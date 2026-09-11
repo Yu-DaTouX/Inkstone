@@ -269,8 +269,9 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 
 | 文件 | 内容 |
 |---|---|
-| [`HANDOFF.md`](HANDOFF.md) | 交接文档：需求、环境事实、踩过的坑 |
-| [`NEXT-SESSION.md`](NEXT-SESSION.md) | 新会话开场指令 |
+| [`docs/README.md`](docs/README.md) | 文档索引（想找什么看这里） |
+| [`docs/dev/HANDOFF.md`](docs/dev/HANDOFF.md) | 交接文档：需求、环境事实、踩过的坑 |
+| [`docs/dev/NEXT-SESSION.md`](docs/dev/NEXT-SESSION.md) | 新会话开场指令 |
 | [`docs/design/DESIGN.md`](docs/design/DESIGN.md) | **设计令牌唯一真源**（tokens.css 必须与它一致） |
 | [`docs/design/prototype.html`](docs/design/prototype.html) | 可交互设计稿（浏览器直接打开） |
 | pi 的 `docs/rpc.md` | RPC 协议（1618 行，47 命令 / 20+ 事件） |
