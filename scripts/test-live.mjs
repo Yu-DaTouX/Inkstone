@@ -54,6 +54,8 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
+  fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
   panels: { probe: 'scripts/probe/panels.js', delay: 9000, cost: 0 },
   // 开关的几何对称性（展开↔收起逐像素对比 + 必须点得到）
@@ -344,6 +346,22 @@ async function main() {
      */
     const piDir = join(sandboxRoot, 'pi-agent')
     for (const d of [userData, sessions, data, piDir]) mkdirSync(d, { recursive: true })
+
+    /*
+     * 预置工作目录 = **项目根**（不是 home）。
+     *
+     * 为什么：隔离后 desktop.json 是空的，cwd 会落到 homedir()，
+     * 于是 fs 场景（文件树）只能看到家目录的杂项，
+     * 所有「应该有 docs/ src/ scripts/」这类断言都无法写。
+     * 指到项目根之后，文件树的断言才有确定的内容可测。
+     *
+     * 只写这一个字段 —— 其余设置由应用自己填默认值（不要在这里模拟）。
+     */
+    writeFileSync(
+      join(data, 'desktop.json'),
+      JSON.stringify({ cwd: root }, null, 2),
+      'utf8'
+    )
 
     env = {
       ...env,

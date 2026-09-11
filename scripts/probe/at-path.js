@@ -31,15 +31,32 @@
   const cwd = store.getState().settings?.cwd ?? ''
   log('  cwd = ' + cwd)
 
-  // cwd 可能是用户主目录（不是项目目录），所以挑一个一定存在的子目录
-  const probe = cwd.includes('pi-desktop') ? 'src/main/' : 'Desktop/'
-  const hits = await window.yan.completePath(probe)
-  log('  completePath(' + probe + ') = ' + hits.length + ' 项')
-  log('    ' + JSON.stringify(hits.slice(0, 5)))
+  /*
+   * 列一层条目。
+   *
+   * ⚠️ 不要绑到具体子目录的内容（上一版用 'src/main/'，那里只有 .ts
+   *    文件、没有子目录，于是「目录带尾斜杠」那条断言落空 —— 它以前靠
+   *    cwd=家目录时 'Desktop/' 里碰巧有子目录才通过）。
+   *    改用根层前缀 's'：项目根下同时有 src/ scripts/（目录）与
+   *    LICENSE 等（文件），两种形态都能验。
+   */
+  const hitPrefix = 's'
+  const hits = await window.yan.completePath(hitPrefix)
+  log('  completePath("s") = ' + hits.length + ' 项')
+  log('    ' + JSON.stringify(hits.slice(0, 6)))
   ok(hits.length > 0, '能列出目录下的条目')
+  const hitDirs = hits.filter((h) => h.endsWith('/'))
+  log('  其中目录 ' + hitDirs.length + ' 项')
+  ok(hitDirs.length > 0, '目录带尾斜杠（界面靠它区分目录 / 文件）')
+  /*
+   * 两种形态都要真的出现才算验证了区分逻辑：
+   *   'src/' 这类目录**带**尾斜杠，'scripts/' 也是；
+   *   而文件不带。用项目里必然存在的名字，比正则更说明问题。
+   */
+  ok(hits.includes('scripts/') || hits.includes('src/'), '目录名带尾斜杠（如 src/）')
   ok(
-    hits.some((h) => h.endsWith('/')),
-    '目录带尾斜杠（界面靠它区分目录 / 文件）'
+    hits.every((h) => !h.endsWith('/') || !h.slice(0, -1).includes('/')),
+    '尾斜杠只出现在目录名后面'
   )
 
   /* 安全：不能跳出 cwd */
@@ -65,11 +82,27 @@
     return out.join('\n')
   }
 
-  setter.call(ta, '@' + probe)
+  /*
+   * ⚠️ 菜单用的前缀必须 **≥ 2 个字符** —— Composer 里是
+   *    `if (atQuery.trim().length < 2) return`（单个字符不查，
+   *    否则刚打出一个 @ 就发 IPC 白干活）。
+   *    这就是下面不用 hitPrefix('s') 而用 menuPrefix('sr') 的原因。
+   */
+  const menuPrefix = 'sr'
+  setter.call(ta, '@' + menuPrefix)
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  await sleep(800)
-
-  const menu = q('[data-testid="at-menu"]')
+  /*
+   * ⚠️ 轮询等菜单出现，不用固定 sleep。
+   *    补全走的是 IPC 往返（completePath → 主进程读目录），
+   *    负载高时会超过 800ms —— 这根固定等待已经假失败过一次。
+   */
+  let menu = null
+  for (let i = 0; i < 30; i++) {
+    menu = q('[data-testid="at-menu"]')
+    if (menu) break
+    await sleep(120)
+  }
+  log('  菜单前缀 @' + menuPrefix + ' → ' + (menu ? '出现' : '超时（textarea="' + ta.value + '"）'))
   ok(!!menu, '输入 @ 后弹出补全菜单')
   if (menu) {
     const items = [...menu.querySelectorAll('.slash-item')].map((x) => x.textContent)
