@@ -59,15 +59,27 @@ export async function cachedTitles(): Promise<TitleMap> {
    ================================================================== */
 
 /** 提示词：要短、要具体、不要标点。写死英文指令 + 中文示例，模型更稳 */
-function buildPrompt(first: string): string {
+function buildPrompt(samples: string[]): string {
+  const body = samples
+    .map((s, i) => `${i === 0 ? '开头' : i === samples.length - 1 ? '现在' : `第 ${i + 1} 句`}：${s}`)
+    .join('\n')
+
   return [
-    '给下面这句用户的话起一个标题。',
-    '要求：不超过 10 个汉字；只输出标题本身；不要引号、句号、冒号；不要解释。',
-    '如果原句很短（少于 10 个字），直接原样输出即可。',
+    '下面是一段对话的节选。给这段对话起一个标题。',
+    '要求：',
+    '1. 不超过 8 个汉字（这是硬限制，超了就重想一个更短的）',
+    '2. 只输出标题本身 —— 不要引号、句号、冒号，不要解释',
+    '3. 具体优于抽象：“重构标题生成” 比 “代码相关讨论” 好',
+    '4. 用中文（除非下面是纯英文对话）',
     '',
-    first.slice(0, 400)
+    body,
+    '',
+    '标题：'
   ].join('\n')
 }
+
+/** 标题长度上限（汉字个数）。超过就截。 */
+const TITLE_MAX = 8
 
 /** 清洗模型输出 —— 它经常不听话地加引号或句号 */
 function cleanTitle(raw: string): string {
@@ -80,8 +92,9 @@ function cleanTitle(raw: string): string {
   s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
   // 只取第一行（模型有时会多写一行解释）
   s = s.split('\n')[0].trim()
-  // 上限 24 个字符，超了截断（宁可我截，也不要一个字库长度的标题）
-  if (s.length > 24) s = s.slice(0, 24)
+  // 上限 8 个字符（用户要求「不超过 8 个字」）。
+  // 宁可我截，也不要一个撑破左栏的标题。
+  if (s.length > TITLE_MAX) s = s.slice(0, TITLE_MAX)
   return s
 }
 
@@ -95,29 +108,32 @@ export interface TitleResult {
  *
  * `cwd` 用用户自己的目录 —— pi 启动时会读 AGENTS.md 之类，
  * 换个目录可能行为不一致。
+ *
+ * `samples` 是要总结的几个片段（按时间顺序）：一般传
+ * [第一句用户话, 最近一句用户话]，这样标题跟得上话题的移动。
+ *
+ * `force` 为 true 时**不用缓存**，重新生成：
+ *   用户要求「每次对话标题需要 agent 生成一个新的」，所以每轮都会重算。
+ *   缓存仍然写（给左栏与切会话时先用一个已有的值垫着）。
  */
 export async function generateTitle(opts: {
   sessionId: string
-  firstMessage: string
+  samples: string[]
   cwd: string
   piBin?: string
   timeoutMs?: number
+  force?: boolean
 }): Promise<TitleResult | null> {
-  const { sessionId, firstMessage, cwd, piBin } = opts
+  const { sessionId, cwd, piBin } = opts
   const timeout = opts.timeoutMs ?? 60_000
 
-  const first = firstMessage.trim()
-  if (!first) return null
+  const samples = opts.samples.map((s) => s.trim()).filter(Boolean)
+  if (samples.length === 0) return null
 
-  // 已经有缓存就不再请求
-  const cached = await loadTitles()
-  if (cached[sessionId]) return { title: cached[sessionId], fromCache: true }
-
-  // 太短的句子不需要归纳，直接用（省一次请求）
-  if (first.length <= 10) {
-    const t = cleanTitle(first)
-    await saveTitle(sessionId, t)
-    return { title: t }
+  // 已经有缓存且不要求重算 → 直接用
+  if (!opts.force) {
+    const cached = await loadTitles()
+    if (cached[sessionId]) return { title: cached[sessionId], fromCache: true }
   }
 
   const rpc = new PiRpc({
@@ -188,7 +204,7 @@ export async function generateTitle(opts: {
       try {
         // 归纳不需要推理 —— 关掉省钱也快
         await rpc.command('set_thinking_level', { level: 'off' })
-        await rpc.command('prompt', { message: buildPrompt(first) })
+        await rpc.command('prompt', { message: buildPrompt(samples) })
       } catch (e) {
         clearTimeout(timer)
         console.error('[title] 发送失败:', e)

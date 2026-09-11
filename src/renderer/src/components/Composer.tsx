@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
+import { ComposerBorder } from './ComposerBorder'
 import { UsageBar } from './UsageBar'
 import type { Attachment } from '../../../shared/ipc'
 
@@ -190,6 +191,15 @@ export function Composer() {
       onDrop={onDrop}
     >
       <div className="composer">
+        {/*
+         * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
+         *
+         * 为什么放在输入框的边框上而不是消息流底部单独一行：
+         *   · 「它在干活」与「我能输入」是同一件事的两面 —— 放一起不用两头看
+         *   · 不额外占垂直空间（消息流已经很长了）
+         *   · 边框颜色顺便承载了当前思考强度
+         */}
+        <ComposerBorder />
         {attachments.length > 0 ? (
           <div className="attach-strip">
             {attachments.map((a) => (

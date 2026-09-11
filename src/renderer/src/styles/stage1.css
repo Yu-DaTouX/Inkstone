@@ -59,14 +59,9 @@
 }
 
 /* -------------------------------------------------------------------
-   2. 标题栏：会话名 / 工作目录
+   2. 标题栏：工作目录
+   （`.tb-session` 的样式已删 —— 会话名胶囊已从界面移除）
    ------------------------------------------------------------------- */
-.tb-session {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .tb-cwd {
   max-width: 340px;
   overflow: hidden;
@@ -256,28 +251,30 @@
   border-top: 1px solid var(--border);
 }
 .md code {
-  background: var(--bg-3);
+  background: var(--code-inline-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 1px 5px;
   font-size: var(--fs-code);
-  color: var(--cyan);
+  color: var(--code-inline-fg);
 }
 .md pre {
   margin: 0 0 var(--sp-3);
-  padding: var(--sp-3);
-  background: var(--bg-1);
+  padding: var(--sp-2);
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   overflow-x: auto;
   /* 代码/ diff 打开连字（DESIGN §2.1） */
   font-variant-ligatures: contextual;
 }
+/* pre code 不再叠行内代码的底/边框/内边距 ——
+   否则代码块里会再套一层浅灰小框（浅色主题下最明显） */
 .md pre code {
   background: none;
   border: none;
   padding: 0;
-  color: var(--fg);
+  color: var(--code-fg);
   font-size: var(--fs-code);
   line-height: var(--lh-tight);
 }

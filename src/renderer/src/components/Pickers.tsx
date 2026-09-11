@@ -4,20 +4,23 @@ import { useT } from '../i18n'
 import { useStore } from '../state/store'
 
 /**
- * 模型 + 思考强度选择器 —— Codex 风格。
+ * 模型 + 思考强度选择器 —— 终端风格。
  *
- * 收起态（输入框底部）：
- *   `DeepSeek V4.1 Flash` + `中`（强调色）+ chevron
- *   —— 两部分合成一个标签：模型回答「用什么」，强度回答「思考多久」。
+ * 收起态（输入框右下）：
+ *   `DeepSeek V4.1 Flash` + `高`（强调色）+ chevron
  *
  * 展开态（贴着触发器向上弹）：
- *   上半  当前强度名（大、强调色）+ 模型名（灰），一条**滑块**调强度
+ *   上半  当前模型名 + 一排**档位**（关 / 轻度 / 中 / 高 / 极高 / Ultra / Max）
  *   下半  模型列表（搜索 + 按 provider 分组）
  *
- * 为什么强度用滑块而不是一排按钮：
- *   Codex 是这么做的，而且强度本质是**连续量**（off→max），
- *   滑块比一堆按钮更贴合「调档」的心智，也更省横向空间。
- *   滑块用原生 input[type=range]（无障碍与键盘天然可用），只做视觉定制。
+ * ⚠️ 为什么把原生 range 滑块换成了档位：
+ *   之前的实现用 `input[type=range]` + `::-webkit-slider-runnable-track/thumb`，
+ *   在 Chromium 里实际渲染出的是「一条 14px 高的粗蓝条 + 一个 16px 的方块」——
+ *   轨道比滑块矮、滑块又比轨道高，视觉上是断的；再叠一层绝对定位的
+ *   `mt-scale` 小方块行，两套「档位」指示互相打架。用户看到的就是「有 bug」。
+ *
+ *   而且滑块本身是个**谎言**：档位是离散的 5~7 档，滑动却没有中间态可用。
+ *   档位按钮是 1:1 的映射 —— 看到几个方块就是几档，点哪个就是哪个。
  */
 export function ModelThinkingPicker() {
   const t = useT()
@@ -59,7 +62,12 @@ export function ModelThinkingPicker() {
     if (open) setQuery('')
   }, [open])
 
-  /** 强度档位的中文名 —— 光看 medium 不知道意味着什么 */
+  /**
+   * 档位的中文名。
+   *
+   * 与 pi 的 7 档一一对应（off → max），不合并：
+   * 合并会让「点了没变化」变成可能的体验（两个档位映射到同一个名字）。
+   */
   const thinkLabel = (l: string): string => {
     const map: Record<string, string> = {
       off: t('think.off'),
@@ -94,7 +102,6 @@ export function ModelThinkingPicker() {
 
   if (!cur) return null
 
-  const idx = Math.max(0, levels.indexOf(level))
   const hasLevels = levels.length > 1
 
   /** 展开时把当前模型滚进视野 */
@@ -114,55 +121,49 @@ export function ModelThinkingPicker() {
       >
         <span className="mt-model">{cur.name}</span>
         {hasLevels && level !== 'off' ? (
-          <span className="mt-level">{thinkLabel(level)}</span>
+          <span className="mt-level" data-testid="thinking-badge">
+            {thinkLabel(level)}
+          </span>
         ) : null}
-        <Icon name="chevron-right" size={12} className={`chev ${open ? 'up' : ''}`} />
+        <span className="mt-chev">{open ? '▴' : '▾'}</span>
       </button>
 
       {open ? (
         <div className="mt-pop" data-testid="model-menu">
-          {/* ---- 上半：强度滑块 ---- */}
-          <div className="mt-head">
-            <div className="mt-head-row">
-              {hasLevels ? (
+          {/* ---- 上半：档位 ---- */}
+          {hasLevels ? (
+            <div className="mt-head">
+              <div className="mt-head-row">
+                <span className="mt-head-title">{t('picker.think')}</span>
+                <span className="spacer" />
                 <span className="mt-head-level" data-testid="thinking-current">
                   {thinkLabel(level)}
                 </span>
-              ) : null}
-              <span className="mt-head-model">{cur.name}</span>
-            </div>
+              </div>
 
-            {hasLevels ? (
-              <>
-                {/* 原生 range：键盘可达、无障碍天然可用，只做视觉定制 */}
-                <input
-                  className="mt-slider"
-                  type="range"
-                  min={0}
-                  max={levels.length - 1}
-                  step={1}
-                  value={idx}
-                  disabled={busy}
-                  onChange={(e) => void setThinking(levels[Number(e.target.value)])}
-                  aria-label={t('picker.thinkTip')}
-                  data-testid="thinking-slider"
-                  style={{ '--fill': `${(idx / (levels.length - 1)) * 100}%` } as React.CSSProperties}
-                />
-                <div className="mt-scale">
-                  {levels.map((l, i) => (
-                    <button
-                      key={l}
-                      className={`mt-scale-dot ${i === idx ? 'on' : ''}`}
-                      onClick={() => void setThinking(l)}
-                      disabled={busy}
-                      title={l}
-                      data-testid={`thinking-dot-${l}`}
-                    />
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </div>
+              {/* 档位按钮：一个方块 = 一档。终端风格的等宽分段。
+                  `--i` 让它们从左到右依次落位（像终端打印出来）。 */}
+              <div className="mt-stops" data-testid="thinking-stops">
+                {levels.map((l, i) => (
+                  <button
+                    key={l}
+                    style={{ '--i': i } as React.CSSProperties}
+                    className={`mt-stop ${l === level ? 'on' : ''}`}
+                    onClick={() => void setThinking(l)}
+                    disabled={busy}
+                    title={l}
+                    data-testid={`thinking-dot-${l}`}
+                    data-level={l}
+                    data-on={l === level ? '1' : '0'}
+                  >
+                    {thinkLabel(l)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-hint">{t('picker.thinkDesc')}</div>
+            </div>
+          ) : null}
 
           {/* ---- 下半：模型列表 ---- */}
           <div className="mt-search">
@@ -180,30 +181,41 @@ export function ModelThinkingPicker() {
             {groups.length === 0 ? (
               <div className="mt-empty">{t('picker.noMatch')}</div>
             ) : (
-              groups.map(([provider, list]) => (
-                <div key={provider} className="mt-group">
-                  <div className="mt-group-head">{provider}</div>
-                  {list.map((m) => {
-                    const on = m.provider === cur.provider && m.id === cur.id
-                    return (
-                      <button
-                        key={`${m.provider}|${m.id}`}
-                        className={`mt-item ${on ? 'sel' : ''}`}
-                        title={m.id}
-                        data-current={on ? '1' : '0'}
-                        onClick={() => {
-                          void setModel(m.provider, m.id)
-                          // 不关面板 —— 用户可能接着调强度
-                        }}
-                      >
-                        <span className="mt-item-name">{m.name}</span>
-                        {m.reasoning ? <span className="mt-tag">{t('picker.reasoning')}</span> : null}
-                        {on ? <Icon name="check" size={12} /> : null}
-                      </button>
-                    )
-                  })}
-                </div>
-              ))
+              (() => {
+                /*
+                 * 列表项的错开序号。
+                 *
+                 * 只错开前 12 个：69 个模型全错开的话，最后一个要等
+                 * 69×8ms ≈ 550ms 才出现，那就不像「入场」而像「卡了」。
+                 */
+                let seq = 0
+                return groups.map(([provider, list]) => (
+                  <div key={provider} className="mt-group">
+                    <div className="mt-group-head">{provider}</div>
+                    {list.map((m) => {
+                      const on = m.provider === cur.provider && m.id === cur.id
+                      const i = Math.min(seq++, 12)
+                      return (
+                        <button
+                          key={`${m.provider}|${m.id}`}
+                          style={{ '--i': i } as React.CSSProperties}
+                          className={`mt-item ${on ? 'sel' : ''}`}
+                          title={m.id}
+                          data-current={on ? '1' : '0'}
+                          onClick={() => {
+                            void setModel(m.provider, m.id)
+                            // 不关面板 —— 用户可能接着调强度
+                          }}
+                        >
+                          <span className="mt-item-name">{m.name}</span>
+                          {m.reasoning ? <span className="mt-tag">{t('picker.reasoning')}</span> : null}
+                          {on ? <Icon name="check" size={12} /> : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))
+              })()
             )}
           </div>
         </div>

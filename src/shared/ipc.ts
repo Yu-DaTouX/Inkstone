@@ -86,6 +86,22 @@ export interface UIMessage {
   error?: string
 }
 
+/**
+ * 队列投递模式（pi 的 set_steering_mode / set_follow_up_mode）。
+ *   all            当前回合的工具跑完后，一次把排队的全投进去
+ *   one-at-a-time  每完成一个回合投一条（pi 的默认值）
+ */
+export type QueueMode = 'all' | 'one-at-a-time'
+
+/** pi 进程 / 版本信息（右栏「环境」分区用） */
+export interface PiInfo {
+  /** 找到的 pi 入口 */
+  bin: string
+  version?: string
+  /** pi 包所在目录（显示用） */
+  home?: string
+}
+
 /** 会话状态快照（get_state 的归一化） */
 export interface SessionState {
   sessionId: string
@@ -100,6 +116,8 @@ export interface SessionState {
   pendingMessageCount: number
   cwd: string
   autoCompactionEnabled?: boolean
+  steeringMode?: QueueMode
+  followUpMode?: QueueMode
 }
 
 /** 可 fork 的用户消息（get_fork_messages） */
@@ -251,6 +269,15 @@ export interface AppSettings {
   piBin?: string
   /** 最近使用的目录 */
   recentCwds: string[]
+  /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */
+  rightPanelOpen: boolean
+  /**
+   * 窗口是否置顶。
+   *
+   * 默认 **false** —— 置顶是个强干扰行为（挡住所有其它窗口），
+   * 不能偷偷默认开。用户主动开了才记住。
+   */
+  alwaysOnTop: boolean
 }
 
 /** 探测 pi 的结果，用于诊断 */
@@ -329,10 +356,19 @@ export type MainPush =
    * ⚠️ 与上面的 'title'（扩展 setTitle，改的是窗口标题）不是一回事，别混。
    */
   /** 窗口最大化状态（用于切换「最大化 / 还原」图标） */
-  | { ch: 'win-state'; payload: { maximized: boolean } }
+  | { ch: 'win-state'; payload: { maximized: boolean; alwaysOnTop: boolean } }
   | { ch: 'session-title'; payload: { sessionId: string; title: string } }
   /** 扩展想把文本塞进输入框（set_editor_text） */
   | { ch: 'editor-text'; payload: string }
+  /**
+   * 扩展的 setWidget。
+   *
+   * TUI 里它是「输入框上方的一小块文本」，桌面端把它收进右栏「扩展」分区 ——
+   * 扩展写的东西（MCP/LSP 状态之类）对用户是有意义的，直接丢掉等于骗扩展。
+   */
+  | { ch: 'widget'; payload: { key: string; lines?: string[] } }
+  /** pi 版本 / 入口（启动时探测一次） */
+  | { ch: 'pi-info'; payload: PiInfo }
   /** 记忆数据变了（扩展写入了新记忆） */
   | { ch: 'memory-changed'; payload: MemoryItem[] }
   /** pi 进程状态 / stderr / 错误 */
@@ -384,6 +420,20 @@ export interface YanBridge {
   /* 开关 */
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
+
+  /* 队列模式 */
+  setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
+  setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
+
+  /* 重试 / 轮换（TUI 的快捷键在桌面端也要有对应入口） */
+  abortRetry(): Promise<{ ok: boolean; error?: string }>
+  cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }>
+  /** 取最后一条助手消息的纯文本（复制用） */
+  lastAssistantText(): Promise<string | null>
+
+  /* pi 环境信息 */
+  piInfo(): Promise<PiInfo>
 
   /* 命令 */
   listCommands(): Promise<SlashCommand[]>
@@ -440,8 +490,20 @@ export interface YanBridge {
   revealPath(p: string): Promise<void>
 
   /* 窗口 */
-  win: { minimize(): void; maximize(): void; close(): void }
+  win: {
+    minimize(): void
+    maximize(): void
+    close(): void
+    /** 切换置顶（会被记住到设置里） */
+    setAlwaysOnTop(v: boolean): Promise<boolean>
+  }
 
   /* 订阅（返回退订函数） */
   onPush(cb: (msg: MainPush) => void): () => void
+  /**
+   * 订阅主进程拦下的全局快捷键（Ctrl+P / Shift+Tab）。
+   * 主进程用 before-input-event 先拦（输入法、焦点问题都拦得住），
+   * 再把动作名发过来；「下一档」怎么算由渲染端决定。
+   */
+  onHotkey(cb: (action: 'cycleModel' | 'cycleThinking') => void): () => void
 }

@@ -1,0 +1,774 @@
+
+/* ===================================================================
+   52. 动效系统 —— 弹窗 / 浮层 / 菜单
+       ─────────────────────────────────────────────────────────────
+       这一节取代第 43 节那套「一浮层一动画」。为什么要重做：
+
+       ① **没有退场**。React 在 open=false 的瞬间卸载节点，纯 CSS
+          只能演入场 —— 表现是「淡入放大」打开、「啪」一下消失，
+          两边不对称。现在配合 `usePresence()` 延迟卸载，
+          入场/退场各有自己的关键帧。
+       ② **曲线不好**。原来统一 `cubic-bezier(0.2,0,0.2,1)`（material
+          standard）是「快出慢进」，适合位移；浮层更想要
+          **快进慢停**（easeOutQuint 那一类），落位有「安定感」。
+          craft-agents 用的是 `cubic-bezier(0.22,1,0.36,1)`，抄过来。
+       ③ **没有层级差**。遮罩、面板、菜单项全用同一个时长，
+          看起来是整块一起动。现在分三档（fast/base/slow）+ 错开。
+
+       参考：craft-agents-oss（Apache-2.0）的动效令牌与
+       `data-[state=open]:animate-in …` 的用法。
+   =================================================================== */
+
+:root {
+  /* 时长：三档够用。菜单最快（要跟手），模态稍慢（体量大） */
+  --mo-fast: 110ms;
+  --mo-base: 170ms;
+  --mo-slow: 240ms;
+  /* 位移距离：浮层不用滑很远，6px 就够表达「从哪来」 */
+  --mo-shift: 6px;
+
+  /* 快进慢停 —— 浮层落位的主力曲线 */
+  --mo-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 退场用标准曲线（退场不需要「安定感」，只需要干脆） */
+  --mo-ease-out: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* -------------------------------------------------------------------
+   52.1 关键帧
+   ------------------------------------------------------------------- */
+
+/* 入场：从上 / 从下 / 居中 */
+@keyframes mo-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(var(--mo-shift)) scale(0.985);
+  }
+}
+@keyframes mo-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--mo-shift) * -1)) scale(0.985);
+  }
+}
+@keyframes mo-in-center {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(4px);
+  }
+}
+@keyframes mo-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+}
+@keyframes mo-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+@keyframes mo-in-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+/* 退场：与入场同向但更快、更小 —— 对称但不拖沓 */
+@keyframes mo-out-up {
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--mo-shift) * 0.6)) scale(0.985);
+  }
+}
+@keyframes mo-out-down {
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--mo-shift) * -0.6)) scale(0.985);
+  }
+}
+@keyframes mo-out-center {
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(3px);
+  }
+}
+@keyframes mo-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+}
+
+@keyframes mo-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mo-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/*
+ * 菜单项 / 列表项逐个淡入。
+ *
+ * 为什么值得做：「一整块滑进来」和「内容一行行落位」的体感差别很大，
+ * 后者让人看出「这是一个列表」，前者像一张图片。
+ * 用 `--i` 控制错开量，调用方只需要给 style={{ '--i': index }}。
+ */
+@keyframes mo-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+/* 按下反馈 —— 按钮被点的那一下要有回应 */
+@keyframes mo-press {
+  50% {
+    transform: scale(0.96);
+  }
+}
+
+/* 遮罩上的细微噪动：让「背景被压住」这件事看得出来 */
+@keyframes mo-scrim-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* -------------------------------------------------------------------
+   52.2 应用：遮罩
+   ------------------------------------------------------------------- */
+.modal-scrim,
+.settings-scrim {
+  animation: mo-scrim-in var(--mo-base) var(--mo-ease) both;
+}
+.modal-scrim.closing,
+.settings-scrim.closing {
+  animation: mo-fade-out var(--mo-fast) var(--mo-ease-out) both;
+}
+
+/* -------------------------------------------------------------------
+   52.3 应用：居中模态（设置面板 / 扩展对话框）
+   ------------------------------------------------------------------- */
+.modal,
+.settings {
+  animation: mo-in-center var(--mo-slow) var(--mo-ease) both;
+}
+.modal.closing,
+.settings.closing {
+  animation: mo-out-center var(--mo-fast) var(--mo-ease-out) both;
+}
+
+/* 设置面板内部的 tab 内容：切 tab 时淡入，别是硬切 */
+.settings-body > * {
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+/* 分组逐个落位 */
+.settings-body .set-group {
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 22ms);
+}
+
+/* -------------------------------------------------------------------
+   52.4 应用：贴着触发器的浮层
+   ------------------------------------------------------------------- */
+/* 向上弹（输入区附近的模型选择器） */
+.mt-pop {
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+  transform-origin: bottom center;
+}
+.mt-pop.closing {
+  animation: mo-out-up var(--mo-fast) var(--mo-ease-out) both;
+}
+/* 模型列表项错开落位 */
+.mt-pop .mt-item {
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 8ms);
+}
+.mt-pop .mt-group {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+/* 档位按钮：从左到右依次出现，像终端里打印出来 */
+.mt-pop .mt-stop {
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 26ms);
+}
+
+/* 向下弹（会话行 / 列表项的操作菜单） */
+.row-menu,
+.srow-menu {
+  animation: mo-in-down var(--mo-fast) var(--mo-ease) both;
+  transform-origin: top left;
+}
+.row-menu.closing,
+.srow-menu.closing {
+  animation: mo-out-down var(--mo-fast) var(--mo-ease-out) both;
+}
+.row-menu .row-menu-btn,
+.srow-menu .srow-menu-btn {
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 14ms);
+}
+
+/* -------------------------------------------------------------------
+   52.5 应用：通知条 —— 从右侧滑入 + 逐条错开
+   ------------------------------------------------------------------- */
+.notices {
+  /* 通知是「从侧边进来」的，方向要固定，不能被 flex 布局的改动带跑 */
+  perspective: 400px;
+}
+.notice {
+  animation: mo-in-right var(--mo-base) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.notice.closing {
+  animation: mo-out-right var(--mo-fast) var(--mo-ease-out) both;
+}
+.notice:hover {
+  /* 点按反馈：悬停时轻微抬起来一点 */
+  transform: translateX(-1px);
+}
+
+/* -------------------------------------------------------------------
+   52.6 应用：底部日志抽屉 —— 从下滑入
+   ------------------------------------------------------------------- */
+.logdrawer {
+  animation: mo-in-up var(--mo-slow) var(--mo-ease) both;
+  transform-origin: bottom center;
+}
+.logdrawer.closing {
+  animation: mo-out-up var(--mo-fast) var(--mo-ease-out) both;
+}
+.logdrawer-body {
+  /* 日志一行行落位 —— 阅读时能看出是新刷出来的 */
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+
+/* -------------------------------------------------------------------
+   52.7 应用：顶部连接条 —— 从上落下
+   ------------------------------------------------------------------- */
+.connbar {
+  animation: mo-in-drop var(--mo-base) var(--mo-ease) both;
+}
+
+/* -------------------------------------------------------------------
+   52.8 通用按压反馈
+   ------------------------------------------------------------------- */
+.tb-icon:active,
+.rp-x:active,
+.rp-act:active,
+.mt-stop:active,
+.mt-trigger:active,
+.rp-switch:active,
+.btn-new:active,
+.rail-icon:active,
+.srow-menu-btn:active,
+.row-menu-btn:active {
+  animation: mo-press 180ms var(--mo-ease);
+}
+
+/* -------------------------------------------------------------------
+   52.9 减少动效
+       ─────────────────────────────────────────────────────────────
+       时长压到 1ms 而不是 `animation: none` ——
+       因为 `usePresence` 的延迟卸载是按时长算的，把动画整个删掉
+       会让「CSS 不动 / JS 还在等」出现一段空窗（浮层短暂消失又出现）。
+       1ms 保证 `both` 填充语义仍在（终态就是 from/to 里那个值）。
+   ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .modal-scrim,
+  .settings-scrim,
+  .modal,
+  .settings,
+  .mt-pop,
+  .row-menu,
+  .srow-menu,
+  .notice,
+  .logdrawer,
+  .connbar,
+  .settings-body > *,
+  .settings-body .set-group,
+  .mt-pop .mt-item,
+  .mt-pop .mt-group,
+  .mt-pop .mt-stop,
+  .row-menu .row-menu-btn,
+  .srow-menu .srow-menu-btn {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+  .notice:hover {
+    transform: none;
+  }
+}
+
+/* ===================================================================
+   53. 导航轨预览卡 v2 —— 「一行标题 + 三行回答」
+       ─────────────────────────────────────────────────────────────
+       用户反馈：预览卡里铺的是用户**整段原话**（带路径、带报错、带换行），
+       看着是一块杂讯。卡片的目的是「让我认出这是哪一轮」，
+       不是「让我重读一遍原话」。
+
+       新结构：
+         ┌─────────────────────────────┐
+         │ 6 / 7            点击跳转   │  ← 序号
+         │ ─────────────────────────── │
+         │ 标题（用户那一问的短摘要）  │  ← 强调色，最多一行
+         │ AI 回答第一行               │  ← 灰色，最多三行
+         │ AI 回答第二行               │
+         │ AI 回答第三行…              │
+         └─────────────────────────────┘
+   =================================================================== */
+.outline-preview {
+  /* 上一节定义的：绝对定位、锚在被指那一格（top 由 JS 给） */
+  width: 300px;
+  max-width: 44vw;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 卡片内部按「块」排，不再用一条大 padding */
+.outline-preview .op-head {
+  margin: 0;
+  padding: 6px var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-2);
+}
+
+/* ---- 标题：用户那一问的短摘要 ---- */
+.op-title {
+  padding: var(--sp-2) var(--sp-3) 5px;
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.4;
+  /* 标题就一行 —— 它是「认出这一轮」的凭据，不是正文 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 标题前的小竖线：与「回答」拉开层级，不用换颜色 */
+.op-title::before {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 11px;
+  margin-right: 6px;
+  border-radius: 1px;
+  background: var(--accent);
+  vertical-align: -1px;
+}
+
+/* ---- 回答：三行封顶 ---- */
+.op-answer {
+  padding: 0 var(--sp-3) var(--sp-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  /* 用户明确要求「三行」 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* 长英文/路径不要撑破卡片 */
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.op-empty {
+  padding: 0 var(--sp-3) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 浅色主题下标题的竖线要深一点才看得见 */
+html[data-theme='light'] .op-title::before {
+  background: var(--accent);
+}
+
+/* ===================================================================
+   54. 回合视图：段落
+       ─────────────────────────────────────────────────────────────
+       用户要求「每次发送的信息要根据段落来显示」。
+
+       为什么值得做：模型经常一次吐好几段（解释 + 清单 + 结论），
+       合成一个死长的 <p> 读起来是一坨，而且**新到的内容无法单独提示**。
+       拆成段之后：
+         · 段间有间距，朗读节奏对了
+         · 新到的那一段自己淡入（key 是段的 id，React 会挂新节点）
+         · 最终回答与中间解说的层级差能用字号/颜色表达
+   =================================================================== */
+.turn-para {
+  animation: text-in 200ms ease-out;
+}
+.turn-para + .turn-para {
+  margin-top: var(--sp-3);
+}
+/* 段落内部：markdown 的首尾边距要去掉，否则段间距会翻倍 */
+.turn-para > .prose > :first-child {
+  margin-top: 0;
+}
+.turn-para > .prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- 中间解说：工具调用之间它说的话，从属于最终回答 ---- */
+.turn-commentary {
+  margin-bottom: var(--sp-3);
+}
+.turn-commentary .turn-para {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+/* 中间解说左侧加一条淡竖线 —— 一眼看出「这是过程，不是结论」 */
+.turn-commentary {
+  border-left: 1px solid var(--border-soft);
+  padding-left: var(--sp-3);
+  margin-left: 1px;
+}
+
+/* ---- 最终回答：正文字色、正常字号 ---- */
+.turn-response {
+  margin-bottom: var(--sp-2);
+}
+.turn-response .turn-para {
+  color: var(--fg);
+}
+
+/* ---- 回合头部的「N 步」标记 ---- */
+.msg-turn-count {
+  margin-left: var(--sp-2);
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 合并后的助手回合：块间距比其他消息稍小一点（它们本来就是一块） */
+.msg.assistant {
+  margin-bottom: var(--sp-5);
+}
+
+/* ===================================================================
+   55. 工作执行栏
+       ─────────────────────────────────────────────────────────────
+       用户要求的回合内顺序：
+
+         ① 模型说话（中间解说，按段落）
+         ② 工作执行栏（干了多少活）      ← 一条横条，把两边隔开
+         ③ 回复（结论）
+
+       为什么要做成「一条横条」而不是一行文字：
+         它夹在「它说的」与「它答的」中间，是个**分界**。
+         靠背景 + 上下边框把它从正文里分离出来，读者一眼就知道
+         「上面是过程，下面是结论」。之前就是一行灰字，看不出分界。
+   =================================================================== */
+.turn {
+  /* 横条：左右拉到整宽，靠背景与上下细线立住 */
+  margin: 2px 0 var(--sp-3);
+  padding: 0 var(--sp-2);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--bg-1) 55%, transparent);
+  border-radius: var(--r-xs);
+}
+/* 展开时去掉底边、让内容自然接上 */
+.turn.open {
+  border-bottom-color: var(--border);
+}
+
+.turn-head {
+  padding: 3px 0;
+}
+
+/* 展开后的内容：往右缩进一点，避免与横条边框贴死 */
+.turn-body {
+  padding: 2px var(--sp-2) var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+}
+
+/* ---- 只有一条工具时的简式（直接一行 `→ name args`，不套横条）---- */
+.turn + .turn-para,
+.turn-para + .turn,
+.turn-response + .turn {
+  margin-top: var(--sp-3);
+}
+
+/* 解说与执行栏、执行栏与回复之间的间距由它们自己的 margin 控制，
+   这里去掉重复叠加 */
+.turn-commentary + .turn {
+  margin-top: var(--sp-2);
+}
+.turn + .turn-response {
+  margin-top: var(--sp-3);
+}
+
+/* 回复前面没有执行栏时，它与解说之间的间距要够 */
+.turn-commentary + .turn-response {
+  margin-top: var(--sp-4);
+}
+
+/* 浅色主题下横条的底要更明显一点，否则看不出是个「条」 */
+html[data-theme='light'] .turn {
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  border-color: var(--border);
+}
+
+/* ===================================================================
+   56. 输入框：pi 风格的边框 + 顶边框上的工作状态
+       ─────────────────────────────────────────────────────────────
+       对齐 pi 的 TUI（`custom-editor.js` 的 `renderTopBorder`）：
+
+         ── ⠋ 正在处理… ────────────────────────────────────────
+         关于聊天栏 按照 pi 的样式来设计▌
+
+       ① 圆角收小：pi 的输入框是**方角**的，右边框与左边框都是竖线。
+          之前用 --r-xl（14px）是"浮起卡片"的思路，与终端形态冲突。
+       ② 顶边框不再是 CSS border，而是一行**真元素** ——
+          因为状态文字要嵌在里面（CSS border 塞不了内容）。
+          代价：`.composer` 的 border-top 要去掉，改由 .cborder 画。
+       ③ 边框颜色 = 当前思考强度的颜色（pi 的 getThinkingBorderColor）。
+          七档七色，这样档位有个常驻的视觉载体，不用去面板里看。
+   =================================================================== */
+
+/* ---- 七档思考强度的边框色（取自 pi 的 dark.json） ---- */
+:root {
+  --think-off: #4a4a4a;
+  --think-minimal: #6e6e6e;
+  --think-low: #5f87af;
+  --think-medium: #81a2be;
+  --think-high: #b294bb;
+  --think-xhigh: #d183e8;
+  --think-max: #ff5fff;
+}
+
+.composer {
+  /* 圆角收小 + 去掉顶边框（改由 .cborder 画） */
+  border-radius: var(--r-md);
+  border-top: none;
+  padding-top: 0;
+  overflow: hidden;
+}
+
+/* 顶边框：`── ⠋ 文案 ────────` */
+.cborder {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 20px;
+  /*
+   * 全出血（负的左右内边距）：
+   * 边框线必须**从卡片最左一直到最右**，才能与左右竖边框接上。
+   * 之前它跟 .composer 的 12px 内边距内缩，两端悬空 ——
+   * 左上/右上角像缺了个口，看着很突兀。
+   */
+  margin: 0 calc(var(--sp-3) * -1);
+  padding: 0;
+  color: var(--think-off);
+  font-size: var(--fs-base);
+  line-height: 1;
+  user-select: none;
+  overflow: hidden;
+  transition: color 260ms var(--mo-ease);
+}
+/* 档位 → 颜色。用属性选择器，加档位时只加一行 */
+.cborder[data-level='minimal'] {
+  color: var(--think-minimal);
+}
+.cborder[data-level='low'] {
+  color: var(--think-low);
+}
+.cborder[data-level='medium'] {
+  color: var(--think-medium);
+}
+.cborder[data-level='high'] {
+  color: var(--think-high);
+}
+.cborder[data-level='xhigh'] {
+  color: var(--think-xhigh);
+}
+.cborder[data-level='max'] {
+  color: var(--think-max);
+}
+
+/* `── ` 前缀：pi 里固定就是这两个横 + 一个空格 */
+.cborder-dash {
+  display: block;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.5;
+  flex: none;
+}
+.cborder-dash.lead {
+  width: 14px;
+  margin-right: 6px;
+}
+/* 剩余宽度：可伸缩（代替 TUI 里手算的 repeat） */
+.cborder-dash.tail {
+  flex: 1;
+  min-width: 8px;
+  margin-left: 6px;
+}
+
+/*
+ * 空闲时：**一条完整连续的线**。
+ *
+ * 这是 pi 的行为（`renderTopBorder` 在没有 working indicator 时
+ * 直接返回一条完整的边框线）。之前把 `── ` 与尾线都留着、
+ * 中间留出空位，空闲时就变成“两段线中间空一截” —— 看着像坏了。
+ */
+.cborder:not(.busy) .cborder-dash.lead {
+  display: none;
+}
+.cborder:not(.busy) .cborder-dash.tail {
+  margin-left: 0;
+}
+/* 空闲时不需要那么亮（它不是重点，只是输入框的边） */
+.cborder:not(.busy) .cborder-dash.tail {
+  opacity: 0.38;
+}
+
+/* ---- 状态（spinner + 文案） ---- */
+.cborder-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.cborder-spinner {
+  /* 盲文字符宽度固定，但要保证不因字体回退而抖 */
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  color: currentColor;
+  font-variant-ligatures: none;
+}
+/* 文案变化时淡入 —— 状态切换是「有新消息」，不该是硬切 */
+.cborder-text {
+  animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
+}
+
+/* ---- 忙碌时：整条边框呼吸 + 尾线扫光 ---- */
+.cborder.busy .cborder-dash {
+  opacity: 0.75;
+}
+/*
+ * 尾线扫光。
+ *
+ * ⚠️ 这里踩过一个坑：一开始只写了一层 `background-image`（限定 240px 宽的渐变）
+ *   并配 `background-repeat: no-repeat` —— 于是那 240px 之外**什么都不画**，
+ *   一条 898px 的线只显示前 240px，看起来就是「线断在半路」。
+ *
+ * 正确做法是**两层**：
+ *   ① background-color：底色，铺满整条线（保证线完整）
+ *   ② background-image：只有高光带，用 no-repeat 让它扫
+ * 底色压到 45% 透明，高光带用实色 —— 这样扫过的地方是“亮了一下”。
+ */
+.cborder.busy .cborder-dash.tail {
+  /* ① 铺满 */
+  background-color: color-mix(in srgb, currentColor 45%, transparent);
+  /* ② 高光带（只有这一层是局部的） */
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    currentColor 50%,
+    transparent 100%
+  );
+  background-size: 240px 100%;
+  background-repeat: no-repeat;
+  animation: cborder-sweep 1.6s linear infinite;
+}
+.cborder.busy .cborder-dash.lead {
+  animation: cborder-pulse 1.6s var(--mo-ease) infinite;
+}
+
+@keyframes cborder-sweep {
+  from {
+    background-position: -240px 0;
+  }
+  to {
+    /* calc 让它扫过右边缘才停，否则末尾会留一截暗的 */
+    background-position: calc(100% + 240px) 0;
+  }
+}
+@keyframes cborder-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 聚焦时把边框提到实色（原 .composer:focus-within 的 border-color 已失效，
+   因为顶边框不在 .composer 上了）*/
+.composer:focus-within .cborder {
+  color: var(--accent);
+}
+/* 但忙碌时优先显示思考强度色（那时「正在干什么」比「聚焦在哪」重要） */
+.composer:focus-within .cborder.busy {
+  color: inherit;
+}
+.composer:focus-within .cborder.busy[data-level='off'] {
+  color: var(--think-off);
+}
+.composer:focus-within .cborder.busy[data-level='minimal'] {
+  color: var(--think-minimal);
+}
+.composer:focus-within .cborder.busy[data-level='low'] {
+  color: var(--think-low);
+}
+.composer:focus-within .cborder.busy[data-level='medium'] {
+  color: var(--think-medium);
+}
+.composer:focus-within .cborder.busy[data-level='high'] {
+  color: var(--think-high);
+}
+.composer:focus-within .cborder.busy[data-level='xhigh'] {
+  color: var(--think-xhigh);
+}
+.composer:focus-within .cborder.busy[data-level='max'] {
+  color: var(--think-max);
+}
+
+/* 浅色主题：pi 的 thinking 色是为深色底调的，浅色下要压暗才能读 */
+html[data-theme='light'] {
+  --think-off: #9a9a9a;
+  --think-minimal: #8a8a8a;
+  --think-low: #3f6c92;
+  --think-medium: #4a7ba0;
+  --think-high: #7a5f8c;
+  --think-xhigh: #8b4bb0;
+  --think-max: #a300a3;
+}
+
+/* ---- 减少动效 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .cborder.busy .cborder-dash {
+    animation: none !important;
+  }
+  .cborder.busy .cborder-dash.tail {
+    /* 去掉扫光层，但**保留**底色 —— 线必须完整 */
+    background-image: none;
+    background-color: currentColor;
+    opacity: 0.5;
+  }
+  .cborder-text {
+    animation-duration: 1ms !important;
+  }
+}

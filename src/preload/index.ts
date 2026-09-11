@@ -7,7 +7,9 @@ import type {
   MainPush,
   MemoryItem,
   ModelInfo,
+  PiInfo,
   PiProbe,
+  QueueMode,
   SessionState,
   SessionStats,
   SessionSummary,
@@ -62,6 +64,15 @@ const api: YanBridge = {
   setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
   setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
 
+  /* ---- 队列模式 / 轮换（pi 自带能力） ---- */
+  setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
+  setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
+  abortRetry: () => invoke<Ok>('yan:abortRetry'),
+  cycleModel: () => invoke<Ok>('yan:cycleModel'),
+  cycleThinking: () => invoke<Ok>('yan:cycleThinking'),
+  lastAssistantText: () => invoke<string | null>('yan:lastAssistantText'),
+  piInfo: () => invoke<PiInfo>('yan:piInfo'),
+
   /* ---- 状态 ---- */
   getState: () => invoke<SessionState | null>('yan:getState'),
   agentStatus: () =>
@@ -102,7 +113,8 @@ const api: YanBridge = {
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),
-    close: () => ipcRenderer.send('win:close')
+    close: () => ipcRenderer.send('win:close'),
+    setAlwaysOnTop: (v) => invoke<boolean>('win:setAlwaysOnTop', v)
   },
 
   /** 订阅主进程推送，返回退订函数 */
@@ -120,6 +132,26 @@ const api: YanBridge = {
 
     return () => {
       ipcRenderer.removeListener('yan:push', listener)
+    }
+  },
+
+  /**
+   * 订阅主进程拦下来的全局快捷键。
+   *
+   * 主进程用 before-input-event 先拦（输入法组合态、焦点不在 webContents
+   * 的时候也拦得住），再把**动作名**发过来；具体怎么算下一档由渲染端决定 ——
+   * 协议知识不进主进程（HANDOFF §9 原则 1）。
+   */
+  onHotkey: (cb: (action: 'cycleModel' | 'cycleThinking') => void): (() => void) => {
+    const listener = (
+      _e: Electron.IpcRendererEvent,
+      p: { action: 'cycleModel' | 'cycleThinking' }
+    ): void => {
+      cb(p.action)
+    }
+    ipcRenderer.on('yan:hotkey', listener)
+    return () => {
+      ipcRenderer.removeListener('yan:hotkey', listener)
     }
   }
 }

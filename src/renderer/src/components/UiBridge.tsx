@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
+import { prefersReducedMotion, usePresence } from '../lib/usePresence'
 import type { ExtensionUiRequest } from '../../../shared/ipc'
+
+/** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
+const EXIT_MS = 110
 
 /**
  * 扩展 UI 桥 —— 把 pi 扩展的 select / confirm / input / editor
@@ -16,12 +20,25 @@ import type { ExtensionUiRequest } from '../../../shared/ipc'
 export function UiDialog() {
   const requests = useStore((s) => s.uiRequests)
   const req = requests[0]
-  if (!req) return null
+
+  /*
+   * 扩展对话框的退场。
+   *
+   * ⚠️ 这里的模型与别处不同：`req` 一从 store 里消失，UiDialog 就会
+   * 返回 null，节点当场卸载。所以不能只靠 `usePresence(!!req)` ——
+   * 那句话永远来不及演退场。得把最后一个 req **留住**。
+   */
+  const lastReq = useRef<ExtensionUiRequest | undefined>(undefined)
+  if (req) lastReq.current = req
+  const shown = req ?? lastReq.current
+  const { mounted, closing } = usePresence(!!req, prefersReducedMotion() ? 1 : EXIT_MS)
+
+  if (!mounted || !shown) return null
   // key 用 id：换一个请求就重置内部状态
-  return <DialogBody key={req.id} req={req} />
+  return <DialogBody key={shown.id} req={shown} closing={closing} />
 }
 
-function DialogBody({ req }: { req: ExtensionUiRequest }) {
+function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boolean }) {
   const t = useT()
   const answerUi = useStore((s) => s.answerUi)
   const dismissRequest = useStore((s) => s.dismissRequest)
@@ -53,8 +70,8 @@ function DialogBody({ req }: { req: ExtensionUiRequest }) {
           : t('ui.input')
 
   return (
-    <div className="modal-scrim" role="dialog" aria-modal="true">
-      <div className="modal">
+    <div className={`modal-scrim ${closing ? 'closing' : ''}`} role="dialog" aria-modal="true">
+      <div className={`modal ${closing ? 'closing' : ''}`}>
         <div className="modal-head">
           <Icon name={req.method === 'confirm' ? 'alert-circle' : 'message-dots'} size={12} />
           <span className="modal-title">{req.title ?? title}</span>
@@ -68,9 +85,10 @@ function DialogBody({ req }: { req: ExtensionUiRequest }) {
 
         {req.method === 'select' && req.options ? (
           <div className="modal-options">
-            {req.options.map((o) => (
+            {req.options.map((o, i) => (
               <button
                 key={o}
+                style={{ '--i': i } as React.CSSProperties}
                 className="modal-option"
                 onClick={() => answerUi({ id: req.id, value: o })}
               >
@@ -183,6 +201,28 @@ export function Notices() {
   const notices = useStore((s) => s.notices)
   const dismiss = useStore((s) => s.dismissNotice)
 
+  /*
+   * 退场：store 一移除通知，节点就没了 —— 所以要把刚被移除的**留住一会儿**。
+   *
+   * 为什么值得做：通知是我自己加频的（模型切换 / 记忆确认 / 复制 都弹），
+   * 只演入场的话每次都是「淡入→啪一下消失」，很不体面。
+   */
+  const [leaving, setLeaving] = useState<typeof notices>([])
+  const prev = useRef<typeof notices>([])
+
+  useEffect(() => {
+    const gone = prev.current.filter((p) => !notices.some((n) => n.id === p.id))
+    prev.current = notices
+    if (gone.length === 0) return
+
+    setLeaving((cur) => [...cur, ...gone])
+    const ms = prefersReducedMotion() ? 1 : EXIT_MS
+    const timer = setTimeout(() => {
+      setLeaving((cur) => cur.filter((x) => !gone.some((g) => g.id === x.id)))
+    }, ms)
+    return () => clearTimeout(timer)
+  }, [notices])
+
   // 自动消失（error 留久一点，用户可能要看）
   useEffect(() => {
     if (notices.length === 0) return
@@ -192,16 +232,25 @@ export function Notices() {
     return () => timers.forEach(clearTimeout)
   }, [notices, dismiss])
 
-  if (notices.length === 0) return null
+  const shown = [...notices, ...leaving]
+  if (shown.length === 0) return null
 
   return (
     <div className="notices">
-      {notices.map((n) => (
-        <button key={n.id} className={`notice ${n.type}`} onClick={() => dismiss(n.id)}>
-          <Icon name={n.type === 'error' ? 'alert-circle' : n.type === 'warning' ? 'alert-circle' : 'check-circle'} size={12} />
-          <span>{n.text}</span>
-        </button>
-      ))}
+      {shown.map((n, i) => {
+        const isLeaving = !notices.some((x) => x.id === n.id)
+        return (
+          <button
+            key={n.id}
+            className={`notice ${n.type} ${isLeaving ? 'closing' : ''}`}
+            style={{ '--i': i } as React.CSSProperties}
+            onClick={() => dismiss(n.id)}
+          >
+            <Icon name={n.type === 'error' ? 'alert-circle' : n.type === 'warning' ? 'alert-circle' : 'check-circle'} size={12} />
+            <span>{n.text}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -215,6 +264,8 @@ export function StatusBar() {
   const logs = useStore((s) => s.logs)
   const session = useStore((s) => s.session)
   const [open, setOpen] = useState(false)
+  // 日志抽屉也要有退场（不然收起时也是一啪就没了）
+  const drawer = usePresence(open, prefersReducedMotion() ? 1 : 240)
 
   const entries = Object.entries(statuses)
   const hasLogs = logs.length > 0
@@ -247,8 +298,8 @@ export function StatusBar() {
         ) : null}
       </div>
 
-      {open ? (
-        <div className="logdrawer">
+      {drawer.mounted ? (
+        <div className={`logdrawer ${drawer.closing ? 'closing' : ''}`}>
           <div className="logdrawer-head">
             <span>{t('log.title')}</span>
             <span className="spacer" />

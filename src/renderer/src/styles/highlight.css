@@ -1,123 +1,181 @@
 /* ===================================================================
-   代码高亮 —— 取自 highlight.js 的 github-dark，作用域限定在 .md pre code
-   改配色请改 tokens.css 的语义色，不要在这里加新颜色。
+   代码高亮 —— highlight.js 官方主题（GitHub Dark / GitHub Light）
+   ─────────────────────────────────────────────────────────────
+   ⚠️ 这个文件之前是坏的（本会话修）：
+      上一版把 highlight.js 主题里的 `.hljs` 做了一次全局替换成
+      `.md pre code`，于是选择器变成了 `pre code.md pre code-keyword`
+      这种无意义的东西 —— 规则**一条都匹配不上**，语法高亮等于完全没生效
+      （probe 实测：`code.hljs` 里的 `span[class^="hljs"]` 数量 = 0）。
+      正确的写法是作用域限定 + 保留 `.hljs-*` 类名：
+          .md pre code .hljs-keyword { ... }
+
+   ⚠️ 另一个坑：主题里写死了 `background:#0d1117`（深色），
+      浅色主题下就变成「白底页面上一个黑框，里面还是深色字」。
+      所以背景/前景改走 tokens.css 的 `--code-bg` / `--code-fg`，
+      语法色按 theme 分两套。
+
    来源：highlight.js (BSD-3-Clause)
    =================================================================== */
-pre code.md pre code {
+
+/* ---- 容器 ---- */
+.md pre code {
   display: block;
   overflow-x: auto;
-  padding: 1em
+  padding: var(--sp-3);
+  color: var(--code-fg);
+  background: var(--code-bg);
 }
-code.md pre code {
-  padding: 3px 5px
-}
-/*!
-  Theme: GitHub Dark
-  Description: Dark theme as seen on github.com
-  Author: github.com
-  Maintainer: @Hirse
-  Updated: 2021-05-15
 
-  Outdated base version: https://github.com/primer/github-syntax-dark
-  Current colors taken from GitHub's CSS
-*/
-.md pre code {
+/* ===================================================================
+   深色主题（GitHub Dark）
+   =================================================================== */
+html[data-theme='dark'] .md pre code .hljs-doctag,
+html[data-theme='dark'] .md pre code .hljs-keyword,
+html[data-theme='dark'] .md pre code .hljs-meta .hljs-keyword,
+html[data-theme='dark'] .md pre code .hljs-template-tag,
+html[data-theme='dark'] .md pre code .hljs-template-variable,
+html[data-theme='dark'] .md pre code .hljs-type,
+html[data-theme='dark'] .md pre code .hljs-variable.language_ {
+  color: #ff7b72;
+}
+html[data-theme='dark'] .md pre code .hljs-title,
+html[data-theme='dark'] .md pre code .hljs-title.class_,
+html[data-theme='dark'] .md pre code .hljs-title.class_.inherited__,
+html[data-theme='dark'] .md pre code .hljs-title.function_ {
+  color: #d2a8ff;
+}
+html[data-theme='dark'] .md pre code .hljs-attr,
+html[data-theme='dark'] .md pre code .hljs-attribute,
+html[data-theme='dark'] .md pre code .hljs-literal,
+html[data-theme='dark'] .md pre code .hljs-meta,
+html[data-theme='dark'] .md pre code .hljs-number,
+html[data-theme='dark'] .md pre code .hljs-operator,
+html[data-theme='dark'] .md pre code .hljs-variable,
+html[data-theme='dark'] .md pre code .hljs-selector-attr,
+html[data-theme='dark'] .md pre code .hljs-selector-class,
+html[data-theme='dark'] .md pre code .hljs-selector-id {
+  color: #79c0ff;
+}
+html[data-theme='dark'] .md pre code .hljs-regexp,
+html[data-theme='dark'] .md pre code .hljs-string,
+html[data-theme='dark'] .md pre code .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+html[data-theme='dark'] .md pre code .hljs-built_in,
+html[data-theme='dark'] .md pre code .hljs-symbol {
+  color: #ffa657;
+}
+html[data-theme='dark'] .md pre code .hljs-comment,
+html[data-theme='dark'] .md pre code .hljs-code,
+html[data-theme='dark'] .md pre code .hljs-formula {
+  color: #8b949e;
+}
+html[data-theme='dark'] .md pre code .hljs-name,
+html[data-theme='dark'] .md pre code .hljs-quote,
+html[data-theme='dark'] .md pre code .hljs-selector-tag,
+html[data-theme='dark'] .md pre code .hljs-selector-pseudo {
+  color: #7ee787;
+}
+html[data-theme='dark'] .md pre code .hljs-subst {
   color: #c9d1d9;
-  background: #0d1117
 }
-.md pre code-doctag,
-.md pre code-keyword,
-.md pre code-meta .md pre code-keyword,
-.md pre code-template-tag,
-.md pre code-template-variable,
-.md pre code-type,
-.md pre code-variable.language_ {
-  /* prettylights-syntax-keyword */
-  color: #ff7b72
-}
-.md pre code-title,
-.md pre code-title.class_,
-.md pre code-title.class_.inherited__,
-.md pre code-title.function_ {
-  /* prettylights-syntax-entity */
-  color: #d2a8ff
-}
-.md pre code-attr,
-.md pre code-attribute,
-.md pre code-literal,
-.md pre code-meta,
-.md pre code-number,
-.md pre code-operator,
-.md pre code-variable,
-.md pre code-selector-attr,
-.md pre code-selector-class,
-.md pre code-selector-id {
-  /* prettylights-syntax-constant */
-  color: #79c0ff
-}
-.md pre code-regexp,
-.md pre code-string,
-.md pre code-meta .md pre code-string {
-  /* prettylights-syntax-string */
-  color: #a5d6ff
-}
-.md pre code-built_in,
-.md pre code-symbol {
-  /* prettylights-syntax-variable */
-  color: #ffa657
-}
-.md pre code-comment,
-.md pre code-code,
-.md pre code-formula {
-  /* prettylights-syntax-comment */
-  color: #8b949e
-}
-.md pre code-name,
-.md pre code-quote,
-.md pre code-selector-tag,
-.md pre code-selector-pseudo {
-  /* prettylights-syntax-entity-tag */
-  color: #7ee787
-}
-.md pre code-subst {
-  /* prettylights-syntax-storage-modifier-import */
-  color: #c9d1d9
-}
-.md pre code-section {
-  /* prettylights-syntax-markup-heading */
+html[data-theme='dark'] .md pre code .hljs-section {
   color: #1f6feb;
-  font-weight: bold
+  font-weight: bold;
 }
-.md pre code-bullet {
-  /* prettylights-syntax-markup-list */
-  color: #f2cc60
+html[data-theme='dark'] .md pre code .hljs-bullet {
+  color: #f2cc60;
 }
-.md pre code-emphasis {
-  /* prettylights-syntax-markup-italic */
+html[data-theme='dark'] .md pre code .hljs-emphasis {
   color: #c9d1d9;
-  font-style: italic
+  font-style: italic;
 }
-.md pre code-strong {
-  /* prettylights-syntax-markup-bold */
+html[data-theme='dark'] .md pre code .hljs-strong {
   color: #c9d1d9;
-  font-weight: bold
+  font-weight: bold;
 }
-.md pre code-addition {
-  /* prettylights-syntax-markup-inserted */
+html[data-theme='dark'] .md pre code .hljs-addition {
   color: #aff5b4;
-  background-color: #033a16
+  background-color: #033a16;
 }
-.md pre code-deletion {
-  /* prettylights-syntax-markup-deleted */
+html[data-theme='dark'] .md pre code .hljs-deletion {
   color: #ffdcd7;
-  background-color: #67060c
+  background-color: #67060c;
 }
-.md pre code-char.escape_,
-.md pre code-link,
-.md pre code-params,
-.md pre code-property,
-.md pre code-punctuation,
-.md pre code-tag {
-  /* purposely ignored */
-  
+
+/* ===================================================================
+   浅色主题（GitHub Light）
+   =================================================================== */
+html[data-theme='light'] .md pre code .hljs-doctag,
+html[data-theme='light'] .md pre code .hljs-keyword,
+html[data-theme='light'] .md pre code .hljs-meta .hljs-keyword,
+html[data-theme='light'] .md pre code .hljs-template-tag,
+html[data-theme='light'] .md pre code .hljs-template-variable,
+html[data-theme='light'] .md pre code .hljs-type,
+html[data-theme='light'] .md pre code .hljs-variable.language_ {
+  color: #cf222e;
+}
+html[data-theme='light'] .md pre code .hljs-title,
+html[data-theme='light'] .md pre code .hljs-title.class_,
+html[data-theme='light'] .md pre code .hljs-title.class_.inherited__,
+html[data-theme='light'] .md pre code .hljs-title.function_ {
+  color: #8250df;
+}
+html[data-theme='light'] .md pre code .hljs-attr,
+html[data-theme='light'] .md pre code .hljs-attribute,
+html[data-theme='light'] .md pre code .hljs-literal,
+html[data-theme='light'] .md pre code .hljs-meta,
+html[data-theme='light'] .md pre code .hljs-number,
+html[data-theme='light'] .md pre code .hljs-operator,
+html[data-theme='light'] .md pre code .hljs-variable,
+html[data-theme='light'] .md pre code .hljs-selector-attr,
+html[data-theme='light'] .md pre code .hljs-selector-class,
+html[data-theme='light'] .md pre code .hljs-selector-id {
+  color: #0550ae;
+}
+html[data-theme='light'] .md pre code .hljs-regexp,
+html[data-theme='light'] .md pre code .hljs-string,
+html[data-theme='light'] .md pre code .hljs-meta .hljs-string {
+  color: #0a3069;
+}
+html[data-theme='light'] .md pre code .hljs-built_in,
+html[data-theme='light'] .md pre code .hljs-symbol {
+  color: #953800;
+}
+html[data-theme='light'] .md pre code .hljs-comment,
+html[data-theme='light'] .md pre code .hljs-code,
+html[data-theme='light'] .md pre code .hljs-formula {
+  color: #6e7781;
+}
+html[data-theme='light'] .md pre code .hljs-name,
+html[data-theme='light'] .md pre code .hljs-quote,
+html[data-theme='light'] .md pre code .hljs-selector-tag,
+html[data-theme='light'] .md pre code .hljs-selector-pseudo {
+  color: #116329;
+}
+html[data-theme='light'] .md pre code .hljs-subst {
+  color: #24292f;
+}
+html[data-theme='light'] .md pre code .hljs-section {
+  color: #0550ae;
+  font-weight: bold;
+}
+html[data-theme='light'] .md pre code .hljs-bullet {
+  color: #953800;
+}
+html[data-theme='light'] .md pre code .hljs-emphasis {
+  color: #24292f;
+  font-style: italic;
+}
+html[data-theme='light'] .md pre code .hljs-strong {
+  color: #24292f;
+  font-weight: bold;
+}
+html[data-theme='light'] .md pre code .hljs-addition {
+  color: #116329;
+  background-color: #dafbe1;
+}
+html[data-theme='light'] .md pre code .hljs-deletion {
+  color: #82071e;
+  background-color: #ffebe9;
 }

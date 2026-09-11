@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
+import { prefersReducedMotion, usePresence } from '../lib/usePresence'
 import { MemorySections } from './MemoryPanel'
 
 export type SettingsTab = 'memory' | 'appearance' | 'status' | 'about'
@@ -30,6 +31,8 @@ export function Settings({
   const t = useT()
   const { lang, setLang } = useI18n()
   const scrim = useRef<HTMLDivElement>(null)
+  // 退场：面板体量大，进度比其他浮层长一点
+  const presence = usePresence(open, prefersReducedMotion() ? 1 : 110)
 
   // Esc 关闭
   useEffect(() => {
@@ -44,7 +47,7 @@ export function Settings({
     return () => document.removeEventListener('keydown', onKey, true)
   }, [open, onClose])
 
-  if (!open) return null
+  if (!presence.mounted) return null
 
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'memory', label: t('set.memory'), icon: 'layers' },
@@ -55,20 +58,26 @@ export function Settings({
 
   return (
     <div
-      className="settings-scrim"
+      className={`settings-scrim ${presence.closing ? 'closing' : ''}`}
       ref={scrim}
       onMouseDown={(e) => {
         if (e.target === scrim.current) onClose()
       }}
     >
-      <div className="settings" role="dialog" aria-modal="true" aria-label={t('set.title')}>
+      <div
+        className={`settings ${presence.closing ? 'closing' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('set.title')}
+      >
         {/* 左：导航 */}
         <nav className="settings-nav">
           <div className="settings-nav-title">{t('set.title')}</div>
-          {tabs.map((x) => (
+          {tabs.map((x, i) => (
             <button
               key={x.id}
               className={`settings-tab ${tab === x.id ? 'sel' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
               onClick={() => onTabChange(x.id)}
             >
               <Icon name={x.icon as never} size={12} />
@@ -82,8 +91,8 @@ export function Settings({
           </button>
         </nav>
 
-        {/* 右：内容 */}
-        <div className="settings-body">
+        {/* 右：内容。key 跟着 tab 走 —— 切 tab 时新节点会重演一次淡入 */}
+        <div className="settings-body" key={tab}>
           {tab === 'memory' ? (
             <MemorySections />
           ) : tab === 'appearance' ? (
@@ -105,10 +114,11 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
   const setTheme = useThemeSetter()
+  const onTop = useStore((s) => s.alwaysOnTop)
+  const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const [reduced, setReduced] = useState(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   )
-
   return (
     <div className="set-group">
       <div className="set-row">
@@ -145,6 +155,26 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {x === 'zh-CN' ? '中文' : 'English'}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.alwaysOnTop')}</div>
+          <div className="set-desc">{t('set.alwaysOnTopDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          {/* 与标题栏那个置顶按钮是同一个状态（store.alwaysOnTop），
+              两处都能切，显示以主进程推的真实值为准 */}
+          <button
+            className={`seg-btn ${onTop ? 'sel' : ''}`}
+            onClick={() => void toggleAlwaysOnTop()}
+            data-testid="set-always-on-top"
+            data-on={onTop ? '1' : '0'}
+          >
+            <Icon name="pin" size={12} />
+            <span>{onTop ? t('set.on') : t('set.off')}</span>
+          </button>
         </div>
       </div>
 

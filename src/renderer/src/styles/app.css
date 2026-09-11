@@ -379,13 +379,14 @@
   left: 0;
   color: var(--fg-mute);
 }
+/* 行内代码：用 token，浅/深主题各一套（浅色下青色在浅灰底上几乎读不到） */
 .prose code {
-  background: var(--bg-3);
+  background: var(--code-inline-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 1px 5px;
   font-size: var(--fs-code);
-  color: var(--cyan);
+  color: var(--code-inline-fg);
 }
 .prose strong {
   color: var(--fg);

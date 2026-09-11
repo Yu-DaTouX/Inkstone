@@ -15,6 +15,8 @@ import type {
   MainPush,
   MemoryItem,
   ModelInfo,
+  PiInfo,
+  QueueMode,
   QueueState,
   SessionState,
   SessionStats,
@@ -129,6 +131,22 @@ interface Store {
   titles: Record<string, string>
   /** 窗口是否最大化（切换标题栏的还原图标） */
   maximized: boolean
+
+  /**
+   * 窗口是否置顶。
+   *
+   * 注意：这是**真实窗口状态**，不是设置里的意图值 ——
+   * 两者可能短暂不一致（用户从任务栏右键改了置顶、或系统收回了）。
+   * 以主进程推的 `win-state` 为准（带有 always-on-top-changed 监听）。
+   */
+  alwaysOnTop: boolean
+  /** pi 入口 / 版本（右栏「环境」分区） */
+  piInfo: PiInfo | null
+  /**
+   * 扩展的 setWidget 文本块（key → lines）。
+   * TUI 里它显示在输入框上方；桌面端收进右栏「扩展」分区。
+   */
+  widgets: Record<string, string[]>
   /** 跳到第 N 轮用户对话（导航轨点击时用，由 App 实现具体滚动） */
   scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
@@ -168,6 +186,16 @@ interface Store {
   setThinking: (level: string) => Promise<void>
   setAutoCompaction: (on: boolean) => Promise<void>
   setAutoRetry: (on: boolean) => Promise<void>
+  /* 队列投递模式（pi 的 set_steering_mode / set_follow_up_mode） */
+  setSteeringMode: (mode: QueueMode) => Promise<void>
+  setFollowUpMode: (mode: QueueMode) => Promise<void>
+  /** 取消正在等待的自动重试 */
+  abortRetry: () => Promise<void>
+  /** 循环切下一个模型 / 下一档思考（TUI 的 Ctrl+P / Ctrl+T） */
+  cycleModel: () => Promise<void>
+  cycleThinking: () => Promise<void>
+  /** 把最后一条助手回复复制到剪贴板 */
+  copyLastReply: () => Promise<void>
   changeCwd: (cwd: string) => Promise<void>
 
   confirmMemory: (id: string, ok: boolean) => Promise<void>
@@ -200,6 +228,11 @@ interface Store {
   openSettings: (tab?: string) => void
   closeSettings: () => void
   setRailPinned: (v: boolean) => void
+  /** 切换窗口置顶（会写进设置，重启后保持） */
+  toggleAlwaysOnTop: () => Promise<void>
+  /** 右栏展开 / 收起（落盘到设置，重启后保持） */
+  setRightPanelOpen: (v: boolean) => Promise<void>
+  toggleRightPanel: () => Promise<void>
   setScrollProgress: (v: number) => void
   /** App 把它自己的滚动实现注册进来 */
   registerScrollToTurn: (fn: (i: number) => void) => void
@@ -209,6 +242,28 @@ interface Store {
 }
 
 const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
+
+/**
+ * 思考档的中文名。
+ *
+ * 与 Pickers.tsx 里的 `thinkLabel` 是同一套映射，但那个需要 `t`（React 上下文），
+ * 这里在 store 里拿不到 —— 所以重复一份常量。
+ * 重复的代价：改档位名要改两处。收益：快捷建的提示能直接说「思考强度 → 极高」
+ * 而不是「思考强度 → high」。
+ */
+const THINK_LABEL: Record<string, string> = {
+  off: '关',
+  minimal: '轻度',
+  low: '中',
+  medium: '高',
+  high: '极高',
+  xhigh: 'Ultra',
+  max: 'Max'
+}
+
+function thinkLabelOf(level: string): string {
+  return THINK_LABEL[level] ?? level
+}
 
 /** 每条消息的 id 必须唯一；流式补丁按 id 找 */
 function patchMessage(list: UIMessage[], id: string, patch: Partial<UIMessage>): UIMessage[] {
@@ -264,12 +319,15 @@ export const useStore = create<Store>((set, get) => ({
   scrollProgress: 0,
   titles: {},
   maximized: false,
+  alwaysOnTop: false,
   scrollToTurn: () => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
   },
   uiRequests: [],
   notices: [],
   statuses: {},
+  widgets: {},
+  piInfo: null,
   editorInject: null,
   queueRestore: null,
   title: null,
@@ -279,7 +337,7 @@ export const useStore = create<Store>((set, get) => ({
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, soul, memory, sessions, session, messages, stats, todos, status, titles] =
+    const [settings, soul, memory, sessions, session, messages, stats, todos, status, titles, pi] =
       await Promise.all([
         api.getSettings(),
         api.readSoul(),
@@ -293,7 +351,9 @@ export const useStore = create<Store>((set, get) => ({
         // dev 模式下渲染端加载慢，可能错过 `proc: ready` 的 push，
         // 不拉的话界面会永远停在「正在启动 pi」（功能其实是好的）。
         api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' })),
-        api.cachedTitles().catch(() => ({}) as Record<string, string>)
+        api.cachedTitles().catch(() => ({}) as Record<string, string>),
+        // pi 入口 / 版本（右栏「环境」分区）——探测失败不能影响启动
+        api.piInfo().catch(() => null)
       ])
 
     set({
@@ -308,7 +368,8 @@ export const useStore = create<Store>((set, get) => ({
       todos,
       conn: status.state,
       connDetail: status.detail,
-      titles
+      titles,
+      piInfo: pi
     })
 
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
@@ -327,7 +388,7 @@ export const useStore = create<Store>((set, get) => ({
         set({ todos: m.payload })
         break
       case 'win-state':
-        set({ maximized: m.payload.maximized })
+        set({ maximized: m.payload.maximized, alwaysOnTop: m.payload.alwaysOnTop })
         break
       case 'session-title':
         set({ titles: { ...s.titles, [m.payload.sessionId]: m.payload.title } })
@@ -405,6 +466,16 @@ export const useStore = create<Store>((set, get) => ({
         set({ statuses: next })
         break
       }
+      case 'widget': {
+        const next = { ...s.widgets }
+        if (!m.payload.lines?.length) delete next[m.payload.key]
+        else next[m.payload.key] = m.payload.lines
+        set({ widgets: next })
+        break
+      }
+      case 'pi-info':
+        set({ piInfo: m.payload })
+        break
       case 'title':
         set({ title: m.payload })
         break
@@ -594,6 +665,71 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  /* --------------------------------------------- 队列模式 / 轮换 / 重试 */
+
+  setSteeringMode: async (mode) => {
+    const res = await window.yan.setSteeringMode(mode)
+    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+  },
+
+  setFollowUpMode: async (mode) => {
+    const res = await window.yan.setFollowUpMode(mode)
+    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+  },
+
+  abortRetry: async () => {
+    await window.yan.abortRetry()
+  },
+
+  /**
+   * 循环切模型（Ctrl+P）。
+   *
+   * 关键在于**给反馈**：主进程按「当前可见模型列表」的下一个走，
+   * 并返回真的切到了哪个名字。不弹提示的话，用户按下去只看到
+   * 右下角一个小标签变了 —— 很容易以为没生效（本会话就踩了这个）。
+   */
+  cycleModel: async () => {
+    const res = await window.yan.cycleModel()
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
+      return
+    }
+    if (res.to) {
+      set({ notices: pushNotice(get().notices, 'info', '模型 → ' + res.to) })
+    }
+  },
+
+  cycleThinking: async () => {
+    const res = await window.yan.cycleThinking()
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换强度') })
+      return
+    }
+    if (res.to) {
+      set({ notices: pushNotice(get().notices, 'info', '思考强度 → ' + thinkLabelOf(res.to)) })
+    }
+  },
+
+  /**
+   * 复制最后一条回复。
+   *
+   * 用 pi 的 get_last_assistant_text 而不是从界面上拼 —— 界面上的文本
+   * 是增量累积的，而 pi 那边是权威的完整文本（包括已经滚出视野的部分）。
+   */
+  copyLastReply: async () => {
+    const text = await window.yan.lastAssistantText()
+    if (!text) {
+      set({ notices: pushNotice(get().notices, 'info', '还没有可复制的回复') })
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      set({ notices: pushNotice(get().notices, 'info', `已复制 ${text.length} 个字符` ) })
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', '复制失败（剪贴板不可用）') })
+    }
+  },
+
   changeCwd: async (cwd) => {
     const res = await window.yan.setCwd(cwd)
     if (!res.ok) {
@@ -696,6 +832,31 @@ export const useStore = create<Store>((set, get) => ({
   },
   closeSettings: () => set({ settingsOpen: false }),
   setRailPinned: (v) => set({ railPinned: v }),
+  toggleAlwaysOnTop: async () => {
+    // 乐观更新：窗口层级的切换必须立即反馈（否则按钮会“点一下没反应”再跳）
+    const next = !get().alwaysOnTop
+    set({ alwaysOnTop: next })
+    const real = await window.yan.win.setAlwaysOnTop(next)
+    // 以主进程回报的真实状态为准
+    set({ alwaysOnTop: real })
+    set({
+      notices: pushNotice(
+        get().notices,
+        'info',
+        real ? '窗口已置顶（总是显示在最上层）' : '已取消置顶'
+      )
+    })
+  },
+  setRightPanelOpen: async (v) => {
+    // 乐观更新：右栏要立刻响应，不能等 IPC 往返
+    const s = get().settings
+    if (s) set({ settings: { ...s, rightPanelOpen: v } })
+    const next = await window.yan.patchSettings({ rightPanelOpen: v })
+    set({ settings: next })
+  },
+  toggleRightPanel: async () => {
+    await get().setRightPanelOpen(!(get().settings?.rightPanelOpen ?? true))
+  },
   setScrollProgress: (v) => set({ scrollProgress: v }),
   registerScrollToTurn: (fn) => set({ scrollToTurn: fn }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),

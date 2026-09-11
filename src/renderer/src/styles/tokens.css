@@ -102,6 +102,13 @@ html[data-theme='dark'] {
   /* 记忆「已确认」用青色：它是事实，不是「进行中」。与 accent 分工明确 */
   --fact: #22d3ee;
   --fact-soft: rgba(34, 211, 238, 0.14);
+
+  /* 代码块（highlight.css 用）。深色主题就是 GitHub Dark 的底色 */
+  --code-bg: #0d1117;
+  --code-fg: #c9d1d9;
+  /* 行内代码：比代码块淡，不抢正文视线 */
+  --code-inline-bg: rgba(255, 255, 255, 0.06);
+  --code-inline-fg: #7ee7f7;
 }
 
 html[data-theme='light'] {
@@ -110,13 +117,14 @@ html[data-theme='light'] {
   --bg-2: #f5f5f5;
   --bg-3: #ededed;
   --bg-4: #e0e0e0;
-  --border-soft: rgba(0, 0, 0, 0.05);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-str: rgba(0, 0, 0, 0.16);
+  --border-soft: rgba(0, 0, 0, 0.07);
+  --border: rgba(0, 0, 0, 0.13);
+  --border-str: rgba(0, 0, 0, 0.2);
   --edge: rgba(0, 0, 0, 0.04);
+  /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑 */
   --fg: #0a0a0a;
-  --fg-dim: #404040;
-  --fg-mute: #737373;
+  --fg-dim: #333333;
+  --fg-mute: #5f5f5f;
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.1);
   --accent-line: rgba(37, 99, 235, 0.4);
@@ -130,6 +138,13 @@ html[data-theme='light'] {
   --cyan: #0891b2;
   --fact: #0891b2;
   --fact-soft: rgba(8, 145, 178, 0.1);
+
+  /* 代码块：白底上不能再用深色底（否则就是“白页面上一个黑框”）。
+     用 GitHub Light 的浅灰底 + 深色字，语法色在 highlight.css 里另给。」 */
+  --code-bg: #f6f8fa;
+  --code-fg: #24292f;
+  --code-inline-bg: rgba(9, 105, 218, 0.08);
+  --code-inline-fg: #0a5fa8;
 }
 
 /* -------------------------------------------------------------------

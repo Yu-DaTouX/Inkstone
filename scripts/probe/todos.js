@@ -51,13 +51,13 @@
 
   /* ================= 3. 任务渲染正确（含完成态） ================= */
   log('\n--- 3. 任务区块 DOM ---')
-  const grp = q('.rightpanel')
+  const grp = q('[data-sec="rp-todo"]')
   ok(!!grp, '右栏出现任务区块')
   if (grp) {
     const items = qa('.rp-todo')
     ok(items.length === todos.length, `渲染了 ${items.length} 行（应 ${todos.length}）`)
 
-    const head = grp.querySelector('.rp-head')?.textContent ?? ''
+    const head = grp.querySelector('.rp-sec-head')?.textContent ?? ''
     const doneCount = todos.filter((t) => t.done).length
     log('  头部: ' + JSON.stringify(head))
     ok(head.includes(`${doneCount}/${todos.length}`), `头部显示进度 ${doneCount}/${todos.length}`)
@@ -79,13 +79,17 @@
       )
     }
 
-    // 位置：右栏在中栏右侧，且任务列表在右栏顶部
+    // 位置：右栏在中栏右侧。
+    //
+    // ⚠️ 不再断言「任务在右栏**顶部**」—— 右栏已经从头改成 OpenCode 风格的
+    //    状态栏（上下文 / 任务 / 队列 / 扩展 / 环境 / 操作），
+    //    任务排在第一块「上下文」之后。这里只保证它确实在右栏里。
     const center = q('.center')?.getBoundingClientRect()
     const r = grp.getBoundingClientRect()
+    const rp = q('[data-testid="rightpanel"]')?.getBoundingClientRect()
     ok(!!center && r.left >= center.right - 2, `右栏在中栏右侧（center.right=${Math.round(center?.right)} rp.left=${Math.round(r.left)}）`)
-    const headBox = grp.querySelector('.rp-head')?.getBoundingClientRect()
-    ok(!!headBox && headBox.top <= r.top + 8, '任务列表在右栏顶部')
-    ok(q('.rail-body') === null || !q('.rail .todo'), '左栏里已没有任务')
+    ok(!!rp && r.left >= rp.left - 1 && r.right <= rp.right + 1, '任务区块在右栏内（不再跑到中栏）')
+    ok(q('.rail .todo') === undefined || q('.rail .rp-todo') === null, '左栏里已没有任务')
   }
 
   /* ================= 4. 没有任务的会话不显示空区块 ================= */
@@ -98,7 +102,9 @@
       if (store.getState().todos.length === 0) break
     }
     ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空')
-    ok(!q('.rightpanel'), '不显示空的「任务」区块')
+    // 右栏现在**常驻**（包含上下文/环境等），所以判据不是「右栏消失」，
+    // 而是「没有任务时不渲染任务区块」。
+    ok(q('[data-sec="rp-todo"]') === null, '没有任务时不渲染任务区块')
   } else {
     log('  （只有一个会话，跳过）')
   }

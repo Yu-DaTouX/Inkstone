@@ -19,6 +19,8 @@ import type {
   ForkPoint,
   MainPush,
   ModelInfo,
+  PiInfo,
+  QueueMode,
   QueueState,
   SessionState,
   SessionStats,
@@ -262,6 +264,14 @@ function todosFromEntries(entries: Record<string, unknown>[]): SessionTodo[] {
   return latest
 }
 
+/**
+ * pi 的队列模式字段是自由字符串（协议文档只保证这两个值）。
+ * 认不出就当成 undefined —— 宁可界面不显示，也不能因为一个认知外的值而崩。
+ */
+function normalizeQueueMode(v: unknown): QueueMode | undefined {
+  return v === 'all' || v === 'one-at-a-time' ? v : undefined
+}
+
 /* ==================================================================
    AgentController
    ================================================================== */
@@ -337,12 +347,15 @@ export class AgentController extends EventEmitter {
   private connDetail = ''
 
   /**
-   * 标题生成中/已尝试的标记。
+   * 正在生成标题的会话（防并发）。
    *
-   * 只在「没有名字 + 有第一条用户消息」时尝试一次 ——
-   * 每轮 agent_settled 都触发的话会反复请求模型，白花钱。
+   * 用户要求每轮都重算，所以它只做「同一会话不要同时跑两个标题进程」，
+   * 而不是「一个会话只生成一次」。
    */
   private titleTried = new Set<string>()
+
+  /** 上一次真的写进 pi 的标题（去重，避免每轮都改会话文件） */
+  private lastTitle: string | undefined
 
   /** 供渲染端拉取（补上可能错过的 push） */
   getConn(): { state: 'starting' | 'ready' | 'exited' | 'error'; detail: string } {
@@ -442,6 +455,13 @@ export class AgentController extends EventEmitter {
 
     // 任务清单（扩展写的 custom entry）
     void this.refreshTodos()
+
+    // 历史会话的标题补生成：
+    // 只对「还没有缓存的会话」做（force 默认 false，命中缓存就直接返回），
+    // 所以切到一个看过的会话不会反复烧钱。
+    this.titleTried.clear()
+    this.lastTitle = undefined
+    void this.maybeGenerateTitle()
   }
 
   /* ------------------------------------------------------------ 任务清单 */
@@ -495,7 +515,9 @@ export class AgentController extends EventEmitter {
       pendingMessageCount: Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
       autoCompactionEnabled:
-        data.autoCompactionEnabled === undefined ? undefined : !!data.autoCompactionEnabled
+        data.autoCompactionEnabled === undefined ? undefined : !!data.autoCompactionEnabled,
+      steeringMode: normalizeQueueMode(data.steeringMode),
+      followUpMode: normalizeQueueMode(data.followUpMode)
     }
     this.push({ ch: 'state', payload: this.state })
   }
@@ -690,8 +712,8 @@ export class AgentController extends EventEmitter {
         void this.refreshStats()
         // 兑底：扩展也可能通过 /panel task 命令改任务（不经过工具调用）
         void this.refreshTodos()
-        // 第一次聊完 → 用模型给这个会话起个短标题
-        void this.maybeGenerateTitle()
+        // 每轮结束都重算标题（用户要求每次都是新生成的）
+        void this.maybeGenerateTitle({ force: true })
         break
 
       case 'turn_end':
@@ -956,14 +978,10 @@ export class AgentController extends EventEmitter {
       return
     }
     if (method === 'setWidget') {
-      // TUI 专属，桌面端不做 widget；记录下来方便排查
-      this.push({
-        ch: 'proc',
-        payload: {
-          state: 'stderr',
-          detail: `[扩展 ${String(req.widgetKey ?? '?')}] setWidget 在桌面端不支持，已忽略`
-        }
-      })
+      // TUI 里它显示在输入框上方。桌面端把它收进右栏「扩展」分区 ——
+      // 扩展写的东西（MCP/LSP 状态之类）对用户有意义，直接丢等于骗扩展。
+      const lines = Array.isArray(req.widgetLines) ? req.widgetLines.map((x) => String(x)) : undefined
+      this.push({ ch: 'widget', payload: { key: String(req.widgetKey ?? 'ext'), lines } })
       return
     }
 
@@ -1279,6 +1297,94 @@ export class AgentController extends EventEmitter {
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
+  /* -------------------------------------------------- 队列模式 / 轮换 */
+
+  /**
+   * 排队消息的投递方式。
+   *
+   * 为什么值得做：用户在生成中插话（steer）时，“什么时候听我的”有两种真实选择 ——
+   *   一次说完（all）：当前工具跑完就全部投进去
+   *   一次一条（one-at-a-time）：每完成一个回合投一条，节奏更可控
+   * 这是 pi 的正式能力，藏着一个没法用的选项等于少了半个功能。
+   */
+  async setSteeringMode(mode: string): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.rpc!.command('set_steering_mode', { mode })
+    if (res.success) await this.refreshState()
+    return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  async setFollowUpMode(mode: string): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.rpc!.command('set_follow_up_mode', { mode })
+    if (res.success) await this.refreshState()
+    return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  /** 取消正在等待的重试（自动重试计时器还开着的时候特别有用） */
+  async abortRetry(): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.rpc!.command('abort_retry')
+    return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  /**
+   * 循环切下一个模型（TUI 的 Ctrl+P）。
+   *
+   * ⚠️ 这里**不用** pi 的 `cycle_model`。
+   *   pi 的 cycle 只在它自己的 “scoped models” 列表里转（默认是从配置推出来的
+   *   一小撮），而界面上的选择器列出的是 `get_available_models` 的全部。
+   *   两者不一致时，用户按 Ctrl+P 看到的行为就是「模型跳到了一个我没见过的」。
+   *   所以按**界面所示的顺序**走：拿当前模型在完整列表里的下一个。
+   *
+   * 按 provider 分组、组内保持原顺序 —— 与选择器渲染的一致，
+   * 否则“下一个”与面板里看到的“下一行”不是一个东西。
+   */
+  async cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }> {
+    const models = await this.listModels()
+    if (models.length < 2) return { ok: false, error: '只有一个可用模型' }
+
+    const cur = this.state?.model
+    const i = models.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
+    // 当前模型不在列表里（刚切过来 / 列表变了）→ 从第一个开始
+    const next = models[i < 0 ? 0 : (i + 1) % models.length]
+
+    const res = await this.rpc!.command('set_model', {
+      provider: next.provider,
+      modelId: next.id
+    })
+    if (!res.success) return { ok: false, error: res.error }
+
+    await this.refreshState()
+    // 换模型后可用档位会变 —— 旧列表里的 high/max 可能不存在了
+    const levels = await this.listThinkingLevels()
+    if (this.state && levels.length) {
+      this.state = { ...this.state, availableThinkingLevels: levels }
+      this.push({ ch: 'state', payload: this.state })
+    }
+    return { ok: true, to: next.name }
+  }
+
+  /** 循环切下一档思考强度（TUI 的 Shift+Tab）。同样按界面所示档位走。 */
+  async cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
+    const levels = await this.listThinkingLevels()
+    if (levels.length < 2) return { ok: false, error: '当前模型不支持思考' }
+
+    const cur = this.state?.thinkingLevel ?? 'off'
+    const i = levels.indexOf(cur)
+    const next = levels[i < 0 ? 0 : (i + 1) % levels.length]
+
+    const res = await this.rpc!.command('set_thinking_level', { level: next })
+    if (!res.success) return { ok: false, error: res.error }
+
+    await this.refreshState()
+    return { ok: true, to: next }
+  }
+
+  /** 最后一条助手消息的纯文本（复制用） */
+  async lastAssistantText(): Promise<string | null> {
+    const res = await this.rpc!.command<{ text?: string | null }>('get_last_assistant_text')
+    if (!res.success) return null
+    return res.data?.text ?? null
+  }
+
   async listCommands(): Promise<SlashCommand[]> {
     const res = await this.rpc!.command<{ commands?: SlashCommand[] }>('get_commands')
     return res.success ? (res.data?.commands ?? []) : []
@@ -1316,44 +1422,59 @@ export class AgentController extends EventEmitter {
   /* ---------------------------------------------------------- 标题生成 */
 
   /**
-   * 用模型把用户的第一句话总结成短标题。
+   * 用模型给会话起一个短标题（≤ 8 字）。
    *
-   * 触发条件（三个都要满足，否则一次都不发请求）：
-   *   ① 这个会话还没有名字（用户没起过）
-   *   ② 有至少一条用户消息（否则没东西可总结）
-   *   ③ 这个会话本次运行还没试过
+   * 触发条件：
+   *   ① 这个会话至少有一条用户消息（没东西可总结）
+   *   ② 该会话现在没有正在跑的标题任务（避免并发多个 pi 进程）
    *
-   * 为什么用独立进程：见 src/main/title.ts 的说明 —— 复用主会话会污染对话、
-   * 还会让 prompt cache 失效（那个代价比一次请求贵得多）。
+   * ⚠️ 用户要求「每次对话标题需要 agent 生成一个新的」—— 所以**每轮**都会重算
+   * （ `force: true` 绕过缓存）。代价是每轮多一个 `--no-session --no-extensions`
+   * 的短进程；这是用户明确要的行为，不是疏忽。
+   *
+   * 为什么用独立进程：见 src/main/title.ts —— 复用主会话会污染对话、
+   * 还会让 prompt cache 全部失效（那个代价比一次请求贵得多）。
    */
-  private async maybeGenerateTitle(): Promise<void> {
+  private async maybeGenerateTitle(opts: { force?: boolean } = {}): Promise<void> {
     const st = this.state
     if (!st) return
-    if (st.sessionName) return // 用户已经起过名字
     if (this.titleTried.has(st.sessionId)) return
 
-    const firstUser = this.messages.find((m) => m.role === 'user' && m.text.trim())
-    if (!firstUser) return
+    const users = this.messages.filter((m) => m.role === 'user' && m.text.trim())
+    if (users.length === 0) return
+
+    // 样本：第一句 + 最近一句。只给第一句的话，
+    // 一个聊到第四轮的会话标题会一直停在第一句的话题上。
+    const samples = [users[0].text, users[users.length - 1].text]
 
     this.titleTried.add(st.sessionId)
+    const sessionId = st.sessionId
 
     try {
       const res = await generateTitle({
-        sessionId: st.sessionId,
-        firstMessage: firstUser.text,
+        sessionId,
+        samples,
         cwd: this.cwd,
-        piBin: this.piBin
+        piBin: this.piBin,
+        force: opts.force
       })
       if (!res?.title) return
 
-      // 写回 pi（TUI 的 /resume 也能看到）
-      const ok = await this.rpc?.command('set_session_name', { name: res.title })
-      if (ok?.success) await this.refreshState()
+      // 写回 pi（TUI 的 /resume 也能看到）。
+      // ⚠️ 只有在标题真的变了才写 —— set_session_name 会改会话文件，
+      // 每轮都写一下是没意义的磁盘写入。
+      if (this.lastTitle !== res.title) {
+        this.lastTitle = res.title
+        const ok = await this.rpc?.command('set_session_name', { name: res.title })
+        if (ok?.success) await this.refreshState()
+      }
       // 不管写没写进 pi，都推给界面 —— 标题是给用户看的
-      this.push({ ch: 'session-title', payload: { sessionId: st.sessionId, title: res.title } })
+      this.push({ ch: 'session-title', payload: { sessionId, title: res.title } })
     } catch (e) {
       // 标题失败不该影响任何事
       console.error('[agent] 标题生成失败：', e)
+    } finally {
+      this.titleTried.delete(sessionId)
     }
   }
 

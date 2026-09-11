@@ -5,47 +5,55 @@ import type { ConnState } from '../state/store'
 export type Theme = 'dark' | 'light'
 
 interface Props {
-  theme: Theme
-  onToggleTheme: () => void
   onToggleRail: () => void
-  onSettings: () => void
-  /** 当前会话标题 */
-  subtitle?: string
   conn: ConnState
   cwd?: string
   onPickCwd: () => void
   /** 左栏是否被钉住 */
   railPinned?: boolean
   railOpen?: boolean
+  /** 右栏（状态栏）是否展开 */
+  rightPanelOpen?: boolean
+  onToggleRightPanel?: () => void
+  onSettings?: () => void
+  /** 窗口是否置顶 */
+  alwaysOnTop?: boolean
+  onToggleAlwaysOnTop?: () => void
   maximized?: boolean
 }
 
 /**
  * 标题栏 —— Win11 风格。
  *
- * 与 mac 风格的区别（用户要求改）：
- *   · 窗口按钮**移到最右**，是 46×32 的方形区域（不是左侧三个圆点）
- *   · 悬停时「关闭」变红，「最小化/最大化」变中性灰
- *   · 左栏开关按钮放到**最左上角**（原来是品牌名后面）
- *   · 最大化时按钮显示"还原"图标
+ * 布局（从左到右）：
+ *   [侧栏开关] [砚] [会话名] ······ [连接 · 工作目录] ······ [右栏开关] [置顶] [— □ ✕]
  *
- * 拖拽区仍由 electron.css 的 -webkit-app-region: drag 负责，
+ * ── 为什么右侧只剩这几个（用户要求精简）──
+ * 「中/EN」与「主题」已从标题栏移除：设置面板的「外观」tab 里**本来就有**
+ * 这两项的完整切换器（带说明文字），标题栏再放一份是重复的两个入口。
+ * 「设置齿轮」也移除了 —— 左栏底部（`rail-settings`）已经是入口。
+ *
+ * 换来的空间给了**置顶**按钮（用户在窗口控制按钮左边要的位置）。
+ * 置顶是真正需要「一眼看到当前状态」的东西：它开着的时候窗口会挡住一切，
+ * 藏进设置里反而容易忘记自己开过。
+ *
+ * 拖拽区由 electron.css 的 -webkit-app-region: drag 负责，
  * 所有按钮显式 no-drag。
  */
 export function TitleBar({
-  theme,
-  onToggleTheme,
   onToggleRail,
-  onSettings,
-  subtitle,
   conn,
   cwd,
   onPickCwd,
   railPinned,
   railOpen,
+  rightPanelOpen,
+  onToggleRightPanel,
+  alwaysOnTop,
+  onToggleAlwaysOnTop,
   maximized
 }: Props) {
-  const { t, toggleLang } = useI18n()
+  const { t } = useI18n()
   const win = window.yan.win
 
   const dotCls = conn === 'ready' ? 'dot ok' : conn === 'starting' ? 'dot warn' : 'dot err'
@@ -74,11 +82,15 @@ export function TitleBar({
         </button>
 
         <span className="tb-name">砚</span>
-        {subtitle ? (
-          <span className="tb-badge tb-session" title={subtitle}>
-            {subtitle}
-          </span>
-        ) : null}
+        {/*
+         * 会话名胶囊**已删**（用户要求）。
+         *
+         * 理由：会话标题已经在**中栏顶部**常驻（SessionHeader），
+         * 而且那边显示的是完整标题（不截断、能悬停看全）。
+         * 标题栏里再放一份短版是重复信息，还占着左边最宝贵的位置。
+         * 这与之前删掉「中/EN · 主题 · 设置齿轮」是同一条原则：
+         * 一个信息只在一个地方出现。
+         */}
       </div>
 
       <div className="tb-sync">
@@ -91,14 +103,31 @@ export function TitleBar({
       </div>
 
       <div className="tb-right">
-        <button className="tb-icon" title={t('tb.lang')} onClick={toggleLang}>
-          中/EN
+        {/* 右栏开关：与左栏开关对称 */}
+        <button
+          className={`tb-icon ${rightPanelOpen ? 'on' : ''}`}
+          title={rightPanelOpen ? t('rp.hide') : t('rp.show')}
+          onClick={onToggleRightPanel}
+          data-testid="rightpanel-toggle"
+          data-open={rightPanelOpen ? '1' : '0'}
+        >
+          <Icon name="sidebar-right" size={14} />
         </button>
-        <button className="tb-icon" title={t('tb.theme')} onClick={onToggleTheme}>
-          <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={14} />
-        </button>
-        <button className="tb-icon" title={t('tb.settings')} onClick={onSettings}>
-          <Icon name="settings" size={14} />
+
+        {/*
+          置顶开关 —— 放在窗口控制按钮的**左边**（用户要求）。
+          `data-on` 给测试与 CSS 用，选中态是实心强调色 + 一个常亮的小点，
+          因为它是个「开着就会挡住一切」的状态，必须一眼看得出来。
+        */}
+        <button
+          className={`tb-icon tb-pin ${alwaysOnTop ? 'on' : ''}`}
+          title={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}
+          onClick={onToggleAlwaysOnTop}
+          aria-pressed={!!alwaysOnTop}
+          data-testid="win-pin"
+          data-on={alwaysOnTop ? '1' : '0'}
+        >
+          <Icon name="pin" size={14} />
         </button>
 
         {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}

@@ -17,6 +17,26 @@ process.env.YAN_SESSIONS_DIR = dir
 // 必须在设置 env 之后 import（模块顶层读了这个变量）
 const { listSessions, deleteSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
 
+/*
+ * 回合分组的纯逻辑用 esbuild 现场编译。
+ *
+ * 为什么不用 out/main/*.js：`src/shared/turns.ts` 是共享层的模块，
+ * 主进程的构建不会把它输出到 out/main（那是摇树后的产物，只有主进程
+ * 真正 import 到的东西）。为了一个纯函数去改主进程的 import 图不值得 ——
+ * 直接用项目里已有的 esbuild（vite 的依赖）转一下，几十毫秒。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/turns.ts'],
+    outfile: 'out/test/turns.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runTurnTests } = await import('./test-turns.mjs')
+
 let pass = 0
 let fail = 0
 const ok = (cond, label, extra = '') => {
@@ -214,6 +234,10 @@ process.env.YAN_SESSIONS_DIR = join(dir, 'nope')
 // 模块常量已经定型，这里只能验证「已删除的目录」不会抛
 const empty = await listSessions()
 ok(Array.isArray(empty), '目录被删后仍返回数组', `${empty.length} 条`)
+
+/* ------------------------------------------------------------------ */
+// 回合分组 / 段落拆分 / 缓存命中率（纯函数，不启动 Electron）
+await runTurnTests(ok)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 process.exit(fail ? 1 : 0)

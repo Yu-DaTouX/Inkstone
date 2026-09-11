@@ -14,7 +14,7 @@ import { cachedTitles } from './title'
 import { MemoryStore, YAN_DIR, readSoul } from './memory'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
-import { resolvePi } from './protocol'
+import { resolvePi, piInfo } from './protocol'
 import type { Attachment, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -203,6 +203,35 @@ function registerIpc(): void {
     async (enabled: boolean) => agent?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
 
+  /* ---- 队列模式 / 轮换（pi 自带能力，TUI 里都有对应快捷键） ---- */
+  handle(
+    'yan:setSteeringMode',
+    async (mode: string) => agent?.setSteeringMode(mode) ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle(
+    'yan:setFollowUpMode',
+    async (mode: string) => agent?.setFollowUpMode(mode) ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle(
+    'yan:abortRetry',
+    async () => agent?.abortRetry() ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle(
+    'yan:cycleModel',
+    async () => agent?.cycleModel() ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle(
+    'yan:cycleThinking',
+    async () => agent?.cycleThinking() ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle('yan:lastAssistantText', async () => agent?.lastAssistantText() ?? null)
+
+  /* ---- pi 环境（版本 / 入口） ---- */
+  handle('yan:piInfo', async () => {
+    const s = await getSettings()
+    return piInfo(s.piBin)
+  })
+
   /* ---- 状态 ---- */
   handle('yan:getState', async () => agent?.getState() ?? null)
   handle('yan:agentStatus', async () =>
@@ -231,8 +260,7 @@ function registerIpc(): void {
   handle('yan:memoryConfirm', async (id: string, ok: boolean) => memory.confirm(id, ok))
   handle('yan:readSoul', async () => readSoul())
 
-  /* ---- 设置 ---- */
-  handle('yan:getSettings', async () => {
+  /* ---- 设置 ---- */  handle('yan:getSettings', async () => {
     const s = await getSettings()
     return { ...s, lang: s.lang, theme: s.theme }
   })
@@ -240,7 +268,6 @@ function registerIpc(): void {
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
   ipcMain.on('yan:respondUi', (_e, res) => agent?.respondUi(res))
-
   /* ---- 渲染端握手：重发当前全部状态 ----
      单向 push 不可靠 —— 主进程可能在 webContents 还没能力接收时
      就把 `proc: ready` 发出去（那条消息就丢了，界面永远停在「正在启动 pi」）。
@@ -328,10 +355,34 @@ function registerIpc(): void {
   ipcMain.on('win:maximize', () => {
     if (!win) return
     win.isMaximized() ? win.unmaximize() : win.maximize()
-    // 同时推窗口的两种状态：① 最大化与否（切图标）② 扩展设的标题
-    push({ ch: 'win-state', payload: { maximized: win.isMaximized() } })
   })
   ipcMain.on('win:close', () => win?.close())
+
+  /**
+   * 置顶开关。
+   *
+   * ⚠️ 这是个会“粘住”的状态：开了之后窗口会挡住所有其它应用，
+   *   很多人会忘记自己开过。所以：
+   *   ① 默认关（见 settings.ts 的 DEFAULTS）
+   *   ② 按钮有明确的选中态
+   *   ③ 状态变更**同时**推到界面（不靠调用方自己推断）
+   */
+  ipcMain.handle('win:setAlwaysOnTop', async (_e, v: boolean) => {
+    const on = !!v
+    win?.setAlwaysOnTop(on)
+    await patchSettings({ alwaysOnTop: on })
+    pushWinState()
+    return on
+  })
+}
+
+/** 推一次窗口状态（最大化 + 置顶） */
+function pushWinState(): void {
+  if (!win) return
+  push({
+    ch: 'win-state',
+    payload: { maximized: win.isMaximized(), alwaysOnTop: win.isAlwaysOnTop() }
+  })
 }
 
 /* ------------------------------------------------------------------
@@ -355,7 +406,79 @@ function createWindow(): void {
     }
   })
 
+  /*
+   * 恢复上次的置顶状态。
+   *
+   * 异步读设置（getSettings 命中缓存后几乎立即返回），所以在 ready-to-show 之前
+   * 就能生效 —— 不会出现「先普通层闪一下再跳到置顶层」。
+   * 构建期就有 `alwaysOnTop` 选项但那时还不知道值，所以走 setTimeout(0)。
+   */
+  void getSettings().then((s) => {
+    if (win && s.alwaysOnTop) {
+      win.setAlwaysOnTop(true)
+      pushWinState()
+    }
+  })
+
   win.once('ready-to-show', () => win?.show())
+
+  /*
+   * 最大化 / 置顶状态变化 → 推给界面。
+   *
+   * 为什么必须监听窗口事件而不是只在 IPC 里推：用户会**双击标题栏**最大化、
+   * 用 Win+↑ 贴靠、或者从任务栏菜单还原 —— 这些都不经过我们的 IPC，
+   * 只在 IPC 里 push 的话图标会与真实状态不同步（之前就是这个 bug）。
+   *
+   * ⚠️ 必须注册在 createWindow 里而不是 registerIpc 里 ——
+   *   启动顺序是 registerIpc() → createWindow()，在那里 `win` 还是 null。
+   *
+   * ⚠️ 逐个 `on` 而不是循环一个数组：BrowserWindow 的事件名是**重载**的，
+   *   循环里的联合类型选不中正确的重载（TS 会拿 26 个重载一个个试都在报错）。
+   */
+  win.on('maximize', () => pushWinState())
+  win.on('unmaximize', () => pushWinState())
+  win.on('enter-full-screen', () => pushWinState())
+  win.on('leave-full-screen', () => pushWinState())
+  // always-on-top 也可能被系统或用户改（任务栏右键），同样同步
+  win.on('always-on-top-changed', () => pushWinState())
+
+  /*
+   * 全局快捷键 —— 在主进程拦。
+   *
+   * 为什么不用渲染端的 window.addEventListener('keydown')：
+   *   那条路会漏。实测中它可能不触发：
+   *     · 输入法（IME）处于组合态时，按键被 IME 吃掉
+   *     · 某些平台的菜单 accelerator / 系统级拦截先一步
+   *     · 焦点不在 webContents（比如刚从原生对话框回来）
+   *   而 before-input-event 是主进程在**按键进入渲染进程之前**的钩子，
+   *   不管焦点在哪、输入法什么状态，只要窗口在前台就一定到。
+   *   代价是主进程要知道“下一模型/下一强度”这种语义 ——
+   *   所以这里只把按键**归一化成动作名**发回渲染端，
+   *   具体怎么算下一档仍然由渲染端决定（协议知识不进主进程）。
+   *
+   * 绑定对齐 pi TUI 的默认：
+   *   Ctrl+P   app.model.cycleForward
+   *   Shift+Tab app.thinking.cycle
+   */
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    const ctrl = input.control || input.meta
+    const key = String(input.key ?? '').toLowerCase()
+
+    // Ctrl+P（排除 Shift+Ctrl+P ——那是 TUI 的“上一个模型”，暂未实现）
+    if (ctrl && !input.shift && !input.alt && key === 'p') {
+      event.preventDefault()
+      win?.webContents.send('yan:hotkey', { action: 'cycleModel' })
+      return
+    }
+
+    // Shift+Tab
+    if (input.shift && !ctrl && !input.alt && input.key === 'Tab') {
+      event.preventDefault()
+      win?.webContents.send('yan:hotkey', { action: 'cycleThinking' })
+    }
+  })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -394,7 +517,51 @@ function createWindow(): void {
               await new Promise((r) => setTimeout(r, 700))
             }
 
+            /*
+             * 可选：发一批**真实**按键。
+             *
+             * 为什么必需：全局快捷键是主进程用 `before-input-event` 拦的，
+             * 而 `webContents.executeJavaScript` 里的合成 KeyboardEvent
+             * **不会**走那条路 —— 断言会“通过”但真实按键可能是坏的。
+             * 只有 sendInputEvent 才是从 Chromium 输入栈进去的，与用户手按一致。
+             *
+             * ⚠️ 顺序很重要：按键是**后台并发**发的（不 await），
+             *   因为探针脚本要先跑起来、把自己的 onHotkey 监听器挂上，
+             *   否则按键会在监听器注册之前就跑完，断言收到空数组
+             *   （本会话真的这么错过一次）。所以：先启动按键序列，再 executeJavaScript。
+             *
+             * 语法：`ctrl+p,shift+tab`（逗号分隔，支持 ctrl/alt/shift/meta + key）
+             */
+            const keys = process.env.YAN_PROBE_KEYS
+            let keyTask: Promise<void> | null = null
+            if (keys) {
+              keyTask = (async () => {
+                // 等探针脚本挂好监听器
+                await new Promise((r) => setTimeout(r, 1800))
+                for (const combo of keys.split(',').map((s) => s.trim()).filter(Boolean)) {
+                  const parts = combo.toLowerCase().split('+')
+                  const key = parts.pop() ?? ''
+                  const mods = new Set(parts)
+
+                  /* Electron 的键盘事件用 keyCode + modifiers（不是 DOM 那套） */
+                  const keyCode =
+                    key === 'tab' ? 'Tab' : key.length === 1 ? key.toUpperCase() : key
+                  const modifiers: Electron.InputEvent['modifiers'] = []
+                  if (mods.has('ctrl')) modifiers.push('control')
+                  if (mods.has('shift')) modifiers.push('shift')
+                  if (mods.has('alt')) modifiers.push('alt')
+                  if (mods.has('meta')) modifiers.push('meta')
+
+                  win!.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+                  win!.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+                  await new Promise((r) => setTimeout(r, 1600))
+                }
+              })()
+            }
+
             const result = await win!.webContents.executeJavaScript(src, true)
+            // 按键序列应该已经跑完（探针脚本会等够时间）；保险起见等一下
+            if (keyTask) await keyTask.catch(() => undefined)
             console.log('---PROBE-START---')
             console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2))
             console.log('---PROBE-END---')

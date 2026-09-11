@@ -13,12 +13,12 @@
  *   · extension_ui_request 里 select/confirm/input/editor 需要回
  *     extension_ui_response，其余（notify/setStatus/...）不需要
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, delimiter } from 'node:path'
-import type { PiProbe, RpcResponse } from '../shared/ipc'
+import type { PiInfo, PiProbe, RpcResponse } from '../shared/ipc'
 
 const PKG = '@earendil-works/pi-coding-agent'
 /** cli 在包里的相对路径（package.json 的 bin 字段） */
@@ -125,10 +125,47 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
   }
 }
 
+/**
+ * 探测本机 pi 的入口与版本号（右栏「环境」分区用）。
+ *
+ * 为什么要版本号：pi 的 RPC 协议在演进（会话格式已经到 version: 3），
+ * 出问题时第一件事就是问「你是哪个版本」—— 界面上直接看得到就省一轮对话。
+ * 探测失败一律静默降级（不显示版本号），绝不能影响启动。
+ */
+export function piInfo(override?: string): PiInfo {
+  const probe = resolvePi({ override })
+  const bin = probe.args[probe.args.length - 1] ?? probe.cmd
+
+  return {
+    bin,
+    version: readPiVersion(probe)
+  }
+}
+
+/**
+ * 同步读版本号。
+ *
+ * 用同步而不是异步：调用方在启动路径上，而这里要的是「一个几十毫秒的子进程」；
+ * 异步化会让启动序列多出一段难以推理的并发。5 秒超时兜底。
+ */
+function readPiVersion(probe: PiProbe): string | undefined {
+  try {
+    const out = execFileSync(probe.cmd, [...probe.args, '--version'], {
+      timeout: 5000,
+      windowsHide: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      encoding: 'utf8'
+    })
+    const m = String(out).match(/\d+\.\d+\.\d+[\w.-]*/)
+    return m ? m[0] : String(out).trim().split('\n')[0] || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /* ==================================================================
    RPC 客户端
    ================================================================== */
-
 export interface PiRpcOptions {
   cwd: string
   /** 追加的 CLI 参数，例如 --no-session */

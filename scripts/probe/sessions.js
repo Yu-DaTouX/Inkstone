@@ -37,7 +37,21 @@
   const after = stat()
   log('切换后: ' + JSON.stringify(after))
   log('  消息数>0 : ' + (after.msgs > 0 ? '✓ ' + after.msgs + ' 条' : '✗'))
-  log('  选中态更新: ' + (after.sel === targetName ? '✓' : '✗ 实际=' + after.sel))
+  /**
+   * 选中态：不再直接比较左栏文字与切换前文字。
+   *
+   * 因为标题现在是**每轮次用模型重算**的（用户要求「每次对话标题需要 agent
+   * 生成一个新的」）—— 切换会话会触发一次（命中缓存则用缓存值），
+   * 生成完会改写左栏那一行的显示名。所以判据是：
+   *   ① 有一行处于选中态，且 ② 它属于目标会话（按 path 比对）。
+   */
+  const selRow = q('.rail .srow.sel')
+  const selPath = selRow?.getAttribute('title') ?? ''
+  const targetPath = target.getAttribute('title') ?? ''
+  log('  选中态更新: ' + (selRow && selPath === targetPath ? '✓' : `✗ 实际=${after.sel} (${selPath})`))
+  if (after.sel !== targetName) {
+    log(`  （标题已被模型重写：“${targetName}” → “${after.sel}”）`)
+  }
   log('  有用户消息: ' + (qa('.msg.user').length > 0 ? '✓' : '✗'))
   log('  有助手消息: ' + (qa('.msg.assistant').length > 0 ? '✓' : '✗'))
 

@@ -243,15 +243,12 @@
 }
 
 /* -------------------------------------------------------------------
-   5. 标题栏：会话名做成胶囊，工作目录做成可点按钮
+   5. 标题栏：工作目录做成可点按钮
+   ─────────────────────────────────────────────────────────────
+   `.tb-session`（会话名胶囊）的样式**已删** —— 那个胶囊已从界面移除
+   （会话标题在中栏顶部常驻，标题栏再放一份是重复信息）。
+   留着死 CSS 会让下一个人以为它还在用。
    ------------------------------------------------------------------- */
-.tb-session {
-  padding: 2px var(--sp-2);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  border: 1px solid var(--border-soft);
-  color: var(--fg-dim);
-}
 .tb-cwd {
   border-radius: var(--r-full);
   border: 1px solid var(--border-soft);
@@ -420,10 +417,11 @@
   color: var(--cyan);
 }
 
-/* 助手正文的代码块：与卡片同一套圆角 */
+/* 助手正文的代码块：与卡片同一套圆角。
+   底色用 --code-bg（浅色主题下不能是深色底，否则就是白页面上一个黑框） */
 .md pre {
   border-radius: var(--r-md);
-  background: var(--bg-0);
+  background: var(--code-bg);
 }
 .md code {
   border-radius: var(--r-xs);
@@ -2943,7 +2941,812 @@
 .ub-sep {
   min-height: 9px;
 }
-/* 上下文在最右，它的百分比也收一点 */
-.ub-pct {
-  min-width: 26px;
+/* 用量条：与输入框同宽（之前是 -120px，看着与输入框错开了）*/
+.usagebar {
+  max-width: var(--w-stream);
+}
+
+/* ===================================================================
+   42. 终端风格重做（用户要求「跟终端版本差不多」）
+       ─────────────────────────────────────────────────────────────
+       参考：pi 自己的 TUI / OpenCode 的输出形态。共同特征：
+         · 圆角几乎为零（2px），没有阴影
+         · 层次靠**左侧竖线 + 缩进**，不靠卡片
+         · 工具调用是 `→ name args` 一行，不是一张卡
+         · 框只留给「执行出来的东西」（命令输出 / diff）
+         · 等宽字符对得齐（本项目字体本身就是等宽栅格）
+   =================================================================== */
+
+/* ---- 角色符号槽：终端提示符气质 ---- */
+.msg .gutter-prompt {
+  font-size: var(--fs-base);
+  line-height: 1;
+  opacity: 0.9;
+}
+.msg.user .gutter {
+  color: var(--cyan);
+}
+/* 用户消息：方角 + 左侧提示符竖线，像终端里的引述块 */
+.msg.user .bubble {
+  border-radius: var(--r-xs);
+  border-left: 2px solid var(--cyan);
+  background: var(--bg-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* 助手正文：无容器，只留一条左侧竖线作为「这是它说的话」的标记 */
+.msg.assistant .msg-body {
+  border-left: 1px solid var(--border-soft);
+  padding-left: var(--sp-3);
+}
+.prose {
+  font-size: var(--fs-base);
+}
+
+/* -------------------------------------------------------------------
+   42.1 工具行（原来是一张卡）
+   ------------------------------------------------------------------- */
+.tool {
+  border: none;
+  border-radius: 0;
+  background: none;
+  margin: 1px 0;
+}
+.tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 2px var(--sp-2) 2px 0;
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  min-width: 0;
+}
+.tool-head:hover {
+  background: var(--bg-1);
+}
+/* `→ read` `~ edit` `$ bash` —— 终端里的动作前缀 */
+.tool-arrow {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  color: var(--fg-mute);
+}
+.tool[data-tool='bash'] .tool-arrow {
+  color: var(--ok);
+}
+.tool[data-tool='edit'] .tool-arrow,
+.tool[data-tool='write'] .tool-arrow {
+  color: var(--warn);
+}
+.tool-name {
+  flex: none;
+  color: var(--fg-mute);
+  min-width: 0;
+}
+.tool-sum {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+.tool-gap {
+  flex: 1;
+  min-width: var(--sp-3);
+}
+.tool-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+}
+.tool-status.error {
+  color: var(--err);
+}
+.tool[data-state='running'] .tool-head {
+  color: var(--fg);
+}
+/* 失败的一行标红，但**不**把输出铺出来 */
+.tool[data-state='error'] .tool-sum {
+  color: var(--err);
+}
+/* 只读工具（read/grep/glob…）更淡 —— 它们不是「发生了什么」，只是「看了什么」 */
+.tool.ro .tool-head {
+  opacity: 0.72;
+}
+.tool.ro:hover .tool-head {
+  opacity: 1;
+}
+
+/* 展开后的内容：这里才画框（终端里只有执行出来的东西才有框） */
+.tool-body {
+  margin: 2px 0 var(--sp-2) 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------------
+   42.2 思考块：一行斜体，展开才见内容
+   ------------------------------------------------------------------- */
+.think {
+  border-left: 1px solid var(--border);
+  padding: 0 0 0 var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+.think summary {
+  font-size: var(--fs-sm);
+}
+
+/* -------------------------------------------------------------------
+   42.3 回合摘要行（多工具折叠）
+   ------------------------------------------------------------------- */
+.turn-head {
+  border-radius: var(--r-xs);
+  padding: 2px var(--sp-2) 2px 0;
+  font-size: var(--fs-sm);
+}
+
+/* ===================================================================
+   43. 右栏（状态栏）—— 对齐 OpenCode 的右侧信息栏
+       ─────────────────────────────────────────────────────────────
+       从「只有任务、没任务就消失」改成**常驻的多分区状态栏**：
+       上下文 / 任务 / 队列 / 扩展 / 环境。默认展开，可收起。
+   =================================================================== */
+.rp-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.rp-top .spacer {
+  flex: 1;
+}
+.rp-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.rp-x:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.rp-body {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  min-height: 0;
+  padding-bottom: var(--sp-4);
+}
+
+.rp-sec {
+  border-bottom: 1px solid var(--border-soft);
+}
+.rp-sec:last-child {
+  border-bottom: none;
+}
+.rp-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+.rp-sec-head:hover {
+  color: var(--fg-dim);
+}
+.rp-sec-head .chev {
+  opacity: 0.6;
+}
+.rp-sec.open .rp-sec-head .chev {
+  transform: rotate(90deg);
+}
+.rp-sec-head .spacer {
+  flex: 1;
+}
+.rp-sec-body {
+  padding: 2px var(--sp-3) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 键值行：左标注、右数值 */
+.rp-kv {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.rp-kv .spacer {
+  flex: 1;
+}
+.rp-k {
+  color: var(--fg-mute);
+  flex: none;
+}
+.rp-v {
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-v.big {
+  color: var(--fg);
+  font-size: var(--fs-lg);
+}
+.rp-v.ok {
+  color: var(--ok);
+}
+.rp-v.warn {
+  color: var(--warn);
+}
+.rp-v.err {
+  color: var(--err);
+}
+.rp-u {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rp-dim {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+/* 上下文进度：3px 细条 */
+.rp-meter {
+  height: 3px;
+  border-radius: 1px;
+  background: var(--bg-4);
+  overflow: hidden;
+  margin: 3px 0 5px;
+}
+.rp-meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+.rp-meter.warn i {
+  background: var(--warn);
+}
+.rp-meter.err i {
+  background: var(--err);
+}
+
+/* 任务 */
+.rp-todos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rp-count {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rp-todo {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 5px;
+  align-items: start;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  min-width: 0;
+}
+.rp-box {
+  color: var(--fg-mute);
+}
+.rp-todo.done .rp-text {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+}
+.rp-todo.done .rp-box {
+  color: var(--ok);
+}
+
+/* 队列 */
+.rp-queued {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 3px;
+}
+.rp-queued-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  min-width: 0;
+}
+.rp-queued-row .rp-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-queued-dot {
+  width: 4px;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--r-full);
+  background: var(--warn);
+}
+/* 两段式开关：一次一条 / 一次全投 */
+.rp-mode {
+  margin-top: 2px;
+}
+.rp-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  flex: none;
+}
+.rp-switch > span:not(.rp-switch-tip) {
+  padding: 1px 6px;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.rp-switch > span.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rp-switch-tip {
+  display: none;
+}
+
+/* 扩展 */
+.rp-widget {
+  margin-top: var(--sp-1);
+  padding: var(--sp-1) 0 0;
+  border-top: 1px dashed var(--border-soft);
+}
+.rp-widget-key {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rp-widget-line {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+/* 环境 */
+.rp-path {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 4px;
+  padding: 3px 5px;
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-path:hover {
+  color: var(--accent);
+}
+
+/* ===================================================================
+   44. 思考强度档位（替换掉出问题的原生滑块）
+   =================================================================== */
+.mt-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.mt-stop {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.mt-stop:hover:not(:disabled) {
+  border-color: var(--border-str);
+  color: var(--fg-dim);
+}
+/* 当前档：实心强调色 —— 一眼看出在哪一档 */
+.mt-stop.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.mt-stop:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mt-hint {
+  margin-top: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+.mt-head-title {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.mt-head {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+.mt-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.mt-head-row .spacer {
+  flex: 1;
+}
+.mt-head-model {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 收起态的箭头用字符而不是图标：终端里 `▾` 比一个旋转的 SVG 更像样 */
+.mt-chev {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* ===================================================================
+   45. 用量条：`.ub-sep` 撤掉，换成中点分隔符
+   =================================================================== */
+.ub-dot {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--border-str);
+  align-self: center;
+}
+.usagebar {
+  gap: 5px var(--sp-2);
+}
+.usagebar .spacer {
+  flex: 1;
+  min-width: var(--sp-3);
+}
+/* 模型/强度标签贴右下：终端风格方角 */
+.mt-trigger {
+  border-radius: var(--r-xs);
+}
+.mt-pop {
+  border-radius: var(--r-sm);
+}
+
+/* ===================================================================
+   47. 右栏「操作」区：pi 自带能力的入口
+       ─────────────────────────────────────────────────────────────
+       这些东西 TUI 里都有快捷键，桌面端不能只能靠命令。
+   =================================================================== */
+.rp-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rp-act {
+  flex: 1 1 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  text-align: center;
+}
+.rp-act:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rp-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ===================================================================
+   48. 导航轨 v3 —— 命中区与视觉分离，悬停那一格就地展开
+       ─────────────────────────────────────────────────────────────
+       用户报的问题：「范围太小且过于密集导致选择起来很困难」。
+       旧实现：3px 高的横线就是可点区域（14×3px），20 轮以上时
+       鼠标要精准落在细线上 —— 而预览卡还固定在轨道垂直中心，
+       指第 5 格却在屏幕中间弹框，指的是哪一格全靠猜。
+
+       新实现：
+         · 每格 = 一个 padding 撑起来的按钮（约 40×15px 命中区）
+           里面的 .outline-bar 才是那条细线 → 看得见的还是细线，
+           但手指不用那么准
+         · 间距压到 6px（视觉上仍疏），因为命中区变高了
+         · 悬停：那一格的线就地长高到 6px / 变长 / 变强调色
+         · 预览卡锚在**被指的那一格**旁边（见 tsx 的 layout effect）
+   =================================================================== */
+.outline {
+  width: 46px;
+  padding-left: 0;
+}
+.outline-track {
+  gap: 2px;
+  max-height: 88%;
+  /* 每格自带上下 padding，所以这里只需要很小的 gap */
+  transition: none;
+  align-items: stretch;
+  padding: 0;
+}
+
+/* 命中区：透明，只有视觉上的那条线在动 */
+.outline-hit {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  /* 关键：padding 把可点区域撑到 15px 高（线只有 3px） */
+  padding: 6px 0 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+}
+.outline-bar {
+  display: block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--border-str);
+  opacity: 0.55;
+  transition:
+    width 130ms var(--ease),
+    height 130ms var(--ease),
+    background 130ms var(--ease),
+    opacity 130ms var(--ease);
+}
+/* 当前读到的那一轮 */
+.outline-hit.on .outline-bar {
+  width: 22px;
+  background: var(--fg);
+  opacity: 0.9;
+}
+
+/* ---- 悬停：这一格就地展开 ---- */
+.outline-hit.hover .outline-bar {
+  width: 34px;
+  height: 8px;
+  background: var(--accent);
+  opacity: 1;
+}
+/* 整条轨道被悬停时，其它格稍微提亮 —— 让「我可以选」这件事看得出来 */
+.outline-track:has(.outline-hit.hover) .outline-bar {
+  opacity: 0.75;
+}
+
+/* ---- 预览卡：锚在被指的那一格（top 由 JS 给） ---- */
+.outline-preview {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 0; /* JS 覆写 */
+  transform: none;
+  width: 300px;
+  max-width: 46vw;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-sm);
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  z-index: 20;
+}
+html[data-theme='light'] .outline-preview {
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.28);
+}
+.op-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.op-head .spacer {
+  flex: 1;
+}
+.op-n {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.op-user {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  margin-bottom: 4px;
+  /* 最多 5 行，超了省略 —— 预览不是阅读区 */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.op-assistant {
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  border-left: 2px solid var(--border);
+  padding-left: var(--sp-2);
+}
+
+/* ===================================================================
+   49. 任务行的完成态：真的要看得出「已完成 / 未完成」
+       ─────────────────────────────────────────────────────────────
+       用户报：「右边栏的任务没有已完成或未完成的提示」。
+       旧实现只给已完成的加删除线，勾选框是个空 span（没边框、没底色），
+       在浅色主题下几乎看不出区别。
+       现在：真勾选框（有边框/底色）+ 右侧状态字。
+   =================================================================== */
+.rp-todos {
+  gap: 3px;
+}
+.rp-todo {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: start;
+  padding: 2px 0;
+}
+/* 勾选框：一个真方框 */
+.rp-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border: 1px solid var(--border-str);
+  border-radius: 2px;
+  background: var(--bg-2);
+  color: transparent;
+  font-size: 9px;
+  line-height: 1;
+  flex: none;
+}
+.rp-todo.done .rp-box {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: #0b1f16;
+  font-weight: 700;
+}
+.rp-todo.todo-open .rp-box {
+  border-color: var(--warn);
+  background: transparent;
+}
+/* 右侧状态字：已完成 / 未完成 */
+.rp-state {
+  flex: none;
+  align-self: start;
+  margin-top: 1px;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.rp-todo.done .rp-state {
+  color: var(--ok);
+}
+.rp-todo.todo-open .rp-state {
+  color: var(--warn);
+}
+
+/* ===================================================================
+   50. 浅色主题的对比度补丁
+       ─────────────────────────────────────────────────────────────
+       白底上「淡」会很快变成「读不到」。这些是实际测出来不够的地方。
+   =================================================================== */
+html[data-theme='light'] .tool.ro .tool-head {
+  /* 深色下 0.72 够，浅色下会糊掉 */
+  opacity: 0.85;
+}
+html[data-theme='light'] .outline-bar {
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 1;
+}
+html[data-theme='light'] .outline-hit.on .outline-bar {
+  background: var(--fg);
+}
+html[data-theme='light'] .rp-box {
+  background: #fff;
+}
+html[data-theme='light'] .rp-todo.done .rp-box {
+  background: var(--ok);
+  color: #fff;
+}
+html[data-theme='light'] .md pre {
+  /* 浅灰底 + 浅灰边框在白底上分不出边界 */
+  border-color: var(--border-str);
+}
+
+/* ===================================================================
+   51. 标题栏：置顶按钮 + 精简掉重复入口
+       ─────────────────────────────────────────────────────────────
+       用户要求：
+         · 置顶给一个按钮，放在**窗口控制按钮的左边**
+         · 旁边的「设置」与「中/英文」移到设置里
+           （两者在设置面板的「外观」tab 里本来就有；设置齿轮在左栏底部也有）
+
+       置顶是个「开着就挡住一切」的状态，所以选中态必须**一眼看得出来**：
+       底色 + 强调色图标 + 右上角一个常亮小点（不依赖颜色也能看出）。
+   =================================================================== */
+.tb-pin {
+  position: relative;
+}
+.tb-pin.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tb-pin.on:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tb-pin.on::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+/* 置顶和窗口控制之间留一点，别看起来像连在一起的四个按钮 */
+.tb-pin + .wctrl {
+  margin-left: var(--sp-2);
+}
+
+/* 浅色主题下 ::after 的小点与强调色都要够深 */
+html[data-theme='light'] .tb-pin.on {
+  background: var(--accent-soft);
+  color: var(--accent);
 }

@@ -35,17 +35,35 @@
 
   const ticks = qa('[data-testid="outline-tick"]')
   ok(ticks.length === bestTurns, `刻度数 ${ticks.length} = 轮数 ${bestTurns}`)
-  ok(qa('.outline-tick.on').length === 1, '恰好一个高亮')
+  ok(qa('.outline-tick.on').length === 1 || qa('.outline-hit.on').length === 1, '恰好一个高亮')
 
-  // 间距：用户要求「拉长一些」
+  /*
+   * 导航轨 v3 的断言（用户报「范围太小且过于密集」后重写）：
+   *   可点区域是 .outline-hit（padding 撑起来的按钮），
+   *   那根细线是它内部的 .outline-bar。
+   *   所以量命中区高度，而不是量线的高度 —— 线只有 3px，不是可点范围。
+   */
+  const hitH = Math.round(ticks[0].getBoundingClientRect().height)
+  out.push('  命中区高度: ' + hitH + 'px')
+  ok(hitH >= 12, `每格命中区 ≥12px（实际 ${hitH}，之前只有 3px —— 这就是选不中的原因）`)
+
+  const hitW = Math.round(ticks[0].getBoundingClientRect().width)
+  out.push('  命中区宽度: ' + hitW + 'px')
+  ok(hitW >= 24, `每格命中区 ≥24px（实际 ${hitW}）`)
+
+  // 命中区之间不能重叠（重叠 = 永远选不到下面那一格）
   if (ticks.length >= 2) {
-    const gap = Math.round(ticks[1].getBoundingClientRect().top - ticks[0].getBoundingClientRect().bottom)
-    out.push('  刻度间距: ' + gap + 'px')
-    ok(gap >= 8, `间距 ≥8px（实际 ${gap}，之前是 5px）`)
+    const a = ticks[0].getBoundingClientRect()
+    const b = ticks[1].getBoundingClientRect()
+    const gap = Math.round(b.top - a.bottom)
+    out.push('  相邻命中区间隙: ' + gap + 'px')
+    ok(gap >= 0, `命中区不重叠（间隙 ${gap}）`)
   }
-  const tickW = Math.round(ticks[0].getBoundingClientRect().width)
-  out.push('  刻度宽度: ' + tickW + 'px')
-  ok(tickW >= 14, `刻度 ≥14px（实际 ${tickW}，之前 11px）`)
+
+  const bar = ticks[0].querySelector('.outline-bar')
+  const barW = bar ? Math.round(bar.getBoundingClientRect().width) : 0
+  out.push('  刻度线宽: ' + barW + 'px')
+  ok(barW >= 14, `刻度线 ≥14px（实际 ${barW}）`)
 
   // 动态展开：CSS 层面验证，**不模拟 hover**。
   //
@@ -55,21 +73,24 @@
   //   而那需要主进程配合，且窗口必须真的可见。
   //   所以这里验证「规则存在且选择器正确」，视觉行为靠人工看一眼。
   const track = q('.outline-track')
-  const gap = Math.round(parseFloat(getComputedStyle(track).rowGap || '0'))
-  out.push('  默认间距: ' + gap + 'px')
-  ok(gap >= 8, `默认间距 ≥8px（实际 ${gap}）`)
+  const barGap = Math.round(parseFloat(getComputedStyle(track).rowGap || '0'))
+  out.push('  轨道 gap: ' + barGap + 'px')
 
   let hasRule = false
+  let hasHitRule = false
   for (const sheet of document.styleSheets) {
     try {
       for (const rule of sheet.cssRules) {
-        if (rule.selectorText?.includes(':has(.outline-tick:hover)')) hasRule = true
+        const s = rule.selectorText ?? ''
+        if (s.includes('.outline-hit.hover .outline-bar')) hasHitRule = true
+        if (s.includes(':has(.outline-hit.hover)')) hasRule = true
       }
     } catch {
       /* 跨域样式表读不到，跳过 */
     }
   }
-  ok(hasRule, '存在「悬停时动态展开」的 CSS 规则')
+  ok(hasHitRule, '存在「悬停时那一格就地展开」的 CSS 规则')
+  ok(hasRule, '存在「悬停时其它格提亮」的 CSS 规则')
   ok(ol && getComputedStyle(ol).pointerEvents === 'none', '导航轨空白处不挡消息流（pointer-events:none）')
 
   // 悬停预览 + 点击跳转
@@ -77,8 +98,44 @@
   out.push('')
   out.push('=== 悬停与跳转 ===')
   ticks[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-  await sleep(300)
+  await sleep(400)
   ok(!!q('[data-testid="outline-preview"]'), '悬停弹出预览')
+  // 预览卡要锚在被指的那一格旁边（旧实现固定在轨道垂直中心）
+  const pv = q('[data-testid="outline-preview"]')
+  const tb = ticks[0].getBoundingClientRect()
+  const pb = pv?.getBoundingClientRect()
+  if (pb) {
+    const dTop = Math.round(Math.abs(pb.top + pb.height / 2 - (tb.top + tb.height / 2)))
+    out.push('  预览卡中心与第 1 格的垂直偏差: ' + dTop + 'px')
+    ok(dTop < 220, `预览卡跟着被指的那一格（偏差 ${dTop}px，不再固定居中）`)
+  }
+
+  /*
+   * 预览卡的内容结构（用户要求改过）：
+   *   「一行标题 + 三行 AI 回答」
+   * 旧版把用户的**整段原话**铺进去（带路径/报错），看着是杂讯。
+   */
+  const ptitle = q('[data-testid="outline-preview-title"]')
+  const panswer = q('[data-testid="outline-preview-answer"]')
+  ok(!!ptitle, '预览有标题（用户那一问的短摘要）')
+  if (ptitle) {
+    const txt = ptitle.textContent ?? ''
+    out.push('  标题: ' + JSON.stringify(txt))
+    // 标题不能只是把原话截断 —— 路径 / 文件名要去掉
+    ok(!/[A-Za-z]:[\\/]/.test(txt), '标题里没有 Windows 路径')
+    ok(!/\.(png|jpe?g|ts|tsx|js|json|md)\b/i.test(txt), '标题里没有裸文件名')
+    ok(txt.length <= 24, `标题够短（${txt.length} ≤ 24）`)
+    // 只占一行
+    ok(getComputedStyle(ptitle).whiteSpace === 'nowrap', '标题强制单行')
+  }
+  ok(!!panswer, '预览有回答正文')
+  if (panswer) {
+    const cs = getComputedStyle(panswer)
+    out.push('  回答 clamp = ' + cs.webkitLineClamp)
+    ok(cs.webkitLineClamp === '3', `回答封顶三行（实际 ${cs.webkitLineClamp}）`)
+    ok(cs.overflow === 'hidden', '超出部分被裁掉')
+  }
+
   ticks[0].dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
   await sleep(250)
   ok(!q('[data-testid="outline-preview"]'), '移开收起')
@@ -89,8 +146,43 @@
   qa('[data-testid="outline-tick"]')[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(1400)
   out.push('  点第 1 轮后 scrollTop=' + Math.round(sc.scrollTop) + ' / ' + sc.scrollHeight)
+
+  /*
+   * 诊断：滚动没到位时把现场打出来，而不是只报一个 ✗。
+   * （这个断言实为 flaky，不把上下文打出来就无法定位。）
+   */
+  if (!(sc.scrollTop < sc.scrollHeight * 0.5)) {
+    const first = q('[data-turn-id]')
+    const fr = first?.getBoundingClientRect()
+    out.push('  ⚠️ 诊断：')
+    out.push('     scrollHeight=' + sc.scrollHeight + ' clientHeight=' + sc.clientHeight)
+    out.push('     第一个回合块 top=' + (fr ? Math.round(fr.top) : 'n/a') +
+             ' / 滚动区 top=' + Math.round(sc.getBoundingClientRect().top))
+    out.push('     data-turn-id 数=' + qa('[data-turn-id]').length)
+    out.push('     是否虚拟化(.stream-row)=' + !!q('.stream-row'))
+    out.push('     贴底按钮在？=' + !!q('.jump-bottom'))
+  }
+
   ok(sc.scrollTop < sc.scrollHeight * 0.5, '跳到了会话前部')
   ok(!!ul[0], '（消息引用正常）')
 
+  /*
+   * 回合合并的副作用检查：导航轨的「第 N 轮」必须仍然 = 第 N 个**用户回合**。
+   * 合并之后一块助手回合里可能含 30+ 条原始消息，用 messages 的下标定位会跳错。
+   */
+  out.push('')
+  out.push('=== 回合合并与导航轨一致 ===')
+  const turnCount = qa('[data-turn-id]').length
+  out.push(`  用户轮数 ${ul.length}，渲染块数 ${turnCount}`)
+  ok(turnCount >= ul.length, '渲染块数 ≥ 用户轮数（每轮至少一块）')
+  ok(after0(sc), '点击后确实滚动到了目标附近')
+
   return out.join('\n')
+
+  /** 目标回合的顶部应靠近滚动区顶部（或已在顶部） */
+  function after0(el) {
+    const firstUser = q('[data-turn-id]')
+    if (!firstUser) return true
+    return Math.abs(firstUser.getBoundingClientRect().top - el.getBoundingClientRect().top) < 260
+  }
 })()

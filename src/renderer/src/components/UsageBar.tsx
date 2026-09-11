@@ -3,17 +3,22 @@ import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import type { Usage } from '../../../shared/ipc'
+import { cacheHitRate, formatHitRate } from '../../../shared/turns'
 import { ModelThinkingPicker } from './Pickers'
 
 /**
- * 底部的用量条（合并版）。
- *
- * 曾经是两条：输入框**上方**放「模型 + 上下文」，**下方**放「输入/输出/缓存/速度」。
- * 现在合成一条，放在输入框下方 —— 因为它们是同一件事的两面：
- * 「这次花了多少、上下文还有多满」，分开看要抬两次眼。
+ * 底部的用量条。
  *
  * 内容（从左到右）：
- *   模型 · 思考档 │ 上下文 进度条 已用/上限 百分比 │ 输入 输出 缓存命中 │ 速度 │ 本轮花费
+ *   速度 · 输入 · 输出 · 缓存命中率 ......... 模型 + 强度（最右）
+ *
+ * ⚠️ 上下文**不在这里**（用户要求改位置）：它搬到了右栏第一块。
+ *
+ * ⚠️ 单位：之前只写 `467` / `634`，没有任何单位 —— 用户报「缺少单位」。
+ *   现在统一带 `tok`（速度本来就是 `tok/s`）。
+ *
+ * ⚠️ 命中率的算法在 shared/turns.ts 的 `cacheHitRate()`，**不在**这里 ——
+ *   因为它的分母容易写错（见那边的说明），值得单测钉住。
  *
  * 关于「输出速度」的诚实做法（别改成估算）：
  *   实测这个 provider 到结束才报 usage（138 个流式事件里只有 2 个带 usage，
@@ -25,10 +30,8 @@ import { ModelThinkingPicker } from './Pickers'
 export function UsageBar() {
   const t = useT()
   const session = useStore((s) => s.session)
-  const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
   const streaming = useStore((s) => !!s.session?.isStreaming)
-  const openSettings = useStore((s) => s.openSettings)
 
   /* ---- 流式计时（拿不到实时 usage 时用） ---- */
   const [tick, setTick] = useState(0)
@@ -48,13 +51,6 @@ export function UsageBar() {
   void tick
   const elapsedSec = streaming && startRef.current ? (Date.now() - startRef.current) / 1000 : 0
 
-  /* ---- 上下文 ---- */
-  const cu = stats?.contextUsage
-  const ctxUsed = cu?.tokens ?? 0
-  const ctxWin = cu?.contextWindow ?? session?.model?.contextWindow ?? 0
-  const ctxPct = cu?.percent ?? (ctxUsed && ctxWin ? (ctxUsed / ctxWin) * 100 : 0)
-  const ctxTone = ctxPct >= 95 ? 'err' : ctxPct >= 85 ? 'warn' : 'ok'
-
   /* ---- 本轮用量 ---- */
   // 全 0 的 usage 不算数：流式途中 provider 可能先报一个全 0
   // （pi 文档：may remain zero until completion），否则会闪一下 "输入 0 输出 0"
@@ -63,43 +59,24 @@ export function UsageBar() {
 
   const last = [...messages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
   const u = last?.usage
-  const promptTotal = (u?.input ?? 0) + (u?.cacheRead ?? 0)
-  const hit = promptTotal > 0 ? (u!.cacheRead / promptTotal) * 100 : 0
 
-  /**
-   * 命中率的显示。
-   *
-   * 实测这个 provider 的命中率最高能到 99.98%（几乎整段提示词都在缓存里），
-   * 用 toFixed(0) 会显示成刺眼的「100%」—— 看着像算错了。
-   * 所以：
-   *   < 99.5%  保留一位小数（92.4%）
-   *   >= 99.5% 显示 ≈100%（明确表示「几乎全部」，不假装是精确的 100）
-   */
-  const hitLabel =
-    promptTotal === 0 ? undefined : hit >= 99.5 ? '≈100%' : hit.toFixed(1) + '%'
+  /* ---- 缓存命中率（算法在 shared/turns.ts，有单测） ---- */
+  const hit = cacheHitRate(u)
+  const hitLabel = formatHitRate(hit)
 
   const liveSpeed = streaming && (u?.output ?? 0) > 0 ? last?.speed : undefined
   const doneSpeed = !streaming ? last?.speed : undefined
   const speed = liveSpeed ?? doneSpeed
 
   // 一点信息都没有就不占位
-  if (!session?.model && !ctxWin && !u) return null
-
-  const nf = new Intl.NumberFormat('en-US')
+  if (!session?.model && !u) return null
 
   return (
     <div className="usagebar" data-testid="usagebar">
-      {/* 模型不在这里重复显示 —— 顶部头部已常驻。
-          这里只放「花的钱」相关：上下文 / 本轮用量 / 速度 */}
+      {/* 左组：本轮账单。模型/强度在最右，上下文在右栏。 */}
 
-      <span className="ub-sep" />
-
-      <span className="ub-sep" />
-
-      {/* 速度 */}
       {streaming && !speed ? (
         <span className="ub-item" title={t('tok.liveTip')}>
-          <span className="ub-label">{t('tok.speed')}</span>
           <span className="ub-value">
             {t('tok.generating')}
             <span className="ub-unit">{elapsedSec.toFixed(1)}s</span>
@@ -121,49 +98,39 @@ export function UsageBar() {
         />
       )}
 
-      {/* 上下文 + 本轮用量：紧跟模型标签靠右（输入框的那一侧）。
-          用户要求「上下文靠右」，且整条要收窄居中。 */}
-      {/* 本轮：输入 / 输出 / 缓存命中 */}
+      <span className="ub-dot" />
+
       <span className="ub-turn">
-        <Item label={t('tok.in')} value={u ? fmtTok(u.input) : '—'} dim={!u || streaming} />
-        <Item label={t('tok.out')} value={u ? fmtTok(u.output) : '—'} dim={!u || (streaming && !liveSpeed)} />
+        <Item
+          label={t('tok.in')}
+          value={u ? fmtTok(u.input) : '—'}
+          unit={u ? t('tok.unit') : undefined}
+          dim={!u || streaming}
+        />
+        <span className="ub-dot" />
+        <Item
+          label={t('tok.out')}
+          value={u ? fmtTok(u.output) : '—'}
+          unit={u ? t('tok.unit') : undefined}
+          dim={!u || (streaming && !liveSpeed)}
+        />
+        <span className="ub-dot" />
+        {/* 缓存：值 = 缓存读取量，额外显示**命中率**（用户明确要求） */}
         <Item
           label={t('tok.cache')}
           value={u?.cacheRead ? fmtTok(u.cacheRead) : '—'}
-          extra={hitLabel}
+          unit={u?.cacheRead ? t('tok.unit') : undefined}
+          extra={hitLabel ?? undefined}
           title={t('tok.cacheTip', {
             read: fmtTok(u?.cacheRead ?? 0),
             write: fmtTok(u?.cacheWrite ?? 0),
-            hit: hit.toFixed(1)
+            hit: hit === null ? '—' : hit.toFixed(1)
           })}
           dim={!u?.cacheRead || streaming}
         />
       </span>
 
-      {/* 上下文 */}
-      {ctxWin ? (
-        <button
-          className={`ub-ctx ${ctxTone}`}
-          onClick={() => openSettings('status')}
-          title={t('ctx.tip', {
-            used: nf.format(ctxUsed),
-            win: nf.format(ctxWin),
-            pct: ctxPct.toFixed(1)
-          })}
-          data-testid="ub-ctx"
-        >
-          <span className="ub-label">{t('ctx.label')}</span>
-          <span className="ub-meter">
-            <i style={{ width: `${Math.min(100, ctxPct)}%` }} />
-          </span>
-          <span className="ub-num">
-            {fmtTok(ctxUsed)}
-            <span className="ub-slash">/</span>
-            {fmtTok(ctxWin)}
-          </span>
-          <span className={`ub-pct ${ctxTone}`}>{ctxPct.toFixed(ctxPct < 10 ? 1 : 0)}%</span>
-        </button>
-      ) : null}
+      <span className="spacer" />
 
       {session?.isCompacting ? (
         <span className="ub-compacting">
@@ -172,18 +139,8 @@ export function UsageBar() {
         </span>
       ) : null}
 
-      <span className="ub-sep" />
-
-
-      {/* 模型 + 强度：Codex 风格的组合标签，放在最右 */}
+      {/* 模型 + 强度：终端风格组合标签，放在最右 */}
       <ModelThinkingPicker />
-
-      {/* 花费：沉到最右 */}
-      {stats && stats.cost > 0 ? (
-        <span className="ub-cost" title={t('tok.cost')}>
-          ${stats.cost.toFixed(3)}
-        </span>
-      ) : null}
     </div>
   )
 }
@@ -225,7 +182,6 @@ function fmtTok(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(2)}k`
   return n.toLocaleString('en-US')
 }
-
 /** 速度：整数 + tok/s，慢的时候给一位小数 */
 function fmtSpeed(v: number): string {
   return v >= 10 ? v.toFixed(0) : v.toFixed(1)

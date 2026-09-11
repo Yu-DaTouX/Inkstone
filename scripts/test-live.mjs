@@ -32,10 +32,26 @@ import { tmpdir, homedir } from 'node:os'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/** 每个场景：probe 脚本 + 等待多久（毫秒） */
+/** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
   // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
+  // 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度
+  // ⚠️ 必须用**真实**按键（sendInputEvent），因为快捷键是主进程
+  //    用 before-input-event 拦的 —— 渲染端的合成 KeyboardEvent 不走那条路，
+  //    用它测会「通过」而真实按键其实是坏的。
+  hotkeys: {
+    probe: 'scripts/probe/hotkeys.js',
+    delay: 9000,
+    cost: 0,
+    keys: 'ctrl+p,shift+tab,ctrl+p'
+  },
+  // 动效：入场 / **退场** / 减少动效 / 消息合并
+  motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
+  // 标题栏：置顶按钮位置 + 精简掉的重复入口
+  titlebar: { probe: 'scripts/probe/titlebar.js', delay: 9000, cost: 0 },
+  // 浅色主题：对比度 / 代码高亮 / 工具行
+  light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
   // 记忆的认识论流程：确认 → 从「我的印象」移到「关于你」
@@ -200,14 +216,15 @@ function writePlainSession(dir, idBase, count) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
-function runProbe({ probe, delay }, env) {
+function runProbe({ probe, delay, keys }, env) {
   return new Promise((resolvePromise) => {
     const child = spawn('npx', ['electron', '.'], {
       cwd: root,
       env: {
         ...env,
         YAN_PROBE: probe,
-        YAN_PROBE_DELAY: String(delay)
+        YAN_PROBE_DELAY: String(delay),
+        ...(keys ? { YAN_PROBE_KEYS: keys } : {})
       },
       shell: true,
       windowsHide: true
@@ -221,9 +238,11 @@ function runProbe({ probe, delay }, env) {
       buf += d
     })
 
+    // 预发按键会额外占时间（每个组合等 1.4s）
+    const keyCost = keys ? keys.split(',').length * 1500 : 0
     const kill = setTimeout(() => {
       child.kill()
-    }, delay + 90_000)
+    }, delay + keyCost + 90_000)
 
     child.on('exit', (code) => {
       clearTimeout(kill)

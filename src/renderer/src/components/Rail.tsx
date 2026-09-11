@@ -300,6 +300,7 @@ function SessionRow({
             {s.path}
           </div>
           <button
+            style={{ '--i': 1 } as React.CSSProperties}
             className="srow-menu-btn"
             onClick={() => {
               void forkLatest()
@@ -310,6 +311,7 @@ function SessionRow({
             {t('rail.forkLast')}
           </button>
           <button
+            style={{ '--i': 2 } as React.CSSProperties}
             className="srow-menu-btn"
             onClick={() => {
               void window.yan.revealPath(s.path)
@@ -321,6 +323,7 @@ function SessionRow({
           </button>
           <button
             className="srow-menu-btn danger"
+            style={{ '--i': 3 } as React.CSSProperties}
             disabled={selected}
             title={selected ? t('rail.cantDeleteCurrent') : ''}
             onClick={() => {

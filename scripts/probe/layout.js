@@ -20,7 +20,13 @@
     out.push('  内容: ' + JSON.stringify(ub.textContent.replace(/\s+/g, ' ').trim()))
     const labels = qa('.usagebar .ub-label').map(e => e.textContent)
     out.push('  字段: ' + JSON.stringify(labels))
-    for (const need of ['上下文', '输入', '输出', '缓存', '速度']) ok(labels.includes(need), `含「${need}」`)
+    /*
+     * ⚠️ 上下文**不在用量条里了**（用户要求改位置）：它搬到了右栏第一块 -> 对齐 OpenCode。
+     * 所以这里反过来断言：用量条里**没有**上下文，上下文在右栏。
+     */
+    for (const need of ['输入', '输出', '缓存', '速度']) ok(labels.includes(need), `含「${need}」`)
+    ok(!labels.includes('上下文'), '上下文已移出用量条')
+    ok(!q('[data-testid="ub-ctx"]'), '旧的内联上下文按钮已移除')
     // 位置：在 composer 下方
     const c = q('.composer'), r1 = ub.getBoundingClientRect(), r2 = c.getBoundingClientRect()
     ok(r1.top >= r2.bottom - 2, `在输入框下方（usagebar.top=${Math.round(r1.top)} composer.bottom=${Math.round(r2.bottom)}）`)
@@ -28,6 +34,25 @@
     const center = q('.center').getBoundingClientRect()
     const leftGap = Math.round(r1.left - center.left), rightGap = Math.round(center.right - r1.right)
     ok(Math.abs(leftGap - rightGap) <= 2, `居中（左 ${leftGap} / 右 ${rightGap}）`)
+    // 与输入框同宽（用户报过「错开」）
+    const ubw = Math.round(r1.width), cw = Math.round(r2.width)
+    out.push(`  用量条宽 ${ubw} / 输入框宽 ${cw}`)
+    ok(Math.abs(ubw - cw) <= 4, `用量条与输入框同宽（差 ${Math.abs(ubw - cw)}px）`)
+    // 不能再有那种「只占位不表意」的竖线分隔符
+    ok(qa('.ub-sep').length === 0, '已清除多余的竖线分隔符（.ub-sep）')
+  }
+
+  out.push('')
+  out.push('=== 1b. 上下文在右栏 ===')
+  const ctx = q('[data-sec="rp-context"]')
+  ok(!!ctx, '右栏有「上下文」分区')
+  if (ctx) {
+    const txt = ctx.textContent.replace(/\s+/g, ' ').trim()
+    out.push('  内容: ' + JSON.stringify(txt.slice(0, 80)))
+    ok(/tokens/.test(txt), '显示 token 总量')
+    ok(/%/.test(txt), '显示占用百分比')
+    ok(/\$/.test(txt), '显示花费')
+    ok(!!ctx.querySelector('.rp-meter'), '有进度条')
   }
 
   out.push('')
@@ -63,6 +88,28 @@
     }
     return fn()
   }
+  /**
+   * 等一个测量值**稳定下来**再读。
+   *
+   * ⚠️ 为什么必需：左栏收放是靠 `--w-rail` 的 CSS 过渡做的，
+   *   `until(() => rail-off)` 只等到**类名**变了，宽度还在变。
+   *   直接读 getBoundingClientRect 会拿到过渡中间值 —— 实测踩到过：
+   *   「收起」后读到的还是展开时的宽度，于是「推挤」断言方向反而是反的。
+   *   这是测量时机问题，不是功能问题。
+   */
+  const settle = async (read, ms = 1500) => {
+    const t0 = Date.now()
+    let prev = read()
+    while (Date.now() - t0 < ms) {
+      await sleep(120)
+      const now = read()
+      if (Math.abs(now - prev) < 0.5) return now
+      prev = now
+    }
+    return prev
+  }
+  const centerW = () => q('.center').getBoundingClientRect().width
+  const innerL = () => q('.stream-inner').getBoundingClientRect().left
 
   // ⚠️ 不能直接断言「初始收起」——真实光标可能恰好停在屏幕左缘，
   //    窗口一出现系统就发一次 mousemove，于是它合法地展开了。
@@ -124,12 +171,13 @@
   // 浮层：展开/收起不该改变中栏宽度与内容位置
   move(900)
   await until(() => app.classList.contains('rail-off'))
-  const cw1 = Math.round(q('.center').getBoundingClientRect().width)
-  const cx1 = Math.round(q('.stream-inner').getBoundingClientRect().left)
+  // 等宽度过渡走完再量（否则拿到的是过渡中间值）
+  const cw1 = Math.round(await settle(centerW))
+  const cx1 = Math.round(await settle(innerL))
   move(3)
   await until(() => !app.classList.contains('rail-off'), 2000)
-  const cw2 = Math.round(q('.center').getBoundingClientRect().width)
-  const cx2 = Math.round(q('.stream-inner').getBoundingClientRect().left)
+  const cw2 = Math.round(await settle(centerW))
+  const cx2 = Math.round(await settle(innerL))
   // 从「浮层」改成「推挤」是刻意的：对齐 Agents-Anywhere 的常驻列做法。
   // 浮层会把标题盖住，推挤才是面板收合的感觉。代价是中栏会重新居中。
   ok(cw2 < cw1, `中栏被左栏推挤（${cw1} → ${cw2}）`)
@@ -156,6 +204,12 @@
   // 重复放两处会让人不确定该点哪个）。
   ok(!q('[data-testid="rail-mode"]'), '左栏内不再重复放侧栏开关')
 
+  /*
+   * 标题栏不再显示会话名（用户要求删掉左上角那个胶囊）。
+   * 标题已经在**中栏顶部**常驻（SessionHeader），标题栏再放一份是重复的。
+   */
+  ok(!q('.tb-session'), '标题栏不再重复显示会话名')
+
   out.push('=== 5. 溢出 ===')
   for (const sel of ['.app', '.workspace', '.center', '.usagebar', '.rightpanel']) {
     const e = q(sel); if (!e) continue
@@ -166,6 +220,10 @@
   out.push('')
   out.push('=== 6. 布局宽度 ===')
   for (const sel of ['.rail', '.center', '.rightpanel', '.usagebar', '.composer']) out.push('  ' + sel.padEnd(14) + box(sel))
+
+  const cw3 = Math.round(await settle(centerW))
+  const cx3 = Math.round(await settle(innerL))
+  if (cw3 && cx3) out.push(`  钉住后中栏宽=${cw3} 内容左=${cx3}`)
 
   return out.join('\n')
 })()

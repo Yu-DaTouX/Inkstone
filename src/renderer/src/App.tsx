@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 /* touch 1789070960743 */import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { useI18n } from './i18n'
@@ -7,8 +7,8 @@ import { Rail } from './components/Rail'
 import { RightPanel } from './components/RightPanel'
 import { ConversationOutline } from './components/ConversationOutline'
 import { Continuity, EmptyStream, ReviewBar } from './components/Continuity'
-import { Working } from './components/PixelSpinner'
-import { Message } from './components/Message'
+import { TurnView } from './components/TurnView'
+import { groupIntoTurns } from '../../shared/turns'
 import { Composer } from './components/Composer'
 import { Settings, type SettingsTab } from './components/Settings'
 import { ConnBar, Notices, StatusBar, UiDialog } from './components/UiBridge'
@@ -18,6 +18,8 @@ import './styles/app.css'
 import './styles/stage1.css'
 import './styles/stage2.css'
 import './styles/redesign.css'
+// 动效放最后：它要覆盖同名选择器上的旧动画（第 43 节那套已废弃）
+import './styles/motion.css'
 import './styles/settings.css'
 import './styles/electron.css'
 import './styles/highlight.css'
@@ -58,6 +60,12 @@ export default function App() {
    */
   const railPinned = useStore((s) => s.railPinned)
   const setRailPinned = useStore((s) => s.setRailPinned)
+  const rightPanelOpen = useStore((s) => s.settings?.rightPanelOpen ?? true)
+  const toggleRightPanel = useStore((s) => s.toggleRightPanel)
+  const alwaysOnTop = useStore((s) => s.alwaysOnTop)
+  const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
+  const cycleModel = useStore((s) => s.cycleModel)
+  const cycleThinking = useStore((s) => s.cycleThinking)
   const [railHover, setRailHover] = useState(false)
   const railTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const railOpen = railPinned || railHover
@@ -84,9 +92,41 @@ export default function App() {
 
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
+  /*
+   * 「跟随底部」开关。
+   *
+   * ⚠️ 为什么 state 之外还要一个 ref：
+   *   state 的更新是**异步**的（React 批处理），而消息推送随时可能到达。
+   *   实测踩到的 bug：点导航轨往上跳 → setStick(false) 还没生效 →
+   *   同一帧来了一条 msg-update → 贴底 effect 读到旧的 stick=true
+   *   → 把用户**拽回底部**。表现就是「点了跳转但没跳过去」（探针实测
+   *   时而 scrollTop=24 ✓，时而 1158 = 到底 ✗）。
+   *   ref 是同步写的，effect 读它就不会被批处理坑到。
+   */
   const [stick, setStick] = useState(true)
+  const stickRef = useRef(true)
+  const setStickNow = (v: boolean): void => {
+    stickRef.current = v
+    setStick(v)
+  }
 
-  const virtual = messages.length >= VIRTUALIZE_AT
+  /**
+   * 正在流式的那条消息（给回合视图标记「还在写」）。
+   *
+   * 注意取的是**最后一条**消息的 id，而不是「最后一条 assistant」——
+   * 流式刚开始时最后一条还是用户消息，那时不该有任何回合在闪光标。
+   */
+  const streamingId = session?.isStreaming ? messages[messages.length - 1]?.id : undefined
+
+  /**
+   * 回合分组 —— 把扁平的 messages 折成「一轮一块」。
+   *
+   * 为什么要记 memoize：每次 msg-update 推送（流式时几十次/秒）都会重算，
+   * 而分组要遍历整个消息数组。依赖只有 messages 与 streamingId。
+   */
+  const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
+
+  const virtual = turns.length >= VIRTUALIZE_AT
 
   /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
   useEffect(() => {
@@ -137,20 +177,21 @@ export default function App() {
 
   /* ---- 贴底滚动：用户往上翻了就不打扰 ---- */
   useEffect(() => {
-    if (!stick) return
+    if (!stickRef.current) return
     if (virtual) {
       // 虚拟列表：滚到最后一项的末尾
-      vlistRef.current?.scrollToIndex(messages.length - 1, { align: 'end' })
+      vlistRef.current?.scrollToIndex(turns.length - 1, { align: 'end' })
       return
     }
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, stick, virtual])
+    // 依赖 turns 而不是 messages：回合合并后一块里也可能长高（新段落）
+  }, [turns, stick, virtual])
 
   const onScroll = () => {
     const el = streamRef.current
     if (!el) return
-    setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
+    setStickNow(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
 
     // 滚动进度 → 导航轨用它算「当前读到第几轮」
     const range = el.scrollHeight - el.clientHeight
@@ -167,40 +208,132 @@ export default function App() {
    */
   useEffect(() => {
     registerScrollToTurn((turnIndex: number) => {
-      const users = messages.filter((m) => m.role === 'user')
-      const target = users[turnIndex]
-      if (!target) return
+      /*
+       * 先**同步**关掉「跟随底部」。
+       *
+       * 跳转是用户明确表达「我要看前面」。而在平滑滚动开始到第一个
+       * scroll 事件之间有一段时间，其间若来一条消息推送，
+       * 贴底 effect 会把用户拉回底部。同步写 ref 就把这个窗口封死了。
+       */
+      setStickNow(false)
 
-      const fullIndex = messages.findIndex((m) => m.id === target.id)
-      if (fullIndex < 0) return
+      /*
+       * 导航轨的「第 N 轮」= 第 N 个**用户回合**。
+       *
+       * 合并后一块助手回合里可能含 34 条原始消息，所以不能再用
+       * messages 的下标去定位 —— 要用**回合数组的下标**。
+       */
+      const userTurns: number[] = []
+      turns.forEach((tt, i) => {
+        if (tt.kind === 'user') userTurns.push(i)
+      })
+      const target = userTurns[turnIndex]
+      if (target === undefined) return
 
       if (virtual) {
-        vlistRef.current?.scrollToIndex(fullIndex, { align: 'start' })
+        vlistRef.current?.scrollToIndex(target, { align: 'start' })
         return
       }
-      const el = streamRef.current?.querySelector<HTMLElement>(
-        `[data-msg-id="${target.id}"]`
-      )
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+      const turn = turns[target]
+
+      /*
+       * ⚠️ 必须等**这一帧的提交**结束再滚。
+       *
+       * 上面 `setStickNow(false)` 会让 React 重渲染（`!stick` 时会挂出
+       * 「回到底部」按钮），而重渲染会让浏览器**取消正在进行的平滑滚动**
+       * （scroll anchoring / 布局变动都会）。
+       * 实测：同步调用 `scrollIntoView({behavior:'smooth'})` 时
+       * scrollTop 永远停在原位（6826 一动不动），同一行代码放到探针里
+       * 单独跑却正常 —— 差别就在于这次重渲染。
+       * 推到下一帧（提交后）再滚，就不会被取消。
+       */
+      requestAnimationFrame(() => {
+        const el = streamRef.current?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
+        if (!el) return
+
+        /*
+         * 跳得远就瞬移，跳得近才动画。
+         *
+         * 为什么分两档：平滑滚动适合「附近」的跳转（有方向感、不丢失上下文）；
+         * 但跨整个会话的跳转（实测有过 6800px）会拖得很久，
+         * 屏幕上是一道模糊的光条 —— 那时用户只想「到了」。
+         */
+        const box = streamRef.current?.getBoundingClientRect()
+        const far =
+          box && Math.abs(el.getBoundingClientRect().top - box.top) > box.height * 1.5
+        el.scrollIntoView({ behavior: far ? 'auto' : 'smooth', block: 'start' })
+      })
     })
-  }, [messages, virtual, registerScrollToTurn])
+  }, [turns, virtual, registerScrollToTurn])
 
   /** 虚拟列表的滚动回调：用 handle 的尺寸算「是否贴底」 */
   const onVirtualScroll = () => {
     const h = vlistRef.current
     if (!h) return
-    setStick(h.scrollSize - h.scrollOffset - h.viewportSize < 40)
+    setStickNow(h.scrollSize - h.scrollOffset - h.viewportSize < 40)
   }
 
   const jumpToBottom = () => {
-    setStick(true)
+    setStickNow(true)
     if (virtual) {
-      vlistRef.current?.scrollToIndex(messages.length - 1, { align: 'end' })
+      vlistRef.current?.scrollToIndex(turns.length - 1, { align: 'end' })
       return
     }
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
   }
+
+  /**
+   * 全局快捷键 —— 对齐 pi TUI 的默认绑定。
+   *
+   *   Ctrl+P     下一模型   （pi: app.model.cycleForward）
+   *   Shift+Tab  下一强度   （pi: app.thinking.cycle）
+   *
+   * ⚠️ 主路径在**主进程**（before-input-event），它先在渲染端之前拦下来，
+   *   再把动作名发过来；这里只负责执行 + 给反馈。
+   *   为什么不在渲染端直接监听 window keydown：实测会漏 ——
+   *   输入法组合态、焦点不在 webContents、菜单 accelerator 先吃，
+   *   三种情况都真实存在。主进程那条路是可靠的。
+   */
+  useEffect(() => {
+    const off = window.yan.onHotkey((action) => {
+      if (action === 'cycleModel') void cycleModel()
+      else if (action === 'cycleThinking') void cycleThinking()
+    })
+
+    /**
+     * 兑底：窗口失焦后的第一下按键 / 旧版 preload（没有 onHotkey）时，
+     * 渲染端的监听仍能接住。两条路都会跑，但重复触发是有害的
+     * （快速按两下 Ctrl+P 会跳两个模型而不是一个），所以用时间锁去重。
+     */
+    let lastAt = 0
+    const guard = (action: 'cycleModel' | 'cycleThinking'): void => {
+      const now = Date.now()
+      if (now - lastAt < 250) return
+      lastAt = now
+      if (action === 'cycleModel') void cycleModel()
+      else void cycleThinking()
+    }
+
+    const onKey = (e: KeyboardEvent): void => {
+      const ctrl = e.ctrlKey || e.metaKey
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        guard('cycleModel')
+        return
+      }
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && e.key === 'Tab') {
+        e.preventDefault()
+        guard('cycleThinking')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      off?.()
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [cycleModel, cycleThinking])
 
   const pickCwd = async () => {
     const p = await window.yan.pickCwd()
@@ -292,36 +425,36 @@ export default function App() {
     .filter(Boolean)
     .join(' ')
 
-  const streamingId = session?.isStreaming ? messages[messages.length - 1]?.id : undefined
   /**
    * 流式开始了但还没有可见内容。
    *
-   * 只判断 text 不够 —— 工具卡也算「有进展」，
+   * 只判断 text 不够 —— 工具行也算「有进展」，
    * 否则工具跑起来之后 spinner 还一直转，看着像卡住。
    */
-  const lastMsg = messages[messages.length - 1]
+  const lastTurn = turns[turns.length - 1]
   const hasVisibleBody =
-    !!lastMsg &&
-    (lastMsg.text.trim().length > 0 ||
-      !!lastMsg.thinking ||
-      (lastMsg.toolCalls?.length ?? 0) > 0)
+    !!lastTurn &&
+    (lastTurn.kind === 'user' ||
+      lastTurn.kind === 'bash' ||
+      lastTurn.commentary.length > 0 ||
+      !!lastTurn.response ||
+      lastTurn.tools.length > 0 ||
+      !!lastTurn.thinking)
 
   return (
     <>
       <IconSprite />
       <div className={appCls}>
         <TitleBar
-          theme={theme}
-          onToggleTheme={() => {
-            userTouched.current.theme = true
-            setTheme((v) => (v === 'dark' ? 'light' : 'dark'))
-          }}
           onToggleRail={() => setRailPinned(!railPinned)}
           railPinned={railPinned}
           railOpen={railOpen}
+          rightPanelOpen={rightPanelOpen}
+          onToggleRightPanel={() => void toggleRightPanel()}
+          alwaysOnTop={alwaysOnTop}
+          onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
-          subtitle={session?.sessionName ?? session?.model?.name}
           conn={conn}
           cwd={settings?.cwd}
           onPickCwd={() => void pickCwd()}
@@ -347,34 +480,40 @@ export default function App() {
             {virtual ? (
               <VList
                 ref={vlistRef}
-                data={messages}
+                data={turns}
                 className="stream"
                 bufferSize={800}
                 onScroll={onVirtualScroll}
               >
-                {(m) => (
+                {(tt) => (
                   <div className="stream-row">
-                    <Message msg={m} streaming={m.id === streamingId} />
+                    <TurnView turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />
                   </div>
                 )}
               </VList>
             ) : (
               <div className="stream" ref={streamRef} onScroll={onScroll}>
                 <div className="stream-inner">
-                  {messages.length === 0 ? (
+                  {turns.length === 0 ? (
                     <EmptyStream />
                   ) : (
-                    messages.map((m) => (
-                      <Message key={m.id} msg={m} streaming={m.id === streamingId} />
+                    turns.map((tt) => (
+                      <TurnView
+                        key={tt.id}
+                        turn={tt}
+                        streaming={tt.kind === 'assistant' && tt.streaming}
+                      />
                     ))
                   )}
                 </div>
               </div>
             )}
 
-            {/* 等第一个字时显示「⠋ 正在处理…」——
-                流式还没吐字时用户需要知道它在干活，而不是卡住了 */}
-            {session?.isStreaming && !hasVisibleBody ? <Working /> : null}
+            {/*
+             * 「⠋ 正在处理…」已搬到**输入框的顶边框**上
+             * （pi 的做法，见 ComposerBorder.tsx）。
+             * 这里不再占一行，也不再有独立的像素 spinner。
+             */}
 
             {!stick ? (
               <button className="jump-bottom" onClick={jumpToBottom}>
