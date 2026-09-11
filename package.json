@@ -4,9 +4,9 @@
   "description": "砚 · 个人 agent 桌面端",
   "main": "./out/main/index.js",
   "author": "Yu-DaTouX",
-  "repository": { "type": "git", "url": "https://github.com/Yu-DaTouX/pi-desktop.git" },
-  "homepage": "https://github.com/Yu-DaTouX/pi-desktop#readme",
-  "bugs": { "url": "https://github.com/Yu-DaTouX/pi-desktop/issues" },
+  "repository": { "type": "git", "url": "https://github.com/Yu-DaTouX/--agent.git" },
+  "homepage": "https://github.com/Yu-DaTouX/--agent#readme",
+  "bugs": { "url": "https://github.com/Yu-DaTouX/--agent/issues" },
   "keywords": ["pi", "agent", "electron", "desktop", "memory", "rpc"],
   "license": "MIT",
   "private": true,
@@ -23,7 +23,9 @@
     "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions layout outline todos virtual settings light hotkeys titlebar motion atPath auth",
     "test:unit": "node scripts/test-unit.mjs",
     "lint:css": "node scripts/lint-css.mjs",
-    "measure:design": "electron scripts/measure-design.mjs"
+    "measure:design": "electron scripts/measure-design.mjs",
+    "vendor:pi": "node scripts/vendor-pi.mjs",
+    "vendor:pi:check": "node scripts/vendor-pi.mjs --check"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

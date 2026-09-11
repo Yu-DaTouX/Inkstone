@@ -21,11 +21,13 @@
 | | |
 |---|---|
 | **Node** | ≥ 20（开发时用的是 24） |
-| **pi** | 必须已安装：`npm i -g @earendil-works/pi-coding-agent` |
+| **pi** | **已内置，无需自己安装**。运行时随应用分发（`resources/pi-runtime/`，约 20MB） |
 | 平台 | Windows 优先（Windows 11 实测）；macOS / Linux 未实测 |
 
 > 砚**不重写 pi 的会话格式**，它直接读 `~/.pi/agent/sessions/` ——
 > 所以和 pi 的 TUI 是**互通**的：TUI 里聊过的会话桌面端左侧栏里能看到，反之亦然。
+>
+> 想用别的 pi 版本（或你全局装的那个）：设置里的 `piBin`，或环境变量 `YAN_PI_BIN`。
 
 ---
 
@@ -75,12 +77,18 @@ npm run dev
 
 ```bash
 npm install
-npm run font        # 复制 Maple Mono CN（18.5MB，不入库，新克隆必跑一次）
 npm run dev
 ```
 
-需要本机已装 pi（`npm i -g @earendil-works/pi-coding-agent`）。
-应用会自动找 pi 的位置；找不到时点标题栏中间的连接状态看诊断，或跑 `npm run probe-pi`。
+新克隆需要先抽一次内置 pi 运行时（20MB，不入库）：
+
+```bash
+npm run vendor:pi        # 从本机已装的 pi 抽 → resources/pi-runtime/
+```
+
+它要求本机至少装过一个 pi（`npm i -g @earendil-works/pi-coding-agent`）——
+这只是**开发时**的取材来源，最终用户不需要装 pi。
+抽完可以 `npm run vendor:pi:check` 校验（会真起一次 pi 做 RPC 握手）。
 
 ## 怎么用
 

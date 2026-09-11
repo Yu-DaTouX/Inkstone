@@ -39,3 +39,6 @@ auth.json
 *.key
 .env
 .env.*
+
+# ---- 内置 pi 运行时（20MB，由 `npm run vendor:pi` 从本地已装 pi 生成，不入库）----
+resources/pi-runtime/

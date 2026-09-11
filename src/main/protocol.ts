@@ -18,11 +18,34 @@ import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, delimiter } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { PiInfo, PiProbe, RpcResponse } from '../shared/ipc'
 
 const PKG = '@earendil-works/pi-coding-agent'
 /** cli 在包里的相对路径（package.json 的 bin 字段） */
 const CLI_REL = join('dist', 'bundle', 'cli.js')
+
+const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
+
+/**
+ * 随应用分发的内置 pi 运行时（由 `npm run vendor:pi` 生成，见 scripts/vendor-pi.mjs）。
+ *
+ * 为什么内置：不内置的话用户得先 `npm i -g @earendil-works/pi-coding-agent`
+ * 才能用这个应用 —— 这是分发时最大的门槛。内置后开箱即用。
+ *
+ * 放在**全局安装之前**优先使用：版本确定，不受用户环境里 pi 升级/降级影响。
+ * 想换回全局 pi 或指定别的版本，用设置项 `piBin` 或 `YAN_PI_BIN` 覆盖。
+ */
+function bundledRoots(): string[] {
+  const out: string[] = []
+  // 打包后：electron-builder 把 resources/pi-runtime 放进 process.resourcesPath
+  if (process.resourcesPath) out.push(join(process.resourcesPath, 'pi-runtime'))
+  // 开发期：out/main/protocol.js → ../../resources/pi-runtime
+  out.push(join(__dirname_, '..', '..', 'resources', 'pi-runtime'))
+  // 兜底：以 cwd 为项目根时
+  out.push(join(process.cwd(), 'resources', 'pi-runtime'))
+  return out
+}
 
 /* ==================================================================
    定位 pi 可执行入口
@@ -101,20 +124,27 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
     }
   }
 
-  // 3. 常规安装位置
+  // 3. 随应用分发的内置运行时（正常分发路径，开箱即用）
+  for (const root of bundledRoots()) {
+    const cli = join(root, CLI_REL)
+    tried.push(`内置运行时: ${cli}`)
+    if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
+  }
+
+  // 4. 常规安装位置（用户自己全局装过 pi）
   for (const root of packageRoots()) {
     const cli = join(root, PKG, CLI_REL)
     tried.push(cli)
     if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
   }
 
-  // 4. 从 PATH 上的 shim 反推
+  // 5. 从 PATH 上的 shim 反推
   for (const cli of pathCandidates()) {
     tried.push(cli)
     if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
   }
 
-  // 5. 最后兜底：直接用 PATH 上的 pi（需要 shell，量力而行）
+  // 6. 最后兜底：直接用 PATH 上的 pi（需要 shell，量力而行）
   tried.push('PATH 上的 pi（shell 兜底）')
   return {
     ok: true,
