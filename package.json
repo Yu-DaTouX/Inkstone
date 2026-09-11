@@ -4,15 +4,28 @@
   "description": "砚 · 个人 agent 桌面端",
   "main": "./out/main/index.js",
   "author": "Yu-DaTouX",
-  "repository": { "type": "git", "url": "https://github.com/Yu-DaTouX/--agent.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Yu-DaTouX/--agent.git"
+  },
   "homepage": "https://github.com/Yu-DaTouX/--agent#readme",
-  "bugs": { "url": "https://github.com/Yu-DaTouX/--agent/issues" },
-  "keywords": ["pi", "agent", "electron", "desktop", "memory", "rpc"],
+  "bugs": {
+    "url": "https://github.com/Yu-DaTouX/--agent/issues"
+  },
+  "keywords": [
+    "pi",
+    "agent",
+    "electron",
+    "desktop",
+    "memory",
+    "rpc"
+  ],
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:watch": "electron-vite dev --watch",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs",
@@ -20,7 +33,7 @@
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions layout outline todos virtual settings light hotkeys titlebar motion atPath auth",
+    "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions layout outline todos virtual settings light hotkeys zoom titlebar motion atPath auth",
     "test:unit": "node scripts/test-unit.mjs",
     "lint:css": "node scripts/lint-css.mjs",
     "measure:design": "electron docs/design/measure-design.mjs",

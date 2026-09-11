@@ -9,6 +9,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { AppSettings } from '../shared/ipc'
 import { YAN_DIR } from './memory'
+import { clampScale } from './zoom-math'
 
 // 与记忆共用目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
 const DIR = YAN_DIR
@@ -21,7 +22,9 @@ const DEFAULTS: AppSettings = {
   memoryOrder: ['soul', 'about', 'impressions', 'people', 'projects', 'status'],
   recentCwds: [],
   rightPanelOpen: true,
-  alwaysOnTop: false
+  alwaysOnTop: false,
+  // 0 = 自动（按屏幕缩放算，见 main/zoom.ts）
+  uiScale: 0
 }
 
 let cached: AppSettings | null = null
@@ -44,6 +47,8 @@ export async function getSettings(): Promise<AppSettings> {
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
     cached.alwaysOnTop = cached.alwaysOnTop === true
+    // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）
+    cached.uiScale = clampScale(cached.uiScale)
   } catch {
     cached = { ...DEFAULTS }
   }

@@ -18,7 +18,8 @@ import type {
   SessionTodo,
   SlashCommand,
   UIMessage,
-  YanBridge
+  YanBridge,
+  ZoomState
 } from '../shared/ipc'
 
 /**
@@ -118,6 +119,10 @@ const api: YanBridge = {
   probePi: () => invoke<PiProbe>('yan:probePi'),
   openPath: (p) => invoke<void>('yan:openPath', p),
   revealPath: (p) => invoke<void>('yan:revealPath', p),
+
+  /* ---- 界面缩放（0 = 自动） ---- */
+  getZoom: () => invoke<ZoomState>('yan:getZoom'),
+  setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
   /* ---- 窗口 ---- */
   win: {

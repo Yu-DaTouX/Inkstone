@@ -47,6 +47,13 @@ const CASES = {
     keys: 'ctrl+p,shift+tab,ctrl+p'
   },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
+  // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
+  zoom: {
+    probe: 'scripts/probe/zoom.js',
+    delay: 7000,
+    cost: 0,
+    keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
+  },
   motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
   // 模型接入（凭证读写）—— ⚠️ 会用 YAN_PI_DIR 隔离，不碰真实 auth.json
   auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },

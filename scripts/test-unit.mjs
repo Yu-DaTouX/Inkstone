@@ -35,7 +35,27 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+
+/*
+ * 界面缩放的纯计算（src/main/zoom-math.ts）。
+ *
+ * 为什么不直接从 out/main/zoom-math.js import：它现在已经进了主进程
+ * 构建入口（electron.vite.config.ts 的 input），但只要哪天有人把它
+ * 从入口列表里删掉（它只被 zoom.ts import，而 zoom.ts 会被摇进 index.js），
+ * 这个测试就会静默地找不到文件。现场编译一份不依赖构建图。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/zoom-math.ts'],
+    outfile: 'out/test/zoom-math.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
 const { runTurnTests } = await import('./test-turns.mjs')
+const { runZoomTests } = await import('./test-zoom.mjs')
 
 let pass = 0
 let fail = 0
@@ -238,6 +258,10 @@ ok(Array.isArray(empty), '目录被删后仍返回数组', `${empty.length} 条`
 /* ------------------------------------------------------------------ */
 // 回合分组 / 段落拆分 / 缓存命中率（纯函数，不启动 Electron）
 await runTurnTests(ok)
+
+/* ------------------------------------------------------------------ */
+// 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）
+await runZoomTests(ok)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 process.exit(fail ? 1 : 0)

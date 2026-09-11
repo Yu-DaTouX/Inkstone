@@ -4,7 +4,7 @@
  * 一个窗口 = 一个 AgentController = 一个 pi 子进程。
  * 会话切换走 pi 自己的 switch_session，不开新进程（进程很贵）。
  */
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, screen } from 'electron'
 import { join, dirname, basename, extname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -17,6 +17,7 @@ import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { resolvePi, piInfo } from './protocol'
+import { applyZoom, clampScale, stepScale, zoomState } from './zoom'
 import type { Attachment, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -412,6 +413,12 @@ function registerIpc(): void {
     pushWinState()
     return on
   })
+
+  /** 读界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」） */
+  ipcMain.handle('yan:getZoom', async () => zoomState(win, (await getSettings()).uiScale))
+
+  /** 设界面缩放（0 = 自动）。落盘 + 应用 + 回推 */
+  ipcMain.handle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
@@ -421,6 +428,20 @@ function pushWinState(): void {
     ch: 'win-state',
     payload: { maximized: win.isMaximized(), alwaysOnTop: win.isAlwaysOnTop() }
   })
+}
+
+/**
+ * 设置界面缩放（0 = 自动）。
+ *
+ * 三件事缺一不可：应用 zoom、落盘、**推给渲染端** ——
+ * 不推的话用 Ctrl+= 改完，设置面板里的选中态还是旧值（下不了台）。
+ */
+async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
+  const next = clampScale(v)
+  await patchSettings({ uiScale: next })
+  const st = applyZoom(win, next)
+  push({ ch: 'ui-scale', payload: st })
+  return st
 }
 
 /* ------------------------------------------------------------------
@@ -450,13 +471,35 @@ function createWindow(): void {
    * 异步读设置（getSettings 命中缓存后几乎立即返回），所以在 ready-to-show 之前
    * 就能生效 —— 不会出现「先普通层闪一下再跳到置顶层」。
    * 构建期就有 `alwaysOnTop` 选项但那时还不知道值，所以走 setTimeout(0)。
+   *
+   * 同时应用界面缩放（见 main/zoom.ts）。
    */
   void getSettings().then((s) => {
-    if (win && s.alwaysOnTop) {
+    if (!win) return
+    if (s.alwaysOnTop) {
       win.setAlwaysOnTop(true)
       pushWinState()
     }
+    applyZoom(win, s.uiScale)
   })
+
+  /*
+   * 显示器变化 → 重算缩放。
+   *
+   * 两种必须重算的情况：
+   *   · 窗口被拖到另一块屏（笔记本 150% + 外接 100% 很常见）
+   *   · 用户在系统里改了缩放比例（不重启应用也应该跟上）
+   * 自动模式（uiScale=0）下这是唯一能跟上变化的时机。
+   */
+  const reapply = (): void => {
+    void getSettings().then((s) => {
+      if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
+    })
+  }
+  win.on('moved', reapply)
+  screen.on('display-metrics-changed', reapply)
+  screen.on('display-added', reapply)
+  screen.on('display-removed', reapply)
 
   win.once('ready-to-show', () => win?.show())
 
@@ -497,6 +540,9 @@ function createWindow(): void {
    * 绑定对齐 pi TUI 的默认：
    *   Ctrl+P   app.model.cycleForward
    *   Shift+Tab app.thinking.cycle
+   *
+   * 另外接了缩放（Ctrl+= / Ctrl+- / Ctrl+0）—— 这是浏览器/编辑器的通用约定，
+   * 用户不用去设置里找。缩放不需要渲染端参与决策，主进程直接改并回推。
    */
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
@@ -515,6 +561,24 @@ function createWindow(): void {
     if (input.shift && !ctrl && !input.alt && input.key === 'Tab') {
       event.preventDefault()
       win?.webContents.send('yan:hotkey', { action: 'cycleThinking' })
+      return
+    }
+
+    /*
+     * 缩放：Ctrl+= / Ctrl++ / Ctrl+- / Ctrl+0。
+     *
+     * ⚠️ 挡在渲染进程之前是必需的 —— 不拦的话 Chromium 会用自己的 zoom
+     *   改掉 webContents 的 zoomFactor，与设置里的 uiScale 不同步
+     *   （表现为「重启后缩放又变回去了」）。
+     * `Ctrl+0` 回到**自动**（而不是 1.0）—— 自动才是默认状态。
+     */
+    if (ctrl && !input.alt && (key === '=' || key === '+' || key === '-' || key === '_' || key === '0')) {
+      event.preventDefault()
+      void getSettings().then((s) => {
+        const next =
+          key === '0' ? 0 : stepScale(win, s.uiScale, key === '-' || key === '_' ? -1 : 1)
+        void setUiScale(next)
+      })
     }
   })
 

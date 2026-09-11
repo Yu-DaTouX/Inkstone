@@ -23,7 +23,8 @@ import type {
   SessionSummary,
   SessionTodo,
   SlashCommand,
-  UIMessage
+  UIMessage,
+  ZoomState
 } from '../../../shared/ipc'
 
 /* ==================================================================
@@ -140,6 +141,13 @@ interface Store {
    * 以主进程推的 `win-state` 为准（带有 always-on-top-changed 监听）。
    */
   alwaysOnTop: boolean
+  /**
+   * 界面缩放现状（主进程算的）。null = 还没拉到。
+   *
+   * 为什么不放 settings 里：settings.uiScale 是**用户意图**（0 = 自动），
+   * 而这里带的是实际生效倍率、屏幕缩放、自动值 —— 是给界面解释用的。
+   */
+  zoom: ZoomState | null
   /** pi 入口 / 版本（右栏「环境」分区） */
   piInfo: PiInfo | null
   /**
@@ -206,6 +214,10 @@ interface Store {
   /** 把最后一条助手回复复制到剪贴板 */
   copyLastReply: () => Promise<void>
   changeCwd: (cwd: string) => Promise<void>
+  /** 设界面缩放（0 = 自动） */
+  setUiScale: (v: number) => Promise<void>
+  /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
+  loadZoom: () => Promise<void>
 
   confirmMemory: (id: string, ok: boolean) => Promise<void>
   removeMemory: (id: string) => Promise<void>
@@ -342,6 +354,7 @@ export const useStore = create<Store>((set, get) => ({
   titles: {},
   maximized: false,
   alwaysOnTop: false,
+  zoom: null,
   scrollToTurn: () => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
   },
@@ -398,6 +411,8 @@ export const useStore = create<Store>((set, get) => ({
 
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
     void get().reloadModels()
+    // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
+    void get().loadZoom()
     void get().reloadCommands()
   },
 
@@ -421,6 +436,19 @@ export const useStore = create<Store>((set, get) => ({
         break
       case 'win-state':
         set({ maximized: m.payload.maximized, alwaysOnTop: m.payload.alwaysOnTop })
+        break
+      case 'ui-scale':
+        /*
+         * 同时把 settings.uiScale 补上。
+         *
+         * 为什么不能只更新 zoom：Ctrl+= / Ctrl+- 是**主进程**拦的，
+         * 它改完只推这一条。不补 settings 的话，用快捷键调完缩放，
+         * 设置面板里的选中态还是旧的（两处状态各说一套）。
+         */
+        set({
+          zoom: m.payload,
+          ...(s.settings ? { settings: { ...s.settings, uiScale: m.payload.uiScale } } : {})
+        })
         break
       case 'session-title':
         set({ titles: { ...s.titles, [m.payload.sessionId]: m.payload.title } })
@@ -805,6 +833,27 @@ export const useStore = create<Store>((set, get) => ({
     await get().refreshSessions()
   },
 
+  /* ----------------------------------------------------------- 界面缩放 */
+
+  /**
+   * 设缩放。0 = 自动。
+   *
+   * 不回写 settings 里的 uiScale —— 以主进程回推的 `ui-scale` 为准，
+   * 避免两处状态各说一套（快捷键也会改它，而那是主进程直接改的）。
+   */
+  setUiScale: async (v) => {
+    set({ zoom: await window.yan.setUiScale(v) })
+    set({ settings: await window.yan.getSettings() })
+  },
+
+  loadZoom: async () => {
+    try {
+      set({ zoom: await window.yan.getZoom() })
+    } catch {
+      /* 拉不到就不显示这一行，不能因此影响启动 */
+    }
+  },
+
   /* --------------------------------------------------------------- 记忆 */
 
   confirmMemory: async (id, ok) => {
@@ -913,8 +962,7 @@ export const useStore = create<Store>((set, get) => ({
       /* 存不了就只在本次会话生效 */
     }
   },
-  toggleAlwaysOnTop: async () => {
-    // 乐观更新：窗口层级的切换必须立即反馈（否则按钮会“点一下没反应”再跳）
+  toggleAlwaysOnTop: async () => {    // 乐观更新：窗口层级的切换必须立即反馈（否则按钮会“点一下没反应”再跳）
     const next = !get().alwaysOnTop
     set({ alwaysOnTop: next })
     const real = await window.yan.win.setAlwaysOnTop(next)

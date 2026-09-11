@@ -127,6 +127,26 @@
   line-height: var(--lh-tight);
   overflow-wrap: anywhere;
 }
+/* 数值类说明（屏幕 125% · 自动 1.15× · 当前 1.15×）—— 等宽对数字更易读 */
+.set-num {
+  color: var(--fg-dim);
+  font-size: var(--fs-code);
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
+}
+/*
+ * 5 档的分段控件（界面缩放）。
+ * 窗口窄时必须能换行 —— `.seg` 是 inline-flex 且不换行，
+ * 5 个按钮加起来比参数列宽的时候会直接溢出去（这个坑本项目犯过多次）。
+ */
+.seg-scale {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+.seg-scale .seg-btn {
+  white-space: nowrap;
+}
 .set-path {
   font-size: var(--fs-code);
   direction: ltr;

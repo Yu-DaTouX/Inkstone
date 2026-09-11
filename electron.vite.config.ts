@@ -12,7 +12,8 @@ export default defineConfig({
           // 额外入口：让脚本能直接 import 这些**不依赖 Electron** 的模块做单元测试
           // （scripts/probe-pi.mjs 用 protocol，scripts/test-unit.mjs 用 sessions）
           protocol: resolve('src/main/protocol.ts'),
-          sessions: resolve('src/main/sessions.ts')
+          sessions: resolve('src/main/sessions.ts'),
+          'zoom-math': resolve('src/main/zoom-math.ts')
         }
       }
     }

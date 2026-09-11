@@ -337,6 +337,14 @@ export interface AppSettings {
    * 不能偷偷默认开。用户主动开了才记住。
    */
   alwaysOnTop: boolean
+  /**
+   * 界面缩放倍率。**0 = 自动**（按所在屏幕的缩放算，见 main/zoom.ts）。
+   *
+   * 为什么默认自动：Electron 会跟随系统 DPI，但设计基准 12.5px 在 125%
+   * 下会落在 15.625 设备像素（非整数）→ 中文发虚、偏小。
+   * 自动模式把它对齐到整数设备像素并放大到舒适尺寸。
+   */
+  uiScale: number
 }
 
 /** 探测 pi 的结果，用于诊断 */
@@ -432,6 +440,12 @@ export type MainPush =
   | { ch: 'memory-changed'; payload: MemoryItem[] }
   /** pi 进程状态 / stderr / 错误 */
   | { ch: 'proc'; payload: { state: 'starting' | 'ready' | 'exited' | 'stderr' | 'error'; detail?: string; code?: number | null } }
+  /**
+   * 界面缩放变了（快捷键改的也走这条路）。
+   * 为什么要推：Ctrl+= 是主进程拦的，渲染端不知道设置变了，
+   * 设置面板里的选中态会与真实值不同步。
+   */
+  | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
 export interface YanBridge {
@@ -586,9 +600,28 @@ export interface YanBridge {
   /* 订阅（返回退订函数） */
   onPush(cb: (msg: MainPush) => void): () => void
   /**
-   * 订阅主进程拦下的全局快捷键（Ctrl+P / Shift+Tab）。
+   * 订阅主进程拦下的全局快捷键（Ctrl+P / Shift+Tab / Ctrl+±0）。
    * 主进程用 before-input-event 先拦（输入法、焦点问题都拦得住），
    * 再把动作名发过来；「下一档」怎么算由渲染端决定。
+   *
+   * 例外：缩放（Ctrl+= / Ctrl+- / Ctrl+0）由主进程自己直接改并回推
+   * `ui-scale` —— 它不需要渲染端参与决策。
    */
   onHotkey(cb: (action: 'cycleModel' | 'cycleThinking') => void): () => void
+  /** 读界面缩放现状（含自动模式下算出的倍率与屏幕缩放） */
+  getZoom(): Promise<ZoomState>
+  /** 设界面缩放（0 = 自动），返回生效后的状态 */
+  setUiScale(v: number): Promise<ZoomState>
+}
+
+/** 界面缩放状态（主进程算出，渲染端只显示） */
+export interface ZoomState {
+  /** 0 = 自动 */
+  uiScale: number
+  /** 实际应用的 zoom */
+  effective: number
+  /** 窗口所在屏的系统缩放（1.25 = 125%） */
+  scaleFactor: number
+  /** 自动模式下会用的倍率 */
+  autoScale: number
 }

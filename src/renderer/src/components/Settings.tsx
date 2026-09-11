@@ -114,12 +114,29 @@ export function Settings({
 
 /* ------------------------------------------------------------- 外观 */
 
+/**
+ * 界面缩放档位。0 = 自动（按屏幕缩放算，见 main/zoom.ts）。
+ *
+ * 为什么用固定档位而不是滑块：档位可逆、可记住、能用快捷键走到底，
+ * 而滑块每次停的位置都是个新的浮点数。
+ */
+const SCALE_OPTS = [
+  { v: 0, key: 'set.uiScaleAuto' },
+  { v: 0.9, key: 'set.uiScaleTight' },
+  { v: 1, key: 'set.uiScaleNormal' },
+  { v: 1.25, key: 'set.uiScaleWide' },
+  { v: 1.5, key: 'set.uiScaleHuge' }
+] as const
+
 function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' | 'en-US') => void }) {
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
   const setTheme = useThemeSetter()
   const onTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
+  const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
+  const setUiScale = useStore((s) => s.setUiScale)
+  const zoom = useStore((s) => s.zoom)
   const [reduced, setReduced] = useState(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   )
@@ -157,6 +174,36 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               onClick={() => setLang(x)}
             >
               {x === 'zh-CN' ? '中文' : 'English'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.uiScale')}</div>
+          <div className="set-desc">{t('set.uiScaleDesc')}</div>
+          {zoom ? (
+            <div className="set-desc set-num">
+              {t('set.uiScaleNow', {
+                sf: Math.round(zoom.scaleFactor * 100),
+                auto: zoom.autoScale.toFixed(2),
+                now: zoom.effective.toFixed(2)
+              })}
+            </div>
+          ) : null}
+        </div>
+        <div className="set-ctl seg seg-scale" data-testid="set-ui-scale">
+          {SCALE_OPTS.map((o) => (
+            <button
+              key={o.v}
+              className={`seg-btn ${uiScale === o.v ? 'sel' : ''}`}
+              data-scale={o.v}
+              onClick={() => void setUiScale(o.v)}
+            >
+              {o.v === 0 && zoom
+                ? t('set.uiScaleAutoVal', { v: zoom.autoScale.toFixed(2) })
+                : t(o.key)}
             </button>
           ))}
         </div>
