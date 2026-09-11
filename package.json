@@ -1,0 +1,49 @@
+{
+  "name": "yan-desktop",
+  "version": "0.1.0",
+  "description": "砚 · 个人 agent 桌面端",
+  "main": "./out/main/index.js",
+  "author": "YuDaTou",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs",
+    "icons": "node scripts/extract-icons.mjs",
+    "font": "node scripts/setup-font.mjs",
+    "probe-pi": "npm run build && node scripts/probe-pi.mjs",
+    "shot": "electron scripts/shot.mjs",
+    "test:live": "node scripts/test-live.mjs",
+    "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions",
+    "test:unit": "node scripts/test-unit.mjs",
+    "lint:css": "node scripts/lint-css.mjs",
+    "measure:design": "electron scripts/measure-design.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.3.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.0"
+  },
+  "dependencies": {
+    "highlight.js": "^11.12.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "virtua": "^0.51.2",
+    "zustand": "^5.0.15"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}

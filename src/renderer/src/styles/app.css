@@ -1,0 +1,948 @@
+/* ===================================================================
+   组件样式 —— 从 docs/design/prototype.html 原样移植，改动最小化
+   （那份 CSS 已经过逐像素校验：12.5px 汉字栅格、13px 树缩进、grid 对齐）
+   =================================================================== */
+
+/* ===================================================================
+   3. 骨架
+   =================================================================== */
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: var(--h-titlebar) minmax(0, 1fr);
+}
+/* ⚠️ 这里曾经是 `display: none` —— 它会让滑出动画完全失效
+   （display 不可过渡，元素直接消失）。
+   收起时的宽度处理统一在 redesign.css 里（--w-rail: 0 + 推挤）。 */
+/* .app.status-off / .status 规则已随右栏移除（记忆现在在设置面板里） */
+
+/* ---- 标题栏 ---- */
+.titlebar {
+  display: grid;
+  /* 0 号原则：grid 的 1fr 要写 minmax(0,1fr)，否则轨道最小值是 auto(=内容宽)，
+     内容一宽就撑破容器，溢出的部分被右邻不透明列盖住（文字被遮 / 边框不见）。
+     详见 DESIGN.md §8。 */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-3);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.tb-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.tb-dots {
+  display: flex;
+  gap: 6px;
+}
+.tb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-4);
+  padding: 0;
+  transition: filter var(--dur) var(--ease);
+}
+.tb-dot.r {
+  background: #ff5f57;
+}
+.tb-dot.y {
+  background: #febc2e;
+}
+.tb-dot.g {
+  background: #28c840;
+}
+.tb-dot:hover {
+  filter: brightness(1.25);
+}
+/* 名字是身份的第一眼，给正常前景色 + 一点点字距 */
+.tb-name {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  letter-spacing: 0.06em;
+}
+.tb-badge {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-str);
+}
+/* 同步状态常驻居中：记忆跨设备，用户必须能一眼看到它是否同步 */
+.tb-sync {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  min-width: 0;
+}
+.tb-sync .devs {
+  color: var(--fg-dim);
+}
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.btn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.btn.icon {
+  padding: 0 5px;
+}
+.btn.danger:hover {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.btn.fact:hover {
+  background: var(--fact-soft);
+  color: var(--fact);
+}
+
+/* 布局列数在 redesign.css 里统一管（三列：左栏 / 中栏 / 右栏）。
+   这里只保留最低限度的骨架，避免两处规则打架。 */
+.workspace {
+  display: grid;
+  min-height: 0;
+}
+
+/* ===================================================================
+   4. 左栏 —— 话题 + 时间线
+   =================================================================== */
+.rail {
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  display: grid;
+  /* minmax(0,1fr) 而不是默认的 auto：
+     默认 auto 列会把 grid 列撑到子元素的 max-content（长会话名直接撑破 224px），
+     minmax(0,…) 才允许内容收缩。同理见 .center / .workspace */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+.rail-head {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+.search:focus-within {
+  border-color: var(--border-str);
+}
+.search input {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+  min-width: 0;
+}
+.search input::placeholder {
+  color: var(--fg-mute);
+}
+.rail-body {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 0 var(--sp-2) var(--sp-2);
+}
+
+.group-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: var(--sp-3) var(--sp-2) var(--sp-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+.group-label:hover {
+  color: var(--fg);
+}
+.group-label .chev {
+  color: var(--fg-mute);
+}
+.group-label .count {
+  margin-left: auto;
+  color: var(--fg-mute);
+  letter-spacing: 0;
+}
+.group.collapsed .group-body {
+  display: none;
+}
+.group.open .group-label .chev {
+  transform: rotate(90deg);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  transition: background var(--dur) var(--ease);
+  text-align: left;
+  width: 100%;
+}
+.item:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.item.sel {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.item.sel .ico {
+  color: var(--accent);
+}
+.item .ico {
+  color: var(--fg-mute);
+}
+.item .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item .meta {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+/* 话题：与「会话」是不同轴 —— 会话是时间，话题是主题 */
+.item.topic .ico {
+  color: var(--magenta);
+}
+
+.rail-foot {
+  padding: var(--sp-3) var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+.btn-new {
+  width: 100%;
+  height: 28px;
+  justify-content: center;
+  border: 1px dashed var(--border-str);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.btn-new:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ===================================================================
+   5. 中栏 —— 连续性 + 对话 + 审阅条 + 输入
+   =================================================================== */
+.center {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
+  background: var(--bg-0);
+}
+
+/* 连续性：会话不是孤岛。这条带子让「它记得」这件事可见 */
+.continuity {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  padding: 5px var(--sp-5);
+}
+.continuity-inner {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.continuity .ico {
+  color: var(--fg-mute);
+}
+.continuity b {
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+.continuity .spacer {
+  flex: 1;
+}
+.continuity .btn {
+  height: 20px;
+  font-size: var(--fs-xs);
+  padding: 0 6px;
+}
+
+.stream {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: var(--sp-5) 0 var(--sp-6);
+  min-width: 0;
+}
+.stream-inner {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  padding: 0 var(--sp-5);
+}
+
+.msg {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+.msg .gutter {
+  padding-top: 1px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+.msg.user .gutter {
+  color: var(--cyan);
+}
+.msg.assistant .gutter {
+  color: var(--ok);
+  display: flex;
+  justify-content: center;
+}
+.msg-body {
+  min-width: 0;
+}
+.msg-label {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--sp-2);
+}
+.bubble {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  white-space: pre-wrap;
+}
+.prose p {
+  margin-bottom: var(--sp-3);
+}
+.prose p:last-child {
+  margin-bottom: 0;
+}
+.prose ul {
+  margin: 0 0 var(--sp-3) var(--sp-4);
+  list-style: none;
+}
+.prose li {
+  position: relative;
+  padding-left: var(--sp-3);
+}
+.prose li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  color: var(--fg-mute);
+}
+.prose code {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  font-size: var(--fs-code);
+  color: var(--cyan);
+}
+.prose strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.think {
+  border-left: 2px solid var(--border-str);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.think summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.think summary::-webkit-details-marker {
+  display: none;
+}
+.think[open] summary .chev {
+  transform: rotate(90deg);
+}
+.think .think-body {
+  margin-top: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+/* -------------------------------------------------------------------
+   5.1 记忆卡 —— 界面的心脏
+   它让「它记了什么」在对话里当场可见、可撤回。
+   「已确认」用青色（事实），「我的印象」用橙色（未确认）——
+   颜色差异就是认识论差异，不是装饰。
+   ------------------------------------------------------------------- */
+.memcard {
+  border: 1px solid var(--border);
+  border-left-width: 2px;
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+}
+.memcard.fact {
+  border-left-color: var(--fact);
+}
+.memcard.guess {
+  border-left-color: var(--warn);
+}
+.memcard-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-xs);
+  border-bottom: 1px solid var(--border);
+}
+.memcard.fact .memcard-head {
+  background: var(--fact-soft);
+  color: var(--fact);
+}
+.memcard.guess .memcard-head {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.memcard-head .spacer {
+  flex: 1;
+}
+.memcard-head .chip {
+  border: 1px solid currentColor;
+  border-radius: var(--r-sm);
+  padding: 0 5px;
+  opacity: 0.75;
+  font-size: var(--fs-xs);
+}
+.memcard-body {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-base);
+}
+.memcard.guess .memcard-body {
+  color: var(--fg-dim);
+}
+.memcard-note {
+  padding: 0 var(--sp-3) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.memcard-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 4px var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.memcard-acts .spacer {
+  flex: 1;
+}
+.memcard-acts .btn {
+  height: 20px;
+  font-size: var(--fs-xs);
+}
+.memcard-acts .key {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 审阅条：确认是显式的（与「改动」相反，改动接受是隐式的） */
+.review {
+  background: var(--warn-soft);
+  border-top: 1px solid rgba(224, 175, 104, 0.28);
+}
+.review-inner {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  padding: 6px var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--warn);
+}
+.review .cnt {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.review .spacer {
+  flex: 1;
+}
+.review .why {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.review .btn {
+  height: 22px;
+  color: var(--fg-dim);
+}
+.review .btn:hover {
+  background: rgba(224, 175, 104, 0.14);
+  color: var(--warn);
+}
+
+/* ---- 输入区 ---- */
+.composer-wrap {
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: var(--sp-4) var(--sp-5);
+}
+.composer {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  padding: var(--sp-3);
+  transition: border-color var(--dur) var(--ease);
+}
+.composer:focus-within {
+  border-color: var(--accent);
+}
+.composer textarea {
+  width: 100%;
+  min-height: 34px;
+  max-height: 200px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  color: var(--fg);
+  display: block;
+}
+.composer textarea::placeholder {
+  color: var(--fg-mute);
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+.hints {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+kbd {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-str);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+.send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #0b0b0d;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.send:hover {
+  filter: brightness(1.1);
+}
+.send:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
+/* 流式光标：让「正在生成」这件事可见（DESIGN §5 三处动效之一） */
+.cursor {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: -1px;
+  background: var(--fg-dim);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ===================================================================
+   6. 右栏 —— 记忆面板
+   分区顺序：身份 → 关于你 → 我的印象 → 人 → 项目 → 状态
+   前三块是核心，状态沉底
+   =================================================================== */
+.status {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  /* overflow-y:auto 会把 overflow-x 也变成 auto（CSS 规则：一个轴非 visible，另一个可见值会变 auto）。
+     于是纵向滚动条出现→clientWidth 少 9px→内容立刻横向溢出→冒出一条横向滚动条。
+     scrollbar-gutter: stable 预先留位，宽度不变就不会触发；overflow-x 再堵死。
+     同理见 .rail-body / .stream。 */
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: var(--sp-3);
+  min-width: 0;
+}
+.status-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1) var(--sp-2);
+}
+.status-head .t {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.status-head .spacer {
+  flex: 1;
+}
+
+.sect {
+  margin-bottom: var(--sp-4);
+  position: relative;
+}
+.sect:last-child {
+  margin-bottom: 0;
+}
+.sect.dragging {
+  opacity: 0.4;
+}
+.sect.drop-above::before,
+.sect.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.sect.drop-above::before {
+  top: -7px;
+}
+.sect.drop-below::after {
+  bottom: -7px;
+}
+
+.sect-title {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: var(--sp-2);
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+  text-align: left;
+}
+.sect-title .ico {
+  color: var(--fg-mute);
+}
+.sect-title .spacer {
+  flex: 1;
+}
+.sect-title .extra {
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+}
+.sect.collapsed .card {
+  display: none;
+}
+.sect.open .sect-title .head-chev {
+  transform: rotate(90deg);
+}
+.grip {
+  display: flex;
+  align-items: center;
+  color: var(--fg-mute);
+  opacity: 0;
+  cursor: grab;
+  border-radius: var(--r-sm);
+  padding: 0 1px;
+  transition: opacity var(--dur) var(--ease);
+}
+.sect:hover .grip,
+.grip:focus-visible {
+  opacity: 0.75;
+}
+.grip:hover {
+  color: var(--fg-dim);
+}
+.grip:active {
+  cursor: grabbing;
+}
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* ---- 身份：只读，agent 改不了自己 ---- */
+.soul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.soul-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: baseline;
+  font-size: var(--fs-sm);
+}
+.soul-line dt {
+  color: var(--fg-mute);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.soul-line dd {
+  color: var(--fg);
+  min-width: 0;
+}
+.soul-ro {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.soul-ro .ico {
+  color: var(--ok);
+}
+
+/* ---- 记忆条目 ---- */
+.mems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.memrow {
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  align-items: start;
+  padding: 4px var(--sp-2) 4px 0;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  cursor: default;
+}
+.memrow:hover {
+  background: var(--bg-3);
+}
+/* 左侧 3px 色条 = 来源，跟对话里的记忆卡同一套颜色 */
+.memrow .bar {
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  margin-top: 3px;
+}
+.memrow.fact .bar {
+  background: var(--fact);
+}
+.memrow.guess .bar {
+  background: var(--warn);
+}
+.memrow.peer .bar {
+  background: var(--magenta);
+}
+.memrow .txt {
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.memrow.fact .txt {
+  color: var(--fg);
+}
+.memrow .src {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.memrow .acts {
+  display: none;
+  gap: 2px;
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+.memrow:hover .acts {
+  display: flex;
+}
+/* 带操作的行：悬停时用按钮顶掉来源标记，避免行高跳动 */
+.memrow:has(.acts):hover .src {
+  display: none;
+}
+.memrow .acts .btn {
+  height: 18px;
+  padding: 0 4px;
+  font-size: var(--fs-xs);
+}
+
+/* 未确认区块整体降一级：视觉上就该「不那么确定」 */
+.card.guess-card {
+  border-style: dashed;
+}
+.mem-note {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* ---- 状态 ---- */
+.kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  align-items: baseline;
+}
+.kv dt {
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.kv dd {
+  color: var(--fg);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meter {
+  height: 4px;
+  background: var(--bg-4);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: var(--sp-2);
+}
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+}
+.meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  margin-top: 5px;
+}
+.usage-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+}
+.usage-line b {
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+.dot.ok {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.dot.warn {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+/* ===================================================================
+   7. 响应式降级
+   =================================================================== */
+/* 右栏移除后，中屏不再需要降级（只有左栏需要） */
+@media (max-width: 900px) {
+  :root {
+    --w-rail: 0px;
+  }
+  .rail {
+    display: none;
+  }
+}

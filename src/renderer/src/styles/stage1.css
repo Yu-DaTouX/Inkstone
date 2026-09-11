@@ -1,0 +1,875 @@
+/* ===================================================================
+   阶段 1 新增组件的样式
+   —— 继续遵守 DESIGN §4 的禁止项：无投影、无渐变、圆角 ≤14px
+   —— 唯一例外是 .modal-scrim 的遮罩（它不是投影，是遮罩层）
+   =================================================================== */
+
+/* -------------------------------------------------------------------
+   1. 连接状态条
+   ------------------------------------------------------------------- */
+.connbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-5);
+  background: var(--err-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+.connbar.starting {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.connbar .spacer {
+  flex: 1;
+}
+.connbar .btn {
+  height: 20px;
+  font-size: var(--fs-xs);
+  color: inherit;
+}
+.connbar-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connbar-detail {
+  flex-basis: 100%;
+  max-height: 180px;
+  overflow: auto;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.dot.err {
+  background: var(--err);
+  box-shadow: 0 0 0 3px var(--err-soft);
+}
+
+/* -------------------------------------------------------------------
+   2. 标题栏：会话名 / 工作目录
+   ------------------------------------------------------------------- */
+.tb-session {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tb-cwd {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 路径右对齐可换行而不是 rtl 截断（DESIGN §8 的坑） */
+  direction: ltr;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  transition: background var(--dur) var(--ease);
+}
+.tb-cwd:hover {
+  background: var(--bg-3);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+/* -------------------------------------------------------------------
+   3. 连续性带
+   ------------------------------------------------------------------- */
+.continuity-ico {
+  color: var(--fg-mute);
+}
+.continuity b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+}
+.continuity-model {
+  color: var(--fg-mute);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0 5px;
+}
+
+/* -------------------------------------------------------------------
+   4. 空状态
+   ------------------------------------------------------------------- */
+.empty-stream {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 46vh;
+  color: var(--fg-mute);
+  text-align: center;
+  user-select: none;
+}
+.empty-mark {
+  color: var(--ok);
+  font-size: 22px;
+  line-height: 1;
+  margin-bottom: var(--sp-2);
+}
+.empty-title {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+}
+.empty-hint {
+  max-width: 46ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.empty-stats {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+}
+.empty-stats b {
+  color: var(--fg-dim);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------
+   5. 消息：用量角标 / 错误
+   ------------------------------------------------------------------- */
+.msg-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.msg-usage {
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+.msg-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--r-sm);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+.cursor-inline {
+  height: 10px;
+  margin-left: 4px;
+}
+
+/* -------------------------------------------------------------------
+   6. Markdown 正文
+   ------------------------------------------------------------------- */
+.md > *:last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  color: var(--fg);
+  font-weight: 600;
+  margin: var(--sp-4) 0 var(--sp-2);
+  line-height: var(--lh-tight);
+}
+.md h1 {
+  font-size: var(--fs-lg);
+}
+.md h2 {
+  font-size: var(--fs-base);
+}
+.md h3,
+.md h4 {
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+.md p {
+  margin-bottom: var(--sp-3);
+}
+.md ul,
+.md ol {
+  margin: 0 0 var(--sp-3) var(--sp-4);
+}
+.md ul {
+  list-style: none;
+}
+.md ul li {
+  position: relative;
+  padding-left: var(--sp-3);
+}
+.md ul li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  color: var(--fg-mute);
+}
+.md ol {
+  list-style: decimal;
+}
+.md ol li {
+  padding-left: 2px;
+}
+.md ol li::marker {
+  color: var(--fg-mute);
+}
+.md li > p {
+  margin-bottom: var(--sp-1);
+}
+.md blockquote {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  border-left: 2px solid var(--border-str);
+  color: var(--fg-dim);
+}
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md a:hover {
+  text-decoration: underline;
+}
+.md hr {
+  margin: var(--sp-4) 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+.md code {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  font-size: var(--fs-code);
+  color: var(--cyan);
+}
+.md pre {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  /* 代码/ diff 打开连字（DESIGN §2.1） */
+  font-variant-ligatures: contextual;
+}
+.md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+}
+.md-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--sp-3);
+}
+.md table {
+  border-collapse: collapse;
+  font-size: var(--fs-code);
+  width: 100%;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 3px var(--sp-2);
+  text-align: left;
+}
+.md th {
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+.md input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 4px;
+}
+
+/* -------------------------------------------------------------------
+   7. 工具卡
+   ------------------------------------------------------------------- */
+.tool {
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.tool[data-state='error'] {
+  border-color: var(--err);
+}
+.tool[data-state='running'] {
+  border-color: var(--border-str);
+}
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  text-align: left;
+}
+.tool-head:hover {
+  background: var(--bg-2);
+}
+.tool-head .chev {
+  color: var(--fg-mute);
+}
+.tool.open .tool-head .chev {
+  transform: rotate(90deg);
+}
+.tool-name {
+  color: var(--fg);
+  flex: none;
+}
+.tool-sum {
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  /* 命令里常有路径，别让 bidi 把顺序弄乱 */
+  direction: ltr;
+  text-align: left;
+}
+.tool-gap {
+  flex: none;
+  width: var(--sp-2);
+}
+.tool-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.tool-status.ok {
+  color: var(--ok);
+}
+.tool-status.error {
+  color: var(--err);
+}
+.tool-status.running,
+.tool-status.pending {
+  color: var(--warn);
+}
+.tool-body {
+  border-top: 1px solid var(--border);
+}
+/* 工具操作的文件路径：单独一行，左对齐可换行（不用 rtl 截断，DESIGN §8） */
+.tool-path {
+  padding: 3px var(--sp-3);
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  user-select: text;
+}
+/* write 的正文：按整个文件算新增，用 add 色但不加边框（否则像 diff 的一半） */
+.diff-pre.write-body {
+  max-height: 420px;
+}
+/* 工具的执行结果回执（比如 "Successfully replaced 1 block(s)"） */
+.tool-result {
+  padding: 4px var(--sp-3);
+  border-top: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.tool-pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow-y: auto;
+  user-select: text;
+  font-variant-ligatures: contextual;
+}
+.tool-pre.args {
+  color: var(--fg-mute);
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+  max-height: 140px;
+}
+.tool-pre.out {
+  color: var(--fg-dim);
+}
+.tool-pre.code {
+  color: var(--fg);
+}
+.tool-empty {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
+/* ---- 工具卡里的 diff ---- */
+.diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+@media (min-width: 1100px) {
+  .diff {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.diff-side {
+  background: var(--bg-1);
+  min-width: 0;
+}
+.diff-label {
+  padding: 2px var(--sp-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.diff-label.err {
+  color: var(--err);
+  background: var(--err-soft);
+}
+.diff-label.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.diff-pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  user-select: text;
+  font-variant-ligatures: contextual;
+}
+.diff-pre.del {
+  color: var(--err);
+}
+.diff-pre.add {
+  color: var(--ok);
+}
+
+/* -------------------------------------------------------------------
+   8. 排队角标 / 跳到底部
+   ------------------------------------------------------------------- */
+.queue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn);
+}
+.jump-bottom {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-str);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  z-index: 3;
+}
+.jump-bottom:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.jump-ico {
+  line-height: 1;
+}
+.center {
+  position: relative;
+}
+
+/* -------------------------------------------------------------------
+   9. 记忆：空状态 / 编辑 / 手动添加
+   ------------------------------------------------------------------- */
+.mem-empty {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  padding: var(--sp-1) 0;
+}
+.mem-edit {
+  background: var(--bg-0);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 2px 5px;
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  min-width: 0;
+  width: 100%;
+}
+.memrow.editing .acts.editing {
+  display: flex;
+}
+.mem-add {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+}
+.mem-add-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  font-size: var(--fs-xs);
+  color: var(--fg);
+}
+.mem-add-input:focus {
+  border-color: var(--border-str);
+}
+.mem-add-input::placeholder {
+  color: var(--fg-mute);
+}
+.mem-add .btn {
+  height: 20px;
+  font-size: var(--fs-xs);
+  flex: none;
+}
+.mem-add-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  user-select: none;
+}
+.mem-add-fact input {
+  accent-color: var(--fact);
+  width: 11px;
+  height: 11px;
+}
+/* 未确认的来源条用 warn，已确认的用 fact —— 与对话里的记忆卡同一套 */
+.memrow.topic-people .bar {
+  background: var(--magenta);
+}
+.status-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+}
+.status-actions .btn {
+  height: 22px;
+  font-size: var(--fs-xs);
+}
+
+/* -------------------------------------------------------------------
+   10. 模态框（扩展 UI 桥）
+   ------------------------------------------------------------------- */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 遮罩不是投影，是压暗层 —— 不违反 DESIGN §4 */
+  background: rgba(0, 0, 0, 0.55);
+}
+.modal {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+.modal-head .spacer {
+  flex: 1;
+}
+.modal-title {
+  color: var(--fg);
+}
+.modal-message {
+  padding: var(--sp-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--sp-2) var(--sp-2);
+  overflow-y: auto;
+}
+.modal-option {
+  text-align: left;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.modal-option:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.modal-input,
+.modal-editor {
+  margin: 0 var(--sp-3) var(--sp-3);
+  background: var(--bg-0);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--fg);
+  user-select: text;
+}
+.modal-editor {
+  min-height: 180px;
+  line-height: var(--lh-base);
+}
+.modal-input:focus,
+.modal-editor:focus {
+  border-color: var(--accent);
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.modal-foot .spacer {
+  flex: 1;
+}
+
+/* -------------------------------------------------------------------
+   11. 通知
+   ------------------------------------------------------------------- */
+.notices {
+  position: fixed;
+  right: var(--sp-5);
+  /* 往上抬：底部会挡住输入区和右栏的记忆列表 */
+  bottom: calc(var(--h-titlebar) + var(--sp-5));
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 380px;
+  /* 不要把点击穿透到下面的界面 */
+  pointer-events: none;
+}
+.notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-left-width: 2px;
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  /* 长消息（扩展常刷一段路径很长的话）截断到三行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notice.info {
+  border-left-color: var(--accent);
+}
+.notice.warning {
+  border-left-color: var(--warn);
+}
+.notice.error {
+  border-left-color: var(--err);
+}
+.notice:hover {
+  color: var(--fg);
+}
+
+/* -------------------------------------------------------------------
+   12. 状态条 + 日志抽屉
+   ------------------------------------------------------------------- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 2px var(--sp-5);
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.statusbar .spacer {
+  flex: 1;
+}
+.statusbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.statusbar-item.warn {
+  color: var(--warn);
+}
+.statusbar-key {
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+}
+.statusbar-count {
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.logdrawer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+.logdrawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-5);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.logdrawer-head .spacer {
+  flex: 1;
+}
+.logdrawer-body {
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+  padding: 0 var(--sp-5) var(--sp-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* -------------------------------------------------------------------
+   14. 虚拟化长会话：VList 模式下每一项需要自己带内边距
+   （短会话走 .stream-inner 统一内边距，长会话走 .stream-row 逐项内边距）
+   ------------------------------------------------------------------- */
+.stream-row {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  padding: 0 var(--sp-5);
+}
+.stream-row:first-child {
+  padding-top: var(--sp-5);
+}
+.stream-row:last-child {
+  padding-bottom: var(--sp-6);
+}
+
+.rail-empty {
+  padding: var(--sp-4) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+/* -------------------------------------------------------------------
+   14. 任务清单（agent 通过 panel_todos 维护）
+   放在左栏最上面：当前进度比历史会话更该先看到。
+   ------------------------------------------------------------------- */
+.todo-group {
+  margin-bottom: var(--sp-1);
+}
+.todo {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+.todo-box {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  text-align: center;
+}
+.todo-text {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.todo.done .todo-text {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+}
+.todo.done .todo-box {
+  color: var(--ok);
+}

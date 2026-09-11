@@ -1,0 +1,2172 @@
+/* ===================================================================
+   视觉重做（redesign pass）
+   —— 目标：拉开层次、给出呼吸、空状态有内容
+   —— 仍然遵守 DESIGN §4：无投影、无渐变、圆角 ≤18px
+   =================================================================== */
+
+/* -------------------------------------------------------------------
+   1. 空状态 —— 之前是「一行小字 + 一大片黑」，现在给它内容
+   ------------------------------------------------------------------- */
+.empty-stream {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: min(58vh, 520px);
+  padding: var(--sp-6) var(--sp-5);
+  text-align: center;
+  user-select: none;
+}
+
+.empty-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: var(--sp-4);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  /* 内描边高光：比投影干净，且不违反 DESIGN §4 */
+  box-shadow: inset 0 1px 0 var(--edge);
+  color: var(--ok);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.empty-title {
+  color: var(--fg);
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  margin-bottom: var(--sp-2);
+}
+
+.empty-hint {
+  max-width: 44ch;
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  margin-bottom: var(--sp-5);
+}
+
+/* 记忆现状 */
+.empty-memory {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.empty-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+}
+.empty-chip.plain {
+  background: none;
+  border-color: var(--border-soft);
+}
+.empty-chip b {
+  color: var(--fg);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.empty-sep {
+  color: var(--border-str);
+}
+
+/* 三条建议：把空白变成入口 */
+.empty-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: min(420px, 100%);
+  margin-bottom: var(--sp-5);
+}
+.empty-sug {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.empty-sug .ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+.empty-sug:hover {
+  background: var(--bg-2);
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+.empty-sug:hover .ico {
+  color: var(--accent);
+}
+
+/* 斜杠命令：发现性 */
+.empty-cmds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.empty-cmds-label {
+  margin-right: 2px;
+}
+.empty-cmd {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.empty-cmd:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* -------------------------------------------------------------------
+   2. 卡片层次：加内描边高光 + 大一点的圆角
+   ------------------------------------------------------------------- */
+.bubble,
+.tool,
+.memcard,
+.card,
+.composer {
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+/* -------------------------------------------------------------------
+   3. 左右栏：面板底色与内容分层
+   ------------------------------------------------------------------- */
+.rail,
+.status {
+  background: var(--bg-1);
+}
+.rail-head,
+.rail-foot,
+.status-head {
+  background: transparent;
+}
+
+/* 左栏会话项：选中态更明确（左侧色条 + 更亮的底） */
+.item {
+  position: relative;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+}
+.item.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.item.sel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+.item.sel .ico {
+  color: var(--accent);
+}
+
+/* 分组标签更轻，减少视觉噪音 */
+.group-label {
+  padding: var(--sp-3) var(--sp-2) 3px;
+  color: var(--fg-mute);
+  letter-spacing: 0.06em;
+}
+
+/* -------------------------------------------------------------------
+   4. 输入区：更像「输入框」，不是一块黑板
+   ------------------------------------------------------------------- */
+.composer {
+  border-radius: var(--r-lg);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.composer textarea::placeholder {
+  color: var(--fg-mute);
+}
+
+/* 提示按钮：「+ 图片」之前像个文字链接，现在是个真按钮 */
+.hint-btn {
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.hint-btn:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.send {
+  height: 28px;
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-4);
+}
+
+/* -------------------------------------------------------------------
+   5. 标题栏：会话名做成胶囊，工作目录做成可点按钮
+   ------------------------------------------------------------------- */
+.tb-session {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+}
+.tb-cwd {
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+}
+
+/* -------------------------------------------------------------------
+   6. 右栏记忆：卡片间距与分区标题的层次
+   ------------------------------------------------------------------- */
+.sect {
+  margin-bottom: var(--sp-3);
+}
+.sect-title {
+  padding: 0 2px;
+  margin-bottom: 5px;
+  letter-spacing: 0.06em;
+}
+.card {
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+}
+.memrow {
+  padding: 5px var(--sp-2) 5px 0;
+  border-radius: var(--r-xs);
+}
+
+/* -------------------------------------------------------------------
+   7. 消息流：给助手消息一点呼吸，用户气泡更立体
+   ------------------------------------------------------------------- */
+.msg {
+  margin-bottom: var(--sp-6);
+}
+.bubble {
+  border-radius: var(--r-lg);
+  padding: var(--sp-3) var(--sp-4);
+}
+.msg-label {
+  margin-bottom: var(--sp-2);
+  letter-spacing: 0.06em;
+}
+
+/* 工具卡：圆角与边框跟整体统一 */
+.tool {
+  border-radius: var(--r-md);
+}
+.tool-head {
+  padding: 6px var(--sp-3);
+}
+
+/* -------------------------------------------------------------------
+   8. 滚动条更细更淡，别抢视线
+   ------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-str);
+  background-clip: content-box;
+}
+
+/* -------------------------------------------------------------------
+   9. 连续性带 / 审阅条：弱化边框，强化状态色
+   ------------------------------------------------------------------- */
+.continuity {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-soft);
+}
+.review {
+  border-top: 1px solid var(--border-soft);
+}
+
+/* -------------------------------------------------------------------
+   10. 「新对话」按钮 —— 之前是 dashed 0.8px 弱色，看着像坏掉的边框。
+       现在做成实心次要按钮：底 + 边框 + 图标，hover 变强调色。
+   ------------------------------------------------------------------- */
+.btn-new {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+.btn-new:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.btn-new .ico {
+  color: var(--fg-mute);
+}
+.btn-new:hover .ico {
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------------------
+   11. 右栏分区标题：10px 太小，提到 11px 并加强对比
+   ------------------------------------------------------------------- */
+.sect-title {
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+  gap: 6px;
+}
+.sect-title .ico {
+  color: var(--fg-mute);
+}
+.sect-title .extra {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* -------------------------------------------------------------------
+   12. 连续性带：「上次聊到」之前几乎看不见
+   ------------------------------------------------------------------- */
+.continuity-inner {
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+.continuity .ico {
+  color: var(--fg-mute);
+}
+.continuity b {
+  color: var(--fg);
+}
+
+/* -------------------------------------------------------------------
+   13. 标题栏控件统一成胶囊，别一个是文字一个是图标
+   ------------------------------------------------------------------- */
+.tb-right .btn:not(.icon),
+.tb-left .btn.icon {
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+.tb-right .btn:not(.icon):hover,
+.tb-left .btn.icon:hover {
+  border-color: var(--border-str);
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.tb-badge {
+  border-radius: var(--r-full);
+  border-color: var(--border-soft);
+  background: var(--bg-2);
+}
+
+/* -------------------------------------------------------------------
+   14. 用户气泡：给出与助手正文的层次差
+   ------------------------------------------------------------------- */
+.bubble {
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.msg.user .gutter {
+  color: var(--cyan);
+}
+
+/* 助手正文的代码块：与卡片同一套圆角 */
+.md pre {
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+}
+.md code {
+  border-radius: var(--r-xs);
+}
+
+/* -------------------------------------------------------------------
+   15. 左栏搜索框：跟「新对话」同一套
+   ------------------------------------------------------------------- */
+.search {
+  height: 28px;
+  background: var(--bg-2);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+/* -------------------------------------------------------------------
+   16. 底部状态条 / 审阅条：更明确的按钮
+   ------------------------------------------------------------------- */
+.statusbar .btn {
+  height: 18px;
+}
+.review .btn {
+  border-radius: var(--r-full);
+  border-color: rgba(224, 175, 104, 0.3);
+}
+
+/* -------------------------------------------------------------------
+   17. 输入框下方的用量条（输入 / 输出 / 缓存命中 / 输出速度）
+       —— 与上面的 .ctxbar（模型 + 上下文）区分：
+          ctxbar 是「状态」，这条是「账单」。
+   ------------------------------------------------------------------- */
+.tokbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.tok {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.tok.dim {
+  opacity: 0.55;
+}
+.tok-label {
+  color: var(--fg-mute);
+}
+.tok-value {
+  color: var(--fg-dim);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.tok-unit {
+  color: var(--fg-mute);
+  font-size: 0.92em;
+}
+/* 缓存命中率：用强调色，因为它是「省了多少钱」的关键指标 */
+.tok-extra {
+  color: var(--ok);
+  padding: 0 4px;
+  border-radius: var(--r-full);
+  background: var(--ok-soft);
+}
+.tok-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 10px;
+  background: var(--border);
+}
+/* 流式期间的呼吸点，暗示数字还在变 */
+.tok-live {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+  animation: tokpulse 1.1s ease-in-out infinite;
+}
+@keyframes tokpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* 流式期间「生成中 Ns」那格 */
+.tok-live-wrap .tok-value {
+  color: var(--fg-dim);
+}
+.tok-live-wrap .tok-live {
+  margin-left: 2px;
+}
+
+/* -------------------------------------------------------------------
+   18. 中栏居中
+       —— .stream 有 scrollbar-gutter:stable，那条 gutter 只占**右侧**，
+          导致 margin:0 auto 算出来的居中其实偏左（实测左 448 / 右 234）。
+          用对称 padding 抵消 gutter，让内容真正居中。
+   ------------------------------------------------------------------- */
+.stream,
+.center > .stream {
+  /* scrollbar-gutter 占的是右内边距，这里补一个等量左内边距 */
+  padding-left: 10px;
+}
+.stream-inner,
+.stream-row {
+  /* 两端对称的内边距，保证 max-width 区域本身居中 */
+  padding-left: var(--sp-5);
+  padding-right: var(--sp-5);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 底部那几条（状态条 / 输入区 / 用量条）用同一个宽度并居中 */
+.ctxbar,
+.tokbar {
+  width: 100%;
+  max-width: var(--w-stream);
+  margin-left: auto;
+  margin-right: auto;
+  /* composer-wrap 自己有左右 padding，这里不再叠加 */
+}
+.composer {
+  max-width: var(--w-stream);
+  margin-left: auto;
+  margin-right: auto;
+}
+.tokbar {
+  /* 用量条在 composer 内部，跟着它一起居中 */
+  max-width: none;
+}
+
+/* 空状态也居中 */
+.empty-stream {
+  max-width: var(--w-stream);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* -------------------------------------------------------------------
+   19. 上下文状态条（常驻版）
+       进度条占满中间，数字紧随其后；接近上限时变黄/变红。
+   ------------------------------------------------------------------- */
+.ctxbar {
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  padding: 0;
+  min-width: 0;
+}
+.ctxbar-ctx {
+  display: grid;
+  grid-template-columns: auto minmax(60px, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+  text-align: left;
+}
+.ctxbar-ctx:hover {
+  background: var(--bg-2);
+  border-color: var(--border-soft);
+}
+.ctxbar-label {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.ctxbar-meter {
+  display: block;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  overflow: hidden;
+  min-width: 60px;
+}
+.ctxbar-meter i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+/* 语义色：85% 黄、95% 红 —— 这是「提前预警」，不是装饰 */
+.ctxbar-ctx.warn .ctxbar-meter i {
+  background: var(--warn);
+}
+.ctxbar-ctx.err .ctxbar-meter i {
+  background: var(--err);
+}
+.ctxbar-num {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ctxbar-slash {
+  color: var(--fg-mute);
+  margin: 0 1px;
+}
+.ctxbar-pct {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+  color: var(--fg-mute);
+}
+.ctxbar-pct.warn {
+  color: var(--warn);
+}
+.ctxbar-pct.err {
+  color: var(--err);
+  font-weight: 600;
+}
+
+/* 中栏更宽之后，模型名不必那么小气 */
+.ctxbar-model {
+  max-width: 240px;
+}
+
+/* ===================================================================
+   21. 右栏 —— 任务进度
+   =================================================================== */
+.rightpanel {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+.rp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.rp-title {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.06em;
+}
+.rp-head .spacer {
+  flex: 1;
+}
+.rp-count {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rp-meter {
+  height: 3px;
+  margin: 0 var(--sp-3) var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  overflow: hidden;
+}
+.rp-meter i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  border-radius: var(--r-full);
+  transition: width var(--dur) var(--ease);
+}
+.rp-list {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 0 var(--sp-3) var(--sp-4);
+  min-width: 0;
+}
+.rp-todo {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+.rp-todo:hover {
+  background: var(--bg-2);
+}
+.rp-box {
+  color: var(--fg-mute);
+  text-align: center;
+  line-height: inherit;
+}
+.rp-text {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.rp-todo.done .rp-text {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+}
+.rp-todo.done .rp-box {
+  color: var(--ok);
+}
+
+/* 窄屏：右栏让位（先藏右栏，再藏左栏） */
+@media (max-width: 1180px) {
+  :root {
+    --w-right: 0px;
+  }
+  .rightpanel {
+    display: none;
+  }
+}
+
+/* ===================================================================
+   22. 合并后的用量条（在输入框下方，居中）
+   =================================================================== */
+.usagebar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px var(--sp-3);
+  width: 100%;
+  max-width: var(--w-stream);
+  margin: var(--sp-2) auto 0;
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  min-width: 0;
+}
+.ub-model {
+  color: var(--fg-dim);
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: none;
+}
+.ub-model:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.ub-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 10px;
+  background: var(--border);
+  flex: none;
+}
+.ub-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.ub-item.dim {
+  opacity: 0.55;
+}
+.ub-label {
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.ub-value {
+  color: var(--fg-dim);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.ub-unit {
+  color: var(--fg-mute);
+  font-size: 0.92em;
+}
+/* 缓存命中率：用 ok 色，它是「省了多少钱」的关键指标 */
+.ub-extra {
+  color: var(--ok);
+  padding: 0 4px;
+  border-radius: var(--r-full);
+  background: var(--ok-soft);
+}
+.ub-live {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+  animation: ubpulse 1.1s ease-in-out infinite;
+}
+@keyframes ubpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.ub-turn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.ub-compacting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn);
+}
+.ub-cost {
+  margin-left: auto;
+  color: var(--fg-mute);
+}
+
+/* ---- 上下文那一格 ---- */
+.ub-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
+  min-width: 0;
+}
+.ub-ctx:hover {
+  background: var(--bg-2);
+  border-color: var(--border-soft);
+}
+.ub-meter {
+  display: inline-block;
+  width: 64px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  overflow: hidden;
+  flex: none;
+}
+.ub-meter i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+.ub-ctx.warn .ub-meter i {
+  background: var(--warn);
+}
+.ub-ctx.err .ub-meter i {
+  background: var(--err);
+}
+.ub-num {
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.ub-slash {
+  color: var(--fg-mute);
+  margin: 0 1px;
+}
+.ub-pct {
+  color: var(--fg-mute);
+  min-width: 32px;
+  text-align: right;
+}
+.ub-pct.warn {
+  color: var(--warn);
+}
+.ub-pct.err {
+  color: var(--err);
+  font-weight: 600;
+}
+
+/* 旧的上下两条已删除；composer-wrap 的底部内边距留一点给用量条 */
+.composer-wrap {
+  padding-bottom: var(--sp-3);
+}
+
+/* -------------------------------------------------------------------
+   23. 左栏收起/展开用**推挤**而不是浮层
+       —— 对齐 Agents-Anywhere：他们的侧栏是 layout 里的常驻列，
+          收起时列宽变 0，内容重新排版；不是盖在内容上。
+          浮层看着像"抽屉弹出"，和他们那种"面板收合"的感觉不一样。
+          代价：展开时中栏内容会重新居中（会轻微跳一下）——
+          用 transition 把宽度变化做成动画，跳的感觉就被吸收了。
+   ------------------------------------------------------------------- */
+.workspace {
+  display: grid;
+  grid-template-columns: var(--w-rail) minmax(0, 1fr) var(--w-right);
+  transition: grid-template-columns 200ms var(--ease);
+}
+.rail-slot {
+  position: relative;
+  width: auto;
+  transform: none;
+  overflow: hidden;
+  z-index: 5;
+  min-width: 0;
+}
+.app.rail-off .rail {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 收起时左栏内容淡出，避免宽度收到 0 的过程中文字被压扁 */
+.app.rail-off .rail {
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.app:not(.rail-off) .rail {
+  opacity: 1;
+  transition: opacity 160ms var(--ease) 60ms;
+}
+/* -------------------------------------------------------------------
+   24. 左栏顶部的模式开关（固定 / 自动）
+   ------------------------------------------------------------------- */
+.rail-mode {
+  display: inline-flex;
+  align-self: stretch;
+  padding: 2px;
+  margin-bottom: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+}
+.rail-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.rail-mode-btn:hover {
+  color: var(--fg-dim);
+}
+.rail-mode-btn.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.rail-mode-btn.sel .ico {
+  color: var(--accent);
+}
+/* 自动模式下给一个小小的「A」提示？不需要 —— 选中态已经够清楚 */
+
+/* rail-head 现在是纵向排列：开关 / 搜索 / 会话动作 */
+.rail-head {
+  display: flex;
+  flex-direction: column;
+  /* 顶部留出与标题栏的呼吸 */
+  padding-top: var(--sp-3);
+}
+
+/* ===================================================================
+   26. 对话导航轨（消息流左侧那条刻度）
+       —— 参考 Codex：细横线刻度、当前项加宽加亮、悬停弹预览卡
+   =================================================================== */
+.outline {
+  position: absolute;
+  left: 0;
+  top: 96px; /* 让开连续性带 */
+  bottom: 0;
+  width: 34px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* 只有刻度本身可点，空白处不挡消息流 */
+}
+.outline-track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  max-height: 72%;
+  padding: 4px 0;
+  /* 刻度多得放不下时收紧间距 */
+  overflow: hidden;
+  pointer-events: auto;
+}
+.outline-tick {
+  display: block;
+  width: 11px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--border-str);
+  opacity: 0.65;
+  transition:
+    width 140ms var(--ease),
+    opacity 140ms var(--ease),
+    background 140ms var(--ease);
+}
+.outline-tick:nth-child(3n) {
+  /* 轻微错落，避免看起来像一条虚线 */
+  width: 14px;
+}
+.outline-tick:hover,
+.outline-tick.hover {
+  width: 20px;
+  opacity: 1;
+  background: var(--fg-dim);
+}
+.outline-tick.on {
+  width: 24px;
+  height: 3px;
+  opacity: 1;
+  background: var(--fg);
+}
+/* 当前项 + 悬停：悬停优先（用户正在指的那个才是重点） */
+.outline-tick.hover.on,
+.outline-tick.on:hover {
+  background: var(--accent);
+}
+
+/* ---- 预览卡 ---- */
+.outline-preview {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 320px;
+  padding: var(--sp-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 20;
+}
+.op-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px dashed var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.op-n {
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.op-hint {
+  margin-left: auto;
+}
+.op-user {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  margin-bottom: var(--sp-2);
+}
+.op-assistant {
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  /* 最多 4 行，超了省略 —— 预览不是阅读区 */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ===================================================================
+   27. 左栏重做 v2 —— 对齐 Agents-Anywhere
+       核心：去掉全部卡片式边框，只靠背景色 + 缩进 + 小字表达层级
+   =================================================================== */
+.rail {
+  /**
+   * 用 flex 列而不是 grid 行 ——
+   * 左栏的子元素是「有时有、有时没有」（搜索框按需出现），
+   * 用 grid-template-rows 数固定行数会漏掉隐式行：
+   * 曾经写死 4 行、实际渲染 5 个元素，整栏高度只有 805px（容器 866px），
+   * 底部空一截且不随窗口变化。
+   * flex 下只要给「分组」加 flex: 1，它自然吃掉剩余高度。
+   */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+}
+
+/* ---- 顶部 ---- */
+.rail-top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.rail-brand {
+  color: var(--fg);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  /* 品牌字用小字距 + 稍大字号，和列表文字区分开 */
+}
+.rail-spacer {
+  flex: 1;
+}
+.rail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.rail-icon.sm {
+  width: 22px;
+  height: 22px;
+}
+.rail-icon:hover,
+.rail-icon.on {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.rail-icon.on .ico {
+  color: var(--accent);
+}
+
+/* ---- 搜索 ---- */
+.rail-search {
+  position: relative;
+  margin: 0 var(--sp-3) var(--sp-2);
+}
+.rail-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 26px 0 var(--sp-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+.rail-search input:focus {
+  border-color: var(--border-str);
+}
+.rail-search input::placeholder {
+  color: var(--fg-mute);
+}
+.rail-search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rail-search-clear:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* ---- 操作行 ---- */
+.rail-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-2);
+  padding: 8px var(--sp-2);
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.rail-action .ico {
+  color: var(--fg-mute);
+}
+.rail-action:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+/* ---- 分组（项目） ---- */
+.rail-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  /* 这一节吃掉左栏的剩余高度（列表要能滚动、底栏要贴底） */
+  min-height: 0;
+  flex: 1;
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--sp-2);
+}
+.rail-section-head {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+}
+.rail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.rail-section-title:hover {
+  color: var(--fg-dim);
+}
+.rail-section-title .chev {
+  color: var(--fg-mute);
+}
+/* 收起时 chevron 转回来（默认朝右 = 收起，展开时朝下） */
+.rail-section-title .chev {
+  transform: rotate(90deg);
+}
+.rail-section-title.collapsed .chev {
+  transform: rotate(0deg);
+}
+
+.rail-body {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 0 var(--sp-2) var(--sp-3);
+  min-width: 0;
+}
+
+/* ---- 项目行 ---- */
+.proj + .proj {
+  margin-top: 3px;
+}
+.proj-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.proj-head:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.proj-head .ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+.proj-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proj-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 会话行：嵌套在项目下，缩进一级 ---- */
+.srow-wrap {
+  position: relative;
+}
+.srow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  /* 缩进：项目行的文字落在 26px（8 padding + 12 图标 + 6 gap），
+     会话行要比它再深一级，所以左内边距给 38px。
+     ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
+     验证缩进必须量 **.srow-name 的左缘**，量 .srow 永远看不到差异。 */
+  padding: 6px var(--sp-2) 6px 38px;
+  border-radius: var(--r-md);
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+/* 左侧引导线：表明这些会话属于上面的项目 */
+.proj {
+  position: relative;
+}
+.proj::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 30px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border-soft);
+  pointer-events: none;
+}
+.proj-head.collapsed ~ * {
+  /* 项目收起时不画线 */
+  display: none;
+}
+.srow:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+.srow.sel {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.srow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 选中项的右侧动作（⋯），只在选中/悬停时出现 */
+.srow-acts {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 1px;
+}
+.srow-wrap:hover .srow-name {
+  /* 给右侧图标让位，避免文字压到按钮下面 */
+  padding-right: 24px;
+}
+
+/* ---- 会话菜单 ---- */
+.srow-menu {
+  position: absolute;
+  z-index: 30;
+  left: 20px;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  padding: 3px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.7);
+}
+.srow-menu-path {
+  padding: 4px var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  user-select: text;
+}
+.srow-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.srow-menu-btn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.srow-menu-btn.danger:hover {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.srow-menu-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.srow-menu-btn:disabled:hover {
+  background: none;
+  color: var(--fg-dim);
+}
+
+/* ---- 底部用户块 ---- */
+.rail-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+}
+.rail-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+/* 连接状态做成头像右下角的小点 */
+.rail-avatar::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--bg-1);
+}
+.rail-avatar.ok::after {
+  background: var(--ok);
+}
+.rail-avatar.warn::after {
+  background: var(--warn);
+}
+.rail-user {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+.rail-user-name {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-user-sub {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 空状态 */
+.rail-empty {
+  padding: var(--sp-4) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+/* ===================================================================
+   28. 整轮活动摘要（对齐 Agents-Anywhere 的「推理了 N 次，执行了 M 次工具」）
+   =================================================================== */
+.turn {
+  margin-bottom: var(--sp-3);
+}
+.turn-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-2) 5px var(--sp-3);
+  border-left: 2px solid var(--border-str);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: color var(--dur) var(--ease);
+}
+.turn-head:hover {
+  color: var(--fg-dim);
+}
+.turn-head .chev {
+  color: var(--fg-mute);
+  transition: transform var(--dur) var(--ease);
+}
+.turn.open .turn-head .chev {
+  transform: rotate(90deg);
+}
+.turn-sum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-gap {
+  flex: 1;
+}
+/* 展开后的内容：往里缩一级，表明它是这行的细节 */
+.turn-body {
+  margin: var(--sp-2) 0 0 var(--sp-3);
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border-soft);
+}
+
+/* ===================================================================
+   29. 输入区工具条（对齐 Agents-Anywhere）
+       左：附件 / 模型胶囊；右：圆形发送键
+   =================================================================== */
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.ctool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border-radius: var(--r-md);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.ctool:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+/* 模型胶囊：带边框，比纯图标正式一点 */
+.ctool.chip {
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 0 var(--sp-2);
+  max-width: 220px;
+}
+.ctool.chip:hover {
+  border-color: var(--border-str);
+  background: var(--bg-2);
+}
+.ctool-level {
+  color: var(--accent);
+  flex: none;
+}
+.ctool-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  min-width: 0;
+}
+.ctool.chip .chev {
+  flex: none;
+  opacity: 0.5;
+}
+
+/* 发送键：圆形（对齐他们的圆形箭头按钮） */
+.send {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--r-full);
+  background: var(--fg);
+  color: var(--bg-0);
+  flex: none;
+  justify-content: center;
+  gap: 0;
+  /* 文字只在忙碌时（中止）显示，正常状态只有一个箭头 */
+}
+.send span {
+  display: none;
+}
+.send .ico {
+  color: currentColor;
+}
+.send:hover:not(:disabled) {
+  filter: none;
+  opacity: 0.9;
+}
+.send:disabled {
+  opacity: 0.3;
+}
+/* 忙碌时按钮变「中止」：给文字留位置 */
+.send.abort {
+  width: auto;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.send.abort span {
+  display: inline;
+}
+
+/* ===================================================================
+   30. 主区域头部（对齐 Agents-Anywhere：标题 + 状态胶囊）
+   =================================================================== */
+.shead {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 7px var(--sp-5) 6px;
+}
+.shead-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  min-width: 0;
+}
+.shead-title {
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 状态胶囊：小圆点 + 文字，像「● 设备 · 模型」 */
+.shead-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 340px;
+  padding: 2px 9px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.shead-chip:hover {
+  border-color: var(--border-str);
+  color: var(--fg-dim);
+}
+.shead-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+  flex: none;
+}
+.shead-dot.busy {
+  background: var(--warn);
+}
+.shead-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 第二行：上次聊到 */
+.shead-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: var(--w-stream);
+  margin: 2px auto 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  min-width: 0;
+}
+.shead-sub-label {
+  flex: none;
+}
+.shead-sub-text {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  text-align: left;
+  transition: color var(--dur) var(--ease);
+}
+.shead-sub-text:hover {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--border-str);
+}
+.shead-sub-time {
+  flex: none;
+  color: var(--fg-mute);
+}
+.shead.flash {
+  animation: sheadflash 600ms var(--ease);
+}
+@keyframes sheadflash {
+  0%,
+  100% {
+    background: var(--bg-1);
+  }
+  30% {
+    background: var(--accent-soft);
+  }
+}
+
+/* ===================================================================
+   31. 对齐收尾
+   —— 学了 Agents-Anywhere 代码里的两点：
+      ① 展开状态用 CSS 的 [data-state] / [aria-expanded] 驱动图标，
+         不在 React 里为「箭头转不转」多留一份 state
+      ② 层级靠背景色 + 缩进，不靠边框
+   =================================================================== */
+
+/* ① 所有折叠箭头统一由 aria-expanded 驱动 —— 少一份 state，也不会不同步 */
+[aria-expanded='true'] > .chev {
+  transform: rotate(90deg);
+}
+.turn-head[aria-expanded='true'] .chev,
+.turn-head[aria-expanded='false'] .chev {
+  /* 覆盖上面的通用规则，因为 .chev 不是直接子元素 */
+  transform: none;
+}
+.turn-head[aria-expanded='true'] .chev {
+  transform: rotate(90deg);
+}
+.turn.open .turn-head .chev {
+  transform: rotate(90deg);
+}
+
+/* ② 主区域头部：给他们那种「有呼吸」的间距 */
+.shead {
+  padding: 10px var(--sp-5) 8px;
+}
+.shead-title {
+  font-size: 15px;
+  line-height: 1.3;
+}
+.shead-sub {
+  margin-top: 3px;
+}
+
+/* ③ 会话行：悬停时显示时间（他们的做法：默认不占位，悬停才出） */
+.srow-name {
+  flex: 1;
+  min-width: 0;
+}
+.srow-wrap .srow-time {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.srow-wrap:hover .srow-time {
+  opacity: 1;
+}
+.srow-wrap:hover .srow-acts {
+  opacity: 1;
+}
+.srow-acts {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.srow:hover {
+  background: var(--bg-2);
+}
+
+/* ④ 项目行的分组感：当前项目的图标用强调色 */
+.proj-head[data-current='1'] .ico {
+  color: var(--accent);
+}
+
+/* ⑤ 主区域两侧留白随宽度自适应（他们用 max-w-3xl 居中，我们沿用 --w-stream） */
+@media (min-width: 1600px) {
+  :root {
+    --w-stream: 980px;
+  }
+}
+
+
+
+/* ===================================================================
+   23b. 布局变量（定义必须存在 —— 之前误删过一次，
+        结果 --w-rail 为空，grid 只剩一列，左栏撑满整屏）
+   =================================================================== */
+:root {
+  /* 左栏展开宽度。收起时 .app.rail-off 把它设成 0（grid 列宽跟着收）。
+     ⚠️ 只用这一个变量 —— 曾经同时存在 --w-rail 与 --w-rail，
+        两者在收起/展开时值不同步，grid 列算成了 0px 1441px 0px，
+        中栏宽度变成 0、整屏被左栏占满。 */
+  --w-rail: 300px;
+  /* 右栏（任务）。没有任务时由 :has 归零 */
+  --w-right: 264px;
+}
+.workspace:not(:has(.rightpanel)) {
+  --w-right: 0px;
+}
+.app.rail-off {
+  --w-rail: 0px;
+}
+/* 左栏内容宽度固定，不能跟着列宽收缩 ——
+   否则收起过程中文字被压扁，而不是「滑走」 */
+
+/* ===================================================================
+   33. 左栏布局（**唯一**一处定义，别再在别处写 .rail 宽度）
+       ─────────────────────────────────────────────────────────────
+       规则：
+         · --w-rail 是唯一真源；收起时 .app.rail-off 把它设为 0
+         · .rail-slot 是 grid 的一列，宽度 = --w-rail（跟着收放）
+         · .rail 自身宽度固定 300px，不跟着列宽收缩 ——
+           否则收起过程中文字会被压扁而不是「滑走」
+         · 内容用 opacity 淡出，避免窄列里文字挤成一团
+       ─────────────────────────────────────────────────────────────
+       踩过的坑：曾经同时存在 --w-rail 与 --w-rail-fixed 两个变量，
+       加上三处 .rail 宽度规则叠加，grid 列算成了 `0px 1441px 0px`，
+       中栏宽度变 0、整屏被左栏占满。变量和规则都只能有一处。
+   =================================================================== */
+.rail-slot {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  z-index: 5;
+}
+.rail {
+  /* 固定宽度：不随 grid 列宽收缩 */
+  width: 300px;
+}
+.app.rail-off .rail {
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.app:not(.rail-off) .rail {
+  opacity: 1;
+  transition: opacity 160ms var(--ease) 60ms;
+}
+
+/* ===================================================================
+   34. 输入区悬浮
+       ─────────────────────────────────────────────────────────────
+       之前是贴底的实心条（铺满整个宽度、带背景色 + 上边框），
+       视觉上像「页面的一块」，和消息流割裂。
+       改成一张浮起的卡片：圆角更大、有边框与淡淡的落影、
+       左右留出边距，看起来是"浮在内容之上"。
+
+       同时用量条跟着悬浮（它附在输入区下方）。
+   =================================================================== */
+.composer-wrap {
+  /* 不再铺满：左右留边距，让卡片浮起来 */
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  background: transparent;
+  border-top: none;
+  /* 让上面的消息流滚到卡片下面时能被遮住，强化"浮层"感 */
+  position: relative;
+  z-index: 3;
+}
+
+.composer {
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  background: var(--bg-1);
+  /* 浮层：圆角 + 明显的边框 + 极淡落影（DESIGN §4 的例外，见下方说明） */
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-xl);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  box-shadow:
+    0 2px 4px -2px rgba(0, 0, 0, 0.4),
+    0 12px 32px -12px rgba(0, 0, 0, 0.55);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow:
+    0 2px 4px -2px rgba(0, 0, 0, 0.4),
+    0 12px 36px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 3px var(--accent-soft);
+}
+/* 拖入文件时整张卡片亮起来（比改边框更明显） */
+.composer-wrap.dropping .composer {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+
+.composer textarea {
+  min-height: 40px;
+  padding: 2px 2px 0;
+}
+
+/* 用量条：与卡片同宽、跟着悬浮 */
+.usagebar {
+  max-width: var(--w-stream);
+  margin: var(--sp-2) auto 0;
+  padding: 0 2px;
+  border-top: none;
+}
+
+/* ===================================================================
+   35. 模型选择器（垂直列表，贴触发器向上弹）
+   =================================================================== */
+.picker-wrap {
+  position: relative;
+  flex: none;
+}
+
+.ub-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.ub-pick:hover:not(:disabled),
+.ub-pick.open {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.ub-pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ub-pick-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ub-pick .chev {
+  opacity: 0.55;
+  transform: rotate(-90deg); /* 收起时朝上（因为面板向上弹） */
+}
+.ub-pick .chev.up {
+  transform: rotate(90deg);
+}
+
+/* ---- 浮层：贴着触发器上方弹出，不是屏幕居中 ---- */
+.mpop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px); /* 向上弹 */
+  z-index: 40;
+  width: 300px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 4px 8px -4px rgba(0, 0, 0, 0.5),
+    0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.mpop-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  flex: none;
+}
+.mpop-search input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+.mpop-search input::placeholder {
+  color: var(--fg-mute);
+}
+.mpop-count {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.mpop-list {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 4px;
+  min-height: 0;
+}
+.mpop-group + .mpop-group {
+  margin-top: 4px;
+}
+.mpop-group-head {
+  padding: 6px var(--sp-2) 3px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.mpop-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
+}
+.mpop-item:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.mpop-item.sel {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.mpop-item.sel .ico {
+  color: var(--accent);
+  flex: none;
+}
+.mpop-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mpop-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.mpop-empty {
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* ===================================================================
+   36. 思考强度（横向滑动分段控件）
+       —— 档位少、切换频繁，横向一排直接点比下拉少两步
+   =================================================================== */
+.think-seg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  user-select: none;
+}
+.think-seg:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+}
+.think-seg.busy {
+  opacity: 0.6;
+}
+/* 滑动块：跟着选中项横向移动（transform 用百分比，档位数变化不用重算） */
+.think-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  bottom: 2px;
+  border-radius: calc(var(--r-md) - 2px);
+  background: var(--bg-3);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.think-opt {
+  position: relative;
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: calc(var(--r-md) - 2px);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  transition: color var(--dur) var(--ease);
+}
+.think-opt:hover:not(:disabled) {
+  color: var(--fg-dim);
+}
+.think-opt.on {
+  color: var(--fg);
+}
+.think-opt:disabled {
+  cursor: default;
+}
+/* 选中项是「不思考」时用中性色；有思考强度时用强调色提示「它在花算力」 */
+.think-seg:has(.think-opt.on:not([data-testid='thinking-off'])) .think-thumb {
+  background: var(--accent-soft);
+}
+.think-seg:has(.think-opt.on:not([data-testid='thinking-off'])) .think-opt.on {
+  color: var(--accent);
+}

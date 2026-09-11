@@ -1,0 +1,41 @@
+# ---- 本地备份（.backup/<时间戳>/ 是手动快照，不入库）----
+.backup/
+
+# ---- 依赖 ----
+node_modules/
+.pnpm-store/
+
+# ---- 构建产物 ----
+dist/
+out/
+build/
+release/
+*.tsbuildinfo
+
+# ---- 字体全量文件（体积大、可从公开源重新获取，见 docs/design/font-test/README.md）----
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.tgz
+
+# ---- 临时 / 日志 ----
+*.log
+npm-debug.log*
+.tmp/
+temp/
+
+# ---- 编辑器 / 系统 ----
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 密钥（pi 的 auth.json 之类，永不入库）----
+auth.json
+*.key
+.env
+.env.*

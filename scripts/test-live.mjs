@@ -1,0 +1,356 @@
+/**
+ * 真实应用的验收测试（不是对着 mock 测）。
+ *
+ * 做法：用 `YAN_PROBE=<脚本>` 启动**真正的应用** —— 完整主进程、
+ * preload、contextBridge、pi 子进程都在跑 —— 然后在渲染端执行断言。
+ *
+ * 为什么不在单独的 BrowserWindow 里测：那样 preload/IPC/pi 全都不存在，
+ * 断言会「通过」而应用其实是坏的。
+ *
+ * 用法：
+ *   npm run test:live            全部
+ *   npm run test:live -- live    只跑 DOM 体检（不烧 token）
+ *   npm run test:live -- memory  只跑记忆流程（不烧 token）
+ *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
+ *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
+ */
+import { spawn } from 'node:child_process'
+import {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+  existsSync
+} from 'node:fs'
+import { dirname, join, resolve, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { tmpdir, homedir } from 'node:os'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** 每个场景：probe 脚本 + 等待多久（毫秒） */
+const CASES = {
+  // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
+  live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
+  // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
+  features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
+  // 记忆的认识论流程：确认 → 从「我的印象」移到「关于你」
+  memory: { probe: 'scripts/probe/memory.js', delay: 9000, cost: 0 },
+  // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
+  layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
+  // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型
+  tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
+  // 记忆搬进设置：右栏移除 / 设置面板 / 输入区状态条
+  settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
+  // 连接状态竞态回归（dev 下必现、build 下不现，很容易再犯）—— 会真调模型
+  conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
+  // 扩展集成：任务清单（panel_todos 的产物）+ 启动通知降级
+  todos: { probe: 'scripts/probe/todos.js', delay: 9000, cost: 0 },
+  // 长会话虚拟化
+  virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
+  // 会话切换 + 新建会话
+  sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
+  // 真发一条消息，验证流式 + 工具卡
+  e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1 },
+  // 图片真的发给模型（花 token）
+  image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1 },
+  // 排队 + Esc 回收：需要真流式，也花 token
+  queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 }
+}
+
+const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
+
+function seedSessions(destRoot) {
+  const project = '--C--Users-Test--'
+  const destDir = join(destRoot, project)
+  mkdirSync(destDir, { recursive: true })
+  let n = 0
+
+  try {
+    const real = join(homedir(), '.pi', 'agent', 'sessions')
+    if (existsSync(real)) {
+      const found = []
+      const walk = (dir, depth) => {
+        if (depth > 2) return
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const p = join(dir, e.name)
+          if (e.isDirectory()) walk(p, depth + 1)
+          else if (e.name.endsWith('.jsonl')) {
+            found.push({ path: p, project: basename(dir), mtime: statSync(p).mtimeMs })
+          }
+        }
+      }
+      walk(real, 0)
+
+      for (const f of found.sort((a, b) => b.mtime - a.mtime).slice(0, 3)) {
+        const d = join(destRoot, f.project)
+        mkdirSync(d, { recursive: true })
+        copyFileSync(f.path, join(d, basename(f.path)))
+        n++
+      }
+    }
+  } catch (e) {
+    console.log('  ⚠️  拷贝真实会话失败：' + e.message)
+  }
+
+  // 合成：带任务清单的会话（确定性，不依赖真实数据）
+  writeTodoSession(destDir, 'yan-todo-fixture')
+  n++
+
+  // 合成：20 条消息的普通会话
+  writePlainSession(destDir, 'yan-plain-fixture', 20)
+  n++
+
+  return n
+}
+
+function writeTodoSession(dir, idBase) {
+  const id = `${idBase}-${Date.now().toString(36)}`
+  const file = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`)
+  const cwd = homedir()
+  const m = (role, text, i, extra = {}) => ({
+    type: 'message',
+    id: 'm' + i,
+    parentId: i === 0 ? null : 'm' + (i - 1),
+    timestamp: TS(100 - i),
+    message: {
+      role,
+      content: [{ type: 'text', text }],
+      ...(role === 'assistant'
+        ? {
+            usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            stopReason: 'stop'
+          }
+        : {}),
+      ...extra
+    }
+  })
+
+  const lines = [
+    { type: 'session', version: 3, id, timestamp: TS(200), cwd },
+    {
+      type: 'model_change',
+      id: 'mc0',
+      parentId: null,
+      timestamp: TS(200),
+      provider: 'commandcode',
+      modelId: 'deepseek/deepseek-v4.1-flash'
+    },
+    m('user', 'YAN-TODO fixture：用来验证任务清单渲染', 0),
+    m('assistant', '好，我把计划列出来。', 1),
+    {
+      type: 'custom',
+      id: 'task0',
+      parentId: 'm1',
+      timestamp: TS(90),
+      customType: 'left-panel-tasks',
+      data: {
+        todos: [
+          { text: '读 spec 并确认范围', done: true },
+          { text: '写 protocol.ts 的 JSONL 分帧', done: true },
+          { text: '把渲染端的假数据换成 MainPush 补丁', done: false },
+          { text: '补测试并用真实应用跑一遍回归', done: false }
+        ]
+      }
+    }
+  ]
+
+  writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+}
+
+function writePlainSession(dir, idBase, count) {
+  const id = `${idBase}-${Date.now().toString(36)}`
+  const file = join(dir, `2026-01-02T00-00-00-000Z_${id}.jsonl`)
+  const cwd = homedir()
+  const lines = [
+    { type: 'session', version: 3, id, timestamp: TS(500), cwd },
+    {
+      type: 'model_change',
+      id: 'mc0',
+      parentId: null,
+      timestamp: TS(500),
+      provider: 'commandcode',
+      modelId: 'deepseek/deepseek-v4.1-flash'
+    }
+  ]
+  for (let i = 0; i < count; i++) {
+    lines.push({
+      type: 'message',
+      id: 'p' + i,
+      parentId: i === 0 ? 'mc0' : 'p' + (i - 1),
+      timestamp: TS(400 - i),
+      message: {
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: [{ type: 'text', text: `YAN-PLAIN fixture 第 ${i} 条消息` }],
+        ...(i % 2 === 1
+          ? {
+              usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+              stopReason: 'stop'
+            }
+          : {})
+      }
+    })
+  }
+  writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+}
+
+function runProbe({ probe, delay }, env) {
+  return new Promise((resolvePromise) => {
+    const child = spawn('npx', ['electron', '.'], {
+      cwd: root,
+      env: {
+        ...env,
+        YAN_PROBE: probe,
+        YAN_PROBE_DELAY: String(delay)
+      },
+      shell: true,
+      windowsHide: true
+    })
+
+    let buf = ''
+    child.stdout.on('data', (d) => {
+      buf += d
+    })
+    child.stderr.on('data', (d) => {
+      buf += d
+    })
+
+    const kill = setTimeout(() => {
+      child.kill()
+    }, delay + 90_000)
+
+    child.on('exit', (code) => {
+      clearTimeout(kill)
+
+      const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
+      if (!m) {
+        resolvePromise({
+          ok: false,
+          text: buf.slice(-3000),
+          hint: '没抓到 PROBE 输出 —— 应用可能启动失败。先跑 `npm run probe-pi`。'
+        })
+        return
+      }
+
+      const body = m[1]
+      // 断言失败标记：✗ 或 “=0（应为 1）” 之类的显式否定
+      const bad = /✗/.test(body)
+      resolvePromise({
+        ok: !bad && code === 0,
+        text: body + '\n',
+        hint: bad ? '输出里有 ✗ 的行' : undefined
+      })
+    })
+  })
+}
+
+
+/* ------------------------------------------------------------------
+   入口：放在最后调用。
+   为什么不在顶层直接跑：fixture 生成器用了 `const TS`，而它在顶层被调用时
+   还在 TDZ（函数声明会提升，const 不会）—— 包成函数调用就绕开了。
+   ------------------------------------------------------------------ */
+async function main() {
+
+  // 支持多个场景：npm run test:live -- live memory sessions
+  const argv = process.argv.slice(2).filter((a) => !a.startsWith('-'))
+  const names = argv.length ? argv : Object.keys(CASES)
+
+  for (const n of names) {
+    if (!CASES[n]) {
+      console.error(`未知场景：${n}。可选：${Object.keys(CASES).join(' / ')}`)
+      process.exit(2)
+    }
+  }
+
+  // 早失败比晚失败好：确认探针脚本都存在
+  for (const n of names) {
+    readFileSync(join(root, CASES[n].probe), 'utf8')
+  }
+
+  console.log(`将运行：${names.join(', ')}`)
+  const spends = names.filter((n) => CASES[n].cost > 0)
+  if (spends.length) console.log(`⚠️  ${spends.join(', ')} 会真的调用模型（花少量额度）`)
+
+  /* ------------------------------------------------------------------
+     状态隔离 —— 每个测试批次用一套临时目录。
+
+     为什么必须做：验收测试会改应用状态（右栏分区顺序、主题、语言存在
+     localStorage；会话文件在 ~/.pi/agent/sessions）以及写记忆。
+     共用真实目录就会污染用户数据 —— 已经踩过两次：
+       · 会话目录里多了 6 个测试会话
+       · 记忆里留了 5 条编造的「已确认事实」（会误导后续对话）
+       · 右栏顺序被拖成了 status 开头
+
+     隔离三件事：
+       YAN_USER_DATA      Electron 的 localStorage / cache
+       YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
+       YAN_DATA_DIR       记忆 / soul / desktop 设置（扩展也读这个变量）
+     ------------------------------------------------------------------ */
+  const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
+  const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
+
+  let env = { ...process.env }
+  if (sandboxRoot) {
+    const userData = join(sandboxRoot, 'userData')
+    const sessions = join(sandboxRoot, 'sessions')
+    const data = join(sandboxRoot, 'data')
+    for (const d of [userData, sessions, data]) mkdirSync(d, { recursive: true })
+
+    env = {
+      ...env,
+      YAN_USER_DATA: userData,
+      YAN_SESSIONS_DIR: sessions,
+      YAN_DATA_DIR: data
+    }
+
+    // 从真实会话目录**只读**拷几份当 fixture。
+    // 为什么要拷：有些场景（切会话、长会话虚拟化）需要真实数据才有意义；
+    // 为什么是拷贝而不是直接引用：测试会改名/删除会话，不能动原件。
+    const seeded = seedSessions(sessions)
+
+    console.log(`隔离目录：${sandboxRoot}`)
+    console.log(`  fixture：从真实会话里拷了 ${seeded} 份（只读，原件不受影响）`)
+    console.log('  （不碰真实的 sessions / memory.json / localStorage）')
+  } else {
+    console.log('⚠️  YAN_TEST_ISOLATED=0 —— 直接改真实数据，仅用于排查问题')
+  }
+
+  let failed = 0
+
+  for (const name of names) {
+    const c = CASES[name]
+    console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
+
+    const out = await runProbe(c, env)
+    process.stdout.write(out.text)
+
+    if (!out.ok) {
+      failed++
+      console.log(`\n✗ ${name} 未通过`)
+      if (out.hint) console.log(`  提示：${out.hint}`)
+    } else {
+      console.log(`\n✓ ${name} 通过`)
+    }
+  }
+
+  if (sandboxRoot) {
+    try {
+      rmSync(sandboxRoot, { recursive: true, force: true })
+    } catch {
+      /* Windows 上偶有句柄未释放，留着也无害 */
+    }
+  }
+
+  console.log(`\n${'='.repeat(64)}`)
+  console.log(failed === 0 ? `全部通过（${names.length} 个场景）` : `${failed}/${names.length} 个场景失败`)
+  process.exit(failed === 0 ? 0 : 1)
+
+  /* ------------------------------------------------------------------ */
+}
+
+await main()
