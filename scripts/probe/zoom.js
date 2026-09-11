@@ -22,19 +22,32 @@
 
   try {
     out.push('=== 真实按键：Ctrl+= / Ctrl+= / Ctrl+- / Ctrl+0 ===')
+    /*
+     * 记录 effective 的变化序列。
+     *
+     * ⚠️ 轮询到条件成立，**不用固定 10 秒窗口** —— 这是本项目的硬约定
+     *    （HANDOFF：'探针不要用固定 sleep 等 UI，负载高时不够'）。
+     *    上一版就是固定 10s：在被前一个场景拖慢时，最后一下 Ctrl+0 还没到
+     *    采样就结束了，报成「没回到自动」。这类假失败浪费过时间。
+     *
+     * 结束条件：已经观察到 ≥4 次变化 **且** 末值回到自动；超时 30s 兜底。
+     */
     const seq = []
     let prev = null
     const t0 = Date.now()
-    // 采样 10 秒，记录 effective 的变化序列
-    while (Date.now() - t0 < 10000) {
+    const DEADLINE = 30000
+    while (Date.now() - t0 < DEADLINE) {
       const z = await window.yan.getZoom()
       const v = Number(z.effective.toFixed(4))
       if (v !== prev) {
         seq.push({ t: Date.now() - t0, v, ui: z.uiScale })
         prev = v
       }
-      await sleep(150)
+      const done = seq.length >= 4 && seq[seq.length - 1].ui === 0
+      if (done) break
+      await sleep(120)
     }
+    out.push('  观察用时 ' + (Date.now() - t0) + 'ms，变化 ' + seq.length + ' 次')
     out.push('  变化序列（毫秒 → 生效倍率，uiScale）：')
     for (const s of seq) out.push('    t=' + String(s.t).padStart(5) + 'ms  ' + s.v.toFixed(3) + '×  uiScale=' + s.ui)
 

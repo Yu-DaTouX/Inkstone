@@ -54,6 +54,10 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
+  panels: { probe: 'scripts/probe/panels.js', delay: 9000, cost: 0 },
+  // 开关的几何对称性（展开↔收起逐像素对比 + 必须点得到）
+  symmetry: { probe: 'scripts/probe/symmetry.js', delay: 9000, cost: 0 },
   motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
   // 模型接入（凭证读写）—— ⚠️ 会用 YAN_PI_DIR 隔离，不碰真实 auth.json
   auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },

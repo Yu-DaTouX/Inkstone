@@ -16,8 +16,9 @@ import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
+import { listDir } from './files'
 import { resolvePi, piInfo } from './protocol'
-import { applyZoom, clampScale, stepScale, zoomState } from './zoom'
+import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import type { Attachment, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -415,10 +416,16 @@ function registerIpc(): void {
   })
 
   /** 读界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」） */
-  ipcMain.handle('yan:getZoom', async () => zoomState(win, (await getSettings()).uiScale))
+  ipcMain.handle('yan:getZoom', async () => zoomState(win, peekUiScale()))
 
   /** 设界面缩放（0 = 自动）。落盘 + 应用 + 回推 */
   ipcMain.handle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
+
+  /* ---- 文件树 ---- */
+  ipcMain.handle('yan:listDir', async (_e, rel: unknown) => {
+    const s = await getSettings()
+    return listDir(s.cwd, typeof rel === 'string' ? rel : '')
+  })
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
@@ -438,9 +445,10 @@ function pushWinState(): void {
  */
 async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
   const next = clampScale(v)
-  await patchSettings({ uiScale: next })
+  // 先同步更新内存值（快捷键要立即看到），再落盘
   const st = applyZoom(win, next)
   push({ ch: 'ui-scale', payload: st })
+  await patchSettings({ uiScale: next })
   return st
 }
 
@@ -574,11 +582,15 @@ function createWindow(): void {
      */
     if (ctrl && !input.alt && (key === '=' || key === '+' || key === '-' || key === '_' || key === '0')) {
       event.preventDefault()
-      void getSettings().then((s) => {
-        const next =
-          key === '0' ? 0 : stepScale(win, s.uiScale, key === '-' || key === '_' ? -1 : 1)
-        void setUiScale(next)
-      })
+      /*
+       * ⚠️ 用 `peekUiScale()` 而**不是**异步读设置。
+       *    这里曾经是 `getSettings().then(...)`，而它每次都要读盘 ——
+       *    连按两次 Ctrl+= 时第二下可能读到写盘之前的旧值，
+       *    算出同一个档位（看上去就是按键丢了）。详见 zoom.ts 的注释。
+       */
+      const cur = peekUiScale()
+      const next = key === '0' ? 0 : stepScale(win, cur, key === '-' || key === '_' ? -1 : 1)
+      void setUiScale(next)
     }
   })
 

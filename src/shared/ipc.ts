@@ -345,6 +345,33 @@ export interface AppSettings {
    * 自动模式把它对齐到整数设备像素并放大到舒适尺寸。
    */
   uiScale: number
+  /** 左栏底部的用户档案（名字 / 头像 / 登录预留） */
+  profile: UserProfile
+}
+
+/**
+ * 用户档案（左栏底部那个块）。
+ *
+ * ── 为什么全部本地存储 ──
+ * 登录功能**尚未接入**（本地模式）。这里刻意不做一个假的「已登录」状态 ——
+ * 本项目的约定是「界面上出现的每个值都必须真的来自某个地方」。
+ * 所以 `signedIn` 恒为 false，界面上显示的是「本地模式」，
+ * 点登录会明确告知未接入。字段先留着，接入时不用改数据结构。
+ */
+export interface UserProfile {
+  /** 显示名。空 = 回落到系统用户名（见 main/settings.ts 的 DEFAULTS 推导） */
+  name: string
+  /** 头像形式：首字（letter）或内置图标（icon） */
+  avatarKind: 'letter' | 'icon'
+  /** letter 时用名字首字（空则用默认）；icon 时是图标名 */
+  avatarValue: string
+  /** 头像底色色相（0–360）。-1 = 用默认中性色 */
+  avatarHue: number
+  /**
+   * 是否已登录。
+   * ⚠️ **本地模式恒为 false** —— 登录尚未接入，不做假状态。
+   */
+  signedIn: boolean
 }
 
 /** 探测 pi 的结果，用于诊断 */
@@ -612,6 +639,8 @@ export interface YanBridge {
   getZoom(): Promise<ZoomState>
   /** 设界面缩放（0 = 自动），返回生效后的状态 */
   setUiScale(v: number): Promise<ZoomState>
+  /** 列一层目录（文件树；相对 cwd，一层一次 —— 有意不递归） */
+  listDir(rel: string): Promise<DirListing>
 }
 
 /** 界面缩放状态（主进程算出，渲染端只显示） */
@@ -624,4 +653,30 @@ export interface ZoomState {
   scaleFactor: number
   /** 自动模式下会用的倍率 */
   autoScale: number
+}
+
+/** 文件树的一个条目 */
+export interface DirEntry {
+  name: string
+  dir: boolean
+  /** 文件字节数（目录没有） */
+  size?: number
+}
+
+/** 列一层目录的结果 */
+export interface DirListing {
+  /** 相对 cwd 的路径（根 = ''） */
+  path: string
+  /** 展示用绝对路径（`~` 缩写）。越界或读不到时是空串 */
+  abs: string
+  entries: DirEntry[]
+  /**
+   * 被故意跳过的目录（node_modules / .git …）。
+   * 为什么要报出来：不报的话用户会以为文件树列不全。
+   */
+  skipped: string[]
+  /** 是否因为条目太多而截断 */
+  truncated: boolean
+  /** 只有根层带：项目名（cwd 的 basename） */
+  rootName?: string
 }

@@ -12,7 +12,7 @@ import { groupIntoTurns } from '../../shared/turns'
 import { Composer } from './components/Composer'
 import { Settings, type SettingsTab } from './components/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/Onboarding'
-import { ConnBar, Notices, StatusBar, UiDialog } from './components/UiBridge'
+import { ConnBar, Notices, UiDialog } from './components/UiBridge'
 import { useStore } from './state/store'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -46,7 +46,7 @@ function readTheme(parent: Theme | undefined): Theme {
 }
 
 export default function App() {
-  const { lang, setLang } = useI18n()
+  const { lang, setLang, t } = useI18n()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
@@ -71,7 +71,8 @@ export default function App() {
    *     · 它会**抢走鼠标**——想去点中栏最左边的导航轨时，
    *       侧栏先弹出来把内容推走（推挤式布局会重排）
    *     · “1.5s 后收回”让界面在你还没读完时就开始动
-   *     · 现在两个侧栏都有常驻的开关按钮（标题栏左右各一个），
+   *     · 现在开关在**各自面板的头部**（用户要求），
+   *       收起后左栏左边留一个把手（.rail-stub）用于展开，
    *       显式控制比猜测意图可靠
    */
   const railPinned = useStore((s) => s.railPinned)
@@ -397,11 +398,6 @@ export default function App() {
       <IconSprite />
       <div className={appCls}>
         <TitleBar
-          onToggleRail={() => setRailPinned(!railPinned)}
-          railPinned={railPinned}
-          railOpen={railOpen}
-          rightPanelOpen={rightPanelOpen}
-          onToggleRightPanel={() => void toggleRightPanel()}
           alwaysOnTop={alwaysOnTop}
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
@@ -417,9 +413,21 @@ export default function App() {
               导致 .rail-slot 被挤到第二列、.center 落到 0px 宽的第三列。
               而「鼠标靠近左边缘」是用 window mousemove 的 clientX 判断的，
               根本不需要 DOM 元素。 */}
-          <div className="rail-slot">
-            <Rail />
-          </div>
+        {/*
+         * 展开把手**已删除**（曾经用 .rail-stub）。
+         *
+         * 为什么删：它和左栏头部的开关是**两个不同的元素、两套几何**，
+         * 所以展开前/后按钮的位置与大小对不上（用户报的第二个问题）。
+         * 而且收起时左栏虽然透明却仍然盖在把手上（过时的
+         * `.app.rail-off .rail{pointer-events:auto}`），导致把手根本点不到 ——
+         * 实测 elementFromPoint 命中的是 rail-brand-btn。
+         *
+         * 现在改成：**同一个按钮**（左栏头部的 .rail-brand-btn）在收起时
+         * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
+         */}
+        <div className="rail-slot">
+          <Rail />
+        </div>
 
           <section className="center">
             <Continuity />
@@ -473,7 +481,6 @@ export default function App() {
             ) : null}
 
             <ReviewBar />
-            <StatusBar />
             <Composer />
           </section>
 

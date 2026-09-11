@@ -966,18 +966,15 @@
   z-index: 5;
   min-width: 0;
 }
-.app.rail-off .rail {
-  opacity: 1;
-  pointer-events: auto;
+/* 收起时左栏内容隐藏（但头部那个开关**要留着**，否则展不开）。
+   ⚠️ 曾经这里是 `opacity: 0` + `pointer-events: auto` —— 结果是
+   左栏透明却仍然可点、还盖在展开把手上，展开按钮根本点不到。
+   现在改为「保留头部、隐藏其余」。 */
+.app.rail-off .rail > *:not(.rail-top) {
+  visibility: hidden;
 }
-/* 收起时左栏内容淡出，避免宽度收到 0 的过程中文字被压扁 */
-.app.rail-off .rail {
-  opacity: 0;
-  transition: opacity 120ms var(--ease);
-}
-.app:not(.rail-off) .rail {
-  opacity: 1;
-  transition: opacity 160ms var(--ease) 60ms;
+.app.rail-off .rail-top > *:not(.rail-brand-btn) {
+  visibility: hidden;
 }
 /* -------------------------------------------------------------------
    24. 左栏顶部的模式开关（固定 / 自动）
@@ -1878,7 +1875,12 @@
      ⚠️ 只用这一个变量 —— 曾经同时存在 --w-rail 与 --w-rail，
         两者在收起/展开时值不同步，grid 列算成了 0px 1441px 0px，
         中栏宽度变成 0、整屏被左栏占满。 */
+  /* 展开宽度 */
   --w-rail: 300px;
+  /* 收起宽度：必须容得下头部那个开关（offset 12 + 按钮 26 + 边距 12）——
+     否则收起后按钮被裁掉，就没法再展开了。
+     48-50 也是常见「折叠侧边栏」宽度（VS Code 的 activity bar 是 48） */
+  --w-rail-collapsed: 50px;
   /* 右栏（任务）。没有任务时由 :has 归零 */
   --w-right: 264px;
 }
@@ -1886,7 +1888,7 @@
   --w-right: 0px;
 }
 .app.rail-off {
-  --w-rail: 0px;
+  --w-rail: var(--w-rail-collapsed);
 }
 /* 左栏内容宽度固定，不能跟着列宽收缩 ——
    否则收起过程中文字被压扁，而不是「滑走」 */
@@ -1915,13 +1917,9 @@
   /* 固定宽度：不随 grid 列宽收缩 */
   width: 300px;
 }
+/* 收起时左栏变成一条 50px 的竖条（仍显示头部的开关） */
 .app.rail-off .rail {
-  opacity: 0;
-  transition: opacity 120ms var(--ease);
-}
-.app:not(.rail-off) .rail {
-  opacity: 1;
-  transition: opacity 160ms var(--ease) 60ms;
+  width: 50px;
 }
 
 /* ===================================================================
@@ -3865,4 +3863,417 @@ html[data-theme='light'] .md pre {
 html[data-theme='light'] .tb-pin.on {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* ===================================================================
+   45. 右栏 · 文件树
+
+   设计取舍：
+   · 缩进用 padding-left，行是**整行可点**的按钮（不是小图标）——
+     文件树的行高只有 20px，点小图标是折磨。
+   · 目录 / 文件用不同前缀区分：目录有 folder 图标，文件只有一个 1.5px 小点。
+     不引入「文件类型图标」是有意的 —— 那需要按扩展名映射几十个图标，
+     而在这里用户要判断的是「哪个文件」，看名字就够了。
+   · 尺寸（1.4K）只在文件行右侧显示，颜色比名字淡一档：
+     它是辅助信息，不能在扫读名字时抢注意力。
+   · `.rp-fs` 限制最大高度并可滚 —— 一个 400 项的目录不能把右栏顶穿。
+   =================================================================== */
+.rp-fs {
+  max-height: 280px;
+  overflow: auto;
+  /* 滚动条别压住文字 */
+  scrollbar-gutter: stable;
+}
+.rp-fs-node {
+  display: contents;
+}
+.rp-fs-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 20px;
+  padding-right: 4px;
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
+}
+.rp-fs-row:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.rp-fs-row.dir {
+  color: var(--fg-mute);
+}
+.rp-fs-row.dir:hover {
+  color: var(--fg);
+}
+/* 点过之后闪一下 —— 否则「已把 @路径 插进输入框」这件事看不见（输入框可能在视野外） */
+.rp-fs-row.hot {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rp-fs-ico {
+  flex: none;
+  opacity: 0.75;
+}
+.rp-fs-dot {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  margin: 0 4.5px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  opacity: 0.45;
+}
+.rp-fs-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rp-fs-size {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  color: var(--fg-dim);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+/* 展开时的加载指示：一个小方块呼吸，不占位不打乱行高 */
+.rp-fs-spin {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  margin: 0 4px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  animation: rp-fs-pulse 900ms var(--ease) infinite;
+}
+@keyframes rp-fs-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.rp-fs-err {
+  color: var(--err);
+}
+
+/* 分区标题右侧的小按钮（刷新）—— 必须 e.stopPropagation，
+   否则点它会连带折叠整个分区（父级是折叠按钮） */
+.rp-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.rp-mini:hover {
+  background: var(--bg-3);
+  color: var(--accent);
+}
+
+/* ===================================================================
+   46. 右栏 · 日志（从中栏底部搬过来）
+
+   为什么用等宽 + pre：它是 stderr，保留原始换行与缩进才有诊断价值。
+   高度上限比文件树小 —— 日志是「出问题时才看」的东西。
+   =================================================================== */
+.rp-log {
+  max-height: 160px;
+  overflow: auto;
+  margin: 0;
+  padding: 5px 6px;
+  border-radius: var(--r-xs);
+  background: var(--bg-0);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+  font-family: var(--font-code);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  scrollbar-gutter: stable;
+}
+
+/* ===================================================================
+   47. 面板收起后的「把手」
+
+   用户要求把两个面板开关从标题栏搬进各自面板的头部。
+   但搬进去之后有个必然的后果：面板塌陷后开关也跟着不可见了，
+   就再也没有办法展开。所以收起时留一条 24px 的窄把手。
+
+   左栏不需要这个 —— 它收起后头部那个开关仍然可见可点（见 Rail.tsx）。
+   =================================================================== */
+/*
+ * 右栏收起后的竖条（左栏已不需要 —— 它自己的开关就是把手，见 Rail.tsx）。
+ *
+ * 对称规则：按钮距离**窗口右边缘** 8px、距顶部 8px ——
+ * 与展开时 .rp-top 里那个按钮的偏移一致（.rp-top 的 padding-right 是 8px），
+ * 所以展开/收起时按钮不会跳位置（用户报过左栏同样的问题）。
+ * 宽度 40 = 8 + 22 + 10，让按钮的右偏移量能对上。
+ */
+.rightstub {
+  position: relative; /* 右栏是 grid 的最后一列，不脱离文档流 */
+  width: 40px;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+}
+.rightstub .rp-x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* 右栏收起：只留那条 40px 的竖条 */
+.workspace:not(:has(.rightpanel)) {
+  --w-right: 40px;
+}
+
+/* ===================================================================
+   48. 左栏头部的品牌按钮（点了收起左栏）
+
+   与右栏 .rp-x 同一个语义：开关贴着它控制的东西。
+   悬停时才显示那个「收起」小图标 —— 平时它就是一个品牌标识。
+   =================================================================== */
+/*
+ * 开关按钮的几何**必须固定**（26×26，居中）。
+ *
+ * 不能再用 padding 追随内容宽度 —— 展开时内容是「砚」（宽）、
+ * 收起时是图标（窄），内容一变按钮尺寸就变，位置也跟着跳
+ * （这正是用户报的「展开前后按钮大小位置不对称」）。
+ * 固定尺寸后，两种状态只在**内容**上不同，盒子完全一致。
+ */
+.rail-brand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  transition: background var(--dur) var(--ease);
+}
+.rail-brand-btn:hover {
+  background: var(--bg-3);
+  color: var(--accent);
+}
+
+/* ===================================================================
+   49. 左栏底部：用户档案（头像 / 名字 / 设置）
+
+   用户报的两个问题：
+   · 原来显示「砚 / 工作目录 / N 个会话」→ 改成用户名 + 可自定义头像
+   · 设置按钮太小（原来是 .rail-icon.sm = 22px 盒 + 12px 图标，
+     跟旁边 26px 的头像不成比例）→ 改用标准 .rail-icon（26px + 14px）
+   =================================================================== */
+.rail-foot {
+  position: relative; /* .rail-user-pop 的定位基准 */
+}
+.rail-avatar {
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.rail-avatar:hover {
+  border-color: var(--accent-line);
+}
+.rail-avatar-letter {
+  font-size: var(--fs-base);
+  line-height: 1;
+  /* 中文首字在圆里偏下，抬 0.5px 视觉居中 */
+  transform: translateY(-0.5px);
+}
+.rail-user-name {
+  color: var(--fg);
+}
+
+/* ---- 弹出面板：贴在底栏上方 ---- */
+.rail-user-pop {
+  position: absolute;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  bottom: calc(100% - var(--sp-1));
+  z-index: 40;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+}
+.rup-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+.rup-head .spacer {
+  flex: 1;
+}
+.rup-x {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.rup-x:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rup-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.rup-label {
+  flex: none;
+  width: 34px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rup-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.rup-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.rup-input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
+
+/* 首字 / 图标 二选一 */
+.rup-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+}
+.rup-seg-btn {
+  padding: 2px 9px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rup-seg-btn.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 图标网格 */
+.rup-icons {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: var(--sp-2);
+}
+.rup-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+}
+.rup-icon:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.rup-icon.sel {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 色相 */
+.rup-hues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rup-hue {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+}
+.rup-hue.none {
+  /* 默认色：用半白半透明的斜条表示「不指定」 */
+  background: linear-gradient(135deg, var(--bg-4) 50%, transparent 50%);
+}
+.rup-hue.sel {
+  box-shadow: 0 0 0 2px var(--accent-line);
+  border-color: var(--accent);
+}
+
+.rup-btn {
+  width: 100%;
+  margin-top: var(--sp-3);
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.rup-btn:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.rup-login {
+  background: transparent;
+}
+
+/* 登录说明（预留功能，如实说明） */
+.rup-login-note {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.rup-note-title {
+  color: var(--warn);
+  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-1);
+}
+.rup-note-body {
+  margin: 0 0 var(--sp-2);
+  overflow-wrap: anywhere;
+}
+.rup-note-list {
+  margin: 0;
+  padding-left: 16px;
+}
+.rup-note-list li {
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }

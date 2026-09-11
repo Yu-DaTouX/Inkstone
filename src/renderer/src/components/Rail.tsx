@@ -4,6 +4,7 @@ import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import type { SessionSummary } from '../../../shared/ipc'
 import { shortProject } from './rail-utils'
+import { RailUser } from './RailUser'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -133,7 +134,30 @@ export function Rail() {
     <aside className="rail">
       {/* ---- 顶部：品牌 + 动作 ---- */}
       <div className="rail-top">
-        <span className="rail-brand">砚</span>
+        {/*
+         * 左栏开关 = 品牌按钮，**同一个元素在两种状态下几何完全相同**。
+         *
+         * 为什么这么做（用户报的「展开前后按钮大小位置不对称」）：
+         *   上一版收起后渲染的是另一个元素（.rail-stub），它在 24px 的列里
+         *   居中、图标 12px、padding-top 8px；而展开时是「砚 + 图标」的按钮、
+         *   在 .rail-top 的 12px 内边距处。两个东西对不上。
+         *   现在收起宽度 50px（= 12 + 26 + 12），按钮仍在 (12,12) 处 26×26 ——
+         *   位置与尺寸一模一样，只是内容从「砚」换成展开图标。
+         */}
+        <button
+          className="rail-brand-btn"
+          title={railPinned ? t('rail.collapse') : t('rail.expand')}
+          onClick={() => setRailPinned(!railPinned)}
+          data-testid="rail-toggle"
+          data-open={railPinned ? '1' : '0'}
+          aria-expanded={railPinned}
+        >
+          {railPinned ? (
+            <span className="rail-brand">砚</span>
+          ) : (
+            <Icon name="sidebar-left" size={14} />
+          )}
+        </button>
         <span className="rail-spacer" />
         <button
           className={`rail-icon ${searching ? 'on' : ''}`}
@@ -146,8 +170,6 @@ export function Rail() {
         >
           <Icon name="search" size={12} />
         </button>
-        {/* 侧栏开关不放这里 —— 标题栏最左上角已经有了。
-            同一件事摆两个按钮会让人不确定该点哪个。 */}
       </div>
 
       {searching ? (
@@ -235,26 +257,8 @@ export function Rail() {
         </div>
       </div>
 
-      {/* ---- 底部：用户块 ---- */}
-      <div className="rail-foot">
-        <span className={`rail-avatar ${conn === 'ready' ? 'ok' : 'warn'}`}>砚</span>
-        <span className="rail-user">
-          <span className="rail-user-name" title={cwd}>
-            {cwd ? shortProject(cwd) : '—'}
-          </span>
-          <span className="rail-user-sub">
-            {sessions.length} {t('rail.sessionsCount')}
-          </span>
-        </span>
-        <button
-          className="rail-icon sm"
-          title={t('set.title')}
-          onClick={() => openSettings()}
-          data-testid="rail-settings"
-        >
-          <Icon name="settings" size={12} />
-        </button>
-      </div>
+      {/* ---- 底部：用户块（名字 / 自定义头像 / 登录预留）---- */}
+      <RailUser />
     </aside>
   )
 }

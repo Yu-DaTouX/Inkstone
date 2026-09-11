@@ -24,6 +24,7 @@ import type {
   SessionTodo,
   SlashCommand,
   UIMessage,
+  UserProfile,
   ZoomState
 } from '../../../shared/ipc'
 
@@ -216,6 +217,11 @@ interface Store {
   changeCwd: (cwd: string) => Promise<void>
   /** 设界面缩放（0 = 自动） */
   setUiScale: (v: number) => Promise<void>
+  /**
+   * 改用户档案（名字 / 头像）。
+   * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
+   */
+  patchProfile: (p: Partial<UserProfile>) => Promise<void>
   /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
   loadZoom: () => Promise<void>
 
@@ -852,6 +858,11 @@ export const useStore = create<Store>((set, get) => ({
     } catch {
       /* 拉不到就不显示这一行，不能因此影响启动 */
     }
+  },
+
+  patchProfile: async (p) => {
+    const next = await window.yan.patchSettings({ profile: { ...get().settings?.profile, ...p } as UserProfile })
+    set({ settings: next })
   },
 
   /* --------------------------------------------------------------- 记忆 */

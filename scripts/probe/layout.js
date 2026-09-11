@@ -187,12 +187,16 @@
   ok(cx2 > cx1, `内容跟着右移（left ${cx1} → ${cx2}）`)
 
   /* ---- ⑤ 按钮的选中态跟着状态 ---- */
-  out.push('  展开后 data-pinned=' + btn.dataset.pinned + ' data-open=' + btn.dataset.open)
-  ok(btn.dataset.pinned === '1', '展开时按钮显示为选中')
+  out.push('  展开后 data-open=' + btn.dataset.open + ' aria-expanded=' + btn.getAttribute('aria-expanded'))
+  // ⚠️ 这个按钮现在是**同一个元素**在两种状态下复用（收起时显示展开图标），
+  //    所以数据属性从 data-pinned 改成了 data-open —— 断言跟着改。
+  ok(btn.dataset.open === '1', '展开时按钮显示为选中')
 
-  // 左栏顶部的模式开关已删 —— 侧栏开关在标题栏最左上角（一个入口就够，
-  // 重复放两处会让人不确定该点哪个）。
-  ok(!q('[data-testid="rail-mode"]'), '左栏内不再重复放侧栏开关')
+  // 左栏顶部的模式开关已删。
+  // 侧栏开关位置变过两次：标题栏最左上角 → 左栏头部的品牌按钮（当前）。
+  // 所以这里改为断言**当前设计意图**：开关就在左栏头部，且没有重复入口。
+  ok(!!btn.closest('.rail-top'), '开关在左栏头部（开关贴着它控制的东西）')
+  ok(!q('[data-testid="rail-mode"]'), '左栏内不再有旧的模式开关')
 
   /*
    * 标题栏不再显示会话名（用户要求删掉左上角那个胶囊）。

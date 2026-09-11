@@ -37,6 +37,32 @@ export interface ZoomState extends ZoomMath {
 }
 
 /**
+ * 当前生效的缩放值（内存里的唯一真源）。
+ *
+ * ── 为什么需要它（这里曾经有过一个真 bug）──
+ * 快捷键处理器原本是这么写的：
+ *
+ *     void getSettings().then((s) => setUiScale(stepScale(win, s.uiScale, 1)))
+ *
+ * 它每次都要**异步读盘**才知道当前值。而 setUiScale → patchSettings 是
+ * 「invalidate 缓存 → 重读文件 → 写文件」的异步链。实测后果：
+ * **连按两次 Ctrl+= 时第二下可能读到写盘之前的旧值**，于是算出与第一下
+ * 相同的档位（看上去就是「按键丢了」）。探针里表现为
+ * `1.152 → 1.3 → (无变化) → ...`，而且只在高负载/连续按键时出现。
+ *
+ * 现在：应用缩放时同步更新这个变量，快捷键直接读它 —— 热路径不碰磁盘，
+ * 也没有竞态。设置里的值仍然会写（重启后保持）。
+ *
+ * `undefined` = 还没从设置里初始化过（启动早期）。
+ */
+let currentUiScale: number | undefined
+
+/** 当前值（未初始化则当自动） */
+export function peekUiScale(): number {
+  return currentUiScale ?? 0
+}
+
+/**
  * 取窗口所在显示器的缩放系数。
  *
  * 用 `getDisplayMatching(win.getBounds())` 而不是 primaryDisplay：
@@ -62,9 +88,10 @@ export function zoomState(win: BrowserWindow | null, uiScale: unknown): ZoomStat
   return { ...m, scaleFactor: sf }
 }
 
-/** 应用缩放，返回生效后的状态 */
+/** 应用缩放，返回生效后的状态。同时记住当前值（供快捷键同步读取） */
 export function applyZoom(win: BrowserWindow | null, uiScale: unknown): ZoomState {
   const st = zoomState(win, uiScale)
+  currentUiScale = st.uiScale
   if (win && !win.isDestroyed()) win.webContents.setZoomFactor(st.effective)
   return st
 }

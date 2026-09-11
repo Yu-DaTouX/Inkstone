@@ -4,6 +4,7 @@ import type {
   Attachment,
   AuthProviderInfo,
   CustomEntry,
+  DirListing,
   ForkPoint,
   MainPush,
   MemoryItem,
@@ -123,6 +124,9 @@ const api: YanBridge = {
   /* ---- 界面缩放（0 = 自动） ---- */
   getZoom: () => invoke<ZoomState>('yan:getZoom'),
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
+
+  /* ---- 文件树 ---- */
+  listDir: (rel) => invoke<DirListing>('yan:listDir', rel),
 
   /* ---- 窗口 ---- */
   win: {

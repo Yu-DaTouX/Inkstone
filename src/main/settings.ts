@@ -5,9 +5,9 @@
  * 桌面端改它会污染用户的 pi 配置。
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import type { AppSettings } from '../shared/ipc'
+import type { AppSettings, UserProfile } from '../shared/ipc'
 import { YAN_DIR } from './memory'
 import { clampScale } from './zoom-math'
 
@@ -24,7 +24,50 @@ const DEFAULTS: AppSettings = {
   rightPanelOpen: true,
   alwaysOnTop: false,
   // 0 = 自动（按屏幕缩放算，见 main/zoom.ts）
-  uiScale: 0
+  uiScale: 0,
+  // 空名字 → 界面回落到系统用户名（见 defaultProfile）
+  profile: defaultProfile()
+}
+
+/**
+ * 默认用户档案。
+ *
+ * 名字默认用**系统用户名**（`os.userInfo().username`）而不是写死「用户」：
+ * 首启动就有个真名，用户想改再改。取不到（极小概率）就空串，
+ * 界面会用「你」兼底。
+ */
+function defaultProfile(): UserProfile {
+  let name = ''
+  try {
+    name = userInfo().username ?? ''
+  } catch {
+    /* 取不到就用空名 */
+  }
+  return {
+    name,
+    avatarKind: 'letter',
+    avatarValue: '',
+    avatarHue: -1,
+    signedIn: false
+  }
+}
+
+/** 夹一个干净的用户档案（设置文件可能被手改，不能信） */
+function sanitizeProfile(v: unknown): UserProfile {
+  const d = defaultProfile()
+  if (!v || typeof v !== 'object') return d
+  const o = v as Partial<UserProfile> & Record<string, unknown>
+  const kind = o.avatarKind === 'icon' ? 'icon' : 'letter'
+  const hueRaw = typeof o.avatarHue === 'number' ? o.avatarHue : -1
+  return {
+    // 名字限长 32：左栏那一行放不下更长的，而且设置文件不该被写进巨串
+    name: typeof o.name === 'string' ? o.name.slice(0, 32) : d.name,
+    avatarKind: kind,
+    avatarValue: typeof o.avatarValue === 'string' ? o.avatarValue.slice(0, 32) : '',
+    avatarHue: Number.isFinite(hueRaw) ? Math.min(360, Math.max(-1, hueRaw)) : -1,
+    // 恒为 false（登录未接入）—— 即使设置文件里被写成 true 也不信
+    signedIn: false
+  }
 }
 
 let cached: AppSettings | null = null
@@ -49,6 +92,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.alwaysOnTop = cached.alwaysOnTop === true
     // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）
     cached.uiScale = clampScale(cached.uiScale)
+    cached.profile = sanitizeProfile(cached.profile)
   } catch {
     cached = { ...DEFAULTS }
   }
@@ -75,6 +119,8 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
     // 去重、保留最近 8 个
     next.recentCwds = [...new Set(patch.recentCwds)].slice(0, 8)
   }
+  // 档案是合并写入（只改名字不能把头像清空），且一律过一遍校验
+  next.profile = sanitizeProfile({ ...next.profile, ...(patch.profile ?? {}) })
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }

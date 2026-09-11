@@ -87,7 +87,15 @@
   const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
   log('  右栏分区: ' + JSON.stringify(secs))
   ok(secs.includes('rp-context'), '右栏有「上下文」分区')
-  ok(secs.includes('rp-env'), '右栏有「环境」分区')
+  /*
+   * 分区清单变过（2026-09-12）：
+   *   · 「环境」（pi 版本 / 模型 / 计数 / 工作目录）**已删** —— 那些都有别处：
+   *     模型在标题栏、pi 版本在设置→关于、工作目录在文件树根部
+   *   · 新增「文件」（项目文件树）与「日志」（从底部搬过来）
+   * 所以断言改成验证**当前的分区集合**，不再绑到已删的 rp-env。
+   */
+  ok(secs.includes('rp-files'), '右栏有「文件」分区（文件树）')
+  ok(!secs.includes('rp-env'), '「环境」分区已移除（信息在别处，不再重复）')
 
   return out.join('\n')
 })()

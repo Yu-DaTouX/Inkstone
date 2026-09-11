@@ -4,7 +4,7 @@ import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import type { MessageKey } from '../i18n'
 import type { QueueMode } from '../../../shared/ipc'
-import { shortProject } from './rail-utils'
+import { FileTree } from './FileTree'
 
 /**
  * 右栏 —— 常驻状态栏。
@@ -15,8 +15,16 @@ import { shortProject } from './rail-utils'
  *   上下文   用了多少 / 占了多少 / 花了多少
  *   任务      agent 的 panel_todos（与 TUI 的 /panel 同一份）
  *   队列      待投递的插话 + 投递模式（pi 的 set_steering_mode / set_follow_up_mode）
+ *   文件      项目文件树（点一下 = 往输入框插 @路径）
  *   扩展      扩展的 setStatus / setWidget（真实数据，不再丢掉）
- *   环境      pi 版本 / 工作目录 / 模型 / 计数
+ *   日志      pi stderr + 扩展通知（原来挤在中栏底部，用户要求搬过来）
+ *   操作      pi 自带能力的入口
+ *
+ * ── 本次的两处改动（用户要求）──
+ * · **去掉「环境」分区**（pi 版本 / 模型 / 计数 / 热键提示）：
+ *   这些都不需要在右栏常驻 —— 模型在标题栏、热键在设置里、
+ *   pi 版本在设置→关于。而且它的工作目录一行与文件树的根重复。
+ * · **加文件树**：见 FileTree.tsx。
  *
  * 为什么不照抄 OpenCode 的分区名（MCP / LSP）：
  *   pi 没有 MCP 与 LSP 这两个概念，硬写上去就是**编状态**。
@@ -30,7 +38,27 @@ export function RightPanel() {
   const open = useStore((s) => s.settings?.rightPanelOpen ?? true)
   const toggle = useStore((s) => s.toggleRightPanel)
 
-  if (!open) return null
+  /*
+   * 收起时不再返回 null —— 而是留一个**窄把手**：
+   * 面板开关已经搬到面板自己的头部（用户要求），
+   * 如果收起后什么都不留，就没办法再展开了。
+   * 这也是左右对称的：左栏收起后有 .rail-stub。
+   */
+  if (!open) {
+    return (
+      <aside className="rightstub" data-testid="rightstub">
+        <button
+          className="rp-x"
+          onClick={() => void toggle()}
+          title={t('rp.show')}
+          data-testid="rightpanel-toggle"
+          data-open="0"
+        >
+          <Icon name="sidebar-right" size={12} />
+        </button>
+      </aside>
+    )
+  }
 
   return (
     <aside className="rightpanel" data-testid="rightpanel">
@@ -51,8 +79,9 @@ export function RightPanel() {
         <ContextSection />
         <TodoSection />
         <QueueSection />
+        <FileTree />
         <ExtSection />
-        <EnvSection />
+        <LogSection />
         <ActionsSection />
       </div>
     </aside>
@@ -100,7 +129,6 @@ function ContextSection() {
   const t = useT()
   const stats = useStore((s) => s.stats)
   const session = useStore((s) => s.session)
-
   const cu = stats?.contextUsage
   const used = cu?.tokens ?? 0
   const win = cu?.contextWindow ?? session?.model?.contextWindow ?? 0
@@ -118,7 +146,6 @@ function ContextSection() {
         <span className="rp-v big">{nf.format(tokens)}</span>
         <span className="rp-u">{t('rp.tokens')}</span>
       </div>
-
       <div className="rp-kv">
         <span className="rp-k" />
         <span className={`rp-v ${tone}`}>{pct.toFixed(pct < 10 ? 1 : 0)}%</span>
@@ -132,6 +159,20 @@ function ContextSection() {
       })}>
         <i style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
+
+      {/*
+       * 压缩中 —— 从中栏底部的状态条搬过来的。
+       * 放在上下文分区是因为它本来就是上下文的事（快满了才压缩），
+       * 而且这样中栏底部那一条就能整个去掉（用户嫌它挤，见 rp 文件头注释）。
+       */}
+      {session?.isCompacting ? (
+        <div className="rp-kv rp-warn" data-testid="rp-compacting">
+          <span className="rp-now-spin" aria-hidden>
+            <Spinner />
+          </span>
+          <span className="rp-text">{t('status.compacting')}</span>
+        </div>
+      ) : null}
 
       <div className="rp-kv">
         <span className="rp-k" />
@@ -398,52 +439,41 @@ function ExtSection() {
 }
 
 /* ==================================================================
-   环境 —— 版本 / 目录 / 模型 / 计数
+   日志 —— pi 的 stderr + 扩展通知
+
+   原来挤在中栏底部（.statusbar + .logdrawer），用户嫌它不美观。
+   搬到右栏的理由：「状态」类信息本来就属于右栏（见文件头注释）。
+   顺带把中栏底部整条去掉 —— 那个条只用干两件事：显示压缩中
+   与当日志按钮，两件都搬走了就不需要它了。
    ================================================================== */
 
-function EnvSection() {
+function LogSection() {
   const t = useT()
-  const info = useStore((s) => s.piInfo)
-  const session = useStore((s) => s.session)
-  const stats = useStore((s) => s.stats)
-  const cwd = useStore((s) => s.settings?.cwd)
-  const openSettings = useStore((s) => s.openSettings)
+  const logs = useStore((s) => s.logs)
+
+  // 日志为空时不占位（与 ExtSection 同一个约定）
+  if (logs.length === 0) return null
 
   return (
-    <Section titleKey="rp.env" testId="rp-env">
-      {info?.version ? (
-        <div className="rp-kv">
-          <span className="rp-k">pi</span>
-          <span className="spacer" />
-          <span className="rp-v">{info.version}</span>
-        </div>
-      ) : null}
-
-      {session?.model ? (
-        <div className="rp-kv">
-          <span className="rp-k">{t('rp.model')}</span>
-          <span className="spacer" />
-          <span className="rp-v" title={session.model.id}>
-            {session.model.name}
-          </span>
-        </div>
-      ) : null}
-
-      {stats ? (
-        <div className="rp-kv">
-          <span className="rp-k">{t('rp.counts')}</span>
-          <span className="spacer" />
-          <span className="rp-v">
-            {stats.userMessages} / {stats.assistantMessages} / {stats.toolCalls}
-          </span>
-        </div>
-      ) : null}
-
-      <button className="rp-path" onClick={() => openSettings('general')} title={cwd}>
-        {cwd ? shortProject(cwd) : '—'}
-      </button>
-
-      <div className="rp-dim">{t('rp.hotkeys')}</div>
+    <Section
+      titleKey="rp.log"
+      testId="rp-log"
+      defaultOpen={false}
+      extra={
+        <span className="rp-count" data-testid="log-count">
+          {logs.length}
+        </span>
+      }
+    >
+      {/*
+       * 只渲染最后 200 行。
+       * pi 的 stderr 在启动期可能一下刷很多（扩展自检、警告），
+       * 全量渲染会把右栏变成一个几千行的列表 —— 而用户真正要看的是尾部。
+       */}
+      <pre className="rp-log" data-testid="log-body">
+        {logs.slice(-200).join('\n')}
+      </pre>
+      <div className="rp-dim">{t('rp.logHint')}</div>
     </Section>
   )
 }
