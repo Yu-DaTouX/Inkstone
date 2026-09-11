@@ -13,6 +13,7 @@
 import { EventEmitter } from 'node:events'
 import { PiRpc } from './protocol'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
+import { generateTitle } from './title'
 import type {
   BashRun,
   ForkPoint,
@@ -334,6 +335,14 @@ export class AgentController extends EventEmitter {
    */
   private conn: 'starting' | 'ready' | 'exited' | 'error' = 'starting'
   private connDetail = ''
+
+  /**
+   * 标题生成中/已尝试的标记。
+   *
+   * 只在「没有名字 + 有第一条用户消息」时尝试一次 ——
+   * 每轮 agent_settled 都触发的话会反复请求模型，白花钱。
+   */
+  private titleTried = new Set<string>()
 
   /** 供渲染端拉取（补上可能错过的 push） */
   getConn(): { state: 'starting' | 'ready' | 'exited' | 'error'; detail: string } {
@@ -681,6 +690,8 @@ export class AgentController extends EventEmitter {
         void this.refreshStats()
         // 兑底：扩展也可能通过 /panel task 命令改任务（不经过工具调用）
         void this.refreshTodos()
+        // 第一次聊完 → 用模型给这个会话起个短标题
+        void this.maybeGenerateTitle()
         break
 
       case 'turn_end':
@@ -1300,6 +1311,50 @@ export class AgentController extends EventEmitter {
       /* ignore */
     }
     return null
+  }
+
+  /* ---------------------------------------------------------- 标题生成 */
+
+  /**
+   * 用模型把用户的第一句话总结成短标题。
+   *
+   * 触发条件（三个都要满足，否则一次都不发请求）：
+   *   ① 这个会话还没有名字（用户没起过）
+   *   ② 有至少一条用户消息（否则没东西可总结）
+   *   ③ 这个会话本次运行还没试过
+   *
+   * 为什么用独立进程：见 src/main/title.ts 的说明 —— 复用主会话会污染对话、
+   * 还会让 prompt cache 失效（那个代价比一次请求贵得多）。
+   */
+  private async maybeGenerateTitle(): Promise<void> {
+    const st = this.state
+    if (!st) return
+    if (st.sessionName) return // 用户已经起过名字
+    if (this.titleTried.has(st.sessionId)) return
+
+    const firstUser = this.messages.find((m) => m.role === 'user' && m.text.trim())
+    if (!firstUser) return
+
+    this.titleTried.add(st.sessionId)
+
+    try {
+      const res = await generateTitle({
+        sessionId: st.sessionId,
+        firstMessage: firstUser.text,
+        cwd: this.cwd,
+        piBin: this.piBin
+      })
+      if (!res?.title) return
+
+      // 写回 pi（TUI 的 /resume 也能看到）
+      const ok = await this.rpc?.command('set_session_name', { name: res.title })
+      if (ok?.success) await this.refreshState()
+      // 不管写没写进 pi，都推给界面 —— 标题是给用户看的
+      this.push({ ch: 'session-title', payload: { sessionId: st.sessionId, title: res.title } })
+    } catch (e) {
+      // 标题失败不该影响任何事
+      console.error('[agent] 标题生成失败：', e)
+    }
   }
 
   getState(): SessionState | null {

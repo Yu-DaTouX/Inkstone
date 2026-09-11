@@ -216,5 +216,8 @@
   "think.high": "多",
   "think.xhigh": "很多",
   "think.max": "最大",
-  "picker.reasoning": "推理"
+  "picker.reasoning": "推理",
+  "header.noProject": "无项目",
+  "tb.restore": "还原",
+  "chat.working": "正在处理…"
 }

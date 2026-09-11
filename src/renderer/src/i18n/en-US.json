@@ -216,5 +216,8 @@
   "think.high": "High",
   "think.xhigh": "Very high",
   "think.max": "Max",
-  "picker.reasoning": "reasoning"
+  "picker.reasoning": "reasoning",
+  "header.noProject": "No project",
+  "tb.restore": "Restore",
+  "chat.working": "Working…"
 }

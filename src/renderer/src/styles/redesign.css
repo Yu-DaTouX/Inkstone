@@ -2170,3 +2170,780 @@
 .think-seg:has(.think-opt.on:not([data-testid='thinking-off'])) .think-opt.on {
   color: var(--accent);
 }
+
+/* ===================================================================
+   37. 终端风格强化
+       ─────────────────────────────────────────────────────────────
+       目标：更像终端，不像「一堆卡片」。
+       手段（按重要性排）：
+         ① 圆角收小 —— 卡片感主要来自圆角
+         ② 助手消息加左侧 1px 竖线 —— 终端里输出是缩进的，不装箱
+         ③ 工具卡用左侧状态色条 + 方角，不用整圈边框
+         ④ 层级只用背景色差，不用边框（边框是"卡片"的信号）
+         ⑤ 分隔线更细更淡
+   =================================================================== */
+
+/* ① 圆角收小 */
+:root {
+  --r-xs: 2px;
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-xl: 8px;
+}
+
+/* ② 助手消息：左侧竖线槽位（终端输出的缩进感） */
+.msg.assistant .msg-body {
+  border-left: 1px solid var(--border-soft);
+  padding-left: var(--sp-3);
+  margin-left: -1px;
+}
+
+/* ③ 工具卡：方角 + 左侧状态色条 */
+.tool {
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--border-str);
+  background: var(--bg-1);
+  box-shadow: none;
+}
+.tool[data-state='ok'] {
+  border-left-color: var(--ok);
+}
+.tool[data-state='error'] {
+  border-left-color: var(--err);
+}
+.tool[data-state='running'] {
+  border-left-color: var(--warn);
+}
+.tool-head {
+  padding: 4px var(--sp-3);
+}
+/* 内层不要第二个圆角 */
+.tool-pre,
+.diff-pre {
+  border-radius: 0;
+}
+
+/* ④ 块级元素统一收圆角，去掉投影 */
+.memcard,
+.card,
+.row-menu,
+.srow-menu,
+.mt-pop {
+  border-radius: var(--r-md);
+  box-shadow: none;
+}
+/* 浮层保留一点投影（它们是真的浮在上面） */
+.mt-pop,
+.srow-menu,
+.row-menu {
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+}
+/* 大面板保留小圆角 */
+.settings,
+.modal {
+  border-radius: var(--r-lg);
+}
+
+/* ===================================================================
+   38. 用户消息：右对齐 + 背景
+       ─────────────────────────────────────────────────────────────
+       用户要求「加背景 + 移到右边」。
+       注意：气泡靠右，但**文字仍然左对齐** ——
+       中文右对齐会非常难读（每行起止位置不齐）。
+   =================================================================== */
+.msg.user {
+  /* 槽位挪到右侧 */
+  grid-template-columns: minmax(0, 1fr) 20px;
+}
+.msg.user .gutter {
+  grid-column: 2;
+  grid-row: 1;
+  justify-content: flex-start;
+}
+.msg.user .msg-body {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  border-left: none;
+}
+.msg.user .msg-label {
+  align-self: flex-end;
+}
+.msg.user .bubble {
+  max-width: 76%;
+  /* 明显的背景 —— 之前只有边框 */
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  /* 文字左对齐（不要 justify） */
+  text-align: left;
+}
+.msg.user .msg-images {
+  justify-content: flex-end;
+}
+.msg.user .msg-act {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* ===================================================================
+   39. 对话导航轨：拉长间距 + 动态展开
+       ─────────────────────────────────────────────────────────────
+       之前：tick 高 2px、间距 5px —— 20 轮只占 140px，又挤又难点。
+       现在：
+         · 默认间距 9px（拉长），tick 宽 14px
+         · 鼠标靠近整条导航轨 → 间距拉到 12px、tick 变长 22px（动态反馈）
+         · 当前项更长并高亮
+   =================================================================== */
+.outline {
+  width: 40px;
+  padding-left: 6px;
+}
+.outline-track {
+  gap: 9px;
+  max-height: 84%;
+  transition: gap 180ms var(--ease);
+}
+.outline-tick {
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--border-str);
+  opacity: 0.55;
+}
+/* 去掉之前的错落 —— 终端风格要整齐 */
+.outline-tick:nth-child(3n) {
+  width: 14px;
+}
+.outline-tick.on {
+  width: 26px;
+  background: var(--fg);
+  opacity: 1;
+}
+
+/* 鼠标进入导航轨：整条展开。
+   ⚠️ 用 :has(:hover) 而不是 .outline:hover ——
+   .outline 有 pointer-events: none（只有刻度可点，空白处不挡消息流），
+   所以它自己永远收不到 :hover。要靠子元素被悬停来反推。 */
+.outline:has(.outline-tick:hover) .outline-track {
+  gap: 12px;
+}
+.outline:has(.outline-tick:hover) .outline-tick {
+  width: 22px;
+  opacity: 0.85;
+}
+.outline:has(.outline-tick:hover) .outline-tick.on {
+  width: 30px;
+  opacity: 1;
+  background: var(--accent);
+}
+/* 单项悬停：再长一点，明确「我要点这个」 */
+.outline-tick:hover {
+  width: 32px;
+  height: 4px;
+  background: var(--fg);
+  opacity: 1;
+}
+
+/* ===================================================================
+   40. Codex 风格的模型 + 强度选择器
+   =================================================================== */
+
+/* ---- 收起态：`模型 强度` 合成一个标签 ---- */
+.mt-trigger {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.mt-trigger:hover:not(:disabled),
+.mt-trigger.open {
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.mt-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mt-model {
+  color: var(--fg-dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 强度用强调色（对应 Codex 那个紫色 "Ultra"） */
+.mt-level {
+  color: var(--accent);
+  flex: none;
+}
+.mt-trigger .chev {
+  align-self: center;
+  opacity: 0.5;
+  transform: rotate(-90deg);
+}
+.mt-trigger .chev.up {
+  transform: rotate(90deg);
+}
+
+/* ---- 展开面板 ---- */
+.mt-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  width: 320px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  overflow: hidden;
+}
+
+/* ---- 上半：强度 ---- */
+.mt-head {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+  flex: none;
+}
+.mt-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.mt-head-level {
+  color: var(--accent);
+  font-size: var(--fs-base);
+}
+.mt-head-model {
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 滑块：原生 range，只定制视觉。轨道用渐变表示"从省到贵" */
+.mt-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+.mt-slider:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.mt-slider::-webkit-slider-runnable-track {
+  height: 14px;
+  border-radius: var(--r-sm);
+  /* 已填充部分用强调色，未填充暗色 —— 一眼看出当前在哪 */
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 0%),
+    var(--bg-3) var(--fill, 0%),
+    var(--bg-3) 100%
+  );
+  border: 1px solid var(--border);
+}
+.mt-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -2px;
+  border-radius: var(--r-sm);
+  background: var(--fg);
+  border: 2px solid var(--bg-1);
+}
+.mt-slider:focus-visible {
+  outline: none;
+}
+.mt-slider:focus-visible::-webkit-slider-thumb {
+  border-color: var(--accent);
+}
+
+/* 档位落点：小方块，点了直接跳 */
+.mt-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 5px;
+  padding: 0 1px;
+}
+.mt-scale-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--border-str);
+  transition:
+    background var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.mt-scale-dot:hover {
+  background: var(--fg-mute);
+  transform: scale(1.3);
+}
+.mt-scale-dot.on {
+  background: var(--accent);
+}
+
+/* ---- 下半：模型列表 ---- */
+.mt-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  flex: none;
+}
+.mt-search input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+.mt-search input::placeholder {
+  color: var(--fg-mute);
+}
+.mt-count {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.mt-list {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 4px;
+  min-height: 0;
+}
+.mt-group + .mt-group {
+  margin-top: 4px;
+}
+.mt-group-head {
+  padding: 6px var(--sp-2) 3px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.mt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
+}
+.mt-item:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.mt-item.sel {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.mt-item.sel .ico {
+  color: var(--accent);
+  flex: none;
+}
+.mt-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mt-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.mt-empty {
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* ===================================================================
+   41. 主区头部：标题 + 项目胶囊（删掉了「上次聊到」那一行）
+   =================================================================== */
+.shead {
+  padding: 8px var(--sp-5) 7px;
+}
+.shead-title {
+  font-size: 15px;
+}
+/* 项目胶囊：终端风格，用小三角而不是圆点 */
+.shead-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  max-width: 220px;
+  padding: 1px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.shead-proj-ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+.shead-proj.none {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.shead-proj-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shead-chip {
+  border-radius: var(--r-sm);
+}
+/* ===================================================================
+   42. 标题栏改 Win11 风格
+       ─────────────────────────────────────────────────────────────
+       与 mac 风格的差别：
+         · 窗口按钮在**最右**，46×32 的方形区域（不是左侧三个圆点）
+         · 悬停：关闭变红、其余变中性灰
+         · 最大化时图标切成「还原」（两个错开方框）
+       尺寸严格按 Win11：宽 46px、高 32px（= 标题栏高度）
+   =================================================================== */
+.titlebar {
+  padding-right: 0; /* 让窗口按钮紧贴右边缘 */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* 左栏开关在最左上角 */
+.tb-left .tb-icon {
+  margin-left: -4px;
+}
+
+/* 通用图标按钮（非窗口控制） */
+.tb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.tb-icon:hover,
+.tb-icon.on {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.tb-icon.on .ico {
+  color: var(--accent);
+}
+
+.tb-right {
+  gap: 2px;
+  /* 窗口控制要贴边，这里不留间距 */
+  padding-right: 0;
+}
+
+/* ---- Win11 窗口控制 ---- */
+.wctrl {
+  display: flex;
+  align-self: stretch;
+  margin-left: var(--sp-2);
+}
+.wbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  /* 与标题栏同高 */
+  height: 100%;
+  color: var(--fg-dim);
+  transition:
+    background 80ms linear,
+    color 80ms linear;
+}
+.wbtn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+/* 关闭：Win11 是 #c42b1c（红），悬停时白字 */
+.wbtn.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.wbtn:active {
+  background: var(--bg-4);
+}
+.wbtn.close:active {
+  background: #b1261a;
+}
+/* 最大化/还原的图标用 svg 的 currentColor */
+.wbtn svg {
+  display: block;
+}
+
+/* 删掉旧的 mac 圆点样式（保留类名以防引用，但不显示） */
+.tb-dots {
+  display: none;
+}
+/* ===================================================================
+   43. 弹出层统一动画
+       ─────────────────────────────────────────────────────────────
+       所有浮层用同一套：遮罩淡入 + 面板从贴着触发器的方向缩放入场。
+       关键帧只写两套（上弹 / 居中弹），其余复用 —— 
+       每个浮层各写一套动画会让"一致性"在维护中慢慢丢掉。
+   =================================================================== */
+@keyframes pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes pop-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes center-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 向上弹的浮层（输入区附近的选择器） */
+.mt-pop,
+.srow-menu {
+  animation: pop-up 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  transform-origin: bottom;
+}
+/* 向下弹的（从列表项下方出现） */
+.srow-menu {
+  animation-name: pop-down;
+  transform-origin: top;
+}
+.row-menu {
+  animation: pop-down 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  transform-origin: top;
+}
+/* 居中的模态框 */
+.modal {
+  animation: center-in 140ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+.settings {
+  animation: center-in 140ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+.modal-scrim,
+.settings-scrim {
+  animation: fade-in 140ms linear;
+}
+
+/* 尊重系统设置 */
+@media (prefers-reduced-motion: reduce) {
+  .mt-pop,
+  .srow-menu,
+  .row-menu,
+  .modal,
+  .settings,
+  .modal-scrim,
+  .settings-scrim {
+    animation: none;
+  }
+}
+
+/* ===================================================================
+   44. 流式输出更柔和
+       ─────────────────────────────────────────────────────────────
+       「流式一些、柔和一些」的落点：
+         · 光标从实心方块 → 渐隐的细竖线（终端里那种若隐若现）
+         · 新到的文字淡入，而不是"啪"地出现
+         · 助手正文的每一段有轻微入场，避免整块闪现
+   =================================================================== */
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--fg-dim);
+  border-radius: 1px;
+  animation: cursor-soft 1.15s ease-in-out infinite;
+}
+@keyframes cursor-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+.cursor-inline {
+  height: 0.9em;
+}
+
+/* 流式期间新内容柔化入场 */
+.msg.assistant.streaming .md > *:last-child {
+  animation: text-in 180ms ease-out;
+}
+@keyframes text-in {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 思考块流式时也柔一点 */
+.think .think-body {
+  animation: text-in 200ms ease-out;
+}
+
+/* ===================================================================
+   45. 「⠋ 正在处理…」提示
+   =================================================================== */
+.working {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: var(--w-stream);
+  /* 与消息的槽位对齐（20px 槽 + 12px 间距） */
+  padding: 0 var(--sp-5) 0 calc(var(--sp-5) + 32px);
+  margin: 0 auto var(--sp-4);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+.spinner {
+  display: inline-block;
+  /* 等宽字体下盲文宽度固定，不会推动布局 */
+  width: 1em;
+  text-align: center;
+  color: var(--accent);
+  font-variant-ligatures: none;
+}
+.working-text {
+  animation: working-pulse 1.6s ease-in-out infinite;
+}
+@keyframes working-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-text {
+    animation: none;
+  }
+}
+
+/* ===================================================================
+   46. 底部信息条：整体居中收窄，上下文靠右
+       ─────────────────────────────────────────────────────────────
+       用户的三个要求：
+         ① 放到聊天框**正中心** —— 与输入框同宽（--w-stream）并居中
+         ② **稍微缩小** —— 字号与高度都收一档
+         ③ **上下文靠右** —— 它和模型标签在同一组（右侧），
+            左边只留「本轮用量」那些次要数字
+   =================================================================== */
+.usagebar {
+  /* ① 与输入框同宽居中；再窄一点显得轻 */
+  max-width: calc(var(--w-stream) - 120px);
+  margin: var(--sp-2) auto 0;
+  padding: 0 2px;
+  gap: 4px var(--sp-2);
+  /* ② 缩小 */
+  font-size: var(--fs-xs);
+  min-height: 22px;
+  border-top: none;
+  /* ③ 右侧那组靠右：用 auto margin 把左组推开 */
+  justify-content: flex-start;
+}
+/* 把「本轮用量」之后的所有内容推到右边 */
+.usagebar > .ub-turn {
+  margin-right: auto;
+}
+/* 收窄之后，模型名不必那么长 */
+.mt-trigger {
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+}
+.mt-model {
+  max-width: 130px;
+}
+.ub-ctx {
+  padding: 0 5px;
+  gap: 5px;
+}
+.ub-meter {
+  width: 48px;
+  height: 3px;
+}
+.ub-item {
+  gap: 4px;
+}
+.ub-sep {
+  min-height: 9px;
+}
+/* 上下文在最右，它的百分比也收一点 */
+.ub-pct {
+  min-width: 26px;
+}

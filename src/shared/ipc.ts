@@ -324,6 +324,13 @@ export type MainPush =
   | { ch: 'status'; payload: { key: string; text?: string } }
   /** 窗口标题（setTitle） */
   | { ch: 'title'; payload: string }
+  /**
+   * 会话标题生成好了（用模型总结用户第一句话）。
+   * ⚠️ 与上面的 'title'（扩展 setTitle，改的是窗口标题）不是一回事，别混。
+   */
+  /** 窗口最大化状态（用于切换「最大化 / 还原」图标） */
+  | { ch: 'win-state'; payload: { maximized: boolean } }
+  | { ch: 'session-title'; payload: { sessionId: string; title: string } }
   /** 扩展想把文本塞进输入框（set_editor_text） */
   | { ch: 'editor-text'; payload: string }
   /** 记忆数据变了（扩展写入了新记忆） */
@@ -393,6 +400,8 @@ export interface YanBridge {
   agentStatus(): Promise<{ state: 'starting' | 'ready' | 'exited' | 'error'; detail: string }>
   getMessages(): Promise<UIMessage[]>
   getStats(): Promise<SessionStats | null>
+  /** 已生成过的会话标题缓存（sessionId → title），启动时一次性拉走 */
+  cachedTitles(): Promise<Record<string, string>>
   /** 读会话里的 extension custom entries（任务清单的来源） */
   getCustomEntries(): Promise<CustomEntry[]>
   /** 手动刷新任务清单 */

@@ -120,6 +120,15 @@ interface Store {
    * 两者隔了几层，props 传下去很啰嗦。
    */
   scrollProgress: number
+  /**
+   * 模型生成的会话标题（sessionId → title）。
+   * 与 pi 的 session_info 名字是两回事：
+   *   session_info 是**用户**起的（set_session_name）
+   *   这里是**模型总结**出来的，只在会话没名字时作为显示标题
+   */
+  titles: Record<string, string>
+  /** 窗口是否最大化（切换标题栏的还原图标） */
+  maximized: boolean
   /** 跳到第 N 轮用户对话（导航轨点击时用，由 App 实现具体滚动） */
   scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
@@ -253,6 +262,8 @@ export const useStore = create<Store>((set, get) => ({
   settingsTab: 'memory',
   railPinned: false,
   scrollProgress: 0,
+  titles: {},
+  maximized: false,
   scrollToTurn: () => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
   },
@@ -268,7 +279,7 @@ export const useStore = create<Store>((set, get) => ({
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, soul, memory, sessions, session, messages, stats, todos, status] =
+    const [settings, soul, memory, sessions, session, messages, stats, todos, status, titles] =
       await Promise.all([
         api.getSettings(),
         api.readSoul(),
@@ -281,7 +292,8 @@ export const useStore = create<Store>((set, get) => ({
         // 拉一次权威连接状态：
         // dev 模式下渲染端加载慢，可能错过 `proc: ready` 的 push，
         // 不拉的话界面会永远停在「正在启动 pi」（功能其实是好的）。
-        api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' }))
+        api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' })),
+        api.cachedTitles().catch(() => ({}) as Record<string, string>)
       ])
 
     set({
@@ -295,7 +307,8 @@ export const useStore = create<Store>((set, get) => ({
       stats: stats ?? get().stats,
       todos,
       conn: status.state,
-      connDetail: status.detail
+      connDetail: status.detail,
+      titles
     })
 
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
@@ -312,6 +325,12 @@ export const useStore = create<Store>((set, get) => ({
         break
       case 'todos':
         set({ todos: m.payload })
+        break
+      case 'win-state':
+        set({ maximized: m.payload.maximized })
+        break
+      case 'session-title':
+        set({ titles: { ...s.titles, [m.payload.sessionId]: m.payload.title } })
         break
       case 'msg-update':
         set({ messages: patchMessage(s.messages, m.payload.id, m.payload.patch) })

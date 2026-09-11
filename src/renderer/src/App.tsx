@@ -7,6 +7,7 @@ import { Rail } from './components/Rail'
 import { RightPanel } from './components/RightPanel'
 import { ConversationOutline } from './components/ConversationOutline'
 import { Continuity, EmptyStream, ReviewBar } from './components/Continuity'
+import { Working } from './components/PixelSpinner'
 import { Message } from './components/Message'
 import { Composer } from './components/Composer'
 import { Settings, type SettingsTab } from './components/Settings'
@@ -75,6 +76,7 @@ export default function App() {
   const settings = useStore((s) => s.settings)
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
+  const maximized = useStore((s) => s.maximized)
   const setScrollProgress = useStore((s) => s.setScrollProgress)
   const registerScrollToTurn = useStore((s) => s.registerScrollToTurn)
   const applyPush = useStore((s) => s.applyPush)
@@ -291,6 +293,18 @@ export default function App() {
     .join(' ')
 
   const streamingId = session?.isStreaming ? messages[messages.length - 1]?.id : undefined
+  /**
+   * 流式开始了但还没有可见内容。
+   *
+   * 只判断 text 不够 —— 工具卡也算「有进展」，
+   * 否则工具跑起来之后 spinner 还一直转，看着像卡住。
+   */
+  const lastMsg = messages[messages.length - 1]
+  const hasVisibleBody =
+    !!lastMsg &&
+    (lastMsg.text.trim().length > 0 ||
+      !!lastMsg.thinking ||
+      (lastMsg.toolCalls?.length ?? 0) > 0)
 
   return (
     <>
@@ -305,6 +319,7 @@ export default function App() {
           onToggleRail={() => setRailPinned(!railPinned)}
           railPinned={railPinned}
           railOpen={railOpen}
+          maximized={maximized}
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
           subtitle={session?.sessionName ?? session?.model?.name}
           conn={conn}
@@ -356,6 +371,10 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* 等第一个字时显示「⠋ 正在处理…」——
+                流式还没吐字时用户需要知道它在干活，而不是卡住了 */}
+            {session?.isStreaming && !hasVisibleBody ? <Working /> : null}
 
             {!stick ? (
               <button className="jump-bottom" onClick={jumpToBottom}>

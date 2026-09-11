@@ -3,7 +3,7 @@ import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import type { Usage } from '../../../shared/ipc'
-import { ModelPicker, ThinkingPicker } from './Pickers'
+import { ModelThinkingPicker } from './Pickers'
 
 /**
  * 底部的用量条（合并版）。
@@ -92,12 +92,53 @@ export function UsageBar() {
       {/* 模型不在这里重复显示 —— 顶部头部已常驻。
           这里只放「花的钱」相关：上下文 / 本轮用量 / 速度 */}
 
-      {/* 模型 + 思考强度：放在上下文左边。
-          切模型是高频动作，做成就地下拉而不是打开设置面板。 */}
-      <ModelPicker />
-      <ThinkingPicker />
+      <span className="ub-sep" />
 
       <span className="ub-sep" />
+
+      {/* 速度 */}
+      {streaming && !speed ? (
+        <span className="ub-item" title={t('tok.liveTip')}>
+          <span className="ub-label">{t('tok.speed')}</span>
+          <span className="ub-value">
+            {t('tok.generating')}
+            <span className="ub-unit">{elapsedSec.toFixed(1)}s</span>
+            <span className="ub-live" />
+          </span>
+        </span>
+      ) : (
+        <Item
+          label={t('tok.speed')}
+          value={speed ? fmtSpeed(speed) : '—'}
+          unit={speed ? t('tok.perSec') : undefined}
+          title={
+            last?.elapsedMs
+              ? t('tok.speedTip', { n: (last.elapsedMs / 1000).toFixed(1) })
+              : t('tok.speedUnknown')
+          }
+          dim={!speed}
+          live={!!liveSpeed}
+        />
+      )}
+
+      {/* 上下文 + 本轮用量：紧跟模型标签靠右（输入框的那一侧）。
+          用户要求「上下文靠右」，且整条要收窄居中。 */}
+      {/* 本轮：输入 / 输出 / 缓存命中 */}
+      <span className="ub-turn">
+        <Item label={t('tok.in')} value={u ? fmtTok(u.input) : '—'} dim={!u || streaming} />
+        <Item label={t('tok.out')} value={u ? fmtTok(u.output) : '—'} dim={!u || (streaming && !liveSpeed)} />
+        <Item
+          label={t('tok.cache')}
+          value={u?.cacheRead ? fmtTok(u.cacheRead) : '—'}
+          extra={hitLabel}
+          title={t('tok.cacheTip', {
+            read: fmtTok(u?.cacheRead ?? 0),
+            write: fmtTok(u?.cacheWrite ?? 0),
+            hit: hit.toFixed(1)
+          })}
+          dim={!u?.cacheRead || streaming}
+        />
+      </span>
 
       {/* 上下文 */}
       {ctxWin ? (
@@ -133,49 +174,9 @@ export function UsageBar() {
 
       <span className="ub-sep" />
 
-      {/* 本轮：输入 / 输出 / 缓存命中 */}
-      <span className="ub-turn">
-        <Item label={t('tok.in')} value={u ? fmtTok(u.input) : '—'} dim={!u || streaming} />
-        <Item label={t('tok.out')} value={u ? fmtTok(u.output) : '—'} dim={!u || (streaming && !liveSpeed)} />
-        <Item
-          label={t('tok.cache')}
-          value={u?.cacheRead ? fmtTok(u.cacheRead) : '—'}
-          extra={hitLabel}
-          title={t('tok.cacheTip', {
-            read: fmtTok(u?.cacheRead ?? 0),
-            write: fmtTok(u?.cacheWrite ?? 0),
-            hit: hit.toFixed(1)
-          })}
-          dim={!u?.cacheRead || streaming}
-        />
-      </span>
 
-      <span className="ub-sep" />
-
-      {/* 速度 */}
-      {streaming && !speed ? (
-        <span className="ub-item" title={t('tok.liveTip')}>
-          <span className="ub-label">{t('tok.speed')}</span>
-          <span className="ub-value">
-            {t('tok.generating')}
-            <span className="ub-unit">{elapsedSec.toFixed(1)}s</span>
-            <span className="ub-live" />
-          </span>
-        </span>
-      ) : (
-        <Item
-          label={t('tok.speed')}
-          value={speed ? fmtSpeed(speed) : '—'}
-          unit={speed ? t('tok.perSec') : undefined}
-          title={
-            last?.elapsedMs
-              ? t('tok.speedTip', { n: (last.elapsedMs / 1000).toFixed(1) })
-              : t('tok.speedUnknown')
-          }
-          dim={!speed}
-          live={!!liveSpeed}
-        />
-      )}
+      {/* 模型 + 强度：Codex 风格的组合标签，放在最右 */}
+      <ModelThinkingPicker />
 
       {/* 花费：沉到最右 */}
       {stats && stats.cost > 0 ? (

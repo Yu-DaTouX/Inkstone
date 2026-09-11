@@ -35,6 +35,7 @@ export function Rail() {
   const conn = useStore((s) => s.conn)
   const cwd = useStore((s) => s.settings?.cwd)
   const railPinned = useStore((s) => s.railPinned)
+  const titles = useStore((s) => s.titles)
   const setRailPinned = useStore((s) => s.setRailPinned)
 
   const [query, setQuery] = useState('')
@@ -84,7 +85,11 @@ export function Rail() {
         ]
       : []
 
-    const all = [...synthetic, ...sessions]
+    // 用模型生成的短标题覆盖列表标题（如果有）
+    const all = [...synthetic, ...sessions].map((x) => {
+      const t = titles[x.id]
+      return t ? { ...x, title: t } : x
+    })
     const filtered = q
       ? all.filter(
           (s) => s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q)
@@ -111,7 +116,7 @@ export function Rail() {
         if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
         return (b.list[0]?.updatedAt ?? 0) - (a.list[0]?.updatedAt ?? 0)
       })
-  }, [sessions, query, session, t])
+  }, [sessions, query, session, t, titles])
 
   const toggleProject = (key: string): void =>
     setCollapsed((prev) => {
@@ -141,14 +146,8 @@ export function Rail() {
         >
           <Icon name="search" size={12} />
         </button>
-        <button
-          className={`rail-icon ${railPinned ? 'on' : ''}`}
-          title={railPinned ? t('tb.railUnpin') : t('tb.rail')}
-          onClick={() => setRailPinned(!railPinned)}
-          data-testid="rail-mode-pin"
-        >
-          <Icon name="sidebar-left" size={12} />
-        </button>
+        {/* 侧栏开关不放这里 —— 标题栏最左上角已经有了。
+            同一件事摆两个按钮会让人不确定该点哪个。 */}
       </div>
 
       {searching ? (

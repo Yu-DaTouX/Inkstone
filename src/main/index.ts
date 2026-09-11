@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
+import { cachedTitles } from './title'
 import { MemoryStore, YAN_DIR, readSoul } from './memory'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
@@ -209,6 +210,7 @@ function registerIpc(): void {
   )
   handle('yan:getMessages', async () => agent?.getMessages() ?? [])
   handle('yan:getStats', async () => agent?.refreshStats() ?? null)
+  handle('yan:cachedTitles', async () => cachedTitles())
   handle('yan:getCustomEntries', async () => agent?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => agent?.refreshTodos() ?? [])
   handle('yan:listSessions', async () => listSessions())
@@ -326,10 +328,8 @@ function registerIpc(): void {
   ipcMain.on('win:maximize', () => {
     if (!win) return
     win.isMaximized() ? win.unmaximize() : win.maximize()
-    win.webContents.send('yan:push', {
-      ch: 'title',
-      payload: win.isMaximized() ? 'maximized' : 'normal'
-    } satisfies MainPush)
+    // 同时推窗口的两种状态：① 最大化与否（切图标）② 扩展设的标题
+    push({ ch: 'win-state', payload: { maximized: win.isMaximized() } })
   })
   ipcMain.on('win:close', () => win?.close())
 }
@@ -385,6 +385,15 @@ function createWindow(): void {
           try {
             const { readFile } = await import('node:fs/promises')
             const src = await readFile(probeFile, 'utf8')
+            // 可选：先发一次**真实**鼠标移动（合成事件不产生 :hover，
+            // 所以涉及 CSS hover 的断言必须用 sendInputEvent）
+            const mouse = process.env.YAN_PROBE_MOUSE
+            if (mouse) {
+              const [mx, my] = mouse.split(',').map(Number)
+              win!.webContents.sendInputEvent({ type: 'mouseMove', x: mx, y: my })
+              await new Promise((r) => setTimeout(r, 700))
+            }
+
             const result = await win!.webContents.executeJavaScript(src, true)
             console.log('---PROBE-START---')
             console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2))

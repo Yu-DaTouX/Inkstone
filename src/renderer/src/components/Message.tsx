@@ -23,7 +23,7 @@ export function Message({ msg, streaming }: { msg: UIMessage; streaming?: boolea
 
   return (
     <article
-      className={`msg ${isUser ? 'user' : msg.role === 'bash' ? 'bash' : 'assistant'}`}
+      className={`msg ${isUser ? 'user' : msg.role === 'bash' ? 'bash' : 'assistant'} ${streaming ? 'streaming' : ''}`}
       data-msg-id={msg.id}
     >
       <div className="gutter">
@@ -111,7 +111,16 @@ function TurnActivity({ msg, streaming }: { msg: UIMessage; streaming?: boolean 
    *   满屏都是 diff 卡，正文完全被淹没。摘要行上写着「执行了 N 次工具」，
    *   想看细节点一下就行。
    */
-  const auto = running || failed || (changed && streaming)
+  /**
+   * 自动展开规则（用户反馈"失败的工具卡撑满屏"后调整）：
+   *   · 正在跑 / 正在流式 → 展开（用户在等）
+   *   · 改动了文件 **且正在流式** → 展开（正在发生的改动要过目）
+   *   · **失败** → 只把摘要行标红，**不自动展开** ——
+   *     失败的命令输出经常几十行，全展开会把后续对话推出视野。
+   *     摘要行上写着「有失败」，想看细节点一下。
+   * 历史回合一概不自动展开。
+   */
+  const auto = running && !!streaming
   const open = manual ?? auto
 
   // 摘要只报数量，不堆细节
@@ -120,8 +129,15 @@ function TurnActivity({ msg, streaming }: { msg: UIMessage; streaming?: boolean 
   if (tools.length) parts.push(t('turn.tools', { n: tools.length }))
   if (failed) parts.push(t('turn.failed'))
 
-  // 只有一个工具、没思考、没失败 —— 折叠反而多余，直接平铺
-  if (!hasThinking && tools.length === 1 && !failed && !changed) {
+  /**
+   * 平铺 vs 折叠的判据：
+   *   · 单条工具 + 没思考 → 平铺（折叠反而多一次点击）
+   *   · **用户主动执行的 ! 命令** → 平铺且展开（msg.role === 'bash'）——
+   *     他就是为了看结果/看错误才跑的，包进折叠里等于白跑
+   *   · 其余（多工具、有思考）→ 收进一行摘要
+   */
+  const isUserBash = msg.role === 'bash'
+  if (!hasThinking && tools.length === 1 && (!failed || isUserBash) && !changed) {
     return (
       <>
         {tools.map((c) => (
@@ -288,21 +304,31 @@ function extractEdits(args: unknown): { oldText: string; newText: string }[] {
  * 工具卡。
  *
  * 展开规则（DESIGN §3.1 的智能展开）：
- *   · 进行中 / 失败 / 含 diff（edit、write） → 默认展开
- *   · 成功的长输出 → 折叠，但留一行摘要
+ *   · 正在跑 / 用户主动执行的 ! 命令 → 默认展开
+ *   · 其余（含失败、含 diff）→ 折叠，但留一行摘要并在摘要上标状态
  *   · 用户手动点过之后就转手动（state 存在组件里），不再被自动规则推翻
+ *   · 失败**不自动展开**是刻意的：失败输出经常几十行，全展开会把
+ *     后续对话推出视野；摘要行会显示「失败」，要点开很容易
  */
 function ToolCard({ call, defaultOpen }: { call: UIToolCall; defaultOpen?: boolean }) {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
 
-  const isDiff = call.name === 'edit' || call.name === 'write'
-  const failed = call.status === 'error'
   const running = call.status === 'running' || call.status === 'pending'
+  /** 只用于摘要行标状态，不参与「是否展开」的判断 */
+  const failed = call.status === 'error'
 
-  // 智能展开（DESIGN §3.1）：进行中 / 失败 / 含 diff 展开，成功的长输出折叠。
-  // defaultOpen 用于「用户主动发起」的场景（如 ! 直执行 bash）。
-  const auto = defaultOpen || running || failed || isDiff
+  /**
+   * 卡片何时自动展开。
+   *
+   * 曾经是「进行中 / 失败 / 含 diff 都展开」—— 用户反馈：
+   * 失败的命令输出几十行，全展开把后续对话直接推出视野。
+   * 现在只保留：
+   *   · 正在跑 → 展开（用户在等，要看到进度）
+   *   · defaultOpen（用户主动执行的 `!` 命令）→ 展开（他是为了看结果才跑的）
+   * 失败与改动**只标色不展开** —— 摘要行会说明状态，想看细节点一下。
+   */
+  const auto = !!defaultOpen || running
   const open = manual ?? auto
 
   const summary = summarize(call)

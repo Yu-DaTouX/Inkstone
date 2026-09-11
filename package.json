@@ -17,7 +17,7 @@
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions",
+    "check": "npm run typecheck && npm run build && npm run test:unit && npm run measure:design && npm run test:live -- live features memory sessions layout outline",
     "test:unit": "node scripts/test-unit.mjs",
     "lint:css": "node scripts/lint-css.mjs",
     "measure:design": "electron scripts/measure-design.mjs"

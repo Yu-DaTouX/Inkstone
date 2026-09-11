@@ -71,7 +71,7 @@
   const collapsed = await until(() => app.classList.contains('rail-off'))
   ok(collapsed, '指针离开后左栏收起')
 
-  ok(!!q('[data-testid="rail-hotzone"]'), '有左边缘热区')
+  ok(true, '（左边缘热区已移除：鼠标靠近由 window mousemove 的 clientX 判断，没有 DOM 元素）')
 
   // 靠近 → **延迟**展开（避免鼠标只是路过就弹出来）
   move(3)
@@ -130,8 +130,10 @@
   await until(() => !app.classList.contains('rail-off'), 2000)
   const cw2 = Math.round(q('.center').getBoundingClientRect().width)
   const cx2 = Math.round(q('.stream-inner').getBoundingClientRect().left)
-  ok(cw1 === cw2, `中栏宽度不随左栏变化（${cw1} → ${cw2}）`)
-  ok(cx1 === cx2, `内容位置不跳（left ${cx1} → ${cx2}）`)
+  // 从「浮层」改成「推挤」是刻意的：对齐 Agents-Anywhere 的常驻列做法。
+  // 浮层会把标题盖住，推挤才是面板收合的感觉。代价是中栏会重新居中。
+  ok(cw2 < cw1, `中栏被左栏推挤（${cw1} → ${cw2}）`)
+  ok(cx2 > cx1, `内容跟着右移（left ${cx1} → ${cx2}）`)
 
   // 钉住
   const btn = q('[data-testid="rail-toggle"]')
@@ -150,30 +152,9 @@
   const autoAgain = await until(() => app.classList.contains('rail-off'))
   ok(autoAgain, '取消钉住后恢复自动隐藏')
 
-  // 左栏顶部的模式开关
-  move(3)
-  await until(() => !app.classList.contains('rail-off'), 2000)
-  const sw = q('[data-testid="rail-mode"]')
-  ok(!!sw, '左栏顶部有模式开关')
-  if (sw) {
-    const pinBtn = q('[data-testid="rail-mode-pin"]')
-    const autoBtn = q('[data-testid="rail-mode-auto"]')
-    out.push('  按钮: ' + JSON.stringify([pinBtn?.textContent, autoBtn?.textContent]))
-    ok(autoBtn.classList.contains('sel'), '默认选中「自动」')
-
-    pinBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(300)
-    ok(pinBtn.classList.contains('sel'), '点「固定」后选中态切换')
-    move(900)
-    await sleep(1900)
-    ok(!app.classList.contains('rail-off'), '固定后不自动收起')
-
-    autoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(300)
-    move(900)
-    await until(() => app.classList.contains('rail-off'))
-    ok(app.classList.contains('rail-off'), '点「自动」后恢复自动隐藏')
-  }
+  // 左栏顶部的模式开关已删 —— 侧栏开关在标题栏最左上角（一个入口就够，
+  // 重复放两处会让人不确定该点哪个）。
+  ok(!q('[data-testid="rail-mode"]'), '左栏内不再重复放侧栏开关')
 
   out.push('=== 5. 溢出 ===')
   for (const sel of ['.app', '.workspace', '.center', '.usagebar', '.rightpanel']) {

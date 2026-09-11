@@ -8,39 +8,42 @@ interface Props {
   theme: Theme
   onToggleTheme: () => void
   onToggleRail: () => void
-  /** 左栏是否被钉住（不自动收回） */
-  railPinned?: boolean
-  /** 左栏当前是否可见（钉住或鼠标悬停） */
-  railOpen?: boolean
   onSettings: () => void
   /** 当前会话标题 */
   subtitle?: string
   conn: ConnState
   cwd?: string
   onPickCwd: () => void
+  /** 左栏是否被钉住 */
+  railPinned?: boolean
+  railOpen?: boolean
+  maximized?: boolean
 }
 
 /**
- * 标题栏。
+ * 标题栏 —— Win11 风格。
  *
- * 它同时是 Electron 的原生标题栏（frame:false + electron.css 里的拖拽区），
- * 所以那三个圆点不是装饰 —— 它们就是 关闭 / 最小化 / 最大化。
+ * 与 mac 风格的区别（用户要求改）：
+ *   · 窗口按钮**移到最右**，是 46×32 的方形区域（不是左侧三个圆点）
+ *   · 悬停时「关闭」变红，「最小化/最大化」变中性灰
+ *   · 左栏开关按钮放到**最左上角**（原来是品牌名后面）
+ *   · 最大化时按钮显示"还原"图标
  *
- * ⚠️ 与原设计稿的差异：中间原来写的是「记忆已同步 · 桌面 · 笔记本 · 手机」，
- * 那是设计稿的虚构状态。接上真 pi 之后这里改成**连接状态 + 工作目录** ——
- * 真实的、用户需要一直看得见的两件事。跨设备同步没有实现，就不该显示。
+ * 拖拽区仍由 electron.css 的 -webkit-app-region: drag 负责，
+ * 所有按钮显式 no-drag。
  */
 export function TitleBar({
   theme,
   onToggleTheme,
   onToggleRail,
-  railPinned,
-  railOpen,
   onSettings,
   subtitle,
   conn,
   cwd,
-  onPickCwd
+  onPickCwd,
+  railPinned,
+  railOpen,
+  maximized
 }: Props) {
   const { t, toggleLang } = useI18n()
   const win = window.yan.win
@@ -58,27 +61,24 @@ export function TitleBar({
   return (
     <header className="titlebar">
       <div className="tb-left">
-        <div className="tb-dots">
-          <button className="tb-dot r" title={t('tb.close')} onClick={() => win.close()} />
-          <button className="tb-dot y" title={t('tb.minimize')} onClick={() => win.minimize()} />
-          <button className="tb-dot g" title={t('tb.maximize')} onClick={() => win.maximize()} />
-        </div>
-        <span className="tb-name">砚</span>
-        {subtitle ? (
-          <span className="tb-badge tb-session" title={subtitle}>
-            {subtitle}
-          </span>
-        ) : null}
+        {/* 左栏开关放最左上角（Win11 里左上角本来就是"侧栏"位置） */}
         <button
-          className={`btn icon ${railPinned ? 'on' : ''}`}
+          className={`tb-icon ${railPinned ? 'on' : ''}`}
           title={railPinned ? t('tb.railUnpin') : t('tb.rail')}
           onClick={onToggleRail}
           data-testid="rail-toggle"
           data-pinned={railPinned ? '1' : '0'}
           data-open={railOpen ? '1' : '0'}
         >
-          <Icon name="sidebar-left" />
+          <Icon name="sidebar-left" size={14} />
         </button>
+
+        <span className="tb-name">砚</span>
+        {subtitle ? (
+          <span className="tb-badge tb-session" title={subtitle}>
+            {subtitle}
+          </span>
+        ) : null}
       </div>
 
       <div className="tb-sync">
@@ -91,15 +91,63 @@ export function TitleBar({
       </div>
 
       <div className="tb-right">
-        <button className="btn" title={t('tb.lang')} onClick={toggleLang}>
-          中文 / EN
+        <button className="tb-icon" title={t('tb.lang')} onClick={toggleLang}>
+          中/EN
         </button>
-        <button className="btn icon" title={t('tb.theme')} onClick={onToggleTheme}>
-          <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
+        <button className="tb-icon" title={t('tb.theme')} onClick={onToggleTheme}>
+          <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={14} />
         </button>
-        <button className="btn icon" title={t('tb.settings')} onClick={onSettings}>
-          <Icon name="settings" />
+        <button className="tb-icon" title={t('tb.settings')} onClick={onSettings}>
+          <Icon name="settings" size={14} />
         </button>
+
+        {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}
+        <div className="wctrl">
+          <button
+            className="wbtn min"
+            title={t('tb.minimize')}
+            onClick={() => win.minimize()}
+            data-testid="win-min"
+          >
+            {/* 最小化：一条横线 */}
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+              <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
+            </svg>
+          </button>
+
+          <button
+            className="wbtn max"
+            title={maximized ? t('tb.restore') : t('tb.maximize')}
+            onClick={() => win.maximize()}
+            data-testid="win-max"
+          >
+            {maximized ? (
+              /* 还原：两个错开的方框 */
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <path d="M2.5 2.5h6v6h-6z" fill="none" stroke="currentColor" strokeWidth="1" />
+                <path d="M1.5 1.5h6" fill="none" stroke="currentColor" strokeWidth="1" />
+                <path d="M1.5 1.5v6" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            ) : (
+              /* 最大化：一个方框 */
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            )}
+          </button>
+
+          <button
+            className="wbtn close"
+            title={t('tb.close')}
+            onClick={() => win.close()}
+            data-testid="win-close"
+          >
+            {/* 关闭：X */}
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+              <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1" />
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
   )

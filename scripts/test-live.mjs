@@ -40,6 +40,8 @@ const CASES = {
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
   // 记忆的认识论流程：确认 → 从「我的印象」移到「关于你」
   memory: { probe: 'scripts/probe/memory.js', delay: 9000, cost: 0 },
+  // 对话导航轨：间距拉长 + 鼠标靠近动态展开
+  outline: { probe: 'scripts/probe/outline.js', delay: 9000, cost: 0 },
   // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
   layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
   // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型

@@ -68,6 +68,7 @@ const api: YanBridge = {
     invoke<{ state: 'starting' | 'ready' | 'exited' | 'error'; detail: string }>('yan:agentStatus'),
   getMessages: () => invoke<UIMessage[]>('yan:getMessages'),
   getStats: () => invoke<SessionStats | null>('yan:getStats'),
+  cachedTitles: () => invoke<Record<string, string>>('yan:cachedTitles'),
   getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),

@@ -126,8 +126,16 @@
   await sleep(400)
   const lastBash = qa('.msg.bash').pop()
   if (lastBash) {
-    const st = lastBash.querySelector('.tool-status')
-    ok(!!st && st.classList.contains('error'), '非零退出码标记为失败')
+    // ⚠️ 失败**不自动展开**（刻意的：失败输出经常几十行）。
+    // 所以断言要看卡片本身的 data-state，而不是内部的 .tool-status ——
+    // 后者只在展开时渲染。
+    const card = lastBash.querySelector('.tool')
+    if (card) {
+      ok(card.dataset.state === 'error', `非零退出码标记为失败（data-state=${card.dataset.state}）`)
+    } else {
+      // 连卡片都没有 → 说明消息结构有问题
+      ok(false, '找不到 bash 工具卡')
+    }
   }
 
   /* ================= 3. 图片附件（粘贴） ================= */
