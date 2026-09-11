@@ -278,5 +278,5 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 
 ## 许可证
 
-MIT（待定稿）。图标 [reicon](https://github.com/)（MIT），字体 Maple Mono CN（OFL），
+MIT（见 [`LICENSE`](LICENSE)；末尾附了第三方组件的许可声明）。图标 [reicon](https://github.com/)（MIT），字体 Maple Mono CN（OFL），
 代码高亮 highlight.js（BSD-3-Clause）。打包 pi 时需保留其 MIT 版权声明。
