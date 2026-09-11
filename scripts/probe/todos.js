@@ -118,6 +118,60 @@
     ok(over <= 0, `${sel} 无横向溢出（差 ${over}）`)
   }
 
+  /* ============ 6. 进度条 / 当前任务 / 动画（用户要求） ============ */
+
+
+  log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
+
+  const tstore = window.__yanStore
+  /** 造 N 个任务、前 d 个已完成 */
+  const tmk = (n, d) =>
+    Array.from({ length: n }, (_, i) => ({ text: '任务 ' + (i + 1), done: i < d }))
+
+  /* ---- 5 个任务，完成 2 个（用户描述的场景）---- */
+  tstore.setState({ todos: tmk(5, 2) })
+  await sleep(500)
+
+  const tmeter = () => q('[data-testid="todo-meter"]')
+  ok(!!tmeter(), '进度条存在（不管任务数多少）')
+
+  if (tmeter()) {
+    log('  填充 = ' + tmeter().querySelector('i').style.width + '  data-pct=' + tmeter().dataset.pct)
+    ok(tmeter().dataset.pct === '40', '2/5 显示 40%（实际 ' + tmeter().dataset.pct + '）')
+    ok(tmeter().classList.contains('busy'), '未完成时进度条带推进动画')
+  }
+
+  const tcount = q('[data-testid="todo-count"]')
+  ok(tcount?.textContent === '2/5', '计数显示 2/5（实际 ' + tcount?.textContent + '）')
+
+  /* ---- 当前任务 = 第一个未完成的 ---- */
+  const tnow = q('[data-testid="todo-now"]')
+  ok(!!tnow, '有「当前正在做」那一行')
+  log('  当前 = ' + JSON.stringify(tnow ? tnow.textContent : ''))
+  ok(!!tnow && tnow.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
+  ok(qa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
+
+  /* ---- 勾完一个：宽度变化 + 闪动 ---- */
+  tstore.setState({ todos: tmk(5, 3) })
+  await sleep(200)
+  ok(!!tmeter(), '进度条节点稳定（不是被重建）')
+  ok(tmeter().dataset.pct === '60', '勾完变 60%（实际 ' + tmeter().dataset.pct + '）')
+  ok(qa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
+
+  /* ---- 全完成 ---- */
+  await sleep(1000)
+  tstore.setState({ todos: tmk(5, 5) })
+  await sleep(300)
+  ok(!tmeter().classList.contains('busy'), '全完成后去掉推进动画')
+  ok(!!q('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
+  ok(!q('[data-testid="todo-now"]'), '全完成后不再有「当前任务」行')
+
+  /* ---- 恢复真实数据（别把用户的会话状态改坏）---- */
+  tstore.setState({ todos: [] })
+  await sleep(200)
+  ok(!tmeter(), '没有任务时不渲染进度条（不占位）')
+
+
   return out.join('\n')
 
   /* ---------------------------------------------------------------- */

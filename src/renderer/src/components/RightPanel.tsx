@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -146,45 +146,137 @@ function ContextSection() {
    任务 —— 来自会话里的 custom entry（panel_todos）
    ================================================================== */
 
+/**
+ * 任务栏 —— 进度条 + 逐行落位。
+ *
+ * ── 用户要求 ──
+ * 「假设你列出五个任务 已完成两个 再执行当前任务时 显示一个进度条 并加入动画」
+ *
+ * 所以三件事：
+ *   ① **进度条始终显示**（原先只有 ≥ 4 个任务才显示）——
+ *      5 个任务完成 2 个时它不是装饰，而是「还剩多少」的唯一提示。
+ *   ② 「当前正在做的那一条」要能认出来：
+ *      判定 = 第一个未完成的（列表本来就是顺序执行的）。
+ *      它带一个转动的 spinner + 左条强调色 + 名字高亮。
+ *   ③ 动画：
+ *      · 进度条宽度变化用 transition（不是瞬跳）
+ *      · 刚被勾完的那一条闪一下（确认反馈）
+ *      · 当前条目的左条呼吸 + 进度条上有一道扫光
+ */
 function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
   const done = useMemo(() => todos.filter((x) => x.done).length, [todos])
 
+  /*
+   * 记住上一条被勾完的，用来给它加一下高亮闪动。
+   *
+   * 为什么要记「上一条」而不是直接看 done：勾完的条目不会消失，
+   * 光靠 done 无法区分「刚勾的」与「早就勾的」。
+   */
+  const prevDone = useRef<Set<number>>(new Set())
+  const [justDone, setJustDone] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    const cur = new Set(todos.map((x, i) => (x.done ? i : -1)).filter((i) => i >= 0))
+    const fresh = new Set<number>()
+    for (const i of cur) if (!prevDone.current.has(i)) fresh.add(i)
+    prevDone.current = cur
+    // 首次渲染时不要把全部已完成当成「刚完成」
+    if (cur.size && fresh.size === cur.size) return
+    if (fresh.size === 0) return
+    setJustDone(fresh)
+    const id = setTimeout(() => setJustDone(new Set()), 900)
+    return () => clearTimeout(id)
+  }, [todos])
+
   if (todos.length === 0) return null
-  const pct = (done / todos.length) * 100
+
+  const pct = todos.length ? (done / todos.length) * 100 : 0
+  // 当前正在做的 = 第一个未完成的
+  const activeIdx = todos.findIndex((x) => !x.done)
+  const active = activeIdx >= 0 ? todos[activeIdx] : null
 
   return (
     <Section
       titleKey="rp.todo"
       testId="rp-todo"
       extra={
-        <span className="rp-count">
+        <span className="rp-count" data-testid="todo-count">
           {done}/{todos.length}
         </span>
       }
     >
-      {todos.length >= 4 ? (
-        <div className="rp-meter">
-          <i style={{ width: `${pct}%` }} />
-        </div>
-      ) : null}
-      <div className="rp-todos">
-        {todos.map((todo, i) => (
-          <div key={i} className={`rp-todo ${todo.done ? 'done' : 'todo-open'}`} data-done={todo.done ? '1' : '0'}>
-            {/* 真实勾选框：空框 = 未完成，对勾 = 已完成。
-                之前只有一个空 span，已完成与未完成的区别只剩删除线 ——
-                用户反馈「没有已完成或未完成的提示」。 */}
-            <span className="rp-box" aria-hidden>
-              {todo.done ? '✓' : ''}
+      {/* 进度条：**总是**显示（用户要的就是“已完成两个、五个任务”的比例感） */}
+      <div
+        className={`rp-meter ${active ? 'busy' : ''}`}
+        data-testid="todo-meter"
+        data-pct={Math.round(pct)}
+        title={t('rp.todoProgress', { done, total: todos.length })}
+      >
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      {active ? (
+        <div className="rp-todo-now" data-testid="todo-now">
+            <span className="rp-now-spin" aria-hidden>
+              <Spinner />
             </span>
-            <span className="rp-text">{todo.text}</span>
-            <span className="rp-state">{todo.done ? t('rp.done') : t('rp.open')}</span>
-          </div>
-        ))}
+          <span className="rp-now-label">{t('rp.todoNow')}</span>
+          <span className="rp-now-text">{active.text}</span>
+        </div>
+      ) : (
+        <div className="rp-todo-all" data-testid="todo-all-done">
+          <span className="rp-all-done">{t('rp.todoAllDone')}</span>
+        </div>
+      )}
+
+      <div className="rp-todos">
+        {todos.map((todo, i) => {
+          const isActive = i === activeIdx
+          return (
+            <div
+              key={i}
+              /*
+               * 行类名：
+               *   done      已完成（删除线 + 绿勾）
+               *   todo-open 未完成
+               *   active    当前正在做
+               *   flash     刚被勾完（闪一下）
+               * `--i` 给 CSS 做逐行落位
+               */
+              className={`rp-todo ${todo.done ? 'done' : 'todo-open'} ${isActive ? 'active' : ''} ${justDone.has(i) ? 'flash' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+              data-done={todo.done ? '1' : '0'}
+              data-active={isActive ? '1' : '0'}
+            >
+              <span className="rp-box" aria-hidden>
+                {todo.done ? '✓' : ''}
+              </span>
+              <span className="rp-text">{todo.text}</span>
+              <span className="rp-state">
+                {todo.done ? t('rp.done') : isActive ? t('rp.doing') : t('rp.open')}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </Section>
   )
+}
+
+/** 盲文 spinner —— 与输入框边框上那个同一套帧（pi 的 loader.js） */
+const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+function Spinner() {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    const reduce =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) return
+    const id = setInterval(() => setI((v) => (v + 1) % SPIN.length), 80)
+    return () => clearInterval(id)
+  }, [])
+  return <>{SPIN[i]}</>
 }
 
 /* ==================================================================

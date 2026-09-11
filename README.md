@@ -1,9 +1,49 @@
 # 砚 · Yan
 
-个人 agent 的桌面端。记忆是第一公民。
+**个人 agent 的桌面端。记忆是第一公民。**
 
-它是一个**能用的 pi 客户端**：真的连 `pi --mode rpc`，真的流式输出，真的调工具，真的记得你 ——
-并且把「它记的」和「它猜的」分开摆给你看。
+它是一个能日常使用的 **pi 客户端**：真连 `pi --mode rpc` 子进程，真的流式输出，
+真的调工具，真的记得你 —— 并且把「它记的」和「它猜的」分开摆给你看
+
+![界面](docs/design/preview/ui-live.png)
+
+<sub>深色主题，真实会话。右侧是状态栏（上下文 / 任务 / 队列 / 环境），
+输入框顶边框上的 `── ⠙ 正在处理… ──` 是工作状态，边框颜色跟着当前思考强度变</sub>
+
+| 浅色主题 | 设置面板 |
+|---|---|
+| ![浅色](docs/design/preview/yan-app-light.png) | ![设置](docs/design/preview/ui-settings.png) |
+
+---
+
+## 前置要求
+
+| | |
+|---|---|
+| **Node** | ≥ 20（开发时用的是 24） |
+| **pi** | 必须已安装：`npm i -g @earendil-works/pi-coding-agent` |
+| 平台 | Windows 优先（Windows 11 实测）；macOS / Linux 未实测 |
+
+> 砚**不重写 pi 的会话格式**，它直接读 `~/.pi/agent/sessions/` ——
+> 所以和 pi 的 TUI 是**互通**的：TUI 里聊过的会话桌面端左侧栏里能看到，反之亦然。
+
+---
+
+## 跑起来
+
+```bash
+npm install     # 依赖 + 字体（Maple Mono CN 走 npm，不需要额外步骤）
+npm run dev
+```
+
+应用会自动找 pi 的位置；找不到时点标题栏中间的连接状态看诊断，或跑 `npm run probe-pi`。
+
+> **字体**：早期版本要单独跑 `npm run font` 从本地拷一份 18.5MB 的 TTF，
+> 而那个源文件同样不入库 —— 结果**新克隆的仓库根本跑不起来**
+> （`@font-face` 静默回退，汉字格宽不再是 15.00px，整个等宽栅格塌掉且不报错）。
+> 现在改成 npm 依赖 [`@mogeko/maple-mono-cn`](https://www.npmjs.com/package/@mogeko/maple-mono-cn)
+> （239 个 `unicode-range` woff2 分片，按需加载），`npm install` 就位。
+> 字体 SIL OFL 1.1，可随软件分发。
 
 ---
 
@@ -126,13 +166,13 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|
 | `npm run dev` | 开发模式（HMR） |
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
-| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 真实应用验收（不烧 token） |
-| `npm run test:unit` | 会话解析的单元测试（19 条，不启动 Electron） |
-| `npm run test:live` | 全部场景（含 3 个会真调模型的） |
-| `npm run test:live -- live features memory sessions virtual` | 指定场景，不烧 token |
+| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 13 个真实应用场景（不烧 token） |
+| `npm run test:unit` | 纯逻辑单测（70 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 |
+| `npm run test:live` | 全部场景（含 5 个会真调模型的） |
+| `npm run test:live -- live features memory` | 指定场景，不烧 token |
 | `npm run test:live -- e2e image queue` | 会花少量额度（真流式 / 真图片 / 真排队） |
 | `npm run probe-pi` | 单独验证「pi 能不能被找到并启动」 |
-| `npm run font` / `npm run icons` | 字体就位 / 从设计稿重抽图标 |
+| `npm run icons` | 从设计稿重抽图标 sprite |
 
 ### 测试分三层
 

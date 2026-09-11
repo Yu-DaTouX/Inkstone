@@ -13,7 +13,7 @@
  *   · extension_ui_request 里 select/confirm/input/editor 需要回
  *     extension_ui_response，其余（notify/setStatus/...）不需要
  */
-import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -132,35 +132,76 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
  * 出问题时第一件事就是问「你是哪个版本」—— 界面上直接看得到就省一轮对话。
  * 探测失败一律静默降级（不显示版本号），绝不能影响启动。
  */
-export function piInfo(override?: string): PiInfo {
+export async function piInfo(override?: string): Promise<PiInfo> {
   const probe = resolvePi({ override })
   const bin = probe.args[probe.args.length - 1] ?? probe.cmd
 
   return {
     bin,
-    version: readPiVersion(probe)
+    version: await readPiVersion(probe)
   }
 }
 
+/** 版本号缓存（进程生命周期内不会变，pi 升级要重启应用） */
+let versionCache: string | undefined | null = null
+/** 正在探测中的 Promise —— 防止并发重复起进程 */
+let versionPending: Promise<string | undefined> | null = null
+
 /**
- * 同步读版本号。
+ * 异步读版本号。
  *
- * 用同步而不是异步：调用方在启动路径上，而这里要的是「一个几十毫秒的子进程」；
- * 异步化会让启动序列多出一段难以推理的并发。5 秒超时兜底。
+ * ⚠️ 这里**曾经用 `execFileSync`，是个错误的决定**：
+ *   同步子进程会阻塞主进程的事件循环 —— 实测 183ms 内所有其它 IPC 全部排队
+ *   （`bootstrap()` 并发下发 11 个请求，它们都要等这个 `--version` 跑完）。
+ *   而且冷启动时 pi 自己要加载模块，可能到几秒。
+ *
+ * 现在：异步 + 结果缓存 + 重入保护，不再堵塞任何东西。
  */
-function readPiVersion(probe: PiProbe): string | undefined {
-  try {
-    const out = execFileSync(probe.cmd, [...probe.args, '--version'], {
-      timeout: 5000,
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      encoding: 'utf8'
-    })
-    const m = String(out).match(/\d+\.\d+\.\d+[\w.-]*/)
-    return m ? m[0] : String(out).trim().split('\n')[0] || undefined
-  } catch {
-    return undefined
-  }
+function readPiVersion(probe: PiProbe): Promise<string | undefined> {
+  if (versionCache !== null) return Promise.resolve(versionCache)
+  if (versionPending) return versionPending
+
+  versionPending = new Promise<string | undefined>((resolve) => {
+    const done = (v: string | undefined): void => {
+      versionPending = null
+      if (v !== undefined) versionCache = v
+      resolve(v)
+    }
+
+    try {
+      /*
+       * 用 execFile（不走 shell） + ELECTRON_RUN_AS_NODE：
+       * 与 protocol.ts 启动 pi 的方式一致 —— 避免依赖用户系统上的 node 版本，
+       * 也不需要 shell 解析（路径含空格/中文时 shell 很容易出错）。
+       */
+      const child = execFile(
+        probe.cmd,
+        [...probe.args, '--version'],
+        {
+          timeout: 8000,
+          windowsHide: true,
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+          encoding: 'utf8',
+          maxBuffer: 1024 * 1024
+        },
+        (err, stdout) => {
+          if (err) {
+            // 探测失败**不**缓存 —— 下次换个时机可能就成功了
+            done(undefined)
+            return
+          }
+          const m = String(stdout).match(/\d+\.\d+\.\d+[\w.-]*/)
+          done(m ? m[0] : String(stdout).trim().split('\n')[0] || undefined)
+        }
+      )
+      // 别让子进程句柄拴住主进程退出
+      child.unref?.()
+    } catch {
+      done(undefined)
+    }
+  })
+
+  return versionPending
 }
 
 /* ==================================================================

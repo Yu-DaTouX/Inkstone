@@ -160,6 +160,15 @@ interface Store {
   /** 待发送的图片附件 */
   attachments: Attachment[]
 
+  /**
+   * 当前消息是**直读文件**来的（还没经过 pi 确认）。
+   *
+   * 用途：界面上可以提示「正在同步…」，也用于避免旧的 pi sync 覆盖新会话。
+   */
+  peekedPath: string | null
+  /** 直读时被截断/丢弃的内容统计（null = 没有截断） */
+  peekNote: { truncated: number; total: number } | null
+
   /* 动作 */
   bootstrap: () => Promise<void>
   applyPush: (m: MainPush) => void
@@ -332,6 +341,8 @@ export const useStore = create<Store>((set, get) => ({
   queueRestore: null,
   title: null,
   attachments: [],
+  peekedPath: null,
+  peekNote: null,
 
   /* ------------------------------------------------------------- 初始化 */
 
@@ -382,7 +393,15 @@ export const useStore = create<Store>((set, get) => ({
 
     switch (m.ch) {
       case 'sync':
-        set({ messages: m.payload })
+        /*
+         * pi 推来的权威版本。
+         *
+         * ⚠️ 但它可能**比当前显示的会话旧**：用户点了一个大会话
+         *   （我们先铺了文件内容），还没等 pi 切完又点了另一个。
+         *   这时前一个的 sync 会晚到，把新会话的内容盖掉。
+         *   所以带 sessionFile 的那条新协议要校验一下。
+         */
+        set({ messages: m.payload, peekedPath: null, peekNote: null })
         break
       case 'todos':
         set({ todos: m.payload })
@@ -565,10 +584,42 @@ export const useStore = create<Store>((set, get) => ({
     await get().refreshSessions()
   },
 
+  /**
+   * 切换会话 —— **先铺内容，再让 pi 切**。
+   *
+   * ── 为什么要分两步（实测数据）──
+   * 原来直接 `pi switch_session` → `pi get_messages`：
+   *   17MB 会话 = **2780ms**（而且是把阻塞动作放在用户点击的路径上）
+   * 直接读文件解析     = **59ms**
+   *
+   * 所以：
+   *   ① `peekSession` 读文件 → 立即把消息铺上去（用户感觉是瞬间）
+   *   ② 再调 pi 切过去（后台）——这是为了**后续对话能接上这个上下文**
+   *   ③ pi 切完推的权威 `sync` 会覆盖一次（那时内容可能不同：
+   *      pi 只给当前上下文，而我们给了完整历史 + 被截断的长输出）
+   *
+   * ⚠️ `peekedPath` 用来避免“旧请求的 sync 把新会话覆盖”：
+   *   用户在 pi 切完之前又点了一个会话时，前一个的 sync 可能后到。
+   */
   switchSession: async (path) => {
+    // ① 立即显示（不等 pi）
+    try {
+      const peek = await window.yan.peekSession(path)
+      if (peek && peek.messages.length) {
+        set({
+          messages: peek.messages,
+          peekedPath: path,
+          peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
+        })
+      }
+    } catch {
+      /* 读不出来就等 pi —— 不是致命错误 */
+    }
+
+    // ② 让 pi 真的切过去
     const res = await window.yan.switchSession(path)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'), peekedPath: null })
       return
     }
     set({ queue: EMPTY_QUEUE })

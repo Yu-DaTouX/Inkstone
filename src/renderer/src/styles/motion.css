@@ -772,3 +772,201 @@ html[data-theme='light'] {
     animation-duration: 1ms !important;
   }
 }
+
+/* ===================================================================
+   57. 任务栏：进度条 + 当前任务 + 动画
+       ─────────────────────────────────────────────────────────────
+       用户要求：「列出五个任务、已完成两个、再执行当前任务时，
+       显示一个进度条，并加入动画」。
+
+       对应三件东西：
+         · .rp-meter        进度条（**总是**显示，不再只在 ≥4 个任务时）
+         · .rp-todo-now     当前正在做的那条（spinner + 强调色）
+         · .rp-todo.active  列表里同一条的左条高亮
+   =================================================================== */
+
+/* ---- 进度条 ---- */
+.rp-meter {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-4);
+  overflow: hidden;
+  margin: 2px 0 6px;
+}
+.rp-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ok);
+  /* 宽度变化要有过程 —— 勾完一条时「长过去」比瞬跳好读 */
+  transition:
+    width 420ms var(--mo-ease),
+    background-color 200ms var(--mo-ease);
+}
+/*
+ * 还没全做完时：条上有一道扫光，表示「还在推进」。
+ * 与输入框边框的扫光是同一手法（两层背景：底色铺满 + 高光带扫过）。
+ */
+.rp-meter.busy i {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 100%
+  );
+  background-size: 60px 100%;
+  background-repeat: no-repeat;
+  animation: rp-sweep 1.5s linear infinite;
+}
+@keyframes rp-sweep {
+  from {
+    background-position: -60px 0;
+  }
+  to {
+    background-position: calc(100% + 60px) 0;
+  }
+}
+
+/* ---- 当前正在做的那条（常驻一行，带 spinner）---- */
+.rp-todo-now {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: baseline;
+  margin: 0 0 6px;
+  padding: 3px 5px 3px 4px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  font-size: var(--fs-sm);
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+.rp-now-spin {
+  color: var(--accent);
+  font-size: var(--fs-base);
+  line-height: 1;
+}
+.rp-now-label {
+  color: var(--accent);
+  flex: none;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.rp-now-text {
+  color: var(--fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 全部完成时的一行提示（无 spinner，安静） */
+.rp-todo-all {
+  margin: 0 0 6px;
+}
+.rp-all-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: var(--fs-xs);
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+.rp-all-done::before {
+  content: '✓';
+  font-weight: 700;
+}
+
+/* ---- 列表：逐行落位 ---- */
+.rp-todos .rp-todo {
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+  animation-delay: calc(var(--i, 0) * 24ms);
+}
+
+/* 当前条目：左条强调 + 名字提亮 */
+.rp-todo.active {
+  position: relative;
+  background: var(--bg-2);
+  border-radius: var(--r-xs);
+}
+.rp-todo.active .rp-text {
+  color: var(--fg);
+}
+.rp-todo.active .rp-state {
+  color: var(--accent);
+}
+.rp-todo.active .rp-box {
+  /* 当前条目的空框用强调色描边（与「未完成」的黄色区分开） */
+  border-color: var(--accent);
+}
+
+/*
+ * 刚被勾完的那一条：闪一下。
+ *
+ * 为什么需要：勾选框很小，任务文字又长，用户不一定马上看到「它变了」。
+ * 这一下闪动是**确认反馈** —— 与 pi 勾完任务时整行重绘同一个作用。
+ */
+.rp-todo.flash {
+  animation: rp-flash 900ms var(--mo-ease);
+}
+@keyframes rp-flash {
+  0% {
+    background: var(--ok-soft);
+  }
+  60% {
+    background: var(--ok-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.rp-todo.flash .rp-box {
+  animation: rp-pop 400ms var(--mo-ease);
+}
+@keyframes rp-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  55% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 浅色主题：进度条底与扫光都要够对比 */
+html[data-theme='light'] .rp-meter {
+  background: var(--bg-3);
+}
+html[data-theme='light'] .rp-meter.busy i {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.75) 50%,
+    transparent 100%
+  );
+}
+html[data-theme='light'] .rp-todo-now {
+  background: var(--accent-soft);
+}
+
+/* reduced-motion：去掉扫光与闪动，但**保留**进度条本身 */
+@media (prefers-reduced-motion: reduce) {
+  .rp-meter.busy i {
+    animation: none !important;
+    background-image: none;
+  }
+  .rp-meter i,
+  .rp-todos .rp-todo,
+  .rp-todo-now,
+  .rp-todo.flash,
+  .rp-todo.flash .rp-box,
+  .rp-all-done {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}

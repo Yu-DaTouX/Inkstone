@@ -7,15 +7,22 @@
    0. 内嵌字体
    Maple Mono CN：拉丁列宽 0.600em / 汉字 1.200em，严格 1:2
    必须内嵌，不能靠系统回退（凑不出 2.000 的整数比，见 DESIGN §2.1）
-   全量 18.5MB；发布前用 cn-font-split 切 woff2 子集（DESIGN §2.1 待办）
+
+   ── 为什么改成 npm 依赖（原来是本地 18.5MB 的 TTF）──
+   原来：字体全量 TTF 不入库（.gitignore），新克隆者必须先跑 `npm run font`,
+        而那个命令只是从 docs/design/font-test/ 拷贝 —— 那个源文件同样不入库，
+        所以**新克隆的仓库根本跑不起来**（@font-face 静默回退，
+        汉字格宽不再是 15.00px，整个等宽栅格塔掉且不报错）。
+   现在：`@mogeko/maple-mono-cn` 是 Maple Mono CN 的 cn-font-split 重新打包，
+        239 个 woff2 分片 + unicode-range，总计 9.7MB，
+        而**实际只会加载当前用到的几个分片**（比 18.5MB 全量小一个量级）。
+        `npm install` 就位，不需要额外步骤。
+
+   授权：字体 SIL OFL 1.1（可随软件分发）；打包 MIT。
+   风格名与我们用的一致（"Maple Mono CN"、weight 400），所以下方 @font-face
+   里的引用不用改。
    ------------------------------------------------------------------- */
-@font-face {
-  font-family: 'Maple Mono CN';
-  src: url('../assets/fonts/MapleMono-CN-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
+@import '@mogeko/maple-mono-cn/dist/font/result.css';
 
 /* -------------------------------------------------------------------
    1. 令牌

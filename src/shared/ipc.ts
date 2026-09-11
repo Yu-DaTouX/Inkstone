@@ -228,6 +228,23 @@ export interface SessionSummary {
   model?: string
 }
 
+/**
+ * 会话预览的结果（不经过 pi 的直读）。
+ *
+ * `truncated > 0` 时界面应提示「有内容被省略」——
+ * 因为大会话里 75% 的体积是超长 tool result / base64 图片，
+ * 那些被**有损降级**了（见 main/session-reader.ts）。
+ */
+export interface PeekResult {
+  messages: UIMessage[]
+  /** 文件里一共多少条 message entry */
+  total: number
+  /** 被截断/丢弃的内容条数 */
+  truncated: number
+  /** 文件字节数 */
+  bytes: number
+}
+
 /* ==================================================================
    记忆 —— 砚的核心
    ================================================================== */
@@ -459,6 +476,16 @@ export interface YanBridge {
 
   /* 会话列表 */
   listSessions(): Promise<SessionSummary[]>
+
+  /**
+   * 快速预览会话消息（**直接读文件，不问 pi**）。
+   *
+   * 实测：打开 17MB 会话，pi 要 2780ms，直接解析只需 59ms。
+   * 而且 jsonl 里包含**压缩前的历史**，pi 的 get_messages 不含。
+   *
+   * `null` = 读不出来（调用方应回退到等 pi）。
+   */
+  peekSession(path: string): Promise<PeekResult | null>
 
   /* 记忆 */
   memoryList(): Promise<MemoryItem[]>

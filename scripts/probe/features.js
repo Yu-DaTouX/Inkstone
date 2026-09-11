@@ -24,6 +24,22 @@
   log('=== 阶段 2 功能验收 ===')
 
   const store = window.__yanStore
+  /**
+   * 轮询等条件成立。
+   *
+   * ⚠️ 为什么不用固定 sleep：左栏展开是「320ms 延迟 + CSS 过渡」，
+   *   负载高（比如连着跑多个场景）时 900ms 可能不够 ——
+   *   实测在 check 全量跑时偶发失败，单独跑必过。
+   *   这是**探针的定时假设太紧**，不是功能问题（真实用户不会在 900ms 内强制判定）。
+   */
+  const until = async (fn, ms = 4000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (fn()) return true
+      await sleep(120)
+    }
+    return fn()
+  }
 
   // 任何面板的模态遮罩都会挡住点击 —— 每段测试前都确保它是关的。
   // （记忆/状态搬进设置后，测试会开面板，之后忘了关就会让后续点击全部失效）
@@ -278,8 +294,8 @@
   // 左栏默认收起（自动隐藏模式）→ 断言前先把它展开，
   // 否则元素虽然在 DOM 里，但宽度是 0，可见性相关的判断会失效。
   window.dispatchEvent(new MouseEvent('mousemove', { clientX: 3, clientY: 400, bubbles: true }))
-  await sleep(900)
-  ok(!q('.app').classList.contains('rail-off'), '左栏已展开（后续断言依赖它可见）')
+  const railOpen = await until(() => !q('.app').classList.contains('rail-off'))
+  ok(railOpen, '左栏已展开（后续断言依赖它可见）')
 
   log('\n--- 6. 会话重命名 ---')
   await ensureClosed()

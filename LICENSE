@@ -1,0 +1,55 @@
+MIT License
+
+Copyright (c) 2026 Yu-DaTouX
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## 第三方组件
+
+本项目使用了以下第三方组件。各自的许可证与版权归属见下方，**分发本软件时需一并保留**。
+
+### 运行时依赖
+
+| 组件 | 许可证 | 说明 |
+|---|---|---|
+| [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`） | MIT | **不随本项目分发**，由用户自行全局安装。砚通过子进程 + JSONL 调用它 |
+| [Maple Mono CN](https://github.com/subframe7536/maple-font) | **SIL OFL 1.1** | 界面字体。经 [`@mogeko/maple-mono-cn`](https://www.npmjs.com/package/@mogeko/maple-mono-cn)（MIT，cn-font-split 重打包）以 npm 依赖引入 |
+| [reicon](https://github.com/) | MIT | 图标集，已抽取为内联 SVG sprite（`src/renderer/src/icons/`） |
+| [highlight.js](https://github.com/highlightjs/highlight.js) | BSD-3-Clause | 代码语法高亮。配色取自其 GitHub Dark / Light 主题 |
+| [Electron](https://github.com/electron/electron) | MIT | 运行时 |
+| [React](https://github.com/facebook/react) | MIT | 界面层 |
+| [Vite](https://github.com/vitejs/vite) / [electron-vite](https://github.com/alex8088/electron-vite) | MIT | 构建工具 |
+| [zustand](https://github.com/pmndrs/zustand) | MIT | 状态管理 |
+| [virtua](https://github.com/inokawa/virtua) | MIT | 长列表虚拟化 |
+| [react-markdown](https://github.com/remarkjs/react-markdown) / [remark-gfm](https://github.com/remarkjs/remark-gfm) / [rehype-highlight](https://github.com/rehypejs/rehype-highlight) | MIT | Markdown 渲染 |
+| [typebox](https://github.com/sinclairzx81/typebox) | MIT | （pi 的依赖，间接使用） |
+
+### 设计与调研参考
+
+| 项目 | 许可证 | 用途 |
+|---|---|---|
+| [craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) | Apache-2.0 | **思路参考**（未复制代码）：回合分组规则、弹窗动效曲线、内置浏览器与数据源的架构设计 |
+| [OpenCode](https://github.com/sst/opencode) | MIT | 右侧状态栏的信息架构参考（上下文 / 任务 / 队列 的分区方式） |
+
+> 关于 OFL 字体的分发：Maple Mono CN 依 SIL Open Font License 1.1 授权，
+> 允许嵌入与再分发。字体元数据中已包含版权与许可声明
+> （`Copyright 2022 The Maple Mono Project Authors`）。
+> OFL 全文见 <https://openfontlicense.org>。

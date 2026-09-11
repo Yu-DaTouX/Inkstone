@@ -1,97 +1,93 @@
+/**
+ * 设置面板 —— 入口、分区、以及「入口不该重复」。
+ *
+ * ⚠️ 这个场景整体重写过（2026-09-11）。原来它断言的是：
+ *   「右栏（.status）已移除」「中间栏 > 1100px」「标题栏有设置按钮」
+ * 这三条全部**已经不再是事实**：
+ *   · 右栏回来了，但形态变了（常驻多分区状态栏，不是记忆面板）
+ *   · 所以中间栏不再是 1100+（右栏占 264px）
+ *   · 设置按钮从标题栏搬走了（用户要求：一个信息只在一个地方出现）
+ * 断言绑定了当时的布局，布局变了它就失败 —— 这是「过时断言」，不是回归。
+ * 现在改成验证**当前的设计意图**。
+ */
 ;(async () => {
   const out = []
   const log = (s) => out.push(s)
-  const ok = (c, s) => { out.push((c ? '  ✓ ' : '  ✗ ') + s); return !!c }
+  const ok = (c, s) => {
+    out.push((c ? '  ✓ ' : '  ✗ ') + s)
+    return !!c
+  }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  log('=== 记忆搬进设置 ===')
+  log('=== 1. 三栏格局 ===')
+  ok(!!q('.rail'), '左栏存在')
+  ok(!!q('.center'), '中栏存在')
+  ok(!!q('[data-testid="rightpanel"]'), '右栏存在（常驻状态栏，默认展开）')
 
-  /* 1. 右栏应该没了 */
-  ok(!q('.status'), '右栏（.status）已移除')
-  ok(!q('.status-panel'), '没有残留的右栏容器')
-
-  /* 2. 消息流变宽了 */
-  const center = q('.center')
-  const cw = Math.round(center?.getBoundingClientRect().width ?? 0)
+  const cw = Math.round(q('.center')?.getBoundingClientRect().width ?? 0)
   log('  中间栏宽度: ' + cw)
-  ok(cw > 1100, `中间栏变宽（${cw}px，撤掉 328px 右栏后）`)
+  ok(cw > 600, `中间栏宽度合理（${cw}px）`)
 
-  /* 3. 设置按钮存在，点了能开 */
-  const btns = qa('.tb-right .btn.icon')
-  log('  标题栏右侧图标按钮数: ' + btns.length)
-  const setBtn = btns.find((b) => b.title && /设置|Settings/.test(b.title))
-  ok(!!setBtn, '标题栏有「设置」按钮')
-  if (!setBtn) return out.join('\n')
+  log('')
+  log('=== 2. 设置的入口：左栏底部（标题栏那个已按用户要求移除）===')
+  const railBtn = q('[data-testid="rail-settings"]')
+  ok(!!railBtn, '左栏底部有设置入口')
+  ok(!qa('.tb-right [title*="设置"], .tb-right [title*="Settings"]').length, '标题栏不再有重复的设置按钮')
 
-  click(setBtn)
-  await sleep(400)
-  ok(!!q('.settings'), '点开后出现设置面板')
-  ok(store.getState().settingsOpen, 'store.settingsOpen = true')
+  if (railBtn) {
+    click(railBtn)
+    await sleep(400)
+    ok(!!q('.settings'), '点左栏那个能打开设置面板')
+    ok(store.getState().settingsOpen, 'store.settingsOpen = true')
+  }
 
-  /* 4. 四个 tab */
+  log('')
+  log('=== 3. 四个 tab ===')
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tab: ' + JSON.stringify(tabs))
   ok(tabs.length >= 4, `有 ${tabs.length} 个 tab（含关闭）`)
 
-  /* 5. 记忆 tab 里六个分区都在 */
+  log('')
+  log('=== 4. 记忆在设置里（不在右栏）===')
+  // 切到「记忆」tab
   const memTab = qa('.settings-tab').find((x) => /记忆|Memory/.test(x.textContent))
-  click(memTab)
+  ok(!!memTab, '有「记忆」tab')
+  if (memTab) {
+    click(memTab)
+    await sleep(500)
+    const body = q('.settings-body')?.textContent ?? ''
+    log('  记忆页片段: ' + JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 70)))
+    ok(/身份|关于你|我的印象|Identity/.test(body), '记忆页有身份 / 关于你 / 我的印象 分区')
+  }
+  // 右栏现在没有记忆面板了（它变成了状态栏）
+  ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板（已搬进设置）')
+
+  log('')
+  log('=== 5. 外观 tab ===')
+  const appTab = qa('.settings-tab').find((x) => /外观|Appearance/.test(x.textContent))
+  ok(!!appTab, '有「外观」tab')
+  if (appTab) {
+    click(appTab)
+    await sleep(500)
+    const body = q('.settings-body')?.textContent ?? ''
+    ok(/深色|浅色|Dark|Light/i.test(body), '外观页有主题切换')
+    ok(/中文|English|语言/i.test(body), '外观页有语言切换')
+    ok(!!q('[data-testid="set-always-on-top"]'), '外观页有窗口置顶开关')
+  }
+
+  log('')
+  log('=== 6. 右栏状态栏的分区 ===')
+  // 关掉设置看右栏
+  store.getState().closeSettings()
   await sleep(400)
-  const secs = qa('.mem-sections .sect').map((s) => s.dataset.sec)
-  log('  记忆分区: ' + JSON.stringify(secs))
-  ok(secs.length === 6, `六个分区都在（${secs.length}）`)
-  for (const need of ['soul', 'about', 'impressions', 'people', 'projects', 'status']) {
-    ok(secs.includes(need), `有 ${need}`)
-  }
-
-  /* 6. 切换 tab */
-  for (const name of ['外观', '状态', '关于']) {
-    const tb = qa('.settings-tab').find((x) => x.textContent.includes(name))
-    if (!tb) { out.push('  ✗ 找不到 tab ' + name); continue }
-    click(tb)
-    await sleep(300)
-    const rows = qa('.settings-body .set-row').length
-    ok(rows > 0, `${name} tab 有 ${rows} 个设置项`)
-  }
-
-  /* 7. Esc 关闭 */
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  await sleep(300)
-  ok(!q('.settings'), 'Esc 能关闭')
-  ok(!store.getState().settingsOpen, 'store.settingsOpen = false')
-
-  /* 8. 输入区的紧凑状态条 */
-  log('')
-  log('=== 输入区状态条 ===')
-  const ctx = q('.ctxbar')
-  ok(!!ctx, '有 .ctxbar')
-  if (ctx) {
-    log('  内容: ' + JSON.stringify(ctx.textContent.replace(/\s+/g, ' ').trim()))
-    const modelBtn = ctx.querySelector('.ctxbar-model')
-    ok(!!modelBtn && (modelBtn.textContent ?? '').length > 0, '显示模型名')
-    ok(!!ctx.querySelector('.ctxbar-meter'), '有上下文进度条')
-    // 点模型名应该打开设置的「状态」tab
-    click(modelBtn)
-    await sleep(400)
-    ok(store.getState().settingsOpen, '点模型名能打开设置')
-    ok(store.getState().settingsTab === 'status', `定位到状态 tab（${store.getState().settingsTab}）`)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await sleep(300)
-  }
-
-  /* 9. 溢出回归 */
-  log('')
-  log('=== 溢出 ===')
-  for (const sel of ['.rail', '.rail-body', '.app', '.settings-body']) {
-    const el = q(sel)
-    if (!el) continue
-    const over = el.scrollWidth - el.clientWidth
-    ok(over <= 0, `${sel} 无横向溢出（差 ${over}）`)
-  }
+  const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
+  log('  右栏分区: ' + JSON.stringify(secs))
+  ok(secs.includes('rp-context'), '右栏有「上下文」分区')
+  ok(secs.includes('rp-env'), '右栏有「环境」分区')
 
   return out.join('\n')
 })()

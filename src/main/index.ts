@@ -14,6 +14,7 @@ import { cachedTitles } from './title'
 import { MemoryStore, YAN_DIR, readSoul } from './memory'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
+import { readSessionMessages } from './session-reader'
 import { resolvePi, piInfo } from './protocol'
 import type { Attachment, MainPush } from '../shared/ipc'
 
@@ -243,6 +244,23 @@ function registerIpc(): void {
   handle('yan:getCustomEntries', async () => agent?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => agent?.refreshTodos() ?? [])
   handle('yan:listSessions', async () => listSessions())
+
+  /**
+   * 快速预览一个会话的消息 —— **直接读文件，不问 pi**。
+   *
+   * 为什么需要（实测）：打开一个 17MB 的会话，
+   *   pi 的 switch_session + get_messages = **2780ms**
+   *   直接解析 JSONL               = **59ms**
+   * 而且 pi 的 get_messages 不含压缩前历史（docs/rpc.md 写了），
+   * 所以大会话在界面上只剩当前窗口 —— 用户感觉是「又卡又少内容」。
+   *
+   * 调用方应该：先拿这个把内容锦上（瞬间），再让 pi 在后台切过去。
+   * 返回 null 表示读不出来（格式不认 / 文件不在）—— 调用方回退到等 pi。
+   */
+  handle('yan:peekSession', async (path: string) => {
+    if (typeof path !== 'string' || !path) return null
+    return readSessionMessages(path)
+  })
 
   /* ---- 记忆 ---- */
   handle('yan:memoryList', async () => {

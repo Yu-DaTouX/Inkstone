@@ -7,6 +7,7 @@ import type {
   MainPush,
   MemoryItem,
   ModelInfo,
+  PeekResult,
   PiInfo,
   PiProbe,
   QueueMode,
@@ -83,6 +84,7 @@ const api: YanBridge = {
   getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
+  peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
 
   /* ---- 记忆 ---- */
   memoryList: () => invoke<MemoryItem[]>('yan:memoryList'),

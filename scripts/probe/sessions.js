@@ -5,6 +5,13 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  /** 轮询等条件成立（固定 sleep 在负载高时会不够，见 features.js 的说明） */
+  const until = async (fn, ms = 4000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(120) }
+    return fn()
+  }
+
   const stat = () => ({
     msgs: qa('.msg').length,
     sessions: qa('.rail .srow').length,
@@ -15,8 +22,8 @@
   log('=== 会话切换 ===')
   // 左栏默认收起（自动隐藏）→ 先展开
   window.dispatchEvent(new MouseEvent('mousemove', { clientX: 3, clientY: 400, bubbles: true }))
-  await sleep(900)
-  log('左栏已展开: ' + !document.querySelector('.app').classList.contains('rail-off'))
+  const opened = await until(() => !document.querySelector('.app').classList.contains('rail-off'))
+  log('左栏已展开: ' + opened)
   log('起始: ' + JSON.stringify(stat()))
 
   const items = qa('.rail .srow')

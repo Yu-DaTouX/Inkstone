@@ -27,7 +27,7 @@ export const SESSIONS_DIR =
  * ⚠️ 只在用户/测试**显式**接管了会话目录时才传。
  *
  * 为什么：pi 自己会在 sessions 根目录下按 cwd 建项目子目录
- * （如 `--C--Users-YuDaTou--/xxx.jsonl`）。
+ * （如 `--C--Users-Name--/xxx.jsonl`）。
  * 一旦显式传了 `--session-dir`，pi 就**不再建那个子目录**，
  * 而是把会话平铺写进指定目录 —— 结果是新会话与用户原会话分居两处，
  * 左栏里新会话只能靠合成条目显示。
@@ -60,7 +60,7 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>()
 
-/** 目录名形如 --C--Users-YuDaTou--；括号里的内容是 cwd 的 lossy 编码，仅作兜底 */
+/** 目录名形如 --C--Users-Name--；括号里的内容是 cwd 的 lossy 编码，仅作兜底 */
 function decodeDirName(name: string): string | null {
   if (!name.startsWith('-') || !name.endsWith('-')) return null
   const inner = name.slice(1, -1)
