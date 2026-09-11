@@ -56,12 +56,23 @@ export default function App() {
    * 左栏自动隐藏。
    *
    * 三种状态：
-   *   pinned  用户点了标题栏的按钮 → 常驻，不自动收
-   *   hover   鼠标靠近左边缘 → 展开（并会重算计时器）
+   *   pinned  用户点了标题栏的按钮 → 展开
    *   其余    收起
    *
    * 为什么默认收起：会话列表是「偶尔翻找」的东西，
-   * 让它常驻占 224px 不如把宽度让给对话。
+   * 让它常驻占 300px 不如把宽度让给对话。
+   */
+  /**
+   * 左栏只由标题栏那个按钮控制（用户要求取消鼠标悬停自动展开）。
+   *
+   * ⚠️ 以前有三种状态：pinned / hover / 收起。悬停那套实现是
+   *   “鼠标靠近左边缘 12px → 延迟 320ms 展开，离开 1.5s 后收回”。
+   *   为什么去掉：
+   *     · 它会**抢走鼠标**——想去点中栏最左边的导航轨时，
+   *       侧栏先弹出来把内容推走（推挤式布局会重排）
+   *     · “1.5s 后收回”让界面在你还没读完时就开始动
+   *     · 现在两个侧栏都有常驻的开关按钮（标题栏左右各一个），
+   *       显式控制比猜测意图可靠
    */
   const railPinned = useStore((s) => s.railPinned)
   const setRailPinned = useStore((s) => s.setRailPinned)
@@ -71,9 +82,9 @@ export default function App() {
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const cycleModel = useStore((s) => s.cycleModel)
   const cycleThinking = useStore((s) => s.cycleThinking)
-  const [railHover, setRailHover] = useState(false)
-  const railTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const railOpen = railPinned || railHover
+
+  /* 左栏是否可见：只取决于那个开关 */
+  const railOpen = railPinned
   // 设置面板状态放 store（ContextBar 等深层组件要能直接打开）
   const settingsOpen = useStore((s) => s.settingsOpen)
   const settingsTab = useStore((s) => s.settingsTab as SettingsTab)
@@ -256,11 +267,7 @@ export default function App() {
        * ⚠️ 必须等**这一帧的提交**结束再滚。
        *
        * 上面 `setStickNow(false)` 会让 React 重渲染（`!stick` 时会挂出
-       * 「回到底部」按钮），而重渲染会让浏览器**取消正在进行的平滑滚动**
-       * （scroll anchoring / 布局变动都会）。
-       * 实测：同步调用 `scrollIntoView({behavior:'smooth'})` 时
-       * scrollTop 永远停在原位（6826 一动不动），同一行代码放到探针里
-       * 单独跑却正常 —— 差别就在于这次重渲染。
+       * 「回到底部」按钮），而重渲染会让浏览器**取消正在进行的平滑滚动**。
        * 推到下一帧（提交后）再滚，就不会被取消。
        */
       requestAnimationFrame(() => {
@@ -268,16 +275,22 @@ export default function App() {
         if (!el) return
 
         /*
-         * 跳得远就瞬移，跳得近才动画。
+         * **一律瞬移，不用平滑滚动。**
          *
-         * 为什么分两档：平滑滚动适合「附近」的跳转（有方向感、不丢失上下文）；
-         * 但跨整个会话的跳转（实测有过 6800px）会拖得很久，
-         * 屏幕上是一道模糊的光条 —— 那时用户只想「到了」。
+         * 本会话实测（这是第二次在这个点上耽误时间了）：
+         *   scrollIntoView({behavior:'smooth'}) 单独调用  → 能滑到位
+         *   同一行代码放进这里（重渲染之后）            → **永远不动**
+         * 原因是平滑滚动会被任何一次重渲染取消，而这条路径上
+         * 总有重渲染（setStickNow / setHover / 流式推送）。
+         *
+         * 曾经写过「跳得远就瞬移、跳得近就平滑」来缓解 —— 那只是拆中一半：
+         * 距离阈值是 `box.height * 1.5`，而实测的跳动距离（594px）
+         * 恰好小于阈值（954px）→ 又走回平滑 → 又不动。
+         *
+         * 现在直接不用平滑：「跳到第 N 轮」本来就是**定位**，不是看动画。
+         * 代价只是少一个滚动动效，换来的是它真的能用。
          */
-        const box = streamRef.current?.getBoundingClientRect()
-        const far =
-          box && Math.abs(el.getBoundingClientRect().top - box.top) > box.height * 1.5
-        el.scrollIntoView({ behavior: far ? 'auto' : 'smooth', block: 'start' })
+        el.scrollIntoView({ behavior: 'auto', block: 'start' })
       })
     })
   }, [turns, virtual, registerScrollToTurn])
@@ -354,83 +367,6 @@ export default function App() {
     const p = await window.yan.pickCwd()
     if (p) await changeCwd(p)
   }
-
-  /**
-   * 左栏自动显隐。
-   *
-   * 用「指针 x 坐标」当唯一判据，不用 mouseenter/mouseleave 配对 ——
-   * 配对很脆：鼠标快速划过或跨窗口时会漏掉 leave，侧栏就永久卡在展开态。
-   *
-   * 两个延迟：
-   *   OPEN_DELAY  悬停多久才弹出。给一点延迟是为了**避免误触** ——
-   *               鼠标只是路过左边缘时不该弹出来。
-   *   CLOSE_DELAY 离开多久才收回。给 1.5s 是为了「不小心划出去」能回来。
-   */
-  useEffect(() => {
-    if (railPinned) return
-
-    const HOT = 12 // 左边缘多少像素内算「想打开」
-    const MARGIN = 24 // 离开侧栏多远才算「走开」
-    const OPEN_DELAY = 320
-    const CLOSE_DELAY = 1500
-
-    /** 当前左栏宽度 —— 从 CSS 变量读，不写死。
-        写死过 224，结果左栏加宽到 300 后，鼠标停在侧栏中间就被判为「走开」。 */
-    const railWidth = (): number => {
-      const v = getComputedStyle(document.documentElement).getPropertyValue('--w-rail')
-      const n = parseFloat(v)
-      return Number.isFinite(n) && n > 0 ? n : 300
-    }
-
-    const clear = (): void => {
-      if (railTimer.current) {
-        clearTimeout(railTimer.current)
-        railTimer.current = null
-      }
-    }
-
-    const onMove = (e: MouseEvent): void => {
-      const x = e.clientX
-      const railW = railHover ? railWidth() : 0
-
-      // 1) 靠近左边缘 → 延迟展开（不是立刻）
-      if (x <= HOT) {
-        if (!railHover && !railTimer.current) {
-          railTimer.current = setTimeout(() => {
-            railTimer.current = null
-            setRailHover(true)
-          }, OPEN_DELAY)
-        } else if (railHover) {
-          clear() // 已展开，取消任何待执行的收回
-        }
-        return
-      }
-
-      // 2) 还在侧栏里（或紧邻）→ 取消收回
-      if (railHover && x <= railW + MARGIN) {
-        clear()
-        return
-      }
-
-      // 3) 走开了 → 把「待展开」取消掉；已展开的则延迟收回
-      if (!railHover) {
-        clear() // 还没展开就走开 → 别弹了
-        return
-      }
-      if (!railTimer.current) {
-        railTimer.current = setTimeout(() => {
-          railTimer.current = null
-          setRailHover(false)
-        }, CLOSE_DELAY)
-      }
-    }
-
-    window.addEventListener('mousemove', onMove, { passive: true })
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      clear()
-    }
-  }, [railPinned, railHover])
 
   const appCls = [
     'app',

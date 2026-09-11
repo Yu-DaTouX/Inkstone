@@ -103,22 +103,16 @@ export function TitleBar({
       </div>
 
       <div className="tb-right">
-        {/* 右栏开关：与左栏开关对称 */}
-        <button
-          className={`tb-icon ${rightPanelOpen ? 'on' : ''}`}
-          title={rightPanelOpen ? t('rp.hide') : t('rp.show')}
-          onClick={onToggleRightPanel}
-          data-testid="rightpanel-toggle"
-          data-open={rightPanelOpen ? '1' : '0'}
-        >
-          <Icon name="sidebar-right" size={14} />
-        </button>
-
         {/*
-          置顶开关 —— 放在窗口控制按钮的**左边**（用户要求）。
-          `data-on` 给测试与 CSS 用，选中态是实心强调色 + 一个常亮的小点，
-          因为它是个「开着就会挡住一切」的状态，必须一眼看得出来。
-        */}
+         * 置顶开关。
+         *
+         * 放在右栏开关的**左边**（而不在它右边）——
+         * 这样右栏开关就紧贴着窗口控制按钮，成为右侧最靠外的内容按钮，
+         * 与左侧最靠外的左栏开关形成**结构对称**。
+         *
+         * 原来的顺序是 `[右栏开关][置顶][—□✕]`：右栏开关被挤在里侧，
+         * 与左栏开关不对称（用户报的问题）。
+         */}
         <button
           className={`tb-icon tb-pin ${alwaysOnTop ? 'on' : ''}`}
           title={alwaysOnTop ? t('tb.unpin') : t('tb.pin')}
@@ -128,6 +122,17 @@ export function TitleBar({
           data-on={alwaysOnTop ? '1' : '0'}
         >
           <Icon name="pin" size={14} />
+        </button>
+
+        {/* 右栏开关：与左栏开关对称（两边各自最靠外的那一个） */}
+        <button
+          className={`tb-icon ${rightPanelOpen ? 'on' : ''}`}
+          title={rightPanelOpen ? t('rp.hide') : t('rp.show')}
+          onClick={onToggleRightPanel}
+          data-testid="rightpanel-toggle"
+          data-open={rightPanelOpen ? '1' : '0'}
+        >
+          <Icon name="sidebar-right" size={14} />
         </button>
 
         {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}

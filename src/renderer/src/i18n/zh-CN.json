@@ -1,7 +1,7 @@
 {
   "tb.badge": "个人 agent",
   "tb.session": "会话",
-  "tb.rail": "展开左栏（鼠标靠近也可）",
+  "tb.rail": "展开会话列表",
   "tb.status": "折叠右栏",
   "tb.theme": "切换主题",
   "tb.lang": "切换语言",
@@ -212,14 +212,14 @@
   "tok.liveTip": "这个 provider 在流式期间不报 token 用量，结束才有真实速度。这里显示的是已耗时。",
   "ctx.label": "上下文",
   "ctx.tip": "已用 {used} / 上限 {win}（{pct}%）\n满 85% 黄、95% 红 — 快满时会自动压缩",
-  "tb.railUnpin": "取消钉住（改为鼠标靠近时展开）",
+  "tb.railUnpin": "收起会话列表",
   "tb.pin": "置顶显示（总是浮在其它窗口上面）",
   "tb.unpin": "取消置顶",
   "rail.mode": "左栏显示方式",
   "rail.modePin": "固定",
   "rail.modeAuto": "自动",
   "rail.modePinTip": "左栏常驻显示，不自动收起",
-  "rail.modeAutoTip": "默认收起；鼠标移到窗口左边缘才展开，离开 1.5 秒收回",
+  "rail.modeAutoTip": "（已取消：现在只由标题栏按钮控制）",
   "rail.clear": "清除",
   "outline.label": "对话导航",
   "outline.tick": "第 {n} 轮",
@@ -314,5 +314,11 @@
   "ob.footNote": "这些随时能在「设置 → 模型接入 / 状态」里再看",
   "ob.start": "开始使用",
   "composer.dir": "目录",
-  "composer.file": "文件"
+  "composer.file": "文件",
+  "composer.resize": "拖动调高 / 双击复位",
+  "composer.phTall": "写长文模式：Enter 换行，Ctrl+Enter 发送",
+  "composer.enterNewline": "长文模式 · Enter 换行 · Ctrl+Enter 发送 · Esc 退出",
+  "composer.sendTipTall": "Ctrl+Enter",
+  "composer.resizeHint": "双击 ↑ 或点这里进入长文模式（也可以往上拖）",
+  "composer.resizeExpanded": "长文模式：Enter 换行 · Ctrl+Enter 发送 · 点这里退出"
 }

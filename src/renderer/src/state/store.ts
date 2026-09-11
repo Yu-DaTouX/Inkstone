@@ -324,7 +324,20 @@ export const useStore = create<Store>((set, get) => ({
   settings: null,
   settingsOpen: false,
   settingsTab: 'memory',
-  railPinned: false,
+  /**
+   * 左栏是否展开（持久化到 localStorage）。
+   *
+   * 读不到时默认 **true**：取消悬停展开之后，按钮是唯一手段，
+   * 而它远在标题栏左上角 —— 首次打开就收起会让新用户找不到会话列表。
+   */
+  railPinned: ((): boolean => {
+    try {
+      const v = localStorage.getItem('yan.rail-open')
+      return v === null ? true : v === '1'
+    } catch {
+      return true
+    }
+  })(),
   scrollProgress: 0,
   titles: {},
   maximized: false,
@@ -882,7 +895,24 @@ export const useStore = create<Store>((set, get) => ({
     set({ settingsOpen: true, settingsTab: tab ?? 'memory' })
   },
   closeSettings: () => set({ settingsOpen: false }),
-  setRailPinned: (v) => set({ railPinned: v }),
+  /**
+   * 左栏是否展开。
+   *
+   * ⚠️ 取消「鼠标悬停自动展开」后，它变成了**用户唯一的手段**，
+   *   所以两件事必须做对：
+   *     ① 默认展开（否则首次打开看到的是一个光秃秃的界面，
+   *        而开关键远在标题栏最左上角）
+   *     ② 记住用户的选择（落盘）—— 以前不落盘是因为
+   *        hover 会随时改它，存下来反而奇怪；现在它是显式设置。
+   */
+  setRailPinned: (v) => {
+    set({ railPinned: v })
+    try {
+      localStorage.setItem('yan.rail-open', v ? '1' : '0')
+    } catch {
+      /* 存不了就只在本次会话生效 */
+    }
+  },
   toggleAlwaysOnTop: async () => {
     // 乐观更新：窗口层级的切换必须立即反馈（否则按钮会“点一下没反应”再跳）
     const next = !get().alwaysOnTop

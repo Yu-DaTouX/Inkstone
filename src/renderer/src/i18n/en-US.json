@@ -1,7 +1,7 @@
 {
   "tb.badge": "personal agent",
   "tb.session": "session",
-  "tb.rail": "Pin sidebar open (or just move your cursor to the left edge)",
+  "tb.rail": "Show conversation list",
   "tb.status": "Collapse panel",
   "tb.theme": "Switch theme",
   "tb.lang": "Switch language",
@@ -212,14 +212,14 @@
   "tok.liveTip": "This provider reports token usage only at the end, so live tok/s is unavailable. Showing elapsed time instead.",
   "ctx.label": "context",
   "ctx.tip": "Used {used} / limit {win} ({pct}%)\nTurns amber at 85%, red at 95% — auto-compaction kicks in before it fills",
-  "tb.railUnpin": "Unpin (back to hover-to-reveal)",
+  "tb.railUnpin": "Hide conversation list",
   "tb.pin": "Keep on top",
   "tb.unpin": "Stop keeping on top",
   "rail.mode": "Sidebar mode",
   "rail.modePin": "Pinned",
   "rail.modeAuto": "Auto",
   "rail.modePinTip": "Always visible, never auto-hides",
-  "rail.modeAutoTip": "Hidden by default; slides out when the cursor touches the left edge, retracts 1.5s after leaving",
+  "rail.modeAutoTip": "(removed — now controlled only by the title bar button)",
   "rail.clear": "Clear",
   "outline.label": "Conversation outline",
   "outline.tick": "Turn {n}",
@@ -314,5 +314,11 @@
   "ob.footNote": "All of this stays available under Settings → Providers / Status",
   "ob.start": "Start using",
   "composer.dir": "dir",
-  "composer.file": "file"
+  "composer.file": "file",
+  "composer.resize": "Drag to resize / double-click to reset",
+  "composer.phTall": "Long-form mode: Enter inserts a newline, Ctrl+Enter sends",
+  "composer.enterNewline": "Long-form · Enter = newline · Ctrl+Enter = send · Esc to exit",
+  "composer.sendTipTall": "Ctrl+Enter",
+  "composer.resizeHint": "Double-tap ↑ or click here for long-form mode (or drag up)",
+  "composer.resizeExpanded": "Long-form: Enter = newline · Ctrl+Enter = send · click to exit"
 }

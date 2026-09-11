@@ -76,7 +76,7 @@
   }
 
   out.push('')
-  out.push('=== 4. 左栏自动隐藏 ===')
+  out.push('=== 4. 左栏：只有按钮能控制 ===')
   const app = q('.app')
   const move = (x) => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 400, bubbles: true }))
   /** 轮询等待某个条件成立（不依赖固定 sleep，避免环境差异） */
@@ -110,72 +110,75 @@
   }
   const centerW = () => q('.center').getBoundingClientRect().width
   const innerL = () => q('.stream-inner').getBoundingClientRect().left
+  const isOpen = () => !app.classList.contains('rail-off')
+  const btn = q('[data-testid="rail-toggle"]')
+  const click = () => btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-  // ⚠️ 不能直接断言「初始收起」——真实光标可能恰好停在屏幕左缘，
-  //    窗口一出现系统就发一次 mousemove，于是它合法地展开了。
-  //    所以先强制把指针挪开，等它收起，再开始测。
-  move(900)
-  const collapsed = await until(() => app.classList.contains('rail-off'))
-  ok(collapsed, '指针离开后左栏收起')
+  /*
+   * ⚠️ 悬停展开**已被移除**（用户要求）。
+   *
+   * 原来这里有 6 条断言测「鼠标靠近左边缘 → 延迟 320ms 展开 / 离开 1.5s 收回 /
+   * 中途返回取消收回」。那个功能删掉的原因是它会**抢鼠标**：
+   * 想去点中栏最左边的导航轨时，侧栏先弹出来把内容推走。
+   * 现在左栏只由标题栏那个按钮控制。
+   */
 
-  ok(true, '（左边缘热区已移除：鼠标靠近由 window mousemove 的 clientX 判断，没有 DOM 元素）')
+  // 先确保是展开的（默认值就是展开）
+  if (!isOpen()) {
+    click()
+    await until(isOpen, 2000)
+  }
 
-  // 靠近 → **延迟**展开（避免鼠标只是路过就弹出来）
+  /* ---- ① 悬停不再打开 ---- */
+  if (isOpen()) {
+    click()
+    await until(() => !isOpen(), 2000)
+  }
+  ok(!isOpen(), '点按钮能收起左栏')
+
   move(3)
-  await sleep(120)
-  ok(app.classList.contains('rail-off'), '刚靠近 120ms 时还没展开（有延迟）')
-  const expanded = await until(() => !app.classList.contains('rail-off'), 2000)
-  ok(expanded, '指针停留后展开')
+  await sleep(200)
+  move(3)
+  await sleep(1600) // 比原来的 OPEN_DELAY(320ms) + CLOSE_DELAY(1500ms) 都长
+  ok(!isOpen(), '鼠标停在左边缘 1.8s 也不会展开（悬停已移除）')
+
+  move(120)
+  await sleep(600)
+  ok(!isOpen(), '鼠标停在原侧栏区域内也不会展开')
+
+  move(900)
+  await sleep(300)
+  ok(!isOpen(), '鼠标移开也不会因此展开')
+
+  /* ---- ② 只有按钮能控制 ---- */
+  click()
+  const opened = await until(isOpen, 2000)
+  ok(opened, '点按钮能展开左栏')
   const railW = Math.round(q('.rail').getBoundingClientRect().width)
   out.push('  左栏宽度: ' + railW)
   ok(railW > 200, `左栏真的展开了（${railW}px）`)
 
-  // 只是路过（快速划过左边缘）不该展开
-  move(900)
-  await until(() => app.classList.contains('rail-off'))
-  move(3)
-  await sleep(120)
-  move(900) // 立刻划走
-  await sleep(600)
-  ok(app.classList.contains('rail-off'), '鼠标只是路过左边缘时不会弹出')
+  click()
+  const closed = await until(() => !isOpen(), 2000)
+  ok(closed, '再点一次能收起')
 
-  // 挪走 → 有延迟地收回（先确保是展开的）
-  move(3)
-  await until(() => !app.classList.contains('rail-off'), 2000)
-  move(900)
-  await sleep(800)
-  out.push('  挪走 0.8s 后 rail-off=' + app.classList.contains('rail-off'))
-  ok(!app.classList.contains('rail-off'), '0.8 秒时还没收回（说明有 1.5s 延迟）')
-  const late = await until(() => app.classList.contains('rail-off'))
-  ok(late, '延迟后自动收回')
+  /* ---- ③ 选择被持久化（按钮是唯一手段，所以要记住） ---- */
+  click()
+  await until(isOpen, 2000)
+  await sleep(300)
+  out.push('  展开后 localStorage = ' + localStorage.getItem('yan.rail-open'))
+  ok(localStorage.getItem('yan.rail-open') === '1', '展开状态会落盘')
+  click()
+  await until(() => !isOpen(), 2000)
+  await sleep(300)
+  out.push('  收起后 localStorage = ' + localStorage.getItem('yan.rail-open'))
+  ok(localStorage.getItem('yan.rail-open') === '0', '收起状态会落盘')
 
-  // 中途回到栏内 → 取消收回（同样先确保展开）
-  move(3)
-  await until(() => !app.classList.contains('rail-off'), 2000)
-  move(900)
-  await sleep(700)
-  move(120) // 回到侧栏范围内
-  await sleep(1600)
-  out.push('  中途回到栏内后 rail-off=' + app.classList.contains('rail-off'))
-  ok(!app.classList.contains('rail-off'), '中途返回会取消收回')
-
-  // 收起状态下，指针落在侧栏原来的位置不该误展开
-  move(3)
-  await until(() => !app.classList.contains('rail-off'), 2000)
-  move(900)
-  await until(() => app.classList.contains('rail-off'))
-  move(120)
-  await sleep(400)
-  ok(app.classList.contains('rail-off'), '收起后指针在 x=120 不会误展开')
-
-  // 浮层：展开/收起不该改变中栏宽度与内容位置
-  move(900)
-  await until(() => app.classList.contains('rail-off'))
-  // 等宽度过渡走完再量（否则拿到的是过渡中间值）
+  /* ---- ④ 推挤式（不是浮层） ---- */
   const cw1 = Math.round(await settle(centerW))
   const cx1 = Math.round(await settle(innerL))
-  move(3)
-  await until(() => !app.classList.contains('rail-off'), 2000)
+  click()
+  await until(isOpen, 2000)
   const cw2 = Math.round(await settle(centerW))
   const cx2 = Math.round(await settle(innerL))
   // 从「浮层」改成「推挤」是刻意的：对齐 Agents-Anywhere 的常驻列做法。
@@ -183,22 +186,9 @@
   ok(cw2 < cw1, `中栏被左栏推挤（${cw1} → ${cw2}）`)
   ok(cx2 > cx1, `内容跟着右移（left ${cx1} → ${cx2}）`)
 
-  // 钉住
-  const btn = q('[data-testid="rail-toggle"]')
-  btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(300)
-  out.push('  钉住后 data-pinned=' + btn.dataset.pinned)
-  ok(btn.dataset.pinned === '1', '标题栏按钮能钉住')
-  move(900)
-  await sleep(1900)
-  ok(!app.classList.contains('rail-off'), '钉住后不会自动收回')
-
-  // 取消钉住 → 恢复自动隐藏
-  btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(300)
-  move(900)
-  const autoAgain = await until(() => app.classList.contains('rail-off'))
-  ok(autoAgain, '取消钉住后恢复自动隐藏')
+  /* ---- ⑤ 按钮的选中态跟着状态 ---- */
+  out.push('  展开后 data-pinned=' + btn.dataset.pinned + ' data-open=' + btn.dataset.open)
+  ok(btn.dataset.pinned === '1', '展开时按钮显示为选中')
 
   // 左栏顶部的模式开关已删 —— 侧栏开关在标题栏最左上角（一个入口就够，
   // 重复放两处会让人不确定该点哪个）。

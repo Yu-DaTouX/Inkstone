@@ -41,6 +41,98 @@ export function Composer() {
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState<{ open: boolean; index: number }>({ open: false, index: 0 })
 
+  /**
+   * 写长文模式。
+   *
+   * 这个状态**影响回车键的语义**：
+   *   普通模式 → Enter 发送，Shift+Enter 换行
+   *   长文模式 → Enter 换行，Ctrl+Enter 或点发送按钮才发
+   * 因为长文模式下 Enter 是“分段”，而不是“说完了”。
+   *
+   * ── 怎么进入（用户指定的两种方式）──
+   *   ① **双击 ↑ 键**（输入框为空时）—— Slack / Discord / Claude Code
+   *      都是这个手势，所以用户的肌肉记忆里已经有它了
+   *   ② **点一下拖拽柄** —— 看得见的入口，不用猜
+   *
+   * ⚠️ 拖拽柄上「拖」与「点」要分开：拖 = 调高度，点 = 切换模式。
+   *   判据是位移量（< 4px 算点）—— 与系统里拖拽/点击的惯例一致。
+   *   本会话实测过一个反面例子：用 64×10 的小把手配元素自己的
+   *   pointermove 监听，鼠标拖快了就“掉”（指针跑出把手）。
+   *   所以 move/up 挂在 document 上。
+   */
+  /** 上一次按 ↑ 的时间（双击判定） */
+  const lastArrowUp = useRef(0)
+
+  const [expanded, setExpanded] = useState(false)
+  /** 拖出来的高度（px）。0 = 用默认的 max-height */
+  const [tall, setTall] = useState(0)
+
+  /** 展开后的默认高度：够写一段，但不至于占半个屏 */
+  const TALL_H = 180
+
+  /** 开关长文模式。开启时给一个默认高度；关闭时完全回到默认尺寸 */
+  const toggleExpanded = useCallback((): void => {
+    setExpanded((v) => {
+      if (v) {
+        setTall(0)
+        return false
+      }
+      setTall(TALL_H)
+      return true
+    })
+  }, [])
+
+  /**
+   * 拖拽柄：拖 = 调高，点 = 切换长文模式。
+   *
+   * 用 document 上的 pointermove/up（而不是元素自己的）——
+   * 鼠标拖得快时会跑出那个小把手，挂在元素上会“掉”。
+   * pointer 事件而不是 mouse：自动兼得触控与指针捕获。
+   */
+  const startResize = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault()
+      const startY = e.clientY
+      const startT = tall || (ref.current?.offsetHeight ?? TALL_H)
+      const handle = e.currentTarget as HTMLElement
+      let moved = 0
+      handle.classList.add('active')
+      document.body.classList.add('resizing-composer')
+
+      const onMove = (ev: PointerEvent): void => {
+        const dy = startY - ev.clientY
+        moved = Math.max(moved, Math.abs(dy))
+        // 只有真的动了才改动高度（否则轻微抖动会把“点击”变成“拖拽”）
+        if (moved < 4) return
+        const next = Math.max(40, Math.min(560, startT + dy))
+        setTall(next)
+        if (next > 48) setExpanded(true)
+      }
+
+      const onUp = (): void => {
+        handle.classList.remove('active')
+        document.body.classList.remove('resizing-composer')
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+
+        // 位移极小 → 当成一次点击：切换长文模式
+        if (moved < 4) {
+          toggleExpanded()
+          return
+        }
+        // 拖回默认高度 → 退出长文模式（恢复 Enter 发送）
+        if ((ref.current?.offsetHeight ?? 40) <= 48) {
+          setExpanded(false)
+          setTall(0)
+        }
+      }
+
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+    },
+    [tall, toggleExpanded]
+  )
+
   /* ---- 扩展调 set_editor_text ---- */
   useEffect(() => {
     if (editorInject === null) return
@@ -176,10 +268,20 @@ export function Composer() {
 
   const submit = async () => {
     const raw = value.trim()
-    if (!raw) return
+
+    /*
+     * ⚠️ 这里曾经是一行 `if (!raw) return`，而它挡住了**只带图片**的发送：
+     *   用户拖一张图进来、一个字不打就点发送 —— 附件已经显示了，
+     *   但 submit 在第一行就返回了。用户报的「拖入文件可以正常显示但没办法发送」
+     *   就是这个。
+     *
+     * 正确的判据是「文字或附件至少有一个」——
+     * 这与输入框的 placeholder 提示（「发图片不必配文字」）也对得上。
+     */
+    if (!raw && attachments.length === 0) return
 
     if (bashMode) {
-      // `!` 开头的走直接执行，不进模型
+      // `!` 开头的走直接执行，不进模型（图片对它无意义）
       const cmd = raw.slice(1).trim()
       if (!cmd) return
       setValue('')
@@ -251,10 +353,60 @@ export function Composer() {
       }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    /*
+     * 双击 ↑ 进入 / 退出长文模式（用户指定的手势）。
+     *
+     * 为什么只在**输入框为空**时手：
+     *   有文字时 ↑ 是“把光标移到上一行”的正常编辑操作，不能抢。
+     *   空输入框里 ↑ 本来什么都不做 —— 把它借来当快捷方式无副作用。
+     *   （Slack / Discord / Claude Code 都是这个约定。）
+     *
+     * 400ms 内两次算双击：与系统的双击间隔一致，不另设参数。
+     */
+    if (e.key === 'ArrowUp' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (value.length === 0) {
+        const now = Date.now()
+        if (now - lastArrowUp.current < 400) {
+          e.preventDefault()
+          lastArrowUp.current = 0
+          toggleExpanded()
+          return
+        }
+        lastArrowUp.current = now
+        // 不 preventDefault —— 第一次 ↑ 该干什么还干什么
+      }
+    }
+
+    /*
+     * 发送键。
+     *
+     * 默认：Enter 发送，Shift+Enter 换行。
+     *
+     * ⚠️ 进了长文模式之后意图就变了 —— 那时他是要写长文，
+     *   Enter 应该是换行。用户明确要求：
+     *     「按回车按钮是换行而不是输入；
+     *       按下 Ctrl+回车 或者发送按钮再发送」。
+     *
+     * Ctrl/Cmd+Enter 任何时候都能发送（写长文时也不会误发）。
+     */
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      const wantsSend = e.ctrlKey || e.metaKey || (!e.shiftKey && !expanded)
+      if (wantsSend) {
+        e.preventDefault()
+        void submit()
+        return
+      }
+      // 否则放行，让 textarea 插入换行
+    }
+
+    /* 长文模式下 Esc 退出（不用先清空再双击 ↑） */
+    if (e.key === 'Escape' && expanded && !busy) {
       e.preventDefault()
-      void submit()
-    } else if (e.key === 'Escape' && busy) {
+      toggleExpanded()
+      return
+    }
+
+    if (e.key === 'Escape' && busy) {
       e.preventDefault()
       void abort()
     }
@@ -272,7 +424,7 @@ export function Composer() {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
-      <div className="composer">
+      <div className={`composer ${expanded ? 'tall' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
          *
@@ -335,18 +487,32 @@ export function Composer() {
           </div>
         ) : null}
 
+        {/* 拖拽调高：贴在顶边框上的一根小短横 */}
+        <div
+          className="composer-resize"
+          onPointerDown={startResize}
+          title={expanded ? t('composer.resizeExpanded') : t('composer.resizeHint')}
+          data-testid="composer-resize"
+          role="separator"
+          aria-orientation="horizontal"
+        />
+
         <textarea
           ref={ref}
           rows={2}
           data-testid="composer"
           value={value}
           disabled={disabled}
+          /* 拖出来的高度优先；否则交给 CSS 的 max-height */
+          style={tall ? { height: tall, maxHeight: tall } : undefined}
           placeholder={
             disabled
               ? t('conn.starting')
               : busy
                 ? t('composer.busy')
-                : t('composer.ph')
+                : expanded
+                  ? t('composer.phTall')
+                  : t('composer.ph')
           }
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKeyDown}
@@ -371,12 +537,27 @@ export function Composer() {
             </button>
 
             <QueueBadge />
+
+            {/*
+             * 放大状态下的提示。
+             *
+             * 为什么需要：拖大之后 Enter 的语义变了（换行），
+             * 而这是**看不见的规则** —— 不提示的话用户会按 Enter 发现没发出去，
+             * 以为是坏了。直接把当下规则写在旁边。
+             */}
+            {expanded ? (
+              <span className="ctool-hint" data-testid="composer-keyhint">
+                {t('composer.enterNewline')}
+              </span>
+            ) : null}
           </div>
           <button
             className={`send ${busy ? 'abort' : ''}`}
             data-testid="send"
             onClick={busy ? () => void abort() : () => void submit()}
-            disabled={!busy && (!value.trim() || disabled)}
+            /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
+            disabled={!busy && (!value.trim() && attachments.length === 0 ? true : disabled)}
+            title={expanded ? t('composer.sendTipTall') : undefined}
           >
             <Icon name={busy ? 'alert-circle' : bashMode ? 'activity' : 'send'} size={12} />
             <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>

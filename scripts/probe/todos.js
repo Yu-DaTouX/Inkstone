@@ -30,8 +30,22 @@
   /* ================= 2. 任务清单从会话里读出来 ================= */
   log('\n--- 2. 任务清单（panel_todos 的产物）---')
 
-  // fixture 里应该带一个有任务的会话；没有就现场造一个，免得测试依赖外部数据
-  let target = store.getState().sessions.find((s) => s.title.includes('YAN-TODO'))
+  /*
+   * fixture 里应该带一个有任务的会话；没有就现场造一个，免得测试依赖外部数据。
+   *
+   * ⚠️ 按 **path** 找，不能按 title 找。
+   *   本会话踩到过：改成「每轮用模型重新生成标题」之后，
+   *   前面的场景（live / sessions）一跑就会把这个 fixture 会话的标题
+   *   改成模型生成的短标题，于是这里 `title.includes('YAN-TODO')` 找不到，
+   *   于是走到“现场造”分支、而造出来的又没进 sessions 列表 → 整个场景失败。
+   *   单独跑 todos 是过的 —— 典型的“只在全量跑时暴露”。
+   *
+   *   fixture 的文件名里带 `yan-todo-fixture`（见 test-live.mjs），
+   *   那是它真正的身份，不会变。
+   */
+  let target = store
+    .getState()
+    .sessions.find((s) => s.path.includes('yan-todo-fixture') || s.title.includes('YAN-TODO'))
   if (!target) {
     log('  fixture 里没有带任务的会话，现场造一个')
     target = await makeTodoSession()

@@ -743,12 +743,39 @@
 }
 
 /* 窄屏：右栏让位（先藏右栏，再藏左栏） */
+/*
+ * 窄屏：右栏**收窄**，而不是消失。
+ *
+ * ⚠️ 这里原来写的是 `display: none` —— 用户报「窗口一旦变化右边栏内容会消失」
+ *   就是这个：拖窄到 1180px 以下，整栏直接没了，也没有任何提示。
+ *
+ * 为什么改成收窄：右栏是**状态栏**（上下文用量 / 任务进度 / 队列），
+ * 不是可选的辅助面板 —— 用户明确要过「右栏要默认打开」。
+ * 被动消失还让「用按钮隐藏」这件事失去意义（到底是谁关的？）。
+ *
+ * 分级：
+ *   < 1180px  收窄到 220px
+ *   < 980px   再收到 190px（仍保留，只让中栏更挤）
+ *   中栏自己有 min-width: 0，所以永远不会因为挤压而报错
+ */
 @media (max-width: 1180px) {
-  :root {
-    --w-right: 0px;
+  .workspace {
+    --w-right: 220px;
   }
-  .rightpanel {
-    display: none;
+}
+@media (max-width: 980px) {
+  .workspace {
+    --w-right: 190px;
+  }
+  /* 窄屏下右栏内部的左右内边距收一档 */
+  .rp-sec-head,
+  .rp-top {
+    padding-left: var(--sp-2);
+    padding-right: var(--sp-2);
+  }
+  .rp-sec-body {
+    padding-left: var(--sp-2);
+    padding-right: var(--sp-2);
   }
 }
 
@@ -1945,9 +1972,90 @@
   background: var(--bg-2);
 }
 
+/*
+ * 输入框内的 textarea 不要自己的 focus 框。
+ *
+ * ⚠️ 用户报「单击输入框边框会有两圈高光」—— 就是这里：
+ *   ① textarea 自己拿到 `:focus-visible` → tokens.css 里的全局规则
+ *      给了它 1px 蓝色 outline（实测 0.8px solid rgb(76,126,243)）
+ *   ② 卡片 .composer:focus-within 另外给了一圈 `0 0 0 3px` 的 accent 光环
+ *   两个框一起出现，而且大小不同 → 看着像“双重描边”。
+ *
+ * 只留外圈（“输入区是聚焦的”比“textarea 这个元素是聚焦的”更有意义）。
+ */
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+}
+
 .composer textarea {
   min-height: 40px;
   padding: 2px 2px 0;
+}
+
+/*
+ * 输入框拖拽调高。
+ *
+ * 用户要求：「向上拖动可以放大输入框」。
+ *
+ * 实现方式是把 textarea 的 max-height 当成可调尺寸（不是给卡片加高度）——
+ * 这样文字多的时候卡片自然变高，而写码区的滚动仍然由 textarea 自己管。
+ * 拖拽柄放在顶边框上（那一行本来就有），不额外占高度。
+ */
+.composer {
+  position: relative;
+}
+/*
+ * 拖拽柄：拖 = 调高，**点 = 切换长文模式**。
+ *
+ * 可见性分三档（它现在是一个可点的入口，不能只在 hover 时显形）：
+ *   常态     淡的短横（暗示可交互）
+ *   hover    变长变强调色 + 出现提示文字（由 title 负责）
+ *   长文模式 常亮（用户需要知道“现在能点它回去”）
+ */
+.composer-resize {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 96px;
+  height: 12px;
+  cursor: ns-resize;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  /* 命中区比视觉大：12px 高很好点，但看着只是一条细线 */
+  border-radius: var(--r-xs);
+}
+/* 中间那根小短横 —— 暗示“这里可以点/拖” */
+.composer-resize::after {
+  content: '';
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-str);
+  transition:
+    background var(--dur) var(--ease),
+    width var(--dur) var(--ease);
+}
+.composer-resize:hover::after,
+.composer-resize.active::after {
+  background: var(--accent);
+  width: 44px;
+}
+/* 长文模式：短横常亮 + 居中两段（像一个“收起来”的提示） */
+.composer.tall .composer-resize::after {
+  background: var(--accent-line);
+  width: 40px;
+}
+.composer.tall .composer-resize:hover::after {
+  background: var(--accent);
+  width: 52px;
+}
+/* 拖拽中：整页光标保持 ns-resize，且禁用选中（否则会选到文字） */
+body.resizing-composer {
+  cursor: ns-resize !important;
+  user-select: none !important;
 }
 
 /* 用量条：与卡片同宽、跟着悬浮 */
@@ -2966,10 +3074,18 @@
 .msg.user .gutter {
   color: var(--cyan);
 }
-/* 用户消息：方角 + 左侧提示符竖线，像终端里的引述块 */
+/*
+ * 用户消息：底色 + **右侧**强调条（用户要求）。
+ *
+ * 为什么在右边：用户气泡是靠右对齐的，内容从右边“长出”。
+ * 竖线在左侧时，它离气泡的左边缘很远、看起来属于正文区
+ * （与助手消息的左侧竖线混在一起，分不清是谁的）。
+ * 放到右边就跟右对齐的方向一致了。
+ */
 .msg.user .bubble {
   border-radius: var(--r-xs);
-  border-left: 2px solid var(--cyan);
+  border-left: none;
+  border-right: 2px solid var(--cyan);
   background: var(--bg-2);
   padding: var(--sp-2) var(--sp-3);
 }

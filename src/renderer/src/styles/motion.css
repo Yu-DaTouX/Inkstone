@@ -567,7 +567,14 @@ html[data-theme='light'] .turn {
   display: flex;
   align-items: center;
   gap: 0;
-  height: 20px;
+  /*
+   * 行高 + 字号：工作状态要**看得见**（用户要求放大）。
+   *
+   * 它是唯一告诉用户「它在干活」的信号，而原来用正文字号（12.5px），
+   * 附在一条 1px 边框线上很不起眼。放大到 14px（--fs-lg）并配 24px 行高。
+   * 空闲时这一行里只有一条横线，高度不能太大，否则输入框上方会显得空。
+   */
+  height: 24px;
   /*
    * 全出血（负的左右内边距）：
    * 边框线必须**从卡片最左一直到最右**，才能与左右竖边框接上。
@@ -577,11 +584,18 @@ html[data-theme='light'] .turn {
   margin: 0 calc(var(--sp-3) * -1);
   padding: 0;
   color: var(--think-off);
-  font-size: var(--fs-base);
+  font-size: var(--fs-lg);
   line-height: 1;
   user-select: none;
   overflow: hidden;
   transition: color 260ms var(--mo-ease);
+}
+/*
+ * 空闲时字号回到正文 —— 那时行里没有文字，只有一条横线，
+ * 字号大小不影响它；但继承下去会影响子元素（如按钮）的默认字号。
+ */
+.cborder:not(.busy) {
+  font-size: var(--fs-base);
 }
 /* 档位 → 颜色。用属性选择器，加档位时只加一行 */
 .cborder[data-level='minimal'] {
@@ -640,22 +654,26 @@ html[data-theme='light'] .turn {
   opacity: 0.38;
 }
 
-/* ---- 状态（spinner + 文案） ---- */
+/*
 .cborder-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  color: var(--fg-dim);
-  white-space: nowrap;
+  gap: 7px;
 }
 .cborder-spinner {
-  /* 盲文字符宽度固定，但要保证不因字体回退而抖 */
+  /*
+   * 盲文字符宽度固定，但要保证不因字体回退而抖。
+   * 字号变大后宽高用 em 跟着缩放（不改这里的值就能同步放大）。
+   */
   display: inline-block;
-  width: 1em;
+  width: 1.1em;
   text-align: center;
   color: currentColor;
   font-variant-ligatures: none;
+  /* 行高收紧：盲文字符本身在字身框里偏上，1 会让它看起来浮动 */
+  line-height: 1;
+}
+.cborder-text {
+  /* 与 spinner 之间留一点呼吸，字大了之后 5px 显得挤 */
+  letter-spacing: 0.01em;
 }
 /* 文案变化时淡入 —— 状态切换是「有新消息」，不该是硬切 */
 .cborder-text {

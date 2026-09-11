@@ -63,15 +63,20 @@ export function SessionHeader() {
           </span>
         </span>
 
-        {/* 模型胶囊：点它进设置的状态页 */}
-        <button
-          className="shead-chip"
-          onClick={() => openSettings('status')}
-          title={session?.model?.id}
-        >
-          <span className={`shead-dot ${session?.isStreaming ? 'busy' : ''}`} />
-          <span className="shead-chip-text">{session?.model?.name ?? '—'}</span>
-        </button>
+        {/*
+         * 模型胶囊**已删**（用户要求）。
+         *
+         * 理由：模型名在**底部用量条的最右**已经常驻（而且那里就能点开切换），
+         * 标题栏中间的「连接 · 工作目录」旁边也不再重复。
+         * 会话头部再挂一个就是三处重复，而标题旁边最该留给标题本身。
+         *
+         * 保留的只有「正在流式」的小圆点 —— 它是**状态**，不是名称。
+         */}
+        {session?.isStreaming ? (
+          <span className="shead-busy" title={t('chat.working')} data-testid="shead-busy">
+            <span className="shead-dot busy" />
+          </span>
+        ) : null}
       </div>
     </div>
   )
