@@ -1,0 +1,21 @@
+# 行尾统一：仓库里一律 LF，检出到 Windows 时按需转换。
+#
+# 为什么需要：Windows 上 git 默认把 LF 转 CRLF，每次 add 都刷一屏
+# 「LF will be replaced by CRLF」警告；跨平台协作时还会把整个文件
+# 标记成改动，diff 里全是行尾噪音。
+* text=auto eol=lf
+
+# 这些必须保持二进制原样，不能做行尾转换
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.ico  binary
+*.ttf  binary
+*.woff binary
+*.woff2 binary
+
+# 锁文件由工具生成，不参与 diff（避免合并冲突时刷屏）
+package-lock.json  -diff linguist-generated
+
+# 生成的图标 sprite 也是产物，折叠在 diff 里
+src/renderer/src/icons/sprite.ts  linguist-generated
