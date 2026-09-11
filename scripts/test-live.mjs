@@ -48,6 +48,10 @@ const CASES = {
   },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
+  // 模型接入（凭证读写）—— ⚠️ 会用 YAN_PI_DIR 隔离，不碰真实 auth.json
+  auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },
+  // @ 文件引用补全（pi 的 @files 用法）
+  atPath: { probe: 'scripts/probe/at-path.js', delay: 9000, cost: 0 },
   // 标题栏：置顶按钮位置 + 精简掉的重复入口
   titlebar: { probe: 'scripts/probe/titlebar.js', delay: 9000, cost: 0 },
   // 浅色主题：对比度 / 代码高亮 / 工具行
@@ -320,13 +324,22 @@ async function main() {
     const userData = join(sandboxRoot, 'userData')
     const sessions = join(sandboxRoot, 'sessions')
     const data = join(sandboxRoot, 'data')
-    for (const d of [userData, sessions, data]) mkdirSync(d, { recursive: true })
+    /*
+     * pi 的凭证目录（auth.json）。
+     *
+     * ⚠️ 必须隔离：`auth` 场景会写入并删除一个测试凭证，
+     *   而 auth.json 里是用户的**真实密钥**。写坏了比污染
+     *   会话目录/记忆文件严重得多（那两件已经各踩过一次）。
+     */
+    const piDir = join(sandboxRoot, 'pi-agent')
+    for (const d of [userData, sessions, data, piDir]) mkdirSync(d, { recursive: true })
 
     env = {
       ...env,
       YAN_USER_DATA: userData,
       YAN_SESSIONS_DIR: sessions,
-      YAN_DATA_DIR: data
+      YAN_DATA_DIR: data,
+      YAN_PI_DIR: piDir
     }
 
     // 从真实会话目录**只读**拷几份当 fixture。
@@ -337,6 +350,7 @@ async function main() {
     console.log(`隔离目录：${sandboxRoot}`)
     console.log(`  fixture：从真实会话里拷了 ${seeded} 份（只读，原件不受影响）`)
     console.log('  （不碰真实的 sessions / memory.json / localStorage）')
+    console.log('  （也不碰真实的 ~/.pi/agent/auth.json —— 里面是用户的密钥）')
   } else {
     console.log('⚠️  YAN_TEST_ISOLATED=0 —— 直接改真实数据，仅用于排查问题')
   }

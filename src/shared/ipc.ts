@@ -245,6 +245,48 @@ export interface PeekResult {
   bytes: number
 }
 
+/**
+ * 会话预览的结果（不经过 pi 的直读）。
+ *
+ * `truncated > 0` 时界面应提示「有内容被省略」——
+ * 因为大会话里 75% 的体积是超长 tool result / base64 图片，
+ * 那些被**有损降级**了（见 main/session-reader.ts）。
+ */
+export interface PeekResult {
+  messages: UIMessage[]
+  /** 文件里一共多少条 message entry */
+  total: number
+  /** 被截断/丢弃的内容条数 */
+  truncated: number
+  /** 文件字节数 */
+  bytes: number
+}
+
+/* ==================================================================
+   模型接入（凭证）
+   ================================================================== */
+
+/** 能不能用：ready = 有可用凭证 */
+export type AuthStatus = 'ready' | 'missing' | 'unknown'
+
+/** 接入方式：订阅制（OAuth）还是 API key */
+export type AuthKind = 'subscription' | 'api_key'
+
+export interface AuthProviderInfo {
+  id: string
+  name: string
+  kind: AuthKind
+  /** 一句话说明（为什么选它 / 有什么坑） */
+  hint: string
+  /** 对应的环境变量名（空 = 该方式不走环境变量） */
+  envVar: string
+  /** 在 auth.json 里的键名（空 = 由 pi 的 OAuth 流程自己定） */
+  authKey: string
+  /** 订阅制需要跑的命令（目前统一是 `pi`，然后在里面 `/login`） */
+  loginCmd?: string
+  status: AuthStatus
+}
+
 /* ==================================================================
    记忆 —— 砚的核心
    ================================================================== */
@@ -486,6 +528,22 @@ export interface YanBridge {
    * `null` = 读不出来（调用方应回退到等 pi）。
    */
   peekSession(path: string): Promise<PeekResult | null>
+
+  /* 模型接入（凭证） */
+  /** 列出接入方式与状态。deep=true 时逐个问 pi（慢，几百 ms × N） */
+  authProviders(deep?: boolean): Promise<AuthProviderInfo[]>
+  /** 写入一个 provider 的 API key（**合并**写入 auth.json） */
+  setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
+  /** 移除某个 provider 的凭证（界面上的「退出」） */
+  clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
+  /** auth.json 的路径与条目数（界面上告知凭证存在哪） */
+  authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
+
+  /**
+   *  文件引用补全 —— 只读**一层**目录（不递归扫项目）。
+   * 返回相对 cwd 的路径，目录带尾斜杠。
+   */
+  completePath(prefix: string): Promise<string[]>
 
   /* 记忆 */
   memoryList(): Promise<MemoryItem[]>

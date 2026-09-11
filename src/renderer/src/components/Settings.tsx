@@ -4,8 +4,9 @@ import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { prefersReducedMotion, usePresence } from '../lib/usePresence'
 import { MemorySections } from './MemoryPanel'
+import { AuthTab } from './AuthTab'
 
-export type SettingsTab = 'memory' | 'appearance' | 'status' | 'about'
+export type SettingsTab = 'memory' | 'auth' | 'appearance' | 'status' | 'about'
 
 /**
  * 设置面板。
@@ -51,6 +52,7 @@ export function Settings({
 
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'memory', label: t('set.memory'), icon: 'layers' },
+    { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'about', label: t('set.about'), icon: 'shield-check' }
@@ -95,6 +97,8 @@ export function Settings({
         <div className="settings-body" key={tab}>
           {tab === 'memory' ? (
             <MemorySections />
+          ) : tab === 'auth' ? (
+            <AuthTab />
           ) : tab === 'appearance' ? (
             <AppearanceTab lang={lang} setLang={setLang} />
           ) : tab === 'status' ? (

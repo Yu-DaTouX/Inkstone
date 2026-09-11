@@ -15,6 +15,7 @@ import { MemoryStore, YAN_DIR, readSoul } from './memory'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
+import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { resolvePi, piInfo } from './protocol'
 import type { Attachment, MainPush } from '../shared/ipc'
 
@@ -260,6 +261,25 @@ function registerIpc(): void {
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
     return readSessionMessages(path)
+  })
+
+  /* ---- 模型接入（凭证） ---- */
+  handle('yan:authProviders', async (deep?: boolean) => {
+    const s = await getSettings()
+    const probe = resolvePi({ override: s.piBin })
+    return listAuthProviders({ cmd: probe.cmd, args: probe.args }, !!deep)
+  })
+  handle('yan:setApiKey', async (provider: string, key: string) => setApiKey(provider, key))
+  handle('yan:clearAuth', async (provider: string) => clearAuth(provider))
+  handle('yan:authFileInfo', async () => authFileInfo())
+
+  /**
+   *  文件引用补全 —— 只读一层目录（不递归扫项目）。
+   * 以 cwd 为根；拒绝跳出 cwd 的路径。
+   */
+  handle('yan:completePath', async (prefix: string) => {
+    const st = await getSettings()
+    return completePath(st.cwd, String(prefix ?? ''))
   })
 
   /* ---- 记忆 ---- */

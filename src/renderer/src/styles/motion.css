@@ -970,3 +970,456 @@ html[data-theme='light'] .rp-todo-now {
     transition-duration: 1ms !important;
   }
 }
+
+/* ===================================================================
+   58. 设置 · 模型接入页
+       ─────────────────────────────────────────────────────────────
+       两条路要一眼分得开：订阅制（OAuth，需要终端里跑一次 pi）
+       与 API key（在这里填）。所以用两个小标题分隔，
+       并且订阅制那边**不给输入框**（给了会让人以为能在这里登录）。
+   =================================================================== */
+.auth-tab {
+  gap: var(--sp-2);
+}
+
+.auth-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.auth-head .seg-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.auth-head .seg-btn:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+/* 凭证文件位置：一行灰色的说明，不抢视线 */
+.auth-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  min-width: 0;
+}
+.auth-path code {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;      /* 路径太长时保留尾部（文件名比开头有用） */
+  text-align: left;
+}
+.auth-path-count {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.auth-msg {
+  padding: 5px 8px;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-sm);
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+}
+.auth-msg.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.auth-msg.err {
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+/* 分区小标题 */
+.auth-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--border-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.auth-sec-head .spacer {
+  flex: 1;
+}
+.auth-sec-note {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 一行一个接入方式 */
+.auth-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px var(--sp-1);
+  border-radius: var(--r-xs);
+  min-width: 0;
+}
+.auth-row + .auth-row {
+  /* 细分隔线：一行行读下来不会糊成一片 */
+  box-shadow: inset 0 1px 0 var(--border-soft);
+}
+.auth-row:hover {
+  background: var(--bg-1);
+}
+.auth-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.auth-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.auth-row-hint {
+  margin-top: 1px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.auth-row-hint code {
+  color: var(--fg-dim);
+  background: var(--bg-3);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+/* 状态点 */
+.auth-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  flex: none;
+  background: var(--bg-4);
+}
+.auth-dot.ready {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--ok-soft);
+}
+.auth-dot.missing {
+  background: var(--border-str);
+}
+.auth-dot.unknown {
+  background: var(--warn);
+}
+
+.auth-badge {
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: var(--fs-xs);
+}
+
+/* 订阅制那行给的命令提示（不是按钮 —— 它是「去终端做」） */
+.auth-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 7px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.auth-cmd code {
+  color: var(--accent);
+}
+.auth-cmd-then {
+  opacity: 0.6;
+}
+
+/* 填 key 的那一行 */
+.auth-actions,
+.auth-edit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.auth-edit {
+  flex: 1;
+  min-width: 0;
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+}
+.auth-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.auth-input:focus {
+  border-color: var(--accent-line);
+  outline: none;
+}
+.auth-actions .seg-btn,
+.auth-edit .seg-btn {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.auth-actions .seg-btn:hover:not(:disabled),
+.auth-edit .seg-btn:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.auth-edit .seg-btn.sel {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.auth-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-msg,
+  .auth-edit {
+    animation-duration: 1ms !important;
+  }
+}
+
+/* ===================================================================
+   59. 首次使用引导
+       ─────────────────────────────────────────────────────────────
+       四条**可当场验证**的检查项（不是「请确保…」那种空话）：
+       pi 装没装显示版本号、凭证有没有显示已就绪数量。
+       看起来像清单而不是向导：只有两件事要检查，分步反而要点四次下一步。
+   =================================================================== */
+.ob-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+
+.ob-card {
+  width: min(620px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  animation: mo-in-center var(--mo-slow) var(--mo-ease) both;
+}
+
+.ob-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ob-head .spacer {
+  flex: 1;
+}
+.ob-logo {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 16px;
+  flex: none;
+}
+.ob-title {
+  color: var(--fg);
+  font-size: var(--fs-lg);
+}
+.ob-sub {
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+.ob-x {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.ob-x:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.ob-body {
+  padding: var(--sp-3) var(--sp-4);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- 检查项 ---- */
+.ob-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  align-items: start;
+  padding: 7px var(--sp-2);
+  border-radius: var(--r-sm);
+  /* 逐项落位 */
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+.ob-row + .ob-row {
+  box-shadow: inset 0 1px 0 var(--border-soft);
+}
+.ob-check {
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  text-align: center;
+}
+.ob-row.ok .ob-check {
+  color: var(--ok);
+}
+.ob-row.todo .ob-check {
+  color: var(--warn);
+}
+.ob-row-title {
+  color: var(--fg);
+  font-size: var(--fs-base);
+}
+.ob-row.todo .ob-row-title {
+  color: var(--warn);
+}
+.ob-row-desc {
+  margin-top: 1px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.ob-row-desc code {
+  color: var(--fg-dim);
+  background: var(--bg-3);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: var(--fs-xs);
+}
+.ob-row-act {
+  flex: none;
+}
+
+.ob-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.ob-btn:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.ob-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.ob-btn.primary:hover {
+  background: var(--accent);
+  color: #fff;
+  filter: brightness(1.1);
+}
+
+/* ---- 三条「知道就好」---- */
+.ob-tips {
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ob-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.ob-tip .ico {
+  margin-top: 1px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.ob-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-2);
+}
+.ob-foot .spacer {
+  flex: 1;
+}
+.ob-foot-note {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+html[data-theme='light'] .ob-scrim {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-scrim,
+  .ob-card,
+  .ob-row {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}

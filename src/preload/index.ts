@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AppSettings,
   Attachment,
+  AuthProviderInfo,
   CustomEntry,
   ForkPoint,
   MainPush,
@@ -85,6 +86,13 @@ const api: YanBridge = {
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
   peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
+
+  /* ---- 模型接入（凭证） ---- */
+  authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
+  setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
+  clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
+  authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
+  completePath: (prefix) => invoke<string[]>('yan:completePath', prefix),
 
   /* ---- 记忆 ---- */
   memoryList: () => invoke<MemoryItem[]>('yan:memoryList'),

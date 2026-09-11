@@ -11,6 +11,7 @@ import { TurnView } from './components/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
 import { Composer } from './components/Composer'
 import { Settings, type SettingsTab } from './components/Settings'
+import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/Onboarding'
 import { ConnBar, Notices, StatusBar, UiDialog } from './components/UiBridge'
 import { useStore } from './state/store'
 import './styles/tokens.css'
@@ -47,6 +48,10 @@ function readTheme(parent: Theme | undefined): Theme {
 export default function App() {
   const { lang, setLang } = useI18n()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
+  /** 首次使用引导（默认关；启动后按条件自动开） */
+  const [onboarding, setOnboarding] = useState(false)
+  /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
+  const onboardDecided = useRef(false)
   /**
    * 左栏自动隐藏。
    *
@@ -89,6 +94,8 @@ export default function App() {
   const registerScrollToTurn = useStore((s) => s.registerScrollToTurn)
   const applyPush = useStore((s) => s.applyPush)
   const changeCwd = useStore((s) => s.changeCwd)
+  const piInfo = useStore((s) => s.piInfo)
+  const models = useStore((s) => s.models)
 
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
@@ -136,6 +143,14 @@ export default function App() {
     startConnWatch()
     return off
   }, [applyPush, bootstrap, startConnWatch])
+
+  /* ---- 首次引导：数据到位后判定一次 ---- */
+  useEffect(() => {
+    if (onboardDecided.current) return
+    if (!settings) return // 等 bootstrap 有结果
+    onboardDecided.current = true
+    if (shouldAutoOnboard({ conn, piInfo, models })) setOnboarding(true)
+  }, [settings, conn, piInfo, models])
 
   /* ---- 设置只在首次到达时对齐 UI（之后以 UI 为准） ---- */
   useEffect(() => {
@@ -529,6 +544,15 @@ export default function App() {
           <RightPanel />
         </div>
       </div>
+
+      {onboarding ? (
+        <Onboarding
+          onClose={() => {
+            markOnboarded()
+            setOnboarding(false)
+          }}
+        />
+      ) : null}
 
       <UiDialog />
       <Notices />

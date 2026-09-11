@@ -82,18 +82,93 @@ export function Composer() {
       .slice(0, 12)
   }, [commands, slashQuery])
 
+  /**
+   * `@` 文件引用补全。
+   *
+   * pi 的命令行支持 `@files`（把文件内容当上下文），这是它的核心用法之一，
+   * 但桌面端之前没有 —— 用户只能自己在路径里手打。
+   *
+   * ⚠️ 与 `/` 命令不同，这里**不能列整个文件树**：
+   *   仓库里动辄几万个文件，列出来既慢又没用。
+   *   所以只对**已经在输入里写出的路径前缀**做提示：
+   *   `@src/ma` → 提示 `@src/main/` 下有哪几个条目。
+   *   没写前缀时（刚打出一个 `@`）不做任何 IO —— 用户可以继续打。
+   *
+   * 为什么不做成「文件选择器」：那需要主进程递归扫目录（慢、权限问题多），
+   * 而 pi 自己会处理 `@path` 的解析 —— 我们只需要帮用户**少打几个字**。
+   */
+  const atQuery = useMemo(() => {
+    // 光标前最后一个 @token（允许路径分隔符与常见文件名字符）
+    const m = /@([\w./\\-]*)$/.exec(value)
+    return m ? m[1] : null
+  }, [value])
+
+  /**
+   * `@` 路径补全的候选。
+   *
+   * 异步去主进程查（只读一层目录），所以用 state 存。
+   * 防抖：每敲一个字都发 IPC 会白干活。
+   */
+  const [paths, setPaths] = useState<string[]>([])
+
+  useEffect(() => {
+    if (atQuery === null || atQuery.trim().length < 2) {
+      setPaths([])
+      return
+    }
+    let alive = true
+    const id = setTimeout(() => {
+      void window.yan
+        .completePath(atQuery)
+        .then((r) => {
+          if (alive) setPaths(r)
+        })
+        .catch(() => {
+          if (alive) setPaths([])
+        })
+    }, 120)
+    return () => {
+      alive = false
+      clearTimeout(id)
+    }
+  }, [atQuery])
+
+  const atMatches = useMemo(() => {
+    if (atQuery === null || paths.length === 0) return []
+    return paths.slice(0, 10)
+  }, [atQuery, paths])
+
   useEffect(() => {
     if (slashQuery !== null && slashMatches.length > 0) {
+      setMenu({ open: true, index: 0 })
+    } else if (atMatches.length > 0) {
       setMenu({ open: true, index: 0 })
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [slashQuery, slashMatches.length])
+  }, [slashQuery, slashMatches.length, atMatches.length])
 
   const completeSlash = useCallback(
     (name: string) => {
       setValue(`/${name} `)
       setMenu({ open: false, index: 0 })
+      ref.current?.focus()
+    },
+    []
+  )
+
+  /**
+   * 把 `@前缼` 补成 `@完整路径`。
+   *
+   * 目录（带尾斜杠）补完后**不关菜单** —— 用户通常要接着选下一层
+   * （`@src/` → `@src/main/` → `@src/main/agent.ts`）。
+   * 文件则补完就关。这是与 `/` 命令补全的关键差别。
+   */
+  const completeAt = useCallback(
+    (p: string) => {
+      setValue((v) => v.replace(/@([\w./\\-]*)$/, `@${p}`))
+      // 目录：保持菜单开（等下一层的结果自动刷新）；文件：关
+      if (!p.endsWith('/')) setMenu({ open: false, index: 0 })
       ref.current?.focus()
     },
     []
@@ -145,21 +220,28 @@ export function Composer() {
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // 斜杠菜单打开时，方向键/Enter/Tab 归菜单
-    if (menu.open && slashMatches.length > 0) {
+    /*
+     * 补全菜单的键盘导航。
+     *
+     * 两个菜单（`/` 命令与 `@` 文件）共用同一个 menu 状态与按键处理 ——
+     * 它们不会同时出现（`@` 只在 slashMatches 为空时才渲染）。
+     */
+    const items = slashMatches.length > 0 ? slashMatches.map((c) => c.name) : atMatches
+    if (menu.open && items.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setMenu((m) => ({ ...m, index: (m.index + 1) % slashMatches.length }))
+        setMenu((m) => ({ ...m, index: (m.index + 1) % items.length }))
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setMenu((m) => ({ ...m, index: (m.index - 1 + slashMatches.length) % slashMatches.length }))
+        setMenu((m) => ({ ...m, index: (m.index - 1 + items.length) % items.length }))
         return
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
-        completeSlash(slashMatches[menu.index].name)
+        if (slashMatches.length > 0) completeSlash(items[menu.index])
+        else completeAt(items[menu.index])
         return
       }
       if (e.key === 'Escape') {
@@ -228,6 +310,26 @@ export function Composer() {
                 <span className="slash-name">/{c.name}</span>
                 <span className="slash-desc">{c.description ?? ''}</span>
                 <span className="slash-src">{c.source}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {/* `@` 文件引用补全（pi 的 @files 用法）。
+            只列主进程返回的那一层目录结果，不递归扫项目。 */}
+        {menu.open && slashMatches.length === 0 && atMatches.length > 0 ? (
+          <div className="slash-menu" role="listbox" data-testid="at-menu">
+            {atMatches.map((p, i) => (
+              <button
+                key={p}
+                className={`slash-item ${i === menu.index ? 'sel' : ''}`}
+                onMouseEnter={() => setMenu((m) => ({ ...m, index: i }))}
+                onClick={() => completeAt(p)}
+                role="option"
+                aria-selected={i === menu.index}
+              >
+                <span className="slash-name">{p.endsWith('/') ? '▸ ' : '· '}{p}</span>
+                <span className="slash-src">{p.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>
               </button>
             ))}
           </div>
