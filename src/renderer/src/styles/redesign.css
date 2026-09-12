@@ -665,6 +665,8 @@
 .rightpanel {
   background: var(--bg-1);
   border-left: 1px solid var(--border);
+  /* .resizer-panel 的定位基准（它绝对定位在左缘） */
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -760,12 +762,13 @@
  */
 @media (max-width: 1180px) {
   .workspace {
-    --w-right: 220px;
+    /* ⚠️ 用户手动拖过宽度就不动它（var 的 fallback 只在未定义时生效） */
+    --w-right: var(--w-panel-user, 220px);
   }
 }
 @media (max-width: 980px) {
   .workspace {
-    --w-right: 190px;
+    --w-right: var(--w-panel-user, 190px);
   }
   /* 窄屏下右栏内部的左右内边距收一档 */
   .rp-sec-head,
@@ -1161,12 +1164,6 @@
   align-items: center;
   gap: 2px;
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
-}
-.rail-brand {
-  color: var(--fg);
-  font-size: 15px;
-  letter-spacing: 0.14em;
-  /* 品牌字用小字距 + 稍大字号，和列表文字区分开 */
 }
 .rail-spacer {
   flex: 1;
@@ -1876,13 +1873,16 @@
         两者在收起/展开时值不同步，grid 列算成了 0px 1441px 0px，
         中栏宽度变成 0、整屏被左栏占满。 */
   /* 展开宽度 */
-  --w-rail: 300px;
+  /* 实际宽度 = 用户拖出来的（--w-rail-user），没设过就用设计默认 300。
+     用「变量套变量」而不是把默认值写进设置文件：
+     这样以后调默认值时，没手动改过的用户会跟着变。 */
+  --w-rail: var(--w-rail-user, 300px);
   /* 收起宽度：必须容得下头部那个开关（offset 12 + 按钮 26 + 边距 12）——
      否则收起后按钮被裁掉，就没法再展开了。
      48-50 也是常见「折叠侧边栏」宽度（VS Code 的 activity bar 是 48） */
   --w-rail-collapsed: 50px;
-  /* 右栏（任务）。没有任务时由 :has 归零 */
-  --w-right: 264px;
+  /* 工具栏。同样：用户拖过就用他的值 */
+  --w-right: var(--w-panel-user, 264px);
 }
 .workspace:not(:has(.rightpanel)) {
   --w-right: 0px;
@@ -1915,11 +1915,17 @@
 }
 .rail {
   /* 固定宽度：不随 grid 列宽收缩 */
-  width: 300px;
-}
-/* 收起时左栏变成一条 50px 的竖条（仍显示头部的开关） */
-.app.rail-off .rail {
-  width: 50px;
+  /*
+   * ⚠️ 这里原来是 `width: 300px`（「内容宽度固定，不跟着列宽收缩」）。
+   *    那个写法让**拖拽调宽失效**：grid 列宽变了，但 .rail 自己还是 300px，
+   *    视觉上完全不动（实测 raiWidth 已落盘 390，界面仍是 300）。
+   *    现在跟随列宽（列宽由 --w-rail 控制，含用户拖出来的值）。
+   *
+   *    原来担心的「收起过程中文字被压扁」已经不存在了 ——
+   *    收起时内容是 `visibility: hidden`（见上文 .app.rail-off 规则），
+   *    不会被看到压扁的过程。
+   */
+  width: 100%;
 }
 
 /* ===================================================================
@@ -4276,4 +4282,245 @@ html[data-theme='light'] .tb-pin.on {
 .rup-note-list li {
   margin-bottom: 2px;
   overflow-wrap: anywhere;
+}
+
+/* ===================================================================
+   50. 面板宽度把手（拖拽调宽）
+
+   位置：左栏右缘 / 工具栏左缘。
+   体量：7px 宽的命中区，但视觉上只有悬停/拖动时露一条线 ——
+         常驻一条竖线会让本就窄的三栏更像被切片。
+   为什么放在相邻面板**内部**并绝对定位：.workspace 是 3 列 grid，
+         把手若作为 grid 子元素会多出一列（本项目列宽踩过坑，见 §23b）。
+   =================================================================== */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /*
+   * 5px：再宽会与工具栏分区左缘的**排序把手**重叠（实测 7px 时重叠 5px，
+   *   用户想拖排序会变成拖宽度）。排序把手的 margin-left 也因此设为 6px。
+   */
+  width: 5px;
+  z-index: 8;
+  cursor: col-resize;
+  /* 触摸设备上别滚页面 */
+  touch-action: none;
+}
+/*
+ * 贴在**列的内缘**（不能用负偏移）：左栏的 .rail-slot 有 overflow: hidden，
+ * 负偏移的部分会被裁掉，把手就点不到了。
+ * 代价是它盖住面板自己 5px 宽的一条边 —— 因为平时完全透明，看不出来。
+ */
+.resizer-rail {
+  right: 0;
+}
+.resizer-panel {
+  left: 0;
+}
+/* 悬停/聚焦/拖动时才显线 —— 平时完全不可见，但一直可点 */
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: transparent;
+  transition: background 120ms var(--ease);
+}
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer[data-dragging='1']::after {
+  background: var(--accent);
+}
+.resizer:focus-visible {
+  outline: none;
+}
+/*
+ * 拖动中：禁掉过渡与文字选择。
+ * 过渡是给「收起/展开」用的动画，拖动时带着缓动会像橡皮筋；
+ * 不关 user-select 的话拖快了会把界面文字整片选蓝。
+ */
+body.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.resizing .workspace {
+  transition: none;
+}
+
+/* ===================================================================
+   51. 工具栏：分区排序把手 + 工具库
+
+   把手（⠿）：平时不可见，悬停分区或聚焦时才显 ——
+     常驻七个小把手会让右栏到处都是点，而排序是低频操作。
+   插入指示线：拖动中在被跨过的分区边缘画一条强调色线。
+     没有它的话「会插到哪」完全靠猜（HTML5 DnD 自带的指示线在 Electron 里
+     不一定画，这也是本项目改用指针事件的原因之一）。
+   =================================================================== */
+.rp-sec-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.rp-sec-row .rp-sec-head {
+  flex: 1;
+  min-width: 0;
+}
+.rp-grip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  /* 让开宽度把手占的那 5px，否则两者在左缘重叠（见 .resizer 的注释） */
+  margin-left: 6px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  opacity: 0;
+  cursor: grab;
+  /* 触摸设备上别滚页面（拖排序时） */
+  touch-action: none;
+  transition: opacity var(--dur) var(--ease);
+}
+.rp-sec:hover .rp-grip,
+.rp-grip:focus-visible {
+  opacity: 0.7;
+}
+.rp-grip:hover,
+.rp-grip:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+}
+.rp-slot.dragging {
+  opacity: 0.55;
+}
+/* 插入指示线：before 画上边、after 画下边 */
+.rp-slot[data-over='before'] > .rp-sec {
+  box-shadow: inset 0 2px 0 -0.5px var(--accent);
+}
+.rp-slot[data-over='after'] > .rp-sec {
+  box-shadow: inset 0 -2px 0 -0.5px var(--accent);
+}
+/* 排序中禁掉文字选择（拖快了会把标题选蓝） */
+body.reordering {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* ---- 工具库弹层：从工具栏头部下面展开 ---- */
+.tool-lib {
+  position: absolute;
+  top: 33px; /* .rp-top 的高度 */
+  left: var(--sp-2);
+  right: var(--sp-2);
+  z-index: 40;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: mo-in-down var(--mo-base) var(--mo-ease) both;
+}
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+.tl-head .spacer {
+  flex: 1;
+}
+.tl-count {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.tl-hint {
+  margin: 3px 0 var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+.tl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+.tl-row .spacer {
+  flex: 1;
+}
+.tl-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+}
+.tl-dot.on {
+  background: var(--ok);
+}
+.tl-dot.off {
+  background: var(--fg-mute);
+  opacity: 0.5;
+}
+.tl-name {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.tl-row[data-in-lib='1'] .tl-name {
+  color: var(--fg-mute);
+}
+.tl-move {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.tl-move:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--accent);
+}
+.tl-move:disabled {
+  opacity: 0.25;
+}
+.tl-toggle {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.tl-toggle:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.tl-toggle.on {
+  /* 已在工具栏里 —— 按钮是「收进库」，用中性色（不是危险操作） */
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+.tl-reset {
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.tl-reset:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
 }

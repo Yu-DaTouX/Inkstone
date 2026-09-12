@@ -20,6 +20,15 @@
   const store = window.__yanStore
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
+  /** 轮询到条件成立（不用固定 sleep 等 IPC 往返 —— 全量跑时会被拖慢） */
+  const until = async (fn, ms = 6000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (fn()) return Date.now() - t0
+      await sleep(100)
+    }
+    return -1
+  }
 
   for (let i = 0; i < 80; i++) {
     if (store.getState().conn === 'ready') break
@@ -48,6 +57,8 @@
   /* ---------------- 2. 默认不置顶 ---------------- */
   out.push('')
   out.push('=== 2. 默认不置顶（不能偷偷开） ===')
+  // 等设置从主进程回来（别在 store 还是初始默认值时断言）
+  await until(() => store.getState().settings != null, 5000)
   out.push('  store.alwaysOnTop = ' + store.getState().alwaysOnTop)
   ok(store.getState().alwaysOnTop !== true, '默认不在置顶态')
   ok(pin?.getAttribute('data-on') === '0', '按钮的选中态是关')
@@ -56,16 +67,22 @@
   out.push('')
   out.push('=== 3. 切换置顶 ===')
   pin?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(1200)
+  /*
+   * ⚠️ 轮询等状态，不要用固定 sleep。
+   *    置顶要走：渲染端 IPC → 主进程 setAlwaysOnTop → always-on-top-changed
+   *    事件 → push 回渲染端。全量跑（前一个场景刚跑完）时这条链可能超过 1.2s，
+   *    固定等待会假失败 —— 实测就在全量第 2 轮挂过。
+   */
+  const onMs = await until(() => store.getState().alwaysOnTop === true, 6000)
   const on = store.getState().alwaysOnTop
-  out.push('  点击后 store.alwaysOnTop = ' + on)
+  out.push('  点击后 store.alwaysOnTop = ' + on + '（等了 ' + onMs + 'ms）')
   ok(on === true, '点一下变置顶（store 收到主进程回报的真实状态）')
   ok(pin?.getAttribute('data-on') === '1', '按钮的选中态跟着变')
 
   // 再点一下关掉 —— 留一个干净的退出状态（别让下次启动是置顶的）
   pin?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(1200)
-  out.push('  再点一次后 = ' + store.getState().alwaysOnTop)
+  const offMs = await until(() => store.getState().alwaysOnTop === false, 6000)
+  out.push('  再点一次后 = ' + store.getState().alwaysOnTop + '（等了 ' + offMs + 'ms）')
   ok(store.getState().alwaysOnTop === false, '再点一下取消置顶')
 
   /* ---------------- 4. 标题栏不再有重复入口 ---------------- */

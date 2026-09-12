@@ -49,8 +49,16 @@
     if (!rt) bad('左栏头部没有开关')
     else {
       const inRail = !!rt.closest('.rail-top')
-      ok('开关在 .rail-top 里：' + inRail + '，文字=' + rt.textContent.trim())
-      if (!inRail) bad('开关不在左栏头部')
+      const hasIco = !!rt.querySelector('svg')
+      out.push('  开关在 .rail-top 里：' + inRail + '，纯图标=' + hasIco + '，文字=' + JSON.stringify(rt.textContent.trim()))
+      ok(inRail, '开关在左栏头部：' + inRail)
+      /*
+       * 用户要求：把品牌字「砚」从开关上删掉。
+       * 理由不只是好看 —— **标题栏已经有「砚」了**（.tb-name），
+       * 而且内容是图标还是汉字会让盒子尺寸变，位置对不上。
+       */
+      if (hasIco && !/砚/.test(rt.textContent)) ok('开关是纯图标（品牌字只在标题栏，不重复）')
+      else bad('开关不是纯图标：' + JSON.stringify(rt.textContent))
     }
 
     out.push('\n=== 3. 右栏标题是「工具栏」===')
@@ -80,10 +88,19 @@
     }
 
     out.push('\n=== 5. 头像面板：改名字 ===')
-    click(av); await sleep(500)
-    const pop = document.querySelector('[data-testid="rail-user-pop"]')
-    if (!pop) bad('没打开档案面板')
-    else {
+    click(av)
+    /*
+     * 轮询等浮层出现（不用固定 sleep）。
+     * 浮层是 React 状态驱动的，负载高时一帧可能超过 500ms ——
+     * 这根固定等待已经假失败过一次（报「没打开档案面板」）。
+     */
+    let pop = null
+    for (let i = 0; i < 25; i++) {
+      pop = document.querySelector('[data-testid="rail-user-pop"]')
+      if (pop) break
+      await sleep(120)
+    }
+    if (pop) {
       ok('档案面板已打开')
       const inp = document.querySelector('[data-testid="rail-name-input"]')
       if (!inp) bad('没有名字输入框')
@@ -91,11 +108,24 @@
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
         setter.call(inp, '测试名字')
         inp.dispatchEvent(new Event('input', { bubbles: true }))
-        // ⚠️ 必须用**真实**的 focus/blur 方法：React 的 onBlur 挂在 focusout 上，
-        //    合成的 blur Event 触发不到它（这是工具边界，不是应用 bug）
+        /*
+         * 提交靠 onBlur。触发它有两种方式，**两种都要用**：
+         *   · `inp.focus()` + `inp.blur()`：真实路径。但在
+         *     `win.showInactive()`（探针运行时不抢焦点）下，
+         *     文档本身不是 active 的，focusout 可能被抑制。
+         *   · 补发合成的 `focusout`：React 的 onBlur 就挂在这个事件上
+         *     （React 17+ 用 focusout 做事件委派），且它 bubbles，
+         *     所以能稳定到 root 上的委派监听。
+         * commitName 是幂等的（先比再写），重复触发无副作用。
+         */
         inp.focus()
         inp.blur()
-        await sleep(700)
+        inp.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+        // 等落盘（走 IPC + 写文件）——轮询而不是固定等
+        for (let i = 0; i < 25; i++) {
+          if (store.getState().settings?.profile?.name === '测试名字') break
+          await sleep(120)
+        }
         const nm = store.getState().settings?.profile?.name
         out.push('  store.profile.name = ' + JSON.stringify(nm))
         if (nm === '测试名字') ok('名字已写入设置')

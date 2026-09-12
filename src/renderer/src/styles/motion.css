@@ -1364,6 +1364,10 @@ html[data-theme='light'] .rp-todo-now {
 }
 .ob-row-act {
   flex: none;
+  /* 第 2 步有两个按钮（重新检测 / 去配置）—— 竖排，窄窗口下不会挤扁 */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .ob-btn {

@@ -5,6 +5,7 @@ import { useI18n } from './i18n'
 import { TitleBar, type Theme } from './components/TitleBar'
 import { Rail } from './components/Rail'
 import { RightPanel } from './components/RightPanel'
+import { Resizer } from './components/Resizer'
 import { ConversationOutline } from './components/ConversationOutline'
 import { Continuity, EmptyStream, ReviewBar } from './components/Continuity'
 import { TurnView } from './components/TurnView'
@@ -427,6 +428,8 @@ export default function App() {
          */}
         <div className="rail-slot">
           <Rail />
+          {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
+          <Resizer side="rail" />
         </div>
 
           <section className="center">

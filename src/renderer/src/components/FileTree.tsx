@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
+import { Section } from './ToolSection'
 import type { DirListing } from '../../../shared/ipc'
 
 /**
@@ -95,7 +96,7 @@ export function FileTree() {
   )
 
   return (
-    <Section2
+    <Section
       titleKey="rp.files"
       testId="rp-files"
       extra={
@@ -146,7 +147,7 @@ export function FileTree() {
           {t('rp.fsSkipped', { names: cache[''].skipped.join('、') })}
         </div>
       ) : null}
-    </Section2>
+    </Section>
   )
 }
 
@@ -166,33 +167,6 @@ function pickIntoComposer(rel: string): void {
 }
 
 /* ------------------------------------------------------------------ */
-
-/** 右栏的折叠分区（与 RightPanel 里那个同形，但接受 ReactNode 标题额外内容） */
-function Section2({
-  titleKey,
-  extra,
-  children,
-  testId
-}: {
-  titleKey: Parameters<ReturnType<typeof useT>>[0]
-  extra?: React.ReactNode
-  testId?: string
-  children: React.ReactNode
-}) {
-  const t = useT()
-  const [isOpen, setIsOpen] = useState(true)
-  return (
-    <section className={`rp-sec ${isOpen ? 'open' : ''}`} data-sec={testId} data-testid={testId}>
-      <button className="rp-sec-head" onClick={() => setIsOpen((v) => !v)} aria-expanded={isOpen}>
-        <Icon name="chevron-right" size={12} className="chev" />
-        <span className="rp-sec-title">{t(titleKey)}</span>
-        <span className="spacer" />
-        {extra}
-      </button>
-      {isOpen ? <div className="rp-sec-body">{children}</div> : null}
-    </section>
-  )
-}
 
 /** 一层的内容（根下面的所有条目） */
 function TreeLevel({

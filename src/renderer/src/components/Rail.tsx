@@ -135,14 +135,14 @@ export function Rail() {
       {/* ---- 顶部：品牌 + 动作 ---- */}
       <div className="rail-top">
         {/*
-         * 左栏开关 = 品牌按钮，**同一个元素在两种状态下几何完全相同**。
+         * 左栏开关 = 一个纯图标按钮，**两种状态下几何完全相同**。
          *
-         * 为什么这么做（用户报的「展开前后按钮大小位置不对称」）：
-         *   上一版收起后渲染的是另一个元素（.rail-stub），它在 24px 的列里
-         *   居中、图标 12px、padding-top 8px；而展开时是「砚 + 图标」的按钮、
-         *   在 .rail-top 的 12px 内边距处。两个东西对不上。
-         *   现在收起宽度 50px（= 12 + 26 + 12），按钮仍在 (12,12) 处 26×26 ——
-         *   位置与尺寸一模一样，只是内容从「砚」换成展开图标。
+         * 这里曾经显示品牌字「砚」（展开时）与侧栏图标（收起时）——
+         * 两个问题：
+         *   ① 内容是「砚」还是图标，盒子尺寸就跟着变，
+         *      位置与大小对不上（用户报过「展开前后不对称」）
+         *   ② **品牌字在标题栏已经有了**（.tb-name），这里是重复信息
+         * 现在只有图标，固定 26×26（见 CSS），内容不随状态变。
          */}
         <button
           className="rail-brand-btn"
@@ -152,11 +152,7 @@ export function Rail() {
           data-open={railPinned ? '1' : '0'}
           aria-expanded={railPinned}
         >
-          {railPinned ? (
-            <span className="rail-brand">砚</span>
-          ) : (
-            <Icon name="sidebar-left" size={14} />
-          )}
+          <Icon name="sidebar-left" size={14} />
         </button>
         <span className="rail-spacer" />
         <button

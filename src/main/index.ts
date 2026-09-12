@@ -23,6 +23,26 @@ import type { Attachment, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
+/*
+ * 探针运行时关掉 Chromium 的**后台节流**。
+ *
+ * 为什么必需：为了不抢用户焦点，探针窗口用 `showInactive()`（见下面
+ * ready-to-show 处的注释）。代价是窗口**不是 active** 的，Chromium 会对
+ * 未聚焦/被遮住的窗口做后台节流：
+ *   · 定时器被拉到 ≥1s（setTimeout / rAF 驱动的滚动与动画变慢）
+ *   · 渲染被降频
+ * 后果是探针偶发假失败（实测：outline 的滚动跳转、resize 的宽度应用
+ * 偶尔「没生效」——单跑必过、连着跑才挂）。
+ *
+ * 这三个开只用开关就是为这种场景准备的，而且**只在有 YAN_PROBE 时加**，
+ * 不影响用户实际使用的行为（他们本来就是聚焦窗口）。
+ */
+if (process.env.YAN_PROBE) {
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+}
+
 /* ------------------------------------------------------------------
    测试隔离：YAN_USER_DATA 指向临时目录时，把 Electron 的 userData
    （localStorage / sessionData / cache）也搬过去。
@@ -509,7 +529,18 @@ function createWindow(): void {
   screen.on('display-added', reapply)
   screen.on('display-removed', reapply)
 
-  win.once('ready-to-show', () => win?.show())
+  /*
+   * 显示窗口。
+   *
+   * ⚠️ 探针运行时用 `showInactive()`（显示但**不抢焦点**）。
+   * 为什么：跑测试会连续开十几次窗口，`show()` 每次都把焦点抢过来 ——
+   * 用户在多桌面工作时会被反复打断（实测：测试把焦点从另一个桌面抢走）。
+   * 不激活不影响断言：窗口照样渲染、布局、跑动画，只是不在最前面。
+   */
+  win.once('ready-to-show', () => {
+    if (process.env.YAN_PROBE) win?.showInactive()
+    else win?.show()
+  })
 
   /*
    * 最大化 / 置顶状态变化 → 推给界面。

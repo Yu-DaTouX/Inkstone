@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -36,15 +36,37 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   const models = useStore((s) => s.models)
   const openSettings = useStore((s) => s.openSettings)
 
-  const [ready, setReady] = useState<{ n: number; total: number } | null>(null)
+  const [ready, setReady] = useState<{ n: number; total: number; fromEnv: number } | null>(null)
+
+  /**
+   * 重新检测凭证。
+   *
+   * 为什么单独抽成函数并暴露重测按钮（用户要求）：
+   *   首次启动时用户可能**已经在本地配好了 key**（写在 auth.json 里，
+   *   或者跑在环境变量里）—— 引导页不应该拿一个一次性快照就把第 2 步
+   *   判成未完成。用户去接线页填完 key 回来、或自己改完环境变量，
+   *   需要能**就地重测**，而不用重启应用。
+   *
+   * 用浅查（不启 pi 进程）：auth.json 与环境变量都是本地文件/内存读，
+   * 毫秒级；deep 查会逐项问 pi，那是设置页里点「重新检测」才做的事。
+   */
+  const detect = useCallback(async () => {
+    try {
+      const list = await window.yan.authProviders(false)
+      const okList = list.filter((x) => x.status === 'ready')
+      setReady({
+        n: okList.length,
+        total: list.length,
+        fromEnv: okList.filter((x) => x.source === 'env').length
+      })
+    } catch {
+      setReady(null)
+    }
+  }, [])
 
   useEffect(() => {
-    // 查一下有几个 provider 已就绪（浅查，不启 pi 进程）
-    void window.yan
-      .authProviders(false)
-      .then((list) => setReady({ n: list.filter((x) => x.status === 'ready').length, total: list.length }))
-      .catch(() => setReady(null))
-  }, [])
+    void detect()
+  }, [detect])
 
   const piOk = !!piInfo?.version
   const connOk = conn === 'ready'
@@ -118,7 +140,16 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             title={t('ob.authTitle')}
             desc={
               authOk ? (
-                <>{t('ob.authOk', { n: ready?.n ?? 0 })}</>
+                <>
+                  {t('ob.authOk', { n: ready?.n ?? 0 })}
+                  {/* 用环境变量配的要说明白：那种情况在设置里「移除」不了 */}
+                  {ready && ready.fromEnv > 0 ? (
+                    <span data-testid="ob-auth-env">
+                      {' '}
+                      · {t('ob.authEnv', { n: ready.fromEnv })}
+                    </span>
+                  ) : null}
+                </>
               ) : (
                 <>
                   {t('ob.authMissing')} <code>pi</code> → <code>/login</code>
@@ -126,9 +157,15 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               )
             }
             action={
-              <button className="ob-btn" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
-                {t('ob.goAuth')}
-              </button>
+              <>
+                {/* 重测：用户去填完 key 回来、或改了环境变量，不用重启应用 */}
+                <button className="ob-btn" onClick={() => void detect()} data-testid="ob-recheck-auth">
+                  {t('ob.recheck')}
+                </button>
+                <button className="ob-btn primary" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
+                  {t('ob.goAuth')}
+                </button>
+              </>
             }
           />
 

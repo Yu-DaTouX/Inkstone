@@ -7,7 +7,17 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import type { AppSettings, UserProfile } from '../shared/ipc'
+import {
+  RAIL_MAX,
+  RAIL_MIN,
+  PANEL_MAX,
+  PANEL_MIN,
+  clampPanelWidth,
+  normalizeToolHidden,
+  normalizeToolOrder,
+  type AppSettings,
+  type UserProfile
+} from '../shared/ipc'
 import { YAN_DIR } from './memory'
 import { clampScale } from './zoom-math'
 
@@ -26,7 +36,13 @@ const DEFAULTS: AppSettings = {
   // 0 = 自动（按屏幕缩放算，见 main/zoom.ts）
   uiScale: 0,
   // 空名字 → 界面回落到系统用户名（见 defaultProfile）
-  profile: defaultProfile()
+  profile: defaultProfile(),
+  // 0 = 用设计默认宽度（见 AppSettings 的注释）
+  railWidth: 0,
+  panelWidth: 0,
+  // 空 = 用设计默认顺序
+  toolOrder: [],
+  toolHidden: []
 }
 
 /**
@@ -93,6 +109,11 @@ export async function getSettings(): Promise<AppSettings> {
     // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）
     cached.uiScale = clampScale(cached.uiScale)
     cached.profile = sanitizeProfile(cached.profile)
+    cached.railWidth = clampPanelWidth(cached.railWidth, RAIL_MIN, RAIL_MAX)
+    cached.panelWidth = clampPanelWidth(cached.panelWidth, PANEL_MIN, PANEL_MAX)
+    // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
+    cached.toolOrder = normalizeToolOrder(cached.toolOrder)
+    cached.toolHidden = normalizeToolHidden(cached.toolHidden)
   } catch {
     cached = { ...DEFAULTS }
   }
@@ -121,6 +142,9 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   }
   // 档案是合并写入（只改名字不能把头像清空），且一律过一遍校验
   next.profile = sanitizeProfile({ ...next.profile, ...(patch.profile ?? {}) })
+  // 宽度同样夹一下（渲染端传 0 = 恢复默认）
+  if ('railWidth' in patch) next.railWidth = clampPanelWidth(next.railWidth, RAIL_MIN, RAIL_MAX)
+  if ('panelWidth' in patch) next.panelWidth = clampPanelWidth(next.panelWidth, PANEL_MIN, PANEL_MAX)
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }

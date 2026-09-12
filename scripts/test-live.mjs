@@ -54,6 +54,10 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 恢复默认）
+  tools: { probe: 'scripts/probe/tools.js', delay: 9000, cost: 0 },
+  // 面板宽度拖拽（含夹取范围与键盘）
+  resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
@@ -61,6 +65,17 @@ const CASES = {
   // 开关的几何对称性（展开↔收起逐像素对比 + 必须点得到）
   symmetry: { probe: 'scripts/probe/symmetry.js', delay: 9000, cost: 0 },
   motion: { probe: 'scripts/probe/motion.js', delay: 9000, cost: 0 },
+  /*
+   * 凭证写在**环境变量**里的那条路。
+   * 必须单独一个场景，因为环境变量是**主进程启动时**读的，
+   * 不能在探针里造 —— 所以用 caseEnv 注入一个假 key。
+   */
+  authEnv: {
+    probe: 'scripts/probe/auth-env.js',
+    delay: 9000,
+    cost: 0,
+    env: { OPENAI_API_KEY: 'sk-probe-dummy-not-a-real-key' }
+  },
   // 模型接入（凭证读写）—— ⚠️ 会用 YAN_PI_DIR 隔离，不碰真实 auth.json
   auth: { probe: 'scripts/probe/auth.js', delay: 9000, cost: 0 },
   // @ 文件引用补全（pi 的 @files 用法）
@@ -233,12 +248,14 @@ function writePlainSession(dir, idBase, count) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
-function runProbe({ probe, delay, keys }, env) {
+function runProbe({ probe, delay, keys, env: caseEnv }, env) {
   return new Promise((resolvePromise) => {
     const child = spawn('npx', ['electron', '.'], {
       cwd: root,
       env: {
         ...env,
+        // 场景自己的环境变量（如 authEnv 要验「key 写在环境变量里」那条路）
+        ...(caseEnv ?? {}),
         YAN_PROBE: probe,
         YAN_PROBE_DELAY: String(delay),
         ...(keys ? { YAN_PROBE_KEYS: keys } : {})
@@ -389,6 +406,23 @@ async function main() {
   for (const name of names) {
     const c = CASES[name]
     console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
+
+    /*
+     * 每个场景开跑前把设置文件**重置回已知状态**。
+     *
+     * 为什么必要：所有场景共用一个隔离目录，而 desktop.json 是**持久化**的
+     * —— 上一个场景改了 cwd / 缩放 / 面板宽度 / 分区顺序，下一个场景就会
+     * 带着那些状态开跑。实测后果：某个场景把 cwd 改掉后，后面的 atPath
+     * 场景拿到家目录（而不是种子里的项目目录），断言全部落空，
+     * 而且「单跑必过、全量才炸」。
+     *
+     * 重置成「只有 cwd」而不是删文件：应用会用 DEFAULTS 补全其余字段，
+     * 这样场景一开始就是一个干净、已知的默认状态。
+     * 场景自己需要什么（缩放 / 宽度 / 顺序 / 档案）自己会显式设置。
+     */
+    if (sandboxRoot) {
+      writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root }, null, 2), 'utf8')
+    }
 
     const out = await runProbe(c, env)
     process.stdout.write(out.text)

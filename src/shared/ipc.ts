@@ -285,6 +285,14 @@ export interface AuthProviderInfo {
   /** 订阅制需要跑的命令（目前统一是 `pi`，然后在里面 `/login`） */
   loginCmd?: string
   status: AuthStatus
+  /**
+   * 凭证从哪里来的（status='ready' 时才有意义）。
+   *
+   * 为什么要把这个告诉界面：用户用**环境变量**配的 key 与写在 auth.json 里的
+   * 是两个不同的东西 —— 前者在设置里「移除」不了（要去改环境变量），
+   * 不区分的话界面上会给出一个点了没用的「退出」按钮。
+   */
+  source?: 'auth.json' | 'env'
 }
 
 /* ==================================================================
@@ -347,6 +355,86 @@ export interface AppSettings {
   uiScale: number
   /** 左栏底部的用户档案（名字 / 头像 / 登录预留） */
   profile: UserProfile
+  /**
+   * 左栏宽度（px）。
+   *
+   * **0 = 用设计默认值**（300），而不是把 300 写死进设置文件 ——
+   * 这样以后调默认值时，没手动改过宽度的用户会跟着变，
+   * 改过的人保留自己的值。右栏同理。
+   */
+  railWidth: number
+  /** 工具栏宽度（px）。0 = 用设计默认值 */
+  panelWidth: number
+  /**
+   * 工具栏分区的显示顺序（存 id）。
+   *
+   * **空数组 = 用设计默认顺序** —— 与 railWidth 同一个思路：
+   * 以后调整默认顺序时，没手动改过的人会跟着变。
+   * 数组中出现的未知 id 会被忽略（版本升级后旧 id 可能有变动）。
+   */
+  toolOrder: string[]
+  /**
+   * 被收进「工具库」的分区 id（即不在工具栏里显示的）。
+   * 在这里面的分区不是删除，随时可以从库里拿回来。
+   */
+  toolHidden: string[]
+}
+
+/**
+ * 工具栏分区的 id。
+ *
+ * 为什么放 shared：主进程要拿它**校验**设置文件里的顺序/隐藏集合
+ * （未知 id 直接丢掉，否则版本升级后旧 id 会一直占位），
+ * 渲染端要按它排默认顺序。两处必须用同一份定义。
+ */
+export const TOOL_SECTIONS = ['context', 'todo', 'queue', 'files', 'ext', 'log', 'actions'] as const
+export type ToolSectionId = (typeof TOOL_SECTIONS)[number]
+
+/** 把设置里读到的顺序规范化：只留合法 id、去重、并补上缺的（按默认相对位置放后面） */
+export function normalizeToolOrder(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const known = new Set<string>(TOOL_SECTIONS)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const x of v) {
+    if (typeof x !== 'string' || !known.has(x) || seen.has(x)) continue
+    seen.add(x)
+    out.push(x)
+  }
+  // 缺的按默认顺序补在后面（新版本新增分区时，老用户的顺序不会把新分区弄丢）
+  for (const id of TOOL_SECTIONS) if (!seen.has(id)) out.push(id)
+  return out
+}
+
+/** 隐藏集合：只留合法 id、去重 */
+export function normalizeToolHidden(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const known = new Set<string>(TOOL_SECTIONS)
+  const seen = new Set<string>()
+  for (const x of v) {
+    if (typeof x === 'string' && known.has(x)) seen.add(x)
+  }
+  return [...seen]
+}
+
+/**
+ * 面板宽度的允许区间。
+ *
+ * ⚠️ 放在 shared 是因为**两边都要夹**：
+ *   主进程在落盘时夹（防设置文件被手改成脏值），
+ *   渲染端在拖动时也要夹 —— 不夹的话拖过头会产生 `-9439px` 这种非法值，
+ *   而非法值会让 `grid-template-columns` 整条声明失效（那一拖就完全没反应）。
+ */
+export const RAIL_MIN = 220
+export const RAIL_MAX = 560
+export const PANEL_MIN = 220
+export const PANEL_MAX = 560
+
+/** 夹一个合法的面板宽度；0 / 非数字都当「用默认」 */
+export function clampPanelWidth(v: unknown, min: number, max: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.round(Math.min(max, Math.max(min, n)))
 }
 
 /**

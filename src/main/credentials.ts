@@ -220,11 +220,31 @@ export async function listAuthProviders(
     if (o && (o.key || o.type === 'oauth')) configured.add(k)
   }
 
-  const base: AuthProviderInfo[] = CATALOG.map((c) => ({
-    ...c,
-    status:
-      (c.authKey && configured.has(c.authKey)) || configured.has(c.id) ? 'ready' : 'missing'
-  }))
+  /*
+   * 环境变量里的 key 也算已配置。
+   *
+   * ⚠️ 这里原本**完全没看 envVar** —— CATALOG 里每一项都写了 envVar，
+   * 但那列声明一直没人用。后果：用 `ANTHROPIC_API_KEY` 之类环境变量配好的
+   * 用户，界面上显示「还没配置」，引导页第 2 步也会卡住（用户报过）。
+   *
+   * 只有**非空**才算；空字符串/纯空白视为没设（Windows 上很容易
+   * 留下 `set X=` 这种空值）。
+   */
+  const fromEnv = (name: string): boolean => {
+    if (!name) return false
+    const v = process.env[name]
+    return typeof v === 'string' && v.trim().length > 0
+  }
+
+  const base: AuthProviderInfo[] = CATALOG.map((c) => {
+    if ((c.authKey && configured.has(c.authKey)) || configured.has(c.id)) {
+      return { ...c, status: 'ready' as const, source: 'auth.json' as const }
+    }
+    if (fromEnv(c.envVar)) {
+      return { ...c, status: 'ready' as const, source: 'env' as const }
+    }
+    return { ...c, status: 'missing' as const }
+  })
 
   /*
    * 把已配置但不在目录里的补上。
@@ -247,7 +267,8 @@ export async function listAuthProviders(
       hint: '',
       envVar: '',
       authKey: id,
-      status: 'ready'
+      status: 'ready',
+      source: 'auth.json'
     })
   }
 

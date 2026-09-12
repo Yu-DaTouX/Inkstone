@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
-import { useStore } from '../state/store'
 import type { MessageKey } from '../i18n'
-import type { QueueMode } from '../../../shared/ipc'
+import { Section } from './ToolSection'
+import { useStore } from '../state/store'
+import { TOOL_SECTIONS, type QueueMode, type ToolSectionId } from '../../../shared/ipc'
+import { HandleProvider } from './ToolSection'
+import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
+import { Resizer } from './Resizer'
 
 /**
  * 右栏 —— 常驻状态栏。
@@ -37,12 +41,67 @@ export function RightPanel() {
   const t = useT()
   const open = useStore((s) => s.settings?.rightPanelOpen ?? true)
   const toggle = useStore((s) => s.toggleRightPanel)
+  const order = useStore((s) => s.settings?.toolOrder)
+  const hidden = useStore((s) => s.settings?.toolHidden)
+  const setToolLayout = useStore((s) => s.setToolLayout)
+  const [libOpen, setLibOpen] = useState(false)
+
+  /*
+   * 空判据需要的几个字段分别选出来（选对象会让 zustand 每帧返回新引用 → 无限重渲染）。
+   * 有了它们才能算出**真正会渲染出来的**分区列表 —— 这一步很关键：
+   * 排序的 index/total 必须按「可见分区」算，否则交换的是两个看不见的分区，
+   * 界面完全没反应（实测踩过：todo/ext 为空时不渲染，但 order 里还算着它们）。
+   */
+  const todos = useStore((s) => s.todos)
+  const logs = useStore((s) => s.logs)
+  const statuses = useStore((s) => s.statuses)
+  const widgets = useStore((s) => s.widgets)
+
+  /**
+   * 完整顺序（含当前不可见的）：设置里的顺序规范化到 7 项。
+   * 排序操作在**它**上面做 —— 这样「因空而不显示」的分区不会被挤到末尾。
+   */
+  const fullOrder = useMemo<ToolSectionId[]>(() => {
+    const saved = order?.length ? order : [...TOOL_SECTIONS]
+    const known = new Set<string>(TOOL_SECTIONS)
+    const out = saved.filter((x): x is ToolSectionId => known.has(x))
+    for (const id of TOOL_SECTIONS) if (!out.includes(id)) out.push(id)
+    return out
+  }, [order])
+
+  /** 实际渲染出来的（再减去收进库的与内容为空的） */
+  const visible = useMemo<ToolSectionId[]>(() => {
+    const hiddenSet = new Set(hidden ?? [])
+    const state = { todos, logs, statuses, widgets }
+    return fullOrder.filter((id) => {
+      if (hiddenSet.has(id)) return false
+      const isEmpty = SECTION_REGISTRY[id].isEmpty
+      return isEmpty ? !isEmpty(state) : true
+    })
+  }, [fullOrder, hidden, todos, logs, statuses, widgets])
+
+  /**
+   * 把 `id` 移到 `targetId` 的前/后（在**完整顺序**上操作）。
+   * 集中在这里做：键盘与拖拽只是「目标是谁、放前还是放后」不同，
+   * 移动算法不该写两遍。
+   */
+  const move = useCallback(
+    (id: ToolSectionId, targetId: ToolSectionId, after: boolean) => {
+      if (id === targetId) return
+      const next = fullOrder.filter((x) => x !== id)
+      const at = next.indexOf(targetId)
+      if (at < 0) return
+      next.splice(after ? at + 1 : at, 0, id)
+      void setToolLayout({ toolOrder: next })
+    },
+    [fullOrder, setToolLayout]
+  )
 
   /*
    * 收起时不再返回 null —— 而是留一个**窄把手**：
    * 面板开关已经搬到面板自己的头部（用户要求），
    * 如果收起后什么都不留，就没办法再展开了。
-   * 这也是左右对称的：左栏收起后有 .rail-stub。
+   * 这也是左右对称的：左栏收起后有头部那个开关。
    */
   if (!open) {
     return (
@@ -62,9 +121,28 @@ export function RightPanel() {
 
   return (
     <aside className="rightpanel" data-testid="rightpanel">
+      {/*
+       * 宽度把手放在 aside **内部**并绝对定位。
+       * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
+       * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 redesign.css §23b）。
+       */}
+      <Resizer side="panel" />
       <div className="rp-top">
         <span className="rp-title">{t('rp.title')}</span>
         <span className="spacer" />
+        {/*
+         * 工具库。放在标题旁边（用户问「库放哪」时给的备选之一）——
+         * 库管的就是工具栏的内容，入口贴着工具栏标题最直。
+         */}
+        <button
+          className={`rp-x ${libOpen ? 'on' : ''}`}
+          onClick={() => setLibOpen((v) => !v)}
+          title={t('tl.open')}
+          data-testid="tool-lib-btn"
+          aria-expanded={libOpen}
+        >
+          <Icon name="layers" size={12} />
+        </button>
         <button
           className="rp-x"
           onClick={() => void toggle()}
@@ -75,51 +153,259 @@ export function RightPanel() {
         </button>
       </div>
 
-      <div className="rp-body">
-        <ContextSection />
-        <TodoSection />
-        <QueueSection />
-        <FileTree />
-        <ExtSection />
-        <LogSection />
-        <ActionsSection />
+      {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+
+      <div className="rp-body" data-testid="rp-body">
+        {visible.map((id, i) => (
+          <SectionSlot
+            key={id}
+            id={id}
+            index={i}
+            total={visible.length}
+            /* 键盘用：下一个/上一个**可见**邻居 */
+            prevId={visible[i - 1]}
+            nextId={visible[i + 1]}
+            onMove={move}
+          />
+        ))}
       </div>
     </aside>
   )
 }
 
 /* ==================================================================
-   一个可折叠的小分区 —— 右栏所有块共用
+   分区插槽 —— 把「注册表 + 排序」与各分区自己的渲染分开
    ================================================================== */
 
-function Section({
-  titleKey,
-  extra,
-  defaultOpen = true,
-  testId,
-  children
+/**
+ * 按 id 渲染对应分区，并给它包上一层可拖拽的头。
+ *
+ * 为什么要注册表而不是直接写 JSX：
+ *   排序功能需要「按数据决定渲染顺序」，而 JSX 的字面顺序是写死的。
+ *   注册表让「分区有哪些」与「它们怎么显示」分成两件事。
+ */
+function SectionSlot({
+  id,
+  index,
+  total,
+  prevId,
+  nextId,
+  onMove
 }: {
-  titleKey: MessageKey
-  extra?: React.ReactNode
-  defaultOpen?: boolean
-  testId?: string
-  children: React.ReactNode
+  id: ToolSectionId
+  /** 在**可见**分区里的序号（键盘边界用） */
+  index: number
+  /** 可见分区总数 */
+  total: number
+  /** 上一个 / 下一个**可见**邻居（键盘调顺序用） */
+  prevId?: ToolSectionId
+  nextId?: ToolSectionId
+  onMove: (id: ToolSectionId, targetId: ToolSectionId, after: boolean) => void
 }) {
-  const [open, setOpen] = useState(defaultOpen)
   const t = useT()
+  const [dragging, setDragging] = useState(false)
+  const [over, setOver] = useState<'before' | 'after' | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  /*
+   * 拖拽用**指针事件**而不是 HTML5 DnD。
+   * HTML5 DnD 在 Electron 里有一套自己的拖影/拖放目标规则，
+   * 而且 dragenter/dragleave 会冒泡出成对的假事件（子元素进出时反复触发），
+   * 算插入位置很麻烦。指针事件只需自己比 Y 坐标，行为完全可控 ——
+   * 文件树与宽度把手用的也是同一套。
+   */
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    /*
+     * ⚠️ 先置状态、再尝试 capture，而且 **capture 必须包 try**。
+     *    上一版是 `setPointerCapture()` 放在前面且不包 catch：
+     *    它会抛 NotFoundError（指针已不存在 / 合成事件里 pointerId 无效），
+     *    异常抛出去之后 `setDragging(true)` 根本没执行 ——
+     *    于是整个拖拽**静默失效**（看起来像「拖了但没反应」）。
+     *    探针就是用这一条抓出来的。
+     *    capture 只是个便利（指针移出元素后仍收 move），失败也不该影响可用性。
+     */
+    setDragging(true)
+    document.body.classList.add('reordering')
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* 拿不到 capture 也能拖 —— 只是指针移出把手后会断流 */
+    }
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (!dragging) return
+    /*
+     * 找「指针现在落在哪个分区上、在它的上半还是下半」。
+     *
+     * ⚠️ 用 `.rp-slot` 上的 data-tool-id（**不带 rp- 前缀的原始 id**）来比，
+     *    不能读 `.rp-sec` 的 data-sec（那是 `rp-queue` 这种 testid 形态）——
+     *    顺序数组里存的是 `queue`，拿 testid 去 indexOf 会得到 -1，
+     *    于是整个拖放静默失效（实测就错在这里）。
+     */
+    const others = [...document.querySelectorAll('.rp-body > .rp-slot')] as HTMLElement[]
+    for (const el of others) {
+      const r = el.getBoundingClientRect()
+      if (e.clientY >= r.top && e.clientY <= r.bottom) {
+        const id2 = el.dataset.toolId as ToolSectionId | undefined
+        if (!id2 || id2 === id) {
+          setOver(null)
+          return
+        }
+        setOver(e.clientY < r.top + r.height / 2 ? 'before' : 'after')
+        return
+      }
+    }
+    setOver(null)
+  }
+
+  const finish = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (!dragging) return
+    setDragging(false)
+    document.body.classList.remove('reordering')
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* 指针没了也无所谓 */
+    }
+
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
+    const targetId = target?.dataset.toolId as ToolSectionId | undefined
+    setOver(null)
+    if (!target || !targetId || targetId === id) return
+
+    // 放在目标之前还是之后：用指针在目标盒子里的相对位置决定
+    const r = target.getBoundingClientRect()
+    onMove(id, targetId, e.clientY > r.top + r.height / 2)
+  }
+
+  /**
+   * 键盘调顺序（把手聚焦后 Alt+↑↓）。
+   * 与**可见**邻居交换 —— 不是数组里的相邻项（中间可能夹着不可见的分区，
+   * 那样按一下会「没反应」）。
+   */
+  const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>): void => {
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+    e.preventDefault()
+    if (e.key === 'ArrowUp') {
+      if (index === 0 || !prevId) return
+      onMove(id, prevId, false)
+    } else {
+      if (index === total - 1 || !nextId) return
+      onMove(id, nextId, true)
+    }
+  }
+
+  const Body = SECTION_REGISTRY[id].Body
+  /*
+   * 空判据交给注册表，而不是「让 Body 返回 null」。
+   *
+   * ⚠️ 重构时犯过的错：原来 TodoSection 在没任务时返回 null，
+   *    整个 section 就不存在了；改成「按注册表渲染」后，外面那层
+   *    SectionFrame 是无条件渲染的 —— 于是没任务时也会出现一个空的
+   *    「任务」区块（探针的「没有任务时不渲染任务区块」抓到了）。
+   *    现在把「什么算空」声在注册表里，容器先问一句再决定渲染。
+   *
+   * 选择器返回**布尔**（不是对象）—— zustand v5 用 Object.is 比较，
+   * 每帧返回新对象会无限重渲染。
+   */
+  const isEmpty = useStore((s) =>
+    SECTION_REGISTRY[id].isEmpty ? SECTION_REGISTRY[id].isEmpty!(s) : false
+  )
+  if (isEmpty) return null
 
   return (
-    <section className={`rp-sec ${open ? 'open' : ''}`} data-sec={testId} data-testid={testId}>
-      <button className="rp-sec-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <Icon name="chevron-right" size={12} className="chev" />
-        <span className="rp-sec-title">{t(titleKey)}</span>
-        <span className="spacer" />
-        {extra}
-      </button>
-      {open ? <div className="rp-sec-body">{children}</div> : null}
-    </section>
+    <div
+      className={`rp-slot ${dragging ? 'dragging' : ''}`}
+      data-over={over ?? ''}
+      data-tool-id={id}
+      ref={ref}
+    >
+      <HandleProvider
+        value={
+          <button
+            className="rp-grip"
+            title={t('rp.dragHint')}
+            aria-label={t('rp.dragHint')}
+            tabIndex={0}
+            data-testid={`grip-${id}`}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={finish}
+            onPointerCancel={finish}
+            onKeyDown={onKeyDown}
+          >
+            <span aria-hidden>⠿</span>
+          </button>
+        }
+      >
+        <Body />
+      </HandleProvider>
+    </div>
   )
 }
+
+/** 每个分区自己的内容与头部声明（与 SectionFrame 分开，避免把顺序逻辑重复七遍） */
+const SECTION_REGISTRY: Record<
+  ToolSectionId,
+  {
+    /** 这个分区自己的内容 */
+    Body: () => React.ReactElement | null
+    /** 头部右侧的附加信息（如任务的 2/4、日志行数） */
+    Extra?: () => React.ReactElement | null
+    /** 返回 true 则整个分区不渲染（而不是渲染一个空的） */
+    isEmpty?: (s: ToolPanelState) => boolean
+  }
+> = {
+  context: { Body: () => <ContextSection /> },
+  todo: {
+    isEmpty: (s) => s.todos.length === 0,
+    Extra: () => <TodoCount />,
+    Body: () => <TodoSection />
+  },
+  queue: { Body: () => <QueueSection /> },
+  files: { Body: () => <FileTree /> },
+  ext: {
+    isEmpty: (s) => Object.keys(s.statuses).length === 0 && Object.keys(s.widgets).length === 0,
+    Body: () => <ExtSection />
+  },
+  log: {
+    isEmpty: (s) => s.logs.length === 0,
+    Extra: () => <LogCount />,
+    Body: () => <LogSection />
+  },
+  actions: { Body: () => <ActionsSection /> }
+}
+
+/** 注册表的 isEmpty 只读这几个字段（从 store 里抳型，避免写 any） */
+type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'logs' | 'statuses' | 'widgets'>
+
+/** 任务完成数 / 总数（放在分区头部，不进 body） */
+function TodoCount() {
+  const todos = useStore((s) => s.todos)
+  const done = todos.filter((x) => x.done).length
+  return (
+    <span className="rp-count" data-testid="todo-count">
+      {done}/{todos.length}
+    </span>
+  )
+}
+
+/** 日志行数 */
+function LogCount() {
+  const n = useStore((s) => s.logs.length)
+  return (
+    <span className="rp-count" data-testid="log-count">
+      {n}
+    </span>
+  )
+}
+
+/* ==================================================================
+   一个可折叠的小分区 —— 右栏所有块共用
+   ================================================================== */
 
 /* ==================================================================
    上下文 —— 用多少 / 占多少 / 花了多少

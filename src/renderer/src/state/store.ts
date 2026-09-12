@@ -222,6 +222,13 @@ interface Store {
    * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
    */
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
+  /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
+  setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
+  /**
+   * 改工具栏分区布局（顺序 / 哪些收进库）。
+   * 与 setPanelWidth 分开命名：一个管几何，一个管内容。
+   */
+  setToolLayout: (p: { toolOrder?: string[]; toolHidden?: string[] }) => Promise<void>
   /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
   loadZoom: () => Promise<void>
 
@@ -863,6 +870,20 @@ export const useStore = create<Store>((set, get) => ({
   patchProfile: async (p) => {
     const next = await window.yan.patchSettings({ profile: { ...get().settings?.profile, ...p } as UserProfile })
     set({ settings: next })
+  },
+
+  /**
+   * 改面板宽度（0 = 用设计默认值）。
+   *
+   * 调用方（Resizer）已经在拖动中把 CSS 变量改好了，这里**只负责落盘** ——
+   * 不在中间帧里 set({settings})，否则整个界面会跟着重渲染，拖拽会卡。
+   */
+  setPanelWidth: async (patch) => {
+    set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
+  },
+
+  setToolLayout: async (patch) => {
+    set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
   },
 
   /* --------------------------------------------------------------- 记忆 */

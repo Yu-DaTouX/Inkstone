@@ -48,8 +48,20 @@
   const loaded = store.getState().messages.length
   ok(loaded === N, `store 里有 ${loaded} 条`)
 
+  /*
+   * ⚠️ 轮询等**首帧真正提交**再量，不用固定 sleep。
+   *    原来这里是 `await sleep(50)`：单跑时够（实测 62ms 就画完了），
+   *    但在全量后半段（机器被前十几个场景拖过）时首帧可能还没提交 ——
+   *    量到 0 条，后面所有断言跟着挂（实测全量第 4 轮） 。
+   *    渲染路径会从普通切到虚拟化，所以两种节点都要等。
+   */
   const t0 = performance.now()
-  await sleep(50)
+  let waited = 0
+  while (waited < 5000) {
+    if (qa('.stream-row').length > 0 || qa('.stream .msg').length > 0) break
+    await sleep(50)
+    waited += 50
+  }
   const rowItems = qa('.stream-row').length
   const plainItems = qa('.stream-inner > .msg').length
   const domMsgs = qa('.stream .msg').length
@@ -70,7 +82,8 @@
   log('  初始可见文本前 40 字: ' + JSON.stringify(qa('.stream .msg')[0]?.textContent?.slice(0, 40)))
 
   sc.scrollTop = sc.scrollHeight
-  await sleep(900)
+  // 同样轮询等滚动后的重渲染（虚拟化要按新的滚动位置重算窗口）
+  for (let i = 0; i < 60 && qa('.stream .msg').length === 0; i++) await sleep(50)
   const afterScroll = qa('.stream .msg').length
   log('  滚到底后 DOM 里 %d 条'.replace('%d', afterScroll))
   ok(afterScroll > 0, '滚到底后仍有内容渲染')
@@ -81,7 +94,7 @@
 
   /* 中间滚动也不该出错 */
   sc.scrollTop = sc.scrollHeight / 2
-  await sleep(700)
+  for (let i = 0; i < 60 && qa('.stream .msg').length === 0; i++) await sleep(50)
   ok(qa('.stream .msg').length > 0, '滚到中间仍有内容')
 
   /* 长列表下横向溢出仍然为 0 */
