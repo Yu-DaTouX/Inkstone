@@ -36,6 +36,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CASES = {
   // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
+  // 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位（不烧 token，注入数据）
+  reasoning: { probe: 'scripts/probe/reasoning.js', delay: 9000, cost: 0 },
   // 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度
   // ⚠️ 必须用**真实**按键（sendInputEvent），因为快捷键是主进程
   //    用 before-input-event 拦的 —— 渲染端的合成 KeyboardEvent 不走那条路，

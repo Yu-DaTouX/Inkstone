@@ -133,6 +133,8 @@ export class AgentController extends EventEmitter {
     thinking: string
     thinkingMs?: number
     thinkingStartedAt?: number
+    /** 正在流式思考（thinking_start 置位、thinking_end 清掉） */
+    thinkingLive?: boolean
     tools: UIToolCall[]
     /** 本轮助手消息开始生成的时间 */
     startedAt?: number
@@ -418,12 +420,14 @@ export class AgentController extends EventEmitter {
 
         if (kind === 'thinking_start') {
           this.streaming.thinkingStartedAt = Date.now()
+          this.streaming.thinkingLive = true
         } else if (kind === 'thinking_delta') {
           this.streaming.thinking += String(ev.delta ?? '')
           this.markDirty()
         } else if (kind === 'thinking_end') {
           const started = this.streaming.thinkingStartedAt
           if (started) this.streaming.thinkingMs = Date.now() - started
+          this.streaming.thinkingLive = false
           this.markDirty()
         } else if (kind === 'text_delta') {
           this.streaming.text += String(ev.delta ?? '')
@@ -483,6 +487,8 @@ export class AgentController extends EventEmitter {
           text: s.text,
           thinking: s.thinking || undefined,
           thinkingMs: s.thinkingMs,
+          // 收尾了就不再是「正在思考」（即使是中途 abort 的）
+          thinkingLive: false,
           toolCalls: s.tools.length ? s.tools : undefined,
           usage: finalUsage,
           speed: sp.speed,
@@ -735,6 +741,7 @@ export class AgentController extends EventEmitter {
           text: s.text,
           thinking: s.thinking || undefined,
           thinkingMs: s.thinkingMs,
+          thinkingLive: s.thinkingLive,
           toolCalls: s.tools.length ? s.tools : undefined,
           // 流式期间也让输入/输出/速度实时更新
           usage: s.usage,
@@ -891,6 +898,7 @@ export class AgentController extends EventEmitter {
         role: 'assistant',
         text: s.text,
         thinking: s.thinking || undefined,
+        thinkingLive: false,
         toolCalls: s.tools.length ? s.tools : undefined,
         timestamp: Date.now()
       }

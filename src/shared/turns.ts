@@ -59,6 +59,8 @@ export interface AssistantTurn {
   thinking: string
   /** 思考耗时合计 */
   thinkingMs?: number
+  /** 是否**正在**流式思考（推理胶囊据此展开/折叠） */
+  thinkingLive: boolean
   /** 中间解说，按时间顺序；每条是一段 */
   commentary: TurnText[]
   /** 整个回合的工具调用（合并后按时间排） */
@@ -167,6 +169,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     sourceIds: string[]
     thinking: string[]
     thinkingMs: number
+    thinkingLive: boolean
     /** 按时间顺序缓存的「有文字」的段，带位置标记 */
     texts: TurnText[]
     tools: NonNullable<UIMessage['toolCalls']>
@@ -217,6 +220,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       id: cur.firstId,
       thinking: cur.thinking.join('\n\n'),
       thinkingMs: cur.thinkingMs || undefined,
+      thinkingLive: cur.thinkingLive,
       commentary,
       tools: cur.tools,
       // 多段回复用双换行拼成一段（渲染时 Markdown 自己会分段）
@@ -261,6 +265,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         sourceIds: [],
         thinking: [],
         thinkingMs: 0,
+        thinkingLive: false,
         texts: [],
         tools: [],
         streaming: false,
@@ -274,6 +279,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       cur.thinking.push(m.thinking!.trim())
       cur.thinkingMs += m.thinkingMs ?? 0
     }
+    // 取最新一条的「正在思考」信号（同一回合可能想好几次）
+    if (m.thinkingLive !== undefined) cur.thinkingLive = m.thinkingLive
 
     if (m.toolCalls?.length) cur.tools.push(...m.toolCalls)
 

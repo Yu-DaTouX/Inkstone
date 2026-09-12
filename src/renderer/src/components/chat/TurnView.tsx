@@ -211,16 +211,37 @@ function Paragraph({ text, primary }: { text: string; primary?: boolean }) {
  */
 function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
   const tools = turn.tools
-  if (tools.length === 0) return null
+  const hasThinking = !!turn.thinking
 
   /*
-   * 工具调用用 **Codex 风格**（用户要求）：一行一条，折叠在
-   * 「运行了命令 N」下面（见 ToolRow.tsx）。
-   *
-   * 与上一版的区别：上一版是「智能展开的工具卡」，一张卡占好几行，
-   * 一次跑十几条就把回答顶出屏幕。Codex 的做法是一行一条 ——
-   * 想看细节就点开（终端窗口样式的详情；默认是否展开由设置里的开关决定）。
+   * ⚠️ 这里曾经是个 bug（用户报「为什么我看不到推理」）：
+   *   ReasoningCapsule 被 import 了，但**没有任何地方渲染它**，
+   *   而函数又在 tools 为空时直接 return null —— 于是「纯推理、还没调工具」
+   *   的那一段什么都看不到（推理胶囊整块丢失）。
+   *   教训：import 了不等于渲染了；tsconfig 没开 noUnusedLocals 抓不到。
    */
-  if (tools.length === 1) return <ToolRow call={tools[0]} />
-  return <ToolGroup tools={tools} streaming={streaming} />
+  if (!hasThinking && tools.length === 0) return null
+
+  return (
+    <>
+      {/* 思考（推理胶囊）：没有思考就不渲染，不占位 */}
+      {hasThinking ? (
+        <ReasoningCapsule text={turn.thinking} ms={turn.thinkingMs} live={turn.thinkingLive} />
+      ) : null}
+
+      {/*
+       * 工具调用用 **Codex 风格**（用户要求）：一行一条，折叠在
+       * 「运行了命令 N」下面（见 ToolRow.tsx）。
+       *
+       * 与上一版的区别：上一版是「智能展开的工具卡」，一张卡占好几行，
+       * 一次跑十几条就把回答顶出屏幕。Codex 的做法是一行一条 ——
+       * 想看细节就点开（终端窗口样式的详情；默认是否展开由设置里的开关决定）。
+       */}
+      {tools.length === 1 ? (
+        <ToolRow call={tools[0]} />
+      ) : tools.length > 1 ? (
+        <ToolGroup tools={tools} streaming={streaming} />
+      ) : null}
+    </>
+  )
 }

@@ -67,6 +67,14 @@ export interface UIMessage {
   /** 思考文本 */
   thinking?: string
   thinkingMs?: number
+  /**
+   * 思考是否**正在**流式输出。
+   *
+   * 为什么不能拿 `thinkingMs` 猜：一个回合里模型可能想好几次
+   * （每次工具往返前都想一遍），`thinkingMs` 是累加的，
+   * 第二段推理开始时它已经 > 0，猜不出「现在正在想」。
+   */
+  thinkingLive?: boolean
   toolCalls?: UIToolCall[]
   usage?: Usage
   /**

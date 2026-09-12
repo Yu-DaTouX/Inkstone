@@ -198,7 +198,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|
 | `npm run dev` | 开发模式（HMR） |
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
-| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 30 个真实应用场景（不烧 token） |
+| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 31 个真实应用场景（不烧 token） |
 | `npm run test:unit` | 纯逻辑单测（110 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 |
 | `npm run test:live` | 全部场景（含 5 个会真调模型的） |
 | `npm run test:live -- live features memory` | 指定场景，不烧 token |
@@ -225,7 +225,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 
 > 体积：安装包约 120MB、免安装目录约 399MB（Electron 本体占大头）。
 >
-> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 30 个场景
+> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 31 个场景
 > 读的是仓库里的 `resources/pi-runtime`，打包后改从 `process.resourcesPath/` 找，
 > 路径错了应用**能启动但连不上 pi**，开发态测试全绿也照样复现不了。
 
@@ -240,7 +240,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 **UI 层不在裸 `BrowserWindow` 里测。** 那样 preload/IPC/pi 全都不存在，
 断言会「通过」而应用其实是坏的。
 
-> 完整清单见 `package.json` 的 `check`（共 **30 个场景**，下表只列重点）。
+> 完整清单见 `package.json` 的 `check`（共 **31 个场景**，下表只列重点）。
 
 | 场景 | 覆盖 | 花 token |
 |---|---|---|
