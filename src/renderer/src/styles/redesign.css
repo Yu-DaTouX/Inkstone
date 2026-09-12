@@ -1405,6 +1405,46 @@
   background: var(--bg-2);
   color: var(--fg);
 }
+/* 会话行的文字块：第一行是「编号 + 名字 + 分支数」，第二行是「分叉自哪句话」 */
+.srow-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.srow-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+/* 分支编号（这个会话是第几个分支） */
+.srow-bno {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* 分支数（这个会话分出去了几个） */
+.srow-bcount {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* 分叉自父会话的哪句话 */
+.srow-origin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
 .srow-name {
   flex: 1;
   min-width: 0;
@@ -1421,7 +1461,7 @@
   display: flex;
   gap: 1px;
 }
-.srow-wrap:hover .srow-name {
+.srow-wrap:hover .srow-text {
   /* 给右侧图标让位，避免文字压到按钮下面 */
   padding-right: 24px;
 }
@@ -1857,6 +1897,21 @@
 }
 .srow-wrap:hover .srow-acts {
   opacity: 1;
+}
+/*
+ * 选中的会话行右侧要放「分支 / 更多」两个动作按钮（绝对定位在右缘），
+ * 而相对时间也落在同一个位置 —— 悬停时两个都显出来就会叠成一团
+ * （用户截图报的：「查看pi桌面界面」后面那团重影）。
+ *
+ * 规则：动作按钮存在（选中态）的行不显示相对时间；
+ * 时间留给未选中的行（那些行没有动作按钮）。
+ * 同时把会话名右侧让出足够的宽度，避免文字压到图标下面。
+ */
+.srow-wrap.has-acts:hover .srow-time {
+  opacity: 0;
+}
+.srow-wrap.has-acts:hover .srow-text {
+  padding-right: 34px;
 }
 .srow-acts {
   opacity: 0;
@@ -4938,156 +4993,3 @@ body.resizing .workspace {
   color: var(--accent);
 }
 
-/* ===================================================================
-   63. 左栏会话行里的分支树（用户要求）
-
-   挂点：**选中的会话**行右侧的「分支」按钮 → 行下方展开。
-   为什么只给选中的会话：分支树要先读那个会话的 get_tree
-   （2000+ 节点的会话要裁一次，有成本），而用户只可能看当前这个。
-   =================================================================== */
-.srow-branches {
-  margin: 2px 0 var(--sp-2) var(--sp-2);
-  padding-left: var(--sp-2);
-  border-left: 1px solid var(--border-soft);
-}
-.bt-dim {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  padding: 3px 0;
-  line-height: 1.5;
-}
-.bt-sum {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  padding: 2px 0 4px;
-  font-variant-numeric: tabular-nums;
-}
-.bt-point {
-  margin-bottom: 1px;
-}
-.bt-head {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 2px 3px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  text-align: left;
-  min-width: 0;
-}
-.bt-head:hover {
-  background: var(--bg-2);
-  color: var(--fg-dim);
-}
-.bt-head .chev {
-  flex: none;
-  opacity: 0.6;
-  transition: transform var(--dur) var(--ease);
-}
-.bt-head.open .chev {
-  transform: rotate(90deg);
-}
-.bt-head .spacer {
-  flex: 1;
-}
-.bt-idx {
-  flex: none;
-  color: var(--fg-dim);
-  font-variant-numeric: tabular-nums;
-}
-.bt-after {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.bt-count {
-  flex: none;
-}
-.bt-body {
-  padding: 2px 0 4px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-/* 一条岔路：点 + 标签 + 「从这里分支」 */
-.bt-alt {
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  padding: 3px 3px;
-  border-radius: var(--r-xs);
-  min-width: 0;
-}
-.bt-alt:hover {
-  background: var(--bg-2);
-}
-.bt-alt.active {
-  background: var(--bg-2);
-}
-.bt-dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  margin-top: 5px;
-  border-radius: var(--r-full);
-  background: var(--fg-mute);
-  opacity: 0.5;
-}
-/* 活动分支：强调色实心点 —— 用户一眼知道自己在哪一条 */
-.bt-alt.active .bt-dot {
-  background: var(--accent);
-  opacity: 1;
-}
-.bt-alt-main {
-  min-width: 0;
-  flex: 1;
-}
-.bt-alt-text {
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.bt-alt.active .bt-alt-text {
-  color: var(--fg);
-}
-.bt-alt-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--fg-mute);
-  font-size: 9.5px;
-  margin-top: 1px;
-}
-.bt-now {
-  color: var(--accent);
-}
-.bt-fork {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: 9.5px;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity var(--dur) var(--ease);
-}
-.bt-alt:hover .bt-fork,
-.bt-fork:focus-visible {
-  opacity: 1;
-}
-.bt-fork:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.bt-fork:disabled {
-  opacity: 0.4;
-}

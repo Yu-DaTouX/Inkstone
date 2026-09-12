@@ -251,6 +251,13 @@ export interface SessionSummary {
   title: string
   /** 是否用的是用户起的名字（而不是首条消息） */
   named: boolean
+  /**
+   * 分叉自哪个会话文件（pi 的 `session` 头里的 `parentSession`）。
+   * 没有就是根会话；左栏据此显示「分支数 / 分支编号 / 分叉自哪句话」。
+   */
+  parentSession?: string
+  /** 分叉自父会话的那句话（截断；读不到就没有） */
+  branchOrigin?: string
   createdAt: number
   updatedAt: number
   messageCount: number
@@ -524,41 +531,6 @@ export interface UserProfile {
   signedIn: boolean
 }
 
-/**
- * 会话里的一条分支（来自 pi 的会话树 get_tree）。
- *
- * ⚠️ 协议里**没有** navigate_tree —— 所以界面只能「查看 + 从这里分支」，
- *    **不能**切到已存在的分支。按钮文案要如实写。
- */
-export interface SessionBranch {
-  /** 分支点的 entry id */
-  id: string
-  /** 属于哪个会话文件（切会话时要用） */
-  sessionPath: string
-  /** 分支点之前还有多少条消息（用来显示「… N 条消息之后」） */
-  afterMessages: number
-  /** 这个分支点的几条岔路 */
-  alternatives: {
-    /** 该分支第一条消息的 entry id（从它分叉 / 定位） */
-    entryId: string
-    /** 该分支的第一句用户话（人认的是这句话） */
-    text: string
-    /** 是否是当前活动的那一支 */
-    active: boolean
-    /** 这一支下面有多少节点 */
-    size: number
-  }[]
-}
-
-/** 整棵会话树裁完之后的摘要（只回分支点，不回 2000 个节点） */
-export interface SessionTree {
-  branches: SessionBranch[]
-  /** 分支点个数 */
-  points: number
-  /** 树里的节点总数（界面上显示「共 N 条」） */
-  total: number
-}
-
 /** 探测 pi 的结果，用于诊断 */
 export interface PiProbe {
   ok: boolean
@@ -830,8 +802,6 @@ export interface YanBridge {
   listDir(rel: string, showHidden?: boolean): Promise<DirListing>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
-  /** 当前会话的分支树（只回分支点，主进程已经裁过） */
-  sessionTree(): Promise<SessionTree>
 }
 
 /** 界面缩放状态（主进程算出，渲染端只显示） */

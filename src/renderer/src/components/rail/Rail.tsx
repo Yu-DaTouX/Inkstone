@@ -5,7 +5,6 @@ import { useStore } from '../../state/store'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
-import { BranchTree } from './BranchTree'
 import { RailUser } from './RailUser'
 
 /**
@@ -151,6 +150,33 @@ export function Rail() {
         return (b.list[0]?.updatedAt ?? 0) - (a.list[0]?.updatedAt ?? 0)
       })
   }, [sessions, query, session, t, titles])
+
+  /**
+   * 会话分支关系（用户要求：左栏显示分支数 / 分支编号）。
+   *
+   * 数据来自 pi 的 session 头：`parentSession` 指向分叉来源的会话文件。
+   * 从这里算出：
+   *   · branchCount：这个会话被分叉出去几次（父会话行上显示）
+   *   · branchIndex：这个会话是父会话的第几个分支（子会话行上显示 #N）
+   * 编号按 createdAt 升序 —— 与分支创建的先后一致。
+   */
+  const { branchCount, branchIndex } = useMemo(() => {
+    const kids = new Map<string, SessionSummary[]>()
+    for (const s of sessions) {
+      if (!s.parentSession) continue
+      const arr = kids.get(s.parentSession) ?? []
+      arr.push(s)
+      kids.set(s.parentSession, arr)
+    }
+    const count = new Map<string, number>()
+    const index = new Map<string, number>()
+    for (const [parent, list] of kids) {
+      count.set(parent, list.length)
+      list.sort((a, b) => a.createdAt - b.createdAt)
+      list.forEach((s, i) => index.set(s.path, i + 1))
+    }
+    return { branchCount: count, branchIndex: index }
+  }, [sessions])
 
   const toggleProject = (key: string): void =>
     setCollapsed((prev) => {
@@ -299,6 +325,8 @@ export function Rail() {
                           key={s.path}
                           s={s}
                           selected={!!session?.sessionFile && session.sessionFile === s.path}
+                          branchCount={branchCount.get(s.path) ?? 0}
+                          branchIndex={branchIndex.get(s.path)}
                           menuOpen={menuFor === s.path}
                           onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
                           onSelect={() => void switchSession(s.path)}
@@ -323,47 +351,56 @@ export function Rail() {
 function SessionRow({
   s,
   selected,
+  branchCount,
+  branchIndex,
   menuOpen,
   onToggleMenu,
   onSelect
 }: {
   s: SessionSummary
   selected: boolean
+  /** 这个会话被分叉出去几次（父会话行上的「⑂ N」） */
+  branchCount: number
+  /** 这个会话自己是第几个分支（undefined = 不是分支） */
+  branchIndex?: number
   menuOpen: boolean
   onToggleMenu: () => void
   onSelect: () => void
 }) {
   const t = useT()
-  /** 分支树是否展开（用户要求：在左栏的会话里增加一个分支树，点开看详情） */
-  const [branchesOpen, setBranchesOpen] = useState(false)
 
   return (
-    <div className={`srow-wrap ${menuOpen ? 'menu-open' : ''}`}>
+    <div className={`srow-wrap ${selected ? 'has-acts' : ''} ${menuOpen ? 'menu-open' : ''}`}>
       <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
-        <span className="srow-name">{s.title}</span>
+        <span className="srow-text">
+          <span className="srow-line">
+            {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
+            {branchIndex ? (
+              <span className="srow-bno" data-testid="rail-branch-no" title={t('rail.branchNo', { n: branchIndex })}>
+                #{branchIndex}
+              </span>
+            ) : null}
+            <span className="srow-name">{s.title}</span>
+            {/* 分支数：这个会话分出去了几个 */}
+            {branchCount > 0 ? (
+              <span className="srow-bcount" data-testid="rail-branch-count" title={t('rail.branchCount', { n: branchCount })}>
+                <Icon name="layers" size={12} />
+                {branchCount}
+              </span>
+            ) : null}
+          </span>
+          {/* 分叉自父会话的哪句话 */}
+          {s.branchOrigin ? (
+            <span className="srow-origin" data-testid="rail-branch-origin" title={s.branchOrigin}>
+              {t('rail.fromMessage', { text: s.branchOrigin })}
+            </span>
+          ) : null}
+        </span>
         <span className="srow-time">{relTime(s.updatedAt)}</span>
       </button>
 
       {selected ? (
         <span className="srow-acts">
-          {/*
-           * 分支入口（用户要求）。
-           * 为什么只在**选中的**会话上显示：分支树要先读那个会话的
-           * get_tree（2000+ 节点的会话要裁一次，有成本），
-           * 而用户只可能看他当前打开的这个。
-           */}
-          <button
-            className={`rail-icon sm ${branchesOpen ? 'on' : ''}`}
-            title={t('rail.branches')}
-            data-testid="rail-branches"
-            data-open={branchesOpen ? '1' : '0'}
-            onClick={(e) => {
-              e.stopPropagation()
-              setBranchesOpen((v) => !v)
-            }}
-          >
-            <Icon name="layers" size={12} />
-          </button>
           <button className="rail-icon sm" title={t('rail.more')} onClick={(e) => {
             e.stopPropagation()
             onToggleMenu()
@@ -371,12 +408,6 @@ function SessionRow({
             <Icon name="menu" size={12} />
           </button>
         </span>
-      ) : null}
-
-      {selected && branchesOpen ? (
-        <div className="srow-branches" onClick={(e) => e.stopPropagation()}>
-          <BranchTree sessionPath={s.path} />
-        </div>
       ) : null}
 
       {menuOpen ? (

@@ -15,7 +15,6 @@ import type {
   PiProbe,
   QueueMode,
   SessionState,
-  SessionTree,
   SessionStats,
   SessionSummary,
   SessionTodo,
@@ -130,7 +129,6 @@ const api: YanBridge = {
   /* ---- 文件树 ---- */
   listDir: (rel, showHidden) => invoke<DirListing>('yan:listDir', rel, showHidden === true),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
-  sessionTree: () => invoke<SessionTree>('yan:sessionTree'),
 
   /* ---- 窗口 ---- */
   win: {

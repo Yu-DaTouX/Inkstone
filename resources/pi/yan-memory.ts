@@ -28,6 +28,45 @@ import { join } from 'node:path'
 const DIR = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 const FILE = join(DIR, 'memory.json')
 
+/**
+ * 界面语言：读桌面端设置（与主进程共用同一个 desktop.json）。
+ *
+ * 每轮对话开始前会重读一次 —— 用户在设置里改了语言，
+ * 下一轮就生效，不必重启 pi。
+ */
+function uiLang(): string {
+  try {
+    const raw = JSON.parse(readFileSync(join(DIR, 'desktop.json'), 'utf8')) as { lang?: unknown }
+    const v = String(raw.lang ?? '').trim()
+    return v || 'zh-CN'
+  } catch {
+    // 读不到（首次启动 / 旧版本还没写过设置）就当中文：本产品中文优先
+    return 'zh-CN'
+  }
+}
+
+/**
+ * 语言 → 给模型的一句话。重点是让它用同一种语言**思考**（推理会显示在推理窗口里）。
+ * 不认识的语种返回 null（不往提示词里塞没意义的话）。
+ */
+function languageInstruction(lang: string): string | null {
+  const l = lang.toLowerCase()
+  if (l.startsWith('zh')) {
+    return (
+      '## 语言\n' +
+      '当前界面语言是**中文**。请用中文思考和推理（reasoning / thinking 的内容也用中文），并用中文回答。'
+    )
+  }
+  if (l.startsWith('en')) {
+    return (
+      '## Language\n' +
+      'The UI language is **English**. Think and reason in English ' +
+      '(including your thinking/reasoning output), and answer in English.'
+    )
+  }
+  return null
+}
+
 interface MemoryItem {
   id: string
   kind: 'fact' | 'guess'
@@ -224,15 +263,25 @@ export default function (pi: ExtensionAPI) {
      ---------------------------------------------------------------- */
   pi.on('before_agent_start', async (event) => {
     const items = load()
-    if (items.length === 0) return
-
     const facts = items.filter((m) => m.kind === 'fact')
     const guesses = items.filter((m) => m.kind === 'guess')
 
-    const parts: string[] = []
+    /*
+     * 界面语言 → 让模型用同一种语言**思考**。
+     *
+     * 为什么需要：推理内容现在会显示在推理窗口里（用户能看见），
+     * 而模型默认可能用英文推理（实测：中文提问、thinking 是英文）——
+     * 界面上就是「中文提问 + 英文旁白」，很割裂。
+     *
+     * 为什么读文件而不是环境变量：语言在设置里随时可改，
+     * 环境变量只在 pi 启动时读一次，改完语言得重启 pi；
+     * 而 desktop.json 就在同目录，每轮开始前读一下就即时生效。
+     */
+    const languagePart = languageInstruction(uiLang())
 
+    const memoryParts: string[] = []
     if (facts.length) {
-      parts.push(
+      memoryParts.push(
         '## 关于用户（已确认）\n' +
           '以下是用户确认过的事实，可以直接使用：\n' +
           facts.map((m) => `- ${m.text}`).join('\n')
@@ -240,7 +289,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (guesses.length) {
-      parts.push(
+      memoryParts.push(
         '## 关于用户（我的印象，未确认）\n' +
           '以下是你自己观察到的，**用户从未确认过**。它们可能是错的：\n' +
           guesses.map((m) => `- ${m.text}`).join('\n') +
@@ -250,14 +299,14 @@ export default function (pi: ExtensionAPI) {
       )
     }
 
+    const parts = languagePart ? [languagePart, ...memoryParts] : memoryParts
     if (parts.length === 0) return
 
-    return {
-      systemPrompt:
-        event.systemPrompt +
-        '\n\n---\n\n' +
-        parts.join('\n\n') +
+    let systemPrompt = event.systemPrompt + '\n\n---\n\n' + parts.join('\n\n')
+    if (memoryParts.length) {
+      systemPrompt +=
         '\n\n（这段记忆由「砚」的 remember/recall 工具维护。要补记就用 remember，要查就用 recall。）'
     }
+    return { systemPrompt }
   })
 }

@@ -448,12 +448,6 @@ function registerIpc(): void {
     return listDir(s.cwd, typeof rel === 'string' ? rel : '', showHidden === true)
   })
 
-  /* ---- 当前会话的分支树 ---- */
-  ipcMain.handle('yan:sessionTree', async () => {
-    if (!agent) return { branches: [], points: 0, total: 0 }
-    return agent.sessionTree(agent.currentSessionPath())
-  })
-
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
   ipcMain.handle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()

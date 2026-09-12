@@ -174,9 +174,10 @@ function seedSessions(destRoot) {
   writeTodoSession(destDir, 'yan-todo-fixture')
   n++
 
-  // 合成：带分支点的会话（确定性 —— 不能指望真实会话里恰好有分支）
-  writeBranchSession(destDir, 'yan-branch-fixture')
-  n++
+  // 合成：一组「分支会话」——父会话 + 两个子会话（带 parentSession）
+  // 用来验左栏的「分支数 / 分支编号 / 分叉自哪句话」
+  writeBranchFamily(destDir, 'yan-family')
+  n += 3
 
   // 合成：20 条消息的普通会话
   writePlainSession(destDir, 'yan-plain-fixture', 20)
@@ -240,23 +241,22 @@ function writeTodoSession(dir, idBase) {
 }
 
 /**
- * 合成：带分支点的会话。
+ * 合成：一组「分支会话」——父会话 + 两个子会话。
  *
- * 为什么要合成：分支树场景原来只靠「从真实会话里拷的那几份」，
- * 而真实数据会漂 —— 最近 3 个会话恰好都没分支时，场景就假失败
- * （实测踩过：有分支的那个排第 6）。合成一份就与用户数据无关了。
- *
- * b1 有两个孩子（b2 / b4）→ 那就是一个分支点，两条岔路。
+ * 子会话头里的 `parentSession` 指向父会话文件（pi 就是这么记分叉来源的），
+ * 且子会话开头拷入了父会话的前缀（包括那句「源问题」）—— 与真实分叉一致，
+ * 这样「分叉自哪句话」才能算出来。
  */
-function writeBranchSession(dir, idBase) {
-  const id = `${idBase}-${Date.now().toString(36)}`
-  const file = join(dir, `2026-01-03T00-00-00-000Z_${id}.jsonl`)
+function writeBranchFamily(dir, idBase) {
+  const stamp = Date.now().toString(36)
   const cwd = homedir()
-  const m = (role, text, i, parentId) => ({
+  const T0 = Date.now() - 60_000
+  const iso = (ms) => new Date(ms).toISOString()
+  const msg = (id, parentId, role, text, ts) => ({
     type: 'message',
-    id: 'b' + i,
+    id,
     parentId,
-    timestamp: TS(300 - i),
+    timestamp: iso(ts),
     message: {
       role,
       content: [{ type: 'text', text }],
@@ -268,26 +268,55 @@ function writeBranchSession(dir, idBase) {
         : {})
     }
   })
-  const lines = [
-    { type: 'session', version: 3, id, timestamp: TS(300), cwd },
-    {
-      type: 'model_change',
-      id: 'mc0',
-      parentId: null,
-      timestamp: TS(300),
-      provider: 'commandcode',
-      modelId: 'deepseek/deepseek-v4.1-flash'
-    },
-    m('user', 'YAN-BRANCH fixture：从这里开始分叉', 0, 'mc0'),
-    m('assistant', '好，我先看看整体结构。', 1, 'b0'),
-    // 岔路 A
-    m('user', '走 A 方案：自己写 JSONL 分帧', 2, 'b1'),
-    m('assistant', 'A 方案：按行切、逐字增量拼。', 3, 'b2'),
-    // 岔路 B（与 b2 共用父 b1 → b1 有 2 个孩子 = 分支点）
-    m('user', '走 B 方案：直接用现有协议', 4, 'b1'),
-    m('assistant', 'B 方案：复用 RPC 事件流。', 5, 'b4')
-  ]
-  writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+  const modelLine = {
+    type: 'model_change',
+    id: 'mc0',
+    parentId: null,
+    timestamp: iso(T0),
+    provider: 'commandcode',
+    modelId: 'deepseek/deepseek-v4.1-flash'
+  }
+  const ORIGIN = 'YAN-FAMILY 源问题：这段对话要怎么分帧？'
+
+  const parentFile = join(dir, `2026-01-05T00-00-00-000Z_${idBase}-parent-${stamp}.jsonl`)
+  writeFileSync(
+    parentFile,
+    [
+      { type: 'session', version: 3, id: `${idBase}-parent-${stamp}`, timestamp: iso(T0), cwd },
+      modelLine,
+      msg('fu0', 'mc0', 'user', ORIGIN, T0 + 1),
+      msg('fa0', 'fu0', 'assistant', '按行切就行。', T0 + 2)
+    ]
+      .map((o) => JSON.stringify(o))
+      .join('\n') + '\n',
+    'utf8'
+  )
+
+  for (let i = 1; i <= 2; i++) {
+    const forkTs = T0 + i * 1000
+    const file = join(dir, `2026-01-05T00-00-0${i}-000Z_${idBase}-child${i}-${stamp}.jsonl`)
+    writeFileSync(
+      file,
+      [
+        {
+          type: 'session',
+          version: 3,
+          id: `${idBase}-child${i}-${stamp}`,
+          timestamp: iso(forkTs),
+          cwd,
+          parentSession: parentFile
+        },
+        modelLine,
+        msg('fu0', 'mc0', 'user', ORIGIN, T0 + 1),
+        msg('fa0', 'fu0', 'assistant', '按行切就行。', T0 + 2),
+        msg(`c${i}u`, 'fa0', 'user', `YAN-FAMILY 分支${i}：改用方案 ${i}`, forkTs + 1),
+        msg(`c${i}a`, `c${i}u`, 'assistant', `好，用方案 ${i}。`, forkTs + 2)
+      ]
+        .map((o) => JSON.stringify(o))
+        .join('\n') + '\n',
+      'utf8'
+    )
+  }
 }
 
 function writePlainSession(dir, idBase, count) {

@@ -9,7 +9,7 @@
  *
  * Codex 的样子（两张截图）：
  *   运行中：  ⠋ 正在运行 Test-NetConnection -ComputerName www.baidu.com ›
- *   已完成：  运行了命令 ⌄
+ *   已完成：  调用了 N 次工具/命令 ⌄
  *             ✓ 已在 11s 内运行 Test-NetConnection -ComputerName 8.8.8.8
  *             ✓ 已在 2s 内运行 Get-NetIPConfiguration | Select-Object ...
  *
@@ -107,7 +107,7 @@ export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => voi
 }
 
 /**
- * 一组工具：折叠在「运行了命令 N」下面（Codex 的「运行了命令 ⌄」）。
+ * 一组工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
  *
  * 为什么仍然要分组：一次回合可能几十条工具，全部平铺会把回答顶走。
  * 运行中默认展开（用户要看着它干活），结束后收成一行。

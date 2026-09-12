@@ -104,6 +104,8 @@ async function readHead(path: string): Promise<{
   id?: string
   /** session_info 里的用户名字（TUI 的 /name 或 --name 写的） */
   name?: string
+  /** 分叉自哪个会话文件（session 头的 parentSession） */
+  parentSession?: string
   createdAt: number
 }> {
   const fh = await open(path, 'r')
@@ -116,6 +118,7 @@ async function readHead(path: string): Promise<{
     let title: string | undefined
     let id: string | undefined
     let name: string | undefined
+    let parentSession: string | undefined
     let createdAt = 0
 
     for (const line of head.split('\n')) {
@@ -131,6 +134,7 @@ async function readHead(path: string): Promise<{
       if (obj.type === 'session') {
         id = typeof obj.id === 'string' ? obj.id : undefined
         cwd = typeof obj.cwd === 'string' ? obj.cwd : undefined
+        parentSession = typeof obj.parentSession === 'string' ? obj.parentSession : undefined
         const ts = Date.parse(String(obj.timestamp ?? ''))
         if (!Number.isNaN(ts)) createdAt = ts
       } else if (obj.type === 'session_info') {
@@ -141,7 +145,7 @@ async function readHead(path: string): Promise<{
       }
     }
 
-    return { cwd, title, id, name, createdAt }
+    return { cwd, title, id, name, parentSession, createdAt }
   } finally {
     await fh.close()
   }
@@ -162,6 +166,53 @@ async function countMessages(path: string): Promise<number> {
     return n
   } catch {
     return -1
+  } finally {
+    await fh.close()
+  }
+}
+
+/**
+ * 分叉自父会话的「哪句话」。
+ *
+ * 原理：pi 分叉时会把父会话的条目**拷到子会话开头**（保留原 id/时间戳），
+ * 然后才写分叉之后的新内容；`session` 头的 timestamp 就是分叉时刻。
+ * 所以只要从头扫，时间戳 < 分叉时刻的条目就是拷来的，
+ * 其中最后一条用户消息就是「从这儿分出去的那句话」。
+ *
+ * 只读开头一段（CAP），不为一个深分叉去读整个大文件；读不到就返回 undefined，
+ * 界面上顶多少一行说明，不影响功能。
+ */
+async function readBranchOrigin(path: string, forkTs: number): Promise<string | undefined> {
+  const CAP = 2 * 1024 * 1024
+  const fh = await open(path, 'r')
+  try {
+    const { size } = await fh.stat()
+    const len = Math.min(size, CAP)
+    const buf = Buffer.alloc(len)
+    await fh.read(buf, 0, len, 0)
+
+    const lines = buf.toString('utf8').split('\n')
+    let origin: string | undefined
+    // 第 0 行是 session 头，从第 1 行开始
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i]
+      if (!line.trim()) continue
+      let obj: Record<string, unknown>
+      try {
+        obj = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      const ts = Date.parse(String(obj.timestamp ?? ''))
+      if (forkTs && !Number.isNaN(ts) && ts >= forkTs) break
+      if (obj.type === 'message') {
+        const t = titleFromMessage(obj.message)
+        if (t) origin = t
+      }
+    }
+    return origin
+  } catch {
+    return undefined
   } finally {
     await fh.close()
   }
@@ -221,10 +272,15 @@ export async function listSessions(limit = 200): Promise<SessionSummary[]> {
         // 优先用用户起的名字（TUI 的 /name 也看得到同一个字段）
         title: head.name ?? head.title ?? '(无标题)',
         named,
+        parentSession: head.parentSession,
         createdAt: head.createdAt || Math.round(f.mtimeMs),
         updatedAt: Math.round(f.mtimeMs),
         messageCount: await countMessages(f.path),
         model: undefined
+      }
+      // 子会话：算一下「从哪句话分出去」（给左栏显示来源用）
+      if (head.parentSession) {
+        summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)
       }
       cache.set(f.path, { mtimeMs: f.mtimeMs, summary })
       out.push(summary)
