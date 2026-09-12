@@ -1,13 +1,12 @@
 /*
- * 会话分支（左栏）——用户要求：
- *   · 会话栏**不要**那个「分支」按钮（分支只在对话窗口里做）
- *   · 会话栏显示：分支数、分支会话及其编号、分叉自哪句话、能点进那段对话
+ * 会话分叉树（左栏）——用户要求：
+ *   · 会话栏**不要**那个「分支」动作按钮（创建分支只在对话窗口里）
+ *   · 分叉树**默认折叠**，开关放在**会话标题旁边**
+ *   · 展开后列出每条分支：编号、分叉自哪句话、点击跳过去
+ *   · 子会话行上也要有编号 `#N` 与来源
  *
- * 数据来源是 pi 的 `session` 头里的 `parentSession`（分叉自哪个会话文件），
- * 不是会话内的 get_tree —— 这轮把 get_tree 那条链路（分支树）整个删掉了。
- *
- * fixture 用**合成的**分支家族（父 + 两个子，见 test-live 的 writeBranchFamily），
- * 不依赖真实会话里恰好有分叉。
+ * 数据来自 pi 的 `session` 头 `parentSession`。fixture 是合成的分支家族
+ * （父 + 两个子，见 test-live 的 writeBranchFamily），不依赖真实会话。
  */
 ;(async () => {
   const out = []
@@ -24,7 +23,6 @@
   }
   const store = window.__yanStore
 
-  /** 样式表里找一条规则（`:hover` 类断言只能这么验，见 HANDOFF §8） */
   const findRule = (re) => {
     for (const sheet of document.styleSheets) {
       let rules
@@ -49,57 +47,76 @@
       20000
     )
     await sleep(900)
-
-    // 展开所有项目分组（分支家族在 homedir 那个项目下）
     for (const h of qa('.proj-head')) if (h.classList.contains('collapsed')) click(h)
     await sleep(600)
 
-    log('=== 1. 会话栏不再有「分支」按钮 ===')
-    ok(!q('[data-testid="rail-branches"]'), '没有分支按钮了（分支只在对话窗口里做）')
-    ok(!q('.srow-branches'), '会话行下方不再挂会话内分支树')
+    log('=== 1. 会话栏不再有「分支」动作按钮 ===')
+    ok(!q('[data-testid="rail-branches"]'), '没有右侧的分支动作按钮（创建分支只在对话窗口里）')
 
-    log('=== 2. 分支数 / 编号 / 来源 ===')
-    const count = q('[data-testid="rail-branch-count"]')
-    ok(!!count, '父会话行显示了分支数')
-    log(`  分支数徽标：「${count?.textContent ?? '(无)'}」`)
-    ok(!!count && String(count.textContent).includes('2'), '分支数 = 2（合成家族有两个子会话）')
-
+    log('=== 2. 子会话行：编号 + 来源 ===')
     const nos = qa('[data-testid="rail-branch-no"]').map((e) => e.textContent.trim())
     log(`  分支编号：${JSON.stringify(nos)}`)
     ok(nos.includes('#1') && nos.includes('#2'), '两个子会话分别显示 #1 / #2')
-
     const origins = qa('[data-testid="rail-branch-origin"]').map((e) => e.textContent.trim())
     log(`  来源行：「${origins[0] ?? '(无)'}」`)
-    ok(origins.length >= 2, '子会话显示了「分叉自哪句话」')
-    ok(origins.every((t) => t.includes('源问题')), '来源就是父会话里那句话')
+    ok(origins.length >= 2, '子会话行显示了「分叉自哪句话」')
+    // 合成家族那两条的来源必须是那句「源问题」（可能还混有真实 fixture 的子会话）
+    ok(origins.filter((t) => t.includes('源问题')).length >= 2, '合成家族的来源就是父会话里那句话')
 
-    log('=== 3. 点分支会话能切过去（链接到那段对话）===')
-    const childRow = qa('.srow').find((r) => r.querySelector('[data-testid="rail-branch-no"]'))
-    ok(!!childRow, '找得到一条分支会话行')
-    if (childRow) {
-      click(childRow)
-      await until(
-        () => String(store.getState().session?.sessionFile ?? '').includes('child'),
-        20000
-      )
+    log('=== 3. 分叉树：默认折叠，开关在标题旁 ===')
+    const toggle = q('[data-testid="rail-branch-toggle"]')
+    ok(!!toggle, '父会话行有分叉开关')
+    ok(toggle && toggle.getAttribute('data-open') === '0', '默认是折叠的')
+    ok(!q('[data-testid="rail-branch-tree"]'), '折叠时看不到树')
+
+    if (toggle) {
+      // 开关是 .srow 的兄弟（不能嵌在行按钮里），且紧挨标题
+      ok(toggle.parentElement?.classList.contains('srow-row'), '开关与标题在同一行主体里')
+      ok(!!toggle.closest('.srow-wrap')?.querySelector('.srow'), '行主体里还有会话按钮')
+
+      click(toggle)
+      await until(() => !!q('[data-testid="rail-branch-tree"]'), 6000)
+      const tree = q('[data-testid="rail-branch-tree"]')
+      ok(!!tree, '点开关能展开分叉树')
+      const items = qa('[data-testid="rail-branch-item"]')
+      log(`  树里 ${items.length} 条：${items.map((e) => e.textContent.replace(/\s+/g, ' ').trim()).join(' | ')}`)
+      ok(items.length === 2, '树里列出两条分支')
+      ok(items.some((e) => /#1/.test(e.textContent)), '树里带分支编号')
+      ok(items.every((e) => /源问题/.test(e.textContent)), '树里带「分叉自哪句话」')
+
+      log('=== 4. 点树里的分支 → 切到那个会话 ===')
+      click(items[items.length - 1])
+      await until(() => String(store.getState().session?.sessionFile ?? '').includes('child'), 20000)
       const cur = String(store.getState().session?.sessionFile ?? '')
       log(`  当前会话文件：…${cur.slice(-34)}`)
-      ok(cur.includes('child'), '点分支会话行真的切到了那个分支会话')
+      ok(cur.includes('child'), '点树里的分支能切过去')
     }
 
-    log('=== 4. 选中行的「时间」不与动作按钮重叠（上一轮报的 UI bug）===')
+    log('=== 5. 进入会话不会把它置顶（按创建时间新→旧） ===')
+    // 用 path（title 属性）比，不用会话名（名字可能被标题生成改掉）
+    const paths = () => qa('.rail .srow').map((e) => e.getAttribute('title') || '')
+    const before = paths()
+    // 专门挑靠后的一行 —— 如果它被置顶，顺序一定会变
+    const rows = qa('.srow')
+    const other = rows[Math.max(1, rows.length - 2)]
+    if (other) {
+      click(other)
+      await sleep(1800)
+      const after = paths()
+      const common = before.filter((p) => after.includes(p))
+      const afterCommon = after.filter((p) => before.includes(p))
+      const same = JSON.stringify(common) === JSON.stringify(afterCommon)
+      log(`  切换后公共行顺序一致：${same}（${common.length} 行）`)
+      ok(same, '切换会话后列表顺序不变（不再按 mtime 置顶）')
+      ok(after[0] !== other.getAttribute('title') || before[0] === other.getAttribute('title'), '刚切过去的会话没有被置顶')
+    }
+
+    log('=== 6. 选中行的时间不与动作按钮重叠 ===')
     const sel = q('.srow-wrap.has-acts') ?? q('.srow-wrap.sel')
     ok(!!sel, '有选中的会话行')
     if (sel) {
-      ok(!!sel.querySelector('.srow-acts'), '选中行有动作按钮')
-      /*
-       * 时间与动作按钮都落在行右缘，靠 `:hover` 切换显隐；
-       * 而 DOM 断言测不了 :hover（见 HANDOFF §8），
-       * 所以验证「规则存在」：带动作的行悬停时把时间藏起来。
-       */
       const rule = findRule(/\.srow-wrap\.has-acts:hover\s+\.srow-time/)
-      ok(!!rule, '有规则：带动作按钮的行悬停时隐藏相对时间')
-      ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '该规则确实把 opacity 设为 0')
+      ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '带动作的行悬停时隐藏时间（不叠在图标上）')
     }
 
     return out.join('\n')

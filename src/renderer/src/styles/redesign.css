@@ -1362,10 +1362,16 @@
 .srow-wrap {
   position: relative;
 }
+/* 行主体：会话按钮 + 分叉开关 + 时间（开关必须是兄弟节点，不能嵌在按钮里） */
+.srow-row {
+  display: flex;
+  align-items: center;
+}
 .srow {
   display: flex;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   /* 缩进：项目行的文字落在 26px（8 padding + 12 图标 + 6 gap），
      会话行要比它再深一级，所以左内边距给 38px。
      ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
@@ -1426,16 +1432,7 @@
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
-/* 分支数（这个会话分出去了几个） */
-.srow-bcount {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
+/* 分支数（已改成行尾的开关按钮 .srow-btoggle，这里保留名字不用） */
 /* 分叉自父会话的哪句话 */
 .srow-origin {
   overflow: hidden;
@@ -1886,6 +1883,7 @@
 }
 .srow-wrap .srow-time {
   flex: none;
+  padding-right: var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
@@ -4993,3 +4991,93 @@ body.resizing .workspace {
   color: var(--accent);
 }
 
+
+/* ===================================================================
+   64. 会话分叉树（用户要求：默认折叠，开关放在会话标题旁）
+
+   为什么开关是 .srow 的兄弟节点而不是子节点：.srow 本身是 <button>，
+   里面再放 <button> 是非法嵌套（浏览器会把内层拆出去，行为不可预期）。
+   所以行主体拆成 .srow-row = [.srow 按钮] [.srow-btoggle 按钮] [时间]。
+   =================================================================== */
+.srow-btoggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.srow-btoggle:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+.srow-btoggle.open {
+  color: var(--accent);
+}
+.srow-btoggle .srow-btoggle-n {
+  min-width: 8px;
+  text-align: center;
+}
+.srow-btoggle .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+.srow-btoggle.open .chev {
+  transform: rotate(90deg);
+}
+/* 树本体：每条分叉一行，缩进到与标题对齐 */
+.srow-branches {
+  margin: 1px 0 var(--sp-2) 38px;
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border-soft);
+}
+.sbr {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.sbr:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+.sbr-no {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+.sbr-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sbr-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.sbr-origin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}

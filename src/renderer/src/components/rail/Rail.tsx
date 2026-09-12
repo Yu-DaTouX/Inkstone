@@ -142,7 +142,14 @@ export function Rail() {
       .map(([cwdKey, list]) => ({
         cwd: cwdKey,
         label: shortProject(cwdKey),
-        list: list.sort((a, b) => b.updatedAt - a.updatedAt),
+        /*
+         * 按**创建时间**倒序（新→旧）。
+         *
+         * 用户报：「进入会话的时候不要置顶」。以前按 `updatedAt`（文件 mtime）排，
+         * 而每打开一个会话都可能写一次会话文件（标题生成 / name 落盘）→ mtime 变成“刚刚”
+         * → 那一行就跑到最上面。改成 createdAt 后，打开会话不再改变列表顺序。
+         */
+        list: list.sort((a, b) => b.createdAt - a.createdAt),
         isCurrent: cwdKey === cur
       }))
       .sort((a, b) => {
@@ -160,7 +167,7 @@ export function Rail() {
    *   · branchIndex：这个会话是父会话的第几个分支（子会话行上显示 #N）
    * 编号按 createdAt 升序 —— 与分支创建的先后一致。
    */
-  const { branchCount, branchIndex } = useMemo(() => {
+  const { branchCount, branchIndex, branchesOf } = useMemo(() => {
     const kids = new Map<string, SessionSummary[]>()
     for (const s of sessions) {
       if (!s.parentSession) continue
@@ -175,7 +182,7 @@ export function Rail() {
       list.sort((a, b) => a.createdAt - b.createdAt)
       list.forEach((s, i) => index.set(s.path, i + 1))
     }
-    return { branchCount: count, branchIndex: index }
+    return { branchCount: count, branchIndex: index, branchesOf: kids }
   }, [sessions])
 
   const toggleProject = (key: string): void =>
@@ -327,6 +334,8 @@ export function Rail() {
                           selected={!!session?.sessionFile && session.sessionFile === s.path}
                           branchCount={branchCount.get(s.path) ?? 0}
                           branchIndex={branchIndex.get(s.path)}
+                          branches={branchesOf.get(s.path) ?? []}
+                          onOpenBranch={(path) => void switchSession(path)}
                           menuOpen={menuFor === s.path}
                           onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
                           onSelect={() => void switchSession(s.path)}
@@ -353,51 +362,93 @@ function SessionRow({
   selected,
   branchCount,
   branchIndex,
+  branches,
+  onOpenBranch,
   menuOpen,
   onToggleMenu,
   onSelect
 }: {
   s: SessionSummary
   selected: boolean
-  /** 这个会话被分叉出去几次（父会话行上的「⑂ N」） */
+  /** 这个会话被分叉出去几次 */
   branchCount: number
   /** 这个会话自己是第几个分支（undefined = 不是分支） */
   branchIndex?: number
+  /** 这个会话分出去的分支会话（按创建时间排序），用于「分叉树」 */
+  branches: SessionSummary[]
+  onOpenBranch: (path: string) => void
   menuOpen: boolean
   onToggleMenu: () => void
   onSelect: () => void
 }) {
   const t = useT()
+  /** 分叉树是否展开（用户要求：**默认折叠**，开关在会话标题旁） */
+  const [branchesOpen, setBranchesOpen] = useState(false)
 
   return (
     <div className={`srow-wrap ${selected ? 'has-acts' : ''} ${menuOpen ? 'menu-open' : ''}`}>
-      <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
-        <span className="srow-text">
-          <span className="srow-line">
-            {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
-            {branchIndex ? (
-              <span className="srow-bno" data-testid="rail-branch-no" title={t('rail.branchNo', { n: branchIndex })}>
-                #{branchIndex}
-              </span>
-            ) : null}
-            <span className="srow-name">{s.title}</span>
-            {/* 分支数：这个会话分出去了几个 */}
-            {branchCount > 0 ? (
-              <span className="srow-bcount" data-testid="rail-branch-count" title={t('rail.branchCount', { n: branchCount })}>
-                <Icon name="layers" size={12} />
-                {branchCount}
+      {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
+      <div className="srow-row">
+        <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
+          <span className="srow-text">
+            <span className="srow-line">
+              {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
+              {branchIndex ? (
+                <span className="srow-bno" data-testid="rail-branch-no" title={t('rail.branchNo', { n: branchIndex })}>
+                  #{branchIndex}
+                </span>
+              ) : null}
+              <span className="srow-name">{s.title}</span>
+            </span>
+            {/* 分叉自父会话的哪句话 */}
+            {s.branchOrigin ? (
+              <span className="srow-origin" data-testid="rail-branch-origin" title={s.branchOrigin}>
+                {t('rail.fromMessage', { text: s.branchOrigin })}
               </span>
             ) : null}
           </span>
-          {/* 分叉自父会话的哪句话 */}
-          {s.branchOrigin ? (
-            <span className="srow-origin" data-testid="rail-branch-origin" title={s.branchOrigin}>
-              {t('rail.fromMessage', { text: s.branchOrigin })}
-            </span>
-          ) : null}
-        </span>
+        </button>
+
+        {branchCount > 0 ? (
+          <button
+            className={`srow-btoggle ${branchesOpen ? 'open' : ''}`}
+            data-testid="rail-branch-toggle"
+            data-open={branchesOpen ? '1' : '0'}
+            aria-expanded={branchesOpen}
+            title={t('rail.branchCount', { n: branchCount })}
+            onClick={() => setBranchesOpen((v) => !v)}
+          >
+            <Icon name="layers" size={12} />
+            <span className="srow-btoggle-n">{branchCount}</span>
+            <Icon name="chevron-right" size={12} className="chev" />
+          </button>
+        ) : null}
+
         <span className="srow-time">{relTime(s.updatedAt)}</span>
-      </button>
+      </div>
+
+      {/* 分叉树（默认折叠）：列出这个会话分出去的每条分支，点击即跳过去 */}
+      {branchesOpen && branches.length ? (
+        <div className="srow-branches" data-testid="rail-branch-tree">
+          {branches.map((b, i) => (
+            <button
+              key={b.path}
+              className="sbr"
+              data-testid="rail-branch-item"
+              onClick={() => onOpenBranch(b.path)}
+              title={b.path}
+            >
+              <span className="sbr-no">#{i + 1}</span>
+              <span className="sbr-main">
+                <span className="sbr-name">{b.title}</span>
+                {b.branchOrigin ? (
+                  <span className="sbr-origin">{t('rail.fromMessage', { text: b.branchOrigin })}</span>
+                ) : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {selected ? (
         <span className="srow-acts">
