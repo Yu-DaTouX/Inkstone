@@ -106,7 +106,7 @@
   "mem.yes": "Yes",
   "mode.agent": "Personal agent",
   "mode.ask": "Read-only Q&A",
-  "mode.coding": "Coding assistant",
+  "mode.coding": "Coding mode",
   "mode.current": "Current",
   "mode.foot": "Mode differences (tools / prompt / default effort) are not wired up yet — this is the entry point only",
   "mode.soon": "Coming soon",

@@ -258,6 +258,14 @@ export interface SessionSummary {
   parentSession?: string
   /** 分叉自父会话的那句话（截断；读不到就没有） */
   branchOrigin?: string
+  /**
+   * 会话的**真实最近活动**：最后一条 message 的时间戳。
+   *
+   * ⚠️ 不能用文件 mtime（打开会话会写 session_info/标题 → mtime 变新 → 那一行跳到顶部），
+   * 也不能用 createdAt（那是**分叉时刻**，会让刚分叉出来的子会话全挤到最上面）。
+   * 只认 message 的时间戳，列表才能“新→旧”且打开不重排。
+   */
+  lastActivityAt?: number
   createdAt: number
   updatedAt: number
   messageCount: number

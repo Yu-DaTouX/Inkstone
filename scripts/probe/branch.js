@@ -115,8 +115,47 @@
     const sel = q('.srow-wrap.has-acts') ?? q('.srow-wrap.sel')
     ok(!!sel, '有选中的会话行')
     if (sel) {
-      const rule = findRule(/\.srow-wrap\.has-acts:hover\s+\.srow-time/)
-      ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '带动作的行悬停时隐藏时间（不叠在图标上）')
+      const rule = findRule(/\.srow-wrap:hover\s+\.srow-time/)
+      ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '悬停时时间让位（不叠在动作按钮上）')
+    }
+
+    log('=== 7. 「新对话」与「删除会话」按钮真的能用 ===')
+    window.confirm = () => true
+
+    // 新对话：点左栏顶部的按钮，应该不报错、并换到一个新会话
+    const beforePath = String(store.getState().session?.sessionFile ?? '')
+    const err0 = store.getState().notices.filter((n) => n.kind === 'error').length
+    click(q('[data-testid="rail-new"]'))
+    await sleep(3000)
+    const errs = store.getState().notices.filter((n) => n.kind === 'error')
+    ok(errs.length <= err0, '点「新对话」没有报错')
+    const afterPath = String(store.getState().session?.sessionFile ?? '')
+    log(`  会话文件：…${beforePath.slice(-20)} → …${afterPath.slice(-20)}`)
+    ok(!!afterPath, '新对话后仍有一个当前会话')
+
+    // 删除：非选中行也要能开 ⋯ 菜单（以前只在选中行渲染 → 而删除又对选中行禁用 → 永远删不了）
+    const cur = String(store.getState().session?.sessionFile ?? '')
+    const rows2 = qa('.srow')
+    const victim = rows2.find((r) => {
+      const p = r.getAttribute('title')
+      return p && p !== cur && !r.classList.contains('sel') && !/FAMILY/.test(r.textContent)
+    })
+    ok(!!victim, '找到一条可删的非当前会话')
+    if (victim) {
+      const path = victim.getAttribute('title')
+      const actsBtn = victim.closest('.srow-wrap')?.querySelector('.srow-acts button')
+      ok(!!actsBtn, '非选中行也有 ⋯ 按钮（不需要先选中）')
+      if (actsBtn) {
+        click(actsBtn)
+        await until(() => !!q('.srow-menu'), 4000)
+        const del = q('.srow-menu .srow-menu-btn.danger')
+        ok(!!del && !del.disabled, '删除按钮可用（不是 disabled）')
+        if (del && !del.disabled) {
+          click(del)
+          await sleep(1800)
+          ok(!store.getState().sessions.some((s) => s.path === path), '删除后会话从列表消失')
+        }
+      }
     }
 
     return out.join('\n')

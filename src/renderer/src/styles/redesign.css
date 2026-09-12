@@ -295,8 +295,10 @@
    8. 滚动条更细更淡，别抢视线
    ------------------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  /* 11 → 14：用户报「滚轮太小了不好点」。下面 thumb 的 border 是透明的，
+     真正可见的宽度 = width - 2×border（trasparent 部分也算命中区）。 */
+  width: 14px;
+  height: 14px;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--bg-4);
@@ -1025,132 +1027,6 @@
   flex-direction: column;
   /* 顶部留出与标题栏的呼吸 */
   padding-top: var(--sp-3);
-}
-
-/* ===================================================================
-   26. 对话导航轨（消息流左侧那条刻度）
-       —— 参考 Codex：细横线刻度、当前项加宽加亮、悬停弹预览卡
-   =================================================================== */
-.outline {
-  position: absolute;
-  /*
-   * 贴着**消息列**的左边缘，而不是中栏的左边缘。
-   *
-   * 为什么（用户报的「侧边隐藏时导航轨位置错位」）：
-   *   内容列是 `max-width: var(--w-stream)` **居中**的。
-   *     · 左栏展开 → 中栏 877px < 900 → 内容满宽，两者重合 → 看不出问题
-   *     · 左栏收起 → 中栏 1139px > 900 → 内容居中右移 ~120px，
-   *       而导航轨还钉在中栏左缘 → **错位 120px**
-   *   （窗很宽时不用收起也会出现，只是没人注意）
-   *
-   * 算式：· (100% - var(--w-stream)) / 2 = 内容列的左边距（<0 则内容满宽）
-   *      · 内容列还有 24px 内边距，排版文字从「左边距 + 24」开始
-   *      · 刻度宽 11px、轨道宽 34px（居中）→ 刻度在 outline.left + 11.5
-   *      所以想让刻度落在内边距的空隙里（离正文 ~18px）：
-   *          outline.left = 内容列左缘 - 5px
-   */
-  left: max(0px, calc((100% - var(--w-stream)) / 2 - 5px));
-  top: 96px; /* 让开连续性带 */
-  bottom: 0;
-  width: 34px;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none; /* 只有刻度本身可点，空白处不挡消息流 */
-}
-.outline-track {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-  max-height: 72%;
-  padding: 4px 0;
-  /* 刻度多得放不下时收紧间距 */
-  overflow: hidden;
-  pointer-events: auto;
-}
-.outline-tick {
-  display: block;
-  width: 11px;
-  height: 2px;
-  border-radius: var(--r-full);
-  background: var(--border-str);
-  opacity: 0.65;
-  transition:
-    width 140ms var(--ease),
-    opacity 140ms var(--ease),
-    background 140ms var(--ease);
-}
-.outline-tick:nth-child(3n) {
-  /* 轻微错落，避免看起来像一条虚线 */
-  width: 14px;
-}
-.outline-tick:hover,
-.outline-tick.hover {
-  width: 20px;
-  opacity: 1;
-  background: var(--fg-dim);
-}
-.outline-tick.on {
-  width: 24px;
-  height: 3px;
-  opacity: 1;
-  background: var(--fg);
-}
-/* 当前项 + 悬停：悬停优先（用户正在指的那个才是重点） */
-.outline-tick.hover.on,
-.outline-tick.on:hover {
-  background: var(--accent);
-}
-
-/* ---- 预览卡 ---- */
-.outline-preview {
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: 320px;
-  padding: var(--sp-3);
-  background: var(--bg-2);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-md);
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-  z-index: 20;
-}
-.op-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
-  padding-bottom: var(--sp-2);
-  border-bottom: 1px dashed var(--border);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.op-n {
-  color: var(--fg-dim);
-  font-variant-numeric: tabular-nums;
-}
-.op-hint {
-  margin-left: auto;
-}
-.op-user {
-  color: var(--fg);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
-  margin-bottom: var(--sp-2);
-}
-.op-assistant {
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-base);
-  /* 最多 4 行，超了省略 —— 预览不是阅读区 */
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* ===================================================================
@@ -1887,32 +1763,24 @@
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--dur) var(--ease);
 }
+/* 悬停时时间让位给动作按钮 —— 两者落在同一个右缘，不能同时显示（会叠成一团） */
 .srow-wrap:hover .srow-time {
-  opacity: 1;
+  opacity: 0;
 }
 .srow-wrap:hover .srow-acts {
   opacity: 1;
-}
-/*
- * 选中的会话行右侧要放「分支 / 更多」两个动作按钮（绝对定位在右缘），
- * 而相对时间也落在同一个位置 —— 悬停时两个都显出来就会叠成一团
- * （用户截图报的：「查看pi桌面界面」后面那团重影）。
- *
- * 规则：动作按钮存在（选中态）的行不显示相对时间；
- * 时间留给未选中的行（那些行没有动作按钮）。
- * 同时把会话名右侧让出足够的宽度，避免文字压到图标下面。
- */
-.srow-wrap.has-acts:hover .srow-time {
-  opacity: 0;
+  pointer-events: auto;
 }
 .srow-wrap.has-acts:hover .srow-text {
   padding-right: 34px;
 }
 .srow-acts {
   opacity: 0;
+  /* 隐藏时不接收指针事件，否则看不见的 ⋯ 会抢走“点行选中”的点击 */
+  pointer-events: none;
   transition: opacity var(--dur) var(--ease);
 }
 .srow:hover {
@@ -3450,140 +3318,6 @@ body.resizing-composer {
 }
 
 /* ===================================================================
-   48. 导航轨 v3 —— 命中区与视觉分离，悬停那一格就地展开
-       ─────────────────────────────────────────────────────────────
-       用户报的问题：「范围太小且过于密集导致选择起来很困难」。
-       旧实现：3px 高的横线就是可点区域（14×3px），20 轮以上时
-       鼠标要精准落在细线上 —— 而预览卡还固定在轨道垂直中心，
-       指第 5 格却在屏幕中间弹框，指的是哪一格全靠猜。
-
-       新实现：
-         · 每格 = 一个 padding 撑起来的按钮（约 40×15px 命中区）
-           里面的 .outline-bar 才是那条细线 → 看得见的还是细线，
-           但手指不用那么准
-         · 间距压到 6px（视觉上仍疏），因为命中区变高了
-         · 悬停：那一格的线就地长高到 6px / 变长 / 变强调色
-         · 预览卡锚在**被指的那一格**旁边（见 tsx 的 layout effect）
-   =================================================================== */
-.outline {
-  width: 46px;
-  padding-left: 0;
-}
-.outline-track {
-  gap: 2px;
-  max-height: 88%;
-  /* 每格自带上下 padding，所以这里只需要很小的 gap */
-  transition: none;
-  align-items: stretch;
-  padding: 0;
-}
-
-/* 命中区：透明，只有视觉上的那条线在动 */
-.outline-hit {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  /* 关键：padding 把可点区域撑到 15px 高（线只有 3px） */
-  padding: 6px 0 6px 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  min-width: 0;
-}
-.outline-bar {
-  display: block;
-  width: 14px;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--border-str);
-  opacity: 0.55;
-  transition:
-    width 130ms var(--ease),
-    height 130ms var(--ease),
-    background 130ms var(--ease),
-    opacity 130ms var(--ease);
-}
-/* 当前读到的那一轮 */
-.outline-hit.on .outline-bar {
-  width: 22px;
-  background: var(--fg);
-  opacity: 0.9;
-}
-
-/* ---- 悬停：这一格就地展开 ---- */
-.outline-hit.hover .outline-bar {
-  width: 34px;
-  height: 8px;
-  background: var(--accent);
-  opacity: 1;
-}
-/* 整条轨道被悬停时，其它格稍微提亮 —— 让「我可以选」这件事看得出来 */
-.outline-track:has(.outline-hit.hover) .outline-bar {
-  opacity: 0.75;
-}
-
-/* ---- 预览卡：锚在被指的那一格（top 由 JS 给） ---- */
-.outline-preview {
-  position: absolute;
-  left: calc(100% + 4px);
-  top: 0; /* JS 覆写 */
-  transform: none;
-  width: 300px;
-  max-width: 46vw;
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--bg-1);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-sm);
-  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.65);
-  pointer-events: none;
-  z-index: 20;
-}
-html[data-theme='light'] .outline-preview {
-  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.28);
-}
-.op-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  margin-bottom: 6px;
-  padding-bottom: 5px;
-  border-bottom: 1px dashed var(--border);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.op-head .spacer {
-  flex: 1;
-}
-.op-n {
-  color: var(--fg);
-  font-variant-numeric: tabular-nums;
-}
-.op-user {
-  color: var(--fg);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-  margin-bottom: 4px;
-  /* 最多 5 行，超了省略 —— 预览不是阅读区 */
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.op-assistant {
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  border-left: 2px solid var(--border);
-  padding-left: var(--sp-2);
-}
-
-/* ===================================================================
    49. 任务行的完成态：真的要看得出「已完成 / 未完成」
        ─────────────────────────────────────────────────────────────
        用户报：「右边栏的任务没有已完成或未完成的提示」。
@@ -5080,4 +4814,147 @@ body.resizing .workspace {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   opacity: 0.7;
+}
+
+/* ===================================================================
+   48. 对话导航轨（消息流左侧那条刻度）—— 单一真源
+
+   以前这条轨的样式散在两节里（旧节的 .outline-tick 已改成 .outline-bar，
+   类名对不上 → 那些规则是死的；两节的 .outline 又互相打架），
+   而且 op-title / op-answer / op-empty 根本没有样式。这里合并成一节。
+
+   两条设计约束（用户报的问题）：
+     ① **刻度要向右长 → 会压到正文**。现在整列被 JS 推到正文左侧的空隙里，
+        刻度向左锚定、向右最多长 34px（刻度列 44px），永远到不了正文。
+     ② 「随窗口缩放」：横向位置由 tsx 实测内容列左缘算出（见那里的注释）——
+        纯 CSS 没“有边距就放外边、没边距就夹进内边距”这种分支。
+   =================================================================== */
+.outline {
+  position: absolute;
+  left: 0; /* JS 覆写（随窗口/面板宽度重算） */
+  top: 96px; /* 让开连续性带 */
+  bottom: 0;
+  width: 44px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none; /* 只有刻度本身可点，空白处不挡消息流 */
+}
+.outline-track {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  max-height: 88%;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+/* 命中区：透明；刻度锚在命中区左侧（向右长，最长 34 < 容器 44） */
+.outline-hit {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+}
+.outline-bar {
+  display: block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--border-str);
+  opacity: 0.55;
+  transition:
+    width 130ms var(--ease),
+    height 130ms var(--ease),
+    background 130ms var(--ease),
+    opacity 130ms var(--ease);
+}
+/* 当前读到的那一轮 */
+.outline-hit.on .outline-bar {
+  width: 22px;
+  background: var(--fg);
+  opacity: 0.9;
+}
+/* 悬停：那一格就地长高变宽（向左长） */
+.outline-hit.hover .outline-bar {
+  width: 34px;
+  height: 8px;
+  background: var(--accent);
+  opacity: 1;
+}
+/* 整条轨道被悬停时其它格稍微提亮 —— 让「我可以选」看得出来 */
+.outline-track:has(.outline-hit.hover) .outline-bar {
+  opacity: 0.75;
+}
+
+/* ---- 悬停预览卡（top 由 JS 覆写，锚在被指的那一格） ---- */
+.outline-preview {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  width: 320px;
+  max-width: 42vw;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-sm);
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  z-index: 20;
+}
+html[data-theme='light'] .outline-preview {
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.28);
+}
+.op-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.op-head .spacer {
+  flex: 1;
+}
+.op-n {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.op-hint {
+  color: var(--fg-mute);
+}
+/* 标题：用户那一问的短摘要（强调色 + 稍大） */
+.op-title {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  line-height: 1.4;
+  margin-bottom: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 正文：AI 回答的三行预览 */
+.op-answer {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.op-empty {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-style: italic;
 }

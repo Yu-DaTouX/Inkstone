@@ -97,13 +97,14 @@
     store.getState().applyPush({ ch: 'sync', payload: fake })
     await sleep(900)
     const inner = rect('.stream-inner')
-    const tick = rect('.outline-hit')
+    // 量**看得见的那条刻度**的右缘（不是命中区/容器的左缘）
+    const tick = rect('.outline-hit .outline-bar')
     const center = rect('.center')
     out.push('  center=' + JSON.stringify(center) + ' inner=' + JSON.stringify(inner) + ' tick=' + JSON.stringify(tick))
     if (inner && tick && center) {
-      const gap = (inner.x + 24) - tick.x
+      const gap = inner.x + 24 - (tick.x + tick.w)
       out.push('  刻度距正文 ' + gap.toFixed(0) + 'px')
-      if (gap >= 6 && gap <= 34) ok('导航轨贴着小列（不错位）')
+      if (gap >= 6 && gap <= 34) ok('导航轨贴着正文左侧（不压字、不错位）')
       else bad('导航轨离正文 ' + gap.toFixed(0) + 'px')
     }
 

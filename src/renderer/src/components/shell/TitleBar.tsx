@@ -1,6 +1,5 @@
 import { Icon } from '../../icons/Icon'
 import { useI18n } from '../../i18n'
-import type { ConnState } from '../../state/store'
 
 export type Theme = 'dark' | 'light'
 
@@ -11,9 +10,6 @@ interface Props {
   /** 右栏（工具栏）开关 —— 在窗口控制按钮左侧 */
   onToggleRightPanel: () => void
   rightPanelOpen?: boolean
-  conn: ConnState
-  cwd?: string
-  onPickCwd: () => void
   onSettings?: () => void
   /** 窗口是否置顶 */
   alwaysOnTop?: boolean
@@ -49,25 +45,12 @@ export function TitleBar({
   railOpen,
   onToggleRightPanel,
   rightPanelOpen,
-  conn,
-  cwd,
-  onPickCwd,
   alwaysOnTop,
   onToggleAlwaysOnTop,
   maximized
 }: Props) {
   const { t } = useI18n()
   const win = window.yan.win
-
-  const dotCls = conn === 'ready' ? 'dot ok' : conn === 'starting' ? 'dot warn' : 'dot err'
-  const connText =
-    conn === 'ready'
-      ? t('conn.ready')
-      : conn === 'starting'
-        ? t('conn.starting')
-        : conn === 'error'
-          ? t('conn.error')
-          : t('conn.down')
 
   return (
     <header className="titlebar">
@@ -95,14 +78,13 @@ export function TitleBar({
          */}
       </div>
 
-      <div className="tb-sync">
-        <span className={dotCls} />
-        <span>{connText}</span>
-        <span className="devs">·</span>
-        <button className="tb-cwd" title={t('tb.cwd')} onClick={onPickCwd}>
-          {cwd ?? '—'}
-        </button>
-      </div>
+      {/*
+       * 标题栏中段：**空**（用户要求删掉「已连接 · 工作目录」）。
+       * 这里必须留一个占位元素 —— .titlebar 是三列 grid
+       *（auto / 1fr / auto），少一个子元素右侧那组会被摆到中列里拉宽。
+       * 连接失败有 .connbar 在正文上方提示，工作目录在设置里看。
+       */}
+      <div className="tb-center" />
 
       <div className="tb-right">
         {/*

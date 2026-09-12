@@ -131,6 +131,43 @@ export function ConversationOutline() {
   const [hoverRatio, setHoverRatio] = useState(0)
 
   /**
+   * 导航轨的横向位置**由 JS 实测**（用户要求：随窗口缩放）。
+   *
+   * 纯 CSS 做不到：
+   *   · 内容列是居中限宽的，刻度要贴在它左边；
+   *   · 窗口窄时内容列占满，左边只剩内边距（24px）——
+   *     而悬停时刻度要长到 34px，CSS 里没有“有边距就放外边、
+   *     没边距就夹进内边距”这种分支。
+   * 用 `textLeft - 44`（刻度列宽 + 让位）算，两种情形都对，
+   * 而且窗口一变就重算。
+   */
+  const root = useRef<HTMLDivElement>(null)
+  const [leftPx, setLeftPx] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const host = root.current?.offsetParent as HTMLElement | null
+    const inner = document.querySelector<HTMLElement>('.stream-inner')
+    if (!host || !inner) return
+
+    const OUTLINE_W = 44
+    const measure = (): void => {
+      const hb = host.getBoundingClientRect()
+      const ib = inner.getBoundingClientRect()
+      // 正文左缘 = 内容列左缘 + 它自己的左内边距（--sp-5 = 24）
+      const textLeft = ib.left + 24
+      setLeftPx(Math.max(0, Math.round(textLeft - hb.left - OUTLINE_W)))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(host)
+    ro.observe(inner)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [turns.length])
+
+  /**
    * 悬停时记下这一格在轨道里的相对位置。
    *
    * 用 `useLayoutEffect` 而不是在事件里直接算 —— 因为 CSS 会在 hover 后
@@ -151,7 +188,14 @@ export function ConversationOutline() {
   if (turns.length < 3) return null
 
   return (
-    <div className="outline" data-testid="outline" role="navigation" aria-label={t('outline.label')}>
+    <div
+      className="outline"
+      ref={root}
+      style={leftPx != null ? { left: `${leftPx}px` } : undefined}
+      data-testid="outline"
+      role="navigation"
+      aria-label={t('outline.label')}
+    >
       <div className="outline-track" ref={track}>
         {turns.map((turn, i) => (
           <button

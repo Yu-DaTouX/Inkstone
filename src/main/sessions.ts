@@ -218,6 +218,41 @@ async function readBranchOrigin(path: string, forkTs: number): Promise<string | 
   }
 }
 
+/**
+ * 读文件**尾部**，取最后一条 message 的时间戳（= 会话真正的“最近活动”）。
+ *
+ * 为什么读尾部而不是全文件：会话可能十几 MB；最近活动总在最后一段。
+ * 尾部窗口的第一行可能被截断 → JSON.parse 失败就往前继续找。
+ */
+async function readLastActivity(path: string, size: number): Promise<number | undefined> {
+  const TAIL = 64 * 1024
+  const start = Math.max(0, size - TAIL)
+  const fh = await open(path, 'r')
+  try {
+    const len = size - start
+    if (len <= 0) return undefined
+    const buf = Buffer.alloc(len)
+    await fh.read(buf, 0, len, start)
+    const lines = buf.toString('utf8').split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]
+      if (!line.includes('"type":"message"')) continue
+      try {
+        const o = JSON.parse(line) as { timestamp?: string }
+        const ts = Date.parse(String(o.timestamp ?? ''))
+        if (!Number.isNaN(ts)) return ts
+      } catch {
+        /* 尾部第一行可能被截断，继续往前找 */
+      }
+    }
+    return undefined
+  } catch {
+    return undefined
+  } finally {
+    await fh.close()
+  }
+}
+
 /** 列出所有会话，按更新时间倒序 */
 export async function listSessions(limit = 200): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
@@ -273,6 +308,8 @@ export async function listSessions(limit = 200): Promise<SessionSummary[]> {
         title: head.name ?? head.title ?? '(无标题)',
         named,
         parentSession: head.parentSession,
+        lastActivityAt:
+          (await readLastActivity(f.path, f.size)) ?? (head.createdAt || Math.round(f.mtimeMs)),
         createdAt: head.createdAt || Math.round(f.mtimeMs),
         updatedAt: Math.round(f.mtimeMs),
         messageCount: await countMessages(f.path),

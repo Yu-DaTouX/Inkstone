@@ -33,10 +33,9 @@
   const ta = q('[data-testid="composer"]')
   ok(ta && !ta.disabled, '输入框可用（证明 ready 真的生效了，不只是变量对）')
 
-  // 5. 标题栏的连接文字
-  const sync = q('.tb-sync')?.textContent ?? ''
-  log('  标题栏: ' + JSON.stringify(sync))
-  ok(!sync.includes('启动'), '标题栏不显示「启动中」')
+  // 5. 标题栏不再显示连接状态/工作目录（用户要求删掉），只在没连上时用 connbar 提示
+  ok(!q('.tb-sync'), '标题栏没有「已连接 · 工作目录」那一段')
+  ok(!q('.tb-cwd'), '标题栏没有工作目录按钮')
 
   // 6. store 与主进程两边一致
   ok(status.state === store.getState().conn, 'store.conn 与主进程 agentStatus 一致')

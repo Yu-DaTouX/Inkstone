@@ -45,16 +45,15 @@
       const inner = R('.stream-inner')
       const center = R('.center')
       if (!oc || !inner || !center) { bad(label + '：量不到元素'); return }
-      // 刻度的实际位置（取第一个刻度）
-      const tick = R('.outline-hit')
-      const gap = tick ? +(inner.x - tick.x).toFixed(1) : NaN
-      out.push(`  ${label}: center.x=${center.x} inner.x=${inner.x} outline.x=${oc.x} tick.x=${tick ? tick.x : '?'} → 刻度距消息列 ${gap}px`)
+      // 量**看得见的那条刻度**的右缘（不是命中区/容器的左缘）
+      const tick = R('.outline-hit .outline-bar')
+      const gap = tick ? +(inner.x + 24 - tick.right).toFixed(1) : NaN
+      out.push(`  ${label}: center.x=${center.x} inner.x=${inner.x} outline.x=${oc.x} bar.x=${tick ? tick.x : '?'} → 刻度右缘距正文 ${gap}px`)
       /*
-       * 判据：刻度到消息列左缘的距离应该**与中栏宽度无关**（一个固定的小值）。
+       * 判据：刻度右缘到正文左缘的距离应该**与中栏宽度无关**（一个固定的小值）。
        * 内容居中时这个距离会变成上百 px —— 那就是用户报的错位。
        */
-      // 返回「刻度到正文」的距离：正文从内容列左缘 + 24px 内边距开始
-      return +(inner.x + 24 - (tick ? tick.x : NaN)).toFixed(1)
+      return gap
     }
 
     const g1 = await check('左栏展开')

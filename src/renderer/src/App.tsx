@@ -107,7 +107,6 @@ export default function App() {
   const setScrollProgress = useStore((s) => s.setScrollProgress)
   const registerScrollToTurn = useStore((s) => s.registerScrollToTurn)
   const applyPush = useStore((s) => s.applyPush)
-  const changeCwd = useStore((s) => s.changeCwd)
   const piInfo = useStore((s) => s.piInfo)
   const models = useStore((s) => s.models)
 
@@ -372,11 +371,6 @@ export default function App() {
     }
   }, [cycleModel, cycleThinking])
 
-  const pickCwd = async () => {
-    const p = await window.yan.pickCwd()
-    if (p) await changeCwd(p)
-  }
-
   const appCls = [
     'app',
     !railOpen && 'rail-off',
@@ -414,9 +408,6 @@ export default function App() {
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
           onSettings={() => (settingsOpen ? closeSettings() : openSettings())}
-          conn={conn}
-          cwd={settings?.cwd}
-          onPickCwd={() => void pickCwd()}
         />
 
         <div className="workspace">

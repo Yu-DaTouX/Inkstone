@@ -924,7 +924,13 @@ export const useStore = create<Store>((set, get) => ({
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换目录失败') })
       return
     }
-    set({ messages: [], stats: null, conn: 'starting' })
+    /*
+     * 不再清空对话、也不硬把 conn 改成 starting。
+     *
+     * pi 的 cwd 是子进程级的（RPC 47 个命令里没有 set_cwd，new_session 也不收 cwd），
+     * 所以换目录**必须重启 pi 子进程** —— 这一步避免不了。
+     * 但没必要把界面清成白板：重启期间保留当前对话，新连接就绪后 pi 会自己推 sync。
+     */
     set({ settings: await window.yan.getSettings() })
     await get().refreshSessions()
   },

@@ -97,6 +97,51 @@ export function Rail() {
     const q = query.trim().toLowerCase()
 
     /**
+     * 会话的**真实最近活动**（最后一条消息的时间）。
+     * 老数据可能没有（升级前拉的列表）→ 退回 mtime。
+     */
+    const activity = (s: SessionSummary): number => s.lastActivityAt ?? s.updatedAt
+
+    /**
+     * 排序：先按家族分组，再按“新→旧”。
+     *
+     * 用户报「顺序不对 很乱」：以前所有会话混在一起排，
+     * 分叉出来的子会话散落在各处，找不到“它从哪来”。
+     * 现在：根会话按最近活动倒序，**子会话紧跟在它的父会话后面**
+     *（同族按创建先后），家族内部不再交错。
+     *
+     * ⚠️ 排序键用 lastActivityAt（最后一条 message 的时间），
+     * 不用 updatedAt（= mtime）：打开会话会写会话文件，mtime 一变
+     * 那行就跳到顶部（用户上一轮报的「进入会话就置顶」）。
+     */
+    const orderFamily = (list: SessionSummary[]): SessionSummary[] => {
+      const inList = new Set(list.map((s) => s.path))
+      const children = new Map<string, SessionSummary[]>()
+      for (const s of list) {
+        if (!s.parentSession || !inList.has(s.parentSession)) continue
+        const arr = children.get(s.parentSession) ?? []
+        arr.push(s)
+        children.set(s.parentSession, arr)
+      }
+      for (const arr of children.values()) arr.sort((a, b) => a.createdAt - b.createdAt)
+
+      const roots = list.filter((s) => !s.parentSession || !inList.has(s.parentSession))
+      roots.sort((a, b) => activity(b) - activity(a))
+
+      const out: SessionSummary[] = []
+      const seen = new Set<string>()
+      const push = (s: SessionSummary): void => {
+        if (seen.has(s.path)) return
+        seen.add(s.path)
+        out.push(s)
+        for (const c of children.get(s.path) ?? []) push(c)
+      }
+      for (const r of roots) push(r)
+      for (const s of list) push(s) // 兑底：不丢行
+      return out
+    }
+
+    /**
      * ⚠️ pi 的会话文件是**懒创建**的 —— 新建的会话在第一条消息之前不落盘，
      * sessions 列表里根本没有它。不补一条的话，点「新对话」后左栏毫无反应，
      * 也看不出「当前就在这个新会话里」。
@@ -142,19 +187,14 @@ export function Rail() {
       .map(([cwdKey, list]) => ({
         cwd: cwdKey,
         label: shortProject(cwdKey),
-        /*
-         * 按**创建时间**倒序（新→旧）。
-         *
-         * 用户报：「进入会话的时候不要置顶」。以前按 `updatedAt`（文件 mtime）排，
-         * 而每打开一个会话都可能写一次会话文件（标题生成 / name 落盘）→ mtime 变成“刚刚”
-         * → 那一行就跑到最上面。改成 createdAt 后，打开会话不再改变列表顺序。
-         */
-        list: list.sort((a, b) => b.createdAt - a.createdAt),
+        list: orderFamily(list),
         isCurrent: cwdKey === cur
       }))
       .sort((a, b) => {
         if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
-        return (b.list[0]?.updatedAt ?? 0) - (a.list[0]?.updatedAt ?? 0)
+        const at = (p: { list: SessionSummary[] }) =>
+          p.list[0] ? (p.list[0].lastActivityAt ?? p.list[0].updatedAt) : 0
+        return at(b) - at(a)
       })
   }, [sessions, query, session, t, titles])
 
@@ -386,7 +426,7 @@ function SessionRow({
   const [branchesOpen, setBranchesOpen] = useState(false)
 
   return (
-    <div className={`srow-wrap ${selected ? 'has-acts' : ''} ${menuOpen ? 'menu-open' : ''}`}>
+    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
       <div className="srow-row">
         <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
@@ -450,16 +490,22 @@ function SessionRow({
         </div>
       ) : null}
 
-      {selected ? (
-        <span className="srow-acts">
-          <button className="rail-icon sm" title={t('rail.more')} onClick={(e) => {
-            e.stopPropagation()
-            onToggleMenu()
-          }}>
-            <Icon name="menu" size={12} />
-          </button>
-        </span>
-      ) : null}
+      {/*
+       * 动作按钮（⋯）**每一行都渲染**，悬停才显形。
+       *
+       * ⚠️ 以前只在 selected 行渲染 ── 而菜单里的「删除」又对 selected 行
+       *    禁用（当前会话不能删）→ **删除功能永远点不到**（用户报的）。
+       *    现在任何行悬停都能开菜单，未选中的行删除可用。
+       *    隐藏时 pointer-events:none，否则看不见的按钮会抢走“点行选中”的点击。
+       */}
+      <span className="srow-acts">
+        <button className="rail-icon sm" title={t('rail.more')} onClick={(e) => {
+          e.stopPropagation()
+          onToggleMenu()
+        }}>
+          <Icon name="menu" size={12} />
+        </button>
+      </span>
 
       {menuOpen ? (
         <div className="srow-menu" onClick={(e) => e.stopPropagation()}>
