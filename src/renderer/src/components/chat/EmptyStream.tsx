@@ -11,18 +11,14 @@ import { useStore } from '../../state/store'
  * 重做思路：给空状态**内容**，而不是给装饰。
  *   · 一个符号（它是谁）
  *   · 一句能读懂的话
- *   · 记忆现状（它现在知道什么）
  *   · 三条可立即执行的建议（把空白变成入口）
  *   · 斜杠命令提示（发现性）
+ *
+ * （原来还有一行「记忆现状：N 已确认 / M 未确认」；记忆功能已移除。）
  */
 export function EmptyStream() {
   const t = useT()
-  const soul = useStore((s) => s.soul)
-  const memory = useStore((s) => s.memory)
   const commands = useStore((s) => s.commands)
-
-  const confirmed = memory.filter((m) => m.kind === 'fact').length
-  const guesses = memory.filter((m) => m.kind === 'guess').length
 
   /** 建议：点了就填进输入框并聚焦 */
   const suggest = (text: string) => {
@@ -42,23 +38,6 @@ export function EmptyStream() {
 
       <div className="empty-title">{t('chat.empty')}</div>
       <div className="empty-hint">{t('chat.emptyHint')}</div>
-
-      {/* 记忆现状：让「它知道什么」在开口之前就可见 */}
-      <div className="empty-memory">
-        <span className="empty-chip">
-          <b>{confirmed}</b>
-          <span>{t('mem.confirmed')}</span>
-        </span>
-        <span className="empty-sep">·</span>
-        <span className="empty-chip plain">
-          <b>{guesses}</b>
-          <span>{t('mem.unconfirmed')}</span>
-        </span>
-        <span className="empty-sep">·</span>
-        <span className="empty-chip plain">
-          <span>{soul.name}</span>
-        </span>
-      </div>
 
       {/* 三条建议：把空白变成入口 */}
       <div className="empty-suggest">

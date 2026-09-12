@@ -157,13 +157,12 @@ export function ToolGroup({ tools, streaming }: { tools: UIToolCall[]; streaming
 /* ------------------------------------------------------------------ */
 
 /** 动词：按工具类型给一个中文动作词 */
-function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit' | 'tool2.vWrite' | 'tool2.vSearch' | 'tool2.vMem' | 'tool2.vCall') => string): string {
+function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit' | 'tool2.vWrite' | 'tool2.vSearch' | 'tool2.vCall') => string): string {
   if (name === 'bash') return t('tool2.vRun')
   if (name === 'read' || name === 'list') return t('tool2.vRead')
   if (name === 'edit') return t('tool2.vEdit')
   if (name === 'write') return t('tool2.vWrite')
   if (name === 'grep' || name === 'glob' || name === 'web_search' || name === 'fetch') return t('tool2.vSearch')
-  if (name === 'remember' || name === 'forget' || name === 'recall') return t('tool2.vMem')
   return t('tool2.vCall')
 }
 

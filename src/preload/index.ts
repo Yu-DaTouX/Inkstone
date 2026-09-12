@@ -8,7 +8,6 @@ import type {
   DirListing,
   ForkPoint,
   MainPush,
-  MemoryItem,
   ModelInfo,
   PeekResult,
   PiInfo,
@@ -96,14 +95,6 @@ const api: YanBridge = {
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
   completePath: (prefix) => invoke<string[]>('yan:completePath', prefix),
-
-  /* ---- 记忆 ---- */
-  memoryList: () => invoke<MemoryItem[]>('yan:memoryList'),
-  memoryAdd: (text, kind, topic) => invoke<MemoryItem[]>('yan:memoryAdd', text, kind, topic),
-  memoryUpdate: (id, patch) => invoke<MemoryItem[]>('yan:memoryUpdate', id, patch),
-  memoryRemove: (id) => invoke<MemoryItem[]>('yan:memoryRemove', id),
-  memoryConfirm: (id, ok) => invoke<MemoryItem[]>('yan:memoryConfirm', id, ok),
-  readSoul: () => invoke<{ name: string; selfRef: string; tone: string }>('yan:readSoul'),
 
   /* ---- 附件 ---- */
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),

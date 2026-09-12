@@ -10,7 +10,6 @@
  * 用法：
  *   npm run test:live            全部
  *   npm run test:live -- live    只跑 DOM 体检（不烧 token）
- *   npm run test:live -- memory  只跑记忆流程（不烧 token）
  *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
  *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
  */
@@ -109,8 +108,6 @@ const CASES = {
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
-  // 记忆的认识论流程：确认 → 从「我的印象」移到「关于你」
-  memory: { probe: 'scripts/probe/memory.js', delay: 9000, cost: 0 },
   // 对话导航轨：间距拉长 + 鼠标靠近动态展开
   outline: { probe: 'scripts/probe/outline.js', delay: 9000, cost: 0 },
   // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
@@ -451,7 +448,7 @@ async function main() {
      隔离三件事：
        YAN_USER_DATA      Electron 的 localStorage / cache
        YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
-       YAN_DATA_DIR       记忆 / soul / desktop 设置（扩展也读这个变量）
+       YAN_DATA_DIR       桌面端设置（desktop.json）
      ------------------------------------------------------------------ */
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
@@ -483,7 +480,7 @@ async function main() {
      */
     writeFileSync(
       join(data, 'desktop.json'),
-      JSON.stringify({ cwd: root }, null, 2),
+      JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2),
       'utf8'
     )
 
@@ -532,7 +529,7 @@ async function main() {
     let hint
     for (const win of wins) {
       if (sandboxRoot) {
-        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root }, null, 2), 'utf8')
+        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2), 'utf8')
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
       const out = await runProbe(c, { ...env, ...(win ? { YAN_WIN: win } : {}) })

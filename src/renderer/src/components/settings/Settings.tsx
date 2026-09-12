@@ -3,10 +3,9 @@ import { Icon } from '../../icons/Icon'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
-import { MemorySections } from './MemoryPanel'
 import { AuthTab } from './AuthTab'
 
-export type SettingsTab = 'memory' | 'auth' | 'appearance' | 'status' | 'about'
+export type SettingsTab = 'auth' | 'appearance' | 'status' | 'about'
 
 /**
  * 设置面板。
@@ -51,7 +50,6 @@ export function Settings({
   if (!presence.mounted) return null
 
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
-    { id: 'memory', label: t('set.memory'), icon: 'layers' },
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
@@ -95,9 +93,7 @@ export function Settings({
 
         {/* 右：内容。key 跟着 tab 走 —— 切 tab 时新节点会重演一次淡入 */}
         <div className="settings-body" key={tab}>
-          {tab === 'memory' ? (
-            <MemorySections />
-          ) : tab === 'auth' ? (
+          {tab === 'auth' ? (
             <AuthTab />
           ) : tab === 'appearance' ? (
             <AppearanceTab lang={lang} setLang={setLang} />
@@ -316,7 +312,7 @@ function StatusTab() {
     <div className="set-group">
       <div className="set-row">
         <div className="set-label">
-          <div className="set-name">{t('mem.model')}</div>
+          <div className="set-name">{t('status.model')}</div>
           <div className="set-desc">{t('set.modelDesc')}</div>
         </div>
         <div className="set-ctl">
@@ -346,7 +342,7 @@ function StatusTab() {
 
       <div className="set-row">
         <div className="set-label">
-          <div className="set-name">{t('mem.thinking')}</div>
+          <div className="set-name">{t('status.thinking')}</div>
           <div className="set-desc">{t('set.thinkingDesc')}</div>
         </div>
         <div className="set-ctl">
@@ -380,7 +376,7 @@ function StatusTab() {
             <b>{t('status.tools')}</b> {stats?.toolCalls ?? 0}
           </span>
           <span>
-            <b>{t('mem.cost')}</b> ${(stats?.cost ?? 0).toFixed(3)}
+            <b>{t('status.cost')}</b> ${(stats?.cost ?? 0).toFixed(3)}
           </span>
           <span>
             <b>{t('status.rounds')}</b> {stats?.userMessages ?? 0}

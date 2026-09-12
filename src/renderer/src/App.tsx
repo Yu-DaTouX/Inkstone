@@ -8,7 +8,7 @@ import { RightPanel } from './components/toolbar/RightPanel'
 import { Resizer } from './components/toolbar/Resizer'
 import { Icon } from './icons/Icon'
 import { ConversationOutline } from './components/chat/ConversationOutline'
-import { Continuity, EmptyStream, ReviewBar } from './components/chat/Continuity'
+import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
 import { Composer } from './components/chat/Composer'
@@ -490,7 +490,6 @@ export default function App() {
               </button>
             ) : null}
 
-            <ReviewBar />
             <Composer />
           </section>
 

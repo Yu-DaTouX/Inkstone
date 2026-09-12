@@ -23,26 +23,7 @@
     )
   }
 
-  /* ---- 2. 身份卡的三个值 ---- */
-  out.push('=== 身份卡 ===')
-  const soulLines = qa('.sect[data-sec="soul"] .soul-line')
-  out.push(`  行数=${soulLines.length}`)
-  for (const l of soulLines) {
-    out.push(`  ${l.querySelector('dt')?.textContent} = ${l.querySelector('dd')?.textContent}`)
-  }
-  out.push(`  soul-ro 文本=${q('.sect[data-sec="soul"] .soul-ro')?.textContent ?? '缺失'}`)
-
-  /* ---- 3. 记忆行 ---- */
-  out.push('=== 记忆行 ===')
-  for (const r of qa('.memrow')) {
-    const cs = getComputedStyle(r.querySelector('.bar'))
-    out.push(
-      `  ${r.className.replace('memrow ', '').padEnd(18)} bar=${cs.backgroundColor} ` +
-        `txt=${(r.querySelector('.txt')?.textContent ?? '').slice(0, 22)}`
-    )
-  }
-  out.push(`  空状态块=${qa('.mem-empty').length}`)
-  out.push(`  添加行=${qa('.mem-add').length}（出现在: ${qa('.sect').filter((s) => s.querySelector('.mem-add')).map((s) => s.dataset.sec).join(',')}）`)
+  /* ---- 2. 记忆相关区块已随记忆功能移除，这里不再检查 ---- */
 
   /* ---- 4. 左栏会话 ---- */
   out.push('=== 左栏会话 ===')
@@ -107,8 +88,6 @@
 
   /* ---- 9. 控制台报错残留 ---- */
   out.push('=== 其他 ===')
-  out.push('  未确认记忆数=' + qa('.sect[data-sec="impressions"] .memrow').length)
-  out.push('  审阅条=' + (q('.review') ? q('.review').textContent.replace(/\s+/g, ' ').trim() : '隐藏'))
 
   return out.join('\n')
 })()

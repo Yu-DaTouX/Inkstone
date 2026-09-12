@@ -1,9 +1,13 @@
 # 砚 · Yan
 
-**个人 agent 的桌面端。记忆是第一公民。**
+**一个独立的 agent —— pi 只做内核。**
 
-它是一个能日常使用的 **pi 客户端**：真连 `pi --mode rpc` 子进程，真的流式输出，
-真的调工具，真的记得你 —— 并且把「它记的」和「它猜的」分开摆给你看
+砚**不是「pi 的前端」**。它自己是一个 agent：会话与项目、输入（`/` 命令 · `@` 文件 · 图片 · `!` shell）、
+工具调用的呈现、任务与状态、模型接入、打包分发，**都在应用这一侧**；
+pi 只负责模型循环与工具执行（一个 `pi --mode rpc` 子进程）。
+
+它真连 `pi --mode rpc`、真流式、真调工具，并直接复用 pi 的 `~/.pi/agent/sessions/` ——
+所以和 pi 的 TUI **互通**（TUI 里聊过的会话桌面端能看到，反之亦然）。
 
 ![界面](docs/design/preview/ui-live.png)
 
@@ -16,7 +20,7 @@
 
 **推理窗口**：模型真的在思考时，回答上方开一个**固定大小的窗口**（约 1/4 屏高），
 推理逐字在窗口内滚动；结束后折叠成一行（可再点开）。没有推理就不显示。
-**界面是中文时，会让模型也用中文推理**（否则会出现「中文提问 + 英文旁白」）。
+思考语言**保持 pi 原装**（模型跟用户的语言走，我们不往提示词里塞任何东西）。
 
 ![推理窗口](docs/design/preview/reasoning-window.png)
 
@@ -44,7 +48,7 @@ npm install     # 依赖 + 字体（Maple Mono CN 走 npm，不需要额外步�
 npm run dev
 ```
 
-应用会自动找 pi 的位置；找不到时点标题栏中间的连接状态看诊断，或跑 `npm run probe-pi`。
+应用会自动找 pi 的位置；找不到时跑 `npm run probe-pi` 看诊断。
 
 > **字体**：早期版本要单独跑 `npm run font` 从本地拷一份 18.5MB 的 TTF，
 > 而那个源文件同样不入库 —— 结果**新克隆的仓库根本跑不起来**
@@ -55,27 +59,18 @@ npm run dev
 
 ---
 
-## 这跟别的 agent 客户端差在哪
+## 谁是 agent，谁是内核
 
-一个聊天窗口 + 一个记忆面板不稀奇。区别在**记忆的认识论**：
-
-| 设计 | 为什么 |
+| | 归谁 |
 |---|---|
-| 记忆分「**关于你**」（青色，你确认过）与「**我的印象**」（橙色，它自己猜的） | 这两者可信度根本不同，界面必须让差异可见 |
-| 「我的印象」可以**当场点头/否认** | 确认动作要廉价，否则用户不会做 |
-| 只有你确认过的记忆，才会被**当作事实**注入系统提示词 | 未确认的注入时**强制带上「我不确定」的语气** |
-| agent 的工具（`remember`）**只能写未确认的记忆** | agent 不能自己批准自己的判断 |
-| 「身份」区块**只读**，代码里没有写入路径 | 「我不会改它」是真的，不是文案 |
-| 确认是**显式**的 | 一条错误的记忆会长期影响判断，不能默认接受 |
+| 模型循环、工具执行（`read/write/edit/bash`）、会话文件格式、RPC | **pi（内核）** |
+| 会话与项目管理、输入与斜杠命令、工具调用的呈现、任务/状态/日志、全部界面、模型接入、打包分发 | **砚（agent）** |
 
-最后两条是硬约束，不是 UI 风格：`remember` 工具的实现里 `kind` 被写死成 `'guess'`，
-`forget` 拒绝删除已确认的记忆，soul.md 全项目只有读取调用。
+为什么这么切：pi 的作者把 pi 定位成「极简内核 + 可被任意 UI 包」，并明确欢迎 fork 与自建 UI。
+砚只在内核外面做事，**不往 pi 里塞东西** —— 不给 pi 打补丁、不 import 它的内部模块、
+不往 `~/.pi/agent/extensions/` 写文件（用户自己的扩展照常生效）。
 
-**实际效果**（真实对话截取）：
-
-> 时间：今天收数据 → 周末/周一写初稿（**如果我没记错，你好像更愿意晚上写东西**，那初稿放晚上也行）→ 周二压缩 → 周三上午通读。
-
-它主动带了不确定语气 —— 因为那条记忆是「我的印象」而它知道。这就是设计目的。
+> 想换内核（另一个 pi 版本、或你全局装的那个）：设置里的 `piBin`，或环境变量 `YAN_PI_BIN`。
 
 ---
 
@@ -121,8 +116,7 @@ npm run launch -- --rebuild  # 强制重新构建
 | 看模型的推理 | 回答上方的**推理窗口**：固定约 1/4 屏高、推理逐字在里面滚动；结束后折叠成一行（点标题可再打开）。没有推理就不显示 |
 | 工具调用详情 | 一行一条（Codex 风格）；**正在运行**的那条自动展开成**终端窗口**，已结束的保持一行（点开才看详情）。开关见设置 → 外观 → 工具调用详情 |
 | 从某条消息分叉 | 鼠标悬停在**用户消息**上 → 「分叉」 |
-| 确认记忆 | 底部审阅条「都记对了」，或设置 → 记忆 |
-| 换模型 / 思考档 | 标题栏中间显示当前模型；`Ctrl+P` 换模型，`Shift+Tab` 换强度 |
+| 换模型 / 思考档 | `Ctrl+P` 换模型，`Shift+Tab` 换强度（当前模型显示在底部状态条右侧） |
 | 压缩上下文 | 工具栏「操作」分区 |
 | 缩放界面 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0`（0 = 自动，按屏幕 DPI 对齐整数像素） |
 | 换工作目录 | 设置 → 外观里的「工作目录」（pi 的 cwd 是子进程级的，换目录会重启 pi 子进程；界面不会清空） |
@@ -155,7 +149,7 @@ src/
 │   ├── index.ts                 窗口 + IPC + 生命周期
 │   ├── protocol.ts          ⭐ 手写的 pi RPC 客户端（JSONL / 请求响应关联 / 扩展 UI）
 │   ├── agent.ts             ⭐ 协议 → UI 的归一化（唯一认识 pi 协议的地方）
-│   ├── memory.ts                记忆存储 + 认识论规则 + soul.md 只读读
+│   ├── paths.ts                数据目录（desktop.json）
 │   ├── sessions.ts              会话列表（只读扫描 sessions/*.jsonl）
 │   └── settings.ts              桌面端设置（不碰 pi 的 settings.json）
 ├── preload/index.ts             contextBridge 白名单（形态由 YanBridge 类型约束）
@@ -163,16 +157,14 @@ src/
 └── renderer/src/
     ├── state/store.ts           zustand：只负责套用 MainPush
     ├── components/              TitleBar / Rail / Continuity / Message / Composer /
-    │                            MemoryPanel / UiBridge（扩展对话框 + 通知 + 日志）
+    │                            UiBridge（扩展对话框 + 通知 + 日志）
     ├── styles/                  tokens / app / stage1 / electron / highlight
     └── i18n/                    中英双语，类型安全（漏翻译编译报错）
-
-resources/pi/yan-memory.ts        ⭐ 注入给 pi 的记忆扩展（remember/recall/forget + 提示词注入）
 ```
 
 ### 三条设计原则
 
-**1. 协议知识只存在于 `main/` 和 `resources/pi/`。**
+**1. 协议知识只存在于 `main/`。**
 渲染端只认识 `MainPush`（`msg-add` / `msg-update` / `tool` / `state` / `stats` …）。
 `pi update` 改了协议，只改 `protocol.ts` 和 `agent.ts`，组件一行不动。
 
@@ -184,17 +176,15 @@ resources/pi/yan-memory.ts        ⭐ 注入给 pi 的记忆扩展（remember/re
 pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数数组**启动，
 不走 `pi.cmd` + `shell:true` —— 否则提示词里的引号、反斜杠、中文可能被 shell 吃掉或注入。
 
-### 记忆的存放
+### 数据的存放
 
 ```
 ~/.pi/agent/yan/
-├── memory.json    记忆（主进程与扩展共享；主进程用 fs.watch 感知扩展的写入）
-├── soul.md        身份（只读，全项目只有读取路径）
-└── desktop.json   桌面端设置（窗口/主题/语言/cwd）
+└── desktop.json   桌面端设置（窗口/主题/语言/cwd/栏宽）
 ```
 
-记忆扩展用 `pi --extension <path>` 显式加载，**不写进 `~/.pi/agent/extensions/`** ——
-不干扰你已有的扩展，也不用装。
+砚**不往 pi 的目录里写东西**（除了这个自己的设置目录）：不碰 `~/.pi/agent/settings.json`、
+不碰 `~/.pi/agent/extensions/`、不改会话文件。用户自己的扩展照常生效。
 
 ---
 
@@ -204,10 +194,10 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|
 | `npm run dev` | 开发模式（HMR） |
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
-| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 31 个真实应用场景（不烧 token） |
+| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 30 个真实应用场景（不烧 token） |
 | `npm run test:unit` | 纯逻辑单测（110 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 |
 | `npm run test:live` | 全部场景（含 5 个会真调模型的） |
-| `npm run test:live -- live features memory` | 指定场景，不烧 token |
+| `npm run test:live -- live features sessions` | 指定场景，不烧 token |
 | `npm run test:live -- e2e image queue` | 会花少量额度（真流式 / 真图片 / 真排队） |
 | `npm run probe-pi` | 单独验证「pi 能不能被找到并启动」 |
 | `npm run icons` | 从设计稿重抽图标 sprite |
@@ -227,11 +217,11 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `砚-<版本>-portable.exe` | 免安装单文件版（双击即跑，自解压到临时目录） |
 
 两件**生成物/静态资源**随包分发（`extraResources` → 安装目录的 `resources/`）：
-内置 pi 运行时（20MB）与记忆扩展 `yan-memory.ts`。所以**用户不需要自己装 pi**。
+内置 pi 运行时（20MB）。所以**用户不需要自己装 pi**。
 
 > 体积：安装包约 120MB、免安装目录约 399MB（Electron 本体占大头）。
 >
-> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 31 个场景
+> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 30 个场景
 > 读的是仓库里的 `resources/pi-runtime`，打包后改从 `process.resourcesPath/` 找，
 > 路径错了应用**能启动但连不上 pi**，开发态测试全绿也照样复现不了。
 
@@ -246,11 +236,11 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 **UI 层不在裸 `BrowserWindow` 里测。** 那样 preload/IPC/pi 全都不存在，
 断言会「通过」而应用其实是坏的。
 
-> 完整清单见 `package.json` 的 `check`（共 **31 个场景**，下表只列重点）。
+> 完整清单见 `package.json` 的 `check`（共 **30 个场景**，下表只列重点）。
 
 | 场景 | 覆盖 | 花 token |
 |---|---|---|
-| `live` | 工具栏分区渲染、记忆行颜色、三栏宽度、横向/纵向溢出、字体栅格、图标空引用、i18n 裸键 | 否 |
+| `live` | 工具栏分区渲染、任务行、三栏宽度、横向/纵向溢出、字体栅格、图标空引用、i18n 裸键 | 否 |
 | `panels` | 面板开关位置（在各自面板头部而非标题栏）、工具栏命名、用户档案（名字落盘 / 图标头像 / 色相）、**登录只做预留不做假状态**、左右栏收放 | 否 |
 | `symmetry` | 开关的**几何对称性**：展开↔收起**逐像素对比** + `elementFromPoint` 必须命中开关本身 | 否 |
 | `zoom` | 界面缩放：DPI 取整（正文落在整数设备像素）、`Ctrl+=/Ctrl+-/Ctrl+0`（**真实按键** `sendInputEvent`）、设置面板档位 | 否 |
@@ -266,7 +256,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `vheight` | 分区高度可调：哪些分区有把手、拖动实时生效、落盘、范围夹取 | 否 |
 | `slashcmd` | `/` 命令：列表过期自动重拉、用过的排前面、Enter/Tab 填充且带尾空格、按键说明可见 | 否 |
 | `features` | 斜杠补全、`!bash`（含非零退出码）、图片附件（粘贴/去重/移除）、模型+思考选择器（真切换再切回）、开关、重命名、新建会话可见性 | 否 |
-| `memory` | 造未确认记忆 → 点「对」→ 移到「关于你」→ 落库 `fact`/`you`；点「不对」→ 真删除 | 否 |
+| `todos` | 任务面板：启动期通知不弹窗（只进日志）、清单渲染（进度标签 / 删除线 / 折叠 / 空态不占位） | 否 |
 | `sessions` | 切换会话加载历史、选中态、连续性带、新建会话清空 | 否 |
 | `todos` | 启动期通知不弹窗（只进日志）、任务清单渲染（进度标签 / 删除线 / 折叠 / 空态不占位） | 否 |
 | `virtual` | 注入 240 条 → 只渲染 8 条、滚到底可见最后一项、恢复真实数据 | 否 |
@@ -294,8 +284,8 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 模型与思考档选择（69 个模型）、上下文压缩、自动压缩与自动重试开关、
 图片输入（粘贴 / 拖拽 / 选文件）、`!` 直执行 shell、`/` 斜杠命令补全、
 扩展 UI 对话框（select/confirm/input/editor）、扩展通知与状态条、
-长会话虚拟化、中英切换、深浅主题、记忆的完整认识论流程、
-**Windows 打包分发**（NSIS 安装包 + 免安装单文件版，内置 pi 与记忆扩展随包）。
+长会话虚拟化、中英切换、深浅主题、
+**Windows 打包分发**（NSIS 安装包 + 免安装单文件版，内置 pi）。
 
 **没做：**
 - 会话树浏览（`get_tree` 协议有，没做 UI）
@@ -313,8 +303,6 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 **实现上的取舍（都是踩过的坑）：**
 - **通知限流**：扩展 `notify` 去重 + 最多 3 条。真实扩展（如 `left-info-panel`）会反复通知，
   不去重会直接刷满屏幕。
-- **记忆写盘串行化**：`load()` 会先等 `writeQueue`，否则「改完立刻读」会读到旧文件、
-  把内存改动回滚（删掉的条目复活）。退出时也会 `flush()`，否则点完确认立刻关窗口会丢改动。
 - **`scrollbar-gutter: stable`**：`overflow-y:auto` 会连带把 `overflow-x` 变 `auto`，
   纵向滚动条一出现就挤窄容器 → 冒出一条横向滚动条。**空状态看不见它**，
   只有数据满了才复现。
@@ -329,10 +317,10 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
   它讲的是 TUI 的 overlay 和命令，在桌面端不适用，开机弹出来只会让人困惑。
   但也不能咽掉，所以进日志抽屉（底部状态条能看到有几条）。
 - **测试跑在隔离目录**：`test:live` 会建一个临时 sandbox，
-  把 `YAN_USER_DATA`（localStorage）/ `YAN_SESSIONS_DIR`（会话）/ `YAN_DATA_DIR`（记忆）
+  把 `YAN_USER_DATA`（localStorage）/ `YAN_SESSIONS_DIR`（会话）/ `YAN_DATA_DIR`（桌面端设置）
   全指过去，并从真实会话里**只读拷贝**几份当 fixture。
-  不这样做的话测试会改掉你的右栏顺序、往会话目录里塞文件、往记忆里留编造的条目 ——
-  这三件事都真实发生过。
+  不这样做的话测试会改掉你的右栏顺序、往会话目录里塞文件、往设置里写东西 ——
+  这几件事都真实发生过。
 
 ---
 

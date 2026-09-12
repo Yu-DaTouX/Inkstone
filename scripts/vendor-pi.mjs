@@ -57,7 +57,7 @@ const MUST_HAVE = [
   'typebox',
   'undici',
   '@silvia-odwyer/photon-node',
-  // 加载 .ts 扩展（我们的 yan-memory.ts）用的编译器。
+  // 加载 .ts 扩展（用户自己的 left-info-panel.ts 之类）用的编译器。
   // ⚠️ bundle 里静态扫不到它 —— 是扩展加载器在运行时 require 的（HANDOFF §8 第 11 版坑）
   'jiti'
 ]

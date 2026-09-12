@@ -345,28 +345,6 @@ export interface AuthProviderInfo {
 
 /**
  * fact  = 已确认（来源：你）
- * guess = 我的印象（来源：我，未确认）
- *
- * 这个区分是整个产品的认识论基础，不是视觉标签。
- * 只有 confirmed 过的记忆才会被注入系统提示词。
- */
-export type MemoryKind = 'fact' | 'guess'
-export type MemorySource = 'you' | 'me'
-
-export interface MemoryItem {
-  id: string
-  kind: MemoryKind
-  text: string
-  source: MemorySource
-  /** 主题/分类，用于「人」「项目」等分组；缺省归入「关于你」 */
-  topic: string
-  createdAt: number
-  updatedAt: number
-  confirmedAt?: number
-  /** 来自哪个会话（可追溯） */
-  sessionId?: string
-}
-
 /* ==================================================================
    设置
    ================================================================== */
@@ -375,7 +353,6 @@ export interface AppSettings {
   cwd: string
   theme: 'dark' | 'light'
   lang: 'zh-CN' | 'en-US'
-  memoryOrder: string[]
   /** 手动指定 pi 入口（自动探测失败时用） */
   piBin?: string
   /** 最近使用的目录 */
@@ -630,8 +607,6 @@ export type MainPush =
   | { ch: 'widget'; payload: { key: string; lines?: string[] } }
   /** pi 版本 / 入口（启动时探测一次） */
   | { ch: 'pi-info'; payload: PiInfo }
-  /** 记忆数据变了（扩展写入了新记忆） */
-  | { ch: 'memory-changed'; payload: MemoryItem[] }
   /** pi 进程状态 / stderr / 错误 */
   | { ch: 'proc'; payload: { state: 'starting' | 'ready' | 'exited' | 'stderr' | 'error'; detail?: string; code?: number | null } }
   /**
@@ -752,16 +727,6 @@ export interface YanBridge {
    * 返回相对 cwd 的路径，目录带尾斜杠。
    */
   completePath(prefix: string): Promise<string[]>
-
-  /* 记忆 */
-  memoryList(): Promise<MemoryItem[]>
-  memoryAdd(text: string, kind: MemoryKind, topic?: string): Promise<MemoryItem[]>
-  memoryUpdate(id: string, patch: Partial<Pick<MemoryItem, 'text' | 'topic' | 'kind'>>): Promise<MemoryItem[]>
-  memoryRemove(id: string): Promise<MemoryItem[]>
-  memoryConfirm(id: string, ok: boolean): Promise<MemoryItem[]>
-
-  /** 只读身份（soul.md） */
-  readSoul(): Promise<{ name: string; selfRef: string; tone: string }>
 
   /* 附件 */
   /** 弹系统文件选择框，读成 base64（图片） */

@@ -16,7 +16,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
-import { YAN_DIR } from './memory'
+import { YAN_DIR } from './paths'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 

@@ -9,7 +9,7 @@
  *   npm run dist:check       上面两步一起
  *
  * 为什么开发态的 30 个场景不够：它们跑的是 `npx electron .`，
- * 读的是仓库里的 `resources/pi-runtime`。打包后 pi 与记忆扩展都改从
+ * 读的是仓库里的 `resources/pi-runtime`。打包后 pi 改从
  * `process.resourcesPath/` 找 —— 路径错了应用**能启动但连不上**，
  * 开发态测试全绿也照样复现不了。这个脚本就是专门补那个缝。
  */
@@ -70,7 +70,6 @@ console.log(C.dim(`  ${exePath}`))
 const must = [
   ['pi-runtime', join(unpacked, 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')],
   ['pi-runtime node_modules', join(unpacked, 'resources', 'pi-runtime', 'node_modules')],
-  ['记忆扩展', join(unpacked, 'resources', 'pi', 'yan-memory.ts')],
   ['app.asar', join(unpacked, 'resources', 'app.asar')]
 ]
 if (exeFromArg) {
@@ -79,7 +78,7 @@ if (exeFromArg) {
   for (const [label, p] of must) {
     if (!existsSync(p)) fail(`extraResources 缺件：${label}`, p)
   }
-  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / pi / app.asar）`)
+  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / app.asar）`)
 }
 
 /* ------------------------------------------------------------------
@@ -93,7 +92,7 @@ const dirs = {
   YAN_PI_DIR: join(sandbox, 'pi-agent')
 }
 for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true })
-writeFileSync(join(dirs.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ cwd: root }), 'utf8')
+writeFileSync(join(dirs.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }), 'utf8')
 console.log(C.dim(`  隔离目录 ${sandbox}`))
 
 /* ------------------------------------------------------------------
@@ -155,4 +154,4 @@ if (/✗/.test(body)) {
   console.error(`\n${C.err('✗ 打包验收失败')}`)
   process.exit(1)
 }
-console.log(`\n${C.ok('✓ 打包验收通过')} ${C.dim('内置 pi + 记忆扩展在安装目录里可用')}`)
+console.log(`\n${C.ok('✓ 打包验收通过')} ${C.dim('内置 pi 在安装目录里可用')}`)

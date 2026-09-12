@@ -52,38 +52,6 @@
   margin-bottom: var(--sp-5);
 }
 
-/* 记忆现状 */
-.empty-memory {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-5);
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-}
-.empty-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  padding: 3px var(--sp-2);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  color: var(--fg-dim);
-}
-.empty-chip.plain {
-  background: none;
-  border-color: var(--border-soft);
-}
-.empty-chip b {
-  color: var(--fg);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-.empty-sep {
-  color: var(--border-str);
-}
-
 /* 三条建议：把空白变成入口 */
 .empty-suggest {
   display: flex;

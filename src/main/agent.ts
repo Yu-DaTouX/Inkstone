@@ -117,8 +117,6 @@ function normalizeQueueMode(v: unknown): QueueMode | undefined {
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
   private push: Push
-  private memoryPath: string
-  private extensionPath: string
   private cwd: string
   private piBin?: string
 
@@ -160,15 +158,11 @@ export class AgentController extends EventEmitter {
   constructor(opts: {
     push: Push
     cwd: string
-    extensionPath: string
-    memoryPath: string
     piBin?: string
   }) {
     super()
     this.push = opts.push
     this.cwd = opts.cwd
-    this.extensionPath = opts.extensionPath
-    this.memoryPath = opts.memoryPath
     this.piBin = opts.piBin
   }
 
@@ -222,9 +216,6 @@ export class AgentController extends EventEmitter {
       cwd: this.cwd,
       piBin: this.piBin,
       args: [
-        // 显式加载砚的记忆扩展：不碰用户的 ~/.pi/agent/extensions/
-        '--extension',
-        this.extensionPath,
         // 只在测试隔离时接管会话目录。
         // 平时不传 —— 传了 pi 就不再按 cwd 建项目子目录，
         // 会把新会话平铺到根目录，与用户已有会话分居两处。
@@ -555,10 +546,6 @@ export class AgentController extends EventEmitter {
         call.endedAt = Date.now()
         this.pushTool(call)
 
-        // remember / forget 改了记忆文件 → 让界面刷新
-        if (call.name === 'remember' || call.name === 'forget') {
-          this.emit('memory-touched')
-        }
         // panel_todos 改了会话里的 custom entry → 任务清单要重读
         if (call.name === 'panel_todos') {
           void this.refreshTodos()

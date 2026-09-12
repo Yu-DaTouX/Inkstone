@@ -52,19 +52,12 @@
   ok(tabs.length >= 4, `有 ${tabs.length} 个 tab（含关闭）`)
 
   log('')
-  log('=== 4. 记忆在设置里（不在右栏）===')
-  // 切到「记忆」tab
+  log('=== 4. 记忆已移除 ===')
+  // 设置里不应再有「记忆」tab（记忆功能整体删掉了）
   const memTab = qa('.settings-tab').find((x) => /记忆|Memory/.test(x.textContent))
-  ok(!!memTab, '有「记忆」tab')
-  if (memTab) {
-    click(memTab)
-    await sleep(500)
-    const body = q('.settings-body')?.textContent ?? ''
-    log('  记忆页片段: ' + JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 70)))
-    ok(/身份|关于你|我的印象|Identity/.test(body), '记忆页有身份 / 关于你 / 我的印象 分区')
-  }
-  // 右栏现在没有记忆面板了（它变成了状态栏）
-  ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板（已搬进设置）')
+  ok(!memTab, '设置里没有「记忆」tab')
+  ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板')
+  ok(!q('.review'), '没有记忆审阅条')
 
   log('')
   log('=== 5. 外观 tab ===')

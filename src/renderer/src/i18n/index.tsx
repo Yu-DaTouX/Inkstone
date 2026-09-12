@@ -6,7 +6,7 @@ import enUS from './en-US.json'
 /**
  * i18n —— 严格按 docs/design/DESIGN.md §6。
  *
- * · 键名扁平 + 命名空间（rail.* / chat.* / mem.* …）
+ * · 键名扁平 + 命名空间（rail.* / chat.* / set.* …）
  * · 基准语言 zh-CN，类型从它推导 → 漏翻译**编译期**报错
  * · 回退链：当前语言 → en-US → key 原文（并 console.warn）
  * · `{name}` 占位符

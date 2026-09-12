@@ -1,10 +1,9 @@
 # electron-builder 配置
 #
-# 打包「砚 · Yan」。两件**生成物/静态资源**必须随应用分发，走 extraResources
+# 打包「砚 · Yan」。需要随应用分发的**生成物/静态资源**走 extraResources
 # （放在 <安装目录>/resources/ 下，即 process.resourcesPath）：
 #
 #   resources/pi-runtime  →  resources/pi-runtime   （20MB 内置 pi，vendor:pi 生成）
-#   resources/pi          →  resources/pi           （记忆扩展 yan-memory.ts）
 #
 # 主进程（src/main/**）只 import 'electron' 和 node: 内置模块，
 # 渲染层的第三方依赖被 Vite 打进 out/renderer/**。
@@ -44,9 +43,6 @@ extraResources:
     filter: ['**/*']
   - from: resources/pi-runtime/package.json
     to: pi-runtime/package.json
-  - from: resources/pi
-    to: pi
-    filter: ['**/*']
 
 asar: true
 compression: normal

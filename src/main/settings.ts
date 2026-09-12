@@ -7,6 +7,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
+import { app } from 'electron'
 import {
   RAIL_MAX,
   RAIL_MIN,
@@ -19,18 +20,44 @@ import {
   type AppSettings,
   type UserProfile
 } from '../shared/ipc'
-import { YAN_DIR } from './memory'
+import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 
 // 与记忆共用目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
 
+/**
+ * 默认界面语言**跟随系统**（用户要求）。
+ *
+ * 优先用 Electron 的 `app.getLocale()` —— 它是系统**界面**语言；
+ * 拿不到（还没 ready / 非 Electron）再退到 ICU（`Intl...locale`），
+ * 最后才是中文。
+ *
+ * ⚠️ 只在 desktop.json **没有合法 lang** 时用；用户手动选过就听用户的。
+ * 注意 `app` 要 ready 后才准，所以这个函数只能懒调（不能在模块顶层跑）。
+ */
+const LANGS = ['zh-CN', 'en-US'] as const
+function detectLang(): (typeof LANGS)[number] {
+  try {
+    const l = (app.getLocale?.() || '').toLowerCase()
+    if (l) return l.startsWith('zh') ? 'zh-CN' : 'en-US'
+  } catch {
+    /* 还没 ready */
+  }
+  try {
+    const l = (Intl.DateTimeFormat().resolvedOptions().locale || '').toLowerCase()
+    return l.startsWith('zh') ? 'zh-CN' : 'en-US'
+  } catch {
+    return 'zh-CN'
+  }
+}
+
 const DEFAULTS: AppSettings = {
   cwd: homedir(),
   theme: 'dark',
+  // 占位；真正生效的是 getSettings 里的 detectLang()（见那里）
   lang: 'zh-CN',
-  memoryOrder: ['soul', 'about', 'impressions', 'people', 'projects', 'status'],
   recentCwds: [],
   rightPanelOpen: true,
   alwaysOnTop: false,
@@ -125,9 +152,8 @@ export async function getSettings(): Promise<AppSettings> {
     const raw = await readFile(FILE, 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     cached = { ...DEFAULTS, ...parsed }
-    if (!Array.isArray(cached.memoryOrder) || cached.memoryOrder.length === 0) {
-      cached.memoryOrder = [...DEFAULTS.memoryOrder]
-    }
+    // 语言：文件里没有合法值就跟随系统（用户手动选过就听用户的）
+    if (!LANGS.includes(cached.lang as (typeof LANGS)[number])) cached.lang = detectLang()
     if (!Array.isArray(cached.recentCwds)) cached.recentCwds = []
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
@@ -144,6 +170,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolDetail = cached.toolDetail === true
   } catch {
     cached = { ...DEFAULTS }
+    cached.lang = detectLang()
   }
   return cached
 }

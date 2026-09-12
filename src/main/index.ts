@@ -11,7 +11,6 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
 import { cachedTitles } from './title'
-import { MemoryStore, YAN_DIR, readSoul } from './memory'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
@@ -63,20 +62,6 @@ if (process.env.YAN_USER_DATA) {
    ------------------------------------------------------------------ */
 let win: BrowserWindow | null = null
 let agent: AgentController | null = null
-const memory = new MemoryStore()
-
-/** 打包后扩展在 resources/ 下；开发期在仓库的 resources/pi/ 下 */
-function extensionPath(): string {
-  const candidates = [
-    join(process.resourcesPath ?? '', 'pi', 'yan-memory.ts'),
-    join(__dirname_, '../../resources/pi/yan-memory.ts'),
-    join(app.getAppPath(), 'resources/pi/yan-memory.ts')
-  ]
-  for (const c of candidates) {
-    if (c && existsSync(c)) return c
-  }
-  return candidates[1]
-}
 
 function push(msg: MainPush): void {
   if (!win || win.isDestroyed()) return
@@ -84,23 +69,12 @@ function push(msg: MainPush): void {
 }
 
 /**
- * 退出前的清理。
- *
- * 两件事都不能省：
- *   1. 等记忆写盘 —— persist() 是异步链在 writeQueue 上的，
- *      不等的话「点完确认立刻关窗口」会丢改动。
- *   2. 收好 pi 子进程 —— 否则会留下孤儿 node 进程。
+ * 退出前的清理：收好 pi 子进程 —— 否则会留下孤儿 node 进程。
  */
 let shuttingDown = false
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
-  try {
-    await memory.flush()
-  } catch {
-    /* 写不了就算了，不能因为一个记忆文件卡住退出 */
-  }
-  memory.close()
   try {
     await agent?.stop()
   } catch {
@@ -120,21 +94,10 @@ async function startAgent(): Promise<{ ok: boolean; error?: string }> {
   agent = new AgentController({
     push,
     cwd: settings.cwd,
-    extensionPath: extensionPath(),
-    memoryPath: join(YAN_DIR, 'memory.json'),
     piBin: settings.piBin
   })
 
-  // 工具改了记忆文件 → 让界面同步
-  agent.on('memory-touched', () => {
-    void memory.load().then((items) => push({ ch: 'memory-changed', payload: items }))
-  })
-
-  const res = await agent.start()
-  if (res.ok) {
-    await memory.load()
-  }
-  return res
+  return agent.start()
 }
 
 /* ------------------------------------------------------------------
@@ -304,22 +267,6 @@ function registerIpc(): void {
     const st = await getSettings()
     return completePath(st.cwd, String(prefix ?? ''))
   })
-
-  /* ---- 记忆 ---- */
-  handle('yan:memoryList', async () => {
-    await memory.load()
-    memory.ensureWatch()
-    return memory.list()
-  })
-  handle('yan:memoryAdd', async (text: string, kind: 'fact' | 'guess', topic?: string) =>
-    memory.add({ text, kind, topic })
-  )
-  handle('yan:memoryUpdate', async (id: string, patch: Record<string, unknown>) =>
-    memory.update(id, patch as never)
-  )
-  handle('yan:memoryRemove', async (id: string) => memory.remove(id))
-  handle('yan:memoryConfirm', async (id: string, ok: boolean) => memory.confirm(id, ok))
-  handle('yan:readSoul', async () => readSoul())
 
   /* ---- 设置 ---- */  handle('yan:getSettings', async () => {
     const s = await getSettings()
@@ -802,11 +749,6 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   registerIpc()
   createWindow()
-
-  // 记忆目录可能一开始不存在 —— 加载后挂上 watcher
-  await memory.load()
-  memory.watch((items) => push({ ch: 'memory-changed', payload: items }))
-  memory.ensureWatch()
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」
   const started = await startAgent()

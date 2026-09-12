@@ -13,7 +13,6 @@ import type {
   Attachment,
   ExtensionUiRequest,
   MainPush,
-  MemoryItem,
   ModelInfo,
   PiInfo,
   QueueMode,
@@ -50,41 +49,6 @@ function readCommandUse(): Record<string, number> {
 }
 
 /* ==================================================================
-   记忆分组 —— 把扁平的记忆条目映射到右栏的分区
-   ================================================================== */
-
-export interface MemoryGroup {
-  topic: 'about' | 'people' | 'projects'
-  facts: MemoryItem[]
-  guesses: MemoryItem[]
-}
-
-function groupMemory(items: MemoryItem[]): {
-  about: MemoryItem[]
-  impressions: MemoryItem[]
-  people: MemoryItem[]
-  projects: MemoryItem[]
-} {
-  const about: MemoryItem[] = []
-  const impressions: MemoryItem[] = []
-  const people: MemoryItem[] = []
-  const projects: MemoryItem[] = []
-
-  for (const m of items) {
-    // 未确认的一律进「我的印象」—— 这是认识论分区，不是分类分区
-    if (m.kind === 'guess') {
-      impressions.push(m)
-      continue
-    }
-    if (m.topic === 'people') people.push(m)
-    else if (m.topic === 'projects') projects.push(m)
-    else about.push(m)
-  }
-
-  return { about, impressions, people, projects }
-}
-
-/* ==================================================================
    Store
    ================================================================== */
 
@@ -118,11 +82,6 @@ interface Store {
   todos: SessionTodo[]
   /** 全部任务清单快照（含最新）——「历史任务」模块用 */
   todoHistory: SessionTodoSnapshot[]
-
-  /* 记忆 */
-  memory: MemoryItem[]
-  soul: { name: string; selfRef: string; tone: string }
-  groups: ReturnType<typeof groupMemory>
 
   /* 模型 / 命令 */
   models: ModelInfo[]
@@ -205,7 +164,6 @@ interface Store {
   bootstrap: () => Promise<void>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
-  refreshMemory: () => Promise<void>
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
   /**
@@ -289,11 +247,6 @@ interface Store {
   setToolHeight: (id: string, px: number) => Promise<void>
   /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
   loadZoom: () => Promise<void>
-
-  confirmMemory: (id: string, ok: boolean) => Promise<void>
-  removeMemory: (id: string) => Promise<void>
-  editMemory: (id: string, patch: { text?: string; topic?: string; kind?: 'fact' | 'guess' }) => Promise<void>
-  addMemory: (text: string, kind: 'fact' | 'guess', topic?: string) => Promise<void>
 
   addAttachments: (a: Attachment[]) => void
   removeAttachment: (id: string) => void
@@ -397,10 +350,6 @@ export const useStore = create<Store>((set, get) => ({
   todos: [],
   todoHistory: [],
 
-  memory: [],
-  soul: { name: '砚', selfRef: '我', tone: '直说，不绕，不奉承' },
-  groups: { about: [], impressions: [], people: [], projects: [] },
-
   models: [],
   thinkingLevels: [],
   commands: [],
@@ -409,7 +358,7 @@ export const useStore = create<Store>((set, get) => ({
 
   settings: null,
   settingsOpen: false,
-  settingsTab: 'memory',
+  settingsTab: 'appearance',
   /**
    * 左栏是否展开（持久化到 localStorage）。
    *
@@ -448,11 +397,9 @@ export const useStore = create<Store>((set, get) => ({
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, soul, memory, sessions, session, messages, stats, todos, status, titles, pi] =
+    const [settings, sessions, session, messages, stats, todos, status, titles, pi] =
       await Promise.all([
         api.getSettings(),
-        api.readSoul(),
-        api.memoryList(),
         api.listSessions(),
         api.getState(),
         api.getMessages(),
@@ -469,9 +416,6 @@ export const useStore = create<Store>((set, get) => ({
 
     set({
       settings,
-      soul,
-      memory,
-      groups: groupMemory(memory),
       sessions,
       session: session ?? get().session,
       messages: messages.length ? messages : get().messages,
@@ -619,9 +563,6 @@ export const useStore = create<Store>((set, get) => ({
       case 'editor-text':
         set({ editorInject: m.payload })
         break
-      case 'memory-changed':
-        set({ memory: m.payload, groups: groupMemory(m.payload) })
-        break
       case 'proc':
         if (m.payload.state === 'ready') set({ conn: 'ready', connDetail: '' })
         else if (m.payload.state === 'starting') set({ conn: 'starting' })
@@ -648,11 +589,6 @@ export const useStore = create<Store>((set, get) => ({
 
   refreshSessions: async () => {
     set({ sessions: await window.yan.listSessions() })
-  },
-
-  refreshMemory: async () => {
-    const items = await window.yan.memoryList()
-    set({ memory: items, groups: groupMemory(items) })
   },
 
   reloadModels: async () => {
@@ -1016,28 +952,6 @@ export const useStore = create<Store>((set, get) => ({
     set({ settings: await window.yan.patchSettings({ toolOrder: next, toolHidden: hidden } as Partial<AppSettings>) })
   },
 
-  /* --------------------------------------------------------------- 记忆 */
-
-  confirmMemory: async (id, ok) => {
-    const items = await window.yan.memoryConfirm(id, ok)
-    set({ memory: items, groups: groupMemory(items) })
-  },
-
-  removeMemory: async (id) => {
-    const items = await window.yan.memoryRemove(id)
-    set({ memory: items, groups: groupMemory(items) })
-  },
-
-  editMemory: async (id, patch) => {
-    const items = await window.yan.memoryUpdate(id, patch)
-    set({ memory: items, groups: groupMemory(items) })
-  },
-
-  addMemory: async (text, kind, topic) => {
-    const items = await window.yan.memoryAdd(text, kind, topic)
-    set({ memory: items, groups: groupMemory(items) })
-  },
-
   /* --------------------------------------------------------------- 附件 */
 
   addAttachments: (a) => {
@@ -1103,7 +1017,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   openSettings: (tab) => {
-    set({ settingsOpen: true, settingsTab: tab ?? 'memory' })
+    set({ settingsOpen: true, settingsTab: tab ?? 'appearance' })
   },
   closeSettings: () => set({ settingsOpen: false }),
   /**
@@ -1153,10 +1067,3 @@ export const useStore = create<Store>((set, get) => ({
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
 }))
-
-export { groupMemory }
-
-/** 供组件使用的记忆分组便捷选择器 */
-export function useMemoryGroups(): ReturnType<typeof groupMemory> {
-  return useStore((s) => s.groups)
-}
