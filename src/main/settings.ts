@@ -1,5 +1,5 @@
 /**
- * 桌面端专属设置（窗口尺寸、主题、语言、cwd、记忆排序）。
+ * 桌面端专属设置（窗口尺寸、主题、语言、cwd、栏宽/分区布局）。
  *
  * 刻意**不写 pi 的 settings.json** —— 那是 TUI 和扩展的领地，
  * 桌面端改它会污染用户的 pi 配置。
@@ -23,7 +23,7 @@ import {
 import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 
-// 与记忆共用目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
+// 数据目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
 

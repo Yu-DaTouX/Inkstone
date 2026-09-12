@@ -782,7 +782,7 @@ app.on('window-all-closed', () => {
   })
 })
 
-// 退出前收好子进程与未写盘的记忆，别留孤儿 pi、也别丢刚确认的记忆
+// 退出前收好 pi 子进程，别留孤儿 pi
 app.on('before-quit', (e) => {
   if (shuttingDown) return
   e.preventDefault()
