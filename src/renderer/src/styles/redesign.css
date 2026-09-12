@@ -4719,9 +4719,25 @@ body.resizing .workspace {
   font-style: italic;
 }
 .reason-body {
-  max-height: 260px;
-  overflow: auto;
-  padding: 2px var(--sp-2) var(--sp-2) var(--sp-3);
+  /*
+   * 固定大小的「推理窗口」（用户要求：约占窗口 1/4，信息在里面滚动）。
+   * 用 height 而不是 max-height —— max-height 会随内容长高，
+   * 把下面的回答一路顶走；固定高度后推理只在窗口内滚。
+   *
+   * min/max 只是极端窗口尺寸下的护栏（很矮的窗口别只剩一条缝，
+   * 很高的窗口别让旁白占掉半屏）。
+   */
+  height: 25vh;
+  min-height: 150px;
+  max-height: 420px;
+  overflow-y: auto;
+  /* 滚动条一出现不挤窄内容（否则会冒横向滚动条） */
+  scrollbar-gutter: stable;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  /* 让「窗口」成立：一点点底色 + 细描边，与正文区分开 */
+  background: var(--bg-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   line-height: var(--lh-base);

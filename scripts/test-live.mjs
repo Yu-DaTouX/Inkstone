@@ -174,6 +174,10 @@ function seedSessions(destRoot) {
   writeTodoSession(destDir, 'yan-todo-fixture')
   n++
 
+  // 合成：带分支点的会话（确定性 —— 不能指望真实会话里恰好有分支）
+  writeBranchSession(destDir, 'yan-branch-fixture')
+  n++
+
   // 合成：20 条消息的普通会话
   writePlainSession(destDir, 'yan-plain-fixture', 20)
   n++
@@ -232,6 +236,57 @@ function writeTodoSession(dir, idBase) {
     }
   ]
 
+  writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+}
+
+/**
+ * 合成：带分支点的会话。
+ *
+ * 为什么要合成：分支树场景原来只靠「从真实会话里拷的那几份」，
+ * 而真实数据会漂 —— 最近 3 个会话恰好都没分支时，场景就假失败
+ * （实测踩过：有分支的那个排第 6）。合成一份就与用户数据无关了。
+ *
+ * b1 有两个孩子（b2 / b4）→ 那就是一个分支点，两条岔路。
+ */
+function writeBranchSession(dir, idBase) {
+  const id = `${idBase}-${Date.now().toString(36)}`
+  const file = join(dir, `2026-01-03T00-00-00-000Z_${id}.jsonl`)
+  const cwd = homedir()
+  const m = (role, text, i, parentId) => ({
+    type: 'message',
+    id: 'b' + i,
+    parentId,
+    timestamp: TS(300 - i),
+    message: {
+      role,
+      content: [{ type: 'text', text }],
+      ...(role === 'assistant'
+        ? {
+            usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            stopReason: 'stop'
+          }
+        : {})
+    }
+  })
+  const lines = [
+    { type: 'session', version: 3, id, timestamp: TS(300), cwd },
+    {
+      type: 'model_change',
+      id: 'mc0',
+      parentId: null,
+      timestamp: TS(300),
+      provider: 'commandcode',
+      modelId: 'deepseek/deepseek-v4.1-flash'
+    },
+    m('user', 'YAN-BRANCH fixture：从这里开始分叉', 0, 'mc0'),
+    m('assistant', '好，我先看看整体结构。', 1, 'b0'),
+    // 岔路 A
+    m('user', '走 A 方案：自己写 JSONL 分帧', 2, 'b1'),
+    m('assistant', 'A 方案：按行切、逐字增量拼。', 3, 'b2'),
+    // 岔路 B（与 b2 共用父 b1 → b1 有 2 个孩子 = 分支点）
+    m('user', '走 B 方案：直接用现有协议', 4, 'b1'),
+    m('assistant', 'B 方案：复用 RPC 事件流。', 5, 'b4')
+  ]
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
@@ -417,7 +472,7 @@ async function main() {
     const seeded = seedSessions(sessions)
 
     console.log(`隔离目录：${sandboxRoot}`)
-    console.log(`  fixture：从真实会话里拷了 ${seeded} 份（只读，原件不受影响）`)
+    console.log(`  fixture：${seeded} 份（真实会话只读拷贝 + 合成；原件不受影响）`)
     console.log('  （不碰真实的 sessions / memory.json / localStorage）')
     console.log('  （也不碰真实的 ~/.pi/agent/auth.json —— 里面是用户的密钥）')
   } else {

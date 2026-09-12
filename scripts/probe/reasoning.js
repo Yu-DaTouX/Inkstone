@@ -17,24 +17,46 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
 
-  const THINK = '先看题目：狼会吃羊，羊会吃白菜。' + '关键是把羊先带过去，再把羊带回来。'.repeat(4)
+  const THINK =
+    '先看题目：狼会吃羊，羊会吃白菜。' +
+    '关键是把羊先带过去，再把羊带回来。'.repeat(80)
 
   log('=== 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位 ===')
 
-  /* 等应用起来（store 就绪）—— 不假设起始状态 */
-  for (let i = 0; i < 40 && !store.getState().messages; i++) await sleep(250)
+  /*
+   * 等应用真的就绪再注入。
+   *
+   * ⚠️ 两个坑都踩过（见 HANDOFF §8.13）：
+   *   ① `messages` 初始就是 `[]`（真值），拿它当「就绪」会立刻穿过；
+   *   ② 真实会话的 `sync` 推送会**覆盖**我们注入的假数据 ——
+   *      所以注入要能重试，直到胶囊真的出现（不能只注入一次就断言）。
+   */
+  let conn = store.getState().conn
+  for (let i = 0; i < 40 && conn !== 'ready'; i++) {
+    await sleep(250)
+    conn = store.getState().conn
+  }
+  await sleep(1200) // 让首屏真实 sync 先落下来
 
-  /* ---- 1. 注入一条**正在推理**的助手消息 ---- */
-  store.getState().applyPush({
-    ch: 'sync',
-    payload: [
-      { id: 'r-user', role: 'user', text: '帮我解一下过河题' },
-      { id: 'r-a1', role: 'assistant', text: '', thinking: THINK, thinkingLive: true }
-    ]
-  })
-  await sleep(600)
+  const injectThinking = () =>
+    store.getState().applyPush({
+      ch: 'sync',
+      payload: [
+        { id: 'r-user', role: 'user', text: '帮我解一下过河题' },
+        { id: 'r-a1', role: 'assistant', text: '', thinking: THINK, thinkingLive: true }
+      ]
+    })
 
-  const cap = q('[data-testid="reasoning"]')
+  let cap = null
+  for (let i = 0; i < 12; i++) {
+    injectThinking()
+    await sleep(350)
+    cap = q('[data-testid="reasoning"]')
+    if (cap) break
+  }
+  await sleep(400)
+  cap = q('[data-testid="reasoning"]')
+
   ok(!!cap, '推理胶囊被渲染了（这是那个 bug 的直接断言）')
   if (!cap) return out.join('\n')
 
@@ -51,6 +73,32 @@
   }
   log(`  逐字进度：${shownLen} / ${THINK.length}`)
   ok(shownLen >= THINK.length, '推理文本逐字追上（不是一次性贴上来）')
+
+  /* ---- 1b. 固定大小的窗口 + 内容在里面滚动（用户要求） ---- */
+  const body = q('[data-testid="reasoning-body"]')
+  const r1 = body.getBoundingClientRect()
+  const vh = window.innerHeight
+  log(`  推理窗口 ${Math.round(r1.height)}px / 视口 ${vh}px（${Math.round((r1.height / vh) * 100)}%）`)
+  ok(r1.height >= 149 && r1.height <= 421, '窗口高度在护栏内（150~420）')
+  ok(!(vh >= 700) || Math.abs(r1.height - vh * 0.25) <= Math.max(24, vh * 0.05), '窗口高度 ≈ 视口 1/4')
+  ok(
+    body.scrollHeight > body.clientHeight + 8,
+    `内容在窗口内溢出（scrollHeight ${body.scrollHeight} > clientHeight ${body.clientHeight}）`
+  )
+  ok(
+    body.scrollHeight - body.scrollTop - body.clientHeight < 24,
+    `自动跟随最新（离开底部 ${body.scrollHeight - body.scrollTop - body.clientHeight}px）`
+  )
+
+  /* 内容变多时窗口尺寸不能变（这就是「固定大小」的意思） */
+  const h1 = body.getBoundingClientRect().height
+  store.getState().applyPush({
+    ch: 'msg-update',
+    payload: { id: 'r-a1', patch: { thinking: THINK + '（继续推演）'.repeat(300) } }
+  })
+  await sleep(700)
+  const body2 = q('[data-testid="reasoning-body"]')
+  ok(Math.abs(body2.getBoundingClientRect().height - h1) < 2, '内容变多时窗口高度不变（固定大小）')
 
   /* ---- 2. 推理结束 → 自动折叠，但保留开关 ---- */
   store.getState().applyPush({

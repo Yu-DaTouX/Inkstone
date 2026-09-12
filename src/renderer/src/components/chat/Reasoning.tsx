@@ -41,6 +41,30 @@ export function ReasoningCapsule({
   const [manual, setManual] = useState<boolean | null>(null)
   /** 逐字显示用的文本（逐步追上 text） */
   const shown = useTypewriter(text, !!live)
+  /* 展开态：用户手动覆盖优先，否则跟随 live（注意要在下面的 effect 之前算好，
+     否则 effect 依赖的 `open` 还在 TDZ —— 实测直接整块渲染不出来） */
+  const open = manual ?? !!live
+
+  /*
+   * 固定大小的推理窗口里要自动跟随最新（用户要求「信息在里面滚动显示」）。
+   * 但不能无脑 scrollTop=scrollHeight —— 用户往上翻想看前面在想什么时，
+   * 每一次新字到达都会把他拽回底部。所以记一个「是否粘着底部」：
+   * 只有本来就在底部（或用户自己滑回底部）才跟随。
+   */
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const stickRef = useRef(true)
+
+  const onBodyScroll = (): void => {
+    const el = bodyRef.current
+    if (!el) return
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el || !open) return
+    if (stickRef.current) el.scrollTop = el.scrollHeight
+  }, [shown, open])
 
   // 推理结束 → 自动折叠（除非用户在这期间手动开过）
   const wrappedRef = useRef(false)
@@ -58,7 +82,6 @@ export function ReasoningCapsule({
 
   if (!text.trim()) return null
 
-  const open = manual ?? !!live
   const secs = ms ? Math.max(1, Math.round(ms / 1000)) : null
 
   /**
@@ -73,7 +96,11 @@ export function ReasoningCapsule({
     <div className={`reason ${open ? 'open' : ''} ${live ? 'live' : ''}`} data-testid="reasoning">
       <button
         className="reason-head"
-        onClick={() => setManual(!open)}
+        onClick={() => {
+          // 重新打开时回到粘底（用户想看的是最新进度）
+          if (!open) stickRef.current = true
+          setManual(!open)
+        }}
         aria-expanded={open}
         data-testid="reasoning-toggle"
       >
@@ -95,7 +122,12 @@ export function ReasoningCapsule({
         {live ? <span className="cursor cursor-inline" /> : null}
       </button>
       {open ? (
-        <div className="reason-body" data-testid="reasoning-body">
+        <div
+          className="reason-body"
+          data-testid="reasoning-body"
+          ref={bodyRef}
+          onScroll={onBodyScroll}
+        >
           {shown}
           {live ? <span className="cursor cursor-inline" /> : null}
         </div>
