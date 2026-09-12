@@ -212,8 +212,8 @@
     else bad('收起后没有展开入口（会锁死）')
     const railW = document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? 0
     out.push('  收起后 rail-slot 宽 = ' + railW.toFixed(1))
-    if (railW <= 12) ok('收成一条细缝（≤12px，不再是 40px 的条）')
-    else bad('收起后太宽：' + railW)
+    if (railW >= 30 && railW <= 40) ok('收起槽 ' + railW.toFixed(1) + 'px（容得下入口按钮，且不是 0 宽）')
+    else bad('收起槽宽度不对：' + railW)
     click(unhide); await sleep(600)
     if (store.getState().railPinned) ok('点它 → 左栏展开')
     else bad('展不开')

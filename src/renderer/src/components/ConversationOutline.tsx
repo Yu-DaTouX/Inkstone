@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
+import { groupIntoTurns } from '../../../shared/turns'
 
 /**
  * 对话导航轨 —— 消息流左侧那一条。
@@ -32,25 +33,98 @@ import { useStore } from '../state/store'
 export function ConversationOutline() {
   const t = useT()
   const messages = useStore((s) => s.messages)
-  const scrollProgress = useStore((s) => s.scrollProgress)
   const scrollToTurn = useStore((s) => s.scrollToTurn)
+  const streamingId = useStore((s) => (s.session?.isStreaming ? s.messages[s.messages.length - 1]?.id : undefined))
   const [hover, setHover] = useState<number | null>(null)
 
-  /** 每一轮：用户消息 + 紧接着的助手回复（用来做预览摘要） */
+  /**
+   * 每一轮：用**和滚动跳转同一个分组函数**（groupIntoTurns）算出来。
+   *
+   * ⚠️ 这里以前是自己从 messages 里数 `role === 'user'` 得到的数组。
+   *    两者目前数量一致，但那是**巧合**（都等于用户消息数）——
+   *    只要分组逻辑一变（例如把连续用户消息合并成一轮、或把 bash 算进去），
+   *    导航轨的下标就会与 scrollToTurn 的下标错位，表现为
+   *    「点第 N 格跳到第 N-1 轮」。两套口径必须只有一个真源。
+   */
   const turns = useMemo(() => {
-    const out: { user: string; assistant: string; msgId: string; index: number }[] = []
-    messages.forEach((m, i) => {
-      if (m.role !== 'user') return
-      const next = messages[i + 1]
-      out.push({
-        user: m.text,
-        assistant: next?.role === 'assistant' ? next.text : '',
-        msgId: m.id,
+    const all = groupIntoTurns(messages, streamingId)
+    return all
+      .filter((x) => x.kind === 'user')
+      .map((x, i) => ({
+        user: x.msg.text,
+        assistant: assistantTextAfter(all, all.indexOf(x)),
+        msgId: x.id,
         index: i
+      }))
+  }, [messages, streamingId])
+
+  /**
+   * 当前高亮哪一格。
+   *
+   * ⚠️ 以前是 `round(scrollProgress * (n-1))` —— 用滚动百分比**线性**估算轮次。
+   *    但每轮高度差异很大（一句话 vs 一段代码），线性估算必然偏，
+   *    用户看到的就是「我点第 5 格，标记却跑到第 4 格」（定位不准）。
+   *    现在按**真实几何**算：找到顶边在视口内/之上的最接近的那一轮。
+   */
+  const [active, setActive] = useState(0)
+  /** 点击后钉住的下标（因为最后几格滚不动，靠钉住才能给出正确反馈） */
+  const pinned = useRef<number | null>(null)
+  /** 我们自己发起的滚动在多久内不算「用户自己滚」 */
+  const programmaticAt = useRef(0)
+
+  const activeFromGeometry = (): number => {
+    const box = document.querySelector('.stream')
+    if (!box) return 0
+    const boxTop = box.getBoundingClientRect().top
+    /*
+     * 拿 DOM 里真实存在的回合（虚拟化时只有可见的那几个）。
+     * 用 data-turn-id 匹配到「第几个用户回合」：
+     *   回合 id 就是用户消息 id，而导航轨的每一格也存了 msgId。
+     */
+    let best = 0
+    let bestTop = -Infinity
+    for (const el of document.querySelectorAll<HTMLElement>('[data-turn-id]')) {
+      const id = el.dataset.turnId
+      const idx = turns.findIndex((x) => x.msgId === id)
+      if (idx < 0) continue
+      const top = el.getBoundingClientRect().top - boxTop
+      // 顶边已经越过视口顶部的那一轮里，最靠下的那个 = 当前在读的
+      if (top <= 8 && top > bestTop) {
+        bestTop = top
+        best = idx
+      }
+    }
+    return best
+  }
+
+  /* 滚动时按几何重算（rAF 节流）。自己发起的滚动在 300ms 内不解除钉住 */
+  useEffect(() => {
+    const box = document.querySelector('.stream')
+    if (!box) return
+    let raf = 0
+    const onScroll = (): void => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        if (Date.now() - programmaticAt.current < 300) return
+        pinned.current = null
+        setActive(activeFromGeometry())
       })
-    })
-    return out
-  }, [messages])
+    }
+    box.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      box.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, turns.map((x) => x.msgId).join(',')])
+
+  /** 切会话 / 首次渲染时也同步一次 */
+  useEffect(() => {
+    if (pinned.current !== null) return
+    setActive(activeFromGeometry())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length])
 
   const track = useRef<HTMLDivElement>(null)
   /** 被指的那一格在轨道内的相对位置（0~1），预览卡按它定位 */
@@ -76,9 +150,6 @@ export function ConversationOutline() {
   // 轮数太少时不显示（2-3 格既没用又占地方）
   if (turns.length < 3) return null
 
-  // 当前读到第几轮：用滚动进度估算
-  const active = Math.min(turns.length - 1, Math.max(0, Math.round(scrollProgress * (turns.length - 1))))
-
   return (
     <div className="outline" data-testid="outline" role="navigation" aria-label={t('outline.label')}>
       <div className="outline-track" ref={track}>
@@ -93,7 +164,20 @@ export function ConversationOutline() {
             onMouseOut={() => setHover((h) => (h === i ? null : h))}
             onFocus={() => setHover(i)}
             onBlur={() => setHover((h) => (h === i ? null : h))}
-            onClick={() => scrollToTurn(i)}
+            onClick={() => {
+              /*
+               * 点击时**钉住**高亮。
+               * 为什么需要：最后几格的目标回合已经很靠底，滚动被夹在
+               * 最大 scrollTop 上（内容不够了）—— 滚动几乎不动，
+               * 几何重算会把高亮留在原来那格，用户看到的就是
+               * 「点了第 10 格，标记还在第 9 格」（他报的「跳到上一个」）。
+               * 钉住之后标记跟着点击走，用户至少知道自己的操作生效了。
+               */
+              pinned.current = i
+              programmaticAt.current = Date.now()
+              setActive(i)
+              scrollToTurn(i)
+            }}
             data-testid="outline-tick"
             aria-label={t('outline.tick', { n: i + 1 })}
           >
@@ -112,6 +196,18 @@ export function ConversationOutline() {
       ) : null}
     </div>
   )
+}
+
+/**
+ * 取某一轮后面的助手回复正文（用于预览摘要）。
+ * 找不到就回空 —— 用户刚发完还没回答时就是这样。
+ */
+function assistantTextAfter(all: ReturnType<typeof groupIntoTurns>, userIdx: number): string {
+  const next = all[userIdx + 1]
+  if (!next || next.kind !== 'assistant') return ''
+  /* assistant 回合把正文拆成了 response（回复）与 commentary（解说），预览要的是回复 */
+  /* response 是单个 TurnText（不是数组）—— 多段回复在分组时已拼成一段 */
+  return next.response?.text ?? ''
 }
 
 /**

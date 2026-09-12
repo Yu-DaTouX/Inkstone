@@ -145,8 +145,23 @@
     out.push('  极限左拖后 railPinned=' + store.getState().railPinned + '  列宽=' + slotAfter.toFixed(1) + '（之前 ' + wasPinned + '）')
     if (collapsed) ok('拖到过窄 → 直接收起（不是停在最小宽）')
     else bad('拖到过窄没收起，railPinned=' + store.getState().railPinned)
-    if (slotAfter <= 12) ok('收起后只剩一条细缝')
-    else bad('收起后仍占 ' + slotAfter.toFixed(1) + 'px')
+    /*
+     * 「隐藏条」的判据不是宽度多小，而是**没有可见的条**：
+     * 收起槽是透明、无边框的（宽度 38 是为了让展开按钮与展开态对齐）。
+     * 以前这里断言 ≤12px —— 那是上一版的形态，会让后来的人以为
+     * 「越窄越好」，而窄到 8px 时按钮只能错位（用户报过不对齐）。
+     */
+    const slotEl = document.querySelector('.rail-slot')
+    const railEl = document.querySelector('.rail')
+    const slotBg = slotEl ? getComputedStyle(slotEl).backgroundColor : '?'
+    const railBg = railEl ? getComputedStyle(railEl).backgroundColor : '?'
+    const railBorder = railEl ? getComputedStyle(railEl).borderRightWidth : '?'
+    out.push('  收起槽: 宽=' + slotAfter.toFixed(1) + ' slot背景=' + slotBg + ' rail背景=' + railBg + ' rail右边框=' + railBorder)
+    const transparent = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
+    if (transparent(railBg) && (railBorder === '0px' || railBorder === '0')) ok('收起后没有可见的条（背景透明 + 无边框）')
+    else bad('收起后仍能看到条：bg=' + railBg + ' border=' + railBorder)
+    if (slotAfter <= 40) ok('收起槽很窄（' + slotAfter.toFixed(1) + 'px，只够放展开按钮）')
+    else bad('收起后太宽：' + slotAfter.toFixed(1))
 
     // 展开回来，并复位两个宽度，别把状态留给后面的场景
     store.getState().setRailPinned(true)

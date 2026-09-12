@@ -158,9 +158,37 @@ export function Composer() {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 34), 240)}px`
-  }, [value])
+    /*
+     * ⚠️ 这里曾经一句写死了：
+     *
+     *     el.style.height = `${min(max(scrollHeight,34),240)}px`
+     *
+     * 它每次 value 变化都执行 —— 于是**长文模式下拉出的高度被冲掉**：
+     * 在长文模式里按回车（value 变了）→ 高度被改成「内容高」→
+     * 输入框肉眼可见地变小（用户报的 bug）。
+     *
+     * 现在：tall > 0（长文模式/手动拖过）时，高度是**下限**而不是结果 ——
+     * 内容更多可以长高，但不会缩回去。
+     */
+    const need = Math.min(Math.max(el.scrollHeight, 34), 240)
+    const h = tall > 0 ? Math.max(tall, need) : need
+    el.style.height = `${h}px`
+    el.style.maxHeight = tall > 0 ? `${Math.max(tall, 240)}px` : ''
+
+    /*
+     * 超过三行就**自动进入长文模式**（用户要求）。
+     * 判据用真实行高而不是数换行符 —— 一行很长的文字会被自动折行，
+     * 那也是「三行」。所以量 scrollHeight 与 lineHeight 的比。
+     * 只自动**进入**，不自动退出：编辑到一半高度自己收回去很难受。
+     */
+    if (expanded) return
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || 20
+    const pad = 16
+    if (el.scrollHeight > lh * 3 + pad) {
+      setExpanded(true)
+      setTall(TALL_H)
+    }
+  }, [value, tall, expanded])
 
   const disabled = conn !== 'ready'
 
@@ -549,8 +577,11 @@ export function Composer() {
           data-testid="composer"
           value={value}
           disabled={disabled}
-          /* 拖出来的高度优先；否则交给 CSS 的 max-height */
-          style={tall ? { height: tall, maxHeight: tall } : undefined}
+          /*
+           * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
+           * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
+           * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
+           */
           placeholder={
             disabled
               ? t('conn.starting')

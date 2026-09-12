@@ -23,6 +23,7 @@ import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { generateTitle } from './title'
 import type {
   BashRun,
+  CustomEntry,
   ForkPoint,
   MainPush,
   ModelInfo,
@@ -32,7 +33,7 @@ import type {
   SessionState,
   SessionStats,
   SessionTodo,
-  CustomEntry,
+  SessionTodoSnapshot,
   SlashCommand,
   UIMessage,
   UIToolCall,
@@ -49,17 +50,35 @@ type Push = (msg: MainPush) => void
 /* ------------------------------------------------------------ 任务清单 */
 
 /**
- * 从会话的 custom entries 里抽任务清单。
+ * 从会话的 custom entries 里抽任务清单 —— **全部快照**，不只最后一份。
  *
  * 用户的 `left-info-panel.ts` 用 `pi.appendEntry('left-panel-tasks', {todos})` 写，
- * 数据形状是 `{ todos: {text, done}[] }`。
- * 这里做宽松解析：认不出就不显示，不让整个面板崩。
+ * 数据形状是 `{ todos: {text, done}[] }`。**每轮都会写一份**（agent 重新规划任务时
+ * 覆盖写一个新的 entry），所以旧的那些就是「历史任务」——
+ * 上一版只留最后一份，于是界面上完全看不到历史（用户提了这个需求）。
+ *
+ * `round`：这份清单是在第几轮写的 —— 数一下它前面有多少条消息即可。
+ * 有了它，「跳转到那次任务的对话」才能真的跳（否则只能跳到最后）。
+ * 数的是 message entry，与 UI 的回合分组口径一致（都以用户消息为界）。
  */
-function todosFromEntries(entries: Record<string, unknown>[]): SessionTodo[] {
-  let latest: SessionTodo[] = []
+function todoSnapshotsFromEntries(
+  entries: Record<string, unknown>[]
+): SessionTodoSnapshot[] {
+  const out: SessionTodoSnapshot[] = []
+  let userMsgs = 0
 
   for (const e of entries) {
+    /*
+     * 先算轮次：遇到用户消息就 +1。
+     * 所以在这之后写的任务清单属于「第 userMsgs 轮」。
+     */
+    if (e.type === 'message') {
+      const m = e.message as { role?: unknown } | undefined
+      if (m?.role === 'user') userMsgs++
+      continue
+    }
     if (e.type !== 'custom') continue
+
     const ct = String(e.customType ?? '')
     // 具体名字认不出来就跳过 —— 不能把所有 custom entry 都当任务
     if (!/task|todo/i.test(ct)) continue
@@ -67,13 +86,20 @@ function todosFromEntries(entries: Record<string, unknown>[]): SessionTodo[] {
     const data = e.data as { todos?: unknown } | undefined
     if (!Array.isArray(data?.todos)) continue
 
-    latest = data.todos
+    const todos = data.todos
       .filter((t): t is { text?: unknown; done?: unknown } => !!t && typeof t === 'object')
       .map((t) => ({ text: String(t.text ?? ''), done: Boolean(t.done) }))
       .filter((t) => t.text.length > 0)
+    if (todos.length === 0) continue
+
+    out.push({
+      id: String(e.id ?? `t${out.length}`),
+      todos,
+      round: Math.max(1, userMsgs)
+    })
   }
 
-  return latest
+  return out
 }
 
 /**
@@ -304,9 +330,18 @@ export class AgentController extends EventEmitter {
     try {
       const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
       if (!res?.success) return []
-      const todos = todosFromEntries(res.data?.entries ?? [])
-      this.push({ ch: 'todos', payload: todos })
-      return todos
+      const snaps = todoSnapshotsFromEntries(res.data?.entries ?? [])
+      /*
+       * 推两条：
+       *   · todos —— 最新那份（旧行为不变，界面主体的任务清单就是它）
+       *   · todo-history —— 全部快照（含最新），供「历史任务」模块用
+       * 兼容性：单独加一条 push 而不是改 todos 的形状 ——
+       * 已有探针与界面都按「todos = 当前清单」写的。
+       */
+      const latest = snaps.length ? snaps[snaps.length - 1].todos : []
+      this.push({ ch: 'todos', payload: latest })
+      this.push({ ch: 'todo-history', payload: snaps })
+      return latest
     } catch {
       return []
     }

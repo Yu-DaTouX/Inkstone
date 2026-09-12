@@ -94,7 +94,12 @@
     const slotW = cfg.collapsedWidth()
     const entry = document.querySelector(cfg.entry)
     out.push(`  收起后 列宽=${slotW.toFixed(1)}  入口=${entry ? '存在' : '缺失'}`)
-    if (slotW <= 12) ok('收起成一条细缝（≤12px）—— 不再留 40px 的竖条')
+    /*
+     * 收起槽宽 38px（不是 8）—— 为的是让入口按钮与展开态**同坐标**。
+     * 「没有条」指的是视觉上透明无边框，不是宽度小：
+     * 窄到 8px 时按钮只能错位，而那正是用户报过的「不对齐」。
+     */
+    if (slotW <= 40) ok('收起槽很窄（' + slotW.toFixed(1) + 'px，只够放入口按钮）')
     else bad(`收起后仍占 ${slotW.toFixed(1)}px`)
     if (entry) ok('收起态有展开入口（否则面板锁死）')
     else bad('收起后没有展开入口')

@@ -59,19 +59,50 @@ function findBareFr(css) {
 console.log('=== CSS 守卫：grid 的 1fr 必须用 minmax(0, 1fr) ===\n')
 
 const files = (await Promise.all(TARGETS.map(collect))).flat()
-let bad = 0
+let badFr = 0
+let badBrace = 0
+
+/**
+ * 花括号平衡检查。
+ *
+ * 为什么需要（真实事故）：用脚本删 CSS 片段时留下了一个未闭合的 `{`，
+ * 把后面**所有规则**都吞进了一个非法块 —— 结果压缩记号、高度把手、
+ * 收起态按钮全部静默失效（CSS 不报错，只是不生效）。
+ * 这类错误很难发现：浏览器什么都不说，只能靠量像素才看得出来。
+ */
+function braceImbalance(css) {
+  let depth = 0
+  let firstBad = 0
+  const lines = css.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    for (const ch of lines[i]) {
+      if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth < 0 && !firstBad) firstBad = i + 1
+      }
+    }
+  }
+  return depth === 0 ? null : { depth, firstBad: firstBad || lines.length }
+}
 
 for (const file of files) {
   const css = await readFile(file, 'utf8')
-  const hits = findBareFr(css)
   const rel = relative(root, file).replace(/\\/g, '/')
+  const imbalance = braceImbalance(css)
+  if (imbalance) {
+    badBrace++
+    console.log(`✗ ${rel}  花括号不平衡（结束时还差 ${imbalance.depth} 个 }）—— 后面全部规则会失效`)
+    continue
+  }
+  const hits = findBareFr(css)
 
   if (hits.length === 0) {
     console.log(`✓ ${rel}`)
     continue
   }
 
-  bad += hits.length
+  badFr += hits.length
   console.log(`✗ ${rel}`)
   for (const h of hits) {
     console.log(`    ${h.line} 行: ${h.value}`)
@@ -79,8 +110,11 @@ for (const file of files) {
 }
 
 console.log()
-if (bad) {
-  console.log(`✗ 发现 ${bad} 处裸 1fr —— 换成 minmax(0, 1fr)（原因见 DESIGN.md §8）`)
-  process.exit(1)
+if (badBrace) {
+  console.log(`✗ 有 ${badBrace} 个文件的花括号不平衡 —— 那里之后的所有规则都会**静默失效**`)
 }
+if (badFr) {
+  console.log(`✗ 发现 ${badFr} 处裸 1fr —— 换成 minmax(0, 1fr)（原因见 DESIGN.md §8）`)
+}
+if (badBrace || badFr) process.exit(1)
 console.log(`✓ 全部合规（检查了 ${files.length} 个文件）`)

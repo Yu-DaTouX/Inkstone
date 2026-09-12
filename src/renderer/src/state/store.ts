@@ -22,6 +22,7 @@ import type {
   SessionStats,
   SessionSummary,
   SessionTodo,
+  SessionTodoSnapshot,
   SlashCommand,
   UIMessage,
   UserProfile,
@@ -115,6 +116,8 @@ interface Store {
   sessions: SessionSummary[]
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
   todos: SessionTodo[]
+  /** 全部任务清单快照（含最新）——「历史任务」模块用 */
+  todoHistory: SessionTodoSnapshot[]
 
   /* 记忆 */
   memory: MemoryItem[]
@@ -390,6 +393,7 @@ export const useStore = create<Store>((set, get) => ({
   messages: [],
   sessions: [],
   todos: [],
+  todoHistory: [],
 
   memory: [],
   soul: { name: '砚', selfRef: '我', tone: '直说，不绕，不奉承' },
@@ -501,6 +505,9 @@ export const useStore = create<Store>((set, get) => ({
         break
       case 'todos':
         set({ todos: m.payload })
+        break
+      case 'todo-history':
+        set({ todoHistory: m.payload })
         break
       case 'win-state':
         set({ maximized: m.payload.maximized, alwaysOnTop: m.payload.alwaysOnTop })

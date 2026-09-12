@@ -203,6 +203,21 @@ export interface SessionTodo {
   done: boolean
 }
 
+/**
+ * 一份任务清单快照（会话里每轮都会写一份）。
+ *
+ * 为什么要保留历史：agent 重新规划任务时会写一份**新的**清单，
+ * 旧的那份仍在会话文件里 —— 用户要能回头看「上一轮列了哪些任务」，
+ * 并**跳回**当时那轮对话。所以快照要带上轮次号。
+ */
+export interface SessionTodoSnapshot {
+  /** custom entry 的 id */
+  id: string
+  todos: SessionTodo[]
+  /** 写这份清单时已经过了几轮用户消息（跳转用；从 1 开始） */
+  round: number
+}
+
 /** 会话里的一条 custom entry（扩展写的任意数据） */
 export interface CustomEntry {
   id: string
@@ -550,6 +565,8 @@ export type MainPush =
   | { ch: 'queue'; payload: QueueState }
   /** 会话里的任务清单变了（扩展通过 panel_todos 维护） */
   | { ch: 'todos'; payload: SessionTodo[] }
+  /** 全部任务清单快照（含最新）。界面用它做「历史任务」模块 */
+  | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   /** 扩展要弹窗，需要应答 */
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
   /** 扩展的 fire-and-forget 通知 */

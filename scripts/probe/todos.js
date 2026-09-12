@@ -159,11 +159,23 @@
   ok(tcount?.textContent === '2/5', '计数显示 2/5（实际 ' + tcount?.textContent + '）')
 
   /* ---- 当前任务 = 第一个未完成的 ---- */
-  const tnow = q('[data-testid="todo-now"]')
-  ok(!!tnow, '有「当前正在做」那一行')
-  log('  当前 = ' + JSON.stringify(tnow ? tnow.textContent : ''))
-  ok(!!tnow && tnow.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
+  /*
+   * 当前任务 = 第一个未完成的，而且**在任务本体那一行上**显示（用户要求）。
+   *
+   * 这里原来断言的是一个**单独的行**（todo-now，重复一遍当前任务名）。
+   * 用户提了「正在进行的任务在任务本体上显示 而不是单独开一栏」，
+   * 那一行已删，所以改断言三件事：
+   *   · 不存在单独的行
+   *   · 当前那条在列表里带 active（且只有一条）
+   *   · 它行内有「正在进行」+ spinner
+   */
+  ok(!q('[data-testid="todo-now"]'), '不再有单独的「正在做」行（已并入任务本体）')
+  const tActive = q('.rp-todo[data-active="1"]')
+  log('  当前 = ' + JSON.stringify(tActive ? tActive.textContent : ''))
+  ok(!!tActive && tActive.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
   ok(qa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
+  const tLabel = q('[data-testid="todo-active-label"]')
+  ok(!!tLabel && /正在进行/.test(tLabel.textContent), '当前那条行内显示「正在进行」')
 
   /* ---- 勾完一个：宽度变化 + 闪动 ---- */
   tstore.setState({ todos: tmk(5, 3) })
@@ -178,7 +190,7 @@
   await sleep(300)
   ok(!tmeter().classList.contains('busy'), '全完成后去掉推进动画')
   ok(!!q('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
-  ok(!q('[data-testid="todo-now"]'), '全完成后不再有「当前任务」行')
+  ok(!q('[data-testid="todo-active-label"]'), '全完成后不再有「正在进行」标记')
 
   /* ---- 恢复真实数据（别把用户的会话状态改坏）---- */
   tstore.setState({ todos: [] })

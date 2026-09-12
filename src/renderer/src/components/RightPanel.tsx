@@ -686,29 +686,17 @@ function ContextSection() {
         ) : null}
       </div>
 
-      {/* 自动压缩的说明行（用户要求：「显示什么时候开始自动压缩」） */}
-      {compact ? (
+      {/*
+        自动压缩的触发点**只在进度条上画一条记号**（用户要求）：
+        「不要显示自动压缩还差多少多少多少，在进度条上有记号即可」。
+        记号右边还有一行说明 —— 但只在**已经过线**时才出现
+        （那时它是警告，不是冗余信息）。
+      */}
+      {compact?.enabled && untilCompact <= 0 ? (
         <div className="rp-kv" data-testid="ctx-compaction">
           <span className="rp-k">{t('ctx.autoCompact')}</span>
           <span className="spacer" />
-          {compact.enabled ? (
-            <span
-              className={`rp-v ${untilCompact <= 0 ? 'warn' : ''}`}
-              title={t('ctx.thresholdTip2', {
-                reserve: nf.format(compact.reserveTokens),
-                keep: nf.format(compact.keepRecentTokens),
-                src: compact.custom ? t('ctx.custom') : t('ctx.defaults')
-              })}
-            >
-              {untilCompact > 0
-                ? t('ctx.untilCompact', { n: nf.format(untilCompact) })
-                : t('ctx.atCompact')}
-            </span>
-          ) : (
-            <span className="rp-v" title={t('ctx.disabledTip')}>
-              {t('ctx.off')}
-            </span>
-          )}
+          <span className="rp-v warn">{t('ctx.atCompact')}</span>
         </div>
       ) : null}
 
@@ -759,6 +747,11 @@ function ContextSection() {
 function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
+  /** 全部任务清单快照（含最新）——历史任务模块用 */
+  const history = useStore((s) => s.todoHistory)
+  const scrollToTurn = useStore((s) => s.scrollToTurn)
+  /** 历史任务折叠模块是否展开（默认收起） */
+  const [histOpen, setHistOpen] = useState(false)
   const done = useMemo(() => todos.filter((x) => x.done).length, [todos])
 
   /*
@@ -809,19 +802,17 @@ function TodoSection() {
       >
         <i style={{ width: `${pct}%` }} />
       </div>
-      {active ? (
-        <div className="rp-todo-now" data-testid="todo-now">
-            <span className="rp-now-spin" aria-hidden>
-              <Spinner />
-            </span>
-          <span className="rp-now-label">{t('rp.todoNow')}</span>
-          <span className="rp-now-text">{active.text}</span>
-        </div>
-      ) : (
+      {/*
+        正在进行的任务**在任务本体上显示**（用户要求：「不要单独开一栏」）。
+        这里只剩下「全部完成」的提示 —— 它不属于任何一个任务行。
+        原先这里有一行 .rp-todo-now 重复了一遍当前任务名，
+        与下面列表里那一行是同一件事，白占一行。
+      */}
+      {!active ? (
         <div className="rp-todo-all" data-testid="todo-all-done">
           <span className="rp-all-done">{t('rp.todoAllDone')}</span>
         </div>
-      )}
+      ) : null}
 
       <div className="rp-todos">
         {todos.map((todo, i) => {
@@ -833,7 +824,7 @@ function TodoSection() {
                * 行类名：
                *   done      已完成（删除线 + 绿勾）
                *   todo-open 未完成
-               *   active    当前正在做
+               *   active    当前正在做（行内会显示「正在进行」+ spinner）
                *   flash     刚被勾完（闪一下）
                * `--i` 给 CSS 做逐行落位
                */
@@ -841,20 +832,112 @@ function TodoSection() {
               style={{ '--i': i } as React.CSSProperties}
               data-done={todo.done ? '1' : '0'}
               data-active={isActive ? '1' : '0'}
+              title={todo.text}
             >
               <span className="rp-box" aria-hidden>
                 {todo.done ? '✓' : ''}
               </span>
-              <span className="rp-text">{todo.text}</span>
-              <span className="rp-state">
-                {todo.done ? t('rp.done') : isActive ? t('rp.doing') : t('rp.open')}
-              </span>
+              {/*
+               * 字数限制（用户要求「单个任务的字数太多，限制为最多 18 字」）。
+               * 完整文本在 title 里（悬停可见）—— 截断而不丢信息。
+               */}
+              <span className="rp-text">{clip(todo.text, TODO_MAX_CHARS)}</span>
+              {isActive ? (
+                <span className="rp-state doing" data-testid="todo-active-label">
+                  <span className="rp-now-spin" aria-hidden>
+                    <Spinner />
+                  </span>
+                  {t('rp.doing')}
+                </span>
+              ) : (
+                <span className="rp-state">{todo.done ? t('rp.done') : t('rp.open')}</span>
+              )}
             </div>
           )
         })}
       </div>
+
+      {/*
+        历史任务（用户要求）：
+          · 「如果这段对话有历史任务 就显示一个历史任务的折叠模块 如果没有就不显示」
+          · 「在任务模块的旁边加入一个当前会话历史任务查看以及跳转」
+        两者用同一个入口：头部的「历史 N」按钮 = 在任务模块旁边；
+        点开后是折叠模块，每份清单带「跳转」。
+        history 里最后一份就是**当前**这份，所以只在 length > 1 时才算有历史。
+      */}
+      {history.length > 1 ? (
+        <div className="rp-todo-hist" data-testid="todo-history">
+          <button
+            className={`rp-hist-head ${histOpen ? 'open' : ''}`}
+            onClick={() => setHistOpen((v) => !v)}
+            aria-expanded={histOpen}
+            data-testid="todo-history-toggle"
+          >
+            <Icon name="history" size={12} className="chev" />
+            <span>{t('rp.todoHistory')}</span>
+            <span className="spacer" />
+            <span className="rp-count">{history.length - 1}</span>
+          </button>
+          {histOpen ? (
+            <div className="rp-hist-body">
+              {/* 新的在前（最近的一轮最可能被回看） */}
+              {history
+                .slice(0, -1)
+                .reverse()
+                .map((snap) => (
+                  <div key={snap.id} className="rp-hist-item" data-testid={`todo-hist-${snap.round}`}>
+                    <div className="rp-hist-meta">
+                      <span className="rp-hist-round">
+                        {t('rp.todoHistoryRound', { n: snap.round })}
+                      </span>
+                      <span className="rp-count">
+                        {snap.todos.filter((x) => x.done).length}/{snap.todos.length}
+                      </span>
+                      <span className="spacer" />
+                      {/*
+                       * 跳转：滚到写这份清单时那一轮。
+                       * 用 store 的 scrollToTurn（与导航轨同一个实现）——
+                       * 一个应用里不该有两套「跳到第几轮」。
+                       */}
+                      <button
+                        className="rp-hist-jump"
+                        onClick={() => scrollToTurn(Math.max(0, snap.round - 1))}
+                        data-testid={`todo-hist-jump-${snap.round}`}
+                        title={t('rp.todoHistoryJump')}
+                      >
+                        {t('rp.jump')}
+                      </button>
+                    </div>
+                    <div className="rp-hist-todos">
+                      {snap.todos.map((x, j) => (
+                        <div key={j} className={`rp-hist-todo ${x.done ? 'done' : ''}`}>
+                          <span className="rp-box" aria-hidden>
+                            {x.done ? '✓' : ''}
+                          </span>
+                          <span className="rp-text">{clip(x.text, TODO_MAX_CHARS)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </Section>
   )
+}
+
+/**
+ * 任务文字的字数上限（用户要求 18 字）。
+ * 为什么不是按像素截：中文等宽，18 字是个“能看出干什么”的长度，
+ * 而像素截断在不同字体/缩放下结果不一致。
+ */
+const TODO_MAX_CHARS = 18
+
+/** 超过上限就截断并加省略号（完整文本由 title 提供） */
+function clip(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + '…' : s
 }
 
 /** 盲文 spinner —— 与输入框边框上那个同一套帧（pi 的 loader.js） */

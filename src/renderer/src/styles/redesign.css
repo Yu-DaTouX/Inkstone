@@ -974,12 +974,22 @@
    左栏透明却仍然可点、还盖在展开把手上，展开按钮根本点不到。
    现在改为「保留头部、隐藏其余」。 */
 .app.rail-off .rail {
-  /* 整条隐藏：收起态的展开入口改用 .rail-unhide（细线上的悬停按钮） */
+  /*
+   * 收起态：**没有任何可见的条**（用户要求「隐藏左右两边栏的条」）。
+   * 内容隐藏，但容器保留 38px 宽 —— 为的是让展开按钮能落在
+   * 与展开态**完全相同**的位置（12, 48, 26×26）。
+   * 透明度 0 而不是 visibility: hidden 的差别：后者会让
+   * 位置计算仍然基于 38px 的盒（我们就是要这个），但内容不可见。
+   * 背景与边框也要去掉 —— 否则会看到一条空槽。
+   */
   visibility: hidden;
+  background: transparent;
+  border-right: none;
 }
 /*
- * 收起时允许溢出：.rail-unhide 的 22px 按钮要比 8px 的缝宽，
- * overflow:hidden 会把它裁掉（实测：按钮存在但看不见也点不到）。
+ * 收起时允许溢出：.rail-unhide 的 26px 按钮要比 38px 的槽小，但
+ * 悬停时会带背景色（视觉上要“出格”一点）—— overflow:hidden 会把它裁掉
+ * （实测：按钮存在但看不见也点不到）。
  * 左栏内容此时是 visibility:hidden，溢出不会带来别的东西。
  */
 .app.rail-off .rail-slot {
@@ -1883,16 +1893,19 @@
      用「变量套变量」而不是把默认值写进设置文件：
      这样以后调默认值时，没手动改过的用户会跟着变。 */
   --w-rail: var(--w-rail-user, 300px);
-  /* 收起宽度：必须容得下头部那个开关（offset 12 + 按钮 26 + 边距 12）——
-     否则收起后按钮被裁掉，就没法再展开了。
-     48-50 也是常见「折叠侧边栏」宽度（VS Code 的 activity bar 是 48） */
-  --w-rail-collapsed: 8px;
+  /*
+   * 收起宽度 = 12 + 26 = 38 —— **恰好让入口按钮落在与展开态相同的位置**
+   * （展开态那个 26px 按钮就在 x=12）。
+   * 为什么不收得更窄（以前是 8px）：8px 时按钮只能错位（用户报过
+   * 「和展开后的按钮不对齐」）。38px 的槽是**透明无边框**的，
+   * 视觉上没有条 —— 「隐藏条」与「按钮对齐」只能这样同时满足。
+   */
+  --w-rail-collapsed: 38px;
   /* 工具栏。同样：用户拖过就用他的值 */
   --w-right: var(--w-panel-user, 264px);
 }
-.workspace:not(:has(.rightpanel)) {
-  --w-right: 0px;
-}
+/* ⚠️ 收起宽度**只在这里定义**（曾经 §23b 还有一条 --w-right: 0px，
+   被后面这条覆盖 —— 同一条规则写两处会让读代码的人以为收起是 0 宽） */
 .app.rail-off {
   --w-rail: var(--w-rail-collapsed);
 }
@@ -4035,11 +4048,11 @@ html[data-theme='light'] .tb-pin.on {
  */
 .rightstub {
   position: relative; /* 右栏是 grid 的最后一列，不脱离文档流 */
-  /* 跟随列宽（--w-right 收起时是 8px）。写死宽度会让「收起」失效 ——
-     实测写 40px 时列宽虽是 8px，但元素仍占 40px（溢出） */
+  /* 跟随列宽（收起时 38px）。写死宽度会让「收起」失效 */
   width: 100%;
-  background: var(--bg-1);
-  border-left: 1px solid var(--border);
+  /* **不要任何可见的条**（用户要求）：透明、无边框 */
+  background: transparent;
+  border-left: none;
 }
 .rightstub .rp-x {
   position: absolute;
@@ -4049,7 +4062,7 @@ html[data-theme='light'] .tb-pin.on {
 
 /* 右栏收起：只留那条 40px 的竖条 */
 .workspace:not(:has(.rightpanel)) {
-  --w-right: 8px;
+  --w-right: 38px;
 }
 
 /* ===================================================================
@@ -4546,73 +4559,6 @@ body.reordering {
 
    左栏与右栏共用这套规则（用户明确要求「左栏同理」）。
    =================================================================== */
-.rp-unhide {
-  /* 收起态的展开按钮：平时完全透明，悬停/聚焦才显形 */
-  position: absolute;
-  top: 8px;
-  left: 0;
-  width: 8px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  color: transparent;
-  overflow: visible;
-}
-.rp-unhide:hover,
-.rp-unhide:focus-visible {
-  color: var(--accent);
-  outline: none;
-}
-/* 悬停时把按钮本体「吐」到面板外侧 —— 8px 宽放不下 22px 的图标 */
-.rp-unhide .ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: 1px;
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  opacity: 0;
-  transition: opacity var(--dur) var(--ease);
-}
-.rp-unhide:hover .ico,
-.rp-unhide:focus-visible .ico {
-  opacity: 1;
-}
-
-/* 左栏的同款：收起时 8px 缝，悬停显按钮 */
-.rail-unhide {
-  position: absolute;
-  top: 12px;
-  left: 0;
-  width: 8px;
-  height: 40px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-}
-.rail-unhide .ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: 1px;
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  color: var(--fg-mute);
-  opacity: 0;
-  transition: opacity var(--dur) var(--ease);
-}
-.rail-unhide:hover .ico,
-.rail-unhide:focus-visible .ico {
-  opacity: 1;
-  color: var(--accent);
-}
 
 /* 拖到过窄、松手就要收起时的反馈：把手变强调色并加粗 */
 .resizer[data-will-collapse='1']::after {
@@ -4756,5 +4702,192 @@ body.tool-dragging {
   font-size: var(--fs-xs);
 }
 .slash-hint span {
+  white-space: nowrap;
+}
+
+/* ===================================================================
+   57. 收起态的展开按钮：与展开态**逐像素对齐**（用户报的问题）
+
+   收起槽是 38px（= 12 + 26），所以按钮可以放在和展开态相同的位置：
+     · 左栏：展开态的 .rail-brand-btn 在 (12, 48) 26×26
+       （.rail-top 的 padding 12 + 标题栏 36）
+     · 右栏：展开态的 .rp-x 在距右缘 8px、距顶 8px 22×22
+   两边都用绝对定位钉在这些坐标上 —— 这才是「对齐」，
+   而不是靠「看起来差不多」（之前收起态在 x=0、展开态在 x=12，
+   差了 12px，用户一眼就看出来了）。
+
+   按钮平时不可见（只有槽），悬停/聚焦才显形：这样既「隐藏了条」，
+   又能找到入口。键盘用户 Tab 也能到（focus-visible 同样显形）。
+   =================================================================== */
+.rail-unhide {
+  position: absolute;
+  /* 相对 .rail-slot（它在标题栏之下，从 y=36 开始）——
+     12 + 36 = 48，正是展开态 .rail-brand-btn 的视口纵坐标 */
+  top: 12px;
+  left: 12px;
+  width: 26px;
+  height: 26px;
+  z-index: 20;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+.rail-unhide .ico,
+.rp-unhide .ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  background: transparent;
+  border: none;
+  opacity: 0;
+  transition:
+    opacity var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.rail-unhide:hover .ico,
+.rail-unhide:focus-visible .ico,
+.rp-unhide:hover .ico,
+.rp-unhide:focus-visible .ico {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--bg-2);
+}
+.rp-unhide {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+
+/* ===================================================================
+   57. 任务模块（用户提的四条）
+
+   ① 「正在进行的任务 在任务本体上显示 而不是单独开一栏」
+      → 删掉了 .rp-todo-now 那一行；当前任务在**它自己那一行**上
+        显示「正在进行」+ spinner（.rp-state.doing）
+   ② 「单个任务的字数太多 限制为最多 18 字」
+      → 组件里 clip() 截断（完整文本放 title）
+   ③ 「有历史任务就显示一个历史任务的折叠模块 没有就不显示」
+   ④ 「在任务模块的旁边加入一个当前会话历史任务查看以及跳转」
+      → ③④ 共用同一个入口：折叠模块的头部（就在任务列表下面）
+   =================================================================== */
+
+/* 当前任务那一行：左边加一道强调条 + 底色，一眼能认出「现在做的是这条」 */
+.rp-todo.active {
+  background: var(--bg-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-radius: var(--r-xs);
+}
+.rp-todo.active .rp-box {
+  border-color: var(--accent);
+}
+.rp-todo.active .rp-text {
+  color: var(--fg);
+}
+/* 「正在进行」标签：与状态字同一列，但带 spinner */
+.rp-state.doing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+.rp-now-spin {
+  display: inline-flex;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* ---- 历史任务折叠模块 ---- */
+.rp-todo-hist {
+  margin-top: var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+  padding-top: var(--sp-1);
+}
+.rp-hist-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 3px 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+.rp-hist-head:hover {
+  color: var(--fg-dim);
+}
+.rp-hist-head .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+.rp-hist-head.open .chev {
+  transform: rotate(90deg);
+}
+.rp-hist-head .spacer {
+  flex: 1;
+}
+.rp-hist-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0 var(--sp-1) 2px;
+}
+.rp-hist-item {
+  border-left: 1px solid var(--border);
+  padding-left: var(--sp-2);
+}
+.rp-hist-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rp-hist-meta .spacer {
+  flex: 1;
+}
+.rp-hist-round {
+  color: var(--fg-dim);
+}
+.rp-hist-jump {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.rp-hist-jump:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.rp-hist-todos {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 3px;
+}
+.rp-hist-todo {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.rp-hist-todo.done {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.rp-hist-todo .rp-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }

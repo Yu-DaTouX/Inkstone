@@ -483,9 +483,21 @@ async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
    窗口
    ------------------------------------------------------------------ */
 function createWindow(): void {
+  /*
+   * 窗口初始尺寸。默认 1440×900，但可以用 `YAN_WIN=940x600` 覆盖 ——
+   * 探针需要能测**窄窗口**下的布局（侧栏收起 + 窄窗口就出过问题），
+   * 而从渲染端改不了窗口尺寸（resizeTo 对非脚本打开的窗口无效）。
+   * 这条只是开发用手段，不影响正常启动。
+   */
+  const [winW, winH] = (process.env.YAN_WIN ?? '')
+    .split("x")
+    .map((x) => Number(x))
+  const useW = Number.isFinite(winW) && winW > 0 ? winW : 1440
+  const useH = Number.isFinite(winH) && winH > 0 ? winH : 900
+
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: useW,
+    height: useH,
     minWidth: 940,
     minHeight: 600,
     show: false,

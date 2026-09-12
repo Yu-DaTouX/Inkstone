@@ -54,6 +54,15 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // 窄窗口 + 面板收起态（三档宽度都要过 —— 那三个 bug 只在窄窗口暴露）
+  narrow: {
+    probe: 'scripts/probe/narrow.js',
+    delay: 9000,
+    cost: 0,
+    wins: ['1456x1000', '1002x700', '940x700']
+  },
+  // 任务模块：进行中就地显示 / 18 字 / 历史折叠 + 跳转
+  todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
   // `/` 斜杠命令：自动重拉 + 常用优先 + Enter/Tab 填充
   slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
   // 分区内容高度可调
@@ -414,29 +423,38 @@ async function main() {
     console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
 
     /*
-     * 每个场景开跑前把设置文件**重置回已知状态**。
-     *
-     * 为什么必要：所有场景共用一个隔离目录，而 desktop.json 是**持久化**的
-     * —— 上一个场景改了 cwd / 缩放 / 面板宽度 / 分区顺序，下一个场景就会
-     * 带着那些状态开跑。实测后果：某个场景把 cwd 改掉后，后面的 atPath
-     * 场景拿到家目录（而不是种子里的项目目录），断言全部落空，
+     * 每个场景开跑前把设置文件**重置回已知状态**（且每档窗口都重置）——
+     * 所有场景共用一个隔离目录，而 desktop.json 是持久化的：
+     * 上一个场景改了 cwd / 缩放 / 面板宽度 / 分区顺序，下一个就会带着开跑。
+     * 实测后果：某场景改掉 cwd 后，后面的 atPath 拿到家目录、断言全落空，
      * 而且「单跑必过、全量才炸」。
      *
-     * 重置成「只有 cwd」而不是删文件：应用会用 DEFAULTS 补全其余字段，
-     * 这样场景一开始就是一个干净、已知的默认状态。
-     * 场景自己需要什么（缩放 / 宽度 / 顺序 / 档案）自己会显式设置。
+     * 重置成「只有 cwd」而不是删文件：应用会用 DEFAULTS 补全其余字段。
      */
-    if (sandboxRoot) {
-      writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root }, null, 2), 'utf8')
+    /*
+     * 一个场景可能需要跑**多档窗口宽度**（narrow 就是）。
+     * 每档都要重置设置 —— 否则上一档留下的面板宽度/收起态会带过来。
+     */
+    const wins = c.wins ?? [null]
+    let allOk = true
+    let hint
+    for (const win of wins) {
+      if (sandboxRoot) {
+        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root }, null, 2), 'utf8')
+      }
+      if (win) console.log(`\n─── 窗口 ${win} ───`)
+      const out = await runProbe(c, { ...env, ...(win ? { YAN_WIN: win } : {}) })
+      process.stdout.write(out.text)
+      if (!out.ok) {
+        allOk = false
+        hint = hint ?? out.hint
+      }
     }
 
-    const out = await runProbe(c, env)
-    process.stdout.write(out.text)
-
-    if (!out.ok) {
+    if (!allOk) {
       failed++
       console.log(`\n✗ ${name} 未通过`)
-      if (out.hint) console.log(`  提示：${out.hint}`)
+      if (hint) console.log(`  提示：${hint}`)
     } else {
       console.log(`\n✓ ${name} 通过`)
     }
