@@ -183,31 +183,12 @@ export function RightPanel() {
   const ghostRef = useRef<HTMLDivElement>(null)
 
   /*
-   * 收起时不再返回 null —— 留一条**细线 + 悬停才显的展开按钮**。
-   *
-   * 演进过程（每一步都是用户提的）：
-   *   ① 原来收起后什么都不留 → 没有展开入口，面板锁死
-   *   ② 补了 40px 竖条 → 用户说「把条形隐藏掉」（那道竖条本身很难看）
-   *   ③ 现在 8px（见 CSS §52）：常驻只有一条缝，鼠标移上去才出按钮
+   * 收起时直接不渲染 —— 开关在**标题栏右侧**（用户要求，参考 Codex），
+   * 它的位置与面板收放无关，所以这里不需要留槽/悬停按钮。
+   * （曾经留过 38px 的槽放那个按钮 —— 那条保留下来的宽度会把
+   *   中栏宽度算错，连带把导航轨的位置带偏。）
    */
-  if (!open) {
-    return (
-      <aside className="rightstub" data-testid="rightstub">
-        <button
-          className="rp-unhide"
-          onClick={() => void toggle()}
-          title={t('rp.show')}
-          data-testid="rightpanel-toggle"
-          data-open="0"
-          aria-label={t('rp.show')}
-        >
-          <span className="ico">
-            <Icon name="sidebar-right" size={12} />
-          </span>
-        </button>
-      </aside>
-    )
-  }
+  if (!open) return null
 
   return (
     <aside className="rightpanel" data-testid="rightpanel">
@@ -232,14 +213,6 @@ export function RightPanel() {
           aria-expanded={libOpen}
         >
           <Icon name="layers" size={12} />
-        </button>
-        <button
-          className="rp-x"
-          onClick={() => void toggle()}
-          title={t('rp.hide')}
-          data-testid="rightpanel-hide"
-        >
-          <Icon name="sidebar-right" size={12} />
         </button>
       </div>
 

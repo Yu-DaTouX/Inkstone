@@ -25,6 +25,23 @@ import { RailUser } from './RailUser'
  *   · 底部是用户块而不是一行状态文字
  *   · 去掉卡片式边框，全部靠背景色与缩进表达层级
  */
+/**
+ * 模式列表（入口先做出来，只有当前模式可选 —— 其余标「即将支持」）。
+ *
+ * 为什么先只做入口（用户的原话）：模式的**行为**差异（工具集、提示词、
+ * 默认思考档……）需要先定清楚，先把入口/文案/交互定下来，
+ * 接入时只换这份数据。这也是本项目的惯例：
+ * 不做假状态 —— 未接入的项明确写「即将支持」而不是让它看着能用。
+ */
+const MODES = [
+  { id: 'agent', labelKey: 'mode.agent' },
+  { id: 'coding', labelKey: 'mode.coding' },
+  { id: 'ask', labelKey: 'mode.ask' }
+] as const
+
+/** 当前模式（暂时只有一个） */
+const MODE_ID = 'agent'
+
 export function Rail() {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
@@ -44,6 +61,8 @@ export function Rail() {
   const [projectsOpen, setProjectsOpen] = useState(true)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
+  const [modeMenu, setModeMenu] = useState(false)
 
   // 会话列表在有新消息后会变（标题、时间），settled 时刷一次
   const msgCount = useStore((s) => s.messages.length)
@@ -59,6 +78,18 @@ export function Rail() {
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [menuFor])
+
+  /* 模式菜单：点外面关掉（与其它浮层同一套做法） */
+  useEffect(() => {
+    if (!modeMenu) return
+    const close = (): void => setModeMenu(false)
+    // 延后一帧挂，免得打开的那一下点击立刻把它关掉
+    const id = setTimeout(() => document.addEventListener('mousedown', close), 0)
+    return () => {
+      clearTimeout(id)
+      document.removeEventListener('mousedown', close)
+    }
+  }, [modeMenu])
 
   /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
@@ -132,28 +163,54 @@ export function Rail() {
 
   return (
     <aside className="rail">
-      {/* ---- 顶部：品牌 + 动作 ---- */}
+      {/* ---- 顶部：品牌（带模式菜单）+ 动作 ---- */}
       <div className="rail-top">
         {/*
-         * 左栏开关 = 一个纯图标按钮，**两种状态下几何完全相同**。
+         * 品牌字 + 模式菜单（用户要求，参考 Codex 的「Codex ⌄」）。
          *
-         * 这里曾经显示品牌字「砚」（展开时）与侧栏图标（收起时）——
-         * 两个问题：
-         *   ① 内容是「砚」还是图标，盒子尺寸就跟着变，
-         *      位置与大小对不上（用户报过「展开前后不对称」）
-         *   ② **品牌字在标题栏已经有了**（.tb-name），这里是重复信息
-         * 现在只有图标，固定 26×26（见 CSS），内容不随状态变。
+         * 「先只做入口」：菜单里列出模式，但除当前模式外都标**未接入** ——
+         * 不做假状态（同左栏头像那个「登录（尚未接入）」的做法）。
+         * 这样入口、交互、文案都定下来了，接入时只需换掉菜单数据。
          */}
-        <button
-          className="rail-brand-btn"
-          title={railPinned ? t('rail.collapse') : t('rail.expand')}
-          onClick={() => setRailPinned(!railPinned)}
-          data-testid="rail-toggle"
-          data-open={railPinned ? '1' : '0'}
-          aria-expanded={railPinned}
-        >
-          <Icon name="sidebar-left" size={14} />
-        </button>
+        <div className="rail-mode-wrap">
+          <button
+            className={`rail-mode-btn ${modeMenu ? 'open' : ''}`}
+            onClick={() => setModeMenu((v) => !v)}
+            data-testid="mode-menu-btn"
+            aria-expanded={!!modeMenu}
+            aria-haspopup="menu"
+            title={t('mode.switch')}
+          >
+            <span className="rail-brand">砚</span>
+            <Icon name="chevron-right" size={12} className="rail-mode-chev" />
+          </button>
+          {modeMenu ? (
+            <div className="rail-mode-menu" role="menu" data-testid="mode-menu">
+              <div className="rmm-head">{t('mode.title')}</div>
+              {MODES.map((m) => (
+                <button
+                  key={m.id}
+                  className={`rmm-item ${m.id === MODE_ID ? 'cur' : ''}`}
+                  role="menuitem"
+                  data-testid={`mode-${m.id}`}
+                  disabled={m.id !== MODE_ID}
+                  onClick={() => {
+                    /* 只有当前模式是可选的；其余明确提示未接入 */
+                    if (m.id === MODE_ID) setModeMenu(false)
+                  }}
+                >
+                  <span className="rmm-dot" aria-hidden />
+                  <span className="rmm-name">{t(m.labelKey)}</span>
+                  <span className="spacer" />
+                  <span className="rmm-tag">
+                    {m.id === MODE_ID ? t('mode.current') : t('mode.soon')}
+                  </span>
+                </button>
+              ))}
+              <div className="rmm-foot">{t('mode.foot')}</div>
+            </div>
+          ) : null}
+        </div>
         <span className="rail-spacer" />
         <button
           className={`rail-icon ${searching ? 'on' : ''}`}

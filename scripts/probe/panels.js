@@ -14,6 +14,15 @@
   const ok = (m) => out.push('  ✓ ' + m)
   const bad = (m) => out.push('  ✗ ' + m)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  /** 轮询到条件成立（不用固定 sleep 等 IPC/布局） */
+  const until = async (fn, ms = 4000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (fn()) return true
+      await sleep(80)
+    }
+    return false
+  }
   const qa = (s) => [...document.querySelectorAll(s)]
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
@@ -48,11 +57,13 @@
     await sleep(700)
     out.push('  起始状态：railPinned=' + store.getState().railPinned + '  rightPanelOpen=' + store.getState().settings?.rightPanelOpen)
 
-    out.push('=== 1. 标题栏：面板开关已移除 ===')
-    if (!document.querySelector('.titlebar [data-testid="rail-toggle"]')) ok('标题栏没有左栏开关了')
-    else bad('标题栏还有左栏开关')
-    if (!document.querySelector('.titlebar [data-testid="rightpanel-toggle"]')) ok('标题栏没有右栏开关了')
-    else bad('标题栏还有右栏开关')
+    out.push('=== 1. 面板开关在标题栏两端（参考 Codex）===')
+    const tbRail = document.querySelector('.titlebar [data-testid="rail-toggle"]')
+    const tbPanel = document.querySelector('.titlebar [data-testid="rightpanel-toggle"]')
+    if (tbRail) ok('标题栏有左栏开关（在左侧）')
+    else bad('标题栏没有左栏开关')
+    if (tbPanel) ok('标题栏有工具栏开关（在右侧）')
+    else bad('标题栏没有工具栏开关')
     const wbtns = qa('.wctrl .wbtn').length
     ok('窗口控制按钮 ' + wbtns + ' 个（— □ ✕）')
 
@@ -60,10 +71,10 @@
     const rt = document.querySelector('[data-testid="rail-toggle"]')
     if (!rt) bad('左栏头部没有开关')
     else {
-      const inRail = !!rt.closest('.rail-top')
+      const inRail = !!rt.closest('.titlebar')
       const hasIco = !!rt.querySelector('svg')
       out.push('  开关在 .rail-top 里：' + inRail + '，纯图标=' + hasIco + '，文字=' + JSON.stringify(rt.textContent.trim()))
-      ok(inRail, '开关在左栏头部：' + inRail)
+      ok(inRail, '开关在标题栏里（不在面板内部）：' + inRail)
       /*
        * 用户要求：把品牌字「砚」从开关上删掉。
        * 理由不只是好看 —— **标题栏已经有「砚」了**（.tb-name），
@@ -207,28 +218,38 @@
      *   ③ 现在 8px 的缝 + 悬停才显的展开按钮
      * 所以断言改成验证当前设计：缝很窄、但展开入口存在且可用。
      */
-    const unhide = document.querySelector('[data-testid="rail-expand"]')
-    if (unhide) ok('收起后有展开入口（细线上的按钮）')
-    else bad('收起后没有展开入口（会锁死）')
+    /*
+     * 收起态的入口 = 标题栏那个开关（位置与面板收放无关）。
+     * 面板内部不再有悬停入口 —— 那个设计需要给收起态保留 38px，
+     * 而保留宽度会把导航轨位置带偏（用户报的错位）。
+     */
+    const tbNow = document.querySelector('.titlebar [data-testid="rail-toggle"]')
+    if (tbNow) ok('收起后入口仍在标题栏（面板内不需要留槽）')
+    else bad('收起后没有展开入口')
     const railW = document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? 0
     out.push('  收起后 rail-slot 宽 = ' + railW.toFixed(1))
-    if (railW >= 30 && railW <= 40) ok('收起槽 ' + railW.toFixed(1) + 'px（容得下入口按钮，且不是 0 宽）')
-    else bad('收起槽宽度不对：' + railW)
-    click(unhide); await sleep(600)
+    if (railW === 0) ok('收起 = 0 宽（开关在标题栏，不占位）')
+    else bad('收起后仍占 ' + railW.toFixed(1) + 'px')
+    click(tbNow); await sleep(600)
     if (store.getState().railPinned) ok('点它 → 左栏展开')
     else bad('展不开')
 
-    // 收起右栏
-    const w = document.querySelector('.workspace').getBoundingClientRect().width
-    click(document.querySelector('[data-testid="rightpanel-hide"]')); await sleep(600)
+    // 收起工具栏（标题栏右侧那个开关）
+    click(document.querySelector('.titlebar [data-testid="rightpanel-toggle"]'))
+    await sleep(700)
     const centerCollapsed = document.querySelector('.center').getBoundingClientRect().width
-    const rp = document.querySelector('.rightstub')
-    out.push('  收起右栏后 rightstub 存在=' + !!rp)
-    if (rp) ok('右栏收起留把手')
-    else bad('右栏收起后没有展开入口')
-    if (!document.querySelector('[data-testid="rightpanel"]')) ok('完整工具栏已卸载')
-    click(document.querySelector('[data-testid="rightpanel-toggle"]')); await sleep(600)
-    if (document.querySelector('[data-testid="rightpanel"]')) ok('点把手 → 工具栏展开')
+    out.push('  收起后 .rightstub 存在=' + !!document.querySelector('.rightstub') + '（不该有：入口在标题栏）')
+    if (!document.querySelector('.rightstub')) ok('不再需要收起态的把手（入口在标题栏）')
+    else bad('还留着旧的 rightstub')
+    if (!document.querySelector('[data-testid="rightpanel"]')) ok('完整工具栏已卸载（收起 0 宽）')
+    else bad('工具栏还在')
+    // 开关位置与收起前一致（这是「收起后找不到入口」的正解）
+    const tbAfter = document.querySelector('.titlebar [data-testid="rightpanel-toggle"]')
+    if (tbAfter) ok('收起后标题栏开关仍在')
+    else bad('收起后开关不见了')
+    click(tbAfter)
+    await until(() => document.querySelector('[data-testid="rightpanel"]'), 3000)
+    if (document.querySelector('[data-testid="rightpanel"]')) ok('点标题栏开关 → 工具栏展开')
     else bad('展不开工具栏')
     // 量中栏（.center）而不是 .workspace —— 后者是外层容器，面板收放不影响它的宽度
     out.push('  展开后 .center 宽 = ' + document.querySelector('.center').getBoundingClientRect().width.toFixed(1) + '（右栏收起时 ' + centerCollapsed.toFixed(1) + '）')

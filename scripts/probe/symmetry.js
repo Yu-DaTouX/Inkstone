@@ -1,20 +1,19 @@
 /**
- * 面板开关的**位置稳定性**与收起态的可达性。
+ * 面板开关的**位置稳定性**：收起/展开时按钮不能跳。
  *
- * ── 这个场景的目标变过，值得说明 ──
- * 最初它断言「展开态与收起态的按钮**几何完全相同**」—— 因为当时的设计
- * 是两个状态复用同一个按钮（8px 缝之前）。用户在「开关放哪 / 收起后长什么样」
- * 这件事上提过几次要求，最终形态是：
- *   · 展开态：面板头部一个 26×26 的图标按钮
- *   · 收起态：一条 8px 的缝 + **悬停才显**的展开按钮
- * 两者**不可能几何相同**（也不该相同），所以原来那条断言不再成立。
+ * ── 这个场景的目标变过三次，值得说明（否则后来的人会以为断言写错了）──
+ *   ① 最初：两个状态复用同一个按钮 → 断言「几何完全相同」
+ *   ② 后来开关搬进面板内部 → 收起后必须留槽/悬停入口，断言变成
+ *      「收起再展开后按钮回到同一格」
+ *   ③ 现在：开关回到**标题栏两端**（用户要求，参考 Codex）→
+ *      收起 = 0 宽，开关压根不参与面板收放，所以断言变成最简单的形态：
+ *      **收放前后开关的矩形必须完全一致**（它本来就不该动）
  *
- * 但用户真正在意的性质没变，而且它才是当初两种 bug 的根源：
- *   ① **按钮不能跳位置** —— 收起再展开后，按钮必须回到原来那一格
- *      （曾经因为两个状态用两个不同元素/不同尺寸而错位）
- *   ② **收起后必须点得到** —— 曾经透明左栏盖在把手上，
- *      `elementFromPoint` 命中的是别的元素，按钮等于不可用
- * 这个场景现在就断言这两条 —— 它们与具体设计无关，不会被下次改版推翻。
+ * 这条性质一直没变，变的是「怎么实现」——所以断言也跟着从
+ * 「几何相同」收敛成「位置不变」。位置不变是**因**，其它都是从它派生的。
+ *
+ * 另外保留：收起后入口必须**点得到**（`elementFromPoint` 命中的是它）——
+ * 历史上出过「透明左栏盖住入口，按钮存在但点不动」的 bug。
  */
 ;(async () => {
   const out = []
@@ -30,11 +29,7 @@
     const r = e.getBoundingClientRect()
     return { x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) }
   }
-  /**
-   * 量到**稳定值**再返回（连读两次相同才算）。
-   * 面板收放有 120–200ms 过渡，中途量出的矩形是随机的 —— 这是本场景
-   * 唯一真正的不确定来源，必须等。
-   */
+  /** 量到**稳定值**再返回（连读两次相同才算）—— 面板有 120–200ms 过渡 */
   const rect = async (sel) => {
     let prev = rawRect(sel)
     const t0 = Date.now()
@@ -47,15 +42,7 @@
     }
     return prev
   }
-
-  const until = async (fn, ms = 4000) => {
-    const t0 = Date.now()
-    while (Date.now() - t0 < ms) {
-      if (fn()) return true
-      await sleep(80)
-    }
-    return false
-  }
+  const same = (a, b) => a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 
   /** 关掉首次引导层（轮询等它出现再关 —— 不要假设它已经没了） */
   const dismissOnboarding = async () => {
@@ -71,59 +58,44 @@
   }
 
   /**
-   * 一个面板的往返测试：
-   *   展开 → 量按钮位置 → 收起 → 验证「缝很窄 + 入口可点」→ 展开 → 再量
-   *   两次位置必须完全一致（用户报过的「跳位置」）。
+   * 一个面板的往返：量开关 → 收起 → 再量 → 必须一模一样，且入口点得到。
+   * `entrySel` 就是标题栏那个开关自己（入口不在面板内部了）。
    */
   const roundTrip = async (label, cfg) => {
     out.push(`\n=== ${label} ===`)
-    // 显式置为展开态（不假设前一个场景留下的状态）
     await cfg.ensureOpen()
     await sleep(600)
 
-    const before = await rect(cfg.openBtn)
+    const before = await rect(cfg.btn)
     if (!before) {
-      bad(`${label}：展开态找不到开关`)
+      bad(`${label}：找不到标题栏开关`)
       return
     }
-    out.push(`  展开态按钮 ${JSON.stringify(before)}`)
+    out.push(`  收放前开关 ${JSON.stringify(before)}`)
 
-    click(document.querySelector(cfg.openBtn))
+    click(document.querySelector(cfg.btn))
     await sleep(700)
 
-    const slotW = cfg.collapsedWidth()
-    const entry = document.querySelector(cfg.entry)
-    out.push(`  收起后 列宽=${slotW.toFixed(1)}  入口=${entry ? '存在' : '缺失'}`)
-    /*
-     * 收起槽宽 38px（不是 8）—— 为的是让入口按钮与展开态**同坐标**。
-     * 「没有条」指的是视觉上透明无边框，不是宽度小：
-     * 窄到 8px 时按钮只能错位，而那正是用户报过的「不对齐」。
-     */
-    if (slotW <= 40) ok('收起槽很窄（' + slotW.toFixed(1) + 'px，只够放入口按钮）')
-    else bad(`收起后仍占 ${slotW.toFixed(1)}px`)
-    if (entry) ok('收起态有展开入口（否则面板锁死）')
-    else bad('收起后没有展开入口')
+    const after = await rect(cfg.btn)
+    out.push(`  收放后开关 ${JSON.stringify(after)}`)
+    if (same(before, after)) ok('开关位置/尺寸完全不变（入口始终在）')
+    else bad(`开关跳了：${JSON.stringify(before)} → ${JSON.stringify(after)}`)
 
-    /* 入口必须**真的点得到**：用 elementFromPoint 看命中的是谁 */
-    if (entry) {
-      const r = entry.getBoundingClientRect()
-      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(12, r.height / 2))
-      const owner = hit ? hit.closest('button') : null
-      out.push(`  elementFromPoint → ${owner ? owner.dataset.testid : String(hit)}`)
-      if (owner && owner.dataset.testid === cfg.entryTestId) ok('命中的就是展开入口（没被别的东西盖住）')
-      else bad(`点不到入口，命中 ${owner ? owner.dataset.testid : hit}`)
-      click(owner ?? entry)
-      await until(() => store.getState().railPinned === true || !!document.querySelector(cfg.openBtn), 3000)
-      await sleep(700)
-    }
+    /* 入口必须**真的点得到**：elementFromPoint 看命中的是谁 */
+    const hit = document.elementFromPoint(after.x + after.w / 2, after.y + after.h / 2)
+    const owner = hit ? hit.closest('button') : null
+    out.push(`  elementFromPoint → ${owner ? owner.dataset.testid : String(hit)}`)
+    if (owner && owner.dataset.testid === cfg.testId) ok('命中的就是开关（没被别的东西盖住）')
+    else bad(`点不到开关，命中 ${owner ? owner.dataset.testid : hit}`)
 
-    const after = await rect(cfg.openBtn)
-    out.push(`  往返后按钮 ${JSON.stringify(after)}`)
-    if (before && after && before.x === after.x && before.y === after.y && before.w === after.w && before.h === after.h) {
-      ok('收起再展开后按钮回到**同一格**（不跳位置）')
-    } else {
-      bad(`按钮跳了位置：${JSON.stringify(before)} → ${JSON.stringify(after)}`)
-    }
+    if (cfg.unmounted && !document.querySelector(cfg.unmounted)) ok('面板已卸载（收起 = 0 宽）')
+    else if (cfg.unmounted) bad('面板还挂着')
+
+    click(owner ?? document.querySelector(cfg.btn))
+    await sleep(700)
+    const back = await rect(cfg.btn)
+    if (same(before, back)) ok('展开后仍在同一格')
+    else bad(`展开后位置变了：${JSON.stringify(before)} → ${JSON.stringify(back)}`)
   }
 
   try {
@@ -131,24 +103,19 @@
     out.push('  引导层: ' + obState)
     if (obState === 'still-open') bad('引导层关不掉，几何测量会量到遮罩')
 
-    const rpOpen = () => !!document.querySelector('[data-testid="rightpanel"]')
-
     await roundTrip('左栏：收起 → 展开', {
-      openBtn: '[data-testid="rail-toggle"]',
-      entry: '[data-testid="rail-expand"]',
-      entryTestId: 'rail-expand',
-      collapsedWidth: () => document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? -1,
+      btn: '[data-testid="rail-toggle"]',
+      testId: 'rail-toggle',
       ensureOpen: async () => {
         store.getState().setRailPinned(true)
         await sleep(400)
       }
     })
 
-    await roundTrip('右栏（工具栏）：收起 → 展开', {
-      openBtn: '[data-testid="rightpanel-hide"]',
-      entry: '[data-testid="rightpanel-toggle"]',
-      entryTestId: 'rightpanel-toggle',
-      collapsedWidth: () => document.querySelector('.rightstub')?.getBoundingClientRect().width ?? -1,
+    await roundTrip('工具栏：收起 → 展开', {
+      btn: '[data-testid="rightpanel-toggle"]',
+      testId: 'rightpanel-toggle',
+      unmounted: '[data-testid="rightpanel"]',
       ensureOpen: async () => {
         if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
         await sleep(400)
@@ -157,7 +124,7 @@
 
     out.push('\n=== 连点 12 次（快速切换不应崩）===')
     for (let i = 0; i < 12; i++) {
-      const t = document.querySelector('[data-testid="rail-toggle"]') || document.querySelector('[data-testid="rail-expand"]')
+      const t = document.querySelector('[data-testid="rail-toggle"]')
       if (t) click(t)
       await sleep(60)
     }
@@ -165,6 +132,7 @@
     if (document.querySelector('.app')) ok('页面存活，railPinned=' + store.getState().railPinned)
     else bad('页面没了')
     store.getState().setRailPinned(true)
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
   } catch (e) {
     bad('抛异常：' + (e && e.message ? e.message : String(e)))
   }

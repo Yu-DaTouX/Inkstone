@@ -50,23 +50,16 @@
     out.push('  展开态开关 ' + JSON.stringify(exp))
     click(document.querySelector('[data-testid="rail-toggle"]'))
     await sleep(700)
-    const unhide = box('[data-testid="rail-expand"]')
-    out.push('  收起态入口 ' + JSON.stringify(unhide))
-    if (unhide) {
-      // 与展开态同一个位置吗（用户报「不对齐」）
-      const dx = Math.abs((unhide.x ?? 0) - (exp?.x ?? 0))
-      const dy = Math.abs((unhide.y ?? 0) - (exp?.y ?? 0))
-      out.push('  与展开态的位置差: dx=' + dx + ' dy=' + dy)
-      if (dx <= 2 && dy <= 2) ok('收起态入口与展开态开关对齐')
-      else bad('入口位置偏了（dx=' + dx + ' dy=' + dy + '）')
-      if (unhide.w >= 6) ok('入口有可点宽度（' + unhide.w + 'px）')
-      else bad('入口太窄点不到：' + unhide.w)
-      // 悬停时按钮本体要出来（8px 的缝放不下 22px 图标）
-      const ico = box('[data-testid="rail-expand"] .ico')
-      out.push('  图标本体 ' + JSON.stringify(ico))
-      if (ico && ico.w >= 18) ok('图标本体有尺寸（悬停可显示）')
-      else bad('图标本体尺寸不对：' + JSON.stringify(ico))
-    } else bad('收起后找不到展开入口')
+    /*
+     * 收起态的入口在**标题栏**（开关位置与面板收放无关，参考 Codex）——
+     * 所以这里断言「标题栏那个开关还在、还没动」，而不是找面板内的悬停按钮。
+     */
+    const toggleNow = box('[data-testid="rail-toggle"]')
+    out.push('  收起后标题栏开关 ' + JSON.stringify(toggleNow))
+    if (toggleNow && exp && toggleNow.x === exp.x && toggleNow.y === exp.y) ok('收起后开关没动（入口始终在标题栏）')
+    else bad('开关位置变了：' + JSON.stringify(exp) + ' → ' + JSON.stringify(toggleNow))
+    if (toggleNow && toggleNow.w >= 20) ok('开关有可点尺寸（' + toggleNow.w + 'px）')
+    else bad('开关太小：' + JSON.stringify(toggleNow))
 
     const c2 = box('[data-testid="composer"]')
     out.push('  收起后 composer = ' + JSON.stringify(c2))
@@ -78,41 +71,48 @@
     else bad('收起后中栏反而变窄：' + centerW + ' → ' + centerW2)
 
     // 展开回来
-    const un = document.querySelector('[data-testid="rail-expand"]')
+    const un = document.querySelector('[data-testid="rail-toggle"]')
     if (un) click(un)
     await until(() => store.getState().railPinned, 3000)
     await sleep(600)
 
-    out.push('\n=== 3. 右栏收起：按钮位置 + 输入框 ===')
-    const rpExp = box('[data-testid="rightpanel-hide"]')
-    out.push('  展开态开关 ' + JSON.stringify(rpExp))
-    click(document.querySelector('[data-testid="rightpanel-hide"]'))
+    out.push('\n=== 3. 工具栏收起：开关位置 + 输入框 ===')
+    /*
+     * 开关在**标题栏右侧**（参考 Codex）—— 它是常驻的，
+     * 所以「收起后找不到入口」在结构上就不存在了。
+     * 断言：位置在收放前后**完全不变**（这才是「位置对」的定义）。
+     */
+    const rpExp = box('.titlebar [data-testid="rightpanel-toggle"]')
+    out.push('  收起前开关 ' + JSON.stringify(rpExp))
+    click(document.querySelector('.titlebar [data-testid="rightpanel-toggle"]'))
     await sleep(700)
-    const rpUn = box('[data-testid="rightpanel-toggle"]')
-    out.push('  收起态入口 ' + JSON.stringify(rpUn))
+    const rpUn = box('.titlebar [data-testid="rightpanel-toggle"]')
+    out.push('  收起后开关 ' + JSON.stringify(rpUn) + '  工具栏已卸载=' + !document.querySelector('[data-testid="rightpanel"]'))
+    if (!document.querySelector('[data-testid="rightpanel"]')) ok('工具栏已卸载（收起 0 宽）')
+    else bad('工具栏还在')
     if (rpUn) {
       const dx = Math.abs((rpUn.x ?? 0) - (rpExp?.x ?? 0))
       const dy = Math.abs((rpUn.y ?? 0) - (rpExp?.y ?? 0))
-      out.push('  与展开态的位置差: dx=' + dx + ' dy=' + dy)
-      if (dx <= 3 && dy <= 3) ok('右栏收起态入口与展开态开关对齐')
-      else bad('右栏入口位置偏了（dx=' + dx + ' dy=' + dy + '）')
-      // 必须贴右边缘（用户报「位置不对」）
-      const fromRight = window.innerWidth - ((rpUn.x ?? 0) + rpUn.w)
-      out.push('  距窗口右边缘 ' + fromRight + 'px')
-      if (Math.abs(fromRight - 8) <= 6 || fromRight <= 14) ok('贴在窗口右边缘（' + fromRight + 'px）')
-      else bad('入口没有贴右边缘，离了 ' + fromRight + 'px')
-    } else bad('右栏收起后找不到展开入口')
-
-    const c3 = box('[data-testid="composer"]')
-    if (visible(c3)) ok('右栏收起后输入框仍可见')
-    else bad('右栏收起后输入框不见了')
+      out.push('  与收起前的位置差: dx=' + dx + ' dy=' + dy)
+      if (dx <= 1 && dy <= 1) ok('工具栏收起后开关**不动**（入口始终在）')
+      else bad('开关移动了（dx=' + dx + ' dy=' + dy + '）')
+      const maxB = box('[data-testid="win-max"]')
+      out.push('  开关 x=' + rpUn.x + '  最大化按钮 x=' + (maxB?.x ?? '?'))
+      /* 开关与窗口控制之间还有「置顶」按钮，所以间距约一个按钮宽 */
+      const gapToControls = maxB ? maxB.x - (rpUn.x + rpUn.w) : -1
+      out.push('  与窗口控制的间距 ' + gapToControls + 'px（中间还有置顶按钮）')
+      if (maxB && rpUn.x + rpUn.w <= maxB.x + 2 && gapToControls <= 60) ok('在窗口控制按钮左侧（右侧的唯一入口）')
+      else bad('与窗口控制的相对位置不对')
+    } else bad('收起后找不到开关')
 
     out.push('\n=== 4. 两侧都收起（最窄的可用状态）===')
     click(document.querySelector('[data-testid="rail-toggle"]'))
     await sleep(700)
     const c4 = box('[data-testid="composer"]')
     const rw = box('.rail-slot')?.w ?? -1
-    const pw = box('.rightstub')?.w ?? -1
+    /* 右栏收起后连元素都没有，所以量 grid 的第一/第三列 */
+    const gridCols = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(' ')
+    const pw = parseFloat(gridCols[gridCols.length - 1])
     out.push('  rail=' + rw + ' right=' + pw + ' composer=' + JSON.stringify(c4))
     if (visible(c4)) ok('两侧都收起时输入框仍在（' + c4.w + '×' + c4.h + '）')
     else bad('两侧收起后输入框不见了！')
@@ -121,18 +121,22 @@
      * 「没有条」是**视觉**性质（透明 + 无边框），不是宽度小 ——
      * 窄到 8px 时按钮只能错位，而那正是用户报过的「不对齐」。
      */
+    /*
+     * 「没有条」：左栏收起后容器透明无边框；工具栏收起后**整个卸载**
+     * （连容器都没有，自然没有条）。'.rightstub' 已经不存在了。
+     */
     const bgOf = (sel) => {
       const e = document.querySelector(sel)
-      return e ? getComputedStyle(e).backgroundColor : '?'
+      return e ? getComputedStyle(e).backgroundColor : '（不存在）'
     }
-    out.push('  收起槽背景 rail=' + bgOf('.rail') + ' right=' + bgOf('.rightstub'))
-    const noBar = [bgOf('.rail'), bgOf('.rightstub')].every(
-      (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
-    )
-    if (noBar) ok('两侧收起后都没有可见的条（透明）')
-    else bad('收起后还能看到条')
-    if (rw > 0 && rw <= 40 && pw > 0 && pw <= 40) ok('两条槽都很窄（' + rw + ' / ' + pw + 'px）')
-    else bad('收起槽宽度不对：' + rw + ' / ' + pw)
+    out.push('  收起后：rail 背景=' + bgOf('.rail') + '  .rightstub=' + bgOf('.rightstub'))
+    const railGone = bgOf('.rail') === 'rgba(0, 0, 0, 0)' || bgOf('.rail') === 'transparent'
+    const panelGone = !document.querySelector('.rightstub')
+    if (railGone && panelGone) ok('两侧收起后都没有可见的条')
+    else bad('收起后还能看到条：' + bgOf('.rail') + ' / ' + bgOf('.rightstub'))
+    /* 开关在标题栏 → 收起就是真的 0 宽（不需要留槽） */
+    if (rw === 0 && pw === 0) ok('两侧收起都是 0 宽（开关在标题栏，中栏拿到全部空间）')
+    else bad('收起后仍有保留宽度：' + rw + ' / ' + pw)
 
     // 复位
     store.getState().setRailPinned(true)

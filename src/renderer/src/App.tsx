@@ -400,6 +400,10 @@ export default function App() {
       <IconSprite />
       <div className={appCls}>
         <TitleBar
+          onToggleRail={() => setRailPinned(!railPinned)}
+          railOpen={railOpen}
+          onToggleRightPanel={() => void toggleRightPanel()}
+          rightPanelOpen={rightPanelOpen}
           alwaysOnTop={alwaysOnTop}
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}
@@ -429,22 +433,10 @@ export default function App() {
          */}
         <div className="rail-slot">
           {/*
-           * 收起后：8px 的缝 + 悬停才显示的展开按钮。
-           * 与右栏 .rp-unhide 同形（用户要求「左栏同理」）。
-           */}
-          {!railOpen ? (
-            <button
-              className="rail-unhide"
-              onClick={() => setRailPinned(true)}
-              title={t('rail.expand')}
-              data-testid="rail-expand"
-              aria-label={t('rail.expand')}
-            >
-              <span className="ico">
-                <Icon name="sidebar-left" size={12} />
-              </span>
-            </button>
-          ) : null}
+            左栏开关在标题栏最左上（用户要求，参考 Codex）——
+            所以收起就是真的 0 宽，这里不再需要留槽/悬停按钮。
+            收起后仍能展开：标题栏那个按钮的位置从不变。
+          */}
           <Rail />
           {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
           <Resizer side="rail" />

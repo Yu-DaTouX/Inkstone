@@ -986,15 +986,7 @@
   background: transparent;
   border-right: none;
 }
-/*
- * 收起时允许溢出：.rail-unhide 的 26px 按钮要比 38px 的槽小，但
- * 悬停时会带背景色（视觉上要“出格”一点）—— overflow:hidden 会把它裁掉
- * （实测：按钮存在但看不见也点不到）。
- * 左栏内容此时是 visibility:hidden，溢出不会带来别的东西。
- */
-.app.rail-off .rail-slot {
-  overflow: visible;
-}
+/* 收起 = 0 宽（开关在标题栏），所以不需要给收起态留任何东西 */
 /* -------------------------------------------------------------------
    24. 左栏顶部的模式开关（固定 / 自动）
    ------------------------------------------------------------------- */
@@ -1048,7 +1040,23 @@
    =================================================================== */
 .outline {
   position: absolute;
-  left: 0;
+  /*
+   * 贴着**消息列**的左边缘，而不是中栏的左边缘。
+   *
+   * 为什么（用户报的「侧边隐藏时导航轨位置错位」）：
+   *   内容列是 `max-width: var(--w-stream)` **居中**的。
+   *     · 左栏展开 → 中栏 877px < 900 → 内容满宽，两者重合 → 看不出问题
+   *     · 左栏收起 → 中栏 1139px > 900 → 内容居中右移 ~120px，
+   *       而导航轨还钉在中栏左缘 → **错位 120px**
+   *   （窗很宽时不用收起也会出现，只是没人注意）
+   *
+   * 算式：· (100% - var(--w-stream)) / 2 = 内容列的左边距（<0 则内容满宽）
+   *      · 内容列还有 24px 内边距，排版文字从「左边距 + 24」开始
+   *      · 刻度宽 11px、轨道宽 34px（居中）→ 刻度在 outline.left + 11.5
+   *      所以想让刻度落在内边距的空隙里（离正文 ~18px）：
+   *          outline.left = 内容列左缘 - 5px
+   */
+  left: max(0px, calc((100% - var(--w-stream)) / 2 - 5px));
   top: 96px; /* 让开连续性带 */
   bottom: 0;
   width: 34px;
@@ -1894,13 +1902,14 @@
      这样以后调默认值时，没手动改过的用户会跟着变。 */
   --w-rail: var(--w-rail-user, 300px);
   /*
-   * 收起宽度 = 12 + 26 = 38 —— **恰好让入口按钮落在与展开态相同的位置**
-   * （展开态那个 26px 按钮就在 x=12）。
-   * 为什么不收得更窄（以前是 8px）：8px 时按钮只能错位（用户报过
-   * 「和展开后的按钮不对齐」）。38px 的槽是**透明无边框**的，
-   * 视觉上没有条 —— 「隐藏条」与「按钮对齐」只能这样同时满足。
+   * 收起宽度 = **0**（真的不占宽）。
+   *
+   * 能这么做的前提：开关在**标题栏**（用户要求，参考 Codex）——
+   * 它的位置与面板收放无关，所以收起态不需要为了放按钮而保留宽度。
+   * 曾经保留过 38px（开关在面板内部时不得不然），那条被保留的宽度
+   * 会把中栏宽度算错，连带把导航轨的位置带偏（用户报的错位）。
    */
-  --w-rail-collapsed: 38px;
+  --w-rail-collapsed: 0px;
   /* 工具栏。同样：用户拖过就用他的值 */
   --w-right: var(--w-panel-user, 264px);
 }
@@ -4030,40 +4039,23 @@ html[data-theme='light'] .tb-pin.on {
 }
 
 /* ===================================================================
-   47. 面板收起后的「把手」
+   47. 面板收起后的形态：**不占宽**（开关在标题栏）
 
-   用户要求把两个面板开关从标题栏搬进各自面板的头部。
-   但搬进去之后有个必然的后果：面板塌陷后开关也跟着不可见了，
-   就再也没有办法展开。所以收起时留一条 24px 的窄把手。
+   演进记录（每次都是用户提的，值得留着）：
+     ① 收起后什么都不留 → 没有展开入口，面板锁死
+     ② 留 40/50px 的竖条 → 用户说「把条形隐藏掉」
+     ③ 8px 缝 + 悬停按钮 → 用户说「展开按钮和展开后的不对齐」
+     ④ 38px 透明槽（按钮与展开态同坐标）→ 能对齐，但那条保留的宽度
+        会把中栏宽度算错，连带把**导航轨位置带偏**（用户报的错位）
+     ⑤ **现在**：开关回到标题栏（参考 Codex）→ 收起就是真的 0 宽，
+        上面①~④ 的问题一次性消失（入口永在、无条、无保留宽度）
 
-   左栏不需要这个 —— 它收起后头部那个开关仍然可见可点（见 Rail.tsx）。
+   教训：把「开关」与「被控制的面板」解耦，比在面板内部想办法更省事。
    =================================================================== */
-/*
- * 右栏收起后的竖条（左栏已不需要 —— 它自己的开关就是把手，见 Rail.tsx）。
- *
- * 对称规则：按钮距离**窗口右边缘** 8px、距顶部 8px ——
- * 与展开时 .rp-top 里那个按钮的偏移一致（.rp-top 的 padding-right 是 8px），
- * 所以展开/收起时按钮不会跳位置（用户报过左栏同样的问题）。
- * 宽度 40 = 8 + 22 + 10，让按钮的右偏移量能对上。
- */
-.rightstub {
-  position: relative; /* 右栏是 grid 的最后一列，不脱离文档流 */
-  /* 跟随列宽（收起时 38px）。写死宽度会让「收起」失效 */
-  width: 100%;
-  /* **不要任何可见的条**（用户要求）：透明、无边框 */
-  background: transparent;
-  border-left: none;
-}
-.rightstub .rp-x {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+.workspace:not(:has(.rightpanel)) {
+  --w-right: 0px;
 }
 
-/* 右栏收起：只留那条 40px 的竖条 */
-.workspace:not(:has(.rightpanel)) {
-  --w-right: 38px;
-}
 
 /* ===================================================================
    48. 左栏头部的品牌按钮（点了收起左栏）
@@ -4071,30 +4063,7 @@ html[data-theme='light'] .tb-pin.on {
    与右栏 .rp-x 同一个语义：开关贴着它控制的东西。
    悬停时才显示那个「收起」小图标 —— 平时它就是一个品牌标识。
    =================================================================== */
-/*
- * 开关按钮的几何**必须固定**（26×26，居中）。
- *
- * 不能再用 padding 追随内容宽度 —— 展开时内容是「砚」（宽）、
- * 收起时是图标（窄），内容一变按钮尺寸就变，位置也跟着跳
- * （这正是用户报的「展开前后按钮大小位置不对称」）。
- * 固定尺寸后，两种状态只在**内容**上不同，盒子完全一致。
- */
-.rail-brand-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: var(--r-sm);
-  color: var(--fg);
-  transition: background var(--dur) var(--ease);
-}
-.rail-brand-btn:hover {
-  background: var(--bg-3);
-  color: var(--accent);
-}
+
 
 /* ===================================================================
    49. 左栏底部：用户档案（头像 / 名字 / 设置）
@@ -4306,72 +4275,6 @@ html[data-theme='light'] .tb-pin.on {
 }
 
 /* ===================================================================
-   50. 面板宽度把手（拖拽调宽）
-
-   位置：左栏右缘 / 工具栏左缘。
-   体量：7px 宽的命中区，但视觉上只有悬停/拖动时露一条线 ——
-         常驻一条竖线会让本就窄的三栏更像被切片。
-   为什么放在相邻面板**内部**并绝对定位：.workspace 是 3 列 grid，
-         把手若作为 grid 子元素会多出一列（本项目列宽踩过坑，见 §23b）。
-   =================================================================== */
-.resizer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  /*
-   * 5px：再宽会与工具栏分区左缘的**排序把手**重叠（实测 7px 时重叠 5px，
-   *   用户想拖排序会变成拖宽度）。排序把手的 margin-left 也因此设为 6px。
-   */
-  width: 5px;
-  z-index: 8;
-  cursor: col-resize;
-  /* 触摸设备上别滚页面 */
-  touch-action: none;
-}
-/*
- * 贴在**列的内缘**（不能用负偏移）：左栏的 .rail-slot 有 overflow: hidden，
- * 负偏移的部分会被裁掉，把手就点不到了。
- * 代价是它盖住面板自己 5px 宽的一条边 —— 因为平时完全透明，看不出来。
- */
-.resizer-rail {
-  right: 0;
-}
-.resizer-panel {
-  left: 0;
-}
-/* 悬停/聚焦/拖动时才显线 —— 平时完全不可见，但一直可点 */
-.resizer::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2px;
-  width: 1px;
-  background: transparent;
-  transition: background 120ms var(--ease);
-}
-.resizer:hover::after,
-.resizer:focus-visible::after,
-.resizer[data-dragging='1']::after {
-  background: var(--accent);
-}
-.resizer:focus-visible {
-  outline: none;
-}
-/*
- * 拖动中：禁掉过渡与文字选择。
- * 过渡是给「收起/展开」用的动画，拖动时带着缓动会像橡皮筋；
- * 不关 user-select 的话拖快了会把界面文字整片选蓝。
- */
-body.resizing {
-  user-select: none;
-  cursor: col-resize;
-}
-body.resizing .workspace {
-  transition: none;
-}
-
-/* ===================================================================
    51. 工具栏：分区排序把手 + 工具库
 
    把手（⠿）：平时不可见，悬停分区或聚焦时才显 ——
@@ -4547,26 +4450,6 @@ body.reordering {
 }
 
 /* ===================================================================
-   52. 面板收起后的形态：**一条细线**（用户要求「隐藏条形」）
-
-   之前收起留的是 40/50px 的竖条 —— 用户觉得那道竖条本身很难看。
-   现在收起宽度 8px：视觉上就是一条缝，但**仍然是可点的**（鼠标移上去
-   会显出一个展开按钮）。
-
-   为什么不做成完全 0 宽：那样就没有任何展开入口，面板会锁死。
-   8px 是「看不见但点到得」和「有入口」的折中 ——
-   常驻一条 40px 的条是「看得见的废空间」，8px 是一条缝，观感完全不同。
-
-   左栏与右栏共用这套规则（用户明确要求「左栏同理」）。
-   =================================================================== */
-
-/* 拖到过窄、松手就要收起时的反馈：把手变强调色并加粗 */
-.resizer[data-will-collapse='1']::after {
-  background: var(--warn);
-  width: 2px;
-}
-
-/* ===================================================================
    53. 上下文进度条上的「自动压缩触发线」
 
    用户要求显示「什么时候开始自动压缩上下文」。只写个数字不够直观 ——
@@ -4705,67 +4588,6 @@ body.tool-dragging {
   white-space: nowrap;
 }
 
-/* ===================================================================
-   57. 收起态的展开按钮：与展开态**逐像素对齐**（用户报的问题）
-
-   收起槽是 38px（= 12 + 26），所以按钮可以放在和展开态相同的位置：
-     · 左栏：展开态的 .rail-brand-btn 在 (12, 48) 26×26
-       （.rail-top 的 padding 12 + 标题栏 36）
-     · 右栏：展开态的 .rp-x 在距右缘 8px、距顶 8px 22×22
-   两边都用绝对定位钉在这些坐标上 —— 这才是「对齐」，
-   而不是靠「看起来差不多」（之前收起态在 x=0、展开态在 x=12，
-   差了 12px，用户一眼就看出来了）。
-
-   按钮平时不可见（只有槽），悬停/聚焦才显形：这样既「隐藏了条」，
-   又能找到入口。键盘用户 Tab 也能到（focus-visible 同样显形）。
-   =================================================================== */
-.rail-unhide {
-  position: absolute;
-  /* 相对 .rail-slot（它在标题栏之下，从 y=36 开始）——
-     12 + 36 = 48，正是展开态 .rail-brand-btn 的视口纵坐标 */
-  top: 12px;
-  left: 12px;
-  width: 26px;
-  height: 26px;
-  z-index: 20;
-  padding: 0;
-  border-radius: var(--r-sm);
-}
-.rail-unhide .ico,
-.rp-unhide .ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
-  background: transparent;
-  border: none;
-  opacity: 0;
-  transition:
-    opacity var(--dur) var(--ease),
-    background var(--dur) var(--ease);
-}
-.rail-unhide:hover .ico,
-.rail-unhide:focus-visible .ico,
-.rp-unhide:hover .ico,
-.rp-unhide:focus-visible .ico {
-  opacity: 1;
-  color: var(--accent);
-  background: var(--bg-2);
-}
-.rp-unhide {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: var(--r-sm);
-}
-
-/* ===================================================================
    57. 任务模块（用户提的四条）
 
    ① 「正在进行的任务 在任务本体上显示 而不是单独开一栏」
@@ -4890,4 +4712,192 @@ body.tool-dragging {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===================================================================
+   58. 左栏头部的「砚 ⌄」+ 模式菜单（用户要求，参考 Codex 的「Codex ⌄」）
+
+   「先只做入口」：菜单里列模式，只有当前模式可选，其余标「即将支持」。
+   不做假状态 —— 未接入的项明确写出来，而不是让它看着能用。
+   =================================================================== */
+.rail-mode-wrap {
+  position: relative;
+  flex: none;
+}
+.rail-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 5px 0 2px;
+  border-radius: var(--r-sm);
+  color: var(--fg);
+}
+.rail-mode-btn:hover,
+.rail-mode-btn.open {
+  background: var(--bg-3);
+}
+.rail-brand {
+  color: var(--fg);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+}
+/* 小箭头：展开时转 90°（与分区标题的 chevron 同一套语义） */
+.rail-mode-chev {
+  color: var(--fg-mute);
+  transform: rotate(90deg);
+  transition: transform var(--dur) var(--ease);
+}
+.rail-mode-btn.open .rail-mode-chev {
+  transform: rotate(-90deg);
+}
+
+.rail-mode-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: mo-in-down var(--mo-base) var(--mo-ease) both;
+}
+.rmm-head {
+  padding: 3px var(--sp-2) 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.rmm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.rmm-item:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+/* 未接入的项：明确不可选（不做假状态），但仍然列出来让人知道有这回事 */
+.rmm-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.rmm-item .spacer {
+  flex: 1;
+}
+.rmm-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--fg-mute);
+  opacity: 0.5;
+}
+.rmm-item.cur .rmm-dot {
+  background: var(--accent);
+  opacity: 1;
+}
+.rmm-item.cur .rmm-name {
+  color: var(--fg);
+}
+.rmm-tag {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.rmm-item.cur .rmm-tag {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.rmm-foot {
+  margin-top: 4px;
+  padding: 5px var(--sp-2) 3px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ===================================================================
+   59. 面板宽度把手（拖拽调宽）
+
+   ⚠️ 这段曾被误删过一次（清理旧样式时 `cut()` 打偏，把整节删掉）。
+      症状是把手变成「占满整栏的隐形层」—— 拖拽还能用，但把手的位置
+      断言会量到 300px。所以这里保留注释说明它属于哪一节。
+
+   位置：左栏右缘 / 工具栏左缘。
+   体量：5px 的命中区，视觉上只有悬停/拖动时显一条线 ——
+         常驻一条竖线会让本就窄的三栏更像被切片。
+   为什么放在相邻面板**内部**并绝对定位：.workspace 是 3 列 grid，
+         把手若作为 grid 子元素会多出一列（本项目列宽踩过坑，见 §23b）。
+   =================================================================== */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /*
+   * 5px：再宽会与工具栏分区左缘的**排序把手**重叠（实测 7px 时重叠 5px，
+   *   用户想拖排序会变成拖宽度）。排序把手的 margin-left 也因此设为 6px。
+   */
+  width: 5px;
+  z-index: 8;
+  cursor: col-resize;
+  /* 触摸设备上别滚页面 */
+  touch-action: none;
+}
+.resizer-rail {
+  right: 0;
+}
+.resizer-panel {
+  left: 0;
+}
+/* 悬停/聚焦/拖动时才显线 —— 平时完全不可见，但一直可点 */
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: transparent;
+  transition: background 120ms var(--ease);
+}
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer[data-dragging='1']::after {
+  background: var(--accent);
+}
+.resizer:focus-visible {
+  outline: none;
+}
+/* 拖到过窄、松手就要收起时的反馈：把手变警示色并加粗 */
+.resizer[data-will-collapse='1']::after {
+  background: var(--warn);
+  width: 2px;
+}
+/*
+ * 拖动中：禁掉过渡与文字选择。
+ * 过渡是给「收起/展开」用的动画，拖动时带着缓动会像橡皮筋；
+ * 不关 user-select 的话拖快了会把界面文字整片选蓝。
+ */
+body.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.resizing .workspace {
+  transition: none;
 }

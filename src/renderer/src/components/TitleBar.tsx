@@ -5,6 +5,12 @@ import type { ConnState } from '../state/store'
 export type Theme = 'dark' | 'light'
 
 interface Props {
+  /** 左栏（侧边栏）开关 —— 在标题栏最左上（对齐 Codex） */
+  onToggleRail: () => void
+  railOpen?: boolean
+  /** 右栏（工具栏）开关 —— 在窗口控制按钮左侧 */
+  onToggleRightPanel: () => void
+  rightPanelOpen?: boolean
   conn: ConnState
   cwd?: string
   onPickCwd: () => void
@@ -19,28 +25,30 @@ interface Props {
  * 标题栏 —— Win11 风格。
  *
  * 布局（从左到右）：
- *   [砚] ······ [连接 · 工作目录] ······ [置顶] [— □ ✕]
+ *   [侧栏开关] [砚] ······ [连接 · 工作目录] ······ [置顶] [工具栏开关] [— □ ✕]
  *
- * ── 面板开关已从标题栏移除（用户要求，附图）──
- * 左栏/右栏的开关现在在**各自面板的头部**：
- *   · 左栏 → `.rail-top` 里的砚字旁边（点了就收起）
- *   · 右栏 → `.rp-top` 里的「工具栏」标题右侧（原本就有）
- * 为什么这样更对：开关贴着它控制的东西。原先两个按钮都在标题栏，
- * 而标题栏是**窗口**的控件区（拖动/最大化/关闭），不是面板的；
- * 用户看截图后指出这一点。
+ * ── 面板开关为什么在标题栏两端（用户要求，参考 Codex 截图）──
+ * 这两个开关的位置**与面板收放无关**：收起后它们仍在原处，
+ * 所以不存在「收起后开关跟着消失 / 移位」的问题。
  *
- * ── 为什么右侧只剩置顶 + 窗口控制（用户要求精简）──
- * 「中/EN」与「主题」已从标题栏移除：设置面板的「外观」tab 里**本来就有**
- * 这两项的完整切换器（带说明文字），标题栏再放一份是重复的两个入口。
- * 「设置齿轮」也移除了 —— 左栏底部（`rail-settings`）已经是入口。
+ * 曾经把开关搬进面板内部（“开关贴着它控制的东西”），
+ * 但那样收起后面板跟着塌陷，就必须给收起态**保留一条宽度**
+ * （之前是 38px）来放那个按钮 —— 那条被保留下来的宽度让
+ * 中栏变窄/变宽，连带把导航轨的位置算错（用户报的错位）。
+ * 开关回到标题栏后，收起就是真的 0 宽，那条保留下来的宽度也就不用存在了。
  *
- * 置顶留下是因为它是真正需要「一眼看到当前状态」的东西：
- * 开着的时候窗口会挡住一切，藏进设置里反而容易忘记自己开过。
+ * ── 为什么右侧只剩这几个 ──
+ * 「中/EN」与「主题」在设置面板的「外观」tab 里有完整切换器，
+ * 标题栏再放一份是重复入口。设置齿轮在左栏底部。
  *
  * 拖拽区由 electron.css 的 -webkit-app-region: drag 负责，
  * 所有按钮显式 no-drag。
  */
 export function TitleBar({
+  onToggleRail,
+  railOpen,
+  onToggleRightPanel,
+  rightPanelOpen,
   conn,
   cwd,
   onPickCwd,
@@ -64,17 +72,26 @@ export function TitleBar({
   return (
     <header className="titlebar">
       <div className="tb-left">
+        {/*
+         * 侧栏开关：标题栏**最左上角**（对齐 Codex 的位置）。
+         * 它不随侧栏收放而移动/消失 —— 这是它与「放进面板内部」的关键区别。
+         */}
+        <button
+          className={`tb-icon ${railOpen ? 'on' : ''}`}
+          title={railOpen ? t('rail.collapse') : t('rail.expand')}
+          onClick={onToggleRail}
+          data-testid="rail-toggle"
+          data-open={railOpen ? '1' : '0'}
+          aria-expanded={railOpen}
+        >
+          <Icon name="sidebar-left" size={14} />
+        </button>
         <span className="tb-name">砚</span>
         {/*
          * 会话名胶囊**已删**（用户要求）。
-         *
          * 理由：会话标题已经在**中栏顶部**常驻（SessionHeader），
          * 而且那边显示的是完整标题（不截断、能悬停看全）。
-         * 标题栏里再放一份短版是重复信息，还占着左边最宝贵的位置。
-         * 这与之前删掉「中/EN · 主题 · 设置齿轮」是同一条原则：
          * 一个信息只在一个地方出现。
-         *
-         * 左栏开关也已搬走（到左栏自己的头部）—— 见文件头注释。
          */}
       </div>
 
@@ -103,6 +120,18 @@ export function TitleBar({
           data-on={alwaysOnTop ? '1' : '0'}
         >
           <Icon name="pin" size={14} />
+        </button>
+
+        {/* 工具栏开关：紧邻窗口控制按钮（与左上的侧栏开关形成两端对称） */}
+        <button
+          className={`tb-icon ${rightPanelOpen ? 'on' : ''}`}
+          title={rightPanelOpen ? t('rp.hide') : t('rp.show')}
+          onClick={onToggleRightPanel}
+          data-testid="rightpanel-toggle"
+          data-open={rightPanelOpen ? '1' : '0'}
+          aria-expanded={rightPanelOpen}
+        >
+          <Icon name="sidebar-right" size={14} />
         </button>
 
         {/* ---- Win11 窗口控制：46×32 方形，紧贴右上角 ---- */}

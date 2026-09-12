@@ -146,10 +146,12 @@
     if (collapsed) ok('拖到过窄 → 直接收起（不是停在最小宽）')
     else bad('拖到过窄没收起，railPinned=' + store.getState().railPinned)
     /*
-     * 「隐藏条」的判据不是宽度多小，而是**没有可见的条**：
-     * 收起槽是透明、无边框的（宽度 38 是为了让展开按钮与展开态对齐）。
-     * 以前这里断言 ≤12px —— 那是上一版的形态，会让后来的人以为
-     * 「越窄越好」，而窄到 8px 时按钮只能错位（用户报过不对齐）。
+     * 收起 = 0 宽（开关在标题栏，参考 Codex）。
+     * 这里曾经断言过 ≤12px / ≤40px —— 那两个数都是「开关在面板内部」时代
+     * 的妥协产物（不放按钮就要么错位要么占宽）。开关搬到标题栏后
+     * 两个问题都不存在，收起就是真的 0。
+     * 仍然断言背景/边框：万一以后有人给收起槽加了底色，
+     * 「没有条」这条用户要求就会被破坏。
      */
     const slotEl = document.querySelector('.rail-slot')
     const railEl = document.querySelector('.rail')
@@ -160,10 +162,10 @@
     const transparent = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
     if (transparent(railBg) && (railBorder === '0px' || railBorder === '0')) ok('收起后没有可见的条（背景透明 + 无边框）')
     else bad('收起后仍能看到条：bg=' + railBg + ' border=' + railBorder)
-    if (slotAfter <= 40) ok('收起槽很窄（' + slotAfter.toFixed(1) + 'px，只够放展开按钮）')
-    else bad('收起后太宽：' + slotAfter.toFixed(1))
+    if (slotAfter === 0) ok('收起 = 真的 0 宽（开关在标题栏，不需要留槽）')
+    else bad('收起后仍占 ' + slotAfter.toFixed(1) + 'px')
 
-    // 展开回来，并复位两个宽度，别把状态留给后面的场景
+    // 展开回来（用标题栏的开关），并复位两个宽度，别把状态留给后面的场景
     store.getState().setRailPinned(true)
     await sleep(500)
     hr.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
