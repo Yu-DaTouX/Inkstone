@@ -88,6 +88,19 @@
     if (hint && /Enter|Tab/.test(hint.textContent)) ok('菜单底部写明了快捷键')
     else bad('没有按键说明')
     setVal(ta(), '')
+
+    out.push('\n=== 5. `/login` 不发给模型，而是打开「模型接入」 ===')
+    const before = store.getState().messages.length
+    setVal(ta(), '/login')
+    await sleep(300)
+    document.querySelector('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await until(() => store.getState().settingsOpen, 4000)
+    out.push('  settingsOpen=' + store.getState().settingsOpen + ' tab=' + store.getState().settingsTab)
+    if (store.getState().settingsOpen && store.getState().settingsTab === 'auth') ok('/login 路由到「模型接入」窗口')
+    else bad('/login 没被拦截（可能当成一句话发给了模型）')
+    if (store.getState().messages.length === before) ok('没有把 /login 当消息发给模型')
+    else bad('消息里多了一条（说明真的发给模型了）')
+    store.getState().closeSettings()
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length

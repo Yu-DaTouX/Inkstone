@@ -32,6 +32,7 @@ export function Composer() {
   const commandUse = useStore((s) => s.commandUse)
   const markCommandUsed = useStore((s) => s.markCommandUsed)
   const reloadCommands = useStore((s) => s.reloadCommands)
+  const openSettings = useStore((s) => s.openSettings)
   const commandsAt = useStore((s) => s.commandsAt)
   const attachments = useStore((s) => s.attachments)
   const addAttachments = useStore((s) => s.addAttachments)
@@ -354,6 +355,22 @@ export function Composer() {
     }
 
     const images = attachments.map((a) => ({ data: a.data, mimeType: a.mimeType }))
+
+    /*
+     * `/login` 不能当普通消息发给模型。
+     *
+     * pi 的订阅制登录是**交互式**的（OAuth 要开浏览器、回调回连 localhost），
+     * RPC 的 47 个命令里没有 login —— 直接发过去模型会把它当一句话回答
+     *（用户报的「输入 /login 模型没办法正常接受」）。
+     * 这里路由到「设置 → 模型接入」：那里列出了准确的登录方式。
+     */
+    if (raw === '/login' || raw.startsWith('/login ')) {
+      setValue('')
+      clearAttachments()
+      openSettings('auth')
+      return
+    }
+
     setValue('')
     clearAttachments()
     await send(raw, images.length ? images : undefined)

@@ -267,7 +267,7 @@
   "set.thinkingDesc": "Higher is slower and costs more",
   "set.title": "Settings",
   "set.toolDetail": "Tool call details",
-  "set.toolDetailDesc": "When expanded, show the full output in a terminal-style window. Off keeps it to a one-line summary (recommended)",
+  "set.toolDetailDesc": "The **running** call expands into a terminal window; finished ones stay one line and open on click. Off disables opening entirely (recommended)",
   "set.uiScale": "UI scale",
   "set.uiScaleAuto": "Auto",
   "set.uiScaleAutoVal": "Auto ({v}×)",

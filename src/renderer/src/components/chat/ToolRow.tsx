@@ -20,11 +20,11 @@
  * ── 新增：终端窗口详情（开关控制）──
  * 展开某一条时，用**终端窗口**的样子显示详情（深色底 + 标题栏显示命令 +
  * 等宽正文），而不是散落的键值对。这就是用户说的「类似终端窗口」。
- * 开关在设置 → 外观（`toolDetail`）：控制**默认**是否展开到终端详情 ——
- * 不想看细节的人不必每次手动收起（Codex 默认就是收起的）。
+ * 开关在设置 → 外观（`toolDetail`）：控制**已结束的**那些能不能点开看详情。
  *
- * ⚠️ 为什么默认收起：一次 agent 跑几十条命令是常态，
- *    默认展开会把回答顶出屏幕（这正是它当初「智能展开」想解决的问题）。
+ * ⚠️ 自动展开的只有**正在运行**的那条（用户要求：「只展示正在调用的详情，
+ *    不要全部弹出」）。一次 agent 跑几十条命令是常态，
+ *    已结束的全展开会把回答顶出屏幕。
  */
 import { useState } from 'react'
 import { Icon } from '../../icons/Icon'
@@ -43,7 +43,18 @@ export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => voi
 
   const running = call.status === 'running' || call.status === 'pending'
   const failed = call.status === 'error'
-  const open = manual ?? (detailOn && !running)
+  /*
+   * 展开规则（用户要求：「只展示正在调用的详情，不要全部弹出」）。
+   *
+   * 旧实现是 `detailOn && !running` —— 正好反了：打开开关后
+   * **已结束的**每一条都展开成终端窗口，正在跑的那条反而收起，
+   * 一次跑十几条就把回答顶出屏幕（用户报的）。
+   *
+   * 现在：**只有正在跑的那条自动展开**；已结束的保持一行，
+   * 要看详情自己点（设置里的 toolDetail 关掉则连点都不能点）。
+   */
+  const canExpand = detailOn || running
+  const open = canExpand && (manual ?? running)
 
   const target = summarize(call)
   const secs = durationSecs(call)
@@ -59,7 +70,10 @@ export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => voi
     <div className={`trow ${open ? 'open' : ''}`} data-state={call.status} data-tool={call.name}>
       <button
         className="trow-head"
-        onClick={() => setManual(!open)}
+        onClick={() => {
+          if (!canExpand) return
+          setManual(!open)
+        }}
         aria-expanded={open}
         title={target}
         data-testid="tool-row"
@@ -75,7 +89,7 @@ export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => voi
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
         ) : null}
-        {running ? null : (
+        {running || !canExpand ? null : (
           <Icon name="chevron-right" size={12} className={`chev ${open ? 'on' : ''}`} />
         )}
       </button>

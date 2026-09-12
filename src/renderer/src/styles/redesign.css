@@ -1056,7 +1056,8 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  /* 用户报「左栏边缘留白有点多」：12 → 8 */
+  padding: var(--sp-2) var(--sp-2) var(--sp-2);
 }
 .rail-spacer {
   flex: 1;
@@ -1089,7 +1090,7 @@
 /* ---- 搜索 ---- */
 .rail-search {
   position: relative;
-  margin: 0 var(--sp-3) var(--sp-2);
+  margin: 0 var(--sp-2) var(--sp-2);
 }
 .rail-search input {
   width: 100%;
@@ -1128,7 +1129,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin: 0 var(--sp-2);
+  margin: 0 5px;
   padding: 8px var(--sp-2);
   border-radius: var(--r-md);
   color: var(--fg-dim);
@@ -1160,7 +1161,7 @@
 .rail-section-head {
   display: flex;
   align-items: center;
-  padding: 0 var(--sp-2) 0 var(--sp-3);
+  padding: 0 var(--sp-2);
 }
 .rail-section-title {
   display: flex;
@@ -1190,7 +1191,8 @@
 .rail-body {
   overflow: hidden auto;
   scrollbar-gutter: stable;
-  padding: 0 var(--sp-2) var(--sp-3);
+  /* 左栏边缘留白收窄（用户要求靠近边缘） */
+  padding: 0 5px var(--sp-3);
   min-width: 0;
 }
 
@@ -1249,10 +1251,10 @@
   flex: 1;
   min-width: 0;
   /* 缩进：项目行的文字落在 26px（8 padding + 12 图标 + 6 gap），
-     会话行要比它再深一级，所以左内边距给 38px。
+     会话行要比它再深一级。原来是 38px，用户说边缘留白多 → 收到 32px。
      ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
      验证缩进必须量 **.srow-name 的左缘**，量 .srow 永远看不到差异。 */
-  padding: 6px var(--sp-2) 6px 38px;
+  padding: 6px var(--sp-2) 6px 32px;
   border-radius: var(--r-md);
   color: var(--fg-mute);
   font-size: var(--fs-base);
@@ -4768,7 +4770,7 @@ body.resizing .workspace {
 }
 /* 树本体：每条分叉一行，缩进到与标题对齐 */
 .srow-branches {
-  margin: 1px 0 var(--sp-2) 38px;
+  margin: 1px 0 var(--sp-2) 32px;
   padding-left: var(--sp-2);
   border-left: 1px solid var(--border-soft);
 }

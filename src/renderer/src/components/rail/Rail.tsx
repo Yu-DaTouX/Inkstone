@@ -464,7 +464,8 @@ function SessionRow({
           </button>
         ) : null}
 
-        <span className="srow-time">{relTime(s.updatedAt)}</span>
+        {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
+        <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>
 
       {/* 分叉树（默认折叠）：列出这个会话分出去的每条分支，点击即跳过去 */}
