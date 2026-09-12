@@ -8,6 +8,10 @@
  *
  * 这里不烧 token：直接往 store 注入一条带 thinking 的助手消息
  * （真实数据通路已由 `npm run test:live -- e2e` 覆盖，这里只验渲染）。
+ *
+ * ⚠️ 重点回归：推理窗口的展开/折叠跟**整个回合**走，不是跟单段推理走 ——
+ *   否则「思考 → 调工具 → 再回复」时，第一段思考一结束（工具还在跑）
+ *   窗口就被折叠了（用户报：「推理显示几秒、执行工具后推理被折叠」）。
  */
 ;(async () => {
   const out = []
@@ -21,7 +25,7 @@
     '先看题目：狼会吃羊，羊会吃白菜。' +
     '关键是把羊先带过去，再把羊带回来。'.repeat(80)
 
-  log('=== 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位 ===')
+  log('=== 推理窗口：渲染 / 固定尺寸 / 回合结束前不折叠 ===')
 
   /*
    * 等应用真的就绪再注入。
@@ -47,13 +51,21 @@
       ]
     })
 
+  /** 控制「整个助手回合是否仍在进行」（App 用它算 streamingId → turn.streaming） */
+  const setTurnStreaming = (v) => {
+    const s = store.getState().session
+    store.setState({ session: { ...(s ?? {}), isStreaming: v, isAgentRunning: v } })
+  }
+
   let cap = null
   for (let i = 0; i < 12; i++) {
     injectThinking()
+    setTurnStreaming(true)
     await sleep(350)
     cap = q('[data-testid="reasoning"]')
     if (cap) break
   }
+  setTurnStreaming(true)
   await sleep(400)
   cap = q('[data-testid="reasoning"]')
 
@@ -100,25 +112,60 @@
   const body2 = q('[data-testid="reasoning-body"]')
   ok(Math.abs(body2.getBoundingClientRect().height - h1) < 2, '内容变多时窗口高度不变（固定大小）')
 
-  /* ---- 2. 推理结束 → 自动折叠，但保留开关 ---- */
+  /* ---- 2. 第一段思考结束、开始调工具（回合仍在跑）→ 窗口必须**不折叠** ---- */
   store.getState().applyPush({
     ch: 'msg-update',
     payload: { id: 'r-a1', patch: { thinkingLive: false, thinkingMs: 4200 } }
   })
+  setTurnStreaming(true)
+  await sleep(500)
+  ok(
+    !!q('[data-testid="reasoning-body"]'),
+    '第一段思考结束、工具开始跑时，推理窗口仍展开（不折叠）——用户报的 bug'
+  )
+  ok(!!q('[data-testid="reasoning"]'), '窗口仍在（不是消失）')
+  {
+    const l = q('.reason-label')?.textContent ?? ''
+    ok(!l.includes('推理中'), `工具执行中不再显示「推理中」（应为耗时）：「${l}」`)
+  }
+
+  /* ---- 2b. 工具跑完、模型又开始想（第二段）→ 继续展开、标题回到「推理中」 ---- */
+  store.getState().applyPush({
+    ch: 'msg-update',
+    payload: {
+      id: 'r-a1',
+      patch: { thinking: THINK + '\n\n第二轮：再看看有没有更短的走法。', thinkingLive: true }
+    }
+  })
+  setTurnStreaming(true)
+  await sleep(500)
+  ok(!!q('[data-testid="reasoning-body"]'), '第二段推理仍然展开（窗口全程不折）')
+  ok((q('.reason-label')?.textContent ?? '').includes('推理中'), '第二段思考时标题回到「推理中」')
+  ok(
+    (q('[data-testid="reasoning-body"]')?.textContent ?? '').includes('第二轮'),
+    '第二段推理追加在窗口里（不是替换）'
+  )
+
+  /* ---- 3. **整个回合结束** → 这时才自动折叠，且保留开关 ---- */
+  store.getState().applyPush({
+    ch: 'msg-update',
+    payload: { id: 'r-a1', patch: { thinkingLive: false, thinkingMs: 8000 } }
+  })
+  setTurnStreaming(false)
   await sleep(500)
 
-  ok(!!q('[data-testid="reasoning"]'), '结束后胶囊还在（不是消失）')
-  ok(!q('[data-testid="reasoning-body"]'), '结束后自动折叠（正文收起）')
+  ok(!!q('[data-testid="reasoning"]'), '回合结束后胶囊还在（不是消失）')
+  ok(!q('[data-testid="reasoning-body"]'), '回合结束后自动折叠（正文收起）')
   const label2 = q('.reason-label')?.textContent ?? ''
-  ok(label2.includes('4'), `标题给出耗时 =「${label2}」（应为「已推理 4 秒」）`)
+  ok(label2.includes('8'), `标题给出耗时 =「${label2}」（应为「已推理 8 秒」）`)
   ok(!!q('.reason-peek'), '折叠态有一行预览（不用展开就知道在想什么）')
 
-  /* ---- 3. 点开关能重新打开 ---- */
+  /* ---- 4. 点开关能重新打开 ---- */
   q('[data-testid="reasoning-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await sleep(300)
   ok(!!q('[data-testid="reasoning-body"]'), '点开关能再打开（保留开关）')
 
-  /* ---- 4. 没有推理的回合不许出现空壳 ---- */
+  /* ---- 5. 没有推理的回合不许出现空壳 ---- */
   store.getState().applyPush({
     ch: 'sync',
     payload: [

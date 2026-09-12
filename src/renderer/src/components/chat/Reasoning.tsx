@@ -12,9 +12,12 @@
  * ① **逐字**：模型给的是**块**（一次几十上百字），直接贴上去是「一大段突然出现」。
  *    这里用 `useTypewriter` 把它按字吐出来 —— 追不上时按积压量加速，
  *    所以既像逐字输出，又不会越落越远（详见 hook 的注释）。
- * ② **推理中不折叠**：正在推理时胶囊是展开的（用户就是要「看着它在想」）。
+ * ② **回合结束前不折叠**：正在推理时胶囊是展开的（用户就是要「看着它在想」），
+ *    但折叠的时机是**整个助手回合结束**（`turnLive`）——不是单段推理结束。
+ *    一个回合可能「思考 → 调工具 → 再思考 → 回复」，第一段 thinking_end
+ *    时工具还在跑，那时折叠就会「推理只显示几秒、一执行工具就消失了」（用户报的）。
  *    结束后自动折叠成一行，**保留开关**（用户要能再打开看）。
- *    所以这里的 open 是「用户手动覆盖」+「live 时强制展开」的组合。
+ *    所以这里的 open 是「用户手动覆盖」+「回合进行中强制展开」的组合。
  * ③ **没有推理就不显示**：`text` 为空直接返回 null —— 不占位、不留空壳。
  *
  * ⚠️ 与「思考档」的区别：思考档（thinkingLevel）是**设置**，
@@ -28,22 +31,32 @@ import { useT } from '../../i18n'
 export function ReasoningCapsule({
   text,
   ms,
-  live
+  live,
+  turnLive
 }: {
   text: string
   /** 推理耗时（历史消息从会话里读不到，那时是 undefined） */
   ms?: number
-  /** 是否还在流式推理 */
+  /** 模型**此刻**是否正在吐推理字（控制 spinner、「推理中」标题、光标） */
   live?: boolean
+  /**
+   * 整个助手回合是否还在进行（含工具执行、后续再思考）。
+   * 推理窗口的**展开与折叠时机**跟它走，不跟单段推理走 ——
+   * 否则「思考 → 调工具」时第一段推理会在工具刚跑起来就被折叠。
+   */
+  turnLive?: boolean
 }) {
   const t = useT()
-  /** 用户手动开关；null = 还没手动干预过（此时跟随 live） */
+  /** 用户手动开关；null = 还没手动干预过（此时跟随 turnLive） */
   const [manual, setManual] = useState<boolean | null>(null)
+  /** 没有回合级信号时（历史消息）退回到单段信号 */
+  const streaming = turnLive ?? live
   /** 逐字显示用的文本（逐步追上 text） */
-  const shown = useTypewriter(text, !!live)
-  /* 展开态：用户手动覆盖优先，否则跟随 live（注意要在下面的 effect 之前算好，
-     否则 effect 依赖的 `open` 还在 TDZ —— 实测直接整块渲染不出来） */
-  const open = manual ?? !!live
+  const shown = useTypewriter(text, !!streaming)
+  /* 展开态：用户手动覆盖优先，否则跟随「回合是否进行中」。
+     注意要在下面的 effect 之前算好，否则 effect 依赖的 `open` 还在 TDZ ——
+     实测直接整块渲染不出来。 */
+  const open = manual ?? !!streaming
 
   /*
    * 固定大小的推理窗口里要自动跟随最新（用户要求「信息在里面滚动显示」）。
@@ -69,16 +82,16 @@ export function ReasoningCapsule({
   // 推理结束 → 自动折叠（除非用户在这期间手动开过）
   const wrappedRef = useRef(false)
   useEffect(() => {
-    if (live) {
+    if (streaming) {
       wrappedRef.current = false
       return
     }
-    // 从 live 变成不 live 的那一刻：折叠，并把控制权交给用户
+    // 从「回合进行中」变成「回合结束」的那一刻：折叠，并把控制权交给用户
     if (!wrappedRef.current) {
       wrappedRef.current = true
       setManual((m) => m ?? false)
     }
-  }, [live])
+  }, [streaming])
 
   if (!text.trim()) return null
 

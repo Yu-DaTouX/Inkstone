@@ -224,9 +224,16 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
 
   return (
     <>
-      {/* 思考（推理胶囊）：没有思考就不渲染，不占位 */}
+      {/* 思考（推理胶囊）：没有思考就不渲染，不占位。
+          turnLive=整个回合是否还在跑（含工具执行）—— 推理窗口要等回合
+          结束才折叠，不能因为「第一段思考结束、开始调工具」就藏起来 */}
       {hasThinking ? (
-        <ReasoningCapsule text={turn.thinking} ms={turn.thinkingMs} live={turn.thinkingLive} />
+        <ReasoningCapsule
+          text={turn.thinking}
+          ms={turn.thinkingMs}
+          live={turn.thinkingLive}
+          turnLive={streaming}
+        />
       ) : null}
 
       {/*

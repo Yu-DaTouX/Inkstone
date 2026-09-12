@@ -136,8 +136,14 @@ export default function App() {
    *
    * 注意取的是**最后一条**消息的 id，而不是「最后一条 assistant」——
    * 流式刚开始时最后一条还是用户消息，那时不该有任何回合在闪光标。
+   *
+   * ⚠️ 用 `isStreaming || isAgentRunning`：
+   * `isStreaming` 是「此刻有一条 assistant 消息在流」，工具执行期间为 false；
+   * `isAgentRunning` 是「整个回合在跑」（agent_start → agent_settled）。
+   * 只用一个的话，「思考 → 调工具」时回合会被当成已结束 → 推理窗口提前折叠
+   * （用户报的 bug）。
    */
-  const streamingId = session?.isStreaming ? messages[messages.length - 1]?.id : undefined
+  const streamingId = session?.isStreaming || session?.isAgentRunning ? messages[messages.length - 1]?.id : undefined
 
   /**
    * 回合分组 —— 把扁平的 messages 折成「一轮一块」。

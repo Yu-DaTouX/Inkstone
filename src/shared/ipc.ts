@@ -119,6 +119,12 @@ export interface SessionState {
   thinkingLevel: string
   availableThinkingLevels: string[]
   isStreaming: boolean
+  /**
+   * 回合级「正在干活」：从 agent_start 到 agent_settled，**覆盖工具执行**。
+   * `isStreaming` 在工具执行期间是 false（每条 assistant 消息结束就清），
+   * 所以「回合是否还在继续」要看这个。
+   */
+  isAgentRunning?: boolean
   isCompacting: boolean
   messageCount: number
   pendingMessageCount: number

@@ -143,6 +143,8 @@ export class AgentController extends EventEmitter {
     /** 累积 usage（message_update 里带的就是累积值） */
     usage?: Usage
   } | null = null
+  /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
+  private agentRunning = false
   private dirty = false
   private flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -361,6 +363,16 @@ export class AgentController extends EventEmitter {
       thinkingLevel: String(data.thinkingLevel ?? 'off'),
       availableThinkingLevels: this.state?.availableThinkingLevels ?? [],
       isStreaming: !!data.isStreaming,
+      /*
+       * 回合级「正在干活」：从 agent_start 到 agent_settled，
+       * **覆盖工具执行**。
+       *
+       * 为什么不能只用 isStreaming：它是「此刻有一条 assistant 消息在流」——
+       * 第一段 assistant（带 toolcall）message_end 就把它清了，而工具还在跑、
+       * 模型马上还要接着想/t回答。推理窗口的展开/折叠要用这个宽信号，
+       * 否则「思考→执行工具」时推理会被折叠（用户报的）。
+       */
+      isAgentRunning: this.agentRunning,
       isCompacting: !!data.isCompacting,
       messageCount: Number(data.messageCount ?? 0),
       pendingMessageCount: Number(data.pendingMessageCount ?? 0),
@@ -559,10 +571,12 @@ export class AgentController extends EventEmitter {
       /* ---- 会话级 ---- */
       case 'agent_start':
         this.markStreaming(true)
+        this.setAgentRunning(true)
         break
 
       case 'agent_settled':
         this.markStreaming(false)
+        this.setAgentRunning(false)
         void this.refreshState()
         void this.refreshStats()
         // 兑底：扩展也可能通过 /panel task 命令改任务（不经过工具调用）
@@ -797,6 +811,21 @@ export class AgentController extends EventEmitter {
     })
   }
 
+  /**
+   * 回合级「正在干活」。与 markStreaming 的区别：
+   *   · isStreaming  = 此刻**有一条 assistant 消息在流**（工具执行期间为 false）；
+   *   · agentRunning = 整个 agent 回合在跑（agent_start → agent_settled），
+   *                    **覆盖工具执行**与中途的再思考。
+   * 推理窗口的展开/折叠跟宽的那个走。
+   */
+  private setAgentRunning(v: boolean): void {
+    if (this.agentRunning === v) return
+    this.agentRunning = v
+    if (!this.state) return
+    this.state = { ...this.state, isAgentRunning: v }
+    this.push({ ch: 'state', payload: this.state })
+  }
+
   private markStreaming(v: boolean): void {
     if (!this.state) return
     if (this.state.isStreaming === v) return
@@ -933,6 +962,7 @@ export class AgentController extends EventEmitter {
     }
 
     this.markStreaming(false)
+    this.setAgentRunning(false)
     await this.rpc?.command('abort').catch(() => null)
     void this.refreshState()
 
@@ -1048,6 +1078,7 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: '会话切换被扩展取消' }
     }
     this.uiSeen.clear()
+    this.setAgentRunning(false)
     await this.hydrate()
     return { ok: true }
   }
@@ -1059,6 +1090,7 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: '会话切换被扩展取消' }
     }
     this.uiSeen.clear()
+    this.setAgentRunning(false)
     await this.hydrate()
     return { ok: true }
   }

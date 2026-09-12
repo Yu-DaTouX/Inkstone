@@ -626,9 +626,18 @@ export const useStore = create<Store>((set, get) => ({
         if (m.payload.state === 'ready') set({ conn: 'ready', connDetail: '' })
         else if (m.payload.state === 'starting') set({ conn: 'starting' })
         else if (m.payload.state === 'exited') {
-          set({ conn: 'exited', connDetail: `pi 已退出（code=${m.payload.code ?? 'null'}）` })
+          // pi 都已退出：不能再宣称「回合进行中」，否则推理窗口会永远不折
+          set({
+            conn: 'exited',
+            connDetail: `pi 已退出（code=${m.payload.code ?? 'null'}）`,
+            ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
+          })
         } else if (m.payload.state === 'error') {
-          set({ conn: 'error', connDetail: m.payload.detail ?? '未知错误' })
+          set({
+            conn: 'error',
+            connDetail: m.payload.detail ?? '未知错误',
+            ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
+          })
         } else if (m.payload.state === 'stderr' && m.payload.detail) {
           // stderr 只留最近 200 行，避免内存涨
           set({ logs: [...s.logs, m.payload.detail].slice(-200) })
