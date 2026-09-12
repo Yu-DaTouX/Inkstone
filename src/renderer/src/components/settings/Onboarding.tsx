@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 
 /**
  * 首次使用引导。

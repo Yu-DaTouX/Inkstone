@@ -107,8 +107,9 @@
   let bashDone = false
   for (let i = 0; i < 60; i++) {
     await sleep(400)
-    const t = q('.msg.bash .tool')
-    if (t && t.dataset.state !== 'running') {
+    // ⚠️ 选择器跟着 DOM 改（Codex 风格：.tool 卡片 → .trow 一行）
+    const t = q('.msg.bash .trow')
+    if (t && t.dataset.state !== 'running' && t.dataset.state !== 'pending') {
       bashDone = true
       break
     }
@@ -119,13 +120,24 @@
   ok(!!bashMsg, '产生了 bash 消息')
   ok(bashDone, '命令执行完毕（状态不再是 running）')
   if (bashMsg) {
-    // 用户主动执行的命令应当默认展开（否则看不到结果）
-    ok(bashMsg.querySelector('.tool').classList.contains('open'), '默认展开（用户是为了看结果才跑的）')
-    const outText = bashMsg.querySelector('.tool-pre.out')?.textContent ?? ''
-    log('  输出: ' + JSON.stringify(outText.slice(0, 60)))
-    ok(outText.includes('yan-bash-feature-ok'), '输出里能看到命令打印的内容')
-    const st = bashMsg.querySelector('.tool-status')
-    ok(!!st && st.classList.contains('ok'), '状态为成功')
+    /*
+     * ⚠️ DOM 按设计改过（用户要求「工具调用模拟 codex」）：
+     *   旧：.tool 卡片 + .tool-pre.out + .tool-status
+     *   新：.trow 一行 + 展开后的终端窗口 .term（详情在 .term-body 里）
+     * 断言跟着改成新结构 —— 检查的是同一件事（能看到输出、状态是成功）。
+     */
+    const row = bashMsg.querySelector('.trow')
+    ok(!!row, '是新的一行式工具行（.trow）')
+    if (row) {
+      // 用户主动执行的命令：点开就能看到结果（一行式默认收起，但输出必须在）
+      const head = row.querySelector('.trow-head')
+      if (!row.classList.contains('open') && head) head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(300)
+      const outText = bashMsg.textContent ?? ''
+      log('  输出片段: ' + JSON.stringify(outText.replace(/s+/g, ' ').slice(0, 80)))
+      ok(outText.includes('yan-bash-feature-ok'), '展开后能看到命令打印的内容')
+      ok(row.getAttribute('data-state') === 'ok', '状态为成功')
+    }
   }
   ok(qa('.msg').length > nBefore, '消息数增加')
   ok(store.getState().session?.isStreaming !== true, '没有进入「模型流式」状态（确实绕过了模型）')
@@ -136,21 +148,22 @@
   click(q('[data-testid="send"]'))
   for (let i = 0; i < 40; i++) {
     await sleep(300)
-    const t = qa('.msg.bash .tool').pop()
-    if (t && t.dataset.state !== 'running') break
+    // 选择器跟着 Codex 风格的行改（.tool → .trow）
+    const t = qa('.msg.bash .trow').pop()
+    if (t && t.dataset.state !== 'running' && t.dataset.state !== 'pending') break
   }
   await sleep(400)
   const lastBash = qa('.msg.bash').pop()
   if (lastBash) {
-    // ⚠️ 失败**不自动展开**（刻意的：失败输出经常几十行）。
-    // 所以断言要看卡片本身的 data-state，而不是内部的 .tool-status ——
-    // 后者只在展开时渲染。
-    const card = lastBash.querySelector('.tool')
+    /*
+     * 失败的命令**不自动展开**（刻意的：失败输出经常几十行）。
+     * 所以断言要看行本身的 data-state（.trow），而不是展开后才有的内容。
+     */
+    const card = lastBash.querySelector('.trow')
     if (card) {
       ok(card.dataset.state === 'error', `非零退出码标记为失败（data-state=${card.dataset.state}）`)
     } else {
-      // 连卡片都没有 → 说明消息结构有问题
-      ok(false, '找不到 bash 工具卡')
+      ok(false, '找不到工具行（.trow）')
     }
   }
 

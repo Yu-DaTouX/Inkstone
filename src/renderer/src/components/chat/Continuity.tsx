@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 
 export { SessionHeader, SessionHeader as Continuity } from './SessionHeader'
 

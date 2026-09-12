@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { UsageBar } from './UsageBar'
-import type { Attachment } from '../../../shared/ipc'
+import type { Attachment } from '../../../../shared/ipc'
 
 /**
  * 输入区。四种输入模式共存：

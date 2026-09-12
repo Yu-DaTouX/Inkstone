@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import type { AuthProviderInfo } from '../../../shared/ipc'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import type { AuthProviderInfo } from '../../../../shared/ipc'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。

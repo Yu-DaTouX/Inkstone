@@ -1,8 +1,8 @@
 import { createContext, useContext, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import type { MessageKey } from '../i18n'
-import type { ToolSectionId } from '../../../shared/ipc'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import type { MessageKey } from '../../i18n'
+import type { ToolSectionId } from '../../../../shared/ipc'
 
 /**
  * 工具栏分区的**外观**（可折叠的头 + body）。

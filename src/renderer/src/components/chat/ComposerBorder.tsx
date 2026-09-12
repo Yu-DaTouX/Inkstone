@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 
 /**
  * 输入框顶边框上的工作状态 —— **pi TUI 的原样实现**。

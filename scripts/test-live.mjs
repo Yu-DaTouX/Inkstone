@@ -54,6 +54,8 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // 会话分支树（左栏入口 + 主进程裁剪）
+  branch: { probe: 'scripts/probe/branch.js', delay: 10000, cost: 0 },
   // 标题栏两端的面板开关 + 左栏模式菜单（参考 Codex）
   topbar: { probe: 'scripts/probe/topbar.js', delay: 9000, cost: 0 },
   // 导航轨与消息列的对齐（收起/展开时距离必须稳定）

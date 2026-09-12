@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useI18n, useT } from '../i18n'
-import { useStore } from '../state/store'
-import { prefersReducedMotion, usePresence } from '../lib/usePresence'
+import { Icon } from '../../icons/Icon'
+import { useI18n, useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { MemorySections } from './MemoryPanel'
 import { AuthTab } from './AuthTab'
 
@@ -132,6 +132,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
   const setTheme = useThemeSetter()
+  /** 工具详情默认展开（用户要求加的开关） */
+  const toolDetail = useStore((s) => s.settings?.toolDetail === true)
+  const patchSettings = useStore((s) => s.patchSettings)
   const onTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
@@ -206,6 +209,30 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
                 : t(o.key)}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.toolDetail')}</div>
+          <div className="set-desc">{t('set.toolDetailDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          {/*
+           * 用户要求：「提供一个开关来让用户自己选择是否可以看到
+           * 用类似终端窗口的工具调用详情」。
+           * 默认关（收起）：一次 agent 跑几十条命令是常态，
+           * 默认展开会把回答顶出屏幕。
+           */}
+          <button
+            className={`seg-btn ${toolDetail ? 'sel' : ''}`}
+            onClick={() => void patchSettings({ toolDetail: !toolDetail })}
+            data-testid="set-tool-detail"
+            data-on={toolDetail ? '1' : '0'}
+          >
+            <Icon name="menu" size={12} />
+            <span>{toolDetail ? t('set.on') : t('set.off')}</span>
+          </button>
         </div>
       </div>
 

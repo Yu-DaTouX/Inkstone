@@ -394,6 +394,14 @@ export interface AppSettings {
    */
   toolHidden: string[]
   /**
+   * 工具调用是否**默认展开成终端窗口详情**（用户要求「提供一个开关
+   * 让用户自己选择是否可以看到用类似终端窗口的工具调用详情」）。
+   *
+   * 默认 false（收起）—— 一次 agent 跑几十条命令是常态，
+   * 默认展开会把回答顶出屏幕。想看细节的人打开这个开关。
+   */
+  toolDetail: boolean
+  /**
    * 分区内容高度（px），按分区 id 存。
    * 只给「内容会滚动」的分区用（文件树 / 日志）—— 其余几行高的分区
    * 调高度没意义，界面上也不给把手。
@@ -500,6 +508,41 @@ export interface UserProfile {
    * ⚠️ **本地模式恒为 false** —— 登录尚未接入，不做假状态。
    */
   signedIn: boolean
+}
+
+/**
+ * 会话里的一条分支（来自 pi 的会话树 get_tree）。
+ *
+ * ⚠️ 协议里**没有** navigate_tree —— 所以界面只能「查看 + 从这里分支」，
+ *    **不能**切到已存在的分支。按钮文案要如实写。
+ */
+export interface SessionBranch {
+  /** 分支点的 entry id */
+  id: string
+  /** 属于哪个会话文件（切会话时要用） */
+  sessionPath: string
+  /** 分支点之前还有多少条消息（用来显示「… N 条消息之后」） */
+  afterMessages: number
+  /** 这个分支点的几条岔路 */
+  alternatives: {
+    /** 该分支第一条消息的 entry id（从它分叉 / 定位） */
+    entryId: string
+    /** 该分支的第一句用户话（人认的是这句话） */
+    text: string
+    /** 是否是当前活动的那一支 */
+    active: boolean
+    /** 这一支下面有多少节点 */
+    size: number
+  }[]
+}
+
+/** 整棵会话树裁完之后的摘要（只回分支点，不回 2000 个节点） */
+export interface SessionTree {
+  branches: SessionBranch[]
+  /** 分支点个数 */
+  points: number
+  /** 树里的节点总数（界面上显示「共 N 条」） */
+  total: number
 }
 
 /** 探测 pi 的结果，用于诊断 */
@@ -773,6 +816,8 @@ export interface YanBridge {
   listDir(rel: string, showHidden?: boolean): Promise<DirListing>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
+  /** 当前会话的分支树（只回分支点，主进程已经裁过） */
+  sessionTree(): Promise<SessionTree>
 }
 
 /** 界面缩放状态（主进程算出，渲染端只显示） */

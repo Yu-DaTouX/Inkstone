@@ -1,6 +1,6 @@
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 
 /**
  * 空状态。

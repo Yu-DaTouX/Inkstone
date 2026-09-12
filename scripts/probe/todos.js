@@ -108,14 +108,22 @@
 
   /* ================= 4. 没有任务的会话不显示空区块 ================= */
   log('\n--- 4. 空任务不占位 ---')
-  const noTask = store.getState().sessions.find((s) => s.path !== target.path)
-  if (noTask) {
-    await store.getState().switchSession(noTask.path)
+  /*
+   * ⚠️ 不要拿「第一个不是当前的会话」当「无任务的会话」——
+   *    那个会话可能也有任务（fixture 一变就假失败，实测全量跑时挂过）。
+   *    这里逐个试，直到找到一个确实没有任务的（并把它记下来用于后续断言）。
+   */
+  let noTask = null
+  for (const cand of store.getState().sessions.filter((x) => x.path !== target.path)) {
+    await store.getState().switchSession(cand.path)
     for (let i = 0; i < 25; i++) {
       await sleep(400)
       if (store.getState().todos.length === 0) break
     }
-    ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空')
+    if (store.getState().todos.length === 0) { noTask = cand; break }
+  }
+  if (noTask) {
+    ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空（' + noTask.title + '）')
     // 右栏现在**常驻**（包含上下文/环境等），所以判据不是「右栏消失」，
     // 而是「没有任务时不渲染任务区块」。
     ok(q('[data-sec="rp-todo"]') === null, '没有任务时不渲染任务区块')

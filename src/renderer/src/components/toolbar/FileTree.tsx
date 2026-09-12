@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 import { Section } from './ToolSection'
-import type { DirListing } from '../../../shared/ipc'
+import type { DirListing } from '../../../../shared/ipc'
 
 /**
  * 文件树（右栏分区）。

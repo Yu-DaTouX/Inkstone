@@ -258,6 +258,8 @@ interface Store {
    * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
    */
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
+  /** 通用设置写入（设置面板用）。主进程会做校验 */
+  patchSettings: (p: Partial<AppSettings>) => Promise<void>
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   /**
@@ -942,6 +944,10 @@ export const useStore = create<Store>((set, get) => ({
   patchProfile: async (p) => {
     const next = await window.yan.patchSettings({ profile: { ...get().settings?.profile, ...p } as UserProfile })
     set({ settings: next })
+  },
+
+  patchSettings: async (p) => {
+    set({ settings: await window.yan.patchSettings(p) })
   },
 
   /**

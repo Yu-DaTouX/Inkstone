@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useStore } from '../state/store'
-import { useT } from '../i18n'
-import { PANEL_MAX, PANEL_MIN, RAIL_MAX, RAIL_MIN } from '../../../shared/ipc'
+import { useStore } from '../../state/store'
+import { useT } from '../../i18n'
+import { PANEL_MAX, PANEL_MIN, RAIL_MAX, RAIL_MIN } from '../../../../shared/ipc'
 
 /**
  * 面板宽度的拖拽把手。

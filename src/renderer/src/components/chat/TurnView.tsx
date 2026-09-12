@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { forkFromText } from './Rail'
-import { Markdown, ToolCard } from './MessageParts'
-import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../shared/turns'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { forkFromText } from '../../lib/fork'
+import { Markdown } from './MessageParts'
+import { ReasoningCapsule } from './Reasoning'
+import { ToolGroup, ToolRow } from './ToolRow'
+import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -84,9 +86,9 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
         <div className="msg-label">
           <span>{t('chat.bash')}</span>
         </div>
-        {/* 用户主动跑的命令默认展开 —— 他是为了看结果才跑的 */}
+        {/* 用户主动跑的命令（`!命令`）—— 用同一套 Codex 风格行 */}
         {(msg.toolCalls ?? []).map((c) => (
-          <ToolCard key={c.id} call={c} defaultOpen />
+          <ToolRow key={c.id} call={c} />
         ))}
         {msg.error ? (
           <div className="msg-error">
@@ -208,75 +210,17 @@ function Paragraph({ text, primary }: { text: string; primary?: boolean }) {
  *   · 用户手动点过之后不再被自动规则推翻
  */
 function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
-  const t = useT()
   const tools = turn.tools
-  const hasThinking = !!turn.thinking
-  const [manual, setManual] = useState<boolean | null>(null)
+  if (tools.length === 0) return null
 
-  if (!hasThinking && tools.length === 0) return null
-
-  const failed = tools.some((c) => c.status === 'error')
-  const running = streaming && tools.some((c) => c.status === 'running' || c.status === 'pending')
-  const open = manual ?? running
-
-  // 摘要只报数量，不堆细节
-  const parts: string[] = []
-  if (hasThinking) parts.push(t('turn.reasoned', { n: 1 }))
-  if (tools.length) parts.push(t('turn.tools', { n: tools.length }))
-  if (failed) parts.push(t('turn.failed'))
-
-  /**
-   * 只有一条工具、没有思考 → 直接平铺那一行。
-   * 折叠反而多一次点击（进这个分支的 `!` 命令已经在 BashTurnView 里处理了）。
+  /*
+   * 工具调用用 **Codex 风格**（用户要求）：一行一条，折叠在
+   * 「运行了命令 N」下面（见 ToolRow.tsx）。
+   *
+   * 与上一版的区别：上一版是「智能展开的工具卡」，一张卡占好几行，
+   * 一次跑十几条就把回答顶出屏幕。Codex 的做法是一行一条 ——
+   * 想看细节就点开（终端窗口样式的详情；默认是否展开由设置里的开关决定）。
    */
-  if (!hasThinking && tools.length === 1) {
-    return <ToolCard call={tools[0]} />
-  }
-
-  return (
-    <div className={`turn ${open ? 'open' : ''}`} data-testid="turn-activity">
-      <button className="turn-head" onClick={() => setManual(!open)} aria-expanded={open}>
-        <Icon name="chevron-right" size={12} className="chev" />
-        <span className="turn-sum">{parts.join(t('turn.sep'))}</span>
-        <span className="turn-gap" />
-        {running ? <span className="cursor cursor-inline" /> : null}
-      </button>
-
-      {open ? (
-        <div className="turn-body">
-          {hasThinking ? <Thinking text={turn.thinking} ms={turn.thinkingMs} live={streaming} /> : null}
-          {tools.map((c) => (
-            <ToolCard key={c.id} call={c} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ 思考 */
-
-export function Thinking({ text, ms, live }: { text: string; ms?: number; live?: boolean }) {
-  const t = useT()
-  const [open, setOpen] = useState(false)
-  const secs = ms ? Math.max(1, Math.round(ms / 1000)) : null
-
-  /**
-   * 三种标题，别弄混：
-   *   live       还在流式思考 →「正在思考…」
-   *   有耗时     历史上我们亲眼见过开始/结束 →「已思考 N 秒」
-   *   无耗时     从会话历史加载的（没看到事件流）→「思考过程」
-   */
-  const label = live ? t('chat.thinkingNow') : secs ? t('chat.thinking', { n: secs }) : t('chat.thought')
-
-  return (
-    <details className="think" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary>
-        <Icon name="chevron-right" size={12} className="chev" />
-        <span>{label}</span>
-        {live ? <span className="cursor cursor-inline" /> : null}
-      </summary>
-      <div className="think-body">{text}</div>
-    </details>
-  )
+  if (tools.length === 1) return <ToolRow call={tools[0]} />
+  return <ToolGroup tools={tools} streaming={streaming} />
 }

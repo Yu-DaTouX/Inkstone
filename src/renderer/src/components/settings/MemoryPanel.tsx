@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Icon, type IconName } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon, type IconName } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 import {
   MEMORY_SECTIONS,
   MEMORY_SECTION_IDS,
@@ -9,8 +9,8 @@ import {
   type MemorySectionDef,
   type MemorySectionId,
   type Topic
-} from '../data/sections'
-import type { MemoryItem } from '../../../shared/ipc'
+} from '../../data/sections'
+import type { MemoryItem } from '../../../../shared/ipc'
 
 /* ===================================================================
    右栏 —— 记忆面板

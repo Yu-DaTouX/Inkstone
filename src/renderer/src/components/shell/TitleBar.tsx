@@ -1,6 +1,6 @@
-import { Icon } from '../icons/Icon'
-import { useI18n } from '../i18n'
-import type { ConnState } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useI18n } from '../../i18n'
+import type { ConnState } from '../../state/store'
 
 export type Theme = 'dark' | 'light'
 

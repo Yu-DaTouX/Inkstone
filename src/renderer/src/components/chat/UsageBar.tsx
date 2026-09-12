@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
-import type { Usage } from '../../../shared/ipc'
-import { cacheHitRate, formatHitRate } from '../../../shared/turns'
-import { ModelThinkingPicker } from './Pickers'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import type { Usage } from '../../../../shared/ipc'
+import { cacheHitRate, formatHitRate } from '../../../../shared/turns'
+import { ModelThinkingPicker } from '../Pickers'
 
 /**
  * 底部的用量条。

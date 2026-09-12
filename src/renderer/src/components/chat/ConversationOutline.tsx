@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
-import { groupIntoTurns } from '../../../shared/turns'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import { groupIntoTurns } from '../../../../shared/turns'
 
 /**
  * 对话导航轨 —— 消息流左侧那一条。

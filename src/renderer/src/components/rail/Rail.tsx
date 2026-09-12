@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
-import type { SessionSummary } from '../../../shared/ipc'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import type { SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
+import { forkLatest } from '../../lib/fork'
+import { BranchTree } from './BranchTree'
 import { RailUser } from './RailUser'
 
 /**
@@ -332,6 +334,8 @@ function SessionRow({
   onSelect: () => void
 }) {
   const t = useT()
+  /** 分支树是否展开（用户要求：在左栏的会话里增加一个分支树，点开看详情） */
+  const [branchesOpen, setBranchesOpen] = useState(false)
 
   return (
     <div className={`srow-wrap ${menuOpen ? 'menu-open' : ''}`}>
@@ -342,6 +346,24 @@ function SessionRow({
 
       {selected ? (
         <span className="srow-acts">
+          {/*
+           * 分支入口（用户要求）。
+           * 为什么只在**选中的**会话上显示：分支树要先读那个会话的
+           * get_tree（2000+ 节点的会话要裁一次，有成本），
+           * 而用户只可能看他当前打开的这个。
+           */}
+          <button
+            className={`rail-icon sm ${branchesOpen ? 'on' : ''}`}
+            title={t('rail.branches')}
+            data-testid="rail-branches"
+            data-open={branchesOpen ? '1' : '0'}
+            onClick={(e) => {
+              e.stopPropagation()
+              setBranchesOpen((v) => !v)
+            }}
+          >
+            <Icon name="layers" size={12} />
+          </button>
           <button className="rail-icon sm" title={t('rail.more')} onClick={(e) => {
             e.stopPropagation()
             onToggleMenu()
@@ -349,6 +371,12 @@ function SessionRow({
             <Icon name="menu" size={12} />
           </button>
         </span>
+      ) : null}
+
+      {selected && branchesOpen ? (
+        <div className="srow-branches" onClick={(e) => e.stopPropagation()}>
+          <BranchTree sessionPath={s.path} />
+        </div>
       ) : null}
 
       {menuOpen ? (
@@ -371,6 +399,33 @@ function SessionRow({
             style={{ '--i': 2 } as React.CSSProperties}
             className="srow-menu-btn"
             onClick={() => {
+              /*
+               * 重命名。
+               *
+               * ⚠️ 这里曾经**没有入口** —— store 里 renameSession / 主进程 IPC /
+               *    pi 的 set_session_name 三层都通，但界面上没有任何地方调它，
+               *    于是「重命名」这个功能实际上不可达（而 README 里写着左栏菜单有它）。
+               *    整理时发现的：扫 i18n 孤儿键时看到 rail.rename 没人用，
+               *    顺着往下查才确认是**功能缺口**而不是多余的文案。
+               *
+               * 用 prompt 与相邻的删除按钮（confirm）保持同一量级 ——
+               * 重命名不值得为它开一个模态框。
+               */
+              const name = window.prompt(t('rail.renamePrompt'), s.title)
+              if (name === null) return
+              const trimmed = name.trim()
+              if (!trimmed) return
+              void useStore.getState().renameSession(trimmed)
+              onToggleMenu()
+            }}
+          >
+            <Icon name="tag" size={12} />
+            {t('rail.rename')}
+          </button>
+          <button
+            style={{ '--i': 3 } as React.CSSProperties}
+            className="srow-menu-btn"
+            onClick={() => {
               void window.yan.revealPath(s.path)
               onToggleMenu()
             }}
@@ -380,7 +435,7 @@ function SessionRow({
           </button>
           <button
             className="srow-menu-btn danger"
-            style={{ '--i': 3 } as React.CSSProperties}
+            style={{ '--i': 4 } as React.CSSProperties}
             disabled={selected}
             title={selected ? t('rail.cantDeleteCurrent') : ''}
             onClick={() => {
@@ -400,26 +455,8 @@ function SessionRow({
 
 /* ---------------------------------------------------------------- 工具 */
 
-/**
- * 从最后一条用户消息分叉。
- * entryId 必须由 pi 给（get_messages 不带 entry id），
- * 所以走 get_fork_messages 取最后一项 —— 而不是从 DOM 猜。
- */
-async function forkLatest(): Promise<void> {
-  const points = await window.yan.forkPoints()
-  const last = points[points.length - 1]
-  if (!last) return
-  await useStore.getState().fork(last.entryId)
-}
-
-/** 供消息上的「从这里分叉」按钮使用 */
-export async function forkFromText(text: string): Promise<void> {
-  const points = await window.yan.forkPoints()
-  const hit = [...points].reverse().find((p) => p.text.trim() === text.trim())
-  if (!hit) return
-  await useStore.getState().fork(hit.entryId)
-}
-
+/* 分叉的两个入口在 lib/fork.ts —— 对话区（消息上的分支按钮）也要用，
+   放在这里会让对话区反过来 import 左栏。 */
 /** 相对时间：12m / 5h / 3d */
 function relTime(ts: number): string {
   const d = Math.max(0, Date.now() - ts)

@@ -44,7 +44,9 @@ const DEFAULTS: AppSettings = {
   // 空 = 用设计默认顺序
   toolOrder: [],
   toolHidden: [],
-  toolHeights: {}
+  toolHeights: {},
+  // 工具详情默认收起（见 AppSettings.toolDetail 的注释）
+  toolDetail: false
 }
 
 /**
@@ -139,6 +141,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolOrder = normalizeToolOrder(cached.toolOrder)
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
     cached.toolHeights = normalizeHeights(cached.toolHeights)
+    cached.toolDetail = cached.toolDetail === true
   } catch {
     cached = { ...DEFAULTS }
   }

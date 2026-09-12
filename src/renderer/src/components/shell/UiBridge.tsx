@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
-import { prefersReducedMotion, usePresence } from '../lib/usePresence'
-import type { ExtensionUiRequest } from '../../../shared/ipc'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
+import type { ExtensionUiRequest } from '../../../../shared/ipc'
 
 /** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
 const EXIT_MS = 110

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../icons/Icon'
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { Icon } from '../../icons/Icon'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 import { shortProject } from './rail-utils'
 
 /**

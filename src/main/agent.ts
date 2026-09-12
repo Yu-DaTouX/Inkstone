@@ -21,6 +21,7 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { generateTitle } from './title'
+import { trimTree } from './session-tree'
 import type {
   BashRun,
   CustomEntry,
@@ -34,6 +35,7 @@ import type {
   SessionStats,
   SessionTodo,
   SessionTodoSnapshot,
+  SessionTree,
   SlashCommand,
   UIMessage,
   UIToolCall,
@@ -1091,6 +1093,24 @@ export class AgentController extends EventEmitter {
   async forkPoints(): Promise<ForkPoint[]> {
     const res = await this.rpc!.command<{ messages?: ForkPoint[] }>('get_fork_messages')
     return res.success ? (res.data?.messages ?? []) : []
+  }
+
+  /**
+   * 取当前会话的分支树（已裁成「分支点 + 标签」）。
+   * 为什么要裁：实测真实会话有 2000+ 节点，原样发给界面既慢又没法显示。
+   */
+  /** 当前会话文件路径（分支树要知道属于哪个会话） */
+  currentSessionPath(): string {
+    return this.state?.sessionFile ?? ''
+  }
+
+  async sessionTree(sessionPath: string): Promise<SessionTree> {
+    const res = await this.rpc?.command<{ tree?: unknown[]; leafId?: string }>('get_tree')
+    if (!res?.success || !Array.isArray(res.data?.tree)) {
+      return { branches: [], points: 0, total: 0 }
+    }
+    const t = trimTree(res.data.tree as never, String(res.data.leafId ?? ''), sessionPath)
+    return t
   }
 
   async exportHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {

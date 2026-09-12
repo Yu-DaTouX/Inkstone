@@ -1,6 +1,6 @@
-import { useT } from '../i18n'
-import { useStore } from '../state/store'
-import { shortProject } from './rail-utils'
+import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import { shortProject } from '../rail/rail-utils'
 
 /**
  * 主区域顶部 —— 对齐 Codex 的头部。
