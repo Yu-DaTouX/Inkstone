@@ -1,0 +1,74 @@
+# electron-builder 配置
+#
+# 打包「砚 · Yan」。两件**生成物/静态资源**必须随应用分发，走 extraResources
+# （放在 <安装目录>/resources/ 下，即 process.resourcesPath）：
+#
+#   resources/pi-runtime  →  resources/pi-runtime   （20MB 内置 pi，vendor:pi 生成）
+#   resources/pi          →  resources/pi           （记忆扩展 yan-memory.ts）
+#
+# 主进程（src/main/**）只 import 'electron' 和 node: 内置模块，
+# 渲染层的第三方依赖被 Vite 打进 out/renderer/**。
+# 所以 asar 里**不需要 node_modules** —— files 只收 out/ 与 package.json。
+
+appId: com.yudatoux.yan
+productName: 砚
+copyright: Copyright © 2026 Yu-DaTouX
+
+directories:
+  output: release
+  buildResources: build
+
+# app.asar 内容（依赖已被 Vite 打包，故显式排除 node_modules）
+files:
+  - out/**
+  - package.json
+  - '!node_modules/**'
+  - '!**/*.{map,md,ts,tsx,tsbuildinfo}'
+
+# 放在 resources/ 下的额外文件（不进 asar，可被 pi 子进程直接读/执行）
+#
+# ⚠️ node_modules 必须**单独一条 from**，不能靠父目录带出来。
+#    electron-builder 的 createFilter（app-builder-lib/out/util/filter.js）里
+#    有一条硬规则：被拷贝目录的**顶层** `node_modules` 直接跳过
+#    （它以为那是 app 根的依赖，交给它的依赖解析去处理）。
+#    所以 `from: resources/pi-runtime` 只会拷来 dist/ 与 package.json，
+#    内置 pi 的 6 个最小依赖（@earendil-works/chord 等）会静默丢失 ——
+#    症状是开发态 30 个场景全绿，装出来的应用却连不上 pi。
+#    单独 `from: …/node_modules` 后，相对路径不再等于 "node_modules"，规则不触发。
+extraResources:
+  - from: resources/pi-runtime/dist
+    to: pi-runtime/dist
+    filter: ['**/*']
+  - from: resources/pi-runtime/node_modules
+    to: pi-runtime/node_modules
+    filter: ['**/*']
+  - from: resources/pi-runtime/package.json
+    to: pi-runtime/package.json
+  - from: resources/pi
+    to: pi
+    filter: ['**/*']
+
+asar: true
+compression: normal
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  # 图标：把 256×256 以上的 icon.ico / icon.png 放进 build/ 即自动使用
+  # （electron-builder 会从 PNG 自动生成 ico，无需手工转换）
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 砚
+  artifactName: ${productName}-${version}-setup.${ext}
+
+# 免安装单文件版（可选，用户想直接跑不装时用）
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

@@ -40,7 +40,12 @@
     "vendor:pi": "node scripts/vendor-pi.mjs",
     "vendor:pi:check": "node scripts/vendor-pi.mjs --check",
     "launch": "node scripts/launch.mjs",
-    "launch:dev": "node scripts/launch.mjs --dev"
+    "launch:dev": "node scripts/launch.mjs --dev",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --win",
+    "test:packaged": "node scripts/test-packaged.mjs",
+    "dist:check": "npm run dist:dir && npm run test:packaged",
+    "icon": "electron scripts/build-icon.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
@@ -48,6 +53,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.0"

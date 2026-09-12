@@ -198,13 +198,36 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|
 | `npm run dev` | 开发模式（HMR） |
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
-| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 13 个真实应用场景（不烧 token） |
-| `npm run test:unit` | 纯逻辑单测（70 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 |
+| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 30 个真实应用场景（不烧 token） |
+| `npm run test:unit` | 纯逻辑单测（110 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 |
 | `npm run test:live` | 全部场景（含 5 个会真调模型的） |
 | `npm run test:live -- live features memory` | 指定场景，不烧 token |
 | `npm run test:live -- e2e image queue` | 会花少量额度（真流式 / 真图片 / 真排队） |
 | `npm run probe-pi` | 单独验证「pi 能不能被找到并启动」 |
 | `npm run icons` | 从设计稿重抽图标 sprite |
+| `npm run icon` | 重新生成应用图标 `build/icon.ico` + `icon.png`（离屏渲染，无新依赖） |
+| `npm run dist:dir` | 产出免安装目录 `release/win-unpacked/`（调试用，快） |
+| `npm run dist` | 出安装包：NSIS `*-setup.exe` + 免安装单文件 `*-portable.exe` |
+| `npm run test:packaged` | **验打包产物**：跑 `release/win-unpacked` 里的真实应用，断言用的是包内 pi |
+| `npm run dist:check` | `dist:dir` + `test:packaged` 一条龙 |
+
+### 打包分发（Windows）
+
+配置在 [`electron-builder.yml`](electron-builder.yml)，`npm run dist` 出两个东西：
+
+| 产物 | 用途 |
+|---|---|
+| `砚-<版本>-setup.exe` | NSIS 安装包（可选安装目录、桌面/开始菜单快捷方式） |
+| `砚-<版本>-portable.exe` | 免安装单文件版（双击即跑，自解压到临时目录） |
+
+两件**生成物/静态资源**随包分发（`extraResources` → 安装目录的 `resources/`）：
+内置 pi 运行时（20MB）与记忆扩展 `yan-memory.ts`。所以**用户不需要自己装 pi**。
+
+> 体积：安装包约 120MB、免安装目录约 399MB（Electron 本体占大头）。
+>
+> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 30 个场景
+> 读的是仓库里的 `resources/pi-runtime`，打包后改从 `process.resourcesPath/` 找，
+> 路径错了应用**能启动但连不上 pi**，开发态测试全绿也照样复现不了。
 
 ### 测试分三层
 
@@ -216,6 +239,8 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 
 **UI 层不在裸 `BrowserWindow` 里测。** 那样 preload/IPC/pi 全都不存在，
 断言会「通过」而应用其实是坏的。
+
+> 完整清单见 `package.json` 的 `check`（共 **30 个场景**，下表只列重点）。
 
 | 场景 | 覆盖 | 花 token |
 |---|---|---|
@@ -262,12 +287,13 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 模型与思考档选择（69 个模型）、上下文压缩、自动压缩与自动重试开关、
 图片输入（粘贴 / 拖拽 / 选文件）、`!` 直执行 shell、`/` 斜杠命令补全、
 扩展 UI 对话框（select/confirm/input/editor）、扩展通知与状态条、
-长会话虚拟化、中英切换、深浅主题、记忆的完整认识论流程。
+长会话虚拟化、中英切换、深浅主题、记忆的完整认识论流程、
+**Windows 打包分发**（NSIS 安装包 + 免安装单文件版，内置 pi 与记忆扩展随包）。
 
 **没做：**
 - 会话树浏览（`get_tree` 协议有，没做 UI）
 - 浅色主题未打磨（令牌齐全）
-- **打包分发**（唯一阻塞「给别人用」的：pi 怎么随应用分发、18.6MB 字体怎么子集化）
+- macOS / Linux 打包、代码签名（Windows 优先；未签名安装会有 SmartScreen 提示）
 - 跨设备同步（原型里的「已同步 · 桌面·笔记本·手机」是虚构的，已从界面移除）
 - 快捷键映射（扩展的 `registerShortcut` 未接）
 

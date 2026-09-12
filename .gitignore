@@ -8,7 +8,9 @@ node_modules/
 # ---- 构建产物 ----
 dist/
 out/
-build/
+build/*
+!build/icon.ico
+!build/icon.png
 release/
 *.tsbuildinfo
 

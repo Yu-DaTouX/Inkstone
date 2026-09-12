@@ -676,7 +676,7 @@ function createWindow(): void {
       setTimeout(() => {
         void (async () => {
           try {
-            const { readFile } = await import('node:fs/promises')
+            const { readFile, writeFile } = await import('node:fs/promises')
             const src = await readFile(probeFile, 'utf8')
             // 可选：先发一次**真实**鼠标移动（合成事件不产生 :hover，
             // 所以涉及 CSS hover 的断言必须用 sendInputEvent）
@@ -732,9 +732,24 @@ function createWindow(): void {
             const result = await win!.webContents.executeJavaScript(src, true)
             // 按键序列应该已经跑完（探针脚本会等够时间）；保险起见等一下
             if (keyTask) await keyTask.catch(() => undefined)
+            const body = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
             console.log('---PROBE-START---')
-            console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2))
+            console.log(body)
             console.log('---PROBE-END---')
+            /*
+             * 可选：把结果同时写进文件。
+             * 为什么需要：Windows 上的 GUI 应用（尤其 electron-builder 的
+             * portable 单文件版）**不保证有可用的 stdout** —— 外层包装进程
+             * 不转发子进程的管道，靠 stdout 抓输出会「一个字节都没有」，
+             * 看着像启动失败。文件没有这个限制。
+             */
+            if (process.env.YAN_PROBE_OUT) {
+              await writeFile(
+                process.env.YAN_PROBE_OUT,
+                `${body}\n`,
+                'utf8'
+              ).catch(() => undefined)
+            }
           } catch (e) {
             console.error('[probe] 失败', e)
           }
