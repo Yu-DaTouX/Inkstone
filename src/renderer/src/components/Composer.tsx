@@ -28,6 +28,11 @@ export function Composer() {
   const busy = useStore((s) => !!s.session?.isStreaming)
   const conn = useStore((s) => s.conn)
   const commands = useStore((s) => s.commands)
+  /** 常用排序（自动管理）、记录使用、以及列表的自动刷新 */
+  const commandUse = useStore((s) => s.commandUse)
+  const markCommandUsed = useStore((s) => s.markCommandUsed)
+  const reloadCommands = useStore((s) => s.reloadCommands)
+  const commandsAt = useStore((s) => s.commandsAt)
   const attachments = useStore((s) => s.attachments)
   const addAttachments = useStore((s) => s.addAttachments)
   const removeAttachment = useStore((s) => s.removeAttachment)
@@ -169,10 +174,23 @@ export function Composer() {
   const slashMatches = useMemo(() => {
     if (slashQuery === null) return []
     const q = slashQuery.toLowerCase()
-    return commands
+    /*
+     * 排序：**用过的排前面**（用户要的「自动管理」）。
+     *
+     * 为什么不改成完全按频率排：命令列表是用户背下来的东西，
+     * 顺序乱变会让「第三个是 /compact」这种肌肉记忆失效。
+     * 所以只把**用过的**提到前面，其余仍按名字 —— 稳定又有用。
+     */
+    const hit = commands
       .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q))
       .slice(0, 12)
-  }, [commands, slashQuery])
+    return hit.sort((a, b) => {
+      const ua = commandUse[a.name] ?? 0
+      const ub = commandUse[b.name] ?? 0
+      if (ua !== ub) return ub - ua
+      return a.name.localeCompare(b.name)
+    })
+  }, [commands, slashQuery, commandUse])
 
   /**
    * `@` 文件引用补全。
@@ -244,10 +262,28 @@ export function Composer() {
     (name: string) => {
       setValue(`/${name} `)
       setMenu({ open: false, index: 0 })
+      /* 记录使用 → 下次它排在前面（自动管理） */
+      markCommandUsed(name)
       ref.current?.focus()
     },
-    []
+    [markCommandUsed]
   )
+
+  /*
+   * 命令列表的**自动刷新**（用户要的「自动管理」）。
+   *
+   * 为什么需要：命令来自扩展 / 技能 / 提示词模板，它们是**运行时**加载的
+   * （启动那一刻可能还没就绪），而旧实现只在启动时拉一次 ——
+   * 之后新增的命令永远看不到，用户会以为「我的扩展没生效」。
+   *
+   * 策略：菜单一打开就检查，超过 30s 就重拉（一条子命令，很快，不烧钱）。
+   * 不用定时轮询：命令变更是低频事件，轮询会在后台白跑。
+   */
+  useEffect(() => {
+    if (slashQuery === null) return
+    if (Date.now() - commandsAt < 30_000) return
+    void reloadCommands()
+  }, [slashQuery, commandsAt, reloadCommands])
 
   /**
    * 把 `@前缼` 补成 `@完整路径`。
@@ -464,6 +500,16 @@ export function Composer() {
                 <span className="slash-src">{c.source}</span>
               </button>
             ))}
+            {/*
+             * 底部按键说明。
+             * 为什么要写：菜单支持 ↑↓ / Enter / Tab / Esc，但这些都是**看不见的**，
+             * 不提示的话用户只会用鼠标点（或者以为只能点）。
+             */}
+            <div className="slash-hint" data-testid="slash-hint">
+              <span>↑↓ 选</span>
+              <span>Enter / Tab 填入</span>
+              <span>Esc 关闭</span>
+            </div>
           </div>
         ) : null}
 

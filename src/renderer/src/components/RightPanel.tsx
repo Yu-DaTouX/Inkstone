@@ -4,8 +4,8 @@ import { useT } from '../i18n'
 import type { MessageKey } from '../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../state/store'
-import { TOOL_SECTIONS, type QueueMode, type ToolSectionId } from '../../../shared/ipc'
-import { HandleProvider } from './ToolSection'
+import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type ToolSectionId } from '../../../shared/ipc'
+import { HandleProvider, SECTION_TITLE } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
@@ -44,6 +44,11 @@ export function RightPanel() {
   const order = useStore((s) => s.settings?.toolOrder)
   const hidden = useStore((s) => s.settings?.toolHidden)
   const setToolLayout = useStore((s) => s.setToolLayout)
+  const draggingId = useStore((s) => s.draggingSection)
+  const setDraggingSection = useStore((s) => s.setDraggingSection)
+  const setToolDropTarget = useStore((s) => s.setToolDropTarget)
+  const placeSection = useStore((s) => s.placeSection)
+  const dropTarget = useStore((s) => s.toolDropTarget)
   const [libOpen, setLibOpen] = useState(false)
 
   /*
@@ -97,23 +102,108 @@ export function RightPanel() {
     [fullOrder, setToolLayout]
   )
 
+  /**
+   * 从工具库拖拽到工具栏的全过程处理。
+   *
+   * 为什么监听挂在 window 上：指针一旦离开工具库那个元素（这是必然的 ——
+   * 用户在往工具栏那边拖），元素自己的 pointermove 就不再触发了。
+   * 监听 window 才能持续拿到坐标、算出落点 —— 这就是「实时位置预览」的来源。
+   */
+  useEffect(() => {
+    if (!draggingId) return
+
+    /** 根据指针 Y 找出「会插到哪个分区的前/后」 */
+    const onMove = (e: PointerEvent): void => {
+      // 浮动标签跟着鼠标（直接改 style，零重渲染）
+      const g = ghostRef.current
+      if (g) {
+        g.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 10}px)`
+      }
+      const slots = [...document.querySelectorAll('.rp-body > .rp-slot')] as HTMLElement[]
+      // 先看有没有落在某个分区里（含它的边界）
+      for (const el of slots) {
+        const r = el.getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) {
+          const id2 = el.dataset.toolId ?? ''
+          if (!id2 || id2 === draggingId) {
+            setToolDropTarget(null)
+            return
+          }
+          setToolDropTarget({ id: id2, after: e.clientY > r.top + r.height / 2 })
+          return
+        }
+      }
+      /*
+       * 落在空白处（列表上方/下方）：
+       *   · 在第一个分区之上 → 插到最前
+       *   · 在最后一个分区之下 → 插到最后（targetId = null 时 placeSection 会追加）
+       * 不给反馈的话，用户拖到顶部会以为「拖丢了」。
+       */
+      const first = slots[0]?.dataset.toolId
+      if (slots.length && e.clientY < slots[0].getBoundingClientRect().top && first) {
+        setToolDropTarget({ id: first, after: false })
+      } else {
+        setToolDropTarget(null)
+      }
+    }
+
+    const onUp = (e: PointerEvent): void => {
+      const t = useStore.getState().toolDropTarget
+      /*
+       * 落点在工具栏区域内才真的移动；拖到别处 = 取消。
+       * 不这么做的话，用户想放弃拖拽时把指针甩到中栏，
+       * 分区会莫名其妙地跳位置。
+       */
+      const body = document.querySelector('.rp-body')?.getBoundingClientRect()
+      const inside = !!body && e.clientX >= body.left - 40 && e.clientX <= body.right + 8 && e.clientY >= body.top - 60 && e.clientY <= body.bottom + 40
+      if (inside) void placeSection(draggingId, t?.id ?? null, t?.after ?? true)
+      else setDraggingSection(null)
+    }
+
+    /** 拖到一半按 Esc = 取消 */
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setDraggingSection(null)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('keydown', onKey)
+    document.body.classList.add('tool-dragging')
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('keydown', onKey)
+      document.body.classList.remove('tool-dragging')
+    }
+  }, [draggingId, placeSection, setDraggingSection, setToolDropTarget])
+
+  /** 跟着鼠标的小标签：告诉用户「正在搬的这块叫什么」 */
+  const ghostLabel = draggingId ? t(SECTION_TITLE[draggingId as ToolSectionId]) : ''
+  /** 浮动标签的 DOM 引用：位置直接改 style，不走 state（每像素重渲染会卡） */
+  const ghostRef = useRef<HTMLDivElement>(null)
+
   /*
-   * 收起时不再返回 null —— 而是留一个**窄把手**：
-   * 面板开关已经搬到面板自己的头部（用户要求），
-   * 如果收起后什么都不留，就没办法再展开了。
-   * 这也是左右对称的：左栏收起后有头部那个开关。
+   * 收起时不再返回 null —— 留一条**细线 + 悬停才显的展开按钮**。
+   *
+   * 演进过程（每一步都是用户提的）：
+   *   ① 原来收起后什么都不留 → 没有展开入口，面板锁死
+   *   ② 补了 40px 竖条 → 用户说「把条形隐藏掉」（那道竖条本身很难看）
+   *   ③ 现在 8px（见 CSS §52）：常驻只有一条缝，鼠标移上去才出按钮
    */
   if (!open) {
     return (
       <aside className="rightstub" data-testid="rightstub">
         <button
-          className="rp-x"
+          className="rp-unhide"
           onClick={() => void toggle()}
           title={t('rp.show')}
           data-testid="rightpanel-toggle"
           data-open="0"
+          aria-label={t('rp.show')}
         >
-          <Icon name="sidebar-right" size={12} />
+          <span className="ico">
+            <Icon name="sidebar-right" size={12} />
+          </span>
         </button>
       </aside>
     )
@@ -154,6 +244,18 @@ export function RightPanel() {
       </div>
 
       {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+
+      {/*
+        拖动中的浮动标签（用户要的「实时位置预览」的文字部分）。
+        位置跟随鼠标：pointermove 里直接改 style，不走 React state ——
+        否则每移动一像素就重渲染整棵工具栏，拖拽会卡。
+        插入位置那条线由各 .rp-slot 的 data-over 画（也在实时更新）。
+      */}
+      {draggingId ? (
+        <div className="tool-drag-ghost" data-testid="tool-drag-ghost" ref={ghostRef}>
+          {ghostLabel}
+        </div>
+      ) : null}
 
       <div className="rp-body" data-testid="rp-body">
         {visible.map((id, i) => (
@@ -204,8 +306,15 @@ function SectionSlot({
 }) {
   const t = useT()
   const [dragging, setDragging] = useState(false)
-  const [over, setOver] = useState<'before' | 'after' | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  /*
+   * 插入预览线统一走 store 的 toolDropTarget —— 因为拖拽可能**从工具库发起**，
+   * 那时指针不在这块分区上，用本组件的局部 state 根本收不到事件。
+   * （曾经这里有一份自己的 over state，与 store 那份会打架。）
+   */
+  const setToolDropTarget = useStore((s2) => s2.setToolDropTarget)
+  /** 当前全局落点（拖拽从工具库发起时也走它 —— 局部 state 收不到那些事件） */
+  const dropTarget = useStore((s2) => s2.toolDropTarget)
 
   /*
    * 拖拽用**指针事件**而不是 HTML5 DnD。
@@ -251,14 +360,14 @@ function SectionSlot({
       if (e.clientY >= r.top && e.clientY <= r.bottom) {
         const id2 = el.dataset.toolId as ToolSectionId | undefined
         if (!id2 || id2 === id) {
-          setOver(null)
+          setToolDropTarget(null)
           return
         }
-        setOver(e.clientY < r.top + r.height / 2 ? 'before' : 'after')
+        setToolDropTarget({ id: id2, after: e.clientY >= r.top + r.height / 2 })
         return
       }
     }
-    setOver(null)
+    setToolDropTarget(null)
   }
 
   const finish = (e: React.PointerEvent<HTMLButtonElement>): void => {
@@ -273,7 +382,7 @@ function SectionSlot({
 
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
     const targetId = target?.dataset.toolId as ToolSectionId | undefined
-    setOver(null)
+    setToolDropTarget(null)
     if (!target || !targetId || targetId === id) return
 
     // 放在目标之前还是之后：用指针在目标盒子里的相对位置决定
@@ -298,6 +407,75 @@ function SectionSlot({
     }
   }
 
+  /**
+   * 分区高度可调（用户要求）。
+   *
+   * 做法：在**可滚动内容**（.rp-fs / .rp-log）上加一个底部把手，拖动改
+   * max-height；数值按分区 id 存到设置里（toolHeights[id] = px）。
+   *
+   * 为什么不给每个分区都加：大部分分区内容就是几行，给它们加把手只是噪声。
+   * 只有「内部会滚动」的分区（文件树、日志）才真的需要调高度 ——
+   * 这也是用户会碰到的两个。
+   */
+  const [heightDragging, setHeightDragging] = useState(false)
+  const heightRef = useRef<{ y: number; base: number } | null>(null)
+
+  const onHeightDown = (e: React.PointerEvent<HTMLButtonElement>, el: HTMLElement | null): void => {
+    if (e.button !== 0 || !el) return
+    e.preventDefault()
+    e.stopPropagation()
+    heightRef.current = { y: e.clientY, base: el.getBoundingClientRect().height }
+    setHeightDragging(true)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* capture 失败也能拖（只会在移出把手后断流） */
+    }
+  }
+
+  const onHeightMove = (e: React.PointerEvent<HTMLButtonElement>, el: HTMLElement | null): void => {
+    const st = heightRef.current
+    if (!st || !el) return
+    /*
+     * 边界与主进程一致（80–900）。往下拖 = 变高。
+     * 拖动中直接改 style（不走 state）—— 每像素重渲染整棵工具栏会跟手不起来。
+     */
+    const next = Math.round(Math.min(900, Math.max(80, st.base + (e.clientY - st.y))))
+    el.style.maxHeight = next + 'px'
+  }
+
+  const onHeightUp = (e: React.PointerEvent<HTMLButtonElement>, el: HTMLElement | null): void => {
+    const st = heightRef.current
+    if (!st || !el) return
+    heightRef.current = null
+    setHeightDragging(false)
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    const h = Math.round(el.getBoundingClientRect().height)
+    void setToolHeight(id, h)
+  }
+
+  /**
+   * 找本分区里那个「会滚动的容器」（文件树的 .rp-fs / 日志的 .rp-log）。
+   * 高度把手改的就是它的 max-height —— 不要改分区本身的高度，
+   * 那会把标题栏也一起拉高（用户拖的是内容区）。
+   */
+  const scrollEl = (): HTMLElement | null =>
+    ref.current?.querySelector('.rp-fs, .rp-log, .rp-todos') as HTMLElement | null
+
+  /** 设置里存的高度（启动时应用一次） */
+  const savedHeight = useStore((s2) => s2.settings?.toolHeights?.[id] ?? 0)
+  useEffect(() => {
+    const el = scrollEl()
+    if (el && savedHeight > 0) el.style.maxHeight = savedHeight + 'px'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedHeight, id])
+
+  const setToolHeight = useStore((s2) => s2.setToolHeight)
+
   const Body = SECTION_REGISTRY[id].Body
   /*
    * 空判据交给注册表，而不是「让 Body 返回 null」。
@@ -318,9 +496,9 @@ function SectionSlot({
 
   return (
     <div
-      className={`rp-slot ${dragging ? 'dragging' : ''}`}
-      data-over={over ?? ''}
+      className={`rp-slot ${dragging ? 'dragging' : ''} tool-drag-from-lib`}
       data-tool-id={id}
+      data-over={dropTarget?.id === id ? (dropTarget.after ? 'after' : 'before') : ''}
       ref={ref}
     >
       <HandleProvider
@@ -342,6 +520,19 @@ function SectionSlot({
         }
       >
         <Body />
+        {/* 只在会滚动的分区上给高度把手（见 onHeightDown 的注释） */}
+        {SECTION_REGISTRY[id].resizable ? (
+          <button
+            className={`rp-vgrip ${heightDragging ? 'on' : ''}`}
+            title={t('rp.heightHint')}
+            aria-label={t('rp.heightHint')}
+            data-testid={`vgrip-${id}`}
+            onPointerDown={(e) => onHeightDown(e, scrollEl())}
+            onPointerMove={(e) => onHeightMove(e, scrollEl())}
+            onPointerUp={(e) => onHeightUp(e, scrollEl())}
+            onPointerCancel={(e) => onHeightUp(e, scrollEl())}
+          />
+        ) : null}
       </HandleProvider>
     </div>
   )
@@ -357,6 +548,11 @@ const SECTION_REGISTRY: Record<
     Extra?: () => React.ReactElement | null
     /** 返回 true 则整个分区不渲染（而不是渲染一个空的） */
     isEmpty?: (s: ToolPanelState) => boolean
+    /**
+     * 内容会滚动、高度值得调（文件树 / 日志）。
+     * 其余分区就几行，给它们加把手只是噪声。
+     */
+    resizable?: boolean
   }
 > = {
   context: { Body: () => <ContextSection /> },
@@ -366,7 +562,7 @@ const SECTION_REGISTRY: Record<
     Body: () => <TodoSection />
   },
   queue: { Body: () => <QueueSection /> },
-  files: { Body: () => <FileTree /> },
+  files: { resizable: true, Body: () => <FileTree /> },
   ext: {
     isEmpty: (s) => Object.keys(s.statuses).length === 0 && Object.keys(s.widgets).length === 0,
     Body: () => <ExtSection />
@@ -374,6 +570,7 @@ const SECTION_REGISTRY: Record<
   log: {
     isEmpty: (s) => s.logs.length === 0,
     Extra: () => <LogCount />,
+    resizable: true,
     Body: () => <LogSection />
   },
   actions: { Body: () => <ActionsSection /> }
@@ -425,6 +622,37 @@ function ContextSection() {
 
   const nf = new Intl.NumberFormat('en-US')
 
+  /*
+   * 自动压缩的触发点（用户要求：「显示什么时候开始自动压缩上下文」）。
+   *
+   * 数据来自 pi 自己的设置文件（main/compaction.ts）—— **不能写死 16384**：
+   * 用户可以在 pi 的 settings.json 里改 reserveTokens，
+   * 而界面上的这个数字是他判断「还能聊多久」的依据（丢了上下文就没了）。
+   * 窗口大小变化（换模型）时重算。
+   */
+  const [compact, setCompact] = useState<CompactionInfo | null>(null)
+  useEffect(() => {
+    if (!win) return
+    let alive = true
+    void window.yan
+      .compactionInfo(win)
+      .then((r) => {
+        if (alive) setCompact(r)
+      })
+      .catch(() => {
+        /* 读不到就不显示这一行 —— 不能因此把上下文分区弄崩 */
+      })
+    return () => {
+      alive = false
+    }
+  }, [win])
+
+  /** 触发点在进度条上的位置（%） */
+  const thresholdPct =
+    compact && compact.contextWindow > 0 ? (compact.threshold / compact.contextWindow) * 100 : 0
+  /** 距离触发还差多少 tokens（≤ 0 = 已经过线） */
+  const untilCompact = compact ? compact.threshold - used : 0
+
   return (
     <Section titleKey="rp.context" testId="rp-context">
       <div className="rp-kv">
@@ -444,7 +672,45 @@ function ContextSection() {
         pct: pct.toFixed(1)
       })}>
         <i style={{ width: `${Math.min(100, pct)}%` }} />
+        {/*
+         * 自动压缩的触发线画在进度条上，而不只写一个数字 ——
+         * 用户真正想知道的是「离那条线还有多远」，那就把线画出来。
+         */}
+        {compact?.enabled && thresholdPct > 0 && thresholdPct < 100 ? (
+          <b
+            className="rp-threshold"
+            data-testid="ctx-threshold-mark"
+            style={{ left: `${thresholdPct}%` }}
+            title={t('ctx.thresholdTip', { n: nf.format(compact.threshold) })}
+          />
+        ) : null}
       </div>
+
+      {/* 自动压缩的说明行（用户要求：「显示什么时候开始自动压缩」） */}
+      {compact ? (
+        <div className="rp-kv" data-testid="ctx-compaction">
+          <span className="rp-k">{t('ctx.autoCompact')}</span>
+          <span className="spacer" />
+          {compact.enabled ? (
+            <span
+              className={`rp-v ${untilCompact <= 0 ? 'warn' : ''}`}
+              title={t('ctx.thresholdTip2', {
+                reserve: nf.format(compact.reserveTokens),
+                keep: nf.format(compact.keepRecentTokens),
+                src: compact.custom ? t('ctx.custom') : t('ctx.defaults')
+              })}
+            >
+              {untilCompact > 0
+                ? t('ctx.untilCompact', { n: nf.format(untilCompact) })
+                : t('ctx.atCompact')}
+            </span>
+          ) : (
+            <span className="rp-v" title={t('ctx.disabledTip')}>
+              {t('ctx.off')}
+            </span>
+          )}
+        </div>
+      ) : null}
 
       {/*
        * 压缩中 —— 从中栏底部的状态条搬过来的。

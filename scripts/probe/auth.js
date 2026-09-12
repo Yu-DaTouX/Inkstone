@@ -88,8 +88,13 @@
   log('')
   log('=== 3. 设置 · 接入页 ===')
   store.getState().openSettings('auth')
-  await sleep(900)
-
+  /*
+   * ⚠️ 轮询等面板渲染，不用固定 sleep。
+   *    设置面板要渲染 19 行接入方式，在全量跑的最后（机器被前二十几个
+   *    场景拖过）可能超过 900ms —— 固定等待会量到 tabs=[]，
+   *    后面所有断言跟着挂（实测第 1 轮挂了）。
+   */
+  for (let i = 0; i < 40 && !q('.settings-tab'); i++) await sleep(100)
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tabs = ' + JSON.stringify(tabs))
   ok(
@@ -97,6 +102,8 @@
     '有「接入」tab'
   )
 
+  // 行也是异步渲染的（面板内容挂载后才有）—— 同样轮询
+  for (let i = 0; i < 30 && !q('.auth-row'); i++) await sleep(100)
   const rows = qa('.auth-row')
   log('  行数 = ' + rows.length)
   ok(rows.length > 0, '渲染出接入方式列表')
@@ -115,7 +122,7 @@
   const first = setBtns[0]
   if (first) {
     first.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(400)
+    for (let i = 0; i < 25 && !q('.auth-input'); i++) await sleep(100)
     const inputs = qa('.auth-input')
     ok(inputs.length > 0, '点「填入」后出现输入框')
     if (inputs.length) {

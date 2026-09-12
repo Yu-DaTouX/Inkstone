@@ -39,6 +39,16 @@ export function ToolLibrary({ onClose }: { onClose: () => void }) {
   }, [onClose])
 
   const hiddenSet = useMemo(() => new Set(hidden ?? []), [hidden])
+  const dragging = useStore((s) => s.draggingSection)
+
+  /*
+   * 一开始拖就把浮层关掉（用户要求「从工具库拖到右栏」）：
+   *   ① 浮层盖在工具栏上方，不关掉就看不到落点
+   *   ② 拖拽一结束就自动关（不管落在哪），不留一个悬在空中的面板
+   */
+  useEffect(() => {
+    if (dragging) onClose()
+  }, [dragging, onClose])
   /**
    * 展示顺序 = 设置里的顺序（空则用默认）。
    * 库里的分区也按同一顺序排 —— 两边顺序一致，来回搬的时候不会「跳位置」。
@@ -76,7 +86,21 @@ export function ToolLibrary({ onClose }: { onClose: () => void }) {
         {list.map((id, i) => {
           const inLib = hiddenSet.has(id)
           return (
-            <div key={id} className="tl-row" data-id={id} data-in-lib={inLib ? '1' : '0'}>
+            <div
+              key={id}
+              className="tl-row"
+              data-id={id}
+              data-in-lib={inLib ? '1' : '0'}
+              /*
+               * 整行可拖（用户要求「可以从工具库拖拽到右栏」）。
+               * 拖拽用指针事件，与工具栏内的排序、面板宽度同一套 ——
+               * 项目里三处拖拽行为一致，维护时只需要懂一种。
+               */
+              onPointerDown={(e) => beginDrag(e, id, inLib)}
+            >
+              <span className="tl-grip" aria-hidden title={t('tl.dragHint')}>
+                ⠿
+              </span>
               <span className={`tl-dot ${inLib ? 'off' : 'on'}`} aria-hidden />
               <span className="tl-name">{t(SECTION_TITLE[id])}</span>
               <span className="spacer" />
@@ -135,4 +159,31 @@ async function move(
   next[i] = next[j]
   next[j] = tmp
   await save({ toolOrder: next })
+}
+
+/**
+ * 从工具库发起拖拽。
+ *
+ * 为什么要在这里（而不是等用户在工具栏里拖）：因为**源和目标是两个组件**。
+ * 做法：把「正在拖谁」放进 store，然后
+ *   · 关掉工具库浮层（否则它盖住工具栏，用户看不到落点）
+ *   · 在 document 上挂临时的 pointermove / pointerup（由 RightPanel 处理）
+ *     —— 指针会离开这个元素，所以不能只听元素自己的事件
+ *
+ * 拖拽中那个跟着鼠标的小标签（「位置预览」的文字部分）也在 RightPanel，
+ * 因为只有它知道当前落点算到了哪。
+ */
+function beginDrag(e: React.PointerEvent<HTMLDivElement>, id: ToolSectionId, inLib: boolean): void {
+  if (e.button !== 0) return
+  /*
+   * 已在工具栏里的分区也能拖（用户可能想调位置），所以不区分 inLib ——
+   * 它只影响提示文案。
+   *
+   * 但点在行内按钮（↑↓ / 收进库 / 拿到工具栏）上不能当拖拽，
+   * 所以用 closest 排除 —— 不排除的话那些按钮会点不动。
+   */
+  void inLib
+  if ((e.target as HTMLElement).closest('button')) return
+  e.preventDefault()
+  useStore.getState().setDraggingSection(id)
 }

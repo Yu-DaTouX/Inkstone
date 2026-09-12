@@ -973,11 +973,17 @@
    ⚠️ 曾经这里是 `opacity: 0` + `pointer-events: auto` —— 结果是
    左栏透明却仍然可点、还盖在展开把手上，展开按钮根本点不到。
    现在改为「保留头部、隐藏其余」。 */
-.app.rail-off .rail > *:not(.rail-top) {
+.app.rail-off .rail {
+  /* 整条隐藏：收起态的展开入口改用 .rail-unhide（细线上的悬停按钮） */
   visibility: hidden;
 }
-.app.rail-off .rail-top > *:not(.rail-brand-btn) {
-  visibility: hidden;
+/*
+ * 收起时允许溢出：.rail-unhide 的 22px 按钮要比 8px 的缝宽，
+ * overflow:hidden 会把它裁掉（实测：按钮存在但看不见也点不到）。
+ * 左栏内容此时是 visibility:hidden，溢出不会带来别的东西。
+ */
+.app.rail-off .rail-slot {
+  overflow: visible;
 }
 /* -------------------------------------------------------------------
    24. 左栏顶部的模式开关（固定 / 自动）
@@ -1880,7 +1886,7 @@
   /* 收起宽度：必须容得下头部那个开关（offset 12 + 按钮 26 + 边距 12）——
      否则收起后按钮被裁掉，就没法再展开了。
      48-50 也是常见「折叠侧边栏」宽度（VS Code 的 activity bar 是 48） */
-  --w-rail-collapsed: 50px;
+  --w-rail-collapsed: 8px;
   /* 工具栏。同样：用户拖过就用他的值 */
   --w-right: var(--w-panel-user, 264px);
 }
@@ -4029,7 +4035,9 @@ html[data-theme='light'] .tb-pin.on {
  */
 .rightstub {
   position: relative; /* 右栏是 grid 的最后一列，不脱离文档流 */
-  width: 40px;
+  /* 跟随列宽（--w-right 收起时是 8px）。写死宽度会让「收起」失效 ——
+     实测写 40px 时列宽虽是 8px，但元素仍占 40px（溢出） */
+  width: 100%;
   background: var(--bg-1);
   border-left: 1px solid var(--border);
 }
@@ -4041,7 +4049,7 @@ html[data-theme='light'] .tb-pin.on {
 
 /* 右栏收起：只留那条 40px 的竖条 */
 .workspace:not(:has(.rightpanel)) {
-  --w-right: 40px;
+  --w-right: 8px;
 }
 
 /* ===================================================================
@@ -4523,4 +4531,230 @@ body.reordering {
 .tl-reset:hover {
   border-color: var(--accent-line);
   color: var(--accent);
+}
+
+/* ===================================================================
+   52. 面板收起后的形态：**一条细线**（用户要求「隐藏条形」）
+
+   之前收起留的是 40/50px 的竖条 —— 用户觉得那道竖条本身很难看。
+   现在收起宽度 8px：视觉上就是一条缝，但**仍然是可点的**（鼠标移上去
+   会显出一个展开按钮）。
+
+   为什么不做成完全 0 宽：那样就没有任何展开入口，面板会锁死。
+   8px 是「看不见但点到得」和「有入口」的折中 ——
+   常驻一条 40px 的条是「看得见的废空间」，8px 是一条缝，观感完全不同。
+
+   左栏与右栏共用这套规则（用户明确要求「左栏同理」）。
+   =================================================================== */
+.rp-unhide {
+  /* 收起态的展开按钮：平时完全透明，悬停/聚焦才显形 */
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 8px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: transparent;
+  overflow: visible;
+}
+.rp-unhide:hover,
+.rp-unhide:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+/* 悬停时把按钮本体「吐」到面板外侧 —— 8px 宽放不下 22px 的图标 */
+.rp-unhide .ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 1px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.rp-unhide:hover .ico,
+.rp-unhide:focus-visible .ico {
+  opacity: 1;
+}
+
+/* 左栏的同款：收起时 8px 缝，悬停显按钮 */
+.rail-unhide {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 8px;
+  height: 40px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+}
+.rail-unhide .ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 1px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.rail-unhide:hover .ico,
+.rail-unhide:focus-visible .ico {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* 拖到过窄、松手就要收起时的反馈：把手变强调色并加粗 */
+.resizer[data-will-collapse='1']::after {
+  background: var(--warn);
+  width: 2px;
+}
+
+/* ===================================================================
+   53. 上下文进度条上的「自动压缩触发线」
+
+   用户要求显示「什么时候开始自动压缩上下文」。只写个数字不够直观 ——
+   真正想知道的是「离那条线还有多远」，所以把线画在条上：
+   左段是已用（.rp-meter i），这条竖线是触发点。
+   =================================================================== */
+.rp-meter {
+  /* 触发线要相对它定位 */
+  position: relative;
+}
+.rp-threshold {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--fg-mute);
+  opacity: 0.9;
+  /* 不是交互元素，只做标记 —— 不要挡住悬停提示 */
+  pointer-events: none;
+}
+.rp-v.warn {
+  color: var(--warn);
+}
+
+/* 文件区头部的小开关（显示隐藏项）—— 打开时高亮，与别处 .on 语义一致 */
+.rp-mini.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ===================================================================
+   54. 从工具库拖到工具栏（用户要求：可拖拽 + 拖动时实时位置预览）
+
+   「实时位置预览」由两部分组成：
+     · **插入线**：各 .rp-slot 的 data-over 画在分区上/下边缘（沿用排序那套）
+       —— 它随指针实时更新，用户能看到「会插到哪」
+     · **浮动标签**：跟着鼠标的一个小胶囊，显示正在搬的分区名字
+       —— 拖离工具栏时（比如拖到中栏想放弃）插入线会消失，
+         这个标签还在，用户知道「拖拽还在进行，Esc 可取消」
+   =================================================================== */
+.tool-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  padding: 3px 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  /* 别挡住鼠标下方的元素（否则 elementFromPoint 会一直命中自己） */
+  pointer-events: none;
+  opacity: 0.95;
+}
+/* 拖拽进行中：禁掉文字选择，指针保持「抓着」的样子 */
+body.tool-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+/* 工具库里每行的抓取把手 */
+.tl-grip {
+  flex: none;
+  width: 12px;
+  color: var(--fg-mute);
+  opacity: 0.5;
+  cursor: grab;
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.tl-row:hover .tl-grip {
+  opacity: 1;
+  color: var(--accent);
+}
+.tl-row {
+  /* 整行可拖（用户在库里随便按哪都能拖） */
+  cursor: grab;
+}
+.tl-row:active {
+  cursor: grabbing;
+}
+
+/* ===================================================================
+   55. 分区高度把手（用户要求「组件高度可调节」）
+
+   只给内容会滚动的分区（文件树 / 日志）。位置在分区内容的**底部内缘**，
+   视觉是一条细线，悬停加粗 —— 与宽度把手同一套语言，
+   免得同一个应用里两种拖拽长得不一样。
+   =================================================================== */
+.rp-vgrip {
+  display: block;
+  width: 100%;
+  height: 7px;
+  margin-top: 2px;
+  cursor: row-resize;
+  /* 触摸设备上别滚页面 */
+  touch-action: none;
+  border-radius: var(--r-xs);
+}
+.rp-vgrip::after {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 3px 0;
+  background: transparent;
+  transition: background 120ms var(--ease);
+}
+.rp-vgrip:hover::after,
+.rp-vgrip:focus-visible::after,
+.rp-vgrip.on::after {
+  background: var(--accent);
+}
+.rp-vgrip:focus-visible {
+  outline: none;
+}
+
+/* ===================================================================
+   56. `/` 命令菜单底部的按键说明（用户要求「补全填充」要看得见）
+
+   这些快捷键一直支持，但界面上没写 —— 用户只会用鼠标点。
+   一行小字比在文档里写十行有用。
+   =================================================================== */
+.slash-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 4px var(--sp-2) 3px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.slash-hint span {
+  white-space: nowrap;
 }

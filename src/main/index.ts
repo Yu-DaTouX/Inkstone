@@ -17,6 +17,7 @@ import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { listDir } from './files'
+import { compactionInfo } from './compaction'
 import { resolvePi, piInfo } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import type { Attachment, MainPush } from '../shared/ipc'
@@ -442,9 +443,15 @@ function registerIpc(): void {
   ipcMain.handle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
 
   /* ---- 文件树 ---- */
-  ipcMain.handle('yan:listDir', async (_e, rel: unknown) => {
+  ipcMain.handle('yan:listDir', async (_e, rel: unknown, showHidden: unknown) => {
     const s = await getSettings()
-    return listDir(s.cwd, typeof rel === 'string' ? rel : '')
+    return listDir(s.cwd, typeof rel === 'string' ? rel : '', showHidden === true)
+  })
+
+  /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
+  ipcMain.handle('yan:compactionInfo', async (_e, win: unknown) => {
+    const s = await getSettings()
+    return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
   })
 }
 

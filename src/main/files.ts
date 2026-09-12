@@ -19,14 +19,20 @@ import { homedir } from 'node:os'
 import type { DirEntry, DirListing } from '../shared/ipc'
 
 /**
- * 永远不进这些目录。
+ * 永远**不展开**的目录（不是“隐藏”，是“太大没意义”）。
  *
- * `node_modules` 是几万个文件、`.git` 是二进制对象库 ——
- * 展开它们既慢又没有信息量（用户的意图是找**自己的**代码）。
- * 但**不隐藏**它们：在树上显示成一个不可展开的条目，
- * 比凭空消失好（用户会以为文件树列不全）。
+ * ⚠️ 命名与文案的区别（用户特地纠正过）：
+ *   · 代码里叫 OPAQUE —— 这些目录不是被“藏起来”了，而是列出来也没用
+ *   · 界面上叫**已隐藏**（用户要求的措辞），并且旁边给一个**开关**：
+ *     想看到它们时能打开（打开后仍然会标注「展开没有意义」）
+ * 以前界面写「已跳过」，又没有开关，用户会以为文件树列不全。
  */
 const OPAQUE = new Set(['node_modules', '.git', '.svn', '.hg'])
+
+/** 名字以 . 开头的条目（.gitignore / .vscode 这些）—— 默认不显示，可开关 */
+function isDotName(name: string): boolean {
+  return name.startsWith('.') && name !== '.' && name !== '..'
+}
 
 /** 一层最多回多少条（超了截断并告诉界面「还有 N 项」） */
 const MAX_ENTRIES = 400
@@ -70,7 +76,7 @@ function displayPath(abs: string): string {
  *   家目录上千条 = 上千次系统调用，主进程被拖住（表现为快捷键丢事件）。
  *   现在先排序、再截断、**最后**只为那 ≤400 个文件取 size。
  */
-export async function listDir(cwd: string, rel = ''): Promise<DirListing> {
+export async function listDir(cwd: string, rel = '', showHidden = false): Promise<DirListing> {
   const abs = safeJoin(cwd, rel)
   const empty: DirListing = { path: rel ?? '', abs: '', entries: [], skipped: [], truncated: false }
   if (!abs) return empty
@@ -87,8 +93,17 @@ export async function listDir(cwd: string, rel = ''): Promise<DirListing> {
   const dirs: { name: string; dir: true }[] = []
   const files: { name: string; dir: false }[] = []
   for (const d of dirents) {
+    /*
+     * 三类过滤，语义不同（用户要求把「隐藏」单独拉出来给个开关）：
+     *   ① OPAQUE（node_modules/.git…）—— showHidden 打开时才列出，
+     *      并且仍然不可展开（列出来只是想让你看见它存在）
+     *   ② 点名文件（.gitignore/.vscode…）—— 默认不列，showHidden 打开时列
+     *   ③ 其余 —— 照常列
+     */
     const isDir = d.isDirectory()
-    if (isDir && OPAQUE.has(d.name)) {
+    const opaque = isDir && OPAQUE.has(d.name)
+    const dotted = isDotName(d.name)
+    if (!showHidden && (opaque || dotted)) {
       skipped.push(d.name)
       continue
     }

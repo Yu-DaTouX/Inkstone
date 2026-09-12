@@ -378,6 +378,12 @@ export interface AppSettings {
    * 在这里面的分区不是删除，随时可以从库里拿回来。
    */
   toolHidden: string[]
+  /**
+   * 分区内容高度（px），按分区 id 存。
+   * 只给「内容会滚动」的分区用（文件树 / 日志）—— 其余几行高的分区
+   * 调高度没意义，界面上也不给把手。
+   */
+  toolHeights: Record<string, number>
 }
 
 /**
@@ -435,6 +441,25 @@ export function clampPanelWidth(v: unknown, min: number, max: number): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n <= 0) return 0
   return Math.round(Math.min(max, Math.max(min, n)))
+}
+
+/**
+ * 自动压缩的生效设置与触发点（读 pi 的 settings.json，只读）。
+ * 界面用它说明「什么时候会自动压缩」—— 这个数字必须与 pi 实际行为一致。
+ */
+export interface CompactionInfo {
+  /** 自动压缩开关（pi 的 compaction.enabled） */
+  enabled: boolean
+  /** 为模型回答预留的 tokens（默认 16384） */
+  reserveTokens: number
+  /** 压缩时保留的最近 tokens（默认 20000） */
+  keepRecentTokens: number
+  /** 当前模型的上下文窗口 */
+  contextWindow: number
+  /** 触发线 = contextWindow - reserveTokens */
+  threshold: number
+  /** 是否被用户改过（false = 全是 pi 的默认值） */
+  custom: boolean
 }
 
 /**
@@ -728,7 +753,9 @@ export interface YanBridge {
   /** 设界面缩放（0 = 自动），返回生效后的状态 */
   setUiScale(v: number): Promise<ZoomState>
   /** 列一层目录（文件树；相对 cwd，一层一次 —— 有意不递归） */
-  listDir(rel: string): Promise<DirListing>
+  listDir(rel: string, showHidden?: boolean): Promise<DirListing>
+  /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
+  compactionInfo(contextWindow: number): Promise<CompactionInfo>
 }
 
 /** 界面缩放状态（主进程算出，渲染端只显示） */

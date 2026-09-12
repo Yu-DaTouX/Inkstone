@@ -54,6 +54,12 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+=,ctrl+=,ctrl+-,ctrl+0'
   },
+  // `/` 斜杠命令：自动重拉 + 常用优先 + Enter/Tab 填充
+  slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
+  // 分区内容高度可调
+  vheight: { probe: 'scripts/probe/vheight.js', delay: 9000, cost: 0 },
+  // 从工具库拖到工具栏（含实时位置预览 / 取消语义）
+  libdrag: { probe: 'scripts/probe/libdrag.js', delay: 9000, cost: 0 },
   // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 恢复默认）
   tools: { probe: 'scripts/probe/tools.js', delay: 9000, cost: 0 },
   // 面板宽度拖拽（含夹取范围与键盘）

@@ -24,11 +24,39 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
   const t = useT()
   const settings = useStore((s) => s.settings)
   const setPanelWidth = useStore((s) => s.setPanelWidth)
+  /*
+   * ⚠️ 选择器**必须返回已有引用**，不能在里面造函数。
+   *    上一版写的是 `useStore((s) => () => s.setRailPinned(false))` ——
+   *    每帧返回一个新函数，zustand v5（useSyncExternalStore + Object.is）
+   *    会认为状态一直在变 → **无限重渲染 → 整个界面空白**。
+   *    实测就是靠探针发现的（“窗口控制按钮 0 个”）。
+   */
+  const setRailPinned = useStore((s) => s.setRailPinned)
+  const toggleRightPanel = useStore((s) => s.toggleRightPanel)
+  const toggleCollapse = useCallback((): void => {
+    if (side === 'rail') setRailPinned(false)
+    else void toggleRightPanel()
+  }, [side, setRailPinned, toggleRightPanel])
 
   const stored = (side === 'rail' ? settings?.railWidth : settings?.panelWidth) ?? 0
   /** 拖动中的宽度（临时覆盖 stored，松手后清掉） */
   const [dragging, setDragging] = useState<number | null>(null)
   const startRef = useRef<{ x: number; base: number } | null>(null)
+
+  /**
+   * 拖到多窄就**直接收起**（用户要求：「拖拽到更窄的范围时直接收起」）。
+   *
+   * 为什么是「收起」而不是「继续变窄」：宽到 220px 以下时内容已经
+   * 挤到不能用（中文标题一行放不下两个字），拖出来的也是个废面板。
+   * 比「夹在 220px」更好的行为是：到了临界就归位（收起），意图很清楚。
+   *
+   * 注意这个值比 RAIL_MIN/PANEL_MIN（220）小 —— 拖到中间那一段是
+   * 「继续缩小」的正常行为，只有超出最小宽再拖这么多才收起。
+   */
+  const COLLAPSE_AT = 100
+
+  /** 拖动中是否已经越过「收起」临界（松手时才真的收起，避免拖回来时反复切） */
+  const [willCollapse, setWillCollapse] = useState(false)
 
   const cssVar = side === 'rail' ? '--w-rail-user' : '--w-panel-user'
   /* 与主进程同一份区间（shared）。拖动时也得夹 —— 见 clamp 的注释 */
@@ -90,7 +118,20 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
     if (!st) return
     // 左栏往右拖变宽；工具栏往左拖变宽 —— 所以工具栏要取反
     const dx = e.clientX - st.x
-    const next = clamp(side === 'rail' ? st.base + dx : st.base - dx)
+    const raw = side === 'rail' ? st.base + dx : st.base - dx
+    /*
+     * 拖到临界以下：不继续缩（保持最小宽），但记下「松手要收起」
+     * 并给一个视觉反馈（把手变强调色 + 后缩一点），让用户知道
+     * 再松手就会收起 —— 否则「松手后面板消失」会很突然。
+     */
+    if (raw < COLLAPSE_AT) {
+      setWillCollapse(true)
+      setDragging(min)
+      apply(min)
+      return
+    }
+    setWillCollapse(false)
+    const next = clamp(raw)
     setDragging(next)
     apply(next)
   }
@@ -99,12 +140,24 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
     const st = startRef.current
     if (!st) return
     startRef.current = null
+    const collapseNow = willCollapse
+    setWillCollapse(false)
     setDragging(null)
     document.body.classList.remove('resizing')
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {
       /* 指针已经没了也无所谓 */
+    }
+    /*
+     * 越过临界：**收起**，而且不把最小宽写进设置 ——
+     * 用户要的是「收起」，不是「变成最窄」。设置保持原值（0 = 默认），
+     * 下次展开时宽度回到他上次用的值。
+     */
+    if (collapseNow) {
+      document.documentElement.style.removeProperty(cssVar)
+      void toggleCollapse()
+      return
     }
     // 落盘（主进程会再夹一次范围）
     const final = readCurrent()
@@ -156,6 +209,7 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
       aria-label={t('rp.resizeHint')}
       data-testid={`resizer-${side}`}
       data-dragging={dragging !== null ? '1' : '0'}
+      data-will-collapse={willCollapse ? '1' : '0'}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}

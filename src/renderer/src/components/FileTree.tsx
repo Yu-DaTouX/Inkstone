@@ -32,19 +32,27 @@ export function FileTree() {
   const [open, setOpen] = useState<Set<string>>(new Set(['']))
   const [loading, setLoading] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  /**
+   * 是否列出隐藏项（.gitignore / .vscode / node_modules / .git 这类）。
+   *
+   * 用户要求：「已跳过改为已隐藏，加一个开关」。
+   * 定位：它是**临时看一眼**的动作（找一个被点掉的文件、确认 .git 在不在），
+   * 不值得落盘变成永久偏好 —— 所以只存在这个组件的 state 里，重启回默认。
+   */
+  const [showHidden, setShowHidden] = useState(false)
 
   /* 换 cwd → 整个树作废 */
   useEffect(() => {
     setCache({})
     setOpen(new Set(['']))
     setError(null)
-  }, [cwd])
+  }, [cwd, showHidden])
 
   const load = useCallback(
     async (path: string) => {
       setLoading((s) => new Set(s).add(path))
       try {
-        const r = await window.yan.listDir(path)
+        const r = await window.yan.listDir(path, showHidden)
         setCache((c) => ({ ...c, [path]: r }))
         setError(null)
       } catch {
@@ -58,7 +66,7 @@ export function FileTree() {
         })
       }
     },
-    [t]
+    [t, showHidden]
   )
 
   /* 根层一定要有内容（展开状态里 '' 默认就在） */
@@ -105,6 +113,18 @@ export function FileTree() {
             {total}
           </span>
           <button
+            className={`rp-mini ${showHidden ? 'on' : ''}`}
+            data-testid="fs-hidden-toggle"
+            title={showHidden ? t('rp.fsHideHidden') : t('rp.fsShowHidden')}
+            aria-pressed={showHidden}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowHidden((v) => !v)
+            }}
+          >
+            <Icon name={showHidden ? 'sun' : 'moon'} size={12} />
+          </button>
+          <button
             className="rp-mini"
             data-testid="fs-refresh"
             title={t('rp.fsRefresh')}
@@ -144,7 +164,12 @@ export function FileTree() {
       {error ? <div className="rp-dim rp-fs-err">{error}</div> : null}
       {cache['']?.skipped.length ? (
         <div className="rp-dim" data-testid="fs-skipped">
-          {t('rp.fsSkipped', { names: cache[''].skipped.join('、') })}
+          {/*
+            * 用户要求把「已跳过」改成「已隐藏」——
+            * 「跳过」听起来像程序跳过了它们（可能漏内容），
+            * 「隐藏」才是事实：它们还在，点上面的开关就显示。
+            */}
+          {t('rp.fsHidden', { names: cache[''].skipped.join('、') })}
         </div>
       ) : null}
     </Section>

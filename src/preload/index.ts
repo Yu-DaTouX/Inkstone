@@ -3,6 +3,7 @@ import type {
   AppSettings,
   Attachment,
   AuthProviderInfo,
+  CompactionInfo,
   CustomEntry,
   DirListing,
   ForkPoint,
@@ -126,7 +127,8 @@ const api: YanBridge = {
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
   /* ---- 文件树 ---- */
-  listDir: (rel) => invoke<DirListing>('yan:listDir', rel),
+  listDir: (rel, showHidden) => invoke<DirListing>('yan:listDir', rel, showHidden === true),
+  compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
 
   /* ---- 窗口 ---- */
   win: {

@@ -57,10 +57,24 @@
    */
   const t0 = performance.now()
   let waited = 0
-  while (waited < 5000) {
-    if (qa('.stream-row').length > 0 || qa('.stream .msg').length > 0) break
+  let injected = 1
+  const painted = () => qa('.stream-row').length > 0 || qa('.stream .msg').length > 0
+  while (waited < 20000) {
+    if (painted()) break
     await sleep(50)
     waited += 50
+    /*
+     * 每 4s 重新注入一次。
+     *
+     * 为什么需要（实测）：前面的场景会切会话，而切会话会让 pi 推一条
+     * `sync`（它才是权威的），把刚注入的 240 条**覆盖掉** ——
+     * 于是页面上什么都没有，断言一个个全挂，而且只在全量跑时出现。
+     * 重注入把这个竞态抹平：只要最终渲染出来了，测的就是渲染逻辑。
+     */
+    if (waited > 0 && waited % 4000 === 0) {
+      store.getState().applyPush({ ch: 'sync', payload: fake })
+      injected++
+    }
   }
   const rowItems = qa('.stream-row').length
   const plainItems = qa('.stream-inner > .msg').length
@@ -68,7 +82,7 @@
   const paintMs = Math.round(performance.now() - t0)
 
   log('  .stream-row=' + rowItems + '  .stream-inner>.msg=' + plainItems + '  DOM 里 .msg 总数=' + domMsgs)
-  log('  渲染耗时约 ' + paintMs + 'ms')
+  log('  渲染耗时约 ' + paintMs + 'ms（注入 ' + injected + ' 次，store 里 ' + store.getState().messages.length + ' 条）')
 
   ok(rowItems > 0, '超过阈值后走虚拟化路径（.stream-row）')
   ok(plainItems === 0, '没有同时走普通路径')

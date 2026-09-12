@@ -27,6 +27,26 @@ import type {
   UserProfile,
   ZoomState
 } from '../../../shared/ipc'
+import { TOOL_SECTIONS } from '../../../shared/ipc'
+
+/**
+ * 读命令使用次数（排序用）。
+ * 单独抽出来是为了能在 store 初始化时调用 —— 那里不能有 await。
+ */
+function readCommandUse(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem('yan.cmdUse')
+    const j = raw ? (JSON.parse(raw) as unknown) : null
+    if (!j || typeof j !== 'object') return {}
+    const out: Record<string, number> = {}
+    for (const [k, v] of Object.entries(j as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
 
 /* ==================================================================
    记忆分组 —— 把扁平的记忆条目映射到右栏的分区
@@ -185,6 +205,19 @@ interface Store {
   refreshMemory: () => Promise<void>
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
+  /**
+   * 命令列表上次拉取的时间戳（0 = 还没拉过）。
+   * 界面用它判断「该不该自动刷新」—— 命令会随扩展/技能变化，
+   * 而旧实现只在启动时拉一次，之后新增的命令永远看不到。
+   */
+  commandsAt: number
+  /**
+   * 记一次命令使用（用户要求「自动管理」）。
+   * 存在 localStorage（不写进桌面设置 —— 它只是排序偏好，丢了也无所谓）。
+   */
+  markCommandUsed: (name: string) => void
+  /** 命令使用次数（用于把常用的排在前面） */
+  commandUse: Record<string, number>
 
   send: (text: string, images?: { data: string; mimeType: string }[]) => Promise<void>
   abort: () => Promise<void>
@@ -229,6 +262,26 @@ interface Store {
    * 与 setPanelWidth 分开命名：一个管几何，一个管内容。
    */
   setToolLayout: (p: { toolOrder?: string[]; toolHidden?: string[] }) => Promise<void>
+  /**
+   * 正在从工具库拖往工具栏的分区（null = 没在拖）。
+   *
+   * 为什么放 store 而不是组件 state：拖拽要**跨两个组件**才知道该画什么
+   *   · 工具库（ToolLibrary）发起拖拽
+   *   · 工具栏（RightPanel 的各个 .rp-slot）显示「会插到这里」的预览
+   * 放组件 state 就得层层透传，而且工具库拖拽中会关掉自己的浮层。
+   */
+  draggingSection: string | null
+  /** 拖拽中当前落点（哪个分区、插在它前还是后）—— 就是这个在画预览线 */
+  toolDropTarget: { id: string; after: boolean } | null
+  setDraggingSection: (id: string | null) => void
+  setToolDropTarget: (t: { id: string; after: boolean } | null) => void
+  /**
+   * 把分区放到指定位置（从库拖到栏、或在栏内重排都走它）。
+   * 会自动把它从隐藏集合里拿出来 —— 拖进来当然是要显示。
+   */
+  placeSection: (id: string, targetId: string | null, after: boolean) => Promise<void>
+  /** 设某个分区的内容高度（px）。与其余布局一起写入设置 */
+  setToolHeight: (id: string, px: number) => Promise<void>
   /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
   loadZoom: () => Promise<void>
 
@@ -345,6 +398,8 @@ export const useStore = create<Store>((set, get) => ({
   models: [],
   thinkingLevels: [],
   commands: [],
+  commandsAt: 0,
+  commandUse: readCommandUse(),
 
   settings: null,
   settingsOpen: false,
@@ -591,7 +646,17 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   reloadCommands: async () => {
-    set({ commands: await window.yan.listCommands() })
+    set({ commands: await window.yan.listCommands(), commandsAt: Date.now() })
+  },
+
+  markCommandUsed: (name) => {
+    const next = { ...get().commandUse, [name]: (get().commandUse[name] ?? 0) + 1 }
+    set({ commandUse: next })
+    try {
+      localStorage.setItem('yan.cmdUse', JSON.stringify(next))
+    } catch {
+      /* 存不了就只在本次会话生效 */
+    }
   },
 
   /* --------------------------------------------------------------- 对话 */
@@ -884,6 +949,43 @@ export const useStore = create<Store>((set, get) => ({
 
   setToolLayout: async (patch) => {
     set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
+  },
+
+  draggingSection: null,
+  toolDropTarget: null,
+  setDraggingSection: (id) => set({ draggingSection: id, toolDropTarget: null }),
+  setToolDropTarget: (t) => set({ toolDropTarget: t }),
+
+  /**
+   * 放到指定位置。三步：
+   *   ① 从隐藏集合里拿掉（拖进来就是要显示）
+   *   ② 在完整顺序里把它移到目标前/后
+   *   ③ 一次落盘（两步分开写会出现「先显示在末尾、再跳到位」的闪烁）
+   *
+   * `targetId === null` = 放到最后（拖到列表空白处）。
+   */
+  setToolHeight: async (id, px) => {
+    const cur = get().settings?.toolHeights ?? {}
+    set({ settings: await window.yan.patchSettings({ toolHeights: { ...cur, [id]: Math.round(px) } } as Partial<AppSettings>) })
+  },
+
+  placeSection: async (id, targetId, after) => {
+    const s = get().settings
+    const known = new Set<string>(TOOL_SECTIONS)
+    if (!known.has(id)) return
+    const hidden = (s?.toolHidden ?? []).filter((x) => x !== id)
+    const base = (s?.toolOrder?.length ? s.toolOrder : [...TOOL_SECTIONS]).filter((x) => known.has(x))
+    for (const k of TOOL_SECTIONS) if (!base.includes(k)) base.push(k)
+    const next = base.filter((x) => x !== id)
+    if (targetId && targetId !== id) {
+      const at = next.indexOf(targetId)
+      if (at >= 0) next.splice(after ? at + 1 : at, 0, id)
+      else next.push(id)
+    } else {
+      next.push(id)
+    }
+    set({ draggingSection: null, toolDropTarget: null })
+    set({ settings: await window.yan.patchSettings({ toolOrder: next, toolHidden: hidden } as Partial<AppSettings>) })
   },
 
   /* --------------------------------------------------------------- 记忆 */

@@ -6,6 +6,7 @@ import { TitleBar, type Theme } from './components/TitleBar'
 import { Rail } from './components/Rail'
 import { RightPanel } from './components/RightPanel'
 import { Resizer } from './components/Resizer'
+import { Icon } from './icons/Icon'
 import { ConversationOutline } from './components/ConversationOutline'
 import { Continuity, EmptyStream, ReviewBar } from './components/Continuity'
 import { TurnView } from './components/TurnView'
@@ -427,6 +428,23 @@ export default function App() {
          * 仍然可见可点 —— 收起宽度 50px 刚好容纳它，几何完全一致。
          */}
         <div className="rail-slot">
+          {/*
+           * 收起后：8px 的缝 + 悬停才显示的展开按钮。
+           * 与右栏 .rp-unhide 同形（用户要求「左栏同理」）。
+           */}
+          {!railOpen ? (
+            <button
+              className="rail-unhide"
+              onClick={() => setRailPinned(true)}
+              title={t('rail.expand')}
+              data-testid="rail-expand"
+              aria-label={t('rail.expand')}
+            >
+              <span className="ico">
+                <Icon name="sidebar-left" size={12} />
+              </span>
+            </button>
+          ) : null}
           <Rail />
           {/* 宽度把手：贴在左栏右缘（放进 slot 内部，不占 grid 列） */}
           <Resizer side="rail" />

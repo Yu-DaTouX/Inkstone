@@ -36,6 +36,18 @@
     out.push('  引导层已关: ' + !document.querySelector('.ob-card'))
     await sleep(400)
 
+    /*
+     * 显式把两个面板都置为**展开**再开始量。
+     * 为什么要这一步：前面的场景（resize）会把左栏拖到收起、libdrag 会动工具栏，
+     * 而本场景第 4 节要量底部那几个按钮的**尺寸** —— 收起状态下它们会被
+     * flex 挤扁（实测：26px 的设置按钮被挤成 14px，看起来像「按钮变小了」，
+     * 其实只是容器窄）。不假设前一个场景留下的状态。
+     */
+    store.getState().setRailPinned(true)
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
+    await sleep(700)
+    out.push('  起始状态：railPinned=' + store.getState().railPinned + '  rightPanelOpen=' + store.getState().settings?.rightPanelOpen)
+
     out.push('=== 1. 标题栏：面板开关已移除 ===')
     if (!document.querySelector('.titlebar [data-testid="rail-toggle"]')) ok('标题栏没有左栏开关了')
     else bad('标题栏还有左栏开关')
@@ -188,14 +200,21 @@
      * 两个元素两套几何，位置对不上（用户报过），而且透明左栏会盖住它。
      * 几何一致性交给 symmetry 场景测，这里只测「还在、还能用」。
      */
-    const same = document.querySelector('[data-testid="rail-toggle"]')
-    if (same) ok('收起后同一个开关仍在（收起时显示展开图标）')
+    /*
+     * 收起形态变过两次（每一步都是用户提的）：
+     *   ① 什么都不留 → 锁死
+     *   ② 40/50px 竖条 → 用户说条形难看
+     *   ③ 现在 8px 的缝 + 悬停才显的展开按钮
+     * 所以断言改成验证当前设计：缝很窄、但展开入口存在且可用。
+     */
+    const unhide = document.querySelector('[data-testid="rail-expand"]')
+    if (unhide) ok('收起后有展开入口（细线上的按钮）')
     else bad('收起后没有展开入口（会锁死）')
     const railW = document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? 0
     out.push('  收起后 rail-slot 宽 = ' + railW.toFixed(1))
-    if (railW >= 50) ok('列宽 ≥ 50（容得下开关，不会被裁）')
-    else bad('列宽不够：' + railW)
-    click(same); await sleep(600)
+    if (railW <= 12) ok('收成一条细缝（≤12px，不再是 40px 的条）')
+    else bad('收起后太宽：' + railW)
+    click(unhide); await sleep(600)
     if (store.getState().railPinned) ok('点它 → 左栏展开')
     else bad('展不开')
 

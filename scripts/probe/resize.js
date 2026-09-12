@@ -125,22 +125,36 @@
     if (homeMs >= 0) ok('Home 复原')
     else bad('Home 没复原：' + w('.rail').toFixed(1))
 
-    out.push('\n=== 6. 宽度被夹住（不能拖到离谱）===')
+    out.push('\n=== 6. 拖到过窄 → 直接收起（用户要的行为）===')
+    /*
+     * 用户原话：「拖拽到更窄的范围时直接收起」。
+     * 所以「极限左拖」的**正确结果是收起面板**，而不是停在最小宽 ——
+     * 这条断言取代了之前那句「下限被夹住」（那个行为已经不要了）。
+     */
+    const wasPinned = store.getState().railPinned
     await drag(hr, +9999)
     const big = store.getState().settings?.railWidth
     out.push('  极限右拖后 railWidth=' + big)
     if (big > 0 && big <= 560) ok('上限被夹住（≤560）')
     else bad('没夹住：' + big)
-    await drag(hr, -9999)
-    const small = store.getState().settings?.railWidth
-    out.push('  极限左拖后 railWidth=' + small)
-    if (small === 0 || small >= 220) ok('下限被夹住（≥220，或回到默认）')
-    else bad('没夹住：' + small)
 
-    // 复位，别影响后面的场景
+    await drag(hr, -9999)
+    // 收起是异步的一帧内落定，轮询等它
+    const collapsed = await until(() => store.getState().railPinned === false, 4000)
+    const slotAfter = w('.rail-slot')
+    out.push('  极限左拖后 railPinned=' + store.getState().railPinned + '  列宽=' + slotAfter.toFixed(1) + '（之前 ' + wasPinned + '）')
+    if (collapsed) ok('拖到过窄 → 直接收起（不是停在最小宽）')
+    else bad('拖到过窄没收起，railPinned=' + store.getState().railPinned)
+    if (slotAfter <= 12) ok('收起后只剩一条细缝')
+    else bad('收起后仍占 ' + slotAfter.toFixed(1) + 'px')
+
+    // 展开回来，并复位两个宽度，别把状态留给后面的场景
+    store.getState().setRailPinned(true)
+    await sleep(500)
     hr.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     hp.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-    await sleep(400)
+    await until(() => Math.abs(w('.rail') - 300) <= 3, 5000)
+    await sleep(300)
   } catch (e) {
     bad('抛异常：' + (e && e.message ? e.message : String(e)))
   }

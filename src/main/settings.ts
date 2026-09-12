@@ -13,6 +13,7 @@ import {
   PANEL_MAX,
   PANEL_MIN,
   clampPanelWidth,
+  TOOL_SECTIONS,
   normalizeToolHidden,
   normalizeToolOrder,
   type AppSettings,
@@ -42,7 +43,30 @@ const DEFAULTS: AppSettings = {
   panelWidth: 0,
   // 空 = 用设计默认顺序
   toolOrder: [],
-  toolHidden: []
+  toolHidden: [],
+  toolHeights: {}
+}
+
+/**
+ * 分区高度的范围与校验。
+ *
+ * 为什么两边都要夹（渲染端拖动时也夹）：拖过头会产生极大/极小的值，
+ * 写进设置后再启动就是坏界面 —— 而设置文件用户也能手改。
+ * 这个教训来自宽度拖拽（非法值会让 grid 声明整条失效）。
+ */
+export const HEIGHT_MIN = 80
+export const HEIGHT_MAX = 900
+
+function normalizeHeights(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object') return {}
+  const out: Record<string, number> = {}
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (!TOOL_SECTIONS.includes(k as (typeof TOOL_SECTIONS)[number])) continue
+    const n = typeof val === 'number' ? val : Number(val)
+    if (!Number.isFinite(n)) continue
+    out[k] = Math.round(Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, n)))
+  }
+  return out
 }
 
 /**
@@ -114,6 +138,7 @@ export async function getSettings(): Promise<AppSettings> {
     // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
     cached.toolOrder = normalizeToolOrder(cached.toolOrder)
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
+    cached.toolHeights = normalizeHeights(cached.toolHeights)
   } catch {
     cached = { ...DEFAULTS }
   }

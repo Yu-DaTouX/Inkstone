@@ -129,12 +129,55 @@
       }
     }
 
-    /* ---- 5. 跳过 node_modules 并明确标注 ---- */
-    out.push('\n=== 5. 跳过 node_modules / .git 并标注 ===')
+    /* ---- 5. 隐藏项：文案是「已隐藏」+ 有开关能显示出来 ---- */
+    out.push('\n=== 5. 隐藏项与开关 ===')
     const skipped = document.querySelector('[data-testid="fs-skipped"]')
     out.push('  提示文案 = ' + (skipped?.textContent.replace(/\s+/g, ' ').trim() ?? '（无）'))
-    if (skipped && /\.git|node_modules/.test(skipped.textContent)) ok('明确提示跳过了哪些目录（不假装列全了）')
-    else bad('没有跳过提示')
+    /*
+     * 用户要求：把「已跳过」改成「已隐藏」。
+     * 理由：「跳过」听起来像程序漏掉了内容，「隐藏」才是事实 ——
+     * 上面的开关一开它们就出来（下面就地验证）。
+     */
+    if (skipped && /已隐藏/.test(skipped.textContent)) ok('文案是「已隐藏」（不是「已跳过」）')
+    else bad('文案不对：应含「已隐藏」，实际 ' + JSON.stringify(skipped?.textContent))
+    if (skipped && /\.git|node_modules/.test(skipped.textContent)) ok('列出了被隐藏的名字（不假装列全了）')
+    else bad('没列出隐藏的名字')
+
+    /* 开关：打开后隐藏项真的会出现，关回去又恢复 */
+    const toggle = document.querySelector('[data-testid="fs-hidden-toggle"]')
+    if (!toggle) bad('没有「显示隐藏项」开关')
+    else {
+      const rowsBefore = qa('[data-testid="rp-files"] .rp-fs-row').length
+      click(toggle)
+      /*
+       * ⚠️ 不能断言「行数变了」—— 切开关会清缓存重拉，
+       *    行数变化可能只是「展开的子目录被收起来了」。
+       *    要断言的真正性质是：**被隐藏的那些条目现在在列表里**。
+       */
+      const appeared = await until(
+        () =>
+          qa('[data-testid="rp-files"] .rp-fs-row').some((r) => {
+            const n = r.dataset.path ?? ''
+            return n === '.gitignore' || n === 'node_modules' || n === '.git'
+          }),
+        6000
+      )
+      const names = qa('[data-testid="rp-files"] .rp-fs-row').map((r) => r.dataset.path)
+      out.push('  开关后根层: ' + JSON.stringify(names.slice(0, 14)))
+      if (appeared) ok('打开开关后 .gitignore / node_modules 真的出现在列表里')
+      else bad('开关没起作用：列表里没有隐藏项（' + JSON.stringify(names.slice(0, 10)) + '）')
+      if (!document.querySelector('[data-testid="fs-skipped"]')) ok('全部显示后不再有「已隐藏」提示')
+      else out.push('  仍有提示: ' + document.querySelector('[data-testid="fs-skipped"]').textContent.replace(/\s+/g, ' '))
+      // 关回去，别影响后面的断言
+      click(toggle)
+      const gone = await until(
+        () => !qa('[data-testid="rp-files"] .rp-fs-row').some((r) => r.dataset.path === '.gitignore'),
+        6000
+      )
+      if (gone) ok('关掉开关后 .gitignore 又消失（恢复隐藏）')
+      else bad('关掉开关后隐藏项还在')
+      void rowsBefore
+    }
 
     /* ---- 6. 无横向溢出（工具栏只有 264px 宽，长名字很容易撑破）---- */
     out.push('\n=== 6. 溢出体检 ===')
