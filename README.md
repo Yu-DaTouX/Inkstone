@@ -13,7 +13,7 @@ pi 只负责模型循环与工具执行（一个 `pi --mode rpc` 子进程）。
 
 ![界面](docs/design/preview/ui-live.png)
 
-<sub>深色主题，真实会话。右侧是**工具栏**（上下文 / 任务 / 队列 / 文件 / 日志），
+<sub>深色主题，真实会话。右侧是**工具栏**（上下文 / 额度 / 任务 / 队列 / 文件 / 扩展 / 日志 / 操作，顺序可拖），
 输入框顶边框上的 `── ⠙ 正在处理… ──` 是工作状态，边框颜色跟着当前思考强度变</sub>
 
 | 浅色主题 | 设置面板 |
@@ -107,8 +107,10 @@ npm run launch -- --rebuild  # 强制重新构建
 | 操作 | 位置 |
 |---|---|
 | 发消息 | 底部输入框，`Enter` 发送 / `Shift+Enter` 换行 / `Esc` 中止 |
-| 生成中插话 | 生成时按 `Enter` 就是 `steer`（下一个回合听你的） |
+| 生成中插话 | 生成时按 `Enter` **默认排队**（`followUp`，等这一轮跑完再投递）；想立刻插进当前这轮，用排队行上的「插队」 |
 | 中止并收回排队 | `Esc` —— 先 `clear_queue`，把排队的插话**放回输入框**（不是丢掉） |
+| 模型主动提问 | 信息不足时模型会弹窗问你（选项 / 文本 / 确认），回答回填进对话；不想被打断就打开**自主模式** |
+| 自主模式 | 输入框下方的开关：开启后模型不再提问、自行决策 |
 | 跑 shell（不经模型） | `!` 开头，如 `!git status`。结果进会话，下一轮对话它能看到 |
 | 斜杠命令 | 打 `/` 弹补全（扩展命令 / 提示词模板 / 技能，如 `/panel`）。`/login` 会被路由到「设置 → 模型接入」（pi 的登录是交互式 OAuth，不经 RPC） |
 | 发图片 | 直接**粘贴**或**拖进**输入框；也可点输入框左下「+ 图片」 |
@@ -124,12 +126,14 @@ npm run launch -- --rebuild  # 强制重新构建
 | 换工作目录 | 设置 → 关于里的「工作目录」（pi 的 cwd 是子进程级的，换目录会重启 pi 子进程；界面不会清空） |
 | 打开内置浏览器 | 右侧工具栏标题旁的滑动开关；支持地址栏、标签页、前进后退、刷新，页面也可由 pi 的 `browser_*` 工具操作 |
 | 关闭浏览器 | 浏览器工具栏右侧的 `×`；浏览器登录态保存在本机的独立持久化分区 |
+| 接入本机 Chrome | 浏览器工具栏「接入本机 Chrome」：用独立 profile 起一个真实 Chrome，并把本机的历史 / 登录态同步过来（**Cookie 需先退出 Chrome**，界面会逐项报告同步结果） |
 | 折叠左栏 | 标题栏**最左上角**的图标（收起 = 0 宽，开关位置从不变） |
 | 折叠工具栏 | 标题栏**右侧**、紧邻窗口控制按钮的图标（同样收起 = 0 宽） |
 | 切换模式 | 左栏左上角「砚 ⌄」（目前只做了入口：列出的模式除当前外都标「即将支持」） |
 | 看运行日志 | 工具栏「日志」分区（pi 的 stderr + 扩展通知） |
 | 看项目文件 | 工具栏「文件」分区。**点文件 = 往输入框插 `@路径`**，不是打开文件 |
 | 调栏宽 | 拖左栏右缘 / 工具栏左缘（双击复原；聚焦后 ←→ 微调，Shift 更快，Home 复原）。**拖到很窄会自动收起** |
+| 调对话宽度 | 拖对话内容列的边缘（560–1600px；双击复原）。正文 / 输入框 / 用量条 / 导航轨一起对齐 |
 | 调分区顺序 | 拖分区标题左侧的 ⠿ 把手（或聚焦后 Alt+↑↓） |
 | 收起不用的分区 | 工具栏标题旁的「工具库」→ 收进库 / 拿回 / 恢复默认布局；**也能从库里直接拖到工具栏**（拖时有落点预览） |
 | 调分区高度 | 文件区 / 日志区内容底部的细条（只给会滚动的分区） |
@@ -137,7 +141,7 @@ npm run launch -- --rebuild  # 强制重新构建
 | 显示隐藏文件 | 文件区标题旁的月亮/太阳图标（默认隐藏 .gitignore / node_modules 等） |
 | 用斜杠命令 | 打 `/` 搜（命令与说明都能搜）；`↑↓` 选、`Enter`/`Tab` 填入、`Esc` 关。用过的命令会被排到前面 |
 | 改名字 / 头像 | 点左栏左下角的头像（12 图标 / 首字 / 12 档色相） |
-| 任务进度 | 工具栏「任务」分区（agent 用 `panel_todos` 维护；与 TUI 的 `/panel` 看的是同一份） |
+| 任务进度 | 工具栏「任务」分区（agent 用 `panel_todos` 维护，含**历史**任务，可跳回对应回合；与 TUI 的 `/panel` 看的是同一份） |
 
 > 浏览器扩展能力：砚会以内置 pi extension 方式加载 `resources/pi-extensions/browser.js`，
 > 通过随机 token 保护的本地桥操作应用内页面。页面使用 Electron `WebContentsView`，
@@ -159,16 +163,20 @@ src/
 │   ├── index.ts                 窗口 + IPC + 生命周期
 │   ├── protocol.ts          ⭐ 手写的 pi RPC 客户端（JSONL / 请求响应关联 / 扩展 UI）
 │   ├── agent.ts             ⭐ 协议 → UI 的归一化（唯一认识 pi 协议的地方）
-│   ├── paths.ts                数据目录（desktop.json）
-│   ├── sessions.ts              会话列表（只读扫描 sessions/*.jsonl）
-│   └── settings.ts              桌面端设置（不碰 pi 的 settings.json）
+│   ├── paths.ts / settings.ts   数据目录（desktop.json）与桌面端设置
+│   ├── sessions.ts / session-reader.ts   会话列表与只读解析
+│   ├── browser/ + chrome.ts + chrome-profile.ts   内置浏览器 / 本机 Chrome 接入与数据同步
+│   ├── quota.ts                 供应商额度查询（走 Electron net.fetch）
+│   ├── todo-snapshots.ts        任务清单按轮归并（纯函数，可单测）
+│   └── title.ts / compaction.ts / credentials.ts / files.ts / zoom.ts
 ├── preload/index.ts             contextBridge 白名单（形态由 YanBridge 类型约束）
 ├── shared/ipc.ts                主/渲染共享类型 —— 含 MainPush（已归一化的 UI 补丁）
 └── renderer/src/
     ├── state/store.ts           zustand：只负责套用 MainPush
-    ├── components/              TitleBar / Rail / Continuity / Message / Composer /
-    │                            UiBridge（扩展对话框 + 通知 + 日志）
-    ├── styles/                  tokens / app / stage1 / electron / highlight
+    ├── components/              TitleBar / Rail / Composer / Terminal / ToolRow /
+    │                            RightPanel / BrowserSurface / UiBridge（扩展对话框）
+    ├── styles/                  tokens / app / stage1 / stage2 / redesign /
+    │                            motion / settings / electron / highlight
     └── i18n/                    中英双语，类型安全（漏翻译编译报错）
 ```
 
@@ -204,8 +212,8 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|
 | `npm run dev` | 开发模式（HMR） |
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
-| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 30 个真实应用场景（不烧 token） |
-| `npm run test:unit` | 纯逻辑单测（110 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 |
+| `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 40 个真实应用场景（不烧 token） |
+| `npm run test:unit` | 纯逻辑单测（181 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 / 任务快照归并 / 提问回填 |
 | `npm run test:live` | 全部场景（含会真调模型的） |
 | `npm run test:live -- live features sessions` | 指定场景，不烧 token |
 | `npm run test:live -- e2e image queue ask` | 会真调模型（真流式 / 真图片 / 真排队 / 真问答） |
@@ -213,6 +221,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `npm run probe-pi` | 单独验证「pi 能不能被找到并启动」 |
 | `npm run icons` | 从设计稿重抽图标 sprite |
 | `npm run icon` | 重新生成应用图标 `build/icon.ico` + `icon.png`（离屏渲染，无新依赖） |
+| `npm run shots` | 重新生成 README 用的界面截图（注入假数据，**不调模型**；见 `scripts/shot-fixture.js`） |
 | `npm run dist:dir` | 产出免安装目录 `release/win-unpacked/`（调试用，快） |
 | `npm run dist` | 出安装包：NSIS `*-setup.exe` + 免安装单文件 `*-portable.exe` |
 | `npm run test:packaged` | **验打包产物**：跑 `release/win-unpacked` 里的真实应用，断言用的是包内 pi |
@@ -232,7 +241,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 
 > 体积：安装包约 120MB、免安装目录约 399MB（Electron 本体占大头）。
 >
-> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 30 个场景
+> ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 40 个场景
 > 读的是仓库里的 `resources/pi-runtime`，打包后改从 `process.resourcesPath/` 找，
 > 路径错了应用**能启动但连不上 pi**，开发态测试全绿也照样复现不了。
 
@@ -242,7 +251,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|---|
 | 纯逻辑 | `test:unit`（node） | 快、确定、能断言边界（路径穿越 / 坏数据 / 缓存） |
 | UI + 接线 | `test:live`（真实 Electron） | 完整主进程 / preload / IPC / pi 子进程 |
-| 真行为 | `test:live -- e2e image queue ask` | 真模型、真工具、真图片 |
+| 真行为 | `test:live -- e2e image queue ask` | 真模型、真工具、真图片、真问答 |
 
 > **测试用哪个模型**：真实调模型的场景默认固定用 **commandcode 的
 > Ling 3.0 Flash Sante（免费）**，所以可以放心反复跑；需要视觉的 `image`
@@ -252,7 +261,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 **UI 层不在裸 `BrowserWindow` 里测。** 那样 preload/IPC/pi 全都不存在，
 断言会「通过」而应用其实是坏的。
 
-> 完整清单见 `package.json` 的 `check`（共 **30 个场景**，下表只列重点）。
+> 完整清单见 `package.json` 的 `check`（共 **40 个场景**，下表只列重点）。
 
 | 场景 | 覆盖 | 花 token |
 |---|---|---|
@@ -275,6 +284,15 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `todos` | 任务面板：启动期通知不弹窗（只进日志）、清单渲染（进度标签 / 删除线 / 折叠 / 空态不占位） | 否 |
 | `sessions` | 切换会话加载历史、选中态、连续性带、新建会话清空 | 否 |
 | `virtual` | 注入 240 条 → 只渲染 8 条、滚到底可见最后一项、恢复真实数据 | 否 |
+| `terminal` | 终端窗口：结构 / 三个拖拽把手 / 拖动与键盘调大小 / 展开恢复 | 否 |
+| `streamwidth` | 对话宽度自定义 + 导航轨跟随 | 否 |
+| `working` | 「正在处理」提示在整个 agent 回合内常驻 | 否 |
+| `autonomous` | 自主模式开关（在输入栏里 / 落盘） | 否 |
+| `context` | 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐 | 否 |
+| `queuestack` | 排队消息：显示在输入框上方 + 插队按钮接线 | 否 |
+| `rename` | 左栏会话重命名（行内输入；回归 Electron 不支持 `window.prompt` 的坑） | 否 |
+| `logs` | 所有报错都进日志（store.set 包装的回归网） | 否 |
+| `ask` | 模型主动提问 → 弹窗 → 回答 → 回填 | 是 |
 | `e2e` | 流式光标、正文增量、工具卡状态与摘要、智能展开、收尾状态 | 是 |
 | `image` | 8×8 红色 PNG 发过去，断言**模型回答「红色」**（证明图片真的进了上下文） | 是 |
 | `queue` | 生成中排队 2 条 → `Esc` → 断言队列清空**且文本回到输入框** | 是 |
@@ -294,12 +312,17 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 ## 已知边界
 
 **能用：**
-流式对话、markdown + 语法高亮、bash/read/edit/write 工具卡（含彩色 diff）、
-多会话（切换 / 新建 / 重命名 / 复制 / 分叉 / 导出 HTML / 删除）、
+流式对话、markdown + 语法高亮、bash/read/edit/write 工具卡（含彩色 diff + **终端窗口**，可拖宽高）、
+多会话（切换 / 新建 / 手动重命名 / 复制 / 分叉 / 导出 HTML / 删除）、
 模型与思考档选择（69 个模型）、上下文压缩、自动压缩与自动重试开关、
-图片输入（粘贴 / 拖拽 / 选文件）、内置浏览器（导航 / 结构化观察 / ref 点击 / 输入 / 按键 / 滚动 / 标签页 / 截图 / 下载）、`!` 直执行 shell、`/` 斜杠命令补全、
+图片输入（粘贴 / 拖拽 / 选文件）、**模型主动提问**（信息不足时弹窗问你；**自主模式**可关）、
+**供应商额度查询**（余额 / 用量；订阅制按 5 小时 / 每周分窗口）、
+**对话列宽自定义**（正文 / 输入框 / 用量条 / 导航轨一起对齐）、
+内置浏览器（导航 / 结构化观察 / ref 点击 / 输入 / 按键 / 滚动 / 标签页 / 截图 / 下载）、
+**接入本机 Chrome**（独立 profile + 本机历史 / 登录态同步）、
+`!` 直执行 shell、`/` 斜杠命令补全、
 扩展 UI 对话框（select/confirm/input/editor）、扩展通知与状态条、
-长会话虚拟化、中英切换、深浅主题、
+任务面板（含**历史**与回合跳转）、长会话虚拟化、中英切换、深浅主题、
 **Windows 打包分发**（NSIS 安装包 + 免安装单文件版，内置 pi）。
 
 **没做：**
