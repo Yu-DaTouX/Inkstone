@@ -73,20 +73,25 @@
   ok(Array.isArray(st().tabs), '状态里给出 Chrome 标签列表')
   ok(typeof st().canGoBack === 'boolean' && typeof st().canGoForward === 'boolean', '历史状态是布尔值')
   const firstId = st().activeTabId
+  const embeddedCount = st().tabs.filter((t) => !t.id.startsWith('chrome:')).length
   await window.yan.browser.newTab('about:blank')
-  ok(await until(() => (st().tabs?.length ?? 0) === 2), '新建后有两个标签', `tabs=${st().tabs?.length}`)
-  // 新建后新标签才是 active，所以 other 是原来那个
-  const other = st().tabs.find((t) => t.id !== st().activeTabId)
-  ok(!!other, '能找出另一个标签')
+  ok(await until(() => st().tabs.filter((t) => t.id.startsWith('chrome:')).length === 2), '新建后有两个 Chrome 标签', `tabs=${st().tabs?.length}`)
+  ok((st().tabs?.length ?? 0) === embeddedCount + 2, '统一列表同时保留内置标签', `tabs=${st().tabs?.length}`)
+  // 新建后新标签才是 active，所以 other 是原来那个 Chrome 标签
+  const other = st().tabs.find((t) => t.id.startsWith('chrome:') && t.id !== st().activeTabId)
+  ok(!!other, '能找出另一个 Chrome 标签')
   if (other) {
     await window.yan.browser.switchTab(other.id)
     ok(await until(() => st().activeTabId === other.id), '切换后 activeTabId 指向该标签')
     await window.yan.browser.closeTab(other.id)
-    ok(await until(() => (st().tabs?.length ?? 0) === 1), '关闭后只剩一个标签', `tabs=${st().tabs?.length}`)
+    ok(await until(() => st().tabs.filter((t) => t.id.startsWith('chrome:')).length === 1), '关闭后只剩一个 Chrome 标签', `tabs=${st().tabs?.length}`)
+    const current = st().activeTabId
+    await window.yan.browser.closeTab(current)
+    ok(await until(() => st().mode === 'embedded'), '关闭最后一个 Chrome 标签后回到内置模式', `mode=${st().mode}`)
     ok(
-      st().tabs.length === 1 && st().activeTabId === st().tabs[0].id,
-      '关闭当前标签后自动切到剩下的那个',
-      `active=${st().activeTabId} only=${st().tabs[0]?.id} first=${firstId}`
+      st().tabs.length === embeddedCount && st().activeTabId && !st().activeTabId.startsWith('chrome:'),
+      '关闭外部标签后恢复内置标签',
+      `active=${st().activeTabId} first=${firstId}`
     )
   }
 
@@ -95,7 +100,7 @@
   out.push('=== 4. 断开 ===')
   await store.getState().closeExternalChrome()
   ok(await until(() => st().mode !== 'external'), '断开后不再处于 external 模式')
-  ok(!st().open, '断开后浏览器面板回到关闭状态')
+  ok(st().mode === 'embedded' && st().open, '断开后保留内置浏览器面板', `mode=${st().mode} open=${st().open}`)
 
   return out.join('\n')
 })()

@@ -118,8 +118,17 @@ export class BrowserController {
   private lastDownload: BrowserState['lastDownload']
   private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
-  /** 外部 Chrome 目标（null = 用内嵌 WebContentsView） */
+  /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
+  private activeMode: 'embedded' | 'external' = 'embedded'
+
+  private externalTabId(targetId: string): string {
+    return `chrome:${targetId}`
+  }
+
+  private externalTargetId(tabId: string): string | null {
+    return tabId.startsWith('chrome:') ? tabId.slice('chrome:'.length) : null
+  }
   /** 外部 Chrome 下载：guid → 文件名（downloadWillBegin 先到，进度事件用 guid 关联） */
   private readonly externalDownloadNames = new Map<string, string>()
   private state: BrowserState = {
@@ -168,17 +177,18 @@ export class BrowserController {
   getState(): BrowserState {
     const ext = this.external
     const active = this.activeTab()
+    const activeIsExternal = this.activeMode === 'external' && Boolean(ext)
+    const embeddedTabs = [...this.tabs.values()].map((tab) => ({ ...tab.state }))
+    const externalTabs = ext ? ext.chromeTabs.map((tab) => ({ ...tab, id: this.externalTabId(tab.id) })) : []
     return {
       open: Boolean(active) || Boolean(ext),
-      url: ext?.url ?? active?.state.url ?? '',
-      title: ext?.title ?? active?.state.title ?? '',
-      loading: ext?.loading ?? active?.state.loading ?? false,
-      canGoBack: ext ? ext.canGoBack : active?.state.canGoBack ?? false,
-      canGoForward: ext ? ext.canGoForward : active?.state.canGoForward ?? false,
-      tabs: ext
-        ? ext.chromeTabs.map((tab) => ({ ...tab }))
-        : [...this.tabs.values()].map((tab) => ({ ...tab.state })),
-      activeTabId: ext ? ext.targetId : this.activeTabId ?? undefined,
+      url: activeIsExternal ? ext?.url ?? '' : active?.state.url ?? '',
+      title: activeIsExternal ? ext?.title ?? '' : active?.state.title ?? '',
+      loading: activeIsExternal ? ext?.loading ?? false : active?.state.loading ?? false,
+      canGoBack: activeIsExternal ? ext?.canGoBack ?? false : active?.state.canGoBack ?? false,
+      canGoForward: activeIsExternal ? ext?.canGoForward ?? false : active?.state.canGoForward ?? false,
+      tabs: [...embeddedTabs, ...externalTabs],
+      activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
       userControl: this.userControl,
       lastDownload: this.lastDownload,
       nativeBounds: this.nativeBounds,
@@ -209,7 +219,7 @@ export class BrowserController {
    * 两种目标都提供 cdp / registry / observer / input，调用方不用分叉。
    */
   private parts(): TargetParts | null {
-    if (this.external) return this.external
+    if (this.external && this.activeMode === 'external') return this.external
     const tab = this.activeTab()
     return tab ? { cdp: tab.cdp, registry: tab.registry, observer: tab.observer, input: tab.input } : null
   }
@@ -343,8 +353,8 @@ export class BrowserController {
   async open(url = INITIAL_URL): Promise<BrowserState> {
     const next = safeUrl(url)
     if (!next) throw new Error('只允许打开 http(s) 网页')
-    // 两种模式互斥：开内嵌浏览时先断开外部 Chrome
-    await this.closeExternalChrome()
+    // 统一标签栏：切回内嵌标签，不断开外部 Chrome
+    this.activeMode = 'embedded'
     let tab = this.activeTab()
     if (!tab) {
       tab = this.createTab()
@@ -371,7 +381,7 @@ export class BrowserController {
     const url = safeUrl(rawUrl)
     if (!url) throw new Error('只允许打开 http(s) 网页')
     // 外部 Chrome：新建一个真实标签页，并把 CDP 连接切过去
-    if (this.external) {
+    if (this.external && this.activeMode === 'external') {
       const created = await createCdpTab(this.external.port, url)
       if (created?.webSocketDebuggerUrl) await this.attachExternalTarget(created)
       else await this.navigateExternal(url)
@@ -395,17 +405,20 @@ export class BrowserController {
   }
 
   async switchTab(id: string): Promise<BrowserState> {
-    // 外部 Chrome：把 CDP 连接切到那个页面目标
-    if (this.external) {
+    const externalTargetId = this.externalTargetId(id)
+    if (externalTargetId && this.external) {
       const target = (await listTargets(this.external.port)).find(
-        (t) => t.id === id && !!t.webSocketDebuggerUrl
+        (t) => t.id === externalTargetId && !!t.webSocketDebuggerUrl
       )
       if (!target) throw new Error('找不到浏览器标签页')
+      this.activeMode = 'external'
+      for (const tab of this.tabs.values()) tab.view.setVisible(false)
       await this.attachExternalTarget(target)
       return this.getState()
     }
     const tab = this.tabs.get(id)
     if (!tab) throw new Error('找不到浏览器标签页')
+    this.activeMode = 'embedded'
     this.activeTabId = id
     for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === id)
     this.updateState()
@@ -414,9 +427,10 @@ export class BrowserController {
 
   async closeTab(id = this.activeTabId ?? ''): Promise<BrowserState> {
     // 外部 Chrome：关掉那个真实标签页
-    if (this.external) {
+    const externalTargetId = this.externalTargetId(id)
+    if (externalTargetId && this.external) {
       const ext = this.external
-      const targetId = id || ext.targetId
+      const targetId = externalTargetId
       await closeCdpTarget(ext.port, targetId)
       if (targetId === ext.targetId) {
         // 当前目标被关掉：切到剩下的第一个页面，没有就整体断开
@@ -464,7 +478,7 @@ export class BrowserController {
     const url = safeUrl(raw)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
     try {
-      if (this.external) await this.navigateExternal(url)
+      if (this.external && this.activeMode === 'external') await this.navigateExternal(url)
       else await this.open(url)
       return { ok: true }
     } catch (error) {
@@ -473,7 +487,7 @@ export class BrowserController {
   }
 
   async back(): Promise<BrowserActionResult> {
-    if (this.external) return this.externalHistory(-1)
+    if (this.external && this.activeMode === 'external') return this.externalHistory(-1)
     const tab = this.activeTab()
     if (!tab?.view.webContents.canGoBack()) return { ok: false, error: '没有可返回的页面' }
     tab.view.webContents.goBack()
@@ -481,7 +495,7 @@ export class BrowserController {
   }
 
   async forward(): Promise<BrowserActionResult> {
-    if (this.external) return this.externalHistory(1)
+    if (this.external && this.activeMode === 'external') return this.externalHistory(1)
     const tab = this.activeTab()
     if (!tab?.view.webContents.canGoForward()) return { ok: false, error: '没有可前进的页面' }
     tab.view.webContents.goForward()
@@ -489,7 +503,7 @@ export class BrowserController {
   }
 
   async reload(): Promise<BrowserActionResult> {
-    if (this.external) {
+    if (this.external && this.activeMode === 'external') {
       try {
         this.external.registry.clear()
         await this.external.cdp.send('Page.reload', {})
@@ -538,6 +552,7 @@ export class BrowserController {
     const url = safeUrl(rawUrl)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
     if (this.external) {
+      this.activeMode = 'external'
       await this.navigateExternal(url)
       return { ok: true }
     }
@@ -566,7 +581,6 @@ export class BrowserController {
        * 之前是「先关内嵌再启动」，一旦 Chrome 启动失败，用户已打开的内嵌页
        * 被清空而外部又没接上 —— 看起来就像界面卡死。
        */
-      for (const id of [...this.tabs.keys()]) await this.closeTab(id)
       this.external = {
         cdp,
         registry,
@@ -583,6 +597,8 @@ export class BrowserController {
         canGoForward: false,
         chromeTabs: []
       }
+      this.activeMode = 'external'
+      for (const tab of this.tabs.values()) tab.view.setVisible(false)
       // 用户自己关掉 Chrome 时同步清状态
       chrome.once('exit', () => {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
@@ -650,6 +666,9 @@ export class BrowserController {
     this.external = null
     await ext.cdp.detach().catch(() => undefined)
     stopChrome(ext.chrome)
+    this.activeMode = 'embedded'
+    const active = this.activeTab()
+    for (const tab of this.tabs.values()) tab.view.setVisible(tab.id === active?.id)
     this.userControl = false
     this.updateState()
     return this.getState()
@@ -794,7 +813,7 @@ export class BrowserController {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
     await p.cdp.attach()
-    if (this.external) {
+    if (this.external && this.activeMode === 'external') {
       const observation = await this.external.observer.capture(this.external.url, this.external.title)
       // 页面自己跳转（或标题变化）时同步状态与可切换标签
       this.external.url = observation.url

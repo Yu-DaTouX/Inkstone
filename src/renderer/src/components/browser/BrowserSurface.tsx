@@ -73,13 +73,13 @@ export function BrowserSurface() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`browser-tab ${tab.id === state.activeTabId ? 'active' : ''}`}
+            className={`browser-tab ${tab.id === state.activeTabId ? 'active' : ''} ${tab.id.startsWith('chrome:') ? 'external' : ''}`}
             role="tab"
             aria-selected={tab.id === state.activeTabId}
             onClick={() => void window.yan.browser.switchTab(tab.id)}
             title={tab.url}
           >
-            <span>{tab.title || tab.url || '新标签页'}</span>
+            <span>{tab.id.startsWith('chrome:') ? 'Chrome · ' : ''}{tab.title || tab.url || '新标签页'}</span>
             <i onClick={(event) => { event.stopPropagation(); void window.yan.browser.closeTab(tab.id) }}>×</i>
           </button>
         ))}
