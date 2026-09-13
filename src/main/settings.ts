@@ -14,6 +14,7 @@ import {
   PANEL_MAX,
   PANEL_MIN,
   clampPanelWidth,
+  clampStreamWidth,
   TOOL_SECTIONS,
   normalizeToolHidden,
   normalizeToolOrder,
@@ -59,6 +60,8 @@ const DEFAULTS: AppSettings = {
   // 占位；真正生效的是 getSettings 里的 detectLang()（见那里）
   lang: 'zh-CN',
   recentCwds: [],
+  projectNames: {},
+  providerBudgets: {},
   rightPanelOpen: true,
   alwaysOnTop: false,
   // 0 = 自动（按屏幕缩放算，见 main/zoom.ts）
@@ -73,7 +76,11 @@ const DEFAULTS: AppSettings = {
   toolHidden: [],
   toolHeights: {},
   // 工具详情默认收起（见 AppSettings.toolDetail 的注释）
-  toolDetail: false
+  toolDetail: false,
+  // 0 = 用设计默认宽度（见 AppSettings 的注释）
+  streamWidth: 0,
+  // 提问优先（自主模式默认关）
+  autonomous: false
 }
 
 /**
@@ -155,6 +162,8 @@ export async function getSettings(): Promise<AppSettings> {
     // 语言：文件里没有合法值就跟随系统（用户手动选过就听用户的）
     if (!LANGS.includes(cached.lang as (typeof LANGS)[number])) cached.lang = detectLang()
     if (!Array.isArray(cached.recentCwds)) cached.recentCwds = []
+    if (!cached.projectNames || typeof cached.projectNames !== 'object' || Array.isArray(cached.projectNames)) cached.projectNames = {}
+    if (!cached.providerBudgets || typeof cached.providerBudgets !== 'object' || Array.isArray(cached.providerBudgets)) cached.providerBudgets = {}
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
     cached.alwaysOnTop = cached.alwaysOnTop === true
@@ -168,6 +177,8 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
     cached.toolHeights = normalizeHeights(cached.toolHeights)
     cached.toolDetail = cached.toolDetail === true
+    cached.streamWidth = clampStreamWidth(cached.streamWidth)
+    cached.autonomous = cached.autonomous === true
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -195,11 +206,17 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
     // 去重、保留最近 8 个
     next.recentCwds = [...new Set(patch.recentCwds)].slice(0, 8)
   }
+  if (patch.projectNames) {
+    next.projectNames = Object.fromEntries(Object.entries(patch.projectNames)
+      .filter(([path, name]) => path && typeof name === 'string' && name.trim())
+      .map(([path, name]) => [path, name.trim().slice(0, 64)]))
+  }
   // 档案是合并写入（只改名字不能把头像清空），且一律过一遍校验
   next.profile = sanitizeProfile({ ...next.profile, ...(patch.profile ?? {}) })
   // 宽度同样夹一下（渲染端传 0 = 恢复默认）
   if ('railWidth' in patch) next.railWidth = clampPanelWidth(next.railWidth, RAIL_MIN, RAIL_MAX)
   if ('panelWidth' in patch) next.panelWidth = clampPanelWidth(next.panelWidth, PANEL_MIN, PANEL_MAX)
+  if ('streamWidth' in patch) next.streamWidth = clampStreamWidth(next.streamWidth)
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }

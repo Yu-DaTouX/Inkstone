@@ -20,7 +20,9 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
+import { YAN_DIR } from './paths'
 import { generateTitle } from './title'
+import { todoSnapshotsFromEntries } from './todo-snapshots'
 import type {
   BashRun,
   CustomEntry,
@@ -32,7 +34,6 @@ import type {
   SessionState,
   SessionStats,
   SessionTodo,
-  SessionTodoSnapshot,
   SlashCommand,
   UIMessage,
   UIToolCall,
@@ -47,60 +48,6 @@ const FLUSH_MS = 16
 type Push = (msg: MainPush) => void
 
 /* ------------------------------------------------------------ 任务清单 */
-
-/**
- * 从会话的 custom entries 里抽任务清单 —— **全部快照**，不只最后一份。
- *
- * 用户的 `left-info-panel.ts` 用 `pi.appendEntry('left-panel-tasks', {todos})` 写，
- * 数据形状是 `{ todos: {text, done}[] }`。**每轮都会写一份**（agent 重新规划任务时
- * 覆盖写一个新的 entry），所以旧的那些就是「历史任务」——
- * 上一版只留最后一份，于是界面上完全看不到历史（用户提了这个需求）。
- *
- * `round`：这份清单是在第几轮写的 —— 数一下它前面有多少条消息即可。
- * 有了它，「跳转到那次任务的对话」才能真的跳（否则只能跳到最后）。
- * 数的是 message entry，与 UI 的回合分组口径一致（都以用户消息为界）。
- */
-function todoSnapshotsFromEntries(
-  entries: Record<string, unknown>[]
-): SessionTodoSnapshot[] {
-  const out: SessionTodoSnapshot[] = []
-  let userMsgs = 0
-
-  for (const e of entries) {
-    /*
-     * 先算轮次：遇到用户消息就 +1。
-     * 所以在这之后写的任务清单属于「第 userMsgs 轮」。
-     */
-    if (e.type === 'message') {
-      const m = e.message as { role?: unknown } | undefined
-      if (m?.role === 'user') userMsgs++
-      continue
-    }
-    if (e.type !== 'custom') continue
-
-    const ct = String(e.customType ?? '')
-    // 具体名字认不出来就跳过 —— 不能把所有 custom entry 都当任务
-    if (!/task|todo/i.test(ct)) continue
-
-    const data = e.data as { todos?: unknown } | undefined
-    if (!Array.isArray(data?.todos)) continue
-
-    const todos = data.todos
-      .filter((t): t is { text?: unknown; done?: unknown } => !!t && typeof t === 'object')
-      .map((t) => ({ text: String(t.text ?? ''), done: Boolean(t.done) }))
-      .filter((t) => t.text.length > 0)
-    if (todos.length === 0) continue
-
-    out.push({
-      id: String(e.id ?? `t${out.length}`),
-      todos,
-      round: Math.max(1, userMsgs)
-    })
-  }
-
-  return out
-}
-
 /**
  * pi 的队列模式字段是自由字符串（协议文档只保证这两个值）。
  * 认不出就当成 undefined —— 宁可界面不显示，也不能因为一个认知外的值而崩。
@@ -119,6 +66,7 @@ export class AgentController extends EventEmitter {
   private cwd: string
   private piBin?: string
   private browserExtension?: string
+  private questionExtension?: string
   private browserEnv?: NodeJS.ProcessEnv
 
   /** 权威消息列表 */
@@ -161,6 +109,7 @@ export class AgentController extends EventEmitter {
     cwd: string
     piBin?: string
     browserExtension?: string
+    questionExtension?: string
     browserEnv?: NodeJS.ProcessEnv
   }) {
     super()
@@ -168,6 +117,7 @@ export class AgentController extends EventEmitter {
     this.cwd = opts.cwd
     this.piBin = opts.piBin
     this.browserExtension = opts.browserExtension
+    this.questionExtension = opts.questionExtension
     this.browserEnv = opts.browserEnv
   }
 
@@ -222,6 +172,14 @@ export class AgentController extends EventEmitter {
       piBin: this.piBin,
       args: [
         ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
+        // 内置提问扩展（模型可主动向用户提问；自主模式时改为自行决策）
+        ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
+        /*
+         * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
+         * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
+         * 避免每次跑真实场景都需要选定/付费；个别场景（如发图）可在 CASES 里覆盖。
+         */
+        ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : []),
         // 只在测试隔离时接管会话目录。
         // 平时不传 —— 传了 pi 就不再按 cwd 建项目子目录，
         // 会把新会话平铺到根目录，与用户已有会话分居两处。
@@ -231,7 +189,12 @@ export class AgentController extends EventEmitter {
         // 在左栏里长得一模一样，等于没标题。
         // 让 pi 用首条用户消息当标题，才真正可辨认。
       ],
-      env: this.browserEnv
+      env: {
+        ...this.browserEnv,
+        // 让内置扩展能读到桌面端设置（自主模式存在 desktop.json 里）。
+        // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
+        YAN_DATA_DIR: YAN_DIR
+      }
     })
     this.rpc = rpc
 
@@ -880,8 +843,10 @@ export class AgentController extends EventEmitter {
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
     }
-    // 流式中必须指定行为，否则 pi 直接报错
-    if (this.state?.isStreaming) payload.streamingBehavior = 'steer'
+    // 流式中必须指定行为，否则 pi 直接报错。
+    // 默认**排队**（followUp）：等这一轮跑完再投递，不打断它。
+    // 想立刻插入当前这轮，用队列行上的「插队」按钮（走 steerQueued）。
+    if (this.state?.isStreaming) payload.streamingBehavior = 'followUp'
 
     const res = await this.rpc!.command('prompt', payload)
     return res.success ? { ok: true } : { ok: false, error: res.error }
@@ -895,6 +860,53 @@ export class AgentController extends EventEmitter {
   async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
     const res = await this.rpc!.command('follow_up', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  /**
+   * 把一条排队的消息「插队」提升为 steering（在当前这轮就听它的）。
+   *
+   * pi 没有「移除队列里某一条」的 RPC，只有 `clear_queue`（一次清空）。
+   * 所以只能：先取出全部排队 → 把目标之外的内容按原类型重排 → 再把目标 steer。
+   * 这里有固有的竞态（清空与重建之间 pi 可能已经投递了某条），
+   * 所以失败不能吞：返回错误，由界面写进日志（用户要求「所有报错进日志」）。
+   */
+  async steerQueued(text: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await this.rpc!.command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+      if (!res.success) return { ok: false, error: res.error }
+      const steering = res.data?.steering ?? []
+      const followUp = res.data?.followUp ?? []
+
+      // 只在 follow-up 队列里移除**一条**匹配项（可能有重复文案）
+      let removedFromFollow = false
+      const restFollow = followUp.filter((m) => {
+        if (!removedFromFollow && m === text) {
+          removedFromFollow = true
+          return false
+        }
+        return true
+      })
+      // 若 follow-up 里没有，再从 steering 里移除一条
+      let removedFromSteer = false
+      const restSteer = removedFromFollow
+        ? steering
+        : steering.filter((m) => {
+            if (!removedFromSteer && m === text) {
+              removedFromSteer = true
+              return false
+            }
+            return true
+          })
+
+      // 先重建其余排队（保持原有先后）
+      for (const m of restSteer) await this.rpc!.command('steer', { message: m })
+      for (const m of restFollow) await this.rpc!.command('follow_up', { message: m })
+      // 再把目标提升为 steering
+      const promoted = await this.rpc!.command('steer', { message: text })
+      return promoted.success ? { ok: true } : { ok: false, error: promoted.error }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
   }
 
   async abort(): Promise<{ steering: string[]; followUp: string[] }> {
@@ -1337,12 +1349,25 @@ export class AgentController extends EventEmitter {
     if (!st) return
     if (this.titleTried.has(st.sessionId)) return
 
-    const users = this.messages.filter((m) => m.role === 'user' && m.text.trim())
+    const users = this.messages.filter(
+      (m) => m.role === 'user' && (m.text.trim() || m.images?.length)
+    )
     if (users.length === 0) return
 
     // 样本：第一句 + 最近一句。只给第一句的话，
     // 一个聊到第四轮的会话标题会一直停在第一句的话题上。
-    const samples = [users[0].text, users[users.length - 1].text]
+    // 纯图片消息没有文字：用占位符，否则 samples 为空 → 标题永远生成不出来
+    // （用户报的「首条消息带图就没标题」）。
+    const sampleOf = (m: UIMessage): string =>
+      m.text.trim() || (m.images?.length ? `[图片 ×${m.images.length}]` : '')
+    const samples = [sampleOf(users[0]), sampleOf(users[users.length - 1])].filter(Boolean)
+
+    // 首条消息的图片一并交给归纳进程 —— 模型能看着图起标题。
+    // 只带 1 张：标题生成是个短请求，塞太多图又慢又贵。
+    const titleImages = users[0].images?.slice(0, 1).map((im) => ({
+      data: im.data,
+      mimeType: im.mimeType
+    }))
 
     this.titleTried.add(st.sessionId)
     const sessionId = st.sessionId
@@ -1351,6 +1376,7 @@ export class AgentController extends EventEmitter {
       const res = await generateTitle({
         sessionId,
         samples,
+        images: titleImages,
         cwd: this.cwd,
         piBin: this.piBin,
         force: opts.force

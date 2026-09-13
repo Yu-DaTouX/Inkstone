@@ -385,6 +385,10 @@ export interface AppSettings {
   piBin?: string
   /** 最近使用的目录 */
   recentCwds: string[]
+  /** 工作目录绝对路径 → 用户自定义项目名 */
+  projectNames: Record<string, string>
+  /** 供应商月度预算（用于没有余额概念但提供费用 API 的平台） */
+  providerBudgets: Record<string, number>
   /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */
   rightPanelOpen: boolean
   /**
@@ -441,6 +445,22 @@ export interface AppSettings {
    * 调高度没意义，界面上也不给把手。
    */
   toolHeights: Record<string, number>
+  /**
+   * 对话内容列的宽度（px）。**0 = 用设计默认值**（--w-stream，当前 900）。
+   *
+   * 与 railWidth / panelWidth 同一个约定：只在用户手动调过之后才落盘一个数字，
+   * 以后改默认值时没调过的人会跟着变。对话正文、输入框、用量条、导航轨
+   * 全都从同一个 --w-stream 变量取值，所以调它一处就整体对齐。
+   */
+  streamWidth: number
+  /**
+   * 自主模式。
+   *
+   * 开启后模型**不再向用户提问**（内置提问扩展会跳过弹窗并自行决策，
+   * 系统提示也会明确要求不要问）。默认 false —— 提问是更有帮助的默认行为，
+   * 自主模式是用户为了“别打断我”主动打开的。
+   */
+  autonomous: boolean
 }
 
 /**
@@ -450,8 +470,37 @@ export interface AppSettings {
  * （未知 id 直接丢掉，否则版本升级后旧 id 会一直占位），
  * 渲染端要按它排默认顺序。两处必须用同一份定义。
  */
-export const TOOL_SECTIONS = ['context', 'todo', 'queue', 'files', 'ext', 'log', 'actions'] as const
+export const TOOL_SECTIONS = ['context', 'quota', 'todo', 'queue', 'files', 'ext', 'log', 'actions'] as const
 export type ToolSectionId = (typeof TOOL_SECTIONS)[number]
+
+export interface ProviderQuota {
+  provider: string
+  supported: boolean
+  remaining?: number
+  total?: number
+  used?: number
+  currency?: string
+  label?: string
+  error?: string
+  /**
+   * 分窗口的额度（订阅制常见：5 小时 + 每周）。
+   * 有它时右栏会在总额度下面逐条画进度条，而不是只给一个数字。
+   */
+  windows?: QuotaWindow[]
+  checkedAt: number
+}
+
+export interface QuotaWindow {
+  /** 稳定 id，仅用于 React key 与测试 */
+  id: string
+  /** 展示名（由主进程按供应商语言给出） */
+  label: string
+  used: number
+  total: number
+  /** 重置时间（毫秒时间戳），没有就不显示 */
+  resetAt?: number
+  exceeded?: boolean
+}
 
 /** 把设置里读到的顺序规范化：只留合法 id、去重、并补上缺的（按默认相对位置放后面） */
 export function normalizeToolOrder(v: unknown): string[] {
@@ -498,6 +547,23 @@ export function clampPanelWidth(v: unknown, min: number, max: number): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n <= 0) return 0
   return Math.round(Math.min(max, Math.max(min, n)))
+}
+
+/**
+ * 对话内容列宽度的允许区间（px）。
+ *
+ * 下限 560：再窄中文一行放不下几个字，代码块会疯狂折行；
+ * 上限 1600：再宽就接近全屏，阅读行长会失控（这是当初设 --w-stream 的原因）。
+ * 与面板宽度一样放在 shared —— 主进程落盘前夹、渲染端拖动时也夹。
+ */
+export const STREAM_MIN = 560
+export const STREAM_MAX = 1600
+
+/** 夹一个合法的对话宽度；0 / 非数字都当「用默认」 */
+export function clampStreamWidth(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.round(Math.min(STREAM_MAX, Math.max(STREAM_MIN, n)))
 }
 
 /**
@@ -590,6 +656,32 @@ export interface BrowserExternalState {
   profileDir?: string
   /** DevTools 调试端口 */
   debuggingPort?: number
+  /** 接入时从真实 Chrome 同步数据的结果（哪几项成功/失败） */
+  sync?: ChromeSyncReport
+}
+
+/**
+ * 本机 Chrome 数据同步报告。
+ *
+ * 为什么逐项报告而不是一个布尔值：历史随时能同步、Cookie 在 Chrome
+ * 开着时拿不到 —— 「一半成功」是常态。只有一个布尔值的话，界面就只能
+ * 笼统地说「同步失败」，用户不知道该做什么。
+ */
+export interface ChromeSyncReport {
+  /** 找到本机 Chrome 的用户数据了吗 */
+  found: boolean
+  /** 源（真实 Chrome 用户数据根目录） */
+  source?: string
+  /** 目标（托管 profile） */
+  target?: string
+  /** 成功同步的条目 */
+  copied: string[]
+  /** 失败/跳过及原因 */
+  failed: { item: string; reason: string }[]
+  /** 探测时 Chrome 是否在运行 */
+  chromeRunning: boolean
+  /** Cookie 是否真的同步过来了（决定提示不提示「请先退出 Chrome」） */
+  cookiesSynced: boolean
 }
 
 export interface BrowserTabState {
@@ -732,6 +824,8 @@ export interface YanBridge {
   send(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
+  /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */
+  steerQueued(text: string): Promise<{ ok: boolean; error?: string }>
   /**
    * 中止。按 pi 的约定先 clear_queue 再 abort，把清出来的队列文本返回，
    * 客户端应把它放回输入框（否则用户排的话就白打了）。
@@ -812,6 +906,10 @@ export interface YanBridge {
   getStats(): Promise<SessionStats | null>
   /** 已生成过的会话标题缓存（sessionId → title），启动时一次性拉走 */
   cachedTitles(): Promise<Record<string, string>>
+  /** 用户手动重命名的会话名（sessionId → name），优先于自动标题 */
+  manualTitles(): Promise<Record<string, string>>
+  /** 写一个手动会话名（空串 = 清除，恢复自动标题） */
+  setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean }>
   /** 读会话里的 extension custom entries（任务清单的来源） */
   getCustomEntries(): Promise<CustomEntry[]>
   /** 手动刷新任务清单 */
@@ -893,6 +991,7 @@ export interface YanBridge {
   listDir(rel: string, showHidden?: boolean): Promise<DirListing>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
+  providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /* 内置浏览器 */
   browser: {
@@ -916,6 +1015,8 @@ export interface YanBridge {
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
     /** 断开本机 Chrome，并关掉我们拉起的那个进程 */
     closeExternalChrome(): Promise<BrowserState>
+    /** 重新同步本机 Chrome 的登录态与历史（退出 Chrome 后调用才拿得到 cookie） */
+    syncLocalProfile(): Promise<ChromeSyncReport>
     setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
   }

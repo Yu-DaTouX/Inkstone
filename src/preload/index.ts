@@ -5,6 +5,7 @@ import type {
   BrowserBounds,
   BrowserObservation,
   BrowserState,
+  ChromeSyncReport,
   AuthProviderInfo,
   CompactionInfo,
   CustomEntry,
@@ -15,6 +16,7 @@ import type {
   PeekResult,
   PiInfo,
   PiProbe,
+  ProviderQuota,
   SessionState,
   SessionStats,
   SessionSummary,
@@ -44,6 +46,7 @@ const api: YanBridge = {
   send: (text, images) => invoke<Ok>('yan:send', text, images),
   steer: (text) => invoke<Ok>('yan:steer', text),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
+  steerQueued: (text) => invoke<Ok>('yan:steerQueued', text),
   abort: () => invoke<{ steering: string[]; followUp: string[] }>('yan:abort'),
   newSession: () => invoke<Ok>('yan:newSession'),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
@@ -88,6 +91,8 @@ const api: YanBridge = {
   getMessages: () => invoke<UIMessage[]>('yan:getMessages'),
   getStats: () => invoke<SessionStats | null>('yan:getStats'),
   cachedTitles: () => invoke<Record<string, string>>('yan:cachedTitles'),
+  manualTitles: () => invoke<Record<string, string>>('yan:manualTitles'),
+  setManualTitle: (sessionId, name) => invoke<{ ok: boolean }>('yan:setManualTitle', sessionId, name),
   getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
@@ -124,6 +129,7 @@ const api: YanBridge = {
   /* ---- 文件树 ---- */
   listDir: (rel, showHidden) => invoke<DirListing>('yan:listDir', rel, showHidden === true),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
+  providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   /* ---- 内置浏览器 ---- */
   browser: {
@@ -141,6 +147,7 @@ const api: YanBridge = {
     openExternal: (url) => invoke<Ok>('yan:browser:openExternal', url),
     openExternalChrome: (url) => invoke<Ok>('yan:browser:openExternalChrome', url),
     closeExternalChrome: () => invoke<BrowserState>('yan:browser:closeExternalChrome'),
+    syncLocalProfile: () => invoke<ChromeSyncReport>('yan:browser:syncLocalProfile'),
     setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds)
   },

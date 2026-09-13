@@ -4,19 +4,20 @@
  * 一个窗口 = 一个 AgentController = 一个 pi 子进程。
  * 会话切换走 pi 自己的 switch_session，不开新进程（进程很贵）。
  */
-import { app, shell, BrowserWindow, ipcMain, dialog, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu } from 'electron'
 import { join, dirname, basename, extname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
-import { cachedTitles } from './title'
+import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { listDir } from './files'
 import { compactionInfo } from './compaction'
+import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
@@ -138,6 +139,20 @@ function browserExtensionPath(): string | undefined {
   return candidates.find((p) => existsSync(p))
 }
 
+/**
+ * 内置「提问」扩展的路径。
+ * 让模型在信息不足时主动问用户；自主模式打开时改为自行决策。
+ * 与 browser.js 同一套查找顺序（打包后 / 开发期）。
+ */
+function questionExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'question.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'question.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'question.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
 function push(msg: MainPush): void {
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
@@ -176,6 +191,7 @@ async function startAgent(): Promise<{ ok: boolean; error?: string }> {
     cwd: settings.cwd,
     piBin: settings.piBin,
     browserExtension: browserExtensionPath(),
+    questionExtension: questionExtensionPath(),
     browserEnv: browser?.bridgeEnv()
   })
 
@@ -207,6 +223,7 @@ function registerIpc(): void {
 
   handle('yan:steer', async (text: string) => agent?.steer(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:followUp', async (text: string) => agent?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:steerQueued', async (text: string) => agent?.steerQueued(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
     const cleared = (await agent?.abort()) ?? { steering: [], followUp: [] }
@@ -220,7 +237,6 @@ function registerIpc(): void {
   })
 
   /* ---- 会话管理 ---- */
-  handle('yan:renameSession', async (name: string) => agent?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:fork', async (entryId: string) => agent?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:clone', async () => agent?.clone() ?? { ok: false, error: 'pi 未运行' })
   handle('yan:forkPoints', async () => agent?.forkPoints() ?? [])
@@ -332,6 +348,18 @@ function registerIpc(): void {
   handle('yan:getMessages', async () => agent?.getMessages() ?? [])
   handle('yan:getStats', async () => agent?.refreshStats() ?? null)
   handle('yan:cachedTitles', async () => cachedTitles())
+  /*
+   * 手动重命名。比“自动标题”更松一点：写一个独立的粘性名。
+   * 两条通路：
+   *   · 当前会话也调一次 pi 的 set_session_name（TUI / 其它客户端能看到）
+   *   · 无论哪个会话都写 manual-titles.json（桌面端左栏立刻生效、且不被重生标题盖掉）
+   */
+  handle('yan:renameSession', async (name: string) => agent?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:manualTitles', async () => manualTitles())
+  handle('yan:setManualTitle', async (sessionId: string, name: string) => {
+    await setManualTitle(String(sessionId ?? ''), String(name ?? ''))
+    return { ok: true }
+  })
   handle('yan:getCustomEntries', async () => agent?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => agent?.refreshTodos() ?? [])
   handle('yan:listSessions', async () => listSessions())
@@ -505,6 +533,7 @@ function registerIpc(): void {
     const s = await getSettings()
     return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
   })
+  ipcMain.handle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
 
   /* ---- 内置浏览器 ---- */
   ipcMain.handle('yan:browser:getState', () => browser?.getState() ?? {
@@ -529,6 +558,9 @@ function registerIpc(): void {
     browser?.openExternalChrome(url) ?? { ok: false, error: '浏览器未初始化' }
   )
   ipcMain.handle('yan:browser:closeExternalChrome', () => browser?.closeExternalChrome())
+  ipcMain.handle('yan:browser:syncLocalProfile', () =>
+    browser?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
+  )
   ipcMain.handle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
   ipcMain.handle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browser?.setBounds(bounds)
@@ -750,12 +782,48 @@ function createWindow(): void {
     }
   })
 
+  /*
+   * 右键菜单（复制 / 粘贴 / 剪切 / 全选）。
+   *
+   * 为什么之前“被隐藏”了：Electron **默认没有**右键菜单（只有浏览器才有），
+   * 我们没有自己建，所以输入框和正文里右键什么都不弹。
+   *
+   * 按上下文给项：可编辑处给剪切/复制/粘贴/全选，只选中文本时给复制。
+   * 标签跟随应用语言（role 的默认标签是英文）。
+   */
+  win.webContents.on('context-menu', (_e, params) => {
+    const editable = params.isEditable
+    const hasSel = params.selectionText.trim().length > 0
+    if (!editable && !hasSel) return
+    void getSettings().then((s) => {
+      const zh = String(s.lang ?? 'zh-CN').toLowerCase().startsWith('zh')
+      const L = zh
+        ? { cut: '剪切', copy: '复制', paste: '粘贴', selectAll: '全选' }
+        : { cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select all' }
+      const items: Electron.MenuItemConstructorOptions[] = []
+      if (editable && hasSel) items.push({ role: 'cut', label: L.cut })
+      if (hasSel) items.push({ role: 'copy', label: L.copy })
+      if (editable) {
+        if (items.length) items.push({ type: 'separator' })
+        items.push({ role: 'paste', label: L.paste })
+        items.push({ type: 'separator' })
+        items.push({ role: 'selectAll', label: L.selectAll })
+      }
+      if (items.length) Menu.buildFromTemplate(items).popup({ window: win ?? undefined })
+    })
+  })
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  // 渲染端崩了要有记录，否则只看到黑屏
+  // 渲染端异常要有记录，否则 React 启动失败时用户只会看到黑屏。
+  win.webContents.on('console-message', (...args: unknown[]) => {
+    const detail = args.find((x) => x && typeof x === 'object' && 'message' in x) as { level?: string; message?: string; sourceId?: string; lineNumber?: number } | undefined
+    if (detail?.level === 'error') console.error('[renderer console]', detail.message, detail.sourceId, detail.lineNumber)
+    else if (typeof args[2] === 'string' && Number(args[1]) >= 2) console.error('[renderer console]', args[2], args[4], args[3])
+  })
   win.webContents.on('render-process-gone', (_e, details) => {
     console.error('[renderer gone]', details.reason)
   })

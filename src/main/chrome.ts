@@ -4,11 +4,13 @@
  * 为什么单开一个 profile（而不是用用户默认目录）：
  *   Chrome 136 起，对**默认配置目录**开 `--remote-debugging-port` 会被拒绝
  *   （安全策略，防 cookie 被调试接口读走）。所以必须 `--user-data-dir`
- *   指向一个独立目录；代价是用户要在那个 profile 里登录一次目标网站。
- *   好处是：调试能力完整、与用户日常 profile 不互相锁。
+ *   指向一个独立目录；好处是调试能力完整、与用户日常 profile 不互相锁。
  *
- * 本文件只负责「找到 Chrome / 拼参数 / 拉起进程 / 停掉」，
- * 协议连接在 browser/RawCdp.ts。
+ * ⚠️ 独立 profile 本身是空白的一一那会让用户以为「cookie 与历史没共享」。
+ *    所以启动前会先调 `chrome-profile.ts` 把真实 profile 的登录态与历史
+ *    导过来（详见那个文件的注释：Chrome 开着时 cookie 拿不到，历史能拿）。
+ *    本文只负责「找到 Chrome / 拼参数 / 拉起进程 / 停掉」，
+ *    协议连接在 browser/RawCdp.ts。
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'

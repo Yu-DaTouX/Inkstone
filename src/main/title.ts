@@ -23,13 +23,52 @@ const TITLES_FILE = join(YAN_DIR, 'titles.json')
 /** sessionId → 标题 */
 type TitleMap = Record<string, string>
 
-async function loadTitles(): Promise<TitleMap> {
+/**
+ * 用户**手动**重命名的会话名（sessionId → 名字）。
+ *
+ * 为什么要与 titles.json 分开：自动生成的标题每轮都会重算（用户要求
+ * 「每次对话标题需要 agent 生成一个新的」），如果把手动名写进同一张表，
+ * 下一轮就会被自动标题覆盖 —— 用户报的「重命名不管用」有一半是这个原因。
+ * 分开存之后，手动名是**粘性**的：有手动名就不再自动生成。
+ */
+const MANUAL_FILE = join(YAN_DIR, 'manual-titles.json')
+
+async function loadMap(file: string): Promise<TitleMap> {
   try {
-    const raw = await readFile(TITLES_FILE, 'utf8')
+    const raw = await readFile(file, 'utf8')
     const j = JSON.parse(raw) as TitleMap
     return j && typeof j === 'object' ? j : {}
   } catch {
     return {}
+  }
+}
+
+async function loadTitles(): Promise<TitleMap> {
+  return loadMap(TITLES_FILE)
+}
+
+/** 加载手动重命名的会话名（渲染端启动时一次性拉走） */
+export async function manualTitles(): Promise<TitleMap> {
+  return loadMap(MANUAL_FILE)
+}
+
+/** 某个会话是否有手动名（有则不再自动生成标题） */
+export async function manualTitleOf(sessionId: string): Promise<string | undefined> {
+  const all = await loadMap(MANUAL_FILE)
+  return all[sessionId]
+}
+
+/** 写一个手动会话名（空串 = 清除，恢复自动标题） */
+export async function setManualTitle(sessionId: string, name: string): Promise<void> {
+  try {
+    const all = await loadMap(MANUAL_FILE)
+    const trimmed = name.trim()
+    if (trimmed) all[sessionId] = trimmed.slice(0, 60)
+    else delete all[sessionId]
+    await mkdir(YAN_DIR, { recursive: true })
+    await writeFile(MANUAL_FILE, JSON.stringify(all, null, 2), 'utf8')
+  } catch {
+    /* 存不下就算了 */
   }
 }
 
@@ -126,6 +165,12 @@ export async function generateTitle(opts: {
   samples: string[]
   cwd: string
   piBin?: string
+  /**
+   * 随首条消息附带的图片。用户报「首条消息带图时标题生成不了」——
+   * 只把文字交给归纳进程，纯图片的消息摘要不出任何东西。
+   * 把图片也传过去，模型能看着图起标题。
+   */
+  images?: { data: string; mimeType: string }[]
   timeoutMs?: number
   force?: boolean
 }): Promise<TitleResult | null> {
@@ -134,6 +179,10 @@ export async function generateTitle(opts: {
 
   const samples = opts.samples.map((s) => s.trim()).filter(Boolean)
   if (samples.length === 0) return null
+
+  // 手动重命名是**粘性**的：有手动名就不再自动生成（否则每轮又会盖掉）
+  const manual = await manualTitleOf(sessionId)
+  if (manual) return { title: manual, fromCache: true }
 
   // 已经有缓存且不要求重算 → 直接用
   if (!opts.force) {
@@ -209,7 +258,13 @@ export async function generateTitle(opts: {
       try {
         // 归纳不需要推理 —— 关掉省钱也快
         await rpc.command('set_thinking_level', { level: 'off' })
-        await rpc.command('prompt', { message: buildPrompt(samples) })
+        await rpc.command('prompt', {
+          message: buildPrompt(samples),
+          // pi 的 prompt 支持 images（见 rpc-types.d.ts 的 prompt 命令）
+          ...(opts.images?.length
+            ? { images: opts.images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType })) }
+            : {})
+        })
       } catch (e) {
         clearTimeout(timer)
         console.error('[title] 发送失败:', e)

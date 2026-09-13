@@ -44,6 +44,44 @@ import type { AuthProviderInfo, AuthStatus } from '../shared/ipc'
 const PI_DIR = process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
 const AUTH_FILE = join(PI_DIR, 'auth.json')
 
+/** 只供主进程服务使用；密钥绝不跨 IPC 返回渲染层。 */
+export async function resolveProviderSecret(provider: string): Promise<string | undefined> {
+  const envNames: Record<string, string> = {
+    openrouter: 'OPENROUTER_API_KEY',
+    deepseek: 'DEEPSEEK_API_KEY',
+    commandcode: 'COMMANDCODE_API_KEY',
+    openai: 'OPENAI_API_KEY',
+    'openai-codex': 'OPENAI_API_KEY'
+  }
+  let fromFile: string | undefined
+  try {
+    const data = JSON.parse(await readFile(AUTH_FILE, 'utf8')) as Record<string, unknown>
+    const entry = data[provider] as { key?: unknown; access?: unknown; access_token?: unknown } | string | undefined
+    if (typeof entry === 'string') fromFile = entry
+    else if (entry && typeof entry.key === 'string') fromFile = entry.key
+    else if (entry && typeof entry.access === 'string') fromFile = entry.access
+    else if (entry && typeof entry.access_token === 'string') fromFile = entry.access_token
+  } catch { /* 未配置 */ }
+  return fromFile || process.env[envNames[provider] ?? '']
+}
+
+/**
+ * ChatGPT（Codex）订阅的 account id。
+ *
+ * 它的用量接口要求 `chatgpt-account-id` 头，而这个值只存在 auth.json 的
+ * OAuth 条目里（与 access token 同源），所以放在这里统一读 ——
+ * 不让 quota.ts 自己再拼一遍路径（那样两处迟早会读到不同的文件）。
+ */
+export async function resolveCodexAccountId(): Promise<string | undefined> {
+  try {
+    const data = JSON.parse(await readFile(AUTH_FILE, 'utf8')) as Record<string, unknown>
+    const entry = data['openai-codex'] as { accountId?: unknown } | undefined
+    return typeof entry?.accountId === 'string' ? entry.accountId : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * 接入方式一览。
  *
@@ -92,6 +130,14 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
   },
 
   // ---- API key ----
+  {
+    id: 'commandcode',
+    name: 'Command Code',
+    kind: 'api_key',
+    hint: '订阅套餐（按 5 小时 / 每周滚动额度计费）',
+    envVar: 'COMMANDCODE_API_KEY',
+    authKey: 'commandcode'
+  },
   { id: 'deepseek', name: 'DeepSeek', kind: 'api_key', hint: '', envVar: 'DEEPSEEK_API_KEY', authKey: 'deepseek' },
   { id: 'openai', name: 'OpenAI', kind: 'api_key', hint: '', envVar: 'OPENAI_API_KEY', authKey: 'openai' },
   { id: 'google', name: 'Google Gemini', kind: 'api_key', hint: '', envVar: 'GEMINI_API_KEY', authKey: 'google' },

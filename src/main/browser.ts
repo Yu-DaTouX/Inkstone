@@ -35,11 +35,12 @@ import {
   type CdpTarget
 } from './browser/RawCdp'
 import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
+import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
-const INITIAL_URL = 'about:blank'
+const INITIAL_URL = 'https://www.google.com/'
 /** 接入本机 Chrome 时默认打开的页面（用户要操作的 ChatGPT 网页版） */
 const EXTERNAL_CHROME_URL = 'https://chatgpt.com'
 const MAX_BODY = 1024 * 1024
@@ -97,6 +98,8 @@ interface ExternalTarget {
   canGoForward: boolean
   /** Chrome 当前所有可切换的页面标签（供工具栏渲染） */
   chromeTabs: BrowserTabState[]
+  /** 本次接入时从真实 Chrome 同步数据的结果（供界面如实展示哪几项没同步） */
+  syncReport?: ChromeSyncReport
 }
 
 /** 两种渲染模式共用的「可观察目标」抽象 */
@@ -199,7 +202,8 @@ export class BrowserController {
             title: ext.title,
             loading: ext.loading,
             profileDir: ext.profileDir,
-            debuggingPort: ext.port
+            debuggingPort: ext.port,
+            sync: ext.syncReport
           }
         : undefined
     }
@@ -562,6 +566,13 @@ export class BrowserController {
     let chrome: ChildProcess | null = null
     try {
       await mkdir(profileDir, { recursive: true })
+      /*
+       * 先把真实 Chrome 的登录态与历史导入托管 profile ——
+       * 否则这个 profile 是空白的，用户会看到「cookie 和历史没有共享」。
+       * 逐项容错：cookie 在 Chrome 开着时拿不到，但历史/书签照样能同步；
+       * 具体结果存进 syncReport 交给界面如实展示，不在这里决定成败。
+       */
+      const syncReport = await syncLocalChromeData(profileDir)
       chrome = launchChrome({
         profileDir,
         port,
@@ -595,7 +606,8 @@ export class BrowserController {
         loading: false,
         canGoBack: false,
         canGoForward: false,
-        chromeTabs: []
+        chromeTabs: [],
+        syncReport
       }
       this.activeMode = 'external'
       for (const tab of this.tabs.values()) tab.view.setVisible(false)
@@ -657,6 +669,31 @@ export class BrowserController {
       }
       this.updateState()
     })
+  }
+
+  /**
+   * 手动重新同步本机 Chrome 数据。
+   *
+   * 场景：用户先点了「接入」但当时 Chrome 还开着（cookie 没同步到），
+   * 后来退出了 Chrome 再点这个 —— 此时 cookie 能拷了。
+   * 因为托管 Chrome 已经把旧 cookie 读进内存，**必须重启才能生效**，
+   * 所以同步到 cookie 且当前已连接时自动重开一次（否则用户会以为又没生效）。
+   */
+  async syncLocalProfile(): Promise<ChromeSyncReport> {
+    const profileDir = defaultProfileDir(YAN_DIR)
+    await mkdir(profileDir, { recursive: true })
+    const report = await syncLocalChromeData(profileDir)
+    if (this.external) {
+      if (report.cookiesSynced) {
+        const url = this.external.url
+        await this.closeExternalChrome()
+        await this.openExternalChrome(url)
+      } else {
+        this.external.syncReport = report
+        this.updateState()
+      }
+    }
+    return report
   }
 
   /** 断开外部 Chrome，并关掉我们拉起的那个进程 */
