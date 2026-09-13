@@ -58,6 +58,8 @@ export function Rail() {
   // 不能在 selector 里 `?? {}`：每次都会制造新引用，React 19 会判定快照持续变化并陷入重渲染。
   const settings = useStore((s) => s.settings)
   const projectNames = settings?.projectNames ?? EMPTY_PROJECT_NAMES
+  const projectRecords = settings?.projects ?? []
+  const projectGroups = settings?.projectGroups ?? []
   const patchSettings = useStore((s) => s.patchSettings)
 
   const [query, setQuery] = useState('')
@@ -66,7 +68,7 @@ export function Rail() {
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
   const [expanded, setExpanded] = useSidebarValue<string[]>('expanded-branches', [])
   const [pinned, setPinned] = useSidebarValue<string[]>('pinned', [])
-  const [archived, setArchived] = useSidebarValue<string[]>('archived-projects', [])
+  const archived = useMemo(() => projectRecords.filter((p) => p.archived).map((p) => p.cwd), [projectRecords])
   const [showArchived, setShowArchived] = useState(false)
   const [unread, setUnread] = useSidebarValue<string[]>('unread', [])
   const railPinned = useStore((s) => s.railPinned)
@@ -79,6 +81,8 @@ export function Rail() {
   const [modeMenu, setModeMenu] = useState(false)
   const [projectMenu, setProjectMenu] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
+  const [groupingProject, setGroupingProject] = useState<string | null>(null)
+  const [groupDraft, setGroupDraft] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
 
   useEffect(() => {
@@ -469,7 +473,7 @@ export function Rail() {
                     <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
                     <span className="proj-labels">
                       <span className="proj-name">{p.label}</span>
-
+                      {projectRecords.find((record) => record.cwd === p.cwd)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.cwd === p.cwd)?.groupId)?.name}</span> : null}
                     </span>
                     <span
                       className="proj-rename"
@@ -492,7 +496,24 @@ export function Rail() {
                     <button onClick={() => { setProjectMenu(null); setProjDraft(p.label); setProjRename(p.cwd) }}>{t('rail.renameProject')}</button>
                     <button onClick={() => { void window.yan.revealPath(p.cwd); setProjectMenu(null) }}>{t('rail.reveal')}</button>
                     <button onClick={() => { void navigator.clipboard.writeText(p.cwd); setProjectMenu(null) }}>{t('rail.copyPath')}</button>
-                    <button onClick={() => { setArchived((prev) => showArchived ? prev.filter((x) => x !== p.cwd) : [...prev, p.cwd]); setProjectMenu(null) }}>{showArchived ? t('rail.restoreProject') : t('rail.archiveProject')}</button>
+                    <button onClick={() => {
+                      void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) })
+                      setProjectMenu(null)
+                    }}>{showArchived ? t('rail.restoreProject') : t('rail.archiveProject')}</button>
+                    <button onClick={() => { setGroupingProject(p.cwd); setGroupDraft(''); setProjectMenu(null) }}>{t('rail.moveGroup')}</button>
+                  </div> : null}
+                  {groupingProject === p.cwd ? <div className="project-menu project-group-menu">
+                    <input autoFocus value={groupDraft} placeholder={t('rail.newGroup')} onChange={(e) => setGroupDraft(e.target.value)} />
+                    <button onClick={() => {
+                      const name = groupDraft.trim()
+                      if (!name) return
+                      const existing = projectGroups.find((group) => group.name.toLowerCase() === name.toLowerCase())
+                      const group = existing ?? { id: `group-${Date.now().toString(36)}`, name, createdAt: Date.now() }
+                      void patchSettings({ projectGroups: existing ? projectGroups : [...projectGroups, group], projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) })
+                      setGroupingProject(null)
+                    }}>{t('rail.saveGroup')}</button>
+                    {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{group.name}</button>)}
+                    <button onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{t('rail.noGroup')}</button>
                   </div> : null}
                   {pOpen ? <>
                     {p.list.filter((s) => !s.parentSession || !p.list.some((p) => p.path === s.parentSession)).map((s) => renderSession(s, p.list))}
@@ -525,8 +546,6 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   const running = useStore((state) => state.session?.sessionFile === s.path && !!state.session?.isAgentRunning)
   const waiting = useStore((state) => state.session?.sessionFile === s.path && state.uiRequests.length > 0)
   const failure = useStore((state) => state.session?.sessionFile === s.path && (state.conn === 'error' || state.conn === 'exited') ? state.connDetail : '')
-  // Filtering or the pinned shortcut must not bypass the descendant guard.
-  const hasChildren = useStore((state) => state.sessions.some((child) => child.parentSession === s.path))
   /**
    * 行内重命名。
    *
@@ -686,8 +705,8 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           <button
             className="srow-menu-btn danger"
             style={{ '--i': 4 } as React.CSSProperties}
-            disabled={selected || hasChildren}
-            title={hasChildren ? t('rail.hasBranches') : selected ? t('rail.cantDeleteCurrent') : ''}
+            disabled={selected}
+            title={selected ? t('rail.cantDeleteCurrent') : ''}
             onClick={() => { onRequestDelete(); onToggleMenu() }}
           >
             <Icon name="alert-circle" size={12} />
@@ -705,6 +724,17 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
  */
 function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; onClose: () => void }) {
   const t = useT()
+  const descendantCount = useStore((state) => {
+    const children = new Map<string, string[]>()
+    for (const item of state.sessions) {
+      if (!item.parentSession) continue
+      const list = children.get(item.parentSession) ?? []
+      list.push(item.path)
+      children.set(item.parentSession, list)
+    }
+    const walk = (path: string): number => (children.get(path) ?? []).reduce((n, child) => n + 1 + walk(child), 0)
+    return walk(session.path)
+  })
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -757,7 +787,7 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
         <span className="modal-title" id="delete-session-title">{t('rail.delete')}</span>
       </div>
       <div className="modal-message">
-        {t('rail.deleteExplain', { name: session.title })}
+        {t('rail.deleteExplain', { name: session.title })}{descendantCount ? ` ${t('rail.deleteBranches', { n: descendantCount })}` : ''}
       </div>
       <input
         className="modal-input"

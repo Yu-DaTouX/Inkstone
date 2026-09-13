@@ -336,10 +336,10 @@ export async function listSessions(limit = 200): Promise<SessionSummary[]> {
  * 因此先原子移动到砚自己的回收站；当前运行期内保留原路径映射供“撤销”使用。
  */
 const TRASH_DIR = join(YAN_DIR, 'trash', 'sessions')
-const deleted = new Map<string, { from: string; to: string }>()
+const deleted = new Map<string, Array<{ from: string; to: string }>>()
 
 /** 将一份会话文件移入回收站，返回一次性撤销 token。 */
-export async function deleteSession(path: string): Promise<string> {
+export async function deleteSession(path: string, protectedPath?: string): Promise<string> {
   // 只允许删 sessions 目录下的 .jsonl，防止路径穿越误删
   const resolved = resolve(path)
   if (!resolved.startsWith(resolve(SESSIONS_DIR))) {
@@ -348,12 +348,40 @@ export async function deleteSession(path: string): Promise<string> {
   if (!resolved.endsWith('.jsonl')) {
     throw new Error('不是会话文件')
   }
+  const all = await listSessions(500)
+  const byParent = new Map<string, SessionSummary[]>()
+  for (const session of all) {
+    if (!session.parentSession) continue
+    const children = byParent.get(session.parentSession) ?? []
+    children.push(session)
+    byParent.set(session.parentSession, children)
+  }
+  const paths: string[] = []
+  const visit = (candidate: string): void => {
+    if (paths.includes(candidate)) return
+    paths.push(candidate)
+    for (const child of byParent.get(candidate) ?? []) visit(child.path)
+  }
+  visit(resolved)
+  if (protectedPath && paths.includes(resolve(protectedPath))) {
+    throw new Error('当前正在使用的会话位于将删除的分支中')
+  }
+
   await mkdir(TRASH_DIR, { recursive: true })
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  const destination = join(TRASH_DIR, `${token}-${resolved.split(/[\\/]/).pop()}`)
-  await rename(resolved, destination)
-  cache.delete(resolved)
-  deleted.set(token, { from: resolved, to: destination })
+  const entries: Array<{ from: string; to: string }> = []
+  try {
+    for (const [index, source] of paths.entries()) {
+      const destination = join(TRASH_DIR, `${token}-${index}-${source.split(/[\\/]/).pop()}`)
+      await rename(source, destination)
+      cache.delete(source)
+      entries.push({ from: source, to: destination })
+    }
+  } catch (error) {
+    for (const entry of entries.reverse()) await rename(entry.to, entry.from).catch(() => undefined)
+    throw error
+  }
+  deleted.set(token, entries)
   return token
 }
 
@@ -361,7 +389,9 @@ export async function deleteSession(path: string): Promise<string> {
 export async function restoreSession(token: string): Promise<void> {
   const entry = deleted.get(token)
   if (!entry) throw new Error('此删除已无法撤销')
-  await mkdir(resolve(entry.from, '..'), { recursive: true })
-  await rename(entry.to, entry.from)
+  for (const item of entry) {
+    await mkdir(resolve(item.from, '..'), { recursive: true })
+    await rename(item.to, item.from)
+  }
   deleted.delete(token)
 }

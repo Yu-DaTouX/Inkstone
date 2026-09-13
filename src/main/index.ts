@@ -333,12 +333,8 @@ function registerIpc(): void {
     return res
   })
   handle('yan:deleteSession', async (path: string) => {
-    // 不让删当前正在用的那份（pi 还持有它）
-    if (agent?.getState()?.sessionFile === path) {
-      return { ok: false, error: '不能删除当前正在使用的会话' }
-    }
     try {
-      const undoToken = await deleteSession(path)
+      const undoToken = await deleteSession(path, agent?.getState()?.sessionFile)
       return { ok: true, undoToken }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }

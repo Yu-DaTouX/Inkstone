@@ -352,6 +352,23 @@ export interface AuthProviderInfo {
 
 /* 设置 */
 
+/** 可独立归档、分组和迁移路径的项目实体。 */
+export interface ProjectRecord {
+  id: string
+  cwd: string
+  name: string
+  groupId?: string
+  archived: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ProjectGroup {
+  id: string
+  name: string
+  createdAt: number
+}
+
 export interface AppSettings {
   cwd: string
   theme: 'dark' | 'light'
@@ -362,6 +379,10 @@ export interface AppSettings {
   recentCwds: string[]
   /** 工作目录绝对路径 → 用户自定义项目名 */
   projectNames: Record<string, string>
+  /** 持久化项目实体；projectNames 是旧版本兼容映射。 */
+  projects: ProjectRecord[]
+  /** 项目分组（空 groupId 表示未分组）。 */
+  projectGroups: ProjectGroup[]
   /** 供应商月度预算（用于没有余额概念但提供费用 API 的平台） */
   providerBudgets: Record<string, number>
   /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */

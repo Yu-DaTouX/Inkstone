@@ -21,6 +21,8 @@ import {
   SOUND_VOLUME_MAX,
   SOUND_VOLUME_MIN,
   type AppSettings,
+  type ProjectGroup,
+  type ProjectRecord,
   type SoundSettings,
   type UserProfile
 } from '../shared/ipc'
@@ -64,6 +66,8 @@ const DEFAULTS: AppSettings = {
   lang: 'zh-CN',
   recentCwds: [],
   projectNames: {},
+  projects: [],
+  projectGroups: [],
   providerBudgets: {},
   rightPanelOpen: true,
   alwaysOnTop: false,
@@ -186,6 +190,42 @@ function sanitizeProfile(v: unknown): UserProfile {
   }
 }
 
+function projectId(cwd: string): string {
+  // 路径变更前后 id 独立保存；这里仅用于旧设置的确定性迁移。
+  return `project-${Buffer.from(cwd.toLowerCase()).toString('base64url').slice(0, 36)}`
+}
+
+function sanitizeProjects(v: unknown, names: Record<string, string>, recent: string[], cwd: string): ProjectRecord[] {
+  const now = Date.now()
+  const raw = Array.isArray(v) ? v : []
+  const out: ProjectRecord[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Partial<ProjectRecord>
+    if (typeof o.id !== 'string' || !o.id || typeof o.cwd !== 'string' || !o.cwd || seen.has(o.id)) continue
+    seen.add(o.id)
+    out.push({ id: o.id.slice(0, 80), cwd: o.cwd, name: typeof o.name === 'string' ? o.name.trim().slice(0, 64) : '', groupId: typeof o.groupId === 'string' ? o.groupId.slice(0, 80) : undefined, archived: o.archived === true, createdAt: Number.isFinite(o.createdAt) ? Number(o.createdAt) : now, updatedAt: Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : now })
+  }
+  for (const path of new Set([...Object.keys(names), ...recent, cwd])) {
+    if (!path || out.some((p) => p.cwd === path)) continue
+    out.push({ id: projectId(path), cwd: path, name: names[path]?.trim().slice(0, 64) ?? '', archived: false, createdAt: now, updatedAt: now })
+  }
+  return out
+}
+
+function sanitizeProjectGroups(v: unknown): ProjectGroup[] {
+  if (!Array.isArray(v)) return []
+  const seen = new Set<string>()
+  return v.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const o = item as Partial<ProjectGroup>
+    if (typeof o.id !== 'string' || !o.id || seen.has(o.id) || typeof o.name !== 'string' || !o.name.trim()) return []
+    seen.add(o.id)
+    return [{ id: o.id.slice(0, 80), name: o.name.trim().slice(0, 48), createdAt: Number.isFinite(o.createdAt) ? Number(o.createdAt) : Date.now() }]
+  })
+}
+
 let cached: AppSettings | null = null
 
 /** 清掉内存缓存（下次 getSettings 重新读盘） */
@@ -203,6 +243,8 @@ export async function getSettings(): Promise<AppSettings> {
     if (!LANGS.includes(cached.lang as (typeof LANGS)[number])) cached.lang = detectLang()
     if (!Array.isArray(cached.recentCwds)) cached.recentCwds = []
     if (!cached.projectNames || typeof cached.projectNames !== 'object' || Array.isArray(cached.projectNames)) cached.projectNames = {}
+    cached.projectGroups = sanitizeProjectGroups(cached.projectGroups)
+    cached.projects = sanitizeProjects(cached.projects, cached.projectNames, cached.recentCwds, cached.cwd)
     if (!cached.providerBudgets || typeof cached.providerBudgets !== 'object' || Array.isArray(cached.providerBudgets)) cached.providerBudgets = {}
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
@@ -253,6 +295,9 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
       .filter(([path, name]) => path && typeof name === 'string' && name.trim())
       .map(([path, name]) => [path, name.trim().slice(0, 64)]))
   }
+  if ('projects' in patch) next.projects = sanitizeProjects(patch.projects, next.projectNames, next.recentCwds, next.cwd)
+  else next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd)
+  if ('projectGroups' in patch) next.projectGroups = sanitizeProjectGroups(patch.projectGroups)
   // 档案是合并写入（只改名字不能把头像清空），且一律过一遍校验
   next.profile = sanitizeProfile({ ...next.profile, ...(patch.profile ?? {}) })
   // 宽度同样夹一下（渲染端传 0 = 恢复默认）
@@ -274,6 +319,12 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }
+  // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
+  next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
+    ...project,
+    name: next.projectNames[project.cwd] ?? project.name,
+    groupId: next.projectGroups.some((g) => g.id === project.groupId) ? project.groupId : undefined
+  }))
 
   cached = next
   try {
