@@ -21,6 +21,7 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import { ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
 import type { Attachment, AttentionNotify, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -81,8 +82,11 @@ process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection
  *    用户开着应用时就再也跑不了探针（进程直接静默 app.exit(0)）。
  *    必须放在 app.whenReady() 之前。
  */
-if (process.env.YAN_USER_DATA) {
-  app.setPath('userData', process.env.YAN_USER_DATA)
+if (ELECTRON_USER_DATA_DIR) {
+  app.setPath('userData', ELECTRON_USER_DATA_DIR)
+}
+if (ELECTRON_CRASH_DUMPS_DIR) {
+  app.setPath('crashDumps', ELECTRON_CRASH_DUMPS_DIR)
 }
 
 /*

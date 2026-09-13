@@ -51,10 +51,15 @@ asar: true
 compression: normal
 
 win:
+  # ZIP 解压一次后直接运行，避免 portable 单文件版每次启动都自解压到临时目录。
+  # nsis / portable 分别在下方覆盖自己的文件名；此命名只用于 zip 快速免安装版。
+  artifactName: ${productName}-${version}-portable-fast.${ext}
   target:
     - target: nsis
       arch: [x64]
     - target: portable
+      arch: [x64]
+    - target: zip
       arch: [x64]
   # 图标：把 256×256 以上的 icon.ico / icon.png 放进 build/ 即自动使用
   # （electron-builder 会从 PNG 自动生成 ico，无需手工转换）

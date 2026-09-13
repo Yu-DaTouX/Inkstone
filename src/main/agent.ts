@@ -20,7 +20,7 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
-import { YAN_DIR } from './paths'
+import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { generateTitle } from './title'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import type {
@@ -202,7 +202,9 @@ export class AgentController extends EventEmitter {
         ...this.browserEnv,
         // 让内置扩展能读到桌面端设置（自主模式存在 desktop.json 里）。
         // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
-        YAN_DATA_DIR: YAN_DIR
+        YAN_DATA_DIR: YAN_DIR,
+        // 便携版必须让 pi 也使用 EXE 同级的私有目录；否则它会回退到 ~/.pi。
+        PI_CODING_AGENT_DIR: PI_AGENT_DIR
       }
     })
     this.rpc = rpc

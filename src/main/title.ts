@@ -16,7 +16,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
-import { YAN_DIR } from './paths'
+import { PI_AGENT_DIR, YAN_DIR } from './paths'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 
@@ -191,7 +191,10 @@ export async function generateTitle(opts: {
   const rpc = new PiRpc({
     cwd,
     piBin,
-    args: ['--no-session', '--no-extensions']
+    args: ['--no-session', '--no-extensions'],
+    // 标题生成也会单独启动 pi；和主 Agent 使用相同的数据根，避免便携版
+    // 意外从 ~/.pi 读取凭证或在其中留下 pi 数据。
+    env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
   })
 
   let text = ''

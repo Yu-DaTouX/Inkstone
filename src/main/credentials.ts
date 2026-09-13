@@ -30,9 +30,9 @@
  */
 import { readFile, writeFile, mkdir, stat, readdir } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { AuthProviderInfo, AuthStatus } from '../shared/ipc'
+import { PI_AGENT_DIR } from './paths'
 
 /**
  * pi 的凭证文件。
@@ -41,7 +41,7 @@ import type { AuthProviderInfo, AuthStatus } from '../shared/ipc'
  *   这个项目已经因为「测试写真实用户数据」踩过两次（会话目录、记忆文件）。
  *   auth.json 里是用户的**真实密钥**，写坏了比那两个严重得多。
  */
-const PI_DIR = process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
+const PI_DIR = PI_AGENT_DIR
 const AUTH_FILE = join(PI_DIR, 'auth.json')
 
 /** 只供主进程服务使用；密钥绝不跨 IPC 返回渲染层。 */

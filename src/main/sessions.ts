@@ -9,9 +9,9 @@
  */
 import { readdir, stat, open, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { SessionSummary } from '../shared/ipc'
+import { PI_AGENT_DIR } from './paths'
 
 /**
  * 会话目录。
@@ -19,7 +19,7 @@ import type { SessionSummary } from '../shared/ipc'
  * 既方便测试（不进真实目录），也方便用户把 pi 的 `--session-dir` 指到别处。
  */
 export const SESSIONS_DIR =
-  process.env.YAN_SESSIONS_DIR?.trim() || join(homedir(), '.pi', 'agent', 'sessions')
+  process.env.YAN_SESSIONS_DIR?.trim() || join(PI_AGENT_DIR, 'sessions')
 
 /**
  * 是否应该把 `--session-dir` 传给 pi。
@@ -40,7 +40,7 @@ export const SESSIONS_DIR_IS_OVERRIDE = !!process.env.YAN_SESSIONS_DIR?.trim()
 const HEAD_BYTES = 96 * 1024
 
 /** 标题里把家目录缩写，否则路径会把内容挤没 */
-const HOME = homedir()
+const HOME = process.env.USERPROFILE || process.env.HOME || ''
 function shortenPaths(s: string): string {
   let out = s
   // 两种分隔符都处理，大小写不敏感（Windows 路径）

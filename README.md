@@ -225,6 +225,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `npm run shots` | 重新生成 README 用的界面截图（注入假数据，**不调模型**；见 `scripts/shot-fixture.js`） |
 | `npm run dist:dir` | 产出免安装目录 `release/win-unpacked/`（调试用，快） |
 | `npm run dist` | 出安装包：NSIS `*-setup.exe` + 免安装单文件 `*-portable.exe` |
+| `npm run dist:portable-fast` | 出快速免安装 ZIP；解压一次后直接运行，适合日常使用 |
 | `npm run test:packaged` | **验打包产物**：跑 `release/win-unpacked` 里的真实应用，断言用的是包内 pi |
 | `npm run dist:check` | `dist:dir` + `test:packaged` 一条龙 |
 
@@ -235,7 +236,10 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | 产物 | 用途 |
 |---|---|
 | `砚-<版本>-setup.exe` | NSIS 安装包（可选安装目录、桌面/开始菜单快捷方式） |
-| `砚-<版本>-portable.exe` | 免安装单文件版（双击即跑，自解压到临时目录） |
+| `砚-<版本>-portable.exe` | 单文件免安装版（双击即跑；每次都会自解压到临时目录，适合临时携带） |
+| `砚-<版本>-portable-fast.zip` | **快速免安装版**（先解压一次，再双击目录内 `砚.exe`；日常使用推荐） |
+
+免安装版会在其 EXE 所在目录自动创建 `砚数据/`。其中包含 pi 凭证、会话、砚设置、浏览器 Profile、Electron 的缓存和 localStorage，以及崩溃转储；不会把这些隐私数据写回 `%USERPROFILE%\\.pi` 或 `%APPDATA%`。移动或备份免安装版时，请连同 `砚数据/` 一起移动或备份；不要把该目录分享给他人。
 
 两类资源随包分发（`extraResources` → 安装目录的 `resources/`）：
 内置 pi 运行时（20MB）和内置浏览器 extension。所以**用户不需要自己装 pi**。
