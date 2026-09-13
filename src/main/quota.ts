@@ -63,7 +63,8 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
         const secs = Number(w.limit_window_seconds)
         windows.push({
           id,
-          label: windowLabel(secs),
+          // Codex 固定按短窗口和周窗口展示；用稳定名称而非“1 周”，更贴近套餐页面。
+          label: id === 'primary' ? '五小时' : id === 'secondary' ? '本周' : windowLabel(secs),
           used: Number(w.used_percent),
           /* 百分比口径：满分 100 */
           total: 100,
@@ -86,7 +87,8 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
         total: binding.total,
         /* 订阅没有金额；用 percent 让渲染层知道单位 */
         currency: 'PERCENT',
-        label: `${plan ? plan + ' · ' : ''}${binding.label}`,
+        // 套餐名称单独展示，避免与某个“最紧窗口”混在同一行。
+        label: plan,
         windows,
         checkedAt
       }

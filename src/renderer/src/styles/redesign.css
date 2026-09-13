@@ -2465,6 +2465,12 @@ body.resizing-composer {
 }
 
 .rp-quota-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Codex 套餐名独占一行，和其下的两个限额窗口形成清晰层级。 */
+.rp-quota-plan {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  margin: 2px 0 4px;
+}
 /* 窗口额度（Command Code 的 5 小时 / 每周）——每条一行 + 一条细进度条 */
 .rp-quota-wins {
   display: flex;

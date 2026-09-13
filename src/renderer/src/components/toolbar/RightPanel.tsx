@@ -4,7 +4,7 @@ import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
-import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type ToolSectionId } from '../../../../shared/ipc'
+import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import { HandleProvider, SECTION_TITLE } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
@@ -684,22 +684,38 @@ function QuotaSection() {
     const sym = CURRENCY_SYMBOL[code]
     return sym ? `${sym}${v.toFixed(2)}` : `${v.toFixed(2)} ${code}`
   }
+  const isCodex = provider === 'openai-codex'
+  const codexReset = (w: QuotaWindow): string => {
+    if (!w.resetAt) return ''
+    // 短窗口显示剩余时长，周窗口显示具体的重置日期。
+    if (w.id === 'primary') {
+      const seconds = Math.max(0, Math.ceil((w.resetAt - Date.now()) / 1000))
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      return hours ? `${hours}小时${minutes}分后` : `${Math.max(1, minutes)}分钟后`
+    }
+    return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(w.resetAt))
+  }
   return (
     <Section titleKey="rp.quota" testId="rp-quota">
       <div className="rp-kv">
         <span className="rp-k">{provider || '—'}</span><span className="spacer" />
-        <span className={`rp-v big ${quota?.windows?.some((w) => w.exceeded) ? 'err' : ''}`}>
-          {amount !== undefined
-            ? money(amount, quota?.currency)
-            : quota?.used !== undefined
-              ? `${money(quota.used, quota?.currency)} ${isPercent ? t('quota.usedPct') : t('quota.used')}`
-              : loading
-                ? '…'
-                : '—'}
-        </span>
+        {isCodex ? (
+          <button className="rp-btn" onClick={() => void refresh()} disabled={loading}>{loading ? '…' : t('quota.refresh')}</button>
+        ) : (
+          <span className={`rp-v big ${quota?.windows?.some((w) => w.exceeded) ? 'err' : ''}`}>
+            {amount !== undefined
+              ? money(amount, quota?.currency)
+              : quota?.used !== undefined
+                ? `${money(quota.used, quota?.currency)} ${isPercent ? t('quota.usedPct') : t('quota.used')}`
+                : loading
+                  ? '…'
+                  : '—'}
+          </span>
+        )}
       </div>
-      {/* 有窗口额度时下面会逐条画，这里就不再重复 used/total */}
-      {quota?.label ? <div className="rp-dim">{quota.label}{!quota.windows?.length && quota.total ? ` · ${money(quota.used ?? 0, quota.currency)} / ${money(quota.total, quota.currency)}` : ''}</div> : null}
+      {/* Codex 的套餐名、短窗口和周窗口按官网的阅读顺序分开显示。 */}
+      {quota?.label ? <div className={isCodex ? 'rp-quota-plan' : 'rp-dim'}>{quota.label}{!isCodex && !quota.windows?.length && quota.total ? ` · ${money(quota.used ?? 0, quota.currency)} / ${money(quota.total, quota.currency)}` : ''}</div> : null}
       {quota?.error ? <div className="rp-dim">{quota.supported ? quota.error : t('quota.unsupported')}</div> : null}
       {quota?.windows?.length ? (
         <div className="rp-quota-wins">
@@ -707,7 +723,7 @@ function QuotaSection() {
             const left = Math.max(0, w.total - w.used)
             const pct = w.total > 0 ? Math.min(100, (w.used / w.total) * 100) : 0
             const tone = w.exceeded ? 'err' : pct >= 85 ? 'warn' : 'ok'
-            const reset = w.resetAt ? new Date(w.resetAt).toLocaleString() : ''
+            const reset = isCodex ? codexReset(w) : w.resetAt ? new Date(w.resetAt).toLocaleString() : ''
             return (
               <div key={w.id} className="rp-quota-win" data-testid={`quota-win-${w.id}`}>
                 <div className="rp-kv">
@@ -731,7 +747,7 @@ function QuotaSection() {
         </div>
       ) : null}
       <div className="rp-quota-actions">
-        <button className="rp-btn" onClick={() => void refresh()} disabled={loading}>{t('quota.refresh')}</button>
+        {!isCodex ? <button className="rp-btn" onClick={() => void refresh()} disabled={loading}>{t('quota.refresh')}</button> : null}
         {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
         {provider === 'openai' ? <button className="rp-btn" onClick={() => {
           const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
