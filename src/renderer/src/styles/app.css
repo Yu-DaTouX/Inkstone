@@ -14,7 +14,6 @@
 /* ⚠️ 这里曾经是 `display: none` —— 它会让滑出动画完全失效
    （display 不可过渡，元素直接消失）。
    收起时的宽度处理统一在 redesign.css 里（--w-rail: 0 + 推挤）。 */
-/* .app.status-off / .status 规则已随右栏移除（记忆现在在设置面板里） */
 
 /* ---- 标题栏 ---- */
 .titlebar {
@@ -72,19 +71,6 @@
   padding: 1px 6px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-str);
-}
-/* 同步状态常驻居中：记忆跨设备，用户必须能一眼看到它是否同步 */
-.tb-sync {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  min-width: 0;
-}
-.tb-sync .devs {
-  color: var(--fg-dim);
 }
 .tb-right {
   display: flex;
@@ -422,118 +408,6 @@
   white-space: pre-wrap;
 }
 
-/* -------------------------------------------------------------------
-   5.1 记忆卡 —— 界面的心脏
-   它让「它记了什么」在对话里当场可见、可撤回。
-   「已确认」用青色（事实），「我的印象」用橙色（未确认）——
-   颜色差异就是认识论差异，不是装饰。
-   ------------------------------------------------------------------- */
-.memcard {
-  border: 1px solid var(--border);
-  border-left-width: 2px;
-  border-radius: var(--r-md);
-  background: var(--bg-1);
-  margin-bottom: var(--sp-3);
-  overflow: hidden;
-}
-.memcard.fact {
-  border-left-color: var(--fact);
-}
-.memcard.guess {
-  border-left-color: var(--warn);
-}
-.memcard-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px var(--sp-3);
-  font-size: var(--fs-xs);
-  border-bottom: 1px solid var(--border);
-}
-.memcard.fact .memcard-head {
-  background: var(--fact-soft);
-  color: var(--fact);
-}
-.memcard.guess .memcard-head {
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-.memcard-head .spacer {
-  flex: 1;
-}
-.memcard-head .chip {
-  border: 1px solid currentColor;
-  border-radius: var(--r-sm);
-  padding: 0 5px;
-  opacity: 0.75;
-  font-size: var(--fs-xs);
-}
-.memcard-body {
-  padding: var(--sp-2) var(--sp-3);
-  font-size: var(--fs-base);
-}
-.memcard.guess .memcard-body {
-  color: var(--fg-dim);
-}
-.memcard-note {
-  padding: 0 var(--sp-3) var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.memcard-acts {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: 4px var(--sp-3);
-  border-top: 1px solid var(--border);
-}
-.memcard-acts .spacer {
-  flex: 1;
-}
-.memcard-acts .btn {
-  height: 20px;
-  font-size: var(--fs-xs);
-}
-.memcard-acts .key {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-/* 审阅条：确认是显式的（与「改动」相反，改动接受是隐式的） */
-.review {
-  background: var(--warn-soft);
-  border-top: 1px solid rgba(224, 175, 104, 0.28);
-}
-.review-inner {
-  max-width: var(--w-stream);
-  margin: 0 auto;
-  padding: 6px var(--sp-5);
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-size: var(--fs-sm);
-  color: var(--warn);
-}
-.review .cnt {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.review .spacer {
-  flex: 1;
-}
-.review .why {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.review .btn {
-  height: 22px;
-  color: var(--fg-dim);
-}
-.review .btn:hover {
-  background: rgba(224, 175, 104, 0.14);
-  color: var(--warn);
-}
-
 /* ---- 输入区 ---- */
 .composer-wrap {
   border-top: 1px solid var(--border);
@@ -625,9 +499,8 @@ kbd {
 }
 
 /* ===================================================================
-   6. 右栏 —— 记忆面板
-   分区顺序：身份 → 关于你 → 我的印象 → 人 → 项目 → 状态
-   前三块是核心，状态沉底
+   6. 右栏 —— 工具与状态面板
+   （上下文 / 额度 / 任务 / 队列 / 文件 / 扩展 / 日志 / 操作，顺序可调）
    =================================================================== */
 .status {
   background: var(--bg-1);
@@ -743,127 +616,6 @@ kbd {
   padding: var(--sp-2) var(--sp-3);
 }
 
-/* ---- 身份：只读，agent 改不了自己 ---- */
-.soul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.soul-line {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--sp-2);
-  align-items: baseline;
-  font-size: var(--fs-sm);
-}
-.soul-line dt {
-  color: var(--fg-mute);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.soul-line dd {
-  color: var(--fg);
-  min-width: 0;
-}
-.soul-ro {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
-  border-top: 1px dashed var(--border);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.soul-ro .ico {
-  color: var(--ok);
-}
-
-/* ---- 记忆条目 ---- */
-.mems {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.memrow {
-  display: grid;
-  grid-template-columns: 3px minmax(0, 1fr) auto;
-  gap: var(--sp-2);
-  align-items: start;
-  padding: 4px var(--sp-2) 4px 0;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-tight);
-  cursor: default;
-}
-.memrow:hover {
-  background: var(--bg-3);
-}
-/* 左侧 3px 色条 = 来源，跟对话里的记忆卡同一套颜色 */
-.memrow .bar {
-  width: 3px;
-  height: 11px;
-  border-radius: 2px;
-  margin-top: 3px;
-}
-.memrow.fact .bar {
-  background: var(--fact);
-}
-.memrow.guess .bar {
-  background: var(--warn);
-}
-.memrow.peer .bar {
-  background: var(--magenta);
-}
-.memrow .txt {
-  color: var(--fg-dim);
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.memrow.fact .txt {
-  color: var(--fg);
-}
-.memrow .src {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-.memrow .acts {
-  display: none;
-  gap: 2px;
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-}
-.memrow:hover .acts {
-  display: flex;
-}
-/* 带操作的行：悬停时用按钮顶掉来源标记，避免行高跳动 */
-.memrow:has(.acts):hover .src {
-  display: none;
-}
-.memrow .acts .btn {
-  height: 18px;
-  padding: 0 4px;
-  font-size: var(--fs-xs);
-}
-
-/* 未确认区块整体降一级：视觉上就该「不那么确定」 */
-.card.guess-card {
-  border-style: dashed;
-}
-.mem-note {
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
-  border-top: 1px dashed var(--border);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
 
 /* ---- 状态 ---- */
 .kv {

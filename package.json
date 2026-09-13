@@ -6,19 +6,23 @@
   "author": "Yu-DaTouX",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Yu-DaTouX/--agent.git"
+    "url": "https://github.com/Yu-DaTouX/yan--agent.git"
   },
-  "homepage": "https://github.com/Yu-DaTouX/--agent#readme",
+  "homepage": "https://github.com/Yu-DaTouX/yan--agent#readme",
   "bugs": {
-    "url": "https://github.com/Yu-DaTouX/--agent/issues"
+    "url": "https://github.com/Yu-DaTouX/yan--agent/issues"
   },
   "keywords": [
-    "pi",
     "agent",
+    "ai-agent",
+    "llm",
+    "pi",
     "electron",
     "desktop",
-    "memory",
-    "rpc"
+    "react",
+    "typescript",
+    "rpc",
+    "chat"
   ],
   "license": "MIT",
   "private": true,
@@ -32,6 +36,7 @@
     "icons": "node docs/design/extract-icons.mjs",
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
+    "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
     "check": "npm run typecheck && npm run build && npm run test:unit && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions layout outline todos virtual settings toolgroup light hotkeys externalchrome zoom resize fs branch topbar outlinepos narrow todonew slashcmd tools vheight libdrag panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename autonomous context queuestack logs",
     "test:unit": "node scripts/test-unit.mjs",

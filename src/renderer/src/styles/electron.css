@@ -35,12 +35,10 @@
   user-select: none;
 }
 
-/* 正文、气泡、代码、记忆条目允许选中复制 */
+/* 正文、气泡、代码允许选中复制 */
 .bubble,
 .prose,
 .think-body,
-.memcard-body,
-.memrow .txt,
 .composer textarea {
   user-select: text;
 }
