@@ -39,7 +39,7 @@ import { YAN_DIR } from './paths'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
-const INITIAL_URL = 'https://www.google.com'
+const INITIAL_URL = 'about:blank'
 /** 接入本机 Chrome 时默认打开的页面（用户要操作的 ChatGPT 网页版） */
 const EXTERNAL_CHROME_URL = 'https://chatgpt.com'
 const MAX_BODY = 1024 * 1024
@@ -299,7 +299,16 @@ export class BrowserController {
       this.downloadSessionAttached = true
       view.webContents.session.on('will-download', (_event, item) => void this.handleDownload(item))
     }
-    void cdp.attach().catch((error) => this.pushError(`浏览器 CDP 启动失败：${String(error)}`))
+    void cdp.attach().catch((error) => {
+      /*
+       * 「目标已关闭」是**良性**的：标签在 attach 过程中被关/被替换
+       * （例如紧接着切到外部 Chrome、重复 open），Page.enable 这类命令
+       * 撞上已销毁的目标就会报它。这不该弹错误条。
+       */
+      const message = error instanceof Error ? error.message : String(error)
+      if (tab.view.webContents.isDestroyed() || /target closed|closed|destroyed/i.test(message)) return
+      this.pushError(`浏览器 CDP 启动失败：${message}`)
+    })
     this.tabs.set(id, tab)
     return tab
   }
