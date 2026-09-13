@@ -83,9 +83,7 @@ export function BrowserSurface() {
             <i onClick={(event) => { event.stopPropagation(); void window.yan.browser.closeTab(tab.id) }}>×</i>
           </button>
         ))}
-        {external ? null : (
-          <button className="browser-new-tab" onClick={() => void window.yan.browser.newTab()} title="新建标签页">+</button>
-        )}
+        <button className="browser-new-tab" onClick={() => void window.yan.browser.newTab()} title="新建标签页">+</button>
       </div>
       <div className="browser-toolbar">
         <button className="browser-nav" onClick={() => void window.yan.browser.back()} disabled={!state.canGoBack} title={t('browser.back')}>

@@ -25,7 +25,15 @@ import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
 import { InputController } from './browser/InputController'
 import { Observer } from './browser/Observer'
-import { RawCdp, createTab as createCdpTab, listTargets, pickPageTarget, waitForCdp } from './browser/RawCdp'
+import {
+  RawCdp,
+  createTab as createCdpTab,
+  closeTarget as closeCdpTarget,
+  listTargets,
+  pickPageTarget,
+  waitForCdp,
+  type CdpTarget
+} from './browser/RawCdp'
 import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
 import { YAN_DIR } from './paths'
 
@@ -79,9 +87,16 @@ interface ExternalTarget {
   chrome: ChildProcess | null
   port: number
   profileDir: string
+  /** 当前连接的 Chrome 页面目标 id（`/json/list` 里的 id） */
+  targetId: string
   url: string
   title: string
   loading: boolean
+  /** 页面历史状态（同步给工具栏的前进/后退按钮） */
+  canGoBack: boolean
+  canGoForward: boolean
+  /** Chrome 当前所有可切换的页面标签（供工具栏渲染） */
+  chromeTabs: BrowserTabState[]
 }
 
 /** 两种渲染模式共用的「可观察目标」抽象 */
@@ -105,6 +120,8 @@ export class BrowserController {
   private downloadSessionAttached = false
   /** 外部 Chrome 目标（null = 用内嵌 WebContentsView） */
   private external: ExternalTarget | null = null
+  /** 外部 Chrome 下载：guid → 文件名（downloadWillBegin 先到，进度事件用 guid 关联） */
+  private readonly externalDownloadNames = new Map<string, string>()
   private state: BrowserState = {
     open: false,
     url: '',
@@ -156,11 +173,12 @@ export class BrowserController {
       url: ext?.url ?? active?.state.url ?? '',
       title: ext?.title ?? active?.state.title ?? '',
       loading: ext?.loading ?? active?.state.loading ?? false,
-      // 外部 Chrome 的历史我们自己管（Page.getNavigationHistory），这里保守报 false
-      canGoBack: ext ? false : active?.state.canGoBack ?? false,
-      canGoForward: ext ? false : active?.state.canGoForward ?? false,
-      tabs: [...this.tabs.values()].map((tab) => ({ ...tab.state })),
-      activeTabId: this.activeTabId ?? undefined,
+      canGoBack: ext ? ext.canGoBack : active?.state.canGoBack ?? false,
+      canGoForward: ext ? ext.canGoForward : active?.state.canGoForward ?? false,
+      tabs: ext
+        ? ext.chromeTabs.map((tab) => ({ ...tab }))
+        : [...this.tabs.values()].map((tab) => ({ ...tab.state })),
+      activeTabId: ext ? ext.targetId : this.activeTabId ?? undefined,
       userControl: this.userControl,
       lastDownload: this.lastDownload,
       nativeBounds: this.nativeBounds,
@@ -368,6 +386,15 @@ export class BrowserController {
   }
 
   async switchTab(id: string): Promise<BrowserState> {
+    // 外部 Chrome：把 CDP 连接切到那个页面目标
+    if (this.external) {
+      const target = (await listTargets(this.external.port)).find(
+        (t) => t.id === id && !!t.webSocketDebuggerUrl
+      )
+      if (!target) throw new Error('找不到浏览器标签页')
+      await this.attachExternalTarget(target)
+      return this.getState()
+    }
     const tab = this.tabs.get(id)
     if (!tab) throw new Error('找不到浏览器标签页')
     this.activeTabId = id
@@ -377,6 +404,27 @@ export class BrowserController {
   }
 
   async closeTab(id = this.activeTabId ?? ''): Promise<BrowserState> {
+    // 外部 Chrome：关掉那个真实标签页
+    if (this.external) {
+      const ext = this.external
+      const targetId = id || ext.targetId
+      await closeCdpTarget(ext.port, targetId)
+      if (targetId === ext.targetId) {
+        // 当前目标被关掉：切到剩下的第一个页面，没有就整体断开
+        let remaining: CdpTarget | undefined
+        try {
+          remaining = (await listTargets(ext.port)).find((t) => t.type === 'page' && !!t.webSocketDebuggerUrl)
+        } catch {
+          remaining = undefined
+        }
+        if (remaining) await this.attachExternalTarget(remaining)
+        else return this.closeExternalChrome()
+      } else {
+        await this.syncExternalTabs()
+      }
+      this.updateState()
+      return this.getState()
+    }
     const tab = this.tabs.get(id)
     if (!tab) return this.getState()
     const win = this.getWindow()
@@ -436,6 +484,8 @@ export class BrowserController {
       try {
         this.external.registry.clear()
         await this.external.cdp.send('Page.reload', {})
+        await this.syncExternalHistory()
+        this.updateState()
         return { ok: true }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -504,6 +554,7 @@ export class BrowserController {
       const cdp = new RawCdp(page.webSocketDebuggerUrl)
       await cdp.attach()
       const registry = new ElementRegistry()
+      await this.setupExternalDownloads(cdp)
       this.external = {
         cdp,
         registry,
@@ -512,15 +563,21 @@ export class BrowserController {
         chrome,
         port,
         profileDir,
+        targetId: page.id,
         url: page.url || url,
         title: page.title || '',
-        loading: false
+        loading: false,
+        canGoBack: false,
+        canGoForward: false,
+        chromeTabs: []
       }
       // 用户自己关掉 Chrome 时同步清状态
       chrome.once('exit', () => {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
       })
       this.userControl = false
+      await this.syncExternalTabs()
+      await this.syncExternalHistory()
       this.updateState()
       return { ok: true }
     } catch (error) {
@@ -529,6 +586,49 @@ export class BrowserController {
       this.updateState()
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /**
+   * 外部 Chrome 的下载：CDP 允许下载到系统下载目录，并监听完成事件。
+   *
+   * ⚠️ 浏览器级 setDownloadBehavior 只在**当前连接**上生效；切目标后
+   * 重连（attachExternalTarget）要重新调一次，否则下载会被 Chrome 默认阻止。
+   */
+  private async setupExternalDownloads(cdp: RawCdp): Promise<void> {
+    const directory = app.getPath('downloads')
+    try {
+      await mkdir(directory, { recursive: true })
+      try {
+        await cdp.send('Browser.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: directory,
+          eventsEnabled: true
+        })
+      } catch {
+        // 旧版本不接受 eventsEnabled，退回基础参数（至少不阻断下载）
+        await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: directory })
+      }
+    } catch {
+      return
+    }
+    cdp.on('Browser.downloadWillBegin', (params) => {
+      const guid = String(params.guid ?? '')
+      const name = String(params.suggestedFilename ?? '')
+      if (guid && name) this.externalDownloadNames.set(guid, name)
+    })
+    cdp.on('Browser.downloadProgress', (params) => {
+      if (String(params.state ?? '') !== 'completed') return
+      const guid = String(params.guid ?? '')
+      const filename = this.externalDownloadNames.get(guid) ?? `download-${Date.now()}`
+      this.externalDownloadNames.delete(guid)
+      const size = Number(params.receivedBytes ?? 0)
+      this.lastDownload = {
+        path: join(directory, filename),
+        filename,
+        size: Number.isFinite(size) && size > 0 ? size : undefined
+      }
+      this.updateState()
+    })
   }
 
   /** 断开外部 Chrome，并关掉我们拉起的那个进程 */
@@ -543,12 +643,8 @@ export class BrowserController {
     return this.getState()
   }
 
-  /** 把一个新建的 Chrome 标签页接成当前目标（重建 registry/observer/input） */
-  private async attachExternalTarget(target: {
-    url: string
-    title: string
-    webSocketDebuggerUrl?: string
-  }): Promise<void> {
+  /** 把一个 Chrome 页面目标接成当前目标（重建 registry/observer/input） */
+  private async attachExternalTarget(target: CdpTarget): Promise<void> {
     if (!this.external || !target.webSocketDebuggerUrl) return
     await this.external.cdp.detach().catch(() => undefined)
     const cdp = new RawCdp(target.webSocketDebuggerUrl)
@@ -558,9 +654,48 @@ export class BrowserController {
     this.external.registry = registry
     this.external.observer = new Observer(cdp, registry)
     this.external.input = new InputController(cdp)
+    this.external.targetId = target.id
     this.external.url = target.url
     this.external.title = target.title
+    await this.setupExternalDownloads(cdp)
+    await this.syncExternalTabs()
+    await this.syncExternalHistory()
     this.updateState()
+  }
+
+  /** 同步外部 Chrome 的前进/后退可用状态（页面自身跳转后也要刷） */
+  private async syncExternalHistory(): Promise<void> {
+    const ext = this.external
+    if (!ext) return
+    try {
+      const history = await ext.cdp.send<{ currentIndex: number; entries: unknown[] }>(
+        'Page.getNavigationHistory'
+      )
+      ext.canGoBack = history.currentIndex > 0
+      ext.canGoForward = history.currentIndex < history.entries.length - 1
+    } catch {
+      /* 目标可能已关闭，保持旧值 */
+    }
+  }
+
+  /** 同步外部 Chrome 的页面标签列表（供工具栏渲染可切换标签） */
+  private async syncExternalTabs(): Promise<void> {
+    const ext = this.external
+    if (!ext) return
+    try {
+      ext.chromeTabs = (await listTargets(ext.port))
+        .filter((t) => t.type === 'page' && !!t.webSocketDebuggerUrl)
+        .map((t) => ({
+          id: t.id,
+          url: t.url,
+          title: t.title,
+          loading: false,
+          canGoBack: false,
+          canGoForward: false
+        }))
+    } catch {
+      /* 浏览器可能已退出 */
+    }
   }
 
   private async navigateExternal(url: string): Promise<void> {
@@ -571,6 +706,7 @@ export class BrowserController {
     try {
       await ext.cdp.send('Page.navigate', { url })
       ext.url = url
+      await this.syncExternalHistory()
     } finally {
       ext.loading = false
       this.updateState()
@@ -589,6 +725,8 @@ export class BrowserController {
         return { ok: false, error: delta < 0 ? '没有可返回的页面' : '没有可前进的页面' }
       }
       await ext.cdp.send('Page.navigateToHistoryEntry', { entryId: history.entries[index].id })
+      await this.syncExternalHistory()
+      this.updateState()
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -637,9 +775,11 @@ export class BrowserController {
     await p.cdp.attach()
     if (this.external) {
       const observation = await this.external.observer.capture(this.external.url, this.external.title)
-      // 页面自己跳转（或标题变化）时同步状态
+      // 页面自己跳转（或标题变化）时同步状态与可切换标签
       this.external.url = observation.url
       this.external.title = observation.title
+      await this.syncExternalHistory()
+      await this.syncExternalTabs()
       this.updateState()
       return observation
     }

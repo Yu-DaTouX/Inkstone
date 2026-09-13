@@ -41,8 +41,26 @@ export class RawCdp implements CdpChannel {
   private pending = new Map<number, Pending>()
   private attaching: Promise<void> | null = null
   private attached = false
+  /** CDP 事件订阅（`method` → 回调集合）。下载等浏览器事件走这条路。 */
+  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>()
 
   constructor(private readonly webSocketDebuggerUrl: string) {}
+
+  /**
+   * 订阅一个 CDP 事件（无需 id 的那些，如 `Browser.downloadProgress`）。
+   * 返回取消订阅函数；连接重建后需要重新订阅。
+   */
+  on(method: string, cb: (params: Record<string, unknown>) => void): () => void {
+    let set = this.listeners.get(method)
+    if (!set) {
+      set = new Set()
+      this.listeners.set(method, set)
+    }
+    set.add(cb)
+    return () => {
+      set?.delete(cb)
+    }
+  }
 
   async attach(): Promise<void> {
     if (this.attached) return
@@ -128,13 +146,26 @@ export class RawCdp implements CdpChannel {
   }
 
   private onMessage(data: unknown): void {
-    let msg: { id?: number; result?: unknown; error?: { message?: string } }
+    let msg: {
+      id?: number
+      method?: string
+      params?: Record<string, unknown>
+      result?: unknown
+      error?: { message?: string }
+    }
     try {
       msg = JSON.parse(typeof data === 'string' ? data : String(data)) as typeof msg
     } catch {
       return
     }
-    if (msg.id === undefined) return
+    // 事件（无 id）：分发给订阅者
+    if (msg.id === undefined) {
+      if (msg.method) {
+        const set = this.listeners.get(msg.method)
+        if (set) for (const cb of set) cb(msg.params ?? {})
+      }
+      return
+    }
     const p = this.pending.get(msg.id)
     if (!p) return
     clearTimeout(p.timer)

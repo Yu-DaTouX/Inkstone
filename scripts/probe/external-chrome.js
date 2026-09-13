@@ -67,6 +67,29 @@
   ok(typeof observation?.generationId === 'string' && observation.generationId.length > 0, 'observe 返回 generationId')
   ok(observation.url.startsWith('about:blank'), 'observe 的 url 来自外部页面', observation.url)
 
+  /* ---- 3b. 标签列表 / 切换 / 关闭 ---- */
+  out.push('')
+  out.push('=== 3b. 标签页 ===')
+  ok(Array.isArray(st().tabs), '状态里给出 Chrome 标签列表')
+  ok(typeof st().canGoBack === 'boolean' && typeof st().canGoForward === 'boolean', '历史状态是布尔值')
+  const firstId = st().activeTabId
+  await window.yan.browser.newTab('about:blank')
+  ok(await until(() => (st().tabs?.length ?? 0) === 2), '新建后有两个标签', `tabs=${st().tabs?.length}`)
+  // 新建后新标签才是 active，所以 other 是原来那个
+  const other = st().tabs.find((t) => t.id !== st().activeTabId)
+  ok(!!other, '能找出另一个标签')
+  if (other) {
+    await window.yan.browser.switchTab(other.id)
+    ok(await until(() => st().activeTabId === other.id), '切换后 activeTabId 指向该标签')
+    await window.yan.browser.closeTab(other.id)
+    ok(await until(() => (st().tabs?.length ?? 0) === 1), '关闭后只剩一个标签', `tabs=${st().tabs?.length}`)
+    ok(
+      st().tabs.length === 1 && st().activeTabId === st().tabs[0].id,
+      '关闭当前标签后自动切到剩下的那个',
+      `active=${st().activeTabId} only=${st().tabs[0]?.id} first=${firstId}`
+    )
+  }
+
   /* ---- 4. 断开 ---- */
   out.push('')
   out.push('=== 4. 断开 ===')
