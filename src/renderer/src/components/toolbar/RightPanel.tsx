@@ -263,7 +263,10 @@ function BrowserHeightSplitter({ asideRef }: { asideRef: React.RefObject<HTMLEle
   const browserEl = (): HTMLElement | null =>
     asideRef.current?.querySelector('.browser-surface') as HTMLElement | null
   /* 与主进程夹的区间一致（主进程会再夹一次，防脏值） */
-  const clamp = (h: number): number => Math.round(Math.min(900, Math.max(120, h)))
+  const clamp = (h: number): number => {
+    const available = (asideRef.current?.clientHeight ?? 900) - 140
+    return Math.round(Math.min(Math.max(120, available), Math.max(120, h)))
+  }
 
   const onDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
     if (e.button !== 0) return

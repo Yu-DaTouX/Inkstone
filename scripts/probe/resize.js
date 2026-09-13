@@ -39,6 +39,7 @@
     await sleep(500)
   }
   const w = (sel) => document.querySelector(sel)?.getBoundingClientRect().width ?? 0
+  const qa = (sel) => [...document.querySelectorAll(sel)]
 
   try {
     localStorage.setItem('yan.onboarded', '1')
@@ -99,12 +100,13 @@
      *    而全量跑时主线程可能被前一个场景的收尾占着，
      *    固定 600ms 有时量到还没应用的状态（实测全量第 3 轮挂在这里）。
      */
-    const backMs = await until(() => Math.abs(w('.rail') - 300) <= 3, 8000)
+    const backMs = await until(() => Math.abs(w('.rail') - 260) <= 3, 8000)
     const r2 = w('.rail')
-    out.push('  复原后左栏 = ' + r2.toFixed(1) + '（设计默认 300，等了 ' + backMs + 'ms）')
+    out.push('  复原后左栏 = ' + r2.toFixed(1) + '（设计默认 260，等了 ' + backMs + 'ms）')
     if (backMs >= 0) ok('双击回到设计默认宽度')
-    else bad('没回到 300：' + r2)
-    if (store.getState().settings?.railWidth === 0) ok('设置里回到 0（= 用默认，而不是把 300 写死）')
+    else bad('没回到 260：' + r2)
+    const resetPersisted = await until(() => store.getState().settings?.railWidth === 0, 8000)
+    if (resetPersisted) ok('设置里回到 0（= 用默认，而不是把 260 写死）')
     else bad('railWidth=' + store.getState().settings?.railWidth)
 
     out.push('\n=== 5. 键盘：方向键微调 ===')
@@ -121,21 +123,28 @@
     if (k1 > k0 && k2 > k1) ok('方向键能调宽（Shift 步长更大）')
     else bad('键盘调整失效')
     kb('Home')
-    const homeMs = await until(() => Math.abs(w('.rail') - 300) <= 3, 8000)
+    const homeMs = await until(() => Math.abs(w('.rail') - 260) <= 3, 8000)
     if (homeMs >= 0) ok('Home 复原')
     else bad('Home 没复原：' + w('.rail').toFixed(1))
 
-    out.push('\n=== 6. 拖到过窄 → 直接收起（用户要的行为）===')
+    out.push('\n=== 6. 拖动范围：下限 210、上限 420 ===')
     /*
-     * 用户原话：「拖拽到更窄的范围时直接收起」。
-     * 所以「极限左拖」的**正确结果是收起面板**，而不是停在最小宽 ——
-     * 这条断言取代了之前那句「下限被夹住」（那个行为已经不要了）。
+     * 先验证超过下限但没有越过收起临界时，宽度和落盘值都精确夹到 210。
      */
-    const wasPinned = store.getState().railPinned
+    await drag(hr, -100)
+    const min = w('.rail')
+    const minStored = store.getState().settings?.railWidth
+    out.push('  拖到下限后宽度=' + min + ' railWidth=' + minStored)
+    if (Math.abs(min - 210) < 1) ok('下限精确夹到 210px')
+    else bad('下限不正确：' + min)
+    if (minStored === 210) ok('下限值已落盘')
+    else bad('下限未落盘：' + minStored)
+
     await drag(hr, +9999)
+    const wasPinned = store.getState().railPinned
     const big = store.getState().settings?.railWidth
     out.push('  极限右拖后 railWidth=' + big)
-    if (big > 0 && big <= 560) ok('上限被夹住（≤560）')
+    if (big === 420 && Math.abs(w('.rail') - 420) < 1) ok('上限精确夹到 420px')
     else bad('没夹住：' + big)
 
     await drag(hr, -9999)
@@ -146,12 +155,7 @@
     if (collapsed) ok('拖到过窄 → 直接收起（不是停在最小宽）')
     else bad('拖到过窄没收起，railPinned=' + store.getState().railPinned)
     /*
-     * 收起 = 0 宽（开关在标题栏，参考 Codex）。
-     * 这里曾经断言过 ≤12px / ≤40px —— 那两个数都是「开关在面板内部」时代
-     * 的妥协产物（不放按钮就要么错位要么占宽）。开关搬到标题栏后
-     * 两个问题都不存在，收起就是真的 0。
-     * 仍然断言背景/边框：万一以后有人给收起槽加了底色，
-     * 「没有条」这条用户要求就会被破坏。
+     * 收起保留 48px 的紧凑工具栏，并且必须有四个实际按钮。
      */
     const slotEl = document.querySelector('.rail-slot')
     const railEl = document.querySelector('.rail')
@@ -159,18 +163,18 @@
     const railBg = railEl ? getComputedStyle(railEl).backgroundColor : '?'
     const railBorder = railEl ? getComputedStyle(railEl).borderRightWidth : '?'
     out.push('  收起槽: 宽=' + slotAfter.toFixed(1) + ' slot背景=' + slotBg + ' rail背景=' + railBg + ' rail右边框=' + railBorder)
-    const transparent = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
-    if (transparent(railBg) && (railBorder === '0px' || railBorder === '0')) ok('收起后没有可见的条（背景透明 + 无边框）')
-    else bad('收起后仍能看到条：bg=' + railBg + ' border=' + railBorder)
-    if (slotAfter === 0) ok('收起 = 真的 0 宽（开关在标题栏，不需要留槽）')
-    else bad('收起后仍占 ' + slotAfter.toFixed(1) + 'px')
+    if (Math.abs(slotAfter - 48) < 1 && Math.abs(w('.rail') - 48) < 1) ok('收起后保留 48px 紧凑栏')
+    else bad('收起宽度不正确：slot=' + slotAfter + ' rail=' + w('.rail'))
+    const compactButtons = qa('.rail-compact > button')
+    if (compactButtons.length === 4 && compactButtons.every((b) => b.getBoundingClientRect().width > 0)) ok('紧凑栏有四个可见按钮')
+    else bad('紧凑栏按钮数量或尺寸不正确：' + compactButtons.length)
 
     // 展开回来（用标题栏的开关），并复位两个宽度，别把状态留给后面的场景
     store.getState().setRailPinned(true)
     await sleep(500)
     hr.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     hp.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-    await until(() => Math.abs(w('.rail') - 300) <= 3, 5000)
+    await until(() => Math.abs(w('.rail') - 260) <= 3, 5000)
     await sleep(300)
   } catch (e) {
     bad('抛异常：' + (e && e.message ? e.message : String(e)))

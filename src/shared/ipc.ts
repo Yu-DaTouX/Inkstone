@@ -567,8 +567,8 @@ export function normalizeToolHidden(v: unknown): string[] {
  *   渲染端在拖动时也要夹 —— 不夹的话拖过头会产生 `-9439px` 这种非法值，
  *   而非法值会让 `grid-template-columns` 整条声明失效（那一拖就完全没反应）。
  */
-export const RAIL_MIN = 220
-export const RAIL_MAX = 560
+export const RAIL_MIN = 210
+export const RAIL_MAX = 420
 export const PANEL_MIN = 220
 export const PANEL_MAX = 560
 
@@ -873,8 +873,13 @@ export interface YanBridge {
   forkPoints(): Promise<ForkPoint[]>
   /** 导出当前会话为 HTML */
   exportHtml(): Promise<{ ok: boolean; path?: string; error?: string }>
-  /** 删除一份会话文件（不可逆，UI 要先确认） */
-  deleteSession(path: string): Promise<{ ok: boolean; error?: string }>
+  /**
+   * 将一份会话移到砚的回收站。返回的 token 只在本次应用运行期间可用于撤销。
+   * UI 必须先完成自己的明确确认，主进程仍会拒绝当前会话。
+   */
+  deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
+  /** 撤销本次运行内刚刚执行的会话删除。 */
+  restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
 
   /* 直执行 bash（不进 LLM 的工具调用） */
   runBash(command: string): Promise<{ ok: boolean; error?: string }>

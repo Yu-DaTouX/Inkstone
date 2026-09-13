@@ -305,7 +305,8 @@ function TreeRow({
       data-path={path}
       data-dir={dir ? '1' : '0'}
       data-testid={`fs-row-${path || 'root'}`}
-      title={dir ? name : `${name}${size !== undefined ? ` · ${fmtSize(size)}` : ''}`}
+      title={dir ? path || name : `${path}${size !== undefined ? ` · ${fmtSize(size)}` : ''} · @`}
+      aria-expanded={dir ? open : undefined}
       onClick={() => {
         if (dir) onToggle(path)
         else {
@@ -314,10 +315,11 @@ function TreeRow({
         }
       }}
     >
+      {dir ? <Icon name="chevron-right" size={12} className={`fs-chevron ${open ? 'open' : ''}`} /> : <span style={{ width: 12, flex: 'none' }} />}
       {dir ? (
         <Icon name={open ? 'folder-open' : 'folder'} size={12} className="rp-fs-ico" />
       ) : (
-        <span className="rp-fs-dot" aria-hidden />
+        <svg className="fs-file-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h8" /></svg>
       )}
       <span className="rp-fs-name">{name}</span>
       {dir && loading ? <span className="rp-fs-spin" aria-hidden /> : null}

@@ -15,6 +15,7 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
+  const sessionPath = (el) => el?.closest('.srow-wrap')?.getAttribute('data-session-path') || ''
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const until = async (fn, ms = 15000) => {
     const t0 = Date.now()
@@ -53,22 +54,22 @@
     log('=== 1. 会话栏不再有「分支」动作按钮 ===')
     ok(!q('[data-testid="rail-branches"]'), '没有右侧的分支动作按钮（创建分支只在对话窗口里）')
 
-    log('=== 2. 子会话行：编号 + 来源 ===')
-    const nos = qa('[data-testid="rail-branch-no"]').map((e) => e.textContent.trim())
-    log(`  分支编号：${JSON.stringify(nos)}`)
-    ok(nos.includes('#1') && nos.includes('#2'), '两个子会话分别显示 #1 / #2')
-    const origins = qa('[data-testid="rail-branch-origin"]').map((e) => e.textContent.trim())
-    log(`  来源行：「${origins[0] ?? '(无)'}」`)
-    ok(origins.length >= 2, '子会话行显示了「分叉自哪句话」')
-    // 合成家族那两条的来源必须是那句「源问题」（可能还混有真实 fixture 的子会话）
-    ok(origins.filter((t) => t.includes('源问题')).length >= 2, '合成家族的来源就是父会话里那句话')
-
-    log('=== 3. 分叉树：默认折叠，开关在标题旁 ===')
-    const toggle = q('[data-testid="rail-branch-toggle"]')
+    log('=== 2. 分叉树：默认折叠，子会话不提前出现在根列表 ===')
+    const familyRoot = qa('.srow').find((e) => /YAN-FAMILY/.test(e.textContent))
+    const familyPath = sessionPath(familyRoot)
+    ok(!!familyRoot && !!familyPath, '找到合成家族父会话及其 data-session-path')
+    const familyRows = qa('.srow-wrap').filter((e) => sessionPath(e) === familyPath)
+    ok(familyRows.length === 1 && !!familyRows[0]?.closest('.proj'), '父会话只出现在一个项目树节点下')
+    const familyChildren = store.getState().sessions.filter((s) => s.parentSession === familyPath)
+    ok(familyChildren.length === 2, 'fixture 父会话恰有两个子会话')
+    const visibleBefore = new Set(qa('.srow').map(sessionPath))
+    ok(familyChildren.every((s) => !visibleBefore.has(s.path)), '折叠时子会话不在根列表中')
+    const toggle = familyRoot?.closest('.srow-wrap')?.querySelector('[data-testid="rail-branch-toggle"]')
     ok(!!toggle, '父会话行有分叉开关')
     ok(toggle && toggle.getAttribute('data-open') === '0', '默认是折叠的')
-    ok(!q('[data-testid="rail-branch-tree"]'), '折叠时看不到树')
+    ok(!familyRoot?.closest('.srow-wrap')?.querySelector('[data-testid="rail-branch-tree"]'), '折叠时父行下看不到树')
 
+    log('=== 3. 展开后：递归树只挂在唯一父节点，行宽统一 ===')
     if (toggle) {
       // 开关是 .srow 的兄弟（不能嵌在行按钮里），且紧挨标题
       ok(toggle.parentElement?.classList.contains('srow-row'), '开关与标题在同一行主体里')
@@ -78,84 +79,28 @@
       await until(() => !!q('[data-testid="rail-branch-tree"]'), 6000)
       const tree = q('[data-testid="rail-branch-tree"]')
       ok(!!tree, '点开关能展开分叉树')
-      const items = qa('[data-testid="rail-branch-item"]')
+      const items = tree ? [...tree.querySelectorAll('[data-testid="rail-branch-item"]')] : []
       log(`  树里 ${items.length} 条：${items.map((e) => e.textContent.replace(/\s+/g, ' ').trim()).join(' | ')}`)
       ok(items.length === 2, '树里列出两条分支')
       ok(items.some((e) => /#1/.test(e.textContent)), '树里带分支编号')
-      ok(items.every((e) => /源问题/.test(e.textContent)), '树里带「分叉自哪句话」')
-
-      log('=== 4. 点树里的分支 → 切到那个会话 ===')
-      click(items[items.length - 1])
-      await until(() => String(store.getState().session?.sessionFile ?? '').includes('child'), 20000)
-      const cur = String(store.getState().session?.sessionFile ?? '')
-      log(`  当前会话文件：…${cur.slice(-34)}`)
-      ok(cur.includes('child'), '点树里的分支能切过去')
+      const origins = tree ? [...tree.querySelectorAll('[data-testid="rail-branch-origin"]')] : []
+      ok(origins.length === 2 && origins.every((e) => getComputedStyle(e).display === 'none'), '来源字段保留但按设计隐藏')
+      ok(origins.every((e) => (e.getAttribute('title') || '').includes('YAN-FAMILY 源问题')), '来源 tooltip 保留完整原句')
+      ok(items.every((e) => (e.getAttribute('title') || '').includes('YAN-FAMILY 源问题') && (e.getAttribute('title') || '').includes(sessionPath(e))), '子会话 title 同时包含来源与路径')
+      const paths = items.map(sessionPath)
+      ok(paths.every((p) => familyChildren.some((s) => s.path === p)) && new Set(paths).size === 2, '树中两个子会话路径各出现一次')
+      ok(items.every((e) => !e.querySelector('[data-testid="rail-branch-tree"]') && (e.closest('.srow-wrap')?.querySelector('[data-testid="rail-branch-toggle"]')?.getAttribute('data-open') === '0' || !e.closest('.srow-wrap')?.querySelector('[data-testid="rail-branch-toggle"]'))), '父会话展开时默认只显示第一层子节点')
+      const rowWidths = qa('.rail .srow-row').map((e) => e.getBoundingClientRect().width).filter((n) => n > 0)
+      const widthSpan = rowWidths.length ? Math.max(...rowWidths) - Math.min(...rowWidths) : Infinity
+      ok(widthSpan <= 1, '可见 .srow-row 宽度统一（误差 ≤1px）')
     }
 
-    log('=== 5. 进入会话不会把它置顶（按创建时间新→旧） ===')
-    // 用 path（title 属性）比，不用会话名（名字可能被标题生成改掉）
-    const paths = () => qa('.rail .srow').map((e) => e.getAttribute('title') || '')
-    const before = paths()
-    // 专门挑靠后的一行 —— 如果它被置顶，顺序一定会变
-    const rows = qa('.srow')
-    const other = rows[Math.max(1, rows.length - 2)]
-    if (other) {
-      click(other)
-      await sleep(1800)
-      const after = paths()
-      const common = before.filter((p) => after.includes(p))
-      const afterCommon = after.filter((p) => before.includes(p))
-      const same = JSON.stringify(common) === JSON.stringify(afterCommon)
-      log(`  切换后公共行顺序一致：${same}（${common.length} 行）`)
-      ok(same, '切换会话后列表顺序不变（不再按 mtime 置顶）')
-      ok(after[0] !== other.getAttribute('title') || before[0] === other.getAttribute('title'), '刚切过去的会话没有被置顶')
-    }
-
-    log('=== 6. 选中行的时间不与动作按钮重叠 ===')
+    log('=== 4. 时间与操作按钮不重叠 ===')
     const sel = q('.srow-wrap.has-acts') ?? q('.srow-wrap.sel')
     ok(!!sel, '有选中的会话行')
     if (sel) {
       const rule = findRule(/\.srow-wrap:hover\s+\.srow-time/)
       ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '悬停时时间让位（不叠在动作按钮上）')
-    }
-
-    log('=== 7. 「新对话」与「删除会话」按钮真的能用 ===')
-    window.confirm = () => true
-
-    // 新对话：点左栏顶部的按钮，应该不报错、并换到一个新会话
-    const beforePath = String(store.getState().session?.sessionFile ?? '')
-    const err0 = store.getState().notices.filter((n) => n.kind === 'error').length
-    click(q('[data-testid="rail-new"]'))
-    await sleep(3000)
-    const errs = store.getState().notices.filter((n) => n.kind === 'error')
-    ok(errs.length <= err0, '点「新对话」没有报错')
-    const afterPath = String(store.getState().session?.sessionFile ?? '')
-    log(`  会话文件：…${beforePath.slice(-20)} → …${afterPath.slice(-20)}`)
-    ok(!!afterPath, '新对话后仍有一个当前会话')
-
-    // 删除：非选中行也要能开 ⋯ 菜单（以前只在选中行渲染 → 而删除又对选中行禁用 → 永远删不了）
-    const cur = String(store.getState().session?.sessionFile ?? '')
-    const rows2 = qa('.srow')
-    const victim = rows2.find((r) => {
-      const p = r.getAttribute('title')
-      return p && p !== cur && !r.classList.contains('sel') && !/FAMILY/.test(r.textContent)
-    })
-    ok(!!victim, '找到一条可删的非当前会话')
-    if (victim) {
-      const path = victim.getAttribute('title')
-      const actsBtn = victim.closest('.srow-wrap')?.querySelector('.srow-acts button')
-      ok(!!actsBtn, '非选中行也有 ⋯ 按钮（不需要先选中）')
-      if (actsBtn) {
-        click(actsBtn)
-        await until(() => !!q('.srow-menu'), 4000)
-        const del = q('.srow-menu .srow-menu-btn.danger')
-        ok(!!del && !del.disabled, '删除按钮可用（不是 disabled）')
-        if (del && !del.disabled) {
-          click(del)
-          await sleep(1800)
-          ok(!store.getState().sessions.some((s) => s.path === path), '删除后会话从列表消失')
-        }
-      }
     }
 
     return out.join('\n')

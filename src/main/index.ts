@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
 import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
-import { listSessions, deleteSession } from './sessions'
+import { listSessions, deleteSession, restoreSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { listDir } from './files'
@@ -338,7 +338,15 @@ function registerIpc(): void {
       return { ok: false, error: '不能删除当前正在使用的会话' }
     }
     try {
-      await deleteSession(path)
+      const undoToken = await deleteSession(path)
+      return { ok: true, undoToken }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+  handle('yan:restoreSession', async (undoToken: string) => {
+    try {
+      await restoreSession(undoToken)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }

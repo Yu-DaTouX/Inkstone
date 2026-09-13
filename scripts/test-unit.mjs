@@ -15,7 +15,7 @@ const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 process.env.YAN_SESSIONS_DIR = dir
 
 // 必须在设置 env 之后 import（模块顶层读了这个变量）
-const { listSessions, deleteSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
+const { listSessions, deleteSession, restoreSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
 
 /*
  * 回合分组的纯逻辑用 esbuild 现场编译。
@@ -261,10 +261,13 @@ ok(before === after || (before?.title === after?.title && before?.updatedAt === 
 
 console.log('\n--- 8. 删除的路径防护 ---')
 
-// 正常删除
-await deleteSession(pPath)
+// 正常删除：先移入回收站，再允许本次运行内撤销
+const undoToken = await deleteSession(pPath)
 list = await listSessions()
 ok(!list.some((s) => s.id === 'ccc'), '删除后列表里没有了')
+await restoreSession(undoToken)
+list = await listSessions()
+ok(list.some((s) => s.id === 'ccc'), '撤销后会话恢复到原路径')
 
 // 越界路径必须被拒
 let rejected = false

@@ -16,6 +16,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { ChildProcess } from 'node:child_process'
 import { app, shell, WebContentsView, type BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { BrowserBounds, BrowserObservation, BrowserState, BrowserTabState, MainPush } from '../shared/ipc'
@@ -37,6 +38,7 @@ import {
 import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
+import { transferCookies } from './browser/cookie-transfer'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -570,7 +572,9 @@ export class BrowserController {
        * 逐项容错：cookie 在 Chrome 开着时拿不到，但历史/书签照样能同步；
        * 具体结果存进 syncReport 交给界面如实展示，不在这里决定成败。
        */
-      const syncReport = await syncLocalChromeData(profileDir)
+      const syncReport = existsSync(join(profileDir, 'Local State'))
+        ? undefined
+        : await syncLocalChromeData(profileDir)
       chrome = launchChrome({
         profileDir,
         port,
@@ -678,19 +682,29 @@ export class BrowserController {
    * 所以同步到 cookie 且当前已连接时自动重开一次（否则用户会以为又没生效）。
    */
   async syncLocalProfile(): Promise<ChromeSyncReport> {
+    // A connected managed Chrome is a live session, never a file-copy target.
+    // Copy from the active browser to the other browser using Chromium's API.
+    if (this.external) {
+      const embedded = this.activeTab() ?? this.createTab()
+      const fromChrome = this.activeMode === 'external'
+      const result = await transferCookies(
+        fromChrome ? this.external.cdp : embedded.cdp,
+        fromChrome ? embedded.cdp : this.external.cdp
+      )
+      const report: ChromeSyncReport = {
+        found: true, chromeRunning: true, cookiesSynced: result.failed === 0,
+        source: fromChrome ? 'Chrome' : '内置浏览器',
+        target: fromChrome ? '内置浏览器' : 'Chrome',
+        copied: [`Cookies: ${result.copied}`],
+        failed: result.failed ? [{ item: 'Cookies', reason: `${result.failed} 项未能复制` }] : []
+      }
+      this.external.syncReport = report
+      this.updateState()
+      return report
+    }
     const profileDir = defaultProfileDir(YAN_DIR)
     await mkdir(profileDir, { recursive: true })
     const report = await syncLocalChromeData(profileDir)
-    if (this.external) {
-      if (report.cookiesSynced) {
-        const url = this.external.url
-        await this.closeExternalChrome()
-        await this.openExternalChrome(url)
-      } else {
-        this.external.syncReport = report
-        this.updateState()
-      }
-    }
     return report
   }
 

@@ -30,6 +30,14 @@ export function BrowserSurface() {
   const externalActive = state.mode === 'external' ? external : undefined
   const [address, setAddress] = useState(state.url)
   const [error, setError] = useState('')
+  const [syncNotice, setSyncNotice] = useState('')
+  const syncCookies = async (): Promise<void> => {
+    setSyncing(true)
+    try {
+      const report = await syncLocalProfile()
+      setSyncNotice(`${report.source ?? ''} → ${report.target ?? ''}: ${report.copied.join(', ')}${report.failed.length ? ' · ' + report.failed.map((x) => x.reason).join('; ') : ''}`)
+    } catch { setError(t('browser.syncFailed')) } finally { setSyncing(false) }
+  }
   const viewportRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -82,13 +90,12 @@ export function BrowserSurface() {
       }
       if (!disposed) frame = requestAnimationFrame(syncBounds)
     }
-    const observer = new ResizeObserver(syncBounds)
-    observer.observe(el)
+    // Only one animation loop owns scheduling. ResizeObserver previously started
+    // another permanent loop on every resize, multiplying layout reads over time.
     frame = requestAnimationFrame(syncBounds)
     return () => {
       disposed = true
       cancelAnimationFrame(frame)
-      observer.disconnect()
     }
   }, [])
 
@@ -191,6 +198,10 @@ export function BrowserSurface() {
        */}
       {menuOpen ? (
         <div className="browser-actions" data-testid="browser-menu">
+          {external ? <button className="browser-action" disabled={syncing} onClick={() => void syncCookies()} title={t('browser.cookieScope')}>
+            {syncing ? t('browser.syncing') : state.mode === 'external' ? t('browser.cookiesToEmbedded') : t('browser.cookiesToChrome')}
+          </button> : null}
+          {syncNotice ? <span className="browser-sync-result" title={syncNotice}>{syncNotice}</span> : null}
           <button
             className="browser-action"
             onClick={() => {
@@ -260,7 +271,7 @@ export function BrowserSurface() {
                 {externalActive.sync.found ? (
                   <div className="browser-ext-sync-line">
                     {externalActive.sync.cookiesSynced
-                      ? t('browser.syncOk')
+                      ? t('browser.cookiesCopied')
                       : t('browser.syncNoCookies')}
                   </div>
                 ) : (
@@ -285,13 +296,13 @@ export function BrowserSurface() {
                 onClick={async () => {
                   setSyncing(true)
                   try {
-                    await syncLocalProfile()
+                    await syncCookies()
                   } finally {
                     setSyncing(false)
                   }
                 }}
               >
-                {syncing ? t('browser.syncing') : t('browser.resync')}
+                {syncing ? t('browser.syncing') : t('browser.cookiesToEmbedded')}
               </button>
             ) : null}
           </div>

@@ -189,7 +189,7 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
   const copyItem = (item: { rel: string; dir?: boolean; optional?: boolean }): boolean => {
     const rel = item.rel.replace('{p}', location.name)
     const from = join(location.root, rel)
-    const to = join(targetProfileDir, rel)
+    const to = join(targetProfileDir, item.rel.replace('{p}', 'Default'))
     if (!existsSync(from)) {
       if (!item.optional) failed.push({ item: rel, reason: '源文件不存在' })
       return false
@@ -260,7 +260,12 @@ export async function syncLocalChromeData(targetProfileDir: string): Promise<Chr
       cookiesSynced: false
     }
   }
+  if (chromeRunning) return {
+    found: true, source: location.root, target: targetProfileDir,
+    copied: [], failed: [{ item: 'Chrome profile', reason: '请先退出 Chrome 后导入；运行中的配置文件不进行覆盖。已连接时可使用浏览器菜单复制 Cookie。' }],
+    chromeRunning: true, cookiesSynced: false
+  }
   const base = syncChromeProfile(targetProfileDir, location)
-  const cookiesSynced = base.copied.some((c) => c.endsWith('Network/Cookies'))
+  const cookiesSynced = false // Copying encrypted files does not verify a working login session.
   return { ...base, chromeRunning, cookiesSynced }
 }

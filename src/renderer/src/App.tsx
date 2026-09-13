@@ -25,6 +25,7 @@ import './styles/motion.css'
 import './styles/settings.css'
 import './styles/electron.css'
 import './styles/highlight.css'
+import './styles/sidebar-review.css'
 
 /**
  * 超过这么多条消息才开启虚拟化。

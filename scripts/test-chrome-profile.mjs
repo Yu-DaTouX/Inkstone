@@ -89,10 +89,23 @@ export async function runChromeProfileTests(ok) {
    */
   ok(!report3.copied.includes('Local State'), 'Cookie 失败时 Local State 一并跳过（保护原有 cookie）')
 
+  /* 非 Default 源 profile 也必须落到托管 profile 的 Default 目录，
+   * 否则 Profile 3 用户导入后会得到一个空白的托管 profile。 */
+  const root4 = await mkdtemp(join(tmpdir(), 'yan-chrome-src4-'))
+  const target4 = await mkdtemp(join(tmpdir(), 'yan-chrome-dst4-'))
+  await mkdir(join(root4, 'Profile 3'), { recursive: true })
+  await writeFile(join(root4, 'Profile 3', 'History'), 'PROFILE 3 HISTORY')
+  const report4 = syncChromeProfile(target4, { root: root4, name: 'Profile 3', dir: join(root4, 'Profile 3') })
+  ok(report4.copied.includes('Profile 3/History'), 'Profile 3 源文件已记录为已同步')
+  ok(existsSync(join(target4, 'Default', 'History')), 'Profile 3 内容映射到目标 Default')
+  ok(!existsSync(join(target4, 'Profile 3', 'History')), '目标不会误建 Profile 3 目录')
+
   await rm(root, { recursive: true, force: true })
   await rm(root2, { recursive: true, force: true })
   await rm(root3, { recursive: true, force: true })
   await rm(target, { recursive: true, force: true })
   await rm(target2, { recursive: true, force: true })
   await rm(target3, { recursive: true, force: true })
+  await rm(root4, { recursive: true, force: true })
+  await rm(target4, { recursive: true, force: true })
 }

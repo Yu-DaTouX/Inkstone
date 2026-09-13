@@ -57,7 +57,8 @@ const api: YanBridge = {
   clone: () => invoke<Ok>('yan:clone'),
   forkPoints: () => invoke<ForkPoint[]>('yan:forkPoints'),
   exportHtml: () => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml'),
-  deleteSession: (path) => invoke<Ok>('yan:deleteSession', path),
+  deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
+  restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
 
   /* ---- 直执行 bash ---- */
   runBash: (command) => invoke<Ok>('yan:runBash', command),

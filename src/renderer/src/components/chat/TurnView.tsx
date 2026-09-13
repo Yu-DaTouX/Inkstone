@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { forkFromText } from '../../lib/fork'
@@ -26,11 +27,11 @@ import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared
  * （见 redesign.css 的 `.turn-para`）。
  */
 
-export function TurnView({ turn, streaming }: { turn: Turn; streaming?: boolean }) {
+export const TurnView = memo(function TurnView({ turn, streaming }: { turn: Turn; streaming?: boolean }) {
   if (turn.kind === 'user') return <UserTurnView turn={turn} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   return <AssistantTurnView turn={turn} streaming={streaming} />
-}
+})
 
 /* ------------------------------------------------------------------ 用户 */
 

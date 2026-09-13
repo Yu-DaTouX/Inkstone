@@ -6,6 +6,7 @@ import type { SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
+import { ancestorPaths, useSidebarValue } from './sidebar-state'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -35,13 +36,12 @@ import { RailUser } from './RailUser'
  * 不做假状态 —— 未接入的项明确写「即将支持」而不是让它看着能用。
  */
 const MODES = [
-  { id: 'agent', labelKey: 'mode.agent' },
   { id: 'coding', labelKey: 'mode.coding' },
-  { id: 'ask', labelKey: 'mode.ask' }
+  { id: 'ask', labelKey: 'mode.daily' }
 ] as const
 
 /** 当前模式（暂时只有一个） */
-const MODE_ID = 'agent'
+const MODE_ID = 'coding'
 /** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 
@@ -62,14 +62,40 @@ export function Rail() {
 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [projectsOpen, setProjectsOpen] = useState(true)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
+  const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
+  const [expanded, setExpanded] = useSidebarValue<string[]>('expanded-branches', [])
+  const [pinned, setPinned] = useSidebarValue<string[]>('pinned', [])
+  const [archived, setArchived] = useSidebarValue<string[]>('archived-projects', [])
+  const [showArchived, setShowArchived] = useState(false)
+  const [unread, setUnread] = useSidebarValue<string[]>('unread', [])
+  const railPinned = useStore((s) => s.railPinned)
+  const setRailPinned = useStore((s) => s.setRailPinned)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
   /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
   const [modeMenu, setModeMenu] = useState(false)
+  const [projectMenu, setProjectMenu] = useState<string | null>(null)
+  const [projectError, setProjectError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
+
+  useEffect(() => {
+    const clearCurrent = (): void => {
+      const path = useStore.getState().session?.sessionFile
+      if (path) setUnread((prev) => prev.includes(path) ? prev.filter((p) => p !== path) : prev)
+    }
+    const unsubscribe = useStore.subscribe((next, prev) => {
+      const current = next.session
+      if (current?.sessionFile && current.sessionId === prev.session?.sessionId &&
+        prev.session?.isAgentRunning && !current.isAgentRunning && !document.hasFocus()) {
+        setUnread((old) => [...new Set([...old, current.sessionFile!])])
+      }
+    })
+    window.addEventListener('focus', clearCurrent)
+    return () => { unsubscribe(); window.removeEventListener('focus', clearCurrent) }
+  }, [setUnread])
 
   // 会话列表在有新消息后会变（标题、时间），settled 时刷一次
   const msgCount = useStore((s) => s.messages.length)
@@ -80,11 +106,11 @@ export function Rail() {
   }, [msgCount, refreshSessions])
 
   useEffect(() => {
-    if (!menuFor) return
-    const close = (): void => setMenuFor(null)
+    if (!menuFor && !projectMenu) return
+    const close = (): void => { setMenuFor(null); setProjectMenu(null) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
-  }, [menuFor])
+  }, [menuFor, projectMenu])
 
   /* 模式菜单：点外面关掉（与其它浮层同一套做法） */
   useEffect(() => {
@@ -176,35 +202,45 @@ export function Rail() {
       const t = titles[x.id]
       return t ? { ...x, title: t } : x
     })
-    const filtered = q
-      ? all.filter(
-          (s) => s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q)
-        )
-      : all
+    const parents = new Map(all.filter((s) => s.parentSession).map((s) => [s.path, s.parentSession!]))
+    const matches = new Set<string>()
+    for (const s of all) {
+      if (!q || [s.title, s.cwd, projectNames[s.cwd] ?? ''].some((v) => v.toLowerCase().includes(q))) {
+        matches.add(s.path)
+        for (const p of ancestorPaths(s.path, parents)) matches.add(p)
+      }
+    }
+    const filtered = all.filter((s) => matches.has(s.path))
 
     const byCwd = new Map<string, SessionSummary[]>()
     for (const s of filtered) {
-      const key = s.cwd || '—'
+      const rootPath = ancestorPaths(s.path, parents).at(-1)
+      const root = rootPath ? all.find((x) => x.path === rootPath) : s
+      const key = (root?.cwd || s.cwd) || '—'
       const list = byCwd.get(key) ?? []
       list.push(s)
       byCwd.set(key, list)
     }
 
+    for (const cwd of settings?.recentCwds ?? []) {
+      if (!byCwd.has(cwd) && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) byCwd.set(cwd, [])
+    }
     const cur = session?.cwd
     return [...byCwd.entries()]
       .map(([cwdKey, list]) => ({
         cwd: cwdKey,
-        label: projectNames[cwdKey] || shortProject(cwdKey),
+        label: cwdKey === '—' ? t('rail.local') : projectNames[cwdKey] || shortProject(cwdKey),
         list: orderFamily(list),
         isCurrent: cwdKey === cur
       }))
+      .filter((p) => showArchived === archived.includes(p.cwd))
       .sort((a, b) => {
         if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
         const at = (p: { list: SessionSummary[] }) =>
           p.list[0] ? (p.list[0].lastActivityAt ?? p.list[0].updatedAt) : 0
         return at(b) - at(a)
       })
-  }, [sessions, query, session, t, titles, manualTitles, projectNames])
+  }, [sessions, query, session, t, titles, manualTitles, projectNames, settings?.recentCwds, archived, showArchived])
 
   /**
    * 会话分支关系（用户要求：左栏显示分支数 / 分支编号）。
@@ -215,7 +251,7 @@ export function Rail() {
    *   · branchIndex：这个会话是父会话的第几个分支（子会话行上显示 #N）
    * 编号按 createdAt 升序 —— 与分支创建的先后一致。
    */
-  const { branchCount, branchIndex, branchesOf } = useMemo(() => {
+  const { branchIndex } = useMemo(() => {
     const kids = new Map<string, SessionSummary[]>()
     for (const s of sessions) {
       if (!s.parentSession) continue
@@ -234,18 +270,42 @@ export function Rail() {
   }, [sessions])
 
   const toggleProject = (key: string): void =>
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setCollapsed((prev) => prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key])
+  const toggleBranch = (key: string): void =>
+    setExpanded((prev) => prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key])
+  const select = async (path: string): Promise<void> => {
+    const parents = new Map(sessions.filter((s) => s.parentSession).map((s) => [s.path, s.parentSession!]))
+    if (!query) setExpanded((prev) => [...new Set([...prev, ...ancestorPaths(path, parents)])])
+    await switchSession(path)
+    setUnread((prev) => prev.filter((p) => p !== path))
+  }
+  const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>()): React.ReactNode => {
+    if (lineage.has(s.path)) return null
+    const next = new Set(lineage).add(s.path)
+    const children = list.filter((c) => c.parentSession === s.path && !next.has(c.path))
+    const isOpen = !!query || expanded.includes(s.path)
+    return <SessionRow key={s.path} s={s} selected={session?.sessionFile === s.path}
+      depth={depth} branchCount={children.length} branchIndex={branchIndex.get(s.path)}
+      branchesOpen={isOpen} onToggleBranches={() => toggleBranch(s.path)}
+      children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next)) : null}
+      menuOpen={menuFor === s.path} onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
+      onSelect={() => void select(s.path)} pinned={pinned.includes(s.path)} unread={unread.includes(s.path)}
+      onPin={() => setPinned((prev) => prev.includes(s.path) ? prev.filter((p) => p !== s.path) : [...prev, s.path])}
+      onRequestDelete={() => setDeleteTarget(s)} />
+  }
 
   const total = sessions.length
   const shown = projects.reduce((n, p) => n + p.list.length, 0)
 
   return (
     <aside className="rail">
+      {!railPinned ? <div className="rail-compact">
+        <button title={t('mode.switch')} onClick={() => { setRailPinned(true); setModeMenu(true) }}>砚</button>
+        <button title={t('rail.search')} onClick={() => { setRailPinned(true); setSearching(true) }}><Icon name="search" size={16} /></button>
+        <button title={t('rail.new')} onClick={() => void newSession()}><Icon name="plus" size={16} /></button>
+        <span className="spacer" />
+        <button title={t('rail.settings')} onClick={() => useStore.getState().openSettings()}><Icon name="settings" size={16} /></button>
+      </div> : null}
       {/* ---- 顶部：品牌（带模式菜单）+ 动作 ---- */}
       <div className="rail-top">
         {/*
@@ -345,21 +405,27 @@ export function Rail() {
           </button>
           <button
             className="rail-icon sm"
-            title={t('rail.new')}
-            onClick={() => void newSession()}
+            title={t('rail.addProject')}
+            onClick={async () => { const cwd = await window.yan.pickCwd(); if (!cwd) return; const r = await window.yan.setCwd(cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else await useStore.getState().bootstrap() }}
           >
             <Icon name="plus" size={12} />
           </button>
         </div>
 
         <div className="rail-body">
-          {total === 0 ? (
+          {projectError ? <div className="rail-empty" role="alert">{projectError}</div> : null}
+          {!query && !showArchived && pinned.some((p) => sessions.some((s) => s.path === p && !archived.includes(s.cwd))) ? <div className="rail-pins">
+            <div className="rail-section-title">{t('rail.pinned')}</div>
+            {sessions.filter((s) => pinned.includes(s.path) && !archived.includes(s.cwd)).map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
+          </div> : null}
+          <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
+          {total === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.empty')}</div>
-          ) : shown === 0 ? (
+          ) : shown === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.noMatch')}</div>
-          ) : projectsOpen ? (
+          ) : projectsOpen || query ? (
             projects.map((p) => {
-              const pOpen = !collapsed.has(p.cwd)
+              const pOpen = !!query || !collapsed.includes(p.cwd)
               return (
                 <div key={p.cwd} className="proj">
                   {projRename === p.cwd ? (
@@ -375,7 +441,7 @@ export function Rail() {
                         onBlur={() => {
                           const names = { ...projectNames }
                           if (projDraft.trim()) names[p.cwd] = projDraft.trim()
-                          else delete names[p.cwd]
+                          else { setProjRename(null); return }
                           void patchSettings({ projectNames: names })
                           setProjRename(null)
                         }}
@@ -394,6 +460,8 @@ export function Rail() {
                   <button
                     className={`proj-head ${pOpen ? '' : 'collapsed'}`}
                     onClick={() => toggleProject(p.cwd)}
+                    onDoubleClick={() => { setProjDraft(p.label); setProjRename(p.cwd) }}
+                    onContextMenu={(e) => { e.preventDefault(); setProjectMenu(p.cwd) }}
                     title={p.cwd}
                     data-testid="rail-project"
                     data-current={p.isCurrent ? '1' : '0'}
@@ -401,40 +469,34 @@ export function Rail() {
                     <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
                     <span className="proj-labels">
                       <span className="proj-name">{p.label}</span>
-                      <span className="proj-path">{p.cwd}</span>
+
                     </span>
                     <span
                       className="proj-rename"
                       role="button"
                       tabIndex={0}
-                      title={t('rail.renameProject')}
+                      title={t('rail.more')}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setProjectMenu(p.cwd) } }}
                       onClick={(event) => {
                         event.stopPropagation()
                         // ⚠️ Electron 不支持 window.prompt（返回 null，什么都发生不了）
-                        setProjDraft(projectNames[p.cwd] || shortProject(p.cwd))
-                        setProjRename(p.cwd)
+                        setProjectMenu(projectMenu === p.cwd ? null : p.cwd)
                       }}
-                    >✎</span>
+                    ><Icon name="menu" size={12} /></span>
                     <span className="proj-count">{p.list.length}</span>
                   </button>
                   )}
 
-                  {pOpen
-                    ? p.list.map((s) => (
-                        <SessionRow
-                          key={s.path}
-                          s={s}
-                          selected={!!session?.sessionFile && session.sessionFile === s.path}
-                          branchCount={branchCount.get(s.path) ?? 0}
-                          branchIndex={branchIndex.get(s.path)}
-                          branches={branchesOf.get(s.path) ?? []}
-                          onOpenBranch={(path) => void switchSession(path)}
-                          menuOpen={menuFor === s.path}
-                          onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
-                          onSelect={() => void switchSession(s.path)}
-                        />
-                      ))
-                    : null}
+                  {projectMenu === p.cwd ? <div className="project-menu" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await useStore.getState().bootstrap(); await newSession() } }}>{t('rail.new')}</button>
+                    <button onClick={() => { setProjectMenu(null); setProjDraft(p.label); setProjRename(p.cwd) }}>{t('rail.renameProject')}</button>
+                    <button onClick={() => { void window.yan.revealPath(p.cwd); setProjectMenu(null) }}>{t('rail.reveal')}</button>
+                    <button onClick={() => { void navigator.clipboard.writeText(p.cwd); setProjectMenu(null) }}>{t('rail.copyPath')}</button>
+                    <button onClick={() => { setArchived((prev) => showArchived ? prev.filter((x) => x !== p.cwd) : [...prev, p.cwd]); setProjectMenu(null) }}>{showArchived ? t('rail.restoreProject') : t('rail.archiveProject')}</button>
+                  </div> : null}
+                  {pOpen ? <>
+                    {p.list.filter((s) => !s.parentSession || !p.list.some((p) => p.path === s.parentSession)).map((s) => renderSession(s, p.list))}
+                  </> : null}
                 </div>
               )
             })
@@ -444,39 +506,27 @@ export function Rail() {
 
       {/* ---- 底部：用户块（名字 / 自定义头像 / 登录预留）---- */}
       <RailUser />
+      {deleteTarget ? <SessionDeleteDialog session={deleteTarget} onClose={() => setDeleteTarget(null)} /> : null}
     </aside>
   )
 }
 
 /* ---------------------------------------------------------------- 会话行 */
 
-function SessionRow({
-  s,
-  selected,
-  branchCount,
-  branchIndex,
-  branches,
-  onOpenBranch,
-  menuOpen,
-  onToggleMenu,
-  onSelect
+function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onToggleBranches,
+  children, depth, menuOpen, onToggleMenu, onSelect, pinned, onPin, unread, onRequestDelete
 }: {
-  s: SessionSummary
-  selected: boolean
-  /** 这个会话被分叉出去几次 */
-  branchCount: number
-  /** 这个会话自己是第几个分支（undefined = 不是分支） */
-  branchIndex?: number
-  /** 这个会话分出去的分支会话（按创建时间排序），用于「分叉树」 */
-  branches: SessionSummary[]
-  onOpenBranch: (path: string) => void
-  menuOpen: boolean
-  onToggleMenu: () => void
-  onSelect: () => void
+  s: SessionSummary; selected: boolean; branchCount: number; branchIndex?: number;
+  branchesOpen: boolean; onToggleBranches: () => void; children: React.ReactNode; depth: number;
+  menuOpen: boolean; onToggleMenu: () => void; onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
+  onRequestDelete: () => void
 }) {
   const t = useT()
-  /** 分叉树是否展开（用户要求：**默认折叠**，开关在会话标题旁） */
-  const [branchesOpen, setBranchesOpen] = useState(false)
+  const running = useStore((state) => state.session?.sessionFile === s.path && !!state.session?.isAgentRunning)
+  const waiting = useStore((state) => state.session?.sessionFile === s.path && state.uiRequests.length > 0)
+  const failure = useStore((state) => state.session?.sessionFile === s.path && (state.conn === 'error' || state.conn === 'exited') ? state.connDetail : '')
+  // Filtering or the pinned shortcut must not bypass the descendant guard.
+  const hasChildren = useStore((state) => state.sessions.some((child) => child.parentSession === s.path))
   /**
    * 行内重命名。
    *
@@ -496,9 +546,9 @@ function SessionRow({
   }
 
   return (
-    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`}>
+    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
-      <div className="srow-row">
+      <div className={`srow-row ${selected ? 'selected' : ''}`} onContextMenu={(e) => { e.preventDefault(); onToggleMenu() }}>
         {renaming ? (
           /* 行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
           <input
@@ -522,7 +572,7 @@ function SessionRow({
             }}
           />
         ) : (
-          <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
+          <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={`${s.title}${s.branchOrigin ? '\n' + s.branchOrigin : ''}\n${s.path}`} data-testid={depth ? 'rail-branch-item' : 'rail-session'}>
             <span className="srow-text">
               <span className="srow-line">
                 {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
@@ -550,7 +600,7 @@ function SessionRow({
             data-open={branchesOpen ? '1' : '0'}
             aria-expanded={branchesOpen}
             title={t('rail.branchCount', { n: branchCount })}
-            onClick={() => setBranchesOpen((v) => !v)}
+            onClick={onToggleBranches}
           >
             <Icon name="layers" size={12} />
             <span className="srow-btoggle-n">{branchCount}</span>
@@ -558,32 +608,12 @@ function SessionRow({
           </button>
         ) : null}
 
+        {waiting ? <span className="session-status waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status waiting" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" title={t('rail.unread')}>●</span> : null}
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
         <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>
 
-      {/* 分叉树（默认折叠）：列出这个会话分出去的每条分支，点击即跳过去 */}
-      {branchesOpen && branches.length ? (
-        <div className="srow-branches" data-testid="rail-branch-tree">
-          {branches.map((b, i) => (
-            <button
-              key={b.path}
-              className="sbr"
-              data-testid="rail-branch-item"
-              onClick={() => onOpenBranch(b.path)}
-              title={b.path}
-            >
-              <span className="sbr-no">#{i + 1}</span>
-              <span className="sbr-main">
-                <span className="sbr-name">{b.title}</span>
-                {b.branchOrigin ? (
-                  <span className="sbr-origin">{t('rail.fromMessage', { text: b.branchOrigin })}</span>
-                ) : null}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {branchesOpen && children ? <div className="session-children" data-testid="rail-branch-tree">{children}</div> : null}
 
       {/*
        * 动作按钮（⋯）**每一行都渲染**，悬停才显形。
@@ -607,7 +637,10 @@ function SessionRow({
           <div className="srow-menu-path" title={s.path}>
             {s.path}
           </div>
+          <button className="srow-menu-btn" onClick={() => { onPin(); onToggleMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
           <button
+            disabled={!selected || running}
+            title={!selected ? t('rail.openBeforeFork') : ''}
             style={{ '--i': 1 } as React.CSSProperties}
             className="srow-menu-btn"
             onClick={() => {
@@ -653,13 +686,9 @@ function SessionRow({
           <button
             className="srow-menu-btn danger"
             style={{ '--i': 4 } as React.CSSProperties}
-            disabled={selected}
-            title={selected ? t('rail.cantDeleteCurrent') : ''}
-            onClick={() => {
-              if (!confirm(t('rail.confirmDelete', { name: s.title }))) return
-              void useStore.getState().deleteSession(s.path)
-              onToggleMenu()
-            }}
+            disabled={selected || hasChildren}
+            title={hasChildren ? t('rail.hasBranches') : selected ? t('rail.cantDeleteCurrent') : ''}
+            onClick={() => { onRequestDelete(); onToggleMenu() }}
           >
             <Icon name="alert-circle" size={12} />
             {t('rail.delete')}
@@ -668,6 +697,86 @@ function SessionRow({
       ) : null}
     </div>
   )
+}
+
+/**
+ * 删除会话不能依赖浏览器原生 confirm：它没有明确告知“可撤销”，在某些
+ * Electron 环境下也不能稳定地呈现。这里要求输入完整标题再启用动作。
+ */
+function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; onClose: () => void }) {
+  const t = useT()
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [undoToken, setUndoToken] = useState<string | null>(null)
+  const confirmed = typed.trim() === session.title.trim()
+
+  const remove = async (): Promise<void> => {
+    if (!confirmed || busy) return
+    setBusy(true)
+    const res = await window.yan.deleteSession(session.path)
+    if (!res.ok) {
+      setError(res.error ?? t('rail.deleteFailed'))
+      setBusy(false)
+      return
+    }
+    await useStore.getState().refreshSessions()
+    setUndoToken(res.undoToken ?? null)
+    setBusy(false)
+  }
+
+  const restore = async (): Promise<void> => {
+    if (!undoToken || busy) return
+    setBusy(true)
+    const res = await window.yan.restoreSession(undoToken)
+    if (!res.ok) {
+      setError(res.error ?? t('rail.deleteFailed'))
+      setBusy(false)
+      return
+    }
+    await useStore.getState().refreshSessions()
+    onClose()
+  }
+
+  if (undoToken) return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+    <div className="modal rail-delete-dialog">
+      <div className="modal-head"><Icon name="alert-circle" size={14} /><span className="modal-title" id="delete-session-title">{t('rail.delete')}</span></div>
+      <div className="modal-message">{t('rail.deletedUndo')}</div>
+      <div className="modal-foot">
+        <button className="btn" onClick={onClose}>{t('ui.ok')}</button>
+        <span className="spacer" />
+        <button className="send" disabled={busy} onClick={() => void restore()}>{t('rail.undoDelete')}</button>
+      </div>
+    </div>
+  </div>
+
+  return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+    <div className="modal rail-delete-dialog">
+      <div className="modal-head">
+        <Icon name="alert-circle" size={14} />
+        <span className="modal-title" id="delete-session-title">{t('rail.delete')}</span>
+      </div>
+      <div className="modal-message">
+        {t('rail.deleteExplain', { name: session.title })}
+      </div>
+      <input
+        className="modal-input"
+        autoFocus
+        value={typed}
+        placeholder={session.title}
+        onChange={(e) => setTyped(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter') void remove() }}
+      />
+      {error ? <div className="rail-delete-error" role="alert">{error}</div> : null}
+      <div className="modal-foot">
+        <button className="btn" onClick={onClose} disabled={busy}>{t('ui.cancel')}</button>
+        <span className="spacer" />
+        <button className="btn danger" disabled={!confirmed || busy} onClick={() => void remove()}>
+          {busy ? t('rail.deleting') : t('rail.delete')}
+        </button>
+      </div>
+    </div>
+  </div>
 }
 
 /* ---------------------------------------------------------------- 工具 */

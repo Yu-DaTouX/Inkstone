@@ -7,11 +7,11 @@
  *
  * 性能：会话文件可能十几 MB。用 mtime 做缓存，且只在 head 里找标题。
  */
-import { readdir, stat, open, rm } from 'node:fs/promises'
+import { readdir, stat, open, mkdir, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { SessionSummary } from '../shared/ipc'
-import { PI_AGENT_DIR } from './paths'
+import { PI_AGENT_DIR, YAN_DIR } from './paths'
 
 /**
  * 会话目录。
@@ -329,8 +329,17 @@ export async function listSessions(limit = 200): Promise<SessionSummary[]> {
   return out
 }
 
-/** 删除一份会话文件。不可逆，调用方必须先让用户确认。 */
-export async function deleteSession(path: string): Promise<void> {
+/**
+ * 会话回收站。
+ *
+ * 会话常常包含很长的工作记录，菜单里的“删除”不能悄悄变成不可恢复的 rm。
+ * 因此先原子移动到砚自己的回收站；当前运行期内保留原路径映射供“撤销”使用。
+ */
+const TRASH_DIR = join(YAN_DIR, 'trash', 'sessions')
+const deleted = new Map<string, { from: string; to: string }>()
+
+/** 将一份会话文件移入回收站，返回一次性撤销 token。 */
+export async function deleteSession(path: string): Promise<string> {
   // 只允许删 sessions 目录下的 .jsonl，防止路径穿越误删
   const resolved = resolve(path)
   if (!resolved.startsWith(resolve(SESSIONS_DIR))) {
@@ -339,6 +348,20 @@ export async function deleteSession(path: string): Promise<void> {
   if (!resolved.endsWith('.jsonl')) {
     throw new Error('不是会话文件')
   }
-  await rm(resolved, { force: true })
+  await mkdir(TRASH_DIR, { recursive: true })
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  const destination = join(TRASH_DIR, `${token}-${resolved.split(/[\\/]/).pop()}`)
+  await rename(resolved, destination)
   cache.delete(resolved)
+  deleted.set(token, { from: resolved, to: destination })
+  return token
+}
+
+/** 撤销本次应用运行中刚刚执行的会话删除。 */
+export async function restoreSession(token: string): Promise<void> {
+  const entry = deleted.get(token)
+  if (!entry) throw new Error('此删除已无法撤销')
+  await mkdir(resolve(entry.from, '..'), { recursive: true })
+  await rename(entry.to, entry.from)
+  deleted.delete(token)
 }
