@@ -11,6 +11,7 @@ import { create } from 'zustand'
 import type {
   AppSettings,
   Attachment,
+  BrowserState,
   ExtensionUiRequest,
   MainPush,
   ModelInfo,
@@ -124,6 +125,8 @@ interface Store {
    * 以主进程推的 `win-state` 为准（带有 always-on-top-changed 监听）。
    */
   alwaysOnTop: boolean
+  /** 内置浏览器状态；页面本体由主进程 WebContentsView 承载 */
+  browserState: BrowserState
   /**
    * 界面缩放现状（主进程算的）。null = 还没拉到。
    *
@@ -166,6 +169,8 @@ interface Store {
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
+  /** 重新探测 pi 内核（版本 / 来源），pi 之前没找到时会顺便重新拉起 */
+  redetectPi: () => Promise<void>
   /**
    * 命令列表上次拉取的时间戳（0 = 还没拉过）。
    * 界面用它判断「该不该自动刷新」—— 命令会随扩展/技能变化，
@@ -205,12 +210,19 @@ interface Store {
   abortRetry: () => Promise<void>
   /** 循环切下一个模型 / 下一档思考（TUI 的 Ctrl+P / Ctrl+T） */
   cycleModel: () => Promise<void>
+  cycleModelBack: () => Promise<void>
   cycleThinking: () => Promise<void>
   /** 把最后一条助手回复复制到剪贴板 */
   copyLastReply: () => Promise<void>
   changeCwd: (cwd: string) => Promise<void>
   /** 设界面缩放（0 = 自动） */
   setUiScale: (v: number) => Promise<void>
+  openBrowser: (url?: string) => Promise<void>
+  closeBrowser: () => Promise<void>
+  /** 接入本机已安装的 Chrome（独立 profile + CDP） */
+  openExternalChrome: (url?: string) => Promise<void>
+  /** 断开本机 Chrome（会关掉我们拉起的进程） */
+  closeExternalChrome: () => Promise<void>
   /**
    * 改用户档案（名字 / 头像）。
    * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
@@ -377,6 +389,7 @@ export const useStore = create<Store>((set, get) => ({
   titles: {},
   maximized: false,
   alwaysOnTop: false,
+  browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   zoom: null,
   scrollToTurn: () => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
@@ -397,7 +410,7 @@ export const useStore = create<Store>((set, get) => ({
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, sessions, session, messages, stats, todos, status, titles, pi] =
+    const [settings, sessions, session, messages, stats, todos, status, titles, pi, browserState] =
       await Promise.all([
         api.getSettings(),
         api.listSessions(),
@@ -411,7 +424,8 @@ export const useStore = create<Store>((set, get) => ({
         api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' })),
         api.cachedTitles().catch(() => ({}) as Record<string, string>),
         // pi 入口 / 版本（右栏「环境」分区）——探测失败不能影响启动
-        api.piInfo().catch(() => null)
+        api.piInfo().catch(() => null),
+        api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
 
     set({
@@ -424,7 +438,8 @@ export const useStore = create<Store>((set, get) => ({
       conn: status.state,
       connDetail: status.detail,
       titles,
-      piInfo: pi
+      piInfo: pi,
+      browserState
     })
 
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
@@ -470,6 +485,14 @@ export const useStore = create<Store>((set, get) => ({
           zoom: m.payload,
           ...(s.settings ? { settings: { ...s.settings, uiScale: m.payload.uiScale } } : {})
         })
+        break
+      case 'browser-state':
+        set({ browserState: m.payload })
+        break
+      case 'log':
+        // 主进程未捕获异常 / 未处理 Promise：与 pi stderr 共用同一条日志抽屉，
+        // 不再走 Electron 的原生错误弹框。
+        set({ logs: [...s.logs, m.payload.text].slice(-200) })
         break
       case 'session-title':
         set({ titles: { ...s.titles, [m.payload.sessionId]: m.payload.title } })
@@ -601,6 +624,15 @@ export const useStore = create<Store>((set, get) => ({
 
   reloadCommands: async () => {
     set({ commands: await window.yan.listCommands(), commandsAt: Date.now() })
+  },
+
+  redetectPi: async () => {
+    const info = await window.yan.redetectPi().catch(() => null)
+    if (info) set({ piInfo: info })
+    // pi 刚被拉起来时，连接状态与模型列表都要重新拉
+    const status = await window.yan.agentStatus().catch(() => null)
+    if (status) set({ conn: status.state, connDetail: status.detail })
+    void get().reloadModels()
   },
 
   markCommandUsed: (name) => {
@@ -823,6 +855,18 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  /** 反向切模型（Ctrl+Shift+P） */
+  cycleModelBack: async () => {
+    const res = await window.yan.cycleModelBack()
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
+      return
+    }
+    if (res.to) {
+      set({ notices: pushNotice(get().notices, 'info', '模型 → ' + res.to) })
+    }
+  },
+
   cycleThinking: async () => {
     const res = await window.yan.cycleThinking()
     if (!res.ok) {
@@ -890,6 +934,32 @@ export const useStore = create<Store>((set, get) => ({
     } catch {
       /* 拉不到就不显示这一行，不能因此影响启动 */
     }
+  },
+
+  openBrowser: async (url) => {
+    try {
+      set({ browserState: await window.yan.browser.open(url) })
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '打开浏览器失败') })
+    }
+  },
+
+  closeBrowser: async () => {
+    set({ browserState: await window.yan.browser.close() })
+  },
+
+  openExternalChrome: async (url) => {
+    const res = await window.yan.browser.openExternalChrome(url)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '接入本机 Chrome 失败') })
+      return
+    }
+    // 接入后主进程会把 state.open 置 true，面板会切到浏览器模式
+    set({ browserState: await window.yan.browser.getState() })
+  },
+
+  closeExternalChrome: async () => {
+    set({ browserState: await window.yan.browser.closeExternalChrome() })
   },
 
   patchProfile: async (p) => {

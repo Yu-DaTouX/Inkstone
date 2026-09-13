@@ -501,6 +501,275 @@
   /* scrollbar-gutter 占的是右内边距，这里补一个等量左内边距 */
   padding-left: 10px;
 }
+
+/* -------------------------------------------------------------------
+   内置浏览器：固定在右侧工具栏面板内，不替换中栏会话
+   ------------------------------------------------------------------- */
+.rightpanel.browser-mode {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.rp-browser-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 2px 5px 2px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  color: var(--fg-mute);
+  background: var(--bg-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.rp-browser-toggle:hover,
+.rp-browser-toggle.on {
+  border-color: var(--accent-line);
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+.rp-browser-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 27px;
+  height: 15px;
+  padding: 2px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  transition: background var(--dur) var(--ease);
+}
+.rp-browser-toggle.on .rp-browser-track {
+  background: var(--accent);
+}
+.rp-browser-thumb {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--fg-mute);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  transform: translateX(0);
+  transition:
+    transform 160ms var(--ease),
+    background var(--dur) var(--ease);
+}
+.rp-browser-toggle.on .rp-browser-thumb {
+  background: #fff;
+  transform: translateX(12px);
+}
+.browser-surface {
+  position: relative;
+  height: 100%;
+  display: grid;
+  /*
+   * 单列必须写死为 minmax(0, 1fr)。
+   * 隐式列是 auto，会被内容撑到 max-content —— 一条长错误提示就能
+   * 把工具栏/网页区撑到比面板还宽，连带把原生 WebContentsView 的
+   * 坐标算歪。面板本身的宽度是固定的，这里只需要老老实实填满。
+   */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 31px 42px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-1);
+}
+.browser-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px 8px 0;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+.browser-tab,
+.browser-new-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-mute);
+  background: transparent;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.browser-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-tab i {
+  flex: none;
+  font-style: normal;
+  font-size: 15px;
+  opacity: .65;
+}
+.browser-tab:hover,
+.browser-tab.active {
+  color: var(--fg);
+  background: var(--bg-1);
+  border-bottom-color: var(--accent);
+}
+.browser-new-tab {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+}
+.rightpanel.browser-mode .browser-surface {
+  min-height: 0;
+}
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.browser-nav,
+.browser-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: 18px;
+  line-height: 1;
+}
+.browser-nav:hover,
+.browser-close:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+.browser-nav:disabled {
+  opacity: .35;
+  cursor: default;
+}
+/* 接入本机 Chrome 的开关：比图标按钮宽一点，放得下文字 */
+.browser-nav.browser-chrome {
+  width: auto;
+  padding: 0 7px;
+  font-size: var(--fs-xs);
+  letter-spacing: .2px;
+}
+.browser-nav.browser-chrome.on {
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+.browser-address {
+  flex: 1;
+  min-width: 0;
+}
+.browser-address input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--fg);
+  background: var(--bg-2);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.browser-address input:focus {
+  border-color: var(--border-str);
+}
+.browser-close {
+  font-size: 21px;
+}
+.browser-control {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--accent-soft);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.browser-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+}
+/*
+ * 外部 Chrome 模式下，网页在 Chrome 自己的窗口里 —— viewport 区域没有原生视图，
+ * 用一段说明告诉用户去哪儿操作。这段文本在渲染层，不会被遮挡。
+ */
+.browser-ext-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  text-align: center;
+  background: var(--bg-1);
+  color: var(--fg-dim);
+}
+.browser-ext-title {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.browser-ext-desc {
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+.browser-ext-path,
+.browser-ext-port {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+/*
+ * 网页是原生 WebContentsView，永远盖在渲染层之上。右栏宽度把手只有 5px、
+ * 又贴在面板左缘，会被原生视图整段遮住 —— 浏览器打开时就没法从页面区域
+ * 拖宽度（只能在顶部工具栏那一段拖）。这里让网页区让开这条缝，
+ * 把手在整条边上都能抓。
+ */
+.rightpanel.browser-mode .browser-viewport {
+  margin-left: 5px;
+}
+/*
+ * 加载 / 错误提示放在工具栏内联位置。
+ * 不能定位到 .browser-viewport 上方 —— 网页是原生 WebContentsView，
+ * 永远盖在渲染层之上，那里的提示会被整段遮住。
+ */
+.browser-loading {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.browser-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--err);
+  font-size: var(--fs-xs);
+}
 .stream-inner,
 .stream-row {
   /* 两端对称的内边距，保证 max-width 区域本身居中 */
@@ -1937,6 +2206,10 @@
   width: 96px;
   height: 12px;
   cursor: ns-resize;
+  /* 组合窗口的可拖拽区域不能吞掉这个交互把手。 */
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  touch-action: none;
   z-index: 2;
   display: grid;
   place-items: center;

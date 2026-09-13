@@ -124,6 +124,10 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               piOk ? (
                 <>
                   {t('ob.piFound')} <code>{piInfo?.version}</code>
+                  <span className="ob-src">
+                    {' · '}
+                    {piInfo?.bundled ? t('ob.piSourceBundled') : t('ob.piSourceExternal')}
+                  </span>
                 </>
               ) : (
                 <>

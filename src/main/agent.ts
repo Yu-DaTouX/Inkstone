@@ -27,7 +27,6 @@ import type {
   ForkPoint,
   MainPush,
   ModelInfo,
-  PiInfo,
   QueueMode,
   QueueState,
   SessionState,
@@ -119,6 +118,8 @@ export class AgentController extends EventEmitter {
   private push: Push
   private cwd: string
   private piBin?: string
+  private browserExtension?: string
+  private browserEnv?: NodeJS.ProcessEnv
 
   /** 权威消息列表 */
   private messages: UIMessage[] = []
@@ -159,11 +160,15 @@ export class AgentController extends EventEmitter {
     push: Push
     cwd: string
     piBin?: string
+    browserExtension?: string
+    browserEnv?: NodeJS.ProcessEnv
   }) {
     super()
     this.push = opts.push
     this.cwd = opts.cwd
     this.piBin = opts.piBin
+    this.browserExtension = opts.browserExtension
+    this.browserEnv = opts.browserEnv
   }
 
   get running(): boolean {
@@ -216,6 +221,7 @@ export class AgentController extends EventEmitter {
       cwd: this.cwd,
       piBin: this.piBin,
       args: [
+        ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
         // 只在测试隔离时接管会话目录。
         // 平时不传 —— 传了 pi 就不再按 cwd 建项目子目录，
         // 会把新会话平铺到根目录，与用户已有会话分居两处。
@@ -224,7 +230,8 @@ export class AgentController extends EventEmitter {
         // 曾经传 `--name 砚` 希望“好辨认”，结果每个新会话标题都是「砚」，
         // 在左栏里长得一模一样，等于没标题。
         // 让 pi 用首条用户消息当标题，才真正可辨认。
-      ]
+      ],
+      env: this.browserEnv
     })
     this.rpc = rpc
 
@@ -1212,13 +1219,29 @@ export class AgentController extends EventEmitter {
    * 否则“下一个”与面板里看到的“下一行”不是一个东西。
    */
   async cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }> {
+    return this.cycleModelBy(1)
+  }
+
+  /**
+   * 反向循环模型（桌面端 Ctrl+Shift+P，对齐 pi TUI 的“上一个模型”）。
+   *
+   * 为什么自己算而不用 pi 的命令：pi 0.85.1 的 RPC 只有 `cycle_model`
+   * （固定向前），没有反向命令。这里复用 `get_available_models` +
+   * `set_model` 手动走上一项，语义与界面显示的列表一致。
+   */
+  async cycleModelBack(): Promise<{ ok: boolean; error?: string; to?: string }> {
+    return this.cycleModelBy(-1)
+  }
+
+  /** `dir = 1` 下一个，`dir = -1` 上一个 */
+  private async cycleModelBy(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
     const models = await this.listModels()
     if (models.length < 2) return { ok: false, error: '只有一个可用模型' }
 
     const cur = this.state?.model
     const i = models.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
     // 当前模型不在列表里（刚切过来 / 列表变了）→ 从第一个开始
-    const next = models[i < 0 ? 0 : (i + 1) % models.length]
+    const next = models[i < 0 ? 0 : (i + dir + models.length) % models.length]
 
     const res = await this.rpc!.command('set_model', {
       provider: next.provider,

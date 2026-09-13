@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { forkFromText } from '../../lib/fork'
@@ -204,8 +203,9 @@ function Paragraph({ text, primary }: { text: string; primary?: boolean }) {
  * 合并之后这里的 N/M 是**整个回合**的合计（不是一个 API 往返的）。
  * 一个回合十几次工具往返很常见，平铺出来会把回答淹掉，所以收进一行。
  *
- * 自动展开规则（沿用之前定下的，用户反馈过失败输出撑屏）：
- *   · 正在跑 / 正在流式 → 展开（用户在等，要看进度）
+ * 展开规则（用户要求：「只展开正在运行的那条」）：
+ *   · 正在跑 / 排队中的工具 → 单独一行，自动展开详情（用户在等，要看进度）
+ *   · 已结束的工具 → 收进折叠组，默认收起，用户点了才展开
  *   · 失败 → 只把摘要行标红，**不自动展开**（失败输出经常几十行）
  *   · 用户手动点过之后不再被自动规则推翻
  */
@@ -222,6 +222,18 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
    */
   if (!hasThinking && tools.length === 0) return null
 
+  /*
+   * 工具行的展开规则（用户要求：「只展开正在运行的那条」）。
+   *
+   * 拆成两组，而不是把所有工具塞进同一个组里：
+   *   · 正在跑 / 排队中的 → 单独一行渲染，ToolRow 会自动展开它的详情
+   *   · 已结束的 → 收进 ToolGroup，默认收起（用户点了才展开）
+   * 之前是放同一个组、组在运行中自动展开 —— 于是模型一调工具，
+   * 整组（连同所有已结束的行）一起弹开，就是用户报的「整个工具调用栏会展开」。
+   */
+  const runningTools = tools.filter((c) => c.status === 'running' || c.status === 'pending')
+  const doneTools = tools.filter((c) => c.status !== 'running' && c.status !== 'pending')
+
   return (
     <>
       {/* 思考（推理胶囊）：没有思考就不渲染，不占位。
@@ -237,17 +249,19 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
       ) : null}
 
       {/*
-       * 工具调用用 **Codex 风格**（用户要求）：一行一条，折叠在
+       * 工具调用用 **Codex 风格**（用户要求）：一行一条，已结束的折叠在
        * 「运行了命令 N」下面（见 ToolRow.tsx）。
        *
-       * 与上一版的区别：上一版是「智能展开的工具卡」，一张卡占好几行，
-       * 一次跑十几条就把回答顶出屏幕。Codex 的做法是一行一条 ——
-       * 想看细节就点开（终端窗口样式的详情；默认是否展开由设置里的开关决定）。
+       * 与上一版的区别：不再把「正在跑」也塞进那个折叠组里 ——
+       * 运行中的单独一行、自动展开详情；只有已结束的才进组且默认收起。
        */}
-      {tools.length === 1 ? (
-        <ToolRow call={tools[0]} />
-      ) : tools.length > 1 ? (
-        <ToolGroup tools={tools} streaming={streaming} />
+      {runningTools.map((c) => (
+        <ToolRow key={c.id} call={c} />
+      ))}
+      {doneTools.length === 1 ? (
+        <ToolRow call={doneTools[0]} />
+      ) : doneTools.length > 1 ? (
+        <ToolGroup tools={doneTools} />
       ) : null}
     </>
   )

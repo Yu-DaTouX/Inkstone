@@ -73,6 +73,22 @@
   }
 
   log('')
+  log('=== 5b. 关于 tab：pi 内核管理 ===')
+  const aboutTab = qa('.settings-tab').find((x) => /关于|About/.test(x.textContent))
+  ok(!!aboutTab, '有「关于」tab')
+  if (aboutTab) {
+    click(aboutTab)
+    await sleep(500)
+    const aboutBody = q('.settings-body')?.textContent ?? ''
+    ok(/来源|Source/.test(aboutBody), '关于页显示 pi 来源（内置/系统安装）')
+    ok(/版本|Version/.test(aboutBody), '关于页显示 pi 版本')
+    ok(!!q('[data-testid="pi-redetect"]'), '关于页有「重新检测」按钮')
+    const pi = store.getState().piInfo
+    ok(!!pi && !!pi.source, 'store.piInfo 带 source', 'source=' + (pi && pi.source))
+    ok(!!pi && !!pi.bin, 'store.piInfo 带入口路径')
+  }
+
+  log('')
   log('=== 6. 右栏状态栏的分区 ===')
   // 关掉设置看右栏
   store.getState().closeSettings()

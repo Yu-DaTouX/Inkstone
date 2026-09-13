@@ -35,7 +35,7 @@ import type { UIToolCall } from '../../../../shared/ipc'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => void }) {
+export function ToolRow({ call }: { call: UIToolCall }) {
   const t = useT()
   /** 用户手动开关；null = 跟随设置里的默认值 */
   const detailOn = useStore((s) => s.settings?.toolDetail === true)
@@ -121,17 +121,18 @@ export function ToolRow({ call, onOpen }: { call: UIToolCall; onOpen?: () => voi
 }
 
 /**
- * 一组工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
+ * 一组**已结束**的工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
  *
- * 为什么仍然要分组：一次回合可能几十条工具，全部平铺会把回答顶走。
- * 运行中默认展开（用户要看着它干活），结束后收成一行。
+ * ⚠️ 默认**收起**，而且**不因有工具在跑而自动展开**。
+ *   历史上这里写过 `open = running && streaming` —— 结果是模型一调工具，
+ *   整组（连同所有已结束的行）一起弹开，把回答顶出屏幕（用户报的）。
+ *   正在运行的那条不再放进本组：它由 TurnView 单独渲染并自动展开详情，
+ *   这样只有「当前在跑的工具」是打开的，其余保持一行。
  */
-export function ToolGroup({ tools, streaming }: { tools: UIToolCall[]; streaming?: boolean }) {
+export function ToolGroup({ tools }: { tools: UIToolCall[] }) {
   const t = useT()
-  const running = tools.some((c) => c.status === 'running' || c.status === 'pending')
   const [manual, setManual] = useState<boolean | null>(null)
-  // 运行中展开（能看见在跑什么），结束收成一行
-  const open = manual ?? (running && !!streaming)
+  const open = manual ?? false
 
   if (tools.length === 0) return null
 
@@ -141,7 +142,6 @@ export function ToolGroup({ tools, streaming }: { tools: UIToolCall[]; streaming
         <Icon name="chevron-right" size={12} className="chev" />
         <span>{t('tool2.ran', { n: tools.length })}</span>
         <span className="spacer" />
-        {running ? <span className="cursor cursor-inline" /> : null}
       </button>
       {open ? (
         <div className="tgroup-body">

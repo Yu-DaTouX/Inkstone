@@ -12,7 +12,7 @@ chcp 65001 >nul
 title Yan
 cd /d "%~dp0"
 
-node "scripts\launch.mjs"
+node "scripts\launch.mjs" --rebuild
 if errorlevel 1 (
   echo.
   echo   Startup failed. Press any key to close.

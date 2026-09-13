@@ -17,9 +17,9 @@ import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, delimiter } from 'node:path'
+import { join, delimiter, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { PiInfo, PiProbe, RpcResponse } from '../shared/ipc'
+import type { PiInfo, PiSource, PiProbe, RpcResponse } from '../shared/ipc'
 
 const PKG = '@earendil-works/pi-coding-agent'
 /** cli 在包里的相对路径（package.json 的 bin 字段） */
@@ -50,6 +50,41 @@ function bundledRoots(): string[] {
 /* ==================================================================
    定位 pi 可执行入口
    ================================================================== */
+
+/** 内置运行时目录是否可用（clili.js 存在） */
+export function bundledAvailable(): boolean {
+  return bundledRoots().some((root) => existsSync(join(root, CLI_REL)))
+}
+
+/**
+ * 从 CLI 入口往上找 pi 包根目录（含 package.json 的那层）。
+ *
+ * 仅用于界面显示「包在哪」，找不到就返回 undefined —— 不能因为
+ * 一个诊断字段让定位流程失败。最多上溯 6 层，防止在异常路径上死循环。
+ */
+function findPackageHome(cliPath: string): string | undefined {
+  let dir = dirname(cliPath)
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(join(dir, 'package.json'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return undefined
+}
+
+/** 达到一个候选时统一组装返回，补上来源与包目录 */
+function hit(source: PiSource, args: string[], tried: string[]): PiProbe {
+  const cli = args[args.length - 1]
+  return {
+    ok: true,
+    source,
+    cmd: process.execPath,
+    args,
+    home: cli ? findPackageHome(cli) : undefined,
+    tried
+  }
+}
 
 /** 候选的包安装根目录 */
 function packageRoots(): string[] {
@@ -111,7 +146,7 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
   if (opts.override) {
     tried.push(`设置项 piBin: ${opts.override}`)
     if (existsSync(opts.override)) {
-      return { ok: true, cmd: process.execPath, args: [opts.override], tried }
+      return hit('override', [opts.override], tried)
     }
   }
 
@@ -120,7 +155,7 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
   if (fromEnv) {
     tried.push(`env YAN_PI_BIN: ${fromEnv}`)
     if (existsSync(fromEnv)) {
-      return { ok: true, cmd: process.execPath, args: [fromEnv], tried }
+      return hit('env', [fromEnv], tried)
     }
   }
 
@@ -128,26 +163,27 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
   for (const root of bundledRoots()) {
     const cli = join(root, CLI_REL)
     tried.push(`内置运行时: ${cli}`)
-    if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
+    if (existsSync(cli)) return hit('bundled', [cli], tried)
   }
 
   // 4. 常规安装位置（用户自己全局装过 pi）
   for (const root of packageRoots()) {
     const cli = join(root, PKG, CLI_REL)
     tried.push(cli)
-    if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
+    if (existsSync(cli)) return hit('global', [cli], tried)
   }
 
   // 5. 从 PATH 上的 shim 反推
   for (const cli of pathCandidates()) {
     tried.push(cli)
-    if (existsSync(cli)) return { ok: true, cmd: process.execPath, args: [cli], tried }
+    if (existsSync(cli)) return hit('path', [cli], tried)
   }
 
   // 6. 最后兜底：直接用 PATH 上的 pi（需要 shell，量力而行）
   tried.push('PATH 上的 pi（shell 兜底）')
   return {
     ok: true,
+    source: 'shell',
     cmd: 'pi',
     args: [],
     tried,
@@ -162,14 +198,31 @@ export function resolvePi(opts: { override?: string } = {}): PiProbe {
  * 出问题时第一件事就是问「你是哪个版本」—— 界面上直接看得到就省一轮对话。
  * 探测失败一律静默降级（不显示版本号），绝不能影响启动。
  */
-export async function piInfo(override?: string): Promise<PiInfo> {
+export async function piInfo(override?: string, opts: { fresh?: boolean } = {}): Promise<PiInfo> {
   const probe = resolvePi({ override })
   const bin = probe.args[probe.args.length - 1] ?? probe.cmd
+  const version = probe.ok ? await readPiVersion(probe, !!opts.fresh) : undefined
 
   return {
     bin,
-    version: await readPiVersion(probe)
+    home: probe.home,
+    version,
+    source: probe.source,
+    bundled: probe.source === 'bundled',
+    bundledAvailable: bundledAvailable(),
+    error: probe.error
   }
+}
+
+/**
+ * 清掉版本缓存。
+ *
+ * `redetectPi` 用它强制重跑 `--version` —— 否则用户装完/升完 pi
+ * 点「重新检测」，界面还是显示旧版本。
+ */
+export function resetPiVersionCache(): void {
+  versionCache = null
+  versionPending = null
 }
 
 /** 版本号缓存（进程生命周期内不会变，pi 升级要重启应用） */
@@ -187,7 +240,8 @@ let versionPending: Promise<string | undefined> | null = null
  *
  * 现在：异步 + 结果缓存 + 重入保护，不再堵塞任何东西。
  */
-function readPiVersion(probe: PiProbe): Promise<string | undefined> {
+function readPiVersion(probe: PiProbe, fresh = false): Promise<string | undefined> {
+  if (fresh) versionCache = null
   if (versionCache !== null) return Promise.resolve(versionCache)
   if (versionPending) return versionPending
 
@@ -243,6 +297,8 @@ export interface PiRpcOptions {
   args?: string[]
   /** 显式指定 pi JS 入口 */
   piBin?: string
+  /** 给扩展注入的额外环境变量（例如内置浏览器桥接 token） */
+  env?: NodeJS.ProcessEnv
 }
 
 type Pending = {
@@ -289,7 +345,7 @@ export class PiRpc extends EventEmitter {
 
     // ELECTRON_RUN_AS_NODE：让 Electron 二进制当纯 Node 跑，
     // 这样不依赖用户系统里装了哪个版本的 node。
-    const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+    const env: NodeJS.ProcessEnv = { ...process.env, ...(this.opts.env ?? {}), ELECTRON_RUN_AS_NODE: '1' }
     // 去掉可能干扰子进程的 Electron 变量
     delete env.ELECTRON_NO_ATTACH_CONSOLE
     delete env.ELECTRON_FORCE_IS_PACKAGED

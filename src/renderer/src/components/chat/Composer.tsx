@@ -72,6 +72,16 @@ export function Composer() {
   const [expanded, setExpanded] = useState(false)
   /** 拖出来的高度（px）。0 = 用默认的 max-height */
   const [tall, setTall] = useState(0)
+  /** pointerup 后由 click 事件完成“点一下切换”；拖动则抑制 click */
+  const resizeMoved = useRef(false)
+  /** 用户明确收起后，同一份长文本不能在自动长高检查里立刻重新展开。 */
+  const collapsedValue = useRef<string | null>(null)
+
+  const resetComposerHeight = useCallback((): void => {
+    if (!ref.current) return
+    ref.current.style.height = '40px'
+    ref.current.style.maxHeight = ''
+  }, [])
 
   /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
@@ -80,13 +90,16 @@ export function Composer() {
   const toggleExpanded = useCallback((): void => {
     setExpanded((v) => {
       if (v) {
+        collapsedValue.current = value
+        resetComposerHeight()
         setTall(0)
         return false
       }
+      collapsedValue.current = null
       setTall(TALL_H)
       return true
     })
-  }, [])
+  }, [value, resetComposerHeight])
 
   /**
    * 拖拽柄：拖 = 调高，点 = 切换长文模式。
@@ -102,6 +115,14 @@ export function Composer() {
       const startT = tall || (ref.current?.offsetHeight ?? TALL_H)
       const handle = e.currentTarget as HTMLElement
       let moved = 0
+      let lastHeight = startT
+      resizeMoved.current = false
+      // Electron/Chromium 下确保快速拖动仍由这个把手持续接收指针事件。
+      try {
+        handle.setPointerCapture(e.pointerId)
+      } catch {
+        /* 某些测试环境不实现 pointer capture，document 监听仍可工作 */
+      }
       handle.classList.add('active')
       document.body.classList.add('resizing-composer')
 
@@ -111,8 +132,10 @@ export function Composer() {
         // 只有真的动了才改动高度（否则轻微抖动会把“点击”变成“拖拽”）
         if (moved < 4) return
         const next = Math.max(40, Math.min(560, startT + dy))
+        lastHeight = next
         setTall(next)
         if (next > 48) setExpanded(true)
+        else setExpanded(false)
       }
 
       const onUp = (): void => {
@@ -121,13 +144,12 @@ export function Composer() {
         document.removeEventListener('pointermove', onMove)
         document.removeEventListener('pointerup', onUp)
 
-        // 位移极小 → 当成一次点击：切换长文模式
-        if (moved < 4) {
-          toggleExpanded()
-          return
-        }
+        resizeMoved.current = moved >= 4
+        if (moved < 4) return
         // 拖回默认高度 → 退出长文模式（恢复 Enter 发送）
-        if ((ref.current?.offsetHeight ?? 40) <= 48) {
+        if (lastHeight <= 48) {
+          collapsedValue.current = value
+          resetComposerHeight()
           setExpanded(false)
           setTall(0)
         }
@@ -136,8 +158,13 @@ export function Composer() {
       document.addEventListener('pointermove', onMove)
       document.addEventListener('pointerup', onUp)
     },
-    [tall, toggleExpanded]
+    [tall, toggleExpanded, value, resetComposerHeight]
   )
+
+  const finishResizeClick = useCallback((): void => {
+    if (!resizeMoved.current) toggleExpanded()
+    resizeMoved.current = false
+  }, [toggleExpanded])
 
   /* ---- 扩展调 set_editor_text ---- */
   useEffect(() => {
@@ -183,6 +210,10 @@ export function Composer() {
      * 只自动**进入**，不自动退出：编辑到一半高度自己收回去很难受。
      */
     if (expanded) return
+    if (collapsedValue.current === value) {
+      resetComposerHeight()
+      return
+    }
     const lh = parseFloat(getComputedStyle(el).lineHeight) || 20
     const pad = 16
     if (el.scrollHeight > lh * 3 + pad) {
@@ -582,6 +613,7 @@ export function Composer() {
         <div
           className="composer-resize"
           onPointerDown={startResize}
+          onClick={finishResizeClick}
           title={expanded ? t('composer.resizeExpanded') : t('composer.resizeHint')}
           data-testid="composer-resize"
           role="separator"

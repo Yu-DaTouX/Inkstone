@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-/* touch 1789070960743 */import { VList, type VListHandle } from 'virtua'
+import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
 import { useI18n } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
 import { RightPanel } from './components/toolbar/RightPanel'
 import { Resizer } from './components/toolbar/Resizer'
-import { Icon } from './icons/Icon'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
@@ -48,7 +47,7 @@ function readTheme(parent: Theme | undefined): Theme {
 }
 
 export default function App() {
-  const { lang, setLang, t } = useI18n()
+  const { lang, setLang } = useI18n()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
@@ -84,6 +83,7 @@ export default function App() {
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const cycleModel = useStore((s) => s.cycleModel)
+  const cycleModelBack = useStore((s) => s.cycleModelBack)
   const cycleThinking = useStore((s) => s.cycleThinking)
 
   /* 左栏是否可见：只取决于那个开关 */
@@ -323,8 +323,9 @@ export default function App() {
   /**
    * 全局快捷键 —— 对齐 pi TUI 的默认绑定。
    *
-   *   Ctrl+P     下一模型   （pi: app.model.cycleForward）
-   *   Shift+Tab  下一强度   （pi: app.thinking.cycle）
+   *   Ctrl+P       下一模型   （pi: app.model.cycleForward）
+   *   Ctrl+Shift+P 上一模型   （pi TUI: app.model.cycleBackward；RPC 无反向命令，本地算）
+   *   Shift+Tab    下一强度   （pi: app.thinking.cycle）
    *
    * ⚠️ 主路径在**主进程**（before-input-event），它先在渲染端之前拦下来，
    *   再把动作名发过来；这里只负责执行 + 给反馈。
@@ -335,6 +336,7 @@ export default function App() {
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {
       if (action === 'cycleModel') void cycleModel()
+      else if (action === 'cycleModelBack') void cycleModelBack()
       else if (action === 'cycleThinking') void cycleThinking()
     })
 
@@ -344,16 +346,23 @@ export default function App() {
      * （快速按两下 Ctrl+P 会跳两个模型而不是一个），所以用时间锁去重。
      */
     let lastAt = 0
-    const guard = (action: 'cycleModel' | 'cycleThinking'): void => {
+    const guard = (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking'): void => {
       const now = Date.now()
       if (now - lastAt < 250) return
       lastAt = now
       if (action === 'cycleModel') void cycleModel()
+      else if (action === 'cycleModelBack') void cycleModelBack()
       else void cycleThinking()
     }
 
     const onKey = (e: KeyboardEvent): void => {
       const ctrl = e.ctrlKey || e.metaKey
+      // Ctrl+Shift+P 要排在 Ctrl+P 前面，否则会被后者先吃掉
+      if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        guard('cycleModelBack')
+        return
+      }
       if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
         e.preventDefault()
         guard('cycleModel')
@@ -369,7 +378,7 @@ export default function App() {
       off?.()
       window.removeEventListener('keydown', onKey)
     }
-  }, [cycleModel, cycleThinking])
+  }, [cycleModel, cycleModelBack, cycleThinking])
 
   const appCls = [
     'app',
@@ -378,22 +387,6 @@ export default function App() {
   ]
     .filter(Boolean)
     .join(' ')
-
-  /**
-   * 流式开始了但还没有可见内容。
-   *
-   * 只判断 text 不够 —— 工具行也算「有进展」，
-   * 否则工具跑起来之后 spinner 还一直转，看着像卡住。
-   */
-  const lastTurn = turns[turns.length - 1]
-  const hasVisibleBody =
-    !!lastTurn &&
-    (lastTurn.kind === 'user' ||
-      lastTurn.kind === 'bash' ||
-      lastTurn.commentary.length > 0 ||
-      !!lastTurn.response ||
-      lastTurn.tools.length > 0 ||
-      !!lastTurn.thinking)
 
   return (
     <>

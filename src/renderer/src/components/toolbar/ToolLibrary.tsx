@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { TOOL_SECTIONS, type ToolSectionId } from '../../../../shared/ipc'
 import { SECTION_TITLE } from './ToolSection'
-import type { MessageKey } from '../../i18n'
 
 /**
  * 「工具库」—— 把工具栏分区收起来 / 拿回来。

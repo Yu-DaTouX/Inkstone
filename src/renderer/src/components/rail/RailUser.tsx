@@ -49,7 +49,6 @@ const HUES = [0, 30, 60, 90, 140, 170, 200, 220, 260, 290, 320, 340]
 export function RailUser() {
   const t = useT()
   const profile = useStore((s) => s.settings?.profile)
-  const patchProfile = useStore((s) => s.patchProfile)
   const openSettings = useStore((s) => s.openSettings)
   const conn = useStore((s) => s.conn)
 

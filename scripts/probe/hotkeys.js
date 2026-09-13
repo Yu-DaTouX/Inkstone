@@ -1,5 +1,5 @@
 /**
- * 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度。
+ * 全局快捷键：Ctrl+P 下一模型 / Ctrl+Shift+P 上一模型 / Shift+Tab 换强度。
  *
  * ── 为什么这个场景必须用真实按键 ──
  * 快捷键是由**主进程**用 `before-input-event` 拦下来的（不是渲染端的
@@ -45,6 +45,7 @@
 
   out.push('  收到的动作: ' + JSON.stringify(seen))
   ok(seen.length > 0, '主进程拦到了按键并转成动作')
+  ok(seen.includes('cycleModelBack'), 'Ctrl+Shift+P 转成 cycleModelBack（上一个模型）')
 
   /* ---- 2. 动作真的改了状态 ---- */
   out.push('')

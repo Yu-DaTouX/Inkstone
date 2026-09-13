@@ -45,7 +45,7 @@ const CASES = {
     probe: 'scripts/probe/hotkeys.js',
     delay: 9000,
     cost: 0,
-    keys: 'ctrl+p,shift+tab,ctrl+p'
+    keys: 'ctrl+shift+p,ctrl+p,shift+tab'
   },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
@@ -104,6 +104,15 @@ const CASES = {
   atPath: { probe: 'scripts/probe/at-path.js', delay: 9000, cost: 0 },
   // 标题栏：置顶按钮位置 + 精简掉的重复入口
   titlebar: { probe: 'scripts/probe/titlebar.js', delay: 9000, cost: 0 },
+  // 内置浏览器：工具栏标题旁开关 → 右栏 WebContentsView/CDP → renderer/preload 状态闭环
+  browser: { probe: 'scripts/probe/browser.js', delay: 9000, cost: 0 },
+  // 接入本机 Chrome（无头 + 隔离 profile，验 CDP 接入链路）
+  externalchrome: {
+    probe: 'scripts/probe/external-chrome.js',
+    delay: 9000,
+    cost: 0,
+    env: { YAN_CHROME_HEADLESS: '1' }
+  },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
@@ -116,6 +125,8 @@ const CASES = {
   tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
   // 记忆搬进设置：右栏移除 / 设置面板 / 输入区状态条
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
+  // 工具调用栏的展开规则（注入合成回合，不烧 token）
+  toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
   // 连接状态竞态回归（dev 下必现、build 下不现，很容易再犯）—— 会真调模型
   conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
   // 扩展集成：任务清单（panel_todos 的产物）+ 启动通知降级

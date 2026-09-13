@@ -22,7 +22,6 @@ export function SessionHeader() {
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const cwd = useStore((s) => s.settings?.cwd)
-  const openSettings = useStore((s) => s.openSettings)
 
   /**
    * 标题取值顺序：

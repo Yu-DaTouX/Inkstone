@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AppSettings,
   Attachment,
+  BrowserBounds,
+  BrowserObservation,
+  BrowserState,
   AuthProviderInfo,
   CompactionInfo,
   CustomEntry,
@@ -12,7 +15,6 @@ import type {
   PeekResult,
   PiInfo,
   PiProbe,
-  QueueMode,
   SessionState,
   SessionStats,
   SessionSummary,
@@ -73,9 +75,11 @@ const api: YanBridge = {
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
   abortRetry: () => invoke<Ok>('yan:abortRetry'),
   cycleModel: () => invoke<Ok>('yan:cycleModel'),
+  cycleModelBack: () => invoke<Ok>('yan:cycleModelBack'),
   cycleThinking: () => invoke<Ok>('yan:cycleThinking'),
   lastAssistantText: () => invoke<string | null>('yan:lastAssistantText'),
   piInfo: () => invoke<PiInfo>('yan:piInfo'),
+  redetectPi: () => invoke<PiInfo>('yan:redetectPi'),
 
   /* ---- 状态 ---- */
   getState: () => invoke<SessionState | null>('yan:getState'),
@@ -121,6 +125,26 @@ const api: YanBridge = {
   listDir: (rel, showHidden) => invoke<DirListing>('yan:listDir', rel, showHidden === true),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
 
+  /* ---- 内置浏览器 ---- */
+  browser: {
+    getState: () => invoke<BrowserState>('yan:browser:getState'),
+    open: (url) => invoke<BrowserState>('yan:browser:open', url),
+    observe: () => invoke<BrowserObservation>('yan:browser:observe'),
+    newTab: (url) => invoke<BrowserState>('yan:browser:newTab', url),
+    switchTab: (id) => invoke<BrowserState>('yan:browser:switchTab', id),
+    closeTab: (id) => invoke<BrowserState>('yan:browser:closeTab', id),
+    close: () => invoke<BrowserState>('yan:browser:close'),
+    navigate: (url) => invoke<Ok>('yan:browser:navigate', url),
+    back: () => invoke<Ok>('yan:browser:back'),
+    forward: () => invoke<Ok>('yan:browser:forward'),
+    reload: () => invoke<Ok>('yan:browser:reload'),
+    openExternal: (url) => invoke<Ok>('yan:browser:openExternal', url),
+    openExternalChrome: (url) => invoke<Ok>('yan:browser:openExternalChrome', url),
+    closeExternalChrome: () => invoke<BrowserState>('yan:browser:closeExternalChrome'),
+    setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
+    setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds)
+  },
+
   /* ---- 窗口 ---- */
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
@@ -154,10 +178,10 @@ const api: YanBridge = {
    * 的时候也拦得住），再把**动作名**发过来；具体怎么算下一档由渲染端决定 ——
    * 协议知识不进主进程（HANDOFF §9 原则 1）。
    */
-  onHotkey: (cb: (action: 'cycleModel' | 'cycleThinking') => void): (() => void) => {
+  onHotkey: (cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): (() => void) => {
     const listener = (
       _e: Electron.IpcRendererEvent,
-      p: { action: 'cycleModel' | 'cycleThinking' }
+      p: { action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking' }
     ): void => {
       cb(p.action)
     }

@@ -101,13 +101,41 @@ export interface UIMessage {
  */
 export type QueueMode = 'all' | 'one-at-a-time'
 
-/** pi 进程 / 版本信息（右栏「环境」分区用） */
+/**
+ * pi 内核的来源。
+ *
+ * 用户需要知道「现在跑的是哪个 pi」，出问题时第一件事就是区分
+ * 内置运行时 / 系统安装 / 自定义入口 —— 三者版本和依赖都可能不同。
+ */
+export type PiSource =
+  /** 设置项 piBin 显式指定 */
+  | 'override'
+  /** 环境变量 YAN_PI_BIN */
+  | 'env'
+  /** 随应用分发的内置运行时 */
+  | 'bundled'
+  /** 系统里全局安装的 pi */
+  | 'global'
+  /** 从 PATH 上的 pi shim 反推到的安装 */
+  | 'path'
+  /** 都没找到，退回 PATH 上的 pi（需 shell） */
+  | 'shell'
+
+/** pi 进程 / 版本信息（设置「关于」页与引导页用） */
 export interface PiInfo {
-  /** 找到的 pi 入口 */
+  /** 找到的 pi 入口（CLI JS 路径；shell 兜底时是 'pi'） */
   bin: string
   version?: string
   /** pi 包所在目录（显示用） */
   home?: string
+  /** 实际来源 */
+  source?: PiSource
+  /** 是否为随应用分发的内置运行时（= source === 'bundled'） */
+  bundled?: boolean
+  /** 内置运行时目录当前是否可用（用于「缺件修复」提示） */
+  bundledAvailable?: boolean
+  /** 解析/探测过程中的警告（退回 shell、文件缺失等） */
+  error?: string
 }
 
 /** 会话状态快照（get_state 的归一化） */
@@ -522,8 +550,79 @@ export interface PiProbe {
   cmd: string
   args: string[]
   version?: string
+  /** 命中的来源（见 PiSource） */
+  source: PiSource
+  /** pi 包所在目录（显示用） */
+  home?: string
   error?: string
   tried: string[]
+}
+
+/* ==================================================================
+   内置浏览器
+   ================================================================== */
+
+/** 应用内浏览器的可观察状态。 */
+export interface BrowserState {
+  open: boolean
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  activeTabId?: string
+  tabs?: BrowserTabState[]
+  userControl?: boolean
+  lastDownload?: { path: string; filename: string; size?: number }
+  nativeBounds?: BrowserBounds
+  /** 当前由谁在渲染页面：内嵌 WebContentsView（旧行为）还是外部 Chrome */
+  mode?: 'embedded' | 'external'
+  /** 外部 Chrome 接入状态（mode === 'external' 时存在） */
+  external?: BrowserExternalState
+}
+
+/** 外部 Chrome（本机已安装的浏览器）的接入状态 */
+export interface BrowserExternalState {
+  url: string
+  title: string
+  loading: boolean
+  /** 独立 profile 目录（用户需要在这里登录一次目标站点） */
+  profileDir?: string
+  /** DevTools 调试端口 */
+  debuggingPort?: number
+}
+
+export interface BrowserTabState {
+  id: string
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
+export interface BrowserObservation {
+  generationId: string
+  url: string
+  title: string
+  text: string
+  elements: Array<{
+    ref: string
+    role: string
+    name: string
+    box: [number, number, number, number]
+    disabled?: boolean
+    value?: string
+  }>
+  accessibilityNodeCount: number
+  domSnapshotCaptured: boolean
+}
+
+export interface BrowserBounds {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 /* ==================================================================
@@ -615,6 +714,16 @@ export type MainPush =
    * 设置面板里的选中态会与真实值不同步。
    */
   | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
+  /** 内置浏览器状态（WebContentsView 与 pi browser extension 共用） */
+  | { ch: 'browser-state'; payload: BrowserState }
+  /**
+   * 主进程自己产生的日志（未捕获异常 / 未处理 Promise）。
+   * 为什么要走 UI：Electron 默认会为 uncaughtException 弹一个原生
+   * “A JavaScript error occurred in the main process”对话框，既打断
+   * 用户、又只在屏幕上存在几秒。这些信息应该和 pi 的 stderr 一样进
+   * 右栏日志抽屉，可回看、不弹框。
+   */
+  | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
 export interface YanBridge {
@@ -670,12 +779,21 @@ export interface YanBridge {
   /* 重试 / 轮换（TUI 的快捷键在桌面端也要有对应入口） */
   abortRetry(): Promise<{ ok: boolean; error?: string }>
   cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }>
+  /** 反向切到上一个模型（Ctrl+Shift+P；pi 的 RPC 只有向前） */
+  cycleModelBack(): Promise<{ ok: boolean; error?: string; to?: string }>
   cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }>
   /** 取最后一条助手消息的纯文本（复制用） */
   lastAssistantText(): Promise<string | null>
 
   /* pi 环境信息 */
   piInfo(): Promise<PiInfo>
+  /**
+   * 重新探测 pi（清掉版本缓存，强制重跑 --version）。
+   *
+   * 为什么需要：用户可能在应用运行期间 `npm i -g` 装了 pi、或补好了
+   * 内置运行时 —— 不重测的话界面一直停在启动时那个快照上。
+   */
+  redetectPi(): Promise<PiInfo>
 
   /* 命令 */
   listCommands(): Promise<SlashCommand[]>
@@ -766,7 +884,7 @@ export interface YanBridge {
    * 例外：缩放（Ctrl+= / Ctrl+- / Ctrl+0）由主进程自己直接改并回推
    * `ui-scale` —— 它不需要渲染端参与决策。
    */
-  onHotkey(cb: (action: 'cycleModel' | 'cycleThinking') => void): () => void
+  onHotkey(cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): () => void
   /** 读界面缩放现状（含自动模式下算出的倍率与屏幕缩放） */
   getZoom(): Promise<ZoomState>
   /** 设界面缩放（0 = 自动），返回生效后的状态 */
@@ -775,6 +893,32 @@ export interface YanBridge {
   listDir(rel: string, showHidden?: boolean): Promise<DirListing>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
+
+  /* 内置浏览器 */
+  browser: {
+    getState(): Promise<BrowserState>
+    open(url?: string): Promise<BrowserState>
+    observe(): Promise<BrowserObservation>
+    newTab(url?: string): Promise<BrowserState>
+    switchTab(id: string): Promise<BrowserState>
+    closeTab(id?: string): Promise<BrowserState>
+    close(): Promise<BrowserState>
+    navigate(url: string): Promise<{ ok: boolean; error?: string }>
+    back(): Promise<{ ok: boolean; error?: string }>
+    forward(): Promise<{ ok: boolean; error?: string }>
+    reload(): Promise<{ ok: boolean; error?: string }>
+    /** 用系统默认浏览器打开地址（不传用当前标签页） */
+    openExternal(url?: string): Promise<{ ok: boolean; error?: string }>
+    /**
+     * 接入本机 Chrome：独立 profile + 调试端口 + CDP。
+     * 之后所有 browser_* 工具都指向这个真实浏览器（含它的登录态）。
+     */
+    openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
+    /** 断开本机 Chrome，并关掉我们拉起的那个进程 */
+    closeExternalChrome(): Promise<BrowserState>
+    setUserControl(value: boolean): Promise<BrowserState>
+    setBounds(bounds: BrowserBounds): Promise<void>
+  }
 }
 
 /** 界面缩放状态（主进程算出，渲染端只显示） */

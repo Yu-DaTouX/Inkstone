@@ -43,6 +43,9 @@ extraResources:
     filter: ['**/*']
   - from: resources/pi-runtime/package.json
     to: pi-runtime/package.json
+  - from: resources/pi-extensions
+    to: pi-extensions
+    filter: ['**/*']
 
 asar: true
 compression: normal

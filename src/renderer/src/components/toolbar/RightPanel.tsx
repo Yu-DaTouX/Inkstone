@@ -9,6 +9,7 @@ import { HandleProvider, SECTION_TITLE } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
+import { BrowserSurface } from '../browser/BrowserSurface'
 
 /**
  * 右栏 —— 常驻状态栏。
@@ -48,6 +49,9 @@ export function RightPanel() {
   const setDraggingSection = useStore((s) => s.setDraggingSection)
   const setToolDropTarget = useStore((s) => s.setToolDropTarget)
   const placeSection = useStore((s) => s.placeSection)
+  const browserOpen = useStore((s) => s.browserState.open)
+  const openBrowser = useStore((s) => s.openBrowser)
+  const closeBrowser = useStore((s) => s.closeBrowser)
   const dropTarget = useStore((s) => s.toolDropTarget)
   const [libOpen, setLibOpen] = useState(false)
 
@@ -183,15 +187,16 @@ export function RightPanel() {
   const ghostRef = useRef<HTMLDivElement>(null)
 
   /*
-   * 收起时直接不渲染 —— 开关在**标题栏右侧**（用户要求，参考 Codex），
-   * 它的位置与面板收放无关，所以这里不需要留槽/悬停按钮。
+   * 收起时直接不渲染 —— 浏览器切换在**工具栏标题旁**（用户要求，参考 Codex），
+   * pi 直接打开浏览器时则临时显示右栏，确保浏览器不会跑到中栏。
    * （曾经留过 38px 的槽放那个按钮 —— 那条保留下来的宽度会把
    *   中栏宽度算错，连带把导航轨的位置带偏。）
    */
-  if (!open) return null
+  /* pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也要把浏览器显示出来。 */
+  if (!open && !browserOpen) return null
 
   return (
-    <aside className="rightpanel" data-testid="rightpanel">
+    <aside className={`rightpanel ${browserOpen ? 'browser-mode' : ''}`} data-testid="rightpanel">
       {/*
        * 宽度把手放在 aside **内部**并绝对定位。
        * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
@@ -200,6 +205,19 @@ export function RightPanel() {
       <Resizer side="panel" />
       <div className="rp-top">
         <span className="rp-title">{t('rp.title')}</span>
+        <button
+          className={`rp-browser-toggle ${browserOpen ? 'on' : ''}`}
+          onClick={() => void (browserOpen ? closeBrowser() : openBrowser())}
+          title={browserOpen ? t('browser.close') : t('browser.open')}
+          data-testid="browser-view-toggle"
+          role="switch"
+          aria-checked={browserOpen}
+        >
+          <span className="rp-browser-label">{t('browser.mode')}</span>
+          <span className="rp-browser-track" aria-hidden="true">
+            <span className="rp-browser-thumb" />
+          </span>
+        </button>
         <span className="spacer" />
         {/*
          * 工具库。放在标题旁边（用户问「库放哪」时给的备选之一）——
@@ -216,7 +234,8 @@ export function RightPanel() {
         </button>
       </div>
 
-      {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+      {browserOpen ? <BrowserSurface /> : null}
+      {!browserOpen && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
       {/*
         拖动中的浮动标签（用户要的「实时位置预览」的文字部分）。
@@ -224,13 +243,13 @@ export function RightPanel() {
         否则每移动一像素就重渲染整棵工具栏，拖拽会卡。
         插入位置那条线由各 .rp-slot 的 data-over 画（也在实时更新）。
       */}
-      {draggingId ? (
+      {!browserOpen && draggingId ? (
         <div className="tool-drag-ghost" data-testid="tool-drag-ghost" ref={ghostRef}>
           {ghostLabel}
         </div>
       ) : null}
 
-      <div className="rp-body" data-testid="rp-body">
+      {!browserOpen ? <div className="rp-body" data-testid="rp-body">
         {visible.map((id, i) => (
           <SectionSlot
             key={id}
@@ -243,7 +262,7 @@ export function RightPanel() {
             onMove={move}
           />
         ))}
-      </div>
+      </div> : null}
     </aside>
   )
 }

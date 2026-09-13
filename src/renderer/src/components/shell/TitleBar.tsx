@@ -47,7 +47,7 @@ export function TitleBar({
   rightPanelOpen,
   alwaysOnTop,
   onToggleAlwaysOnTop,
-  maximized
+  maximized,
 }: Props) {
   const { t } = useI18n()
   const win = window.yan.win

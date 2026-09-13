@@ -1,9 +1,7 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import { useState } from 'react'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 /**

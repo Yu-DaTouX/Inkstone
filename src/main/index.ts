@@ -17,11 +17,90 @@ import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { listDir } from './files'
 import { compactionInfo } from './compaction'
-import { resolvePi, piInfo } from './protocol'
+import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
+import { BrowserController } from './browser'
 import type { Attachment, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
+
+/*
+ * Electron 的开发进程经常由 npm / IDE 通过 pipe 启动。启动器退出、重启
+ * 或关闭终端后，Node 的 stdout/stderr 仍可能收到 console.error；Windows
+ * 会把这次写入报成 EPIPE，并把它升级成“主进程 JavaScript 错误”对话框。
+ * 日志管道断开不应该让桌面应用崩溃，真正的异常仍会按原路径处理。
+ */
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EPIPE') throw error
+  })
+}
+
+/*
+ * 主进程未捕获异常 → UI 日志，而不是原生错误弹框。
+ *
+ * Electron 默认会为 uncaughtException 弹「A JavaScript error occurred in
+ * the main process」，它是模态式打断，关掉就再也看不到内容。这里注册
+ * 处理器把信息推进右栏日志抽屉（与 pi 的 stderr 同一条），保留可回看性。
+ *
+ * 注意：function 声明会提升，所以这里引用后面定义的 push 是安全的；
+ * 窗口还没建好时 push 会自己丢弃。
+ */
+function reportMainError(kind: string, error: unknown): void {
+  const detail =
+    error instanceof Error
+      ? `${error.message}${error.stack ? `\n${error.stack}` : ''}`
+      : String(error)
+  const text = `[主进程/${kind}] ${detail}`
+  try {
+    push({ ch: 'log', payload: { text, level: 'error' } })
+  } catch {
+    /* 窗口/管道已死，不能因为记录日志再抛一次 */
+  }
+  try {
+    console.error(text)
+  } catch {
+    /* EPIPE 已在上面吞掉；这里只是双重保险 */
+  }
+}
+
+process.on('uncaughtException', (error) => reportMainError('uncaughtException', error))
+process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
+
+/*
+ * 测试隔离：YAN_USER_DATA 指向临时目录时，把 Electron 的 userData
+ * （localStorage / sessionData / cache）也搬过去。
+ *
+ * 为什么需要：右栏分区顺序、主题、语言都存在 localStorage 里。
+ * 验收测试会改这些 —— 共用一个 userData 就会把用户的设置改掉
+ * （已经踩过一次：测试把右栏顺序弄成了 status 开头）。
+ *
+ * ⚠️ 必须在 requestSingleInstanceLock **之前**设置：单实例锁是按
+ *    userData 路径命名的。放在锁后面会让所有隔离实例共抢同一把锁，
+ *    用户开着应用时就再也跑不了探针（进程直接静默 app.exit(0)）。
+ *    必须放在 app.whenReady() 之前。
+ */
+if (process.env.YAN_USER_DATA) {
+  app.setPath('userData', process.env.YAN_USER_DATA)
+}
+
+/*
+ * 同一个 userData 只能有一个桌面窗口。
+ * 没有单实例锁时，重复执行 launch / dev 会创建多个 BrowserWindow；每个
+ * 窗口都带自己的原生 WebContentsView，用户看到的就可能是不同进程的
+ * toolbar、页面层和旧坐标叠在一起。
+ */
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.exit(0)
+} else {
+  app.on('second-instance', () => {
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  })
+}
 
 /*
  * 探针运行时关掉 Chromium 的**后台节流**。
@@ -44,24 +123,20 @@ if (process.env.YAN_PROBE) {
 }
 
 /* ------------------------------------------------------------------
-   测试隔离：YAN_USER_DATA 指向临时目录时，把 Electron 的 userData
-   （localStorage / sessionData / cache）也搬过去。
-
-   为什么需要：右栏分区顺序、主题、语言都存在 localStorage 里。
-   验收测试会改这些 —— 共用一个 userData 就会把用户的设置改掉
-   （已经踩过一次：测试把右栏顺序弄成了 status 开头）。
-
-   注意：必须放在 app.whenReady() 之前。
-   ------------------------------------------------------------------ */
-if (process.env.YAN_USER_DATA) {
-  app.setPath('userData', process.env.YAN_USER_DATA)
-}
-
-/* ------------------------------------------------------------------
    全局状态
    ------------------------------------------------------------------ */
 let win: BrowserWindow | null = null
 let agent: AgentController | null = null
+let browser: BrowserController | null = null
+
+function browserExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'browser.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'browser.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'browser.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
 
 function push(msg: MainPush): void {
   if (!win || win.isDestroyed()) return
@@ -80,6 +155,11 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 已死 */
   }
+  try {
+    await browser?.dispose()
+  } catch {
+    /* 浏览器视图已死 */
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -94,7 +174,9 @@ async function startAgent(): Promise<{ ok: boolean; error?: string }> {
   agent = new AgentController({
     push,
     cwd: settings.cwd,
-    piBin: settings.piBin
+    piBin: settings.piBin,
+    browserExtension: browserExtensionPath(),
+    browserEnv: browser?.bridgeEnv()
   })
 
   return agent.start()
@@ -209,6 +291,10 @@ function registerIpc(): void {
     async () => agent?.cycleModel() ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
+    'yan:cycleModelBack',
+    async () => agent?.cycleModelBack() ?? { ok: false, error: 'pi 未运行' }
+  )
+  handle(
     'yan:cycleThinking',
     async () => agent?.cycleThinking() ?? { ok: false, error: 'pi 未运行' }
   )
@@ -218,6 +304,24 @@ function registerIpc(): void {
   handle('yan:piInfo', async () => {
     const s = await getSettings()
     return piInfo(s.piBin)
+  })
+
+  /**
+   * 重新探测 pi。
+   *
+   * 除了刷新展示，还有一个实际作用：如果 pi 在一开始没找到（agent 启动失败），
+   * 用户装好后点重新检测，这里把 agent 拉起来 —— 不用重启应用。
+   * agent 已经在跑时只刷新信息，不动正在进行的会话。
+   */
+  handle('yan:redetectPi', async () => {
+    const s = await getSettings()
+    resetPiVersionCache()
+    const info = await piInfo(s.piBin, { fresh: true })
+    push({ ch: 'pi-info', payload: info })
+    if (info.version && !agent?.running) {
+      await startAgent()
+    }
+    return info
   })
 
   /* ---- 状态 ---- */
@@ -287,6 +391,7 @@ function registerIpc(): void {
     if (st) push({ ch: 'state', payload: st })
     void agent?.refreshStats()
     void agent?.refreshTodos()
+    if (browser) push({ ch: 'browser-state', payload: browser.getState() })
   })
 
   /* ---- 诊断 ---- */
@@ -400,6 +505,34 @@ function registerIpc(): void {
     const s = await getSettings()
     return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
   })
+
+  /* ---- 内置浏览器 ---- */
+  ipcMain.handle('yan:browser:getState', () => browser?.getState() ?? {
+    open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
+  })
+  ipcMain.handle('yan:browser:open', async (_e, url?: string) => browser?.open(url) ?? {
+    open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
+  })
+  ipcMain.handle('yan:browser:observe', async () => browser?.observe() ?? {
+    generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0, domSnapshotCaptured: false
+  })
+  ipcMain.handle('yan:browser:newTab', async (_e, url?: string) => browser?.newTab(url))
+  ipcMain.handle('yan:browser:switchTab', async (_e, id: string) => browser?.switchTab(id))
+  ipcMain.handle('yan:browser:closeTab', async (_e, id?: string) => browser?.closeTab(id))
+  ipcMain.handle('yan:browser:close', async () => browser?.close())
+  ipcMain.handle('yan:browser:navigate', async (_e, url: string) => browser?.navigate(url) ?? { ok: false, error: '浏览器未初始化' })
+  ipcMain.handle('yan:browser:back', () => browser?.back() ?? { ok: false, error: '浏览器未初始化' })
+  ipcMain.handle('yan:browser:forward', () => browser?.forward() ?? { ok: false, error: '浏览器未初始化' })
+  ipcMain.handle('yan:browser:reload', () => browser?.reload() ?? { ok: false, error: '浏览器未初始化' })
+  ipcMain.handle('yan:browser:openExternal', (_e, url?: string) => browser?.openExternal(url) ?? { ok: false, error: '浏览器未初始化' })
+  ipcMain.handle('yan:browser:openExternalChrome', (_e, url?: string) =>
+    browser?.openExternalChrome(url) ?? { ok: false, error: '浏览器未初始化' }
+  )
+  ipcMain.handle('yan:browser:closeExternalChrome', () => browser?.closeExternalChrome())
+  ipcMain.handle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
+  ipcMain.handle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
+    browser?.setBounds(bounds)
+  })
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
@@ -506,6 +639,24 @@ function createWindow(): void {
   win.once('ready-to-show', () => {
     if (process.env.YAN_PROBE) win?.showInactive()
     else win?.show()
+    /*
+     * 窗口显示后再补一次缩放。
+     *
+     * 为什么需要：上面那次 applyZoom 可能跑在 `loadURL/loadFile` **之前**，
+     * 而导航会把 webContents 的 zoom 重置回默认值 —— 自动缩放（如 125%
+     * 屏上的 1.152）就“报告了但没生效”（devicePixelRatio 仍是 1.25），
+     * 所有 CSS 像素 ↔ DIP 的换算都会跟着错。
+     *
+     * 为什么延后 1.2s 而不是在 did-finish-load 里：实测在首次提交前后同步
+     * 调 setZoomFactor 会让渲染进程 render-process-gone: crashed，
+     * 窗口永远停在 ready-to-show 之前。等窗口稳定后就没问题。
+     */
+    setTimeout(() => {
+      if (!win || win.isDestroyed()) return
+      void getSettings().then((s) => {
+        if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
+      })
+    }, 1200)
   })
 
   /*
@@ -543,8 +694,9 @@ function createWindow(): void {
    *   具体怎么算下一档仍然由渲染端决定（协议知识不进主进程）。
    *
    * 绑定对齐 pi TUI 的默认：
-   *   Ctrl+P   app.model.cycleForward
-   *   Shift+Tab app.thinking.cycle
+   *   Ctrl+P        app.model.cycleForward
+   *   Ctrl+Shift+P  app.model.cycleBackward
+   *   Shift+Tab     app.thinking.cycle
    *
    * 另外接了缩放（Ctrl+= / Ctrl+- / Ctrl+0）—— 这是浏览器/编辑器的通用约定，
    * 用户不用去设置里找。缩放不需要渲染端参与决策，主进程直接改并回推。
@@ -555,7 +707,14 @@ function createWindow(): void {
     const ctrl = input.control || input.meta
     const key = String(input.key ?? '').toLowerCase()
 
-    // Ctrl+P（排除 Shift+Ctrl+P ——那是 TUI 的“上一个模型”，暂未实现）
+    // Ctrl+Shift+P —— 上一个模型（必须排在 Ctrl+P 前，否则会被后者先吃掉）
+    if (ctrl && input.shift && !input.alt && key === 'p') {
+      event.preventDefault()
+      win?.webContents.send('yan:hotkey', { action: 'cycleModelBack' })
+      return
+    }
+
+    // Ctrl+P —— 下一个模型
     if (ctrl && !input.shift && !input.alt && key === 'p') {
       event.preventDefault()
       win?.webContents.send('yan:hotkey', { action: 'cycleModel' })
@@ -747,6 +906,8 @@ function createWindow(): void {
    启动
    ------------------------------------------------------------------ */
 app.whenReady().then(async () => {
+  browser = new BrowserController(() => win, push)
+  await browser.startBridge()
   registerIpc()
   createWindow()
 

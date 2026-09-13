@@ -284,11 +284,24 @@ const checkOnly = process.argv.includes('--check')
 
 if (checkOnly) {
   if (!existsSync(DEST)) {
+    // --if-present：新克隆里 resources/pi-runtime 还没生成（它是 gitignore 的）。
+    // 总检查在缺件时跳过，而不是失败 —— 但在有内置运行时且它坏掉时必须报错。
+    if (process.argv.includes('--if-present')) {
+      log('⚠ 跳过内置运行时校验：resources/pi-runtime 不存在（需要时跑 node scripts/vendor-pi.mjs）')
+      process.exit(0)
+    }
     bad('resources/pi-runtime 不存在，先跑 node scripts/vendor-pi.mjs')
     process.exit(1)
   }
   log(`校验内置运行时 ${relative(root, DEST)}（${mb(dirSize(DEST))}）\n`)
-  process.exit(verify('内置 pi：') ? 0 : 1)
+  const usable = verify('内置 pi：')
+  if (!usable) {
+    log('')
+    log('内置运行时自检失败。修复：')
+    log('  npm i -g @earendil-works/pi-coding-agent@latest   # 更新源 pi')
+    log('  npm run upgrade:pi -- --force                     # 重新提取 + 自检')
+  }
+  process.exit(usable ? 0 : 1)
 }
 
 log('抽取 pi 运行时 → resources/pi-runtime/\n')
@@ -350,6 +363,8 @@ for (const part of ['dist', 'node_modules']) {
 log('\n自检（真跑一次 pi）：')
 if (!verify('内置 pi：')) {
   bad('内置运行时不可用 —— 不要提交，先修依赖闭包')
+  log('  修复入口：npm i -g @earendil-works/pi-coding-agent@latest 后重跑本脚本，')
+  log('  或先看 npm run upgrade:pi -- --check 报告的版本差异。')
   process.exit(1)
 }
 

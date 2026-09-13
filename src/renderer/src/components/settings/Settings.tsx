@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
-import { useI18n, useT } from '../../i18n'
+import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { AuthTab } from './AuthTab'
@@ -134,7 +134,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const zoom = useStore((s) => s.zoom)
-  const [reduced, setReduced] = useState(
+  const [reduced] = useState(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   )
   return (
@@ -449,17 +449,40 @@ function AboutTab() {
   const session = useStore((s) => s.session)
   const conn = useStore((s) => s.conn)
   const logs = useStore((s) => s.logs)
+  const piInfo = useStore((s) => s.piInfo)
   const changeCwd = useStore((s) => s.changeCwd)
-  const [probe, setProbe] = useState<{ cmd: string; args: string[]; error?: string } | null>(null)
-
-  useEffect(() => {
-    void window.yan.probePi().then((p) => setProbe({ cmd: p.cmd, args: p.args, error: p.error }))
-  }, [])
+  const redetectPi = useStore((s) => s.redetectPi)
+  const [detecting, setDetecting] = useState(false)
 
   const pickCwd = async (): Promise<void> => {
     const p = await window.yan.pickCwd()
     if (p) await changeCwd(p)
   }
+
+  const redetect = async (): Promise<void> => {
+    setDetecting(true)
+    try {
+      await redetectPi()
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  /*
+   * 「缺件修复」提示只在这几种情况下出现：
+   *   · 没版本且内置运行时缺失 → 给出生成/重装指引（最常见：新克隆没跑 vendor:pi）
+   *   · 没版本且内置在、但其它来源也没命中 → 给出安装命令
+   *   · 退回 shell 兜底 → 提醒特殊字符风险
+   */
+  const hint = !piInfo?.version
+    ? piInfo && piInfo.bundledAvailable === false
+      ? t('set.piBundledMissing')
+      : t('set.piMissing')
+    : piInfo?.source === 'shell'
+      ? t('set.piShellWarn')
+      : piInfo?.error
+
+  const binPath = piInfo?.bin ?? '—'
 
   return (
     <div className="set-group">
@@ -489,11 +512,25 @@ function AboutTab() {
       <div className="set-row col">
         <div className="set-label">
           <div className="set-name">{t('set.piBin')}</div>
-          <div className="set-desc set-path" title={probe ? [probe.cmd, ...probe.args].join(' ') : ''}>
-            {probe ? [probe.cmd, ...probe.args].join(' ') : '—'}
+          <div className="set-desc">
+            {t('set.piSource')}: {sourceLabel(t, piInfo?.source)} · {t('set.piVersion')}:{' '}
+            {piInfo?.version ?? '—'}
+          </div>
+          {piInfo?.home ? (
+            <div className="set-desc set-path" title={piInfo.home}>
+              {t('set.piHome')}: {piInfo.home}
+            </div>
+          ) : null}
+          <div className="set-desc set-path" title={binPath}>
+            {binPath}
           </div>
         </div>
-        {probe?.error ? <div className="set-warn">{probe.error}</div> : null}
+        <div className="set-ctl">
+          <button className="btn" onClick={() => void redetect()} disabled={detecting} data-testid="pi-redetect">
+            {detecting ? t('set.piRedetecting') : t('set.piRedetect')}
+          </button>
+        </div>
+        {hint ? <div className="set-warn">{hint}</div> : null}
       </div>
 
       <div className="set-row">
@@ -514,4 +551,24 @@ function AboutTab() {
       ) : null}
     </div>
   )
+}
+
+/** pi 来源的中文/英文标签 */
+function sourceLabel(t: TFunc, src?: string): string {
+  switch (src) {
+    case 'bundled':
+      return t('set.piSourceBundled')
+    case 'global':
+      return t('set.piSourceGlobal')
+    case 'override':
+      return t('set.piSourceOverride')
+    case 'env':
+      return t('set.piSourceEnv')
+    case 'path':
+      return t('set.piSourcePath')
+    case 'shell':
+      return t('set.piSourceShell')
+    default:
+      return '—'
+  }
 }

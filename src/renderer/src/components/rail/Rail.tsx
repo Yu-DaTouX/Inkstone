@@ -50,12 +50,7 @@ export function Rail() {
   const switchSession = useStore((s) => s.switchSession)
   const newSession = useStore((s) => s.newSession)
   const refreshSessions = useStore((s) => s.refreshSessions)
-  const openSettings = useStore((s) => s.openSettings)
-  const conn = useStore((s) => s.conn)
-  const cwd = useStore((s) => s.settings?.cwd)
-  const railPinned = useStore((s) => s.railPinned)
   const titles = useStore((s) => s.titles)
-  const setRailPinned = useStore((s) => s.setRailPinned)
 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)

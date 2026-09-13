@@ -32,8 +32,3 @@ export async function forkFromText(text: string): Promise<void> {
   if (!hit) return
   await useStore.getState().fork(hit.entryId)
 }
-
-/** 从指定的 entryId 分叉（分支树里点某个节点用） */
-export async function forkAt(entryId: string): Promise<void> {
-  await useStore.getState().fork(entryId)
-}
