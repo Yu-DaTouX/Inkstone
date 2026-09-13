@@ -26,11 +26,6 @@ const catalogs: Record<Lang, Record<MessageKey, string>> = {
   'en-US': enUS satisfies Record<MessageKey, string>
 }
 
-export const LANG_LABEL: Record<Lang, string> = {
-  'zh-CN': '中文',
-  'en-US': 'EN'
-}
-
 export type TVars = Record<string, string | number>
 export type TFunc = (key: MessageKey, vars?: TVars) => string
 

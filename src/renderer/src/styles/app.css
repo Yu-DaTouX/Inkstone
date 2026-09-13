@@ -31,43 +31,14 @@
   gap: var(--sp-3);
   min-width: 0;
 }
-.tb-dots {
-  display: flex;
-  gap: 6px;
-}
-.tb-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--bg-4);
-  padding: 0;
-  transition: filter var(--dur) var(--ease);
-}
-.tb-dot.r {
-  background: #ff5f57;
-}
-.tb-dot.y {
-  background: #febc2e;
-}
-.tb-dot.g {
-  background: #28c840;
-}
-.tb-dot:hover {
-  filter: brightness(1.25);
-}
+
 /* 名字是身份的第一眼，给正常前景色 + 一点点字距 */
 .tb-name {
   color: var(--fg);
   font-size: var(--fs-base);
   letter-spacing: 0.06em;
 }
-.tb-badge {
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-  padding: 1px 6px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-str);
-}
+
 .tb-right {
   display: flex;
   align-items: center;
@@ -99,10 +70,6 @@
   background: var(--err-soft);
   color: var(--err);
 }
-.btn.fact:hover {
-  background: var(--fact-soft);
-  color: var(--fact);
-}
 
 /* 布局列数在 redesign.css 里统一管（三列：左栏 / 中栏 / 右栏）。
    这里只保留最低限度的骨架，避免两处规则打架。 */
@@ -123,9 +90,7 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
 }
-.rail-head {
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
-}
+
 .search {
   display: flex;
   align-items: center;
@@ -156,34 +121,8 @@
   padding: 0 var(--sp-2) var(--sp-2);
 }
 
-.group-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: var(--sp-3) var(--sp-2) var(--sp-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-  user-select: none;
-}
-.group-label:hover {
-  color: var(--fg);
-}
-.group-label .chev {
-  color: var(--fg-mute);
-}
-.group-label .count {
-  margin-left: auto;
-  color: var(--fg-mute);
-  letter-spacing: 0;
-}
 .group.collapsed .group-body {
   display: none;
-}
-.group.open .group-label .chev {
-  transform: rotate(90deg);
 }
 
 .item {
@@ -224,28 +163,10 @@
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
-/* 话题：与「会话」是不同轴 —— 会话是时间，话题是主题 */
-.item.topic .ico {
-  color: var(--magenta);
-}
 
 .rail-foot {
   padding: var(--sp-3) var(--sp-2) var(--sp-4);
   border-top: 1px solid var(--border);
-}
-.btn-new {
-  width: 100%;
-  height: 28px;
-  justify-content: center;
-  border: 1px dashed var(--border-str);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-}
-.btn-new:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
 }
 
 /* 5. 中栏 —— 连续性 + 对话 + 审阅条 + 输入 */
@@ -255,37 +176,6 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 0;
   background: var(--bg-0);
-}
-
-/* 连续性：会话不是孤岛。这条带子让「它记得」这件事可见 */
-.continuity {
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  padding: 5px var(--sp-5);
-}
-.continuity-inner {
-  max-width: var(--w-stream);
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.continuity .ico {
-  color: var(--fg-mute);
-}
-.continuity b {
-  color: var(--fg-dim);
-  font-weight: 400;
-}
-.continuity .spacer {
-  flex: 1;
-}
-.continuity .btn {
-  height: 20px;
-  font-size: var(--fs-xs);
-  padding: 0 6px;
 }
 
 .stream {
@@ -392,13 +282,6 @@
 .think[open] summary .chev {
   transform: rotate(90deg);
 }
-.think .think-body {
-  margin-top: var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  font-style: italic;
-  white-space: pre-wrap;
-}
 
 /* ---- 输入区 ---- */
 .composer-wrap {
@@ -437,13 +320,7 @@
   gap: var(--sp-3);
   margin-top: var(--sp-2);
 }
-.hints {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
+
 kbd {
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -504,21 +381,6 @@ kbd {
   padding: var(--sp-3);
   min-width: 0;
 }
-.status-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-1) var(--sp-2);
-}
-.status-head .t {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.status-head .spacer {
-  flex: 1;
-}
 
 .sect {
   margin-bottom: var(--sp-4);
@@ -530,54 +392,11 @@ kbd {
 .sect.dragging {
   opacity: 0.4;
 }
-.sect.drop-above::before,
-.sect.drop-below::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
-}
-.sect.drop-above::before {
-  top: -7px;
-}
-.sect.drop-below::after {
-  bottom: -7px;
-}
 
-.sect-title {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: var(--sp-2);
-  cursor: pointer;
-  user-select: none;
-  width: 100%;
-  text-align: left;
-}
-.sect-title .ico {
-  color: var(--fg-mute);
-}
-.sect-title .spacer {
-  flex: 1;
-}
-.sect-title .extra {
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--fg-mute);
-  font-variant-numeric: tabular-nums;
-}
 .sect.collapsed .card {
   display: none;
 }
-.sect.open .sect-title .head-chev {
-  transform: rotate(90deg);
-}
+
 .grip {
   display: flex;
   align-items: center;
@@ -605,7 +424,6 @@ kbd {
   border-radius: var(--r-md);
   padding: var(--sp-2) var(--sp-3);
 }
-
 
 /* ---- 状态 ---- */
 .kv {
@@ -639,13 +457,7 @@ kbd {
   background: var(--accent);
   border-radius: 99px;
 }
-.meter-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-  margin-top: 5px;
-}
+
 .usage-line {
   display: flex;
   flex-wrap: wrap;

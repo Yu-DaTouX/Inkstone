@@ -28,15 +28,6 @@ export interface Usage {
   cost: number
 }
 
-export const EMPTY_USAGE: Usage = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: 0
-}
-
 /** 工具调用（来自 assistant 的 toolCall 内容块，或 tool_execution_* 事件） */
 export interface UIToolCall {
   id: string
@@ -359,13 +350,7 @@ export interface AuthProviderInfo {
   source?: 'auth.json' | 'env'
 }
 
-/* 记忆 —— 砚的核心 */
-
-/**
- * fact  = 已确认（来源：你）
-/* ==================================================================
-   设置
-   ================================================================== */
+/* 设置 */
 
 export interface AppSettings {
   cwd: string

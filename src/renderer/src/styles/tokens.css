@@ -235,8 +235,7 @@ textarea {
 .chev {
   transition: transform var(--dur) var(--ease);
 }
-.open > .chev,
-.open .head-chev {
+.open > .chev {
   transform: rotate(90deg);
 }
 .spin {

@@ -18,6 +18,3 @@ import { join } from 'node:path'
  */
 export const YAN_DIR =
   process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
-
-/** 桌面端设置（窗口 / 主题 / 语言 / cwd） */
-export const SETTINGS_FILE = join(YAN_DIR, 'desktop.json')

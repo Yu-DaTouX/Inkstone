@@ -55,12 +55,6 @@
     transform: translateX(16px) scale(0.98);
   }
 }
-@keyframes mo-in-left {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-}
 @keyframes mo-in-drop {
   from {
     opacity: 0;
@@ -232,10 +226,6 @@
 .logdrawer.closing {
   animation: mo-out-up var(--mo-fast) var(--mo-ease-out) both;
 }
-.logdrawer-body {
-  /* 日志一行行落位 —— 阅读时能看出是新刷出来的 */
-  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
-}
 
 /* 52.7 应用：顶部连接条 —— 从上落下 */
 .connbar {
@@ -249,7 +239,6 @@
 .mt-stop:active,
 .mt-trigger:active,
 .rp-switch:active,
-.btn-new:active,
 .rail-icon:active,
 .srow-menu-btn:active,
 .row-menu-btn:active {
@@ -450,16 +439,6 @@ html[data-theme='light'] .op-title::before {
 /* 展开时去掉底边、让内容自然接上 */
 .turn.open {
   border-bottom-color: var(--border);
-}
-
-.turn-head {
-  padding: 3px 0;
-}
-
-/* 展开后的内容：往右缩进一点，避免与横条边框贴死 */
-.turn-body {
-  padding: 2px var(--sp-2) var(--sp-2);
-  border-top: 1px dashed var(--border-soft);
 }
 
 /* ---- 只有一条工具时的简式（直接一行 `→ name args`，不套横条）---- */
@@ -818,17 +797,6 @@ html[data-theme='light'] {
   color: var(--accent);
   font-size: var(--fs-base);
   line-height: 1;
-}
-.rp-now-label {
-  color: var(--accent);
-  flex: none;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-}
-.rp-now-text {
-  color: var(--fg);
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* 全部完成时的一行提示（无 spinner，安静） */

@@ -122,12 +122,6 @@ function pathCandidates(): string[] {
   return out
 }
 
-export interface PiLaunch {
-  cmd: string
-  args: string[]
-  env: NodeJS.ProcessEnv
-}
-
 /**
  * 解析出「怎么启动 pi」。
  *

@@ -50,7 +50,7 @@
     await store.getState().setToolLayout({ toolOrder: [], toolHidden: [] })
     await sleep(700)
 
-    const ALL = ['context', 'todo', 'queue', 'files', 'ext', 'log', 'actions']
+    const ALL = ['context', 'quota', 'todo', 'queue', 'files', 'ext', 'log', 'actions']
     const st = store.getState()
     /** 按 isEmpty 规则推导「应该渲染哪些」——与实现保持同一判据 */
     const expectEmpty = []
@@ -166,7 +166,7 @@
       out.push('  库里列出 ' + rows.length + ' 个分区')
       /*
        * 工具库列的是**全部分区**（含已在工具栏的）—— 只列已隐藏的会让人
-       * 不知道某块到底在库里还是已经在栏里。所以这里应该是全部 7 个。
+       * 不知道某块到底在库里还是已经在栏里。所以这里应该是全部 8 个。
        */
       if (rows.length === ALL.length) ok('列全部分区（不只是已隐藏的）')
       else bad('列表不全：' + rows.length + ' / ' + ALL.length)

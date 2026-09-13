@@ -342,26 +342,3 @@ export async function deleteSession(path: string): Promise<void> {
   await rm(resolved, { force: true })
   cache.delete(resolved)
 }
-
-/** 按时间就近把会话分组，供左栏「今天/昨天/更早」用 */
-export function groupSessions(list: SessionSummary[]): {
-  today: SessionSummary[]
-  yesterday: SessionSummary[]
-  earlier: SessionSummary[]
-} {
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  const t0 = startOfToday.getTime()
-  const t1 = t0 - 24 * 60 * 60 * 1000
-
-  const today: SessionSummary[] = []
-  const yesterday: SessionSummary[] = []
-  const earlier: SessionSummary[] = []
-
-  for (const s of list) {
-    if (s.updatedAt >= t0) today.push(s)
-    else if (s.updatedAt >= t1) yesterday.push(s)
-    else earlier.push(s)
-  }
-  return { today, yesterday, earlier }
-}

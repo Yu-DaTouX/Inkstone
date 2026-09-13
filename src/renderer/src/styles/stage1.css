@@ -53,45 +53,6 @@
   box-shadow: 0 0 0 3px var(--err-soft);
 }
 
-/* 2. 标题栏：工作目录
-   （`.tb-session` 的样式已删 —— 会话名胶囊已从界面移除） */
-.tb-cwd {
-  max-width: 340px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* 路径右对齐可换行而不是 rtl 截断（DESIGN §8 的坑） */
-  direction: ltr;
-  padding: 1px 6px;
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  color: var(--fg-dim);
-  font: inherit;
-  transition: background var(--dur) var(--ease);
-}
-.tb-cwd:hover {
-  background: var(--bg-3);
-  border-color: var(--border);
-  color: var(--fg);
-}
-
-/* 3. 连续性带 */
-.continuity-ico {
-  color: var(--fg-mute);
-}
-.continuity b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 380px;
-}
-.continuity-model {
-  color: var(--fg-mute);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 0 5px;
-}
-
 /* 4. 空状态 */
 .empty-stream {
   display: flex;
@@ -119,17 +80,6 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-base);
 }
-.empty-stats {
-  display: flex;
-  gap: var(--sp-2);
-  margin-top: var(--sp-3);
-  font-size: var(--fs-xs);
-}
-.empty-stats b {
-  color: var(--fg-dim);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
 
 /* 5. 消息：用量角标 / 错误 */
 .msg-label {
@@ -137,13 +87,7 @@
   align-items: baseline;
   gap: var(--sp-2);
 }
-.msg-usage {
-  color: var(--fg-mute);
-  font-variant-numeric: tabular-nums;
-  text-transform: none;
-  letter-spacing: 0;
-  opacity: 0.75;
-}
+
 .msg-error {
   display: flex;
   align-items: center;
@@ -302,64 +246,7 @@
 .tool[data-state='running'] {
   border-color: var(--border-str);
 }
-.tool-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px var(--sp-3);
-  font-size: var(--fs-xs);
-  color: var(--fg-dim);
-  text-align: left;
-}
-.tool-head:hover {
-  background: var(--bg-2);
-}
-.tool-head .chev {
-  color: var(--fg-mute);
-}
-.tool.open .tool-head .chev {
-  transform: rotate(90deg);
-}
-.tool-name {
-  color: var(--fg);
-  flex: none;
-}
-.tool-sum {
-  color: var(--fg-mute);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
-  /* 命令里常有路径，别让 bidi 把顺序弄乱 */
-  direction: ltr;
-  text-align: left;
-}
-.tool-gap {
-  flex: none;
-  width: var(--sp-2);
-}
-.tool-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-.tool-status.ok {
-  color: var(--ok);
-}
-.tool-status.error {
-  color: var(--err);
-}
-.tool-status.running,
-.tool-status.pending {
-  color: var(--warn);
-}
-.tool-body {
-  border-top: 1px solid var(--border);
-}
+
 /* 工具操作的文件路径：单独一行，左对齐可换行（不用 rtl 截断，DESIGN §8） */
 .tool-path {
   padding: 3px var(--sp-3);
@@ -469,13 +356,6 @@
   color: var(--ok);
 }
 
-/* 8. 排队角标 / 跳到底部 */
-.queue-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--warn);
-}
 .jump-bottom {
   position: absolute;
   left: 50%;
@@ -499,17 +379,6 @@
 }
 .center {
   position: relative;
-}
-.status-actions {
-  display: flex;
-  gap: var(--sp-2);
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
-  border-top: 1px dashed var(--border);
-}
-.status-actions .btn {
-  height: 22px;
-  font-size: var(--fs-xs);
 }
 
 /* 10. 模态框（扩展 UI 桥） */
@@ -668,51 +537,10 @@
 .statusbar .spacer {
   flex: 1;
 }
-.statusbar-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-.statusbar-item.warn {
-  color: var(--warn);
-}
-.statusbar-key {
-  color: var(--fg-dim);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 0 4px;
-}
-.statusbar-count {
-  margin-left: 3px;
-  font-variant-numeric: tabular-nums;
-}
+
 .logdrawer {
   border-top: 1px solid var(--border);
   background: var(--bg-0);
-}
-.logdrawer-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 3px var(--sp-5);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.logdrawer-head .spacer {
-  flex: 1;
-}
-.logdrawer-body {
-  max-height: 200px;
-  overflow: auto;
-  margin: 0;
-  padding: 0 var(--sp-5) var(--sp-3);
-  color: var(--fg-dim);
-  font-size: var(--fs-code);
-  line-height: var(--lh-tight);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
 }
 
 /* 14. 虚拟化长会话：VList 模式下每一项需要自己带内边距
@@ -736,11 +564,6 @@
   line-height: var(--lh-base);
 }
 
-/* 14. 任务清单（agent 通过 panel_todos 维护）
-   放在左栏最上面：当前进度比历史会话更该先看到。 */
-.todo-group {
-  margin-bottom: var(--sp-1);
-}
 .todo {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr);
@@ -752,21 +575,4 @@
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
 }
-.todo-box {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-tight);
-  text-align: center;
-}
-.todo-text {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.todo.done .todo-text {
-  color: var(--fg-mute);
-  text-decoration: line-through;
-  text-decoration-color: var(--border-str);
-}
-.todo.done .todo-box {
-  color: var(--ok);
-}
+

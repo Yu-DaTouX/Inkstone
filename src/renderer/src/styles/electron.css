@@ -9,34 +9,21 @@
 }
 .titlebar button,
 .titlebar input,
-.titlebar a,
-.titlebar .tb-badge {
+.titlebar a {
   -webkit-app-region: no-drag;
-}
-
-/* 自绘窗口控制：三个圆点就是 minimize / maximize / close */
-.tb-dot {
-  cursor: default;
-}
-.app.is-maximized .tb-dot.g {
-  /* 最大化后绿点变暗，作为状态提示 */
-  opacity: 0.55;
 }
 
 /* 整窗口禁止拖拽选中 UI 文字（正文/代码仍可选中） */
 .rail,
 .status,
 .titlebar,
-.continuity,
-.composer-bar,
-.hints {
+.composer-bar {
   user-select: none;
 }
 
 /* 正文、气泡、代码允许选中复制 */
 .bubble,
 .prose,
-.think-body,
 .composer textarea {
   user-select: text;
 }
