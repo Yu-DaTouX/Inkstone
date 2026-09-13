@@ -1,21 +1,16 @@
-/* ===================================================================
-   代码高亮 —— highlight.js 官方主题（GitHub Dark / GitHub Light）
-   ─────────────────────────────────────────────────────────────
+/* 代码高亮 —— highlight.js 官方主题（GitHub Dark / GitHub Light）
    ⚠️ 这个文件之前是坏的（本会话修）：
-      上一版把 highlight.js 主题里的 `.hljs` 做了一次全局替换成
-      `.md pre code`，于是选择器变成了 `pre code.md pre code-keyword`
-      这种无意义的东西 —— 规则**一条都匹配不上**，语法高亮等于完全没生效
-      （probe 实测：`code.hljs` 里的 `span[class^="hljs"]` 数量 = 0）。
-      正确的写法是作用域限定 + 保留 `.hljs-*` 类名：
-          .md pre code .hljs-keyword { ... }
-
+   上一版把 highlight.js 主题里的 `.hljs` 做了一次全局替换成
+   `.md pre code`，于是选择器变成了 `pre code.md pre code-keyword`
+   这种无意义的东西 —— 规则**一条都匹配不上**，语法高亮等于完全没生效
+   （probe 实测：`code.hljs` 里的 `span[class^="hljs"]` 数量 = 0）。
+   正确的写法是作用域限定 + 保留 `.hljs-*` 类名：
+   .md pre code .hljs-keyword { ... }
    ⚠️ 另一个坑：主题里写死了 `background:#0d1117`（深色），
-      浅色主题下就变成「白底页面上一个黑框，里面还是深色字」。
-      所以背景/前景改走 tokens.css 的 `--code-bg` / `--code-fg`，
-      语法色按 theme 分两套。
-
-   来源：highlight.js (BSD-3-Clause)
-   =================================================================== */
+   浅色主题下就变成「白底页面上一个黑框，里面还是深色字」。
+   所以背景/前景改走 tokens.css 的 `--code-bg` / `--code-fg`，
+   语法色按 theme 分两套。
+   来源：highlight.js (BSD-3-Clause) */
 
 /* ---- 容器 ---- */
 .md pre code {
@@ -26,9 +21,7 @@
   background: var(--code-bg);
 }
 
-/* ===================================================================
-   深色主题（GitHub Dark）
-   =================================================================== */
+/* 深色主题（GitHub Dark） */
 html[data-theme='dark'] .md pre code .hljs-doctag,
 html[data-theme='dark'] .md pre code .hljs-keyword,
 html[data-theme='dark'] .md pre code .hljs-meta .hljs-keyword,
@@ -103,9 +96,7 @@ html[data-theme='dark'] .md pre code .hljs-deletion {
   background-color: #67060c;
 }
 
-/* ===================================================================
-   浅色主题（GitHub Light）
-   =================================================================== */
+/* 浅色主题（GitHub Light） */
 html[data-theme='light'] .md pre code .hljs-doctag,
 html[data-theme='light'] .md pre code .hljs-keyword,
 html[data-theme='light'] .md pre code .hljs-meta .hljs-keyword,

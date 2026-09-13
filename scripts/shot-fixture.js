@@ -44,7 +44,8 @@
     toolHeights: {},
     toolDetail: false,
     streamWidth: 940,
-    autonomous: false
+    autonomous: false,
+    sound: { enabled: false, volume: 0.4, notifications: true, events: { done: true, question: true, error: true } }
   }
 
   const sessions = [

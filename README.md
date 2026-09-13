@@ -142,6 +142,7 @@ npm run launch -- --rebuild  # 强制重新构建
 | 用斜杠命令 | 打 `/` 搜（命令与说明都能搜）；`↑↓` 选、`Enter`/`Tab` 填入、`Esc` 关。用过的命令会被排到前面 |
 | 改名字 / 头像 | 点左栏左下角的头像（12 图标 / 首字 / 12 档色相） |
 | 任务进度 | 工具栏「任务」分区（agent 用 `panel_todos` 维护，含**历史**任务，可跳回对应回合；与 TUI 的 `/panel` 看的是同一份） |
+| 声音与通知 | 设置 → 声音与通知：回合完成 / 需要你回答 / 出错时响一声；窗口不在前台时还会发 Windows 系统通知（**默认关**；三类事件可单独开关、音量可调、可试听、可发测试通知）。对齐 opencode 的 `attention` |
 
 > 浏览器扩展能力：砚会以内置 pi extension 方式加载 `resources/pi-extensions/browser.js`，
 > 通过随机 token 保护的本地桥操作应用内页面。页面使用 Electron `WebContentsView`，

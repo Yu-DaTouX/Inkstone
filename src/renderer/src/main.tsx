@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
+import { installAudioUnlock } from './lib/sound'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -20,6 +21,9 @@ declare global {
   }
 }
 window.__yanStore = useStore
+
+/* 声音提示：首次点击/按键时解锁 AudioContext（主进程已放开自动播放，这里兜底） */
+installAudioUnlock()
 
 createRoot(root).render(
   <StrictMode>

@@ -141,7 +141,7 @@ export function ToolGroup({ tools }: { tools: UIToolCall[] }) {
   )
 }
 
-/* ------------------------------------------------------------------ */
+
 
 /** 动词：按工具类型给一个中文动作词 */
 function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit' | 'tool2.vWrite' | 'tool2.vSearch' | 'tool2.vCall') => string): string {

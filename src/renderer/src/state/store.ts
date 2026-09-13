@@ -25,11 +25,50 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
+  SoundEvent,
   UIMessage,
   UserProfile,
   ZoomState
 } from '../../../shared/ipc'
 import { TOOL_SECTIONS } from '../../../shared/ipc'
+import { playSound } from '../lib/sound'
+
+/**
+ * 提醒的标题（系统通知用）。按界面语言分。
+ *
+ * 不把 i18n 的 t() 引进来：store 不在 React 树里，且这几个词很短，
+ * 直接用 i18n 会写过的 documentElement.lang（它由 i18n Provider 维护）。
+ */
+function attentionTitle(event: SoundEvent): string {
+  const en = typeof document !== 'undefined' && document.documentElement.lang === 'en-US'
+  switch (event) {
+    case 'done':
+      return en ? 'Turn finished' : '回合完成'
+    case 'question':
+      return en ? 'Waiting for your answer' : '需要你的回答'
+    case 'error':
+      return en ? 'Error' : '出错'
+  }
+}
+
+/**
+ * 按设置决定发声 / 发通知。
+ *
+ * 声音总是按事件播（与窗口焦点无关）；系统通知只在**窗口不在前台**时发 ——
+ * 用户正看着窗口时再弹一个通知是打扰，对齐 opencode 的 attention。
+ */
+function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string): void {
+  const sound = settings?.sound
+  if (!sound?.enabled || !sound.events?.[event]) return
+  playSound(event, sound.volume)
+  if (sound.notifications && typeof document !== 'undefined' && !document.hasFocus()) {
+    void window.yan
+      .notifyAttention({ kind: event, title: attentionTitle(event), body })
+      .catch(() => {
+        /* 通知失败不影响主流程 */
+      })
+  }
+}
 
 /**
  * 读命令使用次数（排序用）。
@@ -50,9 +89,7 @@ function readCommandUse(): Record<string, number> {
   }
 }
 
-/* ==================================================================
-   Store
-   ================================================================== */
+/* Store */
 
 export type ConnState = 'starting' | 'ready' | 'exited' | 'error'
 
@@ -312,6 +349,9 @@ interface Store {
 
 const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
 
+/** 连接状态心跳是否已在跑（startConnWatch 单例，避免重复挂载开出多条） */
+let connWatchActive = false
+
 /**
  * 思考档的中文名。
  *
@@ -447,7 +487,22 @@ export const useStore = create<Store>((rawSet, get) => {
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, sessions, session, messages, stats, todos, status, titles, manualTitles, pi, browserState] =
+    /*
+     * ⚠️ 连接状态（conn）**不在这里拉、也不在这里写**。
+     *
+     * 曾经的写法是把 api.agentStatus() 混在这批 Promise.all 里，再
+     * `set({ conn: status.state })`。看起来没问题，实际上是个隐蔽的竞态：
+     * 这一批里的 listSessions / piInfo / getMessages 都很慢（要扫会话文件、
+     * 起 `pi --version`、解析大会话），agentStatus 的返回值是**发起时**的快照
+     * （往往是 'starting'），而 set 要等所有慢调用都回来才执行。
+     * 与此同时 startConnWatch 可能早就拉到 'ready' 并停止轮询了 ——
+     * 于是这次迟到的 set 把 ready **降级回 starting**，且再没人纠正，
+     * 界面就永远停在「正在启动 pi」。
+     *
+     * 连接状态交给 startConnWatch 独占（它轮询到 ready 为止），
+     * 接口少了这个字段、也就没有降级的可能。
+     */
+    const [settings, sessions, session, messages, stats, todos, titles, manualTitles, pi, browserState] =
       await Promise.all([
         api.getSettings(),
         api.listSessions(),
@@ -455,10 +510,6 @@ export const useStore = create<Store>((rawSet, get) => {
         api.getMessages(),
         api.getStats(),
         api.refreshTodos().catch(() => [] as SessionTodo[]),
-        // 拉一次权威连接状态：
-        // dev 模式下渲染端加载慢，可能错过 `proc: ready` 的 push，
-        // 不拉的话界面会永远停在「正在启动 pi」（功能其实是好的）。
-        api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' })),
         api.cachedTitles().catch(() => ({}) as Record<string, string>),
         api.manualTitles().catch(() => ({}) as Record<string, string>),
         // pi 入口 / 版本（右栏「环境」分区）——探测失败不能影响启动
@@ -473,8 +524,6 @@ export const useStore = create<Store>((rawSet, get) => {
       messages: messages.length ? messages : get().messages,
       stats: stats ?? get().stats,
       todos,
-      conn: status.state,
-      connDetail: status.detail,
       titles,
       manualTitles,
       piInfo: pi,
@@ -553,12 +602,32 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ messages: patchMessage(s.messages, msgId, { toolCalls: calls }) })
         break
       }
-      case 'state':
+      case 'state': {
+        /*
+         * 完成提示音：agent 从「在跑」变成「停了」。
+         *
+         * 为什么比对前后两个 isAgentRunning 而不是直接听 agent_settled：
+         * 渲染端本来就收不到 pi 的原始事件（协议知识只在主进程），
+         * 而 agent_settled 在主进程已经归一到这次 state 推送里了。
+         *
+         * 加 sessionId 判断：切会话时也可能从「在跑」变「没跑」，
+         * 那不是「完成」，不能响。
+         */
+        const finished =
+          s.session?.sessionId === m.payload.sessionId &&
+          s.session?.isAgentRunning === true &&
+          m.payload.isAgentRunning !== true
         set({ session: m.payload })
+        if (finished) {
+          const sid = s.session?.sessionId
+          const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''
+          alertAttention(s.settings, 'done', label || undefined)
+        }
         if (m.payload.availableThinkingLevels?.length) {
           set({ thinkingLevels: m.payload.availableThinkingLevels })
         }
         break
+      }
       case 'msg-add': {
         // 真正开始干活了，启动期结束
         const patch: Partial<Store> = { messages: [...s.messages, m.payload] }
@@ -574,6 +643,8 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'ui-request':
         set({ uiRequests: [...s.uiRequests, m.payload] })
+        // 需要用户介入（模型提问 / 扩展要选择）—— 提示音 + 通知
+        alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
         break
       case 'notify': {
         // 去重 + 限流：真实场景下扩展（例如用户自己的 left-info-panel）会在
@@ -600,6 +671,8 @@ export const useStore = create<Store>((rawSet, get) => {
             m.payload.id
           )
         })
+        // 报错才出声：info/告警不打断
+        if ((m.payload.notifyType ?? 'info') === 'error') alertAttention(s.settings, 'error', text)
         break
       }
       case 'status': {
@@ -644,6 +717,7 @@ export const useStore = create<Store>((rawSet, get) => {
             logs: [...s.logs, `[错误] pi 进程：${detail}`].slice(-200),
             ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
           })
+          alertAttention(s.settings, 'error', detail)
         } else if (m.payload.state === 'stderr' && m.payload.detail) {
           // stderr 只留最近 200 行，避免内存涨
           set({ logs: [...s.logs, m.payload.detail].slice(-200) })
@@ -1155,20 +1229,32 @@ export const useStore = create<Store>((rawSet, get) => {
   consumeQueueRestore: () => set({ queueRestore: null }),
   setSettings: (s) => set({ settings: s }),
   startConnWatch: () => {
+    /*
+     * 连接状态自愈（单例心跳）。
+     *
+     * 为什么不能「拉到 ready 就彻底退出」也不「拉一会儿就放弃」：
+     *   `proc: ready` / `proc: starting` 都是**一次性 push**，渲染端一旦
+     *   错过（加载慢、窗口重载、主进程在 webContents 就绪前就发了），
+     *   就再也收不到。之前这里 80 次（~40s）就 return ——
+     *   一旦这 40s 里的拉取恰好都落在主进程 ready 之前，界面就**永久**
+     *   停在「正在启动 pi」，而 pi 其实早就好了。
+     *   拉取成本极低（一个同步取值 + 一次 IPC），所以常驻：
+     *     · 未 ready：前 10s 每 500ms，之后每 3s
+     *     · 已 ready：每 5s 核对一次（防某次重启的 ready push 丢了）
+     */
+    if (connWatchActive) return
+    connWatchActive = true
     let tries = 0
     const tick = async (): Promise<void> => {
-      if (get().conn === 'ready') return
-      if (tries++ > 80) return // 最多 ~40 秒
+      const cur = get().conn
       try {
         const st = await window.yan.agentStatus()
-        if (st && st.state !== get().conn) {
-          set({ conn: st.state, connDetail: st.detail })
-        }
-        if (st?.state === 'ready') return
+        if (st && st.state !== get().conn) set({ conn: st.state, connDetail: st.detail })
       } catch {
         /* 主进程可能还没注册 handler，下一轮再来 */
       }
-      setTimeout(() => void tick(), 500)
+      const delay = cur === 'ready' ? 5000 : tries++ < 20 ? 500 : 3000
+      setTimeout(() => void tick(), delay)
     }
     void tick()
   },

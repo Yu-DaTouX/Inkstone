@@ -46,7 +46,7 @@
   }
 
   log('')
-  log('=== 3. 四个 tab ===')
+  log('=== 3. tab 数量 ===')
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tab: ' + JSON.stringify(tabs))
   ok(tabs.length >= 4, `有 ${tabs.length} 个 tab（含关闭）`)
@@ -86,6 +86,52 @@
     const pi = store.getState().piInfo
     ok(!!pi && !!pi.source, 'store.piInfo 带 source', 'source=' + (pi && pi.source))
     ok(!!pi && !!pi.bin, 'store.piInfo 带入口路径')
+  }
+
+  log('')
+  log('=== 5c. 声音与通知 tab ===')
+  const soundTab = qa('.settings-tab').find((x) => /声音与通知|Sound & notifications/.test(x.textContent))
+  ok(!!soundTab, '有「声音与通知」tab')
+  if (soundTab) {
+    click(soundTab)
+    await sleep(500)
+    ok(!!q('[data-testid="set-sound"]'), '声音页渲染出设置组')
+    const sound0 = store.getState().settings?.sound
+    ok(!!sound0 && typeof sound0.volume === 'number', 'store.settings 带 sound 配置')
+    const enableBtn = q('[data-testid="set-sound-enabled"]')
+    ok(!!enableBtn, '有总开关')
+    if (enableBtn && sound0) {
+      click(enableBtn)
+      await sleep(500)
+      ok(store.getState().settings?.sound?.enabled === true, '点总开关后 enabled=true（已落盘）')
+      ok(!!q('[data-testid="set-sound-event-done"]'), '有「回合完成」事件开关')
+      ok(!!q('[data-testid="set-sound-event-question"]'), '有「需要回答」事件开关')
+      ok(!!q('[data-testid="set-sound-event-error"]'), '有「出错」事件开关')
+      ok(!!q('[data-testid="set-sound-preview-done"]'), '每个事件可试听')
+      ok(!!q('[data-testid="set-sound-notify"]'), '有系统通知开关')
+      ok(!!q('[data-testid="set-sound-notify-test"]'), '有测试通知按钮')
+      const notifyBtn = q('[data-testid="set-sound-notify"]')
+      if (notifyBtn) {
+        const beforeN = store.getState().settings?.sound?.notifications
+        click(notifyBtn)
+        await sleep(500)
+        ok(store.getState().settings?.sound?.notifications === !beforeN, '通知开关可切换并落盘')
+        click(notifyBtn) // 恢复
+        await sleep(500)
+      }
+      let previewOk = true
+      try {
+        click(q('[data-testid="set-sound-preview-done"]'))
+      } catch {
+        previewOk = false
+      }
+      await sleep(120)
+      ok(previewOk, '试听按钮可点击（合成音频路径不抛异常）')
+      // 改回关闭，避免影响后续断言（也顺带验证可逆）
+      click(enableBtn)
+      await sleep(500)
+      ok(store.getState().settings?.sound?.enabled === false, '再点一次回到关闭')
+    }
   }
 
   log('')

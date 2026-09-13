@@ -47,9 +47,7 @@ function bundledRoots(): string[] {
   return out
 }
 
-/* ==================================================================
-   定位 pi 可执行入口
-   ================================================================== */
+/* 定位 pi 可执行入口 */
 
 /** 内置运行时目录是否可用（clili.js 存在） */
 export function bundledAvailable(): boolean {
@@ -288,9 +286,7 @@ function readPiVersion(probe: PiProbe, fresh = false): Promise<string | undefine
   return versionPending
 }
 
-/* ==================================================================
-   RPC 客户端
-   ================================================================== */
+/* RPC 客户端 */
 export interface PiRpcOptions {
   cwd: string
   /** 追加的 CLI 参数，例如 --no-session */

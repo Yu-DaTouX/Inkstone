@@ -156,7 +156,7 @@ function firstLine(s: string): string {
   return plain.length > 60 ? plain.slice(0, 60) + '…' : plain
 }
 
-/* ------------------------------------------------------------------ */
+
 
 /**
  * 逐字显示（typewriter）—— 真·逐字。

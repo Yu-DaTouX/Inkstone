@@ -35,9 +35,7 @@ function fail(msg, extra = '') {
   process.exit(1)
 }
 
-/* ------------------------------------------------------------------
-   0. 前置：打包产物在不在
-   ------------------------------------------------------------------ */
+/* 0. 前置：打包产物在不在 */
 if (process.platform !== 'win32') fail('这个脚本目前只支持 Windows（先做 Windows 分发）')
 
 /*
@@ -64,9 +62,7 @@ if (exeFromArg) {
 console.log(`${C.b('▸')} 打包产物验收`)
 console.log(C.dim(`  ${exePath}`))
 
-/* ------------------------------------------------------------------
-   1. extraResources 必须真的落在安装目录里
-   ------------------------------------------------------------------ */
+/* 1. extraResources 必须真的落在安装目录里 */
 const must = [
   ['pi-runtime', join(unpacked, 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')],
   ['pi-runtime node_modules', join(unpacked, 'resources', 'pi-runtime', 'node_modules')],
@@ -81,9 +77,7 @@ if (exeFromArg) {
   console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / app.asar）`)
 }
 
-/* ------------------------------------------------------------------
-   2. 隔离沙盒（绝不碰真实 sessions / memory / localStorage）
-   ------------------------------------------------------------------ */
+/* 2. 隔离沙盒（绝不碰真实 sessions / memory / localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
 const dirs = {
   YAN_USER_DATA: join(sandbox, 'userData'),
@@ -95,13 +89,10 @@ for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true })
 writeFileSync(join(dirs.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }), 'utf8')
 console.log(C.dim(`  隔离目录 ${sandbox}`))
 
-/* ------------------------------------------------------------------
-   3. 跑探针
-
+/* 3. 跑探针
    结果优先从 **文件** 读（YAN_PROBE_OUT），stdout 只当兜底：
    electron-builder 的 portable 单文件版外层包装不转发子进程 stdout，
-   而且 Windows GUI 应用本来就不保证有可用控制台。
-   ------------------------------------------------------------------ */
+   而且 Windows GUI 应用本来就不保证有可用控制台。 */
 const delay = 9000
 const outFile = join(sandbox, 'probe.txt')
 const child = spawn(exePath, [], {

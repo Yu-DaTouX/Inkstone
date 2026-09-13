@@ -62,5 +62,25 @@
   if (finalRect && rect && Math.abs(finalRect.width - rect.width) > 1) {
     throw new Error(`浏览器区域宽度被内容撑变形：${rect.width} -> ${finalRect.width}`)
   }
+
+  /*
+   * 用户要求：浏览器与工具栏**独立** —— 收起工具栏时浏览器要独占整列，
+   * 不能再留着一排工具栏标题/分区。这里按住这个回归点。
+   */
+  const surfaceBox = () => document.querySelector('[data-testid="browser-surface"]')?.getBoundingClientRect()
+  const beforeH = surfaceBox()?.height ?? 0
+  const panelToggle = document.querySelector('[data-testid="rightpanel-toggle"]')
+  if (panelToggle) {
+    panelToggle.click()
+    await new Promise((r) => setTimeout(r, 700))
+    const rpTopGone = !document.querySelector('.rp-top')
+    const bodyGone = !document.querySelector('[data-testid="rp-body"]')
+    const afterH = surfaceBox()?.height ?? 0
+    if (!rpTopGone || !bodyGone) throw new Error('收起工具栏后仍渲染了工具栏内容（浏览器没有独占右栏）')
+    if (!(afterH > beforeH)) throw new Error(`收起工具栏后浏览器没有变高：${beforeH} -> ${afterH}`)
+    panelToggle.click()
+    await new Promise((r) => setTimeout(r, 700))
+  }
+
   return JSON.stringify({ open: state.open, hasUrl: Boolean(state.url), rightPanel: true, centerUnchanged: !centerMode, title: state.title, generation: observation.generationId, elements: observation.elements.length, tabs: finalState.tabs?.length || 0, viewport: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, finalViewport: finalRect && { x: finalRect.x, y: finalRect.y, width: finalRect.width, height: finalRect.height }, nativeBounds: finalState.nativeBounds })
 })()

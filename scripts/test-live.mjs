@@ -159,6 +159,8 @@ const CASES = {
   tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
   // 记忆搬进设置：右栏移除 / 设置面板 / 输入区状态条
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
+  // 声音提示（对齐 opencode 的 attention）：事件触发 / 单事件开关 / 音量夹取
+  sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
   // 工具调用栏的展开规则（注入合成回合，不烧 token）
   toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
   // 终端窗口：结构 / 三个拖拽把手 / 拖动与键盘调大小 / 展开恢复（不烧 token）
@@ -461,11 +463,9 @@ function runProbe({ probe, delay, keys, env: caseEnv }, env) {
 }
 
 
-/* ------------------------------------------------------------------
-   入口：放在最后调用。
+/* 入口：放在最后调用。
    为什么不在顶层直接跑：fixture 生成器用了 `const TS`，而它在顶层被调用时
-   还在 TDZ（函数声明会提升，const 不会）—— 包成函数调用就绕开了。
-   ------------------------------------------------------------------ */
+   还在 TDZ（函数声明会提升，const 不会）—— 包成函数调用就绕开了。 */
 async function main() {
 
   // 支持多个场景：npm run test:live -- live memory sessions
@@ -493,21 +493,17 @@ async function main() {
     }
   }
 
-  /* ------------------------------------------------------------------
-     状态隔离 —— 每个测试批次用一套临时目录。
-
+  /* 状态隔离 —— 每个测试批次用一套临时目录。
      为什么必须做：验收测试会改应用状态（右栏分区顺序、主题、语言存在
      localStorage；会话文件在 ~/.pi/agent/sessions）以及写记忆。
      共用真实目录就会污染用户数据 —— 已经踩过两次：
-       · 会话目录里多了 6 个测试会话
-       · 记忆里留了 5 条编造的「已确认事实」（会误导后续对话）
-       · 右栏顺序被拖成了 status 开头
-
+     · 会话目录里多了 6 个测试会话
+     · 记忆里留了 5 条编造的「已确认事实」（会误导后续对话）
+     · 右栏顺序被拖成了 status 开头
      隔离三件事：
-       YAN_USER_DATA      Electron 的 localStorage / cache
-       YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
-       YAN_DATA_DIR       桌面端设置（desktop.json）
-     ------------------------------------------------------------------ */
+     YAN_USER_DATA      Electron 的 localStorage / cache
+     YAN_SESSIONS_DIR   会话文件（同时 pi 也会收到 --session-dir）
+     YAN_DATA_DIR       桌面端设置（desktop.json） */
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
 
@@ -624,7 +620,7 @@ async function main() {
   console.log(failed === 0 ? `全部通过（${names.length} 个场景）` : `${failed}/${names.length} 个场景失败`)
   process.exit(failed === 0 ? 0 : 1)
 
-  /* ------------------------------------------------------------------ */
+
 }
 
 await main()

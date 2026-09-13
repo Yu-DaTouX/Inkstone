@@ -191,7 +191,7 @@ function pickIntoComposer(rel: string): void {
   useStore.setState({ editorInject: needQuote ? `@"${path}"` : `@${path}` })
 }
 
-/* ------------------------------------------------------------------ */
+
 
 /** 一层的内容（根下面的所有条目） */
 function TreeLevel({

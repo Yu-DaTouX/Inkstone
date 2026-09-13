@@ -162,7 +162,7 @@ async function makeSession(file, opts) {
 
 const HOME = process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\Test'
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 1. 标题：优先 session_info 的名字 ---')
 
 const pNamed = await makeSession('a.jsonl', {
@@ -190,7 +190,7 @@ ok(!!unnamed && unnamed.title === '没名字的会话就用首条消息当标题
 ok(!!unnamed && unnamed.named === false, 'named 标记为 false')
 ok(list.length === 2, `列出 ${list.length} 个会话`)
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 2. 名字取最后一个（改名后应生效）---')
 
 const pRename = join(PROJECT, 'a.jsonl')
@@ -216,7 +216,7 @@ ok(
   `title=${afterRename?.title}`
 )
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 3. 家目录缩成 ~ ---')
 
 const pPath = await makeSession('c.jsonl', {
@@ -235,15 +235,15 @@ ok(
 )
 ok(shortened?.title.length <= 35, `标题被截断到 ${shortened?.title.length} 字符（上限 34+省略号）`)
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 4. cwd 取自 session 头 ---')
 ok(shortened?.cwd === HOME, 'cwd 解析正确', `cwd=${shortened?.cwd}`)
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 5. 消息条数 ---')
 ok(shortened?.messageCount === 1, 'messageCount = 1', `实际 ${shortened?.messageCount}`)
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 6. 按更新时间倒序 ---')
 const times = list.map((s) => s.updatedAt)
 ok(
@@ -252,13 +252,13 @@ ok(
   times.join(' ≥ ')
 )
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 7. 缓存：内容没变时不重读 ---')
 const before = (await listSessions()).find((s) => s.id === 'aaa')
 const after = (await listSessions()).find((s) => s.id === 'aaa')
 ok(before === after || (before?.title === after?.title && before?.updatedAt === after?.updatedAt), '两次调用结果一致')
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 8. 删除的路径防护 ---')
 
 // 正常删除
@@ -284,7 +284,7 @@ try {
 }
 ok(rejected, '拒绝删除非 .jsonl 文件')
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 9. 坏数据不致命 ---')
 
 await writeFile(join(PROJECT, 'broken.jsonl'), 'not json at all\n{{{', 'utf8')
@@ -297,7 +297,7 @@ ok(
   '正常会话不受影响'
 )
 
-/* ------------------------------------------------------------------ */
+
 console.log('\n--- 10. 不存在的目录 ---')
 await rm(dir, { recursive: true, force: true })
 process.env.YAN_SESSIONS_DIR = join(dir, 'nope')
@@ -305,7 +305,7 @@ process.env.YAN_SESSIONS_DIR = join(dir, 'nope')
 const empty = await listSessions()
 ok(Array.isArray(empty), '目录被删后仍返回数组', `${empty.length} 条`)
 
-/* ------------------------------------------------------------------ */
+
 // pi 定位（来源分类）——纯文件探测，不启 pi
 console.log('\n--- 11. pi 定位：来源分类 ---')
 const { resolvePi, bundledAvailable, piInfo, resetPiVersionCache } = await import('../out/main/protocol.js')
@@ -336,23 +336,23 @@ ok(typeof piInfoRes.bundledAvailable === 'boolean', 'piInfo.bundledAvailable 是
 
 await rm(piTmp, { recursive: true, force: true })
 
-/* ------------------------------------------------------------------ */
+
 // 回合分组 / 段落拆分 / 缓存命中率（纯函数，不启动 Electron）
 await runTurnTests(ok)
 
-/* ------------------------------------------------------------------ */
+
 // 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）
 await runZoomTests(ok)
 
-/* ------------------------------------------------------------------ */
+
 // 本机 Chrome profile 同步（合成目录，不碰真实 profile）
 await runChromeProfileTests(ok)
 
-/* ------------------------------------------------------------------ */
+
 // 对话宽度钳取（纯函数）
 await runStreamWidthTests(ok)
 
-/* ------------------------------------------------------------------ */
+
 // 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
 await runTodoHistoryTests(ok)

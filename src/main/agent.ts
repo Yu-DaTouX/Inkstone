@@ -56,9 +56,7 @@ function normalizeQueueMode(v: unknown): QueueMode | undefined {
   return v === 'all' || v === 'one-at-a-time' ? v : undefined
 }
 
-/* ==================================================================
-   AgentController
-   ================================================================== */
+/* AgentController */
 
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
@@ -68,6 +66,8 @@ export class AgentController extends EventEmitter {
   private browserExtension?: string
   private questionExtension?: string
   private browserEnv?: NodeJS.ProcessEnv
+  /** 追加系统提示（--append-system-prompt），见构造函数注释 */
+  private appendSystemPrompt?: string
 
   /** 权威消息列表 */
   private messages: UIMessage[] = []
@@ -111,6 +111,12 @@ export class AgentController extends EventEmitter {
     browserExtension?: string
     questionExtension?: string
     browserEnv?: NodeJS.ProcessEnv
+    /**
+     * 追加到 pi 系统提示末尾的一段文本（--append-system-prompt）。
+     * 目前用于「推理/回复跟随界面语言」——pi 只在启动时读它，
+     * 所以语言切换时由主进程重启 agent（会话用 switch_session 恢复）。
+     */
+    appendSystemPrompt?: string
   }) {
     super()
     this.push = opts.push
@@ -119,6 +125,7 @@ export class AgentController extends EventEmitter {
     this.browserExtension = opts.browserExtension
     this.questionExtension = opts.questionExtension
     this.browserEnv = opts.browserEnv
+    this.appendSystemPrompt = opts.appendSystemPrompt
   }
 
   get running(): boolean {
@@ -180,6 +187,8 @@ export class AgentController extends EventEmitter {
          * 避免每次跑真实场景都需要选定/付费；个别场景（如发图）可在 CASES 里覆盖。
          */
         ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : []),
+        // 追加系统提示（目前是「推理/回复跟随界面语言」）
+        ...(this.appendSystemPrompt ? ['--append-system-prompt', this.appendSystemPrompt] : []),
         // 只在测试隔离时接管会话目录。
         // 平时不传 —— 传了 pi 就不再按 cwd 建项目子目录，
         // 会把新会话平铺到根目录，与用户已有会话分居两处。
@@ -843,10 +852,17 @@ export class AgentController extends EventEmitter {
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
     }
-    // 流式中必须指定行为，否则 pi 直接报错。
+    // 智能体正在处理时必须指定投递行为，否则 pi 直接报错。
     // 默认**排队**（followUp）：等这一轮跑完再投递，不打断它。
     // 想立刻插入当前这轮，用队列行上的「插队」按钮（走 steerQueued）。
-    if (this.state?.isStreaming) payload.streamingBehavior = 'followUp'
+    //
+    // ⚠️ 判据必须是**回合级**的 `agentRunning`，不能只看 `isStreaming`。
+    //    `isStreaming` 只在「有一条 assistant 消息正在流」时为真：
+    //    工具执行期间它是 false（每条 assistant 消息 message_end 就清掉了），
+    //    但 pi 内部的 isStreaming 仍是 true —— 于是用户在工具执行时发消息，
+    //    我们没带 streamingBehavior，pi 直接抛
+    //    「Agent is already processing. Specify streamingBehavior...」（用户报的错）。
+    if (this.agentRunning || this.state?.isStreaming) payload.streamingBehavior = 'followUp'
 
     const res = await this.rpc!.command('prompt', payload)
     return res.success ? { ok: true } : { ok: false, error: res.error }

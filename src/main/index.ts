@@ -4,7 +4,7 @@
  * 一个窗口 = 一个 AgentController = 一个 pi 子进程。
  * 会话切换走 pi 自己的 switch_session，不开新进程（进程很贵）。
  */
-import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification } from 'electron'
 import { join, dirname, basename, extname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -21,7 +21,7 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
-import type { Attachment, MainPush } from '../shared/ipc'
+import type { Attachment, AttentionNotify, MainPush } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -123,9 +123,31 @@ if (process.env.YAN_PROBE) {
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 }
 
-/* ------------------------------------------------------------------
-   全局状态
-   ------------------------------------------------------------------ */
+/*
+ * 声音提示：允许在没有用户手势的情况下播放音频。
+ *
+ * Chromium 默认的自动播放策略要求页面先收到过点击/按键，否则 AudioContext
+ * 一直是 suspended。桌面端「回合完成/报错」的提示音往往发生在用户没碰键盘时，
+ * 所以必须放开。渲染端还留了一层手势解锁兜底（见 lib/sound.ts）。
+ */
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
+/*
+ * Windows 通知标识。
+ *
+ * Windows 的 toast 必须用 AppUserModelID 归属到一个「应用」，否则静默不弹。
+ * 打包后 electron-builder 会按 electron-builder.yml 的 appId 建开始菜单快捷方式，
+ * 这里用同一个 id 才能对上；开发期没有快捷方式，至少让主进程不要再默认成
+ * electron.exe（那样通知会以“Electron”之名发出，或干脆不显示）。
+ */
+const APP_ID = 'com.yudatoux.yan'
+try {
+  app.setAppUserModelId(APP_ID)
+} catch {
+  /* 极早期/平台差异，失败不影响其它功能 */
+}
+
+/* 全局状态 */
 let win: BrowserWindow | null = null
 let agent: AgentController | null = null
 let browser: BrowserController | null = null
@@ -177,10 +199,41 @@ async function shutdown(): Promise<void> {
   }
 }
 
-/* ------------------------------------------------------------------
-   Agent 生命周期
-   ------------------------------------------------------------------ */
-async function startAgent(): Promise<{ ok: boolean; error?: string }> {
+/* Agent 生命周期 */
+/**
+ * 系统提示里的语言约束。
+ *
+ * 用户反馈：模型的**推理内容**仍是英语，没有跟随界面语言。
+ * pi 默认不限定语言（模型按用户消息自己选），要它跟着界面走
+ * 只能在系统提示里明确要求 —— 这里把界面语言翻成一句指令，
+ * 通过 `--append-system-prompt` 追加到 pi 系统提示末尾。
+ */
+function languageSystemPrompt(lang: string): string {
+  return lang === 'zh-CN'
+    ? '推理（思考过程）与回复一律使用简体中文，即使用户用其他语言提问也不要切换。'
+    : 'Think (reason) and reply in English, even if the user writes in another language.'
+}
+
+/**
+ * 启动 pi 的**单飞**（single-flight）锁。
+ *
+ * 为什么需要：应用启动（app.whenReady）与「界面语言变了要重启」都会调
+ * startAgent；两者可能交叠 —— 后一个会把 agent 换成新实例，而前一个的开始
+ * 流程还在跑，等它超时后会拿一个已经作废的实例去 setConn('error')，
+ * 把新实例的 ready 覆盖掉（旧连接状态推给了同一个界面）。
+ * 串行化后同一时刻只会有一个启动流程，旧实例不会再反过来污染状态。
+ */
+let starting: Promise<{ ok: boolean; error?: string }> | null = null
+
+function startAgent(): Promise<{ ok: boolean; error?: string }> {
+  if (starting) return starting
+  starting = doStartAgent().finally(() => {
+    starting = null
+  })
+  return starting
+}
+
+async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
   if (agent?.running) return { ok: true }
   await agent?.stop()
 
@@ -192,15 +245,45 @@ async function startAgent(): Promise<{ ok: boolean; error?: string }> {
     piBin: settings.piBin,
     browserExtension: browserExtensionPath(),
     questionExtension: questionExtensionPath(),
-    browserEnv: browser?.bridgeEnv()
+    browserEnv: browser?.bridgeEnv(),
+    appendSystemPrompt: languageSystemPrompt(settings.lang)
   })
 
   return agent.start()
 }
 
-/* ------------------------------------------------------------------
-   IPC
-   ------------------------------------------------------------------ */
+/**
+ * 界面语言变了 → 重启 pi，让新的 `--append-system-prompt` 生效，
+ * 并用 switch_session 把当前会话接回来（不丢历史）。
+ *
+ * ⚠️ 一定要等**这一轮跑完**再重启：跑的时候重启会直接掐断正在生成的内容。
+ *    所以忙的时候每隔一会儿再试，直到空闲（最多等 ~5 分钟）。
+ */
+let langRestarting = false
+async function restartAgentForLanguage(retries = 150): Promise<void> {
+  if (langRestarting) return
+  /* 启动还没跑完就别动它 —— 等它落定再判断要不要重启 */
+  if (starting) await starting
+  if (!agent?.running) return
+  if (agent.getState()?.isAgentRunning) {
+    if (retries <= 0) return
+    setTimeout(() => void restartAgentForLanguage(retries - 1), 2000)
+    return
+  }
+  langRestarting = true
+  const file = agent.getState()?.sessionFile
+  try {
+    await agent.stop()
+    const res = await startAgent()
+    if (res.ok && file) await agent?.switchSession(file)
+  } catch (error) {
+    reportMainError('语言切换', error)
+  } finally {
+    langRestarting = false
+  }
+}
+
+/* IPC */
 function registerIpc(): void {
   const handle = <T>(ch: string, fn: (...a: never[]) => Promise<T> | T): void => {
     ipcMain.handle(ch, async (_e, ...args) => fn(...(args as never[])))
@@ -404,10 +487,54 @@ function registerIpc(): void {
     const s = await getSettings()
     return { ...s, lang: s.lang, theme: s.theme }
   })
-  handle('yan:patchSettings', async (patch: Record<string, unknown>) => patchSettings(patch as never))
+  handle('yan:patchSettings', async (patch: Record<string, unknown>) => {
+    const before = await getSettings()
+    const next = await patchSettings(patch as never)
+    /* 语言影响 pi 的系统提示（推理/回复语言），需要重启子进程才能生效 */
+    if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
+      void restartAgentForLanguage()
+    }
+    return next
+  })
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
   ipcMain.on('yan:respondUi', (_e, res) => agent?.respondUi(res))
+
+  /*
+   * 系统通知（「声音提示」里的通知开关）。
+   *
+   * 为什么由主进程弹：
+   *   · 点击通知要把窗口拉回前台（restore + show + focus），主进程拿得到 win；
+   *   · Windows toast 需要 AppUserModelID，已在启动时设好；
+   *   · 探针（YAN_PROBE）下不真弹系统通知，改为写日志 —— 不然跑一轮回归
+   *     会给用户弹一堆通知，且无头环境也无法断言。
+   */
+  handle('yan:notifyAttention', async (n: AttentionNotify) => {
+    const kind = n?.kind ?? 'done'
+    const title = typeof n?.title === 'string' && n.title.trim() ? n.title : '砚'
+    const body = typeof n?.body === 'string' && n.body.trim() ? n.body : undefined
+
+    if (process.env.YAN_PROBE) {
+      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}` } })
+      return { shown: true, simulated: true }
+    }
+
+    if (!Notification.isSupported()) return { shown: false, error: '系统不支持通知' }
+    try {
+      // silent: 声音由渲染端自己合成播放，系统通知再响一次会双重出声
+      const notification = new Notification({ title, body, silent: true })
+      notification.on('click', () => {
+        if (!win || win.isDestroyed()) return
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      })
+      notification.show()
+      return { shown: true }
+    } catch (error) {
+      return { shown: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
   /* ---- 渲染端握手：重发当前全部状态 ----
      单向 push 不可靠 —— 主进程可能在 webContents 还没能力接收时
      就把 `proc: ready` 发出去（那条消息就丢了，界面永远停在「正在启动 pi」）。
@@ -486,6 +613,8 @@ function registerIpc(): void {
   handle('yan:setCwd', async (cwd: string) => {
     await patchSettings({ cwd })
     // 换目录必须重启 pi（cwd 是子进程级的）
+    // 先把在途的启动等完，否则 startAgent 会复用旧 cwd 的那次启动
+    if (starting) await starting
     await agent?.stop()
     agent = null
     return startAgent()
@@ -591,9 +720,7 @@ async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
   return st
 }
 
-/* ------------------------------------------------------------------
-   窗口
-   ------------------------------------------------------------------ */
+/* 窗口 */
 function createWindow(): void {
   /*
    * 窗口初始尺寸。默认 1440×900，但可以用 `YAN_WIN=940x600` 覆盖 ——
@@ -970,9 +1097,7 @@ function createWindow(): void {
   }
 }
 
-/* ------------------------------------------------------------------
-   启动
-   ------------------------------------------------------------------ */
+/* 启动 */
 app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
   await browser.startBridge()

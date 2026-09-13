@@ -3,15 +3,17 @@ import { Icon } from '../../icons/Icon'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc'
+import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
+import { previewSound } from '../../lib/sound'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { AuthTab } from './AuthTab'
 
-export type SettingsTab = 'auth' | 'appearance' | 'status' | 'about'
+export type SettingsTab = 'auth' | 'appearance' | 'sound' | 'status' | 'about'
 
 /**
  * 设置面板。
  *
- * 四个 tab：模型接入 / 外观 / 状态 / 关于。
+ * 五个 tab：模型接入 / 外观 / 声音提示 / 状态 / 关于。
  *
  * 「状态」（模型 / 上下文用量 / 花费）是**边聊边看**的，
  * 所以它同时以紧凑形式留在输入区（见 ContextBar），不只是躺在这里。
@@ -51,6 +53,7 @@ export function Settings({
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
+    { id: 'sound', label: t('set.sound'), icon: 'sparkles' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'about', label: t('set.about'), icon: 'shield-check' }
   ]
@@ -96,6 +99,8 @@ export function Settings({
             <AuthTab />
           ) : tab === 'appearance' ? (
             <AppearanceTab lang={lang} setLang={setLang} />
+          ) : tab === 'sound' ? (
+            <SoundTab />
           ) : tab === 'status' ? (
             <StatusTab />
           ) : (
@@ -338,6 +343,171 @@ function useThemeSetter(): (t: 'dark' | 'light') => void {
     // 让 App 的 state 跟上（它监听 localStorage 不可靠，直接派事件）
     window.dispatchEvent(new CustomEvent('yan:theme', { detail: next }))
   }
+}
+
+/** ------------------------------------------------------------- 声音提示 */
+
+/** 设置还没读完时的兜底（与主进程 DEFAULTS 保持一致） */
+const DEFAULT_SOUND: SoundSettings = {
+  enabled: false,
+  volume: 0.4,
+  notifications: true,
+  events: { done: true, question: true, error: true }
+}
+
+/**
+ * 声音提示设置。
+ *
+ * 对应 opencode 的 attention：回合完成 / 需要回答 / 出错时出声。
+ * 每个事件都可单独关，且都能「试听」——不用真跑一轮就能确认音色。
+ */
+function SoundTab() {
+  const t = useT()
+  const sound = useStore((s) => s.settings?.sound) ?? DEFAULT_SOUND
+  const patchSettings = useStore((s) => s.patchSettings)
+  /** 音量拖动中的本地值（受控 range 否则会被 settings 拉回去，与对话宽度同一套） */
+  const [volDraft, setVolDraft] = useState<number | null>(null)
+  useEffect(() => setVolDraft(null), [sound.volume])
+  const shownVol = volDraft ?? sound.volume
+
+  const write = (patch: Partial<SoundSettings>): void => {
+    void patchSettings({ sound: { ...sound, ...patch } })
+  }
+  const toggleEvent = (ev: SoundEvent): void => {
+    write({ events: { ...sound.events, [ev]: !sound.events[ev] } })
+  }
+
+  const events: { id: SoundEvent; name: string; desc: string }[] = [
+    { id: 'done', name: t('set.soundEventDone'), desc: t('set.soundEventDoneDesc') },
+    { id: 'question', name: t('set.soundEventQuestion'), desc: t('set.soundEventQuestionDesc') },
+    { id: 'error', name: t('set.soundEventError'), desc: t('set.soundEventErrorDesc') }
+  ]
+
+  return (
+    <div className="set-group" data-testid="set-sound">
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.soundEnabled')}</div>
+          <div className="set-desc">{t('set.soundEnabledDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          <button
+            className={`seg-btn ${sound.enabled ? 'sel' : ''}`}
+            onClick={() => write({ enabled: !sound.enabled })}
+            data-testid="set-sound-enabled"
+            data-on={sound.enabled ? '1' : '0'}
+          >
+            <Icon name="sparkles" size={12} />
+            <span>{sound.enabled ? t('set.on') : t('set.off')}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.soundNotify')}</div>
+          <div className="set-desc">{t('set.soundNotifyDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          <button
+            className={`seg-btn ${sound.notifications ? 'sel' : ''}`}
+            onClick={() => write({ notifications: !sound.notifications })}
+            data-testid="set-sound-notify"
+            data-on={sound.notifications ? '1' : '0'}
+          >
+            <Icon name="alert-circle" size={12} />
+            <span>{sound.notifications ? t('set.on') : t('set.off')}</span>
+          </button>
+          {/* 测试：不受「窗口失焦」限制，直接让主进程弹一条，方便确认系统真的能弹 */}
+          <button
+            className="seg-btn"
+            onClick={() =>
+              void window.yan.notifyAttention({
+                kind: 'question',
+                title: t('set.soundNotifyTestTitle'),
+                body: t('set.soundNotifyTestBody')
+              })
+            }
+            title={t('set.soundNotifyTest')}
+            data-testid="set-sound-notify-test"
+          >
+            <Icon name="send" size={12} />
+            <span>{t('set.soundNotifyTest')}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.soundVolume')}</div>
+          <div className="set-desc">{t('set.soundVolumeDesc')}</div>
+          <div className="set-desc set-num" data-testid="set-sound-volume-now">
+            {t('set.soundVolumeNow', { n: Math.round(shownVol * 100) })}
+          </div>
+        </div>
+        <div className="set-ctl stream-width-ctl">
+          <input
+            className="range"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={shownVol}
+            aria-label={t('set.soundVolume')}
+            disabled={!sound.enabled}
+            data-testid="set-sound-volume"
+            onChange={(e) => setVolDraft(Number(e.target.value))}
+            onPointerUp={(e) => {
+              const v = Number((e.target as HTMLInputElement).value)
+              write({ volume: v })
+              previewSound('done', v)
+            }}
+            onKeyUp={(e) => {
+              const v = Number((e.target as HTMLInputElement).value)
+              write({ volume: v })
+              previewSound('done', v)
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.soundEvents')}</div>
+          <div className="set-desc">{t('set.soundDesc')}</div>
+        </div>
+      </div>
+
+      {events.map((ev) => (
+        <div className="set-row" key={ev.id}>
+          <div className="set-label">
+            <div className="set-name">{ev.name}</div>
+            <div className="set-desc">{ev.desc}</div>
+          </div>
+          <div className="set-ctl">
+            <button
+              className={`seg-btn ${sound.events[ev.id] ? 'sel' : ''}`}
+              onClick={() => toggleEvent(ev.id)}
+              data-testid={`set-sound-event-${ev.id}`}
+              data-on={sound.events[ev.id] ? '1' : '0'}
+            >
+              <Icon name="sparkle" size={12} />
+              <span>{sound.events[ev.id] ? t('set.on') : t('set.off')}</span>
+            </button>
+            <button
+              className="seg-btn"
+              onClick={() => previewSound(ev.id, sound.volume)}
+              title={t('set.soundPreview')}
+              data-testid={`set-sound-preview-${ev.id}`}
+            >
+              <Icon name="send" size={12} />
+              <span>{t('set.soundPreview')}</span>
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------- 状态 */

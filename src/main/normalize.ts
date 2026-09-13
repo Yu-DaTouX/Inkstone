@@ -11,9 +11,7 @@
  */
 import type { Usage, UIMessage, UIToolCall } from '../shared/ipc'
 
-/* ==================================================================
-   pi 的原始类型（只在这里出现）
-   ================================================================== */
+/* pi 的原始类型（只在这里出现） */
 
 export interface PiContentBlock {
   type: string

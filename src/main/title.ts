@@ -93,9 +93,7 @@ export async function cachedTitles(): Promise<TitleMap> {
   return loadTitles()
 }
 
-/* ==================================================================
-   生成
-   ================================================================== */
+/* 生成 */
 
 /** 提示词：要短、要具体、不要标点。写死英文指令 + 中文示例，模型更稳 */
 function buildPrompt(samples: string[]): string {

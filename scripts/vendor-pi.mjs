@@ -69,9 +69,7 @@ const log = (s) => console.log(s)
 const ok = (s) => console.log(`  ✓ ${s}`)
 const bad = (s) => console.error(`  ✗ ${s}`)
 
-/* ------------------------------------------------------------------
-   1. 找到已安装的 pi
-   ------------------------------------------------------------------ */
+/* 1. 找到已安装的 pi */
 function findPiRoot() {
   const tried = []
   const push = (p) => {
@@ -117,9 +115,7 @@ function findPiRoot() {
   )
 }
 
-/* ------------------------------------------------------------------
-   2. 依赖闭包（递归读 package.json 的 dependencies）
-   ------------------------------------------------------------------ */
+/* 2. 依赖闭包（递归读 package.json 的 dependencies） */
 function depClosure(piRoot, seeds) {
   const have = new Set()
   const missing = []
@@ -152,9 +148,7 @@ function depClosure(piRoot, seeds) {
   return { have, missing, locate }
 }
 
-/* ------------------------------------------------------------------
-   3. 扫 bundle 的裸 import —— 用来校验 MUST_HAVE 没漏
-   ------------------------------------------------------------------ */
+/* 3. 扫 bundle 的裸 import —— 用来校验 MUST_HAVE 没漏 */
 function scanExternals(bundleDir) {
   const builtin = new Set(builtinModules)
   const found = new Set()
@@ -183,9 +177,7 @@ function scanExternals(bundleDir) {
   return found
 }
 
-/* ------------------------------------------------------------------
-   4. 拷贝 dist（保留资产，丢掉源码与类型声明）
-   ------------------------------------------------------------------ */
+/* 4. 拷贝 dist（保留资产，丢掉源码与类型声明） */
 function copyDist(piRoot) {
   const src = join(piRoot, 'dist')
   const dst = join(DEST, 'dist')
@@ -234,9 +226,7 @@ function dirSize(dir) {
 
 const mb = (b) => (b / 1024 / 1024).toFixed(1) + ' MB'
 
-/* ------------------------------------------------------------------
-   5. 自检：真跑一次 RPC 握手
-   ------------------------------------------------------------------ */
+/* 5. 自检：真跑一次 RPC 握手 */
 function verify(label) {
   const cli = join(DEST, 'dist', 'bundle', 'cli.js')
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
@@ -277,9 +267,7 @@ function verify(label) {
   return true
 }
 
-/* ------------------------------------------------------------------
-   main
-   ------------------------------------------------------------------ */
+/* main */
 const checkOnly = process.argv.includes('--check')
 
 if (checkOnly) {

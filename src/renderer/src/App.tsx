@@ -80,6 +80,10 @@ export default function App() {
   const setRailPinned = useStore((s) => s.setRailPinned)
   const rightPanelOpen = useStore((s) => s.settings?.rightPanelOpen ?? true)
   const toggleRightPanel = useStore((s) => s.toggleRightPanel)
+  /* 浏览器开关与工具栏独立：入口在标题栏，收起工具栏不影响浏览器 */
+  const browserOpen = useStore((s) => s.browserState.open)
+  const openBrowser = useStore((s) => s.openBrowser)
+  const closeBrowser = useStore((s) => s.closeBrowser)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const cycleModel = useStore((s) => s.cycleModel)
@@ -416,6 +420,8 @@ export default function App() {
           railOpen={railOpen}
           onToggleRightPanel={() => void toggleRightPanel()}
           rightPanelOpen={rightPanelOpen}
+          onToggleBrowser={() => void (browserOpen ? closeBrowser() : openBrowser())}
+          browserOpen={browserOpen}
           alwaysOnTop={alwaysOnTop}
           onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
           maximized={maximized}

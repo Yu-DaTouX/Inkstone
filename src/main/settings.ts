@@ -18,7 +18,10 @@ import {
   TOOL_SECTIONS,
   normalizeToolHidden,
   normalizeToolOrder,
+  SOUND_VOLUME_MAX,
+  SOUND_VOLUME_MIN,
   type AppSettings,
+  type SoundSettings,
   type UserProfile
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
@@ -71,6 +74,8 @@ const DEFAULTS: AppSettings = {
   // 0 = 用设计默认宽度（见 AppSettings 的注释）
   railWidth: 0,
   panelWidth: 0,
+  // 0 = 用设计默认高度（55% 右栏，见 AppSettings 的注释）
+  browserHeight: 0,
   // 空 = 用设计默认顺序
   toolOrder: [],
   toolHidden: [],
@@ -80,7 +85,42 @@ const DEFAULTS: AppSettings = {
   // 0 = 用设计默认宽度（见 AppSettings 的注释）
   streamWidth: 0,
   // 提问优先（自主模式默认关）
-  autonomous: false
+  autonomous: false,
+  // 声音提示默认关（见 SoundSettings 注释）
+  sound: defaultSound()
+}
+
+/** 声音提示的默认值（总开关关、音量 0.4、三类事件都开） */
+function defaultSound(): SoundSettings {
+  return {
+    enabled: false,
+    volume: 0.4,
+    notifications: true,
+    events: { done: true, question: true, error: true }
+  }
+}
+
+/**
+ * 夹一份干净的声音设置。
+ *
+ * 设置文件可以被手改，不能信：音量可能写成 -3 / NaN，events 可能是 null。
+ * 未知事件键直接丢掉（版本升级后旧键不该一直占位）。
+ */
+function sanitizeSound(v: unknown): SoundSettings {
+  const d = defaultSound()
+  if (!v || typeof v !== 'object') return d
+  const o = v as Partial<SoundSettings> & Record<string, unknown>
+  const rawVol = typeof o.volume === 'number' ? o.volume : Number(o.volume)
+  const volume = Number.isFinite(rawVol)
+    ? Math.min(SOUND_VOLUME_MAX, Math.max(SOUND_VOLUME_MIN, rawVol))
+    : d.volume
+  const ev = o.events && typeof o.events === 'object' ? (o.events as Record<string, unknown>) : {}
+  const events = {
+    done: ev.done === undefined ? d.events.done : ev.done === true,
+    question: ev.question === undefined ? d.events.question : ev.question === true,
+    error: ev.error === undefined ? d.events.error : ev.error === true
+  }
+  return { enabled: o.enabled === true, volume, notifications: o.notifications !== false, events }
 }
 
 /**
@@ -172,6 +212,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.profile = sanitizeProfile(cached.profile)
     cached.railWidth = clampPanelWidth(cached.railWidth, RAIL_MIN, RAIL_MAX)
     cached.panelWidth = clampPanelWidth(cached.panelWidth, PANEL_MIN, PANEL_MAX)
+    cached.browserHeight = clampPanelWidth(cached.browserHeight, HEIGHT_MIN, HEIGHT_MAX)
     // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
     cached.toolOrder = normalizeToolOrder(cached.toolOrder)
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
@@ -179,6 +220,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolDetail = cached.toolDetail === true
     cached.streamWidth = clampStreamWidth(cached.streamWidth)
     cached.autonomous = cached.autonomous === true
+    cached.sound = sanitizeSound(cached.sound)
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -216,7 +258,19 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   // 宽度同样夹一下（渲染端传 0 = 恢复默认）
   if ('railWidth' in patch) next.railWidth = clampPanelWidth(next.railWidth, RAIL_MIN, RAIL_MAX)
   if ('panelWidth' in patch) next.panelWidth = clampPanelWidth(next.panelWidth, PANEL_MIN, PANEL_MAX)
+  if ('browserHeight' in patch) next.browserHeight = clampPanelWidth(next.browserHeight, HEIGHT_MIN, HEIGHT_MAX)
   if ('streamWidth' in patch) next.streamWidth = clampStreamWidth(next.streamWidth)
+  if ('sound' in patch) {
+    // 合并写入的基准取**磁盘上的旧值** cur.sound（已过 sanitize），
+    // 不能用 next.sound —— 它是 patch 的原始值，partial 时 events 会是 undefined
+    const base = cur.sound
+    const incoming = (patch.sound ?? {}) as Partial<SoundSettings>
+    next.sound = sanitizeSound({
+      ...base,
+      ...incoming,
+      events: { ...base.events, ...(incoming.events ?? {}) }
+    })
+  }
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
   }

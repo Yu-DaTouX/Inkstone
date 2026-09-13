@@ -10,6 +10,9 @@ interface Props {
   /** 右栏（工具栏）开关 —— 在窗口控制按钮左侧 */
   onToggleRightPanel: () => void
   rightPanelOpen?: boolean
+  /** 内置浏览器开关 —— 与工具栏独立，收起工具栏不影响它 */
+  onToggleBrowser?: () => void
+  browserOpen?: boolean
   onSettings?: () => void
   /** 窗口是否置顶 */
   alwaysOnTop?: boolean
@@ -45,6 +48,8 @@ export function TitleBar({
   railOpen,
   onToggleRightPanel,
   rightPanelOpen,
+  onToggleBrowser,
+  browserOpen,
   alwaysOnTop,
   onToggleAlwaysOnTop,
   maximized,
@@ -102,6 +107,19 @@ export function TitleBar({
           data-on={alwaysOnTop ? '1' : '0'}
         >
           <Icon name="pin" size={14} />
+        </button>
+
+        {/* 内置浏览器开关：与工具栏独立（收起工具栏时浏览器仍可独占右栏） */}
+        <button
+          className={`tb-icon ${browserOpen ? 'on' : ''}`}
+          title={browserOpen ? t('browser.close') : t('browser.open')}
+          onClick={onToggleBrowser}
+          data-testid="browser-view-toggle"
+          data-open={browserOpen ? '1' : '0'}
+          aria-checked={!!browserOpen}
+          role="switch"
+        >
+          <Icon name="globe" size={14} />
         </button>
 
         {/* 工具栏开关：紧邻窗口控制按钮（与左上的侧栏开关形成两端对称） */}

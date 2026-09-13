@@ -158,9 +158,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
   )
 }
 
-/* ------------------------------------------------------------------
-   连接失败条
-   ------------------------------------------------------------------ */
+/* 连接失败条 */
 export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'error' }) {
   const logs = useStore((s) => s.logs)
   const connDetail = useStore((s) => s.connDetail)

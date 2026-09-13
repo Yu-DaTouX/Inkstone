@@ -49,9 +49,7 @@ say('')
 say(`  ${C.b('砚')} ${C.dim('·')} 个人 agent 桌面端`)
 say(`  ${C.dim('─'.repeat(38))}`)
 
-/* ------------------------------------------------------------------
-   1. 依赖检查
-   ------------------------------------------------------------------ */
+/* 1. 依赖检查 */
 step('检查环境')
 
 if (!existsSync(join(root, 'package.json'))) {
@@ -89,18 +87,14 @@ if (!existsSync(piRuntime)) {
 }
 say(`  ${C.ok('✓')} 内置 pi 运行时`)
 
-/* ------------------------------------------------------------------
-   2. 开发模式：直接交给 electron-vite（它自己会 build + watch）
-   ------------------------------------------------------------------ */
+/* 2. 开发模式：直接交给 electron-vite（它自己会 build + watch） */
 if (has('--dev') || has('-d')) {
   step('开发模式（HMR）')
   say(C.dim('  改 src/renderer/** 即时生效；改 src/main/** 需要重启（或加 --watch）'))
   const child = spawn('npm', ['run', 'dev'], { cwd: root, stdio: 'inherit', shell: true })
   child.on('exit', (code) => process.exit(code ?? 0))
 } else {
-  /* ----------------------------------------------------------------
-     3. 生产模式：out/ 比源码旧就重新构建
-     ---------------------------------------------------------------- */
+  /* 3. 生产模式：out/ 比源码旧就重新构建 */
   const outMain = join(root, 'out', 'main', 'index.js')
 
   /** 源码里最新的一个 mtime（只看目录，不看 node_modules / out） */
@@ -153,9 +147,7 @@ if (has('--dev') || has('-d')) {
     process.exit(0)
   }
 
-  /* ----------------------------------------------------------------
-     4. 启动 Electron（脱离父进程 → 控制台自己关掉）
-     ---------------------------------------------------------------- */
+  /* 4. 启动 Electron（脱离父进程 → 控制台自己关掉） */
   step('启动')
   const electron = join(root, 'node_modules', 'electron', 'dist', 'electron.exe')
   const bin = existsSync(electron) ? electron : 'npx'

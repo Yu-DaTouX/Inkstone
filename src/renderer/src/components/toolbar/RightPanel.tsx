@@ -12,36 +12,13 @@ import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
 
 /**
- * 右栏 —— 常驻状态栏。
- *
- * 布局参考 OpenCode 的右侧栏（用户给的截图）：一串**小分区的堆叠**，
- * 每块只讲一件事，没有图表没有装饰：
- *
- *   上下文   用了多少 / 占了多少 / 花了多少
- *   任务      agent 的 panel_todos（与 TUI 的 /panel 同一份）
- *   队列      待投递的插话 + 投递模式（pi 的 set_steering_mode / set_follow_up_mode）
- *   文件      项目文件树（点一下 = 往输入框插 @路径）
- *   扩展      扩展的 setStatus / setWidget（真实数据，不再丢掉）
- *   日志      pi stderr + 扩展通知（原来挤在中栏底部，用户要求搬过来）
- *   操作      pi 自带能力的入口
- *
- * ── 本次的两处改动（用户要求）──
- * · **去掉「环境」分区**（pi 版本 / 模型 / 计数 / 热键提示）：
- *   这些都不需要在右栏常驻 —— 模型在标题栏、热键在设置里、
- *   pi 版本在设置→关于。而且它的工作目录一行与文件树的根重复。
- * · **加文件树**：见 FileTree.tsx。
- *
- * 为什么不照抄 OpenCode 的分区名（MCP / LSP）：
- *   pi 没有 MCP 与 LSP 这两个概念，硬写上去就是**编状态**。
- *   这份界面里出现的每个数字都必须真的来自某个地方
- *   （这就是为什么「已同步 · 桌面·笔记本·手机」那条被从标题栏删掉了）。
- *
- * 默认展开，可以收起 —— 收起后宽度归零，中栏内容重新居中（不是盖上去的浮层）。
+ * 右侧工具面板：按用户配置排列上下文、任务、队列、文件、扩展、日志和操作分区。
+ * 仅显示真实会话数据；空分区不参与排序。浏览器视图占用面板下方独立区域。
+ * 收起后释放布局宽度，不以浮层覆盖对话。
  */
 export function RightPanel() {
   const t = useT()
   const open = useStore((s) => s.settings?.rightPanelOpen ?? true)
-  const toggle = useStore((s) => s.toggleRightPanel)
   const order = useStore((s) => s.settings?.toolOrder)
   const hidden = useStore((s) => s.settings?.toolHidden)
   const setToolLayout = useStore((s) => s.setToolLayout)
@@ -50,9 +27,7 @@ export function RightPanel() {
   const setToolDropTarget = useStore((s) => s.setToolDropTarget)
   const placeSection = useStore((s) => s.placeSection)
   const browserOpen = useStore((s) => s.browserState.open)
-  const openBrowser = useStore((s) => s.openBrowser)
-  const closeBrowser = useStore((s) => s.closeBrowser)
-  const dropTarget = useStore((s) => s.toolDropTarget)
+  const browserHeight = useStore((s) => s.settings?.browserHeight ?? 0)
   const [libOpen, setLibOpen] = useState(false)
 
   /*
@@ -185,57 +160,62 @@ export function RightPanel() {
   const ghostLabel = draggingId ? t(SECTION_TITLE[draggingId as ToolSectionId]) : ''
   /** 浮动标签的 DOM 引用：位置直接改 style，不走 state（每像素重渲染会卡） */
   const ghostRef = useRef<HTMLDivElement>(null)
+  /** 右栏自身：浏览器高度分隔条需要从它里面量浏览器区域的高度 */
+  const asideRef = useRef<HTMLElement>(null)
 
   /*
-   * 收起时直接不渲染 —— 浏览器切换在**工具栏标题旁**（用户要求，参考 Codex），
-   * pi 直接打开浏览器时则临时显示右栏，确保浏览器不会跑到中栏。
-   * （曾经留过 38px 的槽放那个按钮 —— 那条保留下来的宽度会把
-   *   中栏宽度算错，连带把导航轨的位置带偏。）
+   * 浏览器与工具栏**解耦**（用户要求）。
+   *
+   * 两者的开关互相独立：
+   *   · 只开工具栏  → 只渲染工具分区
+   *   · 只开浏览器  → 浏览器**独占整列**（工具栏收起时不再拖着一排空标题）
+   *   · 都开        → 上浏览器 / 下工具分区，中间可拖高度
+   * 浏览器入口在**标题栏**（与左右栏开关同一处，位置永不漂移），
+   * 不再占用工具栏标题行 —— 这样「收起工具栏」对浏览器完全无影响。
+   * pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也把浏览器显示出来。
    */
-  /* pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也要把浏览器显示出来。 */
   if (!open && !browserOpen) return null
 
   return (
-    <aside className={`rightpanel ${browserOpen ? 'browser-mode' : ''}`} data-testid="rightpanel">
+    <aside
+      ref={asideRef}
+      className={`rightpanel ${browserOpen ? 'browser-mode' : ''} ${open ? '' : 'tools-collapsed'}`}
+      data-testid="rightpanel"
+      style={browserHeight > 0 ? ({ '--h-browser': `${browserHeight}px` } as React.CSSProperties) : undefined}
+    >
       {/*
        * 宽度把手放在 aside **内部**并绝对定位。
        * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
        * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 redesign.css §23b）。
        */}
       <Resizer side="panel" />
-      <div className="rp-top">
-        <span className="rp-title">{t('rp.title')}</span>
-        <button
-          className={`rp-browser-toggle ${browserOpen ? 'on' : ''}`}
-          onClick={() => void (browserOpen ? closeBrowser() : openBrowser())}
-          title={browserOpen ? t('browser.close') : t('browser.open')}
-          data-testid="browser-view-toggle"
-          role="switch"
-          aria-checked={browserOpen}
-        >
-          <span className="rp-browser-label">{t('browser.mode')}</span>
-          <span className="rp-browser-track" aria-hidden="true">
-            <span className="rp-browser-thumb" />
-          </span>
-        </button>
-        <span className="spacer" />
-        {/*
-         * 工具库。放在标题旁边（用户问「库放哪」时给的备选之一）——
-         * 库管的就是工具栏的内容，入口贴着工具栏标题最直。
-         */}
-        <button
-          className={`rp-x ${libOpen ? 'on' : ''}`}
-          onClick={() => setLibOpen((v) => !v)}
-          title={t('tl.open')}
-          data-testid="tool-lib-btn"
-          aria-expanded={libOpen}
-        >
-          <Icon name="layers" size={12} />
-        </button>
-      </div>
+
+      {open ? (
+        <>
+          <div className="rp-top">
+            <span className="rp-title">{t('rp.title')}</span>
+            <span className="spacer" />
+            {/*
+             * 工具库。放在标题旁边（用户问「库放哪」时给的备选之一）——
+             * 库管的就是工具栏的内容，入口贴着工具栏标题最直。
+             */}
+            <button
+              className={`rp-x ${libOpen ? 'on' : ''}`}
+              onClick={() => setLibOpen((v) => !v)}
+              title={t('tl.open')}
+              data-testid="tool-lib-btn"
+              aria-expanded={libOpen}
+            >
+              <Icon name="layers" size={12} />
+            </button>
+          </div>
+
+          {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+        </>
+      ) : null}
 
       {browserOpen ? <BrowserSurface /> : null}
-      {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+      {browserOpen && open ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
 
       {/*
         拖动中的浮动标签（用户要的「实时位置预览」的文字部分）。
@@ -249,10 +229,11 @@ export function RightPanel() {
         </div>
       ) : null}
 
-      <div className="rp-body" data-testid="rp-body">
-        {visible.map((id, i) => (
-          <SectionSlot
-            key={id}
+      {open ? (
+        <div className="rp-body" data-testid="rp-body">
+          {visible.map((id, i) => (
+            <SectionSlot
+              key={id}
             id={id}
             index={i}
             total={visible.length}
@@ -262,14 +243,88 @@ export function RightPanel() {
             onMove={move}
           />
         ))}
-      </div>
+        </div>
+      ) : null}
     </aside>
   )
 }
 
-/* ==================================================================
-   分区插槽 —— 把「注册表 + 排序」与各分区自己的渲染分开
-   ================================================================== */
+/* 浏览器高度分隔条
+   只在浏览器与工具栏同时显示时出现。拖动时直接改 aside 上的
+   `--h-browser`（CSS 变量，零重渲染）；松手才把最终值落盘。
+   双击复原成设计默认（55%）。 */
+function BrowserHeightSplitter({ asideRef }: { asideRef: React.RefObject<HTMLElement | null> }) {
+  const t = useT()
+  const patchSettings = useStore((s) => s.patchSettings)
+  const [dragging, setDragging] = useState(false)
+  const startRef = useRef<{ y: number; base: number } | null>(null)
+
+  /** 浏览器区域当前高度（从真实布局量，避免再维护一份 state） */
+  const browserEl = (): HTMLElement | null =>
+    asideRef.current?.querySelector('.browser-surface') as HTMLElement | null
+  /* 与主进程夹的区间一致（主进程会再夹一次，防脏值） */
+  const clamp = (h: number): number => Math.round(Math.min(900, Math.max(120, h)))
+
+  const onDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (e.button !== 0) return
+    const el = browserEl()
+    if (!el) return
+    e.preventDefault()
+    startRef.current = { y: e.clientY, base: el.getBoundingClientRect().height }
+    setDragging(true)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* 拿不到 capture 也能拖 */
+    }
+    document.body.classList.add('resizing')
+  }
+
+  const onMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    const st = startRef.current
+    if (!st || !asideRef.current) return
+    const next = clamp(st.base + (e.clientY - st.y))
+    asideRef.current.style.setProperty('--h-browser', `${next}px`)
+  }
+
+  const onUp = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    const st = startRef.current
+    if (!st) return
+    startRef.current = null
+    setDragging(false)
+    document.body.classList.remove('resizing')
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    const h = browserEl()?.getBoundingClientRect().height ?? 0
+    if (h > 0) void patchSettings({ browserHeight: clamp(h) })
+  }
+
+  const reset = (): void => {
+    asideRef.current?.style.removeProperty('--h-browser')
+    void patchSettings({ browserHeight: 0 })
+  }
+
+  return (
+    <button
+      className={`browser-splitter ${dragging ? 'on' : ''}`}
+      title={t('browser.resizeHint')}
+      aria-label={t('browser.resizeHint')}
+      role="separator"
+      aria-orientation="horizontal"
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      onDoubleClick={reset}
+      data-testid="browser-splitter"
+    />
+  )
+}
+
+/* 分区插槽 —— 把「注册表 + 排序」与各分区自己的渲染分开 */
 
 /**
  * 按 id 渲染对应分区，并给它包上一层可拖拽的头。
@@ -593,13 +648,9 @@ function LogCount() {
   )
 }
 
-/* ==================================================================
-   一个可折叠的小分区 —— 右栏所有块共用
-   ================================================================== */
+/* 一个可折叠的小分区 —— 右栏所有块共用 */
 
-/* ==================================================================
-   上下文 —— 用多少 / 占多少 / 花了多少
-   ================================================================== */
+/* 上下文 —— 用多少 / 占多少 / 花了多少 */
 
 function QuotaSection() {
   const t = useT()
@@ -830,9 +881,7 @@ function ContextSection() {
   )
 }
 
-/* ==================================================================
-   任务 —— 来自会话里的 custom entry（panel_todos）
-   ================================================================== */
+/* 任务 —— 来自会话里的 custom entry（panel_todos） */
 
 /**
  * 任务栏 —— 进度条 + 逐行落位。
@@ -1075,9 +1124,7 @@ function Spinner() {
   return <>{SPIN[i]}</>
 }
 
-/* ==================================================================
-   队列 —— pi 的投递模式 + 待投递内容
-   ================================================================== */
+/* 队列 —— pi 的投递模式 + 待投递内容 */
 
 function QueueSection() {
   const t = useT()
@@ -1133,7 +1180,6 @@ function ModeRow({
   testId: string
 }) {
   const t = useT()
-  const modes: QueueMode[] = ['one-at-a-time', 'all']
   const label = (m: QueueMode): string =>
     m === 'all' ? t('rp.modeAll') : t('rp.modeOne')
 
@@ -1156,9 +1202,7 @@ function ModeRow({
   )
 }
 
-/* ==================================================================
-   扩展 —— setStatus / setWidget 的真实内容
-   ================================================================== */
+/* 扩展 —— setStatus / setWidget 的真实内容 */
 
 function ExtSection() {
   const t = useT()
@@ -1193,14 +1237,11 @@ function ExtSection() {
   )
 }
 
-/* ==================================================================
-   日志 —— pi 的 stderr + 扩展通知
-
+/* 日志 —— pi 的 stderr + 扩展通知
    原来挤在中栏底部（.statusbar + .logdrawer），用户嫌它不美观。
    搬到右栏的理由：「状态」类信息本来就属于右栏（见文件头注释）。
    顺带把中栏底部整条去掉 —— 那个条只用干两件事：显示压缩中
-   与当日志按钮，两件都搬走了就不需要它了。
-   ================================================================== */
+   与当日志按钮，两件都搬走了就不需要它了。 */
 
 function LogSection() {
   const t = useT()
@@ -1233,12 +1274,9 @@ function LogSection() {
   )
 }
 
-/* ==================================================================
-   操作 —— pi 自带能力的入口
-   ================================================================== */
+/* 操作 —— pi 自带能力的入口 */
 
 function ActionsSection() {
-  const t = useT()
   const compact = useStore((s) => s.compact)
   const copyLastReply = useStore((s) => s.copyLastReply)
   const abortRetry = useStore((s) => s.abortRetry)

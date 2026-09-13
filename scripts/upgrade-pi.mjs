@@ -88,7 +88,7 @@ function repairHints() {
   log('注意：内置运行时不可用时不要提交、不要打包 —— 装出来的应用会连不上 pi。')
 }
 
-/* ------------------------------------------------------------------ */
+
 const src = findSourceRoot()
 const cur = bundledVersion()
 const next = src ? readVersion(join(src, 'package.json')) : undefined

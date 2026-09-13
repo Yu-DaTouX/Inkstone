@@ -1,13 +1,11 @@
 /**
  * 主进程 ↔ 渲染进程的共享类型。
  *
- * 这一层刻意**不认识 pi 的内部类型** —— pi 的 message 结构在这里被归一化成
- * UIMessage。协议怎么变，只改 src/main/prompt.ts 一侧的适配（见 HANDOFF §9 原则 2）。
+ * 不依赖 pi 内部类型；消息在 src/main/normalize.ts 中归一化为 UIMessage，
+ * RPC 事件由 src/main/agent.ts 适配。
  */
 
-/* ==================================================================
-   RPC
-   ================================================================== */
+/* RPC */
 
 /** 带 id 的请求 → 响应关联 */
 export interface RpcResponse {
@@ -19,9 +17,7 @@ export interface RpcResponse {
   error?: string
 }
 
-/* ==================================================================
-   消息（渲染用）
-   ================================================================== */
+/* 消息（渲染用） */
 
 export interface Usage {
   input: number
@@ -267,9 +263,7 @@ export interface CustomEntry {
   data: unknown
 }
 
-/* ==================================================================
-   会话列表
-   ================================================================== */
+/* 会话列表 */
 
 export interface SessionSummary {
   id: string
@@ -334,9 +328,7 @@ export interface PeekResult {
   bytes: number
 }
 
-/* ==================================================================
-   模型接入（凭证）
-   ================================================================== */
+/* 模型接入（凭证） */
 
 /** 能不能用：ready = 有可用凭证 */
 export type AuthStatus = 'ready' | 'missing' | 'unknown'
@@ -367,9 +359,7 @@ export interface AuthProviderInfo {
   source?: 'auth.json' | 'env'
 }
 
-/* ==================================================================
-   记忆 —— 砚的核心
-   ================================================================== */
+/* 记忆 —— 砚的核心 */
 
 /**
  * fact  = 已确认（来源：你）
@@ -419,6 +409,12 @@ export interface AppSettings {
   /** 工具栏宽度（px）。0 = 用设计默认值 */
   panelWidth: number
   /**
+   * 浏览器区域高度（px）。**0 = 用设计默认值**（55% 的右栏高度）。
+   * 只在浏览器与工具栏同时显示时可拖 —— 工具栏收起时浏览器独占整列，
+   * 这个值就不参与了。与 railWidth / panelWidth 同一个约定。
+   */
+  browserHeight: number
+  /**
    * 工具栏分区的显示顺序（存 id）。
    *
    * **空数组 = 用设计默认顺序** —— 与 railWidth 同一个思路：
@@ -461,7 +457,56 @@ export interface AppSettings {
    * 自主模式是用户为了“别打断我”主动打开的。
    */
   autonomous: boolean
+  /**
+   * 声音提示（对齐 opencode 的 attention / sounds）。
+   *
+   * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。
+   */
+  sound: SoundSettings
 }
+
+/**
+ * 会发出提示音的事件。
+ *
+ * 对齐 opencode 的 done / question / error 三类：
+ *   · done      —— 一个回合跑完了（agent_settled）
+ *   · question  —— 扩展/模型要用户做选择，需要人介入
+ *   · error     —— 出错（扩展报错 / pi 进程错误）
+ */
+export type SoundEvent = 'done' | 'question' | 'error'
+
+export interface SoundSettings {
+  /** 总开关 */
+  enabled: boolean
+  /** 音量 0~1（opencode 默认 0.4） */
+  volume: number
+  /**
+   * 窗口不在前台时是否发**系统通知**（Windows 通知中心）。
+   *
+   * 与声音独立：可以只要声音不要通知，或反之。默认 true（对齐 opencode）。
+   */
+  notifications: boolean
+  /** 各事件单独开关（控制声音，也控制通知） */
+  events: Record<SoundEvent, boolean>
+}
+
+/**
+ * 渲染端请求一次系统通知。
+ *
+ * 为什么不在渲染端直接 new Notification：
+ *   · 主进程能拿到窗口状态，点击通知后能把窗口拉回前台（restore + focus）；
+ *   · Windows 上需要 AppUserModelID 才能显示 toast，那只能在主进程设；
+ *   · 渲染端的 Web Notification 在打包后行为不一致，主进程一条路径更好控。
+ */
+export interface AttentionNotify {
+  kind: SoundEvent
+  title: string
+  body?: string
+}
+
+/** 音量的合法区间（主进程与渲染端共用，避免两边各写一份） */
+export const SOUND_VOLUME_MIN = 0
+export const SOUND_VOLUME_MAX = 1
 
 /**
  * 工具栏分区的 id。
@@ -624,9 +669,7 @@ export interface PiProbe {
   tried: string[]
 }
 
-/* ==================================================================
-   内置浏览器
-   ================================================================== */
+/* 内置浏览器 */
 
 /** 应用内浏览器的可观察状态。 */
 export interface BrowserState {
@@ -717,9 +760,7 @@ export interface BrowserBounds {
   height: number
 }
 
-/* ==================================================================
-   扩展 UI 桥
-   ================================================================== */
+/* 扩展 UI 桥 */
 
 export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text'
 
@@ -741,11 +782,9 @@ export interface ExtensionUiRequest {
   timeout?: number
 }
 
-/* ==================================================================
-   主进程 → 渲染进程 的推送
+/* 主进程 → 渲染进程 的推送
    —— 全部是**已归一化**的 UI 补丁。渲染端不认识 pi 的协议细节，
-      协议知识只存在于 src/main/agent.ts 一处。
-   ================================================================== */
+   协议知识只存在于 src/main/agent.ts 一处。 */
 
 export interface ToolPatch {
   /** 工具调用属于哪条消息 */
@@ -956,6 +995,12 @@ export interface YanBridge {
 
   /* 扩展 UI 应答 */
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
+
+  /**
+   * 发一条系统通知（仅当用户开了通知开关时由 store 调用）。
+   * 返回 shown=false 表示系统不支持/被拦，调用方不需要重试。
+   */
+  notifyAttention(n: AttentionNotify): Promise<{ shown: boolean; simulated?: boolean; error?: string }>
 
   /* 诊断 */
   probePi(): Promise<PiProbe>

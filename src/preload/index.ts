@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AppSettings,
   Attachment,
+  AttentionNotify,
   BrowserBounds,
   BrowserObservation,
   BrowserState,
@@ -116,6 +117,10 @@ const api: YanBridge = {
 
   /* ---- 扩展 UI 应答（单向） ---- */
   respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
+
+  /* ---- 系统通知（声音提示的通知开关用） ---- */
+  notifyAttention: (n: AttentionNotify) =>
+    invoke<{ shown: boolean; simulated?: boolean; error?: string }>('yan:notifyAttention', n),
 
   /* ---- 诊断 ---- */
   probePi: () => invoke<PiProbe>('yan:probePi'),
