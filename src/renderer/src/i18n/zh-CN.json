@@ -419,6 +419,8 @@
   "browser.cookiesToChrome": "复制 Cookie 到 Chrome",
   "browser.cookiesCopied": "Cookie 已复制，刷新目标网页后检查登录状态",
   "browser.cookieScope": "按此方向复制 Cookie；不复制浏览器设置，也不保证所有网站登录可迁移",
+  "browser.storageCopy": "复制当前页面存储",
+  "browser.storageScope": "仅复制同一网站当前页面的 localStorage 和 sessionStorage；按此方向复制，不包含 Cookie、浏览器设置或跨站数据",
   "browser.syncFailed": "Cookie 复制失败，请检查浏览器连接",
   "rail.unread": "有未读的完成结果"
 }

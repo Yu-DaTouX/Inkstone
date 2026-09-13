@@ -272,6 +272,7 @@ interface Store {
    * 返回逐项报告 —— 界面要如实说「哪几项没同步、为什么」。
    */
   syncLocalProfile: () => Promise<ChromeSyncReport>
+  syncPageStorage: () => Promise<ChromeSyncReport>
   /**
    * 改用户档案（名字 / 头像）。
    * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
@@ -1119,6 +1120,11 @@ export const useStore = create<Store>((rawSet, get) => {
      * 同步后主进程可能重启了外部 Chrome（为让 cookie 生效），
      * 所以重新拉一次状态，而不是假定旧状态还成立。
      */
+    set({ browserState: await window.yan.browser.getState() })
+    return report
+  },
+  syncPageStorage: async () => {
+    const report = await window.yan.browser.syncPageStorage()
     set({ browserState: await window.yan.browser.getState() })
     return report
   },

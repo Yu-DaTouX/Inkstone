@@ -246,6 +246,23 @@ export function Rail() {
       })
   }, [sessions, query, session, t, titles, manualTitles, projectNames, settings?.recentCwds, archived, showArchived])
 
+  // 将项目实体按持久化分组重新排列；分组标题会在项目列表中作为一级标题显示。
+  // 组内仍保留项目原本的活动排序，未分组项目统一放在最后。
+  const displayProjects = useMemo(() => {
+    const groupIdFor = (cwd: string): string | undefined => projectRecords.find((record) => record.cwd === cwd)?.groupId
+    const byGroup = new Map<string, typeof projects>()
+    for (const project of projects) {
+      const key = groupIdFor(project.cwd) ?? ''
+      const list = byGroup.get(key) ?? []
+      list.push(project)
+      byGroup.set(key, list)
+    }
+    const ordered: typeof projects = []
+    for (const group of projectGroups) ordered.push(...(byGroup.get(group.id) ?? []))
+    ordered.push(...(byGroup.get('') ?? []))
+    return ordered
+  }, [projects, projectRecords, projectGroups])
+
   /**
    * 会话分支关系（用户要求：左栏显示分支数 / 分支编号）。
    *
@@ -428,10 +445,15 @@ export function Rail() {
           ) : shown === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.noMatch')}</div>
           ) : projectsOpen || query ? (
-            projects.map((p) => {
+            displayProjects.map((p, projectIndex) => {
               const pOpen = !!query || !collapsed.includes(p.cwd)
+              const groupId = projectRecords.find((record) => record.cwd === p.cwd)?.groupId
+              const group = groupId ? projectGroups.find((candidate) => candidate.id === groupId) : undefined
+              const previous = displayProjects[projectIndex - 1]
+              const previousGroupId = previous ? projectRecords.find((record) => record.cwd === previous.cwd)?.groupId : undefined
               return (
                 <div key={p.cwd} className="proj">
+                  {group && groupId !== previousGroupId ? <div className="proj-group-heading" data-testid="rail-project-group" title={group.name}>{group.name}</div> : null}
                   {projRename === p.cwd ? (
                     /* 项目行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
                     <div className="proj-head renaming" data-testid="rail-project-rename">

@@ -14,6 +14,7 @@
   const grandchild = sample('review-grandchild', '窄窗口验证', child.path)
   const other = sample('review-other', '字体与文件树')
   const list = [root, child, grandchild, other]
+  const group = { id: 'review-group', name: '界面改版', createdAt: stamp }
   const messages = [
     { id: 'review-u', role: 'user', text: '请结合设计方案，检查左右栏与整体界面。' },
     { id: 'review-a', role: 'assistant', text: '**左右栏结构已整理。**\n\n项目下显示主会话，展开后查看分支。长标题保持单行，完整内容可以悬停查看。\n\n- 左栏宽度可以拖动调整，收起后保留常用入口。\n- 右侧浏览器随窗口尺寸变化，工具分区保持可滚动。\n- 正文采用更紧凑的字距，代码保留等宽显示。\n\n```ts\nconst sidebar = { width: 260, collapsed: false }\n```\n\n这是一组独立的界面验证数据。' }
@@ -22,8 +23,9 @@
   // Keep the renderer-only fixture independent of pi's disk session refresh.
   store.setState({ refreshSessions: async () => {} })
   store.getState().setRailPinned(true)
-  await store.getState().patchSettings({ railWidth: 0, panelWidth: 264, rightPanelOpen: true, browserHeight: 900 })
+  await store.getState().patchSettings({ railWidth: 0, panelWidth: 264, rightPanelOpen: true, browserHeight: 900, projectGroups: [group], projects: [{ id: 'review-project', cwd, name: 'pi-desktop', groupId: group.id, archived: false, createdAt: stamp, updatedAt: stamp }] })
   await sleep(350)
+  assert(document.querySelector('[data-testid="rail-project-group"]')?.textContent === group.name, 'Project group must render as a first-level heading')
   const row = (path) => [...document.querySelectorAll('.proj [data-session-path]')].find((el) => el.dataset.sessionPath === path)
   assert(row(root.path) && !row(child.path), 'Branches must start collapsed without duplicate project roots')
   row(root.path).querySelector('[data-testid="rail-branch-toggle"]').click()

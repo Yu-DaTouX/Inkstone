@@ -39,6 +39,7 @@ import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chr
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { transferCookies } from './browser/cookie-transfer'
+import { transferPageStorage } from './browser/storage-transfer'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -705,6 +706,21 @@ export class BrowserController {
     const profileDir = defaultProfileDir(YAN_DIR)
     await mkdir(profileDir, { recursive: true })
     const report = await syncLocalChromeData(profileDir)
+    return report
+  }
+
+  async syncPageStorage(): Promise<ChromeSyncReport> {
+    if (!this.external) throw new Error('请先接入本机 Chrome')
+    const embedded = this.activeTab() ?? this.createTab()
+    const externalUrl = this.external.url
+    const embeddedUrl = embedded.state.url
+    if (new URL(externalUrl).origin !== new URL(embeddedUrl).origin) throw new Error('两个页面必须处于同一网站，才能复制当前页面存储')
+    const from = this.activeMode === 'external' ? this.external.cdp : embedded.cdp
+    const to = this.activeMode === 'external' ? embedded.cdp : this.external.cdp
+    const results = await Promise.all([transferPageStorage(from, to, 'localStorage'), transferPageStorage(from, to, 'sessionStorage')])
+    const report: ChromeSyncReport = { found: true, chromeRunning: true, cookiesSynced: false, source: this.activeMode === 'external' ? 'Chrome 当前页面' : '内置浏览器当前页面', target: this.activeMode === 'external' ? '内置浏览器当前页面' : 'Chrome 当前页面', copied: results.map((r) => `${r.kind}: ${r.copied}`), failed: results.flatMap((r) => r.failed ? [{ item: r.kind, reason: `${r.failed} 项未能复制` }] : []) }
+    this.external.syncReport = report
+    this.updateState()
     return report
   }
 

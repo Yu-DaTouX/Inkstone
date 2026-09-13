@@ -154,6 +154,7 @@ const api: YanBridge = {
     openExternalChrome: (url) => invoke<Ok>('yan:browser:openExternalChrome', url),
     closeExternalChrome: () => invoke<BrowserState>('yan:browser:closeExternalChrome'),
     syncLocalProfile: () => invoke<ChromeSyncReport>('yan:browser:syncLocalProfile'),
+    syncPageStorage: () => invoke<ChromeSyncReport>('yan:browser:syncPageStorage'),
     setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds)
   },

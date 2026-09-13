@@ -1109,6 +1109,17 @@
 }
 
 /* ---- 项目行 ---- */
+.proj-group-heading {
+  margin: 12px 6px 4px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .proj + .proj {
   margin-top: 3px;
 }

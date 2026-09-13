@@ -136,7 +136,8 @@ async function makeSession(file, opts) {
     version: 3,
     id: opts.id,
     timestamp: opts.timestamp,
-    cwd: opts.cwd
+    cwd: opts.cwd,
+    ...(opts.parentSession ? { parentSession: opts.parentSession } : {})
   })
   if (opts.name) {
     body += line({
@@ -260,6 +261,29 @@ ok(before === after || (before?.title === after?.title && before?.updatedAt === 
 
 
 console.log('\n--- 8. 删除的路径防护 ---')
+
+// 父子孙分支必须作为一棵树移动，并可完整撤销。
+const branchRoot = await makeSession('branch-root.jsonl', {
+  id: 'branch-root', timestamp: new Date().toISOString(), cwd: 'C:\\branch', messages: ['root']
+})
+const branchChild = await makeSession('branch-child.jsonl', {
+  id: 'branch-child', parentSession: 'branch-root', timestamp: new Date().toISOString(), cwd: 'C:\\branch', messages: ['child']
+})
+const branchGrandchild = await makeSession('branch-grandchild.jsonl', {
+  id: 'branch-grandchild', parentSession: 'branch-child', timestamp: new Date().toISOString(), cwd: 'C:\\branch', messages: ['grandchild']
+})
+const branchToken = await deleteSession(branchRoot)
+const afterBranchDelete = await listSessions()
+ok(![branchRoot, branchChild, branchGrandchild].some((p) => afterBranchDelete.some((s) => s.path === p)), '删除父会话会移除整棵父子孙树')
+await restoreSession(branchToken)
+const afterBranchRestore = await listSessions()
+ok([branchRoot, branchChild, branchGrandchild].every((p) => afterBranchRestore.some((s) => s.path === p)), '撤销删除会恢复整棵父子孙树')
+
+let protectedRejected = false
+try { await deleteSession(branchRoot, branchGrandchild) } catch { protectedRejected = true }
+ok(protectedRejected, '当前会话位于子树时拒绝删除父会话')
+const afterProtected = await listSessions()
+ok([branchRoot, branchChild, branchGrandchild].every((p) => afterProtected.some((s) => s.path === p)), '拒绝删除时不会移动任何分支文件')
 
 // 正常删除：先移入回收站，再允许本次运行内撤销
 const undoToken = await deleteSession(pPath)

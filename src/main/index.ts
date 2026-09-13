@@ -698,6 +698,7 @@ function registerIpc(): void {
   ipcMain.handle('yan:browser:syncLocalProfile', () =>
     browser?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
   )
+  ipcMain.handle('yan:browser:syncPageStorage', () => browser?.syncPageStorage() ?? Promise.reject(new Error('浏览器未初始化')))
   ipcMain.handle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
   ipcMain.handle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browser?.setBounds(bounds)

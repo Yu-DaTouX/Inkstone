@@ -23,6 +23,7 @@ export function BrowserSurface() {
   const openExternalChrome = useStore((s) => s.openExternalChrome)
   const closeExternalChrome = useStore((s) => s.closeExternalChrome)
   const syncLocalProfile = useStore((s) => s.syncLocalProfile)
+  const syncPageStorage = useStore((s) => s.syncPageStorage)
   const [syncing, setSyncing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const tabs = state.tabs ?? []
@@ -37,6 +38,11 @@ export function BrowserSurface() {
       const report = await syncLocalProfile()
       setSyncNotice(`${report.source ?? ''} → ${report.target ?? ''}: ${report.copied.join(', ')}${report.failed.length ? ' · ' + report.failed.map((x) => x.reason).join('; ') : ''}`)
     } catch { setError(t('browser.syncFailed')) } finally { setSyncing(false) }
+  }
+  const syncStorage = async (): Promise<void> => {
+    setSyncing(true)
+    try { const report = await syncPageStorage(); setSyncNotice(`${report.source ?? ''} → ${report.target ?? ''}: ${report.copied.join(', ')}`) }
+    catch (e) { setError(e instanceof Error ? e.message : t('browser.syncFailed')) } finally { setSyncing(false) }
   }
   const viewportRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -200,6 +206,9 @@ export function BrowserSurface() {
         <div className="browser-actions" data-testid="browser-menu">
           {external ? <button className="browser-action" disabled={syncing} onClick={() => void syncCookies()} title={t('browser.cookieScope')}>
             {syncing ? t('browser.syncing') : state.mode === 'external' ? t('browser.cookiesToEmbedded') : t('browser.cookiesToChrome')}
+          </button> : null}
+          {external ? <button className="browser-action" disabled={syncing} onClick={() => void syncStorage()} title={t('browser.storageScope')}>
+            {syncing ? t('browser.syncing') : t('browser.storageCopy')}
           </button> : null}
           {syncNotice ? <span className="browser-sync-result" title={syncNotice}>{syncNotice}</span> : null}
           <button

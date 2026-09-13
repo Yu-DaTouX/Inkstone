@@ -1073,6 +1073,7 @@ export interface YanBridge {
     closeExternalChrome(): Promise<BrowserState>
     /** 重新同步本机 Chrome 的登录态与历史（退出 Chrome 后调用才拿得到 cookie） */
     syncLocalProfile(): Promise<ChromeSyncReport>
+    syncPageStorage(): Promise<ChromeSyncReport>
     setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
   }

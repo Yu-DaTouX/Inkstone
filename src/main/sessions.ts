@@ -357,10 +357,14 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     byParent.set(session.parentSession, children)
   }
   const paths: string[] = []
-  const visit = (candidate: string): void => {
-    if (paths.includes(candidate)) return
+  const visited = new Set<string>()
+  const visit = (candidate: string, sessionId?: string): void => {
+    if (visited.has(candidate)) return
+    visited.add(candidate)
     paths.push(candidate)
-    for (const child of byParent.get(candidate) ?? []) visit(child.path)
+    const id = sessionId ?? all.find((session) => resolve(session.path) === candidate)?.id
+    if (!id) return
+    for (const child of byParent.get(id) ?? []) visit(resolve(child.path), child.id)
   }
   visit(resolved)
   if (protectedPath && paths.includes(resolve(protectedPath))) {

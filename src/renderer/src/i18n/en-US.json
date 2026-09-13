@@ -419,6 +419,8 @@
   "browser.cookiesToChrome": "Copy cookies to Chrome",
   "browser.cookiesCopied": "Cookies copied; refresh the destination page to check login",
   "browser.cookieScope": "Copies cookies in this direction; excludes browser settings and does not guarantee login portability",
+  "browser.storageCopy": "Copy current page storage",
+  "browser.storageScope": "Copies same-origin localStorage and sessionStorage in this direction; excludes cookies, browser settings, and cross-site data",
   "browser.syncFailed": "Cookie copy failed. Check the browser connection.",
   "rail.unread": "Unread completed result"
 }
