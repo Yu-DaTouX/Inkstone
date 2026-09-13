@@ -53,6 +53,11 @@
   log('  队列: steering=' + JSON.stringify(queue.steering) + ' followUp=' + JSON.stringify(queue.followUp))
   const queued = [...queue.steering, ...queue.followUp]
   ok(queued.length > 0, `排队里有 ${queued.length} 条`)
+  // 默认投递方式是**排队**（follow-up），不是插话（steering）
+  ok(queue.followUp.length > 0, '默认进 follow-up 队列（排队）')
+  ok(queue.steering.length === 0, '默认不插话（steering 为空）')
+  // 排队消息要显示在输入框上方
+  ok(!!q('[data-testid="queue-stack"]'), '排队消息显示在输入框上方')
 
   /* ---- Esc：clear_queue → abort → 文本回到输入框 ---- */
   log('--- 按 Esc ---')

@@ -2,7 +2,8 @@
  * 任务模块的四条要求（用户消息 #17）。
  *
  *   ① 正在进行的任务在**任务本体上**显示，不单独开一栏
- *   ② 单个任务最多 18 字（完整文本放 title）
+ *   ② 单个任务最多两行（完整文本放 title）—— 用户新要求，之前是 18 字
+ *   ③ 全部任务完成时，任务栏自动收起（用户新要求）
  *   ③ 有历史任务就显示折叠模块，没有就不显示
  *   ④ 旁边有「历史任务查看 + 跳转」
  *
@@ -64,12 +65,28 @@
     if (qa('.rp-todo[data-active="1"]').length === 1) ok('只有一条被标为 active')
     else bad('active 条数不对：' + qa('.rp-todo[data-active="1"]').length)
 
-    out.push('\n=== 3. 任务文字最多 18 字 ===')
-    const texts = qa('.rp-todos .rp-text').map((e) => e.textContent)
+    out.push('\n=== 3. 任务文字最多两行 ===')
+    const cells = qa('.rp-todos .rp-text')
+    const texts = cells.map((e) => e.textContent)
     out.push('  渲染的任务文字: ' + JSON.stringify(texts))
-    const long = texts.find((x) => x.includes('…'))
-    if (long && long.length === 19) ok('超长任务被截断为 18 字 + 省略号（' + long.length + ' 字符）')
-    else bad('截断不对：' + JSON.stringify(texts))
+    const longCell = cells.find((e) => e.textContent.includes('特别特别长'))
+    if (longCell) {
+      const cs = getComputedStyle(longCell)
+      const clamp = cs.getPropertyValue('-webkit-line-clamp') || cs.webkitLineClamp
+      const lineH = parseFloat(cs.lineHeight) || 20
+      const maxH = parseFloat(cs.maxHeight)
+      out.push('  display=' + cs.display + ' line-clamp=' + clamp + ' max-height=' + cs.maxHeight + ' line-height=' + cs.lineHeight)
+      if (String(clamp) === '2') ok('声明了 -webkit-line-clamp: 2')
+      else bad('行数限制不对：' + clamp)
+      if (cs.overflow === 'hidden' && Number.isFinite(maxH) && maxH <= lineH * 2 + 2) {
+        ok('高度被夹在两行内（max-height + overflow hidden）')
+      } else {
+        bad('两行夹取未生效（overflow=' + cs.overflow + ' max-height=' + cs.maxHeight + '）')
+      }
+      // 27 字的文本不应再被按 18 字硬截（两行能放满）
+      if (!longCell.textContent.includes('…')) ok('没有按 18 字硬截（' + longCell.textContent.length + ' 字符）')
+      else bad('仍然在按字数截断：' + JSON.stringify(longCell.textContent))
+    } else bad('没找到超长任务那个格子')
     const longRow = qa('.rp-todo').find((r) => r.getAttribute('title')?.includes('特别特别长'))
     if (longRow) ok('完整文本在 title 里（悬停可见，没丢信息）')
     else bad('没有 title，信息丢了')
@@ -115,6 +132,23 @@
     await sleep(600)
     if (!document.querySelector('[data-testid="rp-todo"]')) ok('空任务不占位')
     else bad('空任务还渲染了分区')
+
+    out.push('\n=== 7. 全部完成自动收起；新任务再展开（用户新要求）===')
+    const secOpen = () => !!document.querySelector('[data-testid="rp-todo"].open')
+    store.setState({ todos: mk([['甲', true], ['乙', false]]), todoHistory: [] })
+    await sleep(500)
+    if (secOpen()) ok('有未完成任务时任务栏展开')
+    else bad('有未完成任务却没展开')
+    store.setState({ todos: mk([['甲', true], ['乙', true]]), todoHistory: [] })
+    await sleep(600)
+    if (!secOpen()) ok('全部完成后任务栏自动收起')
+    else bad('全部完成了但没收起')
+    if (!document.querySelector('.rp-todo')) ok('收起后任务行不在 DOM（真的收起了）')
+    else bad('收起后任务行还在')
+    store.setState({ todos: mk([['丙', false]]), todoHistory: [] })
+    await sleep(600)
+    if (secOpen()) ok('新任务出现后自动重新展开')
+    else bad('新任务来了却没展开')
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length

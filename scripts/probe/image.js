@@ -47,14 +47,15 @@
   await sleep(600)
   ok(store.getState().attachments.length === 0, '发送后附件被清空（不会重复发）')
 
-  // 等回答
+  // 等回答（硬截止 70s：测试框架会在 delay+90s 后 kill，必须提前收尾）
   let answered = false
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + 70000
+  while (Date.now() < deadline) {
     await sleep(500)
     const busy = store.getState().session?.isStreaming || !!q('.cursor')
     const txt = qa('.msg.assistant .md').map((e) => e.textContent).join('')
     if (!busy && txt.length > 0 && qa('.msg').length > nBefore) { answered = true; break }
-    if (i > 8 && !busy && txt.length > 0) { answered = true; break }
+    if (!busy && txt.length > 0) { answered = true; break }
   }
   await sleep(1200)
 

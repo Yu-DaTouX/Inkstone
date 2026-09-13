@@ -206,9 +206,10 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `npm run build` / `npm start` | 构建 / 用构建产物启动 |
 | `npm run check` | **提交前跑这个**：typecheck + build + 单元测试 + 设计稿溢出 + 30 个真实应用场景（不烧 token） |
 | `npm run test:unit` | 纯逻辑单测（110 条，不启动 Electron）：会话解析 / 回合分组 / 段落拆分 / 命中率 / 缩放档位 |
-| `npm run test:live` | 全部场景（含 5 个会真调模型的） |
+| `npm run test:live` | 全部场景（含会真调模型的） |
 | `npm run test:live -- live features sessions` | 指定场景，不烧 token |
-| `npm run test:live -- e2e image queue` | 会花少量额度（真流式 / 真图片 / 真排队） |
+| `npm run test:live -- e2e image queue ask` | 会真调模型（真流式 / 真图片 / 真排队 / 真问答） |
+| `npm run test:live -- ask` | 问答功能端到端（模型主动提问 → 弹窗 → 回答 → 回填） |
 | `npm run probe-pi` | 单独验证「pi 能不能被找到并启动」 |
 | `npm run icons` | 从设计稿重抽图标 sprite |
 | `npm run icon` | 重新生成应用图标 `build/icon.ico` + `icon.png`（离屏渲染，无新依赖） |
@@ -241,7 +242,12 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 |---|---|---|
 | 纯逻辑 | `test:unit`（node） | 快、确定、能断言边界（路径穿越 / 坏数据 / 缓存） |
 | UI + 接线 | `test:live`（真实 Electron） | 完整主进程 / preload / IPC / pi 子进程 |
-| 真行为 | `test:live -- e2e image queue` | 真模型、真工具、真图片 |
+| 真行为 | `test:live -- e2e image queue ask` | 真模型、真工具、真图片 |
+
+> **测试用哪个模型**：真实调模型的场景默认固定用 **commandcode 的
+> Ling 3.0 Flash Sante（免费）**，所以可以放心反复跑；需要视觉的 `image`
+> 用视觉模型。用 `YAN_TEST_MODEL` 可覆盖。完整约定见
+> [`docs/dev/TESTING.md`](docs/dev/TESTING.md)。
 
 **UI 层不在裸 `BrowserWindow` 里测。** 那样 preload/IPC/pi 全都不存在，
 断言会「通过」而应用其实是坏的。

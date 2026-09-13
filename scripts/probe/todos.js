@@ -196,7 +196,19 @@
   await sleep(1000)
   tstore.setState({ todos: tmk(5, 5) })
   await sleep(300)
-  ok(!tmeter().classList.contains('busy'), '全完成后去掉推进动画')
+  /*
+   * 全部完成时任务栏会**自动收起**（用户要求，todonew 专测）。
+   * 收起后 Section 不渲染 body → 进度条节点不在 DOM。
+   * 这里要验证的是「去掉推进动画」，所以先把分区重新展开再查。
+   */
+  {
+    const head = q('[data-sec="rp-todo"] .rp-sec-head')
+    if (head && head.getAttribute('aria-expanded') === 'false') {
+      head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(250)
+    }
+  }
+  ok(!!tmeter() && !tmeter().classList.contains('busy'), '全完成后去掉推进动画')
   ok(!!q('[data-testid="todo-all-done"]'), '全完成后有「全部完成」提示')
   ok(!q('[data-testid="todo-active-label"]'), '全完成后不再有「正在进行」标记')
 

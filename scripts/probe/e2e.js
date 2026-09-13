@@ -25,7 +25,7 @@
 
   /* ---- 输入（受控组件必须走原生 setter） ---- */
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  setter.call(ta, '用 bash 工具跑 `echo yan-e2e-ok`，然后只回复命令输出，不要任何解释。')
+  setter.call(ta, '必须先调用 bash 工具执行命令 `echo yan-e2e-ok`，再根据工具返回的内容回复。不要自己编造输出，不要省略工具调用。')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(200)
 
@@ -45,8 +45,8 @@
   while (Date.now() < deadline) {
     await sleep(400)
     if (q('.cursor')) sawCursor = true
-    if (q('.tool-status.running')) sawRunning = true
-    if (q('.tool')) sawTool = true
+    if (q('.trow[data-state="running"]')) sawRunning = true
+    if (q('.trow')) sawTool = true
 
     const txt = qa('.msg.assistant .md').map((e) => e.textContent).join('')
     if (txt.length > lastLen) {
@@ -55,7 +55,7 @@
     }
 
     // 收工条件：已有助手正文，且不再流式/执行工具
-    const busy = !!q('.cursor') || !!q('.tool-status.running') || send.textContent.includes('中止')
+    const busy = !!q('.cursor') || !!q('.trow[data-state="running"]') || send.textContent.includes('中止')
     if (txt.length > 0 && !busy) break
   }
 
@@ -72,15 +72,15 @@
 
   /* ---- 工具卡内容 ---- */
   log('--- 工具卡 ---')
-  const tools = qa('.tool')
+  const tools = qa('.trow')
   const bash = tools.find((t) => t.dataset.tool === 'bash')
   ok(!!bash, '有 bash 工具卡')
   if (bash) {
     log(`  ${bash.dataset.tool} state=${bash.dataset.state} open=${bash.classList.contains('open')}`)
-    log('  摘要=' + JSON.stringify((bash.querySelector('.tool-sum')?.textContent ?? '').slice(0, 60)))
+    log('  摘要=' + JSON.stringify((bash.querySelector('.trow-target')?.textContent ?? '').slice(0, 60)))
     ok(bash.dataset.state === 'ok', `bash 状态 = ${bash.dataset.state}（应 ok）`)
     ok(
-      (bash.querySelector('.tool-sum')?.textContent ?? '').includes('echo'),
+      (bash.querySelector('.trow-target')?.textContent ?? '').includes('echo'),
       'bash 摘要显示的是命令'
     )
     // 成功的短输出按规则是折叠的，但摘要必须留着

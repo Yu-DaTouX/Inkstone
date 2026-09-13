@@ -27,7 +27,7 @@
 
   /* ---- 1. 还没跑过对话时不占位 ---- */
   log('\n--- 1. 空会话不占位 ---')
-  const beforeHas = !!q('[data-testid="tokbar"]')
+  const beforeHas = !!q('[data-testid="usagebar"]')
   log('  跑对话前 tokbar 存在: ' + beforeHas)
 
   /* ---- 2. 发一条真消息 ---- */
@@ -40,7 +40,7 @@
   let liveSample = null
   for (let i = 0; i < 60; i++) {
     await sleep(400)
-    const bar = q('[data-testid="tokbar"]')
+    const bar = q('[data-testid="usagebar"]')
     if (bar && store.getState().session?.isStreaming) {
       liveSample = bar.textContent.replace(/\s+/g, ' ').trim()
       break
@@ -59,15 +59,15 @@
   await sleep(1200)
 
   /* ---- 3. 断言：DOM 里有条，字段齐全 ---- */
-  const bar = q('[data-testid="tokbar"]')
+  const bar = q('[data-testid="usagebar"]')
   ok(!!bar, 'tokbar 出现了')
   if (!bar) return out.join('\n')
 
   log('  内容: ' + JSON.stringify(bar.textContent.replace(/\s+/g, ' ').trim()))
 
-  const toks = qa('.tokbar .tok')
+  const toks = qa('.usagebar .ub-item')
   log('  字段数: ' + toks.length)
-  const labels = toks.map((x) => x.querySelector('.tok-label')?.textContent)
+  const labels = toks.map((x) => x.querySelector('.ub-label')?.textContent)
   log('  标签: ' + JSON.stringify(labels))
   for (const need of ['输入', '输出', '缓存', '速度']) {
     ok(labels.includes(need), `有「${need}」`)
@@ -89,17 +89,24 @@
   )
 
   // 输出字段应该显示的就是 output
-  const outTok = toks.find((x) => x.querySelector('.tok-label')?.textContent === '输出')
-  const outShown = outTok?.querySelector('.tok-value')?.textContent ?? ''
+  const outTok = toks.find((x) => x.querySelector('.ub-label')?.textContent === '输出')
+  const outShown = outTok?.querySelector('.ub-value')?.textContent ?? ''
   log('  输出显示: ' + JSON.stringify(outShown))
   ok(outShown.length > 0 && outShown !== '—', '输出有数字而不是 —')
 
   // 缓存命中率
-  const cacheTok = toks.find((x) => x.querySelector('.tok-label')?.textContent === '缓存')
-  const hitShown = cacheTok?.querySelector('.tok-extra')?.textContent ?? ''
+  const cacheTok = toks.find((x) => x.querySelector('.ub-label')?.textContent === '缓存')
+  const hitShown = cacheTok?.querySelector('.ub-extra')?.textContent ?? ''
   log('  命中率显示: ' + JSON.stringify(hitShown))
   const u = last.usage
-  const expect = u.cacheRead + u.input > 0 ? ((u.cacheRead / (u.cacheRead + u.input)) * 100).toFixed(0) + '%' : null
+  const expect =
+    u.cacheRead + u.input > 0
+      ? (() => {
+          const pct = (u.cacheRead / (u.cacheRead + u.input)) * 100
+          // 与 UsageBar 的 formatHitRate 同一规则：≥99.5% 显示“≈100%”，否则一位小数
+          return pct >= 99.5 ? '≈100%' : pct.toFixed(1) + '%'
+        })()
+      : null
   if (expect) {
     ok(hitShown === expect, `命中率 = ${hitShown}（应 ${expect}）`)
   } else {
@@ -111,14 +118,19 @@
 
   /* ---- 5. 大数缩写 ---- */
   log('\n--- 5. 格式化 ---')
-  log('  输入显示: ' + JSON.stringify(toks.find((x) => x.querySelector('.tok-label')?.textContent === '输入')?.querySelector('.tok-value')?.textContent))
+  log('  输入显示: ' + JSON.stringify(toks.find((x) => x.querySelector('.ub-label')?.textContent === '输入')?.querySelector('.ub-value')?.textContent))
   ok(!/\d{6,}/.test(bar.textContent), '没有裸露的六位以上数字（应该缩写）')
 
-  /* ---- 6. 不占位：没有 usage 时 ---- */
-  log('\n--- 6. 新会话不占位 ---')
+  /* ---- 6. 新会话：条在，但没有用量数字 ---- */
+  log('\n--- 6. 新会话：条在但没有用量数字 ---')
   await store.getState().newSession()
   await sleep(3000)
-  ok(!q('[data-testid="tokbar"]'), '新会话（无用量）时不显示用量条')
+  ok(!!q('[data-testid="usagebar"]'), '新会话仍显示用量条（模型已连上）')
+  {
+    const outItem = qa('.usagebar .ub-item').find((x) => x.querySelector('.ub-label')?.textContent === '输出')
+    const v = outItem?.querySelector('.ub-value')?.textContent ?? ''
+    ok(v.startsWith('—') || v === '', `新会话「输出」没有数字（实际 ${JSON.stringify(v)}）`)
+  }
 
   /* ---- 7. 溢出 ---- */
   const over = bar.scrollWidth - bar.clientWidth

@@ -31,6 +31,24 @@ import { tmpdir, homedir } from 'node:os'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+/*
+ * 测试统一使用的模型（会让所有 cost>0 场景真实调模型）。
+ *
+ * 默认用 **commandcode 的 Ling 3.0 Flash Sante（免费）**：
+ *   供应商 provider = commandcode
+ *   模型 id        = inclusionai/ling-3.0-flash-sante:free
+ * 它成本为 0，适合反复跑回归。个别场景（如 image 要发图）需要视觉模型，
+ * 在 CASES 里用 `model:` 单独覆盖。
+ *
+ * 想用别的模型：`YAN_TEST_MODEL="provider/modelId" npm run test:live -- e2e`。
+ * 约束：模型必须能从 **真实 `~/.pi/agent/auth.json`** 取到凭证（测试不隔离 auth）；
+ * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
+ */
+const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/inclusionai/ling-3.0-flash-sante:free'
+/** 需要视觉的场景专用（Ling 是纯文本模型，发图会失败） */
+const TEST_VISION_MODEL =
+  process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
+
 /** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
   // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
@@ -68,8 +86,18 @@ const CASES = {
     cost: 0,
     wins: ['1456x1000', '1002x700', '940x700']
   },
-  // 任务模块：进行中就地显示 / 18 字 / 历史折叠 + 跳转
+  // 任务模块：进行中就地显示 / 两行截断 / 全部完成自动收起 / 历史折叠 + 跳转
   todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
+  // 左栏会话重命名（行内输入；回归 Electron 不支持 window.prompt 的坑）
+  rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
+  // 自主模式开关（在输入栏里 / 落盘）
+  autonomous: { probe: 'scripts/probe/autonomous.js', delay: 9000, cost: 0 },
+  // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
+  context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
+  // 排队消息：显示在输入框上方 + 插队按钮接线
+  queuestack: { probe: 'scripts/probe/queuestack.js', delay: 9000, cost: 0 },
+  // 所有报错都进日志（store.set 包装的回归网）
+  logs: { probe: 'scripts/probe/logs.js', delay: 9000, cost: 0 },
   // `/` 斜杠命令：自动重拉 + 常用优先 + Enter/Tab 填充
   slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
   // 分区内容高度可调
@@ -111,7 +139,13 @@ const CASES = {
     probe: 'scripts/probe/external-chrome.js',
     delay: 9000,
     cost: 0,
-    env: { YAN_CHROME_HEADLESS: '1' }
+    /*
+     * YAN_CHROME_SYNC=0：接入时不从**真实** Chrome 导入历史/cookie。
+     * 测试必须保持隔离 —— 否则跑一次探针就把用户的真实浏览历史
+     * 拷进临时目录（功能本身没问题，但在测试里不该发生）。
+     * 同步逻辑本身由 test:unit 的合成目录用例覆盖。
+     */
+    env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
   },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
@@ -127,6 +161,12 @@ const CASES = {
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
   // 工具调用栏的展开规则（注入合成回合，不烧 token）
   toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
+  // 终端窗口：结构 / 三个拖拽把手 / 拖动与键盘调大小 / 展开恢复（不烧 token）
+  terminal: { probe: 'scripts/probe/terminal.js', delay: 9000, cost: 0 },
+  // 对话宽度自定义 + 导航轨跟随（不烧 token）
+  streamwidth: { probe: 'scripts/probe/streamwidth.js', delay: 9000, cost: 0 },
+  // 「正在处理」提示在整个 agent 回合内常驻（不烧 token）
+  working: { probe: 'scripts/probe/working.js', delay: 9000, cost: 0 },
   // 连接状态竞态回归（dev 下必现、build 下不现，很容易再犯）—— 会真调模型
   conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
   // 扩展集成：任务清单（panel_todos 的产物）+ 启动通知降级
@@ -137,8 +177,10 @@ const CASES = {
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
   // 真发一条消息，验证流式 + 工具卡
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1 },
-  // 图片真的发给模型（花 token）
-  image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1 },
+  // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
+  ask: { probe: 'scripts/probe/ask.js', delay: 9000, cost: 1 },
+  // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
+  image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 }
 }
@@ -443,8 +485,13 @@ async function main() {
   }
 
   console.log(`将运行：${names.join(', ')}`)
+  console.log(`测试模型：${TEST_MODEL}（可用 YAN_TEST_MODEL 覆盖）`)
   const spends = names.filter((n) => CASES[n].cost > 0)
-  if (spends.length) console.log(`⚠️  ${spends.join(', ')} 会真的调用模型（花少量额度）`)
+  if (spends.length) {
+    for (const n of spends) {
+      console.log(`⚠️  ${n} 会真的调用模型（花少量额度）→ ${CASES[n].model ?? TEST_MODEL}`)
+    }
+  }
 
   /* ------------------------------------------------------------------
      状态隔离 —— 每个测试批次用一套临时目录。
@@ -543,7 +590,12 @@ async function main() {
         writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2), 'utf8')
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
-      const out = await runProbe(c, { ...env, ...(win ? { YAN_WIN: win } : {}) })
+      const out = await runProbe(c, {
+        ...env,
+        ...(win ? { YAN_WIN: win } : {}),
+        // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
+        YAN_TEST_MODEL: c.model ?? TEST_MODEL
+      })
       process.stdout.write(out.text)
       if (!out.ok) {
         allOk = false

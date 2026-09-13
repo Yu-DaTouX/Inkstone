@@ -57,6 +57,56 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 
+/*
+ * 本机 Chrome profile 同步的纯逻辑（选 profile / 拼路径 / 逐项容错）。
+ * 现场编译，理由同 turns.ts：这段逻辑只被 browser.ts import，
+ * 主进程构建会把它摇进 index.js，不单独产出到 out/main。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/chrome-profile.ts'],
+    outfile: 'out/test/chrome-profile.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runChromeProfileTests } = await import('./test-chrome-profile.mjs')
+
+/*
+ * 对话宽度钳取（src/shared/ipc.ts）。
+ * ipc.ts 是纯类型/常量模块（无 electron / DOM 依赖），可以现场编译。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/ipc.ts'],
+    outfile: 'out/test/ipc.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runStreamWidthTests } = await import('./test-stream-width.mjs')
+const { runQuestionTests } = await import('./test-question.mjs')
+
+/*
+ * 历史任务快照归并（src/main/todo-snapshots.ts）。
+ * 纯函数（不碰 electron），现场编译一份测它 —— 不被主进程构建图影响。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/todo-snapshots.ts'],
+    outfile: 'out/test/todo-snapshots.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
+
 let pass = 0
 let fail = 0
 const ok = (cond, label, extra = '') => {
@@ -293,6 +343,19 @@ await runTurnTests(ok)
 /* ------------------------------------------------------------------ */
 // 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）
 await runZoomTests(ok)
+
+/* ------------------------------------------------------------------ */
+// 本机 Chrome profile 同步（合成目录，不碰真实 profile）
+await runChromeProfileTests(ok)
+
+/* ------------------------------------------------------------------ */
+// 对话宽度钳取（纯函数）
+await runStreamWidthTests(ok)
+
+/* ------------------------------------------------------------------ */
+// 内置提问扩展（不启动 pi：import 后喂假 pi API）
+await runQuestionTests(ok)
+await runTodoHistoryTests(ok)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 process.exit(fail ? 1 : 0)

@@ -130,17 +130,34 @@
   }
 
   /* ---- 2b. 工具跑完、模型又开始想（第二段）→ 继续展开、标题回到「推理中」 ---- */
-  store.getState().applyPush({
-    ch: 'msg-update',
-    payload: {
-      id: 'r-a1',
-      patch: { thinking: THINK + '\n\n第二轮：再看看有没有更短的走法。', thinkingLive: true }
-    }
-  })
-  setTurnStreaming(true)
-  await sleep(500)
+  const SECOND = THINK + '\n\n第二轮：再看看有没有更短的走法。'
+  /*
+   * 用**重试 + 全量 sync 注入**，而不是只发一次 msg-update。
+   * 为什么：真实会话的 sync 推送可能在任意时刻到达并盖掉注入的假数据 ——
+   * 单发一次 msg-update 时，如果那一刻正好被覆盖（r-a1 不存在），
+   * 就什么都注入不进去，探针随机失败（批量跑时踩过）。
+   */
+  const injectSecond = () =>
+    store.getState().applyPush({
+      ch: 'sync',
+      payload: [
+        { id: 'r-user', role: 'user', text: '帮我解一下过河题' },
+        { id: 'r-a1', role: 'assistant', text: '', thinking: SECOND, thinkingLive: true, thinkingMs: 4200 }
+      ]
+    })
+  for (let i = 0; i < 10; i++) {
+    injectSecond()
+    setTurnStreaming(true)
+    await sleep(300)
+    if (q('[data-testid="reasoning-body"]')?.textContent?.includes('第二轮')) break
+  }
   ok(!!q('[data-testid="reasoning-body"]'), '第二段推理仍然展开（窗口全程不折）')
   ok((q('.reason-label')?.textContent ?? '').includes('推理中'), '第二段思考时标题回到「推理中」')
+  /* 逐字可能还在追，等它追到第二段结尾（不是一次性贴上来） */
+  for (let i = 0; i < 30; i++) {
+    if ((q('[data-testid="reasoning-body"]')?.textContent ?? '').includes('第二轮')) break
+    await sleep(150)
+  }
   ok(
     (q('[data-testid="reasoning-body"]')?.textContent ?? '').includes('第二轮'),
     '第二段推理追加在窗口里（不是替换）'
