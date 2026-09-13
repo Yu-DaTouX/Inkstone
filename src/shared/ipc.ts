@@ -575,9 +575,9 @@ export interface BrowserState {
   userControl?: boolean
   lastDownload?: { path: string; filename: string; size?: number }
   nativeBounds?: BrowserBounds
-  /** 当前由谁在渲染页面：内嵌 WebContentsView（旧行为）还是外部 Chrome */
+  /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
-  /** 外部 Chrome 接入状态（mode === 'external' 时存在） */
+  /** 外部 Chrome 连接状态；连接存在时保留，与当前是否激活无关 */
   external?: BrowserExternalState
 }
 

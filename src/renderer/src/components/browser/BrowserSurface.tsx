@@ -13,7 +13,8 @@ export function BrowserSurface() {
   const openExternalChrome = useStore((s) => s.openExternalChrome)
   const closeExternalChrome = useStore((s) => s.closeExternalChrome)
   const tabs = state.tabs ?? []
-  const external = state.mode === 'external' ? state.external : undefined
+  const external = state.external
+  const externalActive = state.mode === 'external' ? external : undefined
   const [address, setAddress] = useState(state.url)
   const [error, setError] = useState('')
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -146,12 +147,12 @@ export function BrowserSurface() {
         ) : null}
       </div>
       <div className="browser-viewport" ref={viewportRef}>
-        {external ? (
+        {externalActive ? (
           <div className="browser-ext-note" data-testid="browser-external-note">
             <div className="browser-ext-title">{t('browser.externalActive')}</div>
             <div className="browser-ext-desc">{t('browser.externalDesc')}</div>
-            {external.profileDir ? <code className="browser-ext-path">{external.profileDir}</code> : null}
-            {external.debuggingPort ? <span className="browser-ext-port">:{external.debuggingPort}</span> : null}
+            {externalActive.profileDir ? <code className="browser-ext-path">{externalActive.profileDir}</code> : null}
+            {externalActive.debuggingPort ? <span className="browser-ext-port">:{externalActive.debuggingPort}</span> : null}
           </div>
         ) : null}
       </div>
