@@ -42,6 +42,8 @@ const MODES = [
 
 /** 当前模式（暂时只有一个） */
 const MODE_ID = 'agent'
+/** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
+const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 
 export function Rail() {
   const t = useT()
@@ -51,12 +53,21 @@ export function Rail() {
   const newSession = useStore((s) => s.newSession)
   const refreshSessions = useStore((s) => s.refreshSessions)
   const titles = useStore((s) => s.titles)
+  /** 用户手动重命名的会话名（优先于自动标题） */
+  const manualTitles = useStore((s) => s.manualTitles)
+  // 不能在 selector 里 `?? {}`：每次都会制造新引用，React 19 会判定快照持续变化并陷入重渲染。
+  const settings = useStore((s) => s.settings)
+  const projectNames = settings?.projectNames ?? EMPTY_PROJECT_NAMES
+  const patchSettings = useStore((s) => s.patchSettings)
 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useState(true)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  /** 正在重命名哪个项目（cwd）；null = 没有 */
+  const [projRename, setProjRename] = useState<string | null>(null)
+  const [projDraft, setProjDraft] = useState('')
   /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
   const [modeMenu, setModeMenu] = useState(false)
 
@@ -158,8 +169,10 @@ export function Rail() {
         ]
       : []
 
-    // 用模型生成的短标题覆盖列表标题（如果有）
+    // 用模型生成的短标题覆盖列表标题（如果有）；用户手动名优先
     const all = [...synthetic, ...sessions].map((x) => {
+      const manual = manualTitles[x.id]
+      if (manual) return { ...x, title: manual, named: true }
       const t = titles[x.id]
       return t ? { ...x, title: t } : x
     })
@@ -181,7 +194,7 @@ export function Rail() {
     return [...byCwd.entries()]
       .map(([cwdKey, list]) => ({
         cwd: cwdKey,
-        label: shortProject(cwdKey),
+        label: projectNames[cwdKey] || shortProject(cwdKey),
         list: orderFamily(list),
         isCurrent: cwdKey === cur
       }))
@@ -191,7 +204,7 @@ export function Rail() {
           p.list[0] ? (p.list[0].lastActivityAt ?? p.list[0].updatedAt) : 0
         return at(b) - at(a)
       })
-  }, [sessions, query, session, t, titles])
+  }, [sessions, query, session, t, titles, manualTitles, projectNames])
 
   /**
    * 会话分支关系（用户要求：左栏显示分支数 / 分支编号）。
@@ -349,6 +362,35 @@ export function Rail() {
               const pOpen = !collapsed.has(p.cwd)
               return (
                 <div key={p.cwd} className="proj">
+                  {projRename === p.cwd ? (
+                    /* 项目行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
+                    <div className="proj-head renaming" data-testid="rail-project-rename">
+                      <Icon name="folder" size={12} />
+                      <input
+                        className="proj-rename-input"
+                        autoFocus
+                        value={projDraft}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => setProjDraft(e.target.value)}
+                        onBlur={() => {
+                          const names = { ...projectNames }
+                          if (projDraft.trim()) names[p.cwd] = projDraft.trim()
+                          else delete names[p.cwd]
+                          void patchSettings({ projectNames: names })
+                          setProjRename(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            e.currentTarget.blur()
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault()
+                            setProjRename(null)
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
                   <button
                     className={`proj-head ${pOpen ? '' : 'collapsed'}`}
                     onClick={() => toggleProject(p.cwd)}
@@ -357,9 +399,25 @@ export function Rail() {
                     data-current={p.isCurrent ? '1' : '0'}
                   >
                     <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
-                    <span className="proj-name">{p.label}</span>
+                    <span className="proj-labels">
+                      <span className="proj-name">{p.label}</span>
+                      <span className="proj-path">{p.cwd}</span>
+                    </span>
+                    <span
+                      className="proj-rename"
+                      role="button"
+                      tabIndex={0}
+                      title={t('rail.renameProject')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        // ⚠️ Electron 不支持 window.prompt（返回 null，什么都发生不了）
+                        setProjDraft(projectNames[p.cwd] || shortProject(p.cwd))
+                        setProjRename(p.cwd)
+                      }}
+                    >✎</span>
                     <span className="proj-count">{p.list.length}</span>
                   </button>
+                  )}
 
                   {pOpen
                     ? p.list.map((s) => (
@@ -419,30 +477,71 @@ function SessionRow({
   const t = useT()
   /** 分叉树是否展开（用户要求：**默认折叠**，开关在会话标题旁） */
   const [branchesOpen, setBranchesOpen] = useState(false)
+  /**
+   * 行内重命名。
+   *
+   * ⚠️ 以前用 `window.prompt` —— 而 **Electron 不支持 prompt()**
+   *    （调用返回 null 并报错），于是点「重命名」什么都不会发生，
+   *    用户看到的就是「左栏会话没办法重命名」。
+   *    改成行内 input：不依赖浏览器对话框，也少一层弹窗。
+   */
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState(s.title)
+
+  const commitRename = (): void => {
+    const name = draft.trim()
+    setRenaming(false)
+    if (!name || name === s.title) return
+    void useStore.getState().setManualTitle(s.id, name)
+  }
 
   return (
     <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
       <div className="srow-row">
-        <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
-          <span className="srow-text">
-            <span className="srow-line">
-              {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
-              {branchIndex ? (
-                <span className="srow-bno" data-testid="rail-branch-no" title={t('rail.branchNo', { n: branchIndex })}>
-                  #{branchIndex}
+        {renaming ? (
+          /* 行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
+          <input
+            className="srow-rename-input"
+            data-testid="rail-rename-input"
+            autoFocus
+            value={draft}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitRename()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setRenaming(false)
+                setDraft(s.title)
+              }
+            }}
+          />
+        ) : (
+          <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={s.path}>
+            <span className="srow-text">
+              <span className="srow-line">
+                {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
+                {branchIndex ? (
+                  <span className="srow-bno" data-testid="rail-branch-no" title={t('rail.branchNo', { n: branchIndex })}>
+                    #{branchIndex}
+                  </span>
+                ) : null}
+                <span className="srow-name">{s.title}</span>
+              </span>
+              {/* 分叉自父会话的哪句话 */}
+              {s.branchOrigin ? (
+                <span className="srow-origin" data-testid="rail-branch-origin" title={s.branchOrigin}>
+                  {t('rail.fromMessage', { text: s.branchOrigin })}
                 </span>
               ) : null}
-              <span className="srow-name">{s.title}</span>
             </span>
-            {/* 分叉自父会话的哪句话 */}
-            {s.branchOrigin ? (
-              <span className="srow-origin" data-testid="rail-branch-origin" title={s.branchOrigin}>
-                {t('rail.fromMessage', { text: s.branchOrigin })}
-              </span>
-            ) : null}
-          </span>
-        </button>
+          </button>
+        )}
 
         {branchCount > 0 ? (
           <button
@@ -522,24 +621,18 @@ function SessionRow({
           <button
             style={{ '--i': 2 } as React.CSSProperties}
             className="srow-menu-btn"
+            data-testid="rail-rename"
             onClick={() => {
               /*
                * 重命名。
                *
-               * ⚠️ 这里曾经**没有入口** —— store 里 renameSession / 主进程 IPC /
-               *    pi 的 set_session_name 三层都通，但界面上没有任何地方调它，
-               *    于是「重命名」这个功能实际上不可达（而 README 里写着左栏菜单有它）。
-               *    整理时发现的：扫 i18n 孤儿键时看到 rail.rename 没人用，
-               *    顺着往下查才确认是**功能缺口**而不是多余的文案。
-               *
-               * 用 prompt 与相邻的删除按钮（confirm）保持同一量级 ——
-               * 重命名不值得为它开一个模态框。
+               * ⚠️ 这里曾经**没有入口** —— 后来加上了，但用 `window.prompt`；
+               *    而 **Electron 不支持 prompt()**（返回 null），于是点了没反应，
+               *    用户看到的就是「左栏会话没办法重命名」。
+               *    现在改成行内 input（见上面的 renaming），不再依赖浏览器对话框。
                */
-              const name = window.prompt(t('rail.renamePrompt'), s.title)
-              if (name === null) return
-              const trimmed = name.trim()
-              if (!trimmed) return
-              void useStore.getState().renameSession(trimmed)
+              setDraft(s.title)
+              setRenaming(true)
               onToggleMenu()
             }}
           >

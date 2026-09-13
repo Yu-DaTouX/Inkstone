@@ -15,7 +15,8 @@ import type { Attachment } from '../../../../shared/ipc'
  *   · 贴/拖入图片    → 随 prompt 作为 images 发送
  *
  * Enter 发送 / Shift+Enter 换行 / Esc 中止。
- * 生成中按 Enter 会走 pi 的 steer（插话），这是 pi 的能力，值得暴露。
+ * 生成中按 Enter 会**排队**（pi 的 follow-up，等这轮跑完再发）；
+ * 想立刻插入当前这轮，用排队行右侧的「插队」（pi 的 steer）。
  */
 export function Composer() {
   const t = useT()
@@ -536,6 +537,8 @@ export function Composer() {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
+      {/* 排队的消息：显示在输入框**上方**（用户要求） */}
+      <QueueStack />
       <div className={`composer ${expanded ? 'tall' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
@@ -662,7 +665,8 @@ export function Composer() {
               <Icon name="plus" size={12} />
             </button>
 
-            <QueueBadge />
+            {/* 自主模式：放进输入栏（用户要求，原先在输入框下方单独一行） */}
+            <AutonomousToggle />
 
             {/*
              * 放大状态下的提示。
@@ -695,6 +699,80 @@ export function Composer() {
       {/* 用量条：合并版，放在输入框下方 */}
       <UsageBar />
     </div>
+  )
+}
+
+/**
+ * 排队中的消息（显示在输入框上方）。
+ *
+ * pi 把“生成中收到的消息”分两类：
+ *   · steering —— 插话，当前这轮就会看到
+ *   · followUp —— 排队，等这轮跑完再投递（现在的默认）
+ * 每行右侧的「插队」把一条 followUp 提升为 steering（有时会失败，错误进日志）。
+ */
+function QueueStack() {
+  const t = useT()
+  const queue = useStore((s) => s.queue)
+  const steerQueued = useStore((s) => s.steerQueued)
+  const steering = queue.steering
+  const followUp = queue.followUp
+  if (steering.length + followUp.length === 0) return null
+
+  return (
+    <div className="queue-stack" data-testid="queue-stack">
+      {steering.map((text, i) => (
+        <div className="qrow steering" key={`s${i}`} title={text} data-testid="queue-row">
+          <Icon name="activity" size={12} />
+          <span className="qrow-text">{text}</span>
+          <span className="qrow-tag">{t('queue.inserting')}</span>
+        </div>
+      ))}
+      {followUp.map((text, i) => (
+        <div className="qrow" key={`f${i}`} title={text} data-testid="queue-row">
+          <Icon name="history" size={12} />
+          <span className="qrow-text">{text}</span>
+          <button
+            className="qrow-jump"
+            data-testid="queue-steer"
+            title={t('queue.steerTip')}
+            onClick={() => void steerQueued(text)}
+          >
+            {t('queue.steer')}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 自主模式开关（用户要求：放进输入栏，去掉「未开启」字样，做成开/关动效）。
+ *
+ * 放在 composer 的工具行里。打开后：
+ *   · 内置 question 扩展不再弹窗，直接让模型自行决策
+ *   · 系统提示里也会追加「不要提问」的规则（下一轮生效）
+ * 关掉则恢复「模糊时先问」的默认行为。
+ */
+function AutonomousToggle() {
+  const t = useT()
+  const autonomous = useStore((s) => s.settings?.autonomous === true)
+  const patchSettings = useStore((s) => s.patchSettings)
+  return (
+    <button
+      className={`ctool auto-toggle ${autonomous ? 'on' : ''}`}
+      data-testid="autonomous-toggle"
+      data-on={autonomous ? '1' : '0'}
+      role="switch"
+      aria-checked={autonomous}
+      title={autonomous ? t('autonomous.onTip') : t('autonomous.offTip')}
+      onClick={() => void patchSettings({ autonomous: !autonomous })}
+    >
+      <Icon name="sparkles" size={12} />
+      <span className="auto-label">{t('autonomous.label')}</span>
+      <span className="auto-track" aria-hidden>
+        <span className="auto-thumb" />
+      </span>
+    </button>
   )
 }
 
@@ -738,18 +816,6 @@ function fmtSize(n: number): string {
 }
 
 /** 排队的插话 / 后续消息 —— 让「它知道我说了」可见 */
-function QueueBadge() {
-  const t = useT()
-  const queue = useStore((s) => s.queue)
-  const n = queue.steering.length + queue.followUp.length
-  if (n === 0) return null
-  return (
-    <span className="queue-badge" title={[...queue.steering, ...queue.followUp].join('\n')}>
-      <Icon name="history" size={12} />
-      <span>{t('queue.pending', { n })}</span>
-    </span>
-  )
-}
 
 
 

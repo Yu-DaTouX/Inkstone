@@ -145,11 +145,23 @@ export function ConversationOutline() {
   const [leftPx, setLeftPx] = useState<number | null>(null)
   useLayoutEffect(() => {
     const host = root.current?.offsetParent as HTMLElement | null
-    const inner = document.querySelector<HTMLElement>('.stream-inner')
-    if (!host || !inner) return
+    if (!host) return
 
     const OUTLINE_W = 44
+    /*
+     * 取当前内容列的元素。
+     *
+     * ⚠️ 不能只找 `.stream-inner`：虚拟化的长会话走 `.stream-row`，
+     *    根本没有 `.stream-inner` —— 旧实现此时直接 return，
+     *    leftPx 永远是 null，导航轨就钉死在 CSS 的 left:0（用户报的错位）。
+     *    两者的内边距与 max-width 完全一致，量哪一个都行。
+     */
+    const innerOf = (): HTMLElement | null =>
+      document.querySelector<HTMLElement>('.stream-inner, .stream-row')
+
     const measure = (): void => {
+      const inner = innerOf()
+      if (!inner) return
       const hb = host.getBoundingClientRect()
       const ib = inner.getBoundingClientRect()
       // 正文左缘 = 内容列左缘 + 它自己的左内边距（--sp-5 = 24）
@@ -159,11 +171,16 @@ export function ConversationOutline() {
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(host)
-    ro.observe(inner)
+    /* 观察内容列本身：改对话宽度 / 收放面板时它的宽度都会变 */
+    const inner0 = innerOf()
+    if (inner0) ro.observe(inner0)
     window.addEventListener('resize', measure)
+    /* 设置里改对话宽度后，App 会派这个事件（虚拟化时没有可观察的常驻元素） */
+    window.addEventListener('yan:stream-width', measure)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', measure)
+      window.removeEventListener('yan:stream-width', measure)
     }
   }, [turns.length])
 

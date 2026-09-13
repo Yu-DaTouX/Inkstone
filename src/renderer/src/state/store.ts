@@ -12,6 +12,7 @@ import type {
   AppSettings,
   Attachment,
   BrowserState,
+  ChromeSyncReport,
   ExtensionUiRequest,
   MainPush,
   ModelInfo,
@@ -114,6 +115,8 @@ interface Store {
    *   这里是**模型总结**出来的，只在会话没名字时作为显示标题
    */
   titles: Record<string, string>
+  /** 用户手动重命名的会话名（sessionId → name）—— 优先于 titles，且不会被自动标题覆盖 */
+  manualTitles: Record<string, string>
   /** 窗口是否最大化（切换标题栏的还原图标） */
   maximized: boolean
 
@@ -186,12 +189,16 @@ interface Store {
   commandUse: Record<string, number>
 
   send: (text: string, images?: { data: string; mimeType: string }[]) => Promise<void>
+  /** 把队列里某条消息插队（提升为 steering，在当前这轮就听） */
+  steerQueued: (text: string) => Promise<void>
   abort: () => Promise<void>
   runBash: (command: string) => Promise<void>
   abortBash: () => Promise<void>
   newSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
   renameSession: (name: string) => Promise<void>
+  /** 给**任意**会话（含非当前会话）起一个手动名，粘性、不被自动标题覆盖 */
+  setManualTitle: (sessionId: string, name: string) => Promise<void>
   deleteSession: (path: string) => Promise<void>
   fork: (entryId: string) => Promise<void>
   clone: () => Promise<void>
@@ -223,6 +230,11 @@ interface Store {
   openExternalChrome: (url?: string) => Promise<void>
   /** 断开本机 Chrome（会关掉我们拉起的进程） */
   closeExternalChrome: () => Promise<void>
+  /**
+   * 重新同步本机 Chrome 的登录态与历史。
+   * 返回逐项报告 —— 界面要如实说「哪几项没同步、为什么」。
+   */
+  syncLocalProfile: () => Promise<ChromeSyncReport>
   /**
    * 改用户档案（名字 / 头像）。
    * 参数是**部分**，主进程会与现有档案合并（只改名字不能把头像清空）。
@@ -348,7 +360,31 @@ function pushNotice(
   return next.slice(-MAX_NOTICES)
 }
 
-export const useStore = create<Store>((set, get) => ({
+export const useStore = create<Store>((rawSet, get) => {
+  /*
+   * 包装 set：凡是新增的 **error 通知**，同时写一份进日志抽屉
+   * （用户要求「所有报错都要显示到日志模块内」）。
+   * 这样各处 `set({ notices: pushNotice(..., 'error', ...) })` 不用逐处改，
+   * 以后新加的报错也自动进日志。
+   */
+  const set = (partial: Partial<Store>): void => {
+    rawSet((state) => {
+      const notices = partial.notices
+      if (notices && notices !== state.notices) {
+        const added = notices.filter(
+          (n) => n.type === 'error' && !state.notices.some((o) => o.id === n.id)
+        )
+        if (added.length) {
+          return {
+            ...partial,
+            logs: [...(partial.logs ?? state.logs), ...added.map((n) => `[错误] ${n.text}`)].slice(-200)
+          }
+        }
+      }
+      return partial
+    })
+  }
+  return {
   conn: 'starting',
   connDetail: '',
   logs: [],
@@ -387,6 +423,7 @@ export const useStore = create<Store>((set, get) => ({
   })(),
   scrollProgress: 0,
   titles: {},
+  manualTitles: {},
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
@@ -410,7 +447,7 @@ export const useStore = create<Store>((set, get) => ({
 
   bootstrap: async () => {
     const api = window.yan
-    const [settings, sessions, session, messages, stats, todos, status, titles, pi, browserState] =
+    const [settings, sessions, session, messages, stats, todos, status, titles, manualTitles, pi, browserState] =
       await Promise.all([
         api.getSettings(),
         api.listSessions(),
@@ -423,6 +460,7 @@ export const useStore = create<Store>((set, get) => ({
         // 不拉的话界面会永远停在「正在启动 pi」（功能其实是好的）。
         api.agentStatus().catch(() => ({ state: 'starting' as const, detail: '' })),
         api.cachedTitles().catch(() => ({}) as Record<string, string>),
+        api.manualTitles().catch(() => ({}) as Record<string, string>),
         // pi 入口 / 版本（右栏「环境」分区）——探测失败不能影响启动
         api.piInfo().catch(() => null),
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
@@ -438,6 +476,7 @@ export const useStore = create<Store>((set, get) => ({
       conn: status.state,
       connDetail: status.detail,
       titles,
+      manualTitles,
       piInfo: pi,
       browserState
     })
@@ -597,9 +636,12 @@ export const useStore = create<Store>((set, get) => ({
             ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
           })
         } else if (m.payload.state === 'error') {
+          const detail = m.payload.detail ?? '未知错误'
           set({
             conn: 'error',
-            connDetail: m.payload.detail ?? '未知错误',
+            connDetail: detail,
+            // pi 进程级错误也要进日志（用户要求「所有报错进日志」）
+            logs: [...s.logs, `[错误] pi 进程：${detail}`].slice(-200),
             ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
           })
         } else if (m.payload.state === 'stderr' && m.payload.detail) {
@@ -651,6 +693,15 @@ export const useStore = create<Store>((set, get) => ({
     const res = await window.yan.send(text, images)
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '发送失败') })
+    }
+  },
+
+  steerQueued: async (text) => {
+    const res = await window.yan.steerQueued(text)
+    if (!res.ok) {
+      set({
+        notices: pushNotice(get().notices, 'error', res.error ?? '插队失败')
+      })
     }
   },
 
@@ -736,6 +787,32 @@ export const useStore = create<Store>((set, get) => ({
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '重命名失败') })
       return
+    }
+    await get().refreshSessions()
+  },
+
+  /**
+   * 给会话起手动名（任意会话）。
+   *
+   * 为什么要单独一条（而不是都走 renameSession）：
+   *   · pi 的 set_session_name 只能改**当前**会话；
+   *   · 而且“自动标题”每轮都会重生 —— 不锁住的话手动名立刻被盖掉。
+   * @param sessionId 会话 id（空 = 当前会话）
+   * @param name      新名字
+   */
+  setManualTitle: async (sessionId, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const state = get()
+    const sid = sessionId || state.session?.sessionId || ''
+    if (sid) {
+      const next = { ...state.manualTitles, [sid]: trimmed }
+      set({ manualTitles: next })
+      // 同步给 pi（仅当前会话），失败不影响本地名生效
+      if (sid === state.session?.sessionId) {
+        await window.yan.renameSession(trimmed).catch(() => ({ ok: false as const }))
+      }
+      await window.yan.setManualTitle(sid, trimmed).catch(() => ({ ok: false }))
     }
     await get().refreshSessions()
   },
@@ -962,6 +1039,16 @@ export const useStore = create<Store>((set, get) => ({
     set({ browserState: await window.yan.browser.closeExternalChrome() })
   },
 
+  syncLocalProfile: async () => {
+    const report = await window.yan.browser.syncLocalProfile()
+    /*
+     * 同步后主进程可能重启了外部 Chrome（为让 cookie 生效），
+     * 所以重新拉一次状态，而不是假定旧状态还成立。
+     */
+    set({ browserState: await window.yan.browser.getState() })
+    return report
+  },
+
   patchProfile: async (p) => {
     const next = await window.yan.patchSettings({ profile: { ...get().settings?.profile, ...p } as UserProfile })
     set({ settings: next })
@@ -1136,4 +1223,5 @@ export const useStore = create<Store>((set, get) => ({
   registerScrollToTurn: (fn) => set({ scrollToTurn: fn }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
-}))
+  }
+})

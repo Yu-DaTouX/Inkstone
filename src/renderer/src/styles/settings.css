@@ -166,6 +166,52 @@
   border-radius: var(--r-full);
   border: 1px solid var(--border-soft);
 }
+
+/* -------------------------------------------------------------------
+   对话宽度：滑块 + 恢复默认
+   -------------------------------------------------------------------
+   宽度是连续量，用 range 表达“可调到任意值”最直观。
+   轨道用 tokens 里的中性色，thumb 用强调色 —— 与整个设置的层级一致。
+   参数列宽约 260px，滑块固定 200px 以免把整行撑破。 */
+.stream-width-ctl {
+  gap: 6px;
+}
+.stream-width-ctl .range {
+  width: 200px;
+  max-width: 42vw;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.stream-width-ctl .range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+}
+.stream-width-ctl .range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  border: 2px solid var(--bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.stream-width-ctl .range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}
+/* 恢复默认按钮：与 seg-btn 同款，但在这行里不要撑得那么宽 */
+.stream-width-ctl .seg-btn {
+  padding: 0 7px;
+}
+.stream-width-ctl .seg-btn[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
 .set-warn {
   margin-top: var(--sp-2);
   padding: var(--sp-2);

@@ -235,7 +235,7 @@ export function RightPanel() {
       </div>
 
       {browserOpen ? <BrowserSurface /> : null}
-      {!browserOpen && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
+      {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
       {/*
         拖动中的浮动标签（用户要的「实时位置预览」的文字部分）。
@@ -243,13 +243,13 @@ export function RightPanel() {
         否则每移动一像素就重渲染整棵工具栏，拖拽会卡。
         插入位置那条线由各 .rp-slot 的 data-over 画（也在实时更新）。
       */}
-      {!browserOpen && draggingId ? (
+      {draggingId ? (
         <div className="tool-drag-ghost" data-testid="tool-drag-ghost" ref={ghostRef}>
           {ghostLabel}
         </div>
       ) : null}
 
-      {!browserOpen ? <div className="rp-body" data-testid="rp-body">
+      <div className="rp-body" data-testid="rp-body">
         {visible.map((id, i) => (
           <SectionSlot
             key={id}
@@ -262,7 +262,7 @@ export function RightPanel() {
             onMove={move}
           />
         ))}
-      </div> : null}
+      </div>
     </aside>
   )
 }
@@ -548,6 +548,7 @@ const SECTION_REGISTRY: Record<
   }
 > = {
   context: { Body: () => <ContextSection /> },
+  quota: { Body: () => <QuotaSection /> },
   todo: {
     isEmpty: (s) => s.todos.length === 0,
     Extra: () => <TodoCount />,
@@ -600,17 +601,124 @@ function LogCount() {
    上下文 —— 用多少 / 占多少 / 花了多少
    ================================================================== */
 
+function QuotaSection() {
+  const t = useT()
+  const provider = useStore((s) => s.session?.model?.provider ?? '')
+  const settings = useStore((s) => s.settings)
+  const patchSettings = useStore((s) => s.patchSettings)
+  const budget = settings?.providerBudgets?.[provider]
+  const [quota, setQuota] = useState<Awaited<ReturnType<typeof window.yan.providerQuota>> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const refresh = useCallback(async () => {
+    if (!provider) return
+    setLoading(true)
+    try { setQuota(await window.yan.providerQuota(provider, budget)) } finally { setLoading(false) }
+  }, [provider, budget])
+  useEffect(() => { setQuota(null); void refresh() }, [refresh])
+  const amount = quota?.remaining
+  /**
+   * 百分比口径（ChatGPT 订阅的用量接口只给 used_percent）。
+   * 用 PERCENT 这个伪币种传递 —— 它不能走 money()，否则会显示成 “$28.00”。
+   */
+  const isPercent = (quota?.currency ?? '').toUpperCase() === 'PERCENT'
+  const pctText = (v: number): string => `${Math.round(v)}%`
+  /*
+   * 余额行只写一个数字 + 一个单位，不要 `$` / 币种混排。
+   * 为什么单独一个函数：DeepSeek 的余额可能是 CNY（¥9.92），
+   * 之前只认 USD，非 USD 会显示成 “9.92 CNY”，与右侧其它数值对不齐。
+   */
+  const money = (v: number, cur?: string): string => {
+    const code = (cur ?? 'USD').toUpperCase()
+    if (code === 'PERCENT') return pctText(v)
+    const sym = CURRENCY_SYMBOL[code]
+    return sym ? `${sym}${v.toFixed(2)}` : `${v.toFixed(2)} ${code}`
+  }
+  return (
+    <Section titleKey="rp.quota" testId="rp-quota">
+      <div className="rp-kv">
+        <span className="rp-k">{provider || '—'}</span><span className="spacer" />
+        <span className={`rp-v big ${quota?.windows?.some((w) => w.exceeded) ? 'err' : ''}`}>
+          {amount !== undefined
+            ? money(amount, quota?.currency)
+            : quota?.used !== undefined
+              ? `${money(quota.used, quota?.currency)} ${isPercent ? t('quota.usedPct') : t('quota.used')}`
+              : loading
+                ? '…'
+                : '—'}
+        </span>
+      </div>
+      {/* 有窗口额度时下面会逐条画，这里就不再重复 used/total */}
+      {quota?.label ? <div className="rp-dim">{quota.label}{!quota.windows?.length && quota.total ? ` · ${money(quota.used ?? 0, quota.currency)} / ${money(quota.total, quota.currency)}` : ''}</div> : null}
+      {quota?.error ? <div className="rp-dim">{quota.supported ? quota.error : t('quota.unsupported')}</div> : null}
+      {quota?.windows?.length ? (
+        <div className="rp-quota-wins">
+          {quota.windows.map((w) => {
+            const left = Math.max(0, w.total - w.used)
+            const pct = w.total > 0 ? Math.min(100, (w.used / w.total) * 100) : 0
+            const tone = w.exceeded ? 'err' : pct >= 85 ? 'warn' : 'ok'
+            const reset = w.resetAt ? new Date(w.resetAt).toLocaleString() : ''
+            return (
+              <div key={w.id} className="rp-quota-win" data-testid={`quota-win-${w.id}`}>
+                <div className="rp-kv">
+                  <span className="rp-k">{w.label}</span>
+                  <span className="spacer" />
+                  <span className={`rp-v ${w.exceeded ? 'err' : ''}`}>{pct.toFixed(pct < 10 ? 1 : 0)}%</span>
+                  {/* 百分比口径下不再重复 “28% / 100%”（读起来是噪声） */}
+                  {isPercent ? null : <span className="rp-u">{money(left, quota.currency)} / {money(w.total, quota.currency)}</span>}
+                </div>
+                <div className={`rp-meter ${tone}`} title={reset ? `${t('quota.resetAt')} ${reset}` : undefined}>
+                  <i style={{ width: `${pct}%` }} />
+                </div>
+                {w.exceeded ? (
+                  <div className="rp-dim err" data-testid={`quota-win-${w.id}-reached`}>{t('quota.limitReached')}{reset ? ` · ${t('quota.resetAt')} ${reset}` : ''}</div>
+                ) : reset ? (
+                  <div className="rp-dim">{t('quota.resetAt')} {reset}</div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      <div className="rp-quota-actions">
+        <button className="rp-btn" onClick={() => void refresh()} disabled={loading}>{t('quota.refresh')}</button>
+        {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
+        {provider === 'openai' ? <button className="rp-btn" onClick={() => {
+          const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
+          if (value === null) return
+          const n = Number(value)
+          if (!Number.isFinite(n) || n <= 0) return
+          void patchSettings({ providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: n } })
+        }}>{t('quota.setBudget')}</button> : null}
+      </div>
+    </Section>
+  )
+}
+
+/** 常用币种符号；没有的币种就退回 “9.92 CNY” 这种写法（不猜符号） */
+const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', CNY: '¥', EUR: '€', GBP: '£', JPY: '¥' }
+
 function ContextSection() {
   const t = useT()
   const stats = useStore((s) => s.stats)
+  const messages = useStore((s) => s.messages)
   const session = useStore((s) => s.session)
   const cu = stats?.contextUsage
-  const used = cu?.tokens ?? 0
   const win = cu?.contextWindow ?? session?.model?.contextWindow ?? 0
-  const pct = cu?.percent ?? (used && win ? (used / win) * 100 : 0)
+  /*
+   * pi 在「刚压缩完、还没有下一条带 usage 的助手消息」时会**故意**把
+   * tokens / percent 报成 null（见 pi 的 getContextUsage：latestCompaction 之后
+   * 找不到新的 usage 就返回 null）。
+   *
+   * 所以这里不能用 `?? 0` —— 那会把它显示成「0 tokens / 0.0% 已用」，
+   * 看起来像是进度条坏了（用户报的「手动压缩后不显示进度」）。
+   * 区分「未知」与「真的是 0」是这里的核心。
+   */
+  const known = typeof cu?.tokens === 'number'
+  const used = known ? (cu?.tokens as number) : 0
+  const pct = known ? (cu?.percent ?? (used && win ? (used / win) * 100 : 0)) : 0
   const tone = pct >= 95 ? 'err' : pct >= 85 ? 'warn' : 'ok'
-  const tokens = stats?.tokens.total ?? 0
-  const cost = stats?.cost ?? 0
+  const tokens = used
+  const cost = [...messages].reverse().find((m) => m.role === 'assistant' && m.usage)?.usage?.cost ?? 0
 
   const nf = new Intl.NumberFormat('en-US')
 
@@ -647,22 +755,16 @@ function ContextSection() {
 
   return (
     <Section titleKey="rp.context" testId="rp-context">
-      <div className="rp-kv">
-        <span className="rp-k" />
-        <span className="rp-v big">{nf.format(tokens)}</span>
-        <span className="rp-u">{t('rp.tokens')}</span>
-      </div>
-      <div className="rp-kv">
-        <span className="rp-k" />
-        <span className={`rp-v ${tone}`}>{pct.toFixed(pct < 10 ? 1 : 0)}%</span>
-        <span className="rp-u">{t('rp.used')}</span>
+      <div className="rp-context-summary">
+        <span><strong>{known ? nf.format(tokens) : '—'}</strong> {t('rp.tokens')}</span>
+        <span className={known ? tone : ''}><strong>{known ? pct.toFixed(1) + '%' : '—'}</strong> {t('rp.used')}</span>
       </div>
 
-      <div className={`rp-meter ${tone}`} title={t('ctx.tip', {
+      <div className={`rp-meter ${known ? tone : 'unknown'}`} title={known ? t('ctx.tip', {
         used: nf.format(used),
         win: nf.format(win),
         pct: pct.toFixed(1)
-      })}>
+      }) : t('ctx.afterCompact')}>
         <i style={{ width: `${Math.min(100, pct)}%` }} />
         {/*
          * 自动压缩的触发线画在进度条上，而不只写一个数字 ——
@@ -697,6 +799,18 @@ function ContextSection() {
        * 放在上下文分区是因为它本来就是上下文的事（快满了才压缩），
        * 而且这样中栏底部那一条就能整个去掉（用户嫌它挤，见 rp 文件头注释）。
        */}
+      {/*
+        刚压缩完：pi 还报不出新的 contextUsage（tokens=null）。
+        不是“没了”，只是要等下一轮才有新数据 —— 明说一句，别让用户以为坏了。
+      */}
+      {cu && cu.tokens === null ? (
+        <div className="rp-kv" data-testid="ctx-unknown">
+          <span className="rp-k">{t('ctx.afterCompactK')}</span>
+          <span className="spacer" />
+          <span className="rp-v">{t('ctx.afterCompact')}</span>
+        </div>
+      ) : null}
+
       {session?.isCompacting ? (
         <div className="rp-kv rp-warn" data-testid="rp-compacting">
           <span className="rp-now-spin" aria-hidden>
@@ -706,10 +820,11 @@ function ContextSection() {
         </div>
       ) : null}
 
-      <div className="rp-kv">
-        <span className="rp-k" />
-        <span className="rp-v">${cost.toFixed(2)}</span>
-        <span className="rp-u">{t('rp.spent')}</span>
+      {/* 累计花费：与其它 rp-kv 一致 —— 标注靠左、数值靠右（对齐） */}
+      <div className="rp-kv" data-testid="ctx-cost">
+        <span className="rp-k">{t('rp.spent')}</span>
+        <span className="spacer" />
+        <span className="rp-v">${cost.toFixed(4)}</span>
       </div>
     </Section>
   )
@@ -747,6 +862,20 @@ function TodoSection() {
   const done = useMemo(() => todos.filter((x) => x.done).length, [todos])
 
   /*
+   * 任务栏的展开态（用户要求：「当任务完成时自动收起任务工具栏」）。
+   * 条件是**从“未全部完成”变为“全部完成”**那一刻收起；新任务出现时再展开。
+   * 用受控 open 传给 Section（之前 Section 自己管，外面插不进去）。
+   */
+  const [open, setOpen] = useState(true)
+  const allDone = todos.length > 0 && done === todos.length
+  const prevAllDone = useRef(allDone)
+  useEffect(() => {
+    if (allDone && !prevAllDone.current) setOpen(false)
+    else if (!allDone && prevAllDone.current) setOpen(true)
+    prevAllDone.current = allDone
+  }, [allDone])
+
+  /*
    * 记住上一条被勾完的，用来给它加一下高亮闪动。
    *
    * 为什么要记「上一条」而不是直接看 done：勾完的条目不会消失，
@@ -779,6 +908,8 @@ function TodoSection() {
     <Section
       titleKey="rp.todo"
       testId="rp-todo"
+      open={open}
+      onOpenChange={setOpen}
       extra={
         <span className="rp-count" data-testid="todo-count">
           {done}/{todos.length}
@@ -829,10 +960,7 @@ function TodoSection() {
               <span className="rp-box" aria-hidden>
                 {todo.done ? '✓' : ''}
               </span>
-              {/*
-               * 字数限制（用户要求「单个任务的字数太多，限制为最多 18 字」）。
-               * 完整文本在 title 里（悬停可见）—— 截断而不丢信息。
-               */}
+              {/** 只做 200 字安全上限，真正的行数限制交给 CSS 两行截断 */}
               <span className="rp-text">{clip(todo.text, TODO_MAX_CHARS)}</span>
               {isActive ? (
                 <span className="rp-state doing" data-testid="todo-active-label">
@@ -921,11 +1049,11 @@ function TodoSection() {
 }
 
 /**
- * 任务文字的字数上限（用户要求 18 字）。
- * 为什么不是按像素截：中文等宽，18 字是个“能看出干什么”的长度，
- * 而像素截断在不同字体/缩放下结果不一致。
+ * 任务文字的安全上限（用户新要求：显示**最多两行**）。
+ * 不再按字数硬截（那会让两行永远用不满）；只留一个很大的安全上限，
+ * 防止模型把一整段文轩塞进一条任务，然后交给 CSS `-webkit-line-clamp: 2`。
  */
-const TODO_MAX_CHARS = 18
+const TODO_MAX_CHARS = 200
 
 /** 超过上限就截断并加省略号（完整文本由 title 提供） */
 function clip(s: string, max: number): string {

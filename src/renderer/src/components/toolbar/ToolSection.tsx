@@ -31,6 +31,7 @@ export const useSectionHandle = (): React.ReactNode => useContext(HandleCtx)
  */
 export const SECTION_TITLE: Record<ToolSectionId, MessageKey> = {
   context: 'rp.context',
+  quota: 'rp.quota',
   todo: 'rp.todo',
   queue: 'rp.queue',
   files: 'rp.files',
@@ -45,6 +46,9 @@ export function Section({
   defaultOpen = true,
   testId,
   handle,
+  /** 受控展开态（不传则内部自管）。任务栏用它做「全部完成自动收起」 */
+  open: openProp,
+  onOpenChange,
   children
 }: {
   titleKey: MessageKey
@@ -53,9 +57,16 @@ export function Section({
   testId?: string
   /** 显式传把手（不传则用 context 里的） */
   handle?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [openState, setOpenState] = useState(defaultOpen)
+  const open = openProp ?? openState
+  const setOpen = (v: boolean): void => {
+    setOpenState(v)
+    onOpenChange?.(v)
+  }
   const t = useT()
   const ctxHandle = useSectionHandle()
   const grip = handle ?? ctxHandle
@@ -64,7 +75,7 @@ export function Section({
     <section className={`rp-sec ${open ? 'open' : ''}`} data-sec={testId} data-testid={testId}>
       <div className="rp-sec-row">
         {grip}
-        <button className="rp-sec-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <button className="rp-sec-head" onClick={() => setOpen(!open)} aria-expanded={open}>
           <Icon name="chevron-right" size={12} className="chev" />
           <span className="rp-sec-title">{t(titleKey)}</span>
           <span className="spacer" />

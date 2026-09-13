@@ -506,7 +506,8 @@
    内置浏览器：固定在右侧工具栏面板内，不替换中栏会话
    ------------------------------------------------------------------- */
 .rightpanel.browser-mode {
-  grid-template-rows: auto minmax(0, 1fr);
+  /* 浏览器是工具栏中的一个工具，不再替换其余工具。 */
+  grid-template-rows: auto minmax(240px, 55%) minmax(0, 1fr);
 }
 .rp-browser-toggle {
   display: inline-flex;
@@ -741,6 +742,54 @@
   color: var(--fg-mute);
 }
 /*
+ * 同步报告：内容可能变长（多项失败），所以 note 本身要能滚。
+ * 为什么要逐条列出失败项：用户报的「cookie 没共享」本身就是「部分成功」，
+ * 一句笼统的失败提示无法告诉他该去退 Chrome 还是该去登录。
+ */
+.browser-ext-note {
+  overflow: auto;
+}
+.browser-ext-sync {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.browser-ext-sync-line {
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--warn);
+}
+.browser-ext-sync-failed {
+  margin: 0;
+  padding-left: 1.1em;
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--fg-mute);
+}
+.browser-ext-sync-failed code {
+  color: var(--fg-dim);
+}
+.browser-ext-resync {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.browser-ext-resync:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.browser-ext-resync:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/*
  * 网页是原生 WebContentsView，永远盖在渲染层之上。右栏宽度把手只有 5px、
  * 又贴在面板左缘，会被原生视图整段遮住 —— 浏览器打开时就没法从页面区域
  * 拖宽度（只能在顶部工具栏那一段拖）。这里让网页区让开这条缝，
@@ -967,6 +1016,24 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
+/*
+ * 任务标题最多**两行**（用户要求，包括处理中的那条）。
+ * 用 line-clamp 而不是按字数截：右栏可拖宽，按行数限制在小/宽两种宽度下都成立。
+ * 完整文本仍在 title 上（悬停可见）。
+ */
+.rp-todos .rp-text,
+.rp-hist-todo .rp-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  /*
+   * 兼容兜底：.rp-text 是 grid 子项，会被 blockify，`display:-webkit-box`
+   * 在实测里算成 flow-root，line-clamp 可能不生效。用 max-height 按行高
+   * 硬扣两行（行高 1.55）。两道保险一起上，哪个生效都能保证“最多两行”。
+   */
+  max-height: calc(1.55em * 2 + 1px);
+}
 .rp-todo.done .rp-text {
   color: var(--fg-mute);
   text-decoration: line-through;
@@ -1002,14 +1069,14 @@
   .workspace {
     --w-right: var(--w-panel-user, 190px);
   }
-  /* 窄屏下右栏内部的左右内边距收一档 */
+  /* 窄屏下右栏内部的左右内边距收一档；左边距跟标题一致（见 .rp-sec-head） */
   .rp-sec-head,
   .rp-top {
-    padding-left: var(--sp-2);
+    padding-left: var(--sp-1);
     padding-right: var(--sp-2);
   }
   .rp-sec-body {
-    padding-left: var(--sp-2);
+    padding-left: var(--sp-1);
     padding-right: var(--sp-2);
   }
 }
@@ -1459,18 +1526,44 @@
   color: var(--fg-mute);
   flex: none;
 }
-.proj-name {
+.proj-labels {
+  display: flex;
   flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.proj-name, .proj-path {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.proj-path { color: var(--fg-mute); font-size: var(--fs-xs); direction: rtl; text-align: left; }
+.proj-rename { opacity: 0; color: var(--fg-mute); padding: 2px; }
+.proj-head:hover .proj-rename, .proj-rename:focus { opacity: 1; }
 .proj-count {
   flex: none;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
+}
+/* 项目行内重命名（Electron 不支持 window.prompt，改用 input） */
+.proj-head.renaming {
+  gap: 6px;
+}
+.proj-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-base);
+  outline: none;
 }
 
 /* ---- 会话行：嵌套在项目下，缩进一级 ---- */
@@ -1564,7 +1657,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 选中项的右侧动作（⋯），只在选中/悬停时出现 */
+/* 会话行内重命名（用户报「左栏会话没办法重命名」：Electron 不支持 window.prompt） */
+.srow-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  /* 缩进与 .srow 一致，重命名时文字位置不跳 */
+  padding: 0 var(--sp-2) 0 32px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-base);
+  outline: none;
+}
 .srow-acts {
   position: absolute;
   right: 3px;
@@ -3205,17 +3312,22 @@ body.resizing-composer {
 }
 
 .rp-sec {
-  border-bottom: 1px solid var(--border-soft);
+  /* 工具之间不再使用“分割标题/分割线”，内容靠留白成组。 */
+  border-bottom: 0;
+  padding-top: 3px;
 }
-.rp-sec:last-child {
-  border-bottom: none;
-}
+.rp-sec + .rp-sec { margin-top: 3px; }
 .rp-sec-head {
   display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
-  padding: 6px var(--sp-3);
+  /*
+   * 左边距收窄（用户反馈：标题离左边框太远）。
+   * 左侧实际占地 = grip 的 margin-left + grip 宽度 + 这里的 padding-left；
+   * 三处一起收才能真的贴过去，只改这里会看不出效果。
+   */
+  padding: 6px var(--sp-3) 6px var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-sm);
   letter-spacing: 0.04em;
@@ -3234,11 +3346,62 @@ body.resizing-composer {
   flex: 1;
 }
 .rp-sec-body {
-  padding: 2px var(--sp-3) var(--sp-3);
+  /* 左内边距跟着标题走（标题收窄后正文也要跟着，否则正文比标题缩进还小，看着歪） */
+  padding: 2px var(--sp-3) var(--sp-3) calc(var(--sp-1) + 2px);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
+
+.rp-quota-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 窗口额度（Command Code 的 5 小时 / 每周）——每条一行 + 一条细进度条 */
+.rp-quota-wins {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0;
+}
+.rp-quota-win .rp-u {
+  flex: none;
+}
+.rp-dim.err {
+  color: var(--err);
+}
+.rp-quota-win .rp-meter {
+  margin: 2px 0 1px;
+}
+/* 文字按钮（刷新额度 / 设置月预算）—— 与 .rp-mini 区分开：
+   .rp-mini 是 18×18 的图标按钮，文字塞进去会竖排换行并把相邻行顶开。 */
+.rp-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  width: auto;
+  height: auto;
+}
+.rp-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.rp-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.rp-context-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.rp-context-summary strong { color: var(--fg); font-size: var(--fs-lg); font-weight: 600; }
+.rp-context-summary .warn, .rp-context-summary .warn strong { color: var(--warn); }
+.rp-context-summary .err, .rp-context-summary .err strong { color: var(--err); }
 
 /* 键值行：左标注、右数值 */
 .rp-kv {
@@ -3304,6 +3467,10 @@ body.resizing-composer {
 }
 .rp-meter.err i {
   background: var(--err);
+}
+/* 压缩后 pi 还报不出用量：条保持可见但弱化，避免看着像“0 进度”的故障 */
+.rp-meter.unknown {
+  opacity: 0.4;
 }
 
 /* 任务 */
@@ -4084,9 +4251,9 @@ html[data-theme='light'] .tb-pin.on {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  /* 让开宽度把手占的那 5px，否则两者在左缘重叠（见 .resizer 的注释） */
-  margin-left: 6px;
+  width: 12px;
+  /* 只让开宽度把手需要的距离 —— 原来是 6px，把标题推得太靠右了 */
+  margin-left: 2px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   opacity: 0;
@@ -4900,53 +5067,280 @@ body.resizing .workspace {
   padding: 4px 0 4px 18px;
 }
 
-/* ---- 终端窗口（用户要求「类似终端窗口的工具调用详情」）---- */
+/* ---- 终端窗口（工具调用详情；用户要求「更好的终端实现 + 调整窗口大小」）----
+   设计要点：
+   · 无论浅色/深色主题，终端都是**深色底**（终端本来就该是深色），
+     内部的 diff / 输出都覆盖成深色底上的浅色字，不与主题令牌混用。
+   · 标题栏 = 窗口灯 + 工具名 + 命令预览 + 状态胶囊 + 耗时 + 复制/展开。
+   · 正文 = prompt 行（`$ 命令`）+ 输出，等宽、可滚。
+   · 三个拖拽把手定位在窗口内（下 / 右 / 右下角），不占布局。 */
 .term {
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-md);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-0);
+  background: #0c0c0c;
+  box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.8);
+}
+.term.dragging {
+  border-color: var(--accent-line);
 }
 .term-bar {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px var(--sp-2);
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--fg-mute);
+  gap: 6px;
+  padding: 5px var(--sp-2);
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: #9a9a9a;
   font-size: var(--fs-xs);
+  user-select: none;
+}
+.term-lights {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: 2px;
 }
 .term-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--r-full);
-  background: var(--border-str);
+  background: #3a3a3a;
+}
+/* 窗口灯用低饱和度，既能读出「这是个窗口」又不至于抢眼 */
+.term-lights .term-dot:nth-child(1) {
+  background: #e0605a;
+}
+.term-lights .term-dot:nth-child(2) {
+  background: #e0b34a;
+}
+.term-lights .term-dot:nth-child(3) {
+  background: #4fb85f;
+}
+.term-ico {
+  display: inline-flex;
+  color: #6f6f6f;
+}
+.term-ico.live {
+  color: var(--accent);
 }
 .term-title {
-  margin-left: 4px;
-  max-width: 60%;
+  flex: none;
+  color: #d6d6d6;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.term-cmd {
+  min-width: 0;
+  max-width: 36%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg-dim);
-  font-family: var(--font-code);
+  color: #7f7f7f;
+  font-family: var(--font-mono);
+}
+.term-bar .spacer {
+  flex: 1;
+}
+.term-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.term-pill.ok {
+  color: #7ee787;
+  background: rgba(126, 231, 135, 0.12);
+}
+.term-pill.err {
+  color: #ff7b72;
+  background: rgba(255, 123, 114, 0.12);
+}
+.term-pill.running {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .term-time {
-  margin-left: auto;
+  flex: none;
+  color: #6f6f6f;
   font-variant-numeric: tabular-nums;
 }
-/* 终端正文：等宽、可滚、保留原始空白（stdout 的换行/缩进是信息） */
+.term-act {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a8a;
+  cursor: pointer;
+}
+.term-act:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #e6e6e6;
+}
+.term-act.on {
+  color: #7ee787;
+}
+/* 正文：等宽、可滚、保留原始空白（stdout 的换行/缩进是信息） */
 .term-body {
-  max-height: 320px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  padding: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
   scrollbar-gutter: stable;
+  color: #d6d6d6;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  line-height: 1.55;
   user-select: text;
 }
-.term-body .diff,
-.term-body pre {
-  margin: 0;
+.term-prompt {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+.term-prompt-sign {
+  flex: none;
+  color: #7ee787;
+  user-select: none;
+}
+.term-prompt-text {
+  min-width: 0;
+  color: #eaeaea;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.term-out {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.term-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: term-blink 1s step-end infinite;
+}
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+/* 终端内一律深色底：把按主题写的工具详情颜色覆盖掉 */
+.term .tool-path,
+.term .diff-label,
+.term .tool-result {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.term .tool-path {
+  background: transparent;
+  color: #7f7f7f;
+}
+.term .tool-pre {
+  padding: 0;
+  background: transparent;
+  border: none;
+  max-height: none;
+  color: #d6d6d6;
+}
+.term .tool-pre.args {
+  color: #8f8f8f;
+}
+.term .tool-result {
+  padding: 4px 0 0;
+  color: #c8c8c8;
+}
+.term .tool-empty {
+  padding: 0;
+  color: #7f7f7f;
+}
+.term .diff {
+  background: rgba(255, 255, 255, 0.08);
+}
+.term .diff-side {
+  background: transparent;
+}
+.term .diff-label {
+  background: transparent;
+}
+.term .diff-label.err {
+  color: #ff7b72;
+}
+.term .diff-label.ok {
+  color: #7ee787;
+}
+.term .diff-pre {
+  padding: 4px 6px;
+  background: transparent;
+  max-height: 320px;
+}
+.term .diff-pre.add,
+.term .diff-pre.write-body {
+  color: #a5e8a8;
+}
+.term .diff-pre.del {
+  color: #ff9b93;
+}
+
+/* ---- 拖拽把手（下 / 右 / 右下角）：绝对定位在窗口内部 ---- */
+.term-grip {
+  position: absolute;
+  z-index: 2;
+}
+.term-grip-s {
+  left: 0;
+  right: 12px;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+.term-grip-e {
+  top: 0;
+  bottom: 12px;
+  right: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+.term-grip-se {
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+.term-grip-se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.4);
+}
+.term-grip:hover,
+.term-grip:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+body.resizing-term {
+  user-select: none;
 }
 
 /* ===================================================================
@@ -5200,4 +5594,117 @@ html[data-theme='light'] .outline-preview {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-style: italic;
+}
+
+/* ===================================================================
+   65. 自主模式开关（用户要求：放进输入栏、去掉「未开启」字样、有开/关动效）
+   ─────────────────────────────────────────────────────────────
+   与 composer 的其它工具同高（.ctool 26px），做成一枚小胶囊：
+     · 关：中性灰，轨道灰、滑块靠左
+     · 开：强调色，轨道 accent、滑块滑到右侧
+   文案不再显示「未开启 / 已开启」——开关本身就能表达。
+   =================================================================== */
+.auto-toggle.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.auto-toggle .auto-label {
+  color: inherit;
+  font-size: var(--fs-sm);
+}
+.auto-toggle .auto-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 26px;
+  height: 14px;
+  padding: 2px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  transition: background var(--dur) var(--ease);
+}
+.auto-toggle.on .auto-track {
+  background: var(--accent);
+}
+.auto-toggle .auto-thumb {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-mute);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transform: translateX(0);
+  transition:
+    transform 160ms var(--ease),
+    background var(--dur) var(--ease);
+}
+.auto-toggle.on .auto-thumb {
+  background: #fff;
+  transform: translateX(12px);
+}
+
+/* -------------------------------------------------------------------
+   66. 排队消息（输入框上方）
+   每行：[图标] 文本 ................ [插队]
+   插队按钮只在 follow-up 行出现（steering 已经在插话了，显示状态即可）。
+   ------------------------------------------------------------------- */
+.queue-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: var(--w-stream);
+  margin: 0 auto var(--sp-2);
+}
+.qrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.qrow.steering {
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+.qrow .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+.qrow.steering .ico {
+  color: var(--accent);
+}
+.qrow-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qrow-tag {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+.qrow-jump {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.qrow-jump:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
+import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { AuthTab } from './AuthTab'
 
@@ -134,6 +135,19 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const zoom = useStore((s) => s.zoom)
+  /** 对话内容列宽度（0 = 用设计默认值） */
+  const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
+  /**
+   * 滑块拖动中的本地值。
+   *
+   * 为什么需要：拖动时只改 CSS 变量、松手才落盘（与面板拖拽同一套，
+   * 避免每帧写文件）。但 range 是**受控**输入，如果 value 一直绑在
+   * settings.streamWidth 上，拖动时 React 会把 thumb 拉回旧值 ——
+   * 手感是「拖不动」。所以拖动期间用 draft，落盘后 settings 变化再清掉。
+   */
+  const [draft, setDraft] = useState<number | null>(null)
+  const shownWidth = draft ?? (streamWidth || 900)
+  useEffect(() => setDraft(null), [streamWidth])
   const [reduced] = useState(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   )
@@ -203,6 +217,54 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
                 : t(o.key)}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.streamWidth')}</div>
+          <div className="set-desc">{t('set.streamWidthDesc')}</div>
+          <div className="set-desc set-num" data-testid="set-stream-width-now">
+            {streamWidth > 0 ? t('set.streamWidthNow', { n: shownWidth }) : t('set.streamWidthDefault')}
+          </div>
+        </div>
+        <div className="set-ctl stream-width-ctl" data-testid="set-stream-width">
+          {/*
+           * 滑块而不是预设档位：宽度是个连续量，用户心里往往有个具体值
+           * （“我想让代码块一行放下 100 个字符”）。拖动时实时改 CSS 变量
+           * （只写 documentElement，不走 IPC），松手才落盘 —— 与面板拖拽同一套。
+           */}
+          <input
+            className="range"
+            type="range"
+            min={STREAM_MIN}
+            max={STREAM_MAX}
+            step={20}
+            value={shownWidth}
+            aria-label={t('set.streamWidth')}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              setDraft(v)
+              document.documentElement.style.setProperty('--w-stream', `${v}px`)
+            }}
+            onPointerUp={(e) => {
+              const v = clampStreamWidth(Number((e.target as HTMLInputElement).value))
+              void patchSettings({ streamWidth: v })
+            }}
+            onKeyUp={(e) => {
+              const v = clampStreamWidth(Number((e.target as HTMLInputElement).value))
+              void patchSettings({ streamWidth: v })
+            }}
+          />
+          <button
+            className="seg-btn"
+            onClick={() => void patchSettings({ streamWidth: 0 })}
+            title={t('set.streamWidthReset')}
+            data-testid="set-stream-width-reset"
+            disabled={streamWidth === 0}
+          >
+            <Icon name="refresh" size={12} />
+          </button>
         </div>
       </div>
 

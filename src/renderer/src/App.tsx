@@ -209,6 +209,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang])
 
+  /*
+   * 对话内容列宽度 —— 把设置里的 streamWidth 写到 CSS 变量 --w-stream。
+   *
+   * 为什么用 CSS 变量而不是给每个元素传宽度：
+   *   正文列 / 输入框 / 用量条 / 导航轨的定位**全都**从 --w-stream 取值，
+   *   改一个变量就整体对齐，不会出现「正文宽了但输入框还窄」的错位。
+   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（900px）。
+   *
+   * 改完发一个 `yan:stream-width` 事件：导航轨的横向位置是 JS 实测的，
+   * 它需要重新量一次（尤其虚拟化长会话里没有 .stream-inner 可观察）。
+   */
+  useEffect(() => {
+    const root = document.documentElement
+    const w = settings?.streamWidth ?? 0
+    if (w > 0) root.style.setProperty('--w-stream', `${w}px`)
+    else root.style.removeProperty('--w-stream')
+    window.dispatchEvent(new Event('yan:stream-width'))
+  }, [settings?.streamWidth])
+
   /* ---- 贴底滚动：用户往上翻了就不打扰 ---- */
   useEffect(() => {
     if (!stickRef.current) return

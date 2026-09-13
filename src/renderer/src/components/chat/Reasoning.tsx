@@ -159,19 +159,25 @@ function firstLine(s: string): string {
 /* ------------------------------------------------------------------ */
 
 /**
- * 逐字显示（typewriter）。
+ * 逐字显示（typewriter）—— 真·逐字。
  *
  * ── 为什么不是「一个字一个字 append」那么简单 ──
  * 模型送来的块可能一次几百字，如果固定「每帧 1 个字」，
  * 落后面会越来越大（最后显示的字比真实进度晚十几秒）。
- * 所以速率跟着**积压量**走：
+ * 所以用**基于时间**的速率，并且让速率跟着积压量走：
  *
- *     每帧吐出的字数 = clamp(积压 / 8, 1, 24)
+ *     每秒吐出 = 基础 90 字 + 积压 × 12（封顶 990 字/秒）
  *
- * 积压小时就是逐字（1 字/帧 ≈ 60 字/秒，接近人的阅读节奏）；
- * 积压大时自动加速，稳定在落后约 8 帧（~130ms）。
+ * 积压小时是接近匀速的 90 字/秒（人眼看得出来是一个个字在长）；
+ * 积压大时自动加速，稳定在落后极短的时间，不会越落越远。
  *
- * ── 为什么要 rAF 而不是 setInterval ──
+ * ⚠️ 之前是「每帧按 backlog/8 取整、最多 24 字」——
+ *    backlog 上百字时一帧就吐十几个，视觉上是「一块块地跳」，
+ *    用户要的逐字感反而没了。而且它随刷新率变化（120Hz 比 60Hz 快一倍）。
+ *    现在按**真实时间**算，跟刷新率无关，而且带小数累加器，
+ *    低积压时每帧就是 1-2 个字。
+ *
+ * ── 为什么用 rAF 而不是 setInterval ──
  * rAF 跟着显示器刷新（60/120Hz 都合适），而且窗口不可见时自动停 ——
  * 不会在后台空转。也顺便避免「组件卸载后还在 setState」。
  *
@@ -179,38 +185,72 @@ function firstLine(s: string): string {
  */
 export function useTypewriter(text: string, enabled: boolean): string {
   const [shown, setShown] = useState(enabled ? '' : text)
+  /** 最新的完整文本（rAF 循环一直读它，不再因为文本变化重启循环） */
   const target = useRef(text)
+  /** 当前已经吐出来的文本（rAF 循环内的同步真源，避免 stale closure） */
+  const shownRef = useRef(shown)
   const raf = useRef<number | null>(null)
+  /** 上一帧的时间戳（算 dt）；0 = 还没开始 / 刚追平 */
+  const lastTs = useRef(0)
+  /** 小数累加器：低积压时一帧不足 1 字就先攒着，下一帧补上 */
+  const carry = useRef(0)
 
   useEffect(() => {
     target.current = text
     if (!enabled) {
+      shownRef.current = text
       setShown(text)
       return
     }
-    // 已经追上（或文本被替换成更短的）→ 直接对齐，避免动画倒放
-    setShown((cur) => (text.length <= cur.length || !text.startsWith(cur) ? text : cur))
+    /*
+     * 文本被**替换**成不相接的另一段（切会话 / 重新开始）→ 直接对齐，
+     * 避免从旧的错误前缀开始动画。追加（startsWith 成立且更长）则不动，
+     * 让 rAF 继续把它吐出来。
+     */
+    if (!text.startsWith(shownRef.current) || text.length < shownRef.current.length) {
+      shownRef.current = text
+      setShown(text)
+    }
+  }, [text, enabled])
 
-    if (raf.current !== null) return
-    const tick = (): void => {
-      let done = false
-      setShown((cur) => {
-        const tgt = target.current
-        if (!tgt.startsWith(cur)) return tgt
+  /*
+   * 稳定的 rAF 循环：只在 enabled 变化时起停。
+   * 不再把 text 放进依赖里 —— 之前每来一个 delta 就 cancel + requestAnimationFrame，
+   * 既抖又让「上一帧算好的 dt」丢掉。
+   */
+  useEffect(() => {
+    if (!enabled) return
+    lastTs.current = 0
+    carry.current = 0
+
+    const tick = (ts: number): void => {
+      const tgt = target.current
+      let cur = shownRef.current
+
+      if (!tgt.startsWith(cur)) {
+        cur = tgt
+      } else {
         const backlog = tgt.length - cur.length
         if (backlog <= 0) {
-          done = true
-          return cur
+          lastTs.current = 0
+        } else {
+          const dt = lastTs.current ? Math.min(0.1, (ts - lastTs.current) / 1000) : 1 / 60
+          lastTs.current = ts
+          const cps = 90 + Math.min(900, backlog * 12)
+          const add = cps * dt + carry.current
+          const n = Math.floor(add)
+          carry.current = add - n
+          if (n > 0) cur = tgt.slice(0, cur.length + n)
         }
-        const step = Math.max(1, Math.min(24, Math.round(backlog / 8)))
-        return tgt.slice(0, cur.length + step)
-      })
-      if (done) {
-        raf.current = null
-        return
+      }
+
+      if (cur !== shownRef.current) {
+        shownRef.current = cur
+        setShown(cur)
       }
       raf.current = requestAnimationFrame(tick)
     }
+
     raf.current = requestAnimationFrame(tick)
     return () => {
       if (raf.current !== null) {
@@ -218,8 +258,7 @@ export function useTypewriter(text: string, enabled: boolean): string {
         raf.current = null
       }
     }
-    // text 变化时重新起 tick；enabled 切换同理
-  }, [text, enabled])
+  }, [enabled])
 
   return shown
 }

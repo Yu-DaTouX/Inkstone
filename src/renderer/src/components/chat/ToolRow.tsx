@@ -30,7 +30,7 @@ import { useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { ToolDetail } from './MessageParts'
+import { TerminalWindow } from './Terminal'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 
@@ -97,23 +97,10 @@ export function ToolRow({ call }: { call: UIToolCall }) {
       {open ? (
         <div className="trow-body">
           {/*
-           * 终端窗口：标题栏放命令原文，正文等宽、可滚。
-           * 这是「类似终端窗口的工具调用详情」（用户要求）。
+           * 终端窗口：标题栏放命令，正文等宽可滚，**可拖动调整大小**
+           * （见 Terminal.tsx：下/右/右下三个把手 + 展开按钮）。
            */}
-          <div className="term" data-testid="tool-terminal">
-            <div className="term-bar">
-              <span className="term-dot" aria-hidden />
-              <span className="term-dot" aria-hidden />
-              <span className="term-dot" aria-hidden />
-              <span className="term-title" title={target}>
-                {call.name}
-              </span>
-              {secs !== null ? <span className="term-time">{secs}s</span> : null}
-            </div>
-            <div className="term-body">
-              <ToolDetail call={call} />
-            </div>
-          </div>
+          <TerminalWindow call={call} target={target} secs={secs} />
         </div>
       ) : null}
     </div>

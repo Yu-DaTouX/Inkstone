@@ -12,6 +12,8 @@ export function BrowserSurface() {
   const close = useStore((s) => s.closeBrowser)
   const openExternalChrome = useStore((s) => s.openExternalChrome)
   const closeExternalChrome = useStore((s) => s.closeExternalChrome)
+  const syncLocalProfile = useStore((s) => s.syncLocalProfile)
+  const [syncing, setSyncing] = useState(false)
   const tabs = state.tabs ?? []
   const external = state.external
   const externalActive = state.mode === 'external' ? external : undefined
@@ -153,6 +155,50 @@ export function BrowserSurface() {
             <div className="browser-ext-desc">{t('browser.externalDesc')}</div>
             {externalActive.profileDir ? <code className="browser-ext-path">{externalActive.profileDir}</code> : null}
             {externalActive.debuggingPort ? <span className="browser-ext-port">:{externalActive.debuggingPort}</span> : null}
+
+            {/*
+             * 数据同步状态 —— 用户报的「cookie 和历史没共享」就发生在这里。
+             * 如实列出成功了哪些、哪些没成功以及原因，而不是一句「已连接」。
+             */}
+            {externalActive.sync ? (
+              <div className="browser-ext-sync" data-testid="browser-ext-sync">
+                {externalActive.sync.found ? (
+                  <div className="browser-ext-sync-line">
+                    {externalActive.sync.cookiesSynced
+                      ? t('browser.syncOk')
+                      : t('browser.syncNoCookies')}
+                  </div>
+                ) : (
+                  <div className="browser-ext-sync-line">{t('browser.syncNoChrome')}</div>
+                )}
+                {externalActive.sync.failed.length ? (
+                  <ul className="browser-ext-sync-failed" data-testid="browser-ext-sync-failed">
+                    {externalActive.sync.failed.map((f) => (
+                      <li key={f.item}>
+                        <code>{f.item}</code> — {f.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+            {externalActive.sync && !externalActive.sync.cookiesSynced ? (
+              <button
+                className="browser-ext-resync"
+                data-testid="browser-ext-resync"
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true)
+                  try {
+                    await syncLocalProfile()
+                  } finally {
+                    setSyncing(false)
+                  }
+                }}
+              >
+                {syncing ? t('browser.syncing') : t('browser.resync')}
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

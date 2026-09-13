@@ -67,6 +67,13 @@ function useFrame(active: boolean, frames: string[] = FRAMES): string {
  *
  * 优先级与 pi 一致：压缩 > 重试 > 常规处理。
  * 因为压缩/重试时「正在处理」是误导的 —— 那一刻它在做别的事。
+ *
+ * ⚠️ 这里曾经只看 `isStreaming`，而 `isStreaming` 在**工具执行期间是 false**
+ *    （每条 assistant 消息结束就清）。结果是模型调工具的那几秒里，
+ *    输入框顶部的动画和「正在处理…」整条消失，工具跑完又冒出来 ——
+ *    用户看到的就是「一闪一闪」。
+ *    现在跟宽的那个信号 `isAgentRunning`（agent_start → agent_settled，
+ *    覆盖工具执行与中途再思考）走，整个回合内**常驻**。
  */
 function useStatusText(): { kind: string; text: string } | null {
   const t = useT()
@@ -77,7 +84,7 @@ function useStatusText(): { kind: string; text: string } | null {
   }
   // 重试中：pi 会显示倒计时。我们拿不到精确的 delay，
   // 所以不编数字（与用量条的速度同一条原则：拿不到就不假装）。
-  if (session?.isStreaming) {
+  if (session?.isStreaming || session?.isAgentRunning) {
     return { kind: 'working', text: t('chat.working') }
   }
   return null
