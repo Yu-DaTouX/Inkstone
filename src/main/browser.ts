@@ -542,9 +542,6 @@ export class BrowserController {
       return { ok: true }
     }
 
-    // 内嵌标签页与外部 Chrome 互斥：先关掉内嵌的，避免两套状态并存
-    for (const id of [...this.tabs.keys()]) await this.closeTab(id)
-
     const port = await pickFreePort()
     const profileDir = defaultProfileDir(YAN_DIR)
     let chrome: ChildProcess | null = null
@@ -564,6 +561,12 @@ export class BrowserController {
       await cdp.attach()
       const registry = new ElementRegistry()
       await this.setupExternalDownloads(cdp)
+      /*
+       * 连接成功后再关内嵌标签页。
+       * 之前是「先关内嵌再启动」，一旦 Chrome 启动失败，用户已打开的内嵌页
+       * 被清空而外部又没接上 —— 看起来就像界面卡死。
+       */
+      for (const id of [...this.tabs.keys()]) await this.closeTab(id)
       this.external = {
         cdp,
         registry,
@@ -766,7 +769,16 @@ export class BrowserController {
     }
     this.nativeBounds = clean
     tab.view.setBounds(clean)
-    this.updateState()
+    /*
+     * ⚠️ 这里**不** push 状态。
+     *
+     * 渲染端 BrowserSurface 有一个常驻的逐帧「测量视口 → setBounds」循环
+     * （几何一变就发 IPC）。如果 setBounds 每次都 updateState→push，那么
+     * 面板宽度过渡 / 缩放动画期间（几何每帧都在变）就会变成
+     * 「每帧 push → React 每帧重渲染」的推送风暴，界面直接卡死。
+     * nativeBounds 只是诊断字段，渲染端不响应它 —— 不需要推送；
+     * getState() 会返回它，探针也依旧能读到。
+     */
   }
 
   async dispose(): Promise<void> {
