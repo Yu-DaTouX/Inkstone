@@ -26,7 +26,7 @@
  *    不要全部弹出」）。一次 agent 跑几十条命令是常态，
  *    已结束的全展开会把回答顶出屏幕。
  */
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -35,7 +35,7 @@ import type { UIToolCall } from '../../../../shared/ipc'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-export function ToolRow({ call }: { call: UIToolCall }) {
+function ToolRowImpl({ call }: { call: UIToolCall }) {
   const t = useT()
   /** 用户手动开关；null = 跟随设置里的默认值 */
   const detailOn = useStore((s) => s.settings?.toolDetail === true)
@@ -115,6 +115,35 @@ export function ToolRow({ call }: { call: UIToolCall }) {
 }
 
 /**
+ * 两个工具对象是不是「渲染上等价」。
+ *
+ * ⚠️ 为什么 ToolRow 需要 memo：流式期间每个工具输出 chunk 都会让 store 重建
+ *    messages 数组 → 把所有回合/工具行重渲染一遍。已结束的工具其实什么都没变，
+ *    但它们下面的 TerminalWindow 里装着完整 output（可能几百 KB），
+ *    重渲染一次就是重新 diff 一遍全量文本。
+ *
+ * 用逐字段比较而不是默认引用比较：已结束的 call 在主进程 messages 里是稳定对象，
+ * 但渲染端可能因 `{...base, ...call}` 重建过（见 store 的 `'tool'` 分支），
+ * 引用不一定相等；逐字段比较才是真正关心的东西。
+ */
+function sameCall(a: UIToolCall, b: UIToolCall): boolean {
+  return (
+    a === b ||
+    (a.id === b.id &&
+      a.name === b.name &&
+      a.status === b.status &&
+      a.output === b.output &&
+      a.argsRaw === b.argsRaw &&
+      a.args === b.args &&
+      a.details === b.details &&
+      a.startedAt === b.startedAt &&
+      a.endedAt === b.endedAt)
+  )
+}
+
+export const ToolRow = memo(ToolRowImpl, (a, b) => sameCall(a.call, b.call))
+
+/**
  * 一组**已结束**的工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
  *
  * ⚠️ 默认**收起**，而且**不因有工具在跑而自动展开**。
@@ -123,7 +152,7 @@ export function ToolRow({ call }: { call: UIToolCall }) {
  *   正在运行的那条不再放进本组：它由 TurnView 单独渲染并自动展开详情，
  *   这样只有「当前在跑的工具」是打开的，其余保持一行。
  */
-export function ToolGroup({ tools }: { tools: UIToolCall[] }) {
+function ToolGroupImpl({ tools }: { tools: UIToolCall[] }) {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
   /*
@@ -164,6 +193,21 @@ export function ToolGroup({ tools }: { tools: UIToolCall[] }) {
     </div>
   )
 }
+
+/**
+ * 组的 memo：比较的也是「渲染上等价」——长度相同且逐条 sameCall。
+ *
+ * 不比较数组引用：`TurnActivity` 每次都用 filter 新建数组，引用永远不相等，
+ * 用默认比较等于没 memo。
+ */
+export const ToolGroup = memo(ToolGroupImpl, (a, b) => {
+  if (a.tools === b.tools) return true
+  if (a.tools.length !== b.tools.length) return false
+  for (let i = 0; i < a.tools.length; i++) {
+    if (!sameCall(a.tools[i], b.tools[i])) return false
+  }
+  return true
+})
 
 
 

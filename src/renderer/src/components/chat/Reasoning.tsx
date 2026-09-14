@@ -24,11 +24,11 @@
  *    告诉模型用多大强度推理；这里是**模型的推理输出本身**。
  *    模型可能在某轮完全不推理（off 档，或它决定直接回答）—— 那时不显示。
  */
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 
-export function ReasoningCapsule({
+function ReasoningCapsuleImpl({
   text,
   ms,
   live,
@@ -148,6 +148,21 @@ export function ReasoningCapsule({
     </div>
   )
 }
+
+/**
+ * ⚠️ memo 是必需的（与 TurnView 的 Paragraph 同一个原因）：
+ *
+ * `groupIntoTurns` 每帧重建全部回合对象 → 所有 ReasoningCapsule 都会
+ * 重渲染。而它内部有 `useTypewriter`（rAF 循环 + setState），
+ * 每帧重建一次会把历史推理的逐字动画重新起一遍。
+ *
+ * 比较字段就是它真正渲染依赖的全部东西：文本、耗时、两个「是否在跑」信号。
+ */
+export const ReasoningCapsule = memo(
+  ReasoningCapsuleImpl,
+  (a, b) =>
+    a.text === b.text && a.ms === b.ms && a.live === b.live && a.turnLive === b.turnLive
+)
 
 /** 取第一行做预览（去掉 markdown 记号，太长的截断） */
 function firstLine(s: string): string {

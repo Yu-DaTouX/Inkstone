@@ -49,11 +49,20 @@ import './styles/browser.css'
 /**
  * 超过这么多条消息才开启虚拟化。
  *
- * 为什么不平一直开：虚拟化会改变 DOM 结构（外层变成绝对定位的项），
+ * 为什么不一直开：虚拟化会改变 DOM 结构（外层变成绝对定位的项），
  * 而消息高度是**动态**的（流式文本在长、工具卡在展开/折叠），
  * 短会话里收益为零、风险却真实。长会话（上千条）才是会卡死的场景。
+ *
+ * ⚠️ 阈值必须按**消息/DOM 规模**判，不能只看回合数。
+ *    历史上只比 `turns.length >= VIRTUALIZE_AT`（回合数），而回合是把
+ *    「一次 API 往返 = 一条 assistant 消息」合并后的结果：
+ *    实测一个真实会话有 1948 条消息、967 次工具调用，合并后却只有 **58 个回合**
+ *    —— 于是虚拟化根本没开，1948 条消息全量进 DOM，每帧还要重渲染一遍。
+ *    工具调用密集的会话（就是用户报卡顿的那种）恰好是「回合少、消息多」。
  */
 const VIRTUALIZE_AT = 80
+/** 消息条数达到这个量级就虚拟化（回合数之外的第二道闸） */
+const VIRTUALIZE_MSGS_AT = 200
 
 function readTheme(parent: Theme | undefined): Theme {
   if (parent) return parent
@@ -176,7 +185,7 @@ export default function App() {
    */
   const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
 
-  const virtual = turns.length >= VIRTUALIZE_AT
+  const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
 
   /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
   useEffect(() => {

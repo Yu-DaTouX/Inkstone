@@ -190,13 +190,29 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
  * key 用的是段的 id，所以新的一段出现时 React 会挂新节点 →
  * CSS 的 fade-in 动画就会跑（`animation` 只在节点首次挂载时触发）。
  */
-function Paragraph({ text, primary }: { text: string; primary?: boolean }) {
+function ParagraphImpl({ text, primary }: { text: string; primary?: boolean }) {
   return (
     <div className={`turn-para ${primary ? 'primary' : ''}`}>
       <Markdown text={text} />
     </div>
   )
 }
+
+/**
+ * ⚠️ 这个 memo 是**性能的关键点**，不是可选项。
+ *
+ * 背景：`groupIntoTurns` 每帧（流式期间 16ms）重建**全部**回合对象，
+ * 所以 `TurnView` 的 memo 一定失效、每个回合都会重新渲染。这时如果
+ * Paragraph 跟着重渲染，它下面的 Markdown 就会把历史回答全部重解析一遍
+ * （实测一次 535ms，见 MessageParts.tsx 顶部）。
+ *
+ * 这里有效的原因：文本是**字符串**（值比较），回合对象虽是新引用，
+ * 但里面的段落文本内容没变，`===` 就直接命中。
+ *
+ * 所以改这里的 props 时要小心：任何非原始值（对象/数组/函数）都会让
+ * 这个 memo 完全失效，退回成「每帧重解析整段会话」。
+ */
+const Paragraph = memo(ParagraphImpl, (a, b) => a.text === b.text && a.primary === b.primary)
 
 /**
  * 整轮活动摘要 —— 「推理了 N 次 · 执行了 M 次工具」。
