@@ -20,6 +20,19 @@
 
   log('=== 排队 + 中止回收（会真调模型）===')
 
+  /*
+   * 这个场景要 pi **真的开始生成**一段回答，才有后面的排队/中止可测。
+   * 它是 cost > 0 的场景（所以不进 `check` 回归），但手动跑时 pi 也可能没起 ——
+   * 那时显式跳过，不报 ✗（约定见交接文档第 5 节）。
+   */
+  for (let i = 0; i < 20; i++) {
+    if (store.getState().conn === 'ready') break
+    await sleep(500)
+  }
+  if (store.getState().conn !== 'ready') {
+    return `  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），本场景要真的生成一段回答`
+  }
+
   const ta = q('[data-testid="composer"]')
   if (!ta) return fail('找不到输入框')
 

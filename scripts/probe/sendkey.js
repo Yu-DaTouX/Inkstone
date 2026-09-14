@@ -92,6 +92,41 @@
     await sleep(400)
     out.push('  现在: ' + JSON.stringify(store.getState().settings?.sendKey))
     ok(store.getState().settings?.sendKey === 'auto', '可以改回 auto')
+
+    out.push('')
+    out.push('=== 7. 中文输入法组合态：Enter 是「选词」，不能当成发送 ===')
+    /*
+     * 组合态（拼音还没上屏）时按 Enter 是**输入法选词**。Composer 靠
+     * `!e.nativeEvent.isComposing` 挡住它（验收清单里那一条）。
+     *
+     * 这里直接断言 handler 的**决策**（preventDefault=True 就是“拦下来去发送”）：
+     *   · 非组合态 → 拦；
+     *   · 组合态   → 不拦（放行给输入法）。
+     *
+     * ⚠️ 别拿「输入框被清空」当判据：隔离环境里 pi 没起，submit 可能提前
+     *    返回，两条路径都不会清空 —— 那就测不出区别了。决策本身才是要钉的东西。
+     * ⚠️ 必须在 auto 模式下测（上面刚恢复）：ctrlEnter 模式下 Enter 本来就
+     *    不发送，测出来的“没拦”是模式的效果，不是 IME 防护的效果。
+     */
+    if (ta) {
+      setValue(ta, 'YAN-IME-PROBE')
+      await sleep(200)
+      const press = (isComposing) => {
+        const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+        /* isComposing 是原型上的只读 getter，得在实例上盖一层 */
+        Object.defineProperty(ev, 'isComposing', { value: isComposing })
+        ta.dispatchEvent(ev)
+        return ev.defaultPrevented
+      }
+      const plain = press(false)
+      await sleep(150)
+      const ime = press(true)
+      out.push(`  非组合态 preventDefault=${plain} / 组合态 preventDefault=${ime}`)
+      ok(plain, '非组合态 Enter 被拦下来处理（走发送）')
+      ok(!ime, '组合态 Enter 没有被拦（放行给输入法选词）')
+      setValue(ta, '')
+      await sleep(80)
+    }
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }
