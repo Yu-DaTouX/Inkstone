@@ -74,17 +74,35 @@
     out.push(`  渲染出 ${rows.length} 个工具行（含 ToolGroup 里的）`)
 
     out.push('')
-    out.push('=== 已结束的工具收进 ToolGroup，但「有失败就默认展开 + 标红」 ===')
+    out.push('=== 已结束的工具收进 ToolGroup，但「有失败就默认展开 + 角标标红」 ===')
     const group = q('[data-testid="tool-group"]')
     ok(!!group, '已结束的工具收进 ToolGroup（默认形态）')
     if (group) {
       const expanded = group.querySelector('[data-testid="tool-group-toggle"]')?.getAttribute('aria-expanded')
       out.push('  组标题 aria-expanded = ' + JSON.stringify(expanded))
       ok(expanded === 'true', '**组里有失败 → 默认展开**（失败不被埋在折叠里）')
-      ok(group.classList.contains('has-fail'), '组带 has-fail 标记（标题变红）')
+      ok(group.classList.contains('has-fail'), '组带 has-fail 标记（语义钩子，不再给标题染色）')
       const badge = q('[data-testid="tool-group-fail"]')
       out.push('  失败角标: ' + JSON.stringify(badge?.textContent ?? '(无)'))
       ok(!!badge, '标题上有失败角标（一眼看出有东西挂了）')
+
+      /*
+       * 用户要求：只有「N 个失败」是红的，标题里其他字保持原来的颜色。
+       * 所以拿 --err 的实际色值做基准：角标必须是它，标题必须**不是**它。
+       */
+      if (badge) {
+        const probeEl = document.createElement('span')
+        probeEl.style.color = 'var(--err)'
+        document.body.appendChild(probeEl)
+        const errRgb = getComputedStyle(probeEl).color
+        probeEl.remove()
+        const badgeCol = getComputedStyle(badge).color
+        const headCol = getComputedStyle(group.querySelector('.tgroup-head')).color
+        out.push(`  角标色 ${badgeCol} / 标题色 ${headCol}（--err = ${errRgb}）`)
+        ok(badgeCol === errRgb, '角标是红色（--err）')
+        ok(headCol !== errRgb, '标题文字没有被染红（红只留在角标上）')
+      }
+
       ok(qa('.tgroup-body .trow').length >= 1, '展开后能看到组内的工具行')
     }
 
