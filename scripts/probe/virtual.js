@@ -111,6 +111,34 @@
   for (let i = 0; i < 60 && qa('.stream .msg').length === 0; i++) await sleep(50)
   ok(qa('.stream .msg').length > 0, '滚到中间仍有内容')
 
+  /*
+   * 向上阅读时，新的内容**不该把用户拽回底部**
+   * （验收清单：「流式输出时向上阅读，不被自动拉回底部」）。
+   *
+   * App.tsx 里靠 `onScroll` 算「距底 < 40px 才算贴底」+ 贴底 effect 实现。
+   * 这里滚到 40% 处（离底很远）→ 记下 scrollTop → 推一条新消息（回合数变 →
+   * 贴底 effect 会跑）→ 断言位置基本没动。
+   */
+  sc.scrollTop = Math.round(sc.scrollHeight * 0.4)
+  await sleep(300) // 等 onScroll 把「不贴底」写进 state/ref
+  const beforeTop = sc.scrollTop
+  const beforeH = sc.scrollHeight
+  store.getState().applyPush({
+    ch: 'msg-add',
+    payload: { id: 'f-follow-probe', role: 'user', text: '新消息：用来验证向上阅读时不会被拽到底部' }
+  })
+  await sleep(500)
+  const afterTop = sc.scrollTop
+  log(
+    `  向上翻后追加内容：scrollTop ${Math.round(beforeTop)} → ${Math.round(afterTop)}` +
+      `（内容 ${beforeH} → ${sc.scrollHeight}）`
+  )
+  ok(Math.abs(afterTop - beforeTop) < 60, '向上阅读时没有被拉回底部')
+  ok(
+    sc.scrollHeight - sc.scrollTop - sc.clientHeight > 40,
+    '确实不在底部（否则上面那条断言没有意义）'
+  )
+
   /* 长列表下横向溢出仍然为 0 */
   const over = sc.scrollWidth - sc.clientWidth
   ok(over <= 0, `.stream 无横向溢出（差 ${over}）`)
