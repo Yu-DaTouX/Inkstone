@@ -156,9 +156,31 @@
 .center {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  /*
+   * 行：标题 / 连接条 / 对话区 / 输入区。
+   *
+   * ⚠️ 为什么改成「四个 auto/1fr + 显式绑行」：
+   *    原来写的是 `auto minmax(0,1fr) auto auto`，靠子元素**出现顺序**占行。
+   *    而 `.connbar` 只在连接异常时渲染 —— 它一出现就把 `minmax(0,1fr)`
+   *    那一行抢走，对话区被挤到 `auto` 行。
+   *    普通列表靠内容撑开还看不出来；**虚拟化长会话时 VList 的项是绝对定位的**，
+   *    `.stream` 只剩 56px（padding），视口里一项都排不出来，
+   *    界面上等同于白屏卡死（实测：注入 240 条后 stream 高 56px、渲染 0 条）。
+   *
+   *    现在把行定义成 auto/auto/1fr/auto，并给对话区与输入区**显式行号**：
+   *    连接条在不在，都不影响对话区拿到剩余空间。
+   */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
   background: var(--bg-0);
+}
+
+/* 显式绑行（`.outline` / `.jump-bottom` 是 absolute，不参与行分配） */
+.center > .stream {
+  grid-row: 3;
+}
+.center > .composer-wrap {
+  grid-row: 4;
 }
 
 .stream {

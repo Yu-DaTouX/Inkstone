@@ -118,12 +118,15 @@
      *    改成从当前实际渲染的分区里挑一个不同于 dragId 的。
      */
     const dragId = before[1]
-    const visibleIds = qa('.rp-slot').map((x) => x.dataset.toolId)
-    const anchorId = visibleIds.find((x) => x !== dragId) ?? 'files'
-    const g2 = document.querySelector('[data-testid="grip-' + dragId + '"]')
-    const targetSlot = qa('.rp-slot').find((x) => x.dataset.toolId === anchorId)
-    if (!g2 || !targetSlot) {
-      bad('找不到把手或目标（' + dragId + ' → ' + anchorId + '）')
+    const slots = qa('.rp-slot')
+    /* 去掉 undefined（万一某个 slot 没有 data-tool-id）—— 否则 find 可能返回 undefined
+       并把 undefined 当成目标，后面 .dispatchEvent 直接抛异常（实测抛过一次） */
+    const visibleIds = slots.map((x) => x.dataset.toolId).filter(Boolean)
+    const anchorId = visibleIds.find((x) => x !== dragId)
+    const g2 = dragId ? document.querySelector('[data-testid="grip-' + dragId + '"]') : null
+    const targetSlot = anchorId ? slots.find((x) => x.dataset.toolId === anchorId) : null
+    if (!dragId || !anchorId || !g2 || !targetSlot) {
+      bad('找不到可用的拖拽用例（drag=' + dragId + ' → anchor=' + anchorId + '）')
     } else if (dragId === anchorId) {
       bad('拖拽测试的两个分区相同，用例无效')
     } else {

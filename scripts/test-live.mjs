@@ -73,6 +73,8 @@ const CASES = {
     cost: 0,
     keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
+  // 诊断：长会话虚拟化为什么不渲染（只输出尺寸，不断言）
+  virtualdiag: { probe: 'scripts/probe/virtualdiag.js', delay: 14000, cost: 0 },
   // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
   // 动效：入场 / **退场** / 减少动效 / 消息合并

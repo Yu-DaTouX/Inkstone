@@ -129,7 +129,6 @@ export default function App() {
   const bootstrap = useStore((s) => s.bootstrap)
   const startConnWatch = useStore((s) => s.startConnWatch)
   const maximized = useStore((s) => s.maximized)
-  const setScrollProgress = useStore((s) => s.setScrollProgress)
   const registerScrollToTurn = useStore((s) => s.registerScrollToTurn)
   const applyPush = useStore((s) => s.applyPush)
   const piInfo = useStore((s) => s.piInfo)
@@ -278,10 +277,6 @@ export default function App() {
     const el = streamRef.current
     if (!el) return
     setStickNow(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
-
-    // 滚动进度 → 导航轨用它算「当前读到第几轮」
-    const range = el.scrollHeight - el.clientHeight
-    setScrollProgress(range > 0 ? el.scrollTop / range : 0)
   }
 
   /**

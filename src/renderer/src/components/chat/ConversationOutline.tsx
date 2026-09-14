@@ -65,6 +65,8 @@ export function ConversationOutline() {
    *    但每轮高度差异很大（一句话 vs 一段代码），线性估算必然偏，
    *    用户看到的就是「我点第 5 格，标记却跑到第 4 格」（定位不准）。
    *    现在按**真实几何**算：找到顶边在视口内/之上的最接近的那一轮。
+   *    （那个 store 字段连同它在每次滚动时的写入已经删掉了，
+   *      见 store.ts 里 `scrollProgress` 处的说明。）
    */
   const [active, setActive] = useState(0)
   /** 点击后钉住的下标（因为最后几格滚不动，靠钉住才能给出正确反馈） */

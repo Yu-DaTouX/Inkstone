@@ -140,11 +140,15 @@ interface Store {
   railPinned: boolean
   /**
    * 消息流的滚动进度（0~1）。
-   * 由 App 在滚动时写入，导航轨用它算「当前读到第几轮」。
-   * 放 store 是因为导航轨在 .center 里、消息流在它旁边，
-   * 两者隔了几层，props 传下去很啰嗦。
+  /**
+   * ⚠️ 这里曾有 `scrollProgress: number`（滚动百分比），已删。
+   *
+   * 导航轨一度用 `round(scrollProgress * (n-1))` **线性**估算「当前读到第几轮」，
+   * 但它已经改成按 DOM 几何测量（ConversationOutline 的 activeFromGeometry）——
+   * 后者在长聊天里才准（回合高度差很大，百分比换算出来的轮次是错的）。
+   * 于是这个状态没了消费者，却还在**每次滚动时**写一次 store（流式输出时
+   * 每秒几十次）。删掉它既能减少无效更新，也避免后来的人以为导航靠它。
    */
-  scrollProgress: number
   /**
    * 模型生成的会话标题（sessionId → title）。
    * 与 pi 的 session_info 名字是两回事：
@@ -340,7 +344,6 @@ interface Store {
   /** 右栏展开 / 收起（落盘到设置，重启后保持） */
   setRightPanelOpen: (v: boolean) => Promise<void>
   toggleRightPanel: () => Promise<void>
-  setScrollProgress: (v: number) => void
   /** App 把它自己的滚动实现注册进来 */
   registerScrollToTurn: (fn: (i: number) => void) => void
   setSettingsTab: (tab: string) => void
@@ -501,7 +504,6 @@ export const useStore = create<Store>((rawSet, get) => {
       return true
     }
   })(),
-  scrollProgress: 0,
   titles: {},
   manualTitles: {},
   maximized: false,
@@ -1375,7 +1377,6 @@ export const useStore = create<Store>((rawSet, get) => {
   toggleRightPanel: async () => {
     await get().setRightPanelOpen(!(get().settings?.rightPanelOpen ?? true))
   },
-  setScrollProgress: (v) => set({ scrollProgress: v }),
   registerScrollToTurn: (fn) => set({ scrollToTurn: fn }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
