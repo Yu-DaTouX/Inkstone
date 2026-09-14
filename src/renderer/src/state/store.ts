@@ -388,6 +388,45 @@ function patchMessage(list: UIMessage[], id: string, patch: Partial<UIMessage>):
 const MAX_NOTICES = 3
 
 /** 统一的通知入口：去重 + 限流 + 保留最近 N 条 */
+/**
+ * 调一条 pi 命令，把「主进程抛错」归一成 `{ ok: false, error }`。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 为什么必须有这一层
+ * ══════════════════════════════════════════════════════════════════
+ * pi 没连接时，主进程的 handler 会 **throw**（`Error: pi 未运行`），
+ * 于是 IPC invoke 直接 reject。而渲染端这些 action 原来都只判断
+ * `if (!res.ok)`，**没有 try/catch** —— 结果是：
+ *   · 未捕获的 promise rejection（控制台报错，用户什么都看不到）
+ *   · **不进日志**，违背「所有报错都进日志」这条已确认的设计
+ * 实测是 logs 探针抓到的（它故意触发一次必败操作，整个探针直接崩了）。
+ *
+ * 已经把「失败」当成返回值而不是异常的部分（如 setManualTitle）
+ * 用的是 `.catch(() => ({ ok: false }))`，这里把它收成一个入口，
+ * 免得同一个约定在几十处各写一遍。
+ */
+async function piCall<T extends { ok: boolean; error?: string }>(
+  fn: () => Promise<T>
+): Promise<T> {
+  try {
+    return await fn()
+  } catch (e) {
+    /*
+     * Electron 会把 IPC 异常的消息包成
+     *   `Error invoking remote method 'yan:xxx': Error: pi 未运行`
+     * 用户只需要后半句。把这层壳剥掉 —— 否则提示条和日志里全是这个前缀。
+     */
+    const raw = e instanceof Error ? e.message : String(e)
+    const error = raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '')
+    /*
+     * 断言成 T：失败时只保证 ok/error 这两个字段（调用方判断 `!res.ok`
+     * 之后就不会再读别的）。用 any 或联合类型会让每一处调用都要
+     * 额外窄化，几十处全是噪声。
+     */
+    return { ok: false, error } as T
+  }
+}
+
 function pushNotice(
   list: Notice[],
   type: Notice['type'],
@@ -765,14 +804,14 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------------------- 对话 */
 
   send: async (text, images) => {
-    const res = await window.yan.send(text, images)
+    const res = await piCall(() => window.yan.send(text, images))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '发送失败') })
     }
   },
 
   steerQueued: async (text) => {
-    const res = await window.yan.steerQueued(text)
+    const res = await piCall(() => window.yan.steerQueued(text))
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '插队失败')
@@ -795,7 +834,7 @@ export const useStore = create<Store>((rawSet, get) => {
   /* ------------------------------------------------------------ bash */
 
   runBash: async (command) => {
-    const res = await window.yan.runBash(command)
+    const res = await piCall(() => window.yan.runBash(command))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '命令执行失败') })
     }
@@ -806,7 +845,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   newSession: async () => {
-    const res = await window.yan.newSession()
+    const res = await piCall(() => window.yan.newSession())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
       return
@@ -848,7 +887,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     // ② 让 pi 真的切过去
-    const res = await window.yan.switchSession(path)
+    const res = await piCall(() => window.yan.switchSession(path))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'), peekedPath: null })
       return
@@ -858,7 +897,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   renameSession: async (name) => {
-    const res = await window.yan.renameSession(name)
+    const res = await piCall(() => window.yan.renameSession(name))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '重命名失败') })
       return
@@ -885,7 +924,7 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ manualTitles: next })
       // 同步给 pi（仅当前会话），失败不影响本地名生效
       if (sid === state.session?.sessionId) {
-        await window.yan.renameSession(trimmed).catch(() => ({ ok: false as const }))
+        await piCall(() => window.yan.renameSession(trimmed))
       }
       await window.yan.setManualTitle(sid, trimmed).catch(() => ({ ok: false }))
     }
@@ -893,7 +932,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   deleteSession: async (path) => {
-    const res = await window.yan.deleteSession(path)
+    const res = await piCall(() => window.yan.deleteSession(path))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除失败') })
       return
@@ -902,7 +941,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   fork: async (entryId) => {
-    const res = await window.yan.fork(entryId)
+    const res = await piCall(() => window.yan.fork(entryId))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '分叉失败') })
       return
@@ -915,7 +954,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   clone: async () => {
-    const res = await window.yan.clone()
+    const res = await piCall(() => window.yan.clone())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '复制失败') })
       return
@@ -925,7 +964,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   exportHtml: async () => {
-    const res = await window.yan.exportHtml()
+    const res = await piCall(() => window.yan.exportHtml())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '导出失败') })
       return
@@ -936,7 +975,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   compact: async () => {
-    const res = await window.yan.compact()
+    const res = await piCall(() => window.yan.compact())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '压缩失败') })
     }
@@ -949,7 +988,7 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------- 模型 / 思考 / 目录 */
 
   setModel: async (provider, id) => {
-    const res = await window.yan.setModel(provider, id)
+    const res = await piCall(() => window.yan.setModel(provider, id))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换模型失败') })
     }
@@ -960,14 +999,14 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   setAutoCompaction: async (on) => {
-    const res = await window.yan.setAutoCompaction(on)
+    const res = await piCall(() => window.yan.setAutoCompaction(on))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
     }
   },
 
   setAutoRetry: async (on) => {
-    const res = await window.yan.setAutoRetry(on)
+    const res = await piCall(() => window.yan.setAutoRetry(on))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
     }
@@ -976,12 +1015,12 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------- 队列模式 / 轮换 / 重试 */
 
   setSteeringMode: async (mode) => {
-    const res = await window.yan.setSteeringMode(mode)
+    const res = await piCall(() => window.yan.setSteeringMode(mode))
     if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
   },
 
   setFollowUpMode: async (mode) => {
-    const res = await window.yan.setFollowUpMode(mode)
+    const res = await piCall(() => window.yan.setFollowUpMode(mode))
     if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
   },
 
@@ -997,7 +1036,7 @@ export const useStore = create<Store>((rawSet, get) => {
    * 右下角一个小标签变了 —— 很容易以为没生效（本会话就踩了这个）。
    */
   cycleModel: async () => {
-    const res = await window.yan.cycleModel()
+    const res = await piCall(() => window.yan.cycleModel())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
       return
@@ -1009,7 +1048,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   /** 反向切模型（Ctrl+Shift+P） */
   cycleModelBack: async () => {
-    const res = await window.yan.cycleModelBack()
+    const res = await piCall(() => window.yan.cycleModelBack())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
       return
@@ -1020,7 +1059,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   cycleThinking: async () => {
-    const res = await window.yan.cycleThinking()
+    const res = await piCall(() => window.yan.cycleThinking())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换强度') })
       return
@@ -1051,7 +1090,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   changeCwd: async (cwd) => {
-    const res = await window.yan.setCwd(cwd)
+    const res = await piCall(() => window.yan.setCwd(cwd))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换目录失败') })
       return
