@@ -28,7 +28,16 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outDir = join(root, 'docs/design/preview')
+/*
+ * 输出目录：默认写进 README 用的 docs/design/preview/。
+ *
+ * `YAN_SHOT_DIR` 是给「只想要一张基线图看看、不想碰仓库里那几张
+ * 已发布的预览图」用的（那些图有用户自己的未提交修改）。
+ * 调 UI 时先导到临时目录，对比完再决定要不要刷新正式的那几张。
+ */
+const outDir = process.env.YAN_SHOT_DIR
+  ? resolve(process.env.YAN_SHOT_DIR)
+  : join(root, 'docs/design/preview')
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
