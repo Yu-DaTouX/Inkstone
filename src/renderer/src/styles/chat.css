@@ -230,16 +230,16 @@
 
 .reason-body {
   /*
-   * 固定大小的「推理窗口」（用户要求：约占窗口 1/4，信息在里面滚动）。
-   * 用 height 而不是 max-height —— max-height 会随内容长高，
-   * 把下面的回答一路顶走；固定高度后推理只在窗口内滚。
+   * 高度**跟着内容走**，只给上限（方案 4.2：「推理默认内容自适应，
+   * 并设置高度上限」）。
    *
-   * min/max 只是极端窗口尺寸下的护栏（很矮的窗口别只剩一条缝，
-   * 很高的窗口别让旁白占掉半屏）。
+   * ⚠️ 曾经写成固定的 `height: 25vh`：实测一段 4 行推理只占 80px，
+   *    窗口却有 227px，下面空了 2/3。用 max-height 就够了 ——
+   *    内容短时窗口贴着内容；内容一旦超过上限就不再长高、改为内部滚动，
+   *    所以「随内容长高把下面的回答顶走」最多顶到上限那一步。
+   * 上限取 min(25vh, 420px)：跟随窗口大小，但超高窗口下旁白不该占掉半屏。
    */
-  height: 25vh;
-  min-height: 150px;
-  max-height: 420px;
+  max-height: min(25vh, 420px);
   overflow-y: auto;
   /* 滚动条一出现不挤窄内容（否则会冒横向滚动条） */
   scrollbar-gutter: stable;
@@ -254,7 +254,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
-  scrollbar-gutter: stable;
   /* 逐字输出时每帧都在长，别让浏览器做重排抖动 */
   contain: content;
 }

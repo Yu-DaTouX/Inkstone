@@ -25,7 +25,7 @@
     '先看题目：狼会吃羊，羊会吃白菜。' +
     '关键是把羊先带过去，再把羊带回来。'.repeat(80)
 
-  log('=== 推理窗口：渲染 / 固定尺寸 / 回合结束前不折叠 ===')
+  log('=== 推理窗口：渲染 / 高度自适应+上限 / 回合结束前不折叠 ===')
 
   /*
    * 等应用真的就绪再注入。
@@ -86,13 +86,14 @@
   log(`  逐字进度：${shownLen} / ${THINK.length}`)
   ok(shownLen >= THINK.length, '推理文本逐字追上（不是一次性贴上来）')
 
-  /* ---- 1b. 固定大小的窗口 + 内容在里面滚动（用户要求） ---- */
+  /* ---- 1b. 内容自适应 + 高度上限（方案 4.2） ---- */
   const body = q('[data-testid="reasoning-body"]')
   const r1 = body.getBoundingClientRect()
   const vh = window.innerHeight
-  log(`  推理窗口 ${Math.round(r1.height)}px / 视口 ${vh}px（${Math.round((r1.height / vh) * 100)}%）`)
-  ok(r1.height >= 149 && r1.height <= 421, '窗口高度在护栏内（150~420）')
-  ok(!(vh >= 700) || Math.abs(r1.height - vh * 0.25) <= Math.max(24, vh * 0.05), '窗口高度 ≈ 视口 1/4')
+  /** 上限：min(25vh, 420px) —— 必须与 chat.css 的 .reason-body 保持一致 */
+  const limit = Math.min(vh * 0.25, 420)
+  log(`  推理窗口 ${Math.round(r1.height)}px / 视口 ${vh}px，上限 ${Math.round(limit)}px`)
+  ok(r1.height <= limit + 2, `内容超长时窗口封顶（${Math.round(r1.height)}px ≤ ${Math.round(limit)}px）`)
   ok(
     body.scrollHeight > body.clientHeight + 8,
     `内容在窗口内溢出（scrollHeight ${body.scrollHeight} > clientHeight ${body.clientHeight}）`
@@ -102,7 +103,24 @@
     `自动跟随最新（离开底部 ${body.scrollHeight - body.scrollTop - body.clientHeight}px）`
   )
 
-  /* 内容变多时窗口尺寸不能变（这就是「固定大小」的意思） */
+  /*
+   * 短内容不许留大片空白 —— 这是本轮改动的直接断言。
+   *
+   * 造一个同样 class 的元素来量：如果 CSS 又退回「固定 25vh」，
+   * 这里会直接量到 227px（就是被修掉的那个「空 2/3」），断言随即失败。
+   */
+  const shortProbe = document.createElement('div')
+  shortProbe.className = 'reason-body'
+  shortProbe.textContent = '两行就够。\n说完了。'
+  body.parentElement.appendChild(shortProbe)
+  const shortH = shortProbe.getBoundingClientRect().height
+  ok(
+    shortH < Math.min(120, limit),
+    `短内容时窗口贴着内容（${Math.round(shortH)}px，不是固定的 ${Math.round(vh * 0.25)}px）`
+  )
+  shortProbe.remove()
+
+  /* 内容继续变多时窗口不能跟着长高（上限生效的意思） */
   const h1 = body.getBoundingClientRect().height
   store.getState().applyPush({
     ch: 'msg-update',
@@ -110,7 +128,7 @@
   })
   await sleep(700)
   const body2 = q('[data-testid="reasoning-body"]')
-  ok(Math.abs(body2.getBoundingClientRect().height - h1) < 2, '内容变多时窗口高度不变（固定大小）')
+  ok(Math.abs(body2.getBoundingClientRect().height - h1) < 2, '内容超过上限后窗口不再长高')
 
   /* ---- 2. 第一段思考结束、开始调工具（回合仍在跑）→ 窗口必须**不折叠** ---- */
   store.getState().applyPush({
