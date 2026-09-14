@@ -256,22 +256,6 @@
 .think[open] summary .chev {
   transform: rotate(90deg);
 }
-
-/* ---- 输入区 ---- */
-.composer-wrap {
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-  padding: var(--sp-4) var(--sp-5);
-}
-.composer {
-  max-width: var(--w-stream);
-  margin: 0 auto;
-  background: var(--bg-2);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-lg);
-  padding: var(--sp-3);
-  transition: border-color var(--dur) var(--ease);
-}
 .composer textarea {
   width: 100%;
   min-height: 34px;

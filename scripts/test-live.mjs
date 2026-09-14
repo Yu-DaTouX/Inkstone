@@ -69,9 +69,9 @@ const CASES = {
   // 弹窗行为：快捷键让位（真按键）/ 焦点圈定 / Esc / 焦点恢复 / 图标按钮名称
   dialog: {
     probe: 'scripts/probe/dialog.js',
-    delay: 11000,
+    delay: 20000,
     cost: 0,
-    keys: 'shift+tab,shift+tab'
+    keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
   // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },

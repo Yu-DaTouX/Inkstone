@@ -951,16 +951,6 @@
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   margin: 2px 0 4px;
-}.rp-meter i {
-  display: block;
-  height: 100%;
-  background: var(--ok);
-  border-radius: var(--r-full);
-  transition: width var(--dur) var(--ease);
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width var(--dur) var(--ease);
 }
 
 /* 45. 用量条：`.ub-sep` 撤掉，换成中点分隔符 */
@@ -1086,23 +1076,6 @@
   background: var(--bg-2);
   box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
   animation: mo-in-down var(--mo-base) var(--mo-ease) both;
-}/* 53. 上下文进度条上的「自动压缩触发线」
-   用户要求显示「什么时候开始自动压缩上下文」。只写个数字不够直观 ——
-   真正想知道的是「离那条线还有多远」，所以把线画在条上：
-   左段是已用（.rp-meter i），这条竖线是触发点。 */
-.rp-meter {
-  height: 3px;
-  margin: 0 var(--sp-3) var(--sp-2);
-  border-radius: var(--r-full);
-  background: var(--bg-4);
-  overflow: hidden;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--bg-4);
-  overflow: hidden;
-  margin: 3px 0 5px;
-  /* 触发线要相对它定位 */
-  position: relative;
 }
 
 /* 54. 从工具库拖到工具栏（用户要求：可拖拽 + 拖动时实时位置预览）
@@ -1146,9 +1119,6 @@
   background: var(--bg-2);
   box-shadow: inset 2px 0 0 var(--accent);
   border-radius: var(--r-xs);
-}
-.rp-todo.active .rp-box {
-  border-color: var(--accent);
 }
 .rp-now-spin {
   display: inline-flex;
@@ -1296,17 +1266,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 正文：AI 回答的三行预览 */
-.op-answer {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
 }
 .op-empty {
   color: var(--fg-mute);

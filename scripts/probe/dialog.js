@@ -88,11 +88,18 @@
   if (first) first.focus()
 
   out.push('')
-  out.push('=== 4. 模态守卫：面板打开时 Shift+Tab 不被抢（真按键 #1）===')
-  // 等到第 1 个按键之后（t≈1.8s），此时面板仍开着
-  await sleep(1900)
+  out.push('=== 4. 模态守卫：面板打开时 Shift+Tab 不被抢（真按键）===')
+  /*
+   * ⚠️ 这里靠**真按键的固定时序**（主进程每隔 1.6s 发一个，第一个在 1.8s）。
+   *    场景连跑时机器负载高，固定 sleep 会漂 —— 实测报过一次
+   *    「关闭后没恢复」（其实是第二个键还没到）。
+   *    所以：让它盖住**前两个**按键（t≈1.8 / 3.4），后面留一个做对照，
+   *    并且对照那侧用**轮询**等。
+   */
+  await sleep(3300)
   const closeAt = Date.now()
   const inWindow = seen.filter((x) => x.t >= openAt && x.t <= closeAt)
+  out.push('  面板打开期间收到的动作: ' + JSON.stringify(inWindow.map((x) => x.a)))
   ok(
     inWindow.filter((x) => x.a === 'cycleThinking').length === 0,
     `面板打开期间没有收到 cycleThinking（区间内动作 ${inWindow.length} 个）`
@@ -115,12 +122,38 @@
   )
 
   out.push('')
-  out.push('=== 6. 关闭后快捷键恢复（真按键 #2）===')
-  // 第 2 个按键在 t≈3.4s，这里等它之后
-  await sleep(2400)
-  const after = seen.filter((x) => x.t > closeAt)
-  out.push('  区间内动作: ' + JSON.stringify(inWindow.map((x) => x.a)))
+  out.push('=== 6. 关闭后快捷键恢复（真按键对照）===')
+  let after = []
+  for (let i = 0; i < 20; i++) {
+    after = seen.filter((x) => x.t > closeAt)
+    if (after.some((x) => x.a === 'cycleThinking')) break
+    await sleep(200)
+  }
   out.push('  关闭后动作: ' + JSON.stringify(after.map((x) => x.a)))
+  out.push('  诊断: 设置面板还在=' + !!q('.settings') + ' isProbe=' + window.yan.isProbe)
+  if (!after.some((x) => x.a === 'cycleThinking')) {
+    /*
+     * 对照实验（**只输出，不断言**）：
+     * 手动告诉主进程「没有模态了」，再看下一个按键。
+     *   · 收到 → 说明渲染端没把 guard 复位（真问题，关闭设置后快捷键会一直失效）
+     *   · 没收到 → 多数是按键时序没跑到（本场景靠固定间隔的真按键，负载高时会漂）
+     * 不用 ok() 把它变成“通过” —— 那会把上面那个失败掩盖掉。
+     */
+    out.push('  对照：手动把守卫复位，等下一个按键…')
+    window.yan.setHotkeyGuard?.(false)
+    const t0 = Date.now()
+    for (let i = 0; i < 25; i++) {
+      if (seen.some((x) => x.a === 'cycleThinking' && x.t > t0)) break
+      await sleep(200)
+    }
+    const manual = seen.filter((x) => x.a === 'cycleThinking' && x.t > t0)
+    out.push(
+      `  手动复位后收到 ${manual.length} 个 —— ` +
+        (manual.length > 0
+          ? '渲染端似乎没有复位 guard（实现问题，需查）'
+          : '对照按键也没到，更可能是时序抖动')
+    )
+  }
   ok(
     after.some((x) => x.a === 'cycleThinking'),
     '关闭面板后 Shift+Tab 恢复生效'

@@ -1079,3 +1079,65 @@
 .outline-track:has(.outline-hit.hover) .outline-bar {
   opacity: 0.75;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.msg-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--r-sm);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+
+/* 7. 工具卡 */
+.tool {
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.tool[data-state='error'] {
+  border-color: var(--err);
+}
+
+.tool[data-state='running'] {
+  border-color: var(--border-str);
+}
+
+/* ---- 工具卡里的 diff ---- */
+.diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+
+.stream-row:first-child {
+  padding-top: var(--sp-5);
+}
+
+.stream-row:last-child {
+  padding-bottom: var(--sp-6);
+}
+
+.todo {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}

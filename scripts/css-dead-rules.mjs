@@ -122,7 +122,12 @@ function scan(cssRaw) {
 }
 
 /** 解析声明：[{prop, important}] */
-function declsOf(body) {
+function declsOf(bodyRaw) {
+  /*
+   * ⚠️ 先抹掉注释：否则属性之间夹着一段 CSS 注释时，注释会被并进属性名，
+   *    覆盖判定静默失效（css-merge-dups.mjs 里因为这个报出 8 处层叠不一致）。
+   */
+  const body = bodyRaw.replace(/\/\*[\s\S]*?\*\//g, ' ')
   const out = []
   for (const raw of body.split(';')) {
     const d = raw.replace(/\s+/g, ' ').trim()

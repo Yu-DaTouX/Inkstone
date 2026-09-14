@@ -272,3 +272,32 @@
 .notice.error {
   border-left-color: var(--err);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.dot.err {
+  background: var(--err);
+  box-shadow: 0 0 0 3px var(--err-soft);
+}
+
+.jump-ico {
+  line-height: 1;
+}
+
+/* 12. 状态条 + 日志抽屉 */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 2px var(--sp-5);
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.statusbar .spacer {
+  flex: 1;
+}
