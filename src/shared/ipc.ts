@@ -36,6 +36,12 @@ export interface UIToolCall {
   /** 流式参数累积的原始 JSON 片段（未解析成功时用于显示） */
   argsRaw?: string
   status: 'pending' | 'running' | 'ok' | 'error'
+  /**
+   * 被取消 / 中断（用户点了停止）。
+   * 方案 4.1：取消要**单独显示**，不能和失败混为一谈 ——
+   * 红字会让人以为工具自己坏了。
+   */
+  cancelled?: boolean
   /** 已累积的输出文本 */
   output?: string
   /** 结构化详情（diff / 截断信息等） */
@@ -149,8 +155,31 @@ export interface SessionState {
   followUpMode?: QueueMode
 }
 
-/** 可 fork 的用户消息（get_fork_messages） */
-export interface ForkPoint {
+/**
+ * 一个会话运行实例的状态（N12）。
+ *
+ * 「正在查看的会话」与「正在运行的会话」是两件事：
+ * 切到别的会话时，后台会话的 pi 进程继续跑，左栏用它画状态槽。
+ */
+export interface RunnerStatus {
+  id: string
+  sessionFile?: string
+  sessionId?: string
+  cwd: string
+  /** 回合在跑（agent_start → agent_settled） */
+  running: boolean
+  /** 有扩展请求在等用户回答 */
+  waiting: boolean
+  /** 连接失败 / 进程退出 */
+  failed: boolean
+  conn: 'starting' | 'ready' | 'exited' | 'error'
+  createdAt: number
+  lastActiveAt: number
+  /** 当前视图正在看的就是它 */
+  isActive: boolean
+}
+
+/** 可 fork 的用户消息（get_fork_messages） */export interface ForkPoint {
   entryId: string
   text: string
 }
@@ -169,10 +198,17 @@ export interface Attachment {
   name: string
   mimeType: string
   size: number
-  /** 不带 data: 前缀的裸 base64 */
+  /** 图片：不带 `data:` 前缀的裸 base64；文件引用：空串 */
   data: string
-  /** 预览用（与 data 相同，单独字段只是为了语义清楚） */
+  /** 预览用（图片与 data 相同；文件引用为空串） */
   preview: string
+  /**
+   * `image`（默认，向后兼容）或 `file`。
+   * 文件引用**不携带内容** —— 只登记路径，模型按需 read，避免把大文件塞进上下文。
+   */
+  kind?: 'image' | 'file'
+  /** 文件引用的绝对路径（仅 `kind === 'file'`） */
+  path?: string
 }
 
 export interface ModelInfo {
@@ -341,6 +377,20 @@ export interface PeekResult {
 /** 能不能用：ready = 有可用凭证 */
 export type AuthStatus = 'ready' | 'missing' | 'unknown'
 
+/**
+ * 应用内 OAuth 登录的结果。
+ *
+ * 失败时 `error` 是**给用户看的中文句子**（不是错误码）—— 流程里的每一种
+ * 失败（端口被占、state 不匹配、换 token 被拒、超时、取消）都拼好人话再返回，
+ * 因为它会直接显示在设置页上。
+ */
+export interface CodexLoginResult {
+  ok: boolean
+  /** 成功时的 ChatGPT 账号 id（从 access token 的 claim 里取）。 */
+  accountId?: string
+  error?: string
+}
+
 /** 接入方式：订阅制（OAuth）还是 API key */
 export type AuthKind = 'subscription' | 'api_key'
 
@@ -356,6 +406,15 @@ export interface AuthProviderInfo {
   authKey: string
   /** 订阅制需要跑的命令（目前统一是 `pi`，然后在里面 `/login`） */
   loginCmd?: string
+  /**
+   * 能不能**在应用内直接登录**（不用回终端）。
+   *
+   * 目前只有 ChatGPT 订阅（`openai-codex`）为 true —— 它的 OAuth 参数
+   * 可以从内置 pi 里逐字对齐抄出来（见 src/main/oauth.ts）。
+   * 其余订阅制（Claude Pro、Copilot、xAI、OpenRouter）仍只能跑 `pi → /login`：
+   * 要么是各自协议不同，要么是 pi 没提供可拷贝的客户端参数。
+   */
+  inAppLogin?: boolean
   status: AuthStatus
   /**
    * 凭证从哪里来的（status='ready' 时才有意义）。
@@ -451,13 +510,27 @@ export interface AppSettings {
    */
   toolHidden: string[]
   /**
-   * 工具调用是否**默认展开成终端窗口详情**（用户要求「提供一个开关
-   * 让用户自己选择是否可以看到用类似终端窗口的工具调用详情」）。
+   * 运行中的工具调用是否**自动展开成详情**（N03）。
    *
-   * 默认 false（收起）—— 一次 agent 跑几十条命令是常态，
-   * 默认展开会把回答顶出屏幕。想看细节的人打开这个开关。
+   * 语义：它只决定「自动展开」，**不再决定历史能不能查看**。
+   * 所有已记录的调用随时可以点击查看详情；失败调用始终保留行内状态与入口。
+   *
+   * 默认 **false** —— 工具调用只留一行，开始 / 增量输出 / 结束都不自动展开，
+   * 避免一次跑十几条命令把回答顶出屏幕。这是显式偏好：
+   * 只有用户在设置里主动打开（同时写入 `toolDetailExplicit`）才会自动展开。
    */
   toolDetail: boolean
+  /**
+   * 「用户在设置里显式切换过 toolDetail」的标记。
+   *
+   * 为什么需要它：`toolDetail` 的默认值改过两次，靠值本身无法区分
+   * 「用户选的」和「旧版本迁移写的默认值」。
+   *   · 旧语义 v1：已结束的能不能点开（旧配置里的 false 只是默认值）；
+   *   · v2：运行中是否自动展开，迁移时把老配置一律升为 true；
+   *   · v3（N03）：默认改为收起，**没有这个标记就归到 false**。
+   * 有标记的配置不会被迁移覆盖 —— 用户手动选过的偏好一直保留。
+   */
+  toolDetailExplicit?: boolean
   /**
    * 分区内容高度（px），按分区 id 存。
    * 只给「内容会滚动」的分区用（文件树 / 日志）—— 其余几行高的分区
@@ -493,6 +566,28 @@ export interface AppSettings {
    * （见 Composer 的 sendRule），不必靠试。
    */
   sendKey: 'auto' | 'enter' | 'ctrlEnter'
+  /**
+   * 回复详细程度（方案 3.1）。
+   *
+   * 与推理强度（`thinkingLevel`）是**两件事**：
+   *   · 推理强度 = 让它想多深；
+   *   · 回复详细程度 = 它把结果讲多细。
+   * 三档都不得省略必要错误提示或改变任务完成范围，也不调低推理强度。
+   *
+   * 默认 `standard`：与改动前的行为一致（不注入任何额外提示）。
+   * 落地方式：内置扩展 `response-detail.js` 在 before_agent_start 里注入，
+   * 每轮开始时读一次有效设置，不逐 token 改提示。
+   */
+  responseDetail: 'brief' | 'standard' | 'detailed'
+  /**
+   * 界面密度（方案 A1）：只改间距与行高，**不缩放字体**。
+   *
+   * 默认 `standard` = 改动前的观感（不能改老用户的界面）。
+   * 实现走 CSS 变量（`--d-row-gap` / `--d-section-gap` / `--d-message-gap`），
+   * 由 `html[data-density]` 覆盖 —— 而不是给所有尺寸统一乘倍数，
+   * 那样会把中文字体的像素对齐弄坏。
+   */
+  density: 'compact' | 'standard' | 'comfortable'
   /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
@@ -592,6 +687,11 @@ export interface QuotaWindow {
   /** 重置时间（毫秒时间戳），没有就不显示 */
   resetAt?: number
   exceeded?: boolean
+  /**
+   * 这个窗口的额度是**推算**出来的（不是接口给的官方字段）。
+   * 方案 7.2：界面必须标明来源，不能把推算值伪装成精确额度。
+   */
+  estimated?: boolean
 }
 
 /** 把设置里读到的顺序规范化：只留合法 id、去重、并补上缺的（按默认相对位置放后面） */
@@ -729,7 +829,12 @@ export interface BrowserState {
   activeTabId?: string
   tabs?: BrowserTabState[]
   userControl?: boolean
-  lastDownload?: { path: string; filename: string; size?: number }
+  lastDownload?: { path: string; filename: string; size?: number; source?: string }
+  /**
+   * 被拒绝的网页权限请求（方案 9.2）。
+   * 默认全部拒绝；这里把请求记下来，用户能看到“网站要过什么、被拒了什么”。
+   */
+  permissions?: Array<{ permission: string; origin: string; at: number }>
   nativeBounds?: BrowserBounds
   /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
@@ -814,6 +919,14 @@ export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'not
 export interface ExtensionUiRequest {
   id: string
   method: ExtensionUiMethod
+  /**
+   * 安全敏感的确认（删除、支付、授权……）。
+   *
+   * 方案第 6 节：分类必须由**请求方声明**，不根据问题措辞推断。
+   * 标记为 true 时走模态框（焦点圈定 + 遮罩）；未标记的普通提问
+   * 走输入区上方的非模态面板。
+   */
+  sensitive?: boolean
   title?: string
   message?: string
   options?: string[]
@@ -865,7 +978,42 @@ export type MessagePatch = Partial<UIMessage> & {
   thinkingDelta?: string
 }
 
-export type MainPush =
+/** 子代理的一次运行（方案第 8 节） */
+export interface SubagentRun {
+  id: string
+  /** 派给它的任务描述 */
+  task: string
+  /** 它跑在哪个工作目录 */
+  cwd: string
+  model?: string
+  status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
+  startedAt: number
+  endedAt?: number
+  /** 最新一行活动（紧凑列表里显示） */
+  latestActivity?: string
+  /** 转录（有界：主进程只保留最后若干条，避免 IPC 越推越大） */
+  transcript: UIMessage[]
+  error?: string
+}
+
+/** 子代理控制器对外暴露的能力 */
+export interface SubagentBridge {
+  list(): Promise<SubagentRun[]>
+  start(task: string, model?: string): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
+  stop(id: string): Promise<{ ok: boolean; error?: string }>
+  stopAll(): Promise<void>
+  /** 清掉**已结束**的记录（运行中的不会被清） */
+  clearFinished(): Promise<void>
+}
+
+/**
+ * 主进程 → 渲染进程 的推送**内容**。
+ *
+ * ⚠️ 与 `MainPush` 分开：每条会话相关的推送都带一个 `sessionKey`
+ *（= 运行实例 id，N12），渲染端才能把「后台会话的输出」与
+ *「当前正在看的会话」分开。全局推送（设置 / 缩放 / 浏览器）不带它。
+ */
+export type MainPushBody =
   /** 全量替换消息列表（启动 / 切会话 / compact 之后） */
   | { ch: 'sync'; payload: UIMessage[] }
   /** 新增一条消息 */
@@ -876,6 +1024,10 @@ export type MainPush =
   | { ch: 'msg-remove'; payload: string }
   /** 工具调用状态变化 */
   | { ch: 'tool'; payload: ToolPatch }
+  /** 子代理运行状态变化（整条快照，转录有界） */
+  | { ch: 'subagent'; payload: SubagentRun }
+  /** 子代理被移除（用户清掉记录时） */
+  | { ch: 'subagent-remove'; payload: string }
   /** 会话状态变化 */
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
@@ -928,10 +1080,38 @@ export type MainPush =
    * 右栏日志抽屉，可回看、不弹框。
    */
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
+  /**
+   * 运行实例状态快照（N12）。
+   * 它是**全局**推送（不属于某个会话）—— 左栏需要一次拿到所有实例的画法。
+   */
+  | { ch: 'runners'; payload: RunnerStatus[] }
+
+/**
+ * 主进程 → 渲染进程 的推送。
+ *
+ * 带 `sessionKey` 的表示「这条消息属于哪个运行实例」；渲染端对
+ * **不是当前正在查看的实例**的事件不得写进当前视图（否则后台任务
+ * 的输出会串到眼前这个会话里）。
+ */
+export type MainPush = MainPushBody & { sessionKey?: string }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
 export interface YanBridge {
   /* 会话控制 */
+  /**
+   * 切到某个会话（N12）：命中已有实例就只改视图，**不发停止命令**；
+   * 空闲实例会被复用；到并发上限时明确报错，而不是停掉正在跑的旧会话。
+   */
+  selectSession(target: { sessionFile?: string; cwd: string }): Promise<{
+    ok: boolean
+    id?: string
+    via?: 'hit' | 'reuse' | 'new'
+    error?: string
+  }>
+  /** 所有运行实例的状态（左栏状态槽用；也可用来补上错过的推送） */
+  runnerStatuses(): Promise<RunnerStatus[]>
+  /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
+  stopRunner(id: string): Promise<boolean>
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
@@ -943,7 +1123,7 @@ export interface YanBridge {
    * 客户端应把它放回输入框（否则用户排的话就白打了）。
    */
   abort(): Promise<{ steering: string[]; followUp: string[] }>
-  newSession(): Promise<{ ok: boolean; error?: string }>
+  newSession(): Promise<{ ok: boolean; error?: string; id?: string }>
   switchSession(path: string): Promise<{ ok: boolean; error?: string }>
   compact(): Promise<{ ok: boolean; error?: string }>
   /**
@@ -1048,6 +1228,16 @@ export interface YanBridge {
   /* 模型接入（凭证） */
   /** 列出接入方式与状态。deep=true 时逐个问 pi（慢，几百 ms × N） */
   authProviders(deep?: boolean): Promise<AuthProviderInfo[]>
+  /**
+   * 在应用内登录 ChatGPT 订阅（Codex）：开系统浏览器走 OAuth，回调落在
+   * 本机 1455 端口，成功后凭证合并写入 pi 的 auth.json。
+   *
+   * 这个 Promise 在流程**结束时** resolve（成功/失败/取消/超时都是），
+   * 所以界面可以一直 await 它来显示「等待浏览器授权…」。
+   */
+  codexLogin(): Promise<CodexLoginResult>
+  /** 取消正在进行的 ChatGPT 登录（关掉本地回调、释放 1455 端口）。 */
+  codexLoginCancel(): Promise<void>
   /** 写入一个 provider 的 API key（**合并**写入 auth.json） */
   setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
   /** 移除某个 provider 的凭证（界面上的「退出」） */
@@ -1130,9 +1320,27 @@ export interface YanBridge {
   setUiScale(v: number): Promise<ZoomState>
   /** 列一层目录（文件树；相对 cwd，一层一次 —— 有意不递归） */
   listDir(rel: string, showHidden?: boolean): Promise<DirListing>
+  /**
+   * 把拖入的 `File` 换成绝对路径（Electron 的 `webUtils`，不经主进程）。
+   * 只转换；校验与授权在 `describeFiles` 里做。
+   */
+  pathForFile(file: File): string
+  /** 校验并登记一组文件引用（工作区外也允许，仅本次运行有效） */
+  describeFiles(paths: string[]): Promise<FileRefInfo[]>
+  /** 读已登记文件的文本（只读预览）；未登记 / 二进制 / 超限会返回错误 */
+  readFileText(path: string): Promise<FileTextResult>
+  /**
+   * 只读预览一个链接指向的文件。
+   * 相对路径按会话 cwd 解析，绝对路径也允许（但一律 realpath 校验）。
+   * `line` 来自 `path:42` 形式，界面用它滚到目标行。
+   */
+  readPreview(path: string, line?: number): Promise<FilePreview>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
+
+  /* 子代理（方案第 8 节） */
+  subagents: SubagentBridge
 
   /* 内置浏览器 */
   browser: {
@@ -1161,6 +1369,8 @@ export interface YanBridge {
     syncPageStorage(): Promise<ChromeSyncReport>
     setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
+    /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
+    setVisible(visible: boolean): Promise<void>
   }
 }
 
@@ -1177,8 +1387,7 @@ export interface ZoomState {
 }
 
 /** 文件树的一个条目 */
-export interface DirEntry {
-  name: string
+export interface DirEntry {  name: string
   dir: boolean
   /** 文件字节数（目录没有） */
   size?: number
@@ -1200,4 +1409,76 @@ export interface DirListing {
   truncated: boolean
   /** 只有根层带：项目名（cwd 的 basename） */
   rootName?: string
+}
+
+/* ---- 拖入 / 加入上下文的普通文件 ---- */
+/** 文件引用大致分类：决定「能不能在预览里看内容」 */
+export type FileRefKind = 'text' | 'image' | 'pdf' | 'binary' | 'other'
+
+/** 主进程校验并登记之后的文件引用 */
+export interface FileRefInfo {
+  ok: boolean
+  /** 渲染端传来的原始路径（失败时用于回显） */
+  input: string
+  /** 校验后的**真实**绝对路径（realpath）；失败时为空串 */
+  path: string
+  name: string
+  size: number
+  mimeType: string
+  kind: FileRefKind
+  /** 失败原因（可直接显示） */
+  error?: string
+}
+
+/** 读已登记文件的文本结果 */export interface FileTextResult {
+  ok: boolean
+  text?: string
+  /** 是否因为超过 2MB 而截断 */
+  truncated?: boolean
+  size?: number
+  error?: string
+}
+
+/**
+ * 写入类工具的执行前后快照（方案 5.3 的「可靠差异」阶段）。
+ * 内容全文不传给渲染端（可能几 MB、可能是密钥类内容）。
+ */
+export interface FileSnapshotSide {
+  exists: boolean
+  size: number
+  /** 内容哈希（前 16 位），只用于判断是否真变了 */
+  hash?: string
+  /** 超过 2MB 没有读内容 */
+  tooLarge?: boolean
+}
+
+/** 一次写入调用的真实差异 */
+export interface FileDiff {
+  path: string
+  before: FileSnapshotSide
+  after: FileSnapshotSide
+  /** 新增 / 删除行数；-1 = 未知（拿不到内容） */
+  added: number
+  removed: number
+  /** unified 风格逐行差异；规模超限时为空串 */
+  patch: string
+  status: 'created' | 'deleted' | 'modified' | 'unchanged' | 'unknown'
+}
+
+/** 只读文件预览的结果（消息里的文件链接 / 附件按需查看） */
+export interface FilePreview {
+  ok: boolean
+  /** 链接里写的原路径（展示用，保持用户看到的样子） */
+  path: string
+  /** realpath 后的绝对路径（失败时为空） */
+  abs: string
+  name: string
+  size: number
+  kind: FileRefKind
+  /** 只对文本文件有值（前 2MB） */
+  text?: string
+  truncated?: boolean
+  /** 从 `path:42` 解析出的行号（1 起） */
+  line?: number
+  error?: string
 }

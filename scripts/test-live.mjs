@@ -75,6 +75,25 @@ const CASES = {
   },
   // 工具调用行：成功摘要 / 失败保留可展开入口（P1 4.2）
   toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
+  // 删除会话确认框：标题 / 按钮样式 / 不换行 / Esc 不误删（方案 15）
+  trash: { probe: 'scripts/probe/trash.js', delay: 10000, cost: 0 },
+  // 文件引用：主进程校验通道 / 标签渲染 / 只有附件也能发（方案 5.1）
+  fileref: { probe: 'scripts/probe/fileref.js', delay: 10000, cost: 0 },
+  // 链接路由 + 只读文件预览（方案 5.2）
+  linkpreview: { probe: 'scripts/probe/linkpreview.js', delay: 11000, cost: 0 },
+  // 回复详细程度三档（方案 3.1）
+  detail: { probe: 'scripts/probe/detail.js', delay: 10000, cost: 0 },
+  // 模型菜单：可见行数 / 不越界 / 键盘选择（注入合成模型，不连 pi）
+  modelmenu: {
+    probe: 'scripts/probe/modelmenu.js',
+    delay: 9000,
+    cost: 0,
+    wins: ['1440x900', '940x640']
+  },
+  // 子代理：真起一个独立 pi 子进程（方案第 8 节；用免费模型）
+  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0 },
+  // 界面密度三档：间距真的变、落盘、字号不变（方案 A1）
+  density: { probe: 'scripts/probe/density.js', delay: 10000, cost: 0 },
   // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
   railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
   // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
@@ -119,6 +138,14 @@ const CASES = {
   todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
   // 左栏会话重命名（行内输入；回归 Electron 不支持 window.prompt 的坑）
   rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
+  // 分组管理（N01）：重命名 + 空白/重名校验 + 解散但保留项目
+  grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0 },
+  // 项目默认只展开前五个（N17）：更多/收起 + 搜索 + 当前项目定位
+  projectlimit: { probe: 'scripts/probe/projectlimit.js', delay: 9000, cost: 0 },
+  // 窄侧栏会话标题可读性（N13）：最小宽度下量标题/缩进/状态槽
+  railtitle: { probe: 'scripts/probe/railtitle.js', delay: 9000, cost: 0 },
+  // 收起侧栏的 mini 项目文件夹（N14）：图标 / 名称 / 当前标记 / 全部项目浮层
+  railmini: { probe: 'scripts/probe/railmini.js', delay: 9000, cost: 0 },
   // 自主模式开关（在输入栏里 / 落盘）
   autonomous: { probe: 'scripts/probe/autonomous.js', delay: 9000, cost: 0 },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
@@ -178,6 +205,13 @@ const CASES = {
   },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
+  // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
+  onboarding: {
+    probe: 'scripts/probe/onboarding.js',
+    delay: 9000,
+    cost: 0,
+    wins: ['1440x900', '940x640']
+  },
   // 阶段 2 功能：斜杠菜单 / !bash / 图片附件 / 模型选择器 / 开关 / 重命名删除 / 分叉点
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
   // 对话导航轨：间距拉长 + 鼠标靠近动态展开
@@ -206,6 +240,10 @@ const CASES = {
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
   // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
+  // 运行实例：身份过滤 + 左栏状态槽 + 单独停止（N12，注入合成推送）
+  sessionrunners: { probe: 'scripts/probe/sessionrunners.js', delay: 9000, cost: 0 },
+  // 运行实例选择：真实主进程注册表路径（N12，不跑回合）
+  runnerselect: { probe: 'scripts/probe/runnerselect.js', delay: 12000, cost: 0 },
   // 真发一条消息，验证流式 + 工具卡
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1 },
   // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
@@ -458,16 +496,20 @@ function checkProbeSyntax(probe) {
 
 function runProbe({ probe, delay, keys, env: caseEnv }, env) {
   return new Promise((resolvePromise) => {
+    const probeEnv = {
+      ...env,
+      // 场景自己的环境变量（如 authEnv 要验「key 写在环境变量里」那条路）
+      ...(caseEnv ?? {}),
+      YAN_PROBE: probe,
+      YAN_PROBE_DELAY: String(delay),
+      ...(keys ? { YAN_PROBE_KEYS: keys } : {})
+    }
+    // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
+    // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
+    delete probeEnv.ELECTRON_RUN_AS_NODE
     const child = spawn('npx', ['electron', '.'], {
       cwd: root,
-      env: {
-        ...env,
-        // 场景自己的环境变量（如 authEnv 要验「key 写在环境变量里」那条路）
-        ...(caseEnv ?? {}),
-        YAN_PROBE: probe,
-        YAN_PROBE_DELAY: String(delay),
-        ...(keys ? { YAN_PROBE_KEYS: keys } : {})
-      },
+      env: probeEnv,
       shell: true,
       windowsHide: true
     })

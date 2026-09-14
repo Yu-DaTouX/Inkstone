@@ -170,7 +170,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
         })
         .catch(() => undefined)
       const windows: QuotaWindow[] = []
-      const add = (id: string, label: string, w?: CommandCodeWindow): void => {
+      const add = (id: string, label: string, w?: CommandCodeWindow, estimated = false): void => {
         const cap = Number(w?.cap)
         if (!w || !Number.isFinite(cap) || cap <= 0) return
         windows.push({
@@ -179,7 +179,8 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
           used: Number(w.used ?? 0),
           total: cap,
           resetAt: typeof w.resetAt === 'number' ? w.resetAt : undefined,
-          exceeded: w.exceeded === true
+          exceeded: w.exceeded === true,
+          ...(estimated ? { estimated: true } : {})
         })
       }
       add('fiveHour', '5 小时', wl.fiveHour)
@@ -199,25 +200,36 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
           used: usedMonthly,
           total: planCredits,
           resetAt: periodEnd,
-          exceeded: usedMonthly >= planCredits
+          exceeded: usedMonthly >= planCredits,
+          /*
+           * 月度上限是**反推**的（weekly.cap × 2），不是接口给的官方字段。
+           * 标出来，UI 才能如实写「月度上限推算」而不是假装精确。
+           */
+          estimated: true
         })
       }
 
       if (windows.length === 0) {
         return { provider, supported: true, error: wl.limited === false ? '套餐未启用额度窗口' : '未返回额度窗口', checkedAt }
       }
-      /* 主数字取剩余比例最小（最紧）的窗口 —— 那才是用户当前真正撞得到的墙。 */
+      /*
+       * 主值口径（方案 7.2）：**本月已用**。
+       * 以前取「最紧窗口的 used」—— 那个数字随哪个窗口先撞线而变，
+       * 用户对着官网看时怎么也对不上。
+       * 月度窗口拿不到时才退回最紧窗口（并保留 label 说明口径）。
+       */
       const binding = [...windows].sort(
         (a, b) => (a.total - a.used) / a.total - (b.total - b.used) / b.total
       )[0]
+      const monthly = windows.find((w) => w.id === 'monthly')
       return {
         provider,
         supported: true,
-        remaining: Math.max(0, binding.total - binding.used),
-        used: binding.used,
-        total: binding.total,
+        remaining: Math.max(0, (monthly ?? binding).total - (monthly ?? binding).used),
+        used: monthly ? monthly.used : binding.used,
+        total: (monthly ?? binding).total,
         currency: 'USD',
-        label: `${binding.label}额度`,
+        label: monthly ? '本月已用' : `${binding.label}额度`,
         windows,
         checkedAt
       }

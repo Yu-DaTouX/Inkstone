@@ -1,6 +1,6 @@
 {
   "name": "yan-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "砚 · 独立 agent 桌面端（pi 作内核）",
   "main": "./out/main/index.js",
   "author": "Yu-DaTouX",
@@ -38,7 +38,7 @@
     "shot": "electron scripts/shot.mjs",
     "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:unit && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions layout outline todos virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs branch topbar outlinepos narrow todonew sendkey slashcmd tools vheight libdrag panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename autonomous context queuestack logs perf deltas railsearch toolrow",
+    "check": "npm run typecheck && npm run build && npm run test:unit && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions layout outline todos virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs branch topbar outlinepos narrow todonew sendkey slashcmd tools vheight libdrag panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename autonomous context queuestack logs perf deltas railsearch toolrow trash fileref linkpreview detail subagent density",
     "test:unit": "node scripts/test-unit.mjs",
     "lint:css": "node scripts/lint-css.mjs",
     "lint:layers": "node scripts/css-layer-check.mjs --selftest",

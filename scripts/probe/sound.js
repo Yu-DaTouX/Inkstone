@@ -61,6 +61,23 @@
     await store.getState().patchSettings({ sound: { ...cur, ...patch, events: { ...cur.events, ...(patch.events ?? {}) } } })
   }
 
+  /*
+   * 等一个条件成立（而不是固定 sleep）。
+   *
+   * ⚠️ 为什么必须这样：音频是**异步**的（AudioContext 调度 + 节流窗口），
+   *    固定 80ms 在批量跑、机器负载高时会漏 —— 实测出现过「第一次批量跑失败、
+   *    单独跑必过」的 flaky（方案 B4）。轮询把「等多久」变成「等到为止」，
+   *    只在真的没发生时失败。
+   */
+  const waitFor = async (fn, ms = 1500) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (fn()) return true
+      await sleep(30)
+    }
+    return fn()
+  }
+
   /* ---- 造一次「回合结束」的 state 推送 ---- */
   const statePush = (sessionId, isAgentRunning) => ({
     ch: 'state',
@@ -102,7 +119,7 @@
   store.getState().applyPush(statePush('probe-b', true))
   const d0 = starts
   store.getState().applyPush(statePush('probe-b', false))
-  await sleep(80)
+  await waitFor(() => starts > d0)
   const doneN = starts - d0
   ok(doneN > 0, `回合完成出声（${doneN} 个音符）`)
 
@@ -110,7 +127,7 @@
   store.getState().applyPush(statePush('probe-b', true))
   const s0 = starts
   store.getState().applyPush(statePush('probe-c', false))
-  await sleep(80)
+  await sleep(250)
   ok(starts === s0, `切会话导致的 isAgentRunning=false 不响（+${starts - s0}）`)
 
   await sleep(300) // 越过 done 的节流窗口
@@ -119,7 +136,7 @@
     ch: 'ui-request',
     payload: { id: 'q2', method: 'confirm', message: '继续吗' }
   })
-  await sleep(80)
+  await waitFor(() => starts > q0)
   const questionN = starts - q0
   ok(questionN > 0, `需要回答出声（${questionN} 个音符）`)
 
@@ -129,7 +146,7 @@
     ch: 'notify',
     payload: { id: 'e2', method: 'notify', notifyType: 'error', message: '又炸了' }
   })
-  await sleep(80)
+  await waitFor(() => starts > e0)
   const errorN = starts - e0
   ok(errorN > 0, `出错出声（${errorN} 个音符）`)
   log(`  音符数：done=${doneN} question=${questionN} error=${errorN}`)
@@ -151,7 +168,7 @@
   await sleep(300)
   store.getState().applyPush(statePush('probe-d', true))
   store.getState().applyPush(statePush('probe-d', false))
-  await sleep(80)
+  await waitFor(() => starts > d1)
   ok(starts > d1, `done 仍开着，照常响（+${starts - d1}）`)
 
   log('')

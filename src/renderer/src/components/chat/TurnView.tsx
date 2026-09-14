@@ -250,6 +250,12 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
    */
   const runningTools = tools.filter((c) => c.status === 'running' || c.status === 'pending')
   const doneTools = tools.filter((c) => c.status !== 'running' && c.status !== 'pending')
+  /*
+   * 并行时只有**最新开始的那条**自动展开（方案 4.2）：
+   * 三条命令同时跑，三个终端窗口会把回答顶出屏幕。
+   * 其余保持一行，用户点哪条看哪条。
+   */
+  const activeToolId = runningTools.length ? runningTools[runningTools.length - 1].id : null
 
   return (
     <>
@@ -273,7 +279,7 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
        * 运行中的单独一行、自动展开详情；只有已结束的才进组且默认收起。
        */}
       {runningTools.map((c) => (
-        <ToolRow key={c.id} call={c} />
+        <ToolRow key={c.id} call={c} autoOpen={c.id === activeToolId} />
       ))}
       {doneTools.length === 1 ? (
         <ToolRow call={doneTools[0]} />

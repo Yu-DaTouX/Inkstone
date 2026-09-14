@@ -87,11 +87,16 @@ if (!existsSync(piRuntime)) {
 }
 say(`  ${C.ok('✓')} 内置 pi 运行时`)
 
+/* GUI 进程不能带 ELECTRON_RUN_AS_NODE —— 从 Electron 应用内嵌的终端里启动时，
+   它会把 Electron 二进制降级成纯 Node（无窗口、静默 exit 0）。见 test-packaged.mjs。 */
+const launchEnv = { ...process.env }
+delete launchEnv.ELECTRON_RUN_AS_NODE
+
 /* 2. 开发模式：直接交给 electron-vite（它自己会 build + watch） */
 if (has('--dev') || has('-d')) {
   step('开发模式（HMR）')
   say(C.dim('  改 src/renderer/** 即时生效；改 src/main/** 需要重启（或加 --watch）'))
-  const child = spawn('npm', ['run', 'dev'], { cwd: root, stdio: 'inherit', shell: true })
+  const child = spawn('npm', ['run', 'dev'], { cwd: root, stdio: 'inherit', shell: true, env: launchEnv })
   child.on('exit', (code) => process.exit(code ?? 0))
 } else {
   /* 3. 生产模式：out/ 比源码旧就重新构建 */
@@ -164,7 +169,8 @@ if (has('--dev') || has('-d')) {
     cwd: root,
     detached: true,
     stdio: 'ignore',
-    shell: !existsSync(electron)
+    shell: !existsSync(electron),
+    env: launchEnv
   })
   child.unref()
 

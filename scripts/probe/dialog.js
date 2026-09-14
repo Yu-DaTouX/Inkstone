@@ -193,6 +193,96 @@
   nameless.slice(0, 5).forEach((b) => out.push('  ✗ ' + b.className))
   ok(nameless.length === 0, '所有渲染出来的按钮都有文字或可访问名称')
 
+  out.push('')
+  out.push('=== 8. 普通问题：非模态、不抢焦点（方案第 6 节）===')
+  store.getState().applyPush({
+    ch: 'ui-request',
+    payload: { id: 'probe-q1', method: 'input', message: '补充说明', placeholder: '写点什么' }
+  })
+  await sleep(500)
+  const qp = q('[data-testid="question-panel"]')
+  ok(!!qp, '普通问题渲染成输入区上方的问题面板')
+  ok(!q('.modal-scrim'), '普通问题不再有遮罩（非模态）')
+  ok(!qp || !qp.contains(document.activeElement), '问题到达不抢焦点')
+
+  /*
+   * 方案第 6 节的关键断语：「能切换焦点阅读历史」。
+   * 旧模态框会抢走焦点并圈定，这条在旧实现下必然失败。
+   *
+   * ⚠️ 不能用输入框做靶子：pi 未就绪时 textarea 是 disabled 的
+   *    （隔离环境常见），focus 不会生效。用左栏的设置按钮 —— 它在任何
+   *    连接状态下都可聚焦，而且同样是「面板之外的界面」。
+   */
+  const outside = q('[data-testid="rail-settings"]') ?? q('[data-testid="composer"]')
+  outside?.focus()
+  ok(document.activeElement === outside, '面板打开时仍能把焦点移到界面其它部分（能继续操作与阅读）')
+
+  const toggleBtn = q('[data-testid="question-panel-toggle"]')
+  ok(!!toggleBtn, '面板有收起开关')
+  toggleBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await sleep(250)
+  ok(q('[data-testid="question-panel"]')?.classList.contains('collapsed'), '能收起面板')
+  ok(
+    store.getState().uiRequests.some((r) => r.id === 'probe-q1'),
+    '收起不等于取消：请求仍在队列里（不发送取消，也不替你选默认值）'
+  )
+  ok(!!q('.qpanel-mini'), '收起后仍提示「有 N 个问题待回答」')
+
+  q('[data-testid="question-panel-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await sleep(250)
+  const inputEl = q('[data-testid="question-panel-input"]')
+  ok(!!inputEl, '重新展开后输入框仍在（草稿随组件保留）')
+  if (inputEl) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(inputEl, '我的回答')
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }))
+    await sleep(150)
+    q('[data-testid="question-panel-submit"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await sleep(350)
+    ok(
+      !store.getState().uiRequests.some((r) => r.id === 'probe-q1'),
+      '提交后请求从队列移除'
+    )
+    ok(!q('[data-testid="question-panel"]'), '队列空了面板就消失')
+  }
+
+  out.push('')
+  out.push('=== 9. 键盘可用性：关键控件是原生可聚焦元素（方案 B3）===')
+  click(railBtn)
+  await sleep(500)
+  const panel2 = q('.settings')
+  ok(!!panel2, '设置面板能再次打开')
+  if (panel2) {
+    /*
+     * 真正要验证的是「不需要鼠标」：控件必须是原生 button / input，
+     * 而不是 div + onClick —— 后者天生不可 Tab、不能用 Enter/Space 触发。
+     * 真实按键序列留给人工与 hotkeys 场景（合成键盘事件不产生 click，
+     * 用它测“能用键盘操作”会得到一个假结论）。
+     */
+    const controls = [
+      ...panel2.querySelectorAll('[role="tab"], .seg-btn, .set-ctl button, .set-ctl input, .set-ctl select')
+    ]
+    const notFocusable = controls.filter((el) => el.tabIndex < 0)
+    const notNative = controls.filter(
+      (el) => !['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el.tagName)
+    )
+    out.push(`  设置里的控件：${controls.length} 个，不可聚焦 ${notFocusable.length}，非原生 ${notNative.length}`)
+    ok(controls.length >= 8, '设置面板里有很多可操作控件')
+    ok(notFocusable.length === 0, '所有控件都能被 Tab 聚焦（没有 tabindex=-1 的坑）')
+    ok(notNative.length === 0, '全部是原生控件（Enter / Space 天然可用）')
+
+    const density = q('[data-testid="set-density"]')
+    ok(!!density, '密度分段控件存在')
+    ok(
+      density ? [...density.querySelectorAll('button')].length === 3 : false,
+      '密度的三档都是原生 button'
+    )
+
+    key('Escape')
+    await sleep(300)
+    ok(!q('.settings'), '再次 Esc 关闭设置')
+  }
+
   obs.disconnect()
   return out.join('\n')
 })()

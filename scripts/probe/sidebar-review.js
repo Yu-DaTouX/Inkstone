@@ -42,7 +42,9 @@
   store.getState().setRailPinned(false)
   await sleep(100)
   assert(Math.abs(document.querySelector('.rail-slot').getBoundingClientRect().width - 48) < 1, 'Collapsed rail must be 48 CSS px')
-  assert(document.querySelectorAll('.rail-compact button').length === 4, 'Collapsed rail needs four usable entries')
+  /* N14 之后紧凑栏多了项目文件夹入口；这里钉「四个基础入口」仍在 */
+  const compactBase = [...document.querySelectorAll('.rail-compact > button')].filter((b) => !b.classList.contains('rail-compact-proj'))
+  assert(compactBase.length === 4, 'Collapsed rail needs four base entries (projects are extra)')
   store.getState().setRailPinned(true)
   await sleep(100)
   const long = Array.from({ length: 240 }, (_, i) => ({ id: `long-${i}`, role: i % 2 ? 'assistant' : 'user', text: `验证消息 ${i}\n\n` + '长会话布局验证。'.repeat(25) }))

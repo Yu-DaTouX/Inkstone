@@ -189,6 +189,8 @@
   scrollbar-gutter: stable;
   padding: 4px;
   min-height: 0;
+  /* 占满 head/search 之后的剩余高度，让 max-height 真正变成「更多模型行」 */
+  flex: 1 1 auto;
 }
 
 .mt-group + .mt-group {
@@ -223,6 +225,14 @@
 .mt-item.sel {
   background: var(--bg-2);
   color: var(--fg);
+}
+
+/* 键盘高亮（N08）：与 sel（当前生效的模型）分开 —— 高亮是「按 Enter
+   会选它」，sel 是「现在就是它」，两者可以同时落在同一行。 */
+.mt-item.cur {
+  background: var(--bg-2);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
 .mt-item.sel .ico {
@@ -529,6 +539,37 @@
   white-space: nowrap;
 }
 
+/*
+ * 文件引用（不是图片）：横向一行「图标 + 名字 + 大小」。
+ * 原来的 .attach 是给图片缩略图用的竖排卡片，文件引用照它渲染会只剩一行名字。
+ */
+.attach[data-kind='file'] {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+  width: auto;
+  max-width: 240px;
+  padding: 5px 20px 5px 6px;
+}
+
+.attach-file-ico {
+  display: flex;
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.attach-size {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  opacity: 0.7;
+}
+
+.attach[data-kind='file'] .attach-del {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .attach-del {
   position: absolute;
   top: 1px;
@@ -756,4 +797,270 @@
 .qrow-jump:hover {
   border-color: var(--accent-line);
   color: var(--accent);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   问题面板（方案第 6 节）
+
+   非模态：贴在输入区上方，不遮罩、不圈定焦点 ——
+   用户要能一边看历史一边回答。收起 = 保留队列与草稿，不等于取消。
+   ══════════════════════════════════════════════════════════════ */
+.qpanel {
+  margin: 0 var(--sp-4) var(--sp-2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  box-shadow: 0 8px 22px -16px rgba(0, 0, 0, 0.55);
+}
+
+.qpanel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.qpanel-head .ico {
+  flex: none;
+  color: var(--accent);
+}
+
+.qpanel-head .spacer {
+  flex: 1;
+}
+
+.qpanel-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.qpanel-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-mute);
+}
+
+.qpanel-toggle:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.qpanel-toggle .chev {
+  opacity: 0.7;
+  transition: transform var(--dur) var(--ease);
+}
+
+/* 展开时箭头朝下（与折叠的 → 区分） */
+.qpanel-toggle .chev.on {
+  transform: rotate(90deg);
+}
+
+.qpanel-mini {
+  padding: 0 var(--sp-3) 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.qpanel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  /* 默认最多约 200px，且不超过消息视口的 35%（方案第 6 节） */
+  max-height: min(35vh, 200px);
+  overflow-y: auto;
+  padding: 0 var(--sp-3) var(--sp-2);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--sp-2);
+}
+
+.qpanel-msg {
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.qpanel-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qpanel-option {
+  text-align: left;
+  padding: 5px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.qpanel-option:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.qpanel-input,
+.qpanel-editor {
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.qpanel-editor {
+  min-height: 64px;
+  resize: vertical;
+  font-family: var(--font-ui);
+}
+
+.qpanel-input:focus,
+.qpanel-editor:focus {
+  border-color: var(--accent);
+}
+
+.qpanel-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.qpanel-foot .spacer {
+  flex: 1;
+}
+
+/* 主操作按钮：与 .btn 同尺寸，只换底色 */
+.btn.primary {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.btn.primary:hover {
+  background: var(--accent);
+  color: var(--bg-0);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   子代理运行列表（方案 8.3）
+
+   与工具行同一套读法：状态图标 + 任务 + 当前活动 + 耗时 + 动作。
+   它是「正在发生的事」，所以放在主对话区域（输入区上方）。
+   ══════════════════════════════════════════════════════════════ */
+.sa-strip {
+  margin: 0 var(--sp-4) var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.sa-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.sa-head .spacer {
+  flex: 1;
+}
+
+.sa-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.sa-row + .sa-row {
+  border-top: 1px dashed var(--border-soft);
+}
+
+.sa-row.running .sa-ico,
+.sa-row.starting .sa-ico {
+  color: var(--accent);
+}
+
+.sa-row.done .sa-ico {
+  color: var(--ok);
+}
+
+.sa-row.error .sa-ico {
+  color: var(--err);
+}
+
+.sa-ico {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.sa-task {
+  flex: 0 1 auto;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.sa-activity {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.sa-time {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-act-btn {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.sa-act-btn:hover {
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
+.sa-act-btn.danger:hover {
+  border-color: var(--err);
+  color: var(--err);
 }

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
   Attachment,
@@ -8,9 +8,13 @@ import type {
   BrowserState,
   ChromeSyncReport,
   AuthProviderInfo,
+  CodexLoginResult,
   CompactionInfo,
   CustomEntry,
   DirListing,
+  FilePreview,
+  FileRefInfo,
+  FileTextResult,
   ForkPoint,
   MainPush,
   ModelInfo,
@@ -18,10 +22,12 @@ import type {
   PiInfo,
   PiProbe,
   ProviderQuota,
+  RunnerStatus,
   SessionState,
   SessionStats,
   SessionSummary,
   SessionTodo,
+  SubagentRun,
   SlashCommand,
   UIMessage,
   YanBridge,
@@ -52,8 +58,16 @@ const api: YanBridge = {
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (text) => invoke<Ok>('yan:steerQueued', text),
   abort: () => invoke<{ steering: string[]; followUp: string[] }>('yan:abort'),
-  newSession: () => invoke<Ok>('yan:newSession'),
+  newSession: () => invoke<Ok & { id?: string }>('yan:newSession'),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
+  /* N12：切换视图（不停止其它运行中的会话）、实例状态、单独停止 */
+  selectSession: (target) =>
+    invoke<{ ok: boolean; id?: string; via?: 'hit' | 'reuse' | 'new'; error?: string }>(
+      'yan:selectSession',
+      target
+    ),
+  runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
+  stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
   compact: () => invoke<Ok>('yan:compact'),
   renameSession: (name) => invoke<Ok>('yan:renameSession', name),
   fork: (entryId) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId),
@@ -105,6 +119,8 @@ const api: YanBridge = {
 
   /* ---- 模型接入（凭证） ---- */
   authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
+  codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),
+  codexLoginCancel: () => invoke<void>('yan:codexLoginCancel'),
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
@@ -112,6 +128,26 @@ const api: YanBridge = {
 
   /* ---- 附件 ---- */
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
+
+  /* ---- 文件引用（拖入 / 加入上下文的普通文件） ---- */  /*
+   * `webUtils.getPathForFile` 必须在渲染进程的 File 对象上调用，
+   * 而且只能通过 contextBridge 暴露（File 会被结构化克隆，
+   * 直接当 IPC 参数传过去会变成空对象）。这也是 Electron 官方推荐的写法。
+   */
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
+  readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
+  readPreview: (p, line) => invoke<FilePreview>('yan:readPreview', p, line),
+
+  /* ---- 子代理（方案第 8 节） ---- */
+  subagents: {
+    list: () => invoke<SubagentRun[]>('yan:subagents:list'),
+    start: (task, model) =>
+      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model),
+    stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:stop', id),
+    stopAll: () => invoke<void>('yan:subagents:stopAll'),
+    clearFinished: () => invoke<void>('yan:subagents:clear')
+  },
 
   /* ---- 设置 ---- */
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
@@ -159,7 +195,9 @@ const api: YanBridge = {
     syncLocalProfile: () => invoke<ChromeSyncReport>('yan:browser:syncLocalProfile'),
     syncPageStorage: () => invoke<ChromeSyncReport>('yan:browser:syncPageStorage'),
     setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
-    setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds)
+    setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
+    /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
+    setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
   },
 
   /* ---- 窗口 ---- */

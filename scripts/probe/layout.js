@@ -57,12 +57,29 @@
   if (ctx) {
     const txt = ctx.textContent.replace(/\s+/g, ' ').trim()
     out.push('  内容: ' + JSON.stringify(txt.slice(0, 80)))
-    ok(/tokens/.test(txt), '显示 token 总量')
+    /*
+     * 方案 7.3 改版后主行是「上下文 49% …… 128k / 262k」，
+     * tokens 行带 data-testid=ctx-tokens；阈值与花费收进「详情」。
+     */
+    const tokensLine = ctx.querySelector('[data-testid="ctx-tokens"]')?.textContent?.trim() ?? ''
+    out.push('  tokens 行: ' + JSON.stringify(tokensLine))
+    ok(tokensLine.length > 0, '显示 token 总量（84k / 200k 这种写法）')
     /* 拿不到上下文窗口时百分比显示为「—」（而不是编一个数）—— 那是环境 */
     if (/%/.test(txt)) ok(true, '显示占用百分比')
     else skip('没有上下文窗口数据（pi 未就绪），百分比显示为「—」')
-    ok(/\$/.test(txt), '显示花费')
     ok(!!ctx.querySelector('.rp-meter'), '有进度条')
+
+    /* 详情：调参项与花费默认收起（方案 7.3） */
+    const detailsToggle = ctx.querySelector('[data-testid="ctx-details-toggle"]')
+    ok(!!detailsToggle, '阈值 / 花费等收进「详情」入口')
+    if (detailsToggle) {
+      detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(250)
+      const cost = ctx.querySelector('[data-testid="ctx-cost"]')
+      ok(!!cost && /\$/.test(cost.textContent ?? ''), '详情里有花费')
+      detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(150)
+    }
   }
 
   out.push('')

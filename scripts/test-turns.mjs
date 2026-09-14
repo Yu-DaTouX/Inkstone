@@ -244,10 +244,13 @@ export async function runTurnTests(ok) {
     ok(cacheHitRate(u(0, 100)) === 100, '全是缓存命中 → 100%')
     ok(cacheHitRate(u(100, 0)) === 0, '完全没命中 → 0%')
 
-    ok(formatHitRate(99.98) === '≈100%', '99.98% 显示为 ≈100%（不假装精确）')
-    ok(formatHitRate(92.44) === '92.4%', '92.44% 保留一位小数')
-    ok(formatHitRate(0) === '0.0%', '0% 也有显示')
+    ok(formatHitRate(99.98) === '99.98%', '99.98% 保留两位小数（不再写 ≈100%）')
+    ok(formatHitRate(92.44) === '92.44%', '92.44% 保留两位小数')
+    ok(formatHitRate(0) === '0.00%', '0% 也有显示')
     ok(formatHitRate(null) === null, 'null 不显示')
+    ok(formatHitRate(100) === '100%', '只有真满命中才显示 100%')
+    ok(formatHitRate(99.999) === '99.99%', '99.999% 截断成 99.99%，不能四舍五入成 100%')
+    ok(formatHitRate(99.995) === '99.99%', '99.995% 同样截断，不显示 ≈ 也不显示 100%')
   }
 
   /* ----------------------------------------------------- 14. turnUsage */

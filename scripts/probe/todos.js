@@ -256,6 +256,50 @@
     )
   }
 
+  /* ---- 受阻（方案 7.1）---- */
+  tstore.setState({
+    todos: [
+      { text: '任务 1', done: true, status: 'done' },
+      { text: '任务 2', done: false, status: 'blocked' },
+      { text: '任务 3', done: false, status: 'pending' }
+    ]
+  })
+  await sleep(400)
+  {
+    const blockedRow = q('.rp-todo[data-blocked="1"]')
+    ok(!!blockedRow, 'blocked 的那条带 data-blocked 标记')
+    ok(!!blockedRow && blockedRow.textContent.includes('受阻'), '行内显示「受阻」而不是「未完成」')
+    ok(!blockedRow?.classList.contains('active'), '受阻不等于「正在做」')
+    const label = q('[data-testid="todo-blocked-label"]')
+    ok(!!label, '受阻有独立的语义标签')
+    if (label) {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--warn)'
+      document.body.appendChild(probe)
+      const warnRgb = getComputedStyle(probe).color
+      probe.remove()
+      ok(getComputedStyle(label).color === warnRgb, '受阻标签用警示色（--warn）')
+    }
+  }
+
+  /* ---- 行布局：状态槽 / 文本 / 状态说明（方案 7.1）---- */
+  {
+    const row = qa('.rp-todo')[0]
+    if (row) {
+      const cs = getComputedStyle(row)
+      ok(cs.display === 'grid', '任务行是 grid（状态槽 / 文本 / 状态说明）')
+      const cols = cs.gridTemplateColumns.split(/\s+/).map((v) => parseFloat(v))
+      ok(cols.length === 3, `三列布局（实际 ${cs.gridTemplateColumns}）`)
+      ok(Math.abs(cols[0] - 16) <= 1, `状态槽 16px（实际 ${cols[0]}px）`)
+      ok(parseFloat(cs.columnGap) >= 8, `状态槽与文本间距 ≥ 8px（实际 ${cs.columnGap}）`)
+      const box = row.querySelector('.rp-box')
+      if (box) {
+        const bw = box.getBoundingClientRect().width
+        ok(bw <= 16, `复选框不超出状态槽（${Math.round(bw)}px）`)
+      }
+    }
+  }
+
   /* ---- 全完成 ---- */
   await sleep(1000)
   tstore.setState({ todos: tmk(5, 5) })

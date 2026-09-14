@@ -337,13 +337,17 @@ export function cacheHitRate(u?: Usage): number | null {
 /**
  * 命中率的显示串。
  *
- * 实测这个 provider 的命中率能到 99.98%（几乎整段提示词都在缓存里），
- * `toFixed(0)` 会显示成刺眼的「100%」—— 看着像算错了。
- * 所以：
- *   ≥ 99.5%   显示 ≈100%（明确表示「几乎全部」，不假装精确）
- *   否则      保留一位小数
+ * 规则（用户要求「不要显示约等于」）：
+ *   有数据     保留**两位小数**
+ *   真满命中   只有原始比例就是 100% 才显示「100%」
+ *   null       返回 null（调用方决定显示「—」还是「待结算」）
+ *
+ * ⚠️ 必须**截断**而不是四舍五入：99.999% 用 `toFixed(2)` 会变成 100.00%，
+ *    又回到「看着像算错了」的老问题。
  */
 export function formatHitRate(pct: number | null): string | null {
-  if (pct === null) return null
-  return pct >= 99.5 ? '≈100%' : `${pct.toFixed(1)}%`
+  if (pct === null || !Number.isFinite(pct)) return null
+  if (pct >= 100) return '100%'
+  const truncated = Math.floor(pct * 100) / 100
+  return `${truncated.toFixed(2)}%`
 }

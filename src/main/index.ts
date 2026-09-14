@@ -10,12 +10,16 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
+import { RunnerRegistry } from './runners'
 import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession, restoreSession } from './sessions'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
+import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir } from './files'
+import { grantFiles, readGrantedText, readPreview } from './file-refs'
+import { SubagentController } from './subagents'
 import { compactionInfo } from './compaction'
 import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
@@ -153,8 +157,35 @@ try {
 
 /* 全局状态 */
 let win: BrowserWindow | null = null
-let agent: AgentController | null = null
+/**
+ * 会话运行实例注册表（N12）。
+ *
+ * 一个**运行中**的会话 = 一个 pi 子进程（AgentController 实例）。
+ * 切换会话不再复用同一个进程，所以「切走」不会把后台任务停掉。
+ */
+let runners: RunnerRegistry | null = null
 let browser: BrowserController | null = null
+let subagents: SubagentController | null = null
+
+/**
+ * 当前**正在查看**的会话实例。
+ * 绝大多数据 IPC 命令作用在它身上（发送 / 停止 / 模型切换 …）。
+ */
+function ac(): AgentController | null {
+  return runners?.active() ?? null
+}
+
+/**
+ * 子代理的系统提示（方案 8.3）。
+ * 子代理不该反过来问用户问题 —— 它拿不到桌面端的提问通道，
+ * 而且它的职责就是把一件事做完并汇报。
+ */
+const SUBAGENT_SYSTEM_PROMPT = [
+  'You are a subagent working on one focused task inside a larger project.',
+  '- Work autonomously: do not ask the user questions; make reasonable assumptions and state them.',
+  '- Keep the scope to the task you were given.',
+  '- Finish with a concise report: what you changed or found, and how you verified it.'
+].join('\n')
 
 function browserExtensionPath(): string | undefined {
   const candidates = [
@@ -179,9 +210,63 @@ function questionExtensionPath(): string | undefined {
   return candidates.find((p) => existsSync(p))
 }
 
+/**
+ * 内置「回复详细程度」扩展的路径（方案 3.1）。
+ * 它在 before_agent_start 里按档位注入系统提示；standard 档不注入。
+ */
+function responseDetailExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'response-detail.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'response-detail.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'response-detail.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
 function push(msg: MainPush): void {
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
+}
+
+/**
+ * 给某个实例的事件标上身份（N12）。
+ *
+ * 渲染端靠 `sessionKey` 判断：这条输出是「我在看的这个会话」的，
+ * 还是后台另一个会话的 —— 后者不得写进当前视图。
+ */
+function pushFrom(runnerId: string, msg: MainPush): void {
+  push({ ...msg, sessionKey: runnerId })
+}
+
+/** 把所有运行实例的状态推给渲染端（左栏状态槽） */
+function pushRunners(): void {
+  push({ ch: 'runners', payload: runners?.statuses() ?? [] })
+}
+
+/**
+ * 切完视图后把目标实例的现状推给渲染端（N12）。
+ *
+ * 为什么必须做：渲染端对**非当前实例**的事件是直接丢弃的，切过去之后
+ * 必须有一份完整快照（状态 + 消息 + 统计）作为新视图的起点。
+ */
+async function pushRunnerSnapshot(id: string): Promise<void> {
+  const ag = runners?.active()
+  if (!ag) return
+  const st = ag.getState()
+  if (st) pushFrom(id, { ch: 'state', payload: st })
+  try {
+    pushFrom(id, { ch: 'sync', payload: await ag.getMessages() })
+  } catch {
+    /* 拿不到就当空会话，下一次事件会补 */
+  }
+  void ag
+    .refreshStats()
+    .then((stats) => {
+      if (stats) pushFrom(id, { ch: 'stats', payload: stats })
+    })
+    .catch(() => {})
+  void ag.refreshTodos().catch(() => {})
+  pushRunners()
 }
 
 /**
@@ -191,10 +276,20 @@ let shuttingDown = false
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  /*
+   * 退出时必须收掉**所有**运行实例（N12）：现在可能同时有好几个
+   * pi 子进程在跑，只停当前视图那个会留下孤儿进程。
+   */
   try {
-    await agent?.stop()
+    await runners?.stopAll()
   } catch {
     /* 已死 */
+  }
+  /* 退出前把子代理一起收掉（方案 8.3：主任务停了，它的子任务不该变孤儿） */
+  try {
+    subagents?.stopAll()
+  } catch {
+    /* 忽略 */
   }
   try {
     await browser?.dispose()
@@ -238,32 +333,47 @@ function startAgent(): Promise<{ ok: boolean; error?: string }> {
 }
 
 async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
-  if (agent?.running) return { ok: true }
-  await agent?.stop()
+  if (runners?.active()?.running) return { ok: true }
+  /*
+   * 重建整套实例集合：旧的子代理跑在旧 cwd / 旧语言提示上，
+   * 继续留着只会让界面里出现“看起来还在跑但环境已经变了”的记录。
+   */
+  await runners?.stopAll()
+  subagents?.stopAll()
 
   const settings = await getSettings()
 
-  agent = new AgentController({
-    push,
-    cwd: settings.cwd,
-    piBin: settings.piBin,
-    browserExtension: browserExtensionPath(),
-    questionExtension: questionExtensionPath(),
-    browserEnv: browser?.bridgeEnv(),
-    appendSystemPrompt: languageSystemPrompt(settings.lang)
+  runners = new RunnerRegistry({
+    /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
+    createAgent: (id, cwd) =>
+      new AgentController({
+        push: (m) => pushFrom(id, m),
+        cwd,
+        piBin: settings.piBin,
+        browserExtension: browserExtensionPath(),
+        questionExtension: questionExtensionPath(),
+        responseDetailExtension: responseDetailExtensionPath(),
+        browserEnv: browser?.bridgeEnv(),
+        appendSystemPrompt: languageSystemPrompt(settings.lang)
+      }),
+    onChanged: () => pushRunners()
   })
 
-  return agent.start()
+  const res = await runners.startPrimary(settings.cwd)
+  pushRunners()
+  return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
 
 /**
- * 界面语言变了 → 重启 pi，让新的 `--append-system-prompt` 生效，
- * 并用 switch_session 把当前会话接回来（不丢历史）。
+ * 重启 pi 子进程，并把当前会话接回来（不丢历史）。
+ *
+ * 触发场景：切换界面语言（`--append-system-prompt` 变了）、应用内登录 ChatGPT
+ * （pi 只在**启动时**读 auth.json，长跑的进程不会因为文件变了就重读）。
  *
  * ⚠️ 一定要等**这一轮跑完**再重启：跑的时候重启会直接掐断正在生成的内容。
  *    所以忙的时候每隔一会儿再试，直到空闲（最多等 ~5 分钟）。
  */
-let langRestarting = false
+let agentRestarting = false
 
 /**
  * 模态层守卫（渲染端上报）。
@@ -276,77 +386,113 @@ let langRestarting = false
  * 与窗口生命周期无关；窗口重载时由 yan:renderer-ready 重置。
  */
 let hotkeyGuardPaused = false
-async function restartAgentForLanguage(retries = 150): Promise<void> {
-  if (langRestarting) return
+async function restartAgent(reason: string, retries = 150): Promise<void> {
+  if (agentRestarting) return
   /* 启动还没跑完就别动它 —— 等它落定再判断要不要重启 */
   if (starting) await starting
-  if (!agent?.running) return
-  if (agent.getState()?.isAgentRunning) {
+  if (!runners) return
+  /*
+   * 只要有**任何一个**实例在干活就不能重启（N12）：重启会抦断的不只是
+   * 眼前这个会话，后台会话的流也会一起断。一直等到全部空闲。
+   */
+  if (runners.hasBusy()) {
     if (retries <= 0) return
-    setTimeout(() => void restartAgentForLanguage(retries - 1), 2000)
+    setTimeout(() => void restartAgent(reason, retries - 1), 2000)
     return
   }
-  langRestarting = true
-  const file = agent.getState()?.sessionFile
+  agentRestarting = true
+  const file = ac()?.getState()?.sessionFile
   try {
-    await agent.stop()
+    await runners.stopAll()
     const res = await startAgent()
-    if (res.ok && file) await agent?.switchSession(file)
+    if (res.ok && file) await ac()?.switchSession(file)
   } catch (error) {
-    reportMainError('语言切换', error)
+    reportMainError(reason, error)
   } finally {
-    langRestarting = false
+    agentRestarting = false
   }
 }
 
 /* IPC */
 function registerIpc(): void {
+  /**
+   * IPC 来源校验（方案 9.2）。
+   *
+   * 只接受**主窗口渲染进程**的调用：浏览器视图是另一个 webContents
+   * （而且没有挂 preload），远程网页无法伪造这条通道。
+   * 显式比较 `sender === win.webContents` 比信任 `senderFrame.url`
+   * 更直接 —— 后者只是字符串，而这里比的是真实的进程对象。
+   */
+  const trusted = (event: Electron.IpcMainInvokeEvent): boolean =>
+    !!win && !win.isDestroyed() && event.sender === win.webContents
+
+  const guard = (event: Electron.IpcMainInvokeEvent): void => {
+    if (!trusted(event)) throw new Error('拒绝来自非主窗口的 IPC 调用')
+  }
+
   const handle = <T>(ch: string, fn: (...a: never[]) => Promise<T> | T): void => {
-    ipcMain.handle(ch, async (_e, ...args) => fn(...(args as never[])))
+    ipcMain.handle(ch, async (event, ...args) => {
+      guard(event)
+      return fn(...(args as never[]))
+    })
+  }
+
+  /** 与 handle 同一套校验，只是给「没有外层 helper」的那些通道用 */
+  const rawHandle = (
+    ch: string,
+    fn: (event: Electron.IpcMainInvokeEvent, ...a: never[]) => unknown
+  ): void => {
+    ipcMain.handle(ch, async (event, ...args) => {
+      guard(event)
+      return fn(event, ...(args as never[]))
+    })
   }
 
   /* ---- 会话 ---- */
   handle('yan:start', async () => {
     const settings = await getSettings()
     const res = await startAgent()
-    return { ...res, state: agent?.getState() ?? undefined, settings }
+    return { ...res, state: ac()?.getState() ?? undefined, settings }
   })
 
   handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[]) => {
-    if (!agent?.running) {
+    if (!ac()?.running) {
       const r = await startAgent()
       if (!r.ok) return r
     }
-    return agent!.send(text, images)
+    return ac()!.send(text, images)
   })
 
-  handle('yan:steer', async (text: string) => agent?.steer(text) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:followUp', async (text: string) => agent?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:steerQueued', async (text: string) => agent?.steerQueued(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:steer', async (text: string) => ac()?.steer(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:steerQueued', async (text: string) => ac()?.steerQueued(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
-    const cleared = (await agent?.abort()) ?? { steering: [], followUp: [] }
+    const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
     return cleared
   })
 
   /* ---- 直执行 bash ---- */
-  handle('yan:runBash', async (command: string) => agent?.runBash(command) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:runBash', async (command: string) => ac()?.runBash(command) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abortBash', async () => {
-    await agent?.abortBash()
+    await ac()?.abortBash()
   })
 
   /* ---- 会话管理 ---- */
-  handle('yan:fork', async (entryId: string) => agent?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:clone', async () => agent?.clone() ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:forkPoints', async () => agent?.forkPoints() ?? [])
+  handle('yan:fork', async (entryId: string) => ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:clone', async () => ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:forkPoints', async () => ac()?.forkPoints() ?? [])
   handle('yan:exportHtml', async () => {
-    const res = (await agent?.exportHtml()) ?? { ok: false, error: 'pi 未运行' }
+    const res = (await ac()?.exportHtml()) ?? { ok: false, error: 'pi 未运行' }
     if (res.ok && res.path) await shell.openPath(res.path)
     return res
   })
   handle('yan:deleteSession', async (path: string) => {
     try {
-      const undoToken = await deleteSession(path, agent?.getState()?.sessionFile)
+      /* 删之前先把跑在它上面的实例停掉（N12：作用域只到这一个会话） */
+      await runners?.stopBySessionFile(path)
+      const undoToken = await deleteSession(path, ac()?.getState()?.sessionFile)
+      pushRunners()
       return { ok: true, undoToken }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -362,62 +508,104 @@ function registerIpc(): void {
   })
 
   handle('yan:newSession', async () => {
-    if (!agent?.running) {
+    if (!runners) {
       const r = await startAgent()
-      return r.ok ? { ok: true } : r
+      if (!r.ok) return r
     }
-    return agent.newSession()
+    const settings = await getSettings()
+    const res = await runners!.select({ cwd: settings.cwd })
+    if (res.ok && res.id) void pushRunnerSnapshot(res.id)
+    pushRunners()
+    return res.ok ? { ok: true, id: res.id } : { ok: false, error: res.error }
   })
 
-  handle('yan:switchSession', async (path: string) => agent?.switchSession(path) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:compact', async () => agent?.compact() ?? { ok: false, error: 'pi 未运行' })
+  /**
+   * 切到某个会话（N12）。
+   *
+   * 命中已有实例 → 只改视图（后台会话继续跑）；
+   * 空闲实例 → 复用；到并发上限 → 明确报错。
+   */
+  handle(
+    'yan:selectSession',
+    async (target: { sessionFile?: string; cwd: string }) => {
+      if (!runners) {
+        const r = await startAgent()
+        if (!r.ok) return r
+      }
+      const res = await runners!.select(target)
+      if (res.ok && res.id) void pushRunnerSnapshot(res.id)
+      pushRunners()
+      return res
+    }
+  )
+
+  /** 所有运行实例的状态（左栏状态槽；也用于补上错过的 runners 推送） */
+  handle('yan:runnerStatuses', async () => runners?.statuses() ?? [])
+
+  /** 停掉某一个运行实例 —— 作用域只到它（单独停 B 不影响 A） */
+  handle('yan:stopRunner', async (id: string) => {
+    const done = (await runners?.stopOne(id)) ?? false
+    pushRunners()
+    return done
+  })
+
+  /* 兼容旧调用：与 selectSession 同一套逻辑（cwd 取当前项目） */
+  handle('yan:switchSession', async (path: string) => {
+    if (!runners) return { ok: false, error: 'pi 未运行' }
+    const settings = await getSettings()
+    const res = await runners.select({ sessionFile: path, cwd: settings.cwd })
+    if (res.ok && res.id) void pushRunnerSnapshot(res.id)
+    pushRunners()
+    return res.ok ? { ok: true } : { ok: false, error: res.error }
+  })
+  handle('yan:compact', async () => ac()?.compact() ?? { ok: false, error: 'pi 未运行' })
 
   /* ---- 模型 / 思考 ---- */
-  handle('yan:listModels', async () => agent?.listModels() ?? [])
+  handle('yan:listModels', async () => ac()?.listModels() ?? [])
   handle(
     'yan:setModel',
-    async (provider: string, modelId: string) => agent?.setModel(provider, modelId) ?? { ok: false, error: 'pi 未运行' }
+    async (provider: string, modelId: string) => ac()?.setModel(provider, modelId) ?? { ok: false, error: 'pi 未运行' }
   )
-  handle('yan:setThinking', async (level: string) => agent?.setThinking(level) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:listThinkingLevels', async () => agent?.listThinkingLevels() ?? [])
-  handle('yan:listCommands', async () => agent?.listCommands() ?? [])
+  handle('yan:setThinking', async (level: string) => ac()?.setThinking(level) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
+  handle('yan:listCommands', async () => ac()?.listCommands() ?? [])
 
   /* ---- 开关 ---- */
   handle(
     'yan:setAutoCompaction',
-    async (enabled: boolean) => agent?.setAutoCompaction(enabled) ?? { ok: false, error: 'pi 未运行' }
+    async (enabled: boolean) => ac()?.setAutoCompaction(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:setAutoRetry',
-    async (enabled: boolean) => agent?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
+    async (enabled: boolean) => ac()?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
 
   /* ---- 队列模式 / 轮换（pi 自带能力，TUI 里都有对应快捷键） ---- */
   handle(
     'yan:setSteeringMode',
-    async (mode: string) => agent?.setSteeringMode(mode) ?? { ok: false, error: 'pi 未运行' }
+    async (mode: string) => ac()?.setSteeringMode(mode) ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:setFollowUpMode',
-    async (mode: string) => agent?.setFollowUpMode(mode) ?? { ok: false, error: 'pi 未运行' }
+    async (mode: string) => ac()?.setFollowUpMode(mode) ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:abortRetry',
-    async () => agent?.abortRetry() ?? { ok: false, error: 'pi 未运行' }
+    async () => ac()?.abortRetry() ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:cycleModel',
-    async () => agent?.cycleModel() ?? { ok: false, error: 'pi 未运行' }
+    async () => ac()?.cycleModel() ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:cycleModelBack',
-    async () => agent?.cycleModelBack() ?? { ok: false, error: 'pi 未运行' }
+    async () => ac()?.cycleModelBack() ?? { ok: false, error: 'pi 未运行' }
   )
   handle(
     'yan:cycleThinking',
-    async () => agent?.cycleThinking() ?? { ok: false, error: 'pi 未运行' }
+    async () => ac()?.cycleThinking() ?? { ok: false, error: 'pi 未运行' }
   )
-  handle('yan:lastAssistantText', async () => agent?.lastAssistantText() ?? null)
+  handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 
   /* ---- pi 环境（版本 / 入口） ---- */
   handle('yan:piInfo', async () => {
@@ -437,19 +625,19 @@ function registerIpc(): void {
     resetPiVersionCache()
     const info = await piInfo(s.piBin, { fresh: true })
     push({ ch: 'pi-info', payload: info })
-    if (info.version && !agent?.running) {
+    if (info.version && !ac()?.running) {
       await startAgent()
     }
     return info
   })
 
   /* ---- 状态 ---- */
-  handle('yan:getState', async () => agent?.getState() ?? null)
+  handle('yan:getState', async () => ac()?.getState() ?? null)
   handle('yan:agentStatus', async () =>
-    agent?.getConn() ?? { state: 'starting' as const, detail: '' }
+    ac()?.getConn() ?? { state: 'starting' as const, detail: '' }
   )
-  handle('yan:getMessages', async () => agent?.getMessages() ?? [])
-  handle('yan:getStats', async () => agent?.refreshStats() ?? null)
+  handle('yan:getMessages', async () => ac()?.getMessages() ?? [])
+  handle('yan:getStats', async () => ac()?.refreshStats() ?? null)
   handle('yan:cachedTitles', async () => cachedTitles())
   /*
    * 手动重命名。比“自动标题”更松一点：写一个独立的粘性名。
@@ -457,14 +645,14 @@ function registerIpc(): void {
    *   · 当前会话也调一次 pi 的 set_session_name（TUI / 其它客户端能看到）
    *   · 无论哪个会话都写 manual-titles.json（桌面端左栏立刻生效、且不被重生标题盖掉）
    */
-  handle('yan:renameSession', async (name: string) => agent?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:renameSession', async (name: string) => ac()?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:manualTitles', async () => manualTitles())
   handle('yan:setManualTitle', async (sessionId: string, name: string) => {
     await setManualTitle(String(sessionId ?? ''), String(name ?? ''))
     return { ok: true }
   })
-  handle('yan:getCustomEntries', async () => agent?.getCustomEntries() ?? [])
-  handle('yan:refreshTodos', async () => agent?.refreshTodos() ?? [])
+  handle('yan:getCustomEntries', async () => ac()?.getCustomEntries() ?? [])
+  handle('yan:refreshTodos', async () => ac()?.refreshTodos() ?? [])
   handle('yan:listSessions', async () => listSessions())
 
   /**
@@ -494,6 +682,25 @@ function registerIpc(): void {
   handle('yan:clearAuth', async (provider: string) => clearAuth(provider))
   handle('yan:authFileInfo', async () => authFileInfo())
 
+  /*
+   * 应用内登录 ChatGPT 订阅（Codex）。
+   *
+   * 为什么登录后要重启 agent：pi 在**启动时**读 auth.json，正在跑的那个子进程
+   * 不会因为文件变了就重新读。不重启的话用户会看到「登录成功但模型还是旧的 /
+   * 依然报没凭证」—— 这与语言切换需要重启是同一个原因，所以复用那条路。
+   *
+   * 重启是**非阻塞**的（fire and forget）：登录结果要立刻回给界面，而重启要等
+   * 当前这一轮跑完（见 restartAgent 里的空闲等待），不能让设置页转圈等它。
+   */
+  handle('yan:codexLogin', async () => {
+    const r = await startCodexLogin()
+    if (r.ok) void restartAgent('ChatGPT 登录')
+    return r
+  })
+  handle('yan:codexLoginCancel', async () => {
+    cancelCodexLogin()
+  })
+
   /**
    *  文件引用补全 —— 只读一层目录（不递归扫项目）。
    * 以 cwd 为根；拒绝跳出 cwd 的路径。
@@ -512,13 +719,13 @@ function registerIpc(): void {
     const next = await patchSettings(patch as never)
     /* 语言影响 pi 的系统提示（推理/回复语言），需要重启子进程才能生效 */
     if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
-      void restartAgentForLanguage()
+      void restartAgent('语言切换')
     }
     return next
   })
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
-  ipcMain.on('yan:respondUi', (_e, res) => agent?.respondUi(res))
+  ipcMain.on('yan:respondUi', (_e, res) => ac()?.respondUi(res))
 
   /*
    * 模态层守卫：渲染端有弹窗时暂停全局快捷键（cycleModel / cycleThinking）。
@@ -575,13 +782,20 @@ function registerIpc(): void {
     /* 渲染端刚加载完 —— 它还没有任何模态层，守卫必须归零。
        否则（比如窗口崩溃/热重载后）会永久卡在 paused=true。 */
     hotkeyGuardPaused = false
-    const c = agent?.getConn()
+    const rid = runners?.activeRunnerId
+    const c = ac()?.getConn()
     if (c) push({ ch: 'proc', payload: { state: c.state, detail: c.detail } })
-    const st = agent?.getState()
-    if (st) push({ ch: 'state', payload: st })
-    void agent?.refreshStats()
-    void agent?.refreshTodos()
+    const st = ac()?.getState()
+    if (st) {
+      /* 初始化时也带身份：渲染端还没有 activeRunnerId，会把第一条当成当前会话 */
+      if (rid) pushFrom(rid, { ch: 'state', payload: st })
+      else push({ ch: 'state', payload: st })
+    }
+    void ac()?.refreshStats()
+    void ac()?.refreshTodos()
     if (browser) push({ ch: 'browser-state', payload: browser.getState() })
+    /* 左栏状态槽：把所有运行实例的状态一次性交给渲染端 */
+    pushRunners()
   })
 
   /* ---- 诊断 ---- */
@@ -646,13 +860,17 @@ function registerIpc(): void {
   })
 
   handle('yan:setCwd', async (cwd: string) => {
+    /*
+     * N05：换项目**不再**停掉正在跑的会话。
+     *
+     * 旧实现是把当前 pi 子进程停掉重启（cwd 是子进程级的），代价是
+     * 「点一下别的项目 = 后台任务全没」。现在每个运行实例自己带 cwd，
+     * 所以这里只更新设置里的当前项目；视图切换由渲染端显式调
+     * `yan:selectSession`（它知道该项目最近访问的会话）。
+     */
     await patchSettings({ cwd })
-    // 换目录必须重启 pi（cwd 是子进程级的）
-    // 先把在途的启动等完，否则 startAgent 会复用旧 cwd 的那次启动
     if (starting) await starting
-    await agent?.stop()
-    agent = null
-    return startAgent()
+    return { ok: true }
   })
 
   /* ---- 窗口 ---- */
@@ -672,7 +890,7 @@ function registerIpc(): void {
    *   ② 按钮有明确的选中态
    *   ③ 状态变更**同时**推到界面（不靠调用方自己推断）
    */
-  ipcMain.handle('win:setAlwaysOnTop', async (_e, v: boolean) => {
+  rawHandle('win:setAlwaysOnTop', async (_e, v: boolean) => {
     const on = !!v
     win?.setAlwaysOnTop(on)
     await patchSettings({ alwaysOnTop: on })
@@ -681,54 +899,96 @@ function registerIpc(): void {
   })
 
   /** 读界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」） */
-  ipcMain.handle('yan:getZoom', async () => zoomState(win, peekUiScale()))
+  rawHandle('yan:getZoom', async () => zoomState(win, peekUiScale()))
 
   /** 设界面缩放（0 = 自动）。落盘 + 应用 + 回推 */
-  ipcMain.handle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
+  rawHandle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
+
+  /*
+   * 拖入的普通文件：主进程校验 + 登记授权（方案 5.1）。
+   * ⚠️ 这是安全边界：渲染端只能传路径，能不能读、是不是普通文件、
+   *    有没有超出大小上限，全部在这里定，而且只认已登记的路径。
+   */
+  handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
+  handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
+  /* 只读预览（消息里的文件链接）：相对路径按**当前会话 cwd** 解析 */
+  handle('yan:readPreview', async (p: string, line?: number) => {
+    const s = await getSettings()
+    return readPreview(String(p ?? ''), s.cwd, typeof line === 'number' ? line : undefined)
+  })
 
   /* ---- 文件树 ---- */
-  ipcMain.handle('yan:listDir', async (_e, rel: unknown, showHidden: unknown) => {
+  rawHandle('yan:listDir', async (_e, rel: unknown, showHidden: unknown) => {
     const s = await getSettings()
     return listDir(s.cwd, typeof rel === 'string' ? rel : '', showHidden === true)
   })
 
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
-  ipcMain.handle('yan:compactionInfo', async (_e, win: unknown) => {
+  rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()
     return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
   })
-  ipcMain.handle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
+  rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
+
+  /* ---- 子代理（方案第 8 节）---- */
+  const subagentCtrl = async (): Promise<SubagentController> => {
+    if (subagents) return subagents
+    const s = await getSettings()
+    subagents = new SubagentController({
+      cwd: s.cwd,
+      piBin: s.piBin,
+      appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
+      onChange: (run) => push({ ch: 'subagent', payload: run }),
+      onRemove: (id) => push({ ch: 'subagent-remove', payload: id })
+    })
+    return subagents
+  }
+  handle('yan:subagents:list', async () => (await subagentCtrl()).list())
+  handle('yan:subagents:start', async (task: string, model?: string) =>
+    (await subagentCtrl()).start(String(task ?? ''), typeof model === 'string' ? model : undefined)
+  )
+  handle('yan:subagents:stop', async (id: string) => (await subagentCtrl()).stop(String(id ?? '')))
+  handle('yan:subagents:stopAll', async () => {
+    ;(await subagentCtrl()).stopAll()
+  })
+  handle('yan:subagents:clear', async () => {
+    ;(await subagentCtrl()).clearFinished()
+  })
 
   /* ---- 内置浏览器 ---- */
-  ipcMain.handle('yan:browser:getState', () => browser?.getState() ?? {
+  rawHandle('yan:browser:getState', () => browser?.getState() ?? {
     open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
   })
-  ipcMain.handle('yan:browser:open', async (_e, url?: string) => browser?.open(url) ?? {
+  rawHandle('yan:browser:open', async (_e, url?: string) => browser?.open(url) ?? {
     open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
   })
-  ipcMain.handle('yan:browser:observe', async () => browser?.observe() ?? {
+  rawHandle('yan:browser:observe', async () => browser?.observe() ?? {
     generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0, domSnapshotCaptured: false
   })
-  ipcMain.handle('yan:browser:newTab', async (_e, url?: string) => browser?.newTab(url))
-  ipcMain.handle('yan:browser:switchTab', async (_e, id: string) => browser?.switchTab(id))
-  ipcMain.handle('yan:browser:closeTab', async (_e, id?: string) => browser?.closeTab(id))
-  ipcMain.handle('yan:browser:close', async () => browser?.close())
-  ipcMain.handle('yan:browser:navigate', async (_e, url: string) => browser?.navigate(url) ?? { ok: false, error: '浏览器未初始化' })
-  ipcMain.handle('yan:browser:back', () => browser?.back() ?? { ok: false, error: '浏览器未初始化' })
-  ipcMain.handle('yan:browser:forward', () => browser?.forward() ?? { ok: false, error: '浏览器未初始化' })
-  ipcMain.handle('yan:browser:reload', () => browser?.reload() ?? { ok: false, error: '浏览器未初始化' })
-  ipcMain.handle('yan:browser:openExternal', (_e, url?: string) => browser?.openExternal(url) ?? { ok: false, error: '浏览器未初始化' })
-  ipcMain.handle('yan:browser:openExternalChrome', (_e, url?: string) =>
+  rawHandle('yan:browser:newTab', async (_e, url?: string) => browser?.newTab(url))
+  rawHandle('yan:browser:switchTab', async (_e, id: string) => browser?.switchTab(id))
+  rawHandle('yan:browser:closeTab', async (_e, id?: string) => browser?.closeTab(id))
+  rawHandle('yan:browser:close', async () => browser?.close())
+  rawHandle('yan:browser:navigate', async (_e, url: string) => browser?.navigate(url) ?? { ok: false, error: '浏览器未初始化' })
+  rawHandle('yan:browser:back', () => browser?.back() ?? { ok: false, error: '浏览器未初始化' })
+  rawHandle('yan:browser:forward', () => browser?.forward() ?? { ok: false, error: '浏览器未初始化' })
+  rawHandle('yan:browser:reload', () => browser?.reload() ?? { ok: false, error: '浏览器未初始化' })
+  rawHandle('yan:browser:openExternal', (_e, url?: string) => browser?.openExternal(url) ?? { ok: false, error: '浏览器未初始化' })
+  rawHandle('yan:browser:openExternalChrome', (_e, url?: string) =>
     browser?.openExternalChrome(url) ?? { ok: false, error: '浏览器未初始化' }
   )
-  ipcMain.handle('yan:browser:closeExternalChrome', () => browser?.closeExternalChrome())
-  ipcMain.handle('yan:browser:syncLocalProfile', () =>
+  rawHandle('yan:browser:closeExternalChrome', () => browser?.closeExternalChrome())
+  rawHandle('yan:browser:syncLocalProfile', () =>
     browser?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
   )
-  ipcMain.handle('yan:browser:syncPageStorage', () => browser?.syncPageStorage() ?? Promise.reject(new Error('浏览器未初始化')))
-  ipcMain.handle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
-  ipcMain.handle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
+  rawHandle('yan:browser:syncPageStorage', () => browser?.syncPageStorage() ?? Promise.reject(new Error('浏览器未初始化')))
+  rawHandle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
+  rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browser?.setBounds(bounds)
+  })
+  /* 文件预览占用同一区域时，把原生视图临时藏起来（方案 5.2） */
+  rawHandle('yan:browser:setVisible', (_e, visible: unknown) => {
+    browser?.setViewVisible(visible !== false)
   })
 }
 
@@ -779,8 +1039,15 @@ function createWindow(): void {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      preload: join(__dirname_, '../preload/index.mjs'),
-      sandbox: false,
+      preload: join(__dirname_, '../preload/index.cjs'),
+      /*
+       * 主窗口的进程沙盒（方案第 9 节）。
+       *
+       * 评估结论：preload 只用到 contextBridge / ipcRenderer / webUtils，
+       * 这三个在 sandboxed preload 里都是允许的，所以不需要保留 Node 能力。
+       * 远程网页视图本来就单独开了 sandbox（见 browser.ts）。
+       */
+      sandbox: true,
       nodeIntegration: false,
       contextIsolation: true,
       spellcheck: false
@@ -1159,7 +1426,7 @@ app.whenReady().then(async () => {
     const fire = (): void => {
       if (fired) return
       fired = true
-      void agent?.send(prompt).then((r) => {
+      void ac()?.send(prompt).then((r) => {
         if (!r.ok) console.error('[yan] 自动发送失败：', r.error)
       })
     }
@@ -1169,7 +1436,7 @@ app.whenReady().then(async () => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    else if (!agent?.running) void startAgent()
+    else if (!ac()?.running) void startAgent()
   })
 })
 

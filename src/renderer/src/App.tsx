@@ -12,6 +12,8 @@ import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
+import { QuestionPanel } from './components/chat/QuestionPanel'
+import { SubagentList } from './components/chat/SubagentList'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
@@ -233,8 +235,7 @@ export default function App() {
     return () => window.removeEventListener('yan:theme', onTheme)
   }, [])
 
-  /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */
-  useEffect(() => {
+  /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */  useEffect(() => {
     document.documentElement.dataset.theme = theme
     try {
       localStorage.setItem('yan.theme', theme)
@@ -249,6 +250,15 @@ export default function App() {
     if (settings && settings.lang !== lang) void window.yan.patchSettings({ lang })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang])
+
+  /*
+   * 密度（方案 A1）：挂在 <html data-density>，由 tokens.css 覆盖三个 --d-* 变量。
+   * 只走 CSS 变量 —— 不给所有尺寸统一乘倍数（那会破坏中文像素对齐）。
+   */
+  const density = settings?.density ?? 'standard'
+  useEffect(() => {
+    document.documentElement.dataset.density = density
+  }, [density])
 
   /*
    * 对话内容列宽度 —— 把设置里的 streamWidth 写到 CSS 变量 --w-stream。
@@ -553,6 +563,13 @@ export default function App() {
               </button>
             ) : null}
 
+            {/*
+             * 问题面板：输入区**上方**，非模态（方案第 6 节）。
+             * 用户要能一边看历史一边回答，所以不再用遮罩 + 焦点圈定的模态框。
+             */}
+            <QuestionPanel />
+            {/* 子代理运行列表：与问题面板同一区域（主对话内，方案 8.3） */}
+            <SubagentList />
             <Composer />
           </section>
 
@@ -577,6 +594,11 @@ export default function App() {
         tab={settingsTab}
         onClose={closeSettings}
         onTabChange={setSettingsTab}
+        /* 重新查看引导：先把设置收起来，否则两层模态叠在一起（引导是下层会被挡住） */
+        onShowOnboarding={() => {
+          closeSettings()
+          setOnboarding(true)
+        }}
       />
     </>
   )

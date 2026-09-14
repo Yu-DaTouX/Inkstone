@@ -211,6 +211,22 @@ export function BrowserSurface() {
             {syncing ? t('browser.syncing') : t('browser.storageCopy')}
           </button> : null}
           {syncNotice ? <span className="browser-sync-result" title={syncNotice}>{syncNotice}</span> : null}
+          {/*
+           * 被拒的权限请求（方案 9.2）：默认全部拒绝，但用户要能查
+           * 「这个网站要过什么、被拒了什么」—— 否则摄像头点了没反应只能猜。
+           */}
+          {state.permissions?.length ? (
+            <span
+              className="browser-sync-result"
+              data-testid="browser-permissions"
+              title={state.permissions
+                .slice(-8)
+                .map((p) => `${p.permission} · ${p.origin || '—'}`)
+                .join('\n')}
+            >
+              {t('browser.permissionsBlocked', { n: state.permissions.length })}
+            </span>
+          ) : null}
           <button
             className="browser-action"
             onClick={() => {
@@ -243,7 +259,7 @@ export function BrowserSurface() {
             </button>
           ) : null}
         </div>
-      ) : state.loading || error || state.userControl ? (
+      ) : state.loading || error || state.userControl || state.lastDownload ? (
         <div className="browser-status" data-testid="browser-status">
           {state.loading ? <span className="browser-loading">{t('browser.loading')}</span> : null}
           {state.userControl ? (
@@ -258,6 +274,16 @@ export function BrowserSurface() {
           {error ? (
             <span className="browser-error" title={error}>
               {error}
+            </span>
+          ) : null}
+          {/*
+           * 下载（方案 9.2）：显示文件名与**来源**，并说明没有自动打开。
+           * 下载下来的东西可能可执行，不能自动跑。
+           */}
+          {state.lastDownload ? (
+            <span className="browser-download" data-testid="browser-download" title={state.lastDownload.path}>
+              {t('browser.downloaded', { name: state.lastDownload.filename })}
+              {state.lastDownload.source ? ` · ${downloadHost(state.lastDownload.source)}` : ''}
             </span>
           ) : null}
         </div>
@@ -319,4 +345,13 @@ export function BrowserSurface() {
       </div>
     </div>
   )
+}
+
+/** 下载来源只显示主机名（完整 URL 放 title 里太长） */
+function downloadHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url.slice(0, 40)
+  }
 }

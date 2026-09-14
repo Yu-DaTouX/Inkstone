@@ -16,9 +16,10 @@
  * }
  * ```
  * OAuth 订阅（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、xAI、
- * OpenRouter、Radius）的 token 也存这里，但**只能由 pi 的交互式 `/login` 生成** ——
- * RPC 模式没有 login 命令（查过 docs/rpc.md 的 47 个命令，确认没有）。
- * 所以本模块对订阅制只做「状态展示 + 告诉用户怎么做」，**不假装能代劳**。
+ * OpenRouter、Radius）的 token 也存这里，形状是
+ * `{ type:'oauth', access, refresh, expires, accountId }`。
+ * 本模块只管**读写与状态展示**；其中 ChatGPT 的登录流程在 `src/main/oauth.ts`
+ * （参数逐字对齐内置 pi 的实现），其余几家仍要用户自己跑 `pi → /login`。
  *
  * ══════════════════════════════════════════════════════════════════
  * 为什么要写这个（而 README 里说「不碰 pi 的 settings.json」）
@@ -98,7 +99,9 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     hint: '用你的 ChatGPT 订阅额度（Codex）',
     envVar: '',
     authKey: '',
-    loginCmd: 'pi'
+    loginCmd: 'pi',
+    /** 只有它支持在应用内直接登录（见 src/main/oauth.ts，参数抄自 pi）。 */
+    inAppLogin: true
   },
   {
     id: 'anthropic',
@@ -178,11 +181,22 @@ export async function setApiKey(provider: string, key: string): Promise<{ ok: bo
   const val = key.trim()
   if (!id) return { ok: false, error: 'provider 不能为空' }
   if (!val) return { ok: false, error: 'API key 不能为空' }
+  return mergeAuthEntry(id, { type: 'api_key', key: val })
+}
 
+/**
+ * 合并写入一条凭证（任何形状：api_key / oauth）。
+ *
+ * OAuth 也用它 —— `src/main/oauth.ts` 登录完把 pi 期望的
+ * `{ type:'oauth', access, refresh, expires, accountId }` 写进同一个 key。
+ * 两边的写入路径**共用这一个函数**，免得以后只改一处导致其中一条路把别人的
+ * 凭证抹掉。
+ */
+export async function mergeAuthEntry(provider: string, value: unknown): Promise<{ ok: boolean; error?: string }> {
   try {
     await mkdir(PI_DIR, { recursive: true })
     const cur = await readAuth()
-    cur[id] = { type: 'api_key', key: val }
+    cur[provider] = value
     await writeFile(AUTH_FILE, JSON.stringify(cur, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
     return { ok: true }
   } catch (e) {
@@ -326,15 +340,19 @@ export async function listAuthProviders(
       /*
        * 探测用的名字：
        *   · 目录里的自定义项 → 直接用 id（它就是 auth.json 的键）
-       *   · 订阅制 → 去掉我给的人为后缀（`openai-codex` → `openai`）
+       *   · 订阅制 → 也是 c.id：这几个 id 就是 pi 真实的 provider 名
+       *     （openai-codex / anthropic / github-copilot / xai / openrouter）
        *   · API key → 用 authKey
+       *
+       * ⚠️ 这里曾经把订阅制的 `openai-codex` 改写成 `openai` 再去问 pi，
+       *    依据是「-codex 是我自己加的后缀」。但那是错的：pi 的 provider
+       *    的确叫 `openai-codex`，而 `openai` 是另一条路（OpenAI API key）。
+       *    后果：已登录 ChatGPT Plus 的用户一点「重新检测」，深查问到
+       *    没配 key 的 `openai` 上 → 返回 not_ready → 界面从「已就绪」
+       *    翻转成「未配置」，还提示去 /login 重新登录。别再把这个后缀
+       *    替换加回来。
        */
-      const probeId =
-        c.hint === '' && c.name === c.id
-          ? c.id
-          : c.kind === 'subscription'
-            ? c.id.replace(/-codex$/, '')
-            : c.authKey || c.id
+      const probeId = c.kind === 'subscription' || (c.hint === '' && c.name === c.id) ? c.id : c.authKey || c.id
       const r = await checkViaPi(pi.cmd, pi.args, probeId)
       // pi 说 ready / 说缺 → 以 pi 为准（它会考虑环境变量）
       if (r.status === 'ready') return { ...c, status: 'ready' as const }

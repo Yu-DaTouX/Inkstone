@@ -13,6 +13,7 @@ import type { Attachment } from '../../../../shared/ipc'
  *   · `/` 开头       → 斜杠命令，带自动补全（扩展命令 / 提示词模板 / 技能）
  *   · `!` 开头       → 直接跑 shell，**不进模型**（`bash` 命令）
  *   · 贴/拖入图片    → 随 prompt 作为 images 发送
+ *   · 拖入普通文件    → 作为**文件引用**（只带路径，模型按需读取）
  *
  * Enter 发送 / Shift+Enter 换行 / Esc 中止。
  * 生成中按 Enter 会**排队**（pi 的 follow-up，等这轮跑完再发）；
@@ -44,9 +45,11 @@ export function Composer() {
   const commandsAt = useStore((s) => s.commandsAt)
   const attachments = useStore((s) => s.attachments)
   const addAttachments = useStore((s) => s.addAttachments)
+  const addFileRefs = useStore((s) => s.addFileRefs)
   const removeAttachment = useStore((s) => s.removeAttachment)
   const clearAttachments = useStore((s) => s.clearAttachments)
   const pickImages = useStore((s) => s.pickImages)
+  const startSubagent = useStore((s) => s.startSubagent)
   const editorInject = useStore((s) => s.editorInject)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
   const queueRestore = useStore((s) => s.queueRestore)
@@ -388,6 +391,7 @@ export function Composer() {
      *
      * 正确的判据是「文字或附件至少有一个」——
      * 这与输入框的 placeholder 提示（「发图片不必配文字」）也对得上。
+     * 文件引用同样适用：只有附件也能发。
      */
     if (!raw && attachments.length === 0) return
 
@@ -400,7 +404,19 @@ export function Composer() {
       return
     }
 
-    const images = attachments.map((a) => ({ data: a.data, mimeType: a.mimeType }))
+    const images = attachments
+      .filter((a) => a.kind !== 'file')
+      .map((a) => ({ data: a.data, mimeType: a.mimeType }))
+    /*
+     * 文件引用：**不**把内容拼进来（大文件会爆上下文），
+     * 只把路径交给模型，由它自己 `read`（方案 5.1）。
+     */
+    const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
+    const outgoing = fileRefs.length
+      ? `${raw ? raw + '\n\n' : ''}${t('composer.fileRefs', {
+          list: fileRefs.map((a) => `- ${a.path}`).join('\n')
+        })}`
+      : raw
 
     /*
      * `/login` 不能当普通消息发给模型。
@@ -417,9 +433,23 @@ export function Composer() {
       return
     }
 
+    /*
+     * `/subagent <任务>`：把这件事交给一个**独立 pi 子进程**去跑（方案第 8 节）。
+     * 不进模型 —— 这是本地命令（与 `/login` 同一类）。
+     * 没有任务描述时不发：避免起一个什么都干不了的子代理。
+     */
+    if (raw === '/subagent' || raw.startsWith('/subagent ')) {
+      const task = raw.slice('/subagent'.length).trim()
+      if (!task) return
+      setValue('')
+      clearAttachments()
+      await startSubagent(task)
+      return
+    }
+
     setValue('')
     clearAttachments()
-    await send(raw, images.length ? images : undefined)
+    await send(outgoing, images.length ? images : undefined)
   }
 
   /* ---- 图片：粘贴 ---- */
@@ -436,16 +466,25 @@ export function Composer() {
     [addAttachments]
   )
 
-  /* ---- 图片：拖放 ---- */
+  /* ---- 图片：拖放；普通文件 → 文件引用 ---- */
   const onDrop = useCallback(
     (e: React.DragEvent) => {
+      /*
+       * 从编辑器拖一段**选中的文字**进来时，dataTransfer 里没有 Files ——
+       * 这时候不要 preventDefault，否则浏览器自带的「拖入即插入文本」体验就没了
+       * （方案 5.1 明确要求保留）。
+       */
+      if (!e.dataTransfer.types.includes('Files')) return
       e.preventDefault()
       setDragging(false)
-      const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))
+      const files = [...e.dataTransfer.files]
       if (files.length === 0) return
-      void readFiles(files, addAttachments)
+      const images = files.filter((f) => f.type.startsWith('image/'))
+      const others = files.filter((f) => !f.type.startsWith('image/'))
+      if (images.length) void readFiles(images, addAttachments)
+      if (others.length) void addFileRefs(others)
     },
-    [addAttachments]
+    [addAttachments, addFileRefs]
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -577,9 +616,16 @@ export function Composer() {
         {attachments.length > 0 ? (
           <div className="attach-strip">
             {attachments.map((a) => (
-              <div className="attach" key={a.id} title={`${a.name} · ${fmtSize(a.size)}`}>
-                <img src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
+              <div className="attach" key={a.id} title={`${a.name} · ${fmtSize(a.size)}`} data-kind={a.kind ?? 'image'}>
+                {a.kind === 'file' ? (
+                  <span className="attach-file-ico" aria-hidden>
+                    <Icon name="tag" size={12} />
+                  </span>
+                ) : (
+                  <img src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
+                )}
                 <span className="attach-name">{a.name}</span>
+                {a.kind === 'file' ? <span className="attach-size">{fmtSize(a.size)}</span> : null}
                 <button className="attach-del" onClick={() => removeAttachment(a.id)} title={t('composer.removeImage')}>
                   ✕
                 </button>

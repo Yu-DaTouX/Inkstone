@@ -3,6 +3,8 @@ import ReactMarkdown, { type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
+import { classifyLink } from '../../../../shared/links'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 /**
@@ -44,17 +46,66 @@ const MD_CACHE_MAX_CHARS = 20_000
 const mdCache = new Map<string, React.ReactElement>()
 
 const MD_COMPONENTS = {
-  // 链接一律交给系统浏览器（setWindowOpenHandler 已限流）
-  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
-    <a href={href} target="_blank" rel="noreferrer noopener">
-      {children}
-    </a>
-  ),
+  a: LinkAnchor,
   // 表格用等宽栅格，横向可滚
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="md-table-wrap">
       <table>{children}</table>
     </div>
+  )
+}
+
+/**
+ * 链接 = 统一入口（方案 5.2）。
+ *
+ * 以前是 `target="_blank"` 交给系统浏览器 —— 结果是：网页跳出应用、
+ * 文件路径根本没有反应（Windows 下 `C:\a\b.ts` 也不是合法 URL）。
+ *
+ * 现在：
+ *   · http/https → 右侧内部浏览器打开（菜单里另有外部浏览器入口）
+ *   · 文件路径（绝对/相对/`path:42`）→ 右侧只读文件预览
+ *   · 危险协议（javascript:/data:/vbs…）→ 不开，样式上也不像可点的链接
+ *
+ * 识别只作用于**显式链接**（Markdown 语法 / GFM 自动链接）：
+ * 代码块、代码示例与流式输出里的半截路径不会被改写。
+ */
+function LinkAnchor({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const t = useT()
+  const openBrowser = useStore((s) => s.openBrowser)
+  const previewFile = useStore((s) => s.previewFile)
+
+  const target = classifyLink(href)
+
+  const onClick = (e: React.MouseEvent): void => {
+    /*
+     * 不用 preventDefault 的话，`<a href>` 会让整个渲染进程导航走 ——
+     * 而窗口里没有地址栏，导航走了就回不来了。
+     */
+    e.preventDefault()
+    e.stopPropagation()
+    if (target.kind === 'url') void openBrowser(target.url)
+    else if (target.kind === 'file') void previewFile(target.path, target.line)
+    /* invalid：什么也不做（title 已说明原因） */
+  }
+
+  const title =
+    target.kind === 'file'
+      ? t('link.preview', { path: target.path })
+      : target.kind === 'invalid'
+        ? t('link.blocked')
+        : target.url
+
+  return (
+    <a
+      href={target.kind === 'url' ? target.url : '#'}
+      className={`md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
+      data-link-kind={target.kind}
+      title={title}
+      onClick={onClick}
+      onAuxClick={(e) => e.preventDefault()}
+    >
+      {children}
+    </a>
   )
 }
 

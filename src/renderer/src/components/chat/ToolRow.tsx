@@ -20,29 +20,41 @@
  * ── 新增：终端窗口详情（开关控制）──
  * 展开某一条时，用**终端窗口**的样子显示详情（深色底 + 标题栏显示命令 +
  * 等宽正文），而不是散落的键值对。这就是用户说的「类似终端窗口」。
- * 开关在设置 → 外观（`toolDetail`）：控制**已结束的**那些能不能点开看详情。
+ *
+ * ⚠️ 设置 `toolDetail` 的语义（2026-09 修订）：它只决定**运行中的调用
+ *    是否自动展开**，不再决定历史能不能查看 —— 查看权限与自动展开偏好
+ *    已经分开（历史上关掉开关后连已完成的都点不开，那是个 bug）。
  *
  * ⚠️ 自动展开的只有**正在运行**的那条（用户要求：「只展示正在调用的详情，
  *    不要全部弹出」）。一次 agent 跑几十条命令是常态，
  *    已结束的全展开会把回答顶出屏幕。
  */
-import { memo, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
+import { FileChangeDetail, ToolResultDetail, detailKind } from './ToolDetails'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-function ToolRowImpl({ call }: { call: UIToolCall }) {
+function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: boolean }) {
   const t = useT()
-  /** 用户手动开关；null = 跟随设置里的默认值 */
-  const detailOn = useStore((s) => s.settings?.toolDetail === true)
+  /** 用户手动开关；null = 跟随默认值 */
   const [manual, setManual] = useState<boolean | null>(null)
+  /*
+   * 自动展开偏好：**默认关**（N03）。
+   * 缺失 / 脏值都当关闭 —— 只有设置里明确打开过（toolDetail === true）
+   * 才会把「正在运行」的那条自动展开。见 AppSettings.toolDetail。
+   */
+  const autoDetail = useStore((s) => s.settings?.toolDetail === true)
 
   const running = call.status === 'running' || call.status === 'pending'
   const failed = call.status === 'error'
+  /** 被取消：单独显示，不当作失败（方案 4.1） */
+  const cancelled = call.cancelled === true
   /*
    * 展开规则（用户要求：「只展示正在调用的详情，不要全部弹出」）。
    *
@@ -50,19 +62,24 @@ function ToolRowImpl({ call }: { call: UIToolCall }) {
    * **已结束的**每一条都展开成终端窗口，正在跑的那条反而收起，
    * 一次跑十几条就把回答顶出屏幕（用户报的）。
    *
-   * 现在：**只有正在跑的那条自动展开**；已结束的保持一行，
-   * 要看详情自己点。
+   * 现在：**默认全部收起**（开始 / 增量输出 / 结束都不自动展开）；
+   * 只有当用户在设置里显式打开 `toolDetail` 时，正在跑的那条才自动展开。
+   * 已结束的保持一行，随时点击展开。
    *
-   * ⚠️ 但**失败的一律可展开**（`failed` 这个变量以前就定义了、却没用上）：
-   *    设计要的是「成功调用默认摘要，**错误结果保留明显入口**」。
-   *    用 `detailOn || running` 时，没开那个设置的用户遇到报错
-   *    连点都点不开 —— 只能看到一行红字，却不知道错在哪。
-   *    默认仍**收起**：一次十几条错误的话展开会把回答顶出屏幕，
-   *    一行红字 + 可点的箭头已经是足够明显的入口。
+   * ⚠️ **所有已记录的调用都可以查看详情**（展开按钮恒可点）。
+   *    查看权限是「历史能不能回看」，自动展开是「运行时要不要抢占版面」，
+   *    两者必须分开：以前 `canExpand = detailOn || running || failed` 会让
+   *    关掉偏好的用户连已完成的调用都点不开。失败调用由行内红色徽标 +
+   *    可点的箭头给出足够明显的入口，不需要另开自动展开分支。
+   *
+   * ⚠️ 多个调用并行时只有**当前活动的**那条自动展开（`autoOpen`，方案 4.2）：
+   *    三条并行命令全部展开会把回答顶出屏幕，其余保持活动行。
    */
-  const canExpand = detailOn || running || failed
-  const open = canExpand && (manual ?? running)
-
+  const open = manual ?? (running && autoDetail && autoOpen)
+  /** 滚动锚点：展开/收起时让这一行在屏幕上原地不动（方案 4.2） */
+  const rowRef = useRef<HTMLDivElement | null>(null)
+  /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
+  const kind = detailKind(call.name)
   const target = summarize(call)
   const secs = durationSecs(call)
 
@@ -74,12 +91,17 @@ function ToolRowImpl({ call }: { call: UIToolCall }) {
       : t('tool2.done', { what: verbOf(call.name, t) })
 
   return (
-    <div className={`trow ${open ? 'open' : ''}`} data-state={call.status} data-tool={call.name}>
+    <div
+      className={`trow ${open ? 'open' : ''}`}
+      data-state={call.status}
+      data-tool={call.name}
+      ref={rowRef}
+    >
       <button
         className="trow-head"
         onClick={() => {
-          if (!canExpand) return
-          setManual(!open)
+          /* 用锚点包裹：正在读历史时展开不会把视口顶走 */
+          withScrollAnchor(rowRef.current, () => setManual(!open))
         }}
         aria-expanded={open}
         title={target}
@@ -95,8 +117,10 @@ function ToolRowImpl({ call }: { call: UIToolCall }) {
         <span className="spacer" />
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
+        ) : cancelled ? (
+          <span className="trow-badge warn">{t('tool.cancelled')}</span>
         ) : null}
-        {running || !canExpand ? null : (
+        {running ? null : (
           <Icon name="chevron-right" size={12} className={`chev ${open ? 'on' : ''}`} />
         )}
       </button>
@@ -104,10 +128,17 @@ function ToolRowImpl({ call }: { call: UIToolCall }) {
       {open ? (
         <div className="trow-body">
           {/*
-           * 终端窗口：标题栏放命令，正文等宽可滚，**可拖动调整大小**
-           * （见 Terminal.tsx：下/右/右下三个把手 + 展开按钮）。
+           * 按调用类型选详情组件（方案 4.1）：
+           *   命令 → 紧凑终端；文件改动 → 改动卡片；其余 → 直接给结果。
+           * 以前所有工具都套终端窗口，搜索/读文件看起来像跑过 shell。
            */}
-          <TerminalWindow call={call} target={target} secs={secs} />
+          {kind === 'command' ? (
+            <TerminalWindow call={call} target={target} secs={secs} />
+          ) : kind === 'change' ? (
+            <FileChangeDetail call={call} />
+          ) : (
+            <ToolResultDetail call={call} />
+          )}
         </div>
       ) : null}
     </div>
@@ -132,6 +163,7 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
     (a.id === b.id &&
       a.name === b.name &&
       a.status === b.status &&
+      a.cancelled === b.cancelled &&
       a.output === b.output &&
       a.argsRaw === b.argsRaw &&
       a.args === b.args &&
@@ -141,7 +173,7 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   )
 }
 
-export const ToolRow = memo(ToolRowImpl, (a, b) => sameCall(a.call, b.call))
+export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && sameCall(a.call, b.call))
 
 /**
  * 一组**已结束**的工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
@@ -156,18 +188,17 @@ function ToolGroupImpl({ tools }: { tools: UIToolCall[] }) {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
   /*
-   * 组里有失败的 → **默认展开**，并在标题上标出来。
+   * 组里有失败的 → 标题上标出来，但**默认仍然收起**（N03）。
    *
-   * 为什么这与「有工具在跑就展开」不同：那条会造成模型一调工具、
-   * 整组十几行一起弹开、把回答顶出屏幕（用户报过）。
-   * 而失败是**必须被看到**的，而且一个回合里通常只有一两条。
-   *
-   * 不这样做时，失败的调用被埋在「调用了 N 次命令」里面 ——
-   * 标题连“有东西挂了”都不说，用户得逐组点开找（设计要的是
-   * 「错误结果保留明显入口」）。
+   * 历史上有过两版自动展开规则，都被用户报过：
+   *   · `open = running && streaming`：模型一调工具，整组十几行一起弹开；
+   *   · `open = failedCount > 0`：一条失败就把整组展开，同样抢版面。
+   * 现在自动展开必须由用户显式打开 `toolDetail`，失败只靠
+   * 「N 个失败」角标 + 行内红色状态提示 —— 一眼看得出有东西挂了，
+   * 但不替用户决定要不要展开。
    */
   const failedCount = tools.filter((c) => c.status === 'error').length
-  const open = manual ?? failedCount > 0
+  const open = manual ?? false
 
   if (tools.length === 0) return null
 

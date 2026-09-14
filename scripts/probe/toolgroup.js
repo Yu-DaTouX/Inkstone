@@ -70,8 +70,10 @@
     return aid
   }
 
-  /* ---- 1. 一条在跑 + 两条已结束 ---- */
-  out.push('=== 1. 只有正在运行的那条展开 ===')
+  /* ---- 1. 默认（toolDetail 关）：运行中的行也**不**自动展开 ---- */
+  out.push('=== 1. 默认不自动展开（N03）===')
+  await store.getState().patchSettings({ toolDetail: false, toolDetailExplicit: true })
+  await sleep(200)
   await inject(
     [tool('t1', 'ok', 'echo one'), tool('t2', 'ok', 'echo two'), tool('t3', 'running', 'sleep 30')],
     'a-toolgroup'
@@ -79,16 +81,31 @@
 
   const runningRow = q('.trow[data-state="running"]')
   ok(!!runningRow, '渲染出了运行中的工具行')
-  ok(!!runningRow && runningRow.classList.contains('open'), '运行中的行**已展开**（详情可见）')
-  ok(!!runningRow && !!runningRow.querySelector('.term'), '运行中的行里有终端详情')
+  ok(!!runningRow && !runningRow.classList.contains('open'), '运行中的行**默认收起**（只留一行）')
+  ok(!!runningRow && !runningRow.querySelector('.term'), '默认不渲染终端详情（不抢版面）')
+  ok(qa('.trow.open').length === 0, '整个回合没有任何自动展开的工具行')
+
+  /* ---- 1b. 显式打开偏好：只有正在运行的那条自动展开 ---- */
+  out.push('')
+  out.push('=== 1b. 显式打开 toolDetail 后，只有运行中的那条展开 ===')
+  await store.getState().patchSettings({ toolDetail: true, toolDetailExplicit: true })
+  ok(
+    await until(() => !!q('.trow[data-state="running"]')?.classList.contains('open')),
+    '打开偏好后运行中的行自动展开'
+  )
+  ok(!!q('.trow[data-state="running"] .term'), '展开后里面有终端详情')
 
   const group = q('.tgroup')
   ok(!!group, '已结束的工具收进了折叠组')
-  ok(!!group && !group.classList.contains('open'), '折叠组**默认收起**（这是 bug 的正题）')
+  ok(!!group && !group.classList.contains('open'), '折叠组**默认收起**')
   ok(qa('.tgroup-body .trow').length === 0, '收起时组内的已完成行不占位')
 
   const visibleRows = qa('.trow').length
   ok(visibleRows === 1, `屏幕上只看到一个工具行（实际 ${visibleRows}）`)
+
+  /* 还原成默认偏好，不影响后面的场景 */
+  await store.getState().patchSettings({ toolDetail: false, toolDetailExplicit: true })
+  await sleep(150)
 
   /* ---- 2. 用户主动点击后组才展开 ---- */
   out.push('')
@@ -104,10 +121,7 @@
       doneRows.every((r) => !r.classList.contains('open')),
       '已结束的行仍然保持一行（未自动展开详情）'
     )
-    ok(
-      !!q('.trow[data-state="running"]')?.classList.contains('open'),
-      '运行中的行不受影响，仍展开'
-    )
+    ok(!!q('.trow[data-state="running"]'), '运行中的行仍在（不再有自动展开可断言）')
   }
 
   /* ---- 3. 全部结束后：全新的组保持收起，没有任何行自动展开 ---- */

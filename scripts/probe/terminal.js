@@ -18,6 +18,7 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
+  const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const until = async (fn, ms = 4000) => {
     const t0 = Date.now()
@@ -64,12 +65,24 @@
   out.push('')
   out.push('=== 1. 结构 ===')
   ok(!!q('.term-bar'), '有标题栏')
-  ok(!!q('.term-lights .term-dot'), '标题栏有窗口灯')
-  ok(!!q('.term-pill'), '有状态胶囊（运行中 / 完成 / 失败）')
+  /*
+   * 方案 4.3：紧凑命令窗口去掉三色装饰灯、重复目标与重复状态。
+   * 这里断言它们**不在** —— 否则「紧凑」会慢慢长回去。
+   */
+  ok(!q('.term-lights'), '标题栏没有三色装饰灯（方案 4.3）')
+  ok(!q('.term-pill'), '窗口内不再重复状态胶囊（行上已有状态）')
+  ok(!q('.term-cmd'), '标题栏不再重复命令（正文 prompt 行已有）')
   ok(!!q('.term-prompt'), '正文有 prompt 行（终端里的 $ 命令）')
   ok((q('.term-prompt')?.textContent ?? '').includes('npm run build'), 'prompt 行显示命令原文')
   ok(!!q('[data-testid="term-copy"]'), '有复制按钮')
   ok(!!q('[data-testid="term-max"]'), '有展开/恢复按钮')
+
+  const hDefault = term.getBoundingClientRect().height
+  out.push(`  默认高度 = ${Math.round(hDefault)}px`)
+  ok(
+    hDefault >= 70 && hDefault <= 118,
+    `默认就是「1 行命令 + 2 行输出」的紧凑高度（${Math.round(hDefault)}px，方案 4.3 建议 80–110）`
+  )
 
   out.push('')
   out.push('=== 2. 调整窗口大小 ===')
@@ -124,7 +137,42 @@
   q('.term-grip-s').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
   await sleep(250)
   const h4 = q('.term').getBoundingClientRect().height
-  ok(h4 !== h3, `双击下把手复位高度（${Math.round(h3)} → ${Math.round(h4)}）`)
+  out.push(`  复位：${Math.round(h3)}px → ${Math.round(h4)}px`)
+  ok(Math.abs(h4 - hDefault) <= 3, '双击下把手复位回默认紧凑高度')
+
+  out.push('')
+  out.push('=== 5. 详情分型（方案 4.1）===')
+  /* 非命令工具不该套终端外壳：换一条 read 调用注入 */
+  store.getState().applyPush({
+    ch: 'sync',
+    payload: [
+      { id: 'term-u2', role: 'user', text: '读个文件' },
+      {
+        id: 'term-a2',
+        role: 'assistant',
+        text: '',
+        toolCalls: [
+          {
+            id: 'term-c2',
+            name: 'read',
+            args: { path: 'src/main/index.ts' },
+            status: 'ok',
+            output: 'export function main() {}\n'
+          }
+        ]
+      }
+    ]
+  })
+  await sleep(600)
+  const readRow = qa('.trow[data-tool="read"]')[0]
+  if (readRow) {
+    readRow.querySelector('.trow-head')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await sleep(300)
+    ok(!readRow.querySelector('.term'), '读取类工具展开后不是终端外壳')
+    ok(!!readRow.querySelector('[data-testid="tool-result-detail"]'), '读取类工具走「结果」型详情')
+  } else {
+    out.push('  （跳过）read 工具行没渲染出来')
+  }
 
   return out.join('\n')
 })()

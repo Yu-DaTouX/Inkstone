@@ -43,6 +43,12 @@ const MODES = [
 
 /** 当前模式（暂时只有一个） */
 const MODE_ID = 'coding'
+/**
+ * 左栏默认展开多少个项目（N17）。
+ * 超出的收在「更多项目（N）」后面；这只是**显示层**的限制，
+ * 分组与项目归属不受影响。
+ */
+const PROJECT_PREVIEW = 5
 /** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 
@@ -83,6 +89,17 @@ export function Rail() {
   const archived = useMemo(() => projectRecords.filter((p) => p.archived).map((p) => p.cwd), [projectRecords])
   const [showArchived, setShowArchived] = useState(false)
   const [unread, setUnread] = useSidebarValue<string[]>('unread', [])
+  /** 运行实例状态（N12）：左栏每行/每项目/每分组的状态汇总都来自它 */
+  const runners = useStore((s) => s.runners)
+  /**
+   * 某个会话列表里有几个正在跑。
+   * 做成闭包是为了在渲染时按项目/分组直接算，不用再建索引。
+   */
+  const runningIn = useMemo(() => {
+    const files = new Set(runners.filter((r) => r.running && r.sessionFile).map((r) => r.sessionFile!))
+    return (list: SessionSummary[]): number => list.filter((s) => files.has(s.path)).length
+  }, [runners])
+
   const railPinned = useStore((s) => s.railPinned)
   const setRailPinned = useStore((s) => s.setRailPinned)
   const [menuFor, setMenuFor] = useState<string | null>(null)
@@ -91,27 +108,95 @@ export function Rail() {
   const [projDraft, setProjDraft] = useState('')
   /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
   const [modeMenu, setModeMenu] = useState(false)
+  /** mini 栏（收起态）的「全部项目」浮层（N14） */
+  const [miniMenu, setMiniMenu] = useState(false)
+  /**
+   * mini 栏里正在悬停/聚焦的项目（N14）。
+   *
+   * 为什么用 React 状态而不是纯 CSS `:hover`：
+   *   · 触摸设备没有 hover；
+   *   · 键盘用户需要 focus 也能看到名称；
+   *   · 纯 CSS 悬停无法在自动化里验证（合成事件改不了 :hover）。
+   * CSS 里的 `:hover` / `:focus-visible` 仍作为兜底保留。
+   */
+  const [miniHover, setMiniHover] = useState<string | null>(null)
   const [projectMenu, setProjectMenu] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
   const [groupDraft, setGroupDraft] = useState('')
+  /** 正在重命名哪个分组（groupId）；null = 没有（N01） */
+  const [groupRename, setGroupRename] = useState<string | null>(null)
+  /** 打开操作菜单的分组 id（N01） */
+  const [groupMenu, setGroupMenu] = useState<string | null>(null)
+  /** 分组操作的错误提示：空白名 / 重名 / 保存失败（N01） */
+  const [groupError, setGroupError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
+  /*
+   * 删除成功后的**轻量通知**（方案 15.2）。
+   * 为什么不再用模态框报成功：已经执行完的可逆操作不该继续遮挡界面、
+   * 再要求点一次「确定」。撤销记录留在本次运行的通知里，
+   * 用户不点也随时能看到自己刚删了什么。
+   */
+  const [trashNotice, setTrashNotice] = useState<TrashNotice | null>(null)
+
+  /** 撤销删除：通知条上的动作，非模态，不圈定焦点 */
+  const undoTrash = async (): Promise<void> => {
+    const n = trashNotice
+    if (!n || n.busy || n.restored || !n.token) return
+    setTrashNotice({ ...n, busy: true, error: '' })
+    const res = await window.yan.restoreSession(n.token)
+    if (!res.ok) {
+      setTrashNotice({ ...n, busy: false, error: res.error ?? t('rail.deleteFailed') })
+      return
+    }
+    await refreshSessions()
+    setTrashNotice({ ...n, busy: false, restored: true })
+  }
+
+  /*
+   * 通知自动收走（方案 15）：
+   *   · 删除成功 → 30 秒（给用户足够时间决定要不要恢复）
+   *   · 恢复成功 → 2.6 秒（已经完成的操作不需要一直占着位置）
+   *
+   * 两种都要**重置并清理旧计时器**：新通知替换旧通知时用同一个 state 槽位，
+   * 若不清理，旧的 30 秒计时会把新通知提前收走（连续删除时最容易复现）。
+   * 恢复请求进行中（busy）不收走 —— 否则反馈会在请求完成前消失。
+   */
+  useEffect(() => {
+    if (!trashNotice || trashNotice.busy) return
+    const id = setTimeout(() => setTrashNotice(null), trashNotice.restored ? 2600 : 30_000)
+    return () => clearTimeout(id)
+  }, [trashNotice])
 
   useEffect(() => {
     const clearCurrent = (): void => {
       const path = useStore.getState().session?.sessionFile
       if (path) setUnread((prev) => prev.includes(path) ? prev.filter((p) => p !== path) : prev)
     }
-    const unsubscribe = useStore.subscribe((next, prev) => {
-      const current = next.session
-      if (current?.sessionFile && current.sessionId === prev.session?.sessionId &&
-        prev.session?.isAgentRunning && !current.isAgentRunning && !document.hasFocus()) {
-        setUnread((old) => [...new Set([...old, current.sessionFile!])])
-      }
-    })
     window.addEventListener('focus', clearCurrent)
-    return () => { unsubscribe(); window.removeEventListener('focus', clearCurrent) }
+    return () => window.removeEventListener('focus', clearCurrent)
   }, [setUnread])
+
+  /**
+   * 「完成未读」（N12）：后台会话跑完也要算未读。
+   *
+   * 旧实现只看**当前会话**（订阅 store 里的 session 槽位），所以切走之后
+   * 别的会话跑完完全不会提示。现在比较两次 `runners` 快照：
+   * 某个实例从 running 变 not running，且窗口不在前台 → 把那行标未读。
+   */
+  const runnersSeen = useRef<Map<string, boolean>>(new Map())
+  useEffect(() => {
+    const prev = runnersSeen.current
+    const next = new Map<string, boolean>()
+    for (const r of runners) {
+      if (!r.sessionFile) continue
+      next.set(r.sessionFile, r.running)
+      if (prev.get(r.sessionFile) === true && !r.running && !document.hasFocus()) {
+        setUnread((old) => (old.includes(r.sessionFile!) ? old : [...old, r.sessionFile!]))
+      }
+    }
+    runnersSeen.current = next
+  }, [runners, setUnread])
 
   // 会话列表在有新消息后会变（标题、时间），settled 时刷一次
   const msgCount = useStore((s) => s.messages.length)
@@ -122,11 +207,11 @@ export function Rail() {
   }, [msgCount, refreshSessions])
 
   useEffect(() => {
-    if (!menuFor && !projectMenu) return
-    const close = (): void => { setMenuFor(null); setProjectMenu(null) }
+    if (!menuFor && !projectMenu && !groupMenu) return
+    const close = (): void => { setMenuFor(null); setProjectMenu(null); setGroupMenu(null) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
-  }, [menuFor, projectMenu])
+  }, [menuFor, projectMenu, groupMenu])
 
   /* 模式菜单：点外面关掉（与其它浮层同一套做法） */
   useEffect(() => {
@@ -139,6 +224,17 @@ export function Rail() {
       document.removeEventListener('mousedown', close)
     }
   }, [modeMenu])
+
+  /* mini 栏的项目浮层：同样点外面关掉（N14） */
+  useEffect(() => {
+    if (!miniMenu) return
+    const close = (): void => setMiniMenu(false)
+    const id = setTimeout(() => document.addEventListener('mousedown', close), 0)
+    return () => {
+      clearTimeout(id)
+      document.removeEventListener('mousedown', close)
+    }
+  }, [miniMenu])
 
   /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
@@ -276,6 +372,48 @@ export function Rail() {
   }, [projects, projectRecords, projectGroups])
 
   /**
+   * 项目列表默认只展开前 N 个（N17）。
+   *
+   * 为什么是「项目」而不是「每个分组各 N 个」：项目多了以后左栏被拉得很长，
+   * 用户要的是一次能看到最常用的几个；分组结构和归属一个都不动，
+   * 只是**显示层**截断。搜索时临时全部展开。
+   */
+  const [projectsExpanded, setProjectsExpanded] = useState<boolean | null>(null)
+
+  /** 当前项目在默认前 N 之外 → 自动展开（否则用户看不到自己在哪个项目里） */
+  const currentOutOfPreview = useMemo(() => {
+    const i = displayProjects.findIndex((p) => p.isCurrent)
+    return i >= PROJECT_PREVIEW
+  }, [displayProjects])
+
+  /** 手工展开/收起优先（null = 还没点过，按「当前项目是否可见」自动决定） */
+  const showAllProjects = !!query || (projectsExpanded ?? currentOutOfPreview)
+  const shownProjects = showAllProjects ? displayProjects : displayProjects.slice(0, PROJECT_PREVIEW)
+  const hiddenProjects = Math.max(0, displayProjects.length - PROJECT_PREVIEW)
+
+  /*
+   * 切换项目时把「手工展开/收起」重置（N17）。
+   *
+   * 为什么：手工状态是相对于「当时看到的那批项目」的，换了项目/工作目录
+   * 还沿用旧选择，就会出现「切到一个排在第 8 位的项目，左栏却看不到它」。
+   * 重置后回到自动规则 —— 当前项目在前五之外就自动展开到它。
+   */
+  useEffect(() => {
+    setProjectsExpanded(null)
+  }, [session?.cwd])
+
+  /** 每个分组的运行汇总（N12）：分组标题上显示「N 个在跑」 */
+  const groupRunning = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const p of displayProjects) {
+      const gid = projectRecords.find((r) => r.cwd === p.cwd)?.groupId
+      if (!gid) continue
+      m.set(gid, (m.get(gid) ?? 0) + runningIn(p.list))
+    }
+    return m
+  }, [displayProjects, projectRecords, runningIn])
+
+  /**
    * 会话分支关系（用户要求：左栏显示分支数 / 分支编号）。
    *
    * 数据来自 pi 的 session 头：`parentSession` 指向分叉来源的会话文件。
@@ -304,6 +442,101 @@ export function Rail() {
 
   const toggleProject = (key: string): void =>
     setCollapsed((prev) => prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key])
+  /**
+   * 保存项目显示名（N06）。
+   *
+   * 双击改名入口已移除，重命名只从项目菜单进入 —— 单击始终是
+   * 「切换/折叠项目」，不会因为手快点两下就掉进输入框。
+   * 保存失败时**保留输入**并把错误显示在项目区顶部：直接关掉输入框
+   * 会让用户以为改名成功，而磁盘上什么都没写。
+   */
+  const saveRename = async (cwd: string): Promise<void> => {
+    const name = projDraft.trim()
+    if (!name) { setProjRename(null); return }
+    try {
+      await patchSettings({ projectNames: { ...projectNames, [cwd]: name } })
+      setProjectError('')
+      setProjRename(null)
+    } catch {
+      setProjectError(t('rail.renameFailed', { name }))
+    }
+  }
+  /**
+   * 重命名分组（N01）。
+   *
+   * 只改分组名：`groupId` 与项目归属一个字节都不动，所以重启后
+   * 分组关系照旧。空白名和重名（忽略大小写，排除自己）都**保留输入**
+   * 并就地给提示 —— 关掉输入框会让人以为改好了。
+   */
+  const saveGroupRename = async (id: string): Promise<void> => {
+    const group = projectGroups.find((g) => g.id === id)
+    if (!group) { setGroupRename(null); return }
+    const name = groupDraft.trim()
+    if (!name) { setGroupError(t('rail.groupNameEmpty')); return }
+    if (name === group.name) { setGroupError(''); setGroupRename(null); return }
+    if (projectGroups.some((g) => g.id !== id && g.name.toLowerCase() === name.toLowerCase())) {
+      setGroupError(t('rail.groupNameTaken', { name }))
+      return
+    }
+    try {
+      await patchSettings({
+        projectGroups: projectGroups.map((g) => (g.id === id ? { ...g, name } : g))
+      })
+      setGroupError('')
+      setGroupRename(null)
+    } catch {
+      setGroupError(t('rail.groupRenameFailed', { name }))
+    }
+  }
+
+  /**
+   * 解散分组（N01）：只去掉分组和归属，**不删**任何项目、会话或目录。
+   * 项目回到未分组区域（仍然可用、仍能重新分组）。
+   */
+  const dissolveGroup = async (id: string): Promise<void> => {
+    try {
+      await patchSettings({
+        projectGroups: projectGroups.filter((g) => g.id !== id),
+        projects: projectRecords.map((r) => (r.groupId === id ? { ...r, groupId: undefined } : r))
+      })
+      setGroupError('')
+      setGroupMenu(null)
+    } catch {
+      setGroupError(t('rail.groupRenameFailed', { name: '' }))
+    }
+  }
+
+  /**
+   * mini 栏（收起态）只放前 N 个项目的文件夹图标（N14），
+   * 排序与展开态完全一致（同一个 `projects` 派生值）。
+   */
+  const miniProjects = projects.slice(0, PROJECT_PREVIEW)
+
+  /**
+   * 切到某个项目（N05）。
+   *
+   * 与旧实现的区别：旧的是「停掉当前 pi 再在新 cwd 起一个」，所以点一下
+   * 别的项目 = 后台任务全没。现在 `yan:setCwd` 只更新设置里的当前项目，
+   * 视图切到该项目**最近访问的会话**（没有就新建一个空会话），
+   * 其它项目里正在跑的会话一个都不动。
+   */
+  const switchProject = async (cwd: string): Promise<void> => {
+    if (cwd === session?.cwd) return
+    const res = await window.yan.setCwd(cwd)
+    if (!res.ok) {
+      setProjectError(res.error || t('rail.projectError'))
+      return
+    }
+    setProjectError('')
+    const store = useStore.getState()
+    const recent = sessions
+      .filter((x) => x.cwd === cwd)
+      .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))[0]
+    if (recent) await store.switchSession(recent.path)
+    else await store.newSession()
+    await store.refreshSessions()
+  }
+
   const toggleBranch = (key: string): void =>
     setExpanded((prev) => prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key])
   const select = async (path: string): Promise<void> => {
@@ -336,8 +569,71 @@ export function Rail() {
         <button title={t('mode.switch')} onClick={() => { setRailPinned(true); setModeMenu(true) }}>砚</button>
         <button title={t('rail.search')} onClick={() => { setRailPinned(true); setSearching(true) }}><Icon name="search" size={16} /></button>
         <button title={t('rail.new')} onClick={() => void newSession()}><Icon name="plus" size={16} /></button>
+        {/*
+         * 项目文件夹（N14）：收起侧栏仍然能看见/切到项目。
+         *
+         * 与展开态**同一排序、同一前五项规则**（N17）：先按当前项目，
+         * 再按最近活动；超过五个的项目从「全部项目」浮层里进。
+         * 名称不常驻（mini 栏只有 48px）—— 悬停 / 键盘聚焦时在右侧浮出。
+         */}
+        <span className="rail-compact-sep" aria-hidden />
+        {miniProjects.map((p) => (
+          <button
+            key={p.cwd}
+            className={`rail-compact-proj ${p.isCurrent ? 'cur' : ''}`}
+            title={p.label}
+            aria-label={p.label}
+            aria-current={p.isCurrent ? 'true' : undefined}
+            data-testid="rail-compact-project"
+            data-current={p.isCurrent ? '1' : '0'}
+            data-hover={miniHover === p.cwd ? '1' : '0'}
+            data-running={runningIn(p.list) > 0 ? '1' : '0'}
+            data-cwd={p.cwd}
+            onMouseEnter={() => setMiniHover(p.cwd)}
+            onMouseLeave={() => setMiniHover((v) => (v === p.cwd ? null : v))}
+            onFocus={() => setMiniHover(p.cwd)}
+            onBlur={() => setMiniHover((v) => (v === p.cwd ? null : v))}
+            onClick={() => void switchProject(p.cwd)}
+          >
+            <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={16} />
+            <span className="rail-compact-name">{p.label}</span>
+          </button>
+        ))}
+        {projects.length > PROJECT_PREVIEW ? (
+          <button
+            className="rail-compact-proj rail-compact-more"
+            title={t('rail.allProjects', { n: projects.length })}
+            aria-label={t('rail.allProjects', { n: projects.length })}
+            aria-expanded={miniMenu}
+            aria-haspopup="menu"
+            data-testid="rail-compact-more"
+            onClick={() => setMiniMenu((v) => !v)}
+          >
+            <Icon name="menu" size={16} />
+            <span className="rail-compact-name">{t('rail.allProjects', { n: projects.length })}</span>
+          </button>
+        ) : null}
         <span className="spacer" />
         <button title={t('rail.settings')} onClick={() => useStore.getState().openSettings()}><Icon name="settings" size={16} /></button>
+        {miniMenu ? (
+          <div className="rail-compact-menu" role="menu" data-testid="rail-compact-menu">
+            <div className="rcm-head">{t('rail.projects')}</div>
+            {projects.map((p) => (
+              <button
+                key={p.cwd}
+                role="menuitem"
+                className={`rcm-item ${p.isCurrent ? 'cur' : ''}`}
+                data-current={p.isCurrent ? '1' : '0'}
+                data-cwd={p.cwd}
+                onClick={() => { setMiniMenu(false); void switchProject(p.cwd) }}
+              >
+                <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={12} />
+                <span className="rcm-name" title={p.cwd}>{p.label}</span>
+                <span className="rcm-count">{p.list.length}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div> : null}
       {/* ---- 顶部：品牌（带模式菜单）+ 动作 ---- */}
       <div className="rail-top">
@@ -479,15 +775,87 @@ export function Rail() {
           ) : shown === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.noMatch')}</div>
           ) : projectsOpen || query ? (
-            displayProjects.map((p, projectIndex) => {
+            shownProjects.map((p, projectIndex) => {
               const pOpen = !!query || !collapsed.includes(p.cwd)
               const groupId = projectRecords.find((record) => record.cwd === p.cwd)?.groupId
               const group = groupId ? projectGroups.find((candidate) => candidate.id === groupId) : undefined
-              const previous = displayProjects[projectIndex - 1]
+              const previous = shownProjects[projectIndex - 1]
               const previousGroupId = previous ? projectRecords.find((record) => record.cwd === previous.cwd)?.groupId : undefined
               return (
                 <div key={p.cwd} className="proj">
-                  {group && groupId !== previousGroupId ? <div className="proj-group-heading" data-testid="rail-project-group" title={group.name}>{group.name}</div> : null}
+                  {group && groupId !== previousGroupId ? (
+                    <div className="proj-group-heading" data-testid="rail-project-group" data-group-id={group.id}>
+                      {groupRename === group.id ? (
+                        <input
+                          className="proj-rename-input group-rename-input"
+                          autoFocus
+                          value={groupDraft}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(e) => setGroupDraft(e.target.value)}
+                          onBlur={() => void saveGroupRename(group.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              /* 直接保存，不绕 blur：无焦点环境下 blur 不可靠，
+                                 而且 Enter 的语义就是「提交」。 */
+                              void saveGroupRename(group.id)
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault()
+                              setGroupRename(null)
+                              setGroupError('')
+                            }
+                          }}
+                          data-testid="rail-group-rename"
+                        />
+                      ) : (
+                        <>
+                          <Icon name="layers" size={12} className="proj-group-ico" />
+                          <span className="proj-group-name" title={group.name}>{group.name}</span>
+                          {(groupRunning.get(group.id) ?? 0) > 0 ? (
+                            <span
+                              className="proj-group-running"
+                              data-testid="rail-group-running"
+                              title={t('rail.runningCount', { n: groupRunning.get(group.id) ?? 0 })}
+                            >
+                              <Icon name="activity" size={12} />
+                              {groupRunning.get(group.id)}
+                            </span>
+                          ) : null}
+                          <span className="spacer" />
+                          <button
+                            className="proj-group-act"
+                            title={t('rail.groupMenu')}
+                            aria-label={t('rail.groupMenu')}
+                            data-testid={`rail-group-menu-${group.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setGroupError('')
+                              setGroupMenu(groupMenu === group.id ? null : group.id)
+                            }}
+                          ><Icon name="menu" size={12} /></button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                  {group && groupId !== previousGroupId && groupMenu === group.id ? (
+                    <div className="project-menu group-menu" data-testid="rail-group-menu-panel" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        data-testid="rail-group-rename-action"
+                        onClick={() => {
+                          setGroupMenu(null)
+                          setGroupDraft(group.name)
+                          setGroupError('')
+                          setGroupRename(group.id)
+                        }}
+                      >{t('rail.renameGroup')}</button>
+                      <button data-testid="rail-group-dissolve" onClick={() => void dissolveGroup(group.id)}>
+                        {t('rail.dissolveGroup')}
+                      </button>
+                    </div>
+                  ) : null}
+                  {group && groupId !== previousGroupId && groupError && (groupRename === group.id || groupMenu === group.id) ? (
+                    <div className="rail-group-err" role="alert" data-testid="rail-group-error">{groupError}</div>
+                  ) : null}
                   {projRename === p.cwd ? (
                     /* 项目行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
                     <div className="proj-head renaming" data-testid="rail-project-rename">
@@ -498,17 +866,12 @@ export function Rail() {
                         value={projDraft}
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => setProjDraft(e.target.value)}
-                        onBlur={() => {
-                          const names = { ...projectNames }
-                          if (projDraft.trim()) names[p.cwd] = projDraft.trim()
-                          else { setProjRename(null); return }
-                          void patchSettings({ projectNames: names })
-                          setProjRename(null)
-                        }}
+                        onBlur={() => { void saveRename(p.cwd) }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            e.currentTarget.blur()
+                            /* 直接保存（理由同分组重命名：Enter 的语义就是提交） */
+                            void saveRename(p.cwd)
                           } else if (e.key === 'Escape') {
                             e.preventDefault()
                             setProjRename(null)
@@ -517,20 +880,41 @@ export function Rail() {
                       />
                     </div>
                   ) : (
-                  <button
+                  /*
+                   * 项目行拆成两个独立动作（N05）：
+                   *   · 名称/图标 → **切到这个项目**（切视图，不停任何会话）
+                   *   · 右侧箭头 → 只折叠/展开会话树
+                   * 以前整行都是折叠按钮，想切项目只能从菜单里点「新对话」。
+                   */
+                  <div
                     className={`proj-head ${pOpen ? '' : 'collapsed'}`}
-                    onClick={() => toggleProject(p.cwd)}
-                    onDoubleClick={() => { setProjDraft(p.label); setProjRename(p.cwd) }}
                     onContextMenu={(e) => { e.preventDefault(); setProjectMenu(p.cwd) }}
                     title={p.cwd}
-                    data-testid="rail-project"
+                    data-testid="rail-project-row"
                     data-current={p.isCurrent ? '1' : '0'}
                   >
-                    <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
-                    <span className="proj-labels">
-                      <span className="proj-name">{p.label}</span>
-                      {projectRecords.find((record) => record.cwd === p.cwd)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.cwd === p.cwd)?.groupId)?.name}</span> : null}
-                    </span>
+                    <button
+                      className="proj-pick"
+                      data-testid="rail-project"
+                      title={`${p.label}\n${p.cwd}`}
+                      aria-current={p.isCurrent ? 'true' : undefined}
+                      onClick={() => void switchProject(p.cwd)}
+                    >
+                      <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
+                      <span className="proj-labels">
+                        <span className="proj-name">{p.label}</span>
+                        {projectRecords.find((record) => record.cwd === p.cwd)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.cwd === p.cwd)?.groupId)?.name}</span> : null}
+                      </span>
+                    </button>
+                    <button
+                      className="proj-fold"
+                      data-testid="rail-project-fold"
+                      aria-expanded={pOpen}
+                      title={pOpen ? t('rail.foldProject') : t('rail.unfoldProject')}
+                      onClick={() => toggleProject(p.cwd)}
+                    >
+                      <Icon name="chevron-right" size={12} className={`chev ${pOpen ? 'open' : ''}`} />
+                    </button>
                     <span
                       className="proj-rename"
                       role="button"
@@ -544,11 +928,21 @@ export function Rail() {
                       }}
                     ><Icon name="menu" size={12} /></span>
                     <span className="proj-count">{p.list.length}</span>
-                  </button>
+                    {runningIn(p.list) > 0 ? (
+                      <span
+                        className="proj-running"
+                        data-testid="rail-project-running"
+                        title={t('rail.runningCount', { n: runningIn(p.list) })}
+                      >
+                        <Icon name="activity" size={12} />
+                        {runningIn(p.list)}
+                      </span>
+                    ) : null}
+                  </div>
                   )}
 
                   {projectMenu === p.cwd ? <div className="project-menu" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await useStore.getState().bootstrap(); await newSession() } }}>{t('rail.new')}</button>
+                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await newSession(); await useStore.getState().refreshSessions() } }}>{t('rail.new')}</button>
                     <button onClick={() => { setProjectMenu(null); setProjDraft(p.label); setProjRename(p.cwd) }}>{t('rail.renameProject')}</button>
                     <button onClick={() => { void window.yan.revealPath(p.cwd); setProjectMenu(null) }}>{t('rail.reveal')}</button>
                     <button onClick={() => { void navigator.clipboard.writeText(p.cwd); setProjectMenu(null) }}>{t('rail.copyPath')}</button>
@@ -578,13 +972,111 @@ export function Rail() {
               )
             })
           ) : null}
+          {/* ---- 更多项目（N17）：默认只展开前 5 个 ---- */}
+          {projectsOpen && !query && hiddenProjects > 0 ? (
+            <button
+              className="rail-more-projects"
+              onClick={() => setProjectsExpanded(!showAllProjects)}
+              data-testid="rail-more-projects"
+              data-expanded={showAllProjects ? '1' : '0'}
+            >
+              <Icon name="chevron-right" size={12} className={`chev ${showAllProjects ? 'on' : ''}`} />
+              <span>
+                {showAllProjects ? t('rail.lessProjects') : t('rail.moreProjects', { n: hiddenProjects })}
+              </span>
+            </button>
+          ) : null}
         </div>
       </div>
 
       {/* ---- 底部：用户块（名字 / 自定义头像 / 登录预留）---- */}
+      {trashNotice ? (
+        <TrashNoticeBar
+          notice={trashNotice}
+          onUndo={() => void undoTrash()}
+          onClose={() => setTrashNotice(null)}
+        />
+      ) : null}
       <RailUser />
-      {deleteTarget ? <SessionDeleteDialog session={deleteTarget} onClose={() => setDeleteTarget(null)} /> : null}
+      {deleteTarget ? (
+        <SessionDeleteDialog
+          session={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={(token, refreshFailed) => {
+            setTrashNotice({ token, title: deleteTarget.title, busy: false, error: '', restored: false, refreshFailed })
+            setDeleteTarget(null)
+          }}
+        />
+      ) : null}
     </aside>
+  )
+}
+
+/** 删除成功后的轻量通知状态（非模态） */
+interface TrashNotice {
+  /** 主进程给的撤销 token；没有时只提示、不可撤销 */
+  token: string | null
+  title: string
+  busy: boolean
+  error: string
+  restored: boolean
+  /** 文件已移动但会话列表没刷新成功 —— 要如实告知，不能显示成完全成功 */
+  refreshFailed: boolean
+}
+
+/**
+ * 删除成功 / 恢复过程中的轻量通知条。
+ *
+ * 视觉规范（方案 15.3）：
+ *   · 不圈定焦点、用 `role="status"` 播报，不打断用户输入；
+ *   · 撤销是**普通主要动作**，不用危险红色；
+ *   · 不用 `.send`（那是输入框发送按钮的圆形专用样式）。
+ */
+function TrashNoticeBar({ notice, onUndo, onClose }: {
+  notice: TrashNotice
+  onUndo: () => void
+  onClose: () => void
+}) {
+  const t = useT()
+  const label = notice.restored
+    ? t('rail.restoredNotice')
+    : notice.busy
+      ? t('rail.restoring')
+      : notice.refreshFailed
+        ? t('rail.deletedRefreshFailed')
+        : t('rail.deletedNotice')
+
+  return (
+    <div className="rail-trash" role="status" aria-live="polite" data-testid="trash-notice">
+      <Icon name={notice.restored ? 'check' : 'history'} size={12} />
+      <span className="rail-trash-text">
+        <span>{label}</span>
+        {!notice.restored ? (
+          <span className="rail-trash-name" title={notice.title}>
+            {notice.title}
+          </span>
+        ) : null}
+        {notice.error ? (
+          <span className="rail-trash-err" role="alert">
+            {notice.error}
+          </span>
+        ) : null}
+      </span>
+      <span className="spacer" />
+      {!notice.restored && notice.token ? (
+        <button className="btn" disabled={notice.busy} onClick={onUndo} data-testid="trash-undo">
+          {notice.busy ? t('rail.restoring') : t('rail.undoDelete')}
+        </button>
+      ) : null}
+      <button
+        className="btn icon"
+        onClick={onClose}
+        title={t('rail.noticeDismiss')}
+        aria-label={t('rail.noticeDismiss')}
+      >
+        <Icon name="plus" size={12} className="rail-trash-x" />
+      </button>
+    </div>
   )
 }
 
@@ -599,9 +1091,17 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   onRequestDelete: () => void
 }) {
   const t = useT()
-  const running = useStore((state) => state.session?.sessionFile === s.path && !!state.session?.isAgentRunning)
-  const waiting = useStore((state) => state.session?.sessionFile === s.path && state.uiRequests.length > 0)
-  const failure = useStore((state) => state.session?.sessionFile === s.path && (state.conn === 'error' || state.conn === 'exited') ? state.connDetail : '')
+  /*
+   * 运行 / 等待 / 失败状态来自**运行实例注册表**（N12）。
+   *
+   * 旧实现判断的是 `state.session?.sessionFile === s.path` —— 那是「当前
+   * 正在看的会话」，所以后台会话在跑也看不出来。现在每个会话的实例都在
+   * 注册表里，左栏每一行都能显示自己的状态。
+   */
+  const runner = useStore((state) => state.runners.find((r) => !!r.sessionFile && r.sessionFile === s.path))
+  const running = runner?.running === true
+  const waiting = runner?.waiting === true
+  const failure = runner?.failed ? t('rail.runnerFailed') : ''
   /**
    * 行内重命名。
    *
@@ -677,13 +1177,13 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             title={t('rail.branchCount', { n: branchCount })}
             onClick={onToggleBranches}
           >
-            <Icon name="layers" size={12} />
+            <Icon name="layers" size={12} className="srow-btoggle-ico" />
             <span className="srow-btoggle-n">{branchCount}</span>
             <Icon name="chevron-right" size={12} className="chev" />
           </button>
         ) : null}
 
-        {waiting ? <span className="session-status waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status waiting" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" title={t('rail.unread')}>●</span> : null}
+        {waiting ? <span className="session-status waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" title={t('rail.unread')}>●</span> : null}
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
         <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>
@@ -709,6 +1209,23 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
 
       {menuOpen ? (
         <div className="srow-menu" onClick={(e) => e.stopPropagation()}>
+          <div className="srow-menu-time" data-testid="rail-menu-time">
+            {t('rail.lastActive')} {relTime(s.lastActivityAt ?? s.updatedAt)}
+          </div>
+          {/* 停止**这一个**运行实例（N12）：后台会话也能单独停，不影响别的会话 */}
+          {runner && (runner.running || runner.waiting) ? (
+            <button
+              className="srow-menu-btn"
+              data-testid="rail-stop-runner"
+              onClick={() => {
+                onToggleMenu()
+                void window.yan.stopRunner(runner.id).then(() => useStore.getState().syncRunners())
+              }}
+            >
+              <Icon name="alert-circle" size={12} />
+              {t('rail.stopRunner')}
+            </button>
+          ) : null}
           <div className="srow-menu-path" title={s.path}>
             {s.path}
           </div>
@@ -777,8 +1294,16 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
 /**
  * 删除会话不能依赖浏览器原生 confirm：它没有明确告知“可撤销”，在某些
  * Electron 环境下也不能稳定地呈现。这里要求输入完整标题再启用动作。
+ *
+ * 交互分成四段（方案 15.2）：确认 → 进行 → 成功（关模态 + 轻量通知）
+ * → 失败（框内给原因）。删除成功不再弹第二个模态框。
  */
-function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; onClose: () => void }) {
+function SessionDeleteDialog({ session, onClose, onDeleted }: {
+  session: SessionSummary
+  onClose: () => void
+  /** 删除成功：把撤销 token 交给通知条（token 可能为 null） */
+  onDeleted: (token: string | null, refreshFailed: boolean) => void
+}) {
   const t = useT()
   const descendantCount = useStore((state) => {
     const children = new Map<string, string[]>()
@@ -794,7 +1319,6 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [undoToken, setUndoToken] = useState<string | null>(null)
   const confirmed = typed.trim() === session.title.trim()
 
   /*
@@ -809,47 +1333,33 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
   const remove = async (): Promise<void> => {
     if (!confirmed || busy) return
     setBusy(true)
+    setError('')
     const res = await window.yan.deleteSession(session.path)
     if (!res.ok) {
+      /* 删除失败：留在确认框里说清原因，保留取消与重试 */
       setError(res.error ?? t('rail.deleteFailed'))
       setBusy(false)
       return
     }
-    await useStore.getState().refreshSessions()
-    setUndoToken(res.undoToken ?? null)
-    setBusy(false)
-  }
-
-  const restore = async (): Promise<void> => {
-    if (!undoToken || busy) return
-    setBusy(true)
-    const res = await window.yan.restoreSession(undoToken)
-    if (!res.ok) {
-      setError(res.error ?? t('rail.deleteFailed'))
-      setBusy(false)
-      return
+    /*
+     * 文件已移动，但**列表刷新可能失败**。
+     * 刷新失败不能重跑删除（那会真删两次），只如实告诉用户，
+     * 撤销 token 照常交给通知条。
+     */
+    let refreshFailed = false
+    try {
+      await useStore.getState().refreshSessions()
+    } catch {
+      refreshFailed = true
     }
-    await useStore.getState().refreshSessions()
-    onClose()
+    onDeleted(res.undoToken ?? null, refreshFailed)
   }
-
-  if (undoToken) return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
-    <div className="modal rail-delete-dialog" ref={panel}>
-      <div className="modal-head"><Icon name="alert-circle" size={14} /><span className="modal-title" id="delete-session-title">{t('rail.delete')}</span></div>
-      <div className="modal-message">{t('rail.deletedUndo')}</div>
-      <div className="modal-foot">
-        <button className="btn" onClick={onClose}>{t('ui.ok')}</button>
-        <span className="spacer" />
-        <button className="send" disabled={busy} onClick={() => void restore()}>{t('rail.undoDelete')}</button>
-      </div>
-    </div>
-  </div>
 
   return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
     <div className="modal rail-delete-dialog" ref={panel}>
       <div className="modal-head">
         <Icon name="alert-circle" size={14} />
-        <span className="modal-title" id="delete-session-title">{t('rail.delete')}</span>
+        <span className="modal-title" id="delete-session-title">{t('rail.deleteTitle')}</span>
       </div>
       <div className="modal-message">
         {t('rail.deleteExplain', { name: session.title })}{descendantCount ? ` ${t('rail.deleteBranches', { n: descendantCount })}` : ''}
@@ -867,7 +1377,7 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
         <button className="btn" onClick={onClose} disabled={busy}>{t('ui.cancel')}</button>
         <span className="spacer" />
         <button className="btn danger" disabled={!confirmed || busy} onClick={() => void remove()}>
-          {busy ? t('rail.deleting') : t('rail.delete')}
+          {busy ? t('rail.deleting') : t('rail.deleteAction')}
         </button>
       </div>
     </div>

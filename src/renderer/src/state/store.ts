@@ -14,12 +14,14 @@ import type {
   BrowserState,
   ChromeSyncReport,
   ExtensionUiRequest,
+  FilePreview,
   MainPush,
   MessagePatch,
   ModelInfo,
   PiInfo,
   QueueMode,
   QueueState,
+  RunnerStatus,
   SessionState,
   SessionStats,
   SessionSummary,
@@ -27,6 +29,7 @@ import type {
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
+  SubagentRun,
   UIMessage,
   UIToolCall,
   UserProfile,
@@ -173,6 +176,12 @@ interface Store {
   alwaysOnTop: boolean
   /** 内置浏览器状态；页面本体由主进程 WebContentsView 承载 */
   browserState: BrowserState
+  /** 右侧的只读文件预览（消息里的文件链接 / 拖入的文件） */
+  filePreview: FilePreviewState | null
+  /** 子代理运行列表（方案第 8 节） */
+  subagents: SubagentRun[]
+  /** 右侧正在看的子代理（null = 没开） */
+  subagentPreviewId: string | null
   /**
    * 界面缩放现状（主进程算的）。null = 还没拉到。
    *
@@ -190,6 +199,13 @@ interface Store {
   /** 跳到第 N 轮用户对话（导航轨点击时用，由 App 实现具体滚动） */
   scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
+  /**
+   * 问题面板是否收起（方案第 6 节）。
+   * 收起**不是**取消，也不会替你选默认值 —— 草稿与队列都还在。
+   */
+  uiCollapsed: boolean
+  /** 问题草稿：按 request id 保存（切面板/收起后仍在） */
+  uiDrafts: Record<string, string>
   notices: Notice[]
   statuses: Record<string, string>
   /** 扩展想让输入框变成的文本（消费一次就清） */
@@ -209,8 +225,24 @@ interface Store {
   /** 直读时被截断/丢弃的内容统计（null = 没有截断） */
   peekNote: { truncated: number; total: number } | null
 
+  /**
+   * 当前视图对应的运行实例 id（N12）。
+   *
+   * null = 还没和主进程对齐（刚加载那一瞬）。主进程推的会话事件都带
+   * `sessionKey`，与本字段不一致的就是**后台会话**的输出 —— 不得写进
+   * 当前视图（否则后台任务的流会串到眼前这个会话里）。
+   */
+  activeRunnerId: string | null
+  /**
+   * 所有运行实例的状态快照（N12）。
+   * 左栏用它画每行的运行 / 等待输入 / 失败状态。
+   */
+  runners: RunnerStatus[]
+
   /* 动作 */
   bootstrap: () => Promise<void>
+  /** 重新对齐运行实例状态（N12）：拉一次快照 + 同步当前视图 id */
+  syncRunners: () => Promise<void>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
@@ -269,6 +301,15 @@ interface Store {
   setUiScale: (v: number) => Promise<void>
   openBrowser: (url?: string) => Promise<void>
   closeBrowser: () => Promise<void>
+  /** 打开只读文件预览（相对路径由主进程按会话 cwd 解析） */
+  previewFile: (path: string, line?: number) => Promise<void>
+  closePreview: () => void
+  /* ---- 子代理 ---- */
+  loadSubagents: () => Promise<void>
+  startSubagent: (task: string, model?: string) => Promise<void>
+  stopSubagent: (id: string) => Promise<void>
+  clearSubagents: () => Promise<void>
+  openSubagent: (id: string | null) => void
   /** 接入本机已安装的 Chrome（独立 profile + CDP） */
   openExternalChrome: (url?: string) => Promise<void>
   /** 断开本机 Chrome（会关掉我们拉起的进程） */
@@ -317,11 +358,17 @@ interface Store {
   loadZoom: () => Promise<void>
 
   addAttachments: (a: Attachment[]) => void
+  /** 拖入的普通文件：主进程校验 + 登记，然后作为「文件引用」附件入列 */
+  addFileRefs: (files: File[]) => Promise<void>
   removeAttachment: (id: string) => void
   clearAttachments: () => void
   pickImages: () => Promise<void>
 
   answerUi: (res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }) => void
+  /** 收起 / 展开问题面板（不取消请求） */
+  setUiCollapsed: (v: boolean) => void
+  /** 保存某个问题的草稿 */
+  setUiDraft: (id: string, value: string) => void
   dismissNotice: (id: string) => void
   consumeEditorInject: () => void
   consumeQueueRestore: () => void
@@ -354,6 +401,19 @@ interface Store {
 }
 
 const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
+
+/** 右侧只读文件预览的界面状态 */
+export interface FilePreviewState {
+  /** 请求的原路径（展示 + 竞态比对用） */
+  path: string
+  line?: number
+  loading: boolean
+  data: FilePreview | null
+}
+
+/** 附件上限（方案 5.1：最多 20 个附件，图片合计 20MB） */
+const MAX_ATTACHMENTS = 20
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 /** 连接状态心跳是否已在跑（startConnWatch 单例，避免重复挂载开出多条） */
 let connWatchActive = false
@@ -507,6 +567,8 @@ export const useStore = create<Store>((rawSet, get) => {
   sessions: [],
   todos: [],
   todoHistory: [],
+  activeRunnerId: null,
+  runners: [],
 
   models: [],
   thinkingLevels: [],
@@ -536,11 +598,16 @@ export const useStore = create<Store>((rawSet, get) => {
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
+  filePreview: null,
+  subagents: [],
+  subagentPreviewId: null,
   zoom: null,
   scrollToTurn: () => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
   },
   uiRequests: [],
+  uiCollapsed: false,
+  uiDrafts: {},
   notices: [],
   statuses: {},
   widgets: {},
@@ -604,10 +671,42 @@ export const useStore = create<Store>((rawSet, get) => {
     // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
     void get().loadZoom()
     void get().reloadCommands()
+    /* 运行实例身份与状态（N12）：bootstrap 后对齐一次 */
+    void get().syncRunners()
+  },
+
+  /**
+   * 对齐运行实例状态（N12）。
+   *
+   * 两件事：拉一次完整状态（补上可能错过的 `runners` 推送），
+   * 并把当前视图的实例 id 对齐到主进程认为的 active。
+   */
+  syncRunners: async () => {
+    try {
+      const list = await window.yan.runnerStatuses()
+      const active = list.find((r) => r.isActive)
+      set({ runners: list, ...(active ? { activeRunnerId: active.id } : {}) })
+    } catch {
+      /* 主进程还没起来 —— 下一帧会有推送 */
+    }
   },
 
   applyPush: (m) => {
     const s = get()
+
+    /*
+     * 实例身份过滤（N12）。
+     *
+     * 带 `sessionKey` 的消息只属于某一个运行实例：
+     *   · 还没对齐身份（初始化第一帧）→ 以第一条为当前视图；
+     *   · 与当前视图不一致 → **丢弃**（后台会话的输出不进当前界面）。
+     *     切回去时主进程会给完整快照，所以丢弃不会丢内容。
+     * 全局推送（设置 / 缩放 / 浏览器 / runners）不带 key，不受影响。
+     */
+    if (m.sessionKey) {
+      if (!s.activeRunnerId) set({ activeRunnerId: m.sessionKey })
+      else if (s.activeRunnerId !== m.sessionKey) return
+    }
 
     switch (m.ch) {
       case 'sync':
@@ -623,6 +722,10 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'todos':
         set({ todos: m.payload })
+        break
+      case 'runners':
+        /* 全局快照（N12）：左栏状态槽用。不参与上面的实例身份过滤 */
+        set({ runners: m.payload })
         break
       case 'todo-history':
         set({ todoHistory: m.payload })
@@ -722,8 +825,27 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'queue':
         set({ queue: m.payload })
         break
+      case 'subagent': {
+        /* 整条快照覆盖 / 追加（主进程已把转录限制在 200 条以内） */
+        const run = m.payload
+        const idx = s.subagents.findIndex((r) => r.id === run.id)
+        set({
+          subagents:
+            idx >= 0
+              ? s.subagents.map((r) => (r.id === run.id ? run : r))
+              : [...s.subagents, run]
+        })
+        break
+      }
+      case 'subagent-remove':
+        set({
+          subagents: s.subagents.filter((r) => r.id !== m.payload),
+          subagentPreviewId: s.subagentPreviewId === m.payload ? null : s.subagentPreviewId
+        })
+        break
       case 'ui-request':
-        set({ uiRequests: [...s.uiRequests, m.payload] })
+        /* 新问题到达 → 自动展开面板（用户收起了也不该把新问题藏起来） */
+        set({ uiRequests: [...s.uiRequests, m.payload], uiCollapsed: false })
         // 需要用户介入（模型提问 / 扩展要选择）—— 提示音 + 通知
         alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
         break
@@ -911,7 +1033,13 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
       return
     }
-    set({ queue: EMPTY_QUEUE })
+    /*
+     * N12：新会话可能落在**新实例**上（当前实例忙着的时候）。
+     * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
+     */
+    if (res.id) set({ queue: EMPTY_QUEUE, activeRunnerId: res.id, messages: [] })
+    else set({ queue: EMPTY_QUEUE })
+    void get().syncRunners()
     await get().refreshSessions()
   },
 
@@ -947,13 +1075,16 @@ export const useStore = create<Store>((rawSet, get) => {
       /* 读不出来就等 pi —— 不是致命错误 */
     }
 
-    // ② 让 pi 真的切过去
-    const res = await piCall(() => window.yan.switchSession(path))
+    // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
+    const sum = get().sessions.find((x) => x.path === path)
+    const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
+    const res = await piCall(() => window.yan.selectSession({ sessionFile: path, cwd }))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'), peekedPath: null })
       return
     }
-    set({ queue: EMPTY_QUEUE })
+    set({ queue: EMPTY_QUEUE, ...(res.id ? { activeRunnerId: res.id } : {}) })
+    void get().syncRunners()
     void get().reloadModels()
   },
 
@@ -1194,6 +1325,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   openBrowser: async (url) => {
+    /*
+     * 浏览器与文件预览占同一块区域，而且原生网页视图永远盖在 DOM 之上 ——
+     * 打开浏览器时先把预览收掉，否则会看到「预览在下面、网页在上面」的叠影。
+     */
+    if (get().filePreview) set({ filePreview: null })
     try {
       set({ browserState: await window.yan.browser.open(url) })
     } catch (error) {
@@ -1204,6 +1340,70 @@ export const useStore = create<Store>((rawSet, get) => {
   closeBrowser: async () => {
     set({ browserState: await window.yan.browser.close() })
   },
+
+  /*
+   * 只读文件预览（方案 5.2）。
+   *
+   * ⚠️ 原生 `WebContentsView` 永远盖在 DOM 之上：浏览器开着的时候，
+   *    光在 DOM 里画一个预览面板是**看不见**的，必须让主进程
+   *    把原生视图 setVisible(false)；关预览时再恢复。
+   */
+  previewFile: async (path, line) => {
+    set({ filePreview: { path, line, loading: true, data: null } })
+    if (get().browserState.open) void window.yan.browser.setVisible(false)
+    const data = await window.yan.readPreview(path, line)
+    /* 期间用户可能已经换了别的文件 / 关掉了预览：只认最后一次请求 */
+    const cur = get().filePreview
+    if (!cur || cur.path !== path || cur.line !== line) return
+    set({ filePreview: { path, line, loading: false, data } })
+  },
+
+  closePreview: () => {
+    set({ filePreview: null })
+    /* 浏览器还开着 → 把原生视图恢复出来 */
+    if (get().browserState.open) void window.yan.browser.setVisible(true)
+  },
+
+  /* ---- 子代理（方案第 8 节）---- */
+  loadSubagents: async () => {
+    try {
+      set({ subagents: await window.yan.subagents.list() })
+    } catch {
+      /* 拿不到就当没有 —— 不该因为子代理把界面弄崩 */
+    }
+  },
+
+  startSubagent: async (task, model) => {
+    const res = await window.yan.subagents.start(task, model)
+    if (!res.ok) {
+      set({
+        notices: pushNotice(get().notices, 'error', res.error ?? '子代理启动失败')
+      })
+      return
+    }
+    /* 新跑起来的那条默认打开详情，用户不用再点一下 */
+    if (res.run) {
+      const run = res.run
+      const idx = get().subagents.findIndex((r) => r.id === run.id)
+      set({
+        subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run],
+        subagentPreviewId: run.id
+      })
+    }
+  },
+
+  stopSubagent: async (id) => {
+    const res = await window.yan.subagents.stop(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '停止子代理失败') })
+    }
+  },
+
+  clearSubagents: async () => {
+    await window.yan.subagents.clearFinished()
+  },
+
+  openSubagent: (id) => set({ subagentPreviewId: id }),
 
   openExternalChrome: async (url) => {
     const res = await window.yan.browser.openExternalChrome(url)
@@ -1301,16 +1501,87 @@ export const useStore = create<Store>((rawSet, get) => {
     const existing = get().attachments
     // 去重：既要与已有的比，也要与**本批内部**比
     // （只比 existing 的话，一次传入两条相同的会全进来）
-    const seen = new Set(existing.map((e) => `${e.name}|${e.size}`))
+    // 文件引用带上 path —— 同名同大小的两个不同文件是两个附件
+    const seen = new Set(existing.map((e) => `${e.name}|${e.size}|${e.path ?? ''}`))
     const fresh: Attachment[] = []
     for (const x of a) {
-      const k = `${x.name}|${x.size}`
+      const k = `${x.name}|${x.size}|${x.path ?? ''}`
       if (seen.has(k)) continue
       seen.add(k)
       fresh.push(x)
     }
     if (fresh.length === 0) return
-    set({ attachments: [...existing, ...fresh].slice(0, 8) })
+
+    /* 首期上限：最多 20 个附件（方案 5.1） */
+    let next = [...existing, ...fresh].slice(0, MAX_ATTACHMENTS)
+
+    /*
+     * 图片合计上限 20MB（方案 5.1）。
+     * 超出的**新图**不收（已经有的一样不删），并明确告知 ——
+     * 不能默默丢掉用户刚拖进来的东西。
+     */
+    const imgBytes = next.filter((x) => x.kind !== 'file').reduce((n, x) => n + x.size, 0)
+    if (imgBytes > MAX_IMAGE_BYTES) {
+      const kept: Attachment[] = []
+      let acc = 0
+      for (const x of next) {
+        if (x.kind === 'file') {
+          kept.push(x)
+          continue
+        }
+        if (acc + x.size > MAX_IMAGE_BYTES) continue
+        acc += x.size
+        kept.push(x)
+      }
+      next = kept
+      set({ notices: pushNotice(get().notices, 'error', '图片合计超过 20MB，已跳过放不下的那些') })
+    }
+
+    set({ attachments: next })
+  },
+
+  addFileRefs: async (files) => {
+    if (!files.length) return
+    /*
+     * Electron 里 `File` 拿不到 path，必须走 preload 的 webUtils
+     * （见 preload/index.ts 的说明）。
+     */
+    const paths: string[] = []
+    for (const f of files) {
+      try {
+        const p = window.yan.pathForFile(f)
+        if (p) paths.push(p)
+      } catch {
+        /* 拿不到路径的单个文件跳过，下面统一提示 */
+      }
+    }
+    if (!paths.length) {
+      set({ notices: pushNotice(get().notices, 'error', '拿不到文件路径，无法加入上下文') })
+      return
+    }
+
+    /* 校验 + 登记在主进程（工作区外也允许，但只在本进程内有效） */
+    const infos = await window.yan.describeFiles(paths)
+    const refs: Attachment[] = []
+    const errors: string[] = []
+    for (const info of infos) {
+      if (!info.ok) {
+        errors.push(`${info.name}：${info.error ?? '无法引用'}`)
+        continue
+      }
+      refs.push({
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: info.name,
+        mimeType: info.mimeType,
+        size: info.size,
+        data: '',
+        preview: '',
+        kind: 'file',
+        path: info.path
+      })
+    }
+    if (refs.length) get().addAttachments(refs)
+    if (errors.length) set({ notices: pushNotice(get().notices, 'error', errors.join('；')) })
   },
 
   removeAttachment: (id) => {
@@ -1327,12 +1598,20 @@ export const useStore = create<Store>((rawSet, get) => {
 
   answerUi: (res) => {
     window.yan.respondUi(res)
-    set({ uiRequests: get().uiRequests.filter((r) => r.id !== res.id) })
+    const drafts = { ...get().uiDrafts }
+    delete drafts[res.id]
+    set({ uiRequests: get().uiRequests.filter((r) => r.id !== res.id), uiDrafts: drafts })
   },
+
+  setUiCollapsed: (v) => set({ uiCollapsed: v }),
+
+  setUiDraft: (id, value) => set({ uiDrafts: { ...get().uiDrafts, [id]: value } }),
 
   dismissRequest: (id) => {
     // 超时的对话框：不回应答（pi 侧会自己超时），只从列表移除
-    set({ uiRequests: get().uiRequests.filter((r) => r.id !== id) })
+    const drafts = { ...get().uiDrafts }
+    delete drafts[id]
+    set({ uiRequests: get().uiRequests.filter((r) => r.id !== id), uiDrafts: drafts })
   },
 
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),

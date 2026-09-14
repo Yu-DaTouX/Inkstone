@@ -74,6 +74,51 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
+const { runFileRefTests } = await import('./test-filerefs.mjs')
+const { runLinkTests } = await import('./test-links.mjs')
+const { runResponseDetailTests } = await import('./test-response-detail.mjs')
+const { runSnapshotTests } = await import('./test-snapshots.mjs')
+
+/* 写入类工具的前后快照（diff 算法）。纯 node fs，现场编译一份。 */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/snapshots.ts'],
+    outfile: 'out/test/snapshots.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 链接路由（src/shared/links.ts）：纯函数，无依赖，单独 bundle。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/links.ts'],
+    outfile: 'out/test/links.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 文件引用（拖入的普通文件）的校验/授权/读取。
+ * 这里不依赖 Electron，只是 node fs —— 单独 bundle 一份即可。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/file-refs.ts'],
+    outfile: 'out/test/file-refs.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
 
 /*
  * 本机 Chrome profile 同步的纯逻辑（选 profile / 拼路径 / 逐项容错）。
@@ -124,6 +169,22 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
+
+/*
+ * 运行实例注册表的策略（src/main/runners.ts，N12）。
+ * 纯逻辑：用假 agent 验证「切会话不停任务」「忙碌实例不被顶掉」
+ * 「到上限明确拒绝」这些策略，不需要起任何 pi 进程。
+ */
+const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/runners.ts'],
+    outfile: 'out/test/runners.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/runners.mjs'))
+)
 
 let pass = 0
 let fail = 0
@@ -390,6 +451,22 @@ await runTurnTests(ok)
 await runZoomTests(ok)
 
 
+// 文件引用：路径校验 / 授权 / 文本读取截断（安全边界）
+await runFileRefTests(ok)
+
+
+// 链接路由：网页 / 文件 / 行号 / 危险协议（安全判断）
+await runLinkTests(ok)
+
+
+// 回复详细程度扩展：三档注入 / standard 不注入 / 脏值回落
+await runResponseDetailTests(ok)
+
+
+// 写入类工具的前后快照与行级差异（安全证据）
+await runSnapshotTests(ok)
+
+
 // 本机 Chrome profile 同步（合成目录，不碰真实 profile）
 await runChromeProfileTests(ok)
 
@@ -401,6 +478,22 @@ await runStreamWidthTests(ok)
 // 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
 await runTodoHistoryTests(ok)
+
+/*
+ * 运行实例注册表（N12）：切换不停任务、忙碌实例不被牺牲、并发上限。
+ */
+{
+  const { runRunnerTests } = await import('./test-runners.mjs')
+  await runRunnerTests(ok, RunnerRegistry)
+}
+
+// 模型接入：provider 名映射（假 pi 探针，不碰真实 auth.json）
+const { runCredentialsTests } = await import('./test-credentials.mjs')
+await runCredentialsTests(ok)
+
+// 应用内登录 ChatGPT 订阅（electron/fetch 都换成桩，不联网不开浏览器）
+const { runOAuthTests } = await import('./test-oauth.mjs')
+await runOAuthTests(ok)
 
 // 流式增量推送协议（textDelta / thinkingDelta / outputDelta）
 const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')

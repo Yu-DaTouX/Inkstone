@@ -112,7 +112,8 @@ npm run launch -- --rebuild  # 强制重新构建
 | 模型主动提问 | 信息不足时模型会弹窗问你（选项 / 文本 / 确认），回答回填进对话；不想被打断就打开**自主模式** |
 | 自主模式 | 输入框下方的开关：开启后模型不再提问、自行决策 |
 | 跑 shell（不经模型） | `!` 开头，如 `!git status`。结果进会话，下一轮对话它能看到 |
-| 斜杠命令 | 打 `/` 弹补全（扩展命令 / 提示词模板 / 技能，如 `/panel`）。`/login` 会被路由到「设置 → 模型接入」（pi 的登录是交互式 OAuth，不经 RPC） |
+| 斜杠命令 | 打 `/` 弹补全（扩展命令 / 提示词模板 / 技能，如 `/panel`）。`/login` 会被路由到「设置 → 模型接入」 |
+| 接入 ChatGPT 订阅 | 设置 → 模型接入 → 「在本应用内登录」：开系统浏览器走 OAuth，回调落在本机 1455 端口，凭证写进 pi 的 `auth.json`。**不用再去终端跑 `pi /login`** |
 | 发图片 | 直接**粘贴**或**拖进**输入框；也可点输入框左下「+ 图片」 |
 | 切会话 / 新建 | 左栏；每行右侧 `⋯` 可**重命名 / 从这里分支 / 打开会话文件 / 删除** |
 | 复制会话 / 导出 HTML | 工具栏「操作」分区 |
@@ -239,7 +240,22 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 | `砚-<版本>-portable.exe` | 单文件免安装版（双击即跑；每次都会自解压到临时目录，适合临时携带） |
 | `砚-<版本>-portable-fast.zip` | **快速免安装版**（先解压一次，再双击目录内 `砚.exe`；日常使用推荐） |
 
-免安装版会在其 EXE 所在目录自动创建 `砚数据/`。其中包含 pi 凭证、会话、砚设置、浏览器 Profile、Electron 的缓存和 localStorage，以及崩溃转储；不会把这些隐私数据写回 `%USERPROFILE%\\.pi` 或 `%APPDATA%`。移动或备份免安装版时，请连同 `砚数据/` 一起移动或备份；不要把该目录分享给他人。
+免安装单文件版（`-portable.exe`）会在其 EXE 所在目录自动创建 `砚数据/`。其中包含 pi 凭证、会话、砚设置、浏览器 Profile、Electron 的缓存和 localStorage，以及崩溃转储；不会把这些隐私数据写回 `%USERPROFILE%\\.pi` 或 `%APPDATA%`。移动或备份免安装版时，请连同 `砚数据/` 一起移动或备份；不要把该目录分享给他人。
+
+> ⚠️ **只有单文件 `-portable.exe` 是这种“数据跟着文件夹走”的形态。**
+> 判断依据是环境变量 `PORTABLE_EXECUTABLE_DIR` —— 它**只由单文件版的外层 NSIS 包装设置**
+> （见 `release/builder-debug.yml` 里 portable 目标的 `SetEnvironmentVariable(…"PORTABLE_EXECUTABLE_DIR", "$EXEDIR")`）。
+> 因此另外两种形态**数据跟着电脑**，落在用户目录：
+>
+> | 形态 | 凭证 / 会话 | localStorage |
+> |---|---|---|
+> | `-portable.exe`（单文件） | `<EXE目录>\砚数据\pi-agent` | `<EXE目录>\砚数据\electron` |
+> | `-portable-fast.zip`（解压后跑 `砚.exe`） | `%USERPROFILE%\\.pi\\agent` | `%APPDATA%\\砚` |
+> | `-setup.exe`（安装版） | `%USERPROFILE%\\.pi\\agent` | `%APPDATA%\\砚` |
+>
+> 也就是说：**ZIP 快速免安装版并不随包携带凭证**（它没有外层包装，拿不到那个变量），
+> 而且它与安装版**共用** `~/.pi/agent/auth.json` —— 你在终端用 pi `/login` 登录过，
+> 安装版/ZIP 版直接就能用。要在同事机器上跑单文件版，把 `砚数据/` 一起拷过去即带凭证。
 
 两类资源随包分发（`extraResources` → 安装目录的 `resources/`）：
 内置 pi 运行时（20MB）和内置浏览器 extension。所以**用户不需要自己装 pi**。
@@ -249,6 +265,17 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 > ⚠️ 改打包配置后**务必跑一次 `npm run test:packaged`** —— 开发态的 40 个场景
 > 读的是仓库里的 `resources/pi-runtime`，打包后改从 `process.resourcesPath/` 找，
 > 路径错了应用**能启动但连不上 pi**，开发态测试全绿也照样复现不了。
+
+> ⚠️ **发布时只挑产物文件，不要把 `release/` 整个传上去。** 该目录里除了三个产物，
+> 还有两类不该外传的东西：
+>
+> - `builder-debug.yml`（electron-builder 每次自动写）内含本机绝对路径，
+>   如 `C:\Users\<你的用户名>\…\node_modules\…`；
+> - `砚数据/` —— 在本机跑过免安装版就会在这里生成，含 pi 凭证位
+>   （`pi-agent/auth.json`）、会话、浏览器 localStorage/profile 与缓存。
+>
+> 发布清单就是三个产物 + `SHA256SUMS.txt`。另外打包前建议先把 `砚数据/` 挪出
+> `release/`：它虽然在 .gitignore 里，但会跟着「整个目录压缩上传」一起出去。
 
 ### 测试分三层
 
@@ -322,6 +349,7 @@ pi 的入口用 Electron 自带的 Node（`ELECTRON_RUN_AS_NODE=1`）以**参数
 模型与思考档选择（69 个模型）、上下文压缩、自动压缩与自动重试开关、
 图片输入（粘贴 / 拖拽 / 选文件）、**模型主动提问**（信息不足时弹窗问你；**自主模式**可关）、
 **供应商额度查询**（余额 / 用量；订阅制按 5 小时 / 每周分窗口）、
+**ChatGPT 订阅在应用内登录**（OAuth 参数逐字对齐 pi，不用回终端跑 `pi /login`）、
 **对话列宽自定义**（正文 / 输入框 / 用量条 / 导航轨一起对齐）、
 内置浏览器（导航 / 结构化观察 / ref 点击 / 输入 / 按键 / 滚动 / 标签页 / 截图 / 下载）、
 **接入本机 Chrome**（独立 profile + 本机历史 / 登录态同步）、

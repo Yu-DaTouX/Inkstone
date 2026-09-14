@@ -79,7 +79,14 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   const modelOk = !!session?.model
   const authOk = (ready?.n ?? 0) > 0
 
-  /** 一条检查项 */
+  /**
+   * 一条检查项。
+   *
+   * ⚠️ 状态类名带 `ob-` 前缀：以前叫 `ok` / `todo`，后者撞上 chat.css 里
+   *    旧任务面板遗留的全局 `.todo { grid-template-columns: 12px 1fr }`，
+   *    把这一行改成了两列 grid —— 操作区的两个按钮被挤成 21px 宽、
+   *    文字截断并压在说明文字上（N20）。前缀化的类名不会误命中通用选择器。
+   */
   const Row = ({
     ok,
     title,
@@ -93,7 +100,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     action?: React.ReactNode
     testId: string
   }) => (
-    <div className={`ob-row ${ok ? 'ok' : 'todo'}`} data-testid={testId} data-ok={ok ? '1' : '0'}>
+    <div className={`ob-row ${ok ? 'ob-ok' : 'ob-todo'}`} data-testid={testId} data-ok={ok ? '1' : '0'}>
       <span className="ob-check" aria-hidden>
         {ok ? '✓' : '○'}
       </span>

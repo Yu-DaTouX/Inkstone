@@ -55,10 +55,15 @@
     }
   })
   await sleep(300)
-  const sum1 = q('[data-testid="rp-context"] .rp-context-summary')?.textContent ?? ''
+  /*
+   * 方案 7.3 改版后主行是 `.rp-ctx-main`：
+   *   「上下文 49% …… 128k / 262k」
+   * （旧版是 `.rp-context-summary` 的「128,000 tokens / 48.8% 已用」）
+   */
+  const sum1 = q('[data-testid="rp-context"] .rp-ctx-main')?.textContent ?? ''
   out.push('  摘要: ' + JSON.stringify(sum1))
   ok(sum1.includes('—'), '摘要里是「—」而不是 0')
-  ok(!/0\s*tokens/.test(sum1), '没有出现「0 tokens」')
+  ok(!/0\s*(tokens|k)/.test(sum1), '没有出现「0 tokens」')
   ok(!!q('[data-testid="ctx-unknown"]'), '出现「已压缩 · 下一条消息后重新统计」提示')
 
   /* ---- ② 正常：有数字 ---- */
@@ -75,17 +80,22 @@
     }
   })
   await sleep(300)
-  const sum2 = q('[data-testid="rp-context"] .rp-context-summary')?.textContent ?? ''
-  out.push('  摘要: ' + JSON.stringify(sum2))
-  ok(sum2.includes('128,000'), '显示 128,000 tokens')
-  ok(sum2.includes('48.8%'), '显示 48.8%')
+  const sum2 = q('[data-testid="rp-context"] .rp-ctx-main')?.textContent ?? ''
+  const tokensLine = q('[data-testid="ctx-tokens"]')?.textContent ?? ''
+  out.push('  摘要: ' + JSON.stringify(sum2) + ' / tokens 行: ' + JSON.stringify(tokensLine))
+  ok(tokensLine.includes('128k') && tokensLine.includes('262k'), '显示「128k / 262k」（方案 7.3 的写法）')
+  ok(sum2.includes('49%'), '显示 49%（整数百分比）')
   ok(!q('[data-testid="ctx-unknown"]'), '有数字时不显示“已压缩”提示')
 
-  /* ---- ③ 对齐：标注靠左、数值靠右 ---- */
+  /* ---- ③ 详情默认收起，展开后有累计花费且对齐 ---- */
   out.push('')
-  out.push('=== 3. 累计花费行对齐（标注左 / 数值右）===')
+  out.push('=== 3. 详情折叠与累计花费对齐 ===')
+  ok(!q('[data-testid="ctx-details"]'), '详情默认收起（方案 7.3：调参项移进详情）')
+  q('[data-testid="ctx-details-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await sleep(250)
+  ok(!!q('[data-testid="ctx-details"]'), '点「详情」后展开')
   const cost = q('[data-testid="ctx-cost"]')
-  ok(!!cost, '存在累计花费行')
+  ok(!!cost, '详情里有累计花费行')
   if (cost) {
     const k = cost.querySelector('.rp-k')
     const v = cost.querySelector('.rp-v')
@@ -98,6 +108,9 @@
     ok(kr.left - cr.left < 2, '标注贴左')
     ok(cr.right - vr.right < 2, '数值贴右')
   }
+  /* 收尾：折叠回去，不给后面的场景留展开态 */
+  q('[data-testid="ctx-details-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await sleep(150)
 
   return out.join('\n')
 })()

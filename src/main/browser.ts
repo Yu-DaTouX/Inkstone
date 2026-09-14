@@ -60,6 +60,30 @@ function safeUrl(raw: unknown): string | null {
   }
 }
 
+/** 私有 / 本地地址（用于「本地预览边界」） */
+function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  return (
+    h === 'localhost' ||
+    h === '0.0.0.0' ||
+    h === '[::1]' ||
+    h.endsWith('.localhost') ||
+    /^127\./.test(h) ||
+    /^10\./.test(h) ||
+    /^192\.168\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+  )
+}
+
+/** 发起方本身是不是本地页面 */
+function isLoopbackOrigin(value: string): boolean {
+  try {
+    return isPrivateHost(new URL(value).hostname)
+  } catch {
+    return false
+  }
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status
   res.setHeader('content-type', 'application/json; charset=utf-8')
@@ -124,6 +148,14 @@ export class BrowserController {
   private lastDownload: BrowserState['lastDownload']
   private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
+  /** 权限管理器是否已挂（session 是共享的，只能挂一次） */
+  private permissionHandlerAttached = false
+  /**
+   * 被拒绝的权限请求（方案 9.2）。
+   * 为什么要记：默认拒绝是安全默认，但用户得**能看到**自己网站要过什么、
+   * 被拒了什么，否则遇到“摄像头点了没反应”只能猜。
+   */
+  private permissionLog: Array<{ permission: string; origin: string; at: number }> = []
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -197,6 +229,7 @@ export class BrowserController {
       activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
       userControl: this.userControl,
       lastDownload: this.lastDownload,
+      permissions: this.permissionLog,
       nativeBounds: this.nativeBounds,
       mode: ext ? 'external' : 'embedded',
       external: ext
@@ -315,6 +348,70 @@ export class BrowserController {
     if (!this.downloadSessionAttached) {
       this.downloadSessionAttached = true
       view.webContents.session.on('will-download', (_event, item) => void this.handleDownload(item))
+    }
+    if (!this.permissionHandlerAttached) {
+      this.permissionHandlerAttached = true
+      /*
+       * 远程网页的权限一律**默认拒绝**（方案 9.1/9.2）。
+       *
+       * 摄像头 / 麦克风 / 定位 / 通知 / 剪贴板这些在 agent 场景里基本没有
+       * 正当用途，而一旦放行，网页就拿到了真实设备能力。
+       * 这里不用关键词猜“这个站点看起来可不可信”—— 一律拒绝，并把
+       * 请求记下来给用户看；要放开时应该由用户显式授权（后续能力）。
+       */
+      const ses = view.webContents.session
+      ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
+        this.permissionLog.push({
+          permission: String(permission),
+          origin: String(details?.requestingUrl ?? ''),
+          at: Date.now()
+        })
+        if (this.permissionLog.length > 40) this.permissionLog.splice(0, this.permissionLog.length - 40)
+        this.updateState()
+        callback(false)
+      })
+      ses.setPermissionCheckHandler(() => false)
+
+      /*
+       * 本地预览边界（方案 9.2 第 4 点）。
+       *
+       * 编码场景需要 localhost 预览（dev server），但**远程页面**没理由
+       * 去访问用户机器上的本地服务（那是一个常见的探测/攻击路径）。
+       * 所以：目标是本地/私有地址时，只允许由本地页面发起。
+       *
+       * ⚠️ 已知局限（如实写在代码里，不假装完备）：
+       *   · 拿不到 initiator 的请求一律放行 —— 宁可少拦，也不把正常
+       *     图片/字体请求误杀；
+       *   · 这里拦的是导航与子资源请求，DNS 重绑定这类攻击面需要
+       *     在更底层（网络栈）处理，不在本次范围。
+       */
+      ses.webRequest.onBeforeRequest((details, callback) => {
+        let target: URL
+        try {
+          target = new URL(details.url)
+        } catch {
+          callback({})
+          return
+        }
+        if (!isPrivateHost(target.hostname)) {
+          callback({})
+          return
+        }
+        /*
+         * 发起方看**顶层页面**的 URL（Electron 的 details 里没有 initiator；
+         * Chrome 扩展那套 API 字段在这里不存在）。
+         * 拿不到顶层 URL 时放行 —— 宁可少拦，也不误杀正常请求。
+         */
+        const owner = [...this.tabs.values()].find(
+          (t) => t.view.webContents.id === details.webContentsId
+        )
+        const topUrl = owner?.state.url ?? ''
+        if (!topUrl || isLoopbackOrigin(topUrl)) {
+          callback({})
+          return
+        }
+        callback({ cancel: true })
+      })
     }
     void cdp.attach().catch((error) => {
       /*
@@ -829,6 +926,23 @@ export class BrowserController {
     }
   }
 
+  /**
+   * 临时隐藏 / 恢复原生网页视图。
+   *
+   * 为什么需要：`WebContentsView` 是**原生视图**，永远盖在 DOM 之上。
+   * 文件预览/其它详情要占用同一块区域时，只用 CSS 是藏不住的（方案 5.2）；
+   * 必须显式 setVisible(false)，关掉预览时再按当前模式恢复。
+   */
+  setViewVisible(visible: boolean): void {
+    if (!visible) {
+      for (const tab of this.tabs.values()) tab.view.setVisible(false)
+      return
+    }
+    /* 外部 Chrome 是独立窗口，没有内嵌视图要恢复 */
+    if (this.activeMode !== 'embedded') return
+    for (const tab of this.tabs.values()) tab.view.setVisible(tab.id === this.activeTabId)
+  }
+
   setBounds(bounds: BrowserBounds): void {
     // 外部 Chrome 是独立窗口，没有原生视图要摆位置
     if (this.external) return
@@ -984,10 +1098,16 @@ export class BrowserController {
     await mkdir(directory, { recursive: true })
     const filename = item.getFilename().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || `download-${Date.now()}`
     const path = join(directory, filename)
+    /*
+     * 下载**不自动执行**（方案 9.2）：只落盘到系统下载目录并告知来源，
+     * 是否打开由用户自己决定。
+     */
+    const origin = item.getURL()
     item.setSavePath(path)
     item.once('done', (_event, state) => {
       if (state !== 'completed') return
-      this.lastDownload = { path, filename, size: item.getReceivedBytes() }
+      /* 带上来源：用户要能看出「这个文件是从哪来的」（方案 9.2） */
+      this.lastDownload = { path, filename, size: item.getReceivedBytes(), source: origin }
       this.updateState()
     })
   }

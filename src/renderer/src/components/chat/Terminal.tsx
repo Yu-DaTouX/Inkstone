@@ -29,8 +29,13 @@ import type { UIToolCall } from '../../../../shared/ipc'
  */
 
 const SIZE_KEY = 'yan.termSize'
-const DEFAULT_H = 240
-const MIN_H = 80
+/**
+ * 默认高度（方案 4.3：**默认 1 行命令 + 2 行输出**，约 80–110px）。
+ * 标题栏 26 + prompt 行 18 + 两行输出 36 + 内边距 ≈ 84。
+ */
+const DEFAULT_H = 84
+/** 再矮就只剩标题栏（但允许用户拉到只看命令） */
+const MIN_H = 56
 
 /** 从 localStorage 读上次的尺寸（脏数据一律当默认，别让坏值把窗口撑爆） */
 function loadSize(): { h: number; w: number } {
@@ -58,9 +63,9 @@ function saveSize(size: { h: number; w: number }): void {
   }
 }
 
-/** 允许的最大高度：视口的 72%（再高就把整屏占了，不像“窗口”了） */
+/** 允许的最大高度：消息视口的 60%（方案 4.3） */
 function maxHeight(): number {
-  return Math.max(200, Math.round(window.innerHeight * 0.72))
+  return Math.max(200, Math.round(window.innerHeight * 0.6))
 }
 
 export function TerminalWindow({
@@ -86,7 +91,6 @@ export function TerminalWindow({
   const [drag, setDrag] = useState<'h' | 'w' | 'both' | null>(null)
 
   const running = call.status === 'running' || call.status === 'pending'
-  const failed = call.status === 'error'
 
   /* 输出文本（复制 / 提示用） */
   const output = call.output ?? ''
@@ -217,26 +221,17 @@ export function TerminalWindow({
       data-testid="tool-terminal"
     >
       <div className="term-bar">
-        <span className="term-lights" aria-hidden>
-          <span className="term-dot" />
-          <span className="term-dot" />
-          <span className="term-dot" />
-        </span>
         <span className={`term-ico ${running ? 'live' : ''}`} aria-hidden>
           <Icon name="activity" size={12} />
         </span>
         <span className="term-title" title={target || call.name}>
           {call.name}
         </span>
-        {target ? <span className="term-cmd" title={target}>{target}</span> : null}
         <span className="spacer" />
-        {running ? (
-          <span className="term-pill running">{t('term.running')}</span>
-        ) : failed ? (
-          <span className="term-pill err">{t('term.failed')}</span>
-        ) : (
-          <span className="term-pill ok">{t('term.ok')}</span>
-        )}
+        {/*
+         * ⚠️ 方案 4.3：窗口**内**不再重复状态胶囊（行上已经有状态与耗时）。
+         *    三色装饰灯也去掉了 —— 它们只是装饰，占宽度还像“假终端”。
+         */}
         {secs !== null ? <span className="term-time">{secs}s</span> : null}
         <button
           className={`term-act ${copied ? 'on' : ''}`}

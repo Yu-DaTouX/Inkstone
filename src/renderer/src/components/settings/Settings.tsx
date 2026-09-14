@@ -23,12 +23,22 @@ export function Settings({
   open,
   tab,
   onClose,
-  onTabChange
+  onTabChange,
+  onShowOnboarding
 }: {
   open: boolean
   tab: SettingsTab
   onClose: () => void
   onTabChange: (t: SettingsTab) => void
+  /**
+   * 「重新查看首次引导」（N20）。
+   *
+   * 为什么放在设置里：引导只在首次启动且检测到问题时自动弹，
+   * 用户跳过（或当时环境已就绪）之后就再也找不到那页检查清单。
+   * 这里给一个可发现的入口，同时让探针能在**不重置首次启动标记**
+   * 的前提下真实渲染引导层（先前只能靠伪造 localStorage）。
+   */
+  onShowOnboarding: () => void
 }) {
   const t = useT()
   const { lang, setLang } = useI18n()
@@ -114,7 +124,7 @@ export function Settings({
           ) : tab === 'status' ? (
             <StatusTab />
           ) : (
-            <AboutTab />
+            <AboutTab onShowOnboarding={onShowOnboarding} />
           )}
         </div>
       </div>
@@ -151,6 +161,18 @@ const SEND_KEY_OPTS = [
   { v: 'ctrlEnter', key: 'set.sendKeyCtrl' }
 ] as const
 
+/**
+ * 界面密度（方案 A1）。
+ *
+ * 三档只改间距与行高，**不改字号** —— 中文字体在 12.5px 上是像素
+ * 对齐的，缩放字号会让字变糊。standard 档与改动前完全一致。
+ */
+const DENSITY_OPTS = [
+  { v: 'compact', key: 'set.densityCompact' },
+  { v: 'standard', key: 'set.densityStandard' },
+  { v: 'comfortable', key: 'set.densityComfortable' }
+] as const
+
 function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' | 'en-US') => void }) {
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
@@ -163,6 +185,8 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
+  /** 界面密度（方案 A1） */
+  const density = useStore((s) => s.settings?.density) ?? 'standard'
   const zoom = useStore((s) => s.zoom)
   /** 对话内容列宽度（0 = 用设计默认值） */
   const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
@@ -251,6 +275,26 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 
       <div className="set-row">
         <div className="set-label">
+          <div className="set-name">{t('set.density')}</div>
+          <div className="set-desc">{t('set.densityDesc')}</div>
+        </div>
+        <div className="set-ctl seg" data-testid="set-density">
+          {DENSITY_OPTS.map((o) => (
+            <button
+              key={o.v}
+              className={`seg-btn ${density === o.v ? 'sel' : ''}`}
+              data-density={o.v}
+              data-on={density === o.v ? '1' : '0'}
+              onClick={() => void patchSettings({ density: o.v })}
+            >
+              {t(o.key)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
           <div className="set-name">{t('set.sendKey')}</div>
           <div className="set-desc">{t('set.sendKeyDesc')}</div>
         </div>
@@ -325,12 +369,14 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
           {/*
            * 用户要求：「提供一个开关来让用户自己选择是否可以看到
            * 用类似终端窗口的工具调用详情」。
-           * 默认关（收起）：一次 agent 跑几十条命令是常态，
-           * 默认展开会把回答顶出屏幕。
+           *
+           * 默认关（收起）：开始 / 增量输出 / 结束都不自动展开。
+           * 打开后**只有正在跑的那条**会自动展开成终端窗口。
+           * 同时写 `toolDetailExplicit` —— 这是用户偏好，迁移时不再被重置。
            */}
           <button
             className={`seg-btn ${toolDetail ? 'sel' : ''}`}
-            onClick={() => void patchSettings({ toolDetail: !toolDetail })}
+            onClick={() => void patchSettings({ toolDetail: !toolDetail, toolDetailExplicit: true })}
             data-testid="set-tool-detail"
             data-on={toolDetail ? '1' : '0'}
           >
@@ -718,7 +764,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 
 /* ------------------------------------------------------------- 关于 */
 
-function AboutTab() {
+function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
   const t = useT()
   const settings = useStore((s) => s.settings)
   const session = useStore((s) => s.session)
@@ -806,6 +852,18 @@ function AboutTab() {
           </button>
         </div>
         {hint ? <div className="set-warn">{hint}</div> : null}
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.replayOnboard')}</div>
+          <div className="set-desc">{t('set.replayOnboardDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          <button className="btn" onClick={onShowOnboarding} data-testid="ob-reopen">
+            {t('set.replayOnboardAction')}
+          </button>
+        </div>
       </div>
 
       <div className="set-row">

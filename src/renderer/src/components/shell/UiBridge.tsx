@@ -20,7 +20,12 @@ const EXIT_MS = 110
  */
 export function UiDialog() {
   const requests = useStore((s) => s.uiRequests)
-  const req = requests[0]
+  /*
+   * 只处理**安全敏感的**请求（方案第 6 节）：
+   * 普通 select / input / editor / confirm 已经改成输入区上方的非模态
+   * 问题面板（QuestionPanel.tsx），不应该再遮住聊天。
+   */
+  const req = requests.find((r) => r.sensitive === true)
 
   /*
    * 扩展对话框的退场。

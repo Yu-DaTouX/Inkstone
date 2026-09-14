@@ -23,6 +23,7 @@ import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { generateTitle } from './title'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
+import { isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import type {
   BashRun,
   CustomEntry,
@@ -74,6 +75,7 @@ export class AgentController extends EventEmitter {
   private piBin?: string
   private browserExtension?: string
   private questionExtension?: string
+  private responseDetailExtension?: string
   private browserEnv?: NodeJS.ProcessEnv
   /** 追加系统提示（--append-system-prompt），见构造函数注释 */
   private appendSystemPrompt?: string
@@ -135,6 +137,14 @@ export class AgentController extends EventEmitter {
 
   private state: SessionState | null = null
   private uiSeen = new Set<string>()
+  /**
+   * 正在等用户回答的扩展请求（N12）。
+   *
+   * 与上面的 uiSeen 不同：uiSeen 是「这个请求见过了」的去重集合，
+   * 应答后仍然留在里面；这个集合只装**还没答复**的，
+   * 用来给「后台会话正在等输入」这个状态提供依据。
+   */
+  private pendingUi = new Set<string>()
 
   /** 当前直执行的 bash（RPC bash 命令，不走 LLM）。流式输出靠它累积。 */
   private bash: {
@@ -150,6 +160,8 @@ export class AgentController extends EventEmitter {
     piBin?: string
     browserExtension?: string
     questionExtension?: string
+    /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
+    responseDetailExtension?: string
     browserEnv?: NodeJS.ProcessEnv
     /**
      * 追加到 pi 系统提示末尾的一段文本（--append-system-prompt）。
@@ -164,6 +176,7 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.browserExtension = opts.browserExtension
     this.questionExtension = opts.questionExtension
+    this.responseDetailExtension = opts.responseDetailExtension
     this.browserEnv = opts.browserEnv
     this.appendSystemPrompt = opts.appendSystemPrompt
   }
@@ -221,6 +234,8 @@ export class AgentController extends EventEmitter {
         ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
         // 内置提问扩展（模型可主动向用户提问；自主模式时改为自行决策）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
+        // 回复详细程度（简洁 / 标准 / 详细）：standard 档不注入任何东西
+        ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
@@ -566,6 +581,14 @@ export class AgentController extends EventEmitter {
         )
         call.status = 'running'
         call.startedAt = Date.now()
+        /*
+         * 写入类工具：**在文件被改之前**留一份执行前快照（方案 5.3）。
+         * 同步读（限 2MB）：异步会有「工具已写完、before 才读到新内容」的竞态。
+         */
+        if (isWriteTool(call.name)) {
+          const path = writePathOf(call.args)
+          if (path) snapshotBefore(call.id, path)
+        }
         this.pushTool(call)
         break
       }
@@ -592,13 +615,27 @@ export class AgentController extends EventEmitter {
         const call = this.findCall(String(evt.toolCallId ?? ''))
         if (!call) break
         const result = evt.result as { content?: PiContentBlock[]; details?: unknown } | undefined
-        call.status = evt.isError ? 'error' : 'ok'
+        /* 被取消不算失败（方案 4.1）：单独标记，界面不染红 */
+        const cancelled = (evt as { cancelled?: boolean }).cancelled === true
+        call.cancelled = cancelled || undefined
+        call.status = evt.isError && !cancelled ? 'error' : 'ok'
         call.output = (result?.content ?? [])
           .filter((c) => c.type === 'text')
           .map((c) => c.text ?? '')
           .join('')
         call.details = result?.details
         call.endedAt = Date.now()
+        /* 写入类工具：执行后快照 → 真实的行级差异与增删行数 */
+        if (isWriteTool(call.name)) {
+          const diff = snapshotAfter(call.id)
+          if (diff) {
+            const base =
+              call.details && typeof call.details === 'object' && !Array.isArray(call.details)
+                ? (call.details as Record<string, unknown>)
+                : {}
+            call.details = { ...base, fileDiff: diff }
+          }
+        }
         this.pushTool(call)
 
         // panel_todos 改了会话里的 custom entry → 任务清单要重读
@@ -995,11 +1032,21 @@ export class AgentController extends EventEmitter {
     // 需要应答的对话框
     if (id && this.uiSeen.has(id)) return
     if (id) this.uiSeen.add(id)
-    this.push({ ch: 'ui-request', payload: { id, method, ...req } as never })
+    if (id) this.pendingUi.add(id)
+    /*
+     * `sensitive` 是**请求方声明**的安全分类（方案第 6 节）：
+     * 只有它为 true 时才走模态确认（焦点圈定），其余都走非模态问题面板。
+     * 不从问题措辞里推断 —— 那既不可靠也容易被绕过。
+     */
+    this.push({
+      ch: 'ui-request',
+      payload: { id, method, sensitive: req.sensitive === true, ...req } as never
+    })
   }
 
   /** 渲染端回答案（由 IPC 调） */
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void {
+    if (res.id) this.pendingUi.delete(res.id)
     this.rpc?.respondUi(res as Record<string, unknown>)
   }
 
@@ -1265,6 +1312,7 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: '会话切换被扩展取消' }
     }
     this.uiSeen.clear()
+    this.pendingUi.clear()
     this.setAgentRunning(false)
     await this.hydrate()
     return { ok: true }
@@ -1277,6 +1325,7 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: '会话切换被扩展取消' }
     }
     this.uiSeen.clear()
+    this.pendingUi.clear()
     this.setAgentRunning(false)
     await this.hydrate()
     return { ok: true }
@@ -1304,6 +1353,7 @@ export class AgentController extends EventEmitter {
     if (!res.success) return { ok: false, error: res.error }
     if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
     this.uiSeen.clear()
+    this.pendingUi.clear()
     await this.hydrate()
     return { ok: true, text: res.data?.text }
   }
@@ -1313,6 +1363,7 @@ export class AgentController extends EventEmitter {
     if (!res.success) return { ok: false, error: res.error }
     if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
     this.uiSeen.clear()
+    this.pendingUi.clear()
     await this.hydrate()
     return { ok: true }
   }
@@ -1588,6 +1639,11 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
+  /** 还在等用户回答的请求数（N12：后台会话的状态槽用它） */
+  getPendingUiCount(): number {
+    return this.pendingUi.size
+  }
+
   async stop(): Promise<void> {
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
@@ -1598,6 +1654,7 @@ export class AgentController extends EventEmitter {
     this.callIndex.clear()
     this.callOwner.clear()
     this.pushedOut.clear()
+    this.pendingUi.clear()
     await this.rpc?.close()
     this.rpc = null
     this.messages = []

@@ -13,17 +13,19 @@ import type { AuthProviderInfo } from '../../../../shared/ipc'
  *    解析顺序是 `auth.json` 优先于环境变量。
  *
  * **② 订阅制**（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、
- *    xAI、OpenRouter、Radius）：走 OAuth，token 也落在 auth.json，
- *    但**流程只能由 pi 的交互式 `/login` 发起** ——
- *    RPC 模式没有 login 命令（查过 docs/rpc.md 的 47 个命令，确认没有）。
- *    所以这里**不假装能代劳**：给出命令，让用户在自己终端里跑一次。
+ *    xAI、OpenRouter、Radius）：走 OAuth，token 也落在 auth.json。
+ *    pi 的 RPC 里没有 login 命令（查过 docs/rpc.md 的 47 个命令，确认没有），
+ *    但 **ChatGPT 这一家的参数可以从内置 pi 的实现里逐字对齐抄出来**，
+ *    所以它在应用内就能登录（见 src/main/oauth.ts）—— 界面给按钮。
+ *    其余几家仍只能跑 `pi → /login`：协议/客户端参数不同，不能照搬。
  *    这一步只做一次，之后 token 自动续期。
  *
- * ── 为什么不做成「一键弹出终端自动跑」 ──
+ * ── 为什么其余几家不也做成「一键弹出终端自动跑」──
  * 各平台的终端启动方式差别太大（Windows Terminal / conhost / macOS Terminal
  * / Linux 各种 emulator），而且 OAuth 要用户在浏览器里点授权、
  * 回调地址还得能回连 localhost。自动化的失败模式比手动多。
- * 诚实地给一条命令，比一个时灵时不灵的按钮好。
+ * 诚实地给一条命令，比一个时灵时不灵的按钮好；
+ * 真能自己跑完的那一家（ChatGPT）就真给按钮。
  */
 export function AuthTab() {
   const t = useT()
@@ -33,6 +35,8 @@ export function AuthTab() {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 应用内 OAuth 进行中（要等用户在浏览器里点完，可能几十秒）。 */
+  const [loggingIn, setLoggingIn] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   const load = async (deep: boolean): Promise<void> => {
@@ -75,6 +79,34 @@ export function AuthTab() {
     if (r.ok) {
       setMsg({ kind: 'ok', text: t('auth.cleared') })
       await load(false)
+    }
+  }
+
+  /**
+   * 应用内登录 ChatGPT 订阅（Codex）。
+   *
+   * 为什么能这么做：这一家的 OAuth 参数（client_id / 端点 / 回调节点）可以从
+   * 内置 pi 的实现里逐字对齐抄出来，所以桌面端自己就能把流程跑完 ——
+   * 不再要求用户去终端跑 `pi → /login`。
+   *
+   * 这个 await 会**一直等到用户在浏览器里点完**（可能几十秒），所以期间要把
+   * 状态显示出来，并给一个取消按钮。
+   */
+  const loginCodex = async (): Promise<void> => {
+    setLoggingIn(true)
+    setMsg(null)
+    try {
+      const r = await window.yan.codexLogin()
+      if (r.ok) {
+        setMsg({ kind: 'ok', text: t('auth.loginOk') })
+        await load(false)
+        /* 深查一次：让状态以 pi 自己的判断为准（它会顺手刷新 token） */
+        await load(true)
+      } else {
+        setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
+      }
+    } finally {
+      setLoggingIn(false)
     }
   }
 
@@ -134,9 +166,48 @@ export function AuthTab() {
           </div>
 
           {p.status === 'ready' ? (
-            <button className="seg-btn" onClick={() => void signOut(p.id)} disabled={busy}>
+            <button className="seg-btn" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
               {t('auth.signOut')}
             </button>
+          ) : p.inAppLogin ? (
+            /*
+             * 能应用内登录的（目前只有 ChatGPT 订阅）就给按钮；
+             * 其余订阅制仍然只能给命令提示 —— 不是不想做，是各家协议/参数不同，
+             * 而 pi 没有可通过 RPC 发起的登录（见 AuthTab 顶部注释）。
+             */
+            <div className="auth-actions">
+              {loggingIn ? (
+                <>
+                  <span className="auth-waiting" data-testid="auth-login-waiting">
+                    <Icon name="refresh" size={12} className="spin" />
+                    <span>{t('auth.loginWaiting')}</span>
+                  </span>
+                  <button
+                    className="seg-btn"
+                    data-testid="auth-login-cancel"
+                    onClick={() => void window.yan.codexLoginCancel()}
+                  >
+                    {t('ui.cancel')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="seg-btn sel"
+                    data-testid={`auth-login-${p.id}`}
+                    disabled={busy}
+                    onClick={() => void loginCodex()}
+                  >
+                    {t('auth.loginInApp')}
+                  </button>
+                  <span className="auth-cmd" title={t('auth.cmdTip')}>
+                    <code>pi</code>
+                    <span className="auth-cmd-then">→</span>
+                    <code>/login</code>
+                  </span>
+                </>
+              )}
+            </div>
           ) : (
             <div className="auth-cmd" title={t('auth.cmdTip')}>
               <code>pi</code>

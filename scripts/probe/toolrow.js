@@ -30,7 +30,7 @@
     await sleep(1200)
 
     /* 确保「工具详情」这个设置是**关**的 —— 那才是这条断言的场景 */
-    await store.getState().patchSettings({ toolDetail: false })
+    await store.getState().patchSettings({ toolDetail: false, toolDetailExplicit: true })
     await sleep(300)
 
     /*
@@ -74,17 +74,21 @@
     out.push(`  渲染出 ${rows.length} 个工具行（含 ToolGroup 里的）`)
 
     out.push('')
-    out.push('=== 已结束的工具收进 ToolGroup，但「有失败就默认展开 + 角标标红」 ===')
+    out.push('=== 已结束的工具收进 ToolGroup；失败组也默认收起（N03）===')
     const group = q('[data-testid="tool-group"]')
     ok(!!group, '已结束的工具收进 ToolGroup（默认形态）')
     if (group) {
       const expanded = group.querySelector('[data-testid="tool-group-toggle"]')?.getAttribute('aria-expanded')
       out.push('  组标题 aria-expanded = ' + JSON.stringify(expanded))
-      ok(expanded === 'true', '**组里有失败 → 默认展开**（失败不被埋在折叠里）')
+      /*
+       * N03：失败组**不再**默认展开。失败靠标题角标 + 行内红色状态提示，
+       * 展开与否交给用户（旧断言是 expanded === 'true'）。
+       */
+      ok(expanded === 'false', '**失败组默认也收起**（不抢版面）')
       ok(group.classList.contains('has-fail'), '组带 has-fail 标记（语义钩子，不再给标题染色）')
       const badge = q('[data-testid="tool-group-fail"]')
       out.push('  失败角标: ' + JSON.stringify(badge?.textContent ?? '(无)'))
-      ok(!!badge, '标题上有失败角标（一眼看出有东西挂了）')
+      ok(!!badge, '标题上有失败角标（一眼看出有东西挂了，不需要自动展开）')
 
       /*
        * 用户要求：只有「N 个失败」是红的，标题里其他字保持原来的颜色。
@@ -103,6 +107,13 @@
         ok(headCol !== errRgb, '标题文字没有被染红（红只留在角标上）')
       }
 
+      /* 展开必须是用户点击的结果 */
+      const toggle = group.querySelector('[data-testid="tool-group-toggle"]')
+      if (toggle) {
+        click(toggle)
+        await sleep(300)
+      }
+      ok(q('.tgroup')?.classList.contains('open') === true, '用户点击后组才展开')
       ok(qa('.tgroup-body .trow').length >= 1, '展开后能看到组内的工具行')
     }
 
@@ -139,6 +150,23 @@
     if (okRow) {
       out.push(`  成功行 open=${okRow.classList.contains('open')}（终态下应收起，只留一行摘要）`)
       ok(true, '（信息）成功行保持摘要，不因同组有失败而全部展开')
+
+      /*
+       * 核心修复（方案 4.2）：查看权限与自动展开偏好分开。
+       * 探针特意把 toolDetail 设成 false（见上面），旧实现下成功行连点都点不开。
+       */
+      const head = okRow.querySelector('.trow-head') ?? okRow.firstElementChild
+      ok(head?.getAttribute('aria-expanded') === 'false', '成功行是可展开控件（有 aria-expanded）')
+      if (head) {
+        click(head)
+        await sleep(300)
+        ok(okRow.classList.contains('open'), '关掉自动展开后，已完成的成功调用**仍然可以点开**（历史可回看）')
+        const body = okRow.textContent ?? ''
+        ok(/echo hi|hi/.test(body), '展开后能看到当时的输入输出')
+        click(head)
+        await sleep(200)
+        ok(!okRow.classList.contains('open'), '再点一次能收起来')
+      }
     }
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))

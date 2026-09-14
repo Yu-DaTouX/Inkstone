@@ -136,7 +136,9 @@ export function normalizeMessage(m: PiMessage, idx: number): UIMessage | null {
           id: m.toolCallId ?? id,
           name: m.toolName ?? 'tool',
           args: undefined,
-          status: m.isError ? 'error' : 'ok',
+          /* 被取消的不是失败：方案 4.1 要求取消单独显示 */
+          status: m.isError && !m.cancelled ? 'error' : 'ok',
+          ...(m.cancelled ? { cancelled: true } : {}),
           output: Array.isArray(m.content)
             ? m.content
                 .filter((c) => c.type === 'text')
@@ -166,7 +168,8 @@ export function normalizeMessage(m: PiMessage, idx: number): UIMessage | null {
           id,
           name: 'bash',
           args: { command: m.command },
-          status: m.exitCode === 0 ? 'ok' : 'error',
+          status: m.exitCode === 0 || m.cancelled ? 'ok' : 'error',
+          ...(m.cancelled ? { cancelled: true } : {}),
           output: m.content as string | undefined
         }
       ],

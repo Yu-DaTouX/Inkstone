@@ -939,64 +939,451 @@
 .rp-todos {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  gap: 3px;
+  /* 密度变量（方案 A1）；standard 档 = 原来的 3px */
+  gap: var(--d-row-gap);
 }
 
+/*
+ * 任务行布局：
+ *   运行标记 2px ／ 图标槽 16px ／ 文本 minmax(0,1fr) ／ 状态说明
+ * 运行标记和图标槽都固定，只有文本列可压缩；每个槽之间保留 8px。
+ * 运行标记不再用 inset box-shadow，避免贴边、圆角叠加和意外横线。
+ */
 .rp-todo {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 6px;
-  align-items: start;
-  padding: 5px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
-  display: grid;
-  grid-template-columns: 13px minmax(0, 1fr);
-  gap: 5px;
-  align-items: start;
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-  color: var(--fg-dim);
-  min-width: 0;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 2px 16px minmax(0, 1fr) auto;
+  column-gap: 8px;
   align-items: start;
   padding: 2px 0;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  min-width: 0;
+}
+
+/* 运行状态：行内独立标记，顶部/底部各留 6px；选中态不复用这条线。 */
+.rp-running-mark {
+  display: block;
+  width: 2px;
+  min-width: 2px;
+  min-height: 8px;
+  align-self: stretch;
+  margin-block: 6px;
+  border-radius: var(--r-full);
+  background: transparent;
+}
+
+.rp-todo.active .rp-running-mark {
+  background: var(--accent);
 }
 
 /* 勾选框：一个真方框 */
 .rp-box {
-  color: var(--fg-mute);
-  text-align: center;
-  line-height: inherit;
-  color: var(--fg-mute);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
   border: 1px solid var(--border-str);
   border-radius: 2px;
   background: var(--bg-2);
   color: transparent;
   font-size: 9px;
   line-height: 1;
+  grid-column: 2;
   flex: none;
 }
 
+.rp-todo .rp-text {
+  grid-column: 3;
+  min-width: 0;
+}
+
+.rp-todo .rp-state {
+  grid-column: 4;
+  min-width: max-content;
+}
+
 .rp-todo.done .rp-box {
-  color: var(--ok);
-  color: var(--ok);
   border-color: var(--ok);
   background: var(--ok);
   color: #0b1f16;
   font-weight: 700;
 }
 
+/* 受阻（方案 7.1）：只有数据真的标了 blocked 才显示，不把“跑得久”推断成受阻 */
+.rp-todo.blocked .rp-box {
+  border-color: var(--warn);
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.rp-todo.blocked .rp-text {
+  color: var(--fg-mute);
+}
+
+.rp-state.blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--warn);
+}
+
 .rp-v.warn {
   color: var(--warn);
   color: var(--warn);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   只读文件预览（方案 5.2 / 5.3）
+
+   与浏览器详情占同一块区域。原生网页视图由主进程 setVisible 隐藏，
+   这里只管 DOM 与排版。
+   ══════════════════════════════════════════════════════════════ */
+.fp {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.fp-head > .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.fp-head .spacer {
+  flex: 1;
+}
+
+.fp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.fp-line-no {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+
+.fp-size {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.fp-act {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-mute);
+}
+
+.fp-act:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 用 plus 旋转成关闭叉（与删除通知同一套做法） */
+.fp-x {
+  transform: rotate(45deg);
+}
+
+.fp-path {
+  padding: 2px var(--sp-2) 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fp-code {
+  margin: 0;
+  padding: 0 0 var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 18px;
+}
+
+.fp-row {
+  display: flex;
+}
+
+.fp-gutter {
+  flex: none;
+  width: 46px;
+  padding-right: var(--sp-2);
+  text-align: right;
+  color: var(--fg-mute);
+  opacity: 0.55;
+  user-select: none;
+}
+
+.fp-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg-dim);
+}
+
+.fp-note {
+  padding: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.fp-note.err {
+  color: var(--err);
+}
+
+.fp-path-line {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  word-break: break-all;
+}
+
+.fp-image {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-3);
+}
+
+.fp-image img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   额度 / 上下文的主值布局（方案 7.2、7.3）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 额度主值：本月已用 */
+.rp-quota-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 3px 0 4px;
+}
+
+.rp-quota-main-label {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 推算值徽标：明确标出来源，不伪装成官方额度 */
+.rp-quota-est {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+/* 上下文主值：上下文 42% ... 84k / 200k */
+.rp-ctx-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: 4px;
+}
+
+/* 详情折叠（阈值 / 保留量 / 预留 token / 累计花费） */
+.rp-details-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rp-details-toggle:hover {
+  color: var(--fg-dim);
+}
+
+.rp-details-toggle .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+
+.rp-details-toggle .chev.on {
+  transform: rotate(90deg);
+}
+
+.rp-details {
+  margin-top: 2px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   子代理详情（右栏，与文件预览同一区域）
+   ══════════════════════════════════════════════════════════════ */
+.sp {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.sp-head .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.sp-head .spacer {
+  flex: 1;
+}
+
+.sp-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.sp-state {
+  flex: none;
+  font-size: var(--fs-xs);
+}
+
+.sp-state.running,
+.sp-state.starting {
+  color: var(--accent);
+}
+
+.sp-state.done {
+  color: var(--ok);
+}
+
+.sp-state.error {
+  color: var(--err);
+}
+
+.sp-meta {
+  display: flex;
+  gap: 4px;
+  padding: 2px var(--sp-2) 4px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sp-err {
+  color: var(--err);
+}
+
+.sp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-2) var(--sp-3);
+}
+
+.sp-note {
+  padding: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.sp-msg {
+  margin-top: var(--sp-2);
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--border-str);
+}
+
+.sp-msg.user {
+  border-left-color: var(--accent-line);
+}
+
+.sp-role {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.sp-think {
+  margin: 2px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.sp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.sp-tool {
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.sp-tool[data-state='error'] {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.sp-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-2);
+  border-top: 1px solid var(--border);
 }

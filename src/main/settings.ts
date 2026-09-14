@@ -84,7 +84,13 @@ const DEFAULTS: AppSettings = {
   toolOrder: [],
   toolHidden: [],
   toolHeights: {},
-  // 工具详情默认收起（见 AppSettings.toolDetail 的注释）
+  /*
+   * 运行中的工具调用是否**自动展开**详情。
+   *
+   * 默认 false（N03）：工具调用只留一行，开始 / 增量输出 / 结束都不自动展开。
+   * 这是一个**显式偏好** —— 只有用户在设置里主动打开才会自动展开，
+   * 具体见 AppSettings.toolDetail 的注释与下面的迁移规则。
+   */
   toolDetail: false,
   // 0 = 用设计默认宽度（见 AppSettings 的注释）
   streamWidth: 0,
@@ -96,6 +102,10 @@ const DEFAULTS: AppSettings = {
    * 可见的（见 AppSettings.sendKey 的注释）。
    */
   sendKey: 'auto',
+  /* 回复详细程度：默认 standard（与改动前行为一致） */
+  responseDetail: 'standard',
+  /* 密度：默认 standard（与改动前观感一致） */
+  density: 'standard',
   // 声音提示默认关（见 SoundSettings 注释）
   sound: defaultSound()
 }
@@ -265,12 +275,36 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolOrder = normalizeToolOrder(cached.toolOrder)
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
     cached.toolHeights = normalizeHeights(cached.toolHeights)
-    cached.toolDetail = cached.toolDetail === true
+    /*
+     * toolDetail 的迁移历史（见 AppSettings.toolDetail 的注释）：
+     *   v1  「已结束的能不能点开」—— 旧配置里的 false 只是默认值；
+     *   v2  改成「运行中是否自动展开」，迁移时把老配置一律升为 true；
+     *   v3（N03）默认值再改为 **收起**，且只有显式开关（toolDetailExplicit）
+     *       才算用户偏好。v2 迁移强制写入的 true 是默认值、不是偏好，
+     *       在 v3 里同样被重置 —— 否则升级后又会「自动展开干扰」。
+     *   规则是幂等的：没有显式偏好的配置每次都归到 false。
+     */
+    if (cached.toolDetailExplicit !== true) {
+      cached.toolDetail = false
+    } else {
+      // 显式偏好：非 true 一律当关（含缺失与脏值）
+      cached.toolDetail = cached.toolDetail === true
+    }
     cached.streamWidth = clampStreamWidth(cached.streamWidth)
     cached.autonomous = cached.autonomous === true
     // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
     cached.sendKey =
       cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'
+    // 回复详细程度：只认三个已知值，脏值 / 缺失回落到 standard
+    cached.responseDetail =
+      cached.responseDetail === 'brief' || cached.responseDetail === 'detailed'
+        ? cached.responseDetail
+        : 'standard'
+    // 密度：只认三个已知值，脏值 / 缺失回落到 standard
+    cached.density =
+      cached.density === 'compact' || cached.density === 'comfortable'
+        ? cached.density
+        : 'standard'
     cached.sound = sanitizeSound(cached.sound)
   } catch {
     cached = { ...DEFAULTS }

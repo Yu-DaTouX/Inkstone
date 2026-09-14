@@ -14,6 +14,9 @@ build/*
 release/
 *.tsbuildinfo
 
+# 录屏中间帧；保留最终 GIF 与审阅截图
+docs/design/preview/live/frame-*.png
+
 # ---- 字体全量文件（体积大、可从公开源重新获取，见 docs/design/font-test/README.md）----
 *.ttf
 *.otf

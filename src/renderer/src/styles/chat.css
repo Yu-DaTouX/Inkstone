@@ -167,6 +167,7 @@
    展开时是一块可滚的正文（等宽感、比正文淡一档）——
    推理是「旁白」，不该和回答抢注意力。 */
 .reason {
+  position: relative;
   margin-bottom: var(--sp-2);
   border-left: 2px solid var(--border-str);
   /* 推理中用强调色细线，一眼能看出「它在想」 */
@@ -228,18 +229,28 @@
   font-style: italic;
 }
 
+/*
+ * 推理窗口（方案 4.4，2026-09 改版）。
+ *
+ * 从「随内容自适应 + max-height」改成**固定高度 + 可拖**：
+ *   · 默认约 3 行（58px），超出内部滚动 —— 长推理不会再把回答顶走，
+ *     短推理也不会留一段空白；
+ *   · 高度可拖，落盘在 localStorage（按窗口全局记忆，会话间复用）；
+ *   · 展开/收起用容器高度过渡（160–220ms），**保留挂载**：
+ *     先把尾字显示完再收起，不会因卸载把最后一段内容丢掉。
+ */
+.reason-body-wrap {
+  height: 0;
+  overflow: hidden;
+  transition: height 180ms var(--ease);
+}
+
+.reason-body-wrap.open {
+  height: var(--reason-h, 58px);
+}
+
 .reason-body {
-  /*
-   * 高度**跟着内容走**，只给上限（方案 4.2：「推理默认内容自适应，
-   * 并设置高度上限」）。
-   *
-   * ⚠️ 曾经写成固定的 `height: 25vh`：实测一段 4 行推理只占 80px，
-   *    窗口却有 227px，下面空了 2/3。用 max-height 就够了 ——
-   *    内容短时窗口贴着内容；内容一旦超过上限就不再长高、改为内部滚动，
-   *    所以「随内容长高把下面的回答顶走」最多顶到上限那一步。
-   * 上限取 min(25vh, 420px)：跟随窗口大小，但超高窗口下旁白不该占掉半屏。
-   */
-  max-height: min(25vh, 420px);
+  height: 100%;
   overflow-y: auto;
   /* 滚动条一出现不挤窄内容（否则会冒横向滚动条） */
   scrollbar-gutter: stable;
@@ -250,12 +261,78 @@
   border-radius: var(--r-md);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
-  line-height: var(--lh-base);
+  line-height: 18px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
   /* 逐字输出时每帧都在长，别让浏览器做重排抖动 */
   contain: content;
+}
+
+/* 新增尾部 140ms 淡入：只作用在最后一个 span，稳定文本不重复动画 */
+.reason-tail {
+  animation: reason-tail-in 140ms var(--ease);
+}
+
+@keyframes reason-tail-in {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 上滚暂停跟随后的「回到最新」入口 */
+.reason-jump {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: 10px;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.reason-jump:hover {
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
+/* 底部把手：拖动改高度，双击复位 */
+.reason-grip {
+  height: 5px;
+  margin-top: 2px;
+  cursor: ns-resize;
+  border-radius: var(--r-sm);
+}
+
+.reason-grip:hover,
+.reason-grip:focus-visible {
+  background: var(--accent-line);
+}
+
+.reason.resizing {
+  user-select: none;
+}
+
+/* 系统要求减少动态效果：不做高度过渡与尾部动画（方案 4.4） */
+@media (prefers-reduced-motion: reduce) {
+  .reason-body-wrap {
+    transition: none;
+  }
+
+  .reason-tail {
+    /*
+     * 用 1ms 而不是 `animation: none`：
+     * usePresence 等地方是按**时长**算延迟卸载的，整个删掉动画会出现
+     * 「CSS 不动 / JS 还在等」的空窗（motion.css 里同一套约定）。
+     */
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
 }
 
 /* 61. 工具调用 —— Codex 风格（用户要求，附截图）
@@ -404,6 +481,49 @@
   font-size: var(--fs-xs);
 }
 
+.trow-badge.warn {
+  flex: none;
+  color: var(--warn);
+  font-size: var(--fs-xs);
+}
+
+/*
+ * 运行中的「扫光」（方案 4.1）。
+ *
+ * 设计规范原本要求「无渐变」；本轮修订为：**静态界面不用装饰渐变，
+ * 只有运行状态允许低对比度扫光** —— 它是状态反馈，不是装饰。
+ * 不使用动画作为唯一状态信息：图标、动词与 spinner 同时在表达「在跑」。
+ */
+.trow[data-state='running'] .trow-head,
+.trow[data-state='pending'] .trow-head {
+  position: relative;
+  overflow: hidden;
+}
+
+.trow[data-state='running'] .trow-head::after,
+.trow[data-state='pending'] .trow-head::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
+  transform: translateX(-100%);
+  animation: trow-sweep 1.9s linear infinite;
+}
+
+@keyframes trow-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trow[data-state='running'] .trow-head::after,
+  .trow[data-state='pending'] .trow-head::after {
+    display: none;
+  }
+}
+
 .trow-head .chev {
   flex: none;
   opacity: 0.5;
@@ -418,12 +538,83 @@
   padding: 4px 0 4px 18px;
 }
 
+/*
+ * 文件改动详情（方案 4.1 / 5.3 的「可查看」阶段）。
+ * 与终端窗口不同，这里**跟随主题**：它不是终端，是一次改动。
+ */
+.fd {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.fd-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  user-select: none;
+}
+
+.fd-head .ico {
+  flex: none;
+}
+
+.fd-head .spacer {
+  flex: 1;
+}
+
+.fd-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+}
+
+.fd-state {
+  flex: none;
+}
+
+.fd-state.ok {
+  color: var(--ok);
+}
+
+.fd-state.err {
+  color: var(--err);
+}
+
+.fd-state.run {
+  color: var(--accent);
+}
+
+.fd-note {
+  padding: 4px var(--sp-2);
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: var(--fs-xs);
+}
+
+.fd-body {
+  padding: var(--sp-2);
+}
+
+/* 普通工具结果：不套外壳，只给一点上间距与正文分开 */
+.trd {
+  padding-top: var(--sp-1);
+}
+
 /* ---- 终端窗口（工具调用详情；用户要求「更好的终端实现 + 调整窗口大小」）----
-   设计要点：
+   设计要点（方案 4.3 改版）：
    · 无论浅色/深色主题，终端都是**深色底**（终端本来就该是深色），
    内部的 diff / 输出都覆盖成深色底上的浅色字，不与主题令牌混用。
-   · 标题栏 = 窗口灯 + 工具名 + 命令预览 + 状态胶囊 + 耗时 + 复制/展开。
-   · 正文 = prompt 行（`$ 命令`）+ 输出，等宽、可滚。
+   · 标题栏 = 工具名 + 耗时 + 复制/展开（**不再有窗口灯、命令预览、状态胶囊** ——
+   装饰灯与重复的状态/目标只会占宽度）。
+   · 正文 = prompt 行（`$ 命令`）+ 输出，等宽、可滚，默认只有 ≈3 行高。
    · 三个拖拽把手定位在窗口内（下 / 右 / 右下角），不占布局。 */
 .term {
   position: relative;
@@ -454,32 +645,6 @@
   user-select: none;
 }
 
-.term-lights {
-  display: inline-flex;
-  gap: 4px;
-  margin-right: 2px;
-}
-
-.term-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--r-full);
-  background: #3a3a3a;
-}
-
-/* 窗口灯用低饱和度，既能读出「这是个窗口」又不至于抢眼 */
-.term-lights .term-dot:nth-child(1) {
-  background: #e0605a;
-}
-
-.term-lights .term-dot:nth-child(2) {
-  background: #e0b34a;
-}
-
-.term-lights .term-dot:nth-child(3) {
-  background: #4fb85f;
-}
-
 .term-ico {
   display: inline-flex;
   color: #6f6f6f;
@@ -496,44 +661,8 @@
   font-weight: 500;
 }
 
-.term-cmd {
-  min-width: 0;
-  max-width: 36%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #7f7f7f;
-  font-family: var(--font-mono);
-}
-
 .term-bar .spacer {
   flex: 1;
-}
-
-.term-pill {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: var(--r-full);
-  font-size: 10px;
-  letter-spacing: 0.02em;
-}
-
-.term-pill.ok {
-  color: #7ee787;
-  background: rgba(126, 231, 135, 0.12);
-}
-
-.term-pill.err {
-  color: #ff7b72;
-  background: rgba(255, 123, 114, 0.12);
-}
-
-.term-pill.running {
-  color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .term-time {
@@ -784,10 +913,25 @@
 .md a {
   color: var(--accent);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .md a:hover {
   text-decoration: underline;
+}
+
+/*
+ * 被拒绝的协议（javascript:/data:…）：不要看起来像可点的链接，
+ * 否则用户会反复点它并以为界面坏了（方案 5.2）。
+ */
+.md a.md-link.blocked {
+  color: var(--fg-mute);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.md a.md-link.blocked:hover {
+  text-decoration: line-through;
 }
 
 .md hr {
@@ -985,6 +1129,48 @@
    以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
    ══════════════════════════════════════════════════════════════ */
 
+/* 当前项目：空状态里的次级信息（不抢主标题） */
+.empty-project {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: min(420px, 100%);
+  margin-bottom: var(--sp-4);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.empty-project .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.empty-project-label {
+  flex: none;
+}
+
+.empty-project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+
+.empty-project-pick {
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.empty-project-pick:hover {
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
 /* 三条建议：把空白变成入口 */
 .empty-suggest {
   display: flex;
@@ -1164,14 +1350,47 @@
   padding-bottom: var(--sp-6);
 }
 
-.todo {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  gap: 6px;
-  align-items: start;
-  padding: 3px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
+/*
+ * 这里曾有一条全局 `.todo { display: grid; grid-template-columns: 12px minmax(0, 1fr) }`
+ * —— 旧任务面板的遗留样式，组件早就不再用它（现在是 .rp-todo）。
+ * 它唯一的实际效果是**污染引导层**：Onboarding 的检查行拿 `todo` 当状态类，
+ * 于是被改成两列 grid，第 2 栏「模型接入」的两个按钮被挤到 21px 宽、
+ * 文字截断、并压在说明文字上（N20 用户报的「按钮错位」）。
+ * 现在引导行用 ob-ok / ob-todo，两边都不再依赖这个通用类名。
+ */
+
+/* 文件改动：状态标记与逐行 patch（方案 5.3） */
+.fd-status {
+  flex: none;
+  color: var(--fg-mute);
   font-size: var(--fs-xs);
-  line-height: var(--lh-tight);
+}
+
+.fd-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-stat.add {
+  color: var(--ok);
+}
+
+.fd-stat.del {
+  color: var(--err);
+}
+
+.fd-patch {
+  margin: 0;
+  max-height: min(40vh, 360px);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--fg-dim);
+  background: var(--bg-0);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
 }

@@ -48,7 +48,10 @@
       20000
     )
     await sleep(900)
-    for (const h of qa('.proj-head')) if (h.classList.contains('collapsed')) click(h)
+    /* 项目行现在拆成「切项目」+「折叠」（N05）：展开要点折叠按钮 */
+    for (const h of qa('[data-testid="rail-project-fold"]')) {
+      if (h.getAttribute('aria-expanded') === 'false') click(h)
+    }
     await sleep(600)
 
     log('=== 1. 会话栏不再有「分支」动作按钮 ===')

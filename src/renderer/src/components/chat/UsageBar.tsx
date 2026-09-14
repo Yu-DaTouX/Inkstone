@@ -64,6 +64,17 @@ export function UsageBar() {
   const hit = cacheHitRate(u)
   const hitLabel = formatHitRate(hit)
 
+  /*
+   * 本轮是否已经结算。
+   *
+   * ⚠️ 流式期间 `u` 可能来自**上一轮**（`last` 是在全部消息里倒着找）。
+   *    设计要的是「流式期间没有用量就显示待结算，不拿旧轮次比例代替」——
+   *    所以只有当前最后一条助手消息自带 usage 时，才把比例当真。
+   */
+  const lastMsg = messages[messages.length - 1]
+  const settled = !streaming || (lastMsg?.role === 'assistant' && hasNumbers(lastMsg.usage))
+  const cacheExtra = settled ? (hitLabel ?? (u ? '—' : undefined)) : t('tok.settling')
+
   const liveSpeed = streaming && (u?.output ?? 0) > 0 ? last?.speed : undefined
   const doneSpeed = !streaming ? last?.speed : undefined
   const speed = liveSpeed ?? doneSpeed
@@ -120,11 +131,11 @@ export function UsageBar() {
           label={t('tok.cache')}
           value={u?.cacheRead ? fmtTok(u.cacheRead) : '—'}
           unit={u?.cacheRead ? t('tok.unit') : undefined}
-          extra={hitLabel ?? undefined}
+          extra={cacheExtra}
           title={t('tok.cacheTip', {
             read: fmtTok(u?.cacheRead ?? 0),
             write: fmtTok(u?.cacheWrite ?? 0),
-            hit: hit === null ? '—' : hit.toFixed(1)
+            hit: !settled ? t('tok.settling') : hit === null ? '—' : hit.toFixed(2)
           })}
           dim={!u?.cacheRead || streaming}
         />

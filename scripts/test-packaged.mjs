@@ -95,15 +95,24 @@ console.log(C.dim(`  隔离目录 ${sandbox}`))
    而且 Windows GUI 应用本来就不保证有可用控制台。 */
 const delay = 9000
 const outFile = join(sandbox, 'probe.txt')
+/*
+ * ELECTRON_RUN_AS_NODE 必须剥掉。它本来是给「用 Electron 自带 Node 跑 pi」用的
+ * （见 src/main/protocol.ts），但不该传给 GUI 进程：从 Electron 应用内嵌的终端
+ * （或任何带这个变量的 shell）跑验收时，它会让 砚.exe 退化成纯 Node ——
+ * 无窗口、无 userData、静默 exit 0，看起来完全像「打包后启动失败」。
+ * 同样的处理见 scripts/review-ui.mjs。
+ */
+const probeEnv = {
+  ...process.env,
+  ...dirs,
+  YAN_PROBE: join(root, 'scripts', 'probe', 'packaged.js'),
+  YAN_PROBE_DELAY: String(delay),
+  YAN_PROBE_OUT: outFile
+}
+delete probeEnv.ELECTRON_RUN_AS_NODE
 const child = spawn(exePath, [], {
   cwd: root,
-  env: {
-    ...process.env,
-    ...dirs,
-    YAN_PROBE: join(root, 'scripts', 'probe', 'packaged.js'),
-    YAN_PROBE_DELAY: String(delay),
-    YAN_PROBE_OUT: outFile
-  },
+  env: probeEnv,
   windowsHide: true
 })
 

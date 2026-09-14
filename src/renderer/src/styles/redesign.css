@@ -86,7 +86,8 @@
 
 /* 7. 消息流：给助手消息一点呼吸，用户气泡更立体 */
 .msg {
-  margin-bottom: var(--sp-6);
+  /* 消息间距走密度变量（方案 A1）；standard 档 = 原来的 --sp-6 */
+  margin-bottom: var(--d-message-gap);
 }
 .msg-label {
   margin-bottom: var(--sp-2);
@@ -921,7 +922,8 @@
 .rp-sec {
   /* 工具之间不再使用“分割标题/分割线”，内容靠留白成组。 */
   border-bottom: 0;
-  padding-top: 3px;
+  /* 密度变量（方案 A1）；standard 档 = 原来的 3px */
+  padding-top: var(--d-section-gap);
 }
 .rp-sec-head {
   display: flex;
@@ -966,8 +968,17 @@
   right: 0;
   bottom: calc(100% + 6px);
   z-index: 40;
-  width: 320px;
-  max-height: 400px;
+  /*
+   * 宽度跟着窗口收：窄窗口下不越界，普通窗口给到 360px
+   *（长模型名更能完整显示，而不是早早省略）。
+   */
+  width: min(360px, calc(100vw - 24px));
+  /*
+   * 高度（N08）：打开时由 JS 按「触发器上方真实可用空间」写成 inline
+   * max-height；这里的值是回退，也是普通窗口的上限。
+   * 旧值 400px —— 900px 高的窗口里只放得下 5 行多（用户报的「五个半」）。
+   */
+  max-height: min(560px, calc(100vh - 120px));
   display: flex;
   flex-direction: column;
   background: var(--bg-1);
@@ -1114,10 +1125,9 @@
       → ③④ 共用同一个入口：折叠模块的头部（就在任务列表下面）
    =================================================================== */
 
-/* 当前任务那一行：左边加一道强调条 + 底色，一眼能认出「现在做的是这条」 */
+/* 当前任务行：底色与圆角；运行标记由行内槽位单独渲染 */
 .rp-todo.active {
   background: var(--bg-2);
-  box-shadow: inset 2px 0 0 var(--accent);
   border-radius: var(--r-xs);
 }
 .rp-now-spin {

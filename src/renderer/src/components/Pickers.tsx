@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -29,9 +29,23 @@ export function ModelThinkingPicker() {
   const levels = useStore((s) => s.thinkingLevels)
   const setModel = useStore((s) => s.setModel)
   const setThinking = useStore((s) => s.setThinking)
+  /* 回复详细程度（方案 3.1）：与推理强度分开的两个维度 */
+  const patchSettings = useStore((s) => s.patchSettings)
+  const responseDetail = useStore((s) => s.settings?.responseDetail ?? 'standard')
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  /**
+   * 菜单最大高度（px）—— 按**触发器上方的真实可用空间**算（N08）。
+   *
+   * 为什么不只用 CSS：菜单是向上弹的（`bottom: 100%`），固定 `max-height`
+   * 在矮窗口里会把面板顶出窗口上沿（用户报的「看不到全部模型」）。
+   * 打开时量一次 `top` 再算，窗口多矮都不会越界；普通 900px 高窗口
+   * 给到 560px，列表能一次看到 8 行以上。
+   */
+  const [maxH, setMaxH] = useState(0)
+  /** 键盘高亮的下标（对应扁平后的模型列表）；-1 = 没在用键盘 */
+  const [cursor, setCursor] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
 
   const cur = session?.model
@@ -60,6 +74,28 @@ export function ModelThinkingPicker() {
 
   useEffect(() => {
     if (open) setQuery('')
+  }, [open])
+
+  /*
+   * 打开时量上方的可用高度（含窗口缩放后的 CSS 像素）。
+   * 用 useLayoutEffect：要在浏览器绘制前定下 max-height，
+   * 否则会先渲染一帧越界高度再跳一下。
+   */
+  useLayoutEffect(() => {
+    if (!open) {
+      setMaxH(0)
+      return
+    }
+    const el = box.current
+    if (!el) return
+    const measure = (): void => {
+      const r = el.getBoundingClientRect()
+      /* 上方留 20px 安全边距（菜单本身还要往上 6px 的间隔），封顶 560px */
+      setMaxH(Math.max(200, Math.min(560, Math.floor(r.top - 26))))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
   }, [open])
 
   /**
@@ -104,10 +140,61 @@ export function ModelThinkingPicker() {
 
   const hasLevels = levels.length > 1
 
+  /** 分组扁平化 —— 键盘上下走的是这个顺序（与视觉顺序一致） */
+  const flat = groups.flatMap(([, list]) => list)
+  const indexOf = new Map(flat.map((m, i) => [`${m.provider}|${m.id}`, i]))
+
   /** 展开时把当前模型滚进视野 */
   const listRef = (el: HTMLDivElement | null): void => {
     if (!el || !open) return
     el.querySelector<HTMLElement>('[data-current="1"]')?.scrollIntoView({ block: 'center' })
+  }
+
+  /**
+   * 键盘高亮（N08：鼠标与键盘都能选中）。
+   *
+   * 打开、搜索结果变化、以及点选某个模型之后都重算一次：
+   * 高亮始终落在当前模型上（找不到就第一项），用户一进来就能直接上下走。
+   */
+  const cursorKey = cursor >= 0 ? `${flat[cursor]?.provider}|${flat[cursor]?.id}` : ''
+  useEffect(() => {
+    if (!open) return
+    const i = flat.findIndex((m) => m.provider === cur.provider && m.id === cur.id)
+    setCursor(i >= 0 ? i : flat.length > 0 ? 0 : -1)
+    // 依赖只取「列表变了没 / 当前模型变了没」，平铺数组每次新建不能用引用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, flat.length, query, cur.provider, cur.id])
+
+  /** 高亮项滚进视野（键盘走到底时列表要跟着动） */
+  const cursorEl = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    cursorEl.current?.scrollIntoView({ block: 'nearest' })
+  }, [open, cursorKey])
+
+  /**
+   * 搜索框的键盘导航。
+   *
+   * Enter 只「接受当前高亮」，不发消息、也不关面板 —— 用户可能接着调
+   * 思考强度而模型已经切好了。⌘/IME 组合期间完全不打岔，选词用得上的
+   * Enter / 方向键必须留给输入法。
+   */
+  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (flat.length === 0) return
+      const base = cursor < 0 ? -1 : cursor
+      const next = e.key === 'ArrowDown' ? base + 1 : base - 1
+      setCursor(Math.max(0, Math.min(flat.length - 1, next)))
+      return
+    }
+    if (e.key === 'Enter') {
+      const m = cursor >= 0 ? flat[cursor] : undefined
+      if (!m) return
+      e.preventDefault()
+      void setModel(m.provider, m.id)
+    }
   }
 
   return (
@@ -129,12 +216,12 @@ export function ModelThinkingPicker() {
       </button>
 
       {open ? (
-        <div className="mt-pop" data-testid="model-menu">
+        <div className="mt-pop" data-testid="model-menu" style={maxH ? { maxHeight: maxH } : undefined}>
           {/* ---- 上半：档位 ---- */}
           {hasLevels ? (
             <div className="mt-head">
               <div className="mt-head-row">
-                <span className="mt-head-title">{t('picker.think')}</span>
+                <span className="mt-head-title" title={t('picker.thinkDesc')}>{t('picker.think')}</span>
                 <span className="spacer" />
                 <span className="mt-head-level" data-testid="thinking-current">
                   {thinkLabel(level)}
@@ -161,18 +248,51 @@ export function ModelThinkingPicker() {
                 ))}
               </div>
 
-              <div className="mt-hint">{t('picker.thinkDesc')}</div>
+              {/* 说明只在空间充裕时占位：矮窗口把高度让给模型列表（N08） */}
+              {maxH > 520 ? <div className="mt-hint">{t('picker.thinkDesc')}</div> : null}
             </div>
           ) : null}
 
+          {/*
+           * ---- 回复详细程度（方案 3.1）----
+           * 与推理强度是**两件事**：一个管「想多深」，一个管「讲多细」。
+           * 放在同一个菜单里，因为它们是同一个决定（要多少篇幅）。
+           */}
+          <div className="mt-head">
+            <div className="mt-head-row">
+              <span className="mt-head-title" title={t('picker.detailDesc')}>{t('picker.detail')}</span>
+              <span className="spacer" />
+              <span className="mt-head-level" data-testid="detail-current">
+                {detailLabel(responseDetail, t)}
+              </span>
+            </div>
+            <div className="mt-stops" data-testid="detail-stops">
+              {(['brief', 'standard', 'detailed'] as const).map((d, i) => (
+                <button
+                  key={d}
+                  style={{ '--i': i } as React.CSSProperties}
+                  className={`mt-stop ${d === responseDetail ? 'on' : ''}`}
+                  onClick={() => void patchSettings({ responseDetail: d })}
+                  disabled={busy}
+                  data-testid={`detail-${d}`}
+                  data-on={d === responseDetail ? '1' : '0'}
+                >
+                  {detailLabel(d, t)}
+                </button>
+              ))}
+            </div>
+            {maxH > 520 ? <div className="mt-hint">{t('picker.detailDesc')}</div> : null}
+          </div>
           {/* ---- 下半：模型列表 ---- */}
           <div className="mt-search">
             <Icon name="search" size={12} />
             <input
-              autoFocus={!hasLevels}
+              autoFocus
               value={query}
               placeholder={t('picker.searchModel')}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onSearchKey}
+              data-testid="model-search"
             />
             <span className="mt-count">{models.length}</span>
           </div>
@@ -194,14 +314,18 @@ export function ModelThinkingPicker() {
                     <div className="mt-group-head">{provider}</div>
                     {list.map((m) => {
                       const on = m.provider === cur.provider && m.id === cur.id
+                      const idx = indexOf.get(`${m.provider}|${m.id}`) ?? -1
+                      const isCursor = idx === cursor
                       const i = Math.min(seq++, 12)
                       return (
                         <button
                           key={`${m.provider}|${m.id}`}
+                          ref={isCursor ? cursorEl : undefined}
                           style={{ '--i': i } as React.CSSProperties}
-                          className={`mt-item ${on ? 'sel' : ''}`}
+                          className={`mt-item ${on ? 'sel' : ''} ${isCursor ? 'cur' : ''}`}
                           title={m.id}
                           data-current={on ? '1' : '0'}
+                          data-cursor={isCursor ? '1' : '0'}
                           onClick={() => {
                             void setModel(m.provider, m.id)
                             // 不关面板 —— 用户可能接着调强度
@@ -222,4 +346,16 @@ export function ModelThinkingPicker() {
       ) : null}
     </div>
   )
+}
+
+/**
+ * 回复详细程度的中文名（方案 3.1）。
+ *
+ * 三档都说清「它对输出做了什么」，不用「简短 / 正常 / 啰嗦」这类
+ * 带评价的词 —— 用户选的是篇幅，不是质量。
+ */
+function detailLabel(v: string, t: (k: 'detail.brief' | 'detail.standard' | 'detail.detailed') => string): string {
+  if (v === 'brief') return t('detail.brief')
+  if (v === 'detailed') return t('detail.detailed')
+  return t('detail.standard')
 }

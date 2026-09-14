@@ -12,6 +12,13 @@
 .rail-body {
   padding: 0 6px 8px;
   scrollbar-gutter: auto;
+  /*
+   * 作为**容器查询**的上下文（N13）。
+   * 用容器查询而不是媒体查询：栏宽是用户拖出来（或设置里存着）的，
+   * 与窗口宽度无关 —— 宽屏上把左栏拖到 210px 一样会遇到同样的问题。
+   */
+  container-type: inline-size;
+  container-name: railbody;
 }
 .rail-section {
   margin-top: 6px;
@@ -46,6 +53,14 @@
 .srow-menu-path {
   font-family: var(--font-mono);
   letter-spacing: normal;
+}
+
+/* 会话菜单里的「最后活动」（N13）：窄栏把行内时间收起来之后，
+   这个信息仍然可发现 —— 不是删掉，只是换了个位置。 */
+.srow-menu-time {
+  padding: 4px var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
 }
 
 /* 左栏整体略收紧字距，跟正文的视觉密度对齐 */
@@ -135,6 +150,33 @@
   color: var(--warn);
   font-weight: 700;
 }
+
+/* 失败（N12）：与「等待输入」分开 —— 一个是需要你回答，一个是已经挂了 */
+.session-status.failed {
+  color: var(--err);
+}
+
+/* 项目行上的运行汇总（N12）：这个项目里有几个会话在跑 */
+.proj-running {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分组标题上的运行汇总（N12） */
+.proj-group-running {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 .rail-pins {
   margin-bottom: 6px;
   padding-bottom: 6px;
@@ -195,6 +237,174 @@
 .rail-delete-dialog {
   width: min(430px, calc(100vw - 32px));
 }
+/*
+ * 确认框按钮：普通小圆角矩形，高度 30px，按内容撑宽、文字不换行（方案 15.3）。
+ * 曾经「撤销删除」直接借用 `.send`（输入框发送按钮的圆形专用样式），
+ * 四个中文字被挤进圆里换行。这里只用尺寸类修正，不改 .btn 本身。
+ */
+.rail-delete-dialog .modal-foot .btn {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  white-space: nowrap;
+}
+
+/*
+ * 删除成功后的轻量通知（方案 15.2）：非模态、不圈定焦点、可撤销。
+ * 放在左栏底部（原生网页视图不会覆盖这里）。
+ */
+.rail-trash {
+  display: flex;
+  /* 顶部对齐：按钮不再被拉伸成与多行文案等高（窄栏下会变成细长竖条）。 */
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 6px 6px;
+  padding: 5px 6px 5px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.rail-trash > .ico {
+  flex: none;
+  color: var(--fg-mute);
+  /* 与首行文字视觉居中（图标行高比文字小） */
+  margin-top: 2px;
+}
+
+.rail-trash .spacer {
+  flex: 1;
+}
+
+/*
+ * 文案区：窄栏下最多两行，超出用省略号截断。
+ * 不用 flex 行布局 —— 那样「提示 + 名称」会互相挤压，
+ * 名称只剩几像素后就轮到按钮被压成竖条。
+ */
+.rail-trash-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.rail-trash-name {
+  display: inline;
+  color: var(--fg-mute);
+  overflow-wrap: anywhere;
+}
+
+.rail-trash-err {
+  display: block;
+  color: var(--err);
+  overflow-wrap: anywhere;
+}
+
+.rail-trash .btn {
+  flex: none;
+  white-space: nowrap;
+  /* 同上：按钮按自身高度，不被多行文案拉高 */
+  margin-top: 1px;
+}
+
+/* ---- 项目行：切项目 vs 折叠是两个独立动作（N05）---- */
+.proj-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  color: inherit;
+  text-align: left;
+  border-radius: var(--r-xs);
+}
+
+.proj-fold {
+  flex: none;
+  width: 20px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+
+.proj-fold:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.proj-fold .chev {
+  transition: transform var(--dur) var(--ease);
+}
+
+.proj-fold .chev.open {
+  transform: rotate(90deg);
+}
+
+/* 「更多项目（N）」（N17）：默认只展开前 5 个项目 */
+.rail-more-projects {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: calc(100% - 12px);
+  margin: 4px 6px 2px;
+  padding: 4px 4px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.rail-more-projects:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.rail-more-projects .chev {
+  flex: none;
+  transition: transform var(--dur) var(--ease);
+}
+
+.rail-more-projects .chev.on {
+  transform: rotate(90deg);
+}
+
+/* 用 plus 旋转成关闭叉（sprite 里没有独立的 close） */
+.rail-trash-x {
+  transform: rotate(45deg);
+}
+
+/*
+ * 窄栏下的取舍（N13）：标题优先。
+ *
+ * 实测 210px（RAIL_MIN）时，一行里 btoggle(44) + 时间(26) + 状态(16)
+ * 会吃掉 ~86px，中文标题只剩 68px（约四个字）。这里让两类低频内容让位：
+ *   · 相对时间 —— 会话菜单里仍能看到（不是删掉信息）
+ *   · 分支「层级」图标 —— 数字和展开箭头保留，语义不变
+ * 状态槽（运行 / 等待 / 未读）**不动**：那是后台运行状态（N12）的主入口。
+ */
+@container railbody (max-width: 250px) {
+  .srow-time {
+    display: none;
+  }
+
+  .srow-btoggle-ico {
+    display: none;
+  }
+
+  /* 缩进从 12px/级 收到 9px/级、基础 18 → 14：跨四层省下 ~11px 给标题 */
+  .srow-row .srow {
+    padding-left: calc(14px + var(--branch-depth, 0) * 9px);
+  }
+}
+
 .rail-delete-error {
   margin: 0 var(--sp-3) var(--sp-3);
   color: var(--err);
@@ -232,8 +442,10 @@
   height: 100%;
   padding: 6px;
   gap: 4px;
+  /* 项目名称浮层与「全部项目」浮层的定位基准（N14） */
+  position: relative;
 }
-.rail-compact button {
+.rail-compact > button {
   width: 36px;
   height: 32px;
   display: flex;
@@ -242,9 +454,136 @@
   border-radius: 6px;
   color: var(--fg-dim);
 }
-.rail-compact button:hover {
+.rail-compact > button:hover {
   background: var(--bg-2);
   color: var(--fg);
+}
+
+/* ---- mini 栏里的项目文件夹（N14）---- */
+.rail-compact-sep {
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border);
+}
+
+.rail-compact-proj {
+  position: relative;
+}
+
+/* 当前项目：图标用强调色 + 底色（不只是颜色差） */
+.rail-compact-proj.cur {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 该项目里有会话在跑（N12）：一个小圆点，不靠动画 */
+.rail-compact-proj[data-running='1']::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/*
+ * 项目名不常驻（mini 栏只有 48px），悬停 / 键盘聚焦时从右侧浮出。
+ * 为什么要 `:focus-visible`：键盘用户 Tab 到这儿也得知道这是哪个项目，
+ * 而 hover 对键盘不存在。
+ */
+.rail-compact-name {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 200px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+  z-index: 60;
+}
+
+/* 名称浮出：React 状态（data-hover，合成事件可验证）为主，
+   `:hover` / `:focus-visible` 作为兜底（不依赖 JS 时的原生行为）。 */
+.rail-compact-proj[data-hover='1'] .rail-compact-name,
+.rail-compact-proj:hover .rail-compact-name,
+.rail-compact-proj:focus-visible .rail-compact-name {
+  opacity: 1;
+}
+
+/* 「全部项目」浮层：超过前 N 个的项目从这里进（不把 mini 栏撑长） */
+.rail-compact-menu {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 6px;
+  width: 208px;
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.75);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rcm-head {
+  padding: 4px var(--sp-2) 3px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.rcm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.rcm-item:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rcm-item.cur {
+  color: var(--accent);
+}
+
+.rcm-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcm-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -389,15 +728,66 @@
 
 /* ---- 项目行 ---- */
 .proj-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 12px 6px 4px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: .04em;
   text-transform: uppercase;
+  /* 省略号要落在名字 span 上 —— flex 容器上的 text-overflow 不生效 */
+  min-width: 0;
+}
+
+.proj-group-ico {
+  flex: none;
+  opacity: .8;
+}
+
+.proj-group-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.proj-group-heading .spacer {
+  flex: 1;
+}
+
+/* 分组操作菜单按钮：静止时隐形（低频操作，靠菜单或悬停进入），
+   但键盘聚焦时必须显形 —— 不然焦点跑到一个看不见的东西上。 */
+.proj-group-act {
+  flex: none;
+  opacity: 0;
+  padding: 1px 2px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.proj-group-heading:hover .proj-group-act,
+.proj-group-act:focus-visible {
+  opacity: 1;
+}
+.proj-group-act:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.group-rename-input {
+  flex: 1;
+  min-width: 0;
+  /* 分组标题是全大写样式，输入框要保持原名输入的可读性 */
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.rail-group-err {
+  margin: -2px 6px 4px;
+  color: var(--err);
+  font-size: var(--fs-xs);
 }
 
 .proj-head:hover {

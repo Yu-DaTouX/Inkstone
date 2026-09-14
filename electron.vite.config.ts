@@ -20,7 +20,18 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    build: { rollupOptions: { input: { index: resolve('src/preload/index.ts') } } }
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/preload/index.ts') },
+        /*
+         * 输出 **CJS**（.cjs）：主窗口开了 `sandbox: true`，
+         * 而 sandboxed preload **不支持 ESM**（实测：输出 .mjs 时 preload
+         * 整个加载失败，`window.yan` 直接是 undefined，界面空白）。
+         * 改成 CJS 后 sandboxed preload 能正常加载。
+         */
+        output: { format: 'cjs', entryFileNames: '[name].cjs' }
+      }
+    }
   },
   renderer: {
     root: resolve('src/renderer'),

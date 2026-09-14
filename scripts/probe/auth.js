@@ -8,6 +8,8 @@
  *      `commandcode` 凭证、对话正常，界面却显示「0/N 已就绪」）
  *   ③ 写入是**合并**的（配第二个不会弄丢第一个）
  *   ④ 凭证路径可见（用户得知道文件在哪）
+ *   ⑤ ChatGPT 订阅可以**在应用内登录**（src/main/oauth.ts，参数抄自 pi），
+ *      其余订阅制仍然只能跑 `pi → /login` —— 两者在界面上要分得出来
  */
 ;(async () => {
   const out = []
@@ -117,6 +119,28 @@
 
   ok(!!q('.auth-path'), '显示凭证文件路径')
   ok(!!q('[data-testid="auth-recheck"]'), '有「重新检测」按钮')
+
+  /*
+   * 应用内登录：只有 ChatGPT 订阅有按钮，其余订阅制仍然只能给命令提示。
+   *
+   * 隔离环境里 YAN_PI_DIR 是空的，所以这一行必为 missing —— 按钮应该出来。
+   * （openai-codex 的 envVar 是空串，不会被环境变量意外弄成 ready。）
+   */
+  log('=== 3. 应用内登录（ChatGPT 订阅）===')
+  ok(!!q('[data-testid="auth-row-openai-codex"]'), '有 ChatGPT 订阅这一行')
+  ok(
+    typeof window.yan.codexLogin === 'function' && typeof window.yan.codexLoginCancel === 'function',
+    'IPC 暴露了 codexLogin / codexLoginCancel'
+  )
+  /*
+   * test:live 的沙盒里 YAN_PI_DIR 是空的 → 这一行必为 missing → 按钮应该出来。
+   * （openai-codex 的 envVar 是空串，不会被宿主的环境变量意外弄成 ready。）
+   */
+  ok(!!q('[data-testid="auth-login-openai-codex"]'), '未登录时给「在本应用内登录」按钮')
+  ok(
+    !q('[data-testid="auth-login-anthropic"]'),
+    '其余订阅制（Claude）不给登录按钮 —— 只给 pi → /login 提示'
+  )
 
   /* 展开一个输入框，确认是 password 类型（不明文显示 key） */
   const first = setBtns[0]

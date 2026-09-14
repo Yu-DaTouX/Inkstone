@@ -734,7 +734,7 @@ html[data-theme='light'] {
    对应三件东西：
    · .rp-meter        进度条（**总是**显示，不再只在 ≥4 个任务时）
    · .rp-todo-now     当前正在做的那条（spinner + 强调色）
-   · .rp-todo.active  列表里同一条的左条高亮 */
+   · .rp-running-mark  列表里同一条的独立运行标记 */
 
 /* ---- 进度条 ---- */
 .rp-meter {
@@ -825,7 +825,7 @@ html[data-theme='light'] {
   animation-delay: calc(var(--i, 0) * 24ms);
 }
 
-/* 当前条目：左条强调 + 名字提亮 */
+/* 当前条目：运行标记 + 名字提亮 */
 .rp-todo.active {
   position: relative;
   background: var(--bg-2);
@@ -1088,6 +1088,17 @@ html[data-theme='light'] .rp-todo-now {
   opacity: 0.6;
 }
 
+/* 「等待浏览器授权…」——OAuth 期间要告诉用户去浏览器点，别以为它卡住了 */
+.auth-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
+}
+
 /* 填 key 的那一行 */
 .auth-actions,
 .auth-edit {
@@ -1252,17 +1263,17 @@ html[data-theme='light'] .rp-todo-now {
   line-height: 1.5;
   text-align: center;
 }
-.ob-row.ok .ob-check {
+.ob-row.ob-ok .ob-check {
   color: var(--ok);
 }
-.ob-row.todo .ob-check {
+.ob-row.ob-todo .ob-check {
   color: var(--warn);
 }
 .ob-row-title {
   color: var(--fg);
   font-size: var(--fs-base);
 }
-.ob-row.todo .ob-row-title {
+.ob-row.ob-todo .ob-row-title {
   color: var(--warn);
 }
 .ob-row-desc {

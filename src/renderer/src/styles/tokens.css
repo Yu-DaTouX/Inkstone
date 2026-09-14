@@ -39,6 +39,17 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
+  /*
+   * 密度语义变量（方案 A1）。
+   *
+   * 策略是「只调间距、不动字号」：中文字体在 12.5px 上是像素对齐的，
+   * 整体乘倍数会把字描绘弄糊。
+   * standard 档的值就是**改动前实际生效的值**，所以默认观感不变。
+   */
+  --d-row-gap: 3px;      /* 列表行（任务行 / 子代理行）之间 */
+  --d-section-gap: 3px;  /* 右栏分区之间 */
+  --d-message-gap: 32px; /* 消息回合之间（= 原来的 --sp-6） */
+
   /* 圆角：组件使用分级令牌，胶囊和圆形控件使用 --r-full。
      ⚠️ 这些是**评审收紧后**的最终值（原本这里是 sm=6/md=8/lg=10/xl=14，
         后来被 redesign.css 覆盖成现在这套）。归并到这里之后，改圆角
@@ -251,4 +262,21 @@ textarea {
   to {
     transform: rotate(360deg);
   }
+}
+
+/*
+ * 密度档位（方案 A1）：只覆盖三个语义间距。
+ *   紧凑 = 同屏放下更多行；舒适 = 行与行之间喘口气。
+ * 三档都不改字号与行高倍率 —— 见上面的说明。
+ */
+html[data-density='compact'] {
+  --d-row-gap: 1px;
+  --d-section-gap: 1px;
+  --d-message-gap: 16px;
+}
+
+html[data-density='comfortable'] {
+  --d-row-gap: 7px;
+  --d-section-gap: 9px;
+  --d-message-gap: 48px;
 }
