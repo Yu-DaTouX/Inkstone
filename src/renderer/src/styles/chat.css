@@ -612,7 +612,20 @@
   animation: term-blink 1s step-end infinite;
 }
 
-.term .tool-pre {
+/*
+ * ⚠️ 每个变体都要写全（`.args` / `.out` / `.code`）—— 特异性必须到 (0,3,0)。
+ *
+ * 为什么：`.tool-pre.args` 等在本文件**后面**定义，特异性 (0,2,0)。
+ * 只写 `.term .tool-pre`（也是 0,2,0）时后写的那条赢 —— 这组覆盖规则
+ * 于是**全线失效**：浅色主题下终端里的参数块成了白底（`--bg-0`）+
+ * 浅色下边框（`--border`）+ 中灰字，基本看不清。
+ * 深色主题下 `--bg-0` 与终端的 `#0c0c0c` 接近，肉眼看不出来 ——
+ * 这个 bug 只在浅色主题下暴露（守卫见 scripts/probe/light.js 第 5 节）。
+ */
+.term .tool-pre,
+.term .tool-pre.args,
+.term .tool-pre.out,
+.term .tool-pre.code {
   padding: 0;
   background: transparent;
   border: none;

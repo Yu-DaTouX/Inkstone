@@ -104,22 +104,24 @@
     out.push('  （无行内代码，跳过）')
   }
 
-  const head = q('.tool-head')
-  const sum = q('.tool-sum')
-  const mute = getComputedStyle(document.documentElement).getPropertyValue('--fg-mute').trim()
-  out.push('  --fg-mute = ' + mute)
+  /*
+   * ⚠️ 选择器是 `.trow-head`（ToolRow 重构后的名字）。
+   *    这里原来写的是已废弃的 `.tool-head` / `.tool-sum` —— 选择器永远
+   *    匹配不到，断言于是**静默走了「跳过」分支**，工具行的对比度其实
+   *    一直没人看着（与 sessions 探针的悬停断言同一类失效方式）。
+   */
+  const head = q('.trow-head')
   out.push('  工具行: ' + (head ? '有' : '无'))
   if (head) {
     // 浅色下的可读性标准：颜色不能是“黑的不彻底、浅的不明显”
     const col = getComputedStyle(head).color
     const rgb = col.match(/\d+/g)?.map(Number) ?? []
     const lum = rgb.length >= 3 ? (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 255 : 1
-    out.push(`  .tool-head color=${col}（亮度 ${lum.toFixed(2)}）`)
+    out.push(`  .trow-head color=${col}（亮度 ${lum.toFixed(2)}）`)
     ok(lum < 0.75, `工具行文字够深（亮度 ${lum.toFixed(2)}，< 0.75）`)
   } else {
     out.push('  ⚠️ 这份 fixture 里没有工具调用，跳过工具行的对比度断言')
   }
-  if (sum) out.push('  .tool-sum color=' + getComputedStyle(sum).color)
 
   out.push('')
   out.push('=== 4. 导航轨在浅色下有对比 ===')
@@ -130,6 +132,74 @@
     ok(Number(c.opacity) >= 0.9, `浅色主题下导航轨不透明（实际 ${c.opacity}）`)
   } else {
     out.push('  （当前会话轮数不足，无导航轨）')
+  }
+
+  out.push('')
+  out.push('=== 5. 终端窗口：内部的深色覆盖必须真的生效 ===')
+  /*
+   * 设计上终端「无论浅色/深色都是深底」（见 chat.css 里 .term 的注释），
+   * 内部把 `--bg-*` / `--border` 这些主题令牌都覆盖成深底上的颜色。
+   *
+   * 但那组覆盖规则曾经**全线失效**：`.term .tool-pre` 与 `.tool-pre.args`
+   * 同为 (0,2,0)，而它写在前面 —— 后写者赢。于是浅色主题下终端里的参数块
+   * 成了白底（--bg-0）+ 浅色下边框（--border）+ 中灰字，基本看不清。
+   * 深色主题下 --bg-0 与 #0c0c0c 接近，所以只有浅色能暴露它。
+   */
+  if (!q('.term')) {
+    /*
+     * 已结束的工具默认收起，而且 `detailOn` 关着时**连展开入口都没有**
+     * （`canExpand = detailOn || running || failed`，见 ToolRow）。
+     * fixture 里的工具都是成功结束的，所以先把设置打开再点行头。
+     */
+    await store.getState().patchSettings({ toolDetail: true })
+    await sleep(400)
+    q('.trow-head')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await sleep(600)
+  }
+  const term = q('.term')
+  if (!term) {
+    out.push('  ⚠️ 这份 fixture 里没渲染出终端窗口，跳过')
+  } else {
+    /*
+     * 把颜色**合成到终端深底上**再算亮度。
+     *
+     * 为什么不直接看声明值：终端里很多颜色是半透明的，而且是刻意如此 ——
+     * `.term-prompt` 的 `rgba(255,255,255,0.08)` 分隔线、`.term .diff` 的
+     * 提亮底色。它们在深底上叠出来仍然很暗，不构成「亮底」。
+     * 直接看声明值就得写 alpha 特判，而合成之后这些情况自然就落到暗端。
+     */
+    const TERM_LUMA = 12 / 255 // .term 的 #0c0c0c
+    const lumOn = (el, prop) => {
+      const m = String(getComputedStyle(el)[prop]).match(/[\d.]+/g)?.map(Number) ?? []
+      if (m.length < 3) return null
+      const a = m.length >= 4 ? m[3] : 1
+      const ch = (c) => (c / 255) * a + TERM_LUMA * (1 - a)
+      return ch(m[0]) * 0.299 + ch(m[1]) * 0.587 + ch(m[2]) * 0.114
+    }
+    const termLum = lumOn(term, 'backgroundColor')
+    out.push(`  .term bg=${getComputedStyle(term).backgroundColor}（亮度 ${termLum?.toFixed(2)}）`)
+    ok(termLum !== null && termLum < 0.25, `终端窗口本身是深底（亮度 ${termLum?.toFixed(2)} < 0.25）`)
+
+    const inner = [...term.querySelectorAll('.tool-pre, .tool-result, .term-body, .term-prompt, .tool-empty')]
+    const cls = (el) => '.' + String(el.className).split(/\s+/).join('.')
+    const bright = inner.filter((el) => {
+      const l = lumOn(el, 'backgroundColor')
+      return l !== null && l > 0.5
+    })
+    out.push(
+      `  内部元素 ${inner.length} 个，亮底的 ${bright.length} 个` +
+        (bright.length ? '：' + bright.map(cls).join(', ') : '')
+    )
+    ok(bright.length === 0, '终端内部没有亮底元素（深色覆盖确实生效）')
+
+    const lightBorder = inner.filter((el) => {
+      const cs = getComputedStyle(el)
+      if (parseFloat(cs.borderBottomWidth) <= 0) return false
+      const l = lumOn(el, 'borderBottomColor')
+      return l !== null && l > 0.6
+    })
+    out.push(`  内部带浅色下边框的 ${lightBorder.length} 个` + (lightBorder.length ? '：' + lightBorder.map(cls).join(', ') : ''))
+    ok(lightBorder.length === 0, '终端内部没有浅色下边框（不透明的那种）')
   }
 
   /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */
