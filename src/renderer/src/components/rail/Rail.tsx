@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
@@ -763,6 +764,15 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
   const [undoToken, setUndoToken] = useState<string | null>(null)
   const confirmed = typed.trim() === session.title.trim()
 
+  /*
+   * 这个弹窗是条件渲染的（deleteTarget 非空才挂载），所以 open 恒为 true。
+   * Esc 以前写在 input 的 onKeyDown 上 —— 只在焦点在输入框时生效，
+   * 且与「点取消」是两条不同的路径。现在统一到这里。
+   */
+  const panel = useRef<HTMLDivElement>(null)
+  const { isTop } = useModalLayer(true, onClose)
+  useFocusTrap(panel, true, isTop)
+
   const remove = async (): Promise<void> => {
     if (!confirmed || busy) return
     setBusy(true)
@@ -791,7 +801,7 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
   }
 
   if (undoToken) return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
-    <div className="modal rail-delete-dialog">
+    <div className="modal rail-delete-dialog" ref={panel}>
       <div className="modal-head"><Icon name="alert-circle" size={14} /><span className="modal-title" id="delete-session-title">{t('rail.delete')}</span></div>
       <div className="modal-message">{t('rail.deletedUndo')}</div>
       <div className="modal-foot">
@@ -803,7 +813,7 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
   </div>
 
   return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
-    <div className="modal rail-delete-dialog">
+    <div className="modal rail-delete-dialog" ref={panel}>
       <div className="modal-head">
         <Icon name="alert-circle" size={14} />
         <span className="modal-title" id="delete-session-title">{t('rail.delete')}</span>
@@ -817,7 +827,7 @@ function SessionDeleteDialog({ session, onClose }: { session: SessionSummary; on
         value={typed}
         placeholder={session.title}
         onChange={(e) => setTyped(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter') void remove() }}
+        onKeyDown={(e) => { if (e.key === 'Enter') void remove() }}
       />
       {error ? <div className="rail-delete-error" role="alert">{error}</div> : null}
       <div className="modal-foot">

@@ -41,6 +41,9 @@ const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
+  /* 探针标记（YAN_PROBE）——渲染端唯一能知道自己在被验收的方式 */
+  isProbe: !!process.env.YAN_PROBE,
+
   /* ---- 会话 ---- */
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
@@ -203,6 +206,14 @@ const api: YanBridge = {
     return () => {
       ipcRenderer.removeListener('yan:hotkey', listener)
     }
+  },
+
+  /**
+   * 模态层守卫：有弹窗/对话框打开时，暂停主进程对 cycleModel / cycleThinking
+   * 的全局拦截（见 shared/ipc.ts 的说明）。单向 send —— 不需要回执。
+   */
+  setHotkeyGuard: (paused: boolean): void => {
+    ipcRenderer.send('yan:hotkey-guard', Boolean(paused))
   }
 }
 

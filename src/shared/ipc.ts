@@ -1019,6 +1019,15 @@ export interface YanBridge {
   /** 在系统文件管理器里定位一个文件 */
   revealPath(p: string): Promise<void>
 
+  /**
+   * 是不是跑在验收探针里（主进程带了 `YAN_PROBE`）。
+   *
+   * 目前只用于**首次引导**：探针环境没有凭证，引导层会无条件自动弹出，
+   * 而它是一层模态（按设计会让出 Shift+Tab 这类快捷键），
+   * 会把 hotkeys 那类场景的按键全吃掉。真实用户路径不受影响。
+   */
+  readonly isProbe: boolean
+
   /* 窗口 */
   win: {
     minimize(): void
@@ -1039,6 +1048,15 @@ export interface YanBridge {
    * `ui-scale` —— 它不需要渲染端参与决策。
    */
   onHotkey(cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): () => void
+  /**
+   * 告诉主进程「现在有模态层打开」，让它**暂停** cycleModel / cycleThinking 的
+   * 全局拦截（缩放不受影响）。
+   *
+   * 为什么必需：Shift+Tab / Ctrl+P 是在 `before-input-event` 里**先于渲染端**
+   * 被 preventDefault 的，渲染端再怎么判断都来不及 —— 设置面板里的表单
+   * 因此永远做不了反向焦点导航。守卫状态必须由渲染端上报。
+   */
+  setHotkeyGuard(paused: boolean): void
   /** 读界面缩放现状（含自动模式下算出的倍率与屏幕缩放） */
   getZoom(): Promise<ZoomState>
   /** 设界面缩放（0 = 自动），返回生效后的状态 */

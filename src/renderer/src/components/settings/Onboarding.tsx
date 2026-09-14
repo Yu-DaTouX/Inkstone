@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 
 /**
  * 首次使用引导。
@@ -35,6 +36,11 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   const conn = useStore((s) => s.conn)
   const models = useStore((s) => s.models)
   const openSettings = useStore((s) => s.openSettings)
+
+  /* 卡片本身就是一层模态：Esc 关闭 + 焦点圈定 + 通知主进程暂停快捷键 */
+  const card = useRef<HTMLDivElement>(null)
+  const { isTop } = useModalLayer(true, onClose)
+  useFocusTrap(card, true, isTop)
 
   const [ready, setReady] = useState<{ n: number; total: number; fromEnv: number } | null>(null)
 
@@ -101,7 +107,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="ob-scrim" role="dialog" aria-modal="true" aria-label={t('ob.title')}>
-      <div className="ob-card" data-testid="onboarding">
+      <div className="ob-card" ref={card} data-testid="onboarding">
         <div className="ob-head">
           <span className="ob-logo">✦</span>
           <div>

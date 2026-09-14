@@ -264,6 +264,18 @@ async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
  *    所以忙的时候每隔一会儿再试，直到空闲（最多等 ~5 分钟）。
  */
 let langRestarting = false
+
+/**
+ * 模态层守卫（渲染端上报）。
+ *
+ * true = 有弹窗/对话框打开，`before-input-event` 里**不再**拦 Shift+Tab /
+ * Ctrl+P —— 否则设置面板里的表单做不了反向焦点导航（Shift+Tab 被抢走
+ * 去切思考强度）。缩放快捷键不受此影响。
+ *
+ * 放在模块级而不是 createWindow 里：IPC 监听在 registerIpc 注册，
+ * 与窗口生命周期无关；窗口重载时由 yan:renderer-ready 重置。
+ */
+let hotkeyGuardPaused = false
 async function restartAgentForLanguage(retries = 150): Promise<void> {
   if (langRestarting) return
   /* 启动还没跑完就别动它 —— 等它落定再判断要不要重启 */
@@ -509,6 +521,18 @@ function registerIpc(): void {
   ipcMain.on('yan:respondUi', (_e, res) => agent?.respondUi(res))
 
   /*
+   * 模态层守卫：渲染端有弹窗时暂停全局快捷键（cycleModel / cycleThinking）。
+   *
+   * ⚠️ 为什么不能只在渲染端判断：Shift+Tab / Ctrl+P 是在主进程的
+   *    `before-input-event` 里 preventDefault 的，**先于**渲染端。
+   *    渲染端那条 window keydown 只是兑底，改它拦不住已经吃掉按键的主进程。
+   *    所以必须由渲染端上报状态、主进程据此放行。
+   */
+  ipcMain.on('yan:hotkey-guard', (_e, v) => {
+    hotkeyGuardPaused = Boolean(v)
+  })
+
+  /*
    * 系统通知（「声音提示」里的通知开关）。
    *
    * 为什么由主进程弹：
@@ -548,6 +572,9 @@ function registerIpc(): void {
      就把 `proc: ready` 发出去（那条消息就丢了，界面永远停在「正在启动 pi」）。
      所以渲染端一订阅就发这个，我们把当前状态补一遍。 */
   ipcMain.on('yan:renderer-ready', () => {
+    /* 渲染端刚加载完 —— 它还没有任何模态层，守卫必须归零。
+       否则（比如窗口崩溃/热重载后）会永久卡在 paused=true。 */
+    hotkeyGuardPaused = false
     const c = agent?.getConn()
     if (c) push({ ch: 'proc', payload: { state: c.state, detail: c.detail } })
     const st = agent?.getState()
@@ -875,22 +902,29 @@ function createWindow(): void {
     const ctrl = input.control || input.meta
     const key = String(input.key ?? '').toLowerCase()
 
+    /*
+     * 模态层守卫（见 hotkeyGuardPaused 的说明）。
+     *
+     * 三条 cycle 判断都带上 `!hotkeyGuardPaused`：有弹窗时**不
+     * preventDefault**、不发动作，把按键原样留给渲染端 —— 设置面板里的
+     * 表单才能用 Shift+Tab 反向遍历焦点。下面的缩放照旧（与焦点语义无关）。
+     */
     // Ctrl+Shift+P —— 上一个模型（必须排在 Ctrl+P 前，否则会被后者先吃掉）
-    if (ctrl && input.shift && !input.alt && key === 'p') {
+    if (!hotkeyGuardPaused && ctrl && input.shift && !input.alt && key === 'p') {
       event.preventDefault()
       win?.webContents.send('yan:hotkey', { action: 'cycleModelBack' })
       return
     }
 
     // Ctrl+P —— 下一个模型
-    if (ctrl && !input.shift && !input.alt && key === 'p') {
+    if (!hotkeyGuardPaused && ctrl && !input.shift && !input.alt && key === 'p') {
       event.preventDefault()
       win?.webContents.send('yan:hotkey', { action: 'cycleModel' })
       return
     }
 
     // Shift+Tab
-    if (input.shift && !ctrl && !input.alt && input.key === 'Tab') {
+    if (!hotkeyGuardPaused && input.shift && !ctrl && !input.alt && input.key === 'Tab') {
       event.preventDefault()
       win?.webContents.send('yan:hotkey', { action: 'cycleThinking' })
       return

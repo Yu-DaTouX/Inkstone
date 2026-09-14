@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 
 /** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
@@ -45,6 +46,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
 
   const [value, setValue] = useState(req.prefill ?? req.options?.[0] ?? '')
   const [expired, setExpired] = useState(false)
+  const panel = useRef<HTMLDivElement>(null)
 
   // pi 侧会自己超时解析，但我们也要收起来，否则框会一直挂着
   useEffect(() => {
@@ -56,9 +58,25 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
     return () => clearTimeout(id)
   }, [req.id, req.timeout, dismissRequest])
 
-  if (expired) return null
-
   const cancel = () => answerUi({ id: req.id, cancelled: true })
+
+  /*
+   * 模态层 + 焦点圈定。
+   *
+   * ⚠️ Esc 以前写在 input/textarea 的 onKeyDown 上 —— 那样只有当焦点
+   *    正好在输入框里才生效（select/confirm 类型完全没处理），
+   *    而且 input 的 Esc 与面板的 Esc 会**双重应答**同一个 id。
+   *    现在统一由 useModalLayer 处理（仅最上层 + 不依赖焦点位置），
+   *    输入框里只保留 Enter 提交。
+   *
+   * ⚠️ 必须在 `if (expired) return null` 之前调用 —— hooks 不能条件执行。
+   */
+  const live = !closing && !expired
+  const { isTop } = useModalLayer(live, cancel)
+  /* DialogBody 只在 mounted 时渲染（挂载即 live），所以节点一定在 */
+  useFocusTrap(panel, live, isTop)
+
+  if (expired) return null
 
   const title =
     req.method === 'select'
@@ -71,7 +89,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
 
   return (
     <div className={`modal-scrim ${closing ? 'closing' : ''}`} role="dialog" aria-modal="true">
-      <div className={`modal ${closing ? 'closing' : ''}`}>
+      <div className={`modal ${closing ? 'closing' : ''}`} ref={panel}>
         <div className="modal-head">
           <Icon name={req.method === 'confirm' ? 'alert-circle' : 'message-dots'} size={12} />
           <span className="modal-title">{req.title ?? title}</span>
@@ -107,7 +125,6 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') answerUi({ id: req.id, value })
-              if (e.key === 'Escape') cancel()
             }}
           />
         ) : null}
@@ -118,9 +135,6 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
             autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') cancel()
-            }}
           />
         ) : null}
 

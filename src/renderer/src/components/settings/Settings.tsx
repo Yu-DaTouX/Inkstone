@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc'
 import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
 import { previewSound } from '../../lib/sound'
@@ -32,21 +33,29 @@ export function Settings({
   const t = useT()
   const { lang, setLang } = useI18n()
   const scrim = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   // 退场：面板体量大，进度比其他浮层长一点
   const presence = usePresence(open, prefersReducedMotion() ? 1 : 110)
 
-  // Esc 关闭
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
+  /*
+   * 模态层：Esc 关闭（仅顶层）+ 告知主进程暂停全局快捷键。
+   *
+   * ⚠️ Esc 以前是这里自己监听的 —— 两个弹窗叠加时两个都会响应，
+   *    一次 Esc 关掉两层。交给 useModalLayer 后只有最上层生效。
+   */
+  const { isTop } = useModalLayer(open, onClose)
+  /*
+   * 焦点圈定只在**最上层**生效。
+   *
+   * ⚠️ 两层模态同时在时（首次引导 + 设置、设置 + 扩展确认框），
+   *    两个 trap 都监听 document 的 Tab —— 下层那个会把焦点
+   *    从上层拽回来。用 isTop 串起来才是「栈」的语义。
+   *
+   * ⚠️ 第一个参数传 presence.mounted 而不是 open：open 变 true 的那一帧
+   *    DOM 还没渲染（面板要等 mounted 才挂），effect 里 ref 会是 null，
+   *    整个陷阱（含初始焦点）静默失效。
+   */
+  useFocusTrap(panel, presence.mounted, isTop)
 
   if (!presence.mounted) return null
 
@@ -68,6 +77,7 @@ export function Settings({
     >
       <div
         className={`settings ${presence.closing ? 'closing' : ''}`}
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label={t('set.title')}
