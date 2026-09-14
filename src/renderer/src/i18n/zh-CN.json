@@ -310,7 +310,7 @@
   "set.thinkingDesc": "越强越慢、越贵",
   "set.title": "设置",
   "set.toolDetail": "工具调用详情",
-  "set.toolDetailDesc": "**正在运行**的那条自动展开成终端窗口；已结束的保持一行，点开才看详情。关掉则连点都不能点（推荐）",
+  "set.toolDetailDesc": "「正在运行」的那条自动展开成终端窗口；已结束的保持一行，点开才看详情。关掉则连点都不能点（推荐）",
   "set.uiScale": "界面缩放",
   "set.uiScaleAuto": "自动",
   "set.uiScaleAutoVal": "自动（{v}×）",

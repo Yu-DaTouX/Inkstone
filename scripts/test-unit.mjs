@@ -406,5 +406,26 @@ await runTodoHistoryTests(ok)
 const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')
 await runStreamDeltasTests(ok)
 
+/*
+ * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
+ * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
+ * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
+ * 界面上 —— set.toolDetailDesc 就是这么错的（已在截图里看到）。
+ *
+ * 这里只拦最容易被误用的加粗记号；要真的支持 markdown 时，
+ * 把这条改成“该键允许 markdown”的名单。
+ */
+{
+  const { readFileSync } = await import('node:fs')
+  const bad = []
+  for (const file of ['zh-CN', 'en-US']) {
+    const json = JSON.parse(readFileSync(`src/renderer/src/i18n/${file}.json`, 'utf8'))
+    for (const [key, value] of Object.entries(json)) {
+      if (typeof value === 'string' && value.includes('**')) bad.push(`${file}:${key}`)
+    }
+  }
+  ok(bad.length === 0, 'i18n 文案不含 markdown 加粗记号', bad.join(', '))
+}
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 process.exit(fail ? 1 : 0)
