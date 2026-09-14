@@ -51,9 +51,16 @@ export function ToolRow({ call }: { call: UIToolCall }) {
    * 一次跑十几条就把回答顶出屏幕（用户报的）。
    *
    * 现在：**只有正在跑的那条自动展开**；已结束的保持一行，
-   * 要看详情自己点（设置里的 toolDetail 关掉则连点都不能点）。
+   * 要看详情自己点。
+   *
+   * ⚠️ 但**失败的一律可展开**（`failed` 这个变量以前就定义了、却没用上）：
+   *    设计要的是「成功调用默认摘要，**错误结果保留明显入口**」。
+   *    用 `detailOn || running` 时，没开那个设置的用户遇到报错
+   *    连点都点不开 —— 只能看到一行红字，却不知道错在哪。
+   *    默认仍**收起**：一次十几条错误的话展开会把回答顶出屏幕，
+   *    一行红字 + 可点的箭头已经是足够明显的入口。
    */
-  const canExpand = detailOn || running
+  const canExpand = detailOn || running || failed
   const open = canExpand && (manual ?? running)
 
   const target = summarize(call)
@@ -119,15 +126,32 @@ export function ToolRow({ call }: { call: UIToolCall }) {
 export function ToolGroup({ tools }: { tools: UIToolCall[] }) {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
-  const open = manual ?? false
+  /*
+   * 组里有失败的 → **默认展开**，并在标题上标出来。
+   *
+   * 为什么这与「有工具在跑就展开」不同：那条会造成模型一调工具、
+   * 整组十几行一起弹开、把回答顶出屏幕（用户报过）。
+   * 而失败是**必须被看到**的，而且一个回合里通常只有一两条。
+   *
+   * 不这样做时，失败的调用被埋在「调用了 N 次命令」里面 ——
+   * 标题连“有东西挂了”都不说，用户得逐组点开找（设计要的是
+   * 「错误结果保留明显入口」）。
+   */
+  const failedCount = tools.filter((c) => c.status === 'error').length
+  const open = manual ?? failedCount > 0
 
   if (tools.length === 0) return null
 
   return (
-    <div className={`tgroup ${open ? 'open' : ''}`} data-testid="tool-group">
+    <div className={`tgroup ${open ? 'open' : ''} ${failedCount > 0 ? 'has-fail' : ''}`} data-testid="tool-group">
       <button className="tgroup-head" onClick={() => setManual(!open)} aria-expanded={open} data-testid="tool-group-toggle">
         <Icon name="chevron-right" size={12} className="chev" />
         <span>{t('tool2.ran', { n: tools.length })}</span>
+        {failedCount > 0 ? (
+          <span className="tgroup-fail" data-testid="tool-group-fail">
+            {t('tool2.failed', { n: failedCount })}
+          </span>
+        ) : null}
         <span className="spacer" />
       </button>
       {open ? (

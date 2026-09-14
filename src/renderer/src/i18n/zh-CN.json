@@ -384,6 +384,7 @@
   "tool2.doneIn": "已在 {n}s 内{what}",
   "tool2.noTarget": "（无参数）",
   "tool2.ran": "调用了 {n} 次工具/命令",
+  "tool2.failed": "{n} 个失败",
   "tool2.running": "正在{what}",
   "tool2.vCall": "调用",
   "tool2.vEdit": "修改",

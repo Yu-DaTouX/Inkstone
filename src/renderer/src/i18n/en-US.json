@@ -384,6 +384,7 @@
   "tool2.doneIn": "{what} in {n}s",
   "tool2.noTarget": "(no args)",
   "tool2.ran": "Called {n} tools/commands",
+  "tool2.failed": "{n} failed",
   "tool2.running": "{what}…",
   "tool2.vCall": "Called",
   "tool2.vEdit": "Edited",

@@ -297,6 +297,25 @@
   flex: 1;
 }
 
+/*
+ * 组里有失败：标题就不能还是灰的。
+ *
+ * 以前失败被埋在「调用了 N 次命令」里面 —— 标题不说有东西挂了，
+ * 用户得逐组点开找（设计要的是「错误结果保留明显入口」）。
+ * 配合 ToolGroup 的「有失败就默认展开」。
+ */
+.tgroup.has-fail .tgroup-head {
+  color: var(--err);
+}
+.tgroup-fail {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: var(--fs-xs);
+}
+
 .tgroup-body {
   display: flex;
   flex-direction: column;

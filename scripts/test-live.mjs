@@ -73,6 +73,8 @@ const CASES = {
     cost: 0,
     keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
+  // 工具调用行：成功摘要 / 失败保留可展开入口（P1 4.2）
+  toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
   // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
   railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
   // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
