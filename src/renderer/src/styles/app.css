@@ -115,11 +115,6 @@
 .search input::placeholder {
   color: var(--fg-mute);
 }
-.rail-body {
-  overflow: hidden auto;
-  scrollbar-gutter: stable;
-  padding: 0 var(--sp-2) var(--sp-2);
-}
 
 .group.collapsed .group-body {
   display: none;
@@ -143,13 +138,6 @@
   background: var(--bg-3);
   color: var(--fg);
 }
-.item.sel {
-  background: var(--accent-soft);
-  color: var(--fg);
-}
-.item.sel .ico {
-  color: var(--accent);
-}
 .item .ico {
   color: var(--fg-mute);
 }
@@ -162,11 +150,6 @@
 .item .meta {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-}
-
-.rail-foot {
-  padding: var(--sp-3) var(--sp-2) var(--sp-4);
-  border-top: 1px solid var(--border);
 }
 
 /* 5. 中栏 —— 连续性 + 对话 + 审阅条 + 输入 */
@@ -201,9 +184,6 @@
   color: var(--fg-mute);
   font-size: var(--fs-sm);
   user-select: none;
-}
-.msg.user .gutter {
-  color: var(--cyan);
 }
 .msg.assistant .gutter {
   color: var(--ok);
@@ -260,12 +240,6 @@
   color: var(--fg);
   font-weight: 600;
 }
-
-.think {
-  border-left: 2px solid var(--border-str);
-  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
-  margin-bottom: var(--sp-3);
-}
 .think summary {
   cursor: pointer;
   list-style: none;
@@ -298,9 +272,6 @@
   padding: var(--sp-3);
   transition: border-color var(--dur) var(--ease);
 }
-.composer:focus-within {
-  border-color: var(--accent);
-}
 .composer textarea {
   width: 100%;
   min-height: 34px;
@@ -309,9 +280,6 @@
   line-height: var(--lh-base);
   color: var(--fg);
   display: block;
-}
-.composer textarea::placeholder {
-  color: var(--fg-mute);
 }
 .composer-bar {
   display: flex;
@@ -349,17 +317,6 @@ kbd {
   opacity: 0.45;
   cursor: default;
   filter: none;
-}
-
-/* 流式光标：让「正在生成」这件事可见（DESIGN §5 三处动效之一） */
-.cursor {
-  display: inline-block;
-  width: 6px;
-  height: 12px;
-  margin-left: 2px;
-  vertical-align: -1px;
-  background: var(--fg-dim);
-  animation: blink 1s steps(2, start) infinite;
 }
 @keyframes blink {
   to {

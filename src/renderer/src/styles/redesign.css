@@ -291,9 +291,6 @@
   }
 }
 @media (max-width: 980px) {
-  .workspace {
-    --w-right: var(--w-panel-user, 190px);
-  }
   /* 窄屏下右栏内部的左右内边距收一档；左边距跟标题一致（见 .rp-sec-head） */
   .rp-sec-head,
   .rp-top {
@@ -809,10 +806,6 @@
 .settings {
   animation: center-in 140ms cubic-bezier(0.2, 0, 0.2, 1);
 }
-.modal-scrim,
-.settings-scrim {
-  animation: fade-in 140ms linear;
-}
 
 /* 尊重系统设置 */
 @media (prefers-reduced-motion: reduce) {
@@ -1156,9 +1149,6 @@
 }
 .rp-todo.active .rp-box {
   border-color: var(--accent);
-}
-.rp-todo.active .rp-text {
-  color: var(--fg);
 }
 .rp-now-spin {
   display: inline-flex;

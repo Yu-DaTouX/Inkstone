@@ -31,21 +31,6 @@
   text-align: center;
   user-select: none;
 }
-.empty-mark {
-  color: var(--ok);
-  font-size: 22px;
-  line-height: 1;
-  margin-bottom: var(--sp-2);
-}
-.empty-title {
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-}
-.empty-hint {
-  max-width: 46ch;
-  font-size: var(--fs-sm);
-  line-height: var(--lh-base);
-}
 
 /* 5. 消息：用量角标 / 错误 */
 .msg-label {
@@ -89,9 +74,6 @@
 .md h4 {
   font-size: var(--fs-sm);
   color: var(--fg-dim);
-}
-.md p {
-  margin-bottom: var(--sp-3);
 }
 .md ul,
 .md ol {
@@ -283,13 +265,6 @@
 }
 .stream-row:last-child {
   padding-bottom: var(--sp-6);
-}
-
-.rail-empty {
-  padding: var(--sp-4) var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-base);
 }
 
 .todo {
