@@ -487,3 +487,273 @@
   max-width: var(--w-stream);
   margin: 0 auto var(--sp-2);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage2.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px dashed var(--border);
+}
+
+.attach {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 78px;
+  padding: 3px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.attach img {
+  width: 100%;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 2px;
+  background: var(--bg-0);
+}
+
+.attach-name {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-del {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 15px;
+  height: 15px;
+  line-height: 1;
+  border-radius: var(--r-sm);
+  background: var(--bg-4);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attach-del:hover {
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+/* 2. 斜杠命令菜单 */
+.slash-menu {
+  margin-bottom: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px dashed var(--border);
+  max-height: 224px;
+  overflow-y: auto;
+}
+
+.slash-item {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: var(--fs-sm);
+}
+
+.slash-item.sel {
+  background: var(--accent-soft);
+}
+
+.slash-name {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.slash-desc {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-src {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+}
+
+/* 3. 输入区模式角标 / 附件按钮 */
+.mode-badge {
+  border-radius: var(--r-sm);
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  font-size: var(--fs-xs);
+}
+
+.mode-badge.bash {
+  color: var(--warn);
+}
+
+.mode-badge.cmd {
+  color: var(--accent);
+}
+
+.pick {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.pick:hover:not(:disabled) {
+  border-color: var(--border-str);
+}
+
+.pick:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pick option,
+.pick optgroup {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch:hover {
+  color: var(--fg-dim);
+}
+
+.switch input {
+  accent-color: var(--accent);
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.review {
+  border-top: 1px solid var(--border-soft);
+}
+
+.review .btn {
+  border-radius: var(--r-full);
+  border-color: rgba(224, 175, 104, 0.3);
+}
+
+.tok {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.tok.dim {
+  opacity: 0.55;
+}
+
+/* 35. 模型选择器（垂直列表，贴触发器向上弹） */
+.picker-wrap {
+  position: relative;
+  flex: none;
+}
+
+.qrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.qrow.steering {
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
+.qrow .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.qrow.steering .ico {
+  color: var(--accent);
+}
+
+.qrow-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qrow-tag {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+
+.qrow-jump {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.qrow-jump:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}

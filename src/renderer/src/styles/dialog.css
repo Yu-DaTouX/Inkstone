@@ -1,0 +1,79 @@
+/*
+ * 对话框与浮层：扩展 UI 对话框（UiDialog）、首次引导（Onboarding）、
+ * 删除会话的确认框。（设置面板是独立的 settings.css。）
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ */
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.modal-head .spacer {
+  flex: 1;
+}
+
+.modal-title {
+  color: var(--fg);
+}
+
+.modal-message {
+  padding: var(--sp-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--sp-2) var(--sp-2);
+  overflow-y: auto;
+}
+
+.modal-option {
+  text-align: left;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.modal-option:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.modal-input:focus,
+.modal-editor:focus {
+  border-color: var(--accent);
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.modal-foot .spacer {
+  flex: 1;
+}

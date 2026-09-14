@@ -706,3 +706,376 @@
   border-color: var(--accent-line);
   color: var(--accent);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 6. Markdown 正文 */
+.md > *:last-child {
+  margin-bottom: 0;
+}
+
+.md ul li {
+  position: relative;
+  padding-left: var(--sp-3);
+}
+
+.md ul li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  color: var(--fg-mute);
+}
+
+.md ol li {
+  padding-left: 2px;
+}
+
+.md ol li::marker {
+  color: var(--fg-mute);
+}
+
+.md li > p {
+  margin-bottom: var(--sp-1);
+}
+
+.md blockquote {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  border-left: 2px solid var(--border-str);
+  color: var(--fg-dim);
+}
+
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.md a:hover {
+  text-decoration: underline;
+}
+
+.md hr {
+  margin: var(--sp-4) 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.md-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--sp-3);
+}
+
+.md table {
+  border-collapse: collapse;
+  font-size: var(--fs-code);
+  width: 100%;
+}
+
+.md input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 4px;
+}
+
+/* 工具操作的文件路径：单独一行，左对齐可换行（不用 rtl 截断，DESIGN §8） */
+.tool-path {
+  padding: 3px var(--sp-3);
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  user-select: text;
+}
+
+/* write 的正文：按整个文件算新增，用 add 色但不加边框（否则像 diff 的一半） */
+.diff-pre.write-body {
+  max-height: 420px;
+}
+
+/* 工具的执行结果回执（比如 "Successfully replaced 1 block(s)"） */
+.tool-result {
+  padding: 4px var(--sp-3);
+  border-top: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.tool-pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow-y: auto;
+  user-select: text;
+  font-variant-ligatures: contextual;
+}
+
+.tool-pre.args {
+  color: var(--fg-mute);
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+  max-height: 140px;
+}
+
+.tool-pre.out {
+  color: var(--fg-dim);
+}
+
+.tool-pre.code {
+  color: var(--fg);
+}
+
+.tool-empty {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
+.diff-side {
+  background: var(--bg-1);
+  min-width: 0;
+}
+
+.diff-label {
+  padding: 2px var(--sp-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-label.err {
+  color: var(--err);
+  background: var(--err-soft);
+}
+
+.diff-label.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.diff-pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  user-select: text;
+  font-variant-ligatures: contextual;
+}
+
+.diff-pre.del {
+  color: var(--err);
+}
+
+.diff-pre.add {
+  color: var(--ok);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage2.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 消息里的图片 */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.msg-images img {
+  max-width: 220px;
+  max-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+}
+
+/* 6. 消息：分叉按钮 / bash 角色 */
+.msg-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0 5px;
+  height: 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.msg:hover .msg-act {
+  opacity: 1;
+}
+
+.msg-act:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* bash 直执行：与「模型工具调用」在视觉上分开 */
+.msg.bash .gutter {
+  color: var(--warn);
+  font-size: var(--fs-sm);
+}
+
+.msg.bash .bubble,
+.msg.bash .md {
+  font-family: var(--font-mono);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 三条建议：把空白变成入口 */
+.empty-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: min(420px, 100%);
+  margin-bottom: var(--sp-5);
+}
+
+.empty-sug {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.empty-sug .ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.empty-sug:hover {
+  background: var(--bg-2);
+  border-color: var(--accent-line);
+  color: var(--fg);
+}
+
+.empty-sug:hover .ico {
+  color: var(--accent);
+}
+
+/* 斜杠命令：发现性 */
+.empty-cmds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.empty-cmds-label {
+  margin-right: 2px;
+}
+
+.empty-cmd {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.empty-cmd:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.outline-track {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  max-height: 88%;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+/* 命中区：透明；刻度锚在命中区左侧（向右长，最长 34 < 容器 44） */
+.outline-hit {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.outline-bar {
+  display: block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--border-str);
+  opacity: 0.55;
+  transition:
+    width 130ms var(--ease),
+    height 130ms var(--ease),
+    background 130ms var(--ease),
+    opacity 130ms var(--ease);
+}
+
+/* 当前读到的那一轮 */
+.outline-hit.on .outline-bar {
+  width: 22px;
+  background: var(--fg);
+  opacity: 0.9;
+}
+
+/* 悬停：那一格就地长高变宽（向左长） */
+.outline-hit.hover .outline-bar {
+  width: 34px;
+  height: 8px;
+  background: var(--accent);
+  opacity: 1;
+}
+
+/* 整条轨道被悬停时其它格稍微提亮 —— 让「我可以选」看得出来 */
+.outline-track:has(.outline-hit.hover) .outline-bar {
+  opacity: 0.75;
+}

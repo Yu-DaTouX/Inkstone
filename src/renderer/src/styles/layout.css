@@ -90,3 +90,78 @@
     --w-rail: 48px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 拖拽中：整页光标保持 ns-resize，且禁用选中（否则会选到文字） */
+body.resizing-composer {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+/* 50. 浅色主题的对比度补丁
+   白底上「淡」会很快变成「读不到」。这些是实际测出来不够的地方。 */
+html[data-theme='light'] .outline-bar {
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 1;
+}
+
+html[data-theme='light'] .outline-hit.on .outline-bar {
+  background: var(--fg);
+}
+
+html[data-theme='light'] .rp-box {
+  background: #fff;
+}
+
+html[data-theme='light'] .rp-todo.done .rp-box {
+  background: var(--ok);
+  color: #fff;
+}
+
+html[data-theme='light'] .md pre {
+  /* 浅灰底 + 浅灰边框在白底上分不出边界 */
+  border-color: var(--border-str);
+}
+
+/* 浅色主题下 ::after 的小点与强调色都要够深 */
+html[data-theme='light'] .tb-pin.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 排序中禁掉文字选择（拖快了会把标题选蓝） */
+body.reordering {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* 拖拽进行中：禁掉文字选择，指针保持「抓着」的样子 */
+body.tool-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/*
+ * 拖动中：禁掉过渡与文字选择。
+ * 过渡是给「收起/展开」用的动画，拖动时带着缓动会像橡皮筋；
+ * 不关 user-select 的话拖快了会把界面文字整片选蓝。
+ */
+body.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.resizing .workspace {
+  transition: none;
+}
+
+body.resizing-term {
+  user-select: none;
+}
+
+html[data-theme='light'] .outline-preview {
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.28);
+}

@@ -26,7 +26,6 @@ const ORDER = [
   'tokens.css',
   'app.css',
   'stage1.css',
-  'stage2.css',
   'redesign.css',
   'motion.css',
   'settings.css',
@@ -38,7 +37,8 @@ const ORDER = [
   'chat.css',
   'composer.css',
   'tools.css',
-  'browser.css'
+  'browser.css',
+  'dialog.css'
 ]
 
 /**

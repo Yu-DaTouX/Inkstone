@@ -33,71 +33,6 @@
   margin-bottom: var(--sp-5);
 }
 
-/* 三条建议：把空白变成入口 */
-.empty-suggest {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  width: min(420px, 100%);
-  margin-bottom: var(--sp-5);
-}
-.empty-sug {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  padding: 7px var(--sp-3);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  text-align: left;
-  transition:
-    background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.empty-sug .ico {
-  color: var(--fg-mute);
-  flex: none;
-}
-.empty-sug:hover {
-  background: var(--bg-2);
-  border-color: var(--accent-line);
-  color: var(--fg);
-}
-.empty-sug:hover .ico {
-  color: var(--accent);
-}
-
-/* 斜杠命令：发现性 */
-.empty-cmds {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-}
-.empty-cmds-label {
-  margin-right: 2px;
-}
-.empty-cmd {
-  padding: 2px var(--sp-2);
-  border-radius: var(--r-full);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-.empty-cmd:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
 /* 2. 卡片层次：加内描边高光 + 大一点的圆角 */
 .bubble,
 .card,
@@ -176,10 +111,6 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-str);
   background-clip: content-box;
-}
-
-.review {
-  border-top: 1px solid var(--border-soft);
 }/* 14. 用户气泡：给出与助手正文的层次差 */
 .bubble {
   border-radius: var(--r-lg);
@@ -210,20 +141,6 @@
 .statusbar .btn {
   height: 18px;
 }
-.review .btn {
-  border-radius: var(--r-full);
-  border-color: rgba(224, 175, 104, 0.3);
-}
-
-.tok {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-}
-.tok.dim {
-  opacity: 0.55;
-}
 
 /* 18. 中栏居中
    —— .stream 有 scrollbar-gutter:stable，那条 gutter 只占**右侧**，
@@ -233,20 +150,6 @@
 .center > .stream {
   /* scrollbar-gutter 占的是右内边距，这里补一个等量左内边距 */
   padding-left: 10px;
-}
-
-/*
- * 浏览器与工具栏同时显示时的右栏布局：
- *   rp-top(auto) / 浏览器(可拖高度) / 分隔条(6px) / 工具分区(1fr)
- * `--h-browser` 由 BrowserHeightSplitter 在拖动时写入（px）；
- * 没写时回落设计默认 55%。工具栏收起时用 .tools-collapsed 让浏览器独占整列。
- */
-.rightpanel.browser-mode {
-  grid-template-rows: auto minmax(200px, var(--h-browser, 55%)) 6px minmax(0, 1fr);
-}
-/* 工具栏收起：把整列都给浏览器（上面的浏览器模式行数规则失效） */
-.rightpanel.tools-collapsed {
-  grid-template-rows: minmax(0, 1fr);
 }
 .browser-tabs {
   grid-row: 1;
@@ -278,9 +181,6 @@
   justify-content: center;
   padding: 0;
   font-size: 17px;
-}
-.rightpanel.browser-mode .browser-surface {
-  min-height: 0;
 }
 .browser-toolbar {
   grid-row: 2;
@@ -327,15 +227,6 @@
 .browser-close {
   font-size: 21px;
 }
-/*
- * 网页是原生 WebContentsView，永远盖在渲染层之上。右栏宽度把手只有 5px、
- * 又贴在面板左缘，会被原生视图整段遮住 —— 浏览器打开时就没法从页面区域
- * 拖宽度（只能在顶部工具栏那一段拖）。这里让网页区让开这条缝，
- * 把手在整条边上都能抓。
- */
-.rightpanel.browser-mode .browser-viewport {
-  margin-left: 5px;
-}
 .stream-inner,
 .stream-row {
   /* 两端对称的内边距，保证 max-width 区域本身居中 */
@@ -357,19 +248,6 @@
   max-width: var(--w-stream);
   margin-left: auto;
   margin-right: auto;
-}
-
-/* 21. 右栏 —— 任务进度 */
-.rightpanel {
-  background: var(--bg-1);
-  border-left: 1px solid var(--border);
-  /* .resizer-panel 的定位基准（它绝对定位在左缘） */
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  min-height: 0;
-  min-width: 0;
 }
 /*
  * 任务标题最多**两行**（用户要求，包括处理中的那条）。
@@ -556,9 +434,6 @@
   padding: 0 5px var(--sp-3);
   min-width: 0;
 }
-.proj + .proj {
-  margin-top: 3px;
-}
 .proj-head {
   display: flex;
   align-items: center;
@@ -584,20 +459,6 @@
 .srow-row {
   display: flex;
   align-items: center;
-}
-/* 左侧引导线：表明这些会话属于上面的项目 */
-.proj {
-  position: relative;
-}
-.proj::before {
-  content: '';
-  position: absolute;
-  left: 14px;
-  top: 30px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border-soft);
-  pointer-events: none;
 }
 /* 会话行的文字块：第一行是「编号 + 名字 + 分支数」，第二行是「分叉自哪句话」 */
 .srow-text {
@@ -832,17 +693,6 @@
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
   position: relative;
-}
-/* 拖拽中：整页光标保持 ns-resize，且禁用选中（否则会选到文字） */
-body.resizing-composer {
-  cursor: ns-resize !important;
-  user-select: none !important;
-}
-
-/* 35. 模型选择器（垂直列表，贴触发器向上弹） */
-.picker-wrap {
-  position: relative;
-  flex: none;
 }/* 37. 终端风格强化
    目标：更像终端，不像「一堆卡片」。
    手段（按重要性排）：
@@ -1118,20 +968,6 @@ body.resizing-composer {
   height: 100%;
   background: var(--accent);
   transition: width var(--dur) var(--ease);
-}.rp-count {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}.rp-todo.done .rp-text {
-  color: var(--fg-mute);
-  text-decoration: line-through;
-  text-decoration-color: var(--border-str);
-  color: var(--fg-mute);
-  text-decoration: line-through;
-  text-decoration-color: var(--border-str);
 }
 
 /* 45. 用量条：`.ub-sep` 撤掉，换成中点分隔符 */
@@ -1155,90 +991,6 @@ body.resizing-composer {
   border: 1px solid var(--border-str);
   overflow: hidden;
   border-radius: var(--r-sm);
-}/* 49. 任务行的完成态：真的要看得出「已完成 / 未完成」
-   用户报：「右边栏的任务没有已完成或未完成的提示」。
-   旧实现只给已完成的加删除线，勾选框是个空 span（没边框、没底色），
-   在浅色主题下几乎看不出区别。
-   现在：真勾选框（有边框/底色）+ 右侧状态字。 */
-.rp-todos {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  gap: 3px;
-}.rp-todo {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 6px;
-  align-items: start;
-  padding: 5px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
-  display: grid;
-  grid-template-columns: 13px minmax(0, 1fr);
-  gap: 5px;
-  align-items: start;
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-  color: var(--fg-dim);
-  min-width: 0;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: start;
-  padding: 2px 0;
-}/* 勾选框：一个真方框 */
-.rp-box {
-  color: var(--fg-mute);
-  text-align: center;
-  line-height: inherit;
-  color: var(--fg-mute);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin-top: 2px;
-  border: 1px solid var(--border-str);
-  border-radius: 2px;
-  background: var(--bg-2);
-  color: transparent;
-  font-size: 9px;
-  line-height: 1;
-  flex: none;
-}.rp-todo.done .rp-box {
-  color: var(--ok);
-  color: var(--ok);
-  border-color: var(--ok);
-  background: var(--ok);
-  color: #0b1f16;
-  font-weight: 700;
-}
-
-/* 50. 浅色主题的对比度补丁
-   白底上「淡」会很快变成「读不到」。这些是实际测出来不够的地方。 */
-html[data-theme='light'] .outline-bar {
-  background: rgba(0, 0, 0, 0.28);
-  opacity: 1;
-}
-html[data-theme='light'] .outline-hit.on .outline-bar {
-  background: var(--fg);
-}
-html[data-theme='light'] .rp-box {
-  background: #fff;
-}
-html[data-theme='light'] .rp-todo.done .rp-box {
-  background: var(--ok);
-  color: #fff;
-}
-html[data-theme='light'] .md pre {
-  /* 浅灰底 + 浅灰边框在白底上分不出边界 */
-  border-color: var(--border-str);
-}
-
-/* 浅色主题下 ::after 的小点与强调色都要够深 */
-html[data-theme='light'] .tb-pin.on {
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 /* 45. 右栏 · 文件树
@@ -1318,170 +1070,6 @@ html[data-theme='light'] .tb-pin.on {
   border-top: 1px solid var(--border-soft);
   position: relative; /* .rail-user-pop 的定位基准 */
 }
-.rup-head {
-  display: flex;
-  align-items: center;
-  margin-bottom: var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-}
-.rup-head .spacer {
-  flex: 1;
-}
-.rup-x {
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-.rup-x:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.rup-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-top: var(--sp-2);
-}
-.rup-label {
-  flex: none;
-  width: 34px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.rup-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-.rup-input {
-  flex: 1;
-  min-width: 0;
-  height: 24px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg-0);
-  color: var(--fg);
-  font-size: var(--fs-sm);
-}
-.rup-input:focus {
-  outline: none;
-  border-color: var(--accent-line);
-}
-
-/* 首字 / 图标 二选一 */
-.rup-seg {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-0);
-}
-.rup-seg-btn {
-  padding: 2px 9px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.rup-seg-btn.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-/* 图标网格 */
-.rup-icons {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
-  margin-top: var(--sp-2);
-}
-.rup-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  border: 1px solid transparent;
-  border-radius: var(--r-xs);
-  color: var(--fg-dim);
-}
-.rup-icon:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-.rup-icon.sel {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-/* 色相 */
-.rup-hues {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.rup-hue {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-full);
-}
-.rup-hue.none {
-  /* 默认色：用半白半透明的斜条表示「不指定」 */
-  background: linear-gradient(135deg, var(--bg-4) 50%, transparent 50%);
-}
-.rup-hue.sel {
-  box-shadow: 0 0 0 2px var(--accent-line);
-  border-color: var(--accent);
-}
-
-.rup-btn {
-  width: 100%;
-  margin-top: var(--sp-3);
-  padding: 5px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-3);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-}
-.rup-btn:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.rup-login {
-  background: transparent;
-}
-
-/* 登录说明（预留功能，如实说明） */
-.rup-login-note {
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-base);
-}
-.rup-note-title {
-  color: var(--warn);
-  font-size: var(--fs-sm);
-  margin-bottom: var(--sp-1);
-}
-.rup-note-body {
-  margin: 0 0 var(--sp-2);
-  overflow-wrap: anywhere;
-}
-.rup-note-list {
-  margin: 0;
-  padding-left: 16px;
-}
-.rup-note-list li {
-  margin-bottom: 2px;
-  overflow-wrap: anywhere;
-}
 .rp-sec:hover .rp-grip,
 .rp-grip:focus-visible {
   opacity: 0.7;
@@ -1490,11 +1078,6 @@ html[data-theme='light'] .tb-pin.on {
 .rp-grip:focus-visible {
   opacity: 1;
   color: var(--accent);
-}
-/* 排序中禁掉文字选择（拖快了会把标题选蓝） */
-body.reordering {
-  user-select: none;
-  cursor: grabbing;
 }
 
 /* ---- 工具库弹层：从工具栏头部下面展开 ---- */
@@ -1527,9 +1110,6 @@ body.reordering {
   margin: 3px 0 5px;
   /* 触发线要相对它定位 */
   position: relative;
-}.rp-v.warn {
-  color: var(--warn);
-  color: var(--warn);
 }
 
 /* 54. 从工具库拖到工具栏（用户要求：可拖拽 + 拖动时实时位置预览）
@@ -1554,11 +1134,6 @@ body.reordering {
   /* 别挡住鼠标下方的元素（否则 elementFromPoint 会一直命中自己） */
   pointer-events: none;
   opacity: 0.95;
-}
-/* 拖拽进行中：禁掉文字选择，指针保持「抓着」的样子 */
-body.tool-dragging {
-  user-select: none;
-  cursor: grabbing;
 }
 
 /* 57. 任务模块（用户提的四条）
@@ -1599,84 +1174,6 @@ body.tool-dragging {
 .rail-mode-btn.open {
   background: var(--bg-3);
 }
-.rmm-head {
-  padding: 3px var(--sp-2) 5px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-}
-.rmm-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-}
-.rmm-item:hover:not(:disabled) {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-/* 未接入的项：明确不可选（不做假状态），但仍然列出来让人知道有这回事 */
-.rmm-item:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.rmm-item .spacer {
-  flex: 1;
-}
-.rmm-dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: var(--r-full);
-  background: var(--fg-mute);
-  opacity: 0.5;
-}
-.rmm-item.cur .rmm-dot {
-  background: var(--accent);
-  opacity: 1;
-}
-.rmm-item.cur .rmm-name {
-  color: var(--fg);
-}
-.rmm-tag {
-  flex: none;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: 9.5px;
-  white-space: nowrap;
-}
-.rmm-item.cur .rmm-tag {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.rmm-foot {
-  margin-top: 4px;
-  padding: 5px var(--sp-2) 3px;
-  border-top: 1px solid var(--border-soft);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-/*
- * 拖动中：禁掉过渡与文字选择。
- * 过渡是给「收起/展开」用的动画，拖动时带着缓动会像橡皮筋；
- * 不关 user-select 的话拖快了会把界面文字整片选蓝。
- */
-body.resizing {
-  user-select: none;
-  cursor: col-resize;
-}
-body.resizing .workspace {
-  transition: none;
-}
 @keyframes term-blink {
   50% {
     opacity: 0;
@@ -1698,9 +1195,6 @@ body.resizing .workspace {
 }
 .term .diff-label {
   background: transparent;
-}
-body.resizing-term {
-  user-select: none;
 }
 .sbr {
   display: flex;
@@ -1767,58 +1261,6 @@ body.resizing-term {
   justify-content: flex-start;
   pointer-events: none; /* 只有刻度本身可点，空白处不挡消息流 */
 }
-.outline-track {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  max-height: 88%;
-  overflow: hidden;
-  pointer-events: auto;
-}
-
-/* 命中区：透明；刻度锚在命中区左侧（向右长，最长 34 < 容器 44） */
-.outline-hit {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  width: 100%;
-  padding: 6px 4px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  min-width: 0;
-}
-.outline-bar {
-  display: block;
-  width: 14px;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--border-str);
-  opacity: 0.55;
-  transition:
-    width 130ms var(--ease),
-    height 130ms var(--ease),
-    background 130ms var(--ease),
-    opacity 130ms var(--ease);
-}
-/* 当前读到的那一轮 */
-.outline-hit.on .outline-bar {
-  width: 22px;
-  background: var(--fg);
-  opacity: 0.9;
-}
-/* 悬停：那一格就地长高变宽（向左长） */
-.outline-hit.hover .outline-bar {
-  width: 34px;
-  height: 8px;
-  background: var(--accent);
-  opacity: 1;
-}
-/* 整条轨道被悬停时其它格稍微提亮 —— 让「我可以选」看得出来 */
-.outline-track:has(.outline-hit.hover) .outline-bar {
-  opacity: 0.75;
-}
 
 /* ---- 悬停预览卡（top 由 JS 覆写，锚在被指的那一格） ---- */
 .outline-preview {
@@ -1834,9 +1276,6 @@ body.resizing-term {
   box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.65);
   pointer-events: none;
   z-index: 20;
-}
-html[data-theme='light'] .outline-preview {
-  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.28);
 }
 .op-head {
   display: flex;
@@ -1883,57 +1322,4 @@ html[data-theme='light'] .outline-preview {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-style: italic;
-}
-.qrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 2px 4px 2px 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-}
-.qrow.steering {
-  border-color: var(--accent-line);
-  color: var(--fg);
-}
-.qrow .ico {
-  flex: none;
-  color: var(--fg-mute);
-}
-.qrow.steering .ico {
-  color: var(--accent);
-}
-.qrow-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.qrow-tag {
-  flex: none;
-  color: var(--accent);
-  font-size: var(--fs-xs);
-}
-.qrow-jump {
-  flex: none;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  transition:
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.qrow-jump:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
 }

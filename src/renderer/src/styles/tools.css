@@ -852,3 +852,137 @@
 .tl-row:active {
   cursor: grabbing;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/*
+ * 浏览器与工具栏同时显示时的右栏布局：
+ *   rp-top(auto) / 浏览器(可拖高度) / 分隔条(6px) / 工具分区(1fr)
+ * `--h-browser` 由 BrowserHeightSplitter 在拖动时写入（px）；
+ * 没写时回落设计默认 55%。工具栏收起时用 .tools-collapsed 让浏览器独占整列。
+ */
+.rightpanel.browser-mode {
+  grid-template-rows: auto minmax(200px, var(--h-browser, 55%)) 6px minmax(0, 1fr);
+}
+
+/* 工具栏收起：把整列都给浏览器（上面的浏览器模式行数规则失效） */
+.rightpanel.tools-collapsed {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.rightpanel.browser-mode .browser-surface {
+  min-height: 0;
+}
+
+/*
+ * 网页是原生 WebContentsView，永远盖在渲染层之上。右栏宽度把手只有 5px、
+ * 又贴在面板左缘，会被原生视图整段遮住 —— 浏览器打开时就没法从页面区域
+ * 拖宽度（只能在顶部工具栏那一段拖）。这里让网页区让开这条缝，
+ * 把手在整条边上都能抓。
+ */
+.rightpanel.browser-mode .browser-viewport {
+  margin-left: 5px;
+}
+
+/* 21. 右栏 —— 任务进度 */
+.rightpanel {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  /* .resizer-panel 的定位基准（它绝对定位在左缘） */
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.rp-count {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-todo.done .rp-text {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+}
+
+/* 49. 任务行的完成态：真的要看得出「已完成 / 未完成」
+   用户报：「右边栏的任务没有已完成或未完成的提示」。
+   旧实现只给已完成的加删除线，勾选框是个空 span（没边框、没底色），
+   在浅色主题下几乎看不出区别。
+   现在：真勾选框（有边框/底色）+ 右侧状态字。 */
+.rp-todos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  gap: 3px;
+}
+
+.rp-todo {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 5px;
+  align-items: start;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  min-width: 0;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: start;
+  padding: 2px 0;
+}
+
+/* 勾选框：一个真方框 */
+.rp-box {
+  color: var(--fg-mute);
+  text-align: center;
+  line-height: inherit;
+  color: var(--fg-mute);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border: 1px solid var(--border-str);
+  border-radius: 2px;
+  background: var(--bg-2);
+  color: transparent;
+  font-size: 9px;
+  line-height: 1;
+  flex: none;
+}
+
+.rp-todo.done .rp-box {
+  color: var(--ok);
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok);
+  color: #0b1f16;
+  font-weight: 700;
+}
+
+.rp-v.warn {
+  color: var(--warn);
+  color: var(--warn);
+}

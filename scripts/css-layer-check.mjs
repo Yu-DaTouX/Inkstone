@@ -24,7 +24,6 @@ const ORDER = [
   'tokens.css',
   'app.css',
   'stage1.css',
-  'stage2.css',
   'redesign.css',
   'motion.css',
   'settings.css',
@@ -36,7 +35,8 @@ const ORDER = [
   'chat.css',
   'composer.css',
   'tools.css',
-  'browser.css'
+  'browser.css',
+  'dialog.css'
 ]
 
 /** 解析成 Map<"媒体查询|选择器", Map<属性,值>>，同 key 后写覆盖前写 */

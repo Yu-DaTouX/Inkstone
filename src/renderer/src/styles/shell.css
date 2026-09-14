@@ -197,3 +197,78 @@
   background: var(--warn);
   width: 2px;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.connbar.starting {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.connbar .spacer {
+  flex: 1;
+}
+
+.connbar .btn {
+  height: 20px;
+  font-size: var(--fs-xs);
+  color: inherit;
+}
+
+.connbar-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connbar-detail {
+  flex-basis: 100%;
+  max-height: 180px;
+  overflow: auto;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-code);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.jump-bottom {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-str);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  z-index: 3;
+}
+
+.jump-bottom:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.notice.info {
+  border-left-color: var(--accent);
+}
+
+.notice.warning {
+  border-left-color: var(--warn);
+}
+
+.notice.error {
+  border-left-color: var(--err);
+}

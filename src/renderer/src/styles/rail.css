@@ -808,3 +808,304 @@
   padding-left: var(--sp-2);
   border-left: 1px solid var(--border-soft);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 stage2.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.rail-rename {
+  height: 22px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.proj + .proj {
+  margin-top: 3px;
+}
+
+/* 左侧引导线：表明这些会话属于上面的项目 */
+.proj {
+  position: relative;
+}
+
+.proj::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 30px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border-soft);
+  pointer-events: none;
+}
+
+.rup-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.rup-head .spacer {
+  flex: 1;
+}
+
+.rup-x {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+
+.rup-x:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rup-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.rup-label {
+  flex: none;
+  width: 34px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rup-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.rup-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.rup-input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
+
+/* 首字 / 图标 二选一 */
+.rup-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+}
+
+.rup-seg-btn {
+  padding: 2px 9px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rup-seg-btn.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 图标网格 */
+.rup-icons {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: var(--sp-2);
+}
+
+.rup-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+}
+
+.rup-icon:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rup-icon.sel {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 色相 */
+.rup-hues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rup-hue {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+}
+
+.rup-hue.none {
+  /* 默认色：用半白半透明的斜条表示「不指定」 */
+  background: linear-gradient(135deg, var(--bg-4) 50%, transparent 50%);
+}
+
+.rup-hue.sel {
+  box-shadow: 0 0 0 2px var(--accent-line);
+  border-color: var(--accent);
+}
+
+.rup-btn {
+  width: 100%;
+  margin-top: var(--sp-3);
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.rup-btn:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.rup-login {
+  background: transparent;
+}
+
+/* 登录说明（预留功能，如实说明） */
+.rup-login-note {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+.rup-note-title {
+  color: var(--warn);
+  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-1);
+}
+
+.rup-note-body {
+  margin: 0 0 var(--sp-2);
+  overflow-wrap: anywhere;
+}
+
+.rup-note-list {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.rup-note-list li {
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+.rmm-head {
+  padding: 3px var(--sp-2) 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.rmm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.rmm-item:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 未接入的项：明确不可选（不做假状态），但仍然列出来让人知道有这回事 */
+.rmm-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rmm-item .spacer {
+  flex: 1;
+}
+
+.rmm-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--fg-mute);
+  opacity: 0.5;
+}
+
+.rmm-item.cur .rmm-dot {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.rmm-item.cur .rmm-name {
+  color: var(--fg);
+}
+
+.rmm-tag {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.rmm-item.cur .rmm-tag {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.rmm-foot {
+  margin-top: 4px;
+  padding: 5px var(--sp-2) 3px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
