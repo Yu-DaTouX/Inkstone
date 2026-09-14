@@ -73,6 +73,8 @@ const CASES = {
     cost: 0,
     keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
+  // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
+  perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0 },
   // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
   layoutdiag: { probe: 'scripts/probe/layoutdiag.js', delay: 12000, cost: 0 },
   // 诊断：长会话虚拟化为什么不渲染（只输出尺寸，不断言）
