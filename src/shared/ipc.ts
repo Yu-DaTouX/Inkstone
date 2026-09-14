@@ -534,7 +534,18 @@ export const SOUND_VOLUME_MAX = 1
  * （未知 id 直接丢掉，否则版本升级后旧 id 会一直占位），
  * 渲染端要按它排默认顺序。两处必须用同一份定义。
  */
-export const TOOL_SECTIONS = ['context', 'quota', 'todo', 'queue', 'files', 'ext', 'log', 'actions'] as const
+/**
+ * 右栏工具分区的**默认顺序**，也是合法 id 的白名单。
+ *
+ * ⚠️ 顺序改过（2026-09 评审）：原来是 `context, quota, todo, …`，
+ *    现在把 **任务** 提到最前 —— 它回答的是“现在该我做什么”，
+ *    是唯一“越早看到越好”的分区；上下文与文件是查资料的。
+ *    额度 / 队列 / 日志 / 扩展 / 操作都归到后面按需展开。
+ *
+ *    这只影响 `toolOrder` 为空（从未自定义过）的用户 —— 设置里存过顺序的
+ *    人仍按自己的来（见 RightPanel 的 fullOrder），不会被默默重排。
+ */
+export const TOOL_SECTIONS = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions'] as const
 export type ToolSectionId = (typeof TOOL_SECTIONS)[number]
 
 export interface ProviderQuota {

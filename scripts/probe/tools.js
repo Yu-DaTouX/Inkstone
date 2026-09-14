@@ -50,7 +50,12 @@
     await store.getState().setToolLayout({ toolOrder: [], toolHidden: [] })
     await sleep(700)
 
-    const ALL = ['context', 'quota', 'todo', 'queue', 'files', 'ext', 'log', 'actions']
+    /*
+     * 默认顺序 —— 与 shared/ipc.ts 的 TOOL_SECTIONS **必须一致**。
+     * 改一处要改两处（探针是独立文件，拿不到那个常量）。
+     * 2026-09 评审：任务提到最前（它回答“现在该我做什么”）。
+     */
+    const ALL = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions']
     const st = store.getState()
     /** 按 isEmpty 规则推导「应该渲染哪些」——与实现保持同一判据 */
     const expectEmpty = []
@@ -106,9 +111,15 @@
     }
 
     out.push('\n=== 4. 指针拖拽调顺序 ===')
-    // 用两个**一定存在**且不同的分区：交换后的第一项 与 files
+    /*
+     * 用两个**一定存在且不同**的分区。
+     * ⚠️ 不能写死第二个分区的 id：默认顺序改过（任务提到最前），
+     *    写死的那个可能正好等于 dragId —— 探针自己报「用例无效」。
+     *    改成从当前实际渲染的分区里挑一个不同于 dragId 的。
+     */
     const dragId = before[1]
-    const anchorId = 'files'
+    const visibleIds = qa('.rp-slot').map((x) => x.dataset.toolId)
+    const anchorId = visibleIds.find((x) => x !== dragId) ?? 'files'
     const g2 = document.querySelector('[data-testid="grip-' + dragId + '"]')
     const targetSlot = qa('.rp-slot').find((x) => x.dataset.toolId === anchorId)
     if (!g2 || !targetSlot) {
