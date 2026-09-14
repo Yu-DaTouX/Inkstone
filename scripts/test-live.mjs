@@ -73,6 +73,8 @@ const CASES = {
     cost: 0,
     keys: 'shift+tab,shift+tab'
   },
+  // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
+  sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
   zoom: {

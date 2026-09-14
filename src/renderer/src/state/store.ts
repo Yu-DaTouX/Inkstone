@@ -767,19 +767,39 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   refreshSessions: async () => {
-    set({ sessions: await window.yan.listSessions() })
+    /*
+     * ⚠️ 「拉取类」动作全部包 try/catch。
+     *
+     * pi 没起来时主进程的 handler 会 throw，IPC 因此 reject —— 这些动作
+     * 原来直接 await，于是变成未捕获的 promise rejection：控制台报错、
+     * 界面什么都不更新、用户看不出原因（logs / slashcmd 探针各抓到一处）。
+     * 拿不到就保持原状，等连接恢复后 startConnWatch 会再拉一次。
+     */
+    try {
+      set({ sessions: await window.yan.listSessions() })
+    } catch {
+      /* 保持原状 */
+    }
   },
 
   reloadModels: async () => {
-    const [models, thinkingLevels] = await Promise.all([
-      window.yan.listModels(),
-      window.yan.listThinkingLevels()
-    ])
-    set({ models, thinkingLevels })
+    try {
+      const [models, thinkingLevels] = await Promise.all([
+        window.yan.listModels(),
+        window.yan.listThinkingLevels()
+      ])
+      set({ models, thinkingLevels })
+    } catch {
+      /* pi 未就绪：保持上一次的列表（可能是空的） */
+    }
   },
 
   reloadCommands: async () => {
-    set({ commands: await window.yan.listCommands(), commandsAt: Date.now() })
+    try {
+      set({ commands: await window.yan.listCommands(), commandsAt: Date.now() })
+    } catch {
+      /* 同上 */
+    }
   },
 
   redetectPi: async () => {
@@ -1076,7 +1096,12 @@ export const useStore = create<Store>((rawSet, get) => {
    * 是增量累积的，而 pi 那边是权威的完整文本（包括已经滚出视野的部分）。
    */
   copyLastReply: async () => {
-    const text = await window.yan.lastAssistantText()
+    let text: string | null = null
+    try {
+      text = await window.yan.lastAssistantText()
+    } catch {
+      /* pi 未就绪：下面按「没有可复制的回复」处理，比抛未捕获异常好 */
+    }
     if (!text) {
       set({ notices: pushNotice(get().notices, 'info', '还没有可复制的回复') })
       return

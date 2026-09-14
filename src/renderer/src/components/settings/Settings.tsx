@@ -138,6 +138,19 @@ const SCALE_OPTS = [
   { v: 1.5, key: 'set.uiScaleHuge' }
 ] as const
 
+/**
+ * 发送键档位。
+ *
+ * `auto` 是默认值，也就是**改动前的行为**（短输入框 Enter 发送，
+ * 长文模式 Enter 换行）—— 不把默认改成别的，是因为那会静悄悄
+ * 改变所有人的按键习惯。见 AppSettings.sendKey 的注释。
+ */
+const SEND_KEY_OPTS = [
+  { v: 'auto', key: 'set.sendKeyAuto' },
+  { v: 'enter', key: 'set.sendKeyEnter' },
+  { v: 'ctrlEnter', key: 'set.sendKeyCtrl' }
+] as const
+
 function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' | 'en-US') => void }) {
   const t = useT()
   const theme = useStore((s) => s.settings?.theme) ?? 'dark'
@@ -149,6 +162,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
+  const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
   const zoom = useStore((s) => s.zoom)
   /** 对话内容列宽度（0 = 用设计默认值） */
   const streamWidth = useStore((s) => s.settings?.streamWidth) ?? 0
@@ -230,6 +244,25 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {o.v === 0 && zoom
                 ? t('set.uiScaleAutoVal', { v: zoom.autoScale.toFixed(2) })
                 : t(o.key)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.sendKey')}</div>
+          <div className="set-desc">{t('set.sendKeyDesc')}</div>
+        </div>
+        <div className="set-ctl seg" data-testid="set-send-key">
+          {SEND_KEY_OPTS.map((o) => (
+            <button
+              key={o.v}
+              className={`seg-btn ${sendKey === o.v ? 'sel' : ''}`}
+              data-send-key={o.v}
+              onClick={() => void patchSettings({ sendKey: o.v })}
+            >
+              {t(o.key)}
             </button>
           ))}
         </div>

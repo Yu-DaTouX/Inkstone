@@ -464,6 +464,19 @@ export interface AppSettings {
    */
   autonomous: boolean
   /**
+   * 发送键。
+   *
+   * - `auto`（**默认**）：短输入框里 Enter 发送；进入长文模式后 Enter 换行、
+   *   Ctrl/Cmd+Enter 发送。这是用户明确要求过的行为（写长文时不想误发）。
+   * - `enter`：任何时候 Enter 发送（Shift+Enter 换行）。
+   * - `ctrlEnter`：任何时候 Ctrl/Cmd+Enter 发送（Enter 换行）。
+   *
+   * 为什么要把它变成设置：`auto` 让「输入框高度」隐式决定了 Enter 的语义 ——
+   * 按下去之前无法确定会发生什么。显式之后，当前规则还会常显在输入区里
+   * （见 Composer 的 sendRule），不必靠试。
+   */
+  sendKey: 'auto' | 'enter' | 'ctrlEnter'
+  /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
    * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。

@@ -90,6 +90,12 @@ const DEFAULTS: AppSettings = {
   streamWidth: 0,
   // 提问优先（自主模式默认关）
   autonomous: false,
+  /*
+   * 发送键默认 auto —— 保持用户已有的习惯：短输入框 Enter 发送，
+   * 长文模式里 Enter 换行。**不改变默认行为**，只是把它变成可配、
+   * 可见的（见 AppSettings.sendKey 的注释）。
+   */
+  sendKey: 'auto',
   // 声音提示默认关（见 SoundSettings 注释）
   sound: defaultSound()
 }
@@ -262,6 +268,9 @@ export async function getSettings(): Promise<AppSettings> {
     cached.toolDetail = cached.toolDetail === true
     cached.streamWidth = clampStreamWidth(cached.streamWidth)
     cached.autonomous = cached.autonomous === true
+    // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
+    cached.sendKey =
+      cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'
     cached.sound = sanitizeSound(cached.sound)
   } catch {
     cached = { ...DEFAULTS }

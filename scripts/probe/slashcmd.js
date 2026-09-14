@@ -37,7 +37,17 @@
     out.push('=== 0. 命令列表 ===')
     out.push('  共 ' + cmds.length + ' 条: ' + JSON.stringify(cmds.slice(0, 6).map((c) => c.name)))
     if (cmds.length > 0) ok('拿到了命令列表')
-    else bad('命令列表是空的')
+    else {
+      /*
+       * pi 没就绪（隔离环境里它起不来）→ 整个场景没有可测的对象。
+       * 明确标注跳过，而不是报 ✗ —— 否则环境问题会被读成代码回归。
+       * 另外：以前这里会因为 listCommands 直接抛异常而让**整个探针崩掉**，
+       * 连这条说明都看不到（store 的拉取类动作已加保护）。
+       */
+      out.push('  ⤺ 跳过：pi 未就绪（conn=' + store.getState().conn + '），命令列表为空')
+      out.push('    本场景要靠 pi 提供的命令列表才能验证填充与排序。')
+      return out.join('\n')
+    }
 
     out.push('\n=== 1. 自动管理：列表过期时会自动重拉 ===')
     // 手工把时间戳改旧 → 打开菜单应触发重拉

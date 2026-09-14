@@ -32,6 +32,13 @@ export function Composer() {
   /** 常用排序（自动管理）、记录使用、以及列表的自动刷新 */
   const commandUse = useStore((s) => s.commandUse)
   const markCommandUsed = useStore((s) => s.markCommandUsed)
+  /**
+   * 发送键（用户可在设置里选）。
+   *
+   * `auto` 是默认值，也是**改动前的行为**：短输入框 Enter 发送，
+   * 长文模式里 Enter 换行。见 AppSettings.sendKey 的注释。
+   */
+  const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const reloadCommands = useStore((s) => s.reloadCommands)
   const openSettings = useStore((s) => s.openSettings)
   const commandsAt = useStore((s) => s.commandsAt)
@@ -71,6 +78,13 @@ export function Composer() {
   const lastArrowUp = useRef(0)
 
   const [expanded, setExpanded] = useState(false)
+  /**
+   * 当前生效的发送规则 —— 输入区常显的那句提示就是从它来的。
+   *
+   * `auto` 模式下规则会跟着展开态变（这正是要写出来的原因）。
+   */
+  const sendRule: 'enter' | 'ctrl' =
+    sendKey === 'enter' ? 'enter' : sendKey === 'ctrlEnter' ? 'ctrl' : expanded ? 'ctrl' : 'enter'
   /** 拖出来的高度（px）。0 = 用默认的 max-height */
   const [tall, setTall] = useState(0)
   /** pointerup 后由 click 事件完成“点一下切换”；拖动则抑制 click */
@@ -493,17 +507,28 @@ export function Composer() {
     /*
      * 发送键。
      *
-     * 默认：Enter 发送，Shift+Enter 换行。
+     * 三种规则（用户可在设置里选，见 AppSettings.sendKey）：
+     *   auto（默认）短输入框 Enter 发送；长文模式里 Enter 换行、
+     *         Ctrl/Cmd+Enter 发送 —— 用户明确要求过「写长文时别误发」。
+     *   enter      任何时候 Enter 发送（Shift+Enter 换行）
+     *   ctrlEnter  任何时候 Ctrl/Cmd+Enter 发送（Enter 换行）
      *
-     * ⚠️ 进了长文模式之后意图就变了 —— 那时他是要写长文，
-     *   Enter 应该是换行。用户明确要求：
-     *     「按回车按钮是换行而不是输入；
-     *       按下 Ctrl+回车 或者发送按钮再发送」。
+     * ⚠️ 为什么把这条规则提出来做成设置：`auto` 让「输入框高度」**隐式**
+     *    决定了 Enter 的语义 —— 按下去之前无法确定会发生什么。
+     *    现在规则既可选，也常显在输入区里（见下面的 sendRule 提示）。
      *
-     * Ctrl/Cmd+Enter 任何时候都能发送（写长文时也不会误发）。
+     * Ctrl/Cmd+Enter 在任何模式下都能发送 —— 这是跨应用的通用约定，
+     * 也是「写长文时想发出去」的退路。
      */
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      const wantsSend = e.ctrlKey || e.metaKey || (!e.shiftKey && !expanded)
+      const wantsSend =
+        e.ctrlKey || e.metaKey
+          ? true
+          : sendKey === 'enter'
+            ? !e.shiftKey
+            : sendKey === 'ctrlEnter'
+              ? false
+              : !e.shiftKey && !expanded
       if (wantsSend) {
         e.preventDefault()
         void submit()
@@ -669,17 +694,19 @@ export function Composer() {
             <AutonomousToggle />
 
             {/*
-             * 放大状态下的提示。
+             * 当前发送规则 —— **常显**（不只是长文模式）。
              *
-             * 为什么需要：拖大之后 Enter 的语义变了（换行），
-             * 而这是**看不见的规则** —— 不提示的话用户会按 Enter 发现没发出去，
-             * 以为是坏了。直接把当下规则写在旁边。
+             * 为什么必须写出来：Enter 到底是发送还是换行，取决于
+             * 设置的发送键 + 是否长文模式。不写出来就得靠试 ——
+             * 而“试”的代价是一条没写完就发出去的消息。
+             *
+             * ⚠️ 不用 `!disabled` 包住：规则是**设置状态**的反映，
+             *    不是“现在能不能输入”。禁用时留空反而让探针
+             *    和用户都不知道当前规则是什么。
              */}
-            {expanded ? (
-              <span className="ctool-hint" data-testid="composer-keyhint">
-                {t('composer.enterNewline')}
-              </span>
-            ) : null}
+            <span className="ctool-hint" data-testid="composer-keyhint">
+              {sendRule === 'enter' ? t('composer.keyEnterSend') : t('composer.keyCtrlSend')}
+            </span>
           </div>
           <button
             className={`send ${busy ? 'abort' : ''}`}
@@ -687,7 +714,13 @@ export function Composer() {
             onClick={busy ? () => void abort() : () => void submit()}
             /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
             disabled={!busy && (!value.trim() && attachments.length === 0 ? true : disabled)}
-            title={expanded ? t('composer.sendTipTall') : undefined}
+            title={
+              sendRule === 'ctrl'
+                ? t('composer.keyCtrlSend')
+                : expanded
+                  ? t('composer.sendTipTall')
+                  : undefined
+            }
           >
             <Icon name={busy ? 'alert-circle' : bashMode ? 'activity' : 'send'} size={12} />
             <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>
