@@ -5,6 +5,17 @@
     out.push('✗ ' + s)
     return out.join('\n')
   }
+  /**
+   * 显式跳过（环境不满足，**不是**失败）。
+   *
+   * 为什么要区分：测试器只认 `✗`，所以把「环境不具备」写成 `✗`
+   * 会让隔离环境的每次回归都亮红灯 —— 久了就没人看，真的回归也就淹了。
+   * （当初那个白屏 bug 就是被「环境问题」糊弄过去的。）
+   */
+  const skip = (s) => {
+    out.push('  ⤺ 跳过：' + s)
+    return out.join('\n')
+  }
   const ok = (cond, s) => {
     out.push((cond ? '  ✓ ' : '  ✗ ') + s)
     return !!cond
@@ -60,7 +71,13 @@
   }
   const connNow = store.getState().conn
   log('pi 连接: ' + connNow)
-  if (connNow !== 'ready') return fail('pi 未连上（conn=' + connNow + '），后面的功能测不了')
+  if (connNow !== 'ready') {
+    /*
+     * 这个场景要发**真实消息**（发、中断、工具、错误态）—— 没有 pi 就无从测起。
+     * 显式跳过，不报 ✗（约定见文件头与交接文档第 5 节）。
+     */
+    return skip(`pi 未就绪（conn=${connNow}），本场景要发真实消息`)
+  }
 
   /* ================= 1. 斜杠命令菜单 ================= */
   log('\n--- 1. 斜杠命令 ---')
