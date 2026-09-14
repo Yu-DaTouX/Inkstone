@@ -54,10 +54,19 @@
 
   out.push('')
   out.push('=== 2. 初始焦点进面板 ===')
-  ok(
-    !!panel && !!document.activeElement && panel.contains(document.activeElement),
-    `打开后焦点在面板内（${document.activeElement?.tagName ?? '-'}）`
-  )
+  /*
+   * 初始焦点是在 requestAnimationFrame 里做的 —— 固定 sleep 在 16 个场景
+   * 连着跑时会漏（实测抖动过一次）。改成轮询等它落位。
+   */
+  let focused = false
+  for (let i = 0; i < 15; i++) {
+    if (panel && document.activeElement && panel.contains(document.activeElement)) {
+      focused = true
+      break
+    }
+    await sleep(100)
+  }
+  ok(focused, `打开后焦点在面板内（${document.activeElement?.tagName ?? '-'}）`)
 
   out.push('')
   out.push('=== 3. Tab 圈定（合成事件；焦点移动是我们显式做的）===')
