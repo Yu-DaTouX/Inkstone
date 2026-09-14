@@ -202,6 +202,64 @@
     ok(lightBorder.length === 0, '终端内部没有浅色下边框（不透明的那种）')
   }
 
+  out.push('')
+  out.push('=== 6. 浅色主题下不该出现「深色块」（终端除外）===')
+  /*
+   * 这一节是那类 bug 的**泛化**：主题令牌被写死成深色时，浅色主题下就是
+   * 「白页面上一个黑框」（本文件头那两个 bug 都是这么来的；后来终端里
+   * 那个白底是同一族的反向情况）。
+   *
+   * 终端是**刻意**深色的（chat.css 里写明了「无论浅色/深色都是深底」），
+   * 所以排除 `.term` 子树；代码块走 `--code-bg`，浅色主题下本来就是浅的。
+   *
+   * 只查**不透明**的背景（alpha ≥ 0.9）：半透明的压暗层/阴影要与祖先
+   * 合起来才有意义（如 modal 的 scrim）。
+   *
+   * 小面积也跳过：按钮/指示条用深色填充是常见设计 —— 发送键就是
+   * `--fg` 实心 + 白图标（30×30），导航轨的视口条在浅色下也是 `--fg`。
+   * 这里要抓的是**成片**的深色背景，那才是「白页面上的黑框」。
+   */
+  /** 小于这个面积（px²）的深色块当设计，不算「黑框」（≈ 70×70） */
+  const DARK_BOX_MIN_AREA = 5000
+  const darkBoxesIn = (root, label) => {
+    if (!root) {
+      out.push(`  ${label}: (节点不存在)`)
+      return []
+    }
+    const hits = []
+    for (const el of root.querySelectorAll('*')) {
+      if (el.closest('.term')) continue
+      const rect = el.getBoundingClientRect()
+      if (rect.width * rect.height < DARK_BOX_MIN_AREA) continue
+      const m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g)
+      if (!m) continue
+      const a = m.length >= 4 ? Number(m[3]) : 1
+      if (a < 0.9) continue
+      const l = (m[0] * 0.299 + m[1] * 0.587 + m[2] * 0.114) / 255
+      if (l < 0.25) {
+        hits.push(
+          `.${String(el.className).split(/\s+/).filter(Boolean).join('.')}(${Math.round(rect.width)}×${Math.round(rect.height)},${l.toFixed(2)})`
+        )
+      }
+    }
+    out.push(`  ${label}: ${hits.length} 个${hits.length ? ' → ' + hits.slice(0, 6).join(' ') : ''}`)
+    return hits
+  }
+
+  const dark = [
+    ...darkBoxesIn(q('.rail'), '左栏'),
+    ...darkBoxesIn(q('.center'), '中栏'),
+    ...darkBoxesIn(q('[data-testid="rightpanel"]'), '右栏')
+  ]
+
+  store.getState().openSettings('appearance')
+  await sleep(700)
+  const darkSettings = darkBoxesIn(q('.settings'), '设置面板')
+  store.getState().closeSettings()
+  await sleep(300)
+
+  ok(dark.length + darkSettings.length === 0, '浅色主题下没有意外的深色块')
+
   /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */
   document.documentElement.dataset.theme = 'dark'
   try {
