@@ -234,7 +234,12 @@
       }
     }
   } catch (e) {
-    bad('抛异常：' + (e && e.message ? e.message : String(e)))
+    /* 带上堆栈：只有 message 时定位不到是哪一行抛的（踩过） */
+    const stack = String(e && e.stack ? e.stack : '')
+      .split('\n')
+      .slice(0, 4)
+      .join(' | ')
+    bad('抛异常：' + (e && e.message ? e.message : String(e)) + '  @ ' + stack)
   }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length

@@ -894,9 +894,23 @@
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /*
+   * 行数必须与**实际渲染的元素**一致，否则 `1fr` 那一行会落到
+   * 不该拿它的元素上（同类问题在 `.center` 上造成过长会话白屏）。
+   *
+   * 普通模式下的流内元素：`.rp-top` + `.rp-body`（= 2 行）。
+   * 开了工具库时多一个 `.tool-lib`（= 3 行）—— 用 `:has()` 分支，
+   * 而不是把 3 行写死：写死时没开库的用户会多出一行空行，
+   * 而 `.rp-body` 会落到 `auto` 行（内容一长就溢出容器）。
+   *
+   * 浏览器模式的行定义在 browser.css 里，那儿已经是 4/5 行两个分支。
+   */
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+}
+.rightpanel:has(> .tool-lib) {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .rp-count {
