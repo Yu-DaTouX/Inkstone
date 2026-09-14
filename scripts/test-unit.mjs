@@ -54,6 +54,24 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+
+/*
+ * 流式增量推送（src/main/agent.ts）。
+ *
+ * 为什么不直接 import out/main/index.js：整个主进程入口会把 Electron 拉进来
+ * （node 下跑不了）。而 AgentController 本身只依赖 node 内置与本地模块，
+ * 所以单独 bundle 一份 —— 它的 handleEvent 是纯逻辑，不需要窗口、不需要 pi。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/agent.ts'],
+    outfile: 'out/test/agent.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 
@@ -383,6 +401,10 @@ await runStreamWidthTests(ok)
 // 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
 await runTodoHistoryTests(ok)
+
+// 流式增量推送协议（textDelta / thinkingDelta / outputDelta）
+const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')
+await runStreamDeltasTests(ok)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 process.exit(fail ? 1 : 0)

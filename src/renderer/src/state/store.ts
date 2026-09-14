@@ -15,6 +15,7 @@ import type {
   ChromeSyncReport,
   ExtensionUiRequest,
   MainPush,
+  MessagePatch,
   ModelInfo,
   PiInfo,
   QueueMode,
@@ -27,6 +28,7 @@ import type {
   SlashCommand,
   SoundEvent,
   UIMessage,
+  UIToolCall,
   UserProfile,
   ZoomState
 } from '../../../shared/ipc'
@@ -379,11 +381,36 @@ function thinkLabelOf(level: string): string {
 }
 
 /** 每条消息的 id 必须唯一；流式补丁按 id 找 */
-function patchMessage(list: UIMessage[], id: string, patch: Partial<UIMessage>): UIMessage[] {
+function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMessage[] {
   const i = list.findIndex((m) => m.id === id)
   if (i < 0) return list
+
+  /*
+   * 增量路径（流式文本走这里）。
+   *
+   * 为什么单独一支：`patch.textDelta` 是**追加**语义，不能跟
+   * 「用 patch 覆盖」的写法混在一起 —— 若 patch 里既没有全量 text 又没有
+   * delta，就只是普通字段更新。
+   *
+   * ⚠️ 这里**不改数组元素以外的东西**：找不到 id 时（例如渲染端刚 reload、
+   *    错过了 msg-add）直接返回，不伪造消息 —— 主进程在 message_end / sync
+   *    时会发全量快照，那时会补齐。
+   */
+  if (patch.textDelta === undefined && patch.thinkingDelta === undefined) {
+    const next = list.slice()
+    next[i] = { ...next[i], ...patch }
+    return next
+  }
+
+  const cur = list[i]
+  const { textDelta, thinkingDelta, ...rest } = patch
   const next = list.slice()
-  next[i] = { ...next[i], ...patch }
+  next[i] = {
+    ...cur,
+    ...rest,
+    ...(textDelta ? { text: (cur.text ?? '') + textDelta } : null),
+    ...(thinkingDelta ? { thinking: (cur.thinking ?? '') + thinkingDelta } : null)
+  }
   return next
 }
 
@@ -634,13 +661,25 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ messages: s.messages.filter((x) => x.id !== m.payload) })
         break
       case 'tool': {
-        const { msgId, call } = m.payload
+        const { msgId, call, outputDelta } = m.payload
         const msg = s.messages.find((x) => x.id === msgId)
         if (!msg) break
         const calls = (msg.toolCalls ?? []).slice()
         const i = calls.findIndex((c) => c.id === call.id)
-        if (i >= 0) calls[i] = call
-        else calls.push(call)
+        /*
+         * 增量输出（append）与「整条替换」两条路。
+         *
+         * ⚠️ 增量时**必须**基于本地已有的 output 拼接，而不是信任 call.output：
+         *    主进程发增量时不会再传那份越来越长的全量输出（那正是要避免的开销）。
+         */
+        if (i >= 0) {
+          const base = calls[i]
+          const merged: UIToolCall = { ...base, ...call }
+          if (outputDelta) merged.output = (base.output ?? '') + outputDelta
+          calls[i] = merged
+        } else {
+          calls.push(outputDelta ? { ...call, output: outputDelta } : call)
+        }
         set({ messages: patchMessage(s.messages, msgId, { toolCalls: calls }) })
         break
       }

@@ -79,6 +79,8 @@ const CASES = {
   railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
   // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
   perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0 },
+  // 增量推送协议：textDelta / thinkingDelta / outputDelta 的拼接与兜底
+  deltas: { probe: 'scripts/probe/deltas.js', delay: 12000, cost: 0 },
   // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
   layoutdiag: { probe: 'scripts/probe/layoutdiag.js', delay: 12000, cost: 0 },
   // 诊断：长会话虚拟化为什么不渲染（只输出尺寸，不断言）

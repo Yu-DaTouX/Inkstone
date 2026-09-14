@@ -42,6 +42,15 @@ import type {
 
 /** 流式文本的推送节流：60 帧够了，再多是给 IPC 白干活 */
 const FLUSH_MS = 16
+/**
+ * 节流间隔的上限。
+ *
+ * 文本/输出越长，一帧要序列化、要 diff 的字节越多 —— 这时把间隔拉开比
+ * 「硬撑 60fps」更划算：每次推送都是**值得的**，而不是把主线程压在
+ * 全量重传上。实测（见 MessageParts.tsx 顶部）一帧的渲染预算会被
+ * 几十万字的累积文本吃穿，所以让它自然降频到 10~20fps 比卡顿好。
+ */
+const MAX_FLUSH_MS = 120
 
 
 /** 推送补丁到渲染端（主进程注入） */
@@ -87,11 +96,42 @@ export class AgentController extends EventEmitter {
     firstTokenAt?: number
     /** 累积 usage（message_update 里带的就是累积值） */
     usage?: Usage
+    /**
+     * 已经推给渲染端的文本长度（增量推送的游标）。
+     *
+     * 为什么不用「每次重发全量文本」：流式期间每帧都带整篇累积文本，
+     * 一篇 50KB 的回答推 300 帧就是 15MB 的结构化克隆 + React 状态复制，
+     * 越长越贵（O(N²)）。存个游标只需发新的那一段。
+     * 权威对齐由 message_end / sync 的全量快照负责。
+     */
+    pushedText: number
+    /** 同上，思考文本的游标 */
+    pushedThinking: number
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
+  /** 文本脏（有新的流式文本待推） */
   private dirty = false
   private flushTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * 工具输出的**增量**待推集合（callId）。
+   *
+   * 工具输出是最高频的路径（一条命令的 stdout 一秒几十上百 chunk），
+   * 以前每个 chunk 都直接推一份完整累积输出 —— 一次长命令就是 O(N²) 字节。
+   * 现在只标记脏，由共用的定时器批量取增量。
+   */
+  private dirtyTools = new Set<string>()
+  /**
+   * toolCallId → 工具对象 / 它属于哪条消息。
+   *
+   * 为什么要建索引：`findCall` 以前是**线性扫全部消息的 toolCalls**，
+   * 而它会被每一个工具事件调用（高频）。一个 2000 条消息、上千次工具调用的
+   * 会话下，这就是 O(n) × 每秒上百次。
+   */
+  private callIndex = new Map<string, UIToolCall>()
+  private callOwner = new Map<string, string>()
+  /** toolCallId → 已经推给渲染端的 output 长度（与 streaming.pushedText 同理） */
+  private pushedOut = new Map<string, number>()
 
   private state: SessionState | null = null
   private uiSeen = new Set<string>()
@@ -262,6 +302,22 @@ export class AgentController extends EventEmitter {
 
     const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
     this.messages = Array.isArray(raw) ? normalizeHistory(raw) : []
+
+    /*
+     * 全量替换了消息列表 → 工具索引必须跟着重建。
+     *
+     * ⚠️ 不能只 clear()：此刻可能还有一条正在流的助手消息（compaction_end
+     *    会调 hydrate），它的 tools 不在 messages 里而在 streaming 上 ——
+     *    漏登记的话，后续 tool_execution_* 全部找不到 call，工具行就再也不更新。
+     */
+    this.callIndex.clear()
+    this.callOwner.clear()
+    this.pushedOut.clear()
+    for (const msg of this.messages) this.indexCalls(msg)
+    for (const call of this.streaming?.tools ?? []) {
+      this.registerCall(call, this.streaming?.id)
+    }
+
     this.push({ ch: 'sync', payload: this.messages })
 
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
@@ -368,11 +424,21 @@ export class AgentController extends EventEmitter {
           const norm = normalizeMessage(m, this.messages.length)
           if (norm) {
             this.messages.push(norm)
+            this.indexCalls(norm)
             this.push({ ch: 'msg-add', payload: norm })
           }
         } else if (m?.role === 'assistant') {
           const id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
-          this.streaming = { id, text: '', thinking: '', tools: [], startedAt: Date.now() }
+          this.streaming = {
+            id,
+            text: '',
+            thinking: '',
+            tools: [],
+            startedAt: Date.now(),
+            // 增量游标从 0 开始（渲染端拿到的 msg-add 里 text 也是空）
+            pushedText: 0,
+            pushedThinking: 0
+          }
           this.push({
             ch: 'msg-add',
             payload: { id, role: 'assistant', text: '', timestamp: Date.now() }
@@ -424,6 +490,7 @@ export class AgentController extends EventEmitter {
             startedAt: Date.now()
           }
           this.streaming.tools.push(call)
+          this.registerCall(call, this.streaming.id)
           this.flushNow()
           this.pushTool(call)
         } else if (kind === 'toolcall_delta') {
@@ -459,6 +526,8 @@ export class AgentController extends EventEmitter {
         const s = this.streaming
         const id = s.id
         this.streaming = null
+        // 这一条消息的工具从此属于历史消息 —— 索引要落到 id 上（渲染端也会收到全量快照）
+        for (const c of s.tools) this.registerCall(c, id)
 
         // 以 message_end 的 usage 为准（流式期间的可能是 0 或旧值）
         const finalUsage = toUsage(m.usage) ?? s.usage
@@ -510,7 +579,12 @@ export class AgentController extends EventEmitter {
           .map((c) => c.text ?? '')
           .join('')
         call.details = partial?.details
-        this.pushTool(call)
+        /*
+         * ⚠️ 这里**不能**直接 pushTool：这是最高频的事件（一条命令的 stdout
+         *    一秒几十上百个 chunk），而每个 chunk 都带完整累积输出，
+         *    推给渲染端就是 O(N²) 字节。只标脏，由共用定时器批量取增量。
+         */
+        this.markToolOutput(call.id)
         break
       }
 
@@ -574,12 +648,17 @@ export class AgentController extends EventEmitter {
         if (evtId && evtId !== this.bash.reqId) break
 
         this.bash.output += String(evt.delta ?? '')
-        // 与助手消息共用节流：bash 输出可能很密
-        if (this.flushTimer) break
-        this.flushTimer = setTimeout(() => {
-          this.flushTimer = null
-          this.flushBash()
-        }, FLUSH_MS)
+        /*
+         * 与工具输出走**同一条增量通道**（同一套节流）。
+         *
+         * 以前这里每帧重发 command + toolCalls 数组（含完整累积输出），
+         * 一条跑十几分钟的命令（构建/测试）会把它推成 O(N²) 字节 ——
+         * 而命令文本与 bash 状态在 msg-add 时已经发过了，
+         * 最终结果由 finishBash 发全量快照对齐。
+         */
+        const call = this.findCall(this.bash.msgId)
+        if (call) call.output = this.bash.output
+        this.markToolOutput(this.bash.msgId)
         break
       }
 
@@ -648,13 +727,30 @@ export class AgentController extends EventEmitter {
 
   /* ------------------------------------------------------- 消息组装辅助 */
 
+  /**
+   * 登记一个工具（连同它的宿主消息）—— callIndex / callOwner 的**唯一**写入口。
+   *
+   * 不登记的话 `findCall` 就找不到它 → 工具行永远停在「正在运行」。
+   */
+  private registerCall(call: UIToolCall, msgId?: string): void {
+    this.callIndex.set(call.id, call)
+    const owner = msgId ?? this.callOwner.get(call.id)
+    if (owner) this.callOwner.set(call.id, owner)
+  }
+
+  /** 一条消息里的全部工具都登记（hydrate / 历史消息） */
+  private indexCalls(msg: UIMessage): void {
+    for (const c of msg.toolCalls ?? []) this.registerCall(c, msg.id)
+  }
+
   private findCall(id: string): UIToolCall | undefined {
     if (!id) return undefined
-    for (const m of this.messages) {
-      const hit = m.toolCalls?.find((c) => c.id === id)
-      if (hit) return hit
-    }
-    return this.streaming?.tools.find((c) => c.id === id)
+    return this.callIndex.get(id)
+  }
+
+  /** 这个工具属于哪条消息 */
+  private ownerOf(call: UIToolCall): string | undefined {
+    return this.callOwner.get(call.id) ?? this.streaming?.id
   }
 
   private findOrCreateCall(id: string, name: string, args: unknown): UIToolCall {
@@ -664,6 +760,7 @@ export class AgentController extends EventEmitter {
     const call: UIToolCall = { id, name, args, status: 'running', startedAt: Date.now() }
     if (this.streaming) {
       this.streaming.tools.push(call)
+      this.registerCall(call, this.streaming.id)
     } else {
       // 没有对应的助手消息（例如扩展直接调工具）—— 补一条
       const msg: UIMessage = {
@@ -675,55 +772,132 @@ export class AgentController extends EventEmitter {
       }
       this.messages.push(msg)
       this.push({ ch: 'msg-add', payload: msg })
+      this.registerCall(call, msg.id)
     }
     return call
   }
 
-  /** 工具补丁：先找到它属于哪条消息 */
+  /** 工具补丁：**全量**推一个工具（状态 / 参数 / 最终结果变化时用） */
   private pushTool(call: UIToolCall): void {
-    let msgId = this.streaming?.id
-    if (!msgId) {
-      for (const m of this.messages) {
-        if (m.toolCalls?.some((c) => c.id === call.id)) {
-          msgId = m.id
-          break
-        }
-      }
-    }
+    const msgId = this.ownerOf(call)
     if (!msgId) return
+    /* 游标必须跟上：否则下一次增量会把已经发过的内容再发一遍 */
+    this.pushedOut.set(call.id, call.output?.length ?? 0)
+    /* 全量已经是最新的了 —— 待推的增量作废，否则会重复追加一遍 */
+    this.dirtyTools.delete(call.id)
     this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
+  }
+
+  /**
+   * 工具输出变了 —— 只标脏，由共用定时器批量取增量。
+   *
+   * 这是工具输出的**高频路径**（每个 chunk 一次）。
+   */
+  private markToolOutput(callId: string): void {
+    if (!callId) return
+    this.dirtyTools.add(callId)
+    this.scheduleFlush()
+  }
+
+  /** 把标脏的工具输出**增量**推出去 */
+  private flushTools(): void {
+    if (!this.dirtyTools.size) return
+    const ids = [...this.dirtyTools]
+    this.dirtyTools.clear()
+
+    for (const id of ids) {
+      const call = this.callIndex.get(id)
+      if (!call) {
+        this.pushedOut.delete(id)
+        continue
+      }
+      const pushed = this.pushedOut.get(id) ?? 0
+      const out = call.output ?? ''
+      if (out.length <= pushed) continue
+      const msgId = this.ownerOf(call)
+      if (!msgId) continue
+      this.pushedOut.set(id, out.length)
+      /*
+       * ⚠️ 故意**不带全量 output**：那正是要避免的开销。
+       *    渲染端按 `outputDelta` 追加（见 store 的 `'tool'` 分支）。
+       *    这里把 output 显式置为 undefined，语义是「这一帧没有全量快照」；
+       *    渲染端拼接时用的是**它自己的**旧 output + delta。
+       */
+      this.push({
+        ch: 'tool',
+        payload: {
+          msgId,
+          call: { ...call, output: undefined },
+          outputDelta: out.slice(pushed)
+        }
+      })
+    }
   }
 
   /** 流式文本节流：累积到下一帧再推，避免每个 delta 一次 IPC */
   private markDirty(): void {
     this.dirty = true
+    this.scheduleFlush()
+  }
+
+  /**
+   * 共用定时器：文本 / 工具输出 / bash 输出都走它。
+   *
+   * 为什么不各用一个定时器：三类更新常常同时到来（模型一边说话一边跑工具），
+   * 分开就会在同一帧里推三次 IPC、触发三次 React 更新（另两次是白干）。
+   */
+  private scheduleFlush(): void {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
       this.flushNow()
-    }, FLUSH_MS)
+      this.flushTools()
+    }, this.flushDelay())
   }
 
+  /**
+   * 节流间隔：随着累积文本/输出变长而拉大（上限 MAX_FLUSH_MS）。
+   *
+   * 理由见 MAX_FLUSH_MS：一帧的成本与已累积的文本量成正比，
+   * 长回答/长输出时降频比卡顿好。
+   */
+  private flushDelay(): number {
+    const len = (this.streaming?.text.length ?? 0) + (this.bash?.output.length ?? 0)
+    return Math.min(MAX_FLUSH_MS, Math.max(FLUSH_MS, Math.round(len / 2000)))
+  }
+
+  /**
+   * 把流式文本推给渲染端 —— **只发增量**（textDelta / thinkingDelta）。
+   *
+   * 全量版本的推送仍然存在（`message_end` / 中止 / sync），那是权威对齐。
+   * 这里只负责「又长了几个字」。
+   */
   private flushNow(): void {
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer)
-      this.flushTimer = null
-    }
     if (!this.dirty || !this.streaming) return
     this.dirty = false
     const s = this.streaming
+
+    const textDelta = s.text.length > s.pushedText ? s.text.slice(s.pushedText) : ''
+    const thinkingDelta =
+      s.thinking.length > s.pushedThinking ? s.thinking.slice(s.pushedThinking) : ''
+    s.pushedText = s.text.length
+    s.pushedThinking = s.thinking.length
+
     const sp = this.speedOf(s)
     this.push({
       ch: 'msg-update',
       payload: {
         id: s.id,
         patch: {
-          text: s.text,
-          thinking: s.thinking || undefined,
+          ...(textDelta ? { textDelta } : null),
+          ...(thinkingDelta ? { thinkingDelta } : null),
           thinkingMs: s.thinkingMs,
           thinkingLive: s.thinkingLive,
-          toolCalls: s.tools.length ? s.tools : undefined,
-          // 流式期间也让输入/输出/速度实时更新
+          /*
+           * ⚠️ 工具数组**不在这里重发**：它有自己的增量通道（`ch:'tool'`）。
+           *    以前每帧都带着全部工具的完整 output，工具多/输出长的回合里
+           *    每帧就是几百 KB 的结构化克隆。
+           */
           usage: s.usage,
           speed: sp.speed,
           elapsedMs: sp.elapsedMs
@@ -752,30 +926,12 @@ export class AgentController extends EventEmitter {
     return { speed: out / (ms / 1000), elapsedMs: ms }
   }
 
-  /** 直执行 bash 的流式推送 */
-  private flushBash(): void {
-    if (!this.bash) return
-    const b = this.bash
-    this.push({
-      ch: 'msg-update',
-      payload: {
-        id: b.msgId,
-        patch: {
-          text: b.command,
-          bash: { command: b.command, exitCode: null, cancelled: false },
-          toolCalls: [
-            {
-              id: b.msgId,
-              name: 'bash',
-              args: { command: b.command },
-              status: 'running',
-              output: b.output
-            }
-          ]
-        }
-      }
-    })
-  }
+  /*
+   * 这里曾经有一个 `flushBash()`：每帧把 command + toolCalls（含完整累积输出）
+   * 重新推一遍。直执行 bash 的输出现在是工具增量通道的一部分
+   * （见 `bash_execution_update` → `markToolOutput`），所以它被删掉了 ——
+   * 留着会多出一条与增量协议并行的全量路径，两边迟早说不到一块去。
+   */
 
   /**
    * 回合级「正在干活」。与 markStreaming 的区别：
@@ -954,6 +1110,7 @@ export class AgentController extends EventEmitter {
         timestamp: Date.now()
       }
       this.messages.push(msg)
+      for (const c of s.tools) this.registerCall(c, s.id)
       this.push({ ch: 'msg-update', payload: { id: s.id, patch: msg } })
     }
 
@@ -1018,6 +1175,7 @@ export class AgentController extends EventEmitter {
       timestamp: Date.now()
     }
     this.messages.push(msg)
+    this.indexCalls(msg)
     this.push({ ch: 'msg-add', payload: msg })
 
     try {
@@ -1063,6 +1221,13 @@ export class AgentController extends EventEmitter {
     fullOutputPath?: string
   ): void {
     const failed = cancelled || exitCode === null || exitCode !== 0
+    /*
+     * 这里要**主动清掉该工具的增量游标与待推标记**：
+     * 下面推的是全量快照，若还留着一个待推增量，定时器到点后会再追加一次
+     * —— 而那份增量是基于旧长度算的，结果就是输出里多一段重复的尾巴。
+     */
+    this.pushedOut.set(msgId, output.length)
+    this.dirtyTools.delete(msgId)
     this.push({
       ch: 'msg-update',
       payload: {
@@ -1425,8 +1590,14 @@ export class AgentController extends EventEmitter {
 
   async stop(): Promise<void> {
     if (this.flushTimer) clearTimeout(this.flushTimer)
+    this.flushTimer = null
     this.streaming = null
     this.bash = null
+    this.dirty = false
+    this.dirtyTools.clear()
+    this.callIndex.clear()
+    this.callOwner.clear()
+    this.pushedOut.clear()
     await this.rpc?.close()
     this.rpc = null
     this.messages = []

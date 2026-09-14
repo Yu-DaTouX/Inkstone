@@ -820,6 +820,32 @@ export interface ToolPatch {
   /** 工具调用属于哪条消息 */
   msgId: string
   call: UIToolCall
+  /**
+   * 输出的**增量**（append 语义）。
+   *
+   * 为什么需要它：工具输出是**最高频**的推送路径（一条 bash 命令的
+   * stdout 一秒几十上百个 chunk），而每个 chunk 都带完整累积输出。
+   * 那样每帧传输的是 O(已输出总量)，一次命令下来就是 O(N²) 字节，
+   * 长输出（例如一次 `npm run build`）会把 IPC 和渲染线程一起拖住。
+   * 有这个字段时渲染端只追加，不再被 `call.output` 覆盖。
+   */
+  outputDelta?: string
+}
+
+/**
+ * 消息补丁。
+ *
+ * `textDelta` / `thinkingDelta` 是**追加**语义：主进程只发新增的那一段，
+ * 渲染端自己接到已显示的文本后面。
+ *
+ * 为什么不用全量 `text`：流式期间主进程每 16~120ms 推一次，
+ * 每次都带整篇累积文本 —— 一篇 50KB 的回答推 300 帧就是 15MB 的
+ * 结构化克隆 + React 状态复制。长回答越长，每帧越贵（O(N²)）。
+ * 全量仍然保留：`message_end` / 中止 / 切换会话时用它做权威对齐。
+ */
+export type MessagePatch = Partial<UIMessage> & {
+  textDelta?: string
+  thinkingDelta?: string
 }
 
 export type MainPush =
@@ -827,8 +853,8 @@ export type MainPush =
   | { ch: 'sync'; payload: UIMessage[] }
   /** 新增一条消息 */
   | { ch: 'msg-add'; payload: UIMessage }
-  /** 增量更新一条消息（流式文本会高频触发） */
-  | { ch: 'msg-update'; payload: { id: string; patch: Partial<UIMessage> } }
+  /** 增量更新一条消息（流式文本会高频触发，见 MessagePatch 的 delta 说明） */
+  | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
   /** 删掉一条消息 */
   | { ch: 'msg-remove'; payload: string }
   /** 工具调用状态变化 */
