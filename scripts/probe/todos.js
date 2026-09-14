@@ -52,6 +52,9 @@
     if (!target) return fail('造不出带任务的会话')
   }
 
+  /** 从会话读清单要走 pi（agent.ts 的 refreshTodos → `get_entries`）；采样一次 */
+  const piReady = store.getState().conn === 'ready'
+
   await store.getState().switchSession(target.path)
   // 切会话要等 pi 加载 + hydrate，实测约 3-5 秒
   for (let i = 0; i < 30; i++) {
@@ -61,12 +64,23 @@
 
   const todos = store.getState().todos
   log('  store.todos = ' + JSON.stringify(todos))
-  ok(todos.length > 0, `读到 ${todos.length} 条任务`)
+  /*
+   * ⚠️ 这份清单是**从会话里读的**（agent.ts 的 refreshTodos 调 pi 的 `get_entries`），
+   *    所以隔离测试环境（pi 起不来）里读到 0 条是**环境**，不是回归 ——
+   *    显式跳过，别把它读成「任务功能坏了」。
+   *    不依赖 pi 的那部分在下面第 6 节（直接往 store 注入）。
+   */
+  if (piReady) {
+    ok(todos.length > 0, `读到 ${todos.length} 条任务`)
+  } else {
+    log(`  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），会话里的任务清单读不到`)
+  }
 
   /* ================= 3. 任务渲染正确（含完成态） ================= */
   log('\n--- 3. 任务区块 DOM ---')
   const grp = q('[data-sec="rp-todo"]')
-  ok(!!grp, '右栏出现任务区块')
+  if (piReady) ok(!!grp, '右栏出现任务区块')
+  else log('  ⤺ 跳过：同上（没有清单，自然也没有区块）')
   if (grp) {
     const items = qa('.rp-todo')
     ok(items.length === todos.length, `渲染了 ${items.length} 行（应 ${todos.length}）`)
@@ -146,6 +160,19 @@
   log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
 
   const tstore = window.__yanStore
+  /**
+   * 回合是否运行中 —— 「正在进行」现在要求它（见 RightPanel 的 activeIdx）。
+   *
+   * 只有 `{text, done}` 的老数据里，「哪条正在做」是**推断**：第一个未完成的，
+   * **且回合真的在跑**。所以注入任务前必须把会话标成运行中 ——
+   * 否则这里断言的就是「停下也硬说有人在跑」那个旧行为。
+   */
+  const setRunning = (v) => {
+    const s = tstore.getState().session
+    tstore.setState({ session: { ...(s ?? {}), isAgentRunning: v, isStreaming: v } })
+  }
+  setRunning(true)
+
   /** 造 N 个任务、前 d 个已完成 */
   const tmk = (n, d) =>
     Array.from({ length: n }, (_, i) => ({ text: '任务 ' + (i + 1), done: i < d }))
@@ -185,12 +212,49 @@
   const tLabel = q('[data-testid="todo-active-label"]')
   ok(!!tLabel && /正在进行/.test(tLabel.textContent), '当前那条行内显示「正在进行」')
 
+  /* ---- 回合停下来：未完成的那些不该再冒充「正在进行」---- */
+  /*
+   * 这是方案 4.5 的核心：只有 `done` 时「哪条在做」只能猜，于是只要还有
+   * 没做完的任务，界面上就永远有一条在转 —— agent 停了也照转。
+   */
+  setRunning(false)
+  await sleep(400)
+  ok(!q('.rp-todo[data-active="1"]'), '回合停下后没有条目被标为 active')
+  ok(!q('[data-testid="todo-active-label"]'), '停下后不再有转圈的「正在进行」')
+  ok(qa('.rp-todo.todo-open').length === 3, '未完成的条目仍在（只是不再冒充「正在做」）')
+  setRunning(true)
+  await sleep(300)
+  ok(!!q('.rp-todo[data-active="1"]'), '回合又跑起来后「正在进行」回来')
+
   /* ---- 勾完一个：宽度变化 + 闪动 ---- */
   tstore.setState({ todos: tmk(5, 3) })
   await sleep(200)
   ok(!!tmeter(), '进度条节点稳定（不是被重建）')
   ok(tmeter().dataset.pct === '60', '勾完变 60%（实际 ' + tmeter().dataset.pct + '）')
   ok(qa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
+
+  /*
+   * 显式 status 优先（pi 侧带了状态就不再猜）。
+   *
+   * 放在这里而不是更早：它会改掉 todos，从而打乱上面 flash 断言依赖的
+   * prevDone 基线（实测因此误报过一次 —— flash 变成 2 条）。
+   */
+  tstore.setState({
+    todos: [
+      { text: '任务 1', done: true, status: 'done' },
+      { text: '任务 2', done: false, status: 'pending' },
+      { text: '任务 3', done: false, status: 'running' }
+    ]
+  })
+  await sleep(400)
+  {
+    const row = q('.rp-todo[data-active="1"]')
+    ok(!!row && row.textContent.includes('任务 3'), '显式 running 的那条是 active')
+    ok(
+      !!row && row.textContent.includes('任务 3') && !row.textContent.includes('任务 2'),
+      '显式 pending 的那条不算「正在做」（即使它在 running 前面）'
+    )
+  }
 
   /* ---- 全完成 ---- */
   await sleep(1000)

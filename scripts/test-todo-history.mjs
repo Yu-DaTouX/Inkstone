@@ -86,5 +86,54 @@ export async function runTodoHistoryTests(ok) {
     ok(!sameTodos([T('甲')], [T('甲', true)]), 'sameTodos：完成态不同为 false')
     ok(!sameTodos([T('甲')], [T('乙')]), 'sameTodos：文字不同为 false')
     ok(!sameTodos([T('甲')], [T('甲'), T('乙')]), 'sameTodos：长度不同为 false')
+    /*
+     * status 不参与比较：一轮里 `pending → running` 只是进度变化，
+     * 清单本身没变 —— 算成新历史的话，同一个计划会冒出好几份。
+     */
+    ok(
+      sameTodos([{ text: '甲', done: false, status: 'pending' }], [{ text: '甲', done: false, status: 'running' }]),
+      'sameTodos：只看清单内容（status 变化不算新历史）'
+    )
+  }
+
+  /*
+   * 6. 显式 status（方案 4.5）。
+   *
+   * 写清单的是 pi 侧的**扩展**，字段名不归我们管 —— 所以用别名表认，
+   * 认不出来就当「没有显式状态」（退回 `done`），**不猜**。
+   */
+  {
+    const entries = [
+      user(1),
+      snap('s1', [
+        { text: '甲', done: false, status: 'in_progress' },
+        { text: '乙', done: false, status: 'pending' },
+        { text: '丙', done: true, status: 'completed' },
+        { text: '丁', done: false, status: 'not-a-real-status' },
+        { text: '戊', done: false },
+        { text: '己', done: true, status: 'running' }
+      ])
+    ]
+    const out = todoSnapshotsFromEntries(entries)
+    const t = out[0]?.todos ?? []
+    ok(t[0]?.status === 'running' && t[0].done === false, 'in_progress → running（且不算完成）')
+    ok(t[1]?.status === 'pending', 'pending 原样保留')
+    ok(t[2]?.status === 'done' && t[2].done === true, 'completed → done')
+    ok(t[3]?.status === undefined && t[3].done === false, '认不出的状态不带 status（宁可不猜）')
+    ok(t[4]?.status === undefined, '老数据（没有 status）保持原样')
+    ok(t[5]?.status === 'done' && t[5].done === true, 'done 与 status=running 冲突时以完成为准')
+  }
+
+  // 7. 别名：大小写 / 连字符 / 空格都该认
+  {
+    const out = todoSnapshotsFromEntries([
+      user(1),
+      snap('s1', [
+        { text: '甲', done: false, status: 'IN-PROGRESS' },
+        { text: '乙', done: false, status: ' Doing ' }
+      ])
+    ])
+    ok(out[0]?.todos[0]?.status === 'running', `'IN-PROGRESS' → running`)
+    ok(out[0]?.todos[1]?.status === 'running', `' Doing ' → running`)
   }
 }

@@ -1,4 +1,35 @@
-import type { SessionTodoSnapshot } from '../shared/ipc'
+import type { SessionTodoSnapshot, TodoStatus } from '../shared/ipc'
+
+/**
+ * pi 侧各样写法 → 这里的四种状态。
+ *
+ * 为什么要别名表而不是只认一个名字：写清单的是**扩展**（不在这个仓库里），
+ * 它的字段名我们管不着（`in_progress` / `doing` / `active` 都见过）。
+ * 认不出来的一律当**没有显式状态**（退回 `done` 推断），而不是塞一个猜的 ——
+ * 猜错的状态比没有状态更糟。
+ */
+const STATUS_ALIASES: Record<string, TodoStatus> = {
+  pending: 'pending',
+  todo: 'pending',
+  open: 'pending',
+  not_started: 'pending',
+  in_progress: 'running',
+  running: 'running',
+  doing: 'running',
+  active: 'running',
+  completed: 'done',
+  complete: 'done',
+  done: 'done',
+  finished: 'done',
+  blocked: 'blocked',
+  failed: 'blocked',
+  error: 'blocked'
+}
+
+function toStatus(v: unknown): TodoStatus | undefined {
+  if (typeof v !== 'string') return undefined
+  return STATUS_ALIASES[v.trim().toLowerCase().replace(/[\s-]+/g, '_')]
+}
 
 /**
  * 从会话的 custom entries 里抽任务清单快照。
@@ -41,8 +72,20 @@ export function todoSnapshotsFromEntries(
     if (!Array.isArray(data?.todos)) continue
 
     const todos = data.todos
-      .filter((t): t is { text?: unknown; done?: unknown } => !!t && typeof t === 'object')
-      .map((t) => ({ text: String(t.text ?? ''), done: Boolean(t.done) }))
+      .filter(
+        (t): t is { text?: unknown; done?: unknown; status?: unknown } => !!t && typeof t === 'object'
+      )
+      .map((t) => {
+        const status = toStatus(t.status)
+        /* 两个字段不一致时以「完成」为准：勾上了就不该还在跑 */
+        const done = status === 'done' || Boolean(t.done)
+        /* 只在**认得出**显式状态时才带上它，否则保持老数据的形状 */
+        return {
+          text: String(t.text ?? ''),
+          done,
+          ...(status ? { status: done ? ('done' as const) : status } : {})
+        }
+      })
       .filter((t) => t.text.length > 0)
     if (todos.length === 0) continue
 

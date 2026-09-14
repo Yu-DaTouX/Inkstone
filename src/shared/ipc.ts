@@ -230,7 +230,24 @@ export interface QueueState {
 export interface SessionTodo {
   text: string
   done: boolean
+  /**
+   * 显式状态（**可选**，来自 pi 侧写清单的那个扩展）。
+   *
+   * 为什么是可选的：写清单的是扩展（`panel_todos`，不在这个仓库里），
+   * 现有数据只有 `{text, done}`。桌面端不能假定它在 —— **有就用、
+   * 没有就退回推断**（见 RightPanel 里 `activeIdx` 的两步判定）。
+   */
+  status?: TodoStatus
 }
+
+/**
+ * 任务状态。
+ *
+ * 为什么需要：只有 `done` 时，「哪一条正在做」只能猜（第一个未完成的），
+ * 于是只要还有没做完的任务，界面上就**永远**有一条在转 —— agent 早就
+ * 停了也照转。那是猜测，不是状态（方案 4.5）。
+ */
+export type TodoStatus = 'pending' | 'running' | 'done' | 'blocked'
 
 /**
  * 一份任务清单快照（会话里每轮都会写一份）。

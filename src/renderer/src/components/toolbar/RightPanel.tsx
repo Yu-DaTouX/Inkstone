@@ -912,7 +912,8 @@ function ContextSection() {
  *   ① **进度条始终显示**（原先只有 ≥ 4 个任务才显示）——
  *      5 个任务完成 2 个时它不是装饰，而是「还剩多少」的唯一提示。
  *   ② 「当前正在做的那一条」要能认出来：
- *      判定 = 第一个未完成的（列表本来就是顺序执行的）。
+ *      显式 `status` 优先；只有老数据才退回「第一个未完成」，
+ *      而且**要求回合真的在跑**（见下面 activeIdx）。
  *      它带一个转动的 spinner + 左条强调色 + 名字高亮。
  *   ③ 动画：
  *      · 进度条宽度变化用 transition（不是瞬跳）
@@ -922,6 +923,15 @@ function ContextSection() {
 function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
+  /**
+   * 回合是否真的在跑 —— 「正在进行」的兜底判据（见下面 activeIdx）。
+   *
+   * `isStreaming` 在工具执行期间是 false（见 shared/ipc.ts 的注释），
+   * 所以两个都要看，否则「调工具的那几十秒」会被当成已经停下。
+   */
+  const agentRunning = useStore(
+    (s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true
+  )
   /** 全部任务清单快照（含最新）——历史任务模块用 */
   const history = useStore((s) => s.todoHistory)
   const scrollToTurn = useStore((s) => s.scrollToTurn)
@@ -968,8 +978,26 @@ function TodoSection() {
   if (todos.length === 0) return null
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
-  // 当前正在做的 = 第一个未完成的
-  const activeIdx = todos.findIndex((x) => !x.done)
+  /*
+   * 「当前正在做」的那一条 —— 决定哪一行带 active + spinner。
+   *
+   * ⚠️ 以前是一句 `findIndex((x) => !x.done)`：只要还有没做完的任务，
+   *    界面上就**永远**有一条「正在进行」在转 —— agent 停了、报错了、
+   *    用户中断了，它照转。那不是状态，是猜测（方案 4.5）。
+   *
+   * 现在分两步：
+   *   ① pi 侧的清单带**显式 `status`** 时以它为准（有人 running 就是它；
+   *      有状态但没人 running → 真的没有正在做的那条）；
+   *   ② 只有 `{text, done}` 的老数据退回推断，但**要求回合真的在跑** ——
+   *      没在跑时，那些没做完的是「还没做」，不是「正在做」。
+   */
+  const activeIdx = (() => {
+    const explicit = todos.findIndex((x) => x.status === 'running')
+    if (explicit >= 0) return explicit
+    if (todos.some((x) => x.status !== undefined)) return -1
+    if (!agentRunning) return -1
+    return todos.findIndex((x) => !x.done)
+  })()
   const active = activeIdx >= 0 ? todos[activeIdx] : null
 
   return (

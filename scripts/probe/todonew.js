@@ -34,6 +34,18 @@
     const past1 = mk([['调研方案', true], ['写初稿', true]])
     const past2 = mk([['列大纲', true]])
 
+    /*
+     * 「正在进行」是**推断**出来的（第一个未完成 + 回合在跑，见 RightPanel 的
+     * activeIdx），所以注入任务前必须把会话标成运行中 —— 否则下面那些
+     * 「有 active 行」的断言测的就是旧行为（停下也硬说有人在跑）。
+     */
+    const setRunning = (v) => {
+      const s = store.getState().session
+      store.setState({ session: { ...(s ?? {}), isAgentRunning: v, isStreaming: v } })
+    }
+    setRunning(true)
+    await sleep(200)
+
     out.push('=== 1. 注入两轮历史 + 当前一份 ===')
     store.setState({
       todos: cur,
@@ -64,6 +76,15 @@
     else bad('标签没有 spinner')
     if (qa('.rp-todo[data-active="1"]').length === 1) ok('只有一条被标为 active')
     else bad('active 条数不对：' + qa('.rp-todo[data-active="1"]').length)
+
+    out.push('\n=== 2b. 回合停下后不再冒充「正在进行」（方案 4.5）===')
+    setRunning(false)
+    await sleep(400)
+    if (!document.querySelector('.rp-todo[data-active="1"]')) ok('停下后没有条目被标为 active')
+    else bad('停下了还在标 active')
+    if (!document.querySelector('[data-testid="todo-active-label"]')) ok('停下后不再有转圈的标签')
+    else bad('停下后还有 spinner 在转')
+    setRunning(true)
 
     out.push('\n=== 3. 任务文字最多两行 ===')
     const cells = qa('.rp-todos .rp-text')
