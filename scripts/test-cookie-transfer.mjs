@@ -30,8 +30,8 @@ class FakeCdpChannel {
   async detach() {}
 
   async send(method, params) {
-    if (method === 'Storage.getCookies') return { cookies: this.cookies }
-    assert.equal(method, 'Storage.setCookies')
+    if (method === 'Network.getAllCookies') return { cookies: this.cookies }
+    assert.equal(method, 'Network.setCookies')
     const cookie = params.cookies[0]
     this.calls.push(cookie)
     if (this.failingNames.has(cookie.name)) throw new Error(`synthetic failure: ${cookie.name}`)
