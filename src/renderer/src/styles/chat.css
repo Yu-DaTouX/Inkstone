@@ -33,3 +33,676 @@
   font-family: var(--font-mono);
   letter-spacing: normal;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.shead-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.shead-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+  flex: none;
+}
+
+.shead-dot.busy {
+  background: var(--warn);
+}
+
+.shead.flash {
+  animation: sheadflash 600ms var(--ease);
+}
+
+/* 41. 主区头部：标题 + 项目胶囊（删掉了「上次聊到」那一行） */
+.shead {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 7px var(--sp-5) 6px;
+  padding: 10px var(--sp-5) 8px;
+  padding: 8px var(--sp-5) 7px;
+}
+
+.shead-title {
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 1.3;
+  font-size: 15px;
+}
+
+/* 项目胶囊：终端风格，用小三角而不是圆点 */
+.shead-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  max-width: 220px;
+  padding: 1px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.shead-proj-ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.shead-proj.none {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.shead-proj-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 流式期间新内容柔化入场 */
+.msg.assistant.streaming .md > *:last-child {
+  animation: text-in 180ms ease-out;
+}
+
+/* 42. 终端风格重做（用户要求「跟终端版本差不多」）
+   参考：pi 自己的 TUI / OpenCode 的输出形态。共同特征：
+   · 圆角几乎为零（2px），没有阴影
+   · 层次靠**左侧竖线 + 缩进**，不靠卡片
+   · 工具调用是 `→ name args` 一行，不是一张卡
+   · 框只留给「执行出来的东西」（命令输出 / diff）
+   · 等宽字符对得齐（本项目字体本身就是等宽栅格） */
+
+/* ---- 角色符号槽：终端提示符气质 ---- */
+.msg .gutter-prompt {
+  font-size: var(--fs-base);
+  line-height: 1;
+  opacity: 0.9;
+}
+
+/*
+ * 用户消息：底色 + **右侧**强调条（用户要求）。
+ *
+ * 为什么在右边：用户气泡是靠右对齐的，内容从右边“长出”。
+ * 竖线在左侧时，它离气泡的左边缘很远、看起来属于正文区
+ * （与助手消息的左侧竖线混在一起，分不清是谁的）。
+ * 放到右边就跟右对齐的方向一致了。
+ */
+.msg.user .bubble {
+  border-radius: var(--r-xs);
+  border-left: none;
+  border-right: 2px solid var(--cyan);
+  background: var(--bg-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* 助手正文：无容器，只留一条左侧竖线作为「这是它说的话」的标记 */
+.msg.assistant .msg-body {
+  border-left: 1px solid var(--border-soft);
+  padding-left: var(--sp-3);
+  margin-left: -1px;
+  border-left: 1px solid var(--border-soft);
+  padding-left: var(--sp-3);
+}
+
+/* 60. 推理胶囊（用户要求：逐字流式 / 结束折叠 / 保留开关 / 无推理不显示）
+   位置：助手块的**最上面**（推理 → 干活 → 说话 → 结论，时间顺序）。
+   展开时是一块可滚的正文（等宽感、比正文淡一档）——
+   推理是「旁白」，不该和回答抢注意力。 */
+.reason {
+  margin-bottom: var(--sp-2);
+  border-left: 2px solid var(--border-str);
+  /* 推理中用强调色细线，一眼能看出「它在想」 */
+  transition: border-color var(--dur) var(--ease);
+}
+
+.reason.live {
+  border-left-color: var(--accent-line);
+}
+
+.reason-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0 2px var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.reason-head:hover {
+  color: var(--fg-dim);
+}
+
+.reason.live .reason-head {
+  color: var(--accent);
+}
+
+.reason-head .spacer {
+  flex: 1;
+}
+
+.reason-head .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+
+.reason.open .reason-head .chev {
+  transform: rotate(90deg);
+}
+
+.reason-spin {
+  display: inline-flex;
+  width: 12px;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* 折叠时的单行预览：不用展开也知道它在想什么 */
+.reason-peek {
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
+.reason-body {
+  /*
+   * 固定大小的「推理窗口」（用户要求：约占窗口 1/4，信息在里面滚动）。
+   * 用 height 而不是 max-height —— max-height 会随内容长高，
+   * 把下面的回答一路顶走；固定高度后推理只在窗口内滚。
+   *
+   * min/max 只是极端窗口尺寸下的护栏（很矮的窗口别只剩一条缝，
+   * 很高的窗口别让旁白占掉半屏）。
+   */
+  height: 25vh;
+  min-height: 150px;
+  max-height: 420px;
+  overflow-y: auto;
+  /* 滚动条一出现不挤窄内容（否则会冒横向滚动条） */
+  scrollbar-gutter: stable;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  /* 让「窗口」成立：一点点底色 + 细描边，与正文区分开 */
+  background: var(--bg-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  scrollbar-gutter: stable;
+  /* 逐字输出时每帧都在长，别让浏览器做重排抖动 */
+  contain: content;
+}
+
+/* 61. 工具调用 —— Codex 风格（用户要求，附截图）
+   运行中：  ⠋ 正在运行 <命令>  ›
+   结束后：  ✓ 已在 11s 内运行 <命令>  ›
+   多条时折叠在「运行了命令 N」下面（Codex 的「运行了命令 ⌄」）。
+   要点：**一行一条**，命令原文直接铺在行里，超长截断（title 里有全文）。
+   展开后是**终端窗口**（下一节）——默认是否展开由设置 toolDetail 决定。 */
+.tgroup {
+  margin: var(--sp-2) 0;
+}
+
+.tgroup-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.tgroup-head:hover {
+  color: var(--fg-dim);
+}
+
+.tgroup-head .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+
+.tgroup.open .tgroup-head .chev {
+  transform: rotate(90deg);
+}
+
+.tgroup-head .spacer {
+  flex: 1;
+}
+
+.tgroup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.trow {
+  min-width: 0;
+}
+
+.trow-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+  min-width: 0;
+}
+
+.trow-head:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+
+.trow[data-state='error'] .trow-head {
+  color: var(--err);
+}
+
+.trow-ico {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  color: var(--fg-mute);
+}
+
+.trow[data-state='ok'] .trow-ico {
+  color: var(--ok);
+}
+
+.trow[data-state='error'] .trow-ico {
+  color: var(--err);
+}
+
+.trow-check {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* 动词（正在运行 / 已在 Ns 内运行）：比目标淡，让命令本身最醒目 */
+.trow-verb {
+  flex: none;
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+
+/* 目标（命令原文）：等宽，超长截断 */
+.trow-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-family: var(--font-code);
+  font-size: var(--fs-code);
+}
+
+.trow-head:hover .trow-target {
+  color: var(--fg);
+}
+
+.trow-head .spacer {
+  flex: 1;
+}
+
+.trow-badge.err {
+  flex: none;
+  color: var(--err);
+  font-size: var(--fs-xs);
+}
+
+.trow-head .chev {
+  flex: none;
+  opacity: 0.5;
+  transition: transform var(--dur) var(--ease);
+}
+
+.trow-head .chev.on {
+  transform: rotate(90deg);
+}
+
+.trow-body {
+  padding: 4px 0 4px 18px;
+}
+
+/* ---- 终端窗口（工具调用详情；用户要求「更好的终端实现 + 调整窗口大小」）----
+   设计要点：
+   · 无论浅色/深色主题，终端都是**深色底**（终端本来就该是深色），
+   内部的 diff / 输出都覆盖成深色底上的浅色字，不与主题令牌混用。
+   · 标题栏 = 窗口灯 + 工具名 + 命令预览 + 状态胶囊 + 耗时 + 复制/展开。
+   · 正文 = prompt 行（`$ 命令`）+ 输出，等宽、可滚。
+   · 三个拖拽把手定位在窗口内（下 / 右 / 右下角），不占布局。 */
+.term {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0c0c0c;
+  box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.8);
+}
+
+.term.dragging {
+  border-color: var(--accent-line);
+}
+
+.term-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px var(--sp-2);
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: #9a9a9a;
+  font-size: var(--fs-xs);
+  user-select: none;
+}
+
+.term-lights {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: 2px;
+}
+
+.term-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: #3a3a3a;
+}
+
+/* 窗口灯用低饱和度，既能读出「这是个窗口」又不至于抢眼 */
+.term-lights .term-dot:nth-child(1) {
+  background: #e0605a;
+}
+
+.term-lights .term-dot:nth-child(2) {
+  background: #e0b34a;
+}
+
+.term-lights .term-dot:nth-child(3) {
+  background: #4fb85f;
+}
+
+.term-ico {
+  display: inline-flex;
+  color: #6f6f6f;
+}
+
+.term-ico.live {
+  color: var(--accent);
+}
+
+.term-title {
+  flex: none;
+  color: #d6d6d6;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.term-cmd {
+  min-width: 0;
+  max-width: 36%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7f7f7f;
+  font-family: var(--font-mono);
+}
+
+.term-bar .spacer {
+  flex: 1;
+}
+
+.term-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.term-pill.ok {
+  color: #7ee787;
+  background: rgba(126, 231, 135, 0.12);
+}
+
+.term-pill.err {
+  color: #ff7b72;
+  background: rgba(255, 123, 114, 0.12);
+}
+
+.term-pill.running {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.term-time {
+  flex: none;
+  color: #6f6f6f;
+  font-variant-numeric: tabular-nums;
+}
+
+.term-act {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a8a;
+  cursor: pointer;
+}
+
+.term-act:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #e6e6e6;
+}
+
+.term-act.on {
+  color: #7ee787;
+}
+
+/* 正文：等宽、可滚、保留原始空白（stdout 的换行/缩进是信息） */
+.term-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+  scrollbar-gutter: stable;
+  color: #d6d6d6;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  line-height: 1.55;
+  user-select: text;
+}
+
+.term-prompt {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.term-prompt-sign {
+  flex: none;
+  color: #7ee787;
+  user-select: none;
+}
+
+.term-prompt-text {
+  min-width: 0;
+  color: #eaeaea;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.term-out {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.term-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: term-blink 1s step-end infinite;
+}
+
+.term .tool-pre {
+  padding: 0;
+  background: transparent;
+  border: none;
+  max-height: none;
+  color: #d6d6d6;
+}
+
+.term .tool-pre.args {
+  color: #8f8f8f;
+}
+
+.term .tool-empty {
+  padding: 0;
+  color: #7f7f7f;
+}
+
+.term .diff {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.term .diff-side {
+  background: transparent;
+}
+
+.term .diff-label.err {
+  color: #ff7b72;
+}
+
+.term .diff-label.ok {
+  color: #7ee787;
+}
+
+.term .diff-pre {
+  padding: 4px 6px;
+  background: transparent;
+  max-height: 320px;
+}
+
+.term .diff-pre.add,
+.term .diff-pre.write-body {
+  color: #a5e8a8;
+}
+
+.term .diff-pre.del {
+  color: #ff9b93;
+}
+
+/* ---- 拖拽把手（下 / 右 / 右下角）：绝对定位在窗口内部 ---- */
+.term-grip {
+  position: absolute;
+  z-index: 2;
+}
+
+.term-grip-s {
+  left: 0;
+  right: 12px;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.term-grip-e {
+  top: 0;
+  bottom: 12px;
+  right: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.term-grip-se {
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+
+.term-grip-se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.4);
+}
+
+.term-grip:hover,
+.term-grip:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+/* 62. 用户消息的分支按钮（用户要求：消息上要有分支按钮）
+   原来是 `opacity: 0`（只有悬停才出现）—— 用户看截图时以为没有这个功能。
+   现在常驻淡显（0.4），悬停到 1：既看得见，又不抢消息本身的注意力。
+   图标用 layers（内置 sprite 里最接近「分支」的一个）。 */
+.msg.user .msg-act {
+  opacity: 0.4;
+}
+
+.msg.user:hover .msg-act,
+.msg.user .msg-act:focus-visible {
+  opacity: 1;
+}
+
+.msg.user .msg-act:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}

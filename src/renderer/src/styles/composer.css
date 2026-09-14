@@ -1,0 +1,489 @@
+/*
+ * 输入区：输入框、发送 / 停止、用量条、排队消息、斜杠命令、附件。
+ * 以及从输入区弹出的模型 / 思考选择器（Pickers.tsx）。
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ */
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.send span {
+  display: none;
+}
+
+.send .ico {
+  color: currentColor;
+}
+
+.send:hover:not(:disabled) {
+  filter: none;
+  opacity: 0.9;
+}
+
+/* 忙碌时按钮变「中止」：给文字留位置 */
+.send.abort {
+  width: auto;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.send.abort span {
+  display: inline;
+}
+
+/*
+ * 输入框内的 textarea 不要自己的 focus 框。
+ *
+ * ⚠️ 用户报「单击输入框边框会有两圈高光」—— 就是这里：
+ *   ① textarea 自己拿到 `:focus-visible` → tokens.css 里的全局规则
+ *      给了它 1px 蓝色 outline（实测 0.8px solid rgb(76,126,243)）
+ *   ② 卡片 .composer:focus-within 另外给了一圈 `0 0 0 3px` 的 accent 光环
+ *   两个框一起出现，而且大小不同 → 看着像“双重描边”。
+ *
+ * 只留外圈（“输入区是聚焦的”比“textarea 这个元素是聚焦的”更有意义）。
+ */
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+}
+
+/*
+ * 拖拽柄：拖 = 调高，**点 = 切换长文模式**。
+ *
+ * 可见性分三档（它现在是一个可点的入口，不能只在 hover 时显形）：
+ *   常态     淡的短横（暗示可交互）
+ *   hover    变长变强调色 + 出现提示文字（由 title 负责）
+ *   长文模式 常亮（用户需要知道“现在能点它回去”）
+ */
+.composer-resize {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 96px;
+  height: 12px;
+  cursor: ns-resize;
+  /* 组合窗口的可拖拽区域不能吞掉这个交互把手。 */
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  /* 命中区比视觉大：12px 高很好点，但看着只是一条细线 */
+  border-radius: var(--r-xs);
+}
+
+/* 中间那根小短横 —— 暗示“这里可以点/拖” */
+.composer-resize::after {
+  content: '';
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-str);
+  transition:
+    background var(--dur) var(--ease),
+    width var(--dur) var(--ease);
+}
+
+.composer-resize:hover::after,
+.composer-resize.active::after {
+  background: var(--accent);
+  width: 44px;
+}
+
+/* 长文模式：短横常亮 + 居中两段（像一个“收起来”的提示） */
+.composer.tall .composer-resize::after {
+  background: var(--accent-line);
+  width: 40px;
+}
+
+.composer.tall .composer-resize:hover::after {
+  background: var(--accent);
+  width: 52px;
+}
+
+.mt-trigger:hover:not(:disabled),
+.mt-trigger.open {
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+
+.mt-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 强度用强调色（对应 Codex 那个紫色 "Ultra"） */
+.mt-level {
+  color: var(--accent);
+  flex: none;
+}
+
+.mt-trigger .chev {
+  align-self: center;
+  opacity: 0.5;
+  transform: rotate(-90deg);
+}
+
+.mt-trigger .chev.up {
+  transform: rotate(90deg);
+}
+
+.mt-head-level {
+  color: var(--accent);
+  font-size: var(--fs-base);
+}
+
+/* 档位落点：小方块，点了直接跳 */
+.mt-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 5px;
+  padding: 0 1px;
+}
+
+/* ---- 下半：模型列表 ---- */
+.mt-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.mt-search input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.mt-search input::placeholder {
+  color: var(--fg-mute);
+}
+
+.mt-count {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-list {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  padding: 4px;
+  min-height: 0;
+}
+
+.mt-group + .mt-group {
+  margin-top: 4px;
+}
+
+.mt-group-head {
+  padding: 6px var(--sp-2) 3px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.mt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
+}
+
+.mt-item:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.mt-item.sel {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.mt-item.sel .ico {
+  color: var(--accent);
+  flex: none;
+}
+
+.mt-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.mt-empty {
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* 把「本轮用量」之后的所有内容推到右边 */
+.usagebar > .ub-turn {
+  margin-right: auto;
+}
+
+.mt-model {
+  color: var(--fg-dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+
+/* 44. 思考强度档位（替换掉出问题的原生滑块） */
+.mt-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.mt-stop {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.mt-stop:hover:not(:disabled) {
+  border-color: var(--border-str);
+  color: var(--fg-dim);
+}
+
+/* 当前档：实心强调色 —— 一眼看出在哪一档 */
+.mt-stop.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mt-stop:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mt-hint {
+  margin-top: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.mt-head-title {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+
+.mt-head {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+  flex: none;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+
+.mt-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.mt-head-row .spacer {
+  flex: 1;
+}
+
+/* 收起态的箭头用字符而不是图标：终端里 `▾` 比一个旋转的 SVG 更像样 */
+.mt-chev {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.usagebar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px var(--sp-3);
+  width: 100%;
+  max-width: var(--w-stream);
+  margin: var(--sp-2) auto 0;
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border-soft);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  min-width: 0;
+  max-width: var(--w-stream);
+  margin: var(--sp-2) auto 0;
+  padding: 0 2px;
+  border-top: none;
+  /* ① 与输入框同宽居中；再窄一点显得轻 */
+  max-width: calc(var(--w-stream) - 120px);
+  margin: var(--sp-2) auto 0;
+  padding: 0 2px;
+  gap: 4px var(--sp-2);
+  /* ② 缩小 */
+  font-size: var(--fs-xs);
+  min-height: 22px;
+  border-top: none;
+  /* ③ 右侧那组靠右：用 auto margin 把左组推开 */
+  justify-content: flex-start;
+  max-width: var(--w-stream);
+  gap: 5px var(--sp-2);
+}
+
+.usagebar .spacer {
+  flex: 1;
+  min-width: var(--sp-3);
+}
+
+/* 模型/强度标签贴右下：终端风格方角 */
+.mt-trigger {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+  border-radius: var(--r-xs);
+}
+
+/* 56. `/` 命令菜单底部的按键说明（用户要求「补全填充」要看得见）
+   这些快捷键一直支持，但界面上没写 —— 用户只会用鼠标点。
+   一行小字比在文档里写十行有用。 */
+.slash-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 4px var(--sp-2) 3px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.slash-hint span {
+  white-space: nowrap;
+}
+
+/* 65. 自主模式开关（用户要求：放进输入栏、去掉「未开启」字样、有开/关动效）
+   与 composer 的其它工具同高（.ctool 26px），做成一枚小胶囊：
+   · 关：中性灰，轨道灰、滑块靠左
+   · 开：强调色，轨道 accent、滑块滑到右侧
+   文案不再显示「未开启 / 已开启」——开关本身就能表达。 */
+.auto-toggle.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.auto-toggle .auto-label {
+  color: inherit;
+  font-size: var(--fs-sm);
+}
+
+.auto-toggle .auto-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 26px;
+  height: 14px;
+  padding: 2px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  transition: background var(--dur) var(--ease);
+}
+
+.auto-toggle.on .auto-track {
+  background: var(--accent);
+}
+
+.auto-toggle .auto-thumb {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-mute);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transform: translateX(0);
+  transition:
+    transform 160ms var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.auto-toggle.on .auto-thumb {
+  background: #fff;
+  transform: translateX(12px);
+}
+
+/* 66. 排队消息（输入框上方）
+   每行：[图标] 文本 ................ [插队]
+   插队按钮只在 follow-up 行出现（steering 已经在插话了，显示状态即可）。 */
+.queue-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: var(--w-stream);
+  margin: 0 auto var(--sp-2);
+}

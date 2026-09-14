@@ -39,8 +39,10 @@ import './styles/highlight.css'
  * 拆分过程有脚本保证等价：scripts/css-split-check.mjs
  */
 import './styles/layout.css'
+import './styles/shell.css'
 import './styles/rail.css'
 import './styles/chat.css'
+import './styles/composer.css'
 import './styles/tools.css'
 import './styles/browser.css'
 

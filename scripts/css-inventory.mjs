@@ -29,8 +29,10 @@ const ORDER = [
   'highlight.css',
   /* ── 模块化收敛层（最后加载）：原 sidebar-review.css 按模块拆开 ── */
   'layout.css',
+  'shell.css',
   'rail.css',
   'chat.css',
+  'composer.css',
   'tools.css',
   'browser.css'
 ]

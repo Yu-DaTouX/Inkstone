@@ -31,8 +31,10 @@ const ORDER = [
   'electron.css',
   'highlight.css',
   'layout.css',
+  'shell.css',
   'rail.css',
   'chat.css',
+  'composer.css',
   'tools.css',
   'browser.css'
 ]

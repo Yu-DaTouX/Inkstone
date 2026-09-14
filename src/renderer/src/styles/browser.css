@@ -60,3 +60,284 @@
   font-size: var(--fs-xs);
   color: var(--fg-dim);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.browser-surface {
+  position: relative;
+  height: 100%;
+  display: grid;
+  /*
+   * 单列必须写死为 minmax(0, 1fr)。
+   * 隐式列是 auto，会被内容撑到 max-content —— 一条长错误提示就能
+   * 把工具栏/网页区撑到比面板还宽，连带把原生 WebContentsView 的
+   * 坐标算歪。面板本身的宽度是固定的，这里只需要老老实实填满。
+   */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 31px 42px auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-1);
+}
+
+.browser-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-tab i {
+  flex: none;
+  font-style: normal;
+  font-size: 15px;
+  opacity: .65;
+}
+
+.browser-tab:hover,
+.browser-tab.active {
+  color: var(--fg);
+  background: var(--bg-1);
+  border-bottom-color: var(--accent);
+}
+
+.browser-nav:hover,
+.browser-close:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.browser-nav:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.browser-nav.browser-chrome.on {
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* 「⋯」菜单 */
+.browser-menu-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+/* 展开的「⋯」操作行：占第 3 行（与状态行同一个位置） */
+.browser-actions {
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  overflow-x: auto;
+}
+
+.browser-action {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  background: var(--bg-1);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.browser-action:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-str);
+}
+
+.browser-action:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+/* 加载 / 错误状态行：只在有内容时占高（auto 行） */
+.browser-status {
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.browser-status:empty {
+  display: none;
+}
+
+/* 浏览器高度分隔条（水平） */
+.browser-splitter {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.browser-splitter::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--border-str);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.browser-splitter:hover::after,
+.browser-splitter:focus-visible::after,
+.browser-splitter.on::after {
+  opacity: 1;
+}
+
+.browser-address input:focus {
+  border-color: var(--border-str);
+}
+
+.browser-control {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--accent-soft);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.browser-viewport {
+  grid-row: 4;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+}
+
+.browser-ext-title {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.browser-ext-desc {
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+
+.browser-ext-path,
+.browser-ext-port {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+
+/*
+ * 同步报告：内容可能变长（多项失败），所以 note 本身要能滚。
+ * 为什么要逐条列出失败项：用户报的「cookie 没共享」本身就是「部分成功」，
+ * 一句笼统的失败提示无法告诉他该去退 Chrome 还是该去登录。
+ */
+.browser-ext-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  text-align: center;
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  overflow: auto;
+}
+
+.browser-ext-sync {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.browser-ext-sync-line {
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--warn);
+}
+
+.browser-ext-sync-failed {
+  margin: 0;
+  padding-left: 1.1em;
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--fg-mute);
+}
+
+.browser-ext-sync-failed code {
+  color: var(--fg-dim);
+}
+
+.browser-ext-resync {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.browser-ext-resync:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.browser-ext-resync:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/*
+ * 加载 / 错误提示放在工具栏内联位置。
+ * 不能定位到 .browser-viewport 上方 —— 网页是原生 WebContentsView，
+ * 永远盖在渲染层之上，那里的提示会被整段遮住。
+ */
+.browser-loading {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.browser-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--err);
+  font-size: var(--fs-xs);
+}

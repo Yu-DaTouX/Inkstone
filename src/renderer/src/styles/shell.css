@@ -1,0 +1,199 @@
+/*
+ * 应用外壳：标题栏、窗口控制按钮、面板拖拽把手、全局浮层（选择器）。
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ */
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 13. 标题栏控件统一成胶囊，别一个是文字一个是图标 */
+.tb-right .btn:not(.icon),
+.tb-left .btn.icon {
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+
+.tb-right .btn:not(.icon):hover,
+.tb-left .btn.icon:hover {
+  border-color: var(--border-str);
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 左栏开关在最左上角 */
+.tb-left .tb-icon {
+  margin-left: -4px;
+}
+
+/* 通用图标按钮（非窗口控制） */
+.tb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.tb-icon:hover,
+.tb-icon.on {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.tb-icon.on .ico {
+  color: var(--accent);
+}
+
+/* ---- Win11 窗口控制 ---- */
+.wctrl {
+  display: flex;
+  align-self: stretch;
+  margin-left: var(--sp-2);
+}
+
+.wbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  /* 与标题栏同高 */
+  height: 100%;
+  color: var(--fg-dim);
+  transition:
+    background 80ms linear,
+    color 80ms linear;
+}
+
+.wbtn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 关闭：Win11 是 #c42b1c（红），悬停时白字 */
+.wbtn.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.wbtn:active {
+  background: var(--bg-4);
+}
+
+.wbtn.close:active {
+  background: #b1261a;
+}
+
+/* 最大化/还原的图标用 svg 的 currentColor */
+.wbtn svg {
+  display: block;
+}
+
+/* 51. 标题栏：置顶按钮 + 精简掉重复入口
+   用户要求：
+   · 置顶给一个按钮，放在**窗口控制按钮的左边**
+   · 旁边的「设置」与「中/英文」移到设置里
+   （两者在设置面板的「外观」tab 里本来就有；设置齿轮在左栏底部也有）
+   置顶是个「开着就挡住一切」的状态，所以选中态必须**一眼看得出来**：
+   底色 + 强调色图标 + 右上角一个常亮小点（不依赖颜色也能看出）。 */
+.tb-pin {
+  position: relative;
+}
+
+.tb-pin.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tb-pin.on:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tb-pin.on::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+
+/* 置顶和窗口控制之间留一点，别看起来像连在一起的四个按钮 */
+.tb-pin + .wctrl {
+  margin-left: var(--sp-2);
+}
+
+/* 59. 面板宽度把手（拖拽调宽）
+   ⚠️ 这段曾被误删过一次（清理旧样式时 `cut()` 打偏，把整节删掉）。
+   症状是把手变成「占满整栏的隐形层」—— 拖拽还能用，但把手的位置
+   断言会量到 300px。所以这里保留注释说明它属于哪一节。
+   位置：左栏右缘 / 工具栏左缘。
+   体量：5px 的命中区，视觉上只有悬停/拖动时显一条线 ——
+   常驻一条竖线会让本就窄的三栏更像被切片。
+   为什么放在相邻面板**内部**并绝对定位：.workspace 是 3 列 grid，
+   把手若作为 grid 子元素会多出一列（本项目列宽踩过坑，见 §23b）。 */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /*
+   * 5px：再宽会与工具栏分区左缘的**排序把手**重叠（实测 7px 时重叠 5px，
+   *   用户想拖排序会变成拖宽度）。排序把手的 margin-left 也因此设为 6px。
+   */
+  width: 5px;
+  z-index: 8;
+  cursor: col-resize;
+  /* 触摸设备上别滚页面 */
+  touch-action: none;
+}
+
+.resizer-rail {
+  right: 0;
+}
+
+.resizer-panel {
+  left: 0;
+}
+
+/* 悬停/聚焦/拖动时才显线 —— 平时完全不可见，但一直可点 */
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: transparent;
+  transition: background 120ms var(--ease);
+}
+
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer[data-dragging='1']::after {
+  background: var(--accent);
+}
+
+.resizer:focus-visible {
+  outline: none;
+}
+
+/* 拖到过窄、松手就要收起时的反馈：把手变警示色并加粗 */
+.resizer[data-will-collapse='1']::after {
+  background: var(--warn);
+  width: 2px;
+}

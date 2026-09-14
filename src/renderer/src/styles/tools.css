@@ -705,3 +705,150 @@
   text-decoration: line-through;
   opacity: 0.75;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.tl-head .spacer {
+  flex: 1;
+}
+
+.tl-count {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-hint {
+  margin: 3px 0 var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+
+.tl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tl-row .spacer {
+  flex: 1;
+}
+
+.tl-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+}
+
+.tl-dot.on {
+  background: var(--ok);
+}
+
+.tl-dot.off {
+  background: var(--fg-mute);
+  opacity: 0.5;
+}
+
+.tl-name {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+
+.tl-row[data-in-lib='1'] .tl-name {
+  color: var(--fg-mute);
+}
+
+.tl-move {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.tl-move:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--accent);
+}
+
+.tl-move:disabled {
+  opacity: 0.25;
+}
+
+.tl-toggle {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.tl-toggle:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.tl-toggle.on {
+  /* 已在工具栏里 —— 按钮是「收进库」，用中性色（不是危险操作） */
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+
+.tl-reset {
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.tl-reset:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+/* 工具库里每行的抓取把手 */
+.tl-grip {
+  flex: none;
+  width: 12px;
+  color: var(--fg-mute);
+  opacity: 0.5;
+  cursor: grab;
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.tl-row:hover .tl-grip {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  /* 整行可拖（用户在库里随便按哪都能拖） */
+  cursor: grab;
+}
+
+.tl-row:active {
+  cursor: grabbing;
+}

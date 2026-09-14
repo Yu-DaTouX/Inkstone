@@ -246,3 +246,565 @@
   background: var(--bg-2);
   color: var(--fg);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 收起 = 0 宽（开关在标题栏），所以不需要给收起态留任何东西 */
+/* 24. 左栏顶部的模式开关（固定 / 自动） */
+.rail-mode {
+  display: inline-flex;
+  align-self: stretch;
+  padding: 2px;
+  margin-bottom: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+}
+
+.rail-mode-btn.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rail-mode-btn.sel .ico {
+  color: var(--accent);
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+.rail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.rail-icon.sm {
+  width: 22px;
+  height: 22px;
+}
+
+.rail-icon:hover,
+.rail-icon.on {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.rail-icon.on .ico {
+  color: var(--accent);
+}
+
+/* ---- 搜索 ---- */
+.rail-search {
+  position: relative;
+  margin: 0 var(--sp-2) var(--sp-2);
+}
+
+.rail-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 26px 0 var(--sp-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.rail-search input:focus {
+  border-color: var(--border-str);
+}
+
+.rail-search input::placeholder {
+  color: var(--fg-mute);
+}
+
+.rail-search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rail-search-clear:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rail-action .ico {
+  color: var(--fg-mute);
+}
+
+.rail-action:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.rail-section-head {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-2);
+}
+
+.rail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.rail-section-title:hover {
+  color: var(--fg-dim);
+}
+
+/* 收起时 chevron 转回来（默认朝右 = 收起，展开时朝下） */
+.rail-section-title .chev {
+  color: var(--fg-mute);
+  transform: rotate(90deg);
+}
+
+.rail-section-title.collapsed .chev {
+  transform: rotate(0deg);
+}
+
+/* ---- 项目行 ---- */
+.proj-group-heading {
+  margin: 12px 6px 4px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-head:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.proj-head .ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.proj-labels {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.proj-rename { opacity: 0; color: var(--fg-mute); padding: 2px; }
+
+.proj-head:hover .proj-rename, .proj-rename:focus { opacity: 1; }
+
+.proj-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 项目行内重命名（Electron 不支持 window.prompt，改用 input） */
+.proj-head.renaming {
+  gap: 6px;
+}
+
+.proj-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-base);
+  outline: none;
+}
+
+/* ---- 会话行：嵌套在项目下，缩进一级 ---- */
+.srow-wrap {
+  position: relative;
+}
+
+.srow {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  /* 缩进：项目行的文字落在 26px（8 padding + 12 图标 + 6 gap），
+     会话行要比它再深一级。原来是 38px，用户说边缘留白多 → 收到 32px。
+     ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
+     验证缩进必须量 **.srow-name 的左缘**，量 .srow 永远看不到差异。 */
+  padding: 6px var(--sp-2) 6px 32px;
+  border-radius: var(--r-md);
+  color: var(--fg-mute);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.proj-head.collapsed ~ * {
+  /* 项目收起时不画线 */
+  display: none;
+}
+
+.srow.sel {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+/* 分支编号（这个会话是第几个分支） */
+.srow-bno {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 会话行内重命名（用户报「左栏会话没办法重命名」：Electron 不支持 window.prompt） */
+.srow-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  /* 缩进与 .srow 一致，重命名时文字位置不跳 */
+  padding: 0 var(--sp-2) 0 32px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-base);
+  outline: none;
+}
+
+.srow-wrap:hover .srow-text {
+  /* 给右侧图标让位，避免文字压到按钮下面 */
+  padding-right: 24px;
+}
+
+.srow-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.srow-menu-btn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.srow-menu-btn.danger:hover {
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+.srow-menu-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.srow-menu-btn:disabled:hover {
+  background: none;
+  color: var(--fg-dim);
+}
+
+/* 连接状态做成头像右下角的小点 */
+.rail-avatar::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--bg-1);
+}
+
+.rail-avatar.ok::after {
+  background: var(--ok);
+}
+
+.rail-avatar.warn::after {
+  background: var(--warn);
+}
+
+.rail-user {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.rail-user-sub {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 悬停时时间让位给动作按钮 —— 两者落在同一个右缘，不能同时显示（会叠成一团） */
+.srow-wrap:hover .srow-time {
+  opacity: 0;
+}
+
+.srow-wrap:hover .srow-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.srow-wrap.has-acts:hover .srow-text {
+  padding-right: 34px;
+}
+
+.srow-acts {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  /* 隐藏时不接收指针事件，否则看不见的 ⋯ 会抢走“点行选中”的点击 */
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.srow:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  background: var(--bg-2);
+}
+
+/* ④ 项目行的分组感：当前项目的图标用强调色 */
+.proj-head[data-current='1'] .ico {
+  color: var(--accent);
+}
+
+/* 左栏内容宽度固定，不能跟着列宽收缩 ——
+   否则收起过程中文字被压扁，而不是「滑走」 */
+
+/* 33. 左栏布局（**唯一**一处定义，别再在别处写 .rail 宽度）
+   规则：
+   · --w-rail 是唯一真源；收起时 .app.rail-off 把它设为 0
+   · .rail-slot 是 grid 的一列，宽度 = --w-rail（跟着收放）
+   · .rail 自身宽度固定 300px，不跟着列宽收缩 ——
+   否则收起过程中文字会被压扁而不是「滑走」
+   · 内容用 opacity 淡出，避免窄列里文字挤成一团
+   踩过的坑：曾经同时存在 --w-rail 与 --w-rail-fixed 两个变量，
+   加上三处 .rail 宽度规则叠加，grid 列算成了 `0px 1441px 0px`，
+   中栏宽度变 0、整屏被左栏占满。变量和规则都只能有一处。 */
+.rail-slot {
+  position: relative;
+  width: auto;
+  transform: none;
+  overflow: hidden;
+  z-index: 5;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  z-index: 5;
+}
+
+.rail-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.rail-avatar:hover {
+  border-color: var(--accent-line);
+}
+
+.rail-avatar-letter {
+  font-size: var(--fs-base);
+  line-height: 1;
+  /* 中文首字在圆里偏下，抬 0.5px 视觉居中 */
+  transform: translateY(-0.5px);
+}
+
+.rail-user-name {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+/* ---- 弹出面板：贴在底栏上方 ---- */
+.rail-user-pop {
+  position: absolute;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  bottom: calc(100% - var(--sp-1));
+  z-index: 40;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: mo-in-up var(--mo-base) var(--mo-ease) both;
+}
+
+/* 58. 左栏头部的「砚 ⌄」+ 模式菜单（用户要求，参考 Codex 的「Codex ⌄」）
+   「先只做入口」：菜单里列模式，只有当前模式可选，其余标「即将支持」。
+   不做假状态 —— 未接入的项明确写出来，而不是让它看着能用。 */
+.rail-mode-wrap {
+  position: relative;
+  flex: none;
+}
+
+.rail-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 5px 0 2px;
+  border-radius: var(--r-sm);
+  color: var(--fg);
+}
+
+.rail-brand {
+  color: var(--fg);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+}
+
+/* 小箭头：展开时转 90°（与分区标题的 chevron 同一套语义） */
+.rail-mode-chev {
+  color: var(--fg-mute);
+  transform: rotate(90deg);
+  transition: transform var(--dur) var(--ease);
+}
+
+.rail-mode-btn.open .rail-mode-chev {
+  transform: rotate(-90deg);
+}
+
+.rail-mode-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  animation: mo-in-down var(--mo-base) var(--mo-ease) both;
+}
+
+/* 64. 会话分叉树（用户要求：默认折叠，开关放在会话标题旁）
+   为什么开关是 .srow 的兄弟节点而不是子节点：.srow 本身是 <button>，
+   里面再放 <button> 是非法嵌套（浏览器会把内层拆出去，行为不可预期）。
+   所以行主体拆成 .srow-row = [.srow 按钮] [.srow-btoggle 按钮] [时间]。 */
+.srow-btoggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.srow-btoggle:hover {
+  background: var(--bg-2);
+  color: var(--fg-dim);
+}
+
+.srow-btoggle.open {
+  color: var(--accent);
+}
+
+.srow-btoggle .srow-btoggle-n {
+  min-width: 8px;
+  text-align: center;
+}
+
+.srow-btoggle .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+
+.srow-btoggle.open .chev {
+  transform: rotate(90deg);
+}
+
+/* 树本体：每条分叉一行，缩进到与标题对齐 */
+.srow-branches {
+  margin: 1px 0 var(--sp-2) 32px;
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border-soft);
+}
