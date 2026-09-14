@@ -64,6 +64,17 @@ export function Rail() {
   const patchSettings = useStore((s) => s.patchSettings)
 
   const [query, setQuery] = useState('')
+  /*
+   * 搜索的两个焦点锚点。
+   *
+   * 为什么要它们：打开搜索时输入框是 `autoFocus`（焦点自然在那儿），
+   * 但**清空/关掉之后焦点就没人管了** —— 输入框一卸载，焦点掉回 body，
+   * 键盘用户得从头 Tab 一遍才能回到左栏。
+   *   · 清空（✕）后仍想继续搜 → 焦点回输入框
+   *   · 关掉搜索（Esc）后 → 焦点还给那个开关按钮
+   */
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchBtnRef = useRef<HTMLButtonElement>(null)
   const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
@@ -378,6 +389,7 @@ export function Rail() {
         </div>
         <span className="rail-spacer" />
         <button
+          ref={searchBtnRef}
           className={`rail-icon ${searching ? 'on' : ''}`}
           title={t('rail.search')}
           onClick={() => {
@@ -393,15 +405,36 @@ export function Rail() {
       {searching ? (
         <div className="rail-search">
           <input
+            ref={searchInputRef}
             autoFocus
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            /*
+             * Esc：关掉搜索并把焦点还给开关。
+             * 与设置面板一致 —— 弹层关掉后焦点回到打开它的那个东西。
+             */
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              e.preventDefault()
+              setQuery('')
+              setSearching(false)
+              searchBtnRef.current?.focus()
+            }}
             placeholder={t('rail.search')}
             data-testid="rail-search"
           />
           {query ? (
-            <button className="rail-search-clear" onClick={() => setQuery('')} title={t('rail.clear')}>
+            <button
+              className="rail-search-clear"
+              onClick={() => {
+                setQuery('')
+                /* 清空之后大概率还要继续搜 —— 焦点留在输入框 */
+                searchInputRef.current?.focus()
+              }}
+              title={t('rail.clear')}
+              data-testid="rail-search-clear"
+            >
               ✕
             </button>
           ) : null}

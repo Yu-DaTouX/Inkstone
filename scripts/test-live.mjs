@@ -73,6 +73,8 @@ const CASES = {
     cost: 0,
     keys: 'shift+tab,shift+tab,shift+tab,shift+tab'
   },
+  // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
+  railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
   // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
   perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0 },
   // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
