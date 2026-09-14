@@ -117,26 +117,23 @@
     if (visible(c4)) ok('两侧都收起时输入框仍在（' + c4.w + '×' + c4.h + '）')
     else bad('两侧收起后输入框不见了！')
     /*
-     * 收起槽 = 38px（= 12 + 26，恰好让入口按钮落在展开态的同一坐标）。
-     * 「没有条」是**视觉**性质（透明 + 无边框），不是宽度小 ——
-     * 窄到 8px 时按钮只能错位，而那正是用户报过的「不对齐」。
+     * ⚠️ 2026-09 评审后设计变过：收起态从「 0 宽、入口只在标题栏」
+     *    改成「48px 紧凑快捷轨（.rail-compact，带 bg-1 底色）」。
+     *    下面这两条原来写的是**旧设计**（必须 0 宽 / 必须透明），
+     *    在新设计下它们是错的 —— 那是过时断言，不是回归。
+     *    现在改为验证新设计真正在意的事：紧凑轨宽度稳定、
+     *    里面的入口可见可点，而右栏收起后是真的卸载。
      */
-    /*
-     * 「没有条」：左栏收起后容器透明无边框；工具栏收起后**整个卸载**
-     * （连容器都没有，自然没有条）。'.rightstub' 已经不存在了。
-     */
-    const bgOf = (sel) => {
-      const e = document.querySelector(sel)
-      return e ? getComputedStyle(e).backgroundColor : '（不存在）'
+    const compactBtns = [...document.querySelectorAll('.rail-compact button')]
+    const compactVisible = compactBtns.some((b) => b.getBoundingClientRect().width > 0)
+    out.push(`  收起后：rail=${rw}px 紧凑轨按钮=${compactBtns.length} 个（可见=${compactVisible}） panel=${pw}px`)
+    if (rw === 48 && compactBtns.length > 0 && compactVisible) {
+      ok('左栏收起为 48px 紧凑轨，且有可见可点的快捷入口')
+    } else {
+      bad(`左栏收起态不对：宽 ${rw}px，紧凑按钮 ${compactBtns.length} 个（可见=${compactVisible}）`)
     }
-    out.push('  收起后：rail 背景=' + bgOf('.rail') + '  .rightstub=' + bgOf('.rightstub'))
-    const railGone = bgOf('.rail') === 'rgba(0, 0, 0, 0)' || bgOf('.rail') === 'transparent'
-    const panelGone = !document.querySelector('.rightstub')
-    if (railGone && panelGone) ok('两侧收起后都没有可见的条')
-    else bad('收起后还能看到条：' + bgOf('.rail') + ' / ' + bgOf('.rightstub'))
-    /* 开关在标题栏 → 收起就是真的 0 宽（不需要留槽） */
-    if (rw === 0 && pw === 0) ok('两侧收起都是 0 宽（开关在标题栏，中栏拿到全部空间）')
-    else bad('收起后仍有保留宽度：' + rw + ' / ' + pw)
+    if (pw === 0) ok('右栏收起后 0 宽（整个卸载，不占位）')
+    else bad('右栏收起后仍有保留宽度：' + pw)
 
     // 复位
     store.getState().setRailPinned(true)

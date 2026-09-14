@@ -228,8 +228,13 @@
     else bad('收起后没有展开入口')
     const railW = document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? 0
     out.push('  收起后 rail-slot 宽 = ' + railW.toFixed(1))
-    if (railW === 0) ok('收起 = 0 宽（开关在标题栏，不占位）')
-    else bad('收起后仍占 ' + railW.toFixed(1) + 'px')
+    /*
+     * ⚠️ 设计变更（ 2026-09 评审）：收起态不再是 0 宽，而是 48px 紧凑快捷轨
+     *    （开关仍在标题栏，两者并存）。旧断言「必须 0 宽」已过时。
+     */
+    const compactN = document.querySelectorAll('.rail-compact button').length
+    if (Math.abs(railW - 48) < 1 && compactN > 0) ok(`收起 = 48px 紧凑轨（${compactN} 个快捷入口）`)
+    else bad(`收起态不对：宽 ${railW.toFixed(1)}px，紧凑按钮 ${compactN} 个`)
     click(tbNow); await sleep(600)
     if (store.getState().railPinned) ok('点它 → 左栏展开')
     else bad('展不开')

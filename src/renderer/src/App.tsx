@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
-import { useI18n } from './i18n'
+import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
 import { RightPanel } from './components/toolbar/RightPanel'
@@ -10,6 +10,7 @@ import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
+import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
@@ -25,7 +26,23 @@ import './styles/motion.css'
 import './styles/settings.css'
 import './styles/electron.css'
 import './styles/highlight.css'
-import './styles/sidebar-review.css'
+/*
+ * ── 模块化收敛层（最后加载）──
+ *
+ * 这些文件装的是**最新评审的最终形态**，按模块归属（见各文件头部说明）。
+ * 它们放在加载链末尾有两个原因：
+ *   ① 迁移期间要保证「最后胜出」的规则归属不再漂移；
+ *   ② 它们内部互不重叠，所以彼此顺序不影响结果。
+ *
+ * 历史：这里原来是单个 sidebar-review.css（评审补丁）。P0-1 把它按模块
+ * 拆开、后面继续把 redesign.css 里属于各模块的规则逐步迁进来。
+ * 拆分过程有脚本保证等价：scripts/css-split-check.mjs
+ */
+import './styles/layout.css'
+import './styles/rail.css'
+import './styles/chat.css'
+import './styles/tools.css'
+import './styles/browser.css'
 
 /**
  * 超过这么多条消息才开启虚拟化。
@@ -49,6 +66,7 @@ function readTheme(parent: Theme | undefined): Theme {
 
 export default function App() {
   const { lang, setLang } = useI18n()
+  const t = useT()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
@@ -173,6 +191,14 @@ export default function App() {
     if (onboardDecided.current) return
     if (!settings) return // 等 bootstrap 有结果
     onboardDecided.current = true
+    /*
+     * 验收探针里**不自动弹**。
+     *
+     * 隔离的测试环境没有凭证，所以这里会无条件弹出；而引导层是一层模态，
+     * 按（正确的）设计会让出 Shift+Tab / Ctrl+P —— hotkeys 那类场景
+     * 的按键就全被吃掉了。手动从「关于」页打开不受影响。
+     */
+    if (window.yan.isProbe) return
     if (shouldAutoOnboard({ conn, piInfo, models })) setOnboarding(true)
   }, [settings, conn, piInfo, models])
 
@@ -368,6 +394,10 @@ export default function App() {
      * 兑底：窗口失焦后的第一下按键 / 旧版 preload（没有 onHotkey）时，
      * 渲染端的监听仍能接住。两条路都会跑，但重复触发是有害的
      * （快速按两下 Ctrl+P 会跳两个模型而不是一个），所以用时间锁去重。
+     *
+     * ⚠️ 有模态层时必须**完全放行**：主进程那条路已经用 setHotkeyGuard
+     *    暂停了，这里再拦就会把设置面板里的 Shift+Tab 反向导航吃掉
+     *    （两条路只暂停一条 = 没暂停）。
      */
     let lastAt = 0
     const guard = (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking'): void => {
@@ -380,6 +410,8 @@ export default function App() {
     }
 
     const onKey = (e: KeyboardEvent): void => {
+      // 设置面板 / 对话框打开时，把按键原样留给它（表单要能做焦点导航）
+      if (isModalOpen()) return
       const ctrl = e.ctrlKey || e.metaKey
       // Ctrl+Shift+P 要排在 Ctrl+P 前面，否则会被后者先吃掉
       if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
@@ -504,8 +536,14 @@ export default function App() {
              */}
 
             {!stick ? (
-              <button className="jump-bottom" onClick={jumpToBottom}>
-                <span className="jump-ico">↓</span>
+              <button
+                className="jump-bottom"
+                onClick={jumpToBottom}
+                /* 纯图标按钮：辅助技术需要名称，悬停也需要提示 */
+                aria-label={t('chat.jumpToBottom')}
+                title={t('chat.jumpToBottom')}
+              >
+                <span className="jump-ico" aria-hidden="true">↓</span>
               </button>
             ) : null}
 

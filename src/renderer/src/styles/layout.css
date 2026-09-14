@@ -1,0 +1,90 @@
+/*
+ * 布局骨架与应用级布局变量。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 这个文件属于 P0-1「样式收敛」的**模块化层**
+ * ══════════════════════════════════════════════════════════════════
+ * 背景：样式的加载顺序是
+ *   tokens → app → stage1 → stage2 → redesign → motion → settings
+ *   → electron → highlight → 本层
+ * 最终效果依赖层层覆盖，同一个布局规则可能散在 3~4 个文件里。
+ * 本层的规则**放最后加载**，因此「最后生效」这件事有了明确归属。
+ *
+ * 迁移原则（每一步都可验证，不做一次性重写）：
+ *   ① 先把最新评审补丁（原 sidebar-review.css）按模块拆到这里 ——
+ *      只搬家、不改值，层叠顺序不变，视觉零回归；
+ *   ② 再把 redesign.css 里属于各模块的规则逐步迁出（一次一个区域，
+ *      每次跑截图 + 交互回归）。
+ *
+ * 各模块文件：
+ *   layout.css   ← 应用骨架、布局变量、断点（本文件）
+ *   rail.css     ← 左栏（项目 / 会话 / 紧凑轨）
+ *   chat.css     ← 对话区（正文、推理、终端）
+ *   tools.css    ← 右栏工具分区（上下文 / 额度 / 文件 …）
+ *   browser.css  ← 内置浏览器
+ */
+
+/*
+ * 左栏宽度。
+ *
+ * ⚠️ 收起宽度只在这里定义（--w-rail-collapsed），展开宽度只由
+ *    --w-rail-user 决定（用户拖出来的值；没设过就用默认）。
+ *    历史上同时存在 --w-rail / --w-rail-fixed / --w-rail-collapsed
+ *    三个变量互相覆盖，导致「拖动后宽度回弹」「收起来但列宽还在」。
+ */
+:root {
+  --w-rail: var(--w-rail-user, 260px);
+  --w-rail-collapsed: 48px;
+}
+
+/*
+ * 左栏收放**不做过渡**。
+ *
+ * 几何变化立即生效：grid-template-columns 一旦参与动画，整段对话会
+ * 在动画的每一帧里重新折行 —— 长会话下肉眼可见地掉帧。收起/展开
+ * 本来就是「一次性到位」的操作，动效收益远小于代价。
+ */
+.workspace {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace {
+    transition: none;
+  }
+}
+
+/*
+ * 窄屏：保存下来的桌面宽度**不能**把面板顶出窗口。
+ *
+ * 用 min() 夹取实际显示宽度，而**不是**改写用户的保存值
+ * （--w-rail-user / --w-panel-user 来自设置）—— 窗口恢复后布局原样回来。
+ */
+@media (max-width: 980px) {
+  .workspace {
+    --w-rail: min(var(--w-rail-user, 260px), 210px);
+    --w-right: min(var(--w-panel-user, 264px), 190px);
+  }
+  .app.rail-off .workspace {
+    --w-rail: 48px;
+  }
+}
+
+/*
+ * 极窄窗口（高 DPI 下的 940px 最小窗口就会落到这里）。
+ *
+ * 断点与数值按**实测的对话区最小可用宽度**倒推，不是拍的：
+ *   composer 宽度 ≈ center - 73px（中栏内边距）
+ *   要让输入框可用（≥320px），需要 center ≥ 393px
+ *   视口 818px 时 rail 210 + right 190 已经把 center 压到 418（临界）
+ *   视口再小就只能靠这一档让步，否则发送 / 停止按钮会挤到不可点。
+ */
+@media (max-width: 900px) {
+  .workspace {
+    --w-rail: min(var(--w-rail-user, 260px), 180px);
+    --w-right: min(var(--w-panel-user, 264px), 170px);
+  }
+  .app.rail-off .workspace {
+    --w-rail: 48px;
+  }
+}

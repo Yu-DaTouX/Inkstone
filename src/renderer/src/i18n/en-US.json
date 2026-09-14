@@ -57,6 +57,7 @@
   "chat.sug2": "Walk through this project's structure and tell me where to start",
   "chat.sug3": "Anything this week I should keep an eye on?",
   "chat.working": "Working…",
+  "chat.jumpToBottom": "Jump to latest",
   "chat.you": "You",
   "composer.attach": "Add images (or just paste / drop them)",
   "composer.bashMode": "! runs directly, bypasses the model",

@@ -1,0 +1,248 @@
+/*
+ * 左栏：项目分组 / 会话树 / 紧凑快捷轨。
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）——
+ * 见 layout.css 顶部的说明。这里只放**最新评审的最终形态**，
+ * 迁移期间旧规则仍留在 redesign.css，逐步搬过来。
+ */
+
+.rail-top {
+  padding: 6px;
+}
+.rail-body {
+  padding: 0 6px 8px;
+  scrollbar-gutter: auto;
+}
+.rail-section {
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.rail-action {
+  margin: 0 6px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.proj-head {
+  height: 34px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* 路径与来源在窄栏里只会挤掉标题，所以不显示（完整值在悬停提示里） */
+.proj-path,
+.srow-origin {
+  display: none;
+}
+
+/*
+ * 等宽：路径类文本要对齐。
+ *
+ * ⚠️ 原来这条（与 .md code / .terminal / .rp-fs 合并）写在评审补丁里。
+ *    按模块拆开后，每个选择器的声明**完全不变**，只是各自归位 ——
+ *    这是「只搬家不改值」的前提：拆开不能改变任何元素的最终样式。
+ */
+.proj-path,
+.srow-menu-path {
+  font-family: var(--font-mono);
+  letter-spacing: normal;
+}
+
+/* 左栏整体略收紧字距，跟正文的视觉密度对齐 */
+.rail {
+  letter-spacing: -0.01em;
+}
+
+/*
+ * 会话行：整行是一个可点区域，选中态用左侧色条表达。
+ *
+ * 为什么把 .srow 的 padding-left 写成 calc(20px + 深度×12px)：
+ * 分支会话要按层级缩进，但缩进不能写在行本身（那会连选中背景一起缩进），
+ * 所以把缩进放在内层文字块上。
+ */
+.srow-row {
+  height: 32px;
+  min-width: 0;
+  width: 100%;
+  border-radius: 6px;
+  position: relative;
+  padding-right: 6px;
+}
+.srow-row:hover {
+  background: var(--bg-2);
+}
+.srow-row.selected {
+  background: var(--accent-soft);
+}
+.srow-row.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  background: var(--accent);
+}
+.srow-row .srow {
+  height: 32px;
+  padding: 0 6px 0 calc(20px + var(--branch-depth, 0) * 12px);
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--fs-base);
+  min-width: 0;
+}
+.srow-row .srow.sel,
+.srow-row .srow:hover {
+  background: transparent;
+  box-shadow: none;
+}
+.srow-row .srow.sel::before {
+  display: none;
+}
+.srow-text,
+.srow-line,
+.srow-name {
+  min-width: 0;
+}
+.srow-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.srow-wrap .srow-acts {
+  top: 5px;
+  bottom: auto;
+  transform: none;
+}
+.srow-wrap:has(> .srow-row:hover) > .srow-acts,
+.srow-wrap:focus-within > .srow-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+.srow-wrap .srow-time {
+  flex: none;
+}
+.session-children {
+  width: 100%;
+}
+.session-status {
+  flex: none;
+  width: 16px;
+  color: var(--accent);
+  text-align: center;
+}
+.session-status.waiting {
+  color: var(--warn);
+  font-weight: 700;
+}
+.rail-pins {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.rail-archive-toggle {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+/* 项目上下文菜单（就地展开，不是浮层） */
+.project-menu,
+.proj-head.collapsed ~ .project-menu {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 4;
+  margin: 2px 0 4px;
+  padding: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.project-menu button {
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--fg-dim);
+  text-align: left;
+  font: inherit;
+}
+.project-menu button:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+.project-menu input {
+  min-height: 28px;
+  margin: 2px;
+  padding: 4px 7px;
+  color: var(--fg);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+.proj-group {
+  margin-left: 5px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 删除会话的确认框 —— 宽度跟着视口收，不会在小窗口里顶出去 */
+.rail-delete-dialog {
+  width: min(430px, calc(100vw - 32px));
+}
+.rail-delete-error {
+  margin: 0 var(--sp-3) var(--sp-3);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+
+/*
+ * ── 收起态：48px 紧凑快捷轨 ──
+ *
+ * ⚠️ 这里与一段历史有关，别按「收起 = 0 宽」改：
+ *   曾经做过 ① 收起留 38px 透明槽 ② 面板内悬停展开按钮，
+ *   两者都因为「保留宽度把中栏算错 → 导航轨位置带偏」被否掉。
+ *   现在的形态是：开关常驻标题栏 **并且** 左栏收缩成一排图标
+ *   （.rail-compact），两者并存 —— 入口永在，同时保留常用快捷键位。
+ *
+ * `.rail > :not(.rail-compact)` 只隐藏「其余内容」，紧凑轨本身留着。
+ */
+.app.rail-off .rail {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  background: var(--bg-1);
+}
+.app.rail-off .rail > :not(.rail-compact) {
+  display: none;
+}
+/* 收起时没有可拖的宽度，把手一并去掉（否则会出现一条假的拖拽命中区） */
+.app.rail-off .resizer-rail {
+  display: none;
+}
+.rail-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  padding: 6px;
+  gap: 4px;
+}
+.rail-compact button {
+  width: 36px;
+  height: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 6px;
+  color: var(--fg-dim);
+}
+.rail-compact button:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}

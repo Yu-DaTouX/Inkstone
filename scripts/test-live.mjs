@@ -14,6 +14,7 @@
  *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
  */
 import { spawn } from 'node:child_process'
+import vm from 'node:vm'
 import {
   readFileSync,
   writeFileSync,
@@ -65,6 +66,13 @@ const CASES = {
     cost: 0,
     keys: 'ctrl+shift+p,ctrl+p,shift+tab'
   },
+  // 弹窗行为：快捷键让位（真按键）/ 焦点圈定 / Esc / 焦点恢复 / 图标按钮名称
+  dialog: {
+    probe: 'scripts/probe/dialog.js',
+    delay: 11000,
+    cost: 0,
+    keys: 'shift+tab,shift+tab'
+  },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
   zoom: {
@@ -85,6 +93,13 @@ const CASES = {
     delay: 9000,
     cost: 0,
     wins: ['1456x1000', '1002x700', '940x700']
+  },
+  // 布局宽度扫描（P0-2 取基线用；只测量 + 最小可用宽度断言）
+  narrowscan: {
+    probe: 'scripts/probe/narrowscan.js',
+    delay: 9000,
+    cost: 0,
+    wins: ['1600x1000', '1280x860', '1100x760', '1000x700', '940x640']
   },
   // 任务模块：进行中就地显示 / 两行截断 / 全部完成自动收起 / 历史折叠 + 跳转
   todonew: { probe: 'scripts/probe/todonew.js', delay: 9000, cost: 0 },
@@ -407,6 +422,26 @@ function writePlainSession(dir, idBase, count) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
+/**
+ * 探针脚本的语法检查。
+ *
+ * 它们会被当成字符串交给 `executeJavaScript`，所以语法错误不会在构建期
+ * 暴露 —— 只会变成「没抓到 PROBE 输出 —— 应用可能启动失败」，
+ * 跟真正的启动失败混在一起。实测踩过一次（重名 const），排查花了不少时间。
+ *
+ * @returns 错误信息，合法时返回 null
+ */
+function checkProbeSyntax(probe) {
+  try {
+    const src = readFileSync(join(root, probe), 'utf8')
+    // 与 executeJavaScript 一致：按普通脚本（非 module）解析
+    new vm.Script(src, { filename: probe })
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 function runProbe({ probe, delay, keys, env: caseEnv }, env) {
   return new Promise((resolvePromise) => {
     const child = spawn('npx', ['electron', '.'], {
@@ -581,6 +616,23 @@ async function main() {
     const wins = c.wins ?? [null]
     let allOk = true
     let hint
+
+    /*
+     * 探针脚本先过一遍**语法检查**。
+     *
+     * 它们是以字符串形式被 executeJavaScript 执行的，所以语法错误
+     * （比如重复声明一个 const）不会在构建期报错，只会表现为
+     * 「没抓到 PROBE 输出 —— 应用可能启动失败」，极难定位。
+     * 实测踩过一次（topbar 里重名 cur），这里提前拦住。
+     */
+    const syntaxErr = checkProbeSyntax(c.probe)
+    if (syntaxErr) {
+      console.log(`  ✗ 探针脚本语法错误：${syntaxErr}`)
+      failed++
+      console.log(`\n✗ ${name} 未通过`)
+      continue
+    }
+
     for (const win of wins) {
       if (sandboxRoot) {
         writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2), 'utf8')

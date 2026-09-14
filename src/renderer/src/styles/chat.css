@@ -1,0 +1,35 @@
+/*
+ * 对话区：正文（Markdown）、推理、终端。
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ */
+
+/*
+ * 正文用**真实的 Windows UI 字体**，代码保持等宽网格。
+ *
+ * 为什么正文不用等宽：中文长段落用等宽字体读起来很累（字距过大、
+ * 行宽难对齐），而代码 / 路径必须等宽才能对齐。这个「正文非等宽、
+ * 代码等宽」的分工是评审确认的方向。
+ */
+.md {
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  letter-spacing: -0.01em;
+  line-height: 1.6;
+}
+.md strong {
+  font-weight: 700;
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+}
+.md p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* 等宽：正文里的代码块 + 终端 */
+.md code,
+.md pre,
+.terminal {
+  font-family: var(--font-mono);
+  letter-spacing: normal;
+}

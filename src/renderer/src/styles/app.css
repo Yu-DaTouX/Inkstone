@@ -489,13 +489,23 @@ kbd {
   box-shadow: 0 0 0 3px var(--warn-soft);
 }
 
-/* 7. 响应式降级 */
-/* 右栏移除后，中屏不再需要降级（只有左栏需要） */
-@media (max-width: 900px) {
-  :root {
-    --w-rail: 0px;
-  }
-  .rail {
-    display: none;
-  }
-}
+/*
+ * 7. 响应式降级 —— 已移到 sidebar-review.css
+ *
+ * ⚠️ 这里曾经是（右栏还在、左栏只有「展开/收起」两态的年代的写法）：
+ *
+ *     @media (max-width: 900px) {
+ *       :root { --w-rail: 0px; }
+ *       .rail { display: none; }
+ *     }
+ *
+ *   它已经**完全失效**，而且失效得很隐蔽：
+ *     · `:root{--w-rail:0px}` 被 sidebar-review.css 的
+ *       `:root{--w-rail: var(--w-rail-user, 260px)}` 覆盖（同特异性、后加载）
+ *     · `.rail{display:none}` 被 redesign.css 的 `.rail{display:flex}` 覆盖（同理）
+ *   所以无论窗口多窄都不会生效 —— 它不是「有效但过时」，而是死代码。
+ *   实测（视口 818px，max-900 媒体查询为 true）里左栏仍然 210px 且可见。
+ *
+ *   现在的窄屏规则统一由 sidebar-review.css 管（它最后加载），
+ *   断点与宽度按实测的「对话区最小可用宽度」定。
+ */

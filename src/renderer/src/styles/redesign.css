@@ -675,12 +675,6 @@
   min-width: 0;
 }
 
-.rp-title {
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  letter-spacing: 0.06em;
-}
-
 .rp-count {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -712,17 +706,10 @@
   font-size: var(--fs-base);
   line-height: var(--lh-base);
 }
-.rp-todo:hover {
-  background: var(--bg-2);
-}
 .rp-box {
   color: var(--fg-mute);
   text-align: center;
   line-height: inherit;
-}
-.rp-text {
-  overflow-wrap: anywhere;
-  min-width: 0;
 }
 /*
  * 任务标题最多**两行**（用户要求，包括处理中的那条）。
@@ -2399,33 +2386,6 @@ body.resizing-composer {
 .think summary {
   font-size: var(--fs-sm);
 }
-
-/* 43. 右栏（状态栏）—— 对齐 OpenCode 的右侧信息栏
-   从「只有任务、没任务就消失」改成**常驻的多分区状态栏**：
-   上下文 / 任务 / 队列 / 扩展 / 环境。默认展开，可收起。 */
-.rp-top {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-soft);
-}
-.rp-top .spacer {
-  flex: 1;
-}
-.rp-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-.rp-x:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
 .rp-body {
   overflow: hidden auto;
   scrollbar-gutter: stable;
@@ -2438,7 +2398,6 @@ body.resizing-composer {
   border-bottom: 0;
   padding-top: 3px;
 }
-.rp-sec + .rp-sec { margin-top: 3px; }
 .rp-sec-head {
   display: flex;
   align-items: center;
@@ -2455,18 +2414,6 @@ body.resizing-composer {
   letter-spacing: 0.04em;
   text-align: left;
 }
-.rp-sec-head:hover {
-  color: var(--fg-dim);
-}
-.rp-sec-head .chev {
-  opacity: 0.6;
-}
-.rp-sec.open .rp-sec-head .chev {
-  transform: rotate(90deg);
-}
-.rp-sec-head .spacer {
-  flex: 1;
-}
 .rp-sec-body {
   /* 左内边距跟着标题走（标题收窄后正文也要跟着，否则正文比标题缩进还小，看着歪） */
   padding: 2px var(--sp-3) var(--sp-3) calc(var(--sp-1) + 2px);
@@ -2474,106 +2421,14 @@ body.resizing-composer {
   flex-direction: column;
   gap: 3px;
 }
-
-.rp-quota-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Codex 套餐名独占一行，和其下的两个限额窗口形成清晰层级。 */
 .rp-quota-plan {
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   margin: 2px 0 4px;
 }
-/* 窗口额度（Command Code 的 5 小时 / 每周）——每条一行 + 一条细进度条 */
-.rp-quota-wins {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 2px 0;
-}
-.rp-quota-win .rp-u {
-  flex: none;
-}
-.rp-dim.err {
-  color: var(--err);
-}
-.rp-quota-win .rp-meter {
-  margin: 2px 0 1px;
-}
-/* 文字按钮（刷新额度 / 设置月预算）—— 与 .rp-mini 区分开：
-   .rp-mini 是 18×18 的图标按钮，文字塞进去会竖排换行并把相邻行顶开。 */
-.rp-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  width: auto;
-  height: auto;
-}
-.rp-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.rp-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.rp-context-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-}
-.rp-context-summary strong { color: var(--fg); font-size: var(--fs-lg); font-weight: 600; }
-.rp-context-summary .warn, .rp-context-summary .warn strong { color: var(--warn); }
-.rp-context-summary .err, .rp-context-summary .err strong { color: var(--err); }
-
-/* 键值行：左标注、右数值 */
-.rp-kv {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  font-size: var(--fs-sm);
-  min-width: 0;
-}
-.rp-kv .spacer {
-  flex: 1;
-}
-.rp-k {
-  color: var(--fg-mute);
-  flex: none;
-}
-.rp-v {
-  color: var(--fg-dim);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rp-v.big {
-  color: var(--fg);
-  font-size: var(--fs-lg);
-}
-.rp-v.ok {
-  color: var(--ok);
-}
 .rp-v.warn {
   color: var(--warn);
-}
-.rp-v.err {
-  color: var(--err);
-}
-.rp-u {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.rp-dim {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-base);
 }
 
 /* 上下文进度：3px 细条 */
@@ -2589,16 +2444,6 @@ body.resizing-composer {
   height: 100%;
   background: var(--accent);
   transition: width var(--dur) var(--ease);
-}
-.rp-meter.warn i {
-  background: var(--warn);
-}
-.rp-meter.err i {
-  background: var(--err);
-}
-/* 压缩后 pi 还报不出用量：条保持可见但弱化，避免看着像“0 进度”的故障 */
-.rp-meter.unknown {
-  opacity: 0.4;
 }
 
 /* 任务 */
@@ -2632,74 +2477,6 @@ body.resizing-composer {
 }
 .rp-todo.done .rp-box {
   color: var(--ok);
-}
-
-/* 队列 */
-.rp-queued {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 3px;
-}
-.rp-queued-row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  gap: 4px;
-  font-size: var(--fs-xs);
-  color: var(--fg-dim);
-  min-width: 0;
-}
-.rp-queued-row .rp-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rp-queued-dot {
-  width: 4px;
-  height: 4px;
-  margin-top: 6px;
-  border-radius: var(--r-full);
-  background: var(--warn);
-}
-/* 两段式开关：一次一条 / 一次全投 */
-.rp-mode {
-  margin-top: 2px;
-}
-.rp-switch {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  overflow: hidden;
-  flex: none;
-}
-.rp-switch > span:not(.rp-switch-tip) {
-  padding: 1px 6px;
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-}
-.rp-switch > span.on {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.rp-switch-tip {
-  display: none;
-}
-
-/* 扩展 */
-.rp-widget {
-  margin-top: var(--sp-1);
-  padding: var(--sp-1) 0 0;
-  border-top: 1px dashed var(--border-soft);
-}
-.rp-widget-key {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.rp-widget-line {
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
-  line-height: 1.5;
 }
 
 /* 44. 思考强度档位（替换掉出问题的原生滑块） */
@@ -2795,34 +2572,6 @@ body.resizing-composer {
   border-radius: var(--r-sm);
 }
 
-/* 47. 右栏「操作」区：pi 自带能力的入口
-   这些东西 TUI 里都有快捷键，桌面端不能只能靠命令。 */
-.rp-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.rp-act {
-  flex: 1 1 auto;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  text-align: center;
-}
-.rp-act:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.rp-act:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 /* 49. 任务行的完成态：真的要看得出「已完成 / 未完成」
    用户报：「右边栏的任务没有已完成或未完成的提示」。
    旧实现只给已完成的加删除线，勾选框是个空 span（没边框、没底色），
@@ -2857,26 +2606,6 @@ body.resizing-composer {
   background: var(--ok);
   color: #0b1f16;
   font-weight: 700;
-}
-.rp-todo.todo-open .rp-box {
-  border-color: var(--warn);
-  background: transparent;
-}
-/* 右侧状态字：已完成 / 未完成 */
-.rp-state {
-  flex: none;
-  align-self: start;
-  margin-top: 1px;
-  font-size: 9.5px;
-  letter-spacing: 0.02em;
-  color: var(--fg-mute);
-  white-space: nowrap;
-}
-.rp-todo.done .rp-state {
-  color: var(--ok);
-}
-.rp-todo.todo-open .rp-state {
-  color: var(--warn);
 }
 
 /* 50. 浅色主题的对比度补丁
@@ -2955,9 +2684,6 @@ html[data-theme='light'] .tb-pin.on {
   /* 滚动条别压住文字 */
   scrollbar-gutter: stable;
 }
-.rp-fs-node {
-  display: contents;
-}
 .rp-fs-row {
   display: flex;
   align-items: center;
@@ -2971,39 +2697,6 @@ html[data-theme='light'] .tb-pin.on {
   text-align: left;
   white-space: nowrap;
 }
-.rp-fs-row:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-.rp-fs-row.dir {
-  color: var(--fg-mute);
-}
-.rp-fs-row.dir:hover {
-  color: var(--fg);
-}
-/* 点过之后闪一下 —— 否则「已把 @路径 插进输入框」这件事看不见（输入框可能在视野外） */
-.rp-fs-row.hot {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.rp-fs-ico {
-  flex: none;
-  opacity: 0.75;
-}
-.rp-fs-dot {
-  flex: none;
-  width: 3px;
-  height: 3px;
-  margin: 0 4.5px;
-  border-radius: var(--r-full);
-  background: currentColor;
-  opacity: 0.45;
-}
-.rp-fs-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .rp-fs-size {
   flex: none;
   margin-left: auto;
@@ -3011,16 +2704,6 @@ html[data-theme='light'] .tb-pin.on {
   color: var(--fg-dim);
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
-}
-/* 展开时的加载指示：一个小方块呼吸，不占位不打乱行高 */
-.rp-fs-spin {
-  flex: none;
-  width: 4px;
-  height: 4px;
-  margin: 0 4px;
-  border-radius: var(--r-full);
-  background: var(--accent);
-  animation: rp-fs-pulse 900ms var(--ease) infinite;
 }
 @keyframes rp-fs-pulse {
   0%,
@@ -3030,46 +2713,6 @@ html[data-theme='light'] .tb-pin.on {
   50% {
     opacity: 1;
   }
-}
-.rp-fs-err {
-  color: var(--err);
-}
-
-/* 分区标题右侧的小按钮（刷新）—— 必须 e.stopPropagation，
-   否则点它会连带折叠整个分区（父级是折叠按钮） */
-.rp-mini {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-.rp-mini:hover {
-  background: var(--bg-3);
-  color: var(--accent);
-}
-
-/* 46. 右栏 · 日志（从中栏底部搬过来）
-   为什么用等宽 + pre：它是 stderr，保留原始换行与缩进才有诊断价值。
-   高度上限比文件树小 —— 日志是「出问题时才看」的东西。 */
-.rp-log {
-  max-height: 160px;
-  overflow: auto;
-  margin: 0;
-  padding: 5px 6px;
-  border-radius: var(--r-xs);
-  background: var(--bg-0);
-  border: 1px solid var(--border-soft);
-  color: var(--fg-dim);
-  font-family: var(--font-code);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-tight);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
-  scrollbar-gutter: stable;
 }
 
 /* 47. 面板收起后的形态：**不占宽**（开关在标题栏）
@@ -3295,38 +2938,6 @@ html[data-theme='light'] .tb-pin.on {
   margin-bottom: 2px;
   overflow-wrap: anywhere;
 }
-
-/* 51. 工具栏：分区排序把手 + 工具库
-   把手（⠿）：平时不可见，悬停分区或聚焦时才显 ——
-   常驻七个小把手会让右栏到处都是点，而排序是低频操作。
-   插入指示线：拖动中在被跨过的分区边缘画一条强调色线。
-   没有它的话「会插到哪」完全靠猜（HTML5 DnD 自带的指示线在 Electron 里
-   不一定画，这也是本项目改用指针事件的原因之一）。 */
-.rp-sec-row {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-}
-.rp-sec-row .rp-sec-head {
-  flex: 1;
-  min-width: 0;
-}
-.rp-grip {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  /* 只让开宽度把手需要的距离 —— 原来是 6px，把标题推得太靠右了 */
-  margin-left: 2px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  opacity: 0;
-  cursor: grab;
-  /* 触摸设备上别滚页面（拖排序时） */
-  touch-action: none;
-  transition: opacity var(--dur) var(--ease);
-}
 .rp-sec:hover .rp-grip,
 .rp-grip:focus-visible {
   opacity: 0.7;
@@ -3335,16 +2946,6 @@ html[data-theme='light'] .tb-pin.on {
 .rp-grip:focus-visible {
   opacity: 1;
   color: var(--accent);
-}
-.rp-slot.dragging {
-  opacity: 0.55;
-}
-/* 插入指示线：before 画上边、after 画下边 */
-.rp-slot[data-over='before'] > .rp-sec {
-  box-shadow: inset 0 2px 0 -0.5px var(--accent);
-}
-.rp-slot[data-over='after'] > .rp-sec {
-  box-shadow: inset 0 -2px 0 -0.5px var(--accent);
 }
 /* 排序中禁掉文字选择（拖快了会把标题选蓝） */
 body.reordering {
@@ -3476,25 +3077,8 @@ body.reordering {
   /* 触发线要相对它定位 */
   position: relative;
 }
-.rp-threshold {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  width: 1px;
-  margin-left: -0.5px;
-  background: var(--fg-mute);
-  opacity: 0.9;
-  /* 不是交互元素，只做标记 —— 不要挡住悬停提示 */
-  pointer-events: none;
-}
 .rp-v.warn {
   color: var(--warn);
-}
-
-/* 文件区头部的小开关（显示隐藏项）—— 打开时高亮，与别处 .on 语义一致 */
-.rp-mini.on {
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 /* 54. 从工具库拖到工具栏（用户要求：可拖拽 + 拖动时实时位置预览）
@@ -3547,37 +3131,6 @@ body.tool-dragging {
   cursor: grabbing;
 }
 
-/* 55. 分区高度把手（用户要求「组件高度可调节」）
-   只给内容会滚动的分区（文件树 / 日志）。位置在分区内容的**底部内缘**，
-   视觉是一条细线，悬停加粗 —— 与宽度把手同一套语言，
-   免得同一个应用里两种拖拽长得不一样。 */
-.rp-vgrip {
-  display: block;
-  width: 100%;
-  height: 7px;
-  margin-top: 2px;
-  cursor: row-resize;
-  /* 触摸设备上别滚页面 */
-  touch-action: none;
-  border-radius: var(--r-xs);
-}
-.rp-vgrip::after {
-  content: '';
-  display: block;
-  height: 1px;
-  margin: 3px 0;
-  background: transparent;
-  transition: background 120ms var(--ease);
-}
-.rp-vgrip:hover::after,
-.rp-vgrip:focus-visible::after,
-.rp-vgrip.on::after {
-  background: var(--accent);
-}
-.rp-vgrip:focus-visible {
-  outline: none;
-}
-
 /* 56. `/` 命令菜单底部的按键说明（用户要求「补全填充」要看得见）
    这些快捷键一直支持，但界面上没写 —— 用户只会用鼠标点。
    一行小字比在文档里写十行有用。 */
@@ -3619,101 +3172,10 @@ body.tool-dragging {
 .rp-todo.active .rp-text {
   color: var(--fg);
 }
-/* 「正在进行」标签：与状态字同一列，但带 spinner */
-.rp-state.doing {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--accent);
-}
 .rp-now-spin {
   display: inline-flex;
   font-size: 10px;
   line-height: 1;
-}
-
-/* ---- 历史任务折叠模块 ---- */
-.rp-todo-hist {
-  margin-top: var(--sp-2);
-  border-top: 1px dashed var(--border-soft);
-  padding-top: var(--sp-1);
-}
-.rp-hist-head {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 3px 2px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  text-align: left;
-}
-.rp-hist-head:hover {
-  color: var(--fg-dim);
-}
-.rp-hist-head .chev {
-  opacity: 0.6;
-  transition: transform var(--dur) var(--ease);
-}
-.rp-hist-head.open .chev {
-  transform: rotate(90deg);
-}
-.rp-hist-head .spacer {
-  flex: 1;
-}
-.rp-hist-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-1) 0 var(--sp-1) 2px;
-}
-.rp-hist-item {
-  border-left: 1px solid var(--border);
-  padding-left: var(--sp-2);
-}
-.rp-hist-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-.rp-hist-meta .spacer {
-  flex: 1;
-}
-.rp-hist-round {
-  color: var(--fg-dim);
-}
-.rp-hist-jump {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-.rp-hist-jump:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.rp-hist-todos {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 3px;
-}
-.rp-hist-todo {
-  display: grid;
-  grid-template-columns: 13px minmax(0, 1fr);
-  gap: 5px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-}
-.rp-hist-todo.done {
-  text-decoration: line-through;
-  opacity: 0.75;
 }
 .rp-hist-todo .rp-text {
   overflow: hidden;

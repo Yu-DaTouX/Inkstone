@@ -57,6 +57,7 @@
   "chat.sug2": "把我这个项目的结构摸一遍，然后告诉我从哪下手",
   "chat.sug3": "这周有什么值得我注意的事",
   "chat.working": "正在处理…",
+  "chat.jumpToBottom": "回到最新消息",
   "chat.you": "你",
   "composer.attach": "添加图片（也可直接粘贴或拖入）",
   "composer.bashMode": "! 直接执行，不进模型",

@@ -1,0 +1,62 @@
+/*
+ * 内置浏览器（右栏的一种形态）。
+ *
+ * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ */
+
+/*
+ * 浏览器 + 工具同时打开时，右栏要**共享**高度而不是各自撑满。
+ *
+ * 为什么用 min(var(--h-browser, 55%), calc(100% - 140px))：
+ *   · 保存下来的浏览器高度是像素值，窗口变矮时必须跟着缩（前半段）
+ *   · 同时要给工具区留出可用高度（后半段），否则工具区被压到只剩标题行
+ * 两层 min 缺一不可 —— 少任何一层都会在「矮窗口 + 分屏」时溢出。
+ */
+.rightpanel.browser-mode:not(.tools-collapsed) {
+  grid-template-rows: auto minmax(0, min(var(--h-browser, 55%), calc(100% - 140px))) 6px minmax(0, 1fr);
+}
+/* 上面还有工具库那一行时的变体 */
+.rightpanel.browser-mode:has(> .tool-lib):not(.tools-collapsed) {
+  grid-template-rows: auto auto minmax(0, min(var(--h-browser, 55%), 40%)) 6px minmax(0, 1fr);
+}
+
+.browser-toolbar {
+  padding: 0 4px;
+  gap: 2px;
+}
+/* 导航按钮固定宽度：地址栏是唯一该伸缩的东西 */
+.browser-nav,
+.browser-close,
+.browser-nav.browser-chrome {
+  width: 22px;
+  flex: 0 0 22px;
+}
+.browser-address {
+  min-width: 0;
+}
+.browser-address input {
+  width: 100%;
+  min-width: 0;
+}
+.browser-new-tab {
+  flex: 0 0 24px;
+}
+/* 标签多了横向滚动，不要换行（换行会挤掉网页视口） */
+.browser-tabs {
+  overflow-x: auto;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.browser-tab {
+  flex: 0 1 160px;
+  min-width: 48px;
+}
+.browser-sync-result {
+  flex: none;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
