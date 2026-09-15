@@ -950,50 +950,15 @@ function ContextSection() {
         </div>
       ) : null}
 
-      {/* 详情：调参项与累计花费（方案 7.3：默认收起） */}
-      <button
-        className="rp-details-toggle"
-        onClick={() => setDetailsOpen((v) => !v)}
-        aria-expanded={detailsOpen}
-        data-testid="ctx-details-toggle"
-      >
-        <Icon name="chevron-right" size={12} className={`chev ${detailsOpen ? 'on' : ''}`} />
-        {t('ctx.details')}
-      </button>
-
-      {detailsOpen ? (
-        <div className="rp-details" data-testid="ctx-details">
-          <div className="rp-kv">
-            <span className="rp-k">{t('ctx.threshold')}</span>
-            <span className="spacer" />
-            <span className="rp-v">{compact ? nf.format(compact.threshold) : '—'}</span>
-          </div>
-          <div className="rp-kv">
-            <span className="rp-k">{t('ctx.reserve')}</span>
-            <span className="spacer" />
-            <span className="rp-v">{compact ? nf.format(compact.reserveTokens) : '—'}</span>
-          </div>
-          <div className="rp-kv">
-            <span className="rp-k">{t('ctx.keep')}</span>
-            <span className="spacer" />
-            <span className="rp-v">{compact ? nf.format(compact.keepRecentTokens) : '—'}</span>
-          </div>
-          <div className="rp-kv">
-            <span className="rp-k">{t('ctx.autoCompact')}</span>
-            <span className="spacer" />
-            <span className="rp-v">{compact?.enabled ? t('set.on') : t('set.off')}</span>
-          </div>
-          {/* 累计花费：与上下文分开呈现（它是花销，不是占用） */}
-          <div className="rp-kv" data-testid="ctx-cost">
-            <span className="rp-k">{t('rp.spent')}</span>
-            <span className="spacer" />
-            <span className="rp-v">${cost.toFixed(4)}</span>
-          </div>
-        </div>
-      ) : null}
-
+      {/*
+       * 自动压缩的开关与手动入口（阶段 1 归位）。
+       *
+       * 它属于「上下文」本身，所以紧跟进度条与状态提示 —— 之前它排在
+       * 「详情」折叠区下面，视觉上像第二个工具（用户报的问题）。
+       * 标签改用 ctx.* 域，与这一块其余文案同一命名空间。
+       */}
       <div className="rp-kv" data-testid="rp-context-actions">
-        <span className="rp-k">{t('status.autoCompact')}</span>
+        <span className="rp-k">{t('ctx.autoCompact')}</span>
         <span className="spacer" />
         <button
           className={`switch-pill ${session?.autoCompactionEnabled !== false ? 'on' : ''}`}
@@ -1015,6 +980,55 @@ function ContextSection() {
           <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
         </button>
       </div>
+
+      {/*
+       * 详情：容量参数与花费，分两组，默认收起（方案 7.3 + 阶段 1 分组）。
+       *
+       * 只读的「自动压缩 开/关」行已删除：上面就是可切换的同一个开关，
+       * 两处同时出现正是「看起来像两个工具」的一部分。
+       * 这里只放**真实生效**的 pi 参数（阶段 1 不提前展示尚未接管的工作集）。
+       */}
+      <button
+        className="rp-details-toggle"
+        onClick={() => setDetailsOpen((v) => !v)}
+        aria-expanded={detailsOpen}
+        data-testid="ctx-details-toggle"
+      >
+        <Icon name="chevron-right" size={12} className={`chev ${detailsOpen ? 'on' : ''}`} />
+        {t('ctx.details')}
+      </button>
+
+      {detailsOpen ? (
+        <div className="rp-details" data-testid="ctx-details">
+          <div className="rp-group">{t('ctx.groupCapacity')}</div>
+          <div className="rp-kv">
+            <span className="rp-k">{t('ctx.window')}</span>
+            <span className="spacer" />
+            <span className="rp-v">{win ? nf.format(win) : '—'}</span>
+          </div>
+          <div className="rp-kv">
+            <span className="rp-k">{t('ctx.threshold')}</span>
+            <span className="spacer" />
+            <span className="rp-v">{compact ? nf.format(compact.threshold) : '—'}</span>
+          </div>
+          <div className="rp-kv">
+            <span className="rp-k">{t('ctx.keep')}</span>
+            <span className="spacer" />
+            <span className="rp-v">{compact ? nf.format(compact.keepRecentTokens) : '—'}</span>
+          </div>
+          <div className="rp-kv">
+            <span className="rp-k">{t('ctx.reserve')}</span>
+            <span className="spacer" />
+            <span className="rp-v">{compact ? nf.format(compact.reserveTokens) : '—'}</span>
+          </div>
+          <div className="rp-group">{t('ctx.groupSpend')}</div>
+          <div className="rp-kv" data-testid="ctx-cost">
+            <span className="rp-k">{t('rp.spent')}</span>
+            <span className="spacer" />
+            <span className="rp-v">${cost.toFixed(4)}</span>
+          </div>
+        </div>
+      ) : null}
     </Section>
   )
 }
