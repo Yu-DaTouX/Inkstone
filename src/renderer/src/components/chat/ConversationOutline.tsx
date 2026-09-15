@@ -78,13 +78,29 @@ export function ConversationOutline() {
     const box = document.querySelector('.stream')
     if (!box) return 0
     const boxTop = box.getBoundingClientRect().top
+
+    /*
+     * 已滚到底优先：这时“当前读到哪”就是最后一轮。
+     *
+     * ⚠️ 这一条必须在几何判定**之前**（用户报的 bug：他明明在最新消息，
+     * 柄却停在第一格）。原实现只在“顶边已越过视口顶部”的回合里挑，
+     * 若一个都没有（短会话内容不满一屏，或者滚到底后最后几轮全在视口里），
+     * `best` 就停在初始值 0 —— 高亮第一格。
+     * 阈值给 32px 容差：虚拟列表的高度是估算的，不能用严格相等。
+     */
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight <= 32
+    if (atBottom && turns.length > 0) return turns.length - 1
+
     /*
      * 拿 DOM 里真实存在的回合（虚拟化时只有可见的那几个）。
      * 用 data-turn-id 匹配到「第几个用户回合」：
      *   回合 id 就是用户消息 id，而导航轨的每一格也存了 msgId。
      */
-    let best = 0
+    let best = -1
     let bestTop = -Infinity
+    /** 视口里最靠上的一轮（内容不满一屏时的兜底） */
+    let topmost = -1
+    let topmostTop = Infinity
     for (const el of document.querySelectorAll<HTMLElement>('[data-turn-id]')) {
       const id = el.dataset.turnId
       const idx = turns.findIndex((x) => x.msgId === id)
@@ -95,8 +111,15 @@ export function ConversationOutline() {
         bestTop = top
         best = idx
       }
+      if (top < topmostTop) {
+        topmostTop = top
+        topmost = idx
+      }
     }
-    return best
+    if (best >= 0) return best
+    // 没有越顶的：取视口里最靠上的一轮，而不是默认回第一格
+    if (topmost >= 0) return topmost
+    return 0
   }
 
   /* 滚动时按几何重算（rAF 节流）。自己发起的滚动在 300ms 内不解除钉住 */

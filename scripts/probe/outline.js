@@ -47,6 +47,33 @@
   ok(qa('.outline-tick.on').length === 1 || qa('.outline-hit.on').length === 1, '恰好一个高亮')
 
   /*
+   * 用户报的 bug：人在最新消息，柄却停在第一格。
+   * 根因是“没有任何回合越过视口顶部"时 active 停在初始值 0，
+   * 所以这里直接按**用户能看到的两个极端位置**断言。
+   */
+  const box = q('.stream')
+  const hits = qa('.outline-hit')
+  const onIndex = () => qa('.outline-hit').findIndex((el) => el.classList.contains('on'))
+  const scrollable = (box?.scrollHeight ?? 0) - (box?.clientHeight ?? 0) > 40
+  out.push(`  可滚动: ${scrollable}（scrollH=${box?.scrollHeight} clientH=${box?.clientHeight}）`)
+
+  if (box) {
+    box.scrollTop = box.scrollHeight
+    await sleep(700)
+    const bottomIdx = onIndex()
+    out.push(`  滚到最新 → 高亮第 ${bottomIdx + 1} / ${hits.length} 格`)
+    ok(bottomIdx === hits.length - 1, '滚到最新时高亮最后一格（人在最新）')
+
+    if (scrollable) {
+      box.scrollTop = 0
+      await sleep(700)
+      const topIdx = onIndex()
+      out.push(`  滚到最顶 → 高亮第 ${topIdx + 1} / ${hits.length} 格`)
+      ok(topIdx === 0, '滚到顶部时高亮第一格')
+    }
+  }
+
+  /*
    * 导航轨 v3 的断言（用户报「范围太小且过于密集」后重写）：
    *   可点区域是 .outline-hit（padding 撑起来的按钮），
    *   那根细线是它内部的 .outline-bar。
