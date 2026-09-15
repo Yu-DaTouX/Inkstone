@@ -156,6 +156,9 @@ const CASES = {
   autonomous: { probe: 'scripts/probe/autonomous.js', delay: 9000, cost: 0 },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
+  // 思考档位：真实模型（DeepSeek V4.1 Flash）切过去后必须显示真实档位，
+  // 且不能被后续 state 推送清空（D11）。不调模型，只 set_model + 读档位。
+  thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0 },
   // 排队消息：显示在输入框上方 + 插队按钮接线
   queuestack: { probe: 'scripts/probe/queuestack.js', delay: 9000, cost: 0 },
   // 所有报错都进日志（store.set 包装的回归网）

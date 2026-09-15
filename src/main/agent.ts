@@ -29,7 +29,8 @@ import {
   capabilitySnapshot,
   modelKeyOf,
   normalizeModelInfo,
-  normalizeThinkingLevels
+  normalizeThinkingLevels,
+  resolveThinkingLevels
 } from '../shared/model-capabilities'
 import type {
   BashRun,
@@ -328,6 +329,13 @@ export class AgentController extends EventEmitter {
 
     this.setConn('ready')
 
+    /*
+     * 首次连接时主动问一次档位：pi 的 get_state 不提供它，而 store.reloadModels
+     * 只会在渲染端某些时机跑；少了这一步，界面上档位会停在 unknown
+     * （“上游未提供思考档位信息”）直到用户手动切一次模型。
+     */
+    void this.listThinkingLevels().catch(() => undefined)
+
     await this.hydrate()
     return { ok: true }
   }
@@ -436,8 +444,22 @@ export class AgentController extends EventEmitter {
 
   private setStateFrom(data: Record<string, unknown>): void {
     const model = normalizeModelInfo(data.model)
-    const hasLevels = Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')
-    const levels = normalizeThinkingLevels(data.availableThinkingLevels, hasLevels)
+    /*
+     * 档位不能只看本条快照：pi 的 get_state 不含 availableThinkingLevels，
+     * 权威结果由 listThinkingLevels() 写入（详见 resolveThinkingLevels 注释）。
+     */
+    const previous = this.state
+    const levels = resolveThinkingLevels(
+      data,
+      previous
+        ? {
+            levels: previous.availableThinkingLevels,
+            status: previous.thinkingLevelsStatus ?? 'unknown',
+            modelKey: modelKeyOf(previous.model)
+          }
+        : undefined,
+      modelKeyOf(model)
+    )
     const availableThinkingLevels = levels.values
     this.state = {
       sessionId: String(data.sessionId ?? ''),
@@ -762,6 +784,8 @@ export class AgentController extends EventEmitter {
 
       case 'model_change':
         void this.refreshState()
+        /* pi 自己换了模型（非用户点击）时档位必须重新问一次 —— get_state 里没有它。 */
+        void this.listThinkingLevels()
         break
 
       case 'auto_retry_start':
