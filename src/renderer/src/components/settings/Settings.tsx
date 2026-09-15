@@ -663,6 +663,8 @@ function StatusTab() {
   )
 }
 
+import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
+
 /* ------------------------------------------------------------- 关于 */
 
 function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
@@ -708,6 +710,27 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
 
   return (
     <div className="set-group">
+      {/*
+       * 版本信息放最上面：它回答的是“我现在跑的到底是哪一份代码”。
+       * 「正式版本」来自 package.json；「构建版本」来自构建时注入的时间 +  git 短 hash。
+       */}
+      <div className="set-row" data-testid="about-release">
+        <div className="set-label">
+          <div className="set-name">{t('set.releaseVersion')}</div>
+          <div className="set-desc">{BUILD_INFO.version || '—'}</div>
+        </div>
+      </div>
+
+      <div className="set-row" data-testid="about-build">
+        <div className="set-label">
+          <div className="set-name">{t('set.buildVersion')}</div>
+          <div className="set-desc" title={BUILD_INFO.buildTime}>
+            {formatBuildTime(BUILD_INFO.buildTime) || '—'}
+            {BUILD_INFO.buildHash ? ` · ${BUILD_INFO.buildHash}` : ''}
+          </div>
+        </div>
+      </div>
+
       <div className="set-row">
         <div className="set-label">
           <div className="set-name">{t('tb.cwd')}</div>

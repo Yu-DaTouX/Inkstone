@@ -264,6 +264,18 @@ const modelCapabilities = await import('../node_modules/esbuild/lib/main.js').th
   }).then(() => import('../out/test/model-capabilities.mjs'))
 )
 
+/* 构建信息：正式版本 / 构建版本的本地时间格式化。 */
+const buildInfo = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/build-info.ts'],
+    outfile: 'out/test/build-info.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/build-info.mjs'))
+)
+
 /* L04 网络边界：私网/IPv6/DNS rebinding 目标的纯逻辑。 */
 const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -676,6 +688,11 @@ await runSubagentIsolationTests(ok, subagentIsolation)
 {
   const { runModelCapabilitiesTests } = await import('./test-model-capabilities.mjs')
   runModelCapabilitiesTests(ok, modelCapabilities)
+}
+
+{
+  const { runBuildInfoTests } = await import('./test-build-info.mjs')
+  runBuildInfoTests(ok, buildInfo)
 }
 
 {

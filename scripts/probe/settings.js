@@ -152,5 +152,22 @@
   ok(secs.includes('rp-files'), '右栏有「文件」分区（文件树）')
   ok(!secs.includes('rp-env'), '「环境」分区已移除（信息在别处，不再重复）')
 
+  /*
+   * 版本信息：排查“改了代码但跑的还是旧进程/旧包”时，
+   * 界面上能直接看到构建时间就是最短路径（用户实际踩过一次）。
+   */
+  log('')
+  log('=== 7. 关于：正式版本与构建版本 ===')
+  store.getState().openSettings('about')
+  await sleep(500)
+  const rel = q('[data-testid="about-release"]')?.textContent ?? ''
+  const bld = q('[data-testid="about-build"]')?.textContent ?? ''
+  log('  正式版本行 = ' + JSON.stringify(rel))
+  log('  构建版本行 = ' + JSON.stringify(bld))
+  ok(/\d+\.\d+\.\d+/.test(rel), '显示正式版本号（来自 package.json）')
+  ok(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(bld), '显示构建时间（构建时注入的本地时间）')
+  ok(/[0-9a-f]{7}/.test(bld), '显示 git 短 hash（能对应到具体提交）')
+  store.getState().closeSettings()
+
   return out.join('\n')
 })()
