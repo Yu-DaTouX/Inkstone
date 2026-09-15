@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { TFunc } from '../../i18n'
@@ -10,6 +11,14 @@ import type {
   FileRequestContext,
   FileSearchResult
 } from '../../../../shared/ipc'
+
+/** 绝对路径归一化：比较“已加入上下文”时忽略大小写与分隔符差异 */
+function normPath(p: string): string {
+  return p.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+/** 「显示更多」每次追加的可见行数（UI 展示批次，不是文件系统加载批次） */
+const FS_PAGE = 50
 
 type FileSearchStatus = FileSearchResult['status']
 
@@ -57,12 +66,27 @@ export function FileTree() {
     return summary?.projectId ?? s.settings?.projects.find((project) => samePath(project.cwd, activeCwd))?.id
   })
   const previewFile = useStore((s) => s.previewFile)
+  const filePreview = useStore((s) => s.filePreview)
   const closePreview = useStore((s) => s.closePreview)
   const addFileRefPaths = useStore((s) => s.addFileRefPaths)
+  const attachments = useStore((s) => s.attachments)
   const fileContext = useMemo<FileRequestContext | null>(
     () => cwd ? { cwd, generation, ...(projectId ? { projectId } : {}) } : null,
     [cwd, generation, projectId]
   )
+
+  /**
+   * 已加入上下文的文件（`kind === 'file'` 的附件）。
+   *
+   * 它是独立于「当前预览」的另一种状态：current 表示“我正在看”，
+   * in-context 表示“已经给模型引用了”。两者可以同时成立，所以视觉上分开表达
+   * （左侧竖条 vs 名称后小点）。
+   */
+  const inContextPaths = useMemo(() => {
+    const set = new Set<string>()
+    for (const a of attachments) if (a.kind === 'file' && a.path) set.add(normPath(a.path))
+    return set
+  }, [attachments])
 
   /** 路径（'' = 根）→ 该层内容。null = 加载失败 */
   const [cache, setCache] = useState<Record<string, DirListing | null>>({})
@@ -70,6 +94,13 @@ export function FileTree() {
   const [loading, setLoading] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [focusPath, setFocusPath] = useState('')
+  /**
+   * 「显示更多」的渲染额度（默认 50，每次 +50）。
+   *
+   * 它是 **UI 展示批次，不是文件系统加载批次**：只决定渲染多少行已加载内容，
+   * 不递归展开目录、不预读未展开的目录 —— 否则会破坏“一层懒加载”的设计。
+   */
+  const [visibleLimit, setVisibleLimit] = useState(FS_PAGE)
   const requestGeneration = useRef(0)
   /**
    * 是否列出隐藏项（.gitignore / .vscode / node_modules / .git 这类）。
@@ -98,6 +129,7 @@ export function FileTree() {
     setSearchResult(null)
     setSearchLoading(false)
     setSearchError(false)
+    setVisibleLimit(FS_PAGE)
   }, [cwd, generation, projectId, showHidden])
 
   useEffect(() => {
@@ -219,13 +251,15 @@ export function FileTree() {
   }, [open, load])
 
   const rootName = cache['']?.rootName ?? t('rp.fsRoot')
-  const total = useMemo(
-    () => Object.values(cache).reduce((n, l) => n + (l?.entries.length ?? 0), 0),
-    [cache]
-  )
 
-  /* 只根据已加载且展开的节点生成可见顺序；不递归触发任何 IO。 */
-  const visiblePaths = useMemo(() => {
+  /*
+   * 可见顺序：只根据已加载且展开的节点生成，不递归触发任何 IO。
+   *
+   * `allVisiblePaths` 是“当前树里一共有多少行”，`visiblePaths` 再按
+   * `visibleLimit` 截断 —— 键盘游走与渲染必须用同一份顺序，
+   * 否则方向键会走到没渲染出来的行。
+   */
+  const allVisiblePaths = useMemo(() => {
     const paths: string[] = ['']
     const visit = (parent: string) => {
       if (!open.has(parent)) return
@@ -240,6 +274,11 @@ export function FileTree() {
     visit('')
     return paths
   }, [cache, open])
+
+  const visiblePaths = useMemo(
+    () => allVisiblePaths.slice(0, visibleLimit),
+    [allVisiblePaths, visibleLimit]
+  )
 
   const focusTreePath = useCallback((path: string) => {
     setFocusPath(path)
@@ -288,9 +327,11 @@ export function FileTree() {
       testId="rp-files"
       extra={
         <>
-          <span className="rp-count" data-testid="fs-count">
-            {total}
-          </span>
+          {/*
+            * 分区头部不再显示计数（用户决定：完全不显示）。
+            * 懒加载下不存在可信口径 —— 已加载项数随展开变化，
+            * 真正的总数又必须额外递归扫描；项目头也只承担身份与折叠。
+            */}
           <button
             className={`rp-mini ${showHidden ? 'on' : ''}`}
             data-testid="fs-hidden-toggle"
@@ -368,11 +409,17 @@ export function FileTree() {
           role="tree"
           aria-label={rootName}
         >
+          {/*
+           * 项目头：root row 的另一种呈现（variant="head"），**不新增层级** ——
+           * 它仍是 role=tree 的第一个 treeitem，键盘语义不变。
+           * 不显示计数：懒加载下没有可信口径（用户已确认）。
+           */}
           <TreeRow
             path=""
             name={rootName}
             dir
             depth={0}
+            variant="head"
             open={open.has('')}
             cwd={cwd}
             loading={loading.has('')}
@@ -395,7 +442,23 @@ export function FileTree() {
               focusPath={focusPath}
               visiblePaths={visiblePaths}
               onFocusPath={focusTreePath}
+              budget={{ left: visibleLimit - 1 }}
+              inContextPaths={inContextPaths}
+              previewPath={filePreview?.path}
             />
+          ) : null}
+          {/*
+            * 「显示更多」：每次只把可见额度 +50（UI 展示批次）。
+            * 不递归展开目录、不预读未展开目录 —— 数据仍是“一层懒加载”。
+            */}
+          {allVisiblePaths.length > visibleLimit ? (
+            <button
+              className="rp-fs-more"
+              data-testid="fs-more"
+              onClick={() => setVisibleLimit((n) => n + FS_PAGE)}
+            >
+              {t('rp.fsShowMore', { n: String(allVisiblePaths.length - visibleLimit) })}
+            </button>
           ) : null}
         </div>
       )}
@@ -501,7 +564,10 @@ function TreeLevel({
   onAdd,
   focusPath,
   visiblePaths,
-  onFocusPath
+  onFocusPath,
+  budget,
+  inContextPaths,
+  previewPath
 }: {
   listing: DirListing | null | undefined
   depth: number
@@ -515,79 +581,100 @@ function TreeLevel({
   focusPath: string
   visiblePaths: string[]
   onFocusPath: (path: string) => void
+  /** 剩余可渲染行数（跨层级共用同一个对象，保证总行数受 visibleLimit 限制） */
+  budget?: { left: number }
+  inContextPaths?: Set<string>
+  previewPath?: string
 }) {
   const t = useT()
 
   if (!cwd) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-invalid" style={{ paddingLeft: depth * 12 + 14 }}>{fileStatusText(t, 'invalid')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-invalid" style={{ paddingLeft: depth * 14 + 14 }}>{fileStatusText(t, 'invalid')}</div>
   }
   if (listing === undefined) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-loading" style={{ paddingLeft: depth * 12 + 14 }}>{t('rp.fsLoading')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-loading" style={{ paddingLeft: depth * 14 + 14 }}>{t('rp.fsLoading')}</div>
   }
   if (listing === null) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-error" style={{ paddingLeft: depth * 12 + 14 }}>{t('rp.fsError')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-error" style={{ paddingLeft: depth * 14 + 14 }}>{t('rp.fsError')}</div>
   }
   const status = listing.status ?? (listing.entries.length ? 'ok' : 'empty')
   if (status !== 'ok' && status !== 'empty') {
     return (
-      <div className="rp-dim rp-fs-state" data-testid={`fs-${status}`} style={{ paddingLeft: depth * 12 + 14 }}>
+      <div className="rp-dim rp-fs-state" data-testid={`fs-${status}`} style={{ paddingLeft: depth * 14 + 14 }}>
         {fileStatusText(t, status)}
       </div>
     )
   }
   if (listing.entries.length === 0) {
     return (
-      <div className="rp-dim rp-fs-state" data-testid="fs-empty" style={{ paddingLeft: depth * 12 + 14 }}>
+      <div className="rp-dim rp-fs-state" data-testid="fs-empty" style={{ paddingLeft: depth * 14 + 14 }}>
         {t('rp.fsEmpty')}
+      </div>
+    )
+  }
+
+  /*
+   * 用 for 而不是 map：`budget` 用尽时要立刻停止渲染剩余行（含递归子层），
+   * map 做不到中途 break。budget 是跨层级共用的同一个对象，所以它是全局上限，
+   * 不是“每层各 50”。
+   */
+  const nodes: ReactNode[] = []
+  for (const e of listing.entries) {
+    if (budget && budget.left <= 0) break
+    if (budget) budget.left -= 1
+    const childPath = listing.path ? `${listing.path}/${e.name}` : e.name
+    const isOpen = e.dir && open.has(childPath)
+    nodes.push(
+      <div key={childPath} className="rp-fs-node">
+        <TreeRow
+          path={childPath}
+          name={e.name}
+          dir={e.dir}
+          size={e.size}
+          depth={depth}
+          cwd={cwd}
+          open={isOpen}
+          loading={e.dir && loading.has(childPath)}
+          focused={focusPath === childPath}
+          current={previewPath === childPath}
+          inContext={
+            !e.dir && cwd ? inContextPaths?.has(normPath(toAbsolutePath(cwd, childPath))) === true : false
+          }
+          visiblePaths={visiblePaths}
+          onFocusPath={onFocusPath}
+          onToggle={onToggle}
+          onPreview={onPreview}
+          onAdd={!e.dir && cwd ? onAdd : undefined}
+          dragPath={!e.dir && cwd ? toAbsolutePath(cwd, childPath) : undefined}
+        />
+        {isOpen ? (
+          <TreeLevel
+            listing={cache[childPath]}
+            depth={depth + 1}
+            cwd={cwd}
+            open={open}
+            loading={loading}
+            cache={cache}
+            onToggle={onToggle}
+            onPreview={onPreview}
+            onAdd={onAdd}
+            focusPath={focusPath}
+            visiblePaths={visiblePaths}
+            onFocusPath={onFocusPath}
+            budget={budget}
+            inContextPaths={inContextPaths}
+            previewPath={previewPath}
+          />
+        ) : null}
       </div>
     )
   }
 
   return (
     <>
-      {listing.entries.map((e) => {
-        const childPath = listing.path ? `${listing.path}/${e.name}` : e.name
-        const isOpen = e.dir && open.has(childPath)
-        return (
-          <div key={childPath} className="rp-fs-node">
-            <TreeRow
-              path={childPath}
-              name={e.name}
-              dir={e.dir}
-              size={e.size}
-              depth={depth}
-              cwd={cwd}
-              open={isOpen}
-              loading={e.dir && loading.has(childPath)}
-              focused={focusPath === childPath}
-              visiblePaths={visiblePaths}
-              onFocusPath={onFocusPath}
-              onToggle={onToggle}
-              onPreview={onPreview}
-              onAdd={!e.dir && cwd ? onAdd : undefined}
-              dragPath={!e.dir && cwd ? toAbsolutePath(cwd, childPath) : undefined}
-            />
-            {isOpen ? (
-              <TreeLevel
-                listing={cache[childPath]}
-                depth={depth + 1}
-                cwd={cwd}
-                open={open}
-                loading={loading}
-                cache={cache}
-                onToggle={onToggle}
-                onPreview={onPreview}
-                onAdd={onAdd}
-                focusPath={focusPath}
-                visiblePaths={visiblePaths}
-                onFocusPath={onFocusPath}
-              />
-            ) : null}
-          </div>
-        )
-      })}
+      {nodes}
       {listing.truncated ? (
-        <div className="rp-dim" style={{ paddingLeft: depth * 12 + 14 }}>
+        <div className="rp-dim" style={{ paddingLeft: depth * 14 + 14 }}>
           {t('rp.fsMore')}
         </div>
       ) : null}
@@ -605,6 +692,9 @@ function TreeRow({
   open,
   loading,
   focused,
+  current,
+  inContext,
+  variant,
   visiblePaths,
   onFocusPath,
   onToggle,
@@ -621,6 +711,12 @@ function TreeRow({
   open: boolean
   loading?: boolean
   focused: boolean
+  /** 当前正在右侧预览的文件（previewed/current，与 selected 不是一回事） */
+  current?: boolean
+  /** 已加入上下文（store.attachments 里的文件引用） */
+  inContext?: boolean
+  /** root 行渲染为项目头：只是另一种视觉呈现，不新增层级 */
+  variant?: 'head'
   visiblePaths: string[]
   onFocusPath: (path: string) => void
   onToggle: (p: string) => void
@@ -646,8 +742,9 @@ function TreeRow({
     <div className="rp-fs-row-wrap">
       <button
         ref={ref}
-        className={`rp-fs-row ${dir ? 'dir' : 'file'} ${hot ? 'hot' : ''}`}
-        style={{ paddingLeft: 4 + depth * 12 }}
+        className={`rp-fs-row ${dir ? 'dir' : 'file'} ${variant === 'head' ? 'head' : ''} ${hot ? 'hot' : ''}`}
+        style={{ paddingLeft: variant === 'head' ? 4 : 4 + depth * 14 }}
+        aria-current={current ? 'true' : undefined}
         data-path={path}
         data-tree-path={path}
         data-dir={dir ? '1' : '0'}
@@ -738,25 +835,33 @@ function TreeRow({
           <svg className="fs-file-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h8" /></svg>
         )}
         <span className="rp-fs-name">{name}</span>
+        {/* 已加入上下文：独立于 current 的小点（两者可以同时成立） */}
+        {inContext ? <span className="rp-fs-inctx" data-testid={`fs-inctx-${path}`} aria-hidden /> : null}
         {dir && loading ? <span className="rp-fs-spin" aria-hidden /> : null}
-        {!dir && size !== undefined ? <span className="rp-fs-size">{fmtSize(size)}</span> : null}
       </button>
-      {!dir && onAdd ? (
-        <button
-          className="rp-fs-add"
-          tabIndex={-1}
-          data-testid={`fs-add-${path}`}
-          title={t('rp.fsAddContext')}
-          aria-label={t('rp.fsAddContext')}
-          onClick={(e) => {
-            e.stopPropagation()
-            setHot(true)
-            onAdd(path)
-          }}
-        >
-          <Icon name="tag" size={12} />
-        </button>
-      ) : null}
+      {/*
+        trailing 固定槽：体积与「加入上下文」**始终占位**，只用 opacity 切换。
+        之前体积用 display 切换，显隐本身会改变名称的可用宽度 —— hover 时文件名会跳。
+      */}
+      <span className="rp-fs-trailing">
+        {!dir && size !== undefined ? <span className="rp-fs-size">{fmtSize(size)}</span> : null}
+        {!dir && onAdd ? (
+          <button
+            className="rp-fs-add"
+            tabIndex={-1}
+            data-testid={`fs-add-${path}`}
+            title={t('rp.fsAddContext')}
+            aria-label={t('rp.fsAddContext')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setHot(true)
+              onAdd(path)
+            }}
+          >
+            <Icon name="tag" size={12} />
+          </button>
+        ) : null}
+      </span>
     </div>
   )
 }

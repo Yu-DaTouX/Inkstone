@@ -336,6 +336,7 @@
   "rp.fsHidden": "Hidden: {names}",
   "rp.fsHideHidden": "Hide hidden entries",
   "rp.fsMore": "…too many entries, showing first 400",
+  "rp.fsShowMore": "Show more ({n} loaded items left)",
   "rp.fsRefresh": "Refresh expanded folders",
   "rp.fsRoot": "Working dir",
   "rp.fsShowHidden": "Show hidden entries (.gitignore, node_modules, …)",

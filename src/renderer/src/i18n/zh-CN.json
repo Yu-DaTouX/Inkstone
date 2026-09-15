@@ -336,6 +336,7 @@
   "rp.fsHidden": "已隐藏：{names}",
   "rp.fsHideHidden": "不显示隐藏项",
   "rp.fsMore": "…条目太多，只列了前 400 项",
+  "rp.fsShowMore": "显示更多（还有 {n} 项已加载）",
   "rp.fsRefresh": "刷新已展开的目录",
   "rp.fsRoot": "工作目录",
   "rp.fsShowHidden": "显示隐藏项（.gitignore / node_modules 等）",

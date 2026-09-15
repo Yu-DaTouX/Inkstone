@@ -997,33 +997,8 @@
    · 尺寸（1.4K）只在文件行右侧显示，颜色比名字淡一档：
    它是辅助信息，不能在扫读名字时抢注意力。
    · `.rp-fs` 限制最大高度并可滚 —— 一个 400 项的目录不能把右栏顶穿。 */
-.rp-fs {
-  max-height: 280px;
-  overflow: auto;
-  /* 滚动条别压住文字 */
-  scrollbar-gutter: stable;
-}
-.rp-fs-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  height: 20px;
-  padding-right: 4px;
-  border-radius: var(--r-xs);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  text-align: left;
-  white-space: nowrap;
-}
-.rp-fs-size {
-  flex: none;
-  margin-left: auto;
-  padding-left: var(--sp-2);
-  color: var(--fg-dim);
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-}
+/* 文件树的 .rp-fs / .rp-fs-row / .rp-fs-size 已全部搬到 tools.css
+   （2026-09-15 样式归属收拢：同名选择器不再跨文件叠加）。 */
 @keyframes rp-fs-pulse {
   0%,
   100% {

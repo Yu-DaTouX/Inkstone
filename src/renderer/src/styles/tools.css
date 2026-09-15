@@ -131,52 +131,189 @@
 .rp-fs-search-row:focus-within .rp-fs-add {
   opacity: 1;
 }
-.rp-fs-row {
-  min-height: 26px;
+/*
+ * ── 文件树：单一 owner ──
+ * 2026-09-15 把 redesign.css 里的 `.rp-fs` / `.rp-fs-row` / `.rp-fs-size` 搬到这里
+ * （只搬家，值未改）。原因：同一个选择器被拆在两个文件里（redesign 管布局，
+ * tools 管尺寸与显隐），改 hover / focus 时无法判断谁最终生效。
+ * 此后文件树的所有视觉规则只出现在本文件。
+ */
+.rp-fs {
+  max-height: 280px;
+  overflow: auto;
+  /* 滚动条别压住文字 */
+  scrollbar-gutter: stable;
 }
+
 .rp-fs-row-wrap {
   display: flex;
   min-width: 0;
   align-items: center;
 }
-.rp-fs-row-wrap .rp-fs-row {
+
+.rp-fs-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 26px;
+  padding-right: 4px;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
 }
+
+.rp-fs-row.dir {
+  color: var(--fg-mute);
+}
+
+.rp-fs-row.dir:hover {
+  color: var(--fg);
+}
+
+/*
+ * 项目头：root row 的另一种呈现（**不新增层级**）。
+ * 键盘语义不变：它仍是 `role=tree` 的第一个 treeitem。
+ */
+.rp-fs-row.head {
+  min-height: 28px;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+/*
+ * 五态与优先级：
+ *   current > focus > hover —— 底色与左侧竖条只由 current 与 hover/focus 决定；
+ *   in-context 只加一个小点，不动底色；expanded 只改 chevron 与图标（独立维度）。
+ * current 用 `aria-current`（不用 `aria-selected`：本树没有实现选择模型）。
+ */
+.rp-fs-row:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.rp-fs-row:focus-visible {
+  outline: 1px solid var(--accent-line);
+  outline-offset: -1px;
+}
+
+.rp-fs-row[aria-current='true'] {
+  position: relative;
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 当前预览项：左侧 2px 强调条（复用左栏 .item.sel 的既有语言） */
+.rp-fs-row[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+
+/* 已加入上下文：名称后一个小点（不占额外宽度，名字仍可截断） */
+.rp-fs-inctx {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  margin-left: 2px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* 点过之后闪一下 —— 否则「已把 @路径 插进输入框」这件事看不见（输入框可能在视野外） */
+.rp-fs-row.hot {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/*
+ * trailing 固定槽：体积 + 「加入上下文」按钮**始终占位**，只用 opacity 切换。
+ * 之前 `.rp-fs-size` 用 display:none ↔ inline，显隐本身就会改变名称的可用宽度，
+ * hover 时文件名会跳（用户报的问题）。
+ */
+.rp-fs-trailing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  width: 66px;
+  padding-right: 2px;
+}
+
+.rp-fs-size {
+  flex: none;
+  color: var(--fg-dim);
+  opacity: 0;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 120ms var(--ease);
+}
+
+.rp-fs-row-wrap:hover .rp-fs-size {
+  opacity: 0.7;
+}
+
 .rp-fs-add {
   flex: none;
   width: 22px;
   height: 22px;
-  margin-right: 2px;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
   opacity: 0;
   transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
 }
+
 .rp-fs-row-wrap:hover .rp-fs-add,
 .rp-fs-add:focus-visible {
   opacity: 1;
 }
+
 .rp-fs-add:hover {
   color: var(--accent);
   background: var(--accent-soft);
 }
-/* 体积只在悬停时出现，避免静态列表被数字切碎 */
-.rp-fs-size {
-  display: none;
-}
-.rp-fs-row:hover .rp-fs-size {
-  display: inline;
-}
+
 .rp-fs-row .fs-chevron {
   flex: none;
   color: var(--fg-mute);
 }
+
 .rp-fs-row .fs-chevron.open {
   transform: rotate(90deg);
 }
+
 .fs-file-icon {
   flex: none;
+}
+
+/*
+ * 「显示更多」：**UI 展示批次，不是文件系统加载批次**。
+ * 每次只把可见额度 +50，不递归展开目录、不预读未展开目录。
+ */
+.rp-fs-more {
+  display: block;
+  width: 100%;
+  padding: 4px 8px 4px 20px;
+  border: none;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.rp-fs-more:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+  border-radius: var(--r-sm);
 }
 [data-testid='fs-skipped'] {
   white-space: nowrap;
@@ -510,25 +647,6 @@
 
 .rp-fs-node {
   display: contents;
-}
-
-.rp-fs-row:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.rp-fs-row.dir {
-  color: var(--fg-mute);
-}
-
-.rp-fs-row.dir:hover {
-  color: var(--fg);
-}
-
-/* 点过之后闪一下 —— 否则「已把 @路径 插进输入框」这件事看不见（输入框可能在视野外） */
-.rp-fs-row.hot {
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .rp-fs-ico {
