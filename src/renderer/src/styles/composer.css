@@ -17,10 +17,26 @@
   min-width: 0;
 }
 
-/* N10：自主模式是低干扰的“模式已开”提示，不改变输入区尺寸或点击区域。 */
+/*
+ * N10：自主模式是低干扰的“模式已开”提示，不改变输入区尺寸或点击区域。
+ *
+ * ── 为什么不是 conic-gradient ──
+ * 早期实现用 `conic-gradient` 铺满伪元素，再 `transform: rotate()` 让它转。
+ * 那是**绕元素中心的角度插值**，在输入框这种宽扁矩形上完全不成立：
+ * 长边（左右）跨越的角度很小、短边（上下）很大，于是光斑在长边一闪而过、
+ * 在短边几乎停住；而旋转的伪元素与矩形边框形状也不匹配，边角处会跳变 ——
+ * 用户报的「光效有位置问题」就是这个。
+ *
+ * ── 现在的做法：沿边框路径跑 ──
+ * 一个短光带用 `offset-path: rect(...)` 沿 `.composer` 的 padding box 周长运动，
+ * `offset-distance` 从 0% 到 100%。`rect()` 的路径方向本身就是顺时针（左上起），
+ * 而且按**弧长**匀速 —— 四条边速度一致，圆角处由 `round` 跟随，这才是
+ * 「沿着输入框边缘按顺时针方向循环」。
+ * `offset-rotate: auto` 让拖尾始终指向运动方向。
+ */
 @keyframes yan-autonomous-border {
   to {
-    transform: rotate(360deg);
+    offset-distance: 100%;
   }
 }
 
@@ -31,24 +47,16 @@
 .composer-wrap.autonomous .composer::before {
   content: '';
   position: absolute;
-  inset: 0;
+  /* 拖尾：尾端透明、头部亮，方向与运动方向一致（offset-rotate: auto） */
+  width: 96px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent));
+  offset-path: rect(0 100% 100% 0 round var(--r-xl));
+  offset-rotate: auto;
+  offset-distance: 0%;
   z-index: 0;
   pointer-events: none;
-  border: 1px solid transparent;
-  border-radius: inherit;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 210deg,
-    var(--accent-line) 270deg,
-    var(--accent) 315deg,
-    transparent 360deg
-  ) border-box;
-  -webkit-mask:
-    linear-gradient(#000 0 0) padding-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
   animation: yan-autonomous-border 3.2s linear infinite;
 }
 
@@ -57,10 +65,26 @@
   z-index: 1;
 }
 
+/*
+ * 减少动画：不跑光带，退回一条静态强调色边框。
+ * 这里必须显式恢复 border-color —— 上面把它设成了 transparent。
+ */
 @media (prefers-reduced-motion: reduce) {
+  .composer-wrap.autonomous .composer {
+    border-color: var(--accent-line);
+  }
   .composer-wrap.autonomous .composer::before {
-    background: var(--accent-line);
-    animation: none;
+    display: none;
+  }
+}
+
+/* 不支持 offset-path: rect() 的运行时同样退回静态边框，不退化成“没有提示” */
+@supports not (offset-path: rect(0 0 0 0)) {
+  .composer-wrap.autonomous .composer {
+    border-color: var(--accent-line);
+  }
+  .composer-wrap.autonomous .composer::before {
+    display: none;
   }
 }
 
