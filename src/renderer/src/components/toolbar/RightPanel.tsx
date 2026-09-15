@@ -5,7 +5,7 @@ import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
-import { HandleProvider, SECTION_TITLE } from './ToolSection'
+import { HandleProvider } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
@@ -24,10 +24,6 @@ export function RightPanel() {
   const order = useStore((s) => s.settings?.toolOrder)
   const hidden = useStore((s) => s.settings?.toolHidden)
   const setToolLayout = useStore((s) => s.setToolLayout)
-  const draggingId = useStore((s) => s.draggingSection)
-  const setDraggingSection = useStore((s) => s.setDraggingSection)
-  const setToolDropTarget = useStore((s) => s.setToolDropTarget)
-  const placeSection = useStore((s) => s.placeSection)
   const browserOpen = useStore((s) => s.browserState.open)
   /** 只读文件预览：与浏览器详情占同一块区域（方案 5.2） */
   const filePreview = useStore((s) => s.filePreview)
@@ -87,85 +83,8 @@ export function RightPanel() {
     [fullOrder, setToolLayout]
   )
 
-  /**
-   * 从工具库拖拽到工具栏的全过程处理。
-   *
-   * 为什么监听挂在 window 上：指针一旦离开工具库那个元素（这是必然的 ——
-   * 用户在往工具栏那边拖），元素自己的 pointermove 就不再触发了。
-   * 监听 window 才能持续拿到坐标、算出落点 —— 这就是「实时位置预览」的来源。
-   */
-  useEffect(() => {
-    if (!draggingId) return
-
-    /** 根据指针 Y 找出「会插到哪个分区的前/后」 */
-    const onMove = (e: PointerEvent): void => {
-      // 浮动标签跟着鼠标（直接改 style，零重渲染）
-      const g = ghostRef.current
-      if (g) {
-        g.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 10}px)`
-      }
-      const slots = [...document.querySelectorAll('.rp-body > .rp-slot')] as HTMLElement[]
-      // 先看有没有落在某个分区里（含它的边界）
-      for (const el of slots) {
-        const r = el.getBoundingClientRect()
-        if (e.clientY >= r.top && e.clientY <= r.bottom) {
-          const id2 = el.dataset.toolId ?? ''
-          if (!id2 || id2 === draggingId) {
-            setToolDropTarget(null)
-            return
-          }
-          setToolDropTarget({ id: id2, after: e.clientY > r.top + r.height / 2 })
-          return
-        }
-      }
-      /*
-       * 落在空白处（列表上方/下方）：
-       *   · 在第一个分区之上 → 插到最前
-       *   · 在最后一个分区之下 → 插到最后（targetId = null 时 placeSection 会追加）
-       * 不给反馈的话，用户拖到顶部会以为「拖丢了」。
-       */
-      const first = slots[0]?.dataset.toolId
-      if (slots.length && e.clientY < slots[0].getBoundingClientRect().top && first) {
-        setToolDropTarget({ id: first, after: false })
-      } else {
-        setToolDropTarget(null)
-      }
-    }
-
-    const onUp = (e: PointerEvent): void => {
-      const t = useStore.getState().toolDropTarget
-      /*
-       * 落点在工具栏区域内才真的移动；拖到别处 = 取消。
-       * 不这么做的话，用户想放弃拖拽时把指针甩到中栏，
-       * 分区会莫名其妙地跳位置。
-       */
-      const body = document.querySelector('.rp-body')?.getBoundingClientRect()
-      const inside = !!body && e.clientX >= body.left - 40 && e.clientX <= body.right + 8 && e.clientY >= body.top - 60 && e.clientY <= body.bottom + 40
-      if (inside) void placeSection(draggingId, t?.id ?? null, t?.after ?? true)
-      else setDraggingSection(null)
-    }
-
-    /** 拖到一半按 Esc = 取消 */
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setDraggingSection(null)
-    }
-
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('keydown', onKey)
-    document.body.classList.add('tool-dragging')
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('keydown', onKey)
-      document.body.classList.remove('tool-dragging')
-    }
-  }, [draggingId, placeSection, setDraggingSection, setToolDropTarget])
 
   /** 跟着鼠标的小标签：告诉用户「正在搬的这块叫什么」 */
-  const ghostLabel = draggingId ? t(SECTION_TITLE[draggingId as ToolSectionId]) : ''
-  /** 浮动标签的 DOM 引用：位置直接改 style，不走 state（每像素重渲染会卡） */
-  const ghostRef = useRef<HTMLDivElement>(null)
   /** 右栏自身：浏览器高度分隔条需要从它里面量浏览器区域的高度 */
   const asideRef = useRef<HTMLElement>(null)
 
@@ -225,17 +144,6 @@ export function RightPanel() {
       {filePreview && !subagentPreviewId ? <FilePreviewPane /> : null}
       {browserOpen && open ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
 
-      {/*
-        拖动中的浮动标签（用户要的「实时位置预览」的文字部分）。
-        位置跟随鼠标：pointermove 里直接改 style，不走 React state ——
-        否则每移动一像素就重渲染整棵工具栏，拖拽会卡。
-        插入位置那条线由各 .rp-slot 的 data-over 画（也在实时更新）。
-      */}
-      {draggingId ? (
-        <div className="tool-drag-ghost" data-testid="tool-drag-ghost" ref={ghostRef}>
-          {ghostLabel}
-        </div>
-      ) : null}
 
       {open ? (
         <div className="rp-body" data-testid="rp-body">
@@ -554,7 +462,7 @@ function SectionSlot({
 
   return (
     <div
-      className={`rp-slot ${dragging ? 'dragging' : ''} tool-drag-from-lib`}
+      className={`rp-slot ${dragging ? 'dragging' : ''}`}
       data-tool-id={id}
       data-over={dropTarget?.id === id ? (dropTarget.after ? 'after' : 'before') : ''}
       ref={ref}
@@ -911,8 +819,13 @@ function ContextSection() {
   const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
   const session = useStore((s) => s.session)
+  const compactNow = useStore((s) => s.compact)
+  const setAutoCompaction = useStore((s) => s.setAutoCompaction)
   const cu = stats?.contextUsage
-  const win = cu?.contextWindow ?? session?.model?.contextWindow ?? 0
+  const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
+  const statsMatchModel = !!cu && (!cu.modelKey || cu.modelKey === modelKey)
+  /* 模型切换后先用新模型的窗口；旧模型的 token 快照不能冒充当前容量。 */
+  const win = session?.model?.contextWindow ?? (statsMatchModel ? cu?.contextWindow : undefined) ?? 0
   /*
    * pi 在「刚压缩完、还没有下一条带 usage 的助手消息」时会**故意**把
    * tokens / percent 报成 null（见 pi 的 getContextUsage：latestCompaction 之后
@@ -922,7 +835,7 @@ function ContextSection() {
    * 看起来像是进度条坏了（用户报的「手动压缩后不显示进度」）。
    * 区分「未知」与「真的是 0」是这里的核心。
    */
-  const known = typeof cu?.tokens === 'number'
+  const known = statsMatchModel && typeof cu?.tokens === 'number'
   const used = known ? (cu?.tokens as number) : 0
   const pct = known ? (cu?.percent ?? (used && win ? (used / win) * 100 : 0)) : 0
   const tone = pct >= 95 ? 'err' : pct >= 85 ? 'warn' : 'ok'
@@ -1078,6 +991,30 @@ function ContextSection() {
           </div>
         </div>
       ) : null}
+
+      <div className="rp-kv" data-testid="rp-context-actions">
+        <span className="rp-k">{t('status.autoCompact')}</span>
+        <span className="spacer" />
+        <button
+          className={`switch-pill ${session?.autoCompactionEnabled !== false ? 'on' : ''}`}
+          role="switch"
+          aria-checked={session?.autoCompactionEnabled !== false}
+          data-testid="rp-auto-compact"
+          title={t('status.autoCompactHint')}
+          onClick={() => void setAutoCompaction(!(session?.autoCompactionEnabled !== false))}
+        >
+          <span className="switch-knob" />
+        </button>
+        <button
+          className="btn"
+          data-testid="rp-compact-now"
+          disabled={!!session?.isStreaming || !!session?.isCompacting}
+          onClick={() => void compactNow()}
+        >
+          <Icon name={session?.isCompacting ? 'refresh' : 'layers'} size={12} className={session?.isCompacting ? 'spin' : undefined} />
+          <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
+        </button>
+      </div>
     </Section>
   )
 }
@@ -1379,10 +1316,10 @@ function QueueSection() {
     <Section titleKey="rp.queue" testId="rp-queue">
       {pending > 0 ? (
         <div className="rp-queued">
-          {[...queue.steering, ...queue.followUp].map((q, i) => (
-            <div key={i} className="rp-queued-row" title={q}>
+          {[...queue.steering, ...queue.followUp].map((q) => (
+            <div key={q.id} className="rp-queued-row" title={q.text}>
               <span className="rp-queued-dot" />
-              <span className="rp-text">{q}</span>
+              <span className="rp-text">{q.text}</span>
             </div>
           ))}
         </div>
@@ -1515,9 +1452,11 @@ function LogSection() {
 /* 操作 —— pi 自带能力的入口 */
 
 function ActionsSection() {
-  const compact = useStore((s) => s.compact)
+  const t = useT()
   const copyLastReply = useStore((s) => s.copyLastReply)
   const abortRetry = useStore((s) => s.abortRetry)
+  const autoRetry = useStore((s) => s.autoRetryEnabled)
+  const setAutoRetry = useStore((s) => s.setAutoRetry)
   const exportHtml = useStore((s) => s.exportHtml)
   const clone = useStore((s) => s.clone)
   const session = useStore((s) => s.session)
@@ -1526,7 +1465,6 @@ function ActionsSection() {
   return (
     <Section titleKey="rp.actions" testId="rp-actions" defaultOpen={false}>
       <div className="rp-acts">
-        <Act onClick={() => void compact()} disabled={streaming} labelKey="rp.actCompact" testId="act-compact" />
         <Act onClick={() => void copyLastReply()} labelKey="rp.actCopy" testId="act-copy" />
         <Act onClick={() => void abortRetry()} labelKey="rp.actRetry" testId="act-abort-retry" />
         <Act onClick={() => void exportHtml()} labelKey="rp.actExport" testId="act-export" />
@@ -1538,6 +1476,19 @@ function ActionsSection() {
             testId="act-reveal"
           />
         ) : null}
+      </div>
+      <div className="rp-kv rp-action-setting" data-testid="rp-auto-retry">
+        <span className="rp-k">{t('status.autoRetry')}</span>
+        <span className="spacer" />
+        <button
+          className={`switch-pill ${autoRetry ? 'on' : ''}`}
+          role="switch"
+          aria-checked={autoRetry}
+          title={t('status.autoRetryHint')}
+          onClick={() => void setAutoRetry(!autoRetry)}
+        >
+          <span className="switch-knob" />
+        </button>
       </div>
     </Section>
   )

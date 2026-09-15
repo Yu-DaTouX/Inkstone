@@ -120,6 +120,7 @@ export function normalizeMessage(m: PiMessage, idx: number): UIMessage | null {
       toolCalls: toolCalls.length ? toolCalls : undefined,
       usage: toUsage(m.usage),
       model: m.model,
+      responseDetail: 'unknown',
       timestamp: m.timestamp,
       error: m.stopReason === 'error' ? '模型返回错误' : undefined
     }

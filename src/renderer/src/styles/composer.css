@@ -17,6 +17,53 @@
   min-width: 0;
 }
 
+/* N10：自主模式是低干扰的“模式已开”提示，不改变输入区尺寸或点击区域。 */
+@keyframes yan-autonomous-border {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.composer-wrap.autonomous .composer {
+  border-color: transparent;
+}
+
+.composer-wrap.autonomous .composer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 210deg,
+    var(--accent-line) 270deg,
+    var(--accent) 315deg,
+    transparent 360deg
+  ) border-box;
+  -webkit-mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: yan-autonomous-border 3.2s linear infinite;
+}
+
+.composer-wrap.autonomous .composer > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-wrap.autonomous .composer::before {
+    background: var(--accent-line);
+    animation: none;
+  }
+}
+
 .send span {
   display: none;
 }
@@ -327,6 +374,13 @@
   line-height: 1.45;
 }
 
+.mt-capability-note {
+  margin-top: 4px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
 .mt-head-title {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -418,6 +472,16 @@
   padding: 0 6px;
   font-size: var(--fs-xs);
   border-radius: var(--r-xs);
+}
+
+/*
+ * 模型未就绪（pi 还没起来 / 启动超时 / 凭证失效）：
+ * 选择器降级显示，而不是整个消失 —— 用户至少要能看到入口和状态。
+ * 弱化 + 斜体，一眼区分于「正常选中的模型」。
+ */
+.mt-trigger.unknown .mt-model {
+  color: var(--fg-mute);
+  font-style: italic;
 }
 
 /* 56. `/` 命令菜单底部的按键说明（用户要求「补全填充」要看得见）
@@ -600,6 +664,15 @@
   overflow-y: auto;
 }
 
+.slash-group {
+  padding: 4px var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 .slash-item {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
@@ -614,6 +687,21 @@
 
 .slash-item.sel {
   background: var(--accent-soft);
+}
+
+.slash-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.slash-item.compat .slash-name {
+  color: var(--fg-mute);
+}
+
+.slash-empty {
+  padding: 8px var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
 }
 
 .slash-name {

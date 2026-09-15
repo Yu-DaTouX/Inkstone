@@ -12,8 +12,11 @@ import type {
   CompactionInfo,
   CustomEntry,
   DirListing,
+  FileRequestContext,
   FilePreview,
   FileRefInfo,
+  FileSearchRequest,
+  FileSearchResult,
   FileTextResult,
   ForkPoint,
   MainPush,
@@ -21,8 +24,10 @@ import type {
   PeekResult,
   PiInfo,
   PiProbe,
+  PathCompletionResult,
   ProviderQuota,
   RunnerStatus,
+  SessionLayoutEntry,
   SessionState,
   SessionStats,
   SessionSummary,
@@ -40,6 +45,12 @@ import type {
  *
  * api 显式标注成 YanBridge：形态对不上就编译报错。
  * 这层是安全边界，值得多写点类型。
+ *
+ * ── 新增一个 IPC 要同步四处（少一处就静默不通）──
+ *   ① `../shared/ipc.ts`   类型 + `YanBridge` 上的签名
+ *   ② 本文件               挂上实现
+ *   ③ `../main/index.ts`   `ipcMain.handle('yan:xxx', …)`
+ *   ④ `../renderer/src/state/store.ts`   界面侧的消费点
  */
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(ch, ...args) as Promise<T>
@@ -56,16 +67,28 @@ const api: YanBridge = {
   send: (text, images) => invoke<Ok>('yan:send', text, images),
   steer: (text) => invoke<Ok>('yan:steer', text),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
-  steerQueued: (text) => invoke<Ok>('yan:steerQueued', text),
+  steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
+  removeQueued: (queueId) => invoke<{ ok: boolean; text?: string; error?: string }>('yan:removeQueued', queueId),
   abort: () => invoke<{ steering: string[]; followUp: string[] }>('yan:abort'),
-  newSession: () => invoke<Ok & { id?: string }>('yan:newSession'),
+  newSession: (target) =>
+    invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
   /* N12：切换视图（不停止其它运行中的会话）、实例状态、单独停止 */
   selectSession: (target) =>
-    invoke<{ ok: boolean; id?: string; via?: 'hit' | 'reuse' | 'new'; error?: string }>(
+    invoke<{
+      ok: boolean
+      id?: string
+      runId?: string
+      sessionId?: string
+      generation?: number
+      via?: 'hit' | 'reuse' | 'new'
+      error?: string
+    }>(
       'yan:selectSession',
       target
     ),
+  moveSession: (sessionId, projectId) =>
+    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:moveSession', sessionId, projectId),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
   compact: () => invoke<Ok>('yan:compact'),
@@ -112,6 +135,7 @@ const api: YanBridge = {
   cachedTitles: () => invoke<Record<string, string>>('yan:cachedTitles'),
   manualTitles: () => invoke<Record<string, string>>('yan:manualTitles'),
   setManualTitle: (sessionId, name) => invoke<{ ok: boolean }>('yan:setManualTitle', sessionId, name),
+  regenerateTitle: (sessionId) => invoke<{ ok: boolean; title?: string; error?: string }>('yan:regenerateTitle', sessionId),
   getCustomEntries: () => invoke<CustomEntry[]>('yan:getCustomEntries'),
   refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
   listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
@@ -124,7 +148,9 @@ const api: YanBridge = {
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
-  completePath: (prefix) => invoke<string[]>('yan:completePath', prefix),
+  completePath: (prefix, cwd, context) => invoke<PathCompletionResult>('yan:completePath', prefix, cwd, context),
+  cancelFileSearch: (requestId) => invoke<void>('yan:cancelFileSearch', requestId),
+  searchFiles: (request: FileSearchRequest) => invoke<FileSearchResult>('yan:searchFiles', request),
 
   /* ---- 附件 ---- */
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
@@ -137,16 +163,18 @@ const api: YanBridge = {
   pathForFile: (file) => webUtils.getPathForFile(file),
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
-  readPreview: (p, line) => invoke<FilePreview>('yan:readPreview', p, line),
+  readPreview: (p, line, cwd) => invoke<FilePreview>('yan:readPreview', p, line, cwd),
 
   /* ---- 子代理（方案第 8 节） ---- */
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
-    start: (task, model) =>
-      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model),
+    start: (task, model, isolation) =>
+      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation),
     stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:stop', id),
     stopAll: () => invoke<void>('yan:subagents:stopAll'),
-    clearFinished: () => invoke<void>('yan:subagents:clear')
+    clearFinished: () => invoke<void>('yan:subagents:clear'),
+    merge: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:merge', id),
+    discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
   },
 
   /* ---- 设置 ---- */
@@ -172,7 +200,7 @@ const api: YanBridge = {
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
   /* ---- 文件树 ---- */
-  listDir: (rel, showHidden) => invoke<DirListing>('yan:listDir', rel, showHidden === true),
+  listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
@@ -194,6 +222,8 @@ const api: YanBridge = {
     closeExternalChrome: () => invoke<BrowserState>('yan:browser:closeExternalChrome'),
     syncLocalProfile: () => invoke<ChromeSyncReport>('yan:browser:syncLocalProfile'),
     syncPageStorage: () => invoke<ChromeSyncReport>('yan:browser:syncPageStorage'),
+    setPermission: (permission, origin, allowed) =>
+      invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
     setUserControl: (value) => invoke<BrowserState>('yan:browser:setUserControl', value),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
@@ -205,7 +235,9 @@ const api: YanBridge = {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),
     close: () => ipcRenderer.send('win:close'),
-    setAlwaysOnTop: (v) => invoke<boolean>('win:setAlwaysOnTop', v)
+    setAlwaysOnTop: (v) => invoke<boolean>('win:setAlwaysOnTop', v),
+    requestExit: () => invoke<{ action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }>('win:requestExit'),
+    lifecycle: () => invoke<{ tray: boolean; visible: boolean; quitting: boolean }>('win:lifecycle')
   },
 
   /** 订阅主进程推送，返回退订函数 */

@@ -8,7 +8,7 @@
  * 另外验了菜单底部的按键说明可见 —— 这些快捷键一直支持，但界面上没写，
  * 用户只会用鼠标点。
  *
- * 需要 pi 已就绪才有命令列表（本场景会等 conn === ready）。
+ * Yan 内置命令不依赖 pi；若 pi 也已就绪，则同时验证运行时命令的合并。
  */
 ;(async () => {
   const out = []
@@ -29,10 +29,10 @@
     localStorage.setItem('yan.onboarded', '1')
     for (let i = 0; i < 25; i++) { const c = document.querySelector('.ob-card'); if (!c) break
       const b = [...c.querySelectorAll('button')].find((x) => /开始使用|完成/.test(x.textContent)); if (b) { click(b); await sleep(300) } else await sleep(150) }
-    // 等 pi 连上（命令列表要 pi 就绪才有）
-    await until(() => store.getState().conn === 'ready', 20000)
+    // 注册表先返回 Yan 本地命令；pi 若随后就绪，刷新会把运行时命令合并进来。
     await store.getState().reloadCommands()
-    await sleep(600)
+    await until(() => store.getState().commands.some((c) => c.name === 'new' && c.source === 'yan'), 6000)
+    await sleep(300)
     const cmds = store.getState().commands
     out.push('=== 0. 命令列表 ===')
     out.push('  共 ' + cmds.length + ' 条: ' + JSON.stringify(cmds.slice(0, 6).map((c) => c.name)))
@@ -78,7 +78,18 @@
     if (localStorage.getItem('yan.cmdUse')) ok('使用次数已落盘（localStorage）')
     else bad('使用次数没存')
 
-    out.push('\n=== 3. 填充：Enter / Tab 都能填入，且带尾空格 ===')
+    out.push('\n=== 3. 来源分类与兼容边界 ===')
+    setVal(ta(), '/')
+    await sleep(500)
+    const groups = [...document.querySelectorAll('.slash-group')].map((x) => x.textContent || '')
+    out.push('  分类标题: ' + JSON.stringify(groups))
+    if (groups.includes('Yan 内置')) ok('菜单显示 Yan 内置分类')
+    else bad('菜单没有 Yan 内置分类')
+    const compat = [...document.querySelectorAll('.slash-item')].find((x) => /\/panel|\/footer/.test(x.textContent || ''))
+    if (compat && compat.disabled && compat.getAttribute('aria-disabled') === 'true') ok('终端兼容命令可见但不可执行')
+    else bad('兼容命令没有正确禁用')
+
+    out.push('\n=== 4. 填充：Enter / Tab 都能填入，且带尾空格 ===')
     for (const k of ['Enter', 'Tab']) {
       setVal(ta(), '/')
       await sleep(500)
@@ -90,7 +101,7 @@
       else bad(k + ' 没填入或格式不对')
     }
 
-    out.push('\n=== 4. 按键说明可见 ===')
+    out.push('\n=== 5. 按键说明可见 ===')
     setVal(ta(), '/')
     await until(() => document.querySelector('[data-testid="slash-hint"]'), 4000)
     const hint = document.querySelector('[data-testid="slash-hint"]')
@@ -99,7 +110,16 @@
     else bad('没有按键说明')
     setVal(ta(), '')
 
-    out.push('\n=== 5. `/login` 不发给模型，而是打开「模型接入」 ===')
+    out.push('\n=== 6. 本地 `/model` 路由到模型状态页 ===')
+    setVal(ta(), '/model')
+    await sleep(300)
+    document.querySelector('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await until(() => store.getState().settingsOpen && store.getState().settingsTab === 'status', 4000)
+    if (store.getState().settingsOpen && store.getState().settingsTab === 'status') ok('/model 路由到模型状态页')
+    else bad('/model 没有走 Yan 本地路由')
+    store.getState().closeSettings()
+
+    out.push('\n=== 7. `/login` 不发给模型，而是打开「模型接入」 ===')
     const before = store.getState().messages.length
     setVal(ta(), '/login')
     await sleep(300)

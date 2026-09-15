@@ -162,15 +162,14 @@
   padding-left: var(--sp-3);
 }
 
-/* 60. 推理胶囊（用户要求：逐字流式 / 结束折叠 / 保留开关 / 无推理不显示）
-   位置：助手块的**最上面**（推理 → 干活 → 说话 → 结论，时间顺序）。
-   展开时是一块可滚的正文（等宽感、比正文淡一档）——
-   推理是「旁白」，不该和回答抢注意力。 */
+/* 60. 推理流（限高省略 / 显示最新 / 结束折叠 / 保留开关 / 无推理不显示）
+   2026-09-15 用户确认：默认展开但钉高，超出部分裁掉**开头**并顶部渐隐。
+   这里刻意**不用可滚动容器** —— overflow:hidden 的元素仍可由脚本设
+   scrollTop 贴底（见 Reasoning.tsx），但用户滚不动它，所以不会出现
+   「第二条滚动条」和「上滚阅读被拽回底部」两个问题。 */
 .reason {
-  position: relative;
   margin-bottom: var(--sp-2);
   border-left: 2px solid var(--border-str);
-  /* 推理中用强调色细线，一眼能看出「它在想」 */
   transition: border-color var(--dur) var(--ease);
 }
 
@@ -229,44 +228,55 @@
   font-style: italic;
 }
 
-/*
- * 推理窗口（方案 4.4，2026-09 改版）。
- *
- * 从「随内容自适应 + max-height」改成**固定高度 + 可拖**：
- *   · 默认约 3 行（58px），超出内部滚动 —— 长推理不会再把回答顶走，
- *     短推理也不会留一段空白；
- *   · 高度可拖，落盘在 localStorage（按窗口全局记忆，会话间复用）；
- *   · 展开/收起用容器高度过渡（160–220ms），**保留挂载**：
- *     先把尾字显示完再收起，不会因卸载把最后一段内容丢掉。
- */
-.reason-body-wrap {
-  height: 0;
-  overflow: hidden;
-  transition: height 180ms var(--ease);
-}
-
-.reason-body-wrap.open {
-  height: var(--reason-h, 58px);
-}
-
 .reason-body {
-  height: 100%;
-  overflow-y: auto;
-  /* 滚动条一出现不挤窄内容（否则会冒横向滚动条） */
-  scrollbar-gutter: stable;
-  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
-  /* 让「窗口」成立：一点点底色 + 细描边，与正文区分开 */
-  background: var(--bg-1);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
+  padding: 1px 0 1px var(--sp-3);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
-  line-height: 18px;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
-  /* 逐字输出时每帧都在长，别让浏览器做重排抖动 */
-  contain: content;
+}
+
+/* 省略态：钉住高度，溢出被裁（内容由脚本 scrollTop 贴底 = 看最新） */
+.reason-body.clip {
+  max-height: var(--reason-max-h);
+  overflow: hidden;
+}
+
+/* 只在真的被裁掉时渐隐；短推理不该被无故淡化 */
+.reason-body.clip.is-clipped {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
+}
+
+/* 「展开全部」后解除限高 */
+.reason-body.clip.expanded {
+  max-height: none;
+}
+
+.reason-body[hidden] {
+  display: none;
+}
+
+/* 「展开全部 / 收起」：必须在 .reason-body 外面，否则会被自己裁掉 */
+.reason-more {
+  display: block;
+  margin: 0 0 1px var(--sp-3);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--fg-mute);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reason-more:hover {
+  color: var(--fg-dim);
+  text-decoration: underline;
 }
 
 /* 新增尾部 140ms 淡入：只作用在最后一个 span，稳定文本不重复动画 */
@@ -283,53 +293,9 @@
   }
 }
 
-/* 上滚暂停跟随后的「回到最新」入口 */
-.reason-jump {
-  position: absolute;
-  right: var(--sp-2);
-  bottom: 10px;
-  padding: 1px var(--sp-2);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-
-.reason-jump:hover {
-  border-color: var(--accent-line);
-  color: var(--fg);
-}
-
-/* 底部把手：拖动改高度，双击复位 */
-.reason-grip {
-  height: 5px;
-  margin-top: 2px;
-  cursor: ns-resize;
-  border-radius: var(--r-sm);
-}
-
-.reason-grip:hover,
-.reason-grip:focus-visible {
-  background: var(--accent-line);
-}
-
-.reason.resizing {
-  user-select: none;
-}
-
-/* 系统要求减少动态效果：不做高度过渡与尾部动画（方案 4.4） */
+/* 系统要求减少动态效果：只取消尾部淡入 */
 @media (prefers-reduced-motion: reduce) {
-  .reason-body-wrap {
-    transition: none;
-  }
-
   .reason-tail {
-    /*
-     * 用 1ms 而不是 `animation: none`：
-     * usePresence 等地方是按**时长**算延迟卸载的，整个删掉动画会出现
-     * 「CSS 不动 / JS 还在等」的空窗（motion.css 里同一套约定）。
-     */
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }

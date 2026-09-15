@@ -63,6 +63,28 @@
     throw new Error(`浏览器区域宽度被内容撑变形：${rect.width} -> ${finalRect.width}`)
   }
 
+  /* 逐站权限：默认拒绝的基础上，允许用户临时授予并随后撤销。 */
+  const permissionOrigin = /^https?:/i.test(state.url) ? new URL(state.url).origin : 'https://example.com'
+  const permissionName = 'notifications'
+  const allowed = await window.yan.browser.setPermission(permissionName, permissionOrigin, true)
+  if (!allowed.ok) throw new Error(`逐站权限允许失败：${allowed.error || 'unknown'}`)
+  const allowedState = await window.yan.browser.getState()
+  const allowedRecord = (allowedState.permissions || []).find(
+    (item) => item.permission === permissionName && item.origin === permissionOrigin
+  )
+  if (!allowedRecord || allowedRecord.status !== 'allowed') {
+    throw new Error(`逐站权限未记录为 allowed：${JSON.stringify(allowedState.permissions)}`)
+  }
+  const revoked = await window.yan.browser.setPermission(permissionName, permissionOrigin, false)
+  if (!revoked.ok) throw new Error(`逐站权限撤销失败：${revoked.error || 'unknown'}`)
+  const revokedState = await window.yan.browser.getState()
+  const revokedRecord = (revokedState.permissions || []).find(
+    (item) => item.permission === permissionName && item.origin === permissionOrigin
+  )
+  if (!revokedRecord || revokedRecord.status !== 'blocked') {
+    throw new Error(`逐站权限未记录为 blocked：${JSON.stringify(revokedState.permissions)}`)
+  }
+
   /*
    * 用户要求：浏览器与工具栏**独立** —— 收起工具栏时浏览器要独占整列，
    * 不能再留着一排工具栏标题/分区。这里按住这个回归点。

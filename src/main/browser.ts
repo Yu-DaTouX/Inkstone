@@ -19,7 +19,14 @@ import { mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import type { BrowserBounds, BrowserObservation, BrowserState, BrowserTabState, MainPush } from '../shared/ipc'
+import type {
+  BrowserBounds,
+  BrowserObservation,
+  BrowserPermissionRecord,
+  BrowserState,
+  BrowserTabState,
+  MainPush
+} from '../shared/ipc'
 import { BrowserPolicy } from './browser/BrowserPolicy'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
@@ -40,6 +47,7 @@ import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
+import { isPrivateAddress, resolvesToPrivateAddress } from './browser/network-policy'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -64,6 +72,7 @@ function safeUrl(raw: unknown): string | null {
 function isPrivateHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   return (
+    isPrivateAddress(h) ||
     h === 'localhost' ||
     h === '0.0.0.0' ||
     h === '[::1]' ||
@@ -82,6 +91,25 @@ function isLoopbackOrigin(value: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * 权限只按 origin 判断，不把页面路径/查询参数当成权限范围。
+ * `about:blank`、file 和自定义协议没有可授予的远程站点 origin。
+ */
+function normalizePermissionOrigin(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
+function permissionKey(permission: string, origin: string): string {
+  return `${permission}\u0000${origin}`
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -155,7 +183,11 @@ export class BrowserController {
    * 为什么要记：默认拒绝是安全默认，但用户得**能看到**自己网站要过什么、
    * 被拒了什么，否则遇到“摄像头点了没反应”只能猜。
    */
-  private permissionLog: Array<{ permission: string; origin: string; at: number }> = []
+  private permissionLog: BrowserPermissionRecord[] = []
+  /** 逐站权限是临时的：进程退出即清空，不写入设置或浏览器 profile。 */
+  private readonly permissionGrants = new Set<string>()
+  /** DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。 */
+  private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -360,17 +392,19 @@ export class BrowserController {
        * 请求记下来给用户看；要放开时应该由用户显式授权（后续能力）。
        */
       const ses = view.webContents.session
-      ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
-        this.permissionLog.push({
-          permission: String(permission),
-          origin: String(details?.requestingUrl ?? ''),
-          at: Date.now()
-        })
-        if (this.permissionLog.length > 40) this.permissionLog.splice(0, this.permissionLog.length - 40)
+      ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+        const name = String(permission)
+        const rawUrl = (details as { requestingUrl?: unknown } | undefined)?.requestingUrl
+        const origin = normalizePermissionOrigin(rawUrl) ?? normalizePermissionOrigin(wc.getURL()) ?? ''
+        const allowed = Boolean(origin && this.permissionGrants.has(permissionKey(name, origin)))
+        this.recordPermission(name, origin, allowed ? 'allowed' : 'blocked')
         this.updateState()
-        callback(false)
+        callback(allowed)
       })
-      ses.setPermissionCheckHandler(() => false)
+      ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+        const origin = normalizePermissionOrigin(requestingOrigin)
+        return Boolean(origin && this.permissionGrants.has(permissionKey(String(permission), origin)))
+      })
 
       /*
        * 本地预览边界（方案 9.2 第 4 点）。
@@ -393,10 +427,6 @@ export class BrowserController {
           callback({})
           return
         }
-        if (!isPrivateHost(target.hostname)) {
-          callback({})
-          return
-        }
         /*
          * 发起方看**顶层页面**的 URL（Electron 的 details 里没有 initiator；
          * Chrome 扩展那套 API 字段在这里不存在）。
@@ -410,7 +440,18 @@ export class BrowserController {
           callback({})
           return
         }
-        callback({ cancel: true })
+        if (isPrivateHost(target.hostname)) {
+          callback({ cancel: true })
+          return
+        }
+        /*
+         * URL 仍然是公网域名时也不能直接放过：域名可能在解析后切到
+         * 127/8、RFC1918、IPv6 ULA 或 link-local。每个短缓存周期重新查，
+         * 把 DNS rebinding 的目标挡在 Chromium 请求真正发出之前。
+         */
+        void this.resolvesToPrivateTarget(target.hostname)
+          .then((privateTarget) => callback(privateTarget ? { cancel: true } : {}))
+          .catch(() => callback({}))
       })
     }
     void cdp.attach().catch((error) => {
@@ -1075,6 +1116,41 @@ export class BrowserController {
     this.userControl = value
     this.updateState()
     return this.getState()
+  }
+
+  /**
+   * 临时允许/撤销某站点的一项权限。撤销会立即影响后续 check/request；
+   * 页面若已经拿到设备流，仍须由网页自身停止，不能假装这里能回收系统资源。
+   */
+  setPermission(permission: string, origin: string, allowed: boolean): BrowserActionResult {
+    const name = typeof permission === 'string' ? permission.trim() : ''
+    const normalizedOrigin = normalizePermissionOrigin(origin)
+    if (!name) return { ok: false, error: '权限名称不能为空' }
+    if (!normalizedOrigin) return { ok: false, error: '权限只接受 http/https origin' }
+    const key = permissionKey(name, normalizedOrigin)
+    if (allowed) this.permissionGrants.add(key)
+    else this.permissionGrants.delete(key)
+    this.recordPermission(name, normalizedOrigin, allowed ? 'allowed' : 'blocked')
+    this.updateState()
+    return { ok: true }
+  }
+
+  private recordPermission(permission: string, origin: string, status: BrowserPermissionRecord['status']): void {
+    const at = Date.now()
+    const index = this.permissionLog.findIndex((item) => item.permission === permission && item.origin === origin)
+    const next = { permission, origin, status, at }
+    if (index >= 0) this.permissionLog[index] = next
+    else this.permissionLog.push(next)
+    if (this.permissionLog.length > 40) this.permissionLog.splice(0, this.permissionLog.length - 40)
+  }
+
+  private async resolvesToPrivateTarget(hostname: string): Promise<boolean> {
+    const key = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    const cached = this.privateDnsCache.get(key)
+    if (cached && cached.expiresAt > Date.now()) return cached.private
+    const privateTarget = await resolvesToPrivateAddress(key)
+    this.privateDnsCache.set(key, { private: privateTarget, expiresAt: Date.now() + 2000 })
+    return privateTarget
   }
 
   private actionError(error: unknown): BrowserActionResult {

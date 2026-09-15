@@ -1,8 +1,8 @@
 /**
- * 自主模式开关（用户要求：放在输入框下方，打开后模型不再提疑问）。
+ * 自主模式开关（用户要求：放在输入栏里，打开后模型不再提疑问）。
  *
  * 这个探针只验**界面与设置接线**：
- *   · 开关在输入框下方（.composer 之下、.usagebar 附近）
+ *   · 开关在输入框工具行（.composer-bar）
  *   · 点击切换 settings.autonomous 并落盘（主进程）
  *   · 视觉状态（data-on / aria-pressed / .on）
  * 「模型不再提问」的逻辑由 test:unit 的 question 扩展测试覆盖
@@ -57,12 +57,16 @@
   const t2 = q('[data-testid="autonomous-toggle"]')
   ok(t2?.getAttribute('data-on') === '1' && t2?.classList.contains('on'), '开关视觉变为开启态')
   ok(t2?.getAttribute('aria-checked') === 'true', 'aria-checked 同步')
+  const wrap = q('.composer-wrap')
+  ok(wrap?.getAttribute('data-autonomous') === '1' && wrap?.classList.contains('autonomous'), '输入区显示自主模式边框状态')
+  ok(getComputedStyle(wrap.querySelector('.composer'), '::before').animationName === 'yan-autonomous-border', '边框使用独立低干扰动画')
 
   out.push('')
   out.push('=== 3. 再点关闭（落盘）===')
   click(q('[data-testid="autonomous-toggle"]'))
   await sleep(600)
   ok(store.getState().settings?.autonomous === false, '再点回到关闭')
+  ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '0', '关闭后立即移除自主模式边框状态')
   // 重新拉一次设置，确认真的落盘（不是只在内存里）
   const persisted = await window.yan.getSettings()
   ok(persisted.autonomous === false, '设置已落盘（getSettings 确认）')

@@ -55,10 +55,51 @@
   letter-spacing: normal;
 }
 
+.srow-title-candidate {
+  margin: 4px 6px 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+
+.srow-title-candidate-label {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.srow-title-candidate-name {
+  margin: 2px 0 4px;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srow-title-candidate-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px;
+}
+
 /* 会话菜单里的「最后活动」（N13）：窄栏把行内时间收起来之后，
    这个信息仍然可发现 —— 不是删掉，只是换了个位置。 */
 .srow-menu-time {
   padding: 4px var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.srow-menu-section {
+  margin: 3px 0;
+  padding-top: 3px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.srow-menu-section-title {
+  padding: 3px var(--sp-2) 2px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }

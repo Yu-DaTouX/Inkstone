@@ -139,10 +139,6 @@ body.reordering {
 }
 
 /* 拖拽进行中：禁掉文字选择，指针保持「抓着」的样子 */
-body.tool-dragging {
-  user-select: none;
-  cursor: grabbing;
-}
 
 /*
  * 拖动中：禁掉过渡与文字选择。

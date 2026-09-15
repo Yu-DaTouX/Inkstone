@@ -29,10 +29,10 @@
  * 桌面端提供输入框只是把它变成 GUI —— 与 TUI 的 `/login` 是同一件事。
  * 而且写入时会**合并**（不会碰其它 provider 的条目）。
  */
-import { readFile, writeFile, mkdir, stat, readdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, stat, readdir, realpath } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
-import { join } from 'node:path'
-import type { AuthProviderInfo, AuthStatus } from '../shared/ipc'
+import { join, resolve } from 'node:path'
+import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
 import { PI_AGENT_DIR } from './paths'
 
 /**
@@ -388,30 +388,66 @@ export async function authFileInfo(): Promise<{ path: string; exists: boolean; c
  * 安全：只允许在 `cwd` 内读，且跳过 node_modules / .git ——
  *   （它们是噪声，而且巨大）。
  */
-export async function completePath(cwd: string, prefix: string): Promise<string[]> {
-  const raw = prefix.replace(/\\/g, '/')
+export async function completePath(
+  cwd: string,
+  prefix: string,
+  request?: FileRequestContext
+): Promise<PathCompletionResult> {
+  const result = (status: FileListingStatus, paths: string[] = [], truncated = false): PathCompletionResult => ({
+    paths,
+    truncated,
+    status,
+    ...(request ? { request } : {})
+  })
+  const rawInput = String(prefix ?? '').replace(/\\/g, '/')
+  const raw = /^(['"]).*\1$/.test(rawInput)
+    ? rawInput.slice(1, -1)
+    : rawInput.replace(/^['"]/, '')
+  if (raw.includes('\0')) return result('invalid')
   const slash = raw.lastIndexOf('/')
   const dirPart = slash >= 0 ? raw.slice(0, slash) : ''
   const namePart = (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase()
 
   // 拒绝跳出 cwd 的路径（`..`、绝对路径）
-  if (dirPart.includes('..') || /^[A-Za-z]:/.test(dirPart) || dirPart.startsWith('/')) return []
+  if (dirPart.includes('..') || /^[A-Za-z]:/.test(dirPart) || dirPart.startsWith('/')) return result('invalid')
 
-  const base = join(cwd, dirPart)
+  let root: string
   try {
-    const entries = await readdir(base, { withFileTypes: true })
-    const out: string[] = []
+    root = await realpath(cwd)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    return result(code === 'EACCES' || code === 'EPERM' ? 'permission' : 'missing')
+  }
+  const base = resolve(join(root, dirPart))
+  const rootKey = root.replace(/[\\/]+/g, '/').toLowerCase()
+  const baseKey = base.replace(/[\\/]+/g, '/').toLowerCase()
+  if (baseKey !== rootKey && !baseKey.startsWith(rootKey + '/')) return result('invalid')
+  try {
+    const realBase = await realpath(base)
+    /* 不允许通过 symlink / junction 把补全目录带到工作区外或换到另一棵树。 */
+    const realKey = realBase.replace(/[\\/]+/g, '/').toLowerCase()
+    if (realKey !== rootKey && !realKey.startsWith(rootKey + '/')) return result('invalid')
+    if (realKey !== baseKey) return result('invalid')
+    const entries = await readdir(realBase, { withFileTypes: true })
+    const dirs: string[] = []
+    const files: string[] = []
     for (const e of entries) {
-      if (e.name === 'node_modules' || e.name === '.git') continue
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === '.svn' || e.name === '.hg') continue
       if (e.name.startsWith('.')) continue // 隐藏文件（大多是噪声）
+      if (e.isSymbolicLink()) continue // 不把符号链接 / 目录联接暴露成可补全路径
       if (namePart && !e.name.toLowerCase().startsWith(namePart)) continue
       const rel = (dirPart ? dirPart + '/' : '') + e.name + (e.isDirectory() ? '/' : '')
-      out.push(rel)
-      if (out.length >= 30) break
+      if (e.isDirectory()) dirs.push(rel)
+      else files.push(rel)
     }
-    // 目录优先（用户更可能是要进目录）
-    return out.sort((a, b) => Number(b.endsWith('/')) - Number(a.endsWith('/')))
-  } catch {
-    return []
+    const byName = (a: string, b: string): number =>
+      a.localeCompare(b, 'zh-CN', { numeric: true, sensitivity: 'base' })
+    dirs.sort(byName)
+    files.sort(byName)
+    const all = [...dirs, ...files]
+    return result(all.length ? 'ok' : 'empty', all.slice(0, 30), all.length > 30)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    return result(code === 'EACCES' || code === 'EPERM' ? 'permission' : code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'error')
   }
 }

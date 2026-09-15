@@ -42,7 +42,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * 在 CASES 里用 `model:` 单独覆盖。
  *
  * 想用别的模型：`YAN_TEST_MODEL="provider/modelId" npm run test:live -- e2e`。
- * 约束：模型必须能从 **真实 `~/.pi/agent/auth.json`** 取到凭证（测试不隔离 auth）；
+ * 约束：模型必须能从真实 `~/.pi/agent/` 取到凭证。测试会把它**只读复制**进
+ * 隔离的 YAN_PI_DIR（不复制就起不了 pi）；副本只写在系统临时目录、退出时清理，
+ * 绝不写回原目录。个别场景需要「没有凭证」的前提，见下面 `piDirNoAuth`。
  * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
  */
 const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/inclusionai/ling-3.0-flash-sante:free'
@@ -56,6 +58,10 @@ const CASES = {
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
   // 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位（不烧 token，注入数据）
   reasoning: { probe: 'scripts/probe/reasoning.js', delay: 9000, cost: 0 },
+  // 模型未知时选择器仍可见（用户报的「看不到模型选择」）
+  // 连接就绪后模型/思考档位列表要能补上（端到端）
+  capabilityload: { probe: 'scripts/probe/capabilityload.js', delay: 9000, cost: 0 },
+  modelnotready: { probe: 'scripts/probe/modelnotready.js', delay: 9000, cost: 0 },
   // 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度
   // ⚠️ 必须用**真实**按键（sendInputEvent），因为快捷键是主进程
   //    用 before-input-event 拦的 —— 渲染端的合成 KeyboardEvent 不走那条路，
@@ -158,9 +164,7 @@ const CASES = {
   slashcmd: { probe: 'scripts/probe/slashcmd.js', delay: 9000, cost: 0 },
   // 分区内容高度可调
   vheight: { probe: 'scripts/probe/vheight.js', delay: 9000, cost: 0 },
-  // 从工具库拖到工具栏（含实时位置预览 / 取消语义）
-  libdrag: { probe: 'scripts/probe/libdrag.js', delay: 9000, cost: 0 },
-  // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 恢复默认）
+  // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 上移下移 / 恢复默认）
   tools: { probe: 'scripts/probe/tools.js', delay: 9000, cost: 0 },
   // 面板宽度拖拽（含夹取范围与键盘）
   resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
@@ -240,6 +244,10 @@ const CASES = {
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
   // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
+  // 项目—会话归属：真实 IPC 迁移索引，不移动 pi 的 JSONL 文件
+  sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
+  // 窗口关闭隐藏到托盘，退出取消路径可重复
+  tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, env: { YAN_EXIT_CHOICE: 'cancel' } },
   // 运行实例：身份过滤 + 左栏状态槽 + 单独停止（N12，注入合成推送）
   sessionrunners: { probe: 'scripts/probe/sessionrunners.js', delay: 9000, cost: 0 },
   // 运行实例选择：真实主进程注册表路径（N12，不跑回合）
@@ -598,6 +606,32 @@ async function main() {
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
 
+  /*
+   * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
+   * 正常跑完的那次 rmSync —— 被 Ctrl+C 或被 timeout 杀掉时，密钥会留在临时目录。
+   * 实测已经踩到：02:14 那批异常退出后，三个 yan-test-* 目录里的 auth.json 副本
+   * 一直留到被发现。这里把清理挂到进程退出，覆盖正常退出与 SIGINT/SIGTERM
+   *（SIGKILL 无法捕获，那就只能靠下次跑到时看见了）。
+   */
+  if (sandboxRoot) {
+    const cleanupSandbox = () => {
+      try {
+        rmSync(sandboxRoot, { recursive: true, force: true })
+      } catch {
+        /* 尽力而为，不能因为清理失败盖住真正的测试结果 */
+      }
+    }
+    process.once('exit', cleanupSandbox)
+    process.once('SIGINT', () => {
+      cleanupSandbox()
+      process.exit(130)
+    })
+    process.once('SIGTERM', () => {
+      cleanupSandbox()
+      process.exit(143)
+    })
+  }
+
   let env = { ...process.env }
   if (sandboxRoot) {
     const userData = join(sandboxRoot, 'userData')
@@ -612,6 +646,40 @@ async function main() {
      */
     const piDir = join(sandboxRoot, 'pi-agent')
     for (const d of [userData, sessions, data, piDir]) mkdirSync(d, { recursive: true })
+
+    /*
+     * 给隔离环境准备 pi 的**凭证 + 模型目录**，否则 pi 根本起不来。
+     *
+     * 为什么需要两个文件：
+     *   · auth.json  —— 凭证；没有它 pi 只能起一个 unknown 模型。
+     *   · models.json —— 自定义 provider 定义。这台机器上的 `commandcode`
+     *     provider（69 个模型）就来自这里，**不在** pi 的内置目录里；
+     *     少了它，pi 解析 `--model commandcode/...` 会直接 "Model not found"
+     *     并退出，表现为 conn 一直卡在 starting、场景全部失败。
+     *   · models-store.json —— 目录缓存（存在就带上，省一次网络拉取）。
+     *
+     * ⚠️ 安全边界（用户明确要求：测试可以用，**打包切勿放进去**）：
+     *   · 只**读**源文件，写成 sandbox 里的副本；
+     *   · 除 auth.json 外已确认不含密钥字段；auth 场景改写也只动副本；
+     *   · sandbox 在系统临时目录，批次结束整个 rmSync 删除；
+     *   · **绝不写入项目目录** —— electron-builder 的 files / extraResources
+     *     只收 out/、build/icon.png、package.json 和 resources/pi-runtime，
+     *     临时目录不可能进发布包；.gitignore 也已忽略 `auth.json`。
+     */
+    const sourceAgentDir = process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
+    const copied = []
+    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+      const src = join(sourceAgentDir, f)
+      if (existsSync(src)) {
+        copyFileSync(src, join(piDir, f))
+        copied.push(f)
+      }
+    }
+    if (copied.length) {
+      console.log(`  pi 文件：已复制 ${copied.join(' / ')} 到隔离目录（仅本次测试，不进包）`)
+    } else {
+      console.log('  pi 文件：没找到凭证/模型目录 —— 依赖 pi 就绪的场景会失败')
+    }
 
     /*
      * 预置工作目录 = **项目根**（不是 home）。
@@ -641,6 +709,18 @@ async function main() {
     // 为什么要拷：有些场景（切会话、长会话虚拟化）需要真实数据才有意义；
     // 为什么是拷贝而不是直接引用：测试会改名/删除会话，不能动原件。
     const seeded = seedSessions(sessions)
+
+    /*
+     * `auth` 场景要验的是「**没有**凭证时给出应用内登录入口」
+     * （`data-testid="auth-login-openai-codex"`）。而上面那个 piDir 为了能起 pi
+     * 复制了真实 auth.json，前提正好相反 —— 单独给它一个空目录。
+     * 只放 models.json：provider 定义仍要能解析，否则列表渲染不出来。
+     */
+    const piDirNoAuth = join(sandboxRoot, 'pi-agent-no-auth')
+    mkdirSync(piDirNoAuth, { recursive: true })
+    const modelsForNoAuth = join(sourceAgentDir, 'models.json')
+    if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
+    CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
 
     console.log(`隔离目录：${sandboxRoot}`)
     console.log(`  fixture：${seeded} 份（真实会话只读拷贝 + 合成；原件不受影响）`)

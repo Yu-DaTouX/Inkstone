@@ -171,7 +171,7 @@ export function TitleBar({
 
           <button
             className="wbtn close"
-            title={t('tb.close')}
+            title={t('tb.hide')}
             onClick={() => win.close()}
             data-testid="win-close"
           >

@@ -105,6 +105,13 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 
 function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
   const t = useT()
+  const actualDetail = turn.responseDetail === 'brief'
+    ? t('detail.brief')
+    : turn.responseDetail === 'detailed'
+      ? t('detail.detailed')
+      : turn.responseDetail === 'standard'
+        ? t('detail.standard')
+        : t('detail.unknown')
 
   const hasBody =
     turn.commentary.length > 0 ||
@@ -131,6 +138,11 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
           {turn.tools.length > 1 ? (
             <span className="msg-turn-count" title={t('turn.merged', { n: turn.sourceIds.length })}>
               {t('turn.steps', { n: turn.tools.length })}
+            </span>
+          ) : null}
+          {turn.responseDetail ? (
+            <span className="msg-turn-detail" data-testid="response-detail" title={t('detail.actual')}>
+              {actualDetail}
             </span>
           ) : null}
         </div>

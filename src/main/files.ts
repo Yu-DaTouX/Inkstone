@@ -12,11 +12,19 @@
  *   · 这里是「列全一层 + 带类型/大小」的浏览场景，且要能区分
  *     「空目录」与「被忽略的目录」（`skipped`），否则用户会以为坏了
  */
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { join, resolve, sep, basename } from 'node:path'
 import { homedir } from 'node:os'
-import type { DirEntry, DirListing } from '../shared/ipc'
+import type {
+  DirEntry,
+  DirListing,
+  FileListingStatus,
+  FileRequestContext,
+  FileSearchEntry,
+  FileSearchRequest,
+  FileSearchResult
+} from '../shared/ipc'
 
 /**
  * 永远**不展开**的目录（不是“隐藏”，是“太大没意义”）。
@@ -36,6 +44,32 @@ function isDotName(name: string): boolean {
 
 /** 一层最多回多少条（超了截断并告诉界面「还有 N 项」） */
 const MAX_ENTRIES = 400
+
+/** 全项目搜索是文件名索引，不是内容搜索；即使用户传入更大的值也不能无限扫。 */
+const MAX_SEARCH_RESULTS = 200
+const MAX_SEARCH_DIRS = 2000
+
+function pathKey(value: string): string {
+  const normalized = value.replace(/[\\/]+/g, '/')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const r = pathKey(root).replace(/\/$/, '')
+  const c = pathKey(candidate).replace(/\/$/, '')
+  return c === r || c.startsWith(r + '/')
+}
+
+function statusForError(error: unknown): FileListingStatus {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  if (code === 'EACCES' || code === 'EPERM') return 'permission'
+  if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'
+  return 'error'
+}
+
+function nameSort(a: { name: string }, b: { name: string }): number {
+  return a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
+}
 
 /**
  * 把渲染端传来的相对路径解析成安全绝对路径。
@@ -76,16 +110,53 @@ function displayPath(abs: string): string {
  *   家目录上千条 = 上千次系统调用，主进程被拖住（表现为快捷键丢事件）。
  *   现在先排序、再截断、**最后**只为那 ≤400 个文件取 size。
  */
-export async function listDir(cwd: string, rel = '', showHidden = false): Promise<DirListing> {
-  const abs = safeJoin(cwd, rel)
-  const empty: DirListing = { path: rel ?? '', abs: '', entries: [], skipped: [], truncated: false }
-  if (!abs) return empty
+export async function listDir(
+  cwd: string,
+  rel = '',
+  showHidden = false,
+  request?: FileRequestContext
+): Promise<DirListing> {
+  const root = await realpath(cwd).catch(() => resolve(cwd))
+  const abs = safeJoin(root, rel)
+  const empty: DirListing = {
+    path: rel ?? '',
+    abs: '',
+    entries: [],
+    skipped: [],
+    truncated: false,
+    status: 'invalid',
+    ...(request ? { request } : {})
+  }
+  if (!abs || !isWithin(root, abs)) return empty
+
+  /* 不跟随用户手写的符号链接 / junction；每次展开只做一次真实路径校验。 */
+  let realDir: string
+  try {
+    realDir = await realpath(abs)
+  } catch (error) {
+    const status = statusForError(error)
+    return {
+      ...empty,
+      abs: displayPath(abs),
+      status,
+      error: status === 'permission' ? 'permission' : status === 'missing' ? 'missing' : 'error'
+    }
+  }
+  if (!isWithin(root, realDir) || pathKey(realDir) !== pathKey(abs)) {
+    return { ...empty, status: 'invalid', error: 'invalid' }
+  }
 
   let dirents: Dirent[]
   try {
-    dirents = await readdir(abs, { withFileTypes: true })
-  } catch {
-    return { ...empty, abs: displayPath(abs) }
+    dirents = await readdir(realDir, { withFileTypes: true })
+  } catch (error) {
+    const status = statusForError(error)
+    return {
+      ...empty,
+      abs: displayPath(realDir),
+      status,
+      error: status === 'permission' ? 'permission' : status === 'missing' ? 'missing' : 'error'
+    }
   }
 
   const skipped: string[] = []
@@ -93,6 +164,11 @@ export async function listDir(cwd: string, rel = '', showHidden = false): Promis
   const dirs: { name: string; dir: true }[] = []
   const files: { name: string; dir: false }[] = []
   for (const d of dirents) {
+    /* 符号链接 / junction 不进入文件树，避免点击或展开时绕过 cwd 边界。 */
+    if (d.isSymbolicLink()) {
+      skipped.push(d.name)
+      continue
+    }
     /*
      * 三类过滤，语义不同（用户要求把「隐藏」单独拉出来给个开关）：
      *   ① OPAQUE（node_modules/.git…）—— showHidden 打开时才列出，
@@ -111,10 +187,8 @@ export async function listDir(cwd: string, rel = '', showHidden = false): Promis
     else files.push({ name: d.name, dir: false })
   }
 
-  const byName = (a: { name: string }, b: { name: string }): number =>
-    a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
-  dirs.sort(byName)
-  files.sort(byName)
+  dirs.sort(nameSort)
+  files.sort(nameSort)
 
   const all = [...dirs, ...files]
   const truncated = all.length > MAX_ENTRIES
@@ -135,7 +209,7 @@ export async function listDir(cwd: string, rel = '', showHidden = false): Promis
     await Promise.all(
       slice.map(async (e) => {
         try {
-          const st = await stat(join(abs, e.name))
+          const st = await stat(join(realDir, e.name))
           sizes.set(e.name, st.size)
         } catch {
           /* 断掉的符号链接 / 权限不足：不显示尺寸 */
@@ -151,10 +225,119 @@ export async function listDir(cwd: string, rel = '', showHidden = false): Promis
 
   return {
     path: rel ?? '',
-    abs: displayPath(abs),
+    abs: displayPath(realDir),
     entries,
-    skipped,
+    skipped: skipped.sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true, sensitivity: 'base' })),
     truncated,
-    ...(rel ? {} : { rootName: basename(abs) || abs })
+    status: entries.length ? 'ok' : 'empty',
+    totalEntries: all.length,
+    ...(request ? { request } : {}),
+    ...(rel ? {} : { rootName: basename(realDir) || realDir })
   }
+}
+
+/**
+ * 全项目文件名搜索。
+ *
+ * 这是和文件树完全不同的动作：它可以递归，但只递归目录名索引，
+ * 不读文件内容；跳过 node_modules/.git 等大型依赖目录；每处理一层
+ * 主动让出事件循环，并在每个边界检查 AbortSignal，避免搜索把桌面端卡住。
+ */
+export async function searchFiles(request: FileSearchRequest, signal?: AbortSignal): Promise<FileSearchResult> {
+  const limit = Math.max(1, Math.min(MAX_SEARCH_RESULTS, Math.floor(request.limit ?? MAX_SEARCH_RESULTS)))
+  const query = String(request.query ?? '').trim().toLocaleLowerCase()
+  const baseResult = (status: FileSearchResult['status'], entries: FileSearchEntry[] = [], truncated = false, scannedDirs = 0, skippedDirs = 0): FileSearchResult => ({
+    request,
+    entries,
+    status,
+    truncated,
+    scannedDirs,
+    skippedDirs
+  })
+
+  if (!query) return baseResult('empty')
+
+  let root: string
+  try {
+    root = await realpath(request.cwd)
+    if (!(await stat(root)).isDirectory()) return baseResult('invalid')
+  } catch (error) {
+    return baseResult(statusForError(error))
+  }
+
+  const entries: FileSearchEntry[] = []
+  const queue: Array<{ abs: string; rel: string }> = [{ abs: root, rel: '' }]
+  let scannedDirs = 0
+  let skippedDirs = 0
+  let hadReadError = false
+  let truncated = false
+
+  const matches = (name: string, rel: string): boolean =>
+    name.toLocaleLowerCase().includes(query) || rel.toLocaleLowerCase().includes(query)
+
+  while (queue.length) {
+    if (signal?.aborted) return baseResult('cancelled', entries, truncated, scannedDirs, skippedDirs)
+    if (scannedDirs >= MAX_SEARCH_DIRS) {
+      truncated = true
+      break
+    }
+
+    const current = queue.shift()!
+    scannedDirs += 1
+    let dirents: Dirent[]
+    try {
+      dirents = await readdir(current.abs, { withFileTypes: true })
+    } catch (error) {
+      hadReadError = true
+      /* 根目录不可读要如实返回；子目录则保留已有结果并标为 partial。 */
+      if (current.rel === '') return baseResult(statusForError(error), entries, truncated, scannedDirs, skippedDirs)
+      continue
+    }
+
+    const dirs: Dirent[] = []
+    const files: Dirent[] = []
+    for (const entry of dirents) {
+      if (signal?.aborted) return baseResult('cancelled', entries, truncated, scannedDirs, skippedDirs)
+      if (entry.isSymbolicLink()) continue
+      if (entry.name.startsWith('.')) continue
+      if (entry.isDirectory()) {
+        if (OPAQUE.has(entry.name)) {
+          skippedDirs += 1
+          continue
+        }
+        dirs.push(entry)
+      } else {
+        files.push(entry)
+      }
+    }
+    dirs.sort(nameSort)
+    files.sort(nameSort)
+
+    for (const entry of [...dirs, ...files]) {
+      const rel = current.rel ? `${current.rel}/${entry.name}` : entry.name
+      if (matches(entry.name, rel)) {
+        entries.push({ path: rel, name: entry.name, dir: entry.isDirectory() })
+        if (entries.length >= limit) {
+          truncated = true
+          break
+        }
+      }
+      if (entry.isDirectory()) {
+        /* 队列本身也要有界：单层目录里有很多子目录时不能先把它们全塞进内存。 */
+        if (scannedDirs + queue.length >= MAX_SEARCH_DIRS) {
+          truncated = true
+          break
+        }
+        queue.push({ abs: join(current.abs, entry.name), rel })
+      }
+    }
+    if (truncated) break
+
+    /* 大型项目搜索不能连续占满主进程事件循环。 */
+    await new Promise<void>((resolveNext) => setImmediate(resolveNext))
+  }
+
+  const status: FileSearchResult['status'] =
+    signal?.aborted ? 'cancelled' : hadReadError ? (entries.length ? 'partial' : 'permission') : truncated ? 'partial' : entries.length ? 'ok' : 'empty'
+  return baseResult(status, entries, truncated, scannedDirs, skippedDirs)
 }

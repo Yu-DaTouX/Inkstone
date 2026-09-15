@@ -21,6 +21,7 @@ import type {
   PiInfo,
   QueueMode,
   QueueState,
+  RuntimeEnvelope,
   RunnerStatus,
   SessionState,
   SessionStats,
@@ -35,8 +36,15 @@ import type {
   UserProfile,
   ZoomState
 } from '../../../shared/ipc'
-import { TOOL_SECTIONS } from '../../../shared/ipc'
 import { playSound } from '../lib/sound'
+import { isCapabilityResponseStale } from './capability-request'
+import {
+  migrateSessionRuntime,
+  reduceSessionRuntime,
+  updateSessionRuntime,
+  type SessionRuntimeMap,
+  type SessionRuntimeSnapshot
+} from './session-runtime'
 
 /**
  * 提醒的标题（系统通知用）。按界面语言分。
@@ -163,6 +171,10 @@ interface Store {
   titles: Record<string, string>
   /** 用户手动重命名的会话名（sessionId → name）—— 优先于 titles，且不会被自动标题覆盖 */
   manualTitles: Record<string, string>
+  /** 按需标题重生成的候选；手动标题存在时必须由用户明确采用。 */
+  titleCandidates: Record<string, string>
+  /** pi 不在 get_state 返回此开关，Yan 在渲染端保留最后一次明确设置。 */
+  autoRetryEnabled: boolean
   /** 窗口是否最大化（切换标题栏的还原图标） */
   maximized: boolean
 
@@ -238,6 +250,8 @@ interface Store {
    * 左栏用它画每行的运行 / 等待输入 / 失败状态。
    */
   runners: RunnerStatus[]
+  /** 后台会话的增量缓存；顶层字段仍是当前查看会话的投影。 */
+  sessionRuntimes: SessionRuntimeMap
 
   /* 动作 */
   bootstrap: () => Promise<void>
@@ -247,6 +261,8 @@ interface Store {
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
+  /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
+  setSessionDraft: (value: string) => void
   /** 重新探测 pi 内核（版本 / 来源），pi 之前没找到时会顺便重新拉起 */
   redetectPi: () => Promise<void>
   /**
@@ -265,15 +281,23 @@ interface Store {
 
   send: (text: string, images?: { data: string; mimeType: string }[]) => Promise<void>
   /** 把队列里某条消息插队（提升为 steering，在当前这轮就听） */
-  steerQueued: (text: string) => Promise<void>
+  steerQueued: (queueId: string) => Promise<void>
+  /** 撤回仍在队列中的消息并回填草稿；已被 pi 接收的消息会返回失败。 */
+  removeQueued: (queueId: string) => Promise<void>
   abort: () => Promise<void>
   runBash: (command: string) => Promise<void>
   abortBash: () => Promise<void>
-  newSession: () => Promise<void>
+  newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => Promise<void>
   switchSession: (path: string) => Promise<void>
+  /** 只改 Yan 的产品归属，不移动 pi 的 JSONL，也不停止运行实例。 */
+  moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
   /** 给**任意**会话（含非当前会话）起一个手动名，粘性、不被自动标题覆盖 */
   setManualTitle: (sessionId: string, name: string) => Promise<void>
+  /** 按稳定 sessionId 生成标题；手动名存在时只放入候选，不覆盖现名。 */
+  regenerateTitle: (sessionId: string) => Promise<void>
+  acceptTitleCandidate: (sessionId: string) => Promise<void>
+  dismissTitleCandidate: (sessionId: string) => void
   deleteSession: (path: string) => Promise<void>
   fork: (entryId: string) => Promise<void>
   clone: () => Promise<void>
@@ -302,13 +326,15 @@ interface Store {
   openBrowser: (url?: string) => Promise<void>
   closeBrowser: () => Promise<void>
   /** 打开只读文件预览（相对路径由主进程按会话 cwd 解析） */
-  previewFile: (path: string, line?: number) => Promise<void>
+  previewFile: (path: string, line?: number, cwd?: string) => Promise<void>
   closePreview: () => void
   /* ---- 子代理 ---- */
   loadSubagents: () => Promise<void>
-  startSubagent: (task: string, model?: string) => Promise<void>
+  startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd') => Promise<void>
   stopSubagent: (id: string) => Promise<void>
   clearSubagents: () => Promise<void>
+  mergeSubagent: (id: string) => Promise<void>
+  discardSubagent: (id: string) => Promise<void>
   openSubagent: (id: string | null) => void
   /** 接入本机已安装的 Chrome（独立 profile + CDP） */
   openExternalChrome: (url?: string) => Promise<void>
@@ -342,16 +368,9 @@ interface Store {
    *   · 工具栏（RightPanel 的各个 .rp-slot）显示「会插到这里」的预览
    * 放组件 state 就得层层透传，而且工具库拖拽中会关掉自己的浮层。
    */
-  draggingSection: string | null
   /** 拖拽中当前落点（哪个分区、插在它前还是后）—— 就是这个在画预览线 */
   toolDropTarget: { id: string; after: boolean } | null
-  setDraggingSection: (id: string | null) => void
   setToolDropTarget: (t: { id: string; after: boolean } | null) => void
-  /**
-   * 把分区放到指定位置（从库拖到栏、或在栏内重排都走它）。
-   * 会自动把它从隐藏集合里拿出来 —— 拖进来当然是要显示。
-   */
-  placeSection: (id: string, targetId: string | null, after: boolean) => Promise<void>
   /** 设某个分区的内容高度（px）。与其余布局一起写入设置 */
   setToolHeight: (id: string, px: number) => Promise<void>
   /** 拉一次界面缩放现状（启动时；快捷键改的走 push） */
@@ -360,6 +379,8 @@ interface Store {
   addAttachments: (a: Attachment[]) => void
   /** 拖入的普通文件：主进程校验 + 登记，然后作为「文件引用」附件入列 */
   addFileRefs: (files: File[]) => Promise<void>
+  /** 文件树拖入输入框时直接传绝对路径，仍由主进程统一校验 */
+  addFileRefPaths: (paths: string[]) => Promise<void>
   removeAttachment: (id: string) => void
   clearAttachments: () => void
   pickImages: () => Promise<void>
@@ -402,10 +423,68 @@ interface Store {
 
 const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
 
+function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
+  return {
+    sessionId: runner.sessionId ?? '',
+    runId: runner.runId ?? runner.id,
+    projectId: runner.projectId,
+    generation: runner.generation
+  }
+}
+
+/** 从渲染端当前投影拼出能力/草稿缓存所需的运行实例身份。 */
+function runtimeForState(
+  state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>
+): RuntimeEnvelope | null {
+  const runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
+  const runId = runner?.runId ?? runner?.id ?? state.activeRunnerId
+  if (!runId) return null
+  return {
+    sessionId: state.session?.sessionId ?? runner?.sessionId ?? '',
+    runId,
+    projectId: runner?.projectId,
+    generation: runner?.generation ?? 0
+  }
+}
+
+/** 把后台缓存投影回顶层；主进程随后仍会用权威 sync/state 校正它。 */
+function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store> {
+  const projection: Partial<Store> = {
+    messages: snapshot.messages,
+    stats: snapshot.stats,
+    queue: snapshot.queue,
+    todos: snapshot.todos,
+    todoHistory: snapshot.todoHistory,
+    uiRequests: snapshot.uiRequests,
+    statuses: snapshot.statuses,
+    widgets: snapshot.widgets,
+    subagents: snapshot.subagents,
+    models: snapshot.models,
+    thinkingLevels: snapshot.thinkingLevels,
+    commands: snapshot.commands,
+    commandsAt: snapshot.commands.length ? Date.now() : 0
+  }
+  if (snapshot.session) projection.session = snapshot.session
+  return projection
+}
+
+function findRuntimeSnapshot(
+  map: SessionRuntimeMap,
+  sessionId?: string,
+  runId?: string
+): SessionRuntimeSnapshot | undefined {
+  if (sessionId && map[sessionId]) return map[sessionId]
+  if (runId) return map[`run:${runId}`]
+  return undefined
+}
+
+
 /** 右侧只读文件预览的界面状态 */
 export interface FilePreviewState {
   /** 请求的原路径（展示 + 竞态比对用） */
   path: string
+  /** 发起预览时绑定的项目根，避免切换项目后旧响应写入新面板。 */
+  cwd?: string
   line?: number
   loading: boolean
   data: FilePreview | null
@@ -417,6 +496,10 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 /** 连接状态心跳是否已在跑（startConnWatch 单例，避免重复挂载开出多条） */
 let connWatchActive = false
+/** 模型/能力拉取的代次：快速切会话时，迟到的旧列表不能覆盖当前实例。 */
+let capabilityRequestSeq = 0
+/** 命令列表的请求代次：快速切会话时，迟到的旧列表不能覆盖当前会话。 */
+let commandRequestSeq = 0
 
 /**
  * 思考档的中文名。
@@ -569,6 +652,7 @@ export const useStore = create<Store>((rawSet, get) => {
   todoHistory: [],
   activeRunnerId: null,
   runners: [],
+  sessionRuntimes: {},
 
   models: [],
   thinkingLevels: [],
@@ -595,6 +679,8 @@ export const useStore = create<Store>((rawSet, get) => {
   })(),
   titles: {},
   manualTitles: {},
+  titleCandidates: {},
+  autoRetryEnabled: true,
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
@@ -685,7 +771,12 @@ export const useStore = create<Store>((rawSet, get) => {
     try {
       const list = await window.yan.runnerStatuses()
       const active = list.find((r) => r.isActive)
-      set({ runners: list, ...(active ? { activeRunnerId: active.id } : {}) })
+      set({ runners: list, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+      if (active) {
+        const runtime = runtimeFromRunner(active)
+        const snapshot = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
+        if (snapshot) set(projectRuntimeSnapshot(snapshot))
+      }
     } catch {
       /* 主进程还没起来 —— 下一帧会有推送 */
     }
@@ -697,13 +788,31 @@ export const useStore = create<Store>((rawSet, get) => {
     /*
      * 实例身份过滤（N12）。
      *
-     * 带 `sessionKey` 的消息只属于某一个运行实例：
+     * 带 `runtime` 的消息只属于某一个会话/运行实例/代次：
      *   · 还没对齐身份（初始化第一帧）→ 以第一条为当前视图；
-     *   · 与当前视图不一致 → **丢弃**（后台会话的输出不进当前界面）。
-     *     切回去时主进程会给完整快照，所以丢弃不会丢内容。
-     * 全局推送（设置 / 缩放 / 浏览器 / runners）不带 key，不受影响。
+     *   · 与当前视图不一致 → 只写进 `sessionRuntimes`，不改当前投影。
+     *     切回去时主进程仍会给完整快照，缓存用于保持后台状态可见。
+     *   · 比当前运行实例更旧的 generation → 直接丢弃。
+     * 旧探针没有 runtime 时继续使用 sessionKey 的兼容路径。
      */
-    if (m.sessionKey) {
+    if (m.runtime) {
+      const currentRunner = s.runners.find((runner) => (runner.runId ?? runner.id) === m.runtime!.runId)
+      if (currentRunner && m.runtime.generation < currentRunner.generation) return
+
+      const active = s.activeRunnerId
+        ? s.activeRunnerId === m.runtime.runId &&
+          (!currentRunner || m.runtime.generation >= currentRunner.generation)
+        : true
+      const cache = migrateSessionRuntime(
+        reduceSessionRuntime(s.sessionRuntimes, m.runtime, m),
+        m.runtime
+      )
+      set({
+        sessionRuntimes: cache,
+        ...(s.activeRunnerId ? {} : { activeRunnerId: m.runtime.runId })
+      })
+      if (!active) return
+    } else if (m.sessionKey) {
       if (!s.activeRunnerId) set({ activeRunnerId: m.sessionKey })
       else if (s.activeRunnerId !== m.sessionKey) return
     }
@@ -725,8 +834,54 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'runners':
         /* 全局快照（N12）：左栏状态槽用。不参与上面的实例身份过滤 */
-        set({ runners: m.payload })
+        {
+          const active = m.payload.find((runner) => runner.isActive)
+          set({ runners: m.payload, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+          if (active) {
+            const runtime = runtimeFromRunner(active)
+            const snapshot = findRuntimeSnapshot(
+              get().sessionRuntimes,
+              runtime.sessionId,
+              runtime.runId
+            )
+            if (snapshot) set(projectRuntimeSnapshot(snapshot))
+          }
+        }
         break
+      case 'tray-new-session':
+        /* 托盘菜单没有 renderer DOM，自身只发一个全局动作；实际新建仍走同一入口。 */
+        void get().newSession({ scope: 'global' })
+        break
+      case 'tray-select-session': {
+        const target = m.payload
+        if (target.sessionFile) {
+          void get().switchSession(target.sessionFile)
+          break
+        }
+        /* 尚未落盘的运行实例没有路径，使用稳定 sessionId 直接选。 */
+        void (async () => {
+          const res = await piCall(() => window.yan.selectSession(target))
+          if (!res.ok) {
+            set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换运行中的会话失败') })
+            return
+          }
+          const runId = res.runId ?? res.id
+          const snapshot = findRuntimeSnapshot(
+            get().sessionRuntimes,
+            res.sessionId ?? target.sessionId,
+            runId
+          )
+          set({
+            ...(snapshot ? projectRuntimeSnapshot(snapshot) : {}),
+            queue: snapshot?.queue ?? EMPTY_QUEUE,
+            activeRunnerId: runId ?? null
+          })
+          void get().syncRunners()
+          void get().reloadModels()
+          void get().reloadCommands()
+        })()
+        break
+      }
       case 'todo-history':
         set({ todoHistory: m.payload })
         break
@@ -807,7 +962,7 @@ export const useStore = create<Store>((rawSet, get) => {
           const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''
           alertAttention(s.settings, 'done', label || undefined)
         }
-        if (m.payload.availableThinkingLevels?.length) {
+        if (Array.isArray(m.payload.availableThinkingLevels)) {
           set({ thinkingLevels: m.payload.availableThinkingLevels })
         }
         break
@@ -946,23 +1101,92 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   reloadModels: async () => {
+    const request = ++capabilityRequestSeq
+    const initial = get()
+    const runnerId = initial.activeRunnerId
+    const sessionId = initial.session?.sessionId
+    const runtime = runtimeForState(initial)
     try {
       const [models, thinkingLevels] = await Promise.all([
         window.yan.listModels(),
         window.yan.listThinkingLevels()
       ])
-      set({ models, thinkingLevels })
+      const current = get()
+      if (request !== capabilityRequestSeq) return
+      /*
+       * 身份校验只认运行实例（见 capability-request.ts）：模型与思考档位是
+       * **实例级**的，而启动早期 sessionId 会从 `pending:<runId>` 过渡到真实 uuid，
+       * 原来拿 sessionId 做等值比较会把这条正常过渡当成过期响应丢掉。
+       */
+      if (
+        isCapabilityResponseStale(
+          { runnerId, sessionId },
+          { runnerId: current.activeRunnerId, sessionId: current.session?.sessionId }
+        )
+      ) {
+        return
+      }
+      const currentRuntime = runtimeForState(current) ?? runtime
+      set({
+        models,
+        thinkingLevels,
+        ...(currentRuntime
+          ? {
+              sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
+                models,
+                thinkingLevels
+              })
+            }
+          : {})
+      })
     } catch {
       /* pi 未就绪：保持上一次的列表（可能是空的） */
     }
   },
 
   reloadCommands: async () => {
+    const request = ++commandRequestSeq
+    const initial = get()
+    const runnerId = initial.activeRunnerId
+    const sessionId = initial.session?.sessionId
+    const runtime = runtimeForState(initial)
     try {
-      set({ commands: await window.yan.listCommands(), commandsAt: Date.now() })
+      const commands = await window.yan.listCommands()
+      const current = get()
+      if (request !== commandRequestSeq) return
+      /* 同 reloadModels：命令列表也是实例级的，别把 pending→uuid 的过渡当过期 */
+      if (
+        isCapabilityResponseStale(
+          { runnerId, sessionId },
+          { runnerId: current.activeRunnerId, sessionId: current.session?.sessionId }
+        )
+      ) {
+        return
+      }
+      const currentRuntime = runtimeForState(current) ?? runtime
+      set({
+        commands,
+        commandsAt: Date.now(),
+        ...(currentRuntime
+          ? {
+              sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
+                commands
+              })
+            }
+          : {})
+      })
     } catch {
       /* 同上 */
     }
+  },
+
+  setSessionDraft: (value) => {
+    const current = get()
+    const runtime = runtimeForState(current)
+    if (!runtime) return
+    set({
+      sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, runtime, { draft: value })
+    })
   },
 
   redetectPi: async () => {
@@ -993,11 +1217,26 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  steerQueued: async (text) => {
-    const res = await piCall(() => window.yan.steerQueued(text))
+  steerQueued: async (queueId) => {
+    const res = await piCall(() => window.yan.steerQueued(queueId))
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '插队失败')
+      })
+    }
+  },
+
+  removeQueued: async (queueId) => {
+    const res = await piCall(() => window.yan.removeQueued(queueId))
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '撤回失败') })
+      return
+    }
+    if (res.text) {
+      const previous = get().queueRestore
+      set({
+        queueRestore: previous ? `${res.text}\n${previous}` : res.text,
+        notices: pushNotice(get().notices, 'info', '已撤回排队内容，并放回输入草稿')
       })
     }
   },
@@ -1027,8 +1266,8 @@ export const useStore = create<Store>((rawSet, get) => {
     await window.yan.abortBash()
   },
 
-  newSession: async () => {
-    const res = await piCall(() => window.yan.newSession())
+  newSession: async (target) => {
+    const res = await piCall(() => window.yan.newSession(target))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
       return
@@ -1037,9 +1276,13 @@ export const useStore = create<Store>((rawSet, get) => {
      * N12：新会话可能落在**新实例**上（当前实例忙着的时候）。
      * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
      */
-    if (res.id) set({ queue: EMPTY_QUEUE, activeRunnerId: res.id, messages: [] })
+    if (res.id || res.runId) {
+      set({ queue: EMPTY_QUEUE, activeRunnerId: res.runId ?? res.id, messages: [] })
+    }
     else set({ queue: EMPTY_QUEUE })
     void get().syncRunners()
+    void get().reloadModels()
+    void get().reloadCommands()
     await get().refreshSessions()
   },
 
@@ -1078,14 +1321,47 @@ export const useStore = create<Store>((rawSet, get) => {
     // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
     const sum = get().sessions.find((x) => x.path === path)
     const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
-    const res = await piCall(() => window.yan.selectSession({ sessionFile: path, cwd }))
+    const settings = get().settings
+    /*
+     * 会话的产品归属优先于它的物理 cwd：移动到另一个项目后，
+     * JSONL 仍可能留在原 cwd，但再次打开不能被旧 cwd 重新归类。
+     * global 也必须显式保留，不能被当前工作目录的项目自动“吸回去”。
+     */
+    const projectId = sum?.scope === 'global'
+      ? undefined
+      : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
+    const scope = sum?.scope ?? (projectId ? 'project' : 'global')
+    const res = await piCall(() =>
+      window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd })
+    )
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'), peekedPath: null })
       return
     }
-    set({ queue: EMPTY_QUEUE, ...(res.id ? { activeRunnerId: res.id } : {}) })
+    const runId = res.runId ?? res.id
+    const snapshot = findRuntimeSnapshot(
+      get().sessionRuntimes,
+      res.sessionId ?? sum?.id,
+      runId
+    )
+    set({
+      ...(snapshot ? projectRuntimeSnapshot(snapshot) : {}),
+      queue: snapshot?.queue ?? EMPTY_QUEUE,
+      ...(runId ? { activeRunnerId: runId } : {})
+    })
     void get().syncRunners()
     void get().reloadModels()
+    void get().reloadCommands()
+  },
+
+  moveSession: async (sessionId, projectId) => {
+    const res = await window.yan.moveSession(sessionId, projectId)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '移动会话失败') })
+      return false
+    }
+    await get().refreshSessions()
+    return true
   },
 
   renameSession: async (name) => {
@@ -1121,6 +1397,44 @@ export const useStore = create<Store>((rawSet, get) => {
       await window.yan.setManualTitle(sid, trimmed).catch(() => ({ ok: false }))
     }
     await get().refreshSessions()
+  },
+
+  regenerateTitle: async (sessionId) => {
+    const sid = sessionId || get().session?.sessionId || ''
+    if (!sid) {
+      set({ notices: pushNotice(get().notices, 'error', '没有可重生成标题的会话') })
+      return
+    }
+    let res: { ok: boolean; title?: string; error?: string }
+    try {
+      res = await window.yan.regenerateTitle(sid)
+    } catch (error) {
+      res = { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    if (!res.ok || !res.title) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '标题生成失败，已保留原标题') })
+      return
+    }
+    set({
+      titleCandidates: { ...get().titleCandidates, [sid]: res.title },
+      notices: pushNotice(get().notices, 'info', `已生成标题候选：「${res.title}」`)
+    })
+  },
+
+  acceptTitleCandidate: async (sessionId) => {
+    const sid = sessionId.trim()
+    const candidate = get().titleCandidates[sid]
+    if (!sid || !candidate) return
+    await get().setManualTitle(sid, candidate)
+    const next = { ...get().titleCandidates }
+    delete next[sid]
+    set({ titleCandidates: next })
+  },
+
+  dismissTitleCandidate: (sessionId) => {
+    const next = { ...get().titleCandidates }
+    delete next[sessionId]
+    set({ titleCandidates: next })
   },
 
   deleteSession: async (path) => {
@@ -1183,7 +1497,10 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() => window.yan.setModel(provider, id))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换模型失败') })
+      return
     }
+    /* 主进程已刷新权威 state/stats；列表也按当前实例代次补一次。 */
+    void get().reloadModels()
   },
 
   setThinking: async (level) => {
@@ -1201,6 +1518,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() => window.yan.setAutoRetry(on))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+    } else {
+      set({ autoRetryEnabled: on })
     }
   },
 
@@ -1293,11 +1612,11 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
     /*
-     * 不再清空对话、也不硬把 conn 改成 starting。
+     * 不再清空对话，也不硬把 conn 改成 starting。
      *
-     * pi 的 cwd 是子进程级的（RPC 47 个命令里没有 set_cwd，new_session 也不收 cwd），
-     * 所以换目录**必须重启 pi 子进程** —— 这一步避免不了。
-     * 但没必要把界面清成白板：重启期间保留当前对话，新连接就绪后 pi 会自己推 sync。
+     * cwd 是每个 runner 的边界；这里仅更新当前项目设置，具体视图由
+     * 项目入口随后选择最近会话或创建新会话。这样切项目不会重启、也不
+     * 会把其它 cwd 的后台任务掐掉。
      */
     set({ settings: await window.yan.getSettings() })
     await get().refreshSessions()
@@ -1348,14 +1667,14 @@ export const useStore = create<Store>((rawSet, get) => {
    *    光在 DOM 里画一个预览面板是**看不见**的，必须让主进程
    *    把原生视图 setVisible(false)；关预览时再恢复。
    */
-  previewFile: async (path, line) => {
-    set({ filePreview: { path, line, loading: true, data: null } })
+  previewFile: async (path, line, cwd) => {
+    set({ filePreview: { path, cwd, line, loading: true, data: null } })
     if (get().browserState.open) void window.yan.browser.setVisible(false)
-    const data = await window.yan.readPreview(path, line)
+    const data = await window.yan.readPreview(path, line, cwd)
     /* 期间用户可能已经换了别的文件 / 关掉了预览：只认最后一次请求 */
     const cur = get().filePreview
-    if (!cur || cur.path !== path || cur.line !== line) return
-    set({ filePreview: { path, line, loading: false, data } })
+    if (!cur || cur.path !== path || cur.cwd !== cwd || cur.line !== line) return
+    set({ filePreview: { path, cwd, line, loading: false, data } })
   },
 
   closePreview: () => {
@@ -1373,8 +1692,8 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  startSubagent: async (task, model) => {
-    const res = await window.yan.subagents.start(task, model)
+  startSubagent: async (task, model, isolation) => {
+    const res = await window.yan.subagents.start(task, model, isolation)
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '子代理启动失败')
@@ -1401,6 +1720,20 @@ export const useStore = create<Store>((rawSet, get) => {
 
   clearSubagents: async () => {
     await window.yan.subagents.clearFinished()
+  },
+
+  mergeSubagent: async (id) => {
+    const res = await window.yan.subagents.merge(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '合并子代理结果失败') })
+    }
+  },
+
+  discardSubagent: async (id) => {
+    const res = await window.yan.subagents.discard(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '放弃子代理结果失败') })
+    }
   },
 
   openSubagent: (id) => set({ subagentPreviewId: id }),
@@ -1457,41 +1790,12 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
   },
 
-  draggingSection: null,
   toolDropTarget: null,
-  setDraggingSection: (id) => set({ draggingSection: id, toolDropTarget: null }),
   setToolDropTarget: (t) => set({ toolDropTarget: t }),
 
-  /**
-   * 放到指定位置。三步：
-   *   ① 从隐藏集合里拿掉（拖进来就是要显示）
-   *   ② 在完整顺序里把它移到目标前/后
-   *   ③ 一次落盘（两步分开写会出现「先显示在末尾、再跳到位」的闪烁）
-   *
-   * `targetId === null` = 放到最后（拖到列表空白处）。
-   */
   setToolHeight: async (id, px) => {
     const cur = get().settings?.toolHeights ?? {}
     set({ settings: await window.yan.patchSettings({ toolHeights: { ...cur, [id]: Math.round(px) } } as Partial<AppSettings>) })
-  },
-
-  placeSection: async (id, targetId, after) => {
-    const s = get().settings
-    const known = new Set<string>(TOOL_SECTIONS)
-    if (!known.has(id)) return
-    const hidden = (s?.toolHidden ?? []).filter((x) => x !== id)
-    const base = (s?.toolOrder?.length ? s.toolOrder : [...TOOL_SECTIONS]).filter((x) => known.has(x))
-    for (const k of TOOL_SECTIONS) if (!base.includes(k)) base.push(k)
-    const next = base.filter((x) => x !== id)
-    if (targetId && targetId !== id) {
-      const at = next.indexOf(targetId)
-      if (at >= 0) next.splice(after ? at + 1 : at, 0, id)
-      else next.push(id)
-    } else {
-      next.push(id)
-    }
-    set({ draggingSection: null, toolDropTarget: null })
-    set({ settings: await window.yan.patchSettings({ toolOrder: next, toolHidden: hidden } as Partial<AppSettings>) })
   },
 
   /* --------------------------------------------------------------- 附件 */
@@ -1560,8 +1864,15 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
+    await get().addFileRefPaths(paths)
+  },
+
+  addFileRefPaths: async (paths) => {
+    const unique = [...new Set(paths.filter(Boolean))]
+    if (!unique.length) return
+
     /* 校验 + 登记在主进程（工作区外也允许，但只在本进程内有效） */
-    const infos = await window.yan.describeFiles(paths)
+    const infos = await window.yan.describeFiles(unique)
     const refs: Attachment[] = []
     const errors: string[] = []
     for (const info of infos) {
@@ -1639,7 +1950,25 @@ export const useStore = create<Store>((rawSet, get) => {
       const cur = get().conn
       try {
         const st = await window.yan.agentStatus()
-        if (st && st.state !== get().conn) set({ conn: st.state, connDetail: st.detail })
+        if (st && st.state !== get().conn) {
+          set({ conn: st.state, connDetail: st.detail })
+          /*
+           * 连接恢复（非 ready → ready）时必须重拉一次能力列表。
+           *
+           * 为什么：bootstrap 里那次 `reloadModels()` **并没有等 pi 就绪**
+           *（注释写着「要等 pi ready」，代码是直接发的）。那时
+           * `listModels()` 只会拿到空数组并被 catch 吞掉，而之后没有任何
+           * 地方会再拉 —— 模型菜单就永远 0 条，用户报的「看不到模型选择」。
+           * 只有切一次会话才会好，因为只有那条路径会再调 reloadModels。
+           *
+           * commands / sessions 同理：它们都依赖 pi 起来后的真实数据。
+           */
+          if (st.state === 'ready' && cur !== 'ready') {
+            void get().reloadModels()
+            void get().reloadCommands()
+            void get().refreshSessions()
+          }
+        }
       } catch {
         /* 主进程可能还没注册 handler，下一轮再来 */
       }

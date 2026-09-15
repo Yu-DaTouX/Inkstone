@@ -206,6 +206,29 @@
       if (!store.getState().settings?.toolHidden?.includes('queue')) ok('toolHidden 已移除该项')
       else bad('toolHidden 没清掉')
 
+      /* 库里的上移 / 下移（按钮，不依赖拖拽） */
+      out.push('\n=== 5b. 工具库的上移 / 下移 ===')
+      const orderNow = [...(store.getState().settings?.toolOrder ?? [])]
+      const li = orderNow.indexOf('log')
+      const upBtn = document.querySelector('[data-testid="tl-up-log"]')
+      const downBtn = document.querySelector('[data-testid="tl-down-log"]')
+      if (!upBtn || !downBtn) {
+        bad('工具库里没有上移/下移按钮')
+      } else if (li <= 0) {
+        bad('log 已在该顺序首位，无法验证上移（index=' + li + '）')
+      } else {
+        click(upBtn)
+        await sleep(700)
+        const afterUp = [...(store.getState().settings?.toolOrder ?? [])]
+        if (afterUp.indexOf('log') === li - 1) ok('上移一位（' + li + ' → ' + afterUp.indexOf('log') + '）')
+        else bad('上移无效：' + li + ' → ' + afterUp.indexOf('log'))
+        click(downBtn)
+        await sleep(700)
+        const afterDown = [...(store.getState().settings?.toolOrder ?? [])]
+        if (afterDown.indexOf('log') === li) ok('下移回到原位')
+        else bad('下移无效：' + afterDown.indexOf('log') + ' 期望 ' + li)
+      }
+
       out.push('\n=== 6. 恢复默认布局 ===')
       // 先弄乱
       await store.getState().setToolLayout({ toolOrder: [...ALL].reverse(), toolHidden: ['log'] })

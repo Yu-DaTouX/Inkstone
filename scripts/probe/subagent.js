@@ -55,6 +55,9 @@
     const id = started?.id
     ok(store.getState().notices.length === noticesBefore, '启动没有报错（没有新通知）')
     ok(!!id, `拿到 run id（${id ?? '无'}）`)
+    ok(started?.isolation === 'worktree', `默认写入任务使用独立 worktree（${started?.isolation ?? '无'}）`)
+    ok(started?.cwd && started.cwd !== store.getState().settings.cwd, '子代理 cwd 不等于主工作树')
+    ok(!!started?.parentSessionId, '记录了父会话身份')
     if (!id) return out.join('\n')
 
     /* store 应该收到 push 并渲染出紧凑列表 */

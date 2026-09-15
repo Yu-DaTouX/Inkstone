@@ -61,8 +61,40 @@
       recentCwds: all.map((x) => x.project.cwd),
       projectNames: { ...store.getState().settings.projectNames, ...projectNames }
     })
+    /*
+     * 把「当前项目」钉到指定项目。
+     *
+     * 为什么不能只改 session.cwd：Rail 的 isCurrent 判定是
+     * `activeProjectId ?? currentSummary?.projectId`（见 Rail.tsx），
+     * activeProjectId 来自运行实例、currentSummary 来自会话列表。
+     * 隔离环境里真实 runner 带着自己的 projectId，只改 session.cwd 时
+     * 「当前项目」根本不动 —— 这正是本探针之前 11 条断言全红的原因。
+     * 这里把运行实例清空并给会话列表挂上目标 projectId。
+     */
+    const pinCurrentProject = (record) => {
+      const file = 'C:/yan-probe/current.jsonl'
+      store.setState({
+        runners: [],
+        activeRunnerId: null,
+        sessions: [
+          {
+            id: 'probe-current',
+            path: file,
+            cwd: record.cwd,
+            projectId: record.id,
+            title: '探针会话',
+            named: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messageCount: 1
+          }
+        ],
+        session: { ...(store.getState().session ?? {}), cwd: record.cwd, sessionFile: file }
+      })
+    }
+
     /* 当前项目放在第一个（在前五之内） */
-    store.setState({ session: { ...(store.getState().session ?? {}), cwd: a[0].project.cwd } })
+    pinCurrentProject(a[0].project)
     await settle()
 
     out.push(`  项目总数 = ${projCount()}，分组标题 = ${JSON.stringify(groupTitles())}`)
@@ -92,7 +124,7 @@
     ok(projCount() === 5, `收起后回到 5 个（实际 ${projCount()}）`)
 
     /* ---- 当前项目在第 5 个之后：自动展开 ---- */
-    store.setState({ session: { ...(store.getState().session ?? {}), cwd: b[0].project.cwd } })
+    pinCurrentProject(b[0].project)
     await sleep(700)
     out.push(`  当前项目=乙组首个 → 显示 ${projCount()} 个`)
     ok(projCount() === expandedCount, '当前项目在默认范围之外时自动展开（能看见自己在哪）')

@@ -50,6 +50,7 @@ export function ModelThinkingPicker() {
 
   const cur = session?.model
   const level = session?.thinkingLevel ?? 'off'
+  const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
   const busy = !!session?.isStreaming || !!session?.isCompacting
 
   // 点外面 / Esc 关掉
@@ -136,9 +137,19 @@ export function ModelThinkingPicker() {
     return [...byProvider.entries()]
   }, [models, query])
 
-  if (!cur) return null
-
+  /*
+   * ⚠️ 这里曾经是 `if (!cur) return null`（用户报的「看不到模型选择」）。
+   *
+   * pi 未就绪、启动超时或凭证失效时 `session` 为 null，于是选择器**整个消失**：
+   * 用户既看不到当前模型，也失去了唯一的换模型入口 —— 而这恰恰是最需要
+   * 一个入口去排查/救援的时刻。现在改为降级渲染：触发器显示「模型未就绪」，
+   * 菜单仍可打开（列表为空时给明确空态）。
+   *
+   * 注意 `session.model` 在无凭证时是 `{id:'unknown', provider:'unknown'}`，
+   * **并不为空**；真正为空的只有 `session` 本身。
+   */
   const hasLevels = levels.length > 1
+  const showThinkingSection = hasLevels || thinkingStatus !== 'known'
 
   /** 分组扁平化 —— 键盘上下走的是这个顺序（与视觉顺序一致） */
   const flat = groups.flatMap(([, list]) => list)
@@ -159,11 +170,11 @@ export function ModelThinkingPicker() {
   const cursorKey = cursor >= 0 ? `${flat[cursor]?.provider}|${flat[cursor]?.id}` : ''
   useEffect(() => {
     if (!open) return
-    const i = flat.findIndex((m) => m.provider === cur.provider && m.id === cur.id)
+    const i = flat.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
     setCursor(i >= 0 ? i : flat.length > 0 ? 0 : -1)
     // 依赖只取「列表变了没 / 当前模型变了没」，平铺数组每次新建不能用引用
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, flat.length, query, cur.provider, cur.id])
+  }, [open, flat.length, query, cur?.provider, cur?.id])
 
   /** 高亮项滚进视野（键盘走到底时列表要跟着动） */
   const cursorEl = useRef<HTMLButtonElement | null>(null)
@@ -200,13 +211,14 @@ export function ModelThinkingPicker() {
   return (
     <div className="picker-wrap" ref={box}>
       <button
-        className={`mt-trigger ${open ? 'open' : ''}`}
+        className={`mt-trigger ${open ? 'open' : ''} ${cur ? '' : 'unknown'}`}
         onClick={() => setOpen((v) => !v)}
         disabled={busy}
-        title={busy ? t('picker.busy') : t('picker.modelTip')}
+        title={busy ? t('picker.busy') : cur ? t('picker.modelTip') : t('picker.notReadyTip')}
         data-testid="model-picker"
+        data-state={cur ? 'ready' : 'unknown'}
       >
-        <span className="mt-model">{cur.name}</span>
+        <span className="mt-model">{cur ? cur.name : t('picker.notReady')}</span>
         {hasLevels && level !== 'off' ? (
           <span className="mt-level" data-testid="thinking-badge">
             {thinkLabel(level)}
@@ -218,35 +230,45 @@ export function ModelThinkingPicker() {
       {open ? (
         <div className="mt-pop" data-testid="model-menu" style={maxH ? { maxHeight: maxH } : undefined}>
           {/* ---- 上半：档位 ---- */}
-          {hasLevels ? (
+          {showThinkingSection ? (
             <div className="mt-head">
               <div className="mt-head-row">
                 <span className="mt-head-title" title={t('picker.thinkDesc')}>{t('picker.think')}</span>
                 <span className="spacer" />
                 <span className="mt-head-level" data-testid="thinking-current">
-                  {thinkLabel(level)}
+                  {hasLevels
+                    ? thinkLabel(level)
+                    : thinkingStatus === 'unsupported'
+                      ? t('picker.thinkUnsupported')
+                      : t('picker.thinkUnknown')}
                 </span>
               </div>
 
               {/* 档位按钮：一个方块 = 一档。终端风格的等宽分段。
                   `--i` 让它们从左到右依次落位（像终端打印出来）。 */}
-              <div className="mt-stops" data-testid="thinking-stops">
-                {levels.map((l, i) => (
-                  <button
-                    key={l}
-                    style={{ '--i': i } as React.CSSProperties}
-                    className={`mt-stop ${l === level ? 'on' : ''}`}
-                    onClick={() => void setThinking(l)}
-                    disabled={busy}
-                    title={l}
-                    data-testid={`thinking-dot-${l}`}
-                    data-level={l}
-                    data-on={l === level ? '1' : '0'}
-                  >
-                    {thinkLabel(l)}
-                  </button>
-                ))}
-              </div>
+              {hasLevels ? (
+                <div className="mt-stops" data-testid="thinking-stops">
+                  {levels.map((l, i) => (
+                    <button
+                      key={l}
+                      style={{ '--i': i } as React.CSSProperties}
+                      className={`mt-stop ${l === level ? 'on' : ''}`}
+                      onClick={() => void setThinking(l)}
+                      disabled={busy}
+                      title={l}
+                      data-testid={`thinking-dot-${l}`}
+                      data-level={l}
+                      data-on={l === level ? '1' : '0'}
+                    >
+                      {thinkLabel(l)}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-capability-note" data-testid="thinking-capability-status">
+                  {thinkingStatus === 'unsupported' ? t('picker.thinkUnsupported') : t('picker.thinkUnknown')}
+                </div>
+              )}
 
               {/* 说明只在空间充裕时占位：矮窗口把高度让给模型列表（N08） */}
               {maxH > 520 ? <div className="mt-hint">{t('picker.thinkDesc')}</div> : null}
@@ -299,7 +321,9 @@ export function ModelThinkingPicker() {
 
           <div className="mt-list" ref={listRef}>
             {groups.length === 0 ? (
-              <div className="mt-empty">{t('picker.noMatch')}</div>
+              <div className="mt-empty">
+                {models.length === 0 ? t('picker.noModels') : t('picker.noMatch')}
+              </div>
             ) : (
               (() => {
                 /*
@@ -313,7 +337,7 @@ export function ModelThinkingPicker() {
                   <div key={provider} className="mt-group">
                     <div className="mt-group-head">{provider}</div>
                     {list.map((m) => {
-                      const on = m.provider === cur.provider && m.id === cur.id
+                      const on = !!cur && m.provider === cur.provider && m.id === cur.id
                       const idx = indexOf.get(`${m.provider}|${m.id}`) ?? -1
                       const isCursor = idx === cursor
                       const i = Math.min(seq++, 12)
@@ -333,6 +357,7 @@ export function ModelThinkingPicker() {
                         >
                           <span className="mt-item-name">{m.name}</span>
                           {m.reasoning ? <span className="mt-tag">{t('picker.reasoning')}</span> : null}
+                          {m.input?.includes('image') ? <span className="mt-tag">{t('picker.image')}</span> : null}
                           {on ? <Icon name="check" size={12} /> : null}
                         </button>
                       )

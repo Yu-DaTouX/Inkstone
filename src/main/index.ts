@@ -1,23 +1,24 @@
 /**
  * 主进程入口：窗口 + IPC + AgentController 的生命周期。
  *
- * 一个窗口 = 一个 AgentController = 一个 pi 子进程。
- * 会话切换走 pi 自己的 switch_session，不开新进程（进程很贵）。
+ * 一个窗口可以承载多个按 cwd/session 隔离的 AgentController；
+ * 会话切换优先复用已有实例或空闲实例，不停止仍在工作的后台会话。
  */
-import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification } from 'electron'
-import { join, dirname, basename, extname } from 'node:path'
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage } from 'electron'
+import { join, dirname, basename, extname, resolve } from 'node:path'
+import { constants as fsConstants, existsSync } from 'node:fs'
+import { access, readFile, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController } from './agent'
 import { RunnerRegistry } from './runners'
-import { cachedTitles, manualTitles, setManualTitle } from './title'
+import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
-import { listSessions, deleteSession, restoreSession } from './sessions'
+import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
+import { moveSessionLayout, rememberSession } from './session-layout'
 import { readSessionMessages } from './session-reader'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
-import { listDir } from './files'
+import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { compactionInfo } from './compaction'
@@ -25,8 +26,16 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import { localCommandDescriptors } from './command-registry'
+import { writeExitSnapshot } from './exit-snapshot'
 import { ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
-import type { Attachment, AttentionNotify, MainPush } from '../shared/ipc'
+import type {
+  Attachment,
+  AttentionNotify,
+  FileRequestContext,
+  FileSearchRequest,
+  MainPush
+} from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -157,6 +166,12 @@ try {
 
 /* 全局状态 */
 let win: BrowserWindow | null = null
+let tray: Tray | null = null
+let trayLanguage: string | undefined
+let isQuitting = false
+let exitRequestInFlight: Promise<{
+  action: 'cancelled' | 'save-and-exit' | 'interrupt-exit'
+}> | null = null
 /**
  * 会话运行实例注册表（N12）。
  *
@@ -166,6 +181,8 @@ let win: BrowserWindow | null = null
 let runners: RunnerRegistry | null = null
 let browser: BrowserController | null = null
 let subagents: SubagentController | null = null
+/** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
+const activeFileSearches = new Map<string, AbortController>()
 
 /**
  * 当前**正在查看**的会话实例。
@@ -235,12 +252,20 @@ function push(msg: MainPush): void {
  * 还是后台另一个会话的 —— 后者不得写进当前视图。
  */
 function pushFrom(runnerId: string, msg: MainPush): void {
-  push({ ...msg, sessionKey: runnerId })
+  const runtime = runners?.runtimeOf(runnerId)
+  push({
+    ...msg,
+    ...(runtime ? { runtime } : {}),
+    /* 旧探针仍读取这个字段；新代码以 runtime.runId 为准。 */
+    sessionKey: runnerId
+  })
+  if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
 }
 
 /** 把所有运行实例的状态推给渲染端（左栏状态槽） */
 function pushRunners(): void {
   push({ ch: 'runners', payload: runners?.statuses() ?? [] })
+  refreshTrayMenu()
 }
 
 /**
@@ -250,7 +275,7 @@ function pushRunners(): void {
  * 必须有一份完整快照（状态 + 消息 + 统计）作为新视图的起点。
  */
 async function pushRunnerSnapshot(id: string): Promise<void> {
-  const ag = runners?.active()
+  const ag = runners?.agentOf(id)
   if (!ag) return
   const st = ag.getState()
   if (st) pushFrom(id, { ch: 'state', payload: st })
@@ -276,6 +301,8 @@ let shuttingDown = false
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  tray?.destroy()
+  tray = null
   /*
    * 退出时必须收掉**所有**运行实例（N12）：现在可能同时有好几个
    * pi 子进程在跑，只停当前视图那个会留下孤儿进程。
@@ -287,7 +314,7 @@ async function shutdown(): Promise<void> {
   }
   /* 退出前把子代理一起收掉（方案 8.3：主任务停了，它的子任务不该变孤儿） */
   try {
-    subagents?.stopAll()
+    await subagents?.stopAll()
   } catch {
     /* 忽略 */
   }
@@ -296,6 +323,144 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 浏览器视图已死 */
   }
+}
+
+type ExitChoice = 'cancel' | 'save' | 'interrupt'
+type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' }
+
+/** live 探针用环境变量选择退出分支，真实用户仍走原生对话框。 */
+function probeExitChoice(): ExitChoice | undefined {
+  if (!process.env.YAN_PROBE) return undefined
+  const value = process.env.YAN_EXIT_CHOICE
+  return value === 'cancel' || value === 'save' || value === 'interrupt' ? value : undefined
+}
+
+function showMainWindow(): void {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+/** 真正退出应用；关闭按钮不进入这里，只负责隐藏到托盘。 */
+function requestExit(): Promise<ExitResult> {
+  if (isQuitting) return Promise.resolve({ action: 'interrupt-exit' })
+  if (exitRequestInFlight) return exitRequestInFlight
+
+  const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
+    const busy = runners?.hasBusy() === true
+    let choice = probeExitChoice()
+    if (!choice && busy && win && !win.isDestroyed()) {
+      const response = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: '退出砚',
+        message: '仍有会话正在运行。请选择退出方式。',
+        detail: '保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。',
+        buttons: ['取消', '保存并退出', '中断退出'],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true
+      })
+      choice = response.response === 2 ? 'interrupt' : response.response === 1 ? 'save' : 'cancel'
+    }
+    if (!choice) choice = 'save'
+    if (choice === 'cancel') return { action: 'cancelled' }
+
+    isQuitting = true
+    const mode = choice === 'save' ? 'save' : 'interrupt'
+    await writeExitSnapshot(mode, runners?.statuses() ?? []).catch((error) => {
+      console.error('[exit-snapshot] 写入失败：', error)
+    })
+    const action: 'save-and-exit' | 'interrupt-exit' = choice === 'save' ? 'save-and-exit' : 'interrupt-exit'
+    void shutdown().then(() => app.quit())
+    return { action }
+  })()
+
+  exitRequestInFlight = task
+  void task.then(
+    () => {
+      if (exitRequestInFlight === task) exitRequestInFlight = null
+    },
+    () => {
+      if (exitRequestInFlight === task) exitRequestInFlight = null
+    }
+  )
+  return task
+}
+
+async function createTray(): Promise<void> {
+  if (tray) return
+  const iconCandidates = [
+    join(app.getAppPath(), 'build', 'icon.png'),
+    join(__dirname_, '..', '..', 'build', 'icon.png')
+  ]
+  const iconPath = iconCandidates.find((candidate) => existsSync(candidate))
+  tray = new Tray(iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty())
+  tray.setToolTip('砚 · Yan')
+  const settings = await getSettings()
+  trayLanguage = settings.lang
+  refreshTrayMenu()
+  tray.on('click', showMainWindow)
+  tray.on('double-click', showMainWindow)
+}
+
+/**
+ * 重建托盘菜单（阶段 3）。
+ *
+ * Electron 的 Tray 菜单不是 DOM，不能让 renderer 的左栏直接复用；每次
+ * 运行实例快照变化时重建一份很小的原生菜单，保证“查看运行中的会话”
+ * 不会停留在旧状态。菜单项只携带 sessionId/cwd，不把消息正文或 token
+ * 放进系统菜单。
+ */
+function refreshTrayMenu(): void {
+  if (!tray) return
+  const zh = trayLanguage !== 'en-US'
+  const statuses = runners?.statuses() ?? []
+  const live = statuses.filter((status) => status.running || status.waiting || status.conn === 'starting')
+  const sessionItems: Electron.MenuItemConstructorOptions[] = live.length
+    ? live.map((status) => {
+        const name = status.sessionFile
+          ? basename(status.sessionFile)
+          : status.sessionId || status.id
+        const state = status.waiting
+          ? (zh ? '等待回答' : 'Waiting')
+          : status.running
+            ? (zh ? '运行中' : 'Running')
+            : (zh ? '启动中' : 'Starting')
+        return {
+          label: `${status.isActive ? '● ' : ''}${name} · ${state}`,
+          click: () => {
+            showMainWindow()
+            push({
+              ch: 'tray-select-session',
+              payload: {
+                ...(status.sessionFile ? { sessionFile: status.sessionFile } : {}),
+                ...(status.sessionId ? { sessionId: status.sessionId } : {}),
+                ...(status.projectId ? { projectId: status.projectId } : {}),
+                cwd: status.cwd
+              }
+            })
+          }
+        }
+      })
+    : [{ label: zh ? '暂无运行中的会话' : 'No running sessions', enabled: false }]
+
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: zh ? '显示砚' : 'Show Yan', click: showMainWindow },
+    {
+      label: zh ? '新建会话' : 'New session',
+      click: () => {
+        showMainWindow()
+        push({ ch: 'tray-new-session', payload: null })
+      }
+    },
+    {
+      label: zh ? '查看运行中的会话' : 'Running sessions',
+      submenu: sessionItems
+    },
+    { type: 'separator' },
+    { label: zh ? '退出砚' : 'Quit Yan', click: () => void requestExit() }
+  ]))
 }
 
 /* Agent 生命周期 */
@@ -313,6 +478,105 @@ function languageSystemPrompt(lang: string): string {
     : 'Think (reason) and reply in English, even if the user writes in another language.'
 }
 
+function projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined {
+  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+  return settings.projects.find((project) => normalize(project.cwd) === normalize(cwd))?.id
+}
+
+/**
+ * 所有会话入口共用的 cwd 边界（N05）。
+ *
+ * 不能只在设置页校验：会话列表、项目切换和旧版 switchSession 都能
+ * 直接把路径送到主进程。统一在这里确认目录存在且可访问，并返回绝对
+ * 路径，避免后续 runner 以相对路径启动到意外位置。
+ */
+async function validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { ok: false; error: string }> {
+  if (typeof cwd !== 'string' || !cwd.trim()) {
+    return { ok: false, error: '工作目录不能为空' }
+  }
+  const raw = cwd.trim()
+  const absolute = resolve(raw)
+  try {
+    const info = await stat(absolute)
+    if (!info.isDirectory()) {
+      return { ok: false, error: `工作目录不是文件夹：${raw}` }
+    }
+    await access(absolute, fsConstants.R_OK)
+    return { ok: true, cwd: absolute }
+  } catch {
+    return { ok: false, error: `工作目录不存在或不可访问：${raw}` }
+  }
+}
+
+type FileContextResult =
+  | { ok: true; context: FileRequestContext }
+  | { ok: false; context: FileRequestContext; error: string }
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeCwdForIdentity(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+/**
+ * 文件树 / @ 补全 / 全项目搜索共用的主进程边界。
+ *
+ * renderer 可以传入迟到的旧 cwd，所以不能只相信 settings.cwd；同时也不能
+ * 只相信 projectId，因为产品归属与 JSONL 的物理 cwd 允许暂时不同。这里把
+ * cwd 先验证成真实存在的目录，再检查显式 projectId 是否确实指向这棵目录。
+ */
+async function resolveFileContext(
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  fallbackCwd: string,
+  rawContext: unknown
+): Promise<FileContextResult> {
+  const raw = isObject(rawContext) ? rawContext : {}
+  const requestedCwd = typeof raw.cwd === 'string' && raw.cwd.trim() ? raw.cwd : fallbackCwd
+  const generation = typeof raw.generation === 'number' && Number.isFinite(raw.generation)
+    ? Math.max(0, Math.floor(raw.generation))
+    : 0
+  const projectId = typeof raw.projectId === 'string' && raw.projectId.trim()
+    ? raw.projectId.trim().slice(0, 160)
+    : undefined
+  const provisional: FileRequestContext = {
+    cwd: requestedCwd,
+    generation,
+    ...(projectId ? { projectId } : {})
+  }
+  const checked = await validateCwd(requestedCwd)
+  if (!checked.ok) return { ok: false, context: provisional, error: checked.error }
+
+  if (projectId) {
+    const project = settings.projects.find((item) => item.id === projectId)
+    if (!project) return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目不存在或已被移除' }
+    if (normalizeCwdForIdentity(project.cwd) !== normalizeCwdForIdentity(checked.cwd)) {
+      return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目与工作目录不匹配' }
+    }
+  }
+
+  return { ok: true, context: { ...provisional, cwd: checked.cwd } }
+}
+
+/** 运行实例切换成功后记录产品归属；物理会话文件仍由 pi 管理。 */
+async function rememberRunnerSession(
+  result: { ok: boolean; id?: string; sessionId?: string },
+  target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
+): Promise<void> {
+  if (!result.ok || !result.sessionId) return
+  const state = result.id ? runners?.agentOf(result.id)?.getState() : undefined
+  await rememberSession({
+    sessionId: result.sessionId,
+    sessionFile: state?.sessionFile ?? target.sessionFile,
+    cwd: state?.cwd ?? target.cwd,
+    ...(target.projectId ? { projectId: target.projectId } : {}),
+    ...(target.scope ? { scope: target.scope } : {})
+  }).catch((error) => {
+    console.error('[session-layout] 记录会话归属失败：', error)
+  })
+}
+
 /**
  * 启动 pi 的**单飞**（single-flight）锁。
  *
@@ -323,6 +587,13 @@ function languageSystemPrompt(lang: string): string {
  * 串行化后同一时刻只会有一个启动流程，旧实例不会再反过来污染状态。
  */
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
+/**
+ * 一个 pi 进程的系统提示在启动时固定。语言切换不重启现有 runner：
+ * 它们继续完成当前任务；之后创建的新 runner 使用这个最新值。
+ */
+let agentLanguage: string | undefined
+/** 当前设置的回复详细程度；每个 Agent 回合自己在 agent_start 时取快照。 */
+let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
 
 function startAgent(): Promise<{ ok: boolean; error?: string }> {
   if (starting) return starting
@@ -334,14 +605,13 @@ function startAgent(): Promise<{ ok: boolean; error?: string }> {
 
 async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
   if (runners?.active()?.running) return { ok: true }
-  /*
-   * 重建整套实例集合：旧的子代理跑在旧 cwd / 旧语言提示上，
-   * 继续留着只会让界面里出现“看起来还在跑但环境已经变了”的记录。
-   */
+  /* 重新建立主 runner 集合时，所有新进程都读取当前设置。 */
   await runners?.stopAll()
-  subagents?.stopAll()
+  await subagents?.stopAll()
 
   const settings = await getSettings()
+  agentLanguage = settings.lang
+  agentResponseDetail = settings.responseDetail
 
   runners = new RunnerRegistry({
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
@@ -353,13 +623,16 @@ async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
         browserExtension: browserExtensionPath(),
         questionExtension: questionExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
+        getResponseDetail: () => agentResponseDetail,
         browserEnv: browser?.bridgeEnv(),
-        appendSystemPrompt: languageSystemPrompt(settings.lang)
+        appendSystemPrompt: languageSystemPrompt(agentLanguage ?? settings.lang)
       }),
     onChanged: () => pushRunners()
   })
 
-  const res = await runners.startPrimary(settings.cwd)
+  const projectId = projectIdForCwd(settings, settings.cwd)
+  const res = await runners.startPrimary(settings.cwd, undefined, projectId)
+  await rememberRunnerSession(res, { cwd: settings.cwd, projectId, scope: 'project' })
   pushRunners()
   return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
@@ -367,8 +640,9 @@ async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
 /**
  * 重启 pi 子进程，并把当前会话接回来（不丢历史）。
  *
- * 触发场景：切换界面语言（`--append-system-prompt` 变了）、应用内登录 ChatGPT
- * （pi 只在**启动时**读 auth.json，长跑的进程不会因为文件变了就重读）。
+ * 触发场景：应用内登录 ChatGPT（pi 只在**启动时**读 auth.json，长跑的进程
+ * 不会因为文件变了就重读）。语言切换不走这条路径，因为它不应为刷新提示
+ * 重建或中断其它会话；新 runner 会从 `agentLanguage` 读取最新语言。
  *
  * ⚠️ 一定要等**这一轮跑完**再重启：跑的时候重启会直接掐断正在生成的内容。
  *    所以忙的时候每隔一会儿再试，直到空闲（最多等 ~5 分钟）。
@@ -465,7 +739,8 @@ function registerIpc(): void {
 
   handle('yan:steer', async (text: string) => ac()?.steer(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:steerQueued', async (text: string) => ac()?.steerQueued(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
     const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
@@ -507,16 +782,58 @@ function registerIpc(): void {
     }
   })
 
-  handle('yan:newSession', async () => {
+  /**
+   * 移动项目语义归属：只写 session-layout.json，不移动 JSONL，也不停止 runner。
+   * null 表示 Yan 默认全局位置；目标项目必须是设置里的稳定 projectId。
+   */
+  handle('yan:moveSession', async (sessionId: string, projectId: string | null) => {
+    const settings = await getSettings()
+    if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
+      return { ok: false, error: '目标项目不存在或已被移除' }
+    }
+    const summaries = await listSessions(500, settings.projects)
+    const summary = summaries.find((item) => item.id === sessionId)
+    if (!summary) return { ok: false, error: '找不到要移动的会话' }
+    try {
+      const entry = await moveSessionLayout(
+        { sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd },
+        projectId
+      )
+      return { ok: true, entry }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  handle('yan:newSession', async (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => {
+    const settings = await getSettings()
+    const cwdResult = await validateCwd(target?.cwd ?? settings.cwd)
+    if (!cwdResult.ok) return cwdResult
     if (!runners) {
       const r = await startAgent()
       if (!r.ok) return r
     }
-    const settings = await getSettings()
-    const res = await runners!.select({ cwd: settings.cwd })
+    if (target?.projectId && !settings.projects.some((project) => project.id === target.projectId)) {
+      return { ok: false, error: '目标项目不存在或已被移除' }
+    }
+    const cwd = cwdResult.cwd
+    const projectId = target?.scope === 'global'
+      ? undefined
+      : (target?.projectId ?? (target?.scope === 'pending' ? undefined : projectIdForCwd(settings, cwd)))
+    const scope = target?.scope ?? (projectId ? 'project' : 'global')
+    const res = await runners!.select({ cwd, projectId, scope })
+    await rememberRunnerSession(res, { cwd, projectId, scope })
     if (res.ok && res.id) void pushRunnerSnapshot(res.id)
     pushRunners()
-    return res.ok ? { ok: true, id: res.id } : { ok: false, error: res.error }
+    return res.ok
+      ? {
+          ok: true,
+          id: res.id,
+          runId: res.runId,
+          sessionId: res.sessionId,
+          generation: res.generation
+        }
+      : { ok: false, error: res.error }
   })
 
   /**
@@ -527,12 +844,29 @@ function registerIpc(): void {
    */
   handle(
     'yan:selectSession',
-    async (target: { sessionFile?: string; cwd: string }) => {
+    async (target: { sessionFile?: string; sessionId?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }) => {
+      const cwdResult = await validateCwd(target.cwd)
+      if (!cwdResult.ok) return cwdResult
       if (!runners) {
         const r = await startAgent()
         if (!r.ok) return r
       }
-      const res = await runners!.select(target)
+      const settings = await getSettings()
+      /* global 是显式产品归属，不能因为物理 cwd 恰好落在项目里就被重新吸回。 */
+      const projectId = target.scope === 'global'
+        ? undefined
+        : (target.projectId ?? (target.scope === 'pending' ? undefined : projectIdForCwd(settings, cwdResult.cwd)))
+      const res = await runners!.select({
+        ...target,
+        cwd: cwdResult.cwd,
+        projectId
+      })
+      await rememberRunnerSession(res, {
+        ...target,
+        cwd: cwdResult.cwd,
+        projectId,
+        scope: target.scope ?? (projectId ? 'project' : 'global')
+      })
       if (res.ok && res.id) void pushRunnerSnapshot(res.id)
       pushRunners()
       return res
@@ -553,7 +887,15 @@ function registerIpc(): void {
   handle('yan:switchSession', async (path: string) => {
     if (!runners) return { ok: false, error: 'pi 未运行' }
     const settings = await getSettings()
-    const res = await runners.select({ sessionFile: path, cwd: settings.cwd })
+    const cwdResult = await validateCwd(settings.cwd)
+    if (!cwdResult.ok) return cwdResult
+    const res = await runners.select({ sessionFile: path, cwd: cwdResult.cwd })
+    await rememberRunnerSession(res, {
+      sessionFile: path,
+      cwd: cwdResult.cwd,
+      projectId: projectIdForCwd(settings, cwdResult.cwd),
+      scope: 'project'
+    })
     if (res.ok && res.id) void pushRunnerSnapshot(res.id)
     pushRunners()
     return res.ok ? { ok: true } : { ok: false, error: res.error }
@@ -568,7 +910,7 @@ function registerIpc(): void {
   )
   handle('yan:setThinking', async (level: string) => ac()?.setThinking(level) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
-  handle('yan:listCommands', async () => ac()?.listCommands() ?? [])
+  handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
 
   /* ---- 开关 ---- */
   handle(
@@ -651,9 +993,45 @@ function registerIpc(): void {
     await setManualTitle(String(sessionId ?? ''), String(name ?? ''))
     return { ok: true }
   })
+  handle('yan:regenerateTitle', async (sessionId: string) => {
+    const sid = String(sessionId ?? '').trim()
+    if (!sid) return { ok: false, error: '缺少目标会话' }
+
+    /*
+     * 运行中的目标交给它自己的 AgentController：不能切当前视图，也不能把
+     * 标题请求塞进主对话。非运行会话则只读 JSONL 的首尾用户消息，起一个
+     * --no-session 的独立归纳进程；两条路径都按稳定 sessionId 归属结果。
+     */
+    const live = runners?.agentForSession(sid)
+    if (live) return live.regenerateTitle()
+
+    const settings = await getSettings()
+    const session = (await listSessions(500, settings.projects)).find((item) => item.id === sid)
+    if (!session) return { ok: false, error: '找不到目标会话，可能已被删除' }
+
+    const samples = await readTitleSamples(session.path)
+    if (!samples.length) return { ok: false, error: '该会话没有可用的用户文字，已保留原标题' }
+
+    const manual = (await manualTitles())[sid]
+    const result = await generateTitle({
+      sessionId: sid,
+      samples,
+      cwd: session.cwd || process.cwd(),
+      piBin: settings.piBin,
+      force: true,
+      allowManual: !!manual,
+      persist: !manual
+    })
+    if (!result?.title) return { ok: false, error: '标题生成失败，已保留原标题' }
+    if (!manual) push({ ch: 'session-title', payload: { sessionId: sid, title: result.title } })
+    return { ok: true, title: result.title }
+  })
   handle('yan:getCustomEntries', async () => ac()?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => ac()?.refreshTodos() ?? [])
-  handle('yan:listSessions', async () => listSessions())
+  handle('yan:listSessions', async () => {
+    const settings = await getSettings()
+    return listSessions(200, settings.projects)
+  })
 
   /**
    * 快速预览一个会话的消息 —— **直接读文件，不问 pi**。
@@ -705,9 +1083,13 @@ function registerIpc(): void {
    *  文件引用补全 —— 只读一层目录（不递归扫项目）。
    * 以 cwd 为根；拒绝跳出 cwd 的路径。
    */
-  handle('yan:completePath', async (prefix: string) => {
+  handle('yan:completePath', async (prefix: string, requestedCwd?: string, rawContext?: unknown) => {
     const st = await getSettings()
-    return completePath(st.cwd, String(prefix ?? ''))
+    const resolved = await resolveFileContext(st, typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : st.cwd, rawContext)
+    if (!resolved.ok) {
+      return { paths: [], truncated: false, status: 'invalid' as const, request: resolved.context }
+    }
+    return completePath(resolved.context.cwd, String(prefix ?? ''), resolved.context)
   })
 
   /* ---- 设置 ---- */  handle('yan:getSettings', async () => {
@@ -717,10 +1099,22 @@ function registerIpc(): void {
   handle('yan:patchSettings', async (patch: Record<string, unknown>) => {
     const before = await getSettings()
     const next = await patchSettings(patch as never)
-    /* 语言影响 pi 的系统提示（推理/回复语言），需要重启子进程才能生效 */
+    /*
+     * 语言提示在 pi 启动时固定。只更新新建实例的工厂值，已有 runner
+     * 继续完成自己的回合；这样不会为了设置变化中断后台会话。
+     */
     if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
-      void restartAgent('语言切换')
+      agentLanguage = next.lang
+      trayLanguage = next.lang
+      refreshTrayMenu()
+      push({
+        ch: 'log',
+        payload: {
+          text: `[语言] 已切换为 ${next.lang}；现有会话不中断，新建运行实例将使用新语言提示。`
+        }
+      })
     }
+    if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
     return next
   })
 
@@ -868,9 +1262,11 @@ function registerIpc(): void {
      * 所以这里只更新设置里的当前项目；视图切换由渲染端显式调
      * `yan:selectSession`（它知道该项目最近访问的会话）。
      */
-    await patchSettings({ cwd })
+    const cwdResult = await validateCwd(cwd)
+    if (!cwdResult.ok) return cwdResult
+    await patchSettings({ cwd: cwdResult.cwd })
     if (starting) await starting
-    return { ok: true }
+    return { ok: true, cwd: cwdResult.cwd }
   })
 
   /* ---- 窗口 ---- */
@@ -880,6 +1276,12 @@ function registerIpc(): void {
     win.isMaximized() ? win.unmaximize() : win.maximize()
   })
   ipcMain.on('win:close', () => win?.close())
+  rawHandle('win:requestExit', async () => requestExit())
+  rawHandle('win:lifecycle', () => ({
+    tray: tray !== null,
+    visible: !!win && !win.isDestroyed() && win.isVisible(),
+    quitting: isQuitting
+  }))
 
   /**
    * 置顶开关。
@@ -912,15 +1314,63 @@ function registerIpc(): void {
   handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
   handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
   /* 只读预览（消息里的文件链接）：相对路径按**当前会话 cwd** 解析 */
-  handle('yan:readPreview', async (p: string, line?: number) => {
+  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string) => {
     const s = await getSettings()
-    return readPreview(String(p ?? ''), s.cwd, typeof line === 'number' ? line : undefined)
+    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
+    return readPreview(String(p ?? ''), cwd, typeof line === 'number' ? line : undefined)
   })
 
   /* ---- 文件树 ---- */
-  rawHandle('yan:listDir', async (_e, rel: unknown, showHidden: unknown) => {
+  rawHandle('yan:listDir', async (_e, rel: unknown, showHidden: unknown, rawContext: unknown) => {
     const s = await getSettings()
-    return listDir(s.cwd, typeof rel === 'string' ? rel : '', showHidden === true)
+    const context = isObject(rawContext) ? rawContext : undefined
+    const requestedCwd = context && typeof context.cwd === 'string' ? context.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, context)
+    if (!resolved.ok) {
+      return {
+        path: typeof rel === 'string' ? rel : '',
+        abs: '',
+        entries: [],
+        skipped: [],
+        truncated: false,
+        status: 'invalid' as const,
+        error: resolved.error,
+        request: resolved.context
+      }
+    }
+    return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
+  })
+  rawHandle('yan:searchFiles', async (_e, rawRequest: unknown) => {
+    const s = await getSettings()
+    const input = isObject(rawRequest) ? rawRequest : {}
+    const requestId = typeof input.requestId === 'string' ? input.requestId.trim().slice(0, 160) : ''
+    const query = typeof input.query === 'string' ? input.query.slice(0, 240) : ''
+    const requestedCwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, input)
+    const request: FileSearchRequest = {
+      ...resolved.context,
+      requestId,
+      query,
+      ...(typeof input.limit === 'number' && Number.isFinite(input.limit) ? { limit: input.limit } : {})
+    }
+    if (!resolved.ok) {
+      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
+    }
+    if (!requestId) {
+      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
+    }
+    activeFileSearches.get(requestId)?.abort()
+    const controller = new AbortController()
+    activeFileSearches.set(requestId, controller)
+    try {
+      return await searchFiles(request, controller.signal)
+    } finally {
+      if (activeFileSearches.get(requestId) === controller) activeFileSearches.delete(requestId)
+    }
+  })
+  rawHandle('yan:cancelFileSearch', async (_e, rawRequestId: unknown) => {
+    if (typeof rawRequestId !== 'string') return
+    activeFileSearches.get(rawRequestId)?.abort()
   })
 
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
@@ -944,16 +1394,33 @@ function registerIpc(): void {
     return subagents
   }
   handle('yan:subagents:list', async () => (await subagentCtrl()).list())
-  handle('yan:subagents:start', async (task: string, model?: string) =>
-    (await subagentCtrl()).start(String(task ?? ''), typeof model === 'string' ? model : undefined)
-  )
+  handle('yan:subagents:start', async (task: string, model?: string, isolation?: string) => {
+    const ctrl = await subagentCtrl()
+    const settings = await getSettings()
+    const state = ac()?.getState()
+    const active = runners?.activeRunner()
+    const runtime = active?.id ? runners?.runtimeOf(active.id) : null
+    const projectId = state?.cwd ? projectIdForCwd(settings, state.cwd) : undefined
+    ctrl.setContext({
+      cwd: state?.cwd ?? active?.cwd ?? settings.cwd,
+      /* 空白新会话在 pi 首次写入前可能还没有 sessionId；runtime 的
+       * pending:<runId> 是可追踪的明确占位，不把父子关系丢掉。 */
+      parentSessionId: state?.sessionId || runtime?.sessionId,
+      parentRunId: active?.id,
+      projectId
+    })
+    const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : 'worktree'
+    return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
+  })
   handle('yan:subagents:stop', async (id: string) => (await subagentCtrl()).stop(String(id ?? '')))
   handle('yan:subagents:stopAll', async () => {
-    ;(await subagentCtrl()).stopAll()
+    await (await subagentCtrl()).stopAll()
   })
   handle('yan:subagents:clear', async () => {
     ;(await subagentCtrl()).clearFinished()
   })
+  handle('yan:subagents:merge', async (id: string) => (await subagentCtrl()).merge(String(id ?? '')))
+  handle('yan:subagents:discard', async (id: string) => (await subagentCtrl()).discard(String(id ?? '')))
 
   /* ---- 内置浏览器 ---- */
   rawHandle('yan:browser:getState', () => browser?.getState() ?? {
@@ -982,6 +1449,12 @@ function registerIpc(): void {
     browser?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
   )
   rawHandle('yan:browser:syncPageStorage', () => browser?.syncPageStorage() ?? Promise.reject(new Error('浏览器未初始化')))
+  rawHandle('yan:browser:setPermission', (_e, permission: string, origin: string, allowed: boolean) =>
+    browser?.setPermission(String(permission ?? ''), String(origin ?? ''), Boolean(allowed)) ?? {
+      ok: false,
+      error: '浏览器未初始化'
+    }
+  )
   rawHandle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
   rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browser?.setBounds(bounds)
@@ -1052,6 +1525,13 @@ function createWindow(): void {
       contextIsolation: true,
       spellcheck: false
     }
+  })
+
+  // 关闭按钮只收起窗口，托盘菜单才会触发真正的退出流程。
+  win.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    win?.hide()
   })
 
   /*
@@ -1412,6 +1892,7 @@ app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
   await browser.startBridge()
   registerIpc()
+  await createTray()
   createWindow()
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」

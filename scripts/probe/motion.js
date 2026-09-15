@@ -141,14 +141,18 @@
   /* ================= 5. 减少动效 ================= */
   out.push('')
   out.push('=== 5. prefers-reduced-motion 的处理 ===')
-  // 找一条 reduced-motion 规则，确认它把时长压到 1ms 而不是 animation:none
-  let found = null
+  // 找 reduced-motion 规则，确认时长被压到 1ms 而不是 animation:none
+  // ⚠️ 不能只留「最后一个」匹配值：motion.css 里有**多个** reduced-motion 块，
+  //    后面的块用 `animation: none !important`（不写 duration），会把结果读成 auto
+  //    —— 本场景因此曾假失败。要收集全部取值，确认**存在** 1ms 的那条规则。
+  const durations = new Set()
   for (const sheet of document.styleSheets) {
     try {
       for (const rule of sheet.cssRules) {
         if (rule.type === CSSRule.MEDIA_RULE && rule.conditionText?.includes('prefers-reduced-motion')) {
           for (const inner of rule.cssRules) {
-            if (inner.style?.animationDuration) found = inner.style.animationDuration
+            const d = inner.style?.animationDuration
+            if (d) durations.add(d)
           }
         }
       }
@@ -156,8 +160,12 @@
       /* 跨域表读不到 */
     }
   }
-  out.push('  reduced-motion 里的 animation-duration = ' + (found ?? '(没找到)'))
-  ok(found === '1ms', '减少动效时把时长压到 1ms（不是 animation:none —— 那会造成空窗）')
+  const durationList = [...durations]
+  out.push('  reduced-motion 里出现的 animation-duration = ' + JSON.stringify(durationList))
+  ok(
+    durationList.includes('1ms'),
+    '减少动效时存在把时长压到 1ms 的规则（不是 animation:none —— 那会造成空窗）'
+  )
 
   /* ================= 6. 回合段落有自己的动画 ================= */
   out.push('')

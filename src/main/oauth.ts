@@ -176,10 +176,6 @@ async function exchangeCode(code: string, verifier: string): Promise<CodexLoginR
 /** 同一时刻只允许一次登录（端口只有一个，且避免两套 PKCE 互相踩）。 */
 let active: { cancel: () => void } | null = null
 
-export function codexLoginInFlight(): boolean {
-  return active !== null
-}
-
 /** 界面上的「取消」—— 让等待中的 Promise 立刻返回，端口随之释放。 */
 export function cancelCodexLogin(): void {
   active?.cancel()

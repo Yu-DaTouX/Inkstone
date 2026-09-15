@@ -22,9 +22,19 @@
  *   · 不把子任务的用量计入父会话（父工具汇总与子会话重复计费是坑）。
  */
 import { randomBytes } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { YAN_DIR } from './paths'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, type PiMessage } from './normalize'
 import { PiRpc } from './protocol'
+import {
+  applyPatch,
+  cleanupWorkspace,
+  collectDiff,
+  prepareWorkspace,
+  type PreparedWorkspace
+} from './subagent-isolation'
 
 /** 同时最多跑几个（方案 8.4 建议首期 2 个） */
 const MAX_CONCURRENT = 2
@@ -38,11 +48,19 @@ interface Run extends SubagentRun {
   timer: NodeJS.Timeout
   /** 收到过 agent_settled / agent_end 就认为这一轮结束 */
   settled: boolean
+  workspace: PreparedWorkspace
+  finalizing?: Promise<void>
 }
 
 export interface SubagentOptions {
+  /** 父会话当前工作目录；写入任务不会直接使用它。 */
   cwd: string
   piBin?: string
+  parentSessionId?: string
+  parentRunId?: string
+  projectId?: string
+  /** 退出 / 重启时的可恢复补丁目录。 */
+  archiveDir?: string
   /** 传给子进程的扩展（默认不传：子代理不需要浏览器/提问扩展） */
   extensions?: string[]
   /** 追加系统提示（例如「你是子代理，目标明确、少寒暄」） */
@@ -60,18 +78,33 @@ export class SubagentController {
     this.opts = opts
   }
 
+  /**
+   * 子代理属于启动它的父会话。切换查看对象不会改已有 run 的归属，
+   * 但下一次 `/subagent` 应使用新的当前会话 / cwd。
+   */
+  setContext(context: { cwd: string; parentSessionId?: string; parentRunId?: string; projectId?: string }): void {
+    this.opts = { ...this.opts, ...context }
+  }
+
   /** 对外只暴露纯数据（不能把 PiRpc 实例推给渲染端） */
   private snapshot(run: Run): SubagentRun {
     return {
       id: run.id,
       task: run.task,
       cwd: run.cwd,
+      parentSessionId: run.parentSessionId,
+      parentRunId: run.parentRunId,
+      projectId: run.projectId,
+      isolation: run.isolation,
+      resultPath: run.resultPath,
       model: run.model,
       status: run.status,
       startedAt: run.startedAt,
       endedAt: run.endedAt,
       latestActivity: run.latestActivity,
       transcript: run.transcript,
+      diff: run.diff,
+      review: run.review,
       error: run.error
     }
   }
@@ -97,12 +130,18 @@ export class SubagentController {
   clearFinished(): void {
     for (const [id, run] of [...this.runs]) {
       if (run.status === 'running' || run.status === 'starting') continue
+      /* 未审阅的 worktree 不能被“清除已结束”悄悄丢掉。 */
+      if (run.review === 'pending' || run.review === 'conflict') continue
       this.runs.delete(id)
       this.opts.onRemove?.(id)
     }
   }
 
-  async start(task: string, model?: string): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
+  async start(
+    task: string,
+    model?: string,
+    isolation: 'worktree' | 'controlled-cwd' = 'worktree'
+  ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const text = task.trim()
     if (!text) return { ok: false, error: '任务描述为空' }
     if (this.runningCount >= MAX_CONCURRENT) {
@@ -110,8 +149,15 @@ export class SubagentController {
     }
 
     const id = `sub-${randomBytes(4).toString('hex')}`
+    let workspace: PreparedWorkspace
+    try {
+      workspace = await prepareWorkspace(this.opts.cwd, id, isolation)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+
     const rpc = new PiRpc({
-      cwd: this.opts.cwd,
+      cwd: workspace.cwd,
       piBin: this.opts.piBin,
       args: [
         ...this.opts.extensions?.flatMap((p) => ['--extension', p]) ?? [],
@@ -131,13 +177,19 @@ export class SubagentController {
     const run: Run = {
       id,
       task: text,
-      cwd: this.opts.cwd,
+      cwd: workspace.cwd,
+      parentSessionId: this.opts.parentSessionId,
+      parentRunId: this.opts.parentRunId,
+      projectId: this.opts.projectId,
+      isolation: workspace.isolation,
       model,
       status: 'starting',
       startedAt: Date.now(),
       latestActivity: '启动中…',
       transcript: [],
+      review: 'none',
       rpc,
+      workspace,
       settled: false,
       /* 占位，下面立刻覆盖 */
       timer: setTimeout(() => undefined, 0)
@@ -153,6 +205,7 @@ export class SubagentController {
         run.error = run.error ?? 'pi 子进程提前退出'
         run.endedAt = Date.now()
         this.emit(run)
+        void this.finalize(run, false)
       }
     })
 
@@ -189,34 +242,167 @@ export class SubagentController {
     const run = this.runs.get(id)
     if (!run) return { ok: false, error: '找不到这个子代理' }
     if (run.status !== 'running' && run.status !== 'starting') return { ok: true }
+    await this.stopRun(run, false)
+    return { ok: true }
+  }
+
+  private async stopRun(run: Run, cleanupReview: boolean): Promise<void> {
     try {
       await run.rpc.command('abort')
     } catch {
       /* abort 失败也要把进程收掉 */
     }
     clearTimeout(run.timer)
-    void run.rpc.close()
+    await run.rpc.close()
     run.status = 'cancelled'
     run.endedAt = Date.now()
     run.latestActivity = '已停止'
     this.emit(run)
-    return { ok: true }
+    await this.finalize(run, cleanupReview)
   }
 
-  stopAll(): void {
-    for (const id of this.runs.keys()) void this.stop(id)
+  /**
+   * 退出 / 重启时必须等待所有 pi 子进程和 worktree 收口。
+   * 有未审阅修改的任务会先落一份补丁归档，再删除临时 worktree，避免
+   * 退出留下孤儿进程或孤儿目录，同时保留可追溯结果。
+   */
+  async stopAll(): Promise<void> {
+    const runs = [...this.runs.values()]
+    for (const run of runs) {
+      if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true)
+      else await this.finalize(run, true)
+    }
   }
 
   private async fail(id: string, message: string): Promise<void> {
     const run = this.runs.get(id)
     if (!run) return
     clearTimeout(run.timer)
-    void run.rpc.close()
+    await run.rpc.close()
     run.status = run.status === 'cancelled' ? 'cancelled' : 'error'
     run.error = message
     run.endedAt = Date.now()
     run.latestActivity = message
     this.emit(run)
+    await this.finalize(run, false)
+  }
+
+  /**
+   * 结束后读取隔离 worktree 的摘要。普通结束保留 worktree 给用户审阅；
+   * 退出/重启则把补丁保留在 YAN_DIR/subagents 后清掉 worktree。
+   */
+  private async finalize(run: Run, cleanupReview: boolean): Promise<void> {
+    if (run.finalizing) return run.finalizing
+    run.finalizing = (async () => {
+      try {
+        const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+        const collected = await collectDiff(run.workspace, archiveDir, run.id)
+        run.diff = collected.summary
+        const changed = collected.summary.files > 0
+
+        if (run.isolation === 'worktree' && changed) {
+          if (cleanupReview) {
+            run.review = 'archived'
+            run.resultPath = collected.patchPath ?? run.workspace.worktreePath
+            await cleanupWorkspace(run.workspace)
+          } else {
+            run.review = 'pending'
+            run.resultPath = run.workspace.worktreePath
+          }
+        } else {
+          run.review = 'none'
+          run.resultPath = collected.patchPath
+          await cleanupWorkspace(run.workspace)
+        }
+
+        await this.writeMetadata(run, collected.patchPath)
+      } catch (error) {
+        /* 差异读取失败时保留 worktree，不把用户改动当成“无改动”清掉。 */
+        run.review = run.isolation === 'worktree' ? 'conflict' : 'none'
+        run.error = run.error ?? `读取子代理差异失败：${error instanceof Error ? error.message : String(error)}`
+        run.resultPath = run.workspace.worktreePath
+        await this.writeMetadata(run)
+      }
+      this.emit(run)
+    })()
+    return run.finalizing
+  }
+
+  private async writeMetadata(run: Run, patchPath?: string): Promise<void> {
+    try {
+      const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+      await mkdir(archiveDir, { recursive: true })
+      await writeFile(
+        join(archiveDir, `${run.id}.json`),
+        JSON.stringify(
+          {
+            id: run.id,
+            task: run.task,
+            parentSessionId: run.parentSessionId,
+            parentRunId: run.parentRunId,
+            projectId: run.projectId,
+            rootCwd: run.workspace.rootCwd,
+            isolation: run.isolation,
+            status: run.status,
+            review: run.review,
+            startedAt: run.startedAt,
+            endedAt: run.endedAt,
+            diff: run.diff,
+            patchPath: patchPath ?? run.diff?.patchPath,
+            resultPath: run.resultPath
+          },
+          null,
+          2
+        ),
+        'utf8'
+      )
+    } catch {
+      /* 归档失败不能让已经完成的子代理变成未处理异常。 */
+    }
+  }
+
+  async merge(id: string): Promise<{ ok: boolean; error?: string }> {
+    const run = this.runs.get(id)
+    if (!run) return { ok: false, error: '找不到这个子代理' }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，结束后才能合并' }
+    if (run.review === 'merged') return { ok: true }
+    const patchPath = run.diff?.patchPath
+    if (!patchPath || !run.diff?.files) {
+      run.review = 'merged'
+      await cleanupWorkspace(run.workspace)
+      this.emit(run)
+      return { ok: true }
+    }
+
+    const res = await applyPatch(run.workspace.rootCwd, patchPath)
+    if (!res.ok) {
+      run.review = 'conflict'
+      run.error = res.error
+      await this.writeMetadata(run, patchPath)
+      this.emit(run)
+      return res
+    }
+
+    run.review = 'merged'
+    run.resultPath = patchPath
+    run.error = undefined
+    await cleanupWorkspace(run.workspace)
+    await this.writeMetadata(run, patchPath)
+    this.emit(run)
+    return { ok: true }
+  }
+
+  async discard(id: string): Promise<{ ok: boolean; error?: string }> {
+    const run = this.runs.get(id)
+    if (!run) return { ok: false, error: '找不到这个子代理' }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，先停止它' }
+    run.review = 'discarded'
+    /* 补丁归档保留，但隔离 worktree 明确删除；主工作树不受影响。 */
+    run.resultPath = run.diff?.patchPath
+    await cleanupWorkspace(run.workspace)
+    await this.writeMetadata(run, run.diff?.patchPath)
+    this.emit(run)
+    return { ok: true }
   }
 
   private async waitReady(rpc: PiRpc, timeoutMs: number): Promise<boolean> {
@@ -266,6 +452,7 @@ export class SubagentController {
       run.endedAt = Date.now()
       run.latestActivity = '已完成'
       this.emit(run)
+      void this.finalize(run, false)
     }
   }
 }

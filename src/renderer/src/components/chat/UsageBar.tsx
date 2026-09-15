@@ -26,6 +26,13 @@ import { ModelThinkingPicker } from '../Pickers'
  *   又实测过「字符数 ÷ 时间」不可靠（tokens/char 在 0.4~93 之间跳，
  *   因为 output 含 thinking 与工具参数）。所以拿不到就显示「生成中 Ns」，
  *   而不是编一个看着精确的假数字。
+ *
+ * ⚠️ **模型 + 思考强度选择器就挂在本组件内部**（`Pickers.tsx` 的 `ModelThinkingPicker`，
+ *   由下方 `.picker-wrap` 渲染），它不是一个独立控件 —— 调用链是
+ *   `Composer.tsx` → `UsageBar` → `Pickers.tsx`。所以「模型菜单打不开 / 看不到选择」
+ *   这类问题要从这里查：pi 未就绪（`session` 为 null）时本组件**必须降级渲染**、
+ *   保留选择器（`data-state="no-usage"`），不能整条 `return null` —— 用户报过的
+ *   「看不到模型选择」就是本组件与 `Pickers` 各有一道 `return null` 叠加造成的。
  */
 export function UsageBar() {
   const t = useT()
@@ -79,8 +86,20 @@ export function UsageBar() {
   const doneSpeed = !streaming ? last?.speed : undefined
   const speed = liveSpeed ?? doneSpeed
 
-  // 一点信息都没有就不占位
-  if (!session?.model && !u) return null
+  /*
+   * 一点用量信息都没有时，原来整条不渲染（`return null`）—— 但那会
+   * **连模型选择器一起藏掉**：pi 未就绪 / 启动超时 / 凭证失效时 session 为 null，
+   * 用户既看不到当前状态，也没有入口去换模型（用户报的「看不到模型选择」）。
+   * 所以降级为只渲染「模型」入口，不铺一排空用量项。
+   */
+  if (!session?.model && !u) {
+    return (
+      <div className="usagebar" data-testid="usagebar" data-state="no-usage">
+        <span className="spacer" />
+        <ModelThinkingPicker />
+      </div>
+    )
+  }
 
   return (
     <div className="usagebar" data-testid="usagebar">

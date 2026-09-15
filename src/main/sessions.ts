@@ -10,8 +10,9 @@
 import { readdir, stat, open, mkdir, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { SessionSummary } from '../shared/ipc'
+import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { decorateSessions } from './session-layout'
 
 /**
  * 会话目录。
@@ -68,8 +69,8 @@ function decodeDirName(name: string): string | null {
   return inner.replace(/-/g, '\\')
 }
 
-/** 从一行 JSON 里安全取 title */
-function titleFromMessage(msg: unknown): string | null {
+/** 从一行 JSON 里安全取用户文字；不会读 tool / assistant 内容。 */
+function userMessageText(msg: unknown): string | null {
   if (!msg || typeof msg !== 'object') return null
   const m = msg as { role?: string; content?: unknown }
   if (m.role !== 'user') return null
@@ -78,12 +79,14 @@ function titleFromMessage(msg: unknown): string | null {
   if (typeof m.content === 'string') {
     text = m.content
   } else if (Array.isArray(m.content)) {
+    const parts: string[] = []
     for (const part of m.content) {
       if (part && typeof part === 'object' && (part as { type?: string }).type === 'text') {
-        text = String((part as { text?: unknown }).text ?? '')
-        break
+        const value = String((part as { text?: unknown }).text ?? '').trim()
+        if (value) parts.push(value)
       }
     }
+    text = parts.join('\n')
   }
 
   text = text.replace(/\s+/g, ' ').trim()
@@ -92,10 +95,71 @@ function titleFromMessage(msg: unknown): string | null {
   text = text.replace(/<[^>]{1,40}>/g, '').trim()
   if (!text) return null
 
+  return text
+}
+
+/** 从一行 JSON 里安全取 title */
+function titleFromMessage(msg: unknown): string | null {
+  let text = userMessageText(msg)
+  if (!text) return null
+
   text = shortenPaths(text)
 
   // 34 个汉字的宽度差不多就是左栏一行放得下的量
   return text.length > 34 ? `${text.slice(0, 34)}…` : text
+}
+
+/**
+ * 为按需标题重生成读取最少的上下文：首条用户意图 + 最近一条有效用户消息。
+ *
+ * 这里故意只扫会话头尾，不解析完整历史，也不把 assistant/tool/image 内容交给
+ * 标题进程。每条最多 600 字符、总量最多 1200 字符，避免一个大会话拖慢标题动作。
+ */
+export async function readTitleSamples(path: string): Promise<string[]> {
+  const fh = await open(path, 'r')
+  try {
+    const { size } = await fh.stat()
+    const firstLen = Math.min(size, HEAD_BYTES)
+    const firstBuf = Buffer.alloc(firstLen)
+    if (firstLen) await fh.read(firstBuf, 0, firstLen, 0)
+
+    let first: string | undefined
+    const readUserLines = (text: string, reverse = false): string | undefined => {
+      const lines = text.split('\n')
+      const order = reverse ? [...lines].reverse() : lines
+      for (const line of order) {
+        if (!line.includes('"type":"message"')) continue
+        try {
+          const obj = JSON.parse(line) as { type?: string; message?: unknown }
+          if (obj.type !== 'message') continue
+          const value = userMessageText(obj.message)
+          if (value) return value
+        } catch {
+          /* 头尾窗口的边界行可能不完整，跳过即可 */
+        }
+      }
+      return undefined
+    }
+
+    first = readUserLines(firstBuf.toString('utf8'))
+
+    const tailStart = Math.max(0, size - HEAD_BYTES)
+    const tailLen = size - tailStart
+    const tailBuf = Buffer.alloc(tailLen)
+    if (tailLen) await fh.read(tailBuf, 0, tailLen, tailStart)
+    const last = readUserLines(tailBuf.toString('utf8'), true)
+
+    const samples: string[] = []
+    for (const value of [first, last]) {
+      const sample = value?.replace(/\s+/g, ' ').trim().slice(0, 600)
+      if (sample && !samples.includes(sample)) samples.push(sample)
+    }
+    return samples.slice(0, 2)
+  } catch {
+    return []
+  } finally {
+    await fh.close()
+  }
 }
 
 async function readHead(path: string): Promise<{
@@ -253,8 +317,8 @@ async function readLastActivity(path: string, size: number): Promise<number | un
   }
 }
 
-/** 列出所有会话，按更新时间倒序 */
-export async function listSessions(limit = 200): Promise<SessionSummary[]> {
+/** 列出所有会话，按更新时间倒序；传入 projects 时附加 Yan 的归属索引。 */
+export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 
   const files: { path: string; mtimeMs: number; size: number }[] = []
@@ -326,7 +390,7 @@ export async function listSessions(limit = 200): Promise<SessionSummary[]> {
     }
   }
 
-  return out
+  return projects ? decorateSessions(out, projects) : out
 }
 
 /**

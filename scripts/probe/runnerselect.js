@@ -32,6 +32,18 @@
     const sessions = store.getState().sessions
     out.push(`  会话数 = ${sessions.length}  conn = ${store.getState().conn}`)
 
+    /* N05：三个入口都必须在主进程拒绝不存在的 cwd，且不能污染当前设置。 */
+    const settingsBeforeCwd = await window.yan.getSettings()
+    const invalidCwd = `${String(cwd).replace(/[\\/]+$/, '')}/__yan_missing_${Date.now()}`
+    const badSet = await window.yan.setCwd(invalidCwd)
+    ok(!badSet.ok && /不存在|不可访问/.test(badSet.error ?? ''), 'setCwd 拒绝不存在的工作目录')
+    const settingsAfterCwd = await window.yan.getSettings()
+    ok(settingsAfterCwd.cwd === settingsBeforeCwd.cwd, '非法 setCwd 不改变当前工作目录')
+    const badNew = await window.yan.newSession({ cwd: invalidCwd })
+    ok(!badNew.ok && /不存在|不可访问/.test(badNew.error ?? ''), 'newSession 拒绝不存在的工作目录')
+    const badSelect = await window.yan.selectSession({ cwd: invalidCwd })
+    ok(!badSelect.ok && /不存在|不可访问/.test(badSelect.error ?? ''), 'selectSession 拒绝不存在的工作目录')
+
     const first = await window.yan.selectSession({ cwd })
     if (!first.ok) {
       /* 约定：环境不满足用「⤺ 跳过」标记，不报 ✗（见 features.js 头部） */
@@ -39,11 +51,16 @@
       out.push('    原因: ' + JSON.stringify(first.error))
       return out.join('\n')
     }
-    ok(!!first.id && (first.via === 'new' || first.via === 'reuse'), `首次选择得到实例 ${first.id}（via=${first.via}）`)
+    ok(
+      !!first.id && first.runId === first.id && typeof first.sessionId === 'string' && first.generation >= 1 &&
+        (first.via === 'new' || first.via === 'reuse'),
+      `首次选择得到带封套身份的实例 ${first.id}（via=${first.via}）`
+    )
 
     let list = await window.yan.runnerStatuses()
     ok(list.length >= 1, `状态快照有 ${list.length} 个实例`)
     ok(list.some((r) => r.id === first.id && r.isActive), '返回的实例就是快照里的 active 那个')
+    ok(list.every((r) => r.runId === r.id && typeof r.generation === 'number'), '状态快照带 runId 和 generation')
     ok(list.every((r) => typeof r.running === 'boolean'), '每个实例都带 running 布尔值')
 
     /* 命中：同一个会话再选一次，不应产生新实例 */

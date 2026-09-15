@@ -8,6 +8,7 @@
  *   ③ 归纳任务不该出现在对话历史里
  *
  * 所以在 `--no-session --no-extensions` 下起一个用完即走的进程，
+ * 并显式关掉所有会读 `.md` 的自动发现（见下面的参数注释），
  * thinking 关掉（归纳不需要推理，省钱也快）。
  *
  * 缓存：同一会话只生成一次，结果落在 ~/.pi/agent/yan/titles.json。
@@ -148,8 +149,9 @@ export interface TitleResult {
 /**
  * 生成标题。失败返回 null（调用方静默忽略）。
  *
- * `cwd` 用用户自己的目录 —— pi 启动时会读 AGENTS.md 之类，
- * 换个目录可能行为不一致。
+ * `cwd` 仍用用户自己的目录（保持 pi 的路径解析与用户环境一致）；
+ * 但标题进程已显式关闭 context files / skills / 提示词模板的自动发现，
+ * 所以项目的 AGENTS.md 不会影响归纳结果，也不会白白读进系统提示。
  *
  * `samples` 是要总结的几个片段（按时间顺序）：一般传
  * [第一句用户话, 最近一句用户话]，这样标题跟得上话题的移动。
@@ -171,6 +173,10 @@ export async function generateTitle(opts: {
   images?: { data: string; mimeType: string }[]
   timeoutMs?: number
   force?: boolean
+  /** 手动标题存在时只生成候选，不把它当作当前标题返回。 */
+  allowManual?: boolean
+  /** 候选标题不覆盖既有自动标题缓存，待用户明确采用后再落盘。 */
+  persist?: boolean
 }): Promise<TitleResult | null> {
   const { sessionId, cwd, piBin } = opts
   const timeout = opts.timeoutMs ?? 60_000
@@ -180,7 +186,7 @@ export async function generateTitle(opts: {
 
   // 手动重命名是**粘性**的：有手动名就不再自动生成（否则每轮又会盖掉）
   const manual = await manualTitleOf(sessionId)
-  if (manual) return { title: manual, fromCache: true }
+  if (manual && !opts.allowManual) return { title: manual, fromCache: true }
 
   // 已经有缓存且不要求重算 → 直接用
   if (!opts.force) {
@@ -191,7 +197,25 @@ export async function generateTitle(opts: {
   const rpc = new PiRpc({
     cwd,
     piBin,
-    args: ['--no-session', '--no-extensions'],
+    /*
+     * 标题是纯归纳任务，和项目内容无关 —— 显式关掉所有会读 `.md` 的
+     * 自动发现，别让项目的 AGENTS.md、技能清单和提示词模板挤进这个短任务的
+     * 系统提示：
+     *   --no-context-files     AGENTS.md / CLAUDE.md（仓库根 + 一路向上的祖先目录）
+     *   --no-skills            SKILL.md 描述（全局技能包也会被列进系统提示）
+     *   --no-prompt-templates  提示词模板
+     * 顺带的好处是启动更快、token 更少；标题质量不受影响 ——
+     * buildPrompt() 已经把全部要求写在自己的提示词里了。
+     *
+     * 注意：上面这些只关「发现」，不关显式传入的 --extension / --skill 路径。
+     */
+    args: [
+      '--no-session',
+      '--no-extensions',
+      '--no-context-files',
+      '--no-skills',
+      '--no-prompt-templates'
+    ],
     // 标题生成也会单独启动 pi；和主 Agent 使用相同的数据根，避免便携版
     // 意外从 ~/.pi 读取凭证或在其中留下 pi 数据。
     env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
@@ -227,7 +251,7 @@ export async function generateTitle(opts: {
           done(null)
           return
         }
-        void saveTitle(sessionId, title)
+        if (opts.persist !== false) void saveTitle(sessionId, title)
         done({ title })
       }
     })

@@ -53,9 +53,17 @@
       }
     ]
   })
-  // 让回合处于「进行中」，运行中的工具行才会自动展开
+  /*
+   * 让回合处于「进行中」，并打开「展开工具详情」。
+   *
+   * ⚠️ 只设 running 是**不够**的：`ToolRow` 的展开条件是
+   *   `open = manual ?? (running && autoDetail && autoOpen)`
+   * 而 `autoDetail` 来自 `settings.toolDetail`（默认 false）——
+   * 这是后来加的开关（让工具行默认一条条收起），探针当时没跟上。
+   */
   store.setState({
-    session: { ...(store.getState().session ?? {}), isStreaming: true, isAgentRunning: true }
+    session: { ...(store.getState().session ?? {}), isStreaming: true, isAgentRunning: true },
+    settings: { ...(store.getState().settings ?? {}), toolDetail: true }
   })
 
   ok(await until(() => !!q('.term')), '终端窗口已渲染')

@@ -1096,22 +1096,6 @@
    · **浮动标签**：跟着鼠标的一个小胶囊，显示正在搬的分区名字
    —— 拖离工具栏时（比如拖到中栏想放弃）插入线会消失，
    这个标签还在，用户知道「拖拽还在进行，Esc 可取消」 */
-.tool-drag-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 90;
-  padding: 3px 8px;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-sm);
-  background: var(--bg-3);
-  color: var(--accent);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  /* 别挡住鼠标下方的元素（否则 elementFromPoint 会一直命中自己） */
-  pointer-events: none;
-  opacity: 0.95;
-}
 
 /* 57. 任务模块（用户提的四条）
 

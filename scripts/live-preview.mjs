@@ -13,7 +13,7 @@ ipcMain.handle('yan:listDir', () => ({path:'',abs:root,entries:[{name:'src',dir:
 ipcMain.handle('yan:providerQuota', () => ({supported:false}))
 async function main() {
   await app.whenReady()
-  win = new BrowserWindow({width:1440,height:900,title:'砚 · UI 审阅模拟（不连接模型）',backgroundColor:'#0a0a0a',webPreferences:{preload:join(root,'out/preload/index.mjs'),contextIsolation:true,sandbox:false}})
+  win = new BrowserWindow({width:1440,height:900,title:'砚 · UI 审阅模拟（不连接模型）',backgroundColor:'#0a0a0a',webPreferences:{/* .cjs：sandboxed preload 不支持 ESM，写成 .mjs 会白屏 */preload:join(root,'out/preload/index.cjs'),contextIsolation:true,sandbox:false}})
   await win.loadFile(join(root,'out/renderer/index.html'))
   await win.webContents.executeJavaScript(readFileSync(join(root,'scripts/shot-fixture.js'),'utf8'))
   await win.webContents.executeJavaScript(readFileSync(join(root,'scripts/ui-review.js'),'utf8'))

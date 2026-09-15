@@ -3,6 +3,13 @@
  *
  * 不依赖 pi 内部类型；消息在 src/main/normalize.ts 中归一化为 UIMessage，
  * RPC 事件由 src/main/agent.ts 适配。
+ *
+ * ⚠️ 这是全仓被 import 最多的文件（40+ 处），改它一律是**跨进程**改动：
+ *   `preload/index.ts`（暴露）→ `main/index.ts`（handler）→ `state/store.ts`（消费）。
+ *   新增 IPC 的完整四处清单见 `src/preload/index.ts` 头部。
+ *
+ * 两边都要用的纯逻辑（回合分组、链接判定、模型能力归一化）放在本层，
+ * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
 
 /* RPC */
@@ -27,6 +34,9 @@ export interface Usage {
   totalTokens: number
   cost: number
 }
+
+/** 回复详细程度的实际采用值；旧历史没有记录时必须保留 unknown。 */
+export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
 
 /** 工具调用（来自 assistant 的 toolCall 内容块，或 tool_execution_* 事件） */
 export interface UIToolCall {
@@ -79,6 +89,8 @@ export interface UIMessage {
   speed?: number
   /** 本轮从开始生成到结束的墙钟耗时（ms），含工具往返 */
   elapsedMs?: number
+  /** 本轮实际采用的回复详细程度；旧历史缺失时为 unknown。 */
+  responseDetail?: ResponseDetail
   /** 该消息是否属于某次工具结果的容器（不渲染为独立消息） */
   model?: string
   timestamp?: number
@@ -139,6 +151,10 @@ export interface SessionState {
   model?: ModelInfo
   thinkingLevel: string
   availableThinkingLevels: string[]
+  /** 思考档位能力的权威来源状态：空数组不再等同于“查询失败”。 */
+  thinkingLevelsStatus?: CapabilityStatus
+  /** 与当前 model 一起推送的能力快照；缺失字段表示上游没有提供该能力。 */
+  capabilities?: ModelCapabilitySnapshot
   isStreaming: boolean
   /**
    * 回合级「正在干活」：从 agent_start 到 agent_settled，**覆盖工具执行**。
@@ -156,15 +172,33 @@ export interface SessionState {
 }
 
 /**
+ * 所有异步运行时事件的身份封套。
+ *
+ * sessionId 是稳定的会话身份，runId 是当前本地运行实例，generation
+ * 用来丢弃切换会话/刷新能力之后迟到的响应。projectId 只表达产品归属，
+ * 不等同于 cwd，也不要求会话文件物理落在项目目录里。
+ */
+export interface RuntimeEnvelope {
+  sessionId: string
+  runId: string
+  projectId?: string
+  generation: number
+}
+
+/**
  * 一个会话运行实例的状态（N12）。
  *
  * 「正在查看的会话」与「正在运行的会话」是两件事：
  * 切到别的会话时，后台会话的 pi 进程继续跑，左栏用它画状态槽。
  */
 export interface RunnerStatus {
+  /** 兼容旧 UI 的别名；新代码使用 runId。 */
   id: string
+  runId: string
   sessionFile?: string
   sessionId?: string
+  projectId?: string
+  generation: number
   cwd: string
   /** 回合在跑（agent_start → agent_settled） */
   running: boolean
@@ -184,13 +218,26 @@ export interface RunnerStatus {
   text: string
 }
 
-/** 斜杠命令（get_commands） */
-export interface SlashCommand {
+/** 命令注册表中的来源。兼容项只用于说明，不应进入可执行候选。 */
+export type CommandSource = 'pi' | 'extension' | 'skill' | 'prompt' | 'yan' | 'compatibility'
+
+/** 统一斜杠命令描述（pi / 扩展 / 技能 / 提示词 / Yan 本地命令）。 */
+export interface CommandDescriptor {
   name: string
   description?: string
-  source: string
+  source: CommandSource
   location?: string
+  /** 注册命令的模块或文件，供同名命令区分来源。 */
+  module?: string
+  /** 是否可以由桌面端补全并执行。 */
+  executable: boolean
+  usage?: string
+  /** 能看见但当前桌面端不执行时，说明兼容边界。 */
+  availability?: string
 }
+
+/** 旧名称保留给 renderer/preload 调用方，实际结构已是 CommandDescriptor。 */
+export type SlashCommand = CommandDescriptor
 
 /** 待发送的图片附件 */
 export interface Attachment {
@@ -216,8 +263,44 @@ export interface ModelInfo {
   name: string
   provider: string
   reasoning: boolean
+  /** `reasoning: false` 与“上游没告诉我们”必须区分。 */
+  reasoningStatus?: CapabilityStatus
+  /** pi 的真实输入模态；缺失表示能力未知，不等同于不支持。 */
+  input?: Array<'text' | 'image' | string>
+  inputStatus?: CapabilityStatus
   contextWindow: number
+  contextWindowStatus?: CapabilityStatus
   maxTokens?: number
+  maxTokensStatus?: CapabilityStatus
+}
+
+/**
+ * 能力字段的三态值。
+ *
+ * `unsupported` 只能来自上游明确返回空/false；`unknown` 表示这次协议
+ * 没有提供该字段。UI 不得把 unknown 画成“明确不支持”。
+ */
+export type CapabilityStatus = 'known' | 'unsupported' | 'unknown'
+
+export interface ModelCapabilitySnapshot {
+  modelKey: string
+  reasoning: CapabilityStatus
+  input: {
+    status: CapabilityStatus
+    modalities: Array<'text' | 'image' | string>
+  }
+  contextWindow: {
+    status: CapabilityStatus
+    value?: number
+  }
+  maxTokens: {
+    status: CapabilityStatus
+    value?: number
+  }
+  thinkingLevels: {
+    status: CapabilityStatus
+    values: string[]
+  }
 }
 
 export interface SessionStats {
@@ -233,6 +316,10 @@ export interface SessionStats {
     tokens: number | null
     contextWindow: number
     percent: number | null
+    /** 主进程标记这份统计对应的模型，旧/跨模型快照不能冒充当前值。 */
+    modelKey?: string
+    availability?: CapabilityStatus
+    estimated?: boolean
   }
   toolCalls: number
   userMessages: number
@@ -250,10 +337,16 @@ export interface BashRun {
   fullOutputPath?: string
 }
 
+/** 队列中的一条尚未投递消息；id 由 Yan 维护，不用文本或数组下标识别。 */
+export interface QueueItem {
+  id: string
+  text: string
+}
+
 /** 队列状态（queue_update） */
 export interface QueueState {
-  steering: string[]
-  followUp: string[]
+  steering: QueueItem[]
+  followUp: QueueItem[]
 }
 
 /**
@@ -336,6 +429,44 @@ export interface SessionSummary {
   updatedAt: number
   messageCount: number
   model?: string
+  /** Yan 的产品语义归属；不代表 JSONL 物理存储位置。 */
+  projectId?: string
+  /** 迁移中的旧会话可能暂时需要用户确认归属。 */
+  scope?: SessionScope
+  /** 最近一次在 Yan 中打开的时间。 */
+  lastOpenedAt?: number
+  /** cwd 对应多个项目时保留候选，不静默选择。 */
+  projectCandidates?: string[]
+}
+
+/** 会话在 Yan 产品模型中的归属范围。 */
+export type SessionScope = 'global' | 'project' | 'pending'
+
+export interface SessionMoveRecord {
+  at: number
+  fromProjectId?: string
+  toProjectId?: string
+  fromScope: SessionScope
+  toScope: SessionScope
+}
+
+/** `session-layout.json` 中的一条会话归属记录。 */
+export interface SessionLayoutEntry {
+  sessionId: string
+  sessionFile?: string
+  cwd: string
+  scope: SessionScope
+  projectId?: string
+  projectCandidates?: string[]
+  createdAt: number
+  updatedAt: number
+  lastOpenedAt?: number
+  moveHistory: SessionMoveRecord[]
+}
+
+export interface SessionLayoutDocument {
+  version: 1
+  entries: SessionLayoutEntry[]
 }
 
 /**
@@ -831,15 +962,23 @@ export interface BrowserState {
   userControl?: boolean
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   /**
-   * 被拒绝的网页权限请求（方案 9.2）。
-   * 默认全部拒绝；这里把请求记下来，用户能看到“网站要过什么、被拒了什么”。
+   * 网页权限记录（方案 9.2）。默认全部拒绝；允许只在本次应用运行期、
+   * 对精确 origin + permission 生效，不落盘，也不把 Cookie/页面存储值带进记录。
    */
-  permissions?: Array<{ permission: string; origin: string; at: number }>
+  permissions?: BrowserPermissionRecord[]
   nativeBounds?: BrowserBounds
   /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
   /** 外部 Chrome 连接状态；连接存在时保留，与当前是否激活无关 */
   external?: BrowserExternalState
+}
+
+export interface BrowserPermissionRecord {
+  permission: string
+  /** 只保留 scheme + host + port，不保存路径、查询参数或页面正文。 */
+  origin: string
+  status: 'allowed' | 'blocked'
+  at: number
 }
 
 /** 外部 Chrome（本机已安装的浏览器）的接入状态 */
@@ -978,13 +1117,34 @@ export type MessagePatch = Partial<UIMessage> & {
   thinkingDelta?: string
 }
 
-/** 子代理的一次运行（方案第 8 节） */
+/** 子代理的一次运行（方案第 8 节 / L03）。 */
+export type SubagentReviewState = 'none' | 'pending' | 'conflict' | 'merged' | 'discarded' | 'archived'
+
+export interface SubagentDiffSummary {
+  files: number
+  additions: number
+  deletions: number
+  /** 相对父项目根的路径；只传摘要，不把补丁正文塞进 IPC。 */
+  paths: string[]
+  truncated: boolean
+  /** 补丁归档位置；用户明确查看/合并/放弃后仍可追溯。 */
+  patchPath?: string
+}
+
 export interface SubagentRun {
   id: string
   /** 派给它的任务描述 */
   task: string
   /** 它跑在哪个工作目录 */
   cwd: string
+  /** 启动时的父会话 / 运行实例；查看对象切换不改变这两个归属。 */
+  parentSessionId?: string
+  parentRunId?: string
+  projectId?: string
+  /** worktree = 默认写入隔离；controlled-cwd = 显式只读受控目录。 */
+  isolation: 'worktree' | 'controlled-cwd'
+  /** 审阅结束后为空；待审阅时指向 worktree，退出归档后指向补丁。 */
+  resultPath?: string
   model?: string
   status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
   startedAt: number
@@ -993,25 +1153,35 @@ export interface SubagentRun {
   latestActivity?: string
   /** 转录（有界：主进程只保留最后若干条，避免 IPC 越推越大） */
   transcript: UIMessage[]
+  diff?: SubagentDiffSummary
+  review: SubagentReviewState
   error?: string
 }
 
 /** 子代理控制器对外暴露的能力 */
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
-  start(task: string, model?: string): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
+  start(
+    task: string,
+    model?: string,
+    isolation?: 'worktree' | 'controlled-cwd'
+  ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
   /** 清掉**已结束**的记录（运行中的不会被清） */
   clearFinished(): Promise<void>
+  /** 预览摘要已经随 list/push 返回；合并前仍会重新读取并检查补丁。 */
+  merge(id: string): Promise<{ ok: boolean; error?: string }>
+  /** 明确放弃隔离 worktree；补丁归档仍保留，便于必要时找回。 */
+  discard(id: string): Promise<{ ok: boolean; error?: string }>
 }
 
 /**
  * 主进程 → 渲染进程 的推送**内容**。
  *
- * ⚠️ 与 `MainPush` 分开：每条会话相关的推送都带一个 `sessionKey`
- *（= 运行实例 id，N12），渲染端才能把「后台会话的输出」与
- *「当前正在看的会话」分开。全局推送（设置 / 缩放 / 浏览器）不带它。
+ * ⚠️ 与 `MainPush` 分开：每条会话相关的推送都带 `runtime` 身份封套，
+ * 渲染端才能把「后台会话的输出」与「当前正在看的会话」分开。全局推送
+ *（设置 / 缩放 / 浏览器）不带它。
  */
 export type MainPushBody =
   /** 全量替换消息列表（启动 / 切会话 / compact 之后） */
@@ -1085,15 +1255,32 @@ export type MainPushBody =
    * 它是**全局**推送（不属于某个会话）—— 左栏需要一次拿到所有实例的画法。
    */
   | { ch: 'runners'; payload: RunnerStatus[] }
+  /** 托盘菜单要求渲染端新建一个全局会话。 */
+  | { ch: 'tray-new-session'; payload: null }
+  /** 托盘菜单要求切到指定运行实例；没有 sessionFile 时用稳定 sessionId。 */
+  | {
+      ch: 'tray-select-session'
+      payload: {
+        sessionFile?: string
+        sessionId?: string
+        projectId?: string
+        scope?: SessionScope
+        cwd: string
+      }
+    }
 
 /**
  * 主进程 → 渲染进程 的推送。
  *
- * 带 `sessionKey` 的表示「这条消息属于哪个运行实例」；渲染端对
+ * 带 `runtime` 的表示「这条消息属于哪个会话/运行实例/代次」；渲染端对
  * **不是当前正在查看的实例**的事件不得写进当前视图（否则后台任务
- * 的输出会串到眼前这个会话里）。
+ * 的输出会串到眼前这个会话里）。`sessionKey` 暂时保留给旧探针和旧构建。
  */
-export type MainPush = MainPushBody & { sessionKey?: string }
+export type MainPush = MainPushBody & {
+  runtime?: RuntimeEnvelope
+  /** @deprecated use runtime.runId */
+  sessionKey?: string
+}
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
 export interface YanBridge {
@@ -1102,9 +1289,12 @@ export interface YanBridge {
    * 切到某个会话（N12）：命中已有实例就只改视图，**不发停止命令**；
    * 空闲实例会被复用；到并发上限时明确报错，而不是停掉正在跑的旧会话。
    */
-  selectSession(target: { sessionFile?: string; cwd: string }): Promise<{
+  selectSession(target: { sessionFile?: string; sessionId?: string; projectId?: string; scope?: SessionScope; cwd: string }): Promise<{
     ok: boolean
     id?: string
+    runId?: string
+    sessionId?: string
+    generation?: number
     via?: 'hit' | 'reuse' | 'new'
     error?: string
   }>
@@ -1117,14 +1307,29 @@ export interface YanBridge {
   steer(text: string): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */
-  steerQueued(text: string): Promise<{ ok: boolean; error?: string }>
+  steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
+  /** 撤回一条仍在 Yan 队列快照中的消息，并把文本交回草稿。 */
+  removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; error?: string }>
   /**
    * 中止。按 pi 的约定先 clear_queue 再 abort，把清出来的队列文本返回，
    * 客户端应把它放回输入框（否则用户排的话就白打了）。
    */
   abort(): Promise<{ steering: string[]; followUp: string[] }>
-  newSession(): Promise<{ ok: boolean; error?: string; id?: string }>
+  newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
+    ok: boolean
+    error?: string
+    id?: string
+    runId?: string
+    sessionId?: string
+    generation?: number
+  }>
   switchSession(path: string): Promise<{ ok: boolean; error?: string }>
+  /** 移动产品归属；null = Yan 默认全局位置，不移动物理 JSONL 文件。 */
+  moveSession(sessionId: string, projectId: string | null): Promise<{
+    ok: boolean
+    error?: string
+    entry?: SessionLayoutEntry
+  }>
   compact(): Promise<{ ok: boolean; error?: string }>
   /**
    * 给会话起名（写进 JSONL，TUI 的 /resume 也看得到）。
@@ -1207,6 +1412,8 @@ export interface YanBridge {
   manualTitles(): Promise<Record<string, string>>
   /** 写一个手动会话名（空串 = 清除，恢复自动标题） */
   setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean }>
+  /** 按稳定 sessionId 重生成短标题；不切换会话、不打断后台运行实例。 */
+  regenerateTitle(sessionId: string): Promise<{ ok: boolean; title?: string; error?: string }>
   /** 读会话里的 extension custom entries（任务清单的来源） */
   getCustomEntries(): Promise<CustomEntry[]>
   /** 手动刷新任务清单 */
@@ -1249,7 +1456,15 @@ export interface YanBridge {
    *  文件引用补全 —— 只读**一层**目录（不递归扫项目）。
    * 返回相对 cwd 的路径，目录带尾斜杠。
    */
-  completePath(prefix: string): Promise<string[]>
+  /**
+   * 以当前查看实例的 cwd 做补全根；cwd 可显式传入，避免后台切换/迟到响应
+   * 把旧项目的候选路径串到新项目输入框里。
+   */
+  completePath(prefix: string, cwd?: string, context?: FileRequestContext): Promise<PathCompletionResult>
+  /** 取消一个仍在主进程扫描中的全项目文件名搜索。 */
+  cancelFileSearch(requestId: string): Promise<void>
+  /** 全项目文件名搜索：有界、可取消，并跳过大型依赖目录。 */
+  searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
 
   /* 附件 */
   /** 弹系统文件选择框，读成 base64（图片） */
@@ -1259,7 +1474,7 @@ export interface YanBridge {
   getSettings(): Promise<AppSettings>
   patchSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   pickCwd(): Promise<string | null>
-  setCwd(cwd: string): Promise<{ ok: boolean; error?: string }>
+  setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
   /* 扩展 UI 应答 */
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
@@ -1292,6 +1507,11 @@ export interface YanBridge {
     close(): void
     /** 切换置顶（会被记住到设置里） */
     setAlwaysOnTop(v: boolean): Promise<boolean>
+    /** 请求真正退出；关闭按钮本身只隐藏到托盘。 */
+    requestExit(): Promise<{
+      action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
+    }>
+    lifecycle(): Promise<{ tray: boolean; visible: boolean; quitting: boolean }>
   }
 
   /* 订阅（返回退订函数） */
@@ -1319,7 +1539,7 @@ export interface YanBridge {
   /** 设界面缩放（0 = 自动），返回生效后的状态 */
   setUiScale(v: number): Promise<ZoomState>
   /** 列一层目录（文件树；相对 cwd，一层一次 —— 有意不递归） */
-  listDir(rel: string, showHidden?: boolean): Promise<DirListing>
+  listDir(rel: string, showHidden?: boolean, context?: FileRequestContext): Promise<DirListing>
   /**
    * 把拖入的 `File` 换成绝对路径（Electron 的 `webUtils`，不经主进程）。
    * 只转换；校验与授权在 `describeFiles` 里做。
@@ -1334,7 +1554,7 @@ export interface YanBridge {
    * 相对路径按会话 cwd 解析，绝对路径也允许（但一律 realpath 校验）。
    * `line` 来自 `path:42` 形式，界面用它滚到目标行。
    */
-  readPreview(path: string, line?: number): Promise<FilePreview>
+  readPreview(path: string, line?: number, cwd?: string): Promise<FilePreview>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
@@ -1367,6 +1587,8 @@ export interface YanBridge {
     /** 重新同步本机 Chrome 的登录态与历史（退出 Chrome 后调用才拿得到 cookie） */
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
+    /** 逐站临时权限；false 为撤销，进程退出后自动清空。 */
+    setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
@@ -1393,6 +1615,46 @@ export interface DirEntry {  name: string
   size?: number
 }
 
+/** 文件树 / @ 补全 / 全项目搜索共用的请求身份。 */
+export interface FileRequestContext {
+  cwd: string
+  projectId?: string
+  /** 切项目或重新打开实例时递增；迟到响应不得覆盖新视图。 */
+  generation: number
+}
+
+export type FileListingStatus = 'ok' | 'empty' | 'missing' | 'permission' | 'invalid' | 'error'
+
+/** `@` 补全的有界结果；paths 仍然保持相对 cwd 的路径格式。 */
+export interface PathCompletionResult {
+  paths: string[]
+  truncated: boolean
+  status: FileListingStatus
+  request?: FileRequestContext
+}
+
+export interface FileSearchRequest extends FileRequestContext {
+  requestId: string
+  query: string
+  /** 主进程仍会夹到安全上限；调用方不应依赖更大的值。 */
+  limit?: number
+}
+
+export interface FileSearchEntry {
+  path: string
+  name: string
+  dir: boolean
+}
+
+export interface FileSearchResult {
+  request: FileSearchRequest
+  entries: FileSearchEntry[]
+  status: FileListingStatus | 'partial' | 'cancelled'
+  truncated: boolean
+  scannedDirs: number
+  skippedDirs: number
+}
+
 /** 列一层目录的结果 */
 export interface DirListing {
   /** 相对 cwd 的路径（根 = ''） */
@@ -1407,6 +1669,14 @@ export interface DirListing {
   skipped: string[]
   /** 是否因为条目太多而截断 */
   truncated: boolean
+  /** 读取状态；旧的 mock / 旧构建缺失时按兼容路径处理。 */
+  status?: FileListingStatus
+  /** 失败时给局部提示，不把系统错误原文直接暴露到界面。 */
+  error?: string
+  /** 过滤后实际可见的条目总数（用于解释截断）。 */
+  totalEntries?: number
+  /** 请求身份回显；用于 renderer 的最后一道迟到响应闸门。 */
+  request?: FileRequestContext
   /** 只有根层带：项目名（cwd 的 basename） */
   rootName?: string
 }

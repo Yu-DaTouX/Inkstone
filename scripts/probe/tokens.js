@@ -103,8 +103,10 @@
     u.cacheRead + u.input > 0
       ? (() => {
           const pct = (u.cacheRead / (u.cacheRead + u.input)) * 100
-          // 与 UsageBar 的 formatHitRate 同一规则：≥99.5% 显示“≈100%”，否则一位小数
-          return pct >= 99.5 ? '≈100%' : pct.toFixed(1) + '%'
+          // 与 shared/turns.ts 的 formatHitRate 同一规则：
+          // 只有原始比例就是 100% 才显示 100%，否则**截断**到两位小数（不四舍五入）。
+          if (pct >= 100) return '100%'
+          return (Math.floor(pct * 100) / 100).toFixed(2) + '%'
         })()
       : null
   if (expect) {

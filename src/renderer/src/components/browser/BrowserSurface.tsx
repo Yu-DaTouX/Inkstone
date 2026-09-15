@@ -44,6 +44,11 @@ export function BrowserSurface() {
     try { const report = await syncPageStorage(); setSyncNotice(`${report.source ?? ''} → ${report.target ?? ''}: ${report.copied.join(', ')}`) }
     catch (e) { setError(e instanceof Error ? e.message : t('browser.syncFailed')) } finally { setSyncing(false) }
   }
+  const changePermission = async (permission: string, origin: string, allowed: boolean): Promise<void> => {
+    const result = await window.yan.browser.setPermission(permission, origin, allowed)
+    if (!result.ok) setError(result.error ?? t('browser.permissionUpdateFailed'))
+    else setError('')
+  }
   const viewportRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -216,16 +221,33 @@ export function BrowserSurface() {
            * 「这个网站要过什么、被拒了什么」—— 否则摄像头点了没反应只能猜。
            */}
           {state.permissions?.length ? (
-            <span
-              className="browser-sync-result"
-              data-testid="browser-permissions"
-              title={state.permissions
-                .slice(-8)
-                .map((p) => `${p.permission} · ${p.origin || '—'}`)
-                .join('\n')}
-            >
-              {t('browser.permissionsBlocked', { n: state.permissions.length })}
-            </span>
+            <div className="browser-permission-list" data-testid="browser-permissions">
+              <span className="browser-sync-result">
+                {t('browser.permissionsBlocked', { n: state.permissions.length })}
+              </span>
+              {state.permissions.slice(-8).map((permission) => (
+                <div
+                  className={`browser-permission-row ${permission.status === 'allowed' ? 'allowed' : 'blocked'}`}
+                  key={`${permission.permission}:${permission.origin}`}
+                >
+                  <span
+                    className="browser-permission-meta"
+                    title={`${permission.permission} · ${permission.origin || '—'}`}
+                  >
+                    {permission.permission} · {permission.origin || '—'} · {permission.status === 'allowed'
+                      ? t('browser.permissionAllowed')
+                      : t('browser.permissionBlockedStatus')}
+                  </span>
+                  <button
+                    className="browser-action"
+                    data-testid="browser-permission-toggle"
+                    onClick={() => void changePermission(permission.permission, permission.origin, permission.status !== 'allowed')}
+                  >
+                    {permission.status === 'allowed' ? t('browser.revokePermission') : t('browser.allowPermission')}
+                  </button>
+                </div>
+              ))}
+            </div>
           ) : null}
           <button
             className="browser-action"

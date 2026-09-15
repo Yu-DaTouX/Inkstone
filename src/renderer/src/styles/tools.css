@@ -53,8 +53,113 @@
   font-family: var(--font-mono);
   letter-spacing: normal;
 }
+.rp-fs-state {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  line-height: var(--lh-tight);
+}
+.rp-fs-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.rp-fs-search-input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-0);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-xs);
+  outline: none;
+}
+.rp-fs-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.rp-fs-search-hint {
+  font-size: var(--fs-xs);
+}
+.rp-fs-search-results {
+  max-height: 280px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.rp-fs-search-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.rp-fs-search-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 4px;
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
+}
+.rp-fs-search-main:hover,
+.rp-fs-search-main:focus-visible {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.rp-fs-search-main.dir {
+  color: var(--fg-mute);
+}
+.rp-fs-search-kind {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.rp-fs-search-dot {
+  width: 12px;
+  flex: none;
+  text-align: center;
+}
+.rp-fs-search-row:hover .rp-fs-add,
+.rp-fs-search-row:focus-within .rp-fs-add {
+  opacity: 1;
+}
 .rp-fs-row {
   min-height: 26px;
+}
+.rp-fs-row-wrap {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.rp-fs-row-wrap .rp-fs-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.rp-fs-add {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  opacity: 0;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
+}
+.rp-fs-row-wrap:hover .rp-fs-add,
+.rp-fs-add:focus-visible {
+  opacity: 1;
+}
+.rp-fs-add:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 /* 体积只在悬停时出现，避免静态列表被数字切碎 */
 .rp-fs-size {
@@ -825,20 +930,7 @@
 }
 
 /* 工具库里每行的抓取把手 */
-.tl-grip {
-  flex: none;
-  width: 12px;
-  color: var(--fg-mute);
-  opacity: 0.5;
-  cursor: grab;
-  font-size: var(--fs-xs);
-  text-align: center;
-}
 
-.tl-row:hover .tl-grip {
-  opacity: 1;
-  color: var(--accent);
-}
 
 .tl-row {
   display: flex;
@@ -1319,6 +1411,47 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.sp-parent {
+  opacity: 0.75;
+  font-family: var(--font-mono);
+}
+
+.sp-review {
+  margin: 0 var(--sp-2) var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  font-size: var(--fs-xs);
+}
+
+.sp-review-head,
+.sp-review-state {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: space-between;
+  color: var(--fg-dim);
+}
+
+.sp-diff-paths {
+  margin: 4px 0;
+  overflow: hidden;
+  color: var(--fg-mute);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-review-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.sp-review-state {
+  color: var(--accent);
 }
 
 .sp-err {

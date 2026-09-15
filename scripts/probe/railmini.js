@@ -49,7 +49,32 @@
       recentCwds: list.map((p) => p.cwd),
       projectNames: { ...store.getState().settings.projectNames, ...projectNames }
     })
-    store.setState({ session: { ...(store.getState().session ?? {}), cwd: list[2].cwd } })
+    /*
+     * 当前项目钉到 list[2]。
+     *
+     * 不能只改 session.cwd：Rail 的 isCurrent 用 `activeProjectId ??
+     * currentSummary?.projectId`，隔离环境里真实 runner 自带 projectId，
+     * 只改 cwd 时标记不会跟着动（探针因此误报）。
+     */
+    const file = 'C:/yan-probe/current.jsonl'
+    store.setState({
+      runners: [],
+      activeRunnerId: null,
+      sessions: [
+        {
+          id: 'rm-current',
+          path: file,
+          cwd: list[2].cwd,
+          projectId: list[2].id,
+          title: '探针会话',
+          named: true,
+          createdAt: stamp,
+          updatedAt: stamp,
+          messageCount: 1
+        }
+      ],
+      session: { ...(store.getState().session ?? {}), cwd: list[2].cwd, sessionFile: file }
+    })
     await sleep(500)
 
     /* ---- 收起左栏 ---- */
@@ -74,7 +99,7 @@
     const cur = q('[data-testid="rail-compact-project"][data-current="1"]')
     ok(!!cur, '当前项目有明确标记（data-current）')
     ok(cur?.classList.contains('cur'), '当前项目有可视的选中样式类')
-    ok(cur?.dataset.cwd === list[2].cwd, '标记落在当前项目上（不是第一个）')
+    ok(cur?.dataset.cwd === list[2].cwd, '标记落在当前项目上（当前项目会被置顶，不是列表的第一个）')
 
     /* ---- 名称悬停浮出 ---- */
     /* 每次都重新查（多场景连跑时前面的推送会让这一行重渲染） */

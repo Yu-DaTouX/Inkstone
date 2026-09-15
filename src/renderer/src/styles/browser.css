@@ -61,6 +61,40 @@
   color: var(--fg-dim);
 }
 
+.browser-permission-list {
+  flex: 0 1 520px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.browser-permission-row {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 360px;
+  padding: 2px 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.browser-permission-row.allowed {
+  border-color: var(--accent-line);
+}
+
+.browser-permission-meta {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+
 /* ══════════════════════════════════════════════════════════════
    以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
    ══════════════════════════════════════════════════════════════ */

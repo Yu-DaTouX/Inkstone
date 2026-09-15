@@ -1,12 +1,8 @@
 /**
- * 推理胶囊（用户要求）。
+ * 推理流（用户确认的最终方向）。
  *
- * ══════════════════════════════════════════════════════════════════
- * 用户原话
- * ══════════════════════════════════════════════════════════════════
- *   「在这里开一个胶囊 用逐字流式输出的方式展示模型的推理过程
- *     （如果没有推理过程就不显示）」
- *   「当推理结束 折叠推理内容胶囊并且保留打开开关」
+ * 上游只返回可展示的思考文本时，按字素流式放进聊天主流。
+ * 结束后默认折叠，但仍保留手动打开入口。
  *
  * ── 三个决定 ──
  * ① **逐字**：模型给的是**块**（一次几十上百字），直接贴上去是「一大段突然出现」。
@@ -17,59 +13,22 @@
  *    结束后自动折叠成一行，**保留开关**。
  * ③ **没有推理就不显示**：`text` 为空直接返回 null —— 不占位、不留空壳。
  *
- * ══════════════════════════════════════════════════════════════════
- * 2026-09 改版（方案 4.4）：固定窗口 + 可拖尺寸 + 柔和尾部
- * ══════════════════════════════════════════════════════════════════
- *   · 默认显示约 **3 行**（固定高度，超出内部滚动），不再是「随内容自适应」——
- *     自适应会让长推理把回答顶走、短推理又留着一段空白，两种都难用；
- *   · 底部把手可拖，尺寸**按窗口全局记忆**（双击复位）；上限取消息视口的 60%；
- *   · 展开/收起用**保留挂载的容器 + 高度过渡**（160–220ms），
- *     先把最后一段内容显示完再收起，不会因为卸载丢掉尾部；
+ * 2026-09-15 改版：限高省略（用户确认，废止 N04「不用内部滚动」那条）
+ *   · 默认展开但钉在 `--reason-max-h`，超出部分裁掉；
+ *   · 裁掉的是**开头**：靠 scrollTop 贴底，所以始终看得到最新一句；
+ *   · 顶部 mask 渐隐表示「上面还有」，只在真被裁剪时出现，短推理不淡化；
+ *   · 「展开全部 / 收起」是显式出口，展开后解除限高；
+ *   · `overflow: hidden` 不产生第二条滚动条 —— 用户也无法用滚轮滚它，
+ *     所以不存在「上滚阅读时被新内容拽回底部」的问题；
+ *   · 正在运行时保持展开，**整个助手回合结束**后自动折叠；
+ *   · 折叠时保留首行预览和打开开关；
  *   · 逐字按**字素**推进（中文标点 / emoji / 组合字符不会被切开），
  *     新增的尾部做 140ms 透明度过渡，稳定历史文本不做重复动画；
- *   · 上滚暂停跟随并给「回到最新」，滚回底部自动恢复；
- *   · 遵从 `prefers-reduced-motion`：不做打字与高度动画，直接显示。
+ *   · 遵从 `prefers-reduced-motion`：直接显示完整文本。
  */
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-
-/** 默认约 3 行（行高 18px + 上下 padding） */
-const DEFAULT_REASON_H = 58
-const MIN_REASON_H = 34
-/** 尺寸记忆键：全局（会话间复用，方案 4.4） */
-const SIZE_KEY = 'yan.reasonHeight'
-
-/** 用户调整上限：消息视口的 60% */
-function maxReasonHeight(): number {
-  return Math.max(DEFAULT_REASON_H + 40, Math.round(window.innerHeight * 0.6))
-}
-
-function loadReasonHeight(): number {
-  try {
-    const n = Number(localStorage.getItem(SIZE_KEY))
-    if (Number.isFinite(n) && n >= MIN_REASON_H) return Math.min(maxReasonHeight(), Math.round(n))
-  } catch {
-    /* 读不到就用默认 */
-  }
-  return DEFAULT_REASON_H
-}
-
-function saveReasonHeight(h: number): void {
-  try {
-    localStorage.setItem(SIZE_KEY, String(Math.round(h)))
-  } catch {
-    /* 隐私模式等写不了，忽略 */
-  }
-}
-
-function clearReasonHeight(): void {
-  try {
-    localStorage.removeItem(SIZE_KEY)
-  } catch {
-    /* 同上 */
-  }
-}
 
 /** 系统是否要求减少动态效果 */
 function prefersReducedMotion(): boolean {
@@ -112,6 +71,11 @@ function ReasoningCapsuleImpl({
   const t = useT()
   /** 用户手动开关；null = 还没手动干预过（此时跟随 turnLive） */
   const [manual, setManual] = useState<boolean | null>(null)
+  /** 是否展开了完整推理；false = 省略态（钉高 + 显示最新） */
+  const [expanded, setExpanded] = useState(false)
+  /** 省略态下内容是否真的被裁掉了（决定要不要加渐隐和「展开全部」） */
+  const [clipped, setClipped] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
   /** 没有回合级信号时（历史消息）退回到单段信号 */
   const streaming = turnLive ?? live
   /** 逐字显示用的文本（逐步追上 text）；减少动态效果时直接给全文 */
@@ -119,66 +83,14 @@ function ReasoningCapsuleImpl({
   const shown = useTypewriter(text, !!streaming && !reduced)
   const open = manual ?? !!streaming
 
-  /* ---- 尺寸（可拖 / 记忆 / 双击复位） ---- */
-  const [height, setHeight] = useState(loadReasonHeight)
-  const heightRef = useRef(height)
-  const [resizing, setResizing] = useState(false)
-  const dragCleanup = useRef<(() => void) | null>(null)
-
-  const beginResize = (e: React.PointerEvent): void => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    e.stopPropagation()
-    const startY = e.clientY
-    const startH = heightRef.current
-    setResizing(true)
-    /*
-     * 监听同步挂 document（不是放 effect）：同一帧内先 pointerdown 再
-     * pointermove 时，effect 还没跑，第一次移动会被丢掉（Terminal 里踩过）。
-     */
-    const onMove = (ev: PointerEvent): void => {
-      const h = Math.min(maxReasonHeight(), Math.max(MIN_REASON_H, Math.round(startH + (ev.clientY - startY))))
-      heightRef.current = h
-      setHeight(h)
-    }
-    const finish = (): void => {
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', finish)
-      document.removeEventListener('pointercancel', finish)
-      dragCleanup.current = null
-      setResizing(false)
-      saveReasonHeight(heightRef.current)
-    }
-    dragCleanup.current = finish
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', finish)
-    document.addEventListener('pointercancel', finish)
-  }
-
-  useEffect(() => () => dragCleanup.current?.(), [])
-
-  /* ---- 跟随最新 / 回到最新 ---- */
-  const bodyRef = useRef<HTMLDivElement | null>(null)
-  const stickRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
-
-  const onBodyScroll = useCallback((): void => {
-    const el = bodyRef.current
-    if (!el) return
-    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-    stickRef.current = bottom
-    setAtBottom((prev) => (prev === bottom ? prev : bottom))
-  }, [])
-
-  useEffect(() => {
-    const el = bodyRef.current
-    if (!el || !open) return
-    if (stickRef.current) el.scrollTop = el.scrollHeight
-  }, [shown, open])
-
-  // 推理结束 → 自动折叠（除非用户在这期间手动开过）
+  // 推理结束 → 自动折叠；如果用户手动改过，就尊重用户的开关。
   const wrappedRef = useRef(false)
   useEffect(() => {
+    /*
+     * 「展开全部」不跨回合：新回合开始与回合结束都收回。
+     * 否则用户在折叠态展开过历史推理后，下一个回合会直接以完整高度开始。
+     */
+    setExpanded(false)
     if (streaming) {
       wrappedRef.current = false
       return
@@ -188,6 +100,28 @@ function ReasoningCapsuleImpl({
       setManual((m) => m ?? false)
     }
   }, [streaming])
+
+  /*
+   * 省略态：钉住高度 + 贴底显示**最新**内容。
+   *
+   * ⚠️ 两个坑：
+   *   ① 折叠时 `hidden` 让 clientHeight = 0，会被误判成「被裁剪」→ 先排除 !open。
+   *   ② 读 scrollHeight 会强制一次同步布局；这里只在 shown 真正变化时跑
+   *      （rAF 循环已经节流），量级可接受。不要挪进 scroll 事件里。
+   *
+   * 为什么用 scrollTop 贴底而不是 flex `column-reverse`：
+   *   后者会把 head / tail 两个 span 的渲染顺序反过来（尾部跑到上面）。
+   */
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (!el || !open || expanded) {
+      setClipped(false)
+      return
+    }
+    const over = el.scrollHeight > el.clientHeight + 1
+    setClipped((c) => (c === over ? c : over))
+    if (over) el.scrollTop = el.scrollHeight
+  }, [shown, open, expanded])
 
   if (!text.trim()) return null
 
@@ -211,24 +145,12 @@ function ReasoningCapsuleImpl({
    */
   const { head, tail } = splitTail(shown, !!live && shown.length <= 4000)
 
-  const toggleOpen = (): void => {
-    if (!open) {
-      stickRef.current = true
-      setAtBottom(true)
-    }
-    setManual(!open)
-  }
-
-  const jumpToLatest = (): void => {
-    const el = bodyRef.current
-    stickRef.current = true
-    setAtBottom(true)
-    if (el) el.scrollTop = el.scrollHeight
-  }
+  const toggleOpen = (): void => setManual(!open)
 
   return (
     <div
-      className={`reason ${open ? 'open' : ''} ${live ? 'live' : ''} ${resizing ? 'resizing' : ''}`}
+      className={`reason ${open ? 'open' : ''} ${live ? 'live' : ''}`}
+      data-layout="clip"
       data-testid="reasoning"
     >
       <button className="reason-head" onClick={toggleOpen} aria-expanded={open} data-testid="reasoning-toggle">
@@ -250,17 +172,14 @@ function ReasoningCapsuleImpl({
         {live ? <span className="cursor cursor-inline" /> : null}
       </button>
 
-      {/*
-       * 正文容器**始终挂载**：收起时高度过渡到 0。
-       * 条件挂载会在收起动画开始前就把内容卸掉（尾部一闪而过），
-       * 而且探针也无法区分「收起」与「没有推理」。
-       */}
       <div
-        className={`reason-body-wrap ${open ? 'open' : ''}`}
-        style={{ '--reason-h': `${height}px` } as React.CSSProperties}
+        ref={bodyRef}
+        className={`reason-body clip ${expanded ? 'expanded' : ''} ${clipped ? 'is-clipped' : ''}`}
+        data-clipped={clipped ? '1' : undefined}
         aria-hidden={!open}
+        hidden={!open}
       >
-        <div className="reason-body" data-testid="reasoning-body" ref={bodyRef} onScroll={onBodyScroll}>
+        <div data-testid="reasoning-body">
           {head}
           {tail ? (
             <span className="reason-tail" key={shown.length}>
@@ -271,42 +190,17 @@ function ReasoningCapsuleImpl({
         </div>
       </div>
 
-      {/* 上滚后暂停跟随，给一个回到最新的入口（方案 4.4） */}
-      {open && !atBottom ? (
-        <button className="reason-jump" onClick={jumpToLatest} data-testid="reasoning-jump">
-          {t('reason.jump')}
+      {/* 省略出口：放在 body **外面**，否则会被自己裁掉。
+          展开后 clipped 会变回 false，所以条件是 clipped || expanded。 */}
+      {open && (clipped || expanded) ? (
+        <button
+          className="reason-more"
+          onClick={() => setExpanded((v) => !v)}
+          data-testid="reasoning-expand"
+        >
+          {expanded ? t('reason.less') : t('reason.more')}
         </button>
       ) : null}
-
-      {/* 底部把手：拖动改高度，双击复位 */}
-      <div
-        className="reason-grip"
-        role="separator"
-        aria-orientation="horizontal"
-        tabIndex={0}
-        title={t('reason.resize')}
-        aria-label={t('reason.resize')}
-        data-testid="reasoning-grip"
-        onPointerDown={beginResize}
-        onDoubleClick={() => {
-          heightRef.current = DEFAULT_REASON_H
-          setHeight(DEFAULT_REASON_H)
-          clearReasonHeight()
-        }}
-        onKeyDown={(e) => {
-          const step = e.shiftKey ? 48 : 12
-          let next = heightRef.current
-          if (e.key === 'ArrowDown') next += step
-          else if (e.key === 'ArrowUp') next -= step
-          else if (e.key === 'Home') next = DEFAULT_REASON_H
-          else return
-          e.preventDefault()
-          next = Math.min(maxReasonHeight(), Math.max(MIN_REASON_H, next))
-          heightRef.current = next
-          setHeight(next)
-          saveReasonHeight(next)
-        }}
-      />
     </div>
   )
 }

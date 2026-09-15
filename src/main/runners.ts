@@ -19,9 +19,20 @@
  *     前端才能把「后台会话的输出」与「当前正在看的会话」分开。
  *
  * 不在这里做的事：消息缓存（那是渲染端的事）、pi 协议细节（在 agent.ts）。
+ *
+ * ── 身份在渲染端的落点（改这里要一起看）──
+ * `runtimeOf()` 产生的封套带 `sessionId` / `runId` / `generation`；前端 `store.applyPush`
+ * 拿它做闸门：只有 `activeRunnerId === runtime.runId` 的补丁才写当前投影，
+ * 其余的进 `state/session-runtime.ts` 的按会话缓存。
+ *
+ * ⚠️ 实测：`runId` 恒等于实例自己的 `id`（`runners[0] = { id:"r1", runId:"r1" }`），
+ *   而 `sessionId` 在启动期是 `pending:<runId>`、pi 就绪后才换成真实 uuid
+ *   （实测 `Object.keys(sessionRuntimes)` = `["pending:r1", "<真实 uuid>"]` —— 同一个实例
+ *   先后以两个键存在）。所以**判断响应是否过期只能用 runId**：拿 sessionId 做等值比较
+ *   会把这条正常过渡当成过期响应丢掉。判定在 `renderer/src/state/capability-request.ts`，有单测。
  */
 import type { AgentController } from './agent'
-import type { RunnerStatus, SessionState } from '../shared/ipc'
+import type { RunnerStatus, RuntimeEnvelope, SessionScope, SessionState } from '../shared/ipc'
 
 /**
  * 同时运行的会话实例上限（含当前正在查看的那个）。
@@ -32,10 +43,22 @@ import type { RunnerStatus, SessionState } from '../shared/ipc'
  */
 export const RUNNER_LIMIT = 3
 
+/**
+ * 工作目录是并发写入边界：Windows 的斜杠、大小写和末尾分隔符不能让
+ * 同一个目录绕过冲突检查。这里不做 realpath，因为 runner 的 cwd 还
+ * 可能是一个合法的符号链接；是否允许该路径由主进程目录校验决定。
+ */
+function canonicalCwd(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
 interface Runner {
   id: string
   agent: AgentController
   cwd: string
+  projectId?: string
+  /** 每次换会话/新建会话都会递增；迟到事件不能覆盖新代次。 */
+  generation: number
   createdAt: number
   lastActiveAt: number
 }
@@ -43,6 +66,12 @@ interface Runner {
 export interface SelectTarget {
   /** 目标会话文件；缺省 = 新会话（未落盘） */
   sessionFile?: string
+  /** 稳定会话 id；优先于文件名匹配，避免标题/路径变化破坏身份。 */
+  sessionId?: string
+  /** 产品语义归属，不等同于 cwd。 */
+  projectId?: string
+  /** 新建/选择时的产品范围；runner 本身不负责持久化，只透传给上层。 */
+  scope?: SessionScope
   cwd: string
 }
 
@@ -50,6 +79,10 @@ export interface SelectResult {
   ok: boolean
   /** 命中 / 复用 / 新建出来的实例 id */
   id?: string
+  /** `id` 的明确命名；新调用方按这个字段传递运行实例身份。 */
+  runId?: string
+  sessionId?: string
+  generation?: number
   /** 复用了哪个实例（'hit' 命中已有、'reuse' 复用空闲、'new' 新建） */
   via?: 'hit' | 'reuse' | 'new'
   error?: string
@@ -59,6 +92,8 @@ export class RunnerRegistry {
   private runners = new Map<string, Runner>()
   private activeId: string | null = null
   private seq = 0
+  /** 防止两个快速点击的会话切换交叉执行。 */
+  private selectTail: Promise<void> = Promise.resolve()
 
   constructor(
     private opts: {
@@ -89,6 +124,29 @@ export class RunnerRegistry {
     return r ? { id: r.id, cwd: r.cwd } : null
   }
 
+  /** 取指定运行实例；主进程推送快照时不能重新读取“当前实例”。 */
+  agentOf(id: string): AgentController | null {
+    return this.runners.get(id)?.agent ?? null
+  }
+
+  /** 按稳定 sessionId 取运行实例；重生成标题等只读动作不应切换视图。 */
+  agentForSession(sessionId: string): AgentController | null {
+    return this.findBySessionId(sessionId)?.agent ?? null
+  }
+
+  /** 给主进程为每条事件附上统一身份封套。 */
+  runtimeOf(id: string): RuntimeEnvelope | null {
+    const runner = this.runners.get(id)
+    if (!runner) return null
+    const sessionId = runner.agent.getState()?.sessionId || `pending:${id}`
+    return {
+      sessionId,
+      runId: runner.id,
+      ...(runner.projectId ? { projectId: runner.projectId } : {}),
+      generation: runner.generation
+    }
+  }
+
   /** 某个实例此刻「忙着」吗：回合在跑，或有请求在等用户回答 */
   private busy(runner: Runner): boolean {
     const st = runner.agent.getState()
@@ -104,6 +162,24 @@ export class RunnerRegistry {
     return undefined
   }
 
+  private findBySessionId(sessionId: string): Runner | undefined {
+    for (const r of this.runners.values()) {
+      if (r.agent.getState()?.sessionId === sessionId) return r
+    }
+    return undefined
+  }
+
+  private result(runner: Runner, via: SelectResult['via']): SelectResult {
+    return {
+      ok: true,
+      id: runner.id,
+      runId: runner.id,
+      sessionId: runner.agent.getState()?.sessionId,
+      generation: runner.generation,
+      via
+    }
+  }
+
   /**
    * 选到某个会话并切换视图。
    *
@@ -111,13 +187,44 @@ export class RunnerRegistry {
    * **任何一条路径都不会停止别的实例。**
    */
   async select(target: SelectTarget): Promise<SelectResult> {
-    if (target.sessionFile) {
-      const hit = this.findBySessionFile(target.sessionFile)
+    const next = this.selectTail.then(
+      () => this.selectNow(target),
+      () => this.selectNow(target)
+    )
+    this.selectTail = next.then(
+      () => undefined,
+      () => undefined
+    )
+    return next
+  }
+
+  private async selectNow(target: SelectTarget): Promise<SelectResult> {
+    if (target.sessionId || target.sessionFile) {
+      const hit = (target.sessionId && this.findBySessionId(target.sessionId)) ||
+        (target.sessionFile ? this.findBySessionFile(target.sessionFile) : undefined)
       if (hit) {
         hit.lastActiveAt = Date.now()
         this.activeId = hit.id
         this.opts.onChanged?.()
-        return { ok: true, id: hit.id, via: 'hit' }
+        return this.result(hit, 'hit')
+      }
+    }
+
+    /*
+     * 两个忙碌实例不能共用一个物理 cwd：即使它们是不同会话文件，
+     * 工具调用仍可能同时修改同一工作树。命中已有实例必须在上面优先
+     * 返回；这里只有“要创建/载入另一个运行实例”时才拒绝。
+     */
+    const conflict = [...this.runners.values()].find(
+      (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
+    )
+    if (conflict) {
+      const sessionId = conflict.agent.getState()?.sessionId ?? conflict.id
+      return {
+        ok: false,
+        error:
+          `同一工作目录已有运行中的会话（${sessionId}）。` +
+          '为避免文件写入冲突，请先等待它完成，或使用隔离工作目录。'
       }
     }
 
@@ -127,15 +234,25 @@ export class RunnerRegistry {
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {
+      const oldGeneration = idle.generation
+      const oldProjectId = idle.projectId
+      idle.generation += 1
+      idle.projectId = target.projectId
+      this.opts.onChanged?.()
       const res = target.sessionFile
         ? await idle.agent.switchSession(target.sessionFile)
         : await idle.agent.newSession()
-      if (!res.ok) return { ok: false, error: res.error }
+      if (!res.ok) {
+        idle.generation = oldGeneration
+        idle.projectId = oldProjectId
+        this.opts.onChanged?.()
+        return { ok: false, error: res.error }
+      }
       idle.cwd = target.cwd
       idle.lastActiveAt = Date.now()
       this.activeId = idle.id
       this.opts.onChanged?.()
-      return { ok: true, id: idle.id, via: 'reuse' }
+      return this.result(idle, 'reuse')
     }
 
     if (this.runners.size >= this.limit) {
@@ -149,14 +266,23 @@ export class RunnerRegistry {
 
     const id = `r${++this.seq}`
     const agent = this.opts.createAgent(id, target.cwd)
-    const runner: Runner = { id, agent, cwd: target.cwd, createdAt: Date.now(), lastActiveAt: Date.now() }
+    const runner: Runner = {
+      id,
+      agent,
+      cwd: target.cwd,
+      projectId: target.projectId,
+      generation: 1,
+      createdAt: Date.now(),
+      lastActiveAt: Date.now()
+    }
+    const previousActive = this.activeId
     this.runners.set(id, runner)
     this.activeId = id
 
     const started = await agent.start()
     if (!started.ok) {
       this.runners.delete(id)
-      this.activeId = null
+      this.activeId = previousActive
       this.opts.onChanged?.()
       return { ok: false, error: started.error }
     }
@@ -164,20 +290,24 @@ export class RunnerRegistry {
       const sw = await agent.switchSession(target.sessionFile)
       if (!sw.ok) {
         this.runners.delete(id)
-        this.activeId = null
+        this.activeId = previousActive
         this.opts.onChanged?.()
         return { ok: false, error: sw.error }
       }
     }
     this.opts.onChanged?.()
-    return { ok: true, id, via: 'new' }
+    return this.result(runner, 'new')
   }
 
   /** 启动时创建「主实例」（当前查看的会话就跑在它上面） */
-  async startPrimary(cwd: string, sessionFile?: string): Promise<SelectResult> {
+  async startPrimary(cwd: string, sessionFile?: string, projectId?: string): Promise<SelectResult> {
     const existing = this.active()
-    if (existing) return { ok: true, id: this.activeId ?? undefined, via: 'hit' }
-    return this.select({ cwd, sessionFile })
+    if (existing) {
+      const id = this.activeId
+      const runner = id ? this.runners.get(id) : undefined
+      return runner ? this.result(runner, 'hit') : { ok: true, id: id ?? undefined, via: 'hit' }
+    }
+    return this.select({ cwd, sessionFile, projectId, scope: 'project' })
   }
 
   /** 当前实例的 id（渲染端回报事件身份时用得上） */
@@ -216,7 +346,10 @@ export class RunnerRegistry {
    * 只影响该目录，不动别的项目里正在跑的会话。
    */
   async stopByCwd(cwd: string): Promise<number> {
-    const ids = [...this.runners.values()].filter((r) => r.cwd === cwd).map((r) => r.id)
+    const normalized = canonicalCwd(cwd)
+    const ids = [...this.runners.values()]
+      .filter((r) => canonicalCwd(r.cwd) === normalized)
+      .map((r) => r.id)
     for (const id of ids) await this.stopOne(id)
     return ids.length
   }
@@ -248,8 +381,11 @@ export class RunnerRegistry {
       const conn = r.agent.getConn().state
       return {
         id: r.id,
+        runId: r.id,
         sessionFile: st?.sessionFile,
         sessionId: st?.sessionId,
+        projectId: r.projectId,
+        generation: r.generation,
         cwd: st?.cwd ?? r.cwd,
         running: st?.isAgentRunning === true,
         waiting: r.agent.getPendingUiCount() > 0,

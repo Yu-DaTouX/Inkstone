@@ -3,7 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
-import type { SessionSummary } from '../../../../shared/ipc'
+import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
@@ -91,6 +91,7 @@ export function Rail() {
   const [unread, setUnread] = useSidebarValue<string[]>('unread', [])
   /** 运行实例状态（N12）：左栏每行/每项目/每分组的状态汇总都来自它 */
   const runners = useStore((s) => s.runners)
+  const activeRunnerId = useStore((s) => s.activeRunnerId)
   /**
    * 某个会话列表里有几个正在跑。
    * 做成闭包是为了在渲染时按项目/分组直接算，不用再建索引。
@@ -239,25 +240,13 @@ export function Rail() {
   /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
     const q = query.trim().toLowerCase()
-
-    /**
-     * 会话的**真实最近活动**（最后一条消息的时间）。
-     * 老数据可能没有（升级前拉的列表）→ 退回 mtime。
-     */
     const activity = (s: SessionSummary): number => s.lastActivityAt ?? s.updatedAt
+    const recordsById = new Map(projectRecords.map((project) => [project.id, project]))
+    const activeProjectId = runners.find((runner) => runner.id === activeRunnerId)?.projectId
+    const currentSummary = sessions.find((item) => item.id === session?.sessionId || item.path === session?.sessionFile)
+    const currentProjectId = activeProjectId ?? currentSummary?.projectId
 
-    /**
-     * 排序：先按家族分组，再按“新→旧”。
-     *
-     * 用户报「顺序不对 很乱」：以前所有会话混在一起排，
-     * 分叉出来的子会话散落在各处，找不到“它从哪来”。
-     * 现在：根会话按最近活动倒序，**子会话紧跟在它的父会话后面**
-     *（同族按创建先后），家族内部不再交错。
-     *
-     * ⚠️ 排序键用 lastActivityAt（最后一条 message 的时间），
-     * 不用 updatedAt（= mtime）：打开会话会写会话文件，mtime 一变
-     * 那行就跳到顶部（用户上一轮报的「进入会话就置顶」）。
-     */
+    /** 同一项目里的分支仍然按“根会话 + 子会话”连续展示。 */
     const orderFamily = (list: SessionSummary[]): SessionSummary[] => {
       const inList = new Set(list.map((s) => s.path))
       const children = new Map<string, SessionSummary[]>()
@@ -271,7 +260,6 @@ export function Rail() {
 
       const roots = list.filter((s) => !s.parentSession || !inList.has(s.parentSession))
       roots.sort((a, b) => activity(b) - activity(a))
-
       const out: SessionSummary[] = []
       const seen = new Set<string>()
       const push = (s: SessionSummary): void => {
@@ -281,86 +269,112 @@ export function Rail() {
         for (const c of children.get(s.path) ?? []) push(c)
       }
       for (const r of roots) push(r)
-      for (const s of list) push(s) // 兑底：不丢行
+      for (const s of list) push(s)
       return out
     }
 
-    /**
-     * ⚠️ pi 的会话文件是**懒创建**的 —— 新建的会话在第一条消息之前不落盘，
-     * sessions 列表里根本没有它。不补一条的话，点「新对话」后左栏毫无反应，
-     * 也看不出「当前就在这个新会话里」。
-     * 这条合成条目在落盘后会自动被真实条目取代（path 相同）。
-     */
     const currentPath = session?.sessionFile
     const synthetic: SessionSummary[] = currentPath && !sessions.some((x) => x.path === currentPath)
-      ? [
-          {
-            id: session?.sessionId ?? 'current',
-            path: currentPath,
-            cwd: session?.cwd ?? '',
-            title: session?.sessionName ?? t('rail.untitled'),
-            named: !!session?.sessionName,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            messageCount: 0
-          }
-        ]
+      ? [{
+          id: session?.sessionId ?? 'current',
+          path: currentPath,
+          cwd: session?.cwd ?? '',
+          title: session?.sessionName ?? t('rail.untitled'),
+          named: !!session?.sessionName,
+          ...(currentProjectId ? { projectId: currentProjectId, scope: 'project' as const } : { scope: 'global' as const }),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messageCount: 0
+        }]
       : []
 
-    // 用模型生成的短标题覆盖列表标题（如果有）；用户手动名优先
+    // 用模型生成的短标题覆盖列表标题（如果有）；用户手动名优先。
     const all = [...synthetic, ...sessions].map((x) => {
       const manual = manualTitles[x.id]
       if (manual) return { ...x, title: manual, named: true }
-      const t = titles[x.id]
-      return t ? { ...x, title: t } : x
+      const generated = titles[x.id]
+      return generated ? { ...x, title: generated } : x
     })
     const parents = new Map(all.filter((s) => s.parentSession).map((s) => [s.path, s.parentSession!]))
+    const projectFor = (s: SessionSummary): {
+      id: string
+      cwd: string
+      label: string
+      projectId?: string
+    } => {
+      const record = s.projectId ? recordsById.get(s.projectId) : undefined
+      if (record) {
+        return {
+          id: `project:${record.id}`,
+          projectId: record.id,
+          cwd: record.cwd,
+          label: record.name || projectNames[record.cwd] || shortProject(record.cwd)
+        }
+      }
+      const cwd = s.cwd || '—'
+      return {
+        id: `global:${cwd}`,
+        cwd,
+        label: cwd === '—' ? t('rail.local') : `${t('rail.global')} · ${shortProject(cwd)}`
+      }
+    }
+
     const matches = new Set<string>()
     for (const s of all) {
-      if (!q || [s.title, s.cwd, projectNames[s.cwd] ?? ''].some((v) => v.toLowerCase().includes(q))) {
+      const project = projectFor(s)
+      if (!q || [s.title, s.cwd, project.label, projectNames[s.cwd] ?? ''].some((v) => v.toLowerCase().includes(q))) {
         matches.add(s.path)
         for (const p of ancestorPaths(s.path, parents)) matches.add(p)
       }
     }
     const filtered = all.filter((s) => matches.has(s.path))
-
-    const byCwd = new Map<string, SessionSummary[]>()
-    for (const s of filtered) {
-      const rootPath = ancestorPaths(s.path, parents).at(-1)
-      const root = rootPath ? all.find((x) => x.path === rootPath) : s
-      const key = (root?.cwd || s.cwd) || '—'
-      const list = byCwd.get(key) ?? []
-      list.push(s)
-      byCwd.set(key, list)
+    const byProject = new Map<string, { id: string; cwd: string; label: string; projectId?: string; list: SessionSummary[] }>()
+    const addProject = (project: ReturnType<typeof projectFor>, list: SessionSummary[] = []): void => {
+      const previous = byProject.get(project.id)
+      if (previous) previous.list.push(...list)
+      else byProject.set(project.id, { ...project, list: [...list] })
     }
 
+    // 先把设置里的项目放入列表，即使它暂时没有会话，项目入口仍然稳定。
+    for (const record of projectRecords) {
+      const label = record.name || projectNames[record.cwd] || shortProject(record.cwd)
+      if (!q || label.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)) {
+        addProject({ id: `project:${record.id}`, projectId: record.id, cwd: record.cwd, label })
+      }
+    }
+    for (const s of filtered) addProject(projectFor(s), [s])
+
+    // 没有 ProjectRecord 的旧 cwd 仍要作为一个可访问的全局位置保留。
     for (const cwd of settings?.recentCwds ?? []) {
-      if (!byCwd.has(cwd) && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) byCwd.set(cwd, [])
+      const alreadyShown = [...byProject.values()].some((project) => project.cwd.toLowerCase() === cwd.toLowerCase())
+      if (!alreadyShown && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
+        addProject({ id: `global:${cwd}`, cwd, label: `${t('rail.global')} · ${shortProject(cwd)}` })
+      }
     }
+
     const cur = session?.cwd
-    return [...byCwd.entries()]
-      .map(([cwdKey, list]) => ({
-        cwd: cwdKey,
-        label: cwdKey === '—' ? t('rail.local') : projectNames[cwdKey] || shortProject(cwdKey),
-        list: orderFamily(list),
-        isCurrent: cwdKey === cur
+    return [...byProject.values()]
+      .map((project) => ({
+        ...project,
+        list: orderFamily(project.list),
+        isCurrent: project.projectId ? project.projectId === currentProjectId : !currentProjectId && project.cwd === cur
       }))
-      .filter((p) => showArchived === archived.includes(p.cwd))
+      .filter((project) => showArchived === !!(project.projectId && recordsById.get(project.projectId)?.archived))
       .sort((a, b) => {
         if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
-        const at = (p: { list: SessionSummary[] }) =>
-          p.list[0] ? (p.list[0].lastActivityAt ?? p.list[0].updatedAt) : 0
+        const at = (p: { list: SessionSummary[] }) => p.list[0] ? activity(p.list[0]) : 0
         return at(b) - at(a)
       })
-  }, [sessions, query, session, t, titles, manualTitles, projectNames, settings?.recentCwds, archived, showArchived])
+  }, [sessions, query, session, t, titles, manualTitles, projectNames, projectRecords, settings?.recentCwds, archived, showArchived, runners, activeRunnerId])
 
   // 将项目实体按持久化分组重新排列；分组标题会在项目列表中作为一级标题显示。
   // 组内仍保留项目原本的活动排序，未分组项目统一放在最后。
   const displayProjects = useMemo(() => {
-    const groupIdFor = (cwd: string): string | undefined => projectRecords.find((record) => record.cwd === cwd)?.groupId
+    const groupIdFor = (project: (typeof projects)[number]): string | undefined =>
+      project.projectId ? projectRecords.find((record) => record.id === project.projectId)?.groupId : undefined
     const byGroup = new Map<string, typeof projects>()
     for (const project of projects) {
-      const key = groupIdFor(project.cwd) ?? ''
+      const key = groupIdFor(project) ?? ''
       const list = byGroup.get(key) ?? []
       list.push(project)
       byGroup.set(key, list)
@@ -520,8 +534,9 @@ export function Rail() {
    * 视图切到该项目**最近访问的会话**（没有就新建一个空会话），
    * 其它项目里正在跑的会话一个都不动。
    */
-  const switchProject = async (cwd: string): Promise<void> => {
-    if (cwd === session?.cwd) return
+  const switchProject = async (cwd: string, projectId?: string): Promise<void> => {
+    const activeProjectId = runners.find((runner) => runner.id === activeRunnerId)?.projectId
+    if (cwd === session?.cwd && projectId === activeProjectId) return
     const res = await window.yan.setCwd(cwd)
     if (!res.ok) {
       setProjectError(res.error || t('rail.projectError'))
@@ -530,10 +545,10 @@ export function Rail() {
     setProjectError('')
     const store = useStore.getState()
     const recent = sessions
-      .filter((x) => x.cwd === cwd)
+      .filter((x) => projectId ? x.projectId === projectId : (!x.projectId && x.cwd === cwd))
       .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))[0]
     if (recent) await store.switchSession(recent.path)
-    else await store.newSession()
+    else await store.newSession({ cwd, ...(projectId ? { projectId } : {}), scope: projectId ? 'project' : 'global' })
     await store.refreshSessions()
   }
 
@@ -556,6 +571,7 @@ export function Rail() {
       children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next)) : null}
       menuOpen={menuFor === s.path} onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
       onSelect={() => void select(s.path)} pinned={pinned.includes(s.path)} unread={unread.includes(s.path)}
+      projectRecords={projectRecords}
       onPin={() => setPinned((prev) => prev.includes(s.path) ? prev.filter((p) => p !== s.path) : [...prev, s.path])}
       onRequestDelete={() => setDeleteTarget(s)} />
   }
@@ -568,7 +584,7 @@ export function Rail() {
       {!railPinned ? <div className="rail-compact">
         <button title={t('mode.switch')} onClick={() => { setRailPinned(true); setModeMenu(true) }}>砚</button>
         <button title={t('rail.search')} onClick={() => { setRailPinned(true); setSearching(true) }}><Icon name="search" size={16} /></button>
-        <button title={t('rail.new')} onClick={() => void newSession()}><Icon name="plus" size={16} /></button>
+        <button title={t('rail.new')} onClick={() => void newSession({ scope: 'global' })}><Icon name="plus" size={16} /></button>
         {/*
          * 项目文件夹（N14）：收起侧栏仍然能看见/切到项目。
          *
@@ -579,21 +595,21 @@ export function Rail() {
         <span className="rail-compact-sep" aria-hidden />
         {miniProjects.map((p) => (
           <button
-            key={p.cwd}
+            key={p.id}
             className={`rail-compact-proj ${p.isCurrent ? 'cur' : ''}`}
             title={p.label}
             aria-label={p.label}
             aria-current={p.isCurrent ? 'true' : undefined}
             data-testid="rail-compact-project"
             data-current={p.isCurrent ? '1' : '0'}
-            data-hover={miniHover === p.cwd ? '1' : '0'}
+            data-hover={miniHover === p.id ? '1' : '0'}
             data-running={runningIn(p.list) > 0 ? '1' : '0'}
             data-cwd={p.cwd}
-            onMouseEnter={() => setMiniHover(p.cwd)}
-            onMouseLeave={() => setMiniHover((v) => (v === p.cwd ? null : v))}
-            onFocus={() => setMiniHover(p.cwd)}
-            onBlur={() => setMiniHover((v) => (v === p.cwd ? null : v))}
-            onClick={() => void switchProject(p.cwd)}
+            onMouseEnter={() => setMiniHover(p.id)}
+            onMouseLeave={() => setMiniHover((v) => (v === p.id ? null : v))}
+            onFocus={() => setMiniHover(p.id)}
+            onBlur={() => setMiniHover((v) => (v === p.id ? null : v))}
+            onClick={() => void switchProject(p.cwd, p.projectId)}
           >
             <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={16} />
             <span className="rail-compact-name">{p.label}</span>
@@ -620,12 +636,12 @@ export function Rail() {
             <div className="rcm-head">{t('rail.projects')}</div>
             {projects.map((p) => (
               <button
-                key={p.cwd}
+                key={p.id}
                 role="menuitem"
                 className={`rcm-item ${p.isCurrent ? 'cur' : ''}`}
                 data-current={p.isCurrent ? '1' : '0'}
                 data-cwd={p.cwd}
-                onClick={() => { setMiniMenu(false); void switchProject(p.cwd) }}
+                onClick={() => { setMiniMenu(false); void switchProject(p.cwd, p.projectId) }}
               >
                 <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={12} />
                 <span className="rcm-name" title={p.cwd}>{p.label}</span>
@@ -738,7 +754,7 @@ export function Rail() {
       ) : null}
 
       {/* ---- 操作行 ---- */}
-      <button className="rail-action" onClick={() => void newSession()} data-testid="rail-new">
+      <button className="rail-action" onClick={() => void newSession({ scope: 'global' })} data-testid="rail-new">
         <Icon name="plus" size={12} />
         <span>{t('rail.new')}</span>
       </button>
@@ -776,13 +792,13 @@ export function Rail() {
             <div className="rail-empty">{t('rail.noMatch')}</div>
           ) : projectsOpen || query ? (
             shownProjects.map((p, projectIndex) => {
-              const pOpen = !!query || !collapsed.includes(p.cwd)
-              const groupId = projectRecords.find((record) => record.cwd === p.cwd)?.groupId
+              const pOpen = !!query || !collapsed.includes(p.id)
+              const groupId = p.projectId ? projectRecords.find((record) => record.id === p.projectId)?.groupId : undefined
               const group = groupId ? projectGroups.find((candidate) => candidate.id === groupId) : undefined
               const previous = shownProjects[projectIndex - 1]
-              const previousGroupId = previous ? projectRecords.find((record) => record.cwd === previous.cwd)?.groupId : undefined
+              const previousGroupId = previous?.projectId ? projectRecords.find((record) => record.id === previous.projectId)?.groupId : undefined
               return (
-                <div key={p.cwd} className="proj">
+                <div key={p.id} className="proj">
                   {group && groupId !== previousGroupId ? (
                     <div className="proj-group-heading" data-testid="rail-project-group" data-group-id={group.id}>
                       {groupRename === group.id ? (
@@ -888,7 +904,7 @@ export function Rail() {
                    */
                   <div
                     className={`proj-head ${pOpen ? '' : 'collapsed'}`}
-                    onContextMenu={(e) => { e.preventDefault(); setProjectMenu(p.cwd) }}
+                    onContextMenu={(e) => { e.preventDefault(); if (p.projectId) setProjectMenu(p.id) }}
                     title={p.cwd}
                     data-testid="rail-project-row"
                     data-current={p.isCurrent ? '1' : '0'}
@@ -898,12 +914,12 @@ export function Rail() {
                       data-testid="rail-project"
                       title={`${p.label}\n${p.cwd}`}
                       aria-current={p.isCurrent ? 'true' : undefined}
-                      onClick={() => void switchProject(p.cwd)}
+                      onClick={() => void switchProject(p.cwd, p.projectId)}
                     >
                       <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
                       <span className="proj-labels">
                         <span className="proj-name">{p.label}</span>
-                        {projectRecords.find((record) => record.cwd === p.cwd)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.cwd === p.cwd)?.groupId)?.name}</span> : null}
+                        {p.projectId && projectRecords.find((record) => record.id === p.projectId)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.id === p.projectId)?.groupId)?.name}</span> : null}
                       </span>
                     </button>
                     <button
@@ -911,22 +927,24 @@ export function Rail() {
                       data-testid="rail-project-fold"
                       aria-expanded={pOpen}
                       title={pOpen ? t('rail.foldProject') : t('rail.unfoldProject')}
-                      onClick={() => toggleProject(p.cwd)}
+                      onClick={() => toggleProject(p.id)}
                     >
                       <Icon name="chevron-right" size={12} className={`chev ${pOpen ? 'open' : ''}`} />
                     </button>
-                    <span
-                      className="proj-rename"
-                      role="button"
-                      tabIndex={0}
-                      title={t('rail.more')}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setProjectMenu(p.cwd) } }}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        // ⚠️ Electron 不支持 window.prompt（返回 null，什么都发生不了）
-                        setProjectMenu(projectMenu === p.cwd ? null : p.cwd)
-                      }}
-                    ><Icon name="menu" size={12} /></span>
+                    {p.projectId ? (
+                      <span
+                        className="proj-rename"
+                        role="button"
+                        tabIndex={0}
+                        title={t('rail.more')}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setProjectMenu(p.id) } }}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          // ⚠️ Electron 不支持 window.prompt（返回 null，什么都发生不了）
+                          setProjectMenu(projectMenu === p.id ? null : p.id)
+                        }}
+                      ><Icon name="menu" size={12} /></span>
+                    ) : null}
                     <span className="proj-count">{p.list.length}</span>
                     {runningIn(p.list) > 0 ? (
                       <span
@@ -941,13 +959,13 @@ export function Rail() {
                   </div>
                   )}
 
-                  {projectMenu === p.cwd ? <div className="project-menu" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await newSession(); await useStore.getState().refreshSessions() } }}>{t('rail.new')}</button>
+                  {projectMenu === p.id && p.projectId ? <div className="project-menu" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await newSession({ cwd: p.cwd, projectId: p.projectId, scope: 'project' }); await useStore.getState().refreshSessions() } }}>{t('rail.new')}</button>
                     <button onClick={() => { setProjectMenu(null); setProjDraft(p.label); setProjRename(p.cwd) }}>{t('rail.renameProject')}</button>
                     <button onClick={() => { void window.yan.revealPath(p.cwd); setProjectMenu(null) }}>{t('rail.reveal')}</button>
                     <button onClick={() => { void navigator.clipboard.writeText(p.cwd); setProjectMenu(null) }}>{t('rail.copyPath')}</button>
                     <button onClick={() => {
-                      void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) })
+                      void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) })
                       setProjectMenu(null)
                     }}>{showArchived ? t('rail.restoreProject') : t('rail.archiveProject')}</button>
                     <button onClick={() => { setGroupingProject(p.cwd); setGroupDraft(''); setProjectMenu(null) }}>{t('rail.moveGroup')}</button>
@@ -959,11 +977,11 @@ export function Rail() {
                       if (!name) return
                       const existing = projectGroups.find((group) => group.name.toLowerCase() === name.toLowerCase())
                       const group = existing ?? { id: `group-${Date.now().toString(36)}`, name, createdAt: Date.now() }
-                      void patchSettings({ projectGroups: existing ? projectGroups : [...projectGroups, group], projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) })
+                      void patchSettings({ projectGroups: existing ? projectGroups : [...projectGroups, group], projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) })
                       setGroupingProject(null)
                     }}>{t('rail.saveGroup')}</button>
-                    {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{group.name}</button>)}
-                    <button onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.cwd === p.cwd ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{t('rail.noGroup')}</button>
+                    {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{group.name}</button>)}
+                    <button onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{t('rail.noGroup')}</button>
                   </div> : null}
                   {pOpen ? <>
                     {p.list.filter((s) => !s.parentSession || !p.list.some((p) => p.path === s.parentSession)).map((s) => renderSession(s, p.list))}
@@ -1083,11 +1101,12 @@ function TrashNoticeBar({ notice, onUndo, onClose }: {
 /* ---------------------------------------------------------------- 会话行 */
 
 function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onToggleBranches,
-  children, depth, menuOpen, onToggleMenu, onSelect, pinned, onPin, unread, onRequestDelete
+  children, depth, menuOpen, onToggleMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete
 }: {
   s: SessionSummary; selected: boolean; branchCount: number; branchIndex?: number;
   branchesOpen: boolean; onToggleBranches: () => void; children: React.ReactNode; depth: number;
   menuOpen: boolean; onToggleMenu: () => void; onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
+  projectRecords: ProjectRecord[];
   onRequestDelete: () => void
 }) {
   const t = useT()
@@ -1099,6 +1118,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
    * 注册表里，左栏每一行都能显示自己的状态。
    */
   const runner = useStore((state) => state.runners.find((r) => !!r.sessionFile && r.sessionFile === s.path))
+  const titleCandidate = useStore((state) => state.titleCandidates[s.id])
   const running = runner?.running === true
   const waiting = runner?.waiting === true
   const failure = runner?.failed ? t('rail.runnerFailed') : ''
@@ -1112,6 +1132,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
    */
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(s.title)
+  const moveTargets = projectRecords.filter((project) => !project.archived && project.id !== s.projectId)
 
   const commitRename = (): void => {
     const name = draft.trim()
@@ -1229,7 +1250,77 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           <div className="srow-menu-path" title={s.path}>
             {s.path}
           </div>
+          {titleCandidate ? (
+            <div className="srow-title-candidate" data-testid="rail-title-candidate">
+              <div className="srow-title-candidate-label">{t('rail.titleCandidate')}</div>
+              <div className="srow-title-candidate-name" title={titleCandidate}>{titleCandidate}</div>
+              <div className="srow-title-candidate-actions">
+                <button
+                  className="srow-menu-btn"
+                  data-testid="rail-accept-title-candidate"
+                  onClick={() => {
+                    void useStore.getState().acceptTitleCandidate(s.id)
+                    onToggleMenu()
+                  }}
+                >
+                  <Icon name="check" size={12} />
+                  {t('rail.acceptTitleCandidate')}
+                </button>
+                <button
+                  className="srow-menu-btn"
+                  data-testid="rail-dismiss-title-candidate"
+                  onClick={() => {
+                    useStore.getState().dismissTitleCandidate(s.id)
+                    onToggleMenu()
+                  }}
+                >
+                  <Icon name="plus" size={12} className="rail-trash-x" />
+                  {t('rail.dismissTitleCandidate')}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <button className="srow-menu-btn" onClick={() => { onPin(); onToggleMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
+          <div className="srow-menu-section" data-testid="rail-move-session">
+            <div className="srow-menu-section-title">{t('rail.moveSession')}</div>
+            {s.scope !== 'global' ? (
+              <button
+                className="srow-menu-btn"
+                data-testid="rail-move-global"
+                onClick={() => {
+                  void useStore.getState().moveSession(s.id, null).then((done) => { if (done) onToggleMenu() })
+                }}
+              >
+                <Icon name="globe" size={12} />
+                {t('rail.defaultLocation')}
+              </button>
+            ) : null}
+            {moveTargets.map((project) => (
+              <button
+                key={project.id}
+                className="srow-menu-btn"
+                data-testid={`rail-move-project-${project.id}`}
+                onClick={() => {
+                  void useStore.getState().moveSession(s.id, project.id).then((done) => { if (done) onToggleMenu() })
+                }}
+              >
+                <Icon name="folder" size={12} />
+                {project.name || shortProject(project.cwd)}
+              </button>
+            ))}
+          </div>
+          <button
+            style={{ '--i': 1 } as React.CSSProperties}
+            className="srow-menu-btn"
+            data-testid="rail-regenerate-title"
+            onClick={() => {
+              onToggleMenu()
+              void useStore.getState().regenerateTitle(s.id)
+            }}
+          >
+            <Icon name="sparkles" size={12} />
+            {t('rail.regenerateTitle')}
+          </button>
           <button
             disabled={!selected || running}
             title={!selected ? t('rail.openBeforeFork') : ''}

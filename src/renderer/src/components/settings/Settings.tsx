@@ -605,87 +605,44 @@ function StatusTab() {
   const t = useT()
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
-  const models = useStore((s) => s.models)
-  const thinkingLevels = useStore((s) => s.thinkingLevels)
-  const setModel = useStore((s) => s.setModel)
-  const setThinking = useStore((s) => s.setThinking)
-  const compact = useStore((s) => s.compact)
-  const setAutoCompaction = useStore((s) => s.setAutoCompaction)
-  const setAutoRetry = useStore((s) => s.setAutoRetry)
-
-  const byProvider = new Map<string, typeof models>()
-  for (const m of models) {
-    const list = byProvider.get(m.provider) ?? []
-    list.push(m)
-    byProvider.set(m.provider, list)
-  }
 
   const cu = stats?.contextUsage
-  const used = cu?.tokens ?? 0
-  const win = cu?.contextWindow ?? session?.model?.contextWindow ?? 0
-  const pct = cu?.percent ?? (used && win ? (used / win) * 100 : 0)
-  const busy = !!session?.isStreaming || !!session?.isCompacting
+  const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
+  const statsMatchModel = !!cu && (!cu.modelKey || cu.modelKey === modelKey)
+  const known = statsMatchModel && typeof cu?.tokens === 'number'
+  const used = known ? (cu?.tokens as number) : 0
+  const win = session?.model?.contextWindow ?? (statsMatchModel ? cu?.contextWindow : undefined) ?? 0
+  const pct = known ? (cu?.percent ?? (used && win ? (used / win) * 100 : 0)) : 0
   const nf = new Intl.NumberFormat('en-US')
 
   return (
-    <div className="set-group">
+    <div className="set-group" data-testid="set-status-diagnostics">
       <div className="set-row">
         <div className="set-label">
-          <div className="set-name">{t('status.model')}</div>
-          <div className="set-desc">{t('set.modelDesc')}</div>
+          <div className="set-name">{t('status.session')}</div>
+          <div className="set-desc set-num">{session?.sessionId ?? '—'}</div>
         </div>
-        <div className="set-ctl">
-          <select
-            className="pick"
-            value={session?.model ? `${session.model.provider}|${session.model.id}` : ''}
-            disabled={busy || models.length === 0}
-            onChange={(e) => {
-              const [provider, id] = e.target.value.split('|')
-              if (provider && id) void setModel(provider, id)
-            }}
-          >
-            {models.length === 0 ? <option value="">{t('status.noModels')}</option> : null}
-            {[...byProvider.entries()].map(([provider, list]) => (
-              <optgroup key={provider} label={provider}>
-                {list.map((m) => (
-                  <option key={`${m.provider}|${m.id}`} value={`${m.provider}|${m.id}`}>
-                    {m.name}
-                    {m.reasoning ? ' · reasoning' : ''}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+        <div className="set-ctl set-static set-num">
+          {session?.model?.name ?? '—'} · {session?.thinkingLevel ?? 'off'}
         </div>
       </div>
 
       <div className="set-row">
         <div className="set-label">
-          <div className="set-name">{t('status.thinking')}</div>
-          <div className="set-desc">{t('set.thinkingDesc')}</div>
+          <div className="set-name">{t('status.context')}</div>
+          <div className="set-desc">
+            {known ? `${nf.format(used)} / ` : '— / '}{win ? nf.format(win) : '—'} · {known && win ? pct.toFixed(1) : '—'}%
+          </div>
         </div>
-        <div className="set-ctl">
-          <select
-            className="pick"
-            value={session?.thinkingLevel ?? 'off'}
-            disabled={busy || thinkingLevels.length === 0}
-            onChange={(e) => void setThinking(e.target.value)}
-          >
-            {(thinkingLevels.length ? thinkingLevels : ['off']).map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
+        <div className="set-ctl set-static">
+          {session?.isCompacting ? t('status.compacting') : session?.isStreaming ? t('status.streaming') : t('status.context')}
         </div>
       </div>
 
       <div className="set-row col">
         <div className="set-label">
-          <div className="set-name">{t('status.context')}</div>
-          <div className="set-desc">
-            {nf.format(used)} / {win ? nf.format(win) : '—'} · {win ? pct.toFixed(1) : '—'}%
-          </div>
+          <div className="set-name">{t('status.tools')} / {t('status.rounds')}</div>
+          <div className="set-desc">{stats?.toolCalls ?? 0} / {stats?.userMessages ?? 0}</div>
         </div>
         <div className="meter">
           <i style={{ width: `${Math.min(100, pct)}%` }} />
@@ -702,63 +659,7 @@ function StatusTab() {
           </span>
         </div>
       </div>
-
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.compact')}</div>
-          <div className="set-desc">{t('set.compactDesc')}</div>
-        </div>
-        <div className="set-ctl">
-          <button className="btn" onClick={() => void compact()} disabled={busy}>
-            <Icon
-              name={session?.isCompacting ? 'refresh' : 'layers'}
-              size={12}
-              className={session?.isCompacting ? 'spin' : undefined}
-            />
-            <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.autoCompact')}</div>
-          <div className="set-desc">{t('status.autoCompactHint')}</div>
-        </div>
-        <div className="set-ctl">
-          <Toggle on={session?.autoCompactionEnabled ?? true} onChange={(v) => void setAutoCompaction(v)} />
-        </div>
-      </div>
-
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.autoRetry')}</div>
-          <div className="set-desc">{t('status.autoRetryHint')}</div>
-        </div>
-        <div className="set-ctl">
-          <Toggle on={autoRetryHeld.value} onChange={(v) => {
-            autoRetryHeld.value = v
-            void setAutoRetry(v)
-          }} />
-        </div>
-      </div>
     </div>
-  )
-}
-
-/** pi 的 get_state 不返回 autoRetry 状态，只能客户端自己记 */
-const autoRetryHeld = { value: true }
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      className={`switch-pill ${on ? 'on' : ''}`}
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-    >
-      <span className="switch-knob" />
-    </button>
   )
 }
 

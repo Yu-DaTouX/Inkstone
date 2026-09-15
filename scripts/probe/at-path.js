@@ -8,7 +8,7 @@
  * 被测的三件事：
  *   ① 能列出目录条目（目录带尾斜杠 —— 界面靠它区分目录 / 文件）
  *   ② 安全：拒绝 ../ 跳出 cwd、拒绝绝对路径
- *   ③ 输入 `@前缀` 时界面真的弹出补全菜单
+ *   ③ 输入裸 `@` / 单字符前缀时界面真的弹出补全菜单
  */
 ;(async () => {
   const out = []
@@ -28,7 +28,15 @@
 
   log('=== @ 文件引用补全 ===')
 
-  const cwd = store.getState().settings?.cwd ?? ''
+  const state = store.getState()
+  const cwd = state.session?.cwd ?? state.settings?.cwd ?? ''
+  const runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
+  const summary = state.sessions.find((item) => item.id === state.session?.sessionId || item.path === state.session?.sessionFile)
+  const context = {
+    cwd,
+    generation: runner?.generation ?? 0,
+    ...(runner?.projectId ?? summary?.projectId ? { projectId: runner?.projectId ?? summary?.projectId } : {})
+  }
   log('  cwd = ' + cwd)
 
   /*
@@ -41,9 +49,12 @@
    *    LICENSE 等（文件），两种形态都能验。
    */
   const hitPrefix = 's'
-  const hits = await window.yan.completePath(hitPrefix)
+  const hitResult = await window.yan.completePath(hitPrefix, cwd, context)
+  const hits = hitResult.paths
   log('  completePath("s") = ' + hits.length + ' 项')
   log('    ' + JSON.stringify(hits.slice(0, 6)))
+  ok(hitResult.status === 'ok' || hitResult.status === 'empty', '返回带状态的补全结果')
+  ok(hitResult.request?.cwd?.toLowerCase() === cwd.toLowerCase(), '补全响应回显当前项目 cwd')
   ok(hits.length > 0, '能列出目录下的条目')
   const hitDirs = hits.filter((h) => h.endsWith('/'))
   log('  其中目录 ' + hitDirs.length + ' 项')
@@ -60,19 +71,19 @@
   )
 
   /* 安全：不能跳出 cwd */
-  const up = await window.yan.completePath('../../')
+  const up = (await window.yan.completePath('../../', cwd, context)).paths
   ok(up.length === 0, '拒绝 ../ 跳出 cwd（返回 ' + up.length + ' 项）')
-  const abs = await window.yan.completePath('C:/Windows/')
+  const abs = (await window.yan.completePath('C:/Windows/', cwd, context)).paths
   ok(abs.length === 0, '拒绝绝对路径（返回 ' + abs.length + ' 项）')
 
   /* 隐藏文件与噪声目录不列（node_modules / .git / 点开头） */
-  const noisy = await window.yan.completePath('')
+  const noisy = (await window.yan.completePath('', cwd, context)).paths
   ok(
     !noisy.some((n) => n.includes('node_modules') || n.startsWith('.')),
     '不列 node_modules 与隐藏文件'
   )
 
-  /* 界面：输入 @ 前缀 → 菜单出现 */
+  /* 界面：输入裸 @ → 根层菜单出现 */
   log('')
   log('=== 界面 ===')
   const ta = q('.composer textarea')
@@ -83,12 +94,10 @@
   }
 
   /*
-   * ⚠️ 菜单用的前缀必须 **≥ 2 个字符** —— Composer 里是
-   *    `if (atQuery.trim().length < 2) return`（单个字符不查，
-   *    否则刚打出一个 @ 就发 IPC 白干活）。
-   *    这就是下面不用 hitPrefix('s') 而用 menuPrefix('sr') 的原因。
+   * 菜单支持裸 @ 与单字符前缀；主进程只读当前 cwd 的一层目录，
+   * 不会因为打开菜单递归扫描整个项目。
    */
-  const menuPrefix = 'sr'
+  const menuPrefix = ''
   setter.call(ta, '@' + menuPrefix)
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   /*
@@ -97,13 +106,16 @@
    *    负载高时会超过 800ms —— 这根固定等待已经假失败过一次。
    */
   let menu = null
-  for (let i = 0; i < 30; i++) {
+  let itemCount = 0
+  for (let i = 0; i < 40; i++) {
     menu = q('[data-testid="at-menu"]')
-    if (menu) break
+    itemCount = menu?.querySelectorAll('.slash-item').length ?? 0
+    /* 菜单会先以「加载中」状态出现；等 IPC 的真实候选进来再读条目。 */
+    if (itemCount > 0 || q('[data-testid="at-error"]')) break
     await sleep(120)
   }
   log('  菜单前缀 @' + menuPrefix + ' → ' + (menu ? '出现' : '超时（textarea="' + ta.value + '"）'))
-  ok(!!menu, '输入 @ 后弹出补全菜单')
+  ok(!!menu, '输入裸 @ 后弹出根层补全菜单')
   if (menu) {
     const items = [...menu.querySelectorAll('.slash-item')].map((x) => x.textContent)
     log('  条目 ' + items.length + ' 个: ' + JSON.stringify(items.slice(0, 3)))

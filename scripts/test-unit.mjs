@@ -12,10 +12,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
+const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
 process.env.YAN_SESSIONS_DIR = dir
+process.env.YAN_DATA_DIR = dataDir
 
 // 必须在设置 env 之后 import（模块顶层读了这个变量）
-const { listSessions, deleteSession, restoreSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
+const { listSessions, deleteSession, readTitleSamples, restoreSession, SESSIONS_DIR } = await import('../out/main/sessions.js')
 
 /*
  * 回合分组的纯逻辑用 esbuild 现场编译。
@@ -170,6 +172,19 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
 
+/* L03 子代理写入隔离 / 差异归档 / 干净主工作树合并。 */
+const subagentIsolation = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/subagent-isolation.ts'],
+    outfile: 'out/test/subagent-isolation.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/subagent-isolation.mjs'))
+)
+const { runSubagentIsolationTests } = await import('./test-subagent-isolation.mjs')
+
 /*
  * 运行实例注册表的策略（src/main/runners.ts，N12）。
  * 纯逻辑：用假 agent 验证「切会话不停任务」「忙碌实例不被顶掉」
@@ -185,6 +200,133 @@ const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').t
     logLevel: 'silent'
   }).then(() => import('../out/test/runners.mjs'))
 )
+
+/*
+ * 后台会话运行时缓存（src/renderer/src/state/session-runtime.ts）。
+ * 这是与 DOM 无关的归并器，单测直接覆盖事件身份、增量和 generation 闸门。
+ */
+const { migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/session-runtime.ts'],
+    outfile: 'out/test/session-runtime.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/session-runtime.mjs'))
+)
+
+/* 项目/会话产品归属索引（src/main/session-layout.ts）。 */
+const sessionLayout = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/session-layout.ts'],
+    outfile: 'out/test/session-layout.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/session-layout.mjs'))
+)
+
+/* 退出时的运行实例元数据快照；不依赖 Electron，单独 bundle 验证落盘边界。 */
+const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/exit-snapshot.ts'],
+    outfile: 'out/test/exit-snapshot.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/exit-snapshot.mjs'))
+)
+
+/* N18 命令注册表：来源分类、兼容项和同名命令策略。 */
+const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/command-registry.ts'],
+    outfile: 'out/test/command-registry.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/command-registry.mjs'))
+)
+
+/* N02 模型能力：不从模型名称猜测，区分已知 / 不支持 / 未知。 */
+const modelCapabilities = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/model-capabilities.ts'],
+    outfile: 'out/test/model-capabilities.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/model-capabilities.mjs'))
+)
+
+/* L04 网络边界：私网/IPv6/DNS rebinding 目标的纯逻辑。 */
+const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/browser/network-policy.ts'],
+    outfile: 'out/test/network-policy.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/network-policy.mjs'))
+)
+
+/* @ 文件引用补全：只编译纯函数，不把 React 组件拉进 Node 测试。 */
+const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/components/chat/at-query.ts'],
+    outfile: 'out/test/at-query.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/at-query.mjs'))
+)
+const { runAtQueryTests } = await import('./test-at-query.mjs')
+
+/* 文件树与全项目文件名搜索：主进程只读 fs 模块，单独 bundle 以覆盖真实边界。 */
+const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/files.ts'],
+    outfile: 'out/test/files.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/files.mjs'))
+)
+const { runFileListingTests } = await import('./test-files.mjs')
+
+/* `/` 命令补全：光标范围与参数保留。 */
+const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/components/chat/slash-query.ts'],
+    outfile: 'out/test/slash-query.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/slash-query.mjs'))
+)
+const { runSlashQueryTests } = await import('./test-slash-query.mjs')
+
+/* 能力列表响应的过期判定（sessionId 从 pending 过渡到 uuid 不该被判过期）。 */
+const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/capability-request.ts'],
+    outfile: 'out/test/capability-request.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/capability-request.mjs'))
+)
+const { runCapabilityRequestTests } = await import('./test-capability-request.mjs')
 
 let pass = 0
 let fail = 0
@@ -269,6 +411,28 @@ ok(!!named && named.named === true, 'named 标记为 true')
 ok(!!unnamed && unnamed.title === '没名字的会话就用首条消息当标题', '没有名字时用首条用户消息')
 ok(!!unnamed && unnamed.named === false, 'named 标记为 false')
 ok(list.length === 2, `列出 ${list.length} 个会话`)
+
+console.log('\n--- 1b. 按需标题只取首条 / 最近用户文字 ---')
+
+const pSamples = await makeSession('samples.jsonl', {
+  id: 'samples',
+  timestamp: new Date().toISOString(),
+  cwd: 'C:\\Users\\Test\\proj',
+  messages: ['首条用户意图', '中间消息', '最近的用户问题']
+})
+const titleSamples = await readTitleSamples(pSamples)
+ok(titleSamples.length === 2, '标题样本只有首条和最近一条', JSON.stringify(titleSamples))
+ok(titleSamples[0] === '首条用户意图' && titleSamples[1] === '最近的用户问题', '标题样本保持时间顺序')
+
+const pLongSamples = await makeSession('samples-long.jsonl', {
+  id: 'samples-long',
+  timestamp: new Date().toISOString(),
+  cwd: 'C:\\Users\\Test\\proj',
+  messages: ['A'.repeat(800), 'B'.repeat(800)]
+})
+const longTitleSamples = await readTitleSamples(pLongSamples)
+ok(longTitleSamples.every((sample) => sample.length <= 600), '每条标题样本最多 600 字符')
+ok(longTitleSamples.reduce((n, sample) => n + sample.length, 0) <= 1200, '标题样本总量最多 1200 字符')
 
 
 console.log('\n--- 2. 名字取最后一个（改名后应生效）---')
@@ -479,6 +643,8 @@ await runStreamWidthTests(ok)
 await runQuestionTests(ok)
 await runTodoHistoryTests(ok)
 
+await runSubagentIsolationTests(ok, subagentIsolation)
+
 /*
  * 运行实例注册表（N12）：切换不停任务、忙碌实例不被牺牲、并发上限。
  */
@@ -486,6 +652,41 @@ await runTodoHistoryTests(ok)
   const { runRunnerTests } = await import('./test-runners.mjs')
   await runRunnerTests(ok, RunnerRegistry)
 }
+
+{
+  const { runSessionRuntimeTests } = await import('./test-session-runtime.mjs')
+  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime)
+}
+
+{
+  const { runSessionLayoutTests } = await import('./test-session-layout.mjs')
+  await runSessionLayoutTests(ok, sessionLayout)
+}
+
+{
+  const { runExitSnapshotTests } = await import('./test-exit-snapshot.mjs')
+  await runExitSnapshotTests(ok, exitSnapshot)
+}
+
+{
+  const { runCommandRegistryTests } = await import('./test-command-registry.mjs')
+  runCommandRegistryTests(ok, commandRegistry)
+}
+
+{
+  const { runModelCapabilitiesTests } = await import('./test-model-capabilities.mjs')
+  runModelCapabilitiesTests(ok, modelCapabilities)
+}
+
+{
+  const { runNetworkPolicyTests } = await import('./test-network-policy.mjs')
+  await runNetworkPolicyTests(ok, networkPolicy)
+}
+
+runAtQueryTests(ok, atQuery)
+runSlashQueryTests(ok, slashQuery)
+runCapabilityRequestTests(ok, capabilityRequest)
+await runFileListingTests(ok, fileListing)
 
 // 模型接入：provider 名映射（假 pi 探针，不碰真实 auth.json）
 const { runCredentialsTests } = await import('./test-credentials.mjs')
@@ -521,4 +722,5 @@ await runStreamDeltasTests(ok)
 }
 
 console.log(`\n${pass}/${pass + fail} 通过`)
+await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)

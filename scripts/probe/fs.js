@@ -1,9 +1,9 @@
 /**
  * 文件树（工具栏「文件」分区）。
  *
- * 覆盖的是「懒加载 + 点文件插 @路径」这条链。为什么值得单独一个场景：
+ * 覆盖的是「懒加载 + 单击预览 + 独立加入上下文 + 内部拖放」这条链。为什么值得单独一个场景：
  *   · 它是**主进程读文件系统**的路径，安全边界（不能跳出 cwd）必须有人守
- *   · 「点文件 = 插 @路径」而不是打开文件，这条约定很容易被后人改错
+ *   · 「点文件 = 预览、加入上下文 = 独立动作」这条边界很容易被后人改错
  *   · 长文件名/深路径在 264px 宽的工具栏里很容易横向溢出（本项目的老坑）
  *
  * ⚠️ 需要 cwd 有内容才有意义。test-live 会把 YAN_DATA_DIR 指到临时目录，
@@ -37,7 +37,7 @@
     }
 
     /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */
-    const cwd = store.getState().settings?.cwd ?? ''
+    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     out.push('=== 0. 工作目录 ===')
     out.push('  cwd = ' + cwd)
     if (!/pi-desktop/i.test(cwd)) {
@@ -105,32 +105,153 @@
     if (a > 0 && b > a && c > b) ok('层级缩进递增')
     else bad('缩进没递增')
 
-    /* ---- 4. 点文件 → 插 @路径（而不是打开文件）---- */
-    out.push('\n=== 4. 点文件 → 往输入框插 @路径 ===')
+    /* ---- 3b. 键盘树导航：方向键不改输入；Enter/Alt+Enter 保持动作分离 ---- */
+    out.push('\n=== 3b. 文件树键盘导航 ===')
+    const tree = document.querySelector('[data-testid="fs-tree"]')
+    if (tree?.getAttribute('role') === 'tree') ok('文件树声明为 tree')
+    else bad('文件树没有 role=tree')
+    const key = async (path, keyName, extra = {}) => {
+      const row = qa('.rp-fs-row').find((r) => r.dataset.path === path)
+      if (!row) return false
+      row.focus()
+      row.dispatchEvent(new KeyboardEvent('keydown', {
+        key: keyName,
+        bubbles: true,
+        cancelable: true,
+        ...extra
+      }))
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      return true
+    }
+    const activePath = () => document.activeElement?.dataset?.treePath ?? ''
+    if (await key('src', 'ArrowRight')) {
+      const p = activePath()
+      if (p === 'src/main') ok('ArrowRight 从已展开目录移动到下一可见节点')
+      else bad('ArrowRight 焦点没有移动到下一可见节点：' + JSON.stringify(p))
+    } else bad('键盘探针找不到 src 目录')
+    if (await key('src/main/agent.ts', 'Enter')) {
+      if (document.querySelector('[data-testid="file-preview"]')) ok('Enter 在文件上打开只读预览')
+      else bad('Enter 在文件上没有打开只读预览')
+    } else bad('键盘探针找不到 src/main/agent.ts')
+    store.getState().clearAttachments()
+    const beforeKeyboardAdd = document.querySelector('textarea')?.value ?? ''
+    if (await key('src/main/agent.ts', 'Enter', { altKey: true })) {
+      const added = await until(() => store.getState().attachments.some((a) => a.kind === 'file' && a.name === 'agent.ts'), 6000)
+      if (added) ok('Alt+Enter 独立加入上下文且不发送')
+      else bad('Alt+Enter 没有生成文件标签')
+      if ((document.querySelector('textarea')?.value ?? '') === beforeKeyboardAdd) ok('Alt+Enter 没有改写输入框')
+      else bad('Alt+Enter 错误地改写了输入框')
+    } else bad('键盘探针无法执行 Alt+Enter')
+    if (await key('src/main/agent.ts', 'Home')) {
+      if (activePath() === '') ok('Home 回到树根')
+      else bad('Home 没有回到树根：' + JSON.stringify(activePath()))
+    } else bad('键盘探针无法执行 Home')
+    if (await key('', 'End')) {
+      const endPath = activePath()
+      if (endPath && document.querySelector(`[data-tree-path="${CSS.escape(endPath)}"]`)) ok('End 移到最后一个可见节点')
+      else bad('End 没有移到最后一个可见节点')
+    } else bad('键盘探针无法执行 End')
+    store.getState().clearAttachments()
+    store.getState().closePreview()
+
+    /* ---- 4. 点文件 → 右侧只读预览；加入上下文是独立动作 ---- */
+    out.push('\n=== 4. 点文件 → 只读预览；独立加入上下文 ===')
     const fileRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
     if (!fileRow) bad('找不到 src/main/agent.ts')
     else {
       const before = document.querySelector('textarea')?.value ?? ''
       click(fileRow)
-      await sleep(400)
+      const previewShown = await until(() => !!document.querySelector('[data-testid="file-preview"]'), 6000)
       const after = document.querySelector('textarea')?.value ?? ''
       out.push('  输入框 ' + JSON.stringify(before) + ' → ' + JSON.stringify(after))
-      if (after.includes('@src/main/agent.ts')) ok('插入了 @src/main/agent.ts')
-      else bad('没插入 @路径')
+      if (previewShown) ok('单击文件打开右侧只读预览')
+      else bad('单击文件没有打开只读预览')
+      if (after === before) ok('单击预览不修改输入框')
+      else bad('单击预览错误地修改了输入框')
+      if (document.querySelector('[data-testid="file-preview"] [data-testid="file-preview-body"]')) ok('预览正文区域已渲染')
+      else bad('预览正文区域没有渲染')
       if (fileRow.classList.contains('hot')) ok('被点的行有高亮反馈')
       else bad('没有高亮反馈')
-      // 清空，别影响后面的场景
-      const ta = document.querySelector('textarea')
-      if (ta) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-        setter.call(ta, '')
-        ta.dispatchEvent(new Event('input', { bubbles: true }))
-        await sleep(200)
+
+      const add = document.querySelector('[data-testid="fs-add-src/main/agent.ts"]')
+      if (add) {
+        click(add)
+        const tagged = await until(() => store.getState().attachments.some((a) => a.kind === 'file' && a.name === 'agent.ts'), 6000)
+        if (tagged) ok('独立加入动作生成文件标签')
+        else bad('独立加入动作没有生成文件标签')
+      } else {
+        bad('文件行没有独立的加入上下文动作')
       }
+
+      /* 内部 MIME 拖放：复用文件行真实 dragstart，再投递到 Composer。 */
+      store.getState().clearAttachments()
+      const wrap = document.querySelector('.composer-wrap')
+      if (wrap && typeof DataTransfer !== 'undefined' && typeof DragEvent !== 'undefined') {
+        const dt = new DataTransfer()
+        fileRow.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }))
+        wrap.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        wrap.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        const dropped = await until(() => store.getState().attachments.some((a) => a.kind === 'file' && a.name === 'agent.ts'), 6000)
+        if (dropped) ok('内部 MIME 拖入 Composer 后生成文件标签')
+        else bad('内部 MIME 拖入没有生成文件标签')
+      } else {
+        bad('当前 Electron 没有可用的 DataTransfer/DragEvent，无法验证内部拖放')
+      }
+      store.getState().clearAttachments()
+      store.getState().closePreview()
     }
 
-    /* ---- 5. 隐藏项：文案是「已隐藏」+ 有开关能显示出来 ---- */
-    out.push('\n=== 5. 隐藏项与开关 ===')
+    /* ---- 5. 全项目文件名搜索：有界、可取消、动作仍然分离 ---- */
+    out.push('\n=== 5. 全项目文件名搜索 ===')
+    const searchToggle = document.querySelector('[data-testid="fs-search-toggle"]')
+    if (!searchToggle) {
+      bad('没有项目搜索开关')
+    } else {
+      click(searchToggle)
+      const searchInputReady = await until(() => !!document.querySelector('[data-testid="fs-search"]'), 2000)
+      if (searchInputReady) ok('打开项目搜索输入框')
+      else bad('打开项目搜索后没有输入框')
+      const searchInput = document.querySelector('[data-testid="fs-search"]')
+      const inputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      if (!searchInput || !inputSetter) {
+        bad('拿不到项目搜索输入框')
+      } else {
+        inputSetter.call(searchInput, 'agent.ts')
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+        const searchReady = await until(() => !!document.querySelector('[data-testid="fs-search-results"]'), 6000)
+        if (searchReady) ok('项目搜索返回真实结果')
+        else bad('项目搜索没有返回结果')
+        const searchRow = qa('[data-testid^="fs-search-row-"]').find((r) => r.dataset.testid?.includes('src/main/agent.ts') || r.textContent.includes('src/main/agent.ts'))
+        if (searchRow) {
+          const beforeSearchPreview = document.querySelector('textarea')?.value ?? ''
+          click(searchRow)
+          const searchPreview = await until(() => !!document.querySelector('[data-testid="file-preview"]'), 6000)
+          if (searchPreview) ok('搜索结果单击文件打开只读预览')
+          else bad('搜索结果单击文件没有打开预览')
+          if ((document.querySelector('textarea')?.value ?? '') === beforeSearchPreview) ok('搜索结果预览不修改输入框')
+          else bad('搜索结果预览错误地修改了输入框')
+          const searchAdd = document.querySelector('[data-testid="fs-search-add-src/main/agent.ts"]')
+          if (searchAdd) {
+            store.getState().clearAttachments()
+            click(searchAdd)
+            const searchTagged = await until(() => store.getState().attachments.some((a) => a.kind === 'file' && a.name === 'agent.ts'), 6000)
+            if (searchTagged) ok('搜索结果的加入动作独立生成文件标签')
+            else bad('搜索结果的加入动作没有生成文件标签')
+            store.getState().clearAttachments()
+          } else {
+            bad('搜索结果没有独立的加入上下文动作')
+          }
+        } else {
+          bad('项目搜索结果中找不到 src/main/agent.ts')
+        }
+      }
+      store.getState().closePreview()
+      click(searchToggle)
+      await until(() => !document.querySelector('[data-testid="fs-search"]'), 2000)
+    }
+
+    /* ---- 6. 隐藏项：文案是「已隐藏」+ 有开关能显示出来 ---- */
+    out.push('\n=== 6. 隐藏项与开关 ===')
     const skipped = document.querySelector('[data-testid="fs-skipped"]')
     out.push('  提示文案 = ' + (skipped?.textContent.replace(/\s+/g, ' ').trim() ?? '（无）'))
     /*
@@ -179,8 +300,8 @@
       void rowsBefore
     }
 
-    /* ---- 6. 无横向溢出（工具栏只有 264px 宽，长名字很容易撑破）---- */
-    out.push('\n=== 6. 溢出体检 ===')
+    /* ---- 7. 无横向溢出（工具栏只有 264px 宽，长名字很容易撑破）---- */
+    out.push('\n=== 7. 溢出体检 ===')
     const over = qa('.rp-fs-row').filter((r) => r.scrollWidth > r.clientWidth + 1)
     out.push('  横向溢出的行：' + (over.length ? over.map((r) => r.dataset.path).join(', ') : '无'))
     if (!over.length) ok('没有行横向溢出')

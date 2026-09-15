@@ -82,30 +82,40 @@ export function runRunnerTests(ok, RunnerRegistry) {
 
       /* ---- 3. 忙碌实例不被复用：另开一个 ---- */
       first.state = { ...first.state, isAgentRunning: true }
-      const r3 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s2.jsonl' })
+      const r3 = await reg.select({ cwd: 'C:/b', sessionFile: 'C:/s2.jsonl' })
       ok(r3.ok && r3.via === 'new', '实例忙着时不会复用/打断它（另开实例）', `via=${r3.via}`)
       ok(first.calls.stop === 0, '忙碌实例没有被停止')
       ok(first.state.sessionFile === 'C:/s1.jsonl', '忙碌实例仍停在原会话上（上下文没被换走）')
       ok(reg.size === 2, '现在有 2 个实例')
 
-      /* ---- 4. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
+      /* ---- 4. 同 cwd 忙碌冲突：明确拒绝，不牺牲后台会话 ---- */
+      const rConflict = await reg.select({ cwd: 'C:/a/', sessionFile: 'C:/s-conflict.jsonl' })
+      ok(!rConflict.ok, '同一工作目录已有忙碌会话时拒绝并发写入')
+      ok(/同一工作目录/.test(rConflict.error ?? ''), '冲突信息明确指出同一工作目录', JSON.stringify(rConflict.error))
+      ok(first.calls.stop === 0 && made.length === 2, '冲突时没有停止或额外创建实例')
+      ok(reg.size === 2, '冲突拒绝后实例数量不变')
+
+      /* ---- 5. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
       const second = made[1]
       second.state = { ...second.state, isAgentRunning: true }
-      const r4 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s3.jsonl' })
+      const r4 = await reg.select({ cwd: 'C:/c', sessionFile: 'C:/s3.jsonl' })
       ok(!r4.ok, '到并发上限时拒绝切换')
       ok(/上限/.test(r4.error ?? ''), '错误信息说明是并发上限', JSON.stringify(r4.error))
       ok(first.calls.stop === 0 && second.calls.stop === 0, '拒绝时**没有**停掉任何后台会话')
       ok(reg.size === 2, '实例数量不变')
 
-      /* ---- 5. 有实例空闲时才复用（并且是切会话不是停止） ---- */
+      /* ---- 6. 有实例空闲时才复用（并且是切会话不是停止） ---- */
       first.state = { ...first.state, isAgentRunning: false }
-      const r5 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s3.jsonl' })
+      const r5 = await reg.select({ cwd: 'C:/c', sessionFile: 'C:/s3.jsonl' })
       ok(r5.ok && r5.via === 'reuse', '有空闲实例时复用它（省进程）', `via=${r5.via}`)
       ok(r5.id === first.id, '复用的正是那个空闲实例')
       ok(first.calls.switchSession.includes('C:/s3.jsonl'), '复用 = 让它切到新会话')
       ok(first.calls.stop === 0, '复用路径没有停止实例')
+      ok((r5.generation ?? 0) > 1, '复用会话时 generation 递增')
+      const envelope = reg.runtimeOf(first.id)
+      ok(envelope?.runId === first.id && envelope?.generation === r5.generation, '运行时封套包含 runId 与当前代次')
 
-      /* ---- 6. 状态快照 ---- */
+      /* ---- 7. 状态快照 ---- */
       const statuses = reg.statuses()
       ok(statuses.length === 2, '状态快照覆盖所有实例')
       const s1 = statuses.find((x) => x.id === first.id)
@@ -113,7 +123,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(s1?.isActive === true, '当前视图那个实例标记 isActive')
       ok(second.id && statuses.find((x) => x.id === second.id)?.running === true, '后台忙碌实例在快照里是 running')
 
-      /* ---- 7. waiting（有请求在等回答）也算忙 ---- */
+      /* ---- 8. waiting（有请求在等回答）也算忙 ---- */
       first.pending = 1
       first.state = { ...first.state, isAgentRunning: false }
       const r7 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s4.jsonl' })
@@ -125,22 +135,33 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(reg.size === 2, '拒绝后实例数不变')
       first.pending = 0
 
-      /* ---- 8. 单独停止只影响一个 ---- */
+      /* ---- 9. 单独停止只影响一个 ---- */
       const beforeStop = statuses.length
       await reg.stopOne(first.id)
       ok(reg.size === 1, `stopOne 之后实例数 ${beforeStop} → ${reg.size}`)
       ok(first.calls.stop === 1, '只停了指定那个实例')
       ok(second.calls.stop === 0, '另一个实例没有被牵连')
 
-      /* ---- 9. hasBusy ---- */
+      /* ---- 10. hasBusy ---- */
       ok(reg.hasBusy() === true, '还有忙碌实例时 hasBusy = true')
       second.state = { ...second.state, isAgentRunning: false }
       ok(reg.hasBusy() === false, '全部空闲后 hasBusy = false')
 
-      /* ---- 10. 全部停止 ---- */
+      /* ---- 11. 全部停止 ---- */
       await reg.stopAll()
       ok(reg.size === 0 && reg.statuses().length === 0, 'stopAll 之后注册表清空')
       ok(made.every((a) => a.calls.stop >= 1), '所有实例都被停过')
+
+      /* ---- 12. stopByCwd 也必须按规范化路径匹配 ---- */
+      {
+        const { reg: cwdReg } = make()
+        const created = await cwdReg.select({ cwd: 'C:/same/project/' })
+        const runner = cwdReg.agentOf(created.id)
+        const stopped = await cwdReg.stopByCwd('c:\\same\\project')
+        ok(stopped === 1, 'stopByCwd 会识别大小写、斜杠和尾部斜杠差异', `stopped=${stopped}`)
+        ok(cwdReg.size === 0, '规范化路径停止后实例已移除')
+        ok(runner?.calls.stop === 1, '规范化路径只停止匹配到的实例')
+      }
     })()
   }
 }

@@ -93,7 +93,10 @@ async function main() {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      preload: join(root, 'out/preload/index.mjs'),
+      /* 产物是 .cjs：sandboxed preload 不支持 ESM（见 electron.vite.config.ts）。
+         写成 index.mjs 时 window.yan 缺失 —— 实测产出的四张图全是空白、
+         字体断言也一并失败（2026-09-15 验证时定位）。 */
+      preload: join(root, 'out/preload/index.cjs'),
       sandbox: false,
       contextIsolation: true
     }

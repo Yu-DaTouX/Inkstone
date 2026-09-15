@@ -31,7 +31,7 @@ export async function runTurnTests(ok) {
   {
     const t = groupIntoTurns([
       usr('u1', '帮我改标题'),
-      asst('a1', '我先看看实现', { toolCalls: [tool('t1', 'read')] }),
+      asst('a1', '我先看看实现', { responseDetail: 'detailed', toolCalls: [tool('t1', 'read')] }),
       asst('a2', '找到了，改成独立进程', { toolCalls: [tool('t2', 'edit')] }),
       asst('a3', '改好了，三处改动：\n1. a\n2. b')
     ])
@@ -42,6 +42,7 @@ export async function runTurnTests(ok) {
     ok(a.commentary.length === 2, '前面两条文字归为解说', `实际 ${a.commentary.length}`)
     ok(a.response?.text.startsWith('改好了'), '最后一条文字成为最终回答')
     ok(a.sourceIds.length === 3, '记录了 3 条原始消息', `实际 ${a.sourceIds.length}`)
+    ok(a.responseDetail === 'detailed', '回合保留第一条 assistant 的实际回复档位')
   }
 
   // 11.2 实测痛点：34 条连续 assistant → 1 块（旧实现是 34 个「砚」）
@@ -62,6 +63,7 @@ export async function runTurnTests(ok) {
     ok(t.length === 2 && t[1].tools.length === 0, '纯回答回合：无工具')
     ok(t[1].response?.text === '你好，我是砚', '纯回答成为 response')
     ok(t[1].commentary.length === 0, '没有冤枉的解说')
+    ok(t[1].responseDetail === 'unknown', '没有元数据的旧消息显示为未知档位')
   }
 
   // 11.4 末尾停在工具上（没有最终文字）→ 提升最后一条解说

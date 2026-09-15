@@ -20,8 +20,12 @@ directories:
 # app.asar 内容（依赖已被 Vite 打包，故显式排除 node_modules）
 files:
   - out/**
+  - build/icon.png
   - package.json
   - '!node_modules/**'
+  # 单测产物（test-unit.mjs 用 esbuild 把被测模块编译到这里）只给 npm run test:unit 用，
+  # 不进发布包 —— 否则「跑完测试再打包」会把一份多余的业务代码副本带进 asar。
+  - '!out/test/**'
   - '!**/*.{map,md,ts,tsx,tsbuildinfo}'
 
 # 放在 resources/ 下的额外文件（不进 asar，可被 pi 子进程直接读/执行）

@@ -37,7 +37,9 @@ async function main() {
     frame: false,
     backgroundColor: '#0b0b0d',
     webPreferences: {
-      preload: join(root, 'out/preload/index.mjs'),
+      /* 产物是 .cjs：sandboxed preload 不支持 ESM（见 electron.vite.config.ts）。
+         写成 index.mjs 会让 window.yan 缺失、截图整片空白。 */
+      preload: join(root, 'out/preload/index.cjs'),
       sandbox: false,
       contextIsolation: true
     }

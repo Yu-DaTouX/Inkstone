@@ -1,12 +1,12 @@
 /**
  * 会话运行实例：前端身份过滤与左栏状态槽（N12）。
  *
- * 前端要解决的核心问题是「串线」：后台会话的事件（带 `sessionKey`）
+ * 前端要解决的核心问题是「串线」：后台会话的事件（带 `runtime` 封套）
  * 绝不能写进当前正在看的会话。切回去时主进程会给完整快照，
  * 所以丢弃后台增量不会丢内容。
  *
  * 这里直接在 store 上驱动（不连 pi、不起第二个进程）：
- *   · 注入带不同 sessionKey 的推送，断言只进对应的视图；
+ *   · 注入带不同 runtime 封套的推送，断言只进对应的视图；
  *   · 注入 runners 快照，断言左栏每一行显示自己的运行/失败状态；
  *   · 断言会话菜单里有「停止运行」（单独停一个实例）。
  */
@@ -61,9 +61,11 @@
     out.push('')
     out.push('=== 1. 身份过滤（后台会话的输出不串进当前视图）===')
     const before = store.getState().messages.length
+    const runtimeA = { sessionId: a.id, runId: 'r1', projectId: 'project-a', generation: 1 }
+    const runtimeB = { sessionId: b.id, runId: 'r2', projectId: 'project-a', generation: 1 }
     store.getState().applyPush({
       ch: 'msg-add',
-      sessionKey: 'r2',
+      runtime: runtimeB,
       payload: { id: 'bg-1', role: 'assistant', text: '我是后台会话的输出' }
     })
     await sleep(200)
@@ -75,7 +77,7 @@
 
     store.getState().applyPush({
       ch: 'msg-add',
-      sessionKey: 'r1',
+      runtime: runtimeA,
       payload: { id: 'fg-1', role: 'assistant', text: '我是当前会话的输出' }
     })
     await sleep(300)
@@ -85,7 +87,7 @@
     /* 带 key 的 state 推送同样要过滤 */
     store.getState().applyPush({
       ch: 'state',
-      sessionKey: 'r2',
+      runtime: runtimeB,
       payload: { ...store.getState().session, sessionId: b.id, sessionFile: b.path, isAgentRunning: true }
     })
     await sleep(200)
@@ -99,7 +101,7 @@
     out.push('')
     out.push('=== 2. 每行会话显示自己的运行状态 ===')
     const status = (id, sessionFile, extra) => ({
-      id, sessionFile, sessionId: sessionFile, cwd,
+      id, runId: id, generation: 1, sessionFile, sessionId: sessionFile, cwd,
       running: false, waiting: false, failed: false, conn: 'ready',
       createdAt: stamp, lastActiveAt: stamp, isActive: id === 'r1',
       ...extra

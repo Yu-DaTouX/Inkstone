@@ -289,8 +289,13 @@
       const cs = getComputedStyle(row)
       ok(cs.display === 'grid', '任务行是 grid（状态槽 / 文本 / 状态说明）')
       const cols = cs.gridTemplateColumns.split(/\s+/).map((v) => parseFloat(v))
-      ok(cols.length === 3, `三列布局（实际 ${cs.gridTemplateColumns}）`)
-      ok(Math.abs(cols[0] - 16) <= 1, `状态槽 16px（实际 ${cols[0]}px）`)
+      /*
+       * 实现是**四列**：2px 运行标记槽 + 16px 状态槽 + 文本 + 状态说明。
+       * 曾经是三列（16px 状态槽打头），后来加了左侧运行标记槽 —— 断言同步改了，
+       * 否则会一直假失败（这个场景当时就是因此没进 `npm run check`）。
+       */
+      ok(cols.length === 4, `四列布局（实际 ${cs.gridTemplateColumns}）`)
+      ok(Math.abs(cols[1] - 16) <= 1, `状态槽 16px（实际 ${cols[1]}px）`)
       ok(parseFloat(cs.columnGap) >= 8, `状态槽与文本间距 ≥ 8px（实际 ${cs.columnGap}）`)
       const box = row.querySelector('.rp-box')
       if (box) {

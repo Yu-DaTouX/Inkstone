@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { UsageBar } from './UsageBar'
-import type { Attachment } from '../../../../shared/ipc'
+import { findAtQuery, replaceAtQuery } from './at-query'
+import { findSlashQuery, replaceSlashQuery } from './slash-query'
+import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
 
 /**
  * 输入区。四种输入模式共存：
@@ -44,12 +46,47 @@ export function Composer() {
   const openSettings = useStore((s) => s.openSettings)
   const commandsAt = useStore((s) => s.commandsAt)
   const attachments = useStore((s) => s.attachments)
+  const activeSessionId = useStore((s) => s.session?.sessionId ?? '')
+  const activeCwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
+  const activeRunnerId = useStore((s) => s.activeRunnerId ?? '')
+  const activeGeneration = useStore((s) =>
+    s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.generation ?? 0
+  )
+  /** 草稿跟随稳定 sessionId；尚未落盘的会话暂时跟随 runId。 */
+  const activeRuntimeKey = useStore((s) => {
+    const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+    const sessionId = s.session?.sessionId ?? runner?.sessionId
+    return sessionId || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
+  })
+  const cachedDraft = useStore((s) =>
+    activeRuntimeKey ? s.sessionRuntimes[activeRuntimeKey]?.draft ?? '' : ''
+  )
+  const setSessionDraft = useStore((s) => s.setSessionDraft)
+  const activeProjectId = useStore((s) => {
+    const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+    if (runner?.projectId) return runner.projectId
+    const summary = s.sessions.find((item) => item.id === s.session?.sessionId || item.path === s.session?.sessionFile)
+    if (summary?.scope === 'global') return undefined
+    const cwd = s.session?.cwd ?? s.settings?.cwd ?? ''
+    return summary?.projectId ?? s.settings?.projects.find((project) => {
+      const a = project.cwd.replace(/[\\/]+$/, '').toLowerCase()
+      const b = cwd.replace(/[\\/]+$/, '').toLowerCase()
+      return a === b
+    })?.id
+  })
   const addAttachments = useStore((s) => s.addAttachments)
   const addFileRefs = useStore((s) => s.addFileRefs)
+  const addFileRefPaths = useStore((s) => s.addFileRefPaths)
   const removeAttachment = useStore((s) => s.removeAttachment)
   const clearAttachments = useStore((s) => s.clearAttachments)
   const pickImages = useStore((s) => s.pickImages)
   const startSubagent = useStore((s) => s.startSubagent)
+  const newSession = useStore((s) => s.newSession)
+  const compact = useStore((s) => s.compact)
+  const setModel = useStore((s) => s.setModel)
+  const models = useStore((s) => s.models)
+  const openBrowser = useStore((s) => s.openBrowser)
+  const autonomous = useStore((s) => s.settings?.autonomous === true)
   const editorInject = useStore((s) => s.editorInject)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
   const queueRestore = useStore((s) => s.queueRestore)
@@ -57,6 +94,10 @@ export function Composer() {
 
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState<{ open: boolean; index: number }>({ open: false, index: 0 })
+  /** 最近一次 textarea 光标位置；null 表示还没有收到真实编辑事件。 */
+  const [cursor, setCursor] = useState<number | null>(null)
+  const hydratedDraftKey = useRef<string | null>(null)
+  const skipDraftPersist = useRef(false)
 
   /**
    * 写长文模式。
@@ -200,6 +241,26 @@ export function Composer() {
     ref.current?.focus()
   }, [queueRestore, consumeQueueRestore])
 
+  /* ---- 按会话恢复 / 保存输入框草稿 ---- */
+  useEffect(() => {
+    hydratedDraftKey.current = activeRuntimeKey || null
+    /* 这次 value 变化来自“换会话”而不是用户输入，跳过一次回写。 */
+    skipDraftPersist.current = true
+    setValue(activeRuntimeKey ? cachedDraft : '')
+    setCursor(activeRuntimeKey ? cachedDraft.length : null)
+    // cachedDraft 只在 activeRuntimeKey 变化时取一次，避免每次敲字都重置输入框。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRuntimeKey])
+
+  useEffect(() => {
+    if (skipDraftPersist.current) {
+      skipDraftPersist.current = false
+      return
+    }
+    if (!activeRuntimeKey || hydratedDraftKey.current !== activeRuntimeKey) return
+    setSessionDraft(value)
+  }, [activeRuntimeKey, setSessionDraft, value])
+
   /* ---- 自动长高 ---- */
   useEffect(() => {
     const el = ref.current
@@ -241,13 +302,19 @@ export function Composer() {
   }, [value, tall, expanded])
 
   const disabled = conn !== 'ready'
+  /* N18：本地 Yan 命令不需要先连上 pi（例如 /login、/model、/browser）。 */
+  const localCommandName = /^\/([^\s]+)/.exec(value.trim())?.[1]?.toLowerCase()
+  const canRunLocalCommand = !!localCommandName && commands.some(
+    (command) => command.source === 'yan' && command.executable && command.name.toLowerCase() === localCommandName
+  )
 
   /* ---- 模式判定 ---- */
   const bashMode = value.startsWith('!')
-  const slashQuery = useMemo(() => {
-    const m = /^\/([^\s]*)$/.exec(value)
-    return m ? m[1] : null
-  }, [value])
+  const slashRange = useMemo(
+    () => findSlashQuery(value, cursor ?? value.length),
+    [cursor, value]
+  )
+  const slashQuery = slashRange?.query ?? null
 
   const slashMatches = useMemo(() => {
     if (slashQuery === null) return []
@@ -261,8 +328,10 @@ export function Composer() {
      */
     const hit = commands
       .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q))
-      .slice(0, 12)
     return hit.sort((a, b) => {
+      const sa = commandSourceRank(a)
+      const sb = commandSourceRank(b)
+      if (sa !== sb) return sa - sb
       const ua = commandUse[a.name] ?? 0
       const ub = commandUse[b.name] ?? 0
       if (ua !== ub) return ub - ua
@@ -280,16 +349,15 @@ export function Composer() {
    *   仓库里动辄几万个文件，列出来既慢又没用。
    *   所以只对**已经在输入里写出的路径前缀**做提示：
    *   `@src/ma` → 提示 `@src/main/` 下有哪几个条目。
-   *   没写前缀时（刚打出一个 `@`）不做任何 IO —— 用户可以继续打。
+   *   没写前缀时（刚打出一个 `@`）也只读项目根层，方便发现可用文件。
    *
    * 为什么不做成「文件选择器」：那需要主进程递归扫目录（慢、权限问题多），
    * 而 pi 自己会处理 `@path` 的解析 —— 我们只需要帮用户**少打几个字**。
    */
-  const atQuery = useMemo(() => {
-    // 光标前最后一个 @token（允许路径分隔符与常见文件名字符）
-    const m = /@([\w./\\-]*)$/.exec(value)
-    return m ? m[1] : null
-  }, [value])
+  const atQuery = useMemo(
+    () => findAtQuery(value, cursor ?? value.length),
+    [cursor, value]
+  )
 
   /**
    * `@` 路径补全的候选。
@@ -298,53 +366,110 @@ export function Composer() {
    * 防抖：每敲一个字都发 IPC 会白干活。
    */
   const [paths, setPaths] = useState<string[]>([])
+  const [pathsLoading, setPathsLoading] = useState(false)
+  const [pathsError, setPathsError] = useState(false)
+  const [pathsStatus, setPathsStatus] = useState<FileListingStatus>('empty')
+  const [pathsTruncated, setPathsTruncated] = useState(false)
+  /** Esc / 接受文件候选后，旧的异步结果不能把菜单重新打开。 */
+  const [atMenuDismissed, setAtMenuDismissed] = useState(false)
 
   useEffect(() => {
-    if (atQuery === null || atQuery.trim().length < 2) {
+    if (atQuery === null) {
       setPaths([])
+      setPathsLoading(false)
+      setPathsError(false)
+      setPathsStatus('empty')
+      setPathsTruncated(false)
+      setAtMenuDismissed(false)
       return
     }
+    setPaths([])
+    setPathsLoading(true)
+    setPathsError(false)
+    setPathsStatus('empty')
+    setPathsTruncated(false)
     let alive = true
+    const context: FileRequestContext = {
+      cwd: activeCwd,
+      generation: activeGeneration,
+      ...(activeProjectId ? { projectId: activeProjectId } : {})
+    }
+    const requestKey = `${activeRunnerId}\0${activeSessionId}\0${activeCwd}\0${activeProjectId ?? ''}\0${activeGeneration}\0${atQuery.query}`
     const id = setTimeout(() => {
       void window.yan
-        .completePath(atQuery)
-        .then((r) => {
-          if (alive) setPaths(r)
+        .completePath(atQuery.query, activeCwd, context)
+        .then((result) => {
+          const current = useStore.getState()
+          const currentRunner = current.runners.find((runner) => (runner.runId ?? runner.id) === current.activeRunnerId)
+          const currentSummary = current.sessions.find(
+            (item) => item.id === current.session?.sessionId || item.path === current.session?.sessionFile
+          )
+          const currentCwd = current.session?.cwd ?? current.settings?.cwd ?? ''
+          const currentProject = currentRunner?.projectId ?? (
+            currentSummary?.scope === 'global'
+              ? undefined
+              : currentSummary?.projectId ?? current.settings?.projects.find((project) => {
+                return sameFileCwd(project.cwd, currentCwd)
+              })?.id
+          ) ?? ''
+          const currentKey = `${current.activeRunnerId ?? ''}\0${current.session?.sessionId ?? ''}\0${current.session?.cwd ?? current.settings?.cwd ?? ''}\0${currentProject}\0${currentRunner?.generation ?? 0}\0${atQuery.query}`
+          const response = result.request
+          const responseMatches = !response || (
+            sameFileCwd(response.cwd, context.cwd) &&
+            response.projectId === context.projectId &&
+            response.generation === context.generation
+          )
+          if (alive && currentKey === requestKey && responseMatches) {
+            setPaths(result.paths)
+            setPathsLoading(false)
+            setPathsStatus(result.status)
+            setPathsTruncated(result.truncated)
+            setPathsError(result.status !== 'ok' && result.status !== 'empty')
+          }
         })
         .catch(() => {
-          if (alive) setPaths([])
+          if (alive) {
+            setPaths([])
+            setPathsLoading(false)
+            setPathsError(true)
+          }
         })
     }, 120)
     return () => {
       alive = false
       clearTimeout(id)
     }
-  }, [atQuery])
+  }, [activeCwd, activeGeneration, activeProjectId, activeRunnerId, activeSessionId, atQuery])
 
   const atMatches = useMemo(() => {
     if (atQuery === null || paths.length === 0) return []
-    return paths.slice(0, 10)
+    return paths
   }, [atQuery, paths])
 
   useEffect(() => {
     if (slashQuery !== null && slashMatches.length > 0) {
       setMenu({ open: true, index: 0 })
-    } else if (atMatches.length > 0) {
+    } else if (atQuery !== null && !atMenuDismissed && (atMatches.length > 0 || pathsLoading || pathsError)) {
       setMenu({ open: true, index: 0 })
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [slashQuery, slashMatches.length, atMatches.length])
+  }, [atMatches.length, atMenuDismissed, atQuery, pathsError, pathsLoading, slashMatches.length, slashQuery])
 
   const completeSlash = useCallback(
-    (name: string) => {
-      setValue(`/${name} `)
+    (command: SlashCommand) => {
+      if (!command.executable) return
+      const range = findSlashQuery(value, cursor ?? value.length)
+      if (!range) return
+      const next = replaceSlashQuery(value, range, command.name)
+      setValue(next.value)
+      setCursor(next.cursor)
       setMenu({ open: false, index: 0 })
       /* 记录使用 → 下次它排在前面（自动管理） */
-      markCommandUsed(name)
+      markCommandUsed(command.name)
       ref.current?.focus()
     },
-    [markCommandUsed]
+    [cursor, markCommandUsed, value]
   )
 
   /*
@@ -372,12 +497,21 @@ export function Composer() {
    */
   const completeAt = useCallback(
     (p: string) => {
-      setValue((v) => v.replace(/@([\w./\\-]*)$/, `@${p}`))
+      const range = findAtQuery(value, cursor ?? value.length)
+      if (!range) return
+      const next = replaceAtQuery(value, range, p)
+      setValue(next.value)
+      setCursor(next.cursor)
       // 目录：保持菜单开（等下一层的结果自动刷新）；文件：关
-      if (!p.endsWith('/')) setMenu({ open: false, index: 0 })
+      if (!p.endsWith('/')) {
+        setAtMenuDismissed(true)
+        setMenu({ open: false, index: 0 })
+      } else {
+        setAtMenuDismissed(false)
+      }
       ref.current?.focus()
     },
-    []
+    [cursor, value]
   )
 
   const submit = async () => {
@@ -439,11 +573,60 @@ export function Composer() {
      * 没有任务描述时不发：避免起一个什么都干不了的子代理。
      */
     if (raw === '/subagent' || raw.startsWith('/subagent ')) {
-      const task = raw.slice('/subagent'.length).trim()
+      let task = raw.slice('/subagent'.length).trim()
+      if (!task) return
+      /* 写入任务默认进独立 worktree；只有明确声明只读才允许看受控 cwd。 */
+      const readOnly = /^--read-only(?:\s|$)/i.test(task)
+      if (readOnly) task = task.replace(/^--read-only\s*/i, '').trim()
       if (!task) return
       setValue('')
       clearAttachments()
-      await startSubagent(task)
+      await startSubagent(task, undefined, readOnly ? 'controlled-cwd' : 'worktree')
+      return
+    }
+
+    /*
+     * N18：Yan 本地命令与 pi 命令共用一个注册表，但本地命令必须在桌面端
+     * 由明确的 UI 动作承接，不能把 `/new` / `/browser` 当自然语言发给模型。
+     * 参数仍保留在输入框语义里：`/model provider/id` 可以直接选中已发现的模型，
+     * 没有参数时打开状态页让用户从权威列表选择。
+     */
+    const localMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(raw)
+    const localName = localMatch?.[1]?.toLowerCase()
+    const localArgs = localMatch?.[2]?.trim() ?? ''
+    const localCommand = localName
+      ? commands.find((command) => command.source === 'yan' && command.name.toLowerCase() === localName)
+      : undefined
+    const compatibilityCommand = localName
+      ? commands.find((command) => command.source === 'compatibility' && command.name.toLowerCase() === localName)
+      : undefined
+
+    if (compatibilityCommand || (localCommand && !localCommand.executable)) {
+      setValue('')
+      clearAttachments()
+      return
+    }
+
+    if (localCommand) {
+      setValue('')
+      clearAttachments()
+      if (localName === 'new') {
+        await newSession({ scope: 'global' })
+      } else if (localName === 'compact') {
+        await compact()
+      } else if (localName === 'browser') {
+        await openBrowser(localArgs || undefined)
+      } else if (localName === 'model') {
+        const spec = localArgs.toLowerCase()
+        const selected = spec
+          ? models.find((model) => {
+              const full = `${model.provider}/${model.id}`.toLowerCase()
+              return full === spec || model.id.toLowerCase() === spec || model.name.toLowerCase() === spec
+            })
+          : undefined
+        if (selected) await setModel(selected.provider, selected.id)
+        else openSettings('status')
+      }
       return
     }
 
@@ -469,6 +652,13 @@ export function Composer() {
   /* ---- 图片：拖放；普通文件 → 文件引用 ---- */
   const onDrop = useCallback(
     (e: React.DragEvent) => {
+      const internalPath = e.dataTransfer.getData('application/x-yan-file-path').trim()
+      if (internalPath) {
+        e.preventDefault()
+        setDragging(false)
+        void addFileRefPaths([internalPath])
+        return
+      }
       /*
        * 从编辑器拖一段**选中的文字**进来时，dataTransfer 里没有 Files ——
        * 这时候不要 preventDefault，否则浏览器自带的「拖入即插入文本」体验就没了
@@ -484,8 +674,13 @@ export function Composer() {
       if (images.length) void readFiles(images, addAttachments)
       if (others.length) void addFileRefs(others)
     },
-    [addAttachments, addFileRefs]
+    [addAttachments, addFileRefPaths, addFileRefs]
   )
+
+  const rememberCursor = useCallback((e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget
+    setCursor(el.selectionStart)
+  }, [])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     /*
@@ -508,12 +703,13 @@ export function Composer() {
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
-        if (slashMatches.length > 0) completeSlash(items[menu.index])
+        if (slashMatches.length > 0) completeSlash(slashMatches[menu.index])
         else completeAt(items[menu.index])
         return
       }
       if (e.key === 'Escape') {
         e.preventDefault()
+        setAtMenuDismissed(true)
         setMenu({ open: false, index: 0 })
         return
       }
@@ -591,10 +787,12 @@ export function Composer() {
 
   return (
     <div
-      className={`composer-wrap ${dragging ? 'dropping' : ''}`}
+      className={`composer-wrap ${dragging ? 'dropping' : ''} ${autonomous ? 'autonomous' : ''}`}
+      data-autonomous={autonomous ? '1' : '0'}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
+        if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-yan-file-path')) {
           e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
           setDragging(true)
         }
       }}
@@ -637,18 +835,25 @@ export function Composer() {
         {menu.open && slashMatches.length > 0 ? (
           <div className="slash-menu" role="listbox">
             {slashMatches.map((c, i) => (
-              <button
-                key={c.name}
-                className={`slash-item ${i === menu.index ? 'sel' : ''}`}
-                onMouseEnter={() => setMenu((m) => ({ ...m, index: i }))}
-                onClick={() => completeSlash(c.name)}
-                role="option"
-                aria-selected={i === menu.index}
-              >
-                <span className="slash-name">/{c.name}</span>
-                <span className="slash-desc">{c.description ?? ''}</span>
-                <span className="slash-src">{c.source}</span>
-              </button>
+              <Fragment key={`${c.source}:${c.name}:${c.module ?? ''}`}>
+                {i === 0 || slashMatches[i - 1].source !== c.source ? (
+                  <div className="slash-group" data-source={c.source}>{commandSourceLabel(c.source)}</div>
+                ) : null}
+                <button
+                  className={`slash-item ${i === menu.index ? 'sel' : ''} ${c.executable ? '' : 'compat'}`}
+                  onMouseEnter={() => setMenu((m) => ({ ...m, index: i }))}
+                  onClick={() => completeSlash(c)}
+                  disabled={!c.executable}
+                  title={c.availability}
+                  role="option"
+                  aria-disabled={!c.executable}
+                  aria-selected={i === menu.index}
+                >
+                  <span className="slash-name">/{c.name}</span>
+                  <span className="slash-desc">{c.description ?? ''}</span>
+                  <span className="slash-src">{c.source}{c.module ? ` · ${c.module}` : ''}</span>
+                </button>
+              </Fragment>
             ))}
             {/*
              * 底部按键说明。
@@ -659,15 +864,25 @@ export function Composer() {
               <span>↑↓ 选</span>
               <span>Enter / Tab 填入</span>
               <span>Esc 关闭</span>
+              <span>{slashMatches.length} 项 · 可滚动</span>
             </div>
           </div>
         ) : null}
 
         {/* `@` 文件引用补全（pi 的 @files 用法）。
             只列主进程返回的那一层目录结果，不递归扫项目。 */}
-        {menu.open && slashMatches.length === 0 && atMatches.length > 0 ? (
+        {menu.open && slashMatches.length === 0 && atQuery !== null ? (
           <div className="slash-menu" role="listbox" data-testid="at-menu">
-            {atMatches.map((p, i) => (
+            {pathsLoading ? <div className="slash-empty" data-testid="at-loading">{t('composer.pathLoading')}</div> : null}
+            {!pathsLoading && pathsError ? (
+              <div className="slash-empty" data-testid="at-error">
+                {pathsStatus === 'permission' ? t('composer.pathPermission') : t('composer.pathError')}
+              </div>
+            ) : null}
+            {!pathsLoading && !pathsError && atMatches.length === 0 ? (
+              <div className="slash-empty" data-testid="at-empty">{t('composer.pathNoMatch')}</div>
+            ) : null}
+            {!pathsLoading && !pathsError ? atMatches.map((p, i) => (
               <button
                 key={p}
                 className={`slash-item ${i === menu.index ? 'sel' : ''}`}
@@ -675,11 +890,15 @@ export function Composer() {
                 onClick={() => completeAt(p)}
                 role="option"
                 aria-selected={i === menu.index}
+                title={toAbsoluteFilePath(activeCwd, p)}
               >
                 <span className="slash-name">{p.endsWith('/') ? '▸ ' : '· '}{p}</span>
                 <span className="slash-src">{p.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>
               </button>
-            ))}
+            )) : null}
+            {!pathsLoading && !pathsError && pathsTruncated ? (
+              <div className="slash-hint" data-testid="at-truncated">{t('composer.pathTruncated')}</div>
+            ) : null}
           </div>
         ) : null}
 
@@ -714,7 +933,14 @@ export function Composer() {
                   ? t('composer.phTall')
                   : t('composer.ph')
           }
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setCursor(e.target.selectionStart)
+            setAtMenuDismissed(false)
+          }}
+          onSelect={rememberCursor}
+          onClick={rememberCursor}
+          onKeyUp={rememberCursor}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
         />
@@ -759,7 +985,7 @@ export function Composer() {
             data-testid="send"
             onClick={busy ? () => void abort() : () => void submit()}
             /* 有附件就能发 —— 与 submit() 的判据保持一致（否则按钮是灰的，点不动） */
-            disabled={!busy && (!value.trim() && attachments.length === 0 ? true : disabled)}
+            disabled={!busy && (!value.trim() && attachments.length === 0 ? true : disabled && !canRunLocalCommand)}
             title={
               sendRule === 'ctrl'
                 ? t('composer.keyCtrlSend')
@@ -781,42 +1007,69 @@ export function Composer() {
   )
 }
 
+function sameFileCwd(a: string, b: string): boolean {
+  return a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
+}
+
+function toAbsoluteFilePath(cwd: string, rel: string): string {
+  const root = cwd.replace(/[\\/]+$/, '')
+  return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
+}
+
 /**
  * 排队中的消息（显示在输入框上方）。
  *
  * pi 把“生成中收到的消息”分两类：
  *   · steering —— 插话，当前这轮就会看到
  *   · followUp —— 排队，等这轮跑完再投递（现在的默认）
- * 每行右侧的「插队」把一条 followUp 提升为 steering（有时会失败，错误进日志）。
+ * 每行右侧的「撤回」只操作仍在队列快照中的条目；目标已经被 pi 接收后，
+ * 它会从快照消失，不会给用户一个虚假的撤回成功。follow-up 仍可另行插队。
  */
 function QueueStack() {
   const t = useT()
   const queue = useStore((s) => s.queue)
   const steerQueued = useStore((s) => s.steerQueued)
+  const removeQueued = useStore((s) => s.removeQueued)
   const steering = queue.steering
   const followUp = queue.followUp
   if (steering.length + followUp.length === 0) return null
 
   return (
     <div className="queue-stack" data-testid="queue-stack">
-      {steering.map((text, i) => (
-        <div className="qrow steering" key={`s${i}`} title={text} data-testid="queue-row">
+      {steering.map((item) => (
+        <div className="qrow steering" key={item.id} title={item.text} data-testid="queue-row">
           <Icon name="activity" size={12} />
-          <span className="qrow-text">{text}</span>
+          <span className="qrow-text">{item.text}</span>
           <span className="qrow-tag">{t('queue.inserting')}</span>
+          <button
+            className="qrow-jump"
+            data-testid="queue-retract"
+            title={t('queue.retractTip')}
+            onClick={() => void removeQueued(item.id)}
+          >
+            {t('queue.retract')}
+          </button>
         </div>
       ))}
-      {followUp.map((text, i) => (
-        <div className="qrow" key={`f${i}`} title={text} data-testid="queue-row">
+      {followUp.map((item) => (
+        <div className="qrow" key={item.id} title={item.text} data-testid="queue-row">
           <Icon name="history" size={12} />
-          <span className="qrow-text">{text}</span>
+          <span className="qrow-text">{item.text}</span>
           <button
             className="qrow-jump"
             data-testid="queue-steer"
             title={t('queue.steerTip')}
-            onClick={() => void steerQueued(text)}
+            onClick={() => void steerQueued(item.id)}
           >
             {t('queue.steer')}
+          </button>
+          <button
+            className="qrow-jump"
+            data-testid="queue-retract"
+            title={t('queue.retractTip')}
+            onClick={() => void removeQueued(item.id)}
+          >
+            {t('queue.retract')}
           </button>
         </div>
       ))}
@@ -892,6 +1145,29 @@ function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** 分类只影响候选菜单的视觉顺序，不改变 pi 原始命令的身份。 */
+function commandSourceRank(command: SlashCommand): number {
+  return {
+    yan: 0,
+    pi: 1,
+    extension: 2,
+    skill: 3,
+    prompt: 4,
+    compatibility: 5
+  }[command.source]
+}
+
+function commandSourceLabel(source: SlashCommand['source']): string {
+  return {
+    yan: 'Yan 内置',
+    pi: 'pi 内置',
+    extension: '扩展',
+    skill: '技能',
+    prompt: '提示词模板',
+    compatibility: '兼容显示'
+  }[source]
 }
 
 /** 排队的插话 / 后续消息 —— 让「它知道我说了」可见 */

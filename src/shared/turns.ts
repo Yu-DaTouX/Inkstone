@@ -34,7 +34,7 @@
  *   这与 craft-agents 的 fallback 行为一致，避免整轮在界面上没有正文。
  * ══════════════════════════════════════════════════════════════════
  */
-import type { UIMessage, Usage } from './ipc'
+import type { ResponseDetail, UIMessage, Usage } from './ipc'
 
 /** 一段文字（解说或回答） */
 export interface TurnText {
@@ -73,6 +73,7 @@ export interface AssistantTurn {
   speed?: number
   elapsedMs?: number
   model?: string
+  responseDetail?: ResponseDetail
   error?: string
   errorMsgId?: string
   /** 构成这一轮的原始消息 id（调试 / 分叉用） */
@@ -173,6 +174,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     /** 按时间顺序缓存的「有文字」的段，带位置标记 */
     texts: TurnText[]
     tools: NonNullable<UIMessage['toolCalls']>
+    responseDetail: ResponseDetail
     last: UIMessage | undefined
     /** 是否还在流式（由调用方传入的 streamingId 决定） */
     streaming: boolean
@@ -238,6 +240,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       speed: cur.last?.speed,
       elapsedMs: cur.last?.elapsedMs,
       model: cur.last?.model,
+      responseDetail: cur.responseDetail,
       error: cur.last?.error,
       errorMsgId: cur.last?.error ? cur.last.id : undefined,
       sourceIds: cur.sourceIds
@@ -268,6 +271,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         thinkingLive: false,
         texts: [],
         tools: [],
+        responseDetail: m.responseDetail ?? 'unknown',
         streaming: false,
         last: undefined
       }

@@ -1,8 +1,8 @@
 /**
  * 排队消息 UI（用户要求）：
  *   · 队列内容显示在**输入框上方**
- *   · follow-up 行右侧有「插队」按钮，点击调用 store.steerQueued(text)
- *   · steering 行显示「插话中」状态（已在当前这轮，不需要再插队）
+ *   · follow-up 行右侧有「插队」按钮，点击调用 store.steerQueued(queueId)
+ *   · 两种待投递行都有「撤回」按钮，点击调用 store.removeQueued(queueId)
  *
  * 不花 token：直接往 store 注入 queue，并把 steerQueued 换成 spy。
  */
@@ -37,10 +37,17 @@
 
   // spy：把真实的 steerQueued 换掉，避免真去调 pi
   const calls = []
+  const retractCalls = []
   store.setState({
-    queue: { steering: [S], followUp: [F1, F2] },
-    steerQueued: async (text) => {
-      calls.push(text)
+    queue: {
+      steering: [{ id: 's1', text: S }],
+      followUp: [{ id: 'f1', text: F1 }, { id: 'f2', text: F2 }]
+    },
+    steerQueued: async (queueId) => {
+      calls.push(queueId)
+    },
+    removeQueued: async (queueId) => {
+      retractCalls.push(queueId)
     }
   })
   await sleep(300)
@@ -70,7 +77,15 @@
   out.push('=== 3. 插队按钮接线 ===')
   jumps[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(250)
-  ok(calls.length === 1 && calls[0] === F1, `点击插队调用 steerQueued("${F1}")（实际 ${JSON.stringify(calls)}）`)
+  ok(calls.length === 1 && calls[0] === 'f1', `点击插队调用 steerQueued("f1")（实际 ${JSON.stringify(calls)}）`)
+
+  out.push('')
+  out.push('=== 4. 撤回按钮接线 ===')
+  const retracts = qa('[data-testid="queue-retract"]')
+  ok(retracts.length === 3, `两类消息都有撤回按钮（实际 ${retracts.length}）`)
+  retracts[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(250)
+  ok(retractCalls.length === 1 && retractCalls[0] === 's1', `点击撤回携带稳定 queueId（实际 ${JSON.stringify(retractCalls)}）`)
 
   // 收尾：清空状态，别影响后续
   store.setState({ queue: { steering: [], followUp: [] } })

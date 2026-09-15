@@ -32,6 +32,10 @@
     lang: 'zh-CN',
     recentCwds: ['C:/work/pi-desktop'],
     projectNames: {},
+    /* 必须给：Composer / FileTree / store 都用 `settings.projects.find(...)`（没有 `?.` 兜底），
+       缺这个字段会在注入后抛 TypeError 并让 React 卸载整棵树 —— 截图会变成整片空白。 */
+    projects: [],
+    projectGroups: [],
     providerBudgets: {},
     rightPanelOpen: true,
     alwaysOnTop: false,

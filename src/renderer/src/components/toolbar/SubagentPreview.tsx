@@ -19,6 +19,8 @@ export function SubagentPreview() {
   const run = useStore((s) => s.subagents.find((r) => r.id === id) ?? null)
   const close = useStore((s) => s.openSubagent)
   const stop = useStore((s) => s.stopSubagent)
+  const merge = useStore((s) => s.mergeSubagent)
+  const discard = useStore((s) => s.discardSubagent)
   const browserOpen = useStore((s) => s.browserState.open)
   const bodyRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
@@ -74,8 +76,63 @@ export function SubagentPreview() {
       <div className="sp-meta">
         <span title={run.cwd}>{run.cwd}</span>
         {run.model ? <span>· {run.model}</span> : null}
+        <span>· {run.isolation === 'worktree' ? t('sa.isolated') : t('sa.readOnly')}</span>
         {run.error ? <span className="sp-err">· {run.error}</span> : null}
       </div>
+
+      {run.parentSessionId || run.parentRunId ? (
+        <div className="sp-meta sp-parent" title={run.parentSessionId ?? run.parentRunId}>
+          {t('sa.parent')}: {run.parentSessionId ?? '—'}{run.parentRunId ? ` · ${run.parentRunId}` : ''}
+        </div>
+      ) : null}
+
+      {run.diff ? (
+        <div className="sp-review" data-testid="subagent-review">
+          <div className="sp-review-head">
+            <span>{t('sa.diff')}</span>
+            <span>{t('sa.diffStats', { files: run.diff.files, additions: run.diff.additions, deletions: run.diff.deletions })}</span>
+          </div>
+          {run.diff.paths.length ? (
+            <div className="sp-diff-paths" title={run.diff.paths.join('\n')}>
+              {run.diff.paths.slice(0, 6).join(' · ')}{run.diff.truncated ? ' · …' : ''}
+            </div>
+          ) : (
+            <div className="sp-diff-paths">{t('sa.noDiff')}</div>
+          )}
+          <div className="sp-review-state">
+            {run.review === 'pending'
+              ? t('sa.reviewPending')
+              : run.review === 'conflict'
+                ? t('sa.reviewConflict')
+                : run.review === 'merged'
+                  ? t('sa.reviewMerged')
+                  : run.review === 'discarded'
+                    ? t('sa.reviewDiscarded')
+                    : run.review === 'archived'
+                      ? t('sa.reviewArchived')
+                      : ''}
+          </div>
+          {run.diff.patchPath ? (
+            <button
+              className="sa-act-btn"
+              onClick={() => void window.yan.openPath(run.diff!.patchPath!)}
+              data-testid="subagent-diff-open"
+            >
+              {t('sa.openDiff')}
+            </button>
+          ) : null}
+          {!running && (run.review === 'pending' || run.review === 'conflict') ? (
+            <span className="sp-review-actions">
+              <button className="sa-act-btn" onClick={() => void merge(run.id)} data-testid="subagent-merge">
+                {t('sa.merge')}
+              </button>
+              <button className="sa-act-btn danger" onClick={() => void discard(run.id)} data-testid="subagent-discard">
+                {t('sa.discard')}
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className="sp-body"

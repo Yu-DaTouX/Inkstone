@@ -235,76 +235,68 @@
   /* ================= 4. 模型 / 思考选择器 ================= */
   log('\n--- 4. 模型 / 思考选择器 ---')
   await ensureClosed()
-  // 模型 / 思考档 现在在设置面板的「状态」tab 里
-  store.getState().openSettings('status')
-  await sleep(700)
-
-  const picks = qa('.pick')
-  ok(picks.length >= 2, `有 ${picks.length} 个下拉（模型 + 思考）`)
-
-  const modelPick = picks[0]
-  if (modelPick) {
-    const opts = [...modelPick.querySelectorAll('option')]
-    log('  模型选项数: ' + opts.length + ' 当前: ' + JSON.stringify(modelPick.value))
-    ok(opts.length > 1, '模型下拉有多项')
-    const groups = [...modelPick.querySelectorAll('optgroup')].map((g) => g.label)
-    ok(groups.length > 0, '模型按 provider 分组: ' + groups.slice(0, 4).join(', '))
+  // 模型 / 思考档统一在输入栏的模型菜单，不再复制一套设置页下拉。
+  const picker = q('[data-testid="model-picker"]')
+  ok(!!picker, '输入栏有统一模型菜单入口')
+  if (picker) {
+    click(picker)
+    await until(() => !!q('[data-testid="model-menu"]'), 3000)
+    const items = qa('.mt-item')
+    const current = q('.mt-item[data-current="1"]')
+    ok(items.length > 1, `模型菜单有 ${items.length} 个模型`)
+    ok(!!current, '模型菜单标记当前模型')
+    /*
+     * 思考档位是**按能力渲染**的（能力探测引入后的契约）：
+     *   levels.length > 1        → 出档位按钮（thinking-dot-*）
+     *   levels.length <= 1 且状态 known → 整块不渲染
+     *   状态 unknown / unsupported     → 出能力说明（thinking-capability-status）
+     * sandbox 里的默认模型常常只有 "off" 一档，所以这里大多数时候走第二条。
+     * 不能无条件断言「有档位按钮」：那会在单档模型上假失败。
+     */
+    const thinkButtons = qa('[data-testid^="thinking-dot-"]')
+    const capNote = q('[data-testid="thinking-capability-status"]')
+    const thinkSection = q('[data-testid="thinking-current"]')
+    const levels = store.getState().thinkingLevels
+    if (levels.length > 1) {
+      ok(thinkButtons.length > 0, `多档时出档位按钮（${thinkButtons.length} 个 / levels=${levels.length}）`)
+    } else {
+      ok(!thinkSection || !!capNote, `单档或能力未知时整块不渲染（levels=${JSON.stringify(levels)}）`)
+    }
 
     const cur = store.getState().session?.model
-    ok(
-      modelPick.value === `${cur?.provider}|${cur?.id}`,
-      '下拉当前值与 session.model 一致'
-    )
-
-    // 真正切一次再切回来
-    const other = opts.find((o) => o.value && o.value !== modelPick.value)
+    const other = items.find((el) => el.getAttribute('data-current') !== '1')
     if (other) {
-      const [p, id] = other.value.split('|')
-      await store.getState().setModel(p, id)
+      click(other)
       await sleep(1200)
-      const after = store.getState().session?.model
-      ok(after?.id === id, `切换到 ${id} 生效`)
-      // 切回
+      const id = other.getAttribute('title') ?? ''
+      ok(store.getState().session?.model?.id === id, `菜单切换到 ${id} 生效`)
       if (cur) {
         await store.getState().setModel(cur.provider, cur.id)
         await sleep(1200)
         ok(store.getState().session?.model?.id === cur.id, '切回原模型成功')
       }
-    } else {
-      log('  （只有一个模型，跳过切换测试）')
     }
-  }
 
-  const thinkPick = picks[1]
-  if (thinkPick) {
-    const opts = [...thinkPick.querySelectorAll('option')].map((o) => o.value)
-    log('  思考档: ' + opts.join(', ') + ' 当前: ' + thinkPick.value)
-    ok(opts.length > 0, '思考档下拉有选项')
-    const orig = thinkPick.value
-    const other = opts.find((o) => o !== orig)
-    if (other) {
-      await store.getState().setThinking(other)
+    const originalThinking = store.getState().session?.thinkingLevel ?? 'off'
+    const otherThink = thinkButtons.find((el) => el.getAttribute('data-on') !== '1')
+    if (otherThink) {
+      const level = otherThink.getAttribute('data-level') ?? ''
+      click(otherThink)
       await sleep(1000)
-      ok(store.getState().session?.thinkingLevel === other, `切到 ${other} 生效`)
-      await store.getState().setThinking(orig)
+      ok(store.getState().session?.thinkingLevel === level, `菜单切到 ${level} 生效`)
+      await store.getState().setThinking(originalThinking)
       await sleep(1000)
-      ok(store.getState().session?.thinkingLevel === orig, `切回 ${orig} 成功`)
+      ok(store.getState().session?.thinkingLevel === originalThinking, '切回原思考档成功')
     }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await sleep(250)
   }
-
-  store.getState().closeSettings()
-  await sleep(250)
 
   /* ================= 5. 自动压缩 / 重试开关 ================= */
-  // 开关现在也在设置面板的「状态」tab 里
-  store.getState().openSettings('status')
-  await sleep(500)
+  // 自动压缩归上下文分区，自动重试归操作分区；各只保留一个入口。
   log('\n--- 5. 开关 ---')
-  // 开关已从「复选框」改成「滑块按钮」（.switch-pill）
-  const switches = qa('.settings-body .switch-pill')
-  ok(switches.length === 2, `有 ${switches.length} 个开关（自动压缩 / 自动重试）`)
-
-  const autoCompact = switches[0]
+  const autoCompact = q('[data-testid="rp-auto-compact"]')
+  ok(!!autoCompact, '上下文分区提供自动压缩开关')
   if (autoCompact) {
     const before = store.getState().session?.autoCompactionEnabled
     log('  自动压缩当前: ' + before)
@@ -318,6 +310,20 @@
     autoCompact.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(1200)
     ok(store.getState().session?.autoCompactionEnabled === before, '还原成功')
+  }
+  const actions = q('[data-testid="rp-actions"]')
+  if (actions && !actions.classList.contains('open')) click(actions.querySelector('.rp-sec-head'))
+  await sleep(300)
+  const autoRetry = q('[data-testid="rp-auto-retry"] .switch-pill')
+  ok(!!autoRetry, '操作分区提供自动重试开关')
+  if (autoRetry) {
+    const before = store.getState().autoRetryEnabled
+    autoRetry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(600)
+    ok(store.getState().autoRetryEnabled === !before, '自动重试开关状态同步')
+    autoRetry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(600)
+    ok(store.getState().autoRetryEnabled === before, '自动重试还原成功')
   }
 
   /* ================= 6. 会话重命名 ================= */

@@ -413,6 +413,15 @@ html[data-theme='light'] .op-title::before {
   font-variant-numeric: tabular-nums;
 }
 
+.msg-turn-detail {
+  margin-left: var(--sp-2);
+  padding: 0 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
 /* 合并后的助手回合：块间距比其他消息稍小一点（它们本来就是一块） */
 .msg.assistant {
   margin-bottom: var(--sp-5);
