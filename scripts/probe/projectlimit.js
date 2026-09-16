@@ -154,6 +154,36 @@
     /* ---- 收尾 ---- */
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await sleep(200)
+
+    /*
+     * ---- N17：顺序与分组要落盘（重启后读的就是这个文件）----
+     *
+     * 探针里改完设置后，去主进程**重新读一次** settings（= 磁盘内容），
+     * 而不是只看渲染端自己的 store —— 后者只证明“界面记住了”。
+     */
+    out.push('')
+    out.push('=== 顺序与分组真的落盘（N17）===')
+    await sleep(600)
+    const persisted = await window.yan.getSettings()
+    const persistedIds = (persisted?.projects ?? []).map((p) => p.id)
+    const persistedGroups = (persisted?.projectGroups ?? []).map((g) => g.name)
+    out.push('  落盘 projects = ' + JSON.stringify(persistedIds))
+    out.push('  落盘 groups = ' + JSON.stringify(persistedGroups))
+    /*
+     * 只断言“注入的那 7 个”的相对顺序：设置里还会有应用自己登记的当前项目
+     * （真实 cwd），要求整个数组相等会假失败。
+     */
+    const injectedIds = all.map((x) => x.project.id)
+    const positions = injectedIds.map((id) => persistedIds.indexOf(id))
+    ok(positions.every((i) => i >= 0), '七个项目都落盘了')
+    ok(
+      positions.every((v, i) => i === 0 || v === positions[i - 1] + 1),
+      '落盘顺序与注入顺序一致（连续，不重排）'
+    )
+    ok(persistedGroups.join(',') === '甲组,乙组', '分组顺序也落盘')
+    const firstGroupOf = (id) => (persisted?.projects ?? []).find((p) => p.id === id)?.groupId
+    ok(firstGroupOf('pl1') === 'pl-group-a' && firstGroupOf('pl6') === 'pl-group-b', '每个项目的分组归属落盘')
+
     await store.getState().patchSettings({ projectGroups: [], projects: [], recentCwds: [], projectNames: {} })
     await sleep(200)
   } catch (error) {

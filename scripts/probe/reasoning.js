@@ -271,5 +271,41 @@
   ok(!q('[data-testid="reasoning"]'), '没有推理时不渲染空壳')
   ok(!!q('[data-tools="1"]') || !!q('.trow'), '工具行照常渲染')
 
+  /* ---- 7. 减少动态效果：直接给全文，不让用户等逐字动画 ---- */
+  /*
+   * 组件在**首次挂载**时读一次 prefer-reduced-motion（`useRef(...).current`），
+   * 所以这里先用假的 `matchMedia` + 一次 `sync`（换 id = 新组件实例）重挂载。
+   * 断言只看“同一时刻文本是否已完整”，不等待逐字推进。
+   */
+  {
+    const realMM = window.matchMedia.bind(window)
+    window.matchMedia = (q2) =>
+      String(q2).includes('prefers-reduced-motion')
+        ? {
+            matches: true,
+            media: String(q2),
+            onchange: null,
+            addEventListener() {},
+            removeEventListener() {},
+            addListener() {},
+            removeListener() {},
+            dispatchEvent: () => false
+          }
+        : realMM(q2)
+    store.getState().applyPush({
+      ch: 'sync',
+      payload: [
+        { id: 'r-user-reduced', role: 'user', text: '减少动效下看推理' },
+        { id: 'r-a-reduced', role: 'assistant', text: '', thinking: THINK, thinkingLive: true }
+      ]
+    })
+    setTurnStreaming(true)
+    await sleep(350)
+    const full = inner()?.textContent ?? ''
+    log(`  减少动效下 350ms 后的推理文本长度 = ${full.length} / 全文 ${THINK.length}`)
+    ok(full.length >= THINK.length, 'prefers-reduced-motion 下直接显示完整推理文本（不逐字等待）')
+    window.matchMedia = realMM
+  }
+
   return out.join('\n')
 })()

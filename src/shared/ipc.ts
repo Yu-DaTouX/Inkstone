@@ -1735,6 +1735,45 @@ export interface FileDiff {
   status: 'created' | 'deleted' | 'modified' | 'unchanged' | 'unknown'
 }
 
+/**
+ * 单个文件在 shell / 第三方工具执行期间的改动（L05 变更归属）。
+ *
+ * ⚠️ 与 `FileDiff` 的区别：这是**目录级前后快照**算出来的，
+ *    只知道“这个文件在这段时间里变了”，行数常常拿不到（只给了状态与大小）。
+ *    不要为了好看编造行数 —— 拿不到就写 -1，界面会说“未读取”。
+ */
+export interface WorkspaceChangeFile {
+  /** 相对工作目录的路径（统一正斜杠，便于展示与比较） */
+  path: string
+  status: 'created' | 'deleted' | 'modified' | 'unknown'
+  /** 改动前后大小（字节）；拿不到时为 -1 */
+  beforeSize: number
+  afterSize: number
+  /** 行级差异；拿不到（大文件 / 同大小但内容变了 / 只算了元信息）时为空串，行数为 -1 */
+  added: number
+  removed: number
+  patch: string
+}
+
+/** shell / 第三方工具一次调用的目录级改动汇总 */
+export interface WorkspaceChanges {
+  /** 快照根（绝对路径，展示用） */
+  root: string
+  /** 差异文件（超上限时只给前 N 个，总数看 total） */
+  files: WorkspaceChangeFile[]
+  /** 真实差异文件总数 */
+  total: number
+  /** 扫描了多少个文件（让“0 个改动”可信：不是没扫） */
+  scanned: number
+  /**
+   * 有值 = **不把这次差异归给这次调用**，界面必须如实说明。
+   *   · `concurrent`：同一目录还有另一个任务在跑，两边都可能改；
+   *   · `truncated`：目录太大 / 有读不了的子目录，快照不完整；
+   *   · `unreadable`：根目录当时读不到。
+   */
+  unknown?: 'concurrent' | 'truncated' | 'unreadable'
+}
+
 /** 只读文件预览的结果（消息里的文件链接 / 附件按需查看） */
 export interface FilePreview {
   ok: boolean

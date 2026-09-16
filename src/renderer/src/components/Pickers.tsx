@@ -29,6 +29,9 @@ export function ModelThinkingPicker() {
   const levels = useStore((s) => s.thinkingLevels)
   const setModel = useStore((s) => s.setModel)
   const setThinking = useStore((s) => s.setThinking)
+  /* 凭证状态（D12）：用来把“没配 API”与“不支持思考”分开说 */
+  const authProviders = useStore((s) => s.authProviders)
+  const loadAuthProviders = useStore((s) => s.loadAuthProviders)
   /* 回复详细程度（方案 3.1）：与推理强度分开的两个维度 */
   const patchSettings = useStore((s) => s.patchSettings)
   const responseDetail = useStore((s) => s.settings?.responseDetail ?? 'standard')
@@ -52,6 +55,24 @@ export function ModelThinkingPicker() {
   const level = session?.thinkingLevel ?? 'off'
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
   const busy = !!session?.isStreaming || !!session?.isCompacting
+
+  /*
+   * 凭证状态（D12）。
+   *
+   * 只在**真的要显示菜单**时才拉：它要读 auth.json 并探测环境变量。
+   * 拿不到状态（列表为空）时一律当作“不知道”，不往界面上写任何结论 ——
+   * 宁可少标一个徽标，也不能把配好的供应商标成“未配置”。
+   */
+  useEffect(() => {
+    if (open) void loadAuthProviders()
+  }, [open, loadAuthProviders])
+
+  const needsAuth = (provider: string): boolean => {
+    if (authProviders.length === 0) return false
+    const info = authProviders.find((p) => p.id === provider || p.authKey === provider)
+    /* 目录里没有这个供应商（pi 支持但不在内置目录）→ 不判断，不当成未配置 */
+    return !!info && info.status !== 'ready'
+  }
 
   // 点外面 / Esc 关掉
   useEffect(() => {
@@ -235,12 +256,28 @@ export function ModelThinkingPicker() {
               <div className="mt-head-row">
                 <span className="mt-head-title" title={t('picker.thinkDesc')}>{t('picker.think')}</span>
                 <span className="spacer" />
-                <span className="mt-head-level" data-testid="thinking-current">
+                <span
+                  className="mt-head-level"
+                  data-testid="thinking-current"
+                  /*
+                   * D10：头部只用**短状态词**。
+                   * 完整说明在下面的 `mt-capability-note` 里，两边写同一句话
+                   * 会让用户看到“同一提示重复两遍”（截图证据：
+                   * `docs/design/preview/matrix-modelmenu-1440x900-100-dark-2026-09-16.png`）。
+                   */
+                  title={
+                    hasLevels
+                      ? t('picker.thinkDesc')
+                      : thinkingStatus === 'unsupported'
+                        ? t('picker.thinkUnsupported')
+                        : t('picker.thinkUnknown')
+                  }
+                >
                   {hasLevels
                     ? thinkLabel(level)
                     : thinkingStatus === 'unsupported'
-                      ? t('picker.thinkUnsupported')
-                      : t('picker.thinkUnknown')}
+                      ? t('picker.thinkUnsupportedShort')
+                      : t('picker.thinkUnknownShort')}
                 </span>
               </div>
 
@@ -333,29 +370,44 @@ export function ModelThinkingPicker() {
                  * 69×8ms ≈ 550ms 才出现，那就不像「入场」而像「卡了」。
                  */
                 let seq = 0
-                return groups.map(([provider, list]) => (
+                return groups.map(([provider, list]) => {
+                  /* 整组都没配凭证时，组标题上也标一下（不用逐个模型去找） */
+                  const groupNeedsAuth = list.some((m) => needsAuth(m.provider))
+                  return (
                   <div key={provider} className="mt-group">
-                    <div className="mt-group-head">{provider}</div>
+                    <div className="mt-group-head" data-needs-auth={groupNeedsAuth ? '1' : '0'}>
+                      {provider}
+                      {groupNeedsAuth ? (
+                        <span className="mt-tag warn" data-testid={`group-needs-auth-${provider}`}>
+                          {t('picker.needsAuth')}
+                        </span>
+                      ) : null}
+                    </div>
                     {list.map((m) => {
                       const on = !!cur && m.provider === cur.provider && m.id === cur.id
                       const idx = indexOf.get(`${m.provider}|${m.id}`) ?? -1
                       const isCursor = idx === cursor
                       const i = Math.min(seq++, 12)
+                      const unauth = needsAuth(m.provider)
                       return (
                         <button
                           key={`${m.provider}|${m.id}`}
                           ref={isCursor ? cursorEl : undefined}
                           style={{ '--i': i } as React.CSSProperties}
-                          className={`mt-item ${on ? 'sel' : ''} ${isCursor ? 'cur' : ''}`}
-                          title={m.id}
+                          className={`mt-item ${on ? 'sel' : ''} ${isCursor ? 'cur' : ''} ${unauth ? 'needs-auth' : ''}`}
+                          title={unauth ? t('picker.needsAuthHint') : m.id}
                           data-current={on ? '1' : '0'}
                           data-cursor={isCursor ? '1' : '0'}
+                          data-needs-auth={unauth ? '1' : '0'}
                           onClick={() => {
                             void setModel(m.provider, m.id)
                             // 不关面板 —— 用户可能接着调强度
                           }}
                         >
                           <span className="mt-item-name">{m.name}</span>
+                          {unauth ? (
+                            <span className="mt-tag warn">{t('picker.needsAuth')}</span>
+                          ) : null}
                           {m.reasoning ? <span className="mt-tag">{t('picker.reasoning')}</span> : null}
                           {m.input?.includes('image') ? <span className="mt-tag">{t('picker.image')}</span> : null}
                           {on ? <Icon name="check" size={12} /> : null}
@@ -363,7 +415,8 @@ export function ModelThinkingPicker() {
                       )
                     })}
                   </div>
-                ))
+                  )
+                })
               })()
             )}
           </div>

@@ -372,6 +372,15 @@ export function Composer() {
   const [pathsTruncated, setPathsTruncated] = useState(false)
   /** Esc / 接受文件候选后，旧的异步结果不能把菜单重新打开。 */
   const [atMenuDismissed, setAtMenuDismissed] = useState(false)
+  /**
+   * 同上，但针对 `/` 命令菜单（N18）。
+   *
+   * 为什么单独一个：Esc 关菜单时会顺手置 `atMenuDismissed`，而它在上面那个
+   * effect 的依赖里 —— effect 因此重跑，又因为 `slashQuery` 仍在、匹配仍在，
+   * 就把命令菜单**又打开**了（实测：按 Esc 菜单不消失）。
+   * 用户在命令名里继续打字时（`slashQuery` 变化）才算重新开始，那时清掉标记。
+   */
+  const [slashMenuDismissed, setSlashMenuDismissed] = useState(false)
 
   useEffect(() => {
     if (atQuery === null) {
@@ -447,14 +456,28 @@ export function Composer() {
   }, [atQuery, paths])
 
   useEffect(() => {
-    if (slashQuery !== null && slashMatches.length > 0) {
+    if (slashQuery !== null && slashMatches.length > 0 && !slashMenuDismissed) {
       setMenu({ open: true, index: 0 })
     } else if (atQuery !== null && !atMenuDismissed && (atMatches.length > 0 || pathsLoading || pathsError)) {
       setMenu({ open: true, index: 0 })
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [atMatches.length, atMenuDismissed, atQuery, pathsError, pathsLoading, slashMatches.length, slashQuery])
+  }, [
+    atMatches.length,
+    atMenuDismissed,
+    atQuery,
+    pathsError,
+    pathsLoading,
+    slashMatches.length,
+    slashMenuDismissed,
+    slashQuery
+  ])
+
+  /* 继续在命令名里打字 = 重新开始补全（清掉 Esc 留下的关闭标记） */
+  useEffect(() => {
+    setSlashMenuDismissed(false)
+  }, [slashQuery])
 
   const completeSlash = useCallback(
     (command: SlashCommand) => {
@@ -691,6 +714,13 @@ export function Composer() {
      */
     const items = slashMatches.length > 0 ? slashMatches.map((c) => c.name) : atMatches
     if (menu.open && items.length > 0) {
+      /*
+       * 中文输入法组合期间，Enter / Tab / 方向键 / Esc 都是**输入法自己的**：
+       * Enter 确认候选、Esc 取消候选。这里必须让路，否则中文用户选词时
+       * 会把候选命令填进输入框（实测：组合态按 Enter → "/help " 被填入）。
+       * 下面的“发送键”分支一直有这个检查，菜单分支之前漏了。
+       */
+      if (e.nativeEvent.isComposing) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setMenu((m) => ({ ...m, index: (m.index + 1) % items.length }))
@@ -710,6 +740,8 @@ export function Composer() {
       if (e.key === 'Escape') {
         e.preventDefault()
         setAtMenuDismissed(true)
+        /* `/` 菜单也要记住“被 Esc 关过”：它有自己的重开 effect（见上面的说明） */
+        if (slashMatches.length > 0) setSlashMenuDismissed(true)
         setMenu({ open: false, index: 0 })
         return
       }

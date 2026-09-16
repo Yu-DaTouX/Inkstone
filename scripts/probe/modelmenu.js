@@ -179,6 +179,47 @@
     search.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(300)
 
+    /* ---- 未配置凭证的供应商要有明确标记（D12）----
+       pi 在凭证缺失时只会把档位回成 ["off"]，界面过去把“没配 API”与
+       “这模型不支持思考”显示成同一句话。这里注入一份凭证状态：
+       openai 已配，anthropic / google 未配。
+       两次 setState 之间必须等一帧：React 渲染完才能读 DOM。 */
+    /*
+     * ⚠️ 把 `loadAuthProviders` 先换成 no-op：菜单一打开就会去拉真实凭证
+     * 状态，会把下面这份虚构数据盖掉（隔离环境里所有 provider 都未配，
+     * 于是 24 条全被标成未配置——实测踩过）。
+     */
+    const realLoadAuth = store.getState().loadAuthProviders
+    store.setState({ loadAuthProviders: async () => {} })
+    store.setState({
+      authProviders: [
+        { id: 'openai', name: 'OpenAI', kind: 'api', hint: '', envVar: '', authKey: '', status: 'ready' },
+        { id: 'anthropic', name: 'Anthropic', kind: 'api', hint: '', envVar: '', authKey: '', status: 'missing' },
+        { id: 'google', name: 'Google', kind: 'api', hint: '', envVar: '', authKey: '', status: 'missing' }
+      ]
+    })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await sleep(250)
+    click(q('[data-testid="model-picker"]'))
+    await sleep(500)
+    const unauth = qa('.mt-item[data-needs-auth="1"]')
+    const auth = qa('.mt-item[data-needs-auth="0"]')
+    out.push(`  标记为未配置的模型 ${unauth.length} 条 / 已配置 ${auth.length} 条`)
+    ok(unauth.length === 16, '未配凭证的两个 provider 都标出来了（24 条里 16 条）')
+    ok(auth.length === 8, '已配凭证的 provider 不误标（openai 的 8 条）')
+    ok(!!q('[data-testid="group-needs-auth-anthropic"]'), '分组标题上有「未配置」徽标')
+    ok(!q('[data-testid="group-needs-auth-openai"]'), '已配凭证的分组不加徽标')
+    ok(
+      (unauth[0]?.textContent ?? '').includes('未配置'),
+      '模型行上写着清楚的原因（不是只靠颜色）',
+      JSON.stringify((unauth[0]?.textContent ?? '').slice(0, 40))
+    )
+
+    /* 恢复干净状态，不把这份虚构凭证与 stub 带给后续断言 */
+    store.setState({ authProviders: [], loadAuthProviders: realLoadAuth })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await sleep(250)
+
     /* 关闭：把焦点和状态还给后续场景 */
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await sleep(300)

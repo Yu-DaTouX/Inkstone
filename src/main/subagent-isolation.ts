@@ -79,9 +79,10 @@ export async function findGitRoot(cwd: string): Promise<string | null> {
 /**
  * 创建一个以当前 HEAD 为基线的隔离工作区。
  *
- * 只读模式故意不创建 worktree：它仍然只拿到受控 cwd，并由上层限制为
- * 只读用途。写入模式在非 Git 项目中直接失败，避免退回到会污染主目录的
- *“临时复制但无法安全合并”伪隔离。
+ * 只读模式故意不创建 worktree：它仍然只拿到受控 cwd，写入能力由
+ * `subagents.ts` 传给 pi 的 `--tools` 白名单（read/grep/find/ls）真正封死 ——
+ * 只换 cwd 不构成只读。写入模式在非 Git 项目中直接失败，避免退回到会污染
+ * 主目录的"临时复制但无法安全合并"伪隔离。
  */
 export async function prepareWorkspace(
   rootCwd: string,

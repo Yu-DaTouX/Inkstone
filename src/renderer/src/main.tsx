@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
 import { installAudioUnlock } from './lib/sound'
@@ -27,8 +28,14 @@ installAudioUnlock()
 
 createRoot(root).render(
   <StrictMode>
+    {/*
+     * ErrorBoundary 放在 I18nProvider **里面**：兜底界面自己要显示中文，
+     * 需要语言上下文。它抓的是 App 子树的渲染异常（D8）。
+     */}
     <I18nProvider>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </I18nProvider>
   </StrictMode>
 )
