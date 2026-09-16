@@ -5,8 +5,8 @@
 > 目录级导航见 [WORKSPACE.md](../WORKSPACE.md)；当前决定与待办见 [HANDOFF.md](HANDOFF.md)；
 > 设计令牌见 [DESIGN.md](../design/DESIGN.md)；测试约定见 [TESTING.md](TESTING.md)。
 >
-> 规模（2026-09-15）：`src/` 109 文件约 4.1 万行、`scripts/` 126 文件约 1.9 万行、
-> `resources/pi-extensions/` 3 文件 432 行。
+> 规模（2026-09-17，仅用于定位，不作为验收指标）：`src/` 124 文件、`scripts/` 162 文件、
+> `resources/pi-extensions/` 5 个扩展源码文件。具体职责以本文各节和当前源码为准。
 
 ---
 
@@ -76,7 +76,7 @@ pi 吐事件
 
 ---
 
-## 4. `src/main/` —— 主进程（39 文件）
+## 4. `src/main/` —— 主进程（44 个 `.ts`）
 
 ### 4.1 入口与生命周期
 
@@ -90,22 +90,32 @@ pi 吐事件
 | `runners.ts` | 440 | **会话运行实例注册表（N12）**：命中已有实例 / 复用空闲 / 新建；`RUNNER_LIMIT=3`；`stopOne` / `stopByCwd` / `stopAll`；`runtimeOf` 生成事件身份封套。**跨 cwd 复用要换进程**（pi 的 cwd 只在 spawn 时确定）。`busy()` 包含**直执行 shell**（D20：否则切换会复用到正在跑命令的实例，新会话直接报“已有一条命令在跑”） | 被 `index.ts` 全面使用；单测 `test-runners.mjs`（含跨项目换进程、失败回退、直执行 shell 也算忙） |
 | `exit-snapshot.ts` | 61 | 退出时只存**运行实例元数据**（不复制消息正文） | `index.ts` 退出流程；单测 `test-exit-snapshot.mjs` |
 | `zoom.ts` / `zoom-math.ts` | 105 / 115 | 界面缩放。**计算与 electron 分离**：`zoom-math` 不 import electron，所以能单测 | `index.ts`、`Settings.tsx`；单测 `test-zoom.mjs` |
+| `browser/network-boundary.ts` | 60 | 内置浏览器的网络边界判定（纯函数）：内网地址只允许「用户/agent 明确要求的顶层导航」放行（本地预览），DNS 重绑定一律拦，link-local（云 metadata）连明确要求也不放行。**发起方取已提交文档**，不取导航发起时乐观写入的期望值（D24） | `browser.ts` 的 `onBeforeRequest`；单测 `test-network-boundary.mjs`；live `browserboundary` |
+| `stdio-guard.ts` | 100 | 主进程 stdio 护栏：EPIPE 只记录不上报（关终端是正常操作），非 EPIPE 最多报一次且**绝不 rethrow**（在流 `'error'` 里 throw 会变成 Electron 的模态错误框 → 事件循环卡死）。与脚本侧 `scripts/lib/stdio-guard.mjs` 的区别见文件头 | `index.ts` 顶部；单测 `test-stdio-guard.mjs` |
 
 ### 4.2 pi 协议与归一化（**改 pi 交互只需动这三个**）
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
 | `protocol.ts` | 534 | **手写** RPC 客户端。只用 LF 分帧（不能用 readline，它会切 U+2028/29）；命令带 `id`；`resolvePi` 决定用内置还是系统 pi | `agent.ts`、`subagents.ts`、`title.ts` 三个 spawn 点 |
-| `agent.ts` | 1934 | `AgentController`：**一个会话一个 pi 子进程** —— 协议 → UI 的归一化、事件循环、`pendingUi`、"等待输入"计数、能力/统计刷新 | 被 `runners.ts` 持有；`index.ts` 事件经 `pushFrom` 带身份推出 |
+| `agent.ts` | 2211 | `AgentController`：**一个会话一个 pi 子进程** —— 协议 → UI 的归一化、事件循环、`pendingUi`、"等待输入"计数、能力/统计刷新 | 被 `runners.ts` 持有；`index.ts` 事件经 `pushFrom` 带身份推出 |
 | `normalize.ts` | 211 | pi 原始消息 → `UIMessage`。单独成文件是因为**会话文件解析器也要用**（那不能依赖 `agent.ts`） | `agent.ts`、`session-reader.ts` |
-| `compaction.ts` | 85 | 读 pi 的压缩设置，界面用来解释「何时会自动压缩上下文」 | `index.ts` → `RightPanel.tsx` |
+| `compaction.ts` | 297 | 压缩的**两件事**：① 读 pi 的压缩设置（`compactionInfo`，界面用来解释「何时会自动压缩」）；② 把 `compaction_start` / `compaction_end` 归一化成 `CompactionState`（N21-2）。**两个坑写在这里**：用户级设置要跟 `PI_AGENT_DIR`（不是拼 `~/.pi/agent`，D22）；项目级 `.pi/settings.json` 只在 pi 信任该项目时生效，否则整份忽略（D21，靠 `<PI_AGENT_DIR>/trust.json` 判断） | `index.ts` → `RightPanel.tsx`；`agent.ts` 的事件循环；单测 `test-compaction-status.mjs` |
+| `shared/ipc.ts` 的 `CompactionRun` | — | 压缩状态快照：`status`（running/completed/declined/failed/cancelled）+ `reason`（manual/threshold/overflow，认不出留 `reasonRaw` 原文）+ `error`（pi 原文，不静默）+ `beforeTokens`/`afterTokens` | `SessionState.compaction`（进行中）/ `.lastCompaction`（已结束，**两者必须分开**：开始新一次时不能擦掉上一次的结果） |
+| `shared/context-policy.ts` | 307 | **工作集预算与触发决策**（N21-3，纯函数）：① `contextBudget(窗口)` 按 `min(240k, 窗口×70%, 窗口−预留−余量)` 算工作集（参考值 64k→40k / 128k→88k / 256k→179.2k / 1M→240k；**小到装不下预留与余量时返回 null**，不给出 ≤ 0 的压缩线）；② `contextPolicyStep` 回答「现在要不要压」（上膛 `armed` / 冷却 30s / 忙时不插刀 / 兜底不看上膛）；③ `policyFrom` 解析 `YAN_CONTEXT_POLICY`；④ `nextContextStage` 给界面算「下一步」；⑤ 兜底线 `emergency = min(窗口 × 比例, 窗口 − 预留)` —— **物理兜底不能突破输出预留**（D31，方案 §12.1）。放在 shared 而不是 main：**判定与显示必须同一套规则** | `main/agent.ts` 的 `evaluateContextPolicy`；`main/context-policy.ts`（env 入口）；渲染端 `nextContextStage`；单测 `test-context-policy.mjs`；live `contextbudget` / `contextswitchguard`（触发时机，D27 的回归网）/ `contexttakeover` |
+| `main/context-policy.ts` | 33 | 只有一件事：把 `YAN_CONTEXT_POLICY` 读成生效策略（按原始字符串记忆化，env 变了立刻跟上）。纯逻辑在 `shared/context-policy.ts` | `agent.ts` 的 `effectivePolicy()`；`index.ts` 的 `yan:contextBudget` |
+| `shared/title-samples.ts` | 60 | **会话标题的样本挑选**（N11，纯函数）：首条 + 最近一条用户话；纯图片消息用 `[图片 ×N]` 占位；最多带首图一张。内存路径（`agent.ts`）与磁盘路径（`sessions.ts.readTitleSamples`）共用这套规则 —— 以前是两份实现，"新会话标题与旧会话标题口径不一致"只表现为"标题怪怪的"，很难归因 | 单测 `test-title-samples.mjs`（11 条）；`test:live -- title` |
+| `scripts/probe/language.js` | 210 | N16 语言：互换提问对照（每方向最多 3 次）+ **切语言不重建实例** + 同一会话下一轮生效 + 流式期间切语言不打断；推理语言**只报告**（软约束） | `test:live -- language`（cost 1） |
+| `scripts/probe/history-switch.js` | 211 | **切换会话不丢历史**（D38 的回归网）：拿历史最长的会话，用 `peekSession` 记条数与首条文本 → 点开 → 等权威 `sync` → 再对一次；期间"曾被打回 0"直接判失败；另外覆盖"切语言"这条路径 | `test:live -- historyswitch`（cost 0） |
+| `scripts/probe/title.js` | 180 | N11 标题：自动生成 / 单次生成锁 / 手动名粘性 / 候选→采用 | `test:live -- title`（cost 1） |
+| `agent.ts` 的 `evaluateContextPolicy` | — | **砚接管时机的唯一入口**：`refreshStats` 拿到用量时判定（回合结束才动，不在流式/工具执行中途）；命中后调 `compact({ fromPolicy })`。`policyOrigin`（含基准 `endedAt`）给那次压缩盖上真实发起方 —— pi 对砚发起的压缩一律报 `reason: 'manual'`，界面会写成「手动」 | 单测覆盖决策分支；live `contexttakeover` / `contextemergency`（两条线各一次真实触发） |
 
 ### 4.3 会话 / 项目 / 运行实例
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
 | `sessions.ts` | 465 | 会话索引（**只读**）：列左栏、读标题样本、删除、恢复。真正切换会话是让 pi 自己 `switch_session` | `index.ts`、`Rail.tsx` |
-| `session-reader.ts` | 193 | 直接从 JSONL 解析消息，让界面**立即**有内容（实测 17MB 会话：文件解析 59ms vs 等 pi 2780ms） | `index.ts` 的 `peekSession` → `store.switchSession` 第一步 |
+| `session-reader.ts` | 193 | 直接从 JSONL 解析消息：① 让界面**立即**有内容（实测 17MB 会话：文件解析 59ms vs 等 pi 2780ms）；② **也是 UI 历史的权威来源**（`agent.hydrate()` 用它，因为 pi 的 `get_messages` 只给当前上下文 —— 压缩过的会话实测 858 → 86 条）。返回值里带文件头的 `sessionId`，用于把 peek 内容与随后的 pi `sync` 认成同一条会话 | `index.ts` 的 `peekSession` → `store.switchSession` 第一步；`agent.ts` 的 `hydrate()` |
 | `session-layout.ts` | 273 | 会话 ↔ 项目的**产品语义映射**（`sessionId → projectId / scope / 最近访问`）。Yan 不搬 pi 的 JSONL | `index.ts`、`Rail.tsx`；单测 `test-session-layout.mjs` |
 | `title.ts` | 300 | 会话标题：**独立短进程**跑归纳；手动标题粘性；候选→采用。已显式关闭 context files / skills / 模板 | `index.ts`、`store.regenerateTitle`；缓存 `YAN_DIR/titles.json` |
 | `todo-snapshots.ts` | 122 | 扩展写入的任务清单 → 四种状态（带别名表，因为字段名由扩展决定） | `agent.ts` 的 `refreshTodos`；单测 `test-todo-history.mjs` |
@@ -151,7 +161,7 @@ pi 吐事件
 
 ---
 
-## 5. `src/renderer/src/` —— 界面（65 文件）
+## 5. `src/renderer/src/` —— 界面（53 个 `.ts/`.tsx`；样式另见 §5.8）
 
 ### 5.1 状态层（改这里要最小心）
 
@@ -161,6 +171,8 @@ pi 吐事件
 | `state/session-runtime.ts` | 261 | 按 sessionId 保存后台运行时状态（消息/草稿/模型/命令/统计）；启动期 `run:<id>` → 稳定 sessionId 的缓存迁移 | `store.ts`；单测 `test-session-runtime.mjs` |
 | `state/capability-request.ts` | 43 | 能力列表响应的**过期判定**：有 runId 只认 runId（`sessionId` 的 `pending→uuid` 是正常过渡） | `store.ts` 的 `reloadModels`/`reloadCommands`；单测 `test-capability-request.mjs` |
 | `state/project-session.ts` | 56 | 切项目时选「该项目最近访问的会话」（**运行实例优先**，其次会话列表）：选错就会新建会话、把草稿弄丢（草稿按 sessionId 存） | `store.ts` 的 `pickProjectSession` 动作 → `Rail.tsx` 的 `switchProject`；单测 `test-project-session.mjs` |
+| `state/compaction-view.ts` | 84 | 压缩状态 → 文案（N21-2）：reason × status 的整张表。**三条边界写在这里**：认不出的 reason 显示上游原文而不是「未知」；`declined`（上游没执行）与 `cancelled`（中断）都不许写成「失败」；两端 token 都有才给「1.6k → 160」。N21-3 起还负责**发起方**：`triggeredBy === 'policy'` 时写「工作集 / 物理兜底」而不是 pi 报的「手动」 | `RightPanel.tsx` 的上下文分区；单测 `test-compaction-status.mjs` |
+| `state/context-view.ts` | 50 | 工作集 → 文案（N21-3）：阶段名（tool-sweep → 清理 / episode-fold → 折叠 / compaction → 压缩）与「下一步：…」。**只预报 `kinds` 里真的会执行的阶段** —— 未接管的阶段在界面上是虚线 + 「阶段 4 才生效」的说明，不能写成会触发 | `RightPanel.tsx` 的上下文分区；单测 `test-context-policy.mjs` |
 
 ### 5.2 对话区 `components/chat/`
 
@@ -258,40 +270,50 @@ pi 吐事件
 | `browser.js` | 198 | 内置浏览器工具（`browser_open/observe/click/type/press/scroll/…`）。只访问 loopback bridge，**不碰 Electron 对象** | `agent.ts` 用 `--extension` 加载 |
 | `question.js` | 167 | 让模型在信息不足时主动问用户；自主模式下不弹窗 | 同上 |
 | `response-detail.js` | 67 | 把界面三档"回复详细程度"变成系统提示（standard 不注入） | 同上 |
+| `context-safety.js` | 437 | **切片安全规则**（N21-10，纯函数、无 Electron/pi 依赖）：原子上下文单元（user 回合 / bash / orphan tool）、从尾部按单元边界切割（`planTailCut`）、被切掉但必须进状态的 `carryOver`、注入分桶 `routeEntries`、清扫候选 `sweepCandidates`、以及不变式检查 `violations` / `routingViolations`。三条硬约束：正在使用的 diff 不得删、用户约束不得降级、不得从 reasoning/output 中间切。**保护分两档**（硬留 vs 可带走），理由写在文件头 | 阶段 4 扩展（N21-4）接入时调它；现在只有单测 `test-context-safety.mjs`（42 条）与 [方案 §12.4](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| `language.js` | 119 | 界面语言 → **一句**推理/回复语言要求（每轮读 `desktop.json`）。两个钩子：`before_provider_request` 在**最后一条用户消息前**插一条独立消息（主通道，实测位置最强）、`before_agent_start` 追加到系统提示末尾（兜底）。**不用** `--append-system-prompt`：那是启动参数，切语言必须重建实例（D37/D39/D40，理由与实测数据写在文件头） | 同上；单测 `test-language-extension.mjs`；live `test:live -- language`（注入取证：`YAN_LANG_EXT_LOG`） |
 
 > ⚠️ 与 `resources/pi-runtime/` 的区别：**这里是源码**（可改、随包分发）；
 > 那个是生成物（Git 忽略、`npm run upgrade:pi` 重生成、**不手改**）。
 
 ---
 
-## 7. `scripts/` —— 测试与工具（126 文件）
+## 7. `scripts/` —— 测试与工具（161 个文件：入口 + 单测 + 探针 + 工具脚本）
 
 ### 7.1 入口
 
 | 文件 | 功能 |
 |---|---|
-| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 29 个 `test-*.mjs` |
-| `test-live.mjs` | live 场景入口：建隔离 sandbox（`YAN_*` + 复制 `auth.json`/`models.json`），起真应用跑探针。场景表就是 `CASES` |
+| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 38 个 `test-*.mjs` |
+| `test-live.mjs` | live 场景入口：建隔离 sandbox（`YAN_*` + 复制 `auth.json`/`models.json`），起真应用跑探针。场景表就是 `CASES`。**要能在被 Ctrl+C / 被 kill 时收掉 Electron 子进程树**（否则会留下继续往死管道写日志的孤儿）。另有两个附属设施：合成 fixture 项目树（`buildFixtureProject`）与 **L04 的本地 HTTP 服务**（`startBoundaryServer`，127.0.0.1:39873：下载 / Cookie 哨兵 / 真实权限请求 / 内网目标） |
 | `launch.mjs` | 一键启动（检查依赖 → 必要时构建 → 起应用） |
 | `probe-pi.mjs` | 只验证「pi 能否被找到并启动」，不开窗口 |
+| `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
+| `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（29 个 `test-*.mjs`）
+### 7.2 单测模块（38 个 `test-*.mjs`）
 
-按被测目标分：`turns` / `zoom` / `filerefs` / `links` / `response-detail` / `snapshots` / `chrome-profile` / `stream-width` / `question` / `todo-history` / `credentials` / `oauth` / `stream-deltas` / `subagent-isolation` / `runners` / `session-runtime` / `session-layout` / `exit-snapshot` / `command-registry` / `model-capabilities` / `network-policy` / `cookie-transfer` / `at-query` / `slash-query` / `capability-request` / `files` / `project-id` / `subagents`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-policy` / `context-safety` / `credentials` / `exit-snapshot` / `filerefs` / `files` / `language-extension` / `links` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
-### 7.3 live 探针（78 个 `probe/*.js`）
+> `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
+> `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
+> 对照 HANDOFF 的「单测 N/N 通过」。
+
+### 7.3 live 探针（97 个文件；93 条在 `CASES` 里）
 
 在**真实渲染进程**里执行（`window.__yanStore` 可直接驱动状态）。
 按主题分组（新增探针同时要在 `test-live.mjs` 的 `CASES` 注册）：
 
 > **例外（不在 CASES 里，别当孤儿）**：`survey.js` 由手工 `YAN_PROBE` 驱动（结构勘察，不断言，
-> 用法见 §11.8）；`packaged.js` 由 `test-packaged.mjs`、`sidebar-review.js` 由 `review-ui.mjs` 驱动。
+> 用法见 §11.8）；`packaged.js` 由 `test-packaged.mjs`、`sidebar-review.js` 由 `review-ui.mjs`、
+> `chrome-cdp.mjs`（`.mjs`，不是 `*.js`）由 `probe:chrome` 驱动。
+> `npm run audit:refs` 的 `probes.orphanCount` 应当**只剩这 4 个** —— 多了就是漏注册，少了是文档该改。
 
 - **会话/运行**：`sessions`、`sessionrunners`、`runnerselect`、`sessionlayout`、`tray`、`rename`、`queuestack`
 - **模型/命令/引用**：`modelmenu`、`modelnotready`、`capabilityload`、`slashcmd`、`at-path`、`fileref`
 - **对话渲染**：`reasoning`、`toolgroup`、`toolrow`、`tools`、`detail`、`streamwidth`、`virtual`、`outline`
 - **布局/视觉**：`layout`、`narrow`、`vheight`、`resize`、`panels`、`symmetry`、`railmini`、`railtitle`、`railsearch`、`projectlimit`、`zoom`、`light`、`density`、`topbar`、`titlebar`、`motion`
-- **文件/浏览器**：`fs`、`linkpreview`、`browser`、`external-chrome`（场景名 `externalchrome`）
+- **文件/浏览器**：`fs`、`linkpreview`、`browser`、`external-chrome`（场景名 `externalchrome`）、`browser-boundary`（场景名 `browserboundary`，L04：权限真实请求 / 本地预览边界 / DNS 重绑定 / 两条下载路径 / Cookie 真实复制；**需公网，不进 check**）
 - **其他**：`live`（DOM 体检）、`logs`、`perf`、`sound`、`hotkeys`、`working`、`trash`、`onboarding`、`grouprename`、`autonomous`、`subagent`、`terminal`、`todos`、`todonew`
 - **勘察（不在 CASES）**：`survey`（§11 的真实窗口 dump，靠手工 `YAN_PROBE` 跑）
 
@@ -342,11 +364,13 @@ pi 吐事件
 | 改后台会话/身份 | `main/runners.ts`（身份封套）+ `store.applyPush`（身份闸门）+ `state/session-runtime.ts`（缓存）。**三处必须一致**，否则事件会被静默丢弃 |
 | 改文件访问边界 | `main/files.ts`、`main/file-refs.ts`、`main/credentials.ts` 的 `completePath` —— 三者是同一条「只能看 cwd 以内」的约束 |
 | 改浏览器坐标 | 原生视图永远盖在渲染层之上；坐标必须乘 `win.webContents.getZoomFactor()` |
-| 加 live 探针 | 写 `scripts/probe/x.js` **并且**在 `test-live.mjs` 的 `CASES` 注册；改完源码先 `npm run build`（`test:live` 不会自动构建）。需要在 **Electron 关闭之后**才能看到的结论（退出归档、临时目录、主树最终状态）用 `afterExit` 钩子，由 Node 侧直接查文件系统 |
-| 要截图/视觉证据 | `npm run visual:matrix`（`scripts/visual-matrix.mjs`，分批入口 `visual-matrix-run.mjs`）：注入 `shot-fixture.js` 的合成数据，按“尺寸 × 缩放 × 主题”建真实窗口截图到 `docs/design/preview/matrix-*.png`。新增一组就改 `GROUPS` / `STATES` / `MUST_HAVE`（截图前必须核对的关键元素） |
+| 加 live 探针 | 写 `scripts/probe/<scenario>.js` **并且**在 `test-live.mjs` 的 `CASES` 注册；改完源码先 `npm run build`（`test:live` 不会自动构建）。需要在 **Electron 关闭之后**才能看到的结论（退出归档、临时目录、主树最终状态）用 `afterExit` 钩子，由 Node 侧直接查文件系统 |
+| 要截图/视觉证据 | `npm run visual:matrix`（`scripts/visual-matrix.mjs`，分批入口 `visual-matrix-run.mjs`）：注入 `shot-fixture.js` 的合成数据，按“尺寸 × 缩放 × 主题”建真实窗口截图到 `docs/design/preview/matrix-*.png`。新增一组就改 `GROUPS` / `STATES` / `MUST_HAVE`（截图前必须核对的关键元素）。写临时图片用 `YAN_SHOT_DIR=…`，否则会**覆盖已有证据文件**（同名同日） |
+| 改浏览器网络边界 | 判定住 `main/browser/network-boundary.ts`（纯函数 + 单测），`browser.ts` 只负责落成「放行 / 拦下记账 / 再解析」；**发起方必须用 `tab.committedUrl`**（不是 `state.url`：那是导航发起时的期望值，D24）；拦下的请求要进 `blockedRequests` 并在界面上看得见（D26）。证据：`test-network-boundary.mjs`（21 条）+ `test:live -- browserboundary`（真实 DNS 重绑定 / 302 借道 / 两条下载 / Cookie 复制） |
+| 碰子进程 / 日志管道 | 独立 Electron 入口脚本（`visual-matrix` / `shots` / `shot` / `live-preview` / `measure-design`）必须先 `import './lib/stdio-guard.mjs'`：EPIPE 容忍 + `uncaughtException` 变成“退出码 1”。父进程侧（`visual-matrix-run.mjs`、`test-live.mjs`）要留超时并能收整棵进程树。桌面应用侧是 `src/main/stdio-guard.ts`（**不退出**，只上报）。理由与定位方法见 [MAINTENANCE](MAINTENANCE.md) 的「子进程与日志管道」 |
 | 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
 | 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
-| 加单测 | `scripts/test-x.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
+| 加单测 | `scripts/test-<module>.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
 | 删任何样式/组件 | 先核对导入顺序与动态类名；`stage1`/`stage2`/`redesign` 名字旧不代表无用 |
 
 ---

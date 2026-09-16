@@ -103,10 +103,21 @@
         )
     )
     ok(!!final?.endedAt, '记录了结束时间')
-    ok(
-      (final?.transcript ?? []).some((m) => m.role === 'assistant' && m.text.length > 0),
-      '转录里有模型的回复文本'
-    )
+    const hasReply = (final?.transcript ?? []).some((m) => m.role === 'assistant' && m.text.length > 0)
+    if (!hasReply) {
+      /*
+       * 空回复最常见的原因是**免费模型配额**（429）——症状固定：
+       * assistant 消息内容为空。把可诊断的字段一起打出来，
+       * 免得每次都要去翻日志才知道是"模型没回"还是"事件流丢了"。
+       */
+      out.push('  诊断：没有回复文本｜run=' + JSON.stringify({
+        status: final?.status,
+        error: final?.error ?? null,
+        endedAt: final?.endedAt ?? null
+      }))
+      out.push('  诊断：免费模型配额（429）时的表现就是空文本，见 MAINTENANCE「免费模型有配额」')
+    }
+    ok(hasReply, '转录里有模型的回复文本')
 
     /* 详情面板里能真的看到输出 */
     const body = q('[data-testid="subagent-preview-body"]')?.textContent ?? ''

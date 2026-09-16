@@ -80,6 +80,25 @@
   log('  speed: ' + (last?.speed ? last.speed.toFixed(2) + ' tok/s' : '（无）'))
   log('  elapsedMs: ' + last?.elapsedMs)
 
+  /*
+   * 本轮用时（用户要求：会话/回合结束时能看到本次用了多久）。
+   *
+   * 值必须来自 pi 的 `elapsedMs`（含工具往返的墙钟耗时），
+   * 不是界面自己计的秒 —— 所以这里拿 store 里的真实字段对一遍，
+   * 并确认它在**回合结束后**仍然在条上（不是只在流式期间一闪而过）。
+   */
+  const elapsedItem = toks.find((x) => x.querySelector('.ub-label')?.textContent === '用时')
+  ok(!!elapsedItem, '回合结束后用量条上有「用时」')
+  if (elapsedItem) {
+    const shown = elapsedItem.querySelector('.ub-value')?.textContent ?? ''
+    log('  用时显示: ' + JSON.stringify(shown))
+    ok(/\d/.test(shown), '用时是个数字，不是「—」', shown)
+    const ms = last?.elapsedMs ?? 0
+    const expect = ms >= 60_000 ? `${Math.floor(ms / 60000)}m${String(Math.round((ms % 60000) / 1000)).padStart(2, '0')}s` : `${(ms / 1000).toFixed(1)}s`
+    ok(shown.replace(/\s/g, '') === expect, `用时 = ${shown}（应 ${expect}，来自 elapsedMs=${ms}）`)
+    ok(!!elapsedItem.getAttribute('title'), '用时项有 tooltip 说明口径')
+  }
+
   ok(last?.usage?.output > 0, `output = ${last?.usage?.output}（应 > 0）`)
   ok(last?.usage?.input > 0 || last?.usage?.cacheRead > 0, '有输入侧用量')
   ok(last?.speed > 0, `速度有值：${last?.speed?.toFixed(1)} tok/s`)
@@ -132,6 +151,9 @@
     const outItem = qa('.usagebar .ub-item').find((x) => x.querySelector('.ub-label')?.textContent === '输出')
     const v = outItem?.querySelector('.ub-value')?.textContent ?? ''
     ok(v.startsWith('—') || v === '', `新会话「输出」没有数字（实际 ${JSON.stringify(v)}）`)
+    /* 新会话没有本轮用时 —— 不能把上一轮的耗时留在界面上 */
+    const elapsed = qa('.usagebar .ub-item').find((x) => x.querySelector('.ub-label')?.textContent === '用时')
+    ok(!elapsed, `新会话不显示「用时」（实际 ${elapsed ? JSON.stringify(elapsed.textContent) : '无'}）`)
   }
 
   /* ---- 7. 溢出 ---- */

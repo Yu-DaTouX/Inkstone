@@ -118,8 +118,18 @@ export function runWorkspaceChangesTests(ok, mod) {
     /* 大文件：只记元信息，不读内容 → 行数写 -1，不编造 */
     writeFile(root, 'big.bin', 'x'.repeat(300 * 1024) + '\n')
     const beforeBig = captureTree(root)
-    /* 等长内容改写：大文件没读过内容 → 只能给 unknown（如实，不猜） */
+    /*
+     * 等长内容改写：大文件没读过内容 → 只能给 unknown（如实，不猜）。
+     *
+     * ⚠️ 必须显式把 mtime 拨到不同值：连续两次写入在 Windows 上可能落在
+     * **同一个 mtime 刻度**里（实测约 1% 的运行会撞上），那时 size 相同、
+     * mtime 也相同 —— 快照的结论是“没变过”，而不是 unknown，
+     * 于是这条断言偶发假失败（2026-09-16 实测到一次，全量门槛因此变红）。
+     * 判定逻辑是对的，含糊的是测试造的数据。
+     */
     writeFile(root, 'big.bin', 'y'.repeat(300 * 1024) + '\n')
+    const bumped = (Date.now() + 2000) / 1000
+    utimesSync(join(root, 'big.bin'), bumped, bumped)
     const bigChanges = diffTrees(beforeBig, captureTree(root))
     ok(
       bigChanges.some((c) => c.path === 'big.bin' && c.status === 'unknown'),

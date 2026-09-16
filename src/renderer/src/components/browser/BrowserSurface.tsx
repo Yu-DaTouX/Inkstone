@@ -249,6 +249,37 @@ export function BrowserSurface() {
               ))}
             </div>
           ) : null}
+          {/*
+           * 被网络边界拦下的请求（本地预览边界 / DNS 重绑定）。
+           *
+           * 拦截是静默 `cancel`：不列出来的话，用户看到的就是“这个页面
+           * 就是打不开”，只会以为浏览器坏了。这里给出目标主机、原因，
+           * 以及**是谁想访问**（发起方顶层页面），方便判断是不是自己预期内的。
+           */}
+          {state.blockedRequests?.length ? (
+            <div className="browser-permission-list" data-testid="browser-blocked">
+              <span className="browser-sync-result">
+                {t('browser.blockedRequests', { n: state.blockedRequests.length })}
+              </span>
+              {state.blockedRequests.slice(-5).map((item) => (
+                <div
+                  className="browser-permission-row blocked"
+                  key={`${item.host}:${item.reason}`}
+                >
+                  <span
+                    className="browser-permission-meta"
+                    title={`${item.host} · ${item.from || '—'}`}
+                  >
+                    {item.host} ·{' '}
+                    {item.reason === 'dns-rebind'
+                      ? t('browser.blockedDnsRebind')
+                      : t('browser.blockedPrivate')}
+                    {item.from ? ` · ${t('browser.blockedFrom', { host: item.from })}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <button
             className="browser-action"
             onClick={() => {
@@ -281,9 +312,18 @@ export function BrowserSurface() {
             </button>
           ) : null}
         </div>
-      ) : state.loading || error || state.userControl || state.lastDownload ? (
+      ) : state.loading || error || state.userControl || state.lastDownload || state.blockedRequests?.length ? (
         <div className="browser-status" data-testid="browser-status">
           {state.loading ? <span className="browser-loading">{t('browser.loading')}</span> : null}
+          {/*
+           * 被拦下的请求也要在**收起菜单时可见**：那正是“页面打不开”的
+           * 原因，藏在「⋯」里等于让用户去猜。
+           */}
+          {state.blockedRequests?.length ? (
+            <span className="browser-error" data-testid="browser-blocked-hint">
+              {t('browser.blockedRequests', { n: state.blockedRequests.length })}
+            </span>
+          ) : null}
           {state.userControl ? (
             <button
               className="browser-control"

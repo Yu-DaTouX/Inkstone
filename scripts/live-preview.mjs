@@ -1,4 +1,5 @@
 // Isolated UI review. No agent process, credentials, or production settings.
+import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
@@ -12,6 +13,13 @@ for (const channel of ['agentStatus','getSettings','listSessions','getState','ge
 ipcMain.handle('yan:listDir', () => ({path:'',abs:root,entries:[{name:'src',dir:true},{name:'docs',dir:true},{name:'scripts',dir:true},{name:'package.json',dir:false}],skipped:['node_modules','.git'],rootName:'pi-desktop'}))
 ipcMain.handle('yan:providerQuota', () => ({supported:false}))
 async function main() {
+  /*
+   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
+   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
+   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
+   * 其余 console.error 原样透传。
+   */
+  muteMissingHandlerNoise()
   await app.whenReady()
   win = new BrowserWindow({width:1440,height:900,title:'砚 · UI 审阅模拟（不连接模型）',backgroundColor:'#0a0a0a',webPreferences:{/* .cjs：sandboxed preload 不支持 ESM，写成 .mjs 会白屏 */preload:join(root,'out/preload/index.cjs'),contextIsolation:true,sandbox:false}})
   await win.loadFile(join(root,'out/renderer/index.html'))

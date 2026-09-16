@@ -304,8 +304,7 @@ const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({
   }).then(() => import('../out/test/exit-snapshot.mjs'))
 )
 
-/* N18 命令注册表：来源分类、兼容项和同名命令策略。 */
-const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+/* N18 命令注册表：来源分类、兼容项和同名命令策略。 */const commandRegistry = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/command-registry.ts'],
     outfile: 'out/test/command-registry.mjs',
@@ -352,6 +351,18 @@ const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then((
   }).then(() => import('../out/test/network-policy.mjs'))
 )
 
+/* L04 网络边界判定：把「拦不拦」从 webRequest 回调里抽成了纯函数，单独编译。 */
+const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/browser/network-boundary.ts'],
+    outfile: 'out/test/network-boundary.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/network-boundary.mjs'))
+)
+
 /* @ 文件引用补全：只编译纯函数，不把 React 组件拉进 Node 测试。 */
 const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -391,8 +402,7 @@ const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ b
 )
 const { runSlashQueryTests } = await import('./test-slash-query.mjs')
 
-/* 能力列表响应的过期判定（sessionId 从 pending 过渡到 uuid 不该被判过期）。 */
-const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+/* 能力列表响应的过期判定（sessionId 从 pending 过渡到 uuid 不该被判过期）。 */const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/capability-request.ts'],
     outfile: 'out/test/capability-request.mjs',
@@ -403,6 +413,78 @@ const capabilityRequest = await import('../node_modules/esbuild/lib/main.js').th
   }).then(() => import('../out/test/capability-request.mjs'))
 )
 const { runCapabilityRequestTests } = await import('./test-capability-request.mjs')
+
+/*
+ * N21-2 压缩可观测：事件归一化（src/main/compaction.ts）+ 文案映射
+ *（src/renderer/src/state/compaction-view.ts）。两者都是纯函数。
+ */
+const compactionEvents = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/compaction.ts'],
+    outfile: 'out/test/compaction.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/compaction.mjs'))
+)
+const compactionView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/compaction-view.ts'],
+    outfile: 'out/test/compaction-view.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/compaction-view.mjs'))
+)
+
+/* 主进程 stdio 护栏（EPIPE 事故的修复点）：纯逻辑，不依赖 Electron。 */
+const stdioGuard = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/stdio-guard.ts'],
+    outfile: 'out/test/stdio-guard.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/stdio-guard.mjs'))
+)
+
+/*
+ * N21-3 上下文策略：预算公式 + 触发决策在 shared（主进程与界面共用），
+ * env 入口在主进程，阶段文案在渲染端。三块都是纯函数。
+ */
+const contextPolicy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/context-policy.ts'],
+    outfile: 'out/test/context-policy.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-policy.mjs'))
+)
+const contextPolicyEnv = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-policy.ts'],
+    outfile: 'out/test/context-policy-env.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-policy-env.mjs'))
+)
+const contextView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/context-view.ts'],
+    outfile: 'out/test/context-view.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-view.mjs'))
+)
 
 let pass = 0
 let fail = 0
@@ -793,6 +875,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
   await runNetworkPolicyTests(ok, networkPolicy)
 }
 
+{
+  const { runNetworkBoundaryTests } = await import('./test-network-boundary.mjs')
+  runNetworkBoundaryTests(ok, networkBoundary)
+}
+
 runAtQueryTests(ok, atQuery)
 runSlashQueryTests(ok, slashQuery)
 runCapabilityRequestTests(ok, capabilityRequest)
@@ -809,6 +896,58 @@ await runOAuthTests(ok)
 // 流式增量推送协议（textDelta / thinkingDelta / outputDelta）
 const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')
 await runStreamDeltasTests(ok)
+
+/*
+ * N11 标题样本次序：先 bundle 一份 shared/title-samples.ts 再断言。
+ * 与上下文策略同样的理由 —— shared 层不进主进程构建图时，
+ * out/ 里可能根本没有这个模块。
+ */
+const titleSampleMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/title-samples.ts'],
+    outfile: 'out/test/title-samples.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/title-samples.mjs'))
+)
+const { runTitleSampleTests } = await import('./test-title-samples.mjs')
+runTitleSampleTests(ok, titleSampleMod)
+
+// N21-2：压缩事件归一化 + 文案映射
+const { runCompactionStatusTests } = await import('./test-compaction-status.mjs')
+runCompactionStatusTests(ok, compactionEvents, compactionView)
+
+// 主进程 stdio 护栏：EPIPE 只记录、非 EPIPE 只上报、绝不 rethrow
+const { runStdioGuardTests } = await import('./test-stdio-guard.mjs')
+runStdioGuardTests(ok, stdioGuard)
+
+// N21-3：工作集预算 / 触发决策 / 阶段文案
+const { runContextPolicyTests } = await import('./test-context-policy.mjs')
+runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
+
+/*
+ * 界面语言扩展（resources/pi-extensions/language.js）。
+ *
+ * 它是**待分发的源码**（随包进 resources/pi-extensions），不是要构建的 src ——
+ * 所以直接 import 那个 .js 文件；但它是 ESM + 顶层 `import node:fs`，
+ * 因此在包内可以直接被 Node 加载（不在 isolated 环境也不依赖 Electron）。
+ */
+const languageExtension = await import('../resources/pi-extensions/language.js')
+const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
+await runLanguageExtensionTests(ok, languageExtension)
+
+/*
+ * 切片安全规则（resources/pi-extensions/context-safety.js，N21-10）。
+ *
+ * 与语言扩展同理：它是**待分发的源码**，直接在包内 import。
+ * 这几条规则（正在用的 diff 不得删 / 用户约束不得降级 / 不从 reasoning 中间切）
+ * 是阶段 4 压缩的前置约束 —— 先在纯函数层钉死，等扩展接进来时直接调。
+ */
+const contextSafety = await import('../resources/pi-extensions/context-safety.js')
+const { runContextSafetyTests } = await import('./test-context-safety.mjs')
+runContextSafetyTests(ok, contextSafety)
 
 /*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点

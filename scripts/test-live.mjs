@@ -13,6 +13,8 @@
  *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
  *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
  */
+/* 日志管道断开（终端关闭 / agent 的 bash 会话结束）不能让我们中途死掉或弹框 */
+import './lib/stdio-guard.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import vm from 'node:vm'
 import {
@@ -29,6 +31,8 @@ import {
   utimesSync
 } from 'node:fs'
 import { createRequire } from 'node:module'
+import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
@@ -236,6 +240,72 @@ const CASES = {
   autonomous: { probe: 'scripts/probe/autonomous.js', delay: 9000, cost: 0 },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
+  /*
+   * N21-2 压缩可观测：真实触发一次自动压缩 + 真实的手动压缩失败。
+   *
+   * 为什么要 `piSettings`：pi 的自动压缩只在「上下文 > 窗口 − reserveTokens」时触发。
+   * 默认 reserveTokens=16384，意味着要把上下文填到接近整个窗口 —— 即使拿最大的
+   * 免费模型也是几十万 token 的额度。把 reserveTokens 调成比任何窗口都大，
+   * 触发线就落到 ≤ 0：第一轮结束必然触发，事件形状与真实情况完全一致。
+   * keepRecentTokens=1 同理：不去压一个 20k 的尾巴。
+   *
+   * cost 1（会真调模型两次：一次正常回合 + 一次摘要请求）—— 所以不进 check 批量。
+   */
+  compactionstatus: {
+    probe: 'scripts/probe/compaction-status.js',
+    delay: 9000,
+    cost: 1,
+    budget: 180000,
+    /* cwd = fixture 里那个**带项目级 pi 设置**的目录（见 buildFixtureProject） */
+    fixture: true,
+    fixtureSub: 'compact',
+    piSettings: { compaction: { enabled: true, reserveTokens: 900000, keepRecentTokens: 1 } }
+  },
+  /*
+   * N21-3 工作集（cost 0）：预算公式的参考值（64k/128k/256k/1M）、
+   * 「界面上的数 = 砚用来判断的数」、三阶段刻度与未接管的虚线，
+   * 以及关掉「自动压缩」后整个工作集视角退回物理窗口。
+   */
+  contextbudget: { probe: 'scripts/probe/context-budget.js', delay: 14000, cost: 0, budget: 90000 },
+  /*
+   * N21-3 真实接管（cost 1）：用一次普通回合越过**砚算出来的工作集**，
+   * 验证 pi 真的压了、砚把这一次记成自己发起的（pi 一律报 reason=manual）。
+   * 触发点用 `YAN_CONTEXT_POLICY` 挪近（默认 240k 要几十万 token 的额度）。
+   */
+  contexttakeover: {
+    probe: 'scripts/probe/context-takeover.js',
+    delay: 10000,
+    cost: 1,
+    budget: 180000,
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":1500}' },
+    /*
+     * `keepRecentTokens: 1`：会话太小时 pi 自己会说
+     * `Nothing to compact (session too small)` —— 保留尾巴默认 20k，
+     * 而本场景的上下文只有几 k。调到 1 压缩才会真的发生（触发仍然是砚自己那条线）。
+     * 不设 reserveTokens：pi 自己那条线必须留在高处，否则分不清是谁触发的。
+     */
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
+  contextswitchguard: {
+    probe: 'scripts/probe/context-switch-guard.js',
+    delay: 10000,
+    cost: 0,
+    budget: 90000,
+    /*
+     * 两条线都压到极低：切到任何有内容的旧会话都必然“在线上”，
+     * 于是“切换没有触发压缩”才是一条有效断言（而不是碰巧没过线）。
+     */
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":100,"emergencyRatio":0.001}' }
+  },
+  /* 同上，但把工作集抬到天上、兜底压到极低 → 命中的是 90% 物理兜底那条线 */
+  contextemergency: {
+    probe: 'scripts/probe/context-takeover.js',
+    delay: 10000,
+    cost: 1,
+    budget: 180000,
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":999999999,"emergencyRatio":0.001}' },
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
   // 思考档位：真实模型（DeepSeek V4.1 Flash）切过去后必须显示真实档位，
   // 且不能被后续 state 推送清空（D11）。不调模型，只 set_model + 读档位。
   thinkinglevels: { probe: 'scripts/probe/thinking-levels.js', delay: 14000, cost: 0 },
@@ -302,6 +372,23 @@ const CASES = {
      */
     env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
   },
+  /*
+   * L04 浏览器授权与网络边界：逐站权限真实请求、本地预览边界、DNS 重绑定、
+   * 下载来源与不自动打开、Cookie 真实转移但不输出值。
+   *
+   * 需要 Node 侧的本地 HTTP 服务（`usesBoundaryServer`）；
+   * 其中「远程页面借道本地服务」与 DNS 重绑定两节要公网/公网 DNS，
+   * 拿不到时会**显式跳过并打印原因**，不假装通过。
+   */
+  browserboundary: {
+    probe: 'scripts/probe/browser-boundary.js',
+    delay: 9000,
+    cost: 0,
+    budget: 180000,
+    usesBoundaryServer: true,
+    afterExit: 'browserBoundaryDownloads',
+    env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
+  },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
@@ -319,6 +406,31 @@ const CASES = {
   layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
   // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型
   tokens: { probe: 'scripts/probe/tokens.js', delay: 9000, cost: 1 },
+  /*
+   * N11 标题：真机下的自动生成 / 单次生成锁 / 手动名粘性 / 候选→采用。
+   * cost 1（2 次聊天 + 几次很短的归纳请求）。
+   */
+  title: {
+    probe: 'scripts/probe/title.js',
+    delay: 12000,
+    budget: 260000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
+  },
+  /*
+   * N16 语言提示：界面语言 → 模型输出语言。cost 1（3 次调用），
+   * 用**互换语言**的对照（中文界面问英文 / 英文界面问中文）来断言
+   * "跟着界面语言走"而不是"跟着用户消息走"。
+   */
+  language: {
+    probe: 'scripts/probe/language.js',
+    delay: 14000,
+    budget: 300000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    /* 诊断：语言扩展把每次注入写一行到该文件（扩展里 YAN_LANG_EXT_LOG 才写） */
+    env: { YAN_LANG_EXT_LOG: join(tmpdir(), 'lang-ext.log') }
+  },
   // 记忆搬进设置：右栏移除 / 设置面板 / 输入区状态条
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
   // 声音提示（对齐 opencode 的 attention）：事件触发 / 单事件开关 / 音量夹取
@@ -339,6 +451,8 @@ const CASES = {
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
   // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
+  // 切换会话不能丢历史（含「切语言重建实例之后」这条路）
+  historyswitch: { probe: 'scripts/probe/history-switch.js', delay: 9000, cost: 0 },
   // 项目—会话归属：真实 IPC 迁移索引，不移动 pi 的 JSONL 文件
   sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
   // 窗口关闭隐藏到托盘，退出取消路径可重复
@@ -348,7 +462,13 @@ const CASES = {
   // 运行实例选择：真实主进程注册表路径（N12，不跑回合）
   runnerselect: { probe: 'scripts/probe/runnerselect.js', delay: 12000, cost: 0 },
   // 真发一条消息，验证流式 + 工具卡
-  e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1 },
+  /*
+   * ⚠️ 这条探针内部的等待上限是 150s（它要看到流式 + 工具 + 正文），
+   * 而 budget 默认只有 90s —— 不够就会被杀在探针打印之前，
+   * 报出来的却是「没抓到 PROBE 输出 —— 应用可能启动失败」（误导）。
+   * 所以这里显式给足：delay 9s + budget 200s。
+   */
+  e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
   // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
   ask: { probe: 'scripts/probe/ask.js', delay: 9000, cost: 1 },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
@@ -440,6 +560,22 @@ function buildFixtureProject(base) {
   mk('uni', '中文 目录')
   put(join('uni', '中文 目录', '文件 名.ts'), 'export const 中文 = 1\n')
   put('notadir.txt', 'not a directory\n')
+
+  /*
+   * 带项目级 pi 设置的工作目录（N21-2 / D21）。
+   *
+   * pi 把「存在 `.pi/settings.json`」的项目视为需要信任（该文件能带 packages /
+   * extensions），而 RPC 模式没有信任弹窗 —— 所以这个文件的内容会被 pi **整份忽略**。
+   * 造出来就是为了让探针验证两件事：① 压缩参数真的不生效（跑的是全局值）；
+   * ② 界面把这件事说出来，而不是拿项目里的数字画一条永远对不上的触发线。
+   * 值故意与全局不同（全局 reserveTokens=900000，这里 4096），否则分不出读了哪份。
+   */
+  mk('compact', '.pi')
+  put(
+    join('compact', '.pi', 'settings.json'),
+    JSON.stringify({ compaction: { enabled: false, reserveTokens: 4096, keepRecentTokens: 1000 } }, null, 2)
+  )
+  put(join('compact', 'README.md'), '# compact cwd\n\nN21-2 的项目级设置边界。\n')
 
   /*
    * 无权限目录（L02 / N19 共用的边界）：真的用 ACL 拒绝当前用户的读取权限，
@@ -1122,7 +1258,149 @@ function checkAtRefSend(sandboxRoot) {
 const AFTER_EXIT = {
   subagentArchive: checkSubagentArchive,
   sessionabArchive: checkSessionabArchive,
-  atrefsendArchive: checkAtRefSend
+  atrefsendArchive: checkAtRefSend,
+  browserBoundaryDownloads: checkBrowserBoundaryDownloads
+}
+
+/*
+ * ── L04 浏览器边界用的本地 HTTP 服务 ──
+ *
+ * 为什么必须有真实服务：下载来源、Cookie 真的转移过去了没有、本地预览
+ * 能不能用 —— 这些没法用纯逻辑或 DOM 断言代替，而探针跑在渲染进程里
+ * 起不了服务，`YAN_*` 环境变量也只有主进程读得到。所以服务开在 Node 侧，
+ * 端口用**约定值**并把地址硬写在探针里。
+ *
+ * 端口被占用就直接报错不静默降级：换一个端口探针就连到别人身上了，
+ * 那时失败原因会变得极难看懂。
+ */
+const BOUNDARY_PORT = 39873
+const BOUNDARY_ORIGIN = `http://127.0.0.1:${BOUNDARY_PORT}`
+/** Cookie 值哨兵：它**只能**出现在网络里，不许出现在任何日志/状态/结果里 */
+const BOUNDARY_SECRET = `yan-probe-cookie-${Date.now()}`
+
+function startBoundaryServer() {
+  const secretHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', BOUNDARY_ORIGIN)
+    if (url.pathname === '/download') {
+      res.writeHead(200, {
+        'content-type': 'text/plain; charset=utf-8',
+        'content-disposition': 'attachment; filename="yan-probe-download.txt"'
+      })
+      res.end(`download fixture ${BOUNDARY_SECRET}\n`)
+      return
+    }
+    if (url.pathname === '/whoami') {
+      /*
+       * 只回「有没有 Cookie」+ 值的前 8 位哈希。
+       * 为什么回哈希而不是原值：本场景要在**输出里**断言“不得出现 Cookie 值”，
+       * 而回显原值就会把它带进页面文本 → 进 observe 结果 → 进日志，
+       * 那正好是我们要防的事。哈希能证明「到的是同一个值」。
+       */
+      const cookie = /(?:^|;\s*)yan_probe_cookie=([^;]*)/.exec(req.headers.cookie ?? '')
+      const value = cookie?.[1] ?? ''
+      const hash = value ? createHash('sha256').update(value).digest('hex').slice(0, 8) : 'none'
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(`cookie=${value ? 'present' : 'none'} hash=${hash}\n`)
+      return
+    }
+    if (url.pathname === '/private') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('private-ok\n')
+      return
+    }
+    if (url.pathname === '/ask') {
+      /*
+       * 真实发起权限请求 —— 不靠界面上调 `setPermission` 写记录，
+       * 而是让 Chromium 的 permission handler 真的跑一遍。
+       *
+       * 同时发两种（定位 + 通知）：不同 Chromium 版本对“无用户手势时
+       * 要不要问 handler”的处理不一样，哪种真的问到了就用哪种
+       *（探针从记录里读实际的名字，不硬编）。
+       */
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(
+        '<!doctype html><meta charset="utf-8"><title>ask</title><body>ask' +
+          '<script>' +
+          'try{navigator.geolocation.getCurrentPosition(function(){},function(){})}catch(e){}' +
+          'try{if(window.Notification)Notification.requestPermission()}catch(e){}' +
+          '</script></body>'
+      )
+      return
+    }
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'set-cookie': `yan_probe_cookie=${BOUNDARY_SECRET}; Path=/; SameSite=Lax`
+    })
+    res.end(
+      '<!doctype html><meta charset="utf-8"><title>yan boundary fixture</title>' +
+        '<a id="dl" href="/download">download</a>'
+    )
+  })
+  return new Promise((resolvePromise, rejectPromise) => {
+    server.once('error', rejectPromise)
+    server.listen(BOUNDARY_PORT, '127.0.0.1', () => resolvePromise(server))
+  })
+}
+
+/**
+ * 退出后（Electron 已关）检查下载真的落到了隔离目录里。
+ *
+ * 为什么放在退出后：`will-download` 的 `done` 回调与文件落盘是异步的，
+ * 在应用还开着的时候查有竞态；关掉之后看的是终态。
+ */
+function checkBrowserBoundaryDownloads(sandboxRoot) {
+  const lines = []
+  if (!sandboxRoot) return { ok: false, lines: ['✗ 非隔离模式无法检查下载目录'] }
+  const dir = join(sandboxRoot, 'downloads')
+  const names = existsSync(dir) ? readdirSync(dir) : []
+  lines.push(`  下载目录（隔离）：${names.length ? names.join(', ') : '（空）'}`)
+  const file = names.find((n) => n === 'yan-probe-download.txt')
+  let ok = Boolean(file)
+  if (!file) {
+    lines.push('  ✗ 没有找到 yan-probe-download.txt')
+  } else {
+    const size = statSync(join(dir, file)).size
+    lines.push(`  ✓ yan-probe-download.txt 已落盘，${size} 字节`)
+    ok = size > 0
+    if (!ok) lines.push('  ✗ 文件是空的')
+  }
+  return { ok, lines }
+}
+
+/*
+ * 当前正在跑的 Electron 子进程。
+ *
+ * 为什么要全局记住它：这个脚本可能被 Ctrl+C / 被外层 timeout 杀掉。
+ * 那时如果只是自己退出，Electron 会变成孤儿并继续往一个**没人读的管道**写日志 ——
+ * 反复 EPIPE，而 Electron 默认会把 EPIPE 变成模态错误框，进程再也不退出
+ *（2026-09-16 实测：一条 visual:matrix 链就这样挂了几个小时）。
+ */
+let activeChild = null
+
+/** 收掉整棵进程树：Windows 上 child.kill() 只杀直接子进程，GPU/渲染/pi 会变孤儿。 */
+function killTree(child) {
+  if (!child || child.exitCode !== null) return
+  if (process.platform === 'win32' && child.pid) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch {
+      /* 已经退了 */
+    }
+  }
+  try {
+    child.kill()
+  } catch {
+    /* 同上 */
+  }
+}
+
+/* Ctrl+C / 被 kill：先收子进程再退，别把它留成孤儿 */
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    killTree(activeChild)
+    process.exit(130)
+  })
 }
 
 function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
@@ -1152,6 +1430,7 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
       env: probeEnv,
       windowsHide: true
     })
+    activeChild = child
 
     let buf = ''
     child.stdout.on('data', (d) => {
@@ -1163,27 +1442,18 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
 
     // 预发按键会额外占时间（每个组合等 1.4s）
     const keyCost = keys ? keys.split(',').length * 1500 : 0
-    const killTree = () => {
-      if (process.platform === 'win32' && child.pid) {
-        /* Windows 上 child.kill() 只杀直接子进程，Electron 的 GPU/渲染/pi 子进程会变孤儿 */
-        try {
-          execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-        } catch {
-          /* 已经退了 */
-        }
-      }
-      child.kill()
-    }
+    const killChild = () => killTree(child)
     /*
      * delay 是“窗口显示后等多久才执行探针”（给应用启动/连上 pi 用），
      * 不是探针的执行预算 —— 这两件事以前混在一起，于是为了给长场景留时间，
      * 只能把 delay 往大里设，结果是白等：探针窗口其实还是 90s。
      * 现在分开： 才决定探针能跑多久。
      */
-    const kill = setTimeout(killTree, delay + keyCost + (budget ?? 90_000))
+    const kill = setTimeout(killChild, delay + keyCost + (budget ?? 90_000))
 
     child.on('exit', (code) => {
       clearTimeout(kill)
+      if (activeChild === child) activeChild = null
 
       const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
       if (!m) {
@@ -1262,6 +1532,22 @@ async function main() {
    */
   const fixtureBase = sandboxRoot ?? mkdtempSync(join(tmpdir(), 'yan-fixture-'))
   const fixtureProject = buildFixtureProject(fixtureBase)
+
+  /*
+   * L04 场景的本地服务：只有真的要点它的场景才占端口。
+   * 服务挂了要直接失败 —— 没服务的 browserboundary 只会给出一堆看不懂的断言失败。
+   */
+  let boundaryServer = null
+  if (names.some((n) => CASES[n].usesBoundaryServer)) {
+    try {
+      boundaryServer = await startBoundaryServer()
+      console.log(`  本地 fixture 服务：${BOUNDARY_ORIGIN}（下载 / Cookie 哨兵 / 内网目标）`)
+    } catch (error) {
+      console.error(`✗ 端口 ${BOUNDARY_PORT} 起不了本地服务：${error?.message ?? error}`)
+      console.error('  该端口被别的程序占着？先关掉它再跑（不自动换端口，否则探针会连到别人身上）')
+      process.exit(2)
+    }
+  }
 
   /*
    * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
@@ -1375,7 +1661,18 @@ async function main() {
       YAN_USER_DATA: userData,
       YAN_SESSIONS_DIR: sessions,
       YAN_DATA_DIR: data,
-      YAN_PI_DIR: piDir
+      YAN_PI_DIR: piDir,
+      /*
+       * 下载必须隔离：内置浏览器与本机 Chrome 都写 `app.getPath('downloads')`，
+       * 而那默认是**用户真实的下载目录** —— 测试往里丢文件，
+       * 用户会当成自己的文件（而且我们没法替他删）。
+       */
+      YAN_DOWNLOADS_DIR: join(sandboxRoot, 'downloads')
+    }
+    mkdirSync(join(sandboxRoot, 'downloads'), { recursive: true })
+    /* 服务句柄不能让事件循环挂住 —— 跑完要关。 */
+    if (boundaryServer) {
+      process.once('exit', () => boundaryServer.close())
     }
 
     // 从真实会话目录**只读**拷几份当 fixture。
@@ -1449,6 +1746,25 @@ async function main() {
     let hint
     /* 边界场景把 cwd 指到合成 fixture 项目（`fixtureSub` 可再下钻到子目录），其余场景用项目根。 */
     const caseCwd = c.fixture ? (c.fixtureSub ? join(fixtureProject, c.fixtureSub) : fixtureProject) : root
+
+    /*
+     * 隔离的 pi 全局设置（`piSettings`）。
+     *
+     * 为什么必须先删再写：所有场景共用一个隔离 piDir，而 `continue` 分支
+     *（语法错、场景失败）会跳过清理 —— 把“清理”放在**每个场景开头**
+     * 就不依赖控制流一定会走到收尾（与 desktop.json 每个场景重置同一个思路）。
+     *
+     * 为什么只写隔离目录：那是本次测试的临时副本（已含 auth.json 副本），
+     * 写它等于扮“用户自己的 pi 全局设置”；**真实** ~/.pi/agent 永远不被写。
+     */
+    const piSettingsFile = sandboxRoot ? join(sandboxRoot, 'pi-agent', 'settings.json') : null
+    if (piSettingsFile) {
+      rmSync(piSettingsFile, { force: true })
+      if (c.piSettings) writeFileSync(piSettingsFile, JSON.stringify(c.piSettings, null, 2), 'utf8')
+    } else if (c.piSettings) {
+      console.log('  ⤺ 跳过：非隔离模式（YAN_TEST_ISOLATED=0）不会写真实 pi 目录的 settings.json')
+      continue
+    }
     /* 退出后检查需要的“场景开始前”快照（临时 worktree 容器） */
     const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
@@ -1483,6 +1799,30 @@ async function main() {
       if (!out.ok) {
         allOk = false
         hint = hint ?? out.hint
+      }
+      /*
+       * 「不得输出 Cookie 值」（L04 的硬约束）：输出的每一行都过一遍哨兵。
+       * 放在这里而不是探针里：探针本身看不到自己产生了什么输出，
+       * 而 stdout + stderr 全在 `out.text` 里。
+       */
+      if (c.usesBoundaryServer) {
+        if (out.text.includes(BOUNDARY_SECRET)) {
+          allOk = false
+          console.log('  ✗ 输出里出现了 Cookie 值（哨兵）—— 凭证不得进日志/状态/结果')
+        } else {
+          console.log('  ✓ 输出里没有 Cookie 值（哨兵未泄漏）')
+        }
+        /*
+         * 光有「页面上有 Cookie」还不能说明复制对了 —— 哨兵值的哈希对得上
+         * 才能证明过去的是**同一个值**（而不是别的 Cookie，也不是空值）。
+         */
+        const expectedHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
+        if (out.text.includes(`cookieHash=${expectedHash}`)) {
+          console.log(`  ✓ 目标浏览器拿到的 Cookie 值与源值一致（sha256 前 8 位 ${expectedHash}）`)
+        } else {
+          allOk = false
+          console.log(`  ✗ 目标浏览器里的 Cookie 值对不上（期待 cookieHash=${expectedHash}）`)
+        }
       }
     }
 

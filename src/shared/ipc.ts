@@ -163,10 +163,38 @@ export interface SessionState {
    */
   isAgentRunning?: boolean
   isCompacting: boolean
+  /**
+   * **正在进行的**压缩（`compaction_start` → `compaction_end` 之间）。
+   *
+   * 与 `isCompacting` 的分工：`isCompacting` 是 pi 自己报的事实（用来转 spinner、
+   * 禁按钮），这里多带一个**原因**（手动 / 阈值 / 溢出），因为「为什么突然在压缩」
+   * 是用户当下最需要知道而 pi 的 state 不给的信息。
+   * 两者不一致时以 `isCompacting` 为准（它是权威，见 `setStateFrom` 里的自愈）。
+   */
+  compaction?: CompactionRun
+  /**
+   * **本次运行内最近一次已结束**的压缩。
+   *
+   * 为什么与 `compaction` 分开而不是一条记录：开始新一次压缩时**不能**把上一次的
+   * 结果擦掉 —— 「详情」里的「最近一次」应当在压缩进行中仍显示上一轮的真实结果，
+   * 结束后才被新结果覆盖。一条记录做不到这点（要么丢历史，要么两个字段打架）。
+   *
+   * ⚠️ 从磁盘打开的历史会话**没有**这条记录（会话文件里的 compaction 条目目前不读），
+   * 所以界面在它缺失时**不写「未发生过」**——那可能是假陈述。
+   */
+  lastCompaction?: CompactionRun
   messageCount: number
   pendingMessageCount: number
   cwd: string
   autoCompactionEnabled?: boolean
+  /**
+   * 工作集预算（N21-3）。
+   *
+   * 只在「策略生效且模型窗口已知」时才有值；窗口未知（旧模型快照 / 未连上）
+   * 时为空 —— 那种情况下界面继续按物理窗口显示（阶段 1 的样子），
+   * 而不是编一个工作集出来。
+   */
+  contextPolicy?: ContextPolicyView
   steeringMode?: QueueMode
   followUpMode?: QueueMode
 }
@@ -484,23 +512,13 @@ export interface PeekResult {
   truncated: number
   /** 文件字节数 */
   bytes: number
-}
-
-/**
- * 会话预览的结果（不经过 pi 的直读）。
- *
- * `truncated > 0` 时界面应提示「有内容被省略」——
- * 因为大会话里 75% 的体积是超长 tool result / base64 图片，
- * 那些被**有损降级**了（见 main/session-reader.ts）。
- */
-export interface PeekResult {
-  messages: UIMessage[]
-  /** 文件里一共多少条 message entry */
-  total: number
-  /** 被截断/丢弃的内容条数 */
-  truncated: number
-  /** 文件字节数 */
-  bytes: number
+  /**
+   * 会话 id（文件头 `type:"session"` 那条的 id）。
+   *
+   * 用来把「刚铺上的内容」与随后到达的 pi `sync` 认成同一条会话：
+   * 对不上就说明那条 `sync` 属于别的会话，不能拿它覆盖当前视图。
+   */
+  sessionId?: string
 }
 
 /* 模型接入（凭证） */
@@ -906,6 +924,165 @@ export interface CompactionInfo {
   threshold: number
   /** 是否被用户改过（false = 全是 pi 的默认值） */
   custom: boolean
+  /**
+   * 生效值来自哪个文件（N21-2 顺手修正 D21/D22 时加）。
+   *
+   * `global` = `<pi 目录>/settings.json`（或默认值）；
+   * `project` = `<项目>/.pi/settings.json`（**且 pi 真的会读它**，见下）。
+   */
+  scope?: 'global' | 'project'
+  /**
+   * 项目里配了压缩参数，但 pi 不会读它（未信任该项目）。
+   *
+   * 界面必须说出来：否则用户改了项目里的 `reserveTokens`，看到的却是一条
+   * 永远对不上的触发线 —— 而这正是“显示的数字与实际生效不符”那类最难发现的错。
+   */
+  projectIgnored?: boolean
+}
+
+/**
+ * 一次上下文压缩的触发原因（N21-2）。
+ *
+ * pi 0.85.1 只会给这三个（`compaction_start.reason`）：
+ *   · `manual`    用户点了「压缩上下文」
+ *   · `threshold` 上下文超过「窗口 − 预留」自动触发
+ *   · `overflow`  上游报了上下文溢出，压缩后重试
+ * 认不出的原因**不吞**：原文进 `CompactionRun.reasonRaw`，界面上显示原文 ——
+ * 显示「未知原因」等于把上游的信息丢掉（与 capability 的三态同一个原则）。
+ */
+export type CompactionReason = 'manual' | 'threshold' | 'overflow'
+
+/** 一次压缩的结局。`running` 只出现在 {@link SessionState.compaction} 里。 */
+export type CompactionStatus = 'running' | 'completed' | 'declined' | 'failed' | 'cancelled'
+
+/**
+ * 一次上下文压缩的状态快照（N21-2 可观测）。
+ *
+ * 唯一来源是 pi 的 RPC 事件 `compaction_start` / `compaction_end` ——
+ * 不引入 extension（方案 §3.1）。事件字段有两套形状，都归一化到这里：
+ *   · durable lane 路径（自动压缩）：`reason` / `status` / `entryId` / `endedAt`
+ *   · `Session.compact()` 路径（手动）：`result` / `aborted` / `errorMessage`，**没有 status**
+ * 映射规则见 `src/main/compaction.ts` 的 `reduceCompaction`。
+ */
+export interface CompactionRun {
+  status: CompactionStatus
+  reason?: CompactionReason
+  /** 上游给的原因认不出时保留原文（界面显示原文） */
+  reasonRaw?: string
+  startedAt?: number
+  endedAt?: number
+  /** `status === 'failed'` 时 pi 的 `errorMessage`；不许静默 */
+  error?: string
+  /** `completed` 时 pi 写入的摘要条目 id（durable lane 路径才会给） */
+  entryId?: string
+  /**
+   * 压缩前 / 压缩后的估算 token（`result.tokensBefore` / `result.estimatedTokensAfter`）。
+   *
+   * 为什么要它：用户看到的只是“上下文突然短了一截”，这两个数就是那句话的
+   * 定量版本（“1.6k → 160”）。pi 不给就不显示 —— 不自己估。
+   */
+  beforeTokens?: number
+  afterTokens?: number
+  /**
+   * 这次压缩是**谁**发起的（N21-3）。
+   *
+   * 为什么不能只看 pi 的 `reason`：砚按工作集自动调用 `compact()` 时，
+   * pi 报的是 `reason: 'manual'`（对 pi 而言确实是“外部让它压的”），
+   * 而界面上写「手动」会让用户以为是自己点的按钮。发起方是砚自己知道的
+   * 事实，所以由砚补上这一列，而不是去猜或改写 pi 给的字段。
+   * 缺省（undefined）= 用户点的「压缩上下文」。
+   */
+  triggeredBy?: 'policy'
+  /** `triggeredBy === 'policy'` 时命中的是哪条线：工作集上限 / 物理兜底 */
+  policyStage?: 'compact' | 'emergency'
+}
+
+/**
+ * 一次上下文变换的阶段（N21-0 定稿，N21-3 起进代码）。
+ *
+ * `compaction` 由 pi 原生完成；`tool-sweep` / `episode-fold` / `recall`
+ * 属于阶段 4（pi 扩展的 `context` 钩子），**现在不会触发** ——
+ * 界面上它们必须显示成「未接管」，不能画成已经生效的策略线。
+ */
+export type ContextOperationKind = 'tool-sweep' | 'episode-fold' | 'compaction' | 'recall'
+
+/**
+ * 工作集预算（方案 §5）。
+ *
+ * 为什么不是一个「窗口 × 70%」：那在小窗口上会和输出预留打架
+ * （64k 窗口固定预留 32k 就只剩 12k 给上下文）。所以三条线取最小值，
+ * 并显式暴露 `responseReserve` / `safetyMargin` 让界面能解释这个数是怎么来的。
+ */
+export interface ContextBudget {
+  /** 物理窗口（模型能力表） */
+  contextWindow: number
+  /** 为模型回答预留的 tokens */
+  responseReserve: number
+  /** 安全余量（估算误差 / 工具结果膨胀） */
+  safetyMargin: number
+  /** 有效工作集上限 */
+  workingSet: number
+  /** 三阶段触发点（工作集预算的百分比 × 工作集） */
+  triggers: { sweep: number; fold: number; compact: number }
+  /**
+   * 物理兜底：达到物理窗口的这个比例时无条件压缩。
+   * 但**不能突破输出预留** —— 取 `min(窗口 × 比例, 窗口 − responseReserve)`
+   * （64k 窗口下是 48k 而不是 57.6k，否则这条线自己就吃掉了回答空间）。见方案 §12.1 / D31。
+   */
+  emergency: number
+}
+
+/**
+ * 上下文策略参数（N21-0 定稿）。
+ *
+ * 阶段 3 起由砚用它决定「什么时候压缩」；`kinds` 说明**真正会执行的阶段**，
+ * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
+ */
+export interface ContextPolicy {
+  enabled: boolean
+  /** 工作集绝对上限（编码模式的参考实践：240k） */
+  workingSetCap: number
+  /** 窗口比例线 */
+  windowRatio: number
+  /** 输出预留的首选值与下限（区间上限是窗口的 25%） */
+  responseReservePreferred: number
+  responseReserveMin: number
+  /** 安全余量：`max(min, 窗口 × ratio)` */
+  safetyMarginMin: number
+  safetyMarginRatio: number
+  /** 物理兜底比例：**上限**，实际取 `min(比例 × 窗口, 窗口 − responseReserve)` */
+  emergencyRatio: number
+  /** 三阶段在工作集里的位置（0–1） */
+  triggerRatios: { sweep: number; fold: number; compact: number }
+  /** 真正会执行的阶段（阶段 3 只有 compaction） */
+  kinds: ContextOperationKind[]
+}
+
+/**
+ * 推给界面的策略视图（N21-3）。
+ *
+ * 预算由**主进程**算完后随 `SessionState` 一起推 —— 而不是渲染端自己再算一遍：
+ * 界面上那个数必须是砚真正用来做决定的那个数（“界面数字 ≠ 实际生效值”
+ * 是这一块最不能犯的错，见 D21/D22）。
+ */
+export interface ContextPolicyView {
+  enabled: boolean
+  kinds: ContextOperationKind[]
+  budget: ContextBudget
+}
+
+/**
+ * 「下一步会发生什么」（N21-3）。
+ *
+ * 只在**真正会执行的阶段**里挑（`ContextPolicy.kinds`），所以阶段 3 永远返回
+ * compaction —— 清理 / 折叠虽然在工作集上有刻度，现在并不会触发。
+ */
+export interface ContextNextStage {
+  kind: ContextOperationKind
+  /** 该阶段的触发点（tokens） */
+  at: number
+  /** 已经过线（下一步就是“现在”） */
+  reached: boolean
 }
 
 /**
@@ -966,6 +1143,14 @@ export interface BrowserState {
    * 对精确 origin + permission 生效，不落盘，也不把 Cookie/页面存储值带进记录。
    */
   permissions?: BrowserPermissionRecord[]
+  /**
+   * 被网络边界拦下来的请求（远程页面借道本地服务 / DNS 重绑定）。
+   *
+   * 为什么必须记下来：拦截表现为“页面就是打不开”—— 不给痕迹的话，
+   * 用户只会以为浏览器坏了。这里只留主机名与原因，不带 URL 路径、
+   * 查询参数或页面内容。
+   */
+  blockedRequests?: BrowserBlockedRequest[]
   nativeBounds?: BrowserBounds
   /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
@@ -979,6 +1164,19 @@ export interface BrowserPermissionRecord {
   origin: string
   status: 'allowed' | 'blocked'
   at: number
+}
+
+/** 一次被拦下的请求（原因可追溯） */
+export interface BrowserBlockedRequest {
+  /** 只有主机名，没有路径/查询参数 */
+  host: string
+  /** private-host = 地址本身就是内网；dns-rebind = 域名解析后落在内网 */
+  reason: 'private-host' | 'dns-rebind'
+  /** 发起方（顶层页面）的主机名，用于说明“谁想访问本地服务” */
+  from: string
+  at: number
+  /** 同一 host + reason 被拦了几次（去重后只留最新一条） */
+  count: number
 }
 
 /** 外部 Chrome（本机已安装的浏览器）的接入状态 */
@@ -1557,6 +1755,11 @@ export interface YanBridge {
   readPreview(path: string, line?: number, cwd?: string): Promise<FilePreview>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
+  /**
+   * 工作集预算（N21-3）。只算不决策：返回当前生效的策略与某个窗口下的预算。
+   * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
+   */
+  contextBudget(contextWindow: number): Promise<{ policy: ContextPolicy; budget: ContextBudget | null }>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /* 子代理（方案第 8 节） */

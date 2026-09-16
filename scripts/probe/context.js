@@ -6,8 +6,14 @@
  *      （latestCompaction 之后没有新 usage）。旧代码 `?? 0` 把它显示成
  *      「0 tokens / 0.0%」——看起来像进度丢了。现在必须显示「—」+ 提示。
  *   ② 累计花费那一行要与其它 rp-kv 一样「标注靠左、数值靠右」（对齐）。
+ *   ③ 主值的分母是**工作集**还是**物理窗口**（N21-3）：两个视角都由
+ *      `session.contextPolicy` 是否存在决定。这里两个视角各注入一次，
+ *      因为“界面上的数”必须与“砚用来判断的数”是同一个。
  *
- * 这个探针**不花 token**：直接往 store 注入 stats。
+ * 这个探针**不花 token**：直接往 store 注入 stats（与会话状态）。
+ * ⚠️ 注入 stats 时必须让 `contextPolicy` 与它一致：真实运行时
+ *    stats.contextWindow 与工作集预算是同一个模型的窗口 —— 只换 stats
+ *    不换 policy 会造出应用自己产生不了的状态（旧版就踩过这个坑）。
  */
 ;(async () => {
   const out = []
@@ -17,6 +23,7 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
+  const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
 
   localStorage.setItem('yan.onboarded', '1')
@@ -66,10 +73,20 @@
   ok(!/0\s*(tokens|k)/.test(sum1), '没有出现「0 tokens」')
   ok(!!q('[data-testid="ctx-unknown"]'), '出现「已压缩 · 下一条消息后重新统计」提示')
 
-  /* ---- ② 正常：有数字 ---- */
+  /* ---- ② 正常：有数字（物理窗口视角：没有工作集策略时） ---- */
   out.push('')
-  out.push('=== 2. 有真实用量时显示数字 ===')
+  out.push('=== 2. 物理窗口视角（没有工作集策略）===')
+  const budget = {
+    contextWindow: 262144,
+    responseReserve: 32000,
+    safetyMargin: 8000,
+    workingSet: 183501,
+    triggers: { sweep: 128451, fold: 155976, compact: 183501 },
+    /* min(90% × 262144, 262144 − 32000) —— 与生产公式一致，别在 fixture 里留旧值 */
+    emergency: 229376
+  }
   store.setState({
+    session: { ...store.getState().session, contextPolicy: undefined },
     stats: {
       tokens: { input: 12, output: 34, cacheRead: 0, cacheWrite: 0, total: 46 },
       cost: 0.1234,
@@ -86,6 +103,27 @@
   ok(tokensLine.includes('128k') && tokensLine.includes('262k'), '显示「128k / 262k」（方案 7.3 的写法）')
   ok(sum2.includes('49%'), '显示 49%（整数百分比）')
   ok(!q('[data-testid="ctx-unknown"]'), '有数字时不显示“已压缩”提示')
+  ok(q('[data-testid="ctx-main"]')?.getAttribute('data-mode') === 'window', 'data-mode=window（没有工作集时不假装有）')
+  ok(!q('[data-testid="ctx-stage-mark"]'), '物理窗口视角不画工作集刻度')
+
+  /* ---- ②b 工作集视角（N21-3）：同一份用量，换个分母 ---- */
+  out.push('')
+  out.push('=== 2b. 工作集视角：分母与百分比都换掉 ===')
+  store.setState({
+    session: {
+      ...store.getState().session,
+      contextPolicy: { enabled: true, kinds: ['compaction'], budget }
+    }
+  })
+  await sleep(300)
+  const sum3 = q('[data-testid="rp-context"] .rp-ctx-main')?.textContent ?? ''
+  const tokensLine3 = q('[data-testid="ctx-tokens"]')?.textContent ?? ''
+  out.push('  摘要: ' + JSON.stringify(sum3) + ' / tokens 行: ' + JSON.stringify(tokensLine3))
+  ok(tokensLine3.includes('128k') && tokensLine3.includes('184k'), '同样的 128k，分母换成工作集 184k')
+  ok(sum3.includes('70%'), '百分比按工作集算（128/183.5 ≈ 70%）')
+  ok(q('[data-testid="ctx-main"]')?.getAttribute('data-mode') === 'working-set', 'data-mode=working-set')
+  ok(qa('[data-testid="ctx-stage-mark"]').length === 3, '进度条上有三条阶段刻度')
+  ok(!!q('[data-testid="ctx-next-stage"]'), '有「下一步」说明行')
 
   /* ---- ③ 详情默认收起，展开后有累计花费且对齐 ---- */
   out.push('')

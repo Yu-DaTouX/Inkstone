@@ -17,6 +17,7 @@
  * 用法： npm run measure:design
  *       （或 npx electron docs/design/measure-design.mjs）
  */
+import { muteMissingHandlerNoise } from '../../scripts/lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow } from 'electron'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +26,13 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const FILE = resolve(HERE, 'prototype.html')
 
 async function main() {
+  /*
+   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
+   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
+   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
+   * 其余 console.error 原样透传。
+   */
+  muteMissingHandlerNoise()
   await app.whenReady()
 
   const win = new BrowserWindow({

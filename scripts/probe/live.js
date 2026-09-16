@@ -50,6 +50,22 @@
 
   // 5b. 元素不应越出父容器
   const overflow = []
+  /**
+   * 这个方向上父容器是不是“可以滚”？
+   *
+   * 为什么必须区分：`.rail-body` 是 `overflow: hidden auto` —— 纵向可滚。
+   * 列表内容超过一屏时，下半部分的子元素**本来就在滚动区之外**，
+   * 它们的 `bottom` 当然大于父容器的 `bottom`。那不是越界，是「还没滚到」。
+   * 实测：fixture 里 3 份“最近的真实会话”归属的项目数一变，左栏项目行数就从
+   * 几个变成十几个，于是 `.rail-more-projects` 落到滚动区之下 —— 旧判据这里
+   * 会稳定报一个假阳性（npm run check 里 live 场景偶发失败）。
+   * 所以：**父容器在该轴上可滚** → 该轴不比；`hidden`（裁切）仍然要比（真越界）。
+   */
+  const scrollsOn = (el, axis) => {
+    const cs = getComputedStyle(el)
+    const v = axis === 'y' ? cs.overflowY : cs.overflowX
+    return v === 'auto' || v === 'scroll' || v === 'overlay'
+  }
   qa('.rail *, .status *, .stream-inner *, .titlebar *, .continuity *').forEach((el) => {
     const p = el.parentElement
     if (!p) return
@@ -57,8 +73,13 @@
     if (p.checkVisibility && !p.checkVisibility({ contentVisibilityAuto: true })) return
     const a = el.getBoundingClientRect()
     const b = p.getBoundingClientRect()
-    if (a.right - b.right > 1 || a.bottom - b.bottom > 1) {
-      overflow.push(`${el.tagName}.${String(el.className).split(' ')[0]} ⤬ ${p.tagName}.${String(p.className).split(' ')[0]}`)
+    const badX = a.right - b.right > 1 && !scrollsOn(p, 'x')
+    const badY = a.bottom - b.bottom > 1 && !scrollsOn(p, 'y')
+    if (badX || badY) {
+      overflow.push(
+        `${el.tagName}.${String(el.className).split(' ')[0]} ⤬ ${p.tagName}.${String(p.className).split(' ')[0]}` +
+          (badX && badY ? ' (右+下)' : badX ? ' (右)' : ' (下)')
+      )
     }
   })
   out.push(`  子元素越界数量=${overflow.length}`)

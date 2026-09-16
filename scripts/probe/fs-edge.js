@@ -146,11 +146,37 @@
       ok(firstBatch < 60, '没有一次性铺满 60 行')
       ok(!!more, '超出一批时出现「显示更多」按钮')
       if (more) {
-        click(more)
+        const beforePaths = rowsOf().map((r) => r.dataset.path)
+        const renderedBefore = beforePaths.length
+        /*
+         * 用键盘激活（Enter）而不是 click：按钮在这批之后会**卸载** ——
+         * 焦点必须交给新露出的第一行，否则会掉到 body（N22-4 的焦点恢复断言）。
+         */
+        more.focus()
+        more.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+        click(more) // 探针里的 click 只是兜底（真实按钮对 Enter 也会触发 click）
         const expanded = await until(() => rowsUnder('big/').length === 60, 4000)
         ok(expanded, '点「显示更多」后补上剩余行', `${rowsUnder('big/').length}/60`)
         await until(() => !q('[data-testid="fs-more"]'), 3000)
         ok(!q('[data-testid="fs-more"]'), '全部渲染完之后「显示更多」消失')
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+        const afterPaths = rowsOf().map((r) => r.dataset.path)
+        /*
+         * 焦点断言只钉两条性质，不钉"具体哪一行"：
+         *   ① 焦点还在树里的行上（按钮卸载后不许掉到 body）；
+         *   ② 它是这一批**新露出**的行（不是又跳回旧行）。
+         * 具体落点（实现里是 `allVisiblePaths[visibleLimit]`，即额度边界那一行）
+         * 会随"已缓存但未渲染"的行数变化 —— 钉死行号会让断言在别的 fixture 上假失败。
+         */
+        const focused = document.activeElement
+        const focusedPath = focused?.dataset?.treePath ?? ''
+        const stillRow = focused?.classList?.contains('rp-fs-row') === true
+        ok(stillRow, '「显示更多」消失后焦点仍在文件树的行上（不是 body）', focusedPath || focused?.tagName || 'null')
+        ok(
+          !!focusedPath && !beforePaths.includes(focusedPath),
+          '焦点落在这一批新露出的行上',
+          `${focusedPath || '?'}（此前渲染 ${renderedBefore} 行）`
+        )
       }
     }
     /* 收起 big，避免占用后面的渲染额度 */

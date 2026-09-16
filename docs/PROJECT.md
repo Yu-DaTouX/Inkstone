@@ -43,11 +43,16 @@ pi 的事件回来 → protocol → agent → normalize → pushFrom(runnerId, �
 | 长会话不卡 | `virtua` 的 `VList` 虚拟滚动 | `App.tsx` |
 | 展开不顶走下方 | 展开/收起前后记录滚动锚点并补偿 | `lib/scrollAnchor.ts` |
 | 底部跟随 | 贴底判定 + 用户上滚时不抢滚动位置 | `App.tsx`、`lib/scrollAnchor.ts` |
+| 用量条 | 底部条：速度 · **用时** · 输入 · 输出 · 缓存（含命中率）；最右是模型 + 思考强度选择器 | `chat/UsageBar.tsx` |
 
 **改动注意点**
 
 - `turns.ts` 是纯函数、被两处消费（回合视图 + 大纲），改分组规则要跑 `npm run test:unit`。
 - 流式 delta 的合并规则有单测（`test-stream-deltas.mjs`）—— 曾经漏合并导致文字重复。
+- **用量条上的两个时间不是一回事**：`speed` 是“首 token → 结束”（不含排队与工具往返）；
+  **「用时」用 pi 的 `elapsedMs`**（本轮从开始生成到结束的**墙钟**耗时，含工具往返），
+  只在回合结束后显示（流式期间那个位置是「生成中 Ns」）；新会话不残留上一轮的用时。
+  断言在 `test:live -- tokens`，视觉证据是 `matrix-usageelapsed-{dark,light}`（硬断言 `[data-testid="ub-elapsed"]`）。
 
 ### 2.2 会话、项目与分支
 
@@ -55,6 +60,7 @@ pi 的事件回来 → protocol → agent → normalize → pushFrom(runnerId, �
 |---|---|---|
 | 会话归属 | **pi 继续拥有 JSONL 和目录**；Yan 只在自己数据目录维护 `sessionId → projectId / scope / 最近访问` 的映射 | `main/session-layout.ts`（有单测） |
 | 切会话立即有内容 | 不等 pi：直接解析会话 JSONL | `main/session-reader.ts` → `store.switchSession` |
+| **界面历史 = 会话文件** | `hydrate()` 用 `readSessionMessages(sessionFile)` 取完整历史；pi 的 `get_messages`（只给**当前上下文**，压缩后只剩尾巴）只做兜底 | `main/agent.ts`、`main/session-reader.ts` |
 | 真正切换 | 让 pi 自己 `switch_session`，Yan 不解析整个会话文件（格式会变） | `main/agent.ts` |
 | 列表 / 删除 / 恢复 | **只读**列目录 + 标题样本；删除走回收站语义 | `main/sessions.ts` |
 | 分支（fork） | 从 pi 的 `get_fork_messages` 拿**分支 entryId**（绝不从 DOM 或归一化消息 id 猜） | `lib/fork.ts`、`main/agent.ts` |
@@ -63,6 +69,12 @@ pi 的事件回来 → protocol → agent → normalize → pushFrom(runnerId, �
 **改动注意点**
 
 - 会话目录按 cwd 编码：`sessions/--C--Users-…-pi-desktop--/<时间戳>_<id>.jsonl`。测试按 **fixture 路径**定位会话，不依赖会被模型重写的标题。
+- **别把 `get_messages` 当成“会话历史”**：它是模型当前上下文（压缩过的会话实测只剩 858 → 86 条，首条用户消息都没了）。界面要看的是用户能看到的完整历史。
+- **切会话的竞态有两条，都不能把眼前的内容盖掉**（HANDOFF 的 D38）：
+  · `sync` 先认人（`runtime.sessionId` vs `peekedSessionId`），旧实例晚到的那条直接丢；
+  · 运行时缓存投影先比会话身份（`snapshotForView` / `findRuntimeSnapshot` 的 `run:` 兜底），
+     实例被复用到别的会话时它的 `messages` 属于上一条会话。
+  回归网：`test:live -- historyswitch`（断言“铺上内容后没被打回 0” + 文件 vs 应用手里的一致）。
 - `title.ts` 那次短任务**显式关掉了** context files / skills / 提示词模板（`--no-context-files` 等）：否则每次生成标题都要把 `AGENTS.md` 与技能清单塞进系统提示。
 - 分支 entryId 来源只有 `get_fork_messages` 一个，别的地方拿到的 id 不可靠。
 
@@ -123,7 +135,14 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 **改动注意点**
 
 - **不引入第二条滚动条**：早期"不设固定高度、不用内部滚动"的方案已废止；改回嵌套滚动会带回"上滚被拽回底部"的问题。
-- 语言：**不注入**"必须用某语言思考"之类的提示；界面语言只由 `languageSystemPrompt()` 生成的一句 `--append-system-prompt` 约束，**永远保留模型返回的原文**。
+- 语言：**不注入**"必须用某语言思考"之外的任何语言要求；界面语言只由**一句**话约束，措辞的唯一真源在
+  内置扩展 `resources/pi-extensions/language.js`（`languageSystemPrompt()`），**永远保留模型返回的原文**。
+  交付方式与位置（改动前先读那段注释与 [MAINTENANCE](dev/MAINTENANCE.md)「提示类改动：位置比措辞更重要」）：
+  · 主通道：`before_provider_request` 在**最后一条用户消息前**插一条独立 `developer` 消息（实测的最强位置）；
+  · 兜底：`before_agent_start` 把同一句追加到系统提示末尾（payload 结构不认识的 provider 也还有一份）；
+  · 每轮读 `YAN_DATA_DIR` 下的 `desktop.json`（便携版是 EXE 同级数据目录），所以**切语言下一轮就生效**；
+  · **不重建 pi 实例**（早期为了 `--append-system-prompt` 生效而重建，代价见 HANDOFF 的 D37）；
+  · 推理语言是**软约束**：模型可能"用英文想、按界面语言答"，不据此下"功能失效"的结论（`test:live -- language` 只报告）。
 - 这条契约被 `scripts/probe/reasoning.js` 钉住了（**44 条断言**），改它探针会红。
 
 ### 2.7 文件树、预览与 @ 引用
@@ -212,6 +231,24 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 - `files` 里的 `out/**` 是**全收**的：跑过单测再打包会把 `out/test/*.mjs`（30 文件 / 489K 的业务代码副本）带进 asar。已用 `'!out/test/**'` 排除（实测条目 259 → 235）。
 - **打包边界要看产物不要只看配置**：`npx @electron/asar list <解包目录>/resources/app.asar`。
 - `release/砚数据/` 是用户真实数据（只读）。它不会被打包，但**若把 `release/` 整个目录分发出去就会被带走** —— 交付时只挑 `砚-*.exe` / `砚-*.zip` / `SHA256SUMS.txt`。
+
+### 2.13 上下文：工作集与压缩（N21）
+
+| 项 | 实现 |
+|---|---|
+| 什么时候压缩 | **砚自己算工作集**并从回合结束处触发：`min(240k, 窗口×70%, 窗口−预留−余量)`（64k→40k / 128k→88k / 256k→179.2k / 1M→240k）。到线就调 pi 的 `compact()`；窗口小到装不下预留与余量时**没有预算**，退回 pi 原生压缩 |
+| pi 原生压缩 | 保留不动（砚不写 pi 的设置文件）。它在工作集之上充当物理兜底；另有一条硬兜底 `emergency = min(90% 窗口, 窗口 − 输出预留)`（**不能突破输出预留**，64k 窗口下是 48k 而不是 57.6k） |
+| 决策层 | `shared/context-policy.ts`（纯函数：预算、上膛/冷却、下一步阶段）；`agent.ts` 的 `evaluateContextPolicy` 只在回合结束时判定，不在流式/工具执行中途动手 |
+| 可观测 | `compaction_start/end` → `SessionState.compaction`（进行中，带原因）+ `.lastCompaction`（已结束，带 status/error/前后 token）；发起方由砚盖章，pi 报的 `manual` 不会显示成「手动」 |
+| 界面 | 工作集模式下主值是工作集（不是物理窗口），进度条上三条阶段刻度（清理/折叠/压缩，未接管的画虚线）；关掉「自动压缩」开关就整个退回物理窗口视角 |
+| 未做（阶段 4） | pi 扩展的 `context` 钩子做 Tool Sweep / Episode Fold / 结构化压缩与 `recall`。`ContextPolicy.kinds` 是这道边界的唯一出处 |
+| 阶段 4 契约 | 提点审核（2026-09-16）把阶段 4 的开工契约定在方案 §12：原子上下文单元与 `recentTail` 切割、`EpisodeState` / `CodingState` 两个 schema、禁止递归摘要、Recall 独立预算与生命周期、每阶段独立的上膛/冷却/收益门槛、失败退回 pi 原生行为 |
+
+**改动注意点**
+
+- 阶段参数目前只有代码默认值 + 测试用 `YAN_CONTEXT_POLICY` 覆盖，**设置面板里还不能改**（阶段 4 或后续再做）。
+- 界面上的工作集数字必须来自主进程推送的那份预算（`SessionState.contextPolicy`）—— 渲染端不许自己再算一遍（这一块出过 D21/D22 那类“界面数字 ≠ 实际生效值”的错）。
+- 策略**默认开启**：这意味着 1M 窗口的模型也会在 240k 左右压缩，而不是等到近百万。要关掉就是关「自动压缩」那个开关。
 
 ---
 

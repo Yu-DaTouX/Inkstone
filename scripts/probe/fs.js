@@ -154,6 +154,105 @@
     store.getState().clearAttachments()
     store.getState().closePreview()
 
+    /* ---- 3c. 键盘与焦点恢复（N22-4）---- */
+    out.push('\n=== 3c. 键盘与焦点恢复 ===')
+    /*
+     * 这一节守的是「焦点不许掉到 body」。树里有三种**卸载**导致的焦点转移：
+     * 收起目录把焦点行卸掉、关掉搜索把输入框卸掉、显示更多把按钮卸掉。
+     * 三种在界面上都看不出来，但键盘用户的下一次 Tab 会从窗口顶部重新开始。
+     * 所以断言必须去问 activeElement 是谁，而不是只看 DOM 里有没有那一行。
+     */
+    const tabbableRows = () => qa('.rp-fs-row').filter((r) => r.tabIndex === 0)
+    const focusedDesc = () => {
+      const el = document.activeElement
+      if (!el) return 'null'
+      return el.dataset?.treePath !== undefined
+        ? 'row:' + el.dataset.treePath
+        : el.getAttribute?.('data-testid') || el.tagName
+    }
+    if (tabbableRows().length === 1) ok('任意时刻恰好一行可 Tab 进入（roving tabindex）')
+    else bad('roving tabindex 坏了：' + tabbableRows().length + ' 行 tabIndex=0')
+
+    /* 收起一个已展开的目录：焦点留在这一行，不跳走 */
+    if (await key('src', 'ArrowLeft')) {
+      const collapsed = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main'), 4000)
+      if (!collapsed) bad('ArrowLeft 没有收起 src')
+      else if (activePath() === 'src') ok('ArrowLeft 收起目录后焦点仍在该目录行')
+      else bad('ArrowLeft 收起目录后焦点跑到 ' + focusedDesc())
+      if (await key('src', 'ArrowRight')) ok('ArrowRight 重新展开并保持焦点')
+      else bad('ArrowRight 无法重新展开已收起的目录')
+    } else bad('键盘探针找不到 src 目录（3c）')
+
+    /* 收起「装着当前预览文件的目录」：不能留下看不见的当前行，展开后要回来 */
+    const previewRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
+    if (!previewRow) bad('3c 找不到 src/main/agent.ts')
+    else {
+      click(previewRow)
+      const marked = await until(() => qa('.rp-fs-row[aria-current="true"]').length === 1, 4000)
+      if (marked) ok('预览一个文件后该行标记 aria-current')
+      else bad('预览后没有出现 aria-current 行')
+      const parent = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main')
+      if (!parent) bad('3c 找不到 src/main 目录行')
+      else {
+        click(parent) // 鼠标收起父目录（会把 current 那一行卸掉）
+        const gone = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main/agent.ts'), 4000)
+        if (gone) ok('收起父目录后那一行不再渲染')
+        else bad('收起父目录后那一行还在')
+        const left = qa('.rp-fs-row[aria-current="true"]').length
+        if (left === 0) ok('折叠目录内的 current 不留下「看不见的当前行」')
+        else bad('折叠后仍有 ' + left + ' 行声称自己是 current')
+        if (document.querySelector('[data-testid="file-preview"]')) ok('预览本身不受折叠影响（仍然开着）')
+        else bad('折叠把预览也关掉了（预览不该依赖树是否渲染）')
+        if (activePath() === 'src/main') ok('鼠标收起后焦点落在被点的目录行（不是 body）')
+        else bad('鼠标收起后焦点在 ' + focusedDesc())
+        click(parent) // 再展开
+        const back = await until(() => qa('.rp-fs-row[aria-current="true"]').length === 1, 4000)
+        const backPath = qa('.rp-fs-row[aria-current="true"]')[0]?.dataset.path
+        if (back && backPath === 'src/main/agent.ts') ok('重新展开后 current 回到那一行')
+        else bad('重新展开后 current 没回来：' + String(backPath))
+      }
+      store.getState().closePreview()
+    }
+
+    /* 搜索态：树整体下线（项目头与「显示更多」都不该再出现），Esc 关掉后回来且焦点不丢 */
+    const treeSearchToggle = document.querySelector('[data-testid="fs-search-toggle"]')
+    if (!treeSearchToggle) bad('3c 找不到搜索按钮')
+    else {
+      const rowsBeforeTreeSearch = qa('.rp-fs-row').length
+      click(treeSearchToggle)
+      const ready = await until(() => !!document.querySelector('[data-testid="fs-search"]'), 3000)
+      if (ready) ok('点搜索按钮后出现搜索框')
+      else bad('点搜索按钮后没有搜索框')
+      const treeSearchInput = document.querySelector('[data-testid="fs-search"]')
+      if (!treeSearchInput) bad('3c 拿不到搜索输入框')
+      else {
+        treeSearchInput.focus()
+        const inputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+        inputSetter?.call(treeSearchInput, 'agent')
+        treeSearchInput.dispatchEvent(new Event('input', { bubbles: true }))
+        const results = await until(
+          () => !document.querySelector('[data-testid="fs-tree"]') && qa('.rp-fs-row').length === 0,
+          6000
+        )
+        if (results) ok('有关键词时文件树整体下线（搜索结果取代它）')
+        else bad('有关键词时文件树还在渲染')
+        if (!document.querySelector('.rp-fs-row.head')) ok('搜索态不渲染项目头')
+        else bad('搜索态还在渲染项目头')
+        if (!document.querySelector('[data-testid="fs-more"]')) ok('搜索态不渲染「显示更多」')
+        else bad('搜索态还在渲染「显示更多」')
+        treeSearchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+        const restored = await until(
+          () => !!document.querySelector('[data-testid="fs-tree"]') && qa('.rp-fs-row').length === rowsBeforeTreeSearch,
+          6000
+        )
+        if (restored) ok('Esc 关掉搜索后文件树回到原样（' + qa('.rp-fs-row').length + ' 行）')
+        else bad('Esc 之后文件树没回来：' + qa('.rp-fs-row').length + '/' + rowsBeforeTreeSearch)
+        if (document.activeElement?.getAttribute('data-testid') === 'fs-search-toggle') {
+          ok('Esc 关掉搜索后焦点回到搜索按钮（不是 body）')
+        } else bad('Esc 之后焦点在 ' + focusedDesc())
+      }
+    }
+
     /* ---- 4. 点文件 → 右侧只读预览；加入上下文是独立动作 ---- */
     out.push('\n=== 4. 点文件 → 只读预览；独立加入上下文 ===')
     const fileRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')

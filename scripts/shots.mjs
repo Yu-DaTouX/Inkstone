@@ -22,6 +22,7 @@
  *      之后的折叠/切主题/开设置都不再出帧，capturePage 会一直拿到旧画面，
  *      `invalidate()` 也救不回来。
  */
+import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -83,6 +84,13 @@ function registerStubHandlers() {
 }
 
 async function main() {
+  /*
+   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
+   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
+   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
+   * 其余 console.error 原样透传。
+   */
+  muteMissingHandlerNoise()
   registerStubHandlers()
   await app.whenReady()
 

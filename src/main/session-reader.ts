@@ -58,6 +58,8 @@ export interface ReadResult {
   truncated: number
   /** 文件字节数（诊断用） */
   bytes: number
+  /** 会话 id（文件头 `type:"session"` 那条；旧文件读不到就不给） */
+  sessionId?: string
 }
 
 /**
@@ -151,9 +153,19 @@ export async function readSessionMessages(path: string): Promise<ReadResult | nu
     const normalized: unknown[] = []
     let total = 0
     let truncated = 0
+    let sessionId: string | undefined
 
     for (const rawLine of lines) {
       if (!rawLine) continue
+      /* 文件头那条记会话身份（界面用它把 peek 内容与 pi 的 sync 认成同一条会话） */
+      if (!sessionId && rawLine.includes('"type":"session"')) {
+        try {
+          const head = JSON.parse(rawLine) as { id?: unknown }
+          if (typeof head.id === 'string' && head.id) sessionId = head.id
+        } catch {
+          /* 头坏了不影响消息解析 */
+        }
+      }
       // 快筛：只关心消息 entry（custom entry 由 refreshTodos 单独处理）
       if (!rawLine.includes('"type":"message"')) continue
 
@@ -183,7 +195,8 @@ export async function readSessionMessages(path: string): Promise<ReadResult | nu
       messages: normalizeHistory(normalized),
       total,
       truncated,
-      bytes: size
+      bytes: size,
+      ...(sessionId ? { sessionId } : {})
     }
   } catch {
     return null

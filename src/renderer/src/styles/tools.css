@@ -421,6 +421,11 @@
   color: var(--err);
 }
 
+/* 需要用户注意、但不是错误（如 D21：项目的 .pi/settings.json 未生效） */
+.rp-dim.warn {
+  color: var(--warn);
+}
+
 .rp-quota-win .rp-meter {
   margin: 2px 0 1px;
 }
@@ -475,6 +480,57 @@
 
 .rp-kv .spacer {
   flex: 1;
+}
+
+/*
+ * 上下文分区里的操作行（自动压缩开关 + 压缩上下文按钮）。
+ *
+ * 为什么不能直接沿用 `.rp-kv`（用户截图里的两个问题）：
+ *  ① `align-items: baseline` 对按钮不成立：按钮高 24px、文字 17px，
+ *     基线对齐的结果是按钮与「自动压缩」看起来不在一条线上；
+ *     这里改成 center，两者共用同一条中线。
+ *  ② 右栏可以窄到 220px，按钮文字**必须保持一行高度**（之前折成
+ *     「压缩上 / 下文」两行，行高跟着变）。nowrap + 省略号：
+ *     宁短一点，也不让它把这一行撞成两行。
+ */
+.rp-ctx-actions {
+  /*
+   * 这一行自己当容器：右栏最窄可以拖到 PANEL_MIN(220px)，而 `.rp-kv` 的
+   * `align-items: baseline` 对 24px 的按钮不成立（按钮与「自动压缩」看起来不在一条线上）。
+   * 容器查询挂在本行上（不是整个分区）：`.rp-sec` 是多个分区共用的，
+   * 在那里加 `container-type` 会把 layout containment 一并带进去，
+   * 可能改变内部分区里绝对定位菜单的包含块 —— 不值得。
+   */
+  container-type: inline-size;
+  container-name: ctxactions;
+  align-items: center;
+  flex-wrap: nowrap;
+  /* 这一行有 3 个元素，默认 gap 会吃掉 24px —— 最窄档下就是按钮文字的救命宽度 */
+  gap: 6px;
+}
+.rp-ctx-actions .switch-pill {
+  /* 把开关＋按钮整体推到右边（替代 .spacer 元素） */
+  margin-left: auto;
+}
+.rp-ctx-actions .btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.rp-ctx-actions .btn > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 最窄档（220px 右栏 → 这一行约 187px）：「自动压缩」+ 开关 +「压缩上下文」
+ * 加起来比可用宽度多十几 px。这时**先把图标收掉**（压缩中那枚 spinner 留着），
+ * 让文字完整显示 —— 宁可少一个装饰图标，也不让按钮文字变省略号。
+ */
+@container ctxactions (max-width: 200px) {
+  .rp-ctx-actions .btn .ico:not(.spin) {
+    display: none;
+  }
 }
 
 .rp-k {
@@ -795,6 +851,54 @@
   opacity: 0.9;
   /* 不是交互元素，只做标记 —— 不要挡住悬停提示 */
   pointer-events: none;
+}
+
+/*
+ * 工作集阶段标记（N21-3）：清理 70% / 折叠 85% / 压缩 100%。
+ * 同一个尺度上可能有几条线，所以必须能一眼看出**哪条真的会动手**：
+ * 已接管的实线（强调色），未接管的虚线 + 更淡 —— 与 `title` 里的说明一致。
+ * 标记都用 `pointer-events: none`，不让它们挡住进度条自己的悬停提示。
+ */
+.rp-stage {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.rp-stage.planned {
+  width: 1px;
+  margin-left: -0.5px;
+  /* 未接管也要看得见（它是“这里将来会动手”的位置），但不能和目标一样重 */
+  background: repeating-linear-gradient(to bottom, var(--fg-mute) 0 2px, transparent 2px 4px);
+  opacity: 0.85;
+}
+
+/* 阶段图例（名字 + 是否已接管）；窄栏会换行，不横溢 */
+.rp-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -2px 0 5px;
+}
+.rp-stage-chip {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+.rp-stage-chip.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rp-stage-chip.planned {
+  border-style: dashed;
 }
 
 /* 文件区头部的小开关（显示隐藏项）—— 打开时高亮，与别处 .on 语义一致 */

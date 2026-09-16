@@ -14,6 +14,7 @@
  *    而 ready 又要等这个 await —— 直接死锁（表现为「什么都没发生」）。
  *    必须包在 main() 里调用。
  */
+import { muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow } from 'electron'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -23,6 +24,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
 
 async function main() {
+  /*
+   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
+   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
+   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
+   * 其余 console.error 原样透传。
+   */
+  muteMissingHandlerNoise()
   await app.whenReady()
 
   const [out = 'shot.png', w = '1440', h = '900', theme = 'dark', lang = 'zh-CN'] = argv

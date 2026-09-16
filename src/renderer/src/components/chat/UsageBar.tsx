@@ -67,6 +67,17 @@ export function UsageBar() {
   const last = [...messages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
   const u = last?.usage
 
+  /*
+   * 本轮用时：回合结束后**一直显示**（用户报「会话结束的时候看不到本次用时」）。
+   *
+   * 数字用 pi 给的 `elapsedMs`（本轮从开始生成到结束的墙钟耗时，含工具往返），
+   * 不自己计时——自己算的话切走再回来、或跨多段流式（工具往返）就对不上了。
+   * 取最后一条助手消息，**不要求它带 usage**：本轮没报用量时也应该看得到耗时。
+   */
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+  const turnMs = !streaming ? lastAssistant?.elapsedMs : undefined
+  const elapsed = turnMs ? fmtElapsed(turnMs) : undefined
+
   /* ---- 缓存命中率（算法在 shared/turns.ts，有单测） ---- */
   const hit = cacheHitRate(u)
   const hitLabel = formatHitRate(hit)
@@ -130,6 +141,20 @@ export function UsageBar() {
 
       <span className="ub-dot" />
 
+      {/* 本轮用时：只在回合结束后显示（流式期间那个位置是「生成中 Ns」） */}
+      {elapsed ? (
+        <>
+          <Item
+            label={t('tok.elapsed')}
+            value={elapsed.value}
+            unit={elapsed.unit}
+            title={t('tok.elapsedTip')}
+            testId="ub-elapsed"
+          />
+          <span className="ub-dot" />
+        </>
+      ) : null}
+
       <span className="ub-turn">
         <Item
           label={t('tok.in')}
@@ -182,7 +207,8 @@ function Item({
   extra,
   title,
   dim,
-  live
+  live,
+  testId
 }: {
   label: string
   value: string
@@ -191,9 +217,11 @@ function Item({
   title?: string
   dim?: boolean
   live?: boolean
+  /** 给视觉矩阵/探针用的稳定钩子（不是样式类名） */
+  testId?: string
 }) {
   return (
-    <span className={`ub-item ${dim ? 'dim' : ''}`} title={title}>
+    <span className={`ub-item ${dim ? 'dim' : ''}`} title={title} {...(testId ? { 'data-testid': testId } : {})}>
       <span className="ub-label">{label}</span>
       <span className="ub-value">
         {value}
@@ -215,4 +243,14 @@ function fmtTok(n: number): string {
 /** 速度：整数 + tok/s，慢的时候给一位小数 */
 function fmtSpeed(v: number): string {
   return v >= 10 ? v.toFixed(0) : v.toFixed(1)
+}
+/**
+ * 本轮用时：一分钟以内给秒（一位小数），更长给 `m:sss`。
+ * 不四舍五入到分钟——用户看的是「这一轮到底花了多久」。
+ */
+function fmtElapsed(ms: number): { value: string; unit?: string } {
+  const total = ms / 1000
+  if (total < 60) return { value: total.toFixed(1), unit: 's' }
+  const m = Math.floor(total / 60)
+  return { value: `${m}m${String(Math.round(total % 60)).padStart(2, '0')}s` }
 }

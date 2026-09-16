@@ -120,6 +120,8 @@ export function FileTree() {
   const [showHidden, setShowHidden] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  /** 搜索关闭后要把焦点交回这个按钮（输入框会随面板一起卸载） */
+  const searchToggleRef = useRef<HTMLButtonElement>(null)
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResult, setSearchResult] = useState<FileSearchResult | null>(null)
   const [searchError, setSearchError] = useState(false)
@@ -365,6 +367,7 @@ export function FileTree() {
             <Icon name={showHidden ? 'sun' : 'moon'} size={12} />
           </button>
           <button
+            ref={searchToggleRef}
             className={`rp-mini ${searchOpen ? 'on' : ''}`}
             data-testid="fs-search-toggle"
             title={t('rp.fsSearchToggle')}
@@ -402,6 +405,12 @@ export function FileTree() {
               e.preventDefault()
               setSearchQuery('')
               setSearchOpen(false)
+              /*
+               * 输入框随 `searchOpen=false` 一起下线，焦点会掉到 body。
+               * 交回搜索按钮：键盘用户的下一次 Tab 才接着从这里走
+               * （与「显示更多」消失时交给新露出的第一行同一条道理，N22-4）。
+               */
+              searchToggleRef.current?.focus()
             }}
             placeholder={t('rp.fsSearchPlaceholder')}
             aria-label={t('rp.fsSearchPlaceholder')}
@@ -475,7 +484,17 @@ export function FileTree() {
             <button
               className="rp-fs-more"
               data-testid="fs-more"
-              onClick={() => setVisibleLimit((n) => n + FS_PAGE)}
+              onClick={() => {
+                const next = visibleLimit + FS_PAGE
+                setVisibleLimit(next)
+                /*
+                 * 这一批之后如果所有行都露出来了，按钮自己会消失 —— 焦点必须交给
+                 * 新露出的第一行。否则它会掉到 body：键盘用户按 Enter 展开列表，
+                 * 下一次 Tab 就从窗口顶部重新开始，位置丢了（N22-4 的焦点恢复断言）。
+                 */
+                const firstNew = allVisiblePaths[visibleLimit]
+                if (allVisiblePaths.length <= next && firstNew !== undefined) focusTreePath(firstNew)
+              }}
             >
               {t('rp.fsShowMore', { n: String(allVisiblePaths.length - visibleLimit) })}
             </button>
