@@ -544,10 +544,13 @@ export function Rail() {
     }
     setProjectError('')
     const store = useStore.getState()
-    const recent = sessions
-      .filter((x) => projectId ? x.projectId === projectId : (!x.projectId && x.cwd === cwd))
-      .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))[0]
-    if (recent) await store.switchSession(recent.path)
+    /*
+     * 选「该项目最近访问的会话」交给 store 的纯逻辑（运行实例优先，其次会话
+     * 列表）—— 只看 `sessions` 会漏掉「刚建、还没落盘就切走」的会话，那种情况
+     * 下会新建一个空会话，用户之前敲的草稿（按 sessionId 存在运行时缓存里）就丢了。
+     */
+    const target = store.pickProjectSession(cwd, projectId)
+    if (target) await store.switchSession(target)
     else await store.newSession({ cwd, ...(projectId ? { projectId } : {}), scope: projectId ? 'project' : 'global' })
     await store.refreshSessions()
   }
