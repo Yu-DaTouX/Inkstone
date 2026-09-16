@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { TFunc } from '../../i18n'
@@ -19,6 +19,14 @@ function normPath(p: string): string {
 
 /** 「显示更多」每次追加的可见行数（UI 展示批次，不是文件系统加载批次） */
 const FS_PAGE = 50
+
+/**
+ * 树的缩进统一走 CSS 变量 `--fs-indent`：像素值由这里按层级算，
+ * **窄栏下的上限由 CSS 兜**（见 `tools.css` 的 `.rp-fs-row` / `.rp-fs-state`）。
+ * 不能在这里写死 `paddingLeft`：窄右栏（PANEL_MIN=220）下深层目录的缩进
+ * 会把 chevron 与图标顶到右边界外（实测 6 级开始）。
+ */
+const indentStyle = (px: number): CSSProperties => ({ '--fs-indent': `${px}px` }) as CSSProperties
 
 type FileSearchStatus = FileSearchResult['status']
 
@@ -166,7 +174,13 @@ export function FileTree() {
         }))
         setError(null)
       } finally {
-        if (generation !== requestGeneration.current) return
+        /*
+         * 这里**不能**再按代次早退：被丢弃的旧请求如果不把 loading 标记清掉，
+         * 根层的守卫（`cache[''] === undefined && !loading.has('')`）就永远挡住重试 ——
+         * 表现是文件树永久停在「正在读取目录…」。切项目 / 切会话时偶发，
+         * 已用 `test:live -- tools projectswitch` 稳定复现。
+         * 清掉旧标记最多让新请求的转圈提前消失一下，随后 effect 会自愈重试。
+         */
         setLoading((s) => {
           const n = new Set(s)
           n.delete(path)
@@ -177,12 +191,18 @@ export function FileTree() {
     [fileContext, showHidden]
   )
 
-  /* 根层一定要有内容（展开状态里 '' 默认就在） */
+  /*
+   * 根层一定要有内容（展开状态里 '' 默认就在）。
+   *
+   * `loading` 必须进依赖：被丢弃的旧请求会清掉 loading 标记（见 `load` 的 finally），
+   * 只有在这里重新看一眼，才能把「根层空着且没人加载」的状态自愈掉。
+   * 缺了它，切项目/切会话时偶发地会永久停在「正在读取目录…」。
+   */
   useEffect(() => {
     if (!cwd) return
     if (cache[''] === undefined && !loading.has('')) void load('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd, cache[''], load])
+  }, [cwd, cache[''], load, loading])
 
   /* 全项目搜索：防抖、可取消，并把响应绑定回当前项目/实例。 */
   useEffect(() => {
@@ -589,25 +609,25 @@ function TreeLevel({
   const t = useT()
 
   if (!cwd) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-invalid" style={{ paddingLeft: depth * 14 + 14 }}>{fileStatusText(t, 'invalid')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-invalid" style={indentStyle(depth * 14 + 14)}>{fileStatusText(t, 'invalid')}</div>
   }
   if (listing === undefined) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-loading" style={{ paddingLeft: depth * 14 + 14 }}>{t('rp.fsLoading')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-loading" style={indentStyle(depth * 14 + 14)}>{t('rp.fsLoading')}</div>
   }
   if (listing === null) {
-    return <div className="rp-dim rp-fs-state" data-testid="fs-error" style={{ paddingLeft: depth * 14 + 14 }}>{t('rp.fsError')}</div>
+    return <div className="rp-dim rp-fs-state" data-testid="fs-error" style={indentStyle(depth * 14 + 14)}>{t('rp.fsError')}</div>
   }
   const status = listing.status ?? (listing.entries.length ? 'ok' : 'empty')
   if (status !== 'ok' && status !== 'empty') {
     return (
-      <div className="rp-dim rp-fs-state" data-testid={`fs-${status}`} style={{ paddingLeft: depth * 14 + 14 }}>
+      <div className="rp-dim rp-fs-state" data-testid={`fs-${status}`} style={indentStyle(depth * 14 + 14)}>
         {fileStatusText(t, status)}
       </div>
     )
   }
   if (listing.entries.length === 0) {
     return (
-      <div className="rp-dim rp-fs-state" data-testid="fs-empty" style={{ paddingLeft: depth * 14 + 14 }}>
+      <div className="rp-dim rp-fs-state" data-testid="fs-empty" style={indentStyle(depth * 14 + 14)}>
         {t('rp.fsEmpty')}
       </div>
     )
@@ -674,7 +694,7 @@ function TreeLevel({
     <>
       {nodes}
       {listing.truncated ? (
-        <div className="rp-dim" style={{ paddingLeft: depth * 14 + 14 }}>
+        <div className="rp-dim" style={indentStyle(depth * 14 + 14)}>
           {t('rp.fsMore')}
         </div>
       ) : null}
@@ -743,7 +763,7 @@ function TreeRow({
       <button
         ref={ref}
         className={`rp-fs-row ${dir ? 'dir' : 'file'} ${variant === 'head' ? 'head' : ''} ${hot ? 'hot' : ''}`}
-        style={{ paddingLeft: variant === 'head' ? 4 : 4 + depth * 14 }}
+        style={indentStyle(variant === 'head' ? 4 : 4 + depth * 14)}
         aria-current={current ? 'true' : undefined}
         data-path={path}
         data-tree-path={path}

@@ -56,7 +56,9 @@
 .rp-fs-state {
   padding-top: 7px;
   padding-bottom: 7px;
+  padding-left: min(var(--fs-indent, 14px), calc(100% - 24px));
   line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
 }
 .rp-fs-search {
   display: flex;
@@ -158,6 +160,19 @@
   flex: 1 1 auto;
   min-width: 0;
   min-height: 26px;
+  /*
+   * 缩进由行内 `--fs-indent` 给（4 + depth*14），但**窄右栏**（PANEL_MIN=220）
+   * 下深层目录会把 chevron + 图标顶出右边界（实测 6 级开始）：图标组
+   *（chevron 12 + gap 5 + 图标 12 + gap 5 = 34）是 `flex: none`、缩不动，
+   * 右边的 trailing 槽又固定 66px。所以再叠一个上限，保证缩进 + 图标组
+   * + 名字最小可见宽度（12px）都能装下：
+   *
+   *   66（trailing）+ 34（图标组）+ 4（padding-right）+ 12（名字）= 116
+   *
+   * `100%` 是这一行实际可用的宽度（包含块是 `.rp-fs-row-wrap`）——
+   * 正常宽度下（右栏 ≥260px）这个上限不生效，缩进仍逐级递增。
+   */
+  padding-left: min(var(--fs-indent, 4px), calc(100% - 116px));
   padding-right: 4px;
   border-radius: var(--r-sm);
   color: var(--fg-dim);
