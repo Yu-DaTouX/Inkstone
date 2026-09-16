@@ -41,6 +41,15 @@ export const ELECTRON_CRASH_DUMPS_DIR = PORTABLE_DATA_DIR
   : undefined
 
 /**
+ * 浏览器下载的落盘目录。默认是系统下载目录。
+ *
+ * `YAN_DOWNLOADS_DIR` 可覆盖 —— 验收测试会真的触发下载，
+ * 往用户真实的下载目录里丢测试文件是不可接受的。
+ *（下载过的文件就是用户文件，测试不能自己删。）
+ */
+export const DOWNLOADS_DIR = process.env.YAN_DOWNLOADS_DIR?.trim() || undefined
+
+/**
  * 桌面端数据目录。`YAN_DATA_DIR` 可覆盖 —— 测试用隔离目录，免得碰真实数据。
  * 便携版则固定落在 EXE 同级的「砚数据」中。
  */

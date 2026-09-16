@@ -22,13 +22,16 @@ import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { compactionInfo } from './compaction'
+import { activeContextPolicy } from './context-policy'
+import { contextBudget } from '../shared/context-policy'
 import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
-import { ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
+import { installStdioGuard } from './stdio-guard'
+import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
 import type {
   Attachment,
   AttentionNotify,
@@ -40,16 +43,20 @@ import type {
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
 /*
- * Electron 的开发进程经常由 npm / IDE 通过 pipe 启动。启动器退出、重启
- * 或关闭终端后，Node 的 stdout/stderr 仍可能收到 console.error；Windows
- * 会把这次写入报成 EPIPE，并把它升级成“主进程 JavaScript 错误”对话框。
- * 日志管道断开不应该让桌面应用崩溃，真正的异常仍会按原路径处理。
+ * Electron 的开发/验收进程经常由 npm / IDE / agent 的 bash 会话通过 pipe 启动。
+ * 启动器退出、重启或关闭终端后，Node 的 stdout/stderr 仍可能收到 console.error；
+ * Windows 会把这次写入报成 EPIPE。
+ *
+ * ⚠️ 这里**不能**在监听里 throw：从 `'error'` 监听抛出来会变成 uncaughtException，
+ * 而 Electron 主进程的默认处理是弹一个**模态**框（标题「Error」）—— 弹框挡住
+ * 事件循环之后，app.exit() 永远不会执行，父进程（spawnSync）于是等一辈子。
+ * 2026-09-16 实测过这条链路（脚本侧同类问题见 `scripts/lib/stdio-guard.mjs`），
+ * 所以非 EPIPE 只**上报**，不抛（详见 `main/stdio-guard.ts`）。
  */
-for (const stream of [process.stdout, process.stderr]) {
-  stream.on('error', (error: NodeJS.ErrnoException) => {
-    if (error.code !== 'EPIPE') throw error
-  })
-}
+installStdioGuard(
+  { stdout: process.stdout, stderr: process.stderr },
+  { onError: (stream, error) => reportMainError(`stdio/${stream}`, error) }
+)
 
 /*
  * 主进程未捕获异常 → UI 日志，而不是原生错误弹框。
@@ -100,6 +107,14 @@ if (ELECTRON_USER_DATA_DIR) {
 }
 if (ELECTRON_CRASH_DUMPS_DIR) {
   app.setPath('crashDumps', ELECTRON_CRASH_DUMPS_DIR)
+}
+/*
+ * 下载目录同理（浏览器内置 / 本机 Chrome 都读 `app.getPath('downloads')`）：
+ * 验收测试会真的下载文件，不能把它们丢进用户真实的下载目录 ——
+ * 那个目录里的东西用户会当成自己的文件。
+ */
+if (DOWNLOADS_DIR) {
+  app.setPath('downloads', DOWNLOADS_DIR)
 }
 
 /*
@@ -236,6 +251,22 @@ function responseDetailExtensionPath(): string | undefined {
     process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'response-detail.js') : '',
     join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'response-detail.js'),
     join(process.cwd(), 'resources', 'pi-extensions', 'response-detail.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 内置「界面语言」扩展的路径。
+ *
+ * 它在 `before_agent_start` 里读 `desktop.json` 的 `lang`，每轮注入一句
+ * 「推理与回复用什么语言」。**不用** `--append-system-prompt`：那个只在进程
+ * 启动时生效，切语言就得重建实例（会掐掉后台会话、并让界面短暂失去历史）。
+ */
+function languageExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'language.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'language.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'language.js')
   ].filter(Boolean)
   return candidates.find((p) => existsSync(p))
 }
@@ -464,20 +495,6 @@ function refreshTrayMenu(): void {
 }
 
 /* Agent 生命周期 */
-/**
- * 系统提示里的语言约束。
- *
- * 用户反馈：模型的**推理内容**仍是英语，没有跟随界面语言。
- * pi 默认不限定语言（模型按用户消息自己选），要它跟着界面走
- * 只能在系统提示里明确要求 —— 这里把界面语言翻成一句指令，
- * 通过 `--append-system-prompt` 追加到 pi 系统提示末尾。
- */
-function languageSystemPrompt(lang: string): string {
-  return lang === 'zh-CN'
-    ? '推理（思考过程）与回复一律使用简体中文，即使用户用其他语言提问也不要切换。'
-    : 'Think (reason) and reply in English, even if the user writes in another language.'
-}
-
 function projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined {
   const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
   return settings.projects.find((project) => normalize(project.cwd) === normalize(cwd))?.id
@@ -599,30 +616,24 @@ async function rememberRunnerSession(
  * 串行化后同一时刻只会有一个启动流程，旧实例不会再反过来污染状态。
  */
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
-/**
- * 一个 pi 进程的系统提示在启动时固定。语言切换不重启现有 runner：
- * 它们继续完成当前任务；之后创建的新 runner 使用这个最新值。
- */
-let agentLanguage: string | undefined
 /** 当前设置的回复详细程度；每个 Agent 回合自己在 agent_start 时取快照。 */
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
 
-function startAgent(): Promise<{ ok: boolean; error?: string }> {
+function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (starting) return starting
-  starting = doStartAgent().finally(() => {
+  starting = doStartAgent(restore).finally(() => {
     starting = null
   })
   return starting
 }
 
-async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
+async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (runners?.active()?.running) return { ok: true }
   /* 重新建立主 runner 集合时，所有新进程都读取当前设置。 */
   await runners?.stopAll()
   await subagents?.stopAll()
 
   const settings = await getSettings()
-  agentLanguage = settings.lang
   agentResponseDetail = settings.responseDetail
 
   runners = new RunnerRegistry({
@@ -637,27 +648,43 @@ async function doStartAgent(): Promise<{ ok: boolean; error?: string }> {
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         browserEnv: browser?.bridgeEnv(),
-        appendSystemPrompt: languageSystemPrompt(agentLanguage ?? settings.lang)
+        languageExtension: languageExtensionPath()
       }),
     onChanged: () => pushRunners()
   })
 
   const projectId = projectIdForCwd(settings, settings.cwd)
-  const res = await runners.startPrimary(settings.cwd, undefined, projectId)
-  await rememberRunnerSession(res, { cwd: settings.cwd, projectId, scope: 'project' })
+  /*
+   * 主实例直接建在「要接回来的那个会话」上（restartAgent 传进来）。
+   * 不能先建一条新会话再 switch：那样界面会先收到一次**空会话**的 sync，
+   * 当前会话的历史当场就被清掉（D37）。
+   */
+  const res = await runners.startPrimary(settings.cwd, restore?.sessionFile, projectId)
+  await rememberRunnerSession(res, {
+    cwd: settings.cwd,
+    projectId,
+    scope: 'project',
+    ...(restore?.sessionFile ? { sessionFile: restore.sessionFile } : {})
+  })
   pushRunners()
+  /* 接回来的会话要把内容推给渲染端（switch 路径自己会推，start 路径不会） */
+  if (res.ok && res.id) await pushRunnerSnapshot(res.id)
   return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
 
 /**
  * 重启 pi 子进程，并把当前会话接回来（不丢历史）。
  *
- * 触发场景：应用内登录 ChatGPT（pi 只在**启动时**读 auth.json，长跑的进程
- * 不会因为文件变了就重读）。语言切换不走这条路径，因为它不应为刷新提示
- * 重建或中断其它会话；新 runner 会从 `agentLanguage` 读取最新语言。
+ * 触发场景：应用内登录 ChatGPT —— pi 只在**启动时**读 `auth.json`，
+ * 长跑的进程不会因为文件变了就重读，所以登录成功后必须重建。
+ * （界面语言**不再**走这条路：语言由扩展每轮注入，见
+ *  `resources/pi-extensions/language.js`。）
  *
  * ⚠️ 一定要等**这一轮跑完**再重启：跑的时候重启会直接掐断正在生成的内容。
  *    所以忙的时候每隔一会儿再试，直到空闲（最多等 ~5 分钟）。
+ *
+ * ⚠️ 重启会把主实例重建到一条**新会话**上，所以必须把当前会话文件带上
+ *    （`startAgent(restore)`），否则界面会停在一条空会话上（D37）。
  */
 let agentRestarting = false
 
@@ -690,8 +717,18 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
   const file = ac()?.getState()?.sessionFile
   try {
     await runners.stopAll()
-    const res = await startAgent()
-    if (res.ok && file) await ac()?.switchSession(file)
+    /* 带上当前会话文件重建：主实例直接落在它上面，不停在空会话（D37） */
+    const res = await startAgent(file ? { sessionFile: file } : undefined)
+    /*
+     * 双保险：startPrimary 已经切过会话了，但那条路径失败时（例如会话文件
+     * 刚被删）不能让界面停在别处 —— 再试一次显式 switch，并把结果说出来。
+     */
+    if (res.ok && file && ac()?.getState()?.sessionFile !== file) {
+      const sw = await ac()?.switchSession(file)
+      if (sw && !sw.ok) {
+        push({ ch: 'log', payload: { text: `[会话] 重建 pi 后没能接回原会话：${sw.error ?? '未知原因'}` } })
+      }
+    }
   } catch (error) {
     reportMainError(reason, error)
   } finally {
@@ -1112,17 +1149,17 @@ function registerIpc(): void {
     const before = await getSettings()
     const next = await patchSettings(patch as never)
     /*
-     * 语言提示在 pi 启动时固定。只更新新建实例的工厂值，已有 runner
-     * 继续完成自己的回合；这样不会为了设置变化中断后台会话。
+     * 语言切换**不重建实例**：语言要求由内置扩展在每一轮读 desktop.json 注入，
+     * 所以下一轮就生效 —— 现有会话、后备会话、新建会话一视同仁
+     * （早期做法是重启 pi 实例，代价是抢掉后台会话、还会让界面短暂失去历史：D37）。
      */
     if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
-      agentLanguage = next.lang
       trayLanguage = next.lang
       refreshTrayMenu()
       push({
         ch: 'log',
         payload: {
-          text: `[语言] 已切换为 ${next.lang}；现有会话不中断，新建运行实例将使用新语言提示。`
+          text: `[语言] 已切换为 ${next.lang}；下一轮开始，推理与回复都跟随新语言（不重建实例、不中断会话）。`
         }
       })
     }
@@ -1389,6 +1426,16 @@ function registerIpc(): void {
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()
     return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
+  })
+  /*
+   * 工作集预算（N21-3）：**只算不决策**。
+   * 界面上显示的工作集与砚真正用来判断过线的是同一份预算（同一个策略对象），
+   * 测试也用它对照参考值（64k → 40k、128k → 88k、256k → 179k、1M → 240k）。
+   */
+  rawHandle('yan:contextBudget', (_e, win: unknown) => {
+    const policy = activeContextPolicy()
+    const budget = contextBudget(typeof win === 'number' ? win : 0, policy)
+    return { policy, budget }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
 

@@ -21,6 +21,7 @@
  *   ② 窗口必须 `show: true`：隐藏窗口只合成一次，之后的切主题/开设置
  *      都不再出帧，`capturePage()` 会一直拿到旧画面。
  */
+import { missingHandlerSummary, muteMissingHandlerNoise } from './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { mkdtempSync } from 'node:fs'
@@ -77,7 +78,48 @@ function registerStubHandlers() {
   ipcMain.handle('yan:listSessions', () => [])
   ipcMain.handle('yan:listCommands', () => [])
   ipcMain.handle('yan:listThinkingLevels', () => [])
-  ipcMain.handle('yan:compactionInfo', () => null)
+  ipcMain.handle('yan:compactionInfo', () => ({
+    /*
+     * 与真实场景一致的一组值：全局设置了 reserveTokens，项目里的
+     * `.pi/settings.json` 因为未信任而**不会被 pi 读** —— 这就是
+     * `compaction` 截图里要看到的那句警告（D21）。
+     */
+    enabled: true,
+    reserveTokens: 16384,
+    keepRecentTokens: 20000,
+    contextWindow: 400000,
+    threshold: 383616,
+    custom: false,
+    scope: 'global',
+    projectIgnored: true
+  }))
+  /*
+   * 回收站通知（N08/N13/N14/N15/N17 的视觉缺口）：截图要拍到「已删除 · 撤销」那条
+   * 非模态通知，所以删除必须成功 —— 给一个桩，撤销也给一个（截图不点它，
+   * 但按钮的存在依赖 token 非空）。
+   */
+  /*
+   * 文件引用登记（N19 截图要真的走一遍「加入上下文」）：真实主进程会 realpath 校验
+   * 并登记路径；截图环境里没有那些文件，所以按请求原样回一个成功的描述 ——
+   * 形状与 `grantFiles()` 完全一致（ok / input / path / name / size / mimeType / kind）。
+   */
+  ipcMain.handle('yan:describeFiles', (_e, paths) =>
+    (Array.isArray(paths) ? paths : []).map((p) => {
+      const input = String(p)
+      const name = input.split(/[\\/]/).pop() ?? input
+      return {
+        ok: true,
+        input,
+        path: input,
+        name,
+        size: 91230,
+        mimeType: name.endsWith('.md') ? 'text/markdown' : 'text/typescript',
+        kind: 'text'
+      }
+    })
+  )
+  ipcMain.handle('yan:deleteSession', () => ({ ok: true, undoToken: 'shot-token' }))
+  ipcMain.handle('yan:restoreSession', () => ({ ok: true }))
   ipcMain.handle('yan:authProviders', () => [])
   /*
    * ⚠️ 拉取型 IPC **故意不注册**（getSettings / getState / getStats / listModels …）。
@@ -106,10 +148,28 @@ function registerStubHandlers() {
         error: 'permission'
       }
     }
+    /*
+     * 目录内容按路径区分：以前每一层都返回同一批名字（src 下面还是 src），
+     * 拍"深层文件"的截图时看起来像树坏了。这里给两层真实感的内容。
+     */
+    const tree = {
+      src: [
+        { name: 'main', dir: true },
+        { name: 'renderer', dir: true },
+        { name: 'shared', dir: true },
+        { name: 'agent.ts', dir: false, size: 18240 },
+        { name: 'index.ts', dir: false, size: 2210 }
+      ],
+      'src/main': [
+        { name: 'agent.ts', dir: false, size: 91230 },
+        { name: 'title.ts', dir: false, size: 11040 },
+        { name: 'files.ts', dir: false, size: 8120 }
+      ]
+    }
     return {
       path,
       abs: 'C:/work/pi-desktop' + (path ? '/' + path : ''),
-      entries: [
+      entries: tree[path] ?? [
         { name: 'src', dir: true },
         { name: 'docs', dir: true },
         { name: 'scripts', dir: true },
@@ -144,9 +204,9 @@ const GROUPS = [
     h: 900,
     scale: 1,
     theme: 'dark',
-    states: ['main', 'modelmenu', 'reasoning', 'settings', 'railmini', 'fsnarrow', 'wschanges', 'wsunknown']
+    states: ['main', 'modelmenu', 'reasoning', 'settings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'railmini'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings'] },
@@ -235,6 +295,98 @@ const STATES = {
    *   · 深层的浅缩进在窄栏下收敛，不再把图标顶出右边界
    *   · 无权限目录给的是「没有读取权限」，而不是「空目录」
    */
+  /*
+   * 浏览器边界（L04）：一张图看三件事 ——
+   *   · 被拦下的请求在「⋯」里**可追溯**（目标主机 + 原因 + 是谁想访问）
+   *   · 下载条写明「未自动打开」并带**来源**
+   *   · 权限记录（默认拒绝）与拦截记录并列
+   * 原生网页视图在这个脚本里不存在（它只在真窗口里存在），所以这一张
+   * 拍的是工具栏 + 状态行 —— 也就是**渲染层能负责的那部分**。
+   */
+  browserboundary: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        filePreview: null,
+        browserState: {
+          open: true,
+          url: 'https://example.com/',
+          title: 'Example Domain',
+          loading: false,
+          canGoBack: false,
+          canGoForward: false,
+          mode: 'embedded',
+          lastDownload: {
+            path: 'C:\\Users\\yan\\Downloads\\yan-probe-download.txt',
+            filename: 'yan-probe-download.txt',
+            size: 48,
+            source: 'http://127.0.0.1:39873/download'
+          },
+          permissions: [
+            { permission: 'geolocation', origin: 'http://127.0.0.1:39873', status: 'blocked', at: Date.now() - 42000 }
+          ],
+          blockedRequests: [
+            { host: '127.0.0.1', reason: 'private-host', from: 'example.com', at: Date.now() - 9000, count: 2 },
+            { host: '127-0-0-1.sslip.io', reason: 'dns-rebind', from: 'example.com', at: Date.now() - 8000, count: 1 }
+          ]
+        }
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      const more = document.querySelector('[data-testid="browser-more"]');
+      if (more && more.getAttribute('aria-expanded') !== 'true') more.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const list = document.querySelector('[data-testid="browser-blocked"]');
+      if (list) list.scrollIntoView({ block: 'nearest' });
+      await new Promise((r) => setTimeout(r, 250));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 同一组数据的**另一面**：⋯ 收起时，状态行上是「已拦截 N 个请求」+ 带来源的
+   * 下载条 —— 这两个恰好是用户不打开菜单也能看到的（也是“页面打不开”的解释）。
+   * 为什么要两张：菜单与状态行在 JSX 里是互斥分支，一张图拍不全。
+   */
+  browserblocked: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        filePreview: null,
+        browserState: {
+          open: true,
+          url: 'https://example.com/',
+          title: 'Example Domain',
+          loading: false,
+          canGoBack: false,
+          canGoForward: false,
+          mode: 'embedded',
+          lastDownload: {
+            path: 'C:\\Users\\yan\\Downloads\\yan-probe-download.txt',
+            filename: 'yan-probe-download.txt',
+            size: 48,
+            source: 'http://127.0.0.1:39873/download'
+          },
+          blockedRequests: [
+            { host: '127.0.0.1', reason: 'private-host', from: 'example.com', at: Date.now() - 9000, count: 2 },
+            { host: '127-0-0-1.sslip.io', reason: 'dns-rebind', from: 'example.com', at: Date.now() - 8000, count: 1 }
+          ]
+        }
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      const more = document.querySelector('[data-testid="browser-more"]');
+      if (more && more.getAttribute('aria-expanded') === 'true') more.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const status = document.querySelector('[data-testid="browser-status"]');
+      if (status) status.scrollIntoView({ block: 'nearest' });
+      await new Promise((r) => setTimeout(r, 250));
+      return 'ok';
+    })()
+  `,
   fsnarrow: `
     (() => {
       const st = window.__yanStore.getState();
@@ -289,6 +441,264 @@ const STATES = {
       return cards.length ? 'ok' : 'no-card';
     })()
   `,
+  /*
+   * 压缩可观测（N21-2）：一张图里看四件事 ——
+   *   · 进行中那一行带**原因**（「压缩中 · 已达阈值」）
+   *   · 「最近一次」在压缩进行中仍显示上一轮的结果（两条互不覆盖）
+   *   · 失败时把 pi 的原文摆出来（不静默）+ 压缩前后 token
+   *   · 项目级设置被 pi 忽略时说出来（D21）
+   * 截的是详情展开态：这些行都在「详情」里。
+   */
+  compaction: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isCompacting: true,
+          compaction: { status: 'running', reason: 'threshold', startedAt: Date.now() - 2400 },
+          lastCompaction: {
+            status: 'failed',
+            reason: 'manual',
+            startedAt: Date.now() - 660000,
+            endedAt: Date.now() - 659000,
+            beforeTokens: 36230,
+            afterTokens: 18400,
+            error: 'Compaction failed: Already compacted'
+          }
+        }
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const row = document.querySelector('[data-testid="ctx-last-compaction"]');
+      if (row) row.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 250));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 工作集视角（N21-3）：一张图里看四件事 ——
+   *   · 主值是**工作集**（240k）而不是物理窗口（400k），带 data-mode
+   *   · 三条阶段刻度：压缩实线（真的会触发）、清理/折叠虚线（阶段 4 才接管）
+   *   · 「下一步：压缩上下文（约 240k 时）」
+   *   · 详情里的 工作集 / 预留 / 安全余量 / 物理兜底
+   * 预算值直接注入 store（与主进程推来的同构），这里不重算公式。
+   */
+  /*
+   * 本轮用时（用户要求）：回合结束后，底部用量条上要能看到「用时 Ns」。
+   * fixture 默认把会话摆成「流式中」（那时显示的是「生成中 Ns」），
+   * 所以这里显式置为已结束，并确认真的渲染出了耗时项。
+   */
+  usageelapsed: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({ session: { ...st.session, isStreaming: false, isAgentRunning: false } });
+      await new Promise((r) => setTimeout(r, 400));
+      const box = document.querySelector('.stream');
+      if (box) box.scrollTop = box.scrollHeight;
+      await new Promise((r) => setTimeout(r, 250));
+      return document.querySelector('[data-testid="ub-elapsed"]') ? 'ok' : 'no-elapsed';
+    })()
+  `,
+  contextbudget: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isAgentRunning: false,
+          contextPolicy: {
+            enabled: true,
+            kinds: ['compaction'],
+            budget: {
+              /*
+               * 窗口必须与截图 fixture 的模型一致（400k，见 shot-fixture.js），
+               * 否则会出现“面板里的窗口 400k、兜底线却是 262k 窗口算出来的”这种
+               * 自相矛盾的截图（正是 D21/D22 那类误解）。
+               * 兜底线在 400k 上不被预留卡住（360k < 368k），所以这里看不出 D31 的
+               * 差别 —— 那一条由单测扫描 + 探针在**真实窗口**上断言（probe/context-budget.js 第 2 节）。
+               */
+              contextWindow: 400000,
+              responseReserve: 32000,
+              safetyMargin: 8000,
+              workingSet: 240000,
+              triggers: { sweep: 168000, fold: 204000, compact: 240000 },
+              emergency: 360000
+            }
+          }
+        }
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      await new Promise((r) => setTimeout(r, 350));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 最窄右栏（PANEL_MIN = 220px）+ 工作集视角：用户截图里的组合。
+   * 要拍的就是「自动压缩」那一行 —— 压缩按钮必须**一行高**、与标题同一条中线，
+   * 文字不能被折成「压缩上/下文」；阶段刻度和「下一步」在窄栏下也要能读。
+   */
+  ctxnarrow: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 不走 store 的 setPanelWidth（async + 需要主进程 handler），直接改本地 settings */
+      window.__yanStore.setState({
+        settings: { ...(st.settings || {}), panelWidth: 220, rightPanelOpen: true },
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isAgentRunning: false,
+          contextPolicy: {
+            enabled: true,
+            kinds: ['compaction'],
+            budget: {
+              /*
+               * 用真实模型的窗口（262144，与用户机器一致）而不是整数 400k：
+               * 这个窗口上兜底线正好被输出预留卡住（224k 而不是 230.4k），
+               * 截图里「物理兜底」那一行就是 §12.1 / D31 的证据。
+               */
+              contextWindow: 262144,
+              responseReserve: 32000,
+              safetyMargin: 8000,
+              workingSet: 183501,
+              triggers: { sweep: 128451, fold: 155976, compact: 183501 },
+              emergency: 229376
+            }
+          }
+        }
+      });
+      await new Promise((r) => setTimeout(r, 400));
+      const row = document.querySelector('[data-testid="rp-context-actions"]');
+      if (row) row.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 250));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 删除后的**非模态**通知条（回收站）。几何与文案由 `trash` 探针断言，
+   * 这里补的是静态截图（浅色/深色各一张）—— 它是左栏唯一一条"操作已完成、
+   * 还能撤销"的横条，颜色与按钮宽度最容易在改主题时坏掉。
+   *
+   * 注意：删除成功后 store 会 `refreshSessions()`，而截图环境故意不注册
+   * 拉取型 IPC（返回空会盖掉 fixture 注入的数据）—— 这里先把会话列表存一份，
+   * 等通知出现后再放回去，否则截图里左栏会空掉（那不是这个状态要拍的东西）。
+   */
+  trashtoast: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      /*
+       * 复位右栏：上几张图（fsnarrow / fileincontext）会留下展开的文件树、文件预览
+       * 与输入区里的附件标签 —— 不清掉的话这张"回收站通知"的图里会挂着别人的状态。
+       */
+      st.closePreview?.();
+      st.clearAttachments?.();
+      document
+        .querySelector('[data-testid="rp-files"] .rp-sec-head')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await sleep(300);
+      const saved = window.__yanStore.getState().sessions;
+      /*
+       * 截图需要一条**可删的**会话：当前会话禁止删除，而 fixture 里只有一条
+       * 显示的会话（其它几条在同名项目分组里没渲染出来）。所以临时补一条
+       * 合成会话 —— 它只活在这张截图里，删完立刻把原列表放回去。
+       */
+      const extra = {
+        ...saved[0],
+        id: 'shot-trash',
+        path: 'C:/Users/x/.pi/agent/sessions/proj/shot-trash.jsonl',
+        title: '布局微调 · 待删除的会话',
+        updatedAt: Date.now() - 60000
+      };
+      window.__yanStore.setState({ sessions: [...saved.filter((x) => x.id !== 'shot-trash'), extra] });
+      await sleep(400);
+      const row = document.querySelector('[data-session-path="' + extra.path + '"]');
+      if (!row) return 'no-row(rows=' + document.querySelectorAll('.srow').length + ')';
+      const setValue = (el, v) => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      row.querySelector('.srow-acts button')?.click();
+      await sleep(300);
+      const danger =
+        row.querySelector('.srow-menu-btn.danger:not([disabled])') ??
+        [...document.querySelectorAll('.srow-menu-btn.danger:not([disabled])')].pop();
+      if (!danger) return 'no-danger-item';
+      danger.click();
+      await sleep(500);
+      const dlg = document.querySelector('.rail-delete-dialog');
+      const input = dlg?.querySelector('.modal-input');
+      if (!input) return 'no-dialog';
+      setValue(input, input.placeholder);
+      await sleep(250);
+      const confirm = dlg.querySelector('.modal-foot .btn.danger');
+      if (!confirm || confirm.disabled) return 'confirm-disabled';
+      confirm.click();
+      for (let i = 0; i < 30; i++) {
+        if (document.querySelector('[data-testid="trash-notice"]')) break;
+        await sleep(150);
+      }
+      /* 删除后 store 会 refreshSessions（截图环境没有该 IPC）→ 把原列表放回去 */
+      window.__yanStore.setState({ sessions: saved });
+      await sleep(400);
+      const notice = document.querySelector('[data-testid="trash-notice"]');
+      if (!notice) return 'no-notice';
+      const r = notice.getBoundingClientRect();
+      const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const chain = [];
+      for (let el = notice.parentElement; el; el = el.parentElement) {
+        const cs = getComputedStyle(el);
+        chain.push((el.className || el.tagName) + ':' + cs.overflow + '/' + cs.overflowY + ':' + el.scrollTop + '/' + el.clientHeight + '/' + el.scrollHeight);
+        if (chain.length > 6) break;
+      }
+      return 'ok(mid=' + (mid?.className || mid?.tagName) + '|' + chain.join(' > ') + ')';
+    })()
+  `,
+  fileincontext: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.getState().clearAttachments?.();
+      const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      click(document.querySelector('[data-testid="fs-row-src"]'));
+      await new Promise((r) => setTimeout(r, 700));
+      click(document.querySelector('[data-testid="fs-row-src/main"]'));
+      await new Promise((r) => setTimeout(r, 700));
+      const file = document.querySelector('[data-testid="fs-row-src/main/agent.ts"]');
+      if (!file) return 'no-file-row';
+      /* 单击 = 只读预览（与"加入上下文"是两件事，这里两样都要拍到） */
+      click(file);
+      await new Promise((r) => setTimeout(r, 500));
+      const add = document.querySelector('[data-testid="fs-add-src/main/agent.ts"]');
+      if (!add) return 'no-add-button';
+      click(add);
+      await new Promise((r) => setTimeout(r, 600));
+      const tagged = window.__yanStore.getState().attachments?.some((a) => a.kind === 'file');
+      const dot = document.querySelector('[data-testid="fs-inctx-src/main/agent.ts"]');
+      return 'ok(tagged=' + (tagged ? 1 : 0) + ',dot=' + (dot ? 1 : 0) + ')';
+    })()
+  `,
   /* 同一个组件的第二个变体：归属存疑（并发）时的写法 */
   wsunknown: `
     (async () => {
@@ -318,14 +728,48 @@ const STATES = {
 
 /** 每个状态要顺带核对的元素（截图的图不能是空的） */
 const MUST_HAVE = {
+  /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
+     用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
   railmini: ['[data-testid="rail-toggle"]'],
+  compaction: [
+    '[data-testid="rp-context"]',
+    '[data-testid="ctx-compacting-reason"]',
+    '[data-testid="ctx-last-compaction"]',
+    '[data-testid="ctx-last-compaction-error"]',
+    '[data-testid="ctx-project-ignored"]'
+  ],
+  browserboundary: [
+    '[data-testid="browser-surface"]',
+    '[data-testid="browser-blocked"]',
+    '[data-testid="browser-permissions"]'
+  ],
+  browserblocked: [
+    '[data-testid="browser-surface"]',
+    '[data-testid="browser-blocked-hint"]',
+    '[data-testid="browser-download"]'
+  ],
   fsnarrow: ['[data-testid="rightpanel"]', '[data-testid="rp-files"]'],
   wschanges: ['[data-testid="workspace-changes"]', '[data-testid="ws-title"]'],
-  wsunknown: ['[data-testid="workspace-changes"]', '[data-testid="ws-unknown"]']
+  wsunknown: ['[data-testid="workspace-changes"]', '[data-testid="ws-unknown"]'],
+  ctxnarrow: ['[data-testid="rp-context-actions"]', '[data-testid="rp-compact-now"]', '[data-testid="ctx-stages"]'],
+  trashtoast: ['[data-testid="trash-notice"]', '[data-testid="trash-undo"]', '.rail-trash-name', '.srow'],
+  fileincontext: ['[data-testid="fs-tree"]', '[data-testid="file-preview"]', '[data-testid="fs-inctx-src/main/agent.ts"]', '[data-testid="composer"]'],
+  usageelapsed: [
+    '[data-testid="usagebar"]',
+    '[data-testid="ub-elapsed"]',
+    '.usagebar .ub-item',
+    '[data-testid="composer"]'
+  ],
+  contextbudget: [
+    '[data-testid="ctx-stages"]',
+    '[data-testid="ctx-stage-mark"]',
+    '[data-testid="ctx-next-stage"]',
+    '[data-testid="ctx-working-set"]'
+  ]
 }
 
 /** 截完图要做的复位（目前只有：把为拍模型菜单而放空的“忙”状态改回去） */
@@ -335,6 +779,21 @@ const AFTER_STATE = {
       const st = window.__yanStore.getState();
       window.__yanStore.setState({ session: { ...st.session, isStreaming: true } });
       document.querySelectorAll('[data-testid="model-picker"]').forEach((b) => b.click());
+      return 'ok';
+    })()
+  `,
+  /*
+   * 压缩态把 isCompacting 置 true，而「忙」时模型 picker 是 disabled ——
+   * 不复位的话，同一组里**排在后面**的状态会点不开菜单（实测踩过同类问题）。
+   */
+  compaction: `
+    (() => {
+      const st = window.__yanStore.getState();
+      window.__yanStore.setState({
+        session: { ...st.session, isCompacting: false, compaction: undefined, lastCompaction: undefined }
+      });
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') === 'true') toggle.click();
       return 'ok';
     })()
   `
@@ -382,6 +841,13 @@ const GROUP_ONLY = (process.env.YAN_MATRIX_GROUP ?? '')
 const WANT_ONBOARDING = GROUP_ONLY.length === 0 || GROUP_ONLY.includes('onboarding')
 
 async function main() {
+  /*
+   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
+   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
+   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
+   * 其余 console.error 原样透传。
+   */
+  muteMissingHandlerNoise()
   registerStubHandlers()
   await app.whenReady()
 
@@ -447,6 +913,13 @@ async function main() {
     await win.webContents.executeJavaScript(
       'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))'
     )
+    /*
+     * 再显式要一次重绘。为什么需要：trashtoast 那张图实测**DOM 里有通知条、
+     * elementFromPoint 也命中它，但截图里没有** —— 窗口不在前台时合成器可能停在
+     * 上一帧（等 rAF 只保证脚本侧排过队，不保证真的出帧）。
+     * invalidate() 只影响画面、不改布局，对所有状态都安全。
+     */
+    win.webContents.invalidate()
     await wait(220)
     const outPath = join(outDir, name)
     await mkdir(dirname(outPath), { recursive: true })
@@ -597,6 +1070,17 @@ async function main() {
     console.log('✓ 视觉矩阵通过（溢出与关键元素都正常）')
   }
   console.log(`截图目录：${outDir}`)
+  /*
+   * 结尾把静音掉的那类日志汇总一行。
+   * 为什么不干脆丢掉：那些 handler 缺失是**故意**的（见 muteMissingHandlerNoise 注释），
+   * 但它也能解释“某块界面没数据”—— 得留个可查的痕迹。
+   */
+  const noise = missingHandlerSummary()
+  if (noise) {
+    console.log(
+      `预期内：截图脚本未注册 ${noise.names.length} 个数据型 IPC，Electron 报了 ${noise.total} 条「No handler registered」，已静音`
+    )
+  }
   app.exit(failures.length === 0 && Math.abs(cnWidth - 15) < 0.01 ? 0 : 1)
 }
 

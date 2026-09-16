@@ -14,8 +14,9 @@
  */
 ;(async () => {
   const out = []
-  const ok = (c, s) => {
-    out.push((c ? '  ✓ ' : '  ✗ ') + s)
+  /* 第三个参数是诊断值（几何/计数）：失败时看得到具体数，成功时也留痕 */
+  const ok = (c, s, extra) => {
+    out.push((c ? '  ✓ ' : '  ✗ ') + s + (extra ? '  ' + extra : ''))
     return !!c
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -136,6 +137,132 @@
   ok(qa('.trow.open').length === 0, '没有自动展开的工具行')
   const g3 = q('.tgroup')
   ok(!!g3 && !g3.classList.contains('open'), '全新的折叠组默认保持收起')
+
+  /* ---- 4. 展开长输出：不抢焦点、不跳动、不引入第二条滚动条（N03）---- */
+  out.push('')
+  out.push('=== 4. 展开长输出（几何与焦点）===')
+  /*
+   * 这一段是 N03 剩下的验收：长输出 / 并行工具 / 历史消息 / 滚动阅读下，
+   * 展开工具详情不能抢焦点、不能让对话跳位、不能冒出第二个滚动条。
+   *
+   * 注入合成回合而不是真跑模型：这里验的是**渲染规则**，
+   * 长输出只要够长（超过终端窗口高度）就够了。
+   */
+  const longOutput = Array.from({ length: 400 }, (_, i) => 'line ' + String(i + 1).padStart(3, '0') + ' 中文输出测试').join('\n')
+  await inject(
+    [
+      tool('t-long', 'ok', 'cat big.log', { output: longOutput }),
+      tool('t-short', 'ok', 'echo short')
+    ],
+    undefined,
+    '-long'
+  )
+  await sleep(250)
+  /* 组默认收起 → 先展开组，再展开其中一行 */
+  click(q('.tgroup-head'))
+  await sleep(250)
+  const rowsLong = qa('.tgroup-body .trow')
+  ok(rowsLong.length === 2, '组里两条已结束的工具行都在', String(rowsLong.length))
+  const longRow = rowsLong[0]
+  const shortRow = rowsLong[1]
+  const listBefore = q('.stream')
+  const scrollBefore = listBefore?.scrollTop ?? 0
+  const topBefore = longRow?.getBoundingClientRect().top ?? 0
+  const focusBefore = document.activeElement
+  /* 用真实点击（行头按钮），并让焦点先落在它身上 —— 这样"抢焦点"才是可测的 */
+  const head = longRow?.querySelector('.trow-head') ?? longRow
+  head?.focus?.()
+  const focusedNow = document.activeElement
+  click(head)
+  const opened = await until(() => longRow?.classList.contains('open'))
+  ok(opened, '点击后这一行展开（长输出）')
+
+  /* ① 不抢焦点：焦点仍在行头，没有被搬进详情里 */
+  ok(
+    document.activeElement === focusedNow || document.activeElement === head,
+    '展开不抢焦点（焦点仍在行头）',
+    document.activeElement?.className ?? String(document.activeElement?.tagName)
+  )
+  /* ② 不跳动：这一行的顶部位置与展开前一致（对话没有滚走） */
+  const topAfter = longRow?.getBoundingClientRect().top ?? 0
+  const scrollAfter = listBefore?.scrollTop ?? 0
+  ok(
+    Math.abs(topAfter - topBefore) <= 2,
+    '展开后这一行没有跳位',
+    `top ${Math.round(topBefore)} → ${Math.round(topAfter)}`
+  )
+  ok(Math.abs(scrollAfter - scrollBefore) <= 2, '对话滚动位置没有被改动', `${scrollBefore} → ${scrollAfter}`)
+  /* ③ 长输出真的完整渲染（不是截断成几行） */
+  const body = longRow?.querySelector('.term') ?? longRow
+  const bodyText = body?.textContent ?? ''
+  ok(/line 400/.test(bodyText), '长输出的结尾在 DOM 里（没有按行数截断）')
+  /*
+   * ④ 不出现第二条滚动条：详情内部可以有一个可滚区域（终端窗口本身就是滚动的），
+   *    但不许"可滚里面再套一个可滚" —— 那才是用户说的第二条滚动条。
+   */
+  const scrollables = [...(body?.querySelectorAll('*') ?? [])].filter((el) => {
+    const cs = getComputedStyle(el)
+    return /auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 2
+  })
+  const nested = scrollables.filter((el) => scrollables.some((other) => other !== el && other.contains(el)))
+  ok(nested.length === 0, '详情里没有"滚动套滚动"', `可滚元素 ${scrollables.length} 个，嵌套 ${nested.length} 个`)
+  const canScroll = scrollables.some((el) => {
+    el.scrollTop = 10
+    const moved = el.scrollTop > 0
+    el.scrollTop = 0
+    return moved
+  })
+  ok(scrollables.length === 0 || canScroll, '详情内部真的能滚动阅读长输出')
+  /* ⑤ 并行工具：展开第二条不影响第一条的展开状态 */
+  click(shortRow?.querySelector('.trow-head') ?? shortRow)
+  await sleep(250)
+  ok(longRow?.classList.contains('open'), '展开另一条时，第一条仍然展开（互不影响）')
+  ok(shortRow?.classList.contains('open'), '刚点的那条也展开了')
+  /* 收回去，别把展开态留给后面的断言 */
+  click(shortRow?.querySelector('.trow-head') ?? shortRow)
+  click(head)
+  await sleep(250)
+  ok(qa('.trow.open').length === 0, '两条都收回去了')
+
+  /* ---- 5. 历史消息里的工具行：滚动阅读后展开仍然不跳位 ---- */
+  out.push('')
+  out.push('=== 5. 历史消息（滚上去再展开）===')
+  const turn = (n) => ({
+    user: { id: 'u-hist' + n, role: 'user', text: '第 ' + n + ' 轮：跑个命令' },
+    assistant: {
+      id: 'a-hist' + n,
+      role: 'assistant',
+      text: '第 ' + n + ' 轮结束。',
+      toolCalls: [tool('h' + n, 'ok', 'echo hist' + n)]
+    }
+  })
+  const turns = [1, 2, 3, 4, 5, 6].map(turn)
+  store.setState({
+    messages: turns.flatMap((t) => [t.user, t.assistant]),
+    streamingId: undefined
+  })
+  await sleep(400)
+  const list = q('.stream')
+  if (list) list.scrollTop = 0
+  await sleep(300)
+  const histRows = qa('.trow')
+  ok(histRows.length >= 6, '多轮历史都渲染出了工具行', String(histRows.length))
+  const firstHist = histRows[0]
+  const histTopBefore = firstHist?.getBoundingClientRect().top ?? 0
+  const histScrollBefore = list?.scrollTop ?? 0
+  click(firstHist?.querySelector('.trow-head') ?? firstHist)
+  const histOpened = await until(() => firstHist?.classList.contains('open'))
+  ok(histOpened, '历史里的工具行能展开')
+  ok(
+    Math.abs((firstHist?.getBoundingClientRect().top ?? 0) - histTopBefore) <= 2,
+    '滚到顶部后展开历史行也不跳位',
+    `top ${Math.round(histTopBefore)} → ${Math.round(firstHist?.getBoundingClientRect().top ?? 0)}`
+  )
+  ok(
+    Math.abs((list?.scrollTop ?? 0) - histScrollBefore) <= 2,
+    '展开历史行没有改变对话滚动位置',
+    `${histScrollBefore} → ${list?.scrollTop ?? 0}`
+  )
 
   return out.join('\n')
 })()

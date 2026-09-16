@@ -21,10 +21,21 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem } from './queue-items'
+import { clearStaleRunning, EMPTY_COMPACTION_STATE, reduceCompaction, type CompactionState } from './compaction'
+import { activeContextPolicy } from './context-policy'
+import {
+  contextBudget,
+  contextPolicyStep,
+  INITIAL_POLICY_STATE,
+  type ContextPolicyState,
+  type ContextTrigger
+} from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
+import { readSessionMessages } from './session-reader'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
+import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import {
   capabilitySnapshot,
@@ -35,6 +46,9 @@ import {
 } from '../shared/model-capabilities'
 import type {
   BashRun,
+  ContextBudget,
+  ContextPolicy,
+  ContextPolicyView,
   CustomEntry,
   ForkPoint,
   MainPush,
@@ -87,11 +101,11 @@ export class AgentController extends EventEmitter {
   private browserExtension?: string
   private questionExtension?: string
   private responseDetailExtension?: string
+  /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
+  private languageExtension?: string
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
   private browserEnv?: NodeJS.ProcessEnv
-  /** 追加系统提示（--append-system-prompt），见构造函数注释 */
-  private appendSystemPrompt?: string
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
 
@@ -156,6 +170,35 @@ export class AgentController extends EventEmitter {
   private pushedOut = new Map<string, number>()
 
   private state: SessionState | null = null
+  /**
+   * 压缩的可观测状态（N21-2）。
+   *
+   * 为什么与 `state` 分开存：`setStateFrom` 每次都用 pi 的 get_state **整份重建**
+   * `this.state`（这条路上已经踩过 D11 —— 档位被每条推送清空），所以压缩记录
+   * 必须活在这之外，否则一收到 state 推送就归零。
+   */
+  private compactionState: CompactionState = EMPTY_COMPACTION_STATE
+  /**
+   * 上下文策略状态（N21-3）：上膛标记 + 上次策略压缩的时间（冷却）。
+   * 与 compactionState 一样活在 `state` 重建之外，否则每条 state 推送都会把它冲掉。
+   */
+  private policyState: ContextPolicyState = INITIAL_POLICY_STATE
+  /**
+   * 砚刚刚为哪条线发起了压缩。
+   *
+   * 为什么需要：pi 对砚发起的 `compact()` 一律报 `reason: 'manual'`，
+   * 界面上会写成「手动」——用户明明没点那个按钮。发起方只有砚自己知道，
+   * 所以在这里记一笔，等压缩事件到达时盖到那条记录上（见 setCompaction）。
+   *
+   * 为什么要带 `baseline`：`compaction_start` / `compaction_end` 的到达顺序、
+   * 以及 `get_state` 的自愈都可能让“正在压缩”那条临时记录消失（实测：成功的
+   * 那次压缩没有可用的开始记录，只有结束记录）。所以不能只靠开始事件盖章，
+   * 而要能认出**哪条结束记录是本次调用产生的** —— 用“上一条记录的 endedAt”
+   * 当基准就够了。
+   */
+  private policyOrigin: { stage: ContextTrigger; baseline: number | null } | null = null
+  /** 正在走策略触发流程（防止两次 stats 刷新同时判定过线） */
+  private policyTriggering = false
   private uiSeen = new Set<string>()
   /**
    * 正在等用户回答的扩展请求（N12）。
@@ -182,16 +225,18 @@ export class AgentController extends EventEmitter {
     questionExtension?: string
     /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
     responseDetailExtension?: string
+    /**
+     * 界面语言扩展：在 before_agent_start 里读 desktop.json，每轮注入
+     * 一句「推理与回复用什么语言」。
+     *
+     * 为什么不做成 `--append-system-prompt`：那是**进程启动时**固定的，
+     * 切语言就必须重建 pi 实例（会掐掉后台会话、界面还会短暂失去当前会话
+     * 的历史）。扩展注入是每轮读设置，切语言下一轮生效。
+     */
+    languageExtension?: string
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
     browserEnv?: NodeJS.ProcessEnv
-    /**
-     * 追加到 pi 系统提示末尾的一段文本（--append-system-prompt）。
-     * 目前用于「推理/回复跟随界面语言」——pi 只在启动时读它。
-     * 语言切换不强制重启正在运行的实例；主进程会把新提示交给之后
-     * 创建或应用重启后的实例，保留当前回合的连续性。
-     */
-    appendSystemPrompt?: string
   }) {
     super()
     const emit = opts.push
@@ -203,9 +248,9 @@ export class AgentController extends EventEmitter {
     this.browserExtension = opts.browserExtension
     this.questionExtension = opts.questionExtension
     this.responseDetailExtension = opts.responseDetailExtension
+    this.languageExtension = opts.languageExtension
     this.getResponseDetail = opts.getResponseDetail
     this.browserEnv = opts.browserEnv
-    this.appendSystemPrompt = opts.appendSystemPrompt
   }
 
   get running(): boolean {
@@ -278,14 +323,14 @@ export class AgentController extends EventEmitter {
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         // 回复详细程度（简洁 / 标准 / 详细）：standard 档不注入任何东西
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
+        // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
+        ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
         /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
          * 避免每次跑真实场景都需要选定/付费；个别场景（如发图）可在 CASES 里覆盖。
          */
         ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : []),
-        // 追加系统提示（目前是「推理/回复跟随界面语言」）
-        ...(this.appendSystemPrompt ? ['--append-system-prompt', this.appendSystemPrompt] : []),
         // 只在测试隔离时接管会话目录。
         // 平时不传 —— 传了 pi 就不再按 cwd 建项目子目录，
         // 会把新会话平铺到根目录，与用户已有会话分居两处。
@@ -358,14 +403,32 @@ export class AgentController extends EventEmitter {
 
   /** 拉一次全量：消息 + 状态 + 统计 + 任务 */
   private async hydrate(): Promise<void> {
-    const [msgs, state, stats] = await Promise.all([
-      this.rpc!.command('get_messages').catch(() => null),
-      this.rpc!.command('get_state').catch(() => null),
-      this.rpc!.command('get_session_stats').catch(() => null)
-    ])
+    /*
+     * 先要 `get_state`：下面读文件需要知道当前会话文件（也先把运行时身份
+     * 对齐，再推消息快照）。
+     */
+    const state = await this.rpc!.command('get_state').catch(() => null)
+    if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
+    const sessionFile = this.state?.sessionFile
 
-    const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
-    this.messages = Array.isArray(raw) ? normalizeHistory(raw) : []
+    /*
+     * 历史来源：**磁盘上的完整历史优先**。
+     *
+     * pi 的 `get_messages` 只给「当前上下文」—— 压缩过的会话在界面上就只剩
+     * 压缩后那一段（实测：磁盘 858 条 → 界面 86 条，首条用户消息也不在了）。
+     * 界面上的「会话历史」应当与用户能看到的会话文件一致，所以这里直接用它；
+     * `get_messages` 只在读不到文件时兜底（刚建、还没落盘的新会话）。
+     * 这也是切换会话时 peek（同样走文件）与 sync 一致的原因 —— 不再先铺全量、
+     * 再被权威快照压短（用户报的「切换会话历史丢失」）。
+     */
+    const fromFile = sessionFile ? await readSessionMessages(sessionFile).catch(() => null) : null
+    if (fromFile?.messages.length) {
+      this.messages = fromFile.messages
+    } else {
+      const msgs = await this.rpc!.command('get_messages').catch(() => null)
+      const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
+      this.messages = Array.isArray(raw) ? normalizeHistory(raw) : []
+    }
 
     /*
      * 全量替换了消息列表 → 工具索引必须跟着重建。
@@ -382,9 +445,8 @@ export class AgentController extends EventEmitter {
       this.registerCall(call, this.streaming?.id)
     }
 
-    /* 先让运行时身份看到新的 sessionId，再推消息快照。 */
-    if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
     this.push({ ch: 'sync', payload: this.messages })
+    const stats = await this.rpc!.command('get_session_stats').catch(() => null)
     if (stats?.success) this.push({ ch: 'stats', payload: this.statsForCurrentModel(stats.data as SessionStats) })
 
     // 任务清单（扩展写的 custom entry）
@@ -443,8 +505,41 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  /**
+   * 当前有效的上下文策略与工作集预算（N21-3，**唯一来源**）。
+   *
+   * 为什么把「界面用的数」与「做决定用的数」算在一处：它们必须是同一个数。
+   * 这一块已经出过两次「界面数字 ≠ 实际生效值」的错（D21 项目级设置被忽略、
+   * D22 用户级设置读错文件），不能再让渲染端自己再算一遍。
+   *
+   * 总开关就是那个已有的「自动压缩」开关（pi 的 `compaction.enabled`）：
+   * 它关掉时砚也不自作主张地压 —— 用户关的就是“别自动动我的上下文”。
+   * 注意 pi 自己那条自动压缩线仍然在（砚不写 pi 的设置文件），
+   * 所以这个开关的语义仍然是“pi 要不要自动压缩”，只是多了一个更早的砚决策点。
+   */
+  private effectivePolicy(): { policy: ContextPolicy; budget: ContextBudget | null } {
+    const base = activeContextPolicy()
+    const policy: ContextPolicy =
+      base.enabled && this.state?.autoCompactionEnabled !== false ? base : { ...base, enabled: false }
+    return { policy, budget: contextBudget(this.state?.model?.contextWindow ?? 0, policy) }
+  }
+
+  /** 推给界面的策略视图（窗口未知或策略关时为 undefined —— 界面退回物理窗口视角） */
+  private contextPolicyView(): ContextPolicyView | undefined {
+    const { policy, budget } = this.effectivePolicy()
+    if (!policy.enabled || !budget) return undefined
+    return { enabled: true, kinds: policy.kinds, budget }
+  }
+
   private setStateFrom(data: Record<string, unknown>): void {
     const model = normalizeModelInfo(data.model)
+    /*
+     * 压缩记录的自愈（见 clearStaleRunning）：pi 说「没在压缩」时，
+     * 残留的 running 记录必须清掉 —— 否则 `compaction_end` 一旦没到，
+     * 界面就永久显示“正在压缩”（与 D19 同一类 bug）。
+     * 注意在构造 this.state **之前**做，否则这一帧推出去的还是旧记录。
+     */
+    this.compactionState = clearStaleRunning(this.compactionState, !!data.isCompacting)
     /*
      * 档位不能只看本条快照：pi 的 get_state 不含 availableThinkingLevels，
      * 权威结果由 listThinkingLevels() 写入（详见 resolveThinkingLevels 注释）。
@@ -483,6 +578,8 @@ export class AgentController extends EventEmitter {
        */
       isAgentRunning: this.agentRunning,
       isCompacting: !!data.isCompacting,
+      compaction: this.compactionState.running ?? undefined,
+      lastCompaction: this.compactionState.last ?? undefined,
       messageCount: Number(data.messageCount ?? 0),
       pendingMessageCount: Number(data.pendingMessageCount ?? 0),
       cwd: this.cwd,
@@ -491,7 +588,48 @@ export class AgentController extends EventEmitter {
       steeringMode: normalizeQueueMode(data.steeringMode),
       followUpMode: normalizeQueueMode(data.followUpMode)
     }
+    /*
+     * 工作集视图要在 `this.state` 落定**之后**算：它依赖本帧刚到的
+     * `autoCompactionEnabled` 与模型窗口。
+     */
+    const policyView = this.contextPolicyView()
+    if (policyView) this.state = { ...this.state, contextPolicy: policyView }
     this.push({ ch: 'state', payload: this.state })
+  }
+
+  /**
+   * 一次上下文策略判定（N21-3）。
+   *
+   * 触发时机只有一处：**回合结束**（`agent_settled` → `refreshStats({ allowPolicyTrigger: true })`）。
+   * 两个理由：① 不在流式输出或工具执行的中途动上下文 —— 那会把正在写的回合从中间截断；
+   * ② 也不能跟着“任何一次用量刷新”跑 —— 切到一个很大的旧会话也会刷新用量，
+   * 那会变成“用户只是想看一眼，却被按头压了一次”（实测踩过，见 refreshStats 的注释）。
+   *
+   * 命中的两条线都是砚自己的：工作集上限（`compact`）与物理兜底（`emergency`，
+   * 取 `min(90% 窗口, 窗口 − 输出预留)` —— 兜底不能吃掉留给回答的空间，见方案 §12.1）。
+   * pi 原生那条 `窗口 − reserveTokens` 自动压缩**保持不动**，两者都失灵时由它兜底。
+   */
+  private async evaluateContextPolicy(tokens: number | null): Promise<void> {
+    const { policy, budget } = this.effectivePolicy()
+    const busy =
+      !!this.state?.isStreaming || !!this.state?.isCompacting || !!this.state?.isAgentRunning
+    const decided = contextPolicyStep({ state: this.policyState, tokens, budget, policy, busy })
+    this.policyState = decided.state
+    if (!decided.trigger || this.policyTriggering) return
+
+    this.policyTriggering = true
+    /* 基准＝调用之前已有的最后一条记录：用来认出“这次调用产生的那条” */
+    this.policyOrigin = { stage: decided.trigger, baseline: this.compactionState.last?.endedAt ?? null }
+    try {
+      const res = await this.compact({ fromPolicy: decided.trigger })
+      if (!res.ok) {
+        /* 连请求都没发出去（RPC 挂了）：清掉来源标记，别把下一次压缩误标成策略发起 */
+        this.policyOrigin = null
+        console.error('[agent] 工作集压缩失败：', res.error)
+      }
+    } finally {
+      this.policyTriggering = false
+    }
   }
 
   /* ---------------------------------------------------------------- 事件 */
@@ -752,7 +890,8 @@ export class AgentController extends EventEmitter {
         this.markStreaming(false)
         this.setAgentRunning(false)
         void this.refreshState()
-        void this.refreshStats()
+        /* 回合结束是唯一允许按工作集动手的时机（这次刷新顺带做判定） */
+        void this.refreshStats({ allowPolicyTrigger: true })
         // 兑底：扩展也可能通过 /panel task 命令改任务（不经过工具调用）
         void this.refreshTodos()
         // 每轮结束都重算标题（用户要求每次都是新生成的）
@@ -794,11 +933,18 @@ export class AgentController extends EventEmitter {
       }
 
       case 'compaction_start':
+        this.setCompaction(this.compactionState, evt)
+        /*
+         * 顺序很重要：先落状态再 refreshState。
+         * 只要 pi 的 `isCompacting` 为 true，`clearStaleRunning` 就不会把
+         * 刚写进去的 running 记录当成残留清掉（自愈见 setStateFrom）。
+         */
         this.markStreaming(true)
         void this.refreshState()
         break
 
       case 'compaction_end':
+        this.setCompaction(this.compactionState, evt)
         this.markStreaming(false)
         void this.refreshState()
         void this.refreshStats()
@@ -1085,6 +1231,44 @@ export class AgentController extends EventEmitter {
     if (!this.state) return
     if (this.state.isStreaming === v) return
     this.state = { ...this.state, isStreaming: v }
+    this.push({ ch: 'state', payload: this.state })
+  }
+
+  /**
+   * 压缩事件 → 状态 → 渲染端（N21-2）。
+   *
+   * 归一化（含“结束了但没有 status 字段”的兼容）全在 `main/compaction.ts`，
+   * 这里只负责落盘与推送 —— 事件不是压缩类时 `reduceCompaction` 返回 null，
+   * 这时**不要**推状态（state 推送很贵，而且没必要让界面重画）。
+   */
+  private setCompaction(cur: CompactionState, evt: Record<string, unknown>): void {
+    let next = reduceCompaction(cur, evt)
+    if (!next) return
+    /*
+     * 补上真正的发起方（N21-3）。两个判据都要，这是关键：
+     *   · `running` 新出现 → 本次调用开的那一次，盖它；
+     *   · `last` 是新对象且 `endedAt` 不同于基准 → 本次调用产生的结束记录，盖它。
+     * 第二条不能省：实测成功的压缩只有结束记录（“正在压缩”已被
+     * `isCompacting=false` 的自愈清掉），只盖 running 会丢章。
+     * 也不能只看 last：开始事件到达时 last 还是**上一次**的结果，盖它就是撒谎。
+     */
+    const origin = this.policyOrigin
+    if (origin) {
+      const stamp = { triggeredBy: 'policy' as const, policyStage: origin.stage }
+      const started = !!next.running && next.running !== cur.running
+      const ended = !!next.last && next.last !== cur.last && next.last.endedAt !== origin.baseline
+      if (started) next = { ...next, running: { ...next.running!, ...stamp } }
+      else if (ended) next = { ...next, last: { ...next.last!, ...stamp } }
+      /* 本次调用已经落定（成功或失败都算）：来源标记不再属于下一笔 */
+      if (ended && !next.running) this.policyOrigin = null
+    }
+    this.compactionState = next
+    if (!this.state) return
+    this.state = {
+      ...this.state,
+      compaction: next.running ?? undefined,
+      lastCompaction: next.last ?? undefined
+    }
     this.push({ ch: 'state', payload: this.state })
   }
 
@@ -1604,6 +1788,14 @@ export class AgentController extends EventEmitter {
       this.pendingUi.clear()
       this.setAgentRunning(false)
       this.resetQueue()
+      /*
+       * 压缩记录是**本次运行**的事实，换会话就作废：留着会把它挂到另一个会话
+       * 头上（A 的「阈值触发 · 已完成」出现在 B 的详情里）。
+       */
+      this.compactionState = EMPTY_COMPACTION_STATE
+      /* 上膛/冷却同样是本次运行的状态：换会话后按新会话的用量重新判定 */
+      this.policyState = INITIAL_POLICY_STATE
+      this.policyOrigin = null
       this.suppressPush = false
       await this.hydrate()
       return { ok: true }
@@ -1624,6 +1816,10 @@ export class AgentController extends EventEmitter {
       this.pendingUi.clear()
       this.setAgentRunning(false)
       this.resetQueue()
+      /* 同上：压缩记录不跨会话 */
+      this.compactionState = EMPTY_COMPACTION_STATE
+      this.policyState = INITIAL_POLICY_STATE
+      this.policyOrigin = null
       this.suppressPush = false
       await this.hydrate()
       return { ok: true }
@@ -1654,9 +1850,21 @@ export class AgentController extends EventEmitter {
     const sessionId = this.state?.sessionId
     if (!sessionId) return { ok: false, error: '当前还没有可重生成标题的会话' }
     if (this.titleTried.has(sessionId)) return { ok: false, error: '标题正在生成，请稍候' }
-    const manual = await manualTitleOf(sessionId)
-    const title = await this.maybeGenerateTitle({ force: true, candidate: !!manual })
-    return title ? { ok: true, title } : { ok: false, error: '标题生成失败，已保留原标题' }
+    /*
+     * **同步**占位，不能等到 maybeGenerateTitle 里再加：下面查手动名是异步的，
+     * 两个并发调用会在那个 await 窗口里**同时**通过上面的 has 检查，各自跑一次
+     * 归纳请求。实测第二次通常拿到空结果 → 用户看到「标题生成失败，已保留原标题」，
+     * 而第一次的候选其实已经出来了（N11 探针第 3 节就是守这个）。
+     * 这里占位、finally 释放；maybeGenerateTitle 用 lockHeld 跳过它自己的加锁。
+     */
+    this.titleTried.add(sessionId)
+    try {
+      const manual = await manualTitleOf(sessionId)
+      const title = await this.maybeGenerateTitle({ force: true, candidate: !!manual, lockHeld: true })
+      return title ? { ok: true, title } : { ok: false, error: '标题生成失败，已保留原标题' }
+    } finally {
+      this.titleTried.delete(sessionId)
+    }
   }
 
   async fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }> {
@@ -1690,7 +1898,12 @@ export class AgentController extends EventEmitter {
     return { ok: true, path: res.data?.path }
   }
 
-  async compact(): Promise<{ ok: boolean; error?: string }> {
+  async compact(opts: { fromPolicy?: ContextTrigger } = {}): Promise<{ ok: boolean; error?: string }> {
+    /*
+     * 用户手动压缩要把来源标记清掉 —— 否则上一次策略触发留下的标记
+     * 会把他自己点的那次标成「工作集」。
+     */
+    if (!opts.fromPolicy) this.policyOrigin = null
     const res = await this.rpc!.command('compact')
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
@@ -1889,12 +2102,24 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
-  async refreshStats(): Promise<SessionStats | null> {
+  async refreshStats(opts: { allowPolicyTrigger?: boolean } = {}): Promise<SessionStats | null> {
     try {
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
         const stats = this.statsForCurrentModel(res.data)
         this.push({ ch: 'stats', payload: stats })
+        /*
+         * 工作集判定**只允许在回合结束那条路上跑**（见 evaluateContextPolicy）。
+         *
+         * 为什么不能用“每次刷新用量”当触发点：切到（或只是读一下）一个很大的旧会话
+         * 也会刷新用量 —— 实测那个会话已经 276k tokens（超过 262k 窗口），
+         * 于是切过去的瞬间就发起压缩、实例变“忙”，紧接着「新对话」被拒
+         * （同一 cwd 已有运行中的会话）。用户只是想看一眼那个会话，不该被动刀。
+         */
+        if (opts.allowPolicyTrigger) {
+          const tokens = stats.contextUsage?.tokens
+          void this.evaluateContextPolicy(typeof tokens === 'number' ? tokens : null)
+        }
         return stats
       }
     } catch {
@@ -1919,32 +2144,30 @@ export class AgentController extends EventEmitter {
    * 为什么用独立进程：见 src/main/title.ts —— 复用主会话会污染对话、
    * 还会让 prompt cache 全部失效（那个代价比一次请求贵得多）。
    */
-  private async maybeGenerateTitle(opts: { force?: boolean; candidate?: boolean } = {}): Promise<string | null> {
+  private async maybeGenerateTitle(
+    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean } = {}
+  ): Promise<string | null> {
     const st = this.state
     if (!st) return null
-    if (this.titleTried.has(st.sessionId)) return null
+    /* lockHeld：调用方（regenerateTitle）已经在 await 之前占好位，别再判一次 */
+    if (!opts.lockHeld && this.titleTried.has(st.sessionId)) return null
 
     const users = this.messages.filter(
       (m) => m.role === 'user' && (m.text.trim() || m.images?.length)
     )
     if (users.length === 0) return null
 
-    // 样本：第一句 + 最近一句。只给第一句的话，
-    // 一个聊到第四轮的会话标题会一直停在第一句的话题上。
-    // 纯图片消息没有文字：用占位符，否则 samples 为空 → 标题永远生成不出来
-    // （用户报的「首条消息带图就没标题」）。
-    const sampleOf = (m: UIMessage): string =>
-      m.text.trim() || (m.images?.length ? `[图片 ×${m.images.length}]` : '')
-    const samples = [sampleOf(users[0]), sampleOf(users[users.length - 1])].filter(Boolean)
+    /*
+     * 样本 = 第一句 + 最近一句（纯逻辑在 shared/title-samples.ts，
+     * 与「从 JSONL 里读」的那条路径共用同一套规则）。
+     * 纯图片消息用占位符，否则 samples 为空 → 标题永远生成不出来
+     *（用户报的「首条消息带图就没标题」）。
+     */
+    const samples = titleSamples(users)
+    /* 首条消息的图片一并交给归纳进程 —— 模型能看着图起标题（最多一张：短请求别塞太多图） */
+    const titleImages = titleSampleImages(users)
 
-    // 首条消息的图片一并交给归纳进程 —— 模型能看着图起标题。
-    // 只带 1 张：标题生成是个短请求，塞太多图又慢又贵。
-    const titleImages = users[0].images?.slice(0, 1).map((im) => ({
-      data: im.data,
-      mimeType: im.mimeType
-    }))
-
-    this.titleTried.add(st.sessionId)
+    if (!opts.lockHeld) this.titleTried.add(st.sessionId)
     const sessionId = st.sessionId
 
     try {
@@ -1978,7 +2201,7 @@ export class AgentController extends EventEmitter {
       console.error('[agent] 标题生成失败：', e)
       return null
     } finally {
-      this.titleTried.delete(sessionId)
+      if (!opts.lockHeld) this.titleTried.delete(sessionId)
     }
   }
 

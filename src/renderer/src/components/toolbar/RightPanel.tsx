@@ -4,6 +4,14 @@ import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
+import {
+  compactionRunningText,
+  compactionSummary,
+  compactionTokensText,
+  compactionTone
+} from '../../state/compaction-view'
+import { CONTEXT_STAGES, contextStageLabel, contextStageTip, nextContextStageText } from '../../state/context-view'
+import { nextContextStage } from '../../../../shared/context-policy'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import { HandleProvider } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
@@ -837,9 +845,29 @@ function ContextSection() {
    */
   const known = statsMatchModel && typeof cu?.tokens === 'number'
   const used = known ? (cu?.tokens as number) : 0
-  const pct = known ? (cu?.percent ?? (used && win ? (used / win) * 100 : 0)) : 0
+  /*
+   * 工作集视角（N21-3）：策略生效时主值就是**砚真正用来判断的那条线**，
+   * 而不是物理窗口 —— 1M 模型上写「3%」会让用户以为还早得很，
+   * 而砚在 240k 就会动手。预算由主进程随会话状态推送（同一个对象，不重算）。
+   */
+  const policy = session?.contextPolicy
+  const workingSet = policy && policy.budget.workingSet > 0 ? policy.budget.workingSet : 0
+  const workingSetMode = workingSet > 0
+  const limit = workingSetMode ? workingSet : win
+  const pct = known
+    ? workingSetMode
+      ? (used / workingSet) * 100
+      : (cu?.percent ?? (used && win ? (used / win) * 100 : 0))
+    : 0
   const tone = pct >= 95 ? 'err' : pct >= 85 ? 'warn' : 'ok'
   const cost = [...messages].reverse().find((m) => m.role === 'assistant' && m.usage)?.usage?.cost ?? 0
+
+  /* 压缩的可观测状态（N21-2）：进行中的原因 + 已结束的最近一次，都来自主进程的 RPC 事件归一化 */
+  const compaction = session?.compaction
+  const lastCompaction = session?.lastCompaction
+
+  /* 工作集刻度的下一步（N21-3）：只预报**真的会执行**的阶段 */
+  const nextStage = policy ? nextContextStage(known ? used : null, policy.budget, policy.kinds) : null
 
   const nf = new Intl.NumberFormat('en-US')
 
@@ -885,26 +913,59 @@ function ContextSection() {
        * 下面只跟一条细进度条。阈值/保留量/预留 token 全部收进「详情」——
        * 它们平时不改变用户要做的事，却占着右栏最贵的位置。
        */}
-      <div className="rp-ctx-main">
+      <div className="rp-ctx-main" data-testid="ctx-main" data-mode={workingSetMode ? 'working-set' : 'window'}>
         <span className="rp-k">{t('rp.context')}</span>
         <span className={`rp-v big ${known ? tone : ''}`}>{known ? `${pct.toFixed(0)}%` : '—'}</span>
         <span className="spacer" />
         <span className="rp-u" data-testid="ctx-tokens">
-          {known ? `${fmtK(used)} / ${fmtK(win)}` : '—'}
+          {known ? `${fmtK(used)} / ${fmtK(limit)}` : '—'}
         </span>
       </div>
 
-      <div className={`rp-meter ${known ? tone : 'unknown'}`} title={known ? t('ctx.tip', {
-        used: nf.format(used),
-        win: nf.format(win),
-        pct: pct.toFixed(1)
-      }) : t('ctx.afterCompact')}>
+      <div
+        className={`rp-meter ${known ? tone : 'unknown'}`}
+        title={
+          known
+            ? workingSetMode
+              ? t('ctx.tipWorkingSet', {
+                  used: nf.format(used),
+                  cap: nf.format(workingSet),
+                  pct: pct.toFixed(1),
+                  win: nf.format(policy?.budget.contextWindow ?? win)
+                })
+              : t('ctx.tip', { used: nf.format(used), win: nf.format(win), pct: pct.toFixed(1) })
+            : t('ctx.afterCompact')
+        }
+      >
         <i style={{ width: `${Math.min(100, pct)}%` }} />
-        {/*
-         * 自动压缩的触发线画在进度条上，而不只写一个数字 ——
-         * 用户真正想知道的是「离那条线还有多远」，那就把线画出来。
-         */}
-        {compact?.enabled && thresholdPct > 0 && thresholdPct < 100 ? (
+        {workingSetMode ? (
+          /*
+           * 工作集刻度（N21-3）：三条线都在同一个尺度上（工作集 × 70/85/100%），
+           * 但它们**不是同一回事** —— 只有压缩现在真的会触发，
+           * 清理 / 折叠要等阶段 4 的上下文扩展。所以未接管的画成虚线，
+           * 并把“什么时候才会真的发生”放进 title（不上色、不装成生效了）。
+           */
+          CONTEXT_STAGES.map((kind) => {
+            const at = kind === 'tool-sweep' ? policy!.budget.triggers.sweep : kind === 'episode-fold' ? policy!.budget.triggers.fold : policy!.budget.triggers.compact
+            const active = policy!.kinds.includes(kind)
+            const left = Math.max(0, Math.min(100, workingSet > 0 ? (at / workingSet) * 100 : 0))
+            return (
+              <b
+                key={kind}
+                className={`rp-stage ${active ? 'active' : 'planned'}`}
+                data-testid="ctx-stage-mark"
+                data-kind={kind}
+                data-active={active ? '1' : '0'}
+                style={{ left: `${left}%` }}
+                title={contextStageTip(t, kind, { at, ratio: left / 100, active })}
+              />
+            )
+          })
+        ) : compact?.enabled && thresholdPct > 0 && thresholdPct < 100 ? (
+          /*
+           * 物理窗口视角：自动压缩的触发线画在进度条上，而不只写一个数字 ——
+           * 用户真正想知道的是「离那条线还有多远」，那就把线画出来。
+           */
           <b
             className="rp-threshold"
             data-testid="ctx-threshold-mark"
@@ -915,12 +976,51 @@ function ContextSection() {
       </div>
 
       {/*
+        工作集模式下的「下一步」（N21-3）：只预报真的会执行的那个阶段。
+        已过线时改说“已达工作集上限” —— 站在线上还报“约 240k 时”是废话。
+      */}
+      {workingSetMode && nextStage ? (
+        <div className={nextStage.reached ? 'rp-dim warn' : 'rp-dim'} data-testid="ctx-next-stage" data-kind={nextStage.kind} data-reached={nextStage.reached ? '1' : '0'}>
+          {nextContextStageText(t, nextStage)}
+        </div>
+      ) : null}
+
+      {/* 阶段图例：名字 + 是否已接管（虚线 = 阶段 4 前不会触发） */}
+      {workingSetMode ? (
+        <div className="rp-stages" data-testid="ctx-stages" title={t('ctx.stagesTip')}>
+          {CONTEXT_STAGES.map((kind) => {
+            const active = policy!.kinds.includes(kind)
+            return (
+              <span
+                key={kind}
+                className={`rp-stage-chip ${active ? 'on' : 'planned'}`}
+                data-testid="ctx-stage-chip"
+                data-kind={kind}
+                data-active={active ? '1' : '0'}
+                /* 说明也挂在格子上：用户是看着这三个词问“它们是干什么的” */
+                title={contextStageTip(t, kind, {
+                  at: kind === 'tool-sweep' ? policy!.budget.triggers.sweep : kind === 'episode-fold' ? policy!.budget.triggers.fold : policy!.budget.triggers.compact,
+                  ratio: kind === 'tool-sweep' ? 0.7 : kind === 'episode-fold' ? 0.85 : 1,
+                  active
+                })}
+              >
+                {contextStageLabel(t, kind)}
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {/*
         自动压缩的触发点**只在进度条上画一条记号**（用户要求）：
         「不要显示自动压缩还差多少多少多少，在进度条上有记号即可」。
         记号右边还有一行说明 —— 但只在**已经过线**时才出现
         （那时它是警告，不是冗余信息）。
+
+        工作集模式下这条不渲染：那条线是 pi 自己的（已经远在工作集之上），
+        而「已达工作集上限」那行上面已经说过了 —— 两行同时出现只是噪声。
       */}
-      {compact?.enabled && untilCompact <= 0 ? (
+      {!workingSetMode && compact?.enabled && untilCompact <= 0 ? (
         <div className="rp-dim err" data-testid="ctx-compaction">
           {t('ctx.atCompact')}
         </div>
@@ -946,20 +1046,32 @@ function ContextSection() {
           <span className="rp-now-spin" aria-hidden>
             <Spinner />
           </span>
-          <span>{t('status.compacting')}</span>
+          {/*
+           * 「压缩中 · 已达阈值」（N21-2）：只说“正在压缩”回答不了用户当下最想知道的
+           * —— 为什么突然在压缩？原因来自 pi 的 `compaction_start.reason`。
+           * 拿不到原因时退回短的 `status.compacting`，不编一个原因。
+           */}
+          <span data-testid="ctx-compacting-reason">
+            {compactionRunningText(t, compaction)}
+          </span>
         </div>
       ) : null}
 
       {/*
-       * 自动压缩的开关与手动入口（阶段 1 归位）。
-       *
-       * 它属于「上下文」本身，所以紧跟进度条与状态提示 —— 之前它排在
-       * 「详情」折叠区下面，视觉上像第二个工具（用户报的问题）。
-       * 标签改用 ctx.* 域，与这一块其余文案同一命名空间。
-       */}
-      <div className="rp-kv" data-testid="rp-context-actions">
+        自动压缩的开关与手动入口（阶段 1 归位）。
+
+        它属于「上下文」本身，所以紧跟进度条与状态提示 —— 之前它排在
+        「详情」折叠区下面，视觉上像第二个工具（用户报的问题）。
+        标签改用 ctx.* 域，与这一块其余文案同一命名空间。
+
+        `rp-ctx-actions`：这一行里混了**按钮**与纯文本，不能沿用 `.rp-kv` 的
+        `align-items: baseline`（24px 的按钮与 17px 的文字会错位，窄栏下按钮
+        还会折成两行 —— 用户截图里的「压缩上/下文」）。见 tools.css 里的说明。
+      */}
+      <div className="rp-kv rp-ctx-actions" data-testid="rp-context-actions">
         <span className="rp-k">{t('ctx.autoCompact')}</span>
-        <span className="spacer" />
+        {/* 不用 .spacer：在这个窄行里它自己要吃掉两个 gap（16px），
+            而这十几 px 正是按钮文字够不够用的临界值 —— 改用 CSS 的 margin-left:auto */}
         <button
           className={`switch-pill ${session?.autoCompactionEnabled !== false ? 'on' : ''}`}
           role="switch"
@@ -974,6 +1086,7 @@ function ContextSection() {
           className="btn"
           data-testid="rp-compact-now"
           disabled={!!session?.isStreaming || !!session?.isCompacting}
+          title={t('status.compact')}
           onClick={() => void compactNow()}
         >
           <Icon name={session?.isCompacting ? 'refresh' : 'layers'} size={12} className={session?.isCompacting ? 'spin' : undefined} />
@@ -1001,15 +1114,62 @@ function ContextSection() {
       {detailsOpen ? (
         <div className="rp-details" data-testid="ctx-details">
           <div className="rp-group">{t('ctx.groupCapacity')}</div>
+          {workingSetMode ? (
+            <>
+              {/*
+                工作集的三个数（N21-3）：上限定下来之后，用户才能把「为什么 240k」
+                算清楚。它们与砚内部用的是同一份预算（主进程随状态推送），
+                不是渲染端照公式再算一遂的副本。
+                ⚠️ 「工作集预留」与 pi 自己的「为回答预留」是两个数：前者进工作集
+                公式，后者（reserveTokens）只决定 pi 那条原生触发线。标签必须
+                分开写 —— 同一个面板里同名不同值是 D21 那类误解的温床。
+              */}
+              <div className="rp-kv" data-testid="ctx-working-set">
+                <span className="rp-k">{t('ctx.workingSet')}</span>
+                <span className="spacer" />
+                <span className="rp-v" title={t('ctx.workingSetTip')}>
+                  {nf.format(workingSet)}
+                </span>
+              </div>
+              <div className="rp-kv" data-testid="ctx-reserve-computed">
+                <span className="rp-k">{t('ctx.reserveWorkingSet')}</span>
+                <span className="spacer" />
+                <span className="rp-v">{nf.format(policy!.budget.responseReserve)}</span>
+              </div>
+              <div className="rp-kv" data-testid="ctx-safety-margin">
+                <span className="rp-k">{t('ctx.safetyMargin')}</span>
+                <span className="spacer" />
+                <span className="rp-v">{nf.format(policy!.budget.safetyMargin)}</span>
+              </div>
+            </>
+          ) : null}
           <div className="rp-kv">
             <span className="rp-k">{t('ctx.window')}</span>
             <span className="spacer" />
             <span className="rp-v">{win ? nf.format(win) : '—'}</span>
           </div>
+          {workingSetMode ? (
+            <div className="rp-kv" data-testid="ctx-emergency">
+              <span className="rp-k">{t('ctx.emergency')}</span>
+              <span className="spacer" />
+              <span
+                className="rp-v"
+                title={t('ctx.emergencyTip', { pct: Math.round((policy!.budget.emergency / policy!.budget.contextWindow) * 100) })}
+              >
+                {nf.format(policy!.budget.emergency)}
+              </span>
+            </div>
+          ) : null}
           <div className="rp-kv">
-            <span className="rp-k">{t('ctx.threshold')}</span>
+            {/* 工作集模式下这条线是 pi 自己的（作为兜底保留） */}
+            <span className="rp-k">{workingSetMode ? t('ctx.thresholdPi') : t('ctx.threshold')}</span>
             <span className="spacer" />
-            <span className="rp-v">{compact ? nf.format(compact.threshold) : '—'}</span>
+            <span
+              className="rp-v"
+              title={compact ? t('ctx.scopeTip', { scope: t(compact.scope === 'project' ? 'ctx.scopeProject' : 'ctx.scopeGlobal') }) : undefined}
+            >
+              {compact ? nf.format(compact.threshold) : '—'}
+            </span>
           </div>
           <div className="rp-kv">
             <span className="rp-k">{t('ctx.keep')}</span>
@@ -1017,16 +1177,71 @@ function ContextSection() {
             <span className="rp-v">{compact ? nf.format(compact.keepRecentTokens) : '—'}</span>
           </div>
           <div className="rp-kv">
-            <span className="rp-k">{t('ctx.reserve')}</span>
+            {/* 工作集模式下这个名字要与上面的「工作集预留」区分开 */}
+            <span className="rp-k">{workingSetMode ? t('ctx.reservePi') : t('ctx.reserve')}</span>
             <span className="spacer" />
             <span className="rp-v">{compact ? nf.format(compact.reserveTokens) : '—'}</span>
           </div>
+          {/*
+            项目里配了压缩参数、pi 却不会读它（D21）：
+            不说的话，用户改的是 `.pi/settings.json`，看到的却是一条永远对不上的
+            触发线 —— 而 “界面数字与实际生效值不符” 正是这一块最不能容忍的错。
+            完整解释放 `title`，面板里只留一句短的。
+          */}
+          {compact?.projectIgnored ? (
+            <div className="rp-dim warn" data-testid="ctx-project-ignored" title={t('ctx.projectIgnoredTip')}>
+              {t('ctx.projectIgnored')}
+            </div>
+          ) : null}
           <div className="rp-group">{t('ctx.groupSpend')}</div>
           <div className="rp-kv" data-testid="ctx-cost">
             <span className="rp-k">{t('rp.spent')}</span>
             <span className="spacer" />
             <span className="rp-v">${cost.toFixed(4)}</span>
           </div>
+          {/*
+            最近一次压缩（N21-2）。
+
+            为什么放在「详情」而不是主视区：它不是用户每轮都要看的数，
+            但“上下文突然变短了”时是唯一能解释原因的地方（什么时候压的、为什么）。
+
+            为什么没有记录时**整行不渲染**：从磁盘打开的历史会话可能早就压缩过，
+            而砚现在不读会话文件里的 compaction 条目 —— 写「未发生过」会是假陈述。
+          */}
+          {lastCompaction ? (
+            <>
+              <div
+                className="rp-kv"
+                data-testid="ctx-last-compaction"
+                title={t('ctx.lastCompactionTip')}
+              >
+                <span className="rp-k">{t('ctx.lastCompaction')}</span>
+                <span className="spacer" />
+                <span className={`rp-v ${lastCompaction.status === 'completed' ? '' : compactionTone(lastCompaction)}`}>
+                  {compactionSummary(t, lastCompaction)}
+                </span>
+              </div>
+              {/* 「1.6k → 160」：上下文到底短了多少（pi 不报就不显示） */}
+              {compactionTokensText(lastCompaction) ? (
+                <div className="rp-dim" data-testid="ctx-last-compaction-tokens">
+                  {compactionTokensText(lastCompaction)}
+                </div>
+              ) : null}
+              {/*
+               * 失败/被跳过时**必须**有话说：pi 的原文（英文）原样透传，
+               * 不翻译也不吞（约定：pi 内置错误一律原样透传）。
+               */}
+              {lastCompaction.error ? (
+                <div className="rp-dim err" data-testid="ctx-last-compaction-error">
+                  {lastCompaction.error}
+                </div>
+              ) : lastCompaction.status === 'declined' ? (
+                <div className="rp-dim" data-testid="ctx-last-compaction-note">
+                  {t('ctx.declinedTip')}
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
     </Section>

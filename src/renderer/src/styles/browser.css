@@ -61,22 +61,27 @@
   color: var(--fg-dim);
 }
 
+/*
+ * 权限 / 拦截明细：整行占位、竖向堆叠。
+ * 每行是「主文本 · 原因 · 来自谁」+（权限行才有的）允许/撤销按钮。
+ * 窄右栏下要能换行读完整：这是用户唯一的判断依据（显示不出来 = 静默拦截）。
+ */
 .browser-permission-list {
-  flex: 0 1 520px;
+  flex: 1 1 100%;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 4px;
   min-width: 0;
-  overflow-x: auto;
 }
 
 .browser-permission-row {
   flex: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 360px;
-  padding: 2px 4px;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 6px;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -87,12 +92,11 @@
 }
 
 .browser-permission-meta {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--fg-dim);
+  /* 窄栏下宁可换行也不要省略：原因与发起方是判断依据，截掉等于没说 */
+  overflow-wrap: anywhere;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -160,17 +164,27 @@
   display: inline-flex;
 }
 
-/* 展开的「⋯」操作行：占第 3 行（与状态行同一个位置） */
+/*
+ * 展开的「⋯」操作行：占第 3 行（与状态行同一个位置）。
+ *
+ * 它是**占位的一行**（不能做浮动下拉：原生网页视图永远盖在渲染层之上，
+ * 浮层伸到网页区域就会被遮住），但可以**换行**。
+ * 2026-09-16 改成可换行 + 明细整行占位：以前是单行横向 `overflow-x: auto`，
+ * 右栏只有 ~280px 时权限/拦截明细被挤到滚动区外，界面上看就是“什么都没记录”，
+ * 而那恰好是用户判断“页面为什么打不开”的依据。
+ */
 .browser-actions {
   grid-row: 3;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
   padding: 3px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
-  overflow-x: auto;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .browser-action {

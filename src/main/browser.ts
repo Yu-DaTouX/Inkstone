@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type {
+  BrowserBlockedRequest,
   BrowserBounds,
   BrowserObservation,
   BrowserPermissionRecord,
@@ -47,7 +48,8 @@ import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
-import { isPrivateAddress, resolvesToPrivateAddress } from './browser/network-policy'
+import { resolvesToPrivateAddress } from './browser/network-policy'
+import { decideRequestBoundary } from './browser/network-boundary'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -68,30 +70,11 @@ function safeUrl(raw: unknown): string | null {
   }
 }
 
-/** 私有 / 本地地址（用于「本地预览边界」） */
-function isPrivateHost(hostname: string): boolean {
-  const h = hostname.toLowerCase()
-  return (
-    isPrivateAddress(h) ||
-    h === 'localhost' ||
-    h === '0.0.0.0' ||
-    h === '[::1]' ||
-    h.endsWith('.localhost') ||
-    /^127\./.test(h) ||
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-  )
-}
-
-/** 发起方本身是不是本地页面 */
-function isLoopbackOrigin(value: string): boolean {
-  try {
-    return isPrivateHost(new URL(value).hostname)
-  } catch {
-    return false
-  }
-}
+/*
+ * 网络边界判定（`isPrivateHost` / `isLoopbackOrigin` / `decideRequestBoundary`）
+ * 住在 `browser/network-boundary.ts` —— 纯函数，有单测；这里只负责把判定结果
+ * 落成「放行 / 拦下并记账 / 再解析一次」。
+ */
 
 /**
  * 权限只按 origin 判断，不把页面路径/查询参数当成权限范围。
@@ -125,7 +108,17 @@ interface BrowserTab {
   registry: ElementRegistry
   observer: Observer
   input: InputController
+  /** 界面用的状态（`url` 会在导航发起时乐观写入，见 `open()`） */
   state: BrowserTabState
+  /**
+   * **已提交**的文档地址（`did-navigate` 才更新）。
+   *
+   * 为什么要跟 `state.url` 分开：网络边界判定要看“谁在发这个请求”，
+   * 而 `state.url` 是导航一开始就写进去的**期望值** —— 拿它判发起方，
+   * 目标地址会被当成发起方自己，判定直接失效（2026-09-16 实测：
+   * 远程页面 → 127.0.0.1 的顶层导航因此没被拦住）。
+   */
+  committedUrl: string
 }
 
 /**
@@ -184,10 +177,25 @@ export class BrowserController {
    * 被拒了什么，否则遇到“摄像头点了没反应”只能猜。
    */
   private permissionLog: BrowserPermissionRecord[] = []
+  /**
+   * 被网络边界拦下的请求（本地预览 / DNS 重绑定）。
+   *
+   * 拦截是静默发生的（请求直接 cancel），所以不给记录的话，用户只会看到
+   * “这个页面就是打不开”。只留主机名与原因，不带路径/查询参数/页面内容。
+   */
+  private blockedRequests: BrowserBlockedRequest[] = []
   /** 逐站权限是临时的：进程退出即清空，不写入设置或浏览器 profile。 */
   private readonly permissionGrants = new Set<string>()
   /** DNS 只短暂缓存，避免每个图片/字体请求都重复解析而留下长窗口。 */
   private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
+  /**
+   * 我们自己（用户敲地址栏 / agent 调 `browser_open`）正在发起的顶层导航。
+   *
+   * 有什么用：内网地址的顶层导航放不放行，取决于“是用户/agent 明确要求，
+   * 还是远程页面想借道”—— 后者在 `details` 里没有 initiator 字段，
+   * 只能靠“这次导航是不是我们发起的”来区分（见 onBeforeRequest 的注释）。
+   */
+  private pendingMainFrameUrl: string | null = null
   /** 外部 Chrome 目标；可与内嵌标签同时存在 */
   private external: ExternalTarget | null = null
   private activeMode: 'embedded' | 'external' = 'embedded'
@@ -200,7 +208,8 @@ export class BrowserController {
     return tabId.startsWith('chrome:') ? tabId.slice('chrome:'.length) : null
   }
   /** 外部 Chrome 下载：guid → 文件名（downloadWillBegin 先到，进度事件用 guid 关联） */
-  private readonly externalDownloadNames = new Map<string, string>()
+  /** 外部 Chrome 下载：guid → 建议文件名 + 源 URL（来源要能显示给用户） */
+  private readonly externalDownloads = new Map<string, { filename: string; url: string }>()
   private state: BrowserState = {
     open: false,
     url: '',
@@ -262,6 +271,7 @@ export class BrowserController {
       userControl: this.userControl,
       lastDownload: this.lastDownload,
       permissions: this.permissionLog,
+      blockedRequests: this.blockedRequests,
       nativeBounds: this.nativeBounds,
       mode: ext ? 'external' : 'embedded',
       external: ext
@@ -318,7 +328,8 @@ export class BrowserController {
       registry,
       observer: new Observer(cdp, registry),
       input: new InputController(cdp),
-      state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
+      state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
+      committedUrl: ''
     }
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
@@ -326,12 +337,15 @@ export class BrowserController {
     })
     view.webContents.on('did-stop-loading', () => {
       tab.state.loading = false
+      this.pendingMainFrameUrl = null
       this.syncTabNavigation(tab)
       tab.registry.clear()
       this.updateState()
     })
     view.webContents.on('did-navigate', (_event, url) => {
       tab.state.url = url
+      tab.committedUrl = url
+      this.pendingMainFrameUrl = null
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -339,6 +353,7 @@ export class BrowserController {
     })
     view.webContents.on('did-navigate-in-page', (_event, url) => {
       tab.state.url = url
+      tab.committedUrl = url
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -351,6 +366,12 @@ export class BrowserController {
     view.webContents.on('render-process-gone', () => {
       tab.state.loading = false
       tab.registry.clear()
+      this.updateState()
+    })
+    /* 导航失败（含被网络边界拦住）也要把在途标记清掉，别让它留到下一次导航 */
+    view.webContents.on('did-fail-load', () => {
+      this.pendingMainFrameUrl = null
+      tab.state.loading = false
       this.updateState()
     })
     view.webContents.setWindowOpenHandler(({ url }) => {
@@ -411,13 +432,26 @@ export class BrowserController {
        *
        * 编码场景需要 localhost 预览（dev server），但**远程页面**没理由
        * 去访问用户机器上的本地服务（那是一个常见的探测/攻击路径）。
-       * 所以：目标是本地/私有地址时，只允许由本地页面发起。
+       *
+       * 三条策略（2026-09-16 改成显式判定，见 `pendingMainFrameUrl`）：
+       *
+       *   ① 地址本身就是内网（127/8、RFC1918、::1 …）
+       *      · 由**用户/agent 明确要求**的顶层导航 → 放行（这就是本地预览）；
+       *      · 其余（页面自己发起的导航、子资源、XHR）→ 拦。
+       *   ② 地址看着像公网域名、解析后却落在内网（DNS 重绑定）→ **一律拦**，
+       *      连我们自己发起的导航也不放行 —— 那时用户以为自己在开一个外部地址，
+       *      而 agent 可能只是被页面上的一句话诱导，真放行等于给它一个
+       *       “读本机服务”的原语。
+       *
+       * 为什么不用 `state.url` 判发起方：它是导航发起时就写进去的**期望值**，
+       * 判定会变成拿目标地址跟自己比，于是远程页面 → 127.0.0.1 的顶层导航
+       * 反而被放过（现已由 `committedUrl` + `pendingMainFrameUrl` 取代）。
        *
        * ⚠️ 已知局限（如实写在代码里，不假装完备）：
-       *   · 拿不到 initiator 的请求一律放行 —— 宁可少拦，也不把正常
-       *     图片/字体请求误杀；
-       *   · 这里拦的是导航与子资源请求，DNS 重绑定这类攻击面需要
-       *     在更底层（网络栈）处理，不在本次范围。
+       *   · 拿不到已提交文档（新标签第一次导航）时一律放行 —— 宁可少拦，
+       *     也不把正常请求误杀；
+       *   · 判定用 Node 的解析器，而真正发请求的是 Chromium。正常配置下两者
+       *     看到同一份 DNS，但它不是网络栈级别的隔离（彻底封住需要单独代理）。
        */
       ses.webRequest.onBeforeRequest((details, callback) => {
         let target: URL
@@ -427,20 +461,24 @@ export class BrowserController {
           callback({})
           return
         }
-        /*
-         * 发起方看**顶层页面**的 URL（Electron 的 details 里没有 initiator；
-         * Chrome 扩展那套 API 字段在这里不存在）。
-         * 拿不到顶层 URL 时放行 —— 宁可少拦，也不误杀正常请求。
-         */
         const owner = [...this.tabs.values()].find(
           (t) => t.view.webContents.id === details.webContentsId
         )
-        const topUrl = owner?.state.url ?? ''
-        if (!topUrl || isLoopbackOrigin(topUrl)) {
+        /* 发起方 = **已提交**的文档；拿不到已提交文档时判定会放行（宁可少拦） */
+        const initiator = owner?.committedUrl ?? ''
+        const decision = decideRequestBoundary({
+          targetHost: target.hostname,
+          initiatorUrl: initiator,
+          resourceType: details.resourceType,
+          requestedByUs:
+            details.resourceType === 'mainFrame' && this.pendingMainFrameUrl === details.url
+        })
+        if (decision === 'allow') {
           callback({})
           return
         }
-        if (isPrivateHost(target.hostname)) {
+        if (decision === 'block-private') {
+          this.recordBlockedRequest(target.hostname, 'private-host', initiator)
           callback({ cancel: true })
           return
         }
@@ -448,9 +486,15 @@ export class BrowserController {
          * URL 仍然是公网域名时也不能直接放过：域名可能在解析后切到
          * 127/8、RFC1918、IPv6 ULA 或 link-local。每个短缓存周期重新查，
          * 把 DNS rebinding 的目标挡在 Chromium 请求真正发出之前。
+         *
+         * 这一支**不看 `requestedByUs`**：地址看着是外部、实际落到内网，
+         * 放行等于给 agent 一个「读本机服务」的原语（详见函数注释）。
          */
         void this.resolvesToPrivateTarget(target.hostname)
-          .then((privateTarget) => callback(privateTarget ? { cancel: true } : {}))
+          .then((privateTarget) => {
+            if (privateTarget) this.recordBlockedRequest(target.hostname, 'dns-rebind', initiator)
+            callback(privateTarget ? { cancel: true } : {})
+          })
           .catch(() => callback({}))
       })
     }
@@ -514,6 +558,8 @@ export class BrowserController {
       tab.state.url = next
       tab.state.title = ''
       tab.state.loading = true
+      /* 明确记下“这次导航是我们发起的”，供网络边界判定区分用户/页面发起 */
+      this.pendingMainFrameUrl = next
       this.updateState()
       await tab.view.webContents.loadURL(next)
     }
@@ -542,6 +588,8 @@ export class BrowserController {
     for (const candidate of this.tabs.values()) candidate.view.setVisible(candidate.id === tab.id)
     tab.state.url = url
     tab.state.loading = true
+    /* 同 `open()`：这是**我们**（用户/agent）发起的顶层导航 */
+    this.pendingMainFrameUrl = url
     this.updateState()
     await tab.view.webContents.loadURL(url)
     this.syncTabNavigation(tab)
@@ -795,18 +843,26 @@ export class BrowserController {
     cdp.on('Browser.downloadWillBegin', (params) => {
       const guid = String(params.guid ?? '')
       const name = String(params.suggestedFilename ?? '')
-      if (guid && name) this.externalDownloadNames.set(guid, name)
+      /*
+       * `url` 是发起下载的地址 —— 存下来才能在界面上显示来源。
+       * 以前只记文件名，于是外部 Chrome 的下载在界面上是个“无来源文件”，
+       * 用户无从判断它来自哪个网站（内置浏览器的下载则是带来源的）。
+       */
+      const url = String(params.url ?? '')
+      if (guid && name) this.externalDownloads.set(guid, { filename: name, url })
     })
     cdp.on('Browser.downloadProgress', (params) => {
       if (String(params.state ?? '') !== 'completed') return
       const guid = String(params.guid ?? '')
-      const filename = this.externalDownloadNames.get(guid) ?? `download-${Date.now()}`
-      this.externalDownloadNames.delete(guid)
+      const begun = this.externalDownloads.get(guid)
+      const filename = begun?.filename ?? `download-${Date.now()}`
+      this.externalDownloads.delete(guid)
       const size = Number(params.receivedBytes ?? 0)
       this.lastDownload = {
         path: join(directory, filename),
         filename,
-        size: Number.isFinite(size) && size > 0 ? size : undefined
+        size: Number.isFinite(size) && size > 0 ? size : undefined,
+        source: begun?.url || undefined
       }
       this.updateState()
     })
@@ -1142,6 +1198,39 @@ export class BrowserController {
     if (index >= 0) this.permissionLog[index] = next
     else this.permissionLog.push(next)
     if (this.permissionLog.length > 40) this.permissionLog.splice(0, this.permissionLog.length - 40)
+  }
+
+  /**
+   * 记下一次被网络边界拦下的请求。
+   *
+   * 去重规则：同一「目标主机 + 原因」只留一条，`count` 累加、`from` 更新为
+   * 最近一次发起方 —— 一个页面往往会在同一 host 上撞好几次
+   *（导航 + favicon + 子资源），逐条堆叠只会把列表冲成一堵墙。
+   */
+  private recordBlockedRequest(
+    rawHost: string,
+    reason: BrowserBlockedRequest['reason'],
+    fromUrl: string
+  ): void {
+    const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    if (!host) return
+    let from = ''
+    try {
+      from = new URL(fromUrl).hostname
+    } catch {
+      from = ''
+    }
+    const index = this.blockedRequests.findIndex((item) => item.host === host && item.reason === reason)
+    if (index >= 0) {
+      const previous = this.blockedRequests[index]
+      this.blockedRequests[index] = { ...previous, from, at: Date.now(), count: previous.count + 1 }
+    } else {
+      this.blockedRequests.push({ host, reason, from, at: Date.now(), count: 1 })
+    }
+    if (this.blockedRequests.length > 20) {
+      this.blockedRequests.splice(0, this.blockedRequests.length - 20)
+    }
+    this.updateState()
   }
 
   private async resolvesToPrivateTarget(hostname: string): Promise<boolean> {

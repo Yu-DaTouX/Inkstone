@@ -244,6 +244,14 @@ interface Store {
    * 用途：界面上可以提示「正在同步…」，也用于避免旧的 pi sync 覆盖新会话。
    */
   peekedPath: string | null
+  /**
+   * peek 的是哪条会话（稳定 id）。
+   *
+   * 为什么需要它：sync 带着 `runtime.sessionId`，而**上一条会话**的 sync
+   * 可能晚到。只比对路径没法识别它，必须按会话 id 认人 —— 否则晚到的旧 sync
+   * 会把刚点开的会话内容整个盖掉（用户报的「切换会话时历史丢失」，D38）。
+   */
+  peekedSessionId: string | null
   /** 直读时被截断/丢弃的内容统计（null = 没有截断） */
   peekNote: { truncated: number; total: number } | null
 
@@ -485,14 +493,43 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   return projection
 }
 
+/**
+ * 从缓存里找一条运行时快照。
+ *
+ * ⚠️ `run:${runId}` 这条兜底路径必须校对**会话身份**：一个运行实例会被复用到
+ *   别的会话（N12 的空闲实例复用），实例 id 不变而会话已经换了 —— 拿旧会话的
+ *   缓存投影上去，会把刚铺好的新会话内容整段覆盖掉（用户报的「切换会话历史
+ *   丢失」，D38）。没有目标 sessionId 时才允许只按实例找（启动早期那个窗口）。
+ */
 function findRuntimeSnapshot(
   map: SessionRuntimeMap,
   sessionId?: string,
   runId?: string
 ): SessionRuntimeSnapshot | undefined {
   if (sessionId && map[sessionId]) return map[sessionId]
-  if (runId) return map[`run:${runId}`]
+  if (runId) {
+    const byRun = map[`run:${runId}`]
+    if (byRun && (!sessionId || byRun.runtime.sessionId === sessionId)) return byRun
+  }
   return undefined
+}
+
+/** 当前视图看向哪条会话：优先「待确认的 peek」，否则用已确认的会话状态。 */
+function viewingSessionId(s: Store): string | undefined {
+  return s.peekedSessionId ?? s.session?.sessionId ?? undefined
+}
+
+/**
+ * 缓存投影是否可用于当前视图。
+ *
+ * 缓存是**按会话**存的：如果它不是正在看的那条会话（实例刚被复用到新会话、
+ * 或切换还没完成），投影上去就会把眼前的内容换成上一条会话的（常见是空的）——
+ * 用户报的「切换会话历史丢失」就是这条路（D38）。
+ */
+function snapshotForView(s: Store, snapshot?: SessionRuntimeSnapshot): SessionRuntimeSnapshot | undefined {
+  if (!snapshot) return undefined
+  const viewing = viewingSessionId(s)
+  return !viewing || snapshot.runtime.sessionId === viewing ? snapshot : undefined
 }
 
 
@@ -721,6 +758,7 @@ export const useStore = create<Store>((rawSet, get) => {
   title: null,
   attachments: [],
   peekedPath: null,
+  peekedSessionId: null,
   peekNote: null,
 
   /* ------------------------------------------------------------- 初始化 */
@@ -836,17 +874,21 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     switch (m.ch) {
-      case 'sync':
+      case 'sync': {
         /*
          * pi 推来的权威版本。
          *
-         * ⚠️ 但它可能**比当前显示的会话旧**：用户点了一个大会话
-         *   （我们先铺了文件内容），还没等 pi 切完又点了另一个。
-         *   这时前一个的 sync 会晚到，把新会话的内容盖掉。
-         *   所以带 sessionFile 的那条新协议要校验一下。
+         * ⚠️ 先认人：它可能**属于别的会话**。用户点开一个会话（我们先铺了文件
+         *   内容）还没等 pi 切完，上一个实例的 sync 就晚到了 —— 那条会把刚点开的
+         *   会话整个盖掉，用户看到的就是「切过去历史没了」。
+         *   判据是 `runtime.sessionId`（实例的运行时身份）。只在「正等着某条会话
+         *   确认」时生效：等到属于它的那条就正常收下（并清掉待确认状态）。
          */
-        set({ messages: m.payload, peekedPath: null, peekNote: null })
+        const incoming = m.runtime?.sessionId
+        if (s.peekedSessionId && incoming && incoming !== s.peekedSessionId) break
+        set({ messages: m.payload, peekedPath: null, peekedSessionId: null, peekNote: null })
         break
+      }
       case 'todos':
         set({ todos: m.payload })
         break
@@ -857,10 +899,15 @@ export const useStore = create<Store>((rawSet, get) => {
           set({ runners: m.payload, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           if (active) {
             const runtime = runtimeFromRunner(active)
-            const snapshot = findRuntimeSnapshot(
-              get().sessionRuntimes,
-              runtime.sessionId,
-              runtime.runId
+            /*
+             * ⚠️ 只投影「正在看的这条会话」的缓存。
+             *   切会话的过程中，实例当前还停在上一条会话上（或已经被复用到
+             *   新会话），拿它的缓存盖上去，眼前刚铺好的内容就变成别人的了 ——
+             *   而这条 `runners` 推送不带实例身份，上面的过滤拦不住它（D38）。
+             */
+            const snapshot = snapshotForView(
+              get(),
+              findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
             )
             if (snapshot) set(projectRuntimeSnapshot(snapshot))
           }
@@ -1349,6 +1396,12 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   switchSession: async (path) => {
+    /*
+     * 会话身份先取：下面 ② 要用它（cwd / 归属），① 的 peek 也要用它把
+     * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
+     */
+    const sum = get().sessions.find((x) => x.path === path)
+
     // ① 立即显示（不等 pi）
     try {
       const peek = await window.yan.peekSession(path)
@@ -1356,6 +1409,7 @@ export const useStore = create<Store>((rawSet, get) => {
         set({
           messages: peek.messages,
           peekedPath: path,
+          peekedSessionId: peek.sessionId ?? sum?.id ?? null,
           peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
         })
       }
@@ -1364,7 +1418,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     // ② 切视图（N12：命中运行实例就只是切换订阅，**不停任何**会话）
-    const sum = get().sessions.find((x) => x.path === path)
     const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
     const settings = get().settings
     /*
@@ -1380,7 +1433,11 @@ export const useStore = create<Store>((rawSet, get) => {
       window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd })
     )
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'), peekedPath: null })
+      set({
+        notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
+        peekedPath: null,
+        peekedSessionId: null
+      })
       return
     }
     const runId = res.runId ?? res.id
@@ -1389,9 +1446,15 @@ export const useStore = create<Store>((rawSet, get) => {
       res.sessionId ?? sum?.id,
       runId
     )
+    /*
+     * 缓存里那条快照必须**就是刚点开的这条会话**（没有它就不投影）：
+     * 实例被复用到别的会话时，缓存里的 messages 属于上一条会话，
+     * 投影上去会把 peek 刚铺好的内容换成别人的/空的（D38）。
+     */
+    const usable = snapshotForView(get(), snapshot)
     set({
-      ...(snapshot ? projectRuntimeSnapshot(snapshot) : {}),
-      queue: snapshot?.queue ?? EMPTY_QUEUE,
+      ...(usable ? projectRuntimeSnapshot(usable) : {}),
+      queue: usable?.queue ?? EMPTY_QUEUE,
       ...(runId ? { activeRunnerId: runId } : {})
     })
     void get().syncRunners()

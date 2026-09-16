@@ -214,7 +214,14 @@ export async function generateTitle(opts: {
       '--no-extensions',
       '--no-context-files',
       '--no-skills',
-      '--no-prompt-templates'
+      '--no-prompt-templates',
+      /*
+       * 测试/CI 用固定模型（与主 Agent、子代理同一套约定）：
+       * 不传的话 pi 会去读它自己的默认模型 —— 测试沙箱里没有那份设置，
+       * 于是标题永远生成不出来，而真实使用里看不出来（默认模型是有的）。
+       * 这也是 N11 真实模型验收当时跑不出标题的原因。
+       */
+      ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : [])
     ],
     // 标题生成也会单独启动 pi；和主 Agent 使用相同的数据根，避免便携版
     // 意外从 ~/.pi 读取凭证或在其中留下 pi 数据。

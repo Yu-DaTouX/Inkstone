@@ -75,9 +75,13 @@ Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供
 - **推理块默认展开但限高省略**：`--reason-max-h`（`min(32vh, 260px)`）、裁掉开头、
   `scrollTop` 贴底显示**最新**内容、顶部 mask 渐隐、「展开全部 / 收起」出口，
   **不引入第二条滚动条**。早期"不设固定高度、不用内部滚动"的方案已废止。
-- **推理语言**：不注入"必须用某语言思考"之类的额外提示；界面语言只由
-  `languageSystemPrompt()` 生成的一句 `--append-system-prompt` 约束，
-  并且永远保留模型返回的原文。
+- **推理语言**：不注入“必须用某语言思考”之外的任何语言要求；界面语言只由
+  `languageSystemPrompt()`（唯一真源在 `resources/pi-extensions/language.js`）生成的**一句**话约束，
+  交付方式见 PROJECT §2.6（`before_provider_request` 贴近用户消息 + 系统提示兜底，
+  **不再**用启动参数 `--append-system-prompt`、也不为此重建 pi 实例），
+  并且永远保留模型返回的原文。推理语言是软约束，别据此判“功能坏了”。
+- **界面历史就是会话文件**：切会话/重建实例后看到的历史以 JSONL 为准，
+  不能拿 pi 的 `get_messages`（只含当前上下文，压缩过的会话只剩尾巴）当界面历史。
 - **登录只预留**：本地档案不得显示虚假的"已登录 / 已同步"状态。
   订阅制里只有 ChatGPT（`openai-codex`）能在应用内登录，其余必须走终端。
 - 深浅主题、设置面板、模型接入 UI、Windows 打包、内置浏览器、本机 Chrome 接入

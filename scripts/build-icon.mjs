@@ -11,6 +11,7 @@
  * 不用「砚」字本身，是因为任务栏/开始菜单里最小会缩到 16px，
  * 汉字在那个尺寸会糊成一团；四角星在 16px 下仍可辨认。
  */
+import './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow, nativeImage } from 'electron'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'

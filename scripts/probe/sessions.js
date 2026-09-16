@@ -45,6 +45,7 @@
   /** 会话行对应的路径（`.srow-wrap` 上有 data-session-path，比解析 title 稳） */
   const pathOf = (el) => el?.closest('.srow-wrap')?.getAttribute('data-session-path') ?? ''
 
+  const t0 = Date.now()
   try {
     out.push('=== 0. 左栏 ===')
     /* 显式展开：不再依赖「悬停」。收起时只渲染 .rail-compact，列表是空的 */
@@ -97,6 +98,22 @@
     } else {
       skip(`pi 未就绪（conn=${conn0}），「选中态」要等 pi 回来的会话状态，无法判定`)
     }
+
+  /*
+   * ── 临时诊断（用户报「切换会话历史丢失」）──
+   * 看切换后 sync 到达时消息数会不会被打回 0，以及是谁推的。
+   */
+  const diag = []
+  const unsub = store.subscribe((s, prev) => {
+    if (s.messages !== prev.messages) {
+      diag.push(`t+${Date.now() - t0} messages=${s.messages.length} peeked=${s.peekedPath ? 'yes' : 'no'} stream=${s.session?.isStreaming ? 'on' : 'off'}`)
+    }
+  })
+  await sleep(9000)
+  unsub()
+  out.push('  [诊断] 切换后 9s 内 messages 变化：')
+  for (const line of diag.slice(0, 20)) out.push('    ' + line)
+  out.push('  [诊断] 结束时 .msg 节点数 = ' + qa('.msg').length + '，messages 长度 = ' + store.getState().messages.length)
 
     out.push('')
     out.push('=== 2. 新建会话 ===')
