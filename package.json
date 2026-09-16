@@ -38,7 +38,7 @@
     "shot": "electron scripts/shot.mjs",
     "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:unit && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions layout outline todos virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs branch topbar outlinepos narrow todonew sendkey slashcmd tools vheight panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename autonomous context queuestack logs perf deltas railsearch toolrow trash fileref linkpreview detail subagent density capabilityload modelnotready modelmenu sessionlayout runnerselect sessionrunners railtitle onboarding grouprename",
+    "check": "npm run typecheck && npm run build && npm run test:unit && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions layout outline todos virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs fsedge atpathedge projectswitch workspacechanges branch topbar outlinepos narrow todonew sendkey slashcmd tools vheight panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename autonomous context queuestack queueretract logs perf deltas railsearch toolrow trash fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename",
     "test:unit": "node scripts/test-unit.mjs",
     "audit:project": "node .audit-project.cjs",
     "audit:refs": "node .audit-deep.cjs",
@@ -57,7 +57,8 @@
     "dist:portable-fast": "npm run build && electron-builder --win zip",
     "test:packaged": "node scripts/test-packaged.mjs",
     "dist:check": "npm run dist:dir && npm run test:packaged",
-    "icon": "electron scripts/build-icon.mjs"
+    "icon": "electron scripts/build-icon.mjs",
+    "visual:matrix": "node scripts/visual-matrix-run.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

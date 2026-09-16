@@ -13,7 +13,7 @@
  *   npm run test:live -- e2e     发一条真消息（烧 token，约 $0.001）
  *   npm run test:live -- sessions 会话切换 + 新建（不烧 token）
  */
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import vm from 'node:vm'
 import {
   readFileSync,
@@ -24,8 +24,11 @@ import {
   readdirSync,
   statSync,
   copyFileSync,
-  existsSync
+  existsSync,
+  symlinkSync,
+  utimesSync
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
@@ -48,6 +51,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
  */
 const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/inclusionai/ling-3.0-flash-sante:free'
+
+/**
+ * Electron 可执行文件（直接 spawn，不经 npx）。
+ *
+ * electron 包在 Node 里 require 出来就是可执行文件路径。走 npx 会多一层
+ * cmd.exe，而 npx 自己可能先退（抢 npm 缓存锁、检查包），会把“应用还在
+ * 跑探针”误判成“应用启动失败”—— 实测踩到过一次，还留下一个无头 GUI 实例。
+ */
+const electronBin = createRequire(import.meta.url)('electron')
+
 /** 需要视觉的场景专用（Ling 是纯文本模型，发图会失败） */
 const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
@@ -98,6 +111,73 @@ const CASES = {
   },
   // 子代理：真起一个独立 pi 子进程（方案第 8 节；用免费模型）
   subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0 },
+  /*
+   * 两个并发写入子代理的真实矩阵（L03）：真起两个 pi 子进程，各自在
+   * `HEAD` 的独立 worktree 里写文件，然后走合并 / 放弃 / 冲突 / 只读
+   * 白名单 / 退出归档。会真调模型（且要求它真的写文件），所以 cost: 1。
+   *
+   * 退出归档只能在 Electron **已经退出**之后看，所以真正的断言在
+   * `afterExit`（Node 侧检查 `YAN_DIR/subagents` 与临时 worktree 目录）。
+   */
+  subagentpair: {
+    probe: 'scripts/probe/subagentpair.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 14000,
+    /* 探针要排队跑几个真实模型任务，实测 1.5-2.5 分钟（budget 是最坏兜底，
+       跑完就退出；delay 只负责把窗口和应用起起来）。 */
+    budget: 240000,
+    cost: 1,
+    /* 免费 Ling 对工具调用的服从度不稳（有时只回话不写文件），这条链路要求模型
+       真的写文件，所以用已在 image 场景使用的 deepseek-v4.1-flash。 */
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    afterExit: 'subagentArchive'
+  },
+  /*
+   * N12：真实 A/B 会话的后台生命周期。
+   *
+   * A（cwd=fixture/repo）发一个长任务跑起来，然后：
+   *   · 切到 B（不同 cwd）—— 允许，且 A **不能**被停掉；
+   *   · 切到 C（与 A 同 cwd）—— 必须明确拒绝并提示，视图不跟着走；
+   *   · 切回 A —— 内容还在，没串成 B 的；
+   *   · 单独停 A —— B 不受影响。
+   *
+   * 会话是运行时生成的合成会话（它们的 cwd 必须是 fixture 的绝对路径），
+   * 见 `writeAbSessions`；模型只用 deepseek（要它真的吐一段长文本）。
+   */
+  sessionab: {
+    probe: 'scripts/probe/sessionab.js',
+    fixture: true,
+    abSessions: true,
+    delay: 14000,
+    budget: 200000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    afterExit: 'sessionabArchive'
+  },
+  /*
+   * 渲染异常兜底（D8）：故意把 sessions 置成非法值把整棵树搞崩，
+   * 验证出现的是可读的兜底界面 + 重新加载出口（而不是整屏白）。
+   * 它必须独立成一个场景 —— boundary 接管后不会自动恢复。
+   */
+  crash: { probe: 'scripts/probe/crash.js', delay: 9000, cost: 0 },
+  /*
+   * N19 的最后一条：@ 引用真的发出去后，模型有没有拿到**文件内容**。
+   * 发一次消息（免费模型），真正的断言在退出后的会话 JSONL 里。
+   */
+  atrefsend: {
+    probe: 'scripts/probe/atrefsend.js',
+    fixture: true,
+    delay: 12000,
+    cost: 1,
+    model: 'commandcode/meituan/LongCat-2.0:free',
+    afterExit: 'atrefsendArchive'
+  },
+  /*
+   * 真实模型切换矩阵（N02）：只切模型不发消息（不花钱）。
+   * 验的是“切过去之后状态归谁”：档位跟随、快速连切不串、用量归属。
+   */
+  modelswitch: { probe: 'scripts/probe/modelswitch.js', delay: 12000, cost: 0 },
   // 界面密度三档：间距真的变、落盘、字号不变（方案 A1）
   density: { probe: 'scripts/probe/density.js', delay: 10000, cost: 0 },
   // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
@@ -171,6 +251,18 @@ const CASES = {
   tools: { probe: 'scripts/probe/tools.js', delay: 9000, cost: 0 },
   // 面板宽度拖拽（含夹取范围与键盘）
   resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
+  // 文件树边界：空目录 / 失效路径 / 多级 / 大目录分页 / 中文空格 / 同名文件 / 目录联接
+  fsedge: { probe: 'scripts/probe/fs-edge.js', delay: 11000, cost: 0, fixture: true, budget: 150000 },
+  // @ 补全边界：多级 / 大目录截断 / 同名文件 / 引号 / 句中光标 / 切项目竞态
+  atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
+  // 项目切换（N05）：视图与文件树跟着 cwd 走 / 草稿按实例隔离 / 附件绝对路径 / 失效与无权限目录的真实反馈
+  projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
+  /*
+   * shell / 第三方工具的变更归属（L05）。cost 0：走直执行 shell 通道
+   *（`window.yan.runBash`），不需要模型生成。必须在**隔离的 fixture 目录**里跑，
+   * 因为它会真的建/改/删文件。
+   */
+  workspacechanges: { probe: 'scripts/probe/workspace-changes.js', delay: 10000, cost: 0, fixture: true, fixtureSub: 'repo', budget: 180000, projectPeers: true },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
@@ -262,10 +354,149 @@ const CASES = {
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
-  queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 }
+  queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
+  // 队列撤回的失败与并发边界（N09）：撤回不存在的 id / 连点两次 / 同时两条 —— 不花 token
+  queueretract: { probe: 'scripts/probe/queue-retract.js', delay: 9000, cost: 0 },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
+
+/** 窄右栏里一定要被省略的超长文件名（fixture 与探针共用同一个名字） */
+const LONG_NAME = '一个非常长的文件名用来验证窄栏下的省略显示-0123456789-abcdefghij-中文结尾.md'
+
+/**
+ * 造「无权限目录」：用 ACL 把当前用户对目录的**读取/列举**权限显式拒绝。
+ *
+ *   `icacls <dir> /deny <user>:(RD)`
+ *
+ * 只 deny `RD`（Read Data / List Directory），**不** deny `WRITE_DAC` ——
+ * 目录属主因此随时能 `/remove:d` 复位。实测若 deny 全权限，连 `rmSync`
+ * 都会 EPERM，临时沙箱就删不掉了。
+ *
+ * Windows 上 Node 的 `readdir` 在这里报的是 **EPERM**（不是 EACCES），
+ * 主进程 `statusForError` 两者都映射到 `permission`。
+ *
+ * 失败（非 NTFS / 组策略 / 改不了 DACL）不算错误：返回 false，
+ * 探针把对应断言降级为「跳过」。
+ */
+function denyDirRead(dir, user = process.env.USERNAME) {
+  if (!user) return false
+  try {
+    execFileSync('icacls', [dir, '/deny', `${user}:(RD)`], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 复位 `denyDirRead` 写下那条 deny 项（没有该项 / 目录不存在都算成功）。 */
+function allowDirRead(dir, user = process.env.USERNAME) {
+  if (!user) return
+  try {
+    execFileSync('icacls', [dir, '/remove:d', user], { stdio: 'ignore' })
+  } catch {
+    /* 尽力而为：目录不存在或本来没有 deny 项都不影响后续 */
+  }
+}
+
+/**
+ * 造一棵内容完全确定的合成项目树，供 `fixture: true` 的场景当 cwd。
+ *
+ * 每一项都对应一条要验的边界：
+ *   `empty/`            空目录（status='empty'，界面上是「空」提示而不是空白）
+ *   `deep/a/b/c/d/e/`   多级目录（逐层展开 + 缩进递增）
+ *   `dup/one|two/same.ts` 同名文件（身份必须按完整路径区分）
+ *   `big/` 60 个文件    大目录（@ 补全 30 条截断；文件树 50 一批分页）
+ *   `uni/中文 目录/`     中文 + 空格（Windows 路径上最容易出错的一类）
+ *   `notadir.txt`       普通文件（当目录用时必须报 missing，不是空列表）
+ *   `junction-dir/file` 目录联接 / 文件链接（主进程必须跳过，不暴露成可展开路径）
+ *   `noperm/`           ACL 拒绝读取的真实无权限目录（status='permission'，不是「空」）
+ *   `<超长中文名>.md`    窄右栏下必须省略显示、但 `title` 里能给全文
+ *
+ * 链接 / ACL 创建失败（Windows 未开开发者模式、非 NTFS、无改 DACL 权限）
+ * 不影响其余断言：探针会把对应断言降级为「跳过」。
+ */
+function buildFixtureProject(base) {
+  const dir = join(base, 'fixture-project')
+  /* 上一轮的 `noperm/` 可能还带着 deny 读取的 ACL，先复位再删（否则 rmSync 报 EPERM）。 */
+  allowDirRead(join(dir, 'noperm'))
+  rmSync(dir, { recursive: true, force: true })
+  const mk = (...parts) => mkdirSync(join(dir, ...parts), { recursive: true })
+  const put = (rel, text) => writeFileSync(join(dir, rel), text, 'utf8')
+
+  mk()
+  put('README.md', '# fixture project\n\n合成项目，只用于边界场景。\n')
+  mk('empty')
+  mk('deep', 'a', 'b', 'c', 'd', 'e')
+  put(join('deep', 'a', 'b', 'c', 'd', 'e', 'f.txt'), 'deep\n')
+  mk('dup', 'one')
+  mk('dup', 'two')
+  put(join('dup', 'one', 'same.ts'), 'export const one = 1\n')
+  put(join('dup', 'two', 'same.ts'), 'export const two = 2\n')
+  mk('big')
+  for (let i = 1; i <= 60; i += 1) {
+    put(join('big', `f${String(i).padStart(3, '0')}.txt`), `${i}\n`)
+  }
+  mk('uni', '中文 目录')
+  put(join('uni', '中文 目录', '文件 名.ts'), 'export const 中文 = 1\n')
+  put('notadir.txt', 'not a directory\n')
+
+  /*
+   * 无权限目录（L02 / N19 共用的边界）：真的用 ACL 拒绝当前用户的读取权限，
+   * 而不是靠 mock。造不出来时探针跳过这条（见 `denyDirRead` 注释）。
+   */
+  mk('noperm')
+  put(join('noperm', 'secret.txt'), 'no permission\n')
+  const noPermDenied = denyDirRead(join(dir, 'noperm'))
+
+  /* 窄右栏（PANEL_MIN = 220）下必须走省略 + title 全文，所以名字要明显超宽。 */
+  put(LONG_NAME, 'long name\n')
+
+  /*
+   * 第二个工作目录（N12 的 A/B 矩阵）：运行实例只拒绝**同一** cwd 的并发，
+   * 所以「切走不停」必须要有一个不同 cwd 的会话可切。
+   */
+  mk('other')
+  put(join('other', 'README.md'), '# other cwd\n\nN12 用的第二个工作目录。\n')
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: join(dir, 'other'), stdio: 'ignore' })
+  } catch {
+    /* 不是必须的：这个目录只当 cwd 用，不建 worktree */
+  }
+
+  /*
+   * 一个最小 Git 仓库（L03 的写入型子代理要建 worktree）。
+   * `LINE-BASE` 是给「两个子代理改同一行」的冲突场景预备的固定锚点。
+   */
+  const repo = join(dir, 'repo')
+  mk('repo')
+  put(join('repo', 'README.md'), '# fixture repo\n\nLINE-BASE: 初始内容\n')
+  const gitEnv = ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test']
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'ignore' })
+    execFileSync('git', [...gitEnv, 'add', '-A'], { cwd: repo, stdio: 'ignore' })
+    execFileSync('git', [...gitEnv, 'commit', '-q', '-m', 'fixture'], { cwd: repo, stdio: 'ignore' })
+  } catch (error) {
+    throw new Error(
+      'fixture 仓库初始化失败（L03 的 worktree 场景需要 git）：' + (error instanceof Error ? error.message : String(error))
+    )
+  }
+
+  try {
+    symlinkSync(join(dir, 'deep'), join(dir, 'junction-dir'), 'junction')
+  } catch {
+    /* 没权限建链接就跳过相关断言 */
+  }
+  try {
+    symlinkSync(join(dir, 'README.md'), join(dir, 'junction-file'))
+  } catch {
+    /* 同上 */
+  }
+  if (!noPermDenied) {
+    console.log('  ⤺ 无权限目录没造成（icacls deny 失败），fsedge 会跳过那组断言')
+  }
+  return dir
+}
 
 function seedSessions(destRoot) {
   const project = '--C--Users-Test--'
@@ -486,6 +717,151 @@ function writePlainSession(dir, idBase, count) {
 }
 
 /**
+ * N12 的 A/B 会话：三个合成会话，cwd 指向 fixture 项目。
+ *
+ * 为什么要在运行时造（而不是像其他 fixture 那样写在 seedSessions 里）：
+ * 它们的 cwd 必须是 fixture 项目的**绝对路径**，而那个路径要等临时
+ * 目录建好才知道。
+ *
+ *   A（`yan-ab-a`）  cwd = fixture/repo   —— 发长任务，验证运行中
+ *   B（`yan-ab-b`）  cwd = fixture/other  —— 不同 cwd，切过去不能被拒
+ *   C（`yan-ab-c`）  cwd = fixture/repo   —— 与 A 同 cwd，用来验证拒绝
+ *
+ * 会话平铺在 sessions 根目录：隔离测试里 `YAN_SESSIONS_DIR` 被接管，
+ * pi 不再自己建项目子目录（见 `SESSIONS_DIR_IS_OVERRIDE`）。
+ */
+function writeAbSessions(root, cwdA, cwdB) {
+  const stamp = Date.now().toString(36)
+  const made = []
+  const one = (tag, cwd) => {
+    const id = `yan-ab-${tag}-${stamp}`
+    const file = join(root, `2026-01-03T00-00-00-000Z_${id}.jsonl`)
+    const lines = [
+      { type: 'session', version: 3, id, timestamp: TS(600), cwd },
+      {
+        type: 'model_change',
+        id: 'mc0',
+        parentId: null,
+        timestamp: TS(600),
+        provider: 'commandcode',
+        modelId: 'deepseek/deepseek-v4.1-flash'
+      },
+      {
+        type: 'message',
+        id: 'a0',
+        parentId: 'mc0',
+        timestamp: TS(590),
+        message: { role: 'user', content: [{ type: 'text', text: `YAN-AB-${tag.toUpperCase()} fixture 会话` }] }
+      },
+      {
+        type: 'message',
+        id: 'a1',
+        parentId: 'a0',
+        timestamp: TS(580),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: `YAN-AB-${tag.toUpperCase()}-REPLY` }],
+          usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason: 'stop'
+        }
+      }
+    ]
+    writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+    made.push({ tag, id, file, cwd })
+  }
+  one('a', cwdA)
+  one('b', cwdB)
+  one('c', cwdA)
+  return made
+}
+
+/**
+ * N05 的两个**已落盘**合成会话（cwd = fixture 项目的 A / B）。
+ *
+ * 为什么必须是落盘的会话（而不像 N12 那样现开一个 `new_session`）：
+ * 项目切换要验证的是「切回来还是原来那个会话」—— 草稿按 `sessionId` 存在运行时
+ * 缓存里，换了会话就回不来。而刚 `new_session` 出来的会话还没有消息，
+ * `listSessions` 解析不出 head、不会出现在会话列表里；空间实例又会在切走时被
+ * 回收（实测：切到 B 后 `runners` 里已经没有 A）。那种情况下没有任何东西可以
+ * 切回去，验的不是这段逻辑。落盘的会话才对齐用户的真实情形。
+ */
+function writeProjectSwitchSessions(root, cwdA, cwdB, opts = {}) {
+  const stamp = Date.now().toString(36)
+  const made = []
+  const one = (tag, cwd, skew = 0) => {
+    const id = `yan-n05-${tag}-${stamp}`
+    const file = join(root, `2026-01-04T00-00-00-000Z_${id}.jsonl`)
+    const lines = [
+      { type: 'session', version: 3, id, timestamp: TS(700 - skew), cwd },
+      {
+        type: 'model_change',
+        id: 'mc0',
+        parentId: null,
+        timestamp: TS(700 - skew),
+        provider: 'commandcode',
+        modelId: 'deepseek/deepseek-v4.1-flash'
+      },
+      {
+        type: 'message',
+        id: 'u0',
+        parentId: 'mc0',
+        timestamp: TS(690 - skew),
+        message: { role: 'user', content: [{ type: 'text', text: `YAN-N05-${tag.toUpperCase()} fixture 会话` }] }
+      },
+      {
+        type: 'message',
+        id: 'a0',
+        parentId: 'u0',
+        timestamp: TS(680 - skew),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: `YAN-N05-${tag.toUpperCase()}-REPLY` }],
+          usage: {
+            input: 5,
+            output: 5,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 10,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+          },
+          stopReason: 'stop'
+        }
+      }
+    ]
+    writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+    /*
+     * 排序键是**文件 mtime**（`sessions.ts` 用 `f.mtimeMs` 排），不是消息 timestamp。
+     * 三个文件先后写入相隔往往只有几毫秒，顺序不稳定 —— 实测就是它让 N05 的
+     * “该项目最近访问的会话”选到了 C。这里按 `skew` 显式把 mtime 拨开：
+     * skew 越大越旧（A 最新，C 最旧）。
+     */
+    const t = (Date.now() - (900 + skew) * 1000) / 1000
+    try {
+      utimesSync(file, t, t)
+    } catch {
+      /* 个别文件系统不支持改时间戳：不致命，只是排序回到不确定状态 */
+    }
+    made.push({ tag, cwd, file })
+  }
+  one('a', cwdA)
+  one('b', cwdB)
+  /*
+   * D/E：**同一个子目录里的两条会话**，只在明确要求时造（`projectPeers: true`）。
+   *
+   * 存在意义只有一个：L05 要验“同 cwd 已有实例在跑时，切换必须被拒绝”，
+   * 而那需要两条同 cwd 的已落盘会话。
+   * ⚠️ 它们**必须**在另一个目录里（`peerCwd`，实测用 fixture 里的 `repo/`）：
+   * 摆在 A 旁边会参与 N05 的“该项目最近访问的会话”挑选（曾经让
+   * `projectswitch` 选到了新造的那条，断言就挂了）。
+   */
+  if (opts.peers && opts.peerCwd) {
+    one('d', opts.peerCwd, 0)
+    one('e', opts.peerCwd, 100)
+  }
+  return made
+}
+
+/**
  * 探针脚本的语法检查。
  *
  * 它们会被当成字符串交给 `executeJavaScript`，所以语法错误不会在构建期
@@ -505,7 +881,251 @@ function checkProbeSyntax(probe) {
   }
 }
 
-function runProbe({ probe, delay, keys, env: caseEnv }, env) {
+/**
+ * 退出后的落盘检查（L03）。
+ *
+ * 子代理的合并 / 放弃 / 冲突 / 只读封堵 / 退出归档，最终都体现在
+ * `YAN_DIR/subagents/<id>.json` + `<id>.patch` 和临时 worktree 目录上。
+ * 这些必须在 Electron **已经退出**之后看才说明问题 —— 退出归档
+ * （D2）就是退出那一刻发生的事，渲染层看不到。
+ *
+ * 探针把固定标记（`YAN-ALPHA` 等）写进任务描述，这里按标记找回记录，
+ * 并顺带直接查主工作树：这才是“主树没被污染”的独立证据。
+ */
+function checkSubagentArchive(sandboxRoot, tempBefore) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dir = join(sandboxRoot, 'data', 'subagents')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')) : []
+  const records = []
+  for (const f of files) {
+    try {
+      records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')))
+    } catch {
+      /* 写了一半的文件当作记录缺失，下面会报出 */
+    }
+  }
+  lines.push(`  元数据 ${records.length} 份：${files.join(' ') || '（空）'}`)
+
+  const byMark = (mark) => records.find((r) => String(r.task ?? '').includes(mark))
+  const patchExists = (r) => !!r?.patchPath && existsSync(r.patchPath)
+
+  const expect = (mark, review, label) => {
+    const run = byMark(mark)
+    say(!!run, `找到 ${label} 记录`)
+    if (!run) return null
+    say(run.review === review, `${label} review=${run.review}（期望 ${review}）`)
+    return run
+  }
+
+  const alpha = expect('YAN-ALPHA', 'merged', 'ALPHA')
+  if (alpha) say(patchExists(alpha), 'ALPHA 的补丁留在归档目录（合并后仍可追溯）')
+  const beta = expect('YAN-BETA', 'discarded', 'BETA')
+  if (beta) say(patchExists(beta), 'BETA 的补丁留在归档目录（放弃但没丢）')
+  expect('YAN-CONFLICT-D', 'merged', 'CONFLICT-D')
+  /*
+   * CONFLICT-C 在退出前一直是未审阅的冲突，所以退出时应该被归档
+   * （review 从 conflict 变成 archived）—— 这正是“未合并差异不因退出丢掉”
+   * 的证据。若它还停在 conflict，说明退出归档没跑到。
+   */
+  const conflictC = expect('YAN-CONFLICT-C', 'archived', 'CONFLICT-C')
+  if (conflictC) say(patchExists(conflictC) || !conflictC.diff?.files, 'CONFLICT-C 的冲突补丁也归档了')
+  /*
+   * LONGRUN 是专门留给退出的：它进去先写一个文件，再到长任务里。
+   * 不管退出时它仍在跑（中断）还是刚好结束（未审阅），都该落成 archived。
+   */
+  const longrun = expect('YAN-LONGRUN', 'archived', 'LONGRUN')
+  if (longrun) say(patchExists(longrun) || !longrun.diff?.files, 'LONGRUN 的退出归档落盘')
+  expect('YAN-READONLY', 'none', 'READONLY')
+
+  /* 主工作树：合并的进来了、放弃与只读的没有 */
+  const repo = join(sandboxRoot, 'fixture-project', 'repo')
+  say(existsSync(join(repo, 'alpha.txt')), '主工作树留住了已合并的 alpha.txt')
+  say(!existsSync(join(repo, 'beta.txt')), '被放弃的 beta.txt 没有进主工作树')
+  say(!existsSync(join(repo, 'readonly-attempt.txt')), '只读子代理没能写进主工作树')
+  let readme = ''
+  try {
+    readme = readFileSync(join(repo, 'README.md'), 'utf8')
+  } catch {
+    /* 读不到也算失败，下面两条会报出来 */
+  }
+  say(readme.includes('LINE-D'), '主工作树 README 是 CONFLICT-D 的版本')
+  say(!readme.includes('LINE-C'), '冲突的 CONFLICT-C 没有被半截写入')
+
+  /* 退出后不能留下孤儿 worktree 容器 */
+  const leftovers = readdirSync(tmpdir()).filter(
+    (n) => n.startsWith('yan-subagent-') && !(tempBefore ?? new Set()).has(n)
+  )
+  for (const dir of leftovers) {
+    /* 把残留目录对回到任务标记，否则看不出是哪条链路漏了清理 */
+    const id = /^yan-subagent-(sub-[0-9a-f]+)-/.exec(dir)?.[1]
+    const owner = records.find((r) => r.id === id)
+    lines.push(`    残留 ${dir} → ${owner ? String(owner.task ?? '').slice(0, 24) + `（${owner.review}）` : '未知任务'}`)
+  }
+  say(leftovers.length === 0, `退出后没有残留的隔离目录（新增 ${leftovers.length} 个）`)
+
+  return { ok, lines }
+}
+
+/**
+ * N12 退出后的落盘检查。
+ *
+ * 这里要回答的是“后台会话真的跑过了、而且结果落进了**它自己**的会话文件”：
+ * A 的长任务回复只能出现在 A 的文件里，不能跑到 B/C 里去。
+ * 当前会话在内存里看着对，不代表落盘也对 —— 切会话正是最容易把内容
+ * 写错文件的一条路。
+ *
+ * 同时确认 A 的仓库工作树没被“数数”这种只读任务改坏（模型若真跑了写工具，
+ * README 的锚点会消失）：这是“后台会话不越界动文件”的一道侧证。
+ */
+function checkSessionabArchive(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const sessionsRoot = join(sandboxRoot, 'sessions')
+  const files = existsSync(sessionsRoot) ? readdirSync(sessionsRoot) : []
+  const fileOf = (tag) => files.find((f) => f.includes(`yan-ab-${tag}-`) && f.endsWith('.jsonl'))
+  const readMessages = (file) => {
+    const text = readFileSync(join(sessionsRoot, file), 'utf8')
+    const msgs = []
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const o = JSON.parse(line)
+        if (o.type === 'message') msgs.push(o.message)
+      } catch {
+        /* 半截行忽略 */
+      }
+    }
+    return msgs
+  }
+  const textOf = (msgs, role) =>
+    msgs
+      .filter((m) => m?.role === role)
+      .map((m) => (m.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join(''))
+      .join('\n')
+
+  const fileA = fileOf('a')
+  const fileB = fileOf('b')
+  const fileC = fileOf('c')
+  lines.push(`  A=${fileA ?? '（缺失）'}  B=${fileB ?? '（缺失）'}  C=${fileC ?? '（缺失）'}`)
+  say(!!fileA && !!fileB && !!fileC, '三个会话文件都还在')
+  if (!fileA || !fileB || !fileC) return { ok, lines }
+
+  const msgsA = readMessages(fileA)
+  const msgsB = readMessages(fileB)
+  const msgsC = readMessages(fileC)
+  const aText = textOf(msgsA, 'assistant')
+  const bText = textOf(msgsB, 'assistant')
+  const cText = textOf(msgsC, 'assistant')
+
+  lines.push(`  A 落盘：${msgsA.length} 条消息，助手正文 ${aText.length} 字`)
+  /*
+   * 不期望“长回复”：任务是个 `sleep 90`，而探针在它跑完之前就把它停了。
+   * 要证的是**后台会话真的在执行工具**——工具参数落在它自己的会话记录里，
+   * 而不是只存在于渲染层的内存里。
+   */
+  say(JSON.stringify(msgsA).includes('sleep 90'), 'A 的会话记录里有那次工具调用（真执行了）')
+  /*
+   * 模型自己那个助手回合（fixture 里本来已有一个）——被中断时不一定写出正文，
+   * 所以数条数而不是找文本。
+   */
+  say(msgsA.filter((m) => m?.role === 'assistant').length >= 2, 'A 的会话文件里多了模型自己的回合（被中断也算落盘）')
+  say(!bText.includes('YAN-AB') || bText.includes('YAN-AB-B-REPLY'), 'B 的回复属于 B（没被 A 的内容覆盖）')
+  say(cText.includes('YAN-AB-C-REPLY'), 'C 的回复原样保留（同 cwd 被拒的那次没写坏它）')
+  /*
+   * 串线的典型症状：A 的长回复被写到 B/C 的文件里。
+   * 判据用“C 的助手消息数”而不是关键字 —— 拒绝之后 C 不应该多出任何消息。
+   */
+  say(msgsC.filter((m) => m?.role === 'assistant').length === 1, 'C 只有一个助手回合（被拒后确实没动它）')
+
+  let readme = ''
+  try {
+    readme = readFileSync(join(sandboxRoot, 'fixture-project', 'repo', 'README.md'), 'utf8')
+  } catch {
+    /* 读不到下面会报 */
+  }
+  say(readme.includes('LINE-BASE'), '与 A 同 cwd 的仓库工作树没被弄坏')
+
+  return { ok, lines }
+}
+
+/**
+ * `@` 引用的真实发送（N19 最后一条）。
+ *
+ * 要证的是一件在渲染层看不到的事：**选中的文件内容到底进没进模型上下文**。
+ * pi 收到 prompt 时会把 `@路径` 展开，展开结果会落在会话 JSONL 里 ——
+ * 所以断言只能在 Electron 退出之后做（读文件）。
+ */
+function checkAtRefSend(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const sessionsRoot = join(sandboxRoot, 'sessions')
+  const files = existsSync(sessionsRoot)
+    ? readdirSync(sessionsRoot)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => ({ f, t: statSync(join(sessionsRoot, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t)
+    : []
+  say(files.length > 0, `找到了会话文件（共 ${files.length} 个）`)
+  if (!files.length) return { ok, lines }
+
+  /* 本场景新建的那个会话就是最新的一个 */
+  const file = files[0].f
+  const raw = readFileSync(join(sessionsRoot, file), 'utf8')
+  lines.push(`  最新会话 = ${file}（${raw.length} 字节）`)
+
+  /*
+   * RPC 的 prompt 只接受 message / images / streamingBehavior —— **没有文件参数**，
+   * 所以 pi 不会把 `@路径` 展开成内容（那是 CLI 参数层 `pi @file "..."` 的行为）。
+   * 砚的 @ 补全因此是“把路径写进消息”，文案也写的是“附件文件，可直接读取”，
+   * 由模型自己调 read。要验的是**路径原样到了模型手里**。
+   */
+  say(raw.includes('@README.md'), '引用路径原样送达模型（RPC 不展开 @，模型自行读取）')
+  const readIt = raw.includes('fixture project')
+  lines.push(`  （模型本轮是否真去读了该文件：${readIt ? '是' : '否'}；会话 ${raw.length} 字节）`)
+  say(/read|已读|第一行/.test(raw), '模型按任务回了话（引用语法没有打断这一轮）')
+
+  return { ok, lines }
+}
+
+/** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
+const AFTER_EXIT = {
+  subagentArchive: checkSubagentArchive,
+  sessionabArchive: checkSessionabArchive,
+  atrefsendArchive: checkAtRefSend
+}
+
+function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
   return new Promise((resolvePromise) => {
     const probeEnv = {
       ...env,
@@ -518,10 +1138,18 @@ function runProbe({ probe, delay, keys, env: caseEnv }, env) {
     // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
     // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
     delete probeEnv.ELECTRON_RUN_AS_NODE
-    const child = spawn('npx', ['electron', '.'], {
+    /*
+     * 直接拿 electron 包导出的可执行文件，**不走 npx**。
+     *
+     * 为什么：`spawn('npx', ['electron'], { shell: true })` 在 Windows 上
+     * 是 cmd.exe → npx → electron 三层。npx 会先抢 npm 缓存锁、检查包，
+     * 偶发几秒内就退出（实测：场景刚起了两个子代理，npx 先退了），于是
+     * test-live 判定“没抓到 PROBE 输出”，而 Electron 其实还在后台跑探针 ——
+     * 既拿不到证据，又留下一个没人管的 GUI 实例。
+     */
+    const child = spawn(electronBin, ['.'], {
       cwd: root,
       env: probeEnv,
-      shell: true,
       windowsHide: true
     })
 
@@ -535,9 +1163,24 @@ function runProbe({ probe, delay, keys, env: caseEnv }, env) {
 
     // 预发按键会额外占时间（每个组合等 1.4s）
     const keyCost = keys ? keys.split(',').length * 1500 : 0
-    const kill = setTimeout(() => {
+    const killTree = () => {
+      if (process.platform === 'win32' && child.pid) {
+        /* Windows 上 child.kill() 只杀直接子进程，Electron 的 GPU/渲染/pi 子进程会变孤儿 */
+        try {
+          execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        } catch {
+          /* 已经退了 */
+        }
+      }
       child.kill()
-    }, delay + keyCost + 90_000)
+    }
+    /*
+     * delay 是“窗口显示后等多久才执行探针”（给应用启动/连上 pi 用），
+     * 不是探针的执行预算 —— 这两件事以前混在一起，于是为了给长场景留时间，
+     * 只能把 delay 往大里设，结果是白等：探针窗口其实还是 90s。
+     * 现在分开： 才决定探针能跑多久。
+     */
+    const kill = setTimeout(killTree, delay + keyCost + (budget ?? 90_000))
 
     child.on('exit', (code) => {
       clearTimeout(kill)
@@ -610,6 +1253,17 @@ async function main() {
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
 
   /*
+   * 合成 fixture 项目树（`fixture: true` 的场景把它当 cwd）。
+   *
+   * 为什么需要：文件树 / @ 补全的剩余边界（空目录、失效路径、大目录、
+   * 中文空格、同名文件、目录联接）需要一个**内容已知且可穷举**的项目；
+   * 源码树既不能造空目录，也不能保证里面有哪些文件，断言只能写成
+   * “看起来像”。fixture 建在临时目录里，不往项目根塞测试垃圾。
+   */
+  const fixtureBase = sandboxRoot ?? mkdtempSync(join(tmpdir(), 'yan-fixture-'))
+  const fixtureProject = buildFixtureProject(fixtureBase)
+
+  /*
    * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
    * 正常跑完的那次 rmSync —— 被 Ctrl+C 或被 timeout 杀掉时，密钥会留在临时目录。
    * 实测已经踩到：02:14 那批异常退出后，三个 yan-test-* 目录里的 auth.json 副本
@@ -619,6 +1273,8 @@ async function main() {
   if (sandboxRoot) {
     const cleanupSandbox = () => {
       try {
+        /* `noperm/` 带着 deny 读取的 ACL，不复位的话 rmSync 会 EPERM 把沙箱留在临时目录。 */
+        allowDirRead(join(fixtureProject, 'noperm'))
         rmSync(sandboxRoot, { recursive: true, force: true })
       } catch {
         /* 尽力而为，不能因为清理失败盖住真正的测试结果 */
@@ -632,6 +1288,20 @@ async function main() {
     process.once('SIGTERM', () => {
       cleanupSandbox()
       process.exit(143)
+    })
+  } else {
+    /*
+     * 非隔离模式（`YAN_TEST_ISOLATED=0`，仅排查用）下 fixture 是自己的临时目录，
+     * 不会被沙箱清理覆盖 —— 而 `noperm/` 的 ACL 会让它变成用户手动删不掉的垃圾。
+     * 所以这一支也必须挂退出清理。
+     */
+    process.once('exit', () => {
+      try {
+        allowDirRead(join(fixtureProject, 'noperm'))
+        rmSync(fixtureBase, { recursive: true, force: true })
+      } catch {
+        /* 同上 */
+      }
     })
   }
 
@@ -714,6 +1384,28 @@ async function main() {
     const seeded = seedSessions(sessions)
 
     /*
+     * N12 的 A/B 会话：cwd 必须是 fixture 项目的绝对路径，而那个路径
+     * 要等上面建完才知道，所以只能在这里补写（详见 `writeAbSessions`）。
+     */
+    if (names.some((n) => CASES[n]?.abSessions)) {
+      const made = writeAbSessions(sessions, join(fixtureProject, 'repo'), join(fixtureProject, 'other'))
+      console.log(`  N12 A/B 会话：${made.map((m) => m.tag + '→' + m.cwd).join('，')}`)
+    }
+
+    /*
+     * N05 的 A/B 会话：同样需要 fixture 的绝对路径，而且必须是**已落盘**的
+     * （详见 `writeProjectSwitchSessions`）。
+     */
+    if (names.some((n) => CASES[n]?.projectSessions || CASES[n]?.projectPeers)) {
+      const made = writeProjectSwitchSessions(sessions, fixtureProject, join(fixtureProject, 'other'), {
+        /* 只有明确要“同 cwd 第二条会话”的场景才造，而且造在另一个子目录里 */
+        peers: names.some((n) => CASES[n]?.projectPeers),
+        peerCwd: join(fixtureProject, 'repo')
+      })
+      console.log(`  N05 项目会话：${made.map((m) => m.tag.toUpperCase() + '→' + m.cwd).join('，')}`)
+    }
+
+    /*
      * `auth` 场景要验的是「**没有**凭证时给出应用内登录入口」
      * （`data-testid="auth-login-openai-codex"`）。而上面那个 piDir 为了能起 pi
      * 复制了真实 auth.json，前提正好相反 —— 单独给它一个空目录。
@@ -755,6 +1447,10 @@ async function main() {
     const wins = c.wins ?? [null]
     let allOk = true
     let hint
+    /* 边界场景把 cwd 指到合成 fixture 项目（`fixtureSub` 可再下钻到子目录），其余场景用项目根。 */
+    const caseCwd = c.fixture ? (c.fixtureSub ? join(fixtureProject, c.fixtureSub) : fixtureProject) : root
+    /* 退出后检查需要的“场景开始前”快照（临时 worktree 容器） */
+    const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
     /*
      * 探针脚本先过一遍**语法检查**。
@@ -774,7 +1470,7 @@ async function main() {
 
     for (const win of wins) {
       if (sandboxRoot) {
-        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2), 'utf8')
+        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: caseCwd, lang: 'zh-CN' }, null, 2), 'utf8')
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
       const out = await runProbe(c, {
@@ -794,9 +1490,31 @@ async function main() {
       failed++
       console.log(`\n✗ ${name} 未通过`)
       if (hint) console.log(`  提示：${hint}`)
-    } else {
-      console.log(`\n✓ ${name} 通过`)
+      continue
     }
+
+    /*
+     * 退出后检查（若场景声明了）：此刻 Electron 已经关闭，才能看到
+     * 退出归档、临时 worktree 清理、以及主工作树的最终状态。
+     */
+    if (c.afterExit) {
+      const check = AFTER_EXIT[c.afterExit]
+      if (!check) {
+        console.log(`  ✗ 未注册的 afterExit 检查：${c.afterExit}`)
+        failed++
+        continue
+      }
+      const res = check(sandboxRoot, tempBefore)
+      console.log('\n退出后检查（Electron 已关闭）')
+      console.log(res.lines.join('\n'))
+      if (!res.ok) {
+        failed++
+        console.log(`\n✗ ${name} 未通过（退出后检查）`)
+        continue
+      }
+    }
+
+    console.log(`\n✓ ${name} 通过`)
   }
 
   if (sandboxRoot) {
@@ -804,6 +1522,13 @@ async function main() {
       rmSync(sandboxRoot, { recursive: true, force: true })
     } catch {
       /* Windows 上偶有句柄未释放，留着也无害 */
+    }
+  } else {
+    /* 非隔离调试时 fixture 有自己的临时根目录，也要清掉。 */
+    try {
+      rmSync(fixtureBase, { recursive: true, force: true })
+    } catch {
+      /* 同上 */
     }
   }
 

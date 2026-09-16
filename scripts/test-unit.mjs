@@ -186,6 +186,70 @@ const subagentIsolation = await import('../node_modules/esbuild/lib/main.js').th
 const { runSubagentIsolationTests } = await import('./test-subagent-isolation.mjs')
 
 /*
+ * 子代理控制器的策略（src/main/subagents.ts，D1–D4）。
+ * 注入假 RPC 与可控工作区，不 spawn 真 pi；只有退出清理那条用真 git。
+ */
+const { SubagentController } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/subagents.ts'],
+    outfile: 'out/test/subagents.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/subagents.mjs'))
+)
+const { runSubagentControllerTests } = await import('./test-subagents.mjs')
+
+/*
+ * 项目 id 派生与碰撞退路（src/main/project-id.ts，D14）。
+ * 纯函数，不碰 settings 文件。
+ */
+const projectId = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/project-id.ts'],
+    outfile: 'out/test/project-id.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-id.mjs'))
+)
+const { runProjectIdTests } = await import('./test-project-id.mjs')
+
+/*
+ * 切项目时「该项目最近访问的会话」的选法（src/renderer/src/state/project-session.ts，N05）。
+ * 渲染端模块，但它不 import React/zustand —— 只 import 类型 —— 所以能单独编译来测。
+ */
+const projectSession = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/project-session.ts'],
+    outfile: 'out/test/project-session.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-session.mjs'))
+)
+const { runProjectSessionTests } = await import('./test-project-session.mjs')
+
+/*
+ * 队列快照的消费/回收规则（src/main/queue-items.ts，D9）。
+ * 纯函数：判断“哪一条排队项已经被 pi 收走”，不碰进程与 IO。
+ */
+const { runQueueItemsTests } = await import('./test-queue-items.mjs')
+const queueItems = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/queue-items.ts'],
+    outfile: 'out/test/queue-items.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/queue-items.mjs'))
+)
+
+/*
  * 运行实例注册表的策略（src/main/runners.ts，N12）。
  * 纯逻辑：用假 agent 验证「切会话不停任务」「忙碌实例不被顶掉」
  * 「到上限明确拒绝」这些策略，不需要起任何 pi 进程。
@@ -656,6 +720,35 @@ await runQuestionTests(ok)
 await runTodoHistoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
+
+/* 子代理控制器：并发槽位、上下文代次、只读白名单、退出清理（D1–D4）。 */
+await runSubagentControllerTests(ok, SubagentController)
+
+/* 项目 id 派生：同前缀目录不能共用一个 id（D14）。 */
+runProjectIdTests(ok, projectId)
+
+/* 切项目选哪条会话：选错就会新建会话、把用户草稿弄丢（N05）。 */
+runProjectSessionTests(ok, projectSession)
+
+/* 队列快照的消费与回收：被接收的插话不能一直挂着“排队中”（D9）。 */
+runQueueItemsTests(ok, queueItems)
+
+/*
+ * shell / 第三方工具的目录级改动归属（L05）：
+ * 同大小不同内容、touch 不算改动、并发不认领、大文件不编造行数。
+ */
+const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/snapshots.ts'],
+    outfile: 'out/test/snapshots.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/snapshots.mjs'))
+)
+const { runWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
+runWorkspaceChangesTests(ok, workspaceChanges)
 
 /*
  * 运行实例注册表（N12）：切换不停任务、忙碌实例不被牺牲、并发上限。
