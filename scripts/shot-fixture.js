@@ -176,6 +176,88 @@
           output:
             '> yan-desktop@0.1.0 check\n> tsc --noEmit -p tsconfig.node.json\n> tsc --noEmit -p tsconfig.web.json\n> node scripts/lint-css.mjs\n\n✓ 全部合规（检查了 10 个文件）\n> node scripts/test-unit.mjs\n181/181 通过',
           startedAt: now - 4000
+        },
+        /*
+         * shell 的目录级改动（L05）：
+         * 三种状态各有代表 —— created（有行数与 patch）/ modified（有 patch）/
+         * unknown（同大小、没读内容，只说“可能改了”）。
+         */
+        {
+          id: 't4',
+          name: 'bash',
+          args: { command: 'node scripts/migrate-tokens.mjs' },
+          status: 'ok',
+          output: '✓ 迁移完成，共处理 3 个文件',
+          details: {
+            workspaceChanges: {
+              root: 'C:/work/pi-desktop',
+              files: [
+                {
+                  path: 'src/renderer/src/styles/tokens.css',
+                  status: 'modified',
+                  beforeSize: 8210,
+                  afterSize: 8452,
+                  added: 12,
+                  removed: 4,
+                  patch:
+                    '  --accent: #2563eb;\n' +
+                    '+  --accent-strong: #1d4ed8;\n' +
+                    '-  --accent-weak: #93c5fd;'
+                },
+                {
+                  path: 'scripts/migrate-tokens.mjs',
+                  status: 'created',
+                  beforeSize: -1,
+                  afterSize: 640,
+                  added: 18,
+                  removed: 0,
+                  patch: '+ // 一次性迁移脚本\n+ import { readFileSync } from "node:fs"'
+                },
+                {
+                  path: 'docs/design/DESIGN.md',
+                  status: 'unknown',
+                  beforeSize: 4096,
+                  afterSize: 4096,
+                  added: -1,
+                  removed: -1,
+                  patch: ''
+                }
+              ],
+              total: 3,
+              scanned: 412
+            }
+          },
+          startedAt: now - 150000,
+          endedAt: now - 141000
+        },
+        /* 第二个变体：同目录并发 → 明说“不能归属” */
+        {
+          id: 't5',
+          name: 'bash',
+          args: { command: 'npm run build' },
+          status: 'ok',
+          output: '✓ 构建完成',
+          details: {
+            workspaceChanges: {
+              root: 'C:/work/pi-desktop',
+              files: [
+                {
+                  path: 'out/main/index.js',
+                  status: 'modified',
+                  beforeSize: 120000,
+                  afterSize: 121400,
+                  added: -1,
+                  removed: -1,
+                  patch: ''
+                }
+              ],
+              total: 1,
+              scanned: 380,
+              unknown: 'concurrent'
+            }
+          },
+          startedAt: now - 130000,
+          endedAt: now - 120000
         }
       ],
       speed: 46,
