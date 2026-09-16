@@ -82,10 +82,12 @@ pi 吐事件
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
-| `index.ts` | 1935 | 窗口 + **全部 IPC handler** + Runner 生命周期 + 托盘 + 缩放 + 快捷键 + 探针注入（`YAN_PROBE`） | 依赖除 `browser/*` 外几乎所有 main 模块。新增功能通常在此注册 handler |
+| `index.ts` | 1947 | 窗口 + **全部 IPC handler** + Runner 生命周期 + 托盘 + 缩放 + 快捷键 + 探针注入（`YAN_PROBE`）。文件树/补全/搜索共用的上下文边界是 `resolveFileContext` | 依赖除 `browser/*` 外几乎所有 main 模块。新增功能通常在此注册 handler |
 | `paths.ts` | 49 | 数据路径常量：`YAN_DIR`、`PI_AGENT_DIR`、便携版根… | 被 10 个文件 import。**这里曾经叫 `memory.ts`**（记忆系统），已移除 |
-| `settings.ts` | 380 | 桌面端专属设置（窗口、主题、语言、cwd、栏宽、工具顺序）。**刻意不写 pi 的 `settings.json`** | `index.ts`、`Rail.tsx`、`Settings.tsx` |
-| `runners.ts` | 393 | **会话运行实例注册表（N12）**：命中已有实例 / 复用空闲 / 新建；`RUNNER_LIMIT=3`；`stopOne` / `stopByCwd` / `stopAll`；`runtimeOf` 生成事件身份封套 | 被 `index.ts` 全面使用；单测 `test-runners.mjs`（42 断言） |
+| `settings.ts` | 388 | 桌面端专属设置（窗口、主题、语言、cwd、栏宽、工具顺序）。**刻意不写 pi 的 `settings.json`** | `index.ts`、`Rail.tsx`、`Settings.tsx`；项目 id 派生在 `project-id.ts` |
+| `project-id.ts` | 45 | 项目 id 派生：沿用旧的 36 字符 base64 前缀（已有归属键不动），**碰撞时**换成整条路径的 sha1（D14：同前缀目录曾共用 id，导致文件树/@ 补全报「项目与工作目录不匹配」） | `settings.ts`（生成项目）、`index.ts` 的 `resolveFileContext`；单测 `test-project-id.mjs` |
+| `queue-items.ts` | 54 | 队列快照的消费/回收规则（D9）：`consumeQueuedItem` 按原文摘掉队首匹配项（先 steering 后 followUp、FIFO、trim 比较）、`reclaimedTexts` 把 `clear_queue` 的结果按 steering→followUp 拼回草稿 | `agent.ts`（收到 user 消息、`abort()`）；单测 `test-queue-items.mjs`（18 条） |
+| `runners.ts` | 440 | **会话运行实例注册表（N12）**：命中已有实例 / 复用空闲 / 新建；`RUNNER_LIMIT=3`；`stopOne` / `stopByCwd` / `stopAll`；`runtimeOf` 生成事件身份封套。**跨 cwd 复用要换进程**（pi 的 cwd 只在 spawn 时确定）。`busy()` 包含**直执行 shell**（D20：否则切换会复用到正在跑命令的实例，新会话直接报“已有一条命令在跑”） | 被 `index.ts` 全面使用；单测 `test-runners.mjs`（含跨项目换进程、失败回退、直执行 shell 也算忙） |
 | `exit-snapshot.ts` | 61 | 退出时只存**运行实例元数据**（不复制消息正文） | `index.ts` 退出流程；单测 `test-exit-snapshot.mjs` |
 | `zoom.ts` / `zoom-math.ts` | 105 / 115 | 界面缩放。**计算与 electron 分离**：`zoom-math` 不 import electron，所以能单测 | `index.ts`、`Settings.tsx`；单测 `test-zoom.mjs` |
 
@@ -132,8 +134,8 @@ pi 吐事件
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
-| `subagents.ts` | 470 | 自有进程管理的子代理：并发上限、超时、停止、转录上限、用量不重复计入 | `index.ts`；`SubagentList.tsx`、`SubagentPreview.tsx` |
-| `subagent-isolation.ts` | 210 | **写入隔离（L03）**：从 HEAD 建独立 worktree、差异汇总、应用补丁、清理。只处理文件系统/Git 边界，不启动 pi | `subagents.ts`；单测 `test-subagent-isolation.mjs` |
+| `subagents.ts` | 697 | 自有进程管理的子代理：槽位预占、启动期上下文快照、只读模式 `--tools` 白名单、退出归档清理、超时、停止、转录上限、用量不重复计入。**跑完要收进程**（等转录安静 → close → 再读差异/清理，D16）；**toolResult 回填**到原调用，消息编号用 `msgSeq`/`streamingId`（D15） | `index.ts`；`SubagentList.tsx`、`SubagentPreview.tsx`；单测 `test-subagents.mjs`（注入假 RPC，不 spawn 真 pi）；live `subagentpair` |
+| `subagent-isolation.ts` | 211 | **写入隔离（L03）**：从 HEAD 建独立 worktree、差异汇总、应用补丁、清理。只处理文件系统/Git 边界，不启动 pi | `subagents.ts`；单测 `test-subagent-isolation.mjs` |
 
 ### 4.6 文件、快照、引用
 
@@ -141,7 +143,7 @@ pi 吐事件
 |---|---|---|---|
 | `files.ts` | 343 | 文件树数据源：列 cwd 下一层（懒加载）；`searchFiles` 全项目检索 | `FileTree.tsx`；单测 `test-files.mjs` |
 | `file-refs.ts` | 294 | 用户**显式引用**的文件（拖入 / 加入上下文）：授权、越界校验、只读预览 | `index.ts`、`Composer.tsx` 附件链路 |
-| `snapshots.ts` | 270 | 写入类工具的**前后快照**（差异归属）。不能只靠工具参数 —— `edit` 的参数只是替换片段 | `agent.ts`；单测 `test-snapshots.mjs` |
+| `snapshots.ts` | 587 | **变更归属（L05）**：写入类工具的**单文件前后快照**（`snapshotBefore/After`，行级 patch 与增删行数）+ shell / 第三方工具的**目录级前后快照**（`captureTree`/`diffTrees`/`beginTreeSnapshot`/`endTreeSnapshot`）。不能只靠工具参数 —— `edit` 的参数只是替换片段，而 `bash` 根本不告诉你要改哪个文件。同步 fs（异步会有“写完才读到 before”的竞态）；跳过依赖/产物目录；文件数 4000 / 深度 12 / 内容预算 12MB 上限定；子目录读不到**不算**截断（否则用户项目里一个无权限目录就会让每条命令都带警告）。归属存疑时返回 `concurrent` / `truncated` / `unreadable`，不把别人的改动记到这次调用头上 | `agent.ts`（`tool_execution_start/end` 的 `bash`、`runBash`/`finishBash`）；单测 `test-snapshots.mjs`、`test-workspace-changes.mjs`（33 条）；live `-- workspacechanges` |
 | `credentials.ts` | 453 | 读写 pi 凭证；**`completePath` 是 `@` 补全的主进程侧**（与文件树共用同一条 cwd 边界） | `AuthTab.tsx`、`Composer.tsx`；单测 `test-credentials.mjs` |
 | `command-registry.ts` | 144 | Yan 命令注册表（N18）：本地路由 + 扩展/技能来源 + "仅兼容显示"统一成一个可审阅列表 | `agent.ts` 的 `listCommands`；单测 `test-command-registry.mjs` |
 | `oauth.ts` | 321 | ChatGPT 订阅（`openai-codex`）**应用内** OAuth；参数逐字对齐内置 pi（差一个 pi 就不认这个 token） | `AuthTab.tsx`；单测 `test-oauth.mjs` |
@@ -155,9 +157,10 @@ pi 吐事件
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
-| `state/store.ts` | 2031 | **唯一状态源**（zustand）：套用 `MainPush` 补丁、按会话缓存、全部用户动作 | **被 26 个文件订阅**。改 store 的字段/动作要同时查：组件订阅点、probe 里的 `window.__yanStore` 调用 |
+| `state/store.ts` | 2076 | **唯一状态源**（zustand）：套用 `MainPush` 补丁、按会话缓存、全部用户动作 | **被 26 个文件订阅**。改 store 的字段/动作要同时查：组件订阅点、probe 里的 `window.__yanStore` 调用 |
 | `state/session-runtime.ts` | 261 | 按 sessionId 保存后台运行时状态（消息/草稿/模型/命令/统计）；启动期 `run:<id>` → 稳定 sessionId 的缓存迁移 | `store.ts`；单测 `test-session-runtime.mjs` |
 | `state/capability-request.ts` | 43 | 能力列表响应的**过期判定**：有 runId 只认 runId（`sessionId` 的 `pending→uuid` 是正常过渡） | `store.ts` 的 `reloadModels`/`reloadCommands`；单测 `test-capability-request.mjs` |
+| `state/project-session.ts` | 56 | 切项目时选「该项目最近访问的会话」（**运行实例优先**，其次会话列表）：选错就会新建会话、把草稿弄丢（草稿按 sessionId 存） | `store.ts` 的 `pickProjectSession` 动作 → `Rail.tsx` 的 `switchProject`；单测 `test-project-session.mjs` |
 
 ### 5.2 对话区 `components/chat/`
 
@@ -166,8 +169,8 @@ pi 吐事件
 | `TurnView.tsx` | 303 | **把一轮对话渲染成一块**；决定推理/工具/正文的排列 | `turns.ts` 的分组结果；`Reasoning.tsx`、`ToolRow.tsx`、`MessageParts.tsx` |
 | `Composer.tsx` | 1187 | 输入区：普通文本 / bash 模式 / `/` 命令 / `@` 引用 + 附件 + 队列 | `slash-query.ts`、`at-query.ts`、`Pickers.tsx`、`UsageBar.tsx` |
 | `Reasoning.tsx` | 403 | 推理流：字素级逐字 + **限高省略**（裁开头、贴底显示最新、顶部渐隐、"展开全部"） | `chat.css` 的 `.reason-body.clip`；`tokens.css` 的 `--reason-max-h` |
-| `ToolRow.tsx` | 293 | 工具调用的 Codex 风格行 / 组；默认收起 | `ToolDetails.tsx`、`Terminal.tsx` |
-| `ToolDetails.tsx` | 135 | 工具详情**分型**（文件改动 / 命令输出…），不再一律套终端壳 | `MessageParts.tsx`、`Terminal.tsx` |
+| `ToolRow.tsx` | 306 | 工具调用的 Codex 风格行 / 组；默认收起。命令类工具在终端窗口下方多挂一张**改动卡片**（`workspaceChanges`，L05） | `ToolDetails.tsx`、`Terminal.tsx` |
+| `ToolDetails.tsx` | 295 | 工具详情**分型**（文件改动 / 命令输出…），不再一律套终端壳。含 `WorkspaceChangesDetail`（目录级改动：文件清单 + 状态 + 能算时给 +N/−N 与 patch）与 `readWorkspaceChanges` | `MessageParts.tsx`、`Terminal.tsx` |
 | `Terminal.tsx` | 316 | 终端窗口（工具输出）；可调大小 | `ToolRow.tsx` |
 | `MessageParts.tsx` | 254 | 共享渲染件：Markdown / 工具行 / 工具详情（被 4 个文件复用） | `TurnView.tsx`、`SubagentPreview.tsx` |
 | `UsageBar.tsx` | 211 | 底部用量条；**模型选择器就住在这里**（无数据时降级为只渲染选择器，不能整条消失） | `Pickers.tsx`、`turns.ts` 的 `cacheHitRate` |
@@ -176,6 +179,7 @@ pi 吐事件
 | `SubagentList.tsx` | 97 | 输入区上方的子代理运行列表 | `SubagentPreview.tsx` |
 | `ComposerBorder.tsx` | 131 | 输入框顶边的**工作状态动画**（pi TUI 原样实现） | `Composer.tsx`、`motion.css` |
 | `SessionHeader.tsx` / `EmptyStream.tsx` / `Continuity.tsx` | 93 / 111 / 8 | 主区顶部信息 / 空状态 / 转发壳 | `App.tsx` |
+| `ErrorBoundary.tsx` | 93 | 渲染异常兜底（D8）：抓 App 子树的渲染期异常，给出原因 + 详情 + 「复制详情 / 重新加载界面」；抓不到事件处理器与异步回调里的异常（那些走日志与 notice） | `main.tsx` 包在 `I18nProvider` 内层；`test:live -- crash` |
 | `at-query.ts` | 84 | `@` 引用的**光标范围**纯函数（范围不含 `@` 本身，便于替换） | `Composer.tsx`；单测 `test-at-query.mjs` |
 | `slash-query.ts` | 43 | `/` 命令的光标范围纯函数（只在首个 token 触发） | `Composer.tsx`；单测 `test-slash-query.mjs` |
 
@@ -193,7 +197,7 @@ pi 吐事件
 | 文件 | 行 | 功能 |
 |---|---|---|
 | `RightPanel.tsx` | 1520 | 右栏主体：按用户配置排列上下文 / 任务 / 队列 / 文件 / 扩展 / 日志 / 操作分区；浏览器视图占下方独立区 |
-| `FileTree.tsx` | 787 | 文件树（懒加载 + 缓存 + 隐藏项开关） |
+| `FileTree.tsx` | 912 | 文件树（懒加载 + 缓存 + 隐藏项开关）。⚠️ 根层加载的守卫依赖 `loading`（丢弃的旧请求会清标记，见 D19）—— 改这段要保持“能自愈重试” |
 | `FilePreview.tsx` | 162 | 只读文件预览（**不是编辑器**） |
 | `SubagentPreview.tsx` | 177 | 子代理详情：任务 + 实时转录 + 停止 |
 | `ToolSection.tsx` | 88 | 分区外观（可折叠头 + body）；被 3 个文件复用 |
@@ -273,7 +277,7 @@ pi 吐事件
 
 ### 7.2 单测模块（29 个 `test-*.mjs`）
 
-按被测目标分：`turns` / `zoom` / `filerefs` / `links` / `response-detail` / `snapshots` / `chrome-profile` / `stream-width` / `question` / `todo-history` / `credentials` / `oauth` / `stream-deltas` / `subagent-isolation` / `runners` / `session-runtime` / `session-layout` / `exit-snapshot` / `command-registry` / `model-capabilities` / `network-policy` / `cookie-transfer` / `at-query` / `slash-query` / `capability-request` / `files`。
+按被测目标分：`turns` / `zoom` / `filerefs` / `links` / `response-detail` / `snapshots` / `chrome-profile` / `stream-width` / `question` / `todo-history` / `credentials` / `oauth` / `stream-deltas` / `subagent-isolation` / `runners` / `session-runtime` / `session-layout` / `exit-snapshot` / `command-registry` / `model-capabilities` / `network-policy` / `cookie-transfer` / `at-query` / `slash-query` / `capability-request` / `files` / `project-id` / `subagents`。
 
 ### 7.3 live 探针（78 个 `probe/*.js`）
 
@@ -333,10 +337,15 @@ pi 吐事件
 | 改推理块 | `Reasoning.tsx` + `chat.css` 的 `.clip/.is-clipped/.expanded` + `tokens.css` 的 `--reason-max-h` + `probe/reasoning.js`（探针钉死了契约）+ `DESIGN.md` |
 | 改模型/思考档位 | `shared/model-capabilities.ts`（归一化）→ `agent.ts`（能力快照）→ `store.reloadModels` + `state/capability-request.ts`（过期判定）→ `Pickers.tsx` + `RightPanel.tsx` |
 | 改会话/项目归属 | `main/session-layout.ts` + `main/sessions.ts` + `store` 的 `switchSession`/`moveSession` + `Rail.tsx`；有单测 |
+| 改文件树 / `@` 补全 / 搜索 | `main/files.ts`（listDir/searchFiles 边界）+ `main/credentials.ts` 的 `completePath` + `index.ts` 的 `resolveFileContext`（cwd+projectId+generation 校验，D14 在这里兜底）。live 证据：`fs` / `fsedge` / `atPath` / `atpathedge` / `projectswitch`（后三个用 test-live 的合成 fixture 项目） |
+| 改工具调用的“改了什么” | `main/snapshots.ts`（写入类工具的单文件快照 + shell 的目录级快照，L05）+ `agent.ts`（`tool_execution_start/end` 与 `runBash/finishBash` 的取/挂）+ `ToolDetails.tsx` 的 `WorkspaceChangesDetail` + `chat.css` 的 `.wsc-*`。注意：`isShellTool` 名单要与渲染端 `detailKind` 的 `'command'` 分支一致，否则会出现“看着是命令却没改动卡片” |
 | 改后台会话/身份 | `main/runners.ts`（身份封套）+ `store.applyPush`（身份闸门）+ `state/session-runtime.ts`（缓存）。**三处必须一致**，否则事件会被静默丢弃 |
 | 改文件访问边界 | `main/files.ts`、`main/file-refs.ts`、`main/credentials.ts` 的 `completePath` —— 三者是同一条「只能看 cwd 以内」的约束 |
 | 改浏览器坐标 | 原生视图永远盖在渲染层之上；坐标必须乘 `win.webContents.getZoomFactor()` |
-| 加 live 探针 | 写 `scripts/probe/x.js` **并且**在 `test-live.mjs` 的 `CASES` 注册；改完源码先 `npm run build`（`test:live` 不会自动构建） |
+| 加 live 探针 | 写 `scripts/probe/x.js` **并且**在 `test-live.mjs` 的 `CASES` 注册；改完源码先 `npm run build`（`test:live` 不会自动构建）。需要在 **Electron 关闭之后**才能看到的结论（退出归档、临时目录、主树最终状态）用 `afterExit` 钩子，由 Node 侧直接查文件系统 |
+| 要截图/视觉证据 | `npm run visual:matrix`（`scripts/visual-matrix.mjs`，分批入口 `visual-matrix-run.mjs`）：注入 `shot-fixture.js` 的合成数据，按“尺寸 × 缩放 × 主题”建真实窗口截图到 `docs/design/preview/matrix-*.png`。新增一组就改 `GROUPS` / `STATES` / `MUST_HAVE`（截图前必须核对的关键元素） |
+| 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
+| 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
 | 加单测 | `scripts/test-x.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
 | 删任何样式/组件 | 先核对导入顺序与动态类名；`stage1`/`stage2`/`redesign` 名字旧不代表无用 |
 
@@ -351,6 +360,8 @@ pi 吐事件
 ---
 
 ## 11. 运行时实测（真实窗口 · 2026-09-15）
+
+> 视觉证据（截图）现在由 `npm run visual:matrix` 产出：26 张 `docs/design/preview/matrix-*-2026-09-16.png`，覆盖 1440x900 / 940x620 / 900x520 × 100% / 125% / 150% × 深/浅 + 引导层 + 窄右栏文件树（`fsnarrow`）+ shell 改动卡片（`wschanges` / `wsunknown`），每张都带“横向溢出 ≤ 1px、关键元素在 DOM 里”的硬断言。下面是 2026-09-15 那次逐元素实测的骨架尺寸，仍然有效。
 
 > 本节**不是**读源码推断的，而是把应用跑起来、在渲染端 dump 出来的。
 > 用途：核对上面的「关系」是否漂移 —— 字段叫 `sessionId` 还是 `id`、谁渲染谁、
