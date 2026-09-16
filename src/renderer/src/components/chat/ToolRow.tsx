@@ -35,7 +35,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
-import { FileChangeDetail, ToolResultDetail, detailKind } from './ToolDetails'
+import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 
@@ -80,6 +80,7 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
   const rowRef = useRef<HTMLDivElement | null>(null)
   /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
   const kind = detailKind(call.name)
+  const wsChanges = readWorkspaceChanges(call.details)
   const target = summarize(call)
   const secs = durationSecs(call)
 
@@ -133,7 +134,15 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
            * 以前所有工具都套终端窗口，搜索/读文件看起来像跑过 shell。
            */}
           {kind === 'command' ? (
-            <TerminalWindow call={call} target={target} secs={secs} />
+            <>
+              <TerminalWindow call={call} target={target} secs={secs} />
+              {/*
+               * shell / 第三方工具改了哪些文件（L05）——挂在命令下面。
+               * 目录级快照只在**真的有变化**或**归属存疑**时才有值，
+               * 所以一条 `ls` 不会凭空多出一张“0 个改动”的卡片。
+               */}
+              {wsChanges ? <WorkspaceChangesDetail changes={wsChanges} /> : null}
+            </>
           ) : kind === 'change' ? (
             <FileChangeDetail call={call} />
           ) : (

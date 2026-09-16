@@ -574,6 +574,125 @@
   padding-top: var(--sp-1);
 }
 
+/* ---------------- shell / 第三方工具的目录级改动（L05） ---------------- */
+/*
+ * 单独一块，不套进终端窗口：它描述的是“这条命令跑完后目录里多了什么”，
+ * 比命令输出更接近用户要审阅的东西。窄右栏下 `.wsc-path` 只负责省略，
+ * 完整路径在 title 里。
+ */
+.wsc {
+  margin-top: var(--sp-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.wsc-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  user-select: none;
+}
+
+.wsc-head .ico {
+  flex: none;
+}
+
+.wsc-head .spacer {
+  flex: 1;
+}
+
+.wsc-title {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wsc-scanned {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.wsc-root {
+  padding: 3px var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 归属存疑：黄色提醒，并明确说“可能包含别的任务/你自己的改动” */
+.wsc-warn {
+  padding: 4px var(--sp-2);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.wsc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wsc-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-xs);
+  /* 长路径不许撑破布局（grid/flex 弹性列的老问题） */
+  min-width: 0;
+}
+
+.wsc-item .spacer {
+  flex: 1;
+}
+
+.wsc-status {
+  flex: none;
+  min-width: 3.5em;
+  color: var(--fg-mute);
+}
+
+.wsc-item[data-status='created'] .wsc-status {
+  color: var(--ok);
+}
+
+.wsc-item[data-status='deleted'] .wsc-status {
+  color: var(--err);
+}
+
+.wsc-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+
+.wsc-toggle {
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  cursor: pointer;
+  color: var(--fg-mute);
+}
+
+.wsc-note {
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
 /* ---- 终端窗口（工具调用详情；用户要求「更好的终端实现 + 调整窗口大小」）----
    设计要点（方案 4.3 改版）：
    · 无论浅色/深色主题，终端都是**深色底**（终端本来就该是深色），

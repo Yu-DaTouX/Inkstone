@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { ToolDetail } from './MessageParts'
-import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
+import type { FileDiff, UIToolCall, WorkspaceChangeFile, WorkspaceChanges } from '../../../../shared/ipc'
 
 /**
  * 工具详情的**分型渲染**（方案 4.1）。
@@ -46,6 +47,16 @@ function readFileDiff(details: unknown): FileDiff | null {
   const diff = d as Partial<FileDiff>
   if (typeof diff.path !== 'string' || !diff.before || !diff.after) return null
   return diff as FileDiff
+}
+
+/** 从 call.details 里取出 shell / 第三方工具的目录级改动（L05，没有就是 null） */
+export function readWorkspaceChanges(details: unknown): WorkspaceChanges | null {
+  if (!details || typeof details !== 'object') return null
+  const raw = (details as { workspaceChanges?: unknown }).workspaceChanges
+  if (!raw || typeof raw !== 'object') return null
+  const wc = raw as Partial<WorkspaceChanges>
+  if (typeof wc.root !== 'string' || !Array.isArray(wc.files)) return null
+  return wc as WorkspaceChanges
 }
 
 /**
@@ -120,6 +131,98 @@ export function FileChangeDetail({ call }: { call: UIToolCall }) {
     </div>
   )
 }
+
+/**
+ * shell / 第三方工具的**目录级改动**卡片（L05）。
+ *
+ * 与 `FileChangeDetail` 的区别：那边是**单文件**的可靠差异（写入类工具，
+ * 执行前后各读一次文件内容）；这边是**目录级**结果 —— 只知道这段时间里
+ * 哪些文件变了，常常给不出行数（没读过内容）。所以这里：
+ *   · 有行数就显示 +N/-N，没有就**明说**“未读取内容，只有状态与大小”；
+ *   · 归属不明（同目录并发 / 快照不完整 / 读不到）时把原因写在卡片里，
+ *     不把这段差异算在这条命令头上。
+ */
+export function WorkspaceChangesDetail({ changes }: { changes: WorkspaceChanges }) {
+  const t = useT()
+  const [openPath, setOpenPath] = useState<string | null>(null)
+  const hidden = Math.max(0, changes.total - changes.files.length)
+  const unknownKey = changes.unknown ? WS_UNKNOWN_KEY[changes.unknown] : null
+  const withLineCount = changes.files.some((f) => f.added >= 0 || f.removed >= 0)
+  const openFile = openPath ? changes.files.find((f) => f.path === openPath) : undefined
+
+  return (
+    <div className="wsc" data-testid="workspace-changes" data-unknown={changes.unknown ?? ''}>
+      <div className="wsc-head">
+        <Icon name="layers" size={12} />
+        <span className="wsc-title" data-testid="ws-title">
+          {t('tool.wsChanges', { n: changes.total })}
+        </span>
+        <span className="spacer" />
+        <span className="wsc-scanned">{t('tool.wsScanned', { n: changes.scanned })}</span>
+      </div>
+      <div className="wsc-root" title={changes.root}>
+        {t('tool.wsRoot')}：{changes.root}
+      </div>
+      {unknownKey ? (
+        <div className="wsc-warn" data-testid="ws-unknown">
+          {t(unknownKey)}
+        </div>
+      ) : null}
+      <ul className="wsc-list">
+        {changes.files.map((f) => (
+          <li key={f.path} className="wsc-item" data-status={f.status} data-path={f.path}>
+            <span className="wsc-status">{wsStatusText(t, f.status)}</span>
+            <span className="wsc-path" title={f.path}>
+              {f.path}
+            </span>
+            <span className="spacer" />
+            {f.added >= 0 ? <span className="fd-stat add">+{f.added}</span> : null}
+            {f.removed >= 0 ? <span className="fd-stat del">-{f.removed}</span> : null}
+            {f.patch ? (
+              <button
+                className="wsc-toggle"
+                onClick={() => setOpenPath(openPath === f.path ? null : f.path)}
+                aria-expanded={openPath === f.path}
+                title={f.path}
+              >
+                <Icon name="chevron-right" size={12} className={openPath === f.path ? 'chev on' : 'chev'} />
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 ? <div className="wsc-note">{t('tool.wsMore', { n: hidden })}</div> : null}
+      {/* 一条行数都给不出时说明原因：不是“没改”，而是没读内容 */}
+      {changes.files.length > 0 && !withLineCount ? <div className="wsc-note">{t('tool.wsNoLine')}</div> : null}
+      {openFile?.patch ? (
+        <pre className="fd-patch" data-testid="ws-patch">
+          {openFile.patch}
+        </pre>
+      ) : null}
+    </div>
+  )
+}
+
+/** 状态 → i18n 键（显式映射，避免拼字符串拼出不存在的键） */
+function wsStatusText(t: ReturnType<typeof useT>, status: WorkspaceChangeFile['status']): string {
+  switch (status) {
+    case 'created':
+      return t('tool.wsAdded')
+    case 'deleted':
+      return t('tool.wsDeleted')
+    case 'modified':
+      return t('tool.wsModified')
+    default:
+      return t('tool.wsUnknownStatus')
+  }
+}
+
+/** 无法可靠归属的原因 → i18n 键 */
+const WS_UNKNOWN_KEY = {
+  concurrent: 'tool.wsConcurrent',
+  truncated: 'tool.wsTruncated',
+  unreadable: 'tool.wsUnreadable'
+} as const
 
 /**
  * 普通工具结果：**不套外壳**（方案 4.1）。
