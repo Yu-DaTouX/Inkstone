@@ -119,7 +119,136 @@
     else bad('/model 没有走 Yan 本地路由')
     store.getState().closeSettings()
 
-    out.push('\n=== 7. `/login` 不发给模型，而是打开「模型接入」 ===')
+    /*
+     * ---- 下面几条补 N18 矩阵里没覆盖的边界 ----
+     * 注入一份**合成命令列表**：屏幕上的命令是 pi/技能提供的，内容不可控；
+     * 要验的是菜单本身的行为（筛选/滚动/光标/IME/同名不同来源/未连接），
+     * 所以直接给一份确定的数据。
+     */
+    const synth = []
+    for (let i = 1; i <= 20; i += 1) {
+      synth.push({
+        name: `probe-cmd-${String(i).padStart(2, '0')}`,
+        description: `第 ${i} 条探测命令，用来撑满列表`,
+        source: 'runtime',
+        executable: true
+      })
+    }
+    synth.push({ name: 'help', description: 'Yan 自己的帮助', source: 'yan', executable: true })
+    synth.push({ name: 'help', description: '扩展提供的帮助', source: 'extension', module: 'probe-ext', executable: true })
+    synth.push({ name: 'auth', description: '未连接时仍可用的本地命令', source: 'yan', executable: true })
+
+    out.push('\n=== 8. 筛选：按命令名与说明都能命中 ===')
+    /* 先存真实列表：后面的 `/login` 路由要靠它 */
+    const realCommands = store.getState().commands
+    store.setState({ commands: synth, commandsAt: Date.now() })
+    setVal(ta(), '/probe-cmd-1')
+    await sleep(500)
+    const byName = [...document.querySelectorAll('.slash-item .slash-name')].map((x) => x.textContent)
+    out.push('  按名字 /probe-cmd-1 → ' + JSON.stringify(byName))
+    if (byName.length === 10 && byName[0] === '/probe-cmd-10') ok('按命令名前缀筛选（20 条里命中 10 条：10~19）')
+    else bad('按名字筛选不对劲：' + JSON.stringify(byName))
+    setVal(ta(), '/撑满')
+    await sleep(500)
+    const byDesc = [...document.querySelectorAll('.slash-item')].length
+    out.push('  按说明里的字“撑满” → ' + byDesc + ' 条')
+    if (byDesc === 20) ok('说明文字也参与匹配（20 条全部提到“撑满”）')
+    else bad('说明没有参与匹配，只命中 ' + byDesc + ' 条')
+
+    out.push('\n=== 9. 超过 12 项时可滚动，不把窗口撑破 ===')
+    setVal(ta(), '/')
+    await sleep(600)
+    const menuBox = document.querySelector('.slash-menu')
+    const menuRect = menuBox?.getBoundingClientRect()
+    out.push(
+      '  菜单高 ' + Math.round(menuRect?.height ?? 0) + 'px，内容高 ' + (menuBox?.scrollHeight ?? 0) + 'px，项数 ' +
+        document.querySelectorAll('.slash-item').length
+    )
+    if (menuBox && menuBox.scrollHeight > menuBox.clientHeight + 4) ok('项目超出时菜单可滚动（scrollHeight > clientHeight）')
+    else bad('菜单没有滚动（项目数超了也看不到后面的）')
+    if (menuRect && menuRect.top >= -1) ok('菜单没有越出窗口上沿')
+    else bad('菜单顶部越界：top=' + Math.round(menuRect?.top ?? -999))
+    const hintText = document.querySelector('[data-testid="slash-hint"]')?.textContent ?? ''
+    out.push('  底部提示: ' + JSON.stringify(hintText.slice(0, 60)))
+    if (/可滚动/.test(hintText)) ok('提示里说明了列表可滚动')
+    else bad('没有提示可滚动')
+
+    out.push('\n=== 10. 光标位置：进了参数区就不该再当成命令名 ===')
+    setVal(ta(), '/help ')
+    await sleep(400)
+    out.push('  "/help "（光标在末尾）菜单=' + (document.querySelector('.slash-menu') ? '有' : '无'))
+    if (!document.querySelector('.slash-menu')) ok('光标进入参数区后菜单关闭（不把参数当命令名）')
+    else bad('光标已到参数区，菜单还开着')
+    /* 光标回到命令名中间 → 菜单应该重新出现（只按光标之前的内容判） */
+    ta().selectionStart = 3
+    ta().selectionEnd = 3
+    ta().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    ta().dispatchEvent(new Event('select', { bubbles: true }))
+    await sleep(500)
+    out.push('  光标移到 /he| lp → 菜单=' + (document.querySelector('.slash-menu') ? '有' : '无'))
+    if (document.querySelector('.slash-menu')) ok('光标回移到命令名内时菜单恢复')
+    else out.push('  ⤺ 说明：光标只能由真实按键移动，合成事件不同步时这一条不作断言')
+
+    out.push('\n=== 11. 同名不同来源要能区分（不互相覆盖） ===')
+    setVal(ta(), '/help')
+    await sleep(500)
+    const helpItems = [...document.querySelectorAll('.slash-item')].filter((x) => /\/help\b/.test(x.querySelector('.slash-name')?.textContent ?? ''))
+    const helpSrcs = helpItems.map((x) => x.querySelector('.slash-src')?.textContent ?? '')
+    out.push('  /help 条目=' + helpItems.length + ' 来源=' + JSON.stringify(helpSrcs))
+    if (helpItems.length === 2) ok('两条同名命令都列出来了（按来源分开）')
+    else bad('同名命令被覆盖，只剩 ' + helpItems.length + ' 条')
+    if (helpSrcs.some((s) => s.includes('yan')) && helpSrcs.some((s) => s.includes('extension'))) {
+      ok('来源标签能区分它们')
+    } else bad('来源标签不够区分：' + JSON.stringify(helpSrcs))
+
+    out.push('\n=== 12. 中文输入法组合态不得吞掉 Enter/Tab ===')
+    setVal(ta(), '/help')
+    await sleep(400)
+    const beforeCompose = ta().value
+    ta().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })
+    )
+    await sleep(300)
+    out.push('  组合态 Enter 后 value=' + JSON.stringify(ta().value))
+    if (ta().value === beforeCompose) ok('组合中的 Enter 交给输入法（不把候选填进去）')
+    else bad('组合态的 Enter 被当成了菜单确认')
+
+    out.push('\n=== 13. 未连接时本地命令仍可执行，扩展命令明确不可用 ===')
+    const realConn = store.getState().conn
+    store.setState({ conn: 'connecting' })
+    await sleep(400)
+    setVal(ta(), '/auth')
+    await sleep(500)
+    const authItem = [...document.querySelectorAll('.slash-item')].find((x) =>
+      /\/auth\b/.test(x.querySelector('.slash-name')?.textContent ?? '')
+    )
+    out.push('  /auth（本地）disabled=' + String(authItem?.disabled) + ' · 来源=' + (authItem?.querySelector('.slash-src')?.textContent ?? ''))
+    if (authItem && !authItem.disabled) ok('本地 Yan 命令在未连接时仍可执行')
+    else bad('未连接时把本地命令也禁用了')
+    const extItem = [...document.querySelectorAll('.slash-item')].find((x) =>
+      (x.querySelector('.slash-src')?.textContent ?? '').includes('extension')
+    )
+    out.push('  扩展命令 title=' + JSON.stringify((extItem?.getAttribute('title') ?? '').slice(0, 40)))
+    store.setState({ conn: realConn })
+    await sleep(300)
+
+    out.push('\n=== 14. Esc 关闭菜单且不动已输入内容 ===')
+    setVal(ta(), '/probe')
+    await sleep(500)
+    key(ta(), 'Escape')
+    await sleep(400)
+    out.push('  Esc 后 value=' + JSON.stringify(ta().value) + ' 菜单=' + (document.querySelector('.slash-menu') ? '有' : '无'))
+    if (!document.querySelector('.slash-menu')) ok('Esc 关闭菜单')
+    else bad('Esc 没关掉菜单')
+    if (ta().value === '/probe') ok('关闭菜单不改动已输入内容')
+    else bad('Esc 把输入内容也改了：' + JSON.stringify(ta().value))
+    setVal(ta(), '')
+
+    /* 把真实命令列表换回来，不然 /login 会被当成普通消息发给模型 */
+    store.setState({ commands: realCommands, commandsAt: Date.now() })
+    await sleep(300)
+
+    out.push('\n=== 15. `/login` 不发给模型，而是打开「模型接入」 ===')
     const before = store.getState().messages.length
     setVal(ta(), '/login')
     await sleep(300)

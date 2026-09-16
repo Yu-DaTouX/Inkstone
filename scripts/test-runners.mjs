@@ -16,11 +16,16 @@ export function runRunnerTests(ok, RunnerRegistry) {
       calls,
       state: { sessionId: 's', sessionFile: undefined, isAgentRunning: false, isStreaming: false, isCompacting: false, cwd: 'C:/p' },
       pending: 0,
+      /** 直执行 shell 是否在跑（L05：它也算“忙”，见 runners.ts 的 busy） */
+      bashRunning: false,
       getState() {
         return this.state
       },
       getPendingUiCount() {
         return this.pending
+      },
+      hasRunningBash() {
+        return this.bashRunning
       },
       getConn() {
         return { state: 'ready', detail: '' }
@@ -95,6 +100,35 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(first.calls.stop === 0 && made.length === 2, '冲突时没有停止或额外创建实例')
       ok(reg.size === 2, '冲突拒绝后实例数量不变')
 
+      /*
+       * ---- 4b. 直执行 shell 在跑也算忙（L05） ----
+       *
+       * 直执行 bash 不经过模型，所以 isAgentRunning / isStreaming 都是 false。
+       * 但它同样在改工作目录 —— 不算忙的话，切换会复用到这颗实例，
+       * 用户在新会话里只会看到“已有一条命令在跑”（看着像卡死）。
+       */
+      {
+        const madeB = []
+        const regB = new RunnerRegistry({
+          limit: 2,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            madeB.push(a)
+            return a
+          }
+        })
+        const b1 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z1.jsonl' })
+        ok(b1.ok, '先建一个实例用于 shell 忙碌判定')
+        madeB[0].bashRunning = true
+        const b2 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
+        ok(!b2.ok, '直执行 shell 在跑时，同 cwd 的切换被拒绝', JSON.stringify(b2))
+        ok(/同一工作目录/.test(b2.error ?? ''), '理由仍是“同一工作目录已有运行中的会话”', JSON.stringify(b2.error))
+        madeB[0].bashRunning = false
+        const b3 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
+        ok(b3.ok, 'shell 跑完后同 cwd 又能正常切换/复用', JSON.stringify(b3))
+      }
+
       /* ---- 5. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
       const second = made[1]
       second.state = { ...second.state, isAgentRunning: true }
@@ -106,11 +140,11 @@ export function runRunnerTests(ok, RunnerRegistry) {
 
       /* ---- 6. 有实例空闲时才复用（并且是切会话不是停止） ---- */
       first.state = { ...first.state, isAgentRunning: false }
-      const r5 = await reg.select({ cwd: 'C:/c', sessionFile: 'C:/s3.jsonl' })
+      const r5 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s3.jsonl' })
       ok(r5.ok && r5.via === 'reuse', '有空闲实例时复用它（省进程）', `via=${r5.via}`)
       ok(r5.id === first.id, '复用的正是那个空闲实例')
       ok(first.calls.switchSession.includes('C:/s3.jsonl'), '复用 = 让它切到新会话')
-      ok(first.calls.stop === 0, '复用路径没有停止实例')
+      ok(first.calls.stop === 0, '同项目复用不会停止实例（跨项目换进程见第 13 组）')
       ok((r5.generation ?? 0) > 1, '复用会话时 generation 递增')
       const envelope = reg.runtimeOf(first.id)
       ok(envelope?.runId === first.id && envelope?.generation === r5.generation, '运行时封套包含 runId 与当前代次')
@@ -126,7 +160,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
       /* ---- 8. waiting（有请求在等回答）也算忙 ---- */
       first.pending = 1
       first.state = { ...first.state, isAgentRunning: false }
-      const r7 = await reg.select({ cwd: 'C:/a', sessionFile: 'C:/s4.jsonl' })
+      const r7 = await reg.select({ cwd: 'C:/d', sessionFile: 'C:/s4.jsonl' })
       ok(
         !r7.ok && /上限/.test(r7.error ?? ''),
         '等待回答的实例也算忙（不会被顶掉，而是明确拒绝）',
@@ -161,6 +195,56 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(stopped === 1, 'stopByCwd 会识别大小写、斜杠和尾部斜杠差异', `stopped=${stopped}`)
         ok(cwdReg.size === 0, '规范化路径停止后实例已移除')
         ok(runner?.calls.stop === 1, '规范化路径只停止匹配到的实例')
+      }
+
+      /*
+       * ---- 13. 跨项目复用空闲实例必须换进程（D5）----
+       *
+       * pi 进程的 cwd 只在 spawn 时确定，`new_session` 改不了它。
+       * 只改注册表字段的话，新会话会落在旧项目目录里。
+       */
+      {
+        const { reg, agents } = make()
+        const first = await reg.select({ cwd: 'C:/p1', sessionFile: 'C:/s-p1.jsonl' })
+        const oldAgent = agents[0]
+        ok(agents.length === 1, '同项目内只起了一个进程')
+
+        /* 同一 cwd 换会话：复用同一个进程 */
+        const same = await reg.select({ cwd: 'C:/p1', sessionFile: 'C:/s-p1b.jsonl' })
+        ok(same.ok && same.via === 'reuse' && agents.length === 1, '同项目复用不换进程', `agents=${agents.length}`)
+        ok(oldAgent.calls.switchSession.includes('C:/s-p1b.jsonl'), '同项目复用只切会话文件')
+
+        /* 跨项目换会话：必须换进程，runner id 保持不变 */
+        const moved = await reg.select({ cwd: 'C:/p2', sessionFile: 'C:/s-p2.jsonl' })
+        ok(moved.ok && moved.via === 'reuse', '跨项目仍复用同一个 runner 身份', `via=${moved.via}`)
+        ok(moved.id === first.id, 'runner id 稳定（渲染端缓存不用换键）')
+        ok(agents.length === 2, '跨项目复用会新建一个 pi 进程', `agents=${agents.length}`)
+        ok(oldAgent.calls.stop === 1, '旧 cwd 的进程被停掉')
+        ok(agents[1].calls.start === 1, '新进程已启动')
+        ok(agents[1].calls.switchSession.includes('C:/s-p2.jsonl'), '新进程切到目标会话')
+        ok(reg.activeRunner()?.cwd === 'C:/p2', '注册表里的 cwd 指向新项目', reg.activeRunner()?.cwd)
+        ok((moved.generation ?? 0) > 1, '换项目同样让 generation 递增（迟到事件失效）')
+      }
+
+      /* ---- 14. 跨项目换进程失败时回退，不把旧实例弄丢 ---- */
+      {
+        const { reg, agents } = make()
+        const first = await reg.select({ cwd: 'C:/p1' })
+        /* 下一个新建的假 agent 启动失败 */
+        reg.opts.createAgent = (id, cwd) => {
+          const bad = mkAgent()
+          bad.id = id
+          bad.cwd = cwd
+          bad.start = async () => ({ ok: false, error: '起不来' })
+          agents.push(bad)
+          return bad
+        }
+        const failed = await reg.select({ cwd: 'C:/p2' })
+        ok(!failed.ok && /起不来/.test(failed.error ?? ''), '跨项目换进程失败会明确报错', JSON.stringify(failed.error))
+        ok(reg.activeRunner()?.cwd === 'C:/p1', '失败后注册表仍指回旧 cwd')
+        ok(agents[0].calls.stop === 0, '失败时旧进程没有被停掉')
+        ok(agents[1].calls.stop === 1, '起不来的半个进程被收掉')
+        ok(first.id === reg.activeRunner()?.id, '实例身份没有被换掉')
       }
     })()
   }

@@ -28,6 +28,7 @@ import {
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
+import { projectIdForCwd } from './project-id'
 
 // 数据目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
 const DIR = YAN_DIR
@@ -206,9 +207,9 @@ function sanitizeProfile(v: unknown): UserProfile {
   }
 }
 
-function projectId(cwd: string): string {
-  // 路径变更前后 id 独立保存；这里仅用于旧设置的确定性迁移。
-  return `project-${Buffer.from(cwd.toLowerCase()).toString('base64url').slice(0, 36)}`
+function projectId(cwd: string, isTaken?: (id: string) => boolean): string {
+  /* 派生规则与碰撞退路在 project-id.ts（那里有 D14 的完整说明）。 */
+  return projectIdForCwd(cwd, isTaken)
 }
 
 function sanitizeProjects(v: unknown, names: Record<string, string>, recent: string[], cwd: string): ProjectRecord[] {
@@ -223,9 +224,16 @@ function sanitizeProjects(v: unknown, names: Record<string, string>, recent: str
     seen.add(o.id)
     out.push({ id: o.id.slice(0, 80), cwd: o.cwd, name: typeof o.name === 'string' ? o.name.trim().slice(0, 64) : '', groupId: typeof o.groupId === 'string' ? o.groupId.slice(0, 80) : undefined, archived: o.archived === true, createdAt: Number.isFinite(o.createdAt) ? Number(o.createdAt) : now, updatedAt: Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : now })
   }
+  const usedIds = new Set(out.map((p) => p.id))
   for (const path of new Set([...Object.keys(names), ...recent, cwd])) {
     if (!path || out.some((p) => p.cwd === path)) continue
-    out.push({ id: projectId(path), cwd: path, name: names[path]?.trim().slice(0, 64) ?? '', archived: false, createdAt: now, updatedAt: now })
+    /*
+     * id 不能与**别的 cwd** 共用：同前缀目录会撞旧算法的 36 字符截断，
+     * 而按 id 反查项目的入口（文件树 / @ 补全 / 搜索）会因此误判。
+     */
+    const id = projectId(path, (candidate) => usedIds.has(candidate))
+    usedIds.add(id)
+    out.push({ id, cwd: path, name: names[path]?.trim().slice(0, 64) ?? '', archived: false, createdAt: now, updatedAt: now })
   }
   return out
 }

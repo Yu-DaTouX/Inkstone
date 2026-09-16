@@ -11,6 +11,7 @@ import { create } from 'zustand'
 import type {
   AppSettings,
   Attachment,
+  AuthProviderInfo,
   BrowserState,
   ChromeSyncReport,
   ExtensionUiRequest,
@@ -37,6 +38,7 @@ import type {
   ZoomState
 } from '../../../shared/ipc'
 import { playSound } from '../lib/sound'
+import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
 import {
   migrateSessionRuntime,
@@ -139,6 +141,14 @@ interface Store {
   models: ModelInfo[]
   thinkingLevels: string[]
   commands: SlashCommand[]
+  /**
+   * 供应商凭证状态（D12）。
+   *
+   * 为什么要它：pi 在凭证缺失时只会把档位回成 `["off"]`，界面于是把
+   * “没配 API” 和 “这模型不支持思考” 显示成同一句话。带上这份状态，
+   * 模型菜单才能把差别说出来（“未配置凭证” vs “不支持思考档位”）。
+   */
+  authProviders: AuthProviderInfo[]
 
   /* UI */
   settings: AppSettings | null
@@ -261,6 +271,8 @@ interface Store {
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
+  /** 拉一次供应商凭证状态（D12）：模型菜单用来区分“未配凭证”与“不支持思考” */
+  loadAuthProviders: () => Promise<void>
   /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
   setSessionDraft: (value: string) => void
   /** 重新探测 pi 内核（版本 / 来源），pi 之前没找到时会顺便重新拉起 */
@@ -289,6 +301,11 @@ interface Store {
   abortBash: () => Promise<void>
   newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => Promise<void>
   switchSession: (path: string) => Promise<void>
+  /**
+   * 切项目时选「该项目最近访问的会话」（N05）：运行实例优先，其次会话列表。
+   * 返回 `undefined` 表示该项目还没有任何会话（调用方应新建一个）。
+   */
+  pickProjectSession: (cwd: string, projectId?: string) => string | undefined
   /** 只改 Yan 的产品归属，不移动 pi 的 JSONL，也不停止运行实例。 */
   moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
@@ -658,6 +675,7 @@ export const useStore = create<Store>((rawSet, get) => {
   thinkingLevels: [],
   commands: [],
   commandsAt: 0,
+  authProviders: [],
   commandUse: readCommandUse(),
 
   settings: null,
@@ -1100,6 +1118,21 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  /**
+   * 拉一次供应商凭证状态（D12）。
+   *
+   * 不放进 bootstrap：它要读 auth.json 并探测环境变量，而结果只在
+   * 打开模型菜单、进设置页时才用得上。失败就当“不知道”，不阻断其它功能。
+   */
+  loadAuthProviders: async () => {
+    try {
+      const list = await window.yan.authProviders()
+      set({ authProviders: Array.isArray(list) ? list : [] })
+    } catch {
+      /* 探测失败不改变现有状态：菜单退化成“不标未配置” */
+    }
+  },
+
   reloadModels: async () => {
     const request = ++capabilityRequestSeq
     const initial = get()
@@ -1303,6 +1336,18 @@ export const useStore = create<Store>((rawSet, get) => {
    * ⚠️ `peekedPath` 用来避免“旧请求的 sync 把新会话覆盖”：
    *   用户在 pi 切完之前又点了一个会话时，前一个的 sync 可能后到。
    */
+  /**
+   * 切项目时选「该项目最近访问的会话」（N05）。
+   *
+   * 判定为什么是「运行实例优先」而不是只看会话列表：刚建、还没有消息的会话
+   * 不会出现在 `sessions` 里（`listSessions` 解析不出 head 就跳过），只看列表
+   * 就会落到 `newSession`，而草稿是按 sessionId 存的 —— 用户切回来时草稿没了。
+   */
+  pickProjectSession: (cwd, projectId) => {
+    const s = get()
+    return pickProjectSessionTarget({ cwd, projectId, runners: s.runners, sessions: s.sessions })
+  },
+
   switchSession: async (path) => {
     // ① 立即显示（不等 pi）
     try {

@@ -151,6 +151,8 @@ export class RunnerRegistry {
   private busy(runner: Runner): boolean {
     const st = runner.agent.getState()
     if (st?.isAgentRunning === true || st?.isCompacting === true || st?.isStreaming === true) return true
+    /* 直执行 shell 也算忙：它同样在改工作目录（L05） */
+    if (runner.agent.hasRunningBash()) return true
     return runner.agent.getPendingUiCount() > 0
   }
 
@@ -239,6 +241,42 @@ export class RunnerRegistry {
       idle.generation += 1
       idle.projectId = target.projectId
       this.opts.onChanged?.()
+
+      /*
+       * pi 进程的 cwd 只在 spawn 时确定：`new_session` 只接受
+       * `parentSession`（0.85.1 实测），`switch_session` 只换会话文件。
+       * 所以跨项目复用必须**换一个进程**，否则新会话会落在旧项目目录里
+       * （D5）—— 只改注册表上的 `cwd` 字段是骗自己的。
+       *
+       * 顺序：先把新实例起起来，失败就整体回退（旧实例原样留着、仍可用）；
+       * 成功后再停旧进程。被复用的实例一定是空闲的（没有流、没有等待），
+       * 所以这段窗口里旧进程不会自己推事件。
+       */
+      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
+        const previous = idle.agent
+        const replacement = this.opts.createAgent(idle.id, target.cwd)
+        const started = await replacement.start()
+        if (!started.ok) {
+          /* 新进程没起来也要收掉，别留下半个 pi。 */
+          try {
+            await replacement.stop()
+          } catch {
+            /* 已经死了 */
+          }
+          idle.generation = oldGeneration
+          idle.projectId = oldProjectId
+          this.opts.onChanged?.()
+          return { ok: false, error: started.error }
+        }
+        idle.agent = replacement
+        idle.cwd = target.cwd
+        try {
+          await previous.stop()
+        } catch {
+          /* 旧进程自己已经退了 */
+        }
+      }
+
       const res = target.sessionFile
         ? await idle.agent.switchSession(target.sessionFile)
         : await idle.agent.newSession()

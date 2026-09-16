@@ -552,7 +552,19 @@ async function resolveFileContext(
     const project = settings.projects.find((item) => item.id === projectId)
     if (!project) return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目不存在或已被移除' }
     if (normalizeCwdForIdentity(project.cwd) !== normalizeCwdForIdentity(checked.cwd)) {
-      return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目与工作目录不匹配' }
+      /*
+       * 旧设置里可能存在两个 cwd 共用一个 id（同前缀目录 + 旧的项目 id
+       * 截断算法，见 project-id.ts 的 D14 说明），按 id `find` 命中的是
+       * 另一条记录。这里按 cwd 再确认一次：确实存在匹配这个 cwd 的项目
+       * 记录才继续（并且把它的 id 回带），否则仍然拒绝。
+       */
+      const byCwd = settings.projects.find(
+        (item) => normalizeCwdForIdentity(item.cwd) === normalizeCwdForIdentity(checked.cwd)
+      )
+      if (!byCwd) {
+        return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目与工作目录不匹配' }
+      }
+      return { ok: true, context: { ...provisional, cwd: checked.cwd, projectId: byCwd.id } }
     }
   }
 

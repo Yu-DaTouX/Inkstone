@@ -96,6 +96,46 @@
       ok(after.length === before.length - 1, `只少了一个实例（${before.length} → ${after.length}）`)
       ok(!after.some((r) => r.id === victim.id), '被停的实例从注册表里消失')
     }
+
+    /*
+     * D5：跨项目复用空闲实例时必须换进程。
+     *
+     * pi 进程的 cwd 只在 spawn 时确定；只改注册表字段的话，新会话会落在
+     * 旧项目目录里。这里用真实存在、且与当前不同的目录（父目录）验证
+     * **pi 上报的 cwd**（statuses().cwd 来自 get_state）确实跟着变。
+     */
+    const canonical = (s) => String(s ?? '').replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+    const parentCwd = String(cwd).replace(/[\\/][^\\/]+[\\/]?$/, '')
+    if (parentCwd && canonical(parentCwd) !== canonical(cwd)) {
+      /* 先回到当前项目，制造一个空闲实例，让下面的跨项目切换走「复用」路径 */
+      const back = await window.yan.selectSession({ cwd })
+      ok(back.ok === true, '回到当前项目，准备验证跨项目复用', back.error ?? '')
+      const moved = await window.yan.selectSession({ cwd: parentCwd })
+      if (!moved.ok) {
+        out.push(`  ⤺ 跳过：无法切到父目录验证跨项目 cwd（${JSON.stringify(moved.error)}）`)
+      } else {
+        let reported = null
+        for (let i = 0; i < 40; i++) {
+          const list = await window.yan.runnerStatuses()
+          const row = list.find((r) => r.id === moved.id)
+          if (row?.cwd && canonical(row.cwd) === canonical(parentCwd)) {
+            reported = row.cwd
+            break
+          }
+          await sleep(200)
+        }
+        ok(
+          reported !== null,
+          `D5：跨项目复用后 pi 进程的 cwd 跟上新项目（via=${moved.via}）`,
+          `cwd=${reported ?? '(未更新)'}`
+        )
+
+        /* 切回去：让探针结束时环境与开始时一致 */
+        await window.yan.selectSession({ cwd })
+      }
+    } else {
+      out.push('  ⤺ 跳过：当前 cwd 没有可用的父目录，无法验证跨项目换进程')
+    }
   } catch (error) {
     out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
   }

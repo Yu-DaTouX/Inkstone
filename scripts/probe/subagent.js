@@ -95,6 +95,13 @@
     ok(!!final, '拿到终态')
     ok(final?.status === 'done', `正常跑完（实际 ${final?.status}）`)
     ok((final?.transcript.length ?? 0) > 0, '转录里有内容（事件流真的接上了）')
+    /* 诊断：一条回复到底落成了几条消息（id 漂移 / 尾部事件丢失都会在这里现形） */
+    out.push(
+      '  转录明细 = ' +
+        JSON.stringify(
+          (final?.transcript ?? []).map((m) => [m.id, m.role, (m.text ?? '').slice(0, 20), (m.toolCalls ?? []).map((c) => c.name)])
+        )
+    )
     ok(!!final?.endedAt, '记录了结束时间')
     ok(
       (final?.transcript ?? []).some((m) => m.role === 'assistant' && m.text.length > 0),

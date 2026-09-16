@@ -472,3 +472,60 @@ kbd {
  *   现在的窄屏规则统一由 sidebar-review.css 管（它最后加载），
  *   断点与宽度按实测的「对话区最小可用宽度」定。
  */
+
+/* ---- 渲染异常兜底（D8）----
+   这张卡片只在 React 渲染期抛错、整棵树被卸载时出现。
+   要求：不依赖应用骨架的任何布局变量（那时候 app 结构可能正处在坏状态），
+   全部用最基础的令牌，且高度自撑满视口。 */
+.crash {
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: var(--bg-0);
+  color: var(--fg);
+}
+
+.crash-card {
+  width: min(720px, 100%);
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+}
+
+.crash-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+  color: var(--err);
+}
+
+.crash-body {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.crash-detail {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.crash-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}

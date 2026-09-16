@@ -20,11 +20,12 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
+import { consumeQueuedItem } from './queue-items'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
-import { isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
+import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import {
   capabilitySnapshot,
   modelKeyOf,
@@ -508,6 +509,14 @@ export class AgentController extends EventEmitter {
             this.messages.push(norm)
             this.indexCalls(norm)
             this.push({ ch: 'msg-add', payload: norm })
+            /*
+             * 插话真的被消费了（D9）。
+             *
+             * pi 只在队列**变化**时推 `queue_update`；它把排队项变成一条真正的
+             * user 消息时不一定再推一次，于是界面会一直挂着「排队中」。
+             * 这里以**消息真的出现**为准：按原文从快照里摘掉一条。
+             */
+            this.consumeQueued(norm.text)
           }
         } else if (m?.role === 'assistant') {
           const id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
@@ -657,6 +666,13 @@ export class AgentController extends EventEmitter {
         if (isWriteTool(call.name)) {
           const path = writePathOf(call.args)
           if (path) snapshotBefore(call.id, path)
+        } else if (isShellTool(call.name)) {
+          /*
+           * shell / 第三方工具（L05）：参数里没有“要改哪个文件”，
+           * 所以对整个工作目录拍一份前后快照，事后算目录级差异。
+           * 同一目录并发时快照会标 concurrent —— 那种情况宁可显示“无法归属”。
+           */
+          beginTreeSnapshot(call.id, this.cwd, this.state?.sessionId)
         }
         this.pushTool(call)
         break
@@ -703,6 +719,17 @@ export class AgentController extends EventEmitter {
                 ? (call.details as Record<string, unknown>)
                 : {}
             call.details = { ...base, fileDiff: diff }
+          }
+        } else if (isShellTool(call.name)) {
+          /* 目录级差异只有在**真的有变化**或**归属存疑**时才挂上去：
+             一条 `ls` 不该在界面上多出一张“0 个改动”的卡片。 */
+          const changes = endTreeSnapshot(call.id)
+          if (changes && (changes.files.length > 0 || changes.unknown)) {
+            const base =
+              call.details && typeof call.details === 'object' && !Array.isArray(call.details)
+                ? (call.details as Record<string, unknown>)
+                : {}
+            call.details = { ...base, workspaceChanges: changes }
           }
         }
         this.pushTool(call)
@@ -1156,6 +1183,19 @@ export class AgentController extends EventEmitter {
     return next
   }
 
+  /**
+   * 从队列快照里摘掉一条“已经被消费”的项（D9）。
+   *
+   * 先 steering 后 followUp：同一个回合里 steering 会先被插进当前对话，
+   * followUp 要等回合结束。两边都可能出现相同文本（用户反复发同一句），
+   * 所以只摘**第一条**匹配（FIFO），剩下的等后续消息再到。
+   */
+  private consumeQueued(text: string): void {
+    /* 判定规则在 queue-items.ts（纯函数，有单测）；这里只管把结果推出去 */
+    const next = consumeQueuedItem(this.queueState, text)
+    if (next) this.publishQueueItems(next)
+  }
+
   private resetQueue(emit = false): void {
     this.queueState = { steering: [], followUp: [] }
     if (emit) this.push({ ch: 'queue', payload: this.queueState })
@@ -1350,8 +1390,17 @@ export class AgentController extends EventEmitter {
       if (res?.success && res.data) {
         cleared = { steering: res.data.steering ?? [], followUp: res.data.followUp ?? [] }
       }
+      /*
+       * 不管 clear_queue 有没有带回文本，本地快照都得跟着清（D9）。
+       *
+       * 为什么：pi 只在队列变化时推 `queue_update`，而它把排队项拿去当普通
+       * 消息消费时不一定推 —— 于是中止之后左栏/输入框上方还会挂着“排队中”，
+       * 用户会以为自己那几句话还在排队。到底有没有被消费，`cleared` 是权威；
+       * 快照只是展示，中止后应与 pi 对齐。
+       */
+      this.resetQueue(true)
     } catch {
-      /* clear_queue 失败不阻碍中止 */
+      /* clear_queue 失败不阻碍中止；快照留给下一条 queue_update 自己对齐 */
     }
 
     // 本地先把流式收尾，UI 立刻有反馈
@@ -1422,6 +1471,9 @@ export class AgentController extends EventEmitter {
     const reqId = `yan-bash-${Date.now().toString(36)}`
     const msgId = `bash-${reqId}`
     this.bash = { reqId, msgId, command: cmd, output: '' }
+    /* 直执行 shell 同样算“变更归属”（L05）：它与模型调的 bash 走的都是
+       同一颗 pi，改的是同一个工作目录 —— 没有理由只有模型跑的命令能审阅。 */
+    beginTreeSnapshot(msgId, this.cwd, this.state?.sessionId)
 
     const msg: UIMessage = {
       id: msgId,
@@ -1481,6 +1533,17 @@ export class AgentController extends EventEmitter {
   ): void {
     const failed = cancelled || exitCode === null || exitCode !== 0
     /*
+     * 先取目录差异：`endTreeSnapshot` 顺带把这次快照注销掉，
+     * 不管后面提前返回还是抛错，都不能把活跃快照留成泄漏。
+     */
+    const changes = endTreeSnapshot(msgId)
+    const details: Record<string, unknown> = {}
+    if (truncated) {
+      details.truncated = truncated
+      details.fullOutputPath = fullOutputPath
+    }
+    if (changes && (changes.files.length > 0 || changes.unknown)) details.workspaceChanges = changes
+    /*
      * 这里要**主动清掉该工具的增量游标与待推标记**：
      * 下面推的是全量快照，若还留着一个待推增量，定时器到点后会再追加一次
      * —— 而那份增量是基于旧长度算的，结果就是输出里多一段重复的尾巴。
@@ -1502,7 +1565,7 @@ export class AgentController extends EventEmitter {
               args: { command },
               status: failed ? 'error' : 'ok',
               output,
-              details: truncated ? { truncated, fullOutputPath } : undefined,
+              details: Object.keys(details).length ? details : undefined,
               endedAt: Date.now()
             }
           ]
@@ -1513,6 +1576,18 @@ export class AgentController extends EventEmitter {
 
   async abortBash(): Promise<void> {
     await this.rpc?.command('abort_bash').catch(() => null)
+  }
+
+  /**
+   * 有**直执行** shell 在跑（L05 发现）。
+   *
+   * 为什么单拉一个方法：`getState()` 里的 isAgentRunning / isStreaming 都不
+   * 包括直执行 bash（它不经过模型）。但这条命令正在改工作目录 ——
+   * 复用/顶掉这个实例会出现两个问题：用户在新会话里发不出命令
+   *（“已有一条命令在跑”），而且两个实例同 cwd 并行改文件正是 L03 要防的事。
+   */
+  hasRunningBash(): boolean {
+    return this.bash !== null
   }
 
   /* ---------------------------------------------------------- 会话管理 */
