@@ -288,7 +288,7 @@ const CASES = {
    * 「界面上的数 = 砚用来判断的数」、三阶段刻度与未接管的虚线，
    * 以及关掉「自动压缩」后整个工作集视角退回物理窗口。
    */
-  contextbudget: { probe: 'scripts/probe/context-budget.js', delay: 14000, cost: 0, budget: 90000 },
+  contextbudget: { probe: 'scripts/probe/context-budget.js', delay: 14000, cost: 0, budget: 180000 },
   /*
    * N21-3 真实接管（cost 1）：用一次普通回合越过**砚算出来的工作集**，
    * 验证 pi 真的压了、砚把这一次记成自己发起的（pi 一律报 reason=manual）。

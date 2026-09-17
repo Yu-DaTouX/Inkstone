@@ -321,5 +321,78 @@
     '恢复默认后工作集上限回到 240k'
   )
 
+  /* === 8. 模型级 override（N21-7 剩余项）：按 provider/model 配，换模型就生效 === */
+  log('=== 8. 模型级 override（真实换模型）===')
+  const keyOf = (m) => (m && m.provider && m.id ? `${m.provider}/${m.id}` : '')
+  const model = S().session?.model
+  const modelKey = keyOf(model)
+  ok(/^[^/]+\/.+/.test(modelKey), `拿到当前模型 key（${modelKey || '拿不到'}）`)
+
+  if (/^[^/]+\/.+/.test(modelKey)) {
+    /* 模型级覆盖存在 `contextPolicyByModel`，key 就是 `provider/model`（与主进程 lookup 同一张表） */
+    const modelLevelCap = 321_000
+    await S().patchSettings({ contextPolicyByModel: { [modelKey]: { workingSetCap: modelLevelCap } } })
+    for (let i = 0; i < 40; i++) {
+      if (S().session?.contextPolicy?.source === 'model') break
+      await sleep(250)
+    }
+    const asModel = S().session?.contextPolicy
+    ok(asModel?.source === 'model', `来源变成 model 层（实际 ${asModel?.source}）`)
+    ok(asModel?.sourceKey === modelKey, `来源点名了命中的 provider/model（实际 ${asModel?.sourceKey}）`)
+    ok((asModel?.overridden ?? []).includes('workingSetCap'), '覆盖字段被点名（界面据此解释“哪些值不是默认”）')
+    ok(
+      Number(asModel?.budget?.workingSet) <= modelLevelCap,
+      `工作集受模型级上限约束（${asModel?.budget?.workingSet} <= ${modelLevelCap}）`
+    )
+
+    /* 设置面板：模型级那一栏要认得这个 override（不是只在内存里生效） */
+    S().openSettings?.('context')
+    await sleep(500)
+    const modelCapInput = q('[data-testid="ctx-model-cap"]')
+    ok(modelCapInput?.value === String(modelLevelCap), `设置面板回填了模型级覆盖（实际 ${JSON.stringify(modelCapInput?.value)}）`)
+    ok(!!q('[data-testid="ctx-model-remove"]'), '有「移除模型级覆盖」的入口')
+    S().closeSettings?.()
+    await sleep(200)
+
+    /*
+     * 真换模型：`setModel` 走的是与界面同一条件 IPC。
+     * 换到另一个模型后，刚才那条 override 必须**不再生效** —— 这是“按模型配”相对于
+     * “按用户配”的全部意义所在（否则它就只是个更麻烦的用户级设置）。
+     */
+    const models = (await window.yan.listModels().catch(() => [])) ?? []
+    const other = models.find((m) => keyOf(m) && keyOf(m) !== modelKey) ?? null
+    if (!other) {
+      log('  ⤺ 没有第二个模型可选，跳过「换模型后 override 失效」这一段')
+    } else {
+      const otherKey = keyOf(other)
+      await window.yan.setModel(other.provider, other.id)
+      for (let i = 0; i < 80; i++) {
+        if (keyOf(S().session?.model) === otherKey) break
+        await sleep(250)
+      }
+      ok(keyOf(S().session?.model) === otherKey, `模型真的换到了 ${otherKey}（实际 ${keyOf(S().session?.model)}）`)
+      const asOther = S().session?.contextPolicy
+      ok(asOther?.source !== 'model', `换到没有 override 的模型后，来源不再是 model（实际 ${asOther?.source}）`)
+      ok(
+        Number(asOther?.budget?.workingSet) !== Number(asModel?.budget?.workingSet) || asOther?.source === 'default',
+        `工作集按新模型所属的层重算过（${asOther?.budget?.workingSet}）`
+      )
+      await window.yan.setModel(model.provider, model.id)
+      for (let i = 0; i < 80; i++) {
+        if (S().session?.contextPolicy?.source === 'model') break
+        await sleep(250)
+      }
+      ok(S().session?.contextPolicy?.source === 'model', '切回原模型后模型级 override 重新生效')
+    }
+  }
+
+  /* 清理：模型级 override 不留副作用（下一次跑要看到干净的表） */
+  await S().patchSettings({ contextPolicyByModel: {} })
+  for (let i = 0; i < 40; i++) {
+    if (S().session?.contextPolicy?.source === 'default') break
+    await sleep(250)
+  }
+  ok(S().session?.contextPolicy?.source === 'default', '清理后来源回到默认（探针不留副作用）')
+
   return out.join('\n')
 })()
