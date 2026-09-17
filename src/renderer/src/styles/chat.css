@@ -5,14 +5,16 @@
  */
 
 /*
- * 正文用**真实的 Windows UI 字体**，代码保持等宽网格。
+ * 正文用**可读性优先的无衬线栈**，代码保持等宽网格。
  *
  * 为什么正文不用等宽：中文长段落用等宽字体读起来很累（字距过大、
  * 行宽难对齐），而代码 / 路径必须等宽才能对齐。这个「正文非等宽、
- * 代码等宽」的分工是评审确认的方向。
+ * 代码等宽」的分工是评审确认的方向，字族定义在 tokens.css（--font-body），
+ * 这里不再硬编码字体名 —— 之前这里直接写 'Segoe UI', 'Microsoft YaHei UI'
+ * 加 sans-serif，导致全仓有两份字体真相，改一处另一处不会动。
  */
 .md {
-  font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  font-family: var(--font-body);
   letter-spacing: -0.01em;
   line-height: 1.6;
 }

@@ -1155,7 +1155,10 @@
 .qpanel-editor {
   min-height: 64px;
   resize: vertical;
-  font-family: var(--font-ui);
+  /* 多行输入与正文同一套字族（--font-body）：问题面板里可能是一段中文描述，
+     等宽的体验与正文不一致。与正文保持同族也避免了“同一个字在两块区域
+     宽度不同”的错觉。 */
+  font-family: var(--font-body);
 }
 
 .qpanel-input:focus,
