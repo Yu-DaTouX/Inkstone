@@ -358,6 +358,22 @@ const CASES = {
       YAN_CONTEXT_POLICY: '{"deep":{"enabled":true,"minTokens":1}}'
     }
   },
+  /*
+   * Deep Context 的**界面路径**（cost 1）：与 `contextdeep` 的分工是 ——
+   * 那个走 `YAN_CONTEXT_POLICY`（测试通道）验「链路通不通」，
+   * 这个走**设置面板**（`patchSettings`）验「设置真的传到扩展了吗」。
+   * 中间隔着「渲染端 → 主进程 → 写盘 → 扩展读 `desktop.json`」四段，
+   * 任何一段断了，界面上的开关都会看起来正常而实际无效。
+   * 刻意**不设** `YAN_CONTEXT_POLICY` / `YAN_CONTEXT_DEEP` —— 设了就盖掉了本场景的命题。
+   */
+  contextdeeppref: {
+    probe: 'scripts/probe/context-deep-pref.js',
+    delay: 10000,
+    cost: 1,
+    budget: 240000,
+    contextExtLog: true,
+    afterExit: 'contextDeepPref'
+  },
   contextswitchguard: {
     probe: 'scripts/probe/context-switch-guard.js',
     delay: 10000,
@@ -1860,6 +1876,54 @@ async function checkContextTakeoverHook(sandboxRoot) {
   return { ok: true, lines }
 }
 
+/**
+ * Deep Context 的**界面路径**：在设置面板开的开关，扩展真的读到了吗。
+ *
+ * 证据形态是 `stage:'deep'` 的 `skipped: below-threshold` —— 它**只在**
+ * `p.deep.enabled` 为 true 时才可能产生（`if (p.deep.enabled)` 才进 `runDeepPass`），
+ * 而探针会话只有几 k token、真实门槛是 150k，所以必然停在门槛上。
+ * 换句话说：**「因为它没跑」这件事本身就是「开关被读到了」的证据**。
+ * （真正的注入由 `contextdeep` 验 —— 那需要把门槛降下来，只能用测试通道。）
+ */
+async function checkContextDeepPref(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxdeeppref')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+
+  const deep = ownRecords.filter((r) => r?.stage === 'deep')
+  const reasons = [...new Set(deep.map((r) => r.reason).filter(Boolean))]
+  say(deep.length >= 1, `扩展读到了界面上的开关（${deep.length} 条 deep 记录）`)
+  say(reasons.includes('below-threshold'), `停在门槛上（reason=${reasons.join(',') || '无'}）—— 短会话不该注入`)
+  say(!reasons.includes('disabled'), '不是「开关没打开」被挡掉（否则这个场景什么也没验到）')
+  say(!deep.some((r) => r.hook === 'injected'), '短会话里真的没有注入（门槛生效）')
+  const boot = ownRecords.filter((r) => r?.stage === 'boot')
+  if (boot[0]) lines.push(`    · 启动时扩展看到的策略：${boot[0].policy || '(空，本场景期望为空)'}`)
+
+  return { ok, lines }
+}
+
 async function checkContextTakeoverSummary(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2319,6 +2383,7 @@ const AFTER_EXIT = {
   contextGate: checkContextGate,
   contextRefresh: checkContextRefresh,
   contextTakeoverSummary: checkContextTakeoverSummary,
+  contextDeepPref: checkContextDeepPref,
   contextTakeoverHook: checkContextTakeoverHook,
   contextDeep: checkContextDeep
 }

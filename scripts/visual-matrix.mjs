@@ -876,7 +876,7 @@ const MUST_HAVE = {
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
-  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]'],
+  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   compaction: [
     '[data-testid="rp-context"]',
