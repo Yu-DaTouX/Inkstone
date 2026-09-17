@@ -1067,6 +1067,17 @@ await runContextProducerTests(ok, {
 })
 
 /*
+ * N21-8：Deep Context（Pass 1 工作集归纳）。
+ *
+ * 它是唯一会在用户提问前**同步阻塞**一次模型调用的部分，而失败是两头静默的：
+ * 该跑时没跑（用户以为开了）与不该跑时跑了（每轮多一次调用 + 最多多等 30s）。
+ * 所以闸门、输入有界、解析容错、注入幂等全部钉在纯逻辑层。
+ */
+const contextDeep = await import('../resources/pi-extensions/context-deep.js')
+const { runContextDeepTests } = await import('./test-context-deep.mjs')
+await runContextDeepTests(ok, { deep: contextDeep })
+
+/*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到

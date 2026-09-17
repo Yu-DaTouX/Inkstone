@@ -455,7 +455,7 @@ export async function runContextTransformTests(ok, deps) {
     const ctx = fakeCtx(branch)
 
     setPolicy({ kinds: ['tool-sweep'], recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })
-    const out = EXT.__internals.onContext({ messages }, ctx)
+    const out = await EXT.__internals.onContext({ messages }, ctx)
     ok(!!out && Array.isArray(out.messages), '钩子返回替换后的消息')
     ok(out.messages.length === messages.length, 'sweep 不改条数')
     ok(T.isTombstoneText(T.messageText(out.messages[2])), '真实钩子路径上也把大结果换成墓碑')
@@ -475,12 +475,12 @@ export async function runContextTransformTests(ok, deps) {
 
     /* kinds 不含 tool-sweep 时什么都不做（用户可把清理关掉） */
     setPolicy({ kinds: ['compaction'] })
-    const untouched = EXT.__internals.onContext({ messages }, ctx)
+    const untouched = await EXT.__internals.onContext({ messages }, ctx)
     ok(untouched === undefined, '把清理关掉（kinds 只有 compaction）后不改任何消息')
 
     /* 身份对不上时安全放弃 */
     setPolicy({ kinds: ['tool-sweep'], recentTail: { target: 1, max: 1 } })
-    const skewed = EXT.__internals.onContext({ messages: messages.slice(1) }, ctx)
+    const skewed = await EXT.__internals.onContext({ messages: messages.slice(1) }, ctx)
     ok(skewed === undefined, 'entry 身份对不上 → 放弃整轮变换（宁可压不动）')
 
     /* Task State 注入：水位一致才注入 */
@@ -495,7 +495,7 @@ export async function runContextTransformTests(ok, deps) {
       episodes: []
     }
     await writeFile(stateFile, JSON.stringify(seeded), 'utf8')
-    const injected = EXT.__internals.onContext({ messages }, ctx)
+    const injected = await EXT.__internals.onContext({ messages }, ctx)
     ok(!!injected && injected.messages[0]?.customType === 'yan-task-state', '水位一致 → 注入 <TASK_STATE>')
     ok(
       T.messageText(injected.messages[0]).includes('<TASK_STATE derived="true" authoritative="false"'),
@@ -508,24 +508,24 @@ export async function runContextTransformTests(ok, deps) {
      */
     const older = { ...seeded, sourceWatermark: { entryCount: 7, lastEntryId: 'm7' } }
     await writeFile(stateFile, JSON.stringify(older), 'utf8')
-    const olderInjected = EXT.__internals.onContext({ messages }, ctx)
+    const olderInjected = await EXT.__internals.onContext({ messages }, ctx)
     ok(!!olderInjected, '水位较旧但可定位（gap 1）→ 仍注入')
     ok(T.messageText(olderInjected.messages[0]).includes('[stale'), '陈旧快照的推测字段显式标 stale')
 
     /* 水位对不上（历史被裁剪/回退）→ 不注入 */
     const diverged = { ...seeded, sourceWatermark: { entryCount: 3, lastEntryId: 'zzz' } }
     await writeFile(stateFile, JSON.stringify(diverged), 'utf8')
-    ok(EXT.__internals.onContext({ messages }, ctx) === undefined, '水位 diverged → 不注入过期状态')
+    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '水位 diverged → 不注入过期状态')
 
     /* 太旧（gap > 6）→ 同样不注入 */
     const tooOld = { ...seeded, sourceWatermark: { entryCount: 1, lastEntryId: 'mc0' } }
     await writeFile(stateFile, JSON.stringify(tooOld), 'utf8')
-    ok(EXT.__internals.onContext({ messages }, ctx) === undefined, '落后超过 6 条 → 不注入（宁少不错）')
+    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '落后超过 6 条 → 不注入（宁少不错）')
 
     /* 会话 id 不一致 → 不注入（不拿别的会话的状态） */
     const other = { ...seeded, sessionId: 'other999' }
     await writeFile(stateFile, JSON.stringify(other), 'utf8')
-    ok(EXT.__internals.onContext({ messages }, ctx) === undefined, '状态文件会话对不上 → 不注入')
+    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '状态文件会话对不上 → 不注入')
   }
 
   /* ============ I. session_before_compact 接管闸门 ============ */
@@ -589,7 +589,7 @@ export async function runContextTransformTests(ok, deps) {
     process.env.YAN_CONTEXT_EXT_LOG = logFile
     const branch = branchFixture()
     setPolicy({ kinds: ['tool-sweep'], recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })
-    EXT.__internals.onContext({ messages: messagesOf(branch) }, fakeCtx(branch))
+    await EXT.__internals.onContext({ messages: messagesOf(branch) }, fakeCtx(branch))
     const lines = (await readFile(logFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
     ok(lines.length >= 1 && lines.some((l) => l.hook === 'context' && l.swept === 1), '每次变换写一行结构化诊断', JSON.stringify(lines.at(-1)))
     ok(lines.every((l) => typeof l.ts === 'number'), '诊断行带时间戳')
@@ -737,12 +737,12 @@ export async function runContextTransformTests(ok, deps) {
     setPolicy({ recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })
     const branch = branchFixture()
     const messages = messagesOf(branch)
-    const out = EXT.__internals.onContext({ messages }, fakeCtx(branch))
+    const out = await EXT.__internals.onContext({ messages }, fakeCtx(branch))
     ok(!!out && T.isTombstoneText(T.messageText(out.messages[2])), '默认 kinds 下清扫照常发生（清理默认开）')
 
     /* 用户把清理关掉 → 回到“什么都不做” */
     setPolicy({ kinds: ['compaction'], recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })
-    ok(EXT.__internals.onContext({ messages }, fakeCtx(branch)) === undefined, '关掉清理后不再改消息')
+    ok((await EXT.__internals.onContext({ messages }, fakeCtx(branch))) === undefined, '关掉清理后不再改消息')
     delete process.env.YAN_CONTEXT_POLICY
   }
 
