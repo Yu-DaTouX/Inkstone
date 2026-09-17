@@ -144,6 +144,18 @@ function sanitizeContextDeep(v: unknown): { enabled: boolean } | undefined {
   return (v as { enabled?: unknown }).enabled === true ? { enabled: true } : undefined
 }
 
+/**
+ * `episode-fold` 的用户开关（P2-7）：只认字面 `false`。
+ *
+ * 与 `sanitizeContextDeep` **方向相反** —— 它在默认接管集里，所以是「默认开、
+ * 只有明确关掉才落盘」。两边共同遵守的约定是：磁盘上没有这个键 = 用户没改过，
+ * 以后调默认值时不会把改过的人一起改掉（与 `railWidth: 0` / `contextPolicy` 同一条）。
+ */
+function sanitizeContextFold(v: unknown): { enabled: boolean } | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  return (v as { enabled?: unknown }).enabled === false ? { enabled: false } : undefined
+}
+
 function sanitizeSound(v: unknown): SoundSettings {
   const d = defaultSound()
   if (!v || typeof v !== 'object') return d
@@ -368,6 +380,11 @@ export async function getSettings(): Promise<AppSettings> {
      * （与 `railWidth: 0` / `contextPolicy` 同一个约定）。
      */
     cached.contextDeep = sanitizeContextDeep(cached.contextDeep)
+    /*
+     * `episode-fold` 的用户开关（P2-7）：同样是「没改过 = 磁盘上没有这个键」，
+     * 只不过默认方向相反（它在默认接管集里，所以只有明确关闭才落盘）。
+     */
+    cached.contextFold = sanitizeContextFold(cached.contextFold)
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -440,6 +457,8 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
    * 会把两类用户一起改掉。
    */
   if ('contextDeep' in patch) next.contextDeep = sanitizeContextDeep(next.contextDeep)
+  /* 同上：关闭时写 `{enabled:false}`（它是「开着」的默认态），「没改过」写 `undefined` */
+  if ('contextFold' in patch) next.contextFold = sanitizeContextFold(next.contextFold)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

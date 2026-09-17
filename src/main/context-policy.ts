@@ -28,6 +28,15 @@ import type { ContextPolicyOverrides } from '../shared/ipc'
 export interface ContextPolicySettingsLayer {
   user?: ContextPolicyOverrides
   byModel?: Record<string, ContextPolicyOverrides>
+  /**
+   * `episode-fold` 的用户开关（`AppSettings.contextFold`，P2-7）。
+   *
+   * `false` = 用户关掉了状态生成与注入；`true` / 不传 = 按默认（开）。
+   * 它是**设置层**而不是数值，所以与 `user` / `byModel` 并列而不是塞进它们
+   * （`applyOverrides` 只认数值）。调用方应由 `settings.contextFold?.enabled !== false`
+   * 得出一个明确的布尔，不要让 undefined 在链路上漏传。
+   */
+  foldEnabled?: boolean
 }
 
 let settingsLayer: ContextPolicySettingsLayer = {}
@@ -41,7 +50,8 @@ let settingsLayer: ContextPolicySettingsLayer = {}
 export function setContextPolicySettings(next: ContextPolicySettingsLayer | null | undefined): void {
   settingsLayer = {
     user: next?.user,
-    byModel: next?.byModel
+    byModel: next?.byModel,
+    foldEnabled: next?.foldEnabled
   }
 }
 
@@ -49,7 +59,8 @@ export function setContextPolicySettings(next: ContextPolicySettingsLayer | null
 export function contextPolicySettings(): ContextPolicySettingsLayer {
   return {
     user: settingsLayer.user ? { ...settingsLayer.user } : undefined,
-    byModel: settingsLayer.byModel ? { ...settingsLayer.byModel } : undefined
+    byModel: settingsLayer.byModel ? { ...settingsLayer.byModel } : undefined,
+    foldEnabled: settingsLayer.foldEnabled
   }
 }
 
@@ -72,7 +83,9 @@ export function activeContextPolicy(
     user: settingsLayer.user,
     byModel: settingsLayer.byModel,
     modelKey,
-    envRaw: env.YAN_CONTEXT_POLICY
+    envRaw: env.YAN_CONTEXT_POLICY,
+    /* `episode-fold` 的用户开关（P2-7）：与扩展侧读的是**同一个设置字段**的两种投影 */
+    foldEnabled: settingsLayer.foldEnabled
   }
   return resolveContextPolicy(layers)
 }

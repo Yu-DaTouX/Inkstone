@@ -65,9 +65,41 @@ export function ContextTab() {
   /* Deep Context 不是「阈值」而是「多做一次模型调用」，所以不用草稿 + 保存那套 ——
      它就是一个开关，点一下写一次盘（与左栏置顶、声音提示同一种交互）。 */
   const deepOn = settings?.contextDeep?.enabled === true
+  /*
+   * 任务状态记忆（`episode-fold`）同样是个开关，但**默认方向相反**：它在默认接管集里，
+   * 所以 `undefined`（用户没改过）算开，只有存到 `{enabled:false}` 才算关。
+   * 界面因此不能直接读 `enabled`，得读「是不是被明确关掉了」。
+   */
+  const foldOff = settings?.contextFold?.enabled === false
 
   return (
     <div className="set-group">
+      {/*
+       * 任务状态记忆（`episode-fold`，P2-7）。与 Deep Context 相邻是因为它们是同一类东西 ——
+       * 都会**多花一次模型调用**；差别是它默认开，而且只在会话够长、并且这一回合
+       * 真的改过东西（脏判定）时才动手，短会话与纯只读回合不花钱。
+       * 它进默认接管集后一直没有界面入口（想关只能手改 `kinds`），这一行补的就是这个缺口。
+       */}
+      <div className="set-row col">
+        <div className="set-ctrow">
+          <div className="set-label">
+            <span>{tk('set.foldTitle')}</span>
+            <span className="set-tag">{tk('set.foldTag')}</span>
+          </div>
+          <div className="set-ctl seg" data-testid="ctx-fold">
+            <button
+              className="seg-btn"
+              data-testid="ctx-fold-toggle"
+              onClick={() => void patchSettings({ contextFold: { enabled: foldOff } })}
+            >
+              {tk(foldOff ? 'set.foldOff' : 'set.foldOn')}
+            </button>
+          </div>
+        </div>
+        <div className="set-desc" data-testid="ctx-fold-desc">
+          {tk(foldOff ? 'set.foldDescOff' : 'set.foldDescOn')}
+        </div>
+      </div>
       {/*
        * Deep Context（N21-8）。它与本页其它选项**不是一类**：那些改的是「什么时候压缩」，
        * 而它改的是「回答前要不要先归纳一遍工作集」—— 代价是**同步阻塞**一次模型调用

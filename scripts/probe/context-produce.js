@@ -16,9 +16,11 @@
  * 等生成（异步，最多 20s）→ 真实回合 2（注入点）→ 退出后由 Node 侧断言
  * 状态文件与诊断日志（探针按设计读不到 `YAN_DATA_DIR`）。
  *
- * ── 为什么 `kinds` 必须显式带上 `episode-fold` ──
- * 生成器只在 `episode-fold` 被接管时工作（默认 kinds 不含它，所以默认
- * **不调模型、不花钱**）。这条场景就是那个开关打开后的取证。
+ * ── 关于 `kinds` —— 本探针被两个场景复用，env 不同，命题也不同 ──
+ * 生成器只在 `episode-fold` 被接管时工作（它不在 default 之外的任何地方默默生效）：
+ *   · `contextproduce` 显式在 `kinds` 里带上它 —— 验「测试通道精确指定接管集」；
+ *   · `contextfolddefault` 不写 `kinds` —— 验「**默认**接管集下也会生成」。
+ * 「从设置面板关掉后不生成」走另一个探针（`context-fold-pref.js`），因为那要先把开关关掉。
  */
 ;(async () => {
   const out = []

@@ -47,7 +47,9 @@
  * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
  * 默认值是 `['tool-sweep', 'recall', 'episode-fold', 'compaction']`（清理默认开但必须保留
  * 可召回引用、2026-09-17 拍板；`episode-fold` 2026-09-18 拍板加入），可用
- * `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖。**扩展侧 `resources/pi-extensions/context.js`
+ * `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖；用户要关掉 `episode-fold` 时有专用开关
+ * （`AppSettings.contextFold` → `ContextPolicyLayers.foldEnabled`），不必自己写 `kinds`。
+ * **扩展侧 `resources/pi-extensions/context.js`
  * 的同名默认值必须与此保持一致** —— 两边不一致时，界面（主进程侧）会与真实生效的行为不同。
  */
 import type {
@@ -301,6 +303,17 @@ export interface ContextPolicyLayers {
   provider?: string
   /** `YAN_CONTEXT_POLICY` 原文（测试通道，优先级最高） */
   envRaw?: string
+  /**
+   * `episode-fold`（Task State 生成 + 注入）的**用户开关**（`AppSettings.contextFold`）。
+   *
+   * `undefined` = 用户没改过 = 按默认（它在默认接管集里）；`false` = 明确关掉。
+   * 为什么单独一个字段而不是塞进 `user` 覆盖：`applyOverrides` 只认**数值**，
+   * 一个布尔开关放进去会被静默丢掉。
+   * 为什么位置在 `user` 之后、`provider` / `model` 之前：它本身就是用户层意图，
+   * 排在数值覆盖之前，`source` 才会正确地被更具体的层（model）接管；
+   * 而 `env` 排在最后，所以显式给了 `kinds` 的测试场景仍能完全控制接管集。
+   */
+  foldEnabled?: boolean
 }
 
 /** 逐字段比较两份策略，返回值不同的字段名（含 `triggerRatios.*` 与 `kinds`） */
@@ -357,6 +370,17 @@ export function resolveContextPolicy(layers: ContextPolicyLayers = {}): Resolved
   }
 
   apply(layers.user, 'user')
+  /*
+   * `episode-fold` 的用户开关（P2-7）：它不是数值，`applyOverrides` 认不了，
+   * 所以在这里单独折算成 `kinds` 的增删。放在 provider / model 之前 ——
+   * 它属于用户层，不该抢走 model 层“数值来源”的位置（见 `foldEnabled` 的说明）。
+   */
+  if (layers.foldEnabled === false && policy.kinds.includes('episode-fold')) {
+    policy.kinds = policy.kinds.filter((k) => k !== 'episode-fold')
+    source = 'user'
+    sourceKey = undefined
+    if (!overridden.includes('kinds')) overridden.push('kinds')
+  }
   const provider = layers.provider ?? (layers.modelKey ? layers.modelKey.split('/')[0] : undefined)
   if (provider) apply(layers.byModel?.[provider], 'provider', provider)
   if (layers.modelKey) apply(layers.byModel?.[layers.modelKey], 'model', layers.modelKey)

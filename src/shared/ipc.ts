@@ -769,11 +769,29 @@ export interface AppSettings {
    * （归纳必须在请求发出前完成），每轮最多多等 30s（`DEEP_TIMEOUT_MS`）。
    * 用户主动开了才记住（与 `alwaysOnTop` 同一个约定）。
    *
-   * 传给扩展走**专用 env `YAN_CONTEXT_DEEP`**，不是写进 `YAN_CONTEXT_POLICY`：
-   * 后者的优先级**高于本设置**（它是测试通道），写进去会让这里的开关静默失效。
-   * env 在 pi 进程启动时固定，所以**改了这项要等实例重建才生效**。
+   * 传给扩展走**扩展自己读 `desktop.json`**（与 `language` / `response-detail` /
+   * `question` 同一个约定），不是写进 `YAN_CONTEXT_POLICY`：后者的优先级**高于本设置**
+   * （它是测试通道），写进去会让这里的开关静默失效。走文件的好处是**改完立即生效**，
+   * 不用重建 pi 实例、也不动已有会话（测试另有 `YAN_CONTEXT_DEEP` 通道）。
    */
   contextDeep?: { enabled: boolean }
+  /**
+   * 上下文状态生成 + 注入（`episode-fold`，N21-5～N21-6）的**用户开关**。
+   *
+   * 方向与 `contextDeep` **相反**：`episode-fold` 2026-09-18 已进默认接管集，
+   * 所以「没改过」（`undefined`）等于**开**；只有明确关掉才落 `{ enabled: false }`
+   * —— 与 `railWidth: 0` / `contextDeep` 同一条约定：磁盘上没有这个键 = 用户没改过，
+   * 以后调默认值时不会把改过的人一起改掉。
+   *
+   * 为什么需要一个独立字段，而不是让用户改 `kinds`：`kinds` 是「真正接管的阶段集」
+   * 这个产品决定的一部分（它一变，界面上的阶段预报与扩展真会做的事必须同时变），
+   * 不适合做成可自由编辑的一组勾选。用户需要的只是「这个功能我要不要」，
+   * 所以这里给一个开关，由主进程与扩展各自把它折算进 `kinds`。
+   *
+   * 传递链与 `contextDeep` 相同（渲染端 → 主进程 → `desktop.json` → 扩展读文件），
+   * 因此改完立即生效；`YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它按测试通道优先。
+   */
+  contextFold?: { enabled: boolean }
   /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
@@ -1098,10 +1116,11 @@ export interface ContextPolicy {
 /**
  * 上下文策略的**可覆盖数值**（N21-7）。
  *
- * 只含数值字段，这是有意的边界：
+ * 只含数值字段，这是意的边界：
  *   · `enabled` 由「自动压缩」开关管（用户关的是“别自动动我的上下文”）；
  *   · `kinds`（真正接管的阶段集）是产品决定，不是可调参数 —— 它一变，
- *     界面上“哪些阶段已生效”和扩展真的会做的事必须同时变，不适合塞进设置。
+ *     界面上“哪些阶段已生效”和扩展真的会做的事必须同时变，不适合塞进设置；
+ *     用户要关掉 `episode-fold` 时走 `AppSettings.contextFold` 那个专用开关。
  *
  * 同一份形状被三层复用：用户级（`AppSettings.contextPolicy`）、
  * 模型/供应商级（`AppSettings.contextPolicyByModel`）、以及预设。

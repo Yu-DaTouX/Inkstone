@@ -655,7 +655,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   const settings = await getSettings()
   agentResponseDetail = settings.responseDetail
   /* 上下文策略的设置层（N21-7）：新起的 pi 实例直接按这份策略跑 */
-  setContextPolicySettings({ user: settings.contextPolicy, byModel: settings.contextPolicyByModel })
+  setContextPolicySettings({
+    user: settings.contextPolicy,
+    byModel: settings.contextPolicyByModel,
+    /* `undefined` 语义留在设置层里（= 没改过 = 按默认开），所以这里先归一成布尔 */
+    foldEnabled: settings.contextFold?.enabled !== false
+  })
 
   runners = new RunnerRegistry({
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
@@ -1190,8 +1195,12 @@ function registerIpc(): void {
      * 不能等下一次回合：用户改完设置回头看右栏，工作集与“下一步”必须已经是新值，
      * 否则看起来像“改了没存”（D21/D22 同类）。
      */
-    if ('contextPolicy' in patch || 'contextPolicyByModel' in patch) {
-      setContextPolicySettings({ user: next.contextPolicy, byModel: next.contextPolicyByModel })
+    if ('contextPolicy' in patch || 'contextPolicyByModel' in patch || 'contextFold' in patch) {
+      setContextPolicySettings({
+        user: next.contextPolicy,
+        byModel: next.contextPolicyByModel,
+        foldEnabled: next.contextFold?.enabled !== false
+      })
       runners?.refreshPolicyViews()
     }
     return next

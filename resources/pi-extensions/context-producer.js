@@ -292,6 +292,17 @@ export const PRODUCER_SYSTEM_PROMPT = [
   '',
   'Each list item is either a short string, or an object {"text": "...", "entryIds": ["<id>"]} when you can point at the evidence it came from.',
   '',
+  /*
+   * Episode（§12.6）：字段清单里**必须**提到它。
+   * 实测教训（2026-09-18）：只在 user 消息里写「如果这段完成了就给 episode」时，
+   * 模型**从不给**（诊断 `why:"absent"`，多次取样一致）—— 它严格按这里列出的字段输出。
+   * 所以「可选的额外字段」也要在输出契约里出现，否则它不存在。
+   * 措辞刻意短：要求的嵌套字段越多，模型跑出非法 JSON 的概率越高（实测）。
+   */
+  'When the input contains an <episode_window> and that older stretch of work is FINISHED (nothing left hanging), also add "episode":',
+  '  an object with objective, outcome, decisions, constraints, failedAttempts, unresolved, importantRefs (same conventions as above; unresolved must be [] when finished).',
+  '  If it is NOT finished, put what is still open in episode.unresolved — an episode with non-empty unresolved will not be kept. Omit "episode" when there is no <episode_window>.',
+  '',
   'Rules:',
   '  · Cite ids from <citable_entries> ONLY. Ids that appear in the previous state are NOT evidence: if something from the previous state still holds, restate it AND cite the current evidence for it.',
   '  · An item without a valid citation is recorded as an unverified inference and is shown to the model as such — so cite when you can, and do not cite to decorate.',
@@ -310,7 +321,7 @@ export const PRODUCER_SYSTEM_PROMPT = [
  * 不放整段对话 —— 那是 pi 自己摘要的活，不是状态生成的活（放进去只会
  * 让模型把状态写成聊天摘要，正是 §12.6 明确反对的）。
  */
-export function buildProducerPrompt({ previousTask, directives, evidence, citable } = {}) {
+export function buildProducerPrompt({ previousTask, directives, evidence, citable, episodeWin } = {}) {
   const parts = []
   const previous = previousTask ? renderTaskState(previousTask) : ''
   parts.push('<previous_state>')
@@ -349,6 +360,34 @@ export function buildProducerPrompt({ previousTask, directives, evidence, citabl
   if (!citableList.length) parts.push('(none)')
   parts.push('</citable_entries>')
   parts.push('')
+  /*
+   * Episode 的候选窗口（§12.6）：**边界由我们算好**（`episodeWindow`），模型只回答
+   * 「这一段收束了吗、它是什么」。为什么不让模型挑边界：entry id 它认不全，而边界
+   * 一旦错位，`sourceRange` 就指不回原始条目 —— 那正是 §12.7 要拦的东西。
+   *
+   * 为什么把「列在 unresolved 里就不会被折叠」写进提示词：收束判据在**我们**手里
+   * （`unresolved` 非空就不折叠），模型提前知道这件事，就不需要去猜门槛，
+   * 也不会为了「让它被扇叠」而隐去真的遗留。
+   */
+  if (episodeWin && Array.isArray(episodeWin.entryIds) && episodeWin.entryIds.length) {
+    parts.push('<episode_window>')
+    parts.push(
+      `entries: ${episodeWin.entryIds.length} (about ${episodeWin.tokens} tokens, already outside the active window)`
+    )
+    parts.push(`from: ${episodeWin.from}`)
+    parts.push(`to: ${episodeWin.to}`)
+    parts.push(
+      'If this older stretch of work is finished (nothing left hanging), also add an "episode" object for it: ' +
+        '{ "objective": "...", "outcome": "...", ' +
+        '"decisions": [{"decision":"...","reason":"..."}], "constraints": ["..."], ' +
+        '"filesChanged": [{"path":"...","summary":"..."}], "failedAttempts": ["..."], ' +
+        '"unresolved": ["..."], "importantRefs": ["ctx://..."] }. ' +
+        'If it is NOT finished, list what is still open in "unresolved" — it will not be folded. ' +
+        'Omit "episode" entirely when there is nothing to fold. "importantRefs" must come from citable_entries.'
+    )
+    parts.push('</episode_window>')
+    parts.push('')
+  }
   parts.push('Reply with the JSON object now.')
   return parts.join('\n')
 }
@@ -478,7 +517,177 @@ export function parseProducerOutput(text) {
     assumptions: entryList(raw.assumptions, CLIP_LIMITS.assumptions, CLIP_LIMITS.textLength),
     hypothesis: entryList(raw.hypothesis, CLIP_LIMITS.hypothesis, CLIP_LIMITS.textLength)
   }
-  return { ok: true, value }
+  /* Episode 单独返回，**不**混进 `value`：它的 schema 形状不同（纯字符串列表），
+     放进 value 会跟着 `mergeTaskState` 的字段一起漂到 TaskState 里去。 */
+  const episode = episodeCandidate(raw.episode)
+  return { ok: true, value, episode, episodeReason: episode ? null : episodeSkipReason(raw.episode) }
+}
+
+/**
+ * 「为什么没有可扇叠的 Episode」——**只用于诊断**。
+ *
+ * 为什么要把它和 `episodeCandidate` 分开：后者只回答「能不能扇叠」，而调提示词时
+ * 需要知道**是模型没给，还是给了但没收束** —— 两者的处置完全不同（一个改提示词，
+ * 一个不用改）。这条路很难从状态文件反推，所以让它在诊断行里直接说出来。
+ */
+export function episodeSkipReason(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'absent'
+  const objective = plainText(raw.objective, EPISODE_LIMITS.textLength)
+  const outcome = plainText(raw.outcome, EPISODE_LIMITS.textLength)
+  if (!objective || !outcome) return 'missing-fields'
+  return textList(raw.unresolved, CLIP_LIMITS.unresolved, EPISODE_LIMITS.textLength).length ? 'unresolved' : 'absent'
+}
+
+/* -------------------------------------------------------------- Episode 扇叠（§12.6）*/
+
+/**
+ * Episode 语义条目的上限。比 TaskState 更紧 —— 它是一「段」的摘要，不是全量工作集。
+ */
+export const EPISODE_LIMITS = {
+  decisions: 8,
+  constraints: 10,
+  filesChanged: 20,
+  failedAttempts: 6,
+  importantRefs: 12,
+  textLength: 300
+}
+
+/** 一份状态文件里最多留几条 Episode（超出丢最旧；§12.12 待压测标定） */
+export const MAX_EPISODES = 12
+
+function plainText(value, maxLength) {
+  if (typeof value !== 'string') return ''
+  const text = value.replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text
+}
+
+/** 纯字符串列表（去重、限长、限条数）—— constraints / failedAttempts 是这种形状 */
+function textList(value, limit, maxLength) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  const seen = new Set()
+  for (const item of value) {
+    const text = plainText(typeof item === 'string' ? item : item?.text, maxLength)
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    out.push(text)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** `{decision, reason?}[]` —— 与 TaskState 的条目不同，这里**不要** status / source */
+function decisionList(value, limit, maxLength) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  const seen = new Set()
+  for (const item of value) {
+    const decision = plainText(item?.decision ?? (typeof item === 'string' ? item : ''), maxLength)
+    if (!decision || seen.has(decision)) continue
+    seen.add(decision)
+    const reason = plainText(item?.reason, maxLength)
+    out.push(reason ? { decision, reason } : { decision })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** `{path, summary?}[]`；没有 path 的条目直接丢掉（schema 要求 path） */
+function fileChangeList(value, limit, maxLength) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  const seen = new Set()
+  for (const item of value) {
+    const path = plainText(item?.path ?? (typeof item === 'string' ? item : ''), maxLength)
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    const summary = plainText(item?.summary, maxLength)
+    out.push(summary ? { path, summary } : { path })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
+ * `importantRefs`：只留**归档引用**（`ctx://tool|file|diff`）。
+ *
+ * 刻意**不收** `ctx://episode/...`（指向另一份 EpisodeState）—— 那会把「扇叠的扇叠」
+ * 变成合法输入，而 §12.7 的判据正是在拦这件事。真正的 schema 执法在 TS 层，
+ * 这里先在源头挡一次，语义与 `episodeRecursionRisk` 一致。
+ */
+function ctxRefList(value, limit) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  const seen = new Set()
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const ref = item.trim()
+    if (!/^ctx:\/\/(tool|file|diff)\/[A-Za-z0-9._~%:-]{1,200}$/.test(ref) || seen.has(ref)) continue
+    seen.add(ref)
+    out.push(ref)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
+ * 解析可选的 `episode`（§12.6）。返回 `null` = **这一段不扇叠**。
+ *
+ * 三种情形都归到 `null`，而它们都是**正常结果**，不是错误：
+ *   ① 模型没给（它认为没什么可扇叠的）；
+ *   ② `objective` / `outcome` 为空（说不出做成了什么，就不值得留）；
+ *   ③ **`unresolved` 非空** —— 收束判据的落点。模型在写的时候就知道
+ *      「列出来 = 不会被扇叠」，所以它不必猜门槛，也不会为了让它被扇叠而隐瞒遗留。
+ */
+export function episodeCandidate(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const objective = plainText(raw.objective, EPISODE_LIMITS.textLength)
+  const outcome = plainText(raw.outcome, EPISODE_LIMITS.textLength)
+  if (!objective || !outcome) return null
+  const unresolved = textList(raw.unresolved, CLIP_LIMITS.unresolved, EPISODE_LIMITS.textLength)
+  if (unresolved.length) return null
+  return {
+    objective,
+    outcome,
+    decisions: decisionList(raw.decisions, EPISODE_LIMITS.decisions, EPISODE_LIMITS.textLength),
+    constraints: textList(raw.constraints, EPISODE_LIMITS.constraints, EPISODE_LIMITS.textLength),
+    filesChanged: fileChangeList(raw.filesChanged, EPISODE_LIMITS.filesChanged, EPISODE_LIMITS.textLength),
+    failedAttempts: textList(raw.failedAttempts, EPISODE_LIMITS.failedAttempts, EPISODE_LIMITS.textLength),
+    unresolved: [],
+    importantRefs: ctxRefList(raw.importantRefs, EPISODE_LIMITS.importantRefs)
+  }
+}
+
+/**
+ * 把这一次的候选 Episode 并进状态文件的 `episodes`（§12.6，**确定性 id**）。
+ *
+ * id 由窗口两端拼成（`ep-<from>--<to>`）：同一段重复归纳只会**替换**自己，
+ * 不会留下两条几乎一样的 Episode。超出 `MAX_EPISODES` 时丢**最旧**的 ——
+ * Episode 是给压缩摘要用的历史档，越新的越可能被用到。
+ *
+ * `watermark` 与 `sourceRange` 都是 schema 的必填字段：少了任何一个就不写，
+ * 宁可这次不落盘（下一轮还能再来），也不要落一份过不了主进程校验的文件。
+ */
+export function mergeEpisodeState({ candidate, candidateReason, window, previous, watermark, now } = {}) {
+  const base = Array.isArray(previous) ? previous.filter((e) => e && typeof e === 'object') : []
+  if (!candidate) return { episodes: base, added: false, reason: candidateReason ?? 'not-sealed' }
+  if (!window || !window.from || !window.to) return { episodes: base, added: false, reason: 'no-window' }
+  if (!watermark) return { episodes: base, added: false, reason: 'no-watermark' }
+  const id = `ep-${window.from}--${window.to}`
+  const at = Number.isFinite(now) ? now : Date.now()
+  const episode = {
+    id,
+    ...candidate,
+    sourceRange: { from: window.from, to: window.to },
+    watermark,
+    tokensBefore: Number.isFinite(window.tokens) ? window.tokens : 0,
+    createdAt: at
+  }
+  const next = base.filter((e) => e?.id !== id)
+  next.push(episode)
+  const trimmed = next.length > MAX_EPISODES ? next.slice(next.length - MAX_EPISODES) : next
+  return { episodes: trimmed, added: true, id }
 }
 
 /* ══════════════════════════════════════════════════════════════════

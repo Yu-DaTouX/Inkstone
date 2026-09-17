@@ -1067,6 +1067,17 @@ await runContextProducerTests(ok, {
 })
 
 /*
+ * N21-4 剩余项：阶段运行状态（三阶段独立 Rearm / Cooldown，方案 §12.3）。
+ *
+ * 它与上下文策略、状态生成器都不同：它管的是「到线之后能不能动手」。
+ * 判定错的每一种方式都是静默的 —— 阶段永久失效、每轮重试、两个阶段互相牵连 ——
+ * 所以边界（回购比例、冷却边界、重试窗口）全部钉在纯函数层。
+ */
+const stageRuntime = await import('../resources/pi-extensions/context-stage-runtime.js')
+const { runContextStageRuntimeTests } = await import('./test-context-stage-runtime.mjs')
+await runContextStageRuntimeTests(ok, { stage: stageRuntime })
+
+/*
  * N21-8：Deep Context（Pass 1 工作集归纳）。
  *
  * 它是唯一会在用户提问前**同步阻塞**一次模型调用的部分，而失败是两头静默的：

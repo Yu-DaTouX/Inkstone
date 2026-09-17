@@ -33,7 +33,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = process.env.YAN_SHOT_DIR
   ? resolve(process.env.YAN_SHOT_DIR)
   : join(root, 'docs/design/preview')
-const STAMP = '2026-09-17'
+/*
+ * 截图的日期戳。
+ *
+ * 新批次用新名，旧图**原样保留**（AGENTS.md：`docs/design/preview/` 里的截图是用户
+ * 视觉证据，不删不覆盖；要更新就另存新名）。`YAN_MATRIX_STAMP` 可以在不改这个
+ * 常量的前提下跑一批临时截图（调样式时反复重跑用）。
+ */
+const STAMP = process.env.YAN_MATRIX_STAMP || '2026-09-18'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -876,7 +883,7 @@ const MUST_HAVE = {
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
-  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-deep"]'],
+  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   compaction: [
     '[data-testid="rp-context"]',
