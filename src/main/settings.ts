@@ -132,6 +132,18 @@ function defaultSound(): SoundSettings {
  * 设置文件可以被手改，不能信：音量可能写成 -3 / NaN，events 可能是 null。
  * 未知事件键直接丢掉（版本升级后旧键不该一直占位）。
  */
+/**
+ * Deep Context（N21-8）的清洗。
+ *
+ * 只认字面 `true`；其余（`false` / 脏值 / 缺失）一律 `undefined` ——
+ * 「默认关」不需要在文件里留一个 `{enabled:false}`：那样「没改过」与
+ * 「明确关掉」在磁盘上长得一模一样，以后改默认值时就分不清了。
+ */
+function sanitizeContextDeep(v: unknown): { enabled: boolean } | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  return (v as { enabled?: unknown }).enabled === true ? { enabled: true } : undefined
+}
+
 function sanitizeSound(v: unknown): SoundSettings {
   const d = defaultSound()
   if (!v || typeof v !== 'object') return d
@@ -349,6 +361,13 @@ export async function getSettings(): Promise<AppSettings> {
      */
     cached.contextPolicy = sanitizeContextPolicyOverrides(cached.contextPolicy)
     cached.contextPolicyByModel = sanitizeContextPolicyByModel(cached.contextPolicyByModel)
+    /*
+     * Deep Context（N21-8）：只认字面 `true`。
+     * 洗不进时结果是 `undefined`（而不是 `{enabled:false}`）—— 让「没改过」
+     * 在磁盘上真的没有这个键，以后调默认值时才不会把改过的人一起改掉
+     * （与 `railWidth: 0` / `contextPolicy` 同一个约定）。
+     */
+    cached.contextDeep = sanitizeContextDeep(cached.contextDeep)
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -415,6 +434,12 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   if ('contextPolicyByModel' in patch) {
     next.contextPolicyByModel = sanitizeContextPolicyByModel(next.contextPolicyByModel)
   }
+  /*
+   * Deep Context（N21-8）：关闭时写成 `undefined`（而不是 `{enabled:false}`），
+   * 让「没改过」与「明确关掉」在磁盘上不一样 —— 否则以后改默认值时
+   * 会把两类用户一起改掉。
+   */
+  if ('contextDeep' in patch) next.contextDeep = sanitizeContextDeep(next.contextDeep)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

@@ -8,6 +8,10 @@
  * 两者都不会让应用崩，只是让一个可选优化变成隐形负担或隐形失效，
  * 所以只能靠这里的断言 + live 场景里的诊断行（`hook: 'deep'`）发现。
  */
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 export async function runContextDeepTests(ok, { deep, extension }) {
   const {
     DEEP_MIN_TOKENS,
@@ -140,11 +144,15 @@ export async function runContextDeepTests(ok, { deep, extension }) {
    */
   const prevDeep = process.env.YAN_CONTEXT_DEEP
   const prevPolicyEnv = process.env.YAN_CONTEXT_POLICY
+  const prevDataDir = process.env.YAN_DATA_DIR
   const restore = () => {
     if (prevDeep === undefined) delete process.env.YAN_CONTEXT_DEEP
     else process.env.YAN_CONTEXT_DEEP = prevDeep
     if (prevPolicyEnv === undefined) delete process.env.YAN_CONTEXT_POLICY
     else process.env.YAN_CONTEXT_POLICY = prevPolicyEnv
+    if (prevDataDir === undefined) delete process.env.YAN_DATA_DIR
+    else process.env.YAN_DATA_DIR = prevDataDir
+    extension.__internals.resetDeepCache()
   }
   try {
     delete process.env.YAN_CONTEXT_POLICY
@@ -165,6 +173,45 @@ export async function runContextDeepTests(ok, { deep, extension }) {
       extension.__internals.policy().deep.enabled === true,
       'deep·测试通道（YAN_CONTEXT_POLICY）优先于用户开关 —— 否则场景会被用户设置静默改掉'
     )
+
+    /*
+     * 第三个来源：桌面端设置（`desktop.json` 的 `contextDeep.enabled`）。
+     * 这是**用户真正能按到的那个开关**，所以重点验两件事：
+     *   ① 「改完立即生效」（不重建 pi 实例）—— 它是每轮读文件换来的性质；
+     *   ② env 里的 `0` 是**明确关**，不该被设置里的 `true` 盖掉。
+     * 另外真的要往磁盘写：所以用临时 `YAN_DATA_DIR`，并在最后删掉缓存。
+     */
+    delete process.env.YAN_CONTEXT_POLICY
+    delete process.env.YAN_CONTEXT_DEEP
+    const tmpDir = mkdtempSync(join(tmpdir(), 'yan-deep-'))
+    try {
+      process.env.YAN_DATA_DIR = tmpDir
+      extension.__internals.resetDeepCache()
+      ok(extension.__internals.policy().deep.enabled === false, 'deep·设置文件不存在时是关的')
+
+      writeFileSync(join(tmpDir, 'desktop.json'), JSON.stringify({ contextDeep: { enabled: true } }))
+      extension.__internals.resetDeepCache()
+      ok(
+        extension.__internals.policy().deep.enabled === true,
+        'deep·设置里 enabled:true 打开（用户开关，无需重建实例）'
+      )
+
+      writeFileSync(join(tmpDir, 'desktop.json'), JSON.stringify({ contextDeep: { enabled: false } }))
+      extension.__internals.resetDeepCache()
+      ok(extension.__internals.policy().deep.enabled === false, 'deep·设置里 enabled:false 关闭')
+
+      writeFileSync(join(tmpDir, 'desktop.json'), '{ 环掉的 JSON')
+      extension.__internals.resetDeepCache()
+      ok(extension.__internals.policy().deep.enabled === false, 'deep·设置文件坏了当没表态（宁可不开）')
+
+      writeFileSync(join(tmpDir, 'desktop.json'), JSON.stringify({ contextDeep: { enabled: true } }))
+      process.env.YAN_CONTEXT_DEEP = '0'
+      extension.__internals.resetDeepCache()
+      ok(extension.__internals.policy().deep.enabled === false, 'deep·env 的 0 是明确关（不被设置里的 true 盖掉）')
+      delete process.env.YAN_CONTEXT_DEEP
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
   } finally {
     restore()
   }

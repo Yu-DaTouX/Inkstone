@@ -763,6 +763,18 @@ export interface AppSettings {
    */
   contextPolicyByModel?: Record<string, ContextPolicyOverrides>
   /**
+   * Deep Context（N21-8）：**回答之前**先让扩展自己归纳一遗工作集。
+   *
+   * 默认**关** —— 它不是「顺带多花点 token」，而是**同步阻塞**本轮请求
+   * （归纳必须在请求发出前完成），每轮最多多等 30s（`DEEP_TIMEOUT_MS`）。
+   * 用户主动开了才记住（与 `alwaysOnTop` 同一个约定）。
+   *
+   * 传给扩展走**专用 env `YAN_CONTEXT_DEEP`**，不是写进 `YAN_CONTEXT_POLICY`：
+   * 后者的优先级**高于本设置**（它是测试通道），写进去会让这里的开关静默失效。
+   * env 在 pi 进程启动时固定，所以**改了这项要等实例重建才生效**。
+   */
+  contextDeep?: { enabled: boolean }
+  /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
    * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。
