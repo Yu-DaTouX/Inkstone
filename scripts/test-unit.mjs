@@ -950,6 +950,86 @@ const { runContextSafetyTests } = await import('./test-context-safety.mjs')
 runContextSafetyTests(ok, contextSafety)
 
 /*
+ * N21-4 / S1：State 与 Archive 基础设施。
+ *
+ * 三块都要**现场编译**：
+ *   · `shared/context-state.ts` —— schema 与校验（纯逻辑，主进程/扩展共用）；
+ *   · `main/context-watermark.ts` —— 从原始会话文件读条目身份与水位；
+ *   · `main/context-state-store.ts` —— 原子写 / 安全丢弃 / 会话清理。
+ * 前两块在 electron-vite 的构建图里**不是**独立入口（只被主进程入口
+ * import 后摇进 index.js），所以不能靠 out/main 里的文件；store 虽然
+ * 会作为额外入口构建，这里仍然自己编译一份，避免测试依赖构建产物。
+ */
+const contextStateSchema = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/context-state.ts'],
+    outfile: 'out/test/context-state.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-state.mjs'))
+)
+const contextWatermark = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-watermark.ts'],
+    outfile: 'out/test/context-watermark.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-watermark.mjs'))
+)
+const contextStateStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-state-store.ts'],
+    outfile: 'out/test/context-state-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-state-store.mjs'))
+)
+const { runContextStateTests } = await import('./test-context-state.mjs')
+await runContextStateTests(ok, {
+  state: contextStateSchema,
+  watermark: contextWatermark,
+  store: contextStateStore
+})
+
+/*
+ * N21-4 / S2–S6：上下文变换（Tool Sweep / Task State / Recall / 结构化压缩闸门）。
+ *
+ * 三个模块都是**待分发的扩展源码**（resources/pi-extensions），直接 import。
+ * 最后一组断言把 JS 写出的归档文件喂给 S1 的 TS schema —— 跨语言交叉验证，
+ * 而不是让两边各信各的。
+ */
+const contextTransform = await import('../resources/pi-extensions/context-transform.js')
+const contextExtension = await import('../resources/pi-extensions/context.js')
+const { runContextTransformTests } = await import('./test-context-transform.mjs')
+await runContextTransformTests(ok, {
+  transform: contextTransform,
+  extension: contextExtension,
+  schema: contextStateSchema
+})
+
+/*
+ * N21-4 剩余项：状态生成器（语义部分 + 确定性 evidence + CAS）。
+ *
+ * 它是**唯一**会调模型、又会写用户派生数据的地方，所以判定全在纯逻辑层
+ * （`context-producer.js`）；最后一组用 fake ctx 真跑一遍落盘，并把 JS 写出的
+ * 状态文件喂给 TS schema 交叉校验（与 transform 测试同一约定）。
+ */
+const contextProducer = await import('../resources/pi-extensions/context-producer.js')
+const { runContextProducerTests } = await import('./test-context-producer.mjs')
+await runContextProducerTests(ok, {
+  producer: contextProducer,
+  transform: contextTransform,
+  extension: contextExtension,
+  schema: contextStateSchema
+})
+
+/*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到

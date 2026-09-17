@@ -22,8 +22,9 @@ import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { compactionInfo } from './compaction'
-import { activeContextPolicy } from './context-policy'
+import { activeContextPolicy, setContextPolicySettings } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
+import { modelKeyOf } from '../shared/model-capabilities'
 import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
@@ -267,6 +268,24 @@ function languageExtensionPath(): string | undefined {
     process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'language.js') : '',
     join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'language.js'),
     join(process.cwd(), 'resources', 'pi-extensions', 'language.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 内置「上下文状态化压缩」扩展的路径（N21-4 / S2–S6）。
+ *
+ * 它做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、
+ * Recall 工具与结构化压缩的接管闸门。默认接管 `tool-sweep` + `recall` + `compaction`
+ * （用户 2026-09-17 拍板：清理默认开，但必须保留可召回引用）；`episode-fold`
+ * 仍要等状态生成器。`kinds` 的唯一真源是主进程的 `ContextPolicy`，扩展从环境变量读到同一份。
+ * 与 language.js 同一套查找顺序（打包后 / 开发期）。
+ */
+function contextExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'context.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'context.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'context.js')
   ].filter(Boolean)
   return candidates.find((p) => existsSync(p))
 }
@@ -635,6 +654,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
   const settings = await getSettings()
   agentResponseDetail = settings.responseDetail
+  /* 上下文策略的设置层（N21-7）：新起的 pi 实例直接按这份策略跑 */
+  setContextPolicySettings({ user: settings.contextPolicy, byModel: settings.contextPolicyByModel })
 
   runners = new RunnerRegistry({
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
@@ -648,7 +669,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         browserEnv: browser?.bridgeEnv(),
-        languageExtension: languageExtensionPath()
+        languageExtension: languageExtensionPath(),
+        contextExtension: contextExtensionPath()
       }),
     onChanged: () => pushRunners()
   })
@@ -1164,6 +1186,15 @@ function registerIpc(): void {
       })
     }
     if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
+    /*
+     * 上下文策略数值改了就当场生效（N21-7）：登记设置层 + 让所有实例重推一帧。
+     * 不能等下一次回合：用户改完设置回头看右栏，工作集与“下一步”必须已经是新值，
+     * 否则看起来像“改了没存”（D21/D22 同类）。
+     */
+    if ('contextPolicy' in patch || 'contextPolicyByModel' in patch) {
+      setContextPolicySettings({ user: next.contextPolicy, byModel: next.contextPolicyByModel })
+      runners?.refreshPolicyViews()
+    }
     return next
   })
 
@@ -1433,9 +1464,18 @@ function registerIpc(): void {
    * 测试也用它对照参考值（64k → 40k、128k → 88k、256k → 179k、1M → 240k）。
    */
   rawHandle('yan:contextBudget', (_e, win: unknown) => {
-    const policy = activeContextPolicy()
-    const budget = contextBudget(typeof win === 'number' ? win : 0, policy)
-    return { policy, budget }
+    /*
+     * 用**当前会话模型**查表（N21-7）：模型级覆盖生效时，界面看到的预算
+     * 必须与 agent 真正用的那份一致 —— 探针的“界面数 = 主进程数”靠这条。
+     */
+    const resolved = activeContextPolicy(process.env, modelKeyOf(ac()?.getState()?.model))
+    return {
+      policy: resolved.policy,
+      budget: contextBudget(typeof win === 'number' ? win : 0, resolved.policy),
+      source: resolved.source,
+      ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
+      overridden: resolved.overridden
+    }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
 

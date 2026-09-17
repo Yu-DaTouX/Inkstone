@@ -10,8 +10,7 @@ import type {
   AuthProviderInfo,
   CodexLoginResult,
   CompactionInfo,
-  ContextBudget,
-  ContextPolicy,
+  ContextPolicyResolution,
   CustomEntry,
   DirListing,
   FileRequestContext,
@@ -204,8 +203,7 @@ const api: YanBridge = {
   /* ---- 文件树 ---- */
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
-  contextBudget: (win) =>
-    invoke<{ policy: ContextPolicy; budget: ContextBudget | null }>('yan:contextBudget', win),
+  contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   /* ---- 内置浏览器 ---- */

@@ -164,6 +164,39 @@
   border-radius: var(--r-full);
   border: 1px solid var(--border-soft);
 }
+/*
+ * 数值输入（上下文策略 N21-7）。
+ * 宽度写死：参数列是 auto 宽，不定宽的 input 会被浏览器默认尺寸（~170px）
+ * 撑开整行，把左侧标签挤窄；tabular-nums 让同列数字对齐。
+ */
+.set-input {
+  width: 96px;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  color: var(--fg);
+  font-size: var(--fs-code);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.set-input:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+}
+/* 覆盖列表里行内的“移除”入口 */
+.ctx-link {
+  margin-left: var(--sp-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.ctx-link:hover {
+  text-decoration: underline;
+}
 
 /* 对话宽度：滑块 + 恢复默认
    宽度是连续量，用 range 表达“可调到任意值”最直观。

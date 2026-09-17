@@ -112,7 +112,7 @@
   store.setState({
     session: {
       ...store.getState().session,
-      contextPolicy: { enabled: true, kinds: ['compaction'], budget }
+      contextPolicy: { enabled: true, kinds: ['tool-sweep', 'recall', 'compaction'], budget }
     }
   })
   await sleep(300)

@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { deleteContextStates } from './context-state-store'
 import { decorateSessions } from './session-layout'
 
 /**
@@ -420,19 +421,41 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     children.push(session)
     byParent.set(session.parentSession, children)
   }
-  const paths: string[] = []
+  /*
+   * 要删的不止一条：分叉出来的子会话跟着父会话一起进回收站。
+   * 每条都记下它的 sessionId —— 派生状态（`context-state/<id>.json`）
+   * 是按 sessionId 命名的，删会话时必须一起清掉，否则用户数据目录里
+   * 会留下永远没人再读的孤儿状态。
+   */
+  const targets: Array<{ path: string; sessionId?: string }> = []
   const visited = new Set<string>()
   const visit = (candidate: string, sessionId?: string): void => {
     if (visited.has(candidate)) return
     visited.add(candidate)
-    paths.push(candidate)
     const id = sessionId ?? all.find((session) => resolve(session.path) === candidate)?.id
+    targets.push({ path: candidate, ...(id ? { sessionId: id } : {}) })
     if (!id) return
     for (const child of byParent.get(id) ?? []) visit(resolve(child.path), child.id)
   }
   visit(resolved)
+  const paths = targets.map((target) => target.path)
   if (protectedPath && paths.includes(resolve(protectedPath))) {
     throw new Error('当前正在使用的会话位于将删除的分支中')
+  }
+
+  /*
+   * 列表只取最近 500 条，很旧的会话可能不在 `all` 里 —— 那就从文件头补读 id，
+   * 免得因为它太老就漏掉派生状态清理。读不到 id 的（头部坏了）就跳过清理：
+   * 状态是可重建的派生物，宁可漏删一份，不要为它让删除失败。
+   */
+  const sessionIds = new Set<string>()
+  for (const target of targets) {
+    if (target.sessionId) {
+      sessionIds.add(target.sessionId)
+      continue
+    }
+    const head = await readHead(target.path).catch(() => null)
+    if (head?.id) sessionIds.add(head.id)
   }
 
   await mkdir(TRASH_DIR, { recursive: true })
@@ -450,6 +473,20 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     throw error
   }
   deleted.set(token, entries)
+
+  /*
+   * 派生状态跟着会话一起清掉。
+   *
+   * 为什么在删除成功之后做：会话已经进回收站了，这时清理失败不能反过来
+   * 让删除失败（用户会看到“删不掉”而实际文件已经没了）。
+   * 为什么恢复（撤销）不把状态找回来：状态是**可重建的派生物**，
+   * 原始 JSONL 才是历史 —— 撤销后下一轮对话会把状态重新生成出来。
+   */
+  if (sessionIds.size) {
+    await deleteContextStates([...sessionIds]).catch((error) => {
+      console.warn('[context-state] 清理派生状态失败：', error instanceof Error ? error.message : error)
+    })
+  }
   return token
 }
 

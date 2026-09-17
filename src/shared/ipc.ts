@@ -738,6 +738,23 @@ export interface AppSettings {
    */
   density: 'compact' | 'standard' | 'comfortable'
   /**
+   * 上下文策略数值（**用户级**覆盖，N21-7）。
+   *
+   * **缺省 / 空对象 = 用砚已验证的默认值**（240k / 0.7 / 三档 + 兜底），
+   * 与 `railWidth: 0` 是同一个约定：以后调默认值时，没手动改过的人会跟着变。
+   */
+  contextPolicy?: ContextPolicyOverrides
+  /**
+   * 上下文策略的**模型级 / 供应商级**覆盖（N21-7）。
+   *
+   * key 有两种形式，查表顺序 specific → provider → generic：
+   *   · `provider/model`（如 `anthropic/claude-sonnet-4`）—— 只对这一个模型生效；
+   *   · `provider`（如 `anthropic`）—— 对该供应商的所有模型生效。
+   * 两者都不命中的模型回落到 `contextPolicy`（用户级）再回落默认值。
+   * 未知 key 一律保留（用户可能只是暂时没选那个模型），但界面只列当前模型。
+   */
+  contextPolicyByModel?: Record<string, ContextPolicyOverrides>
+  /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
    * 默认**关**：突然出声比突然动画更吓人，想用的人自己开。
@@ -1054,9 +1071,40 @@ export interface ContextPolicy {
   emergencyRatio: number
   /** 三阶段在工作集里的位置（0–1） */
   triggerRatios: { sweep: number; fold: number; compact: number }
-  /** 真正会执行的阶段（阶段 3 只有 compaction） */
+  /** 真正会执行的阶段（默认：清理 + 召回 + 压缩） */
   kinds: ContextOperationKind[]
 }
+
+/**
+ * 上下文策略的**可覆盖数值**（N21-7）。
+ *
+ * 只含数值字段，这是有意的边界：
+ *   · `enabled` 由「自动压缩」开关管（用户关的是“别自动动我的上下文”）；
+ *   · `kinds`（真正接管的阶段集）是产品决定，不是可调参数 —— 它一变，
+ *     界面上“哪些阶段已生效”和扩展真的会做的事必须同时变，不适合塞进设置。
+ *
+ * 同一份形状被三层复用：用户级（`AppSettings.contextPolicy`）、
+ * 模型/供应商级（`AppSettings.contextPolicyByModel`）、以及预设。
+ */
+export interface ContextPolicyOverrides {
+  workingSetCap?: number
+  windowRatio?: number
+  responseReservePreferred?: number
+  responseReserveMin?: number
+  safetyMarginMin?: number
+  safetyMarginRatio?: number
+  emergencyRatio?: number
+  triggerRatios?: { sweep?: number; fold?: number; compact?: number }
+}
+
+/**
+ * 策略数值的**生效层**（N21-7 的“可解释”）。
+ *
+ * lookup 顺序：`env` > `model`（`provider/model`）> `provider` > `user` > `default`。
+ * 界面必须能说出“这个工作集上限是谁定的”，否则用户改了设置却看到另一个数
+ * 时无从判断是哪一层赢 —— 这一块已经出过 D21/D22（界面数字 ≠ 实际生效值）。
+ */
+export type ContextPolicySource = 'default' | 'user' | 'provider' | 'model' | 'env'
 
 /**
  * 推给界面的策略视图（N21-3）。
@@ -1069,6 +1117,27 @@ export interface ContextPolicyView {
   enabled: boolean
   kinds: ContextOperationKind[]
   budget: ContextBudget
+  /** 数值的生效层（N21-7） */
+  source: ContextPolicySource
+  /** 命中的层 key：provider 层是供应商名，model 层是 `provider/model` */
+  sourceKey?: string
+  /** 被覆盖（非默认）的字段名，界面据此解释“哪些值不是默认” */
+  overridden: string[]
+}
+
+/**
+ * `window.yan.contextBudget(窗口)` 的返回（N21-7 扩充）。
+ *
+ * 与 `ContextPolicyView` 是同一份东西的两个入口：一个是随会话状态推送，
+ * 一个是渲染端主动问某个窗口下的预算（测试拿它对参考值）。两处的预算
+ * 必须由同一个 `contextBudget()` 算出，所以字段同名同义。
+ */
+export interface ContextPolicyResolution {
+  policy: ContextPolicy
+  budget: ContextBudget | null
+  source: ContextPolicySource
+  sourceKey?: string
+  overridden: string[]
 }
 
 /**
@@ -1076,8 +1145,7 @@ export interface ContextPolicyView {
  *
  * 只在**真正会执行的阶段**里挑（`ContextPolicy.kinds`），所以阶段 3 永远返回
  * compaction —— 清理 / 折叠虽然在工作集上有刻度，现在并不会触发。
- */
-export interface ContextNextStage {
+ */export interface ContextNextStage {
   kind: ContextOperationKind
   /** 该阶段的触发点（tokens） */
   at: number
@@ -1759,7 +1827,7 @@ export interface YanBridge {
    * 工作集预算（N21-3）。只算不决策：返回当前生效的策略与某个窗口下的预算。
    * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
    */
-  contextBudget(contextWindow: number): Promise<{ policy: ContextPolicy; budget: ContextBudget | null }>
+  contextBudget(contextWindow: number): Promise<ContextPolicyResolution>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /* 子代理（方案第 8 节） */

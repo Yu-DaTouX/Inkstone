@@ -29,6 +29,10 @@ import {
 import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
+import {
+  sanitizeContextPolicyByModel,
+  sanitizeContextPolicyOverrides
+} from '../shared/context-policy'
 
 // 数据目录（YAN_DATA_DIR 可覆盖，测试用隔离目录）
 const DIR = YAN_DIR
@@ -314,6 +318,12 @@ export async function getSettings(): Promise<AppSettings> {
         ? cached.density
         : 'standard'
     cached.sound = sanitizeSound(cached.sound)
+    /*
+     * 上下文策略覆盖（N21-7）：非法数值一律丢掉、越界值夹到区间。
+     * 清洗后与默认值一致 → `undefined`，让“没改过”在磁盘上真的没有这个键。
+     */
+    cached.contextPolicy = sanitizeContextPolicyOverrides(cached.contextPolicy)
+    cached.contextPolicyByModel = sanitizeContextPolicyByModel(cached.contextPolicyByModel)
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -369,6 +379,16 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   }
   if (next.cwd && next.cwd !== cur.cwd) {
     next.recentCwds = [next.cwd, ...next.recentCwds.filter((p) => p !== next.cwd)].slice(0, 8)
+  }
+  /*
+   * 上下文策略覆盖（N21-7）：写入前同样过一遍清洗。
+   * 渲染端总是传**完整对象**（从当前设置派生），所以这里直接整体替换即可；
+   * `triggerRatios` 是嵌套的，partial 传半边会被洗成只剩那几个键 ——
+   * 这是可接受的：渲染端不拆分它。
+   */
+  if ('contextPolicy' in patch) next.contextPolicy = sanitizeContextPolicyOverrides(next.contextPolicy)
+  if ('contextPolicyByModel' in patch) {
+    next.contextPolicyByModel = sanitizeContextPolicyByModel(next.contextPolicyByModel)
   }
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({

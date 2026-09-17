@@ -230,30 +230,44 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(policyFrom(JSON.stringify({ triggerRatios: { sweep: 0.5 } })).triggerRatios.sweep === 0.5, '阶段比例可单独覆盖')
   }
 
-  /* ---- 9. env 入口按原始字符串记忆化 ---- */
+  /* ---- 9. env 入口（优先级最高，见 N21-7 段） ---- */
   {
     const env = { YAN_CONTEXT_POLICY: JSON.stringify({ workingSetCap: 2222 }) }
-    ok(activeContextPolicy(env).workingSetCap === 2222, 'activeContextPolicy 读 YAN_CONTEXT_POLICY')
+    ok(activeContextPolicy(env).policy.workingSetCap === 2222, 'activeContextPolicy 读 YAN_CONTEXT_POLICY')
     env.YAN_CONTEXT_POLICY = JSON.stringify({ workingSetCap: 3333 })
-    ok(activeContextPolicy(env).workingSetCap === 3333, 'env 变了立刻跟上（不是缓存死值）')
+    ok(activeContextPolicy(env).policy.workingSetCap === 3333, 'env 变了立刻跟上（不是缓存死值）')
     delete env.YAN_CONTEXT_POLICY
-    ok(activeContextPolicy(env).workingSetCap === DEFAULT_CONTEXT_POLICY.workingSetCap, 'env 清掉后回到默认值')
+    ok(
+      activeContextPolicy(env).policy.workingSetCap === DEFAULT_CONTEXT_POLICY.workingSetCap,
+      'env 清掉后回到默认值'
+    )
   }
 
   console.log('\n--- N21-3 下一步阶段 ---')
 
   {
     const b = budgetOf(128_000)
-    const stage3 = DEFAULT_CONTEXT_POLICY.kinds
-    ok(stage3.join(',') === 'compaction', '阶段 3 只接管压缩')
-    const next = nextContextStage(10_000, b, stage3)
-    ok(next?.kind === 'compaction', '下一步永远只预报真的会执行的阶段')
+    /* 默认接管集（2026-09-17 拍板）：清理 + 召回 + 压缩；折叠要等状态生成器 */
+    const defaults = DEFAULT_CONTEXT_POLICY.kinds
+    ok(defaults.join(',') === 'tool-sweep,recall,compaction', '默认接管：清理 + 召回 + 压缩')
+    ok(defaults.includes('recall'), '召回与清理一起默认开（否则墓碑引用取不回）')
+    ok(!defaults.includes('episode-fold'), '折叠不在默认里（它要状态生成器）')
+
+    /* 只看压缩时（关掉清理）的行为仍要成立 —— 阶段 3 的那套判定不能丢 */
+    const compactOnly = ['compaction']
+    const next = nextContextStage(10_000, b, compactOnly)
+    ok(next?.kind === 'compaction', '只接管压缩时，下一步预报压缩')
     ok(next?.at === b.triggers.compact, '下一步的数字来自工作集预算')
     ok(next?.reached === false, '没过线时 reached=false')
-    ok(nextContextStage(b.triggers.compact, b, stage3)?.reached === true, '过线后 reached=true')
-    ok(nextContextStage(null, b, stage3)?.kind === 'compaction', '用量未知按 0 处理（说清下一步，不报错）')
-    ok(nextContextStage(10_000, null, stage3) === null, '没有预算就没有下一步')
+    ok(nextContextStage(b.triggers.compact, b, compactOnly)?.reached === true, '过线后 reached=true')
+    ok(nextContextStage(null, b, compactOnly)?.kind === 'compaction', '用量未知按 0 处理（说清下一步，不报错）')
+    ok(nextContextStage(10_000, null, compactOnly) === null, '没有预算就没有下一步')
     ok(nextContextStage(10_000, b, []) === null, '什么都没接管时不预报任何阶段')
+    /* 默认接管了清理之后，“下一步”先到清理线，而不是压缩线 */
+    ok(nextContextStage(10_000, b, defaults)?.kind === 'tool-sweep', '默认接管后下一步先是清理')
+    ok(nextContextStage(b.triggers.compact + 1, b, defaults)?.reached === true, '默认接管下全过线 reached')
+    /* `recall` 是取回通道，不是工作集刻度：它不下场排序 */
+    ok(nextContextStage(0, b, ['recall']) === null, '只有 recall 时不预报阶段（它不是刻度）')
 
     /* 阶段 4 的 kinds 一旦接上，顺序就必须是 清理 → 折叠 → 压缩 */
     const full = ['tool-sweep', 'episode-fold', 'compaction']
@@ -287,5 +301,92 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '阶段图例的顺序固定为 清理 → 折叠 → 压缩'
     )
     ok(view.formatTokens(1596) === '1.6k' && view.formatTokens(160000) === '160k', 'token 紧凑写法')
+  }
+
+  /*
+   * N21-7：生效层解析。
+   *
+   * 这里钉住的是“界面上的数就是真正在用的数”的另一半 ——
+   * 用户改了设置却在界面看到别的值、模型级覆盖被用户级默默盖掉、
+   * env 测试通道被设置文件盖掉，这三类都会让“可解释”变成空话。
+   */
+  console.log('\n--- N21-7 生效层解析（用户 / 供应商 / 模型 / env）---')
+  {
+    const {
+      resolveContextPolicy,
+      sanitizeContextPolicyOverrides,
+      sanitizeContextPolicyByModel,
+      CONTEXT_POLICY_PRESETS
+    } = mod
+    const { setContextPolicySettings } = mainMod
+
+    const plain = resolveContextPolicy()
+    ok(plain.source === 'default' && plain.overridden.length === 0, '没有覆盖时来源就是默认值')
+    ok(plain.policy.workingSetCap === DEFAULT_CONTEXT_POLICY.workingSetCap, '默认值原样保留')
+
+    const user = resolveContextPolicy({ user: { workingSetCap: 100_000 } })
+    ok(user.source === 'user' && user.policy.workingSetCap === 100_000, '用户级覆盖生效且来源可解释')
+    ok(user.overridden.join(',') === 'workingSetCap', `只报告真的被覆盖的字段（实际 ${user.overridden}）`)
+
+    const byModel = {
+      anthropic: { workingSetCap: 111_000 },
+      'anthropic/x': { workingSetCap: 222_000 }
+    }
+    const prov = resolveContextPolicy({ user: { windowRatio: 0.5 }, byModel, modelKey: 'anthropic/y' })
+    ok(
+      prov.source === 'provider' && prov.sourceKey === 'anthropic' && prov.policy.workingSetCap === 111_000,
+      'specific 不命中时用供应商层'
+    )
+    ok(prov.policy.windowRatio === 0.5, '供应商层不会丢掉用户级里没被覆盖的字段')
+
+    const spec = resolveContextPolicy({ byModel, modelKey: 'anthropic/x' })
+    ok(
+      spec.source === 'model' && spec.sourceKey === 'anthropic/x' && spec.policy.workingSetCap === 222_000,
+      '`provider/model` 比 `provider` 更具体'
+    )
+
+    const env = resolveContextPolicy({ user: { workingSetCap: 1000 }, envRaw: '{"workingSetCap":5000}' })
+    ok(env.source === 'env' && env.policy.workingSetCap === 5000, 'env（测试通道）优先于用户设置')
+
+    const bad = resolveContextPolicy({ user: { workingSetCap: -5, windowRatio: 3 } })
+    ok(bad.source === 'default' && bad.overridden.length === 0, '非法覆盖被忽略并退回默认值')
+
+    ok(
+      sanitizeContextPolicyOverrides({ workingSetCap: 123.7, nope: 1 })?.workingSetCap === 124,
+      '清洗会取整并丢掉未知键'
+    )
+    ok(sanitizeContextPolicyOverrides({}) === undefined, '空覆盖清洗成 undefined（用完默认）')
+    ok(
+      sanitizeContextPolicyOverrides({ workingSetCap: DEFAULT_CONTEXT_POLICY.workingSetCap }) === undefined,
+      '与默认相同的值不落盘（否则以后改默认值会被空壳配置挡住）'
+    )
+    const bm = sanitizeContextPolicyByModel({ 'a/b': { windowRatio: 0.6 }, '': { windowRatio: 0.5 }, nope: 3 })
+    ok(Object.keys(bm).join(',') === 'a/b', '模型表丢掉空 key 与非法项')
+
+    const tr = resolveContextPolicy({ user: { triggerRatios: { sweep: 0.5 } } })
+    ok(
+      tr.policy.triggerRatios.sweep === 0.5 && tr.policy.triggerRatios.compact === 1,
+      '阶段刻度可以只覆盖一档，其余保持默认'
+    )
+    ok(tr.overridden.join(',') === 'triggerRatios.sweep', `只报告改过的刻度（实际 ${tr.overridden}）`)
+
+    ok(
+      CONTEXT_POLICY_PRESETS.reference.workingSetCap === 300_000 &&
+        CONTEXT_POLICY_PRESETS.reference.windowRatio === 0.75,
+      '参考方案预设是 300k / 0.75'
+    )
+    ok(Object.keys(CONTEXT_POLICY_PRESETS.default).length === 0, '默认预设是空覆盖（用完默认）')
+
+    /* 主进程入口：登记设置层后按当前模型查表，env 仍然最高 */
+    setContextPolicySettings({ user: { workingSetCap: 42_000 }, byModel: { 'm/a': { windowRatio: 0.5 } } })
+    const a1 = activeContextPolicy({}, 'm/a')
+    ok(
+      a1.policy.workingSetCap === 42_000 && a1.policy.windowRatio === 0.5 && a1.source === 'model',
+      '主进程入口按当前模型 key 查表'
+    )
+    const a2 = activeContextPolicy({ YAN_CONTEXT_POLICY: '{"workingSetCap":7}' }, 'm/a')
+    ok(a2.policy.workingSetCap === 7 && a2.source === 'env', '主进程入口优先 env')
+    setContextPolicySettings(null)
+    ok(activeContextPolicy({}).source === 'default', '清空设置层后回到默认值')
   }
 }
