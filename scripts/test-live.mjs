@@ -306,6 +306,8 @@ const CASES = {
      */
     budget: 420000,
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":1500}' },
+    contextExtLog: true,
+    afterExit: 'contextTakeoverHook',
     /*
      * `keepRecentTokens: 1`：会话太小时 pi 自己会说
      * `Nothing to compact (session too small)` —— 保留尾巴默认 20k，
@@ -337,6 +339,23 @@ const CASES = {
     env: {
       YAN_CONTEXT_POLICY:
         '{"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    }
+  },
+  /*
+   * Deep Context（N21-8）—— 默认关的最重的一个可选优化：
+   * 它挂在 `context` 钩子里，会在用户开口前**同步**多调一次模型。
+   * `minTokens` 降到 1：真实门槛是 150k，而探针会话只有几 k ——
+   * 本场景的命题是「打开之后链路通不通」，「门槛算得对不对」由单测钉住。
+   */
+  contextdeep: {
+    probe: 'scripts/probe/context-deep.js',
+    delay: 10000,
+    cost: 1,
+    budget: 240000,
+    contextExtLog: true,
+    afterExit: 'contextDeep',
+    env: {
+      YAN_CONTEXT_POLICY: '{"deep":{"enabled":true,"minTokens":1}}'
     }
   },
   contextswitchguard: {
@@ -1696,6 +1715,151 @@ async function checkContextRefresh(sandboxRoot, _tempBefore, probeText) {
  * 「接管到底写进去了什么」只有 `ctx-ext.log` 知道 —— 接管块进的是 pi 的摘要，
  * 不落我们的任何文件。探针跑在渲染端读不到它，所以判据在这里。
  */
+/**
+ * Deep Context（N21-8，cost 1）：Pass 1 真的调了模型 + Pass 2 真的注入了。
+ *
+ * 断言只落在「链路通不通」上：
+ *   · `hook: 'error'` 为空 —— `ctx.modelRegistry.complete()` 的调用约定（context 形状等）
+ *     是**从 minified bundle 推的**，它错了这里第一个报出来；
+ *   · `hook: 'injected'` 至少一次 —— Pass 1 真的产出并装配了工作 trace；
+ *   · `hook: 'context'` 里有 `injectedWorkingTrace: true` —— 注入块真的进了这一轮的消息
+ *     （注入块本身不落盘，诊断行是唯一取证点，与 `task-state-injected` 同一层级）。
+ *
+ * 刻意**不**断归纳质量（那属于 N21-9 的 A/B 判据），也**不**断延迟数字
+ * （模型速度差异太大，只如实打印，让它可观测）。
+ */
+async function checkContextDeep(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxdeep')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+
+  const deep = ownRecords.filter((r) => r?.stage === 'deep')
+  const injected = deep.filter((r) => r.hook === 'injected')
+  const skipped = deep.filter((r) => r.hook === 'skipped')
+  const errors = deep.filter((r) => r.hook === 'error')
+  const empty = deep.filter((r) => r.hook === 'empty')
+
+  /*
+   * 诊断分布：一次定性「是 env 没到扩展」还是「到了但被闸门挡了」还是「抛错了」。
+   * 没有它的话，`stage:'deep'` 为空只能知道「没跑」，而「为什么没跑」要看天。
+   */
+  const dist = {}
+  for (const record of ownRecords) {
+    const key = `${record.stage ?? '?'}:${record.hook ?? '?'}`
+    dist[key] = (dist[key] ?? 0) + 1
+  }
+  lines.push(`    · 诊断分布：${JSON.stringify(dist)}`)
+  const boot = ownRecords.filter((r) => r?.stage === 'boot')
+  for (const record of boot.slice(0, 2)) {
+    lines.push(`    · 扩展启动时看到的策略：${record.policy || '(空)'}`)
+  }
+  const contextErrors = ownRecords.filter((r) => r?.stage === 'context' && r.hook === 'error')
+  for (const record of contextErrors.slice(0, 2)) {
+    lines.push(`    · context 钩子抛错：${String(record.message).slice(0, 200)}`)
+  }
+
+  say(
+    errors.length === 0,
+    `Pass 1 没有报错（${errors.length} 次${errors[0]?.message ? `：${String(errors[0].message).slice(0, 160)}` : ''}）`
+  )
+  say(
+    skipped.every((r) => r.reason !== 'disabled'),
+    '没有被「开关没打开」挡掉（否则这个场景什么也没验到）'
+  )
+  say(
+    injected.length >= 1,
+    `Pass 1 真的产出并注入了工作 trace（${injected.length} 次；skipped ${skipped.length} / empty ${empty.length}）`
+  )
+  if (injected[0]) {
+    lines.push(
+      `    · ms=${injected[0].ms} inputTokens=${injected[0].inputTokens} outputChars=${injected[0].outputChars} blockTokens=${injected[0].blockTokens}`
+    )
+    say(Number(injected[0].outputChars) > 0, '归纳结果非空')
+    say(Number(injected[0].blockTokens) > 0, '注入块有内容（不是空壳）')
+  }
+  /*
+   * `hook: 'context'` 这个组合是唯一的（compact / producer 都不用它），
+   * 所以这里用 hook 而不是 stage —— 后者要求调用方记得在 payload 里写，
+   * 而 context 系的 trace 没写（正是这一轮误报的成因，见 MAINTENANCE）。
+   */
+  const contexts = ownRecords.filter((r) => r?.hook === 'context')
+  const flagged = contexts.filter((r) => r.injectedWorkingTrace === true)
+  say(
+    flagged.length >= 1,
+    `hook:'context' 里有 injectedWorkingTrace:true（${flagged.length} 次）—— 注入块真的进了这一轮消息`
+  )
+  if (skipped.length > 0) {
+    lines.push(`    · skipped 原因：${[...new Set(skipped.map((r) => r.reason))].join(', ')}`)
+  }
+
+  return { ok, lines }
+}
+
+/**
+ * 「压缩那一刻，`session_before_compact` 到底有没有被调到」——N21-12 的唯一直接取证点。
+ *
+ * ⚠️ 这个检查存在的一半理由是**它曾经是错的**：`diagnostic()` 只把 trace 的
+ * 第一参数放进 `hook` 字段，而 compact 系调用没有在 payload 里写 `stage`
+ * （producer 系写了）—— 于是 `stage === 'compact'` 的过滤**永远为空**，
+ * 看起来就是「一次都没被调到」，而真把 `stage` 补上后结论才作数。
+ * 这类「工具错得很安静」的坑，比它当时想抓的 bug 更值得写下来。
+ *
+ * 只取证不断言：本条跑的是「压缩一定发生」的场景，数字本身就是结论。
+ */
+async function checkContextTakeoverHook(sandboxRoot) {
+  const lines = []
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const compact = records.filter((r) => r?.stage === 'compact')
+  const byHook = {}
+  for (const record of compact) byHook[record.hook] = (byHook[record.hook] ?? 0) + 1
+  lines.push(`  session_before_compact 诊断：${JSON.stringify(byHook)}（共 ${compact.length} 条）`)
+  for (const record of compact.slice(0, 4)) lines.push(`    · ${JSON.stringify(record).slice(0, 200)}`)
+  const entered = compact.filter((r) => r.hook === 'entered')
+  lines.push(
+    entered.length > 0
+      ? '  → 钩子**确实被调到了**：压缩接管在真实链路里是可用的'
+      : '  → 钩子一次都没被调到（`stage` 已确认修对，这个结论现在可信）'
+  )
+  return { ok: true, lines }
+}
+
 async function checkContextTakeoverSummary(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -1725,6 +1889,15 @@ async function checkContextTakeoverSummary(sandboxRoot, _tempBefore, probeText) 
 
   const committed = ownRecords.filter((r) => r?.stage === 'producer' && r.hook === 'committed')
   say(committed.length >= 1, `状态生成器提交过（${committed.length} 次）—— 接管要有状态可用`)
+
+  /*
+   * Deep Context（N21-8）的**反向验证**：本场景的 env 没开 `deep`，
+   * 所以扩展侧的日志里不该出现任何 `stage: 'deep'` 的记录。
+   * 「默认关闭」不能靠代码里那句 `enabled: false` 自证 —— 那条分支也可能写错，
+   * 只有「没开的时候真的一次都没跑」才是真实链路里的证据。
+   */
+  const deepRows = ownRecords.filter((r) => r?.stage === 'deep')
+  say(deepRows.length === 0, `没开 Deep Context 时一次都没跑（${deepRows.length} 条 deep 记录）`)
 
   const compactRows = ownRecords.filter((r) => r?.stage === 'compact')
   const entered = compactRows.filter((r) => r.hook === 'entered')
@@ -2145,7 +2318,9 @@ const AFTER_EXIT = {
   contextProduce: checkContextProduce,
   contextGate: checkContextGate,
   contextRefresh: checkContextRefresh,
-  contextTakeoverSummary: checkContextTakeoverSummary
+  contextTakeoverSummary: checkContextTakeoverSummary,
+  contextTakeoverHook: checkContextTakeoverHook,
+  contextDeep: checkContextDeep
 }
 
 /*

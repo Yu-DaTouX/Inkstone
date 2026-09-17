@@ -99,6 +99,19 @@ import {
   transcriptStats,
   userDirectives
 } from './context-producer.js'
+import {
+  DEEP_MAX_OUTPUT_TOKENS,
+  DEEP_SYSTEM_PROMPT,
+  DEEP_TIMEOUT_MS,
+  buildDeepInput,
+  buildDeepPrompt,
+  deepEligible,
+  deepSwitches,
+  injectWorkingTrace,
+  parseDeepOutput,
+  renderWorkingTrace,
+  turnKeyOf
+} from './context-deep.js'
 
 /* ---------------------------------------------------------------- 环境与设置 */
 
@@ -142,7 +155,12 @@ function policy() {
     sweep: { ...DEFAULT_SWEEP },
     recall: { ...DEFAULT_RECALL },
     /* kinds 不含 `episode-fold` 时两条分路都是关的（总闸优先） */
-    state: { generate: false, inject: false, minTurns: 0, minTokens: 0, refreshRatio: 0 }
+    state: { generate: false, inject: false, minTurns: 0, minTokens: 0, refreshRatio: 0 },
+    /*
+     * Deep Context（N21-8）：**默认关闭** —— 它挂在 `context` 钩子里，会在用户每次
+     * 开口前多调一次模型并**同步阻塞**本轮。开与不开是用户的判断，见 `context-deep.js`。
+     */
+    deep: { enabled: false, minTokens: 0 }
   }
   if (!raw.trim()) return base
   let parsed
@@ -170,7 +188,8 @@ function policy() {
     recentTail: pick(parsed.recentTail, base.recentTail),
     sweep: pick(parsed.sweep, base.sweep),
     recall: pick(parsed.recall, base.recall),
-    state: stateSwitches(parsed.state, kinds)
+    state: stateSwitches(parsed.state, kinds),
+    deep: deepSwitches(parsed.deep)
   }
 }
 
@@ -365,7 +384,7 @@ function sessionIdOf(ctx) {
  *   ③ Task State 前置注入（kinds 含 `episode-fold` 且状态水位一致）；
  *   ④ 校验：`sweepViolations` 非空则整轮放弃（回退到原始消息）。
  */
-function onContext(event, ctx) {
+async function onContext(event, ctx) {
   const messages = event?.messages
   if (!Array.isArray(messages) || messages.length === 0) return
   const sessionId = sessionIdOf(ctx)
@@ -377,6 +396,7 @@ function onContext(event, ctx) {
     const currentTurn = userTurnCount(next)
     let swept = 0
     let injectedTaskState = false
+    let injectedWorkingTrace = false
     let expiredRecalls = 0
 
     /* ① TTL：上一轮的召回正文只在当轮有效 */
@@ -489,6 +509,21 @@ function onContext(event, ctx) {
     }
 
     /*
+     * ④ Deep Context（N21-8，默认关）：回答之前先把**工作集**归纳一遍。
+     * 与 ③ 的分工：③ 给的是跨会话累积的持久状态（决策 / 约束 / 未决），
+     * ④ 给的是「当前这件事进行到哪了」；两者可以同时在。
+     * 这一步会真的**等一次模型调用**（语义如此：归纳必须在请求发出前完成），
+     * 所以四道闸门（开关 / 新用户消息 / 没跑过 / 转录够长）缺一不可。
+     */
+    if (p.deep.enabled) {
+      const deep = await runDeepPass({ sessionId, ctx, messages: next, p })
+      if (deep.injected) {
+        next = deep.messages
+        injectedWorkingTrace = true
+      }
+    }
+
+    /*
      * 召回账本用**真实消息**重算（账本记录当轮回合号，供工具包装召回内容用）。
      *
      * 只在「召回真的可能发生时」才落盘（`tool-sweep` / `recall` 已接管）：
@@ -505,12 +540,13 @@ function onContext(event, ctx) {
       }
     }
 
-    if (swept === 0 && !injectedTaskState && expiredRecalls === 0) return
+    if (swept === 0 && !injectedTaskState && !injectedWorkingTrace && expiredRecalls === 0) return
     trace('context', {
       sessionId,
       hook: 'context',
       swept,
       injectedTaskState,
+      injectedWorkingTrace,
       expiredRecalls,
       activeRecallTokens: activeRecallTokens(next)
     })
@@ -519,6 +555,106 @@ function onContext(event, ctx) {
     trace('context', { sessionId, hook: 'error', message: errorText(error) })
     return undefined
   }
+}
+
+/**
+ * 当前上下文的用量（token）。
+ *
+ * 优先问 pi（`ctx.getContextUsage()`，方案 §16.1）—— 它才是权威口径；
+ * 拿不到时退回 `transcriptStats` 的估算（那个口径只用于相对比较，所以**只当退路**）。
+ */
+function transcriptTokensOf(ctx) {
+  const direct = Number(ctx?.getContextUsage?.()?.tokens)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const entries = ctx?.sessionManager?.getEntries?.() ?? []
+  return transcriptStats(entries).tokens
+}
+
+/** `complete()` 的返回形状随 provider 而异，这里只认几种常见的；认不出就当没产出 */
+function resultTextOf(result) {
+  if (typeof result === 'string') return result
+  if (typeof result?.text === 'string') return result.text
+  if (Array.isArray(result?.content)) {
+    return result.content.map((block) => (typeof block === 'string' ? block : block?.text ?? '')).join('\n')
+  }
+  if (typeof result?.message?.content === 'string') return result.message.content
+  return ''
+}
+
+/**
+ * Deep Context（N21-8）的 Pass 1 + Pass 2。
+ *
+ * 任何失败都**静默降级为「不注入」** 并留一条诊断 —— 这是一次可选优化，
+ * 它出问题不该影响用户这一轮能不能正常提问（宁可少一份归纳，不要卡住输入）。
+ *
+ * `ctx.modelRegistry.complete()` 是扩展侧唯一能自己发起模型调用的通道（§16.1）。
+ * 它**不经过会话循环**，所以不会递归触发 `context` 钩子。
+ */
+async function runDeepPass({ sessionId, ctx, messages, p }) {
+  const key = turnKeyOf(messages)
+  const ranForTurn = !!key && deepRan.get(sessionId) === key
+  const tokens = transcriptTokensOf(ctx)
+  const verdict = deepEligible({
+    enabled: true,
+    tokens,
+    minTokens: p.deep.minTokens,
+    hasNewTurn: !!key,
+    ranForTurn
+  })
+  if (!verdict.ok) {
+    trace('deep', { sessionId, stage: 'deep', hook: 'skipped', reason: verdict.reason, tokens })
+    return { injected: false }
+  }
+  const registry = ctx?.modelRegistry
+  const model = ctx?.model
+  if (typeof registry?.complete !== 'function' || !model) {
+    trace('deep', { sessionId, stage: 'deep', hook: 'skipped', reason: 'no-model-registry', tokens })
+    return { injected: false }
+  }
+  const materials = buildDeepInput(messages)
+  if (!materials.text) {
+    trace('deep', { sessionId, stage: 'deep', hook: 'skipped', reason: 'no-materials', tokens })
+    return { injected: false }
+  }
+  /*
+   * 先记「跑过了」再调用：超时或失败也不重试 ——
+   * 否则一次卡住的请求会让后面每一轮都再等 30s，把「慢」变成「不可用」。
+   */
+  deepRan.set(sessionId, key)
+  if (deepRan.size > 200) deepRan.clear()
+  const startedAt = Date.now()
+  let text = ''
+  try {
+    const result = await registry.complete(
+      model,
+      {
+        systemPrompt: DEEP_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: [{ type: 'text', text: buildDeepPrompt(materials.text) }] }]
+      },
+      { maxTokens: DEEP_MAX_OUTPUT_TOKENS, signal: AbortSignal.timeout(DEEP_TIMEOUT_MS) }
+    )
+    text = resultTextOf(result)
+  } catch (error) {
+    trace('deep', { sessionId, stage: 'deep', hook: 'error', ms: Date.now() - startedAt, message: errorText(error) })
+    return { injected: false }
+  }
+  const parsed = parseDeepOutput(text)
+  if (!parsed.ok) {
+    trace('deep', { sessionId, stage: 'deep', hook: 'empty', reason: parsed.reason, ms: Date.now() - startedAt })
+    return { injected: false }
+  }
+  const block = renderWorkingTrace(parsed.text, { turns: materials.count })
+  const applied = injectWorkingTrace(messages, block)
+  trace('deep', {
+    sessionId,
+    stage: 'deep',
+    hook: 'injected',
+    ms: Date.now() - startedAt,
+    inputTokens: materials.tokens,
+    outputChars: parsed.text.length,
+    blockTokens: estimateTokens(block)
+  })
+  return { injected: applied.injected, messages: applied.messages }
 }
 
 /**
@@ -542,6 +678,7 @@ function onBeforeCompact(event, ctx) {
    */
   trace('compact', {
     sessionId,
+    stage: 'compact',
     hook: 'entered',
     hasPreparation: !!event?.preparation,
     reason: event?.reason ?? null
@@ -554,13 +691,13 @@ function onBeforeCompact(event, ctx) {
    * 关掉它不会连带停掉生成（那是 `state.generate` 的事）。
    */
   if (!p.state.inject) {
-    trace('compact', { sessionId, hook: 'fallback', reason: 'inject-off' })
+    trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: 'inject-off' })
     return
   }
   try {
     const loaded = loadState(sessionId)
     if (loaded.status !== 'ok') {
-      trace('compact', { sessionId, hook: 'fallback', reason: 'no-state' })
+      trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: 'no-state' })
       return
     }
     const entries = ctx.sessionManager?.getEntries?.() ?? []
@@ -572,7 +709,7 @@ function onBeforeCompact(event, ctx) {
     const fresh = freshView(freshnessOf({ stateWatermark: state.sourceWatermark, entries }))
     const applied = applyFreshness(state.task, fresh)
     if (!applied.task) {
-      trace('compact', { sessionId, hook: 'fallback', reason: `freshness-${applied.tier}`, gap: fresh.gap })
+      trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: `freshness-${applied.tier}`, gap: fresh.gap })
       return
     }
     const built = buildStructuredSummary(
@@ -581,20 +718,20 @@ function onBeforeCompact(event, ctx) {
       { freshness: freshnessLabel(applied.tier) }
     )
     if (!built.ok) {
-      trace('compact', { sessionId, hook: 'fallback', reason: built.reason, missing: built.missing ?? null })
+      trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: built.reason, missing: built.missing ?? null })
       return
     }
     const preparation = event?.preparation ?? {}
     const firstKeptEntryId = preparation.firstKeptEntryId
     const tokensBefore = Number(preparation.tokensBefore)
     if (typeof firstKeptEntryId !== 'string' || !firstKeptEntryId || !Number.isFinite(tokensBefore)) {
-      trace('compact', { sessionId, hook: 'fallback', reason: 'bad-preparation' })
+      trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: 'bad-preparation' })
       return
     }
-    trace('compact', { sessionId, hook: 'takeover', fields: built.fields, tier: applied.tier, gap: fresh.gap })
+    trace('compact', { sessionId, stage: 'compact', hook: 'takeover', fields: built.fields, tier: applied.tier, gap: fresh.gap })
     return { compaction: { summary: built.summary, firstKeptEntryId, tokensBefore } }
   } catch (error) {
-    trace('compact', { sessionId, hook: 'error', message: errorText(error) })
+    trace('compact', { sessionId, stage: 'compact', hook: 'error', message: errorText(error) })
     return undefined
   }
 }
@@ -650,6 +787,11 @@ let producerFlight = null
  */
 const sweepSeen = new Set()
 const foldSticky = new Set()
+/*
+ * Deep Context 的「同一条用户消息只跑一次」记忆（sessionId → turnKey）。
+ * 只活在进程内：重启后多跑一次是可接受的（宁可多花一次，也不要在磁盘上留一份要维护的账）。
+ */
+const deepRan = new Map()
 
 /** freshness 分档 → 注入契约里的 `freshness`（机器可读，取值只有三个） */
 function freshnessLabel(tier) {
@@ -1030,6 +1172,17 @@ function errorText(error) {
 /* ---------------------------------------------------------------- 导出 */
 
 export default function contextExtension(pi) {
+  /*
+   * 启动诊断：扩展侧看到的策略原文。
+   * 「开关开了却没生效」第一个要排除的就是「env 到底有没有到这里」——
+   * 主进程侧的策略视图（`resolveContextPolicy`）与扩展侧读的是两回事，
+   * 界面显示正确并不代表扩展也读到了（它只认进程 env）。
+   */
+  trace('boot', {
+    stage: 'boot',
+    policy: (process.env.YAN_CONTEXT_POLICY ?? '').slice(0, 200),
+    log: !!process.env.YAN_CONTEXT_EXT_LOG
+  })
   pi.on('context', (event, ctx) => onContext(event, ctx))
   pi.on('session_before_compact', (event, ctx) => onBeforeCompact(event, ctx))
   /*
