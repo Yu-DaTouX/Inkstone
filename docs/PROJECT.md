@@ -257,6 +257,40 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 
 ---
 
+### 2.14 Git 审查与环境菜单（方案 G1）
+
+会话头部的项目胶囊是**环境菜单**的入口（变更 / 本地 / 分支 / Pull Request /
+比较分支）；点「变更」在右栏打开**审查面板**。整条链路**只读**。
+
+| 做什么 | 怎么实现的 | 涉及文件 |
+|---|---|---|
+| 环境菜单 | 项目胶囊变成按钮 + 菜单（点外 / Escape 关闭、打开时焦点落在第一项）。数字全来自真实查询，`gh` 不在就写「无法获取 Pull Request 状态」 | `components/review/EnvironmentMenu.tsx` |
+| 仓库发现 | `rev-parse --show-toplevel --absolute-git-dir --git-common-dir`；带 30s 缓存 + `.git` 目录 mtime 失效。非 Git 目录返回 `null`（**不是错误**） | `main/git-service.ts` |
+| 变更清单 | `status --porcelain=v2 -z` + `diff --raw -z` + `diff --numstat -z`，合成文件清单（状态 / 行数 / 指纹 / 内容形态） | `main/git-diff.ts`、`shared/git.ts` |
+| 单文件 diff | 按文件懒加载 unified diff → 结构化 hunk（行号 + 类型），界面做折叠 / 两列行号 / 「N 行未修改」展开 | `main/git-diff.ts`、`components/review/DiffViewer.tsx` |
+| 图片对照 | 两侧各读一次内容：旧侧 `git cat-file blob <rev>:<path>`、新侧读工作区；**必须用 buffer 编码**，`utf8` 会把 PNG 的字节替换成 U+FFFD | `main/git-diff.ts`、`components/review/ImageDiff.tsx` |
+| 变更文件树 | 扁平清单折成目录树（纯函数）；文件名筛选、类型筛选、已查看进度 | `components/review/ChangedFileTree.tsx` |
+| 已查看 | 用户主动标记；键 = 仓库 + 工作树 + 范围 + 两侧路径 + **两侧内容指纹**，内容一变即失效。存渲染端 localStorage | `components/review/useGitReview.ts` |
+
+**改动注意点**
+
+1. **绝不能调用 `main/subagent-isolation.ts` 的 `collectDiff()`。** 它在隔离 worktree
+   里执行 `git add -A` 只为生成归档补丁 —— 主工作区复用一次，用户打开审查就会发现
+   自己的暂存区被清空并全部暂存。审查的数据路径是独立的（`git-diff.ts`），
+   而且有一条**退出后逐字节比对**的断言盯着它（`test:live -- gitreview` 的
+   `afterExit: gitReviewReadonly`）。
+2. **渲染端不能传 git 命令**。只传 cwd / 范围 / 路径；命令形状在主进程固定
+   （`execFile` + 参数数组）。范围与 ref 走 `normalizeScope` + `refLooksSafe`
+   （拒 `-` 开头的选项注入），路径走 `safeRepoPath`（拒绝对路径、`..`、`-` 开头）。
+3. **`--no-ext-diff` 与 `--no-textconv` 必须在参数里再给一遍**：用户 gitconfig 里的
+   external diff 会让输出完全不是 unified diff，而解析依赖统一格式。
+4. **只读查询要加 `--no-optional-locks`**：`git status` 默认会写 `.git/index`
+   刷新 stat 缓存。旧 git 不认这个选项时回退重试，而不是把「读不出来」报给用户。
+5. **清单不含正文**。一个工程级改动可能有上千个文件；正文按文件懒加载，
+   否则每次刷新都在 IPC 上搬几 MB 用户还没看的字节。
+6. 图片 / 二进制 / 子模块 / LFS **必须分别标注**，不能都给一个 `+0 -0`
+   （用户会以为没改动）或一个空 diff。未跟踪的二进制靠嗅探前 8000 字节的 NUL。
+
 
 ## 修改前按需阅读
 

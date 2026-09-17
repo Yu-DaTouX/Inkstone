@@ -6,36 +6,36 @@
  * 这些都需要行号与行类型是数据而不是字符串。结构化之后还能顺便做
  * 「未修改的 N 行」折叠块 —— 长文件里真正要看的就是那几行改动。
  *
+ * 「N 行未修改」是**真的能展开**的：点它去要该文件的原文（同一条
+ * content 通道，与图片共用），再按行号切出那一段。不做成装饰性分隔条 ——
+ * 一个点了没反应的控件比没有这个控件更糟。
+ *
  * 不做语法高亮：diff 的可读性主要来自增删底色与行号对齐，
  * 而给上万个 diff 行跑 highlight.js 会让滚动明显变卡（实测过的取舍）。
  */
 import { useEffect, useMemo, useState } from 'react'
-import type { GitDiffHunk, GitFileContent, GitFilePatch } from '../../../../shared/ipc'
+import type { GitFileContent, GitFilePatch } from '../../../../shared/ipc'
+import { gapRanges } from '../../../../shared/git'
 import { useT } from '../../i18n'
 
-/** 相邻两个 hunk 之间未修改的行数（首块之前也算一段） */
-export function unmodifiedGaps(hunks: GitDiffHunk[]): number[] {
-  const gaps: number[] = []
-  for (let i = 0; i < hunks.length; i++) {
-    if (i === 0) {
-      gaps.push(Math.max(0, hunks[0].oldStart - 1))
-      continue
-    }
-    const prev = hunks[i - 1]
-    const cur = hunks[i]
-    gaps.push(Math.max(0, cur.oldStart - (prev.oldStart + prev.oldCount)))
-  }
-  return gaps
+/** 一次最多展开多少行上下文（一个巨大的未修改区不能把界面铺满） */
+const MAX_GAP_LINES = 300
+
+export interface SideLoader {
+  (path: string, side: 'old' | 'new'): Promise<GitFileContent>
 }
 
-export function DiffViewer({ patch }: { patch: GitFilePatch }) {
+export function DiffViewer({ patch, load }: { patch: GitFilePatch; load: SideLoader }) {
   const t = useT()
-  const gaps = useMemo(() => unmodifiedGaps(patch.hunks), [patch.hunks])
-  /** 被用户展开的「未修改的 N 行」块（它不加载真实内容，只是不再折叠） */
-  const [openedGaps, setOpenedGaps] = useState<Set<number>>(new Set())
+  const gaps = useMemo(() => gapRanges(patch.hunks), [patch.hunks])
+  /**
+   * 已经展开的未修改区（键是 hunk 下标）。
+   * 展开后的行是**真的内容**，不是占位符。
+   */
+  const [opened, setOpened] = useState<Record<number, GapLines>>({})
 
   useEffect(() => {
-    setOpenedGaps(new Set())
+    setOpened({})
   }, [patch.path, patch.requestId])
 
   if (patch.binary || patch.kind === 'binary' || patch.kind === 'submodule' || patch.kind === 'lfs') {
@@ -49,26 +49,15 @@ export function DiffViewer({ patch }: { patch: GitFilePatch }) {
     <div className="rdiff" data-testid="review-diff" data-path={patch.path}>
       {patch.hunks.map((h, i) => (
         <div className="rdiff-block" key={`${h.header}-${i}`}>
-          {gaps[i] > 0 ? (
-            openedGaps.has(i) ? (
-              <div className="rdiff-gap open">
-                <span className="rdiff-gap-rule" />
-                <span className="rdiff-gap-label">{t('review.unmodified', { n: gaps[i] })}</span>
-                <span className="rdiff-gap-rule" />
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="rdiff-gap"
-                data-testid="review-gap"
-                onClick={() => setOpenedGaps((p) => new Set(p).add(i))}
-                title={t('review.gapTip')}
-              >
-                <span className="rdiff-gap-rule" />
-                <span className="rdiff-gap-label">{t('review.unmodified', { n: gaps[i] })}</span>
-                <span className="rdiff-gap-rule" />
-              </button>
-            )
+          {gaps[i]?.count > 0 ? (
+            <ContextGap
+              range={gaps[i]}
+              state={opened[i]}
+              onOpen={async () => {
+                const loaded = await loadGap(patch, gaps[i], load)
+                setOpened((p) => ({ ...p, [i]: loaded }))
+              }}
+            />
           ) : null}
 
           <div className="rdiff-hunk">
@@ -94,6 +83,96 @@ export function DiffViewer({ patch }: { patch: GitFilePatch }) {
       {patch.truncated ? <div className="rdiff-note">{t('review.truncatedFile')}</div> : null}
       {patch.synthesized ? <div className="rdiff-note">{t('review.untrackedNote')}</div> : null}
     </div>
+  )
+}
+
+type GapLines = { kind: 'lines'; lines: { oldNo: number; newNo: number; text: string }[]; rest: number } | { kind: 'error'; message: string }
+
+/**
+ * 按行号区间把原文切出来。
+ *
+ * ⚠️ 两个容易搞错的地方：
+ *   ① `split('\n')` 对以换行结尾的文件会多出一个空元素 —— 它不影响
+ *      区间切片（只要区间落在文件行数内），但会让「最后一行」看起来多一行，
+ *      所以按文件实际行数夹取。
+ *   ② 删除文件的**新侧不存在**，必须回退到旧侧。此时两侧行号仍然都要显示
+ *      （旧侧的行号是真实的，新侧那列跟着推进 —— 它就是“如果不删会是第几行”）。
+ */
+async function loadGap(patch: GitFilePatch, range: { oldStart: number; newStart: number; count: number }, load: SideLoader): Promise<GapLines> {
+  const shown = Math.min(range.count, MAX_GAP_LINES)
+  const rest = range.count - shown
+  const trySide = async (side: 'old' | 'new'): Promise<string | null> => {
+    const res = await load(patch.path, side)
+    if (!res.ok || res.missing || typeof res.text !== 'string' || res.truncated) return null
+    return res.text
+  }
+  let text = await trySide('new')
+  let start = range.newStart
+  if (text === null) {
+    text = await trySide('old')
+    start = range.oldStart
+  }
+  if (text === null) return { kind: 'error', message: 'no-content' }
+
+  const all = text.split('\n')
+  /* 末尾因换行多出来的空元素不算一行 */
+  const total = all.length && all[all.length - 1] === '' ? all.length - 1 : all.length
+  const from = start - 1
+  const to = Math.min(from + shown, total)
+  const lines: { oldNo: number; newNo: number; text: string }[] = []
+  for (let i = from; i < to; i++) {
+    const offset = i - from
+    lines.push({ oldNo: range.oldStart + offset, newNo: range.newStart + offset, text: all[i] ?? '' })
+  }
+  return { kind: 'lines', lines, rest }
+}
+
+function ContextGap({
+  range,
+  state,
+  onOpen
+}: {
+  range: { oldStart: number; newStart: number; count: number }
+  state: GapLines | undefined
+  onOpen: () => Promise<void>
+}) {
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+
+  if (state?.kind === 'lines') {
+    return (
+      <div className="rdiff-gap-open" data-testid="review-gap-open">
+        {state.lines.map((l, i) => (
+          <div className="rdiff-line ctx" key={i}>
+            <span className="rdiff-no" aria-hidden="true">{l.oldNo}</span>
+            <span className="rdiff-no" aria-hidden="true">{l.newNo}</span>
+            <span className="rdiff-sign" aria-hidden="true">{' '}</span>
+            <span className="rdiff-text">{l.text || '\u00a0'}</span>
+          </div>
+        ))}
+        {state.rest > 0 ? <div className="rdiff-note">{t('review.gapMore', { n: state.rest })}</div> : null}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="rdiff-gap"
+      data-testid="review-gap"
+      disabled={busy}
+      title={t('review.gapTip')}
+      onClick={() => {
+        setBusy(true)
+        void onOpen().finally(() => setBusy(false))
+      }}
+    >
+      <span className="rdiff-gap-rule" />
+      <span className="rdiff-gap-label">
+        {state?.kind === 'error' ? t('review.gapFailed') : t('review.unmodified', { n: range.count })}
+      </span>
+      <span className="rdiff-gap-rule" />
+    </button>
   )
 }
 

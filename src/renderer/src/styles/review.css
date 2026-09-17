@@ -458,8 +458,18 @@ button.env-item:hover {
   cursor: pointer;
 }
 
-.rdiff-gap.open {
+.rdiff-gap:disabled {
   cursor: default;
+  opacity: 0.6;
+}
+
+/*
+ * 展开后的上下文（真的行内容）。
+ * 用一道很淡的底色与真正的 diff 行区分开：它既不是新增也不是删除，
+ * 只给左侧 2px 的提示线，不用底色（否则一屏里三种底色会很吵）。
+ */
+.rdiff-gap-open {
+  border-left: 2px solid var(--border-soft);
 }
 
 .rdiff-gap:hover {

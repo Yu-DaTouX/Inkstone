@@ -126,9 +126,27 @@
     const addNo = firstAdd ? textOf(firstAdd.querySelectorAll('.rdiff-no')[1]) : ''
     ok(/^\d+$/.test(addNo), '新增行的新行号是数字', addNo)
 
-    /* 多 hunk 文件里的「未修改的 N 行」折叠条 */
+    /*
+     * 多 hunk 文件里的「未修改的 N 行」：**真的能展开**。
+     * 一个点了没反应的控件比没有这个控件更糟，所以这条断言盯的
+     * 不是「折叠条存在」，而是「点了之后出现了真实内容行」。
+     */
     const gap = await waitFor(() => testid('review-gap'), 8000)
     ok(!!gap, '改动之间有「N 行未修改」的折叠条（长文件不会把无关行全铺出来）', textOf(gap))
+    if (gap) {
+      const ctxBefore = $$('.rdiff-line.ctx').length
+      const gapLabel = textOf(gap)
+      await click(gap)
+      /* 展开要去要该文件的原文（一次 IPC），所以等的是出现真实内容行 */
+      const opened = await waitFor(() => testid('review-gap-open'), 8000)
+      ok(!!opened, '点折叠条真的展开了内容（而不是点了没反应）', gapLabel)
+      const ctxAfter = $$('.rdiff-line.ctx').length
+      ok(ctxAfter > ctxBefore, '展开后上下文行数增加', `${ctxBefore} → ${ctxAfter}`)
+      /* 展开出来的行必须带**两侧**行号，且是数字 */
+      const firstLine = opened ? opened.querySelector('.rdiff-line.ctx') : null
+      const nos = firstLine ? [...firstLine.querySelectorAll('.rdiff-no')].map((el) => textOf(el)) : []
+      ok(nos.length === 2 && nos.every((n) => /^\d+$/.test(n)), '展开的上下文行有两列真实行号', nos.join('/'))
+    }
 
     /* ── 4. 变更文件树 ───────────────────────────────────── */
 

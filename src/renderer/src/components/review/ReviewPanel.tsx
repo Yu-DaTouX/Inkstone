@@ -402,7 +402,7 @@ function FileCard({
           ) : patch.status === 'error' ? (
             <div className="rdiff-note err">{t('review.loadFailed', { msg: patch.error })}</div>
           ) : (
-            <DiffViewer patch={patch.patch} />
+            <DiffViewer patch={patch.patch} load={sides.load} />
           )}
         </div>
       ) : null}

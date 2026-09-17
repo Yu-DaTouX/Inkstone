@@ -61,7 +61,8 @@ pi 吐事件
 
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
-| `ipc.ts` | 1747 | 主进程 ↔ 渲染进程的**全部**共享类型与常量：`MainPush`、`SessionState`、`RuntimeEnvelope`、`YanBridge`、`AppSettings`、工具分区、面板宽度夹取… | **被 44 个文件 import**，是全仓第一枢纽。改它必然牵动 `preload/index.ts`（桥）与 `store.ts`（消费） |
+| `ipc.ts` | 2168 | 主进程 ↔ 渲染进程的**全部**共享类型与常量：`MainPush`、`SessionState`、`RuntimeEnvelope`、`YanBridge`、`AppSettings`、工具分区、面板宽度夹取…（Git 审查的类型不在这里，从 `./git` 转发，见下行） | **被 44 个文件 import**，是全仓第一枢纽。改它必然牵动 `preload/index.ts`（桥）与 `store.ts`（消费） |
+| `git.ts` | 987 | **Git 审查的共享类型 + 纯解析（方案 G1）**：范围 → git 参数的映射、`status --porcelain=v2 -z` / `diff --raw -z` / `--numstat -z` / unified diff 的结构化解析、内容形态判定、未修改区的行号区间、已查看的键。**不做任何 IO**（渲染端也要 import），所以能在没有 Electron 的环境下被单测 | `main/git-service.ts`、`main/git-diff.ts`、`components/review/*`；单测 `test-git-review.mjs`（124 条） |
 | `turns.ts` | 357 | 把扁平 `UIMessage[]` 折成「一轮一块」；附带 `cacheHitRate`、段落切分 | `TurnView.tsx`、`UsageBar.tsx`、`ConversationOutline.tsx`；有单测 `test-turns.mjs` |
 | `model-capabilities.ts` | 95 | 归一化 pi 的模型描述符：缺失字段一律 `unknown`，**绝不因为字段缺失就判成 unsupported** | `agent.ts`（`setStateFrom`）、`Pickers.tsx`；单测 `test-model-capabilities.mjs` |
 | `links.ts` | 123 | 链接路由：内部浏览器打开 / 文件预览 / 拒绝（非法协议、路径穿越、可执行文件） | 安全判断，纯函数；单测 `test-links.mjs` |
@@ -77,7 +78,7 @@ pi 吐事件
 
 ---
 
-## 4. `src/main/` —— 主进程（44 个 `.ts`）
+## 4. `src/main/` —— 主进程（50 个 `.ts`，含 `browser/` 子目录）
 
 ### 4.1 入口与生命周期
 
@@ -157,6 +158,15 @@ pi 吐事件
 | `subagents.ts` | 697 | 自有进程管理的子代理：槽位预占、启动期上下文快照、只读模式 `--tools` 白名单、退出归档清理、超时、停止、转录上限、用量不重复计入。**跑完要收进程**（等转录安静 → close → 再读差异/清理，D16）；**toolResult 回填**到原调用，消息编号用 `msgSeq`/`streamingId`（D15） | `index.ts`；`SubagentList.tsx`、`SubagentPreview.tsx`；单测 `test-subagents.mjs`（注入假 RPC，不 spawn 真 pi）；live `subagentpair` |
 | `subagent-isolation.ts` | 211 | **写入隔离（L03）**：从 HEAD 建独立 worktree、差异汇总、应用补丁、清理。只处理文件系统/Git 边界，不启动 pi | `subagents.ts`；单测 `test-subagent-isolation.mjs` |
 
+### 4.7 Git 审查（方案 G1，**只读**）
+
+| 文件 | 行 | 功能 | 联动 |
+|---|---|---|---|
+| `git-service.ts` | 414 | Git 只读查询的底座：`execFile` 封装（参数数组、**不经 shell**、关掉 external diff/textconv 的两道环境变量）、仓库发现（30s 缓存 + `.git` mtime 失效）、`status --porcelain=v2`、refs 列表、worktree 占用分支、ref / 路径校验、未跟踪文件的有界元数据（行数 / 大小 / NUL 嗅探 / LFS） | `git-diff.ts`、`index.ts`；单测 `test-git-review.mjs` / `test-git-repo.mjs`（真实仓库） |
+| `git-diff.ts` | 614 | 审查数据层：变更清单（raw + numstat + status 合成，**按范围过滤 status 条目**）、单文件 patch（结构化 hunk）、两侧内容（图片走 **buffer** 编码）、未跟踪文件合成「全新增」hunk | 同上；live `gitreview` |
+
+⚠️ **不要复用 `subagent-isolation.ts` 的 `collectDiff()`**：它为了生成归档补丁会在隔离 worktree 里 `git add -A`，主工作区调一次就会改用户的暂存区。证据：`test:live -- gitreview` 的 `afterExit: gitReviewReadonly` 逐字节比对 `status` / `ls-files -s` / `diff --cached --numstat` / `HEAD`。
+
 ### 4.6 文件、快照、引用
 
 | 文件 | 行 | 功能 | 联动 |
@@ -171,7 +181,7 @@ pi 吐事件
 
 ---
 
-## 5. `src/renderer/src/` —— 界面（53 个 `.ts/`.tsx`；样式另见 §5.8）
+## 5. `src/renderer/src/` —— 界面（59 个 `.ts/`.tsx`；样式另见 §5.8）
 
 ### 5.1 状态层（改这里要最小心）
 
@@ -229,6 +239,16 @@ pi 吐事件
 | `Resizer.tsx` | 221 | 栏宽拖拽把手（跨组件监听 window，结束后必须清理） |
 | `browser/BrowserSurface.tsx` | 379 | 浏览器工具栏 + 把可见区域坐标同步给主进程（网页本身是原生视图） |
 
+### 5.4b `components/review/` —— Git 审查（5 个文件，方案 G1）
+
+| 文件 | 行 | 功能 |
+|---|---|---|
+| `EnvironmentMenu.tsx` | 224 | 环境菜单（项目胶囊即入口）：变更 / 本地（信息行 + 打开 / 复制）/ 分支 / PR / 比较分支。**只放已经能用的动作** |
+| `ReviewPanel.tsx` | 411 | 审查面板：范围选择、统计、两端比较的基准下拉、逐文件卡片 + 懒加载 patch、关闭 / 刷新 / 全部标记已查看 |
+| `ChangedFileTree.tsx` | 232 | 变更文件树：扁平清单折成目录树（`buildFileTree` 纯函数）、文件名 / 类型筛选、已查看进度 |
+| `DiffViewer.tsx` | 256 | 结构化 hunk 渲染（两列行号 + 增删底色）与「N 行未修改」的**真展开**；含 `ImageDiff`（前后对照 + 适配 / 原尺寸） |
+| `useGitReview.ts` | 428 | 数据钩子：仓库状态 / 快照（带请求闸门丢弃迟到响应）/ patch 懒加载缓存 / 两侧内容 / 已查看（localStorage） |
+
 ### 5.5 设置与外壳
 
 | 文件 | 行 | 功能 |
@@ -262,7 +282,7 @@ pi 吐事件
 | `i18n/index.tsx` | 101 | `useT()` / `I18nProvider`；键扁平 + 命名空间 |
 | `i18n/zh-CN.json` / `en-US.json` | — | 文案。**两份键必须对齐**；改文案要跑 typecheck 的 i18n 检查 |
 
-### 5.8 样式层 `styles/`（16 文件，按 `main.tsx` 的 import 顺序生效）
+### 5.8 样式层 `styles/`（17 文件，按 `main.tsx` 的 import 顺序生效）
 
 | 文件 | 行 | 角色 |
 |---|---|---|
@@ -273,6 +293,7 @@ pi 吐事件
 | `stage1.css` / `redesign.css` | 204 / 1284 | 历史层，**名字旧 ≠ 无用**，删除前核对导入顺序与覆盖 |
 | `motion.css` | 1383 | 动效系统（含 `prefers-reduced-motion` 分支） |
 | `shell.css` / `dialog.css` / `electron.css` / `highlight.css` | 303 / 79 / 34 / 172 | 外壳 / 对话框 / Electron 适配 / 代码高亮主题 |
+| `review.css` | 844 | 环境菜单 + Git 审查面板（G1）；含 diff 的底色 / 行号 / 未修改区与图片对照的棋盘格 |
 
 ---
 
@@ -310,15 +331,15 @@ pi 吐事件
 | `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
 | `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（47 个 `test-*.mjs`）
+### 7.2 单测模块（53 个 `test-*.mjs`）
 
-按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / **`git-review`（G1 纯解析，124 条）** / **`git-repo`（G1 真实 git 仓库）** / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
 > `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
 > 对照 HANDOFF 的「单测 N/N 通过」。
 
-### 7.3 live 探针（108 个文件；104 条在 `CASES` 里）
+### 7.3 live 探针（109 个文件；105 条在 `CASES` 里）
 
 在**真实渲染进程**里执行（`window.__yanStore` 可直接驱动状态）。
 按主题分组（新增探针同时要在 `test-live.mjs` 的 `CASES` 注册）：
@@ -401,6 +422,7 @@ pi 吐事件
 | 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
 | 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
 | 改本地斜杠命令 | `main/command-registry.ts`（`LOCAL_COMMANDS` + 来源分类）→ `Composer.tsx` 的 `localName` 分支（`/new` `/compact` `/browser` `/model` `/login` `/subagent` 真的在这里执行；**参数是契约**：`/new` 必须带 `scope:'global'`、`/browser` 无参必须传 `undefined`）→ `store.ts` 对应动作。兼容来源与 `executable:false` 必须继续被吞掉（不发模型）。证据 `test:live -- slashcmd`（19 节，含三次反向验证） |
+| 改 Git 审查（环境菜单 / 审查面板） | 数据层是 `shared/git.ts`（纯解析，零 IO）→ `main/git-service.ts`（命令与边界）→ `main/git-diff.ts`（清单 / patch / 内容）→ `yan:git:*`。**三条不要放开**：① 不碰 `subagent-isolation.collectDiff()`（它会 `git add -A`）；② 渲染端不能传 git 命令，ref 走 `refLooksSafe`、路径走 `safeRepoPath`；③ 只读查询带 `--no-optional-locks`（`status` 默认会写 index）。回归网：`test-git-review.mjs` + `test-git-repo.mjs`（真仓库，含 index 逐字节不变的断言）+ `test:live -- gitreview`（含 `afterExit` 只读比对）；视觉矩阵 `envmenu` / `review` 状态 |
 | 加单测 | `scripts/test-<module>.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
 | 删任何样式/组件 | 先核对导入顺序与动态类名；`stage1`/`stage2`/`redesign` 名字旧不代表无用 |
 

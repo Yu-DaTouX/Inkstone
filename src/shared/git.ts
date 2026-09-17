@@ -907,6 +907,43 @@ export function countDiffLines(files: GitFileDiff[]): { additions: number; delet
   return { additions, deletions }
 }
 
+/* ── 未修改区（“N 行未修改”折叠条） ────────────────── */
+
+/**
+ * 相邻 hunk 之间被折叠的未修改区（首块之前也算一段）。
+ *
+ * 同时给出**两侧**的起始行号：diff 里未修改区的两侧行数总是相等
+ *（内容一样），所以一个 count 就够；但两侧行号的起点不同
+ *（前面插过行就会错开），所以两个起点都要留着。
+ *
+ * 为什么单独一个函数：界面的「展开这段上下文」要从文件内容里按
+ * 行号切出这一区，切错了会把无关代码显示成上下文 —— 而参数是错的
+ * 时候界面看起来**依然像对的**。所以它能被单测钉住。
+ */
+export interface GitGapRange {
+  oldStart: number
+  newStart: number
+  count: number
+}
+
+export function gapRanges(hunks: GitDiffHunk[]): GitGapRange[] {
+  const out: GitGapRange[] = []
+  for (let i = 0; i < hunks.length; i++) {
+    const cur = hunks[i]
+    if (i === 0) {
+      out.push({ oldStart: 1, newStart: 1, count: Math.max(0, cur.oldStart - 1) })
+      continue
+    }
+    const prev = hunks[i - 1]
+    out.push({
+      oldStart: prev.oldStart + prev.oldCount,
+      newStart: prev.newStart + prev.newCount,
+      count: Math.max(0, cur.oldStart - (prev.oldStart + prev.oldCount))
+    })
+  }
+  return out
+}
+
 /* ── 「已查看」的持久化键 ───────────────────────────────── */
 
 /**
