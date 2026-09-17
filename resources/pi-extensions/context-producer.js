@@ -570,6 +570,25 @@ export function provenanceCounts(task) {
 }
 
 /**
+ * 数一份 TaskState 里条目状态的分布（`active` vs 被跳过的历史）。
+ *
+ * 回答一个具体问题：**`superseded` / `resolved` 的旧条目真的没进注入块吗？**
+ * 渲染侧靠 `status === 'active'` 过滤（`activeTexts`），但注入块不进任何落盘文件 ——
+ * 没有这个计数，就只能靠「tokens 好像没变大」猜。它是对 `superseded` 生命周期
+ * 的唯一真实观测点。
+ */
+export function stateItemCounts(task) {
+  const counts = { active: 0, skipped: 0 }
+  for (const key of SEMANTIC_LIST_FIELDS) {
+    for (const item of Array.isArray(task?.[key]) ? task[key] : []) {
+      if (item?.status === 'active') counts.active += 1
+      else counts.skipped += 1
+    }
+  }
+  return counts
+}
+
+/**
  * 组装完整的 TaskState。
  *
  * 三条硬规则（顺序即优先级）：

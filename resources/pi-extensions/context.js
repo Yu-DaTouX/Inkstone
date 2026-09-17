@@ -93,6 +93,7 @@ import {
   parseProducerOutput,
   provenanceCounts,
   shouldRefresh,
+  stateItemCounts,
   stripSyntheticMessages,
   tailRolesOf,
   transcriptStats,
@@ -456,6 +457,12 @@ function onContext(event, ctx) {
                 freshness: freshnessLabel(applied.tier),
                 sourceHead: loaded.state.sourceWatermark?.entryCount ?? null,
                 tokens: estimateTokens(text),
+                /*
+                 * 条目状态分布：`skipped` 就是被 `activeTexts` 挡在注入块之外的旧条目
+                 * （`superseded` / `resolved`）。渲染侧过滤了它们，但注入块不落盘 ——
+                 * 这是「被推翻的旧决策真的没进去」唯一能取证的地方。
+                 */
+                items: stateItemCounts(applied.task),
                 /* 排查用：水位之后到底多了几条、都是什么（只看 gap 数字排查不了） */
                 gap: fresh.gap,
                 turnsGap: fresh.turnsGap,
