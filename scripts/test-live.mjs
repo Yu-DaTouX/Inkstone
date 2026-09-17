@@ -442,8 +442,9 @@ const CASES = {
   },
   /*
    * N21-4 生成器（cost 1）：真实回合里生成状态 → 落盘 → 下一轮注入。
-   * `kinds` 必须**显式**带上 `episode-fold` —— 默认不含它（默认不调模型、不花钱），
-   * 这条场景就是那个开关打开后的取证。退出后检查在 `checkContextProduce`。
+   * `kinds` **显式**带上 `episode-fold`，验的是「测试通道精确指定接管集」这条路；
+   * 「**默认**接管集下也会生成」由 `contextfolddefault` 承担（它刻意不写 `kinds`），
+   * 「从设置面板关掉后不生成」由 `contextfoldpref` 承担。退出后检查在 `checkContextProduce`。
    */
   contextproduce: {
     probe: 'scripts/probe/context-produce.js',
@@ -488,6 +489,46 @@ const CASES = {
    * 「短会话不生成、不花模型调用、且留得下原因」在真实链路里可以被检查。
    * 与 `contextproduce`（把门槛放开到 1/1 证「够了就生成」）是一对反向对照。
    */
+  /*
+   * `episode-fold` 的**界面关闭路径**（P2-7，cost 1）—— 上一条的反向对照。
+   *
+   * 同样的 env（只降门槛、**不给 `kinds`**）、同样的回合形态，唯一差别是：
+   * 探针先**从设置面板把开关关掉**。于是「一条生成动作都没有」才是可解释的。
+   * 这个入口补的是原来「想关只能手改 `kinds`」的缺口，验的是它真的接到了扩展上
+   * （四段链路：渲染端 → 主进程 → 写 `desktop.json` → 扩展每轮读文件），
+   * 退出后的检查在 `checkContextFoldPref`。
+   */
+  contextfoldpref: {
+    probe: 'scripts/probe/context-fold-pref.js',
+    delay: 12000,
+    cost: 1,
+    budget: 300000,
+    contextExtLog: true,
+    afterExit: 'contextFoldPref',
+    env: {
+      YAN_CONTEXT_POLICY: '{"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    }
+  },
+  /*
+   * Episode 扇叠（§12.6，cost 1）：真实回合里生成一段「已收束的旧工作」的工作状态。
+   *
+   * env 把 `recentTail` 压到 200/400（测试通道）—— 不压的话两三个回合的会话整体都在
+   * 尾部窗口里，候选区间永远为空，「零 Episode」就证明不了任何事；同时把会话级门槛
+   * 降到 1/1（历史只有一个回合，默认门槛要 ≥4 回合）。**不给 `kinds`** —— 走默认接管集。
+   * 退出后检查在 `checkContextEpisode`（窗口是否算得出来是硬断言，模型给不给 Episode 是软报告）。
+   */
+  contextepisode: {
+    probe: 'scripts/probe/context-episode.js',
+    delay: 12000,
+    cost: 1,
+    budget: 300000,
+    contextExtLog: true,
+    afterExit: 'contextEpisode',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"recentTail":{"target":10,"max":100},"episodes":{"minEntries":1,"minTokens":1},"state":{"gate":{"minTurns":1,"minTokens":1},"rearmMs":1000,"cooldownMs":1000,"episodeGenerate":true}}'
+    }
+  },
   contextgate: {
     probe: 'scripts/probe/context-gate.js',
     delay: 12000,
@@ -1604,13 +1645,17 @@ async function checkContextProduce(sandboxRoot, _tempBefore, probeText) {
   const fileCount = state?.task?.files?.length ?? 0
   lines.push(`  evidence：commands=${commands} tests=${tests} files=${fileCount}`)
   say(commands + tests + fileCount >= 1, 'evidence 至少一项来自真实工具调用（确定性 reducer 工作）')
-  /*
-   * Episode 旁路防线（第四轮外部评审 P0-4）：落盘时**不沿用上一版** episodes ——
-   * 旧 EpisodeState 的语义路径还没接上 provenance / freshness 契约。
-   * 这条在真实文件上验，不是单测里的 fixture。
-   */
   const episodes = Array.isArray(state.episodes) ? state.episodes.length : -1
-  say(episodes === 0, `状态文件里 episodes 为空（实际 ${episodes}）—— 旧语义不旁路进注入`)
+  /*
+   * Episode（§12.6）：本场景的会话很短、尾部窗口是默认的 32k，所以**候选窗口为空** ——
+   * 于是状态文件里不该有 Episode。带窗口的真实场景是 `contextepisode`。
+   * （旧口径是「不沿用上一版旧语义」，现在 Episode 已经由确定性边界产出，理由变了。）
+   */
+  const windowRows = ownRecords.filter((r) => r?.stage === 'producer' && Number(r.episodeWindow) > 0)
+  say(
+    episodes === 0 || windowRows.length > 0,
+    `没有 Episode 是因为窗口为空，而不是别的原因（episodes=${episodes}，非空窗口记录=${windowRows.length}）`
+  )
 
   /* ---- 交叉校验：状态文件必须过主进程的读路径 ---- */
   const store = await import('../out/main/context-state-store.js').catch(() => null)
@@ -2040,6 +2085,199 @@ async function checkContextDeepPref(sandboxRoot, _tempBefore, probeText) {
   const boot = ownRecords.filter((r) => r?.stage === 'boot')
   if (boot[0]) lines.push(`    · 启动时扩展看到的策略：${boot[0].policy || '(空，本场景期望为空)'}`)
 
+  return { ok, lines }
+}
+
+/**
+ * `episode-fold`（任务状态记忆）的**界面关闭路径**（P2-7）—— 配 `contextfoldpref` 场景。
+ *
+ * 这是一条**否定式断言**（「生成器一次都没跑」），而否定式断言最容易假通过：
+ * 扩展没加载、回合没跑、根本没原料，都会得到同样的「零」。所以这里必须同时钉
+ * 三件正向的事：设置真的落了盘、扩展真的在读这份设置（`hook:'skipped'` 那行里的
+ * `kinds` 就是它的解析结果）、探针那个回合真的调了工具。
+ * **「本该有」的对照**是同 env、同探针形态的 `contextfolddefault` —— 它用同一套
+ * 条件（`YAN_CONTEXT_POLICY` 只降门槛、**不给 `kinds`**）证明默认集下真的会生成。
+ */
+async function checkContextFoldPref(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  /* ---- ① 界面 → 主进程 → desktop.json 这一段真的通了 ---- */
+  const settingsFile = join(sandboxRoot, 'data', 'desktop.json')
+  let settings = null
+  try {
+    settings = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  } catch {
+    settings = null
+  }
+  say(settings?.contextFold?.enabled === false, `设置真的落盘为「关」（${settingsFile}）`)
+  say(settings?.contextDeep?.enabled !== true, 'Deep Context 没有被连带打开（两个开关共用一份桌面端设置缓存）')
+
+  /* ---- ② 诊断日志：不该有任何真实动作，但必须有「被关掉」的正面证据 ---- */
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxfoldpref')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+  const producerRows = ownRecords.filter((r) => r?.stage === 'producer')
+  const actions = producerRows.filter((r) => r.hook !== 'skipped')
+  const offRows = producerRows.filter((r) => r.hook === 'skipped' && r.reason === 'kind-off')
+  lines.push(`  诊断行 = ${records.length}（本场景 ${ownRecords.length}，其中 producer ${producerRows.length} 行）`)
+  const toolCalls = /ctxfoldpref\.toolCalls=(\d+)/.exec(probeText)?.[1] ?? '?'
+  lines.push(`  探针那个回合的工具调用数 = ${toolCalls}（有原料却不生成，才是开关的功劳）`)
+  for (const row of producerRows.slice(0, 3)) lines.push(`    · ${JSON.stringify(row).slice(0, 240)}`)
+  say(
+    actions.length === 0,
+    `生成器没有任何动作（gate / committed / error 共 ${actions.length} 条）—— 关掉之后连门槛判定都不该发生`
+  )
+  say(
+    offRows.length >= 1,
+    `留下「被关掉」的正面证据（${offRows.length} 条 hook:skipped / kind-off）—— 证明扩展确实在跑，不是没加载`
+  )
+  const offKinds = offRows[0]?.kinds
+  say(
+    Array.isArray(offKinds) && !offKinds.includes('episode-fold') && offKinds.includes('tool-sweep'),
+    `扩展解析出的 kinds 不含 episode-fold、但其它阶段还在（${JSON.stringify(offKinds ?? null)}）—— 只关了一项，没把整个扩展关掉`
+  )
+  const injected = ownRecords.filter((r) => r?.injectedTaskState === true)
+  say(injected.length === 0, `没有任何 <TASK_STATE> 注入（${injected.length} 次）`)
+
+  /* ---- ③ 状态文件不该被创建 ---- */
+  const statePath = ownId ? join(sandboxRoot, 'data', 'context-state', `${ownId}.json`) : ''
+  say(!statePath || !existsSync(statePath), `没有为这个会话落盘状态文件（${statePath || '（会话 id 未知）'}）`)
+
+  return { ok, lines }
+}
+
+/**
+ * Episode 扇叠（§12.6）的真实回合取证 —— 配 `contextepisode` 场景。
+ *
+ * 两层证据分开：
+ *   · **硬**：诊断里候选窗口算出来了（`episodeWindow > 0`）—— 确定性边界在真实链路里成立；
+ *   · **强**：模型真的给了收束的一段 → 状态文件里有 Episode，逐字段可验。
+ * 「没给」**不算失败**：收束判据在模型的输出里（`unresolved` 为空才算），它有权说这段
+ * 还没完 —— 那时如实报告，不把产品判断当成测试失败。
+ * shadow 也在这里验：默认 `episodeInject` 关，所以 `task.episodeRefs` 里不该有它。
+ */
+async function checkContextEpisode(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxepisode')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+  const producerRows = ownRecords.filter((r) => r?.stage === 'producer')
+  const committed = producerRows.filter((r) => r.hook === 'committed')
+  /*
+   * 「边界算得出来」的证据来自**窗口那一行**，不是 committed 行 ——
+   * 窗口在模型调用之前就算出来了，而模型输出会有 `not-json` 的拒收。
+   */
+  const windows = producerRows.filter((r) => r.hook === 'episode-window')
+  lines.push(`  诊断行 = ${records.length}（本场景 ${ownRecords.length}，其中 producer ${producerRows.length} 行）`)
+  say(committed.length >= 1, `生成器至少提交过一次状态（${committed.length} 次）`)
+  say(
+    windows.length >= 1,
+    `Episode 的候选窗口在真实链路里算得出来（${windows.length} 次：${JSON.stringify(windows.map((r) => `${r.from}→${r.to}(${r.entries}条/${r.tokens}tok)`))}）`
+  )
+  const withEpisodes = committed.filter((r) => Number(r.episodes) === 1)
+  lines.push(`  其中带 Episode 的提交 = ${withEpisodes.length}（模型认为那段收束了才会给，没给不算失败）`)
+  for (const row of producerRows.slice(0, 6)) {
+    lines.push(
+      `    · ${JSON.stringify({ hook: row.hook, reason: row.reason ?? null, window: row.episodeWindow ?? null, episodes: row.episodes ?? null, why: row.episodeReason ?? null })}`
+    )
+  }
+
+  const dir = join(sandboxRoot, 'data', 'context-state')
+  const files = existsSync(dir) ? readdirSync(dir) : []
+  const stateFiles = files
+    .filter((f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json'))
+    .filter((f) => !ownId || f.startsWith(ownId))
+  if (!stateFiles.length) {
+    say(false, `状态文件已写出（本场景 ${ownId ?? '未知'} 命中 0 份；目录共 ${files.length} 项）`)
+    return { ok, lines }
+  }
+  let state = null
+  try {
+    state = JSON.parse(readFileSync(join(dir, stateFiles[0]), 'utf8'))
+  } catch {
+    state = null
+  }
+  say(!!state, '状态文件是合法 JSON')
+  if (!state) return { ok, lines }
+
+  const episodes = Array.isArray(state.episodes) ? state.episodes : []
+  if (!episodes.length) {
+    lines.push('  ⤺ 本次模型没有给出可扇叠的一段（正常结果，不是失败）；结构校验跳过')
+  } else {
+    const ep = episodes[0]
+    say(typeof ep.id === 'string' && ep.id.startsWith('ep-'), `Episode 的 id 是确定性拼出来的（${ep.id}）`)
+    say(
+      typeof ep.sourceRange?.from === 'string' && typeof ep.sourceRange?.to === 'string',
+      `sourceRange 指回原始条目（${ep.sourceRange?.from} → ${ep.sourceRange?.to}）`
+    )
+    say(
+      !!ep.watermark?.lastEntryId && Number(ep.tokensBefore) > 0,
+      `watermark 与 tokensBefore 都写上了（${ep.tokensBefore} tokens）`
+    )
+    say(
+      typeof ep.objective === 'string' && ep.objective.length > 0 && typeof ep.outcome === 'string',
+      'objective / outcome 非空（一段的「做了什么 → 做成了什么」）'
+    )
+    say(
+      Array.isArray(ep.unresolved) && ep.unresolved.length === 0,
+      `落盘的 Episode 一定是收束的（unresolved=${(ep.unresolved ?? []).length}，非空的不该落盘）`
+    )
+    const refs = Array.isArray(ep.importantRefs) ? ep.importantRefs : []
+    say(refs.every((r) => /^ctx:\/\/(tool|file|diff)\//.test(r)), `importantRefs 只有归档引用（${JSON.stringify(refs)}）`)
+    say(
+      !(Array.isArray(state.task?.episodeRefs) ? state.task.episodeRefs : []).includes(ep.id),
+      'shadow：默认不把 Episode 汇总进 task.episodeRefs（消费门关着）'
+    )
+  }
+
+  /* ---- 交叉校验：状态文件必须过主进程的读路径（schema + 引用合法性） ---- */
+  const store = await import('../out/main/context-state-store.js').catch(() => null)
+  const loaded = await store?.loadContextState?.(state.sessionId, { dir }).catch(() => null)
+  say(loaded?.status === 'ok', `状态文件过主进程的校验（${loaded?.status ?? 'no-store'}）`)
+  if (loaded?.status !== 'ok' && loaded?.issues) {
+    for (const issue of loaded.issues.slice(0, 4)) lines.push(`    · ${issue.path}: ${issue.message}`)
+  }
   return { ok, lines }
 }
 
@@ -2504,6 +2742,8 @@ const AFTER_EXIT = {
   contextTakeoverSummary: checkContextTakeoverSummary,
   contextTakeoverState: checkContextTakeoverState,
   contextDeepPref: checkContextDeepPref,
+  contextFoldPref: checkContextFoldPref,
+  contextEpisode: checkContextEpisode,
   contextTakeoverHook: checkContextTakeoverHook,
   contextDeep: checkContextDeep
 }

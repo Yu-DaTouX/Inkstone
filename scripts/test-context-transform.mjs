@@ -342,7 +342,14 @@ export async function runContextTransformTests(ok, deps) {
   console.log('\n— F. 结构化压缩与 Episode 汇总 —')
   {
     const full = { task: taskStateFixture(), episodes: [{ id: 'ep1', objective: '做完 S2', outcome: '完成', importantRefs: ['ctx://tool/m3'] }] }
-    const built = T.buildStructuredSummary(full)
+    /*
+     * 消费门（EpisodeState 切片）：**默认不渲染**。生成与校验照常，只是不让模型
+     * 自己写的段结论进模型可见路径 —— 与 `state.inject` 当初的 shadow 模式同一条做法。
+     */
+    const shadow = T.buildStructuredSummary(full)
+    ok(shadow.ok && !shadow.summary.includes('ep1'), '默认不消费 Episode（shadow：只生成不注入）')
+    ok(shadow.episodesSkipped === 1, '被门挡下的条数可观测（不是静默丢掉）', String(shadow.episodesSkipped))
+    const built = T.buildStructuredSummary(full, { includeEpisodes: true })
     ok(built.ok, '六类字段齐备时可以接管', built.reason)
     ok(
       built.summary.includes('<TASK_STATE derived="true"') && built.summary.includes('<HISTORICAL_CONTEXT>'),
@@ -379,13 +386,17 @@ export async function runContextTransformTests(ok, deps) {
      * provenance / freshness 这套契约，所以**有递归风险的条目不进摘要** ——
      * 源头先拦一道，真正的 schema 执法仍在 `shared/context-state.ts`。
      */
-    const riskySummary = T.buildStructuredSummary({
-      task: taskStateFixture(),
-      episodes: [
-        { id: 'ep1', objective: '合法的目标', outcome: '', sourceRange: { from: 'm1', to: 'm2' }, importantRefs: [] },
-        { id: 'ep2', objective: '旧语义的目标', outcome: '', sourceRange: { from: 'ep1', to: 'ep2' }, importantRefs: [] }
-      ]
-    })
+    const riskySummary = T.buildStructuredSummary(
+      {
+        task: taskStateFixture(),
+        episodes: [
+          { id: 'ep1', objective: '合法的目标', outcome: '', sourceRange: { from: 'm1', to: 'm2' }, importantRefs: [] },
+          { id: 'ep2', objective: '旧语义的目标', outcome: '', sourceRange: { from: 'ep1', to: 'ep2' }, importantRefs: [] }
+        ]
+      },
+      /* 消费门开着才能验「有风险的被拦、合法的留下」；关着的时候两者都不在，测不到这一层 */
+      { includeEpisodes: true }
+    )
     ok(
       riskySummary.ok &&
         riskySummary.summary.includes('合法的目标') &&

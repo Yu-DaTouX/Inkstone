@@ -354,6 +354,46 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     const env = resolveContextPolicy({ user: { workingSetCap: 1000 }, envRaw: '{"workingSetCap":5000}' })
     ok(env.source === 'env' && env.policy.workingSetCap === 5000, 'env（测试通道）优先于用户设置')
 
+    /*
+     * P2-7：`episode-fold` 的用户开关。
+     * 它不是一个数值（`applyOverrides` 认不了布尔），所以单独一层，
+     * 但最终效果必须表现在 `kinds` 上 —— 界面上的阶段预报与扩展真做的事
+     * 都是从这个数组读的，这里少改一处就会出现“界面说已接管、实际没跑”。
+     */
+    const foldOff = resolveContextPolicy({ foldEnabled: false })
+    ok(
+      !foldOff.policy.kinds.includes('episode-fold') &&
+        foldOff.policy.kinds.includes('tool-sweep') &&
+        foldOff.policy.kinds.includes('compaction'),
+      `关掉任务状态记忆只摘掉 episode-fold（实际 ${foldOff.policy.kinds.join(',')}）`
+    )
+    ok(
+      foldOff.source === 'user' && foldOff.overridden.includes('kinds'),
+      `关掉后来源是用户级、被覆盖字段含接管阶段（实际 ${foldOff.source} / ${foldOff.overridden}）`
+    )
+    const foldOn = resolveContextPolicy({ foldEnabled: true })
+    ok(
+      foldOn.policy.kinds.includes('episode-fold') && foldOn.overridden.length === 0,
+      '显式打开 = 默认（不记为覆盖）'
+    )
+    const foldVsModel = resolveContextPolicy({
+      foldEnabled: false,
+      byModel: { 'anthropic/x': { workingSetCap: 222_000 } },
+      modelKey: 'anthropic/x'
+    })
+    ok(
+      foldVsModel.source === 'model' && !foldVsModel.policy.kinds.includes('episode-fold'),
+      '模型级数值覆盖仍报 model，但用户关掉的状态层不会被它打开'
+    )
+    const foldVsEnv = resolveContextPolicy({
+      foldEnabled: false,
+      envRaw: '{"kinds":["tool-sweep","recall","episode-fold","compaction"]}'
+    })
+    ok(
+      foldVsEnv.policy.kinds.includes('episode-fold') && foldVsEnv.source === 'env',
+      'env 显式给了 kinds 时用户开关不生效（测试通道优先）'
+    )
+
     const bad = resolveContextPolicy({ user: { workingSetCap: -5, windowRatio: 3 } })
     ok(bad.source === 'default' && bad.overridden.length === 0, '非法覆盖被忽略并退回默认值')
 
@@ -392,6 +432,12 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
     const a2 = activeContextPolicy({ YAN_CONTEXT_POLICY: '{"workingSetCap":7}' }, 'm/a')
     ok(a2.policy.workingSetCap === 7 && a2.source === 'env', '主进程入口优先 env')
+    setContextPolicySettings({ foldEnabled: false })
+    const a3 = activeContextPolicy({}, 'm/a')
+    ok(
+      !a3.policy.kinds.includes('episode-fold') && a3.source === 'user',
+      '主进程入口把任务状态记忆的开关折算进 kinds（界面读的就是这一份）'
+    )
     setContextPolicySettings(null)
     ok(activeContextPolicy({}).source === 'default', '清空设置层后回到默认值')
   }

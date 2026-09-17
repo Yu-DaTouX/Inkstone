@@ -514,6 +514,61 @@ export function planToolSweep(input) {
   }
 }
 
+/* ---------------------------------------------------------------- Episode 扇叠（§12.6）*/
+
+/**
+ * Episode 的候选区间门槛（初值；§12.12 把它们列为「靠压力测试标定」）。
+ *
+ * 为什么必须有：拿两三行历史去做一次归纳，产出比输入还长 —— 而「不值得」必须是
+ * **不生成**，不是生成一份空的。数值与 sweep 的 `minReclaimTokens` 对齐，方便记。
+ */
+export const DEFAULT_EPISODE_WINDOW = { minEntries: 4, minTokens: 2_000 }
+
+/**
+ * Episode 的候选区间（方案 §12.6 + §12.7，**确定性边界**）。
+ *
+ * ── 边界怎么定 ──
+ *   起点：上一版 Episode 覆盖到的地方（`coveredThrough`，没有就从最早一条起）
+ *   终点：`recentTail` 窗口**左边界的前一条** —— 也就是「已经离开活跃窗口」的最后一条
+ *
+ * 为什么不用「两次状态生成之间」当边界：那一段恰恰是**最新**的（还在 recentTail 里），
+ * 把它扇叠掉等于把正在进行的活儿收起来 —— 方案 §12.6 明确警告过这件事。
+ * 而「离开活跃窗口」在语义上正好等价于「不再被当作当前上下文使用」，
+ * 这也是它不需要额外语义判断就能当边界的原因。
+ *
+ * ── 为什么要有 `coveredThrough` ──
+ * 每次生成都会重算一遍窗口，不记住「已经扇叠到哪」就会对同一段反复归纳（幂等靠
+ * id 兜底，但白花输出）。记住它，Episode 只会向前推进。
+ *
+ * 返回 `null` 的情形：拿不到条目身份 / 区间为空 / 区间太短（条目或 token 不足）。
+ * 调用方必须把 `null` 当作「这次不生成 Episode」，**不是**「生成一份空的」。
+ */
+export function episodeWindow(input = {}) {
+  const { messages, entryIds } = input
+  const recentTail = { ...DEFAULT_RECENT_TAIL, ...(input.recentTail ?? {}) }
+  const minEntries = Number.isFinite(input.minEntries) ? input.minEntries : DEFAULT_EPISODE_WINDOW.minEntries
+  const minTokens = Number.isFinite(input.minTokens) ? input.minTokens : DEFAULT_EPISODE_WINDOW.minTokens
+  if (!Array.isArray(messages) || !Array.isArray(entryIds) || messages.length !== entryIds.length) return null
+  const entries = adaptMessages(messages, entryIds, { errorAsUnresolved: true })
+  if (!entries) return null
+  /* `droppedEntryIds` 就是「尾部窗口之外」的那些（planTailCut 按条目顺序给出） */
+  const outside = new Set(planTailCut(entries, recentTail).droppedEntryIds)
+  const ordered = entryIds.filter((id) => outside.has(id))
+  if (!ordered.length) return null
+  let start = 0
+  if (input.coveredThrough) {
+    const at = ordered.indexOf(input.coveredThrough)
+    /* 找不到（已被压缩 / 清扫掉）→ 从头开始；重复不会写重，靠 id 幂等 */
+    start = at >= 0 ? at + 1 : 0
+  }
+  const windowIds = ordered.slice(start)
+  if (windowIds.length < minEntries) return null
+  const tokensById = new Map(entries.map((e) => [e.entryId, e.tokens]))
+  const tokens = windowIds.reduce((n, id) => n + (tokensById.get(id) ?? 0), 0)
+  if (tokens < minTokens) return null
+  return { entryIds: windowIds, from: windowIds[0], to: windowIds[windowIds.length - 1], tokens }
+}
+
 /**
  * 提交一次 Tool Sweep：返回**新** messages（入参不动）。
  *
@@ -807,7 +862,17 @@ export function buildStructuredSummary(state, opts = {}) {
     ...(Number.isFinite(state.sourceWatermark?.entryCount) ? { sourceHead: state.sourceWatermark.entryCount } : {})
   })
   if (!block) return { ok: false, reason: 'empty-task-state' }
-  const episodes = Array.isArray(state.episodes) ? state.episodes : []
+  /*
+   * Episode 的**消费门**（EpisodeState 切片：先 shadow 后放行）。
+   *
+   * 默认 `false`（不渲染）。理由与 `state.inject` 当初的 shadow 模式同源：
+   * Episode 的语义是**模型自己写的段结论**，而这里的内容会直接进 pi 的压缩摘要
+   * （模型可见）。没有真实会话的质量数据就让它们上场，等于拿用户的上下文做实验。
+   * 生成与校验照常（落盘到 `context-state/<id>.json`），质量可以从状态文件里看。
+   * 放行由 `YAN_CONTEXT_POLICY.state.episodeInject` 控制（默认关）。
+   */
+  const includeEpisodes = opts.includeEpisodes === true
+  const episodes = includeEpisodes && Array.isArray(state.episodes) ? state.episodes : []
   /*
    * Episode 旁路防线（第四轮外部评审 P0-4）：旧 EpisodeState 的语义路径还没接上
    * 新契约，所以**有递归摘要风险的条目一律不进摘要**（§12.7 的判据在源头先做一次，
@@ -841,7 +906,7 @@ export function buildStructuredSummary(state, opts = {}) {
   const required = opts.requiredFields ?? []
   const missing = required.filter((key) => !fields[key])
   if (missing.length && !opts.allowMissing) return { ok: false, reason: 'missing-fields', missing, fields }
-  return { ok: true, summary: lines.join('\n'), fields, episodesDropped: riskyIds.size }
+  return { ok: true, summary: lines.join('\n'), fields, episodesDropped: riskyIds.size, episodesSkipped: includeEpisodes ? 0 : (Array.isArray(state.episodes) ? state.episodes.length : 0) }
 }
 
 /**

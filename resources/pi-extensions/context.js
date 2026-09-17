@@ -64,8 +64,11 @@ import {
   contextEntries,
   diagnostic,
   entryProducesMessage,
+  episodeWindow,
+  DEFAULT_EPISODE_WINDOW,
   estimateTokens,
   injectTaskState,
+  mergeEpisodeRefs,
   messageText,
   planToolSweep,
   recallBudget,
@@ -90,6 +93,7 @@ import {
   foldEligible,
   freshView,
   freshnessOf,
+  mergeEpisodeState,
   mergeTaskState,
   parseProducerOutput,
   provenanceCounts,
@@ -100,6 +104,14 @@ import {
   transcriptStats,
   userDirectives
 } from './context-producer.js'
+import {
+  STAGE_COOLDOWN_MS,
+  STAGE_REARM_MS,
+  createStageRuntime,
+  recordStageObservation,
+  recordStageRun,
+  stageStep
+} from './context-stage-runtime.js'
 import {
   DEEP_MAX_OUTPUT_TOKENS,
   DEEP_SYSTEM_PROMPT,
@@ -154,18 +166,29 @@ const DEFAULT_KINDS = ['tool-sweep', 'recall', 'episode-fold', 'compaction']
 
 function policy() {
   const raw = process.env.YAN_CONTEXT_POLICY ?? ''
+  /*
+   * 生效的接管集 = 默认集去掉用户关掉的项（P2-7）。
+   * `DEFAULT_KINDS` 本身不变 —— 用户开关只是它上面的一层，
+   * 而且 `YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它会原样放行（测试通道优先）。
+   */
+  const baseKinds = applyFoldSwitch([...DEFAULT_KINDS])
   const base = {
-    kinds: [...DEFAULT_KINDS],
+    kinds: baseKinds,
     recentTail: { ...DEFAULT_RECENT_TAIL },
     sweep: { ...DEFAULT_SWEEP },
     recall: { ...DEFAULT_RECALL },
     /*
-     * 两个分路的默认值**必须由 `kinds` 推导**，不能硬编码 false。
+     * 两个分路的默认值**必须由（生效的）`kinds` 推导**，不能硬编码 false。
      * `episode-fold` 进默认集之后，写死 false 就会出现「总闸说接管了、分路却说关着」
      * —— 生成器永远不会跑，而界面显示已接管。这里用 `stateSwitches` 保证
      * 「在集合里 → 分路默认开」与 `stateSwitches` 自己的语义始终一致。
      */
-    state: stateSwitches(undefined, DEFAULT_KINDS),
+    state: stateSwitches(undefined, baseKinds),
+    /*
+     * Episode 候选区间的门槛（§12.6 / §12.12 的 P2）。与 sweep 的收益门槛同类：
+     * 初值保守，而标定时**必须能单独覆盖** —— 所以走策略而不是写死在调用处。
+     */
+    episodes: { ...DEFAULT_EPISODE_WINDOW },
     /*
      * Deep Context（N21-8）：**默认关闭** —— 它挂在 `context` 钩子里，会在用户每次
      * 开口前多调一次模型并**同步阻塞**本轮。开与不开是用户的判断，见 `context-deep.js`。
@@ -178,7 +201,7 @@ function policy() {
    *   ② 专用 env `YAN_CONTEXT_DEEP`（也是测试/CI 用；`0` 是**明确关**，不会被 ③ 盖掉）；
    *   ③ 桌面端设置 `desktop.json` 的 `contextDeep.enabled`（用户真正能按的那个开关）。
    *
-   * 抽成函数是因为 `policy()` 有**两处早退**（没设策略 / JSON 不合法）——
+   * 抽成函数是因为 `policy()` 有**三处早退**（没设策略 / JSON 不合法 / JSON 形状不对）——
    * 早退路径也必须带上它，否则「用户开了但没设过任何策略」这种最常见的
    * 生产情形会静默地一直是关的（先只在正常路径里处理，单测当场就红了）。
    */
@@ -188,10 +211,17 @@ function policy() {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return base
+    return { ...base, deep: resolveDeep(undefined) }
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...base, deep: resolveDeep(undefined) }
-  const kinds = Array.isArray(parsed.kinds)
+  /*
+   * `YAN_CONTEXT_POLICY` 显式给了 `kinds` 数组时，接管集完全由它决定：
+   * 这是测试通道，`contexttakeover` / `contextproduce` 靠它精确控制接管集，
+   * 让它被用户设置盖掉会让那些场景静默失效（与 `deep` 的优先级立场一致）。
+   * 只给了其它字段（如只降门槛）时，`kinds` 仍走 `base.kinds`（已含用户开关）。
+   */
+  const kindsFromEnv = Array.isArray(parsed.kinds)
+  const kinds = kindsFromEnv
     ? parsed.kinds.filter((k) => typeof k === 'string')
     : base.kinds
   const pick = (source, defaults) => {
@@ -209,15 +239,16 @@ function policy() {
     recentTail: pick(parsed.recentTail, base.recentTail),
     sweep: pick(parsed.sweep, base.sweep),
     recall: pick(parsed.recall, base.recall),
+    episodes: pick(parsed.episodes, base.episodes),
     state: stateSwitches(parsed.state, kinds),
     /*
-     * Deep Context 的开关有两个来源：`YAN_CONTEXT_POLICY.deep`（测试通道，最高优先级）
-     * 与专用的 `YAN_CONTEXT_DEEP`。
+     * Deep Context 的开关有三个来源：`YAN_CONTEXT_POLICY.deep`（测试通道，最高）、
+     * `YAN_CONTEXT_DEEP`、以及桌面端设置文件。
      *
      * **刻意不让砚把用户设置写进 `YAN_CONTEXT_POLICY`**：那个 env 在
      * `src/shared/context-policy.ts` 的 lookup 里优先级**高于设置面板**，
      * 砚一旦自己写它，用户改设置就会被静默盖掉（这正是测试通道想要的性质，
-     * 但对生产反向）。所以用户设置走专用 env。
+     * 但对生产反向）。所以用户设置走 `desktop.json`。
      */
     deep: resolveDeep(parsed.deep)
   }
@@ -238,28 +269,81 @@ function deepFromEnv() {
 }
 
 /**
- * Deep Context 的用户开关（`desktop.json` 的 `contextDeep.enabled`）。
+ * 桌面端设置里的两个上下文开关（**一次读盘、一个缓存**）。
  *
- * 读文件而不是靠宿主传 env：这与 `language.js` / `response-detail.js` / `question.js`
- * 是**同一个约定**（扩展自己读桌面端设置），好处是**改设置立即生效**，
- * 不需要重建 pi 实例。代价是每轮一次 IO —— 文件很小，再加一个 1 秒缓存补齐：
- * `policy()` 在一个回合里会被调好几次（`onContext` / `onBeforeCompact` / `onAgentSettled`）。
+ * 与 `language.js` / `response-detail.js` / `question.js` 是**同一个约定**（扩展自己读
+ * 桌面端设置）：好处是**改设置立即生效**，不需要重建 pi 实例、也不动已有会话。
+ * 代价是每轮一次 IO —— 文件很小，再加一个 1 秒缓存补齐（`policy()` 在一个回合里
+ * 会被调好几次：`onContext` / `onBeforeCompact` / `onAgentSettled`）。
  *
- * 读不到 / 解析不了 / 字段不是 `true` 一律当作「没表态」，交由默认值（关）。
+ * 为什么两个开关合在一起读：它们来自**同一个文件**，分开读就是两倍 IO 与两份要
+ * 各自失效的缓存。
+ *
+ * 两个开关的**默认方向相反**，这是有意的：
+ *   · `contextDeep`（N21-8）默认关 —— 它每轮同步阻塞一次模型调用，重；
+ *   · `contextFold`（N21-5 / P2-7）默认开 —— 它已在默认接管集里，用户能按的是“关”。
+ * 读不到 / 解析不了 / 字段不是期望的字面量一律当「没表态」，交由各自默认值。
  */
-let deepSettingsCache = { at: 0, value: undefined }
-function deepFromSettings() {
+let desktopSettingsCache = { at: 0, value: {} }
+function desktopSettings() {
   const now = Date.now()
-  if (now - deepSettingsCache.at < 1000) return deepSettingsCache.value
-  let value
-  try {
-    const raw = readJson(join(dataDir(), 'desktop.json'))
-    value = raw?.contextDeep?.enabled === true ? { enabled: true } : undefined
-  } catch {
-    value = undefined
-  }
-  deepSettingsCache = { at: now, value }
+  if (now - desktopSettingsCache.at < 1000) return desktopSettingsCache.value
+  const raw = readJson(join(dataDir(), 'desktop.json'))
+  const value = {}
+  if (raw?.contextDeep?.enabled === true) value.deep = { enabled: true }
+  if (raw?.contextFold?.enabled === false) value.fold = { enabled: false }
+  desktopSettingsCache = { at: now, value }
   return value
+}
+
+/**
+ * Deep Context 的桌面端开关（`desktop.json` 的 `contextDeep.enabled`）。
+ *
+ * 读不到 / 解析不了 / 字段不是 `true` 一律当没表态，交由默认值（关）。
+ */
+function deepFromSettings() {
+  return desktopSettings().deep
+}
+
+/**
+ * `episode-fold` 的桌面端开关（`desktop.json` 的 `contextFold.enabled`）。
+ *
+ * 返回 `undefined` = 没表态（按默认：开）；只有明确 `false` 才返回 `{enabled:false}`。
+ * 之所以不是“字段是 `true` 才算开”：它本来就在默认接管集里，磁盘上没有这个键
+ * 与用户主动打开是同一件事，不该被区分成两种（与 `sanitizeContextFold` 同一条约定）。
+ */
+function foldFromSettings() {
+  return desktopSettings().fold
+}
+
+/**
+ * `episode-fold` 的测试通道（`YAN_CONTEXT_FOLD=1|0`）。
+ *
+ * 与 `YAN_CONTEXT_DEEP` 对称：`0` 是**明确关**，不会被设置里的开盖回去；
+ * 认不出的值（如拼错的 `yes`）当没表态。**不给它加新语义** —— 它只是让场景
+ * 能在不写 `desktop.json` 的前提下走“用户关掉”那条分支。
+ */
+function foldFromEnv() {
+  const raw = (process.env.YAN_CONTEXT_FOLD ?? '').trim().toLowerCase()
+  if (raw === '1' || raw === 'true') return { enabled: true }
+  if (raw === '0' || raw === 'false') return { enabled: false }
+  return undefined
+}
+
+/**
+ * 把 `episode-fold` 的用户开关折算到接管集上。
+ *
+ * `kindsFromEnv: true`（`YAN_CONTEXT_POLICY` 显式给了 `kinds` 数组）时**原样返回**：
+ * 那是测试通道，`contexttakeover` / `contextproduce` 这类场景靠它精确控制接管集，
+ * 让它被用户设置盖掉会让那些场景静默失效（与 `deep` 的优先级立场一致）。
+ *
+ * 注意它改的是**生效的** kinds，不是 `DEFAULT_KINDS` —— 默认值仍然只有一处，
+ * 主进程侧的 `DEFAULT_CONTEXT_POLICY.kinds` 与这里必须始终保持一致。
+ */
+function applyFoldSwitch(kinds, { kindsFromEnv = false } = {}) {
+  if (kindsFromEnv) return kinds
+  const fold = foldFromEnv() ?? foldFromSettings()
+  return fold?.enabled === false ? kinds.filter((k) => k !== 'episode-fold') : kinds
 }
 
 /**
@@ -280,10 +364,38 @@ function deepFromSettings() {
  */
 function stateSwitches(raw, kinds) {
   const on = kindEnabled({ kinds }, 'episode-fold')
-  const out = { generate: on, inject: on, minTurns: 0, minTokens: 0, refreshRatio: 0 }
+  /*
+   * `episodeInject`（Episode 扇叠的**消费门**）：默认 **false** = 只生成、不消费。
+   *
+   * 它与 `inject` 不是一回事：`inject` 管的是「让 TaskState 参与模型可见上下文」，
+   * 而 Episode 是**另一类东西** —— 模型自己写出来的「段结论」，一旦消费就直接进 pi 的
+   * 压缩摘要。没有真实会话的质量数据前先只落盘（质量可以从状态文件里看），
+   * 这是与 `inject` 当初的 shadow 模式同一条做法。
+   * 用户拍板（2026-09-18）：先 shadow，看几轮真实质量再决定是否放行。
+   */
+  const out = { generate: on, inject: on, episodeGenerate: false, episodeInject: false, minTurns: 0, minTokens: 0, refreshRatio: 0, rearmMs: 0, cooldownMs: 0 }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     if (typeof raw.generate === 'boolean') out.generate = raw.generate && on
     if (typeof raw.inject === 'boolean') out.inject = raw.inject && on
+    /*
+     * Episode 的**生成门**（默认关）。
+     *
+     * 为什么生成也要一道门（原本只打算做「生成但不消费」的 shadow）：
+     * 实测（2026-09-18，deepseek-v4.1-flash）——**窗口非空的两次生成全部 `not-json`**，
+     * 而同一个场景里窗口为空的那一次正常提交。也就是说，在提示词里多要一个嵌套对象
+     * 会让**整次生成**（包括 TaskState 本身）更容易失败。
+     * TaskState 是现有能力，不能为了一个还没验收的新东西去降低它。
+     * 所以：默认不发这个要求；要看真实质量时显式打开，并用诊断里的 `episodeReason` 观察。
+     */
+    if (typeof raw.episodeGenerate === 'boolean') out.episodeGenerate = raw.episodeGenerate === true && on
+    if (typeof raw.episodeInject === 'boolean') out.episodeInject = raw.episodeInject === true && on
+    /*
+     * 上锁后的两个时间参数（默认 `STAGE_REARM_MS` 5 分钟 / `STAGE_COOLDOWN_MS` 30 秒）。
+     * 它们成对出现是有原因的：**只有重试窗口比冷却短时冷却才会命中** —— 默认参数下
+     * 重试窗口长得多，所以先被上膛判定拦住；测试场景把两者一起调短才能在一场里跑两次生成。
+     */
+    if (Number.isFinite(raw.rearmMs) && raw.rearmMs > 0) out.rearmMs = raw.rearmMs
+    if (Number.isFinite(raw.cooldownMs) && raw.cooldownMs > 0) out.cooldownMs = raw.cooldownMs
     if (raw.gate && typeof raw.gate === 'object' && !Array.isArray(raw.gate)) {
       if (Number.isFinite(raw.gate.minTurns) && raw.gate.minTurns > 0) out.minTurns = raw.gate.minTurns
       if (Number.isFinite(raw.gate.minTokens) && raw.gate.minTokens > 0) out.minTokens = raw.gate.minTokens
@@ -502,6 +614,17 @@ async function onContext(event, ctx) {
               swept = applied.changed
               sweepSeen.add(sessionId)
               mergeArchive(sessionId, planned.archiveEntries ?? [], Date.now(), watermark)
+              /*
+               * 阶段运行状态：sweep **只留痕、不上锁**（幂等且便宜，冷却会压住
+               * 后续清理 —— 见 `context-stage-runtime.js` 里那条有意的例外）。
+               */
+              stageRuntimes['tool-sweep'].set(
+                sessionId,
+                recordStageObservation(stageRuntimeOf('tool-sweep', sessionId), {
+                  now: Date.now(),
+                  reclaimedCount: applied.changed
+                })
+              )
             } else {
               trace('context', { sessionId, hook: 'sweep-rejected', violations: bad })
             }
@@ -783,8 +906,12 @@ function onBeforeCompact(event, ctx) {
     }
     const built = buildStructuredSummary(
       { ...state, task: applied.task },
-      /* 头行要写**真实**档位，不能默写 fresh（它已经是 stale-soft / stale-hard） */
-      { freshness: freshnessLabel(applied.tier) }
+      /*
+       * 头行要写**真实**档位，不能默写 fresh（它已经是 stale-soft / stale-hard）；
+       * `includeEpisodes` 是 Episode 的消费门：默认关（只生成不消费），
+       * 放行由 `YAN_CONTEXT_POLICY.state.episodeInject` 控制。
+       */
+      { freshness: freshnessLabel(applied.tier), includeEpisodes: p.state.episodeInject === true }
     )
     if (!built.ok) {
       trace('compact', { sessionId, stage: 'compact', hook: 'fallback', reason: built.reason, missing: built.missing ?? null })
@@ -856,6 +983,47 @@ let producerFlight = null
  */
 const sweepSeen = new Set()
 const foldSticky = new Set()
+
+/*
+ * 阶段运行状态（方案 §12.3）——两个由**本扩展**执行的阶段各一份。
+ *
+ * 为什么放在会话内、而不是落盘：重启后状态回到「新阶段」（armed、无冷却），
+ * 最坏结果是下一次多跑一遍 —— 比落一份要维护、要版本化的账便宜得多。
+ * `compaction` 的状态不在（它在主进程，见 `context-stage-runtime.js` 的说明）。
+ *
+ * 键是会话 id，所以同时开着几个会话时它们互不影响；上限只是防长跑的实例里
+ * 无界增长（丢最旧的一个 = 那个会话下一次多跑一遍，不是错误）。
+ */
+const MAX_STAGE_RUNTIMES = 200
+const stageRuntimes = { 'tool-sweep': new Map(), 'episode-fold': new Map() }
+
+function stageRuntimeOf(stage, sessionId) {
+  const map = stageRuntimes[stage]
+  const existing = map.get(sessionId)
+  if (existing) return existing
+  if (map.size >= MAX_STAGE_RUNTIMES) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+  const fresh = createStageRuntime()
+  map.set(sessionId, fresh)
+  return fresh
+}
+
+/**
+ * 记一次生成器的真实执行结果并上锁（§12.3）。
+ *
+ * 成功与失败**都**要 disarm：失败时更需要冷却 —— 否则下一轮会在同样的输入上
+ * 再烧一次调用（模型持续返回坏 JSON 时，这就变成「每轮一次」）。
+ */
+function noteFoldRun(sessionId, ok) {
+  /* 冷却可配（默认 30s）：与 `rearmMs` 成对使用，见 `stateSwitches` 里的说明 */
+  const cooldownMs = policy().state.cooldownMs || undefined
+  stageRuntimes['episode-fold'].set(
+    sessionId,
+    recordStageRun(stageRuntimeOf('episode-fold', sessionId), { now: Date.now(), ok, cooldownMs })
+  )
+}
 /*
  * Deep Context 的「同一条用户消息只跑一次」记忆（sessionId → turnKey）。
  * 只活在进程内：重启后多跑一次是可接受的（宁可多花一次，也不要在磁盘上留一份要维护的账）。
@@ -931,8 +1099,29 @@ function onAgentSettled(_event, ctx) {
    * 第四问 A）：短会话不生成 —— 它没有东西可折叠，却要背上「语义状态变成
    * 下一轮推理输入」的闭环误差风险。
    */
-  if (!kindEnabled(p, 'episode-fold') || !p.state.generate) return
   const sessionId = sessionIdOf(ctx)
+  if (!kindEnabled(p, 'episode-fold') || !p.state.generate) {
+    /*
+     * 关闭时的**正面证据**（P2-7）。
+     *
+     * 默认接管集里含 `episode-fold`，所以这条分支在默认状态下走不到；
+     * 它一旦出现，就是「用户关掉了」或「env 显式排除了」的真实取证。
+     * 为什么必须留痕：`contextfoldpref` 要断言「生成器一次都没跑」——
+     * **没有痕迹的否定**无法与「扩展压根没加载」区分开，而这两件事的处置完全不同。
+     * 把解析后的 `kinds` 一并写进去，证据就不必再靠推断（它同时钉住了
+     * 「扩展真的读到了 desktop.json」）。
+     */
+    if (sessionId) {
+      trace('producer', {
+        sessionId,
+        stage: 'producer',
+        hook: 'skipped',
+        reason: kindEnabled(p, 'episode-fold') ? 'generate-off' : 'kind-off',
+        kinds: p.kinds
+      })
+    }
+    return
+  }
   if (!sessionId) return
   if (!foldSticky.has(sessionId)) {
     const stats = transcriptStats(ctx?.sessionManager?.getEntries?.() ?? [])
@@ -984,10 +1173,24 @@ function onAgentSettled(_event, ctx) {
 }
 
 /**
+ * 上一次折叠到哪里（§12.6）。
+ *
+ * 取最后一条 Episode 的 `sourceRange.to`，作为下一次窗口的起点 —— 没有它就会
+ * 对同一段反复归纳（幂等靠 id 兜底，但白花模型输出）。
+ */
+function lastEpisodeTo(state) {
+  const list = Array.isArray(state?.episodes) ? state.episodes : []
+  const last = list[list.length - 1]
+  return last?.sourceRange?.to ?? null
+}
+
+/**
  * 生成 → 合并 → CAS 落盘。任一环节失败都**不动**旧状态文件。
  */
 async function produceAndCommit(sessionId, ctx) {
   try {
+    /* 这一次生成要用的开关（`inject` 分路用到；`policy()` 一个回合内会调多次，有缓存） */
+    const p = policy()
     const entries = ctx?.sessionManager?.getEntries?.() ?? []
     const pairs = messagePairsFromEntries(entries)
     if (!pairs) {
@@ -1038,6 +1241,32 @@ async function produceAndCommit(sessionId, ctx) {
       return
     }
 
+    /*
+     * 阶段运行状态（方案 §12.3）：**到线之后**才检查上膛与冷却。
+     *
+     * 位置在脏判定与 registry 检查**之后**、模型调用**之前** —— 这才是「真的要花钱」
+     * 的边界：放到脏判定前面会让纯只读回合也消耗冷却，放到模型调用后面就等于没防住。
+     * 环境问题（拿不到 registry）也不该消耗阶段状态，所以这一步在它后面。
+     *
+     * `rearmMs` / `cooldownMs` 默认是 5 分钟 / 30 秒（两次生成之间的**最小间隔**）：
+     * 扩展侧拿不到主进程的工作集，所以「用量回落」那条重新上膛路径在这里不成立，
+     * 真正起节流作用的就是这两个参数 —— 失败后 5 分钟内不再重试（否则模型持续返回
+     * 坏 JSON 时就是每轮一次）。默认参数下**先被上膛判定拦住**，冷却要等重试窗口
+     * 缩短之后才会命中（测试场景就是这么做的）。
+     */
+    const step = stageStep({
+      runtime: stageRuntimeOf('episode-fold', sessionId),
+      now: Date.now(),
+      /* 默认 5 分钟 / 30 秒；两者都可由 `YAN_CONTEXT_POLICY.state.{rearmMs,cooldownMs}` 调短 */
+      rearmMs: p.state.rearmMs || STAGE_REARM_MS,
+      cooldownMs: p.state.cooldownMs || STAGE_COOLDOWN_MS
+    })
+    if (!step.run) {
+      trace('producer', { sessionId, stage: 'producer', hook: 'skipped', reason: step.reason })
+      return
+    }
+    stageRuntimes['episode-fold'].set(sessionId, step.runtime)
+
     const directives = userDirectives(cleaned.messages, cleaned.entryIds)
     /*
      * 可引用清单（第五轮外部意见 Q1 的 P0-③ provenance）：**只装本轮材料** ——
@@ -1045,7 +1274,49 @@ async function produceAndCommit(sessionId, ctx) {
      * 所以「因为上一版这么说」不能充当证据（那正是语义递归固化的通道）。
      */
     const citable = citableEntries({ directives, evidence })
-    const prompt = buildProducerPrompt({ previousTask: previous?.task, directives, evidence, citable })
+    /*
+     * Episode 的候选区间（§12.6）：**确定性边界** —— 从「上一次折叠到哪里」
+     * 到「已经离开 `recentTail` 窗口」的最后一条。窗口为 null（历史太短、或全在
+     * 活跃窗口里）时就不做 Episode —— 那是正常的「没有可折叠的东西」，不是失败。
+     *
+     * **只在生成门开着时才算**（默认关，见 `stateSwitches` 里那段实测说明）：
+     * 它决定提示词里要不要多要一个对象，而那个额外要求会拉低整次生成的成功率。
+     */
+    const episodeWin = p.state.episodeGenerate
+      ? episodeWindow({
+          messages: cleaned.messages,
+          entryIds: cleaned.entryIds,
+          recentTail: p.recentTail,
+          minEntries: p.episodes.minEntries,
+          minTokens: p.episodes.minTokens,
+          coveredThrough: lastEpisodeTo(previous)
+        })
+      : null
+    /*
+     * 窗口本身也单独留一行诊断。
+     *
+     * 为什么不等 committed 再报：窗口是在**模型调用之前**算出来的，而模型输出是
+     * 它自己的自由文本（`not-json` 拒收很常见）。把证据绑在 committed 行上，
+     * 就会出现「边界算出来了、但因为模型没吐合法 JSON 所以看不到」的假缺口。
+     */
+    if (episodeWin) {
+      trace('producer', {
+        sessionId,
+        stage: 'producer',
+        hook: 'episode-window',
+        entries: episodeWin.entryIds.length,
+        tokens: episodeWin.tokens,
+        from: episodeWin.from,
+        to: episodeWin.to
+      })
+    }
+    const prompt = buildProducerPrompt({
+      previousTask: previous?.task,
+      directives,
+      evidence,
+      citable,
+      episodeWin
+    })
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PRODUCER_TIMEOUT_MS)
     let response
@@ -1060,12 +1331,14 @@ async function produceAndCommit(sessionId, ctx) {
       )
     } catch (error) {
       trace('producer', { sessionId, stage: 'producer', hook: 'error', message: errorText(error) })
+      noteFoldRun(sessionId, false)
       return
     } finally {
       clearTimeout(timer)
     }
     if (response?.stopReason === 'aborted') {
       trace('producer', { sessionId, stage: 'producer', hook: 'aborted', usage: producerUsage(prompt, '', response) })
+      noteFoldRun(sessionId, false)
       return
     }
 
@@ -1074,17 +1347,33 @@ async function produceAndCommit(sessionId, ctx) {
     const parsed = parseProducerOutput(text)
     if (!parsed.ok) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: parsed.reason, sample: text.slice(0, 200), usage: usageTokens })
+      noteFoldRun(sessionId, false)
       return
     }
     const merged = mergeTaskState({ semantics: parsed.value, evidence, previous: previous?.task, directives, citable, now: Date.now() })
     if (!merged) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'merge-failed', usage: usageTokens })
+      noteFoldRun(sessionId, false)
       return
     }
+    /*
+     * Episode 的合并（§12.6）：`unresolved` 非空时 `episodeCandidate` 已经返回 null，
+     * 所以这里接到的要么是「一段真的收束了的历史」，要么是空的 —— 不会出现半收束。
+     */
+    const episodeMerge = mergeEpisodeState({
+      candidate: parsed.episode,
+      /* 模型没给 / 给了但没收束 —— 诊断里要能分开（决定要不要改提示词） */
+      candidateReason: parsed.episodeReason,
+      window: episodeWin,
+      previous: previous?.episodes,
+      watermark,
+      now: Date.now()
+    })
     /* 工作集在扩展侧拿不到（那是主进程的策略），用它自己的硬上限即可 */
     const clipped = clipTaskStateToBudget(merged, 0)
     if (clipped.over) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'over-budget', tokens: clipped.tokens, usage: usageTokens })
+      noteFoldRun(sessionId, false)
       return
     }
 
@@ -1102,23 +1391,32 @@ async function produceAndCommit(sessionId, ctx) {
     })
     if (!allowed.ok) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: allowed.reason, expected: allowed.expected, revision: allowed.revision })
+      noteFoldRun(sessionId, false)
       return
     }
 
     const state = buildStateFile({
       sessionId,
       watermark,
-      task: clipped.task,
       /*
-       * Episode 旁路防线（第四轮外部评审 P0-4）：旧 EpisodeState 的语义生成
-       * 还没接上 provenance/freshness 这套契约，所以**不沿用上一版**。
-       * 宁可不注入 Episode（少一段可追溯的引用），也不能让旧语义从旁边混进推理。
+       * 引用汇总（§13.4）：把 Episode 的 id 与重要引用并进 TaskState。
+       * **跟着消费门一起关** —— `archiveRefs` 会出现在 `<TASK_STATE>` 的
+       * 「Archived history」一节（模型可见），而 shadow 的含义是字面「不进任何
+       * 模型可见路径」。放行时这里会自动跟着 `episodeInject` 一起打开（一行的事）。
        */
-      episodes: [],
+      task: p.state.episodeInject ? mergeEpisodeRefs(clipped.task, episodeMerge.episodes) : clipped.task,
+      episodes: episodeMerge.episodes,
+      /*
+       * 旁路防线（第四轮外部评审 P0-4）到本切片为止已被**取代**：Episode 不再来自
+       * 「沿用上一版旧语义」，而是我们自己按**确定性边界 + 收束判据**生成并校验的。
+       * 但它仍然**默认不消费**（只落盘）—— 消费门是 `state.episodeInject`，
+       * 见 `buildStructuredSummary` 的 `includeEpisodes`。
+       */
       now: Date.now(),
       revision: allowed.revision + 1
     })
     writeJsonAtomic(sessionFilePath(sessionId, '.json'), state)
+    noteFoldRun(sessionId, true)
     trace('producer', {
       sessionId,
       stage: 'producer',
@@ -1137,10 +1435,15 @@ async function produceAndCommit(sessionId, ctx) {
       provenance: provenanceCounts(clipped.task),
       citable: citable.length,
       usage: usageTokens,
-      trigger: decision.reason
+      trigger: decision.reason,
+      /* Episode 扇叠的观测点：加了 / 没加、以及没加的原因（not-sealed / no-window / no-watermark） */
+      episodes: episodeMerge.added ? 1 : 0,
+      episodeReason: episodeMerge.added ? null : episodeMerge.reason ?? null,
+      episodeWindow: episodeWin ? episodeWin.entryIds.length : 0
     })
   } catch (error) {
     trace('producer', { sessionId, stage: 'producer', hook: 'error', message: errorText(error) })
+    noteFoldRun(sessionId, false)
   }
 }
 
@@ -1285,8 +1588,18 @@ export const __internals = {
   resetProducerFlight: () => {
     producerFlight = null
   },
-  /* 测试用：丢掉 deep 的设置缓存（否则改完 `YAN_DATA_DIR` 还要等 1 秒） */
+  /* 阶段运行状态（§12.3）：sweep / fold 两份 map，测试之间要互不污染 */
+  stageRuntimeOf,
+  resetStageRuntimes: () => {
+    stageRuntimes['tool-sweep'].clear()
+    stageRuntimes['episode-fold'].clear()
+  },
+  /* 测试用：丢掉桌面端设置的缓存（否则改完 `YAN_DATA_DIR` 还要等 1 秒） */
   resetDeepCache: () => {
-    deepSettingsCache = { at: 0, value: undefined }
+    desktopSettingsCache = { at: 0, value: {} }
+  },
+  /* 同上，名字与 `desktopSettings` 对齐（两个开关共用一份缓存） */
+  resetDesktopSettingsCache: () => {
+    desktopSettingsCache = { at: 0, value: {} }
   }
 }

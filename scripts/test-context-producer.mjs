@@ -719,12 +719,44 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     ok(inspected.status === 'ok', `JS 产出的状态文件过 TS schema（${inspected.status}）`)
     if (inspected.status !== 'ok') console.log('   ', JSON.stringify(inspected.issues?.slice(0, 4)))
     ok(inspected.status === 'ok' && inspected.state.revision === 1, 'schema 读回 revision')
+    /*
+     * 阶段运行状态（§12.3）：成功落盘要立即上锁并记下冷却。
+     * 这条与下一条是「三阶段独立 Rearm/Cooldown」在真实生成路径上的接线凭证 ——
+     * 纯函数层的边界在 `test-context-stage-runtime.mjs` 里钉。
+     */
+    const rtOk = extension.__internals.stageRuntimeOf('episode-fold', sessionId)
+    ok(rtOk.armed === false && rtOk.lastOk === true, '落盘成功后立即上锁')
+    ok(rtOk.cooldownUntil > Date.now() - 1000, '上锁同时记下冷却到期时间')
+
+    /*
+     * 上锁之后不会再跑（§12.3）：把会话弄得「该刷新」（新增两个用户回合 →
+     * settled-gap 触发），但**不清**运行状态 —— 这次调用必须被挡在模型调用之前。
+     *
+     * 为什么必须让它「脏」：不脏时 `shouldRefresh` 先就拦下了，断言就变成
+     * 「测脏判定」而不是「测节流」（两者的区别恰恰是 `stageStep` 的插入位置）。
+     * 拦它的是**未重新上膛**（扩展侧没有用量回落信号，5 分钟重试窗口还没到）；
+     * 同一函数里的冷却分支在扩展侧通常不命中，它的边界在
+     * `test-context-stage-runtime.mjs` 里单独钉。
+     */
+    entries.push({ id: 'p4', type: 'message', message: { role: 'user', content: [{ type: 'text', text: '继续' }] } })
+    entries.push({ id: 'p5', type: 'message', message: { role: 'user', content: [{ type: 'text', text: '再继续' }] } })
+    const beforeCooling = callCount
+    await extension.__internals.produceAndCommit(sessionId, makeCtx())
+    const afterCooling = JSON.parse(readFileSync(filePath, 'utf8'))
+    ok(
+      callCount === beforeCooling && afterCooling.revision === 1,
+      `脏了但尚未重新上膛 → 一次模型都不调、状态也不动（实际 calls=${callCount}, revision=${afterCooling.revision}）`
+    )
 
     /*
      * CAS：**生成期间**磁盘被别的写改掉 → 这次结果必须被拒
      * （迟到结果不许覆盖新快照）。关键是在 completion 的回调里改文件 ——
      * 在调用前改只会让 previous 读到新值，反而证明不了 CAS。
+     *
+     * 先清掉阶段运行状态：上一步刚成功过，冷却窗口会把这次调用整个挡在
+     * 「要不要生成」之前（那是 §12.3 的行为，不是本段要验的东西）。
      */
+    extension.__internals.resetStageRuntimes()
     await extension.__internals.produceAndCommit(sessionId, makeCtx({
       modelRegistry: {
         complete: async () => {
@@ -735,6 +767,12 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     }))
     const after = JSON.parse(readFileSync(filePath, 'utf8'))
     ok(after.revision === 9, `生成期间被改过 → CAS 拒绝，文件保持对方的版本（实际 ${after.revision}）`)
+    /*
+     * 失败路径也要 disarm（§12.3）：否则下一轮会在同样的输入上再烧一次调用 ——
+     * 模型持续返回坏 JSON 时，这就变成「每轮一次」。
+     */
+    const rtRejected = extension.__internals.stageRuntimeOf('episode-fold', sessionId)
+    ok(rtRejected.armed === false && rtRejected.lastOk === false, 'CAS 拒绝后同样上锁（失败不留在“可立即重试”的状态）')
     /* 恢复成 revision=1 的可写状态，供后面的失败路径用例使用 */
     writeFileSync(filePath, JSON.stringify(written, null, 2), 'utf8')
 
@@ -798,5 +836,351 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     }
     ok(taskStateTokens(tokenTask) > 0, '状态渲染有 token 估算')
     ok(taskStateTokens({ ...tokenTask, constraints: [] }) === 0, '只有目标没条目 → 视为空状态（不注入空壳）')
+  }
+
+  /*
+   * ---------------- P2-7：`episode-fold` 的用户开关（扩展侧）----------------
+   *
+   * 这个开关补的是「进默认接管集后没有关闭入口」的缺口，而它有**两个真源**，
+   * 必须同时变：
+   *   · 主进程侧 `resolveContextPolicy()` —— 界面读它画“哪些阶段已接管”；
+   *   · 扩展侧 `policy()` —— 决定生成器跑不跑、`<TASK_STATE>` 注不注入。
+   * 主进程那份钉在 `test-context-policy.mjs`，这里钉扩展侧：三个来源的优先关系，
+   * 以及它是否真的把 `kinds` 与 `stateSwitches` **一起**关掉。
+   *
+   * 为什么要验“一起”：`kinds` 是总闸、`state.generate/inject` 是闸内分路。
+   * 只关一头就会出现「总闸说接管了、分路却说关着」（或反过来）—— 那种状态下
+   * 界面的阶段预报与真实行为相反，而且不报任何错。
+   */
+  console.log('\n--- P2-7 · episode-fold 的用户开关（desktop.json / YAN_CONTEXT_FOLD / YAN_CONTEXT_POLICY）---')
+  {
+    const prevPolicyEnv = process.env.YAN_CONTEXT_POLICY
+    const prevFoldEnv = process.env.YAN_CONTEXT_FOLD
+    const prevDataDir = process.env.YAN_DATA_DIR
+    const restoreEnv = () => {
+      if (prevPolicyEnv === undefined) delete process.env.YAN_CONTEXT_POLICY
+      else process.env.YAN_CONTEXT_POLICY = prevPolicyEnv
+      if (prevFoldEnv === undefined) delete process.env.YAN_CONTEXT_FOLD
+      else process.env.YAN_CONTEXT_FOLD = prevFoldEnv
+      if (prevDataDir === undefined) delete process.env.YAN_DATA_DIR
+      else process.env.YAN_DATA_DIR = prevDataDir
+      extension.__internals.resetDesktopSettingsCache()
+    }
+    const kinds = () => extension.__internals.policy().kinds
+    const state = () => extension.__internals.policy().state
+    const tmp = mkdtempSync(join(tmpdir(), 'yan-fold-'))
+    try {
+      delete process.env.YAN_CONTEXT_POLICY
+      delete process.env.YAN_CONTEXT_FOLD
+      process.env.YAN_DATA_DIR = tmp
+      extension.__internals.resetDesktopSettingsCache()
+
+      ok(kinds().includes('episode-fold'), 'fold·三个来源都没表态时按默认开（它是默认接管集的一员）')
+      ok(
+        state().generate === true && state().inject === true,
+        'fold·默认下生成与注入两条分路都是开'
+      )
+
+      /* env 通道：`1` / `0` 是明确表态，认不出的值当没表态 */
+      process.env.YAN_CONTEXT_FOLD = '1'
+      ok(kinds().includes('episode-fold'), 'fold·YAN_CONTEXT_FOLD=1 打开')
+      process.env.YAN_CONTEXT_FOLD = 'false'
+      ok(!kinds().includes('episode-fold'), 'fold·YAN_CONTEXT_FOLD=false 关闭')
+      ok(state().generate === false && state().inject === false, 'fold·关闭时生成与注入一起停')
+      process.env.YAN_CONTEXT_FOLD = 'yes'
+      ok(kinds().includes('episode-fold'), 'fold·认不出的值当没表态（与 deep 同一条规则）')
+      delete process.env.YAN_CONTEXT_FOLD
+
+      /* 桌面端设置：用户真正能按到的那条路（扩展每轮读文件，所以改完立即生效） */
+      writeFileSync(join(tmp, 'desktop.json'), JSON.stringify({ contextFold: { enabled: false } }))
+      extension.__internals.resetDesktopSettingsCache()
+      ok(!kinds().includes('episode-fold'), 'fold·设置里 enabled:false 关掉（界面开关的落实处）')
+      ok(
+        state().generate === false && state().inject === false,
+        'fold·关掉时总闸与两条分路一致（不会留下“总闸说关、分路说开”）'
+      )
+
+      writeFileSync(join(tmp, 'desktop.json'), JSON.stringify({ contextFold: { enabled: true } }))
+      extension.__internals.resetDesktopSettingsCache()
+      ok(kinds().includes('episode-fold'), 'fold·设置里 enabled:true 等于默认（不额外区分“没改过”与“主动打开”）')
+
+      process.env.YAN_CONTEXT_FOLD = '1'
+      writeFileSync(join(tmp, 'desktop.json'), JSON.stringify({ contextFold: { enabled: false } }))
+      extension.__internals.resetDesktopSettingsCache()
+      ok(kinds().includes('episode-fold'), 'fold·env 的 1 盖过设置里的 false（测试通道优先）')
+
+      /*
+       * `YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它就是接管集的唯一出处：
+       * `contexttakeover` / `contextproduce` 靠它精确控制接管集。
+       */
+      process.env.YAN_CONTEXT_POLICY = '{"kinds":["tool-sweep","recall","episode-fold","compaction"]}'
+      process.env.YAN_CONTEXT_FOLD = '0'
+      extension.__internals.resetDesktopSettingsCache()
+      ok(kinds().includes('episode-fold'), 'fold·env 显式给了 kinds 时用户开关不生效（测试通道优先）')
+
+      /*
+       * 这一条是 live 场景（`contextfoldpref`）依赖的性质：为了验“关掉后不生成”，
+       * 场景要先用 `YAN_CONTEXT_POLICY` 把门槛降到 1/1（否则短会话本来就不生成，
+       * 关与不关看不出区别），但**不能给 kinds** —— 给了就把被测的开关盖掉了。
+       */
+      process.env.YAN_CONTEXT_POLICY = '{"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+      process.env.YAN_CONTEXT_FOLD = '0'
+      ok(!kinds().includes('episode-fold'), 'fold·只降门槛（没给 kinds）时用户开关仍然生效')
+      ok(state().generate === false, 'fold·同上：分路也是关的（生成器一次都不会跑）')
+      ok(state().minTurns === 1 && state().minTokens === 1, 'fold·门槛参数照旧可配（用户开关不影响它）')
+      delete process.env.YAN_CONTEXT_POLICY
+      delete process.env.YAN_CONTEXT_FOLD
+
+      writeFileSync(join(tmp, 'desktop.json'), '{ 坏的 JSON')
+      extension.__internals.resetDesktopSettingsCache()
+      ok(kinds().includes('episode-fold'), 'fold·设置文件坏了当没表态（按默认开）')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      restoreEnv()
+    }
+  }
+
+  /*
+   * ---------------- Episode 扇叠（§12.6，真实落盘）----------------
+   *
+   * 用户拍板（2026-09-18）：**边界确定 + 先 shadow**。这个切片最需要的证据都在这里：
+   *   ① **边界是确定的** —— 窗口来自 `recentTail` 之外 + 上一版 Episode 的终点；
+   *   ② **收束不是猜的** —— `unresolved` 非空就一律不扇叠（两次落盘对比）；
+   *   ③ **shadow 是真的** —— 默认（`episodeInject` 关）时 Episode 只落盘，
+   *      不进 `task.episodeRefs` / `archiveRefs`，而后者会出现在模型可见的注入块里。
+   */
+  console.log('\n--- Episode 扇叠（§12.6）：窗口 / 收束判据 / shadow ---')
+  {
+    const { episodeCandidate, mergeEpisodeState, MAX_EPISODES } = producer
+    const { episodeWindow } = transform
+
+    /* ---- 纯逻辑：候选解析（unresolved 是收束判据的落点） ---- */
+    const good = episodeCandidate({
+      objective: '第一段任务',
+      outcome: '做完了',
+      decisions: [{ decision: '先做 A', reason: '因为 B' }, '直接用 C'],
+      constraints: ['不要动迁移', '不要动迁移'],
+      filesChanged: [{ path: 'src/a.ts' }, 'src/b.ts', { summary: '没有路径，丢掉' }],
+      failedAttempts: ['试过 D，失败'],
+      unresolved: [],
+      importantRefs: ['ctx://tool/x1', 'ctx://episode/y', 'not-a-ref']
+    })
+    ok(good && good.decisions.length === 2 && good.decisions[0].reason === '因为 B', 'decisions 接受对象（带 reason）与纯字符串两种写法')
+    ok(good.constraints.length === 1, '字符串列表去重')
+    ok(good.filesChanged.length === 2 && good.filesChanged[0].path === 'src/a.ts', 'filesChanged 丢掉没 path 的条目')
+    ok(good.importantRefs.join(',') === 'ctx://tool/x1', 'importantRefs 只留归档引用（档掉 ctx://episode 与非法串）')
+    ok(episodeCandidate({ ...good, unresolved: ['还有一件事'] }) === null, 'unresolved 非空 → 不扇叠')
+    ok(episodeCandidate({ objective: '只有目标' }) === null, '缺 outcome → 不扇叠')
+    ok(episodeCandidate(null) === null && episodeCandidate('字符串') === null, '形状不对 → 不扇叠（不报错）')
+
+    /* ---- 纯逻辑：窗口边界（确定性） ---- */
+    const long = (n) => 'A'.repeat(n)
+    const winEntries = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'].map((id, i) => ({
+      id,
+      message: { role: 'user', content: [{ type: 'text', text: `${id} ${long(i < 4 ? 4000 : 400)}` }] }
+    }))
+    const win = episodeWindow({
+      messages: winEntries.map((e) => e.message),
+      entryIds: winEntries.map((e) => e.id),
+      recentTail: { target: 400, max: 900 }
+    })
+    ok(win && win.from === 'q1' && win.to === 'q4', `窗口 = 尾部窗口之外的那一段（${win?.from}→${win?.to}）`)
+    ok(win.entryIds.length === 4 && win.tokens > 0, `窗口带条目清单与 token 估算（${win?.entryIds.length} 条 / ${win?.tokens}）`)
+    ok(
+      episodeWindow({
+        messages: winEntries.map((e) => e.message),
+        entryIds: winEntries.map((e) => e.id),
+        recentTail: { target: 400, max: 900 },
+        coveredThrough: 'q4'
+      }) === null,
+      '已经扇叠到这里 → 不重复（折叠只会向前推进）'
+    )
+    ok(
+      episodeWindow({
+        messages: winEntries.map((e) => e.message),
+        entryIds: winEntries.map((e) => e.id),
+        recentTail: { target: 100000, max: 200000 }
+      }) === null,
+      '全部还在活跃窗口里 → 没有可扇叠的东西（返回 null，不是空 Episode）'
+    )
+    ok(episodeWindow({ messages: [], entryIds: ['a'] }) === null, '消息与 entry id 数量不匹配 → 不猜边界')
+
+    /* ---- 纯逻辑：合并（确定性 id / 幂等 / 上限） ---- */
+    const wm = { entryCount: 8, lastEntryId: 'q8' }
+    const one = mergeEpisodeState({ candidate: good, window: win, previous: [], watermark: wm, now: 1000 })
+    ok(one.added && one.id === 'ep-q1--q4', `id 由窗口两端拼成（${one.id}）`)
+    ok(one.episodes[0].sourceRange.from === 'q1' && one.episodes[0].watermark.lastEntryId === 'q8', 'sourceRange 与 watermark 都是 schema 必填项')
+    const again = mergeEpisodeState({ candidate: good, window: win, previous: one.episodes, watermark: wm, now: 2000 })
+    ok(again.episodes.length === 1, '同一段重复归纳只替换自己（不会留下两条几乎一样的）')
+    const many = []
+    for (let i = 0; i < MAX_EPISODES + 2; i++) {
+      const w = { from: `m${i}`, to: `m${i + 1}`, tokens: 10, entryIds: ['x'] }
+      const r = mergeEpisodeState({ candidate: good, window: w, previous: many, watermark: wm, now: i })
+      many.length = 0
+      many.push(...r.episodes)
+    }
+    ok(many.length === MAX_EPISODES, `超过上限时丢最旧的（${many.length} / ${MAX_EPISODES}）`)
+    ok(many[0].id === 'ep-m2--m3', `留下的是最新的那批（首条 ${many[0].id}）`)
+    ok(
+      mergeEpisodeState({ candidate: null, window: win, previous: [], watermark: wm }).reason === 'not-sealed' &&
+        mergeEpisodeState({ candidate: good, window: null, previous: [], watermark: wm }).reason === 'no-window' &&
+        mergeEpisodeState({ candidate: good, window: win, previous: [], watermark: null }).reason === 'no-watermark',
+      '三种不落盘的理由分开报（可观测，不是静默丢弃）'
+    )
+
+    /* ---- 提示词：窗口写进去，边界不让模型猜 ---- */
+    const withWin = producer.buildProducerPrompt({ episodeWin: win })
+    ok(withWin.includes('<episode_window>') && withWin.includes('from: q1'), '提示词里给出了扇叠窗口的边界')
+    ok(/will not be folded/.test(withWin), '明确告知「列在 unresolved 里就不会被扇叠」')
+    ok(!producer.buildProducerPrompt({}).includes('<episode_window>'), '没有窗口时不提这件事（不制造噪声）')
+
+    /* ---- 真落盘：收束的一段 / 未收束的一段 / 放行时的引用汇总 ---- */
+    const prevPolicyEnv = process.env.YAN_CONTEXT_POLICY
+    const prevData = process.env.YAN_DATA_DIR
+    const tmp = mkdtempSync(join(tmpdir(), 'yan-episode-'))
+    const dir = join(tmp, 'context-state')
+    const readState = (sessionId) => {
+      try {
+        return JSON.parse(readFileSync(join(dir, `${sessionId}.json`), 'utf8'))
+      } catch {
+        return null
+      }
+    }
+    const mkCtx = (sessionId, entries, payload) => ({
+      sessionManager: { getSessionId: () => sessionId, getEntries: () => entries, getBranch: () => entries },
+      model: { provider: 'test', id: 'fake', maxTokens: 4096 },
+      modelRegistry: {
+        complete: async () => ({ content: [{ type: 'text', text: JSON.stringify(payload) }], stopReason: 'stop' })
+      }
+    })
+    const entriesOf = (prefix) =>
+      ['1', '2', '3', '4', '5', '6', '7', '8'].map((n, i) => ({
+        id: `${prefix}q${n}`,
+        type: 'message',
+        message: { role: 'user', content: [{ type: 'text', text: `${prefix}q${n} ${long(i < 4 ? 4000 : 400)}` }] }
+      }))
+    try {
+      process.env.YAN_DATA_DIR = tmp
+      /* 把尾部窗口压小，让前四条落到窗口之外（那就是 Episode 的候选区间） */
+      process.env.YAN_CONTEXT_POLICY = '{"recentTail":{"target":400,"max":900},"state":{"episodeGenerate":true}}'
+      /* 诊断也写进隔离目录：下面「到底为什么没扇叠」要靠 committed 行里的字段说话 */
+      process.env.YAN_CONTEXT_EXT_LOG = join(tmp, 'episode-ext.jsonl')
+      extension.__internals.resetStageRuntimes()
+      const logRows = () => {
+        try {
+          return readFileSync(join(tmp, 'episode-ext.jsonl'), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        } catch {
+          return []
+        }
+      }
+
+      const sealed = 'epep0001'
+      await extension.__internals.produceAndCommit(
+        sealed,
+        mkCtx(sealed, entriesOf('a'), {
+          objective: '把第一段做完',
+          currentPhase: '收尾',
+          episode: {
+            objective: '第一段任务',
+            outcome: '做完了并验证通过',
+            decisions: [{ decision: '先做 A', reason: '因为 B 更稳' }],
+            constraints: ['不要动迁移'],
+            filesChanged: [{ path: 'src/a.ts', summary: '新增函数' }],
+            failedAttempts: ['试过 D，失败'],
+            unresolved: [],
+            importantRefs: ['ctx://tool/aq2']
+          }
+        })
+      )
+      const written = readState(sealed)
+      const commit = logRows().find((r) => r.hook === 'committed' && r.sessionId === sealed)
+      ok(
+        commit?.episodes === 1,
+        `诊断记下 Episode 已落盘（episodes=${commit?.episodes ?? '无 committed 行'}, reason=${commit?.episodeReason ?? '-'}, window=${commit?.episodeWindow ?? '-'}）`
+      )
+      ok(
+        !!written && written.episodes?.length === 1,
+        `收束的一段真的落盘成 Episode（written=${written ? 'ok' : 'null'}, episodes=${written?.episodes?.length ?? '-'}, 跟踪=${commit?.episodes}, dir=${dir}）`
+      )
+      const ep = written?.episodes?.[0] ?? {}
+      ok(ep.id === 'ep-aq1--aq4', `落盘 id 由窗口两端拼成（${ep.id}）`)
+      ok(ep.sourceRange?.from === 'aq1' && ep.sourceRange?.to === 'aq4', 'sourceRange 指回**原始**条目（§12.7）')
+      ok(!!ep.watermark?.lastEntryId && ep.tokensBefore > 0, 'watermark 与 tokensBefore 都写上了')
+      ok((written?.task?.episodeRefs ?? []).length === 0, 'shadow：默认不把 Episode 汇总进 task.episodeRefs')
+      ok(!(written?.task?.archiveRefs ?? []).includes('ctx://tool/aq2'), 'shadow：默认不把 Episode 的引用并进 archiveRefs')
+      const inspected = schema.inspectContextStateFile(written, {
+        knownEntryIds: ['aq1', 'aq2', 'aq3', 'aq4', 'aq5', 'aq6', 'aq7', 'aq8']
+      })
+      ok(inspected.status === 'ok', `带 Episode 的状态文件过 TS schema（${inspected.status}）`)
+      if (inspected.status !== 'ok') console.log('   ', JSON.stringify(inspected.issues?.slice(0, 4)))
+
+      const open = 'epep0002'
+      extension.__internals.resetStageRuntimes()
+      await extension.__internals.produceAndCommit(
+        open,
+        mkCtx(open, entriesOf('b'), {
+          objective: '第一段还没完',
+          currentPhase: '进行中',
+          episode: { objective: '第一段任务', outcome: '做了一半', unresolved: ['还有一个测试没过'], importantRefs: [] }
+        })
+      )
+      const openWritten = readState(open)
+      ok((openWritten?.episodes ?? []).length === 0, 'unresolved 非空 → 不扇叠（收束判据的落点）')
+      ok(openWritten?.task?.task?.objective === '第一段还没完', 'TaskState 照常落盘（不扇叠 ≠ 不更新状态）')
+
+      const allowed = 'epep0003'
+      process.env.YAN_CONTEXT_POLICY =
+        '{"recentTail":{"target":400,"max":900},"state":{"episodeGenerate":true,"episodeInject":true}}'
+      extension.__internals.resetStageRuntimes()
+      await extension.__internals.produceAndCommit(
+        allowed,
+        mkCtx(allowed, entriesOf('c'), {
+          objective: '放行',
+          currentPhase: '收尾',
+          episode: { objective: '第 c 段', outcome: '完成', unresolved: [], importantRefs: ['ctx://tool/cq1'] }
+        })
+      )
+      const allowedWritten = readState(allowed)
+      ok((allowedWritten?.episodes ?? []).length === 1, '放行时 Episode 照常落盘')
+      ok(
+        (allowedWritten?.task?.episodeRefs ?? []).includes('ep-cq1--cq4'),
+        `放行后 Episode id 才汇总进 task（${JSON.stringify(allowedWritten?.task?.episodeRefs)}）`
+      )
+      ok((allowedWritten?.task?.archiveRefs ?? []).includes('ctx://tool/cq1'), '放行后重要引用也并进 archiveRefs')
+
+      /*
+       * 生成门默认关（2026-09-18 的实测教训）：
+       * 窗口非空时提示词里会多要一个嵌套对象，而实测那会让**整次生成**（含 TaskState）
+       * 更容易 `not-json`。所以默认不发这个要求 —— 这条钉住「默认下什么都不变」。
+       */
+      const gated = 'epep0004'
+      process.env.YAN_CONTEXT_POLICY = '{"recentTail":{"target":400,"max":900}}'
+      extension.__internals.resetStageRuntimes()
+      await extension.__internals.produceAndCommit(
+        gated,
+        mkCtx(gated, entriesOf('d'), {
+          objective: '默认不要求 Episode',
+          currentPhase: '收尾',
+          episode: { objective: '第 d 段', outcome: '完成', unresolved: [], importantRefs: [] }
+        })
+      )
+      const gatedWritten = readState(gated)
+      ok((gatedWritten?.episodes ?? []).length === 0, '生成门默认关：即使模型给了 episode、窗口也非空，也不落盘')
+      ok(
+        !logRows().some((r) => r.hook === 'episode-window' && r.sessionId === gated),
+        '生成门关着时连窗口都不算（不为一个没启用的功能白花计算）'
+      )
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      if (prevPolicyEnv === undefined) delete process.env.YAN_CONTEXT_POLICY
+      else process.env.YAN_CONTEXT_POLICY = prevPolicyEnv
+      if (prevData === undefined) delete process.env.YAN_DATA_DIR
+      else process.env.YAN_DATA_DIR = prevData
+      delete process.env.YAN_CONTEXT_EXT_LOG
+      extension.__internals.resetStageRuntimes()
+    }
   }
 }
