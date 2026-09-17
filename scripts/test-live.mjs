@@ -1242,9 +1242,9 @@ function checkContextSweepArchive(sandboxRoot) {
  * 状态生成没有缓存命中，拿“只算非缓存 input”去比会把主 agent 的摊子看小。
  * 三个数都打印出来，读者可以按自己的口径重算。
  */
-function agentTokensFromSessions(sandboxRoot) {
+function agentTokensFromSessions(sandboxRoot, onlySessionId = null) {
   const dir = join(sandboxRoot, 'sessions')
-  const out = { input: 0, cacheRead: 0, output: 0, files: 0 }
+  const out = { input: 0, cacheRead: 0, output: 0, files: 0, scoped: !!onlySessionId, matched: 0 }
   const walk = (at) => {
     let list = []
     try {
@@ -1259,6 +1259,13 @@ function agentTokensFromSessions(sandboxRoot) {
         continue
       }
       if (!entry.name.endsWith('.jsonl')) continue
+      /*
+       * 只算指定会话时按文件名匹配（pi 的文件名是 `<时间戳>_<sessionId>.jsonl`）。
+       * 为什么必须能限定：沙箱里有 8 份 fixture 会话，不限定就会把它们几百万 token
+       * 全算进分母，比值被稀释成 0.0% —— 那种数字比没有数字更糟（2026-09-17 实测）。
+       */
+      if (onlySessionId && !entry.name.includes(onlySessionId)) continue
+      out.matched += 1
       out.files += 1
       let raw = ''
       try {
@@ -1363,7 +1370,18 @@ async function checkContextProduce(sandboxRoot) {
   const pOut = realRows.length
     ? sumOf(realRows, (r) => r.usage.real.output)
     : sumOf(usageRows, (r) => r.usage.output)
-  const agent = agentTokensFromSessions(sandboxRoot)
+  /*
+   * 分母只算**本场景那条会话**：沙箱里另有 8 份 fixture 会话，混进来会让分母凭空多出几百万
+   * token，比值被稀释成 0.0%（2026-09-17 实测）。会话 id 从状态文件名反推（`<sessionId>.json`），
+   * 那是本场景唯一的产物。`cacheRead` 按原值计入（没按折扣加权）—— 口径简单透明，
+   * 代价是分母偏大、比值偏小，方向对“该不该优化”这个判断是保守的。
+   */
+  const stateDir = join(sandboxRoot, 'data', 'context-state')
+  const ownSessionId =
+    (existsSync(stateDir) ? readdirSync(stateDir) : [])
+      .map((f) => /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/.exec(f)?.[1])
+      .find(Boolean) ?? null
+  const agent = agentTokensFromSessions(sandboxRoot, ownSessionId)
   const overhead = stateOverhead({
     producerInput: pIn,
     producerOutput: pOut,
@@ -1373,14 +1391,15 @@ async function checkContextProduce(sandboxRoot) {
   lines.push(
     `  生成开销：producer=${pIn + pOut}（in ${pIn} / out ${pOut}，${usageRows.length} 次尝试，来源 ${
       realRows.length ? `pi 真实 usage×${realRows.length}` : '本地估算'
-    }）；主 agent in ${agent.input} + cacheRead ${agent.cacheRead} + out ${agent.output}`
+    }）；主 agent in ${agent.input} + cacheRead ${agent.cacheRead} + out ${agent.output}` +
+      `（分母来自${agent.scoped ? `本场景会话 ${ownSessionId}，${agent.matched} 份 JSONL` : '全部会话'}）`
   )
   lines.push(
     `  stateOverhead = ${pIn + pOut === 0 || overhead.ratio === null ? 'n/a' : `${(overhead.ratio * 100).toFixed(1)}%`}（${overhead.level}）` +
       `  ← 信号不是门槛：本场景只有 2 回合、且可能整场都没成功提交状态；判 delta 要看长会话的长期值`
   )
   say(usageRows.length >= 1, `诊断里记下了生成器的 token 开销（${usageRows.length} 次尝试，含失败路径）`)
-  say(agent.input + agent.output > 0, `从会话条目里读到主 agent 的用量（分母不是编的，${agent.files} 份 JSONL）`)
+  say(agent.input + agent.output > 0, `从会话条目里读到主 agent 的用量（分母不是编的，${agent.matched} 份 JSONL）`)
 
   /* ---- 状态文件 ---- */
   const dir = join(sandboxRoot, 'data', 'context-state')
