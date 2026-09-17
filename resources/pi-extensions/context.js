@@ -162,14 +162,21 @@ function policy() {
      */
     deep: { enabled: false, minTokens: 0 }
   }
-  if (!raw.trim()) return base
+  /*
+   * Deep Context 的开关解析：测试通道（策略里的 `deep`）优先，其次专用 env。
+   * 抽成函数是因为 `policy()` 有**两处早退**（没设策略 / JSON 不合法）——
+   * 早退路径也必须带上它，否则「用户开了但没设过任何策略」这种最常见的
+   * 生产情形会静默地一直是关的（实测：先只在正常路径里处理，单测当场就红了）。
+   */
+  const resolveDeep = (fromPolicy) => deepSwitches(fromPolicy ?? deepFromEnv())
+  if (!raw.trim()) return { ...base, deep: resolveDeep(undefined) }
   let parsed
   try {
     parsed = JSON.parse(raw)
   } catch {
     return base
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return base
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...base, deep: resolveDeep(undefined) }
   const kinds = Array.isArray(parsed.kinds)
     ? parsed.kinds.filter((k) => typeof k === 'string')
     : base.kinds
@@ -189,8 +196,31 @@ function policy() {
     sweep: pick(parsed.sweep, base.sweep),
     recall: pick(parsed.recall, base.recall),
     state: stateSwitches(parsed.state, kinds),
-    deep: deepSwitches(parsed.deep)
+    /*
+     * Deep Context 的开关有两个来源：`YAN_CONTEXT_POLICY.deep`（测试通道，最高优先级）
+     * 与专用的 `YAN_CONTEXT_DEEP`。
+     *
+     * **刻意不让砚把用户设置写进 `YAN_CONTEXT_POLICY`**：那个 env 在
+     * `src/shared/context-policy.ts` 的 lookup 里优先级**高于设置面板**，
+     * 砚一旦自己写它，用户改设置就会被静默盖掉（这正是测试通道想要的性质，
+     * 但对生产反向）。所以用户设置走专用 env。
+     */
+    deep: resolveDeep(parsed.deep)
   }
+}
+
+/**
+ * Deep Context 的用户开关（`YAN_CONTEXT_DEEP=1|0`）。
+ *
+ * 返回 `undefined` 表示「没表态」，交由 `deepSwitches` 的默认值（关）。
+ * 认不出的值（如拼错的 `yes`）也当没表态 —— 宁可不开，也不要因为一个拼写
+ * 把「同步阻塞一次模型调用」这个重选项悄悄打开。
+ */
+function deepFromEnv() {
+  const raw = (process.env.YAN_CONTEXT_DEEP ?? '').trim().toLowerCase()
+  if (raw === '1' || raw === 'true') return { enabled: true }
+  if (raw === '0' || raw === 'false') return { enabled: false }
+  return undefined
 }
 
 /**

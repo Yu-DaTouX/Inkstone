@@ -1075,7 +1075,7 @@ await runContextProducerTests(ok, {
  */
 const contextDeep = await import('../resources/pi-extensions/context-deep.js')
 const { runContextDeepTests } = await import('./test-context-deep.mjs')
-await runContextDeepTests(ok, { deep: contextDeep })
+await runContextDeepTests(ok, { deep: contextDeep, extension: contextExtension })
 
 /*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
