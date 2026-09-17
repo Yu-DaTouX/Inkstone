@@ -12,6 +12,7 @@
 | 确定每项做到什么程度 | [工程清单](dev/ENGINEERING-CHECKLIST-2026-09-15.md) | N01–N20 / L01–L06 需求、验收条件、六栏模板 |
 | 理解实施方法 | [实施方案](dev/实施方案-2026-09-15.md) | 会话编排架构、身份和作用域、依赖顺序 |
 | 定位功能实现 | [PROJECT](PROJECT.md) | 功能 → 实现 → 文件 |
+| 查看整体软件架构 | [整体架构图](ARCHITECTURE.md) / [网页图](ARCHITECTURE.html) / [Mermaid 源码](ARCHITECTURE.mmd) | 渲染进程、preload、主进程、pi、上下文、浏览器、子代理、数据与发布链条 |
 | 查看代码核对的功能列表 | [功能实现清单（2026-09-17）](dev/FEATURES-2026-09-17-代码功能实现清单.md) | 源码实现、默认开关、限制与验证入口；日期快照 |
 | 查看代码与文档批注 | [审阅报告（2026-09-17）](dev/REVIEW-2026-09-17-代码与文档批注.md) | 已确认问题、证据层级与修复建议；未修复项从 HANDOFF 接手 |
 | 定位目录 / 具体文件 | [WORKSPACE](WORKSPACE.md) / [CODE-MAP](dev/CODE-MAP.md) | 目录分类 / 文件职责与联动 |

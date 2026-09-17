@@ -1,0 +1,182 @@
+%% 砚（Yan）整体软件架构图
+%% 依据 2026-09-17 当前源码与 docs/dev/HANDOFF.md / docs/dev/CODE-MAP.md 整理
+flowchart LR
+    User["用户"]
+    Provider["模型供应商<br/>provider / model"]
+    Workspace[("用户工作区<br/>项目文件 / Git")]
+    SessionFiles[("会话 JSONL<br/>~/.pi 及会话目录")]
+    DesktopData[("桌面数据<br/>desktop.json / titles.json")]
+    ContextData[("派生上下文状态<br/>context-state/*.json<br/>archive / recall audit")]
+    Credentials[("凭证与登录态<br/>pi auth.json / ChatGPT OAuth")]
+    Chrome[("本机 Chrome<br/>独立 profile + CDP")]
+
+    subgraph Renderer["渲染进程 · React / Zustand"]
+        App["App.tsx<br/>桌面壳 / 三栏布局"]
+        Rail["Rail<br/>项目 / 分组 / 会话 / 搜索 / 拖拽"]
+        Chat["Chat 区<br/>Composer / TurnView / Reasoning / ToolRow"]
+        RightPanel["RightPanel<br/>上下文 / 任务 / 队列 / 文件 / 日志"]
+        Settings["Settings / Onboarding<br/>主题 / 语言 / 模型 / 策略"]
+        BrowserSurface["BrowserSurface<br/>原生视图占位与布局同步"]
+        Store["Zustand store<br/>MainPush 补丁 / 会话缓存"]
+        RuntimeCache["session-runtime<br/>按 sessionId 投影后台实例"]
+        RendererShared["shared 纯契约<br/>ipc / turns / policy / state"]
+        Composer["Composer<br/>prompt / bash / /命令 / @引用"]
+        App --> Rail
+        App --> Chat
+        App --> RightPanel
+        App --> Settings
+        App --> BrowserSurface
+        Chat --> Composer
+        Chat --> Store
+        Rail --> Store
+        RightPanel --> Store
+        Settings --> Store
+        Store --> RuntimeCache
+        RendererShared -.类型与纯函数.-> Store
+        RendererShared -.类型与纯函数.-> Chat
+    end
+
+    subgraph Bridge["安全边界 · preload"]
+        Preload["src/preload/index.ts<br/>contextBridge + ipcRenderer<br/>nodeIntegration:false<br/>contextIsolation:true"]
+        MainPushChannel["yan:push<br/>MainPush + RuntimeEnvelope"]
+    end
+
+    subgraph Main["主进程 · Electron / Node"]
+        MainEntry["src/main/index.ts<br/>BrowserWindow / IPC handlers<br/>生命周期 / 托盘 / 缩放"]
+        Runners["RunnerRegistry<br/>一个运行会话 = 一个 AgentController<br/>最多 3 个运行实例"]
+        Agent["AgentController<br/>事件循环 / UI 请求 / 统计<br/>上下文策略触发压缩"]
+        Protocol["PiRpc protocol.ts<br/>LF 分帧 JSONL RPC<br/>内置 pi / 系统 pi 解析"]
+        Normalize["normalize.ts<br/>pi 事件 → UIMessage / MainPush"]
+        Sessions["sessions + session-reader<br/>索引 / 删除恢复 / JSONL 完整历史"]
+        Layout["session-layout<br/>sessionId ↔ projectId / 最近访问"]
+        SettingsMain["settings / paths / project-id<br/>desktop.json 与环境边界"]
+        Files["files + file-refs<br/>懒加载文件树 / 搜索 / @引用 / 预览"]
+        Snapshots["snapshots<br/>单文件与目录级变更归属"]
+        Auth["credentials + oauth + quota<br/>凭证 / ChatGPT 登录 / 额度"]
+        ContextPolicy["context-policy<br/>预算 / 四层覆盖 / 触发决策"]
+        ContextStore["context-state-store + watermark<br/>原子写入 / schema / 水位 / CAS"]
+        BrowserController["BrowserController<br/>标签 / 权限 / 网络边界 / bounds"]
+        CDPChannel["CdpChannel<br/>Electron debugger 或原生 WebSocket"]
+        WebContentsView["WebContentsView<br/>原生内嵌网页视图"]
+        Subagents["SubagentController<br/>独立 pi 子进程 / 槽位 / 超时 / 清理"]
+        Isolation["subagent-isolation<br/>worktree / diff / merge / discard"]
+        Exit["exit-snapshot / stdio-guard<br/>退出收尾与 EPIPE 护栏"]
+
+        MainEntry --> Runners
+        MainEntry --> Sessions
+        MainEntry --> SettingsMain
+        MainEntry --> Files
+        MainEntry --> Auth
+        MainEntry --> BrowserController
+        MainEntry --> Subagents
+        MainEntry --> Exit
+        Runners --> Agent
+        Agent --> Protocol
+        Protocol --> Normalize
+        Agent --> ContextPolicy
+        Agent --> ContextStore
+        Files --> Snapshots
+        Subagents --> Isolation
+        BrowserController --> CDPChannel
+        BrowserController --> WebContentsView
+    end
+
+    subgraph Pi["pi 内核运行时 · 独立子进程"]
+        PiRpc["pi --mode rpc<br/>消息循环 / 工具执行 / 会话切换"]
+        Extensions["随包扩展<br/>browser / question / language<br/>response-detail / context"]
+        PiTools["pi tools<br/>bash / read / edit / browser 等"]
+        PiSession["pi session manager<br/>switch_session / compact / JSONL"]
+        ContextExtension["context.js 家族<br/>Tool Sweep / recall / compact 接管<br/>TaskState / Deep Context（开关控制）"]
+        PiRpc --> Extensions
+        PiRpc --> PiTools
+        PiRpc --> PiSession
+        Extensions --> ContextExtension
+    end
+
+    subgraph BrowserBridge["浏览器内外通道"]
+        Loopback["loopback bridge<br/>127.0.0.1 + token<br/>仅给 browser 扩展使用"]
+        ExternalPage["网页 / 外部 Chrome 页面"]
+    end
+
+    subgraph Delivery["构建、测试与发布"]
+        Build["electron-vite<br/>typecheck / build"]
+        Unit["纯逻辑单测<br/>scripts/test-unit.mjs"]
+        Live["真实 Electron 场景<br/>scripts/test-live.mjs"]
+        Visual["视觉矩阵<br/>visual:matrix / 截图测量"]
+        Pack["electron-builder<br/>app.asar + extraResources"]
+        Artifacts["Windows NSIS / portable / ZIP<br/>release/"]
+        Build --> Pack
+        Pack --> Artifacts
+        Unit -.验证.-> Build
+        Live -.验证.-> Build
+        Visual -.验证.-> Build
+    end
+
+    User --> Composer
+    User --> Rail
+    User --> Settings
+    Composer --> Preload
+    Rail --> Preload
+    Settings --> Preload
+    BrowserSurface --> Preload
+    Store --> Preload
+
+    Preload -->|invoke / send| MainEntry
+    MainPushChannel --> Preload
+    MainEntry -->|pushFrom| MainPushChannel
+    MainPushChannel --> Store
+    MainEntry --> Runners
+    Runners --> Agent
+    Agent --> Protocol
+    Protocol --> PiRpc
+    PiRpc -->|assistant / tool / proc / stats| Protocol
+    Protocol --> Normalize
+    Normalize --> MainPushChannel
+
+    PiRpc --> Provider
+    PiSession --> SessionFiles
+    Sessions --> SessionFiles
+    Layout --> DesktopData
+    SettingsMain --> DesktopData
+    ContextStore --> ContextData
+    Auth --> Credentials
+    Files --> Workspace
+    Snapshots --> Workspace
+    Isolation --> Workspace
+    Provider -.模型响应.-> PiRpc
+
+    ContextPolicy --> Agent
+    ContextPolicy --> ContextExtension
+    ContextExtension --> PiRpc
+    ContextExtension --> ContextStore
+    ContextStore --> ContextExtension
+    ContextExtension -.ctx:// recall.-> PiRpc
+
+    BrowserSurface --> BrowserController
+    BrowserController --> WebContentsView
+    BrowserController --> CDPChannel
+    CDPChannel --> Chrome
+    BrowserController --> Loopback
+    Loopback --> Extensions
+    ExternalPage --> Loopback
+
+    Subagents --> PiRpc
+    Subagents -.状态 / 预览 / 审阅.-> MainPushChannel
+
+    Build -.编译.-> App
+    Build -.编译.-> MainEntry
+    Pack -.复制 extraResources.-> PiRpc
+    Pack -.复制扩展.-> Extensions
+
+    classDef ui fill:#e8f1ff,stroke:#4f83cc,color:#17233d
+    classDef main fill:#fff0d6,stroke:#c88318,color:#3c2605
+    classDef pi fill:#e7f7ea,stroke:#43965a,color:#16351e
+    classDef data fill:#f1e8ff,stroke:#7d5bb3,color:#28183f
+    classDef boundary fill:#ffe8ee,stroke:#c24c6b,color:#421522
+    classDef delivery fill:#edf0f3,stroke:#6f7885,color:#20252c
+    class User,Provider,Workspace,SessionFiles,DesktopData,ContextData,Credentials,Chrome data
+    class App,Rail,Chat,RightPanel,Settings,BrowserSurface,Store,RuntimeCache,RendererShared,Composer ui
+    class Preload,MainPushChannel,Loopback,ExternalPage boundary
+    class MainEntry,Runners,Agent,Protocol,Normalize,Sessions,Layout,SettingsMain,Files,Snapshots,Auth,ContextPolicy,ContextStore,BrowserController,CDPChannel,WebContentsView,Subagents,Isolation,Exit main
+    class PiRpc,Extensions,PiTools,PiSession,ContextExtension pi
+    class Build,Unit,Live,Visual,Pack,Artifacts delivery

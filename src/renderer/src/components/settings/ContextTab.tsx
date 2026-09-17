@@ -62,9 +62,37 @@ export function ContextTab() {
 
   const otherKeys = Object.keys(byModel).filter((k) => k !== modelKey)
   const currentPreset = presetOf(user)
+  /* Deep Context 不是「阈值」而是「多做一次模型调用」，所以不用草稿 + 保存那套 ——
+     它就是一个开关，点一下写一次盘（与左栏置顶、声音提示同一种交互）。 */
+  const deepOn = settings?.contextDeep?.enabled === true
 
   return (
     <div className="set-group">
+      {/*
+       * Deep Context（N21-8）。它与本页其它选项**不是一类**：那些改的是「什么时候压缩」，
+       * 而它改的是「回答前要不要先归纳一遍工作集」—— 代价是**同步阻塞**一次模型调用
+       * （每轮最多多等 30s），所以默认关、说清楚再让人自己选。
+       */}
+      <div className="set-row col">
+        <div className="set-ctrow">
+          <div className="set-label">
+            <span>{tk('set.deepTitle')}</span>
+            <span className="set-tag">{tk('set.deepTag')}</span>
+          </div>
+          <div className="set-ctl seg" data-testid="ctx-deep">
+            <button
+              className="seg-btn"
+              data-testid="ctx-deep-toggle"
+              onClick={() => void patchSettings({ contextDeep: { enabled: !deepOn } })}
+            >
+              {tk(deepOn ? 'set.deepOn' : 'set.deepOff')}
+            </button>
+          </div>
+        </div>
+        <div className="set-desc" data-testid="ctx-deep-desc">
+          {tk(deepOn ? 'set.deepDescOn' : 'set.deepDescOff')}
+        </div>
+      </div>
       {/* 生效来源：这一块的全部意义就是“让人相信界面上的数就是真正在用的数” */}
       <div className="set-row col">
         <div className="set-label">
