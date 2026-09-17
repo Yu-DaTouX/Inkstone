@@ -1060,10 +1060,9 @@ function registerIpc(): void {
    */
   handle('yan:renameSession', async (name: string) => ac()?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:manualTitles', async () => manualTitles())
-  handle('yan:setManualTitle', async (sessionId: string, name: string) => {
-    await setManualTitle(String(sessionId ?? ''), String(name ?? ''))
-    return { ok: true }
-  })
+  handle('yan:setManualTitle', async (sessionId: string, name: string) =>
+    setManualTitle(String(sessionId ?? ''), String(name ?? ''))
+  )
   handle('yan:regenerateTitle', async (sessionId: string) => {
     const sid = String(sessionId ?? '').trim()
     if (!sid) return { ok: false, error: '缺少目标会话' }

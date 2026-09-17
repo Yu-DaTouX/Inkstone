@@ -325,24 +325,41 @@ export class RunnerRegistry {
     this.runners.set(id, runner)
     this.activeId = id
 
-    const started = await agent.start()
-    if (!started.ok) {
-      this.runners.delete(id)
-      this.activeId = previousActive
-      this.opts.onChanged?.()
-      return { ok: false, error: started.error }
-    }
-    if (target.sessionFile) {
-      const sw = await agent.switchSession(target.sessionFile)
-      if (!sw.ok) {
-        this.runners.delete(id)
-        this.activeId = previousActive
-        this.opts.onChanged?.()
-        return { ok: false, error: sw.error }
+    // 新实例一旦失败就不能只摘登记：`stopAll` 只遍历仍登记的对象，
+    // 漏登记等于漏回收（R02）。start / switch 的失败返回和抛异常都走同一条回收路径。
+    let failure: string | undefined
+    try {
+      const started = await agent.start()
+      if (!started.ok) {
+        failure = started.error ?? '实例启动失败'
+      } else if (target.sessionFile) {
+        const sw = await agent.switchSession(target.sessionFile)
+        if (!sw.ok) failure = sw.error ?? '切换会话失败'
       }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+    if (failure !== undefined) {
+      await this.discardNewRunner(id, runner, previousActive)
+      return { ok: false, error: failure }
     }
     this.opts.onChanged?.()
     return this.result(runner, 'new')
+  }
+
+  /**
+   * 新实例创建失败时的统一回收：先摘登记并还原 activeId，再尽力停掉已经起来的进程。
+   * stop 失败只说明进程本来就没了，不能让它盖掉真正的失败原因（R02）。
+   */
+  private async discardNewRunner(id: string, runner: Runner, previousActive: string | null): Promise<void> {
+    this.runners.delete(id)
+    this.activeId = previousActive
+    try {
+      await runner.agent.stop()
+    } catch {
+      /* 进程可能从未启动或已经退出 */
+    }
+    this.opts.onChanged?.()
   }
 
   /** 启动时创建「主实例」（当前查看的会话就跑在它上面） */

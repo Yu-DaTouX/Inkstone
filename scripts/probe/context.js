@@ -86,7 +86,16 @@
     emergency: 229376
   }
   store.setState({
-    session: { ...store.getState().session, contextPolicy: undefined },
+    /*
+     * 分母优先取**模型能力**里的窗口（`RightPanel` 的 `win`），所以 fixture 必须
+     * 把模型窗口也钉住：只改 `stats.contextUsage` 的话，真实模型的窗口
+     * （当前测试模型是 1M）会盖掉这里的 262144，断言变成“看环境的脸色”。
+     */
+    session: {
+      ...store.getState().session,
+      contextPolicy: undefined,
+      model: { ...(store.getState().session?.model ?? {}), contextWindow: 262144 }
+    },
     stats: {
       tokens: { input: 12, output: 34, cacheRead: 0, cacheWrite: 0, total: 46 },
       cost: 0.1234,

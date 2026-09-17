@@ -246,6 +246,71 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(agents[1].calls.stop === 1, '起不来的半个进程被收掉')
         ok(first.id === reg.activeRunner()?.id, '实例身份没有被换掉')
       }
+      /* ---- 15. 新实例切换失败：必须回收进程，不能只摘登记（R02） ---- */
+      {
+        const { reg, agents } = make()
+        const first = await reg.select({ cwd: 'C:/p1', sessionFile: 'C:/s-p1.jsonl' })
+        /* 让已有实例忙起来，逼 select 走「新建实例」而不是复用 */
+        agents[0].state = { ...agents[0].state, isAgentRunning: true }
+        let leaked = null
+        reg.opts.createAgent = (id, cwd) => {
+          const bad = mkAgent()
+          bad.id = id
+          bad.cwd = cwd
+          bad.switchSession = async (p) => {
+            bad.calls.switchSession.push(p)
+            return { ok: false, error: '切换被扩展取消' }
+          }
+          agents.push(bad)
+          leaked = bad
+          return bad
+        }
+        const failed = await reg.select({ cwd: 'C:/p2', sessionFile: 'C:/s-p2.jsonl' })
+        ok(!failed.ok && /切换被扩展取消/.test(failed.error ?? ''), '新实例切换失败会报错', JSON.stringify(failed.error))
+        ok(reg.size === 1, '失败的新实例不会留在注册表里', `size=${reg.size}`)
+        ok(leaked?.calls.stop === 1, '失败的新实例被真正停掉（不是只删登记）', `stop=${leaked?.calls.stop}`)
+        ok(reg.activeRunner()?.id === first.id, 'activeId 还原到原来的实例')
+        await reg.stopAll()
+        ok(
+          agents.every((a) => a.calls.stop >= 1),
+          'stopAll 能覆盖到所有被创建过的实例（没有漏回收对象）',
+          agents.map((a) => a.calls.stop).join(',')
+        )
+      }
+
+      /* ---- 16. 新实例 start 抛异常 / switch 抛异常同样要回收 ---- */
+      {
+        for (const mode of ['start-throws', 'switch-throws']) {
+          const { reg, agents } = make()
+          const firstId = (await reg.select({ cwd: 'C:/p1', sessionFile: 'C:/s-p1.jsonl' })).id
+          agents[0].state = { ...agents[0].state, isAgentRunning: true }
+          let bad = null
+          reg.opts.createAgent = (id, cwd) => {
+            bad = mkAgent()
+            bad.id = id
+            bad.cwd = cwd
+            if (mode === 'start-throws') {
+              bad.start = async () => {
+                bad.calls.start++
+                throw new Error('spawn 失败')
+              }
+            } else {
+              bad.switchSession = async () => {
+                throw new Error('切换超时')
+              }
+            }
+            agents.push(bad)
+            return bad
+          }
+          const failed = await reg.select({ cwd: 'C:/p2', sessionFile: 'C:/s-p2.jsonl' })
+          ok(!failed.ok, `${mode}：以失败返回而不是冒泡异常`, JSON.stringify(failed))
+          ok(/spawn 失败|切换超时/.test(failed.error ?? ''), `${mode}：错误信息带上了原始原因`, failed.error)
+          ok(reg.size === 1, `${mode}：注册表回到 1 个实例`, `size=${reg.size}`)
+          ok(bad?.calls.stop === 1, `${mode}：半途实例被停掉`, `stop=${bad?.calls.stop}`)
+          ok(reg.activeRunner()?.id === firstId, `${mode}：activeId 已还原`)
+          await reg.stopAll()
+        }
+      }
     })()
   }
 }

@@ -34,6 +34,12 @@
  * 一次 completion（额度与延迟已由用户 2026-09-17 拍板可接受）。
  * 生成失败 / 超时（20s）/ 水位对不上 / CAS 失败 一律**保留旧状态**，不落半成品。
  *
+ * 两道额外的闸（第四轮外部评审，2026-09-17 晚）：
+ *   · **分路开关** `state: { generate, inject }`（P0-5）—— 可以只生成不注入
+ *     （shadow 模式：先看它写得对不对、贵不贵），也可以只注入不生成；
+ *   · **会话级门槛** `foldEligible`（第四问 A）—— 短会话不生成：回合数、
+ *     转录 token、是否已经清扫过东西三个信号，命中后本会话 sticky。
+ *
  * ══════════════════════════════════════════════════════════════════
  * 为什么所有钩子都包在 try/catch 里、失败返回 undefined
  * ══════════════════════════════════════════════════════════════════
@@ -79,10 +85,15 @@ import {
   dirtyMask,
   dirtyMaskWithEvidence,
   evidenceFromMessages,
+  foldEligible,
+  freshView,
   freshnessOf,
   mergeTaskState,
   parseProducerOutput,
   shouldRefresh,
+  stripSyntheticMessages,
+  tailRolesOf,
+  transcriptStats,
   userDirectives
 } from './context-producer.js'
 
@@ -126,7 +137,9 @@ function policy() {
     kinds: ['tool-sweep', 'recall', 'compaction'],
     recentTail: { ...DEFAULT_RECENT_TAIL },
     sweep: { ...DEFAULT_SWEEP },
-    recall: { ...DEFAULT_RECALL }
+    recall: { ...DEFAULT_RECALL },
+    /* kinds 不含 `episode-fold` 时两条分路都是关的（总闸优先） */
+    state: { generate: false, inject: false, minTurns: 0, minTokens: 0 }
   }
   if (!raw.trim()) return base
   let parsed
@@ -153,8 +166,39 @@ function policy() {
     kinds,
     recentTail: pick(parsed.recentTail, base.recentTail),
     sweep: pick(parsed.sweep, base.sweep),
-    recall: pick(parsed.recall, base.recall)
+    recall: pick(parsed.recall, base.recall),
+    state: stateSwitches(parsed.state, kinds)
   }
+}
+
+/**
+ * 「生成」与「注入」分开的两个分路（第四轮外部评审 P0-5）。
+ *
+ * `kinds` 是**总闸**（不含 `episode-fold` 就什么都不做）；这两个是闸内的分路：
+ *   · `generate:false` → 只用已有状态（不再花钱生成）；
+ *   · `inject:false`  → 只生成不注入，即 **shadow 模式**：
+ *     先看它写得对不对、贵不贵，再决定让它进上下文。
+ * 出问题时的期望操作是「先关注入、保留生成」或「先停生成、保留已注入的状态」，
+ * 而不是把整个 context 扩展拔掉（那就连 Tool Sweep 也没了）。
+ *
+ * **`inject` 的准确含义是「允许 TaskState 参与任何模型可见的上下文」**，不只是
+ * 「插入 `<TASK_STATE>` 块」—— 压缩接手（`session_before_compact` 的结构化摘要）也算在内；
+ * **以后任何新增的模型可见消费点都必须走这个开关**，否则 `inject:false` 的语义就是假的。
+ * 两个组合的行为契约：`generate:false + inject:true` 时没有合法已有状态就 no-op（**不临时生成**）；
+ * `generate:true + inject:false` 允许落盘与诊断，但任何模型可见路径都不得消费它。
+ */
+function stateSwitches(raw, kinds) {
+  const on = kindEnabled({ kinds }, 'episode-fold')
+  const out = { generate: on, inject: on, minTurns: 0, minTokens: 0 }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    if (typeof raw.generate === 'boolean') out.generate = raw.generate && on
+    if (typeof raw.inject === 'boolean') out.inject = raw.inject && on
+    if (raw.gate && typeof raw.gate === 'object' && !Array.isArray(raw.gate)) {
+      if (Number.isFinite(raw.gate.minTurns) && raw.gate.minTurns > 0) out.minTurns = raw.gate.minTurns
+      if (Number.isFinite(raw.gate.minTokens) && raw.gate.minTokens > 0) out.minTokens = raw.gate.minTokens
+    }
+  }
+  return out
 }
 
 const kindEnabled = (policyValue, kind) => policyValue.kinds.includes(kind)
@@ -360,6 +404,7 @@ function onContext(event, ctx) {
             if (bad.length === 0) {
               next = applied.messages
               swept = applied.changed
+              sweepSeen.add(sessionId)
               mergeArchive(sessionId, planned.archiveEntries ?? [], Date.now(), watermark)
             } else {
               trace('context', { sessionId, hook: 'sweep-rejected', violations: bad })
@@ -373,19 +418,45 @@ function onContext(event, ctx) {
       }
     }
 
-    /* ③ Task State 前置注入（freshness 分档，§16.2 第 3 条） */
-    if (kindEnabled(p, 'episode-fold')) {
+    /*
+     * ③ Task State 前置注入（freshness 分档，§16.2 第 3 条）。
+     * `p.state.inject` 是**独立分路**（第四轮外部评审 P0-5）：关掉它 = shadow 模式，
+     * 状态照生成、只是不进上下文 —— 出问题时不必把整个扩展拔掉。
+     */
+    if (kindEnabled(p, 'episode-fold') && p.state.inject) {
       const loaded = loadState(sessionId)
       if (loaded.status === 'ok') {
         const entries = ctx.sessionManager?.getEntries?.() ?? []
-        const fresh = freshnessOf({ stateWatermark: loaded.state.sourceWatermark, entries })
+        /* `freshView`：只落后「用户刚开口的那一条」不算陈旧（见 context-producer 的说明） */
+        const fresh = freshView(freshnessOf({ stateWatermark: loaded.state.sourceWatermark, entries }))
         const applied = applyFreshness(loaded.state.task, fresh)
         if (applied.task) {
-          const text = renderTaskState(applied.task)
+          const text = renderTaskState(applied.task, {
+            freshness: freshnessLabel(applied.tier),
+            sourceHead: loaded.state.sourceWatermark?.entryCount
+          })
           if (text) {
             const injected = injectTaskState(next, text)
             next = injected.messages
             injectedTaskState = injected.injected
+            /*
+             * 记下**真的注入了什么档位**：注入块本身不进任何落盘文件（它是临时消息），
+             * 所以这条诊断行就是“契约头到底写了什么”在真实链路里的唯一取证点。
+             */
+            if (injected.injected) {
+              trace('context', {
+                sessionId,
+                hook: 'task-state-injected',
+                freshness: freshnessLabel(applied.tier),
+                sourceHead: loaded.state.sourceWatermark?.entryCount ?? null,
+                tokens: estimateTokens(text),
+                /* 排查用：水位之后到底多了几条、都是什么（只看 gap 数字排查不了） */
+                gap: fresh.gap,
+                turnsGap: fresh.turnsGap,
+                pendingOnly: fresh.pendingOnly === true,
+                tail: tailRolesOf(entries, loaded.state.sourceWatermark)
+              })
+            }
             if (applied.tier !== 'fresh') {
               trace('context', {
                 sessionId,
@@ -408,7 +479,7 @@ function onContext(event, ctx) {
      * 召回账本用**真实消息**重算（账本记录当轮回合号，供工具包装召回内容用）。
      *
      * 只在「召回真的可能发生时」才落盘（`tool-sweep` / `recall` 已接管）：
-     * 默认策略（只有 `compaction`）下不应该给每个会话都多出一份文件。
+     * 若显式把 `kinds` 收窄到只有 `compaction`，就不该给每个会话都多出一份文件。
      * 为什么不能“有召回才写”：工具要拿当轮回合号给召回内容打 TTL 标记，
      * 而第一次召回的**那一刻**账本还不存在 —— 那时只能读到 0，会让刚召回
      * 的正文在同一回合的下一个请求里就被误清理（实测踩过：模型被迫二次召回）。
@@ -440,15 +511,27 @@ function onContext(event, ctx) {
 /**
  * `session_before_compact` 钩子：结构化压缩的**接管闸门**。
  *
- * 只在同时满足时才接管：
- *   ① 状态文件存在且水位与本会话**完全一致**（不是 older）；
- *   ② 六类字段齐备（`buildStructuredSummary` 判定），否则不接管 ——
- *      缺 decisions / nextActions 的结构化摘要还不如 pi 自己的摘要。
+ * 接管条件（N21-4 生成器落地后放宽，§16.6.2）：
+ *   ① 状态文件存在（`loadState` 为 ok）；
+ *   ② 水位按 **freshness 分档**可用 —— 完全一致最好，“有效但较早”也接（带 stale 标记），
+ *      对不上就交回 pi 原生摘要（不是“必须完全一致”）；
+ *   ③ `buildStructuredSummary` 通过 —— 它不再要求六类字段齐备，
+ *      `requiredFields` 默认为空数组（形状合法性由 schema 校验负责）。
  * 接管时保留 pi 给的 `firstKeptEntryId` 与 `tokensBefore`（我们只换摘要文本）。
  */
 function onBeforeCompact(event, ctx) {
   const sessionId = sessionIdOf(ctx)
   if (!sessionId) return
+  const p = policy()
+  /*
+   * 与注入同一条分路（第四轮外部评审 P0-5）：`inject=false` 的含义是
+   * 「不让派生状态进入发给模型的上下文」，压缩接手也属于其中。
+   * 关掉它不会连带停掉生成（那是 `state.generate` 的事）。
+   */
+  if (!p.state.inject) {
+    trace('compact', { sessionId, hook: 'fallback', reason: 'inject-off' })
+    return
+  }
   try {
     const loaded = loadState(sessionId)
     if (loaded.status !== 'ok') {
@@ -461,13 +544,17 @@ function onBeforeCompact(event, ctx) {
      * 水位判定改用 freshness 分档（同注入路径）：完全一致最好，
      * “有效但较早”也接（带 stale 标记）；对不上就不接 —— 交回 pi 原生摘要。
      */
-    const fresh = freshnessOf({ stateWatermark: state.sourceWatermark, entries })
+    const fresh = freshView(freshnessOf({ stateWatermark: state.sourceWatermark, entries }))
     const applied = applyFreshness(state.task, fresh)
     if (!applied.task) {
       trace('compact', { sessionId, hook: 'fallback', reason: `freshness-${applied.tier}`, gap: fresh.gap })
       return
     }
-    const built = buildStructuredSummary({ ...state, task: applied.task })
+    const built = buildStructuredSummary(
+      { ...state, task: applied.task },
+      /* 头行要写**真实**档位，不能默写 fresh（它已经是 stale-soft / stale-hard） */
+      { freshness: freshnessLabel(applied.tier) }
+    )
     if (!built.ok) {
       trace('compact', { sessionId, hook: 'fallback', reason: built.reason, missing: built.missing ?? null })
       return
@@ -527,6 +614,25 @@ const PRODUCER_MAX_TOKENS = 1_200
  */
 let producerFlight = null
 
+/**
+ * 会话级 eligibility gate 的两个会话内标记（第四轮外部评审第四问 A）。
+ *
+ * 都是**进程内**状态，不落盘：
+ *   · `sweepSeen`   —— 本会话真的清扫过东西（说明上下文已经大到需要回收）；
+ *   · `foldSticky`  —— 本会话已经满足过激活条件（一旦命中不再退回）。
+ * 为什幺要 sticky：压缩之后用量会掉下来，不 sticky 会出现「开→关→开」，
+ * 状态生命周期会变得没有意义。进程重启后重新判定是可接受的代价。
+ */
+const sweepSeen = new Set()
+const foldSticky = new Set()
+
+/** freshness 分档 → 注入契约里的 `freshness`（机器可读，取值只有三个） */
+function freshnessLabel(tier) {
+  if (tier === 'fresh') return 'fresh'
+  if (tier === 'stale-hard') return 'stale'
+  return 'partial'
+}
+
 function contentTextOf(response) {
   const content = response?.content
   if (!Array.isArray(content)) return ''
@@ -546,13 +652,38 @@ function contentTextOf(response) {
 function onAgentSettled(_event, ctx) {
   const p = policy()
   /*
-   * 生成只由 `episode-fold` 控制：它就是「把状态注入上下文」那个阶段。
-   * 默认 kinds 不含它 —— 所以默认**不调模型、不花钱**，行为与生成器落地前一致；
-   * 打开它才会开始生成（额度与延迟已由用户拍板可接受）。
+   * 总闸是 `episode-fold`（默认 kinds 不含它 —— 所以默认**不调模型、不花钱**，
+   * 行为与生成器落地前一致）；闸内还有两条独立分路（`p.state.generate` /
+   * `p.state.inject`，第四轮外部评审 P0-5）与一道**会话级门槛**（`foldEligible`，
+   * 第四问 A）：短会话不生成 —— 它没有东西可折叠，却要背上「语义状态变成
+   * 下一轮推理输入」的闭环误差风险。
    */
-  if (!kindEnabled(p, 'episode-fold')) return
+  if (!kindEnabled(p, 'episode-fold') || !p.state.generate) return
   const sessionId = sessionIdOf(ctx)
   if (!sessionId) return
+  if (!foldSticky.has(sessionId)) {
+    const stats = transcriptStats(ctx?.sessionManager?.getEntries?.() ?? [])
+    const gate = foldEligible({
+      settledTurns: stats.userTurns,
+      transcriptTokens: stats.tokens,
+      firstSweep: sweepSeen.has(sessionId),
+      ...(p.state.minTurns ? { minTurns: p.state.minTurns } : {}),
+      ...(p.state.minTokens ? { minTokens: p.state.minTokens } : {})
+    })
+    if (!gate.eligible) {
+      trace('producer', {
+        sessionId,
+        stage: 'producer',
+        hook: 'gate',
+        reason: gate.reason,
+        turns: stats.userTurns,
+        tokens: stats.tokens
+      })
+      return
+    }
+    foldSticky.add(sessionId)
+    trace('producer', { sessionId, stage: 'producer', hook: 'gate', reason: gate.reason, activated: true })
+  }
   if (producerFlight) {
     trace('producer', { sessionId, stage: 'producer', hook: 'skipped', reason: 'in-flight' })
     return
@@ -574,14 +705,32 @@ async function produceAndCommit(sessionId, ctx) {
       trace('producer', { sessionId, stage: 'producer', hook: 'skip', reason: 'no-message-identity' })
       return
     }
+    /*
+     * 生成器输入的自净（第四轮外部评审 P0-1）：把**我们注入/改写过的内容**
+     * 从输入里剔掉，免得「漂移」变成「递归压缩」。详见 `stripSyntheticMessages`。
+     */
+    const cleaned = stripSyntheticMessages(pairs.messages, pairs.entryIds)
+    if (!cleaned.messages.length) {
+      trace('producer', { sessionId, stage: 'producer', hook: 'skip', reason: 'no-real-input' })
+      return
+    }
+    if (cleaned.removed) {
+      trace('producer', { sessionId, stage: 'producer', hook: 'input-cleaned', removed: cleaned.removed })
+    }
     const loaded = loadState(sessionId)
     const previous = loaded.status === 'ok' ? loaded.state : null
     const watermark = watermarkOfEntries(entries)
-    const evidence = evidenceFromMessages({ messages: pairs.messages, entryIds: pairs.entryIds })
+    const evidence = evidenceFromMessages({ messages: cleaned.messages, entryIds: cleaned.entryIds })
     const fresh = freshnessOf({ stateWatermark: previous?.sourceWatermark, entries })
+    /*
+     * 落后**回合**数（不是条目数）：一个回合会产生多条 entry，用条目差算
+     * 会让脏闸门提前触发、把权重（≥6）与净增（≥6000）两道门槛绕过去。
+     * 水位条目定位不到（压缩 / 换分支）时退回条目差 —— 宁可多刷新一次，
+     * 也不能因为数不出来就把闸门关掉。
+     */
     const settledGap = previous
       ? fresh.relation === 'older'
-        ? fresh.gap
+        ? (fresh.turnsGap ?? fresh.gap)
         : fresh.relation === 'same'
           ? 0
           : 99
@@ -600,7 +749,7 @@ async function produceAndCommit(sessionId, ctx) {
       return
     }
 
-    const directives = userDirectives(pairs.messages, pairs.entryIds)
+    const directives = userDirectives(cleaned.messages, cleaned.entryIds)
     const prompt = buildProducerPrompt({ previousTask: previous?.task, directives, evidence })
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PRODUCER_TIMEOUT_MS)
@@ -664,7 +813,12 @@ async function produceAndCommit(sessionId, ctx) {
       sessionId,
       watermark,
       task: clipped.task,
-      episodes: previous?.episodes ?? [],
+      /*
+       * Episode 旁路防线（第四轮外部评审 P0-4）：旧 EpisodeState 的语义生成
+       * 还没接上 provenance/freshness 这套契约，所以**不沿用上一版**。
+       * 宁可不注入 Episode（少一段可追溯的引用），也不能让旧语义从旁边混进推理。
+       */
+      episodes: [],
       now: Date.now(),
       revision: allowed.revision + 1
     })
@@ -679,6 +833,7 @@ async function produceAndCommit(sessionId, ctx) {
       tests: evidence.testsRun.length,
       tokens: clipped.tokens,
       gap: fresh.gap,
+      turnsGap: fresh.turnsGap,
       trigger: decision.reason
     })
   } catch (error) {

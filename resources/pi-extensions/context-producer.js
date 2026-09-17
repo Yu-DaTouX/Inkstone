@@ -28,7 +28,16 @@
  *
  * 不 import 任何 IO 模块、不读环境变量（`kinds` / 阈值由调用方传入）。
  */
-import { estimateTokens, messageText, renderTaskState, toolCallsOf, toolPaths } from './context-transform.js'
+import {
+  RECALL_PREFIX,
+  RECALL_STUB_PREFIX,
+  estimateTokens,
+  isTombstoneText,
+  messageText,
+  renderTaskState,
+  toolCallsOf,
+  toolPaths
+} from './context-transform.js'
 
 /* ══════════════════════════════════════════════════════════════════
  * 预算与裁剪上限（方案 §16.6.2 的字段级口径）
@@ -565,14 +574,213 @@ export function freshnessOf({ stateWatermark, entries } = {}) {
   const count = ids.length
   const lastEntryId = count ? ids[count - 1] : null
   const w = stateWatermark
-  if (!w || !Number.isFinite(w.entryCount)) return { relation: 'diverged', gap: Infinity, count, lastEntryId }
+  /* 落后**回合**数（旧快照之后又过了几个用户回合）；定位不到 lastEntryId 时返回 null */
+  const turnsGap = turnsSince(entries, stateWatermark)
+  /* 新增的是不是「只有用户刚说的那一条」（尚未 settled）—— 见 freshView 的说明 */
+  const pendingOnly = pendingUserOnly(entries, stateWatermark)
+  if (!w || !Number.isFinite(w.entryCount)) {
+    return { relation: 'diverged', gap: Infinity, turnsGap, pendingOnly, count, lastEntryId }
+  }
   if (w.entryCount === count && (w.lastEntryId ?? null) === lastEntryId) {
-    return { relation: 'same', gap: 0, count, lastEntryId }
+    return { relation: 'same', gap: 0, turnsGap: turnsGap ?? 0, pendingOnly: false, count, lastEntryId }
   }
   if (w.entryCount <= count && (w.entryCount === 0 || ids.includes(w.lastEntryId))) {
-    return { relation: 'older', gap: count - w.entryCount, count, lastEntryId }
+    return { relation: 'older', gap: count - w.entryCount, turnsGap, pendingOnly, count, lastEntryId }
   }
-  return { relation: 'diverged', gap: Infinity, count, lastEntryId }
+  return { relation: 'diverged', gap: Infinity, turnsGap, pendingOnly, count, lastEntryId }
+}
+
+/**
+ * 水位之后新增的是不是「只有用户刚说的那一条」（尚未 settled）。
+ *
+ * 判据（第四轮复核 Q3 的原话是「唯一新增的是当前尚未 settled 的 user turn」）：
+ *   · 恰好一条 user 消息；
+ *   · 其余新增条目**都不是执行事实**（即不是 assistant / toolResult）——
+ *     pi 会写一些非执行的包装条目（custom_message / branch_summary / compaction），
+ *     它们不影响「用户又说了句话」这个事实。
+ * 一旦出现新的执行事实，就不适用（该走真实的 stale 分档）。
+ */
+export function pendingUserOnly(entries, watermark) {
+  const tail = tailEntries(entries, watermark)
+  if (!tail || !tail.length) return false
+  const users = tail.filter(isUserEntry)
+  if (users.length !== 1) return false
+  /*
+   * **反向判据**：只要出现 assistant / toolResult 这类「执行事实」，就不再是
+   * 「只落后用户刚开口的那一条」。反过来，**非 message 的条目一律不构成执行事实** ——
+   * pi 会写多种包装条目（`session_info` / `custom_message` / `branch_summary` / `compaction`…），
+   * 用白名单枚举它们是必然会漏的：线上第一次就是被 `session_info` 卡住的
+   * （诊断里 `tail: ["session_info","user"]`，于是明明只落后 1 条 user 却判成了 partial）。
+   */
+  return tail.every((e) => e?.type !== 'message' || e?.message?.role === 'user')
+}
+
+/** 水位之后的条目（定位不到水位条目时返回 null） */
+function tailEntries(entries, watermark) {
+  const list = Array.isArray(entries) ? entries.filter((e) => e && e.type !== 'session') : []
+  const lastId = watermark && typeof watermark.lastEntryId === 'string' ? watermark.lastEntryId : null
+  if (!lastId) return null
+  const at = list.findIndex((e) => e?.id === lastId)
+  if (at < 0) return null
+  return list.slice(at + 1)
+}
+
+/**
+ * 水位之后新增条目的**角色指纹**（诊断用）。
+ *
+ * 为什么要有它：`freshness` 到底是 fresh 还是 partial，取决于水位之后到底多了几条、
+ * 都是什么 —— 只看一个 `gap` 数字排查不了（线上第一次就碰到这个：真实链路里
+ * 注入的档位是 partial，而单看数字看不出多出来的那一条是什么）。
+ */
+export function tailRolesOf(entries, watermark) {
+  const tail = tailEntries(entries, watermark)
+  if (!tail) return null
+  return tail.map((e) => (e?.type === 'message' ? (e.message?.role ?? 'message') : (e?.type ?? 'unknown')))
+}
+
+/**
+ * freshness 的**注入视角**：把「只落后当前这一条尚未 settled 的用户消息」视为与快照同步。
+ *
+ * 为什么必须这样（第四轮外部复核 Q3）：生成在回合 N 结束（`agent_settled`），注入发生在
+ * **下一次** `context`；而用户必然要在回合 N+1 里先开口，钩子才会被调到。所以**正常消费路径上
+ * 水位必然落后 1 条 user 消息**。把它叫 stale，等于让 `fresh` 在稳态下永远不可达 ——
+ * 模型每轮都被告知「你拿到的状态不可靠」，那是主动削弱这个功能本身的价值。
+ * 真正的陈旧应当是「已经有新的**执行事实**」（新的 tool result / assistant 执行 / 额外回合），
+ * 而不仅是「用户又说了句话」——后者已经被 authority 优先级覆盖（新用户指令 > 本块）。
+ *
+ * 为什么不是「只给 hypothesis 标 stale」：易变性不是 hypothesis 独有（一句「别做 A 了」
+ * 同样能改写 nextActions / currentPhase / objective），在字段层猜哪个最容易失效治不了根。
+ *
+ * **代价（明确记录）**：极端情况下用户消息已经推翻了 `nextActions`，头行仍写 `fresh`。
+ * 三层缓冲：① 那条用户消息本身比状态新且在上下文里；② authority 已声明用户指令优先；
+ * ③ `sourceHead` 仍是真实水位（没有伪造 provenance）。
+ */
+export function freshView(fresh) {
+  if (!fresh || typeof fresh !== 'object') return fresh
+  if (fresh.pendingOnly !== true) return fresh
+  return { ...fresh, relation: 'same', gap: 0 }
+}
+
+/** 这个条目是不是「用户真的说了话」（回合的边界） */
+export function isUserEntry(entry) {
+  return entry?.type === 'message' && entry?.message?.role === 'user'
+}
+
+/**
+ * 旧快照之后过了**几个用户回合**（§16.6.2 的「落后 ≥2 回合」）。
+ *
+ * 为什么不是条目数差：一个回合会产生**多条** entry（user + assistant + N 个
+ * toolResult），用条目差当「落后几回合」会把一个回合算成 3–8 个回合并提前刷新，
+ * 让 dirty 权重（≥6）那个闸门在长会话里形同虚设 ——
+ * 而「打开 `episode-fold` 到底花多少钱」正是由这个闸门决定的。
+ *
+ * 定位不到水位条目（被压缩 / 换分支 / 换会话）时返回 `null`，由调用方决定兜底。
+ */
+export function turnsSince(entries, watermark) {
+  const tail = tailEntries(entries, watermark)
+  if (!tail) return null
+  return tail.filter(isUserEntry).length
+}
+
+/**
+ * 转录的规模统计：用户回合数与估算 token。
+ *
+ * 两样都从**原始条目**数/估 —— 不读 `get_messages`（压缩过的会话只剩尾巴）。
+ * token 用「UTF-16 长度 ÷ 4」的同一近似（`estimateTokens`），只用于门槛判定。
+ */
+export function transcriptStats(entries) {
+  const list = Array.isArray(entries) ? entries.filter((e) => e && e.type !== 'session') : []
+  let userTurns = 0
+  let tokens = 0
+  for (const entry of list) {
+    const message = entry?.type === 'message' ? entry.message : null
+    if (message?.role === 'user') userTurns += 1
+    tokens += estimateTokens(messageText(message ?? { role: 'custom', summary: entry?.summary ?? '' }))
+  }
+  return { userTurns, tokens }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * 生成器输入的自净（第四轮外部评审 P0-1）
+ * ══════════════════════════════════════════════════════════════════
+ * 要防的不是「模型看到自己写的状态」本身（上一版状态**有意**进 prompt，那是
+ * 「Existing State + Delta」的增量设计），而是「我们注入/改写过的内容被当成事实源」：
+ *
+ *   注入的 <TASK_STATE> → 又被下一版生成器读回去 → 漂移变成递归压缩。
+ *
+ * 目前的三条注入通道都**不进** `sessionManager.getEntries()`（注入是临时消息、
+ * 墓碑与召回只在当轮 working copy 上），所以真实条目里本来就干净。
+ * 但「本来就干净」不是契约 —— 一旦将来任何一条落盘（或者用户把状态粘进提问），
+ * 污染会静默发生。所以这里做**显式自净**，并且在诊断里报告丢了几条。
+ */
+
+/** 这段文本是不是我们自己注入/改写出来的（墓碑 / 召回正文 / 状态块） */
+export function isSyntheticText(text) {
+  if (typeof text !== 'string' || !text) return false
+  if (isTombstoneText(text)) return true
+  const head = text.trimStart()
+  if (head.startsWith(RECALL_PREFIX) || head.startsWith(RECALL_STUB_PREFIX)) return true
+  return head.includes('<TASK_STATE') || head.includes('</TASK_STATE>')
+}
+
+/**
+ * 把这些内容从生成器输入里剔掉（保持 `entryIds` 与 `messages` 一一对应）。
+ *
+ * `custom` / `branchSummary` / `compactionSummary` 三类角色本身就**不是**用户或
+ * 工具说的话（前两类还是我们提示的「已经压缩过」的拐弯），对 evidence 没有贡献，
+ * 一并剔掉反而少一层误读。
+ */
+export function stripSyntheticMessages(messages, entryIds) {
+  if (!Array.isArray(messages)) return { messages: [], entryIds: [], removed: 0 }
+  const keptMessages = []
+  const keptIds = []
+  let removed = 0
+  messages.forEach((message, i) => {
+    const role = message?.role
+    const structural = role === 'custom' || role === 'branchSummary' || role === 'compactionSummary'
+    if (structural || isSyntheticText(messageText(message))) {
+      removed += 1
+      return
+    }
+    keptMessages.push(message)
+    if (Array.isArray(entryIds)) keptIds.push(entryIds[i])
+  })
+  return { messages: keptMessages, entryIds: keptIds, removed }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * 会话级 eligibility gate（第四轮外部评审第四问 A）
+ * ══════════════════════════════════════════════════════════════════
+ * 默认关的代价是整条状态层空转；无条件默认开的代价是**短任务也背上闭环误差风险**
+ * （错误 hypothesis → 模型据此行动 → 行动进 transcript → 新状态又认为它成立）。
+ * 所以最终形态不是二元开关，而是「允许（kinds）+ 够大了吗（本函数）+ 脏吗（shouldRefresh）」。
+ *
+ * 与外部建议的差异（已记录在方案 §17.6）：它另外要 `contextUsage ≥ 60% workingSet`
+ * 与 `compactionIsImminent` 两个信号 —— 工作集在**主进程**，扩展侧拿不到，
+ * 所以这里只用三个可得信号：长会话（回合数 + 转录 token）与「已经清扫过东西」。
+ */
+
+/** 少于这几个用户回合不生成 —— 短任务不需要状态 */
+export const FOLD_MIN_TURNS = 4
+/** 转录估算 token 的下限；不到这个量级，没有东西可折叠 */
+export const FOLD_MIN_TOKENS = 48_000
+
+export function foldEligible({
+  settledTurns = 0,
+  transcriptTokens = 0,
+  firstSweep = false,
+  minTurns = FOLD_MIN_TURNS,
+  minTokens = FOLD_MIN_TOKENS
+} = {}) {
+  /*
+   * 最低回合数是**全局地板**（第四轮复核 Q1 第 2 条）：早期一个回合产生一个巨大的工具输出
+   * 就可能触发 Tool Sweep；若让清扫分支绕过地板，就会把「出现过一个肥工具输出」
+   * 误当成「已有足够历史值得提炼」，而且 sticky 之后再也不会退回来。
+   */
+  if (Number(settledTurns) < minTurns) return { eligible: false, reason: 'too-early' }
+  if (firstSweep) return { eligible: true, reason: 'first-sweep' }
+  if (Number(transcriptTokens) >= minTokens) return { eligible: true, reason: 'long-session' }
+  return { eligible: false, reason: 'small-transcript' }
 }
 
 /**

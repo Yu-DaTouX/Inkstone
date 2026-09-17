@@ -543,9 +543,24 @@ function activeTexts(list) {
  * 供追溯，但不再进注入（§13.1 第 21 条：状态不是长期记忆，旧决策不许
  * 反复污染）。`superseded` 必须带 `supersededBy` 的约束由 schema 校验负责。
  */
-export function renderTaskState(task) {
+/**
+ * 把 TaskState 渲染成注入块（§12.8 / §13.1）。
+ *
+ * 头行是**机器可识别的 authority 契约**（第四轮外部评审 P0-2）：
+ *   · `derived="true" authoritative="false"` —— 这是派生的工作缓存，不是事实源；
+ *   · `freshness` —— 注入时的分档（`fresh` / `partial` / `stale`）；
+ *   · `sourceHead` —— 快照覆盖到的条目数（审计用）。
+ * 紧跟着一句**固定优先级**（新用户指令 > 真实工具结果 > 确定性 reducer 事实 >
+ * 原始转录 > 本块）—— 不能让模型自己猜高低。
+ */
+export function renderTaskState(task, opts = {}) {
   if (!task || typeof task !== 'object') return ''
-  const lines = ['<TASK_STATE>']
+  const freshness = typeof opts.freshness === 'string' && opts.freshness ? opts.freshness : 'fresh'
+  const sourceHead = Number.isFinite(opts.sourceHead) ? ` sourceHead="${opts.sourceHead}"` : ''
+  const lines = [`<TASK_STATE derived="true" authoritative="false" freshness="${freshness}"${sourceHead}>`]
+  lines.push(
+    'Derived working cache, not ground truth. If it conflicts with newer user instructions, real tool results, or the raw transcript, those win.'
+  )
   let content = false
   const objective = task.task?.objective
   const phase = task.task?.currentPhase
@@ -741,11 +756,23 @@ export function activeRecallTokens(messages) {
  */
 export function buildStructuredSummary(state, opts = {}) {
   if (!state || typeof state !== 'object' || !state.task) return { ok: false, reason: 'no-task-state' }
-  const block = renderTaskState(state.task)
+  const block = renderTaskState(state.task, {
+    /* 压缩接手时的档位由调用方告知（它才知道 freshness 分档）—— 头行不能默写 fresh */
+    ...(opts.freshness ? { freshness: opts.freshness } : {}),
+    ...(Number.isFinite(state.sourceWatermark?.entryCount) ? { sourceHead: state.sourceWatermark.entryCount } : {})
+  })
   if (!block) return { ok: false, reason: 'empty-task-state' }
   const episodes = Array.isArray(state.episodes) ? state.episodes : []
+  /*
+   * Episode 旁路防线（第四轮外部评审 P0-4）：旧 EpisodeState 的语义路径还没接上
+   * 新契约，所以**有递归摘要风险的条目一律不进摘要**（§12.7 的判据在源头先做一次，
+   * 真正的 schema 执法仍在 `shared/context-state.ts`）。
+   */
+  const risky = episodeRecursionRisk(episodes)
+  const riskyIds = new Set(risky.map((r) => r.episode))
+  const safeEpisodes = riskyIds.size ? episodes.filter((e) => !riskyIds.has(e?.id)) : episodes
   const lines = ['<HISTORICAL_CONTEXT>']
-  for (const episode of episodes) {
+  for (const episode of safeEpisodes) {
     lines.push(`Episode ${episode.id}: ${episode.objective} → ${episode.outcome || '(in progress)'}`)
     for (const ref of episode.importantRefs ?? []) lines.push(`  ref: ${ref}`)
   }
@@ -769,7 +796,7 @@ export function buildStructuredSummary(state, opts = {}) {
   const required = opts.requiredFields ?? []
   const missing = required.filter((key) => !fields[key])
   if (missing.length && !opts.allowMissing) return { ok: false, reason: 'missing-fields', missing, fields }
-  return { ok: true, summary: lines.join('\n'), fields }
+  return { ok: true, summary: lines.join('\n'), fields, episodesDropped: riskyIds.size }
 }
 
 /**

@@ -116,6 +116,14 @@
   await store.getState().setManualTitle(sid(), manual)
   await sleep(500)
   ok(store.getState().manualTitles[sid()] === manual, '手动名写进 store（左栏优先用它）')
+  /*
+   * R04：写盘失败曾经被吞掉、IPC 无条件回 ok，界面看着保存成功重启就丢。
+   * 这里直接问主进程要盘上那份 —— 能读回才算真的保存过。
+   */
+  const onDisk = await window.yan.manualTitles()
+  ok(onDisk?.[sid()] === manual, '手动名真的落盘（主进程读盘能读回）', JSON.stringify(onDisk?.[sid()]))
+  const direct = await window.yan.setManualTitle(sid(), manual)
+  ok(direct?.ok === true, 'setManualTitle 返回明确成功（失败会带 error）', JSON.stringify(direct))
   const titleBeforeManualTurn = store.getState().titles[sid()]
   await send('再补一句：用一句话说明什么是编译期常量，不要调用任何工具。')
   const replied2 = await waitTurn()

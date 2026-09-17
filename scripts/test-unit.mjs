@@ -351,6 +351,21 @@ const networkPolicy = await import('../node_modules/esbuild/lib/main.js').then((
   }).then(() => import('../out/test/network-policy.mjs'))
 )
 
+/*
+ * R04 手动标题落盘：读写都在 title.ts，但它同时装着会起 pi 进程的生成逻辑。
+ * 单独 bundle 一份，只取 setManualTitle / manualTitles 两个入口 —— 不起进程。
+ */
+const manualTitle = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/title.ts'],
+    outfile: 'out/test/title.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/title.mjs'))
+)
+
 /* L04 网络边界判定：把「拦不拦」从 webRequest 回调里抽成了纯函数，单独编译。 */
 const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -375,6 +390,22 @@ const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ buil
   }).then(() => import('../out/test/at-query.mjs'))
 )
 const { runAtQueryTests } = await import('./test-at-query.mjs')
+
+/*
+ * N01 拖拽排序：顺序计算是纯函数（`src/shared/rail-order.ts`），
+ * 与渲染组件分开编译 —— 真实指针行为交给 `test:live -- railreorder`。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/rail-order.ts'],
+    outfile: 'out/test/rail-order.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runRailOrderTests } = await import('./test-rail-order.mjs')
 
 /* 文件树与全项目文件名搜索：主进程只读 fs 模块，单独 bundle 以覆盖真实边界。 */
 const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -876,12 +907,18 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
+  const { runManualTitleTests } = await import('./test-manual-title.mjs')
+  await runManualTitleTests(ok, manualTitle, dataDir)
+}
+
+{
   const { runNetworkBoundaryTests } = await import('./test-network-boundary.mjs')
   runNetworkBoundaryTests(ok, networkBoundary)
 }
 
 runAtQueryTests(ok, atQuery)
 runSlashQueryTests(ok, slashQuery)
+await runRailOrderTests(ok)
 runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
 

@@ -61,10 +61,11 @@ pi 的事件回来 → protocol → agent → normalize → pushFrom(runnerId, �
 | 会话归属 | **pi 继续拥有 JSONL 和目录**；Yan 只在自己数据目录维护 `sessionId → projectId / scope / 最近访问` 的映射 | `main/session-layout.ts`（有单测） |
 | 切会话立即有内容 | 不等 pi：直接解析会话 JSONL | `main/session-reader.ts` → `store.switchSession` |
 | **界面历史 = 会话文件** | `hydrate()` 用 `readSessionMessages(sessionFile)` 取完整历史；pi 的 `get_messages`（只给**当前上下文**，压缩后只剩尾巴）只做兜底 | `main/agent.ts`、`main/session-reader.ts` |
-| 真正切换 | 让 pi 自己 `switch_session`，Yan 不解析整个会话文件（格式会变） | `main/agent.ts` |
+| 真正切换 | 让 pi 自己 `switch_session` / 跑分支（会话语义、压缩与上下文归属都在 pi）；Yan 只解析 JSONL 把**显示历史**还原出来，不参与运行语义 | `main/agent.ts`、`main/session-reader.ts` |
 | 列表 / 删除 / 恢复 | **只读**列目录 + 标题样本；删除走回收站语义 | `main/sessions.ts` |
 | 分支（fork） | 从 pi 的 `get_fork_messages` 拿**分支 entryId**（绝不从 DOM 或归一化消息 id 猜） | `lib/fork.ts`、`main/agent.ts` |
 | 标题 | **独立短进程**跑一次极短请求做归纳；手动标题粘性优先；候选→采用两段式 | `main/title.ts` |
+| **项目 / 分组顺序（N01）** | 左栏拖拽：**合成指针事件走真实路径**（没用 HTML5 `draggable`，所以行为完全由自己的代码决定）；顺序计算是纯函数，落盘走设置：项目顺序存 `AppSettings.projectOrder`（项目 id 数组），分组顺序就是 `projectGroups` 数组本身 | `shared/rail-order.ts`（纯函数，25 条单测）、`components/rail/Rail.tsx` 的拖拽区块、`styles/rail.css` 的 `.is-dragging` / `.drop-before` / `.drop-after`、`main/settings.ts` 的清洗 |
 
 **改动注意点**
 
@@ -77,6 +78,8 @@ pi 的事件回来 → protocol → agent → normalize → pushFrom(runnerId, �
   回归网：`test:live -- historyswitch`（断言“铺上内容后没被打回 0” + 文件 vs 应用手里的一致）。
 - `title.ts` 那次短任务**显式关掉了** context files / skills / 提示词模板（`--no-context-files` 等）：否则每次生成标题都要把 `AGENTS.md` 与技能清单塞进系统提示。
 - 分支 entryId 来源只有 `get_fork_messages` 一个，别的地方拿到的 id 不可靠。
+- **拖拽排序的三条边界**（N01，别放开）：① 搜索态不允许拖（列表是筛过的，顺序不代表真实排列）；② 项目落点必须**同组**（跨组是归属变更，右键菜单里另有入口，不能让一次误拖悄悄改归属）；③ 松手后浏览器紧跟的那个 `click` 必须被吞掉，否则会顺带切项目。另外「前五项折叠」与拖拽是互斥的 —— 一开始拖就自动展开，否则拖不到看不见的行。
+- `projectOrder` 只存**用户拖过的**项目（新打开的项目不在里面也能正常出现在列表尾部）；读盘时会把已删除项目的陈旧 id 清掉。
 
 ### 2.3 运行实例：切走不打断后台任务（N12）
 
@@ -242,7 +245,7 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 | 阀值可配（N21-7） | 数值的 lookup 顺序：`YAN_CONTEXT_POLICY`（测试通道）> **模型级**（`provider/model`）> **供应商级**（`provider`）> **用户级**（设置面板）> 默认值。三个数值（工作集上限 / 窗口比例 / 输出预留）在设置面板的**「上下文」tab** 可改，可切“砚默认 / 参考方案（300k/0.75）”预设，并按模型覆盖；界面上直接写出生效层与已覆盖字段（“用户设置 · 已覆盖：工作集上限”）—— 这是“界面数 = 真正在用的数”的另一半。`AppSettings.contextPolicy` / `.contextPolicyByModel` 落盘，写入前过 `sanitizeContextPolicyOverrides`（非法值丢掉、越界值夹住、与默认相同就不落盘） |
 | 可观测 | `compaction_start/end` → `SessionState.compaction`（进行中，带原因）+ `.lastCompaction`（已结束，带 status/error/前后 token）；发起方由砚盖章，pi 报的 `manual` 不会显示成「手动」 |
 | 界面 | 工作集模式下主值是工作集（不是物理窗口），进度条上三条阶段刻度（清理/折叠/压缩，未接管的画虚线）；关掉「自动压缩」开关就整个退回物理窗口视角 |
-| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（缺字段一律降级回 pi 摘要）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认 `['tool-sweep', 'recall', 'compaction']`，2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**默认关** —— 只在 `kinds` 含 `episode-fold` 时工作（默认不调模型、不花钱）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**还缺**：EpisodeState 的语义生成（目前只生成 TaskState）、增量 delta（现为全量快照）、三阶段独立 Rearm/Cooldown、`episode-fold` 是否进默认接管集（方案 §17.4 第 5 条）。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（按 **freshness 分档**：完全一致最好、“有效但较早”也接并标 stale、对不上才降级回 pi 摘要；`buildStructuredSummary` 的 `requiredFields` 默认空数组，不再要求六类字段齐备）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认 `['tool-sweep', 'recall', 'compaction']`，2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**默认关** —— 只在 `kinds` 含 `episode-fold` 时工作（默认不调模型、不花钱）；闸内还有 **`state.{generate,inject}` 两条分路**（`inject:false` = shadow 模式，**压缩接手也走这一路**）与一道**会话级 gate**（`foldEligible`：≥4 用户回合且转录 ≥48k，或本会话已经清扫过东西；命中后会话内 sticky）；注入块带 **authority 契约头**（`derived/authoritative/freshness/sourceHead` + 一句固定优先级），生成器输入会**自净掉** synthetic 内容（注入块 / 墓碑 / 召回正文），dirty 的「落后 ≥2」按**回合**而不是条目数算（见[归档 §1.11](archive/2026-09-17-已完成归档.md)）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**还缺**：EpisodeState 的语义生成（目前只生成 TaskState，**旧语义已显式停用沿用**，见归档 §1.11）、增量 delta（现为全量快照）、三阶段独立 Rearm/Cooldown、`episode-fold` 是否进默认接管集（方案 §17.4 第 5 条；硬化项已全部落地，见方案 §17.6）。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
 | 阶段 4 契约 | 提点审核（2026-09-16）把阶段 4 的开工契约定在方案 §12：原子上下文单元与 `recentTail` 切割、`EpisodeState` / `CodingState` 两个 schema、禁止递归摘要、Recall 独立预算与生命周期、每阶段独立的上膛/冷却/收益门槛、失败退回 pi 原生行为 |
 
 **改动注意点**

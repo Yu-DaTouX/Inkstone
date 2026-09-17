@@ -204,9 +204,9 @@ const GROUPS = [
     h: 900,
     scale: 1,
     theme: 'dark',
-    states: ['main', 'modelmenu', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed']
+    states: ['main', 'modelmenu', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings'] },
@@ -549,6 +549,41 @@ const STATES = {
       return document.querySelector('[data-testid="ub-elapsed"]') ? 'ok' : 'no-elapsed';
     })()
   `,
+  /*
+   * 新一轮刚开始（R03）：会话里上一轮有非零 usage 与 speed，现在追加一条
+   * 用户消息并回到流式 —— 用量条必须显示「生成中 Ns」，**不能**把上一轮的
+   * 46 tok/s 标成实时速度，输入/输出/缓存也要是「—」而不是旧值。
+   * 零费用：完全在渲染端注入状态，不调模型。
+   */
+  usageturn: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+        const next = [...st.messages, { id: 'u3', role: 'user', text: '还要把右键菜单也整理一下。', timestamp: Date.now() }];
+        window.__yanStore.setState({
+          messages: next,
+          session: { ...st.session, isStreaming: true, isAgentRunning: true }
+        });
+        await new Promise((r) => setTimeout(r, 500));
+        const bar = document.querySelector('[data-testid="usagebar"]');
+        if (!bar) return 'no-usagebar';
+        const text = bar.textContent || '';
+        if (!/生成中|generating/i.test(text)) return 'no-generating';
+        if (!bar.querySelector('.ub-live')) return 'no-live-dot';
+        if (text.includes('tok/s')) return 'stale-speed';
+        if (bar.querySelector('[data-testid="ub-elapsed"]')) return 'stale-elapsed';
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 250));
+        return 'ok';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
   contextbudget: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -763,6 +798,73 @@ const STATES = {
       await new Promise((r) => setTimeout(r, 250));
       return warn ? 'ok' : 'no-unknown';
     })()
+  `,
+  /*
+   * 项目 / 分组拖拽排序（N01）：停在**拖拽进行中**。
+   *
+   * 为什么不截拖完的结果：拖完的列表与普通列表在视觉上完全一样，
+   * 而这次交互唯一的视觉语言就是「被拖的行半透明 + 目标位置一条 2px 插入线」，
+   * 它必须在真图里能被人眼检查（尤其是浅色主题下的对比度）。
+   */
+  railreorder: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      const base = String(st.settings.cwd || '').replace(/[\\/][^\\/]*$/, '');
+      const stamp = Date.now();
+      const projects = [
+        { id: 'vis-p1', cwd: base + '/vis-one', name: '一号项目', groupId: 'vis-ga', archived: false, createdAt: stamp, updatedAt: stamp + 6 },
+        { id: 'vis-p2', cwd: base + '/vis-two', name: '二号项目', groupId: 'vis-ga', archived: false, createdAt: stamp, updatedAt: stamp + 5 },
+        { id: 'vis-p3', cwd: base + '/vis-three', name: '三号项目', groupId: 'vis-ga', archived: false, createdAt: stamp, updatedAt: stamp + 4 },
+        { id: 'vis-p4', cwd: base + '/vis-four', name: '四号项目', groupId: 'vis-gb', archived: false, createdAt: stamp, updatedAt: stamp + 3 },
+        { id: 'vis-p5', cwd: base + '/vis-five', name: '五号项目', groupId: 'vis-gb', archived: false, createdAt: stamp, updatedAt: stamp + 2 },
+        { id: 'vis-p6', cwd: base + '/vis-six', name: '六号项目', groupId: undefined, archived: false, createdAt: stamp, updatedAt: stamp + 1 }
+      ];
+      /*
+       * 直接 setState 而不走 patchSettings：截图脚本**故意不注册**写设置类 IPC
+       * （见 registerStubHandlers 的说明），调它只会拿到
+       * “No handler registered for 'yan:patchSettings'”。
+       */
+      window.__yanStore.setState({
+        settings: {
+          ...st.settings,
+          projectGroups: [
+            { id: 'vis-ga', name: '产品线', createdAt: stamp },
+            { id: 'vis-gb', name: '实验线', createdAt: stamp }
+          ],
+          projects,
+          projectOrder: projects.map((p) => p.id),
+          recentCwds: projects.map((p) => p.cwd)
+        }
+      });
+      await new Promise((r) => setTimeout(r, 450));
+      const rows = [...document.querySelectorAll('[data-testid="rail-project-row"]')];
+      if (rows.length < 4) return 'rows=' + rows.length;
+      /*
+       * 拖动源与落点必须**同组**：跨组不接受落点（归属变更走右键菜单），
+       * 选错就是一张没有插入线的图（实测踩过）。
+       * 分组聚合后的顺序是：产品线 p1,p2,p3 → 实验线 p4,p5 → 未分组 p6。
+       */
+      const from = rows[2];
+      const to = rows[0];
+      const a = from.getBoundingClientRect();
+      const b = to.getBoundingClientRect();
+      const pe = (target, type, x, y) => target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, composed: true,
+        clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+        pointerId: 1, isPrimary: true, pointerType: 'mouse'
+      }));
+      pe(from, 'pointerdown', a.left + 30, a.top + a.height / 2);
+      await new Promise((r) => setTimeout(r, 40));
+      /* 先越过 4px 阀值才进拖拽态 —— 与用户手拖走的是同一条路径 */
+      pe(window, 'pointermove', a.left + 30, a.top + a.height / 2 + 10);
+      await new Promise((r) => setTimeout(r, 40));
+      pe(window, 'pointermove', b.left + 30, b.top + b.height * 0.2);
+      await new Promise((r) => setTimeout(r, 260));
+      return 'ok';
+    })()
   `
 }
 
@@ -805,11 +907,24 @@ const MUST_HAVE = {
     '.usagebar .ub-item',
     '[data-testid="composer"]'
   ],
+  usageturn: [
+    '[data-testid="usagebar"]',
+    '.usagebar .ub-live',
+    '.usagebar .ub-item',
+    '[data-testid="composer"]'
+  ],
   contextbudget: [
     '[data-testid="ctx-stages"]',
     '[data-testid="ctx-stage-mark"]',
     '[data-testid="ctx-next-stage"]',
     '[data-testid="ctx-working-set"]'
+  ],
+  /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
+  railreorder: [
+    '.rail',
+    '[data-testid="rail-project-row"]',
+    '.is-dragging',
+    '.drop-before, .drop-after'
   ]
 }
 
@@ -835,6 +950,18 @@ const AFTER_STATE = {
       });
       const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
       if (toggle && toggle.getAttribute('aria-expanded') === 'true') toggle.click();
+      return 'ok';
+    })()
+  `,
+  /*
+   * 拖拽截完必须**取消**而不是松手：松手会把这次拖拽真的提交，
+   * 后续状态的左栏顺序就跟着变（截图之间互相干扰）。
+   * Esc 是产品里真有的取消出口，顺便把它也走一遍。
+   * 造出来的分组/项目不清 —— railreorder 在组内排最后，不会串到别的图。
+   */
+  railreorder: `
+    (() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return 'ok';
     })()
   `

@@ -608,6 +608,14 @@ export interface AppSettings {
   projects: ProjectRecord[]
   /** 项目分组（空 groupId 表示未分组）。 */
   projectGroups: ProjectGroup[]
+  /**
+   * 用户拖拽定下的项目顺序（N01）；数组里是 {@link ProjectRecord.id}。
+   *
+   * 只存**用户显式排过**的项目：不在数组里的项目按原来的活动序排在后面，
+   * 所以新增/新打开的项目永远能出现在列表里，不会因为「没排过」而消失。
+   * 空数组 = 全部按活动序（升级前的默认表现）。
+   */
+  projectOrder: string[]
   /** 供应商月度预算（用于没有余额概念但提供费用 API 的平台） */
   providerBudgets: Record<string, number>
   /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */
@@ -1676,8 +1684,8 @@ export interface YanBridge {
   cachedTitles(): Promise<Record<string, string>>
   /** 用户手动重命名的会话名（sessionId → name），优先于自动标题 */
   manualTitles(): Promise<Record<string, string>>
-  /** 写一个手动会话名（空串 = 清除，恢复自动标题） */
-  setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean }>
+  /** 写一个手动会话名（空串 = 清除，恢复自动标题）；写盘失败会带 error 返回 */
+  setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean; error?: string }>
   /** 按稳定 sessionId 重生成短标题；不切换会话、不打断后台运行实例。 */
   regenerateTitle(sessionId: string): Promise<{ ok: boolean; title?: string; error?: string }>
   /** 读会话里的 extension custom entries（任务清单的来源） */

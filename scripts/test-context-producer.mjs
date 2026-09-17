@@ -40,7 +40,15 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     casAllows,
     buildStateFile,
     DIRTY,
-    HARD_DIRTY
+    HARD_DIRTY,
+    foldEligible,
+    freshView,
+    isSyntheticText,
+    pendingUserOnly,
+    stripSyntheticMessages,
+    tailRolesOf,
+    transcriptStats,
+    turnsSince
   } = producer
 
   /* ---------------------------------------------------------- 1. 确定性 reducer */
@@ -297,6 +305,128 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     ok(hard.task.constraints.length === 1, '但约束仍在')
     ok(applyFreshness(task, { relation: 'older', gap: 9 }).task === null, 'gap > 6：不注入')
     ok(applyFreshness(task, { relation: 'diverged', gap: Infinity }).task === null, 'diverged：不注入')
+  }
+
+  /* ---------------------------------------------------------- 5.5 落后几回合（单位口径） */
+  console.log('\n--- N21-4 生成器：落后回合数（不是条目数）---')
+  {
+    /*
+     * 为什么要钉住这个：一个回合会产生**多条** entry（user + assistant + N 个 toolResult）。
+     * 用条目差当「落后几回合」，会让 dirty 权重（≥6）与净增（≥6000）两道门槛
+     * 在长会话里形同虚设 —— 而「开着 episode-fold 到底花多少钱」正是由它决定的。
+     */
+    const entries = [
+      { id: 'e1', type: 'message', message: { role: 'user', content: [{ type: 'text', text: '第一轮' }] } },
+      { id: 'e2', type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '好的' }] } },
+      { id: 'e3', type: 'message', message: { role: 'toolResult', content: [{ type: 'text', text: 'ok' }] } },
+      { id: 'e4', type: 'message', message: { role: 'user', content: [{ type: 'text', text: '第二轮' }] } },
+      { id: 'e5', type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '好的' }] } }
+    ]
+    const fresh = freshnessOf({ stateWatermark: { entryCount: 1, lastEntryId: 'e1' }, entries })
+    ok(fresh.gap === 4, '条目差是 4（旧口径会把它当成「落后 4 个回合」）', String(fresh.gap))
+    ok(fresh.turnsGap === 1, '真实落后只有 1 个回合（中间那些是同回合的 assistant / toolResult）', String(fresh.turnsGap))
+    ok(!shouldRefresh({ settledGap: fresh.turnsGap }).needed, '落后 1 回合 → 不刷新（省额度）')
+    ok(shouldRefresh({ settledGap: 2 }).reason === 'settled-gap', '落后 2 回合 → 刷新')
+    ok(turnsSince(entries, { entryCount: 5, lastEntryId: 'e5' }) === 0, '水位就在末尾 → 0 回合')
+    ok(turnsSince(entries, { entryCount: 1, lastEntryId: 'nope' }) === null, '水位条目找不到 → null（调用方用条目差兜底）')
+    const stats = transcriptStats(entries)
+    ok(stats.userTurns === 2, '数的是**用户**回合', String(stats.userTurns))
+    ok(stats.tokens > 0, '转录 token 是估算值（>0）', String(stats.tokens))
+  }
+
+  /* ---------------------------------------------------------- 5.6 输入自净与激活门槛 */
+  console.log('\n--- N21-4 生成器：输入自净与激活门槛（第四轮外部评审）---')
+  {
+    ok(isSyntheticText('<TASK_STATE derived="true">x</TASK_STATE>'), '认得出状态注入块（P0-1）')
+    ok(isSyntheticText('[Archived tool result]\nRef: ctx://tool/m1'), '认得出墓碑（P0-1）')
+    ok(isSyntheticText('[Recalled context] turn=1 ref=ctx://tool/m1\n原文'), '认得出召回正文（P0-1）')
+    ok(!isSyntheticText('请把迁移文件删掉'), '普通用户消息不是 synthetic')
+
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: '第一轮' }] },
+      { role: 'assistant', content: [{ type: 'text', text: '好' }] },
+      { role: 'custom', customType: 'yan-task-state', content: [{ type: 'text', text: '<TASK_STATE>旧状态</TASK_STATE>' }] },
+      { role: 'user', content: [{ type: 'text', text: '第二轮' }] }
+    ]
+    const ids = ['e1', 'e2', 'e3', 'e4']
+    const cleaned = stripSyntheticMessages(messages, ids)
+    ok(cleaned.removed === 1 && cleaned.messages.length === 3, '注入口那一类被剔掉', `removed=${cleaned.removed}`)
+    ok(cleaned.messages[0].role === 'user' && cleaned.messages[2].role === 'user', '真实消息顺序不变')
+    ok(cleaned.entryIds.join(',') === 'e1,e2,e4', 'entryIds 与 messages 仍一一对应', cleaned.entryIds.join(','))
+    ok(stripSyntheticMessages([], []).messages.length === 0, '空输入不抛错')
+
+    ok(!foldEligible({ settledTurns: 3, transcriptTokens: 100_000 }).eligible, '回合不够 → 不激活（短任务不背闭环误差风险）')
+    ok(!foldEligible({ settledTurns: 9, transcriptTokens: 10_000 }).eligible, '转录太小 → 不激活')
+    ok(foldEligible({ settledTurns: 4, transcriptTokens: 48_000 }).eligible, '回合数 + 转录 token 都到 → 激活')
+    /*
+     * 最低回合数是**全局地板**（第四轮复核 Q1 第 2 条）：不能让清扫分支绕过它，
+     * 否则「早期一回合生成了一个肥工具输出」会被当成「有足够历史值得提炼」，
+     * 而且 sticky 之后再也退不回来。
+     */
+    ok(
+      !foldEligible({ firstSweep: true, settledTurns: 1 }).eligible,
+      '清扫过但回合数不够 → 仍不激活（地板是全局的）'
+    )
+    ok(foldEligible({ firstSweep: true, settledTurns: 4 }).reason === 'first-sweep', '回合够 + 清扫过 → 激活')
+    ok(
+      foldEligible({ settledTurns: 6, transcriptTokens: 1_000 }).reason === 'small-transcript',
+      '回合够但转录太小 → 理由单列（便于诊断）'
+    )
+  }
+
+  /* ---------------------------------------------------------- 5.7 pending-only 与注入视角 */
+  console.log('\n--- N21-4 生成器：只落后一条用户消息不算陈旊 ---')
+  {
+    const userEntry = (id) => ({ id, type: 'message', message: { role: 'user', content: [{ type: 'text', text: id }] } })
+    const assistantEntry = (id) => ({ id, type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: id }] } })
+    const settled = [userEntry('c1'), assistantEntry('c2'), userEntry('c3'), assistantEntry('c4')]
+    const watermark = { entryCount: 4, lastEntryId: 'c4' }
+    /* 完全同步 */
+    ok(pendingUserOnly(settled, watermark) === false, '完全同步 → 不适用（由 relation 处理）')
+    /* 正常消费路径：生成后用户又开口了，但没有新执行事实 */
+    const pending = [...settled, userEntry('c5')]
+    ok(pendingUserOnly(pending, watermark) === true, '水位后恰好一条 user → pending-only')
+    const f = freshnessOf({ stateWatermark: watermark, entries: pending })
+    ok(f.relation === 'older' && f.turnsGap === 1 && f.pendingOnly === true, '原分档确实是「落后 1 回合」', JSON.stringify({ gap: f.gap, turns: f.turnsGap }))
+    ok(
+      freshView(f).relation === 'same' && freshView(f).gap === 0,
+      '注入视角视为同步 —— 否则 fresh 在稳态下永远不可达（第四轮复核 Q3）'
+    )
+    /* 一旦出现新的执行事实（toolResult / assistant 执行）→ 回到真实分档 */
+    ok(pendingUserOnly([...pending, assistantEntry('c6')], watermark) === false, '有新的 assistant 执行 → 不再 pending-only')
+    const f2 = freshnessOf({ stateWatermark: watermark, entries: [...pending, assistantEntry('c6')] })
+    ok(f2.pendingOnly === false && freshView(f2).relation === 'older', '有新证据 → 仍走真实分档（不被新鲜度偏移掉）')
+    ok(pendingUserOnly(pending, { entryCount: 4, lastEntryId: 'nope' }) === false, '水位条目定位不到 → 不假设')
+    ok(freshView({ relation: 'older', gap: 3, pendingOnly: false }).relation === 'older', 'pendingOnly 为假时 freshView 不动它')
+    /* 用户连发两条（follow-up）不算“只落后一条” */
+    ok(pendingUserOnly([...settled, userEntry('c5'), userEntry('c6')], watermark) === false, '连续两条 user → 不算 pending-only')
+    /*
+     * pi 会在用户消息之后/之前写一些**非执行**的包装条目（custom_message 等）。
+     * 它们不影响「用户又说了句话」这个事实，所以判据要能容忍它们 ——
+     * 否则真实会话里永远判不出 pending-only（线上第一次就是卡在这里）。
+     */
+    const wrapped = [...settled, userEntry('c5'), { id: 'c5w', type: 'custom_message', summary: 'x' }]
+    ok(pendingUserOnly(wrapped, watermark) === true, 'user + pi 的包装条目（custom_message）仍算 pending-only')
+    ok(
+      tailRolesOf(wrapped, watermark).join(',') === 'user,custom_message',
+      'tailRolesOf 给出角色指纹（线上排查就靠它）',
+      tailRolesOf(wrapped, watermark).join(',')
+    )
+    /*
+     * `session_info` 是线上真实踩到的那个包装类型（诊断 `tail: ["session_info","user"]`）。
+     * 判据用**反向**表达（非 message 不构成执行事实），而不是枚举包装类型 ——
+     * 枚举必然会漏掉下一个新类型。
+     */
+    ok(
+      pendingUserOnly([...settled, { id: 'c5s', type: 'session_info' }, userEntry('c5')], watermark) === true,
+      'user + session_info ✓（枚举包装类型会漏掉它）'
+    )
+    ok(
+      pendingUserOnly([...settled, { id: 'c5t', type: 'message', message: { role: 'toolResult', content: [] } }], watermark) ===
+        false,
+      '只多了 toolResult（执行事实）→ 不算 pending-only'
+    )
+    ok(tailRolesOf(settled, { entryCount: 4, lastEntryId: 'nope' }) === null, '定位不到水位 → tailRolesOf 返回 null')
   }
 
   /* ---------------------------------------------------------- 6. dirty 与刷新判定 */

@@ -84,9 +84,12 @@ function parseIpv6(raw: string): bigint | null {
   if (halves.length > 2) return null
   const left = halves[0] ? halves[0].split(':') : []
   const right = halves.length === 2 && halves[1] ? halves[1].split(':') : []
-  const expanded = halves.length === 2 ? 8 - left.length - right.length : 0
-  if (halves.length === 1 && left.length !== 8) return null
-  if (expanded < 1) return null
+  // 只有写成 `::` 压缩形式时才需要补零。完整八组（如 fc00:0:0:0:0:0:0:1）
+  // 没有压缩段，expanded 天然为 0，不能再当成非法输入拒绝。
+  const compressed = halves.length === 2
+  if (!compressed && left.length !== 8) return null
+  const expanded = compressed ? 8 - left.length - right.length : 0
+  if (compressed && expanded < 1) return null
   const groups = [...left, ...Array.from({ length: expanded }, () => '0'), ...right]
   if (groups.length !== 8 || groups.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null
   return groups.reduce((acc, part) => (acc << 16n) | BigInt(parseInt(part, 16)), 0n)

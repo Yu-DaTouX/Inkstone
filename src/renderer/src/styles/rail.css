@@ -831,6 +831,63 @@
   font-size: var(--fs-xs);
 }
 
+/*
+ * 拖拽排序（N01）。
+ *
+ * 为什么用插入线而不是「拖影跟着指针跑」：侧栏只有 300px 宽、行高 34px，
+ * 拖影会一直盖住它自己要去的位置；一条 2px 的强调色线既准又不遮内容。
+ * 被拖的行本身半透明，用来回答「我正在拖的是哪一个」。
+ */
+body.rail-dragging * {
+  /* 拖动过程中别让指针划出一片文字选中 */
+  user-select: none;
+}
+
+body.rail-dragging .proj-head,
+body.rail-dragging .proj-pick,
+body.rail-dragging .proj-fold,
+body.rail-dragging .proj-group-heading {
+  cursor: grabbing;
+}
+
+.proj-head.is-dragging,
+.proj-group-heading.is-dragging {
+  opacity: .45;
+  /* 被拖的行不能让 elementFromPoint 命中它自己，否则落点永远算不出来 */
+  pointer-events: none;
+}
+
+.proj-head.drop-before,
+.proj-head.drop-after,
+.proj-group-heading.drop-before,
+.proj-group-heading.drop-after {
+  position: relative;
+}
+
+.proj-head.drop-before::before,
+.proj-head.drop-after::after,
+.proj-group-heading.drop-before::before,
+.proj-group-heading.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.proj-head.drop-before::before,
+.proj-group-heading.drop-before::before {
+  top: -1px;
+}
+
+.proj-head.drop-after::after,
+.proj-group-heading.drop-after::after {
+  bottom: -1px;
+}
+
 .proj-head:hover {
   background: var(--bg-2);
   color: var(--fg);

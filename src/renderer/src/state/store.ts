@@ -1495,14 +1495,26 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!trimmed) return
     const state = get()
     const sid = sessionId || state.session?.sessionId || ''
-    if (sid) {
-      const next = { ...state.manualTitles, [sid]: trimmed }
-      set({ manualTitles: next })
-      // 同步给 pi（仅当前会话），失败不影响本地名生效
-      if (sid === state.session?.sessionId) {
-        await piCall(() => window.yan.renameSession(trimmed))
-      }
-      await window.yan.setManualTitle(sid, trimmed).catch(() => ({ ok: false }))
+    if (!sid) return
+    const previous = state.manualTitles[sid]
+    /*
+     * 乐观写入：左栏要立刻看到新名字。但**写盘失败必须回退** ——
+     * 主进程曾经无条件返回 ok，界面看着保存成功、重启后名字就没了（R04）。
+     */
+    set({ manualTitles: { ...state.manualTitles, [sid]: trimmed } })
+    // 同步给 pi（仅当前会话），失败不影响本地名生效
+    if (sid === state.session?.sessionId) {
+      await piCall(() => window.yan.renameSession(trimmed))
+    }
+    const res = await piCall(() => window.yan.setManualTitle(sid, trimmed))
+    if (!res.ok) {
+      const rolled = { ...get().manualTitles }
+      if (previous === undefined) delete rolled[sid]
+      else rolled[sid] = previous
+      set({
+        manualTitles: rolled,
+        notices: pushNotice(get().notices, 'error', `重命名没能保存：${res.error ?? '写盘失败'}`)
+      })
     }
     await get().refreshSessions()
   },
@@ -1534,6 +1546,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const candidate = get().titleCandidates[sid]
     if (!sid || !candidate) return
     await get().setManualTitle(sid, candidate)
+    /* 写盘失败时 setManualTitle 会把牌子回退掉 —— 候选要留着让用户重试。 */
+    if (get().manualTitles[sid] !== candidate) return
     const next = { ...get().titleCandidates }
     delete next[sid]
     set({ titleCandidates: next })

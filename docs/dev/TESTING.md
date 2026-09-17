@@ -81,7 +81,8 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
 | `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具） |
 | `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextsweep` | **Tool Sweep 真实回合**（N21-4 / S2–S6）：三个回合，末轮确认上一轮的召回正文被清成存根；退出后查归档元数据与 `ctx://` 指得回原始条目 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
-| `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验（含「注入的契约档位」与「`episodes` 为空」） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `contextgate` | **会话级 gate 真实回合**（N21-5 前置硬化，与 `contextproduce` 是反向对照）：kinds 开 `episode-fold` 但门槛保持**默认**（≥4 回合且转录 ≥48k）→ 一个真实回合后断言 gate 被评估、判为 `too-early`、**0 次 committed、0 份状态文件**（短会话不花钱） | 同上 |
 | `browserboundary` | **L04 浏览器边界**（9 节，cost 0，**需公网 → 不进 check**）：真实权限请求的拒绝/授权/撤销、本地预览放行、远程 302 借道本机被拦、DNS 重绑定被拦 + 负对照、内置与本机 Chrome 两条下载（带来源、不自动打开）、Cookie 真实复制到 Chrome（只比哈希）、拦截明细几何可见 | 不需要模型（只起 pi） |
 
 浏览器边界场景 `browserboundary`（**cost 0，不进 `npm run check`**）要**公网**：
@@ -103,6 +104,10 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
 反过来，下面这些 `cost: 0` 场景会**真的起 pi**（但不发消息、不调模型），它们验的是真实状态而不是注入数据：
 
 - `modelswitch`（N02）：真实模型列表上做切换、快速连切、无档位清空、图像输入与用量归属；已进 `npm run check`。
+- `railreorder`（N01）：侧栏项目 / 分组**拖拽排序** —— 合成 PointerEvent 走真实拖拽路径
+ （实现里没用 HTML5 `draggable`，所以探针与用户手拖是同一条代码），并**回读 `yan.getSettings()`**
+ 证明顺序真的过了 IPC 写盘；已进 `npm run check`。要点：要造到 7 个项目才能覆盖
+ 「折叠成前五项时开始拖→自动展开」；落点必须**同组**（跨组不接受落点，拿不到插入线）。见 [MAINTENANCE](MAINTENANCE.md) 的「指针拖拽怎么验」。
 - `thinkinglevels` / `capabilityload`：真实档位与能力补拉（同上，只切换不发消息）。
 - `contextbudget`（N21-3）：工作集预算的参考值（64k/128k/256k/1M）与**兜底线**
   （`min(窗口 × 比例, 窗口 − 预留)`，每个窗口都断言"不吃预留 / 仍高于压缩线"）、界面上的数
@@ -181,9 +186,26 @@ S1 只做「状态长什么样、怎么存、怎么丢」：schema、水位、pr
   `ctx://` 引用指得回原始条目、诊断里 `swept≥1` 且 0 条 error，并在确有召回时断言
   `expiredRecalls≥1`。当前已用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free` 真实通过；
   该模型不可用或触顶时改用 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`。
+- **真实回合（gate 反向对照）**：`npm run test:live -- contextgate`（cost 1，**进 `npm run check`**）。
+  它和 `contextproduce` 是一对：后者用 `state.gate:{minTurns:1,minTokens:1}` 证「够了就生成」，
+  前者保持默认门槛证「不够就不生成、不花模型调用」。两者都靠诊断行判定
+  （`stage: producer, hook: gate` 的 `reason` / `activated`）—— gate 本身是纯逻辑、单测已覆盖，
+  但「真实 pi 在 `agent_settled` 时数得出用户回合」只有真实回合能证。
+- **分路开关与压缩**：`YAN_CONTEXT_POLICY.state.{generate,inject}` 是 `kinds` 闸内的两条分路。
+  `inject:false` 的含义是「**允许 TaskState 参与任何模型可见的上下文**」的反面 —— 所以
+  **压缩接手也走这一路**；单测里「inject:false → 不接管压缩（状态文件仍在）」钉的就是它。
+  写断言时注意：**默认 `kinds` 下压缩本来就不接管**（因为没有状态文件），要测这条必须显式给状态文件。
+- **gate 的地板是全局的**：“清扫过东西”只能是**替代 token 条件**，不能替代最低回合数
+  （否则早期一回合生成了一个肥工具输出就能让会话永久 eligible）。断言：「清扫过但回合数不够 → 仍不激活」。
+- **freshness 的「新陈」定义**：只落后**一条尚未 settled 的 user 消息**算 fresh（`freshView`）——
+  否则 `fresh` 在稳态下永远不可达，模型每轮都会看到 `[stale: verify…]`。
+  判据用**反向**表达（新增里恰好一条 user，且其余条目没有一条是 message 类）：
+  **不要白名单枚举 pi 的条目类型** —— 线上就是被 `session_info` 卡住的（诊断字段 `tail` 会告诉你是谁）。
 
-默认策略（`kinds` 只有 `compaction`）下扩展**不改任何消息** —— 这一点在单测里有一条
-“默认 kinds 不动消息”的断言钉住。是否默认开启 `tool-sweep` 是产品决定，见方案 §15.5。
+默认策略（`kinds` = `tool-sweep` + `recall` + `compaction`，见 `src/shared/context-policy.ts`）下
+扩展会清理旧的工具输出（墓碑 + `ctx://` 引用，会话文件一行不改）、并接管压缩；
+若显式把 `kinds` 配成只有 `compaction`，则消息不被清理 —— 单测里“显式只 compaction 时不动消息”
+这条断言钉的就是后者。默认开启 `tool-sweep` 是产品决定，见方案 §15.5。
 
 ### 用小额度走完整触发路径（N21-3）
 
