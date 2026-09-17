@@ -1350,7 +1350,7 @@ async function checkContextProduce(sandboxRoot) {
    */
   const usageRows = producerRows.filter((r) => r.usage)
   const sumOf = (rows, pick) => rows.reduce((n, r) => n + (Number(pick(r)) || 0), 0)
-  const realRows = usageRows.filter((r) => r.usage.real)
+  const realRows = usageRows.filter((r) => r.usage.real && (r.usage.real.input > 0 || r.usage.real.output > 0))
   const pIn = realRows.length
     ? sumOf(realRows, (r) => r.usage.real.input)
     : sumOf(usageRows, (r) => r.usage.input)
@@ -1370,8 +1370,8 @@ async function checkContextProduce(sandboxRoot) {
     }）；主 agent in ${agent.input} + cacheRead ${agent.cacheRead} + out ${agent.output}`
   )
   lines.push(
-    `  stateOverhead = ${overhead.ratio === null ? 'n/a' : `${(overhead.ratio * 100).toFixed(1)}%`}（${overhead.level}）` +
-      `  ← 本场景只有 2 回合，比例天然偏高；判 delta 要看长会话的长期值`
+    `  stateOverhead = ${pIn + pOut === 0 || overhead.ratio === null ? 'n/a' : `${(overhead.ratio * 100).toFixed(1)}%`}（${overhead.level}）` +
+      `  ← 信号不是门槛：本场景只有 2 回合、且可能整场都没成功提交状态；判 delta 要看长会话的长期值`
   )
   say(usageRows.length >= 1, `诊断里记下了生成器的 token 开销（${usageRows.length} 次尝试，含失败路径）`)
   say(agent.input + agent.output > 0, `从会话条目里读到主 agent 的用量（分母不是编的，${agent.files} 份 JSONL）`)

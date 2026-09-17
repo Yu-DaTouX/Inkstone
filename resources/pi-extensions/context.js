@@ -650,17 +650,28 @@ function contentTextOf(response) {
  */
 function producerUsage(prompt, text, response) {
   const real = response?.usage
+  const realIn = real && typeof real === 'object' ? Number(real.input) || 0 : 0
+  const realOut = real && typeof real === 'object' ? Number(real.output) || 0 : 0
+  /*
+   * 「pi 给了 usage」不等于「数字有意义」：请求失败（超时 / 空响应）时 pi 会把
+   * 一个 input/output 全 0 的 usage 递过来。若直接当真实值用，诊断会显示
+   * 「生成开销 = 0」——比不显示更误导（实测于 2026-09-17 晚的 not-json 路径）。
+   * 所以两个都取 0 时当作「没拿到」，让消费方退回估算。
+   */
+  const realUsable = realIn > 0 || realOut > 0
   return {
     input: estimateTokens(prompt),
     output: estimateTokens(text || ''),
     /* pi 到底给不给真实 usage：记个布尔，下次排查不用再猜 */
     reported: !!real,
+    /* 有没有可用的真实数字（可能与 reported 不一致，见上） */
+    realUsable,
     /* 给了就把数字也留下 —— 估算值与真实值可以对账（实测 pi 0.85.1 是给的） */
     real:
       real && typeof real === 'object'
         ? {
-            input: Number(real.input) || 0,
-            output: Number(real.output) || 0,
+            input: realIn,
+            output: realOut,
             cacheRead: Number(real.cacheRead) || 0
           }
         : null
