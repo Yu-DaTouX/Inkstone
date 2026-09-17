@@ -129,6 +129,14 @@ export class RunnerRegistry {
     return this.runners.get(id)?.agent ?? null
   }
 
+  /**
+   * 让**所有**实例重推一帧上下文策略（N21-7 设置改动后）。
+   * 后台会话的右栏也能看到同一个工作集，不能只刷新当前那条。
+   */
+  refreshPolicyViews(): void {
+    for (const runner of this.runners.values()) runner.agent.refreshPolicyView()
+  }
+
   /** 按稳定 sessionId 取运行实例；重生成标题等只读动作不应切换视图。 */
   agentForSession(sessionId: string): AgentController | null {
     return this.findBySessionId(sessionId)?.agent ?? null

@@ -25,17 +25,18 @@
 | 项 | 值 |
 |---|---|
 | 供应商 provider | `commandcode` |
-| 模型 id | `inclusionai/ling-3.0-flash-sante:free` |
-| 传给 pi 的 `--model` | `commandcode/inclusionai/ling-3.0-flash-sante:free` |
+| 模型 id | `longcat-2.0:free` |
+| 传给 pi 的 `--model` | `commandcode/longcat-2.0:free` |
 | 费用 | 脚本默认选择带 free 标识的模型；实际供应商计费与可用性需在调用前确认 |
 
 默认配置用于避免跟随用户日常模型误耗额度；配置名不保证供应商长期免费或模型能力不变。
 
-**免费模型有日配额**：Ling 是每天 100 次，跑多了 pi 会收到 429，而子代理/会话只会看到
-“assistant 消息内容为空 + `stopReason=error`”——看上去像事件流掉了，其实是配额用尽。
-确认方法：`YAN_DEBUG_SUBAGENT=1`（见 [MAINTENANCE](MAINTENANCE.md)）会把子代理事件落到临时文件，
-里面能看到 `429 ... You've used all 100 free ... requests for today`。
-备选免费模型：`commandcode/meituan/LongCat-2.0:free`、`commandcode/poolside/laguna-s-2.1-free`。
+**免费模型有日配额**：免费模型触顶或供应商暂时不可用时，pi 可能收到 429，
+而子代理/会话只会看到“assistant 消息内容为空 + `stopReason=error`”——看上去像事件流掉了，
+其实是配额或供应商状态问题。确认方法：`YAN_DEBUG_SUBAGENT=1`（见
+[MAINTENANCE](MAINTENANCE.md)）会把子代理事件落到临时文件。当前备用顺序是：
+先用 `commandcode/longcat-2.0:free`，不可用或触顶时改用
+`commandcode/laguna-s-2.1-free`。
 
 ### 覆盖方式
 
@@ -52,7 +53,7 @@ Remove-Item Env:YAN_TEST_MODEL
 
 ### 例外：需要视觉的场景
 
-Ling 3.0 Flash Sante 是**纯文本**模型（`input: ["text"]`），发图会失败。
+LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会失败。
 需要视觉的场景在 `CASES` 里用 `model:` 单独覆盖，默认用：
 
 | 项 | 值 |
@@ -70,15 +71,17 @@ Ling 3.0 Flash Sante 是**纯文本**模型（`input: ["text"]`），发图会�
 
 | 场景 | 做什么 | 用哪个模型 |
 |---|---|---|
-| `tokens` | 用量 / 速度 | 默认（Ling） |
-| `conn` | 连接状态竞态 | 默认（Ling） |
-| `e2e` | 真发一条消息（流式 + 工具） | 默认（Ling） |
-| `queue` | 排队 + Esc 回收 + **N09 边界**（四路并发入队 / 相同文本两条 / 对同文本撤回） | 默认（Ling） |
-| `ask` | **问答功能**：模型主动提问 → 弹窗 → 回答 → 回填；含自主模式不弹窗 | 默认（Ling） |
+| `tokens` | 用量 / 速度 | 默认（LongCat），不可用时 Laguna |
+| `conn` | 连接状态竞态 | 默认（LongCat），不可用时 Laguna |
+| `e2e` | 真发一条消息（流式 + 工具） | 默认（LongCat），不可用时 Laguna |
+| `queue` | 排队 + Esc 回收 + **N09 边界**（四路并发入队 / 相同文本两条 / 对同文本撤回） | 默认（LongCat），不可用时 Laguna |
+| `ask` | **问答功能**：模型主动提问 → 弹窗 → 回答 → 回填；含自主模式不弹窗 | 默认（LongCat），不可用时 Laguna |
 | `image` | 图片真的发给模型 | **视觉模型** |
 | `subagentpair` | **两个并发写入子代理**：worktree 隔离 / 合并 / 放弃 / 同一行冲突 / 只读封堵 / 退出归档 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的写文件） |
 | `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具） |
-| `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/meituan/LongCat-2.0:free` |
+| `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `contextsweep` | **Tool Sweep 真实回合**（N21-4 / S2–S6）：三个回合，末轮确认上一轮的召回正文被清成存根；退出后查归档元数据与 `ctx://` 指得回原始条目 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `browserboundary` | **L04 浏览器边界**（9 节，cost 0，**需公网 → 不进 check**）：真实权限请求的拒绝/授权/撤销、本地预览放行、远程 302 借道本机被拦、DNS 重绑定被拦 + 负对照、内置与本机 Chrome 两条下载（带来源、不自动打开）、Cookie 真实复制到 Chrome（只比哈希）、拦截明细几何可见 | 不需要模型（只起 pi） |
 
 浏览器边界场景 `browserboundary`（**cost 0，不进 `npm run check`**）要**公网**：
@@ -137,6 +140,50 @@ Ling 3.0 Flash Sante 是**纯文本**模型（`input: ["text"]`），发图会�
 构造三组输入（正在使用的 diff / 已解决的旧错误 / 用户约束），既断言合法的方案通过，
 也断言**人为做坏的方案**（切成半条、回收系统提示、保留/丢弃不互补）会被 `violations()` 报出来 ——
 后者才是"这个检查器真的在工作"的证据。改这几条规则时同时跑：撤销保护逻辑必须让 6 条断言变红。
+
+### 阶段 4 的状态 / 归档基础设施（N21-4 / S1）
+
+S1 只做「状态长什么样、怎么存、怎么丢」：schema、水位、provenance、原子写、安全丢弃、
+删会话清理，以及 Deep Context 的**注入闸门**（不产生模型调用）。验证分两层：
+
+- **纯逻辑（单测）**：`scripts/test-context-state.mjs`（76 条，进 `npm run test:unit`）。
+  被 esbuild 编译后直接测三个模块：`shared/context-state.ts`（schema / provenance /
+  §12.7 递归摘要判据 / 水位 / Deep Context 判据）、`main/context-state-store.ts`
+  （原子写、**写入失败不覆盖 last-known-good**、损坏 JSON 与版本不匹配的丢弃、
+  会话清理、路径穿越守卫）、`main/context-watermark.ts`（真实 JSONL 读条目身份；
+  超长行只读前缀、半截尾行不计入、中间坏行整份作废）。store 的 `dir` 全部指向
+  临时目录，**不碰真实用户目录**。
+- **真实窗口**：`npm run test:live -- contextstate`（cost 0，**进 `npm run check`**）。
+  状态文件由 Node 侧用**真实 store** 种进隔离的 `YAN_DATA_DIR`（renderer 按设计碰不到
+  那个目录），探针只走真实界面删一条会话；`afterExit` 再对文件系统断言
+  「被删会话的状态没了、其余一个没少、无 `.tmp` 残留」。
+  删会话的**回归网**除了它还有 `trash`（真删 + 撤销恢复）：改 `deleteSession` 两件都要跑。
+
+还没接上的部分：S1 没有生产读调用点（谁生成状态由后续切片定），所以「损坏丢弃」
+在真实运行中暂时只由删除清理触发，读路径只有单测覆盖。
+
+### 阶段 4 的扩展执行层（N21-4 / S2–S6）
+
+这一层会**真的改写发给模型的消息**，所以判据必须落在两层：纯逻辑与
+「扩展钩子 + 假 sessionManager」，再加一条真回合。
+
+- **纯逻辑 + 钩子集成（单测）**：`scripts/test-context-transform.mjs`（104 条，进 `npm run test:unit`），
+  覆盖 `resources/pi-extensions/context-transform.js`（entry 身份对齐的数量 + 角色双校验、
+  Tool Sweep 只在 `recentTail` 之外且幂等、墓碑文本与 `ctx://` 引用、Task State 只注入 active、
+  recall 预算 / TTL 存根、结构化摘要缺字段不接管、Episode 递归摘要预检）
+  与 `context.js`（用假 `sessionManager` 直调 `context` / `session_before_compact` 钩子，
+  并直调 `context_recall.execute` 覆盖成功与全部拒绝分支）。
+  另外两条是**跨语言交叉验证**：JS 产出的归档条目 / 整份归档文件要能过 S1 的 TS schema；
+  以及“把保护逻辑抓掉就应该变红”的反向断言。
+- **真实回合**：`npm run test:live -- contextsweep`（cost 1，**进 `npm run check`**）。
+  在真实 pi 里跑三个回合（第一回合用 bash 产生大输出，第二回合使上一次结果落到
+  `recentTail` 之外并让模型 recall，第三回合触发召回正文的 TTL 清理），退出后检查归档元数据、
+  `ctx://` 引用指得回原始条目、诊断里 `swept≥1` 且 0 条 error，并在确有召回时断言
+  `expiredRecalls≥1`。当前已用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free` 真实通过；
+  该模型不可用或触顶时改用 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`。
+
+默认策略（`kinds` 只有 `compaction`）下扩展**不改任何消息** —— 这一点在单测里有一条
+“默认 kinds 不动消息”的断言钉住。是否默认开启 `tool-sweep` 是产品决定，见方案 §15.5。
 
 ### 用小额度走完整触发路径（N21-3）
 

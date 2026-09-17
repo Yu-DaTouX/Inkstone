@@ -33,7 +33,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = process.env.YAN_SHOT_DIR
   ? resolve(process.env.YAN_SHOT_DIR)
   : join(root, 'docs/design/preview')
-const STAMP = '2026-09-16'
+const STAMP = '2026-09-17'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -204,9 +204,9 @@ const GROUPS = [
     h: 900,
     scale: 1,
     theme: 'dark',
-    states: ['main', 'modelmenu', 'reasoning', 'settings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed']
+    states: ['main', 'modelmenu', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings'] },
@@ -276,6 +276,46 @@ const STATES = {
       st.setRailPinned(true);
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       st.openSettings('appearance');
+      return 'ok';
+    })()
+  `,
+  /*
+   * 上下文设置（N21-7）：工作集阀值可配 + 生效来源。
+   * 单独一个状态而不是只拍 appearance —— 新 tab 的排版（数值输入、
+   * 预设分段控件、来源行）只能在真图里看是否折行 / 溢出。
+   */
+  ctxsettings: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /*
+       * 注入一份“用户级覆盖”的真实形状：来源 + 覆盖字段 + 预算都是主进程
+       * 会推的那几个字段（不是只为截图摆的假数据）。
+       */
+      window.__yanStore.setState({
+        settings: { ...st.settings, contextPolicy: { workingSetCap: 300000, windowRatio: 0.75 } },
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isAgentRunning: false,
+          contextPolicy: {
+            enabled: true,
+            kinds: ['tool-sweep', 'recall', 'compaction'],
+            source: 'user',
+            overridden: ['workingSetCap', 'windowRatio'],
+            budget: {
+              contextWindow: 400000,
+              responseReserve: 32000,
+              safetyMargin: 8000,
+              workingSet: 300000,
+              triggers: { sweep: 210000, fold: 255000, compact: 300000 },
+              emergency: 360000
+            }
+          }
+        }
+      });
+      st.openSettings('context');
       return 'ok';
     })()
   `,
@@ -522,7 +562,7 @@ const STATES = {
           isAgentRunning: false,
           contextPolicy: {
             enabled: true,
-            kinds: ['compaction'],
+            kinds: ['tool-sweep', 'recall', 'compaction'],
             budget: {
               /*
                * 窗口必须与截图 fixture 的模型一致（400k，见 shot-fixture.js），
@@ -568,7 +608,7 @@ const STATES = {
           isAgentRunning: false,
           contextPolicy: {
             enabled: true,
-            kinds: ['compaction'],
+            kinds: ['tool-sweep', 'recall', 'compaction'],
             budget: {
               /*
                * 用真实模型的窗口（262144，与用户机器一致）而不是整数 400k：
@@ -734,6 +774,7 @@ const MUST_HAVE = {
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
+  ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   compaction: [
     '[data-testid="rp-context"]',

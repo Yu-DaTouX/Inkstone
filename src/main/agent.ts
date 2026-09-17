@@ -28,7 +28,8 @@ import {
   contextPolicyStep,
   INITIAL_POLICY_STATE,
   type ContextPolicyState,
-  type ContextTrigger
+  type ContextTrigger,
+  type ResolvedContextPolicy
 } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { mergeCommandDescriptors } from './command-registry'
@@ -103,6 +104,13 @@ export class AgentController extends EventEmitter {
   private responseDetailExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
   private languageExtension?: string
+  /**
+   * 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State 注入 / Recall /
+   * 结构化压缩闸门，见 resources/pi-extensions/context.js。
+   * 默认接管 `tool-sweep` + `recall` + `compaction`（清理默认开，但保留可召回引用）；
+   * `episode-fold` 要等状态生成器。阶段启用由主进程策略决定。
+   */
+  private contextExtension?: string
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
   private browserEnv?: NodeJS.ProcessEnv
@@ -234,6 +242,8 @@ export class AgentController extends EventEmitter {
      * 的历史）。扩展注入是每轮读设置，切语言下一轮生效。
      */
     languageExtension?: string
+    /** 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State / Recall / 压缩闸门 */
+    contextExtension?: string
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
     browserEnv?: NodeJS.ProcessEnv
@@ -249,6 +259,7 @@ export class AgentController extends EventEmitter {
     this.questionExtension = opts.questionExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
+    this.contextExtension = opts.contextExtension
     this.getResponseDetail = opts.getResponseDetail
     this.browserEnv = opts.browserEnv
   }
@@ -325,6 +336,8 @@ export class AgentController extends EventEmitter {
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
+        // 上下文状态化压缩（N21-4）：默认清扫 + 可召回墓碑，阶段启用由 ContextPolicy.kinds 决定
+        ...(this.contextExtension ? ['--extension', this.contextExtension] : []),
         /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
@@ -517,18 +530,52 @@ export class AgentController extends EventEmitter {
    * 注意 pi 自己那条自动压缩线仍然在（砚不写 pi 的设置文件），
    * 所以这个开关的语义仍然是“pi 要不要自动压缩”，只是多了一个更早的砚决策点。
    */
-  private effectivePolicy(): { policy: ContextPolicy; budget: ContextBudget | null } {
-    const base = activeContextPolicy()
+  private effectivePolicy(): {
+    resolved: ResolvedContextPolicy
+    policy: ContextPolicy
+    budget: ContextBudget | null
+  } {
+    /*
+     * 模型级覆盖按**当前会话模型**查表（N21-7）：同一台机器上切到不同模型
+     * 会得到不同工作集，而 `source` 让界面能说出“这个数是模型级定的”。
+     */
+    const resolved = activeContextPolicy(process.env, modelKeyOf(this.state?.model))
     const policy: ContextPolicy =
-      base.enabled && this.state?.autoCompactionEnabled !== false ? base : { ...base, enabled: false }
-    return { policy, budget: contextBudget(this.state?.model?.contextWindow ?? 0, policy) }
+      resolved.policy.enabled && this.state?.autoCompactionEnabled !== false
+        ? resolved.policy
+        : { ...resolved.policy, enabled: false }
+    return { resolved, policy, budget: contextBudget(this.state?.model?.contextWindow ?? 0, policy) }
   }
 
   /** 推给界面的策略视图（窗口未知或策略关时为 undefined —— 界面退回物理窗口视角） */
   private contextPolicyView(): ContextPolicyView | undefined {
-    const { policy, budget } = this.effectivePolicy()
+    const { resolved, policy, budget } = this.effectivePolicy()
     if (!policy.enabled || !budget) return undefined
-    return { enabled: true, kinds: policy.kinds, budget }
+    return {
+      enabled: true,
+      kinds: policy.kinds,
+      budget,
+      source: resolved.source,
+      ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
+      overridden: resolved.overridden
+    }
+  }
+
+  /**
+   * 设置改动后重推一帧上下文策略（N21-7）。
+   *
+   * 设置面板改完阈值后，界面上的工作集与“下一步”必须当场跟上 ——
+   * 否则用户会看到自己刚改的数没生效，以为是写了没存（D21/D22 同类）。
+   * 只重算这一帧，不读盘、不发 RPC。
+   */
+  refreshPolicyView(): void {
+    if (!this.state) return
+    const view = this.contextPolicyView()
+    const next: SessionState = { ...this.state }
+    if (view) next.contextPolicy = view
+    else delete next.contextPolicy
+    this.state = next
+    this.push({ ch: 'state', payload: next })
   }
 
   private setStateFrom(data: Record<string, unknown>): void {
@@ -2230,8 +2277,7 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  /** 还在等用户回答的请求数（N12：后台会话的状态槽用它） */
-  getPendingUiCount(): number {
+  /** 还在等用户回答的请求数（N12：后台会话的状态槽用它） */  getPendingUiCount(): number {
     return this.pendingUi.size
   }
 

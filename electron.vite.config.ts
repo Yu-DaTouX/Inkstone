@@ -39,7 +39,11 @@ export default defineConfig({
           // （scripts/probe-pi.mjs 用 protocol，scripts/test-unit.mjs 用 sessions）
           protocol: resolve('src/main/protocol.ts'),
           sessions: resolve('src/main/sessions.ts'),
-          'zoom-math': resolve('src/main/zoom-math.ts')
+          'zoom-math': resolve('src/main/zoom-math.ts'),
+          // S1 的派生状态：live 场景要在 Node 侧把状态种进隔离的 YAN_DATA_DIR
+          // 并在退出后检查清理结果（探针跑在渲染进程里，读写不了这个目录）
+          'context-state-store': resolve('src/main/context-state-store.ts'),
+          'context-watermark': resolve('src/main/context-watermark.ts')
         }
       }
     }

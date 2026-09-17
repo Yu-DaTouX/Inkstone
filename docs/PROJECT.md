@@ -238,15 +238,16 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 |---|---|
 | 什么时候压缩 | **砚自己算工作集**并从回合结束处触发：`min(240k, 窗口×70%, 窗口−预留−余量)`（64k→40k / 128k→88k / 256k→179.2k / 1M→240k）。到线就调 pi 的 `compact()`；窗口小到装不下预留与余量时**没有预算**，退回 pi 原生压缩 |
 | pi 原生压缩 | 保留不动（砚不写 pi 的设置文件）。它在工作集之上充当物理兜底；另有一条硬兜底 `emergency = min(90% 窗口, 窗口 − 输出预留)`（**不能突破输出预留**，64k 窗口下是 48k 而不是 57.6k） |
-| 决策层 | `shared/context-policy.ts`（纯函数：预算、上膛/冷却、下一步阶段）；`agent.ts` 的 `evaluateContextPolicy` 只在回合结束时判定，不在流式/工具执行中途动手 |
+| 决策层 | `shared/context-policy.ts`（纯函数：预算、上膛/冷却、下一步阶段、**四层覆盖解析** `resolveContextPolicy`）；`agent.ts` 的 `evaluateContextPolicy` 只在回合结束时判定，不在流式/工具执行中途动手 |
+| 阀值可配（N21-7） | 数值的 lookup 顺序：`YAN_CONTEXT_POLICY`（测试通道）> **模型级**（`provider/model`）> **供应商级**（`provider`）> **用户级**（设置面板）> 默认值。三个数值（工作集上限 / 窗口比例 / 输出预留）在设置面板的**「上下文」tab** 可改，可切“砚默认 / 参考方案（300k/0.75）”预设，并按模型覆盖；界面上直接写出生效层与已覆盖字段（“用户设置 · 已覆盖：工作集上限”）—— 这是“界面数 = 真正在用的数”的另一半。`AppSettings.contextPolicy` / `.contextPolicyByModel` 落盘，写入前过 `sanitizeContextPolicyOverrides`（非法值丢掉、越界值夹住、与默认相同就不落盘） |
 | 可观测 | `compaction_start/end` → `SessionState.compaction`（进行中，带原因）+ `.lastCompaction`（已结束，带 status/error/前后 token）；发起方由砚盖章，pi 报的 `manual` 不会显示成「手动」 |
 | 界面 | 工作集模式下主值是工作集（不是物理窗口），进度条上三条阶段刻度（清理/折叠/压缩，未接管的画虚线）；关掉「自动压缩」开关就整个退回物理窗口视角 |
-| 未做（阶段 4） | pi 扩展的 `context` 钩子做 Tool Sweep / Episode Fold / 结构化压缩与 `recall`。`ContextPolicy.kinds` 是这道边界的唯一出处 |
+| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（缺字段一律降级回 pi 摘要）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认 `['tool-sweep', 'recall', 'compaction']`，2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**默认关** —— 只在 `kinds` 含 `episode-fold` 时工作（默认不调模型、不花钱）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**还缺**：EpisodeState 的语义生成（目前只生成 TaskState）、增量 delta（现为全量快照）、三阶段独立 Rearm/Cooldown、`episode-fold` 是否进默认接管集（方案 §17.4 第 5 条）。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
 | 阶段 4 契约 | 提点审核（2026-09-16）把阶段 4 的开工契约定在方案 §12：原子上下文单元与 `recentTail` 切割、`EpisodeState` / `CodingState` 两个 schema、禁止递归摘要、Recall 独立预算与生命周期、每阶段独立的上膛/冷却/收益门槛、失败退回 pi 原生行为 |
 
 **改动注意点**
 
-- 阶段参数目前只有代码默认值 + 测试用 `YAN_CONTEXT_POLICY` 覆盖，**设置面板里还不能改**（阶段 4 或后续再做）。
+- 阶段参数已可在设置面板改（N21-7：用户级 + 模型/供应商级），但 **`YAN_CONTEXT_POLICY` 仍是最高优先级的测试通道** —— 它被用户设置盖掉会让 `contexttakeover` / `contextswitchguard` 这类场景静默失效。
 - 界面上的工作集数字必须来自主进程推送的那份预算（`SessionState.contextPolicy`）—— 渲染端不许自己再算一遍（这一块出过 D21/D22 那类“界面数字 ≠ 实际生效值”的错）。
 - 策略**默认开启**：这意味着 1M 窗口的模型也会在 240k 左右压缩，而不是等到近百万。要关掉就是关「自动压缩」那个开关。
 

@@ -65,6 +65,7 @@ pi 吐事件
 | `turns.ts` | 357 | 把扁平 `UIMessage[]` 折成「一轮一块」；附带 `cacheHitRate`、段落切分 | `TurnView.tsx`、`UsageBar.tsx`、`ConversationOutline.tsx`；有单测 `test-turns.mjs` |
 | `model-capabilities.ts` | 95 | 归一化 pi 的模型描述符：缺失字段一律 `unknown`，**绝不因为字段缺失就判成 unsupported** | `agent.ts`（`setStateFrom`）、`Pickers.tsx`；单测 `test-model-capabilities.mjs` |
 | `links.ts` | 123 | 链接路由：内部浏览器打开 / 文件预览 / 拒绝（非法协议、路径穿越、可执行文件） | 安全判断，纯函数；单测 `test-links.mjs` |
+| `context-state.ts` | 1280 | **上下文状态的 schema 与校验（N21-4 / S1，纯函数）**：`TaskState`（= 方案 §12.8 的 `CodingState`，`StateEntry` 带 `status` active/resolved/superseded + `source` provenance）、`EpisodeState`（`sourceRange` 指回**原始** entry，§12.7 禁止递归摘要的判据）、`ArchiveEntry`（`recallable` 三态 + TTL + 元数据）、`SourceWatermark`（`entryCount` + `lastEntryId`）、`ContextStateFile` / `ArchiveFile` 信封（`schemaVersion`）、Deep Context artifact 的**注入闸门** `deepContextUsable`（水位/会话/过期三重校验，本切片不产生模型调用）。三条硬约束写在文件头：派生物可丢、provenance 只能指 raw entry identity、禁止递归摘要 | 落盘在 `main/context-state-store.ts`，水位在 `main/context-watermark.ts`；单测 `test-context-state.mjs`（78 条）；[方案 §14](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
 
 ---
 
@@ -84,7 +85,7 @@ pi 吐事件
 |---|---|---|---|
 | `index.ts` | 1947 | 窗口 + **全部 IPC handler** + Runner 生命周期 + 托盘 + 缩放 + 快捷键 + 探针注入（`YAN_PROBE`）。文件树/补全/搜索共用的上下文边界是 `resolveFileContext` | 依赖除 `browser/*` 外几乎所有 main 模块。新增功能通常在此注册 handler |
 | `paths.ts` | 49 | 数据路径常量：`YAN_DIR`、`PI_AGENT_DIR`、便携版根… | 被 10 个文件 import。**这里曾经叫 `memory.ts`**（记忆系统），已移除 |
-| `settings.ts` | 388 | 桌面端专属设置（窗口、主题、语言、cwd、栏宽、工具顺序）。**刻意不写 pi 的 `settings.json`** | `index.ts`、`Rail.tsx`、`Settings.tsx`；项目 id 派生在 `project-id.ts` |
+| `settings.ts` | 408 | 桌面端专属设置（窗口、主题、语言、cwd、栏宽、工具顺序、**上下文策略覆盖** `contextPolicy` / `contextPolicyByModel`）。**刻意不写 pi 的 `settings.json`** | `index.ts`、`Rail.tsx`、`Settings.tsx`；项目 id 派生在 `project-id.ts` |
 | `project-id.ts` | 45 | 项目 id 派生：沿用旧的 36 字符 base64 前缀（已有归属键不动），**碰撞时**换成整条路径的 sha1（D14：同前缀目录曾共用 id，导致文件树/@ 补全报「项目与工作目录不匹配」） | `settings.ts`（生成项目）、`index.ts` 的 `resolveFileContext`；单测 `test-project-id.mjs` |
 | `queue-items.ts` | 54 | 队列快照的消费/回收规则（D9）：`consumeQueuedItem` 按原文摘掉队首匹配项（先 steering 后 followUp、FIFO、trim 比较）、`reclaimedTexts` 把 `clear_queue` 的结果按 steering→followUp 拼回草稿 | `agent.ts`（收到 user 消息、`abort()`）；单测 `test-queue-items.mjs`（18 条） |
 | `runners.ts` | 440 | **会话运行实例注册表（N12）**：命中已有实例 / 复用空闲 / 新建；`RUNNER_LIMIT=3`；`stopOne` / `stopByCwd` / `stopAll`；`runtimeOf` 生成事件身份封套。**跨 cwd 复用要换进程**（pi 的 cwd 只在 spawn 时确定）。`busy()` 包含**直执行 shell**（D20：否则切换会复用到正在跑命令的实例，新会话直接报“已有一条命令在跑”） | 被 `index.ts` 全面使用；单测 `test-runners.mjs`（含跨项目换进程、失败回退、直执行 shell 也算忙） |
@@ -102,11 +103,16 @@ pi 吐事件
 | `normalize.ts` | 211 | pi 原始消息 → `UIMessage`。单独成文件是因为**会话文件解析器也要用**（那不能依赖 `agent.ts`） | `agent.ts`、`session-reader.ts` |
 | `compaction.ts` | 297 | 压缩的**两件事**：① 读 pi 的压缩设置（`compactionInfo`，界面用来解释「何时会自动压缩」）；② 把 `compaction_start` / `compaction_end` 归一化成 `CompactionState`（N21-2）。**两个坑写在这里**：用户级设置要跟 `PI_AGENT_DIR`（不是拼 `~/.pi/agent`，D22）；项目级 `.pi/settings.json` 只在 pi 信任该项目时生效，否则整份忽略（D21，靠 `<PI_AGENT_DIR>/trust.json` 判断） | `index.ts` → `RightPanel.tsx`；`agent.ts` 的事件循环；单测 `test-compaction-status.mjs` |
 | `shared/ipc.ts` 的 `CompactionRun` | — | 压缩状态快照：`status`（running/completed/declined/failed/cancelled）+ `reason`（manual/threshold/overflow，认不出留 `reasonRaw` 原文）+ `error`（pi 原文，不静默）+ `beforeTokens`/`afterTokens` | `SessionState.compaction`（进行中）/ `.lastCompaction`（已结束，**两者必须分开**：开始新一次时不能擦掉上一次的结果） |
-| `shared/context-policy.ts` | 307 | **工作集预算与触发决策**（N21-3，纯函数）：① `contextBudget(窗口)` 按 `min(240k, 窗口×70%, 窗口−预留−余量)` 算工作集（参考值 64k→40k / 128k→88k / 256k→179.2k / 1M→240k；**小到装不下预留与余量时返回 null**，不给出 ≤ 0 的压缩线）；② `contextPolicyStep` 回答「现在要不要压」（上膛 `armed` / 冷却 30s / 忙时不插刀 / 兜底不看上膛）；③ `policyFrom` 解析 `YAN_CONTEXT_POLICY`；④ `nextContextStage` 给界面算「下一步」；⑤ 兜底线 `emergency = min(窗口 × 比例, 窗口 − 预留)` —— **物理兜底不能突破输出预留**（D31，方案 §12.1）。放在 shared 而不是 main：**判定与显示必须同一套规则** | `main/agent.ts` 的 `evaluateContextPolicy`；`main/context-policy.ts`（env 入口）；渲染端 `nextContextStage`；单测 `test-context-policy.mjs`；live `contextbudget` / `contextswitchguard`（触发时机，D27 的回归网）/ `contexttakeover` |
-| `main/context-policy.ts` | 33 | 只有一件事：把 `YAN_CONTEXT_POLICY` 读成生效策略（按原始字符串记忆化，env 变了立刻跟上）。纯逻辑在 `shared/context-policy.ts` | `agent.ts` 的 `effectivePolicy()`；`index.ts` 的 `yan:contextBudget` |
+| `shared/context-policy.ts` | 556 | **工作集预算与触发决策 + 四层覆盖解析**（N21-3 / N21-7，纯函数）：① `contextBudget(窗口)` 按 `min(240k, 窗口×70%, 窗口−预留−余量)` 算工作集（参考值 64k→40k / 128k→88k / 256k→179.2k / 1M→240k；**小到装不下预留与余量时返回 null**，不给出 ≤ 0 的压缩线）；② `contextPolicyStep` 回答「现在要不要压」（上膛 `armed` / 冷却 30s / 忙时不插刀 / 兜底不看上膛）；③ `policyFrom` 解析 `YAN_CONTEXT_POLICY`；④ `nextContextStage` 给界面算「下一步」；⑤ 兜底线 `emergency = min(窗口 × 比例, 窗口 − 预留)` —— **物理兜底不能突破输出预留**（D31，方案 §12.1）；⑥ **N21-7** `resolveContextPolicy`（`env > model(provider/model) > provider > user > default`，返回 `source` / `sourceKey` / `overridden`）、`applyOverrides`（夹取唯一真源）、`sanitizeContextPolicyOverrides*`、`CONTEXT_POLICY_PRESETS`。放在 shared 而不是 main：**判定与显示必须同一套规则** | `main/agent.ts` 的 `evaluateContextPolicy`；`main/context-policy.ts`（设置层 + env 入口）；渲染端 `nextContextStage` / `ContextTab.tsx`；单测 `test-context-policy.mjs`；live `contextbudget` / `contextswitchguard`（触发时机，D27 的回归网）/ `contexttakeover` |
+| `main/context-policy.ts` | 78 | 两件事：① 记住**设置层**（`setContextPolicySettings`，设置读盘 / 写入时登记，因为 `effectivePolicy()` 要同步）；② `activeContextPolicy(env, modelKey)` 按当前模型解析四层覆盖。纯逻辑在 `shared/context-policy.ts` | `agent.ts` 的 `effectivePolicy()`；`index.ts` 的 `yan:contextBudget` 与 `patchSettings` |
+| `main/context-state-store.ts` | 368 | **派生状态的落盘层（N21-4 / S1）**：`YAN_DATA_DIR/context-state/<sessionId>.json`（归档 `<id>.archive.json`）。原子写 = 临时文件 → 回读校验 → `rename`；校验不过**绝不 rename**（失败不覆盖 last-known-good）。读时损坏 / 版本不认识 / 引用不存在的原始条目 → **安全丢弃**（删文件 + 返回原因）。`deleteContextStates` 供 `sessions.ts` 删会话时清派生状态（状态 / 归档 / 召回账本与审计 / 崩溃残留的 `.tmp`）。sessionId 直接进文件名，所以有路径穿越守卫。它也是 electron-vite 的额外入口（live 场景在 Node 侧种/查隔离目录） | `sessions.ts` 的 `deleteSession`；单测 `test-context-state.mjs`；live `contextstate` |
+| `main/context-watermark.ts` | 136 | 从**原始会话 JSONL** 读条目身份与水位（S1 的 provenance 入口）：逐行流式读、只从行首取 `type`/`id`（单行可达 4MB，不复用 `session-reader` 的整文件 parse）；半截尾行不计入且标 `incompleteTail`，中间坏行整份作废（返回 null） | `context-state-store` 的 `raw` 索引来源；live 场景的种子；单测 `test-context-state.mjs` |
 | `shared/title-samples.ts` | 60 | **会话标题的样本挑选**（N11，纯函数）：首条 + 最近一条用户话；纯图片消息用 `[图片 ×N]` 占位；最多带首图一张。内存路径（`agent.ts`）与磁盘路径（`sessions.ts.readTitleSamples`）共用这套规则 —— 以前是两份实现，"新会话标题与旧会话标题口径不一致"只表现为"标题怪怪的"，很难归因 | 单测 `test-title-samples.mjs`（11 条）；`test:live -- title` |
 | `scripts/probe/language.js` | 210 | N16 语言：互换提问对照（每方向最多 3 次）+ **切语言不重建实例** + 同一会话下一轮生效 + 流式期间切语言不打断；推理语言**只报告**（软约束） | `test:live -- language`（cost 1） |
 | `scripts/probe/history-switch.js` | 211 | **切换会话不丢历史**（D38 的回归网）：拿历史最长的会话，用 `peekSession` 记条数与首条文本 → 点开 → 等权威 `sync` → 再对一次；期间"曾被打回 0"直接判失败；另外覆盖"切语言"这条路径 | `test:live -- historyswitch`（cost 0） |
+| `scripts/probe/context-state.js` | 88 | **删会话清派生状态**（N21-4 / S1 的唯一真实窗口证据）：状态文件由 Node 侧用真实 store 种进隔离 `YAN_DATA_DIR`（探针按设计碰不到），探针只走真实界面删一条会话并把 sessionId 打印出来；`afterExit` 再对文件系统断言"被删的没了、别人的还在" | `test:live -- contextstate`（cost 0，进 `npm run check`） |
+| `scripts/probe/context-sweep.js` | 142 | **Tool Sweep 真实回合**（N21-4 / S2）：在真实 pi 里跑三个回合（一：模型用 bash 产生大输出；二：上一次结果落到 `recentTail` 之外并让模型 recall；三：触发召回正文的 TTL 清理），`afterExit` 检查归档元数据、`ctx://` 引用指得回原始条目、诊断里 `swept≥1` 且 0 条 error，并在确有召回时断言 `expiredRecalls≥1` | `test:live -- contextsweep`（cost 1，进 `npm run check`） |
+| `scripts/probe/context-produce.js` | 128 | **状态生成器真实回合**（N21-4 / S7）：真实回合 1 让模型调一次 bash（给 evidence reducer 原料）→ 等生成（异步、内部 20s 上限）→ 回合 2 是 `<TASK_STATE>` 注入点；`afterExit` 检查诊断 `stage=producer` / `hook=committed`、状态文件 `revision>=1` + `objective` 非空 + evidence 非空、`injectedTaskState=true`，并让主进程 `loadContextState` 校验一次 | `test:live -- contextproduce`（cost 1，进 `npm run check`） |
 | `scripts/probe/title.js` | 180 | N11 标题：自动生成 / 单次生成锁 / 手动名粘性 / 候选→采用 | `test:live -- title`（cost 1） |
 | `agent.ts` 的 `evaluateContextPolicy` | — | **砚接管时机的唯一入口**：`refreshStats` 拿到用量时判定（回合结束才动，不在流式/工具执行中途）；命中后调 `compact({ fromPolicy })`。`policyOrigin`（含基准 `endedAt`）给那次压缩盖上真实发起方 —— pi 对砚发起的压缩一律报 `reason: 'manual'`，界面会写成「手动」 | 单测覆盖决策分支；live `contexttakeover` / `contextemergency`（两条线各一次真实触发） |
 
@@ -223,7 +229,8 @@ pi 吐事件
 |---|---|---|
 | `App.tsx` | 605 | 应用外壳：三栏布局 + `VList` 虚拟滚动 + 生命周期接线 |
 | `main.tsx` | 34 | 把 store 挂到 `window.__yanStore`（探针要用） |
-| `components/settings/Settings.tsx` | 808 | 设置面板五 tab：模型接入 / 外观 / 声音 / 状态 / 关于 |
+| `components/settings/Settings.tsx` | 835 | 设置面板六 tab：模型接入 / 外观 / **上下文** / 声音 / 状态 / 关于 |
+| `components/settings/ContextTab.tsx` | 313 | 上下文策略设置（N21-7）：预设（砚默认 / 参考方案 300k·0.75）+ 三个数值（工作集上限 / 窗口比例 / 输出预留）+ 模型级覆盖 + **生效来源**行。草稿 + 显式保存（逐键写盘会把半成品写进设置文件）；具体校验全在 `shared/context-policy.ts`，这里不重复实现 |
 | `components/settings/AuthTab.tsx` | 298 | 凭证管理；只有 `openai-codex` 能在应用内登录 |
 | `components/settings/Onboarding.tsx` | 270 | 首次引导（`shouldAutoOnboard` / `markOnboarded`） |
 | `components/shell/TitleBar.tsx` | 187 | 自定义标题栏（主题、栏开关、置顶） |
@@ -271,6 +278,9 @@ pi 吐事件
 | `question.js` | 167 | 让模型在信息不足时主动问用户；自主模式下不弹窗 | 同上 |
 | `response-detail.js` | 67 | 把界面三档"回复详细程度"变成系统提示（standard 不注入） | 同上 |
 | `context-safety.js` | 437 | **切片安全规则**（N21-10，纯函数、无 Electron/pi 依赖）：原子上下文单元（user 回合 / bash / orphan tool）、从尾部按单元边界切割（`planTailCut`）、被切掉但必须进状态的 `carryOver`、注入分桶 `routeEntries`、清扫候选 `sweepCandidates`、以及不变式检查 `violations` / `routingViolations`。三条硬约束：正在使用的 diff 不得删、用户约束不得降级、不得从 reasoning/output 中间切。**保护分两档**（硬留 vs 可带走），理由写在文件头 | 阶段 4 扩展（N21-4）接入时调它；现在只有单测 `test-context-safety.mjs`（42 条）与 [方案 §12.4](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| `context-producer.js` | 729 | **状态生成器的纯逻辑**（N21-4 / S7，无 IO / 不读 env）：确定性 evidence reducer（`evidenceFromMessages`：命令 / 退出码 / 测试计数 / 文件，全部带真实 `entryId`）、生成提示词（`buildProducerPrompt`）、模型输出白名单解析（`parseProducerOutput`）、合并与 provenance（`mergeTaskState`：`constraints` 命中用户原话 → `kind: 'user'` + `entryId`，其余老实标 `hypothesis`；确定性字段**覆盖**模型）、裁剪与预算（`clipTaskState` / `clipTaskStateToBudget`，objective / constraints / failedAttempts / unresolved 永不删）、freshness 分档（`freshnessOf` / `applyFreshness`）、dirty 位掩码与刷新判定（`shouldRefresh`）、CAS（`casAllows`） | `resources/pi-extensions/context.js` 调它；单测 `test-context-producer.mjs`（~114 条，含 fake ctx 真落盘 + TS schema 交叉校验）；[方案 §17](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| `context-transform.js` | 825 | **上下文变换的纯逻辑**（N21-4 / S2–S6，无 IO / 无模型）：pi 消息 ↔ 条目视图适配（`adaptMessages`）、消息 ↔ **原始 entry id** 对齐（`alignEntryIds`，复刻 pi 的 `buildContextEntries`，压缩后从 `firstKeptEntryId` 起；数量 + 角色双校验）、Tool Sweep 规划与提交（`planToolSweep` / `applyToolSweep`，墓碑幂等、只换 toolResult 内容）、`<TASK_STATE>` 渲染与前置注入（`renderTaskState` / `injectTaskState`；`stale` 条目会显式渲染成 `[stale: verify…]`，不静默当有效）、recall 预算与 TTL（`recallBudget` / `wrapRecall` / `stripStaleRecalls`）、结构化摘要装配与降级判据（`buildStructuredSummary`；N21-4 生成器落地后**默认不再要求六类字段齐备**，需要保守判定时传 `requiredFields`）、Episode 引用汇总与递归摘要预检、诊断行 | `resources/pi-extensions/context.js` 调它；单测 `test-context-transform.mjs`（104 条）；[方案 §15](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| `context.js` | 819 | **上下文状态化压缩扩展**（N21-4 / S2–S6，随包分发的源码）：`context` 钩子做 Tool Sweep + Task State 前置注入 + TTL 清理；`session_before_compact` 接管闸门（状态存在且水位可用时接管，只换摘要文本、保留 pi 的 `firstKeptEntryId`；否则 `return undefined` 交回 pi 摘要）；注册 `context_recall` 工具（原文从会话条目读回、超预算拒绝并解释、召回账本 + `.recall.jsonl` 审计）。归档元数据写 `context-state/<id>.archive.json`；**S7 生成器**（`agent_settled` → `produceAndCommit`）经 `ctx.modelRegistry.complete()` 生成 TaskState 并写 `context-state/<id>.json`（元数据由宿主附加；落盘前过 `revision` CAS；schema 的**真源**仍在 TS 层，主进程读路径校验并安全丢弃非法文件）。**默认清扫大块工具输出**（`kinds` 默认 `['tool-sweep', 'recall', 'compaction']`，2026-09-17 拍板：清理默认开、保留可召回引用；本回合正在动的文件不清扫）；生成只在 `kinds` 含 `episode-fold` 时工作（**默认不调模型、不花钱**），单飞 + 20s 超时 + 失败保留旧状态；整段钩子在 `try/catch` 里，异常即整轮放弃。**扩展侧其实能自己跑一次无工具推理**（`ctx.modelRegistry.complete(ctx.model, {messages}, {tools: []})`，`agent_settled` 也对扩展分发）—— 状态生成器不必起第二个进程，见方案 §16.1 | `src/main/agent.ts` 的 `--extension`（`index.ts` 的 `contextExtensionPath()`）；单测 `test-context-transform.mjs`（含直调 `execute` 覆盖全部拒绝分支）；live `contextsweep`（cost 1，真实回合里模型真的 recall 取回原文） |
 | `language.js` | 119 | 界面语言 → **一句**推理/回复语言要求（每轮读 `desktop.json`）。两个钩子：`before_provider_request` 在**最后一条用户消息前**插一条独立消息（主通道，实测位置最强）、`before_agent_start` 追加到系统提示末尾（兜底）。**不用** `--append-system-prompt`：那是启动参数，切语言必须重建实例（D37/D39/D40，理由与实测数据写在文件头） | 同上；单测 `test-language-extension.mjs`；live `test:live -- language`（注入取证：`YAN_LANG_EXT_LOG`） |
 
 > ⚠️ 与 `resources/pi-runtime/` 的区别：**这里是源码**（可改、随包分发）；
@@ -284,16 +294,16 @@ pi 吐事件
 
 | 文件 | 功能 |
 |---|---|
-| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 38 个 `test-*.mjs` |
+| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 44 个 `test-*.mjs` |
 | `test-live.mjs` | live 场景入口：建隔离 sandbox（`YAN_*` + 复制 `auth.json`/`models.json`），起真应用跑探针。场景表就是 `CASES`。**要能在被 Ctrl+C / 被 kill 时收掉 Electron 子进程树**（否则会留下继续往死管道写日志的孤儿）。另有两个附属设施：合成 fixture 项目树（`buildFixtureProject`）与 **L04 的本地 HTTP 服务**（`startBoundaryServer`，127.0.0.1:39873：下载 / Cookie 哨兵 / 真实权限请求 / 内网目标） |
 | `launch.mjs` | 一键启动（检查依赖 → 必要时构建 → 起应用） |
 | `probe-pi.mjs` | 只验证「pi 能否被找到并启动」，不开窗口 |
 | `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
 | `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（38 个 `test-*.mjs`）
+### 7.2 单测模块（44 个 `test-*.mjs`）
 
-按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-policy` / `context-safety` / `credentials` / `exit-snapshot` / `filerefs` / `files` / `language-extension` / `links` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-policy` / `context-safety` / `context-state`（S1）/ `context-transform`（S2–S6）/ `context-producer`（S7 生成器）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / `language-extension` / `links` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
 > `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
@@ -314,7 +324,7 @@ pi 吐事件
 - **对话渲染**：`reasoning`、`toolgroup`、`toolrow`、`tools`、`detail`、`streamwidth`、`virtual`、`outline`
 - **布局/视觉**：`layout`、`narrow`、`vheight`、`resize`、`panels`、`symmetry`、`railmini`、`railtitle`、`railsearch`、`projectlimit`、`zoom`、`light`、`density`、`topbar`、`titlebar`、`motion`
 - **文件/浏览器**：`fs`、`linkpreview`、`browser`、`external-chrome`（场景名 `externalchrome`）、`browser-boundary`（场景名 `browserboundary`，L04：权限真实请求 / 本地预览边界 / DNS 重绑定 / 两条下载路径 / Cookie 真实复制；**需公网，不进 check**）
-- **其他**：`live`（DOM 体检）、`logs`、`perf`、`sound`、`hotkeys`、`working`、`trash`、`onboarding`、`grouprename`、`autonomous`、`subagent`、`terminal`、`todos`、`todonew`
+- **其他**：`live`（DOM 体检）、`logs`、`perf`、`sound`、`hotkeys`、`working`、`trash`、`contextstate`（S1：删会话清派生状态）、`contextsweep`（S2：真实回合 Tool Sweep + recall）、`onboarding`、`grouprename`、`autonomous`、`subagent`、`terminal`、`todos`、`todonew`
 - **勘察（不在 CASES）**：`survey`（§11 的真实窗口 dump，靠手工 `YAN_PROBE` 跑）
 
 ### 7.4 构建 / 发布 / 诊断
@@ -359,6 +369,8 @@ pi 吐事件
 | 改推理块 | `Reasoning.tsx` + `chat.css` 的 `.clip/.is-clipped/.expanded` + `tokens.css` 的 `--reason-max-h` + `probe/reasoning.js`（探针钉死了契约）+ `DESIGN.md` |
 | 改模型/思考档位 | `shared/model-capabilities.ts`（归一化）→ `agent.ts`（能力快照）→ `store.reloadModels` + `state/capability-request.ts`（过期判定）→ `Pickers.tsx` + `RightPanel.tsx` |
 | 改会话/项目归属 | `main/session-layout.ts` + `main/sessions.ts` + `store` 的 `switchSession`/`moveSession` + `Rail.tsx`；有单测 |
+| 改上下文状态 schema（TaskState / EpisodeState / Archive） | **唯一真源**是 `shared/context-state.ts`：先改 schema + 校验，再同步 `main/context-state-store.ts`（原子写/丢弃）与 `scripts/test-context-state.mjs`。`schemaVersion` 一变，旧文件必须走「不兼容 → 安全丢弃」，不能尽力解析。provenance 只能填**原始 entry id**（`main/context-watermark.ts` 读出来的），不许用数组下标/token/`ctx://`。删会话清理走 `sessions.ts` 的 `deleteContextStates`（含 `.recall.json` / `.recall.jsonl`），回归网是 `test:live -- contextstate`；证据与切片边界见 [方案 §14](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| 改「发给模型的消息」（Tool Sweep / Task State / Recall） | 纯逻辑在 `resources/pi-extensions/context-transform.js`（单测 `test-context-transform.mjs`），钩子与工具在 `resources/pi-extensions/context.js`。三条不许绕：① 默认 `kinds` 不含 `tool-sweep`/`episode-fold` 时**不许动消息**；② entry id 对齐失败就整轮放弃；③ 提交前必须过 `context-safety` 的 `violations()`。JS 产出的归档文件要与 TS schema 对得上（单测里有交叉校验）。真实回归是 `test:live -- contextsweep`（cost 1，需一个会调工具的模型；默认免费模型当天返回空文本时用 `YAN_TEST_MODEL` 换）。**语义状态生成已于 2026-09-17 落地**（S7）：纯逻辑在 `resources/pi-extensions/context-producer.js`（单测 `test-context-producer.mjs` ~114 条），触发与落盘在 `context.js` 的 `onAgentSettled` / `produceAndCommit`，真实回归是 `test:live -- contextproduce`（cost 1，需一个会调工具的模型）；模型调用走扩展内的 `ctx.modelRegistry.complete()`（方案 §16.1），**不要**为它起第二个 pi 进程 |
 | 改文件树 / `@` 补全 / 搜索 | `main/files.ts`（listDir/searchFiles 边界）+ `main/credentials.ts` 的 `completePath` + `index.ts` 的 `resolveFileContext`（cwd+projectId+generation 校验，D14 在这里兜底）。live 证据：`fs` / `fsedge` / `atPath` / `atpathedge` / `projectswitch`（后三个用 test-live 的合成 fixture 项目） |
 | 改工具调用的“改了什么” | `main/snapshots.ts`（写入类工具的单文件快照 + shell 的目录级快照，L05）+ `agent.ts`（`tool_execution_start/end` 与 `runBash/finishBash` 的取/挂）+ `ToolDetails.tsx` 的 `WorkspaceChangesDetail` + `chat.css` 的 `.wsc-*`。注意：`isShellTool` 名单要与渲染端 `detailKind` 的 `'command'` 分支一致，否则会出现“看着是命令却没改动卡片” |
 | 改后台会话/身份 | `main/runners.ts`（身份封套）+ `store.applyPush`（身份闸门）+ `state/session-runtime.ts`（缓存）。**三处必须一致**，否则事件会被静默丢弃 |

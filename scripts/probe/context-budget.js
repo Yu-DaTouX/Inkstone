@@ -73,7 +73,11 @@
   const tiny = await window.yan.contextBudget(20000)
   ok(tiny?.budget === null, '窗口小到装不下预留与余量时没有预算（不当成“随时压缩”）')
   const policy = (await window.yan.contextBudget(128000))?.policy
-  ok(Array.isArray(policy?.kinds) && policy.kinds.join(',') === 'compaction', '阶段 3 只接管压缩（清理/折叠不在 kinds 里）')
+  ok(
+    Array.isArray(policy?.kinds) && policy.kinds.join(',') === 'tool-sweep,recall,compaction',
+    `默认接管清理 + 召回 + 压缩（实际 ${JSON.stringify(policy?.kinds)}）`
+  )
+  ok(!(policy?.kinds ?? []).includes('episode-fold'), '折叠仍不在接管范围内（要状态生成器）')
   log(`  生效策略：${JSON.stringify(policy)}`)
 
   /* ---------------- 2. 界面与主进程同源 ---------------- */
@@ -133,8 +137,9 @@
     ok(activeOf(el) === (shouldBeActive ? '1' : '0'), `${kind} 的接管状态与实际一致（active=${activeOf(el)}）`)
   }
   ok(activeOf(marks.find((m) => kindOf(m) === 'compaction')) === '1', '压缩标记是“真的会触发”的那条')
-  ok(activeOf(marks.find((m) => kindOf(m) === 'tool-sweep')) === '0', '清理标记未接管（阶段 4）')
-  ok(!!marks.find((m) => kindOf(m) === 'tool-sweep')?.className.includes('planned'), '未接管的刻度用虚线样式')
+  ok(activeOf(marks.find((m) => kindOf(m) === 'tool-sweep')) === '1', '清理标记已接管（默认开）')
+  ok(activeOf(marks.find((m) => kindOf(m) === 'episode-fold')) === '0', '折叠标记未接管（要状态生成器）')
+  ok(!!marks.find((m) => kindOf(m) === 'episode-fold')?.className.includes('planned'), '未接管的刻度用虚线样式')
 
   /* 刻度位置真的按比例（不是随便摆三条线） */
   const meter = q('.rp-meter')
@@ -148,17 +153,26 @@
     ok(Math.abs(r.left - expect) <= 3, `${kind} 刻度画在 ${Math.round(ratio * 100)}% 处（偏差 ${Math.round(r.left - expect)}px）`)
   }
 
-  /* 「下一步」只预报真的会执行的阶段 */
+  /* 「下一步」只预报真的会执行的阶段，而且取**最先到的那条** */
   const next = q('[data-testid="ctx-next-stage"]')
   ok(!!next, '有「下一步」说明行')
-  ok(next?.getAttribute('data-kind') === 'compaction', `下一步预报的是压缩（实际 ${next?.getAttribute('data-kind')}）`)
+  /*
+   * 清理默认接管（用户 2026-09-17 拍板）后，最先到线的是清理而不是压缩 ——
+   * 阶段刻度 70% / 85% / 100%，只接管压缩时才会预报压缩。
+   */
+  ok(next?.getAttribute('data-kind') === 'tool-sweep', `下一步预报的是清理（实际 ${next?.getAttribute('data-kind')}）`)
   log(`  下一步文案：${JSON.stringify(text('[data-testid="ctx-next-stage"]'))}`)
   ok(/下一步/.test(text('[data-testid="ctx-next-stage"]')), '文案以「下一步」开头')
 
-  /* 图例：三格，只有压缩是「已接管」 */
+  /* 图例：三格，默认接管格里“清理 + 压缩”两格，折叠仍待状态生成器 */
   const chips = qa('[data-testid="ctx-stage-chip"]')
   ok(chips.length === 3, `阶段图例三格（实际 ${chips.length}）`)
-  ok(chips.filter((c) => c.getAttribute('data-active') === '1').length === 1, '图例里只有一格是已接管')
+  const activeChips = chips.filter((c) => c.getAttribute('data-active') === '1')
+  ok(activeChips.length === 2, `图例里两格已接管（清理 + 压缩，实际 ${activeChips.length}）`)
+  ok(
+    activeChips.every((c) => ['tool-sweep', 'compaction'].includes(c.getAttribute('data-kind'))),
+    '已接管的两格确实是清理与压缩'
+  )
 
   /* 详情：预算的每个数都能在界面里对上 */
   const toggle = q('[data-testid="ctx-details-toggle"]')
@@ -255,6 +269,57 @@
   await checkRow(220, '最窄 220px')
   await S().setPanelWidth({ panelWidth: 260 })
   await sleep(300)
+
+  /* ---------------- 7. 阈值设置：改了当场生效、界面数 = 主进程数（N21-7） ---------------- */
+  log('')
+  log('=== 7. 上下文设置（可配置化 + 生效来源）===')
+  const savedPolicy = S().settings?.contextPolicy
+  /* 与设置面板同一条 IPC（store.patchSettings → main） */
+  await S().patchSettings({ contextPolicy: { workingSetCap: 500_000, windowRatio: 0.25 } })
+  for (let i = 0; i < 40; i++) {
+    if (S().session?.contextPolicy?.source === 'user') break
+    await sleep(250)
+  }
+  const view2 = S().session?.contextPolicy
+  ok(view2?.source === 'user', `来源变成“用户设置”（实际 ${view2?.source}）`)
+  ok((view2?.overridden ?? []).includes('workingSetCap'), '覆盖字段被点名（可解释：哪些值不是默认）')
+
+  const ipc2 = await window.yan.contextBudget(win)
+  ok(ipc2?.policy.workingSetCap === 500_000, 'IPC 策略读到了同一份用户设置')
+  ok(ipc2?.source === 'user' && ipc2?.overridden.includes('windowRatio'), 'IPC 也报告了来源与覆盖字段')
+  ok(
+    view2?.budget.workingSet === ipc2?.budget.workingSet,
+    `改完设置后界面工作集仍 = 主进程算的（${view2?.budget.workingSet} vs ${ipc2?.budget.workingSet}）`
+  )
+  const tokens2 = text('[data-testid="ctx-tokens"]')
+  ok(
+    tokens2.endsWith(`/ ${fmtK(ipc2.budget.workingSet)}`),
+    `用量条分母跟着设置改（实际 ${JSON.stringify(tokens2)}）`
+  )
+
+  /* 设置面板里的来源与回填（打开上下文 tab） */
+  S().openSettings?.('context')
+  await sleep(500)
+  const src = q('[data-testid="ctx-source"]')
+  ok(!!src, '设置面板有「生效来源」')
+  ok(/用户设置/.test(src?.textContent ?? ''), `来源文案显示用户设置（实际 ${JSON.stringify(src?.textContent)}）`)
+  const capInput = q('[data-testid="ctx-cap"]')
+  ok(capInput?.value === '500000', `设置面板回填了当前覆盖（实际 ${JSON.stringify(capInput?.value)}）`)
+  ok(!!q('[data-testid="ctx-preset"]'), '有预设分段控件')
+  S().closeSettings?.()
+  await sleep(200)
+
+  /* 恢复默认：探针不留副作用（下一次跑要看到干净的默认值） */
+  await S().patchSettings({ contextPolicy: savedPolicy })
+  for (let i = 0; i < 40; i++) {
+    if (S().session?.contextPolicy?.source === 'default') break
+    await sleep(250)
+  }
+  ok(S().session?.contextPolicy?.source === 'default', '恢复默认后来源回到“默认值”')
+  ok(
+    (await window.yan.contextBudget(win))?.policy.workingSetCap === 240_000,
+    '恢复默认后工作集上限回到 240k'
+  )
 
   return out.join('\n')
 })()

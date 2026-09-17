@@ -40,12 +40,21 @@
  * 这些分支在真实模型上要么很贵（要填几十万 token）要么很难构造，
  * 所以判定与预算全放在这里，只留「调 RPC」那一行给 agent.ts。
  *
- * ── 阶段边界（不要在阶段 3 提前实现阶段 4 的事）──
- * 这里只做 `compaction`：`tool-sweep` / `episode-fold` 需要 pi 扩展的 `context`
- * 钩子去真的改送给模型的消息（阶段 4）。`kinds` 就是这道边界的唯一出处，
- * 界面上未接管的阶段按「未生效」显示。
+ * ── 阶段边界（`kinds` 是唯一出处）──
+ * 主进程只做 `compaction`（调 pi 的 `compact()`）；`tool-sweep` / `recall` 由 pi 扩展的
+ * `context` 钩子执行，`episode-fold` 还没有状态生成器。`kinds` 说明**真会执行**的那些，
+ * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
+ * 默认值是 `['tool-sweep', 'recall', 'compaction']`（用户 2026-09-17 拍板：清理默认开，
+ * 但必须保留可召回引用），可用 `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖。
  */
-import type { ContextBudget, ContextNextStage, ContextOperationKind, ContextPolicy } from './ipc'
+import type {
+  ContextBudget,
+  ContextNextStage,
+  ContextOperationKind,
+  ContextPolicy,
+  ContextPolicyOverrides,
+  ContextPolicySource
+} from './ipc'
 
 export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   enabled: true,
@@ -57,8 +66,17 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   safetyMarginRatio: 0.02,
   emergencyRatio: 0.9,
   triggerRatios: { sweep: 0.7, fold: 0.85, compact: 1 },
-  /* 阶段 3 只会执行压缩；清理 / 折叠等阶段 4 的上下文扩展落地后再加进来 */
-  kinds: ['compaction']
+  /*
+   * 阶段 4 的默认接管范围：清理（Tool Sweep）+ 召回 + 压缩。
+   *
+   * · `tool-sweep` **默认开**（用户 2026-09-17 拍板）：墓碑里带 `ctx://tool/<entryId>`
+   *   引用与取回说明，原文只从**送给模型的窗口**里拿掉，会话文件一行不动 ——
+   *   所以“扫掉”是可逆的，不是删除。
+   * · `recall` 必须与 `tool-sweep` **同时**在线：墓碑引用的唯一取回通道就是它，
+   *   少了它，默认开启的 sweep 会变成“拿掉且取不回”。
+   * · `episode-fold` 仍不在默认里：它要有状态生成器（语义内容），那是 N21-5/N21-8。
+   */
+  kinds: ['tool-sweep', 'recall', 'compaction']
 }
 
 const ALL_KINDS: readonly ContextOperationKind[] = [
@@ -67,6 +85,25 @@ const ALL_KINDS: readonly ContextOperationKind[] = [
   'compaction',
   'recall'
 ]
+
+/**
+ * 设置面板里的**预设**（N21-7）。
+ *
+ * `default` 是空对象而不是一份数值 —— 与 `railWidth: 0` 同一个约定：
+ * “用完默认”必须能被表达，否则用户没法从预设切回去；而默认值本身只有
+ * `DEFAULT_CONTEXT_POLICY` 一个出处（写两份必然漂移）。
+ *
+ * `reference` 是外部参考方案的数值（300k / 0.75）。**只改这一组两个值**：
+ * 参考方案的“五档阶段”在我们这里没有对应物（我们只有三档 + 兜底，
+ * 而且 `kinds` 是不可调的），所以不能假装选它就多了两档 —— 界面文案要写清。
+ * 小窗口下 `windowRatio: 0.75` 会侵占输出预留，但公式里那个
+ * `窗口 − 预留 − 余量` 的 `min` 项仍然拦着（见 contextBudget 的注释），
+ * 所以这个预设是安全的，只是更激进。
+ */
+export const CONTEXT_POLICY_PRESETS: Record<'default' | 'reference', ContextPolicyOverrides> = {
+  default: {},
+  reference: { workingSetCap: 300_000, windowRatio: 0.75 }
+}
 
 /**
  * 算工作集预算。
@@ -114,12 +151,77 @@ export function contextBudget(
   }
 }
 
-/* ------------------------------------------------------------ 参数覆盖（env） */
+/* ------------------------------------------------------------ 参数覆盖（env / 设置 / 模型） */
 
 function num(v: unknown, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null
   if (v < min || v > max) return null
   return v
+}
+
+/**
+ * 把一份覆盖写进策略，返回**真的被采纳**的字段名。
+ *
+ * 为什么返回字段名而不是 void：设置层有好几层（用户 → provider → model → env），
+ * 界面要能回答“这个值是谁定的”。非法值一律忽略并退回上一层 —— 设置文件可以被手改，
+ * 写坏的数值不能让预算变成 NaN。
+ */
+export function applyOverrides(
+  policy: ContextPolicy,
+  raw: ContextPolicyOverrides | undefined | null
+): string[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+  const o = raw as Record<string, unknown>
+  const applied: string[] = []
+
+  const cap = num(o.workingSetCap, { min: 1 })
+  if (cap !== null) {
+    policy.workingSetCap = Math.round(cap)
+    applied.push('workingSetCap')
+  }
+  const winRatio = num(o.windowRatio, { min: 0.05, max: 1 })
+  if (winRatio !== null) {
+    policy.windowRatio = winRatio
+    applied.push('windowRatio')
+  }
+  const preferred = num(o.responseReservePreferred)
+  if (preferred !== null) {
+    policy.responseReservePreferred = Math.round(preferred)
+    applied.push('responseReservePreferred')
+  }
+  const reserveMin = num(o.responseReserveMin)
+  if (reserveMin !== null) {
+    policy.responseReserveMin = Math.round(reserveMin)
+    applied.push('responseReserveMin')
+  }
+  const marginMin = num(o.safetyMarginMin)
+  if (marginMin !== null) {
+    policy.safetyMarginMin = Math.round(marginMin)
+    applied.push('safetyMarginMin')
+  }
+  const marginRatio = num(o.safetyMarginRatio, { max: 1 })
+  if (marginRatio !== null) {
+    policy.safetyMarginRatio = marginRatio
+    applied.push('safetyMarginRatio')
+  }
+  const emergency = num(o.emergencyRatio, { min: 0.0001, max: 1 })
+  if (emergency !== null) {
+    policy.emergencyRatio = emergency
+    applied.push('emergencyRatio')
+  }
+
+  const ratios = o.triggerRatios
+  if (ratios && typeof ratios === 'object' && !Array.isArray(ratios)) {
+    const r = ratios as Record<string, unknown>
+    for (const key of ['sweep', 'fold', 'compact'] as const) {
+      const v = num(r[key], { min: 0.01, max: 1 })
+      if (v !== null) {
+        policy.triggerRatios[key] = v
+        applied.push(`triggerRatios.${key}`)
+      }
+    }
+  }
+  return applied
 }
 
 /**
@@ -130,6 +232,9 @@ function num(v: unknown, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}): numbe
  * 一两千就能用一次普通回合走完整条路径（与 N21-2 把 `reserveTokens` 调到
  * 比窗口还大是同一个手法）。非法字段一律忽略、退回默认值 —— 测试参数写错时
  * 应当退回生产默认值，而不是让预算变成 NaN。
+ *
+ * 这是**测试/调试通道**，优先级高于设置（见 resolveContextPolicy）：
+ * 否则用户设置会静默盖掉 `YAN_CONTEXT_POLICY`，让测试失去意义。
  */
 export function policyFrom(
   raw: string | undefined | null,
@@ -146,30 +251,8 @@ export function policyFrom(
   const o = parsed as Record<string, unknown>
   const out: ContextPolicy = { ...base, triggerRatios: { ...base.triggerRatios } }
 
+  applyOverrides(out, o as ContextPolicyOverrides)
   if (typeof o.enabled === 'boolean') out.enabled = o.enabled
-  const cap = num(o.workingSetCap, { min: 1 })
-  if (cap !== null) out.workingSetCap = Math.round(cap)
-  const winRatio = num(o.windowRatio, { min: 0.05, max: 1 })
-  if (winRatio !== null) out.windowRatio = winRatio
-  const preferred = num(o.responseReservePreferred)
-  if (preferred !== null) out.responseReservePreferred = Math.round(preferred)
-  const reserveMin = num(o.responseReserveMin)
-  if (reserveMin !== null) out.responseReserveMin = Math.round(reserveMin)
-  const marginMin = num(o.safetyMarginMin)
-  if (marginMin !== null) out.safetyMarginMin = Math.round(marginMin)
-  const marginRatio = num(o.safetyMarginRatio, { max: 1 })
-  if (marginRatio !== null) out.safetyMarginRatio = marginRatio
-  const emergency = num(o.emergencyRatio, { min: 0.0001, max: 1 })
-  if (emergency !== null) out.emergencyRatio = emergency
-
-  const ratios = o.triggerRatios
-  if (ratios && typeof ratios === 'object' && !Array.isArray(ratios)) {
-    const r = ratios as Record<string, unknown>
-    for (const key of ['sweep', 'fold', 'compact'] as const) {
-      const v = num(r[key], { min: 0.01, max: 1 })
-      if (v !== null) out.triggerRatios[key] = v
-    }
-  }
 
   const kinds = o.kinds
   if (Array.isArray(kinds)) {
@@ -180,6 +263,113 @@ export function policyFrom(
     if (picked.length || kinds.length === 0) out.kinds = picked
   }
   return out
+}
+
+/* -------------------------------------------------------- 生效层解析（N21-7） */
+
+/** 一层覆盖：在哪里、覆盖了哪些字段 */
+export interface ContextPolicyLayer {
+  source: ContextPolicySource
+  /** provider 层是供应商名，model 层是 `provider/model` */
+  key?: string
+  overrides: ContextPolicyOverrides
+}
+
+export interface ResolvedContextPolicy {
+  policy: ContextPolicy
+  /** 数值的生效层（`overridden` 非空时才有意义；全默认时为 `default`） */
+  source: ContextPolicySource
+  sourceKey?: string
+  /** 被覆盖（非默认）的字段名 */
+  overridden: string[]
+}
+
+/** 三层设置层的 lookup 输入（`env` 单独给，因为它是测试通道而非持久设置） */
+export interface ContextPolicyLayers {
+  /** 用户级（`AppSettings.contextPolicy`） */
+  user?: ContextPolicyOverrides
+  /** 模型 / 供应商级（`AppSettings.contextPolicyByModel`），key 两种形式 */
+  byModel?: Record<string, ContextPolicyOverrides>
+  /** 当前模型的 `provider/model`（`modelKeyOf` 的输出）；没有当前模型时不传 */
+  modelKey?: string
+  /** 显式供应商名；缺省从 `modelKey` 推 */
+  provider?: string
+  /** `YAN_CONTEXT_POLICY` 原文（测试通道，优先级最高） */
+  envRaw?: string
+}
+
+/** 逐字段比较两份策略，返回值不同的字段名（含 `triggerRatios.*` 与 `kinds`） */
+function diffPolicy(a: ContextPolicy, b: ContextPolicy): string[] {
+  const out: string[] = []
+  const flat = [
+    'enabled',
+    'workingSetCap',
+    'windowRatio',
+    'responseReservePreferred',
+    'responseReserveMin',
+    'safetyMarginMin',
+    'safetyMarginRatio',
+    'emergencyRatio'
+  ] as const
+  for (const key of flat) if (a[key] !== b[key]) out.push(key)
+  for (const key of ['sweep', 'fold', 'compact'] as const) {
+    if (a.triggerRatios[key] !== b.triggerRatios[key]) out.push(`triggerRatios.${key}`)
+  }
+  if (JSON.stringify(a.kinds) !== JSON.stringify(b.kinds)) out.push('kinds')
+  return out
+}
+
+/**
+ * 把各层盖成**一份**策略，并说清它来自哪一层（N21-7 的“可解释”）。
+ *
+ * lookup 顺序（后者赢）：`default` → `user` → `provider` → `model` → `env`。
+ * `provider` 与 `model` 共用 `byModel` 这张表，按 key 的**具体程度**排序 ——
+ * 所以 `anthropic` 与 `anthropic/claude-sonnet-4` 同时存在时，后者赢。
+ *
+ * `source` 取**最后一个真的改了值的层**，不是遍历到的最后一层：一个只有
+ * 供应商覆盖、用户级为空的会话，不该被说成“用户设的”。
+ */
+export function resolveContextPolicy(layers: ContextPolicyLayers = {}): ResolvedContextPolicy {
+  const policy: ContextPolicy = {
+    ...DEFAULT_CONTEXT_POLICY,
+    triggerRatios: { ...DEFAULT_CONTEXT_POLICY.triggerRatios },
+    kinds: [...DEFAULT_CONTEXT_POLICY.kinds]
+  }
+  let source: ContextPolicySource = 'default'
+  let sourceKey: string | undefined
+  const overridden: string[] = []
+
+  const apply = (
+    raw: ContextPolicyOverrides | undefined,
+    src: ContextPolicySource,
+    key?: string
+  ): void => {
+    const applied = applyOverrides(policy, raw)
+    if (!applied.length) return
+    source = src
+    sourceKey = key
+    for (const f of applied) if (!overridden.includes(f)) overridden.push(f)
+  }
+
+  apply(layers.user, 'user')
+  const provider = layers.provider ?? (layers.modelKey ? layers.modelKey.split('/')[0] : undefined)
+  if (provider) apply(layers.byModel?.[provider], 'provider', provider)
+  if (layers.modelKey) apply(layers.byModel?.[layers.modelKey], 'model', layers.modelKey)
+
+  const envRaw = layers.envRaw
+  if (envRaw && envRaw.trim()) {
+    const withEnv = policyFrom(envRaw, policy)
+    const diff = diffPolicy(policy, withEnv)
+    if (diff.length) {
+      /* `policyFrom` 已经夹过合法区间、也认了 `enabled` 与 `kinds`，整份替换即可 */
+      Object.assign(policy, withEnv)
+      source = 'env'
+      sourceKey = undefined
+      for (const f of diff) if (!overridden.includes(f)) overridden.push(f)
+    }
+  }
+
+  return { policy, source, sourceKey, overridden }
 }
 
 /* ---------------------------------------------------------------- 触发决策 */
@@ -277,8 +467,8 @@ export function contextPolicyStep(input: PolicyStepInput): PolicyStepResult {
  *
  * 只收 `kinds` 而不是整份策略：渲染端只拿得到策略**视图**（主进程推来的），
  * 而它真正需要的只是“哪些阶段已接管”。
- * 只在**真正会执行的阶段**里挑，所以阶段 3 永远返回 compaction ——
- * 清理 / 折叠虽然在工作集上有刻度，现在并不会触发。
+ * 只挑**有工作集刻度**的阶段（清理 / 折叠 / 压缩）—— `recall` 是取回通道、不是刻度，
+ * 所以它进 `kinds` 但不参与这条预报。
  * 全部过线时返回当前最高阶段的 `reached: true`。
  */
 export function nextContextStage(
@@ -304,4 +494,63 @@ export function nextContextStage(
   if (ahead) return ahead
   const last = candidates[candidates.length - 1]
   return { ...last, reached: true }
+}
+
+/* ------------------------------------------------------- 覆盖值的清洗与落盘（N21-7） */
+
+/** 只留下与默认值**不同**的字段（“用完默认”必须能被表达，见 CONTEXT_POLICY_PRESETS） */
+function overridesFromPolicy(p: ContextPolicy): ContextPolicyOverrides {
+  const d = DEFAULT_CONTEXT_POLICY
+  const out: ContextPolicyOverrides = {}
+  if (p.workingSetCap !== d.workingSetCap) out.workingSetCap = p.workingSetCap
+  if (p.windowRatio !== d.windowRatio) out.windowRatio = p.windowRatio
+  if (p.responseReservePreferred !== d.responseReservePreferred) {
+    out.responseReservePreferred = p.responseReservePreferred
+  }
+  if (p.responseReserveMin !== d.responseReserveMin) out.responseReserveMin = p.responseReserveMin
+  if (p.safetyMarginMin !== d.safetyMarginMin) out.safetyMarginMin = p.safetyMarginMin
+  if (p.safetyMarginRatio !== d.safetyMarginRatio) out.safetyMarginRatio = p.safetyMarginRatio
+  if (p.emergencyRatio !== d.emergencyRatio) out.emergencyRatio = p.emergencyRatio
+  const ratios: { sweep?: number; fold?: number; compact?: number } = {}
+  for (const key of ['sweep', 'fold', 'compact'] as const) {
+    if (p.triggerRatios[key] !== d.triggerRatios[key]) ratios[key] = p.triggerRatios[key]
+  }
+  if (Object.keys(ratios).length) out.triggerRatios = ratios
+  return out
+}
+
+/**
+ * 清洗**一层**覆盖值（设置文件可以被手改，不能信）。
+ *
+ * 校验逻辑复用 `applyOverrides`（唯一真源），再把夹好的值读回来：
+ * 非法字段被丢掉、越界值被夹到区间、认不出的键直接消失。
+ * 清洗后与默认值完全一致时返回 `undefined` —— 让“没覆盖”在磁盘上就是**没有这个键**，
+ * 而不是一个空对象（否则以后改默认值时，这些人会被一份空壳配置挡住）。
+ */
+export function sanitizeContextPolicyOverrides(v: unknown): ContextPolicyOverrides | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const probe: ContextPolicy = {
+    ...DEFAULT_CONTEXT_POLICY,
+    triggerRatios: { ...DEFAULT_CONTEXT_POLICY.triggerRatios },
+    kinds: [...DEFAULT_CONTEXT_POLICY.kinds]
+  }
+  if (!applyOverrides(probe, v as ContextPolicyOverrides).length) return undefined
+  const clean = overridesFromPolicy(probe)
+  /* 全是默认值时同样当“没有覆盖”，否则会落一份空壳配置 */
+  return Object.keys(clean).length ? clean : undefined
+}
+
+/** 清洗模型级覆盖表：未知形状的项直接丢掉，key 限长（key 会进日志与界面） */
+export function sanitizeContextPolicyByModel(
+  v: unknown
+): Record<string, ContextPolicyOverrides> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const out: Record<string, ContextPolicyOverrides> = {}
+  for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
+    const trimmed = key.trim()
+    if (!trimmed || trimmed.length > 200) continue
+    const clean = sanitizeContextPolicyOverrides(value)
+    if (clean) out[trimmed] = clean
+  }
+  return Object.keys(out).length ? out : undefined
 }

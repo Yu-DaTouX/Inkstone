@@ -8,13 +8,14 @@ import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
 import { previewSound } from '../../lib/sound'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { AuthTab } from './AuthTab'
+import { ContextTab } from './ContextTab'
 
-export type SettingsTab = 'auth' | 'appearance' | 'sound' | 'status' | 'about'
+export type SettingsTab = 'auth' | 'appearance' | 'context' | 'sound' | 'status' | 'about'
 
 /**
  * 设置面板。
  *
- * 五个 tab：模型接入 / 外观 / 声音提示 / 状态 / 关于。
+ * 六个 tab：模型接入 / 外观 / 上下文 / 声音提示 / 状态 / 关于。
  *
  * 「状态」（模型 / 上下文用量 / 花费）是**边聊边看**的，
  * 所以它同时以紧凑形式留在输入区（见 ContextBar），不只是躺在这里。
@@ -72,6 +73,7 @@ export function Settings({
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
+    { id: 'context', label: t('set.context'), icon: 'layers' },
     { id: 'sound', label: t('set.sound'), icon: 'sparkles' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'about', label: t('set.about'), icon: 'shield-check' }
@@ -119,6 +121,8 @@ export function Settings({
             <AuthTab />
           ) : tab === 'appearance' ? (
             <AppearanceTab lang={lang} setLang={setLang} />
+          ) : tab === 'context' ? (
+            <ContextTab />
           ) : tab === 'sound' ? (
             <SoundTab />
           ) : tab === 'status' ? (

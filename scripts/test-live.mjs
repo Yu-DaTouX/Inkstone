@@ -42,10 +42,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /*
  * 测试统一使用的模型（会让所有 cost>0 场景真实调模型）。
  *
- * 默认用 **commandcode 的 Ling 3.0 Flash Sante（免费）**：
+ * 默认用 **commandcode 的 LongCat 2.0（免费）**：
  *   供应商 provider = commandcode
- *   模型 id        = inclusionai/ling-3.0-flash-sante:free
- * 它成本为 0，适合反复跑回归。个别场景（如 image 要发图）需要视觉模型，
+ *   模型 id        = longcat-2.0:free
+ * 它成本为 0，适合反复跑回归。若该模型不可用或触顶，改用
+ * `YAN_TEST_MODEL="commandcode/laguna-s-2.1-free"` 重跑。个别场景（如 image 要发图）需要视觉模型，
  * 在 CASES 里用 `model:` 单独覆盖。
  *
  * 想用别的模型：`YAN_TEST_MODEL="provider/modelId" npm run test:live -- e2e`。
@@ -54,7 +55,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * 绝不写回原目录。个别场景需要「没有凭证」的前提，见下面 `piDirNoAuth`。
  * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
  */
-const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/inclusionai/ling-3.0-flash-sante:free'
+const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/longcat-2.0:free'
 
 /**
  * Electron 可执行文件（直接 spawn，不经 npx）。
@@ -100,6 +101,20 @@ const CASES = {
   toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
   // 删除会话确认框：标题 / 按钮样式 / 不换行 / Esc 不误删（方案 15）
   trash: { probe: 'scripts/probe/trash.js', delay: 10000, cost: 0 },
+  /*
+   * N21-4 / S1：会话删除时清掉派生状态。
+   *
+   * 状态文件由 Node 侧种进隔离的 YAN_DATA_DIR（探针按设计碰不到那个目录），
+   * 探针只负责走真实界面删一条会话，退出后检查文件是否被清掉。
+   * cost 0：不调模型。
+   */
+  contextstate: {
+    probe: 'scripts/probe/context-state.js',
+    delay: 10000,
+    cost: 0,
+    contextStateSeed: true,
+    afterExit: 'contextStateCleanup'
+  },
   // 文件引用：主进程校验通道 / 标签渲染 / 只有附件也能发（方案 5.1）
   fileref: { probe: 'scripts/probe/fileref.js', delay: 10000, cost: 0 },
   // 链接路由 + 只读文件预览（方案 5.2）
@@ -174,7 +189,7 @@ const CASES = {
     fixture: true,
     delay: 12000,
     cost: 1,
-    model: 'commandcode/meituan/LongCat-2.0:free',
+    model: 'commandcode/longcat-2.0:free',
     afterExit: 'atrefsendArchive'
   },
   /*
@@ -297,7 +312,50 @@ const CASES = {
      */
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":100,"emergencyRatio":0.001}' }
   },
-  /* 同上，但把工作集抬到天上、兜底压到极低 → 命中的是 90% 物理兜底那条线 */
+  /*
+   * N21-4 / S2 真实接管（cost 1）：真实回合里把「上一回合的大块工具输出」
+   * 换成墓碑（`ctx://tool/<原始 entryId>`），扩展写归档元数据，模型再用
+   * `context_recall` 取回原文。
+   *
+   * 为什么把 recentTail 与门槛压到最小：默认 32k 尾部以下的小会话
+   * 永远不会 sweep（整个历史都在尾部里）。压到最小后，只要有两个回合
+   * 就必然产生候选 —— 触发路径、钩子调用、消息替换、归档落盘全是真的，
+   * 只有“那条线”被挪近了（与 N21-3 的 `workingSetCap=1500` 同一手法）。
+   * 取证点在退出后的派生文件（扩展在 renderer 里碰不到 `YAN_DATA_DIR`）。
+   *
+   * **刻意不设 `kinds`**（2026-09-17 起）："清理默认开"是个产品决定，
+   * 所以这里验的就是默认接管集本身 —— 哪天默认值被改回 `['compaction']`，
+   * 这条场景会红，而不是静默变成“总是没候选”。
+   */
+  contextsweep: {
+    probe: 'scripts/probe/context-sweep.js',
+    delay: 12000,
+    cost: 1,
+    budget: 420000,
+    contextExtLog: true,
+    afterExit: 'contextSweepArchive',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"recentTail":{"target":1,"max":1},"sweep":{"minTokens":10,"minReclaimTokens":10,"minReclaimRatio":0}}'
+    }
+  },
+  /*
+   * N21-4 生成器（cost 1）：真实回合里生成状态 → 落盘 → 下一轮注入。
+   * `kinds` 必须**显式**带上 `episode-fold` —— 默认不含它（默认不调模型、不花钱），
+   * 这条场景就是那个开关打开后的取证。退出后检查在 `checkContextProduce`。
+   */
+  contextproduce: {
+    probe: 'scripts/probe/context-produce.js',
+    delay: 12000,
+    cost: 1,
+    budget: 420000,
+    contextExtLog: true,
+    afterExit: 'contextProduce',
+    env: {
+      YAN_CONTEXT_POLICY: '{"kinds":["tool-sweep","recall","compaction","episode-fold"]}'
+    }
+  },
+/* 同上，但把工作集抬到天上、兜底压到极低 → 命中的是 90% 物理兜底那条线 */
   contextemergency: {
     probe: 'scripts/probe/context-takeover.js',
     delay: 10000,
@@ -1017,6 +1075,342 @@ function checkProbeSyntax(probe) {
   }
 }
 
+/** S1 种子结果（`contextstate` 场景）：退出后检查靠它区分「种子」与「残留」 */
+let contextStateSeed = { dir: '', ids: [] }
+
+/**
+ * S1：把派生状态种进隔离目录。
+ *
+ * 用**构建产物里的真实模块**（`out/main/context-state-store.js` +
+ * `context-watermark.js`）而不是手写 JSON 夹具 —— 种子与生产走同一套
+ * 原子写 / schema 校验 / 水位绑定，live 场景才能真的证明「删会话清派生状态」
+ * 这条链路上的文件命名与校验是一致的。
+ *
+ * 返回 { dir, ids }：ids 给退出后检查用。
+ * ⚠️ 所有调用都显式传 `dir`（隔离目录）；store 模块默认的 YAN_DIR
+ *    是这个 Node 进程的 process.env，不能依赖它 —— 否则会写进真实用户目录。
+ */
+async function seedContextStates(sessionsRoot, dataDir) {
+  const store = await import('../out/main/context-state-store.js')
+  const watermark = await import('../out/main/context-watermark.js')
+  const dir = join(dataDir, 'context-state')
+  const files = []
+  const walk = (parent) => {
+    for (const e of readdirSync(parent, { withFileTypes: true })) {
+      const p = join(parent, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (e.name.endsWith('.jsonl')) files.push(p)
+    }
+  }
+  walk(sessionsRoot)
+
+  const ids = []
+  for (const file of files) {
+    const index = await watermark.readSessionEntryIndex(file)
+    if (!index?.sessionId) continue
+    const now = Date.now()
+    await store.saveContextState(
+      {
+        schemaVersion: store.CONTEXT_STATE_SCHEMA_VERSION,
+        sessionId: index.sessionId,
+        sourceWatermark: index.watermark,
+        createdAt: now,
+        updatedAt: now,
+        task: store.emptyTaskState('live 场景种下的状态', 'seed'),
+        episodes: []
+      },
+      { dir, raw: { knownEntryIds: index.entryIds } }
+    )
+    ids.push(index.sessionId)
+  }
+  return { dir, ids }
+}
+
+/**
+ * 退出后检查：被删会话的派生状态没了，别人的还在（S1）。
+ *
+ * 探针把删掉的 sessionId 打印成 `ctxstate.deletedSessionId=…`；这里对文件
+ * 系统断言。之所以必须放到退出后：状态文件的清理发生在删除那一刻，
+ * 而渲染进程看不到 YAN_DATA_DIR（测试边界：不能把 renderer 接到数据目录）。
+ */
+function checkContextStateCleanup(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const seeded = contextStateSeed.ids
+  say(seeded.length >= 2, `种下的派生状态数 = ${seeded.length}（至少两条才能验“只删对的那条”）`)
+
+  const match = /ctxstate\.deletedSessionId=(\S*)/.exec(probeText)
+  const deletedId = match?.[1] ?? ''
+  say(!!deletedId, `探针报告被删会话 id = ${JSON.stringify(deletedId)}`)
+  say(seeded.includes(deletedId), '被删会话在种子列表里（否则这条场景没验到该验的东西）')
+
+  const dir = join(sandboxRoot, 'data', 'context-state')
+  const files = existsSync(dir) ? readdirSync(dir) : []
+  const stateFiles = files.filter((f) => f.endsWith('.json') && !f.endsWith('.archive.json'))
+  lines.push(`  目录 = ${dir}`)
+  lines.push(`  剩下 = ${JSON.stringify(stateFiles)}`)
+
+  say(!files.includes(`${deletedId}.json`), `被删会话的状态文件已清理（${deletedId}.json）`)
+  say(
+    stateFiles.length === seeded.length - 1,
+    `其它会话的状态一个没少（${stateFiles.length} / 期望 ${seeded.length - 1}）`
+  )
+  say(
+    !files.some((f) => f.endsWith('.tmp')),
+    '清理后目录里没有残留临时文件'
+  )
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：Tool Sweep 在真实回合里真的发生过（N21-4 / S2）。
+ *
+ * 三份证据缺一不可：
+ *   ① 归档元数据落在隔离的 `YAN_DATA_DIR/context-state/<id>.archive.json`，
+ *      且 `ref = ctx://tool/<entryId>` 里的 entryId **真的存在于会话文件**
+ *      （不然 Recall 会指向空气）；
+ *   ② 扩展诊断里有 `swept >= 1`（证明 `context` 钩子被 pi 调用且替换被采纳），
+ *      并且没有 `hook: "error"`（扩展在真实 pi 里没报错）；
+ *   ③ 召回审计里有 `result: "ok"`（模型真的用 recall 把原文取回去过）。
+ * 三者都在 renderer 看不到的目录里 —— 这正是必须放到退出后检查的原因。
+ */
+function checkContextSweepArchive(sandboxRoot) {
+  return checkContextSweepArchiveImpl(sandboxRoot)
+}
+
+/**
+ * 退出后检查：状态生成器真的跑通了（N21-4 剩余项）。
+ *
+ * 四份证据缺一不可（全在 renderer 看不到的目录里）：
+ *   ① 诊断里有 `stage: "producer"` 与 `hook: "committed"`（扩展真的调了模型并落盘）；
+ *   ② 状态文件存在、`revision >= 1`、`task.objective` 非空，
+ *      且 `commandsRun` / `testsRun` / `files` **至少一项来自真实工具调用**；
+ *   ③ 下一回合注入发生（诊断里有 `injectedTaskState: true`）；
+ *   ④ 状态文件过**主进程的** schema 校验（JS 写、TS 读，两边不许各信各的）。
+ * 任一不成立，功能在真实链路里就是静默失效的。
+ */
+async function checkContextProduce(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  /* ---- 诊断日志 ---- */
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const producerRows = records.filter((r) => r?.stage === 'producer')
+  lines.push(`  诊断行 = ${records.length}（其中 producer ${producerRows.length} 行）`)
+  const committed = producerRows.filter((r) => r.hook === 'committed')
+  const bad = producerRows.filter((r) => ['error', 'rejected', 'aborted'].includes(r.hook))
+  say(committed.length >= 1, `生成器至少提交过一次状态（${committed.length} 次）`)
+  for (const row of bad.slice(0, 4)) lines.push(`    · ${JSON.stringify(row).slice(0, 220)}`)
+  say(bad.length === 0, `生成器没有报错 / 被拒 / 超时（${bad.length} 条）`)
+  const injected = records.filter((r) => r?.injectedTaskState === true)
+  say(injected.length >= 1, `下一个回合真的注入了 <TASK_STATE>（${injected.length} 次）`)
+
+  /* ---- 状态文件 ---- */
+  const dir = join(sandboxRoot, 'data', 'context-state')
+  const files = existsSync(dir) ? readdirSync(dir) : []
+  lines.push(`  目录 = ${dir}`)
+  lines.push(`  文件 = ${JSON.stringify(files)}`)
+  const stateFiles = files.filter(
+    (f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json')
+  )
+  say(stateFiles.length >= 1, `状态文件已写出（${stateFiles.length} 份）`)
+  if (!stateFiles.length) return { ok, lines }
+
+  let state = null
+  try {
+    state = JSON.parse(readFileSync(join(dir, stateFiles[0]), 'utf8'))
+  } catch {
+    state = null
+  }
+  say(!!state, '状态文件是合法 JSON')
+  if (!state) return { ok, lines }
+  say(
+    Number.isInteger(state.revision) && state.revision >= 1,
+    `revision >= 1（实际 ${state.revision}）`
+  )
+  const objective = state?.task?.task?.objective
+  say(
+    typeof objective === 'string' && objective.length > 0,
+    `objective 非空（${JSON.stringify(objective)?.slice(0, 80)}）`
+  )
+  const commands = state?.task?.commandsRun?.length ?? 0
+  const tests = state?.task?.testsRun?.length ?? 0
+  const fileCount = state?.task?.files?.length ?? 0
+  lines.push(`  evidence：commands=${commands} tests=${tests} files=${fileCount}`)
+  say(commands + tests + fileCount >= 1, 'evidence 至少一项来自真实工具调用（确定性 reducer 工作）')
+
+  /* ---- 交叉校验：状态文件必须过主进程的读路径 ---- */
+  const store = await import('../out/main/context-state-store.js').catch(() => null)
+  /*
+   * `opts.dir` 是**完整的状态目录**（不是它的父目录）—— 见
+   * `contextStateDir(dir)` 的实现：`dir ?? join(YAN_DIR, 'context-state')`。
+   * 传错只会得到 `missing`，看起来像“文件没写出”，很容易误导排查。
+   */
+  const loaded = await store
+    ?.loadContextState?.(state.sessionId, { dir })
+    .catch(() => null)
+  say(loaded?.status === 'ok', `状态文件过主进程的校验（${loaded?.status ?? 'no-store'}）`)
+  if (loaded?.status !== 'ok' && loaded?.issues) {
+    for (const issue of loaded.issues.slice(0, 4)) lines.push(`    · ${issue.path}: ${issue.message}`)
+  }
+
+  return { ok, lines }
+}
+
+async function checkContextSweepArchiveImpl(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dir = join(sandboxRoot, 'data', 'context-state')
+  const files = existsSync(dir) ? readdirSync(dir) : []
+  lines.push(`  目录 = ${dir}`)
+  lines.push(`  文件 = ${JSON.stringify(files)}`)
+
+  const archives = files.filter((f) => f.endsWith('.archive.json'))
+  say(archives.length >= 1, `扩展写出了归档元数据（${archives.length} 份）`)
+
+  let archive = null
+  if (archives.length) {
+    try {
+      archive = JSON.parse(readFileSync(join(dir, archives[0]), 'utf8'))
+    } catch {
+      archive = null
+    }
+  }
+  const toolEntries = (archive?.entries ?? []).filter((e) => e.kind === 'tool')
+  say(toolEntries.length >= 1, `归档里有工具条目（${toolEntries.length} 条）`)
+
+  /* 归档引用的 entryId 必须真的在会话文件里 */
+  const knownIds = new Set()
+  const sessionsDir = join(sandboxRoot, 'sessions')
+  if (existsSync(sessionsDir)) {
+    const stack = [sessionsDir]
+    while (stack.length) {
+      const current = stack.pop()
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const p = join(current, entry.name)
+        if (entry.isDirectory()) stack.push(p)
+        else if (entry.name.endsWith('.jsonl')) knownIds.add(p)
+      }
+    }
+  }
+  const sessionFiles = [...knownIds]
+  const entryIds = new Set()
+  /* 用构建产物里的真实读法（与主进程同一实现），不手写 JSON 解析 */
+  const watermark = await import('../out/main/context-watermark.js').catch(() => null)
+  for (const file of sessionFiles) {
+    const index = await watermark?.readSessionEntryIndex?.(file).catch(() => null)
+    if (!index) continue
+    for (const id of index.entryIds) entryIds.add(id)
+  }
+  {
+    say(entryIds.size > 0, `读到会话原始条目 id（${entryIds.size} 条）`)
+    const refs = toolEntries.map((e) => e.ref).filter((r) => typeof r === 'string')
+    say(refs.length > 0, '归档条目带 ctx:// 引用')
+    const resolvable = refs.filter((r) => {
+      const id = r.slice(r.lastIndexOf('/') + 1)
+      return entryIds.has(id)
+    })
+    say(
+      resolvable.length > 0,
+      `ctx:// 引用指得回原始条目（${resolvable.length}/${refs.length}）`,
+    )
+    const sameRange = toolEntries.every((e) => e.sourceRange?.from === e.sourceRange?.to && entryIds.has(e.sourceRange?.from))
+    say(toolEntries.length > 0 && sameRange, 'sourceRange 是单条原始 entry（不是数组下标 / token 偏移）')
+
+    /* 扩展诊断 */
+    const logPath = join(sandboxRoot, 'ctx-ext.log')
+    const logText = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+    const logLines = logText
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        try {
+          return JSON.parse(l)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+    const swept = logLines.filter((l) => l.hook === 'context' && Number(l.swept) >= 1)
+    say(swept.length >= 1, `诊断里有 swept>=1（扩展的 context 钩子在真实 pi 里被采纳）`)
+    const errors = logLines.filter((l) => l.hook === 'error')
+    say(errors.length === 0, `扩展没有报错（${errors.length} 条 error）`)
+    const skips = logLines.filter((l) => l.hook === 'sweep-skipped')
+    if (skips.length) lines.push(`  （跳过记录：${JSON.stringify(skips.map((s) => s.reason))}）`)
+
+    /* 召回审计 */
+    const auditFiles = files.filter((f) => f.endsWith('.recall.jsonl'))
+    const auditLines = auditFiles.flatMap((f) =>
+      readFileSync(join(dir, f), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => {
+          try {
+            return JSON.parse(l)
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean)
+    )
+    lines.push(`  召回审计 = ${JSON.stringify(auditLines)}`)
+    const recalled = auditLines.some((l) => l.kind === 'recall' && l.result === 'ok')
+    if (recalled) {
+      /*
+       * 召回真的发生过 → TTL（ttl='turn'）必须在下一轮把正文清成存根。
+       * 这是「召回不是永久恢复历史」的真实证据；如果模型没召回就不适用
+       * （那种情况由单测覆盖）。
+       */
+      const expired = logLines.filter((l) => l.hook === 'context' && Number(l.expiredRecalls) >= 1)
+      say(expired.length >= 1, '下一轮把上一轮的召回正文清成存根（expiredRecalls≥1）')
+    } else {
+      lines.push('  （本次模型没有调用 recall —— 召回链路由单测覆盖）')
+    }
+  }
+  return { ok, lines }
+}
+
 /**
  * 退出后的落盘检查（L03）。
  *
@@ -1259,7 +1653,10 @@ const AFTER_EXIT = {
   subagentArchive: checkSubagentArchive,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
-  browserBoundaryDownloads: checkBrowserBoundaryDownloads
+  browserBoundaryDownloads: checkBrowserBoundaryDownloads,
+  contextStateCleanup: checkContextStateCleanup,
+  contextSweepArchive: checkContextSweepArchive,
+  contextProduce: checkContextProduce
 }
 
 /*
@@ -1744,6 +2141,8 @@ async function main() {
     const wins = c.wins ?? [null]
     let allOk = true
     let hint
+    /* 退出后检查需要探针的输出（例如 S1 要它报告被删会话的 sessionId） */
+    let lastProbeText = ''
     /* 边界场景把 cwd 指到合成 fixture 项目（`fixtureSub` 可再下钻到子目录），其余场景用项目根。 */
     const caseCwd = c.fixture ? (c.fixtureSub ? join(fixtureProject, c.fixtureSub) : fixtureProject) : root
 
@@ -1769,6 +2168,19 @@ async function main() {
     const tempBefore = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('yan-subagent-')))
 
     /*
+     * S1 的派生状态种子（`contextstate`）。
+     *
+     * 必须**每个场景开跑前**种，而不是批次开始时种一次：所有场景共用一个隔离
+     * 会话目录，而 `trash` 也会真删会话 —— 那会连带清掉先前种下的状态文件，
+     * 于是全量跑时 `contextstate` 的计数对不上。
+     * 它跟 `desktop.json` 的“每场景重置”是同一个道理。
+     */
+    if (c.contextStateSeed && sandboxRoot) {
+      contextStateSeed = await seedContextStates(join(sandboxRoot, 'sessions'), join(sandboxRoot, 'data'))
+      console.log(`  S1 派生状态：种下 ${contextStateSeed.ids.length} 份 → ${contextStateSeed.dir}`)
+    }
+
+    /*
      * 探针脚本先过一遍**语法检查**。
      *
      * 它们是以字符串形式被 executeJavaScript 执行的，所以语法错误
@@ -1792,10 +2204,13 @@ async function main() {
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
+        /* 扩展诊断落到隔离沙箱（退出后检查读它） */
+        ...(c.contextExtLog && sandboxRoot ? { YAN_CONTEXT_EXT_LOG: join(sandboxRoot, 'ctx-ext.log') } : {}),
         // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
         YAN_TEST_MODEL: c.model ?? TEST_MODEL
       })
       process.stdout.write(out.text)
+      lastProbeText = out.text
       if (!out.ok) {
         allOk = false
         hint = hint ?? out.hint
@@ -1844,7 +2259,7 @@ async function main() {
         failed++
         continue
       }
-      const res = check(sandboxRoot, tempBefore)
+      const res = await check(sandboxRoot, tempBefore, lastProbeText)
       console.log('\n退出后检查（Electron 已关闭）')
       console.log(res.lines.join('\n'))
       if (!res.ok) {

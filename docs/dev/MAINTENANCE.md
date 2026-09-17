@@ -12,7 +12,7 @@
 - `session.isStreaming` 只在“有一条 assistant 消息在流”时为真，**工具执行期间是 false** —— 所以那时输入框按钮显示“发送”（点它是排队/插话）。要停一个正在跑工具的任务，用左栏会话菜单里的「停止运行」。
 - 场景比预期久时先看探针自身耗时（`test:live` 的 kill 兜底是 `delay + budget`，默认 budget 90s，长场景用 `budget` 单独给），不要拿“没抓到 PROBE 输出”当启动失败：那个提示同时也意味着**窗口被手动关掉**或探针被 kill —— 两者都没有 PROBE 标记。
 - 改文档时不要在 bash 里用 `node -e "..."` 处理含**反引号**的文本：shell 会先把反引号里的内容当命令执行（实测把文档里的 `test:live -- …` 当命令跑了一遍，终端里突然冒出一堆 Electron IPC 错误）。写成临时 `.mjs` 文件再 `node` 执行，或直接用编辑器工具。
-- 免费模型有配额：`inclusionai/ling-3.0-flash-sante:free` 每天 100 次，跑多了会 429，症状是 assistant 消息**内容为空**且 `stopReason=error`（看起来像事件流掉了）。子代理那条路径上更隐蔽：run 会报 `status=done` / `error=null`，只是转录里那条 assistant 文本为空（`-- subagent` 会打印这段诊断）。备选：`meituan/LongCat-2.0:free`、`poolside/laguna-s-2.1-free`；需要“模型真的写文件”的场景用 `commandcode/deepseek/deepseek-v4.1-flash`。
+- 免费模型有配额：供应商触顶或暂时不可用时会 429，症状是 assistant 消息**内容为空**且 `stopReason=error`（看起来像事件流掉了）。子代理那条路径上更隐蔽：run 会报 `status=done` / `error=null`，只是转录里那条 assistant 文本为空（`-- subagent` 会打印这段诊断）。当前测试优先使用 `commandcode/longcat-2.0:free`，不可用或触顶时改用 `commandcode/laguna-s-2.1-free`；需要“模型真的写文件”的场景再单独选能稳定执行工具的模型。
 - 要真写文件的场景（`subagentpair`）要排队跑好几个模型任务，实测约 1 分钟（曾有 4-5 分钟的记录，那是 `delay` 被当成探针预算白等造成的）；它只手动跑，不进 `npm run check`。
 - Windows 上 Electron 是 GUI 子系统，主进程 `console.log` **不进 stdout**，test-live 抓不到。子代理事件流有 `YAN_DEBUG_SUBAGENT=1` 开关，会把每个事件追加到系统临时目录的 `yan-subagent-events.log`。
 - sandbox 的凭证副本必须随退出、SIGINT/SIGTERM 清理；异常终止后检查残留，不打印凭证内容。
@@ -102,6 +102,14 @@ IPE，**不退出**）。
   照着不成立的建议实施（本次就有一条"更保守"的写法会让兜底线等于压缩线，
   等于让唯一的绕过上膛路径变成小窗口模型的常规路径）。不采纳的理由要落在文档里，
   否则下一轮会被再提一次。
+- **核实上游（pi）能力时别停在字段名**（2026-09-17）：`ctx.model` / `ctx.modelRegistry`
+  看着只是"模型信息"，但 `ModelRegistry.complete(model, context, options)` 就是一次
+  **无工具**的模型调用（返回 Promise），`agent_settled` 也会对扩展分发
+  （`_extensionRunner.emit({type:'agent_settled'})`）。先前只看到字段名就判定"扩展跑不了推理"，
+  把整个状态生成器绕到"起第二个 pi 进程"上（方案 §13.3 初版结论错，§16.1 已更正）。
+  查 minified bundle 的正确姿势：对每个可疑字段再补一次它的**方法**
+  （`grep -o "complete(model,context,options){[^}]*}"`、`grep -o "ModelRegistry=class[^}]*"`），
+  并用"这个词在 bundle 里出现几次、在哪几个类里"确认归属 —— 字段会骗人，方法不会。
 
 ### 阶段 4 的压缩安全规则：先纯函数，再进链路（2026-09-17，N21-10）
 
@@ -247,7 +255,7 @@ N12 的按会话缓存（`sessionRuntimes`）会被投影回顶层字段。它�
 - `compactionstatus`：改回 `get_messages` 版 hydrate 后同样红 → 前提过期（pi 0.85.1 不再按
   `reserveTokens` 在回合结束自动压），不是本轮回归；
 - 免费模型当天返回空文本时，`tokens` / `subagent` / `contexttakeover` 会整片红 ——
-  换 `YAN_TEST_MODEL=commandcode/deepseek/deepseek-v4.1-flash` 复跑就能分辨。
+  先换 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`，不可用或触顶时再换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free` 复跑就能分辨。
 
 顺带记两条这次学到的：
 
@@ -272,3 +280,22 @@ N12 的按会话缓存（`sessionRuntimes`）会被投影回顶层字段。它�
 - 生成脚本后检查正则、反斜杠和 Windows 路径是否原样落盘，避免转义损坏造成扫描假阳性。
 - pi runtime 保留其 bundle、依赖、WASM、worker 和动态资源；用 upgrade:pi 更新，不手工重打单文件。
 - electron-builder 的 extraResources 要包含 runtime 的 node_modules；`out/test/**` 排除在发布包外。产物要查实际 asar，详见 [RELEASING](RELEASING.md)。
+
+## 用本机 Codex 做第三方只读核对（2026-09-17）
+
+需要"再一个模型独立评审"时，不必只靠浏览器：本机 Codex 桌面端自带完整 CLI，可以直接命令行跑。
+
+```text
+CX="$LOCALAPPDATA/OpenAI/Codex/bin/<hash>/codex.exe"   # hash 目录随版本变化，用 Get-Process 找路径
+"$CX" exec --ephemeral -s read-only -C <repo> -o <out.md> - < prompt.md
+```
+
+- **必须显式 `-s read-only`**：用户的 `~/.codex/config.toml` 默认是
+  `approval_policy = "never"` + `sandbox_mode = "workspace-write"`，不覆盖就会真的改文件。
+- `--ephemeral` 不落会话文件；`-o` 取"最后一条消息"比解析 stdout 稳（stdout 是完整过程日志，
+  含它读过的每个文件）。
+- prompt 长时用 `-` 从 stdin 读，避免命令行转义。
+- 凭证与桌面端同一份（`~/.codex/auth.json`）→ **消耗订阅额度**：实测一次
+  "读 4 个文档 + 若干实现文件"的评审用了 **147,856 tokens**（gpt-5.6-luna / reasoning max）。
+  让它自己读文件比把长文塞进 prompt 省事、但更贵；stdout 末尾会打 `tokens used` 供核对。
+- 结论要连同"模型/只读沙箱/token 数"一起记进文档，否则下次无法比较两次评审的成本。
