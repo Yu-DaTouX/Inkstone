@@ -211,12 +211,12 @@ const GROUPS = [
     h: 900,
     scale: 1,
     theme: 'dark',
-    states: ['main', 'modelmenu', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder']
+    states: ['main', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] }
 ]
@@ -243,6 +243,45 @@ const STATES = {
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      return 'ok';
+    })()
+  `,
+  toolgroup: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false });
+      await sleep(200);
+      /*
+       * 只做一件事：展开折叠组。
+       *
+       * 为什么不把终端窗口一起点开（曾经试过）：点工具行会走 withScrollAnchor（碰 store），
+       * 那一次重渲染会把组的内部 manual 状态打回收起的默认值 —— 两张形态合在一张图里
+       * 怎么排都会丢一张。所以拆成两个状态：本状态管**组展开**（组内行保持一行，N03 的规则），
+       * toolterm 管**命令行的终端窗口**。
+       */
+      const head = document.querySelector('.tgroup-head');
+      if (head) head.click();
+      await sleep(400);
+      return 'ok';
+    })()
+  `,
+  /* 工具详情：命令行展开后的终端窗口（N03；只有命令类工具会渲染 .term） */
+  toolterm: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false });
+      await sleep(200);
+      const row =
+        document.querySelector('.trow[data-tool="bash"] .trow-head') ||
+        document.querySelector('.trow[data-state="running"] .trow-head');
+      if (row) row.click();
+      await sleep(400);
       return 'ok';
     })()
   `,
@@ -881,6 +920,8 @@ const MUST_HAVE = {
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
+  toolgroup: ['.tgroup.open'],
+  toolterm: ['.trow.open .term'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
