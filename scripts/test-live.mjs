@@ -1293,7 +1293,20 @@ function agentTokensFromSessions(sandboxRoot, onlySessionId = null) {
   return out
 }
 
-async function checkContextProduce(sandboxRoot) {
+/**
+ * 从探针输出里取本场景的会话 id（各 context 探针都会打印 `ctx<suffix>.sessionId=…`）。
+ *
+ * 为什么非要拿它：**所有场景共用同一个沙箱**（`sandboxRoot` 在场景循环之前就创建了），
+ * 所以诊断日志 `ctx-ext.log` 与 `data/context-state/` 目录里都混着兄弟场景留下的东西。
+ * 「没有提交状态」「没有写出状态文件」这类**否定断言**不按会话隔离就必然误判 ——
+ * 2026-09-17 实测：并跑时 `contextproduce` / `contextgate` 都红，单跑全绿。
+ */
+function ownSessionIdFrom(probeText, key) {
+  const m = new RegExp(`${key}\\.sessionId=([0-9a-zA-Z-]+)`).exec(String(probeText ?? ''))
+  return m ? m[1] : null
+}
+
+async function checkContextProduce(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
   const say = (good, text) => {
@@ -1321,8 +1334,10 @@ async function checkContextProduce(sandboxRoot) {
         return []
       }
     })
-  const producerRows = records.filter((r) => r?.stage === 'producer')
-  lines.push(`  诊断行 = ${records.length}（其中 producer ${producerRows.length} 行）`)
+  const ownId = ownSessionIdFrom(probeText, 'ctxproduce')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+  const producerRows = ownRecords.filter((r) => r?.stage === 'producer')
+  lines.push(`  诊断行 = ${records.length}（本场景 ${ownRecords.length}，其中 producer ${producerRows.length} 行）`)
   const committed = producerRows.filter((r) => r.hook === 'committed')
   const bad = producerRows.filter((r) => ['error', 'rejected', 'aborted'].includes(r.hook))
   say(committed.length >= 1, `生成器至少提交过一次状态（${committed.length} 次）`)
@@ -1376,12 +1391,8 @@ async function checkContextProduce(sandboxRoot) {
    * 那是本场景唯一的产物。`cacheRead` 按原值计入（没按折扣加权）—— 口径简单透明，
    * 代价是分母偏大、比值偏小，方向对“该不该优化”这个判断是保守的。
    */
-  const stateDir = join(sandboxRoot, 'data', 'context-state')
-  const ownSessionId =
-    (existsSync(stateDir) ? readdirSync(stateDir) : [])
-      .map((f) => /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/.exec(f)?.[1])
-      .find(Boolean) ?? null
-  const agent = agentTokensFromSessions(sandboxRoot, ownSessionId)
+  /* 分母只算本场景的会话（id 来自探针输出，理由见 `ownSessionIdFrom` 注释） */
+  const agent = agentTokensFromSessions(sandboxRoot, ownId)
   const overhead = stateOverhead({
     producerInput: pIn,
     producerOutput: pOut,
@@ -1392,7 +1403,7 @@ async function checkContextProduce(sandboxRoot) {
     `  生成开销：producer=${pIn + pOut}（in ${pIn} / out ${pOut}，${usageRows.length} 次尝试，来源 ${
       realRows.length ? `pi 真实 usage×${realRows.length}` : '本地估算'
     }）；主 agent in ${agent.input} + cacheRead ${agent.cacheRead} + out ${agent.output}` +
-      `（分母来自${agent.scoped ? `本场景会话 ${ownSessionId}，${agent.matched} 份 JSONL` : '全部会话'}）`
+      `（分母来自${agent.scoped ? `本场景会话 ${ownId}，${agent.matched} 份 JSONL` : '全部会话'}）`
   )
   lines.push(
     `  stateOverhead = ${pIn + pOut === 0 || overhead.ratio === null ? 'n/a' : `${(overhead.ratio * 100).toFixed(1)}%`}（${overhead.level}）` +
@@ -1406,10 +1417,10 @@ async function checkContextProduce(sandboxRoot) {
   const files = existsSync(dir) ? readdirSync(dir) : []
   lines.push(`  目录 = ${dir}`)
   lines.push(`  文件 = ${JSON.stringify(files)}`)
-  const stateFiles = files.filter(
-    (f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json')
-  )
-  say(stateFiles.length >= 1, `状态文件已写出（${stateFiles.length} 份）`)
+  const stateFiles = files
+    .filter((f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json'))
+    .filter((f) => !ownId || f.startsWith(ownId))
+  say(stateFiles.length >= 1, `状态文件已写出（${stateFiles.length} 份，本场景 ${ownId ?? '未知'}）`)
   if (!stateFiles.length) return { ok, lines }
 
   let state = null
@@ -1460,7 +1471,7 @@ async function checkContextProduce(sandboxRoot) {
   return { ok, lines }
 }
 
-async function checkContextGate(sandboxRoot) {
+async function checkContextGate(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
   const say = (good, text) => {
@@ -1484,10 +1495,12 @@ async function checkContextGate(sandboxRoot) {
         return []
       }
     })
-  const producerRows = records.filter((r) => r?.stage === 'producer')
+  const ownId = ownSessionIdFrom(probeText, 'ctxgate')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+  const producerRows = ownRecords.filter((r) => r?.stage === 'producer')
   const gateRows = producerRows.filter((r) => r.hook === 'gate')
   const committed = producerRows.filter((r) => r.hook === 'committed')
-  lines.push(`  诊断行 = ${records.length}（其中 producer ${producerRows.length} 行）`)
+  lines.push(`  诊断行 = ${records.length}（本场景 ${ownRecords.length}，其中 producer ${producerRows.length} 行）`)
 
   say(gateRows.length >= 1, `gate 被评估过（${gateRows.length} 次）—— 不是静默跳过`)
   const blocked = gateRows.filter((r) => r.reason === 'too-early')
@@ -1500,10 +1513,10 @@ async function checkContextGate(sandboxRoot) {
 
   const dir = join(sandboxRoot, 'data', 'context-state')
   const files = existsSync(dir) ? readdirSync(dir) : []
-  const stateFiles = files.filter(
-    (f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json')
-  )
-  say(stateFiles.length === 0, `没有写出状态文件（目录内容 ${JSON.stringify(files)}）`)
+  const stateFiles = files
+    .filter((f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json'))
+    .filter((f) => !ownId || f.startsWith(ownId))
+  say(stateFiles.length === 0, `没有写出状态文件（本场景 ${ownId ?? '未知'} 命中 ${stateFiles.length} 份；目录共 ${files.length} 项）`)
 
   return { ok, lines }
 }
