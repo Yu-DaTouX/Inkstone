@@ -236,7 +236,21 @@ export async function runContextTransformTests(ok, deps) {
       updatedAt: 1000
     })
     const text = T.renderTaskState(task)
-    ok(text.startsWith('<TASK_STATE>') && text.trimEnd().endsWith('</TASK_STATE>'), '块首尾标记完整')
+    ok(
+      text.startsWith('<TASK_STATE derived="true" authoritative="false" freshness="fresh">') &&
+        text.trimEnd().endsWith('</TASK_STATE>'),
+      '块首尾标记完整（头行带 authority 契约）'
+    )
+    ok(
+      text.includes('not ground truth') && text.includes('those win'),
+      '契约里明确「不是事实源」与优先级（第四轮外部评审 P0-2）'
+    )
+    ok(
+      T.renderTaskState(task, { freshness: 'stale', sourceHead: 42 }).startsWith(
+        '<TASK_STATE derived="true" authoritative="false" freshness="stale" sourceHead="42">'
+      ),
+      'freshness / sourceHead 透传到头行'
+    )
     ok(text.includes('Objective: 把 S2 做完'), '目标在块里')
     ok(text.includes('Constraints:') && text.includes('不改默认阈值'), '约束以独立小标题出现（不降级成背景）')
     ok(!text.includes('旧决策'), 'superseded 条目不再注入')
@@ -292,7 +306,10 @@ export async function runContextTransformTests(ok, deps) {
     const full = { task: taskStateFixture(), episodes: [{ id: 'ep1', objective: '做完 S2', outcome: '完成', importantRefs: ['ctx://tool/m3'] }] }
     const built = T.buildStructuredSummary(full)
     ok(built.ok, '六类字段齐备时可以接管', built.reason)
-    ok(built.summary.includes('<TASK_STATE>') && built.summary.includes('<HISTORICAL_CONTEXT>'), '两段式输出')
+    ok(
+      built.summary.includes('<TASK_STATE derived="true"') && built.summary.includes('<HISTORICAL_CONTEXT>'),
+      '两段式输出'
+    )
     ok(built.summary.includes('ep1') && built.summary.includes('ctx://tool/m3'), 'Episode 只引用不重新摘要')
     ok(!built.summary.includes('旧决策'), 'superseded 不进摘要')
 
@@ -318,6 +335,42 @@ export async function runContextTransformTests(ok, deps) {
       { id: 'ep3', sourceRange: { from: 'ctx://tool/m3', to: 'm3' } }
     ])
     ok(risk.length === 2 && risk[0].episode === 'ep2' && risk[1].episode === 'ep3', '递归摘要风险可预检（§12.7）', JSON.stringify(risk))
+
+    /*
+     * Episode 旁路防线（第四轮外部评审 P0-4）：旧 EpisodeState 的语义路径还没接上
+     * provenance / freshness 这套契约，所以**有递归风险的条目不进摘要** ——
+     * 源头先拦一道，真正的 schema 执法仍在 `shared/context-state.ts`。
+     */
+    const riskySummary = T.buildStructuredSummary({
+      task: taskStateFixture(),
+      episodes: [
+        { id: 'ep1', objective: '合法的目标', outcome: '', sourceRange: { from: 'm1', to: 'm2' }, importantRefs: [] },
+        { id: 'ep2', objective: '旧语义的目标', outcome: '', sourceRange: { from: 'ep1', to: 'ep2' }, importantRefs: [] }
+      ]
+    })
+    ok(
+      riskySummary.ok &&
+        riskySummary.summary.includes('合法的目标') &&
+        !riskySummary.summary.includes('旧语义的目标') &&
+        riskySummary.episodesDropped === 1,
+      '有递归风险的 episode 不进摘要（P0-4）',
+      `dropped=${riskySummary.episodesDropped}`
+    )
+    /*
+     * 压缩接手的摘要里，头行也要写**真实**档位与水位 —— 不能因为它是个摘要
+     * 就默写 `freshness="fresh"`（那时状态可能已经是 stale-soft / stale-hard）。
+     */
+    const staleBlock = T.buildStructuredSummary(
+      { task: taskStateFixture(), episodes: [], sourceWatermark: { entryCount: 7, lastEntryId: 'm7' } },
+      { freshness: 'stale' }
+    )
+    ok(
+      staleBlock.ok &&
+        staleBlock.summary.includes(
+          '<TASK_STATE derived="true" authoritative="false" freshness="stale" sourceHead="7">'
+        ),
+      '压缩摘要的契约头用真实档位与水位（不默写 fresh）'
+    )
   }
 
   /* ============ G. 与 S1 schema 的交叉校验 ============ */
@@ -406,7 +459,10 @@ export async function runContextTransformTests(ok, deps) {
     await writeFile(stateFile, JSON.stringify(seeded), 'utf8')
     const injected = EXT.__internals.onContext({ messages }, ctx)
     ok(!!injected && injected.messages[0]?.customType === 'yan-task-state', '水位一致 → 注入 <TASK_STATE>')
-    ok(T.messageText(injected.messages[0]).includes('<TASK_STATE>'), '注入内容确实是状态块')
+    ok(
+      T.messageText(injected.messages[0]).includes('<TASK_STATE derived="true" authoritative="false"'),
+      '注入内容确实是状态块（带 authority 契约头）'
+    )
 
     /*
      * 有效但较早（有界陈旧）→ 仍然注入，但推测类字段必须带 stale 标记。
@@ -441,7 +497,7 @@ export async function runContextTransformTests(ok, deps) {
     const ctx = fakeCtx(branch)
     const preparation = { firstKeptEntryId: 'm6', tokensBefore: 123_456 }
 
-    setPolicy({ kinds: ['compaction'] })
+    setPolicy({ kinds: ['compaction', 'episode-fold'] })
     await rm(stateFile, { force: true })
     ok(EXT.__internals.onBeforeCompact({ preparation }, ctx) === undefined, '没有状态文件 → 交回 pi 摘要（不 cancel）')
 
@@ -459,7 +515,22 @@ export async function runContextTransformTests(ok, deps) {
     ok(!!taken?.compaction, '状态齐备 → 接管压缩')
     ok(taken.compaction.firstKeptEntryId === 'm6', '保留 pi 给的切割点（只换摘要文本）')
     ok(taken.compaction.tokensBefore === 123_456, '保留 pi 给的 tokensBefore')
-    ok(String(taken.compaction.summary).includes('<TASK_STATE>'), '摘要里是结构化状态，不是对话摘要')
+    ok(
+      String(taken.compaction.summary).includes('<TASK_STATE derived="true"'),
+      '摘要里是结构化状态，不是对话摘要'
+    )
+
+    /*
+     * 分路开关（第四轮外部评审 P0-5）：`inject:false` = 不让派生状态进上下文，
+     * 压缩接手也属于其中 —— 而且这是**默认关时就存在的漏洞**：以前只看
+     * 「状态文件在不在」，关掉 kinds 后遗留的状态文件仍会被压缩接手。
+     */
+    setPolicy({ kinds: ['compaction', 'episode-fold'], state: { inject: false } })
+    ok(
+      EXT.__internals.onBeforeCompact({ preparation }, ctx) === undefined,
+      'inject:false → 不接管压缩（状态文件仍在）'
+    )
+    setPolicy({ kinds: ['compaction', 'episode-fold'] })
 
     /*
      * 缺字段不再等于不可信（生成器已落地）；真正会让它降级的变成水位对不上。

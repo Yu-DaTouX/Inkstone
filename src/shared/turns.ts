@@ -312,6 +312,28 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
 }
 
 /**
+ * 当前回合的消息切片。
+ *
+ * 分界与 `groupIntoTurns` 一致：user / bash 消息开启新回合，所以
+ * 「最后一个分界消息之后」就是此刻正在发生（或刚结束）的那一轮。
+ *
+ * 用法：用量条这类**只关心本轮**的 UI 必须先圈定范围，再在范围内取
+ * usage / speed / elapsedMs。若直接在整个历史里倒着找「最近一次非零 usage」，
+ * 新一轮流式刚开始（还没报 usage）时会把上一轮的数字标成本轮实时值 —— 用户
+ * 报的「上一轮速度被标成新一轮实时速度」就是这么来的。
+ *
+ * 兜底：一条分界消息都没找到（例如从会话文件恢复出的片段）时返回全部消息，
+ * 宁可多显示也不要把信息整条藏掉。
+ */
+export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const role = messages[i].role
+    if (role === 'user' || role === 'bash') return messages.slice(i + 1)
+  }
+  return messages
+}
+
+/**
  * 一轮的用量。
  *
  * ⚠️ 我们**不**把一轮里 N 次 API 往返的 usage 相加。

@@ -59,8 +59,16 @@ export async function manualTitleOf(sessionId: string): Promise<string | undefin
   return all[sessionId]
 }
 
-/** 写一个手动会话名（空串 = 清除，恢复自动标题） */
-export async function setManualTitle(sessionId: string, name: string): Promise<void> {
+/**
+ * 写一个手动会话名（空串 = 清除，恢复自动标题）。
+ *
+ * 返回明确的成功/失败：这是**用户主动保存**的动作，不能像自动标题那样静默降级 ——
+ * 写盘失败（权限、磁盘满）时界面必须先乐观显示后回退，否则重启才发现名字丢了。
+ */
+export async function setManualTitle(
+  sessionId: string,
+  name: string
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const all = await loadMap(MANUAL_FILE)
     const trimmed = name.trim()
@@ -68,8 +76,9 @@ export async function setManualTitle(sessionId: string, name: string): Promise<v
     else delete all[sessionId]
     await mkdir(YAN_DIR, { recursive: true })
     await writeFile(MANUAL_FILE, JSON.stringify(all, null, 2), 'utf8')
-  } catch {
-    /* 存不下就算了 */
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 

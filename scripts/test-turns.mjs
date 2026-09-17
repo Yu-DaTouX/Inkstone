@@ -14,7 +14,7 @@
  */
 
 export async function runTurnTests(ok) {
-  const { groupIntoTurns, splitParagraphs, cacheHitRate, formatHitRate, turnUsage } =
+  const { groupIntoTurns, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, currentTurnMessages } =
     await import('../out/test/turns.mjs')
 
   /* ---------------------------------------------------------------- 构造 */
@@ -272,5 +272,64 @@ export async function runTurnTests(ok) {
     const u = turnUsage(t[1])
     ok(u?.output === 50, 'usage 取最后一条（pi 报的是累计值，不能相加）')
     ok(u?.cacheRead === 900, 'cacheRead 同步取最后一条')
+  }
+
+  /* ----------------------------------------- 15. currentTurnMessages */
+
+  console.log('\n--- 15. 当前回合范围（用量条只认本轮）---')
+  {
+    const msg = { input: 10, output: 50, cacheRead: 900, cacheWrite: 0, totalTokens: 960, cost: 0 }
+
+    // 15.1 只包含最后一个 user 分界之后的消息
+    {
+      const scope = currentTurnMessages([
+        usr('u1', '第一轮'),
+        asst('a1', '答完', { usage: msg, speed: 42, elapsedMs: 1234 }),
+        usr('u2', '第二轮'),
+        asst('a2', '刚开始', { responseDetail: 'unknown' })
+      ])
+      ok(scope.length === 1 && scope[0].id === 'a2', '范围从最后一个 user 消息之后开始', scope.map((m) => m.id).join(','))
+      ok(!scope.some((m) => m.usage), '新一轮没报 usage 时，取不到上一轮的用量')
+      ok(!scope.some((m) => m.speed), '也取不到上一轮的速度（不会被标成实时）')
+    }
+
+    // 15.2 刚发用户消息、还没有回复 → 空范围（而不是退回旧轮）
+    {
+      const scope = currentTurnMessages([
+        usr('u1', '第一轮'),
+        asst('a1', '答完', { usage: msg, speed: 42 }),
+        usr('u2', '第二轮刚发出')
+      ])
+      ok(scope.length === 0, '新一轮还没回消息时范围为空', `实际 ${scope.length}`)
+    }
+
+    // 15.3 bash 回合也是分界（与 groupIntoTurns 的回合定义一致）
+    {
+      const scope = currentTurnMessages([
+        usr('u1', '第一轮'),
+        asst('a1', '答完', { usage: msg }),
+        { id: 'b1', role: 'bash', text: '$ ls' },
+        asst('a2', '接着答')
+      ])
+      ok(scope.length === 1 && scope[0].id === 'a2', 'bash 消息同样开启新回合', scope.map((m) => m.id).join(','))
+    }
+
+    // 15.4 一条分界消息都没有（会话文件片段）→ 退回全部，不把信息藏掉
+    {
+      const all = [asst('a1', '片段一'), asst('a2', '片段二')]
+      const scope = currentTurnMessages(all)
+      ok(scope.length === 2, '没有分界消息时返回全部消息', `实际 ${scope.length}`)
+    }
+
+    // 15.5 同一轮内多条 assistant（工具往返）都算本轮
+    {
+      const scope = currentTurnMessages([
+        usr('u1', '干活'),
+        asst('a1', '先看看', { toolCalls: [tool('t1', 'read')], usage: msg, speed: 30 }),
+        asst('a2', '干完了', { usage: { ...msg, output: 80 }, speed: 55 })
+      ])
+      ok(scope.length === 2, '工具往返的多条 assistant 都在本轮范围内', `实际 ${scope.length}`)
+      ok(scope[scope.length - 1].speed === 55, '范围里能拿到本轮最新的速度')
+    }
   }
 }

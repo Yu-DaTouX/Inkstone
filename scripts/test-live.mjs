@@ -245,6 +245,13 @@ const CASES = {
   rename: { probe: 'scripts/probe/rename.js', delay: 9000, cost: 0 },
   // 分组管理（N01）：重命名 + 空白/重名校验 + 解散但保留项目
   grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0 },
+  /*
+   * N01 拖拽排序：项目 / 分组顺序用**合成 PointerEvent** 走真实渲染路径
+   * （实现里没有用 HTML5 draggable，所以合成事件与用户手拖是同一条），
+   * 并回读 `yan.getSettings()` 证明顺序真的过了 IPC 落盘。
+   * 探针里要等多次 420ms 的界面落定，所以预算给宽一点。
+   */
+  railreorder: { probe: 'scripts/probe/rail-reorder.js', delay: 10000, cost: 0, budget: 150000 },
   // 项目默认只展开前五个（N17）：更多/收起 + 搜索 + 当前项目定位
   projectlimit: { probe: 'scripts/probe/projectlimit.js', delay: 9000, cost: 0 },
   // 窄侧栏会话标题可读性（N13）：最小宽度下量标题/缩进/状态槽
@@ -351,6 +358,28 @@ const CASES = {
     budget: 420000,
     contextExtLog: true,
     afterExit: 'contextProduce',
+    env: {
+      /*
+       * `state.gate` 把会话级门槛调成 1 回合 / 1 token：这条场景只跑两个回合，
+       * 用它证「够了就生成」；门槛本身由 `contextgate` 场景用默认值证反向。
+       */
+      YAN_CONTEXT_POLICY:
+        '{"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    }
+  },
+  /*
+   * 会话级 eligibility gate（cost 1）：kinds 开 `episode-fold`，但门槛保持**默认**
+   * （≥4 回合且转录 ≥48k token）—— 一个回合的会话必然不满足，于是
+   * 「短会话不生成、不花模型调用、且留得下原因」在真实链路里可以被检查。
+   * 与 `contextproduce`（把门槛放开到 1/1 证「够了就生成」）是一对反向对照。
+   */
+  contextgate: {
+    probe: 'scripts/probe/context-gate.js',
+    delay: 12000,
+    cost: 1,
+    budget: 300000,
+    contextExtLog: true,
+    afterExit: 'contextGate',
     env: {
       YAN_CONTEXT_POLICY: '{"kinds":["tool-sweep","recall","compaction","episode-fold"]}'
     }
@@ -489,7 +518,7 @@ const CASES = {
     /* 诊断：语言扩展把每次注入写一行到该文件（扩展里 YAN_LANG_EXT_LOG 才写） */
     env: { YAN_LANG_EXT_LOG: join(tmpdir(), 'lang-ext.log') }
   },
-  // 记忆搬进设置：右栏移除 / 设置面板 / 输入区状态条
+  // 设置面板的当前布局（外观 / 声音 / 上下文 / 关于…）+ 记忆已整体移除的边界
   settings: { probe: 'scripts/probe/settings.js', delay: 9000, cost: 0 },
   // 声音提示（对齐 opencode 的 attention）：事件触发 / 单事件开关 / 音量夹取
   sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
@@ -1233,6 +1262,30 @@ async function checkContextProduce(sandboxRoot) {
   say(bad.length === 0, `生成器没有报错 / 被拒 / 超时（${bad.length} 条）`)
   const injected = records.filter((r) => r?.injectedTaskState === true)
   say(injected.length >= 1, `下一个回合真的注入了 <TASK_STATE>（${injected.length} 次）`)
+  /*
+   * 注入块自身不进任何落盘文件（它是临时消息），所以「契约头里写了什么档位」
+   * 只能在注入那一刻记下来。这条断言把「注入真的发生」与「注入的档位可审计」
+   * 分开取证（P0-2）。
+   */
+  const injectRows = records.filter((r) => r?.hook === 'task-state-injected')
+  say(injectRows.length >= 1, `注入时记下了契约档位（${injectRows.length} 条注入诊断）`)
+  say(
+    injectRows.length > 0 &&
+      injectRows.every((r) => ['fresh', 'partial', 'stale'].includes(r.freshness) && Number.isFinite(r.sourceHead)),
+    `freshness / sourceHead 都是合法值（${JSON.stringify(injectRows[0] ?? null)}）`
+  )
+  /*
+   * 注入档位应该是 `fresh`：生成在回合 1 结束，注入发生在用户开口的回合 2 ——
+   * 只落后「用户刚说的那一条」，按第四轮复核 Q3 的定义不算陈旧。
+   * 这条断言钉的就是那个语义（否则模型每轮都会看到 `[stale: verify…]`）。
+   */
+  say(
+    injectRows.some((r) => r.freshness === 'fresh'),
+    `注入档位是 fresh（只落后一条尚未 settled 的 user turn）`
+  )
+  /* gate 被评估过（这条场景把阈值调成了 1/1，所以门槛应当当场满足） */
+  const gateRows = producerRows.filter((r) => r.hook === 'gate')
+  say(gateRows.some((r) => r.activated === true), `eligibility gate 当场激活（${gateRows.length} 条 gate 诊断）`)
 
   /* ---- 状态文件 ---- */
   const dir = join(sandboxRoot, 'data', 'context-state')
@@ -1267,6 +1320,13 @@ async function checkContextProduce(sandboxRoot) {
   const fileCount = state?.task?.files?.length ?? 0
   lines.push(`  evidence：commands=${commands} tests=${tests} files=${fileCount}`)
   say(commands + tests + fileCount >= 1, 'evidence 至少一项来自真实工具调用（确定性 reducer 工作）')
+  /*
+   * Episode 旁路防线（第四轮外部评审 P0-4）：落盘时**不沿用上一版** episodes ——
+   * 旧 EpisodeState 的语义路径还没接上 provenance / freshness 契约。
+   * 这条在真实文件上验，不是单测里的 fixture。
+   */
+  const episodes = Array.isArray(state.episodes) ? state.episodes.length : -1
+  say(episodes === 0, `状态文件里 episodes 为空（实际 ${episodes}）—— 旧语义不旁路进注入`)
 
   /* ---- 交叉校验：状态文件必须过主进程的读路径 ---- */
   const store = await import('../out/main/context-state-store.js').catch(() => null)
@@ -1282,6 +1342,54 @@ async function checkContextProduce(sandboxRoot) {
   if (loaded?.status !== 'ok' && loaded?.issues) {
     for (const issue of loaded.issues.slice(0, 4)) lines.push(`    · ${issue.path}: ${issue.message}`)
   }
+
+  return { ok, lines }
+}
+
+async function checkContextGate(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const producerRows = records.filter((r) => r?.stage === 'producer')
+  const gateRows = producerRows.filter((r) => r.hook === 'gate')
+  const committed = producerRows.filter((r) => r.hook === 'committed')
+  lines.push(`  诊断行 = ${records.length}（其中 producer ${producerRows.length} 行）`)
+
+  say(gateRows.length >= 1, `gate 被评估过（${gateRows.length} 次）—— 不是静默跳过`)
+  const blocked = gateRows.filter((r) => r.reason === 'too-early')
+  say(
+    blocked.length >= 1,
+    `短会话被判为 too-early（${blocked.length} 次）`,
+    blocked[0] ? JSON.stringify({ turns: blocked[0].turns, tokens: blocked[0].tokens }) : ''
+  )
+  say(committed.length === 0, `没有提交状态（${committed.length} 次）—— 短会话不花模型调用`)
+
+  const dir = join(sandboxRoot, 'data', 'context-state')
+  const files = existsSync(dir) ? readdirSync(dir) : []
+  const stateFiles = files.filter(
+    (f) => f.endsWith('.json') && !f.endsWith('.archive.json') && !f.endsWith('.recall.json')
+  )
+  say(stateFiles.length === 0, `没有写出状态文件（目录内容 ${JSON.stringify(files)}）`)
 
   return { ok, lines }
 }
@@ -1656,7 +1764,8 @@ const AFTER_EXIT = {
   browserBoundaryDownloads: checkBrowserBoundaryDownloads,
   contextStateCleanup: checkContextStateCleanup,
   contextSweepArchive: checkContextSweepArchive,
-  contextProduce: checkContextProduce
+  contextProduce: checkContextProduce,
+  contextGate: checkContextGate
 }
 
 /*

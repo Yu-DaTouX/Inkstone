@@ -73,6 +73,7 @@ const DEFAULTS: AppSettings = {
   projectNames: {},
   projects: [],
   projectGroups: [],
+  projectOrder: [],
   providerBudgets: {},
   rightPanelOpen: true,
   alwaysOnTop: false,
@@ -254,6 +255,26 @@ function sanitizeProjectGroups(v: unknown): ProjectGroup[] {
   })
 }
 
+/**
+ * 项目顺序（N01）：只留字符串、去重、限制长度。
+ *
+ * 为什么不在这里跟 `projects` 交叉过滤：`patchSettings` 允许一次调用同时
+ * 传 `projects` 与 `projectOrder`（拖拽新建顺序的场景没有，但改名/归档会），
+ * 两处清洗顺序不同就会互相打架。未知 id 在渲染端排序时被自然忽略，
+ * 交叉过滤放在 `getSettings`（读盘后的静态清洗）里做。
+ */
+function sanitizeProjectOrder(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const seen = new Set<string>()
+  for (const item of v) {
+    if (typeof item !== 'string') continue
+    const id = item.trim().slice(0, 80)
+    if (id) seen.add(id)
+    if (seen.size >= 500) break
+  }
+  return [...seen]
+}
+
 let cached: AppSettings | null = null
 
 /** 清掉内存缓存（下次 getSettings 重新读盘） */
@@ -273,6 +294,10 @@ export async function getSettings(): Promise<AppSettings> {
     if (!cached.projectNames || typeof cached.projectNames !== 'object' || Array.isArray(cached.projectNames)) cached.projectNames = {}
     cached.projectGroups = sanitizeProjectGroups(cached.projectGroups)
     cached.projects = sanitizeProjects(cached.projects, cached.projectNames, cached.recentCwds, cached.cwd)
+    // 项目顺序：未知 / 已删除的项目 id 丢掉（否则设置文件会越来越长）
+    const knownProjects = cached.projects
+    cached.projectOrder = sanitizeProjectOrder(cached.projectOrder)
+      .filter((id) => knownProjects.some((project) => project.id === id))
     if (!cached.providerBudgets || typeof cached.providerBudgets !== 'object' || Array.isArray(cached.providerBudgets)) cached.providerBudgets = {}
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
@@ -396,6 +421,12 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
     name: next.projectNames[project.cwd] ?? project.name,
     groupId: next.projectGroups.some((g) => g.id === project.groupId) ? project.groupId : undefined
   }))
+  /*
+   * 项目顺序（N01）：统一在这里过一遍（而不是在 patch 分派里），
+   * 保证无论本次 patch 是否带 projectOrder，落盘的都是「只含真实项目」的集合。
+   */
+  next.projectOrder = sanitizeProjectOrder(next.projectOrder)
+    .filter((id) => next.projects.some((project) => project.id === id))
 
   cached = next
   try {

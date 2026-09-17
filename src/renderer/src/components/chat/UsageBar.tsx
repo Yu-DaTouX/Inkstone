@@ -3,7 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { Usage } from '../../../../shared/ipc'
-import { cacheHitRate, formatHitRate } from '../../../../shared/turns'
+import { cacheHitRate, currentTurnMessages, formatHitRate } from '../../../../shared/turns'
 import { ModelThinkingPicker } from '../Pickers'
 
 /**
@@ -64,7 +64,14 @@ export function UsageBar() {
   const hasNumbers = (x?: Usage): boolean =>
     !!x && (x.input > 0 || x.output > 0 || x.cacheRead > 0 || x.cacheWrite > 0)
 
-  const last = [...messages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
+  /*
+   * ⚠️ 只在**当前回合**里找用量/速度（`currentTurnMessages`）。
+   *    在整个历史里倒着找「最近一次非零 usage」会把上一轮的数字标成本轮实时值：
+   *    新一轮刚开始流式时还没报 usage，旧轮有值 —— 于是速度带上了 live 标记、
+   *    「生成中 Ns」被跳过；新一轮最终不报 usage 时，账单也一直在显示旧轮数据。
+   */
+  const turnMessages = currentTurnMessages(messages)
+  const last = [...turnMessages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
   const u = last?.usage
 
   /*
@@ -74,7 +81,7 @@ export function UsageBar() {
    * 不自己计时——自己算的话切走再回来、或跨多段流式（工具往返）就对不上了。
    * 取最后一条助手消息，**不要求它带 usage**：本轮没报用量时也应该看得到耗时。
    */
-  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+  const lastAssistant = [...turnMessages].reverse().find((m) => m.role === 'assistant')
   const turnMs = !streaming ? lastAssistant?.elapsedMs : undefined
   const elapsed = turnMs ? fmtElapsed(turnMs) : undefined
 
@@ -85,11 +92,11 @@ export function UsageBar() {
   /*
    * 本轮是否已经结算。
    *
-   * ⚠️ 流式期间 `u` 可能来自**上一轮**（`last` 是在全部消息里倒着找）。
-   *    设计要的是「流式期间没有用量就显示待结算，不拿旧轮次比例代替」——
-   *    所以只有当前最后一条助手消息自带 usage 时，才把比例当真。
+   * ⚠️ 判定必须落在**当前回合**上：只看全局最后一条消息的话，
+   *    新一轮还没回消息时 `messages` 末尾是用户消息（或干脆没有），
+   *    于是拿不到任何结论；而跨回合取旧 usage 又会让比例看着像本轮的。
    */
-  const lastMsg = messages[messages.length - 1]
+  const lastMsg = turnMessages[turnMessages.length - 1]
   const settled = !streaming || (lastMsg?.role === 'assistant' && hasNumbers(lastMsg.usage))
   const cacheExtra = settled ? (hitLabel ?? (u ? '—' : undefined)) : t('tok.settling')
 
