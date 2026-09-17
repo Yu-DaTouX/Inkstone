@@ -31,10 +31,17 @@
  * 一条实现上的取舍：token 是**估算**，而且刻意保守
  * ══════════════════════════════════════════════════════════════════
  * 扩展侧拿不到 tokenizer（pi 的 usage 是回合结束后才知道的），所以
- * `estimateTokens` 用「UTF-16 长度 ÷ 4」这一经典近似。它只用于
- * **相对比较**（谁更大、够不够门槛），不用于任何硬上限：
+ * `estimateTokens` 用「宽字符按 1 个/字符，其余按 UTF-16 长度 ÷ 4」的近似。
+ * 它只用于**相对比较与门槛判定**（谁更大、够不够门槛），不用于任何硬上限：
  * 真正的工作集与 reserve 判定仍由主进程的 `contextBudget` 负责。
  * 因此估算误差不会突破 `窗口 − 输出预留`（§12.1 的硬规则）。
+ *
+ * 为什么必须按宽字符单独算（N21-11）：`÷ 4` 是**英文**的经典近似，
+ * 一个汉字会被算成 0.25 token。实测 39 个汉字 → 估算 10（真实约 39），
+ * **低估近 4 倍**；而 Tool Sweep / fold gate / recall 预算的门槛都是绝对值，
+ * 低估意味着「中文长会话看起来还早」——真实 token 早已越过工作集线，
+ * 于是整段错过状态层。宽字符按 1 token 是**宁高不低**的取法，与
+ * 「刻意保守」的口径一致（真实 BPE 里中文常 1 字 ≈ 1 token，日文假名更贵）。
  */
 
 import { planTailCut, sweepCandidates, violations } from './context-safety.js'
@@ -82,10 +89,37 @@ export const DEFAULT_RECALL = {
  * token 估算与取文本
  * ══════════════════════════════════════════════════════════════════ */
 
-/** `长度 ÷ 4` 的经典近似；只用于相对比较，见文件头说明 */
+/**
+ * 按码点判定「一个字符就值约一个 token」的宽字符（CJK 汉字、假名、韩文、
+ * 全角标点/符号、CJK 兼容区）。覆盖取常用区块，宁可高估不可低估。
+ */
+export function isWideTokenChar(cp) {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) || // 韩文字母
+    (cp >= 0x2e80 && cp <= 0x303e) || // CJK 部首 + 标点（、。〈〉《》「」…）
+    (cp >= 0x3041 && cp <= 0x33ff) || // 假名 + 注音 + CJK 兼容 + 单位符号
+    (cp >= 0x3400 && cp <= 0x4dbf) || // 汉字扩展 A
+    (cp >= 0x4e00 && cp <= 0x9fff) || // 汉字基本区
+    (cp >= 0xa000 && cp <= 0xa4cf) || // 彝文
+    (cp >= 0xac00 && cp <= 0xd7a3) || // 韩文音节
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK 兼容汉字
+    (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK 兼容形式（竖排标点）
+    (cp >= 0xff00 && cp <= 0xff60) || // 全角 ASCII（！？：；（）等）
+    (cp >= 0xffe0 && cp <= 0xffe6) || // 全角符号
+    (cp >= 0x20000 && cp <= 0x3ffff) // 汉字扩展 B 及以后
+  )
+}
+
+/**
+ * token 估算：宽字符按「1 个字符 = 1 token」、其余按 UTF-16 长度 ÷ 4。
+ *
+ * 只用于相对比较与门槛判定，不用于硬上限；口径与原因见文件头（N21-11）。
+ */
 export function estimateTokens(text) {
   if (typeof text !== 'string' || !text) return 0
-  return Math.ceil(text.length / 4)
+  let wide = 0
+  for (const ch of text) if (isWideTokenChar(ch.codePointAt(0))) wide += ch.length
+  return Math.ceil(wide + (text.length - wide) / 4)
 }
 
 /** 一条内容块数组里的纯文本（thinking / toolCall 不算“读到的内容”） */

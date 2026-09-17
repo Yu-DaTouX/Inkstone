@@ -117,6 +117,18 @@ export async function runContextTransformTests(ok, deps) {
     ok(T.estimateTokens('') === 0 && T.estimateTokens(null) === 0, '空文本估算为 0')
     ok(T.estimateTokens('abcd') === 1, '4 字符 ≈ 1 token', String(T.estimateTokens('abcd')))
     ok(T.estimateTokens('abcde') === 2, '向上取整（不低估）', String(T.estimateTokens('abcde')))
+    /* N21-11：宽字符（CJK/假名/韩文/全角）按 1 个 = 1 token，其余仍按 ÷4 */
+    ok(T.estimateTokens('中文') === 2, '汉字按 1 个 = 1 token', String(T.estimateTokens('中文')))
+    ok(T.estimateTokens('中abc') === 2, '混排：1 汉字 + 3 ASCII → ceil(1 + 0.75)', String(T.estimateTokens('中abc')))
+    ok(T.estimateTokens('？！：；（）') === 6, '全角标点同样按 1 个 = 1 token', String(T.estimateTokens('？！：；（）')))
+    ok(T.estimateTokens('あいう') === 3 && T.estimateTokens('한글') === 2, '假名 / 韩文音节也在宽字符集里')
+    ok(T.estimateTokens('🎉🎉🎉🎉') === 2, 'emoji 不是宽字符（维持 UTF-16 ÷ 4 的既有口径，4 个 = 8 单元）')
+    ok(T.estimateTokens('a'.repeat(4)) === 1, '纯 ASCII 行为不变（回归保护）', String(T.estimateTokens('a'.repeat(4))))
+    ok(
+      T.isWideTokenChar(0x4e2d) && T.isWideTokenChar(0xff01) && T.isWideTokenChar(0x3042) && T.isWideTokenChar(0xac00) &&
+        !T.isWideTokenChar(0x61) && !T.isWideTokenChar(0x1f389) && !T.isWideTokenChar(0x20),
+      'isWideTokenChar 的边界（汉字/全角/假名/韩文 true；字母/emoji/空格 false）'
+    )
     const assistant = { role: 'assistant', content: [{ type: 'text', text: 'hi' }, { type: 'toolCall', id: 't1', name: 'read', arguments: { path: 'p' } }] }
     ok(T.messageText(assistant) === 'hi', 'thinking / toolCall 不算正文', JSON.stringify(T.messageText(assistant)))
     ok(T.toolCallsOf(assistant).length === 1 && T.toolCallsOf(assistant)[0].id === 't1', 'assistant 的 toolCall 能取出来')
