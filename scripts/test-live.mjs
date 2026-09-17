@@ -1228,6 +1228,58 @@ function checkContextSweepArchive(sandboxRoot) {
  *   ④ 状态文件过**主进程的** schema 校验（JS 写、TS 读，两边不许各信各的）。
  * 任一不成立，功能在真实链路里就是静默失效的。
  */
+/**
+ * 从隔离沙箱的会话条目里累加主 agent 的用量（`stateOverhead` 的分母）。
+ *
+ * 会话文件是 JSONL，每个 assistant 条目带 `usage: { input, output, cacheRead, cacheWrite }`。
+ * 口径说明：分母取 `input + cacheRead + output`（模型**实际处理的量**），因为
+ * 状态生成没有缓存命中，拿“只算非缓存 input”去比会把主 agent 的摊子看小。
+ * 三个数都打印出来，读者可以按自己的口径重算。
+ */
+function agentTokensFromSessions(sandboxRoot) {
+  const dir = join(sandboxRoot, 'sessions')
+  const out = { input: 0, cacheRead: 0, output: 0, files: 0 }
+  const walk = (at) => {
+    let list = []
+    try {
+      list = readdirSync(at, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of list) {
+      const full = join(at, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.name.endsWith('.jsonl')) continue
+      out.files += 1
+      let raw = ''
+      try {
+        raw = readFileSync(full, 'utf8')
+      } catch {
+        continue
+      }
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue
+        let rec
+        try {
+          rec = JSON.parse(line)
+        } catch {
+          continue
+        }
+        const u = rec?.message?.usage ?? rec?.usage
+        if (!u || typeof u !== 'object') continue
+        out.input += Number(u.input) || 0
+        out.cacheRead += Number(u.cacheRead) || 0
+        out.output += Number(u.output) || 0
+      }
+    }
+  }
+  walk(dir)
+  return out
+}
+
 async function checkContextProduce(sandboxRoot) {
   const lines = []
   let ok = true
@@ -1235,6 +1287,9 @@ async function checkContextProduce(sandboxRoot) {
     lines.push((good ? '  ✓ ' : '  ✗ ') + text)
     if (!good) ok = false
   }
+  /* 开销纯函数与扩展同源（直接引扩展源码，保证算的就是刚才跑的那份） */
+  const producerModule = await import('../resources/pi-extensions/context-producer.js').catch(() => null)
+  const stateOverhead = producerModule?.stateOverhead ?? (() => ({ ratio: null, level: 'unknown' }))
   if (!sandboxRoot) {
     lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
     return { ok: true, lines }
@@ -1286,6 +1341,40 @@ async function checkContextProduce(sandboxRoot) {
   /* gate 被评估过（这条场景把阈值调成了 1/1，所以门槛应当当场满足） */
   const gateRows = producerRows.filter((r) => r.hook === 'gate')
   say(gateRows.some((r) => r.activated === true), `eligibility gate 当场激活（${gateRows.length} 条 gate 诊断）`)
+
+  /*
+   * ---- 生成开销：这是「增量 delta 值不值得做」的判据（第四轮复核的成本警告）----
+   * 只打印比例、不硬断言具体数值：本场景只有两回合，比例天然偏高，
+   * 拿它当阈值会变成一条看模型脸色的断言。硬断言只查「两端都算得出来」。
+   * 有真实 usage 就用真实值（分子），否则退回估算。
+   */
+  const usageRows = producerRows.filter((r) => r.usage)
+  const sumOf = (rows, pick) => rows.reduce((n, r) => n + (Number(pick(r)) || 0), 0)
+  const realRows = usageRows.filter((r) => r.usage.real)
+  const pIn = realRows.length
+    ? sumOf(realRows, (r) => r.usage.real.input)
+    : sumOf(usageRows, (r) => r.usage.input)
+  const pOut = realRows.length
+    ? sumOf(realRows, (r) => r.usage.real.output)
+    : sumOf(usageRows, (r) => r.usage.output)
+  const agent = agentTokensFromSessions(sandboxRoot)
+  const overhead = stateOverhead({
+    producerInput: pIn,
+    producerOutput: pOut,
+    agentInput: agent.input + agent.cacheRead,
+    agentOutput: agent.output
+  })
+  lines.push(
+    `  生成开销：producer=${pIn + pOut}（in ${pIn} / out ${pOut}，${usageRows.length} 次尝试，来源 ${
+      realRows.length ? `pi 真实 usage×${realRows.length}` : '本地估算'
+    }）；主 agent in ${agent.input} + cacheRead ${agent.cacheRead} + out ${agent.output}`
+  )
+  lines.push(
+    `  stateOverhead = ${overhead.ratio === null ? 'n/a' : `${(overhead.ratio * 100).toFixed(1)}%`}（${overhead.level}）` +
+      `  ← 本场景只有 2 回合，比例天然偏高；判 delta 要看长会话的长期值`
+  )
+  say(usageRows.length >= 1, `诊断里记下了生成器的 token 开销（${usageRows.length} 次尝试，含失败路径）`)
+  say(agent.input + agent.output > 0, `从会话条目里读到主 agent 的用量（分母不是编的，${agent.files} 份 JSONL）`)
 
   /* ---- 状态文件 ---- */
   const dir = join(sandboxRoot, 'data', 'context-state')

@@ -45,6 +45,7 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     freshView,
     isSyntheticText,
     pendingUserOnly,
+    stateOverhead,
     stripSyntheticMessages,
     tailRolesOf,
     transcriptStats,
@@ -427,6 +428,79 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
       '只多了 toolResult（执行事实）→ 不算 pending-only'
     )
     ok(tailRolesOf(settled, { entryCount: 4, lastEntryId: 'nope' }) === null, '定位不到水位 → tailRolesOf 返回 null')
+  }
+
+  /* ---------------------------------------------------------- 5.8 状态生成的开销 */
+  console.log('\n--- N21-4 生成器：状态生成开销（决定增量 delta 值不值得做）---')
+  {
+    const low = stateOverhead({ producerInput: 3_000, producerOutput: 400, agentInput: 40_000, agentOutput: 10_000 })
+    ok(low.ratio < 0.07 && low.level === 'low', '生成开销远小于主 agent → 不必为它加复杂度', String(low.ratio.toFixed(4)))
+    const watch = stateOverhead({ producerInput: 4_000, producerOutput: 1_200, agentInput: 20_000, agentOutput: 10_000 })
+    ok(watch.level === 'watch', '15%–25% → 观察档')
+    const high = stateOverhead({ producerInput: 20_000, producerOutput: 1_200, agentInput: 40_000, agentOutput: 10_000 })
+    ok(high.level === 'high' && high.ratio > 0.25, '>25% → 高（外部说这种情形要把 delta 升 P1）')
+    ok(stateOverhead({}).level === 'unknown', '分母为 0 → unknown（不算出 Inf 骗自己）')
+    ok(stateOverhead({ producerInput: 100 }).stateTokens === 100, '缺省字段按 0 算')
+  }
+
+  /* ---------------------------------------------------------- 5.9 生成器输入是有界的 */
+  console.log('\n--- N21-4 生成器：输入有界（这就是增量 delta 值不值得做的判据）---')
+  {
+    /*
+     * 为什么这条值得钉：第四轮复核的成本警告基于「生成器喂 raw transcript」的假设，
+     * 与我们实际做的事**不同** —— 输入是「上一版状态（有硬 cap）+ 最近 8 条用户消息
+     * （每条 ≤240 字符）+ 有上限的确定性证据」。如果将来有人把 evidence 改成全量，
+     * 这条断言会立即变红。
+     */
+    const fill = (n, text) => Array.from({ length: n }, (_, i) => ({ text: `${text} ${i}`, status: 'active', updatedAt: 1 }))
+    const bigTask = {
+      task: { objective: '把上下文状态层做成可用的东西', currentPhase: '实现与验证' },
+      currentState: fill(CLIP_LIMITS.currentState, '正在处理'),
+      decisions: fill(CLIP_LIMITS.decisions, '决定'),
+      constraints: fill(CLIP_LIMITS.constraints, '约束'),
+      completed: fill(CLIP_LIMITS.completed, '已完成'),
+      failedAttempts: fill(CLIP_LIMITS.failedAttempts, '失败尝试'),
+      unresolved: fill(CLIP_LIMITS.unresolved, '未解决'),
+      nextActions: fill(CLIP_LIMITS.nextActions, '下一步'),
+      assumptions: fill(CLIP_LIMITS.assumptions, '假设'),
+      hypothesis: fill(CLIP_LIMITS.hypothesis, '推测'),
+      files: Array.from({ length: CLIP_LIMITS.files }, (_, i) => ({ path: `src/renderer/src/components/file-${i}.tsx`, state: 'modified' })),
+      commandsRun: Array.from({ length: CLIP_LIMITS.commands }, (_, i) => ({ command: `npm run step-${i}`, exitCode: i % 3 === 0 ? 1 : 0 })),
+      testsRun: Array.from({ length: CLIP_LIMITS.tests }, (_, i) => ({ command: `npm test -- suite-${i}`, failed: i === 0 ? 2 : 0, passed: 12 })),
+      archiveRefs: [],
+      episodeRefs: []
+    }
+    const bigStateTokens = transform.estimateTokens(transform.renderTaskState(bigTask))
+    const session = (turns) => {
+      const messages = []
+      const entryIds = []
+      for (let i = 0; i < turns; i += 1) {
+        messages.push({ role: 'user', content: [{ type: 'text', text: `第 ${i} 轮：继续实现第 ${i} 个模块，注意不要动数据库迁移。` }] })
+        entryIds.push(`u${i}`)
+        messages.push({ role: 'assistant', content: [{ type: 'toolCall', id: `c${i}`, name: 'bash', arguments: { command: `npm run step-${i}` } }] })
+        entryIds.push(`a${i}`)
+        messages.push({ role: 'toolResult', toolCallId: `c${i}`, content: [{ type: 'text', text: `exit code: ${i % 2}\nstep ${i} done` }] })
+        entryIds.push(`t${i}`)
+      }
+      return { messages, entryIds }
+    }
+    const measure = (turns) => {
+      const s = session(turns)
+      const evidence = evidenceFromMessages({ messages: s.messages, entryIds: s.entryIds })
+      const directives = userDirectives(s.messages, s.entryIds)
+      return transform.estimateTokens(buildProducerPrompt({ previousTask: bigTask, directives, evidence }))
+    }
+    const t5 = measure(5)
+    const t100 = measure(100)
+    const t1000 = measure(1000)
+    console.log(`    满状态渲染 ≈ ${bigStateTokens} token；prompt：5 回合 ≈ ${t5}，100 回合 ≈ ${t100}，1000 回合 ≈ ${t1000}`)
+    ok(t1000 < 6_000, `1000 回合的 prompt 仍 < 6000 token（实际 ${t1000}）—— 不随会话长度爆`, String(t1000))
+    ok(t1000 - t5 < 2_000, `5 → 1000 回合只多 ${t1000 - t5} token（多的是 8 条最近用户消息 + 有上限的证据）`, String(t1000 - t5))
+    ok(bigStateTokens < 8_000, `「满状态」渲染本身也在预算内（${bigStateTokens}）`)
+    ok(
+      transform.estimateTokens(buildProducerPrompt({ previousTask: null, directives: [], evidence: { files: [], commandsRun: [], testsRun: [] } })) < 600,
+      'previous 为空时 prompt 就是一个小壳子'
+    )
   }
 
   /* ---------------------------------------------------------- 6. dirty 与刷新判定 */
