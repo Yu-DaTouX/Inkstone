@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
+import { ModelThinkingPicker } from '../Pickers'
 import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
@@ -30,6 +31,28 @@ export function Composer() {
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
   const busy = useStore((s) => !!s.session?.isStreaming)
+  /**
+   * 「模型在干活」的**回合级**判据（agent_start → agent_settled）。
+   *
+   * ⚠️ 不能用 `busy` 代替：`busy` 是 `session.isStreaming`，只在「有一条
+   *    assistant 消息正在流」时为真 —— 工具执行期间是 false，而那时 pi 同样
+   *    不接受不带 streamingBehavior 的 prompt（用户报过这个错）。
+   *    「生成中发送 = 先悬在输入框上方」必须用回合级判据，否则用户在工具执行时
+   *    发消息会被直接投出去，等于又替用户决定了投递方式。
+   *
+   * ⚠️ `isCompacting` 必须算进来（用户 2026-09-19：「自动压缩的时候仍要允许用户
+   *    发送消息」）。压缩期间 pi 照样不接受裸 prompt：
+   *      · 压缩发生在回合内部时 `running` 是真的，这条不影响；
+   *      · **pi 在回合之间自动压缩**（threshold）时 `agent_settled` 已经发过、
+   *        `running` 已经是 false，而 pi 忙着压缩 —— 那时按发送会**直接投出去**，
+   *        pi 报「Agent is already processing」而输入框已经被 `submit` 清空，
+   *        用户的消息就丢了（真正该做的是先进待定区，压缩完再自动按「排队」发）。
+   */
+  const roundRunning = useStore(
+    (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running || !!s.session?.isCompacting
+  )
+  const holdSend = useStore((s) => s.holdSend)
+  const pendingSends = useStore((s) => s.pendingSends)
   const conn = useStore((s) => s.conn)
   const commands = useStore((s) => s.commands)
   /** 常用排序（自动管理）、记录使用、以及列表的自动刷新 */
@@ -145,8 +168,36 @@ export function Composer() {
   /** 展开后的默认高度：够写一段，但不至于占半个屏 */
   const TALL_H = 180
 
+  /**
+   * 让**这一次**高度变化走过渡。
+   *
+   * 为什么不给 textarea 常开 `transition: height`：它每次输入都可能自动长高，
+   * 常开的话打字时高度永远慢半拍，拖拽柄跟手也会变成“藕断丝连”。
+   * 所以只在「模式切换」这个瞬间把过渡打开，动画结束就关掉。
+   *
+   * 为什么需要它：以前点拖拽柄收起长文模式是**瞬跳**（180px 直接变回内容高），
+   * 而展开那一下是跟着手/或者感受不到跳变 —— 于是“关的时候没有动画”很突兀。
+   */
+  const [heightAnimating, setHeightAnimating] = useState(false)
+  const heightAnimTimer = useRef<number | null>(null)
+  const animateHeight = useCallback((): void => {
+    setHeightAnimating(true)
+    if (heightAnimTimer.current !== null) window.clearTimeout(heightAnimTimer.current)
+    heightAnimTimer.current = window.setTimeout(() => {
+      heightAnimTimer.current = null
+      setHeightAnimating(false)
+    }, 240)
+  }, [])
+  useEffect(
+    () => () => {
+      if (heightAnimTimer.current !== null) window.clearTimeout(heightAnimTimer.current)
+    },
+    []
+  )
+
   /** 开关长文模式。开启时给一个默认高度；关闭时完全回到默认尺寸 */
   const toggleExpanded = useCallback((): void => {
+    animateHeight()
     setExpanded((v) => {
       if (v) {
         collapsedValue.current = value
@@ -158,7 +209,7 @@ export function Composer() {
       setTall(TALL_H)
       return true
     })
-  }, [value, resetComposerHeight])
+  }, [value, resetComposerHeight, animateHeight])
 
   /**
    * 拖拽柄：拖 = 调高，点 = 切换长文模式。
@@ -296,6 +347,7 @@ export function Composer() {
     const lh = parseFloat(getComputedStyle(el).lineHeight) || 20
     const pad = 16
     if (el.scrollHeight > lh * 3 + pad) {
+      animateHeight()
       setExpanded(true)
       setTall(TALL_H)
     }
@@ -653,10 +705,37 @@ export function Composer() {
       return
     }
 
+    /*
+     * 生成中不直接投递：先把消息**悬在输入框上方**，由用户选「插话」还是
+     * 「排队」（用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户
+     * 自己选择是插话还是排队」）。
+     *
+     * 悬着的消息在回合结束后会**自动按「排队」发出**（见下面的 effect）：
+     * 那时“插话”已经没有意义，而用户不选也不该把消息丢掉。
+     */
+    if (roundRunning) {
+      setValue('')
+      clearAttachments()
+      holdSend(outgoing, images.length ? images : undefined)
+      return
+    }
+
     setValue('')
     clearAttachments()
     await send(outgoing, images.length ? images : undefined)
   }
+
+  /**
+   * 回合结束后把悬着的消息按「排队」投出去。
+   *
+   * 一条一条发：`releaseSend` 成功后会改 `pendingSends`，本 effect 因此
+   * 再触发一次，顺序天然保持。投递失败时 `pendingSends` 不变、依赖不变，
+   * 所以不会重试到死 —— 卡片留在原地让用户处理。
+   */
+  useEffect(() => {
+    if (roundRunning || pendingSends.length === 0) return
+    void useStore.getState().releaseSend(pendingSends[0].id, 'followUp')
+  }, [roundRunning, pendingSends])
 
   /* ---- 图片：粘贴 ---- */
   const onPaste = useCallback(
@@ -833,7 +912,7 @@ export function Composer() {
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
-      <div className={`composer ${expanded ? 'tall' : ''}`}>
+      <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
          *
@@ -1008,10 +1087,31 @@ export function Composer() {
              *    不是“现在能不能输入”。禁用时留空反而让探针
              *    和用户都不知道当前规则是什么。
              */}
-            <span className="ctool-hint" data-testid="composer-keyhint">
-              {sendRule === 'enter' ? t('composer.keyEnterSend') : t('composer.keyCtrlSend')}
-            </span>
+            {/*
+             * 只在**非默认状态**显示。
+             *
+             * 默认短输入框 + 默认发送键时，规则就是「Enter 发送 / Shift+Enter 换行」，
+             * 写出来只是给输入区添噪声（用户要求：默认不显示）。
+             * 真正需要写出来的是「不写就得靠试」的两种情况：
+             *   ① 长文模式 —— Enter 的语义变了（换行），发不出去会让人以为卡了
+             *   ② 用户改过发送键 —— 那是他自己配的，得让他看得见当前规则
+             * 两种情况下文字仍然与 `sendRule` 同源，不会出现“提示与行为不一致”。
+             */}
+            {expanded || sendKey !== 'auto' ? (
+              <span className="ctool-hint" data-testid="composer-keyhint">
+                {sendRule === 'enter' ? t('composer.keyEnterSend') : t('composer.keyCtrlSend')}
+              </span>
+            ) : null}
           </div>
+
+          {/*
+           * 模型 + 思考强度：放在**输入框内部**右下角（用户要求，
+           * 原来在输入框下方的 UsageBar 里）。
+           *   · 准备打字时先确认“用什么模型”，视线不用往下扫到输入区之外
+           *   · 与发送键同行 —— 这两个是同一个动作的前后两步
+           * 强度文字的颜色由 `.mt-level[data-level]` 按档位染（见 composer.css）。
+           */}
+          <ModelThinkingPicker />
           <button
             className={`send ${busy ? 'abort' : ''}`}
             data-testid="send"
@@ -1049,25 +1149,86 @@ function toAbsoluteFilePath(cwd: string, rel: string): string {
 }
 
 /**
- * 排队中的消息（显示在输入框上方）。
+ * 输入框上方的消息栈：**悬着的（待投递）** + pi 队列里（已投递）的。
  *
- * pi 把“生成中收到的消息”分两类：
- *   · steering —— 插话，当前这轮就会看到
- *   · followUp —— 排队，等这轮跑完再投递（现在的默认）
- * 每行右侧的「撤回」只操作仍在队列快照中的条目；目标已经被 pi 接收后，
- * 它会从快照消失，不会给用户一个虚假的撤回成功。follow-up 仍可另行插队。
+ * 两层语义要分清：
+ *   · `pendingSends` —— 还没投给 pi，用户点「插话 / 排队」之后才投递。
+ *     用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户自己选择
+ *     是插话还是排队」。它只存在于渲染端（`store.pendingSends`）。
+ *   · `queue.steering` / `queue.followUp` —— pi **已经收下**的（插话中 /
+ *     排队中）。每行右侧的「撤回」只操作仍在队列快照中的条目：目标一旦被
+ *     pi 取走就会从快照消失，不会给用户一个虚假的撤回成功。
  */
 function QueueStack() {
   const t = useT()
   const queue = useStore((s) => s.queue)
   const steerQueued = useStore((s) => s.steerQueued)
   const removeQueued = useStore((s) => s.removeQueued)
+  const pendingSends = useStore((s) => s.pendingSends)
+  const releaseSend = useStore((s) => s.releaseSend)
+  const restoreSend = useStore((s) => s.restoreSend)
+  /*
+   * 回合跑着才需要「插话 / 排队」二选一；停了就只剩「发送」一个动作。
+   *
+   * ⚠️ 这里**故意不算 `isCompacting`**（与上面 `Composer` 里那个同名判据不同）：
+   *    压缩期间模型没有在生成，“插话”没有意义 —— 卡片上只给一个
+   *    「发送」（内部走 `followUp`：等压缩完再投）才是对的。
+   *    `Composer` 那个判据加上压缩，是为了让这个时候按 Enter 先进待定区、
+   *    不要拿着裸 prompt 去撞 pi。两处职责不同，不是写漏了。
+   */
+  const roundRunning = useStore(
+    (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running
+  )
   const steering = queue.steering
   const followUp = queue.followUp
-  if (steering.length + followUp.length === 0) return null
+  if (steering.length + followUp.length + pendingSends.length === 0) return null
 
   return (
     <div className="queue-stack" data-testid="queue-stack">
+      {pendingSends.map((item) => (
+        <div className="qrow pending" key={item.id} title={item.text} data-testid="queue-pending">
+          <Icon name="send" size={12} />
+          <span className="qrow-text">{item.text}</span>
+          <span className="qrow-tag">{t('queue.hold')}</span>
+          {roundRunning ? (
+            <>
+              <button
+                className="qrow-jump primary"
+                data-testid="pending-steer"
+                title={t('queue.steerNowTip')}
+                onClick={() => void releaseSend(item.id, 'steer')}
+              >
+                {t('queue.steerNow')}
+              </button>
+              <button
+                className="qrow-jump"
+                data-testid="pending-follow"
+                title={t('queue.queueItTip')}
+                onClick={() => void releaseSend(item.id, 'followUp')}
+              >
+                {t('queue.queueIt')}
+              </button>
+            </>
+          ) : (
+            <button
+              className="qrow-jump primary"
+              data-testid="pending-send"
+              title={t('queue.sendNowTip')}
+              onClick={() => void releaseSend(item.id, 'followUp')}
+            >
+              {t('queue.sendNow')}
+            </button>
+          )}
+          <button
+            className="qrow-jump"
+            data-testid="pending-restore"
+            title={t('queue.restoreTip')}
+            onClick={() => restoreSend(item.id)}
+          >
+            {t('queue.restore')}
+          </button>
+        </div>
+      ))}
       {steering.map((item) => (
         <div className="qrow steering" key={item.id} title={item.text} data-testid="queue-row">
           <Icon name="activity" size={12} />

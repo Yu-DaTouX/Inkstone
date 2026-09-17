@@ -417,6 +417,33 @@
   transform: rotate(90deg);
 }
 
+/*
+ * 「更多会话 / 收起会话」：项目下的折叠出口（同一形态，再缩进一级）。
+ * 用户 2026-09-18：「项目文件夹应该默认显示前五个会话，其余进行折叠」。
+ */
+.rail-more-sessions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: calc(100% - 24px);
+  margin: 2px 6px 2px 18px;
+  padding: 3px 4px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.rail-more-sessions:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.rail-more-sessions .chev {
+  flex: none;
+  opacity: 0.7;
+}
+
 /* 用 plus 旋转成关闭叉（sprite 里没有独立的 close） */
 .rail-trash-x {
   transform: rotate(45deg);
@@ -453,178 +480,27 @@
 }
 
 /*
- * ── 收起态：48px 紧凑快捷轨 ──
+ * ── 收起态：完全折叠（0 宽、什么都不渲染）──
  *
- * ⚠️ 这里与一段历史有关，别按「收起 = 0 宽」改：
- *   曾经做过 ① 收起留 38px 透明槽 ② 面板内悬停展开按钮，
- *   两者都因为「保留宽度把中栏算错 → 导航轨位置带偏」被否掉。
- *   现在的形态是：开关常驻标题栏 **并且** 左栏收缩成一排图标
- *   （.rail-compact），两者并存 —— 入口永在，同时保留常用快捷键位。
+ * 用户 2026-09-18：「左边栏变为完全折叠，不要留下一个边框」。
+ * 之前这里是 48px 的紧凑快捷轨（.rail-compact：砚 / 搜索 / 新建 / 项目文件夹 /
+ * 设置），深色主题下它就是消息区左边**一条颜色不同的竖条** —— 用户看到的
+ * 就是这个「边框」。那条轨的 JSX 与样式已一并删掉。
  *
- * `.rail > :not(.rail-compact)` 只隐藏「其余内容」，紧凑轨本身留着。
+ * ⚠️ 别按「再给它留点东西」改。这段历史走过的三条路都被否过：
+ *   ① 收起留 38px 透明槽（保留宽度把中栏算错 → 导航轨位置带偏）
+ *   ② 面板内悬停展开按钮（透明但仍可点，盖住展开把手）
+ *   ③ 48px 紧凑图标轨（就是本次被要求去掉的那条）
+ *   现在的形态：**`--w-rail-collapsed: 0px`（layout.css）+ 容器 display: none**，
+ *   展开入口只剩标题栏那个开关（`rail-toggle`）—— 项目入口因此回到
+ *   「先展开左栏再切项目」。
  */
 .app.rail-off .rail {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-  background: var(--bg-1);
-}
-.app.rail-off .rail > :not(.rail-compact) {
   display: none;
 }
 /* 收起时没有可拖的宽度，把手一并去掉（否则会出现一条假的拖拽命中区） */
 .app.rail-off .resizer-rail {
   display: none;
-}
-.rail-compact {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  padding: 6px;
-  gap: 4px;
-  /* 项目名称浮层与「全部项目」浮层的定位基准（N14） */
-  position: relative;
-}
-.rail-compact > button {
-  width: 36px;
-  height: 32px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 6px;
-  color: var(--fg-dim);
-}
-.rail-compact > button:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-/* ---- mini 栏里的项目文件夹（N14）---- */
-.rail-compact-sep {
-  flex: none;
-  width: 20px;
-  height: 1px;
-  margin: 2px 0;
-  background: var(--border);
-}
-
-.rail-compact-proj {
-  position: relative;
-}
-
-/* 当前项目：图标用强调色 + 底色（不只是颜色差） */
-.rail-compact-proj.cur {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* 该项目里有会话在跑（N12）：一个小圆点，不靠动画 */
-.rail-compact-proj[data-running='1']::after {
-  content: '';
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-/*
- * 项目名不常驻（mini 栏只有 48px），悬停 / 键盘聚焦时从右侧浮出。
- * 为什么要 `:focus-visible`：键盘用户 Tab 到这儿也得知道这是哪个项目，
- * 而 hover 对键盘不存在。
- */
-.rail-compact-name {
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  max-width: 200px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-3);
-  color: var(--fg);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
-  z-index: 60;
-}
-
-/* 名称浮出：React 状态（data-hover，合成事件可验证）为主，
-   `:hover` / `:focus-visible` 作为兜底（不依赖 JS 时的原生行为）。 */
-.rail-compact-proj[data-hover='1'] .rail-compact-name,
-.rail-compact-proj:hover .rail-compact-name,
-.rail-compact-proj:focus-visible .rail-compact-name {
-  opacity: 1;
-}
-
-/* 「全部项目」浮层：超过前 N 个的项目从这里进（不把 mini 栏撑长） */
-.rail-compact-menu {
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 6px;
-  width: 208px;
-  max-height: min(60vh, 420px);
-  overflow: auto;
-  padding: 4px;
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.75);
-  z-index: 70;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.rcm-head {
-  padding: 4px var(--sp-2) 3px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-}
-
-.rcm-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 3px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-}
-
-.rcm-item:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.rcm-item.cur {
-  color: var(--accent);
-}
-
-.rcm-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rcm-count {
-  flex: none;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ══════════════════════════════════════════════════════════════

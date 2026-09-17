@@ -50,6 +50,16 @@ const MODE_ID = 'coding'
  * 分组与项目归属不受影响。
  */
 const PROJECT_PREVIEW = 5
+/**
+ * 项目下默认展开几个会话（用户 2026-09-18：「项目文件夹应该默认显示前五个会话，
+ * 其余进行折叠」）。
+ *
+ * 与 `PROJECT_PREVIEW` 同一个理由：左栏是导航而不是列表 —— 一个项目攒到几十条
+ * 会话之后，展开态会把下面的项目全挤出视野。
+ * 当前会话落在折叠段里时会自动多展开到它那一行为止，否则用户看不到自己
+ * 正待着的会话。
+ */
+const SESSION_PREVIEW = 5
 /** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 /** 同上：项目顺序的稳定空值 */
@@ -116,6 +126,8 @@ export function Rail() {
   const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
+  /** 哪些项目已点开「更多会话」（按项目 id 记；默认只显示前 SESSION_PREVIEW 条） */
+  const [shownAllSessions, setShownAllSessions] = useSidebarValue<string[]>('expanded-sessions', [])
   const [expanded, setExpanded] = useSidebarValue<string[]>('expanded-branches', [])
   const [pinned, setPinned] = useSidebarValue<string[]>('pinned', [])
   const archived = useMemo(() => projectRecords.filter((p) => p.archived).map((p) => p.cwd), [projectRecords])
@@ -133,26 +145,12 @@ export function Rail() {
     return (list: SessionSummary[]): number => list.filter((s) => files.has(s.path)).length
   }, [runners])
 
-  const railPinned = useStore((s) => s.railPinned)
-  const setRailPinned = useStore((s) => s.setRailPinned)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
   /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
   const [modeMenu, setModeMenu] = useState(false)
-  /** mini 栏（收起态）的「全部项目」浮层（N14） */
-  const [miniMenu, setMiniMenu] = useState(false)
-  /**
-   * mini 栏里正在悬停/聚焦的项目（N14）。
-   *
-   * 为什么用 React 状态而不是纯 CSS `:hover`：
-   *   · 触摸设备没有 hover；
-   *   · 键盘用户需要 focus 也能看到名称；
-   *   · 纯 CSS 悬停无法在自动化里验证（合成事件改不了 :hover）。
-   * CSS 里的 `:hover` / `:focus-visible` 仍作为兜底保留。
-   */
-  const [miniHover, setMiniHover] = useState<string | null>(null)
   const [projectMenu, setProjectMenu] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
@@ -257,17 +255,6 @@ export function Rail() {
       document.removeEventListener('mousedown', close)
     }
   }, [modeMenu])
-
-  /* mini 栏的项目浮层：同样点外面关掉（N14） */
-  useEffect(() => {
-    if (!miniMenu) return
-    const close = (): void => setMiniMenu(false)
-    const id = setTimeout(() => document.addEventListener('mousedown', close), 0)
-    return () => {
-      clearTimeout(id)
-      document.removeEventListener('mousedown', close)
-    }
-  }, [miniMenu])
 
   /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
@@ -728,12 +715,6 @@ export function Rail() {
   }
 
   /**
-   * mini 栏（收起态）只放前 N 个项目的文件夹图标（N14），
-   * 排序与展开态完全一致（同一个 `projects` 派生值）。
-   */
-  const miniProjects = projects.slice(0, PROJECT_PREVIEW)
-
-  /**
    * 切到某个项目（N05）。
    *
    * 与旧实现的区别：旧的是「停掉当前 pi 再在新 cwd 起一个」，所以点一下
@@ -791,76 +772,6 @@ export function Rail() {
 
   return (
     <aside className="rail">
-      {!railPinned ? <div className="rail-compact">
-        <button title={t('mode.switch')} onClick={() => { setRailPinned(true); setModeMenu(true) }}>砚</button>
-        <button title={t('rail.search')} onClick={() => { setRailPinned(true); setSearching(true) }}><Icon name="search" size={16} /></button>
-        <button title={t('rail.new')} onClick={() => void newSession({ scope: 'global' })}><Icon name="plus" size={16} /></button>
-        {/*
-         * 项目文件夹（N14）：收起侧栏仍然能看见/切到项目。
-         *
-         * 与展开态**同一排序、同一前五项规则**（N17）：先按当前项目，
-         * 再按最近活动；超过五个的项目从「全部项目」浮层里进。
-         * 名称不常驻（mini 栏只有 48px）—— 悬停 / 键盘聚焦时在右侧浮出。
-         */}
-        <span className="rail-compact-sep" aria-hidden />
-        {miniProjects.map((p) => (
-          <button
-            key={p.id}
-            className={`rail-compact-proj ${p.isCurrent ? 'cur' : ''}`}
-            title={p.label}
-            aria-label={p.label}
-            aria-current={p.isCurrent ? 'true' : undefined}
-            data-testid="rail-compact-project"
-            data-current={p.isCurrent ? '1' : '0'}
-            data-hover={miniHover === p.id ? '1' : '0'}
-            data-running={runningIn(p.list) > 0 ? '1' : '0'}
-            data-cwd={p.cwd}
-            onMouseEnter={() => setMiniHover(p.id)}
-            onMouseLeave={() => setMiniHover((v) => (v === p.id ? null : v))}
-            onFocus={() => setMiniHover(p.id)}
-            onBlur={() => setMiniHover((v) => (v === p.id ? null : v))}
-            onClick={() => void switchProject(p.cwd, p.projectId)}
-          >
-            <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={16} />
-            <span className="rail-compact-name">{p.label}</span>
-          </button>
-        ))}
-        {projects.length > PROJECT_PREVIEW ? (
-          <button
-            className="rail-compact-proj rail-compact-more"
-            title={t('rail.allProjects', { n: projects.length })}
-            aria-label={t('rail.allProjects', { n: projects.length })}
-            aria-expanded={miniMenu}
-            aria-haspopup="menu"
-            data-testid="rail-compact-more"
-            onClick={() => setMiniMenu((v) => !v)}
-          >
-            <Icon name="menu" size={16} />
-            <span className="rail-compact-name">{t('rail.allProjects', { n: projects.length })}</span>
-          </button>
-        ) : null}
-        <span className="spacer" />
-        <button title={t('rail.settings')} onClick={() => useStore.getState().openSettings()}><Icon name="settings" size={16} /></button>
-        {miniMenu ? (
-          <div className="rail-compact-menu" role="menu" data-testid="rail-compact-menu">
-            <div className="rcm-head">{t('rail.projects')}</div>
-            {projects.map((p) => (
-              <button
-                key={p.id}
-                role="menuitem"
-                className={`rcm-item ${p.isCurrent ? 'cur' : ''}`}
-                data-current={p.isCurrent ? '1' : '0'}
-                data-cwd={p.cwd}
-                onClick={() => { setMiniMenu(false); void switchProject(p.cwd, p.projectId) }}
-              >
-                <Icon name={p.isCurrent ? 'folder-open' : 'folder'} size={12} />
-                <span className="rcm-name" title={p.cwd}>{p.label}</span>
-                <span className="rcm-count">{p.list.length}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div> : null}
       {/* ---- 顶部：品牌（带模式菜单）+ 动作 ---- */}
       <div className="rail-top">
         {/*
@@ -1218,9 +1129,44 @@ export function Rail() {
                     {projectGroups.map((group) => <button key={group.id} onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: group.id, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{group.name}</button>)}
                     <button onClick={() => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, groupId: undefined, updatedAt: Date.now() } : project) }); setGroupingProject(null) }}>{t('rail.noGroup')}</button>
                   </div> : null}
-                  {pOpen ? <>
-                    {p.list.filter((s) => !s.parentSession || !p.list.some((p) => p.path === s.parentSession)).map((s) => renderSession(s, p.list))}
-                  </> : null}
+                  {pOpen ? (() => {
+                    /*
+                     * 只渲染「根会话」（分叉出来的子会话走 SessionRow 的子树），
+                     * 并按 SESSION_PREVIEW 折叠 —— 一个项目几十条会话时，
+                     * 展开态会把下面的项目全部挤出视野。
+                     */
+                    const roots = p.list.filter((s) => !s.parentSession || !p.list.some((x) => x.path === s.parentSession))
+                    /* 当前会话若落在折叠段里，至少展开到它那一行（不能把自己藏起来） */
+                    const currentIndex = roots.findIndex((s) => s.path === session?.sessionFile)
+                    const floor = Math.max(SESSION_PREVIEW, currentIndex + 1)
+                    const all = shownAllSessions.includes(p.id)
+                    const limit = all ? roots.length : floor
+                    const hidden = roots.length - limit
+                    return <>
+                      {roots.slice(0, limit).map((s) => renderSession(s, p.list))}
+                      {hidden > 0 ? (
+                        <button
+                          className="rail-more-sessions"
+                          data-testid="rail-more-sessions"
+                          data-count={hidden}
+                          title={t('rail.moreSessionsTip', { n: hidden })}
+                          onClick={() => setShownAllSessions((prev) => [...prev, p.id])}
+                        >
+                          <Icon name="chevron-right" size={12} className="chev" />
+                          {t('rail.moreSessions', { n: hidden })}
+                        </button>
+                      ) : null}
+                      {/* 只有真能收起来时才给这个出口：当前会话在深处时，
+                          “收起”会立刻又展开到它那一行，看着像没反应 */}
+                      {all && roots.length > floor ? (
+                        <button
+                          className="rail-more-sessions"
+                          data-testid="rail-fold-sessions"
+                          onClick={() => setShownAllSessions((prev) => prev.filter((x) => x !== p.id))}
+                        >{t('rail.foldSessions')}</button>
+                      ) : null}
+                    </>
+                  })() : null}
                 </div>
               )
             })

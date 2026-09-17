@@ -65,7 +65,7 @@ const api: YanBridge = {
   /* ---- 会话 ---- */
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
-  send: (text, images) => invoke<Ok>('yan:send', text, images),
+  send: (text, images, mode) => invoke<Ok>('yan:send', text, images, mode),
   steer: (text) => invoke<Ok>('yan:steer', text),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),

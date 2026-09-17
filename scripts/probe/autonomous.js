@@ -60,6 +60,23 @@
   const wrap = q('.composer-wrap')
   ok(wrap?.getAttribute('data-autonomous') === '1' && wrap?.classList.contains('autonomous'), '输入区显示自主模式边框状态')
   ok(getComputedStyle(wrap.querySelector('.composer'), '::before').animationName === 'yan-autonomous-border', '边框使用独立低干扰动画')
+  /*
+   * 两条**对称**的光带（用户报「跑马灯不明显」）。
+   * 直接复制一条同相位的没用：两条完全重叠，看上去还是一条。
+   * 所以除了「都在跑」，还要钉住相位差 —— 它才是“对称”的实质。
+   */
+  const composerEl = wrap.querySelector('.composer')
+  const bandA = getComputedStyle(composerEl, '::before')
+  const bandB = getComputedStyle(composerEl, '::after')
+  const delayA = parseFloat(bandA.animationDelay) || 0
+  const delayB = parseFloat(bandB.animationDelay) || 0
+  out.push('  光带相位: ::before=' + delayA + 's  ::after=' + delayB + 's')
+  ok(bandB.animationName === 'yan-autonomous-border', '第二条光带也在跑（::after）')
+  ok(
+    Math.abs(Math.abs(delayB - delayA) - 1.6) < 0.05,
+    '两条相位差半个周期（周期 3.2s）—— 停在边框路径的相对两端，不会叠成一条'
+  )
+  ok(bandA.backgroundImage !== bandB.backgroundImage || delayA !== delayB, '两条不是同一个动画实例（各自独立推进）')
 
   out.push('')
   out.push('=== 3. 再点关闭（落盘）===')

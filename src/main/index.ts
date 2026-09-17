@@ -32,13 +32,18 @@ import { BrowserController } from './browser'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
+import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
+import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
 import type {
   Attachment,
   AttentionNotify,
   FileRequestContext,
   FileSearchRequest,
-  MainPush
+  MainPush,
+  RunnerStatus,
+  SessionState,
+  SessionSummary
 } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -128,11 +133,13 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
   app.exit(0)
 } else {
-  app.on('second-instance', () => {
-    if (!win || win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+  app.on('second-instance', (_event, commandLine) => {
+    const command = decodeControlCommand(commandLine)
+    if (command) {
+      void dispatchControlCommand(command)
+      return
+    }
+    showMainWindow()
   })
 }
 
@@ -199,6 +206,8 @@ let browser: BrowserController | null = null
 let subagents: SubagentController | null = null
 /** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
 const activeFileSearches = new Map<string, AbortController>()
+/** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
+let remoteServer: RemoteServer | null = null
 
 /**
  * 当前**正在查看**的会话实例。
@@ -291,6 +300,7 @@ function contextExtensionPath(): string | undefined {
 }
 
 function push(msg: MainPush): void {
+  remoteServer?.publish(msg)
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
@@ -353,6 +363,12 @@ async function shutdown(): Promise<void> {
   shuttingDown = true
   tray?.destroy()
   tray = null
+  try {
+    await remoteServer?.stop()
+  } catch {
+    /* 远程客户端已断开；退出流程不能被监听器关闭失败阻塞 */
+  }
+  remoteServer = null
   /*
    * 退出时必须收掉**所有**运行实例（N12）：现在可能同时有好几个
    * pi 子进程在跑，只停当前视图那个会留下孤儿进程。
@@ -390,6 +406,356 @@ function showMainWindow(): void {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+const CONTROL_KEYS: Readonly<Record<string, string>> = {
+  esc: 'ESC',
+  escape: 'ESC',
+  enter: 'RETURN',
+  return: 'RETURN',
+  tab: 'TAB',
+  backspace: 'BACKSPACE',
+  delete: 'DELETE',
+  up: 'UP',
+  arrowup: 'UP',
+  down: 'DOWN',
+  arrowdown: 'DOWN',
+  left: 'LEFT',
+  arrowleft: 'LEFT',
+  right: 'RIGHT',
+  arrowright: 'RIGHT',
+  space: 'SPACE'
+}
+
+function controlStatus(): Record<string, unknown> {
+  if (!win || win.isDestroyed()) {
+    return { ready: false, agentRunning: ac()?.running === true }
+  }
+  const [contentWidth, contentHeight] = win.getContentSize()
+  return {
+    ready: true,
+    title: win.getTitle(),
+    visible: win.isVisible(),
+    minimized: win.isMinimized(),
+    focused: win.isFocused(),
+    bounds: win.getBounds(),
+    contentSize: { width: contentWidth, height: contentHeight },
+    agentRunning: ac()?.running === true
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Android 远程管理                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 远程 API 不返回会话文件绝对路径：手机只需要稳定 id 和展示信息，
+ * 路径解析始终由主进程按 id 查找，避免网络请求变成任意文件读取入口。
+ */
+function remoteSessionSummary(summary: SessionSummary): Record<string, unknown> {
+  return {
+    id: summary.id,
+    title: summary.title,
+    named: summary.named,
+    ...(summary.parentSession ? { parentSession: summary.parentSession } : {}),
+    ...(summary.branchOrigin ? { branchOrigin: summary.branchOrigin } : {}),
+    ...(summary.lastActivityAt !== undefined ? { lastActivityAt: summary.lastActivityAt } : {}),
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+    messageCount: summary.messageCount,
+    ...(summary.model ? { model: summary.model } : {}),
+    ...(summary.projectId ? { projectId: summary.projectId } : {}),
+    ...(summary.scope ? { scope: summary.scope } : {}),
+    ...(summary.lastOpenedAt !== undefined ? { lastOpenedAt: summary.lastOpenedAt } : {}),
+    ...(summary.projectCandidates?.length ? { projectCandidates: summary.projectCandidates } : {}),
+    cwdName: basename(summary.cwd) || summary.cwd
+  }
+}
+
+/** SessionState 的远程降敏版本；cwd 只留目录名，sessionFile 不出进程。 */
+function remoteSessionState(state: SessionState | null): Record<string, unknown> | null {
+  if (!state) return null
+  return {
+    sessionId: state.sessionId,
+    ...(state.sessionName ? { sessionName: state.sessionName } : {}),
+    ...(state.model ? { model: state.model } : {}),
+    thinkingLevel: state.thinkingLevel,
+    availableThinkingLevels: state.availableThinkingLevels,
+    ...(state.thinkingLevelsStatus ? { thinkingLevelsStatus: state.thinkingLevelsStatus } : {}),
+    ...(state.capabilities ? { capabilities: state.capabilities } : {}),
+    isStreaming: state.isStreaming,
+    ...(state.isAgentRunning !== undefined ? { isAgentRunning: state.isAgentRunning } : {}),
+    isCompacting: state.isCompacting,
+    ...(state.compaction ? { compaction: state.compaction } : {}),
+    ...(state.lastCompaction ? { lastCompaction: state.lastCompaction } : {}),
+    messageCount: state.messageCount,
+    pendingMessageCount: state.pendingMessageCount,
+    cwdName: basename(state.cwd) || state.cwd,
+    ...(state.autoCompactionEnabled !== undefined ? { autoCompactionEnabled: state.autoCompactionEnabled } : {}),
+    ...(state.contextPolicy ? { contextPolicy: state.contextPolicy } : {}),
+    ...(state.steeringMode ? { steeringMode: state.steeringMode } : {}),
+    ...(state.followUpMode ? { followUpMode: state.followUpMode } : {})
+  }
+}
+
+function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
+  return {
+    id: status.id,
+    runId: status.runId,
+    ...(status.sessionId ? { sessionId: status.sessionId } : {}),
+    ...(status.projectId ? { projectId: status.projectId } : {}),
+    generation: status.generation,
+    cwdName: basename(status.cwd) || status.cwd,
+    running: status.running,
+    waiting: status.waiting,
+    failed: status.failed,
+    conn: status.conn,
+    createdAt: status.createdAt,
+    lastActiveAt: status.lastActiveAt,
+    isActive: status.isActive
+  }
+}
+
+async function remoteSnapshot(): Promise<Record<string, unknown>> {
+  const settings = await getSettings()
+  const summaries = await listSessions(200, settings.projects)
+  const state = ac()?.getState() ?? null
+  const connection = ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
+  const windowReady = !!win && !win.isDestroyed()
+  return {
+    apiVersion: 1,
+    generatedAt: Date.now(),
+    desktop: {
+      ready: windowReady,
+      visible: windowReady && win!.isVisible(),
+      minimized: windowReady && win!.isMinimized()
+    },
+    agent: {
+      connection,
+      activeSessionId: state?.sessionId ?? null,
+      state: remoteSessionState(state),
+      runners: (runners?.statuses() ?? []).map(remoteRunnerStatus)
+    },
+    sessions: summaries.map(remoteSessionSummary)
+  }
+}
+
+async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOperationResult> {
+  const settings = await getSettings()
+  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+
+  const result = await readSessionMessages(summary.path)
+  if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
+  const messages = result.messages.slice(-limit)
+  return {
+    ok: true,
+    data: {
+      session: remoteSessionSummary(summary),
+      messages,
+      total: result.total,
+      returned: messages.length,
+      truncated: result.truncated,
+      bytes: result.bytes
+    }
+  }
+}
+
+/** 通过稳定 sessionId 切换当前桌面查看实例，并复用现有 runner 规则。 */
+async function remoteSelectSession(sessionId: string): Promise<RemoteOperationResult> {
+  const settings = await getSettings()
+  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+
+  if (!runners) {
+    const started = await startAgent()
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+  }
+  const cwdResult = await validateCwd(summary.cwd)
+  if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
+  const projectId = summary.scope === 'global'
+    ? undefined
+    : (summary.projectId ?? projectIdForCwd(settings, cwdResult.cwd))
+  const result = await runners!.select({
+    sessionFile: summary.path,
+    sessionId: summary.id,
+    cwd: cwdResult.cwd,
+    projectId,
+    scope: summary.scope
+  })
+  await rememberRunnerSession(result, {
+    sessionFile: summary.path,
+    cwd: cwdResult.cwd,
+    projectId,
+    scope: summary.scope
+  })
+  if (result.ok && result.id) void pushRunnerSnapshot(result.id)
+  pushRunners()
+  return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
+}
+
+async function remoteNewSession(): Promise<RemoteOperationResult> {
+  const settings = await getSettings()
+  if (!runners) {
+    const started = await startAgent()
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+  }
+  const cwdResult = await validateCwd(settings.cwd)
+  if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
+  const projectId = projectIdForCwd(settings, cwdResult.cwd)
+  const scope = projectId ? 'project' as const : 'global' as const
+  const result = await runners!.select({ cwd: cwdResult.cwd, projectId, scope })
+  await rememberRunnerSession(result, { cwd: cwdResult.cwd, projectId, scope })
+  if (result.ok && result.id) void pushRunnerSnapshot(result.id)
+  pushRunners()
+  return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
+}
+
+async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
+  if (command.action === 'select') return remoteSelectSession(command.sessionId)
+  if (command.action === 'new') return remoteNewSession()
+
+  if (command.action === 'send') {
+    if (command.sessionId) {
+      const selected = await remoteSelectSession(command.sessionId)
+      if (!selected.ok) return selected
+    }
+    if (!ac()?.running) {
+      const started = await startAgent()
+      if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+    }
+    const result = await ac()?.send(command.text)
+    return result?.ok
+      ? { ok: true, data: result }
+      : { ok: false, status: 409, error: result?.error ?? 'pi 未运行' }
+  }
+
+  if (command.action === 'abort') {
+    if (!ac()?.running) return { ok: false, status: 409, error: '当前没有正在运行的任务' }
+    return { ok: true, data: await ac()!.abort() }
+  }
+
+  const settings = await getSettings()
+  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === command.sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  const saved = await setManualTitle(command.sessionId, command.name)
+  if (!saved.ok) return { ok: false, status: 500, error: saved.error ?? '保存会话名称失败' }
+  if (ac()?.getState()?.sessionId === command.sessionId) {
+    const renamed = await ac()!.renameSession(command.name)
+    if (!renamed.ok) return { ok: false, status: 409, error: renamed.error ?? '当前会话名称未能同步到 pi' }
+  }
+  push({ ch: 'session-title', payload: { sessionId: command.sessionId, title: command.name } })
+  return { ok: true, data: { sessionId: command.sessionId, name: command.name } }
+}
+
+function remoteServerEnabled(): boolean {
+  const configuredPort = process.env.YAN_REMOTE_PORT?.trim()
+  return process.env.YAN_REMOTE_ENABLE === '1' || !!configuredPort
+}
+
+async function startRemoteServer(): Promise<void> {
+  if (!remoteServerEnabled() || remoteServer) return
+  const host = process.env.YAN_REMOTE_HOST?.trim() || '127.0.0.1'
+  const rawPort = process.env.YAN_REMOTE_PORT?.trim()
+  const port = rawPort ? Number(rawPort) : 37892
+  try {
+    remoteServer = new RemoteServer({
+      host,
+      port,
+      token: process.env.YAN_REMOTE_TOKEN,
+      handlers: {
+        snapshot: remoteSnapshot,
+        history: remoteHistory,
+        command: executeRemoteCommand
+      },
+      onLog: (text, level) => {
+        if (level === 'error') console.error(`[remote] ${text}`)
+        else console.log(`[remote] ${text}`)
+      }
+    })
+    const info = await remoteServer.start()
+    console.log(`[remote] Android 端使用 Bearer token 连接；token=${info.token}`)
+    console.log(`[remote] health: http://${info.host}:${info.port}/remote/v1/health`)
+  } catch (error) {
+    remoteServer = null
+    reportMainError('remote-server', error)
+  }
+}
+
+/**
+ * 执行来自本机控制页的有限动作。
+ *
+ * 这条边界不开放任意 Electron/Node API：窗口输入只允许落在当前内容区域，
+ * 按键只接受明确的导航键；会话消息另走显式的 `send` 动作，不隐式触发。
+ */
+async function executeControlCommand(command: ControlCommand): Promise<ControlResponse> {
+  try {
+    if (command.action === 'status') {
+      return { ok: true, action: command.action, data: controlStatus() }
+    }
+
+    if (!win || win.isDestroyed()) {
+      return { ok: false, action: command.action, error: '砚主窗口尚未就绪' }
+    }
+
+    if (command.action === 'focus') {
+      showMainWindow()
+      return { ok: true, action: command.action, data: controlStatus() }
+    }
+
+    if (command.action === 'click') {
+      const [width, height] = win.getContentSize()
+      const x = command.x ?? -1
+      const y = command.y ?? -1
+      if (x < 0 || y < 0 || x >= width || y >= height) {
+        return { ok: false, action: command.action, error: `坐标超出内容区域：${width}×${height}` }
+      }
+      showMainWindow()
+      win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+      win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+      return { ok: true, action: command.action, data: { x, y } }
+    }
+
+    if (command.action === 'type') {
+      showMainWindow()
+      await win.webContents.insertText(command.text ?? '')
+      return { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
+    }
+
+    if (command.action === 'key') {
+      const keyCode = CONTROL_KEYS[(command.key ?? '').toLowerCase()]
+      if (!keyCode) return { ok: false, action: command.action, error: '只支持受限导航键' }
+      showMainWindow()
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+      return { ok: true, action: command.action, data: { key: command.key } }
+    }
+
+    if (command.action === 'send') {
+      showMainWindow()
+      const result = await ac()?.send(command.text ?? '')
+      return result?.ok
+        ? { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
+        : { ok: false, action: command.action, error: result?.error ?? 'pi 未运行' }
+    }
+
+    return { ok: false, action: command.action, error: '未知控制动作' }
+  } catch (error) {
+    return {
+      ok: false,
+      action: command.action,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+async function dispatchControlCommand(command: ControlCommand): Promise<void> {
+  const response = await executeControlCommand(command)
+  try {
+    await writeControlResponse(command.requestId, response)
+  } catch (error) {
+    reportMainError('control-response', error)
+  }
 }
 
 /** 真正退出应用；关闭按钮不进入这里，只负责隐藏到托盘。 */
@@ -805,12 +1171,12 @@ function registerIpc(): void {
     return { ...res, state: ac()?.getState() ?? undefined, settings }
   })
 
-  handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[]) => {
+  handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp') => {
     if (!ac()?.running) {
       const r = await startAgent()
       if (!r.ok) return r
     }
-    return ac()!.send(text, images)
+    return ac()!.send(text, images, mode)
   })
 
   handle('yan:steer', async (text: string) => ac()?.steer(text) ?? { ok: false, error: 'pi 未运行' })
@@ -2004,6 +2370,17 @@ app.whenReady().then(async () => {
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」
   const started = await startAgent()
+
+  /*
+   * 安卓远程管理是显式 opt-in：默认不监听网络端口。
+   * 放在 pi 启动之后，第一次 /status 就能拿到完整连接状态；即使监听失败，
+   * 也只记录诊断，不阻止桌面端正常启动。
+   */
+  await startRemoteServer()
+
+  // 如果控制启动请求本身拉起了首个实例，也要在窗口准备好后执行一次。
+  const initialControl = decodeControlCommand(process.argv)
+  if (initialControl) void dispatchControlCommand(initialControl)
 
   // 调试/演示用：YAN_PROMPT=<文本> 时，连上后自动发一条。
   // 配合 YAN_SHOT 就能截到“真实对话”而不是空状态。

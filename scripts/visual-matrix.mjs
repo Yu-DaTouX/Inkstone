@@ -211,7 +211,12 @@ const GROUPS = [
     h: 900,
     scale: 1,
     theme: 'dark',
-    states: ['main', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder']
+    /*
+     * ⚠️ `railsessions` / `pendingcards` 放在**最后**：它们会改 `sessions`（造八条假会话）
+     *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
+     *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
+     */
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
@@ -246,6 +251,26 @@ const STATES = {
       return 'ok';
     })()
   `,
+  /*
+   * 自主模式：输入框边框上的两条对称光带（DESIGN §4.2）。
+   *
+   * 静态图只能证明「这个状态存在」且「两条都在」；相位是否真对称（相隔半个周期）
+   * 靠 `autonomous` 探针断言 `animation-delay`，以及现场看一眼。
+   */
+  autonomous: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 视觉矩阵是 mock 环境（没注册数据型 IPC），不能走 patchSettings */
+      window.__yanStore.setState({ settings: { ...(st.settings ?? {}), autonomous: true } });
+      /* 真实使用时输入框就是聚焦的（聚焦时边框更亮，光带也更容易看清） */
+      document.querySelector('[data-testid="composer"]')?.focus();
+      return 'ok';
+    })()
+  `,
   toolgroup: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -255,17 +280,57 @@ const STATES = {
       window.__yanStore.setState({ rightPanelOpen: false });
       await sleep(200);
       /*
-       * 只做一件事：展开折叠组。
+       * 先造一个**长组**（60 条调用）：用户报的就是这个场景 ——
+       * 「主动展开调用工具/命令栏的时候，给展开的条目一个显示范围，
+       * 而不是铺开到整个界面」（他截图里那条组有 146 次调用）。
+       * fixture 只有几条，不造的话这张图上看不出限高。
+       */
+      const now = Date.now();
+      const cmds = [
+        'grep -rn "steering|followUp" src/renderer/src/state/store.ts | head -30',
+        'sed -n 795,830p src/renderer/src/components/rail/Rail.tsx',
+        'npm run check',
+        'rg -n "tgroup-body" src/renderer/src/styles',
+        'git diff --stat src/renderer/src/styles',
+        'node scripts/test-unit.mjs'
+      ];
+      const tools = Array.from({ length: 60 }, (_, i) => ({
+        id: 'shot-tool-' + i,
+        name: 'bash',
+        args: { command: (i + 1) + ') ' + cmds[i % cmds.length] },
+        status: 'ok',
+        output: 'done',
+        startedAt: now - (60 - i) * 1000,
+        endedAt: now - (60 - i) * 1000 + 400
+      }));
+      /*
+       * ⚠️ 只能**追加**到已有的 assistant 消息上，不能整包替换 messages：
+       *    后面几张图（wschanges / wsunknown / usageelapsed …）都靠 fixture 的
+       *    消息与回合，整包换掉它们就全找不着元素了（实测踩过，6 张图缺件）。
+       */
+      const prev = window.__yanStore.getState().messages;
+      /* 挑**第一条**带工具的 assistant 消息：它的组在页面靠上，展开后 548px 的
+         列表基本落在视口内（放到最后一条会有一大半截在屏幕外面，图上看不到边界） */
+      const withTools = prev.find((m) => m.role === 'assistant' && m.toolCalls?.length);
+      window.__yanStore.setState({
+        messages: withTools
+          ? prev.map((m) => (m === withTools ? { ...m, toolCalls: [...m.toolCalls, ...tools] } : m))
+          : [...prev, { id: 'shot-a', role: 'assistant', text: '', toolCalls: tools }]
+      });
+      await sleep(500);
+      /* 只做一件事：展开折叠组。
        *
        * 为什么不把终端窗口一起点开（曾经试过）：点工具行会走 withScrollAnchor（碰 store），
        * 那一次重渲染会把组的内部 manual 状态打回收起的默认值 —— 两张形态合在一张图里
        * 怎么排都会丢一张。所以拆成两个状态：本状态管**组展开**（组内行保持一行，N03 的规则），
        * toolterm 管**命令行的终端窗口**。
        */
-      const head = document.querySelector('.tgroup-head');
+      /* 点刚加长的那一组（第一条带工具的 assistant 消息 → 第一个组头） */
+      const heads = [...document.querySelectorAll('.tgroup-head')];
+      const head = heads[0];
       if (head) head.click();
-      await sleep(400);
-      return 'ok';
+      await sleep(500);
+      return 'ok(count=' + document.querySelectorAll('.tgroup-body .trow').length + ')';
     })()
   `,
   /* 工具详情：命令行展开后的终端窗口（N03；只有命令类工具会渲染 .term） */
@@ -362,6 +427,59 @@ const STATES = {
         }
       });
       st.openSettings('context');
+      return 'ok';
+    })()
+  `,
+  /* 悬着的消息（用户 2026-09-19）：生成中发出去的先悬在输入框上方 */
+  pendingcards: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      /* 回合在跑，才有「插话 / 排队」二选一 */
+      window.__yanStore.setState({
+        activeRunnerId: 'pv-run',
+        runners: [{
+          id: 'pv-run', runId: 'pv-run', sessionFile: 'pv.jsonl', sessionId: 'pv',
+          generation: 1, cwd: 'C:/yan-preview', running: true, waiting: false, failed: false,
+          conn: 'ready', createdAt: Date.now(), lastActiveAt: Date.now(), isActive: true
+        }]
+      });
+      st.holdSend('插话：先把当前的边界说清楚');
+      st.holdSend('排队：等这轮跑完再补上测试');
+      st.holdSend('一条比较长的待投递消息，用来验证卡片上的省略号与按钮排布不会被挤掉');
+      return 'ok';
+    })()
+  `,
+  /* 项目下的会话折叠（用户 2026-09-19：默认只显示前五个） */
+  railsessions: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const names = ['重构入口', '补测试', '查崩溃', '改样式', '写文档', '调性能', '看日志', '读代码'];
+      const sessions = names.map((n, i) => ({
+        id: 'vs-' + i,
+        path: cwd + '/vs-' + i + '.jsonl',
+        cwd,
+        projectId: 'vs-proj',
+        title: '会话 ' + (i + 1) + ' · ' + n,
+        named: true,
+        createdAt: stamp,
+        updatedAt: stamp - i * 1000,
+        messageCount: 3
+      }));
+      window.__yanStore.setState({
+        sessions,
+        session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path }
+      });
+      st.patchSettings({
+        projectGroups: [],
+        projects: [{ id: 'vs-proj', cwd, name: 'pi-desktop', archived: false, createdAt: stamp, updatedAt: stamp }],
+        recentCwds: [cwd]
+      });
       return 'ok';
     })()
   `,
@@ -919,6 +1037,8 @@ const MUST_HAVE = {
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
+  /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
+  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="autonomous-toggle"][data-on="1"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   toolgroup: ['.tgroup.open'],
   toolterm: ['.trow.open .term'],
@@ -926,6 +1046,8 @@ const MUST_HAVE = {
   settings: ['.settings'],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
+  railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
+  pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
   compaction: [
     '[data-testid="rp-context"]',
     '[data-testid="ctx-compacting-reason"]',
@@ -983,6 +1105,17 @@ const AFTER_STATE = {
       const st = window.__yanStore.getState();
       window.__yanStore.setState({ session: { ...st.session, isStreaming: true } });
       document.querySelectorAll('[data-testid="model-picker"]').forEach((b) => b.click());
+      return 'ok';
+    })()
+  `,
+  /*
+   * 自主模式必须在同组里关掉：它是设置项，打开后会一直留在后续每张图的
+   * 输入框边框上（同一组共用同一个窗口）。
+   */
+  autonomous: `
+    (() => {
+      const st = window.__yanStore.getState();
+      window.__yanStore.setState({ settings: { ...(st.settings ?? {}), autonomous: false } });
       return 'ok';
     })()
   `,

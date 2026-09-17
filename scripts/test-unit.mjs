@@ -482,6 +482,19 @@ const stdioGuard = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/stdio-guard.mjs'))
 )
 
+/* 安卓远程管理层：HTTP/SSE 路由与认证边界，不启动 Electron 或 pi。 */
+const remoteServer = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/remote-server.ts'],
+    outfile: 'out/test/remote-server.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/remote-server.mjs'))
+)
+const { runRemoteServerTests } = await import('./test-remote.mjs')
+
 /*
  * N21-3 上下文策略：预算公式 + 触发决策在 shared（主进程与界面共用），
  * env 入口在主进程，阶段文案在渲染端。三块都是纯函数。
@@ -960,6 +973,9 @@ runCompactionStatusTests(ok, compactionEvents, compactionView)
 const { runStdioGuardTests } = await import('./test-stdio-guard.mjs')
 runStdioGuardTests(ok, stdioGuard)
 
+// 安卓远程管理层：HTTP/SSE 路由与认证边界
+await runRemoteServerTests(ok, remoteServer)
+
 // N21-3：工作集预算 / 触发决策 / 阶段文案
 const { runContextPolicyTests } = await import('./test-context-policy.mjs')
 runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
@@ -1087,6 +1103,23 @@ await runContextStageRuntimeTests(ok, { stage: stageRuntime })
 const contextDeep = await import('../resources/pi-extensions/context-deep.js')
 const { runContextDeepTests } = await import('./test-context-deep.mjs')
 await runContextDeepTests(ok, { deep: contextDeep, extension: contextExtension })
+
+/*
+ * IPC 错误剥壳（src/shared/ipc-error.ts）：`piCall` 与渲染端直接 catch 的
+ * 调用点共用同一套规则，它的输出就是用户看到的提示条文案。
+ */
+const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/ipc-error.ts'],
+    outfile: 'out/test/ipc-error.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/ipc-error.mjs'))
+)
+const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
+await runIpcErrorTests(ok, ipcError)
 
 /*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点

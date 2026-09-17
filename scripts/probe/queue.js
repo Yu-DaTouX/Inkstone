@@ -63,14 +63,34 @@
   await sleep(1200)
 
   const queue = store.getState().queue
+  const enteredEarly = store
+    .getState()
+    .messages.filter((m) => m.role === 'user')
+    .map((m) => String(m.text ?? ''))
+    .filter((x) => x === M1 || x === M2)
   log('  队列: steering=' + JSON.stringify(queue.steering) + ' followUp=' + JSON.stringify(queue.followUp))
+  log('  已经进对话的: ' + JSON.stringify(enteredEarly))
   const queued = [...queue.steering, ...queue.followUp]
-  ok(queued.length > 0, `排队里有 ${queued.length} 条`)
-  // 默认投递方式是**排队**（follow-up），不是插话（steering）
-  ok(queue.followUp.length > 0, '默认进 follow-up 队列（排队）')
-  ok(queue.steering.length === 0, '默认不插话（steering 为空）')
-  // 排队消息要显示在输入框上方
-  ok(!!q('[data-testid="queue-stack"]'), '排队消息显示在输入框上方')
+  /*
+   * 默认投递方式是**插话**（steering）：用户在工作过程中打字，
+   * 意思就是“你现在就该知道这件事”。
+   *
+   * 早期默认是 followUp（等这轮跑完再投递）—— 结果是消息半天不出现，
+   * 用户去点队列行上的「插队」/「撤回」，而 followUp 在这轮结束时已被
+   * pi 接收，于是报「消息已被 pi 接收，无法撤回」（用户报的“插话失效”）。
+   *
+   * ⚠️ 判据不能只看“快照里此刻还挂着几条”：steering 会被 pi 很快取走，
+   *    取走后队列就空了 —— 那是**成功**而不是失败。所以两条一起判：
+   *      ① followUp 为空（没有走排队通道）
+   *      ② 消息要么还挂在 steering 里，要么已经进了对话
+   */
+  ok(queue.followUp.length === 0, '默认不排队（followUp 为空）')
+  ok(
+    queued.length + enteredEarly.length >= 1,
+    `消息在插话通道里（队列 ${queued.length} 条 / 已进对话 ${enteredEarly.length} 条）`
+  )
+  // 队列行显示在输入框上方（已被取走时那一行本来就不该在）
+  ok(!!q('[data-testid="queue-stack"]') || enteredEarly.length > 0, '队列行显示在输入框上方（或已被取走）')
 
   /*
    * D9：被 pi 接收的插话不能一直挂在“排队中”。

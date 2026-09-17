@@ -93,5 +93,26 @@
   )
   ok(!!q('[data-testid="thinking-badge"]'), '思考档位角标照常显示')
 
+  /*
+   * 档位文字按**档位色**染（DESIGN §2.6 的 `--think-*`，与输入框顶边框同一套）。
+   * 这条值得钉：以前不管哪一档文字都是强调色，七档在文字上根本区分不出来；
+   * 而且牌色一旦与边框色分家，用户就会看到“边框说高、胶囊说中”。
+   */
+  const badgeColorAt = async (level) => {
+    store.setState({ session: { ...fake, thinkingLevel: level } })
+    await sleep(260)
+    const el = q('[data-testid="thinking-badge"]')
+    return el ? getComputedStyle(el).color : '(没有角标)'
+  }
+  const highColor = await badgeColorAt('high')
+  const lowColor = await badgeColorAt('low')
+  log(`  角标颜色: high=${highColor} · low=${lowColor}`)
+  ok(highColor === 'rgb(178, 148, 187)', 'high 档文字用 --think-high (#b294bb)')
+  ok(lowColor === 'rgb(95, 135, 175)', 'low 档文字用 --think-low (#5f87af)')
+  ok(highColor !== lowColor, '不同档位的文字颜色确实不同（不是所有档位共用一个色）')
+  /* 把档位复位，不给后面的用例留一个改过的 session */
+  store.setState({ session: fake })
+  await sleep(120)
+
   return out.join('\n')
 })()
