@@ -98,31 +98,23 @@
   }
 
   /*
-   * 为什么要发一条**这么长**的消息（约 7.8k 字符）：
+   * 为什么要发一条**这么长**的消息（约 46k 字符，pi 估成 ~11.7k token）：
    *
    * pi 的 `contextUsage.tokens` 实测是「消息文本长度 ÷ 4」的估算，**不含**
    * system prompt 与工具定义 —— 实测 15 字符的消息被报成 `tokens=4`
    * （2026-09-17 晚间，pi 0.85.1）。而本场景按 `workingSet=1500` 判过线，
-   * 所以要让用量真的过线，这一轮的消息本身就得 ≥ 6000 字符。
+   * 所以要让用量真的过线，消息本身就得够长；而 pi 又会拒压「太小」的会话
+   * （`Compaction failed: Nothing to compact (session too small)`），所以内容还得真的压得动。
+   *
+   * 不用「先发一个小回合建立历史」：在 `workingSet=1500` 这种极低阈值下，那个预热回合
+   * 结束本身就会触发一次压缩，反而干扰后面的回合（实测：推理模型下连「跑起来」都观测不到）。
    * 不这么改的话，失败信息长得像「接管坏了」，实际只是「用量没到」——
    * 而两者在输出上唯一的区别就是那个 `tokens=` 数字。
    */
-  const filler = '这一段只是把上下文推过工作集线的填充内容，不需要任何工具调用。'.repeat(250)
+  const filler = '这一段只是把上下文推过工作集线的填充内容，不需要任何工具调用。'.repeat(1500)
 
-  log('=== 0. 预热回合（建立历史） ===')
-  /*
-   * pi 会拒绝压缩「太小」的会话：单条消息的会话开压时直接回
-   * `Compaction failed: Nothing to compact (session too small)`（实测）。
-   * 所以先跑一个**不过线**的小回合，让会话有历史可压。
-   */
-  const warm = await sendTurn('只回复「好」。', 180_000)
-  ok(warm.sent, '预热回合已发出')
-  log(`  started=${warm.started}｜消息数=${(S().messages ?? []).length}`)
-  if (!warm.started) return out.join('\n')
-
-  log('')
   log('=== 1. 真实回合越过工作集 ===')
-  const big = await sendTurn(`${filler}\n只回复「好」。`, 180_000)
+  const big = await sendTurn(`${filler}\n只回复「好」。`, 90_000)
   ok(big.sent, '大回合已发出')
   /*
    * 先确认这一轮**真的跑起来了**再等压缩。没有这一步时，模型侧失败（免费模型
@@ -143,7 +135,7 @@
   if (!big.started) return out.join('\n')
 
   let last = null
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 90; i++) {
     await sleep(1000)
     const cur = S().session?.lastCompaction
     if (cur && cur.status !== 'running' && cur.endedAt !== big.before) {
