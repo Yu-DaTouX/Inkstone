@@ -373,6 +373,35 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
       foldEligible({ settledTurns: 6, transcriptTokens: 1_000 }).reason === 'small-transcript',
       '回合够但转录太小 → 理由单列（便于诊断）'
     )
+    /*
+     * State Refresh 档（N21-6）：用量接近窗口也激活，不必等到压缩 ——
+     * 状态是「压缩时接管」的前提，等压缩真来了才第一次刷新就晚了。
+     * 默认比例 0.42 = 参考方案的「工作集 60%」× 默认 windowRatio 0.7。
+     *
+     * 注意挑区间：`near-window` 排在 `long-session`（48k）之后，所以要验证它，
+     * token 必须落在「窗口 × 0.42」到 48k 之间 —— 否则先命中的是 long-session，
+     * 这条断言就变成在测另一条分支了（第一版就是这么错的）。
+     */
+    ok(
+      foldEligible({ settledTurns: 4, transcriptTokens: 45_000, windowTokens: 100_000 }).reason === 'near-window',
+      '转录到窗口的 42% 且未到 48k → 激活（理由 near-window）'
+    )
+    ok(
+      !foldEligible({ settledTurns: 4, transcriptTokens: 41_999, windowTokens: 100_000 }).eligible,
+      '差一个 token 也不激活（边界不含糊）'
+    )
+    ok(
+      !foldEligible({ settledTurns: 4, transcriptTokens: 40_000, windowTokens: 0 }).eligible,
+      '拿不到窗口大小 → 这条分支整条跳过（不猜绝对值）'
+    )
+    ok(
+      !foldEligible({ settledTurns: 3, transcriptTokens: 45_000, windowTokens: 100_000 }).eligible,
+      '窗口再小也得先过回合地板'
+    )
+    ok(
+      foldEligible({ settledTurns: 4, transcriptTokens: 50, windowTokens: 1_000, refreshRatio: 0.01 }).eligible,
+      'refreshRatio 可被策略覆盖（测试与调参用）'
+    )
   }
 
   /* ---------------------------------------------------------- 5.7 pending-only 与注入视角 */

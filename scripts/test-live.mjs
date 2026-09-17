@@ -390,6 +390,27 @@ const CASES = {
       YAN_CONTEXT_POLICY: '{"kinds":["tool-sweep","recall","compaction","episode-fold"]}'
     }
   },
+  /*
+   * State Refresh 档（N21-6）：把刷新比例调到极小，让「接近窗口」这条分支当场命中。
+   *
+   * 三个参数各自排除一条别的分支：`minTurns:1` 让地板放行、`minTokens` 设成天文数字
+   * 排除 long-session，只剩 near-window。这条同时是 **`ctx.model.contextWindow` 能不能
+   * 拿到**的真实证据：拿不到则是 0 → 该分支跳过 → 这里会红，而诊断里的 `window` 字段
+   * 会把真相直接写出来。
+   * 探针与 `contextgate` 共用（它只负责把回合跑出来），所以会话 id 也从 `ctxgate.` 取。
+   */
+  contextrefresh: {
+    probe: 'scripts/probe/context-gate.js',
+    delay: 12000,
+    cost: 1,
+    budget: 300000,
+    contextExtLog: true,
+    afterExit: 'contextRefresh',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":100000000,"refreshRatio":0.000001}}}'
+    }
+  },
 /* 同上，但把工作集抬到天上、兜底压到极低 → 命中的是 90% 物理兜底那条线 */
   contextemergency: {
     probe: 'scripts/probe/context-takeover.js',
@@ -1521,6 +1542,59 @@ async function checkContextGate(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
+/**
+ * State Refresh 档（N21-6）的退出后检查。
+ *
+ * 与 `checkContextGate` 的区别：那个验「短会话被挡住」（`reason=too-early`），
+ * 这个验「接近窗口会放行」（`reason=near-window`）。探针与它共用 `context-gate.js`，
+ * 所以会话 id 也从同一个 key 取。
+ */
+async function checkContextRefresh(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxgate')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+  const gateRows = ownRecords.filter((r) => r?.stage === 'producer' && r.hook === 'gate')
+  lines.push(`  诊断行 = ${records.length}（本场景 ${ownRecords.length}，gate ${gateRows.length} 行）`)
+  for (const row of gateRows.slice(0, 4)) lines.push(`    · ${JSON.stringify(row).slice(0, 200)}`)
+
+  say(gateRows.some((r) => r.activated === true), `gate 放行了（${gateRows.filter((r) => r.activated).length} 次）`)
+  say(
+    gateRows.some((r) => r.reason === 'near-window'),
+    `放行理由是 near-window（实际 ${JSON.stringify(gateRows.map((r) => r.reason))}）`
+  )
+  /*
+   * `window` 必须 > 0：它来自 `ctx.model.contextWindow`。为 0 说明 pi 没把这个值
+   * 暴露给扩展 —— 设计上会安全跳过该分支（不会误触发），但功能等于没接上，
+   * 所以这里必须红，而不是静默地“永远不命中”。
+   */
+  const windows = gateRows.map((r) => Number(r.window) || 0)
+  say(windows.some((w) => w > 0), `诊断里带着真实窗口大小（${JSON.stringify(windows)}）—— 说明 ctx.model.contextWindow 可用`)
+
+  return { ok, lines }
+}
+
 async function checkContextSweepArchiveImpl(sandboxRoot) {
   const lines = []
   let ok = true
@@ -1892,7 +1966,8 @@ const AFTER_EXIT = {
   contextStateCleanup: checkContextStateCleanup,
   contextSweepArchive: checkContextSweepArchive,
   contextProduce: checkContextProduce,
-  contextGate: checkContextGate
+  contextGate: checkContextGate,
+  contextRefresh: checkContextRefresh
 }
 
 /*

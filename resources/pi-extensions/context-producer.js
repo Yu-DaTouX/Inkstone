@@ -789,11 +789,22 @@ export function stripSyntheticMessages(messages, entryIds) {
 export const FOLD_MIN_TURNS = 4
 /** 转录估算 token 的下限；不到这个量级，没有东西可折叠 */
 export const FOLD_MIN_TOKENS = 48_000
+/**
+ * State Refresh 档（N21-6）：转录到达窗口的这个比例就刷新状态，不必等到压缩。
+ *
+ * 0.42 的来历：参考方案说的是「工作集 60% 就刷新」，而工作集默认 ≈ 窗口 × 0.7，
+ * 两者相乘 ≈ 0.42。扩展侧拿不到主进程算的 `workingSet`，只能用窗口近似 ——
+ * 这是刻意的近似：`windowTokens` 拿不到（0）时**整条分支跳过**，而不是猜一个绝对值。
+ * 为什么需要它：状态是「压缩时接管」的前提，等压缩真的来了才第一次刷新就晚了。
+ */
+export const FOLD_REFRESH_RATIO = 0.42
 
 export function foldEligible({
   settledTurns = 0,
   transcriptTokens = 0,
   firstSweep = false,
+  windowTokens = 0,
+  refreshRatio = FOLD_REFRESH_RATIO,
   minTurns = FOLD_MIN_TURNS,
   minTokens = FOLD_MIN_TOKENS
 } = {}) {
@@ -805,6 +816,13 @@ export function foldEligible({
   if (Number(settledTurns) < minTurns) return { eligible: false, reason: 'too-early' }
   if (firstSweep) return { eligible: true, reason: 'first-sweep' }
   if (Number(transcriptTokens) >= minTokens) return { eligible: true, reason: 'long-session' }
+  /*
+   * State Refresh 档（N21-6）：转录接近窗口就算「够长了」。它排在三档之后，
+   * 但**仍然在地板之后** —— 短会话不会因为窗口小而误触发。
+   */
+  if (Number(windowTokens) > 0 && Number(transcriptTokens) >= Number(windowTokens) * Number(refreshRatio)) {
+    return { eligible: true, reason: 'near-window' }
+  }
   return { eligible: false, reason: 'small-transcript' }
 }
 
