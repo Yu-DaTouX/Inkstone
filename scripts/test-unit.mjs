@@ -1122,6 +1122,24 @@ const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
 await runIpcErrorTests(ok, ipcError)
 
 /*
+ * Git 审查的纯解析（src/shared/git.ts）：`git status/diff` 的 NUL 分隔输出、
+ * rename 多占一段、二进制的 `-`、未跟踪文件的补全、unified diff 的行号。
+ * 平台用 neutral —— 这个模块**不依赖 node 内置**（渲染端也要 import 它）。
+ */
+const gitReview = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/git.ts'],
+    outfile: 'out/test/git.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/git.mjs'))
+)
+const { runGitReviewTests } = await import('./test-git-review.mjs')
+await runGitReviewTests(ok, gitReview)
+
+/*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
