@@ -130,7 +130,7 @@ export function RightPanel() {
        */}
       <Resizer side="panel" />
 
-      {open ? (
+      {open && !reviewOpen ? (
         <>
           <div className="rp-top">
             <span className="rp-title">{t('rp.title')}</span>
@@ -166,7 +166,7 @@ export function RightPanel() {
       {browserOpen && open && !reviewOpen ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
 
 
-      {open ? (
+      {open && !reviewOpen ? (
         <div className="rp-body" data-testid="rp-body">
           {visible.map((id, i) => (
             <SectionSlot
