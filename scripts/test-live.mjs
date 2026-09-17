@@ -2749,6 +2749,47 @@ const AFTER_EXIT = {
 }
 
 /*
+ * ── 孤儿 pi 进程检查（N12 / L03 的共同缺口）──
+ *
+ * 为什么需要它：D16（子代理跑完 pi 进程不退出）与 L03 的「退出后无残留」都是靠
+ * 目录/文件间接推的 —— 目录能删不等于进程真的没了。这里直接看进程表。
+ *
+ * 判据：命令行含 `--mode rpc`（pi 的 RPC 入口）**且父进程已不在进程表里**。
+ * 为什么不比 PID 基线：那要改所有 afterExit 检查的签名，而这条判据本身已经够准。
+ * 为什么不会误报：用户自己正在跑的砚，它的 pi 进程父进程（Electron）是活的。
+ * 返回 `null` = 拿不到进程表（非 Windows / 权限不足）：调用方**跳过**，
+ * 不要把「查不到」当成「没残留」。
+ */
+function orphanPiProcesses() {
+  if (process.platform !== 'win32') return null
+  const script = [
+    '$all = Get-CimInstance Win32_Process',
+    '$ids = @{}',
+    'foreach ($p in $all) { $ids[[int]$p.ProcessId] = 1 }',
+    'foreach ($p in $all) {',
+    "  if ($p.CommandLine -and $p.CommandLine -match '--mode\\s+rpc') {",
+    '    if (-not $ids.ContainsKey([int]$p.ParentProcessId)) {',
+    '      "ORPHAN pid=$($p.ProcessId) parent=$($p.ParentProcessId)"',
+    '    }',
+    '  }',
+    '}'
+  ].join('; ')
+  try {
+    const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      windowsHide: true
+    })
+    return out
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('ORPHAN'))
+  } catch {
+    return null
+  }
+}
+
+/*
  * ── L04 浏览器边界用的本地 HTTP 服务 ──
  *
  * 为什么必须有真实服务：下载来源、Cookie 真的转移过去了没有、本地预览
@@ -3385,6 +3426,21 @@ async function main() {
   }
 
   console.log(`\n${'='.repeat(64)}`)
+  /*
+   * 全部场景跑完之后才查：每个场景的 Electron 这时都已退出，所以「父进程不在表里」
+   * 就等于「它被留下了」。一条检查覆盖所有场景（包括将来新加的）。
+   */
+  const orphanPi = orphanPiProcesses()
+  if (orphanPi === null) {
+    console.log('\n孤儿进程：跳过检查（拿不到进程表，不把“查不到”当成“没残留”）')
+  } else if (orphanPi.length === 0) {
+    console.log('\n孤儿进程：✓ 没有残留的 pi 进程（命令行含 --mode rpc 且父进程已退出）')
+  } else {
+    failed++
+    console.log(`\n孤儿进程：✗ 发现 ${orphanPi.length} 个残留的 pi 进程`)
+    for (const row of orphanPi.slice(0, 6)) console.log(`    · ${row}`)
+  }
+
   console.log(failed === 0 ? `全部通过（${names.length} 个场景）` : `${failed}/${names.length} 个场景失败`)
   process.exit(failed === 0 ? 0 : 1)
 
