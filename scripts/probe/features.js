@@ -278,15 +278,54 @@
     }
 
     const originalThinking = store.getState().session?.thinkingLevel ?? 'off'
-    const otherThink = thinkButtons.find((el) => el.getAttribute('data-on') !== '1')
+    /*
+     * 必须**重新查询**档位按钮：上面切过一次模型，菜单已重渲染，原来那份
+     * `thinkButtons` 已经变成 detached 节点 —— 点它不会触发 React 的 onClick。
+     * 实测（deepseek/deepseek-v4.1-flash）：点 off 后 store 5s 不动，
+     * 而直接调 `window.yan.setThinking('off')` 立刻返回 {ok:true} 且 store 变 "off" ——
+     * 所以这不是产品缺陷，是探针拿着旧引用在点空气。（单档模型不会走到这个分支，
+     * 所以这个 bug 一直没被发现。）
+     */
+    const thinkButtonsNow = qa('[data-testid^="thinking-dot-"]')
+    const otherThink = thinkButtonsNow.find((el) => el.getAttribute('data-on') !== '1')
     if (otherThink) {
       const level = otherThink.getAttribute('data-level') ?? ''
       click(otherThink)
-      await sleep(1000)
-      ok(store.getState().session?.thinkingLevel === level, `菜单切到 ${level} 生效`)
+      /*
+       * 条件轮询，不是固定 sleep：能力变更走主进程的串行队列（`enqueueCapabilityChange`），
+       * 执行完还要 `refreshState()` 再把状态 push 回渲染端 —— 1s 不一定够。
+       * 实测（deepseek/deepseek-v4.1-flash，5 档模型）：点一下 1s 后 store 还是旧值 "high"，
+       * 而**直接调主进程 `setThinking('off')` 立刻返回 {ok:true} 且 store 变 "off"** ——
+       * 所以这不是产品缺陷，是这条断言等得太短（单档模型根本走不到这个分支，
+       * 所以它从来没被真正执行过）。
+       */
+      let applied = false
+      for (let i = 0; i < 25; i++) {
+        if (store.getState().session?.thinkingLevel === level) {
+          applied = true
+          break
+        }
+        await sleep(200)
+      }
+      if (!applied) {
+        const direct = await window.yan.setThinking(level)
+        await sleep(600)
+        log(
+          `  [诊断] 点 ${level} 后等了 5s 仍是 ${JSON.stringify(store.getState().session?.thinkingLevel)}；` +
+            `直接调主进程返回 ${JSON.stringify(direct)}；再读 store=${JSON.stringify(store.getState().session?.thinkingLevel)}`
+        )
+      }
+      ok(applied, `菜单切到 ${level} 生效`)
       await store.getState().setThinking(originalThinking)
-      await sleep(1000)
-      ok(store.getState().session?.thinkingLevel === originalThinking, '切回原思考档成功')
+      let restored = false
+      for (let i = 0; i < 25; i++) {
+        if (store.getState().session?.thinkingLevel === originalThinking) {
+          restored = true
+          break
+        }
+        await sleep(200)
+      }
+      ok(restored, '切回原思考档成功')
     }
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await sleep(250)
