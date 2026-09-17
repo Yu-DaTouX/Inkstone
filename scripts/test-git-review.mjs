@@ -33,6 +33,7 @@ export async function runGitReviewTests(ok) {
     unquoteGitPath,
     stripAbPrefix,
     viewedKey,
+    gapRanges,
     EMPTY_TREE
   } = await import('../out/test/git.mjs')
 
@@ -392,6 +393,58 @@ export async function runGitReviewTests(ok) {
 
     const cn = files[1]
     ok(cn.path === '中文中.ts', '八进制转义的 UTF-8 路径还原成中文', cn.path)
+  }
+
+  /* ═══════════════════ 6b. 未修改区的行号区间 ═══════════════════ */
+
+  console.log('\n--- 6b. 未修改区的区间（“展开上下文”按它切行）---')
+
+  {
+    const hunksOf = (text) => parseUnifiedDiff(text)[0].hunks
+
+    /* 首块之前有一段 9 行，两块之间一段 60 行 */
+    const text = [
+      'diff --git a/x.ts b/x.ts',
+      '--- a/x.ts',
+      '+++ b/x.ts',
+      '@@ -10,3 +10,4 @@',
+      ' a',
+      '-b',
+      '+b2',
+      '+b3',
+      ' c',
+      '@@ -73,3 +74,3 @@',
+      ' d',
+      '-e',
+      '+e2'
+    ].join('\n')
+    const gaps = gapRanges(hunksOf(text))
+    ok(gaps.length === 2, '两个未修改区（首块之前 + 两块之间）', String(gaps.length))
+    ok(gaps[0].oldStart === 1 && gaps[0].newStart === 1, '首块之前的区间从第 1 行开始')
+    ok(gaps[0].count === 9, '首块之前是 9 行（第 10 行之前）', String(gaps[0].count))
+    ok(gaps[1].oldStart === 13 && gaps[1].newStart === 14, '两块之间的区间从上一块的**末尾之后**开始', j(gaps[1]))
+    ok(gaps[1].count === 60, '两块之间是 60 行（73 - 13）', String(gaps[1].count))
+    /* 两侧长度必须相等：未修改区在两侧内容一样，只是起点可能错开 */
+    const nextOld = gaps[1].oldStart + gaps[1].count
+    const nextNew = gaps[1].newStart + gaps[1].count
+    ok(nextOld === 73 && nextNew === 74, '区间末尾正好接上下一个 hunk 的起点（两侧各自对齐）', `${nextOld}/${nextNew}`)
+
+    /* 相邻 hunk（没有未修改区）时给 0，界面据此不渲染折叠条 */
+    const tight = [
+      'diff --git a/y.ts b/y.ts',
+      '--- a/y.ts',
+      '+++ b/y.ts',
+      '@@ -1,2 +1,2 @@',
+      '-a',
+      '+b',
+      '@@ -3,2 +3,2 @@',
+      '-c',
+      '+d'
+    ].join('\n')
+    const tightGaps = gapRanges(hunksOf(tight))
+    ok(tightGaps.length === 2 && tightGaps[0].count === 0 && tightGaps[1].count === 0, '紧贴的两个 hunk 之间是 0 行（不画折叠条）', j(tightGaps))
+
+    ok(gapRanges([]).length === 0, '没有 hunk 时没有区间')
   }
 
   /* ══════════════════════ 7. 内容形态判定 ══════════════════════ */
