@@ -462,6 +462,27 @@ const CASES = {
     }
   },
   /*
+   * 默认接管集下的生成器（2026-09-18 折叠进默认集）—— cost 1。
+   *
+   * 与 `contextproduce` 的**唯一差别**：env 里**不写 `kinds`**，只调会话级门槛。
+   * 于是 `kinds` 走扩展的内置默认值 —— 这条场景证的是「**默认**接管集下生成器
+   * 真的会工作」，而不是「显式打开才会工作」。
+   * 反向（默认里没有它 = 不生成）由 `contextgate`（默认门槛）与 `contextbudget`
+   * （策略层 + 界面层各一次、含摘掉后回退虚线的反向验证）承担。
+   * 复用 `contextProduce` 的检查函数：它的断言全部只关乎「生成了什么」，不读 kinds。
+   */
+  contextfolddefault: {
+    probe: 'scripts/probe/context-produce.js',
+    delay: 12000,
+    cost: 1,
+    budget: 420000,
+    contextExtLog: true,
+    afterExit: 'contextProduce',
+    env: {
+      YAN_CONTEXT_POLICY: '{"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    }
+  },
+  /*
    * 会话级 eligibility gate（cost 1）：kinds 开 `episode-fold`，但门槛保持**默认**
    * （≥4 回合且转录 ≥48k token）—— 一个回合的会话必然不满足，于是
    * 「短会话不生成、不花模型调用、且留得下原因」在真实链路里可以被检查。

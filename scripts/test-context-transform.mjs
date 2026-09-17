@@ -706,7 +706,10 @@ export async function runContextTransformTests(ok, deps) {
   console.log('\n— K. 默认接管集（清理默认开）与“正在使用”保护 —')
   {
     delete process.env.YAN_CONTEXT_POLICY
-    ok(EXT.__internals.policy().kinds.join(',') === 'tool-sweep,recall,compaction', '默认 kinds：清理 + 召回 + 压缩')
+    ok(
+      EXT.__internals.policy().kinds.join(',') === 'tool-sweep,recall,episode-fold,compaction',
+      '默认 kinds：清理 + 召回 + 折叠 + 压缩'
+    )
 
     /* 夹具：A 回合读 src/a.ts（大结果），最后一个回合又在改 src/a.ts */
     const activeBranch = [
@@ -738,7 +741,14 @@ export async function runContextTransformTests(ok, deps) {
     const branch = branchFixture()
     const messages = messagesOf(branch)
     const out = await EXT.__internals.onContext({ messages }, fakeCtx(branch))
-    ok(!!out && T.isTombstoneText(T.messageText(out.messages[2])), '默认 kinds 下清扫照常发生（清理默认开）')
+    /*
+     * 按**内容**找墓碑，不用固定下标：默认 kinds 里现在含 `episode-fold`，
+     * 而它会把 `state.inject` 默认为开 —— 一旦本会话带状态文件，
+     * 注入块会插在**最前**，`messages[2]` 就不再是那条被清扫的工具结果了。
+     * 断言的是「清扫发生了」，位置不是本用例要证明的东西。
+     */
+    const tombstones = (out?.messages ?? []).filter((m) => T.isTombstoneText(T.messageText(m)))
+    ok(tombstones.length > 0, `默认 kinds 下清扫照常发生（清理默认开，墓碑 ${tombstones.length} 条）`)
 
     /* 用户把清理关掉 → 回到“什么都不做” */
     setPolicy({ kinds: ['compaction'], recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })

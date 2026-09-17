@@ -247,11 +247,17 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
 
   {
     const b = budgetOf(128_000)
-    /* 默认接管集（2026-09-17 拍板）：清理 + 召回 + 压缩；折叠要等状态生成器 */
+    /* 默认接管集（2026-09-18 用户拍板加进 `episode-fold`）：清理 + 召回 + 折叠 + 压缩 */
     const defaults = DEFAULT_CONTEXT_POLICY.kinds
-    ok(defaults.join(',') === 'tool-sweep,recall,compaction', '默认接管：清理 + 召回 + 压缩')
+    ok(
+      defaults.join(',') === 'tool-sweep,recall,episode-fold,compaction',
+      '默认接管：清理 + 召回 + 折叠 + 压缩'
+    )
     ok(defaults.includes('recall'), '召回与清理一起默认开（否则墓碑引用取不回）')
-    ok(!defaults.includes('episode-fold'), '折叠不在默认里（它要状态生成器）')
+    ok(
+      defaults.includes('episode-fold'),
+      '折叠在默认里（2026-09-18 拍板；短会话由 foldEligible 挡住）'
+    )
 
     /* 只看压缩时（关掉清理）的行为仍要成立 —— 阶段 3 的那套判定不能丢 */
     const compactOnly = ['compaction']

@@ -301,7 +301,7 @@ const STATES = {
           isAgentRunning: false,
           contextPolicy: {
             enabled: true,
-            kinds: ['tool-sweep', 'recall', 'compaction'],
+            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
             source: 'user',
             overridden: ['workingSetCap', 'windowRatio'],
             budget: {
@@ -597,7 +597,7 @@ const STATES = {
           isAgentRunning: false,
           contextPolicy: {
             enabled: true,
-            kinds: ['tool-sweep', 'recall', 'compaction'],
+            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
             budget: {
               /*
                * 窗口必须与截图 fixture 的模型一致（400k，见 shot-fixture.js），
@@ -643,7 +643,7 @@ const STATES = {
           isAgentRunning: false,
           contextPolicy: {
             enabled: true,
-            kinds: ['tool-sweep', 'recall', 'compaction'],
+            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
             budget: {
               /*
                * 用真实模型的窗口（262144，与用户机器一致）而不是整数 400k：
