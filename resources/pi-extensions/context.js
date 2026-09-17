@@ -139,7 +139,7 @@ function policy() {
     sweep: { ...DEFAULT_SWEEP },
     recall: { ...DEFAULT_RECALL },
     /* kinds 不含 `episode-fold` 时两条分路都是关的（总闸优先） */
-    state: { generate: false, inject: false, minTurns: 0, minTokens: 0 }
+    state: { generate: false, inject: false, minTurns: 0, minTokens: 0, refreshRatio: 0 }
   }
   if (!raw.trim()) return base
   let parsed
@@ -189,13 +189,17 @@ function policy() {
  */
 function stateSwitches(raw, kinds) {
   const on = kindEnabled({ kinds }, 'episode-fold')
-  const out = { generate: on, inject: on, minTurns: 0, minTokens: 0 }
+  const out = { generate: on, inject: on, minTurns: 0, minTokens: 0, refreshRatio: 0 }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     if (typeof raw.generate === 'boolean') out.generate = raw.generate && on
     if (typeof raw.inject === 'boolean') out.inject = raw.inject && on
     if (raw.gate && typeof raw.gate === 'object' && !Array.isArray(raw.gate)) {
       if (Number.isFinite(raw.gate.minTurns) && raw.gate.minTurns > 0) out.minTurns = raw.gate.minTurns
       if (Number.isFinite(raw.gate.minTokens) && raw.gate.minTokens > 0) out.minTokens = raw.gate.minTokens
+      /* State Refresh 档的窗口比例（N21-6）；不设就用 `FOLD_REFRESH_RATIO` */
+      if (Number.isFinite(raw.gate.refreshRatio) && raw.gate.refreshRatio > 0) {
+        out.refreshRatio = raw.gate.refreshRatio
+      }
     }
   }
   return out
@@ -699,12 +703,20 @@ function onAgentSettled(_event, ctx) {
   if (!sessionId) return
   if (!foldSticky.has(sessionId)) {
     const stats = transcriptStats(ctx?.sessionManager?.getEntries?.() ?? [])
+    /*
+     * State Refresh 档（N21-6）要一个「窗口有多大」的近似值。`ctx.model` 是 pi 暴露的
+     * 当前模型对象，实测能拿到 `contextWindow`（拿不到就是 0 → 那条分支自动跳过）；
+     * 把值一并记进诊断，以后再出问题不用猜。
+     */
+    const windowTokens = Number(ctx?.model?.contextWindow) || 0
     const gate = foldEligible({
       settledTurns: stats.userTurns,
       transcriptTokens: stats.tokens,
       firstSweep: sweepSeen.has(sessionId),
+      windowTokens,
       ...(p.state.minTurns ? { minTurns: p.state.minTurns } : {}),
-      ...(p.state.minTokens ? { minTokens: p.state.minTokens } : {})
+      ...(p.state.minTokens ? { minTokens: p.state.minTokens } : {}),
+      ...(p.state.refreshRatio ? { refreshRatio: p.state.refreshRatio } : {})
     })
     if (!gate.eligible) {
       trace('producer', {
@@ -713,12 +725,20 @@ function onAgentSettled(_event, ctx) {
         hook: 'gate',
         reason: gate.reason,
         turns: stats.userTurns,
-        tokens: stats.tokens
+        tokens: stats.tokens,
+        window: windowTokens
       })
       return
     }
     foldSticky.add(sessionId)
-    trace('producer', { sessionId, stage: 'producer', hook: 'gate', reason: gate.reason, activated: true })
+    trace('producer', {
+      sessionId,
+      stage: 'producer',
+      hook: 'gate',
+      reason: gate.reason,
+      activated: true,
+      window: windowTokens
+    })
   }
   if (producerFlight) {
     trace('producer', { sessionId, stage: 'producer', hook: 'skipped', reason: 'in-flight' })
