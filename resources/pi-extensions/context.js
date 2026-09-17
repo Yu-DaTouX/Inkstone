@@ -534,6 +534,18 @@ function onContext(event, ctx) {
  */
 function onBeforeCompact(event, ctx) {
   const sessionId = sessionIdOf(ctx)
+  /*
+   * 「钩子**被调到**」本身是一条独立事实，必须在任何早退之前记下来。
+   * 在此之前分不清两种情况：pi 压根没调（prepareCompaction 返回 falsy 时它直接跳过），
+   * 还是调了但我们在某个分支里早退 —— 两者的日志**都是空的**，排查只能靠猜。
+   * 它只在压缩真的发生时产生，不会污染常规运行的日志。
+   */
+  trace('compact', {
+    sessionId,
+    hook: 'entered',
+    hasPreparation: !!event?.preparation,
+    reason: event?.reason ?? null
+  })
   if (!sessionId) return
   const p = policy()
   /*

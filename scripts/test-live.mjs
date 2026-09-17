@@ -314,6 +314,31 @@ const CASES = {
      */
     piSettings: { compaction: { keepRecentTokens: 1 } }
   },
+  /*
+   * 结构化压缩摘要的逐类字段取证（N21-6 最后一项）。
+   *
+   * 原设计是「长会话触发压缩 → `session_before_compact` 接管」，实测**走不通**：
+   * pi 0.85.1 上那条钩子在真实压缩里**一次都没被调到** —— 砚触发的（`reason: manual`）
+   * 与 pi 自己按 `threshold` 触发的都是，连那次真的调了模型（5.7s、摘要 280 token）也是。
+   * 这是**发现**，不是可以改断言绕过去的东西（登记在归档 §1.19）。
+   * 所以本场景只做能真正取证的两件事：
+   *   ① 跑两个回合，让**状态生成器**真的落盘（只发一个回合时，模型偶尔返回不合法 JSON，
+   *      生成器就空手而归 —— 实测撞到过一次）；
+   *   ② 摘要的逐类字段由退出后的检查在**真实状态文件**上跑真实 `buildStructuredSummary` 判。
+   * `kinds` 必须显式带 `episode-fold`（否则生成器不工作）；`state.gate` 调成 1/1。
+   */
+  contexttakeoversummary: {
+    probe: 'scripts/probe/context-takeover-summary.js',
+    delay: 10000,
+    cost: 1,
+    budget: 240000,
+    contextExtLog: true,
+    afterExit: 'contextTakeoverSummary',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    }
+  },
   contextswitchguard: {
     probe: 'scripts/probe/context-switch-guard.js',
     delay: 10000,
@@ -1665,6 +1690,88 @@ async function checkContextRefresh(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
+/**
+ * 结构化压缩“接管”的退出后检查（N21-6 最后一项）。
+ *
+ * 「接管到底写进去了什么」只有 `ctx-ext.log` 知道 —— 接管块进的是 pi 的摘要，
+ * 不落我们的任何文件。探针跑在渲染端读不到它，所以判据在这里。
+ */
+async function checkContextTakeoverSummary(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxsum')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+
+  const committed = ownRecords.filter((r) => r?.stage === 'producer' && r.hook === 'committed')
+  say(committed.length >= 1, `状态生成器提交过（${committed.length} 次）—— 接管要有状态可用`)
+
+  const compactRows = ownRecords.filter((r) => r?.stage === 'compact')
+  const entered = compactRows.filter((r) => r.hook === 'entered')
+  const takeovers = compactRows.filter((r) => r.hook === 'takeover')
+  const fallbacks = compactRows.filter((r) => r.hook === 'fallback')
+  /*
+   * **真实发现（2026-09-18，待查，见归档 §1.19）**：pi 0.85.1 在这个场景里压了两次
+   * （砚的 policy 一次、pi 自己的 threshold 一次），但 `session_before_compact`
+   * **一次都没被调到** —— 连专门加的 `entered` 取证也是空的。
+   * bundle 里两处调用点都先判 `hasHandlers('session_before_compact')`，所以要么 handler
+   * 没注册上，要么走的不是那两条路。这里**如实记下来、不断言**：
+   * 断言它只会把发现变成一个“测试失败”，而发现本身比一条绿更重要。
+   */
+  lines.push(
+    `  pi 调 session_before_compact 的次数 = ${entered.length}（takeover ${takeovers.length} / fallback ${fallbacks.length}）`
+  )
+  for (const row of entered.slice(0, 2)) lines.push(`    · entered: ${JSON.stringify(row).slice(0, 200)}`)
+  for (const row of fallbacks.slice(0, 2)) lines.push(`    · fallback: ${JSON.stringify(row).slice(0, 200)}`)
+
+  /*
+   * 接管函数本身：用**刚落盘的真实状态文件**跑一遍 ——
+   * 「逐类字段非空」这条命题在钩子没被调的当下只能做到这个层级（如实标注在文档里）。
+   */
+  const transformModule = await import('../resources/pi-extensions/context-transform.js').catch(() => null)
+  const statePath = ownId ? join(sandboxRoot, 'data', 'context-state', `${ownId}.json`) : ''
+  const state = transformModule && statePath && existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : null
+  if (!transformModule || !state) {
+    say(false, `读不到真实状态文件，无法验证接管装配（${statePath || 'no-id'}）`)
+    return { ok, lines }
+  }
+  const built = transformModule.buildStructuredSummary(state, { freshness: 'fresh' })
+  say(built.ok === true, `真实状态能装配出结构化摘要（${built.ok ? 'ok' : built.reason}）`)
+  const summary = built.summary ?? ''
+  say(
+    summary.includes('<HISTORICAL_CONTEXT>') && summary.includes('<TASK_STATE'),
+    '摘要里两个块都在（历史上下文 + 任务状态）'
+  )
+  const nonEmpty = Object.entries(built.fields ?? {})
+    .filter(([, value]) => value === true)
+    .map(([key]) => key)
+  lines.push(`    · fields=${JSON.stringify(built.fields)}（摘要 ${summary.length} 字符）`)
+  say(nonEmpty.length >= 3, `逐类字段非空 ${nonEmpty.length} 类（${nonEmpty.join('/') || '无'}）`)
+  say(built.fields?.task === true, 'objective 非空')
+
+  return { ok, lines }
+}
+
 async function checkContextSweepArchiveImpl(sandboxRoot) {
   const lines = []
   let ok = true
@@ -2037,7 +2144,8 @@ const AFTER_EXIT = {
   contextSweepArchive: checkContextSweepArchive,
   contextProduce: checkContextProduce,
   contextGate: checkContextGate,
-  contextRefresh: checkContextRefresh
+  contextRefresh: checkContextRefresh,
+  contextTakeoverSummary: checkContextTakeoverSummary
 }
 
 /*
