@@ -81,6 +81,7 @@ import {
   buildProducerPrompt,
   buildStateFile,
   casAllows,
+  citableEntries,
   clipTaskStateToBudget,
   dirtyMask,
   dirtyMaskWithEvidence,
@@ -90,6 +91,7 @@ import {
   freshnessOf,
   mergeTaskState,
   parseProducerOutput,
+  provenanceCounts,
   shouldRefresh,
   stripSyntheticMessages,
   tailRolesOf,
@@ -806,7 +808,13 @@ async function produceAndCommit(sessionId, ctx) {
     }
 
     const directives = userDirectives(cleaned.messages, cleaned.entryIds)
-    const prompt = buildProducerPrompt({ previousTask: previous?.task, directives, evidence })
+    /*
+     * 可引用清单（第五轮外部意见 Q1 的 P0-③ provenance）：**只装本轮材料** ——
+     * 用户原话与确定性 reducer 证据。上一版状态的 id 刻意不在其中，
+     * 所以「因为上一版这么说」不能充当证据（那正是语义递归固化的通道）。
+     */
+    const citable = citableEntries({ directives, evidence })
+    const prompt = buildProducerPrompt({ previousTask: previous?.task, directives, evidence, citable })
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PRODUCER_TIMEOUT_MS)
     let response
@@ -837,7 +845,7 @@ async function produceAndCommit(sessionId, ctx) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: parsed.reason, sample: text.slice(0, 200), usage: usageTokens })
       return
     }
-    const merged = mergeTaskState({ semantics: parsed.value, evidence, previous: previous?.task, directives, now: Date.now() })
+    const merged = mergeTaskState({ semantics: parsed.value, evidence, previous: previous?.task, directives, citable, now: Date.now() })
     if (!merged) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'merge-failed', usage: usageTokens })
       return
@@ -891,6 +899,12 @@ async function produceAndCommit(sessionId, ctx) {
       tokens: clipped.tokens,
       gap: fresh.gap,
       turnsGap: fresh.turnsGap,
+      /*
+       * provenance 分布。`hypothesis` 占比高 = 模型给不出证据（这些条目注入时会带
+       * `inferred` 标记），也是「语义递归有没有被挡住」的唯一观测量。
+       */
+      provenance: provenanceCounts(clipped.task),
+      citable: citable.length,
       usage: usageTokens,
       trigger: decision.reason
     })

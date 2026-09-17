@@ -1364,6 +1364,28 @@ async function checkContextProduce(sandboxRoot, _tempBefore, probeText) {
   say(committed.length >= 1, `生成器至少提交过一次状态（${committed.length} 次）`)
   for (const row of bad.slice(0, 4)) lines.push(`    · ${JSON.stringify(row).slice(0, 220)}`)
   say(bad.length === 0, `生成器没有报错 / 被拒 / 超时（${bad.length} 条）`)
+  /*
+   * provenance（第五轮外部意见 Q1 的 P0-③）：提交诊断里必须带**证据分布**。
+   * 它回答的是「模型到底给不给得出引用」—— `hypothesis` 就是会被渲染成 `inferred`
+   * 的那部分，也是「语义递归有没有被挡住」唯一可观测的量。
+   */
+  const provenances = committed.map((r) => r.provenance).filter((p) => p && typeof p === 'object')
+  say(provenances.length >= 1, `提交诊断里带 provenance 分布（${provenances.length} 次）`)
+  const lastProvenance = provenances[provenances.length - 1]
+  if (lastProvenance) {
+    lines.push(
+      `    · provenance = ${JSON.stringify(lastProvenance)}（可引用清单 ${committed[committed.length - 1]?.citable} 条）`
+    )
+    say(
+      Number.isFinite(lastProvenance.total) && lastProvenance.total > 0,
+      `统计到 ${lastProvenance.total} 条语义条目（observed ${lastProvenance.observed} / derived ${lastProvenance.derived} / hypothesis ${lastProvenance.hypothesis}）`
+    )
+    /*
+     * 这条是「提示词真的被遵守了吗」的直接取证。红了不是测试的错，是**真实信息**：
+     * 说明模型完全不给引用，那这一层的价值就只剩「把无证据的条目标出来」。
+     */
+    say(lastProvenance.observed + lastProvenance.derived >= 1, '至少有一条带证据的条目（模型真的按提示词引用了）')
+  }
   const injected = records.filter((r) => r?.injectedTaskState === true)
   say(injected.length >= 1, `下一个回合真的注入了 <TASK_STATE>（${injected.length} 次）`)
   /*

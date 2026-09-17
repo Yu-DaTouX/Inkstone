@@ -563,11 +563,22 @@ export const TASK_STATE_CUSTOM_TYPE = 'yan-task-state'
 function activeTexts(list) {
   return (Array.isArray(list) ? list : [])
     .filter((entry) => entry && typeof entry.text === 'string' && entry.status === 'active')
-    /*
-     * `stale` 必须**显式标出来**（Codex 第三条分歧）：水位落后的快照仍然可用，
-     * 但“假设 / 下一步”这类推测不能静默地当成已知事实喂过去。
-     */
-    .map((entry) => `- ${entry.text}${entry.stale ? '  [stale: verify before relying on it]' : ''}`)
+    .map((entry) => {
+      const marks = []
+      /*
+       * `stale` 必须**显式标出来**（Codex 第三条分歧）：水位落后的快照仍然可用，
+       * 但「假设 / 下一步」这类推测不能静默地当成已知事实喂过去。
+       */
+      if (entry.stale) marks.push('stale: verify before relying on it')
+      /*
+       * `hypothesis`（无证据引用）也要显式标（第五轮外部意见 Q1 的 P0-③）：
+       * 没有引用的语义条目就是模型的推断，不是观察到的事实。不标出来的话，
+       * 「上一版这么说」就会被当成依据一代代传下去 —— 那正是语义递归固化。
+       * 模型只有在本轮材料里找到证据，才能把它变成 observed / derived。
+       */
+      if (entry?.source?.confidence === 'hypothesis') marks.push('inferred: no citation yet')
+      return `- ${entry.text}${marks.length ? `  [${marks.join('; ')}]` : ''}`
+    })
 }
 
 /**
