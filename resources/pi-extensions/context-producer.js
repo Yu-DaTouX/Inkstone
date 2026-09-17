@@ -638,8 +638,33 @@ export function tailRolesOf(entries, watermark) {
   return tail.map((e) => (e?.type === 'message' ? (e.message?.role ?? 'message') : (e?.type ?? 'unknown')))
 }
 
-/**
- * freshness 的**注入视角**：把「只落后当前这一条尚未 settled 的用户消息」视为与快照同步。
+/* ══════════════════════════════════════════════════════════════════
+ * 状态生成的开销（§18）
+ * ══════════════════════════════════════════════════════════════════
+ * 为什么要算这个：第四轮外部复核警告「真正的开销不是 6000 输出上限，而是每 1–3 个 settled turn
+ * 一次的全量快照输入」，并建议 `stateOverhead > 25%` 就把增量 delta 从 P2 升 P1。
+ * 但那条警告基于「生成器喂 raw transcript」的假设 —— **我们不喂**：
+ * 输入是「上一版状态（有 hard cap）+ 用户消息 + 确定性 evidence」，所以实际开销要靠**测**。
+ *
+ * 口径：分子 = 生成器自己的 input + output（估算 token），
+ * 分母 = 主 agent 在这个会话里的 input + output。两者都来自同一个「UTF-16 ÷ 4」估算，
+ * 所以比值本身是可比的；绝对值不要当真值引用。
+ */
+export function stateOverhead({ producerInput = 0, producerOutput = 0, agentInput = 0, agentOutput = 0 } = {}) {
+  const stateTokens = Math.max(0, Number(producerInput) || 0) + Math.max(0, Number(producerOutput) || 0)
+  const agentTokens = Math.max(0, Number(agentInput) || 0) + Math.max(0, Number(agentOutput) || 0)
+  if (agentTokens <= 0) return { stateTokens, agentTokens, ratio: null, level: 'unknown' }
+  const ratio = stateTokens / agentTokens
+  return {
+    stateTokens,
+    agentTokens,
+    ratio,
+    /* 25% 是外部给的那条线；15% 以下没必要为它加复杂度 */
+    level: ratio > 0.25 ? 'high' : ratio > 0.15 ? 'watch' : 'low'
+  }
+}
+
+/** freshness 的**注入视角**：把「只落后当前这一条尚未 settled 的用户消息」视为与快照同步。
  *
  * 为什么必须这样（第四轮外部复核 Q3）：生成在回合 N 结束（`agent_settled`），注入发生在
  * **下一次** `context`；而用户必然要在回合 N+1 里先开口，钩子才会被调到。所以**正常消费路径上

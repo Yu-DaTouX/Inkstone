@@ -643,6 +643,31 @@ function contentTextOf(response) {
 }
 
 /**
+ * 一次生成尝试的 token 开销（估算口径统一）。
+ *
+ * 为什么失败路径也记：**失败也花钱**（20s 超时 / 返回空文本 / JSON 解析失败都是真的调了模型），
+ * 只统计成功那几次会把开销系统性低估。
+ */
+function producerUsage(prompt, text, response) {
+  const real = response?.usage
+  return {
+    input: estimateTokens(prompt),
+    output: estimateTokens(text || ''),
+    /* pi 到底给不给真实 usage：记个布尔，下次排查不用再猜 */
+    reported: !!real,
+    /* 给了就把数字也留下 —— 估算值与真实值可以对账（实测 pi 0.85.1 是给的） */
+    real:
+      real && typeof real === 'object'
+        ? {
+            input: Number(real.input) || 0,
+            output: Number(real.output) || 0,
+            cacheRead: Number(real.cacheRead) || 0
+          }
+        : null
+  }
+}
+
+/**
  * `agent_settled`：状态生成器的唯一触发点。
  *
  * 为什么只在这里：① 它是「这一轮真的结束了」的稳定边界（retry / follow-up 都跑完）；
@@ -770,25 +795,26 @@ async function produceAndCommit(sessionId, ctx) {
       clearTimeout(timer)
     }
     if (response?.stopReason === 'aborted') {
-      trace('producer', { sessionId, stage: 'producer', hook: 'aborted' })
+      trace('producer', { sessionId, stage: 'producer', hook: 'aborted', usage: producerUsage(prompt, '', response) })
       return
     }
 
     const text = contentTextOf(response)
+    const usageTokens = producerUsage(prompt, text, response)
     const parsed = parseProducerOutput(text)
     if (!parsed.ok) {
-      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: parsed.reason, sample: text.slice(0, 200) })
+      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: parsed.reason, sample: text.slice(0, 200), usage: usageTokens })
       return
     }
     const merged = mergeTaskState({ semantics: parsed.value, evidence, previous: previous?.task, directives, now: Date.now() })
     if (!merged) {
-      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'merge-failed' })
+      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'merge-failed', usage: usageTokens })
       return
     }
     /* 工作集在扩展侧拿不到（那是主进程的策略），用它自己的硬上限即可 */
     const clipped = clipTaskStateToBudget(merged, 0)
     if (clipped.over) {
-      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'over-budget', tokens: clipped.tokens })
+      trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'over-budget', tokens: clipped.tokens, usage: usageTokens })
       return
     }
 
@@ -834,6 +860,7 @@ async function produceAndCommit(sessionId, ctx) {
       tokens: clipped.tokens,
       gap: fresh.gap,
       turnsGap: fresh.turnsGap,
+      usage: usageTokens,
       trigger: decision.reason
     })
   } catch (error) {
