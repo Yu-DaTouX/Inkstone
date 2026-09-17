@@ -41,8 +41,13 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 60;
-  min-width: 268px;
-  max-width: 340px;
+  /*
+   * 宽度：要能一行放下「Pull Request 状态 · 无法获取 Pull Request 状态」。
+   * 280px 时后半句被截成省略号（实测截图），而它恰好是“不伪造状态”
+   * 那句话的全部信息量；给到 320–420 并配合 title 兼底。
+   */
+  min-width: 320px;
+  max-width: 420px;
   padding: 4px;
   background: var(--bg-1);
   border: 1px solid var(--border);
@@ -96,6 +101,28 @@ button.env-item:hover {
 .env-static {
   cursor: default;
   opacity: 0.9;
+}
+
+/*
+ * 信息行里的两个小动作（打开目录 / 复制路径）。
+ * 用**文字**而不是图标：reicon 集里没有“复制”这类图标，
+ * 而拿 tag / folder 之类勉强顶上会让一个图标承担两层含义
+ *（DESIGN §2.7 明令禁止）。
+ */
+.env-mini {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.env-mini:hover {
+  border-color: var(--border);
+  color: var(--fg);
+  background: var(--bg-2);
 }
 
 .env-count {

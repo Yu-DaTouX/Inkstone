@@ -25,6 +25,7 @@ import { missingHandlerSummary, muteMissingHandlerNoise } from './lib/stdio-guar
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { mkdtempSync } from 'node:fs'
+import { deflateSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,6 +66,206 @@ app.disableHardwareAcceleration()
  * 在真实应用里是对的，但截图看起来像 bug。这里只补这两块，
  * 其余（会话/模型/提示词）由 `shot-fixture.js` 写进 store。
  */
+/* ── Git 审查的合成数据（只用于截图，与任何真实仓库无关） ── */
+
+/** 一个合法的小 PNG（图片对照的截图里必须真的能解码，否则截到的是破图） */
+function matrixPng(size, rgb) {
+  const table = []
+  for (let n = 0; n < 256; n += 1) {
+    let c = n
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    table[n] = c >>> 0
+  }
+  const crc32 = (buf) => {
+    let crc = 0xffffffff
+    for (const b of buf) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8)
+    return (crc ^ 0xffffffff) >>> 0
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const t = Buffer.from(type, 'ascii')
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([t, data])))
+    return Buffer.concat([len, t, data, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8
+  ihdr[9] = 2
+  const stride = size * 3 + 1
+  const raw = Buffer.alloc(stride * size)
+  for (let y = 0; y < size; y += 1) {
+    const off = y * stride
+    for (let x = 0; x < size; x += 1) {
+      /* 画一个简单的斜向渐变，截图里能看出是两张**不同**的图 */
+      raw[off + 1 + x * 3] = (rgb[0] + x * 6) & 0xff
+      raw[off + 2 + x * 3] = (rgb[1] + y * 6) & 0xff
+      raw[off + 3 + x * 3] = rgb[2]
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0))
+  ])
+}
+
+const GIT_STUB_IMAGE_OLD = matrixPng(24, [40, 90, 190])
+const GIT_STUB_IMAGE_NEW = matrixPng(24, [200, 70, 60])
+
+function gitStubRepo() {
+  return {
+    root: 'C:/work/pi-desktop',
+    name: 'pi-desktop',
+    repoId: 'stub-repo',
+    worktreeId: 'stub-worktree',
+    branch: 'main',
+    detached: false,
+    unborn: false,
+    head: '0aaadf9f00d4a5f5d1f0c9b1b3a1c7e5c8d2f4a6',
+    upstream: 'origin/main',
+    ahead: 1,
+    behind: 0,
+    busyBranches: [],
+    changedCount: 9,
+    stagedCount: 3,
+    unstagedCount: 6,
+    untrackedCount: 2,
+    unpushedCount: 1,
+    hasCommit: true
+  }
+}
+
+function gitStubFiles() {
+  const mk = (path, status, additions, deletions, extra = {}) => ({
+    path,
+    status,
+    staged: extra.staged ?? null,
+    unstaged: extra.unstaged ?? status,
+    untracked: extra.untracked ?? false,
+    unmerged: false,
+    kind: extra.kind ?? 'text',
+    additions,
+    deletions,
+    oldFingerprint: 'aaa111',
+    newFingerprint: 'bbb222',
+    ...(extra.oldPath ? { oldPath: extra.oldPath } : {})
+  })
+  return [
+    mk('src/renderer/src/components/review/ReviewPanel.tsx', 'modified', 42, 8, { staged: 'modified' }),
+    mk('src/shared/git.ts', 'added', 318, 0, { staged: 'added' }),
+    mk('docs/design/DESIGN.md', 'modified', 30, 2),
+    mk('src/renderer/src/styles/review.css', 'added', 402, 0),
+    mk('src/renderer/src/components/chat/SessionHeader.tsx', 'modified', 5, 18),
+    mk('docs/design/preview/matrix-review.png', 'modified', 0, 0, { kind: 'image' }),
+    mk('docs/中文 目录/说明.md', 'untracked', 12, 0, { untracked: true }),
+    mk('assets/logo.bin', 'untracked', 0, 0, { untracked: true, kind: 'binary' }),
+    mk('scripts/test-live.mjs', 'modified', 96, 3, { oldPath: 'scripts/live-tests.mjs' })
+  ]
+}
+
+function gitStubSnapshot() {
+  const files = gitStubFiles()
+  return {
+    ok: true,
+    repo: gitStubRepo(),
+    scope: { kind: 'working' },
+    files,
+    stats: {
+      files: files.length,
+      additions: files.reduce((n, f) => n + f.additions, 0),
+      deletions: files.reduce((n, f) => n + f.deletions, 0),
+      binary: 2,
+      truncated: false
+    },
+    notes: ['有些文件同时有已暂存与未暂存的部分，行数统计按最终内容算，不重复相加'],
+    truncated: false,
+    requestId: 'stub',
+    generatedAt: Date.now()
+  }
+}
+
+/** 合成一段真实的 hunk（行号连贯，截图里能看出旧/新两列行号推进） */
+function gitStubHunks(seed, lines = 8) {
+  const ctx = (i, oldNo, newNo) => ({ type: 'ctx', text: `  // 上下文第 ${i} 行`, oldLine: oldNo, newLine: newNo })
+  const first = { header: `@@ -10,${lines} +10,${lines + 1} @@`, section: 'export function ReviewPanel() {', oldStart: 10, oldCount: lines, newStart: 10, newCount: lines + 1, lines: [] }
+  let oldNo = 10
+  let newNo = 10
+  first.lines.push(ctx(1, oldNo++, newNo++))
+  first.lines.push({ type: 'del', text: `  const files = snapshot.files ?? []`, oldLine: oldNo++, newLine: null })
+  first.lines.push({ type: 'add', text: `  const files = snapshot?.files ?? []`, oldLine: null, newLine: newNo++ })
+  first.lines.push({ type: 'add', text: `  const [filter, setFilter] = useState<Filter>('all')`, oldLine: null, newLine: newNo++ })
+  for (let i = 2; i < lines; i += 1) first.lines.push(ctx(i, oldNo++, newNo++))
+  const second = { header: '@@ -78,6 +82,7 @@ function FileCard(', section: '', oldStart: 78, oldCount: 6, newStart: 82, newCount: 7, lines: [] }
+  let o2 = 78
+  let n2 = 82
+  for (let i = 0; i < 3; i += 1) second.lines.push(ctx(i + 20, o2++, n2++))
+  second.lines.push({ type: 'del', text: `      <span className="rcard-stat">`, oldLine: o2++, newLine: null })
+  second.lines.push({ type: 'add', text: `      <span className="rcard-stat" data-testid="review-stat">`, oldLine: null, newLine: n2++ })
+  for (let i = 0; i < 2; i += 1) second.lines.push(ctx(i + 30, o2++, n2++))
+  void seed
+  return [first, second]
+}
+
+function gitStubPatch(path) {
+  const file = gitStubFiles().find((f) => f.path === path)
+  const base = {
+    ok: true,
+    path,
+    kind: file?.kind ?? 'text',
+    status: file?.status ?? 'modified',
+    binary: false,
+    truncated: false,
+    hunks: [],
+    header: [],
+    additions: file?.additions ?? 0,
+    deletions: file?.deletions ?? 0,
+    synthesized: !!file?.untracked,
+    requestId: 'stub'
+  }
+  if (file?.kind === 'binary' || file?.kind === 'image') {
+    return { ...base, binary: true, kind: file.kind }
+  }
+  const hunks = gitStubHunks(path)
+  return { ...base, hunks, header: ['index 1111111..2222222 100644', `--- a/${path}`, `+++ b/${path}`] }
+}
+
+function gitStubContent(path, side) {
+  const file = gitStubFiles().find((f) => f.path === path)
+  if (file?.kind === 'image') {
+    const buf = side === 'old' ? GIT_STUB_IMAGE_OLD : GIT_STUB_IMAGE_NEW
+    return {
+      ok: true,
+      path,
+      side,
+      kind: 'image',
+      missing: false,
+      base64: buf.toString('base64'),
+      mimeType: 'image/png',
+      bytes: buf.length,
+      truncated: false,
+      requestId: 'stub'
+    }
+  }
+  if (file?.kind === 'binary') {
+    return { ok: true, path, side, kind: 'binary', missing: false, bytes: 20480, truncated: false, requestId: 'stub' }
+  }
+  return {
+    ok: true,
+    path,
+    side,
+    kind: 'text',
+    missing: false,
+    text: `// ${side === 'old' ? '改动前' : '改动后'}的 ${path}\n`,
+    bytes: 120,
+    truncated: false,
+    requestId: 'stub'
+  }
+}
+
 function registerStubHandlers() {
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
   /* 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
@@ -198,6 +399,27 @@ function registerStubHandlers() {
       rootName: 'pi-desktop'
     }
   })
+
+  /*
+   * Git 审查的桩（方案 G1 的视觉验收）。
+   *
+   * 为什么必须给桩：视觉矩阵**故意不连真实主进程**，而审查面板的每一块
+   * 内容都来自 `yan:git:*`。没有桩就只会截到「正在读取…」，
+   * 那就不是在验收布局与配色。数据是合成的，**绝不进用户真实仓库**。
+   */
+  ipcMain.handle('yan:git:state', () => ({ repo: gitStubRepo() }))
+  ipcMain.handle('yan:git:refs', () => ({
+    ok: true,
+    busyBranches: [],
+    refs: [
+      { ref: 'main', label: 'refs/heads/main', kind: 'head', current: true },
+      { ref: 'origin/main', label: 'refs/remotes/origin/main', kind: 'remote', current: false },
+      { ref: 'feature/review-panel', label: 'refs/heads/feature/review-panel', kind: 'local', current: false }
+    ]
+  }))
+  ipcMain.handle('yan:git:snapshot', () => gitStubSnapshot())
+  ipcMain.handle('yan:git:patch', (_e, req) => gitStubPatch(String(req?.path ?? '')))
+  ipcMain.handle('yan:git:content', (_e, req) => gitStubContent(String(req?.path ?? ''), req?.side === 'new' ? 'new' : 'old'))
 }
 
 /**
@@ -216,9 +438,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'review']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'review'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup'] },
@@ -1029,6 +1251,55 @@ const STATES = {
       await new Promise((r) => setTimeout(r, 260));
       return 'ok';
     })()
+  `,
+  /*
+   * 环境菜单（G1 §3.1）：项目胶囊点开后的样子。
+   *
+   * 这张图要能看清五件事：变更数、工作目录、当前分支（带 ↑1）、
+   * 「无法获取 Pull Request 状态」、比较分支。最后一条就是“不伪造状态”。
+   */
+  envmenu: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      /* 审查面板必须关掉：它优先于其它右栏视图，留着会把菜单遮在后面 */
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(400);
+      document.querySelector('[data-testid="session-project"]')?.click();
+      await sleep(500);
+      return document.querySelector('[data-testid="env-menu"]') ? 'ok' : 'no-menu';
+    })()
+  `,
+  /*
+   * 审查面板（G1 §3.2）：范围选择 + 统计 + 逐文件 diff（含「N 行未修改」折叠）
+   * + 变更文件树 + 已查看进度 + 图片前后对照。
+   *
+   * 数据是合成的（见上面的 gitStub*）—— 截图绝不接真实仓库。
+   */
+  review: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true });
+      /* 上两个状态可能留着环境菜单（它是组件内部 state，不随 store 复位），
+         不关掉就会盖在审查面板上 —— 实测就这么截出过一张“菜单图”。 */
+      const btn = document.querySelector('[data-testid="session-project"]');
+      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
+      await sleep(200);
+      st.openReview({ kind: 'working' });
+      /* 等清单 + 前几个文件的 patch（懒加载是两次 IPC 往返） */
+      await sleep(1200);
+      /* 标记第一个文件为已查看：进度条与已查看态都要进证据 */
+      document.querySelector('[data-testid="review-viewed"]')?.click();
+      await sleep(400);
+      return document.querySelector('[data-testid="review-diff"]') ? 'ok' : 'no-diff';
+    })()
   `
 }
 
@@ -1048,6 +1319,16 @@ const MUST_HAVE = {
   railmini: ['[data-testid="rail-toggle"]'],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
   pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
+  envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare"]'],
+  review: [
+    '[data-testid="review-panel"]',
+    '[data-testid="review-scope"]',
+    '[data-testid="review-stats"]',
+    '[data-testid="review-diff"]',
+    '[data-testid="review-tree"]',
+    '[data-testid="review-progress"]',
+    '[data-testid="review-viewed"]'
+  ],
   compaction: [
     '[data-testid="rp-context"]',
     '[data-testid="ctx-compacting-reason"]',

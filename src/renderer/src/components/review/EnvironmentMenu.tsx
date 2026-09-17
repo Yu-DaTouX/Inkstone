@@ -119,21 +119,42 @@ export function EnvironmentMenu() {
                 </span>
               </button>
 
-              <button
-                type="button"
-                role="menuitem"
-                className="env-item"
-                data-testid="env-local"
-                title={project}
-                onClick={() => {
-                  setOpen(false)
-                  openReview({ kind: 'working' })
-                }}
-              >
+              {/*
+               * 「本地」不是导航项，而是**当前执行环境**：显示工作目录，
+               * 并给出方案 §6.1 要求的两个动作（打开文件夹 / 复制路径）。
+               * 之前它点下去是打开审查 —— 名字与实际动作对不上。
+               */}
+              <div className="env-item env-static" data-testid="env-local" title={project ?? ''}>
                 <Icon name="folder" size={14} />
                 <span className="env-label">{t('env.local')}</span>
-                <span className="env-sub">{project ? shortProject(project) : ''}</span>
-              </button>
+                <span className="env-sub" title={project ?? ''}>
+                  {project ? shortProject(project) : ''}
+                </span>
+                <button
+                  type="button"
+                  className="env-mini"
+                  data-testid="env-open-folder"
+                  title={t('env.openFolder')}
+                  onClick={() => {
+                    setOpen(false)
+                    if (project) void window.yan.openPath(project)
+                  }}
+                >
+                  {t('env.open')}
+                </button>
+                <button
+                  type="button"
+                  className="env-mini"
+                  data-testid="env-copy-path"
+                  title={t('env.copyPath')}
+                  onClick={() => {
+                    setOpen(false)
+                    if (project) void navigator.clipboard?.writeText(project)
+                  }}
+                >
+                  {t('env.copy')}
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -160,10 +181,12 @@ export function EnvironmentMenu() {
                 ) : null}
               </button>
 
-              <div className="env-item env-static" data-testid="env-pr">
+              <div className="env-item env-static" data-testid="env-pr" title={t('env.prUnavailable')}>
                 <Icon name="globe" size={14} />
                 <span className="env-label">{t('env.pr')}</span>
-                <span className="env-sub">{t('env.prUnavailable')}</span>
+                <span className="env-sub" title={t('env.prUnavailable')}>
+                  {t('env.prUnavailable')}
+                </span>
               </div>
 
               <button
@@ -180,13 +203,13 @@ export function EnvironmentMenu() {
               >
                 <Icon name="search" size={14} />
                 <span className="env-label">{t('env.compare')}</span>
-                <span className="env-sub">
+                <span className="env-sub" title={repo.upstream && repo.branch ? `${repo.upstream} → ${repo.branch}` : ''}>
                   {repo.upstream && repo.branch ? `${repo.upstream} → ${repo.branch}` : t('env.chooseBase')}
                 </span>
               </button>
             </>
           ) : (
-            <div className="env-item env-static" data-testid="env-notgit">
+            <div className="env-item env-static" data-testid="env-notgit" title={t('env.notGitHint')}>
               <Icon name="folder" size={14} />
               <span className="env-label">{t('env.notGit')}</span>
               <span className="env-sub">{repoView.loading ? t('env.checking') : t('env.notGitHint')}</span>
