@@ -20,8 +20,22 @@
 
 /* 1. 令牌 */
 :root {
+  /* ── 字体分三级（DESIGN §2.1）──
+     --font-mono  代码 / diff / 终端 / 路径。等宽栅格对齐的**前提**
+     --font-code  --font-mono 的别名。历史上 chat.css / tools.css 各写过一次，
+                  而它**从没在 tokens 里定义过** —— 那两条 font-family 一直在
+                  静默失效（字体回退到继承值，看着像“样式没生效”）。保留别名
+                  是为了不改那两处的选择器语义。
+     --font-ui    界面外壳：按钮 / 标签 / 列表 / 树 / 状态。保持等宽，这是
+                  「终端骨架」的来源（DESIGN §1 原则 1）。
+     --font-body  正文与多行输入。中文长段落用等宽读起来很累（字距过大），
+                  这里改用可读性优先的无衬线栈；**代码仍是 --font-mono**。
+     三级的分工而不是“全部等宽”或“全部无衬线”：栅格对齐只在需要对齐的
+     地方（代码 / 表格 / diff）是硬需求，正文的硬需求是读得不累。 */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
+  --font-code: var(--font-mono);
   --font-ui: var(--font-mono);
+  --font-body: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
 
   /* 基准 12.5px（汉字格 15.00px 整，栅格零偏差）；代码 12px */
   --fs-xs: 10px;
@@ -123,9 +137,10 @@ html[data-theme='dark'] {
   --err-soft: rgba(255, 100, 103, 0.16);
   --magenta: #c084fc;
   --cyan: #22d3ee;
-  /* 记忆「已确认」用青色：它是事实，不是「进行中」。与 accent 分工明确 */
-  --fact: #22d3ee;
-  --fact-soft: rgba(34, 211, 238, 0.14);
+  /* --fact / --fact-soft 已删除：它们是记忆模块的「已确认事实」色，
+     而记忆模块整体移除后这两个名字在 src/ 与设计稿里都是**零引用**
+     （只在自己这一行上出现）。留着一个没人用的语义色只会误导后来人
+     以为存在第四种状态。 */
 
   /* 代码块（highlight.css 用）。深色主题就是 GitHub Dark 的底色 */
   --code-bg: #0d1117;
@@ -160,8 +175,6 @@ html[data-theme='light'] {
   --err-soft: rgba(220, 38, 38, 0.1);
   --magenta: #9333ea;
   --cyan: #0891b2;
-  --fact: #0891b2;
-  --fact-soft: rgba(8, 145, 178, 0.1);
 
   /* 代码块：白底上不能再用深色底（否则就是“白页面上一个黑框”）。
      用 GitHub Light 的浅灰底 + 深色字，语法色在 highlight.css 里另给。」 */
