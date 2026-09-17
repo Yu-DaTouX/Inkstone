@@ -8,7 +8,7 @@
  * 两者都不会让应用崩，只是让一个可选优化变成隐形负担或隐形失效，
  * 所以只能靠这里的断言 + live 场景里的诊断行（`hook: 'deep'`）发现。
  */
-export async function runContextDeepTests(ok, { deep }) {
+export async function runContextDeepTests(ok, { deep, extension }) {
   const {
     DEEP_MIN_TOKENS,
     DEEP_INPUT_TOKENS,
@@ -131,4 +131,41 @@ export async function runContextDeepTests(ok, { deep }) {
   const cleared = injectWorkingTrace(injected.messages, '')
   ok(cleared.injected === false && !hasWorkingTrace(cleared.messages), 'deep·空文本 = 摘掉旧块且不注入')
   ok(cleared.messages.length === before.length, 'deep·摘掉后回到原长度')
+
+  /*
+   * ---------------- 开关的第二个来源：`YAN_CONTEXT_DEEP` ----------------
+   * 用户设置走这个专用 env（砚不会把设置写进 `YAN_CONTEXT_POLICY`，因为后者是
+   * 优先级高于设置面板的测试通道）。这里把两种来源的**优先关系**也钉住：
+   * 顺序写反的话，场景会被用户设置静默改掉，而现象是「测试莫名其妙失效」。
+   */
+  const prevDeep = process.env.YAN_CONTEXT_DEEP
+  const prevPolicyEnv = process.env.YAN_CONTEXT_POLICY
+  const restore = () => {
+    if (prevDeep === undefined) delete process.env.YAN_CONTEXT_DEEP
+    else process.env.YAN_CONTEXT_DEEP = prevDeep
+    if (prevPolicyEnv === undefined) delete process.env.YAN_CONTEXT_POLICY
+    else process.env.YAN_CONTEXT_POLICY = prevPolicyEnv
+  }
+  try {
+    delete process.env.YAN_CONTEXT_POLICY
+    process.env.YAN_CONTEXT_DEEP = '1'
+    ok(extension.__internals.policy().deep.enabled === true, 'deep·YAN_CONTEXT_DEEP=1 打开（用户设置走这条路）')
+    process.env.YAN_CONTEXT_DEEP = 'true'
+    ok(extension.__internals.policy().deep.enabled === true, 'deep·也认 true')
+    process.env.YAN_CONTEXT_DEEP = '0'
+    ok(extension.__internals.policy().deep.enabled === false, 'deep·YAN_CONTEXT_DEEP=0 关闭')
+    process.env.YAN_CONTEXT_DEEP = 'yes'
+    ok(extension.__internals.policy().deep.enabled === false, 'deep·认不出的值当没表态（宁可不开）')
+    delete process.env.YAN_CONTEXT_DEEP
+    ok(extension.__internals.policy().deep.enabled === false, 'deep·两个来源都没表态时是关的（默认值）')
+
+    process.env.YAN_CONTEXT_POLICY = '{"deep":{"enabled":true}}'
+    process.env.YAN_CONTEXT_DEEP = '0'
+    ok(
+      extension.__internals.policy().deep.enabled === true,
+      'deep·测试通道（YAN_CONTEXT_POLICY）优先于用户开关 —— 否则场景会被用户设置静默改掉'
+    )
+  } finally {
+    restore()
+  }
 }
