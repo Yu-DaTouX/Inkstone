@@ -1401,6 +1401,13 @@ async function checkContextProduce(sandboxRoot, _tempBefore, probeText) {
     `freshness / sourceHead 都是合法值（${JSON.stringify(injectRows[0] ?? null)}）`
   )
   /*
+   * 条目状态分布（N21-5 最后一项：`superseded` 的生命周期）：
+   * 注入块不进任何落盘文件，所以「被推翻的旧决策到底没进去」只能靠这条诊断观察。
+   */
+  const itemRows = injectRows.filter((r) => r.items && typeof r.items === 'object')
+  say(itemRows.length >= 1, `注入诊断里带条目状态分布（${itemRows.length} 条）`)
+  if (itemRows.length) lines.push(`    · items = ${JSON.stringify(itemRows[0].items)}`)
+  /*
    * 注入档位应该是 `fresh`：生成在回合 1 结束，注入发生在用户开口的回合 2 ——
    * 只落后「用户刚说的那一条」，按第四轮复核 Q3 的定义不算陈旧。
    * 这条断言钉的就是那个语义（否则模型每轮都会看到 `[stale: verify…]`）。
@@ -1509,6 +1516,47 @@ async function checkContextProduce(sandboxRoot, _tempBefore, probeText) {
   say(loaded?.status === 'ok', `状态文件过主进程的校验（${loaded?.status ?? 'no-store'}）`)
   if (loaded?.status !== 'ok' && loaded?.issues) {
     for (const issue of loaded.issues.slice(0, 4)) lines.push(`    · ${issue.path}: ${issue.message}`)
+  }
+
+  /*
+   * `superseded` 的生命周期（N21-5 最后一项未验证）——**模块级**验证。
+   *
+   * 为什么做不到端到端：探针跑在渲染端，按设计读不到 `YAN_DATA_DIR`，没法在真实窗口里
+   * 往状态文件里塞一条 superseded。所以这里用的是**刚落盘的真实状态文件** +
+   * **真实的注入函数链**（applyFreshness → renderTaskState → injectTaskState）：
+   * 数据与渲染器都是真的，只是不经过 app 自己那次注入 —— 这个层级必须说清楚，
+   * 不能当成「真实窗口里验过」。
+   */
+  const transformModule = await import('../resources/pi-extensions/context-transform.js').catch(() => null)
+  if (transformModule && producerModule && state?.task) {
+    const supersededText = '已被推翻的旧决策（不该出现在注入块里）'
+    const patched = {
+      ...state.task,
+      decisions: [
+        {
+          text: supersededText,
+          status: 'superseded',
+          supersededBy: 'd-override',
+          source: { kind: 'user', entryId: 'u-override', confidence: 'observed' },
+          updatedAt: 1
+        },
+        ...(Array.isArray(state.task.decisions) ? state.task.decisions : [])
+      ]
+    }
+    const applied = producerModule.applyFreshness(patched, { relation: 'same', gap: 0 })
+    const rendered = transformModule.renderTaskState(applied.task, {
+      freshness: 'fresh',
+      sourceHead: state.sourceWatermark?.entryCount
+    })
+    say(rendered.includes('<TASK_STATE'), '（superseded 校验）真实状态仍然渲染出块')
+    say(!rendered.includes(supersededText), 'superseded 条目没被渲染进注入块（真实状态文件 + 真实渲染器）')
+    const counts = producerModule.stateItemCounts(patched)
+    say(counts.skipped >= 1, `条目状态分布数得到被跳过的历史（active=${counts.active} skipped=${counts.skipped}）`)
+    const injectResult = transformModule.injectTaskState([{ role: 'user', content: 'x' }], rendered)
+    say(
+      injectResult.injected === true && !JSON.stringify(injectResult.messages).includes(supersededText),
+      '走真实注入函数后消息里也没有它'
+    )
   }
 
   return { ok, lines }
