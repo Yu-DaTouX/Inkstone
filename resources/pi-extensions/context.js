@@ -163,12 +163,16 @@ function policy() {
     deep: { enabled: false, minTokens: 0 }
   }
   /*
-   * Deep Context 的开关解析：测试通道（策略里的 `deep`）优先，其次专用 env。
+   * Deep Context 的开关解析，三个来源，优先级从高到低：
+   *   ① 策略里的 `deep`（`YAN_CONTEXT_POLICY`，测试通道）；
+   *   ② 专用 env `YAN_CONTEXT_DEEP`（也是测试/CI 用；`0` 是**明确关**，不会被 ③ 盖掉）；
+   *   ③ 桌面端设置 `desktop.json` 的 `contextDeep.enabled`（用户真正能按的那个开关）。
+   *
    * 抽成函数是因为 `policy()` 有**两处早退**（没设策略 / JSON 不合法）——
    * 早退路径也必须带上它，否则「用户开了但没设过任何策略」这种最常见的
-   * 生产情形会静默地一直是关的（实测：先只在正常路径里处理，单测当场就红了）。
+   * 生产情形会静默地一直是关的（先只在正常路径里处理，单测当场就红了）。
    */
-  const resolveDeep = (fromPolicy) => deepSwitches(fromPolicy ?? deepFromEnv())
+  const resolveDeep = (fromPolicy) => deepSwitches(fromPolicy ?? deepFromEnv() ?? deepFromSettings())
   if (!raw.trim()) return { ...base, deep: resolveDeep(undefined) }
   let parsed
   try {
@@ -221,6 +225,31 @@ function deepFromEnv() {
   if (raw === '1' || raw === 'true') return { enabled: true }
   if (raw === '0' || raw === 'false') return { enabled: false }
   return undefined
+}
+
+/**
+ * Deep Context 的用户开关（`desktop.json` 的 `contextDeep.enabled`）。
+ *
+ * 读文件而不是靠宿主传 env：这与 `language.js` / `response-detail.js` / `question.js`
+ * 是**同一个约定**（扩展自己读桌面端设置），好处是**改设置立即生效**，
+ * 不需要重建 pi 实例。代价是每轮一次 IO —— 文件很小，再加一个 1 秒缓存补齐：
+ * `policy()` 在一个回合里会被调好几次（`onContext` / `onBeforeCompact` / `onAgentSettled`）。
+ *
+ * 读不到 / 解析不了 / 字段不是 `true` 一律当作「没表态」，交由默认值（关）。
+ */
+let deepSettingsCache = { at: 0, value: undefined }
+function deepFromSettings() {
+  const now = Date.now()
+  if (now - deepSettingsCache.at < 1000) return deepSettingsCache.value
+  let value
+  try {
+    const raw = readJson(join(dataDir(), 'desktop.json'))
+    value = raw?.contextDeep?.enabled === true ? { enabled: true } : undefined
+  } catch {
+    value = undefined
+  }
+  deepSettingsCache = { at: now, value }
+  return value
 }
 
 /**
@@ -1244,5 +1273,9 @@ export const __internals = {
   produceAndCommit,
   resetProducerFlight: () => {
     producerFlight = null
+  },
+  /* 测试用：丢掉 deep 的设置缓存（否则改完 `YAN_DATA_DIR` 还要等 1 秒） */
+  resetDeepCache: () => {
+    deepSettingsCache = { at: 0, value: undefined }
   }
 }
