@@ -33,6 +33,7 @@ import {
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
+import { deflateSync } from 'node:zlib'
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
@@ -599,6 +600,24 @@ const CASES = {
    * 因为它会真的建/改/删文件。
    */
   workspacechanges: { probe: 'scripts/probe/workspace-changes.js', delay: 10000, cost: 0, fixture: true, fixtureSub: 'repo', budget: 180000, projectPeers: true },
+  /*
+   * Git 审查 + 环境菜单（方案 G1）—— cost 0，不调模型。
+   *
+   * 场景 cwd 是 fixture 里那个**故意做脏**的 `review/` 仓库（见
+   * buildFixtureProject）：未暂存修改、已暂存新增、未暂存删除、已暂存重命名、
+   * 未跟踪文件、中文+空格路径、被改动的 PNG、含 NUL 的二进制。
+   * 「只读保证」不在这里断言 —— 那要靠退出后从 Node 侧逐字节比对
+   *（`afterExit: 'gitReviewReadonly'`），因为渲染进程里拿不到 git 的真实回答。
+   */
+  gitreview: {
+    probe: 'scripts/probe/git-review.js',
+    fixture: true,
+    fixtureSub: 'review',
+    delay: 11000,
+    budget: 150000,
+    cost: 0,
+    afterExit: 'gitReviewReadonly'
+  },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
@@ -786,6 +805,82 @@ function allowDirRead(dir, user = process.env.USERNAME) {
 }
 
 /**
+ * Git 审查场景（G1）的**只读基线**。
+ *
+ * 在 fixture 建好、还没启动应用时记下工作区与 index 的真实内容；
+ * 场景跑完后（`afterExit: 'gitReviewReadonly'`）逐字节比对。
+ * 这是「打开审查不会动用户暂存区」唯一的硬证据 —— 渲染进程里
+ * 拿不到 git 的二进制作答，只能在退出后从 Node 侧看。
+ */
+let gitReviewBaseline = null
+
+/** 跑一条 git 命令取 stdout（失败时抛） */
+function gitOut(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+/** 取一份「工作区 + index」的快照签名（用于只读比对） */
+function gitReadonlySnapshot(repo) {
+  return {
+    status: gitOut(repo, ['status', '--porcelain=v2', '-z', '--untracked-files=all']),
+    index: gitOut(repo, ['ls-files', '-s']),
+    cached: gitOut(repo, ['diff', '--cached', '--numstat', '-z']),
+    head: gitOut(repo, ['rev-parse', 'HEAD'])
+  }
+}
+
+/**
+ * 生成一个合法的 PNG（真字节，不是 hex 常量碰运气）。
+ *
+ * 为什么需要真图：审查场景要断言「旧图来自 Git 对象、新图来自工作区，
+ * 两者内容不同」。如果图本身解不开，`<img>` 会变成破图 —— 断言就变成
+ * 在验一个坏掉的资源通道。
+ */
+function makePng(size, rgb) {
+  const crcTable = []
+  for (let n = 0; n < 256; n += 1) {
+    let c = n
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    crcTable[n] = c >>> 0
+  }
+  const crc32 = (buf) => {
+    let crc = 0xffffffff
+    for (const b of buf) crc = crcTable[(crc ^ b) & 0xff] ^ (crc >>> 8)
+    return (crc ^ 0xffffffff) >>> 0
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const t = Buffer.from(type, 'ascii')
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([t, data])))
+    return Buffer.concat([len, t, data, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8 /* bit depth */
+  ihdr[9] = 2 /* truecolor */
+  const stride = size * 3 + 1
+  const raw = Buffer.alloc(stride * size)
+  for (let y = 0; y < size; y += 1) {
+    const off = y * stride
+    raw[off] = 0 /* filter: none */
+    for (let x = 0; x < size; x += 1) {
+      raw[off + 1 + x * 3] = rgb[0]
+      raw[off + 2 + x * 3] = rgb[1]
+      raw[off + 3 + x * 3] = rgb[2]
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0))
+  ])
+}
+
+/**
  * 造一棵内容完全确定的合成项目树，供 `fixture: true` 的场景当 cwd。
  *
  * 每一项都对应一条要验的边界：
@@ -882,6 +977,74 @@ function buildFixtureProject(base) {
     throw new Error(
       'fixture 仓库初始化失败（L03 的 worktree 场景需要 git）：' + (error instanceof Error ? error.message : String(error))
     )
+  }
+
+  /*
+   * Git 审查场景（G1）专用的仓库：故意做脏，覆盖方案 §13.1 的 Git 数据清单。
+   *
+   * 为什么另起一个目录而不是往上面的 repo/ 里塞改动：`subagentpair` 会在
+   * repo/ 里建 worktree 并断言「主工作树没被碰过」，一堆预置脏改动会让
+   * 那些断言的前提变味（它们要的是干净基线）。
+   */
+  const reviewRepo = join(dir, 'review')
+  mk('review')
+  const rgit = (args) => execFileSync('git', args, { cwd: reviewRepo, stdio: 'ignore' })
+  const rgitC = (...args) => execFileSync('git', [...gitEnv, ...args], { cwd: reviewRepo, stdio: 'ignore' })
+  rgit(['init', '-q', '-b', 'main'])
+  /* 关掉 autocrlf：行数在不同平台要一致，否则断言会随机器变 */
+  rgit(['config', 'core.autocrlf', 'false'])
+  put(join('review', 'modify.txt'), 'one\ntwo\nthree\n')
+  put(join('review', 'removed.txt'), 'bye\n')
+  put(join('review', 'renamed.txt'), 'rename me\n')
+  {
+    /* 80 行的文件：待会儿只改首尾两行 → diff 里会出现两个 hunk，
+       中间那段就是界面上「N 行未修改」的折叠条 */
+    const lines = []
+    for (let i = 1; i <= 80; i += 1) lines.push(`line ${i}`)
+    put(join('review', 'multi.txt'), lines.join('\n') + '\n')
+  }
+  mk('review', 'src')
+  put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 1', '}', ''].join('\n'))
+  mk('review', 'docs', '中文 目录')
+  put(join('review', 'docs', '中文 目录', '说明.md'), '# 说明\n\n第一行\n第二行\n')
+  writeFileSync(join(reviewRepo, 'pic.png'), makePng(24, [32, 96, 200]))
+  rgitC('add', '-A')
+  rgitC('commit', '-q', '-m', 'review fixture base')
+
+  /* ① 未暂存修改（+2 -1） */
+  put(join('review', 'modify.txt'), 'one\nTWO\nthree\nfour\n')
+  /* ② 多 hunk（首行与末行） */
+  {
+    const lines = []
+    for (let i = 1; i <= 80; i += 1) {
+      if (i === 2) lines.push('line 2 CHANGED')
+      else if (i === 79) lines.push('line 79 CHANGED')
+      else lines.push(`line ${i}`)
+    }
+    put(join('review', 'multi.txt'), lines.join('\n') + '\n')
+  }
+  /* ③ 未暂存删除 */
+  rmSync(join(reviewRepo, 'removed.txt'), { force: true })
+  /* ④ 已暂存重命名 */
+  rgitC('mv', 'renamed.txt', 'renamed-new.txt')
+  /* ⑤ 已暂存新增 */
+  put(join('review', 'staged-new.txt'), 'brand new\n')
+  rgitC('add', 'staged-new.txt')
+  /* ⑥ 中文 + 空格路径的未暂存修改 */
+  put(join('review', 'docs', '中文 目录', '说明.md'), '# 说明\n\n第一行\n改过的第二行\n')
+  /* ⑦ 未跟踪文件（文本） */
+  put(join('review', 'untracked.txt'), 'u1\nu2\nu3\n')
+  /* ⑧ 图片改动（真的不同的一张图，颜色与尺寸都变） */
+  writeFileSync(join(reviewRepo, 'pic.png'), makePng(24, [220, 48, 48]))
+  /* ⑨ 未跟踪的二进制文件（含 NUL 字节） */
+  writeFileSync(join(reviewRepo, 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
+  /* ⑩ 未暂存修改（源码，用来验语法无关的纯文本 diff） */
+  put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 2', '}', ''].join('\n'))
+
+  try {
+    gitReviewBaseline = gitReadonlySnapshot(reviewRepo)
+  } catch (error) {
+    console.warn('⚠️  Git 审查基线没能记录：' + (error instanceof Error ? error.message : String(error)))
   }
 
   try {
@@ -2730,6 +2893,61 @@ function checkAtRefSend(sandboxRoot) {
   return { ok, lines }
 }
 
+/**
+ * Git 审查（G1）的**只读断言**（退出后从 Node 侧比对）。
+ *
+ * 这是「打开审查/刷新/切范围不会改用户工作区与暂存区」的唯一硬证据：
+ * 渲染进程里看不到 git 的原始输出，只能看界面。把 fixture 仓库在
+ * 应用启动**之前**的 status / index / 已暂存差异记下来，跑完再逐字节比。
+ *
+ * ⚠️ 为什么这条特别重要：同一个仓库里另有一个 `collectDiff()`（子代理隔离）
+ * 会执行 `git add -A` —— 那是**故意**的（它只动隔离 worktree 的独立 index）。
+ * 一旦审查面板错误地复用了那条路径，用户打开一次审查就会发现自己的
+ * 暂存区被清空并全部暂存。这条断言就是拦它的。
+ */
+function checkGitReviewReadonly(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  if (!gitReviewBaseline) {
+    lines.push('  （fixture 基线没记到，无法比对：跳过）')
+    return { ok: true, lines }
+  }
+
+  const repo = join(sandboxRoot, 'fixture-project', 'review')
+  let now
+  try {
+    now = gitReadonlySnapshot(repo)
+  } catch (error) {
+    say(false, '跑完审查后仓库读不出来了：' + (error instanceof Error ? error.message : String(error)))
+    return { ok, lines }
+  }
+
+  say(now.status === gitReviewBaseline.status, 'git status 逐字节相同（工作区没被审查动过）')
+  say(now.index === gitReviewBaseline.index, 'index 内容（ls-files -s）逐字节相同（没有偷偷 add）')
+  say(now.cached === gitReviewBaseline.cached, '已暂存差异完全没变（diff --cached --numstat）')
+  say(now.head === gitReviewBaseline.head, 'HEAD 没动过（没有偷偷提交）')
+
+  /* 探针自己有没有跑完 / 有没有失败项 */
+  say(/\[gitreview\]/.test(probeText), '探针确实跑到了审查场景（输出里有 [gitreview] 小结）')
+  if (/\[gitreview\]\s+\d+\s+条失败/.test(probeText)) say(false, '探针自身有失败项（见上面的 ✗）')
+
+  /* 脏改动应当还在（审查不是“修好”了什么，而是什么都没动） */
+  const entries = now.status.split('\0').filter(Boolean).length
+  lines.push(`  ⓘ 跑完后仓库状态条目 = ${entries}（fixture 故意做脏，不应为 0）`)
+  say(entries > 0, 'fixture 的脏改动还在（审查没有顺手清理什么东西）')
+
+  return { ok, lines }
+}
+
 /** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
 const AFTER_EXIT = {
   subagentArchive: checkSubagentArchive,
@@ -2747,7 +2965,8 @@ const AFTER_EXIT = {
   contextFoldPref: checkContextFoldPref,
   contextEpisode: checkContextEpisode,
   contextTakeoverHook: checkContextTakeoverHook,
-  contextDeep: checkContextDeep
+  contextDeep: checkContextDeep,
+  gitReviewReadonly: checkGitReviewReadonly
 }
 
 /*

@@ -21,6 +21,8 @@ import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
+import { fileContent, filePatch, reviewSnapshot } from './git-diff'
+import { readRepoState, listRefs } from './git-service'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
@@ -40,6 +42,7 @@ import type {
   AttentionNotify,
   FileRequestContext,
   FileSearchRequest,
+  GitScopeRequest,
   MainPush,
   RunnerStatus,
   SessionState,
@@ -1130,6 +1133,33 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
 }
 
 /* IPC */
+
+/**
+ * 审查范围来自渲染端，一律当**不可信输入**校验。
+ *
+ * 参数数组已经挡住了 shell 注入，但 `--` 之前的**选项注入**还挡不住：
+ * 一个形如 `--upload-pack=…` 的「ref」会被 git 当成选项。所以这里
+ * 只放行 git ref 的合法字符集，并且**不以 `-` 开头**。
+ * 任何不合法 / 缺失的范围都退回「工作区全部改动」—— 它是纯只读的，
+ * 退到它不会造成任何破坏，而报错会让整个审查面板打不开。
+ */
+function normalizeScope(raw: unknown): GitScopeRequest {
+  const rec = (raw ?? {}) as Record<string, unknown>
+  const clean = (v: unknown): string | undefined => {
+    const s = typeof v === 'string' ? v.trim() : ''
+    if (!s || s.startsWith('-') || s.length > 250) return undefined
+    if (!/^[\w./@^~{}+-]+$/.test(s)) return undefined
+    return s
+  }
+  if (rec.kind === 'working' || rec.kind === 'unstaged' || rec.kind === 'staged') return { kind: rec.kind }
+  if (rec.kind === 'range') {
+    const base = clean(rec.base)
+    const target = clean(rec.target)
+    if (base && target) return { kind: 'range', base, target }
+  }
+  return { kind: 'working' }
+}
+
 function registerIpc(): void {
   /**
    * IPC 来源校验（方案 9.2）。
@@ -1894,6 +1924,80 @@ function registerIpc(): void {
   })
   handle('yan:subagents:merge', async (id: string) => (await subagentCtrl()).merge(String(id ?? '')))
   handle('yan:subagents:discard', async (id: string) => (await subagentCtrl()).discard(String(id ?? '')))
+
+  /*
+   * ---- Git 审查（只读，方案 G1）----
+   *
+   * 渲染端只能传 cwd / 范围 / 路径，**不能传 git 命令**（方案 §11）：
+   * 命令形状全部在主进程里固定，路径与 ref 在 git-service 里单独校验。
+   * 每个响应带回 requestId，用户切项目后渲染端靠它丢弃迟到结果。
+   */
+  handle('yan:git:state', async (cwd: string) => {
+    try {
+      return { repo: await readRepoState(String(cwd ?? '')) }
+    } catch (error) {
+      return { repo: null, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  handle('yan:git:refs', async (cwd: string) => {
+    try {
+      const repo = await readRepoState(String(cwd ?? ''), { withRefs: false })
+      if (!repo) return { ok: false, refs: [], busyBranches: [], error: '这个目录不在 Git 仓库里' }
+      const listing = await listRefs(repo.root)
+      return { ok: true, refs: listing.refs, busyBranches: listing.busyBranches }
+    } catch (error) {
+      return {
+        ok: false,
+        refs: [],
+        busyBranches: [],
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+  handle('yan:git:snapshot', async (req: { cwd?: string; scope?: unknown; requestId?: string }) =>
+    reviewSnapshot({
+      cwd: String(req?.cwd ?? ''),
+      scope: normalizeScope(req?.scope),
+      requestId: String(req?.requestId ?? '')
+    })
+  )
+  handle(
+    'yan:git:patch',
+    async (req: {
+      cwd?: string
+      scope?: unknown
+      requestId?: string
+      path?: string
+      oldPath?: string
+      untracked?: boolean
+    }) =>
+      filePatch({
+        cwd: String(req?.cwd ?? ''),
+        scope: normalizeScope(req?.scope),
+        requestId: String(req?.requestId ?? ''),
+        path: String(req?.path ?? ''),
+        oldPath: req?.oldPath ? String(req.oldPath) : undefined,
+        untracked: !!req?.untracked
+      })
+  )
+  handle(
+    'yan:git:content',
+    async (req: {
+      cwd?: string
+      scope?: unknown
+      requestId?: string
+      path?: string
+      side?: string
+    }) =>
+      fileContent({
+        cwd: String(req?.cwd ?? ''),
+        scope: normalizeScope(req?.scope),
+        requestId: String(req?.requestId ?? ''),
+        path: String(req?.path ?? ''),
+        /* side 只认 old / new，别的一律当 old（宁可少给一侧也不给错一侧） */
+        side: req?.side === 'new' ? 'new' : 'old'
+      })
+  )
 
   /* ---- 内置浏览器 ---- */
   rawHandle('yan:browser:getState', () => browser?.getState() ?? {

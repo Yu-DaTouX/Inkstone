@@ -20,6 +20,7 @@ import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
 import { FilePreviewPane } from './FilePreview'
 import { SubagentPreview } from './SubagentPreview'
+import { ReviewPanel } from '../review/ReviewPanel'
 
 /**
  * 右侧工具面板：按用户配置排列上下文、任务、队列、文件、扩展、日志和操作分区。
@@ -37,6 +38,12 @@ export function RightPanel() {
   const filePreview = useStore((s) => s.filePreview)
   /** 子代理详情：同一区域（方案 8.3），优先级高于文件预览 */
   const subagentPreviewId = useStore((s) => s.subagentPreviewId)
+  /**
+   * 审查：同一区域的**最高**优先级。
+   * 它盖住其它三个的原因很实际：原生 `WebContentsView`（浏览器）永远盖在
+   * DOM 之上，两个一起显示必然有一个看不见；而审查打开时用户就是在看代码。
+   */
+  const reviewOpen = useStore((s) => s.reviewOpen)
   const browserHeight = useStore((s) => s.settings?.browserHeight ?? 0)
   const [libOpen, setLibOpen] = useState(false)
 
@@ -107,12 +114,12 @@ export function RightPanel() {
    * 不再占用工具栏标题行 —— 这样「收起工具栏」对浏览器完全无影响。
    * pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也把浏览器显示出来。
    */
-  if (!open && !browserOpen && !filePreview && !subagentPreviewId) return null
+  if (!open && !browserOpen && !filePreview && !subagentPreviewId && !reviewOpen) return null
 
   return (
     <aside
       ref={asideRef}
-      className={`rightpanel ${browserOpen ? 'browser-mode' : ''} ${open ? '' : 'tools-collapsed'}`}
+      className={`rightpanel ${browserOpen && !reviewOpen ? 'browser-mode' : ''} ${open ? '' : 'tools-collapsed'} ${reviewOpen ? 'review-mode' : ''}`}
       data-testid="rightpanel"
       style={browserHeight > 0 ? ({ '--h-browser': `${browserHeight}px` } as React.CSSProperties) : undefined}
     >
@@ -147,10 +154,16 @@ export function RightPanel() {
         </>
       ) : null}
 
-      {browserOpen ? <BrowserSurface /> : null}
-      {subagentPreviewId ? <SubagentPreview /> : null}
-      {filePreview && !subagentPreviewId ? <FilePreviewPane /> : null}
-      {browserOpen && open ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
+      {reviewOpen ? (
+        <ReviewPanel />
+      ) : (
+        <>
+          {browserOpen ? <BrowserSurface /> : null}
+          {subagentPreviewId ? <SubagentPreview /> : null}
+          {filePreview && !subagentPreviewId ? <FilePreviewPane /> : null}
+        </>
+      )}
+      {browserOpen && open && !reviewOpen ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
 
 
       {open ? (

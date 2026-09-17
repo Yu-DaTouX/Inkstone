@@ -1,0 +1,807 @@
+/*
+ * Git 审查与环境菜单（方案 G1）。
+ *
+ * 三条样式约定：
+ *   1. diff 只靠**底色 + 行号**表达增删（--ok-soft / --err-soft），
+ *      不用图标也不用左右边框 —— 一屏上千行时那两种都会变成噪声。
+ *   2. 长行**不折行**：折行会让同一份 diff 里行高不一致，行号对不上，
+ *      代码结构也看不清。宁可横向滚动。
+ *   3. 宽度不给用户拖：审查的列宽由内容决定（行号 2 列 + 代码），
+ *      不像工具栏那样是个人偏好。所以审查模式下隐藏面板宽度把手。
+ */
+
+/* ── 环境菜单 ───────────────────────────────────────────── */
+
+.env-wrap {
+  position: relative;
+  flex: none;
+}
+
+.env-btn {
+  cursor: pointer;
+}
+
+.env-btn:hover,
+.env-wrap.open .env-btn {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--bg-2);
+}
+
+.env-caret {
+  transition: transform var(--dur) var(--ease);
+}
+
+.env-wrap.open .env-caret {
+  transform: rotate(90deg);
+}
+
+.env-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 268px;
+  max-width: 340px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  /* 与其它浮层一致：只靠边框与背景分层，不用投影（DESIGN §1 原则 2） */
+  box-shadow: none;
+}
+
+.env-head {
+  padding: 6px 8px 4px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.env-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+button.env-item:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.env-item .ico {
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.env-label {
+  flex: none;
+}
+
+.env-sub {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.env-static {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.env-count {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+  font-size: var(--fs-xs);
+}
+
+.env-num {
+  color: var(--warn);
+}
+
+.env-num.env-untracked {
+  color: var(--fg-mute);
+}
+
+.env-none {
+  color: var(--fg-mute);
+}
+
+.env-ab {
+  color: var(--magenta);
+}
+
+.env-error {
+  padding: 4px 8px 6px;
+  color: var(--err);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/* ── 审查面板（右栏里） ──────────────────────────────────── */
+
+/*
+ * 审查模式把右栏换成宽档位。
+ *
+ * `clamp(420px, 46vw, 900px)`：窄窗口仍有 420px（能放下 diff 的行号 + 一截代码），
+ * 宽屏到 900px 封顶（再宽会让聊天区被挤到不可用）。
+ * **不去改 --w-panel-user** —— 那是用户自己拖出来的值，退出审查后原样回来。
+ */
+.app.review-on .workspace {
+  --w-right: clamp(420px, 46vw, 900px);
+}
+
+/* 拖了也不会有反应（宽度由审查档位决定），索性藏掉把手，免得像坏了 */
+.app.review-on .rightpanel > .resizer,
+.app.review-on .rightpanel .resizer {
+  display: none;
+}
+
+.review {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  background: var(--bg-0);
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.review-scope,
+.review-ref {
+  appearance: none;
+  padding: 2px 18px 2px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-mute) 50%),
+    linear-gradient(135deg, var(--fg-mute) 50%, transparent 50%);
+  background-position: calc(100% - 10px) 50%, calc(100% - 6px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.review-scope:hover,
+.review-ref:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.review-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+}
+
+.review-stat-files {
+  color: var(--fg-mute);
+}
+
+.review-stat-bin {
+  color: var(--fg-mute);
+}
+
+.review-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+
+.review-act:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.review-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.review-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+}
+
+.review-arrow {
+  color: var(--fg-mute);
+}
+
+.review-range-err {
+  color: var(--err);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-notes {
+  flex: none;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.review-note {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.review-error {
+  flex: none;
+  margin: 6px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--err);
+  border-radius: var(--r-sm);
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 主体两列：diff 流 + 文件树。
+ * 树固定 220px（它是导航，不需要更宽）；diff 拿剩下的空间。
+ * grid 用 minmax(0, 1fr) —— 否则长路径会把列撑破（AGENTS 的硬约定）。
+ */
+.review-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  min-height: 0;
+  flex: 1;
+}
+
+.review-stream {
+  min-width: 0;
+  overflow: auto;
+  padding: 6px 0 24px;
+  scrollbar-gutter: stable;
+}
+
+.review-side {
+  min-width: 0;
+  border-left: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.review-hint {
+  padding: 16px 12px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+/* 窄窗口：文件树收到 diff 下面去（抽屉式会让它很难同时看到两边） */
+@media (max-width: 900px) {
+  .review-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .review-side {
+    display: none;
+  }
+}
+
+/* ── 文件卡片 ───────────────────────────────────────────── */
+
+.rcard {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.rcard-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  background: var(--bg-1);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rcard.viewed .rcard-head {
+  opacity: 0.72;
+}
+
+.rcard-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  padding: 2px 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+  text-align: left;
+}
+
+.rcard-toggle:hover {
+  color: var(--fg);
+}
+
+.rcard-old {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  flex: none;
+}
+
+.rcard-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* 路径太长时**从左边省略**，文件名那端必须可见 */
+  text-align: left;
+}
+
+.rcard-stat {
+  display: inline-flex;
+  gap: 5px;
+  flex: none;
+  font-size: var(--fs-xs);
+}
+
+.rcard-nostat {
+  color: var(--fg-mute);
+}
+
+.rcard-viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rcard-viewed:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.rcard-viewed.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rcard-body {
+  background: var(--bg-0);
+}
+
+/* ── diff ───────────────────────────────────────────────── */
+
+.rdiff {
+  font-family: var(--font-code);
+  font-size: var(--fs-code);
+  line-height: 1.5;
+}
+
+.rdiff-note {
+  padding: 6px 12px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rdiff-note.err {
+  color: var(--err);
+}
+
+.rdiff-block {
+  border-top: 1px solid var(--border-soft);
+}
+
+.rdiff-gap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 10px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.rdiff-gap.open {
+  cursor: default;
+}
+
+.rdiff-gap:hover {
+  color: var(--fg-dim);
+}
+
+.rdiff-gap-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.rdiff-hunk-head {
+  display: flex;
+  gap: 8px;
+  padding: 2px 10px;
+  background: var(--bg-1);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+}
+
+.rdiff-hunk-range {
+  flex: none;
+  color: var(--accent);
+}
+
+.rdiff-hunk-sec {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 一行 = 旧行号 | 新行号 | 符号 | 正文。
+ * 用 grid 而不是 flex：四列的宽度要对齐（flex 下 git 的空格宽度会漂）。
+ */
+.rdiff-line {
+  display: grid;
+  grid-template-columns: 40px 40px 14px minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.rdiff-line > span {
+  white-space: pre;
+}
+
+.rdiff-no {
+  padding-right: 6px;
+  text-align: right;
+  color: var(--fg-mute);
+  opacity: 0.75;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.rdiff-sign {
+  text-align: center;
+  user-select: none;
+}
+
+.rdiff-text {
+  overflow: visible; /* 由 .review-stream 提供横向滚动 */
+  tab-size: 4;
+}
+
+.rdiff-line.add {
+  background: var(--ok-soft);
+}
+
+.rdiff-line.add .rdiff-text,
+.rdiff-line.add .rdiff-sign {
+  color: var(--ok);
+}
+
+.rdiff-line.del {
+  background: var(--err-soft);
+}
+
+.rdiff-line.del .rdiff-text,
+.rdiff-line.del .rdiff-sign {
+  color: var(--err);
+}
+
+.rdiff-line.ctx .rdiff-text {
+  color: var(--fg-dim);
+}
+
+.rdiff-line.none {
+  color: var(--fg-mute);
+}
+
+/* ── 图片对照 ───────────────────────────────────────────── */
+
+.rimg {
+  padding: 6px 8px 10px;
+}
+
+.rimg-tools {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 6px;
+}
+
+.rimg-fit {
+  padding: 1px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rimg-fit.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rimg-panes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .rimg-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.rimg-pane {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.rimg-cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--bg-1);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rimg-meta {
+  margin-left: auto;
+}
+
+.rimg-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: 6px;
+  background:
+    /* 透明背景用棋盘格表达（否则透明 PNG 看起来像白底图） */
+    repeating-conic-gradient(var(--bg-1) 0% 25%, var(--bg-2) 0% 50%) 50% / 16px 16px;
+}
+
+.rimg-body.fit img {
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+.rimg-body.actual {
+  overflow: auto;
+  justify-content: flex-start;
+}
+
+.rimg-body.actual img {
+  max-width: none;
+}
+
+.rimg-empty {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* ── 变更文件树 ─────────────────────────────────────────── */
+
+.rtree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.rtree-head {
+  flex: none;
+  padding: 6px 6px 0;
+}
+
+.rtree-search {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+}
+
+.rtree-search::placeholder {
+  color: var(--fg-mute);
+}
+
+.rtree-filters {
+  display: flex;
+  gap: 3px;
+  padding: 5px 0 4px;
+}
+
+.rtree-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rtree-chip.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rtree-progress {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 6px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rtree-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--r-full);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.rtree-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.rtree-bar-text {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtree-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+.rtree-empty {
+  padding: 10px 8px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rtree-dir,
+.rtree-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 6px;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  text-align: left;
+}
+
+.rtree-dir:hover,
+.rtree-file:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.rtree-file.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rtree-file.viewed .rtree-file-name {
+  opacity: 0.6;
+}
+
+.rtree-dir-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rtree-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.rtree-glyph {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-size: var(--fs-xs);
+}
+
+.rtree-glyph.st-added,
+.rtree-glyph.st-untracked {
+  color: var(--ok);
+}
+
+.rtree-glyph.st-deleted {
+  color: var(--err);
+}
+
+.rtree-glyph.st-modified,
+.rtree-glyph.st-typechange {
+  color: var(--warn);
+}
+
+.rtree-glyph.st-renamed,
+.rtree-glyph.st-copied {
+  color: var(--magenta);
+}
+
+.rtree-glyph.st-unmerged {
+  color: var(--err);
+}
+
+.rtree-stat {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 增删色在审查面板内只有一处含义（DESIGN §2.6）：新增绿、删除红。
+ * 限定作用域而不是写成全局 `.add` —— 全局会影响到其它模块里
+ * 恰好用了 `class="add"` 的元素（本项目已有 `.fd-stat.add` 那套组合写法）。
+ */
+.review .add,
+.rcard-stat .add,
+.rtree-stat .add,
+.review-stat .add,
+.rimg-cap .add {
+  color: var(--ok);
+}
+
+.review .del,
+.rcard-stat .del,
+.rtree-stat .del,
+.review-stat .del {
+  color: var(--err);
+}

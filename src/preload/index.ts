@@ -20,6 +20,11 @@ import type {
   FileSearchResult,
   FileTextResult,
   ForkPoint,
+  GitFileContent,
+  GitFilePatch,
+  GitRefOption,
+  GitRepoState,
+  GitReviewSnapshot,
   MainPush,
   ModelInfo,
   PeekResult,
@@ -176,6 +181,16 @@ const api: YanBridge = {
     clearFinished: () => invoke<void>('yan:subagents:clear'),
     merge: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:merge', id),
     discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
+  },
+
+  /* ---- Git 审查（只读，方案 G1）---- */
+  git: {
+    state: (cwd) => invoke<{ repo: GitRepoState | null; error?: string }>('yan:git:state', cwd),
+    refs: (cwd) =>
+      invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
+    snapshot: (req) => invoke<GitReviewSnapshot>('yan:git:snapshot', req),
+    patch: (req) => invoke<GitFilePatch>('yan:git:patch', req),
+    content: (req) => invoke<GitFileContent>('yan:git:content', req)
   },
 
   /* ---- 设置 ---- */
