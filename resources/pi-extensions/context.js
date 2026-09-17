@@ -20,7 +20,7 @@
  * 结构化生成失败/缺失 → 交回 pi 原生行为，不产生半状态。
  *
  * ══════════════════════════════════════════════════════════════════
- * 边界：默认**不调模型**，打开 `episode-fold` 才生成
+ * 边界：`episode-fold` 自 2026-09-18 起**进默认接管集**（但短会话不生成）
  * ══════════════════════════════════════════════════════════════════
  * 状态生成器（N21-4 剩余项 / N21-5 的语义部分）挂在 `agent_settled` 上，
  * 由扩展自己调一次无工具 completion（`ctx.modelRegistry.complete()`，
@@ -28,10 +28,11 @@
  * `files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄，
  * 落盘前**覆盖**模型返回的同名字段（防幻觉污染 durable state）。
  *
- * 它只在 `kinds` 含 **`episode-fold`** 时工作 —— 默认 kinds 是
- * `['tool-sweep', 'recall', 'compaction']`（用户 2026-09-17 拍板），
- * 所以默认路径与生成器落地前**完全一致**；打开 `episode-fold` 才会多花
- * 一次 completion（额度与延迟已由用户 2026-09-17 拍板可接受）。
+ * 它只在 `kinds` 含 **`episode-fold`** 时工作 —— **2026-09-18 用户拍板把它加进默认
+ * 接管集**，默认 kinds 现在含它。请分清「在集合里」与「每轮都跑」：默认开的是
+ * **资格**，真正跑不跑由下面那道**会话级门槛**（`foldEligible`）决定，所以
+ * **短会话仍然不花钱**。要彻底关掉就把 `kinds` 里的 `episode-fold` 去掉，
+ * 或者用 `state.generate` 分路只关注入。
  * 生成失败 / 超时（20s）/ 水位对不上 / CAS 失败 一律**保留旧状态**，不落半成品。
  *
  * 两道额外的闸（第四轮外部评审，2026-09-17 晚）：
@@ -142,20 +143,29 @@ function trace(hook, payload) {
  * 这里额外认几个只在扩展里用的门槛（recentTail / sweep / recall），
  * 主进程不认识它们、也不需要认识 —— 它们只影响「怎么改消息」。
  */
+/**
+ * 默认接管集。与 `src/shared/context-policy.ts` 的 `DEFAULT_CONTEXT_POLICY.kinds`
+ * **必须一致**：主进程读同一份 env，两边不一致时界面（主进程侧）会与真实生效的
+ * 扩展行为不同。`recall` 与 `tool-sweep` 捆绑（墓碑引用的唯一取回通道就是它）；
+ * `episode-fold` 自 2026-09-18 起在默认集里（用户拍板）—— 它**不是**每轮都跑，
+ * 见 `foldEligible` 的会话级门槛。
+ */
+const DEFAULT_KINDS = ['tool-sweep', 'recall', 'episode-fold', 'compaction']
+
 function policy() {
   const raw = process.env.YAN_CONTEXT_POLICY ?? ''
   const base = {
-    /*
-     * 与 `src/shared/context-policy.ts` 的 `DEFAULT_CONTEXT_POLICY.kinds` **必须一致**：
-     * 主进程读同一份 env，两边不一致时界面（主进程侧）会与真实生效的扩展行为不同。
-     * `recall` 与 `tool-sweep` 捆绑：墓碑引用的唯一取回通道就是它。
-     */
-    kinds: ['tool-sweep', 'recall', 'compaction'],
+    kinds: [...DEFAULT_KINDS],
     recentTail: { ...DEFAULT_RECENT_TAIL },
     sweep: { ...DEFAULT_SWEEP },
     recall: { ...DEFAULT_RECALL },
-    /* kinds 不含 `episode-fold` 时两条分路都是关的（总闸优先） */
-    state: { generate: false, inject: false, minTurns: 0, minTokens: 0, refreshRatio: 0 },
+    /*
+     * 两个分路的默认值**必须由 `kinds` 推导**，不能硬编码 false。
+     * `episode-fold` 进默认集之后，写死 false 就会出现「总闸说接管了、分路却说关着」
+     * —— 生成器永远不会跑，而界面显示已接管。这里用 `stateSwitches` 保证
+     * 「在集合里 → 分路默认开」与 `stateSwitches` 自己的语义始终一致。
+     */
+    state: stateSwitches(undefined, DEFAULT_KINDS),
     /*
      * Deep Context（N21-8）：**默认关闭** —— 它挂在 `context` 钩子里，会在用户每次
      * 开口前多调一次模型并**同步阻塞**本轮。开与不开是用户的判断，见 `context-deep.js`。
@@ -914,8 +924,9 @@ function producerUsage(prompt, text, response) {
 function onAgentSettled(_event, ctx) {
   const p = policy()
   /*
-   * 总闸是 `episode-fold`（默认 kinds 不含它 —— 所以默认**不调模型、不花钱**，
-   * 行为与生成器落地前一致）；闸内还有两条独立分路（`p.state.generate` /
+   * 总闸是 `episode-fold`（2026-09-18 起**在默认接管集里** —— 但「在集合里」只
+   * 意味着**允许**生成，真正跑不跑由下面这道会话级门槛决定：短会话照样不花钱）；
+   * 闸内还有两条独立分路（`p.state.generate` /
    * `p.state.inject`，第四轮外部评审 P0-5）与一道**会话级门槛**（`foldEligible`，
    * 第四问 A）：短会话不生成 —— 它没有东西可折叠，却要背上「语义状态变成
    * 下一轮推理输入」的闭环误差风险。

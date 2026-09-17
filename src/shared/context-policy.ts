@@ -41,11 +41,14 @@
  * 所以判定与预算全放在这里，只留「调 RPC」那一行给 agent.ts。
  *
  * ── 阶段边界（`kinds` 是唯一出处）──
- * 主进程只做 `compaction`（调 pi 的 `compact()`）；`tool-sweep` / `recall` 由 pi 扩展的
- * `context` 钩子执行，`episode-fold` 还没有状态生成器。`kinds` 说明**真会执行**的那些，
+ * 主进程只做 `compaction`（调 pi 的 `compact()`）；`tool-sweep` / `recall` / `episode-fold`
+ * 由 pi 扩展的 `context` 钩子执行（`episode-fold` 的状态生成器 2026-09-17 已落地，
+ * 2026-09-18 用户拍板进默认接管集）。`kinds` 说明**真会执行**的那些，
  * 界面据此把尚未接管的阶段画成未生效（而不是假装它会触发）。
- * 默认值是 `['tool-sweep', 'recall', 'compaction']`（用户 2026-09-17 拍板：清理默认开，
- * 但必须保留可召回引用），可用 `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖。
+ * 默认值是 `['tool-sweep', 'recall', 'episode-fold', 'compaction']`（清理默认开但必须保留
+ * 可召回引用、2026-09-17 拍板；`episode-fold` 2026-09-18 拍板加入），可用
+ * `YAN_CONTEXT_POLICY` 的 `kinds` 覆盖。**扩展侧 `resources/pi-extensions/context.js`
+ * 的同名默认值必须与此保持一致** —— 两边不一致时，界面（主进程侧）会与真实生效的行为不同。
  */
 import type {
   ContextBudget,
@@ -74,9 +77,11 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
    *   所以“扫掉”是可逆的，不是删除。
    * · `recall` 必须与 `tool-sweep` **同时**在线：墓碑引用的唯一取回通道就是它，
    *   少了它，默认开启的 sweep 会变成“拿掉且取不回”。
-   * · `episode-fold` 仍不在默认里：它要有状态生成器（语义内容），那是 N21-5/N21-8。
+   * · `episode-fold` **2026-09-18 起在默认里**（用户拍板，见方案 §17.5.7）：状态生成器
+   *   已经落地。但它**不是每轮都跑** —— 会话级门槛（`foldEligible`）与脏判定
+   *   （`shouldRefresh`）决定真正生成与否，短会话照样不花钱。
    */
-  kinds: ['tool-sweep', 'recall', 'compaction']
+  kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction']
 }
 
 const ALL_KINDS: readonly ContextOperationKind[] = [

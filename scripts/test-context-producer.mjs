@@ -763,11 +763,20 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     extension.default({ on: (name, fn) => { handlers[name] = (handlers[name] ?? []).concat(fn) }, registerTool: () => {} })
     ok(typeof handlers.agent_settled?.[0] === 'function', '扩展注册了 agent_settled 钩子（生成器的触发点）')
 
-    /* 默认 kinds 不含 episode-fold → 不生成（默认不花钱） */
+    /*
+     * 默认 kinds 现在**含** episode-fold（2026-09-18 用户拍板进默认接管集）。
+     * 这里必须**同时**断言分路也跟着开 —— 原先 `policy()` 的 base 把
+     * `state.{generate,inject}` 写死成 false，于是「总闸在集合里、分路却关着」，
+     * 生成器永远不会跑而界面显示已接管（这正是本次改动撞出来的真缺陷）。
+     */
     const saved = process.env.YAN_CONTEXT_POLICY
     delete process.env.YAN_CONTEXT_POLICY
     const p = extension.__internals.policy()
-    ok(!p.kinds.includes('episode-fold'), '默认不接管 episode-fold（默认不调模型）')
+    ok(p.kinds.includes('episode-fold'), '默认接管 episode-fold（2026-09-18 用户拍板）')
+    ok(
+      p.state.generate === true && p.state.inject === true,
+      '默认两条分路都由 kinds 推导为开（不能与总闸矛盾）'
+    )
     process.env.YAN_CONTEXT_POLICY = saved
     const tokenTask = {
       task: { objective: 'x', currentPhase: '' },

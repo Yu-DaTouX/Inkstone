@@ -9,7 +9,9 @@
  *      与 `window.yan.contextBudget(窗口)` 完全一致 —— 这一块出过 D21/D22
  *      （界面数字 ≠ 实际生效值），所以“同源”要单独断言。
  *   ③ **工作集视角**：主值/进度条刻度/「下一步」/图例/详情都在，
- *      未接管的阶段（清理、折叠）画成虚线且标 `data-active=0`，
+ *      2026-09-18 起三阶段（清理、折叠、压缩）都在默认接管集里，都是实线 `data-active=1`；
+ *      探针里还有一条**反向验证**：把 `episode-fold` 从 kinds 里摘掉，那一格必须
+ *      退回虚线 `data-active=0` —— 否则推不出「界面按 kinds 取值」而不是写死。
  *      关掉「自动压缩」开关后整个视角退回物理窗口（不展示没生效的策略）。
  */
 ;(async () => {
@@ -74,10 +76,10 @@
   ok(tiny?.budget === null, '窗口小到装不下预留与余量时没有预算（不当成“随时压缩”）')
   const policy = (await window.yan.contextBudget(128000))?.policy
   ok(
-    Array.isArray(policy?.kinds) && policy.kinds.join(',') === 'tool-sweep,recall,compaction',
-    `默认接管清理 + 召回 + 压缩（实际 ${JSON.stringify(policy?.kinds)}）`
+    Array.isArray(policy?.kinds) && policy.kinds.join(',') === 'tool-sweep,recall,episode-fold,compaction',
+    `默认接管清理 + 召回 + 折叠 + 压缩（实际 ${JSON.stringify(policy?.kinds)}）`
   )
-  ok(!(policy?.kinds ?? []).includes('episode-fold'), '折叠仍不在接管范围内（要状态生成器）')
+  ok((policy?.kinds ?? []).includes('episode-fold'), '折叠在默认接管范围内（2026-09-18 用户拍板）')
   log(`  生效策略：${JSON.stringify(policy)}`)
 
   /* ---------------- 2. 界面与主进程同源 ---------------- */
@@ -138,8 +140,8 @@
   }
   ok(activeOf(marks.find((m) => kindOf(m) === 'compaction')) === '1', '压缩标记是“真的会触发”的那条')
   ok(activeOf(marks.find((m) => kindOf(m) === 'tool-sweep')) === '1', '清理标记已接管（默认开）')
-  ok(activeOf(marks.find((m) => kindOf(m) === 'episode-fold')) === '0', '折叠标记未接管（要状态生成器）')
-  ok(!!marks.find((m) => kindOf(m) === 'episode-fold')?.className.includes('planned'), '未接管的刻度用虚线样式')
+  ok(activeOf(marks.find((m) => kindOf(m) === 'episode-fold')) === '1', '折叠标记已接管（2026-09-18 拍板）')
+  ok(!!marks.find((m) => kindOf(m) === 'episode-fold')?.className.includes('active'), '已接管的刻度用实线样式')
 
   /* 刻度位置真的按比例（不是随便摆三条线） */
   const meter = q('.rp-meter')
@@ -164,15 +166,39 @@
   log(`  下一步文案：${JSON.stringify(text('[data-testid="ctx-next-stage"]'))}`)
   ok(/下一步/.test(text('[data-testid="ctx-next-stage"]')), '文案以「下一步」开头')
 
-  /* 图例：三格，默认接管格里“清理 + 压缩”两格，折叠仍待状态生成器 */
+  /* 图例：三格，2026-09-18 起三格都在默认接管集里 */
   const chips = qa('[data-testid="ctx-stage-chip"]')
   ok(chips.length === 3, `阶段图例三格（实际 ${chips.length}）`)
   const activeChips = chips.filter((c) => c.getAttribute('data-active') === '1')
-  ok(activeChips.length === 2, `图例里两格已接管（清理 + 压缩，实际 ${activeChips.length}）`)
+  ok(activeChips.length === 3, `图例里三格都已接管（实际 ${activeChips.length}）`)
   ok(
-    activeChips.every((c) => ['tool-sweep', 'compaction'].includes(c.getAttribute('data-kind'))),
-    '已接管的两格确实是清理与压缩'
+    activeChips.every((c) => ['tool-sweep', 'episode-fold', 'compaction'].includes(c.getAttribute('data-kind'))),
+    '已接管的三格是清理 + 折叠 + 压缩'
   )
+
+  /*
+   * 反向验证：界面确实**按 kinds 取值**，而不是把三格写死成“已接管”。
+   * 同一份渲染逻辑，喂两份 kinds，必须看到两种结果 —— 否则上面那些
+   * active=1 的断言无法排除“硬编码”。这也正是本次改动（折叠进默认集）
+   * 能被真实窗口观测到的根据。
+   */
+  const kindsPolicyBefore = S().session?.contextPolicy
+  store.setState({
+    session: {
+      ...S().session,
+      contextPolicy: { ...kindsPolicyBefore, kinds: ['tool-sweep', 'recall', 'compaction'] }
+    }
+  })
+  await sleep(300)
+  const foldMark = qa('[data-testid="ctx-stage-mark"]').find((m) => m.getAttribute('data-kind') === 'episode-fold')
+  ok(foldMark?.getAttribute('data-active') === '0', '反向：摘掉 episode-fold 后刻度退回未接管')
+  ok(!!foldMark?.className.includes('planned'), '反向：未接管时用虚线样式')
+  const foldChip = qa('[data-testid="ctx-stage-chip"]').find((c) => c.getAttribute('data-kind') === 'episode-fold')
+  ok(foldChip?.getAttribute('data-active') === '0', '反向：图例那一格也跟着退回未接管')
+  store.setState({ session: { ...S().session, contextPolicy: kindsPolicyBefore } })
+  await sleep(300)
+  const restoredChip = qa('[data-testid="ctx-stage-chip"]').find((c) => c.getAttribute('data-kind') === 'episode-fold')
+  ok(restoredChip?.getAttribute('data-active') === '1', '恢复 kinds 后折叠又显示为已接管（探针不留副作用）')
 
   /* 详情：预算的每个数都能在界面里对上 */
   const toggle = q('[data-testid="ctx-details-toggle"]')
