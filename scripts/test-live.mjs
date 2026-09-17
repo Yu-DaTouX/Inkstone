@@ -374,6 +374,34 @@ const CASES = {
     contextExtLog: true,
     afterExit: 'contextDeepPref'
   },
+  /*
+   * 「压缩接管」的**成功分支**（N21-6 最后一项，cost 1）。
+   *
+   * 与 `contexttakeover` 的关键差别：这里 `kinds` 含 `episode-fold` 且 gate 调到 1/1
+   * —— 所以 `state.inject` 是 **true**，钩子不会走 `fallback: 'inject-off'`，
+   * 而是有可能真的接管。
+   *
+   * `workingSetCap: 20000` 是照「回合 1 不过线、回合 2 过线」**实测**选出来的：
+   * 回合 1 只发十几字符，但**工具调用会把用量推上去** —— 实测 pi 报 **5595**；
+   * 回合 2 是 46k 字符的填充回合，实测 pi 报 **31019**。
+   * 所以两个回合之间要留出一段区间（第一次写 2000 时，回合 1 当场就越线了）。
+   * 状态生成器挂在 `agent_settled` 之后且是异步的，所以回合 1 结束就压缩
+   * 一定会 `no-state`；两段时序是本场景成立的前提。
+   */
+  contexttakeoverstate: {
+    probe: 'scripts/probe/context-takeover-state.js',
+    delay: 10000,
+    cost: 1,
+    budget: 420000,
+    contextExtLog: true,
+    afterExit: 'contextTakeoverState',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"workingSetCap":20000,"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    },
+    /* 不调小它，pi 会说 `Nothing to compact (session too small)` */
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
   contextswitchguard: {
     probe: 'scripts/probe/context-switch-guard.js',
     delay: 10000,
@@ -1744,6 +1772,76 @@ async function checkContextRefresh(sandboxRoot, _tempBefore, probeText) {
  * 刻意**不**断归纳质量（那属于 N21-9 的 A/B 判据），也**不**断延迟数字
  * （模型速度差异太大，只如实打印，让它可观测）。
  */
+/**
+ * 压缩接管的**成功分支**（N21-6 最后一项）。
+ *
+ * 在这之前，`hook: 'takeover'` **从来没有在真实链路里出现过**：
+ *   · `contexttakeover` 没开 `episode-fold` → `fallback: 'inject-off'`（降级）；
+ *   · `contexttakeoversummary` 验的是装配（真实状态文件 → 真实函数），不是链路。
+ * 本检查断言的就是那一次成功接管。
+ */
+async function checkContextTakeoverState(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxtakeoverstate')
+  const ownRecords = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+
+  const committed = ownRecords.filter((r) => r?.stage === 'producer' && r.hook === 'committed')
+  say(committed.length >= 1, `状态生成器提交过（${committed.length} 次）—— 接管的前提`)
+
+  const compact = ownRecords.filter((r) => r?.stage === 'compact')
+  const entered = compact.filter((r) => r.hook === 'entered')
+  const takeovers = compact.filter((r) => r.hook === 'takeover')
+  const fallbacks = compact.filter((r) => r.hook === 'fallback')
+  say(entered.length >= 1, `钩子被调到（${entered.length} 次）`)
+  say(
+    takeovers.length >= 1,
+    `压缩真的走了**接管分支**（takeover ${takeovers.length} 次 / fallback ${fallbacks.length} 次）`
+  )
+  const last = takeovers[takeovers.length - 1]
+  if (last) {
+    lines.push(`    · 接管：tier=${last.tier} gap=${last.gap} fields=${JSON.stringify(last.fields)}`)
+    /*
+     * 能接管的档位由 `applyFreshness` 决定（`if (!applied.task)` 就 fallback）：
+     * 只有 `fresh` / `stale-soft` / `stale-hard` 会带 task。
+     * 这里曾写成 `fresh/partial/stale` —— 那三个名字是**猜的**，
+     * 真实数据一进来就是 `stale-hard`，断言当场红了（这次是好事）。
+     */
+    say(['fresh', 'stale-soft', 'stale-hard'].includes(last.tier), `接管写的是真实档位（${last.tier}）`)
+    const fields = last.fields ?? {}
+    const nonEmpty = Object.entries(fields)
+      .filter(([, value]) => value === true)
+      .map(([key]) => key)
+    say(fields.task === true, '接管摘要里有目标（objective 非空）')
+    say(nonEmpty.length >= 2, `摘要里有内容（逐类非空 ${nonEmpty.length} 类：${nonEmpty.join('/') || '无'}）`)
+  }
+  for (const record of fallbacks.slice(0, 3)) {
+    lines.push(`    · fallback: ${JSON.stringify(record).slice(0, 180)}`)
+  }
+  return { ok, lines }
+}
+
 async function checkContextDeep(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2383,6 +2481,7 @@ const AFTER_EXIT = {
   contextGate: checkContextGate,
   contextRefresh: checkContextRefresh,
   contextTakeoverSummary: checkContextTakeoverSummary,
+  contextTakeoverState: checkContextTakeoverState,
   contextDeepPref: checkContextDeepPref,
   contextTakeoverHook: checkContextTakeoverHook,
   contextDeep: checkContextDeep
