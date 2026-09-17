@@ -37,6 +37,7 @@ import type {
   UserProfile,
   ZoomState
 } from '../../../shared/ipc'
+import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
@@ -130,6 +131,14 @@ interface Store {
   session: SessionState | null
   stats: SessionStats | null
   queue: QueueState
+  /**
+   * 生成中按下回车后**悬在输入框上方**的消息（还没投给 pi）。
+   *
+   * 用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户自己选择
+   * 是插话还是排队」。所以它在 pi 之外、只存在于渲染端：用户点什么才
+   * 以什么方式投递；不点就一直在那儿（回合结束后自动按「排队」发出）。
+   */
+  pendingSends: PendingSend[]
   messages: UIMessage[]
   sessions: SessionSummary[]
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
@@ -299,7 +308,24 @@ interface Store {
   /** 命令使用次数（用于把常用的排在前面） */
   commandUse: Record<string, number>
 
-  send: (text: string, images?: { data: string; mimeType: string }[]) => Promise<void>
+  send: (
+    text: string,
+    images?: { data: string; mimeType: string }[],
+    /**
+     * 生成中投递时的行为：`'steer'` 插话（当前这轮就看到）、
+     * `'followUp'` 排队（等这轮跑完）。空闲时无意义，由主进程忽略。
+     */
+    mode?: 'steer' | 'followUp'
+  ) => Promise<boolean>
+  /**
+   * 生成中发送：不直接给 pi，先悬在输入框上方等用户选插话 / 排队。
+   * 空闲时不要用这个 —— 直接 `send`。
+   */
+  holdSend: (text: string, images?: { data: string; mimeType: string }[]) => void
+  /** 把待定消息按指定方式投出去；**成功才**从待定区移掉（失败留着让用户重试） */
+  releaseSend: (id: string, mode: 'steer' | 'followUp') => Promise<void>
+  /** 放弃投递，把文字放回输入草稿 */
+  restoreSend: (id: string) => void
   /** 把队列里某条消息插队（提升为 steering，在当前这轮就听） */
   steerQueued: (queueId: string) => Promise<void>
   /** 撤回仍在队列中的消息并回填草稿；已被 pi 接收的消息会返回失败。 */
@@ -447,6 +473,19 @@ interface Store {
 }
 
 const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
+
+/**
+ * 悬在输入框上方、还没投给 pi 的一条消息。
+ *
+ * 与 `QueueState` 的区别：那是 **pi 已经收下** 的队列（插话中 / 排队中），
+ * 这是**还没决定怎么投**的本地草稿 —— 用户点「插话」或「排队」之后
+ * 才走 `releaseSend` 变成 pi 队列里的一项。
+ */
+export type PendingSend = {
+  id: string
+  text: string
+  images?: { data: string; mimeType: string }[]
+}
 
 function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
   return {
@@ -642,9 +681,10 @@ async function piCall<T extends { ok: boolean; error?: string }>(
      * Electron 会把 IPC 异常的消息包成
      *   `Error invoking remote method 'yan:xxx': Error: pi 未运行`
      * 用户只需要后半句。把这层壳剥掉 —— 否则提示条和日志里全是这个前缀。
+     * 规则在 shared 里（`stripIpcErrorPrefix`），直接 catch 的调用点共用同一套。
      */
     const raw = e instanceof Error ? e.message : String(e)
-    const error = raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '')
+    const error = stripIpcErrorPrefix(raw)
     /*
      * 断言成 T：失败时只保证 ok/error 这两个字段（调用方判断 `!res.ok`
      * 之后就不会再读别的）。用 any 或联合类型会让每一处调用都要
@@ -700,6 +740,7 @@ export const useStore = create<Store>((rawSet, get) => {
   session: null,
   stats: null,
   queue: EMPTY_QUEUE,
+  pendingSends: [],
   messages: [],
   sessions: [],
   todos: [],
@@ -1290,11 +1331,42 @@ export const useStore = create<Store>((rawSet, get) => {
 
   /* --------------------------------------------------------------- 对话 */
 
-  send: async (text, images) => {
-    const res = await piCall(() => window.yan.send(text, images))
+  send: async (text, images, mode) => {
+    const res = await piCall(() => window.yan.send(text, images, mode))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '发送失败') })
+      return false
     }
+    return true
+  },
+
+  holdSend: (text, images) => {
+    const list = get().pendingSends
+    set({
+      pendingSends: [
+        ...list,
+        /* id 带序号：同一毫秒内连发两条也不会撞 */
+        { id: `ps-${Date.now().toString(36)}-${list.length}`, text, images }
+      ]
+    })
+  },
+
+  releaseSend: async (id, mode) => {
+    const item = get().pendingSends.find((p) => p.id === id)
+    if (!item) return
+    const ok = await get().send(item.text, item.images, mode)
+    /* 只有真的投出去才移掉卡片：失败时留在原地，用户能换个方式重试或放弃 */
+    if (ok) set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
+  },
+
+  restoreSend: (id) => {
+    const item = get().pendingSends.find((p) => p.id === id)
+    if (!item) return
+    set({
+      pendingSends: get().pendingSends.filter((p) => p.id !== id),
+      /* 与“撤回排队消息”走同一个回填通道（Composer 里消费 queueRestore） */
+      queueRestore: get().queueRestore ? `${item.text}\n${get().queueRestore}` : item.text
+    })
   },
 
   steerQueued: async (queueId) => {
@@ -1357,9 +1429,9 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
      */
     if (res.id || res.runId) {
-      set({ queue: EMPTY_QUEUE, activeRunnerId: res.runId ?? res.id, messages: [] })
+      set({ queue: EMPTY_QUEUE, pendingSends: [], activeRunnerId: res.runId ?? res.id, messages: [] })
     }
-    else set({ queue: EMPTY_QUEUE })
+    else set({ queue: EMPTY_QUEUE, pendingSends: [] })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
@@ -1576,6 +1648,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     set({
       queue: EMPTY_QUEUE,
+      pendingSends: [],
       notices: pushNotice(get().notices, 'info', res.text ? `已从「${res.text.slice(0, 30)}」分叉` : '已分叉')
     })
     await get().refreshSessions()
@@ -1587,7 +1660,7 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '复制失败') })
       return
     }
-    set({ queue: EMPTY_QUEUE, notices: pushNotice(get().notices, 'info', '已复制到新会话') })
+    set({ queue: EMPTY_QUEUE, pendingSends: [], notices: pushNotice(get().notices, 'info', '已复制到新会话') })
     await get().refreshSessions()
   },
 
@@ -1774,7 +1847,13 @@ export const useStore = create<Store>((rawSet, get) => {
     try {
       set({ browserState: await window.yan.browser.open(url) })
     } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '打开浏览器失败') })
+      /*
+       * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
+       * 所以剥壳要自己调 —— 否则用户看到的提示是
+       * `Error invoking remote method 'yan:browser:open': Error: 只允许打开 http(s) 网页`。
+       */
+      const raw = error instanceof Error ? error.message : '打开浏览器失败'
+      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(raw)) })
     }
   },
 

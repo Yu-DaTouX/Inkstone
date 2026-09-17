@@ -151,9 +151,29 @@
 
     click('[data-testid="reasoning-expand"]')
     await sleep(300)
-    ok(!overflows(), '展开全部后不再裁剪（完整高度）')
     ok(body().classList.contains('expanded'), 'body 标记 expanded')
     ok(!body().classList.contains('is-clipped'), '展开后不再渐隐')
+    /*
+     * 展开全部 ≠ 无限高。用户 2026-09-19：「推理过程同理」（工具与推理的
+     * 展开态都要有一个固定范围），并且要保留上面那个胶囊作为收起入口。
+     * 所以这里**不再**断言「完整高度」—— 那正是被改掉的行为。
+     */
+    const expandedCS = getComputedStyle(body())
+    out.push(`  展开后 max-height=${expandedCS.maxHeight} overflow-y=${expandedCS.overflowY}`)
+    ok(expandedCS.maxHeight !== 'none', '展开全部后有固定上限（不再无限长）')
+    ok(/auto|scroll/.test(expandedCS.overflowY), '超出上限的部分自己滚动')
+    const capPx = parseFloat(expandedCS.maxHeight)
+    ok(capPx > 100 && capPx < window.innerHeight, `上限是个真实可用的高度（${capPx}px）`)
+
+    /* 胶囊在 `.reason-body` **外面**，所以 body 内部滚动时它一动不动 */
+    const headTop1 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
+    body().scrollTop = 99999
+    await sleep(160)
+    const headTop2 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
+    out.push(`  内部滚动后胶囊 top ${Math.round(headTop1)} → ${Math.round(headTop2)}`)
+    ok(headTop1 === headTop2, '推理块内部滚动时胶囊不动（收起入口不会滚丢）')
+    ok(!!q('[data-testid="reasoning-toggle"]'), '胶囊（已推理 N 秒）保留在上方')
+    body().scrollTop = 0
     const t2 = q('[data-testid="reasoning-expand"]')?.textContent ?? ''
     ok(t2.includes('收起'), `按钮变为「${t2}」`)
 

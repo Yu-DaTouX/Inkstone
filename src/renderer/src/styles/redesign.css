@@ -964,9 +964,15 @@
   background: var(--border-str);
   align-self: center;
 }.mt-pop {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
+  /*
+   * ⚠️ `position: fixed`，而不是 absolute 贴住 `.picker-wrap`。
+   *
+   * 模型选择器现在在**输入框内部**，而 `.composer` 有 `overflow: hidden`
+   * （圆角与自主模式光带需要它）—— absolute 的菜单会被整块裁掉，
+   * 只剩贴着输入框上沿的一小截（实测截图里就只能看到两行）。
+   * 坐标由 `Pickers.tsx` 按触发器的 rect 写进 inline style（right/bottom）。
+   */
+  position: fixed;
   z-index: 40;
   /*
    * 宽度跟着窗口收：窄窗口下不越界，普通窗口给到 360px

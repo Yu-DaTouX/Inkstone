@@ -213,6 +213,19 @@
     return moved
   })
   ok(scrollables.length === 0 || canScroll, '详情内部真的能滚动阅读长输出')
+
+  /*
+   * ⑤ 详情上限（用户 2026-09-19：「展开时应该有一个固定的范围，或者在最上方
+   *    显示折叠回去的按钮」）只作用于**非终端**内容：命令类详情是终端窗口，
+   *    它自带高度与缩放手柄（Terminal.tsx），若也套一层，就会在终端外面
+   *    再出现一条滚动条。这里是那条排除规则的反向验证。
+   */
+  const termCS = getComputedStyle(body)
+  out.push(`  终端窗口：max-height=${termCS.maxHeight} overflow-y=${termCS.overflowY}`)
+  ok(
+    termCS.maxHeight === 'none' && !/auto|scroll/.test(termCS.overflowY),
+    '终端窗口没有被详情上限套住（自己管高度与缩放手柄）'
+  )
   /* ⑤ 并行工具：展开第二条不影响第一条的展开状态 */
   click(shortRow?.querySelector('.trow-head') ?? shortRow)
   await sleep(250)
@@ -263,6 +276,65 @@
     '展开历史行没有改变对话滚动位置',
     `${histScrollBefore} → ${list?.scrollTop ?? 0}`
   )
+
+  /* ---- 6. 组展开后有显示范围，不铺开整屏（用户 2026-09-19）---- */
+  out.push('')
+  out.push('=== 6. 组展开后有显示范围，不铺开整屏 ===')
+  /*
+   * 用户原话：「主动展开调用工具/命令栏的时候，给展开的条目一个显示范围，
+   * 而不是铺开到整个界面」—— 他截图里那条组有 146 次调用。
+   * 所以这里造一个 60 条的组：数量不重要，重要是**真的超出上限**。
+   */
+  await inject(
+    Array.from({ length: 60 }, (_, i) => tool('m' + i, 'ok', 'echo line-' + i)),
+    null,
+    '-many'
+  )
+  await sleep(300)
+  const bigGroup = q('.tgroup')
+  ok(!!bigGroup, '造了一个 60 条调用的组')
+  click(bigGroup?.querySelector('.tgroup-head') ?? bigGroup)
+  await sleep(400)
+  const gBody = q('.tgroup-body')
+  const gcs = gBody ? getComputedStyle(gBody) : null
+  out.push(
+    `  组列表：max-height=${gcs?.maxHeight} overflow-y=${gcs?.overflowY} ` +
+      `可视 ${gBody?.clientHeight}px / 内容 ${gBody?.scrollHeight}px`
+  )
+  ok(qa('.tgroup-body .trow').length === 60, '60 条都在 DOM 里（没有按数量截断）')
+  ok(gcs && gcs.maxHeight !== 'none', '组展开后有固定上限（不再铺开到整个界面）')
+  ok(gcs && /auto|scroll/.test(gcs.overflowY), '超出上限的部分自己滚动')
+  ok(
+    !!gBody && gBody.scrollHeight > gBody.clientHeight + 2,
+    '60 条确实超出了上限（真的会滚，不是摆一个空的 max-height）'
+  )
+  /*
+   * 高度按 **25 行**算（用户 2026-09-19：「改为 25 条」）。
+   * 行步进不硬编码 —— 字体/缩放一变它就变，所以按实测相邻两行的 top 差值换算。
+   */
+  const rowsForCount = qa('.tgroup-body .trow')
+  const rowStep =
+    rowsForCount.length > 1
+      ? rowsForCount[1].getBoundingClientRect().top - rowsForCount[0].getBoundingClientRect().top
+      : 0
+  const rowsInView =
+    rowStep > 0 && gBody ? Math.floor((gBody.clientHeight + 1) / rowStep) : 0
+  out.push(`  一屏可见约 ${rowsInView} 条（行步进 ${rowStep.toFixed(1)}px）`)
+  ok(rowsInView >= 25, `一屏能看到 25 条（实测 ${rowsInView}）`)
+  ok(
+    !!gBody && gBody.clientHeight <= window.innerHeight,
+    '列表本身不超出视口',
+    `${gBody?.clientHeight}px / ${window.innerHeight}px`
+  )
+
+  /* 组头在 body 外面，所以列表内部滚动时它一动不动 */
+  const gHeadTop1 = q('.tgroup-head')?.getBoundingClientRect().top
+  if (gBody) gBody.scrollTop = 99999
+  await sleep(160)
+  const gHeadTop2 = q('.tgroup-head')?.getBoundingClientRect().top
+  out.push(`  列表内部滚动后组头 top ${Math.round(gHeadTop1)} → ${Math.round(gHeadTop2)}`)
+  ok(gHeadTop1 === gHeadTop2, '列表内部滚动时组头不动（收起入口不会滚丢）')
+  ok(!!q('.tgroup-head'), '组头（「调用了 N 次工具/命令」）仍在上方')
 
   return out.join('\n')
 })()

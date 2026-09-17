@@ -1477,14 +1477,30 @@ export class AgentController extends EventEmitter {
 
   /* ---------------------------------------------------------------- 命令 */
 
-  async send(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }> {
+  async send(
+    text: string,
+    images?: { data: string; mimeType: string }[],
+    /**
+     * 生成中投递时的行为：`steer` = 插话（当前这轮就看到）、
+     * `followUp` = 排队（等这轮跑完再投）。
+     *
+     * 渲染端在生成中总会显式传值 —— 它先把消息悬在输入框上方让用户
+     * 选「插话 / 排队」，选完才发。这里只是防止别的调用路径漏传时
+     * pi 直接报「Specify streamingBehavior」的兜底。
+     */
+    mode?: 'steer' | 'followUp'
+  ): Promise<{ ok: boolean; error?: string }> {
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
     }
     // 智能体正在处理时必须指定投递行为，否则 pi 直接报错。
-    // 默认**排队**（followUp）：等这一轮跑完再投递，不打断它。
-    // 想立刻插入当前这轮，用队列行上的「插队」按钮（走 steerQueued）。
+    // 具体用哪个由**渲染端**决定：消息先悬在输入框上方，用户点「插话」
+    // 或「排队」之后才发到这里（`mode`）。以前是主进程单方面默认 steer，
+    // 用户没有选择权，也没有机会在投递前改主意。
+    // 不传 `mode` 时兜底 steer：宁可插话，也不能让 pi 抛
+    // 「Agent is already processing. Specify streamingBehavior...」（用户报过的错）。
+    // （pi：'steer' | 'followUp'）
     //
     // ⚠️ 判据必须是**回合级**的 `agentRunning`，不能只看 `isStreaming`。
     //    `isStreaming` 只在「有一条 assistant 消息正在流」时为真：
@@ -1492,7 +1508,14 @@ export class AgentController extends EventEmitter {
     //    但 pi 内部的 isStreaming 仍是 true —— 于是用户在工具执行时发消息，
     //    我们没带 streamingBehavior，pi 直接抛
     //    「Agent is already processing. Specify streamingBehavior...」（用户报的错）。
-    if (this.agentRunning || this.state?.isStreaming) payload.streamingBehavior = 'followUp'
+    //
+    // ⚠️ `isCompacting` 同理（用户 2026-09-19：「自动压缩的时候仍要允许用户
+    //    发送消息」）。pi 在**回合之间**自动压缩时 `agentRunning` 已经是 false，
+    //    而它忙着压缩 —— 漏了这一项就会发出裸 prompt 被 pi 拒掉（渲染端丢了草稿）。
+    //    这里只做兜底：正常路径下渲染端会把消息先悬到待定区。
+    if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
+      payload.streamingBehavior = mode ?? 'steer'
+    }
 
     const res = await this.rpc!.command('prompt', payload)
     return res.success ? { ok: true } : { ok: false, error: res.error }

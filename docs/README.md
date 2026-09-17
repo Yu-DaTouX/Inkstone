@@ -17,6 +17,9 @@
 | 查看代码与文档批注 | [审阅报告（2026-09-17）](dev/REVIEW-2026-09-17-代码与文档批注.md) | 已确认问题、证据层级与修复建议；未修复项从 HANDOFF 接手 |
 | 定位目录 / 具体文件 | [WORKSPACE](WORKSPACE.md) / [CODE-MAP](dev/CODE-MAP.md) | 目录分类 / 文件职责与联动 |
 | 执行测试 | [TESTING](dev/TESTING.md) | 命令、模型配置、隔离与证据边界 |
+| 控制运行中的砚 | [本机控制桥](dev/LOCAL-CONTROL.md) | 浏览器/MCP/CUA 通过 127.0.0.1 控制 Electron 主实例；边界与重启限制 |
+| 安卓远程管理 | [安卓远程管理端](dev/REMOTE-CONTROL.md) | 电脑端主进程的受限 HTTP/SSE API；默认关闭，当前为第一阶段协议实现 |
+| 安卓界面与功能规划 | [Android UI 方案](design/ANDROID-UI-PLAN-2026-09-18.md) | 延续当前视觉风格的移动页面、交互状态、功能分期与协议依赖；设计提案，非已实现客户端 |
 | 构建发布与备份 | [RELEASING](dev/RELEASING.md) | 产物、用户数据、发布检查 |
 | 排查常见实现问题 | [MAINTENANCE](dev/MAINTENANCE.md) | 可复用经验，无进度流水账 |
 | 修改设计 | [DESIGN](design/DESIGN.md) | 设计令牌与视觉规范 |

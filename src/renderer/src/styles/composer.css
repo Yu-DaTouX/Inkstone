@@ -44,20 +44,38 @@
   border-color: transparent;
 }
 
-.composer-wrap.autonomous .composer::before {
+/*
+ * 两条**对称**的光带（用户要求：一条不够明显）。
+ *
+ * 对称指的是「相位差半个周期」：同一段路径、同一个 keyframes，
+ * 第二条用 `animation-delay: -1.6s` 从 50% 处起步 —— 于是两条永远停在
+ * 边框路径的相对两端（一条在上边时另一条在下边，一条拐到右边时另一条在左边）。
+ * 直接复制一条**同相位**的没用：两条会完全重叠，看上去还是一条。
+ *
+ * 顺带把亮度提上来：原来那条 3px 细光贴在 1px 边框上，暗色主题里几乎看不出。
+ * 拖尾加宽到 112px，并加一层同色辉光（`drop-shadow`）—— 这才像“灯”而不是“线”。
+ */
+.composer-wrap.autonomous .composer::before,
+.composer-wrap.autonomous .composer::after {
   content: '';
   position: absolute;
   /* 拖尾：尾端透明、头部亮，方向与运动方向一致（offset-rotate: auto） */
-  width: 96px;
+  width: 112px;
   height: 3px;
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, var(--accent));
+  filter: drop-shadow(0 0 5px var(--accent));
   offset-path: rect(0 100% 100% 0 round var(--r-xl));
   offset-rotate: auto;
   offset-distance: 0%;
   z-index: 0;
   pointer-events: none;
   animation: yan-autonomous-border 3.2s linear infinite;
+}
+
+/* 第二条：半个周期相位差 —— 与首灯分处路径的两端 */
+.composer-wrap.autonomous .composer::after {
+  animation-delay: -1.6s;
 }
 
 .composer-wrap.autonomous .composer > * {
@@ -73,7 +91,8 @@
   .composer-wrap.autonomous .composer {
     border-color: var(--accent-line);
   }
-  .composer-wrap.autonomous .composer::before {
+  .composer-wrap.autonomous .composer::before,
+  .composer-wrap.autonomous .composer::after {
     display: none;
   }
 }
@@ -83,7 +102,8 @@
   .composer-wrap.autonomous .composer {
     border-color: var(--accent-line);
   }
-  .composer-wrap.autonomous .composer::before {
+  .composer-wrap.autonomous .composer::before,
+  .composer-wrap.autonomous .composer::after {
     display: none;
   }
 }
@@ -128,6 +148,17 @@
 .composer textarea:focus,
 .composer textarea:focus-visible {
   outline: none;
+}
+
+/*
+ * 长文模式切换的高度过渡。
+ *
+ * 高度是 JS 写的 inline style（它要知道 tall 与内容两个因素），所以过渡
+ * 只能接在 CSS 这一侧；而 `animating` 类由 Composer 在切换的那一瞬间临时加上
+ * （见 animateHeight）—— 常开的话打字白动长高会慢半拍、拖拽柄也不跟手。
+ */
+.composer.animating textarea {
+  transition: height 200ms var(--ease);
 }
 
 /*
@@ -197,9 +228,49 @@
   cursor: default;
 }
 
-/* 强度用强调色（对应 Codex 那个紫色 "Ultra"） */
+/*
+ * 强度：按**档位色**染，不再统一用强调色。
+ *
+ * 令牌与输入框顶边框（`.cborder`）是同一套（`motion.css` 的 `--think-*`，
+ * 取自 pi 的 dark.json 七档）：同一个档位在**边框**与**文字**上是同一个颜色，
+ * 这两处才不会互相矛盾。改档位色只需改 motion.css 那七个变量。
+ */
+.mt-level[data-level='off'],
+.mt-stop[data-level='off']:not(.on),
+.mt-head-level[data-level='off'] {
+  color: var(--think-off);
+}
+.mt-level[data-level='minimal'],
+.mt-stop[data-level='minimal']:not(.on),
+.mt-head-level[data-level='minimal'] {
+  color: var(--think-minimal);
+}
+.mt-level[data-level='low'],
+.mt-stop[data-level='low']:not(.on),
+.mt-head-level[data-level='low'] {
+  color: var(--think-low);
+}
+.mt-level[data-level='medium'],
+.mt-stop[data-level='medium']:not(.on),
+.mt-head-level[data-level='medium'] {
+  color: var(--think-medium);
+}
+.mt-level[data-level='high'],
+.mt-stop[data-level='high']:not(.on),
+.mt-head-level[data-level='high'] {
+  color: var(--think-high);
+}
+.mt-level[data-level='xhigh'],
+.mt-stop[data-level='xhigh']:not(.on),
+.mt-head-level[data-level='xhigh'] {
+  color: var(--think-xhigh);
+}
+.mt-level[data-level='max'],
+.mt-stop[data-level='max']:not(.on),
+.mt-head-level[data-level='max'] {
+  color: var(--think-max);
+}
 .mt-level {
-  color: var(--accent);
   flex: none;
 }
 
@@ -881,6 +952,37 @@
 .qrow.steering {
   border-color: var(--accent-line);
   color: var(--fg);
+}
+
+/*
+ * 悬着的消息（还没投给 pi）。
+ *
+ * 做成**栈里最显眼的一行**：它是等用户拍板的草稿（插话还是排队），
+ * 而下面的 steering / followUp 已经被 pi 收下了 —— 两者不能看起来一样。
+ */
+.qrow.pending {
+  border-color: var(--accent);
+  background: var(--bg-1);
+  box-shadow: 0 4px 14px -8px rgba(0, 0, 0, 0.65);
+  color: var(--fg);
+}
+
+.qrow.pending .ico,
+.qrow.pending svg {
+  color: var(--accent);
+}
+
+/* 主动作（插话 / 发送）：实心，与旁边那个次要的「排队」拉开层级 */
+.qrow-jump.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-1);
+}
+
+.qrow-jump.primary:hover {
+  border-color: var(--accent);
+  color: var(--bg-1);
+  filter: brightness(1.08);
 }
 
 .qrow .ico {

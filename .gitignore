@@ -28,6 +28,8 @@ docs/design/preview/live/frame-*.png
 *.log
 npm-debug.log*
 .tmp/
+/* 一次性调试脚本（`.tmp-diag.mjs` 这类）——文件名带前缀，不是目录 */
+.tmp-*
 temp/
 
 # ---- 编辑器 / 系统 ----

@@ -47,6 +47,11 @@ export function ModelThinkingPicker() {
    * 给到 560px，列表能一次看到 8 行以上。
    */
   const [maxH, setMaxH] = useState(0)
+  /**
+   * `position: fixed` 的坐标（见 `.mt-pop` 的注释）：触发器在输入框内部，
+   * 而 `.composer` 是 `overflow: hidden` —— 菜单必须挂到视口上才不会被裁掉。
+   */
+  const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null)
   /** 键盘高亮的下标（对应扁平后的模型列表）；-1 = 没在用键盘 */
   const [cursor, setCursor] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
@@ -106,6 +111,7 @@ export function ModelThinkingPicker() {
   useLayoutEffect(() => {
     if (!open) {
       setMaxH(0)
+      setAnchor(null)
       return
     }
     const el = box.current
@@ -114,6 +120,14 @@ export function ModelThinkingPicker() {
       const r = el.getBoundingClientRect()
       /* 上方留 20px 安全边距（菜单本身还要往上 6px 的间隔），封顶 560px */
       setMaxH(Math.max(200, Math.min(560, Math.floor(r.top - 26))))
+      /*
+       * 菜单底边贴在触发器上沿往上 6px 处。
+       * 夹到 ≥ 8px：窗口矮/被拖到极端位置时不能弹出视口外面。
+       */
+      setAnchor({
+        right: Math.max(8, Math.round(window.innerWidth - r.right)),
+        bottom: Math.max(8, Math.round(window.innerHeight - r.top + 6))
+      })
     }
     measure()
     window.addEventListener('resize', measure)
@@ -241,7 +255,7 @@ export function ModelThinkingPicker() {
       >
         <span className="mt-model">{cur ? cur.name : t('picker.notReady')}</span>
         {hasLevels && level !== 'off' ? (
-          <span className="mt-level" data-testid="thinking-badge">
+          <span className="mt-level" data-level={level} data-testid="thinking-badge">
             {thinkLabel(level)}
           </span>
         ) : null}
@@ -249,7 +263,14 @@ export function ModelThinkingPicker() {
       </button>
 
       {open ? (
-        <div className="mt-pop" data-testid="model-menu" style={maxH ? { maxHeight: maxH } : undefined}>
+        <div
+          className="mt-pop"
+          data-testid="model-menu"
+          style={{
+            ...(maxH ? { maxHeight: maxH } : {}),
+            ...(anchor ? { right: anchor.right, bottom: anchor.bottom } : {})
+          }}
+        >
           {/* ---- 上半：档位 ---- */}
           {showThinkingSection ? (
             <div className="mt-head">
@@ -258,6 +279,7 @@ export function ModelThinkingPicker() {
                 <span className="spacer" />
                 <span
                   className="mt-head-level"
+                  data-level={level}
                   data-testid="thinking-current"
                   /*
                    * D10：头部只用**短状态词**。

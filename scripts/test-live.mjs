@@ -211,6 +211,8 @@ const CASES = {
   virtualdiag: { probe: 'scripts/probe/virtualdiag.js', delay: 14000, cost: 0 },
   // 发送键：规则可选 / 常显 / 生效（Enter 的语义不再随输入框高度隐式变化）
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
+  // 悬着的消息：生成中发出去的先悬在输入框上方，由用户选插话 / 排队
+  pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
   zoom: {
@@ -3248,6 +3250,33 @@ async function main() {
     const modelsForNoAuth = join(sourceAgentDir, 'models.json')
     if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
     CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
+
+    /*
+     * N18：`slashcmd` 要验「运行时技能的真实发现」——不能拿“本环境正好没有技能”
+     * 当结论。pi 从 `<agentDir>/skills/<name>/SKILL.md` 发现用户技能，而主 piDir
+     * 只复制了凭证/模型文件，通常没有 skills。所以单独给这一个场景一份 piDir：
+     * 与主 piDir 同样能起 pi，另外多一个探测技能。其它场景照旧看不到它，
+     * 命令列表长度、系统提示都不受影响。
+     */
+    const piDirSkill = join(sandboxRoot, 'pi-agent-skill')
+    for (const d of [piDirSkill, join(piDirSkill, 'skills', 'probe-skill')]) mkdirSync(d, { recursive: true })
+    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+      const src = join(sourceAgentDir, f)
+      if (existsSync(src)) copyFileSync(src, join(piDirSkill, f))
+    }
+    writeFileSync(
+      join(piDirSkill, 'skills', 'probe-skill', 'SKILL.md'),
+      [
+        '---',
+        'name: probe-skill',
+        'description: 仅用于验证「运行时技能会被报告进命令列表」的探测技能，没有任何实际能力。',
+        '---',
+        '',
+        '这个技能存在的唯一目的：证明 pi 会把 `<agentDir>/skills` 下的 SKILL.md 变成命令列表里的 skill 来源条目。'
+      ].join('\n'),
+      'utf8'
+    )
+    CASES.slashcmd.env = { YAN_PI_DIR: piDirSkill }
 
     console.log(`隔离目录：${sandboxRoot}`)
     console.log(`  fixture：${seeded} 份（真实会话只读拷贝 + 合成；原件不受影响）`)

@@ -260,6 +260,172 @@
     if (store.getState().messages.length === before) ok('没有把 /login 当消息发给模型')
     else bad('消息里多了一条（说明真的发给模型了）')
     store.getState().closeSettings()
+
+    /*
+     * ---- N18 尾巴：逐命令的**真实执行反馈** ----
+     * `/model` 与 `/login` 上面已经验过「路由到正确的窗口 + 不发给模型」。
+     * 这里补另外三条，判据是「本地动作真的被执行了」，而不是「输入框里的字消失」：
+     *   · `/new`      → 真的换了会话身份（sessionId / 运行实例变化）
+     *   · `/browser`  → 真的开了原生浏览器视图；带参数时 URL 原样透传
+     *   · `/compact`  → 真的走本地 compact()
+     * `/compact` 的**成功**路径要真调模型（花钱），归 cost 1 的 `contexttakeover`；
+     * 这一节只钉路由与参数，不在这里伪造压缩成功。
+     */
+    const slashAsMessage = () =>
+      store.getState().messages.some(
+        (m) => typeof m.text === 'string' && /^\/(new|browser|compact)\b/.test(m.text)
+      )
+
+    out.push('\n=== 16. `/new` 真的新建了会话 ===')
+    const beforeSessionId = store.getState().session?.sessionId ?? null
+    const beforeRunner = store.getState().activeRunnerId
+    setVal(ta(), '/new')
+    await sleep(300)
+    click(document.querySelector('[data-testid="send"]'))
+    const switched = await until(() => {
+      const s = store.getState()
+      return s.session?.sessionId !== beforeSessionId || s.activeRunnerId !== beforeRunner
+    }, 8000)
+    const afterNew = store.getState()
+    out.push(
+      '  会话 ' + JSON.stringify(beforeSessionId) + ' → ' + JSON.stringify(afterNew.session?.sessionId ?? null) +
+        ' · 运行实例 ' + JSON.stringify(beforeRunner) + ' → ' + JSON.stringify(afterNew.activeRunnerId) +
+        ' · 输入框=' + JSON.stringify(ta().value)
+    )
+    if (switched) ok('/new 真的换了会话（会话身份或运行实例发生变化）')
+    else bad('/new 没有新建会话（会话身份与运行实例都没变）')
+    if (ta().value === '') ok('输入框被本地路由消费掉（没有留下 /new）')
+    else bad('输入框里还留着 ' + JSON.stringify(ta().value))
+    if (!slashAsMessage()) ok('没有把 /new 当消息发给模型')
+    else bad('/new 被当成一句话发出去了')
+    {
+      const err = store.getState().notices.filter((n) => n.type === 'error').map((n) => n.text).join(' | ')
+      out.push('  错误提示: ' + JSON.stringify(err))
+      if (!/新建失败/.test(err)) ok('主进程没有回「新建失败」')
+      else bad('新建失败了：' + err)
+    }
+    /*
+     * 作用域是命令语义的一部分：`/new` 建的是**全局**新会话，不是“在当前项目里
+     * 新建”。上面验的是副作用，这里钉住传下去的参数（真实副作用无法区分两者）。
+     */
+    const newCalls = []
+    const realNewSession = store.getState().newSession
+    store.setState({ newSession: async (target) => { newCalls.push(target) } })
+    await sleep(250)
+    setVal(ta(), '/new')
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    await until(() => newCalls.length > 0, 4000)
+    store.setState({ newSession: realNewSession })
+    out.push('  newSession 收到 ' + JSON.stringify(newCalls))
+    if (newCalls[0] && newCalls[0].scope === 'global') ok('/new 传的是全局作用域（scope=global）')
+    else bad('/new 的作用域不对：' + JSON.stringify(newCalls[0]))
+
+    out.push('\n=== 17. `/browser` 打开原生视图并把 URL 原样透传 ===')
+    const beforeBrowserMsgs = store.getState().messages.length
+    /*
+     * 真实执行用 `about:blank`：这个场景要验的是「命令 → 本地路由 → 主进程真的
+     * 开了原生视图」这条链，不是网页加载本身（那由 `browserboundary` 覆盖）。
+     * 用外网首页会让这节依赖网络可达性，红绿就会被网络而不是代码决定。
+     */
+    setVal(ta(), '/browser about:blank')
+    await sleep(300)
+    click(document.querySelector('[data-testid="send"]'))
+    const opened = await until(() => store.getState().browserState.open, 8000)
+    const bstate = store.getState().browserState
+    out.push('  browserState: open=' + bstate.open + ' url=' + JSON.stringify(bstate.url))
+    if (opened) ok('/browser 真的打开了内置浏览器（主进程开了原生视图）')
+    else bad('/browser 没有打开浏览器')
+    if (store.getState().messages.length === beforeBrowserMsgs && !slashAsMessage()) ok('没有把 /browser 当消息发给模型')
+    else bad('/browser 被当成一句话发出去了')
+    await store.getState().closeBrowser()
+    await sleep(300)
+
+    /*
+     * 参数透传：把本地路由临时换成记录器，验「无参 / 带 URL」两种形状。
+     * 这里**不**真去导航外网站点 —— 位置在这条链的参数边界，不是网络。
+     */
+    const openCalls = []
+    const realOpenBrowser = store.getState().openBrowser
+    store.setState({ openBrowser: async (url) => { openCalls.push(url) } })
+    await sleep(250)
+    setVal(ta(), '/browser https://example.com/probe?q=1')
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    await until(() => openCalls.length > 0, 4000)
+    setVal(ta(), '/browser')
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    await until(() => openCalls.length > 1, 4000)
+    store.setState({ openBrowser: realOpenBrowser })
+    out.push('  openBrowser 收到 [' + openCalls.map((v) => (v === undefined ? 'undefined' : JSON.stringify(v))).join(', ') + ']')
+    if (openCalls[0] === 'https://example.com/probe?q=1') ok('带参数的 /browser 把 URL 原样透传（参数没被吞掉）')
+    else bad('带参数时透传不对：' + JSON.stringify(openCalls[0]))
+    if (openCalls.length >= 2 && openCalls[1] === undefined) ok('无参数的 /browser 传 undefined（走主进程默认首页）')
+    else bad('无参数时参数不对（收到 ' + openCalls.length + ' 次调用）：' + JSON.stringify(openCalls[1]))
+    if (!slashAsMessage()) ok('参数形态下也没有把 /browser 发给模型')
+    else bad('参数形态下 /browser 被发出去了')
+
+    /*
+     * 失败路径：不要只验“命令成功时是什么样”。非 http(s) 地址会被主进程
+     * 拒掉（`safeUrl` 只放行 http/https），用户必须看到**可读的原因** ——
+     * 静默失败会让人觉得命令坏了。这条不调模型，所以能在这里真跑。
+     */
+    store.setState({ notices: [] })
+    setVal(ta(), '/browser file:///etc/passwd')
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    const failedNotice = await until(() => store.getState().notices.some((n) => n.type === 'error'), 5000)
+    const failText = store.getState().notices.map((n) => n.text).join(' | ')
+    out.push('  非法地址的提示: ' + JSON.stringify(failText))
+    if (failedNotice && /http\(s\)|只允许/.test(failText)) ok('/browser 拒绝非 http(s) 地址并给出可读原因')
+    else bad('/browser 对非法地址没有给出失败反馈：' + JSON.stringify(failText))
+    if (store.getState().browserState.url !== 'file:///etc/passwd') ok('被拒的地址没有真的导航过去')
+    else bad('非法地址居然导航成功了')
+    /*
+     * 提示是要给人看的：`Error invoking remote method '…': Error: …` 这层壳是
+     * Electron 的传输细节，不该出现在提示条上（`piCall` 早就剥了，这条链路漏了）。
+     */
+    if (!/Error invoking remote method/.test(failText)) ok('失败提示没有带 IPC 包装前缀')
+    else bad('提示里还带着 IPC 传输细节：' + JSON.stringify(failText))
+
+    out.push('\n=== 18. `/compact` 走本地路由 ===')
+    /*
+     * 成功压缩要真调模型，属于 cost 1 的 `contexttakeover` / `contexttakeoverstate`。
+     * 这里钉的是「`/compact` 不会变成一句自然语言」：本地 compact() 必须被调到。
+     */
+    const realCompact = store.getState().compact
+    let compactCalls = 0
+    store.setState({ compact: async () => { compactCalls += 1 } })
+    await sleep(250)
+    const beforeCompactMsgs = store.getState().messages.length
+    setVal(ta(), '/compact')
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    await until(() => compactCalls > 0, 4000)
+    store.setState({ compact: realCompact })
+    out.push('  compact() 被调用 ' + compactCalls + ' 次 · 消息 ' + beforeCompactMsgs + ' → ' + store.getState().messages.length)
+    if (compactCalls === 1) ok('/compact 路由到本地 compact()')
+    else bad('/compact 没有走到本地路由（调用 ' + compactCalls + ' 次）')
+    if (store.getState().messages.length === beforeCompactMsgs && !slashAsMessage()) ok('没有把 /compact 当消息发给模型')
+    else bad('/compact 被当成一句话发出去了')
+
+    out.push('\n=== 19. 运行时命令的来源分布 ===')
+    const bySource = {}
+    for (const c of store.getState().commands) bySource[c.source] = (bySource[c.source] ?? 0) + 1
+    out.push('  ' + JSON.stringify(bySource))
+    /*
+     * 技能命令必须**真的被发现**才算取证：`test-live.mjs` 给这个场景单独
+     * 准备了一份 piDir，里面放着 `skills/probe-skill/SKILL.md`。
+     * 如果这里数不到，就是发现链路（pi skills 目录 → get_commands → 注册表）断了。
+     */
+    const skillCmds = store.getState().commands.filter((c) => c.source === 'skill')
+    out.push('  技能命令: ' + JSON.stringify(skillCmds.map((c) => c.name)))
+    if (skillCmds.length) ok('pi 真的把技能报告成了命令（source=skill）')
+    else bad('没有发现任何技能命令（本场景的 piDir 里有 probe-skill/SKILL.md）')
+    const extCmds = store.getState().commands.filter((c) => c.source === 'extension')
+    if (extCmds.length) ok('扩展来源命令也在（' + extCmds.length + ' 条）')
+    else out.push('  ℹ 本环境没有扩展来源命令')
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length

@@ -1608,7 +1608,7 @@ export interface YanBridge {
   /** 停掉**某一个**运行实例（只影响它，不涉及别的会话） */
   stopRunner(id: string): Promise<boolean>
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
-  send(text: string, images?: { data: string; mimeType: string }[]): Promise<{ ok: boolean; error?: string }>
+  send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp'): Promise<{ ok: boolean; error?: string }>
   steer(text: string): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   /** 把一条排队的消息插队（提升为 steering，在当前这轮就听） */

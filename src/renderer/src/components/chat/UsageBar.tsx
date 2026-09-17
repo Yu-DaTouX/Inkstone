@@ -4,13 +4,12 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { Usage } from '../../../../shared/ipc'
 import { cacheHitRate, currentTurnMessages, formatHitRate } from '../../../../shared/turns'
-import { ModelThinkingPicker } from '../Pickers'
 
 /**
  * 底部的用量条。
  *
  * 内容（从左到右）：
- *   速度 · 输入 · 输出 · 缓存命中率 ......... 模型 + 强度（最右）
+ *   速度 · 输入 · 输出 · 缓存命中率
  *
  * ⚠️ 上下文**不在这里**（用户要求改位置）：它搬到了右栏第一块。
  *
@@ -27,12 +26,12 @@ import { ModelThinkingPicker } from '../Pickers'
  *   因为 output 含 thinking 与工具参数）。所以拿不到就显示「生成中 Ns」，
  *   而不是编一个看着精确的假数字。
  *
- * ⚠️ **模型 + 思考强度选择器就挂在本组件内部**（`Pickers.tsx` 的 `ModelThinkingPicker`，
- *   由下方 `.picker-wrap` 渲染），它不是一个独立控件 —— 调用链是
- *   `Composer.tsx` → `UsageBar` → `Pickers.tsx`。所以「模型菜单打不开 / 看不到选择」
- *   这类问题要从这里查：pi 未就绪（`session` 为 null）时本组件**必须降级渲染**、
- *   保留选择器（`data-state="no-usage"`），不能整条 `return null` —— 用户报过的
- *   「看不到模型选择」就是本组件与 `Pickers` 各有一道 `return null` 叠加造成的。
+ * ⚠️ **模型 + 思考强度选择器不在这里**（用户要求：放回输入框内部）：
+ *   它在 `Composer.tsx` 的 `.composer-bar` 里（`Pickers.tsx` 的
+ *   `ModelThinkingPicker`）。曾经为它在本组件里保留过一道「pi 未就绪也必须
+ *   渲染模型入口」的降级分支 —— 入口搬进输入框后不再需要，但**容器仍要保留**：
+ *   `layout` / `tokens` 探针与视觉矩阵都按 `[data-testid="usagebar"]` 定位
+ *   输入区下方的这条横带，`return null` 会让它们找不到对象。
  */
 export function UsageBar() {
   const t = useT()
@@ -111,12 +110,11 @@ export function UsageBar() {
    * 所以降级为只渲染「模型」入口，不铺一排空用量项。
    */
   if (!session?.model && !u) {
-    return (
-      <div className="usagebar" data-testid="usagebar" data-state="no-usage">
-        <span className="spacer" />
-        <ModelThinkingPicker />
-      </div>
-    )
+    /*
+     * 一点用量都没有：只留容器，不铺一排空用量项。
+     * 模型入口在输入框内（见上方注释），所以这里不需要降级渲染任何控件。
+     */
+    return <div className="usagebar" data-testid="usagebar" data-state="no-usage" />
   }
 
   return (
@@ -200,9 +198,6 @@ export function UsageBar() {
           {t('status.compacting')}
         </span>
       ) : null}
-
-      {/* 模型 + 强度：终端风格组合标签，放在最右 */}
-      <ModelThinkingPicker />
     </div>
   )
 }

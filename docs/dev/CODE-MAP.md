@@ -108,6 +108,7 @@ pi 吐事件
 | `main/context-state-store.ts` | 368 | **派生状态的落盘层（N21-4 / S1）**：`YAN_DATA_DIR/context-state/<sessionId>.json`（归档 `<id>.archive.json`）。原子写 = 临时文件 → 回读校验 → `rename`；校验不过**绝不 rename**（失败不覆盖 last-known-good）。读时损坏 / 版本不认识 / 引用不存在的原始条目 → **安全丢弃**（删文件 + 返回原因）。`deleteContextStates` 供 `sessions.ts` 删会话时清派生状态（状态 / 归档 / 召回账本与审计 / 崩溃残留的 `.tmp`）。sessionId 直接进文件名，所以有路径穿越守卫。它也是 electron-vite 的额外入口（live 场景在 Node 侧种/查隔离目录） | `sessions.ts` 的 `deleteSession`；单测 `test-context-state.mjs`；live `contextstate` |
 | `main/context-watermark.ts` | 136 | 从**原始会话 JSONL** 读条目身份与水位（S1 的 provenance 入口）：逐行流式读、只从行首取 `type`/`id`（单行可达 4MB，不复用 `session-reader` 的整文件 parse）；半截尾行不计入且标 `incompleteTail`，中间坏行整份作废（返回 null） | `context-state-store` 的 `raw` 索引来源；live 场景的种子；单测 `test-context-state.mjs` |
 | `shared/rail-order.ts` | 57 | **侧栏顺序的纯计算（N01）**：`orderAfterDrag`（拖拽结果，四种「原样返回」的早退：movedId 不在列表 / 落点是自己 / 落点不在列表 / 拖回原位）、`beforeFromDrop`（由指针上半⇄下半推出「插到谁之前」）、`rankOf`（排序比较用的名次表）。**为什么不写在 Rail.tsx 里**：拖拽的几何只能在真实窗口验，而顺序计算要能被单测穷举边界（`test-rail-order.mjs` 25 条） | `Rail.tsx` 的拖拽区块；`shared/ipc.ts` 的 `AppSettings.projectOrder`；单测 `test-rail-order.mjs`；live `railreorder`；截图 `matrix-railreorder-*` |
+| `shared/ipc-error.ts` | 19 | **IPC 错误消息剥壳**（纯函数）：`Error invoking remote method '…': Error: …` 这层壳是 Electron 的传输细节，提示条上只需要后半句。主进程回包的 `piCall` 与渲染端直接 `try/catch` 的调用点（`store.openBrowser`）共用同一套规则 —— 分叉过一次，同一条错误在两处提示长得不一样。**只剥最外层一次**（消息正文自己的 `Error:` 要留着） | 单测 `test-ipc-error.mjs`（7 条）；live `slashcmd` 第 17 节（失败提示不带 IPC 前缀）；反例：还原 `openBrowser` 的剥壳 → 那条断言立刻变红 |
 | `shared/title-samples.ts` | 60 | **会话标题的样本挑选**（N11，纯函数）：首条 + 最近一条用户话；纯图片消息用 `[图片 ×N]` 占位；最多带首图一张。内存路径（`agent.ts`）与磁盘路径（`sessions.ts.readTitleSamples`）共用这套规则 —— 以前是两份实现，"新会话标题与旧会话标题口径不一致"只表现为"标题怪怪的"，很难归因 | 单测 `test-title-samples.mjs`（11 条）；`test:live -- title` |
 | `scripts/probe/language.js` | 210 | N16 语言：互换提问对照（每方向最多 3 次）+ **切语言不重建实例** + 同一会话下一轮生效 + 流式期间切语言不打断；推理语言**只报告**（软约束） | `test:live -- language`（cost 1） |
 | `scripts/probe/history-switch.js` | 211 | **切换会话不丢历史**（D38 的回归网）：拿历史最长的会话，用 `peekSession` 记条数与首条文本 → 点开 → 等权威 `sync` → 再对一次；期间"曾被打回 0"直接判失败；另外覆盖"切语言"这条路径 | `test:live -- historyswitch`（cost 0） |
@@ -296,28 +297,28 @@ pi 吐事件
 
 ---
 
-## 7. `scripts/` —— 测试与工具（161 个文件：入口 + 单测 + 探针 + 工具脚本）
+## 7. `scripts/` —— 测试与工具（183 个文件：入口 + 单测 + 探针 + 工具脚本）
 
 ### 7.1 入口
 
 | 文件 | 功能 |
 |---|---|
-| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 44 个 `test-*.mjs` |
+| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 47 个 `test-*.mjs` |
 | `test-live.mjs` | live 场景入口：建隔离 sandbox（`YAN_*` + 复制 `auth.json`/`models.json`），起真应用跑探针。场景表就是 `CASES`。**要能在被 Ctrl+C / 被 kill 时收掉 Electron 子进程树**（否则会留下继续往死管道写日志的孤儿）。另有两个附属设施：合成 fixture 项目树（`buildFixtureProject`）与 **L04 的本地 HTTP 服务**（`startBoundaryServer`，127.0.0.1:39873：下载 / Cookie 哨兵 / 真实权限请求 / 内网目标） |
 | `launch.mjs` | 一键启动（检查依赖 → 必要时构建 → 起应用） |
 | `probe-pi.mjs` | 只验证「pi 能否被找到并启动」，不开窗口 |
 | `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
 | `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（44 个 `test-*.mjs`）
+### 7.2 单测模块（47 个 `test-*.mjs`）
 
-按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-policy` / `context-safety` / `context-state`（S1）/ `context-transform`（S2–S6）/ `context-producer`（S7 生成器）/ `context-stage-runtime`（阶段运行状态）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / `language-extension` / `links` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
 > `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
 > 对照 HANDOFF 的「单测 N/N 通过」。
 
-### 7.3 live 探针（97 个文件；93 条在 `CASES` 里）
+### 7.3 live 探针（108 个文件；104 条在 `CASES` 里）
 
 在**真实渲染进程**里执行（`window.__yanStore` 可直接驱动状态）。
 按主题分组（新增探针同时要在 `test-live.mjs` 的 `CASES` 注册）：
@@ -385,12 +386,21 @@ pi 吐事件
 | 改后台会话/身份 | `main/runners.ts`（身份封套）+ `store.applyPush`（身份闸门）+ `state/session-runtime.ts`（缓存）。**三处必须一致**，否则事件会被静默丢弃 |
 | 改文件访问边界 | `main/files.ts`、`main/file-refs.ts`、`main/credentials.ts` 的 `completePath` —— 三者是同一条「只能看 cwd 以内」的约束 |
 | 改浏览器坐标 | 原生视图永远盖在渲染层之上；坐标必须乘 `win.webContents.getZoomFactor()` |
+| 改输入区（发送键提示 / 自主开关 / 模型胶囊） | 三样都在 `Composer.tsx` 的 `.composer-bar` 里；**模型菜单必须 `position: fixed`**（`.composer` 是 `overflow: hidden`，圆角与光带需要它），坐标由 `Pickers.tsx` 按触发器 rect 写进 inline style —— 改回 absolute 会被整块裁掉。档位文字与输入框顶边框共用 `--think-*`（DESIGN §2.6），改档位色要同步 `motion.css` 与 `composer.css` 两处映射。长文模式的高度过渡只开在 `.composer.animating` 那一瞬间（常开会拖慢打字自动长高与拖动跟手）。回归网：`sendkey`（提示条件 + 高度过渡）/ `autonomous`（双光带相位）/ `modelnotready`（档位染色）/ `modelmenu` / `layout` / `vheight`；视觉矩阵 `autonomous` 状态 |
+| 改“生成中发送”的投递方式 | 三层：`Composer.submit` 用**回合级**判据（`runners[active].running` **或** `session.isCompacting`）→ `store.holdSend` 挂进 `pendingSends`（只存在渲染端）→ 用户点插话/排队 走 `store.releaseSend(id, mode)` → `yan:send` 的第三个参数 → `agent.ts` 的 `payload.streamingBehavior`。⚠️ 判据里两个“或”都不能掤：`isStreaming` 在工具执行期间是 false，`running` 在**回合之间的自动压缩**期间是 false —— 用错就会把裸 prompt 投给 pi（它报「Agent is already processing」），而 `submit` 已经清空了输入框，消息直接丢。
+
+⚠️ `QueueStack` 里那个**同名但不算 `isCompacting`** 的判据不是写漏：压缩时模型没在生成，“插话”没有意义，卡片只给一个「发送」（内部 `followUp`）。两处职责不同，别“顺手统一”。
+
+改任何一层都要同步“回合结束/压缩结束后自动按 followUp 投递”那个 effect（`Composer` 里，依赖 `[roundRunning, pendingSends]`，靠投递后列表变化自己触发下一条）。回归网：`pending`（cost 0，**已进 check**，第 9 节专钉压缩态）与 `test:live -- queue`（cost 1，真调模型） |
+| 改左栏折叠 / 项目会话列表 | 左栏收起 = `--w-rail-collapsed: 0px`（layout.css，**只在那里定义**）+ `.app.rail-off .rail { display: none }`（rail.css）；N14 的 `.rail-compact` mini 轨已被用户要求删除，别再加回来。项目下的会话默认只列 `SESSION_PREVIEW = 5` 条，**当前会话落在折叠段里要自动展开到它那一行**。回归网：`railmini`（**已进 check**）/ `railsearch` / `grouprename` / `railtitle` / `projectlimit`；视觉矩阵 `railmini` / `railsessions` 状态 |
+| 改工具组 / 详情的高度上限 | 两套量（DESIGN §3.5）：**工具组** `.tgroup-body` 的单位是“条”—— 用户 2026-09-19 要求「改为 25 条」，所以上限写成 25 行的像素（`min(623px, 80vh)`，行步进实测 ≈ 24.8px），**不要再换成 vh**；**单条详情** `.trow-body > :not(.term)` 与**推理全文** `.reason-body.clip.expanded` 是一段连续文本，用 `min(70vh, 620px)`；选择器必须排除 `.term`（终端窗口自带高度与缩放手柄，套上会出现「终端外面还有一层滚动条」）。三者都靠“头部在 body 外面”成立：`tgroup-head` / `trow-head` / `reason-head` 就是那个「折叠回去的按钮」。回归网：`toolgroup`（第 6 节造 60 条长组，**按实测行步进换算可见条数并要求 ≥ 25**）/ `reasoning` / `toolrow`；视觉矩阵 `toolgroup`（62 条长组）与 `toolterm` |
 | 加 live 探针 | 写 `scripts/probe/<scenario>.js` **并且**在 `test-live.mjs` 的 `CASES` 注册；改完源码先 `npm run build`（`test:live` 不会自动构建）。需要在 **Electron 关闭之后**才能看到的结论（退出归档、临时目录、主树最终状态）用 `afterExit` 钩子，由 Node 侧直接查文件系统 |
 | 要截图/视觉证据 | `npm run visual:matrix`（`scripts/visual-matrix.mjs`，分批入口 `visual-matrix-run.mjs`）：注入 `shot-fixture.js` 的合成数据，按“尺寸 × 缩放 × 主题”建真实窗口截图到 `docs/design/preview/matrix-*.png`。新增一组就改 `GROUPS` / `STATES` / `MUST_HAVE`（截图前必须核对的关键元素）。写临时图片用 `YAN_SHOT_DIR=…`，否则会**覆盖已有证据文件**（同名同日） |
 | 改浏览器网络边界 | 判定住 `main/browser/network-boundary.ts`（纯函数 + 单测），`browser.ts` 只负责落成「放行 / 拦下记账 / 再解析」；**发起方必须用 `tab.committedUrl`**（不是 `state.url`：那是导航发起时的期望值，D24）；拦下的请求要进 `blockedRequests` 并在界面上看得见（D26）。证据：`test-network-boundary.mjs`（21 条）+ `test:live -- browserboundary`（真实 DNS 重绑定 / 302 借道 / 两条下载 / Cookie 复制） |
 | 碰子进程 / 日志管道 | 独立 Electron 入口脚本（`visual-matrix` / `shots` / `shot` / `live-preview` / `measure-design`）必须先 `import './lib/stdio-guard.mjs'`：EPIPE 容忍 + `uncaughtException` 变成“退出码 1”。父进程侧（`visual-matrix-run.mjs`、`test-live.mjs`）要留超时并能收整棵进程树。桌面应用侧是 `src/main/stdio-guard.ts`（**不退出**，只上报）。理由与定位方法见 [MAINTENANCE](MAINTENANCE.md) 的「子进程与日志管道」 |
 | 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
 | 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
+| 改本地斜杠命令 | `main/command-registry.ts`（`LOCAL_COMMANDS` + 来源分类）→ `Composer.tsx` 的 `localName` 分支（`/new` `/compact` `/browser` `/model` `/login` `/subagent` 真的在这里执行；**参数是契约**：`/new` 必须带 `scope:'global'`、`/browser` 无参必须传 `undefined`）→ `store.ts` 对应动作。兼容来源与 `executable:false` 必须继续被吞掉（不发模型）。证据 `test:live -- slashcmd`（19 节，含三次反向验证） |
 | 加单测 | `scripts/test-<module>.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
 | 删任何样式/组件 | 先核对导入顺序与动态类名；`stage1`/`stage2`/`redesign` 名字旧不代表无用 |
 

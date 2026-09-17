@@ -33,11 +33,45 @@
     ok(cur === 'auto' || cur === undefined, '默认是 auto（短输入框 Enter 发送、长文模式换行）')
 
     out.push('')
-    out.push('=== 2. 当前规则常显在输入区 ===')
+    out.push('=== 2. 默认状态下**不**显示提示（用户要求） ===')
     let hint = hintText()
-    out.push('  提示文案: ' + JSON.stringify(hint))
-    ok(hint.length > 0, '输入区持续显示发送规则（不再只在长文模式出现）')
-    ok(/Enter/.test(hint), '提示里写明了 Enter 的分工')
+    out.push('  默认提示文案: ' + JSON.stringify(hint))
+    ok(hint.length === 0, '默认输入框不显示发送规则（输入区不添噪声）')
+
+    /*
+     * 但“不显示”不能变成“改了就看不见”：长文模式下 Enter 的语义变了，
+     * 那正是用户不写出来就只能靠试的时刻。
+     * 直接派发 click（不先 pointerdown）—— `finishResizeClick` 只在
+     * `resizeMoved` 为假时切换展开态，所以这就是“点一下拖拽柄”。
+     */
+    const resize = q('[data-testid="composer-resize"]')
+    ok(!!resize, '找到拖拽柄（点击 = 切长文模式）')
+    resize?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(350)
+    const tallHint = hintText()
+    out.push('  长文模式提示文案: ' + JSON.stringify(tallHint))
+    ok(tallHint.length > 0, '长文模式下提示出现（Enter 语义变了，必须写出来）')
+    ok(/Enter/.test(tallHint), '提示里写明了 Enter 的分工')
+
+    /*
+     * 收起时的高度过渡（用户报「用拖拽柄关闭长文模式时动画消失」）。
+     * 过渡不是常开的 —— 打字与拖动时高度必须跟手 —— 所以判据是
+     * 「切换那一瞬间挂了 `.animating`，而且它真的带上了 height 过渡」。
+     */
+    const composer = q('.composer')
+    const textarea = q('[data-testid="composer"]')
+    resize?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(70)
+    const animating = !!composer?.classList.contains('animating')
+    const props = textarea ? getComputedStyle(textarea).transitionProperty : '(无输入框)'
+    out.push(`  收起瞬间: animating=${animating} transition=${props}`)
+    ok(animating, '收起瞬间标记了 animating（只在这一刻开过渡）')
+    ok(/height/.test(props), '过渡属性里含 height（收起不再瞬跳）')
+    await sleep(400)
+    const stillAnimating = !!q('.composer')?.classList.contains('animating')
+    ok(!stillAnimating, '动画结束后标记被移除（打字时不拖着高度）')
+    out.push('  退出长文模式后: ' + JSON.stringify(hintText()))
+    ok(hintText().length === 0, '退出长文模式后提示收回')
 
     out.push('')
     out.push('=== 3. 切成 Ctrl+Enter 发送后，提示随之变化 ===')
