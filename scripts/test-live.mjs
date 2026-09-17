@@ -298,7 +298,13 @@ const CASES = {
     probe: 'scripts/probe/context-takeover.js',
     delay: 10000,
     cost: 1,
-    budget: 180000,
+    /*
+     * 420s 的理由：探针现在要跑三个串行阶段 —— 预热回合（建立历史，否则 pi 会说
+     * `Nothing to compact (session too small)`）、大回合（把用量推过工作集）、
+     * 再等压缩落定。180s 时进程会在探针打印前就被杀掉，而彼时 **buf 是空的**，
+     * 报出来的却是「应用可能启动失败」（2026-09-17 晚为此白查了三轮）。
+     */
+    budget: 420000,
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":1500}' },
     /*
      * `keepRecentTokens: 1`：会话太小时 pi 自己会说
@@ -2052,10 +2058,18 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
 
       const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
       if (!m) {
+        /*
+         * 两种失败长得完全不同，必须分开报：探针自己打印过东西（说明应用起来了、
+         * 只是没走完），与**一句都没打印**（进程在探针输出前就没了 —— 最常见的是
+         * 场景预算不够、探针被 kill）。合成一个提示的话，排查会直接走向错方向。
+         */
+        const hadOutput = buf.trim().length > 0
         resolvePromise({
           ok: false,
           text: buf.slice(-3000),
-          hint: '没抓到 PROBE 输出 —— 应用可能启动失败。先跑 `npm run probe-pi`。'
+          hint: hadOutput
+            ? '没抓到 PROBE 输出（但有其它输出）—— 应用可能启动失败，先跑 `npm run probe-pi`。'
+            : `一句输出都没有 —— 进程在探针打印前就被结束了。先看场景预算够不够：delay ${delay}ms + budget ${budget ?? 90_000}ms`
         })
         return
       }
