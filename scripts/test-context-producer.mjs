@@ -27,6 +27,9 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
     parseProducerOutput,
     matchDirective,
     mergeTaskState,
+    citableEntries,
+    verifyEntryRefs,
+    provenanceCounts,
     clipTaskState,
     clipTaskStateToBudget,
     taskStateTokens,
@@ -210,6 +213,98 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
 
     const emptyEvidence = mergeTaskState({ semantics, evidence: { files: [], commandsRun: [], testsRun: [] }, previous, directives, now: 1 })
     ok(emptyEvidence.files.length === 0, 'reducer 读不到文件时就是空（不沿用旧文件清单）')
+  }
+
+  /* ------------------------------------------------ 3.5 provenance（第五轮外部意见 Q1 的 P0-③） */
+  console.log('\n--- provenance：可引用清单、校验与三档证据 ---')
+  {
+    const directives = [
+      { text: '不要动数据库迁移', entryId: 'u1' },
+      { text: '跑完单测再提交', entryId: 'u2' }
+    ]
+    const evidence = {
+      files: [{ path: 'src/a.ts', state: 'modified', source: { kind: 'file', path: 'src/a.ts', entryId: 'e3', confidence: 'observed' } }],
+      commandsRun: [{ command: 'npm run build', exitCode: 0, source: { kind: 'tool', entryId: 'e2', confidence: 'observed' } }],
+      testsRun: []
+    }
+
+    /* ① 可引用清单：**只装本轮材料** */
+    const citable = citableEntries({ directives, evidence })
+    ok(citable.length === 4, `清单装齐本轮材料（${citable.map((c) => c.entryId).join(',')}）`)
+    ok(citable[0].entryId === 'u1' && citable[0].kind === 'user', '用户原话在前（模型最常引用的证据）')
+    ok(citable.some((c) => c.entryId === 'e2' && c.kind === 'tool'), '工具结果带 kind=tool')
+    ok(citable.some((c) => c.entryId === 'e3' && c.kind === 'file'), '文件带 kind=file')
+    ok(citableEntries({ directives: [], evidence: {} }).length === 0, '空输入 → 空清单')
+
+    /* ② 校验：只认清单里的 */
+    const verified = verifyEntryRefs(['u1', 'e2', 'e3', 'u1', 'ghost'], citable)
+    ok(verified.ok.length === 3, '合法引用取到 3 条（并去重）')
+    ok(verified.bad.length === 1 && verified.bad[0] === 'ghost', '编造的 id 进 bad（诊断用）')
+    ok(verifyEntryRefs(null, citable).ok.length === 0, '非数组输入不抛错')
+    ok(verifyEntryRefs(['x'], null).bad.length === 1, '清单缺失 → 一律非法（宁保守）')
+
+    /* ③ 解析：对象形态与引用合并 */
+    const parsed = parseProducerOutput(
+      JSON.stringify({
+        objective: '带引用的状态',
+        nextActions: [{ text: '跑单测', entryIds: ['u2'] }, '另一件事'],
+        decisions: [{ text: '同一句', entryIds: ['u1'] }, { text: '同一句', entryIds: ['e2'] }]
+      })
+    )
+    ok(parsed.ok, '对象形态解析成功')
+    ok(parsed.value.nextActions[0].text === '跑单测' && parsed.value.nextActions[0].entryIds[0] === 'u2', '对象条目带出 entryIds')
+    ok(parsed.value.nextActions[1].entryIds.length === 0, '裸字符串 → 空引用（不猜）')
+    ok(parsed.value.decisions.length === 1 && parsed.value.decisions[0].entryIds.length === 2, '同一句话的引用被合并而不是丢弃')
+
+    /* ④ 落盘三档 */
+    const semantics = {
+      objective: '目标',
+      constraints: [{ text: '不要动数据库迁移', entryIds: ['u1'] }],
+      decisions: [{ text: '引用工具结果', entryIds: ['e2'] }],
+      nextActions: [{ text: '指不出证据的推断' }],
+      hypothesis: [{ text: '引用一个不存在的 id', entryIds: ['ghost'] }]
+    }
+    const merged = mergeTaskState({ semantics, evidence, previous: { task: { objective: '旧' } }, directives, citable, now: 1000 })
+    ok(!!merged, '合并成功')
+    const byText = (list, text) => (list ?? []).find((i) => i.text === text)
+    ok(byText(merged.constraints, '不要动数据库迁移')?.source.confidence === 'observed', '引用用户原话 → observed')
+    ok(byText(merged.decisions, '引用工具结果')?.source.confidence === 'derived', '引用工具结果 → derived（从观察到的事实推出）')
+    ok(byText(merged.decisions, '引用工具结果')?.source.kind === 'tool', '引用工具结果 → kind=tool（schema 只允许 user/tool 带 entryId）')
+    ok(byText(merged.nextActions, '指不出证据的推断')?.source.kind === 'model', '无引用 → kind=model')
+    ok(byText(merged.nextActions, '指不出证据的推断')?.source.confidence === 'hypothesis', '无引用 → hypothesis（渲染时会标 inferred）')
+    ok(byText(merged.hypothesis, '引用一个不存在的 id')?.source.confidence === 'hypothesis', '引用不存在 → 降级 hypothesis（不伪造 provenance）')
+
+    /* ⑤ 断递归：上一版说过的、本轮找不到证据的，不能靠「上一版有」保住 observed */
+    const previousState = {
+      task: { objective: '旧目标' },
+      decisions: [{ text: '旧决策', status: 'active', source: { kind: 'user', entryId: 'prev-9', confidence: 'observed' }, updatedAt: 1 }]
+    }
+    const controlCitable = citableEntries({ directives: [{ text: '旧决策', entryId: 'prev-9' }], evidence: {} })
+    ok(controlCitable.length === 1, '（对照）如果上一版的 id 真在清单里，它是能当证据的')
+    const inherited = mergeTaskState({
+      semantics: { objective: '新目标', decisions: [{ text: '旧决策', entryIds: ['prev-9'] }] },
+      evidence: {},
+      previous: previousState,
+      directives,
+      citable,
+      now: 2000
+    })
+    ok(inherited.decisions[0].source.confidence === 'hypothesis', '上一版的 id 不在本轮清单 → 只能当推断（这才是断递归）')
+    ok(!inherited.decisions.some((d) => d.source.entryId === 'prev-9'), '上一版的 entryId 不会被继承进新快照')
+
+    /* ⑥ 统计（诊断用，**不落盘**） */
+    const counts = provenanceCounts(merged)
+    ok(counts.observed === 1 && counts.derived === 1 && counts.hypothesis === 2, `分布正确 ${JSON.stringify(counts)}`)
+    ok(counts.total === 4, 'total = 三档之和')
+    ok(provenanceCounts(null).total === 0, '空输入不抛错')
+    ok(!('provenance' in merged), '统计不写进状态主体（否则主进程会判非法）')
+
+    /* ⑦ 提示词：清单进 prompt，且与上一版状态分先后 */
+    const prompt = buildProducerPrompt({ previousTask: previousState, directives, evidence, citable })
+    ok(prompt.includes('<citable_entries>'), 'prompt 里有可引用区块')
+    ok(prompt.includes('- u1 (user)'), '清单带 id 与 kind')
+    ok(prompt.includes('<previous_state>') && prompt.indexOf('<previous_state>') < prompt.indexOf('<citable_entries>'), '先给上一版现状、再给可引用清单')
+    ok(!prompt.slice(prompt.indexOf('<citable_entries>')).includes('prev-9'), '上一版的 id 不会出现在可引用清单里')
   }
 
   /* ---------------------------------------------------------- 4. 裁剪与预算 */

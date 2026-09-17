@@ -92,6 +92,19 @@ export const SEMANTIC_FIELDS = [
   'hypothesis'
 ]
 
+/** `SEMANTIC_FIELDS` 里「是列表」的那些（provenance 统计只数这些） */
+export const SEMANTIC_LIST_FIELDS = [
+  'currentState',
+  'decisions',
+  'constraints',
+  'completed',
+  'failedAttempts',
+  'unresolved',
+  'nextActions',
+  'assumptions',
+  'hypothesis'
+]
+
 /** 一眼是「测试命令」的判据（只用来分类，不改变命令本身） */
 const TEST_COMMAND_RE =
   /(?:^|[\s&|;])(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|vitest|jest|typecheck|lint)|vitest|jest|pytest|go\s+test|cargo\s+test|ctest|dotnet\s+test|mocha|playwright\s+test|\btest:unit\b|--runInBand/i
@@ -269,16 +282,21 @@ export const PRODUCER_SYSTEM_PROMPT = [
   'You maintain the working state of a coding session. You are given:',
   '  · the previous state (if any),',
   '  · the user messages that carry constraints and intent,',
-  '  · deterministic facts the host already extracted (files touched, commands run, tests run).',
+  '  · deterministic facts the host already extracted (files touched, commands run, tests run),',
+  '  · <citable_entries>: the ONLY evidence ids you are allowed to cite.',
   '',
-  'Reply with ONE JSON object and nothing else. Fields (all optional, all arrays of short strings unless noted):',
+  'Reply with ONE JSON object and nothing else. Fields (all optional):',
   '  objective (string, one line, what the user is trying to achieve),',
   '  currentPhase (string, short),',
   '  currentState, decisions, constraints, completed, failedAttempts, unresolved, nextActions, assumptions, hypothesis.',
   '',
+  'Each list item is either a short string, or an object {"text": "...", "entryIds": ["<id>"]} when you can point at the evidence it came from.',
+  '',
   'Rules:',
+  '  · Cite ids from <citable_entries> ONLY. Ids that appear in the previous state are NOT evidence: if something from the previous state still holds, restate it AND cite the current evidence for it.',
+  '  · An item without a valid citation is recorded as an unverified inference and is shown to the model as such — so cite when you can, and do not cite to decorate.',
   '  · Only state things you can support from the material given. If unsure, leave the array empty.',
-  '  · constraints must be things the USER actually required — quote their own words where possible.',
+  '  · constraints must be things the USER actually required — quote their own words where possible and cite the user entry.',
   '  · Do NOT invent files, commands or test results: the host owns those fields and will override yours.',
   '  · nextActions must be concrete and still pending; do not repeat completed work.',
   '  · Write values in the same language the user writes in.',
@@ -292,7 +310,7 @@ export const PRODUCER_SYSTEM_PROMPT = [
  * 不放整段对话 —— 那是 pi 自己摘要的活，不是状态生成的活（放进去只会
  * 让模型把状态写成聊天摘要，正是 §12.6 明确反对的）。
  */
-export function buildProducerPrompt({ previousTask, directives, evidence } = {}) {
+export function buildProducerPrompt({ previousTask, directives, evidence, citable } = {}) {
   const parts = []
   const previous = previousTask ? renderTaskState(previousTask) : ''
   parts.push('<previous_state>')
@@ -317,26 +335,100 @@ export function buildProducerPrompt({ previousTask, directives, evidence } = {})
   )
   parts.push('</verified_facts>')
   parts.push('')
+  /*
+   * 可引用清单（provenance 的锚点，第五轮外部意见 P0-③）。
+   *
+   * 为什么这份清单**只装本轮材料、不装上一版状态**：上一版状态里的 id 对模型是
+   * 「已经写在它眼前的结论」，把它也算成证据，等于允许「因为上一版这么说」当成依据 ——
+   * 错误语义就会一代一代传下去（递归固化）。只给本轮材料，模型想重复上一版的说法
+   * 就必须在**本轮**找到支撑；找不到就只能以「未验证推断」的形式存在，并被显式标注。
+   */
+  const citableList = Array.isArray(citable) ? citable : []
+  parts.push('<citable_entries>')
+  for (const item of citableList) parts.push(`- ${item.entryId} (${item.kind}) ${item.text}`)
+  if (!citableList.length) parts.push('(none)')
+  parts.push('</citable_entries>')
+  parts.push('')
   parts.push('Reply with the JSON object now.')
   return parts.join('\n')
+}
+
+/**
+ * 本次生成**可以引用**的证据条目（entryId + 类型 + 一行摘要）。
+ *
+ * 来源就是喂给模型的那三样材料的 id：用户原话（`directives`）与确定性 reducer 证据。
+ * `previous_state` 刻意**不在**其中 —— 见 `buildProducerPrompt` 里的说明。
+ */
+export function citableEntries({ directives, evidence, limit = 40, maxLength = 120 } = {}) {
+  const out = []
+  const seen = new Set()
+  const push = (entryId, kind, text) => {
+    if (typeof entryId !== 'string' || !entryId || seen.has(entryId) || out.length >= limit) return
+    seen.add(entryId)
+    out.push({ entryId, kind, text: firstLine(text, maxLength) })
+  }
+  for (const d of Array.isArray(directives) ? directives : []) push(d?.entryId, 'user', d?.text)
+  for (const f of evidence?.files ?? []) push(f?.source?.entryId, 'file', f?.path)
+  for (const c of evidence?.commandsRun ?? []) push(c?.source?.entryId, 'tool', c?.command)
+  for (const t of evidence?.testsRun ?? []) push(t?.source?.entryId, 'tool', t?.command)
+  return out
+}
+
+/**
+ * 校验模型给出的引用：**只认本轮可引用清单里的 id**。
+ *
+ * 返回 `{ ok, bad }` —— 合法的留给 `toEntries` 决定档次，非法的记下来进诊断
+ * （「模型引用了什么不存在的 id」本身就是排查漂移的信号）。
+ */
+export function verifyEntryRefs(entryIds, citable) {
+  const known = new Map(
+    (Array.isArray(citable) ? citable : []).filter((c) => c && typeof c.entryId === 'string').map((c) => [c.entryId, c])
+  )
+  const ok = []
+  const bad = []
+  const seen = new Set()
+  for (const id of Array.isArray(entryIds) ? entryIds : []) {
+    if (typeof id !== 'string' || !id || seen.has(id)) continue
+    seen.add(id)
+    const hit = known.get(id)
+    if (hit) ok.push(hit)
+    else bad.push(id)
+  }
+  return { ok, bad }
 }
 
 /* ══════════════════════════════════════════════════════════════════
  * ③ 解析与清洗（模型输出不可信）
  * ══════════════════════════════════════════════════════════════════ */
 
-function stringList(value, limit, maxLength) {
+/**
+ * 解析一个**列表型**语义字段：条目可以是裸字符串，也可以是 `{ text, entryIds }`。
+ *
+ * 留著 `entryIds` 是 provenance 的入口（第五轮外部意见 Q1 的 P0-③）：
+ * 指得出证据的条目才能落成 `observed` / `derived`，指不出的一律 `hypothesis`。
+ * 同一句话说了两遍时**把引用并起来**而不是丢掉后一份的证据。
+ */
+function entryList(value, limit, maxLength) {
   if (!Array.isArray(value)) return []
   const out = []
-  const seen = new Set()
+  const byText = new Map()
   for (const item of value) {
-    if (typeof item !== 'string') continue
-    const text = item.replace(/\s+/g, ' ').trim()
+    const rawText = typeof item === 'string' ? item : item && typeof item === 'object' ? item.text : ''
+    if (typeof rawText !== 'string') continue
+    const text = rawText.replace(/\s+/g, ' ').trim()
     if (!text) continue
     const clipped = text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text
-    if (seen.has(clipped)) continue
-    seen.add(clipped)
-    out.push(clipped)
+    const refs = Array.isArray(item?.entryIds)
+      ? item.entryIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim())
+      : []
+    const existing = byText.get(clipped)
+    if (existing) {
+      for (const id of refs) if (!existing.entryIds.includes(id)) existing.entryIds.push(id)
+      continue
+    }
+    const entry = { text: clipped, entryIds: refs }
+    byText.set(clipped, entry)
+    out.push(entry)
     if (out.length >= limit) break
   }
   return out
@@ -364,6 +456,9 @@ export function extractJsonObject(text) {
  *
  * 白名单 + 逐字段裁剪 + 去重。`objective` 缺失即视为这次生成失败 ——
  * 没有目标的「状态」就是一份剪辑过的聊天记录，会误导模型。
+ *
+ * 列表项保留模型给的 `entryIds`（不在这里校验 —— 校验要拿到本轮可引用清单，
+ * 那是 `toEntries` 的活）。
  */
 export function parseProducerOutput(text) {
   const raw = extractJsonObject(text)
@@ -373,15 +468,15 @@ export function parseProducerOutput(text) {
   const value = {
     objective: objective.length > CLIP_LIMITS.textLength ? objective.slice(0, CLIP_LIMITS.textLength - 1) + '…' : objective,
     currentPhase: typeof raw.currentPhase === 'string' ? raw.currentPhase.replace(/\s+/g, ' ').trim().slice(0, 80) : '',
-    currentState: stringList(raw.currentState, CLIP_LIMITS.currentState, CLIP_LIMITS.textLength),
-    decisions: stringList(raw.decisions, CLIP_LIMITS.decisions, CLIP_LIMITS.textLength),
-    constraints: stringList(raw.constraints, CLIP_LIMITS.constraints, CLIP_LIMITS.textLength),
-    completed: stringList(raw.completed, CLIP_LIMITS.completed, CLIP_LIMITS.textLength),
-    failedAttempts: stringList(raw.failedAttempts, CLIP_LIMITS.failedAttempts, CLIP_LIMITS.textLength),
-    unresolved: stringList(raw.unresolved, CLIP_LIMITS.unresolved, CLIP_LIMITS.textLength),
-    nextActions: stringList(raw.nextActions, CLIP_LIMITS.nextActions, CLIP_LIMITS.textLength),
-    assumptions: stringList(raw.assumptions, CLIP_LIMITS.assumptions, CLIP_LIMITS.textLength),
-    hypothesis: stringList(raw.hypothesis, CLIP_LIMITS.hypothesis, CLIP_LIMITS.textLength)
+    currentState: entryList(raw.currentState, CLIP_LIMITS.currentState, CLIP_LIMITS.textLength),
+    decisions: entryList(raw.decisions, CLIP_LIMITS.decisions, CLIP_LIMITS.textLength),
+    constraints: entryList(raw.constraints, CLIP_LIMITS.constraints, CLIP_LIMITS.textLength),
+    completed: entryList(raw.completed, CLIP_LIMITS.completed, CLIP_LIMITS.textLength),
+    failedAttempts: entryList(raw.failedAttempts, CLIP_LIMITS.failedAttempts, CLIP_LIMITS.textLength),
+    unresolved: entryList(raw.unresolved, CLIP_LIMITS.unresolved, CLIP_LIMITS.textLength),
+    nextActions: entryList(raw.nextActions, CLIP_LIMITS.nextActions, CLIP_LIMITS.textLength),
+    assumptions: entryList(raw.assumptions, CLIP_LIMITS.assumptions, CLIP_LIMITS.textLength),
+    hypothesis: entryList(raw.hypothesis, CLIP_LIMITS.hypothesis, CLIP_LIMITS.textLength)
   }
   return { ok: true, value }
 }
@@ -414,18 +509,64 @@ export function matchDirective(text, directives) {
   return null
 }
 
-function toEntries(list, now, { userMatched = false, directives = null } = {}) {
-  return list.map((text) => {
+/**
+ * 把一个语义字段的条目变带 provenance 的 `StateEntry`。
+ *
+ * 三档（优先级从高到低）：
+ *   ① 命中了用户原话（`matchDirective`）→ `user` / `observed`，带那个 user 条目的 entryId；
+ *   ② 模型给了**本轮可引用清单里**的 id → 引用 user 消息记 `expected` 级的 `observed`，
+ *      引用工具/文件结果记 `derived`（从观察到的事实推出来的）；
+ *   ③ 什么都没指出来 → `model` / `hypothesis`，并在渲染时显式标成未验证 ——
+ *      这是「错误语义不能靠上一版延续」的落点：上一版的 id 不在可引用清单里。
+ */
+function toEntries(list, now, { userMatched = false, directives = null, citable = null } = {}) {
+  return (Array.isArray(list) ? list : []).map((item) => {
+    const text = typeof item === 'string' ? item : String(item?.text ?? '')
+    const refs = typeof item === 'string' ? [] : item?.entryIds
     const hit = userMatched ? matchDirective(text, directives) : null
-    return {
-      text,
-      status: 'active',
-      source: hit
-        ? { kind: 'user', ...(hit.entryId ? { entryId: hit.entryId } : {}), confidence: 'observed' }
-        : { kind: 'model', confidence: 'hypothesis' },
-      updatedAt: now
+    if (hit) {
+      return {
+        text,
+        status: 'active',
+        source: { kind: 'user', ...(hit.entryId ? { entryId: hit.entryId } : {}), confidence: 'observed' },
+        updatedAt: now
+      }
     }
+    const verified = verifyEntryRefs(refs, citable)
+    if (verified.ok.length) {
+      const first = verified.ok[0]
+      return {
+        text,
+        status: 'active',
+        source: {
+          /* TS schema 只允许 `user` / `tool` 带 entryId */
+          kind: first.kind === 'user' ? 'user' : 'tool',
+          entryId: first.entryId,
+          confidence: first.kind === 'user' ? 'observed' : 'derived'
+        },
+        updatedAt: now
+      }
+    }
+    return { text, status: 'active', source: { kind: 'model', confidence: 'hypothesis' }, updatedAt: now }
   })
+}
+
+/**
+ * 数一下一份 TaskState 里的 provenance 分布（诊断用，**不落盘**）。
+ *
+ * 为什么单独给个函数而不是塞进 `mergeTaskState` 的返回值：那个返回值会被直接
+ * 当作状态主体写盘，多挂一个字段会污染 schema（主进程会直接判非法）。
+ */
+export function provenanceCounts(task) {
+  const counts = { observed: 0, derived: 0, hypothesis: 0 }
+  for (const key of SEMANTIC_LIST_FIELDS) {
+    for (const item of Array.isArray(task?.[key]) ? task[key] : []) {
+      const confidence = item?.source?.confidence
+      if (confidence && Object.prototype.hasOwnProperty.call(counts, confidence)) counts[confidence] += 1
+    }
+  }
+  counts.total = counts.observed + counts.derived + counts.hypothesis
+  return counts
 }
 
 /**
@@ -435,18 +576,22 @@ function toEntries(list, now, { userMatched = false, directives = null } = {}) {
  *   ① `files` / `commandsRun` / `testsRun` / `symbolsTouched` **只能**来自 reducer ——
  *      模型给的同名字段一律丢弃（防幻觉污染 durable state，§16.6.1）；
  *   ② 上一版里 `status !== 'active'` 的条目原样保留（那是历史，不是垃圾）；
- *   ③ `constraints` 命中用户原话就带上 `entryId`（可校验），否则标 hypothesis。
+ *   ③ 语义条目的证据：命中用户原话 → `observed`；指得出**本轮**可引用 id → `observed`/`derived`；
+ *      什么都指不出 → `hypothesis`（渲染时会显式标注，见 `activeTexts`）。
+ *
+ * `citable` 必须与本轮 `buildProducerPrompt` 用的是同一份 —— 否则会出现
+ * 「提示词说能引，落盘时又不认」的静默降级。
  *
  * @returns {object|null} 合法则返回 TaskState，`objective` 缺失返回 null
  */
-export function mergeTaskState({ semantics, evidence, previous, directives, now } = {}) {
+export function mergeTaskState({ semantics, evidence, previous, directives, citable, now } = {}) {
   if (!semantics?.objective) return null
   const at = Number.isFinite(now) ? now : Date.now()
   const prev = previous && typeof previous === 'object' ? previous : null
 
   const keptInactive = (key) => (Array.isArray(prev?.[key]) ? prev[key].filter((item) => item && item.status !== 'active' && typeof item.text === 'string') : [])
 
-  const mergeEntries = (key, list, opts) => [...toEntries(list, at, opts), ...keptInactive(key)]
+  const mergeEntries = (key, list, opts) => [...toEntries(list, at, { ...opts, citable }), ...keptInactive(key)]
 
   return {
     task: {

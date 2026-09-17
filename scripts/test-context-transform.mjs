@@ -269,6 +269,32 @@ export async function runContextTransformTests(ok, deps) {
     ok(text.includes('ctx://tool/m3'), '归档引用出现在块里（告诉模型去哪里查）')
     ok(T.renderTaskState({ task: { objective: 'x', currentPhase: 'y' } }) === '', '只有标题、没有内容的空状态不注入')
 
+    /*
+     * provenance 的**可见面**（第五轮外部意见 Q1 的 P0-③）：没有证据引用的语义条目
+     * 必须在注入时显式标出来。否则模型读到的就是「上一版已经认定的结论」，
+     * 错误语义会一代代传下去 —— 这一步是断递归的最后一环，也是**模型唯一能看到**的一环。
+     */
+    const withInferred = {
+      ...task,
+      nextActions: [
+        { text: '推断的下一步', status: 'active', source: { kind: 'model', confidence: 'hypothesis' }, updatedAt: 1 },
+        { text: '有证据的下一步', status: 'active', source: { kind: 'tool', entryId: 'm4', confidence: 'derived' }, updatedAt: 1 }
+      ]
+    }
+    const inferredText = T.renderTaskState(withInferred)
+    ok(/推断的下一步.*\[inferred/.test(inferredText), 'hypothesis 条目带 inferred 标记')
+    ok(!/有证据的下一步.*\[inferred/.test(inferredText), 'derived 条目不带 inferred 标记')
+    ok(inferredText.includes('not ground truth'), '标记不替代 authority 契约（两者都要有）')
+
+    const bothMarks = {
+      ...task,
+      assumptions: [
+        { text: '又旧又没证据', status: 'active', stale: true, source: { kind: 'model', confidence: 'hypothesis' }, updatedAt: 1 }
+      ]
+    }
+    const bothText = T.renderTaskState(bothMarks)
+    ok(/又旧又没证据.*\[stale.*inferred/.test(bothText), 'stale 与 inferred 同时出现时两个都标（不互相掩盖）')
+
     const { messages, injected } = T.injectTaskState(messagesOf(branchFixture()), text)
     ok(injected && messages[0].customType === 'yan-task-state', 'Task State 插在最前（历史之前）')
     ok(messages.length === 8, '只加一条（不复制历史）')
