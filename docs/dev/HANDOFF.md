@@ -56,7 +56,7 @@ D01–D06 的文档/注释漂移已按当前实现改写。
 | D01 | `docs/dev/TESTING.md`：区分**默认接管集**（tool-sweep + recall + compaction）与显式只配 compaction |
 | D02 | `context.js` 的 `session_before_compact` 注释改写为 freshness 分档 + `requiredFields` 默认空；`docs/PROJECT.md` §2.13 同步 |
 | D03 | `docs/PROJECT.md` §2.2：pi 负责切换/分支运行语义，Yan 解析 JSONL 还原**显示历史** |
-| D04 | HANDOFF / PRIORITY 的待拍板项收敛为**只剩 `episode-fold` 默认开关**，§13.5 三问标为已随实现定下（保留原文供回溯） |
+| D04 | HANDOFF / PRIORITY 的待拍板项收敛为**只剩 `episode-fold` 默认开关** —— 该开关**已于 2026-09-18 拍板：进默认接管集**（[方案 §17.5.7](../design/方案-上下文工具内的自动压缩-2026-09-15.md) / [归档 §1.22](../archive/2026-09-17-已完成归档.md)），**待拍板项现在为零**；§13.5 三问标为已随实现定下（保留原文供回溯） |
 | D05 | `scripts/test-live.mjs` 的 settings 注释改成当前设置布局 + 记忆移除边界 |
 | D06 | `docs/WORKSPACE.md`：pi-extensions 职责补全（浏览器/提问/语言/详细度/上下文） |
 
