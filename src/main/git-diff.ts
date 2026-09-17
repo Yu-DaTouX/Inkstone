@@ -146,8 +146,8 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
 
   const diffArgs = diffArgv(args)
   const [rawRes, numstatRes] = await Promise.all([
-    gitRun(repo.root, ['--raw', '-z', '-M', '--no-color', ...diffArgs], { allowFailure: true }),
-    gitRun(repo.root, ['--numstat', '-z', '-M', '--no-color', ...diffArgs], { allowFailure: true })
+    gitRun(repo.root, ['diff', '--raw', '-z', '-M', '--no-color', ...diffArgs], { allowFailure: true }),
+    gitRun(repo.root, ['diff', '--numstat', '-z', '-M', '--no-color', ...diffArgs], { allowFailure: true })
   ])
   if (!rawRes.ok && !numstatRes.ok && !rawRes.stdout && !numstatRes.stdout) {
     return {
@@ -161,9 +161,31 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
   const raw = parseDiffRaw(rawRes.stdout)
   const numstat = parseNumstat(numstatRes.stdout)
 
+  /*
+   * `git status` 给出的是**仓库全局**状态，而我们要的是**这个范围**里的文件。
+   * 不过滤的后果很具体（真实仓库测试抓到的）：选了「未暂存」却把
+   * 只暂存过的文件也列出来，选了「已暂存」还把未跟踪文件混在里面 ——
+   * 两个范围给出同一份清单，用户根本分不出自己在看什么。
+   */
+  const statusForScope: typeof status = {
+    ...status,
+    entries: args.needStatus
+      ? status.entries.filter((e) => {
+          if (e.ignored) return false
+          if (e.untracked) return scopeHasUntracked(q.scope)
+          if (e.unmerged) return true
+          const inIndex = e.x !== '.' && e.x !== ' '
+          const inWorktree = e.y !== '.' && e.y !== ' '
+          if (q.scope.kind === 'staged') return inIndex
+          if (q.scope.kind === 'unstaged') return inWorktree
+          return true
+        })
+      : []
+  }
+
   /* 未跟踪文件：只在工作区侧的范围里出现，且**只能**从 status 拿 */
   const untrackedLines: Record<string, number> = {}
-  const untrackedMeta: Record<string, { size: number; mtimeMs: number }> = {}
+  const untrackedMeta: Record<string, { size: number; mtimeMs: number; binary?: boolean }> = {}
   const lfsPaths: string[] = []
   if (scopeHasUntracked(q.scope)) {
     const untracked = status.entries.filter((e) => e.untracked).slice(0, MAX_FILES)
@@ -172,13 +194,20 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
         const meta = await readUntrackedMeta(join(repo.root, e.path))
         if (!meta) return
         untrackedLines[e.path] = meta.lines
-        untrackedMeta[e.path] = { size: meta.size, mtimeMs: meta.mtimeMs }
+        untrackedMeta[e.path] = { size: meta.size, mtimeMs: meta.mtimeMs, binary: meta.binary }
         if (meta.lfs) lfsPaths.push(e.path)
       })
     )
   }
 
-  const all = buildChangedFiles({ raw, numstat, status, untrackedLines, untrackedMeta, lfsPaths })
+  const all = buildChangedFiles({
+    raw,
+    numstat,
+    status: statusForScope,
+    untrackedLines,
+    untrackedMeta,
+    lfsPaths
+  })
   const files = all.slice(0, MAX_FILES)
   const truncated = all.length > files.length
   const stats = summarize(files, truncated)
@@ -278,7 +307,7 @@ export async function filePatch(q: FileQuery): Promise<GitFilePatch> {
 
   const res = await gitRun(
     repo.root,
-    ['--no-color', '-M', ...diffArgv(args), '--', ...paths],
+    ['diff', '--no-color', '-M', ...diffArgv(args), '--', ...paths],
     { allowFailure: true }
   )
   const parsed = parseUnifiedDiff(res.stdout)
@@ -333,7 +362,7 @@ async function synthesizeAdded(repo: RepoIdentity, path: string, q: FileQuery): 
   if (!meta) {
     return { ...failPatch(q, '文件读不出来（可能已被删除）'), path }
   }
-  const kind: GitFileKind = classifyKind(path, { size: meta.size, lfs: meta.lfs })
+  const kind: GitFileKind = classifyKind(path, { size: meta.size, lfs: meta.lfs, binary: meta.binary })
   if (kind !== 'text') {
     return {
       ok: true,

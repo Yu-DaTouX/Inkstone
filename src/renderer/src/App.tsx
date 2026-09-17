@@ -47,6 +47,8 @@ import './styles/chat.css'
 import './styles/composer.css'
 import './styles/tools.css'
 import './styles/browser.css'
+/* 审查与环境菜单（方案 G1）：与其它模块化层同为最后加载 */
+import './styles/review.css'
 
 /**
  * 超过这么多条消息才开启虚拟化。
@@ -114,6 +116,12 @@ export default function App() {
   const toggleRightPanel = useStore((s) => s.toggleRightPanel)
   /* 浏览器开关与工具栏独立：入口在标题栏，收起工具栏不影响浏览器 */
   const browserOpen = useStore((s) => s.browserState.open)
+  /*
+   * 审查打开时右栏要加宽（CSS 里 `.app.review-on` 把 --w-right 换成审查档位）。
+   * 放在 `.app` 而不是 aside 上：宽度是 grid 的列定义（.workspace），
+   * 而 `.workspace` 不是 aside 的子元素，它拿不到 aside 上的类。
+   */
+  const reviewOpen = useStore((s) => s.reviewOpen)
   const openBrowser = useStore((s) => s.openBrowser)
   const closeBrowser = useStore((s) => s.closeBrowser)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
@@ -455,7 +463,8 @@ export default function App() {
   const appCls = [
     'app',
     !railOpen && 'rail-off',
-    railPinned && 'rail-pinned'
+    railPinned && 'rail-pinned',
+    reviewOpen && 'review-on'
   ]
     .filter(Boolean)
     .join(' ')

@@ -192,6 +192,8 @@ export interface GitRepoState {
   behind: number
   /** 当前分支是否被**别的**工作树占用（切换分支前的提示来源） */
   busyBranches: string[]
+  /** 变更文件总数（**去重**：同一文件既有暂存又有未暂存只算一个） */
+  changedCount: number
   stagedCount: number
   unstagedCount: number
   untrackedCount: number
@@ -552,8 +554,8 @@ export function buildChangedFiles(input: {
   status: GitStatusParse
   /** 未跟踪文件的行数（主进程有界统计；拿不到时给 0） */
   untrackedLines: Record<string, number>
-  /** 未跟踪文件的大小与 mtime，用于指纹与 kind 判定 */
-  untrackedMeta: Record<string, { size: number; mtimeMs: number }>
+  /** 未跟踪文件的大小、mtime 与二进制判据（决定界面用文本还是「无法显示」） */
+  untrackedMeta: Record<string, { size: number; mtimeMs: number; binary?: boolean }>
   /** 未跟踪文件是否 LFS 指针 */
   lfsPaths?: string[]
 }): GitChangedFile[] {
@@ -602,7 +604,15 @@ export function buildChangedFiles(input: {
     if (n.oldPath && !f.oldPath) f.oldPath = key(n.oldPath)
     f.additions = n.additions
     f.deletions = n.deletions
-    if (n.binary) f.kind = f.kind === 'submodule' ? 'submodule' : 'binary'
+    /*
+     * 二进制标记要**重新走一遍 classifyKind**，不能直接写成 'binary'。
+     * 原因：图片在 git 眼里也是二进制（`--numstat` 给 `-`），但界面必须走
+     * 图片前后对照。直接覆盖会把 png/jpg 变成「无法显示文本差异」——
+     * 这正是真实仓库测试（pic.png）抳到的那条。
+     */
+    if (n.binary) {
+      f.kind = classifyKind(n.path, { binary: true, mode: rawByPath.get(key(n.path))?.newMode })
+    }
   }
 
   /* 3. status：未跟踪、未合并，以及 index / 工作区的**双状态** */
@@ -620,6 +630,7 @@ export function buildChangedFiles(input: {
       f.newFingerprint = meta ? `u:${meta.size}:${Math.round(meta.mtimeMs)}` : 'u:0:0'
       f.kind = classifyKind(e.path, {
         size: meta?.size,
+        binary: meta?.binary,
         lfs: lfs.has(key(e.path))
       })
       continue

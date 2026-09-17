@@ -1,6 +1,6 @@
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { shortProject } from '../rail/rail-utils'
+import { EnvironmentMenu } from '../review/EnvironmentMenu'
 
 /**
  * 主区域顶部 —— 对齐 Codex 的头部。
@@ -8,6 +8,10 @@ import { shortProject } from '../rail/rail-utils'
  * 一行两件东西：
  *   左：会话标题（优先用**模型总结**出来的短标题）
  *   右：所属项目胶囊（没有工作目录时明确写「无项目」）
+ *
+ * 项目胶囊现在是**环境菜单的入口**（方案 G1 §3.1）：点开能看到变更、
+ * 工作目录、当前分支、Pull Request 与比较分支。以前它只是一个静态标签，
+ * 而「我现在跑在哪个环境里」是用户最需要随时确认的一件事。
  *
  * 「上次聊到 …」那一行**已删除** ——
  *   它是设计稿里的连续性提示，但实际用起来：
@@ -21,7 +25,6 @@ export function SessionHeader() {
   const session = useStore((s) => s.session)
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
-  const cwd = useStore((s) => s.settings?.cwd)
 
   /**
    * 标题取值顺序：
@@ -40,9 +43,6 @@ export function SessionHeader() {
     fromList ||
     (fromFirst ? truncate(fromFirst, 60) : t('header.untitled'))
 
-  // 项目：会话自己的 cwd 优先（切到历史会话时应显示那个会话的项目）
-  const project = session?.cwd ?? cwd
-
   return (
     <div className="shead" data-testid="session-header">
       <div className="shead-row">
@@ -50,17 +50,8 @@ export function SessionHeader() {
           {title}
         </h1>
 
-        {/* 项目胶囊：没有工作目录时明确说「无项目」，不要留空 */}
-        <span
-          className={`shead-proj ${project ? '' : 'none'}`}
-          title={project ?? t('header.noProject')}
-          data-testid="session-project"
-        >
-          <span className="shead-proj-ico">{project ? '▸' : '·'}</span>
-          <span className="shead-proj-name">
-            {project ? shortProject(project) : t('header.noProject')}
-          </span>
-        </span>
+        {/* 环境菜单（项目胶囊即入口）：变更 / 本地 / 分支 / PR / 比较分支 */}
+        <EnvironmentMenu />
 
         {/*
          * 模型胶囊**已删**（用户要求）。

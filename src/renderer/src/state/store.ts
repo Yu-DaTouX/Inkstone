@@ -16,6 +16,7 @@ import type {
   ChromeSyncReport,
   ExtensionUiRequest,
   FilePreview,
+  GitScopeRequest,
   MainPush,
   MessagePatch,
   ModelInfo,
@@ -209,6 +210,19 @@ interface Store {
   browserState: BrowserState
   /** 右侧的只读文件预览（消息里的文件链接 / 拖入的文件） */
   filePreview: FilePreviewState | null
+  /**
+   * Git 审查面板是否打开（方案 G1）。
+   *
+   * 它是右栏的详情视图之一，但**优先级最高**（审查打开时不需要再同时
+   * 看文件预览 / 子代理详情）。放 store 而不是组件 state 的原因：
+   * 环境菜单（会话头部）、审查入口按钮、右栏分属三个组件。
+   */
+  reviewOpen: boolean
+  /** 当前审查范围（用户选过的要保留，下次打开还是它） */
+  reviewScope: GitScopeRequest
+  openReview: (scope?: GitScopeRequest) => void
+  closeReview: () => void
+  setReviewScope: (scope: GitScopeRequest) => void
   /** 子代理运行列表（方案第 8 节） */
   subagents: SubagentRun[]
   /** 右侧正在看的子代理（null = 没开） */
@@ -781,6 +795,8 @@ export const useStore = create<Store>((rawSet, get) => {
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   filePreview: null,
+  reviewOpen: false,
+  reviewScope: { kind: 'working' },
   subagents: [],
   subagentPreviewId: null,
   zoom: null,
@@ -1868,6 +1884,26 @@ export const useStore = create<Store>((rawSet, get) => {
    *    光在 DOM 里画一个预览面板是**看不见**的，必须让主进程
    *    把原生视图 setVisible(false)；关预览时再恢复。
    */
+  /*
+   * Git 审查（方案 G1）。
+   *
+   * 与 `previewFile` 同一套原生视图规则：审查占的是右栏区域，而原生
+   * `WebContentsView` 永远盖在 DOM 之上 —— 不把它藏起来，审查面板
+   * 会被浏览器盖住（看起来像「审查没打开」）。
+   */
+  openReview: (scope) => {
+    set({ reviewOpen: true, ...(scope ? { reviewScope: scope } : {}) })
+    /* 审查就在右栏里 —— 用户点名要看它，右栏收着就把它展开 */
+    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+    if (get().browserState.open) void window.yan.browser.setVisible(false)
+  },
+  closeReview: () => {
+    set({ reviewOpen: false })
+    /* 浏览器还开着 → 把原生视图恢复出来 */
+    if (get().browserState.open) void window.yan.browser.setVisible(true)
+  },
+  setReviewScope: (scope) => set({ reviewScope: scope }),
+
   previewFile: async (path, line, cwd) => {
     set({ filePreview: { path, cwd, line, loading: true, data: null } })
     if (get().browserState.open) void window.yan.browser.setVisible(false)

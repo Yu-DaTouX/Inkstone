@@ -302,6 +302,12 @@ export async function readRepoState(cwd: string, opts: { withRefs?: boolean } = 
     ahead: status.ahead,
     behind: status.behind,
     busyBranches: refs?.busyBranches ?? [],
+    /*
+     * 去重后的变更文件数。
+     * 不能拿 `stagedCount + unstagedCount` 当总数：一个文件同时有暂存与
+     * 未暂存部分时会被算两次（方案 §4.1 指出的同一类错，只是单位是文件）。
+     */
+    changedCount: status.entries.filter((e) => !e.ignored).length,
     stagedCount,
     unstagedCount,
     untrackedCount,
@@ -367,6 +373,8 @@ export interface UntrackedMeta {
   lines: number
   truncated: boolean
   lfs: boolean
+  /** 前 8000 字节里含 NUL —— 与 git 自己的二进制判据（buffer_is_binary）同一套 */
+  binary: boolean
 }
 
 export async function readUntrackedMeta(absPath: string): Promise<UntrackedMeta | null> {
@@ -378,11 +386,19 @@ export async function readUntrackedMeta(absPath: string): Promise<UntrackedMeta 
       mtimeMs: s.mtimeMs,
       lines: 0,
       truncated: false,
-      lfs: false
+      lfs: false,
+      binary: false
     }
     if (s.size === 0) return meta
     const buf = await readFile(absPath).catch(() => null)
     if (!buf) return meta
+    /*
+     * 二进制嗅探用 git 的同一套判据（前 8000 字节里的 NUL）。
+     * 不嗅探的后果很具体：一个未跟踪的 .bin / .exe 会被判成 text，
+     * 然后 `filePatch` 用 `readFile(utf8)` 读它 —— 界面里会出现一屏乱码
+     * （还是“看起来读到了”的那种）。
+     */
+    meta.binary = buf.subarray(0, 8000).includes(0)
     const text = buf.toString('utf8')
     meta.lfs = text.startsWith('version https://git-lfs.github.com/spec')
     const slice = buf.length > UNTRACKED_READ_LIMIT ? buf.subarray(0, UNTRACKED_READ_LIMIT).toString('utf8') : text

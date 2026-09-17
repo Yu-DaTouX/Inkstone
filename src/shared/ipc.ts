@@ -11,6 +11,34 @@
  * 两边都要用的纯逻辑（回合分组、链接判定、模型能力归一化）放在本层，
  * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
+import type {
+  GitContentSide,
+  GitFileContent,
+  GitFilePatch,
+  GitRefOption,
+  GitRepoState,
+  GitReviewSnapshot,
+  GitScopeRequest
+} from './git'
+
+/* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
+   这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
+export type {
+  GitContentSide,
+  GitFileContent,
+  GitFilePatch,
+  GitRefOption,
+  GitRepoState,
+  GitReviewSnapshot,
+  GitScopeRequest,
+  GitChangedFile,
+  GitDiffHunk,
+  GitDiffLine,
+  GitFileKind,
+  GitFileStats,
+  GitScopeKind,
+  GitChangeStatus
+} from './git'
 
 /* RPC */
 
@@ -1587,6 +1615,40 @@ export type MainPush = MainPushBody & {
   sessionKey?: string
 }
 
+/** Git 审查的请求身份：`requestId` 由渲染端生成，迟到响应靠它丢弃。 */
+export interface GitReviewRequest {
+  /** 会话工作目录（主进程按它解析仓库；渲染端不能传任意命令） */
+  cwd: string
+  scope: GitScopeRequest
+  requestId: string
+}
+
+export interface GitReviewFileRequest extends GitReviewRequest {
+  path: string
+  oldPath?: string
+}
+
+/**
+ * Git 审查（方案 G1）。
+ *
+ * ⚠️ **只读**：这里没有任何 add / commit / checkout / reset。
+ * 打开审查、刷新、切换范围都不会改变用户的工作区与暂存区 ——
+ * 写操作会另开一组接口（G2 的 `git.actions`），因为它们需要
+ * 操作记录、并发协调与明确的用户确认。
+ */
+export interface GitBridge {
+  /** 仓库状态（环境菜单）。非 Git 目录返回 `repo: null`，**不是错误** */
+  state(cwd: string): Promise<{ repo: GitRepoState | null; error?: string }>
+  /** 可选基准（本地 / 远程跟踪 / 标签）与被**其它**工作树占用的分支 */
+  refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
+  /** 变更清单（**不含正文**；正文按文件懒加载，避免大 diff 进每次响应） */
+  snapshot(req: GitReviewRequest): Promise<GitReviewSnapshot>
+  /** 单文件 diff（结构化 hunk，渲染端做折叠 / 行号 / 高亮） */
+  patch(req: GitReviewFileRequest & { untracked?: boolean }): Promise<GitFilePatch>
+  /** 某一侧的文件内容（图片预览、缺失侧判断、「显示完整文件」） */
+  content(req: GitReviewFileRequest & { side: GitContentSide }): Promise<GitFileContent>
+}
+
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
 export interface YanBridge {
   /* 会话控制 */
@@ -1871,6 +1933,9 @@ export interface YanBridge {
 
   /* 子代理（方案第 8 节） */
   subagents: SubagentBridge
+
+  /* Git 审查（方案 G1，只读） */
+  git: GitBridge
 
   /* 内置浏览器 */
   browser: {
