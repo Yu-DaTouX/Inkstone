@@ -229,12 +229,14 @@
     const railW = document.querySelector('.rail-slot')?.getBoundingClientRect().width ?? 0
     out.push('  收起后 rail-slot 宽 = ' + railW.toFixed(1))
     /*
-     * ⚠️ 设计变更（ 2026-09 评审）：收起态不再是 0 宽，而是 48px 紧凑快捷轨
-     *    （开关仍在标题栏，两者并存）。旧断言「必须 0 宽」已过时。
+     * ⚠️ 断言跟着设计走（2026-09 再次变更）：收起态**就是真的 0 宽**，
+     * 不再有 48px 紧凑轨 —— 源码里 `rail-compact` 已经不存在了。
+     * 保留宽度会把导航轨位置带偏（用户报的错位），所以改回 0 宽、
+     * 入口只留标题栏那一个（位置与面板收放无关）。
+     * 这条断言之前一直在找一个已经不存在的元素，是**过时的探针**，不是回归。
      */
-    const compactN = document.querySelectorAll('.rail-compact button').length
-    if (Math.abs(railW - 48) < 1 && compactN > 0) ok(`收起 = 48px 紧凑轨（${compactN} 个快捷入口）`)
-    else bad(`收起态不对：宽 ${railW.toFixed(1)}px，紧凑按钮 ${compactN} 个`)
+    if (railW < 1) ok('收起 = 0 宽（入口只在标题栏）')
+    else bad(`收起态不对：宽 ${railW.toFixed(1)}px（应为 0）`)
     click(tbNow); await sleep(600)
     if (store.getState().railPinned) ok('点它 → 左栏展开')
     else bad('展不开')
@@ -260,6 +262,36 @@
     out.push('  展开后 .center 宽 = ' + document.querySelector('.center').getBoundingClientRect().width.toFixed(1) + '（右栏收起时 ' + centerCollapsed.toFixed(1) + '）')
   } catch (e) {
     bad('抛异常：' + (e && e.message ? e.message : String(e)))
+  }
+
+  /* ── 设置「关于」里的 pi 插件目录入口（方案 §9 的 P1）──────── */
+  out.push('')
+  out.push('=== pi 插件目录入口 ===')
+  if (!store?.getState().openSettings) {
+    bad('store 没有 openSettings')
+  } else {
+    /*
+     * 用 store 直接开设置并指定 tab：点 rail 按钮要求面板处于特定状态
+     * （收起态/紧凑态都会影响它），而这里要验的是「关于」里的入口。
+     */
+    store.getState().openSettings('about')
+    const seen = await until(() => !!document.querySelector('[data-testid="set-pi-catalog"]'), 5000)
+    if (!seen) bad('「关于」里没有 pi 插件目录入口')
+    else {
+      const row = document.querySelector('[data-testid="set-pi-catalog"]')
+      ok('「关于」里有 pi 插件目录入口')
+      if (document.querySelector('[data-testid="set-pi-catalog-open"]')) ok('入口带「打开」按钮')
+      else bad('入口缺「打开」按钮')
+      /*
+       * 这句是**实测结论**写在界面上：目录是网站、没有结构化数据接口，
+       * 所以只打开，不在应用内做一套会立刻过期的搜索与收录状态。
+       */
+      if (/没有结构化数据接口/.test(row.textContent ?? '')) ok('明说「目录没有结构化数据接口」（只打开、不伪造搜索）')
+      else bad('没说清为什么只给一个打开入口')
+      /* 不点「打开」：那会真的拉起内置浏览器窗口，影响后面的断言 */
+    }
+    store.getState().closeSettings()
+    await until(() => qa('.set-group').length === 0, 3000)
   }
 
   const failed = out.filter((l) => l.includes('✗')).length
