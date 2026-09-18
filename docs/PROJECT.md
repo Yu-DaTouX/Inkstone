@@ -342,6 +342,38 @@ exit 1，git 的 stderr 就是那一句，没有任何前缀）。所以分类�
 重试只重试推送。推送的 `expected` 用的是提交**之后**的 HEAD（继续用提交前的
 会被正确地拒成 stale —— 那正是复核在起作用的证据）。
 
+### 2.16 用户工作树（方案 §6.2，W1）
+
+```
+环境菜单「工作树」→ yan:git:worktrees / worktreeCreate / worktreeRemove
+                     └── main/git-worktree.ts
+```
+
+⚠️ **与子代理隔离工作树不是一回事**（改动前先看这一段）：
+
+| | 子代理（`subagent-isolation.ts`） | 用户（`git-worktree.ts`） |
+|---|---|---|
+| 位置 | 系统临时目录 `mkdtemp` | 仓库旁边的 `<仓库名>-worktrees/<分支 slug>` |
+| 分支 | `--detach`（不占分支名） | 新建分支（用户要能提交推送） |
+| 清理 | `worktree remove --force` + `rm -rf`（`cleanupWorkspace()`） | 先查三项、`worktree remove` **不带 force** |
+| 生命周期 | 一次任务 | 用户长期使用，关掉应用还在 |
+
+**创建**：起点（默认 HEAD，所以**未提交改动不会带过去** —— 这一点会在返回的
+notes 里明说）+ 新分支名 + 目标目录（默认在仓库旁边；**不能放在仓库内部**，
+那会变成未跟踪文件、还可能被下一次 `git add -A` 收进去）。分支已存在时
+**不静默复用**（用户输入的是新分支名）。
+
+**删除的三类拦截**（任一命中就拒绝，并把原因**逐条**列出；我们不替用户
+stash / 提交 / 丢弃）：未提交改动（带文件数）、未推送提交（**没有上游时明说
+「无法判断」**，不假定已推）、该工作树里有任务在跑。另外主工作树、被 git
+`locked` 的、以及**不在 `worktree list` 里的路径**一律拒绝 —— 最后一条是
+安全边界，否则这个接口就成了「用任意路径删目录」。
+
+**`-z` 的坑**：`git worktree list --porcelain -z` 是**每一行**以 NUL 结尾
+（字段之间也是 NUL），不是「记录之间 NUL、记录内部换行」。按后者解析会让
+`branch` 永远是 null。`parseWorktreeList` 与 `git-service.ts` 的
+`busyBranches` 都按「外层 NUL、内层再按换行切」处理，两种写法都能吃。
+
 ## 修改前按需阅读
 
 - 工作区规则：[AGENTS](../AGENTS.md)。

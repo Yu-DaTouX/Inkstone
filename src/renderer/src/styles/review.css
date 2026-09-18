@@ -1179,3 +1179,46 @@ button.env-item:hover {
 .env-menu .gwrite-ok {
   margin-top: 4px;
 }
+
+/* ── 工作树区（W1，方案 §6.2）────────────────────────────── */
+
+/*
+ * 一行一个工作树：分支名 + 标记 + 「移除」。
+ * 分支名用等宽（它是可以被复制去终端用的标识符），标记与按钮用界面字体。
+ */
+.env-worktree {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.env-worktree:hover {
+  background: var(--bg-2);
+}
+
+.env-worktree .env-branch-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.env-wt-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 0;
+  font-size: 11.5px;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+
+.env-wt-check input {
+  margin: 0;
+}
+
+/* 目标目录输入框占满一行（它比分支名长得多） */
+.env-wt-path {
+  width: calc(100% - 12px);
+  margin: 4px 6px 0;
+}
