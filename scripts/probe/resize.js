@@ -163,16 +163,13 @@
     const railBg = railEl ? getComputedStyle(railEl).backgroundColor : '?'
     const railBorder = railEl ? getComputedStyle(railEl).borderRightWidth : '?'
     out.push('  收起槽: 宽=' + slotAfter.toFixed(1) + ' slot背景=' + slotBg + ' rail背景=' + railBg + ' rail右边框=' + railBorder)
-    if (Math.abs(slotAfter - 48) < 1 && Math.abs(w('.rail') - 48) < 1) ok('收起后保留 48px 紧凑栏')
-    else bad('收起宽度不正确：slot=' + slotAfter + ' rail=' + w('.rail'))
-    const compactButtons = qa('.rail-compact > button')
     /*
-     * N14 之后紧凑栏多了项目文件夹（前 5 个 + 全部项目入口），
-     * 所以数量不再恒为 4；这里只钉「原来的四个基础入口都还在」。
+     * ⚠️ 当前设计：收起**就是真的 0 宽**（紧凑轨 .rail-compact 已移除，
+     * 入口只留标题栏那个开关）。原来这里断言「保留 48px 紧凑栏 + 四个基础按钮」，
+     * 那对应的是一个已经不存在的元素 —— 过时断言，不是回归。
      */
-    const baseN = compactButtons.filter((b) => !b.classList.contains('rail-compact-proj')).length
-    if (baseN === 4 && compactButtons.every((b) => b.getBoundingClientRect().width > 0)) ok('紧凑栏有四个可见基础按钮（另有项目入口）')
-    else bad('紧凑栏基础按钮数量或尺寸不正确：' + baseN + '/' + compactButtons.length)
+    if (slotAfter < 1 && w('.rail') < 1) ok('收起后左栏是 0 宽（整个让位给内容）')
+    else bad('收起宽度不正确：slot=' + slotAfter + ' rail=' + w('.rail'))
 
     // 展开回来（用标题栏的开关），并复位两个宽度，别把状态留给后面的场景
     store.getState().setRailPinned(true)
