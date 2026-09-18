@@ -425,6 +425,59 @@ function registerStubHandlers() {
   }))
   ipcMain.handle('yan:git:remotes', () => ['origin'])
   /*
+   * 会话来源（§8 的 S1）。视觉矩阵不跑 registerIpc，所有通道都要有桩 ——
+   * 这里给一张"已经关联过东西"的样子：一张图（缩略图用一个 1×1 的 PNG）、
+   * 一个文件、两条网页。
+   */
+  const png1x1 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  ipcMain.handle('yan:sources:list', () => ({
+    ok: true,
+    dir: 'C:/Users/me/AppData/Roaming/yan/sources/sess-1',
+    images: [
+      {
+        sourceId: 'image:aaaa1111bbbb2222cccc3333dddd4444',
+        sessionId: 'sess-1',
+        kind: 'image',
+        title: 'aaaa1111.png',
+        ref: 'C:/Users/me/AppData/Roaming/yan/sources/sess-1/aaaa1111bbbb2222cccc3333dddd4444.png',
+        fingerprint: 'aaaa1111bbbb2222cccc3333dddd4444',
+        origin: 'screenshot.png',
+        addedAt: Date.now() - 60_000,
+        available: true,
+        size: 20_480
+      }
+    ]
+  }))
+  ipcMain.handle('yan:sources:verifyFiles', () => [
+    {
+      sourceId: 'file:ffff9999eeee8888dddd7777',
+      sessionId: 'sess-1',
+      kind: 'file',
+      title: 'HANDOFF.md',
+      ref: 'C:/work/pi-desktop/docs/dev/HANDOFF.md',
+      fingerprint: '20480:1710000000000',
+      origin: 'C:/work/pi-desktop/docs/dev/HANDOFF.md',
+      addedAt: Date.now() - 120_000,
+      available: true
+    },
+    {
+      sourceId: 'file:0000111122223333',
+      sessionId: 'sess-1',
+      kind: 'file',
+      title: 'gone.md',
+      ref: 'C:/work/pi-desktop/gone.md',
+      fingerprint: '',
+      origin: 'C:/work/pi-desktop/gone.md',
+      addedAt: Date.now() - 180_000,
+      available: false,
+      error: '文件不在了（被删除或改名）'
+    }
+  ])
+  ipcMain.handle('yan:sources:readImage', () => ({ ok: true, base64: png1x1, mime: 'image/png' }))
+  ipcMain.handle('yan:sources:addImage', () => null)
+  ipcMain.handle('yan:sources:removeImage', () => ({ ok: true }))
+  /*
    * pi 包管理（§9 的 P2）。视觉矩阵**不跑 registerIpc**，所有通道都靠桩 ——
    * 少一个就会在界面上渲染成 "No handler registered for ..."（第一次跑就是
    * 这么发现漏了桩的）。这里给两条：一条装的、一条「登记着但磁盘上没有」
@@ -1465,8 +1518,8 @@ const STATES = {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(600);
       /* 先写一条关联，列表区才有内容可看 */
-      const box = document.querySelector('[data-testid="env-link-url"]');
-      const title = document.querySelector('[data-testid="env-link-title"]');
+      const box = document.querySelector('[data-testid="src-url"]');
+      const title = document.querySelector('[data-testid="src-title"]');
       if (box && title) {
         const set = (el, v) => {
           const d = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value');
@@ -1476,14 +1529,14 @@ const STATES = {
         set(box, 'https://github.com/o/pi-desktop/issues/42');
         set(title, '把手改可拖拽 · 落盘');
         await sleep(120);
-        document.querySelector('[data-testid="env-link-add"]')?.click();
+        document.querySelector('[data-testid="src-add-web"]')?.click();
         await sleep(400);
       }
       const menu = document.querySelector('.env-menu');
       if (menu) menu.scrollTop = menu.scrollHeight;
       await sleep(500);
       const ok =
-        document.querySelector('[data-testid="env-source-links"]') &&
+        document.querySelector('[data-testid="env-source-menu"]') &&
         document.querySelector('[data-testid="env-compare-web"]');
       return ok ? 'ok' : 'no-links';
     })()
@@ -1563,9 +1616,9 @@ const MUST_HAVE = {
   ],
   envlinks: [
     '[data-testid="env-menu"]',
-    '[data-testid="env-source-links"]',
-    '[data-testid="env-link-open"]',
-    '[data-testid="env-link-url"]',
+    '[data-testid="env-source-menu"]',
+    '[data-testid="src-list"]',
+    '[data-testid="src-url"]',
     '[data-testid="env-compare-web"]'
   ],
   envworktrees: [

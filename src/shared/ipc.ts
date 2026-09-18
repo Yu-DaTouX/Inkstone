@@ -1807,6 +1807,39 @@ export interface PackagesBridge {
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
+/* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
+
+export type SourceKindView = 'image' | 'file' | 'web'
+
+export interface SourceRefView {
+  sourceId: string
+  sessionId: string
+  kind: SourceKindView
+  title: string
+  /** 图片 = 我们存的副本；文件 = **用户原文件**（不复制）；网页 = URL */
+  ref: string
+  fingerprint: string
+  origin: string
+  addedAt: number
+  /** 资源还在不在（文件被删/改名要如实显示，不是静默消失） */
+  available: boolean
+  error?: string
+  size?: number
+}
+
+export interface SourcesBridge {
+  /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类） */
+  list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; error?: string }>
+  /** 存一张图片（base64，不带 data: 前缀）。同一份字节幂等 */
+  addImage(req: { sessionId: string; name: string; mimeType: string; base64: string }): Promise<SourceRefView | null>
+  /** 复核文件引用：还在不在、有没有被改过（我们不复制大文件） */
+  verifyFiles(req: { sessionId: string; entries: { path: string; name?: string; addedAt?: number }[] }): Promise<SourceRefView[]>
+  /** 移除**我们存的副本**。文件引用永远不删 —— 那是用户的原文件 */
+  removeImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; error?: string }>
+  /** 读回图片字节（缩略图） */
+  readImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; base64?: string; mime?: string; error?: string }>
+}
+
 export interface YanBridge {
   /* 会话控制 */
   /**
@@ -2093,6 +2126,8 @@ export interface YanBridge {
 
   /* Git 审查（方案 G1，只读） */
   /** pi 插件包管理（§9 的 P2）：只改 pi 自己的 settings，不动生成的 pi-runtime */
+  /** 会话来源的持久化资源引用（§8 的 S1）：只持有我们自己存的那份副本 */
+  sources: SourcesBridge
   packages: PackagesBridge
   git: GitBridge
 

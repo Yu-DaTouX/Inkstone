@@ -1336,3 +1336,130 @@ button.env-item:hover {
 .env-link-add .env-branch-input:nth-child(2) {
   flex: 2 1 0;
 }
+
+/* ── 来源菜单（方案 §8 的 S1）────────────────────────────── */
+
+/*
+ * 三类来源在一个列表里，所以每一行必须是**同一套骨架**：
+ * [缩略图 36×36] [标题 + 状态标签] [操作按钮]
+ * 缺一个都会让行高参差 —— 第一版忘了写这一整块，截图里就是标题和「已关联」
+ * 粘在一起、缩略图占不到位置。
+ */
+.src-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.src-thumb {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 4px;
+  border: 1px solid var(--line-1);
+  object-fit: cover;
+  background: var(--bg-2);
+}
+
+/* 缩略图还没读出来 / 读失败：留**同样大小**的占位，行高才不会跳 */
+.src-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-4);
+}
+
+.src-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid var(--line-1);
+  color: var(--fg-3);
+}
+
+.src-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.src-title {
+  font-size: 12px;
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.src-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.src-tag {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--line-1);
+  color: var(--fg-4);
+  white-space: nowrap;
+}
+
+/* 「文件不在了」是**异常状态**：要能一眼看到，但别吵 */
+.src-tag-bad {
+  color: var(--warn);
+  border-color: var(--warn);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 筛选：三类 + 全部。用同一套胶囊，选中的用 accent */
+.src-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.src-filter {
+  font-size: 10.5px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line-1);
+  background: none;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+
+.src-filter:hover:not(:disabled) {
+  color: var(--fg-1);
+  border-color: var(--fg-4);
+}
+
+.src-filter.sel {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.src-filter:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 列表自己滚：来源数量不该决定菜单高度 */
+.src-list {
+  max-height: 190px;
+  overflow-y: auto;
+  margin: 2px 0;
+}

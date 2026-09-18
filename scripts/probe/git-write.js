@@ -574,12 +574,12 @@
      * 给一个打不开的链接比不给更糟。
      */
     await openEnvMenu()
-    const links = await waitFor(() => testid('env-source-links'), 8000)
+    const links = await waitFor(() => testid('env-source-menu'), 8000)
     ok(!!links, '环境菜单里有「关联外部任务」区')
     if (links) {
-      const urlBox = testid('env-link-url')
-      const titleBox = testid('env-link-title')
-      const addBtn = testid('env-link-add')
+      const urlBox = testid('src-url')
+      const titleBox = testid('src-title')
+      const addBtn = testid('src-add-web')
       ok(!!urlBox && !!titleBox && !!addBtn, '有地址 / 标题两个输入与「关联」按钮')
 
       /* 不合法地址：要拦下来（javascript: 之类不能被当成可打开的链接） */
@@ -590,19 +590,83 @@
       await typeInto(urlBox, 'https://example.com/task-1')
       await typeInto(titleBox, '探针任务')
       await click(addBtn)
-      const first = await waitFor(() => testid('env-link-open'), 6000)
-      ok(!!first, '关联后列表里出现了一条')
-      ok(textOf(first).includes('探针任务'), '用的是输入框里的标题', textOf(first).slice(0, 24))
-      ok(first?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址')
+      const row = await waitFor(() => $('[data-testid="src-item"]'), 6000)
+      ok(!!row, '关联后列表里出现了一条')
+      const rowText = textOf(row)
+      ok(rowText.includes('探针任务'), '用的是输入框里的标题（.src-title 里）', rowText.slice(0, 30))
+      ok(rowText.includes('已关联'), '状态标成「已关联」（能证明的那一态）')
+      /* 打开按钮的 title 带着原始地址，用于复制/核对 */
+      const openBtn = $('[data-testid="src-open"]')
+      ok(openBtn?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址', String(openBtn?.getAttribute('title')))
       /* 边界文案：这句话是方案要求写在界面上的 */
       const note = textOf(links)
-      ok(/不会上传代码/.test(note), '明说「不会上传代码 / 同步会话 / 远程执行」')
+      ok(/不上传代码/.test(note), '明说「不会上传代码 / 同步会话 / 远程执行」')
 
       /* 移除：只移除会话引用 */
-      const rm = await waitFor(() => testid('env-link-remove'), 4000)
+      const rm = await waitFor(() => testid('src-remove'), 4000)
       if (rm) {
         await click(rm)
-        const gone = await waitFor(() => (testid('env-link-open') ? null : true), 5000)
+        const gone = await waitFor(() => (testid('src-open') ? null : true), 5000)
+        ok(!!gone, '移除后列表里不再有它')
+      }
+    }
+
+    /*
+     * 来源菜单（§8 的 S1）。
+     *
+     * ── 顺序很重要 ──
+     * 筛选区在有内容之后才渲染（没内容时它只是一行噪声），所以「加一条网页」
+     * 必须排在「有 4 个筛选」之前 —— 反过来的话，断言等的是一个正确行为下
+     * 永远不会出现的东西（第一次跑就是这么误报的）。
+     *
+     * 只加网页这一类：图片与文件要走附件流（粘贴/拖入），在这个场景里没有
+     * 可控的输入，硬造会把断言变成"测试自己写文件"。图片那一类的持久化在
+     * 单测里真跑过（test-sources.mjs：落盘、幂等、读回逐字节一致）。
+     */
+    const menu = testid('env-source-menu')
+    ok(!!menu, '环境菜单里有「来源」分区')
+    if (menu) {
+      /* 边界文案是**静态**的，不依赖有没有内容 —— 先断言它 */
+      ok(/原文件不会被删/.test(textOf(menu)), '写明「移除不会删你的原文件、不改写已发送的历史」')
+      ok(/不上传代码/.test(textOf(menu)), '写明「只是关联，不上传代码」')
+
+      const urlBox = testid('src-url')
+      const titleBox = testid('src-title')
+      const addBtn = testid('src-add-web')
+      ok(!!urlBox && !!titleBox && !!addBtn, '有地址 / 标题两个输入与「关联」按钮')
+
+      /* 不合法地址要拦下（javascript: 之类不能被当成可打开的链接） */
+      await typeInto(urlBox, 'javascript:alert(1)')
+      await click(addBtn)
+      ok((await waitFor(() => $('.env-error'), 4000)) !== null, '非 http/https 的地址被拒绝')
+
+      /* 加一条真实的网页来源 */
+      await typeInto(urlBox, 'https://example.com/task-1')
+      await typeInto(titleBox, '探针任务')
+      await click(addBtn)
+
+      const row = await waitFor(() => $('[data-testid="src-item"]'), 8000)
+      ok(!!row, '关联后列表里出现了一条')
+      if (row) {
+        const rowText = textOf(row)
+        ok(rowText.includes('探针任务'), '用的是输入框里的标题', rowText.slice(0, 30))
+        ok(rowText.includes('已关联'), '状态标成「已关联」（能证明的那一态）')
+        const openBtn = $('[data-testid="src-open"]')
+        ok(openBtn?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址', String(openBtn?.getAttribute('title')))
+      }
+
+      /* 有内容之后筛选区才出现：三类 + 全部 */
+      const hasFilter = await waitFor(() => testid('src-filter-all'), 6000)
+      ok(!!hasFilter, '有「全部」筛选')
+      for (const f of ['image', 'file', 'web']) {
+        ok(!!testid(`src-filter-${f}`), `有「${f}` + `」筛选`)
+      }
+
+      /* 移除：只解除会话引用 */
+      const rm = await waitFor(() => testid('src-remove'), 4000)
+      if (rm) {
+        await click(rm)
+        const gone = await waitFor(() => (testid('src-item') ? null : true), 6000)
         ok(!!gone, '移除后列表里不再有它')
       }
     }

@@ -28,7 +28,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { compareWebUrl } from '../../../../shared/git'
 import { shortProject } from '../rail/rail-utils'
-import { SourceLinks } from './SourceLinks'
+import { SourceMenu } from './SourceMenu'
 import { WriteFailure } from './CommitBar'
 import { useGitWrite, useRepoState } from './useGitReview'
 
@@ -791,7 +791,7 @@ export function EnvironmentMenu() {
                 关联外部任务链接（方案 §6.4）。文案里的边界是硬要求：
                 不宣称上传代码 / 同步会话 / 远程执行。
               */}
-              <SourceLinks sessionId={session?.sessionId ?? 'default'} open={open} />
+              <SourceMenu sessionId={session?.sessionId ?? 'default'} open={open} />
             </>
           ) : (
             <div className="env-item env-static" data-testid="env-notgit" title={t('env.notGitHint')}>

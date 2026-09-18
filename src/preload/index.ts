@@ -3,6 +3,7 @@ import type {
   AppSettings,
   PackageActionResultView,
   PackageListingView,
+  SourceRefView,
   Attachment,
   AttentionNotify,
   BrowserBounds,
@@ -196,6 +197,17 @@ const api: YanBridge = {
    * list 只读；action 会改用户磁盘上的包 —— 主进程那边会做形状校验并在有任务
    * 运行时拒绝，渲染端不需要（也不该）自己拼 pi 的命令行。
    */
+  /*
+   * 会话来源（§8 的 S1）。只有 addImage/removeImage 会写磁盘，
+   * 而且只写数据目录下属于**这个会话**的那份副本。
+   */
+  sources: {
+    list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; error?: string }>('yan:sources:list', sessionId),
+    addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
+    verifyFiles: (req) => invoke<SourceRefView[]>('yan:sources:verifyFiles', req),
+    removeImage: (req) => invoke('yan:sources:removeImage', req),
+    readImage: (req) => invoke('yan:sources:readImage', req)
+  },
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)

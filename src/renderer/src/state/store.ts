@@ -2079,6 +2079,28 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     set({ attachments: next })
+
+    /*
+     * 持久化（方案 §8 的 S1）。
+     *
+     * 现有附件链**只活在内存里**（图片是 base64），关掉应用就没了 —— 而「来源」
+     * 菜单要能列出上一次会话关联过的图。所以新进来的图片**另存一份到数据目录**
+     *（按会话隔离、文件名就是内容指纹，同一张图重复粘贴不会堆第二份）。
+     *
+     * fire-and-forget：存不下来不该让用户连消息都发不出去；但要**说一声**，
+     * 因为那意味着这次的图下次打开就不在了。
+     */
+    const sessionId = get().session?.sessionId
+    if (sessionId) {
+      for (const x of fresh) {
+        if (x.kind === 'file' || !x.data) continue
+        void window.yan.sources
+          .addImage({ sessionId, name: x.name, mimeType: x.mimeType, base64: x.data })
+          .catch(() =>
+            set({ notices: pushNotice(get().notices, 'error', '这张图没能存到来源里（下次打开可能不在了）') })
+          )
+      }
+    }
   },
 
   addFileRefs: async (files) => {
@@ -2110,6 +2132,30 @@ export const useStore = create<Store>((rawSet, get) => {
 
     /* 校验 + 登记在主进程（工作区外也允许，但只在本进程内有效） */
     const infos = await window.yan.describeFiles(unique)
+    /*
+     * 文件引用**不复制**（大文件不该被我们抄一份），所以「来源」菜单需要一个
+     * 地方记住「哪些文件被这个会话关联过」—— 记在本地，按会话隔离。
+     * 主进程那边只负责复核「还在不在、有没有被改过」。
+     */
+    try {
+      const sessionId = get().session?.sessionId
+      if (sessionId) {
+        const KEY = 'yan.source-files.v1'
+        const prev: { path: string; name: string; addedAt: number; sessionId?: string }[] = JSON.parse(
+          localStorage.getItem(KEY) ?? '[]'
+        )
+        const mine = Array.isArray(prev) ? prev.filter((x) => x.sessionId === sessionId) : []
+        for (const path of unique) {
+          if (mine.some((x) => x.path === path)) continue
+          mine.push({ path, name: path.split(/[\\/]/).pop() ?? path, addedAt: Date.now(), sessionId })
+        }
+        /* 只保留最近的 200 条（够用，且不会把 localStorage 撑爆） */
+        localStorage.setItem(KEY, JSON.stringify(mine.slice(-200)))
+      }
+    } catch {
+      /* 记不下来不影响这次发送 */
+    }
+
     const refs: Attachment[] = []
     const errors: string[] = []
     for (const info of infos) {
