@@ -302,6 +302,19 @@ export function FileTree() {
     [allVisiblePaths, visibleLimit]
   )
 
+  /*
+   * 渲染用的可见集合 —— 必须与 visiblePaths 是**同一份**顺序。
+   *
+   * ⚠️ 这里曾经用 `budget={{ left: visibleLimit - 1 }}` 逐行扣格子来截断渲染。
+   * 它与 visiblePaths 的顺序并不相同：visiblePaths 走严格 DFS（push 一个就递归子层），
+   * 而 budget 是按 React 的渲染顺序消耗 —— 父层 TreeLevel 先把自己那一层的兄弟行
+   * 全扣完，子层稍后才扣。于是超限时被切掉的位置不同，键盘能“走”到没渲染出来的行：
+   * focus() 静默失败（找不到节点）、焦点留在原地，而 focusPath 被设成幽灵路径后
+   * 所有行 tabIndex 都是 -1（End 那条失败即此路径，2026-09-18 逐帧观测定案）。
+   * 现在渲染直接按这个集合判断，顺序天然只有一份。
+   */
+  const visibleSet = useMemo(() => new Set(visiblePaths), [visiblePaths])
+
   const focusTreePath = useCallback((path: string) => {
     setFocusPath(path)
     requestAnimationFrame(() => {
@@ -471,7 +484,7 @@ export function FileTree() {
               focusPath={focusPath}
               visiblePaths={visiblePaths}
               onFocusPath={focusTreePath}
-              budget={{ left: visibleLimit - 1 }}
+              visibleSet={visibleSet}
               inContextPaths={inContextPaths}
               previewPath={filePreview?.path}
             />
@@ -604,7 +617,7 @@ function TreeLevel({
   focusPath,
   visiblePaths,
   onFocusPath,
-  budget,
+  visibleSet,
   inContextPaths,
   previewPath
 }: {
@@ -620,8 +633,8 @@ function TreeLevel({
   focusPath: string
   visiblePaths: string[]
   onFocusPath: (path: string) => void
-  /** 剩余可渲染行数（跨层级共用同一个对象，保证总行数受 visibleLimit 限制） */
-  budget?: { left: number }
+  /** 可见集合（由 visiblePaths 派生）：渲染与键盘游走用同一份顺序 */
+  visibleSet: Set<string>
   inContextPaths?: Set<string>
   previewPath?: string
 }) {
@@ -653,15 +666,18 @@ function TreeLevel({
   }
 
   /*
-   * 用 for 而不是 map：`budget` 用尽时要立刻停止渲染剩余行（含递归子层），
-   * map 做不到中途 break。budget 是跨层级共用的同一个对象，所以它是全局上限，
-   * 不是“每层各 50”。
+   * 用 for 而不是 map：遇到不在可见集合里的行要立刻停止（含递归子层），
+   * map 做不到中途 break。
+   *
+   * 判据是 `visibleSet`（由 visiblePaths 派生），不是自己数格子 ——
+   * 必须是同一份顺序，否则键盘会走到没渲染出来的行（见 FileTree 里 visibleSet 的注释）。
+   * 用 `break` 而不是 `continue` 是安全的：visiblePaths 是 DFS 前缀，超限之后的项
+   * 全部不在集合里。
    */
   const nodes: ReactNode[] = []
   for (const e of listing.entries) {
-    if (budget && budget.left <= 0) break
-    if (budget) budget.left -= 1
     const childPath = listing.path ? `${listing.path}/${e.name}` : e.name
+    if (!visibleSet.has(childPath)) break
     const isOpen = e.dir && open.has(childPath)
     nodes.push(
       <div key={childPath} className="rp-fs-node">
@@ -700,7 +716,7 @@ function TreeLevel({
             focusPath={focusPath}
             visiblePaths={visiblePaths}
             onFocusPath={onFocusPath}
-            budget={budget}
+            visibleSet={visibleSet}
             inContextPaths={inContextPaths}
             previewPath={previewPath}
           />

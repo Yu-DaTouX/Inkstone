@@ -36,6 +36,7 @@ import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
 import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
+import { summarizeTaskPlanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 
@@ -81,7 +82,16 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
   /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
   const kind = detailKind(call.name)
   const wsChanges = readWorkspaceChanges(call.details)
-  const target = summarize(call)
+  /*
+   * 实施-02 S4：模型用 bash 敲 `yan tasks apply` 时，这条调用其实是
+   * **砚内置的任务计划**（宿主服务持写入权）。卡片必须说出来，否则用户
+   * 只看到一行 bash，以为模型在自己乱改文件。
+   *
+   * 这只是展示标记：不改变写入语义、不隐藏原始调用 ——
+   * 展开后仍然是完整的命令行与输出（判定依据与边界见 shared/tool-origin.ts）。
+   */
+  const taskPlan = taskPlanCommand(call.name, call.args)
+  const target = taskPlan ? summarizeTaskPlanCommand(taskPlan) : summarize(call)
   const secs = durationSecs(call)
 
   /* 动词：Codex 是「正在运行 / 已在 Ns 内运行」，我们按工具类型分 */
@@ -96,6 +106,7 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
       className={`trow ${open ? 'open' : ''}`}
       data-state={call.status}
       data-tool={call.name}
+      {...(taskPlan ? { 'data-origin': 'yan-task-plan' } : {})}
       ref={rowRef}
     >
       <button
@@ -111,6 +122,11 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
         <span className="trow-ico" aria-hidden>
           {running ? <Icon name="refresh" size={12} className="spin" /> : toolGlyph(call.name, failed)}
         </span>
+        {taskPlan ? (
+          <span className="trow-src" data-testid="tool-src" data-origin="yan-task-plan">
+            {t('tool2.yanTaskPlan')}
+          </span>
+        ) : null}
         <span className="trow-verb">{verb}</span>
         <span className="trow-target" data-testid="tool-target">
           {target || t('tool2.noTarget')}

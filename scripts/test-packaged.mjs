@@ -13,7 +13,7 @@
  * `process.resourcesPath/` 找 —— 路径错了应用**能启动但连不上**，
  * 开发态测试全绿也照样复现不了。这个脚本就是专门补那个缝。
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,6 +66,12 @@ console.log(C.dim(`  ${exePath}`))
 const must = [
   ['pi-runtime', join(unpacked, 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')],
   ['pi-runtime node_modules', join(unpacked, 'resources', 'pi-runtime', 'node_modules')],
+  /*
+   * 实施-02 S5：随包 `yan` CLI 也必须进安装目录。
+   * 它不在 app.asar 里（那是代码），而是 extraResources（模型要从磁盘直接跑它）。
+   * 漏了它的症状是：应用能启动、模型一敲 `yan` 就「不是内部或外部命令」。
+   */
+  ['yan-cli', join(unpacked, 'resources', 'yan-cli', 'yan.mjs')],
   ['app.asar', join(unpacked, 'resources', 'app.asar')]
 ]
 if (exeFromArg) {
@@ -74,10 +80,9 @@ if (exeFromArg) {
   for (const [label, p] of must) {
     if (!existsSync(p)) fail(`extraResources 缺件：${label}`, p)
   }
-  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / app.asar）`)
+  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / yan-cli / app.asar）`)
 }
-
-/* 2. 隔离沙盒（绝不碰真实 sessions / memory / localStorage） */
+/* 2. 隔离沙盒（绝不碰真实会话、派生状态与 localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
 const dirs = {
   YAN_USER_DATA: join(sandbox, 'userData'),
@@ -95,21 +100,35 @@ console.log(C.dim(`  隔离目录 ${sandbox}`))
    而且 Windows GUI 应用本来就不保证有可用控制台。 */
 const delay = 9000
 const outFile = join(sandbox, 'probe.txt')
+
 /*
- * ELECTRON_RUN_AS_NODE 必须剥掉。它本来是给「用 Electron 自带 Node 跑 pi」用的
- * （见 src/main/protocol.ts），但不该传给 GUI 进程：从 Electron 应用内嵌的终端
- * （或任何带这个变量的 shell）跑验收时，它会让 砚.exe 退化成纯 Node ——
- * 无窗口、无 userData、静默 exit 0，看起来完全像「打包后启动失败」。
- * 同样的处理见 scripts/review-ui.mjs。
+ * 子进程环境：先把「从砚自己的 pi 子进程里跑测试」时继承下来的两个东西剥掉。
+ *
+ *   · ELECTRON_RUN_AS_NODE —— 给「用 Electron 自带 Node 跑 pi」用的
+ *     （见 src/main/protocol.ts），但**不能传给 GUI 进程**：从应用内嵌终端
+ *     （或任何带这个变量的 shell）跑验收时，它会让 砚.exe 退化成纯 Node ——
+ *     无窗口、无 userData、静默 exit 0，看起来完全像「打包后启动失败」。
+ *   · YAN_CLI_* / YAN_SESSION_ID / YAN_PROJECT_ID —— **外层那个实例**的能力
+ *     服务地址与身份。pi 子进程的环境本来由主进程覆盖，但能力服务没起来时
+ *     就是「没有覆盖”，那时继承值会让子进程里的 `yan` 打到真实用户数据目录。
+ *     这个坑本轮真撞到过（随手跑 `yan tasks apply` 往真实 `~/.pi` 写了一个操作回执）。
+ *
+ * 同样的处理见 scripts/review-ui.mjs / scripts/launch.mjs。
  */
-const probeEnv = {
-  ...process.env,
+const INHERITED_KEYS = ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
+const cleanEnv = (extra = {}) => {
+  const env = { ...process.env }
+  for (const k of INHERITED_KEYS) delete env[k]
+  /* extra 里显式给的值要保留（例如拿 ELECTRON_RUN_AS_NODE 跑纯 Node 模式） */
+  return { ...env, ...extra }
+}
+
+const probeEnv = cleanEnv({
   ...dirs,
   YAN_PROBE: join(root, 'scripts', 'probe', 'packaged.js'),
   YAN_PROBE_DELAY: String(delay),
   YAN_PROBE_OUT: outFile
-}
-delete probeEnv.ELECTRON_RUN_AS_NODE
+})
 const child = spawn(exePath, [], {
   cwd: root,
   env: probeEnv,
@@ -140,6 +159,78 @@ while (Date.now() < deadline) {
 }
 
 child.kill()
+
+/*
+ * 4. 随包 `yan` 在**运行时**真的可用（实施-02 S5）。
+ *
+ * 为什么不能只靠上面的静态存在性：模型敲的是 `yan`（PATH 里的启动器），
+ * 而启动器是应用每次启动时才写进 `YAN_DIR/bin/` 的。两件事会各自出错：
+ *   · 启动器没生成 → 模型报「命令找不到」；
+ *   · 启动了但指向**开发态仓库**里的 yan.mjs → 换一台机器就没有那个路径。
+ * 所以这里既看文件在不在，也看内容指向哪里。
+ */
+const runChecks = []
+if (!exeFromArg) {
+  const binDir = join(dirs.YAN_DATA_DIR, 'bin')
+  const cmdPath = join(binDir, 'yan.cmd')
+  const shPath = join(binDir, 'yan')
+  runChecks.push([existsSync(cmdPath), `启动器已生成（${cmdPath}）`])
+  runChecks.push([existsSync(shPath), `POSIX 启动器已生成（${shPath}）`])
+  if (existsSync(cmdPath)) {
+    const txt = readFileSync(cmdPath, 'utf8')
+    const cliInUnpacked = join(unpacked, 'resources', 'yan-cli', 'yan.mjs')
+    runChecks.push([txt.includes(cliInUnpacked), '启动器指向解包目录里的 yan.mjs（不是开发态仓库路径）'])
+    runChecks.push([/ELECTRON_RUN_AS_NODE/.test(txt), '启动器用应用自带运行时（ELECTRON_RUN_AS_NODE=1）'])
+  }
+  if (existsSync(cmdPath) && body != null) {
+    /* 内容里用反斜杠分隔，与写入时一致；路径比较做一次归一化 */
+    const norm = (s) => s.replace(/[\\/]+/g, '\\')
+    runChecks.push([
+      norm(readFileSync(cmdPath, 'utf8')).includes(norm(join(unpacked, 'resources', 'yan-cli', 'yan.mjs'))),
+      '启动器里的 CLI 路径与安装目录逐段一致'
+    ])
+  }
+}
+
+/*
+ * 5. 解包里的 `yan.mjs` 真能跑（`--help` 不需要宿主服务）。
+ * 上一轮就是这一类「只验文件存在、不真跑程序」的洞漏掉了一个语法错（见证据-02-S4 §2）。
+ */
+if (!exeFromArg) {
+  const cliPath = join(unpacked, 'resources', 'yan-cli', 'yan.mjs')
+  if (existsSync(cliPath)) {
+    const r = spawnSync(exePath, [cliPath, '--help'], {
+      env: cleanEnv({ ELECTRON_RUN_AS_NODE: '1' }),
+      encoding: 'utf8',
+      timeout: 60_000,
+      windowsHide: true
+    })
+    const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
+    runChecks.push([r.status === 0, `解包里的 yan.mjs 能跑（--help 退出码 ${r.status}）`])
+    runChecks.push([/yan — 砚宿主能力 CLI/.test(out), '打出了自己的用法说明'])
+    runChecks.push([/tasks apply/.test(out), '用法里含任务写入（模型能从 help 里发现它）'])
+
+    /*
+     * 再跑一次**子命令**（不花 token、也不需要宿主在跑）：
+     * 目的是验证参数真的被解析、且缺失宿主环境时给的是**可读原因**而不是崩掉。
+     * 模型在打包态最可能撞到的就是这条 —— 它得能从错误里看出是环境不对，
+     * 而不是去猜自己的命令写错了。
+     */
+    const r2 = spawnSync(exePath, [cliPath, 'tasks', 'apply'], {
+      env: cleanEnv({ ELECTRON_RUN_AS_NODE: '1' }),
+      encoding: 'utf8',
+      timeout: 60_000,
+      windowsHide: true
+    })
+    const out2 = `${r2.stdout ?? ''}${r2.stderr ?? ''}`
+    runChecks.push([r2.status !== 0, `无宿主环境下 tasks apply 不报成功（退出码 ${r2.status}）`])
+    runChecks.push([/宿主能力服务不可用/.test(out2), '报的是「宿主服务不可用」这个可读原因'])
+    runChecks.push([/YAN_CLI_URL/.test(out2), '说明了缺哪些环境（不是笼统的「执行失败」）'])
+  } else {
+    runChecks.push([false, '解包目录里找不到 resources/yan-cli/yan.mjs'])
+  }
+}
+
 rmSync(sandbox, { recursive: true, force: true })
 
 if (body == null) {
@@ -150,7 +241,17 @@ if (body == null) {
 
 body = body.trim()
 console.log('\n' + body)
-if (/✗/.test(body)) {
+
+let runFailed = false
+if (runChecks.length) {
+  console.log(`\n${C.b('▸')} 随包能力入口（运行时）`)
+  for (const [ok2, label] of runChecks) {
+    if (!ok2) runFailed = true
+    console.log(`  ${ok2 ? C.ok('✓') : C.err('✗')} ${label}`)
+  }
+}
+
+if (/✗/.test(body) || runFailed) {
   console.error(`\n${C.err('✗ 打包验收失败')}`)
   process.exit(1)
 }

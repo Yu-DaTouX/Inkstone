@@ -1103,7 +1103,17 @@ export class BrowserController {
     return tab.observer.capture(tab.state.url, tab.state.title)
   }
 
-  private async click(ref: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
+  /*
+   * 下面四个动作（click / type / press / scroll）与 requestUserControl、
+   * screenshot 从 private 改为 public（01-S4b）。
+   *
+   * 原因：模型工具 `browser_*` 已移除，宿主能力服务（agent.ts 的
+   * `runBrowserCommand`）要**直接调这些服务方法** —— 它们以前只服务于
+   * loopback bridge 的内部 HTTP 路由，所以是 private。
+   * 注意权限 / 网络边界**一点没动**：BrowserPolicy、resolve()、userControl
+   * 门禁、safeUrl、网络边界判定全部原样生效，改的只是方法可见性。
+   */
+  async click(ref: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
@@ -1119,7 +1129,7 @@ export class BrowserController {
     }
   }
 
-  private async type(ref: string, text: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
+  async type(ref: string, text: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
@@ -1135,7 +1145,7 @@ export class BrowserController {
     }
   }
 
-  private async press(key: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
+  async press(key: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
@@ -1150,7 +1160,7 @@ export class BrowserController {
     }
   }
 
-  private async scroll(deltaX: number, deltaY: number): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
+  async scroll(deltaX: number, deltaY: number): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
@@ -1162,10 +1172,31 @@ export class BrowserController {
     }
   }
 
-  private requestUserControl(): BrowserState {
+  /**
+   * 把页面交给用户（密码 / 验证码 / 支付等敏感步骤）。
+   *
+   * 只翻转 `userControl` 门禁并广播状态：后续 click / type / press / scroll
+   * 一律被拒（code `USER_CONTROL_ACTIVE`），直到用户或界面恢复。
+   * `reason` **不在这里记**：旧路径（HTTP bridge）也从未把它落盘或展示，
+   * 本次迁移不为它新增用户可见功能（01-S4b 的边界）。
+   */
+  requestUserControl(): BrowserState {
     this.userControl = true
     this.updateState()
     return this.getState()
+  }
+
+  /**
+   * 当前页面截图（PNG 原始字节）。
+   *
+   * 以前只有 bridge 路由用得到，所以 base64 编码写在路由里；现在宿主能力服务
+   * 自己调用，就直接返回 Buffer，由调用方决定怎么落盘 ——
+   * 这里**不写文件**，路径决策不归控制器。
+   */
+  async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
+    const p = this.parts()
+    if (!p) throw new Error('浏览器尚未打开')
+    return { mimeType: 'image/png', data: await p.cdp.screenshot() }
   }
 
   setUserControl(value: boolean): BrowserState {

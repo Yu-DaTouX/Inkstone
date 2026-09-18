@@ -85,9 +85,21 @@
     out.push('  分类标题: ' + JSON.stringify(groups))
     if (groups.includes('Yan 内置')) ok('菜单显示 Yan 内置分类')
     else bad('菜单没有 Yan 内置分类')
-    const compat = [...document.querySelectorAll('.slash-item')].find((x) => /\/panel|\/footer/.test(x.textContent || ''))
+    const compat = [...document.querySelectorAll('.slash-item')].find((x) => /\/footer/.test(x.textContent || ''))
     if (compat && compat.disabled && compat.getAttribute('aria-disabled') === 'true') ok('终端兼容命令可见但不可执行')
     else bad('兼容命令没有正确禁用')
+    /*
+     * 实施-02 S4：`/panel` 从补全里隐藏（任务改由砚内置任务计划维护），
+     * 但它**必须还在注册表里**（source=compatibility）——
+     * 直接删掉它的话，pi 侧同名命令会变成那条可执行的，手打就发给模型了。
+     */
+    const panelInMenu = [...document.querySelectorAll('.slash-item')].some((x) => /\/panel\b/.test(x.textContent || ''))
+    if (!panelInMenu) ok('/panel 不出现在补全候选里（S4）')
+    else bad('/panel 仍在补全里（S4 要求隐藏）')
+    const panelCmd = store.getState().commands.find((c) => c.name === 'panel')
+    if (panelCmd && panelCmd.source === 'compatibility' && panelCmd.hiddenInMenu === true)
+      ok('/panel 仍在注册表且标记 hiddenInMenu')
+    else bad('/panel 注册表项缺失或没标隐藏：' + JSON.stringify(panelCmd))
 
     out.push('\n=== 4. 填充：Enter / Tab 都能填入，且带尾空格 ===')
     for (const k of ['Enter', 'Tab']) {
@@ -426,6 +438,51 @@
     const extCmds = store.getState().commands.filter((c) => c.source === 'extension')
     if (extCmds.length) ok('扩展来源命令也在（' + extCmds.length + ' 条）')
     else out.push('  ℹ 本环境没有扩展来源命令')
+
+    out.push('\n=== 20. 手打 /panel：给明确反馈，不动草稿与附件（S4） ===')
+    /*
+     * 兼容命令在桌面端没有可执行动作。旧行为是「静默清空输入框 + 附件」——
+     * 用户会以为命令执行完了，而草稿和附件是真的丢了。
+     *
+     * 附件用合成对象直接进 store（真附件要过文件对话框）——
+     * 这里验的是「兼容分支会不会清掉它」，不是附件本身的校验。
+     */
+    const probeFile = {
+      id: 'probe-panel-attachment',
+      name: 'probe-panel.txt',
+      mimeType: 'text/plain',
+      size: 5,
+      data: '',
+      preview: '',
+      kind: 'file',
+      path: '/tmp/probe-panel.txt'
+    }
+    store.getState().clearAttachments()
+    store.getState().addAttachments([probeFile])
+    const noticesBefore = store.getState().notices.length
+    const msgsBeforePanel = store.getState().messages.length
+    const draft = '/panel 别清掉我\n第二行'
+    setVal(ta(), draft)
+    await sleep(250)
+    click(document.querySelector('[data-testid="send"]'))
+    await until(() => store.getState().notices.length > noticesBefore, 4000)
+    out.push('  输入框 = ' + JSON.stringify(ta().value))
+    out.push('  附件 ' + store.getState().attachments.length + ' 个 · 新增提示 ' + (store.getState().notices.length - noticesBefore) + ' 条')
+    const panelNotices = store
+      .getState()
+      .notices.slice(noticesBefore)
+      .map((n) => n.text)
+      .join(' | ')
+    out.push('  提示: ' + JSON.stringify(panelNotices))
+    if (ta().value === draft) ok('草稿原样保留（以前会被清空）')
+    else bad('草稿被动过了：' + JSON.stringify(ta().value))
+    if (store.getState().attachments.length === 1) ok('附件保留（以前会被一起清掉）')
+    else bad('附件被清掉了（剩 ' + store.getState().attachments.length + '）')
+    if (/终端界面|任务计划/.test(panelNotices)) ok('给出了可读原因（说明为什么没有动作）')
+    else bad('没有给可读原因：' + panelNotices)
+    if (store.getState().messages.length === msgsBeforePanel && !slashAsMessage()) ok('没有把 /panel 当消息发给模型')
+    else bad('/panel 被当成一句话发出去了')
+    store.getState().clearAttachments()
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length

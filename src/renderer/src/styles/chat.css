@@ -457,6 +457,24 @@
   white-space: nowrap;
 }
 
+/*
+ * 来源徽标（实施-02 S4）：目前只有「任务计划 · 砚内置」一种。
+ *
+ * 有一条硬约束：它**不能把命令顶掉** —— 用户判断这条调用在干什么，
+ * 靠的仍然是 `yan tasks apply …` 那几个字，徽标只是补充归属。
+ * 所以 `flex: none` 且不设最大宽度，让 `.trow-target` 去承担截断。
+ */
+.trow-src {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--border-str);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 /* 目标（命令原文）：等宽，超长截断 */
 .trow-target {
   min-width: 0;

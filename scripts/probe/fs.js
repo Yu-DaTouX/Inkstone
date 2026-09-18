@@ -146,6 +146,19 @@
       if (activePath() === '') ok('Home 回到树根')
       else bad('Home 没有回到树根：' + JSON.stringify(activePath()))
     } else bad('键盘探针无法执行 Home')
+    /*
+     * 诊断：把「焦点在哪 / DOM 里几行 / 最后一行是谁」一次打全 ——
+     * 这条遗留缺陷（End 掉焦点）曾经先后猜过四种原因（顺序依赖、detached 节点、
+     * 截断分页、cwd 重置）全不对，最后是靠这几行 + 一次逐帧观测定的案：
+     * visiblePaths（严格 DFS）与预算截断（父层先扣完）用了两套顺序，
+     * 键盘能走到没渲染出来的行。**猜四次不如打印一次。**
+     */
+    const descEl = (el) => {
+      if (!el) return 'null'
+      if (el === document.body) return 'body'
+      if (el.dataset && el.dataset.treePath !== undefined) return 'row(' + JSON.stringify(el.dataset.treePath) + ')'
+      return (el.getAttribute && el.getAttribute('data-testid')) || el.tagName
+    }
     if (await key('', 'End')) {
       const endPath = activePath()
       /* 诊断：把「焦点在哪 / DOM 里几行 / 最后一行是谁 / 展开态」一次打全 ——
@@ -158,8 +171,11 @@
         ' 最后一行=' + JSON.stringify(domPaths[domPaths.length - 1]) +
         ' 含src/main=' + domPaths.includes('src/main')
       )
-      if (endPath && document.querySelector(`[data-tree-path="${CSS.escape(endPath)}"]`)) ok('End 移到最后一个可见节点')
-      else bad('End 没有移到最后一个可见节点')
+      /* 断言要区分「焦点在根行」与「焦点掉到 body」—— 两者 activePath() 都是 '' */
+      const activeDesc = descEl(document.activeElement)
+      if (document.activeElement === document.body) bad('End 之后焦点掉到 body')
+      else if (endPath && document.querySelector(`[data-tree-path="${CSS.escape(endPath)}"]`)) ok('End 移到最后一个可见节点')
+      else bad('End 没有移到最后一个可见节点：active=' + activeDesc)
     } else bad('键盘探针无法执行 End')
     store.getState().clearAttachments()
     store.getState().closePreview()
@@ -197,14 +213,25 @@
     const previewRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
     if (!previewRow) bad('3c 找不到 src/main/agent.ts')
     else {
-      click(previewRow)
+      /*
+       * ⚠️ 用「先 focus 再 click」模拟真实鼠标，而不是裸 dispatchEvent('click')。
+       * 合成的 MouseEvent **不**触发浏览器的默认聚焦行为（真实鼠标 pointerdown 会），
+       * 所以裸合成点击后 activeElement 还停在上一次键盘操作的那一行 —— 后面那条
+       * 「收起后焦点落在被点的目录行」测到的是一个真实用户碰不到的状态
+       * （2026-09-18 排查 fs 遗留缺陷时定案）。
+       */
+      const mouseClick = (el) => {
+        el.focus()
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      }
+      mouseClick(previewRow)
       const marked = await until(() => qa('.rp-fs-row[aria-current="true"]').length === 1, 4000)
       if (marked) ok('预览一个文件后该行标记 aria-current')
       else bad('预览后没有出现 aria-current 行')
       const parent = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main')
       if (!parent) bad('3c 找不到 src/main 目录行')
       else {
-        click(parent) // 鼠标收起父目录（会把 current 那一行卸掉）
+        mouseClick(parent) // 鼠标收起父目录（会把 current 那一行卸掉）
         const gone = await until(() => !qa('.rp-fs-row').some((r) => r.dataset.path === 'src/main/agent.ts'), 4000)
         if (gone) ok('收起父目录后那一行不再渲染')
         else bad('收起父目录后那一行还在')
@@ -213,9 +240,11 @@
         else bad('折叠后仍有 ' + left + ' 行声称自己是 current')
         if (document.querySelector('[data-testid="file-preview"]')) ok('预览本身不受折叠影响（仍然开着）')
         else bad('折叠把预览也关掉了（预览不该依赖树是否渲染）')
-        if (activePath() === 'src/main') ok('鼠标收起后焦点落在被点的目录行（不是 body）')
+        /* 焦点恢复要等 React 重渲染 + focusTreePath 的 rAF 落地，不能看完立即断言 */
+        const landed = await until(() => activePath() === 'src/main', 4000)
+        if (landed) ok('鼠标收起后焦点落在被点的目录行（不是 body）')
         else bad('鼠标收起后焦点在 ' + focusedDesc())
-        click(parent) // 再展开
+        mouseClick(parent) // 再展开
         const back = await until(() => qa('.rp-fs-row[aria-current="true"]').length === 1, 4000)
         const backPath = qa('.rp-fs-row[aria-current="true"]')[0]?.dataset.path
         if (back && backPath === 'src/main/agent.ts') ok('重新展开后 current 回到那一行')

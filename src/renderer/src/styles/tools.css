@@ -1043,6 +1043,18 @@
   line-height: 1.5;
 }
 
+/*
+ * 历史条目的勾选框在**第 1 列**。
+ *
+ * `.rp-box` 的通用规则里写了 `grid-column: 2`（那是为任务本体的 4 列网格写的），
+ * 而这里只有 2 列：不覆盖的话勾选框显式占掉第 2 列，`.rp-text` 的自动放置
+ * 只好退到 13px 的第 1 列 —— 任务文字被挤成「一列一个字」。
+ * （2026-09-18 视觉验收拍 `taskhost` 时发现；当时的截图里就是竖排单字。）
+ */
+.rp-hist-todo .rp-box {
+  grid-column: 1;
+}
+
 .rp-hist-todo.done {
   text-decoration: line-through;
   opacity: 0.75;

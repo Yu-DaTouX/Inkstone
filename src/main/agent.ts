@@ -11,7 +11,13 @@
  *   所以要在这里组装出完整的 UIMessage[]，再以补丁形式推给渲染端。
  */
 import { EventEmitter } from 'node:events'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { PiRpc } from './protocol'
+import type { CapabilityHandlers, YanCliEnv } from './capability-server'
+import { CapabilityCommandError, CapabilityServer } from './capability-server'
+import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
   normalizeMessage,
@@ -36,6 +42,9 @@ import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { readSessionMessages } from './session-reader'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
+import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
+import { isSafeSessionId } from './context-state-store'
+import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import {
@@ -47,6 +56,8 @@ import {
 } from '../shared/model-capabilities'
 import type {
   BashRun,
+  BrowserObservation,
+  BrowserState,
   ContextBudget,
   ContextPolicy,
   ContextPolicyView,
@@ -83,6 +94,45 @@ const MAX_FLUSH_MS = 120
 /** 推送补丁到渲染端（主进程注入） */
 type Push = (msg: MainPush) => void
 
+/* -------------------------------------------------- 浏览器（宿主能力服务） */
+
+/** 浏览器动作的结果形状（`BrowserController` 的 `BrowserActionResult`）。 */
+type BrowserCommandResult = { ok: boolean; error?: string; code?: string }
+
+/** 会带回一份新观察的动作（click / type / press / scroll）。 */
+type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation }
+
+/**
+ * 浏览器命令能看到的宿主服务面。
+ *
+ * ── 为什么不直接 `import type { BrowserController } from './browser'` ──
+ *   ① agent.ts 只负责接线，没必要把 Electron 视图那一层拖进类型依赖；
+ *   ② 这份接口同时是**命令行面的清单**：想给模型多加一个浏览器动作，
+ *      必须在这里加一个方法 —— 扩面要显式过一遍，而不是“顺手”多注册一个工具
+ *      （薄层准入五条见 docs/plan/实施-01-默认pi架构迁移.md §1）。
+ *
+ * 宿主侧 `BrowserController` 结构化满足它（见 src/main/index.ts 的注入点）。
+ */
+export interface BrowserCommandHost {
+  getState(): BrowserState
+  navigate(url: string): Promise<BrowserCommandResult>
+  back(): Promise<BrowserCommandResult>
+  forward(): Promise<BrowserCommandResult>
+  reload(): Promise<BrowserCommandResult>
+  newTab(url?: string): Promise<BrowserState>
+  switchTab(id: string): Promise<BrowserState>
+  closeTab(id?: string): Promise<BrowserState>
+  openExternalChrome(url?: string): Promise<BrowserCommandResult>
+  closeExternalChrome(): Promise<BrowserState>
+  observe(): Promise<BrowserObservation>
+  click(ref: string): Promise<BrowserObservationResult>
+  type(ref: string, text: string): Promise<BrowserObservationResult>
+  press(key: string): Promise<BrowserObservationResult>
+  scroll(deltaX: number, deltaY: number): Promise<BrowserObservationResult>
+  requestUserControl(): BrowserState
+  screenshot(): Promise<{ mimeType: string; data: Buffer }>
+}
+
 /* ------------------------------------------------------------ 任务清单 */
 /**
  * pi 的队列模式字段是自由字符串（协议文档只保证这两个值）。
@@ -104,6 +154,8 @@ export class AgentController extends EventEmitter {
   private responseDetailExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
   private languageExtension?: string
+  /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
+  private capabilityGuideExtension?: string
   /**
    * 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State 注入 / Recall /
    * 结构化压缩闸门，见 resources/pi-extensions/context.js。
@@ -114,6 +166,38 @@ export class AgentController extends EventEmitter {
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
   private browserEnv?: NodeJS.ProcessEnv
+  /**
+   * 浏览器服务取用口（宿主能力服务用）。
+   *
+   * 为什么是 getter 而不是实例：`browser` 在 index.ts 里是模块级单例，
+   * 而 agent 实例会在切会话 / 重建 pi 时反复创建 —— 传 getter 才能拿到
+   * **当前**那个控制器，不会抓住一个已 dispose 的旧实例。
+   */
+  private getBrowserHost?: () => BrowserCommandHost | null
+  /**
+   * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
+   *
+   * 为什么存在 agent 实例上、而不是全局：端点与 token 是**按实例**签发并与
+   * (sessionId, projectId) 绑定的 —— 实例重建（切会话 / 重启 pi）就换一份，
+   * 旧 token 立即作废。
+   */
+  private yanCliEnv?: YanCliEnv
+  /**
+   * 宿主能力服务。与 agent 实例同生命周期：stop() 时关掉，token 随之作废。
+   *
+   * 为什么不全局共享：端点绑定 (sessionId, projectId)，而多个 runner 可能
+   * 跑在不同项目上 —— 共享一个端点就等于把身份校验变成形式。
+   */
+  private capabilityServer?: CapabilityServer
+  /** 能力服务参数（由 RunnerRegistry 工厂传入）。 */
+  private capabilityOpts?: {
+    sessionId: string
+    projectId: string
+    opsDir: string
+    binDir: string
+    /** 开发态 resources 目录（打包态用 process.resourcesPath）。 */
+    devResourcesDir?: string
+  }
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
 
@@ -242,11 +326,35 @@ export class AgentController extends EventEmitter {
      * 的历史）。扩展注入是每轮读设置，切语言下一轮生效。
      */
     languageExtension?: string
+    /**
+     * 能力入口说明扩展：把「怎么用 `yan`、输出怎么读」追加到系统提示。
+     *
+     * 不这么做的话，能力虽然通了，模型也不知道要去用（见
+     * resources/pi-extensions/capability-guide.js）。
+     */
+    capabilityGuideExtension?: string
     /** 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State / Recall / 压缩闸门 */
     contextExtension?: string
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
     browserEnv?: NodeJS.ProcessEnv
+    /**
+     * 浏览器服务取用口（`yan browser …` 的实现要调它）。
+     *
+     * 没注入时 `yan browser` 会回 `browser_unavailable` —— 能力服务
+     * 本身照常启动（任务清单等不受影响）。
+     */
+    browserHost?: () => BrowserCommandHost | null
+    /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
+    yanCliEnv?: YanCliEnv
+    /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
+    capability?: {
+      sessionId: string
+      projectId: string
+      opsDir: string
+      binDir: string
+      devResourcesDir?: string
+    }
   }) {
     super()
     const emit = opts.push
@@ -259,9 +367,68 @@ export class AgentController extends EventEmitter {
     this.questionExtension = opts.questionExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
+    this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextExtension = opts.contextExtension
     this.getResponseDetail = opts.getResponseDetail
     this.browserEnv = opts.browserEnv
+    this.getBrowserHost = opts.browserHost
+    this.yanCliEnv = opts.yanCliEnv
+    this.capabilityOpts = opts.capability
+  }
+
+  /**
+   * 启动宿主能力服务并生成 `yan` 启动器。
+   *
+   * 失败**不阻塞** pi 启动：能力入口不可用时会话要照常能用，
+   * 只是模型敲 `yan` 会拿到「宿主不可用」（见 resources/yan-cli/yan.mjs），
+   * 而不是整个应用起不来。失败原因写进 proc stderr，诊断页看得到。
+   */
+  private async ensureCapability(): Promise<void> {
+    const opts = this.capabilityOpts
+    if (!opts || this.capabilityServer || this.yanCliEnv) return
+    try {
+      /*
+       * 业务命令的实现点在这里。用箭头函数闭包住 `this`：
+       * handler 需要读**当前 pi 会话**（任务日志按会话归属）与当前轮次，
+       * 这两样只有 agent 实例知道。
+       */
+      const handlers: CapabilityHandlers = {
+        run: (command, params) => this.runCapabilityCommand(command, params)
+      }
+      const server = new CapabilityServer({
+        opsDir: opts.opsDir,
+        handlers
+      })
+      const { url, token } = await server.start({
+        sessionId: opts.sessionId,
+        projectId: opts.projectId
+      })
+      const launcher = ensureYanLauncher({
+        packagedResourcesDir: process.resourcesPath,
+        devResourcesDir: opts.devResourcesDir,
+        execPath: process.execPath,
+        binDir: opts.binDir
+      })
+      if (!launcher) {
+        server.stop()
+        this.noteCapabilityProblem('找不到随包的 yan CLI（检查打包是否包含 resources/yan-cli）')
+        return
+      }
+      this.capabilityServer = server
+      this.yanCliEnv = {
+        url,
+        token,
+        sessionId: opts.sessionId,
+        projectId: opts.projectId,
+        binDir: launcher.binDir
+      }
+    } catch (err) {
+      this.noteCapabilityProblem(`能力服务启动失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  private noteCapabilityProblem(detail: string): void {
+    this.push({ ch: 'proc', payload: { state: 'stderr', detail: `[能力服务] ${detail}` } })
   }
 
   get running(): boolean {
@@ -325,6 +492,9 @@ export class AgentController extends EventEmitter {
     this.resetQueue()
     this.setConn('starting')
 
+    /* 先起能力服务：pi 的环境变量里要有它的地址与令牌。 */
+    await this.ensureCapability()
+
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -336,6 +506,10 @@ export class AgentController extends EventEmitter {
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
+        // 能力入口说明：告诉模型有 `yan` 这个入口、输出怎么读（静态文本，不破缓存）
+        ...(this.capabilityGuideExtension
+          ? ['--extension', this.capabilityGuideExtension]
+          : []),
         // 上下文状态化压缩（N21-4）：默认清扫 + 可召回墓碑，阶段启用由 ContextPolicy.kinds 决定
         ...(this.contextExtension ? ['--extension', this.contextExtension] : []),
         /*
@@ -359,7 +533,23 @@ export class AgentController extends EventEmitter {
         // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
         YAN_DATA_DIR: YAN_DIR,
         // 便携版必须让 pi 也使用 EXE 同级的私有目录；否则它会回退到 ~/.pi。
-        PI_CODING_AGENT_DIR: PI_AGENT_DIR
+        PI_CODING_AGENT_DIR: PI_AGENT_DIR,
+        /*
+         * 宿主能力服务的地址与身份（`yan` CLI 用）。
+         *
+         * 只在 pi 子进程里出现：不落盘、不进日志、不进渲染端。
+         * PATH 前置启动器目录而**不改用户系统 PATH** —— pi 的 bash 工具
+         * 继承的是这份环境，所以模型敲 `yan …` 一定命中随包那份。
+         */
+        ...(this.yanCliEnv
+          ? {
+              YAN_CLI_URL: this.yanCliEnv.url,
+              YAN_CLI_TOKEN: this.yanCliEnv.token,
+              YAN_SESSION_ID: this.yanCliEnv.sessionId,
+              YAN_PROJECT_ID: this.yanCliEnv.projectId,
+              PATH: `${this.yanCliEnv.binDir}${delimiter}${process.env.PATH ?? ''}`
+            }
+          : {})
       }
     })
     this.rpc = rpc
@@ -494,14 +684,22 @@ export class AgentController extends EventEmitter {
   /**
    * 重读任务清单并推给渲染端。
    *
-   * 触发时机：hydrate、切会话、agent_settled 兑底，
-   * 以及**监听到 `panel_todos` 工具执行完**（与 remember 处理同一套路）。
+   * 触发时机：hydrate、切会话、agent_settled 兜底，
+   * **监听到任务工具执行完**（旧扩展写的 `panel_todos` 与宿主 `yan tasks apply` 的写入
+   * 在同一次刷新里汇合，见下面两个来源），
+   * 以及**宿主自己写完 `yan tasks apply` 之后**（S3）。
+   *
+   * 两个来源在此汇合：会话文件里的旧条目（`left-panel-tasks`）与
+   * 宿主任务日志（`YAN_DIR/task-plans/<sessionId>.jsonl`）。合并规则
+   * （同轮宿主优先、相邻轮合并）在 [todoSnapshotsFromEntries] 里，只有一份 ——
+   * 同一份会话在「有宿主日志」与「只有旧条目」两种状态下必须显示同一套历史。
    */
   async refreshTodos(): Promise<SessionTodo[]> {
     try {
       const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
       if (!res?.success) return []
-      const snaps = todoSnapshotsFromEntries(res.data?.entries ?? [])
+      const hostEntries = await this.taskPlanEntries()
+      const snaps = todoSnapshotsFromEntries([...(res.data?.entries ?? []), ...hostEntries])
       /*
        * 推两条：
        *   · todos —— 最新那份（旧行为不变，界面主体的任务清单就是它）
@@ -515,6 +713,529 @@ export class AgentController extends EventEmitter {
       return latest
     } catch {
       return []
+    }
+  }
+
+  /**
+   * 宿主任务日志 → 与会话条目同形的条目（喂给历史归并）。
+   *
+   * 读不了（权限 / 磁盘 / 会话还没就绪）时**退回旧条目**而不是把整块清空：
+   * 旧条目是会话文件里的真话，不能因为宿主日志读不到就一起看不见。
+   * 但也不假装它存在 —— 清单会退回旧来源，与「本会话从未写过宿主日志」同形。
+   */
+  private async taskPlanEntries(): Promise<Record<string, unknown>[]> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId || !isSafeSessionId(sessionId)) return []
+    try {
+      return (await readTaskPlanLog(sessionId)).map(taskPlanLogEntry)
+    } catch {
+      return []
+    }
+  }
+
+  /* ------------------------------------------------------- 宿主能力命令 */
+
+  /**
+   * `yan` CLI 的业务命令实现点（S3 起有 `tasks.apply`，01-S4b 加 `browser.*`）。
+   *
+   * 未实现的命令**明确报错**，不静默成功 —— 能力入口先接通、
+   * 具体能力按 02 / 03 / 04 各自落地（01-S2 的约定）。
+   */
+  private async runCapabilityCommand(
+    command: string,
+    params: Record<string, unknown>
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    if (command.startsWith('browser.')) {
+      return this.runBrowserCommand(command.slice('browser.'.length), params)
+    }
+    switch (command) {
+      case 'tasks.apply':
+        return this.applyTaskPlan(params)
+      default:
+        throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：${command}`)
+    }
+  }
+
+  /* ------------------------------------------------ 浏览器命令（01-S4b） */
+
+  /**
+   * `yan browser <动作>` 的实现点。
+   *
+   * ── 为什么直接调宿主服务，而不是复用 loopback bridge ──
+   *   bridge（`src/main/browser.ts` 的 `startBridge`）存在的理由是
+   *   「扩展是**进程外**的、拿不到 Electron 对象」。宿主自己就在同一个进程里，
+   *   再绕一层 HTTP + token 只是把本地函数调用做成网络调用：多一个失败点、
+   *   多一次序列化，安全上不多一分。
+   *
+   * ── 失败分两类（见 capability-server.ts 的注释）──
+   *   · 「浏览器没开 / 地址不是 http(s) / 正在由用户接管」= **业务失败**，
+   *     模型能改参数重试 → `CapabilityCommandError`（带 code，可分支）；
+   *   · 协议版本 / token / 身份不匹配 = **端点级错误**，在进到这里之前就被
+   *     能力服务拦掉了，不会落到本方法里。
+   *
+   * ── 结果形状 ──
+   *   大对象（观察 / 状态 / 截图路径）走 `data` → 由能力服务落文件；
+   *   `summary` 只放能一眼读完的几个字段（它才是进模型上下文的那段）。
+   */
+  private async runBrowserCommand(
+    action: string,
+    params: Record<string, unknown>
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const host = this.browserHost()
+    switch (action) {
+      /* 打开 / 导航：`open` 是历史别名（旧 browser_open 与 browser_navigate 等价） */
+      case 'navigate':
+      case 'open': {
+        const url = this.browserText(params, 'url')
+        if (!url) {
+          throw new CapabilityCommandError(
+            'missing_url',
+            `${action} 需要一个 http(s) 地址（about:blank 也可以）：yan browser ${action} --url <地址>`
+          )
+        }
+        const res = await host.navigate(url)
+        if (!res.ok) this.browserFailure(action, res)
+        const state = host.getState()
+        return { data: state, summary: this.browserSummary(action, state) }
+      }
+
+      /* 当前状态：标签 id 的唯一来源（旧工具链里 switch_tab 要的 id 无处可得） */
+      case 'state': {
+        const state = host.getState()
+        return {
+          data: state,
+          summary: this.browserSummary(action, state, {
+            tabs: (state.tabs ?? []).map((tab) => ({ id: tab.id, url: tab.url, title: tab.title }))
+          })
+        }
+      }
+
+      /* 观察当前页面：URL / 标题 / 可交互元素 ref / 可见文本 */
+      case 'observe': {
+        const observation = await this.browserObserve(action)
+        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+      }
+
+      /* 会带回新观察的四个动作 */
+      case 'click':
+      case 'type':
+      case 'press':
+      case 'scroll': {
+        const res = await this.browserActionCommand(host, action, params)
+        if (!res.ok) this.browserFailure(action, res)
+        const observation = res.observation ?? (await this.browserObserve(action))
+        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+      }
+
+      case 'back':
+      case 'forward':
+      case 'reload': {
+        const res = await (action === 'back'
+          ? host.back()
+          : action === 'forward'
+            ? host.forward()
+            : host.reload())
+        if (!res.ok) this.browserFailure(action, res)
+        const state = host.getState()
+        return { data: state, summary: this.browserSummary(action, state) }
+      }
+
+      case 'new-tab':
+      case 'switch-tab':
+      case 'close-tab': {
+        const id = this.browserText(params, 'id')
+        if (action === 'switch-tab' && !id) {
+          throw new CapabilityCommandError(
+            'missing_tab_id',
+            'switch-tab 需要标签 id：yan browser switch-tab --id <标签id>（id 从 yan browser state 里取）'
+          )
+        }
+        const state =
+          action === 'new-tab'
+            ? await host.newTab(this.browserText(params, 'url'))
+            : action === 'switch-tab'
+              ? await host.switchTab(id as string)
+              : await host.closeTab(id)
+        return { data: state, summary: this.browserSummary(action, state) }
+      }
+
+      /*
+       * 截图：PNG **落盘**，摘要里只给路径与字节数。
+       *
+       * 为什么不把 base64 塞进结果文件：一张 1080p 截图的 base64 是几 MB，
+       * 写进 JSON 后模型还得把整个 JSON 读一遍才能拿到它；落成 .png 后
+       * pi 的原生 read 能直接看图，路径也不占上下文。
+       */
+      case 'screenshot': {
+        const shot = await this.browserScreenshot()
+        return {
+          data: { mimeType: shot.mimeType, path: shot.path, bytes: shot.bytes },
+          summary: {
+            kind: 'browser',
+            action,
+            ok: true,
+            mimeType: shot.mimeType,
+            savedTo: shot.path,
+            bytes: shot.bytes
+          }
+        }
+      }
+
+      /* 最近一次完成的下载（旧 browser_download 的等价物，数据来自宿主 state） */
+      case 'download': {
+        const state = host.getState()
+        const download = state.lastDownload ?? null
+        return {
+          data: { download },
+          summary: {
+            kind: 'browser',
+            action,
+            ok: true,
+            has: Boolean(download),
+            ...(download ? { filename: download.filename, path: download.path } : {})
+          }
+        }
+      }
+
+      /* 把页面交给用户：后续 click / type / press / scroll 一律被拒 */
+      case 'request-user-control': {
+        const state = host.requestUserControl()
+        const reason = this.browserText(params, 'reason')
+        return {
+          data: state,
+          summary: this.browserSummary(action, state, {
+            userControl: state.userControl === true,
+            ...(reason ? { reason } : {})
+          })
+        }
+      }
+
+      /* 接入 / 断开本机已安装的 Chrome（需要登录态的站点） */
+      case 'connect-chrome':
+      case 'disconnect-chrome': {
+        if (action === 'connect-chrome') {
+          const res = await host.openExternalChrome(this.browserText(params, 'url'))
+          if (!res.ok) this.browserFailure(action, res)
+        } else {
+          await host.closeExternalChrome()
+        }
+        const state = host.getState()
+        return {
+          data: state,
+          summary: this.browserSummary(action, state, { mode: state.mode ?? 'embedded' })
+        }
+      }
+
+      /*
+       * 兜底：命令名已过 KNOWN_COMMANDS，能到这里只可能是「登记了但没实现」。
+       * 不静默成功（01-S2 的约定）。
+       *
+       * 注：bridge 的 `/evaluate`（任意页面 JavaScript）**有意不登记**，
+       * 它返回 403；这里也不给出口。
+       */
+      default:
+        throw new CapabilityCommandError(
+          'browser_action_not_implemented',
+          `浏览器动作已登记但尚未实现：${action}`
+        )
+    }
+  }
+
+  /** 取浏览器宿主服务；没注入（或宿主还没起来）时给可读的失败。 */
+  private browserHost(): BrowserCommandHost {
+    const host = this.getBrowserHost?.() ?? null
+    if (!host) {
+      throw new CapabilityCommandError(
+        'browser_unavailable',
+        '内置浏览器服务不可用（宿主还在启动或未初始化）；请稍后在会话里重试'
+      )
+    }
+    return host
+  }
+
+  /**
+   * 参数取值。
+   *
+   * `yan` 走 flag 时所有值都是**字符串**（`--delta-y 300`），走
+   * `--request-file` 时才是 JSON 原生类型 —— 两种都接受，不猜默认值。
+   * 空串按「没给」处理，避免 `--ref ''` 变成一次无意义调用。
+   */
+  private browserText(params: Record<string, unknown>, key: string): string | undefined {
+    const value = params[key]
+    if (typeof value === 'string') return value.trim() ? value.trim() : undefined
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    return undefined
+  }
+
+  /** 数值参数（`--delta-y` / `--delta-x`）：认不出数字就报可读错误，不传 NaN 给 CDP。 */
+  private browserNumber(params: Record<string, unknown>, key: string): number | undefined {
+    const raw = params[key]
+    if (raw === undefined || raw === '' || raw === true) return undefined
+    const value = Number(raw)
+    if (!Number.isFinite(value)) {
+      throw new CapabilityCommandError(
+        'invalid_number',
+        `${key} 需要数字，收到的是 ${JSON.stringify(raw)}`
+      )
+    }
+    return value
+  }
+
+  /** click / type / press / scroll 的参数读取与调用（四个动作的参数面各不相同）。 */
+  private async browserActionCommand(
+    host: BrowserCommandHost,
+    action: 'click' | 'type' | 'press' | 'scroll',
+    params: Record<string, unknown>
+  ): Promise<BrowserObservationResult> {
+    if (action === 'scroll') {
+      const deltaY = this.browserNumber(params, 'deltaY') ?? this.browserNumber(params, 'delta-y')
+      if (deltaY === undefined) {
+        throw new CapabilityCommandError(
+          'missing_delta',
+          'scroll 需要滚动像素：yan browser scroll --delta-y <像素> [--delta-x <像素>]'
+        )
+      }
+      const deltaX = this.browserNumber(params, 'deltaX') ?? this.browserNumber(params, 'delta-x') ?? 0
+      return host.scroll(deltaX, deltaY)
+    }
+
+    if (action === 'press') {
+      const key = this.browserText(params, 'key')
+      if (!key) {
+        throw new CapabilityCommandError('missing_key', 'press 需要按键名：yan browser press --key Enter')
+      }
+      return host.press(key)
+    }
+
+    const ref = this.browserText(params, 'ref')
+    if (!ref) {
+      throw new CapabilityCommandError(
+        'missing_ref',
+        `${action} 需要元素 ref：yan browser ${action} --ref <ref>（ref 来自 yan browser observe）`
+      )
+    }
+    if (action === 'click') return host.click(ref)
+
+    const text = typeof params.text === 'string' ? params.text : undefined
+    if (text === undefined) {
+      throw new CapabilityCommandError(
+        'missing_text',
+        'type 需要文本：yan browser type --ref <ref> --text <文本>'
+      )
+    }
+    return host.type(ref, text)
+  }
+
+  /** observe：把「还没打开」单独归一个 code，其余如实带原话。 */
+  private async browserObserve(action: string): Promise<BrowserObservation> {
+    try {
+      return await this.browserHost().observe()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('浏览器尚未打开')) {
+        throw new CapabilityCommandError(
+          'browser_not_open',
+          '内置浏览器还没打开：先用 `yan browser navigate --url <地址>` 打开一个页面'
+        )
+      }
+      throw new CapabilityCommandError('browser_observe_failed', `${action} 失败：${this.cliHint(message)}`)
+    }
+  }
+
+  /** 截图落盘（宿主能力服务的结果目录），只回路径与字节数。 */
+  private async browserScreenshot(): Promise<{ mimeType: string; path: string; bytes: number }> {
+    let shot: { mimeType: string; data: Buffer }
+    try {
+      shot = await this.browserHost().screenshot()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('浏览器尚未打开')) {
+        throw new CapabilityCommandError(
+          'browser_not_open',
+          '内置浏览器还没打开：先用 `yan browser navigate --url <地址>` 打开一个页面'
+        )
+      }
+      throw new CapabilityCommandError('browser_screenshot_failed', `截图失败：${message}`)
+    }
+    const dir = this.capabilityOpts?.opsDir ?? join(YAN_DIR, 'ops')
+    const path = join(dir, `screenshot-${randomUUID()}.png`)
+    try {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(path, shot.data)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new CapabilityCommandError('browser_screenshot_failed', `截图写盘失败：${message}`)
+    }
+    return { mimeType: shot.mimeType, path, bytes: shot.data.byteLength }
+  }
+
+  /**
+   * 把宿主文案里残留的**旧工具名**换成现在真的能用的 CLI 写法。
+   *
+   * 为什么要在这里改而不是去改那两句原文：
+   *   `src/main/browser/ElementRegistry.ts` 与 `src/main/browser.ts` 的
+   *   STALE_ELEMENT 文案（「请重新调用 browser_observe」）是**模型可见的指引**，
+   *   而它们属于别的文件域（本片只动 capability-server / agent / yan-cli / browser.js）。
+   *   与其让模型去调一个已经不存在的工具，不如在回执里把指引换成真命令 ——
+   *   等价性优先于「文案改在源头」的洁癖。
+   */
+  private cliHint(message: string): string {
+    return message.replace(/\bbrowser_([a-z_]+)\b/g, (_all, action: string) => {
+      return `yan browser ${action.replace(/_/g, '-')}`
+    })
+  }
+
+  /**
+   * 动作失败 → 业务错误。
+   *
+   * 「浏览器尚未打开」单独归 `browser_not_open`：它是最常见的一种，模型
+   * 看到这个 code 就知道该先 navigate，而不用去读中文。其余错误沿用宿主给的
+   * `code`（如权限策略的 `USER_CONTROL_ACTIVE`），没有就用 `browser_<动作>_failed`。
+   */
+  private browserFailure(action: string, res: { error?: string; code?: string }): never {
+    const message = this.cliHint(res.error ?? '浏览器操作失败')
+    const code =
+      res.code ??
+      (String(res.error ?? '').includes('浏览器尚未打开') ? 'browser_not_open' : `browser_${action.replace(/-/g, '_')}_failed`)
+    throw new CapabilityCommandError(code, message)
+  }
+
+  /** 动作后的状态摘要（进上下文的那一小段）。 */
+  private browserSummary(
+    action: string,
+    state: BrowserState,
+    extra: Record<string, unknown> = {}
+  ): Record<string, unknown> {
+    return {
+      kind: 'browser',
+      action,
+      ok: true,
+      open: state.open,
+      url: state.url,
+      title: state.title,
+      mode: state.mode ?? 'embedded',
+      tabs: (state.tabs ?? []).length,
+      ...(state.userControl ? { userControl: true } : {}),
+      ...extra
+    }
+  }
+
+  /** 观察摘要：元素/文本的**全文**在结果文件里，这里只给规模与定位。 */
+  private browserObservationSummary(
+    action: string,
+    observation: BrowserObservation
+  ): Record<string, unknown> {
+    return {
+      kind: 'browser',
+      action,
+      ok: true,
+      url: observation.url,
+      title: observation.title,
+      generationId: observation.generationId,
+      elements: observation.elements.length,
+      accessibilityNodes: observation.accessibilityNodeCount,
+      textChars: observation.text.length
+    }
+  }
+
+  /**
+   * 当前会话「第几轮用户消息」（从 1 开始）。
+   *
+   * 与界面历史分组（[todoSnapshotsFromEntries]）同一口径：数会话文件里的 user 消息。
+   * 任务日志把轮次**记在行里**（不靠条目位置反推），历史快照才能按轮归并、
+   * 「跳回当时那轮对话」才指得准。
+   */
+  private async currentUserRound(): Promise<number> {
+    try {
+      const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
+      if (!res?.success) return 1
+      let userMsgs = 0
+      for (const e of res.data?.entries ?? []) {
+        if (e.type !== 'message') continue
+        const m = e.message as { role?: unknown } | undefined
+        if (m?.role === 'user') userMsgs++
+      }
+      return Math.max(1, userMsgs)
+    } catch {
+      return 1
+    }
+  }
+
+  /**
+   * `yan tasks apply`：一次任务清单写入。
+   *
+   * ── 身份与幂等 ──
+   * 会话身份由宿主自己取（`this.state.sessionId`，**不由模型自报**）；
+   * `operationId` 默认由宿主生成。调用方（模型）显式传了一个时以它为准 ——
+   * 那是「重试同一次提交」的唯一表达方式（把上一次回执里的 id 放回请求文件），
+   * 落盘层的幂等靠它，**不用**它做身份判定（身份永远来自端点绑定）。
+   *
+   * ── 为什么失败要带上「当前清单」──
+   * `index` 越界这类错误只有配上当前清单，模型才能自己改正并重试；
+   * 只给它一句中文，它只能猜。
+   */
+  private async applyTaskPlan(
+    params: Record<string, unknown>
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId || !isSafeSessionId(sessionId)) {
+      throw new CapabilityCommandError(
+        'session_not_ready',
+        '当前还没有可写入的会话（任务清单按会话归属，请等会话就绪后再试）'
+      )
+    }
+
+    const rawOperationId = typeof params.operationId === 'string' ? params.operationId.trim() : ''
+    const request: TaskPlanRequest = {
+      action: params.action as TaskAction,
+      items: params.items,
+      index: params.index,
+      operationId: rawOperationId || randomUUID()
+    }
+
+    const round = await this.currentUserRound()
+    const outcome = await applyTaskPlanOperation({ sessionId, round, request }).catch(
+      (err: unknown): never => {
+        /* 存储层错误（写不进去 / 读不了）原样带码返回，不包装成「参数错」 */
+        if (err instanceof TaskPlanStoreError) {
+          throw new CapabilityCommandError(err.code, err.message)
+        }
+        throw err
+      }
+    )
+
+    if (!outcome.ok) {
+      /* 参数不合法：附件是「当前清单」，让模型能自己修正后重试 */
+      const current = await currentTaskPlan(sessionId).catch(() => null)
+      throw new CapabilityCommandError(outcome.code, outcome.message, {
+        revision: current?.state.revision ?? 0,
+        todos: current?.state.todos ?? []
+      })
+    }
+
+    /* 推送与持久层同源：写成功之后重新读一次（而不是在内存里拼一份） */
+    await this.refreshTodos()
+    const state = outcome.state
+    return {
+      data: {
+        ok: true,
+        action: request.action,
+        operationId: state.operationId,
+        revision: state.revision,
+        replayed: outcome.replayed,
+        changed: outcome.changed,
+        todos: state.todos
+      },
+      summary: {
+        kind: 'task-plan',
+        action: request.action,
+        revision: state.revision,
+        /* 重放要让模型看得见：它重试了一次，而状态**没有**再变 */
+        replayed: outcome.replayed,
+        items: state.todos.length,
+        done: state.todos.filter((t) => t.done).length,
+        changed: outcome.changed.length
+      }
     }
   }
 
@@ -2305,6 +3026,10 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    /* 端点随实例一起停：token 作废，旧 CLI 环境变量从此无效。 */
+    this.capabilityServer?.stop()
+    this.capabilityServer = undefined
+    this.yanCliEnv = undefined
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.streaming = null

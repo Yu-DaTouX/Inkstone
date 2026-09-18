@@ -1,42 +1,25 @@
-import type { SessionTodoSnapshot, TodoStatus } from '../shared/ipc'
+import type { SessionTodoSnapshot } from '../shared/ipc'
+import {
+  isTaskPlanCustomType,
+  normalizeTaskItems,
+  TASK_PLAN_CUSTOM_TYPE,
+  todoArrayOf
+} from '../shared/task-plan'
 
 /**
- * pi 侧各样写法 → 这里的四种状态。
+ * 从会话的 custom entries（以及**宿主任务日志**转成的同形条目）里抽任务清单快照。
  *
- * 为什么要别名表而不是只认一个名字：写清单的是**扩展**（不在这个仓库里），
- * 它的字段名我们管不着（`in_progress` / `doing` / `active` 都见过）。
- * 认不出来的一律当**没有显式状态**（退回 `done` 推断），而不是塞一个猜的 ——
- * 猜错的状态比没有状态更糟。
- */
-const STATUS_ALIASES: Record<string, TodoStatus> = {
-  pending: 'pending',
-  todo: 'pending',
-  open: 'pending',
-  not_started: 'pending',
-  in_progress: 'running',
-  running: 'running',
-  doing: 'running',
-  active: 'running',
-  completed: 'done',
-  complete: 'done',
-  done: 'done',
-  finished: 'done',
-  blocked: 'blocked',
-  failed: 'blocked',
-  error: 'blocked'
-}
-
-function toStatus(v: unknown): TodoStatus | undefined {
-  if (typeof v !== 'string') return undefined
-  return STATUS_ALIASES[v.trim().toLowerCase().replace(/[\s-]+/g, '_')]
-}
-
-/**
- * 从会话的 custom entries 里抽任务清单快照。
+ * 两种来源（契约见 `shared/task-plan.ts`）：
+ *   · `left-panel-tasks` —— 旧 `left-info-panel` 扩展写的，形状 `{ todos: {text, done}[] }`，**只读兼容**；
+ *   · `yan-task-plan` —— 砚宿主任务日志（S3 写入）：真身在 `YAN_DIR/task-plans/<sessionId>.jsonl`，
+ *     由 agent 的 `refreshTodos` 用 `taskPlanLogEntry()` 转成同形条目喂进来（**带轮次**）。
+ * 其它 customType **一律不算任务**（不看名字里有没有 task/todo，那是冒充的来源）。
  *
- * `left-info-panel` 用 `pi.appendEntry('left-info-panel-tasks', {todos})` 写，
- * 形状是 `{ todos: {text, done}[] }`。它**在一轮里会随进度反复写**
- * （0/6 → 1/7 → 7/7 之类），所以原始 entry 里有很多同一轮、不同进度的快照。
+ * 「一条载荷 → 统一条目」的规则在 `shared/task-plan.ts`（`normalizeTaskItems`）：
+ * 那里连 `yan` CLI 也要用，而**轮次归并只属于界面历史**，所以留在本文件。
+ *
+ * 旧扩展在一轮里**随进度反复写**（0/6 → 1/7 → 7/7 之类），
+ * 所以原始 entry 里有很多同一轮、不同进度的快照。
  *
  * 历史任务要展示的是「每一轮最终的清单」，不是每一个中间态。
  * 因此这里：
@@ -51,8 +34,8 @@ function toStatus(v: unknown): TodoStatus | undefined {
 export function todoSnapshotsFromEntries(
   entries: Record<string, unknown>[]
 ): SessionTodoSnapshot[] {
-  // round → 该轮最后一份快照（Map.set 天然让后写的覆盖先写的）
-  const byRound = new Map<number, SessionTodoSnapshot>()
+  /** round → 该轮胜出的快照 + 它是不是宿主日志（宿主优先，见下面的合并规则） */
+  const byRound = new Map<number, { snapshot: SessionTodoSnapshot; host: boolean }>()
   let userMsgs = 0
 
   for (const e of entries) {
@@ -65,36 +48,39 @@ export function todoSnapshotsFromEntries(
     if (e.type !== 'custom') continue
 
     const ct = String(e.customType ?? '')
-    // 认不出名字的 custom entry 不当任务 —— 不能把所有 custom entry 都算进来
-    if (!/task|todo/i.test(ct)) continue
+    // 只认契约里那两个精确标识 —— 模糊匹配会让别的扩展的 entry 冒充任务
+    if (!isTaskPlanCustomType(ct)) continue
+    const host = ct === TASK_PLAN_CUSTOM_TYPE
 
-    const data = e.data as { todos?: unknown } | undefined
-    if (!Array.isArray(data?.todos)) continue
+    const raw = todoArrayOf(e.data)
+    if (!raw) continue
 
-    const todos = data.todos
-      .filter(
-        (t): t is { text?: unknown; done?: unknown; status?: unknown } => !!t && typeof t === 'object'
-      )
-      .map((t) => {
-        const status = toStatus(t.status)
-        /* 两个字段不一致时以「完成」为准：勾上了就不该还在跑 */
-        const done = status === 'done' || Boolean(t.done)
-        /* 只在**认得出**显式状态时才带上它，否则保持老数据的形状 */
-        return {
-          text: String(t.text ?? ''),
-          done,
-          ...(status ? { status: done ? ('done' as const) : status } : {})
-        }
-      })
-      .filter((t) => t.text.length > 0)
+    /* 逐条规范化（坏项丢掉，不因此丢掉整份历史）；空清单不算一份历史 */
+    const todos = normalizeTaskItems(raw)
     if (todos.length === 0) continue
 
-    const round = Math.max(1, userMsgs)
-    byRound.set(round, { id: String(e.id ?? `t${round}`), todos, round })
+    /*
+     * 轮次：
+     *   · 宿主任务日志（`yan-task-plan`）在写入时就记下了当时的轮次，**直接采信** ——
+     *     它落盘时与算它的那一刻可能隔着别的会话动作，靠条目的位置反推会算歪；
+     *   · 旧扩展条目是写进会话文件的，位置本身就是真话，照旧数它前面有几条用户消息。
+     */
+    const round =
+      host && typeof e.round === 'number' && Number.isInteger(e.round) && e.round >= 1
+        ? e.round
+        : Math.max(1, userMsgs)
+    /*
+     * 同一轮里两种来源都写了时**宿主日志优先**（契约里的单写者原则）。
+     * 不能只靠「后写的覆盖先写的」：宿主条目与旧扩展条目谁先落盘取决于
+     * 两个进程的时序，那等于掷骰子。
+     */
+    const prev = byRound.get(round)
+    if (prev?.host && !host) continue
+    byRound.set(round, { snapshot: { id: String(e.id ?? `t${round}`), todos, round }, host })
   }
 
   // 按轮次升序（更早的在前）
-  const groups = [...byRound.values()].sort((a, b) => a.round - b.round)
+  const groups = [...byRound.values()].map((v) => v.snapshot).sort((a, b) => a.round - b.round)
 
   // 相邻且内容完全相同的轮次合并，保留更近的一轮
   const out: SessionTodoSnapshot[] = []

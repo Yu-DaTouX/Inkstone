@@ -3,11 +3,14 @@
  *
  * ⚠️ 这里**只**放路径常量。
  *
- * 历史上这个文件叫 `memory.ts`，装着整套「记忆」系统（MemoryStore / soul.md
- * 只读读 / 认识论规则）。记忆功能已整体移除（用户要求），只剩目录约定 ——
- * 桌面端设置（`desktop.json`）还落在这里。
+ * 数据目录职责：桌面端设置（`desktop.json`）落在这里；`YAN_DIR` 下还有会话派生状态、
+ * 任务日志、项目知识等子目录 —— 各自由对应模块维护，本文件**只管路径常量**。
  *
- * 目录里可能还留着旧的 `memory.json` / `soul.md`：**不主动删**，
+ * 这里历史上是「记忆」系统（`memory.ts` / MemoryStore / soul.md 只读）。那套功能已整体移除，
+ * 且**不会恢复**（AGENTS.md 第五节）；新「项目知识」（`docs/plan/实施-03-项目知识与旧记忆清理.md`）
+ * 是独立新功能，不是把它接回来。
+ *
+ * 但用户目录里可能还留着旧的 `memory.json` / `soul.md`：**不主动删** ——
  * 那是用户的数据，要清自己清。
  */
 import { homedir } from 'node:os'
@@ -56,3 +59,18 @@ export const DOWNLOADS_DIR = process.env.YAN_DOWNLOADS_DIR?.trim() || undefined
 export const YAN_DIR =
   process.env.YAN_DATA_DIR?.trim() ||
   (PORTABLE_DATA_DIR ? join(PORTABLE_DATA_DIR, 'yan') : join(PI_AGENT_DIR, 'yan'))
+
+/**
+ * 项目知识的根目录（实施-03）：一个项目一个子目录。
+ *
+ * 为什么按 `projectId` 分目录而不是一个大文件：项目之间必须**物理隔离** ——
+ * 「A 项目读不到 B 项目的知识」这类保证不该只靠查询条件（漏一个 where 就串了）。
+ * `projectId` 由项目登记给出，条目写入前会再校验形状（见 project-memory-store）。
+ */
+export const PROJECT_KNOWLEDGE_DIRNAME = 'project-knowledge'
+export const PROJECT_KNOWLEDGE_ROOT = join(YAN_DIR, PROJECT_KNOWLEDGE_DIRNAME)
+
+/** 单个项目的知识目录：`YAN_DIR/project-knowledge/<projectId>/`。 */
+export function projectKnowledgeDir(projectId: string): string {
+  return join(PROJECT_KNOWLEDGE_ROOT, projectId)
+}

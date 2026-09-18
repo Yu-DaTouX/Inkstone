@@ -50,6 +50,12 @@ extraResources:
   - from: resources/pi-extensions
     to: pi-extensions
     filter: ['**/*']
+  # 随包的 `yan` CLI（宿主能力入口，模型在 bash 里调它）。
+  # 启动器由主进程写进 YAN_DIR/bin 并前置到 pi 子进程的 PATH，
+  # 这里只需要把脚本本体放进 resources/。
+  - from: resources/yan-cli
+    to: yan-cli
+    filter: ['**/*']
 
 asar: true
 compression: normal

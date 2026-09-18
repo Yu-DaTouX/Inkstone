@@ -136,4 +136,95 @@ export async function runTodoHistoryTests(ok) {
     ok(out[0]?.todos[0]?.status === 'running', `'IN-PROGRESS' → running`)
     ok(out[0]?.todos[1]?.status === 'running', `' Doing ' → running`)
   }
+
+  /*
+   * 8. 来源白名单与单写者优先（实施-02 S1 契约定稿）。
+   *
+   * 旧实现用 `/task|todo/i` 认身份 —— 任何名叫 `my-task-log` 的 custom entry
+   * 只要带 `{todos:[...]}` 就会被当成任务清单显示出来，那不是兼容是冒充。
+   */
+  {
+    const host = (id, todos, extra = {}) => ({
+      type: 'custom',
+      customType: 'yan-task-plan',
+      id,
+      data: { schemaVersion: 1, revision: 1, operationId: 'op-' + id, todos, ...extra }
+    })
+
+    const others = todoSnapshotsFromEntries([
+      user(1),
+      { type: 'custom', customType: 'other-task-log', id: 'x', data: { todos: [T('甲')] } },
+      { type: 'custom', customType: 'my-todos', id: 'y', data: { todos: [T('乙')] } }
+    ])
+    ok(others.length === 0, '只认精确标识：第三方 task/todo 命名的条目不算任务')
+
+    const hostOnly = todoSnapshotsFromEntries([user(1), host('h1', [T('甲')])])
+    ok(hostOnly.length === 1 && hostOnly[0].todos[0].text === '甲', '宿主日志条目被解析（todos 是兼容字段）')
+
+    /*
+     * 同一轮两种来源都写了：**宿主日志优先**，且与落盘先后无关。
+     * 「后写的覆盖先写的」在这里不够 —— 宿主与旧扩展是两个进程，
+     * 谁先落盘是时序骰子。
+     */
+    const legacyFirst = todoSnapshotsFromEntries([user(1), snap('l1', [T('旧')]), host('h1', [T('宿主')])])
+    ok(
+      legacyFirst.length === 1 && legacyFirst[0].todos[0].text === '宿主' && legacyFirst[0].id === 'h1',
+      '旧条目在前：宿主日志胜出'
+    )
+    const hostFirst = todoSnapshotsFromEntries([user(1), host('h1', [T('宿主')]), snap('l1', [T('旧')])])
+    ok(hostFirst.length === 1 && hostFirst[0].todos[0].text === '宿主', '旧条目在后：也不会盖掉宿主日志')
+
+    // 不同轮次互不影响（优先只是同一轮内的规则）
+    const twoRounds = todoSnapshotsFromEntries([
+      user(1),
+      snap('l1', [T('第一轮旧')]),
+      user(2),
+      host('h2', [T('第二轮宿主')])
+    ])
+    ok(twoRounds.length === 2, '不同轮次各自成一份历史（优先规则不跨轮）')
+    ok(twoRounds[0].todos[0].text === '第一轮旧', '第一轮仍是旧条目（该轮没有宿主快照）')
+  }
+
+  /*
+   * 9. 宿主日志条目自带轮次（实施-02 S3）。
+   *
+   * 宿主任务日志是**另一个文件**（`YAN_DIR/task-plans/<sessionId>.jsonl`），
+   * 里面的行推不出「第几轮」—— 写入时就把当时的轮次记进行里（`taskPlanLogEntry`
+   * 把它带进条目）。这里钉两件事：轮次取自记录、**不**被位置覆盖；
+   * 与旧条目混在一起时仍然按同一套规则归并。
+   */
+  {
+    const hostRow = (id, round, todos) => ({
+      type: 'custom',
+      customType: 'yan-task-plan',
+      id,
+      round,
+      data: { schemaVersion: 1, revision: 1, operationId: 'op-' + id, todos }
+    })
+
+    const out = todoSnapshotsFromEntries([
+      user(1),
+      snap('l1', [T('第一轮旧')]),
+      user(2),
+      hostRow('h2', 2, [T('第二轮宿主')]),
+      user(3),
+      hostRow('h3', 3, [T('第三轮宿主')])
+    ])
+    ok(out.length === 3, `旧条目与宿主日志各成一份历史（实际 ${out.length} 份）`)
+    ok(out[0].round === 1 && out[0].todos[0].text === '第一轮旧', '旧条目照旧按位置算轮次')
+    ok(out[1].round === 2 && out[1].todos[0].text === '第二轮宿主', '宿主条目的轮次取自记录')
+    ok(out[2].round === 3, '第三轮也对得上')
+
+    /* 记录里的轮次优先：它们可能不是连续写在一起的（中间切过会话 / 重建过实例） */
+    const skewed = todoSnapshotsFromEntries([user(1), hostRow('h9', 5, [T('第五轮')])])
+    ok(skewed[0].round === 5, '记录里写的轮次优先（位置推不准的时候不会把它挤成第 1 轮）')
+
+    /* 同一轮两种来源：宿主日志胜出，且只出一份 */
+    const mixed = todoSnapshotsFromEntries([
+      user(1),
+      snap('l1', [T('旧')]),
+      hostRow('h1', 1, [T('宿主')])
+    ])
+    ok(mixed.length === 1 && mixed[0].todos[0].text === '宿主', '同一轮带轮次的宿主日志仍然胜出')
+  }
 }

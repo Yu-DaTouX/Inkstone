@@ -67,6 +67,7 @@ export function Composer() {
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const reloadCommands = useStore((s) => s.reloadCommands)
   const openSettings = useStore((s) => s.openSettings)
+  const notify = useStore((s) => s.notify)
   const commandsAt = useStore((s) => s.commandsAt)
   const attachments = useStore((s) => s.attachments)
   const activeSessionId = useStore((s) => s.session?.sessionId ?? '')
@@ -379,6 +380,12 @@ export function Composer() {
      * 所以只把**用过的**提到前面，其余仍按名字 —— 稳定又有用。
      */
     const hit = commands
+      /*
+       * 实施-02 S4：`compatibility` 里标了 `hiddenInMenu` 的命令（目前只有
+       * `/panel`）不进候选列表。它人还在注册表里 —— 手打时由 submit 里的
+       * 兼容分支给明确反馈（而不是静默清空、也不是当消息发给模型）。
+       */
+      .filter((c) => !c.hiddenInMenu)
       .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q))
     return hit.sort((a, b) => {
       const sa = commandSourceRank(a)
@@ -677,8 +684,23 @@ export function Composer() {
       : undefined
 
     if (compatibilityCommand || (localCommand && !localCommand.executable)) {
-      setValue('')
-      clearAttachments()
+      /*
+       * 兼容命令在桌面端**没有可执行动作**。
+       *
+       * ⚠️ 旧实现是 `setValue('') + clearAttachments()` 然后沉默：用户打了
+       * `/panel` 后输入框被清空、什么也没发生，只会以为「命令执行完了」。
+       * 而且草稿和附件是真丢了（用户会重新写一遍）。
+       * 现在：草稿与附件**原样保留**，只推一条说明为什么没动作。
+       *
+       * 同名 runtime 命令不会在此处「接管」：能走到这里的只有注册表里
+       * source=compatibility 的那条；即使 pi 侧也注册了同名命令，
+       * 它也不会被当成消息发出去（那会让模型收到一个斜杠命令文本）。
+       */
+      const command = compatibilityCommand ?? localCommand
+      notify('info', t('composer.compatCommand', { cmd: `/${command?.name ?? localName ?? ''}` }))
+      const note = command?.availability ?? command?.description
+      if (note) notify('info', note)
+      ref.current?.focus()
       return
     }
 

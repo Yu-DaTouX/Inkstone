@@ -72,8 +72,13 @@
     --w-rail: min(var(--w-rail-user, 260px), 210px);
     --w-right: min(var(--w-panel-user, 264px), 190px);
   }
+  /* 收起宽度与宽窗口走同一个真源（--w-rail-collapsed = 0px）。
+     这条**必须留着**：上面那条 min() 是 .workspace 自己的声明，会压过从
+     .app（redesign.css 的 .app.rail-off）继承下来的收起值。但值要跟真源走 ——
+     曾经写死 48px（旧紧凑图标轨的宽度），轨删了它却留下，于是窄窗口收起
+     稳定停在 48px，看起来像「还留着一条边框」（2026-09-18 用户报的形态）。 */
   .app.rail-off .workspace {
-    --w-rail: 48px;
+    --w-rail: var(--w-rail-collapsed);
   }
 }
 
@@ -91,8 +96,9 @@
     --w-rail: min(var(--w-rail-user, 260px), 180px);
     --w-right: min(var(--w-panel-user, 264px), 170px);
   }
+  /* 同上一档：收起值必须走 --w-rail-collapsed，不要写死宽度 */
   .app.rail-off .workspace {
-    --w-rail: 48px;
+    --w-rail: var(--w-rail-collapsed);
   }
 }
 

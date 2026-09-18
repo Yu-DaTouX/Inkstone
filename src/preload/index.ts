@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
+  BuiltinCapabilityView,
   PackageActionResultView,
   PackageListingView,
   SourceRefView,
@@ -211,6 +212,13 @@ const api: YanBridge = {
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
+  },
+  /*
+   * 砚自带的受信能力（实施-02 S4）。只读 —— 内置能力没有安装/卸载，
+   * 所以这里**不应该**长出一个 action。
+   */
+  builtinCapabilities: {
+    list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
   },
   git: {
     state: (cwd) =>
