@@ -634,6 +634,13 @@ const CASES = {
     afterExit: 'gitWriteApplied'
   },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
+  /*
+   * pi 包管理（方案 §9 的 P2，cost 0）：**真实**调用 pi 的 CLI 装一个本地包
+   * 再卸掉。用专属 fixture（`fixtureSub: 'pkgs'`）—— 它会在隔离的
+   * YAN_PI_DIR 下真写 settings.json 与包目录，所以绝不能挂在没有 fixture
+   * 的场景上（那会把 cwd 指到真实项目根）。不联网（本地路径源）。
+   */
+  pkgs: { probe: 'scripts/probe/packages.js', fixture: true, fixtureSub: 'pkgs', delay: 12000, budget: 300000, cost: 0 },
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
   panels: { probe: 'scripts/probe/panels.js', delay: 9000, cost: 0 },
@@ -1066,6 +1073,41 @@ function buildFixtureProject(base) {
    * 预置：main（已推送到本地 bare remote）、feature（与 main 有内容差异，
    * 用来验证切换真的换了工作区文件）、一处未暂存改动、一个未跟踪文件。
    */
+  /*
+   * pi 包管理（P2）的 fixture：一个**最小的本地包**。
+   *
+   * 为什么用本地路径源：安装走的是 pi 自己的 CLI（`pi install <路径>`），
+   * 本地路径不需要联网，也不需要真的往用户目录里装东西 —— 测试全程
+   * 用隔离的 YAN_PI_DIR。放在 fixture 项目目录下，探针那边可以用 cwd 拼出来。
+   */
+  mk('probe-ext')
+  mk('probe-ext', 'extensions')
+  put(join('probe-ext', 'package.json'), JSON.stringify({
+    name: 'yan-probe-ext',
+    version: '9.9.9',
+    description: '探针用的假扩展（P2 的真实安装路径）',
+    license: 'MIT',
+    keywords: ['pi-package']
+  }, null, 2))
+  put(join('probe-ext', 'extensions', 'index.js'), 'export default {}\n')
+
+  /*
+   * pi 包管理（P2）的 fixture：一个最小的**本地包**，放在专属子目录里。
+   * 用本地路径源 —— 装它不需要联网，也不需要往用户目录里写东西
+   *（全程用隔离的 YAN_PI_DIR）。
+   */
+  mk('pkgs')
+  mk('pkgs', 'probe-ext')
+  mk('pkgs', 'probe-ext', 'extensions')
+  put(join('pkgs', 'probe-ext', 'package.json'), JSON.stringify({
+    name: 'yan-probe-ext',
+    version: '9.9.9',
+    description: '探针用的假扩展（P2 的真实安装路径）',
+    license: 'MIT',
+    keywords: ['pi-package']
+  }, null, 2))
+  put(join('pkgs', 'probe-ext', 'extensions', 'index.js'), 'export default {}\n')
+
   const writeRepo = join(dir, 'write')
   mk('write')
   const wgit = (args) => execFileSync('git', args, { cwd: writeRepo, stdio: 'ignore' })
