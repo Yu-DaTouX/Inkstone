@@ -262,7 +262,6 @@
     bad('抛异常：' + (e && e.message ? e.message : String(e)))
   }
 
-  out.push('')
   const failed = out.filter((l) => l.includes('✗')).length
   out.push(failed === 0 ? '[panels] 全部通过' : '[panels] ' + failed + ' 条失败')
   return out.join('\n')

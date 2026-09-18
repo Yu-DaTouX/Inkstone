@@ -735,6 +735,33 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
         </div>
       </div>
 
+      {/*
+        * pi 插件目录（方案 §9 的 P1）。
+        *
+        * 实测结论：目录是**一个网站**（服务端渲染的 HTML，5426 个包，筛选/排序/分页
+        * 都在服务端），**没有结构化数据接口**。方案的前置条件是「确认目录有稳定数据
+        * 接口后再做原生搜索」—— 条件不成立，所以这里**只打开**，不在应用内做一套
+        * 会立刻过期的搜索与收录状态。
+        *
+        * 安装/更新走官方命令 `pi install npm:<包名>`（页面上每条都带这行，可复制），
+        * 不在这里代跑 —— 那会写用户的 pi 目录，需要单独设计生效时机。
+        */}
+      <div className="set-row" data-testid="set-pi-catalog">
+        <div className="set-label">
+          <div className="set-name">{t('set.piCatalog')}</div>
+          <div className="set-desc">{t('set.piCatalogDesc', { count: '5400+' })}</div>
+          <div className="set-desc">{t('set.piCatalogNote')}</div>
+        </div>
+        <button
+          type="button"
+          className="set-btn"
+          data-testid="set-pi-catalog-open"
+          onClick={() => void window.yan.browser.open('https://pi.dev/packages')}
+        >
+          {t('set.piCatalogOpen')}
+        </button>
+      </div>
+
       <div className="set-row">
         <div className="set-label">
           <div className="set-name">{t('tb.cwd')}</div>
