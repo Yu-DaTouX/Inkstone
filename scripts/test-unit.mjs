@@ -1140,6 +1140,23 @@ const { runGitReviewTests } = await import('./test-git-review.mjs')
 await runGitReviewTests(ok, gitReview)
 
 /*
+ * Git **写操作**的纯逻辑（src/shared/git-actions.ts）：失败分类、输入校验、
+ * 版本摘要、命令构造。真跑 git 的部分在 test-git-repo.mjs。
+ */
+const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/git-actions.ts'],
+    outfile: 'out/test/git-actions.mjs',
+    bundle: true,
+    platform: 'neutral',
+    format: 'esm',
+    logLevel: 'warning'
+  }).then(() => import('../out/test/git-actions.mjs'))
+)
+const { runGitActionTests } = await import('./test-git-actions.mjs')
+await runGitActionTests(ok)
+
+/*
  * Git 审查的**真实仓库**验证：数据层与真 git 的接口（临时目录、不碰用户数据）。
  * 与上面的纯解析测试是两层：那边验“我写的解析对不对”，这边验
  * “git 真的是这样输出的吗”，以及最要紧的“只读查询不会改暂存区”。
@@ -1153,6 +1170,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       format: 'esm',
       platform: 'node',
       logLevel: 'silent'
+    }),
+    build({
+      entryPoints: ['src/main/git-actions.ts'],
+      outfile: 'out/test/git-actions-main.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
     }),
     build({
       entryPoints: ['src/main/git-diff.ts'],

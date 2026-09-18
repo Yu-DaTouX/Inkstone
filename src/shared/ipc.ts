@@ -20,6 +20,16 @@ import type {
   GitReviewSnapshot,
   GitScopeRequest
 } from './git'
+/* 写操作的请求 / 结果类型也在这里转发：preload 只 import 本文件（单一入口） */
+export type {
+  GitActionExpected,
+  GitActionKind,
+  GitActionRequest,
+  GitActionResult,
+  GitFailure,
+  GitFailureCode
+} from './git-actions'
+import type { GitActionExpected, GitActionRequest, GitActionResult } from './git-actions'
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
    这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
@@ -1638,7 +1648,7 @@ export interface GitReviewFileRequest extends GitReviewRequest {
  */
 export interface GitBridge {
   /** 仓库状态（环境菜单）。非 Git 目录返回 `repo: null`，**不是错误** */
-  state(cwd: string): Promise<{ repo: GitRepoState | null; error?: string }>
+  state(cwd: string): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
   /** 可选基准（本地 / 远程跟踪 / 标签）与被**其它**工作树占用的分支 */
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
   /** 变更清单（**不含正文**；正文按文件懒加载，避免大 diff 进每次响应） */
@@ -1647,6 +1657,16 @@ export interface GitBridge {
   patch(req: GitReviewFileRequest & { untracked?: boolean }): Promise<GitFilePatch>
   /** 某一侧的文件内容（图片预览、缺失侧判断、「显示完整文件」） */
   content(req: GitReviewFileRequest & { side: GitContentSide }): Promise<GitFileContent>
+  /**
+   * 写操作（方案 §5，G2）：暂存 / 取消暂存 / 提交 / 切分支 / 新建分支 / 拉取 / 推送。
+   *
+   * ⚠️ 这是**唯一**会改用户 index / HEAD / 远程的接口。每个请求都带
+   * `expected`（乐观并发的预期版本）：主进程执行前复核，不一致就**不做**
+   * 并返回 `stale`，由界面刷新后让用户重新决定。
+   */
+  action(req: GitActionRequest): Promise<GitActionResult>
+  /** 仓库配置的 remote 名（推送 / 拉取的下拉与校验） */
+  remotes(cwd: string): Promise<string[]>
 }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */

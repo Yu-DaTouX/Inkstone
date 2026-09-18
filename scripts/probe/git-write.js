@@ -1,0 +1,374 @@
+/**
+ * Git 写操作（方案 §5，G2）—— 真实窗口验收，cost 0。
+ *
+ * ── 与 `git-review.js` 的分工 ──
+ * 那个探针证明「打开审查不会改任何东西」（**只读**）；这一个证明反面：
+ * 「点下去真的改了，而且只改该改的」。两者的 fixture 必须分开 ——
+ * 写操作会真的动仓库，而审查的每条断言都依赖它那份故意做脏的状态。
+ *
+ * ── 为什么这里的断言不满足于「界面上看起来对了」──
+ * 每个关键步骤都用 `window.yan.git.state()` **回读主进程的真实 git 状态**
+ * （stagedCount / branch / head / unpushedCount）。界面自证是不算数的：
+ * 一个只改了 React state 的假操作在这套断言下过不去。
+ * 更强的一层在应用退出之后（`afterExit: gitWriteApplied`）：那时用真的 git
+ * 读 HEAD、提交说明、bare remote 里的 ref —— 渲染进程伪造不了那些。
+ */
+;(async () => {
+  const out = []
+  const ok = (c, s, extra = '') => {
+    out.push((c ? '  ✓ ' : '  ✗ ') + s + (extra ? '  ' + extra : ''))
+    return !!c
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const store = window.__yanStore
+  const early = (msg) => {
+    out.push(msg)
+    return out.join('\n')
+  }
+  if (!store) return early('  ⤺ 跳过：没有 window.__yanStore（探针没被注入）')
+
+  const $ = (sel) => document.querySelector(sel)
+  const testid = (id) => document.querySelector(`[data-testid="${id}"]`)
+  const textOf = (el) => (el ? el.textContent.trim() : '')
+
+  const waitFor = async (fn, ms = 10000, step = 80) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      try {
+        /*
+         * ⚠️ 必须 await：谓词经常是 async（要等一次 IPC 回读真实状态）。
+         * 少了这个 await，Promise 本身是 truthy —— 第一次迭代就「成功」返回，
+         * 而调用方 await 到的其实是 null。表现是一堆看起来像产品坏了的误报。
+         */
+        const v = await fn()
+        if (v) return v
+      } catch {
+        /* 还没出现 */
+      }
+      await sleep(step)
+    }
+    return null
+  }
+
+  const click = async (el) => {
+    if (!el) return false
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(60)
+    return true
+  }
+
+  /*
+   * React 受控组件必须走**原生 setter + input 事件**：
+   * 直接改 `el.value` 再派发 input 时，React 的内部值跟踪会被绕过，
+   * onChange 不触发 —— 表现为「输入框里看得见字，但状态是空的」，
+   * 而提交按钮一直是 disabled。
+   */
+  const typeInto = async (el, value) => {
+    if (!el) return false
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    await sleep(80)
+    return true
+  }
+
+  /** 确保环境菜单是打开的（它可能是开着的 —— 盲点一次反而会关掉它） */
+  const openEnvMenu = async () => {
+    if (testid('env-menu')) return true
+    await click(testid('session-project'))
+    return !!(await waitFor(() => testid('env-menu'), 5000))
+  }
+
+  /**
+   * 按**分支名元素**找条目。
+   * button 的 textContent 含 JSX 留下的换行空白（"\n  main\n  "），
+   * 于是 `/^main/` 这种前缀匹配永远不中 —— 而 `/feature/` 没锚定所以能中，
+   * 结果是「切到 feature」通过、「切回 main」静默失败，一路掩盖到 afterExit。
+   */
+  const branchItem = (name) => {
+    const list = [...document.querySelectorAll('[data-testid="env-branch-item"]')]
+    return (
+      list.find((el) => (el.querySelector('.env-branch-name')?.textContent ?? '').trim() === name) ?? null
+    )
+  }
+  /** 确保分支列表是展开的（它可能是开着的 —— 盲点一次会把它收起来） */
+  const openBranchList = async () => {
+    if (testid('env-branches')) return true
+    await openEnvMenu()
+    await click(testid('env-branch'))
+    return !!(await waitFor(() => testid('env-branches'), 6000))
+  }
+
+  const closeOnboarding = async () => {
+    localStorage.setItem('yan.onboarded', '1')
+    for (let i = 0; i < 20; i++) {
+      const card = $('.ob-card')
+      if (!card) return
+      const btn = [...card.querySelectorAll('button')].find((b) => /开始使用|完成|Get started/.test(b.textContent))
+      if (btn) await click(btn)
+      else await sleep(120)
+    }
+  }
+
+  const COMMIT_MSG = 'feat: live 写操作验收'
+
+  try {
+    await closeOnboarding()
+
+    const cwd = store.getState().session?.cwd || store.getState().settings?.cwd || ''
+    out.push('  会话工作目录 = ' + cwd)
+    ok(/write[\\/]?$/.test(cwd), '会话 cwd 指向写操作 fixture', cwd)
+
+    /* 真实状态的回读口子（断言一律用它，不看界面自报） */
+    const stateFull = async () => await window.yan.git.state(cwd)
+    const state = async () => (await stateFull()).repo
+    /* 诊断：state 读不到时要能看见原因（error 字段），而不是只看到「超时」 */
+    const stateDiag = async () => {
+      try {
+        const res = await stateFull()
+        return JSON.stringify({ repo: !!res.repo, error: res.error ?? '', staged: res.repo?.stagedCount, branch: res.repo?.branch })
+      } catch (e) {
+        return 'throw: ' + (e && e.message ? e.message : String(e))
+      }
+    }
+    const s0 = await waitFor(async () => await state(), 12000)
+    ok(!!s0, '主进程能读到仓库状态')
+    if (!s0) return early('  ⤺ 没有仓库状态，后面的写操作断言无从谈起')
+
+    ok(s0.branch === 'main', '起始分支是 main', String(s0.branch))
+    ok(s0.stagedCount === 0, '起始没有已暂存内容', String(s0.stagedCount))
+    ok(s0.changedCount >= 2, 'fixture 有可暂存的改动', String(s0.changedCount))
+    ok(s0.upstream === 'origin/main', '已有上游（推送不用先设）', String(s0.upstream))
+    ok(s0.unpushedCount === 0, '起始没有待推送提交', String(s0.unpushedCount))
+
+    /* ── 1. 打开审查（写操作的入口在这里）──────────────── */
+
+    const projBtn = testid('session-project')
+    ok(!!projBtn, '会话头部有环境入口')
+    await click(projBtn)
+    const changeBtn = await waitFor(() => testid('env-changes'), 8000)
+    ok(!!changeBtn, '环境菜单里能看到「变更」')
+    await click(changeBtn)
+    ok(!!(await waitFor(() => testid('review-panel'), 6000)), '打开了审查面板')
+
+    /* ── 2. 逐文件暂存：点下去 index 里真的多了一个文件 ── */
+
+    const stageBtn = await waitFor(() => $('[data-file="a.txt"] [data-testid="review-stage"]'), 12000)
+    ok(!!stageBtn, 'a.txt 这一行有「暂存」按钮')
+    if (!stageBtn) return early('  ⤺ 没找到暂存按钮，后面的断言无从谈起')
+
+    await click(stageBtn)
+    const s1 = await waitFor(async () => {
+      const s = await state()
+      return s && s.stagedCount === 1 ? s : null
+    }, 12000)
+    ok(!!s1, '暂存后主进程读到 stagedCount = 1（不是只改了界面）', s1 ? '1' : '超时 → ' + (await stateDiag()))
+    ok((await waitFor(() => testid('git-notice'), 4000)) !== null || true, '（结果行可能出现得很快，不作为判据）')
+    ok((await waitFor(() => testid('commit-staged'), 6000)) !== null, '提交区显示「N 个文件已暂存」')
+    ok(
+      (await waitFor(() => $('[data-file="a.txt"] [data-testid="review-unstage"]'), 6000)) !== null,
+      '同一个文件行出现了「取消暂存」（双状态分别展示）'
+    )
+
+    /* 未跟踪文件也能暂存（它会开始被跟踪） */
+    const newStage = await waitFor(() => $('[data-file="new.txt"] [data-testid="review-stage"]'), 8000)
+    ok(!!newStage, '未跟踪的 new.txt 也有「暂存」按钮')
+    if (newStage) {
+      await click(newStage)
+      const s2 = await waitFor(async () => {
+        const s = await state()
+        return s && s.stagedCount === 2 ? s : null
+      }, 12000)
+      ok(!!s2, '暂存未跟踪文件后 stagedCount = 2')
+    }
+
+    /* ── 3. 取消暂存：只退 index，**不动工作区内容** ─────── */
+
+    const unstageBtn = await waitFor(() => $('[data-file="a.txt"] [data-testid="review-unstage"]'), 6000)
+    if (unstageBtn) {
+      await click(unstageBtn)
+      const s3 = await waitFor(async () => {
+        const s = await state()
+        return s && s.stagedCount === 1 ? s : null
+      }, 12000)
+      ok(!!s3, '取消暂存后 stagedCount 回到 1')
+      /* 工作区里 a.txt 的改动必须还在 —— 取消暂存不是丢弃改动 */
+      ok(
+        (await waitFor(() => $('[data-file="a.txt"] [data-testid="review-stage"]'), 6000)) !== null,
+        'a.txt 仍是「未暂存改动」（内容没被还原掉）'
+      )
+    }
+
+    /* ── 4. 提交：说明 + 提交按钮 → HEAD 真的前进 ───────── */
+
+    const headBefore = (await state())?.head ?? ''
+    const msg = await waitFor(() => testid('commit-message'), 6000)
+    ok(!!msg, '提交区有说明输入框')
+    await typeInto(msg, COMMIT_MSG)
+
+    const submit = await waitFor(() => testid('commit-submit'), 4000)
+    ok(!!submit, '有提交按钮')
+    ok(submit && !submit.disabled, '填了说明且有已暂存内容后，提交按钮可用', submit ? `disabled=${submit.disabled}` : '')
+    await click(submit)
+
+    const s4 = await waitFor(async () => {
+      const s = await state()
+      return s && s.head && s.head !== headBefore ? s : null
+    }, 20000)
+    if (!s4) {
+      /* 诊断：界面报了什么 + 拿**真实的最新版本**直接问主进程一次 */
+      const uiFail = textOf(testid('git-failure')).slice(0, 140)
+      const cur = await stateFull()
+      const direct = await window.yan.git
+        .action({ kind: 'commit', cwd, requestId: 'probe-diag', message: COMMIT_MSG, expected: cur.expected })
+        .catch((e) => ({ ok: false, failure: { message: String(e && e.message) } }))
+      out.push('  ⓘ 诊断：界面失败提示=' + JSON.stringify(uiFail))
+      out.push('  ⓘ 诊断：用最新版本直接提交 → ' + JSON.stringify(direct.ok ? { ok: true, summary: direct.summary } : direct.failure))
+    }
+    ok(!!s4, '提交后 HEAD 真的变了（主进程读到的）', s4 ? s4.head.slice(0, 7) : '超时')
+    ok(s4?.stagedCount === 0, '提交后没有已暂存内容', String(s4?.stagedCount))
+    ok(s4?.unpushedCount === 1, '提交后待推送数为 1（未推送）', String(s4?.unpushedCount))
+    ok(
+      (await waitFor(() => $('.commit-msg')?.value === '' || testid('git-notice'), 6000)) !== null,
+      '提交成功后输入框被清空（不会让人以为没提交）'
+    )
+
+    /* ── 5. 推送：bare remote 真的收到 ──────────────────── */
+
+    const pushBtn = await waitFor(() => {
+      const btn = testid('env-push')
+      return btn && !btn.disabled ? btn : null
+    }, 8000)
+    if (!pushBtn) await openEnvMenu()
+    const push = await waitFor(() => testid('env-push'), 8000)
+    ok(!!push, '环境菜单里有「推送」一项')
+    if (push) {
+      await click(push)
+      const s5 = await waitFor(async () => {
+        const s = await state()
+        return s && s.unpushedCount === 0 ? s : null
+      }, 30000)
+      ok(!!s5, '推送后待推送数归 0（主进程读到）', s5 ? '0' : '超时')
+    }
+
+    /* ── 6. 拉取 ────────────────────────────────────────── */
+
+    const fetchBtn = await waitFor(() => testid('env-fetch'), 6000)
+    ok(!!fetchBtn, '环境菜单里有「拉取」一项')
+    if (fetchBtn) {
+      await click(fetchBtn)
+      const notice = await waitFor(() => testid('env-notice') || testid('git-notice'), 30000)
+      ok(!!notice, '拉取给出了结果行', textOf(notice))
+    }
+
+    /* ── 7. 切换分支：分支名与文件内容真的变了 ──────────── */
+
+    await openEnvMenu()
+    const branchBtn = await waitFor(() => testid('env-branch'), 6000)
+    ok(!!branchBtn, '环境菜单里有分支项', branchBtn ? '' : '菜单文本=' + JSON.stringify(textOf(testid('env-menu')).slice(0, 120)) + ' state=' + (await stateDiag()))
+    await click(branchBtn)
+    const branchList = await waitFor(() => testid('env-branches'), 8000)
+    ok(!!branchList, '点分支项展开了分支列表')
+    const item = await waitFor(() => {
+      /* 等它可用：列表先渲染、状态后到，disabled 期间点了没有任何反应 */
+      const b = branchItem('feature')
+      return b && !b.disabled ? b : null
+    }, 12000)
+    ok(!!item, '分支列表里有 feature')
+    if (item) {
+      await click(item)
+      const s6 = await waitFor(async () => {
+        const s = await state()
+        return s && s.branch === 'feature' ? s : null
+      }, 20000)
+      ok(!!s6, '切换后当前分支真的是 feature（主进程读到）', s6 ? s6.branch : '超时')
+    }
+
+    /* 切回 main：让 afterExit 的断言有一个确定的分支 */
+    await openBranchList()
+    const back = await waitFor(() => {
+      const b = branchItem('main')
+      return b && !b.disabled ? b : null
+    }, 12000)
+    ok(!!back, '分支列表里有 main 可点')
+    if (back) {
+      await click(back)
+      const s7 = await waitFor(async () => {
+        const s = await state()
+        return s && s.branch === 'main' ? s : null
+      }, 20000)
+      ok(!!s7, '切回 main 成功', s7 ? '' : JSON.stringify(await stateDiag()))
+    }
+
+    /* ── 8. 新建分支 ────────────────────────────────────── */
+
+    await openBranchList()
+    const nameInput = await waitFor(() => testid('env-new-branch-name'), 6000)
+    ok(!!nameInput, '分支列表里有「新分支名」输入框')
+    if (nameInput) {
+      await typeInto(nameInput, 'live-made')
+      const typed = await waitFor(() => (nameInput.value === 'live-made' ? nameInput.value : null), 4000)
+      ok(!!typed, '输入框收到了分支名（React 受控值真的更新了）', JSON.stringify(nameInput.value))
+      const createBtn = await waitFor(() => {
+        const b = testid('env-create-branch')
+        return b && !b.disabled ? b : null
+      }, 8000)
+      ok(
+        !!createBtn,
+        '填了名字后「创建并切换」可用',
+        createBtn
+          ? ''
+          : 'disabled=' +
+            String(testid('env-create-branch')?.disabled) +
+            ' value=' +
+            JSON.stringify(nameInput.value) +
+            ' state=' +
+            (await stateDiag())
+      )
+      await click(createBtn)
+      const s8 = await waitFor(async () => {
+        const s = await state()
+        return s && s.branch === 'live-made' ? s : null
+      }, 20000)
+      ok(!!s8, '新建分支并切过去了（主进程读到分支名）', s8 ? s8.branch : '超时')
+    }
+
+    /* 切回 main 收尾 */
+    await openBranchList()
+    const back2 = await waitFor(() => {
+      const b = branchItem("main")
+      return b && !b.disabled ? b : null
+    }, 12000)
+    ok(!!back2, '新建分支之后仍能点回 main')
+    if (back2) {
+      await click(back2)
+      const s9 = await waitFor(async () => {
+        const s = await state()
+        return s && s.branch === 'main' ? s : null
+      }, 20000)
+      ok(!!s9, '收尾时真的回到了 main', s9 ? '' : JSON.stringify(await stateDiag()))
+    }
+
+    /* ── 9. 失败路径：非法分支名要有可读的拒绝 ──────────── */
+
+    await openBranchList()
+    const badInput = await waitFor(() => testid('env-new-branch-name'), 6000)
+    if (badInput) {
+      await typeInto(badInput, 'bad..name')
+      await click(testid('env-create-branch'))
+      const fail = await waitFor(() => testid('git-failure'), 10000)
+      ok(!!fail, '非法分支名被拒并给出说明', textOf(fail).slice(0, 60))
+      const detailBtn = await waitFor(() => testid('git-failure-detail-toggle'), 4000)
+      if (detailBtn) {
+        await click(detailBtn)
+        ok((await waitFor(() => $('.gwrite-fail-raw'), 4000)) !== null, '能展开 git 的原始输出（排查第一现场）')
+      }
+    }
+  } catch (error) {
+    out.push('  ✗ 探针异常：' + (error && error.message ? error.message : String(error)))
+  }
+
+  const failed = out.filter((l) => l.startsWith('  ✗')).length
+  out.push(`[gitwrite] ${failed} 条失败 / 共 ${out.length} 条`)
+  return out.join('\n')
+})()

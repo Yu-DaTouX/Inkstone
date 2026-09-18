@@ -21,6 +21,8 @@ import type {
   FileTextResult,
   ForkPoint,
   GitFileContent,
+  GitActionExpected,
+  GitActionResult,
   GitFilePatch,
   GitRefOption,
   GitRepoState,
@@ -185,12 +187,15 @@ const api: YanBridge = {
 
   /* ---- Git 审查（只读，方案 G1）---- */
   git: {
-    state: (cwd) => invoke<{ repo: GitRepoState | null; error?: string }>('yan:git:state', cwd),
+    state: (cwd) =>
+      invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),
     refs: (cwd) =>
       invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
     snapshot: (req) => invoke<GitReviewSnapshot>('yan:git:snapshot', req),
     patch: (req) => invoke<GitFilePatch>('yan:git:patch', req),
-    content: (req) => invoke<GitFileContent>('yan:git:content', req)
+    content: (req) => invoke<GitFileContent>('yan:git:content', req),
+    action: (req) => invoke<GitActionResult>('yan:git:action', req),
+    remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd)
   },
 
   /* ---- 设置 ---- */

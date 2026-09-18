@@ -22,7 +22,8 @@ import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
-import { readRepoState, listRefs } from './git-service'
+import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
+import { configureWriteContext, listRemotes, runGitAction } from './git-actions'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
@@ -1160,7 +1161,28 @@ function normalizeScope(raw: unknown): GitScopeRequest {
   return { kind: 'working' }
 }
 
+/**
+ * 路径比较用的归一化（Windows 大小写不敏感，且分隔符混用）。
+ * 只为「是不是同一个目录」服务，不做解析。
+ */
+function samePathKind(a: string, b: string): boolean {
+  const norm = (v: string): string => String(v ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  return norm(a) === norm(b)
+}
+
 function registerIpc(): void {
+  /*
+   * 切分支前必须知道「这个目录有没有在跑的任务」（方案 §5.1）。
+   *
+   * 判据用 runner 的 cwd + running：正在跑的回合可能正在读写工作区文件，
+   * 中途把分支换掉，它会读到一半新一半旧的代码 —— 表现成「模型把代码改坏了」。
+   * 渲染端也会拦一道（给出更早的提示），但**真判据在这里**：界面路径可以被绕过，
+   * 主进程是最后一道。
+   */
+  configureWriteContext({
+    hasRunningTask: (cwd) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, cwd))
+  })
+
   /**
    * IPC 来源校验（方案 9.2）。
    *
@@ -1934,7 +1956,17 @@ function registerIpc(): void {
    */
   handle('yan:git:state', async (cwd: string) => {
     try {
-      return { repo: await readRepoState(String(cwd ?? '')) }
+      const dir = String(cwd ?? '')
+      const repo = await resolveRepo(dir)
+      if (!repo) return { repo: null }
+      /*
+       * 一起把「预期版本」带回去：环境菜单里的写操作（切分支 / 拉取 / 推送）
+       * 同样要带上用户看到的那个版本，而菜单没有审查快照可用。
+       * 两次读取与菜单显示的内容是**同一个时刻**的（差几毫秒），
+       * 而且先读版本更安全（见 git-diff.ts 里 reviewSnapshot 的同一段说明）。
+       */
+      const expected = await readExpected(repo.root)
+      return { repo: await readRepoState(repo.root), expected }
     } catch (error) {
       return { repo: null, error: error instanceof Error ? error.message : String(error) }
     }
@@ -1998,6 +2030,94 @@ function registerIpc(): void {
         side: req?.side === 'new' ? 'new' : 'old'
       })
   )
+
+  /*
+   * ---- Git 写操作（方案 §5，G2）----
+   *
+   * 这是整个应用里**唯一**会改用户 Git 状态的入口。防护在 git-actions.ts 里
+   * （按仓库串行、执行前复核预期版本、不 stash/reset/force），这里只做三件事：
+   *   · 剥掉渲染端不该决定的东西（命令形状一律由主进程构造）
+   *   · 把「这个目录有没有在跑的任务」注入进去 —— 切分支前必须问（方案 §5.1）
+   *   · 兜异常，保证渲染端**永远**能拿到一个结果（否则界面会一直转圈）
+   */
+  handle('yan:git:action', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    const cwd = String(raw.cwd ?? '')
+    const expected = (raw.expected ?? {}) as Record<string, unknown>
+    const base = {
+      requestId: String(raw.requestId ?? ''),
+      cwd,
+      expected: {
+        head: typeof expected.head === 'string' ? expected.head : null,
+        indexDigest: String(expected.indexDigest ?? ''),
+        statusDigest: String(expected.statusDigest ?? '')
+      }
+    }
+    const kind = String(raw.kind ?? '')
+    const paths = Array.isArray(raw.paths) ? raw.paths.map((v) => String(v ?? '')) : []
+    const message = typeof raw.message === 'string' ? raw.message : ''
+    const branch = typeof raw.branch === 'string' ? raw.branch : ''
+    const startPoint = typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null
+    const remote = typeof raw.remote === 'string' && raw.remote ? raw.remote : null
+
+    let action: Parameters<typeof runGitAction>[0]
+    switch (kind) {
+      case 'stage':
+      case 'unstage':
+        action = { ...base, kind, paths }
+        break
+      case 'stage-all':
+      case 'unstage-all':
+        action = { ...base, kind }
+        break
+      case 'commit':
+        action = { ...base, kind, message }
+        break
+      case 'switch-branch':
+        action = { ...base, kind, branch }
+        break
+      case 'create-branch':
+        action = { ...base, kind, branch, startPoint, checkout: !!raw.checkout }
+        break
+      case 'fetch':
+        action = { requestId: base.requestId, cwd, kind, remote }
+        break
+      case 'push':
+        action = {
+          ...base,
+          kind,
+          remote,
+          setUpstream: !!raw.setUpstream,
+          branch: branch || null
+        }
+        break
+      default:
+        return {
+          ok: false,
+          failure: { code: 'unknown', message: `不支持的操作：${kind}`, retrySafe: false }
+        }
+    }
+    try {
+      return await runGitAction(action)
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: 'unknown',
+          message: error instanceof Error ? error.message : String(error),
+          retrySafe: false
+        }
+      }
+    }
+  })
+  handle('yan:git:remotes', async (cwd: string) => {
+    try {
+      const repo = await resolveRepo(String(cwd ?? ''))
+      return repo ? await listRemotes(repo.root) : []
+    } catch {
+      return []
+    }
+  })
 
   /* ---- 内置浏览器 ---- */
   rawHandle('yan:browser:getState', () => browser?.getState() ?? {

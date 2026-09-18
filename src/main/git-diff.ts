@@ -14,6 +14,7 @@
  *      `truncated`（而不是假装完整）。
  */
 import { join } from 'node:path'
+import type { GitActionExpected } from '../shared/git-actions'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile, stat } from 'node:fs/promises'
@@ -42,6 +43,7 @@ import {
 } from '../shared/git'
 import {
   gitRun,
+  readExpected,
   readRepoState,
   readStatus,
   readUntrackedMeta,
@@ -100,7 +102,29 @@ function emptyStats(truncated = false) {
   return { files: 0, additions: 0, deletions: 0, binary: 0, truncated }
 }
 
+/**
+ * 审查快照。
+ *
+ * 返回值里带 `expected`（这次读取时的仓库版本），**在清单之前**读 ——
+ * 方向很重要：万一同一个仓库里还有别的进程在写，先读的版本比清单旧，
+ * 写操作复核时会因不匹配而被拒（安全方向）。反过来（清单先、版本后）
+ * 就会拿着新版本放行一堆已经过期的清单。
+ */
 export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot> {
+  const repo = await resolveRepo(q.cwd)
+  const expected = repo
+    ? await readExpected(repo.root)
+    : { head: null, indexDigest: '', statusDigest: '' }
+  return reviewSnapshotInner(q, expected)
+}
+
+async function reviewSnapshotInner(q: ReviewQuery, expected: GitActionExpected): Promise<GitReviewSnapshot> {
+  /*
+   * 这个占位值在**任何**返回路径上都会被 `withExpected` 换成真实版本，
+   * 所以这里的 expected 只是让类型满足 —— 但它必须是「空得明显」的值，
+   * 万一哪条路径漏了替换，写操作会因摘要不匹配而被拒（安全的失败方向），
+   * 而不是拿着假版本去执行。
+   */
   const base: GitReviewSnapshot = {
     ok: true,
     repo: null,
@@ -110,7 +134,8 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
     notes: [],
     truncated: false,
     requestId: q.requestId,
-    generatedAt: Date.now()
+    generatedAt: Date.now(),
+    expected
   }
 
   const repo = await resolveRepo(q.cwd)
@@ -118,6 +143,7 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
     /* 非 Git 项目不是错误：界面显示「未使用 Git」并保留文件来源等功能 */
     return { ...base, notes: ['这个目录不在 Git 仓库里'] }
   }
+
 
   let status
   try {
@@ -245,7 +271,8 @@ export async function reviewSnapshot(q: ReviewQuery): Promise<GitReviewSnapshot>
     notes,
     truncated,
     requestId: q.requestId,
-    generatedAt: Date.now()
+    generatedAt: Date.now(),
+    expected
   }
 }
 
