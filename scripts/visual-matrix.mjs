@@ -527,6 +527,20 @@ function registerStubHandlers() {
   ipcMain.handle('yan:packages:action', () => ({ ok: true, output: 'Installed npm:pi-zh-cn' }))
   /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
   ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
+  /* PR 状态（§7）：给一个"已合并 + 检查通过 + 本地有未推送提交"的样子 */
+  ipcMain.handle('yan:git:prStatus', () => ({
+    ok: true,
+    state: 'merged',
+    checks: 'success',
+    title: '把手改可拖拽 + 落盘',
+    number: 42,
+    url: 'https://github.com/o/pi-desktop/pull/42',
+    base: 'main',
+    localAhead: true,
+    host: 'github.com',
+    owner: 'o',
+    repo: 'pi-desktop'
+  }))
   /* 工作树（W1）：两条，一条主、一条「砚创建」 */
   ipcMain.handle('yan:git:worktrees', () => ({
     ok: true,
@@ -1537,7 +1551,8 @@ const STATES = {
       await sleep(500);
       const ok =
         document.querySelector('[data-testid="env-source-menu"]') &&
-        document.querySelector('[data-testid="env-compare-web"]');
+        document.querySelector('[data-testid="env-compare-web"]',
+    '[data-testid="env-pr-state"]');
       return ok ? 'ok' : 'no-links';
     })()
   `,

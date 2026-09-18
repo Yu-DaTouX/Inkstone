@@ -165,6 +165,7 @@ pi 吐事件
 |---|---|---|---|
 | `git-service.ts` | 414 | Git 只读查询的底座：`execFile` 封装（参数数组、**不经 shell**、关掉 external diff/textconv 的两道环境变量）、仓库发现（30s 缓存 + `.git` mtime 失效）、`status --porcelain=v2`、refs 列表、worktree 占用分支、ref / 路径校验、未跟踪文件的有界元数据（行数 / 大小 / NUL 嗅探 / LFS） | `git-diff.ts`、`index.ts`；单测 `test-git-review.mjs` / `test-git-repo.mjs`（真实仓库） |
 | `git-actions.ts` | 659 | **写操作 —— 唯一会改用户仓库的文件**：按仓库串行、预期版本分级复核、八个动作（暂存 / 取消暂存 / 批量 / 提交 / 切分支 / 新建分支 / 拉取 / 推送）、超时后重读 HEAD、hook 文件探测。「应用会不会改用户的 Git、怎么改」只看这一个文件就能答完 | `shared/git-actions.ts`、`git-service.ts`；单测 `test-git-actions.mjs` / `test-git-repo.mjs`；live `gitwrite` |
+| `hosting.ts`（main） | 233 | **PR 状态（§7 的 G3）**：远端 → owner/repo、GitHub REST API 查 PR 与 check-runs、五种失败分类。**只读**（不创建 / 不合并 / 不评论）；token 只从环境变量读。状态映射的两个优先级（merged_at > closed、draft > open）与「有失败就是失败」都写了断言 | 单测 `test-hosting.mjs`（纯解析 + 一次真实 API）；live `gitwrite` 第 14 节 |
 | `sources.ts`（main） | 292 | **会话来源的持久化引用（§8 的 S1）**：图片写到数据目录（文件名 = 内容 sha256 前 32，同内容幂等）、文件只登记路径 + `size:mtime` 指纹、移除只删副本（**永不删用户原文件**）、会话 id 当目录名前的字符清洗（挡路径穿越）。**唯一**持有来源字节的地方 | 单测 `test-sources.mjs`（真实文件读写）；live `gitwrite` 第 13 节 |
 | `SourceMenu.tsx` | 326 | 环境菜单里的「来源」：三类合并 + 筛选 + 缩略图 + 「已关联 / 文件不在了」两态 + 边界文案。**只显示能证明的状态** | live `gitwrite`；视觉 `envlinks` |
 | `packages.ts`（main） | 349 | **pi 包管理（§9 的 P2）**：读 settings.json 的 `packages`、按 source 形状解析包目录、装/卸/更新（调 pi 自己的 CLI，参数注入在发起前就挡下、有任务在跑时拒绝）。**唯一**会改用户 pi 目录的地方 | 单测 `test-packages.mjs`（真实 CLI + 强隔离）；live `pkgs` |

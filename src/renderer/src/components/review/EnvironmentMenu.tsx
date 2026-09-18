@@ -42,6 +42,40 @@ export function EnvironmentMenu() {
   const newSession = useStore((s) => s.newSession)
   const changeCwd = useStore((s) => s.changeCwd)
   const repoView = useRepoState(project)
+
+  /**
+   * PR 状态文案（方案 §7）。
+   *
+   * ⚠️ 这里必须写全分支，不能 `t(\`pr.${state}\`)` —— `t()` 的键是**字面量联合
+   * 类型**，拼出来的字符串过不了类型检查（这正是不该拼的原因：拼出来的键
+   * 拼错了编译期发现不了）。
+   *
+   * 查不到时要说清是哪一种查不到（没认证 / 限流 / 网络 / 不支持 / 仓库不存在），
+   * 而不是笼统的「无法获取」—— 用户接下来该做什么完全取决于哪一种。
+   */
+  const prText = (): string => {
+    if (pr === null) return t('pr.querying')
+    if (!pr.ok) {
+      if (pr.error === 'auth') return t('pr.err.auth')
+      if (pr.error === 'rate-limit') return t('pr.err.rate-limit')
+      if (pr.error === 'network') return t('pr.err.network')
+      if (pr.error === 'not-found') return t('pr.err.not-found')
+      if (pr.error === 'unsupported') return t('pr.err.unsupported')
+      return t('pr.err.unknown')
+    }
+    if (pr.state === 'none') return t('pr.none')
+    const head =
+      pr.state === 'merged' ? t('pr.merged') : pr.state === 'closed' ? t('pr.closed') : pr.state === 'draft' ? t('pr.draft') : t('pr.open')
+    const checks =
+      pr.checks === 'pending'
+        ? ' · ' + t('pr.checks.pending')
+        : pr.checks === 'success'
+          ? ' · ' + t('pr.checks.success')
+          : pr.checks === 'failure'
+            ? ' · ' + t('pr.checks.failure')
+            : ''
+    return head + checks + (pr.localAhead ? ' · ' + t('pr.localAhead') : '')
+  }
   const repo = repoView.repo
   /* 写操作结束后刷新仓库状态：菜单里的数字（待推送 / 变更数）必须立刻是对的 */
   const write = useGitWrite(project, (res: GitActionResult) => {
@@ -64,6 +98,18 @@ export function EnvironmentMenu() {
   const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
   /** remote 的托管网页地址（github/gitlab/bitbucket 才认）；null = 不显示「在网上比较」 */
   const [webRepo, setWebRepo] = useState<string | null>(null)
+  /** PR 状态（§7）：只读查询，只在菜单打开时拉一次 */
+  const [pr, setPr] = useState<{
+    ok: boolean
+    state: string
+    checks: string
+    title?: string
+    number?: number
+    url?: string
+    localAhead?: boolean
+    error?: string
+    message?: string
+  } | null>(null)
   /*
    * 携带未提交改动（W2a）。
    * 三份东西是**分开**勾的：已暂存、未暂存、未跟踪 —— 因为在新工作树里
@@ -174,6 +220,27 @@ export function EnvironmentMenu() {
         }
       })
   }, [pickOpen, project])
+
+  /*
+   * PR 状态（§7）：只在菜单打开时查一次（它会发外发请求，不能每次渲染都打）。
+   * 失败也记下来 —— 「为什么没有 PR」和「查不到」对用户是两件事。
+   */
+  useEffect(() => {
+    if (!open || !project) return
+    let alive = true
+    setPr(null)
+    void window.yan.git
+      .prStatus(project)
+      .then((res) => {
+        if (alive) setPr(res)
+      })
+      .catch((e: unknown) => {
+        if (alive) setPr({ ok: false, state: 'none', checks: 'none', error: 'unknown', message: e instanceof Error ? e.message : String(e) })
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, project, repoView.repo?.head])
 
   /*
    * 托管网页比较（方案 §7）：只在菜单打开时问一次 remote 的网页地址。
@@ -737,13 +804,26 @@ export function EnvironmentMenu() {
                 </div>
               ) : null}
 
-              <div className="env-item env-static" data-testid="env-pr" title={t('env.prUnavailable')}>
+              <button
+                type="button"
+                role="menuitem"
+                className="env-item"
+                data-testid="env-pr"
+                title={pr?.message ?? pr?.title ?? ''}
+                onClick={() => {
+                  /* 有 PR 就打开它的网页；没有就什么都不做（不弹假状态） */
+                  if (pr?.url) {
+                    setOpen(false)
+                    void window.yan.browser.open(pr.url)
+                  }
+                }}
+              >
                 <Icon name="globe" size={14} />
                 <span className="env-label">{t('env.pr')}</span>
-                <span className="env-sub" title={t('env.prUnavailable')}>
-                  {t('env.prUnavailable')}
+                <span className="env-sub" data-testid="env-pr-state">
+                  {prText()}
                 </span>
-              </div>
+              </button>
 
               <button
                 type="button"

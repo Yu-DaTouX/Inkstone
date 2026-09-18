@@ -1674,6 +1674,26 @@ export interface GitBridge {
    * 关掉应用还在，删除前会逐项检查未提交与未推送内容。契约里**没有** force 选项。
    */
   /**
+   * 关联 PR 的状态（方案 §7）。只读：不创建、不合并、不评论。
+   * 本机没有 `gh`，所以直接调 GitHub REST API —— 没有 token 时也能读公开仓库。
+   */
+  prStatus(cwd: string): Promise<{
+    ok: boolean
+    state: 'none' | 'draft' | 'open' | 'merged' | 'closed'
+    checks: 'none' | 'pending' | 'success' | 'failure'
+    title?: string
+    number?: number
+    url?: string
+    base?: string
+    /** PR 的 head.sha 与本地 head 不一致 → 本地有未推送的提交 */
+    localAhead?: boolean
+    host?: string
+    owner?: string
+    repo?: string
+    error?: 'unsupported' | 'auth' | 'rate-limit' | 'network' | 'not-found' | 'unknown'
+    message?: string
+  }>
+  /**
    * remote 的**托管网页**地址（方案 §7 的托管网页比较）。
    * 只读；认不出的托管站返回 null —— 不猜路径，免得给用户一个 404。
    */

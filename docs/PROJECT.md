@@ -484,6 +484,33 @@ yan:sources:list / addImage / verifyFiles / removeImage / readImage
 
 **移除的语义**：图片连副本一起删，文件与网页只删登记；**不改写已发送的历史**。
 
+### 2.21 PR 状态（方案 §7 的 G3）
+
+```
+yan:git:prStatus → main/hosting.ts
+  ├── 远端地址 → owner/repo（复用 shared/git.ts 的 remoteWebUrl）
+  ├── GitHub REST API: /pulls?head={owner}:{branch}&state=all
+  └── /commits/{head.sha}/check-runs → 检查三态
+```
+
+**为什么不用 gh（GitHub CLI）**：方案原文是「可先采用 GitHub CLI……后续再评估直接 API」。
+实测本机没有装 gh，而 Yan 自己能发请求 —— 直接调 API 少一层外部依赖。token 只从
+环境变量（GITHUB_TOKEN / GH_TOKEN）读：**不落盘、不进设置**，也不去翻 ~/.config/gh。
+没有 token 时匿名读公开仓库（实测余量 60/小时够用），私有仓库会 404/403 —— 那时
+显示「需要认证」，**不编状态**。
+
+⚠️ **关联依据是 head/base 的实际信息**（方案 §7 的硬要求）：查询用
+`head={远端 owner}:{分支}`，带 owner 才能正确处理 **fork**；再把 PR 的 `head.sha` 与
+**本地** head 比一次，不一致就说「本地有未推送的提交」（那正是此刻最该知道的事）。
+「不能仅按同名分支猜测」指的是**只看分支名** —— 那样 fork 场景会认错人。
+
+**状态映射里的两个优先级**（都写了断言，因为反过来就是错的）：
+`merged_at` 优先于 `closed`（合并的 PR 状态也是 closed）、`draft` 优先于 `open`；
+检查里**有失败就是失败、还在跑就是 pending**（不能因为大部分通过就显示通过）。
+
+**只读**：不创建、不合并、不评论（方案 §7：「创建 PR 是单独后续动作，不与读取状态
+混合；本阶段不自动合并 PR」）。
+
 ## 修改前按需阅读
 
 - 工作区规则：[AGENTS](../AGENTS.md)。

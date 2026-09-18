@@ -1188,6 +1188,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
+      entryPoints: ['src/main/hosting.ts'],
+      outfile: 'out/test/hosting.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
       entryPoints: ['src/main/sources.ts'],
       outfile: 'out/test/sources.mjs',
       bundle: true,
@@ -1216,10 +1224,13 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runGitRepoTests } = await import('./test-git-repo.mjs')
 const { runPackagesTests } = await import('./test-packages.mjs')
 const { runSourcesTests } = await import('./test-sources.mjs')
+const { runHostingTests } = await import('./test-hosting.mjs')
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 await runPackagesTests(ok)
 console.log('\n--- S1. 会话来源的持久化引用 ---')
 await runSourcesTests(ok)
+console.log('\n--- G3. PR 状态（纯解析 + 一次真实 API）---')
+await runHostingTests(ok)
 await runGitRepoTests(ok)
 
 /*

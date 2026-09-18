@@ -25,6 +25,7 @@ import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
 import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
 import { configurePackageContext, listPackages, runPackageAction } from './packages'
+import { prStatus } from './hosting'
 import { listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from './sources'
 import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
@@ -2198,6 +2199,29 @@ function registerIpc(): void {
    * 渲染端拿到的只是一个 https 链接 —— 它**不能**让主进程跑任意 git 命令，
    * 这条通道也一样（remote 名字由主进程自己挑）。
    */
+  /*
+   * 关联 PR 的状态（§7）。**只读** —— 不创建、不合并、不评论。
+   *
+   * token 只从环境变量读（GITHUB_TOKEN / GH_TOKEN）：不落盘、不进设置，
+   * 也不去翻用户的 ~/.config/gh（那是 gh 自己的东西）。没有 token 时
+   * GitHub 允许匿名读公开仓库，私有仓库会返回 404/403，那时界面如实显示
+   * 「需要认证」—— 不编状态。
+   */
+  handle('yan:git:prStatus', async (cwd: string) => {
+    try {
+      const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim() || null
+      return await prStatus(String(cwd ?? ''), token)
+    } catch (error) {
+      return {
+        ok: false,
+        state: 'none' as const,
+        checks: 'none' as const,
+        error: 'unknown' as const,
+        message: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
   handle('yan:git:remoteWeb', async (cwd: string) => {
     try {
       return await remoteWeb(String(cwd ?? ''))

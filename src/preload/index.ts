@@ -223,6 +223,8 @@ const api: YanBridge = {
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
     remoteWeb: (cwd) => invoke('yan:git:remoteWeb', cwd),
+    /* PR 状态（§7）：只读，未认证时只能读公开仓库 */
+    prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
     worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
     worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req)
