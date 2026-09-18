@@ -126,8 +126,38 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 |---|---|---|
 | 分型渲染 | 按工具种类选壳体（文件改动 / 命令输出 / …），不再一律套终端外壳 | `chat/ToolDetails.tsx` |
 | Codex 风格 | 一条条列出的工具行 + 可折叠的组；默认收起，只展开运行中的那条 | `chat/ToolRow.tsx`、`chat/ToolGroup` |
+| 来源归属 | `bash` 里敲 `yan tasks apply` 的那条卡标「任务计划 · 砚内置」（`data-origin="yan-task-plan"`）；**仍是 bash 卡**，展开后是原始命令与输出 | `shared/tool-origin.ts`（有单测）、`chat/ToolRow.tsx`、`styles/chat.css`（`.trow-src`） |
 | 前后快照 | 写入类工具在执行前后各存一份，差异归属靠这个（`edit` 的参数只是替换片段，不等于 diff） | `main/snapshots.ts`（有单测） |
 | 终端窗口 | 工具输出可调大小的窗口 | `chat/Terminal.tsx` |
+
+**任务清单的来源（实施-02 S1–S4，2026-09-18）**：右栏任务分区由**两个来源合并**驱动
+（`agent.ts` 的 `refreshTodos` → `main/todo-snapshots.ts` → 右栏任务分区）：
+1. **宿主任务日志**（S3 起是主来源）：`YAN_DATA_DIR/task-plans/<sessionId>.jsonl`，
+   由模型 `bash` → `yan tasks apply` → 宿主 `main/task-plan-store.ts` 写入（只追加、按会话串行、
+   CAS + 幂等、落盘失败不报成功）；
+2. 会话文件里的旧条目（`left-panel-tasks`，**只读兼容**，永不回写）。
+只认两个**精确标识**（第三方 `my-task-log` 这类不算任务）；同一轮两者都有时**宿主日志优先**。
+启动后 `main/extensions-inventory.ts` 把「用户扩展 / 砚薄层」写进日志（诊断样例）——
+旧条目只读、两者不会互相覆盖。
+⚠️ 宿主日志**不写进会话 JSONL**（pi 的 RPC 没有追加 custom entry 的命令，且 01 §5 禁止外部编辑在用的 JSONL）；
+代价是用户拿 pi 终端打开同一会话看不到这些任务（判定过程见 [证据-02-S3 §1](plan/证据-02-S3-宿主任务服务.md)）。
+契约在 `shared/task-plan.ts`；剩余切片见 [实施-02](plan/实施-02-任务工具内置化-已完成.md)，
+本轮证据见 [证据-02-S3](plan/证据-02-S3-宿主任务服务.md) 与 [证据-02-S4](plan/证据-02-S4-UI与命令接线.md)。
+
+**S4 的界面接线（2026-09-18）**：
+
+| 面 | 现在的做法 | 涉及文件 |
+|---|---|---|
+| 工具卡归属 | 模型用 `bash` 敲 `yan tasks apply` 时，卡片显示「任务计划 · 砚内置」；判定只看命令文本（`shared/tool-origin.ts`），**不改变写入语义**，也无法伪造原生独立工具事件 | `shared/tool-origin.ts`、`chat/ToolRow.tsx` |
+| `/panel` | 从 `/` 补全里**隐藏**（`hiddenInMenu`），但**保留在注册表**（`source=compatibility`）—— 删掉它，用户扩展注册的同名命令就会变成唯一命中项、手打时发给模型；手打时正保留草稿与附件，只推两句话说明为什么没动作 | `main/command-registry.ts`、`chat/Composer.tsx`、`state/store.ts`（`notify`） |
+| 插件页 | 「已装的插件」（可卸载）与「砚内置能力」（随包分发、无卸载按钮）分开；内置清单从主进程**实际加载路径**派生（新增只读 IPC `yan:capabilities:builtin`），**不另写一份** | `main/extensions-inventory.ts`、`settings/PackagesTab.tsx` |
+| 来源诊断 | 有用户扩展时不再说「砚只读不写」（S3 之后不成立），改为两条写入路径 + 「同一轮以宿主日志为准」 | `main/extensions-inventory.ts`（有单测） |
+
+**S5 的真实运行验收（2026-09-18）**：新场景 `taskplan`（cost 1）让模型**自己写请求文件、自己登记、自己做、自己勾选**，
+结果「工具调用 / 界面清单 / 磁盘日志」三处逐条一致；`taskcli`（含取消一节）/ `taskext`（**旧任务扩展 + 无关扩展**共存）/
+`slashcmd` / `todos` / `todonew` / `sessions` / `historyswitch` 全绿；打包后启动器写进 `YAN_DIR/bin` 并指向
+**解包目录**里的 `yan.mjs`，CLI 在安装目录里真跑 `--help`、无宿主时报可读错误。
+证据见 [证据-02-S5](plan/证据-02-S5-真实运行与验收.md)。
 
 ### 2.6 推理内容
 

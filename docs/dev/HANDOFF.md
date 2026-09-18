@@ -1,25 +1,212 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-18**，含 P2-7 与 N21-4 剩余项）。本文是**当前状态与剩余任务的唯一入口**。
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-19**，含并行编排 W1 的 03-S2 / 04-S1 / 08-S0 三个子代理片）。本文是**当前状态与验证基线的唯一入口**；
+**接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
-按优先级接手看 [未完成工程排期](PRIORITY-2026-09-15-未完成排期.md)（那份**只列未完成项**）；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
 
 ## 接手顺序
 
 1. 阅读根目录 [AGENTS.md](../../AGENTS.md)，检查 `git status --short`，保留已有改动。
-2. 从下面的「当前未完成」选一组任务；用 [PROJECT](../PROJECT.md) 和 [CODE-MAP](CODE-MAP.md) 定位实现。
+2. 从下面的「当前未完成」选一组任务；**执行顺序与切片看 [实施计划](../plan/README.md)**；用 [PROJECT](../PROJECT.md) 和 [CODE-MAP](CODE-MAP.md) 定位实现。
 3. 按 [TESTING](TESTING.md) 做相应检查，把证据登记回本表（六栏口径见文末）；打包按 [RELEASING](RELEASING.md)。
 
-## 当前基线（最近一次真实执行：2026-09-17 晚）
+## 当前基线（最近一次真实执行：2026-09-19）
 
 | 面 | 数字 / 结论 | 说明 |
 |---|---|---|
-| 自动检查 | **2026-09-18（方案 S1）**：单测 **2237/2237**（新增 38 条真实文件读写：图片落盘 + 逐字节读回、同内容幂等、会话隔离、路径穿越进不来、文件引用「还在不在」的复核、**「登记着但磁盘上没有」如实报**、移除只删副本不碰原文件、会话清理带走副本）。**2026-09-18（方案 P2 界面 + 端到端）**：单测 **2199/2199**；新增 live 场景 **`pkgs`**（cost 0，专属 fixture）—— 真实调用 pi 的 CLI 装一个本地包再卸掉，6 条详情断言（描述 / 来源 / 许可 / **「会执行代码、不做沙箱隔离」的边界声明**）。**隔离**：`YAN_PI_DIR` + 本地路径源，不联网、不碰用户真实装的包。**2026-09-18（方案 H1 / G3）**：单测 **2145/2145**（新增 15 条纯解析：remote 的三类写法、Windows 盘符不当成 scp、自建服务不猜、三家托管站各自的 compare 路径 —— Bitbucket 的顺序与我们相反）。**2026-09-18（方案 W2a）**：单测 **2130/2130**（G11 新增 24 条真实仓库：已暂存/未暂存/未跟踪三份分开迁移、二进制逐字节、未跟踪文件内容、目标侧 diff 摘要比对、源 status 与 index **逐字节不变**、起点非 HEAD 时拒绝、冲突时拒绝且不留半个工作树、勾选项过期时拒绝）。**2026-09-18（方案 W1）**：单测 **2106/2106**（G10 新增 52 条真实 `git worktree`：slug 规则、`worktree list` 解析、真实创建、主工作树不受影响、未提交改动不跟着过去、五条拒绝路径、删除的三类拦截、干净且已推送后真的删掉）。**2026-09-18（方案 G2）**：单测 **2055/2055**（G2 新增 **+79 条真实仓库写操作**：暂存只动选中文件、取消暂存**不碰工作区内容**、无首提交走 `rm --cached`、hook 拒绝、身份未配置、脏工作区切分支由 git 裁决、并发写按仓库串行、被拒时 HEAD 与提交数不变；以及 **+42 条纯逻辑**：失败分类 / 提交说明与分支名校验 / 长度前缀的版本摘要 / 命令参数构造）。`typecheck` / `build` / `audit:refs` 干净；**单测 1853/1853**（2026-09-18 从 1509 增至 **1620** —— 其中 +7 是 N18 尾巴的 IPC 错误剥壳 `stripIpcErrorPrefix`；新增 P2-7 `episode-fold` 界面开关 22 条、「三阶段独立 Rearm/Cooldown」30 条、**EpisodeState 切片 36 条**（确定性边界 / 收束判据 / 幂等与上限 / 消费门与生成门 / 真落盘三连 + schema 交叉校验），1509 那批是 N21-8 Deep Context 的闸门 / 输入有界 / 解析容错 / 注入幂等，以及用户开关的三个来源与优先关系；1450 那批的构成是 **N21-5 前置硬化 +50、N21-11 CJK 估算 +7、N21-6 State Refresh +5、provenance +35**：`turnsSince` 回合口径 / 输入自净 / `foldEligible`（含「清扫不得绕过地板」）/ 注入契约头与 `freshness`+`sourceHead` 透传 / `episodesDropped` / `pendingUserOnly` 与 `freshView` / `tailRolesOf`；此前 1353 里含 N01 的 25 条拖拽顺序与 R01–R04 的 **42 条失败路径断言**）。**2026-09-18 用 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash` 分批跑完了 check 的全部 live 场景**（33 + 23 + 18 次执行，含重复回归）：**唯一的红是 `todos`**；另有三处红是**真 bug、已修**（`features` 的档位断言拿了 detached 节点；`contextproduce` / `contextgate` 的退出后检查没按会话隔离），两处是**批量负载下的偶发**（`sessions` / `virtual`，单跑即绿）。上一次全量实跑（早于本轮改动）是 71 个场景 69 通过 | `todos` 是**陈旧失败**（任务面板按产品边界保持现状，AGENTS.md 第五节）；`subagent` 在换用 deepseek 后已转绿（此前是免费模型返回**空文本**）。另有手动场景 `compactionstatus` **前提过期**：pi 0.85.1 不再按 `reserveTokens` 在回合结束自动压；用改动前的实现重跑同样失败，app 侧压缩链路由 `contexttakeover` 覆盖并通过 |
-| 真实运行 | **2026-09-18（方案 S1）**：`gitwrite` 扩到 **96 条断言**全绿 —— 第 13 节走完整路径：加网页来源 → 列表出现（标题取自输入、"已关联"态、打开按钮带原始地址）→ 四个筛选出现 → 移除后消失；并断言两句**边界文案**（「移除不会删你的原文件、不改写已发送的历史」「只是关联，不上传代码」）。**2026-09-18（方案 H1 / G3）**：`gitwrite` 扩到 **81 条断言**全绿 —— 第 13 节走界面加/删外部链接（`javascript:` 地址被拒、标题与原始地址都对、**边界文案里「不会上传代码」被读出来断言**），并验证本地 bare remote **不显示**「在网上比较」（给一个打不开的链接比不给更糟）。**2026-09-18（方案 W2）**：`gitwrite` 扩到 **72 条断言**全绿 —— 第 11 节走界面勾选携带（未暂存 + 未跟踪）→ 回读**目标工作树**里真有那些改动、源仓库里那份改动**还在**；第 12 节点「开新会话」→ 回读会话 cwd 真的换了、菜单自动收起。**这一轮又抓出三个真问题**：① 已暂存的 patch 必须应用**两次**（`--cached` 进 index + 再进工作区），只做 `--cached` 会在目标里凭空造出一个「未暂存改动」，源仓库里那个文件本来是 index 与工作区一致的；② `notes.unshift(...字符串)` 把**每个字符**塞成一条 note；③ 探针里 `data-testid` 在 input 自身上却按「内部 input」查 → 数到 0 个（诊断输出显示文案里明明有文件名）。**2026-09-18（方案 W1）**：`gitwrite` 场景扩到 **57 条断言**全绿 —— 新增工作树一节：菜单里创建 → **主进程回读**多出一条、路径落在 `<仓库名>-worktrees` 下（不是临时目录）、没有上游时「移除」被拒并列出原因、被拒后工作树还在。**这一轮也抓出两个真问题**：① `git worktree list --porcelain -z` 的 `-z` 是把**每一行**都以 NUL 结尾（不是记录之间分隔）—— 我按后者解析，导致 `branch` 永远是 null、「分支被其它工作树占用」不会亮、删除检查里的未推送判断被整段跳过（合成输入不会暴露它，真实仓库测试一跑就中）；② 探针第 9 节点了 `env-create-branch` 却没先等它可用，**disabled 的按钮不派发 click**，事件被浏览器吞掉（同一个坑第三次复发，已写进注释）。**2026-09-18（方案 G2）**：新场景 `gitwrite`（cost 0，**已进 check**）—— 44 条断言全绿，每条关键步骤都**回读主进程的真实 git 状态**（不是界面自证）；退出后 `afterExit: gitWriteApplied` 用真 git 核对：HEAD 的提交说明就是界面上输入的那条、分支停在 main、`live-made` 分支存在、**bare remote 里的 main 与本地 HEAD 同一个 sha**（推送真的出去了）。同批回归 `gitreview`（只读保证）全绿。**真实运行抓出两个设计问题**：① 初版让每个动作都比三件套预期版本 → 连点两个文件的暂存第二个必被拒、提交后立刻推送必被拒（全是假冲突）→ 改成按动作分级；② 写操作成功后界面手里的 expected 还是旧的 → 切回 main 后马上建分支被拒 → 用响应里带回的状态就地更新（摘要字段置空，任何「全比」的动作照常被拒）。**2026-09-18 深夜（方案 G1）**：新场景 `gitreview`（cost 0，**已进 check**）全绿 —— 环境菜单/范围切换/行号与增删/「N 行未修改」真的展开（8→83 条上下文行）/已查看持久化/图片前后对照（两张图字节不同）/二进制不伪造行数/筛选与折叠；**退出后逐字节比对** `status`、`ls-files -s`、`diff --cached --numstat`、`HEAD` 证明只读，并做了三条反向验证（注回 `git add -A` → 场景 6 条红；只污染 index → 退出后 3 条只读断言红）。此前：cost 0 场景 + 手动 cost 1 场景 | **2026-09-17 R01–R04 轮**：`title`（cost 1，真实通过；新增「手动名真的落盘」与「返回明确成功」两条断言）、`browserboundary`（cost 0，R01 回归）、`sessionrunners`（cost 0，R02 回归）全绿。上一次全量轮次实跑：`sessions` `historyswitch` `contextbudget` `toolgroup` `fs` `e2e` `tokens` `language` `contexttakeover` `live` `reasoning` `virtual` `logs`。**2026-09-17 S1 轮次**：`contextstate`（真实窗口删会话 → 退出后查派生状态清理）、回归 `trash`（真删 + 撤销）与 `sessions`。**2026-09-17 S2–S6 轮次**：`contextsweep`（cost 1，三个回合：真实 pi 里第二个回合后 sweep 生效 + 模型真的 `context_recall` 取回原文 + 第三个回合确认召回正文被清成存根，见方案 §15.4），同批回归 `contextstate` 与 `trash`；随后用用户指定的 `YAN_TEST_MODEL=commandcode/longcat-2.0:free` 独立重跑并通过（bash 8893、recall `turn=2`、`expiredRecalls≥1`、0 error）。**2026-09-17「清理默认开」轮次**：同一场景改为**不设 `kinds`** 重跑通过 —— 验的就是默认接管集本身（bash 8893、归档 1 条、`ctx://` 指得回原始条目、`swept≥1`、模型真的 recall 取回原文 `tokens=2224`、`expiredRecalls≥1`、0 error），见方案 §15.5。不可用或触顶时备用 `commandcode/laguna-s-2.1-free`。**同日 N21-7 轮次**：`contextbudget`（cost 0）重跑通过 —— 第 7 节真实改设置 → 来源 `user`、界面工作集 = 主进程算的、设置面板回填与恢复默认；同场修正 2 条陈旧断言（`下一步` 应为清理、图例两格已接管）。**同日 S7（状态生成器）轮次**：`contextproduce`（cost 1，**已进 check**）真实通过 —— 真实回合调 bash → 诊断 `stage=producer, hook=committed` 1 次且 0 错误、状态文件 `revision=1` / `objective` 非空 / `commands=1`、下一回合 `injectedTaskState=true`、状态文件过主进程 `loadContextState` 校验；同批回归 `contextsweep`（cost 1，**默认 kinds 下没有 producer 行** —— 验证“默认不花钱”）与 `contextstate` / `contextswitchguard` / `contextbudget`（cost 0）全通过。**同日（N01 拖拽排序）轮次**：`test:live -- railreorder`（cost 0，**已进 check**）37 条断言全绿 —— 合成 PointerEvent 走真实拖拽路径、回读 `yan.getSettings()` 验落盘、跨组拒绝、折叠态自动展开、搜索态禁用、click 被吞、无残留类名；同批回归 `live` / `grouprename` / `railsearch` / `projectlimit` / `railmini` / `railtitle` 六个侧栏场景全通过；另做了**两次反向验证**（去掉同组限制 → 跨组两条变红；不消费 click → click 那条变红，均已还原）。**2026-09-17 晚（N21-5 前置硬化）轮次**：`contextgate`（cost 1，新场景，**已进 check**）全绿 —— gate 被评估 1 次 / judged `too-early` / `committed` 0 次 / 状态文件 0 份，即「短会话不花钱」在真实链路成立；`contextproduce`（cost 1）适配 gate 后全绿，含 `task-state-injected{freshness:partial, sourceHead:6, tokens:119}`、`episodes 为空`、`gate 当场激活`；同批回归 `contextsweep`（cost 1，默认 kinds）/ `contextstate` / `contextswitchguard` / `contextbudget` / `context`（最后一条顺带修了一处陈旧 fixture，见 [归档 §1.11](../archive/2026-09-17-已完成归档.md)）。**同日第四轮复核轮次**：按外部意见改掉两处（Sweep 不得绕过最低回合数；`inject` 的语义写死为「允许 TaskState 参与任何模型可见上下文」），并落地「落后 1 条未 settled 的 user 视为 fresh」（`pendingUserOnly` + `freshView`），单测到 1394；`contextproduce` 重跑 7 次：**前 6 次里 5 次是免费模型侧失败**（`aborted` ×3 / `not-json` ×1 / `error` ×1，均已核实不是代码问题），**第 7 次成功且全绿** —— 拿到的关键证据是 `{"freshness":"fresh","sourceHead":6,"tokens":141,"gap":0,"turnsGap":1,"pendingOnly":true,"tail":["session_info","user"]}`（`pendingOnly:true` ↔ `freshness:fresh`，而 `turnsGap` 仍为 1）。 **2026-09-17 晚（N21-11 CJK 估算）轮次**：新口径下重跑 `contextsweep`（cost 1，默认 kinds）✓ 与 `contextgate`（cost 1）✓（前者 `swept>=1`，后者短会话仍 `too-early` / 0 提交 / 0 状态文件）；cost 0 四场景 `context` / `contextstate` / `contextbudget` / `contextswitchguard` ✓；`contexttakeover` 顺带修好了它的**静默失败**（探针现在先跑预热回合、发够大的消息、并在等压缩前断言「回合真的跑起来了」+ 打印 `pi 用量`），实测用量 1940 > 1500、**接管真的触发**（`triggeredBy: policy` / `policyStage: compact`），但压缩那一步调模型时撞上 **longcat 当日 100 次免费额度用尽（429）**、`laguna-s-2.1-free` 上游不可用 —— **改用用户指定的 `deepseek/deepseek-v4.1-flash` 后，`contextsweep` 与 `contexttakeover` 都取到绿**：后者 `pi 用量=31019` → 压缩 `completed`、`beforeTokens=31019` → `afterTokens=120`、`triggeredBy: policy` / `policyStage: compact`、界面「最近一次工作集 · 已完成」（场景本身也修好了：单个大回合 + `keepRecentTokens:1`，预算 180s → 420s，见 [方案 §18.8](../design/方案-上下文工具内的自动压缩-2026-09-15.md)）；**`contextrefresh`**（cost 1，新场景，已进 check）在策略 `{minTurns:1, minTokens:1e8, refreshRatio:1e-6}` 下命中 `near-window`，诊断 `{reason:"near-window", activated:true, window:1000000}` 证明 `ctx.model.contextWindow` 在真实链路可用（方案 §20）；**同模型下 `contextproduce` 也全绿** —— 生成器 1 次提交 0 错误、注入 1 次且 `freshness="fresh"`（`pendingOnly:true`）、gate 当场激活、状态文件 `revision=1` / `episodes 为空` / 主进程校验 ok、`stateOverhead=4.6%（low，分母改为只算本场景会话）；**同日 provenance 轮**：`contextproduce` 全绿且带回证据分布 `{"observed":1,"derived":1,"hypothesis":4,"total":6}`（模型真的引用）、注入 `tokens` 141 → 329（`inferred` 标记真的进了注入块）、状态文件过主进程校验（新的 `kind:tool + derived` 组合合法），`stateOverhead = 6.4%（low）`；**同日 superseded 轮**：注入诊断新增 `items:{active,skipped}`（真实运行 `{"active":7,"skipped":0}`），并用真实状态文件 + 真实注入链验证 superseded 不进注入块（`skipped=1` 渲染与注入均不含它，证据层级=模块级，见[归档 §1.17](../archive/2026-09-17-已完成归档.md)）；**同日模型级 override 轮**：`contextbudget`（cost 0，预算 90s → 180s）第 8 节真的 `setModel` 换到 `deepseek/deepseek-v4-flash`，模型级 override 当场失效（来源 `model` → `default`、工作集 321k → 240k），切回又生效（[归档 §1.18](../archive/2026-09-17-已完成归档.md)）；**同日结构化摘要轮**：新场景 `contexttakeoversummary`（cost 1）在**真实落盘的状态文件**上跑真实 `buildStructuredSummary` —— 逐类非空 4 类（task/constraints/unresolved/nextActions）、摘要 863 字符、两个块都在（[归档 §1.19](../archive/2026-09-17-已完成归档.md)）。**同一轮曾误报一个缺陷（已撤回）**：当时以为 `session_before_compact` 一次都没被调到，实际是**检查里的过滤条件写错了**（compact 系 trace 没在 payload 写 `stage`，而 `diagnostic` 只把第一参数放进 `hook`）；给 compact 系补上 `stage` 后 `contexttakeover` 实测 `{entered:1, fallback:1}` —— 钩子确实被调到，fallback 原因是 `inject-off`（该场景没开 `episode-fold`，符合设计）。「状态存在 + 水位可用 → 真的接管」那一次成功分支**已闭环**（同日）：新场景 `contexttakeoverstate`（cost 1）实测 **`takeover 1 次 / fallback 0 次`**（`tier=stale-hard`、`before=36397 → after=108`）—— 这是 `hook:'takeover'` 第一次在真实链路出现（[归档 §1.21](../archive/2026-09-17-已完成归档.md)）。**同日 N21-8 Deep Context 落地**：新模块 `context-deep.js`（216 行）+ `context.js` 的 ④ 挂接，单测 **1498/1498**；`contextdeep`（cost 1）全绿 —— Pass 1 `ms=3627 / outputChars=177`（真调了模型）、`injectedWorkingTrace:true`（注入真的进了这一轮）；反向验证在 `contexttakeoversummary` 里（没开则 **0 条 deep 记录**）；**默认关，且「可手动开」已闭环**：设置面板「上下文」页有开关（`ctx-deep`），传递链是「渲染端 → 主进程 → `desktop.json` → 扩展读文件」（不是 env，所以改完立即生效、不用重建实例）；视觉证据 `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-17.png` 已看图；界面路径的 live 证据是 `contextdeeppref`（cost 1）—— 扩展读到了开关并停在门槛上（`below-threshold`），真正的注入由 `contextdeep` 用测试通道降门槛验（[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。**同日 P2-7 轮**：新场景 `contextfoldpref`（cost 1，**已进 check**）全绿 —— 从设置面板关掉之后，`desktop.json` 真的落 `contextFold.enabled:false`、诊断里 0 条生成动作但有 1 条 `hook:skipped / reason:kind-off`（带 `kinds=["tool-sweep","recall","compaction"]`，即扩展真的读到了关闭且只关了一项）、0 次注入、0 份状态文件；同日同模型的 `contextfolddefault` 是反向对照（同样条件下会生成）（[归档 §1.23](../archive/2026-09-17-已完成归档.md)）。**同日 N21-4 剩余项轮**：`contextproduce` 重跑全绿 —— 加了阶段节流后真实链路仍然「生成 → 落盘 → 注入」（[归档 §1.24](../archive/2026-09-17-已完成归档.md)）。**同轮 EpisodeState 切片**：新场景 `contextepisode`（cost 1，已进 `check`）全绿 —— 真实回合里 `hook:'episode-window'` 两次（`4条/837tok`）、模型给出 Episode 并落盘（id `ep-…` / `sourceRange` 指回原始条目 / `unresolved` 为 0）、`task.episodeRefs` 里没有它（shadow）、状态文件过主进程校验（[归档 §1.25](../archive/2026-09-17-已完成归档.md)）。**同日孤儿进程检查**：`test-live` 在所有场景跑完后新增一道进程表检查（命令行含 `--mode rpc` 且**父进程已不在表里**）—— `sessionrunners`（cost 0）实跑输出「✓ 没有残留」；反向验证：构造的真孤儿被检出（2 个），同时用户环境里正在跑的 5 个真实 pi 实例**全部未被误报**（父进程链在）。` |
-| 视觉 | **2026-09-18（方案 S1）**：`envlinks` 重跑成来源菜单（筛选、图片缩略图、文件、网页、「文件不在了」的异常态、边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18p.png`（溢出 0px，已看图）。**这张图又抓出一次真问题**：`src-*` 那一整块样式我忘了写，标题与「已关联」粘在一起、缩略图占不到位置 —— 新组件没有样式时不会报错，只会难看。**2026-09-18（方案 P2）**：新增 `settingspkg` 状态（目录入口 / 安装区 / 已装列表三种状态：用户级、项目级、「磁盘上找不到」/ 生效时机）。**这张图抓出两个真问题**：① 视觉矩阵**不跑 `registerIpc`**、全靠桩，漏了 `yan:packages:*` 就在界面上渲染成 `No handler registered`；② `.set-row` 是 **grid**（两列），只写 `flex-direction: column` 完全无效 —— 内容被留在第二列、整块跑到右半边（改成显式 `display: flex` 才对）。图：`matrix-settingspkg-1440x900-100-dark-2026-09-18n.png`（溢出 0px）。**2026-09-18（方案 H1 / G3）**：新增 `envlinks` 状态（菜单滚到底：在网上比较 · github.com、关联外部任务的一条 + 两个输入 + 边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18j.png`（溢出 0px，已看图）。**2026-09-18（方案 W2）**：`envworktrees` 状态重跑（`matrix-envworktrees-1440x900-100-dark-2026-09-18i.png`，溢出 0px，已看图）。分支名原来被挤成 `feat/git-re...` —— 改成允许换行 + 名字保底 96px（分支名是这个区里最需要看全的东西，要拿它去终端里敲）。**2026-09-18（方案 W1）**：新增 `envworktrees` 状态（工作树区：主工作树**没有**移除按钮、砚创建的带标记、同时删分支、新分支名与目标目录两个输入）；`YAN_MATRIX_ONLY=envworktrees` 跑组 0/1 → `matrix-envworktrees-1440x900-100-{dark,light}-2026-09-18g.png`（2 张，溢出 0px，已看图）。**2026-09-18（方案 G2）**：新增两态 —— `reviewwrite`（文件行「暂存 / 取消暂存」+ 头部批量按钮 + 底部提交区）与 `envbranches`（环境菜单展开分支列表 + 当前分支标记 + 新建分支输入 + 拉取 / 推送 ↑N）；`YAN_MATRIX_ONLY=reviewwrite,envbranches` 跑组 0/1 → `matrix-{reviewwrite,envbranches}-1440x900-100-{dark,light}-2026-09-18f.png`（4 张，溢出 0px，已看图）。**2026-09-18 深夜（方案 G1）**：新增两个状态 —— `envmenu`（环境菜单：变更/本地+打开复制/分支/PR 不可用/比较分支）与 `review`（审查面板：范围+统计+两列行号 diff+未修改区+变更树+已查看进度+图片对照）；`YAN_MATRIX_ONLY=envmenu,review` 跑组 0/1 → `matrix-{envmenu,review}-1440x900-100-{dark,light}-2026-09-18e.png`（4 张，溢出 0px，已看图）。**截图当场拍出两个真问题**（审查面板与工具栏争空间、「本地」点了却打开审查），已修并重拍。此前：**2026-09-18 深夜本轮**：组 0 **全绿**（**24 个状态**、溢出 0px）—— 新增 `pendingcards`（待投递卡片）、`railsessions`（项目会话折叠），`railmini` 重拍成「左栏完全消失」；证据 `matrix-{pendingcards,railsessions,railmini}-1440x900-100-dark-2026-09-18.png`（已看图）。**同日更早一轮**：新增 `autonomous` 状态（自主模式双光带），跑组 0 全绿，产出 `matrix-{autonomous,main,modelmenu}-1440x900-100-dark-2026-09-18.png`。此前：`npm run visual:matrix` **组 0/1 追加 `usageturn` 通过**（R03 证据：`matrix-usageturn-1440x900-100-{dark,light}-2026-09-17.png`，溢 0px；`YAN_MATRIX_ONLY=usageturn` 跑组 0/1）。此前：**8 组全绿、40 张截图**（37 个状态 + 3 张引导层） | 组 0/1 重跑（深/浅共 26 张，含 `usageelapsed`）；每张带溢出 ≤ 1px 与关键元素硬断言。**2026-09-17 追加批次**（`STAMP=2026-09-17`）：只重跑受「Tool Sweep 默认开」影响的 3 张 —— `matrix-contextbudget-{dark,light}` 与 `matrix-ctxnarrow-dark`（`YAN_MATRIX_ONLY=contextbudget,ctxnarrow` 跑组 0/1 全绿、溢出 0px）：新图里「下一步」已变成**清理旧工具输出（约 168k 时）**、清理阶段标记为已接管；旧批次（`-2026-09-16`）原样保留。**整组**重跑仍受本机 GPU/Network 崩溃影响（组 0 跑到 10 分钟看门狗），与本次改动无关。**同日 N21-7 追加批次**：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1，产出 `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-17.png`（设置面板「上下文」tab，溢出 0px）。**同日（N01 拖拽排序）追加批次**：`YAN_MATRIX_ONLY=railreorder` 跑组 0/1，产出 `matrix-railreorder-1440x900-100-{dark,light}-2026-09-17.png`（截图停在**拖拽进行中**：被拖行半透明 + 目标位置 2px 插入线；溢出 0px；已裁剪放大逐张核对深浅两套对比度）。**同日 P2-7 追加批次**（`STAMP` 起可由 `YAN_MATRIX_STAMP` 覆盖，旧批次原样保留）：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1 → `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-18.png`（新增 `ctx-fold` 开关行，溢出 0px，已裁剪放大看图核对「已开启」按钮与中英文案）。**同日 N03 追加批次**：新增两个状态 —— `toolgroup`（折叠组展开、组内行保持一行）与 `toolterm`（命令行的终端窗口，只有命令类工具会渲染 `.term`）；`YAN_MATRIX_ONLY=toolgroup,toolterm` 跑组 0/4 → `matrix-toolgroup-1440x900-100-dark`、`matrix-toolterm-1440x900-100-dark`、`matrix-toolgroup-900x520-100-dark`（**窄窗口**）三张，溢出 0px，已裁剪放大核对 |
+| 自动检查 | **2026-09-19（并行编排 W1 · 01-S4b / 03-S2 / 04-S1 / 08-S0）**：单测 **2684/2684**（01-S4b **+17**：`browser.js` 零注册 / `browser.*` 已登记 / CLI 错误码与退出码分层；03-S2 **+153**：14 节真实文件断言）；回归 `test:live -- live`（cost 0）、`browser` / `browserboundary`(L04) / `slashcmd`（3/3）通过。**01-S4b 取到端到端最小闭环**：`test:live -- browserclimodel`（cost 1）两次通过 —— 模型自己发现 `yan browser` 能力入口并完成 `navigate` → `observe`。04-S1 是**零模型调用**的技术预检（RPC 33 命令 / `yan` 10 个已登记命令、差集 8 个）；08-S0 是**零代码**设计冻结（526 行状态机文档）。全部由本机 `pi -p` 非交互子代理完成，主编排者已核对**文件域与 mtime**。⚠️ 单测与 live 数字来自各自子代理的实测输出（编排者只复跑了 `audit:refs`）` |
+| 自动检查 | **2026-09-19（实施-09 S1）**：`typecheck`（含 CSS 约定 / layer 自检）/ `build` 干净；单测 **2510/2510**（本轮无纯逻辑改动，条数不变）；**cost 0 四场景全绿**（`fs` / `narrow` / `railmini` / `toolgroup`）—— `fs` 此前稳定红 3 条现已全清，`narrow` 三档窗口收回硬值 0，`toolgroup` 补上上一轮「25 条高度」未重跑的尾巴。**2026-09-18（实施-02 S5）**：单测 **2510/2510**（本片 **+9**：证据链前提 —— 两个 fixture 扩展、`taskplan` 已接线、`electron-builder.yml` 里 `yan-cli` 的 from/to）；`typecheck` / `build` 干净；新增 cost 1 场景 **`taskplan`**（模型自主多步，全绿）与回归 `taskcli` / `taskext` / `slashcmd` / `todos` / `todonew` / `sessions` / `historyswitch` 全绿；`npm run dist:dir` + `test:packaged` 通过（新增 11 条 —— 启动器落地、指向解包目录、CLI 真跑、无宿主时报错可读）。**2026-09-18（实施-02 S4）**：单测 **2501/2501**（本片 **+48**）；`typecheck` / `build` 干净；`slashcmd`（cost 0，第 3/20 节改写）与回归 `todos` / `taskext` 全绿；`taskcli`（cost 1，deepseek）全绿（含 4 条来源断言）—— 同轮**修掉一个真缺陷**：`resources/yan-cli/yan.mjs` 的 help 文案里嵌了反引号，整个 CLI 语法报错（已补「真跑 CLI」的单测）。**2026-09-18（实施-02 S3）**：单测 **2453/2453**（本轮 +53）；`typecheck` / `build` 干净；新场景 `taskcli`（cost 1，不进 `check`）与回归 `todos` / `taskext` / `capability`（后者用 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）全绿；**`fs` 稳定红 3 条**（焦点 / roving tabindex，AB 验证与本片改动无关，**已于 2026-09-19 修真因**，见「本轮（2026-09-19）实施-09 S1」）。**2026-09-18（方案 S1）**：单测 **2237/2237**（新增 38 条真实文件读写：图片落盘 + 逐字节读回、同内容幂等、会话隔离、路径穿越进不来、文件引用「还在不在」的复核、**「登记着但磁盘上没有」如实报**、移除只删副本不碰原文件、会话清理带走副本）。**2026-09-18（方案 P2 界面 + 端到端）**：单测 **2199/2199**；新增 live 场景 **`pkgs`**（cost 0，专属 fixture）—— 真实调用 pi 的 CLI 装一个本地包再卸掉，6 条详情断言（描述 / 来源 / 许可 / **「会执行代码、不做沙箱隔离」的边界声明**）。**隔离**：`YAN_PI_DIR` + 本地路径源，不联网、不碰用户真实装的包。**2026-09-18（方案 H1 / G3）**：单测 **2145/2145**（新增 15 条纯解析：remote 的三类写法、Windows 盘符不当成 scp、自建服务不猜、三家托管站各自的 compare 路径 —— Bitbucket 的顺序与我们相反）。**2026-09-18（方案 W2a）**：单测 **2130/2130**（G11 新增 24 条真实仓库：已暂存/未暂存/未跟踪三份分开迁移、二进制逐字节、未跟踪文件内容、目标侧 diff 摘要比对、源 status 与 index **逐字节不变**、起点非 HEAD 时拒绝、冲突时拒绝且不留半个工作树、勾选项过期时拒绝）。**2026-09-18（方案 W1）**：单测 **2106/2106**（G10 新增 52 条真实 `git worktree`：slug 规则、`worktree list` 解析、真实创建、主工作树不受影响、未提交改动不跟着过去、五条拒绝路径、删除的三类拦截、干净且已推送后真的删掉）。**2026-09-18（方案 G2）**：单测 **2055/2055**（G2 新增 **+79 条真实仓库写操作**：暂存只动选中文件、取消暂存**不碰工作区内容**、无首提交走 `rm --cached`、hook 拒绝、身份未配置、脏工作区切分支由 git 裁决、并发写按仓库串行、被拒时 HEAD 与提交数不变；以及 **+42 条纯逻辑**：失败分类 / 提交说明与分支名校验 / 长度前缀的版本摘要 / 命令参数构造）。`typecheck` / `build` / `audit:refs` 干净；**单测 1853/1853**（2026-09-18 从 1509 增至 **1620** —— 其中 +7 是 N18 尾巴的 IPC 错误剥壳 `stripIpcErrorPrefix`；新增 P2-7 `episode-fold` 界面开关 22 条、「三阶段独立 Rearm/Cooldown」30 条、**EpisodeState 切片 36 条**（确定性边界 / 收束判据 / 幂等与上限 / 消费门与生成门 / 真落盘三连 + schema 交叉校验），1509 那批是 N21-8 Deep Context 的闸门 / 输入有界 / 解析容错 / 注入幂等，以及用户开关的三个来源与优先关系；1450 那批的构成是 **N21-5 前置硬化 +50、N21-11 CJK 估算 +7、N21-6 State Refresh +5、provenance +35**：`turnsSince` 回合口径 / 输入自净 / `foldEligible`（含「清扫不得绕过地板」）/ 注入契约头与 `freshness`+`sourceHead` 透传 / `episodesDropped` / `pendingUserOnly` 与 `freshView` / `tailRolesOf`；此前 1353 里含 N01 的 25 条拖拽顺序与 R01–R04 的 **42 条失败路径断言**）。**2026-09-18 用 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash` 分批跑完了 check 的全部 live 场景**（33 + 23 + 18 次执行，含重复回归）：**唯一的红是 `todos`**；另有三处红是**真 bug、已修**（`features` 的档位断言拿了 detached 节点；`contextproduce` / `contextgate` 的退出后检查没按会话隔离），两处是**批量负载下的偶发**（`sessions` / `virtual`，单跑即绿）。上一次全量实跑（早于本轮改动）是 71 个场景 69 通过 | `todos` 是**陈旧失败**（任务面板按产品边界保持现状，AGENTS.md 第五节）；`subagent` 在换用 deepseek 后已转绿（此前是免费模型返回**空文本**）。另有手动场景 `compactionstatus` **前提过期**：pi 0.85.1 不再按 `reserveTokens` 在回合结束自动压；用改动前的实现重跑同样失败，app 侧压缩链路由 `contexttakeover` 覆盖并通过 |
+| 真实运行 | **2026-09-19（实施-09 S1）**：**cost 0** —— `fs`（3 条红全清：`End` 移到最后可见节点 / roving tabindex / 鼠标收起焦点）、`narrow`（三档窗口收起后 `rail=0px`）、`railmini`、`toolgroup` 全绿；两条缺陷都做了**反向验证**（48px 临时改回 → 两档变红并实测 48px；fs 的 `End` 用逐帧日志定案 `found:false` → `found:true`）。**2026-09-18（实施-02 S5）**：新场景 `taskplan`（cost 1，deepseek-v4.1-flash）一次全绿 —— 模型自己写请求文件、5 次 `yan tasks apply`、建出 3 个文件、界面 3/3 完成，**界面与磁盘日志逐条相同**（文字 + 勾选），会话 JSONL 里无任务条目；`taskcli` 新增「取消」一节 4 条（取消后清单不变、无卡住的运行行、输入框可用，退出后日志仍是 2 行）；`taskext` 扩成「旧任务扩展 + **无关扩展**」（诊断 2 项、`/notes` 可用）；回归 `todos` / `todonew` / `slashcmd` / `sessions` / `historyswitch` 全绿。**2026-09-18（实施-02 S4）**：`taskcli`（cost 1）新增 4 条 —— 工具行被标为砚内置任务计划 / 标记的仍是 bash 卡 / 徐标写「任务计划」/ 展开后能看到原始命令；`slashcmd`（cost 0）第 20 节 —— 手打 `/panel` 后草稿逐字符未变、合成附件仍在、给出两句话原因、**没发给模型**；`taskext`（cost 0）第 4 节 —— 用户扩展注册的 `/panel` 与兼容项两条并存，命中兼容那条。**2026-09-18（方案 S1）**：`gitwrite` 扩到 **96 条断言**全绿 —— 第 13 节走完整路径：加网页来源 → 列表出现（标题取自输入、"已关联"态、打开按钮带原始地址）→ 四个筛选出现 → 移除后消失；并断言两句**边界文案**（「移除不会删你的原文件、不改写已发送的历史」「只是关联，不上传代码」）。**2026-09-18（方案 H1 / G3）**：`gitwrite` 扩到 **81 条断言**全绿 —— 第 13 节走界面加/删外部链接（`javascript:` 地址被拒、标题与原始地址都对、**边界文案里「不会上传代码」被读出来断言**），并验证本地 bare remote **不显示**「在网上比较」（给一个打不开的链接比不给更糟）。**2026-09-18（方案 W2）**：`gitwrite` 扩到 **72 条断言**全绿 —— 第 11 节走界面勾选携带（未暂存 + 未跟踪）→ 回读**目标工作树**里真有那些改动、源仓库里那份改动**还在**；第 12 节点「开新会话」→ 回读会话 cwd 真的换了、菜单自动收起。**这一轮又抓出三个真问题**：① 已暂存的 patch 必须应用**两次**（`--cached` 进 index + 再进工作区），只做 `--cached` 会在目标里凭空造出一个「未暂存改动」，源仓库里那个文件本来是 index 与工作区一致的；② `notes.unshift(...字符串)` 把**每个字符**塞成一条 note；③ 探针里 `data-testid` 在 input 自身上却按「内部 input」查 → 数到 0 个（诊断输出显示文案里明明有文件名）。**2026-09-18（方案 W1）**：`gitwrite` 场景扩到 **57 条断言**全绿 —— 新增工作树一节：菜单里创建 → **主进程回读**多出一条、路径落在 `<仓库名>-worktrees` 下（不是临时目录）、没有上游时「移除」被拒并列出原因、被拒后工作树还在。**这一轮也抓出两个真问题**：① `git worktree list --porcelain -z` 的 `-z` 是把**每一行**都以 NUL 结尾（不是记录之间分隔）—— 我按后者解析，导致 `branch` 永远是 null、「分支被其它工作树占用」不会亮、删除检查里的未推送判断被整段跳过（合成输入不会暴露它，真实仓库测试一跑就中）；② 探针第 9 节点了 `env-create-branch` 却没先等它可用，**disabled 的按钮不派发 click**，事件被浏览器吞掉（同一个坑第三次复发，已写进注释）。**2026-09-18（方案 G2）**：新场景 `gitwrite`（cost 0，**已进 check**）—— 44 条断言全绿，每条关键步骤都**回读主进程的真实 git 状态**（不是界面自证）；退出后 `afterExit: gitWriteApplied` 用真 git 核对：HEAD 的提交说明就是界面上输入的那条、分支停在 main、`live-made` 分支存在、**bare remote 里的 main 与本地 HEAD 同一个 sha**（推送真的出去了）。同批回归 `gitreview`（只读保证）全绿。**真实运行抓出两个设计问题**：① 初版让每个动作都比三件套预期版本 → 连点两个文件的暂存第二个必被拒、提交后立刻推送必被拒（全是假冲突）→ 改成按动作分级；② 写操作成功后界面手里的 expected 还是旧的 → 切回 main 后马上建分支被拒 → 用响应里带回的状态就地更新（摘要字段置空，任何「全比」的动作照常被拒）。**2026-09-18 深夜（方案 G1）**：新场景 `gitreview`（cost 0，**已进 check**）全绿 —— 环境菜单/范围切换/行号与增删/「N 行未修改」真的展开（8→83 条上下文行）/已查看持久化/图片前后对照（两张图字节不同）/二进制不伪造行数/筛选与折叠；**退出后逐字节比对** `status`、`ls-files -s`、`diff --cached --numstat`、`HEAD` 证明只读，并做了三条反向验证（注回 `git add -A` → 场景 6 条红；只污染 index → 退出后 3 条只读断言红）。此前：cost 0 场景 + 手动 cost 1 场景 | **2026-09-17 R01–R04 轮**：`title`（cost 1，真实通过；新增「手动名真的落盘」与「返回明确成功」两条断言）、`browserboundary`（cost 0，R01 回归）、`sessionrunners`（cost 0，R02 回归）全绿。上一次全量轮次实跑：`sessions` `historyswitch` `contextbudget` `toolgroup` `fs` `e2e` `tokens` `language` `contexttakeover` `live` `reasoning` `virtual` `logs`。**2026-09-17 S1 轮次**：`contextstate`（真实窗口删会话 → 退出后查派生状态清理）、回归 `trash`（真删 + 撤销）与 `sessions`。**2026-09-17 S2–S6 轮次**：`contextsweep`（cost 1，三个回合：真实 pi 里第二个回合后 sweep 生效 + 模型真的 `context_recall` 取回原文 + 第三个回合确认召回正文被清成存根，见方案 §15.4），同批回归 `contextstate` 与 `trash`；随后用用户指定的 `YAN_TEST_MODEL=commandcode/longcat-2.0:free` 独立重跑并通过（bash 8893、recall `turn=2`、`expiredRecalls≥1`、0 error）。**2026-09-17「清理默认开」轮次**：同一场景改为**不设 `kinds`** 重跑通过 —— 验的就是默认接管集本身（bash 8893、归档 1 条、`ctx://` 指得回原始条目、`swept≥1`、模型真的 recall 取回原文 `tokens=2224`、`expiredRecalls≥1`、0 error），见方案 §15.5。不可用或触顶时备用 `commandcode/laguna-s-2.1-free`。**同日 N21-7 轮次**：`contextbudget`（cost 0）重跑通过 —— 第 7 节真实改设置 → 来源 `user`、界面工作集 = 主进程算的、设置面板回填与恢复默认；同场修正 2 条陈旧断言（`下一步` 应为清理、图例两格已接管）。**同日 S7（状态生成器）轮次**：`contextproduce`（cost 1，**已进 check**）真实通过 —— 真实回合调 bash → 诊断 `stage=producer, hook=committed` 1 次且 0 错误、状态文件 `revision=1` / `objective` 非空 / `commands=1`、下一回合 `injectedTaskState=true`、状态文件过主进程 `loadContextState` 校验；同批回归 `contextsweep`（cost 1，**默认 kinds 下没有 producer 行** —— 验证“默认不花钱”）与 `contextstate` / `contextswitchguard` / `contextbudget`（cost 0）全通过。**同日（N01 拖拽排序）轮次**：`test:live -- railreorder`（cost 0，**已进 check**）37 条断言全绿 —— 合成 PointerEvent 走真实拖拽路径、回读 `yan.getSettings()` 验落盘、跨组拒绝、折叠态自动展开、搜索态禁用、click 被吞、无残留类名；同批回归 `live` / `grouprename` / `railsearch` / `projectlimit` / `railmini` / `railtitle` 六个侧栏场景全通过；另做了**两次反向验证**（去掉同组限制 → 跨组两条变红；不消费 click → click 那条变红，均已还原）。**2026-09-17 晚（N21-5 前置硬化）轮次**：`contextgate`（cost 1，新场景，**已进 check**）全绿 —— gate 被评估 1 次 / judged `too-early` / `committed` 0 次 / 状态文件 0 份，即「短会话不花钱」在真实链路成立；`contextproduce`（cost 1）适配 gate 后全绿，含 `task-state-injected{freshness:partial, sourceHead:6, tokens:119}`、`episodes 为空`、`gate 当场激活`；同批回归 `contextsweep`（cost 1，默认 kinds）/ `contextstate` / `contextswitchguard` / `contextbudget` / `context`（最后一条顺带修了一处陈旧 fixture，见 [归档 §1.11](../archive/2026-09-17-已完成归档.md)）。**同日第四轮复核轮次**：按外部意见改掉两处（Sweep 不得绕过最低回合数；`inject` 的语义写死为「允许 TaskState 参与任何模型可见上下文」），并落地「落后 1 条未 settled 的 user 视为 fresh」（`pendingUserOnly` + `freshView`），单测到 1394；`contextproduce` 重跑 7 次：**前 6 次里 5 次是免费模型侧失败**（`aborted` ×3 / `not-json` ×1 / `error` ×1，均已核实不是代码问题），**第 7 次成功且全绿** —— 拿到的关键证据是 `{"freshness":"fresh","sourceHead":6,"tokens":141,"gap":0,"turnsGap":1,"pendingOnly":true,"tail":["session_info","user"]}`（`pendingOnly:true` ↔ `freshness:fresh`，而 `turnsGap` 仍为 1）。 **2026-09-17 晚（N21-11 CJK 估算）轮次**：新口径下重跑 `contextsweep`（cost 1，默认 kinds）✓ 与 `contextgate`（cost 1）✓（前者 `swept>=1`，后者短会话仍 `too-early` / 0 提交 / 0 状态文件）；cost 0 四场景 `context` / `contextstate` / `contextbudget` / `contextswitchguard` ✓；`contexttakeover` 顺带修好了它的**静默失败**（探针现在先跑预热回合、发够大的消息、并在等压缩前断言「回合真的跑起来了」+ 打印 `pi 用量`），实测用量 1940 > 1500、**接管真的触发**（`triggeredBy: policy` / `policyStage: compact`），但压缩那一步调模型时撞上 **longcat 当日 100 次免费额度用尽（429）**、`laguna-s-2.1-free` 上游不可用 —— **改用用户指定的 `deepseek/deepseek-v4.1-flash` 后，`contextsweep` 与 `contexttakeover` 都取到绿**：后者 `pi 用量=31019` → 压缩 `completed`、`beforeTokens=31019` → `afterTokens=120`、`triggeredBy: policy` / `policyStage: compact`、界面「最近一次工作集 · 已完成」（场景本身也修好了：单个大回合 + `keepRecentTokens:1`，预算 180s → 420s，见 [方案 §18.8](../design/方案-上下文工具内的自动压缩-2026-09-15.md)）；**`contextrefresh`**（cost 1，新场景，已进 check）在策略 `{minTurns:1, minTokens:1e8, refreshRatio:1e-6}` 下命中 `near-window`，诊断 `{reason:"near-window", activated:true, window:1000000}` 证明 `ctx.model.contextWindow` 在真实链路可用（方案 §20）；**同模型下 `contextproduce` 也全绿** —— 生成器 1 次提交 0 错误、注入 1 次且 `freshness="fresh"`（`pendingOnly:true`）、gate 当场激活、状态文件 `revision=1` / `episodes 为空` / 主进程校验 ok、`stateOverhead=4.6%（low，分母改为只算本场景会话）；**同日 provenance 轮**：`contextproduce` 全绿且带回证据分布 `{"observed":1,"derived":1,"hypothesis":4,"total":6}`（模型真的引用）、注入 `tokens` 141 → 329（`inferred` 标记真的进了注入块）、状态文件过主进程校验（新的 `kind:tool + derived` 组合合法），`stateOverhead = 6.4%（low）`；**同日 superseded 轮**：注入诊断新增 `items:{active,skipped}`（真实运行 `{"active":7,"skipped":0}`），并用真实状态文件 + 真实注入链验证 superseded 不进注入块（`skipped=1` 渲染与注入均不含它，证据层级=模块级，见[归档 §1.17](../archive/2026-09-17-已完成归档.md)）；**同日模型级 override 轮**：`contextbudget`（cost 0，预算 90s → 180s）第 8 节真的 `setModel` 换到 `deepseek/deepseek-v4-flash`，模型级 override 当场失效（来源 `model` → `default`、工作集 321k → 240k），切回又生效（[归档 §1.18](../archive/2026-09-17-已完成归档.md)）；**同日结构化摘要轮**：新场景 `contexttakeoversummary`（cost 1）在**真实落盘的状态文件**上跑真实 `buildStructuredSummary` —— 逐类非空 4 类（task/constraints/unresolved/nextActions）、摘要 863 字符、两个块都在（[归档 §1.19](../archive/2026-09-17-已完成归档.md)）。**同一轮曾误报一个缺陷（已撤回）**：当时以为 `session_before_compact` 一次都没被调到，实际是**检查里的过滤条件写错了**（compact 系 trace 没在 payload 写 `stage`，而 `diagnostic` 只把第一参数放进 `hook`）；给 compact 系补上 `stage` 后 `contexttakeover` 实测 `{entered:1, fallback:1}` —— 钩子确实被调到，fallback 原因是 `inject-off`（该场景没开 `episode-fold`，符合设计）。「状态存在 + 水位可用 → 真的接管」那一次成功分支**已闭环**（同日）：新场景 `contexttakeoverstate`（cost 1）实测 **`takeover 1 次 / fallback 0 次`**（`tier=stale-hard`、`before=36397 → after=108`）—— 这是 `hook:'takeover'` 第一次在真实链路出现（[归档 §1.21](../archive/2026-09-17-已完成归档.md)）。**同日 N21-8 Deep Context 落地**：新模块 `context-deep.js`（216 行）+ `context.js` 的 ④ 挂接，单测 **1498/1498**；`contextdeep`（cost 1）全绿 —— Pass 1 `ms=3627 / outputChars=177`（真调了模型）、`injectedWorkingTrace:true`（注入真的进了这一轮）；反向验证在 `contexttakeoversummary` 里（没开则 **0 条 deep 记录**）；**默认关，且「可手动开」已闭环**：设置面板「上下文」页有开关（`ctx-deep`），传递链是「渲染端 → 主进程 → `desktop.json` → 扩展读文件」（不是 env，所以改完立即生效、不用重建实例）；视觉证据 `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-17.png` 已看图；界面路径的 live 证据是 `contextdeeppref`（cost 1）—— 扩展读到了开关并停在门槛上（`below-threshold`），真正的注入由 `contextdeep` 用测试通道降门槛验（[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。**同日 P2-7 轮**：新场景 `contextfoldpref`（cost 1，**已进 check**）全绿 —— 从设置面板关掉之后，`desktop.json` 真的落 `contextFold.enabled:false`、诊断里 0 条生成动作但有 1 条 `hook:skipped / reason:kind-off`（带 `kinds=["tool-sweep","recall","compaction"]`，即扩展真的读到了关闭且只关了一项）、0 次注入、0 份状态文件；同日同模型的 `contextfolddefault` 是反向对照（同样条件下会生成）（[归档 §1.23](../archive/2026-09-17-已完成归档.md)）。**同日 N21-4 剩余项轮**：`contextproduce` 重跑全绿 —— 加了阶段节流后真实链路仍然「生成 → 落盘 → 注入」（[归档 §1.24](../archive/2026-09-17-已完成归档.md)）。**同轮 EpisodeState 切片**：新场景 `contextepisode`（cost 1，已进 `check`）全绿 —— 真实回合里 `hook:'episode-window'` 两次（`4条/837tok`）、模型给出 Episode 并落盘（id `ep-…` / `sourceRange` 指回原始条目 / `unresolved` 为 0）、`task.episodeRefs` 里没有它（shadow）、状态文件过主进程校验（[归档 §1.25](../archive/2026-09-17-已完成归档.md)）。**同日孤儿进程检查**：`test-live` 在所有场景跑完后新增一道进程表检查（命令行含 `--mode rpc` 且**父进程已不在表里**）—— `sessionrunners`（cost 0）实跑输出「✓ 没有残留」；反向验证：构造的真孤儿被检出（2 个），同时用户环境里正在跑的 5 个真实 pi 实例**全部未被误报**（父进程链在）。` |
+| 视觉 | **2026-09-19（实施-09 S1）**：`YAN_MATRIX_ONLY=railmini,fsnarrow YAN_MATRIX_STAMP=2026-09-19s1` → `matrix-railmini-940x620-100-dark-2026-09-19s1.png`（**窄窗收起，48px 缺陷的形态对照位**：消息区贴到窗口左缘、无竖条）、`matrix-railmini-1440x900-100-{dark,light}` 与 `matrix-fsnarrow-1440x900-100-dark`（组 0/1/3 全绿、溢出 0px，**三张已看图**）。⚠️ 修复前的旧批次截图**不能当对照**（隔着其它改动，像素比对显示差异不在「少一列」上）→ 改动前后的判据改用 A/B 数值实测（见「本轮」小节）。旧图未覆盖。**2026-09-18（实施-02 S5）**：`YAN_MATRIX_ONLY=taskhost,taskcard YAN_MATRIX_STAMP=2026-09-18s5` 跑组 0/1/4 → `matrix-taskhost-1440x900-100-{dark,light}-2026-09-18s5.png`、`matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s5.png`、`matrix-taskcard-900x520-100-dark-2026-09-18s5.png`（共 5 张，溢出 0px，已看图：右栏任务/历史折叠、工具卡来源徽标、窄窗截断）。本片无 UI 改动，这一栏是 S1–S4 界面成果在新取证批次下仍成立。**2026-09-18（实施-02 S4）**：新增 `taskcard` 状态（内置来源工具卡）→ `matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s4.png` 与 `matrix-taskcard-900x520-100-dark-2026-09-18s4.png`（窄窗）；`settingspkg` 扩断言并重跑 → `matrix-settingspkg-1440x900-100-{dark,light}-2026-09-18s5.png`（未跑 registerIpc，给 `yan:capabilities:builtin` 补了桩）。**5 张已看图，溢出 0px**；看图改掉一处文案错误（内置能力区移到已装列表之后，「下面」→「上面」）。**2026-09-18（方案 S1）**：`envlinks` 重跑成来源菜单（筛选、图片缩略图、文件、网页、「文件不在了」的异常态、边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18p.png`（溢出 0px，已看图）。**这张图又抓出一次真问题**：`src-*` 那一整块样式我忘了写，标题与「已关联」粘在一起、缩略图占不到位置 —— 新组件没有样式时不会报错，只会难看。**2026-09-18（方案 P2）**：新增 `settingspkg` 状态（目录入口 / 安装区 / 已装列表三种状态：用户级、项目级、「磁盘上找不到」/ 生效时机）。**这张图抓出两个真问题**：① 视觉矩阵**不跑 `registerIpc`**、全靠桩，漏了 `yan:packages:*` 就在界面上渲染成 `No handler registered`；② `.set-row` 是 **grid**（两列），只写 `flex-direction: column` 完全无效 —— 内容被留在第二列、整块跑到右半边（改成显式 `display: flex` 才对）。图：`matrix-settingspkg-1440x900-100-dark-2026-09-18n.png`（溢出 0px）。**2026-09-18（方案 H1 / G3）**：新增 `envlinks` 状态（菜单滚到底：在网上比较 · github.com、关联外部任务的一条 + 两个输入 + 边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18j.png`（溢出 0px，已看图）。**2026-09-18（方案 W2）**：`envworktrees` 状态重跑（`matrix-envworktrees-1440x900-100-dark-2026-09-18i.png`，溢出 0px，已看图）。分支名原来被挤成 `feat/git-re...` —— 改成允许换行 + 名字保底 96px（分支名是这个区里最需要看全的东西，要拿它去终端里敲）。**2026-09-18（方案 W1）**：新增 `envworktrees` 状态（工作树区：主工作树**没有**移除按钮、砚创建的带标记、同时删分支、新分支名与目标目录两个输入）；`YAN_MATRIX_ONLY=envworktrees` 跑组 0/1 → `matrix-envworktrees-1440x900-100-{dark,light}-2026-09-18g.png`（2 张，溢出 0px，已看图）。**2026-09-18（方案 G2）**：新增两态 —— `reviewwrite`（文件行「暂存 / 取消暂存」+ 头部批量按钮 + 底部提交区）与 `envbranches`（环境菜单展开分支列表 + 当前分支标记 + 新建分支输入 + 拉取 / 推送 ↑N）；`YAN_MATRIX_ONLY=reviewwrite,envbranches` 跑组 0/1 → `matrix-{reviewwrite,envbranches}-1440x900-100-{dark,light}-2026-09-18f.png`（4 张，溢出 0px，已看图）。**2026-09-18 深夜（方案 G1）**：新增两个状态 —— `envmenu`（环境菜单：变更/本地+打开复制/分支/PR 不可用/比较分支）与 `review`（审查面板：范围+统计+两列行号 diff+未修改区+变更树+已查看进度+图片对照）；`YAN_MATRIX_ONLY=envmenu,review` 跑组 0/1 → `matrix-{envmenu,review}-1440x900-100-{dark,light}-2026-09-18e.png`（4 张，溢出 0px，已看图）。**截图当场拍出两个真问题**（审查面板与工具栏争空间、「本地」点了却打开审查），已修并重拍。此前：**2026-09-18 深夜本轮**：组 0 **全绿**（**24 个状态**、溢出 0px）—— 新增 `pendingcards`（待投递卡片）、`railsessions`（项目会话折叠），`railmini` 重拍成「左栏完全消失」；证据 `matrix-{pendingcards,railsessions,railmini}-1440x900-100-dark-2026-09-18.png`（已看图）。**同日更早一轮**：新增 `autonomous` 状态（自主模式双光带），跑组 0 全绿，产出 `matrix-{autonomous,main,modelmenu}-1440x900-100-dark-2026-09-18.png`。此前：`npm run visual:matrix` **组 0/1 追加 `usageturn` 通过**（R03 证据：`matrix-usageturn-1440x900-100-{dark,light}-2026-09-17.png`，溢 0px；`YAN_MATRIX_ONLY=usageturn` 跑组 0/1）。此前：**8 组全绿、40 张截图**（37 个状态 + 3 张引导层） | 组 0/1 重跑（深/浅共 26 张，含 `usageelapsed`）；每张带溢出 ≤ 1px 与关键元素硬断言。**2026-09-17 追加批次**（`STAMP=2026-09-17`）：只重跑受「Tool Sweep 默认开」影响的 3 张 —— `matrix-contextbudget-{dark,light}` 与 `matrix-ctxnarrow-dark`（`YAN_MATRIX_ONLY=contextbudget,ctxnarrow` 跑组 0/1 全绿、溢出 0px）：新图里「下一步」已变成**清理旧工具输出（约 168k 时）**、清理阶段标记为已接管；旧批次（`-2026-09-16`）原样保留。**整组**重跑仍受本机 GPU/Network 崩溃影响（组 0 跑到 10 分钟看门狗），与本次改动无关。**同日 N21-7 追加批次**：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1，产出 `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-17.png`（设置面板「上下文」tab，溢出 0px）。**同日（N01 拖拽排序）追加批次**：`YAN_MATRIX_ONLY=railreorder` 跑组 0/1，产出 `matrix-railreorder-1440x900-100-{dark,light}-2026-09-17.png`（截图停在**拖拽进行中**：被拖行半透明 + 目标位置 2px 插入线；溢出 0px；已裁剪放大逐张核对深浅两套对比度）。**同日 P2-7 追加批次**（`STAMP` 起可由 `YAN_MATRIX_STAMP` 覆盖，旧批次原样保留）：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1 → `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-18.png`（新增 `ctx-fold` 开关行，溢出 0px，已裁剪放大看图核对「已开启」按钮与中英文案）。**同日 N03 追加批次**：新增两个状态 —— `toolgroup`（折叠组展开、组内行保持一行）与 `toolterm`（命令行的终端窗口，只有命令类工具会渲染 `.term`）；`YAN_MATRIX_ONLY=toolgroup,toolterm` 跑组 0/4 → `matrix-toolgroup-1440x900-100-dark`、`matrix-toolterm-1440x900-100-dark`、`matrix-toolgroup-900x520-100-dark`（**窄窗口**）三张，溢出 0px，已裁剪放大核对 |
 | 应用与包 | **P0-8 已完成（2026-09-18，六步走完）** | `vendor:pi:check`：内置 pi 0.85.1 + RPC 握手正常；`dist:dir` + `test:packaged` 全绿（内置 pi ready、扩展加载 0 报错）；**`test-packaged --exe=release/砚-0.2.0-portable.exe` 也全绿**（单文件便携版真实自解压启动）；**升级读取验证**用 `release/砚数据/` 的副本启动打包产物 —— 读到 cwd/lang/theme/projects/profile（`signedIn:false`，不伪造登录）+ localStorage（theme/onboarded）+ 凭证（`auth count=1`、`conn=ready`），原目录原样保留；`npm run dist` 重产三个产物并重写 `SHA256SUMS.txt`（`9E307C76…` setup.exe 126,991,251 B / `6501AF9A…` portable.exe 126,758,099 B / `7B998F57…` portable-fast.zip 169,672,278 B）；包内可索引到本轮新串（`review-diff` / `review-gap-open` / `env-changes` / `yan:git:snapshot` / `--font-body`），无 `out/test/` 与测试凭证。明细见[归档 §1.26](../archive/2026-09-17-已完成归档.md) |
 | 已知偶发 | 免费模型可能因日配额或供应商状态返回空文本/零 usage；这会让 `tokens` `subagent` `contexttakeover` 等需要真实 usage 的场景变红 | 先用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`；不可用或触顶时换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`，再分辨「模型当时不可用」还是「代码回归」。**2026-09-17 晚实测**：同一夜连跑 `contextproduce` 6 次只有 1 次成功，失败形态分别是 `aborted`（20s 生成超时）/ `not-json`（返回空文本）/ `error`；换备用模型也一样。**2026-09-17 深夜已确证原因**：`commandcode/longcat-2.0:free` **当日 100 次免费额度用尽**（pi 原样报回 `429 You've used all 100 free LongCat 2.0 requests for today`，配额 `2026-09-18T00:00:00Z` 重置），换 `laguna-s-2.1-free` 则报上游暂不可用。**规则**：看到 429 就直接停手（每跑一次都是在烧剩余额度，而且拿不到结论）。**换模型**：用户指定 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`（1M 窗口、支持思考）后，`contextsweep` / `contexttakeover` 均真实通过 —— 免费模型不可用时的首选替代。**另一个易踩的坑**：探针变慢以后没同步加 `budget`，进程会在打印前被 kill，而 `buf` 为空又被报成「应用可能启动失败」（`contexttakeover` 就此白查三轮，现已在提示里区分这两种情况） |
+
+### 本轮（2026-09-19）并行编排 W1 · 四个子代理片（01-S4b / 03-S2 / 04-S1 / 08-S0）
+
+> 编排方式见 [并行代理编排](../plan/编排-并行代理分工-2026-09-19.md)。这三片由**本机 `pi -p` 非交互子代理**
+> 并行完成（同一工作区，靠**文件域隔离**）；主编排者已核对文件域与 mtime（未碰该文 §0.2 的五个热点）。
+> 证据取自各自的产出文档与子代理报告；**`build` 未由编排者复跑**（当时 01-S4b 正占用 `out/`）。
+
+#### 01-S4b · `browser.js` 模型工具 → `yan browser …` CLI（**P0 硬阻塞，已解除**）
+
+> 主题文档：[实施-01](实施-01-默认pi架构迁移.md) §4/§5（矩阵 browser 行已改判「已等价」）；证据：[证据-01-S4b](证据-01-S4b-browser-CLI迁移.md)。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `resources/pi-extensions/browser.js` **零注册**（16 个 `browser_*` 工具 + 1 个 pi 斜杠命令全部移除，留空占位）；`src/main/capability-server.ts` 登记 **19 个 `browser.*`**（`browser.evaluate` **有意不登记**，403 语义保留）；`src/main/agent.ts` 新增 `BrowserCommandHost` + `runBrowserCommand`（19 个动作，**直接调宿主 `BrowserController`，不再绕 loopback bridge**）+ `CapabilityCommandError` 错误分流；`src/main/browser.ts` 五个动作 `private` → public + 新增 `public screenshot()`（**仅可见性，权限 / 网络边界一行未动**）；`resources/yan-cli/yan.mjs` 加 `yan browser` 用法与本地校验；`src/main/index.ts` 注入 `browserHost` |
+| 自动检查 | `typecheck` / `build` 干净；单测 **2684/2684**（新增 17 条：`browser.js` 零注册、`browser.*` 已登记、`browser.evaluate` 仍 `unknown_command`、CLI help / 错误码 / 退出码分层） |
+| 真实运行 | `test:live -- browsercli`（cost 0，默认不上屏）**全绿**；`YAN_SHOW_WINDOW=1` 补 `scroll`（347ms）/ `screenshot`（PNG 1564B，魔数正确）；**`test:live -- browserclimodel`（cost 1）通过两次** —— 模型自己 `yan --help` → `yan browser --help` → `navigate` → `state` → `observe` 并答出 URL（**端到端最小闭环**）；回归 `browser` / `browserboundary`(L04) / `slashcmd` **3/3 通过**（边界未放宽）；错误全是**带 code 的可读 JSON**（`browser_not_open` / `missing_ref` / `invalid_number` / `USER_CONTROL_ACTIVE`），未知子命令退码 2、无堆栈 |
+| 视觉验收 | 不适用 + 原因：无界面改动（内置浏览器面板 UX 未动） |
+| 应用与包 | 不适用 + 原因：打包归 09-S4（`yan.mjs` 在 extraResources 的落位由既有 `test-packaged` 覆盖） |
+| 剩余限制 | ① `click` / `type` **无常驻自动断言**（需带元素的本地页面 fixture，**待拍板**）；② **隐藏测试窗口下 `mouseWheel` / `captureScreenshot` 不返回**（20s 超时）—— **迁移前就存在**，本片只记录复现，建议另开片；③ `ElementRegistry.ts` / `browser.ts` 的 `STALE_ELEMENT` 文案仍含旧工具名（非本片文件域，`agent.ts` 已把回给模型的文案改写成 `yan browser observe`）；④ `browsercli` 尚未加入 `npm run check` 清单（那一行在 `package.json`）；⑤ 空占位 `browser.js` 与已失效的 loopback bridge 建议 01-S5 一并清理 —— **对 S5 的能力影响：零** |
+
+**卡面数字纠正**：实施-01 §4/§5 写「18 个 `browser_*`」，实测是 **15 处 `registerTool` = 16 个工具 + 1 个 pi 斜杠命令**（已在证据文档登记）。
+
+#### 03-S2 · 项目知识存储层
+
+> 主题文档：[实施-03](../plan/实施-03-项目知识与旧记忆清理.md)；证据：[证据-03-S2](../plan/证据-03-S2-项目知识存储.md)（检索 S3 / CLI S4 / UI S5 **未开工**）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | **新** `src/shared/project-memory.ts`（契约 + 纯逻辑：严格校验 / 文本指纹 / `projectId` **只认项目登记** / CAS + 状态迁移 + 墓碑）；**新** `src/main/project-memory-store.ts`（`YAN_DIR/project-knowledge/<projectId>/`：不可变 revision + 原子 manifest + 备份 + 索引重建 + 排他锁 + 落盘失败保留上一版）；`src/main/paths.ts`（**只加** `PROJECT_KNOWLEDGE_ROOT` / `projectKnowledgeDir()`）；**新** `scripts/test-project-memory.mjs`；`scripts/test-unit.mjs`（只加本片登记）。未碰 `agent.ts` / `capability-server.ts` / `yan.mjs`（S4 能力面），未新增 pi 扩展 |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）/ `build` 干净；单测 **2667/2667**（本片 **+153**，14 节）。五条出口全是**真实文件**断言：CAS 冲突（`stale_revision` + 交回 `latest`/`latestManifest` + manifest 逐字节未变）· 磁盘写失败（正文阶段 / manifest 阶段各一次 → manifest 保持上一版且版本没涨）· 崩溃恢复（截断 / 形状不对 → 从 `manifest.json.bak` 恢复上一版；两边都删 → 由 revision 重建并跳过写了一半的 `r99.json`；都坏且不可重建 → `unreadable` 且拒写）· 删除后旧候选不复活（逻辑 / 永久两种，永久删除后整个项目目录搜不到正文；同指纹再提 → `revives_deleted`）· 过期锁核实进程后回收（真子进程拿已死 pid；**活着的 pid 即使 TTL 过期也不抢**） |
+| 真实运行 | 本片**没有可运行的用户路径**（检索 S3 / CLI S4 / UI S5）；取证方式 = 单测在临时目录**真写 / 真坏 / 真恢复** + 回归 `test:live -- live`（cost 0）✓（无残留 pi 进程） |
+| 视觉验收 | 无新视觉元素（存储层，无 UI 入口）；项目知识页在 S5 |
+| 应用与包 | 未做（随 01-S5 / 09）；**不新增运行期资源**（数据写在 `YAN_DATA_DIR`，`resources/` 与 electron-builder 未改） |
+| 剩余限制 | 无检索（索引只有「指纹 → 指针」，n-gram 归 S3）；无调用方（只被单测调用）；逻辑删除**还没有 restore API**（数据层可恢复，`listKnowledge({includeDeleted:true})` 读得到）；孤儿 revision 无 gc（只清 `*.tmp`）；同机 pid 复用时锁只能等（出口是删 `lock.json`）；别的主机的锁只按 TTL + 宽限回收（`kill(pid,0)` 不跨机）；未做双进程抢锁压力测试；`validFor` 的「需复核」判据还没有真实会话喂过它 |
+
+#### 04-S1 · 技术预检（能力自主选择的地基）
+
+> 主题文档：[实施-04](../plan/实施-04-能力自主选择-MCP与Skill.md)（S2–S7 **未开工**）；证据：[证据-04-S1](../plan/证据-04-S1-技术预检.md)。
+> 本片**只产证据、零模型调用、零产品代码改动**。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | **无产品代码改动**。新增 `docs/plan/证据-04-S1-技术预检.md`；`src/**` / `resources/**` / `scripts/**` 一行未动 |
+| 自动检查 | 不适用 + 原因：无代码改动，`typecheck` / `build` / `test:unit` 的输入未变（当时另有代理在构建）。代之以可复现探针：`npm run upgrade:pi -- --check`、`npm run vendor:pi:check -- --if-present`（内置 0.85.1 + RPC 握手正常） |
+| 真实运行 | ① 真 pi × 2 种 `execPath`：`resolvePi()` → `source=bundled`、版本 **0.85.1**（node 与 electron 一致）；② 真 RPC 会话（隔离 agentDir，零模型调用）：`get_commands` 拿到技能名 + 绝对 `SKILL.md` 路径；**`get_tools` / `set_active_tools` / `mcp_list` 全部 `Unknown command`**；③ 真 `CapabilityServer` × 真 `yan.mjs` 7 条调用（`not_implemented` / `unknown_command` / `ok:true` / `identity_mismatch` + 退出码 1/0/1）；④ 附带发现：改副本 `package.json` 版本号后 `--version` 跟着变但仍能 RPC 握手 → **内置运行时的 `--version` 读的是 vendor 生成的 `package.json`，不是完整性证明** |
+| 视觉验收 | 不适用 + 原因：无 UI / 渲染端改动 |
+| 应用与包 | 不适用 + 原因：未改打包产物。记录两条与包有关的实测：`resolvePi` 在 Electron `execPath` 下仍解析到 `resources/pi-runtime`（未退回全局 pi）；随包 SDK 入口 `bundle/index.js`（151 导出，`VERSION=0.85.1`） |
+| 剩余限制 | 只钉接口面，**未做真模型验证**（技能选择 / `yan` 调用是 04-S2/S4 的 cost 1 出口）；技能正文只做**代码级**确认，未真跑 `/skill:<name>`；技能发现的项目信任门未构造场景；**MCP 官方 SDK 不在任何 lockfile**（S3 必须新增依赖并自行验证版本） |
+
+**本片固定的地基**：运行时 pi **0.85.1** / RPC 命令 **33 个**（**无**工具面、**无** MCP 面、**无**技能正文面）/ `yan` 命令面 **10 个已登记**，其中只有 `operations.status` 与 `tasks.apply` 真实实现（**差集 8 个**：`capabilities.{search,discover,prepare,acquire}` / `skill.read` / `mcp.{describe,call}` / `knowledge.search`）。
+**待拍板**：① 主进程是否改用官方 SDK（`bundle/index.js` + `RpcClient`）—— 与「主进程不 import pi 内部模块」的纪律冲突；② `yan skill read` 是否还要做（若走 `get_commands` 发现 + `/skill:<name>` 展开，它可能永远用不上，但会出现在 `/` 补全里）。
+
+#### 08-S0 · 连接状态机与能力边界冻结
+
+> 主题文档：[实施-08](../plan/实施-08-安卓远程管理.md)。**零代码、零产物**；结论要喂 08-S1 / S3。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 [远程-连接状态机-2026-09-19.md](../design/远程-连接状态机-2026-09-19.md)（版本 `RC-SM/1`，526 行）：六态词表、**21 事件 × 6 态 = 126 格**迁移表（含非法迁移、幂等 `(i)`、不适用 + 理由）、授权轴（5 态，与连接态**正交**）、`pairing` / `auth` / `transport` 抽象状态、能力可用性矩阵（11 能力 × 6 态 + 可求值的前置条件模型与**唯一**失败原因优先级）、断线语义（重连退避形状 / 进行中操作三类 / **写操作 `uncertain` 绝不自动重发** / 按 `epoch` + 水位路由迟到响应）、错误分类（8 类，含「401≠403」「503 未就绪≠网络故障」）。同步 `REMOTE-CONTROL.md` 增一节。**未改任何 `src/**` / `resources/**`** |
+| 自动检查 | 不适用 + 原因：本片零代码，没有可执行检查对象。文档内已定义 S1 要落地的两条可断言不变量：① 全部 126 个 `(状态, 事件)` 调用归约函数不抛异常且结果落在六态内；② 所有 `✘` 组合返回状态与输入状态完全相同 |
+| 真实运行 | 不适用 + 原因：无运行时代码；现有 `/remote/v1/*` 行为与证据不变 |
+| 视觉验收 | 不适用 + 原因：无界面改动（协议无关原型属 08-S3）。本文只对原型施加约束：前置不满足的能力默认隐藏、降级必须显式标注、§10 的实现选择画法不得出现在原型里 |
+| 应用与包 | 不适用 + 原因：未改打包配置 / 启动参数 / `release/`；远程服务「默认关闭」口径未变，仍归 09 |
+| 剩余限制 | 本文是**设计冻结，尚无实现**：`pairing` / `permission` / 撤销 / 定向 `runId` 停止 / 事件 id 与重放全部缺失（逐项差距见该文 §11），归 S1/S2。**三项留给人拍板**：能力清单是否免鉴权、撤销时缓存清除的执行位置、自动重试上限与退避数值（形状不改，数值可调）。**本片附带发现两个现有缺陷（未修）**：`POST /sessions/:id/messages` 隐式 `select` 抢走电脑当前视图；`POST /runs/abort` 没有目标 `runId` |
+
+### 本轮（2026-09-19）实施-03 S0 / S1 · 边界复核 + 旧记忆残留清理
+> 本片是**清理与说明校正**，不改行为 —— 所以没有新 live 场景（理由见「真实运行」栏）。
+
+| 六栅 | 证据 |
+|---|---|
+| 实现 | `src/main/agent.ts`（去掉「与 remember 处理同一套路」的过时类比，改为「旧扩展 `panel_todos` 与宿主 `yan tasks apply` 在同一次刷新里汇合」）；`src/main/paths.ts`（历史叙述→**数据目录职责**，保留「旧 `memory.json` / `soul.md` 不主动删」）；`scripts/test-live.mjs` / `scripts/test-packaged.mjs`（隔离文案改成「会话、派生状态与 localStorage」）；`docs/ARCHITECTURE.md`（边界补「项目知识是独立新功能、**尚未实施**」）；`docs/dev/CODE-MAP.md`（`paths.ts` 改为当前职责）；`docs/design/DESIGN.md`（空状态那一行的「记忆现状」改成实际实现）；实施-03 §2 新增**保护集**表 |
+| 自动检查 | `typecheck`（含 CSS 约定 / layer 自检）/ `build` 干净；单测 **2510/2510**（本片只改注释与文案，无纯逻辑改动）；`audit:refs`：`brokenDocLinks: []`、`docScripts.unknown: []` |
+| 真实运行 | 本片的出口是**检索类**的，不是行为类：全仓 memory 关键词逐项归类（代码侧命中里**只有 1 处**是要改的过时类比，其余全是保护集）；**旧入口零 import**（无 `memory` 模块 import）；保护集逐项查活：`context_recall` 2 文件 / `rememberSession` 2 / `rememberCursor` 1 / `capability-guide` 5。**未新增 live 场景** —— 本片不改任何行为，为「注释是否准确」造 probe 不如直接把归类结果与 grep 证据写下来 |
+| 视觉验收 | 无新视觉元素（`DESIGN.md` 改的是**描述性文字**，且改为与 `EmptyStream.tsx` 实际一致；**未动任何设计令牌**）。空状态的视觉证据沿用既有 `matrix-main` 系列 |
+| 应用与包 | 未做（随 09-S4）；本片不改运行期资源 |
+| 剩余限制 | 「保护集」是**人工判定**（关键词归类），以后新增代码命中同类词时**复用这张表**而不是重新猜；`docs/archive/**` 里的历史叙述**故意未改**（§2 规定历史证据不批量改写）；03 的新功能（S2–S6：存储 / 检索 / CLI / UI / 跨会话）**完全未开工** |
+
+### 本轮（2026-09-19）实施-09 S1 · 两条遗留缺陷（窄窗 48px 残留 + fs 键盘导航）
+
+> 主题文档：[实施-09](../plan/实施-09-交付与验收收尾.md) S1。两条都是 2026-09-18 核查时发现、当时只有
+> 「待修」结论的真缺陷（见下文「六」节）。本片把它们修到有根因、有反向验证。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `src/renderer/src/styles/layout.css`（两处窄窗媒体查询里 `.app.rail-off .workspace` 的 `--w-rail: 48px` → `var(--w-rail-collapsed)`）；`src/renderer/src/components/toolbar/FileTree.tsx`（新增 `visibleSet`，`TreeLevel` 改按集合渲染、删掉跨层级 `budget`）；`scripts/probe/narrow.js`（断言从「意图级」收回硬值 0）；`scripts/probe/fs.js`（End 诊断现在区分「焦点在根行」与「焦点掉到 body」；3c 改用 `mouseClick` 模拟真实鼠标聚焦 + 条件轮询） |
+| 自动检查 | `typecheck`（含 CSS 约定 / layer 自检）、`build` 干净；单测 **2510/2510**（本轮无纯逻辑改动，条数不变） |
+| 真实运行 | **cost 0**：`fs` **全部通过**（此前稳定红的 3 条全清）；`narrow` 三档窗口（1456×1000 / 1002×700 / 940×700）全通过，收起后实测 `rail=0px`；回归 `railmini` / `toolgroup` 全绿 —— 后者顺带补上上一轮「工具组高度改成 25 条后没重跑」的尾巴（第 6 节「组展开后有显示范围」） |
+| 视觉验收 | `matrix-railmini-940x620-100-dark-2026-09-19s1.png`（窄窗收起：消息区贴到窗口左缘、无竖条，**已看图**）、`matrix-railmini-1440x900-100-{dark,light}-2026-09-19s1.png`、`matrix-fsnarrow-1440x900-100-dark-2026-09-19s1.png`（文件树层级 / `noperm` 无权限态 / 「已隐藏」均正常，**已看图**）。⚠️ **修复前的视觉对照不可靠**（旧批次隔着其它改动，像素比对显示差异落不到「少一列」上）→ 改动前后的判据改用 **A/B 数值实测**（见下） |
+| 应用与包 | 未做（随 09-S4 统一补）；本片不改运行期资源清单 |
+| 剩余限制 | 48px 那条只有**数值对照**、没有同环境的「修复前」截图；fs 那条第 3 条红（鼠标收起）确认是**测试没有模拟真实鼠标聚焦**（合成 `MouseEvent` 不触发浏览器默认聚焦），产品行为本身正确 |
+
+**两条缺陷的根因与反向验证**（写清楚，避免后人再踩）：
+
+1. **窄窗 48px 残留**：窄窗媒体查询里那条 `.app.rail-off .workspace { --w-rail: … }`（特异性 0,3,0）
+   **必须留着** —— 它要压过同媒体查询里 `.workspace` 自己的 `min(--w-rail-user, …)` 声明（否则收起会退回展开宽度）；
+   但值写死了**旧紧凑图标轨的 48px**，轨删了它却留下。修法是值改走同一个真源 `--w-rail-collapsed`。
+   **A/B 反向验证**：临时改回 48px → 1002×700 与 940×700 两档实测 `rail=48px`、硬断言变红（宽窗口那档仍是 0）；
+   改回 `var(--w-rail-collapsed)` → 三档全 `0px` 通过。
+2. **fs 文件树键盘导航**：`allVisiblePaths` 是严格 DFS，而渲染截断用的是跨层级 `budget`
+   —— 父层 `TreeLevel` 的循环**先把自己那一层的额度扣完**，子层是 React 之后才递归渲染的，于是成了**两套顺序**。
+   超限时被切掉的位置不同：`End` 取到的 `visiblePaths[49]` 根本没渲染
+   （逐帧观测日志 `{"path":"src/main/subagent-isolation.ts","found":false}`，而 DOM 最后一行是根层的 `tsconfig.web.tsbuildinfo`），
+   `focus()` 找不到节点就静默失败、焦点留在原处，`focusPath` 被设成幽灵路径后**所有行 `tabIndex` 都成 -1**（连带 roving 那条）。
+   修法是渲染直接以 `visibleSet`（由 `visiblePaths` 派生）为准，顺序天然只有一份；
+   修后同一条日志变成 `found:true / after=row:src/main/subagent-isolation.ts`。
+
+### 本轮（2026-09-18）实施-02 S5 · 真实运行与验收（02 收尾）
+
+> 主题文档：[实施-02](../plan/实施-02-任务工具内置化-已完成.md)；证据：[证据-02-S5](../plan/证据-02-S5-真实运行与验收.md)。
+> 本片**不新增业务代码** —— 它把 S1–S4 的成果放到真实模型 + 真实窗口 + 真实安装包里验。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新场景 `scripts/probe/taskplan.js` + `CASES.taskplan` + `afterExit: taskPlanMultiStep`（退出后逐条比对界面与磁盘）；`taskcli` 新增「取消」一节；新 fixture `scripts/fixtures/task-ext/notes-panel.ts`（**无关扩展**）+ `taskext` 4 条新断言；`test-packaged.mjs` 新增 11 条（静态落位 / 启动器 5 / CLI 真跑 3 / 无宿主可读错误 3）；`test-unit.mjs` 新增 9 条「证据链前提」；**真问题修复**：`test-live` 与 `test-packaged` 现在都剥掉 `YAN_CLI_URL/TOKEN/SESSION_ID/PROJECT_ID`（以及 `ELECTRON_RUN_AS_NODE`） |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）/ `build` 干净；单测 **2510/2510**（本片 **+9**）；`dist:dir` 后 `test:packaged` **11 条新断言全绿** |
+| 真实运行 | **cost 1**：新场景 `taskplan` 一次全绿 —— 模型自写请求文件、5 次 `yan tasks apply`、建出 `step-1/2/3.txt`、界面 3/3 完成；`revision` 1→2→3→4；**界面与磁盘日志逐条相同**；会话 JSONL 无任务条目。`taskcli` 回归 + 取消 4 条。**cost 0**：`taskext`（旧扩展 + 无关扩展共存）、`slashcmd`、`todos`、`todonew`、`sessions`、`historyswitch` 全绿 |
+| 视觉验收 | `matrix-taskhost-1440x900-100-{dark,light}-2026-09-18s5.png`（任务 + 历史折叠区）、`matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s5.png`、`matrix-taskcard-900x520-100-dark-2026-09-18s5.png` —— **5 张已看图、溢出 0px**；旧图未覆盖 |
+| 应用与包 | `npm run dist:dir` → 安装目录 `resources/` 下 `app.asar` / `pi-extensions` / `pi-runtime` / **`yan-cli`** 四件齐全；`test:packaged` 验了启动器生成与内容指向、**解包里 CLI 真跑 `--help`**、无宿主时 `tasks apply` 退码 3 且报可读原因 |
+| 剩余限制 | **包里「模型触发任务工具」未验**（要真实凭证进隔离 piDir；等价覆盖是开发态两条 cost 1 场景，打包带来的差异已单独验过）；**磁盘错误与两个快速 add 只有单测**（在 Electron 里不可复现，造偶发场景比没场景更糟）；`taskplan` 依赖模型照做（提示给死形状，无强制机制，红时先看探针打印的「工具调用序列」）；失败恢复四类有证据、一类只有等价覆盖（证据 §5 逐项列了） |
+
+### 本轮（2026-09-18）实施-02 S4 · UI 与命令接线
+
+> 主题文档：[实施-02](../plan/实施-02-任务工具内置化-已完成.md)；证据：[证据-02-S4](../plan/证据-02-S4-UI与命令接线.md)。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | **新** `src/shared/tool-origin.ts`（`yan tasks apply` 的文本判定 + 一行化摘要）；`ToolRow.tsx` + `chat.css`（来源徐标）；`shared/ipc.ts`（`hiddenInMenu` / `BuiltinCapabilityView` / `YanBridge.builtinCapabilities`）；`command-registry.ts`（`/panel` 隐藏但保留）；`Composer.tsx`（补全过滤 + 兼容分支改为「保留草稿与附件 + 推提示」）；`store.ts`（`notify`）；`extensions-inventory.ts`（`builtinCapabilities()` + 诊断文案改成当前事实）；`index.ts`（抽出 `yanThinExtensionPaths()` + `yan:capabilities:builtin`）；`preload`；`PackagesTab.tsx`（「砚内置能力」区，无卸载按钮）；双语 i18n；**修** `resources/yan-cli/yan.mjs` 的语法错误 |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）/ `build` 干净；单测 **2501/2501**（本片 **+48**：工具来源 27 + 命令注册表 8 + 内置能力与诊断 9 + 随包 CLI 真跑 4） |
+| 真实运行 | `taskcli`（cost 1，deepseek 全绿）新增 4 条：工具行被标为砚内置任务计划 / 标记的仍是 bash 卡 / 徐标写「任务计划」/ 展开后能看到原始命令；`slashcmd`（cost 0）第 20 节：手打 `/panel` 后草稿逐字符未变、合成附件仍在、两句话说明原因、没发给模型；回归 `todos` / `taskext`（cost 0）全绿 —— 后者刚好覆盖「用户扩展也注册 `/panel`」：两条并存、命中兼容那条 |
+| 视觉验收 | 新增 `taskcard` 状态（内置来源工具卡）→ `matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s4.png` 与 `matrix-taskcard-900x520-100-dark-2026-09-18s4.png`（窄窗）；`settingspkg` 扩断言并重跑 → `matrix-settingspkg-1440x900-100-{dark,light}-2026-09-18s5.png`。**5 张已看图，溢出 0px**；看图改掉一处文案错误（内置能力区移到已装列表之后，「下面」→「上面」） |
+| 应用与包 | 未做（随 01-S5 / 09）；本片不新增运行期资源（新 IPC 是只读查询，清单从既有 `--extension` 路径派生） |
+| 剩余限制 | 工具卡来源是**文本判定**（`echo "yan tasks apply"` 也会被打标，已被单测显式记下）—— 不改变写入语义与权限，要精确得等 pi 把 toolCallId 给到子进程；只认 `tasks apply`，其余 `yan` 子命令仍是普通 bash 卡（属于 04）；`/footer` 只统一了反馈，没有迁移语义；`hiddenInMenu` 只影响补全、不影响 `commands` 列表（来源分布与同名断言仍能看到它） |
+
+### 本轮（2026-09-18）实施-02 S3 · 宿主任务服务 + `yan tasks apply`
+
+> 主题文档：[实施-02](../plan/实施-02-任务工具内置化-已完成.md)；证据：[证据-02-S3](../plan/证据-02-S3-宿主任务服务.md)。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | **新** `src/main/task-plan-store.ts`（`YAN_DIR/task-plans/<sessionId>.jsonl`：只追加 + 同会话串行 + 从磁盘 CAS/幂等 + `fsync` + 回读校验）；`src/main/agent.ts`（`tasks.apply` handler、`refreshTodos` 合并宿主日志 + 旧条目、`currentUserRound`）；`src/main/capability-server.ts`（`CapabilityCommandError`：业务错误带 `code`、附件落文件）；`src/shared/task-plan.ts`（日志行读写 + `taskPlanLogEntry`）；`resources/yan-cli/yan.mjs`（help 补 `operationId` 重试语义）；`tools.css`（修历史任务条目「一列一个字」） |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）/ `build` 干净；单测 **2453/2453**（本轮 **+53**：store 35 条 + 日志行与条目形状 12 条 + 归并 6 条） |
+| 真实运行 | 新场景 `taskcli`（cost 1，**不进 `check`**）全绿：模型敲 `yan tasks apply` → 界面 3 条 → `complete` 勾上 → 切走清空 → **切回从磁盘读回**；**退出后**核对日志 2 行 / `revision` 1→2 / 每行带 `schemaVersion`+`round`+`at` / 会话 JSONL 里**没有**任务条目。回归 `todos` + `taskext`（cost 0）全绿；`capability`（cost 1，`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）全绿 |
+| 视觉验收 | 新状态 `taskhost`（组 0/1）：`matrix-taskhost-1440x900-100-{dark,light}-2026-09-18.png`，溢出 0px，**两张都已看图**。**这张图抓出并修掉一个既有缺陷**：历史任务条目的文字被挤成竖排单字（`.rp-box` 的通用 `grid-column: 2` 与历史条目的 2 列网格冲突），补 `.rp-hist-todo .rp-box { grid-column: 1 }` 后重拍正常 |
+| 应用与包 | 未做（随 01-S5 / 09）；**不新增运行期资源**（任务日志写在 `YAN_DATA_DIR`） |
+| 剩余限制 | 宿主日志**不在会话 JSONL 里**（pi RPC 没有写 entry 的命令，且 01 §5 禁止外部编辑在用的 JSONL）→ 用户用 pi 终端看不到这些任务；多 runner **真并行**未取证（单测已覆盖两会话隔离）；分叉（fork）后是否继承父清单未定也未测；`branchHead` 未落地（pi 的 fork ＝新会话 id，分支维度由会话 id 承担）；**`fs` 场景稳定红 3 条**（焦点 / roving tabindex，**AB 验证与本片无关**，待另行排查）；免费模型（longcat / laguna）本轮实测会空回复或不调工具，`deepseek/deepseek-v4.1-flash` 是可靠替代 |
+
+**一个必须知道的实现偏差**：方案里写的「宿主日志」没规定物理落点，而 pi 的 RPC
+**没有**「追加 custom entry」命令。而 01 §5 又明文禁止外部编辑正在使用的 JSONL、
+也禁止用扩展 `appendEntry` 写新任务数据。所以落点是 `YAN_DATA_DIR/task-plans/<sessionId>.jsonl`，
+界面把它按**与会话条目完全相同的形状**喂给同一套归并（规则只有一份）。
+判定过程与代价登记在 [证据-02-S3 §1](../plan/证据-02-S3-宿主任务服务.md)。
+
+### 本轮（2026-09-18）实施-02 S2 · 任务计划纯逻辑
+
+> 主题文档：[实施-02](../plan/实施-02-任务工具内置化-已完成.md)；证据：[证据-02-S2](../plan/证据-02-S2-任务计划纯逻辑.md)。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `src/shared/task-plan.ts`（校验 / 六操作 reducer / 幂等 / 新旧载荷读写，517 行）、`src/main/todo-snapshots.ts`（改用 `normalizeTaskItems`，删掉本地别名表） |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）干净；单测 **2400/2400**（本轮 **+83**，新增 `test-task-plan.mjs` 10 节） |
+| 真实运行 | 纯逻辑层**没有用户路径**（`yan tasks apply` 在 S3）；证据 = **真实临时文件往返**（读旧载荷 → `add` → 写新文件 → 读回三项/revision/operationId 一致，旧文件逐字节未动）+ 回归 `test:live -- todos taskext` 双绿 |
+| 视觉验收 | 无新视觉元素（纯逻辑） |
+| 应用与包 | 未做（随 01-S5 / 09）；不新增运行期资源 |
+| 剩余限制 | 还没有写入方；幂等目前只在内存成立（跨进程/重启要 S3 从会话文件读回 `revision`/`operationId` 再比）；并发由 S3 的宿主服务串行保证；`toTaskPlanEntryData` 假定入参来自 reducer（S3 不要绕过） |
+
+**本片相对前一版契约收紧四条**（都是「宁可不猜」）：`done` 非 boolean 报错（旧扩展 `Boolean('false')` → `true` 的坑）、
+长度按 **code point** 数、超上限**不截断**、`uncomplete` 把 `status` 置回 `pending`
+（否则右栏会继续显示「正在进行」——它以 status 优先）。
+
+### 本轮（2026-09-18）实施-02 S1 · 兼容性与契约定稿
+
+> 主题文档：[实施-02](../plan/实施-02-任务工具内置化-已完成.md)；证据与契约定稿：[证据-02-S1](../plan/证据-02-S1-兼容性与契约.md)。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `src/shared/task-plan.ts`（契约：精确标识 / 操作 / 上限 / 数据形状）、`src/main/todo-snapshots.ts`（收紧为精确标识 + 同轮宿主日志优先）、`src/main/extensions-inventory.ts`（扩展来源诊断）、`src/main/index.ts`（`ready-to-show` 之后推诊断）、`scripts/fixtures/task-ext/left-info-panel.ts`、`scripts/probe/taskext.js` |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）干净；单测 **2317/2317**（本轮 **+24**：白名单与宿主优先 6 条 + 来源诊断 18 条） |
+| 真实运行 | `test:live -- taskext`（cost 0，**已进 `check`**）全绿：旧扩展真的被加载（`source=extension`）、启动通知降级、诊断三行、任务读自会话文件、切走清空、退出后前缀字节一致；`todos` 回归全绿（并挂上同一道退出后检查） |
+| 视觉验收 | 新状态 `extdiag`（组 0/1）：`matrix-extdiag-1440x900-100-{dark,light}-2026-09-18.png`，溢出 0px，已看图（三行诊断完整可见、无裁切） |
+| 应用与包 | 未做（随实施-01 S5 / 09）；本片不新增运行期资源，fixture 旧扩展只在 `scripts/fixtures/` 里、不进包 |
+| 剩余限制 | 「宿主日志优先」目前只有单测（S3 才开始写）；旧扩展**仍被 pi 自动加载**（等 01-S5 + S3 收敛）；手打 `/panel` 仍会清空草稿且无反馈（S4）；诊断只列目录条目，不解析扩展、不判能否加载 |
+
+**顺带修掉一个既有测试脆弱**（不是产品缺陷）：`todos` 第 6 节四条断言依赖探针**合成**的「回合运行中」状态，
+而第 4 节刚连续切过会话 —— pi 的 hydrate 迟到地推一次真实 `state`（整体替换 `session`）把它清成 false，四条全红
+（诊断打印过现场：`isAgentRunning=false`、`sessionId` 是刚切过去的无任务会话）。改为注入前**等一次静默**
+（连续 1.5s 没有新 `session` 对象），不是加固定 `sleep`；AB 验证过（临时注释掉本轮新增代码，四条照旧红）。
 
 ### 本轮（2026-09-18 深夜）用户报的 5 条（上一条的**反向修正**也在里面）
 
@@ -89,9 +276,37 @@
 
 ## 当前未完成
 
+> 本节是**状态与证据**的索引。**执行口径（会话切片、出口、六栏验收）在 [实施计划](../plan/README.md)**，对应关系：
+> N21 系列 → [实施-06](../plan/实施-06-上下文管理收尾.md)；P2 取证尾巴 / P0-8 / 两条遗留缺陷 → [实施-09](../plan/实施-09-交付与验收收尾.md)；
+> 安卓 → [实施-08](../plan/实施-08-安卓远程管理.md)；Git 与环境菜单 → [实施-07](../plan/实施-07-Git与环境菜单收尾.md)。
+>
+> **实施-02 已完成**（S1–S5，2026-09-18）：证据见本文「本轮」四节与
+> [实施-02](../plan/实施-02-任务工具内置化-已完成.md) 的完成记录；最后一片是
+> [S5 证据](../plan/证据-02-S5-真实运行与验收.md)（真实多步任务三处一致 + 包）。
+> **实施-01**：S4（迁移对照）**已登记完**（2026-09-19，结论表见
+> [实施-01 §4](../plan/实施-01-默认pi架构迁移.md)）；S5（发布切换）仍等 02–06。
+>
+> ✅ **01-S4b（原硬阻塞）已完成（2026-09-19）**：`resources/pi-extensions/browser.js`
+> 已**零注册**（实测是 **16 个 `browser_*` 工具 + 1 个 pi 斜杠命令**，卡面写的「18 个」不准），
+> 等价物 **`yan browser …` 已登记 19 个命令**（`browser.evaluate` 有意不做）。
+> **01-S5 的前置已满足** —— 移除默认扩展装载后浏览器能力不会丢（`test:live -- browserclimodel`，cost 1，
+> 模型自己发现入口并完成 `navigate` → `observe`；L04 边界回归绿）。证据：[证据-01-S4b](../plan/证据-01-S4b-browser-CLI迁移.md)。
+> 它占用过的 `agent.ts` / `capability-server.ts` / `yan.mjs` 三件套（[能力面串行队列](../plan/编排-并行代理分工-2026-09-19.md) §5）
+> **已释放** —— 队列下一位是 05-S2（模式服务），然后是 03-S4、04-S3。
+> 同类的「薄层内注册模型工具」还剩两处，归属明确：`question.js` → 05-S3、
+> `context.js` 的 `context_recall` → 06 的 N21-9 A/B 结论决定去留。
+> 详见 [实施-01 §4 的判定表](../plan/实施-01-默认pi架构迁移.md)。
+>
+> **实施-06**：S1（分支判定）**已完成**（2026-09-19）—— 结论 **分支 A 成立**：
+> 薄层需要的五项钩子（`context` / `before_provider_request` / `before_agent_start` /
+> `session_before_compact` / `agent_settled`）都在且载荷够用（`session_before_compact` 已由真实压缩的
+> `takeover 1 / fallback 0` 取证），**没有任何一项落进止损表**（止损表降为「将来钩子被移除时的预案」）。
+> 除 `context_recall` 外全部有落点；`context_recall` 是唯一「必须注册模型工具」的项，
+> 已按出口 ③ 如实登记为未满足，去留交给 N21-9。**剩**：S2（N21-9 A/B 基准）、S3、S4、S5。
+
 ### 代码与文档审阅（2026-09-17，R01–R04 已修复、D01–D06 已同步）
 
-[审阅批注](REVIEW-2026-09-17-代码与文档批注.md)的 R01–R04 已全部修复，并补齐了失败路径证据；
+[审阅批注](../archive/2026-09-17-代码与文档批注.md)的 R01–R04 已全部修复，并补齐了失败路径证据；
 D01–D06 的文档/注释漂移已按当前实现改写。
 
 | 项 | 修法 | 自动检查 | 真实运行 / 视觉 |
@@ -110,7 +325,7 @@ D01–D06 的文档/注释漂移已按当前实现改写。
 | D05 | `scripts/test-live.mjs` 的 settings 注释改成当前设置布局 + 记忆移除边界 |
 | D06 | `docs/WORKSPACE.md`：pi-extensions 职责补全（浏览器/提问/语言/详细度/上下文） |
 
-[代码功能实现清单](FEATURES-2026-09-17-代码功能实现清单.md)按现有实现列出产品能力和上下文细项。
+[代码功能实现清单](../archive/2026-09-17-代码功能实现清单.md)按现有实现列出产品能力和上下文细项。
 
 ### 一、P1 · 上下文管理（唯一还缺的大功能）
 
@@ -125,7 +340,7 @@ D01–D06 的文档/注释漂移已按当前实现改写。
 |---|---|---|---|
 | **N21-4 多阶段与归档** | **✅ S1–S7 已交付并真实验证（2026-09-17）** | S1（State / Archive 基础设施）证据见[方案 §14](../design/方案-上下文工具内的自动压缩-2026-09-15.md#14-阶段-4--s1-落地记录state--archive-基础设施2026-09-17)；
 S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压缩-2026-09-15.md#15-阶段-4--s2s6-落地记录扩展执行层--recall--降级2026-09-17)：`context` 钩子做 Tool Sweep（墓碑 + `ctx://` 引用）、Task State 前置注入（水位一致才注入）、`context_recall`（预算 / TTL / 审计）、`session_before_compact` 接管闸门（缺字段/无状态一律降级回 pi 摘要），默认**清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；本回合正在动的文件不清扫）。**剩下**：① ~~EpisodeState 的语义生成~~ —— **已完成（2026-09-18，但两道门默认关）**：边界用 `episodeWindow` 的**确定性规则**算（尾部窗口之外 + 上一版终点），收束由模型的 `unresolved` 判（非空即不折），生成后**只落盘、不消费**（`episodeGenerate` / `episodeInject` 都默认关）；真实链路已验证位、落盘与 schema，见[归档 §1.25](../archive/2026-09-17-已完成归档.md)。**开它之前先要有质量数据**；② `symbolsTouched`（需语言级解析，目前为空）；③ §12.11 第 10 条 20+ 回合压力测试（真行为、成本高，同时也是 N21-9 的输入）。~~三阶段独立 Rearm / Cooldown~~ —— **已完成（2026-09-18）**：新模块 `context-stage-runtime.js` + `context.js` 的 sweep / fold 接线，30 条单测 + 3 次反向验证，见[归档 §1.24](../archive/2026-09-17-已完成归档.md)；~~增量 delta（现为全量快照）~~ —— **已决策不做**（方案 §18）。**另：S7（状态生成器）已于 2026-09-17 落地** —— 混合式（确定性 reducer 提供 files / commands / tests + 一次无工具 completion 产出语义字段，落盘前 reducer 覆盖模型返回的同名字段）、`revision` CAS、freshness 分档（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）、状态自身预算与裁剪；**默认在接管集里**（2026-09-18 拍板；但短会话由会话级门槛挡住，不是每轮都跑）。证据见方案 §17。以下为这批交付前的描述（供回溯）：EpisodeState / TaskState 的语义生成器（**扩展内即可完成** —— 方案 §16.1 更正了「扩展侧没有推理 API」的误判：`agent_settled` 事件 + `ctx.modelRegistry.complete()` 就能跑一次无工具归纳；实施级契约（coordinator/CAS/freshness/预算与裁剪/dirty 阈值/注入切分）见**方案 §16.6**，由第三轮外部评审经内置浏览器对话取得并经源码核查；开工前的三项待决中**第 1 项已定**：复用已验证的浏览器 loopback bridge 落盘，见方案 §16.6.3）、三阶段独立 Rearm/Cooldown（**已于 2026-09-18 完成**，见[归档 §1.24](../archive/2026-09-17-已完成归档.md)） | N21-3（已完成） |
-| **N21-5～N21-9 状态化压缩** | **N21-5 / N21-6 / N21-7 / N21-8 全部完成（2026-09-17～18）**，只剩 **N21-9（A/B 基准）未开工**。N21-6 的接管**成功分支**已在真实链路取证（`contexttakeoverstate`：`takeover 1 次 / fallback 0 次`，[归档 §1.21](../archive/2026-09-17-已完成归档.md)）；N21-8 已闭环（默认关 + 设置面板开关 + 视觉证据，[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。方案 §19 的结论仍然成立：pi **没有 system 注入通道**（`convertToLlm` 把 `custom` 一律映射成 user、`default` 直接丢弃），要做 system 级注入只能走 `before_provider_request` | 任务表见 [PRIORITY 的 P1c 节](PRIORITY-2026-09-15-未完成排期.md)。**③ 阈值可配 + 模型级 override 已落地**（N21-7，见[归档 §1.8](../archive/2026-09-17-已完成归档.md#18-n21-7-上下文阈值可配置化--模型级-override2026-09-17已完成)：lookup `env > model(provider/model) > provider > user > default`、设置面板「上下文」tab、`contextbudget` 第 7 节 + 20 条单测 + 两张 `ctxsettings` 截图）。**剩余**：① ~~增量 delta（全量快照）~~ —— **已决策不做**（方案 §18：量化后收益 ≤900 token/次且已有硬 cap，成本是合并语义与新的正确性面；N21-5 不再是「未完成」）；② `episode-fold` 默认值：**2026-09-18 已取得第五轮外部意见，它修正立场为「现在默认关是对的」**（原文存档于 `docs/design/参考-episode-fold 默认策略（第五轮·ChatGPT·原文）-2026-09-18.md`）；它把 `supportingEntryIds`（provenance）定为默认开的前置，而本项目核查确认「语义递归经 `<previous_state>` 仍在」—— 与现状一致，**默认值保持关**（方案 §17.5.6）—— 2026-09-17 晚已取得**第四轮外部意见**并做完源码核查（§17.5），随后**把与开关无关的硬化项全部落地**（[归档 §1.11](../archive/2026-09-17-已完成归档.md)：synthetic 输入自净 / 注入 authority 契约头 / `generate`+`inject` 分路 / episode 旁路防线 / **回合口径修正** / 会话级 gate + 新增 `contextgate` 场景）；它用的三个 gate 信号里「settled turn 计数」已补上（`turnsSince`），另两个（离压缩还有多远）仍需主进程的工作集；**第四轮复核又定掉三条**（Sweep 不得绕过最低回合数 / `inject` 的语义写死为「允许参与任何模型可见上下文」/ 「落后 1 条未 settled 的 user 算 fresh」，见方案 §17.7）；③ Deep Context Mode 默认关闭、开工前先做两项前置调查（其中「扩展侧到底能不能自己调模型」已在方案 §16.1 更正并核实）。方案 §13.5 的开工前三问与 §16.4 的四个拍板点，除②（等价于 §16.4 的默认值项）外都已随实现定下，原文保留仅供回溯；外部评审提的改进项（字段级 freshness、ancestry + 有界陈旧、富墓碑等）已登记在方案 §16.2（**待评估、未排期**）；另有一轮**本机 Codex** 的第三方核对（一致处与分歧见方案 §16.5，它额外指出 TaskState 自适应裁剪、生成器重入/迟到结果 CAS、归档回滚三项硬要求） | N21-4；用户拍板 |
+| **N21-5～N21-9 状态化压缩** | **N21-5 / N21-6 / N21-7 / N21-8 全部完成（2026-09-17～18）**，只剩 **N21-9（A/B 基准）未开工**。N21-6 的接管**成功分支**已在真实链路取证（`contexttakeoverstate`：`takeover 1 次 / fallback 0 次`，[归档 §1.21](../archive/2026-09-17-已完成归档.md)）；N21-8 已闭环（默认关 + 设置面板开关 + 视觉证据，[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。方案 §19 的结论仍然成立：pi **没有 system 注入通道**（`convertToLlm` 把 `custom` 一律映射成 user、`default` 直接丢弃），要做 system 级注入只能走 `before_provider_request` | 任务表见 [实施-06 上下文管理收尾](../plan/实施-06-上下文管理收尾.md)。**③ 阈值可配 + 模型级 override 已落地**（N21-7，见[归档 §1.8](../archive/2026-09-17-已完成归档.md#18-n21-7-上下文阈值可配置化--模型级-override2026-09-17已完成)：lookup `env > model(provider/model) > provider > user > default`、设置面板「上下文」tab、`contextbudget` 第 7 节 + 20 条单测 + 两张 `ctxsettings` 截图）。**剩余**：① ~~增量 delta（全量快照）~~ —— **已决策不做**（方案 §18：量化后收益 ≤900 token/次且已有硬 cap，成本是合并语义与新的正确性面；N21-5 不再是「未完成」）；② `episode-fold` 默认值：**2026-09-18 已取得第五轮外部意见，它修正立场为「现在默认关是对的」**（原文存档于 `docs/design/参考-episode-fold 默认策略（第五轮·ChatGPT·原文）-2026-09-18.md`）；它把 `supportingEntryIds`（provenance）定为默认开的前置，而本项目核查确认「语义递归经 `<previous_state>` 仍在」—— 与现状一致，**默认值保持关**（方案 §17.5.6）—— 2026-09-17 晚已取得**第四轮外部意见**并做完源码核查（§17.5），随后**把与开关无关的硬化项全部落地**（[归档 §1.11](../archive/2026-09-17-已完成归档.md)：synthetic 输入自净 / 注入 authority 契约头 / `generate`+`inject` 分路 / episode 旁路防线 / **回合口径修正** / 会话级 gate + 新增 `contextgate` 场景）；它用的三个 gate 信号里「settled turn 计数」已补上（`turnsSince`），另两个（离压缩还有多远）仍需主进程的工作集；**第四轮复核又定掉三条**（Sweep 不得绕过最低回合数 / `inject` 的语义写死为「允许参与任何模型可见上下文」/ 「落后 1 条未 settled 的 user 算 fresh」，见方案 §17.7）；③ Deep Context Mode 默认关闭、开工前先做两项前置调查（其中「扩展侧到底能不能自己调模型」已在方案 §16.1 更正并核实）。方案 §13.5 的开工前三问与 §16.4 的四个拍板点，除②（等价于 §16.4 的默认值项）外都已随实现定下，原文保留仅供回溯；外部评审提的改进项（字段级 freshness、ancestry + 有界陈旧、富墓碑等）已登记在方案 §16.2（**待评估、未排期**）；另有一轮**本机 Codex** 的第三方核对（一致处与分歧见方案 §16.5，它额外指出 TaskState 自适应裁剪、生成器重入/迟到结果 CAS、归档回滚三项硬要求） | N21-4；用户拍板 |
 
 ### 二、P2 · 已取证项的尾巴（都不阻塞主链路，可批量补）
 
@@ -153,15 +368,15 @@ S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压�
 
 ### 三、安卓远程管理（2026-09-18 新增）
 
-界面与功能规划见 [Android UI 方案](../design/ANDROID-UI-PLAN-2026-09-18.md)：六类页面、移动视觉候选、断线/双端交互与协议依赖已形成设计提案；尚无可交互原型、Android UI 或 APK，工程状态保持下表口径。
+界面与功能规划见 [Android UI 方案](../design/ANDROID-UI-PLAN-2026-09-18.md)：六类页面、移动视觉候选、断线/双端交互与协议依赖已形成设计提案；**S0 已将「连接状态机与能力边界」冻结**（见下表），尚无可交互原型、Android UI 或 APK，工程状态保持下表口径。
 
 | 项 | 当前状态 | 已有证据 | 剩余限制 |
 |---|---|---|---|
-| **Android 远程管理第一阶段** | **电脑端 API 已落地，Android UI 尚未开始** | `src/main/remote-server.ts` + `src/main/index.ts`；`typecheck`、`build`、`test:unit`（远程协议 14 条）和 `audit:refs` 通过；隔离 Electron 实例实测 `/health`、带 token 的 `/status` / `/sessions`，服务默认不启动 | 当前是 HTTP + SSE、环境变量 token；尚无二维码配对、设备密钥、TLS/中继、Android APK、视觉验收和正式包验收；详见 [REMOTE-CONTROL](REMOTE-CONTROL.md) |
+| **Android 远程管理第一阶段** | **电脑端 API 已落地；S0（连接状态机与能力边界）已冻结；Android UI 尚未开始** | `src/main/remote-server.ts` + `src/main/index.ts`；`typecheck`、`build`、`test:unit`（远程协议 14 条）和 `audit:refs` 通过；隔离 Electron 实例实测 `/health`、带 token 的 `/status` / `/sessions`，服务默认不启动。**S0（2026-09-19，零代码）**：[远程-连接状态机-2026-09-19.md](../design/远程-连接状态机-2026-09-19.md)（`RC-SM/1`：六态词表 + 126 格迁移表 + 授权轴正交 + 11 能力 × 6 态矩阵 + 断线语义 + 8 类错误分类） | 当前是 HTTP + SSE、环境变量 token；尚无二维码配对、设备密钥、TLS/中继、Android APK、视觉验收和正式包验收；详见 [REMOTE-CONTROL](REMOTE-CONTROL.md)。**S0 附带发现两个现有缺陷（未修）**：`POST /sessions/:id/messages` 隐式 `select` 抢走电脑当前视图；`POST /runs/abort` 无目标 `runId` |
 
 ### 四、Git 审查与环境菜单（方案 G1 + G2，2026-09-18）
 
-方案唯一真源：[design/方案-Git审查与环境菜单及插件视觉规划](../design/方案-Git审查与环境菜单及插件视觉规划-2026-09-18.md)
+方案唯一真源：[Git 审查与环境菜单及插件视觉规划（已归档，剩余项见实施-07）](../archive/2026-09-18-Git审查与环境菜单及插件视觉规划.md)
 —— 它的 **§16 是评估与落地记录**（源码核查复核、外部条件、已落地的六栏证据、
 与方案的偏差及理由）。本节只列**还没做完的**。
 
@@ -214,10 +429,10 @@ S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压�
 紧凑轨（`.rail-compact`）早已从源码移除，断言还在找它 ——
 `railmini` 探针那边甚至有「已彻底移除」的断言，两边的认知原本是矛盾的。
 
-**已知布局遗留（真问题，未修）**：窄窗口（≤1002px）下左栏收起后**稳定停在 48px**
-（宽窗口是 0）。查清了不是动画中间值 —— 那是紧凑轨移除时没清掉的那一列宽度。
-`narrow` 的断言已改成意图级并**打印实测值**，不让它假装是 0；要彻底修需要动
-`rail.css` 的列定义。
+**已知布局遗留（真问题）已修（2026-09-19）**：窄窗口（≤1002px）下左栏收起后曾**稳定停在 48px**
+（宽窗口是 0）—— 那是紧凑轨移除时没清掉的那一列宽度（写死在窄窗媒体查询里）。
+已改成跟 `--w-rail-collapsed` 同一个真源，`narrow` 的断言也从「意图级」收回**硬值 0**，
+三档窗口实测全 `0px`，A/B 反向验证见「本轮（2026-09-19）实施-09 S1」。
 
 ⚠️ **跑 Electron 前必须清掉 `ELECTRON_RUN_AS_NODE`**（pi 运行时会注入它）。
 注意 `export ELECTRON_RUN_AS_NODE=`（空串）**也算设置了** —— Electron 检查的是
@@ -247,8 +462,13 @@ S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压�
 
 | 项 | 现象与已查到的线索 | 状态 |
 |---|---|---|
-| **fs 文件树的键盘导航** | `End` 从根出发时焦点掉到 **body**（不是"没渲染"—— 探针里那行诊断打出 `DOM行数=50`、最后一行 `tsconfig.web.tsbuildinfo` 就在 DOM 里）。同一节里「Home 回到树根」「ArrowRight 从已展开目录移动到下一可见节点」**都通过** —— 所以**从已聚焦行出发**的移动是好的，问题只出在「先 focus 另一行、再派发按键」这条路径：`row.focus()` → `onFocus` → `setFocusPath` → 重渲染，而 `focusTreePath` 的焦点恢复写在 **`requestAnimationFrame`** 里，查到/聚焦的可能是被替换掉的节点。**试过的方案（已撤回，用备份文件还原，没动 git）**：把 `focusTreePath` 改成 `useLayoutEffect` + 键盘意图哨兵 → `End` 仍然红，而 `ArrowRight` **反而变红** —— 说明焦点链上**还有别的参与者在改焦点**，这不是单点问题。反正在**这次撤销**里学到的是：改焦点管理必须先有逐帧观测（打 activeElement 的时间线），否则「修一处坏一处」。诊断行已留在 `scripts/probe/fs.js` | 待修（需要逐帧观测 activeElement） |
-| **窄窗口下左栏收起的 48px 残留** | 见上一节末尾。宽窗口收起是 0，**窄窗口（≤1002px）稳定停在 48px** —— 紧凑轨移除时没清掉那一列宽度 | 待修（rail.css 的列定义） |
+| **fs 文件树的键盘导航** | `End` 从根出发时焦点掉到 **body**（不是"没渲染"—— 探针里那行诊断打出 `DOM行数=50`、最后一行 `tsconfig.web.tsbuildinfo` 就在 DOM 里）。同一节里「Home 回到树根」「ArrowRight 从已展开目录移动到下一可见节点」**都通过** —— 所以**从已聚焦行出发**的移动是好的，问题只出在「先 focus 另一行、再派发按键」这条路径：`row.focus()` → `onFocus` → `setFocusPath` → 重渲染，而 `focusTreePath` 的焦点恢复写在 **`requestAnimationFrame`** 里，查到/聚焦的可能是被替换掉的节点。**试过的方案（已撤回，用备份文件还原，没动 git）**：把 `focusTreePath` 改成 `useLayoutEffect` + 键盘意图哨兵 → `End` 仍然红，而 `ArrowRight` **反而变红** —— 说明焦点链上**还有别的参与者在改焦点**，这不是单点问题。反正在**这次撤销**里学到的是：改焦点管理必须先有逐帧观测（打 activeElement 的时间线），否则「修一处坏一处」。诊断行已留在 `scripts/probe/fs.js` | **已修（2026-09-19）** |
+| **窄窗口下左栏收起的 48px 残留** | 见上一节末尾。宽窗口收起是 0，**窄窗口（≤1002px）稳定停在 48px** —— 紧凑轨移除时没清掉那一列宽度 | **已修（2026-09-19）** |
+
+> 两条的**真实根因**与反向验证见「本轮（2026-09-19）实施-09 S1」。
+> fs 那条的「焦点管理/节点被替换」是当时的假说，逐帧观测推翻了它：
+> 真正的判据是 **`visiblePaths`（严格 DFS）与渲染截断（父层先扣额度）用了两套顺序**，
+> 键盘能走到没渲染出来的行；`focus()` 找不到节点不报错、只是静默失败。
 
 ### 五、P3 · 外部条件阻塞（不排期）
 
@@ -257,11 +477,22 @@ S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压�
 
 ## 当前产品边界
 
-遵循 [AGENTS.md 第五节](../../AGENTS.md)：**任务面板保持现状**；**记忆模块与 `get_tree` 浏览链路不恢复**；
+遵循 [AGENTS.md 第五节](../../AGENTS.md)：**任务面板保持现状**（只放开任务工具的提供方，见 [实施-02](../plan/实施-02-任务工具内置化-已完成.md)）；
+**旧记忆系统与 `get_tree` 浏览链路不恢复**（「项目知识」是独立新功能，见 [实施-03](../plan/实施-03-项目知识与旧记忆清理.md)：
+**S0–S2 已完成**（残留清理 + 保护集 + 存储层），**S3–S6 新功能未开工**）；
 推理块默认展开但限高省略（`--reason-max-h`）且永远保留模型原文；本地档案不冒充登录
 （只有 ChatGPT `openai-codex` 能在应用内登录）；深浅主题、设置面板、模型接入、Windows 打包、
 内置浏览器与本机 Chrome 接入**都已实现**。
 「Yan 自有账号登录」与「ChatGPT 模型接入登录」是两条不同能力，不要混称。
+
+**pi 边界（2026-09-18 拍板）**：完成版**只包含默认 pi**，不预装 pi 插件、不暗中装回、不改名冒充原生；
+**允许保留一个砚自有薄适配层** —— 只承载宿主无法通过 CLI / RPC 表达的**生命周期桥接与策略执行**
+（不注册模型工具 / 命令、不加用户可见功能、不改 pi 默认工具集）。准入按**语义契约 5 条**判定
+（缺契约且**必须注册模型工具** → 直接判「做不到」，**不塞进薄层**），约束与白名单见
+[实施-01 §1](../plan/实施-01-默认pi架构迁移.md)。两个可选入口（`pi config` 启用 / 禁用、
+GitLab / Bitbucket PR）**已定不做**。**01-S1 仍是所有迁移的共同前提**，且必须包含
+**端到端最小闭环**（模型 → 本机 CLI → 结构化结果 → 继续一轮）。
+[实施计划](../plan/README.md) 是接下来做什么的唯一活入口。
 
 ## 更新状态的方法
 

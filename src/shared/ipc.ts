@@ -300,6 +300,15 @@ export interface CommandDescriptor {
   usage?: string
   /** 能看见但当前桌面端不执行时，说明兼容边界。 */
   availability?: string
+  /**
+   * 不在 `/` 补全候选里出现，但**保留**在注册表内（实施-02 S4）。
+   *
+   * 为什么不是直接删掉这条命令：pi 运行时可能也报一个同名命令
+   *（例如用户扩展注册了 `panel`）。删掉本地这条，剩下的那条就会
+   * 变成「可执行」，用户手打 `/panel` 会被当成消息发给模型 ——
+   * 隐藏 + 手打时给明确反馈，才能保证它永远走不到模型那一侧。
+   */
+  hiddenInMenu?: boolean
 }
 
 /** 旧名称保留给 renderer/preload 调用方，实际结构已是 CommandDescriptor。 */
@@ -1827,6 +1836,25 @@ export interface PackagesBridge {
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
+/**
+ * 「受信内置能力」一条（实施-02 S4）。
+ *
+ * 与 [PackageEntryView] 刻意不是同一个形状：内置能力**没有卸载、没有版本、
+ * 没有仓库**，也不是从 pi 的包目录加载的 —— 共用一个类型会诱使界面
+ * 给它加出一个「卸载」按钮。
+ */
+export interface BuiltinCapabilityView {
+  /** 稳定 id（渲染端据此翻文案；未登记时界面退而成显示 file） */
+  id: string
+  /** 实际加载的扩展文件名；宿主服务没有这一项 */
+  file?: string
+}
+
+/** 内置能力的只读查询（没有对应的写操作，这是有意的）。 */
+export interface BuiltinCapabilitiesBridge {
+  list(): Promise<BuiltinCapabilityView[]>
+}
+
 /* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
 
 export type SourceKindView = 'image' | 'file' | 'web'
@@ -2149,6 +2177,8 @@ export interface YanBridge {
   /** 会话来源的持久化资源引用（§8 的 S1）：只持有我们自己存的那份副本 */
   sources: SourcesBridge
   packages: PackagesBridge
+  /** 受信内置能力的只读查询（实施-02 S4）；与 packages 刻意分开 */
+  builtinCapabilities: BuiltinCapabilitiesBridge
   git: GitBridge
 
   /* 内置浏览器 */

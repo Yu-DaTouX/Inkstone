@@ -171,6 +171,29 @@
     const s = tstore.getState().session
     tstore.setState({ session: { ...(s ?? {}), isAgentRunning: v, isStreaming: v } })
   }
+  /*
+   * ⚠️ 先等一次「静默」，再注入合成的运行中状态。
+   *
+   * 第 4 节为了找「没有任务的会话」连续切了好几次会话，而 pi 的 hydrate
+   * 是**异步**的 —— 它会在这之后迟到地推一次真实 `state`（store 里是整体替换
+   * `session`），把这里注入的 `isAgentRunning` 清成 false。
+   * 症状是下面四条「正在进行」相关断言全红（而实际上根本没有回合在跑）。
+   * 判据用「连续 1.5s 没有新的 session 对象」而不是固定 sleep：固定值只是在赌。
+   */
+  {
+    let changes = 0
+    const unsub = tstore.subscribe((s, prev) => {
+      if (s.session !== prev.session) changes++
+    })
+    let stable = 0
+    while (stable < 5) {
+      const before = changes
+      await sleep(300)
+      if (changes === before) stable++
+      else stable = 0
+    }
+    unsub()
+  }
   setRunning(true)
 
   /** 造 N 个任务、前 d 个已完成 */

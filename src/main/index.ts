@@ -41,7 +41,9 @@ import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
-import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR } from './paths'
+import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
+import { legacyProjectId } from './project-id'
 import type {
   Attachment,
   AttentionNotify,
@@ -290,6 +292,23 @@ function languageExtensionPath(): string | undefined {
 }
 
 /**
+ * 内置「能力入口说明」扩展的路径。
+ *
+ * 它把「有 `yan` 这个入口、输出是摘要 + 结果文件」这段短说明追加到系统提示，
+ * 否则模型根本不会去用它（见 resources/pi-extensions/capability-guide.js）。
+ */
+function capabilityGuideExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath
+      ? join(process.resourcesPath, 'pi-extensions', 'capability-guide.js')
+      : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'capability-guide.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'capability-guide.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
  * 内置「上下文状态化压缩」扩展的路径（N21-4 / S2–S6）。
  *
  * 它做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、
@@ -305,6 +324,25 @@ function contextExtensionPath(): string | undefined {
     join(process.cwd(), 'resources', 'pi-extensions', 'context.js')
   ].filter(Boolean)
   return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
+ *
+ * 抽成一个函数是为了只有一份清单：来源诊断（[reportExtensionSources]）与
+ * 「受信内置能力」查询（`yan:capabilities:builtin`）都从这里取 ——
+ * 否则设置页显示的清单可能与 pi 真正加载的东西不一致。
+ * 找不到文件的项直接丢掉（打包漏了资源时，界面不如实列出这些不存在的东西）。
+ */
+function yanThinExtensionPaths(): string[] {
+  return [
+    browserExtensionPath(),
+    questionExtensionPath(),
+    responseDetailExtensionPath(),
+    languageExtensionPath(),
+    capabilityGuideExtensionPath(),
+    contextExtensionPath()
+  ].filter((p): p is string => !!p)
 }
 
 function push(msg: MainPush): void {
@@ -328,6 +366,22 @@ function pushFrom(runnerId: string, msg: MainPush): void {
     sessionKey: runnerId
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
+  /*
+   * 每次 `state` 推送都顺带刷一次 `runners` 快照。
+   *
+   * 为什么必须刷：渲染端把 `runners[active].running` 当作「回合还在跑」的依据之一
+   * （`Composer` 的待定消息自动投递、`QueueStack` 的「插话 / 排队」二选一）。
+   * 而这个快照原先只在**实例生命周期**事件里推（起停 / 切会话 / 删除），
+   * 回合结束（`agent_settled` → `setAgentRunning(false)`）只走 `state` 通道 ——
+   * 快照会一直停在 `running: true`：待定消息永远等不到自动投递，
+   * 卡片也一直给着「插话」（2026-09-19 用户报的 bug）。
+   *
+   * 为什么不比对变化再推：`pushFrom` 里 `agent.state` **已经是新值**，
+   * 现算比对必然相等（`runners.statuses()` 读的就是它），除非再维护一份影子状态。
+   * 而 `state` 推送全库只有几处（回合起停、流起停、模型 / 压缩状态变化），
+   * 快照又很小 —— 多推这几条的代价远低于再引入一份需要同步的影子状态。
+   */
+  if (msg.ch === 'state') pushRunners()
 }
 
 /** 把所有运行实例的状态推给渲染端（左栏状态槽） */
@@ -1012,6 +1066,30 @@ let starting: Promise<{ ok: boolean; error?: string }> | null = null
 /** 当前设置的回复详细程度；每个 Agent 回合自己在 agent_start 时取快照。 */
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
 
+/**
+ * 「扩展来源」诊断只报一次。
+ *
+ * 扩展目录在应用运行期间不会变，而 `startAgent` 会被语言切换 / 重连等路径
+ * 反复调到 —— 每次重启都刷一遍会让日志分区变成噪声。
+ */
+let extensionSourcesReported = false
+
+/**
+ * 把「谁在给这个 pi 实例加东西」写进日志（实施-02 S1 的诊断出口）。
+ *
+ * 为什么必须有一份：任务工具迁移的过渡期里，用户扩展与砚薄层可能同时存在，
+ * 出问题时（清单跳变 / 历史对不上）第一件事就是分辨是谁写的。
+ * 这里只**如实列举**，不做修复、不禁用、不删（判据见 extensions-inventory.ts 头注释）。
+ */
+function reportExtensionSources(): void {
+  if (extensionSourcesReported) return
+  extensionSourcesReported = true
+  const thin = yanThinExtensionPaths()
+  for (const text of extensionDiagnostics({ piDir: PI_AGENT_DIR, yanThinPaths: thin })) {
+    push({ ch: 'log', payload: { text } })
+  }
+}
+
 function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (starting) return starting
   starting = doStartAgent(restore).finally(() => {
@@ -1048,8 +1126,35 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         browserEnv: browser?.bridgeEnv(),
+        /*
+         * `yan browser …` 的实现入口（01-S4b）。
+         *
+         * 传 getter 而不是实例：agent 实例会随切会话反复重建，
+         * 而浏览器控制器是模块级单例 —— 每次取当时那个。
+         */
+        browserHost: () => browser,
         languageExtension: languageExtensionPath(),
-        contextExtension: contextExtensionPath()
+        capabilityGuideExtension: capabilityGuideExtensionPath(),
+        contextExtension: contextExtensionPath(),
+        /*
+         * 宿主能力服务：模型经 `yan` CLI 触达砚的能力（见 capability-server.ts）。
+         *
+         * `sessionId` 用 runner 实例 id：端点与它绑定，切会话 / 重建 pi 就换一份 token。
+         * `projectId` 按该实例的 cwd 算，所以不同项目跑的主实例互相看不到对方的数据。
+         */
+        capability: {
+          sessionId: id ?? 'primary',
+          /*
+           * 项目 id 必须存在（要与 CLI 回传的值逐一比对）。
+           * 设置里查不到时用 cwd 派生一个稳定的：
+           * 能力服务宁可绑一个「未登记但唯一」的 id，也不能绑空值 ——
+           * 空值会让校验退化成「只要格式对就放行」。
+           */
+          projectId: projectIdForCwd(settings, cwd) ?? legacyProjectId(cwd),
+          opsDir: join(YAN_DIR, 'ops'),
+          binDir: join(YAN_DIR, 'bin'),
+          devResourcesDir: join(app.getAppPath(), 'resources')
+        }
       }),
     onChanged: () => pushRunners()
   })
@@ -2313,6 +2418,13 @@ function registerIpc(): void {
     }
   })
 
+  /*
+   * 受信内置能力清单（实施-02 S4）：设置页要用它与「用户装的插件」分开。
+   * 只读，且与 pi 实际加载的路径同源 —— 不缓存，免得用户换了安装形态
+   *（开发态 ↔ 打包态）后看到一份过期的清单。
+   */
+  handle('yan:capabilities:builtin', async () => builtinCapabilities(yanThinExtensionPaths()))
+
   handle('yan:packages:action', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     try {
@@ -2502,10 +2614,20 @@ function createWindow(): void {
    * 为什么：跑测试会连续开十几次窗口，`show()` 每次都把焦点抢过来 ——
    * 用户在多桌面工作时会被反复打断（实测：测试把焦点从另一个桌面抢走）。
    * 不激活不影响断言：窗口照样渲染、布局、跑动画，只是不在最前面。
+   *
+   * ⚠️ `YAN_PROBE_HIDDEN=1` 时**完全不上屏**（保持 `show: false`，不进任务栏）。
+   * 为什么：即使不抢焦点，窗口仍会出现在屏幕上；批量回归 / agent 在后台跑时
+   * 会持续干扰用户。渲染与布局不受影响 —— 上面那三个
+   * `disable-*-backgrounding` 开关已经关掉了不可见窗口的节流。
+   * 代价：看不到窗口，所以**不能**用这个模式做人工视觉验收。
    */
   win.once('ready-to-show', () => {
-    if (process.env.YAN_PROBE) win?.showInactive()
-    else win?.show()
+    if (process.env.YAN_PROBE) {
+      if (process.env.YAN_PROBE_HIDDEN) win?.setSkipTaskbar(true)
+      else win?.showInactive()
+    } else {
+      win?.show()
+    }
     /*
      * 窗口显示后再补一次缩放。
      *
@@ -2520,6 +2642,13 @@ function createWindow(): void {
      */
     setTimeout(() => {
       if (!win || win.isDestroyed()) return
+      /*
+       * 扩展来源诊断放在这里，而不是 `doStartAgent` / app 启动时：
+       * `push` 在窗口还没准备好时会**直接丢掉**（见 push 里的判空），
+       * 而这些日志是给用户看的诊断 —— 丢了等于没做（实测第一版就丢在这里）。
+       * ready-to-show 表示页面已经画出来了，渲染端的 push 订阅已经就位。
+       */
+      reportExtensionSources()
       void getSettings().then((s) => {
         if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
       })

@@ -68,6 +68,8 @@ pi 吐事件
 | `model-capabilities.ts` | 95 | 归一化 pi 的模型描述符：缺失字段一律 `unknown`，**绝不因为字段缺失就判成 unsupported** | `agent.ts`（`setStateFrom`）、`Pickers.tsx`；单测 `test-model-capabilities.mjs` |
 | `links.ts` | 123 | 链接路由：内部浏览器打开 / 文件预览 / 拒绝（非法协议、路径穿越、可执行文件） | 安全判断，纯函数；单测 `test-links.mjs` |
 | `context-state.ts` | 1280 | **上下文状态的 schema 与校验（N21-4 / S1，纯函数）**：`TaskState`（= 方案 §12.8 的 `CodingState`，`StateEntry` 带 `status` active/resolved/superseded + `source` provenance）、`EpisodeState`（`sourceRange` 指回**原始** entry，§12.7 禁止递归摘要的判据）、`ArchiveEntry`（`recallable` 三态 + TTL + 元数据）、`SourceWatermark`（`entryCount` + `lastEntryId`）、`ContextStateFile` / `ArchiveFile` 信封（`schemaVersion`）、Deep Context artifact 的**注入闸门** `deepContextUsable`（水位/会话/过期三重校验，本切片不产生模型调用）。三条硬约束写在文件头：派生物可丢、provenance 只能指 raw entry identity、禁止递归摘要 | 落盘在 `main/context-state-store.ts`，水位在 `main/context-watermark.ts`；单测 `test-context-state.mjs`（78 条）；[方案 §14](../design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| `task-plan.ts` | 603 | **任务计划的契约 + 纯逻辑（实施-02 S1–S3）**：两个 custom entry 标识（旧 `left-panel-tasks` **只读兼容** / 新 `yan-task-plan` 宿主日志）、六操作名、上限（200 项 / 2000 **code point**）、`TaskPlanState` / `TaskPlanEntryData`、`isTaskPlanCustomType`（精确匹配）、`normalizeTask*`（历史宽容：别名表 + 坏项丢掉）、`readTaskPlanEntry` / `toTaskPlanEntryData` / `planStateOf`（新旧载荷读写）、`parseRequestItems` / `validateTaskRequest`（严格校验，14 类错误码）、`applyTaskRequest`（reducer：幂等 / 失败即不动 / `revision` 只成功时 +1）；**S3 补**日志行形状与读写（`TaskPlanLogRecord` / `parseTaskPlanLogLine` 宽容 / `serializeTaskPlanLogRecord` / `taskPlanLogEntry` —— 把日志行转成与会话条目同形状，喂给同一套归并）。**不碰** electron / pi / fs，所以 `yan` CLI 与单测用同一份规则 | `main/todo-snapshots.ts`（解析）、`main/task-plan-store.ts`（落盘）、`main/agent.ts` 的 `refreshTodos` / `applyTaskPlan`；单测 `test-task-plan.mjs`（95 条）/ `test-todo-history.mjs`；[S1 证据](../plan/证据-02-S1-兼容性与契约.md) / [S2 证据](../plan/证据-02-S2-任务计划纯逻辑.md) / [S3 证据](../plan/证据-02-S3-宿主任务服务.md) |
+| `tool-origin.ts` | 74 | **工具卡来源判定（实施-02 S4）**：`taskPlanCommand(name, args)` 只看 `bash`/`shell`/`run`/`exec` + 命令文本（`yan` / `yan.cmd` / `yan.exe` / 带路径带引号），命中返回命令行原文；`summarizeTaskPlanCommand` 一行化 + 120 字截断（完整原文靠展开详情）。**只生成展示标记**，不改变写入语义与权限；已知边界（`echo "yan tasks apply"` 也会命中）写进了单测 | `chat/ToolRow.tsx`；单测 `test-tool-origin.mjs`；live `taskcli`；截图 `matrix-taskcard-*` |
 
 ---
 
@@ -86,7 +88,7 @@ pi 吐事件
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
 | `index.ts` | 1947 | 窗口 + **全部 IPC handler** + Runner 生命周期 + 托盘 + 缩放 + 快捷键 + 探针注入（`YAN_PROBE`）。文件树/补全/搜索共用的上下文边界是 `resolveFileContext` | 依赖除 `browser/*` 外几乎所有 main 模块。新增功能通常在此注册 handler |
-| `paths.ts` | 49 | 数据路径常量：`YAN_DIR`、`PI_AGENT_DIR`、便携版根… | 被 10 个文件 import。**这里曾经叫 `memory.ts`**（记忆系统），已移除 |
+| `paths.ts` | 49 | 数据路径常量：`YAN_DIR`、`PI_AGENT_DIR`、便携版根… | 被 10 个文件 import。**只放路径常量**；历史上这里是 `memory.ts`（记忆系统，已整体移除且不恢复）—— 旧的 `memory.json` / `soul.md` 属用户数据、**不主动删** |
 | `settings.ts` | 408 | 桌面端专属设置（窗口、主题、语言、cwd、栏宽、工具顺序、**上下文策略覆盖** `contextPolicy` / `contextPolicyByModel`）。**刻意不写 pi 的 `settings.json`** | `index.ts`、`Rail.tsx`、`Settings.tsx`；项目 id 派生在 `project-id.ts` |
 | `project-id.ts` | 45 | 项目 id 派生：沿用旧的 36 字符 base64 前缀（已有归属键不动），**碰撞时**换成整条路径的 sha1（D14：同前缀目录曾共用 id，导致文件树/@ 补全报「项目与工作目录不匹配」） | `settings.ts`（生成项目）、`index.ts` 的 `resolveFileContext`；单测 `test-project-id.mjs` |
 | `queue-items.ts` | 54 | 队列快照的消费/回收规则（D9）：`consumeQueuedItem` 按原文摘掉队首匹配项（先 steering 后 followUp、FIFO、trim 比较）、`reclaimedTexts` 把 `clear_queue` 的结果按 steering→followUp 拼回草稿 | `agent.ts`（收到 user 消息、`abort()`）；单测 `test-queue-items.mjs`（18 条） |
@@ -130,7 +132,9 @@ pi 吐事件
 | `session-reader.ts` | 193 | 直接从 JSONL 解析消息：① 让界面**立即**有内容（实测 17MB 会话：文件解析 59ms vs 等 pi 2780ms）；② **也是 UI 历史的权威来源**（`agent.hydrate()` 用它，因为 pi 的 `get_messages` 只给当前上下文 —— 压缩过的会话实测 858 → 86 条）。返回值里带文件头的 `sessionId`，用于把 peek 内容与随后的 pi `sync` 认成同一条会话 | `index.ts` 的 `peekSession` → `store.switchSession` 第一步；`agent.ts` 的 `hydrate()` |
 | `session-layout.ts` | 273 | 会话 ↔ 项目的**产品语义映射**（`sessionId → projectId / scope / 最近访问`）。Yan 不搬 pi 的 JSONL | `index.ts`、`Rail.tsx`；单测 `test-session-layout.mjs` |
 | `title.ts` | 300 | 会话标题：**独立短进程**跑归纳；手动标题粘性；候选→采用。已显式关闭 context files / skills / 模板 | `index.ts`、`store.regenerateTitle`；缓存 `YAN_DIR/titles.json` |
-| `todo-snapshots.ts` | 122 | 扩展写入的任务清单 → 四种状态（带别名表，因为字段名由扩展决定） | `agent.ts` 的 `refreshTodos`；单测 `test-todo-history.mjs` |
+| `todo-snapshots.ts` | 108 | 会话里的任务清单（含**宿主任务日志转来的同形条目**）→ 统一快照：只认精确标识（旧 `left-panel-tasks` / 新 `yan-task-plan`，第三方 `my-task-log` 不算任务）、同一轮两种来源时**宿主日志优先**、一轮只留最终态、相邻相同轮次合并。逐条规范化用 `shared/task-plan.ts` 的 `normalizeTaskItems`（规则唯一），本文件只管**轮次归并**：宿主日志条目采信**自带的 `round`**（它在异地，靠条目位置推不出来），旧条目照旧数用户消息 | `agent.ts` 的 `refreshTodos`；`shared/task-plan.ts`；单测 `test-todo-history.mjs` |
+| `task-plan-store.ts` | 250 | **宿主任务服务（实施-02 S3，唯一的任务写入方）**：`YAN_DATA_DIR/task-plans/<sessionId>.jsonl`，一行一次提交、**只追加**；按会话**串行**（前一操作失败不带崩后面排队的）；每次提交前从**磁盘**读回 `revision`/`operationId` 做 CAS 与幂等（不靠进程缓存）；写入 `fsync` 后**回读校验**最后一行（落盘失败不得报成功）；读不了报 `read_failed` 而**不是**退化成空清单。会话 id 复用 `context-state-store` 的路径穿越判据（顺带挡住 `pending:`）。**不 import pi、不注册工具、不碰会话文件** | `agent.ts` 的 `applyTaskPlan`（`yan tasks apply`）；单测 `test-task-plan-store.mjs`（35 条）；live `taskcli` / `taskplan`；[S3 证据](../plan/证据-02-S3-宿主任务服务.md) / [S5 证据](../plan/证据-02-S5-真实运行与验收.md) |
+| `extensions-inventory.ts` | 112 | **扩展来源诊断（实施-02 S1）+ 受信内置能力清单（S4）**：`readdir` 用户扩展目录 + 砚薄层清单 → 日志行；检测到用户扩展时说清**两条写入路径与「同一轮以宿主日志为准」**（S4 前那句「砚只读不写」在 S3 后已不成立）；`builtinCapabilities()` 从**实际加载路径**派生 id（第一条恒为宿主任务计划）。**不解析扩展、不 import、不禁用、不删** | `index.ts`（`ready-to-show` 后推一次诊断；`yan:capabilities:builtin` 与诊断**共用** `yanThinExtensionPaths()`）；单测 `test-extension-inventory.mjs`；live `taskext`；截图 `matrix-{extdiag,settingspkg}-*` |
 
 ### 4.4 浏览器（13 文件）
 
@@ -169,7 +173,7 @@ pi 吐事件
 | `sources.ts`（main） | 292 | **会话来源的持久化引用（§8 的 S1）**：图片写到数据目录（文件名 = 内容 sha256 前 32，同内容幂等）、文件只登记路径 + `size:mtime` 指纹、移除只删副本（**永不删用户原文件**）、会话 id 当目录名前的字符清洗（挡路径穿越）。**唯一**持有来源字节的地方 | 单测 `test-sources.mjs`（真实文件读写）；live `gitwrite` 第 13 节 |
 | `SourceMenu.tsx` | 326 | 环境菜单里的「来源」：三类合并 + 筛选 + 缩略图 + 「已关联 / 文件不在了」两态 + 边界文案。**只显示能证明的状态** | live `gitwrite`；视觉 `envlinks` |
 | `packages.ts`（main） | 349 | **pi 包管理（§9 的 P2）**：读 settings.json 的 `packages`、按 source 形状解析包目录、装/卸/更新（调 pi 自己的 CLI，参数注入在发起前就挡下、有任务在跑时拒绝）。**唯一**会改用户 pi 目录的地方 | 单测 `test-packages.mjs`（真实 CLI + 强隔离）；live `pkgs` |
-| `PackagesTab.tsx` | 233 | 设置「插件」：目录入口、安装区（支持版本）、已装列表（用户级/项目级、磁盘上找不到的异常态）、详情（来源 / 仓库 / 许可 + **会执行代码的边界声明**）、生效时机 | live `pkgs` + `panels`；视觉 `settingspkg` |
+| `PackagesTab.tsx` | 282 | 设置「插件」：目录入口、安装区（支持版本）、已装列表（用户级/项目级、磁盘上找不到的异常态）、详情（来源 / 仓库 / 许可 + **会执行代码的边界声明**）、**砚内置能力**（随包分发、无卸载按钮，清单来自 `yan:capabilities:builtin`；与已装包彻底分开）、生效时机 | live `pkgs` + `panels`；视觉 `settingspkg`（含 `set-builtin-caps`） |
 | `SourceLinks.tsx` | 170 | **关联外部任务**（方案 §6.4）：存 URL 与标题 → localStorage、按会话隔离、只收 http/https、在内置浏览器打开；边界文案写在界面上并有 live 断言 | live `gitwrite` 第 13 节 |
 | `git-worktree.ts` | 738 | **用户工作树（方案 §6.2，W1+W2）**：默认目录规则、`worktree list --porcelain -z` 解析、创建（五条拒绝路径）、删除前的三类拦截 + 主工作树 / locked / 非登记路径一律拒绝、**携带未提交改动**（`collectCarry` / `applyCarry` / `verifyCarry`：三份分开迁移、patch 全或无、目标侧验证、源仓库只读）。**绝不**复用 `subagent-isolation.cleanupWorkspace()`（那是 `--force` + `rm -rf`） | 单测 G10 / G11；live `gitwrite` |
 | `git-diff.ts` | 614 | 审查数据层：变更清单（raw + numstat + status 合成，**按范围过滤 status 条目**）、单文件 patch（结构化 hunk）、两侧内容（图片走 **buffer** 编码）、未跟踪文件合成「全新增」hunk | 同上；live `gitreview` |
@@ -184,7 +188,7 @@ pi 吐事件
 | `file-refs.ts` | 294 | 用户**显式引用**的文件（拖入 / 加入上下文）：授权、越界校验、只读预览 | `index.ts`、`Composer.tsx` 附件链路 |
 | `snapshots.ts` | 587 | **变更归属（L05）**：写入类工具的**单文件前后快照**（`snapshotBefore/After`，行级 patch 与增删行数）+ shell / 第三方工具的**目录级前后快照**（`captureTree`/`diffTrees`/`beginTreeSnapshot`/`endTreeSnapshot`）。不能只靠工具参数 —— `edit` 的参数只是替换片段，而 `bash` 根本不告诉你要改哪个文件。同步 fs（异步会有“写完才读到 before”的竞态）；跳过依赖/产物目录；文件数 4000 / 深度 12 / 内容预算 12MB 上限定；子目录读不到**不算**截断（否则用户项目里一个无权限目录就会让每条命令都带警告）。归属存疑时返回 `concurrent` / `truncated` / `unreadable`，不把别人的改动记到这次调用头上 | `agent.ts`（`tool_execution_start/end` 的 `bash`、`runBash`/`finishBash`）；单测 `test-snapshots.mjs`、`test-workspace-changes.mjs`（33 条）；live `-- workspacechanges` |
 | `credentials.ts` | 453 | 读写 pi 凭证；**`completePath` 是 `@` 补全的主进程侧**（与文件树共用同一条 cwd 边界） | `AuthTab.tsx`、`Composer.tsx`；单测 `test-credentials.mjs` |
-| `command-registry.ts` | 144 | Yan 命令注册表（N18）：本地路由 + 扩展/技能来源 + "仅兼容显示"统一成一个可审阅列表 | `agent.ts` 的 `listCommands`；单测 `test-command-registry.mjs` |
+| `command-registry.ts` | 152 | Yan 命令注册表（N18）：本地路由 + 扩展/技能来源 + "仅兼容显示"统一成一个可审阅列表；`/panel` **不再出现在 `/` 补全里**（`hiddenInMenu`）但**保留在注册表**（S4：删掉它，用户扩展注册的同名命令会变成唯一命中项） | `agent.ts` 的 `listCommands`；单测 `test-command-registry.mjs`；live `slashcmd` / `taskext` |
 | `oauth.ts` | 321 | ChatGPT 订阅（`openai-codex`）**应用内** OAuth；参数逐字对齐内置 pi（差一个 pi 就不认这个 token） | `AuthTab.tsx`；单测 `test-oauth.mjs` |
 | `quota.ts` | 298 | 额度查询。**必须用 Electron `net.fetch`**（全局 fetch 会被 Cloudflare 拦） | `RightPanel.tsx` |
 
@@ -334,16 +338,16 @@ pi 吐事件
 
 | 文件 | 功能 |
 |---|---|
-| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 47 个 `test-*.mjs` |
+| `test-unit.mjs` | 单测入口：用 esbuild **现场编译**被测模块（不拉 React/Electron），再跑 49 个 `test-*.mjs` |
 | `test-live.mjs` | live 场景入口：建隔离 sandbox（`YAN_*` + 复制 `auth.json`/`models.json`），起真应用跑探针。场景表就是 `CASES`。**要能在被 Ctrl+C / 被 kill 时收掉 Electron 子进程树**（否则会留下继续往死管道写日志的孤儿）。另有两个附属设施：合成 fixture 项目树（`buildFixtureProject`）与 **L04 的本地 HTTP 服务**（`startBoundaryServer`，127.0.0.1:39873：下载 / Cookie 哨兵 / 真实权限请求 / 内网目标） |
 | `launch.mjs` | 一键启动（检查依赖 → 必要时构建 → 起应用） |
 | `probe-pi.mjs` | 只验证「pi 能否被找到并启动」，不开窗口 |
 | `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
 | `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（55 个 `test-*.mjs`）
+### 7.2 单测模块（57 个 `test-*.mjs`）
 
-按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / **`git-review`（G1 纯解析，124 条）** / **`git-repo`（G1+G2 真实 git 仓库，含写操作）** / **`git-actions`（G2 失败分类与命令构造，42 条）** / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `extension-inventory`（02-S1）/ `filerefs` / `files` / **`git-review`（G1 纯解析，124 条）** / **`git-repo`（G1+G2 真实 git 仓库，含写操作）** / **`git-actions`（G2 失败分类与命令构造，42 条）** / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `task-plan`（02-S2）/ `task-plan-store`（02-S3）/ `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
 > `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
@@ -364,7 +368,7 @@ pi 吐事件
 - **对话渲染**：`reasoning`、`toolgroup`、`toolrow`、`tools`、`detail`、`streamwidth`、`virtual`、`outline`
 - **布局/视觉**：`layout`、`narrow`、`vheight`、`resize`、`panels`、`symmetry`、`railmini`、`railtitle`、`railsearch`、`railreorder`（N01：合成 PointerEvent 走真实拖拽路径 + 回读 `getSettings` 验落盘）、`projectlimit`、`zoom`、`light`、`density`、`topbar`、`titlebar`、`motion`
 - **文件/浏览器**：`fs`、`linkpreview`、`browser`、`external-chrome`（场景名 `externalchrome`）、`browser-boundary`（场景名 `browserboundary`，L04：权限真实请求 / 本地预览边界 / DNS 重绑定 / 两条下载路径 / Cookie 真实复制；**需公网，不进 check**）
-- **其他**：`live`（DOM 体检）、`logs`、`perf`、`sound`、`hotkeys`、`working`、`trash`、`contextstate`（S1：删会话清派生状态）、`contextsweep`（S2：真实回合 Tool Sweep + recall）、`onboarding`、`grouprename`、`autonomous`、`subagent`、`terminal`、`todos`、`todonew`
+- **其他**：`live`（DOM 体检）、`logs`、`perf`、`sound`、`hotkeys`、`working`、`trash`、`contextstate`（S1：删会话清派生状态）、`contextsweep`（S2：真实回合 Tool Sweep + recall）、`onboarding`、`grouprename`、`autonomous`、`subagent`、`terminal`、`todos`、`todonew`、`taskcli`（S3：宿主任务服务，cost 1）
 - **勘察（不在 CASES）**：`survey`（§11 的真实窗口 dump，靠手工 `YAN_PROBE` 跑）
 
 ### 7.4 构建 / 发布 / 诊断
@@ -404,6 +408,7 @@ pi 吐事件
 |---|---|
 | 新增/改 IPC | `shared/ipc.ts`（类型 + `YanBridge`）→ `preload/index.ts`（暴露）→ `main/index.ts`（handler）→ `store.ts`（消费）。四处少一处就静默不通 |
 | 改 pi 协议交互 | 只动 `protocol.ts` / `agent.ts` / `normalize.ts`（**不要**把协议细节泄漏到别处） |
+| 改任务计划（清单写入链） | 契约与纯逻辑 `shared/task-plan.ts`（**唯一真源**）→ 落盘 `main/task-plan-store.ts`（只追加 / 按会话串行 / CAS + 幂等 / 落盘失败不报成功）→ 命令入口 `agent.ts` 的 `runCapabilityCommand('tasks.apply')`（能力路由在 `capability-server.ts`，CLI 在 `resources/yan-cli/yan.mjs`）→ 界面 `agent.ts#refreshTodos` → `todo-snapshots.ts` 归并 → 右栏；工具卡来源标记在 `shared/tool-origin.ts`（**文本判定，只是展示标记**）。**任务日志不进会话 JSONL**（用户拿 pi 终端打开同一会话看不到这些任务，是 S3 定下的已知取舍）。回归网：单测 `test-task-plan.mjs` / `test-task-plan-store.mjs` / `test-todo-history.mjs` / `test-tool-origin.mjs`；live `taskcli` / `taskplan`（cost 1）/ `todos` / `taskext` / `slashcmd`；视觉 `taskhost` / `taskcard` |
 | 改样式/视觉 | 先改 `docs/design/DESIGN.md`，再同步 `styles/tokens.css`；跑 `npm run typecheck`（含 CSS 守卫 + 层叠自检） |
 | 改网格布局 | 弹性列一律 `minmax(0, 1fr)`；`lint-css.mjs` 会拦 |
 | 改推理块 | `Reasoning.tsx` + `chat.css` 的 `.clip/.is-clipped/.expanded` + `tokens.css` 的 `--reason-max-h` + `probe/reasoning.js`（探针钉死了契约）+ `DESIGN.md` |
@@ -431,7 +436,7 @@ pi 吐事件
 | 碰子进程 / 日志管道 | 独立 Electron 入口脚本（`visual-matrix` / `shots` / `shot` / `live-preview` / `measure-design`）必须先 `import './lib/stdio-guard.mjs'`：EPIPE 容忍 + `uncaughtException` 变成“退出码 1”。父进程侧（`visual-matrix-run.mjs`、`test-live.mjs`）要留超时并能收整棵进程树。桌面应用侧是 `src/main/stdio-guard.ts`（**不退出**，只上报）。理由与定位方法见 [MAINTENANCE](MAINTENANCE.md) 的「子进程与日志管道」 |
 | 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
 | 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
-| 改本地斜杠命令 | `main/command-registry.ts`（`LOCAL_COMMANDS` + 来源分类）→ `Composer.tsx` 的 `localName` 分支（`/new` `/compact` `/browser` `/model` `/login` `/subagent` 真的在这里执行；**参数是契约**：`/new` 必须带 `scope:'global'`、`/browser` 无参必须传 `undefined`）→ `store.ts` 对应动作。兼容来源与 `executable:false` 必须继续被吞掉（不发模型）。证据 `test:live -- slashcmd`（19 节，含三次反向验证） |
+| 改本地斜杠命令 | `main/command-registry.ts`（`LOCAL_COMMANDS` + 来源分类）→ `Composer.tsx` 的 `localName` 分支（`/new` `/compact` `/browser` `/model` `/login` `/subagent` 真的在这里执行；**参数是契约**：`/new` 必须带 `scope:'global'`、`/browser` 无参必须传 `undefined`）→ `store.ts` 对应动作。兼容来源与 `executable:false` 必须继续被吞掉（不发模型），**且不能清掉草稿与附件**（S4 起改为 `notify` 提示 + 原样保留）。证据 `test:live -- slashcmd`（20 节，含三次反向验证与 `/panel` 手打回填断言） |
 | 改 Git **写**操作（暂存 / 提交 / 分支 / 推送） | **全部**在 `main/git-actions.ts` 一个文件里（`git-service.ts` / `git-diff.ts` 里没有 `add`/`commit`/`switch`/`reset`/`stash`）。三条不要放开：① 不碰 `subagent-isolation.collectDiff()`；② 不复核预期版本而一律比三件套会造出假冲突（分级理由见文件头）；③ 不 stash / reset / force / `--no-verify`。回归网：`test:unit`（含 `test-git-repo.mjs` 的 G9 节，真仓库真写）+ `test:live -- gitwrite`（退出后用真 git 核对提交与 bare remote）；视觉 `reviewwrite` / `envbranches` |
 | 改 Git 审查（环境菜单 / 审查面板，只读） | 数据层是 `shared/git.ts`（纯解析，零 IO）→ `main/git-service.ts`（命令与边界）→ `main/git-diff.ts`（清单 / patch / 内容）→ `yan:git:*`。**三条不要放开**：① 不碰 `subagent-isolation.collectDiff()`（它会 `git add -A`）；② 渲染端不能传 git 命令，ref 走 `refLooksSafe`、路径走 `safeRepoPath`；③ 只读查询带 `--no-optional-locks`（`status` 默认会写 index）。回归网：`test-git-review.mjs` + `test-git-repo.mjs`（真仓库，含 index 逐字节不变的断言）+ `test:live -- gitreview`（含 `afterExit` 只读比对）；视觉矩阵 `envmenu` / `review` 状态 |
 | 加单测 | `scripts/test-<module>.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |

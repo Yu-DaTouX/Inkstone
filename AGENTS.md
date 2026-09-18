@@ -3,8 +3,8 @@
 > 这份文件会被 pi **自动加载进每次会话的系统提示**。唯一的例外是生成会话标题的
 > 短任务 —— `src/main/title.ts` 给它显式传了 `--no-context-files`（连同
 > `--no-skills` / `--no-prompt-templates`），不会读这份文件。
-> 所以这里只放「每次都得知道」的东西。当前状态与待办统一放在
-> `docs/dev/HANDOFF.md`，不要往这里堆 —— 它一长，每轮对话都在付这个成本。
+> 所以这里只放「每次都得知道」的东西。**接下来做什么**放在 `docs/plan/README.md`，
+> **现在是什么样**放在 `docs/dev/HANDOFF.md`，不要往这里堆 —— 它一长，每轮对话都在付这个成本。
 > 历史决定从 Git 查看。
 
 Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供模型循环与工具执行；
@@ -12,9 +12,10 @@ Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供
 
 ## 一、动手前
 
-1. 读 `docs/dev/HANDOFF.md` —— 当前决定、未完成项、验证基线（首要入口；排障经验见 docs/dev/MAINTENANCE.md）。
-2. `docs/WORKSPACE.md` 用于定位代码与脚本；`docs/dev/TESTING.md` 是测试约定的单一真源。
-3. `git status --short` 看现有改动，**保留它们**。
+1. 读 `docs/plan/README.md` —— 未完成工程按主题切成「一次会话一片」的实施文档（决定**接下来做什么**）。
+2. 读 `docs/dev/HANDOFF.md` —— 当前状态、验证基线与已取证证据（**现在是什么样**；排障经验见 docs/dev/MAINTENANCE.md）。
+3. `docs/WORKSPACE.md` 用于定位代码与脚本；`docs/dev/TESTING.md` 是测试约定的单一真源。
+4. `git status --short` 看现有改动，**保留它们**。
 
 ## 二、工作区铁律
 
@@ -66,15 +67,28 @@ Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供
 
 这些是用户明确拍过的决定。重新"修好"它们会被当成回归：
 
-- **任务面板保持现状**：继续读取会话中的扩展任务清单，不重构，
-  也不改造用户扩展来改变任务引导。
-- **记忆模块已移除**：记忆存储、remember/recall/forget、记忆扩展和提示词注入都不恢复；
-  用户遗留数据也不要顺手删。
+- **完成版只包含默认 pi**：不内置 pi 插件、不预装、不暗中装回、不改名冒充原生。
+  **允许保留一个砚自有薄适配层**（2026-09-18 拍板），但它**不是插件生态**：
+  只承载宿主无法通过 CLI / RPC 表达的**生命周期桥接与策略执行**——
+  不注册模型工具、不注册 pi 命令、不增加用户可见功能、不改 pi 默认工具集。
+  能落地到宿主服务 / 随包 `yan` 子命令的，**一律不得留在扩展里**（含允许钩子白名单、
+  依赖方向与架构检查，见 `docs/plan/实施-01`）。
+- **任务面板保持现状**：继续读取会话中的任务清单，**不重构面板布局、不改造用户扩展来改变任务引导**。
+  任务工具的**所有权与接入来源**已按 `docs/plan/实施-02` 迁移为砚内置（**S1–S5 已完成**，
+  2026-09-18）：宿主任务服务 + `yan tasks apply` 生效，任务日志在 `YAN_DATA_DIR/task-plans/`、
+  **不写进会话 JSONL**；工具卡标「任务计划 · 砚内置」、`/panel` 从补全隐藏且手打不清草稿、
+  插件页区分内置能力与已装包；**不要**再新增注册任务工具的 pi 扩展（那正是迁移要消除的东西）。
+- **旧记忆系统不恢复**：记忆存储、`remember`/`recall`/`forget`、记忆扩展和提示词注入都不恢复；
+  用户遗留数据也不要顺手删。**「项目知识」是独立新功能**，按 `docs/plan/实施-03` 实现（**尚未实施**），
+  既不等于恢复旧记忆，也不自动导入旧存储。
 - **旧会话树浏览链路（`get_tree`）是主动移除的**，不是缺失功能；
   不要重新实现，也不要再列进待办。
 - **推理块默认展开但限高省略**：`--reason-max-h`（`min(32vh, 260px)`）、裁掉开头、
   `scrollTop` 贴底显示**最新**内容、顶部 mask 渐隐、「展开全部 / 收起」出口，
-  **不引入第二条滚动条**。早期"不设固定高度、不用内部滚动"的方案已废止。
+  **默认态不引入第二条滚动条**。早期"不设固定高度、不用内部滚动"的方案已废止。
+  ⚠️ 2026-09-18 深夜用户拍板：**主动展开时给固定范围** —— 工具组 `min(623px, 80vh)`（25 条）、
+  单条详情与推理全文 `min(70vh, 620px)`，`tgroup-head` / `trow-head` / `reason-head` 留在上方作折叠入口；
+  「不引入第二条滚动条」只约束**默认态**（详见 `DESIGN.md` §3.5）。
 - **推理语言**：不注入“必须用某语言思考”之外的任何语言要求；界面语言只由
   `languageSystemPrompt()`（唯一真源在 `resources/pi-extensions/language.js`）生成的**一句**话约束，
   交付方式见 PROJECT §2.6（`before_provider_request` 贴近用户消息 + 系统提示兜底，
@@ -113,12 +127,16 @@ Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供
   （`image` 还需要视觉模型）。默认用免费模型，换模型用 `YAN_TEST_MODEL`。
 - 按 fixture 路径定位会话，不依赖会被模型重写的标题。
 - 用条件轮询代替固定 `sleep`；布局测量等几何稳定后再读数值。
+- **测试默认不上屏**（用户要求）：`test:live` 自动加 `YAN_PROBE_HIDDEN=1`，窗口不显示、
+  不进任务栏；需要看窗口时用 `YAN_SHOW_WINDOW=1`。人工视觉验收（`visual:matrix` / `shot`）
+  不受此限，但那是显式动作，不要顺手跑。详见 [TESTING](docs/dev/TESTING.md)。
 
 ## 八、文档索引
 
 | 文件 | 作用 |
 |---|---|
-| `docs/dev/HANDOFF.md` | **首要入口**：当前决定、未完成项、验证基线 |
+| `docs/plan/README.md` | **实施入口**：9 份主题实施文档 + 会话切片（决定接下来做什么） |
+| `docs/dev/HANDOFF.md` | **状态入口**：当前决定、验证基线、最近证据 |
 | `docs/PROJECT.md` | **实现总览**：每个功能怎么实现的、要改它该动哪里、注意事项与索引 |
 | `docs/dev/CODE-MAP.md` | 文件 → 功能 / 联动；含真实窗口实测数据（§11）与改动波及面速查（§9） |
 | `docs/WORKSPACE.md` | 目录与脚本导航 |
@@ -129,7 +147,7 @@ Electron + React + TypeScript 桌面端。pi 作为 `--mode rpc` 子进程提供
 | `docs/dev/RELEASING.md` | Windows 打包、数据与发布门槛 |
 | `docs/design/DESIGN.md` | 设计令牌与视觉规范 |
 | `docs/README.md` | 文档总索引 |
-| `docs/dev/STATUS-2026-09-14.md`、`docs/dev/WORK-PLAN-2026-09-14.md` | 历史盘点（日期快照，可能已被后续决定覆盖） |
+| `docs/archive/` | 归档的日期快照与被取代方案（索引见 `docs/archive/README.md`） |
 
 文档维护规则：只记录**当前**决定、可操作待办和可复用经验。
 历史性能数字、套餐价格、临时工具路径、被后续实现推翻的决策，不作为当前事实保留。

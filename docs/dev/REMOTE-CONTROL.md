@@ -41,6 +41,35 @@ Electron 主进程 Remote API
 Authorization: Bearer <YAN_REMOTE_TOKEN>
 ```
 
+## 连接状态机与能力边界（抽象，`RC-SM/1`）
+
+连接不能只用一个 `connected: boolean` 表达。冻结后的模型是**三个正交维度**，
+完整迁移表、能力矩阵、断线语义与错误分类见
+[远程连接状态机与能力边界](../design/远程-连接状态机-2026-09-19.md)（`RC-SM/1`，2026-09-19 冻结，S1/S3 的共同前置）。
+
+| 维度 | 抽象状态 | 今天是否有实现 |
+|---|---|---|
+| `transport`（通道） | `idle → opening → open → closing → closed`；在线判据 = 传输就绪 **且** 协议握手成功 | 部分：`/health` + `/info` 即握手，但缺失败码与版本不兼容码 |
+| `auth`（授权） | `unauthorized / authorizing / authorized / expired / revoked` | 部分：只有「Bearer 对/不对」，无过期、无权限集 |
+| `pairing`（身份） | `unpaired / pairing / paired / revoked` | **无**：token 来自环境变量或启动日志 |
+
+连接态词表（六态）：`unconfigured` / `configured` / `connecting` / `online` / `offline` / `revoked`。
+三条必须守住的分离规则：
+
+1. **配对 ≠ 授权**：授权 `expired` 只需重新授权；`revoked` 必须重新配对；
+2. **已连接 ≠ 已授权**：`online` 且授权轴为 `unauthorized` 时只保留只读能力，重新授权不需要重连；
+3. **断线 ≠ 失权**：`DROP` 只把连接态打到 `offline`，不重置授权轴。
+
+`pairing` / `auth` / `transport` 是**抽象阶段**，不绑定实现。
+具体载体（Bearer token、HTTP+SSE、局域网直连、单设备全局权限、二维码配对）都是
+**实现选择，不是流程**，不得画进界面原型 —— 对应关系见状态机文档 §10，
+现状与差距对照见 §11。
+
+界面与能力口径：前置条件（`transport` / `auth` / `permission` / `target` / `freshness`）
+求值结果只有 `✔ / ◐ 降级 / ✘ 不可用` 三种，且失败原因按
+`revoked > 未配置 > offline/protocol > authn > permission > target > freshness`
+取**唯一**一条。前置不满足的能力默认隐藏，不摆出按钮再让用户点失败。
+
 ## 开发启动
 
 PowerShell 中开启一个只绑定本机的远程服务：
@@ -81,4 +110,7 @@ npm run launch:dev
 - token 仍通过环境变量或启动日志提供，没有二维码配对 UI；
 - 只支持操作当前桌面端的会话运行实例，不支持 Android 端直接执行桌面 shell；
 - 外网连接、中继、TLS、设备密钥和 Android APK 尚未实现；
-- 真正的 Android 客户端 UI 尚未加入仓库；本阶段先把电脑端远程 API 和协议边界做实。
+- 真正的 Android 客户端 UI 尚未加入仓库；本阶段先把电脑端远程 API 和协议边界做实；
+- 与连接状态机（`RC-SM/1`）的逐项差距对照在该文档 §11，例如：没有设备身份与撤销、
+  没有权限分级、SSE 无事件 id/重放、`POST /runs/abort` 没有定向 `runId`、
+  `POST /sessions/:id/messages` 会隐式 `select` 抢走电脑当前视图。

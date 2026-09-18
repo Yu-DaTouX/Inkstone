@@ -16,6 +16,44 @@
 完整门槛为 `npm run check`，具体执行链以 [package.json](../../package.json) 为准；纯文档改动只核对内容、链接和命令，不必构建应用。
 完整场景清单在 [`scripts/test-live.mjs`](../../scripts/test-live.mjs) 的 `CASES`。
 
+**能跑的东西不要在单测里只“读它的文本”。** 随包 CLI（`resources/yan-cli/yan.mjs`）曾经
+因为 help 文案里嵌了一对反引号而整个语法报错，而单测只断言了**启动器文件内容**
+包含 `ELECTRON_RUN_AS_NODE=1` 与 `yan.mjs` 路径 —— 全部照绿，直到 cost 1 的 `taskcli`
+才暴露（证据-02-S4 §2）。现在门槛里有：`node --check` + 真跑一次 `--help`。
+同类地方（脚本 / 模板 / 生成物）优先“真跑一次”，而不是比对字符串。
+
+**证据链自身的前提也要钉住。** 有的文件被删/被改之后**没有任何测试会报错**，
+只是静默地少报几条 —— 例如少一个 fixture 扩展、少一个 live 场景接线、
+打包配置里少一行 `extraResources`。 `test-unit.mjs` 里为此有一节「证据链前提」：
+查 fixture 文件在不在、场景是否已接线、`electron-builder.yml` 里 `yan-cli` 的 from/to 还在不在。
+新增这种「只影响证据数量、不影响其它断言」的前提时，一并补一条。
+
+## 测试不得打扰用户（默认后台运行）
+
+**用户明确要求：跑测试不要在前台弹窗。** 据此分三层：
+
+| 模式 | 什么时候用 | 怎么开 |
+|---|---|---|
+| **不上屏**（默认） | 所有自动化回归、由 agent 代跑 | 默认 —— `test:live` 自动给子进程加 `YAN_PROBE_HIDDEN=1` |
+| 不抢焦点但可见 | 需要人眼看窗口，但不想被抢焦点 | `YAN_SHOW_WINDOW=1 npm run test:live -- <场景>` |
+| 正常显示 | 手动 `npm run launch` / `launch:dev` | 不带 `YAN_PROBE` |
+
+实现：`YAN_PROBE_HIDDEN=1` 时主窗口**保持 `show: false`** 并 `setSkipTaskbar(true)`，
+但**渲染与布局照常** —— 因为 `YAN_PROBE` 下已经关掉了 Chromium 的后台节流
+（`disable-background-timer-throttling` / `disable-renderer-backgrounding` /
+`disable-backgrounding-occluded-windows`，见 `src/main/index.ts`）。
+
+**这个模式不能替代的东西**：
+
+- **人工视觉验收**（`visual:matrix`、`shot`、`docs/design/preview/` 的截图）必须看真实窗口；
+  它们本来就是显式的人工动作，**不要**为了「省事」而顺手跑，也不要用隐藏模式代替。
+- 依赖**真实窗口是否上屏**的观察（例如「测试把焦点从另一个桌面抢走」这类回归）
+  在隐藏模式下测不出来。
+
+**纯逻辑与 pi 层验证天然无窗口**：`test:unit`、`probe-pi`、`vendor:pi:check`
+都不启动 Electron 窗口，属于最安全的跑法。**要验证 pi 本身时优先用它们**，
+不要为了「顺手看看界面」去起 `test:live`。
+
 ## 测试模型（重要）
 
 ### 默认模型（以脚本配置为准）
@@ -80,6 +118,7 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
 | `subagentpair` | **两个并发写入子代理**：worktree 隔离 / 合并 / 放弃 / 同一行冲突 / 只读封堵 / 退出归档 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的写文件） |
 | `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具） |
 | `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `taskcli` | **宿主任务服务**（实施-02 S3）：模型 `bash` → `yan tasks apply` → 界面清单 → `complete` → 切会话读回；退出后核对日志文件与会话 JSONL | `commandcode/laguna-s-2.1-free`（不可用或空回复时 `deepseek/deepseek-v4.1-flash`） |
 | `contextsweep` | **Tool Sweep 真实回合**（N21-4 / S2–S6）：三个回合，末轮确认上一轮的召回正文被清成存根；退出后查归档元数据与 `ctx://` 指得回原始条目 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验（含「注入的契约档位」与「`episodes` 为空」） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextgate` | **会话级 gate 真实回合**（N21-5 前置硬化，与 `contextproduce` 是反向对照）：kinds 开 `episode-fold` 但门槛保持**默认**（≥4 回合且转录 ≥48k）→ 一个真实回合后断言 gate 被评估、判为 `too-early`、**0 次 committed、0 份状态文件**（短会话不花钱） | 同上 |
@@ -133,6 +172,56 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
   `peekSession` 记下条数与**首条消息文本**，点开 → 等 pi 的权威 `sync` 落定 → 再对一次；
   期间全程监听 `messages` 变化，"铺上内容后曾被打回 0"直接判失败（用户看到的是"闪一下又没了"）。
   判据必须是**文件 vs 应用手里的历史**，只看"屏幕上有消息"抓不到"只剩压缩后那一截"。
+- `taskext`（实施-02 S1 / S5，cost 0，**已进 `check`**）：**旧任务扩展、无关扩展与砚同时存在**。
+  专属 `YAN_PI_DIR` 里放两份 fixture：
+  [`left-info-panel.ts`](../../scripts/fixtures/task-ext/left-info-panel.ts)
+  （注册同名 `panel_todos`、写旧标识 `left-panel-tasks`、注册 `/panel`、`session_start` 发 info 通知）
+  与 [`notes-panel.ts`](../../scripts/fixtures/task-ext/notes-panel.ts)
+  （**与任务无关**：只注册 `/notes` + 发一条通知，**不写任何 custom entry**）。
+  验：启动通知降级进日志、来源诊断三行、任务清单读自**会话文件**（探针不调任何任务工具）、切走清空；
+  外加硬断言「`/panel` 不得被当自然语言发出去」（S4 已兑现：两条同名命令并存时，
+  命中的是 `source=compatibility` 那条 —— 界面只给提示，不动草稿与附件）。
+  **S5 又加 4 条**：诊断数的是**全部**用户扩展（2 项）、无关扩展也在清单里、
+  它的 `session_start` 通知真的进日志、它注册的 `/notes` 照常出现（`source=extension`）——
+  防的是「按关键词过滤扩展」那类错（无关扩展会静默消失，而场景仍然绿）。
+  `afterExit: taskFixtureReadonly`（`todos` 也挂同一道）再比会话文件：
+  **前缀逐字节不变 + 只允许追加 + 追加里不得有任务类 custom entry** ——
+  为什么不是比整文件 sha：pi 载入会话时会自己追加 `thinking_level_change`（证据-02-S1 §4.3）。
+- `taskcli`（实施-02 S3，cost 1，**不进 `check`**）：**宿主任务服务的真实链路**。
+  模型 → `bash` → `yan tasks apply --request-file tasks/task-set.json` → 界面出现清单 →
+  第二条 `complete` → 切走清空 → **切回从磁盘读回**（这是「重启后读得回」的等价物）。
+  request 文件由 Node 侧预置在 fixture 项目的 `tasks/` 下（`fixture: true`）——
+  **不让模型自己写 JSON**：那多一次工具往返，而模型可能换目录或改内容，
+  而本场景验的是宿主写入链。`afterExit: taskCliLog` 再核对磁盘：日志按**会话 id** 命名、
+  两行、`revision` 1→2、每行带 `schemaVersion` / `round` / `at`，
+  且**会话 JSONL 里没有任务条目**（宿主日志写在 `YAN_DATA_DIR/task-plans/`，不写会话文件，
+  判定过程见 [证据-02-S3 §1](../plan/证据-02-S3-宿主任务服务.md)）。
+  免费模型本轮实测会空回复或不调工具（日志里是 `[错误] 重试失败，本轮结束。`），
+  建议直接 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`。
+  **S4 又加 4 条**：工具行被标为砚内置任务计划、标记的仍是 `bash` 卡、徐标写「任务计划」、
+  展开后能看到原始命令。**两个探针上的坑**（写在探针注释里）：
+  ① 工具组默认收起且**收起时内部的行不在 DOM 里**（`tgroup-body` 不渲染），
+  不展开就数 `.trow` 只会得到 0；② 展开要**幂等**（只点没开的），再点一次就是收起。
+  探针还会把 `tasks apply` 最近两条调用的 `status` 与 `output` 尾部打进日志 ——
+  没有这段诊断时，`yan.mjs` 的语法错误会被误读成「模型不配合」（证据-02-S4 §2）。
+  **S5 又加第 4 节（取消）**：发一条会让模型跑一会儿的消息 → 等回合真的起来 →
+  点同一个按钮（此时文案是「中止」）→ 断言取消后清单没变、没有卡住的 `running` 行、输入框仍可用。
+  退出后那半边的保护也在：日志仍然必须是**两行** —— 取消如果多写或写坏，这条会红。
+- `taskplan`（实施-02 S5，cost 1，**不进 `check`**）：**整条链全由模型驱动**。
+  与 `taskcli` 的分工是「谁决定请求」：`taskcli` 的请求文件由 Node 侧预置（验写入链，
+  不受模型随机性干扰），`taskplan` 要模型**自己写请求文件、自己登记、自己做、自己勾选**——
+  这正是 S5「不能仅造 fixture」的那一条。任务本身是真动作（在 fixture 里建三个文件），
+  所以退出后能拆穿「只登记计划、文件没建」。
+  三处一致在 `afterExit: taskPlanMultiStep` 里落地：探针把渲染端看到的清单打成
+  `taskplan.todos=…`，Node 侧拿它与宿主日志最后一行**逐条比对文字与勾选状态**，
+  外加 `tasks/step-*.txt` 真的存在且非空、会话 JSONL 里没有任务条目。
+  建议 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`（实测一次通过：5 次 `apply`、`revision` 1→4）。
+  ⚠️ 它可能因模型不照做而红 —— 判据全部落在工具调用 / 界面 / 磁盘上，
+  **不拿模型的自然语言当证据**（实测助手最后一条回复是空白）。
+- `slashcmd`（N18，cost 0，**已进 `check`**，20 节）：本地命令路由 + 菜单行为 + 来源分布。
+  **S4 改了两处**：第 3 节从「`/panel` 或 `/footer` 可见但禁用」改成
+  「`/footer` 可见且禁用 + `/panel` **不**在候选里 + 注册表里仍 `hiddenInMenu`」；
+  新增第 20 节：手打 `/panel` → 逐字符断言草稿未变、合成附件仍在、给出可读原因、没发给模型。
 - `title`（N11，cost 1）：标题的自动生成 / 并发单次生成锁 / 手动名粘性 / 候选→采用。
   标题会另起一个 `--no-session` 的 pi 进程，所以这条链路只有真机能验。
   285k tokens 的旧会话，断言“看一眼不会触发压缩、实例不变忙、新对话不被挡”（D27，反向验证过）。
@@ -238,6 +327,18 @@ Remove-Item Env:YAN_CONTEXT_POLICY
   “用小额度走完整触发路径”的场景里给，不是日常隔离变量）
 
 指到临时目录，**不碰真实数据**。
+
+### 从砚自己的 pi 子进程里跑测试时，还要剥掉宿主能力变量
+
+`test-live.mjs` / `test-packaged.mjs` 都会先删掉这几个**继承来的**变量：
+`ELECTRON_RUN_AS_NODE`（否则 GUI 退化成纯 Node，无窗口、静默退出）与
+`YAN_CLI_URL` / `YAN_CLI_TOKEN` / `YAN_SESSION_ID` / `YAN_PROJECT_ID`
+（它们指向**外层那个真实实例**的能力服务）。
+
+后者不是理论风险：pi 子进程的环境本来由主进程覆盖，但当能力服务没起来时就是
+「没有覆盖」，于是一个随手跑的 `yan tasks apply` 会打到真实实例、
+在真实 `~/.pi` 里留下操作回执（本轮真撞到过一次，已清理）。
+**在别处 spawn 子进程跑 `yan` 时也要注意同一件事。**
 
 ### pi 的凭证与模型目录（只读复制）
 

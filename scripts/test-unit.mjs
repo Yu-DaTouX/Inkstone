@@ -172,6 +172,82 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
 
+/*
+ * 任务计划的纯逻辑（实施-02 S2）：校验 / reducer / 幂等 / 历史解析。
+ * 同一个模块也要给`yan` CLI 用，所以现场编译一份、不依赖构建图。
+ */
+const taskPlan = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/task-plan.ts'],
+    outfile: 'out/test/task-plan.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/task-plan.mjs'))
+)
+const { runTaskPlanTests } = await import('./test-task-plan.mjs')
+
+/*
+ * 宿主任务服务（实施-02 S3）：真文件、真串行、真 CAS。
+ * 与上面的纯逻辑分开测 —— 这一层的失败模式全在磁盘边上
+ * （只追加 / 落盘失败不报成功 / 跨会话隔离），只用返回值验不出来。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/task-plan-store.ts'],
+    outfile: 'out/test/task-plan-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runTaskPlanStoreTests } = await import('./test-task-plan-store.mjs')
+
+/*
+ * 项目知识的纯逻辑与存储层（实施-03 S2）：身份只认登记、CAS、原子 manifest、
+ * 崩溃恢复、墓碑防复活、排他锁。两块都要现场编译：shared 的那份保持平台中立，
+ * store 那份要真碰文件系统。
+ */
+const projectMemory = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/project-memory.ts'],
+    outfile: 'out/test/project-memory.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-memory.mjs'))
+)
+const projectMemoryStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/project-memory-store.ts'],
+    outfile: 'out/test/project-memory-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-memory-store.mjs'))
+)
+const { runProjectMemoryTests } = await import('./test-project-memory.mjs')
+
+/*
+ * 扩展来源诊断（src/main/extensions-inventory.ts）：真实临时目录。
+ * 它要能说清「用户扩展 / 砚薄层」各自是谁（实施-02 S1 的诊断出口）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/extensions-inventory.ts'],
+    outfile: 'out/test/extensions-inventory.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runExtensionInventoryTests } = await import('./test-extension-inventory.mjs')
+
 /* L03 子代理写入隔离 / 差异归档 / 干净主工作树合并。 */
 const subagentIsolation = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -313,6 +389,21 @@ const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({
     platform: 'neutral',
     logLevel: 'silent'
   }).then(() => import('../out/test/command-registry.mjs'))
+)
+
+/*
+ * 工具卡来源判定（src/shared/tool-origin.ts，实施-02 S4）。
+ * 纯函数，单独 bundle —— 它只回答「这条 bash 调用是不是 yan tasks apply」。
+ */
+const toolOrigin = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/tool-origin.ts'],
+    outfile: 'out/test/tool-origin.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/tool-origin.mjs'))
 )
 
 /* N02 模型能力：不从模型名称猜测，区分已知 / 不支持 / 未知。 */
@@ -844,6 +935,10 @@ await runStreamWidthTests(ok)
 // 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
 await runTodoHistoryTests(ok)
+await runTaskPlanTests(ok)
+await runTaskPlanStoreTests(ok)
+await runProjectMemoryTests(ok, { memory: projectMemory, store: projectMemoryStore })
+await runExtensionInventoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
 
@@ -902,6 +997,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runCommandRegistryTests } = await import('./test-command-registry.mjs')
   runCommandRegistryTests(ok, commandRegistry)
+}
+
+{
+  const { runToolOriginTests } = await import('./test-tool-origin.mjs')
+  runToolOriginTests(ok, toolOrigin)
 }
 
 {
@@ -1234,6 +1334,240 @@ await runHostingTests(ok)
 await runGitRepoTests(ok)
 
 /*
+ * 宿主能力服务（docs/plan/实施-01-默认pi架构迁移.md 的 S2）：身份校验与结果管道。
+ *
+ * 为什么用真实 HTTP 而不是 mock：这一片的出口就是「管道能跑」——
+ * 端点、token、身份比对、结果落文件，任何一环断了都算没做完；
+ * mock 掉就正好把要验的东西绕过去了。
+ */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({
+    entryPoints: ['src/main/capability-server.ts'],
+    outfile: 'out/test/capability-server.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+  const { CapabilityServer, CAPABILITY_API_VERSION } = await import(
+    '../out/test/capability-server.mjs'
+  )
+  const { readFile } = await import('node:fs/promises')
+  const opsDir = await mkdtemp(join(tmpdir(), 'yan-ops-'))
+
+  const server = new CapabilityServer({ opsDir })
+  const { url, token } = await server.start({ sessionId: 's-1', projectId: 'p-1' })
+
+  const call = async (body, headers = {}) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        ...headers
+      },
+      body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, ...body })
+    })
+    return { status: res.status, body: await res.json() }
+  }
+  const me = { sessionId: 's-1', projectId: 'p-1' }
+
+  const good = await call({ ...me, command: 'operations.status', params: { limit: 5 } })
+  ok(good.status === 200 && good.body.ok === true, '能力服务：合法请求返回 ok', JSON.stringify(good.body).slice(0, 140))
+  ok(typeof good.body.resultFile === 'string', '能力服务：大结果落文件并回路径', String(good.body.resultFile))
+  ok(!('data' in good.body), '能力服务：响应只回摘要，不回完整数据', Object.keys(good.body ?? {}).join(','))
+  if (typeof good.body.resultFile === 'string') {
+    const text = await readFile(good.body.resultFile, 'utf8')
+    ok(text.includes('"ops"'), '能力服务：结果文件是结构化 JSON', text.slice(0, 60))
+  }
+
+  const forged = await call({ sessionId: 's-1', projectId: 'p-2', command: 'operations.status' })
+  ok(
+    forged.status === 403 && forged.body.error === 'identity_mismatch',
+    '能力服务：伪造 projectId 被拒',
+    JSON.stringify(forged.body)
+  )
+  const forgedSession = await call({ sessionId: 's-9', projectId: 'p-1', command: 'operations.status' })
+  ok(forgedSession.status === 403, '能力服务：伪造 sessionId 同样被拒', JSON.stringify(forgedSession.body))
+
+  const badToken = await call({ ...me, command: 'operations.status' }, { authorization: 'Bearer wrong' })
+  ok(badToken.status === 401, '能力服务：错误 token 被拒', JSON.stringify(badToken.body))
+
+  const unknown = await call({ ...me, command: 'evil.exfiltrate' })
+  ok(
+    unknown.status === 400 && unknown.body.error === 'unknown_command',
+    '能力服务：未登记命令被拒',
+    JSON.stringify(unknown.body)
+  )
+
+  const notImpl = await call({ ...me, command: 'knowledge.search' })
+  ok(
+    notImpl.status === 200 && notImpl.body.ok === false && /not_implemented/.test(String(notImpl.body.error)),
+    '能力服务：未实现命令走完整管道后如实报错',
+    JSON.stringify(notImpl.body)
+  )
+
+  const badVersion = await call({ ...me, command: 'operations.status', apiVersion: 999 })
+  ok(badVersion.status === 400, '能力服务：协议版本不一致被拒', JSON.stringify(badVersion.body))
+
+  server.stop()
+  const afterStop = await call({ ...me, command: 'operations.status' }).catch(() => null)
+  ok(afterStop === null || afterStop.status >= 400, '能力服务：stop 后端点不再服务')
+
+  await rm(opsDir, { recursive: true, force: true })
+}
+
+/*
+ * `yan` 启动器（src/main/yan-cli.ts）。
+ *
+ * 这几条断言的都是「打包后会出事的点」：用错运行时（用户的 node）、
+ * 指错脚本（开发态的路径带进包里）、或者找不到 CLI 时默默生成一个坏启动器。
+ */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({
+    entryPoints: ['src/main/yan-cli.ts'],
+    outfile: 'out/test/yan-cli.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+  const { ensureYanLauncher, resolveYanCli } = await import('../out/test/yan-cli.mjs')
+  const { readFileSync } = await import('node:fs')
+  const binDir = await mkdtemp(join(tmpdir(), 'yan-bin-'))
+
+  ok(!!resolveYanCli({ devResourcesDir: 'resources' }), 'yan CLI：开发态能找到 resources/yan-cli/yan.mjs')
+
+  const made = ensureYanLauncher({
+    devResourcesDir: 'resources',
+    execPath: 'C:/fake/electron.exe',
+    binDir
+  })
+  ok(!!made, 'yan 启动器：能生成')
+  if (made) {
+    const text = readFileSync(made.launcher, 'utf8')
+    ok(text.includes('ELECTRON_RUN_AS_NODE=1'), 'yan 启动器：以纯 Node 模式跑内置运行时')
+    ok(text.includes('yan.mjs'), 'yan 启动器：指向随包 CLI 脚本')
+    ok(text.includes('C:/fake/electron.exe'), 'yan 启动器：用的是应用自带运行时，不是用户的 node')
+  }
+
+  const missing = ensureYanLauncher({
+    devResourcesDir: 'resources/does-not-exist',
+    execPath: 'x',
+    binDir
+  })
+  ok(missing === null, 'yan 启动器：找不到 CLI 时返回 null，不静默生成坏启动器')
+
+  /*
+   * ⚠️ 真跑一次随包 CLI，而不是只读它的文本。
+   *
+   * S3 那一轮只断言了启动器**文件内容**包含 ELECTRON_RUN_AS_NODE=1、
+   * 指向 yan.mjs —— 结果 help 文案里多了一对反引号（模板字符串里嵌
+   * 反引号），整个 CLI 直接语法错误，直到 cost 1 的 taskcli 才暴露：
+   * 模型看到的是 Node 的 ESM 报错堆栈，而单测全绿。
+   * 一条 `node --check` + 一次 `--help` 就能把这类错挡在门槛里。
+   */
+  const { spawnSync } = await import('node:child_process')
+  const syntax = spawnSync(process.execPath, ['--check', 'resources/yan-cli/yan.mjs'], { encoding: 'utf8' })
+  ok(syntax.status === 0, 'yan CLI：语法可解析（node --check）', (syntax.stderr ?? '').split('\n')[0])
+  const help = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', '--help'], { encoding: 'utf8' })
+  ok(help.status === 0, 'yan CLI：--help 真的能跑（退出码 0）', (help.stderr ?? '').split('\n')[0])
+  ok(/用法：/.test(help.stdout ?? ''), 'yan CLI：--help 打出用法')
+  ok(
+    /tasks apply/.test(help.stdout ?? ''),
+    'yan CLI：帮助里写了任务写入的用法（迁移后的入口要能被模型发现）'
+  )
+
+  await rm(binDir, { recursive: true, force: true })
+}
+
+/*
+ * 实施-02 S5：**证据链的前提**也要有防线。
+ *
+ * 这一片的证据全建在几份「看着不重要」的文件上，它们被删/被改之后
+ * **没有任何测试会报错**（只会静默地少报几条）：
+ *   · `scripts/fixtures/task-ext/notes-panel.ts` —— 少了它，taskext 退化成
+ *     「只有一个扩展」，而场景仍全绿；
+ *   · `CASES.taskplan` —— 少了它，S5 的真实多步任务证据就没了；
+ *   · `electron-builder.yml` 的 `resources/yan-cli` —— 少了它，装出来的应用里
+ *     模型敲 `yan` 只会得到「不是内部或外部命令」，而开发态一切照旧。
+ * 所以在这里钉住「它们还在、而且还是它们该有的样子」。
+ */
+{
+  const { existsSync, readFileSync } = await import('node:fs')
+
+  const notesFix = 'scripts/fixtures/task-ext/notes-panel.ts'
+  const notesText = existsSync(notesFix) ? readFileSync(notesFix, 'utf8') : ''
+  ok(existsSync('scripts/fixtures/task-ext/left-info-panel.ts'), 'S5 fixture：旧任务扩展还在')
+  ok(notesText.length > 0, 'S5 fixture：无关扩展（notes-panel.ts）还在')
+  ok(/registerCommand\('notes'/.test(notesText), 'S5 fixture：无关扩展真的注册了自己的 /notes 命令')
+  /*
+   * 用 “有没有写 custom entry” 当判据，而不是搜 `left-panel-tasks` 这个名字：
+   * fixture 的**注释**里就会出现那个词（它正是在解释「不能碰它」），
+   * 搜字符串会把这个 fixture 自己的说明文字当成违规。
+   */
+  ok(
+    !/appendEntry/.test(notesText),
+    'S5 fixture：无关扩展不写任何 custom entry（否则它就不是「无关」了）'
+  )
+
+  const live = readFileSync('scripts/test-live.mjs', 'utf8')
+  ok(/probe: 'scripts\/probe\/taskplan\.js'/.test(live), 'S5 场景：taskplan 探针已接线')
+  ok(/taskPlanMultiStep/.test(live), 'S5 场景：taskplan 有退出后核对（三处一致的磁盘那一半）')
+  ok(existsSync('scripts/probe/taskplan.js'), 'S5 场景：taskplan 探针文件存在')
+
+  const builder = readFileSync('electron-builder.yml', 'utf8')
+  ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
+  ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
+}
+
+/*
+ * 能力入口说明扩展（01-S3）。
+ *
+ * 这里锁的是**内容约定**而不是措辞：说明里必须同时有「怎么查用法」
+ * 与「结果是摘要 + 文件，别整份读进上下文」—— 后者决定了 CLI 路线
+ * 到底省不省 token；只要有一句就够了，多的不要。
+ */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({
+    entryPoints: ['resources/pi-extensions/capability-guide.js'],
+    outfile: 'out/test/capability-guide.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+  const mod = await import('../out/test/capability-guide.mjs')
+  const guide = mod.CAPABILITY_GUIDE
+
+  ok(/yan --help/.test(guide), '能力说明：告诉模型按需查完整用法')
+  ok(
+    /resultFile/.test(guide) && /不要把整个结果文件/.test(guide),
+    '能力说明：写明「摘要 + 结果文件，别整份读进上下文」'
+  )
+  ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
+
+  const handlers = {}
+  mod.default({
+    on: (name, fn) => {
+      handlers[name] = fn
+    }
+  })
+  ok(typeof handlers.before_agent_start === 'function', '能力说明：注册在 before_agent_start')
+
+  const first = handlers.before_agent_start({ systemPrompt: 'base' })
+  ok(
+    !!first && first.systemPrompt.startsWith('base') && first.systemPrompt.includes(mod.CAPABILITY_GUIDE),
+    '能力说明：追加在系统提示末尾（不篡改原有内容）'
+  )
+  const second = handlers.before_agent_start({ systemPrompt: first.systemPrompt })
+  ok(second === undefined, '能力说明：幂等，已注入后不再重复追加')
+}
+
+/*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
@@ -1252,6 +1586,146 @@ await runGitRepoTests(ok)
     }
   }
   ok(bad.length === 0, 'i18n 文案不含 markdown 加粗记号', bad.join(', '))
+}
+
+/*
+ * 实施-01 S4b：`yan browser` CLI + 薄层不再注册任何东西。
+ *
+ * 四条一起看才站得住（缺一条就是“命令已接通但会报错”那一类）：
+ *   ① `browser.js` 调 default(pi) 时**什么都不注册** —— 这是「薄层不注册模型工具、
+ *      不注册 pi 命令、不挂钩子」的永久守卫点（模型工具表没有 RPC 出口，
+ *      只能在扩展侧钉）；
+ *   ② `browser.*` 真的登在 `KNOWN_COMMANDS` 里（且 `browser.evaluate` **有意不在**）；
+ *   ③ `yan browser --help` 真能跑（S3 那次 yan.mjs 语法错只被 cost 1 场景抳到）；
+ *   ④ 拼错子命令 / 漏参数给可读 JSON + 用法退出码，不是 Node 堆栈。
+ *
+ * ②——④ 都能在无 Electron、无 session 的情况下验完：本地校验刻意放在身份检查之前。
+ */
+{
+  const { spawnSync } = await import('node:child_process')
+  const { readFile } = await import('node:fs/promises')
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+
+  console.log('\n--- 01-S4b 浏览器 CLI ---')
+
+  /* ① 扩展不再注册任何东西 */
+  const browserExt = await import(new URL('../resources/pi-extensions/browser.js', import.meta.url))
+  const registered = []
+  browserExt.default({
+    registerTool: (tool) => registered.push(`tool:${tool?.name}`),
+    registerCommand: (name) => registered.push(`command:${name}`),
+    on: (name) => registered.push(`on:${name}`)
+  })
+  ok(registered.length === 0, 'browser.js：不注册模型工具 / pi 命令 / 钩子', registered.join(', '))
+  ok(typeof browserExt.default === 'function', 'browser.js：仍保留默认导出（pi 加载扩展要求）')
+
+  /* ② browser.* 已登记（用真实端点验，而不是读源码字符串） */
+  await build({
+    entryPoints: ['src/main/capability-server.ts'],
+    outfile: 'out/test/capability-server-browser.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+  const { CapabilityServer, CAPABILITY_API_VERSION } = await import(
+    '../out/test/capability-server-browser.mjs'
+  )
+  const opsDir = await mkdtemp(join(tmpdir(), 'yan-browser-ops-'))
+  const seen = []
+  const server = new CapabilityServer({
+    opsDir,
+    handlers: {
+      run: async (command, params) => {
+        seen.push(command)
+        return { data: { command, params }, summary: { kind: 'browser', action: command.slice(8), ok: true } }
+      }
+    }
+  })
+  const { url, token } = await server.start({ sessionId: 's-b', projectId: 'p-b' })
+  const call = async (command, params = {}) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        apiVersion: CAPABILITY_API_VERSION,
+        command,
+        params,
+        sessionId: 's-b',
+        projectId: 'p-b'
+      })
+    })
+    return { status: res.status, body: await res.json() }
+  }
+  const navigate = await call('browser.navigate', { url: 'about:blank' })
+  ok(
+    navigate.status === 200 && navigate.body.ok === true && seen[0] === 'browser.navigate',
+    '能力服务：browser.navigate 已登记并落到 handler',
+    JSON.stringify(navigate.body).slice(0, 120)
+  )
+  const evaluate = await call('browser.evaluate', { script: '1+1' })
+  ok(
+    evaluate.status === 400 && evaluate.body.error === 'unknown_command',
+    '能力服务：browser.evaluate 有意不登记（不提供任意页面 JavaScript）'
+  )
+  server.stop()
+  await rm(opsDir, { recursive: true, force: true })
+
+  /* ③ —— ④ 真跑随包 CLI（spawn），并且清掉身份环境变量 */
+  const env = { ...process.env }
+  for (const key of ['YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) delete env[key]
+  const runYan = (args) =>
+    spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', ...args], { encoding: 'utf8', env })
+  const jsonOf = (stdout) => {
+    const line = String(stdout)
+      .split(/\r?\n/)
+      .filter((l) => l.trim().startsWith('{'))
+      .pop()
+    try {
+      return JSON.parse(line)
+    } catch {
+      return null
+    }
+  }
+  const looksLikeStack = (text) => /\n\s+at\s+\S/.test(text) || /\bat\s+\S+\s+\(\S+:\d+:\d+\)/.test(text)
+
+  const help = runYan(['browser', '--help'])
+  ok(help.status === 0 && /yan browser <动作>/.test(help.stdout ?? ''), 'yan CLI：browser --help 能跑（退出码 0）')
+  ok(
+    /navigate/.test(help.stdout ?? '') && /screenshot/.test(help.stdout ?? ''),
+    'yan CLI：browser 用法里列了动作（模型能发现）'
+  )
+  const mainHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', '--help'], {
+    encoding: 'utf8',
+    env
+  })
+  ok(/yan browser/.test(mainHelp.stdout ?? ''), 'yan CLI：主用法里也有 browser 一行')
+
+  const typo = runYan(['browser', 'frobnicate'])
+  const typoBody = jsonOf(typo.stdout)
+  ok(typo.status === 2, 'yan CLI：未知子命令走用法退出码 2')
+  ok(/未知的 browser 子命令/.test(String(typoBody?.error ?? '')), 'yan CLI：未知子命令给中文提示')
+  ok(!looksLikeStack(typo.stdout ?? ''), 'yan CLI：未知子命令不抛堆栈')
+
+  const missingArg = runYan(['browser', 'navigate'])
+  const missingBody = jsonOf(missingArg.stdout)
+  ok(missingArg.status === 2, 'yan CLI：漏参数走用法退出码 2')
+  ok(/--url/.test(String(missingBody?.error ?? '')), 'yan CLI：漏参数指出缺哪个 flag')
+  ok(!looksLikeStack(missingArg.stdout ?? ''), 'yan CLI：漏参数不抛堆栈')
+
+  /* 身份缺失要归到「宿主不可用」（退出码 3），不能和业务失败（1）混'  */
+  const noHost = runYan(['browser', 'observe'])
+  ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
+  ok(/宿主能力服务不可用/.test(noHost.stdout ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
+
+  /* dry 一下：用法表里的动作名必须与 GROUP_SPECS 一致（防手改时只改一处） */
+  const cliText = await readFile('resources/yan-cli/yan.mjs', 'utf8')
+  const actions = /actions:\s*\[([\s\S]*?)\]/.exec(cliText)?.[1] ?? ''
+  const browserActions = [...actions.matchAll(/'([a-z-]+)'/g)].map((m) => m[1])
+  ok(browserActions.includes('navigate') && browserActions.includes('request-user-control'), 'yan CLI：动作表里有 navigate / request-user-control')
+  const usageText = /browser:\s*`([\s\S]*?)`\n\}/.exec(cliText)?.[1] ?? ''
+  const undocumented = browserActions.filter((action) => !usageText.includes(action))
+  ok(undocumented.length === 0, 'yan CLI：每个动作都在用法里（不漏文案）', undocumented.join(', '))
 }
 
 console.log(`\n${pass}/${pass + fail} 通过`)

@@ -456,6 +456,14 @@ interface Store {
   /** 保存某个问题的草稿 */
   setUiDraft: (id: string, value: string) => void
   dismissNotice: (id: string) => void
+  /**
+   * 推一条普通提示（不改变输入框内容）。
+   *
+   * 用途：兼容命令（`/panel`、`/footer`）在桌面端没有可执行动作，
+   * 但**绝不能**像以前那样默默清空输入框 —— 用户会以为命令执行了。
+   * 这些提示同时也会进日志抽屉（error 类由 set 包装自动写入）。
+   */
+  notify: (type: Notice['type'], text: string) => void
   consumeEditorInject: () => void
   consumeQueueRestore: () => void
   setSettings: (s: AppSettings) => void
@@ -2209,6 +2217,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),
+  notify: (type, text) => set({ notices: pushNotice(get().notices, type, text) }),
   consumeEditorInject: () => set({ editorInject: null }),
   consumeQueueRestore: () => set({ queueRestore: null }),
   setSettings: (s) => set({ settings: s }),

@@ -214,6 +214,14 @@ const CASES = {
   sendkey: { probe: 'scripts/probe/sendkey.js', delay: 9000, cost: 0 },
   // 悬着的消息：生成中发出去的先悬在输入框上方，由用户选插话 / 排队
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
+  /*
+   * 待定消息的**真实链路**回归（真调模型）。
+   *
+   * `pending`（上面那条）直接把 store 的 `runners` 改掉来伪造「回合结束」，
+   * 绕过主进程推送链 —— 所以 2026-09-19 那个 bug（回合结束不刷 runners 快照，
+   * 待定消息永不自动投递）它能测出来才怪。这条走真实回合。
+   */
+  pendingreal: { probe: 'scripts/probe/pending-real.js', delay: 15000, cost: 1 },
   // 动效：入场 / **退场** / 减少动效 / 消息合并
   // 界面缩放：DPI 取整 + 快捷键（带 keys，因为 Ctrl+= 是主进程拦的）
   zoom: {
@@ -753,7 +761,30 @@ const CASES = {
   // 连接状态竞态回归（dev 下必现、build 下不现，很容易再犯）—— 会真调模型
   conn: { probe: 'scripts/probe/conn.js', delay: 9000, cost: 1 },
   // 扩展集成：任务清单（panel_todos 的产物）+ 启动通知降级
-  todos: { probe: 'scripts/probe/todos.js', delay: 9000, cost: 0 },
+  todos: {
+    probe: 'scripts/probe/todos.js',
+    delay: 9000,
+    cost: 0,
+    /* 退出后验「旧会话文件没被改写」（实施-02 S1 的出口） */
+    afterExit: 'taskFixtureReadonly',
+    readonlySession: 'yan-todo-fixture'
+  },
+  /*
+   * 实施-02 S1 / S5：旧任务扩展与砚**同时存在**，外加一个**无关扩展**。
+   *
+   * 用专属 piDir（里面多一份 scripts/fixtures/task-ext 的 fixture 旧扩展，
+   * 它注册同名 `panel_todos` 并写旧标识 `left-panel-tasks`；另一个
+   * `notes-panel.ts` 与任务无关，只注册 `/notes`）。
+   * 验四件事：启动期通知降级、来源诊断能说清是谁（两项都数到）、
+   * 无关扩展照常可用、砚只读不写（退出后字节比对）。
+   */
+  taskext: {
+    probe: 'scripts/probe/taskext.js',
+    delay: 12000,
+    cost: 0,
+    afterExit: 'taskFixtureReadonly',
+    readonlySession: 'yan-todo-fixture'
+  },
   // 长会话虚拟化
   virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
   // 会话切换 + 新建会话
@@ -776,6 +807,39 @@ const CASES = {
    * 所以这里显式给足：delay 9s + budget 200s。
    */
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
+  // 宿主能力服务：模型在 bash 里调 `yan`，宿主校验身份后回结构化摘要（花 token）
+  capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
+  /*
+   * 宿主任务服务端到端（实施-02 S3，花 token）：
+   * 模型 → bash → `yan tasks apply` → 宿主任务日志 → 界面清单。
+   *
+   * 为什么必须有这条（单测与 `capability` 都不够）：单测证明落盘层对，
+   * `capability` 证明管道通 —— 但它们都没有证明「模型照这个用法写出来的任务
+   * 真的会出现在界面上」，也没有证明切会话来回能从磁盘读回。
+   * `fixture: true` 让 cwd 是合成项目（request 文件由 Node 侧预置在 `tasks/` 下）。
+   */
+  taskcli: {
+    probe: 'scripts/probe/taskcli.js',
+    fixture: true,
+    delay: 12000,
+    cost: 1,
+    budget: 300000,
+    afterExit: 'taskCliLog'
+  },
+  /*
+   * 真实多步任务（实施-02 S5，花 token）：与 `taskcli` 的分工是
+   * 「链路由谁驱动」——taskcli 用预置的请求文件验**写入链**，
+   * 这条从写请求文件到勾选全由模型自己做，验的是「真实多步任务下仍然三处一致」。
+   * 任务本身是真动作（在 fixture 里建三个文件），退出后能核对。
+   */
+  taskplan: {
+    probe: 'scripts/probe/taskplan.js',
+    fixture: true,
+    delay: 12000,
+    cost: 1,
+    budget: 420000,
+    afterExit: 'taskPlanMultiStep'
+  },
   // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
   ask: { probe: 'scripts/probe/ask.js', delay: 9000, cost: 1 },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
@@ -784,6 +848,51 @@ const CASES = {
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
   // 队列撤回的失败与并发边界（N09）：撤回不存在的 id / 连点两次 / 同时两条 —— 不花 token
   queueretract: { probe: 'scripts/probe/queue-retract.js', delay: 9000, cost: 0 },
+  /*
+   * 实施-01 S4b：`yan browser …` 宿主能力命令（cost 0，不调模型）。
+   *
+   * 模型工具 `browser_*` 已从薄层移除（01-S4b），浏览器的全部模型面现在只有
+   * 这一族 CLI 命令 —— 所以这条场景是「扩展装载被移除后浏览器能力还在吗」的
+   * 直接证据（01-S5 的硬前置）。
+   *
+   * cost 0 的跑法：`window.yan.runBash` 是**不经模型**的直执行 shell 通道，
+   * 它继承 pi 子进程的环境（PATH 里的 yan 启动器 + YAN_CLI_* 身份），
+   * 所以验的是真进程外 CLI。只用 `about:blank`，不依赖外网可达性，
+   * 也**不需要本地 fixture 服务**（`usesBoundaryServer` 会顺带带上 L04 的
+   * Cookie 转移断言，那不属本片）。
+   * `fixture: true`：宿主侧缺参数那条要写一个临时请求文件，放合成项目里。
+   * 需要鼠标的 scroll / click / type 在默认（不上屏）模式下显式跳过，
+   * 理由与实测见 scripts/probe/browser-cli.js 的头注释。
+   *
+   * ⚠️ 还没进 `npm run check` 的场景清单（package.json 不在本片文件域内）。
+   */
+  browsercli: {
+    probe: 'scripts/probe/browser-cli.js',
+    delay: 10000,
+    cost: 0,
+    fixture: true,
+    budget: 240000
+  },
+  /*
+   * 同一条能力的**模型端到端**（花 token）：模型 → bash → `yan browser navigate`
+   * → 读回执 → 再 `yan browser observe` → 答出 URL。
+   *
+   * 为什么必须有：`browsercli` 验的是 CLI ↔ 宿主，它绿了也可能是“模型压根不会去用”。
+   * 16 个 `browser_*` 工具删掉后，模型能不能靠能力入口说明自己找到 `yan browser`，
+   * 只能这样验。不在默认门槛里跑（cost 1）。
+   */
+  browserclimodel: {
+    probe: 'scripts/probe/browser-cli-model.js',
+    delay: 10000,
+    cost: 1,
+    budget: 260000,
+    /*
+     * 固定模型：默认那个免费模型（longcat-2.0:free）在 2026-09-19 实测对这一条
+     * 多步提示连续返回「模型返回错误」（模型侧错误，不是本片代码），
+     * 会变成假红。换成同一个免费档的 deepseek 一闪模型即可稳定跑完（实测通过）。
+     */
+    model: 'deepseek/deepseek-v4.1-flash'
+  },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
@@ -1170,6 +1279,32 @@ function buildFixtureProject(base) {
   if (!noPermDenied) {
     console.log('  ⤺ 无权限目录没造成（icacls deny 失败），fsedge 会跳过那组断言')
   }
+
+  /*
+   * 宿主任务服务（实施-02 S3）的 request 文件：由 Node 侧预置，探针只让
+   * 模型跑 `yan tasks apply --request-file tasks/…`。
+   *
+   * 为什么不让模型自己写这份 JSON：那要多一次工具往返，而模型可能换个目录写、
+   * 或者把内容改掉 —— 本场景要验的是**宿主写入链**，不是 write 工具。
+   * 放在 fixture 子目录里：cwd 就是合成项目，绝不碰真实仓库。
+   */
+  mk('tasks')
+  put(
+    join('tasks', 'task-set.json'),
+    JSON.stringify(
+      {
+        action: 'set',
+        items: [{ text: '确认范围' }, { text: '实现宿主任务服务' }, { text: '真实运行验收' }]
+      },
+      null,
+      2
+    ) + '\n'
+  )
+  put(
+    join('tasks', 'task-complete.json'),
+    JSON.stringify({ action: 'complete', index: 2 }, null, 2) + '\n'
+  )
+
   return dir
 }
 
@@ -3154,7 +3289,280 @@ const AFTER_EXIT = {
   contextTakeoverHook: checkContextTakeoverHook,
   contextDeep: checkContextDeep,
   gitReviewReadonly: checkGitReviewReadonly,
-  gitWriteApplied: checkGitWriteApplied
+  gitWriteApplied: checkGitWriteApplied,
+  taskFixtureReadonly: checkTaskFixtureReadonly,
+  taskCliLog: checkTaskCliLog,
+  taskPlanMultiStep: checkTaskPlanMultiStep
+}
+
+/*
+ * ── 「会话文件只读」基线（实施-02 S1）──
+ *
+ * 判据为什么是「前缀一致 + 只追加」而不是「整文件 sha 不变」：
+ * pi 自己在载入会话时会往文件**追加**一条 `thinking_level_change`
+ * （实测：原封不动的会话也会多这一行）。把它当成「被改写」就只能
+ * 得到一个永远要放宽的断言，等于没验。
+ * 真正要钉的是两件事：
+ *   ① 原有内容一个字节都不许动（不批量转换、不回写旧标识）；
+ *   ② 追加的行里不许出现任务类 custom entry（砚不得伪造任务写入）。
+ */
+let taskFixtureBaseline = null
+
+/** 在 sandbox 会话目录里按文件名子串找一个 jsonl，记下原始文本 */
+function captureSessionFile(sessionsRoot, needle) {
+  const found = []
+  const walk = (dir, depth = 0) => {
+    if (depth > 3) return
+    let entries = []
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) walk(p, depth + 1)
+      else if (e.name.endsWith('.jsonl') && e.name.includes(needle)) found.push(p)
+    }
+  }
+  walk(sessionsRoot)
+  if (!found[0]) return null
+  return { path: found[0], text: readFileSync(found[0], 'utf8') }
+}
+
+async function checkTaskFixtureReadonly() {
+  const lines = []
+  if (!taskFixtureBaseline) {
+    return { ok: false, lines: ['✗ 没有会话只读基线（场景里没找到 fixture 会话）'] }
+  }
+  let after = ''
+  try {
+    after = readFileSync(taskFixtureBaseline.path, 'utf8')
+  } catch (err) {
+    return { ok: false, lines: [`✗ 读不到基线会话文件：${err.message}`] }
+  }
+  let ok = true
+  lines.push(
+    `基线：${basename(taskFixtureBaseline.path)}（${Buffer.byteLength(taskFixtureBaseline.text)} 字节）`
+  )
+  if (after.startsWith(taskFixtureBaseline.text)) {
+    lines.push('✓ 原有内容逐字节不变（只允许在末尾追加）')
+  } else {
+    ok = false
+    lines.push('✗ 原有内容被改写了（前缀不一致）—— 契约要求历史文件不回写、不批量转换')
+  }
+  const added = after.slice(taskFixtureBaseline.text.length)
+  const addedLines = added.split('\n').filter(Boolean)
+  lines.push(`追加 ${addedLines.length} 行：`)
+  for (const l of addedLines.slice(0, 5)) lines.push(`  · ${l.slice(0, 200)}`)
+  const taskWrites = addedLines.filter(
+    (l) => l.includes('left-panel-tasks') || l.includes('yan-task-plan')
+  )
+  if (taskWrites.length) {
+    ok = false
+    lines.push(`✗ 追加里出现了任务快照条目（${taskWrites.length} 条）—— 砚不应替模型伪造任务写入`)
+  } else {
+    lines.push('✓ 追加里没有任务快照条目（没有伪造任务写入）')
+  }
+  return { ok, lines }
+}
+
+/*
+ * ── 宿主任务日志（实施-02 S3）──
+ *
+ * 退出后核对「磁盘上的真相」：
+ *   ① `YAN_DIR/task-plans/<sessionId>.jsonl` 真的写了两行（且 revision 1 → 2）；
+ *   ② 会话 JSONL 里**没有**任务条目 —— 宿主日志不寄在会话文件上
+ *      （「不能直接编辑正在使用的 pi JSONL」，见 task-plan-store.ts 头注释）；
+ *   ③ 文件名就是会话 id（没有 pending / 路径穿越那类不该出现的键）。
+ *
+ * 界面侧的证据（清单真的出现、切会话来回读得回）在探针里 ——
+ * 这一支只回答「磁盘上是什么」。
+ */
+async function checkTaskCliLog(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const text = String(probeText ?? '')
+  const sid = /taskcli\.sessionId=([0-9A-Za-z._-]+)/.exec(text)?.[1] ?? ''
+  const sessionFile = /taskcli\.sessionFile=(.+)/.exec(text)?.[1]?.trim() ?? ''
+  const dir = join(sandboxRoot, 'data', 'task-plans')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+  lines.push(`任务日志目录：${files.length ? files.join('、') : '（空）'}；会话 id = ${sid || '（探针没报）'}`)
+
+  say(!!sid && files.includes(`${sid}.jsonl`), '日志按会话 id 命名（不是 runner id / 时间戳）')
+  say(
+    files.every((f) => /^[0-9A-Za-z._-]+\.jsonl$/.test(f)),
+    '文件名都是合法会话 id（没有 pending: / 路径分隔符）'
+  )
+
+  const path = sid ? join(dir, `${sid}.jsonl`) : null
+  const raw = path && existsSync(path) ? readFileSync(path, 'utf8') : ''
+  const rows = raw
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l)
+      } catch {
+        return null
+      }
+    })
+  const bad = rows.filter((r) => r === null).length
+  const valid = rows.filter(Boolean)
+  say(bad === 0, `没有写坏的行（坏行 ${bad} 条）`)
+  say(valid.length === 2, `两次提交写了两行（实际 ${valid.length} 行）`)
+  say(
+    valid.every((r) => r.data?.schemaVersion === 1),
+    '每行都带 schemaVersion = 1（读回来判版本用）'
+  )
+  say(
+    valid[0]?.data?.revision === 1 && valid[1]?.data?.revision === 2,
+    `revision 从 1 递增到 2（实际 ${valid.map((r) => r.data?.revision).join(' → ')}）`
+  )
+  say(
+    !!valid[0]?.data?.operationId && valid[0].data.operationId !== valid[1]?.data?.operationId,
+    '两次提交各有自己的 operationId（幂等键随提交变化）'
+  )
+  say(valid[0]?.data?.todos?.length === 3, `第一行是三项（实际 ${valid[0]?.data?.todos?.length}）`)
+  say(valid[1]?.data?.todos?.[1]?.done === true, '第二行第 2 项已完成（complete 真的落盘了）')
+  say(
+    valid.every((r) => Number.isInteger(r.round) && r.round >= 1),
+    '每行都记了轮次（历史分组靠它）'
+  )
+  say(valid.every((r) => typeof r.at === 'string' && r.at.length > 0), '每行都有提交时间')
+
+  if (sessionFile && existsSync(sessionFile)) {
+    const sessionText = readFileSync(sessionFile, 'utf8')
+    say(
+      !sessionText.includes('yan-task-plan'),
+      '会话 JSONL 里没有被写入任务条目（宿主日志在砚自己的目录）'
+    )
+    say(
+      !sessionText.includes('left-panel-tasks'),
+      '也没有旧标识的任务条目（本场景没有旧扩展）'
+    )
+  } else {
+    lines.push('（探针没报会话文件路径，跳过会话 JSONL 检查）')
+  }
+
+  return { ok, lines }
+}
+
+/*
+ * ── 真实多步任务（实施-02 S5）──
+ *
+ * 三处一致在这里落地：
+ *   ① 工具调用 —— 探针已经断言过（界面上的 `yan tasks apply` 与来源徐标）；
+ *   ② 原生任务清单 —— 探针把渲染端看到的 todos 打成 `taskplan.todos=…`；
+ *   ③ 实际落盘 —— 宿主日志最后一行。
+ * 退出后把 ② 与 ③ 逐条比对（文字与勾选状态），并确认会话 JSONL 里没有任务条目。
+ *
+ * 另加一条**真实动作**的核对：任务本身是「在 fixture 里建三个文件」，
+ * 所以 step-1/2/3.txt 真的存在、而且非空，才算做完 —— 这条能拆穿
+ *「只登记了计划、文件没建」或「嘴上说做完了」。
+ */
+async function checkTaskPlanMultiStep(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const text = String(probeText ?? '')
+  const sid = /taskplan\.sessionId=([0-9A-Za-z._-]+)/.exec(text)?.[1] ?? ''
+  const sessionFile = /taskplan\.sessionFile=(.+)/.exec(text)?.[1]?.trim() ?? ''
+  const todoLine = text.split(/\r?\n/).find((l) => l.startsWith('taskplan.todos=')) ?? ''
+  let uiTodos = []
+  try {
+    const parsed = JSON.parse(todoLine.slice('taskplan.todos='.length))
+    if (Array.isArray(parsed)) uiTodos = parsed
+  } catch {
+    uiTodos = []
+  }
+
+  /* ① 真实文件动作（任务本身：在 fixture 项目里建 step-1/2/3.txt） */
+  const tasksDir = join(sandboxRoot, 'fixture-project', 'tasks')
+  const steps = [1, 2, 3].map((n) => join(tasksDir, `step-${n}.txt`))
+  const made = steps.filter((p) => existsSync(p))
+  const nonEmpty = made.filter((p) => readFileSync(p, 'utf8').trim().length > 0)
+  lines.push(`真实文件：` + `tasks/step-*.txt 存在 ${made.length}/3（非空 ${nonEmpty.length}）`)
+  say(made.length >= 2, '模型真的建了文件（多步任务确实执行了，不是只登记计划）')
+  say(nonEmpty.length === made.length, '建出来的文件都有内容（不是空文件占位）')
+
+  /* ② 宿主日志（磁盘上的真相） */
+  const dir = join(sandboxRoot, 'data', 'task-plans')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+  lines.push(`任务日志：${files.length ? files.join('、') : '（空）'}；会话 id = ${sid || '（探针没报）'}`)
+  say(!!sid && files.includes(`${sid}.jsonl`), '日志按会话 id 命名')
+
+  const path = sid ? join(dir, `${sid}.jsonl`) : null
+  const raw = path && existsSync(path) ? readFileSync(path, 'utf8') : ''
+  const rows = raw
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l)
+      } catch {
+        return null
+      }
+    })
+  const bad = rows.filter((r) => r === null).length
+  const valid = rows.filter(Boolean)
+  say(bad === 0, `没有写坏的行（坏行 ${bad} 条）`)
+  say(valid.length >= 2, `模型自主提交了 ${valid.length} 次（登记 + 勾选）`)
+  const revisions = valid.map((r) => r.data?.revision)
+  const increasing = revisions.every((v, i) => (i === 0 ? v === 1 : v === revisions[i - 1] + 1))
+  say(increasing, `revision 逐次 +1（实际 ${revisions.join(' → ')}）`)
+  say(valid.every((r) => r.data?.schemaVersion === 1), '每行都带 schemaVersion = 1')
+
+  const last = valid[valid.length - 1]
+  const diskTodos = Array.isArray(last?.data?.todos) ? last.data.todos : []
+  lines.push('  磁盘最后一行 todos = ' + JSON.stringify(diskTodos.map((t) => ({ text: t.text, done: t.done }))))
+  say(diskTodos.length === 3, `日志最后一行是 3 条（实际 ${diskTodos.length}）`)
+
+  /* ③ 界面报告 vs 磁盘日志 —— 「三处一致」里的 ②③ */
+  say(
+    JSON.stringify(uiTodos.map((t) => t.text)) === JSON.stringify(diskTodos.map((t) => t.text)),
+    '界面清单与磁盘日志的文字逐条一致（不是各显示一套）',
+    uiTodos.length ? '' : '（探针没报 todos，比对不可信）'
+  )
+  say(
+    JSON.stringify(uiTodos.map((t) => !!t.done)) === JSON.stringify(diskTodos.map((t) => !!t.done)),
+    '勾选状态也一致'
+  )
+  say(
+    diskTodos.every((t) => typeof t.text === 'string' && t.text.trim().length > 0),
+    '日志里每条都有非空文字（没有空条目）'
+  )
+
+  /* ④ 会话 JSONL 里不能有任务条目 */
+  if (sessionFile && existsSync(sessionFile)) {
+    const sessionText = readFileSync(sessionFile, 'utf8')
+    say(
+      !sessionText.includes('yan-task-plan'),
+      '会话 JSONL 里没有被写入任务条目（宿主日志在砚自己的目录）'
+    )
+    say(!sessionText.includes('left-panel-tasks'), '也没有旧标识的任务条目（本场景没有旧扩展）')
+  } else {
+    lines.push('（探针没报会话文件路径，跳过会话 JSONL 检查）')
+  }
+
+  return { ok, lines }
 }
 
 /*
@@ -3347,11 +3755,28 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
       ...(caseEnv ?? {}),
       YAN_PROBE: probe,
       YAN_PROBE_DELAY: String(delay),
+      /*
+       * 默认**不上屏**：测试不应该在用户面前弹窗（用户明确要求）。
+       * 需要看真实窗口时：`YAN_SHOW_WINDOW=1 npm run test:live -- <场景>`。
+       *
+       * 之前默认是 `showInactive()`（不抢焦点但仍会出现在屏幕上）；
+       * 连跑十几个场景时，窗口不断出现本身就是在打断用户。
+       */
+      ...(process.env.YAN_SHOW_WINDOW ? {} : { YAN_PROBE_HIDDEN: '1' }),
       ...(keys ? { YAN_PROBE_KEYS: keys } : {})
     }
     // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
     // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
-    delete probeEnv.ELECTRON_RUN_AS_NODE
+    /*
+     * 还要剥掉**外层砚实例**的能力服务地址与身份：
+     * 从砚的 pi 子进程里跑 test:live 时，这几个变量会跟着继承下去。
+     * pi 子进程的环境本来由主进程覆盖，但能力服务没起来时就是「没有覆盖」，
+     * 那时被测试的实例里 `yan` 会打到外层那个真实实例（写真实用户数据目录）。
+     * 本轮在 test-packaged 里真撞到过（一个操作回执被写进了真实 ~/.pi）。
+     */
+    for (const k of ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) {
+      delete probeEnv[k]
+    }
     /*
      * 直接拿 electron 包导出的可执行文件，**不走 npx**。
      *
@@ -3685,9 +4110,37 @@ async function main() {
     )
     CASES.slashcmd.env = { YAN_PI_DIR: piDirSkill }
 
+    /*
+     * 实施-02 S1：`taskext` 要验「旧任务扩展与砚同时存在」，所以单独一份 piDir。
+     *
+     * 旧扩展从 `scripts/fixtures/task-ext/` 现拷（**不是**用户本机那份）——
+     * fixture 必须自包含，否则换一台机器场景就变成「不存在旧扩展」而静默变形。
+     * 只读它的行为在本文件的场景注释里说明。
+     */
+    const piDirTaskExt = join(sandboxRoot, 'pi-agent-task-ext')
+    for (const d of [piDirTaskExt, join(piDirTaskExt, 'extensions')]) mkdirSync(d, { recursive: true })
+    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+      const src = join(sourceAgentDir, f)
+      if (existsSync(src)) copyFileSync(src, join(piDirTaskExt, f))
+    }
+    copyFileSync(
+      join(root, 'scripts', 'fixtures', 'task-ext', 'left-info-panel.ts'),
+      join(piDirTaskExt, 'extensions', 'left-info-panel.ts')
+    )
+    /*
+     * 实施-02 S5：「旧扩展 + 无关扩展」共存。真实用户目录里往往还有别的扩展，
+     * 只放一个任务扩展验不出「无关扩展会不会被任务迁移影响」（诊断计数、
+     * 命令列表、清单来源判定三处都可能受它影响）。
+     */
+    copyFileSync(
+      join(root, 'scripts', 'fixtures', 'task-ext', 'notes-panel.ts'),
+      join(piDirTaskExt, 'extensions', 'notes-panel.ts')
+    )
+    CASES.taskext.env = { YAN_PI_DIR: piDirTaskExt }
+
     console.log(`隔离目录：${sandboxRoot}`)
     console.log(`  fixture：${seeded} 份（真实会话只读拷贝 + 合成；原件不受影响）`)
-    console.log('  （不碰真实的 sessions / memory.json / localStorage）')
+    console.log('  （不碰真实的会话、派生状态与 localStorage）')
     console.log('  （也不碰真实的 ~/.pi/agent/auth.json —— 里面是用户的密钥）')
   } else {
     console.log('⚠️  YAN_TEST_ISOLATED=0 —— 直接改真实数据，仅用于排查问题')
@@ -3762,6 +4215,21 @@ async function main() {
      * 「没抓到 PROBE 输出 —— 应用可能启动失败」，极难定位。
      * 实测踩过一次（topbar 里重名 cur），这里提前拦住。
      */
+    /*
+     * 「会话文件只读」的基线（todos / taskext）：Electron 起来之前记下 fixture
+     * 的原始字节，退出后再比 —— 前缀必须逐字节一致（见 checkTaskFixtureReadonly）。
+     * 每个场景都重置：不跳过声明就没基线，避免上一个场景的基线被顺手复用。
+     */
+    taskFixtureBaseline = null
+    if (c.readonlySession && sandboxRoot) {
+      taskFixtureBaseline = captureSessionFile(join(sandboxRoot, 'sessions'), c.readonlySession)
+      console.log(
+        taskFixtureBaseline
+          ? `  只读基线：${basename(taskFixtureBaseline.path)}（${Buffer.byteLength(taskFixtureBaseline.text)} 字节）`
+          : `  ⚠️  找不到只读基线会话：${c.readonlySession}`
+      )
+    }
+
     const syntaxErr = checkProbeSyntax(c.probe)
     if (syntaxErr) {
       console.log(`  ✗ 探针脚本语法错误：${syntaxErr}`)

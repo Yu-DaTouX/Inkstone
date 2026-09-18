@@ -63,11 +63,19 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: 'panel',
-    description: '终端面板命令（桌面端仅兼容显示）',
+    description: '终端面板命令（桌面端不适用）',
     source: 'compatibility',
     executable: false,
     usage: '/panel',
-    availability: '仅终端界面有效；桌面端不会伪造无效果按钮'
+    /*
+     * 实施-02 S4：从 `/` 补全里隐藏，但**不删这一项**。
+     * 任务清单现在由砚内置任务计划维护（`yan tasks apply` + 宿主服务），
+     * 终端面板命令在桌面端没有对应界面。保留在这里的目的是占住
+     * source=compatibility 这个来源 —— 手打时命中它就会给明确反馈，
+     * 而不是掉到「未知命令当消息发给模型」那条路上。
+     */
+    hiddenInMenu: true,
+    availability: '仅终端界面有效；任务由砚内置任务计划维护，桌面端不会伪造无效果按钮'
   },
   {
     name: 'footer',

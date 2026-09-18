@@ -1,8 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import type { MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { PackageActionResultView, PackageListingView } from '../../../../shared/ipc'
+import type { BuiltinCapabilityView, PackageActionResultView, PackageListingView } from '../../../../shared/ipc'
+
+/**
+ * 内置能力的文案表（id → zh-CN 的 i18n 键）。
+ *
+ * 为什么用一张显式表而不是拼字符串：i18n 的键是**编译期检查**的
+ *（`MessageKey` 是 zh-CN.json 的键联合），拼出来的字符串无法校验。
+ * 表里的 id 必须与主进程 `builtinCapabilities()` 产出的 id 一致 ——
+ * 主进程新增一个薄层扩展而这里忘了登记时，界面会退而成显示文件名，
+ * 那是一个**看得见的缺口**，不是静默空白。
+ */
+const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
+  'task-plan': { name: 'pkg.builtin.task-plan', desc: 'pkg.builtin.task-planDesc' },
+  browser: { name: 'pkg.builtin.browser', desc: 'pkg.builtin.browserDesc' },
+  question: { name: 'pkg.builtin.question', desc: 'pkg.builtin.questionDesc' },
+  'response-detail': { name: 'pkg.builtin.response-detail', desc: 'pkg.builtin.response-detailDesc' },
+  language: { name: 'pkg.builtin.language', desc: 'pkg.builtin.languageDesc' },
+  'capability-guide': { name: 'pkg.builtin.capability-guide', desc: 'pkg.builtin.capability-guideDesc' },
+  context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' }
+}
 
 /**
  * pi 插件（方案 §9 的 P2）。
@@ -27,6 +47,7 @@ export function PackagesTab(): React.JSX.Element {
   const t = useT()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const [listing, setListing] = useState<PackageListingView | null>(null)
+  const [builtin, setBuiltin] = useState<BuiltinCapabilityView[]>([])
   const [busy, setBusy] = useState('')
   const [result, setResult] = useState<PackageActionResultView | null>(null)
   const [source, setSource] = useState('')
@@ -52,6 +73,23 @@ export function PackagesTab(): React.JSX.Element {
   useEffect(() => {
     void load()
   }, [load])
+
+  /*
+   * 砚自带的受信能力（实施-02 S4）。
+   *
+   * 拉失败就不显示这一段（而不是显示一个空壳）：这段是**参考信息**，
+   * 它挂了不影响用户装/卸插件。但也不能默认为空就当作「砚没有内置能力」——
+   * 所以用单独的 state，与 packages 的失败互不污染。
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        setBuiltin(await window.yan.builtinCapabilities.list())
+      } catch {
+        setBuiltin([])
+      }
+    })()
+  }, [])
 
   const run = async (kind: 'install' | 'remove' | 'update', src: string): Promise<void> => {
     setBusy(`${kind}:${src}`)
@@ -144,7 +182,7 @@ export function PackagesTab(): React.JSX.Element {
         </div>
       ) : null}
 
-      {/* ④ 已装列表 */}
+      {/* ④ 已装列表（用户装的包：有版本、有来源、可卸载） */}
       <div className="set-row set-row-col" data-testid="pkg-list">
         <div className="set-label">
           <div className="set-name">{t('pkg.installed')}</div>
@@ -221,7 +259,42 @@ export function PackagesTab(): React.JSX.Element {
         )}
       </div>
 
-      {/* ⑤ 生效时机（方案 §9：任务运行中要安排安全的生效时机） */}
+      {/* ⑤ 砚内置能力：与「用户装的包」彻底分开（实施-02 S4） */}
+      {builtin.length > 0 ? (
+        <div className="set-row set-row-col" data-testid="set-builtin-caps">
+          <div className="set-label">
+            <div className="set-name">{t('pkg.builtin')}</div>
+            <div className="set-desc">{t('pkg.builtinDesc')}</div>
+          </div>
+          <div className="pkg-list">
+            {builtin.map((cap) => {
+              /*
+               * 文案按 id 查；查不到就显示文件名。
+               * 不写「未知能力」也不隐藏 —— 新加一个薄层扩展却忘了登记文案，
+               * 应该是一个看得见的缺口，而不是静默吞掉。
+               */
+              const text = BUILTIN_TEXT[cap.id]
+              return (
+                <div className="pkg-item" key={cap.id} data-testid="builtin-cap">
+                  <div className="pkg-item-main">
+                    <span className="pkg-name" data-testid="builtin-cap-name">
+                      {text ? t(text.name) : (cap.file ?? cap.id)}
+                    </span>
+                    {/* 内置能力**没有卸载按钮**：它随砚分发，不是 pi 装的包 */}
+                    <span className="pkg-scope user">{t('pkg.builtinBadge')}</span>
+                    {cap.file ? <span className="pkg-ver">{cap.file}</span> : null}
+                  </div>
+                  <div className="pkg-detail-line pkg-dim">
+                    {text ? t(text.desc) : t('pkg.builtinNoDesc')}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ⑥ 生效时机（方案 §9：任务运行中要安排安全的生效时机） */}
       <div className="set-row" data-testid="pkg-effect">
         <div className="set-label">
           <div className="set-desc">{t('pkg.effect')}</div>

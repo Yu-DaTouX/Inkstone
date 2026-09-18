@@ -525,6 +525,21 @@ function registerStubHandlers() {
     ]
   }))
   ipcMain.handle('yan:packages:action', () => ({ ok: true, output: 'Installed npm:pi-zh-cn' }))
+  /*
+   * 受信内置能力（实施-02 S4）：设置页「插件」里的内置能力区。
+   * 桩数据与主进程 `builtinCapabilities()` 同形：第一条是宿主任务计划
+   *（没有 file），其余按**实际加载的扩展文件名**派生 id。
+   * 漏了这个桩，那张截图里就会缺掉整块（渲染端拉不到就为空）。
+   */
+  ipcMain.handle('yan:capabilities:builtin', () => [
+    { id: 'task-plan' },
+    { id: 'browser', file: 'browser.js' },
+    { id: 'question', file: 'question.js' },
+    { id: 'response-detail', file: 'response-detail.js' },
+    { id: 'language', file: 'language.js' },
+    { id: 'capability-guide', file: 'capability-guide.js' },
+    { id: 'context', file: 'context.js' }
+  ])
   /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
   ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
   /* PR 状态（§7）：给一个"已合并 + 检查通过 + 本地有未推送提交"的样子 */
@@ -600,12 +615,12 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'review', 'reviewwrite']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewwrite']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'review', 'reviewwrite'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewwrite'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup', 'taskcard'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] }
 ]
@@ -1224,6 +1239,166 @@ const STATES = {
    * 拉取型 IPC（返回空会盖掉 fixture 注入的数据）—— 这里先把会话列表存一份，
    * 等通知出现后再放回去，否则截图里左栏会空掉（那不是这个状态要拍的东西）。
    */
+  extdiag: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closePreview?.();
+      st.clearAttachments?.();
+      /*
+       * 「扩展来源」诊断（实施-02 S1）：这三行就是迁移期给用户的诊断样例。
+       * 摆的是**真实文案**（与 extensions-inventory.ts 的输出一致），不是示意。
+       */
+      window.__yanStore.setState({
+        logs: [
+          '[来源] 用户扩展 1 项：left-info-panel.ts（pi 启动时会自动发现并加载它们；砚不删除、不改写）',
+          '[来源] 砚内置薄层 6 项：browser.js、question.js、response-detail.js、language.js、capability-guide.js、context.js（显式传入，只挂生命周期钩子，不注册模型工具）',
+          '[来源] 检测到用户扩展：当前任务清单仍由扩展写入 \`left-panel-tasks\`，砚只读取并显示；砚内置任务计划落地后写入改走宿主日志，旧条目保持只读（两者不会互相覆盖）'
+        ]
+      });
+      await sleep(350);
+      /* 日志分区默认收起 —— 展开才看得到内容 */
+      const head = document.querySelector('[data-testid="rp-log"] .rp-sec-head');
+      if (!head) return 'no-log-section';
+      if (head.getAttribute('aria-expanded') === 'false') {
+        head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await sleep(450);
+      }
+      const body = document.querySelector('[data-testid="log-body"]');
+      if (!body) return 'no-log-body';
+      const text = body.textContent || '';
+      if (!text.includes('[来源] 用户扩展')) return 'no-diag-text';
+      /*
+       * 右栏很长（任务 / 上下文 / 文件 / 额度 / 队列都在日志上面），
+       * 不滚过去的话截图里根本看不到日志区 —— 实测第一张就是这样（只证明了元素存在）。
+       */
+      head.scrollIntoView({ block: 'center' });
+      body.scrollTop = body.scrollHeight;
+      await sleep(350);
+      const r = body.getBoundingClientRect();
+      return 'ok(h=' + Math.round(r.height) + ' lines=' + text.split('\\n').length + ')';
+    })()
+  `,
+  /*
+   * 宿主任务清单（实施-02 S3）。
+   *
+   * 这一片**不改任务面板 UI**（那是产品边界），改的是清单的来源：
+   * 现在由宿主任务日志（`YAN_DIR/task-plans/<sessionId>.jsonl`）提供，
+   * 与会话里的旧条目走同一套归并。所以这张图要看的是：
+   *   · 清单主体（含完成 / 未完成状态）照旧正确；
+   *   · 多轮历史快照折叠展开后每份清单的样式没变。
+   * 数据是摆的（视觉矩阵没有主进程），形态与 `yan tasks apply` 写出来的一致。
+   */
+  taskhost: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closePreview?.();
+      st.clearAttachments?.();
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        todos: [
+          { text: '确认范围', done: false },
+          { text: '实现宿主任务服务', done: true, status: 'done' },
+          { text: '真实运行验收', done: false }
+        ],
+        todoHistory: [
+          {
+            id: 'h1',
+            round: 1,
+            todos: [
+              { text: '确认范围', done: false },
+              { text: '实现宿主任务服务', done: false },
+              { text: '真实运行验收', done: false }
+            ]
+          },
+          {
+            id: 'h2',
+            round: 2,
+            todos: [
+              { text: '确认范围', done: false },
+              { text: '实现宿主任务服务', done: true, status: 'done' },
+              { text: '真实运行验收', done: false }
+            ]
+          }
+        ]
+      });
+      await sleep(350);
+      const toggle = document.querySelector('[data-testid="todo-history-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await sleep(400);
+      }
+      const hist = document.querySelector('[data-testid="todo-history"]');
+      if (!hist) return 'no-history';
+      hist.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      return 'ok(items=' + document.querySelectorAll('.rp-todo').length + ')';
+    })()
+  `,
+  /*
+   * 任务计划工具卡（实施-02 S4）。
+   *
+   * 模型维护任务清单的方式是用**原生 bash** 敲 `yan tasks apply` ——
+   * 对模型这是 bash，对用户应该是“砚内置的任务计划”。这张图要看的是：
+   *   · 卡片上有「任务计划 · 砚内置」来源徐标；
+   *   · 命令原文仍在（用户靠它判断在干什么）；
+   *   · 展开后仍是原始 bash 调用与输出（不伪造独立工具事件）。
+   * 数据是摆的（视觉矩阵没有主进程），形态与 `taskcli` 真实跑出来的一致。
+   */
+  taskcard: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closePreview?.();
+      window.__yanStore.setState({ rightPanelOpen: false });
+      await sleep(200);
+      const now = Date.now();
+      const call = {
+        id: 'shot-task-plan',
+        name: 'bash',
+        args: { command: 'yan tasks apply --request-file tasks/task-set.json' },
+        status: 'ok',
+        output:
+          '{"ok":true,"operationId":"8f27c14b-ef14-44ab","summary":{"kind":"task-plan","action":"set","revision":1,"items":3,"done":0}}',
+        startedAt: now - 4200,
+        endedAt: now - 3600
+      };
+      const prev = window.__yanStore.getState().messages;
+      /* 只**追加**一条调用，不整包换 messages（后面的图还靠 fixture 的消息） */
+      const host = prev.find((m) => m.role === 'assistant' && m.toolCalls?.length);
+      window.__yanStore.setState({
+        messages: host
+          ? prev.map((m) => (m === host ? { ...m, toolCalls: [call, ...m.toolCalls] } : m))
+          : [...prev, { id: 'shot-task-card', role: 'assistant', text: '', toolCalls: [call] }]
+      });
+      await sleep(500);
+      /*
+       * 先展开**还没开**的工具组（收起时内部的行不在 DOM 里），再展开那一行。
+       * 只点没开的：菜单/组是开关，把已展开的点一下反而会收起来（这个坑犯过好几次）。
+       */
+      document
+        .querySelectorAll('.tgroup:not(.open) .tgroup-head')
+        .forEach((h) => h.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+      await sleep(500);
+      const row = document.querySelector('.trow[data-origin="yan-task-plan"] .trow-head');
+      if (row && row.getAttribute('aria-expanded') !== 'true') {
+        row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await sleep(500);
+      }
+      const badge = document.querySelector('[data-testid="tool-src"]');
+      if (!badge) return 'no-badge';
+      badge.closest('.trow')?.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      return 'ok(' + (badge.textContent || '') + ')';
+    })()
+  `,
   trashtoast: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1651,7 +1826,10 @@ const MUST_HAVE = {
     '[data-testid="set-pi-catalog-open"]',
     '[data-testid="pkg-source"]',
     '[data-testid="pkg-install-btn"]',
-    '[data-testid="pkg-effect"]'
+    '[data-testid="pkg-effect"]',
+    /* 实施-02 S4：内置能力区必须与「已装的插件」同时出现在图上 */
+    '[data-testid="set-builtin-caps"]',
+    '[data-testid="builtin-cap"]'
   ],
   envlinks: [
     '[data-testid="env-menu"]',
@@ -1660,6 +1838,15 @@ const MUST_HAVE = {
     '[data-testid="src-url"]',
     '[data-testid="env-compare-web"]'
   ],
+  extdiag: ['[data-testid="rp-log"]', '[data-testid="log-body"]'],
+  taskhost: [
+    '[data-testid="rp-todo"]',
+    '[data-testid="todo-meter"]',
+    '[data-testid="todo-history"]',
+    '[data-testid="todo-history-toggle"]'
+  ],
+  /* 内置来源的工具卡（S4）：徐标 + 原始命令都在 */
+  taskcard: ['[data-testid="tool-src"]', '.trow.open .term'],
   envworktrees: [
     '[data-testid="env-menu"]',
     '[data-testid="env-worktree-list"]',
