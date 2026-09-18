@@ -427,6 +427,29 @@ https 三种写法；**只认 github / gitlab / bitbucket** —— 自建服务�
 否则「来源」列表里的东西在重启后就是一堆死路径。方案对此有明确要求：「不能只保存会被
 清理的临时路径」。
 
+### 2.19 pi 插件包管理（方案 §9 的 P2）
+
+```
+设置「插件」tab → yan:packages:list / yan:packages:action
+                   └── main/packages.ts（唯一会改用户 pi 目录的地方）
+```
+
+**机制是实测的，不是猜的**：pi 自己有 `install` / `remove` / `update` / `list` / `config`，
+`-l` 是项目作用域；已装包的真源是 **settings.json 的 `packages` 字符串数组**；
+agent 目录的环境变量是 **`PI_CODING_AGENT_DIR`**（Yan 已在 `agent.ts` 传它）。
+
+⚠️ **本地路径源不复制**：装 `<root>/my-ext` 得到的是 `"..\\my-ext"` —— 一条**相对
+agent 目录**的路径。所以：元信息要按 source 的形状解析（不能一律去
+`npm/node_modules/<name>` 找）；**卸载/更新时要把路径形态的 source 转成绝对路径**
+（`pi remove` 按 **cwd** 解析，与登记时的基准不是一个）。
+
+三条边界：**不直接改生成的 pi-runtime**（只让 pi 自己的 CLI 动手）；作用域跟着
+`PI_AGENT_DIR` 走（不拼 `~/.pi/agent`）；扩展**会执行代码**，界面上说明来源与
+实际影响，**不做沙箱、不做安全审查、也不宣称有**。
+
+参数注入：以 `-` 开头的 source 在发起前就被拒（否则渲染端等于间接控制命令行）。
+有任务在跑时直接拒绝改包（扩展是启动时加载的，现在动手没有即时效果）。
+
 ## 修改前按需阅读
 
 - 工作区规则：[AGENTS](../AGENTS.md)。

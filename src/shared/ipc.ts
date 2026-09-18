@@ -1758,6 +1758,55 @@ export interface WorktreeRemoveResult {
 }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
+/* ── pi 插件包管理（方案 §9 的 P2）────────────────────── */
+
+export interface PackageEntryView {
+  /** settings 里那条原始字符串（例如 npm:pi-zh-cn 或 ..\my-ext） */
+  source: string
+  scope: 'user' | 'project'
+  name: string
+  version: string | null
+  description: string | null
+  repository: string | null
+  license: string | null
+  /** 磁盘上真能找到（settings 里登记着但没装上是**要显示出来的异常**） */
+  installed: boolean
+  path: string | null
+}
+
+export interface PackageListingView {
+  ok: boolean
+  /** pi 的 agent 目录（界面上要能告诉用户「装到哪了」） */
+  agentDir: string
+  userSettings: string
+  projectSettings: string
+  entries: PackageEntryView[]
+  error?: string
+}
+
+export interface PackageActionView {
+  kind: 'install' | 'remove' | 'update'
+  source: string
+  /** true = 装到当前项目（.pi/settings.json） */
+  local?: boolean
+  cwd: string
+}
+
+export interface PackageActionResultView {
+  ok: boolean
+  /** pi 自己的输出（成功也带 —— 用户要看到它到底做了什么） */
+  output?: string
+  /** 失败时的原始输出（给「展开」看） */
+  detail?: string
+  error?: string
+  listing?: PackageListingView
+}
+
+export interface PackagesBridge {
+  list(cwd: string): Promise<PackageListingView>
+  action(req: PackageActionView): Promise<PackageActionResultView>
+}
+
 export interface YanBridge {
   /* 会话控制 */
   /**
@@ -2043,6 +2092,8 @@ export interface YanBridge {
   subagents: SubagentBridge
 
   /* Git 审查（方案 G1，只读） */
+  /** pi 插件包管理（§9 的 P2）：只改 pi 自己的 settings，不动生成的 pi-runtime */
+  packages: PackagesBridge
   git: GitBridge
 
   /* 内置浏览器 */

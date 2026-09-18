@@ -266,29 +266,70 @@
 
   /* ── 设置「关于」里的 pi 插件目录入口（方案 §9 的 P1）──────── */
   out.push('')
-  out.push('=== pi 插件目录入口 ===')
+
+  /* ── 设置「插件」tab（方案 §9 的 P2）──────────────────────── */
+  out.push(String.fromCharCode(10) + '=== pi 插件 ===')
   if (!store?.getState().openSettings) {
     bad('store 没有 openSettings')
   } else {
-    /*
-     * 用 store 直接开设置并指定 tab：点 rail 按钮要求面板处于特定状态
-     * （收起态/紧凑态都会影响它），而这里要验的是「关于」里的入口。
-     */
-    store.getState().openSettings('about')
-    const seen = await until(() => !!document.querySelector('[data-testid="set-pi-catalog"]'), 5000)
-    if (!seen) bad('「关于」里没有 pi 插件目录入口')
+    store.getState().openSettings('packages')
+    const seen = await until(() => !!document.querySelector('[data-testid="set-packages"]'), 5000)
+    if (!seen) bad('设置里没有「插件」tab 的内容')
     else {
-      const row = document.querySelector('[data-testid="set-pi-catalog"]')
-      ok('「关于」里有 pi 插件目录入口')
-      if (document.querySelector('[data-testid="set-pi-catalog-open"]')) ok('入口带「打开」按钮')
-      else bad('入口缺「打开」按钮')
-      /*
-       * 这句是**实测结论**写在界面上：目录是网站、没有结构化数据接口，
-       * 所以只打开，不在应用内做一套会立刻过期的搜索与收录状态。
-       */
-      if (/没有结构化数据接口/.test(row.textContent ?? '')) ok('明说「目录没有结构化数据接口」（只打开、不伪造搜索）')
+      ok('设置里有「插件」分区')
+      if (document.querySelector('[data-testid="set-pi-catalog"]')) ok('有 pi 插件目录入口')
+      else bad('缺插件目录入口')
+      if (document.querySelector('[data-testid="set-pi-catalog-open"]')) ok('目录入口带「打开」按钮')
+      else bad('目录入口缺「打开」按钮')
+      /* 目录入口把那句**实测结论**写在界面上：没有结构化数据接口 */
+      if (/没有结构化数据接口/.test(document.querySelector('[data-testid="set-pi-catalog"]')?.textContent ?? ''))
+        ok('明说「目录没有结构化数据接口」（只打开、不伪造搜索）')
       else bad('没说清为什么只给一个打开入口')
-      /* 不点「打开」：那会真的拉起内置浏览器窗口，影响后面的断言 */
+
+      const src = document.querySelector('[data-testid="pkg-source"]')
+      const local = document.querySelector('[data-testid="pkg-local"]')
+      const btn = document.querySelector('[data-testid="pkg-install-btn"]')
+      if (src && local && btn) ok('有来源输入 / 「装到当前项目」/ 安装按钮')
+      else bad('安装区缺件')
+      /*
+       * 输入为空时按钮必须是禁用的：一个点了没反应的按钮比禁用更糟，
+       * 而这里真的会去改用户磁盘上的包（主进程还会再校验一次形状）。
+       */
+      if (btn && btn.disabled) ok('来源为空时「安装」是禁用的（不会发一次注定失败的请求）')
+      else bad('来源为空时安装按钮仍可点')
+
+      /* 生效时机必须写在界面上（方案 §9：任务的生效时机）*/
+      const effect = document.querySelector('[data-testid="pkg-effect"]')?.textContent ?? ''
+      if (/生效时机/.test(effect) && /启动时/.test(effect)) ok('写明「pi 在启动时加载」的生效时机')
+      else bad('没写生效时机：' + JSON.stringify(effect.slice(0, 40)))
+
+      /*
+       * 列表：**只断言结构，不断言内容** —— 这里读的是用户真实装的东西，
+       * 内容随人而变，结构才是产品的一部分。也**不点**安装/卸载：
+       * 那会真的改用户的 pi 目录。
+       */
+
+      const listBox = document.querySelector('[data-testid="pkg-list"]')
+      const items = document.querySelectorAll('[data-testid="pkg-item"]')
+      const empty = document.querySelector('[data-testid="pkg-empty"]')
+      if (listBox && (items.length > 0 || empty)) ok('列出了已装插件（' + items.length + ' 条）或空状态')
+      else bad('列表区既没有条目也没有空状态')
+      const detail = document.querySelector('[data-testid="pkg-detail"]')
+      if (items.length === 0) ok('这台机器上没有装插件，跳过详情断言')
+      else if (detail) {
+        click(detail)
+        const body = await until(() => !!document.querySelector('[data-testid="pkg-detail-body"]'), 3000)
+        if (body) {
+          ok('「详情」能展开')
+          /*
+           * 这一句是方案 §9 的硬要求：「说明来源与实际影响，不宣称沙箱隔离」。
+           * 它不是提示语，是产品边界 —— 所以要有断言读它。
+           */
+          const warn = document.querySelector('[data-testid="pkg-warn"]')?.textContent ?? ''
+          if (/不做沙箱隔离/.test(warn)) ok('详情里写明「会执行代码、不做沙箱隔离」（方案 §9 的硬要求）')
+          else bad('详情缺边界声明：' + JSON.stringify(warn.slice(0, 40)))
+        } else bad('「详情」点了没展开')
+      } else bad('有插件但没有「详情」按钮')
     }
     store.getState().closeSettings()
     await until(() => qa('.set-group').length === 0, 3000)

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
+  PackageActionResultView,
+  PackageListingView,
   Attachment,
   AttentionNotify,
   BrowserBounds,
@@ -189,6 +191,15 @@ const api: YanBridge = {
   },
 
   /* ---- Git 审查（只读，方案 G1）---- */
+  /*
+   * pi 插件包管理（§9 的 P2）。
+   * list 只读；action 会改用户磁盘上的包 —— 主进程那边会做形状校验并在有任务
+   * 运行时拒绝，渲染端不需要（也不该）自己拼 pi 的命令行。
+   */
+  packages: {
+    list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
+    action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
+  },
   git: {
     state: (cwd) =>
       invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),

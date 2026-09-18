@@ -165,6 +165,8 @@ pi 吐事件
 |---|---|---|---|
 | `git-service.ts` | 414 | Git 只读查询的底座：`execFile` 封装（参数数组、**不经 shell**、关掉 external diff/textconv 的两道环境变量）、仓库发现（30s 缓存 + `.git` mtime 失效）、`status --porcelain=v2`、refs 列表、worktree 占用分支、ref / 路径校验、未跟踪文件的有界元数据（行数 / 大小 / NUL 嗅探 / LFS） | `git-diff.ts`、`index.ts`；单测 `test-git-review.mjs` / `test-git-repo.mjs`（真实仓库） |
 | `git-actions.ts` | 659 | **写操作 —— 唯一会改用户仓库的文件**：按仓库串行、预期版本分级复核、八个动作（暂存 / 取消暂存 / 批量 / 提交 / 切分支 / 新建分支 / 拉取 / 推送）、超时后重读 HEAD、hook 文件探测。「应用会不会改用户的 Git、怎么改」只看这一个文件就能答完 | `shared/git-actions.ts`、`git-service.ts`；单测 `test-git-actions.mjs` / `test-git-repo.mjs`；live `gitwrite` |
+| `packages.ts`（main） | 349 | **pi 包管理（§9 的 P2）**：读 settings.json 的 `packages`、按 source 形状解析包目录、装/卸/更新（调 pi 自己的 CLI，参数注入在发起前就挡下、有任务在跑时拒绝）。**唯一**会改用户 pi 目录的地方 | 单测 `test-packages.mjs`（真实 CLI + 强隔离）；live `pkgs` |
+| `PackagesTab.tsx` | 233 | 设置「插件」：目录入口、安装区（支持版本）、已装列表（用户级/项目级、磁盘上找不到的异常态）、详情（来源 / 仓库 / 许可 + **会执行代码的边界声明**）、生效时机 | live `pkgs` + `panels`；视觉 `settingspkg` |
 | `SourceLinks.tsx` | 170 | **关联外部任务**（方案 §6.4）：存 URL 与标题 → localStorage、按会话隔离、只收 http/https、在内置浏览器打开；边界文案写在界面上并有 live 断言 | live `gitwrite` 第 13 节 |
 | `git-worktree.ts` | 738 | **用户工作树（方案 §6.2，W1+W2）**：默认目录规则、`worktree list --porcelain -z` 解析、创建（五条拒绝路径）、删除前的三类拦截 + 主工作树 / locked / 非登记路径一律拒绝、**携带未提交改动**（`collectCarry` / `applyCarry` / `verifyCarry`：三份分开迁移、patch 全或无、目标侧验证、源仓库只读）。**绝不**复用 `subagent-isolation.cleanupWorkspace()`（那是 `--force` + `rm -rf`） | 单测 G10 / G11；live `gitwrite` |
 | `git-diff.ts` | 614 | 审查数据层：变更清单（raw + numstat + status 合成，**按范围过滤 status 条目**）、单文件 patch（结构化 hunk）、两侧内容（图片走 **buffer** 编码）、未跟踪文件合成「全新增」hunk | 同上；live `gitreview` |
@@ -344,7 +346,7 @@ pi 吐事件
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
 > 对照 HANDOFF 的「单测 N/N 通过」。
 
-### 7.3 live 探针（110 个文件；109 条在 `CASES` 里）
+### 7.3 live 探针（111 个文件；110 条在 `CASES` 里）
 
 在**真实渲染进程**里执行（`window.__yanStore` 可直接驱动状态）。
 按主题分组（新增探针同时要在 `test-live.mjs` 的 `CASES` 注册）：

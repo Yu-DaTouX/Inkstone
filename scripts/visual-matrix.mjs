@@ -424,6 +424,54 @@ function registerStubHandlers() {
     state: gitStubRepo()
   }))
   ipcMain.handle('yan:git:remotes', () => ['origin'])
+  /*
+   * pi 包管理（§9 的 P2）。视觉矩阵**不跑 registerIpc**，所有通道都靠桩 ——
+   * 少一个就会在界面上渲染成 "No handler registered for ..."（第一次跑就是
+   * 这么发现漏了桩的）。这里给两条：一条装的、一条「登记着但磁盘上没有」
+   *（后者是要在界面上看得出来的异常状态）。
+   */
+  ipcMain.handle('yan:packages:list', () => ({
+    ok: true,
+    agentDir: 'C:/Users/me/.pi/agent',
+    userSettings: 'C:/Users/me/.pi/agent/settings.json',
+    projectSettings: 'C:/work/pi-desktop/.pi/settings.json',
+    entries: [
+      {
+        source: 'npm:pi-zh-cn',
+        scope: 'user',
+        name: 'pi-zh-cn',
+        version: '0.2.6',
+        description: 'pi 编码代理的简体中文界面汉化插件',
+        repository: 'git+https://github.com/GoetheDady/pi-zh-cn.git',
+        license: 'MIT',
+        installed: true,
+        path: 'C:/Users/me/.pi/agent/npm/node_modules/pi-zh-cn'
+      },
+      {
+        source: 'npm:pi-reverse-basics',
+        scope: 'project',
+        name: 'pi-reverse-basics',
+        version: '1.4.0',
+        description: '逆向工程基础技能包（反调试 / 反混淆 / 签名分析）',
+        repository: 'git+https://github.com/example/pi-reverse-basics.git',
+        license: 'MIT',
+        installed: true,
+        path: 'C:/Users/me/.pi/agent/npm/node_modules/pi-reverse-basics'
+      },
+      {
+        source: 'npm:pi-old-thing',
+        scope: 'user',
+        name: 'pi-old-thing',
+        version: null,
+        description: null,
+        repository: null,
+        license: null,
+        installed: false,
+        path: null
+      }
+    ]
+  }))
+  ipcMain.handle('yan:packages:action', () => ({ ok: true, output: 'Installed npm:pi-zh-cn' }))
   /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
   ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
   /* 工作树（W1）：两条，一条主、一条「砚创建」 */
@@ -485,7 +533,7 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'review', 'reviewwrite']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'review', 'reviewwrite']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'review', 'reviewwrite'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
@@ -1388,6 +1436,22 @@ const STATES = {
    * 「关联外部任务」与「在网上比较」（方案 §6.4 / §7）：都在菜单**最下面**，
    * 所以这张图要把菜单滚到底 —— 否则看到的是同一屏的前半段。
    */
+  /*
+   * 设置 → 插件（方案 §9 的 P2）：目录入口 + 安装区 + 已装列表 + 生效时机。
+   * 列表读的是真实 pi 目录（只读），所以这张图反映的是这台机器上真正装了什么。
+   */
+  settingspkg: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      await sleep(200);
+      window.__yanStore.getState().openSettings('packages');
+      await sleep(700);
+      return document.querySelector('[data-testid="set-packages"]') ? 'ok' : 'no-packages-tab';
+    })()
+  `,
   envlinks: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1488,6 +1552,14 @@ const MUST_HAVE = {
     '[data-testid="env-new-branch-name"]',
     '[data-testid="env-fetch"]',
     '[data-testid="env-push"]'
+  ],
+  settingspkg: [
+    '[data-testid="set-packages"]',
+    '[data-testid="set-pi-catalog"]',
+    '[data-testid="set-pi-catalog-open"]',
+    '[data-testid="pkg-source"]',
+    '[data-testid="pkg-install-btn"]',
+    '[data-testid="pkg-effect"]'
   ],
   envlinks: [
     '[data-testid="env-menu"]',

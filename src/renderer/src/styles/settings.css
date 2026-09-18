@@ -336,3 +336,179 @@
   font-size: var(--fs-sm);
 }
 
+
+/* ── pi 插件（方案 §9 的 P2）────────────────────────────── */
+
+/*
+ * ⚠️ 必须显式改 display：`.set-row` 是 **grid**（两列：标签 + 控件）。
+ * 只写 flex-direction 是没有用的 —— 它会被留在第二列，表现成「内容整块
+ * 跑到右半边」（视觉矩阵的截图抓到的就是这个）。
+ */
+.set-row-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+/*
+ * ⚠️ 这一条不能省：.set-row 原本是横向的（标签左、控件右），标签没有宽度约束。
+ * 改成纵向之后，标签会按内容收缩到一个字宽 —— 文字会**竖着排**成一列
+ *（视觉矩阵的截图抓到的就是这个）。
+ */
+.set-row-col > .set-label {
+  width: 100%;
+}
+
+.pkg-install-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pkg-install-row .set-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pkg-local {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 列表自己滚：插件的数量不该决定设置面板的高度 */
+.pkg-list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/*
+ * 名字必须靠左。`.set-row` 的横向布局带了右对齐（标签左、控件右），
+ * 列表项继承下来会整行被推到右边 —— 视觉矩阵的截图里看得一清二楚。
+ */
+.pkg-item-main {
+  justify-content: flex-start;
+}
+
+.pkg-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.pkg-item:hover {
+  background: var(--bg-2);
+}
+
+.pkg-item-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pkg-name {
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pkg-ver {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--fg-4);
+}
+
+.pkg-scope {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--line-1);
+  color: var(--fg-3);
+}
+
+.pkg-scope.project {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 「登记着但磁盘上没有」是异常状态，要显眼但别吵 */
+.pkg-missing {
+  font-size: 10.5px;
+  color: var(--warn);
+}
+
+.pkg-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.pkg-detail {
+  padding: 4px 0 2px 6px;
+  border-left: 2px solid var(--line-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pkg-detail-line {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-2);
+  word-break: break-all;
+}
+
+.pkg-detail-line.pkg-dim {
+  color: var(--fg-4);
+}
+
+/* 边界声明：插件能执行代码，我们不做沙箱也不做审查 */
+.pkg-detail-warn {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--fg-3);
+}
+
+.pkg-ok,
+.pkg-fail {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pkg-ok {
+  border: 1px solid var(--ok);
+  color: var(--fg-2);
+}
+
+.pkg-fail {
+  border: 1px solid var(--err);
+  color: var(--fg-2);
+}
+
+.pkg-result-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  word-break: break-all;
+}

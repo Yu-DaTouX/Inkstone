@@ -24,6 +24,7 @@ import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
 import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
+import { configurePackageContext, listPackages, runPackageAction } from './packages'
 import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
@@ -1184,6 +1185,7 @@ function registerIpc(): void {
     hasRunningTask: (cwd) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, cwd))
   })
 
+
   /**
    * IPC 来源校验（方案 9.2）。
    *
@@ -2198,6 +2200,48 @@ function registerIpc(): void {
   handle('yan:git:remoteWeb', async (cwd: string) => {
     try {
       return await remoteWeb(String(cwd ?? ''))
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  /*
+   * pi 插件包管理（§9 的 P2）。
+   *
+   * 注入两样东西（都只有这里才拿得到）：
+   *   · **bin** —— 必须走 resolvePi()，用户可能用设置项 piBin 覆盖或用系统安装。
+   *     自己拼内置路径会出现「装到 A、跑的是 B」这种最难查的问题。
+   *   · **hasRunningTask** —— 扩展是 pi 启动时加载的，正在跑的回合与磁盘上的
+   *     包集合必须一致，所以有任务时直接拒绝。
+   */
+  handle('yan:packages:list', async (cwd: string) => {
+    try {
+      return listPackages(String(cwd ?? ''))
+    } catch (error) {
+      return { ok: false, agentDir: '', userSettings: '', projectSettings: '', entries: [], error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  handle('yan:packages:action', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      const kind = raw.kind === 'install' || raw.kind === 'remove' || raw.kind === 'update' ? raw.kind : null
+      if (!kind) return { ok: false, error: '未知的操作' }
+      /*
+       * 这里注入 bin：它是**异步**才知道的（settings 的 piBin 覆盖项），
+       * 而 resolvePi() 必须与真正启动 pi 时是同一个解析 —— 否则会出现
+       * 「装到 A、跑的是 B」这种最难查的问题。
+       */
+      const st = await getSettings()
+      configurePackageContext({
+        bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null
+      })
+      return await runPackageAction({
+        kind,
+        source: String(raw.source ?? ''),
+        local: raw.local === true,
+        cwd: String(raw.cwd ?? '')
+      })
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
