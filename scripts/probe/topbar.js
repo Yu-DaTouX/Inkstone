@@ -71,13 +71,12 @@
     const slotW = rect('.rail-slot')?.w ?? -1
     out.push('  收起后 rail-slot 宽 = ' + slotW)
     /*
-     * ⚠️ 设计变更（ 2026-09 评审）：收起态从 0 宽改成 48px 紧凑快捷轨
-     *    （.rail-compact）。旧的「必须 0 宽」断言已过时，但它想要保证的
-     *    事情仍然成立：入口存在、不丢功能。
+     * ⚠️ 当前设计：收起**就是真的 0 宽** —— 紧凑轨（.rail-compact）已经移除，
+     * 入口只留标题栏那个开关（位置与面板收放无关）。这条断言前后改过两次，
+     * 现在跟着源码走：源码里没有 .rail-compact，就不该断言它有 48px。
      */
-    const compactN = document.querySelectorAll('.rail-compact button').length
-    if (Math.abs(slotW - 48) < 1 && compactN > 0) ok(`收起 = 48px 紧凑轨（${compactN} 个快捷入口）`)
-    else bad(`收起态不对：宽 ${slotW}px，紧凑按钮 ${compactN} 个`)
+    if (slotW < 1) ok('收起 = 0 宽（入口只在标题栏）')
+    else bad(`收起态不对：宽 ${slotW}px（应为 0）`)
 
     const ptBefore = rect('[data-testid="rightpanel-toggle"]')
     click(pt)
@@ -90,12 +89,12 @@
     else bad('工具栏还在')
     const ws = getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns
     out.push('  两侧都收起时 grid = ' + ws)
-    /* 第一列 = 48px 紧凑轨；第三列 = 0（右栏整个卸载）—— 见上面的设计变更说明。
+    /* 两侧都收起：第一列 0（左栏让位）、最后一列 0（右栏整个卸载）。
        列宽是小数（47.9926px），不能拿字符串比。 */
     const cols = ws.trim().split(/\s+/).map((x) => parseFloat(x))
     const firstCol = cols[0]
     const lastCol = cols[cols.length - 1]
-    if (Math.abs(firstCol - 48) < 1 && lastCol === 0) ok('左栏 48px 紧凑轨 + 右栏 0 宽（中栏拿到其余空间）')
+    if (firstCol < 1 && lastCol === 0) ok('左栏 0 宽 + 右栏 0 宽（中栏拿到全部空间）')
     else bad('收起后列宽不对：' + ws)
 
     out.push('\n=== 3. 中栏内容与导航轨对齐（之前错位的根因）===')
