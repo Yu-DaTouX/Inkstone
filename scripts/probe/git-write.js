@@ -355,15 +355,94 @@
     const badInput = await waitFor(() => testid('env-new-branch-name'), 6000)
     if (badInput) {
       await typeInto(badInput, 'bad..name')
-      await click(testid('env-create-branch'))
-      const fail = await waitFor(() => testid('git-failure'), 10000)
-      ok(!!fail, '非法分支名被拒并给出说明', textOf(fail).slice(0, 60))
-      const detailBtn = await waitFor(() => testid('git-failure-detail-toggle'), 4000)
-      if (detailBtn) {
-        await click(detailBtn)
-        ok((await waitFor(() => $('.gwrite-fail-raw'), 4000)) !== null, '能展开 git 的原始输出（排查第一现场）')
+      /*
+       * ⚠️ **等按钮可用**再点。disabled 的按钮不派发 click —— 上一步刚结束、
+       * `write.busy` 还没清空时点下去，事件被浏览器直接吞掉，表现成
+       * 「点了没反应」而所有断言都看不出为什么（这次就是这么查了两轮）。
+       */
+      const badBtn = await waitFor(() => {
+        const b = testid('env-create-branch')
+        return b && !b.disabled ? b : null
+      }, 8000)
+      ok(!!badBtn, '非法名字的判断不影响按钮可用性（点下去才知道）')
+      if (badBtn) {
+        await click(badBtn)
+        const fail = await waitFor(() => testid('git-failure'), 10000)
+        ok(!!fail, '非法分支名被拒并给出说明', fail ? textOf(fail).slice(0, 60) : '没有出现失败提示')
+        const detailBtn = await waitFor(() => testid('git-failure-detail-toggle'), 4000)
+        if (detailBtn) {
+          await click(detailBtn)
+          ok((await waitFor(() => $('.gwrite-fail-raw'), 4000)) !== null, '能展开 git 的原始输出（排查第一现场）')
+        }
       }
     }
+
+    /* ── 10. 工作树（W1，方案 §6.2）──────────────────────── */
+
+    /*
+     * 用户工作树的两条边界都在这节里验：
+     *   ① 建出来的是**仓库旁边**的长期目录（不是子代理那种临时容器）
+     *   ② 移除前检查（这里造一个「没有上游」的分支 → 必须被拒，并给出原因）
+     * 断言一律用 window.yan.git.worktrees() 回读主进程，不看界面自报。
+     */
+    await openEnvMenu()
+    const wtItem = await waitFor(() => testid('env-worktrees'), 8000)
+    ok(!!wtItem, '环境菜单里有「工作树」一项')
+    if (wtItem) {
+      await click(wtItem)
+      const wtList = await waitFor(() => testid('env-worktree-list'), 8000)
+      ok(!!wtList, '点开后列出了工作树')
+      const before = await window.yan.git.worktrees(cwd)
+      ok(before.ok === true && before.worktrees.length === 1, '此时只有主工作树', JSON.stringify(before.worktrees.map((w) => w.branch)))
+      ok(before.worktrees[0].main === true, '第一条被标成主工作树')
+
+      const wtName = await waitFor(() => testid('env-worktree-branch'), 6000)
+      ok(!!wtName, '有「新分支名」输入框')
+      if (wtName) {
+        await typeInto(wtName, 'live-wt')
+        const createWt = await waitFor(() => {
+          const b = testid('env-worktree-create')
+          return b && !b.disabled ? b : null
+        }, 8000)
+        ok(!!createWt, '填了名字后「创建并打开」可用')
+        if (createWt) {
+          await click(createWt)
+          const made = await waitFor(async () => {
+            const res = await window.yan.git.worktrees(cwd)
+            return res.worktrees && res.worktrees.length === 2 ? res.worktrees : null
+          }, 30000)
+          ok(!!made, '主进程回读：多了一条工作树', made ? '2' : '超时')
+          const created = made?.find((w) => w.branch === 'live-wt')
+          ok(!!created, '新工作树的分支名是 live-wt')
+          ok(
+            !!created && /-worktrees[\\/]/.test(created.path),
+            '它建在 <仓库名>-worktrees 下（仓库旁边，不是临时目录）',
+            created ? created.path : ''
+          )
+
+          /* 移除：这条分支没有上游 → 必须被拒，并把原因列出来 */
+          const removeBtn = await waitFor(
+            () => {
+              const list = [...document.querySelectorAll('[data-testid="env-worktree-remove"]')]
+              return list.length ? list[list.length - 1] : null
+            },
+            8000
+          )
+          ok(!!removeBtn, '每条非主工作树都有「移除」')
+          if (removeBtn) {
+            await click(removeBtn)
+            const blocked = await waitFor(() => testid('env-worktree-blockers'), 20000)
+            ok(!!blocked, '没有上游时移除被拒，并给出原因', textOf(blocked).slice(0, 80))
+            const still = await window.yan.git.worktrees(cwd)
+            ok(still.worktrees.length === 2, '被拒之后工作树还在（没有偷偷删）', String(still.worktrees.length))
+          }
+        }
+      }
+    }
+
+    /* 收尾：把环境菜单关掉，别让它盖在最后的截图/断言上 */
+    await click(testid('session-project'))
+
   } catch (error) {
     out.push('  ✗ 探针异常：' + (error && error.message ? error.message : String(error)))
   }

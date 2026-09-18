@@ -424,6 +424,35 @@ function registerStubHandlers() {
     state: gitStubRepo()
   }))
   ipcMain.handle('yan:git:remotes', () => ['origin'])
+  /* 工作树（W1）：两条，一条主、一条「砚创建」 */
+  ipcMain.handle('yan:git:worktrees', () => ({
+    ok: true,
+    repoRoot: 'C:/work/pi-desktop',
+    worktrees: [
+      {
+        path: 'C:/work/pi-desktop',
+        head: 'a'.repeat(40),
+        branch: 'main',
+        bare: false,
+        main: true,
+        locked: false,
+        prunable: false,
+        ours: false
+      },
+      {
+        path: 'C:/work/pi-desktop-worktrees/git-review',
+        head: 'b'.repeat(40),
+        branch: 'feat/git-review',
+        bare: false,
+        main: false,
+        locked: false,
+        prunable: false,
+        ours: true
+      }
+    ]
+  }))
+  ipcMain.handle('yan:git:worktreeCreate', () => ({ ok: true, path: 'C:/work/x', branch: 'x', notes: [] }))
+  ipcMain.handle('yan:git:worktreeRemove', () => ({ ok: true, summary: '已移除工作树' }))
   ipcMain.handle('yan:git:refs', () => ({
     ok: true,
     busyBranches: [],
@@ -454,7 +483,7 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'review', 'reviewwrite']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'review', 'reviewwrite']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'review', 'reviewwrite'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
@@ -1349,6 +1378,27 @@ const STATES = {
       return document.querySelector('[data-testid="env-branches"]') ? 'ok' : 'no-branches';
     })()
   `,
+  /*
+   * 工作树区（W1 §6.2）：列出主工作树与「砚创建」的那条，附新建输入与
+   * 目标目录。这张图要能看出**主工作树没有「移除」按钮**（它删不得）。
+   */
+  envworktrees: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(300);
+      document.querySelector('[data-testid="session-project"]')?.click();
+      await sleep(500);
+      document.querySelector('[data-testid="env-worktrees"]')?.click();
+      await sleep(700);
+      return document.querySelector('[data-testid="env-worktree-list"]') ? 'ok' : 'no-worktrees';
+    })()
+  `,
   review: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1396,6 +1446,14 @@ const MUST_HAVE = {
     '[data-testid="env-new-branch-name"]',
     '[data-testid="env-fetch"]',
     '[data-testid="env-push"]'
+  ],
+  envworktrees: [
+    '[data-testid="env-menu"]',
+    '[data-testid="env-worktree-list"]',
+    '[data-testid="env-worktree-remove"]',
+    '[data-testid="env-worktree-branch"]',
+    '[data-testid="env-worktree-create"]',
+    '[data-testid="env-worktree-path"]'
   ],
   reviewwrite: [
     '[data-testid="review-panel"]',

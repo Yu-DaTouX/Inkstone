@@ -17,7 +17,12 @@
  *    比较 = search。**不复用同一个图标承担两层含义**（DESIGN §2.7）。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { GitActionResult, GitRefOption } from '../../../../shared/ipc'
+import type {
+  GitActionResult,
+  GitRefOption,
+  WorktreeBlocker,
+  WorktreeInfo
+} from '../../../../shared/ipc'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -46,6 +51,12 @@ export function EnvironmentMenu() {
   const [refs, setRefs] = useState<GitRefOption[]>([])
   const [busyBranches, setBusyBranches] = useState<string[]>([])
   const [newBranch, setNewBranch] = useState('')
+  const [showWorktrees, setShowWorktrees] = useState(false)
+  const [trees, setTrees] = useState<WorktreeInfo[]>([])
+  const [wtBranch, setWtBranch] = useState('')
+  const [wtPath, setWtPath] = useState('')
+  const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
+  const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
   const wrapRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLButtonElement>(null)
 
@@ -92,6 +103,26 @@ export function EnvironmentMenu() {
     }
   }, [open, showBranches, project])
 
+  /*
+   * 工作树列表也只在展开时拉：它是一条 git 命令 + 一次目录检查，
+   * 而「我有几个工作树」不是每次打开菜单都要看的信息。
+   */
+  useEffect(() => {
+    if (!open || !showWorktrees || !project) return
+    let alive = true
+    void window.yan.git
+      .worktrees(project)
+      .then((res) => {
+        if (alive) setTrees(res.worktrees ?? [])
+      })
+      .catch(() => {
+        /* 拉不到不影响菜单其余部分 */
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, showWorktrees, project, repoView.repo?.worktreeId])
+
   /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
     if (open) firstRef.current?.focus()
@@ -102,6 +133,8 @@ export function EnvironmentMenu() {
     if (!open) {
       setShowBranches(false)
       setNewBranch('')
+      setShowWorktrees(false)
+      setWtBlockers([])
     }
   }, [open])
 
@@ -337,6 +370,154 @@ export function EnvironmentMenu() {
                       : ''}
                 </span>
               </button>
+
+              {/*
+                * 工作树（方案 §6.2）：与子代理的一次性隔离工作树是两回事 ——
+                * 这里建的会被用户长期使用，所以「移除」先检查再动手，
+                * 被拦下时把原因逐条摆出来（不替他 stash / 提交 / 丢弃）。
+                */}
+              <button
+                type="button"
+                role="menuitem"
+                className="env-item"
+                data-testid="env-worktrees"
+                aria-expanded={showWorktrees}
+                onClick={() => setShowWorktrees((v) => !v)}
+              >
+                <Icon name="folder-open" size={14} />
+                <span className="env-label">{t('env.worktrees')}</span>
+                <span className="env-sub">{trees.length > 1 ? String(trees.length) : ''}</span>
+                <Icon name="chevron-right" size={12} className={`env-caret ${showWorktrees ? 'open' : ''}`} />
+              </button>
+
+              {showWorktrees ? (
+                <div className="env-branches env-worktrees" data-testid="env-worktree-list">
+                  {trees.map((w) => (
+                    <div className="env-worktree" key={w.path}>
+                      <span className="env-branch-name" title={w.path}>
+                        {w.branch ?? t('env.detached')}
+                      </span>
+                      {w.main ? <span className="env-branch-tag">{t('env.worktreeMain')}</span> : null}
+                      {!w.main && w.ours ? <span className="env-branch-tag">{t('env.worktreeOurs')}</span> : null}
+                      {!w.main ? (
+                        <button
+                          type="button"
+                          className="env-mini"
+                          data-testid="env-worktree-remove"
+                          disabled={!!write.busy}
+                          onClick={() => {
+                            setWtBlockers([])
+                            void window.yan.git
+                              .worktreeRemove({ cwd: project ?? '', path: w.path, deleteBranch: wtDeleteBranch })
+                              .then((res) => {
+                                if (res.ok) {
+                                  setTrees((prev) => prev.filter((x) => x.path !== w.path))
+                                  repoView.refresh()
+                                  return
+                                }
+                                setWtBlockers(res.blockers ?? [])
+                                /* 没有 blockers 时把失败当普通错误显示（例如 git 自己拒绝） */
+                                if (!res.blockers?.length && res.failure) {
+                                  setWtBlockers([{ kind: 'missing', message: res.failure.message }])
+                                }
+                              })
+                              .catch((e: unknown) =>
+                                setWtBlockers([{ kind: 'missing', message: e instanceof Error ? e.message : String(e) }])
+                              )
+                          }}
+                        >
+                          {t('env.worktreeRemove')}
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+
+                  <label className="env-wt-check">
+                    <input
+                      type="checkbox"
+                      checked={wtDeleteBranch}
+                      data-testid="env-worktree-delete-branch"
+                      onChange={(e) => setWtDeleteBranch(e.target.checked)}
+                    />
+                    <span>{t('env.worktreeDeleteBranch')}</span>
+                  </label>
+
+                  <div className="env-newbranch">
+                    <input
+                      className="env-branch-input"
+                      data-testid="env-worktree-branch"
+                      placeholder={t('env.worktreeBranch')}
+                      value={wtBranch}
+                      spellCheck={false}
+                      onChange={(e) => setWtBranch(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="env-mini"
+                      data-testid="env-worktree-create"
+                      disabled={!!write.busy || !wtBranch.trim()}
+                      onClick={() => {
+                        void window.yan.git
+                          .worktreeCreate({
+                            cwd: project ?? '',
+                            branch: wtBranch.trim(),
+                            startPoint: null,
+                            targetPath: wtPath.trim() || null
+                          })
+                          .then((res) => {
+                            const made = res.ok ? res.path : undefined
+                            if (made) {
+                              setTrees((prev) => [
+                                ...prev,
+                                {
+                                  path: made,
+                                  head: '',
+                                  branch: res.branch ?? null,
+                                  bare: false,
+                                  main: false,
+                                  locked: false,
+                                  prunable: false,
+                                  ours: true
+                                }
+                              ])
+                              setWtBranch('')
+                              setWtPath('')
+                              repoView.refresh()
+                            }
+                          })
+                          .catch(() => {
+                            /* 失败原因由下面的 write.failure 统一展示（走同一条 IPC 形状） */
+                          })
+                      }}
+                    >
+                      {t('env.worktreeCreate')}
+                    </button>
+                  </div>
+                  <input
+                    className="env-branch-input env-wt-path"
+                    data-testid="env-worktree-path"
+                    placeholder={t('env.worktreePath')}
+                    value={wtPath}
+                    spellCheck={false}
+                    onChange={(e) => setWtPath(e.target.value)}
+                  />
+
+                  {wtBlockers.length ? (
+                    <div className="gwrite-fail" data-testid="env-worktree-blockers">
+                      <div className="gwrite-fail-line">
+                        <Icon name="alert-circle" size={12} />
+                        <span className="gwrite-fail-msg">{t('env.worktreeBlocked')}</span>
+                      </div>
+                      {wtBlockers.map((b) => (
+                        <div className="gwrite-fail-hint" key={`${b.kind}-${b.message}`}>
+                          {b.message}
+                          {typeof b.count === 'number' ? `（${b.count}）` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="env-item env-static" data-testid="env-pr" title={t('env.prUnavailable')}>
                 <Icon name="globe" size={14} />
