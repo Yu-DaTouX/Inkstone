@@ -31,6 +31,10 @@ import type {
   GitRefOption,
   GitRepoState,
   GitReviewSnapshot,
+  KnowledgeActionResult,
+  KnowledgeActionRequest,
+  KnowledgeExportResult,
+  KnowledgeListView,
   MainPush,
   ModelInfo,
   WorktreeCreateResult,
@@ -212,6 +216,17 @@ const api: YanBridge = {
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
+  },
+  /*
+   * 项目知识（实施-03 S5）。四个方法都只汇当前会话绑定的项目 ——
+   * 渲染端**不能**指定 projectId（身份由宿主按会话推导，与 `yan knowledge` 同一条边界）。
+   */
+  knowledge: {
+    list: () => invoke<KnowledgeListView>('yan:knowledge:list'),
+    action: (req: KnowledgeActionRequest) => invoke<KnowledgeActionResult>('yan:knowledge:action', req),
+    export: (mode: 'copy' | 'save') => invoke<KnowledgeExportResult>('yan:knowledge:export', mode),
+    sourceSession: (sessionId: string) =>
+      invoke<{ ok: boolean; path?: string; title?: string; error?: string }>('yan:knowledge:sourceSession', sessionId)
   },
   /*
    * 砚自带的受信能力（实施-02 S4）。只读 —— 内置能力没有安装/卸载，

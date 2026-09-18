@@ -512,3 +512,150 @@
   gap: 6px;
   word-break: break-all;
 }
+
+/* ---------------------------------------------------------- 项目知识（实施-03 S5） */
+
+/*
+ * 三个筛选按钮 + 计数。窗口窄时必须能换行 —— `.seg` 是 inline-flex 且不换行，
+ * 三个中文标签加计数比右侧参数列宽时会直接溢出（与 `.seg-scale` 同一个坑）。
+ */
+.kn-filter {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+/* 条目卡：按钮多，标题行顶对齐，别把标题压成一条 */
+.kn-item .set-ctrow {
+  align-items: flex-start;
+}
+.kn-item .set-ctl,
+.kn-editor .set-ctl {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.kn-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+/* 状态用颜色区分，但不是「可信度比分」——只是「这一条处在哪一步」 */
+.kn-badge.st-active {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.kn-badge.st-candidate {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.kn-badge.st-superseded,
+.kn-badge.st-deleted {
+  color: var(--fg-mute);
+}
+.kn-id {
+  color: var(--fg-mute);
+  font-family: var(--font-code);
+  font-size: var(--fs-sm);
+}
+.kn-text {
+  margin-top: var(--sp-1);
+  color: var(--fg);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.kn-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.kn-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 220px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  resize: vertical;
+}
+.kn-textarea:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
+.kn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--sp-3);
+  margin-top: var(--sp-1);
+}
+.kn-evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: var(--sp-2);
+}
+.kn-evidence code {
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  font-family: var(--font-code);
+  font-size: var(--fs-code);
+}
+/* 「来源跳转」是个链接样式的按钮：它真的会切会话，不是装饰 */
+.kn-link {
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kn-link:disabled {
+  color: var(--fg-mute);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+.kn-gone,
+.kn-review {
+  color: var(--warn);
+}
+.kn-excerpt {
+  color: var(--fg-mute);
+}
+.kn-ask {
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+.kn-err {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--err);
+}
+.kn-inline-btn {
+  flex: none;
+}
+.kn-notice.ok .set-desc {
+  color: var(--ok);
+}
+.kn-notice.err .set-desc {
+  color: var(--err);
+}
+.kn-tagline {
+  display: inline-block;
+  margin-bottom: 2px;
+}

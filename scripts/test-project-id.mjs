@@ -31,4 +31,20 @@ export function runProjectIdTests(ok, projectId) {
   const all = new Set([legacyProjectId(b), hashedProjectId(b)])
   const salted = projectIdForCwd(b, (id) => all.has(id))
   ok(!all.has(salted) && salted.startsWith('project-'), '哈希再撞时继续加盐，直到拿到未占用的 id', salted)
+
+  /*
+   * 实施-03 S6：git 工作树与主仓库同前缀 —— 旧算法的 27 字节截断会撞。
+   *
+   * 这不是假设：`<repo>` 与 `<repo>-worktrees/feat` 在前 27 字节上完全相同。
+   * 主仓库**已经登记**（占着那个 id），工作树**未登记** —— 知识身份如果直接
+   * 回退到裸 `legacyProjectId`，两者就会共用一个目录，工作树读到主仓库的知识。
+   * 主进程的 `knowledgeProjectId()` 就是靠这个 `isTaken` 退路挡住的。
+   */
+  const repo = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop'
+  const worktree = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop-worktrees\\feat'
+  ok(legacyProjectId(repo) === legacyProjectId(worktree), '前提：工作树与主仓库的旧算法 id 相同')
+  const registered = new Set([legacyProjectId(repo)])
+  const worktreeId = projectIdForCwd(worktree, (id) => registered.has(id))
+  ok(worktreeId !== legacyProjectId(repo), '未登记的工作树不会共用主仓库的 id')
+  ok(worktreeId === hashedProjectId(worktree), '工作树拿到整条路径的哈希 id（确定性、可重启复现）')
 }

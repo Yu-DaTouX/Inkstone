@@ -55,5 +55,31 @@
   if (extErr.length) log('  ' + extErr.join('\n  '))
   ok(extErr.length === 0, '扩展加载没有报错')
 
+  /*
+   * 6. 项目知识可读（实施-03 S6）：证明**解包实例**也能走通
+   * 「按当前会话推导身份 → 读 YAN_DIR 下的知识」这条路。
+   *
+   * 读写到底落在哪里由 Node 侧核验（探针读不到 YAN_DIR）；
+   * 这里只看「要得回来」与「拿的是自己的项目」。
+   */
+  log('')
+  log('=== 项目知识（解包态）===')
+  let kn = null
+  for (let i = 0; i < 20; i += 1) {
+    try {
+      const res = await window.yan.knowledge.list()
+      if (res && res.ok && res.projectId) {
+        kn = res
+        break
+      }
+    } catch {
+      /* 主进程还没就绪 */
+    }
+    await sleep(500)
+  }
+  log('  knowledge.list = ' + JSON.stringify(kn ? { projectId: kn.projectId, ids: (kn.entries ?? []).map((e) => e.id) } : null))
+  ok(!!kn, '项目知识列表能读回来（IPC 在打包态可用）')
+  ok((kn?.entries ?? []).some((entry) => entry.id === 'kn-packaged'), '读到 fixture 条目（项目身份对得上）')
+
   return out.join('\n')
 })()

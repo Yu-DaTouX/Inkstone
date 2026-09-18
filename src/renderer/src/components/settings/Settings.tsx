@@ -9,9 +9,18 @@ import { previewSound } from '../../lib/sound'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { AuthTab } from './AuthTab'
 import { ContextTab } from './ContextTab'
+import { KnowledgeTab } from './KnowledgeTab'
 import { PackagesTab } from './PackagesTab'
 
-export type SettingsTab = 'auth' | 'appearance' | 'context' | 'sound' | 'packages' | 'status' | 'about'
+export type SettingsTab =
+  | 'auth'
+  | 'appearance'
+  | 'context'
+  | 'knowledge'
+  | 'sound'
+  | 'packages'
+  | 'status'
+  | 'about'
 
 /**
  * 设置面板。
@@ -75,6 +84,7 @@ export function Settings({
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'context', label: t('set.context'), icon: 'layers' },
+    { id: 'knowledge', label: t('set.knowledge'), icon: 'checklist' },
     { id: 'sound', label: t('set.sound'), icon: 'sparkles' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'packages', label: t('set.packages'), icon: 'layers' },
@@ -125,6 +135,8 @@ export function Settings({
             <AppearanceTab lang={lang} setLang={setLang} />
           ) : tab === 'context' ? (
             <ContextTab />
+          ) : tab === 'knowledge' ? (
+            <KnowledgeTab />
           ) : tab === 'sound' ? (
             <SoundTab />
           ) : tab === 'packages' ? (

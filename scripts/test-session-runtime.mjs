@@ -82,4 +82,20 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
     payload: { id: 'late-run', role: 'assistant', text: '旧运行实例迟到' }
   })
   ok(map['session-a'] === beforeRunReplacement, '不同 runId 的低代次事件同样被稳定 sessionId 闸门丢弃')
+
+  /* 子代理列表是跨会话的全局运行资源，不能随会话快照投影或被切换清空。 */
+  map = reduceSessionRuntime(map, runtimeA, {
+    ch: 'subagent',
+    payload: {
+      id: 'sub-1',
+      task: '全局子任务',
+      cwd: 'C:/repo',
+      isolation: 'worktree',
+      status: 'running',
+      startedAt: 1,
+      transcript: [],
+      review: 'none'
+    }
+  })
+  ok(!Object.prototype.hasOwnProperty.call(map['session-a'], 'subagents'), '全局子代理事件不进入会话缓存')
 }

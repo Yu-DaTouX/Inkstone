@@ -44,6 +44,10 @@ import { readSessionMessages } from './session-reader'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
 import { isSafeSessionId } from './context-state-store'
+import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
+import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
+import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
+import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
@@ -133,6 +137,28 @@ export interface BrowserCommandHost {
   screenshot(): Promise<{ mimeType: string; data: Buffer }>
 }
 
+/**
+ * 宿主给当前 pi 实例暴露的子代理入口。
+ *
+ * 这不是 pi 扩展工具：模型仍然只看到原生 bash/read 等工具，
+ * 通过随包 `yan` CLI 进入这里。这样子代理能力仍由砚控制生命周期，
+ * 同时模型能发现并调用它。
+ */
+export interface SubagentCommandContext {
+  cwd: string
+  parentSessionId?: string
+  parentRunId?: string
+  projectId?: string
+}
+
+export interface SubagentCommandHost {
+  run(
+    command: string,
+    params: Record<string, unknown>,
+    context: SubagentCommandContext
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
+}
+
 /* ------------------------------------------------------------ 任务清单 */
 /**
  * pi 的队列模式字段是自由字符串（协议文档只保证这两个值）。
@@ -163,6 +189,11 @@ export class AgentController extends EventEmitter {
    * `episode-fold` 要等状态生成器。阶段启用由主进程策略决定。
    */
   private contextExtension?: string
+  /**
+   * 项目知识注入扩展（实施-03 S3）：只做「读宿主写的注入文件 + 放一条消息」。
+   * 检索与预算全在宿主（`main/project-knowledge.ts`）。
+   */
+  private projectKnowledgeExtension?: string
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
   private browserEnv?: NodeJS.ProcessEnv
@@ -174,6 +205,8 @@ export class AgentController extends EventEmitter {
    * **当前**那个控制器，不会抓住一个已 dispose 的旧实例。
    */
   private getBrowserHost?: () => BrowserCommandHost | null
+  /** `yan subagent …` 的宿主实现；不把它注册为 pi 工具。 */
+  private subagentHost?: SubagentCommandHost
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -335,6 +368,8 @@ export class AgentController extends EventEmitter {
     capabilityGuideExtension?: string
     /** 上下文状态化压缩扩展（N21-4）：Tool Sweep / Task State / Recall / 压缩闸门 */
     contextExtension?: string
+    /** 项目知识注入扩展（实施-03 S3）：读宿主写的注入文件并放到用户消息之前 */
+    projectKnowledgeExtension?: string
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
     browserEnv?: NodeJS.ProcessEnv
@@ -345,6 +380,8 @@ export class AgentController extends EventEmitter {
      * 本身照常启动（任务清单等不受影响）。
      */
     browserHost?: () => BrowserCommandHost | null
+    /** 子代理宿主入口，由 index.ts 注入，按当前 runner 绑定父会话。 */
+    subagentHost?: SubagentCommandHost
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -369,9 +406,11 @@ export class AgentController extends EventEmitter {
     this.languageExtension = opts.languageExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextExtension = opts.contextExtension
+    this.projectKnowledgeExtension = opts.projectKnowledgeExtension
     this.getResponseDetail = opts.getResponseDetail
     this.browserEnv = opts.browserEnv
     this.getBrowserHost = opts.browserHost
+    this.subagentHost = opts.subagentHost
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
   }
@@ -512,6 +551,12 @@ export class AgentController extends EventEmitter {
           : []),
         // 上下文状态化压缩（N21-4）：默认清扫 + 可召回墓碑，阶段启用由 ContextPolicy.kinds 决定
         ...(this.contextExtension ? ['--extension', this.contextExtension] : []),
+        /*
+         * 项目知识注入（实施-03 S3）：宿主本轮先检索并写好注入文件，
+         * 扩展在 `before_provider_request` 把它放到最后一条用户消息之前。
+         * 与其它薄层成员一样：只做「钩子能做、CLI / RPC 做不到」的那一步。
+         */
+        ...(this.projectKnowledgeExtension ? ['--extension', this.projectKnowledgeExtension] : []),
         /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
@@ -748,12 +793,169 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('browser.')) {
       return this.runBrowserCommand(command.slice('browser.'.length), params)
     }
+    if (command.startsWith('subagent.')) {
+      if (!this.subagentHost) {
+        throw new CapabilityCommandError('subagent_unavailable', '子代理宿主入口当前不可用')
+      }
+      return this.subagentHost.run(command, params, {
+        cwd: this.cwd,
+        /* state.sessionId 是真正的父会话；新会话尚未落盘时退回 runner id。 */
+        parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId,
+        parentRunId: this.capabilityOpts?.sessionId,
+        projectId: this.capabilityOpts?.projectId
+      })
+    }
+    if (command.startsWith('knowledge.')) {
+      return this.runKnowledgeCommand(command.slice('knowledge.'.length), params)
+    }
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
       default:
         throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：${command}`)
     }
+  }
+
+  /* ------------------------------------------------ 项目知识命令（实施-03 S4） */
+
+  /** 取一个字符串参数（CLI 的连字符写法与请求文件里的 camelCase 都认）。 */
+  private knowledgeString(params: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = params[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+    }
+    return undefined
+  }
+
+  private knowledgeNumber(params: Record<string, unknown>, key: string): number | undefined {
+    const value = params[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+    return undefined
+  }
+
+  /**
+   * `yan knowledge <动作>` 的实现点（实施-03 §6）。
+   *
+   * 三条硬规则（实施-03 §3/§6）：
+   *   ① **身份不由请求给**：一律用宿主绑定的 `capabilityOpts.projectId`；
+   *      请求里带 `projectId` 时只有两种结果 —— 与宿主一致（忽略）或不一致（拒），
+   *      后者把「越权尝试」变成可观测的错误，而不是静默当成没传；
+   *   ② `propose` **不传 hostCheck** —— 模型自报 `user-confirmed` / `verified` 会被
+   *      存储层拒掉（新条目只会落 `candidate`，等用户确认才进注入）；
+   *   ③ 证据里的文件引用只接受**项目内相对路径**（绝对路径与 `..` 被拒）——
+   *      「文本引用不授予读取权限」是 §4 写死的边界。
+   */
+  private async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
+    const projectId = this.capabilityOpts?.projectId
+    if (!projectId) {
+      throw new CapabilityCommandError('knowledge_no_project', '当前会话没有绑定项目身份，项目知识不可用')
+    }
+    const claimed = typeof params.projectId === 'string' ? params.projectId.trim() : ''
+    if (claimed && claimed !== projectId) {
+      throw new CapabilityCommandError(
+        'knowledge_project_mismatch',
+        '项目知识只认宿主绑定的身份，不接受请求里的 projectId'
+      )
+    }
+    const identity = { projectId, cwd: this.cwd }
+
+    if (action === 'search') {
+      const queryText = this.knowledgeString(params, ['queryText', 'query-text', 'query', 'text'])
+      if (!queryText) {
+        throw new CapabilityCommandError('knowledge_query_required', 'knowledge search 需要 queryText（或 --query-file）')
+      }
+      const entries = await listKnowledge(identity)
+      const result = searchProjectKnowledge(entries, {
+        queryText,
+        limit: this.knowledgeNumber(params, 'limit'),
+        tokenBudget: this.knowledgeNumber(params, 'tokenBudget')
+      })
+      return {
+        data: { hits: result.hits, considered: result.considered, dropped: result.dropped, tokens: result.tokens, reason: result.reason ?? null },
+        summary: {
+          kind: 'knowledge',
+          action: 'search',
+          projectId,
+          count: result.hits.length,
+          tokens: result.tokens,
+          ids: result.hits.map((hit) => hit.id)
+        }
+      }
+    }
+
+    if (action === 'read') {
+      const id = this.knowledgeString(params, ['id'])
+      if (!id || !isSafeKnowledgeId(id)) {
+        throw new CapabilityCommandError('knowledge_id_required', 'knowledge read 需要合法的 id')
+      }
+      const entry = await readKnowledge(identity, id)
+      if (!entry) {
+        throw new CapabilityCommandError('knowledge_not_found', `找不到这条项目知识：${id}`)
+      }
+      return {
+        data: entry,
+        summary: {
+          kind: 'knowledge',
+          action: 'read',
+          projectId,
+          id: entry.id,
+          status: entry.status,
+          revision: entry.revision
+        }
+      }
+    }
+
+    if (action === 'propose') {
+      const raw = params.draft && typeof params.draft === 'object' ? (params.draft as Record<string, unknown>) : params
+      const kind = this.knowledgeString(raw, ['kind'])
+      const text = this.knowledgeString(raw, ['text'])
+      if (!kind || !text) {
+        throw new CapabilityCommandError('knowledge_draft_invalid', 'knowledge propose 需要 kind 与 text')
+      }
+      const evidence = Array.isArray(raw.evidence) ? raw.evidence : []
+      for (const item of evidence) {
+        const file = (item as { file?: unknown })?.file
+        if (file !== undefined && !isSafeRelativeRef(file)) {
+          throw new CapabilityCommandError(
+            'knowledge_evidence_out_of_scope',
+            '证据里的 file 只能是项目内相对路径（不接受绝对路径 / .. / 空值）'
+          )
+        }
+      }
+      const sessionId = typeof raw.sessionId === 'string' && isSafeSessionId(raw.sessionId) ? raw.sessionId : this.capabilityOpts?.sessionId
+      const outcome = await commitKnowledge({
+        identity,
+        request: {
+          id: raw.id,
+          kind,
+          text,
+          tags: raw.tags,
+          evidence: evidence.length > 0 ? evidence : sessionId ? [{ sessionId }] : [],
+          confidenceClass: raw.confidenceClass,
+          validFor: raw.validFor,
+          supersedes: raw.supersedes,
+          expectedRevision: raw.expectedRevision ?? 0
+        }
+        /* 刻意不传 hostCheck：模型不能自证「用户确认」与「证据已核实」 */
+      })
+      if (!outcome.ok) {
+        throw new CapabilityCommandError(`knowledge_${outcome.code}`, outcome.message)
+      }
+      return {
+        data: outcome.entry,
+        summary: {
+          kind: 'knowledge',
+          action: 'propose',
+          projectId,
+          id: outcome.entry.id,
+          status: outcome.entry.status,
+          revision: outcome.entry.revision
+        }
+      }
+    }
+
+    throw new CapabilityCommandError('unknown_command', `未知的 knowledge 动作：${action}`)
   }
 
   /* ------------------------------------------------ 浏览器命令（01-S4b） */
@@ -1070,14 +1272,11 @@ export class AgentController extends EventEmitter {
   }
 
   /**
-   * 把宿主文案里残留的**旧工具名**换成现在真的能用的 CLI 写法。
+   * 把宿主文案里残留的旧工具名换成现在真的能用的 CLI 写法。
    *
-   * 为什么要在这里改而不是去改那两句原文：
-   *   `src/main/browser/ElementRegistry.ts` 与 `src/main/browser.ts` 的
-   *   STALE_ELEMENT 文案（「请重新调用 browser_observe」）是**模型可见的指引**，
-   *   而它们属于别的文件域（本片只动 capability-server / agent / yan-cli / browser.js）。
-   *   与其让模型去调一个已经不存在的工具，不如在回执里把指引换成真命令 ——
-   *   等价性优先于「文案改在源头」的洁癖。
+   * 浏览器服务仍有少量历史错误提示（例如 browser_observe），但模型侧
+   * 的真实入口已经是 yan browser observe；在能力回执边界统一改写，避免
+   * 模型拿到一个无法调用的旧工具名。
    */
   private cliHint(message: string): string {
     return message.replace(/\bbrowser_([a-z_]+)\b/g, (_all, action: string) => {
@@ -1095,8 +1294,7 @@ export class AgentController extends EventEmitter {
   private browserFailure(action: string, res: { error?: string; code?: string }): never {
     const message = this.cliHint(res.error ?? '浏览器操作失败')
     const code =
-      res.code ??
-      (String(res.error ?? '').includes('浏览器尚未打开') ? 'browser_not_open' : `browser_${action.replace(/-/g, '_')}_failed`)
+      res.code ?? (message.includes('浏览器尚未打开') ? 'browser_not_open' : `browser_${action.replace(/-/g, '_')}_failed`)
     throw new CapabilityCommandError(code, message)
   }
 
@@ -2198,6 +2396,42 @@ export class AgentController extends EventEmitter {
 
   /* ---------------------------------------------------------------- 命令 */
 
+  /**
+   * 把这一轮的用户输入交给宿主检索，并把结果写成扩展要读的注入文件（实施-03 S3）。
+   *
+   * 为什么在这一层做：检索（打分 / 预算 / 状态过滤）是业务逻辑，只能在宿主跑 ——
+   * 薄层扩展只允许「读文件 + 放一段消息」。这里 `await` 的意义是保证
+   * **请求发出前**文件已就绪，不然会看到「第一轮没注入、第二轮才注入」的假象。
+   *
+   * 失败一律吞掉：查知识不该拦住用户发消息。宿主那侧失败时也会写一条
+   * `read-failed` 记录（而不是留着上一轮的内容）—— 宁可这轮不注入，
+   * 也不能让模型看到已经过期的材料。
+   */
+  private async prepareKnowledge(text: string): Promise<void> {
+    /*
+     * 会话键取 `capabilityOpts.sessionId`，**不**用 `state.sessionId`：
+     * 扩展只能从环境变量（`YAN_SESSION_ID`）知道自己的会话键，而那个值
+     * 正是 capabilityOpts.sessionId（宿主注入 `yan` CLI 的同一份身份）。
+     * 用 state.sessionId 会让两边写到不同文件 —— 实测踩过：宿主写
+     * `<稳定 sessionId>.json`，扩展去读 `r1.json`，于是「开启了也永远不注入」。
+     */
+    const sessionId = this.capabilityOpts?.sessionId
+    if (!sessionId || !text.trim()) return
+    try {
+      const enabled = await readProjectKnowledgeEnabled()
+      const projectId = this.capabilityOpts?.projectId
+      await prepareProjectKnowledgeInjection({
+        sessionId,
+        /* 身份只来自宿主绑定的 capabilityOpts（不接受调用方自报的 cwd / projectId） */
+        identity: projectId ? { projectId, cwd: this.cwd } : undefined,
+        queryText: text,
+        enabled
+      })
+    } catch {
+      /* 检索失败静默放行 */
+    }
+  }
+
   async send(
     text: string,
     images?: { data: string; mimeType: string }[],
@@ -2238,16 +2472,19 @@ export class AgentController extends EventEmitter {
       payload.streamingBehavior = mode ?? 'steer'
     }
 
+    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('prompt', payload)
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async steer(text: string): Promise<{ ok: boolean; error?: string }> {
+    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('steer', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
+    await this.prepareKnowledge(text)
     const res = await this.rpc!.command('follow_up', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }

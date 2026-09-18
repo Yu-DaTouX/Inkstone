@@ -15,7 +15,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
@@ -82,7 +82,7 @@ if (exeFromArg) {
   }
   console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / yan-cli / app.asar）`)
 }
-/* 2. 隔离沙盒（绝不碰真实会话、派生状态与 localStorage） */
+/* 2. 隔离沙盒（绕不开真实会话、派生状态与 localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
 const dirs = {
   YAN_USER_DATA: join(sandbox, 'userData'),
@@ -93,6 +93,71 @@ const dirs = {
 for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true })
 writeFileSync(join(dirs.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }), 'utf8')
 console.log(C.dim(`  隔离目录 ${sandbox}`))
+
+/*
+ * 2b. 旧用户数据哨兵 + 项目知识 fixture（实施-03 S6）。
+ *
+ * 哨兵：实施-03 §9 要求「用户遗留的 `memory.json` / `soul.md` **不主动删**」。
+ * 光看「应用没报错」证明不了 —— 只有跑完前**逐字节**比对才算。
+ *
+ * 知识 fixture：让打包后的实例真的去读一次项目知识，从而能验证
+ * 「解包实例的读写落在 `YAN_DIR`，不落在安装目录 / 开发目录」。
+ * projectId 用**旧算法**：这就是打包实例自己会算出来的那个（cwd 自动登记）。
+ */
+const LEGACY_SENTINELS = [
+  { name: 'memory.json', body: '{"entries":[{"id":"old-1","text":"用户遗留的旧记忆，不许被删除或改写"}]}\n' },
+  { name: 'soul.md', body: '# soul\n\n用户遗留的旧人设文件，逐字节不许变。\n' }
+]
+for (const base of [dirs.YAN_PI_DIR, dirs.YAN_DATA_DIR]) {
+  for (const sentinel of LEGACY_SENTINELS) writeFileSync(join(base, sentinel.name), sentinel.body, 'utf8')
+}
+const PACKAGED_KNOWLEDGE_ID = 'kn-packaged'
+const PACKAGED_KNOWLEDGE_TEXT = '打包态 fixture：项目知识写在 YAN_DIR 里，不碰安装目录'
+let knowledgeFixture = null
+try {
+  const { pathToFileURL } = await import('node:url')
+  const ids = await import(pathToFileURL(join(root, 'src', 'main', 'project-id.ts')).href)
+  const memory = await import(pathToFileURL(join(root, 'src', 'shared', 'project-memory.ts')).href)
+  const projectId = ids.legacyProjectId(root)
+  const now = new Date().toISOString()
+  const entry = {
+    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+    id: PACKAGED_KNOWLEDGE_ID,
+    projectId,
+    revision: 1,
+    kind: 'fact',
+    status: 'active',
+    text: PACKAGED_KNOWLEDGE_TEXT,
+    textDigest: memory.textDigest(PACKAGED_KNOWLEDGE_TEXT),
+    tags: [],
+    evidence: [{ sessionId: 'fixture' }],
+    confidenceClass: 'user-confirmed',
+    createdAt: now,
+    updatedAt: now
+  }
+  const dir = join(dirs.YAN_DATA_DIR, 'project-knowledge', projectId)
+  mkdirSync(join(dir, 'entries', entry.id), { recursive: true })
+  writeFileSync(join(dir, 'entries', entry.id, 'r1.json'), JSON.stringify(entry, null, 2), 'utf8')
+  writeFileSync(
+    join(dir, 'manifest.json'),
+    JSON.stringify(
+      {
+        schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+        projectId,
+        revision: 1,
+        updatedAt: now,
+        entries: [memory.pointerOf(entry)]
+      },
+      null,
+      2
+    ),
+    'utf8'
+  )
+  knowledgeFixture = { projectId, id: entry.id }
+  console.log(C.dim(`  项目知识 fixture：${projectId.slice(0, 18)}…/${entry.id}`))
+} catch (error) {
+  fail('项目知识 fixture 没种下去（探针会红）', error instanceof Error ? error.message : String(error))
+}
 
 /* 3. 跑探针
    结果优先从 **文件** 读（YAN_PROBE_OUT），stdout 只当兜底：
@@ -209,6 +274,8 @@ if (!exeFromArg) {
     runChecks.push([r.status === 0, `解包里的 yan.mjs 能跑（--help 退出码 ${r.status}）`])
     runChecks.push([/yan — 砚宿主能力 CLI/.test(out), '打出了自己的用法说明'])
     runChecks.push([/tasks apply/.test(out), '用法里含任务写入（模型能从 help 里发现它）'])
+    /* 知识子命令也必须在包里可发现（实施-03 S4/S6） */
+    runChecks.push([/knowledge search/.test(out), '用法里含项目知识检索'])
 
     /*
      * 再跑一次**子命令**（不花 token、也不需要宿主在跑）：
@@ -228,6 +295,44 @@ if (!exeFromArg) {
     runChecks.push([/YAN_CLI_URL/.test(out2), '说明了缺哪些环境（不是笼统的「执行失败」）'])
   } else {
     runChecks.push([false, '解包目录里找不到 resources/yan-cli/yan.mjs'])
+  }
+}
+
+/*
+ * 6. 解包实例的读写隔离 + 旧用户数据完整性（实施-03 S6）。
+ *
+ * 为什么必须在打包态再验一次：开发态读的是仓库里的 `resources/`，而便携版
+ * 的私有数据必须全部落在 `YAN_DIR`（便携版 = EXE 旁边的「砚数据」）——
+ * 写错位置的症状是「安装目录 / 临时解压目录里多了用户数据」，
+ * 而开发态全绿也复现不了（与开头那条 pi 路径的理由相同）。
+ */
+{
+  const knRoot = join(dirs.YAN_DATA_DIR, 'project-knowledge')
+  const manifest = knowledgeFixture ? join(knRoot, knowledgeFixture.projectId, 'manifest.json') : ''
+  const inSandbox = Boolean(manifest) && existsSync(manifest)
+  runChecks.push([inSandbox, '项目知识写在隔离的 YAN_DIR 下（不是安装目录）'])
+  if (inSandbox) {
+    try {
+      const parsed = JSON.parse(readFileSync(manifest, 'utf8'))
+      const ids = (parsed.entries ?? []).map((entry) => entry.id)
+      runChecks.push([ids.includes(PACKAGED_KNOWLEDGE_ID), `fixture 条目仍在（${ids.join(', ') || '（空）'}）`])
+    } catch (error) {
+      runChecks.push([false, '读回项目知识 manifest 失败：' + (error instanceof Error ? error.message : String(error))])
+    }
+  }
+  runChecks.push([!existsSync(join(unpacked, 'project-knowledge')), '安装目录里没有被写进 project-knowledge'])
+  runChecks.push([!existsSync(join(root, 'project-knowledge')), '开发仓库根目录里没有被写进 project-knowledge'])
+  for (const base of [dirs.YAN_PI_DIR, dirs.YAN_DATA_DIR]) {
+    for (const sentinel of LEGACY_SENTINELS) {
+      const path = join(base, sentinel.name)
+      let same = false
+      try {
+        same = readFileSync(path, 'utf8') === sentinel.body
+      } catch {
+        same = false
+      }
+      runChecks.push([same, `旧用户数据逐字节不变：${basename(base)}/${sentinel.name}`])
+    }
   }
 }
 

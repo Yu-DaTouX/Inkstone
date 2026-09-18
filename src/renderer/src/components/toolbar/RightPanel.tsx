@@ -19,7 +19,6 @@ import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
 import { FilePreviewPane } from './FilePreview'
-import { SubagentPreview } from './SubagentPreview'
 import { ReviewPanel } from '../review/ReviewPanel'
 
 /**
@@ -36,8 +35,6 @@ export function RightPanel() {
   const browserOpen = useStore((s) => s.browserState.open)
   /** 只读文件预览：与浏览器详情占同一块区域（方案 5.2） */
   const filePreview = useStore((s) => s.filePreview)
-  /** 子代理详情：同一区域（方案 8.3），优先级高于文件预览 */
-  const subagentPreviewId = useStore((s) => s.subagentPreviewId)
   /**
    * 审查：同一区域的**最高**优先级。
    * 它盖住其它三个的原因很实际：原生 `WebContentsView`（浏览器）永远盖在
@@ -114,7 +111,7 @@ export function RightPanel() {
    * 不再占用工具栏标题行 —— 这样「收起工具栏」对浏览器完全无影响。
    * pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也把浏览器显示出来。
    */
-  if (!open && !browserOpen && !filePreview && !subagentPreviewId && !reviewOpen) return null
+  if (!open && !browserOpen && !filePreview && !reviewOpen) return null
 
   return (
     <aside
@@ -159,8 +156,7 @@ export function RightPanel() {
       ) : (
         <>
           {browserOpen ? <BrowserSurface /> : null}
-          {subagentPreviewId ? <SubagentPreview /> : null}
-          {filePreview && !subagentPreviewId ? <FilePreviewPane /> : null}
+          {filePreview ? <FilePreviewPane /> : null}
         </>
       )}
       {browserOpen && open && !reviewOpen ? <BrowserHeightSplitter asideRef={asideRef} /> : null}

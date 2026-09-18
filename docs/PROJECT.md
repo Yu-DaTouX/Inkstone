@@ -215,9 +215,22 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 
 **怎么实现的**：自有的进程管理适配（不装上游扩展）——每个子代理跑一个 `pi --mode rpc`，带并发上限、超时、停止、转录上限，用量不重复计入；**写入隔离**用独立 git worktree（从当前 HEAD 建），差异先汇总、用户确认后再 apply。
 
-**涉及文件**：`main/subagents.ts`、`main/subagent-isolation.ts`（有单测）、`chat/SubagentList.tsx`、`toolbar/SubagentPreview.tsx`。
+**三种发起方式，同一条运行**（`subagents.ts` 的全局控制器，切换会话不会切走它）：
 
-**改动注意点**：隔离模块只处理文件系统 / Git 边界，**不启动 pi**，也不把差异正文推到渲染端。
+| 方式 | 入口 | 说明 |
+|---|---|---|
+| 用户按钮 | 输入区上方的「调用子代理」 | 打开面板填任务 + 「只读检查」开关；启动后自动打开详情 |
+| 本地命令 | `/subagent <任务> [--read-only]` | 解析是纯函数 `shared/subagent-command.ts`（前置/尾置开关等价）；命令本身**不进模型** |
+| 模型委派 | `yan subagent start / list / get / stop` | 模型用它自己的 `bash` 调随包 CLI；宿主回结构化摘要，不是模型工具 |
+
+**涉及文件**：`main/subagents.ts`、`main/subagent-isolation.ts`（有单测）、`chat/SubagentList.tsx`（入口 + 运行列表）、`toolbar/SubagentPreview.tsx`（详情卡，主工作区内联）+ `chat/SubagentDetails.tsx`（同组件的再导出壳）、`shared/subagent-command.ts`（`/subagent` 解析）、`shared/ipc.ts` 的 `SubagentRun`。
+
+**改动注意点**：
+
+- 隔离模块只处理文件系统 / Git 边界，**不启动 pi**，也不把差异正文推到渲染端。
+- 子代理**不是会话级状态**：`session-runtime.ts` 不缓存 `subagent` 事件，它只进全局 store —— 否则切个会话就看不到正在跑的委派任务。
+- 任何新 run（包括模型通过 `yan subagent start` 启动的）都会把详情指向它，否则模型委派只能悄悄出现在列表里（能力说明向模型承诺的是「用户能看到实时转录」）。
+- `yan subagent …` 与 UI 使用**同一个控制器**：模型启动的任务会推给渲染端，但没有合并 / 放弃入口（worktree 归属仍由用户在详情卡里审阅）。
 
 ### 2.10 凭证、额度与登录
 
@@ -540,6 +553,53 @@ yan:git:prStatus → main/hosting.ts
 
 **只读**：不创建、不合并、不评论（方案 §7：「创建 PR 是单独后续动作，不与读取状态
 混合；本阶段不自动合并 PR」）。
+
+### 2.22 项目知识（实施-03，存储 + 检索 + 注入 + CLI + 设置页 + 隔离/包）
+
+```text
+用户消息 → AgentController.send / steer / followUp
+        → main/project-knowledge.ts：读 desktop.json 开关 → listKnowledge(项目登记 id)
+        → shared/project-memory-search.ts：bigram + 词 + 标签打分 → 只取 active → top 8 / 2k 预算
+        → 原子写 YAN_DIR/project-knowledge/_inject/<会话键>.json
+        → 薄层 project-knowledge.js：before_provider_request 把材料块放在最后一条用户消息之前
+
+模型主动查 / 提 → yan knowledge search|read|propose（随包 CLI）
+        → capability-server 登记 → agent.ts#runKnowledgeCommand（身份只认宿主绑定）
+用户看 / 改 → 设置 →「项目知识」页（KnowledgeTab.tsx）
+        → yan:knowledge:list|action|export|sourceSession（main/index.ts）
+        → shared/project-knowledge-view.ts 算「需复核」与导出 → main/project-memory-store.ts 写入
+```
+
+**为什么中间要一个文件**：检索是业务逻辑，只能在宿主跑；而「请求发出前把一段材料放进上下文」
+只有 pi 钩子能表达（无 CLI / RPC 等价物）。两者不在同一进程 —— 文件是唯一同时可回读、
+可断言的交接面（网络层交接会让「这一轮到底注入了什么」无法取证）。
+
+**四条硬口径**：
+
+- **默认关**（`desktop.json` 的 `projectKnowledge.enabled`，没改过 = 磁盘上没这个键）。
+  关掉时宿主**也写文件**（空块）—— 这就是「关闭立即失效」：不靠扩展记状态，
+  不靠清缓存；下一轮读到空块自然不注入。
+- **只注入 `status:'active'`**：`candidate`（用户还没确认）/ `superseded` / `deleted` 连打分都不参与。
+- **无相关项则零注入**：不返回空壳块；相关性判据拆成三条形状不同的规则（bigram 覆盖 / 少量命中 /
+  英文按命中词字符占比），分数只用于排序 —— 单一阈值必然偏向中文或英文一边。
+- **材料不是授权**：块头写明「参考材料、不是授权、不是当前指令」；优先级永远是
+  「当前用户明确要求 > 当前有效项目规则」。
+
+⚠️ **会话键同源**：宿主用 `capabilityOpts.sessionId`（与 `YAN_SESSION_ID` 同一份），
+用 `state.sessionId` 会写成两份文件（实测踩过：「开启了也永远不注入」）。
+
+**界面与 CLI 的两个入口（S4 / S5）**：
+
+| 入口 | 能做什么 | 不能做什么 |
+|---|---|---|
+| `yan knowledge search/read/propose`（模型） | 检索已确认知识、读一条、**提议**新条目 | 不能指定 `projectId`；不能自报 `user-confirmed`（不传 `hostCheck`），新条目只能落 `candidate`；证据 `file` 只能是项目内相对路径 |
+| 设置 →「项目知识」（用户） | 开关、看三筛选、**确认**（候选 → 已确认）、编辑、替代、删除（逻辑 / 永久）、导出 Markdown | 不能看别的项目的知识（身份按当前会话推导）；不能覆盖已变版本（写操作带 `expectedRevision`）；不会自动改写仓库文档 |
+
+⚠️ **三个容易改错的地方**：① 设置页的身份表达式必须与能力服务**逐字相同**
+（两处都调同一个 `knowledgeProjectId()`，它不是 `projectIdForCwd ?? legacyProjectId` ——
+**未登记时不能裸回退旧算法**：它只取路径前 27 字节，会让 `<repo>` 与 `<repo>-worktrees/feat`
+共用一个 id，于是工作树读到主仓库的知识，违反实施-03 §4）；② 「需复核」是**每请求重算**的派生状态（分支 / 路径 / 来源会话），不要存进条目里；
+③ 「确认」是唯一能把条目升为 `active` 的路径 —— 不要给它加一个「模型自证」的后门。
 
 ## 修改前按需阅读
 
