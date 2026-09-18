@@ -677,6 +677,22 @@
      */
     ok(!testid('env-compare-web'), '本地路径的 remote 不显示「在网上比较」')
 
+    /* ── 14. PR 状态（G3）──────────────────────────────── */
+
+    /*
+     * fixture 的 remote 是**本地 bare 路径** —— 不是托管站，所以这里正确的行为是
+     * 「如实说不支持」，而且**一次外发请求都不发**。这一条同时守住两件事：
+     * 「没有任何远端信息时不猜托管站」和「不为了显示一个状态去打网络」。
+     * （真实 GitHub API 的往返在单测里跑了一次：匿名可读、404 分类。）
+     */
+    const prState = await waitFor(() => testid('env-pr-state'), 8000)
+    ok(!!prState, '环境菜单里有 PR 状态')
+    if (prState) {
+      const text = textOf(prState)
+      ok(!/查询中/.test(text), '已经查完了（不是一直卡在查询中）', text.slice(0, 30))
+      ok(/不支持/.test(text), '本地远端 → 如实说「这个远端不支持」（不猜、不编状态）', text.slice(0, 30))
+    }
+
     /* 收尾：把环境菜单关掉，别让它盖在最后的断言上 */
     if (testid('env-menu')) await click(testid('session-project'))
 
