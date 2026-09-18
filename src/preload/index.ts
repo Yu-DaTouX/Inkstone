@@ -199,6 +199,7 @@ const api: YanBridge = {
     content: (req) => invoke<GitFileContent>('yan:git:content', req),
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
+    remoteWeb: (cwd) => invoke('yan:git:remoteWeb', cwd),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
     worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
     worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req)

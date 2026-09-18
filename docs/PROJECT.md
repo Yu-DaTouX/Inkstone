@@ -395,6 +395,27 @@ index 与工作区，等于替用户做了决定）。
 `branch` 永远是 null。`parseWorktreeList` 与 `git-service.ts` 的
 `busyBranches` 都按「外层 NUL、内层再按换行切」处理，两种写法都能吃。
 
+### 2.17 外部链接（方案 §6.4 / §7）
+
+```
+环境菜单 → yan:git:remoteWeb          （只读：remote 地址 → 托管网页地址）
+         → yan:browser:open           （在内置浏览器打开）
+         → components/review/SourceLinks.tsx（关联外部任务，存 localStorage）
+```
+
+**纯解析在 `shared/git.ts`**（`remoteWebUrl` / `compareWebUrl`，能单测）：认 scp、`ssh://`、
+https 三种写法；**只认 github / gitlab / bitbucket** —— 自建服务的网页路径各不相同，猜一个
+等于给用户一个 404，所以认不出就返回 null、界面**不显示**那一项。三家托管站的 compare
+路径也不同（Bitbucket 的顺序与我们相反：`新..旧`）。`C:oo` 长得和 scp 写法一样，要显式排除。
+
+**关联外部任务链接**（§6.4）：只做三件事 —— 存下 URL 与标题、列出来、打开网页。文案是
+**硬要求**：「不会上传代码、不会同步会话、不会远程执行」。存本地、按会话隔离（与
+「已查看」标记同样的做法）；不做跨设备同步，因为那要先有账号体系，而我们不显示虚假的
+登录 / 同步状态。
+
+**额度**（§6.5）不需要改：`providerQuota` 本来就只认供应商权威字段，失败时保留上一次
+成功的快照，切 provider 清掉旧账户的数字。**不用**上下文剩余量推算账户额度。
+
 ## 修改前按需阅读
 
 - 工作区规则：[AGENTS](../AGENTS.md)。

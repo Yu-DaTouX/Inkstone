@@ -26,7 +26,9 @@ import type {
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { compareWebUrl } from '../../../../shared/git'
 import { shortProject } from '../rail/rail-utils'
+import { SourceLinks } from './SourceLinks'
 import { WriteFailure } from './CommitBar'
 import { useGitWrite, useRepoState } from './useGitReview'
 
@@ -60,6 +62,8 @@ export function EnvironmentMenu() {
   const [wtPath, setWtPath] = useState('')
   const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
   const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
+  /** remote 的托管网页地址（github/gitlab/bitbucket 才认）；null = 不显示「在网上比较」 */
+  const [webRepo, setWebRepo] = useState<string | null>(null)
   /*
    * 携带未提交改动（W2a）。
    * 三份东西是**分开**勾的：已暂存、未暂存、未跟踪 —— 因为在新工作树里
@@ -170,6 +174,27 @@ export function EnvironmentMenu() {
         }
       })
   }, [pickOpen, project])
+
+  /*
+   * 托管网页比较（方案 §7）：只在菜单打开时问一次 remote 的网页地址。
+   * 主进程那边认不出的托管站返回 null —— 那就不显示这一项，
+   * 而不是给一个打不开的链接。
+   */
+  useEffect(() => {
+    if (!open || !project) return
+    let alive = true
+    void window.yan.git
+      .remoteWeb(project)
+      .then((res) => {
+        if (alive) setWebRepo(res.ok ? (res.web ?? null) : null)
+      })
+      .catch(() => {
+        if (alive) setWebRepo(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, project, repoView.repo?.head])
 
   /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
@@ -738,6 +763,35 @@ export function EnvironmentMenu() {
                   {repo.upstream && repo.branch ? `${repo.upstream} → ${repo.branch}` : t('env.chooseBase')}
                 </span>
               </button>
+
+              {/*
+                托管网页比较（方案 §7）：把同一段比较交给托管站渲染。
+                与上面那项是**并列**的，不是替代 —— 内部比较不联网也能用。
+              */}
+              {webRepo && repo.upstream && repo.branch ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="env-item"
+                  data-testid="env-compare-web"
+                  onClick={() => {
+                    const link = compareWebUrl(webRepo, repo.upstream ?? '', repo.branch ?? '')
+                    if (!link) return
+                    setOpen(false)
+                    void window.yan.browser.open(link)
+                  }}
+                >
+                  <Icon name="globe" size={14} />
+                  <span className="env-label">{t('env.compareWeb')}</span>
+                  <span className="env-sub">{new URL(webRepo).host}</span>
+                </button>
+              ) : null}
+
+              {/*
+                关联外部任务链接（方案 §6.4）。文案里的边界是硬要求：
+                不宣称上传代码 / 同步会话 / 远程执行。
+              */}
+              <SourceLinks sessionId={session?.sessionId ?? 'default'} open={open} />
             </>
           ) : (
             <div className="env-item env-static" data-testid="env-notgit" title={t('env.notGitHint')}>

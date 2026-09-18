@@ -23,7 +23,7 @@ import { grantFiles, readGrantedText, readPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
-import { configureWriteContext, listRemotes, runGitAction } from './git-actions'
+import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
 import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
@@ -2187,6 +2187,19 @@ function registerIpc(): void {
           retrySafe: false
         }
       }
+    }
+  })
+
+  /*
+   * remote 的托管网页地址（方案 §7 的托管网页比较，只读）。
+   * 渲染端拿到的只是一个 https 链接 —— 它**不能**让主进程跑任意 git 命令，
+   * 这条通道也一样（remote 名字由主进程自己挑）。
+   */
+  handle('yan:git:remoteWeb', async (cwd: string) => {
+    try {
+      return await remoteWeb(String(cwd ?? ''))
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 
