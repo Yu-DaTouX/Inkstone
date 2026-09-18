@@ -246,11 +246,16 @@ export async function listRefs(root: string): Promise<RefListing> {
   push(remotes.stdout, 'remote')
   push(tags.stdout, 'tag')
 
-  /* worktree list --porcelain -z：每条以 `worktree <path>` 开头，`branch <ref>` 给分支 */
+  /*
+   * worktree list --porcelain -z：`-z` 让**每一行**都以 NUL 结尾
+   *（字段之间也是 NUL），所以先按 NUL 切、再按换行切一次兼容两种写法。
+   * 只按「记录之间是 NUL」解析会让整份输出变成一条记录 —— 于是
+   * 「分支被其它工作树占用」永远不会亮。
+   */
   const busyBranches: string[] = []
   let wtPath = ''
-  for (const seg of worktrees.stdout.split('\0')) {
-    for (const line of seg.split('\n')) {
+  for (const nulChunk of worktrees.stdout.split('\0')) {
+    for (const line of nulChunk.split('\n')) {
       if (line.startsWith('worktree ')) wtPath = line.slice('worktree '.length).trim()
       else if (line.startsWith('branch ')) {
         const ref = line.slice('branch '.length).trim()

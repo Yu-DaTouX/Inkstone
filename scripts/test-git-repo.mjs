@@ -13,6 +13,7 @@
  * 用法：npm run test:unit（由 test-unit.mjs 调起；每个仓库 < 100ms）
  */
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -878,7 +879,185 @@ export async function runGitRepoTests(ok) {
     ok(git(mut, ['ls-files', '-s']) === roBefore.index, '写操作之后，只读快照仍不改 index')
   }
 
-  /* ── 10. 清理 ────────────────────────────────────────── */
+  /* ── 10. 用户工作树（方案 §6.2，W1） ────────────────── */
+
+  console.log('\n--- G10. 用户工作树（真实 git worktree）---')
+
+  {
+    const { listWorktrees, createWorktree, removeWorktree, slugBranch, parseWorktreeList, defaultWorktreeContainer } =
+      await import('../out/test/git-worktree.mjs')
+
+    /* 纯逻辑先测：目录名 slug 与 worktree list 的解析 */
+    ok(slugBranch('feat/git-review') === 'feat-git-review', '分支名里的 / 变成 -（不多出一层目录）', slugBranch('feat/git-review'))
+    ok(slugBranch('  spaced  name  ') === 'spaced-name', '空白收敛成单个 -', slugBranch('  spaced  name  '))
+    ok(slugBranch('a:b*c?d') === 'a-b-c-d', 'Windows 非法字符被替换', slugBranch('a:b*c?d'))
+    ok(slugBranch('---') === 'worktree', '全是符号时退化成 worktree（不留空目录名）', slugBranch('---'))
+    ok(!slugBranch('x'.repeat(200)).includes('/') && slugBranch('x'.repeat(200)).length <= 80, '超长名被截断')
+
+    const container = defaultWorktreeContainer('C:/proj/demo', 'demo')
+    ok(container.replace(/\\/g, '/').endsWith('proj/demo-worktrees'), '默认容器在仓库**旁边**', container)
+
+    /* 真实格式：每条记录内部用换行，记录之间用 NUL（-z 的约定） */
+    const rec = (...lines) => lines.join(String.fromCharCode(10)) + String.fromCharCode(0)
+    const parsed = parseWorktreeList(
+      rec('worktree C:/proj/demo', 'HEAD aaaa', 'branch refs/heads/main') +
+        rec('worktree C:/proj/demo-worktrees/feat', 'HEAD bbbb', 'branch refs/heads/feat') +
+        rec('worktree C:/tmp/detached', 'HEAD cccc', 'detached', 'locked'),
+      container
+    )
+    ok(parsed.length === 3, '解析出三条工作树', String(parsed.length))
+    ok(parsed[0].main === true, '第一条是主工作树（git 的约定）')
+    ok(parsed[1].ours === true, '落在默认容器里 → ours 为真', parsed[1].path)
+    ok(parsed[2].ours === false, '别处的路径不算 ours')
+    ok(parsed[2].branch === null, 'detached 的 branch 是 null')
+    ok(parsed[2].locked === true, 'locked 被认出来')
+
+    /* ── 真实仓库 ── */
+    const wt = join(root, 'wt')
+    await mkdir(wt, { recursive: true })
+    git(wt, ['init', '-q', '-b', 'main'])
+    git(wt, ['config', 'core.autocrlf', 'false'])
+    git(wt, ['config', 'user.name', 'yan-test'])
+    git(wt, ['config', 'user.email', 'yan-test@example.com'])
+    await writeFile(join(wt, 'base.txt'), 'base\n')
+    git(wt, ['add', '-A'])
+    git(wt, ['commit', '-qm', 'wt base'])
+
+    const listing0 = await listWorktrees(wt)
+    ok(listing0.ok === true, '能列出工作树')
+    ok(listing0.worktrees.length === 1, '刚开始只有主工作树', String(listing0.worktrees.length))
+    ok(listing0.worktrees[0].main === true, '那一条是主工作树')
+    ok(listing0.repoRoot.endsWith('wt'), 'repoRoot 指向仓库根', listing0.repoRoot)
+
+    /* 创建：默认位置在仓库旁边 */
+    const created = await createWorktree({ cwd: wt, branch: 'feat/one', startPoint: null, targetPath: null })
+    ok(created.ok === true, '创建工作树成功', JSON.stringify(created.failure))
+    ok(!!created.path && created.path.includes('wt-worktrees'), '默认落在 <仓库名>-worktrees 下', String(created.path))
+    ok(!!created.path && existsSync(created.path), '目录真的存在')
+    ok(!!created.notes && created.notes.some((n) => n.includes('未提交改动不会自动带入')), '明说未提交改动不会带过去')
+    ok(
+      git(created.path, ['rev-parse', '--abbrev-ref', 'HEAD']).trim() === 'feat/one',
+      '新工作树检出的是新分支',
+      git(created.path, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
+    )
+    ok(existsSync(join(created.path, 'base.txt')), '已提交的文件被带过去了')
+    /* 主工作树没被碰过 */
+    ok(!existsSync(join(wt, 'feat')), '主工作树里没有多出工作树目录')
+    ok(git(wt, ['rev-parse', '--abbrev-ref', 'HEAD']).trim() === 'main', '主工作树仍在 main')
+
+    /* 未提交改动**不会**跟着过去（方案 §6.2 的硬要求） */
+    await writeFile(join(wt, 'base.txt'), 'base changed\n')
+    const created2 = await createWorktree({ cwd: wt, branch: 'feat/two', startPoint: null, targetPath: null })
+    ok(created2.ok === true, '带脏工作区也能建（它只从 HEAD 长出来）')
+    ok(
+      (await readFile(join(created2.path, 'base.txt'), 'utf8')) === 'base\n',
+      '新工作树拿到的是**已提交**的内容，不是主工作树的未提交改动'
+    )
+    ok(git(wt, ['status', '--porcelain']).trim().length > 0, '主工作树的未提交改动原样保留')
+
+    /* 拒绝路径 */
+    const dup = await createWorktree({ cwd: wt, branch: 'feat/one', startPoint: null, targetPath: null })
+    ok(dup.ok === false && dup.failure?.code === 'branch-exists', '分支已存在 → 拒绝', dup.failure?.code)
+    const badStart = await createWorktree({ cwd: wt, branch: 'feat/three', startPoint: 'no-such-ref', targetPath: null })
+    ok(badStart.ok === false && badStart.failure?.code === 'branch-missing', '起点不存在 → 拒绝', badStart.failure?.code)
+    const badName = await createWorktree({ cwd: wt, branch: 'bad..name', startPoint: null, targetPath: null })
+    ok(badName.ok === false && badName.failure?.code === 'invalid-input', '非法分支名 → 拒绝', badName.failure?.code)
+    const inside = await createWorktree({
+      cwd: wt,
+      branch: 'feat/four',
+      startPoint: null,
+      targetPath: join(wt, 'inside')
+    })
+    ok(inside.ok === false && inside.failure?.code === 'path-rejected', '目标在仓库内部 → 拒绝', inside.failure?.code)
+    const existing = await createWorktree({
+      cwd: wt,
+      branch: 'feat/five',
+      startPoint: null,
+      targetPath: wt
+    })
+    ok(existing.ok === false && existing.failure?.code === 'path-rejected', '目标目录已存在 → 拒绝', existing.failure?.code)
+
+    /* 有运行任务时拒绝创建（与切分支同一判据） */
+    const busy = await createWorktree({ cwd: wt, branch: 'feat/six', startPoint: null, targetPath: null }, () => true)
+    ok(busy.ok === false && busy.failure?.code === 'busy', '有任务在跑 → 拒绝建工作树', busy.failure?.code)
+
+    /* 列出现在能看到两条（主 + 刚才建的） */
+    const listing1 = await listWorktrees(wt)
+    ok(listing1.worktrees.length === 3, '现在有三条工作树（主 + feat/one + feat/two）', String(listing1.worktrees.length))
+    ok(
+      listing1.worktrees.filter((w) => w.ours).length === 2,
+      '两条被认成「砚创建的」（落在默认容器里）'
+    )
+
+    /* ── 删除：三类内容挡着都要拒绝，且**逐条给原因** ── */
+    const mainBlocked = await removeWorktree({ cwd: wt, path: wt })
+    ok(mainBlocked.ok === false, '主工作树不能删')
+    ok(
+      (mainBlocked.blockers ?? []).some((b) => b.kind === 'main'),
+      '原因是「这是主工作树」',
+      JSON.stringify(mainBlocked.blockers)
+    )
+
+    const notMine = await removeWorktree({ cwd: wt, path: root })
+    ok(notMine.ok === false && notMine.failure?.code === 'path-rejected', '不在工作树列表里的路径 → 拒绝', notMine.failure?.code)
+
+    /* 未提交改动挡着 */
+    await writeFile(join(created.path, 'dirty.txt'), 'x\n')
+    const dirtyBlocked = await removeWorktree({ cwd: wt, path: created.path })
+    ok(dirtyBlocked.ok === false, '有未提交改动 → 拒绝删除')
+    ok(
+      (dirtyBlocked.blockers ?? []).some((b) => b.kind === 'dirty' && (b.count ?? 0) >= 1),
+      '原因里带未提交的文件数',
+      JSON.stringify(dirtyBlocked.blockers)
+    )
+    ok(existsSync(created.path), '被拒之后目录还在（没有偷偷删）')
+    ok((await readFile(join(created.path, 'dirty.txt'), 'utf8')) === 'x\n', '被拒之后未提交的内容也还在')
+
+    /* 未推送提交挡着（没有上游时按「无法判断」列出） */
+    await rm(join(created.path, 'dirty.txt'), { force: true })
+    git(created.path, ['commit', '-q', '--allow-empty', '-m', '工作树里的提交'])
+    const unpushedBlocked = await removeWorktree({ cwd: wt, path: created.path })
+    ok(unpushedBlocked.ok === false, '有未推送提交（或没有上游）→ 拒绝删除')
+    ok(
+      (unpushedBlocked.blockers ?? []).some((b) => b.kind === 'unpushed'),
+      '原因是未推送 / 无法判断',
+      JSON.stringify(unpushedBlocked.blockers)
+    )
+
+    /* 推上去之后就能删了 */
+    const bare2 = join(root, 'wt-remote.git')
+    git(root, ['init', '-q', '--bare', bare2])
+    git(created.path, ['remote', 'add', 'origin', bare2])
+    git(created.path, ['push', '-q', '-u', 'origin', 'feat/one'])
+    const removed = await removeWorktree({ cwd: wt, path: created.path, deleteBranch: false })
+    ok(removed.ok === true, '干净且已推送之后可以删除', JSON.stringify(removed.failure ?? removed.blockers))
+    ok(!existsSync(created.path), '目录真的没了')
+    ok(
+      (await listWorktrees(wt)).worktrees.length === 2,
+      '工作树列表少了一条',
+      String((await listWorktrees(wt)).worktrees.length)
+    )
+    ok(git(wt, ['branch', '--list', 'feat/one']).trim().length > 0, 'deleteBranch 为假时分支保留')
+    /* 主工作树最后确认还活着 */
+    ok(existsSync(join(wt, 'base.txt')), '主工作树始终没被碰')
+
+    /* 清理第二条工作树（它还在，留着会让下一次跑测试的目录名冲突） */
+    /*
+     * ⚠️ 不再 remote add：worktree **共享同一份 .git/config**，第一个工作树
+     * 已经加过 origin 了，再加会报 `remote origin already exists`（第一次跑
+     * 测试就是这么被吞掉的 —— catch 顺手把后面的 push 也跳过了）。
+     */
+    try {
+      git(created2.path, ['push', '-q', '-u', 'origin', 'feat/two'])
+    } catch (e) {
+      console.log('  ⓘ feat/two 推送失败：' + String(e.stderr || e.message).split(String.fromCharCode(10))[0])
+    }
+    const removed2 = await removeWorktree({ cwd: wt, path: created2.path, deleteBranch: true })
+    ok(removed2.ok === true, '第二条也能正常删除', JSON.stringify(removed2.failure ?? removed2.blockers))
+    ok(git(wt, ['branch', '--list', 'feat/two']).trim().length === 0, 'deleteBranch 为真时分支被删掉（已合并/已推送）')
+  }
+
+  /* ── 11. 清理 ────────────────────────────────────────── */
 
   await rm(root, { recursive: true, force: true }).catch(() => {})
 }

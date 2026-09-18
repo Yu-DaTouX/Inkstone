@@ -1180,6 +1180,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
+      entryPoints: ['src/main/git-worktree.ts'],
+      outfile: 'out/test/git-worktree.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
       entryPoints: ['src/main/git-diff.ts'],
       outfile: 'out/test/git-diff.mjs',
       bundle: true,
