@@ -224,6 +224,7 @@
   "env.worktreeNew": "新建工作树",
   "env.worktreeOurs": "砚创建",
   "env.worktreePath": "目标目录（留空用默认）",
+  "env.worktreeRegistered": "已登记为项目",
   "env.worktreeRemove": "移除",
   "env.worktreeStart": "起点",
   "env.worktrees": "工作树",
