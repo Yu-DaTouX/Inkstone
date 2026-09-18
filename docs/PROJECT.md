@@ -292,6 +292,56 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
    （用户会以为没改动）或一个空 diff。未跟踪的二进制靠嗅探前 8000 字节的 NUL。
 
 
+### 2.15 Git 写操作：分支 / 暂存 / 提交 / 推送（方案 G2）
+
+```
+渲染端  ReviewPanel（文件行暂存 + 底部提交区）/ EnvironmentMenu（分支 / 拉取 / 推送）
+          └── useGitWrite（hook）→ window.yan.git.action
+主进程  yan:git:action → main/git-actions.ts（**唯一**会改用户仓库的文件）
+          ├── shared/git-actions.ts   纯逻辑：失败分类 / 输入校验 / 版本摘要 / 命令构造
+          └── git-service.ts          gitRun / readExpected / 仓库与 ref 校验
+```
+
+**请求形状**：`{ requestId, cwd, expected, kind, … }`。`expected` 是用户**看着的**
+那份状态（HEAD + index 摘要 + 工作区摘要），来自同一时刻读到的审查快照或
+`yan:git:state` —— 不是渲染端自己另读一次。
+
+**四条不能绕过的约束**：
+
+1. **按仓库串行**（`repoId` = `.git` 共同目录，所以多个工作树共享同一把锁）。
+   两个写操作并发跑 git 会撞 `index.lock`，而那种失败信息对用户毫无意义。
+2. **执行前复核预期版本，但分级**：
+   - `commit` 全比三件套 —— 它是唯一会把用户**没看过**的内容写进历史的动作，
+     `indexDigest`（`ls-files -s` 的摘要）是唯一拦得住「内容被换了但状态码没变」的判据
+   - 未指定起点的 `create-branch` 只看 HEAD（新分支从 HEAD 长出来）
+   - 其余**不比**：暂存幂等，切分支 / 推送由 git 自己的检查兜住
+     （脏工作区、非快进）。一律全比会造出假冲突（连点两个文件的暂存、
+     提交后立刻推送都会被拒），而假冲突的代价是用户学会无视提示
+3. **不覆盖用户改动**：不 `stash` / `reset` / `clean` / force push，
+   **不跳过 hook**（不传 `--no-verify`）。脏工作区能不能切分支由 git 判，
+   我们只把它的拒绝理由**原样转述**（`dirty-blocks-switch`）。
+4. **超时后不无条件重试**：被杀之后重新读 HEAD，用实际状态说话
+   （`committed` 字段）。推送超时则明说「结果未知，先看待推送数」。
+
+**失败必须分类**（`GitFailureCode`）：身份未配置 / hook 拒绝 / 签名失败 /
+lock / 冲突 / 认证失败 / 非快进 / 无上游 / 分支被占用 / 无首提交 / 无可提交 …
+每类给人话 + **可执行的下一步** + `retrySafe` + **git 的原始输出**（可折叠）。
+分类不中就如实说 `unknown`，**不编原因**。
+
+⚠️ **hook 拒绝只透传 hook 自己的输出**（2026-09-18 实测：hook 里 echo 一句 +
+exit 1，git 的 stderr 就是那一句，没有任何前缀）。所以分类不中时要去查
+「这个仓库到底有没有 `pre-commit` / `commit-msg` 文件」再下判断 ——
+依据是**事实**，message 里也说「很可能是它」。
+
+**切换分支前的运行任务阻断在主进程侧**（`configureWriteContext({ hasRunningTask })`
+由 `index.ts` 注入 runner 状态）：界面路径可以被绕过，主进程是最后一道。
+判据是「该 cwd 有 `running` 的 runner」——**别的进程**（终端里的 git、编辑器）
+不受我们控制，只能由 git 的 lock 与检查兜住。
+
+**「提交并推送」是两个有结果记录的步骤**：提交成功、推送失败时**保留提交**，
+重试只重试推送。推送的 `expected` 用的是提交**之后**的 HEAD（继续用提交前的
+会被正确地拒成 stale —— 那正是复核在起作用的证据）。
+
 ## 修改前按需阅读
 
 - 工作区规则：[AGENTS](../AGENTS.md)。

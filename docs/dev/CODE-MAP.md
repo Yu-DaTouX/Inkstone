@@ -62,6 +62,7 @@ pi 吐事件
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
 | `ipc.ts` | 2168 | 主进程 ↔ 渲染进程的**全部**共享类型与常量：`MainPush`、`SessionState`、`RuntimeEnvelope`、`YanBridge`、`AppSettings`、工具分区、面板宽度夹取…（Git 审查的类型不在这里，从 `./git` 转发，见下行） | **被 44 个文件 import**，是全仓第一枢纽。改它必然牵动 `preload/index.ts`（桥）与 `store.ts`（消费） |
+| `git-actions.ts` | 604 | **Git 写操作的共享契约 + 纯逻辑（方案 G2）**：请求 / 结果类型、失败分类（把 git 的 stderr 变成「身份未配置 / hook / lock / 非快进…」+ 可执行提示 + `retrySafe`）、提交说明与分支名校验、命令参数构造（`--` 终止符、无首提交绕开 `HEAD`）、长度前缀的版本摘要。**零 IO**，所以能被单测直接喂字符串 | `main/git-actions.ts`、`components/review/*`；单测 `test-git-actions.mjs` |
 | `git.ts` | 987 | **Git 审查的共享类型 + 纯解析（方案 G1）**：范围 → git 参数的映射、`status --porcelain=v2 -z` / `diff --raw -z` / `--numstat -z` / unified diff 的结构化解析、内容形态判定、未修改区的行号区间、已查看的键。**不做任何 IO**（渲染端也要 import），所以能在没有 Electron 的环境下被单测 | `main/git-service.ts`、`main/git-diff.ts`、`components/review/*`；单测 `test-git-review.mjs`（124 条） |
 | `turns.ts` | 357 | 把扁平 `UIMessage[]` 折成「一轮一块」；附带 `cacheHitRate`、段落切分 | `TurnView.tsx`、`UsageBar.tsx`、`ConversationOutline.tsx`；有单测 `test-turns.mjs` |
 | `model-capabilities.ts` | 95 | 归一化 pi 的模型描述符：缺失字段一律 `unknown`，**绝不因为字段缺失就判成 unsupported** | `agent.ts`（`setStateFrom`）、`Pickers.tsx`；单测 `test-model-capabilities.mjs` |
@@ -163,6 +164,7 @@ pi 吐事件
 | 文件 | 行 | 功能 | 联动 |
 |---|---|---|---|
 | `git-service.ts` | 414 | Git 只读查询的底座：`execFile` 封装（参数数组、**不经 shell**、关掉 external diff/textconv 的两道环境变量）、仓库发现（30s 缓存 + `.git` mtime 失效）、`status --porcelain=v2`、refs 列表、worktree 占用分支、ref / 路径校验、未跟踪文件的有界元数据（行数 / 大小 / NUL 嗅探 / LFS） | `git-diff.ts`、`index.ts`；单测 `test-git-review.mjs` / `test-git-repo.mjs`（真实仓库） |
+| `git-actions.ts` | 659 | **写操作 —— 唯一会改用户仓库的文件**：按仓库串行、预期版本分级复核、八个动作（暂存 / 取消暂存 / 批量 / 提交 / 切分支 / 新建分支 / 拉取 / 推送）、超时后重读 HEAD、hook 文件探测。「应用会不会改用户的 Git、怎么改」只看这一个文件就能答完 | `shared/git-actions.ts`、`git-service.ts`；单测 `test-git-actions.mjs` / `test-git-repo.mjs`；live `gitwrite` |
 | `git-diff.ts` | 614 | 审查数据层：变更清单（raw + numstat + status 合成，**按范围过滤 status 条目**）、单文件 patch（结构化 hunk）、两侧内容（图片走 **buffer** 编码）、未跟踪文件合成「全新增」hunk | 同上；live `gitreview` |
 
 ⚠️ **不要复用 `subagent-isolation.ts` 的 `collectDiff()`**：它为了生成归档补丁会在隔离 worktree 里 `git add -A`，主工作区调一次就会改用户的暂存区。证据：`test:live -- gitreview` 的 `afterExit: gitReviewReadonly` 逐字节比对 `status` / `ls-files -s` / `diff --cached --numstat` / `HEAD`。
@@ -247,7 +249,8 @@ pi 吐事件
 | `ReviewPanel.tsx` | 411 | 审查面板：范围选择、统计、两端比较的基准下拉、逐文件卡片 + 懒加载 patch、关闭 / 刷新 / 全部标记已查看 |
 | `ChangedFileTree.tsx` | 232 | 变更文件树：扁平清单折成目录树（`buildFileTree` 纯函数）、文件名 / 类型筛选、已查看进度 |
 | `DiffViewer.tsx` | 256 | 结构化 hunk 渲染（两列行号 + 增删底色）与「N 行未修改」的**真展开**；含 `ImageDiff`（前后对照 + 适配 / 原尺寸） |
-| `useGitReview.ts` | 428 | 数据钩子：仓库状态 / 快照（带请求闸门丢弃迟到响应）/ patch 懒加载缓存 / 两侧内容 / 已查看（localStorage） |
+| `CommitBar.tsx` | 192 | 提交区（方案 §5.2 / §5.3）：说明输入（Ctrl+Enter 提交）、提交 / 提交并推送、仓库与分支、已暂存数、设置上游、失败提示（分类 + 可折叠的原始输出）。**刻意没有「丢弃改动」** | 「提交并推送」在渲染端拆成两步调用，所以提交成功、推送失败时提交被保留 |
+| `useGitReview.ts` | 539 | 数据钩子：仓库状态 / 快照（带请求闸门丢弃迟到响应）/ patch 懒加载缓存 / 两侧内容 / 已查看（localStorage） |
 
 ### 5.5 设置与外壳
 
@@ -331,15 +334,15 @@ pi 吐事件
 | `lib/stdio-guard.mjs` | 独立 Electron 脚本的 stdio 护栏（导入即生效）：EPIPE 容忍、`uncaughtException` → 退出码 1（不然 Electron 会弹模态框把父进程一起拖死）、`muteMissingHandlerNoise()` 静音预期内的 handler 缺失。理由见 [MAINTENANCE](MAINTENANCE.md) |
 | `visual-matrix-run.mjs` | 视觉矩阵分批入口：每组一个 Electron 进程。**超时收整棵树 + 信号转发**（不再用 `spawnSync`：它阻塞事件循环，子进程一卡就永久不返回） |
 
-### 7.2 单测模块（53 个 `test-*.mjs`）
+### 7.2 单测模块（55 个 `test-*.mjs`）
 
-按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / **`git-review`（G1 纯解析，124 条）** / **`git-repo`（G1 真实 git 仓库）** / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
+按被测目标分：`at-query` / `build-info` / `capability-request` / `chrome-profile` / `command-registry` / `compaction-status` / `context-deep` / `context-policy` / `context-producer` / `context-safety` / `context-stage-runtime` / `context-state`（S1）/ `context-transform`（S2–S6）/ `credentials` / `exit-snapshot` / `filerefs` / `files` / **`git-review`（G1 纯解析，124 条）** / **`git-repo`（G1+G2 真实 git 仓库，含写操作）** / **`git-actions`（G2 失败分类与命令构造，42 条）** / `ipc-error` / `language-extension` / `links` / `manual-title` / `model-capabilities` / `network-boundary` / `network-policy` / `oauth` / `project-id` / `project-session` / `question` / `queue-items` / `rail-order` / `remote` / `response-detail` / `runners` / `session-layout` / `session-runtime` / `slash-query` / `snapshots` / `stdio-guard` / `stream-deltas` / `stream-width` / `subagent-isolation` / `subagents` / `title-samples` / `todo-history` / `turns` / `workspace-changes` / `zoom`。
 
 > `cookie-transfer` 是**独立**入口（`node scripts/test-cookie-transfer.mjs`），不在 `test-unit.mjs` 的链上；
 > `test-live` / `test-packaged` / `test-unit` 是入口本身。数模块数（`test-unit.mjs` 里被 import 的那些）用于
 > 对照 HANDOFF 的「单测 N/N 通过」。
 
-### 7.3 live 探针（109 个文件；105 条在 `CASES` 里）
+### 7.3 live 探针（110 个文件；106 条在 `CASES` 里）
 
 在**真实渲染进程**里执行（`window.__yanStore` 可直接驱动状态）。
 按主题分组（新增探针同时要在 `test-live.mjs` 的 `CASES` 注册）：
@@ -422,7 +425,8 @@ pi 吐事件
 | 改子代理隔离/生命周期 | `subagents.ts`（生命周期、转录、归档）+ `subagent-isolation.ts`（worktree/补丁）+ `SubagentPreview.tsx`；证据：`test-subagents.mjs` + `test:live -- subagentpair`（真起两个以上 pi 子进程） |
 | 改会话运行实例/切换 | `runners.ts`（`select` 的命中/复用/拒绝、`RUNNER_LIMIT`、`statuses()`）+ `store.ts` 的 `applyPush` 身份过滤与 `sessionRuntimes` 缓存 + `Composer.tsx`（按钮的 `busy` 取 `isStreaming`，工具执行期间为 false）；证据：`test:live -- sessionrunners`（注入推送，不连 pi）+ `test:live -- sessionab`（真实三会话：切走不停 / 同 cwd 拒绝 / 单独停止 / 退出落盘） |
 | 改本地斜杠命令 | `main/command-registry.ts`（`LOCAL_COMMANDS` + 来源分类）→ `Composer.tsx` 的 `localName` 分支（`/new` `/compact` `/browser` `/model` `/login` `/subagent` 真的在这里执行；**参数是契约**：`/new` 必须带 `scope:'global'`、`/browser` 无参必须传 `undefined`）→ `store.ts` 对应动作。兼容来源与 `executable:false` 必须继续被吞掉（不发模型）。证据 `test:live -- slashcmd`（19 节，含三次反向验证） |
-| 改 Git 审查（环境菜单 / 审查面板） | 数据层是 `shared/git.ts`（纯解析，零 IO）→ `main/git-service.ts`（命令与边界）→ `main/git-diff.ts`（清单 / patch / 内容）→ `yan:git:*`。**三条不要放开**：① 不碰 `subagent-isolation.collectDiff()`（它会 `git add -A`）；② 渲染端不能传 git 命令，ref 走 `refLooksSafe`、路径走 `safeRepoPath`；③ 只读查询带 `--no-optional-locks`（`status` 默认会写 index）。回归网：`test-git-review.mjs` + `test-git-repo.mjs`（真仓库，含 index 逐字节不变的断言）+ `test:live -- gitreview`（含 `afterExit` 只读比对）；视觉矩阵 `envmenu` / `review` 状态 |
+| 改 Git **写**操作（暂存 / 提交 / 分支 / 推送） | **全部**在 `main/git-actions.ts` 一个文件里（`git-service.ts` / `git-diff.ts` 里没有 `add`/`commit`/`switch`/`reset`/`stash`）。三条不要放开：① 不碰 `subagent-isolation.collectDiff()`；② 不复核预期版本而一律比三件套会造出假冲突（分级理由见文件头）；③ 不 stash / reset / force / `--no-verify`。回归网：`test:unit`（含 `test-git-repo.mjs` 的 G9 节，真仓库真写）+ `test:live -- gitwrite`（退出后用真 git 核对提交与 bare remote）；视觉 `reviewwrite` / `envbranches` |
+| 改 Git 审查（环境菜单 / 审查面板，只读） | 数据层是 `shared/git.ts`（纯解析，零 IO）→ `main/git-service.ts`（命令与边界）→ `main/git-diff.ts`（清单 / patch / 内容）→ `yan:git:*`。**三条不要放开**：① 不碰 `subagent-isolation.collectDiff()`（它会 `git add -A`）；② 渲染端不能传 git 命令，ref 走 `refLooksSafe`、路径走 `safeRepoPath`；③ 只读查询带 `--no-optional-locks`（`status` 默认会写 index）。回归网：`test-git-review.mjs` + `test-git-repo.mjs`（真仓库，含 index 逐字节不变的断言）+ `test:live -- gitreview`（含 `afterExit` 只读比对）；视觉矩阵 `envmenu` / `review` 状态 |
 | 加单测 | `scripts/test-<module>.mjs` + 在 `test-unit.mjs` 里用 esbuild 编译被测模块（参考 `at-query` 的写法） |
 | 删任何样式/组件 | 先核对导入顺序与动态类名；`stage1`/`stage2`/`redesign` 名字旧不代表无用 |
 
