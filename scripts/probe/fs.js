@@ -148,6 +148,16 @@
     } else bad('键盘探针无法执行 Home')
     if (await key('', 'End')) {
       const endPath = activePath()
+      /* 诊断：把「焦点在哪 / DOM 里几行 / 最后一行是谁 / 展开态」一次打全 ——
+         这个失败我先后猜了四种原因（顺序依赖、detached 节点、截断分页、cwd 重置）
+         全不对，最后是靠这行诊断定的案。**猜四次不如打印一次。** */
+      const domPaths = qa('.rp-fs-row').map((r) => r.dataset.path)
+      out.push(
+        '  End 之后：active=' + JSON.stringify(endPath) +
+        ' DOM行数=' + domPaths.length +
+        ' 最后一行=' + JSON.stringify(domPaths[domPaths.length - 1]) +
+        ' 含src/main=' + domPaths.includes('src/main')
+      )
       if (endPath && document.querySelector(`[data-tree-path="${CSS.escape(endPath)}"]`)) ok('End 移到最后一个可见节点')
       else bad('End 没有移到最后一个可见节点')
     } else bad('键盘探针无法执行 End')
