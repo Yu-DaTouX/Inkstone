@@ -20,15 +20,18 @@ import type {
   FileSearchResult,
   FileTextResult,
   ForkPoint,
-  GitFileContent,
   GitActionExpected,
   GitActionResult,
+  GitFileContent,
   GitFilePatch,
   GitRefOption,
   GitRepoState,
   GitReviewSnapshot,
   MainPush,
   ModelInfo,
+  WorktreeCreateResult,
+  WorktreeListing,
+  WorktreeRemoveResult,
   PeekResult,
   PiInfo,
   PiProbe,
@@ -195,7 +198,10 @@ const api: YanBridge = {
     patch: (req) => invoke<GitFilePatch>('yan:git:patch', req),
     content: (req) => invoke<GitFileContent>('yan:git:content', req),
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
-    remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd)
+    remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
+    worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
+    worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
+    worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req)
   },
 
   /* ---- 设置 ---- */

@@ -24,6 +24,7 @@ import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
 import { configureWriteContext, listRemotes, runGitAction } from './git-actions'
+import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
@@ -2110,6 +2111,71 @@ function registerIpc(): void {
       }
     }
   })
+  /*
+   * ---- 用户工作树（方案 §6.2，W1）----
+   *
+   * 注意与子代理隔离工作树的区别：那条路径是「一次性容器 + --force 清理」，
+   * 这里建的会被用户长期使用，所以删除前逐项检查，且**没有** force 入口。
+   * 「有任务在跑」的判据与切分支同一个（注入的 runner 状态）。
+   */
+  handle('yan:git:worktrees', async (cwd: string) => {
+    try {
+      return await listWorktrees(String(cwd ?? ''))
+    } catch (error) {
+      return {
+        ok: false,
+        repoRoot: '',
+        worktrees: [],
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+  handle('yan:git:worktreeCreate', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return await createWorktree(
+        {
+          cwd: String(raw.cwd ?? ''),
+          branch: String(raw.branch ?? ''),
+          startPoint: typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null,
+          targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null
+        },
+        (dir) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir))
+      )
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: 'unknown',
+          message: error instanceof Error ? error.message : String(error),
+          retrySafe: false
+        }
+      }
+    }
+  })
+  handle('yan:git:worktreeRemove', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return await removeWorktree(
+        {
+          cwd: String(raw.cwd ?? ''),
+          path: String(raw.path ?? ''),
+          deleteBranch: !!raw.deleteBranch
+        },
+        (dir) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir))
+      )
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: 'unknown',
+          message: error instanceof Error ? error.message : String(error),
+          retrySafe: false
+        }
+      }
+    }
+  })
+
   handle('yan:git:remotes', async (cwd: string) => {
     try {
       const repo = await resolveRepo(String(cwd ?? ''))

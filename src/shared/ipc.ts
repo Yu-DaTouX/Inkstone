@@ -29,7 +29,7 @@ export type {
   GitFailure,
   GitFailureCode
 } from './git-actions'
-import type { GitActionExpected, GitActionRequest, GitActionResult } from './git-actions'
+import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from './git-actions'
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
    这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
@@ -1667,6 +1667,67 @@ export interface GitBridge {
   action(req: GitActionRequest): Promise<GitActionResult>
   /** 仓库配置的 remote 名（推送 / 拉取的下拉与校验） */
   remotes(cwd: string): Promise<string[]>
+  /**
+   * **用户工作树**（方案 §6.2，W1）。
+   *
+   * 与子代理的一次性隔离工作树是两回事：这里建的工作树在仓库旁边、用户看得见、
+   * 关掉应用还在，删除前会逐项检查未提交与未推送内容。契约里**没有** force 选项。
+   */
+  worktrees(cwd: string): Promise<WorktreeListing>
+  worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
+  worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
+}
+
+export interface WorktreeInfo {
+  path: string
+  head: string
+  branch: string | null
+  bare: boolean
+  main: boolean
+  locked: boolean
+  prunable: boolean
+  ours: boolean
+}
+
+export interface WorktreeListing {
+  ok: boolean
+  repoRoot: string
+  worktrees: WorktreeInfo[]
+  error?: string
+}
+
+export interface WorktreeCreateRequest {
+  cwd: string
+  branch: string
+  startPoint: string | null
+  targetPath: string | null
+}
+
+export interface WorktreeCreateResult {
+  ok: boolean
+  path?: string
+  branch?: string
+  notes?: string[]
+  failure?: GitFailure
+}
+
+export interface WorktreeBlocker {
+  kind: 'running' | 'dirty' | 'unpushed' | 'main' | 'locked' | 'missing'
+  message: string
+  count?: number
+}
+
+export interface WorktreeRemoveRequest {
+  cwd: string
+  path: string
+  deleteBranch?: boolean
+}
+
+export interface WorktreeRemoveResult {
+  ok: boolean
+  blockers?: WorktreeBlocker[]
+  summary?: string
+  failure?: GitFailure
 }
 
 /** 渲染进程 → 主进程 的调用（全都返回 Promise） */
