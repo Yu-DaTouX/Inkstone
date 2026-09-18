@@ -25,6 +25,7 @@ import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
 import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
 import { configurePackageContext, listPackages, runPackageAction } from './packages'
+import { listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from './sources'
 import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
@@ -2214,6 +2215,72 @@ function registerIpc(): void {
    *   · **hasRunningTask** —— 扩展是 pi 启动时加载的，正在跑的回合与磁盘上的
    *     包集合必须一致，所以有任务时直接拒绝。
    */
+  /*
+   * 会话来源（§8 的 S1）。
+   *
+   * 只有 addImage / removeImage 会写磁盘，而且只写数据目录下属于这个会话的副本 ——
+   * 文件引用（用户的原文件）**永远不写也不删**，removeImage 那边还有一道
+   * 「拼出来的路径必须还在 sources 目录里」的兜底。
+   */
+  handle('yan:sources:list', async (sessionId: string) => {
+    try {
+      return listImagesForSession(String(sessionId ?? ''))
+    } catch (error) {
+      return { ok: false, images: [], dir: '', error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  handle('yan:sources:addImage', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return saveImage({
+        sessionId: String(raw.sessionId ?? ''),
+        name: String(raw.name ?? ''),
+        mimeType: String(raw.mimeType ?? ''),
+        base64: String(raw.base64 ?? '')
+      })
+    } catch {
+      return null
+    }
+  })
+
+  handle('yan:sources:verifyFiles', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      const entries = Array.isArray(raw.entries)
+        ? raw.entries
+            .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+            .map((x) => ({
+              path: String(x.path ?? ''),
+              name: typeof x.name === 'string' ? x.name : undefined,
+              addedAt: typeof x.addedAt === 'number' ? x.addedAt : undefined
+            }))
+            .filter((x) => x.path)
+        : []
+      return verifyFiles(String(raw.sessionId ?? ''), entries)
+    } catch {
+      return []
+    }
+  })
+
+  handle('yan:sources:removeImage', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return removeImage(String(raw.sessionId ?? ''), String(raw.sourceId ?? ''))
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  handle('yan:sources:readImage', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return readImage(String(raw.sessionId ?? ''), String(raw.sourceId ?? ''))
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   handle('yan:packages:list', async (cwd: string) => {
     try {
       return listPackages(String(cwd ?? ''))
