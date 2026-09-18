@@ -1082,6 +1082,8 @@ function buildFixtureProject(base) {
   wgit(['config', 'user.email', 'yan-test@example.com'])
   put(join('write', 'a.txt'), 'a1\na2\na3\n')
   put(join('write', 'b.txt'), 'b1\n')
+  /* dirty.txt 后面会改成未暂存状态，专门留给「携带未提交改动」那一节 */
+  put(join('write', 'dirty.txt'), 'clean\n')
   mk('write', 'src')
   put(join('write', 'src', 'app.ts'), 'export const v = 1\n')
   wgitC('add', '-A')
@@ -1099,6 +1101,13 @@ function buildFixtureProject(base) {
   /* 待暂存的改动 + 未跟踪文件（写操作的输入） */
   put(join('write', 'a.txt'), 'a1\nA2-CHANGED\na3\n')
   put(join('write', 'new.txt'), 'fresh\n')
+  /*
+   * 另外两份是**给 W2a（携带未提交改动）留的**：探针的 G2 部分只会暂存
+   * a.txt 与 new.txt，所以到第 11 节时 dirty.txt 仍是未暂存改动、
+   * notes.txt 仍是未跟踪文件 —— 携带那一节才有东西可带。
+   */
+  put(join('write', 'dirty.txt'), 'dirty\n')
+  put(join('write', 'notes.txt'), 'note\n')
 
   try {
     gitReviewBaseline = gitReadonlySnapshot(reviewRepo)

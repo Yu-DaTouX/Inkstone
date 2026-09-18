@@ -150,6 +150,8 @@ export type GitFailureCode =
   | 'nothing-to-commit'
   | 'empty-message'
   | 'path-rejected'
+  /** 携带未提交改动被拒（源仓库有冲突 / 子模块 / 文件太大 / 应用失败已回滚） */
+  | 'carry-rejected'
   | 'busy'
   | 'timeout'
   | 'cancelled'

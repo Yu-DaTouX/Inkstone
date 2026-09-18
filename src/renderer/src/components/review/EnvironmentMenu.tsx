@@ -37,6 +37,8 @@ export function EnvironmentMenu() {
   const openReview = useStore((s) => s.openReview)
   const project = session?.cwd ?? settings?.cwd
   const patchSettings = useStore((s) => s.patchSettings)
+  const newSession = useStore((s) => s.newSession)
+  const changeCwd = useStore((s) => s.changeCwd)
   const repoView = useRepoState(project)
   const repo = repoView.repo
   /* 写操作结束后刷新仓库状态：菜单里的数字（待推送 / 变更数）必须立刻是对的 */
@@ -58,6 +60,16 @@ export function EnvironmentMenu() {
   const [wtPath, setWtPath] = useState('')
   const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
   const [wtBlockers, setWtBlockers] = useState<WorktreeBlocker[]>([])
+  /*
+   * 携带未提交改动（W2a）。
+   * 三份东西是**分开**勾的：已暂存、未暂存、未跟踪 —— 因为在新工作树里
+   * 「哪些已经挑好了」正是用户最在意、也最难自己重做的一件事。
+   */
+  const [carryStaged, setCarryStaged] = useState(false)
+  const [carryUnstaged, setCarryUnstaged] = useState(false)
+  const [pickOpen, setPickOpen] = useState(false)
+  const [untracked, setUntracked] = useState<{ path: string; size: number }[]>([])
+  const [picked, setPicked] = useState<string[]>([])
   const wrapRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLButtonElement>(null)
 
@@ -124,6 +136,41 @@ export function EnvironmentMenu() {
     }
   }, [open, showWorktrees, project, repoView.repo?.worktreeId])
 
+  /*
+   * 未跟踪清单：只在用户点开「选择要带过去的文件」时拉一次。
+   * 复用审查用的快照通道（scope=untracked）—— 它已经把未跟踪文件做成了
+   * 与审查面板同一份数据，没必要再开一条。
+   */
+  useEffect(() => {
+    if (!pickOpen || !project) return
+    let alive = true
+    void window.yan.git
+      .snapshot({ cwd: project, /* 没有单独的 untracked 范围：未跟踪文件在 working 里，靠 untracked 标志挑出来 */
+            scope: { kind: 'working' }, requestId: `carry-${Date.now()}` })
+      .then((res) => {
+        if (!alive) return
+        setUntracked(
+          (res.files ?? [])
+            .filter((f) => f.untracked)
+            .map((f) => ({
+            path: f.path,
+            /* snapshot 不带 size；展示用 0，真正的大小上限由主进程把关 */
+            size: 0
+          }))
+        )
+      })
+      .catch((e: unknown) => {
+        if (alive) {
+          setUntracked([])
+          /*
+           * 拉不到就说一声 —— 空清单与「拉失败」在界面上长得一样，
+           * 而这两件事对用户的意义完全不同（一个是「没有」，一个是「不知道」）。
+           */
+          setWtBlockers([{ kind: 'missing', message: e instanceof Error ? e.message : String(e) }])
+        }
+      })
+  }, [pickOpen, project])
+
   /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
     if (open) firstRef.current?.focus()
@@ -136,6 +183,8 @@ export function EnvironmentMenu() {
       setNewBranch('')
       setShowWorktrees(false)
       setWtBlockers([])
+      setPickOpen(false)
+      setPicked([])
     }
   }, [open])
 
@@ -401,6 +450,34 @@ export function EnvironmentMenu() {
                       {w.main ? <span className="env-branch-tag">{t('env.worktreeMain')}</span> : null}
                       {!w.main && w.ours ? <span className="env-branch-tag">{t('env.worktreeOurs')}</span> : null}
                       {!w.main ? (
+                        <>
+                        <button
+                          type="button"
+                          className="env-mini"
+                          data-testid="env-worktree-open"
+                          title={t('env.worktreeOpenNote')}
+                          onClick={() => {
+                            /*
+                             * 「在新工作树开始新会话」—— 方案 §6.3 的**降级路径**。
+                             *
+                             * 完整的「带会话继续」要求重绑定项目权限、相对文件路径、
+                             * 附件授权与上下文派生状态，并在新实例里接着原来的历史。
+                             * 这些没有一件是可以靠改一个 cwd 字段完成的，所以按方案的
+                             * 要求：**只开新会话**，并在按钮的 title 与下面的说明里
+                             * 把「不带走什么」讲清楚 —— 不显示「无缝继续」。
+                             *
+                             * 先 setCwd 再 newSession：newSession 会把当前 cwd 作为
+                             * 新会话的起点，晚一步设置就落回旧目录了。
+                             */
+                            void (async () => {
+                              await changeCwd(w.path)
+                              await newSession({ cwd: w.path })
+                              setOpen(false)
+                            })()
+                          }}
+                        >
+                          {t('env.worktreeOpen')}
+                        </button>
                         <button
                           type="button"
                           className="env-mini"
@@ -429,9 +506,16 @@ export function EnvironmentMenu() {
                         >
                           {t('env.worktreeRemove')}
                         </button>
+                        </>
                       ) : null}
                     </div>
                   ))}
+
+                  {trees.some((w) => !w.main) ? (
+                    <div className="env-carry-hint" data-testid="env-worktree-open-note">
+                      {t('env.worktreeOpenNote')}
+                    </div>
+                  ) : null}
 
                   <label className="env-wt-check">
                     <input
@@ -458,12 +542,18 @@ export function EnvironmentMenu() {
                       data-testid="env-worktree-create"
                       disabled={!!write.busy || !wtBranch.trim()}
                       onClick={() => {
+                        setWtBlockers([])
                         void window.yan.git
                           .worktreeCreate({
                             cwd: project ?? '',
                             branch: wtBranch.trim(),
                             startPoint: null,
-                            targetPath: wtPath.trim() || null
+                            targetPath: wtPath.trim() || null,
+                            /* 三项都为假就不传 —— 主进程据此走「不携带」的路径并给出对应说明 */
+                            carry:
+                              carryStaged || carryUnstaged || picked.length > 0
+                                ? { staged: carryStaged, unstaged: carryUnstaged, untracked: picked }
+                                : null
                           })
                           .then((res) => {
                             const made = res.ok ? res.path : undefined
@@ -483,6 +573,10 @@ export function EnvironmentMenu() {
                               ])
                               setWtBranch('')
                               setWtPath('')
+                              setCarryStaged(false)
+                              setCarryUnstaged(false)
+                              setPickOpen(false)
+                              setPicked([])
                               repoView.refresh()
                               /*
                                * 登记为项目（方案 §6.2：创建成功后要能**独立打开**）。
@@ -532,6 +626,74 @@ export function EnvironmentMenu() {
                     spellCheck={false}
                     onChange={(e) => setWtPath(e.target.value)}
                   />
+
+                  {/*
+                    携带未提交改动（方案 §6.2 的可选能力）。
+                    三项分开勾 —— 新工作树里「哪些已经挑好了」是用户最在意的事。
+                    默认全不勾：默认从已提交状态创建，这一点在按钮旁边写着。
+                  */}
+                  <div className="env-carry" data-testid="env-carry">
+                    <label className="env-wt-check">
+                      <input
+                        type="checkbox"
+                        checked={carryStaged}
+                        data-testid="env-carry-staged"
+                        onChange={(e) => setCarryStaged(e.target.checked)}
+                      />
+                      <span>{t('env.carryStaged')}</span>
+                    </label>
+                    <label className="env-wt-check">
+                      <input
+                        type="checkbox"
+                        checked={carryUnstaged}
+                        data-testid="env-carry-unstaged"
+                        onChange={(e) => setCarryUnstaged(e.target.checked)}
+                      />
+                      <span>{t('env.carryUnstaged')}</span>
+                    </label>
+                    <label className="env-wt-check">
+                      <input
+                        type="checkbox"
+                        checked={pickOpen}
+                        data-testid="env-carry-untracked"
+                        onChange={(e) => {
+                          setPickOpen(e.target.checked)
+                          if (!e.target.checked) setPicked([])
+                        }}
+                      />
+                      <span>
+                        {t('env.carryUntracked')}
+                        {picked.length > 0 ? `（${picked.length}）` : ''}
+                      </span>
+                    </label>
+
+                    {pickOpen ? (
+                      <div className="env-carry-list" data-testid="env-carry-list">
+                        {untracked.length === 0 ? (
+                          <div className="env-branch-tag">{t('env.carryNone')}</div>
+                        ) : (
+                          untracked.slice(0, 40).map((f) => (
+                            <label className="env-wt-check env-carry-file" key={f.path}>
+                              <input
+                                type="checkbox"
+                                data-testid="env-carry-file"
+                                checked={picked.includes(f.path)}
+                                onChange={(e) =>
+                                  setPicked((prev) => (e.target.checked ? [...prev, f.path] : prev.filter((x) => x !== f.path)))
+                                }
+                              />
+                              <span title={f.path}>{f.path}</span>
+                            </label>
+                          ))
+                        )}
+                        {untracked.length > 40 ? (
+                          <div className="env-branch-tag">{t('env.carryMore', { n: untracked.length - 40 })}</div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="env-carry-hint">{t('env.carryNote')}</div>
+                  </div>
 
                   {wtBlockers.length ? (
                     <div className="gwrite-fail" data-testid="env-worktree-blockers">
