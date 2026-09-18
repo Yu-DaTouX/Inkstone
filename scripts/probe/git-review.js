@@ -89,10 +89,24 @@
     ok(!!testid('env-local'), '菜单里有「本地」（工作目录）')
     ok(!!testid('env-branch'), '菜单里有当前分支')
     ok(!!testid('env-pr'), '菜单里有 Pull Request 项')
+    /*
+     * ⚠️ 这条断言在 G3 之后**换过语义**：以前是「没有 gh 就说无法获取」，
+     * 现在是「真的去查了，查不到时**说清是哪一种查不到**」。
+     *
+     * review fixture 的 remote 是本地路径（不是托管站），所以正确的答案是
+     * 「这个远端不支持」—— 而且**一次外发请求都不发**。
+     * 要**等**：查询是异步的（第一版直接读，拿到的是"查询中…"）。
+     */
+    const prText = await waitFor(() => {
+      const el = testid('env-pr-state')
+      const txt = el ? textOf(el) : ''
+      return txt && !/查询中|Checking/.test(txt) ? txt : null
+    }, 10000)
+    ok(!!prText, 'PR 状态查完了（不是一直卡在「查询中」）', String(prText))
     ok(
-      /无法获取|Cannot/.test(textOf(testid('env-pr'))),
-      'PR 状态明确写「无法获取」（gh 未安装时不伪造状态）',
-      textOf(testid('env-pr'))
+      /不支持|not supported/.test(String(prText)),
+      '本地路径的远端 → 如实说「这个远端不支持」（不猜托管站、不编状态）',
+      String(prText)
     )
     ok(!!testid('env-compare'), '菜单里有「比较分支」')
 

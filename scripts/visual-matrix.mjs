@@ -1431,8 +1431,14 @@ const STATES = {
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(400);
+      /*
+ * 菜单是**开关**：组内前一个状态可能把它留着开着，再点一次就关上了。
+ * 所以先看它开没开 —— 幂等。
+ */
+if (!document.querySelector('[data-testid="env-menu"]')) {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(500);
+}
       return document.querySelector('[data-testid="env-menu"]') ? 'ok' : 'no-menu';
     })()
   `,
@@ -1488,8 +1494,14 @@ const STATES = {
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
+      /*
+ * 菜单是**开关**：组内前一个状态可能把它留着开着，再点一次就关上了。
+ * 所以先看它开没开 —— 幂等。
+ */
+if (!document.querySelector('[data-testid="env-menu"]')) {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(500);
+}
       document.querySelector('[data-testid="env-branch"]')?.click();
       await sleep(600);
       return document.querySelector('[data-testid="env-branches"]') ? 'ok' : 'no-branches';
@@ -1529,8 +1541,14 @@ const STATES = {
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
+      /*
+ * 菜单是**开关**：组内前一个状态可能把它留着开着，再点一次就关上了。
+ * 所以先看它开没开 —— 幂等。
+ */
+if (!document.querySelector('[data-testid="env-menu"]')) {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(600);
+}
       /* 先写一条关联，列表区才有内容可看 */
       const box = document.querySelector('[data-testid="src-url"]');
       const title = document.querySelector('[data-testid="src-title"]');
@@ -1566,8 +1584,14 @@ const STATES = {
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
       await sleep(300);
+      /*
+ * 菜单是**开关**：组内前一个状态可能把它留着开着，再点一次就关上了。
+ * 所以先看它开没开 —— 幂等。
+ */
+if (!document.querySelector('[data-testid="env-menu"]')) {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(500);
+}
       document.querySelector('[data-testid="env-worktrees"]')?.click();
       await sleep(700);
       return document.querySelector('[data-testid="env-worktree-list"]') ? 'ok' : 'no-worktrees';
