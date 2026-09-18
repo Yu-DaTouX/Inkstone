@@ -165,7 +165,7 @@ pi 吐事件
 |---|---|---|---|
 | `git-service.ts` | 414 | Git 只读查询的底座：`execFile` 封装（参数数组、**不经 shell**、关掉 external diff/textconv 的两道环境变量）、仓库发现（30s 缓存 + `.git` mtime 失效）、`status --porcelain=v2`、refs 列表、worktree 占用分支、ref / 路径校验、未跟踪文件的有界元数据（行数 / 大小 / NUL 嗅探 / LFS） | `git-diff.ts`、`index.ts`；单测 `test-git-review.mjs` / `test-git-repo.mjs`（真实仓库） |
 | `git-actions.ts` | 659 | **写操作 —— 唯一会改用户仓库的文件**：按仓库串行、预期版本分级复核、八个动作（暂存 / 取消暂存 / 批量 / 提交 / 切分支 / 新建分支 / 拉取 / 推送）、超时后重读 HEAD、hook 文件探测。「应用会不会改用户的 Git、怎么改」只看这一个文件就能答完 | `shared/git-actions.ts`、`git-service.ts`；单测 `test-git-actions.mjs` / `test-git-repo.mjs`；live `gitwrite` |
-| `git-worktree.ts` | 408 | **用户工作树（方案 §6.2，W1）**：默认目录规则、`worktree list --porcelain -z` 解析、创建（五条拒绝路径）、删除前的三类拦截 + 主工作树 / locked / 非登记路径一律拒绝。**绝不**复用 `subagent-isolation.cleanupWorkspace()`（那是 `--force` + `rm -rf`） | 单测 `test-git-repo.mjs` 的 G10 节；live `gitwrite` |
+| `git-worktree.ts` | 738 | **用户工作树（方案 §6.2，W1+W2）**：默认目录规则、`worktree list --porcelain -z` 解析、创建（五条拒绝路径）、删除前的三类拦截 + 主工作树 / locked / 非登记路径一律拒绝、**携带未提交改动**（`collectCarry` / `applyCarry` / `verifyCarry`：三份分开迁移、patch 全或无、目标侧验证、源仓库只读）。**绝不**复用 `subagent-isolation.cleanupWorkspace()`（那是 `--force` + `rm -rf`） | 单测 G10 / G11；live `gitwrite` |
 | `git-diff.ts` | 614 | 审查数据层：变更清单（raw + numstat + status 合成，**按范围过滤 status 条目**）、单文件 patch（结构化 hunk）、两侧内容（图片走 **buffer** 编码）、未跟踪文件合成「全新增」hunk | 同上；live `gitreview` |
 
 ⚠️ **不要复用 `subagent-isolation.ts` 的 `collectDiff()`**：它为了生成归档补丁会在隔离 worktree 里 `git add -A`，主工作区调一次就会改用户的暂存区。证据：`test:live -- gitreview` 的 `afterExit: gitReviewReadonly` 逐字节比对 `status` / `ls-files -s` / `diff --cached --numstat` / `HEAD`。

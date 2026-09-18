@@ -14,7 +14,17 @@
  *   · `git worktree remove` **不带 `--force`** —— 让 git 自己的检查兜最后一道
  *   · **绝不**复用 `cleanupWorkspace()`（那个函数就是 `--force` + `rm -rf`）
  */
-import { existsSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
+import type { Stats } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { classifyGitFailure, validateBranchName } from '../shared/git-actions'
 import type { GitFailure } from '../shared/git-actions'
@@ -148,6 +158,216 @@ export async function listWorktrees(cwd: string): Promise<WorktreeListing> {
   return { ok: true, repoRoot: repo.root, worktrees: parseWorktreeList(res.stdout, container) }
 }
 
+/* ── 携带未提交改动（W2a）─────────────────────────────── */
+
+/**
+ * 从**源仓库**收集要带过去的东西（只读）。
+ *
+ * 预检两条（方案 §6.2：「无法准确迁移的冲突、子模块等情况阻止迁移并解释」）：
+ *   · 有未解决的冲突 —— `git apply` 对 unmerged 条目没有意义
+ *   · 改动里含子模块（gitlink，mode 160000）—— 迁移它要递归复制子模块的工作区，
+ *     做不到就明说，**不退化成全目录复制**
+ */
+export async function collectCarry(repoRoot: string, want: CarryChanges): Promise<CarryCollectResult> {
+  const wantStaged = !!want.staged
+  const wantUnstaged = !!want.unstaged
+  const wantUntracked = Array.isArray(want.untracked) ? want.untracked.filter(Boolean) : []
+  if (!wantStaged && !wantUnstaged && wantUntracked.length === 0) {
+    return { ok: true, payload: { staged: '', unstaged: '', files: [], summary: [] } }
+  }
+
+  const unmerged = await gitRun(repoRoot, ['diff', '--name-only', '--diff-filter=U'], { allowFailure: true })
+  const conflicts = unmerged.stdout.trim().split('\n').filter(Boolean)
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      reason: `源工作区有 ${conflicts.length} 个未解决的冲突`,
+      hint: '先在源工作区把它们处理掉（解决或撤销）再迁移 —— 冲突状态下没有什么「正确的」内容可以带过去'
+    }
+  }
+
+  /* 子模块：gitlink 在 --raw 里是 mode 160000 */
+  for (const args of [wantStaged ? ['diff', '--raw', '--cached'] : null, wantUnstaged ? ['diff', '--raw'] : null]) {
+    if (!args) continue
+    const raw = await gitRun(repoRoot, args, { allowFailure: true })
+    if (/\s160000\s/.test(raw.stdout)) {
+      return {
+        ok: false,
+        reason: '改动里包含子模块',
+        hint: '子模块的未提交状态在另一份仓库里，没法用 patch 迁移。去掉这两个勾选，或先在源工作区把子模块的改动提交掉'
+      }
+    }
+  }
+
+  /*
+   * `--binary` 让二进制文件也进 patch（base85 编码，所以输出仍是纯 ASCII）；
+   * `--full-index` 让 index 行带完整 sha —— 目标仓库里没有那些 blob，
+   * 缩写会撞（两侧内容不同但缩写相同的极端情况），完整 sha 让 git 能明确报错。
+   */
+  const staged = wantStaged
+    ? (await gitRun(repoRoot, ['diff', '--cached', '--binary', '--no-color', '--full-index', '--no-ext-diff'], { allowFailure: true })).stdout
+    : ''
+  const unstaged = wantUnstaged
+    ? (await gitRun(repoRoot, ['diff', '--binary', '--no-color', '--full-index', '--no-ext-diff'], { allowFailure: true })).stdout
+    : ''
+
+  const files: CarryPayload['files'] = []
+  const summary: string[] = []
+  if (wantStaged && staged) summary.push(`已暂存：${countPatchFiles(staged)} 个文件`)
+  if (wantUnstaged && unstaged) summary.push(`未暂存：${countPatchFiles(unstaged)} 个文件`)
+
+  if (wantUntracked.length > 0) {
+    /* 只带 git 认可的未跟踪文件（用户勾选的路径可能因为刚才的操作已经不适用了） */
+    const listed = (await gitRun(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'], { allowFailure: true }))
+      .stdout.split('\0')
+      .filter(Boolean)
+    const known = new Set(listed)
+    const missing = wantUntracked.filter((rel) => !known.has(rel))
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        reason: `有 ${missing.length} 个勾选的文件不再是未跟踪状态`,
+        hint: `重新打开一次列表再选（例如 ${missing[0]}）`
+      }
+    }
+
+    let total = 0
+    for (const rel of wantUntracked) {
+      const abs = join(repoRoot, rel)
+      let st: Stats
+      try {
+        st = lstatSync(abs)
+      } catch {
+        return { ok: false, reason: `读不到未跟踪文件：${rel}`, hint: '它可能刚被删掉或改名，重新选一次' }
+      }
+      if (st.isSymbolicLink()) {
+        /* 符号链接按「链接本身」带过去（git 里 mode 120000），不跟随 */
+        const linkTarget = readlinkSync(abs)
+        files.push({ rel, data: Buffer.from(linkTarget, 'utf8'), mode: -1 })
+        continue
+      }
+      if (!st.isFile()) {
+        return { ok: false, reason: `不是普通文件：${rel}`, hint: '目录会连同里面所有文件一起列出，单独勾选它没有意义' }
+      }
+      if (st.size > MAX_CARRY_FILE) {
+        return {
+          ok: false,
+          reason: `单个文件太大：${rel}（${formatBytes(st.size)}）`,
+          hint: `单个上限 ${formatBytes(MAX_CARRY_FILE)} —— 这么大的文件请直接复制过去`
+        }
+      }
+      total += st.size
+      if (total > MAX_CARRY_TOTAL) {
+        return {
+          ok: false,
+          reason: `勾选的未跟踪文件合计超过 ${formatBytes(MAX_CARRY_TOTAL)}`,
+          hint: '少选几个，或者直接在文件管理器里复制'
+        }
+      }
+      files.push({ rel, data: readFileSync(abs), mode: st.mode })
+    }
+    if (files.length > 0) summary.push(`未跟踪：${files.length} 个文件`)
+  }
+
+  return { ok: true, payload: { staged, unstaged, files, summary } }
+}
+
+/** patch 里涉及几个文件（数 `diff --git` 行 —— 它一个文件一行，比数 +++ 稳） */
+function countPatchFiles(patch: string): number {
+  let n = 0
+  for (const line of patch.split('\n')) if (line.startsWith('diff --git ')) n += 1
+  return n
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`
+  return `${n} B`
+}
+
+/**
+ * 把收集到的内容应用到**新工作树**（这里唯一会写的地方）。
+ *
+ * `git apply` 是**全或无**的：任何一个 hunk 失败（或任一个文件找不到）整个
+ * 应用就失败、什么都不写。所以「应用成功」等于「全部应用成功」——
+ * 不需要再逐个文件自查。失败时由调用方把新工作树整个回滚掉。
+ */
+async function applyCarry(target: string, payload: CarryPayload): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (payload.staged) {
+    /*
+     * 已暂存的 patch 要应用**两次**：一次进 index，一次进工作区。
+     *
+     * 只做 `--cached` 的话，工作区文件还停在 HEAD 版 —— 目标工作树里就凭空
+     * 多出一个「未暂存改动」（把 index 的新内容改回去），而源仓库里那个文件是
+     * 「index 与工作区一致」的已暂存状态。这不是挑刺：验证阶段会立刻发现两侧
+     * 的 `git diff` 不一致（第一次实现就是这么被抓出来的）。
+     *
+     * 顺序也不能反：先 `--cached` 再工作区，工作区那条才认得出 patch 的前置
+     * 内容（它按**工作区当前内容**匹配）。两者都成功才算成功，失败由调用方
+     * 整个回滚。
+     */
+    const res = await gitRun(target, ['apply', '--cached', '--binary', '--whitespace=nowarn', '-'], {
+      stdin: payload.staged,
+      allowFailure: true
+    })
+    if (!res.ok) return { ok: false, reason: (res.stderr || res.stdout).trim() || '已暂存的 patch 应用失败（index）' }
+    const work = await gitRun(target, ['apply', '--binary', '--whitespace=nowarn', '-'], {
+      stdin: payload.staged,
+      allowFailure: true
+    })
+    if (!work.ok) return { ok: false, reason: (work.stderr || work.stdout).trim() || '已暂存的 patch 应用失败（工作区）' }
+  }
+  if (payload.unstaged) {
+    const res = await gitRun(target, ['apply', '--binary', '--whitespace=nowarn', '-'], {
+      stdin: payload.unstaged,
+      allowFailure: true
+    })
+    if (!res.ok) return { ok: false, reason: (res.stderr || res.stdout).trim() || '未暂存的 patch 应用失败' }
+  }
+  for (const f of payload.files) {
+    const abs = join(target, f.rel)
+    try {
+      mkdirSync(dirname(abs), { recursive: true })
+      if (f.mode === -1) {
+        symlinkSync(f.data.toString('utf8'), abs)
+      } else {
+        writeFileSync(abs, f.data)
+        /* 可执行位要保持 —— patch 管不到未跟踪文件，这里得自己带 */
+        chmodSync(abs, f.mode & 0o777)
+      }
+    } catch (error) {
+      return { ok: false, reason: `写未跟踪文件失败：${f.rel}（${error instanceof Error ? error.message : String(error)}）` }
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * 目标侧验证（方案 §6.2 的「在目标验证应用」）：比两侧的 diff 摘要。
+ *
+ * 只比**我们声称带过去的那部分**（`--cached` 与工作区）。
+ * 源仓库里没被勾选的未跟踪文件当然不会出现在目标 —— 那不算失败。
+ */
+async function verifyCarry(repoRoot: string, target: string, want: CarryChanges): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const compare = async (args: string[], label: string): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    const a = await gitRun(repoRoot, args, { allowFailure: true })
+    const b = await gitRun(target, args, { allowFailure: true })
+    if (a.stdout.trim() !== b.stdout.trim()) {
+      return { ok: false, reason: `${label}在目标工作树里与源不一致` }
+    }
+    return { ok: true }
+  }
+  if (want.staged) {
+    const r = await compare(['diff', '--cached', '--numstat'], '已暂存的改动')
+    if (!r.ok) return r
+  }
+  if (want.unstaged) {
+    const r = await compare(['diff', '--numstat'], '未暂存的改动')
+    if (!r.ok) return r
+  }
+  return { ok: true }
+}
+
 /* ── 创建 ───────────────────────────────────────────────── */
 
 export interface CreateWorktreeRequest {
@@ -158,7 +378,45 @@ export interface CreateWorktreeRequest {
   startPoint: string | null
   /** 目标目录；null = 用默认容器 + slug */
   targetPath: string | null
+  /** 不传 = 不携带（默认从已提交状态创建） */
+  carry?: CarryChanges | null
 }
+
+/**
+ * 携带未提交的改动（方案 §6.2 的可选能力）。
+ *
+ * ── 为什么用 patch 而不是复制目录 ──
+ * 复制目录会把「哪些改动属于这次迁移」这件事丢掉（整个目录包括构建产物都会过去），
+ * 而这个能力的前提是**精确**：已暂存的仍然暂存、未暂存的仍然未暂存、二进制保持
+ * 二进制、可执行位保持可执行位。patch 天生带这三样，且能全或无地应用。
+ *
+ * ── 源仓库一个字节都不动 ──
+ * 全程只有 `git diff` / `git diff --cached` / `git ls-files --others` 三条**只读**
+ * 命令。不用 `git stash`（它会改源仓库的 index 与工作区，等于替用户做了决定）。
+ */
+export interface CarryChanges {
+  staged: boolean
+  unstaged: boolean
+  untracked: string[]
+}
+
+interface CarryPayload {
+  staged: string
+  unstaged: string
+  /** 未跟踪文件的实际内容（二进制安全：走 Buffer，不经 utf8） */
+  files: { rel: string; data: Buffer; mode: number }[]
+  /** 人类可读的清单，用于创建后的 notes */
+  summary: string[]
+}
+
+/** 未跟踪文件的合计上限：超过就**拒绝**（不静默丢），并说清多大 */
+const MAX_CARRY_TOTAL = 64 * 1024 * 1024
+/** 单个未跟踪文件的上限 */
+const MAX_CARRY_FILE = 32 * 1024 * 1024
+
+export type CarryCollectResult =
+  | { ok: true; payload: CarryPayload }
+  | { ok: false; reason: string; hint?: string }
 
 export interface CreateWorktreeResult {
   ok: boolean
@@ -250,6 +508,45 @@ export async function createWorktree(
     }
   }
 
+  /*
+   * 携带未提交改动（W2a）。
+   *
+   * ① **收集必须在建工作树之前**：源仓库此刻的状态才是用户刚看到的那一份，
+   *    建完再收集的话，中间任何写操作都会让 patch 与用户看到的叙述对不上。
+   * ② 只在起点是**当前 HEAD** 时允许：patch 是相对源 HEAD 的，换基线语义不成立
+   *    （在别的分支上应用一份「相对 main 的未提交改动」，结果没有意义）。
+   */
+  const wantCarry: CarryChanges | null = request.carry ?? null
+  const carryActive =
+    !!wantCarry && (wantCarry.staged || wantCarry.unstaged || (wantCarry.untracked?.length ?? 0) > 0)
+  if (carryActive && request.startPoint) {
+    return {
+      ok: false,
+      failure: {
+        code: 'invalid-input',
+        message: '要携带未提交改动时，起点必须是当前 HEAD',
+        hint: 'patch 是相对当前 HEAD 算的；换成别的起点就不知道该应用到哪里了',
+        retrySafe: true
+      }
+    }
+  }
+  let payload: CarryPayload | null = null
+  if (carryActive && wantCarry) {
+    const collected = await collectCarry(repo.root, wantCarry)
+    if (!collected.ok) {
+      return {
+        ok: false,
+        failure: {
+          code: 'carry-rejected',
+          message: collected.reason,
+          hint: collected.hint,
+          retrySafe: true
+        }
+      }
+    }
+    payload = collected.payload
+  }
+
   const res = await gitRun(repo.root, ['worktree', 'add', '-b', branch, target, startPoint], {
     allowFailure: true,
     timeout: 120_000
@@ -258,16 +555,48 @@ export async function createWorktree(
     return { ok: false, failure: classifyGitFailure(res.stderr || res.stdout) }
   }
 
-  return {
-    ok: true,
-    path: target,
-    branch,
-    notes: [
-      `从 ${startPoint} 创建，未提交改动不会自动带入`,
-      `工作树在仓库旁边独立存在：${target}`,
-      '关掉砚不会删除它（要删除用「移除工作树」，那里会先检查未提交与未推送内容）'
-    ]
+  const notes = [
+    `从 ${startPoint} 创建`,
+    `工作树在仓库旁边独立存在：${target}`,
+    '关掉砚不会删除它（要删除用「移除工作树」，那里会先检查未提交与未推送内容）'
+  ]
+
+  if (carryActive && payload && wantCarry) {
+    const applied = await applyCarry(target, payload)
+    const verified = applied.ok ? await verifyCarry(repo.root, target, wantCarry) : applied
+    if (!verified.ok) {
+      /*
+       * 失败就**整个回滚**：留一个「一半改动」的新工作树是最坏的结果 ——
+       * 用户会以为东西都过来了。
+       *
+       * 这里用 --force 是安全的：这个工作树是**我们刚建的**、用户还没看过，
+       * 而且删除是失败路径上的清理（不是「删用户的东西」）。这是本文件里
+       * 唯一一处 --force，别把它复制到别处。
+       */
+      await gitRun(repo.root, ['worktree', 'remove', '--force', target], { allowFailure: true })
+      await gitRun(repo.root, ['branch', '-D', branch], { allowFailure: true })
+      return {
+        ok: false,
+        failure: {
+          code: 'carry-rejected',
+          message: `迁移未提交改动失败，已回滚新建的工作树：${verified.reason}`,
+          hint: '源工作区没有被动过。可以在终端里手动把改动搬过去，那里能看到完整的报错',
+          retrySafe: true
+        }
+      }
+    }
+    /* 注意别写成 `unshift(...字符串)` —— 展开一个字符串会把每个**字符**塞成一条 note */
+    notes.unshift(payload.summary.length ? `已带入改动（${payload.summary.join('；')}）` : '已带入改动')
+    notes.push('源工作区的改动原样保留（砚没有动过它的 index 与工作区）')
+  } else {
+    /*
+     * 不带的情况必须**明说**，否则用户会以为改动跟着过去了。
+     * 方案 §6.2：「默认从已提交状态创建，明确提示未提交改动不会自动带入」。
+     */
+    notes.unshift('从已提交状态创建，未提交改动不会自动带入')
   }
+
+  return { ok: true, path: target, branch, notes }
 }
 
 /* ── 删除 ───────────────────────────────────────────────── */

@@ -2138,7 +2138,21 @@ function registerIpc(): void {
           cwd: String(raw.cwd ?? ''),
           branch: String(raw.branch ?? ''),
           startPoint: typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null,
-          targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null
+          targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null,
+          /*
+           * 携带未提交改动（W2a）。这里**逐字段取值**而不是把 raw 直接传下去：
+           * 渲染端来的东西是不可信输入，多传一个字段就可能多一条能改用户仓库的路径。
+           * untracked 只收字符串，且由主进程再跟 `git ls-files --others` 对一遍。
+           */
+          carry: (() => {
+            const c = raw.carry as Record<string, unknown> | null | undefined
+            if (!c || typeof c !== 'object') return null
+            return {
+              staged: c.staged === true,
+              unstaged: c.unstaged === true,
+              untracked: Array.isArray(c.untracked) ? c.untracked.filter((x): x is string => typeof x === 'string') : []
+            }
+          })()
         },
         (dir) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir))
       )

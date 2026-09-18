@@ -455,8 +455,117 @@
       }
     }
 
-    /* 收尾：把环境菜单关掉，别让它盖在最后的截图/断言上 */
-    await click(testid('session-project'))
+    /* ── 11. 携带未提交改动（W2a）────────────────────────── */
+
+    /*
+     * 走界面上的真实路径：勾「未暂存的改动」+「未跟踪的文件」→ 创建。
+     * 断言**全部靠回读**：目标工作树里得有那些改动，源仓库里得一个字节没动。
+     * fixture 专门留了 dirty.txt（未暂存）与 notes.txt（未跟踪）给这一节 ——
+     * G2 那部分的暂存/提交只碰 a.txt 与 new.txt，不会把它们消费掉。
+     */
+    await openEnvMenu()
+    /*
+     * ⚠️ 这一格是**开关**，不是「打开」：第 10 节已经把它展开了，再点一次
+     * 就变成收起（第一版就是这么让整节静默跳过的 —— 断言数没涨才发现）。
+     * 所以先看列表在不在，不在才点。
+     */
+    if (!testid('env-worktree-list')) {
+      await click(await waitFor(() => testid('env-worktrees'), 8000))
+    }
+    const carryName = await waitFor(() => testid('env-worktree-branch'), 6000)
+    if (carryName) {
+      await typeInto(carryName, 'live-carry')
+      const pick = await waitFor(() => testid('env-carry-untracked'), 6000)
+      const unstagedBox = testid('env-carry-unstaged')
+      ok(!!pick && !!unstagedBox, '工作树区里有「未暂存的改动」与「未跟踪的文件」两个勾选项')
+      if (pick && unstagedBox) {
+        await click(unstagedBox)
+        await click(pick)
+        const list = await waitFor(() => testid('env-carry-list'), 10000)
+        ok(!!list, '勾上之后列出了可选的未跟踪文件')
+        /*
+         * ⚠️ 等的是**内容**而不是容器：清单容器是跟着勾选立刻渲染的，
+         * 文件列表要等主进程的 snapshot 回来 —— 只等容器就会数到 0 个复选框
+         * （第一版就是这么误报的）。
+         */
+        const boxes = await waitFor(() => {
+          /* data-testid 就在 input 自己身上（不是包着它的 label），别再往里面找 */
+          const b = [...document.querySelectorAll('input[data-testid=\"env-carry-file\"]')]
+          return b.length ? b : null
+        }, 12000)
+        ok(!!boxes && boxes.length > 0, '清单里至少有一个未跟踪文件（fixture 的 notes.txt）', String(boxes ? boxes.length : 0))
+        if (!boxes) return early('  ⤺ 未跟踪清单没出来，后面的断言无从谈起')
+
+        /* 勾上**每一个**列出来的文件，避免依赖列表顺序 */
+        for (const b of boxes) await click(b)
+
+        const createBtn = await waitFor(() => {
+          const b = testid('env-worktree-create')
+          return b && !b.disabled ? b : null
+        }, 8000)
+        ok(!!createBtn, '带改动的创建按钮可用')
+        if (createBtn) {
+          await click(createBtn)
+          const list2 = await waitFor(async () => {
+            const res = await window.yan.git.worktrees(cwd)
+            return (res.worktrees ?? []).some((w) => w.branch === 'live-carry') ? res.worktrees : null
+          }, 30000)
+          ok(!!list2, '带未提交改动的工作树建出来了')
+          const made = list2?.find((w) => w.branch === 'live-carry')
+
+          if (made) {
+            /* ① 目标工作树里真的有那份未暂存改动 */
+            const snap = await window.yan.git.snapshot({
+              cwd: made.path,
+              scope: { kind: 'working' },
+              requestId: 'carry-check'
+            })
+            const got = (snap.files ?? []).map((f) => f.path)
+            ok(got.includes('dirty.txt'), '目标工作树里看到了带过来的未暂存改动（dirty.txt）', JSON.stringify(got.slice(0, 6)))
+            ok(got.includes('notes.txt'), '未跟踪文件也带过来了（notes.txt）')
+
+            /* ② 源仓库一点没变：dirty.txt 仍然是未暂存改动 */
+            const src = await window.yan.git.snapshot({
+              cwd,
+              scope: { kind: 'working' },
+              requestId: 'carry-src'
+            })
+            const srcPaths = (src.files ?? []).map((f) => f.path)
+            ok(srcPaths.includes('dirty.txt'), '源工作区的改动原样保留（没有被搬走）')
+            ok(srcPaths.includes('notes.txt'), '源工作区的未跟踪文件也还在')
+          }
+        }
+      }
+    }
+
+    /* ── 12. 在新工作树开始新会话（W2b，方案 §6.3 的降级路径）──── */
+
+    /*
+     * 方案要求：完整的「带会话继续」做不到正确的重绑定（权限 / 相对路径 /
+     * 附件授权 / 上下文派生）时，**只开放「在新工作树开始新会话」**，
+     * 不显示「无缝继续」。所以这里验两件事：按钮真的换了会话目录，
+     * 以及界面上**明说**了不带走什么。
+     */
+    const openNote = await waitFor(() => testid('env-worktree-open-note'), 8000)
+    ok(!!openNote, '工作树区里明说「新会话不带走历史与权限」', textOf(openNote).slice(0, 50))
+    const openBtn = await waitFor(() => {
+      const list = [...document.querySelectorAll('[data-testid="env-worktree-open"]')]
+      return list.length ? list[list.length - 1] : null
+    }, 8000)
+    ok(!!openBtn, '每条非主工作树都有「开新会话」')
+    if (openBtn) {
+      await click(openBtn)
+      const switched = await waitFor(() => {
+        const now = store.getState().session?.cwd ?? ''
+        return now.replace(/\\/g, '/').toLowerCase().includes('live-carry') ? now : null
+      }, 20000)
+      ok(!!switched, '点击后真的在新工作树目录里开了会话', String(switched ?? '超时'))
+      /* 等菜单**消失**（谓词返回 true 才算成立），不是「等它出现」 */
+      const gone = await waitFor(() => (testid('env-menu') ? null : true), 8000)
+      ok(!!gone, '开完新会话后环境菜单自动收起（不再挡着对话）')
+    }
+
+    /* 收尾：确认环境菜单已收起，别让它盖在最后的断言上 */
 
   } catch (error) {
     out.push('  ✗ 探针异常：' + (error && error.message ? error.message : String(error)))

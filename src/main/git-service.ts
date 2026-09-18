@@ -13,7 +13,7 @@
  * `rev-parse` 在非 Git 目录里就是要失败、`merge-base` 在无共同祖先时也是。
  * 而且它没有 `-z` / `core.quotepath` / 超时分层这些只读查询才需要的参数。
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { realpath, stat, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -50,9 +50,42 @@ export interface GitRunResult {
 export async function gitRun(
   cwd: string,
   args: string[],
-  opts: { timeout?: number; allowFailure?: boolean; env?: Record<string, string> } = {}
+  opts: { timeout?: number; allowFailure?: boolean; env?: Record<string, string>; stdin?: string } = {}
 ): Promise<GitRunResult> {
   const full = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', ...args]
+  const env = {
+    ...process.env,
+    GIT_EXTERNAL_DIFF: '',
+    GIT_PAGER: 'cat',
+    GIT_TERMINAL_PROMPT: '0',
+    ...(opts.env ?? {})
+  }
+  /*
+   * 有 stdin 时走 spawn：`execFile` 没法喂输入。
+   *
+   * ⚠️ 这里只用于 **patch 文本**（`git diff --binary` 的输出是纯 ASCII，
+   * base85 编码过），不是文件内容 —— 所以 utf8 进出不会损坏二进制。
+   * 真·文件内容走 Buffer 写盘（见 git-worktree 的 applyCarry）。
+   */
+  if (opts.stdin !== undefined) {
+    const res = await new Promise<GitRunResult>((resolve) => {
+      const child = spawn('git', full, { cwd, windowsHide: true, env, timeout: opts.timeout ?? DEFAULT_TIMEOUT })
+      let stdout = ''
+      let stderr = ''
+      child.stdout?.on('data', (d: Buffer) => {
+        stdout += d.toString('utf8')
+      })
+      child.stderr?.on('data', (d: Buffer) => {
+        stderr += d.toString('utf8')
+      })
+      child.on('error', (e) => resolve({ ok: false, stdout, stderr: stderr + e.message }))
+      child.on('close', (code) => resolve({ ok: code === 0, stdout, stderr }))
+      child.stdin?.end(opts.stdin, 'utf8')
+    })
+    if (res.ok) return res
+    if (opts.allowFailure) return { ...res, error: (res.stderr || res.stdout).trim() || undefined }
+    throw new Error((res.stderr || res.stdout).trim() || 'git 命令失败')
+  }
   try {
     const res = await execFileAsync('git', full, {
       cwd,
@@ -66,13 +99,7 @@ export async function gitRun(
        * 我们的解析拿到完全不是 unified diff 的输出（甚至弹窗）。
        * 参数里还会再显式关一次（`--no-ext-diff`），两道都要。
        */
-      env: {
-        ...process.env,
-        GIT_EXTERNAL_DIFF: '',
-        GIT_PAGER: 'cat',
-        GIT_TERMINAL_PROMPT: '0',
-        ...(opts.env ?? {})
-      }
+      env
     })
     return { ok: true, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
   } catch (error) {

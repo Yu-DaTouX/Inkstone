@@ -1696,11 +1696,33 @@ export interface WorktreeListing {
   error?: string
 }
 
+/**
+ * 把源工作区的未提交改动带到新工作树（方案 §6.2 的可选能力）。
+ *
+ * 三条都必须按方案来：
+ *   · **分别**捕获已暂存 / 未暂存 / 用户勾选的未跟踪文件 —— 混在一起会让
+ *     新工作树里的「已暂存」状态丢失（那是用户一行行挑出来的）
+ *   · 目标侧**验证应用**（应用后比对两侧的 diff 摘要），不是「发出去就完事」
+ *   · 源工作区与 index **一个字节都不动**（全程只用 `git diff` / `ls-files` 读）
+ *
+ * 只允许起点是当前 HEAD 时携带：patch 是相对源 HEAD 的，换了基线语义就不成立。
+ */
+export interface CarryChanges {
+  /** 带已暂存的改动（进新工作树的 index，保持「已暂存」状态） */
+  staged: boolean
+  /** 带未暂存的改动（只进工作区） */
+  unstaged: boolean
+  /** 用户勾选的未跟踪文件（相对仓库根的路径） */
+  untracked: string[]
+}
+
 export interface WorktreeCreateRequest {
   cwd: string
   branch: string
   startPoint: string | null
   targetPath: string | null
+  /** 不传 = 不携带（默认从已提交状态创建） */
+  carry?: CarryChanges | null
 }
 
 export interface WorktreeCreateResult {

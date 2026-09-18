@@ -13,7 +13,7 @@
  * 用法：npm run test:unit（由 test-unit.mjs 调起；每个仓库 < 100ms）
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1057,7 +1057,206 @@ export async function runGitRepoTests(ok) {
     ok(git(wt, ['branch', '--list', 'feat/two']).trim().length === 0, 'deleteBranch 为真时分支被删掉（已合并/已推送）')
   }
 
-  /* ── 11. 清理 ────────────────────────────────────────── */
+  /* ── 11. 携带未提交改动（W2a，真实仓库）───────────────── */
+
+  {
+    const { createWorktree } = await import('../out/test/git-worktree.mjs')
+    const cRoot = mkdtempSync(join(tmpdir(), 'yan-git-carry-'))
+    const cRepo = join(cRoot, 'carry')
+    mkdirSync(cRepo)
+    git(cRepo, ['init', '-q', '-b', 'main'])
+    git(cRepo, ['config', 'user.email', 't@example.com'])
+    git(cRepo, ['config', 'user.name', 'T'])
+    writeFileSync(join(cRepo, 'a.txt'), 'a\n')
+    writeFileSync(join(cRepo, 'keep.txt'), 'keep\n')
+    writeFileSync(join(cRepo, 'bin.dat'), Buffer.from([0, 1, 2, 3, 255, 254]))
+    writeFileSync(join(cRepo, 'run.sh'), '#!/bin/sh\necho hi\n')
+    git(cRepo, ['add', '-A'])
+    git(cRepo, ['commit', '-q', '-m', 'init'])
+
+    /*
+     * 造出三份**不同**的东西：已暂存、未暂存、未跟踪。
+     * 分开造是为了能验证「已暂存的仍然暂存」—— 混在一起的话，
+     * 就算实现把所有改动都丢进工作区，看 status 也分辨不出来。
+     */
+    writeFileSync(join(cRepo, 'a.txt'), 'a\nstaged\n')
+    git(cRepo, ['add', 'a.txt'])
+    writeFileSync(join(cRepo, 'keep.txt'), 'keep\nmodified\n')
+    writeFileSync(join(cRepo, 'bin.dat'), Buffer.from([0, 9, 9, 3, 255, 254]))
+    writeFileSync(join(cRepo, 'new-untracked.txt'), 'hello\n')
+    writeFileSync(join(cRepo, 'exec-untracked.sh'), '#!/bin/sh\nls\n')
+    chmodSync(join(cRepo, 'exec-untracked.sh'), 0o755)
+
+    /* 源仓库的 status 与 index：迁移前后必须**逐字节相同** */
+    const srcStatusBefore = git(cRepo, ['status', '--porcelain=v1', '-z'])
+    const srcIndexBefore = git(cRepo, ['diff', '--cached', '--binary'])
+
+    const carried = await createWorktree({
+      cwd: cRepo,
+      branch: 'carry-test',
+      startPoint: null,
+      targetPath: null,
+      carry: { staged: true, unstaged: true, untracked: ['new-untracked.txt', 'exec-untracked.sh'] }
+    })
+    ok(carried.ok === true, '带 carry 的创建工作树成功', JSON.stringify(carried.failure))
+    const dst = carried.path ?? ''
+
+    if (carried.ok && dst) {
+      ok(
+        carried.notes?.some((n) => n.includes('已带入改动')) === true,
+        '返回的说明里写明带入了改动',
+        (carried.notes ?? []).join(' | ').slice(0, 90)
+      )
+      ok(
+        (carried.notes ?? []).some((n) => n.includes('源工作区的改动原样保留')) === true,
+        '说明里写明源工作区没被动过'
+      )
+
+      /* ① 已暂存 → 在目标里仍然是**已暂存**（这是「分别捕获」的全部意义） */
+      const dstStatus = git(dst, ['status', '--porcelain=v1'])
+      ok(/^M  a\.txt$/m.test(dstStatus), '已暂存的改动在目标里仍然是已暂存（M + 空格）', JSON.stringify(dstStatus))
+      ok(/^ M keep\.txt$/m.test(dstStatus), '未暂存的改动在目标里仍然是未暂存（空格 + M）')
+      ok(/^ M bin\.dat$/m.test(dstStatus), '二进制改动也过来了')
+      ok(/^\?\? new-untracked\.txt$/m.test(dstStatus), '未跟踪文件过来了')
+      ok(/^\?\? exec-untracked\.sh$/m.test(dstStatus), '未跟踪的脚本也过来了')
+
+      /* ② 内容与二进制保真 */
+      ok(readFileSync(join(dst, 'keep.txt'), 'utf8') === 'keep\nmodified\n', '未暂存文件的内容一致')
+      ok(
+        Buffer.compare(readFileSync(join(dst, 'bin.dat')), Buffer.from([0, 9, 9, 3, 255, 254])) === 0,
+        '二进制文件逐字节一致（没有被 utf8 破坏）'
+      )
+      ok(readFileSync(join(dst, 'new-untracked.txt'), 'utf8') === 'hello\n', '未跟踪文件内容一致')
+      /*
+       * 可执行位只在 POSIX 上有意义：NTFS 不用 mode 位表示可执行，
+       * 写进去的 chmod 也读不回来（git 自己也是靠 core.fileMode=false 绕开这件事）。
+       * 所以这里**分平台**断言，而不是假装 Windows 也能验。
+       */
+      if (process.platform === 'win32') {
+        ok(true, '可执行位：Windows 上跳过（NTFS 不用 mode 位表示可执行）')
+      } else {
+        ok((statSync(join(dst, 'exec-untracked.sh')).mode & 0o777) === 0o755, '未跟踪文件的可执行位保持')
+      }
+
+      /* ③ 目标侧验证：两侧的 diff 摘要一致 */
+      ok(
+        git(dst, ['diff', '--cached', '--numstat']).trim() === git(cRepo, ['diff', '--cached', '--numstat']).trim(),
+        '目标与源的「已暂存」摘要一致'
+      )
+      ok(
+        git(dst, ['diff', '--numstat']).trim() === git(cRepo, ['diff', '--numstat']).trim(),
+        '目标与源的「未暂存」摘要一致'
+      )
+    }
+
+    /* ④ 源仓库一个字节都没动（这是方案里最容易做错的一条） */
+    ok(git(cRepo, ['status', '--porcelain=v1', '-z']) === srcStatusBefore, '源仓库的 status 逐字节不变')
+    ok(git(cRepo, ['diff', '--cached', '--binary']) === srcIndexBefore, '源仓库的 index 逐字节不变')
+    ok(readFileSync(join(cRepo, 'keep.txt'), 'utf8') === 'keep\nmodified\n', '源工作区文件内容不变')
+
+    /* ⑤ 起点不是 HEAD 时不许带 carry（patch 相对 HEAD，换基线语义不成立） */
+    const badStart = await createWorktree({
+      cwd: cRepo,
+      branch: 'carry-bad-start',
+      startPoint: 'main~0',
+      targetPath: null,
+      carry: { staged: false, unstaged: true, untracked: [] }
+    })
+    ok(
+      badStart.ok === false && badStart.failure?.code === 'invalid-input',
+      '指定了起点时拒绝携带（不然不知道该应用到哪）',
+      JSON.stringify(badStart.failure?.code)
+    )
+
+    /* ⑥ 冲突状态下拒绝迁移并解释 */
+    {
+      /* mkdtempSync 已经把目录建好了，不要再 mkdirSync（会 EEXIST） */
+      const xRoot = mkdtempSync(join(tmpdir(), 'yan-git-conflict-'))
+      git(xRoot, ['init', '-q', '-b', 'main'])
+      git(xRoot, ['config', 'user.email', 't@example.com'])
+      git(xRoot, ['config', 'user.name', 'T'])
+      writeFileSync(join(xRoot, 'c.txt'), 'base\n')
+      git(xRoot, ['add', '-A'])
+      git(xRoot, ['commit', '-q', '-m', 'init'])
+      git(xRoot, ['checkout', '-q', '-b', 'other'])
+      writeFileSync(join(xRoot, 'c.txt'), 'other\n')
+      git(xRoot, ['commit', '-q', '-am', 'other'])
+      git(xRoot, ['checkout', '-q', 'main'])
+      writeFileSync(join(xRoot, 'c.txt'), 'main\n')
+      git(xRoot, ['commit', '-q', '-am', 'main'])
+      try {
+        git(xRoot, ['merge', 'other'])
+      } catch {
+        /* 冲突是预期的 */
+      }
+      const conflictCarry = await createWorktree({
+        cwd: xRoot,
+        branch: 'carry-conflict',
+        startPoint: null,
+        targetPath: null,
+        carry: { staged: true, unstaged: true, untracked: [] }
+      })
+      ok(
+        conflictCarry.ok === false && conflictCarry.failure?.code === 'carry-rejected',
+        '有未解决冲突时拒绝迁移',
+        JSON.stringify(conflictCarry.failure?.code)
+      )
+      ok(
+        String(conflictCarry.failure?.message ?? '').includes('冲突'),
+        '拒绝原因里说明是冲突',
+        String(conflictCarry.failure?.message ?? '').slice(0, 50)
+      )
+      /* 被拒之后不该留下半个工作树 */
+      ok(
+        git(xRoot, ['worktree', 'list']).trim().split('\n').length === 1,
+        '被拒时没有留下半个工作树'
+      )
+      await rm(xRoot, { recursive: true, force: true }).catch(() => {})
+    }
+
+    /* ⑦ 勾选的文件不再是未跟踪状态 → 拒绝（提示重新选） */
+    {
+      writeFileSync(join(cRepo, 'gone.txt'), 'x\n')
+      git(cRepo, ['add', 'gone.txt'])
+      const stale = await createWorktree({
+        cwd: cRepo,
+        branch: 'carry-stale',
+        startPoint: null,
+        targetPath: null,
+        carry: { staged: false, unstaged: false, untracked: ['gone.txt'] }
+      })
+      ok(
+        stale.ok === false && stale.failure?.code === 'carry-rejected',
+        '勾选项与实际状态不符时拒绝',
+        JSON.stringify(stale.failure?.code)
+      )
+      git(cRepo, ['reset', '-q', 'gone.txt'])
+      await rm(join(cRepo, 'gone.txt'), { force: true }).catch(() => {})
+    }
+
+    /* ⑧ 不带 carry 时说明里必须写明「不会自动带入」 */
+    const plain = await createWorktree({
+      cwd: cRepo,
+      branch: 'carry-plain',
+      startPoint: null,
+      targetPath: null
+    })
+    ok(
+      plain.ok === true && (plain.notes ?? []).some((n) => n.includes('不会自动带入')),
+      '不带时必须明说「未提交改动不会自动带入」',
+      (plain.notes ?? [])[0] ?? ''
+    )
+    if (plain.ok && plain.path) {
+      ok(
+        !/keep\.txt/.test(git(plain.path, ['status', '--porcelain=v1'])),
+        '不带时目标工作树确实是干净的'
+      )
+    }
+
+    await rm(cRoot, { recursive: true, force: true }).catch(() => {})
+  }
+
+  /* ── 12. 清理 ────────────────────────────────────────── */
 
   await rm(root, { recursive: true, force: true }).catch(() => {})
 }
