@@ -1673,6 +1673,11 @@ export interface GitBridge {
    * 与子代理的一次性隔离工作树是两回事：这里建的工作树在仓库旁边、用户看得见、
    * 关掉应用还在，删除前会逐项检查未提交与未推送内容。契约里**没有** force 选项。
    */
+  /**
+   * remote 的**托管网页**地址（方案 §7 的托管网页比较）。
+   * 只读；认不出的托管站返回 null —— 不猜路径，免得给用户一个 404。
+   */
+  remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }>
   worktrees(cwd: string): Promise<WorktreeListing>
   worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
   worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>

@@ -36,6 +36,7 @@ export async function runGitReviewTests(ok) {
     gapRanges,
     EMPTY_TREE
   } = await import('../out/test/git.mjs')
+  const { remoteWebUrl, compareWebUrl } = await import('../out/test/git.mjs')
 
   const NUL = '\0'
   const j = (...parts) => JSON.stringify(parts)
@@ -503,4 +504,35 @@ export async function runGitReviewTests(ok) {
     ok(viewedKey({ ...base, worktreeId: 'w2' }) !== k1, '另一个工作树 → 键不同（同一仓库两个 worktree 不串）')
     ok(viewedKey({ ...base, path: 'src/a.ts', oldPath: 'src/b.ts' }) !== k1, 'rename 的旧路径参与键（改名后旧的已查看不算数）')
   }
+  /* ── remote 地址 → 托管网页（G3 / H1 的纯解析）── */
+  {
+    /*
+     * 这里的原则是**宁可不给链接，也不要给一个打不开的**：
+     * 认不出的托管站一律 null（自建服务的网页路径各不相同，猜一个等于 404）。
+     */
+    ok(remoteWebUrl('https://github.com/o/r.git') === 'https://github.com/o/r', 'https + .git 去掉后缀')
+    ok(remoteWebUrl('git@github.com:o/r.git') === 'https://github.com/o/r', 'scp 写法（ssh 最常见）')
+    ok(remoteWebUrl('ssh://git@github.com/o/r.git') === 'https://github.com/o/r', 'ssh:// 写法')
+    ok(remoteWebUrl('ssh://git@github.com:2222/o/r') === 'https://github.com/o/r', '带端口的 ssh 写法')
+    ok(remoteWebUrl('https://gitlab.com/g/s') === 'https://gitlab.com/g/s', 'gitlab')
+    ok(remoteWebUrl('git@bitbucket.org:t/p.git') === 'https://bitbucket.org/t/p', 'bitbucket')
+    ok(remoteWebUrl('C:\work\repo') === null, 'Windows 盘符不当成 scp 写法')
+    ok(remoteWebUrl('/Users/x/repo') === null, '本地路径没有网页地址')
+    ok(remoteWebUrl('https://git.example.com/o/r.git') === null, '自建服务不猜（认不出就 null）')
+    ok(remoteWebUrl('') === null, '空字符串给 null')
+
+    const gh = 'https://github.com/o/r'
+    ok(compareWebUrl(gh, 'main', 'feat/x') === 'https://github.com/o/r/compare/main...feat%2Fx', 'GitHub 的 compare 路径')
+    ok(
+      compareWebUrl('https://gitlab.com/g/s', 'main', 'dev') === 'https://gitlab.com/g/s/-/compare/main...dev',
+      'GitLab 用 /-/compare'
+    )
+    ok(
+      compareWebUrl('https://bitbucket.org/t/p', 'main', 'dev') === 'https://bitbucket.org/t/p/branches/compare/dev..main',
+      'Bitbucket 的顺序与我们相反（新..旧）'
+    )
+    ok(compareWebUrl(gh, 'main', 'main') === null, '两侧相同就不给链接（那是空比较）')
+    ok(compareWebUrl(gh, '', 'main') === null, '缺一侧就不给链接')
+  }
+
 }

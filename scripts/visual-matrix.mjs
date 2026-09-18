@@ -424,6 +424,8 @@ function registerStubHandlers() {
     state: gitStubRepo()
   }))
   ipcMain.handle('yan:git:remotes', () => ['origin'])
+  /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
+  ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
   /* 工作树（W1）：两条，一条主、一条「砚创建」 */
   ipcMain.handle('yan:git:worktrees', () => ({
     ok: true,
@@ -483,7 +485,7 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'review', 'reviewwrite']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'review', 'reviewwrite']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'review', 'reviewwrite'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
@@ -1382,6 +1384,46 @@ const STATES = {
    * 工作树区（W1 §6.2）：列出主工作树与「砚创建」的那条，附新建输入与
    * 目标目录。这张图要能看出**主工作树没有「移除」按钮**（它删不得）。
    */
+  /*
+   * 「关联外部任务」与「在网上比较」（方案 §6.4 / §7）：都在菜单**最下面**，
+   * 所以这张图要把菜单滚到底 —— 否则看到的是同一屏的前半段。
+   */
+  envlinks: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(300);
+      document.querySelector('[data-testid="session-project"]')?.click();
+      await sleep(600);
+      /* 先写一条关联，列表区才有内容可看 */
+      const box = document.querySelector('[data-testid="env-link-url"]');
+      const title = document.querySelector('[data-testid="env-link-title"]');
+      if (box && title) {
+        const set = (el, v) => {
+          const d = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value');
+          d.set.call(el, v);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        set(box, 'https://github.com/o/pi-desktop/issues/42');
+        set(title, '把手改可拖拽 · 落盘');
+        await sleep(120);
+        document.querySelector('[data-testid="env-link-add"]')?.click();
+        await sleep(400);
+      }
+      const menu = document.querySelector('.env-menu');
+      if (menu) menu.scrollTop = menu.scrollHeight;
+      await sleep(500);
+      const ok =
+        document.querySelector('[data-testid="env-source-links"]') &&
+        document.querySelector('[data-testid="env-compare-web"]');
+      return ok ? 'ok' : 'no-links';
+    })()
+  `,
   envworktrees: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1446,6 +1488,13 @@ const MUST_HAVE = {
     '[data-testid="env-new-branch-name"]',
     '[data-testid="env-fetch"]',
     '[data-testid="env-push"]'
+  ],
+  envlinks: [
+    '[data-testid="env-menu"]',
+    '[data-testid="env-source-links"]',
+    '[data-testid="env-link-open"]',
+    '[data-testid="env-link-url"]',
+    '[data-testid="env-compare-web"]'
   ],
   envworktrees: [
     '[data-testid="env-menu"]',

@@ -565,7 +565,56 @@
       ok(!!gone, '开完新会话后环境菜单自动收起（不再挡着对话）')
     }
 
-    /* 收尾：确认环境菜单已收起，别让它盖在最后的断言上 */
+    /* ── 13. 关联外部任务链接 + 托管网页比较（H1 / G3）──────── */
+
+    /*
+     * 方案 §6.4 的硬要求是**文案**：「明确只是关联，不宣称上传代码、同步会话
+     * 或远程执行」。所以除了增删，这里还要把这句话读出来断言一遍。
+     * 另外用本地 remote（bare 路径）验证「认不出托管站就不显示网页比较」——
+     * 给一个打不开的链接比不给更糟。
+     */
+    await openEnvMenu()
+    const links = await waitFor(() => testid('env-source-links'), 8000)
+    ok(!!links, '环境菜单里有「关联外部任务」区')
+    if (links) {
+      const urlBox = testid('env-link-url')
+      const titleBox = testid('env-link-title')
+      const addBtn = testid('env-link-add')
+      ok(!!urlBox && !!titleBox && !!addBtn, '有地址 / 标题两个输入与「关联」按钮')
+
+      /* 不合法地址：要拦下来（javascript: 之类不能被当成可打开的链接） */
+      await typeInto(urlBox, 'javascript:alert(1)')
+      await click(addBtn)
+      ok((await waitFor(() => $('.env-error'), 4000)) !== null, '非 http/https 的地址被拒绝')
+
+      await typeInto(urlBox, 'https://example.com/task-1')
+      await typeInto(titleBox, '探针任务')
+      await click(addBtn)
+      const first = await waitFor(() => testid('env-link-open'), 6000)
+      ok(!!first, '关联后列表里出现了一条')
+      ok(textOf(first).includes('探针任务'), '用的是输入框里的标题', textOf(first).slice(0, 24))
+      ok(first?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址')
+      /* 边界文案：这句话是方案要求写在界面上的 */
+      const note = textOf(links)
+      ok(/不会上传代码/.test(note), '明说「不会上传代码 / 同步会话 / 远程执行」')
+
+      /* 移除：只移除会话引用 */
+      const rm = await waitFor(() => testid('env-link-remove'), 4000)
+      if (rm) {
+        await click(rm)
+        const gone = await waitFor(() => (testid('env-link-open') ? null : true), 5000)
+        ok(!!gone, '移除后列表里不再有它')
+      }
+    }
+
+    /*
+     * fixture 的 remote 是本地 bare 路径 —— 不是托管站，所以**不该**出现
+     * 「在网上比较」。这条断言同时守住两件事：不猜路径、不显示死链接。
+     */
+    ok(!testid('env-compare-web'), '本地路径的 remote 不显示「在网上比较」')
+
+    /* 收尾：把环境菜单关掉，别让它盖在最后的断言上 */
+    if (testid('env-menu')) await click(testid('session-project'))
 
   } catch (error) {
     out.push('  ✗ 探针异常：' + (error && error.message ? error.message : String(error)))

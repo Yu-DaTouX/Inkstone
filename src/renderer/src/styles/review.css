@@ -1268,3 +1268,71 @@ button.env-item:hover {
   line-height: 1.5;
   color: var(--fg-4);
 }
+
+/* 关联外部任务链接（方案 §6.4）：一行一条 + 两个输入 + 一句边界说明 */
+.env-links {
+  margin: 6px 6px 0;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--line-1);
+}
+
+.env-links-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-3);
+}
+
+.env-links-list {
+  max-height: 110px;
+  overflow-y: auto;
+  margin: 3px 0;
+}
+
+.env-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+/* 标题占满剩余宽度并省略结尾 —— 长标题不该把「移除」挤出可视区 */
+.env-link-open {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.env-link-open:hover {
+  text-decoration: underline;
+}
+
+.env-link-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.env-link-add .env-branch-input {
+  min-width: 0;
+  padding: 2px 5px;
+  font-size: 11.5px;
+}
+
+.env-link-add .env-branch-input:first-child {
+  flex: 3 1 0;
+}
+
+.env-link-add .env-branch-input:nth-child(2) {
+  flex: 2 1 0;
+}

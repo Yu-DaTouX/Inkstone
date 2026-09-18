@@ -32,6 +32,60 @@ export interface GitScopeRequest {
   target?: string
 }
 
+/**
+ * 把 git remote 的地址转成**托管网页**地址（方案 §7 的「托管网页比较」）。
+ *
+ * 支持三种写法，其余一律返回 null（宁可不给链接，也不要拼一个打不开的）：
+ *   · `https://host/owner/repo.git`
+ *   · `git@host:owner/repo.git`（ssh 最常见的写法）
+ *   · `ssh://git@host/owner/repo.git`
+ *
+ * 只认已知的托管站（github / gitlab / bitbucket）—— 自建服务的网页路径各不相同，
+ * 猜一个等于给用户一个 404。
+ */
+export function remoteWebUrl(remote: string): string | null {
+  const raw = String(remote ?? '').trim()
+  if (!raw) return null
+  let host = ''
+  let path = ''
+  const ssh = /^ssh:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/.exec(raw)
+  const scp = /^(?:[^@/]+@)?([^/:]+):(.+)$/.exec(raw)
+  const http = /^https?:\/\/([^/]+)\/(.+)$/.exec(raw)
+  if (http) {
+    host = http[1]
+    path = http[2]
+  } else if (ssh) {
+    host = ssh[1]
+    path = ssh[2]
+  } else if (scp && !/^[a-zA-Z]:[\\/]/.test(raw)) {
+    /* 排除 Windows 盘符（C:\foo 长得和 scp 写法一样） */
+    host = scp[1]
+    path = scp[2]
+  } else {
+    return null
+  }
+  const clean = path.replace(/\.git$/, '').replace(/\/+$/, '')
+  if (!clean) return null
+  const known = ['github.com', 'gitlab.com', 'bitbucket.org']
+  if (!known.some((h) => host === h || host.endsWith('.' + h))) return null
+  return `https://${host}/${clean}`
+}
+
+/** 托管网页的 compare 页（GitHub / GitLab / Bitbucket 的路径不同） */
+export function compareWebUrl(webUrl: string, base: string, target: string): string | null {
+  const b = String(base ?? '').trim()
+  const t = String(target ?? '').trim()
+  if (!webUrl || !b || !t || b === t) return null
+  if (/bitbucket\.org$/.test(new URL(webUrl).host)) {
+    /* Bitbucket 的写法是 /branches/compare/<新>..<旧> —— 顺序与我们相反 */
+    return `${webUrl}/branches/compare/${encodeURIComponent(t)}..${encodeURIComponent(b)}`
+  }
+  if (/gitlab\.com$/.test(new URL(webUrl).host)) {
+    return `${webUrl}/-/compare/${encodeURIComponent(b)}...${encodeURIComponent(t)}`
+  }
+  return `${webUrl}/compare/${encodeURIComponent(b)}...${encodeURIComponent(t)}`
+}
+
 /** 传给 git 的参数；`null` 表示这个范围不合法（缺 base/target）。 */
 export interface GitScopeArgs {
   /** `git status` 是否需要（只有 working / unstaged / staged 需要未跟踪文件） */

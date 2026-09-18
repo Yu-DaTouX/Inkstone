@@ -22,6 +22,7 @@
 import { isAbsolute, resolve } from 'node:path'
 import { stat } from 'node:fs/promises'
 import type { GitRepoState } from '../shared/git'
+import { remoteWebUrl } from '../shared/git'
 import {
   buildCommitArgs,
   buildCreateBranchArgs,
@@ -518,6 +519,23 @@ export async function listRemotes(root: string): Promise<string[]> {
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean)
+}
+
+/**
+ * remote 的托管网页地址（只读）。
+ *
+ * 优先 `origin`，没有就按名字取第一个 —— 与推送的默认选择一致，
+ * 免得界面上一处说 origin、另一处说别的。
+ */
+export async function remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }> {
+  const repo = await resolveRepo(cwd)
+  if (!repo) return { ok: false, error: '这个目录不是 Git 仓库' }
+  const names = await listRemotes(repo.root)
+  if (names.length === 0) return { ok: true, web: null, remote: null }
+  const name = names.includes('origin') ? 'origin' : names[0]
+  const res = await gitRun(repo.root, ['remote', 'get-url', name], { allowFailure: true, timeout: 8000 })
+  if (!res.ok) return { ok: false, error: (res.stderr || res.stdout).trim() || '读不到 remote 地址' }
+  return { ok: true, web: remoteWebUrl(res.stdout.trim()), remote: name }
 }
 
 async function fetchRemote(request: Extract<GitActionRequest, { kind: 'fetch' }>): Promise<GitActionResult> {
