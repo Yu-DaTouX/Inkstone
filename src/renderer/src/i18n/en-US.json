@@ -224,6 +224,7 @@
   "env.worktreeNew": "New worktree",
   "env.worktreeOurs": "made by Yan",
   "env.worktreePath": "Target directory (blank = default)",
+  "env.worktreeRegistered": "registered as a project",
   "env.worktreeRemove": "Remove",
   "env.worktreeStart": "Start point",
   "env.worktrees": "Worktrees",

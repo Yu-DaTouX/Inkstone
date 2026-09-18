@@ -420,6 +420,21 @@
             created ? created.path : ''
           )
 
+          /* 登记为项目（方案 §6.2 的「创建成功后登记为可独立打开的项目」） */
+          const reg = await waitFor(async () => {
+            const st = await window.yan.getSettings()
+            const norm = (v) => String(v).replace(/\\/g, '/').toLowerCase()
+            return (st.projects ?? []).some((x) => norm(x.cwd) === norm(created?.path)) ? st : null
+          }, 15000)
+          ok(!!reg, '新建的工作树已登记为项目（可独立打开）')
+          ok(
+            !!reg &&
+              (reg.projects ?? []).filter(
+                (x) => String(x.cwd).replace(/\\/g, '/').toLowerCase() === String(created?.path).replace(/\\/g, '/').toLowerCase()
+              ).length === 1,
+            '同一个路径只登记一条（不重复写）'
+          )
+
           /* 移除：这条分支没有上游 → 必须被拒，并把原因列出来 */
           const removeBtn = await waitFor(
             () => {

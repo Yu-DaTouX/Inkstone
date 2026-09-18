@@ -36,6 +36,7 @@ export function EnvironmentMenu() {
   const settings = useStore((s) => s.settings)
   const openReview = useStore((s) => s.openReview)
   const project = session?.cwd ?? settings?.cwd
+  const patchSettings = useStore((s) => s.patchSettings)
   const repoView = useRepoState(project)
   const repo = repoView.repo
   /* 写操作结束后刷新仓库状态：菜单里的数字（待推送 / 变更数）必须立刻是对的 */
@@ -483,6 +484,36 @@ export function EnvironmentMenu() {
                               setWtBranch('')
                               setWtPath('')
                               repoView.refresh()
+                              /*
+                               * 登记为项目（方案 §6.2：创建成功后要能**独立打开**）。
+                               *
+                               * 这里只写 settings.projects 一条记录：**不**动 cwd、**不**切会话 ——
+                               * 「建完自动跳过去」会把用户正在做的事打断，而 W2 的会话重绑定
+                               * 还没做（§6.3 要求做不到就别假装能）。同 cwd 已登记过就不重复写。
+                               */
+                              const known = settings?.projects ?? []
+                              /*
+                               * ⚠️ 比较前把 `\` 归一成 `/`：渲染端拿到的路径来自 git 输出
+                               *（正斜杠），主进程落盘的是反斜杠 —— 直接比在 Windows 上永远不等，
+                               * 结果就是每建一次工作树多一条重复项目。
+                               */
+                              const samePath = (a: string, b: string) => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+                              if (!known.some((x) => samePath(x.cwd, made))) {
+                                const now = Date.now()
+                                void patchSettings({
+                                  projects: [
+                                    ...known,
+                                    {
+                                      id: `wt-${now.toString(36)}`,
+                                      cwd: made,
+                                      name: res.branch ?? made.split(/[\/]/).pop() ?? made,
+                                      archived: false,
+                                      createdAt: now,
+                                      updatedAt: now
+                                    }
+                                  ]
+                                })
+                              }
                             }
                           })
                           .catch(() => {
