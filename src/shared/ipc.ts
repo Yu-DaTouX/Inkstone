@@ -30,6 +30,11 @@ export type {
   GitFailureCode
 } from './git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from './git-actions'
+/* 项目知识的视图类型：纯逻辑在 `./project-knowledge-view`（可在无 Electron 环境单测），
+   这里只做转发，渲染端不必知道存储层。 */
+import type { KnowledgeCounts, KnowledgeEntryView } from './project-knowledge-view'
+import type { KnowledgeKind } from './project-memory'
+export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
    这里只做转发，让渲染端可以从**一处**拿到全部跨进程类型。 */
@@ -839,6 +844,19 @@ export interface AppSettings {
    * 因此改完立即生效；`YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它按测试通道优先。
    */
   contextFold?: { enabled: boolean }
+  /**
+   * 项目知识检索与注入（实施-03 S3）的**用户开关**。
+   *
+   * 默认**关**（与 `contextDeep` 同向：没改过 = 磁盘上没有这个键）。
+   * 默认关的理由不是成本，而是**写入语义**：知识条目是「以后每轮都可能
+   * 被当材料注入」的长期数据，应该在用户明确同意后才开始积累与注入；
+   * 关闭时连检索都不做（不是「检索了但不注入」）。
+   *
+   * 传递链与 `contextDeep` 相同（渲染端 → 主进程 → `desktop.json` →
+   * 宿主检索 → 扩展读注入文件），所以**改完下一轮就生效**，
+   * 不用重建 pi 实例。UI 页在 S5，本片先落地机制与设置字段。
+   */
+  projectKnowledge?: { enabled: boolean }
   /**
    * 声音提示（对齐 opencode 的 attention / sounds）。
    *
@@ -1836,6 +1854,63 @@ export interface PackagesBridge {
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
+/* ------------------------------------------------------- 项目知识（实施-03 S5） */
+
+/**
+ * 项目知识页要的一次性快照。
+ *
+ * `projectId` 缺席 = 当前会话没绑定登记项目（或还没开会话）—— 界面显示
+ * 空态而不是报错：新用户第一次打开设置时本来就是这种状态。
+ */
+export interface KnowledgeListView {
+  ok: boolean
+  projectId?: string
+  /** 检索开关当前状态（与 `settings.projectKnowledge.enabled` 同源）。 */
+  enabled: boolean
+  entries: KnowledgeEntryView[]
+  counts: KnowledgeCounts
+  error?: string
+}
+
+/**
+ * 写操作。四种都要 `expectedRevision`（CAS）：
+ * 界面拿到的是某一版，用户点下去时若磁盘已变，宁可报「请刷新」也不静默覆盖。
+ */
+export type KnowledgeActionRequest =
+  | { action: 'confirm'; id: string; expectedRevision: number }
+  | { action: 'update'; id: string; expectedRevision: number; text?: string; tags?: string[]; kind?: KnowledgeKind }
+  | { action: 'supersede'; id: string; expectedRevision: number; text: string; kind?: KnowledgeKind; tags?: string[] }
+  | { action: 'delete'; id: string; expectedRevision: number; permanent?: boolean }
+
+export interface KnowledgeActionResult {
+  ok: boolean
+  error?: string
+  /** 失败时给最新版本，界面可以提示「磁盘上已更新」而不是反复重试。 */
+  latestRevision?: number
+  entry?: KnowledgeEntryView
+  /** 被这次操作替代掉的条目。 */
+  superseded?: KnowledgeEntryView[]
+}
+
+export interface KnowledgeExportResult {
+  ok: boolean
+  /** Markdown 正文（`copy` 与 `save` 都会回传，界面可直接复制）。 */
+  markdown?: string
+  /** `save` 时写到了哪里；取消保存对话框则不带这个字段。 */
+  path?: string
+  canceled?: boolean
+  error?: string
+}
+
+export interface KnowledgeBridge {
+  list(): Promise<KnowledgeListView>
+  action(req: KnowledgeActionRequest): Promise<KnowledgeActionResult>
+  /** `copy` 只生成文本；`save` 会弹保存对话框写盘（不入仓库）。 */
+  export(mode: 'copy' | 'save'): Promise<KnowledgeExportResult>
+  /** 来源跳转用：这个会话文件还在不在 / 在哪（不可回读时返回 null）。 */
+  sourceSession(sessionId: string): Promise<{ ok: boolean; path?: string; title?: string; error?: string }>
+}
+
 /**
  * 「受信内置能力」一条（实施-02 S4）。
  *
@@ -2177,6 +2252,8 @@ export interface YanBridge {
   /** 会话来源的持久化资源引用（§8 的 S1）：只持有我们自己存的那份副本 */
   sources: SourcesBridge
   packages: PackagesBridge
+  /** 项目知识页（实施-03 S5）：读当前项目、确认 / 编辑 / 替代 / 删除、导出 */
+  knowledge: KnowledgeBridge
   /** 受信内置能力的只读查询（实施-02 S4）；与 packages 刻意分开 */
   builtinCapabilities: BuiltinCapabilitiesBridge
   git: GitBridge

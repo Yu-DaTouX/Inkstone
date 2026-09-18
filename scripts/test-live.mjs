@@ -809,6 +809,98 @@ const CASES = {
   e2e: { probe: 'scripts/probe/e2e.js', delay: 9000, cost: 1, budget: 200000 },
   // 宿主能力服务：模型在 bash 里调 `yan`，宿主校验身份后回结构化摘要（花 token）
   capability: { probe: 'scripts/probe/capability.js', delay: 12000, cost: 1, budget: 180000 },
+  // 子代理能力：父模型通过 yan CLI 启动子代理，UI 必须收到同一条实时 run（花 token）
+  subagentmodel: {
+    probe: 'scripts/probe/subagent-model.js',
+    delay: 12000,
+    cost: 1,
+    budget: 260000,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
+  },
+  /*
+   * 项目知识的注入链（实施-03 S3，花 token）：宿主检索 → 每条会话一份注入文件
+   * → 薄层扩展在 `before_provider_request` 把材料放进上下文；**从设置里关掉
+   * 之后下一轮立刻不再注入**。
+   *
+   * 两个真实回合都在探针里（开 / 关各一轮），断言全在退出后：
+   * 「到底注入了什么」只有扩展诊断日志与注入文件知道，而探针按设计读不到
+   * `YAN_DATA_DIR`（与 context 系场景同一条分工）。
+   * 知识条目由 fixture 预置（`knowledgeSeed`）—— 写入通道是 S4 的 CLI，
+   * 本片**不**假装它已经存在。
+   */
+  knowledgeinject: {
+    probe: 'scripts/probe/knowledge-inject.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    /* 三个真实回合（开 / 关 / 重新开 + 无关查询）；单个回合最坏 120s */
+    budget: 600000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    knowledgeSeed: true,
+    knowledgeExtLog: true,
+    afterExit: 'knowledgeInject'
+  },
+  /*
+   * 项目知识设置页（实施-03 S5，**不调模型**）：真开设置 → 读到 fixture →
+   * 确认 / 编辑 / 逻辑删除一次走完。落盘由 afterExit 核对（界面上“已消失”
+   * 不等于磁盘上真的删了）。
+   */
+  knowledgetab: {
+    probe: 'scripts/probe/knowledge-tab.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 120000,
+    cost: 0,
+    knowledgeSeed: 'candidate',
+    afterExit: 'knowledgeTab'
+  },
+  /*
+   * 项目知识的跨会话 / 项目 / 工作树隔离（实施-03 S6，**不调模型**）。
+   *
+   * 为什么要单独一条：`knowledgetab` 验的是「一条会话里界面能读能写」，
+   * 它看不出**两个项目 / 一棵工作树会不会共用一个知识空间**。而这正是
+   * 实施-03 §4 的硬要求（「工作树默认是独立项目知识空间」）。
+   *
+   * 这条场景用**真实路径前缀**复现旧 projectId 算法的截断缺陷：
+   * `legacyProjectId` 只取路径前 27 字节，而 fixture 根目录很长 ——
+   * `repo`（已登记）与 `repo-worktrees/iso`（真 git 工作树，未登记）会派生出
+   * **同一个 id**。修复前工作树会读到主仓库的知识（见 afterExit 与 HANDOFF）。
+   *
+   * `restart` 是这片新增的能力：第一次启动跑主探针 → 退出 → **用同一份
+   * `YAN_DATA_DIR` 再启动一次**跑重启探针，验「关掉应用再开，知识还在、隔离还在」。
+   * 探针之间用 localStorage 交接观察到的 id（同一个 `YAN_USER_DATA`，跨进程保留）。
+   */
+  knowledgeisolation: {
+    probe: 'scripts/probe/knowledge-isolation.js',
+    restart: { probe: 'scripts/probe/knowledge-isolation-restart.js', delay: 12000, budget: 120000 },
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 150000,
+    cost: 0,
+    knowledgeIsolationSeed: true,
+    afterExit: 'knowledgeIsolation'
+  },
+  /*
+   * `yan knowledge …` 的真实闭环（实施-03 S4，花 token）：模型自己发现并用
+   * 随包 CLI 检索 + 提议。
+   *
+   * 为什么断言在退出后：**「工具执行了」不等于「写进去了」**（§6 明文要求两边都看）。
+   * 磁盘上要多出一条 `candidate`（模型不能自证确认），而原来的 active 条目数量不变。
+   */
+  knowledgecli: {
+    probe: 'scripts/probe/knowledge-cli.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 360000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    knowledgeSeed: true,
+    afterExit: 'knowledgeCli'
+  },
   /*
    * 宿主任务服务端到端（实施-02 S3，花 token）：
    * 模型 → bash → `yan tasks apply` → 宿主任务日志 → 界面清单。
@@ -2508,6 +2600,599 @@ async function checkContextDeepPref(sandboxRoot, _tempBefore, probeText) {
  * **「本该有」的对照**是同 env、同探针形态的 `contextfolddefault` —— 它用同一套
  * 条件（`YAN_CONTEXT_POLICY` 只降门槛、**不给 `kinds`**）证明默认集下真的会生成。
  */
+/* ══════════════════════════════════════════════════════════════════
+ * 项目知识注入（实施-03 S3）
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 项目知识 fixture 的项目 id / 条目 id / 正文（afterExit 也读这几个常量）。 */
+const KNOWLEDGE_FIXTURE_PROJECT_ID = 'proj-fixture'
+const KNOWLEDGE_FIXTURE_ENTRY_ID = 'kn-deploy'
+const KNOWLEDGE_FIXTURE_TEXT = '发布流程统一走 npm run dist，先跑完整门槛'
+/* 设置页场景专用的候选条目：确认按钮只对 candidate 出现 */
+const KNOWLEDGE_FIXTURE_CANDIDATE_ID = 'k-candidate01'
+const KNOWLEDGE_FIXTURE_CANDIDATE_TEXT = 'out/ 是构建产物目录，跑单测前先 build'
+
+/**
+ * 预置一份项目知识（fixture）。
+ *
+ * 指纹用**真模块**算（靠 Node 的类型剥离直接 import `src/shared/project-memory.ts`）——
+ * 手写一个 16 位 hex 也许能过形状校验，但那是 fixture 在替产品说谎，
+ * 而这条场景的全部意义就是「真检索、真注入」。
+ */
+async function seedProjectKnowledge(dataDir, opts = {}) {
+  const projectId = KNOWLEDGE_FIXTURE_PROJECT_ID
+  const { pathToFileURL } = await import('node:url')
+  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
+  const now = new Date().toISOString()
+  const entry = {
+    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+    id: KNOWLEDGE_FIXTURE_ENTRY_ID,
+    projectId,
+    revision: 1,
+    kind: 'decision',
+    status: 'active',
+    text: KNOWLEDGE_FIXTURE_TEXT,
+    textDigest: memory.textDigest(KNOWLEDGE_FIXTURE_TEXT),
+    tags: ['发布'],
+    evidence: [{ sessionId: 'fixture' }],
+    confidenceClass: 'user-confirmed',
+    createdAt: now,
+    updatedAt: now
+  }
+  /*
+   * 「设置页」场景要多一条**候选**：确认按钮只对 `candidate` 出现，
+   * 而候选只能是模型提议出来的（宿主不会自己造）——所以 fixture 必须准备好，
+   * 否则那一列永远是空的，接口不接也不知道。
+   */
+  const candidate = opts.withCandidate
+    ? {
+        ...entry,
+        id: KNOWLEDGE_FIXTURE_CANDIDATE_ID,
+        revision: 1,
+        kind: 'fact',
+        status: 'candidate',
+        text: KNOWLEDGE_FIXTURE_CANDIDATE_TEXT,
+        textDigest: memory.textDigest(KNOWLEDGE_FIXTURE_CANDIDATE_TEXT),
+        tags: [],
+        evidence: [{ sessionId: opts.sessionId ?? 'fixture' }],
+        confidenceClass: 'inferred'
+      }
+    : null
+  /* 来源跳转要一个**真存在**的会话：fixture 会话 id 是动态的，由调用方查好传进来 */
+  if (opts.sessionId) entry.evidence = [{ sessionId: opts.sessionId }]
+  const entries = [entry, ...(candidate ? [candidate] : [])]
+  const manifest = {
+    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+    projectId,
+    revision: 1,
+    updatedAt: now,
+    entries: entries.map((item) => memory.pointerOf(item))
+  }
+  const dir = join(dataDir, 'project-knowledge', projectId)
+  for (const item of entries) {
+    mkdirSync(join(dir, 'entries', item.id), { recursive: true })
+    writeFileSync(join(dir, 'entries', item.id, 'r1.json'), JSON.stringify(item, null, 2), 'utf8')
+  }
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
+  console.log(
+    `  项目知识 fixture：${projectId}/${entry.id}${candidate ? ` + ${candidate.id}（候选）` : ''}（digest ${entry.textDigest.slice(0, 8)}${opts.sessionId ? `，来源会话 ${opts.sessionId}` : ''}）`
+  )
+}
+
+/**
+ * 实施-03 S6 的隔离 fixture 常量（probe 与 afterExit 都要用）。
+ *
+ * 为什么 id / 正文写在这里：探针只做界面断言，真正的字节（digest）核验在
+ * Node 侧（探针按设计读不到 `YAN_DATA_DIR`）。两边得拿同一份常量。
+ */
+const KNOWLEDGE_ISO_A_ID = 'kn-iso-a'
+const KNOWLEDGE_ISO_A_TEXT = 'fixture：主仓库的发布流程统一走 npm run dist'
+const KNOWLEDGE_ISO_B_ID = 'kn-iso-b'
+const KNOWLEDGE_ISO_B_TEXT = 'fixture：另一个项目的接口约定（与主仓库无关）'
+const KNOWLEDGE_ISO_TITLES = { a: 'YAN-ISO-A', b: 'YAN-ISO-B', w: 'YAN-ISO-W' }
+/** 跨重启交接观察结果的 localStorage 键（同一个 YAN_USER_DATA，进程退出后仍在）。 */
+const KNOWLEDGE_ISO_STASH_KEY = 'yan.probe.knowledge-iso.v1'
+/** 旧用户数据的哨兵（实施-03 §9：遗留 `memory.json` / `soul.md` 不主动删）。 */
+const LEGACY_DATA_SENTINELS = [
+  { name: 'memory.json', body: '{"entries":[{"id":"old-1","text":"用户遗留的旧记忆，不许被删除或改写"}]}\n' },
+  { name: 'soul.md', body: '# soul\n\n用户遗留的旧人设文件，逐字节不许变。\n' }
+]
+
+/**
+ * 把三个 cwd 的会话写进隔离会话目录。
+ *
+ * 为什么自己写而不复用 `writeProjectSwitchSessions`：那个函数只支持两个 cwd，
+ * 而这片要验三处 —— 主仓库 A / 另一个项目 B / **未登记的 git 工作树 W**。
+ * 用 `utimesSync` 把 mtime 拨开（排序键是文件 mtime，不是消息时间戳）。
+ */
+function writeIsolationSessions(root, cwdA, cwdB, cwdW) {
+  const stamp = Date.now().toString(36)
+  const made = {}
+  const one = (tag, key, cwd, skew) => {
+    const id = `yan-iso-${tag}-${stamp}`
+    const file = join(root, `2026-01-05T00-00-00-000Z_${id}.jsonl`)
+    const lines = [
+      { type: 'session', version: 3, id, timestamp: TS(800 - skew), cwd },
+      { type: 'model_change', id: 'mc0', parentId: null, timestamp: TS(800 - skew), provider: 'commandcode', modelId: 'deepseek/deepseek-v4.1-flash' },
+      {
+        type: 'message',
+        id: 'u0',
+        parentId: 'mc0',
+        timestamp: TS(790 - skew),
+        message: { role: 'user', content: [{ type: 'text', text: `${KNOWLEDGE_ISO_TITLES[key]} fixture 会话` }] }
+      },
+      {
+        type: 'message',
+        id: 'a0',
+        parentId: 'u0',
+        timestamp: TS(780 - skew),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: `${KNOWLEDGE_ISO_TITLES[key]}-REPLY` }],
+          usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason: 'stop'
+        }
+      }
+    ]
+    writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+    const t = (Date.now() - (900 + skew) * 1000) / 1000
+    try {
+      utimesSync(file, t, t)
+    } catch {
+      /* 个别文件系统不支持改时间戳：不致命 */
+    }
+    made[key] = { tag, cwd, file }
+  }
+  one('a', 'a', cwdA, 0)
+  one('b', 'b', cwdB, 10)
+  one('w', 'w', cwdW, 20)
+  return made
+}
+
+/**
+ * 项目知识隔离 fixture（实施-03 S6）。
+ *
+ * 造出四种真实条件：
+ *   ① A = 主仓库（`fixture-project/repo`，真 git 仓库）—— 用**旧算法**的 id 登记，
+ *      这是「项目被自动登记」时的真实取值；
+ *   ② B = 另一个项目（`fixture-project/other`）—— 它的旧 id 与 A 撞，所以登记时
+ *      必须拿到哈希 id（与 `sanitizeProjects` 的碰撞退路一致）；
+ *   ③ W = A 的**真 git 工作树**（`fixture-project/repo-worktrees/iso`）—— **不登记**，
+ *      模拟「直接打开一条工作树会话」；它的旧 id 与 A 完全相同；
+ *   ④ 旧的 `memory.json` / `soul.md` 哨兵：跑完必须逐字节不变。
+ *
+ * 修复前 ③ 会读到 ① 的知识（工作树与主仓库共用一个 id）—— 这条 fixture
+ * 就是为那个缺陷准备的。
+ */
+async function seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd) {
+  const { pathToFileURL } = await import('node:url')
+  const ids = await import(pathToFileURL(join(root, 'src/main/project-id.ts')).href)
+  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
+
+  const cwdA = caseCwd
+  const cwdB = join(fixtureProject, 'other')
+  const worktreeRoot = join(fixtureProject, 'repo-worktrees')
+  const cwdW = join(worktreeRoot, 'iso')
+
+  /* 真 git 工作树；git 不可用时退化成普通目录 —— 路径前缀（碰撞的成因）不受影响 */
+  let worktreeIsReal = false
+  try {
+    mkdirSync(worktreeRoot, { recursive: true })
+    execFileSync('git', ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test', 'worktree', 'add', '-q', '-b', `iso-${Date.now().toString(36)}`, cwdW], {
+      cwd: cwdA,
+      stdio: 'ignore'
+    })
+    worktreeIsReal = true
+  } catch (error) {
+    mkdirSync(cwdW, { recursive: true })
+    console.log(`  ⚠️  工作树没建起来（${error instanceof Error ? error.message : String(error)}）—— 退化成普通目录，路径前缀不变`)
+  }
+
+  const idA = ids.legacyProjectId(cwdA)
+  const idB = ids.hashedProjectId(cwdB)
+  const legacyW = ids.legacyProjectId(cwdW)
+
+  const entry = (key, id, text, kind) => {
+    const now = new Date().toISOString()
+    return {
+      schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+      id,
+      projectId: key,
+      revision: 1,
+      kind,
+      status: 'active',
+      text,
+      textDigest: memory.textDigest(text),
+      tags: [],
+      evidence: [{ sessionId: 'fixture' }],
+      confidenceClass: 'user-confirmed',
+      createdAt: now,
+      updatedAt: now
+    }
+  }
+  const writeOne = (projectId, item) => {
+    const dir = join(sandboxRoot, 'data', 'project-knowledge', projectId)
+    mkdirSync(join(dir, 'entries', item.id), { recursive: true })
+    writeFileSync(join(dir, 'entries', item.id, 'r1.json'), JSON.stringify(item, null, 2), 'utf8')
+    writeFileSync(
+      join(dir, 'manifest.json'),
+      JSON.stringify(
+        {
+          schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
+          projectId,
+          revision: 1,
+          updatedAt: item.updatedAt,
+          entries: [memory.pointerOf(item)]
+        },
+        null,
+        2
+      ),
+      'utf8'
+    )
+  }
+  writeOne(idA, entry(idA, KNOWLEDGE_ISO_A_ID, KNOWLEDGE_ISO_A_TEXT, 'decision'))
+  writeOne(idB, entry(idB, KNOWLEDGE_ISO_B_ID, KNOWLEDGE_ISO_B_TEXT, 'fact'))
+
+  writeFileSync(
+    join(sandboxRoot, 'data', 'desktop.json'),
+    JSON.stringify(
+      {
+        cwd: cwdA,
+        lang: 'zh-CN',
+        projectKnowledge: { enabled: true },
+        projects: [
+          { id: idA, cwd: cwdA, name: '主仓库', archived: false, createdAt: Date.now(), updatedAt: Date.now() },
+          { id: idB, cwd: cwdB, name: '另一个项目', archived: false, createdAt: Date.now(), updatedAt: Date.now() }
+        ]
+      },
+      null,
+      2
+    ),
+    'utf8'
+  )
+
+  const sessions = join(sandboxRoot, 'sessions')
+  mkdirSync(sessions, { recursive: true })
+  const made = writeIsolationSessions(sessions, cwdA, cwdB, cwdW)
+
+  /* 旧用户数据哨兵：两份（pi 目录 + 数据目录），跑完都要逐字节不变 */
+  const sentinels = []
+  for (const base of [join(sandboxRoot, 'pi-agent'), join(sandboxRoot, 'data')]) {
+    mkdirSync(base, { recursive: true })
+    for (const sentinel of LEGACY_DATA_SENTINELS) {
+      const path = join(base, sentinel.name)
+      writeFileSync(path, sentinel.body, 'utf8')
+      sentinels.push({ path, body: sentinel.body })
+    }
+  }
+
+  console.log(`  隔离 fixture：A=${idA.slice(0, 18)}…(登记) / B=${idB.slice(0, 18)}…(登记·哈希) / W=${legacyW.slice(0, 18)}…(工作树·未登记)`)
+  console.log(`    工作树：${cwdW}${worktreeIsReal ? '（真 git 工作树）' : '（普通目录）'}`)
+  return { cwdA, cwdB, cwdW, idA, idB, legacyW, sessions: made, sentinels }
+}
+
+/**
+ * 退出后检查：注入真的发生过，而且关掉之后不再发生。
+ *
+ * 三处证据缺一不可：
+ *   ① `desktop.json` 里开关真的落成了 false（渲染端 → 主进程 → 磁盘）；
+ *   ② 扩展诊断日志里先有 `inject`（带 fixture 条目 id），之后有 `injected:false`；
+ *   ③ 注入文件最后停成空块 —— 这是「下一轮看得到的」那份状态。
+ */
+async function checkKnowledgeInject(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  /* ① 设置文件：只如实报最终值（探针最后一节把开关重新打开了，不是断言点） */
+  try {
+    const settings = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'desktop.json'), 'utf8'))
+    lines.push(`  desktop.json：projectKnowledge=${JSON.stringify(settings?.projectKnowledge ?? null)}`)
+    say(settings?.projectKnowledge?.enabled === true, '设置写入链通（探针重开后最终为 true）')
+  } catch (error) {
+    say(false, '读 desktop.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* ② 诊断日志 */
+  const logFile = join(sandboxRoot, 'knowledge-ext.log')
+  const records = (existsSync(logFile) ? readFileSync(logFile, 'utf8') : '')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+  const injects = records.filter((record) => record.hook === 'inject')
+  /* 先把诊断原样报出来：沙箱退出后会清掉，这里不报就设不了案 */
+  lines.push(`  诊断行数 = ${records.length}`)
+  for (const record of records.slice(0, 8)) lines.push('    ' + JSON.stringify(record))
+  say(injects.length >= 1, `扩展真的注入过（inject ${injects.length} 次）`)
+  say(
+    injects.some((record) => (record.ids ?? []).includes(KNOWLEDGE_FIXTURE_ENTRY_ID)),
+    `注入的条目里有 fixture 那条（${KNOWLEDGE_FIXTURE_ENTRY_ID}）`
+  )
+  const firstInject = records.findIndex((record) => record.hook === 'inject')
+  const afterInject = firstInject >= 0 ? records.slice(firstInject + 1) : []
+  say(
+    afterInject.some((record) => record.hook === 'payload' && record.injected === false),
+    '关掉之后的回合不再注入（诊断里 injected:false）'
+  )
+  /* 最后一次模型请求必须是「没注入」—— 它对应「重新开启 + 无关查询」那一轮 */
+  const lastPayload = [...records].reverse().find((record) => record.hook === 'payload')
+  say(lastPayload?.injected === false, '最后一次模型请求没注入（与注入文件的 no-match 对应）')
+
+  /* ③ 注入文件：最后停成空块 */
+  try {
+    const injectDir = join(sandboxRoot, 'data', 'project-knowledge', '_inject')
+    const files = existsSync(injectDir) ? readdirSync(injectDir).filter((name) => name.endsWith('.json')) : []
+    say(files.length >= 1, `注入文件存在（${files.length} 份）`)
+    const last = files.length ? JSON.parse(readFileSync(join(injectDir, files[files.length - 1]), 'utf8')) : null
+    if (last) {
+      lines.push(`  注入文件（${files[files.length - 1]}）：enabled=${last.enabled} reason=${last.reason} hits=${(last.hits ?? []).length} block=${(last.block ?? '').length} 字符`)
+    }
+    /*
+     * 最后一份注入文件对应「重新开启 + 无关查询」那一轮：
+     * 开关是开的（所以不是靠关掉蒙过去），但块为空、原因是 no-match ——
+     * 这就是「无相关项则零注入」的磁盘证据。
+     */
+    say(last?.enabled === true && last?.block === '', '无关查询下注入文件是空块（开启着也不注入）')
+    say(last?.reason === 'no-match', `空块的原因是 no-match（收到 ${last?.reason ?? '(无)'}）`)
+  } catch (error) {
+    say(false, '读注入文件失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  say(!/\[knowledgeinject\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：`yan knowledge propose` 真的落盘了，而且落的是 `candidate`。
+ *
+ * 三条：① 条目数增加；② 新条目是 `candidate`（模型不能自证确认）；
+ * ③ 原 fixture 那条仍是唯一的 `active`（没有被顺手改写）。
+ */
+async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const manifestFile = join(sandboxRoot, 'data', 'project-knowledge', KNOWLEDGE_FIXTURE_PROJECT_ID, 'manifest.json')
+  try {
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
+    const entries = Array.isArray(manifest.entries) ? manifest.entries : []
+    const active = entries.filter((entry) => entry.status === 'active')
+    const candidates = entries.filter((entry) => entry.status === 'candidate')
+    lines.push(`  manifest：revision=${manifest.revision} 共 ${entries.length} 条（active ${active.length} / candidate ${candidates.length}）`)
+    for (const entry of entries) lines.push(`    ${entry.id} ${entry.status} ${entry.kind}`)
+    say(entries.length >= 2, '磁盘上真的多了一条（propose 写进去了）')
+    say(candidates.length >= 1, '新条目落成 candidate（模型不能自证 user-confirmed）')
+    say(active.length === 1, 'active 条目仍然只有 fixture 那一条')
+  } catch (error) {
+    say(false, '读 manifest 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  say(!/\[knowledgecli\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：设置页里那三次操作真的落盘了。
+ *
+ * 三件：① 被删的那条 `status` 变成 `deleted` 且 revision 加了至少 3（确认 / 编辑 / 删除）；
+ * ② 另一条 fixture 一点没被动过；③ 删掉的那条**正文不在导出材料里**（墓碑不回流）。
+ */
+async function checkKnowledgeTab(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const manifestFile = join(sandboxRoot, 'data', 'project-knowledge', KNOWLEDGE_FIXTURE_PROJECT_ID, 'manifest.json')
+  try {
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
+    const entries = Array.isArray(manifest.entries) ? manifest.entries : []
+    lines.push(`  manifest：revision=${manifest.revision} 共 ${entries.length} 条`)
+    for (const entry of entries) lines.push(`    ${entry.id} ${entry.status} rev ${entry.revision}`)
+    const deleted = entries.find((entry) => entry.id === KNOWLEDGE_FIXTURE_CANDIDATE_ID)
+    const untouched = entries.find((entry) => entry.id === KNOWLEDGE_FIXTURE_ENTRY_ID)
+    say(!!deleted, '被删的那条仍在 manifest 里（逻辑删除，不是抹掉）')
+    say(deleted?.status === 'deleted', '被删的那条状态是 deleted')
+    say((deleted?.revision ?? 0) >= 4, `revision 至少加了 3（确认 / 编辑 / 删除）：${deleted?.revision}`)
+    say(untouched?.status === 'active' && untouched?.revision === 1, '另一条 fixture 完全没被动过（active / rev 1）')
+    /*
+     * 墓碑不回流：删除后的正文不该出现在导出材料里。这里直接读墓碑正文（还在盘上，
+     * 逻辑删除保留可恢复），确认它**不等于**原来那条候选的文字 ——
+     * 若发现它还是 active 或 revision 没变，上面的断言已经先报错了。
+     */
+    const tombstoneFile = join(
+      sandboxRoot,
+      'data',
+      'project-knowledge',
+      KNOWLEDGE_FIXTURE_PROJECT_ID,
+      'entries',
+      KNOWLEDGE_FIXTURE_CANDIDATE_ID,
+      `r${deleted?.revision ?? 0}.json`
+    )
+    const tombstone = JSON.parse(readFileSync(tombstoneFile, 'utf8'))
+    say(typeof tombstone.text === 'string' && tombstone.text.length > 0, '墓碑保留正文（逻辑删除可恢复）')
+    say(tombstone.status === 'deleted', '那版 revision 文件本身也是 deleted 状态')
+  } catch (error) {
+    say(false, '读 manifest / 墓碑失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  say(!/\[knowledgetab\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：项目知识的跨项目 / 工作树隔离 + 跨重启持久化 + 便携数据完整性
+ *（实施-03 S6）。
+ *
+ * 为什么全部在退出后看：探针跑在渲染端，按设计读不到 `YAN_DATA_DIR` ——
+ * 「界面上看不到 B 的知识」可能只是这一轮没刷新。真正的保证是磁盘上
+ * 两个项目就是两个目录、各只有自己的条目；而重启后再读一次，证明它不是内存态。
+ *
+ * 反向验证：把 `capability.projectId` 的“未登记回退”改回裸 `legacyProjectId(cwd)`，
+ * 工作树那条断言（探针里的 ids.w）会当场变红 —— 这就是旧算法 27 字节截断
+ * 让工作树与主仓库共用 id 的缺陷（详见 HANDOFF 六栅）。
+ */
+async function checkKnowledgeIsolation(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const { pathToFileURL } = await import('node:url')
+  const ids = await import(pathToFileURL(join(root, 'src/main/project-id.ts')).href)
+  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
+  const fixtureProject = join(sandboxRoot, 'fixture-project')
+  const cwdA = join(fixtureProject, 'repo')
+  const cwdB = join(fixtureProject, 'other')
+  const cwdW = join(fixtureProject, 'repo-worktrees', 'iso')
+  const idA = ids.legacyProjectId(cwdA)
+  const idB = ids.hashedProjectId(cwdB)
+  const idW = ids.hashedProjectId(cwdW)
+  const knDir = (projectId) => join(sandboxRoot, 'data', 'project-knowledge', projectId)
+  const readManifest = (projectId) => JSON.parse(readFileSync(join(knDir(projectId), 'manifest.json'), 'utf8'))
+
+  /* ── ① 前提：旧算法的 27 字节截断真的让工作树与主仓库同 id ── */
+  say(
+    ids.legacyProjectId(cwdW) === idA,
+    '前提成立：工作树的旧算法 id 与主仓库完全相同（路径前 27 字节被截断）',
+  )
+  say(idB !== idA, '另一个项目的登记 id 与主仓库不同（碰撞退路生效）')
+
+  /* ── ② 磁盘上两个项目各只有自己那条 ── */
+  try {
+    const manifestA = readManifest(idA)
+    const manifestB = readManifest(idB)
+    const entryA = (manifestA.entries ?? []).find((entry) => entry.id === KNOWLEDGE_ISO_A_ID)
+    const entryB = (manifestB.entries ?? []).find((entry) => entry.id === KNOWLEDGE_ISO_B_ID)
+    lines.push(`  A(${idA.slice(0, 18)}…) → ${(manifestA.entries ?? []).map((e) => e.id).join(', ') || '（空）'}`)
+    lines.push(`  B(${idB.slice(0, 18)}…) → ${(manifestB.entries ?? []).map((e) => e.id).join(', ') || '（空）'}`)
+    say(entryA?.status === 'active', 'A 的条目在 A 的知识目录里（active）')
+    say(entryB?.status === 'active', 'B 的条目在 B 的知识目录里（active）')
+    say(
+      entryA?.digest === memory.textDigest(KNOWLEDGE_ISO_A_TEXT),
+      'A 的条目正文指纹与 fixture 一致（逐字节没被改动）',
+    )
+    say(
+      !(manifestA.entries ?? []).some((entry) => entry.id === KNOWLEDGE_ISO_B_ID),
+      'A 的目录里**没有** B 的条目（物理隔离，不靠查询条件）',
+    )
+    say(
+      !(manifestB.entries ?? []).some((entry) => entry.id === KNOWLEDGE_ISO_A_ID),
+      'B 的目录里**没有** A 的条目',
+    )
+  } catch (error) {
+    say(false, '读项目 manifest 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* ── ③ 工作树不该拿到主仓库的知识 ── */
+  try {
+    const worktreeManifest = existsSync(join(knDir(idW), 'manifest.json')) ? readManifest(idW) : null
+    lines.push(
+      `  工作树 id（哈希）→ ${worktreeManifest ? (worktreeManifest.entries ?? []).map((e) => e.id).join(', ') : '（没有知识目录）'}`,
+    )
+    say(
+      !worktreeManifest || (worktreeManifest.entries ?? []).length === 0,
+      '工作树没有拿到任何条目（即使没有知识目录也算通过 —— 它不该读主仓库的）',
+    )
+  } catch (error) {
+    say(false, '读工作树知识目录失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* ── ④ 探针自己报的 id：运行时真的用了「哈希退路」 ── */
+  const idLine = /\[knowledgeisolation\] ids=(\{[^\n]*\})/.exec(probeText)
+  let runtimeIds = null
+  if (!idLine) {
+    say(false, '探针没有打印运行时的 projectId（拿不到隔离的直接证据）')
+  } else {
+    try {
+      runtimeIds = JSON.parse(idLine[1])
+      lines.push(`  运行时 id = ${JSON.stringify(runtimeIds)}`)
+      say(runtimeIds.a === idA, '主仓库会话用的就是登记 id')
+      say(runtimeIds.b === idB, '另一个项目会话用的是哈希 id（登记过）')
+      say(runtimeIds.w === idW, '工作树会话用的是哈希 id —— 不是主仓库的 id（隔离成立）')
+      say(runtimeIds.w !== runtimeIds.a, '工作树的 id 与主仓库不同（这就是旧算法会撞的地方）')
+    } catch (error) {
+      say(false, '解析探针 id 失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /* ── ⑤ 重启：用同一份数据目录第二次启动，读到同一批 id 与条目 ── */
+  const restartLine = /\[knowledgeisolation\] restart=(\{[^\n]*\})/.exec(probeText)
+  if (!restartLine) {
+    say(false, '没有拿到重启探针的输出（cross-process 持久化没验到）')
+  } else {
+    try {
+      const restart = JSON.parse(restartLine[1])
+      lines.push(`  重启后 = ${JSON.stringify(restart)}`)
+      say(restart.aHasEntry === true, '重启后主仓库仍能读到自己的条目（知识在盘上，不是内存态）')
+      say(restart.aSameId === true, '重启后主仓库的 projectId 与上一次相同（派生确定性）')
+      say(restart.bHasEntry === true, '重启后另一个项目仍能读到自己的条目')
+      say(restart.wEmpty === true, '重启后工作树仍然读不到任何条目')
+      say(restart.wSameId === true, '重启后工作树的 projectId 与上一次相同（哈希退路确定）')
+    } catch (error) {
+      say(false, '解析重启探针输出失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  /* ── ⑥ 无开发目录依赖：知识不往仓库里写 ── */
+  say(!existsSync(join(root, 'project-knowledge')), '开发仓库根目录下没有被创建 project-knowledge（数据只在 YAN_DIR）')
+  say(
+    existsSync(knDir(idA)) && knDir(idA).startsWith(join(sandboxRoot, 'data')),
+    '知识目录落在隔离的 YAN_DIR 下',
+  )
+
+  /* ── ⑦ 旧用户数据逐字节不变（实施-03 §9）── */
+  for (const base of ['pi-agent', 'data']) {
+    for (const sentinel of LEGACY_DATA_SENTINELS) {
+      const path = join(sandboxRoot, base, sentinel.name)
+      let same = false
+      try {
+        same = readFileSync(path, 'utf8') === sentinel.body
+      } catch {
+        same = false
+      }
+      say(same, `旧用户数据逐字节不变：${base}/${sentinel.name}`)
+    }
+  }
+
+  say(!/\[knowledgeisolation\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
+  return { ok, lines }
+}
+
 async function checkContextFoldPref(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -3273,6 +3958,10 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
 /** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
 const AFTER_EXIT = {
   subagentArchive: checkSubagentArchive,
+  knowledgeInject: checkKnowledgeInject,
+  knowledgeCli: checkKnowledgeCli,
+  knowledgeTab: checkKnowledgeTab,
+  knowledgeIsolation: checkKnowledgeIsolation,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
   browserBoundaryDownloads: checkBrowserBoundaryDownloads,
@@ -4237,10 +4926,66 @@ async function main() {
       console.log(`\n✗ ${name} 未通过`)
       continue
     }
+    /* 隔离 fixture 的“只种一次”门（wins 多档时不能重复建工作树 / 重复写会话） */
+    let isolationSeeded = false
 
     for (const win of wins) {
       if (sandboxRoot) {
-        writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify({ cwd: caseCwd, lang: 'zh-CN' }, null, 2), 'utf8')
+        const desktop = { cwd: caseCwd, lang: 'zh-CN' }
+        if (c.knowledgeSeed) {
+          /*
+           * 项目登记决定 `projectId`（宿主用登记里的 id，而不是现场派生）：
+           * fixture 写下的知识目录必须与它同名，所以登记也由 fixture 给定。
+           * 开关同样写在这里 —— 探针之后会从界面上把它关掉。
+           */
+          desktop.projects = [
+            {
+              id: KNOWLEDGE_FIXTURE_PROJECT_ID,
+              cwd: caseCwd,
+              name: 'Fixture',
+              archived: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            }
+          ]
+          desktop.projectKnowledge = { enabled: true }
+        }
+        /*
+         * 隔离 fixture（`knowledgeIsolationSeed`）自己写 desktop.json ——
+         * 默认那份不能覆盖它（否则第二次窗口开跑时项目登记会没，身份退回派生，
+         * 验的就变成另一回事了）。
+         */
+        if (!c.knowledgeIsolationSeed) {
+          writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify(desktop, null, 2), 'utf8')
+        }
+        if (c.knowledgeSeed) {
+          /*
+           * 来源跳转要一个真存在的会话：fixture 会话 id 是动态生成的，
+           * 所以从会话目录里现取一个（文件名 `<时间戳>_<id>.jsonl`）。
+           */
+          let fixtureSessionId
+          try {
+            /* 会话文件可能嵌在项目子目录里（`--C--Users-...--/<时间戳>_<id>.jsonl`），所以要递归找 */
+            const file = readdirSync(join(sandboxRoot, 'sessions'), { recursive: true })
+              .map((name) => String(name))
+              .find((name) => name.endsWith('.jsonl'))
+            if (file) fixtureSessionId = basename(file).replace(/\.jsonl$/, '').split('_').slice(1).join('_')
+          } catch {
+            /* 没有会话目录就算了：来源会显示成「不可回读」，探针会跟着分支 */
+          }
+          await seedProjectKnowledge(join(sandboxRoot, 'data'), {
+            withCandidate: c.knowledgeSeed === 'candidate',
+            sessionId: c.knowledgeSeed === 'candidate' ? fixtureSessionId : undefined
+          })
+        }
+        /*
+         * 实施-03 S6：隔离 fixture 自己写 desktop.json / 会话 / 数据哨兵，
+         * 所以**不能**被上面的默认 desktop 覆盖。每场景只种一次（wins 可能多档）。
+         */
+        if (c.knowledgeIsolationSeed && !isolationSeeded) {
+          await seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd)
+          isolationSeeded = true
+        }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
       const out = await runProbe(c, {
@@ -4248,6 +4993,8 @@ async function main() {
         ...(win ? { YAN_WIN: win } : {}),
         /* 扩展诊断落到隔离沙箱（退出后检查读它） */
         ...(c.contextExtLog && sandboxRoot ? { YAN_CONTEXT_EXT_LOG: join(sandboxRoot, 'ctx-ext.log') } : {}),
+        /* 项目知识注入的诊断（同上，实施-03 S3） */
+        ...(c.knowledgeExtLog && sandboxRoot ? { YAN_KNOWLEDGE_EXT_LOG: join(sandboxRoot, 'knowledge-ext.log') } : {}),
         // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
         YAN_TEST_MODEL: c.model ?? TEST_MODEL
       })
@@ -4280,6 +5027,29 @@ async function main() {
           allOk = false
           console.log(`  ✗ 目标浏览器里的 Cookie 值对不上（期待 cookieHash=${expectedHash}）`)
         }
+      }
+    }
+
+    /*
+     * 跨进程重启（实施-03 S6）：关掉应用后**用同一份 `YAN_DATA_DIR`
+     * 再启动一次**，跑第二个探针。
+     *
+     * 为什么不靠 wins 循环顺路验：那一支每档都会**重置 desktop.json**
+     *（项目登记跟着没了，projectId 会退回派生 —— 验的就是另一回事了）。
+     * 这里刻意不碰任何隔离文件，验的就是「上次写下的东西还在不在」。
+     */
+    if (allOk && c.restart) {
+      console.log(`\n─── 重启（第二次启动，同一份 YAN_DATA_DIR）───`)
+      const out2 = await runProbe(
+        { ...c.restart },
+        { ...env, YAN_TEST_MODEL: c.restart.model ?? c.model ?? TEST_MODEL }
+      )
+      process.stdout.write(out2.text)
+      /* 两轮输出拼在一起：afterExit 要同时看到首次与重启后的两份证据 */
+      lastProbeText = lastProbeText + out2.text
+      if (!out2.ok) {
+        allOk = false
+        hint = hint ?? out2.hint
       }
     }
 

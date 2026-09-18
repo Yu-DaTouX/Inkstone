@@ -116,6 +116,21 @@ const DEFAULTS: AppSettings = {
   sound: defaultSound()
 }
 
+/**
+ * 项目知识（实施-03）的用户开关：与 `sanitizeContextDeep` 同一条约定 ——
+ * 只认字面 `true`，其余（含 `false` / 脏值 / 缺失）一律 `undefined`。
+ *
+ * 「没改过」与「明确关掉」在磁盘上因此长得不一样：后者会落 `{enabled:false}`，
+ * 以后调整默认值时不会把改过的人一起改掉。
+ */
+function sanitizeProjectKnowledge(v: unknown): { enabled: boolean } | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const enabled = (v as { enabled?: unknown }).enabled
+  if (enabled === true) return { enabled: true }
+  if (enabled === false) return { enabled: false }
+  return undefined
+}
+
 /** 声音提示的默认值（总开关关、音量 0.4、三类事件都开） */
 function defaultSound(): SoundSettings {
   return {
@@ -385,6 +400,7 @@ export async function getSettings(): Promise<AppSettings> {
      * 只不过默认方向相反（它在默认接管集里，所以只有明确关闭才落盘）。
      */
     cached.contextFold = sanitizeContextFold(cached.contextFold)
+    cached.projectKnowledge = sanitizeProjectKnowledge(cached.projectKnowledge)
   } catch {
     cached = { ...DEFAULTS }
     cached.lang = detectLang()
@@ -459,6 +475,7 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   if ('contextDeep' in patch) next.contextDeep = sanitizeContextDeep(next.contextDeep)
   /* 同上：关闭时写 `{enabled:false}`（它是「开着」的默认态），「没改过」写 `undefined` */
   if ('contextFold' in patch) next.contextFold = sanitizeContextFold(next.contextFold)
+  if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

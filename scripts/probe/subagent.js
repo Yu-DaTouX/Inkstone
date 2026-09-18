@@ -45,13 +45,29 @@
     out.push('')
     out.push('=== 2. 真实启动一个子代理 ===')
     /*
-     * 走 store action —— 它就是 `/subagent <任务>` 命令走的那条路：
+     * 先走用户可见的调用 UI：它与 Codex 一样靠近输入区，
+     * 不要求用户记住 `/subagent`。提交后仍然落到同一个 store action，
      * 会真的起一个独立 pi 子进程，并把详情面板自动打开。
      */
     const noticesBefore = store.getState().notices.length
-    await store.getState().startSubagent('请只回答两个字：收到')
+    ok(!!q('[data-testid="subagent-new"]'), '输入区上方有显式的子代理调用按钮')
+    q('[data-testid="subagent-new"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(200)
+    ok(!!q('[data-testid="subagent-launch-panel"]'), '点击后打开子代理任务面板')
+    const taskInput = q('[data-testid="subagent-task"]')
+    const taskSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    if (taskInput && taskSetter) {
+      taskSetter.call(taskInput, '请只回答两个字：收到')
+      taskInput.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    q('[data-testid="subagent-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(800)
-    const started = store.getState().subagents[store.getState().subagents.length - 1]
+    let started = null
+    for (let i = 0; i < 30; i++) {
+      started = store.getState().subagents[store.getState().subagents.length - 1]
+      if (started?.task === '请只回答两个字：收到') break
+      await sleep(300)
+    }
     const id = started?.id
     ok(store.getState().notices.length === noticesBefore, '启动没有报错（没有新通知）')
     ok(!!id, `拿到 run id（${id ?? '无'}）`)
@@ -85,7 +101,7 @@
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
     out.push(`  诊断：rightpanel=${!!q('[data-testid="rightpanel"]')} sp=${!!q('.sp')}`)
     out.push(`  诊断：store.subagents=${store.getState().subagents.length}`)
-    ok(previewed, '右侧打开了子代理详情面板')
+    ok(previewed, '详情面板打开了（现在内联在主工作区，不是右栏）')
 
     out.push('')
     out.push('=== 3. 等它跑完（真实模型调用）===')

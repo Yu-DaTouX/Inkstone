@@ -544,7 +544,6 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
     uiRequests: snapshot.uiRequests,
     statuses: snapshot.statuses,
     widgets: snapshot.widgets,
-    subagents: snapshot.subagents,
     models: snapshot.models,
     thinkingLevels: snapshot.thinkingLevels,
     commands: snapshot.commands,
@@ -1111,14 +1110,23 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ queue: m.payload })
         break
       case 'subagent': {
-        /* 整条快照覆盖 / 追加（主进程已把转录限制在 200 条以内） */
+        /*
+         * 整条快照覆盖 / 追加（主进程已把转录限制在 200 条以内）。
+         *
+         * 新 run 同时把详情面板指向它：模型用 `yan subagent start` 启动时
+         * 没有经过任何 UI 点击（`startSubagent` 那条路才有），如果这里不接上，
+         * 模型委派的子代理只会静静地出现在列表里 —— 而能力说明向模型承诺的是
+         * 「启动后用户能看到同一个任务的实时转录」。已存在的 run 按 id 就地覆盖，
+         * 不动用户当前打开的详情。
+         */
         const run = m.payload
         const idx = s.subagents.findIndex((r) => r.id === run.id)
         set({
           subagents:
             idx >= 0
               ? s.subagents.map((r) => (r.id === run.id ? run : r))
-              : [...s.subagents, run]
+              : [...s.subagents, run],
+          ...(idx < 0 ? { subagentPreviewId: run.id } : {})
         })
         break
       }

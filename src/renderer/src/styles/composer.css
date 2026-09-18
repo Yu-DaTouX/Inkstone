@@ -1202,6 +1202,153 @@
   overflow: hidden;
 }
 
+/*
+ * 显式调用入口与运行列表共用输入区上方的位置：
+ * 没有运行中的子代理时仍保留一个轻量按钮，保证能力可发现；
+ * 打开的表单向上浮出，不挤压消息流，也不进入右侧“查看”面板。
+ */
+.subagent-zone {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sa-launcher {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0 var(--sp-4) var(--sp-1);
+  z-index: 4;
+}
+
+.sa-launch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: 26px;
+}
+
+.sa-launch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.sa-launch-label .ico {
+  flex: none;
+  color: var(--accent);
+}
+
+.sa-launch-caption {
+  color: var(--fg-dim);
+  opacity: 0.75;
+}
+
+.sa-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.sa-launch-btn:hover,
+.sa-launch-btn[aria-expanded='true'] {
+  border-color: var(--accent-line);
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+
+.sa-launch-count {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-launch-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-3));
+  width: min(430px, calc(100vw - 32px));
+  padding: var(--sp-3);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: 0 14px 36px -14px rgba(0, 0, 0, 0.65);
+}
+
+.sa-launch-title {
+  margin-bottom: var(--sp-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.sa-launch-panel textarea {
+  display: block;
+  width: 100%;
+  min-height: 66px;
+  padding: 7px 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.sa-launch-panel textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.sa-readonly-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.sa-readonly-label input {
+  accent-color: var(--accent);
+}
+
+.sa-launch-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.sa-launch-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-mute);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .sa-head {
   display: flex;
   align-items: center;
@@ -1292,7 +1439,32 @@
   color: var(--fg);
 }
 
+.sa-act-btn.primary {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.sa-act-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .sa-act-btn.danger:hover {
   border-color: var(--err);
   color: var(--err);
+}
+
+/* 子代理详情属于主工作区，不再占用右侧工具栏的文件/工具预览槽。 */
+.sp-main {
+  flex: 0 1 auto;
+  width: 100%;
+  height: min(28vh, 260px);
+  min-height: 120px;
+  max-height: 260px;
+  margin-top: var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  overflow: hidden;
 }

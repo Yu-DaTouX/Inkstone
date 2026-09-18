@@ -8,6 +8,7 @@ import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
+import { parseSubagentCommand } from '../../../../shared/subagent-command'
 
 /**
  * 输入区。四种输入模式共存：
@@ -654,16 +655,13 @@ export function Composer() {
      * 不进模型 —— 这是本地命令（与 `/login` 同一类）。
      * 没有任务描述时不发：避免起一个什么都干不了的子代理。
      */
-    if (raw === '/subagent' || raw.startsWith('/subagent ')) {
-      let task = raw.slice('/subagent'.length).trim()
-      if (!task) return
-      /* 写入任务默认进独立 worktree；只有明确声明只读才允许看受控 cwd。 */
-      const readOnly = /^--read-only(?:\s|$)/i.test(task)
-      if (readOnly) task = task.replace(/^--read-only\s*/i, '').trim()
+    const subagentCommand = parseSubagentCommand(raw)
+    if (subagentCommand) {
+      const { task, isolation } = subagentCommand
       if (!task) return
       setValue('')
       clearAttachments()
-      await startSubagent(task, undefined, readOnly ? 'controlled-cwd' : 'worktree')
+      await startSubagent(task, undefined, isolation)
       return
     }
 

@@ -17,7 +17,6 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
-  SubagentRun,
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
@@ -33,7 +32,6 @@ export interface SessionRuntimeSnapshot {
   uiRequests: ExtensionUiRequest[]
   statuses: Record<string, string>
   widgets: Record<string, string[]>
-  subagents: SubagentRun[]
   /** 输入框草稿；图片二进制不进缓存，避免把大块数据挂在会话状态上。 */
   draft: string
   /** 当前会话最近一次成功拉到的能力/命令快照。 */
@@ -61,7 +59,6 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     uiRequests: [],
     statuses: {},
     widgets: {},
-    subagents: [],
     draft: '',
     models: [],
     thinkingLevels: [],
@@ -238,22 +235,8 @@ export function reduceSessionRuntime(
       next = { ...next, widgets }
       break
     }
-    case 'subagent': {
-      const index = next.subagents.findIndex((item) => item.id === message.payload.id)
-      next = {
-        ...next,
-        subagents:
-          index < 0
-            ? [...next.subagents, message.payload]
-            : next.subagents.map((item, i) => (i === index ? message.payload : item))
-      }
-      break
-    }
-    case 'subagent-remove':
-      next = { ...next, subagents: next.subagents.filter((item) => item.id !== message.payload) }
-      break
     default:
-      /* 全局推送，或只影响标题/日志的事件，不写入会话缓存。 */
+      /* 全局推送（包括子代理），或只影响标题/日志的事件，不写入会话缓存。 */
       break
   }
 

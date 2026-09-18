@@ -232,6 +232,45 @@ const projectMemoryStore = await import('../node_modules/esbuild/lib/main.js').t
 )
 const { runProjectMemoryTests } = await import('./test-project-memory.mjs')
 
+/* 项目知识的检索纯逻辑（实施-03 S3）：无 IO，但入口单独编译，避免测试从源码 import。 */
+const projectMemorySearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/project-memory-search.ts'],
+    outfile: 'out/test/project-memory-search.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-memory-search.mjs'))
+)
+const { runProjectKnowledgeSearchTests } = await import('./test-project-memory-search.mjs')
+
+/* 项目知识的注入链（实施-03 S3）：宿主准备文件 + 薄层扩展读文件注入。 */
+const projectKnowledge = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/project-knowledge.ts'],
+    outfile: 'out/test/project-knowledge.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-knowledge.mjs'))
+)
+const projectKnowledgeExtension = await import('../resources/pi-extensions/project-knowledge.js')
+const { runProjectKnowledgeInjectionTests } = await import('./test-project-knowledge.mjs')
+/* 项目知识视图层（实施-03 S5）：需复核是派生态，导出只含当前状态 */
+const projectKnowledgeView = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/project-knowledge-view.ts'],
+    outfile: 'out/test/project-knowledge-view.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/project-knowledge-view.mjs'))
+)
+const { runProjectKnowledgeViewTests } = await import('./test-project-knowledge-view.mjs')
+
 /*
  * 扩展来源诊断（src/main/extensions-inventory.ts）：真实临时目录。
  * 它要能说清「用户扩展 / 砚薄层」各自是谁（实施-02 S1 的诊断出口）。
@@ -389,6 +428,18 @@ const exitSnapshot = await import('../node_modules/esbuild/lib/main.js').then(({
     platform: 'neutral',
     logLevel: 'silent'
   }).then(() => import('../out/test/command-registry.mjs'))
+)
+
+/* `/subagent` 本地命令参数解析：前置/尾置只读开关必须走同一条安全路由。 */
+const subagentCommand = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/subagent-command.ts'],
+    outfile: 'out/test/subagent-command.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/subagent-command.mjs'))
 )
 
 /*
@@ -938,6 +989,14 @@ await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)
 await runProjectMemoryTests(ok, { memory: projectMemory, store: projectMemoryStore })
+runProjectKnowledgeSearchTests(ok, projectMemorySearch)
+await runProjectKnowledgeInjectionTests(ok, {
+  prepare: projectKnowledge,
+  store: projectMemoryStore,
+  memory: projectMemory,
+  extension: projectKnowledgeExtension
+})
+await runProjectKnowledgeViewTests(ok, projectKnowledgeView)
 await runExtensionInventoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
@@ -997,6 +1056,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runCommandRegistryTests } = await import('./test-command-registry.mjs')
   runCommandRegistryTests(ok, commandRegistry)
+}
+
+{
+  const { runSubagentCommandTests } = await import('./test-subagent-command.mjs')
+  runSubagentCommandTests(ok, subagentCommand.parseSubagentCommand)
 }
 
 {
@@ -1408,6 +1472,23 @@ await runGitRepoTests(ok)
     JSON.stringify(notImpl.body)
   )
 
+  const subagentRegistered = await call({ ...me, command: 'subagent.list' })
+  ok(
+    subagentRegistered.status === 200 && subagentRegistered.body.error !== 'unknown_command',
+    '能力服务：子代理命令已登记进宿主入口',
+    JSON.stringify(subagentRegistered.body)
+  )
+
+  /* 项目知识（实施-03 S4）：登记面至少要认这三个动作 */
+  for (const command of ['knowledge.search', 'knowledge.read', 'knowledge.propose']) {
+    const res = await call({ ...me, command })
+    ok(
+      res.status !== 400 || res.body.error !== 'unknown_command',
+      `能力服务：${command} 已登记进宿主入口`,
+      JSON.stringify(res.body)
+    )
+  }
+
   const badVersion = await call({ ...me, command: 'operations.status', apiVersion: 999 })
   ok(badVersion.status === 400, '能力服务：协议版本不一致被拒', JSON.stringify(badVersion.body))
 
@@ -1479,6 +1560,9 @@ await runGitRepoTests(ok)
     /tasks apply/.test(help.stdout ?? ''),
     'yan CLI：帮助里写了任务写入的用法（迁移后的入口要能被模型发现）'
   )
+  ok(/subagent start/.test(help.stdout ?? ''), 'yan CLI：主帮助里写了子代理启动入口')
+  const subagentHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'subagent', '--help'], { encoding: 'utf8' })
+  ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
 
   await rm(binDir, { recursive: true, force: true })
 }
@@ -1548,6 +1632,11 @@ await runGitRepoTests(ok)
     /resultFile/.test(guide) && /不要把整个结果文件/.test(guide),
     '能力说明：写明「摘要 + 结果文件，别整份读进上下文」'
   )
+  ok(
+    /yan subagent start/.test(guide) && /yan subagent list/.test(guide) && /yan subagent stop/.test(guide),
+    '能力说明：明确告诉模型可以启动、查看、停止子代理'
+  )
+  ok(/实时显示在输入区上方和右侧详情面板/.test(guide), '能力说明：告知模型用户能看到子代理工作进度')
   ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
 
   const handlers = {}
@@ -1720,12 +1809,48 @@ await runGitRepoTests(ok)
 
   /* dry 一下：用法表里的动作名必须与 GROUP_SPECS 一致（防手改时只改一处） */
   const cliText = await readFile('resources/yan-cli/yan.mjs', 'utf8')
-  const actions = /actions:\s*\[([\s\S]*?)\]/.exec(cliText)?.[1] ?? ''
-  const browserActions = [...actions.matchAll(/'([a-z-]+)'/g)].map((m) => m[1])
-  ok(browserActions.includes('navigate') && browserActions.includes('request-user-control'), 'yan CLI：动作表里有 navigate / request-user-control')
-  const usageText = /browser:\s*`([\s\S]*?)`\n\}/.exec(cliText)?.[1] ?? ''
-  const undocumented = browserActions.filter((action) => !usageText.includes(action))
+  /*
+   * 按**组名**取动作表，不能抓「第一个 `actions:`」——
+   * 那会让断言随着 GROUP_SPECS 的书写顺序改变而误判（加了 subagent 组就撞过一次）。
+   */
+  const specActions = (group) => {
+    const block =
+      new RegExp(`${group}:\\s*\\{[\\s\\S]*?actions:\\s*\\[([\\s\\S]*?)\\]`).exec(cliText)?.[1] ?? ''
+    return [...block.matchAll(/'([a-z-]+)'/g)].map((m) => m[1])
+  }
+  const usageText = (group) => new RegExp(`${group}: \`([\\s\\S]*?)\``).exec(cliText)?.[1] ?? ''
+  const browserActions = specActions('browser')
+  ok(
+    browserActions.includes('navigate') && browserActions.includes('request-user-control'),
+    'yan CLI：动作表里有 navigate / request-user-control'
+  )
+  const undocumented = browserActions.filter((action) => !usageText('browser').includes(action))
   ok(undocumented.length === 0, 'yan CLI：每个动作都在用法里（不漏文案）', undocumented.join(', '))
+  const subagentActions = specActions('subagent')
+  ok(subagentActions.includes('start') && subagentActions.includes('stop'), 'yan CLI：子代理动作表已登记')
+  const subagentUndocumented = subagentActions.filter((action) => !usageText('subagent').includes(action))
+  ok(
+    subagentUndocumented.length === 0,
+    'yan CLI：子代理每个动作都在用法里（不漏文案）',
+    subagentUndocumented.join(', ')
+  )
+  /* 项目知识（实施-03 S4）：三个动作都要既能被发现，也有用途说明 */
+  const knowledgeActions = specActions('knowledge')
+  ok(
+    knowledgeActions.includes('search') && knowledgeActions.includes('read') && knowledgeActions.includes('propose'),
+    'yan CLI：项目知识动作表已登记',
+    knowledgeActions.join(', ')
+  )
+  const knowledgeUndocumented = knowledgeActions.filter((action) => !usageText('knowledge').includes(action))
+  ok(
+    knowledgeUndocumented.length === 0,
+    'yan CLI：项目知识每个动作都在用法里（不漏文案）',
+    knowledgeUndocumented.join(', ')
+  )
+  const knowledgeHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'knowledge', '--help'], {
+    encoding: 'utf8'
+  })
+  ok(knowledgeHelp.status === 0 && /search/.test(knowledgeHelp.stdout ?? ''), 'yan CLI：knowledge 分组帮助可按需读取')
 }
 
 console.log(`\n${pass}/${pass + fail} 通过`)

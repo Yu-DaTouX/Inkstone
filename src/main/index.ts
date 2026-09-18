@@ -7,9 +7,9 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage } from 'electron'
 import { join, dirname, basename, extname, resolve } from 'node:path'
 import { constants as fsConstants, existsSync } from 'node:fs'
-import { access, readFile, stat } from 'node:fs/promises'
+import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { AgentController } from './agent'
+import { AgentController, type SubagentCommandHost } from './agent'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
@@ -36,6 +36,7 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import { CapabilityCommandError } from './capability-server'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
@@ -43,7 +44,16 @@ import { decodeControlCommand, writeControlResponse, type ControlCommand, type C
 import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
-import { legacyProjectId } from './project-id'
+import { projectIdForCwd as deriveProjectId } from './project-id'
+import { commitKnowledge, deleteKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
+import { isSafeRelativeRef, type KnowledgeCommitRequest } from '../shared/project-memory'
+import {
+  countKnowledge,
+  knowledgeMarkdown,
+  toKnowledgeView,
+  toKnowledgeViews,
+  type KnowledgeViewContext
+} from '../shared/project-knowledge-view'
 import type {
   Attachment,
   AttentionNotify,
@@ -214,6 +224,13 @@ let exitRequestInFlight: Promise<{
 let runners: RunnerRegistry | null = null
 let browser: BrowserController | null = null
 let subagents: SubagentController | null = null
+/**
+ * `yan subagent …` 的能力服务回调。
+ *
+ * 它必须是动态引用：RunnerRegistry 会在切会话 / 重启 pi 时重建
+ * AgentController，但子代理控制器是主进程级的生命周期服务。
+ */
+let subagentCapabilityHost: SubagentCommandHost | null = null
 /** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
 const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
@@ -327,6 +344,22 @@ function contextExtensionPath(): string | undefined {
 }
 
 /**
+ * 内置「项目知识注入」扩展的路径（实施-03 S3）。
+ *
+ * 它与其它薄层成员一样只做「宿主无法用 CLI / RPC 表达」的那一步：
+ * 在 `before_provider_request` 把宿主准备好的材料块放进上下文。
+ * 检索与预算全在宿主（见 `main/project-knowledge.ts`）。
+ */
+function projectKnowledgeExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'project-knowledge.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'project-knowledge.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'project-knowledge.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
  *
  * 抽成一个函数是为了只有一份清单：来源诊断（[reportExtensionSources]）与
@@ -341,7 +374,8 @@ function yanThinExtensionPaths(): string[] {
     responseDetailExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
-    contextExtensionPath()
+    contextExtensionPath(),
+    projectKnowledgeExtensionPath()
   ].filter((p): p is string => !!p)
 }
 
@@ -948,6 +982,27 @@ function projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd:
 }
 
 /**
+ * 知识身份 / 能力面用的 projectId —— **未登记时也一定返回一个稳定值**。
+ *
+ * 两个入口（`AgentController.capability.projectId` 与设置页的 `yan:knowledge:*`）
+ * 必须用**同一个表达式**：否则会出现最难查的那类 bug —— 模型 `yan knowledge propose`
+ * 写进去的条目，用户在设置页看不到（或反过来）。
+ *
+ * 未登记时不能直接回退到裸 `legacyProjectId`：旧算法只取路径前 **27 字节**，
+ * 而工作树通常就建在仓库旁边（`<repo>` 与 `<repo>-worktrees/feat`），前 27 字节
+ * 完全相同 —— 于是**工作树与主仓库共用一个 id**，工作树会话直接读到主仓库的知识，
+ * 而实施-03 §4 要求「工作树默认是独立项目知识空间」。
+ *
+ * 所以这里与 `settings.sanitizeProjects` 给登记项目选 id 的规则保持一致：
+ * cwd 派生的 id 已被**别的** cwd 占着时，改用整条路径的哈希（`projectIdForCwd` 的碰撞退路）。
+ */
+function knowledgeProjectId(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string {
+  const registered = projectIdForCwd(settings, cwd)
+  if (registered) return registered
+  return deriveProjectId(cwd, (id) => settings.projects.some((project) => project.id === id))
+}
+
+/**
  * 所有会话入口共用的 cwd 边界（N05）。
  *
  * 不能只在设置页校验：会话列表、项目切换和旧版 switchSession 都能
@@ -1133,9 +1188,20 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          * 而浏览器控制器是模块级单例 —— 每次取当时那个。
          */
         browserHost: () => browser,
+        /* 模型通过 `yan subagent …` 进入同一套全局控制器。 */
+        subagentHost: {
+          run: (command, params, context) => {
+            if (!subagentCapabilityHost) {
+              return Promise.reject(new Error('子代理能力服务尚未注册'))
+            }
+            return subagentCapabilityHost.run(command, params, context)
+          }
+        },
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextExtension: contextExtensionPath(),
+        /* 项目知识注入（实施-03 S3）：检索在宿主，扩展只负责放到用户消息之前 */
+        projectKnowledgeExtension: projectKnowledgeExtensionPath(),
         /*
          * 宿主能力服务：模型经 `yan` CLI 触达砚的能力（见 capability-server.ts）。
          *
@@ -1150,7 +1216,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
            * 能力服务宁可绑一个「未登记但唯一」的 id，也不能绑空值 ——
            * 空值会让校验退化成「只要格式对就放行」。
            */
-          projectId: projectIdForCwd(settings, cwd) ?? legacyProjectId(cwd),
+          projectId: knowledgeProjectId(settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
           binDir: join(YAN_DIR, 'bin'),
           devResourcesDir: join(app.getAppPath(), 'resources')
@@ -2028,6 +2094,126 @@ function registerIpc(): void {
     })
     return subagents
   }
+
+  /*
+   * 模型调用与 UI 调用必须共用同一个控制器：这样模型启动的任务也会
+   * 通过 `onChange` 推到输入区上方的列表和右侧详情，而不是变成“后台黑盒”。
+   * 这里不暴露 merge/discard —— worktree 结果仍由用户在详情面板审阅。
+   */
+  subagentCapabilityHost = {
+    async run(command, params, context) {
+      const ctrl = await subagentCtrl()
+      ctrl.setContext(context)
+
+      if (command === 'subagent.start') {
+        const task = typeof params.task === 'string' ? params.task.trim() : ''
+        if (!task) {
+          throw new CapabilityCommandError(
+            'subagent_task_required',
+            'subagent start 需要 task'
+          )
+        }
+        if (task.length > 12_000) {
+          throw new CapabilityCommandError(
+            'subagent_task_too_long',
+            '子代理任务不能超过 12000 个字符'
+          )
+        }
+        const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
+        const readOnly = params.readOnly === true || params['read-only'] === true
+        const result = await ctrl.start(task, model, readOnly ? 'controlled-cwd' : 'worktree')
+        if (!result.ok || !result.run) {
+          throw new CapabilityCommandError(
+            'subagent_start_failed',
+            result.error ?? '子代理启动失败'
+          )
+        }
+        const run = result.run
+        return {
+          data: run,
+          summary: {
+            kind: 'subagent',
+            action: 'start',
+            id: run.id,
+            status: run.status,
+            isolation: run.isolation,
+            task: run.task,
+            latestActivity: run.latestActivity
+          }
+        }
+      }
+
+      if (command === 'subagent.list') {
+        const runs = ctrl.list()
+        const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
+        return {
+          data: runs,
+          summary: {
+            kind: 'subagent',
+            action: 'list',
+            count: runs.length,
+            active: active.length,
+            ids: runs.map((run) => run.id)
+          }
+        }
+      }
+
+      const id = typeof params.id === 'string' ? params.id.trim() : ''
+      if (!/^sub-[0-9a-f]+$/.test(id)) {
+        throw new CapabilityCommandError(
+          'subagent_id_required',
+          '该子代理动作需要合法的 id（例如 sub-a1b2c3d4）'
+        )
+      }
+
+      if (command === 'subagent.get') {
+        const run = ctrl.get(id)
+        if (!run) {
+          throw new CapabilityCommandError(
+            'subagent_not_found',
+            `找不到子代理：${id}`
+          )
+        }
+        return {
+          data: run,
+          summary: {
+            kind: 'subagent',
+            action: 'get',
+            id: run.id,
+            status: run.status,
+            latestActivity: run.latestActivity,
+            transcript: run.transcript.length,
+            review: run.review
+          }
+        }
+      }
+
+      if (command === 'subagent.stop') {
+        const result = await ctrl.stop(id)
+        if (!result.ok) {
+          throw new CapabilityCommandError(
+            'subagent_stop_failed',
+            result.error ?? `停止子代理失败：${id}`
+          )
+        }
+        const run = ctrl.get(id)
+        return {
+          data: run,
+          summary: {
+            kind: 'subagent',
+            action: 'stop',
+            id,
+            status: run?.status ?? 'stopped'
+          }
+        }
+      }
+
+      throw new CapabilityCommandError(
+        'not_implemented',
+        `命令已登记但尚未实现：${command}`
+      )
+    }
+  }
   handle('yan:subagents:list', async () => (await subagentCtrl()).list())
   handle('yan:subagents:start', async (task: string, model?: string, isolation?: string) => {
     const ctrl = await subagentCtrl()
@@ -2445,6 +2631,202 @@ function registerIpc(): void {
         local: raw.local === true,
         cwd: String(raw.cwd ?? '')
       })
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  /* ---- 项目知识（实施-03 S5）---- */
+  /*
+   * 设置页「项目知识」页的一组通道。四条边界：
+   *   ① **身份不由渲染端给**：一律按当前会话推导（同一处 `projectIdForCwd`，与 `yan knowledge` 同源），
+   *      所以界面永远只能看到「当前项目」的知识；
+   *   ② 「需复核」是**派生**状态（分支漂移 / 路径没了 / 来源会话被删）：
+   *      文件系统与 git 由宿主查，判定交给纯函数（`shared/project-knowledge-view.ts`）；
+   *   ③ 写操作全部带 `expectedRevision`（CAS）—— 界面上看到的版本变了就报错，**不静默覆盖**；
+   *   ④ 「确认」是**用户动作**：只有这条路径能把条目升为 active（hostCheck.userConfirmed），
+   *      模型那条（`yan knowledge propose`）不传 hostCheck，走不通。
+   */
+  const knowledgeIdentity = async (): Promise<{ projectId: string; cwd: string } | null> => {
+    const settings = await getSettings()
+    const state = ac()?.getState()
+    const cwd = state?.cwd
+    if (!cwd) return null
+    /*
+     * 与能力服务（`capability.projectId`，见 startAgent 那里）**同一个表达式**：
+     * 不一致会出现最难查的一类 bug —— 模型 `yan knowledge propose` 写的条目
+     * 用户在设置页看不到（反之亦然）。未登记目录用 cwd 派生的稳定 id，
+     * 它仍只属于这棵树，不是跨项目共享。
+     */
+    const projectId = knowledgeProjectId(settings, cwd)
+    return projectId ? { projectId, cwd } : null
+  }
+
+  const knowledgeQueryOf = async (cwd: string): Promise<KnowledgeViewContext> => {
+    const repo = await readRepoState(cwd).catch(() => null)
+    const sessions = await listSessions(500).catch(() => [])
+    const ids = new Set(sessions.map((session) => session.id))
+    return {
+      branch: repo?.branch ?? null,
+      /* 只判「在不在」，不读内容；路径先过 `isSafeRelativeRef` 挡越界（文本引用不授读取权） */
+      pathExists: (rel: string) => isSafeRelativeRef(rel) && existsSync(resolve(cwd, rel)),
+      sessionReadable: (id: string) => ids.has(id)
+    }
+  }
+
+  const knowledgeSnapshot = async () => {
+    const settings = await getSettings()
+    const enabled = settings.projectKnowledge?.enabled === true
+    const identity = await knowledgeIdentity()
+    const empty = { all: 0, active: 0, candidate: 0, review: 0 }
+    if (!identity) return { ok: true, enabled, entries: [], counts: empty }
+    try {
+      const views = await knowledgeQueryOf(identity.cwd).then((query) =>
+        listKnowledge(identity).then((entries) => toKnowledgeViews(entries, query))
+      )
+      return { ok: true, projectId: identity.projectId, enabled, entries: views, counts: countKnowledge(views) }
+    } catch (error) {
+      return {
+        ok: false,
+        projectId: identity.projectId,
+        enabled,
+        entries: [],
+        counts: empty,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  handle('yan:knowledge:list', () => knowledgeSnapshot())
+
+  handle('yan:knowledge:action', async (req: unknown) => {
+    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown }
+    const identity = await knowledgeIdentity()
+    if (!identity) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    const id = typeof raw.id === 'string' ? raw.id : ''
+    const expectedRevision = Number(raw.expectedRevision)
+    if (!id || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+      return { ok: false, error: '缺少条目 id 或版本号（先刷新列表）' }
+    }
+    const query = await knowledgeQueryOf(identity.cwd)
+    try {
+      if (raw.action === 'delete') {
+        /* 永久删除是**另一个动作**（墓碑之外的正文也清），需要明确用户凭据 —— 不靠一个布尔切换 */
+        const permanent = raw.permanent === true
+        const out = await deleteKnowledge({
+          identity,
+          request: {
+            id,
+            expectedRevision,
+            mode: permanent ? 'permanent' : 'logical',
+            ...(permanent ? { userAction: { by: 'user' as const } } : {})
+          }
+        })
+        if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
+        return { ok: true, entry: toKnowledgeView(out.entry, query) }
+      }
+      const current = await readKnowledge(identity, id)
+      if (!current) return { ok: false, error: '条目不存在（可能已被删除）' }
+      /*
+       * 三种写操作都是「以**磁盘上的当前版**为底稿改字段」，
+       * 底稿一律重新读，不信渲染端回传的内容 —— 否则界面上的旧副本
+       * 会覆盖掉别处（例如模型在会话里）刚写进去的字段。
+       */
+      const draft: KnowledgeCommitRequest = {
+        id,
+        kind: current.kind,
+        text: current.text,
+        tags: current.tags,
+        evidence: current.evidence,
+        confidenceClass: current.confidenceClass,
+        ...(current.validFor ? { validFor: current.validFor } : {}),
+        ...(current.supersedes?.length ? { supersedes: current.supersedes } : {}),
+        expectedRevision
+      }
+      if (raw.action === 'update') {
+        if (typeof raw.text === 'string') draft.text = raw.text
+        if (Array.isArray(raw.tags)) draft.tags = raw.tags
+        if (raw.kind) draft.kind = raw.kind
+        if (!String(draft.text ?? '').trim()) return { ok: false, error: '正文不能为空' }
+      } else if (raw.action === 'confirm') {
+        /* 用户点了确认 → 就是「用户确认」这一类，而不是仍标成模型推断 */
+        draft.confidenceClass = 'user-confirmed'
+      } else if (raw.action === 'supersede') {
+        if (typeof raw.text !== 'string' || !raw.text.trim()) return { ok: false, error: '替代需要新正文' }
+        delete draft.id
+        draft.expectedRevision = 0
+        draft.text = raw.text
+        if (Array.isArray(raw.tags)) draft.tags = raw.tags
+        if (raw.kind) draft.kind = raw.kind
+        draft.confidenceClass = 'user-confirmed'
+        draft.supersedes = [id]
+      } else {
+        return { ok: false, error: '未知的操作' }
+      }
+      const out = await commitKnowledge({
+        identity,
+        request: draft,
+        /* 这是「用户动作」的凭据：模型构造不出来（它那条路不传 hostCheck） */
+        hostCheck: { userConfirmed: { quote: '用户在项目知识页确认' } }
+      })
+      if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
+      return {
+        ok: true,
+        entry: toKnowledgeView(out.entry, query),
+        ...(out.superseded.length ? { superseded: out.superseded.map((entry) => toKnowledgeView(entry, query)) } : {})
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  handle('yan:knowledge:export', async (mode: 'copy' | 'save') => {
+    const identity = await knowledgeIdentity()
+    if (!identity) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    try {
+      const settings = await getSettings()
+      const views = toKnowledgeViews(await listKnowledge(identity), await knowledgeQueryOf(identity.cwd))
+      const markdown = knowledgeMarkdown(views, {
+        projectId: identity.projectId,
+        exportedAt: new Date().toISOString(),
+        enabled: settings.projectKnowledge?.enabled === true
+      })
+      if (mode !== 'save') return { ok: true, markdown }
+      /*
+       * 「保存到文件」只写用户在选择框里点的地方，**不自动改写仓库文档**
+       *（§6：「导出到项目文档」必须展示目标文件与 diff，属于单独动作）。
+       */
+      const picked = win
+        ? await dialog.showSaveDialog(win, {
+            title: '导出项目知识',
+            defaultPath: join(identity.cwd, 'project-knowledge.md'),
+            filters: [{ name: 'Markdown', extensions: ['md'] }]
+          })
+        : await dialog.showSaveDialog({
+            title: '导出项目知识',
+            defaultPath: join(identity.cwd, 'project-knowledge.md'),
+            filters: [{ name: 'Markdown', extensions: ['md'] }]
+          })
+      if (picked.canceled || !picked.filePath) return { ok: true, markdown, canceled: true }
+      await writeFile(picked.filePath, markdown, 'utf8')
+      return { ok: true, markdown, path: picked.filePath }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  /*
+   * 来源跳转（§6「来源跳转」）：渲染端只知道 sessionId，文件路径只有主进程知道。
+   * 返回 `ok:false` 时界面显示「不可回读」——**不伪造证据**（§4）。
+   */
+  handle('yan:knowledge:sourceSession', async (sessionId: string) => {
+    const id = String(sessionId ?? '')
+    if (!id) return { ok: false, error: '缺少会话 id' }
+    try {
+      const sessions = await listSessions(500)
+      const hit = sessions.find((session) => session.id === id)
+      if (!hit) return { ok: false, error: '来源会话已被删除，无法回读' }
+      return { ok: true, path: hit.path, ...(hit.title ? { title: hit.title } : {}) }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }

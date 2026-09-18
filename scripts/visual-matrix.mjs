@@ -538,8 +538,74 @@ function registerStubHandlers() {
     { id: 'response-detail', file: 'response-detail.js' },
     { id: 'language', file: 'language.js' },
     { id: 'capability-guide', file: 'capability-guide.js' },
-    { id: 'context', file: 'context.js' }
+    { id: 'context', file: 'context.js' },
+    { id: 'project-knowledge', file: 'project-knowledge.js' }
   ])
+  /*
+   * 项目知识页（实施-03 S5）的桩数据。
+   *
+   * 三条各自代表一个视觉分支：已确认但**需复核**（分支漂移 + 来源被删）、
+   * 待确认（候选，多了「确认」按钮）、已被替代（无操作按钮）。
+   * `confidenceLabel` 只给一个中性说法（§6：不显示可信度百分比）。
+   */
+  ipcMain.handle('yan:knowledge:list', () => ({
+    ok: true,
+    projectId: 'proj-fixture',
+    enabled: true,
+    counts: { all: 3, active: 1, candidate: 1, review: 1 },
+    entries: [
+      {
+        id: 'k-demo0001',
+        revision: 4,
+        kind: 'decision',
+        status: 'active',
+        text: '发布走 npm run dist，便携包用 dist:portable-fast；两者都先跑 test:packaged。',
+        tags: ['release', 'packaging'],
+        confidenceClass: 'user-confirmed',
+        confidenceLabel: '用户确认',
+        createdAt: '2026-09-18T02:11:00.000Z',
+        updatedAt: '2026-09-19T09:24:00.000Z',
+        evidence: [
+          { file: 'docs/dev/RELEASING.md', excerpt: '先跑 test:packaged', readable: true },
+          { sessionId: 'r-9f3ac210', readable: false }
+        ],
+        validFor: { branch: 'main', paths: ['docs/dev/RELEASING.md'] },
+        review: { needed: true, reasons: ['branch', 'source'] }
+      },
+      {
+        id: 'k-demo0002',
+        revision: 1,
+        kind: 'fact',
+        status: 'candidate',
+        text: '砚的构建产物在 out/ 目录（构建后再跑 test:unit，否则验的是旧产物）。',
+        tags: [],
+        confidenceClass: 'inferred',
+        confidenceLabel: '模型推断',
+        createdAt: '2026-09-19T04:02:00.000Z',
+        updatedAt: '2026-09-19T04:02:00.000Z',
+        evidence: [{ sessionId: 'r-1c07be55', readable: true }],
+        review: { needed: false, reasons: [] }
+      },
+      {
+        id: 'k-demo0003',
+        revision: 2,
+        kind: 'constraint',
+        status: 'superseded',
+        text: '（旧）发布前手动改版本号。',
+        tags: ['release'],
+        confidenceClass: 'verified',
+        confidenceLabel: '已验证',
+        createdAt: '2026-09-17T08:00:00.000Z',
+        updatedAt: '2026-09-18T02:10:00.000Z',
+        evidence: [{ file: 'package.json', readable: true }],
+        review: { needed: false, reasons: [] }
+      }
+    ]
+  }))
+  /* 导出只回一段文本，保存走真对话框 —— 视觉矩阵里只截「复制」那条路 */
+  ipcMain.handle('yan:knowledge:export', () => ({ ok: true, markdown: '# 项目知识 · proj-fixture\n' }))
+  /* 来源跳转在矩阵里不发实际切换（点了也只影响一次截图） */
+  ipcMain.handle('yan:knowledge:sourceSession', () => ({ ok: false, error: '来源会话已被删除，无法回读' }))
   /* remote 的托管网页地址（G3）：给一个 GitHub 地址，图上才能看到「在网上比较」 */
   ipcMain.handle('yan:git:remoteWeb', () => ({ ok: true, web: 'https://github.com/o/pi-desktop', remote: 'origin' }))
   /* PR 状态（§7）：给一个"已合并 + 检查通过 + 本地有未推送提交"的样子 */
@@ -615,12 +681,12 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewwrite']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewwrite', 'subagentlaunch', 'subagent']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewwrite'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewwrite', 'subagentlaunch', 'subagent'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
-  { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup', 'taskcard'] },
+  { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] }
 ]
@@ -826,6 +892,24 @@ const STATES = {
         }
       });
       st.openSettings('context');
+      return 'ok';
+    })()
+  `,
+  /*
+   * 项目知识页（实施-03 S5）。
+   *
+   * 数据是桩（`yan:knowledge:list` 在矩阵主进程里直接返回）—— 这一张验的是
+   * 信息层次：开关、三个筛选 + 计数、条目的状态 / 来源 / 有效范围 / 需复核，
+   * 以及操作按钮窄窗口下会不会溢出。**不要**拿它当「真读到了项目知识」的证据
+   *（那是 live 场景的事）。
+   */
+  knowledgetab: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({ settings: { ...st.settings, projectKnowledge: { enabled: true } } });
+      st.openSettings('knowledge');
       return 'ok';
     })()
   `,
@@ -1792,6 +1876,98 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       await sleep(400);
       return document.querySelector('[data-testid="review-diff"]') ? 'ok' : 'no-diff';
     })()
+  `,
+  /*
+   * 子代理委派（2026-09-19）：输入区上方的显式入口 + 展开的任务面板。
+   *
+   * 这一态要验的是「能力能被发现」：按钮、面板、只读开关、说明与两个动作
+   * 都在一屏内 —— 不需要真起子进程（真链路证据在 live 的 `subagent` /
+   * `subagentmodel` 两个场景）。
+   */
+  subagentlaunch: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      /* 上两态可能留着环境菜单（组件内部 state，不随 store 复位） */
+      const menu = document.querySelector('[data-testid="session-project"]');
+      if (menu && menu.getAttribute('aria-expanded') === 'true') menu.click();
+      window.__yanStore.setState({ rightPanelOpen: true, subagents: [], subagentPreviewId: null });
+      await sleep(200);
+      const btn = document.querySelector('[data-testid="subagent-new"]');
+      if (!btn) return 'no-launcher';
+      if (btn.getAttribute('aria-expanded') !== 'true') btn.click();
+      await sleep(300);
+      const ta = document.querySelector('[data-testid="subagent-task"]');
+      if (ta) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, '把登录流程的错误分支补上测试并跑一遍');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await sleep(250);
+      return document.querySelector('[data-testid="subagent-start"]') ? 'ok' : 'no-panel';
+    })()
+  `,
+  /*
+   * 一条运行中的子代理详情：任务 + 实时转录 + 工具活动 + 变更审阅摘要。
+   * 数据是造的（不真起子进程）—— 这一张验的是信息层次与布局，
+   * 不要拿它当「子代理真的在跑」的证据（那是 live 场景的事）。
+   */
+  subagent: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      const menu = document.querySelector('[data-testid="session-project"]');
+      if (menu && menu.getAttribute('aria-expanded') === 'true') menu.click();
+      /* 上一态（subagentlaunch）把委派面板留着开着 —— 它升在消息流上，不关就遮住详情卡 */
+      const launch = document.querySelector('[data-testid="subagent-new"]');
+      if (launch && launch.getAttribute('aria-expanded') === 'true') launch.click();
+      const startedAt = Date.now() - 42_000;
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        subagentPreviewId: 'sub-preview',
+        subagents: [{
+          id: 'sub-preview',
+          task: '把登录流程的错误分支补上测试并跑一遍',
+          cwd: 'C:/yan-worktrees/sub-preview',
+          parentSessionId: 'session-preview',
+          parentRunId: 'run-preview',
+          isolation: 'worktree',
+          model: 'deepseek/deepseek-v4.1-flash',
+          status: 'running',
+          startedAt,
+          latestActivity: '正在读 src/auth/login.ts',
+          review: 'pending',
+          diff: {
+            files: 2,
+            additions: 48,
+            deletions: 6,
+            paths: ['src/auth/login.ts', 'test/login.test.ts'],
+            truncated: false
+          },
+          transcript: [
+            { id: 'sub-t1', role: 'user', text: '把登录流程的错误分支补上测试并跑一遍' },
+            {
+              id: 'sub-t2',
+              role: 'assistant',
+              text: '我先读一遍现有实现，确认错误码分支的覆盖情况，再补测试。',
+              thinking: '先看 login.ts 的失败分支，再对照现有测试找出缺口。',
+              toolCalls: [
+                { id: 'sub-c1', name: 'read', status: 'done' },
+                { id: 'sub-c2', name: 'bash', status: 'running' }
+              ]
+            }
+          ]
+        }]
+      });
+      await sleep(400);
+      return document.querySelector('[data-testid="subagent-preview"]') ? 'ok' : 'no-detail';
+    })()
   `
 }
 
@@ -1807,6 +1983,14 @@ const MUST_HAVE = {
   toolterm: ['.trow.open .term'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
+  knowledgetab: [
+    '.settings',
+    '[data-testid="kn-toggle"]',
+    '[data-testid="kn-filter"]',
+    '[data-testid="kn-item-k-demo0001"]',
+    '[data-testid="kn-review-k-demo0001"]',
+    '[data-testid="kn-export-copy"]'
+  ],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
@@ -1911,6 +2095,21 @@ const MUST_HAVE = {
     '[data-testid="ctx-stage-mark"]',
     '[data-testid="ctx-next-stage"]',
     '[data-testid="ctx-working-set"]'
+  ],
+  /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
+  subagentlaunch: [
+    '[data-testid="subagent-new"]',
+    '[data-testid="subagent-launch-panel"]',
+    '[data-testid="subagent-task"]',
+    '[data-testid="subagent-readonly"]',
+    '[data-testid="subagent-start"]'
+  ],
+  /* 运行中的子代理详情：任务、转录、变更审阅摘要都要在图里 */
+  subagent: [
+    '[data-testid="subagent-preview"]',
+    '[data-testid="subagent-preview-body"]',
+    '[data-testid="subagent-review"]',
+    '.sp-main'
   ],
   /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
   railreorder: [
