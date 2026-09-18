@@ -22,6 +22,30 @@
 | 应用与包 | **P0-8 已完成（2026-09-18，六步走完）** | `vendor:pi:check`：内置 pi 0.85.1 + RPC 握手正常；`dist:dir` + `test:packaged` 全绿（内置 pi ready、扩展加载 0 报错）；**`test-packaged --exe=release/砚-0.2.0-portable.exe` 也全绿**（单文件便携版真实自解压启动）；**升级读取验证**用 `release/砚数据/` 的副本启动打包产物 —— 读到 cwd/lang/theme/projects/profile（`signedIn:false`，不伪造登录）+ localStorage（theme/onboarded）+ 凭证（`auth count=1`、`conn=ready`），原目录原样保留；`npm run dist` 重产三个产物并重写 `SHA256SUMS.txt`（`9E307C76…` setup.exe 126,991,251 B / `6501AF9A…` portable.exe 126,758,099 B / `7B998F57…` portable-fast.zip 169,672,278 B）；包内可索引到本轮新串（`review-diff` / `review-gap-open` / `env-changes` / `yan:git:snapshot` / `--font-body`），无 `out/test/` 与测试凭证。明细见[归档 §1.26](../archive/2026-09-17-已完成归档.md) |
 | 已知偶发 | 免费模型可能因日配额或供应商状态返回空文本/零 usage；这会让 `tokens` `subagent` `contexttakeover` 等需要真实 usage 的场景变红 | 先用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`；不可用或触顶时换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`，再分辨「模型当时不可用」还是「代码回归」。**2026-09-17 晚实测**：同一夜连跑 `contextproduce` 6 次只有 1 次成功，失败形态分别是 `aborted`（20s 生成超时）/ `not-json`（返回空文本）/ `error`；换备用模型也一样。**2026-09-17 深夜已确证原因**：`commandcode/longcat-2.0:free` **当日 100 次免费额度用尽**（pi 原样报回 `429 You've used all 100 free LongCat 2.0 requests for today`，配额 `2026-09-18T00:00:00Z` 重置），换 `laguna-s-2.1-free` 则报上游暂不可用。**规则**：看到 429 就直接停手（每跑一次都是在烧剩余额度，而且拿不到结论）。**换模型**：用户指定 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`（1M 窗口、支持思考）后，`contextsweep` / `contexttakeover` 均真实通过 —— 免费模型不可用时的首选替代。**另一个易踩的坑**：探针变慢以后没同步加 `budget`，进程会在打印前被 kill，而 `buf` 为空又被报成「应用可能启动失败」（`contexttakeover` 就此白查三轮，现已在提示里区分这两种情况） |
 
+### 本轮（2026-09-19）用户报的 1 条 —— 待定消息在回合结束后自动投递
+
+> 用户原话：「当模型结束输出时 发送的消息应该直接发出」。
+> 现象：用量条已经显示「用时 8.0s」（回合已结束），但待定卡片还挂着「插话 / 排队」。
+
+| 六栅 | 证据 |
+|---|---|
+| 实现 | `src/main/index.ts` 的 `pushFrom`（所有 agent 事件的**唯一出口**）：每条 `ch: 'state'` 推送顺带刷一次 `runners` 快照。改一处 + 写清「为什么不比对变化再推」 |
+| 自动检查 | `typecheck`（含 CSS / layer 自检）/ `build` 干净；单测 **2684/2684**（本片无纯逻辑改动，条数不变） |
+| 真实运行 | **新增 cost 1 场景 `pendingreal`**（`scripts/probe/pending-real.js`）走真实链路：真模型回合 → 跑着时按 Enter 悬起 → 回合结束 → 自动按 `followUp` 投出。断言 **7/7**，其中「回合结束后 `runners[active].running` = false」是修复点的直接证据（修复前会停在 true），投递方式实测 `[null, "followUp"]`。回归 `pending`（cost 0）通过、无残留 pi 进程 |
+| 视觉验收 | 不适用 + 原因：无视觉元素变化（卡片样式与按钮未改，改的是「什么时候不再是插话时机」） |
+| 应用与包 | 不适用 + 原因：未改打包配置 / 启动参数 / `resources/` |
+| 剩余限制 | ① 只在**当前 active 实例**路径上取证：多实例并行时，非 active 实例的 `running` 仍只在生命周期事件里刷（左栏状态槽可能要等下一次切会话才对得上）；② 新增的 `pendingreal` 是 cost 1，**不进 `npm run check`**（照既有约定，付费场景手动跑） |
+
+**根因**：`runners[active].running` 是渲染端判断「回合还在跑」的依据（`Composer` 的待定
+消息自动投递、`QueueStack` 的「插话 / 排队」二选一），但这个快照原先**只在实例生命周期
+事件里推**（起停 / 切会话 / 删除）。回合结束（`agent_settled` → `setAgentRunning(false)`）
+只走 `state` 通道 —— 快照一直停在 `running: true`，于是待定消息永远等不到自动投递。
+
+**为什么老探针测不出来**：`pending`（cost 0）直接把 store 的 `runners` 改掉来伪造
+「回合结束」，绕过了主进程推送链 —— 它验的是探针自己的假设，不是产品链路。
+**教训**：探针自己伪造上游状态时，被测的往往是探针的假设；这条 bug 是真实链路
+（`pi -p` 子代理派发）跑出来的。
+
 ### 本轮（2026-09-19）并行编排 W1 · 四个子代理片（01-S4b / 03-S2 / 04-S1 / 08-S0）
 
 > 编排方式见 [并行代理编排](../plan/编排-并行代理分工-2026-09-19.md)。这三片由**本机 `pi -p` 非交互子代理**
