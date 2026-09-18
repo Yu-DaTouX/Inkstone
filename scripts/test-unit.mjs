@@ -1188,6 +1188,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
+      entryPoints: ['src/main/packages.ts'],
+      outfile: 'out/test/packages.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
       entryPoints: ['src/main/git-diff.ts'],
       outfile: 'out/test/git-diff.mjs',
       bundle: true,
@@ -1198,6 +1206,9 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   ])
 )
 const { runGitRepoTests } = await import('./test-git-repo.mjs')
+const { runPackagesTests } = await import('./test-packages.mjs')
+console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
+await runPackagesTests(ok)
 await runGitRepoTests(ok)
 
 /*
