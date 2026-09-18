@@ -184,7 +184,9 @@ function gitStubSnapshot() {
     notes: ['有些文件同时有已暂存与未暂存的部分，行数统计按最终内容算，不重复相加'],
     truncated: false,
     requestId: 'stub',
-    generatedAt: Date.now()
+    generatedAt: Date.now(),
+    /* 写操作的预期版本（少了它，界面上的暂存 / 提交按钮会一直是 disabled） */
+    expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
   }
 }
 
@@ -407,7 +409,21 @@ function registerStubHandlers() {
    * 内容都来自 `yan:git:*`。没有桩就只会截到「正在读取…」，
    * 那就不是在验收布局与配色。数据是合成的，**绝不进用户真实仓库**。
    */
-  ipcMain.handle('yan:git:state', () => ({ repo: gitStubRepo() }))
+  ipcMain.handle('yan:git:state', () => ({
+    repo: gitStubRepo(),
+    expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
+  }))
+  /* 写操作：矩阵只看界面，返回一个「成功且状态更新」的结果即可 */
+  ipcMain.handle('yan:git:action', (_e, req) => ({
+    ok: true,
+    summary: (req && req.kind === 'commit' ? '已提交' : '已暂存') || '完成',
+    headBefore: 'a'.repeat(40),
+    headAfter: 'b'.repeat(40),
+    committed: req && req.kind === 'commit',
+    commit: 'b0b0b0b',
+    state: gitStubRepo()
+  }))
+  ipcMain.handle('yan:git:remotes', () => ['origin'])
   ipcMain.handle('yan:git:refs', () => ({
     ok: true,
     busyBranches: [],
@@ -438,9 +454,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'review']
+    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'review', 'reviewwrite']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'review'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'review', 'reviewwrite'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'toolgroup'] },
@@ -1280,6 +1296,59 @@ const STATES = {
    *
    * 数据是合成的（见上面的 gitStub*）—— 截图绝不接真实仓库。
    */
+  /*
+   * 写操作界面（G2 §5.2 / §5.3）：每个文件行的「暂存 / 取消暂存」、
+   * 头部的批量按钮、面板底部的提交区（说明 + 提交 / 提交并推送）。
+   *
+   * 这些控件的位置与可用性是截图才能验收的东西：它们挤在文件行右侧、
+   * 行内还有「已查看」，谁在谁左边、忙的时候什么样，只有图说得清。
+   */
+  reviewwrite: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true });
+      const btn = document.querySelector('[data-testid="session-project"]');
+      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
+      await sleep(200);
+      st.openReview({ kind: 'working' });
+      await sleep(1400);
+      /* 填一句提交说明：空输入框看不出 placeholder 之外的东西，
+         而这一区要验的是「说明 + 已暂存数 + 主按钮文案」三者的排布 */
+      const ta = document.querySelector('[data-testid="commit-message"]');
+      if (ta) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, 'feat: 给审查面板加上暂存与提交');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await sleep(300);
+      return document.querySelector('[data-testid="commit-bar"]') ? 'ok' : 'no-commit';
+    })()
+  `,
+  /*
+   * 环境菜单的分支区（G2 §5.1）：分支列表 + 当前分支标记 + 新建分支输入框，
+   * 以及「拉取」「推送（↑1）」两项。这张图要能看出**哪些能点**：
+   * 当前分支的条目是灰的。
+   */
+  envbranches: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(300);
+      document.querySelector('[data-testid="session-project"]')?.click();
+      await sleep(500);
+      document.querySelector('[data-testid="env-branch"]')?.click();
+      await sleep(600);
+      return document.querySelector('[data-testid="env-branches"]') ? 'ok' : 'no-branches';
+    })()
+  `,
   review: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1320,6 +1389,21 @@ const MUST_HAVE = {
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
   pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
   envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare"]'],
+  envbranches: [
+    '[data-testid="env-menu"]',
+    '[data-testid="env-branches"]',
+    '[data-testid="env-branch-item"]',
+    '[data-testid="env-new-branch-name"]',
+    '[data-testid="env-fetch"]',
+    '[data-testid="env-push"]'
+  ],
+  reviewwrite: [
+    '[data-testid="review-panel"]',
+    '[data-testid="review-stage"], [data-testid="review-unstage"]',
+    '[data-testid="commit-bar"]',
+    '[data-testid="commit-message"]',
+    '[data-testid="commit-submit"]'
+  ],
   review: [
     '[data-testid="review-panel"]',
     '[data-testid="review-scope"]',

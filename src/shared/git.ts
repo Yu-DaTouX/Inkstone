@@ -19,6 +19,9 @@
 
 /* ── 范围 ───────────────────────────────────────────────── */
 
+/* 写操作的「预期版本」类型与摘要函数在 git-actions.ts（同目录），这里只借类型 */
+import type { GitActionExpected } from './git-actions'
+
 export type GitScopeKind = 'working' | 'unstaged' | 'staged' | 'range'
 
 export interface GitScopeRequest {
@@ -216,6 +219,14 @@ export interface GitReviewSnapshot {
   /** 请求身份：渲染端切项目后丢弃迟到结果 */
   requestId: string
   generatedAt: number
+  /**
+   * 这次读取时的仓库版本（HEAD + index + 工作区摘要）。
+   *
+   * 写操作必须带着它发出去（方案 §5.4 的「执行前检查实际状态」）。
+   * 为什么由**快照**带而不是让渲染端另发一个请求：那样「用户看到的清单」
+   * 与「复核用的版本」就是两个时刻的数据，复核会变成看运气。
+   */
+  expected: GitActionExpected
 }
 
 /* ── 图片 ───────────────────────────────────────────────── */

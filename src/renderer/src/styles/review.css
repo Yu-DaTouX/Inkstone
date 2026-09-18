@@ -842,3 +842,340 @@ button.env-item:hover {
 .review-stat .del {
   color: var(--err);
 }
+
+/* ══════════════════════════════════════════════════════════
+   G2：写操作（暂存 / 取消暂存 / 提交 / 分支 / 拉取 / 推送）
+   ══════════════════════════════════════════════════════════ */
+
+/*
+ * 暂存按钮里的 +/- 用**文本符号**而不是图标：
+ * sprite（reicon，`npm run icons` 生成）里没有 minus / upload，
+ * 而这两个符号本来就是一格宽的字形，比硬塞一个语义不符的图标更清楚。
+ * 行高用 font-size 与固定宽度控制，保证「+ 3 位」与「− 3 位」同宽。
+ */
+.stage-glyph {
+  display: inline-block;
+  width: 8px;
+  text-align: center;
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rcard-stage {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.rcard-stage:hover:not(:disabled) {
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+
+.rcard-stage:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 取消暂存是「往回退一步」，底色比暂存弱一档（不抢主操作） */
+.rcard-stage.off {
+  color: var(--fg-3);
+}
+
+/* ── 提交区 ─────────────────────────────────────────────── */
+
+.commit {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-1);
+}
+
+.commit-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/*
+ * 输入框自己长高（最多 5 行）：提交说明经常要写第二段，
+ * 但默认只占一行 —— 它不该把 diff 的地方吃掉。
+ */
+.commit-msg {
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
+  max-height: 88px;
+  padding: 5px 7px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  resize: none;
+  field-sizing: content;
+}
+
+.commit-msg:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.commit-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.commit-btn.primary:not(:disabled) {
+  color: var(--bg-0);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.commit-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.commit-push {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.commit-push.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+.commit-target {
+  font-family: var(--font-code);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.commit-staged {
+  color: var(--fg-2);
+}
+
+.commit-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.commit-up input {
+  margin: 0;
+}
+
+.commit-hint {
+  color: var(--warn, var(--fg-2));
+}
+
+/* ── 失败与成功提示 ─────────────────────────────────────── */
+
+.gwrite-fail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  color: var(--danger, #e5484d);
+  background: color-mix(in srgb, var(--danger, #e5484d) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent);
+  border-radius: 5px;
+}
+
+.gwrite-fail-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gwrite-fail-msg {
+  font-weight: 500;
+}
+
+.gwrite-fail-hint {
+  color: var(--fg-2);
+  padding-left: 17px;
+}
+
+.gwrite-fail-more {
+  align-self: flex-start;
+  padding: 0;
+  margin-left: 17px;
+  font-size: 11px;
+  color: var(--fg-3);
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/*
+ * 原始输出：等宽 + 可横向滚动。
+ * 用 pre 而不是 div —— git 的对齐（`! [rejected]        main -> main`）本身
+ * 就是信息，折叠空白会让它更难读。
+ */
+.gwrite-fail-raw {
+  margin: 2px 0 0;
+  padding: 5px 7px;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-1);
+  background: var(--bg-0);
+  border-radius: 4px;
+  white-space: pre;
+}
+
+.gwrite-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ok, #30a46c);
+}
+
+/* ── 环境菜单里的分支与远程 ─────────────────────────────── */
+
+.env-caret.open {
+  transform: rotate(90deg);
+}
+
+.env-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 2px 0 4px 22px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 2px;
+}
+
+.env-branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.env-branch:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.env-branch:disabled {
+  cursor: default;
+}
+
+.env-branch.current {
+  color: var(--fg-0);
+  font-weight: 500;
+}
+
+.env-branch-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.env-branch-tag {
+  flex: none;
+  padding: 0 4px;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+}
+
+.env-branch-tag.warn {
+  color: var(--warn, var(--fg-2));
+}
+
+.env-newbranch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 0;
+}
+
+.env-branch-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+}
+
+.env-branch-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.env-menu .gwrite-fail,
+.env-menu .gwrite-ok {
+  margin-top: 4px;
+}

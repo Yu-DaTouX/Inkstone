@@ -618,6 +618,21 @@ const CASES = {
     cost: 0,
     afterExit: 'gitReviewReadonly'
   },
+  /*
+   * Git 写操作（方案 §5，G2）：暂存 / 取消暂存 / 提交 / 推送 / 拉取 /
+   * 切分支 / 新建分支 / 非法输入。
+   * cost 0（不调模型），但**会真的改 fixture 仓库** —— 退出后由
+   * `afterExit: gitWriteApplied` 用真 git 核对提交与远程。
+   */
+  gitwrite: {
+    probe: 'scripts/probe/git-write.js',
+    fixture: true,
+    fixtureSub: 'write',
+    delay: 13000,
+    budget: 240000,
+    cost: 0,
+    afterExit: 'gitWriteApplied'
+  },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
   fs: { probe: 'scripts/probe/fs.js', delay: 9000, cost: 0 },
   // 面板与工具栏：开关位置 / 命名 / 用户档案 / 收放
@@ -1040,6 +1055,50 @@ function buildFixtureProject(base) {
   writeFileSync(join(reviewRepo, 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
   /* ⑩ 未暂存修改（源码，用来验语法无关的纯文本 diff） */
   put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 2', '}', ''].join('\n'))
+
+  /*
+   * G2 写操作的 fixture：一个**有真实 remote**的仓库。
+   *
+   * 与 review/ 分开是必须的：写操作会真的改仓库（提交、切分支、推送），
+   * 而 review/ 的每条断言都建立在它那份「故意做脏」的状态上 —— 共用一个
+   * 目录会让两边的断言互相污染，且失败原因极难区分。
+   *
+   * 预置：main（已推送到本地 bare remote）、feature（与 main 有内容差异，
+   * 用来验证切换真的换了工作区文件）、一处未暂存改动、一个未跟踪文件。
+   */
+  const writeRepo = join(dir, 'write')
+  mk('write')
+  const wgit = (args) => execFileSync('git', args, { cwd: writeRepo, stdio: 'ignore' })
+  const wgitC = (...args) => execFileSync('git', [...gitEnv, ...args], { cwd: writeRepo, stdio: 'ignore' })
+  wgit(['init', '-q', '-b', 'main'])
+  wgit(['config', 'core.autocrlf', 'false'])
+  /*
+   * 仓库里**必须**有身份：主进程的 git 继承的是测试进程的 env（没有
+   * GIT_AUTHOR_*），所以不配的话提交会以「身份未配置」被拒 —— 那是**正确**
+   * 的产品行为（分类与提示都对，真实仓库单测 G9-F 专门覆盖它），
+   * 但会让这个场景测不到「提交成功」的主路径。
+   */
+  wgit(['config', 'user.name', 'yan-test'])
+  wgit(['config', 'user.email', 'yan-test@example.com'])
+  put(join('write', 'a.txt'), 'a1\na2\na3\n')
+  put(join('write', 'b.txt'), 'b1\n')
+  mk('write', 'src')
+  put(join('write', 'src', 'app.ts'), 'export const v = 1\n')
+  wgitC('add', '-A')
+  wgitC('commit', '-q', '-m', 'write fixture base')
+  /* feature：b.txt 的内容与 main 不同（切换后能验证工作区真的换了） */
+  wgitC('switch', '-q', '-c', 'feature')
+  put(join('write', 'b.txt'), 'b1 on feature\n')
+  wgitC('commit', '-qam', 'feature changes b.txt')
+  wgitC('switch', '-q', 'main')
+  /* bare remote：push / fetch 走真实 git 通道（本地路径，不碰网络） */
+  const writeRemote = join(dir, 'write-remote.git')
+  execFileSync('git', ['init', '-q', '--bare', writeRemote], { stdio: 'ignore' })
+  wgit(['remote', 'add', 'origin', writeRemote])
+  wgitC('push', '-q', '-u', 'origin', 'main')
+  /* 待暂存的改动 + 未跟踪文件（写操作的输入） */
+  put(join('write', 'a.txt'), 'a1\nA2-CHANGED\na3\n')
+  put(join('write', 'new.txt'), 'fresh\n')
 
   try {
     gitReviewBaseline = gitReadonlySnapshot(reviewRepo)
@@ -2948,6 +3007,83 @@ function checkGitReviewReadonly(sandboxRoot, _tempBefore, probeText = '') {
   return { ok, lines }
 }
 
+/**
+ * Git 写操作场景（G2）的**落地验证**。
+ *
+ * 为什么必须在应用退出后做：探针里的断言虽然回读了主进程的 git 状态，
+ * 但那一层仍然在**应用内部**。这里换成第三方的真 git 直接看仓库：
+ * HEAD 是谁、提交说明是什么、index 是否干净、bare remote 里有没有那个提交。
+ * 这些是渲染进程（乃至整个应用）伪造不了的。
+ *
+ * 断言的是「写操作**真的发生了**」—— 与 G1 那条「什么都没动」正好相反，
+ * 两条一起才说明「该动的动了、不该动的没动」。
+ */
+function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const repo = join(sandboxRoot, 'fixture-project', 'write')
+  const bare = join(sandboxRoot, 'fixture-project', 'write-remote.git')
+  const read = (args, cwd = repo) =>
+    execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+
+  try {
+    /* 失败时把实际值打出来 —— 只说「不对」的断言要花一轮才知道「是什么」 */
+    lines.push(
+      '  ⓘ 实际：HEAD=' +
+        read(['log', '-1', '--pretty=%s']) +
+        ' / 分支=' +
+        read(['rev-parse', '--abbrev-ref', 'HEAD']) +
+        ' / 最近三条=' +
+        JSON.stringify(read(['log', '-3', '--pretty=%s']).split(String.fromCharCode(10)))
+ +
+        ' / 全部分支提交=' +
+        JSON.stringify(read(['log', '--all', '--pretty=%h %s']).split(String.fromCharCode(10))) +
+        ' / main=' +
+        read(['rev-parse', 'main']) +
+        ' live-made=' +
+        read(['rev-parse', '--verify', 'live-made'])
+    )
+    say(
+      read(['log', '-1', '--pretty=%s']) === 'feat: live 写操作验收',
+      'HEAD 上的提交正是界面上输入的那条说明'
+    )
+    say(read(['rev-parse', '--abbrev-ref', 'HEAD']) === 'main', '收尾时停在 main 分支（探针最后切回来了）')
+    say(read(['branch', '--list', 'live-made']) !== '', '新建的分支 live-made 真的存在')
+
+    /* 暂存过的 a.txt 已经随提交进了历史 → 工作区里它不再是「已暂存/已修改」 */
+    const status = read(['status', '--porcelain'])
+    const aLine = status.split('\n').find((l) => l.endsWith('a.txt')) ?? ''
+    say(
+      aLine === '' || aLine.startsWith('??') === false,
+      'a.txt 没有留在「已暂存」里（暂存的内容随提交进了历史）[' + aLine + ']'
+    )
+
+    /* 远程：bare 仓库收到了同一个提交（推送真的出去了） */
+    const localHead = read(['rev-parse', 'HEAD'])
+    const remoteHead = execFileSync('git', ['--git-dir', bare, 'rev-parse', 'main'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    }).trim()
+    say(localHead === remoteHead, 'bare remote 里的 main 与本地 HEAD 相同（推送成功）')
+  } catch (error) {
+    say(false, '退出后读仓库失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  say(/\[gitwrite\]/.test(probeText), '探针确实跑到了写操作场景（输出里有 [gitwrite] 小结）')
+  if (/\[gitwrite\]\s+[1-9]\d*\s+条失败/.test(probeText)) say(false, '探针自身有失败项（见上面的 ✗）')
+
+  return { ok, lines }
+}
+
 /** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
 const AFTER_EXIT = {
   subagentArchive: checkSubagentArchive,
@@ -2966,7 +3102,8 @@ const AFTER_EXIT = {
   contextEpisode: checkContextEpisode,
   contextTakeoverHook: checkContextTakeoverHook,
   contextDeep: checkContextDeep,
-  gitReviewReadonly: checkGitReviewReadonly
+  gitReviewReadonly: checkGitReviewReadonly,
+  gitWriteApplied: checkGitWriteApplied
 }
 
 /*

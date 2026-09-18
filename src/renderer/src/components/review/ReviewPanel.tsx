@@ -15,18 +15,25 @@
  *    非 Git 目录说「未使用 Git」而不是给一个空的 diff。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GitChangedFile, GitRefOption, GitScopeRequest } from '../../../../shared/ipc'
+import type {
+  GitActionExpected,
+  GitActionResult,
+  GitChangedFile,
+  GitRefOption,
+  GitScopeRequest
+} from '../../../../shared/ipc'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ChangedFileTree, statusGlyph } from './ChangedFileTree'
+import { CommitBar } from './CommitBar'
 import { DiffViewer, ImageDiff } from './DiffViewer'
-import { patchKeyOf, usePatchStore, useReviewSnapshot, useSideContent, useViewedStore } from './useGitReview'
+import { patchKeyOf, useGitWrite, usePatchStore, useReviewSnapshot, useSideContent, useViewedStore } from './useGitReview'
 
 /** 打开时默认展开多少个文件的正文（小改动全展开，大改动先给前一批） */
 const AUTO_EXPAND = 12
 
-export function ReviewPanel() {
+export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () => void } = {}) {
   const t = useT()
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
@@ -42,6 +49,28 @@ export function ReviewPanel() {
   const patches = usePatchStore(cwd, scope, requestId)
   const viewed = useViewedStore()
   const sides = useSideContent(cwd, scope, true)
+
+  /*
+   * 写操作（暂存 / 取消暂存 / 提交）。
+   * 结束后**必须刷新快照并清掉 patch 缓存**：index 一变，同一个文件的
+   * 「已暂存」与「未暂存」两半内容就都变了，留着旧 patch 会显示错的内容。
+   */
+  const onWritten = useCallback(
+    (res: GitActionResult) => {
+      if (!res.ok) return
+      patches.clear()
+      setBump((v) => v + 1)
+      onRepoStateChanged?.()
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patches]
+  )
+  const write = useGitWrite(cwd, onWritten)
+  const expected = view.snapshot?.expected
+
+  /* 批量暂存按钮的语义跟着范围走：看未暂存内容时是「全部暂存」，看暂存内容时反过来 */
+  const bulkKind: 'stage-all' | 'unstage-all' | null =
+    scope.kind === 'range' ? null : scope.kind === 'staged' ? 'unstage-all' : 'stage-all'
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
@@ -126,6 +155,22 @@ export function ReviewPanel() {
 
         <span className="spacer" />
 
+        {bulkKind && expected ? (
+          <button
+            type="button"
+            className="review-act"
+            title={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
+            aria-label={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
+            data-testid={bulkKind === 'stage-all' ? 'review-stage-all' : 'review-unstage-all'}
+            disabled={!!write.busy || files.length === 0}
+            onClick={() => void write.run({ kind: bulkKind }, expected)}
+          >
+            <span className="stage-glyph" aria-hidden="true">
+              {bulkKind === 'stage-all' ? '+' : '−'}
+            </span>
+          </button>
+        ) : null}
+
         <button
           type="button"
           className="review-act"
@@ -207,6 +252,15 @@ export function ReviewPanel() {
               onViewed={(next) => (next ? viewed.mark(f, identity) : viewed.unmark(f, identity))}
               sides={sides}
               scopeKind={scope.kind}
+              expected={expected}
+              busy={!!write.busy}
+              onStage={(next) => {
+                if (!expected) return
+                void write.run(
+                  next ? { kind: 'stage', paths: [f.path] } : { kind: 'unstage', paths: [f.path] },
+                  expected
+                )
+              }}
             />
           ))}
 
@@ -227,6 +281,8 @@ export function ReviewPanel() {
           />
         </div>
       </div>
+
+      <CommitBar snapshot={view.snapshot} cwd={cwd} onDone={onWritten} />
     </div>
   )
 }
@@ -319,7 +375,10 @@ function FileCard({
   viewed,
   onViewed,
   sides,
-  scopeKind
+  scopeKind,
+  expected,
+  busy,
+  onStage
 }: {
   file: GitChangedFile
   open: boolean
@@ -329,9 +388,20 @@ function FileCard({
   onViewed: (next: boolean) => void
   sides: ReturnType<typeof useSideContent>
   scopeKind: GitScopeRequest['kind']
+  /** 快照带的仓库版本（写操作复核用）。为空时（快照还没回来）不显示暂存按钮 */
+  expected: GitActionExpected | undefined
+  busy: boolean
+  onStage: (next: boolean) => void
 }) {
   const t = useT()
   const isImage = file.kind === 'image'
+  /*
+   * 两半分开判：一个文件可以同时有「已暂存」与「未暂存」两部分
+   * （`git add` 之后又改了），方案 §5.2 要求它们分别展示、分别操作。
+   */
+  const hasUnstaged = file.unstaged !== null || file.untracked
+  const hasStaged = file.staged !== null
+  const canStage = scopeKind !== 'range' && !!expected
 
   /* 图片：两侧内容都在展开时才请求（未展开的图片文件不该产生两次 IPC） */
   const oldContent = sides.cache[`old|${file.path}`]
@@ -369,6 +439,38 @@ function FileCard({
             <span className="rcard-nostat">{t('review.noLineStat')}</span>
           ) : null}
         </span>
+
+        {/*
+         * 暂存 / 取消暂存。
+         * 放在「已查看」左边：前者会改变仓库状态，后者只是本地的阅读标记，
+         * 破坏性大的靠里（远离右侧边缘，不容易误点）。
+         */}
+        {canStage && hasUnstaged ? (
+          <button
+            type="button"
+            className="rcard-stage"
+            data-testid="review-stage"
+            disabled={busy}
+            title={t('git.stageFile')}
+            onClick={() => onStage(true)}
+          >
+            <span className="stage-glyph" aria-hidden="true">+</span>
+            <span>{t('git.stage')}</span>
+          </button>
+        ) : null}
+        {canStage && hasStaged ? (
+          <button
+            type="button"
+            className="rcard-stage off"
+            data-testid="review-unstage"
+            disabled={busy}
+            title={t('git.unstageFile')}
+            onClick={() => onStage(false)}
+          >
+            <span className="stage-glyph" aria-hidden="true">−</span>
+            <span>{t('git.unstage')}</span>
+          </button>
+        ) : null}
 
         <button
           type="button"

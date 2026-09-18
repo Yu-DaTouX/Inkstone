@@ -18,6 +18,8 @@ import { promisify } from 'node:util'
 import { realpath, stat, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { basename, resolve } from 'node:path'
+import type { GitActionExpected } from '../shared/git-actions'
+import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
 import { parseStatusV2 } from '../shared/git'
 
@@ -315,6 +317,35 @@ export async function readRepoState(cwd: string, opts: { withRefs?: boolean } = 
        显示 0 会让用户以为「都推上去了」，而他其实一次都没推过 */
     unpushedCount: status.upstream ? status.ahead : null,
     hasCommit: !status.unborn && !!status.head
+  }
+}
+
+/* ── 预期版本（写操作复核用，但**读**它本身是只读的）───────── */
+
+/**
+ * 读当前的实际版本。
+ *
+ * 放在只读模块里的原因：审查快照要**带上**它一起返回，而写操作复核时
+ * 又必须与那份快照同源 —— 两边各读一次的话，「用户看到的清单」与
+ * 「复核用的版本」就是两个时刻的数据，复核会变成看运气。
+ *
+ * `ls-files -s` 用 `-z`：文件名可能含换行，用 
+ 分隔会让两个不同的
+ * 仓库算出同一个摘要（摘要函数用长度前缀，但输入本身必须无歧义）。
+ */
+export async function readExpected(root: string): Promise<GitActionExpected> {
+  const [headRes, indexRes, statusRes] = await Promise.all([
+    gitRun(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFailure: true, timeout: 8000 }),
+    gitRun(root, ['ls-files', '-s', '-z'], { allowFailure: true }),
+    gitRun(root, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--no-optional-locks'], {
+      allowFailure: true
+    })
+  ])
+  const head = headRes.ok ? headRes.stdout.trim() || null : null
+  return {
+    head,
+    indexDigest: digestOf([indexRes.stdout]),
+    statusDigest: digestOf([statusRes.stdout])
   }
 }
 

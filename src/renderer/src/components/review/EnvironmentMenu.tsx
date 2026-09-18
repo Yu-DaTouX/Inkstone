@@ -17,11 +17,13 @@
  *    比较 = search。**不复用同一个图标承担两层含义**（DESIGN §2.7）。
  */
 import { useEffect, useRef, useState } from 'react'
+import type { GitActionResult, GitRefOption } from '../../../../shared/ipc'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { shortProject } from '../rail/rail-utils'
-import { useRepoState } from './useGitReview'
+import { WriteFailure } from './CommitBar'
+import { useGitWrite, useRepoState } from './useGitReview'
 
 export function EnvironmentMenu() {
   const t = useT()
@@ -31,8 +33,19 @@ export function EnvironmentMenu() {
   const project = session?.cwd ?? settings?.cwd
   const repoView = useRepoState(project)
   const repo = repoView.repo
+  /* 写操作结束后刷新仓库状态：菜单里的数字（待推送 / 变更数）必须立刻是对的 */
+  const write = useGitWrite(project, (res: GitActionResult) => {
+    if (!res.ok) return
+    /* 先用响应里的状态就地更新（立刻可用），再拉一次完整版本（含 refs） */
+    if (res.state) repoView.apply(res.state)
+    repoView.refresh()
+  })
 
   const [open, setOpen] = useState(false)
+  const [showBranches, setShowBranches] = useState(false)
+  const [refs, setRefs] = useState<GitRefOption[]>([])
+  const [busyBranches, setBusyBranches] = useState<string[]>([])
+  const [newBranch, setNewBranch] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLButtonElement>(null)
 
@@ -56,9 +69,40 @@ export function EnvironmentMenu() {
     }
   }, [open])
 
+  /*
+   * 分支列表只在展开时拉：
+   * 菜单每次打开都拉一次 refs（可能上百个分支）是白花的 —— 而分支切换
+   * 本来就是低频动作。拿到后把「被其它工作树占用」也一并收下（方案 §5.1）。
+   */
+  useEffect(() => {
+    if (!open || !showBranches || !project) return
+    let alive = true
+    void window.yan.git
+      .refs(project)
+      .then((res) => {
+        if (!alive) return
+        setRefs(res.refs.filter((r) => r.kind === 'local' || r.kind === 'head'))
+        setBusyBranches(res.busyBranches)
+      })
+      .catch(() => {
+        /* 拉不到分支列表不影响菜单其余部分，静默降级为空列表 */
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, showBranches, project])
+
   /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
     if (open) firstRef.current?.focus()
+  }, [open])
+
+  /* 关掉菜单时收起分支列表：下次打开应该回到干净的面板 */
+  useEffect(() => {
+    if (!open) {
+      setShowBranches(false)
+      setNewBranch('')
+    }
   }, [open])
 
   const changed = repo?.changedCount ?? 0
@@ -156,20 +200,18 @@ export function EnvironmentMenu() {
                 </button>
               </div>
 
+              {/*
+               * 「分支」以前点下去是「与本分支比较」—— 名字与实际动作不符
+               * （Codex 参考里那行于分支本身）。现在它展开分支列表并支持
+               * 切换与新建；「与谁比较」是下面独立的一项。
+               */}
               <button
                 type="button"
                 role="menuitem"
                 className="env-item"
                 data-testid="env-branch"
-                onClick={() => {
-                  setOpen(false)
-                  /*
-                   * 「与本分支比较」：target 是当前 HEAD，base 先给一个能用的
-                   * 默认（upstream 优先，没有就上一个提交）。真正的 base 由
-                   * 审查面板里的下拉换 —— 这里不替用户猜死。
-                   */
-                  openReview({ kind: 'range', base: repo.upstream ?? 'HEAD~1', target: repo.branch ?? 'HEAD' })
-                }}
+                aria-expanded={showBranches}
+                onClick={() => setShowBranches((v) => !v)}
               >
                 <Icon name="layers" size={14} />
                 <span className="env-label">{branchLabel}</span>
@@ -179,6 +221,121 @@ export function EnvironmentMenu() {
                     {repo.behind > 0 ? `↓${repo.behind}` : ''}
                   </span>
                 ) : null}
+                <Icon name="chevron-right" size={12} className={`env-caret ${showBranches ? 'open' : ''}`} />
+              </button>
+
+              {showBranches ? (
+                <div className="env-branches" data-testid="env-branches">
+                  {refs.map((r) => {
+                    const inUse = busyBranches.includes(r.ref)
+                    const isCurrent = r.ref === repo.branch
+                    return (
+                      <button
+                        key={r.ref}
+                        type="button"
+                        className={`env-branch ${isCurrent ? 'current' : ''}`}
+                        data-testid="env-branch-item"
+                        disabled={!!write.busy || isCurrent || inUse}
+                        title={inUse ? t('env.branchInUse') : r.ref}
+                        onClick={() => {
+                          if (!repoView.expected) return
+                          void write.run({ kind: 'switch-branch', branch: r.ref }, repoView.expected)
+                        }}
+                      >
+                        <span className="env-branch-name">{r.ref}</span>
+                        {isCurrent ? <span className="env-branch-tag">{t('env.branchCurrent')}</span> : null}
+                        {inUse ? <span className="env-branch-tag warn">{t('env.branchInUse')}</span> : null}
+                      </button>
+                    )
+                  })}
+
+                  <div className="env-newbranch">
+                    <input
+                      className="env-branch-input"
+                      data-testid="env-new-branch-name"
+                      placeholder={t('env.branchName')}
+                      value={newBranch}
+                      spellCheck={false}
+                      onChange={(e) => setNewBranch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' || !newBranch.trim() || !repoView.expected) return
+                        void write.run(
+                          { kind: 'create-branch', branch: newBranch.trim(), startPoint: null, checkout: true },
+                          repoView.expected
+                        )
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="env-mini"
+                      data-testid="env-create-branch"
+                      disabled={!!write.busy || !newBranch.trim() || !repoView.expected}
+                      title={t('env.createAndSwitch')}
+                      onClick={() => {
+                        if (!repoView.expected) return
+                        void write.run(
+                          { kind: 'create-branch', branch: newBranch.trim(), startPoint: null, checkout: true },
+                          repoView.expected
+                        )
+                      }}
+                    >
+                      {t('env.createAndSwitch')}
+                    </button>
+                  </div>
+
+                  {write.busy === 'switch-branch' || write.busy === 'create-branch' ? (
+                    <div className="env-sub">{t('env.checking')}</div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* 拉取 / 推送：写操作，会改 .git（对象库 / 远程跟踪引用） */}
+              <button
+                type="button"
+                role="menuitem"
+                className="env-item"
+                data-testid="env-fetch"
+                disabled={!!write.busy || !repoView.expected}
+                title={repo.upstream ? `${t('env.fetch')} ${repo.upstream.split('/')[0]}` : t('env.fetch')}
+                onClick={() => {
+                  if (!repoView.expected) return
+                  void write.run({ kind: 'fetch', remote: null }, repoView.expected)
+                }}
+              >
+                <Icon name="refresh" size={14} />
+                <span className="env-label">{t('env.fetch')}</span>
+                <span className="env-sub">{repo.upstream ? repo.upstream.split('/')[0] : ''}</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                className="env-item"
+                data-testid="env-push"
+                disabled={!!write.busy || !repoView.expected}
+                title={repo.upstream ? repo.upstream : t('commit.noUpstream')}
+                onClick={() => {
+                  if (!repoView.expected) return
+                  void write.run(
+                    {
+                      kind: 'push',
+                      remote: null,
+                      branch: repo.branch,
+                      setUpstream: !repo.upstream
+                    },
+                    repoView.expected
+                  )
+                }}
+              >
+                <Icon name="send" size={14} />
+                <span className="env-label">{t('env.push')}</span>
+                <span className="env-sub env-ab">
+                  {repo.unpushedCount === null
+                    ? t('commit.setUpstream')
+                    : repo.unpushedCount > 0
+                      ? t('env.pushN', { n: repo.unpushedCount })
+                      : ''}
+                </span>
               </button>
 
               <div className="env-item env-static" data-testid="env-pr" title={t('env.prUnavailable')}>
@@ -217,6 +374,17 @@ export function EnvironmentMenu() {
           )}
 
           {repoView.error ? <div className="env-error">{repoView.error}</div> : null}
+
+          {/* 写操作的失败：**不关菜单**，原地把原因与原始输出摆出来 */}
+          {write.failure ? (
+            <WriteFailure msg={write.failure.message} hint={write.failure.hint} detail={write.failure.detail} />
+          ) : null}
+          {write.notice ? (
+            <div className="gwrite-ok" data-testid="env-notice">
+              <Icon name="check-circle" size={12} />
+              <span>{write.notice}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
