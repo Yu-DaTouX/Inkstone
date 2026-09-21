@@ -401,6 +401,32 @@ html[data-theme='light'] .op-title::before {
   color: var(--fg);
 }
 
+/* 回合级统计放在正文之后，避免模型品牌 / 步数 / 回复档位打断阅读。 */
+.turn-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--sp-3);
+  margin-top: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-footer-item {
+  white-space: nowrap;
+}
+
+.turn-time {
+  cursor: help;
+}
+
+.msg.user .turn-footer {
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: var(--sp-1);
+}
+
 /* ---- 回合头部的「N 步」标记 ---- */
 .msg-turn-count {
   margin-left: var(--sp-2);

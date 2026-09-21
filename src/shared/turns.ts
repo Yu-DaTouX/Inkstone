@@ -76,6 +76,8 @@ export interface AssistantTurn {
   usage?: Usage
   speed?: number
   elapsedMs?: number
+  /** 最后一条助手消息的时间戳；缺失时不伪造时刻。 */
+  timestamp?: number
   model?: string
   responseDetail?: ResponseDetail
   error?: string
@@ -182,6 +184,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     imageProgress: ImageGenerationProgress[]
     responseDetail: ResponseDetail
     last: UIMessage | undefined
+    timestamp?: number
     /** 是否还在流式（由调用方传入的 streamingId 决定） */
     streaming: boolean
   } | null = null
@@ -247,6 +250,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       usage: cur.last?.usage,
       speed: cur.last?.speed,
       elapsedMs: cur.last?.elapsedMs,
+      timestamp: cur.timestamp,
       model: cur.last?.model,
       responseDetail: cur.responseDetail,
       error: cur.last?.error,
@@ -305,6 +309,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         else cur.imageProgress[index] = progress
       }
     }
+
+    /* 时间戳属于回合的装饰元数据，始终取这一回合最后一条助手消息的值。 */
+    if (m.timestamp !== undefined) cur.timestamp = m.timestamp
 
     if (hasText(m.text)) {
       // 一条消息里可能有好几段 —— 拆开，好让界面按段落排
