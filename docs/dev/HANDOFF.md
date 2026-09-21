@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-21**，最新增量包括 **04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 仍缺独立发现 / 下载来源与获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-21**，最新增量包括 **04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -13,7 +13,7 @@
 
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
-> 最新自动验证：完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4152/4152**、`vendor:pi:check`、设计测量均通过。实际调用模型的场景统一使用本地 llama.cpp，不消耗远程模型额度。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`），但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+> 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4152/4152**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`），但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
 
 ### 本轮增量（2026-09-21）· 墨色工作空间 UI 核心实施片
 
@@ -53,7 +53,7 @@
 | 应用与包 | 开发 renderer 已重新构建；尚未重跑 `dist:dir` / `test:packaged`。 |
 | 剩余限制 | 左栏快捷入口只提供编码 / 日常两档，澄清仍在输入框模式菜单中；模式按现有工作模式契约在当前回合结束后生效，不能把正在执行的回合强行改写。 |
 
-### 2026-09-21 本地模型与本轮收口证据
+### 2026-09-21 本地模型与收口证据（历史批次）
 
 本轮需要实际调用模型的场景统一改用用户确认可用的本地 llama.cpp 服务：`local/qwen3-local` → `http://127.0.0.1:8081/v1`，模型为本机 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`，服务端 `n_ctx=65536`。已用真实 `GET /v1/models`、`POST /v1/chat/completions` 及强制工具调用核对连通性和 tool-call 形状；没有为这些验收消耗远程模型额度。测试模型路由只替换真实模型场景，故意不存在模型与路由探针仍保持原有对照语义。
 
@@ -63,10 +63,11 @@
 - 真实模型：`contextsweep`、`contextproduce`、`contextfoldpref`、`contextepisode`、`contextgate`、`contextrefresh`、`sessionab`、`subagent` 等实际调用场景均已切到本地模型并取得通过证据。`contextepisode` 已走过真实候选窗口，但本次模型判断没有满足生成 Episode 的条件，属于正常业务结果，不计作失败。
 - Live 复合证据：在修正会话标题可变导致的分支夹具误判、全量批次切会话迟到帧，以及本地模型极短回复轮询窗口后，完整矩阵已重新跑通 **83/83**。其中 `branch`、`taskext`、`contextrefresh` 已在修复后单独 3/3 通过，并再次包含在这次全量 83 场景中；不是把两次运行拼成“全量通过”。
 - 已完成的 Skill 文件边界：固定项目内 acquire 只进入受管 staging，安全边界调度器在 runner 空闲且 `runnerId`、generation、项目、目标版本、来源和 manifest 仍匹配时物化 active、重建同一 runner，并核对 `--skill`、续接 ID 和 `resumed` 回执；忙碌 runner 只延后。
+- 后续按用户要求已停止本机 Qwen llama.cpp 服务，当前不把它当作仍在运行的前提；DeepSeek API 批次曾取得 `82/83`（唯一一次 `contextfoldpref` 超时，随后同模型隔离重跑通过），本轮新增的 `skilldirnet` / `discnet` / `test:unit` / Skill 边界检查均为 cost 0，不依赖模型调用。
 
 仍未能勾选为“全部完成”的项目边界：
 
-- 独立 Skill / MCP 目录发现、下载来源，以及未获授权外部候选从 acquire → install → 激活 → 原目标续接的真实整链仍缺证据；当前完成的是固定项目内 Skill 文件安全边界和已实现的本地 / 远程接入基础。
+- 独立 Skill 目录的**只读发现**已有真实证据；但未获授权外部候选从 acquire → install → 激活 → 原目标续接的真实整链仍缺证据。当前完成的是固定项目内 Skill 文件安全边界、SkillMD 风格目录解析，以及已实现的本地 / 远程接入基础。
 - Android UI / APK、配对、TLS / 外部连通性仍是方案或桌面端 API 基础，不应写成移动端已交付；pi、工具、模型调用、项目文件和凭证仍留在桌面端。
 - 当前源码对应的 `dist:dir` / `test:packaged` 已于本节更新后重新跑并通过：解包态、便携版和全新 NSIS 安装态 EXE 都取得了内置 pi、项目知识、Git、能力设置页、随包 CLI 和隔离哨兵的运行证据；包形态本身不再是当前阻塞项。
 
@@ -78,6 +79,19 @@
 | 视觉 | **2026-09-19（实施-07 S4）**：新增 `sourcesearch` 状态 —— `matrix-sourcesearch-1440x900-100-{dark,light}-2026-09-19s4.png`（**两张已看图**，溢出 0px）：来源菜单里的搜索入口与手工添加网址同屏。**2026-09-19（实施-09 S2 第七批，N04）**：`matrix-reasoninglive-1440x900-100-dark-2026-09-19s2d.png`（**已看图**，真实中英混排推理流 + 默认裁剪态 + 「展开全部」）与 `...-s2c.png`（对照：同命令未写语言要求 → 整段英文推理）。**2026-09-19（实施-09 S2 第六批）**：新增 `subagentfailed` 状态 —— `matrix-subagentfailed-1440x900-100-{dark,light}-2026-09-19s2b.png`（**两张已看图**，溢出 0px）：子代理列表行 `✕` + 红字原因、详情卡「失败」+ meta 原因。**2026-09-19（实施-09 S2 第五批）**：本片无 UI 变化，不新增截图。**2026-09-19（实施-05 S5b-4）**：新状态 `chainjoin`（`YAN_MATRIX_ONLY=chainjoin YAN_MATRIX_STAMP=2026-09-19s5b4`）→ `matrix-chainjoin-1440x900-100-{dark,light}-2026-09-19s5b4.png`（**两张已看图**，溢出 0px）：左栏只有代表段（标题来自链首段）+ 一条对照会话；消息区最下面一条是交接正文，接在 fixture 旧消息之后 —— 两段在同一条时间线上。⚠️ 过滤逻辑归主进程，图只证明渲染形态。同一次运行把 8 组都跑了（全 ✓；`chainjoin` 只在组 0/1 出图），并顺带重拍了 3 张引导层图（新 stamp，旧图未动）。**2026-09-19（实施-09 S1）**：`YAN_MATRIX_ONLY=railmini,fsnarrow YAN_MATRIX_STAMP=2026-09-19s1` → `matrix-railmini-940x620-100-dark-2026-09-19s1.png`（**窄窗收起，48px 缺陷的形态对照位**：消息区贴到窗口左缘、无竖条）、`matrix-railmini-1440x900-100-{dark,light}` 与 `matrix-fsnarrow-1440x900-100-dark`（组 0/1/3 全绿、溢出 0px，**三张已看图**）。⚠️ 修复前的旧批次截图**不能当对照**（隔着其它改动，像素比对显示差异不在「少一列」上）→ 改动前后的判据改用 A/B 数值实测（见「本轮」小节）。旧图未覆盖。**2026-09-18（实施-02 S5）**：`YAN_MATRIX_ONLY=taskhost,taskcard YAN_MATRIX_STAMP=2026-09-18s5` 跑组 0/1/4 → `matrix-taskhost-1440x900-100-{dark,light}-2026-09-18s5.png`、`matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s5.png`、`matrix-taskcard-900x520-100-dark-2026-09-18s5.png`（共 5 张，溢出 0px，已看图：右栏任务/历史折叠、工具卡来源徽标、窄窗截断）。本片无 UI 改动，这一栏是 S1–S4 界面成果在新取证批次下仍成立。**2026-09-18（实施-02 S4）**：新增 `taskcard` 状态（内置来源工具卡）→ `matrix-taskcard-1440x900-100-{dark,light}-2026-09-18s4.png` 与 `matrix-taskcard-900x520-100-dark-2026-09-18s4.png`（窄窗）；`settingspkg` 扩断言并重跑 → `matrix-settingspkg-1440x900-100-{dark,light}-2026-09-18s5.png`（未跑 registerIpc，给 `yan:capabilities:builtin` 补了桩）。**5 张已看图，溢出 0px**；看图改掉一处文案错误（内置能力区移到已装列表之后，「下面」→「上面」）。**2026-09-18（方案 S1）**：`envlinks` 重跑成来源菜单（筛选、图片缩略图、文件、网页、「文件不在了」的异常态、边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18p.png`（溢出 0px，已看图）。**这张图又抓出一次真问题**：`src-*` 那一整块样式我忘了写，标题与「已关联」粘在一起、缩略图占不到位置 —— 新组件没有样式时不会报错，只会难看。**2026-09-18（方案 P2）**：新增 `settingspkg` 状态（目录入口 / 安装区 / 已装列表三种状态：用户级、项目级、「磁盘上找不到」/ 生效时机）。**这张图抓出两个真问题**：① 视觉矩阵**不跑 `registerIpc`**、全靠桩，漏了 `yan:packages:*` 就在界面上渲染成 `No handler registered`；② `.set-row` 是 **grid**（两列），只写 `flex-direction: column` 完全无效 —— 内容被留在第二列、整块跑到右半边（改成显式 `display: flex` 才对）。图：`matrix-settingspkg-1440x900-100-dark-2026-09-18n.png`（溢出 0px）。**2026-09-18（方案 H1 / G3）**：新增 `envlinks` 状态（菜单滚到底：在网上比较 · github.com、关联外部任务的一条 + 两个输入 + 边界文案）；`matrix-envlinks-1440x900-100-dark-2026-09-18j.png`（溢出 0px，已看图）。**2026-09-18（方案 W2）**：`envworktrees` 状态重跑（`matrix-envworktrees-1440x900-100-dark-2026-09-18i.png`，溢出 0px，已看图）。分支名原来被挤成 `feat/git-re...` —— 改成允许换行 + 名字保底 96px（分支名是这个区里最需要看全的东西，要拿它去终端里敲）。**2026-09-18（方案 W1）**：新增 `envworktrees` 状态（工作树区：主工作树**没有**移除按钮、砚创建的带标记、同时删分支、新分支名与目标目录两个输入）；`YAN_MATRIX_ONLY=envworktrees` 跑组 0/1 → `matrix-envworktrees-1440x900-100-{dark,light}-2026-09-18g.png`（2 张，溢出 0px，已看图）。**2026-09-18（方案 G2）**：新增两态 —— `reviewwrite`（文件行「暂存 / 取消暂存」+ 头部批量按钮 + 底部提交区）与 `envbranches`（环境菜单展开分支列表 + 当前分支标记 + 新建分支输入 + 拉取 / 推送 ↑N）；`YAN_MATRIX_ONLY=reviewwrite,envbranches` 跑组 0/1 → `matrix-{reviewwrite,envbranches}-1440x900-100-{dark,light}-2026-09-18f.png`（4 张，溢出 0px，已看图）。**2026-09-18 深夜（方案 G1）**：新增两个状态 —— `envmenu`（环境菜单：变更/本地+打开复制/分支/PR 不可用/比较分支）与 `review`（审查面板：范围+统计+两列行号 diff+未修改区+变更树+已查看进度+图片对照）；`YAN_MATRIX_ONLY=envmenu,review` 跑组 0/1 → `matrix-{envmenu,review}-1440x900-100-{dark,light}-2026-09-18e.png`（4 张，溢出 0px，已看图）。**截图当场拍出两个真问题**（审查面板与工具栏争空间、「本地」点了却打开审查），已修并重拍。此前：**2026-09-18 深夜本轮**：组 0 **全绿**（**24 个状态**、溢出 0px）—— 新增 `pendingcards`（待投递卡片）、`railsessions`（项目会话折叠），`railmini` 重拍成「左栏完全消失」；证据 `matrix-{pendingcards,railsessions,railmini}-1440x900-100-dark-2026-09-18.png`（已看图）。**同日更早一轮**：新增 `autonomous` 状态（自主模式双光带），跑组 0 全绿，产出 `matrix-{autonomous,main,modelmenu}-1440x900-100-dark-2026-09-18.png`。此前：`npm run visual:matrix` **组 0/1 追加 `usageturn` 通过**（R03 证据：`matrix-usageturn-1440x900-100-{dark,light}-2026-09-17.png`，溢 0px；`YAN_MATRIX_ONLY=usageturn` 跑组 0/1）。此前：**8 组全绿、40 张截图**（37 个状态 + 3 张引导层） | 组 0/1 重跑（深/浅共 26 张，含 `usageelapsed`）；每张带溢出 ≤ 1px 与关键元素硬断言。**2026-09-17 追加批次**（`STAMP=2026-09-17`）：只重跑受「Tool Sweep 默认开」影响的 3 张 —— `matrix-contextbudget-{dark,light}` 与 `matrix-ctxnarrow-dark`（`YAN_MATRIX_ONLY=contextbudget,ctxnarrow` 跑组 0/1 全绿、溢出 0px）：新图里「下一步」已变成**清理旧工具输出（约 168k 时）**、清理阶段标记为已接管；旧批次（`-2026-09-16`）原样保留。**整组**重跑仍受本机 GPU/Network 崩溃影响（组 0 跑到 10 分钟看门狗），与本次改动无关。**同日 N21-7 追加批次**：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1，产出 `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-17.png`（设置面板「上下文」tab，溢出 0px）。**同日（N01 拖拽排序）追加批次**：`YAN_MATRIX_ONLY=railreorder` 跑组 0/1，产出 `matrix-railreorder-1440x900-100-{dark,light}-2026-09-17.png`（截图停在**拖拽进行中**：被拖行半透明 + 目标位置 2px 插入线；溢出 0px；已裁剪放大逐张核对深浅两套对比度）。**同日 P2-7 追加批次**（`STAMP` 起可由 `YAN_MATRIX_STAMP` 覆盖，旧批次原样保留）：`YAN_MATRIX_ONLY=ctxsettings` 跑组 0/1 → `matrix-ctxsettings-1440x900-100-{dark,light}-2026-09-18.png`（新增 `ctx-fold` 开关行，溢出 0px，已裁剪放大看图核对「已开启」按钮与中英文案）。**同日 N03 追加批次**：新增两个状态 —— `toolgroup`（折叠组展开、组内行保持一行）与 `toolterm`（命令行的终端窗口，只有命令类工具会渲染 `.term`）；`YAN_MATRIX_ONLY=toolgroup,toolterm` 跑组 0/4 → `matrix-toolgroup-1440x900-100-dark`、`matrix-toolterm-1440x900-100-dark`、`matrix-toolgroup-900x520-100-dark`（**窄窗口**）三张，溢出 0px，已裁剪放大核对 |
 | 应用与包 | **2026-09-21 最新复核**：`dist:dir` + `test:packaged`、便携版 `--exe`、全新 NSIS 安装后 EXE `--exe` 均通过完整运行探针；`npm run dist` 已重建三产物与 `SHA256SUMS.txt`，`npm run test:upgrade` 仍以真实用户数据副本验证且原目录 60 个文件逐字节不变。此前“安装包未跑安装流程 / 全量 check 未跑”是旧状态，不再作为当前限制。其余历史包证据保留如下：**2026-09-19（实施-09 S4/S5）**：`vendor:pi:check` ✓；包内开发日志污染已修（`files` 改白名单，无本机路径）。**2026-09-19（实施-05 S6）**：解包态交接恢复与包内静态索引全绿。**P0-8 已完成（2026-09-18，六步走完）** |
 | 已知偶发 | 免费模型可能因日配额或供应商状态返回空文本/零 usage；这会让 `tokens` `subagent` `contexttakeover` 等需要真实 usage 的场景变红 | 先用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`；不可用或触顶时换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`，再分辨「模型当时不可用」还是「代码回归」。**2026-09-17 晚实测**：同一夜连跑 `contextproduce` 6 次只有 1 次成功，失败形态分别是 `aborted`（20s 生成超时）/ `not-json`（返回空文本）/ `error`；换备用模型也一样。**2026-09-17 深夜已确证原因**：`commandcode/longcat-2.0:free` **当日 100 次免费额度用尽**（pi 原样报回 `429 You've used all 100 free LongCat 2.0 requests for today`，配额 `2026-09-18T00:00:00Z` 重置），换 `laguna-s-2.1-free` 则报上游暂不可用。**规则**：看到 429 就直接停手（每跑一次都是在烧剩余额度，而且拿不到结论）。**换模型**：用户指定 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`（1M 窗口、支持思考）后，`contextsweep` / `contexttakeover` 均真实通过 —— 免费模型不可用时的首选替代。**另一个易踩的坑**：探针变慢以后没同步加 `budget`，进程会在打印前被 kill，而 `buf` 为空又被报成「应用可能启动失败」（`contexttakeover` 就此白查三轮，现已在提示里区分这两种情况） |
+
+### 本轮增量（2026-09-21）· 真实外部 Skill 目录只读发现
+
+> 本片只验证“外部目录 → 精确候选元数据”的发现边界，不自动安装、激活或执行第三方 Skill。目录请求通过显式 `YAN_SKILL_DIRECTORY_URL` 开启，默认仍不联网；现场来源为 [SkillMD 机器 API](https://skillmd.com/docs) 的公开搜索接口。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `src/main/capabilities/discovery/discover.ts` 新增对 SkillMD `items` 列表的适配：搜索条目缺少精确 commit 时，只按 raw URL 的同源路径构造详情地址，校验同源 HTTPS 后读取详情固定 `commit_sha`；再读取同源 `raw_url`，以限长 UTF-8 文本计算 SHA-256，映射为 `skill-files` 候选。单页条目并行读取但逐条失败闭合；目录未配置时不产生额外联网请求。新增 `scripts/probe/skill-directory.js` 与非默认 `skilldirnet` 场景。 |
+| 自动检查 | `npm run typecheck`、`npm run build` 通过；`npm run test:unit` **4158/4158**；`npm run test:skill-source` 与 `npm run test:skill-files` 通过。 |
+| 真实运行 | `npm run test:live -- skilldirnet` 全绿：真实 Electron → `yan capabilities discover --query-text "futurediffusion filesystem"` → SkillMD `items` → 同源详情 commit `98812f…` → raw `SKILL.md` SHA-256 `fe6757…` → `skill-directory:futurediffusion/filesystem#…` 候选；候选为 `installKind=skill-files`、`verification=metadata-only`，且探针确认 `discover` 不返回可执行接入结果。`npm run test:live -- discnet` 也回归通过，npm / MCP 各返回 40 条并保持 `metadata-only` 与未知 acquire 拒绝。两条 live 场景均无残留 Pi 进程。 |
+| 视觉验收 | 不适用：本片只改主进程发现 / 测试探针，没有渲染端行为或布局改动。 |
+| 应用与包 | `typecheck` / `build` 已验证普通构建链；本片未重跑 `dist:dir` / `test:packaged`，也没有把外部 Skill 写入真实用户目录或包内资源。 |
+| 剩余限制 | 真实证据到“发现 + 来源 / commit / hash 固定”为止；还没有在用户授权下执行外部候选的 acquire → staging → runner 激活 → 原目标续接整链。独立来源默认关闭；SkillMD 搜索结果是外部可变数据，`skilldirnet` 不纳入默认 `check`。npm 包缺依赖时仍 fail-closed，纯自定义工具若 RPC 不报告 command / Skill 路径仍不能确认 active；Android UI / APK 仍按用户决定最后处理。 |
 
 ### 本轮（2026-09-20）档案与计划整理（非工程片，不填六栏）
 
@@ -127,7 +141,7 @@
 | 真实运行 | 单测在临时目录中真实启动本地 Node MCP fixture 并通过官方 SDK `tools/list`，随后走项目范围登记与复核路径；没有运行未获授权的第三方候选，也没有调用真实业务工具。 |
 | 视觉验收 | 不适用：本片没有渲染端改动。 |
 | 应用与包 | 新代码已进入普通构建链；尚未取得外部候选的 Electron acquire → 安装 → runner 激活 → 原目标续接证据，也未取得便携 / NSIS 安装态的 renderer 探针证据。 |
-| 剩余限制 | `skill-files` 独立来源仍未接线；外部候选整链与包内验收仍缺。当前本地模型 `local/qwen3-local` 已在 `127.0.0.1:8081` 完成真实响应与工具调用核验。Android S1+ 仍需范围确认。 |
+| 剩余限制 | `skill-files` 独立来源仍未接线；外部候选整链与包内验收仍缺。历史批次曾用本地模型 `local/qwen3-local` 在 `127.0.0.1:8081` 完成真实响应与工具调用核验；本机服务随后按用户要求停止。Android S1+ 仍需范围确认。 |
 
 ### 本轮增量（2026-09-21）· acquisition staging 的精确文件集复核
 
