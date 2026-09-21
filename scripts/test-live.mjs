@@ -912,6 +912,14 @@ const CASES = {
   vheight: { probe: 'scripts/probe/vheight.js', delay: 9000, cost: 0 },
   // 工具栏分区排序（拖拽 + 键盘）与工具库（收进库 / 拿回 / 上移下移 / 恢复默认）
   tools: { probe: 'scripts/probe/tools.js', delay: 9000, cost: 0 },
+  /*
+   * 额度区：Command Code 的月度口径（`monthlyCredits` 是「剩余」不是「已用」）
+   * 与颜色分级（<70% 绿 / 70–95% 黄 / ≥95% 红）。
+   * 真实接口那段需要本机 commandcode 凭证 + 网络（只读，不花钱）；没有凭证时探针
+   * 自己跳过真实数据断言，颜色分级那段用打桩数据走真实渲染路径，仍然会跑。
+   * ⚠️ 不进 `check`：方向判据依赖当月真实用量，放在 check 里会变成靠环境碰运气的红灯。
+   */
+  quota: { probe: 'scripts/probe/quota.js', delay: 10000, cost: 0, budget: 120000 },
   // 面板宽度拖拽（含夹取范围与键盘）
   resize: { probe: 'scripts/probe/resize.js', delay: 9000, cost: 0 },
   // 文件树边界：空目录 / 失效路径 / 多级 / 大目录分页 / 中文空格 / 同名文件 / 目录联接

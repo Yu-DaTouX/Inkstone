@@ -240,7 +240,9 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 |---|---|---|
 | 写凭证 | 直接读写 pi 的 `auth.json`，让用户在桌面端就能配 key | `main/credentials.ts`（有单测） |
 | ChatGPT 登录 | **桌面端自己发起 OAuth**，参数逐字对齐内置 pi（差一点 pi 就不认这个 token） | `main/oauth.ts` |
-| 额度 | 取额度必须用 **Electron 的 `net.fetch`**，不能用全局 `fetch` | `main/quota.ts` |
+| 额度查询 | 取额度必须用 **Electron 的 `net.fetch`**，不能用全局 `fetch` | `main/quota.ts` |
+| Command Code 订阅窗口 | **口径易反**：`windowLimits.*.used` 是「已用」，而 `credits.monthlyCredits` 是「**本月剩余**」—— 已用 = 套餐总额度（`weekly.cap × 2` 反推）− 剩余；月度上限是推算值，界面明标「推算」。反了会显示「本月已用 99.9%」（2026-09-21 修过） | `main/quota-commandcode.ts`（有单测） |
+| 额度色阶 | <70% 绿 / 70–95% 黄 / ≥95% 红，窗口与主值共用；与上下文水位的 85 / 95 **不是一套** | `shared/quota-tone.ts`（有单测） |
 
 **改动注意点**
 
@@ -458,8 +460,10 @@ https 三种写法；**只认 github / gitlab / bitbucket** —— 自建服务�
 「已查看」标记同样的做法）；不做跨设备同步，因为那要先有账号体系，而我们不显示虚假的
 登录 / 同步状态。
 
-**额度**（§6.5）不需要改：`providerQuota` 本来就只认供应商权威字段，失败时保留上一次
-成功的快照，切 provider 清掉旧账户的数字。**不用**上下文剩余量推算账户额度。
+**额度**（§6.5）：`providerQuota` 只认供应商权威字段，失败时保留上一次成功的快照，切 provider
+清掉旧账户的数字，**不用**上下文剩余量推算账户额度。唯一一处**推算**是 Command Code 的月度上限
+（接口没有官方月额度字段，用 `weekly.cap × 2` 反推并标 `estimated`，见 §2.10）—— 推算只允许用在
+「供应商自己给的窗口上限能推出总量」这种地方，且界面必须如实标出来。
 
 ### 2.18 附件与来源（现状，S1 的前置事实）
 

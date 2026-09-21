@@ -12,6 +12,7 @@ import {
 } from '../../state/compaction-view'
 import { CONTEXT_STAGES, contextStageLabel, contextStageTip, nextContextStageText } from '../../state/context-view'
 import { nextContextStage } from '../../../../shared/context-policy'
+import { quotaTone } from '../../../../shared/quota-tone'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import { HandleProvider } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
@@ -784,6 +785,17 @@ function QuotaSection() {
    */
   const hasWindows = !!quota?.windows?.length
   const anyExceeded = !!quota?.windows?.some((w) => w.exceeded)
+  /*
+   * 主值着色沿用窗口那一套阈值（quotaTone：<70% 绿 / 70–95% 黄 / ≥95% 红）。
+   * 以前主值只在「已超限」时变红 —— 结果 95% 的窗口红着、主值还是黑的，
+   * 看着像「还没到线」，与窗口自相矛盾。
+   * 没有 used/total 的口径（例如 DeepSeek 的余额）拿不到使用率，就不着色。
+   */
+  const mainPct =
+    quota?.used !== undefined && quota.total !== undefined && quota.total > 0
+      ? (quota.used / quota.total) * 100
+      : undefined
+  const mainTone = mainPct === undefined ? '' : quotaTone(mainPct, anyExceeded)
   const mainText = !quota
     ? null
     : hasWindows || isPercent
@@ -811,7 +823,7 @@ function QuotaSection() {
       {mainText ? (
         <div className="rp-quota-main" data-testid="quota-main">
           <span className="rp-quota-main-label">{mainLabel}</span>
-          <span className={`rp-v big ${anyExceeded ? 'err' : ''}`} data-testid="quota-main-value">
+          <span className={`rp-v big ${mainTone}`} data-testid="quota-main-value">
             {mainText}
           </span>
         </div>
@@ -842,7 +854,11 @@ function QuotaSection() {
             /* 进度条只夹取宽度，不改数字 */
             const barPct = Math.min(100, Math.max(0, realPct))
             const left = Math.max(0, w.total - w.used)
-            const tone = w.exceeded || realPct >= 100 ? 'err' : realPct >= 85 ? 'warn' : 'ok'
+            /*
+             * 颜色分级：<70% 绿 / 70–95% 黄 / ≥95% 红（口径见 shared/quota-tone.ts）。
+             * exceeded（供应商报的已超限）恒红，不受百分比影响。
+             */
+            const tone = quotaTone(realPct, w.exceeded)
             const reset = resetText(w)
             return (
               <div key={w.id} className="rp-quota-win" data-testid={`quota-win-${w.id}`}>
@@ -860,7 +876,11 @@ function QuotaSection() {
                   ) : null}
                   <span className="spacer" />
                   <span
-                    className={`rp-v ${tone === 'err' ? 'err' : tone === 'warn' ? 'warn' : ''}`}
+                    /*
+                     * 三档都要落到类名上：以前 ok 档被写成空字符串，于是「低用量」
+                     * 用的是 .rp-v 的默认色（--fg-dim 灰）—— 而用户要的是**绿色**。
+                     */
+                    className={`rp-v ${tone}`}
                     data-testid={`quota-win-${w.id}-pct`}
                   >
                     {t('quota.usedInline', { pct: realPct.toFixed(1) })}

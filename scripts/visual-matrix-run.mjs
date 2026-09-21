@@ -30,7 +30,7 @@ import { dirname, join, resolve } from 'node:path'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const electron = createRequire(import.meta.url)('electron')
 
-const ALL = ['0', '1', '2', '3', '4', '5', '6', 'onboarding']
+const ALL = ['0', '1', '2', '3', '4', '5', '6', '7', '8', 'onboarding']
 const wanted = process.argv.slice(2).filter(Boolean)
 const groups = wanted.length ? wanted : ALL
 

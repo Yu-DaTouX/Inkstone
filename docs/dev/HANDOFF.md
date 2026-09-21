@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-21**，最新增量包括 **04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-21**，最新增量包括 **额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -14,6 +14,32 @@
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-21）· 额度：Command Code 月度口径修复与三档色阶
+
+> 用户报「commandcode 的月额度识别是反向的，显示已用完，其实是没有用」，同时要求
+> 「70% 以下绿 / 70–95 黄 / 95–100 红」。两件事一起做，因为都落在右栏额度分区。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 [`main/quota-commandcode.ts`](../../src/main/quota-commandcode.ts)：`/alpha/billing/credits` → 三个窗口的纯函数。**口径**：`windowLimits.*.used` 是「已用」，而 `credits.monthlyCredits` 是「**本月剩余**」—— 已用 = 套餐总额度（`weekly.cap × 2` 反推）− 剩余，月度窗口带 `estimated`。`main/quota.ts` 改为调用它，不再内联解析。新增 [`shared/quota-tone.ts`](../../src/shared/quota-tone.ts)：`quotaTone()` = <70% 绿 / 70–95% 黄 / ≥95% 红（两个边界都算进更严的一档，`exceeded` 恒红），窗口与主值共用。`RightPanel.tsx` 三档**都**落类名 —— 原来 `ok` 档被写成空类名，于是「低用量」用的是默认前景色（灰），**根本不是绿色**。 |
+| 自动检查 | `npm run typecheck` 通过（TS + 18 份 CSS 约束 + layer 自检 10 用例）；`npm run build` 通过；`npm run test:unit` **4210/4210**。新增两节单测（`test-quota.mjs`）：① 用线上真实快照钉住「月度已用 = 总额度 − 剩余」（反了会立刻红，就是这次报的 bug）；② `quotaTone` 的 70 / 95 边界逐点（69.9 绿 / 70 黄 / 94.9 黄 / 95 红 / 137 红 / `exceeded` 恒红 / NaN 不误红）。 |
+| 真实运行 | 新场景 `npm run test:live -- quota`（**cost 0，不进 `check`**）—— 真实凭证走 主进程 https → IPC → 真实渲染：实测 `used=0.081258485 / total=70`、面板「已用 0.1%」「$0.08 / 剩余 $69.92」、月度带「推算」徽标。方向断言：本月已用必须 < 总额度的一半（口径反了会是 99.9%）。探针里另加两条「颜色必须等于 `--ok`」的断言，与下面视觉矩阵 `quotatone` 用的是同一判据（后者已实跑为绿）。 |
+| 视觉验收 | 视觉矩阵新增组 7 / 8（只含 `quotatone` 一个状态，1440×900 深浅各一张），看图核对：5 小时 **69.0% 绿**、每周 **75.0% 黄**、本月 **100% +「已用完」红**、主值 `$10.00` 红，溢出 **0px**：[`matrix-quotatone-1440x900-100-dark-2026-09-21-2323.png`](../design/preview/matrix-quotatone-1440x900-100-dark-2026-09-21-2323.png)、[`matrix-quotatone-1440x900-100-light-2026-09-21-2323.png`](../design/preview/matrix-quotatone-1440x900-100-light-2026-09-21-2323.png)。状态脚本除了类名还比 **计算色**：三档必须分别等于 `--ok` / `--warn` / `--err`（第一次跑就抓出「ok 档没落类名 → `rgb(180,180,172)`」，即上面那条真缺陷）。额度桩只在 `provider === 'commandcode'` 时生效，其它状态的图不受影响。 |
+| 应用与包 | `out/` 已按最新源码构建（本片最后一遍 `npm run build`）。**未**因本片重新生成 `dist:dir` / 便携 ZIP / NSIS，也没有重跑 `test:packaged`，所以不把包内运行级证据前移。 |
+| 剩余限制 | ① 月度上限是**反推**的（接口没有官方月额度字段），界面已明标「推算」—— 若官方换比例或改字段口径，只有真实账号能发现（单测用的是快照 fixture）；② 色阶阈值是用户口径（70 / 95），与上下文水位的 85 / 95 **不是一套**，别互相照抄；③ `quota` 场景**不进 `check`**（要凭证，且「已用不到一半」依赖当月真实用量）；④ 另外买了额度包时总额度按「剩余」抬高，是保守近似。 |
+
+### 本轮（2026-09-21）· 文档树归类与去重审计（非工程片）
+
+文档按“当前入口 → 当前状态 → 活动实施 / 设计输入 → 已完成备份 → 外部原文”重新核对。活动正文只在
+`docs/plan/active/` 和 `docs/design/active/`，完成主题、验收证据、外部原文分别只在
+`docs/archive/plan/`、`docs/archive/evidence/`、`docs/archive/reference/`；已移除所有指向这些正文的根级短兼容入口，
+不再保留同名第二份文件。当前 `docs/` 共 **95 个 Markdown 文件**；同内容 SHA-256 重复为 **0 组**，
+README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原文。
+
+`node .audit-deep.cjs` 当前结果：`missingTracked=0`、`deletedUnstaged=0`、`brokenDocLinks=0`、
+`unreferencedSourceFiles=0`、中英文 i18n 键差异为 0、未导入 CSS 为 0。外部评审原文按逐字保存原则保留 1 条旧路径链接，
+审计单列为 `archivedRawDocLinks=1`；历史快照中的旧源码名、示例路径和已删除探针不算当前待办，不能据此恢复旧架构。
 
 ### 本轮增量（2026-09-21）· Codex 风格审查 / 右栏启动器与模式正交
 
@@ -1649,12 +1675,15 @@ S2–S6 证据见[方案 §15](../design/方案-上下文工具内的自动压�
 ### 五、P3 · 外部条件阻塞（不排期）
 
 代码签名（证书）｜macOS / Linux 包（构建环境）｜扩展 `registerShortcut`（pi 0.85.1 RPC 无枚举/执行接口）｜
-`image` 场景视觉验收（需视觉模型）｜Yan 自有账号与跨设备同步（产品与服务端）｜Command Code 月度额度（缺账户权威字段）。
+`image` 场景视觉验收（需视觉模型）｜Yan 自有账号与跨设备同步（产品与服务端）。
+
+> **2026-09-21 移出一条**：「Command Code 月度额度（缺账户权威字段）」不再是外部阻塞 ——
+> 已用「`weekly.cap × 2` 反推总额度 + 界面明标『推算』」落地，见上面的额度增量。
 
 ## 当前产品边界
 
-遵循 [AGENTS.md 第五节](../../AGENTS.md)：**任务面板保持现状**（只放开任务工具的提供方，见 [实施-02](../plan/实施-02-任务工具内置化-已完成.md)）；
-**旧记忆系统与 `get_tree` 浏览链路不恢复**（「项目知识」是独立新功能，见 [实施-03](../plan/实施-03-项目知识与旧记忆清理-已完成.md)：
+遵循 [AGENTS.md 第五节](../../AGENTS.md)：**任务面板保持现状**（只放开任务工具的提供方，见 [实施-02](../archive/plan/实施-02-任务工具内置化-已完成.md)）；
+**旧记忆系统与 `get_tree` 浏览链路不恢复**（「项目知识」是独立新功能，见 [实施-03](../archive/plan/实施-03-项目知识与旧记忆清理-已完成.md)：
 **S0–S2 已完成**（残留清理 + 保护集 + 存储层），**S3–S6 新功能未开工**）；
 推理块默认展开但限高省略（`--reason-max-h`）且永远保留模型原文；本地档案不冒充登录
 （只有 ChatGPT `openai-codex` 能在应用内登录）；深浅主题、设置面板、模型接入、Windows 打包、

@@ -169,6 +169,20 @@ YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run check
 （127.0.0.1:39873，见 `test-live.mjs` 的 `startBoundaryServer`）：探针跑在渲染端起不了服务，
 端口只能约定 —— 端口被占用时场景直接失败，不自动换端口。
 
+### `quota` 场景（cost 0）为什么也不进 `check`
+
+额度口径那条（**月度已用 = 套餐总额度 − 剩余**）只有真实账号能复现：`/alpha/billing/credits`
+把「已用」和「本月剩余」放在同一响应里，而 `monthlyCredits` 是**剩余**。
+所以探针直接读真实 commandcode 接口（只读、不花钱）。代价是：
+
+- 需要本机 pi 的 `commandcode` 凭证 —— 没有时探针打印 `~` 跳过真实数据断言（**不算失败**），
+  颜色断言也会一并跳过；
+- 「本月已用不到一半」这条方向判据依赖当月真实用量 —— 放进 `check` 会变成靠环境碰运气的红灯。
+
+两类边界的覆盖面分开看：**口径**由 `test:unit` 的 `test-quota.mjs`（真实快照）与 live 探针钉住；
+**色阶边界（70 / 95）不依赖网络**，由 `test-quota.mjs` 的 `quotaTone` 单测与视觉矩阵组 7 / 8 的
+`quotatone` 状态覆盖（后者连 `getComputedStyle` 的计算色都比对 `--ok` / `--warn` / `--err`）。
+
 队列的**失败与并发边界**另有一个不花额度的场景 `queueretract`（**进 `npm run check`**）：
 撤回一个 pi 里不存在的 id（= “刚被消费”走的是同一条分支）、连续撤回同一 id、两条并发撤回。
 它只依赖「pi 在跑」——`Agent.removeQueued` 在找不到 id 时直接返回明确错误，不需要真实队列项。
@@ -620,18 +634,25 @@ node scripts/hook-probe.mjs budget-soft       # 05-S4 对照：同一份消息 +
 
 | 命令 | 作用 |
 |---|---|
-| `npm run visual:matrix` | 跑全部 8 组，每组一个 Electron 进程 |
+| `npm run visual:matrix` | 跑全部 9 组，每组一个 Electron 进程 |
 | `npm run visual:matrix -- 0 2` | 只跑指定组（组号看 `GROUPS`；`onboarding` 是名字） |
 
-覆盖：3 尺寸（1440x900 / 940x620 / 900x520）× 3 缩放（100/125/150%）× 深浅，状态包括主界面、模型菜单、推理块、设置面板、迷你项目栏、窄右栏文件树（`fsnarrow`：`PANEL_MIN=220` 下的超长名省略、缩进收敛、无权限目录提示）、shell 改动卡片（`wschanges` 正常归属 / `wsunknown` 同目录并发时的“无法归属”提示）与引导层。输出 26 张
+覆盖：3 尺寸（1440x900 / 940x620 / 900x520）× 3 缩放（100/125/150%）× 深浅，状态包括主界面、模型菜单、推理块、设置面板、迷你项目栏、窄右栏文件树（`fsnarrow`：`PANEL_MIN=220` 下的超长名省略、缩进收敛、无权限目录提示）、shell 改动卡片（`wschanges` 正常归属 / `wsunknown` 同目录并发时的“无法归属”提示）、额度三档色阶（`quotatone`，**单开组 7 / 8**）与引导层。输出 26 张
 `docs/design/preview/matrix-<state>-<尺寸>-<缩放>-<主题>-2026-09-16.png`（**新名，不覆盖任何已有预览图**）。
+
+`quotatone` 为什么要单独成组：它得把会话的 provider 换成 `commandcode`（额度桩只在这个
+provider 下返回三档受控数据），塞进组 0 会让同一进程里后面的状态带着这个假 provider 继续截图；
+单独一组就只影响这一张图。该状态脚本除了类名，还要比 `getComputedStyle` 的计算色是否等于
+`--ok` / `--warn` / `--err` —— 真实额度落不到 70 / 95 这两个点上，边界配色只能这样截。
+这条断言的第一次运行就抓出了一个真缺陷：`ok` 档当时被写成空类名，低用量显示的是默认前景色
+（`rgb(180,180,172)`）而不是绿色。
 
 数据一律来自 `scripts/shot-fixture.js`（合成）：截图会进仓库，**绝不要**把真实会话截进去。
 
 **真实模型的截图**（少见的例外）：N04 的「长中英混排推理流」必须真调模型 —— 合成 fixture
 只能证明渲染，而那一项缺的正是「真的有一段推理在流」。用法是
 `YAN_SHOT=<png> YAN_SHOT_SETUP=scripts/shot-setup/reasoning-live.js`（隔离三件套 + `YAN_TEST_MODEL`
-见 [实施-09 §2 N04](../plan/实施-09-交付与验收收尾.md)）；前置脚本会在**推理仍在流式**时返回，
+见 [实施-09 §2 N04](../plan/active/实施-09-交付与验收收尾.md)）；前置脚本会在**推理仍在流式**时返回，
 因为回合结束后推理块按契约自动折叠，截晚了就没有流。⚠️ 这类图带真实会话内容（虽然只有一条提问）
 并消耗额度，只用于一次性人工验收，**不要**接进 `check`。
 
