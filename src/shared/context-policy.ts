@@ -614,3 +614,95 @@ export function sanitizeContextPolicyByModel(
   }
   return Object.keys(out).length ? out : undefined
 }
+
+/*
+ * ══════════════════════════════════════════════════════════════════
+ * 生效策略交给薄层（实施-11 C-4）
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * 问题：数值覆盖（用户级 / 模型级）住在 `desktop.json` 里，而 pi 扩展按设计
+ * **不读**它（除了两个布尔开关）—— 扩展侧的 `budgetOf()` 于是永远按默认
+ * 240K 算阈值，界面却显示 300K。这正是「界面上的数 ≠ 真正在用的数」。
+ *
+ * 解法：宿主把解析后的覆盖写成一个**独立文件**交给薄层，而不是塞进
+ * `YAN_CONTEXT_POLICY` —— 那个 env 在 `resolveContextPolicy` 里优先级高于
+ * 设置面板（测试通道），宿主自己写它会让用户设置被静默忽略。
+ *
+ * 文件里存的是**分层**覆盖（默认层 + 模型层），不是「当前窗口的预算」：
+ * 窗口只有 pi 侧知道（`ctx.model.contextWindow`），所以阈值仍由两边用同一套
+ * `contextBudget()` 公式各自算 —— 公式的交叉校验在单测里钉着。
+ */
+
+export interface EffectiveContextPolicyDocument {
+  v: 1
+  /** 内容指纹：同内容同值、改一个字段就变（诊断与「要不要重写」用） */
+  revision: string
+  updatedAt: number
+  /** 用户级覆盖（不含模型层）；空对象表示没有覆盖 */
+  default: ContextPolicyOverrides
+  /** 按 `provider/model` 的模型级覆盖 */
+  byModel: Record<string, ContextPolicyOverrides>
+  foldEnabled: boolean
+}
+
+/** 稳定键序的覆盖序列化 —— 键顺序变了不该让 revision 变。 */
+function canonicalOverrides(o: ContextPolicyOverrides | undefined): string {
+  if (!o) return '{}'
+  const keys = Object.keys(o).sort() as Array<keyof ContextPolicyOverrides>
+  return JSON.stringify(keys.map((k) => [k, o[k]]))
+}
+
+/** 内容指纹（djb2 变体）。不用于安全，只要求稳定且敏感。 */
+export function contextPolicyRevision(input: {
+  user?: ContextPolicyOverrides
+  byModel?: Record<string, ContextPolicyOverrides>
+  foldEnabled?: boolean
+}): string {
+  const byModel = input.byModel ?? {}
+  const modelPart = Object.keys(byModel)
+    .sort()
+    .map((k) => `${k}=${canonicalOverrides(byModel[k])}`)
+    .join(';')
+  const canonical = `u:${canonicalOverrides(input.user)}|m:${modelPart}|f:${input.foldEnabled === false ? 0 : 1}`
+  let hash = 5381
+  for (let i = 0; i < canonical.length; i += 1) {
+    hash = ((hash * 33) ^ canonical.charCodeAt(i)) >>> 0
+  }
+  return hash.toString(36)
+}
+
+export function buildEffectivePolicyDocument(input: {
+  user?: ContextPolicyOverrides
+  byModel?: Record<string, ContextPolicyOverrides>
+  foldEnabled?: boolean
+  now?: number
+}): EffectiveContextPolicyDocument {
+  return {
+    v: 1,
+    revision: contextPolicyRevision(input),
+    updatedAt: input.now ?? Date.now(),
+    default: { ...(input.user ?? {}) },
+    byModel: { ...(input.byModel ?? {}) },
+    foldEnabled: input.foldEnabled !== false
+  }
+}
+
+/**
+ * 从文档里挑出**当前模型**那一份覆盖（扩展侧读文件后用同一套规则）。
+ *
+ * 匹配顺序：精确 `provider/model` → provider 段（`provider`）→ 文档默认层。
+ * 认不出的形状返回 `{}`（宁可回落默认，也不要让坏 JSON 把预算变成 NaN）。
+ */
+export function overridesOfEffectiveDocument(
+  doc: unknown,
+  modelKey: string | undefined
+): ContextPolicyOverrides {
+  if (!doc || typeof doc !== 'object') return {}
+  const item = doc as Partial<EffectiveContextPolicyDocument>
+  if (item.v !== 1) return {}
+  const byModel = item.byModel && typeof item.byModel === 'object' ? item.byModel : {}
+  const provider = modelKey && modelKey.includes('/') ? modelKey.split('/')[0] : ''
+  if (modelKey && byModel[modelKey]) return { ...byModel[modelKey] }
+  if (provider && byModel[provider]) return { ...byModel[provider] }
+  return { ...(item.default && typeof item.default === 'object' ? item.default : {}) }
+}

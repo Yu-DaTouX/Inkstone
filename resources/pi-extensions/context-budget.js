@@ -251,3 +251,47 @@ export function requestBudgetLevel({ estimatedTokens, budget }) {
     reason: `估算 ${estimated}（工作集线 ${budget.workingSet}）`
   }
 }
+
+/*
+ * ══════════════════════════════════════════════════════════════════
+ * 宿主交过来的生效策略（实施-11 C-4）
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * 数值覆盖住在桌面端设置里，而扩展按设计**不读** `desktop.json` 的那些数值
+ * （只读两个布尔开关）。于是扩展永远按默认 240K 算阈值，界面却按用户设置
+ * 显示 —— 两边说的不是一件事。
+ *
+ * 宿主把解析后的**分层覆盖**写进 `<YAN_DATA_DIR>/context-policy.effective.json`，
+ * 这里读它、按当前模型挑一份、再与 `YAN_CONTEXT_POLICY`（测试通道，优先级更高）
+ * 合并。下面两个函数是纯的，与 `src/shared/context-policy.ts` 的同名实现由
+ * `scripts/test-context-budget.mjs` 用同一批输入交叉校验。
+ */
+
+/** 文档版本；不认识的版本一律当「没有这份文档」（宁可回落默认）。 */
+export const EFFECTIVE_POLICY_VERSION = 1
+
+/**
+ * 从文档里挑出当前模型那份覆盖。
+ *
+ * 顺序：精确 `provider/model` → provider 段 → 文档默认层。
+ * 形状不对返回 `{}`，不让坏 JSON 把预算变成 NaN。
+ */
+export function overridesOfEffectiveDocument(doc, modelKey) {
+  if (!doc || typeof doc !== 'object') return {}
+  if (doc.v !== EFFECTIVE_POLICY_VERSION) return {}
+  const byModel = doc.byModel && typeof doc.byModel === 'object' ? doc.byModel : {}
+  const provider = typeof modelKey === 'string' && modelKey.includes('/') ? modelKey.split('/')[0] : ''
+  if (modelKey && byModel[modelKey]) return { ...byModel[modelKey] }
+  if (provider && byModel[provider]) return { ...byModel[provider] }
+  return { ...(doc.default && typeof doc.default === 'object' ? doc.default : {}) }
+}
+
+/**
+ * 合并两份覆盖：`env`（测试通道）逐字段盖在宿主文档之上。
+ *
+ * 逐字段而不是整份替换：env 只给一个字段时，文档里其余字段必须保留
+ * （整份替换会让「只调 workingSetCap 的测试」把模型级 windowRatio 清掉）。
+ */
+export function mergeBudgetOverrides(envOverrides, hostOverrides) {
+  return { ...(hostOverrides ?? {}), ...(envOverrides ?? {}) }
+}

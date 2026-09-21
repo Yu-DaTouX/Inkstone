@@ -488,6 +488,47 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '较小窗口不会照搬 700k 裸上限（受 70% 窗口约束）'
     )
 
+    /*
+     * 实施-11 C-4：生效策略交给薄层的文档（revision + 分层覆盖）。
+     *
+     * 两侧（宿主 TS 与扩展 JS）用同一套挑选规则 —— 这里钉 TS 侧，
+     * 扩展侧的同名纯函数由 `test-context-budget.mjs` 用同一批输入验。
+     */
+    {
+      const { contextPolicyRevision, buildEffectivePolicyDocument, overridesOfEffectiveDocument } = mod
+      const a = { user: { workingSetCap: 300_000 }, byModel: { 'a/b': { windowRatio: 0.6 } }, foldEnabled: true }
+      const b = { byModel: { 'a/b': { windowRatio: 0.6 } }, user: { workingSetCap: 300_000 }, foldEnabled: true }
+      ok(contextPolicyRevision(a) === contextPolicyRevision(b), 'revision 与对象键顺序无关')
+      ok(
+        contextPolicyRevision(a) !== contextPolicyRevision({ ...a, foldEnabled: false }),
+        'revision 对开关变化敏感'
+      )
+      ok(
+        contextPolicyRevision(a) !== contextPolicyRevision({ ...a, user: { workingSetCap: 300_001 } }),
+        'revision 对数值变化敏感'
+      )
+
+      const doc = buildEffectivePolicyDocument({ ...a, now: 123 })
+      ok(doc.v === 1 && doc.updatedAt === 123, '文档带版本号与时间戳')
+      ok(doc.revision === contextPolicyRevision(a), '文档里的 revision 与纯函数一致')
+      ok(doc.default.workingSetCap === 300_000 && doc.byModel['a/b'].windowRatio === 0.6, '分层覆盖原样写进文档')
+      ok(doc.foldEnabled === true, 'foldEnabled 默认开')
+
+      const hostDoc = {
+        v: 1,
+        revision: 'x',
+        updatedAt: 1,
+        default: { workingSetCap: 300_000 },
+        byModel: { 'a/b': { workingSetCap: 600_000 }, a: { workingSetCap: 111_000 } },
+        foldEnabled: true
+      }
+      ok(overridesOfEffectiveDocument(hostDoc, 'a/b').workingSetCap === 600_000, '精确模型命中模型层')
+      ok(overridesOfEffectiveDocument(hostDoc, 'a/c').workingSetCap === 111_000, '缺失时回落 provider 段')
+      ok(overridesOfEffectiveDocument(hostDoc, 'z/y').workingSetCap === 300_000, '都没命中时用默认层')
+      ok(overridesOfEffectiveDocument({ ...hostDoc, v: 9 }, 'a/b').workingSetCap === undefined, '未知版本当作没有文档')
+      ok(Object.keys(overridesOfEffectiveDocument(null, 'a/b')).length === 0, 'null 文档返回空覆盖')
+    }
+
     /* 主进程入口：登记设置层后按当前模型查表，env 仍然最高 */
     setContextPolicySettings({ user: { workingSetCap: 42_000 }, byModel: { 'm/a': { windowRatio: 0.5 } } })
     const a1 = activeContextPolicy({}, 'm/a')
