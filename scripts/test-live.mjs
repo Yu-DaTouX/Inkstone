@@ -27,6 +27,7 @@ import {
   statSync,
   copyFileSync,
   existsSync,
+  appendFileSync,
   symlinkSync,
   utimesSync
 } from 'node:fs'
@@ -1562,6 +1563,24 @@ const CASES = {
     fixture: true,
     fixtureSub: 'repo',
     afterExit: 'turnTimingPersisted'
+  },
+  /*
+   * 实施-11 H-6b-2：中途被拿掉的回合读回后报「已中断」（cost 1）。
+   *
+   * 第一次启动跑真实回合写记录；重启前由测试进程向同一 `logicalTurnId`
+   * 追加一条 `final: false` 的中途快照（= 应用在飞行中被拿掉时盘上的样子）；
+   * 重启后第二个探针切进会话，验界面真的写「已中断」。
+   */
+  turninterrupted: {
+    probe: 'scripts/probe/turn-timing-store-live.js',
+    delay: 12000,
+    budget: 300000,
+    cost: 1,
+    fixture: true,
+    fixtureSub: 'repo',
+    restart: { probe: 'scripts/probe/turn-timing-interrupted.js', delay: 12000, budget: 120000 },
+    seedBeforeRestart: 'interruptedSnapshot',
+    afterExit: 'turnTimingInterrupted'
   },
 }
 
@@ -5155,6 +5174,42 @@ function checkSubagentFail(sandboxRoot, tempBefore) {
   return { ok, lines }
 }
 
+/**
+ * 重启前的 seed（实施-11 H-6b-2）。
+ *
+ * 只在第二次启动前跑：它改的是第一次运行写下的数据。
+ */
+const SEED_BEFORE_RESTART = {
+  interruptedSnapshot: seedInterruptedSnapshot
+}
+
+/**
+ * 把盘上最后一条计时记录改写成「中途快照」。
+ *
+ * 同一个 `logicalTurnId` 再追加一条 `final: false` —— 读回时后者胜，
+ * 于是这一轮在界面上的样子就是「应用在飞行中被拿掉、只剩最后那次快照」。
+ * 为什么不直接 SIGKILL：强杀之后连“最后一条快照是否已落盘”都不确定，
+ * 测到的是调度运气；追加快照验的是同一段读侧逻辑，且每次可复现。
+ */
+function seedInterruptedSnapshot(sandboxRoot) {
+  if (!sandboxRoot) return '（无沙箱，跳过）'
+  const dir = join(sandboxRoot, 'data', 'turn-timing')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+  if (!files.length) return '（没有计时日志，跳过）'
+  const file = join(dir, files[files.length - 1])
+  const lines = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim())
+  if (!lines.length) return '（日志为空，跳过）'
+  const last = JSON.parse(lines[lines.length - 1])
+  const snapshot = {
+    ...last,
+    final: false,
+    /* 中途快照的用时一定比收尾时短 —— 照着写，不然像是“压缩”了时间 */
+    elapsedMs: Math.max(1, Math.round((Number(last.elapsedMs) || 1) * 0.4))
+  }
+  appendFileSync(file, `${JSON.stringify(snapshot)}\n`, 'utf8')
+  return `${basename(file)}：追加中途快照（final=false，logicalTurnId=${last.logicalTurnId}）`
+}
+
 const AFTER_EXIT = {
   exitSnapshot: checkExitSnapshot,
   remoteRoutes: checkRemoteRoutes,
@@ -5191,6 +5246,7 @@ const AFTER_EXIT = {
   workModePersisted: checkWorkModePersisted,
   goalPersisted: checkGoalPersisted,
   turnTimingPersisted: checkTurnTimingPersisted,
+  turnTimingInterrupted: checkTurnTimingInterrupted,
   effectivePolicyFile: checkEffectivePolicyFile,
   goalLoopPersisted: checkGoalLoopPersisted,
   autoContinuePersisted: checkAutoContinuePersisted,
@@ -5476,6 +5532,57 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
       `终止原因与界面一致（${last?.terminalReason} vs ${expectedReason}）`
     )
   }
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：中途被拿掉的回合真的被读成「中断」（实施-11 H-6b-2）。
+ *
+ * 两段证据合起来才算闭环：盘上最后一条是 `final: false`（写侧/seed 的事实），
+ * 而重启后的探针在真实界面里读到了「中断」（读侧 + UI）。
+ */
+async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dir = join(sandboxRoot, 'data', 'turn-timing')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+  lines.push(`  目录 = ${dir}`)
+  const records = []
+  for (const file of files) {
+    for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      try {
+        records.push(JSON.parse(line))
+      } catch {
+        /* 坏行不致命 */
+      }
+    }
+  }
+  const last = records[records.length - 1]
+  say(records.length >= 2, `同一回合有收尾 + 中途两条记录（${records.length}）`)
+  say(last?.final === false, `盘上最后一条是中途快照（final=${String(last?.final)}）`)
+
+  /* 读侧归一：直接拿测试构建的同一份模块，不重写一遍规则 */
+  const { pathToFileURL } = await import('node:url')
+  const store = await import(pathToFileURL(join(root, 'out/test/turn-timing-store.mjs')).href)
+  say(
+    store.effectiveTerminalReason(last) === 'interrupted',
+    `中途快照被归一为「中断」（${store.effectiveTerminalReason(last)}）`
+  )
+
+  const uiReason = /turn-timing\.interrupted\.reason=(\w+)/.exec(probeText)?.[1]
+  say(uiReason === 'interrupted', `重启后的探针从 peeking 的历史里读到「中断」（${uiReason}）`)
+  const footer = /turn-timing\.interrupted\.footer=("[^\n]*")/.exec(probeText)?.[1]
+  say(/中断/.test(footer ?? ''), `真实页脚里写出「已中断」（${footer}）`)
   return { ok, lines }
 }
 
@@ -7574,6 +7681,22 @@ async function main() {
      * 这里刻意不碰任何隔离文件，验的就是「上次写下的东西还在不在」。
      */
     if (allOk && c.restart) {
+      /*
+       * 重启前的 seed（实施-11 H-6b-2）：第二次启动前才有意义 ——
+       * 它改的是**第一次运行写下的**数据。
+       */
+      if (c.seedBeforeRestart) {
+        const seed = SEED_BEFORE_RESTART[c.seedBeforeRestart]
+        console.log(
+          seed
+            ? `  重启前 seed：${seed(sandboxRoot) ?? 'ok'}`
+            : `  ✗ 未注册的 seedBeforeRestart：${c.seedBeforeRestart}`
+        )
+        if (!seed) {
+          allOk = false
+          hint = hint ?? `未注册的 seedBeforeRestart：${c.seedBeforeRestart}`
+        }
+      }
       console.log(`\n─── 重启（第二次启动，同一份 YAN_DATA_DIR）───`)
       const out2 = await runProbe(
         { ...c.restart },
