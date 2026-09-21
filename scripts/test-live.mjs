@@ -1415,6 +1415,20 @@ const CASES = {
   discnet: { probe: 'scripts/probe/discovery-cli.js', delay: 9000, cost: 0 },
 
   /*
+   * 实施-04 S6b-2：真实独立 Skill 目录（SkillMD API）的只读发现。
+   *
+   * 不放进默认 check：公网目录不是仓库可控前提；手动运行这条场景时必须真的
+   * 看到 items → raw_url → SHA-256 → skill-files 候选链路，离线直接失败而不是
+   * 把「没有证据」记成通过。它不 prepare / acquire，不执行第三方正文。
+   */
+  skilldirnet: {
+    probe: 'scripts/probe/skill-directory.js',
+    delay: 12000,
+    cost: 0,
+    env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' }
+  },
+
+  /*
    * 实施-04 S2：`yan capabilities search` / `yan skill read` 的**宿主链路**（cost 0）。
    *
    * 为什么不是「capsearch 已经验过就不用验」：`capsearch` 实测发现模型读技能

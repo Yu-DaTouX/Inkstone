@@ -1,19 +1,21 @@
 /**
  * 联网发现编排与目录源适配器（实施-04 §7.2 / §8）。
  *
- * ── 为什么是这两个源 ──
+ * ── 为什么默认是这两个源 ──
  *   实测（2026-09-19）：**官方 MCP Registry**（`registry.modelcontextprotocol.io/v0/servers`）
  *   与 **npm registry 搜索**（`registry.npmjs.org/-/v1/search`）都免密钥、有结构化分页。
  *   而 pi 自己**没有包搜索命令**（`pi --help` 只有 install / remove / update / list / config），
  *   所以 Skill 侧没有「pi 官方包目录」可查 —— 这一条要如实写进候选，不能假装有。
  *   §7.2 的硬要求「至少一条 Skill 路径和一条 MCP 路径可用、密钥缺失时仍能做目录检索」
- *   因此由这两个公开接口满足。
+ *   因此由 npm 的 Skill 包元数据路径与 MCP Registry 公开接口满足。另有显式配置的
+ *   独立 Skill 目录适配器（见下方），它不默认联网，避免新安装平白多一次请求。
  *
  * ── 为什么把适配器放在同一文件 ──
- *   两者加起来只有一个职责：**把目录响应如实映射成候选**。分开成两个文件后，
+ *   这些适配器加起来只有一个职责：**把目录响应如实映射成候选**。分开成多个文件后，
  *   「哪些字段是目录真的给了、哪些是我们推断的」反而更难一眼看全 —— 而这正是
  *   本片最容易被做错的地方（§8：`metadata-only` 不得声称已验证）。
  */
+import { createHash } from 'node:crypto'
 import {
   buildAcquisitionPlan,
   discoveryQueryUsable,
@@ -231,16 +233,138 @@ export function skillDirectoryCandidateOf(raw: unknown, directoryUrl: string, di
   }
 }
 
-async function readBoundedJson(response: Response, limit: number): Promise<unknown> {
+async function readBoundedBytes(response: Response, limit: number, label: string): Promise<Uint8Array> {
   const length = response.headers?.get('content-length')
-  if (length && Number.isFinite(Number(length)) && Number(length) > limit) throw new Error(`Skill 目录响应超过 ${limit} 字节`)
+  if (length && Number.isFinite(Number(length)) && Number(length) > limit) throw new Error(`${label}超过 ${limit} 字节`)
   const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > limit) throw new Error(`Skill 目录响应超过 ${limit} 字节`)
+  if (bytes.byteLength > limit) throw new Error(`${label}超过 ${limit} 字节`)
+  return bytes
+}
+
+async function readBoundedJson(response: Response, limit: number): Promise<unknown> {
+  const bytes = await readBoundedBytes(response, limit, 'Skill 目录响应')
+  let text: string
   try {
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     throw new Error('Skill 目录响应不是合法 UTF-8 JSON')
   }
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    throw new Error('Skill 目录响应不是合法 JSON')
+  }
+}
+
+async function readSkillDirectoryFile(
+  response: Response,
+  limit: number
+): Promise<{ content: Uint8Array; sha256: string }> {
+  const content = await readBoundedBytes(response, limit, 'Skill 文件')
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(content)
+  } catch {
+    throw new Error('Skill 文件不是合法 UTF-8 文本')
+  }
+  if (content.byteLength === 0 || new TextDecoder().decode(content).trim().length === 0) {
+    throw new Error('Skill 文件为空')
+  }
+  return { content, sha256: createHash('sha256').update(content).digest('hex') }
+}
+
+function sameOrigin(left: string, right: string): boolean {
+  try {
+    return new URL(left).origin === new URL(right).origin
+  } catch {
+    return false
+  }
+}
+
+/** SkillMD 搜索列表把精确 commit 放在同源详情接口；从 raw URL 反推路径，避免信任列表里的仓库地址。 */
+function skillMdDetailUrl(directoryUrl: string, rawUrl: string): string | undefined {
+  try {
+    const directory = new URL(directoryUrl)
+    const raw = new URL(rawUrl)
+    if (directory.origin !== raw.origin) return undefined
+    const marker = '/api/skills/'
+    const markerAt = raw.pathname.indexOf(marker)
+    if (markerAt < 0 || !raw.pathname.endsWith('/raw')) return undefined
+    const slugPath = raw.pathname.slice(markerAt + marker.length, -'/raw'.length)
+    const parts = slugPath.split('/').filter(Boolean)
+    if (parts.length < 2 || parts.some((part) => !/^[A-Za-z0-9._-]+$/.test(part))) return undefined
+    return `${directory.origin}/v1/skills/${parts.map((part) => encodeURIComponent(part)).join('/')}`
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * SkillMD 这类独立目录用 `slug` + `raw_url` 表示单文件 Skill，而不是把
+ * `files[]` 直接展开。这里必须重新读取 raw URL 计算 hash；目录的 `raw_md`
+ * 只有 frontmatter，不能拿来冒充实际将被 staging 的正文。
+ */
+async function skillMdCandidateOf(
+  raw: unknown,
+  directoryUrl: string,
+  fetchImpl: FetchLike,
+  timeoutMs: number,
+  discoveredAt: string
+): Promise<CapabilityCandidate | null> {
+  const listed = raw as Record<string, unknown> | null
+  if (!listed || typeof listed !== 'object') return null
+  const listedRawUrl = safeSourceUrl(listed.raw_url)
+  if (!listedRawUrl || !sameOrigin(listedRawUrl, directoryUrl)) return null
+  let entry = listed
+  if (!str(entry.commit_sha)) {
+    const detailUrl = skillMdDetailUrl(directoryUrl, listedRawUrl)
+    if (!detailUrl) return null
+    const detailResponse = await fetchImpl(detailUrl, {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'manual',
+      headers: { accept: 'application/json' }
+    })
+    if (!detailResponse.ok) throw new Error(`Skill 详情返回 HTTP ${detailResponse.status}`)
+    const actualDetailUrl = detailResponse.url || detailUrl
+    if (!sameOrigin(actualDetailUrl, detailUrl)) throw new Error('Skill 详情跳转到了未登记来源')
+    const detail = await readBoundedJson(detailResponse, 512 * 1024)
+    if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null
+    if (str((detail as Record<string, unknown>).slug) !== str(listed.slug)) return null
+    const detailRawUrl = safeSourceUrl((detail as Record<string, unknown>).raw_url)
+    if (detailRawUrl && detailRawUrl !== listedRawUrl) return null
+    entry = { ...listed, ...(detail as Record<string, unknown>) }
+  }
+
+  const slug = str(entry.slug)
+  const commit = str(entry.commit_sha)
+  const rawUrl = listedRawUrl
+  const skillName = slug?.split('/').at(-1)
+  if (!slug || !commit || !/^[a-f0-9]{7,64}$/i.test(commit) || !rawUrl || !skillName || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(skillName)) return null
+
+  const response = await fetchImpl(rawUrl, {
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: 'manual',
+    headers: { accept: 'text/markdown, text/plain;q=0.9, application/octet-stream;q=0.5' }
+  })
+  if (!response.ok) throw new Error(`Skill 文件返回 HTTP ${response.status}`)
+  const actualUrl = response.url || rawUrl
+  if (!sameOrigin(actualUrl, rawUrl)) throw new Error('Skill 文件跳转到了未登记来源')
+  const { sha256 } = await readSkillDirectoryFile(response, 512 * 1024)
+  const owner = slug.includes('/') ? slug.split('/')[0] : undefined
+  const candidate = skillDirectoryCandidateOf(
+    {
+      id: slug,
+      title: entry.title,
+      description: entry.description,
+      commit,
+      publisher: owner,
+      repository: entry.source_repo,
+      sourceUrls: [rawUrl],
+      files: [{ path: `skills/${skillName}/SKILL.md`, url: rawUrl, sha256 }]
+    },
+    directoryUrl,
+    discoveredAt
+  )
+  return candidate
 }
 
 function skillDirectoryRequestUrl(base: string, query: string, cursor?: string): string {
@@ -279,12 +403,19 @@ async function searchSkillDirectory(
     })
     if (!response.ok) throw new Error(`Skill 目录返回 HTTP ${response.status}`)
     const body = await readBoundedJson(response, 2 * 1024 * 1024) as Record<string, unknown> | unknown[]
-    const list = Array.isArray(body) ? body : asArray(body.skills ?? body.entries ?? body.results)
+    const list = Array.isArray(body) ? body : asArray(body.skills ?? body.entries ?? body.results ?? body.items)
     pages++
-    for (const entry of list) {
-      const candidate = skillDirectoryCandidateOf(entry, SKILL_DIRECTORY_URL, discoveredAt)
-      if (candidate) candidates.push(candidate)
-    }
+    /* 同一页的 raw / detail 请求并行，但每条仍独立 fail-closed，避免公网慢条目拖住整轮。 */
+    const pageCandidates = await Promise.all(list.map(async (entry) => {
+      try {
+        return skillDirectoryCandidateOf(entry, SKILL_DIRECTORY_URL, discoveredAt)
+          ?? await skillMdCandidateOf(entry, SKILL_DIRECTORY_URL, fetchImpl, timeoutMs, discoveredAt)
+      } catch {
+        /* 单条 Skill 损坏或下线不应让整个目录源伪装成失败；可用条目仍可返回。 */
+        return null
+      }
+    }))
+    candidates.push(...pageCandidates.filter((candidate): candidate is CapabilityCandidate => candidate !== null))
     const metadata = Array.isArray(body) ? undefined : body.metadata as Record<string, unknown> | undefined
     cursor = str(metadata?.nextCursor) ?? str((body as Record<string, unknown>).nextCursor)
     if (!cursor || list.length === 0) break
