@@ -129,6 +129,21 @@ export function runContextBudgetTests(ok, mod, policyMod) {
   })
   ok(whole.system > 0, '顶层 system 单独计入')
   ok(whole.total === whole.messages + whole.tools + whole.system, 'total 是三部分之和')
+  /*
+   * 真链路上 pi 送的 system 不是字符串（数组 / 对象）—— 只认 string 会把整个
+   * 系统提示算成 0（实测踩到：留痕里 system=0）。三种形状都得认。
+   */
+  const arraySystem = estimateRequestTokens({
+    messages: [{ role: 'user', content: 'abcd' }],
+    system: [{ type: 'text', text: 'you are a helpful assistant' }]
+  })
+  ok(arraySystem.system > 0, `数组形状的 system 也计入（${arraySystem.system}）`)
+  const objectSystem = estimateRequestTokens({ messages: [], system: { text: 'hello there' } })
+  ok(objectSystem.system > 0, `对象形状的 system 也计入（${objectSystem.system}）`)
+  ok(
+    estimateRequestTokens({ messages: [], system: null }).system === 0,
+    '真的没有 system 时才是 0'
+  )
 
   /* --------------------------------------------------- 三档判定边界 */
 
@@ -208,6 +223,81 @@ export function runContextBudgetTests(ok, mod, policyMod) {
     viaHost.workingSet === viaDirect.workingSet && viaHost.triggers.sweep === viaDirect.triggers.sweep,
     `宿主文档算出的预算与直接用同一覆盖算的一致（${viaHost.workingSet}）`
   )
+
+  /* ----------------------------- C-4b：图片 / 二进制附件不再当零 */
+
+  const { estimateContentTokens, NON_TEXT_BUDGET } = mod
+  ok(estimateContentTokens('abcd') === 1, '字符串内容仍按文本算（口径未变）')
+  ok(estimateContentTokens([{ type: 'text', text: 'abcd' }]) === 1, '文本块口径不变')
+
+  const textOnly = estimateMessagesTokens([{ role: 'user', content: [{ type: 'text', text: 'abcd' }] }])
+  const withImageNoSize = estimateMessagesTokens([
+    {
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png' } },
+        { type: 'text', text: 'abcd' }
+      ]
+    }
+  ])
+  ok(
+    withImageNoSize === textOnly + NON_TEXT_BUDGET.imageNoSize,
+    `没给尺寸的图片给保守中位数而不是 0（+${withImageNoSize - textOnly}）`
+  )
+
+  const sized = estimateContentTokens([{ type: 'image', width: 1024, height: 1024 }])
+  ok(
+    sized ===
+      Math.min(NON_TEXT_BUDGET.imageMax, Math.ceil((1024 * 1024) / NON_TEXT_BUDGET.pixelsPerToken)),
+    `有尺寸按面积算并夹在上限（${sized}）`
+  )
+  ok(
+    estimateContentTokens([{ type: 'image', width: 1, height: 1 }]) === NON_TEXT_BUDGET.imageMin,
+    '小图有下限（不能低于 low 档）'
+  )
+  ok(
+    estimateContentTokens([{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }]) >=
+      NON_TEXT_BUDGET.imageNoSize,
+    'OpenAI 风格的 image_url 也认得'
+  )
+  ok(
+    estimateContentTokens([{ type: 'file', data: 'AAAA' }]) === NON_TEXT_BUDGET.binaryMin,
+    '附件（file / data）给二进制下限'
+  )
+  ok(
+    estimateContentTokens([{ type: 'some_future_block' }]) === NON_TEXT_BUDGET.unknownBlock,
+    '认不出的块型不当零（不知道占多小，不等于不占地）'
+  )
+
+  /* 递归：图片藏在 tool_result 的 content 里时同样要算 */
+  const nested = estimateContentTokens([
+    { type: 'toolResult', content: [{ type: 'image', width: 800, height: 800 }] }
+  ])
+  ok(nested >= NON_TEXT_BUDGET.imageMin, `tool_result 里嵌套的图片也计入（${nested}）`)
+  /* toolCall 不能被当成“认不出的块”再叠一次 */
+  const callOnly = estimateContentTokens([
+    { type: 'toolCall', name: 'bash', arguments: { command: 'ls' } }
+  ])
+  ok(
+    callOnly > 0 && callOnly < NON_TEXT_BUDGET.unknownBlock + 50,
+    `toolCall 只算名字与参数，不叠加 unknownBlock（${callOnly}）`
+  )
+
+  /* 方向性：图片能把“刚好装得下”的请求推进去（以前算 0 会报 normal） */
+  {
+    const images = estimateMessagesTokens([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', width: 1024, height: 1024 },
+          { type: 'image', width: 1024, height: 1024 }
+        ]
+      }
+    ])
+    const nearSoft = budget.workingSet - 2
+    const lvl = requestBudgetLevel({ estimatedTokens: nearSoft + images, budget })
+    ok(images > 0 && lvl.level !== 'normal', `图片把临界请求推进去（${lvl.level}，图片 ${images}）`)
+  }
 
   const negative = requestBudgetLevel({ estimatedTokens: -5, budget })
   ok(negative.estimatedTokens === 0 && negative.level === 'normal', '负估算被夹到 0（脏值不制造假 soft）')

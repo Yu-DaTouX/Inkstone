@@ -134,38 +134,17 @@ export function budgetOf(contextWindow, overrides = {}) {
   }
 }
 
-/** 内容块数组 / 字符串 → 文本（toolCall 的参数也算，它们真的占 token）。 */
-function contentText(content) {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  const parts = []
-  for (const block of content) {
-    if (!block) continue
-    if (typeof block === 'string') {
-      parts.push(block)
-      continue
-    }
-    if (typeof block.text === 'string') parts.push(block.text)
-    if (typeof block.content === 'string') parts.push(block.content)
-    else if (Array.isArray(block.content)) parts.push(contentText(block.content))
-    if (block.type === 'toolCall' || block.type === 'tool_call') {
-      parts.push(String(block.name ?? ''))
-      try {
-        parts.push(JSON.stringify(block.arguments ?? block.args ?? {}))
-      } catch {
-        /* 参数里有循环引用：只算名字 */
-      }
-    }
-  }
-  return parts.join('\n')
-}
-
 /**
  * 估算一次请求里 messages 的 token 量。
  *
  * 口径（对齐 `context-transform.js` 的条目估算 + 一点保守量）：
  * 每条消息的**正文字符**、toolCall 名与参数、toolCallId、工具名，外加固定开销。
- * 不估 thinking（provider 侧一般不回灌）与图片（形状差异大，且 S4 的判据是文本体积）。
+ * 不估 thinking（provider 侧一般不回灌）。
+ *
+ * 图片与二进制附件（实施-11 C-4b）：**不再当零**，改给保守下限 ——
+ * 以前把 `content` 直接贬成文本，一张图算 0 token，于是“装得下”的结论
+ * 就建立在一个假前提上（硬闸门本来就不可靠，但不能往假的方向偏）。
+ * 下限是**保守**的：算大了只会更早清扫，算小会直接把请求发爆。
  */
 export function estimateMessagesTokens(messages) {
   if (!Array.isArray(messages)) return 0
@@ -174,10 +153,123 @@ export function estimateMessagesTokens(messages) {
     if (!message || typeof message !== 'object') continue
     total += MESSAGE_OVERHEAD_TOKENS
     total += estimateTokens(String(message.role ?? message.type ?? ''))
-    total += estimateTokens(contentText(message.content ?? message.text ?? ''))
+    total += estimateContentTokens(message.content ?? message.text ?? '')
     if (typeof message.toolCallId === 'string') total += estimateTokens(message.toolCallId)
     if (typeof message.name === 'string') total += estimateTokens(message.name)
     if (typeof message.summary === 'string') total += estimateTokens(message.summary)
+  }
+  return total
+}
+
+/*
+ * ── 非文本内容的下限估算（实施-11 C-4b）──
+ *
+ * 这几个数字是**下限**，不是精确值：它们只保证“一张图 / 一个附件不会被算成 0”。
+ * 来源：各家 provider 的公开口径量级（编码类按像素 / 750、low 档 85、
+ * 未给尺寸时取中位数量级），一律夹在 min/max 之间，不假装比上游更精确。
+ * 没有尺寸时用 `IMAGE_NO_SIZE`：宁可估高一点，也不能把“不知道”当成“没有”。
+ */
+export const NON_TEXT_BUDGET = {
+  imageMin: 85,
+  imageMax: 1600,
+  imageNoSize: 1100,
+  pixelsPerToken: 750,
+  binaryMin: 1000,
+  unknownBlock: 128
+}
+
+const IMAGE_BLOCK_TYPES = new Set(['image', 'image_url', 'input_image', 'image_base64'])
+const BINARY_BLOCK_TYPES = new Set(['file', 'document', 'audio', 'video', 'input_file'])
+const KNOWN_TEXT_BLOCK_TYPES = new Set([
+  'text',
+  'input_text',
+  'output_text',
+  'toolCall',
+  'tool_call',
+  'toolResult',
+  'tool_result',
+  'thinking',
+  'reasoning'
+])
+
+function isImageBlock(block) {
+  if (IMAGE_BLOCK_TYPES.has(String(block.type ?? ''))) return true
+  /* OpenAI 形状：`{type:'image_url', image_url:{url}}`（url 也可能是 data: base64） */
+  if (block.image_url || block.image_url === '') return true
+  /* Anthropic 形状：`{type:'image', source:{type:'base64'|'url'}}` */
+  if (block.source && String(block.source.media_type ?? '').startsWith('image/')) return true
+  return false
+}
+
+function isBinaryBlock(block) {
+  if (BINARY_BLOCK_TYPES.has(String(block.type ?? ''))) return true
+  /* 裸 base64 / data 字段：形状不统一，但只要带着大块二进制就不能当零 */
+  if (typeof block.data === 'string' && block.data.length > 0) return true
+  if (typeof block.base64 === 'string' && block.base64.length > 0) return true
+  return false
+}
+
+/** 图片的保守下限：有尺寸就按面积算，没有就给中位数（不当零）。 */
+function imageTokensOf(block) {
+  const source = block.source && typeof block.source === 'object' ? block.source : {}
+  const nested = block.image && typeof block.image === 'object' ? block.image : {}
+  const width = Number(block.width ?? block.w ?? nested.width ?? source.width)
+  const height = Number(block.height ?? block.h ?? nested.height ?? source.height)
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    const raw = Math.ceil((width * height) / NON_TEXT_BUDGET.pixelsPerToken)
+    return Math.max(
+      NON_TEXT_BUDGET.imageMin,
+      Math.min(NON_TEXT_BUDGET.imageMax, raw)
+    )
+  }
+  return NON_TEXT_BUDGET.imageNoSize
+}
+
+/**
+ * 内容块的 token 估算（递归）。
+ *
+ * 为什么必须递归：`tool_result` 的 content 自己又是个数组，图片就藏在那一层 ——
+ * 只看顶层会让“带图工具结果”重新变成 0。
+ * 认不出的块型给 `unknownBlock` 而不是 0：不知道占了多小，不等于不占地。
+ */
+export function estimateContentTokens(content) {
+  if (typeof content === 'string') return estimateTokens(content)
+  if (!Array.isArray(content)) return 0
+  let total = 0
+  for (const block of content) {
+    if (!block) continue
+    if (typeof block === 'string') {
+      total += estimateTokens(block)
+      continue
+    }
+    if (typeof block !== 'object') continue
+    /* 文本部分（保留原有口径：块内 text / content 都算） */
+    if (typeof block.text === 'string') total += estimateTokens(block.text)
+    if (typeof block.content === 'string') total += estimateTokens(block.content)
+    else if (Array.isArray(block.content)) total += estimateContentTokens(block.content)
+
+    const type = String(block.type ?? '')
+    if (type === 'toolCall' || type === 'tool_call') {
+      total += estimateTokens(String(block.name ?? ''))
+      try {
+        total += estimateTokens(JSON.stringify(block.arguments ?? block.args ?? {}))
+      } catch {
+        /* 参数里有循环引用：只算名字 */
+      }
+      continue
+    }
+    /* thinking / reasoning 通常是回灌文本，不另计（上面已取 text） */
+    if (KNOWN_TEXT_BLOCK_TYPES.has(type)) continue
+    if (isImageBlock(block)) {
+      total += imageTokensOf(block)
+      continue
+    }
+    if (isBinaryBlock(block)) {
+      total += NON_TEXT_BUDGET.binaryMin
+      continue
+    }
+    /* 有 type 但认不出、也没取到文本 —— 不能当零 */
+    if (type) total += NON_TEXT_BUDGET.unknownBlock
   }
   return total
 }
@@ -200,11 +292,26 @@ export function estimateToolsTokens(tools) {
   return total
 }
 
+/**
+ * 顶层 system 的估算。
+ *
+ * 为什么要分三种形状：pi 送来的 `payload.system` 实测**不是字符串**（数组 / 对象），
+ * 而旧实现只认 `typeof === 'string'`，于是真链路上算出来是 0 ——
+ * 整个系统提示被当成不存在（单测里一直是字符串，所以没暴露）。
+ * 同一个道理：不知道形状不等于不占地。
+ */
+function systemTokensOf(raw) {
+  if (typeof raw === 'string') return estimateTokens(raw)
+  if (Array.isArray(raw)) return estimateContentTokens(raw)
+  if (raw && typeof raw === 'object') return estimateContentTokens([raw])
+  return 0
+}
+
 /** 估算**整个请求体**（messages + tools + 顶层 system）。 */
 export function estimateRequestTokens(payload) {
   const messages = estimateMessagesTokens(payload?.messages)
   const tools = estimateToolsTokens(payload?.tools)
-  const system = typeof payload?.system === 'string' ? estimateTokens(payload.system) : 0
+  const system = systemTokensOf(payload?.system)
   return { messages, tools, system, total: messages + tools + system }
 }
 
