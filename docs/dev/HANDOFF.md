@@ -15,7 +15,7 @@
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
 
-### 本轮增量（2026-09-22）· 实施-11 H-6b-1：崩溃 / 中途退出的回合报「已中断」
+### 本轮增量（2026-09-22）· 实施-11 H-6b：崩溃 / 中途退出的回合报「已中断」
 
 > 队列位次 4b 的**写侧 + 读侧切片**。`TurnTerminalReason` 里的 `interrupted` 与
 > `TurnView` 的「已中断」分支早就写好了，但**没有任何代码产出它** —— 本片把它接上。
@@ -24,10 +24,10 @@
 |---|---|
 | 实现 | [`turn-timing-store.ts`](../../src/main/turn-timing-store.ts) 的记录新增 `final?: boolean`；[`agent.ts`](../../src/main/agent.ts) 的 `persistTurnTiming()` 写盘时带上它（中途快照 `false`、终止收尾 `true`）；新增 `effectiveTerminalReason()` —— 读到 `final === false` 的记录就归成 `interrupted`，`applyTurnTimings()` 用它，于是 `peekSession` 与 `hydrate()` 两条读历史路径自动得到中断标记。**旧记录没有这个字段 → 按已收尾处理**：宁可把中断显示成完成，也不能把正常结束的历史集体误报成崩溃。 |
 | 自动检查 | `npm run typecheck` / `build` 通过；`npm run test:unit` **4304/4304** —— `test-turn-timing-store.mjs` 新增 6 条（`final:false`→中断、`final:true`→原原因、无字段→不误报、中途快照的 `final` 能读回、仅中途快照→挂回即中断、后续正常收尾覆盖中途快照且不再报中断）。 |
-| 真实运行 | `npm run test:live -- turnrestore`（**cost 1**，真实会话文件+真实盘）：退出后检查新增断言「**收尾记录带 `final: true`**」—— 实测通过（`146 ≈ 146ms`、`failed` 路径）；这是判据的另一半：正常跑完的回合不能留下中途快照。 |
+| 真实运行 | `npm run test:live -- turnrestore`（**cost 1**，真实会话文件+真实盘）：退出后检查新增断言「**收尾记录带 `final: true`**」—— 实测通过（`146 ≈ 146ms`、`failed` 路径）；这是判据的另一半：正常跑完的回合不能留下中途快照。**中途快照端到端（H-6b-2）**：`npm run test:live -- turninterrupted`（cost 1）—— 真实回合 → 重启前向同一 `logicalTurnId` 追加 `final:false` 快照 → 重启后切进会话，peek 读到 `interrupted`（52ms）、**真实页脚写出「已中断」**；退出后检查确认盘上最后一条 `final=false`、同一回合有收尾+中途共 3 条记录。 |
 | 视觉验收 | 界面分支（`turn-footer` 的「已中断」）由 H-6 的 `matrix-turnstatus-*` 覆盖（同一页脚、同一配色规则）；本片不改 UI。 |
 | 应用与包 | 未因本片重跑 `dist:dir` / `test-packaged`，包级证据归 H-5 与实施-09。 |
-| 剩余限制 | ① **真实中途快照的端到端没有做**（H-6b-2）：需要 restart 双探针 + 在两次启动之间向沙箱注入一条 `final:false` 记录，而现有测试框架只有「启动前 seed」（`knowledgeIsolationSeed`）没有「restart 前 seed」钩子 —— 不能把单测当端到端证据；② 稳定 `logicalTurnId`（自动继续 / 跨会话链）、`waitSpans`、usage 聚合仍未做；③ 强杀（SIGKILL）时最后一条中途记录可能还未落盘（取决于是否走了 `message_end`），这条边界未实测。 |
+| 剩余限制 | ① 稳定 `logicalTurnId`（自动继续 / 跨会话链）、`waitSpans`、usage 聚合仍未做；② 中途快照的**产生**方式是在重启前追加（可复现、每跑必得），不是真的 SIGKILL —— 强杀时最后一条快照是否已落盘取决于是否走过 `message_end`，这条边界未实测（也不能把“调度运气”当断言）；③ 长会话（多回合同一文件）下中途快照与收尾快照的配对未单独取证。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 C-2：压缩可观测性的两个派生量
 
