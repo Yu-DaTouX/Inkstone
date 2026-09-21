@@ -6,7 +6,7 @@
  * 一个相对路径漏了 `..` 就是任意文件读取（主进程还会再挡一次，但这里是第一道）。
  */
 export async function runLinkTests(ok) {
-  const { classifyLink } = await import('../out/test/links.mjs')
+  const { classifyLink, parseFileLink } = await import('../out/test/links.mjs')
 
   const kindOf = (href) => classifyLink(href).kind
 
@@ -41,6 +41,17 @@ export async function runLinkTests(ok) {
   ok(kindOf('./docs/x.md') === 'file', './ 开头的相对路径')
   ok(classifyLink('docs/x.md:12').line === 12, '相对路径也支持行号')
   ok(kindOf('../../etc/passwd') === 'file', '带 .. 的路径仍归类为 file（越界由主进程判定）')
+
+  /* ---- DSH 搬运的 GitHub 风格行号片段 ---- */
+  ok(parseFileLink('src/main/index.ts#L42')?.line === 42, '#L42 解析为首行')
+  ok(parseFileLink('src/main/index.ts#L42-L60')?.line === 42, '#L42-L60 取首行')
+  ok(classifyLink('src/main/index.ts#L42').line === 42, '显式文件链接接入 #L42')
+  ok(classifyLink('file:///C:/a/b.ts#L7').path === 'C:/a/b.ts', 'file URL 兼容 #L7 路径')
+  ok(classifyLink('file:///C:/a/b.ts#L7').line === 7, 'file URL 兼容 #L7 行号')
+  ok(parseFileLink('https://example.com/a#L42') === undefined, '外部 URL 不被文件解析器接管')
+  ok(parseFileLink('src/main/index.ts#L0') === undefined, '零行号被拒绝')
+  ok(parseFileLink('src/main/index.ts#L60-L42') === undefined, '反向行号范围被拒绝')
+  ok(parseFileLink('src/%ZZ/index.ts#L42') === undefined, '坏的 percent escape 被拒绝')
 
   /* ---- 不该被当成路径的 ---- */
   ok(kindOf('') === 'invalid', '空链接 → invalid')

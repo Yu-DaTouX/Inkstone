@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1895,6 +1895,38 @@ const STATES = {
         target.focus();
         await new Promise((r) => setTimeout(r, 400));
         return document.activeElement === target ? 'ok' : 'not-focused';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
+  /*
+   * 正文里的文件引用（实施-11 H-4 的解析 / 呈现切片）。
+   *
+   * 三种形态同屏：带行号、不带行号、范围链接。这张图看的是「蓝色短路径 +
+   * 悬停给出路径与行号」的阅读形态；点击行为由 live 场景 `filelink` 取证
+   *（截图脚本不注册数据型 IPC，点开会拿到空值，反而会覆盖注入的 store）。
+   */
+  filelink: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        window.__yanStore.setState({
+          messages: [
+            ...st.messages,
+            { id: 'vf-u1', role: 'user', text: '这几个文件在哪几行？', timestamp: Date.now() },
+            { id: 'vf-a1', role: 'assistant', text: '见 [README 第 3 行](README.md#L3)、[普通引用](README.md) 与 [一段范围](README.md#L1-L5)：正文里的文件引用长这样。' }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 350));
+        const n = document.querySelectorAll('a.md-link[data-link-kind="file"]').length;
+        return n >= 3 ? 'ok:' + n : 'few:' + n;
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
       }
@@ -3041,6 +3073,7 @@ const MUST_HAVE = {
   ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
   turnstatus: ['.stream', '[data-testid="turn-footer"]'],
+  filelink: ['.stream', 'a.md-link[data-link-kind="file"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
   quotatone: [
