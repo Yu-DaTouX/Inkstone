@@ -100,7 +100,7 @@
 | 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | 未开始 |
 | 10 | C-3 | 大窗口策略验证矩阵 | 审阅 §7 | C-1、C-6 | 未开始 |
 | 11 | H-3 | 工作窗口状态模型 | 方案 §5.3、§9 S2 | H-2 | 未开始 |
-| 12 | H-4 | 文件与文档窗口 | 方案 §3、§8、§9 S3 | H-3 | 未开始 |
+| 12 | H-4 | 文件与文档窗口 | 方案 §3、§8、§9 S3 | H-3 | **部分交付**：解析 / 呈现切片（`#L42` / 范围 / 点击预览）已闭环（见 HANDOFF「H-4a」）；文件标签、目录树联动、Markdown 源码切换、大文件与资源身份待 H-3 后做 |
 | 13 | H-9 | 浏览器窗口融合 | 方案 §6、§9 S4 | H-3 | 未开始 |
 | 14 | H-10 | 子代理展示与累计统计 | 方案 §7、§9 S5 | H-3 | 未开始 |
 | 15 | H-8 | 图标接入统一 | 方案 §13.2 | H-3（形态确定后） | 未开始 |
@@ -275,7 +275,16 @@
   落盘前先定会话边界与旧数据兼容策略，不能因新增字段破坏现有会话 JSONL。
 - 禁区：不同时引入多列 docking、拖出独立 OS 窗口或复杂分屏树；不新增第二份“布局真源”。
 
-**H-4 · 文件与文档窗口（位次 12）**
+**H-4 · 文件与文档窗口（位次 12，部分交付）**
+
+- **已交付（H-4a，证据见 HANDOFF）**：`shared/links.ts` 的 `parseFileLink`（DSH 搬运）
+  与 `classifyLink` 接入；支持 `path#L42` / `path#L42-L60` / `file://…#L7`；
+  `LinkAnchor` 的 `data-line` 与带行号的 title；点击仍走 `previewFile(path, line)`。
+- **未交付（依赖 H-3）**：单击文件 / 目录打开标签并联动文件树、Markdown 阅读 / 源码切换、
+  >2000 行定位的窗口化、文件变化提示、文件缺失保留标签、
+  `projectId + workspaceRoot + canonicalPath` 资源身份、范围高亮、
+  相对路径按所属消息 / 文档上下文解析。
+- 下面的出口清单保留原样；其中未在上一条列到的，就是本片的剩余项。
 
 - 来源：方案 §3（含 §3.1 点击行为、§3.2 路径与渲染边界）、§8、§9 S3。
 - 出口：
@@ -444,9 +453,9 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因）；DSH 的文件链接解析、`TabDomain` 生命周期和压缩事务顺序尚待搬运 / 接线；H-3、H-4、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4、C-5、C-6 尚未闭环。 |
+| 实现 | H-1、H-2、C-1、H-7 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4、C-5、C-6 尚未闭环。 |
 | 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4267/4267**（含 `test-turn-timing.mjs`、`test-turn-timing-store.mjs`、`test-duration.mjs` 与 C-1 的 6 条试行档断言）；其余切片的单测与文档审计待各片补齐。 |
-| 真实运行 | H-1 有 `turnfooter` / `turnfooterlive`；H-2 有 `rightresources`（cost 0，21 条）；C-1 由 `contextbudget`（cost 0）取证；H-7 由 `turnfooter` 新增 6 条断言覆盖；H-6 有 `turnrestore`（cost 1，真实回合 → 落盘 → peek 读回 → 退出后核对日志）。 |
+| 真实运行 | H-1 有 `turnfooter` / `turnfooterlive`；H-2 有 `rightresources`（cost 0，21 条）；C-1 由 `contextbudget`（cost 0）取证；H-7 由 `turnfooter` 新增 6 条断言覆盖；H-6 有 `turnrestore`（cost 1）；H-4a 有 `filelink`（cost 0，11 条）。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
 | 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |

@@ -90,7 +90,9 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
 
   const title =
     target.kind === 'file'
-      ? t('link.preview', { path: target.path })
+      ? t('link.preview', {
+          path: target.line ? `${target.path}:${target.line}` : target.path
+        })
       : target.kind === 'invalid'
         ? t('link.blocked')
         : target.url
@@ -100,6 +102,8 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
       href={target.kind === 'url' ? target.url : '#'}
       className={`md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
+      /* 行号给测试与后续「范围高亮」用；不带行号时不写属性（别把 undefined 写成字符串）。 */
+      data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       title={title}
       onClick={onClick}
       onAuxClick={(e) => e.preventDefault()}

@@ -1515,6 +1515,18 @@ const CASES = {
   rightresources: { probe: 'scripts/probe/right-resources.js', delay: 10000, cost: 0 },
 
   /*
+   * 实施-11 H-4（解析 / 呈现切片）：Markdown 文件链接的 `#L42` 与点击（cost 0）。
+   * 走 fixture 沙箱（`repo`），因为要点开 README.md 验证主进程真的读了文件。
+   */
+  filelink: {
+    probe: 'scripts/probe/filelink.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 10000,
+    cost: 0
+  },
+
+  /*
    * 实施-11 H-6：整轮计时的落盘与读回（cost 1，会调模型一次）。
    *
    * 前面两条计时场景验的是「算得对、显示得对」；这条验的是 **pi 会话 JSONL
