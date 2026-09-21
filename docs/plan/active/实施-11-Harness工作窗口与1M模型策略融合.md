@@ -94,7 +94,7 @@
 | 4 | H-6 | 回合计时契约与 usage 口径 | 方案 §4.2 | H-1 | **已部分交付**（落盘 / 读回 / 终止原因 / 未记录；稳定回合身份、等待分段、usage 聚合归 H-6b） |
 | 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | **部分交付**（崩溃→中断已交付：写侧 `final` + 读侧归一 + restart 端到端；稳定回合身份、waitSpans、usage 聚合未做） |
 | 5 | H-7 | 时间呈现统一与可访问 | 方案 §13.1 | — | **已交付**（六栏见 HANDOFF；`submittedAt` 未实现） |
-| 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则；估算精度与行为口径的剩余归 C-4b / C-6） |
+| 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则 + 估算不再当零（C-4b）；“到线就整理”的行为口径归 C-6） |
 | 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | **部分交付**：回收比例 / 此后新增量 / 「待测」口径已闭环；三类动作分别统计归 C-2b |
 | 8 | C-6 | 三类整理门槛与防抖标定 | 审阅 §5.2、§3.3、§5.1 | C-4、C-2 | 未开始 |
 | 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | **已交付**（分母口径：主值走物理尺度 + 工作集单独一行 + 刻度改窗口尺度；档位名与来源展示留作剩余） |
@@ -179,8 +179,11 @@
   2. 扩展的 `requestBudgetFor()` 改为 **env > 宿主文件 > 默认**，逐字段合并；阈值仍由两侧同一套 `contextBudget()` 算（交叉校验在单测里）；
   3. “1M”仍按运行时实际 `contextWindow` 计算，不硬编码；
   4. 走独立文件而**不写 `YAN_CONTEXT_POLICY`** —— 那个 env 优先级高于设置面板。
-- **未交付（C-4b）**：请求估算仍以字符为主（宽字符 ≈ 1 token、其余 /4），图片与 provider
-  特殊结构覆盖不足；“未知成本不得当零”尚未逐 provider 验证。
+- **已交付（C-4b，证据见 HANDOFF）**：估算不再把未知当零 —— 图片按面积夹在 85–1600（无尺寸给 1100）、
+  附件 / base64 给 1000、认不出的块型给 128，`tool_result` 里嵌套的图片也计；
+  并修掉 `payload.system` 只认字符串的真缺陷（实测 pi 送的不是字符串）。
+- **未交付**：图片下限仍是**保守值**（未用真实多模态请求验证偏差）；附件不随体积增长；
+  provider 特殊结构（缓存断点、schema 变体）未逐家覆盖；硬闸门仍不能宣称精确可靠。
 - **未交付（归 C-6）**：“到线以前不会整理”这个措辞仍不准（`tool-sweep` 另有收益门槛与防抖）——
   数字对齐不等于行为对齐。
 - 禁区不变：不改默认 240K；不绕过输出预留与物理闸门。
@@ -461,9 +464,9 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断：写侧 + 读侧 + restart 端到端），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4304/4304**（含 turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条、C-2 的 10 条、H-6b 的 6 条）。 |
-| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；C-5 `contextbudget`（分母 / 工作集行 / 填充比例 / 刻度位置）；H-7 `turnfooter`；H-6 `turnrestore`（cost 1）；H-6b `turnrestore` + `turninterrupted`（cost 1，restart 双探针）；H-4a `filelink`（11 条）；C-4 `policyfile`；C-2 `compactionview`（11 条）。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断：写侧 + 读侧 + restart 端到端），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4318/4318**（turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条 + C-4b 估算 14 条、C-2 的 10 条、H-6b 的 6 条）。 |
+| 真实运行 | H-1 `turnfooter`；H-2 `rightresources`（21 条）；C-1 / C-5 `contextbudget`；H-7 `turnfooter`；H-6 / H-6b / C-4b `turnrestore`（cost 1，含扩展估算留痕）；H-6b `turninterrupted`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`；C-2 `compactionview`（11 条）。 |
 | 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 / C-5 各有深浅两张（stamp 见 HANDOFF；C-5 为 `2026-09-22-c5`）。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |

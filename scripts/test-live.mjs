@@ -1562,6 +1562,8 @@ const CASES = {
     cost: 1,
     fixture: true,
     fixtureSub: 'repo',
+    /* 真实的 before_provider_request 估算留痕（实施-11 C-4b 的取证入口） */
+    contextExtLog: true,
     afterExit: 'turnTimingPersisted'
   },
   /*
@@ -5532,6 +5534,57 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
       `终止原因与界面一致（${last?.terminalReason} vs ${expectedReason}）`
     )
   }
+
+  /*
+   * 顺带：这一次真实请求的**扩展估算留痕**（实施-11 C-4b）。
+   *
+   * 为什么放在这里：同一场景同一次真实请求的产物，再开一个 cost 1 场景只为了
+   * 重复一遍同样的调用。断言的是“估算真的跑在真实链路里且三部分都在”，
+   * 不是“估得很准”—— 精度不属于本片能取证的范畴（见 HANDOFF 的剩余限制）。
+   */
+  const extLog = join(sandboxRoot, 'ctx-ext.log')
+  const rows = existsSync(extLog)
+    ? readFileSync(extLog, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)]
+          } catch {
+            return []
+          }
+        })
+    : []
+  const budgetRows = rows.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
+  say(budgetRows.length >= 1, `真实请求里有估算留痕（${budgetRows.length} 行）`)
+  const row = budgetRows[budgetRows.length - 1]
+  if (row) {
+    lines.push(
+      `  估算 = messages ${row.messages} + tools ${row.tools} + system ${row.system} = ${row.estimatedTokens}`
+    )
+    say(
+      row.messages > 0 && row.tools > 0,
+      'messages 与 tools 都估到了（工具表不是 0）'
+    )
+    /*
+     * `system` 允许是 0：pi 把系统提示放在 messages 里的 role:'system' 条目，
+     * 顶层并不总是有这个字段 —— 实测为 0 是真实现象，不是漏估。
+     * 真要认的那三件事由单测钉（字符串 / 数组 / 对象形状都要能算）。
+     */
+    lines.push(`  system 段 = ${row.system}（pi 把它放在 messages 里时为 0，属于正常）`)
+    say(
+      row.estimatedTokens === row.messages + row.tools + row.system,
+      '估算总和 = 三部分之和（不是各算各的）'
+    )
+    say(
+      row.projectedTokens === row.estimatedTokens + row.responseReserve,
+      `预测量 = 估算 + 输出预留（${row.projectedTokens} = ${row.estimatedTokens} + ${row.responseReserve}）`
+    )
+    say(row.window > 0 && row.workingSet > 0, `留痕里带着当时的预算线（工作集 ${row.workingSet} / 窗口 ${row.window}）`)
+  } else {
+    say(false, '没有 request-budget-* 行（扩展可能没跑到 before_provider_request）')
+  }
+
   return { ok, lines }
 }
 
