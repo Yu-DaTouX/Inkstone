@@ -951,6 +951,34 @@ const contextView = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/context-view.mjs'))
 )
 
+/*
+ * Command Code 订阅额度的窗口解析（src/main/quota-commandcode.ts）。
+ * 纯函数，但同一个响应里「已用」与「剩余」两种口径并存，极易搞反；
+ * 用线上真实快照钉住「月度 = 总额度 − 剩余」这条换算。
+ */
+const quotaCommandCode = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/quota-commandcode.ts'],
+    outfile: 'out/test/quota-commandcode.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/quota-commandcode.mjs'))
+)
+
+/* 额度颜色分级（src/shared/quota-tone.ts）：渲染组件与单测用同一个函数，阈值不会漂。 */
+const quotaTone = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/quota-tone.ts'],
+    outfile: 'out/test/quota-tone.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/quota-tone.mjs'))
+)
+
 let pass = 0
 let fail = 0
 const ok = (cond, label, extra = '') => {
@@ -1633,6 +1661,12 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 runAtQueryTests(ok, atQuery)
+/* Command Code 额度口径（月度是「剩余」不是「已用」）+ 颜色分级边界 */
+{
+  const { runQuotaCommandCodeTests, runQuotaToneTests } = await import('./test-quota.mjs')
+  runQuotaCommandCodeTests(ok, quotaCommandCode)
+  runQuotaToneTests(ok, quotaTone)
+}
 runSlashQueryTests(ok, slashQuery)
 await runRailOrderTests(ok)
 runCapabilityRequestTests(ok, capabilityRequest)

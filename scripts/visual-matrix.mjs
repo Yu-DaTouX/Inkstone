@@ -316,20 +316,47 @@ function gitStubContent(path, side) {
 
 function registerStubHandlers() {
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
-  /* 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
-     截进验收图会被当成真 bug。数据与 shots.mjs 一致。 */
-  ipcMain.handle('yan:providerQuota', (_e, provider) => ({
-    provider: provider || 'openai-codex',
-    supported: true,
-    remaining: 8.42,
-    currency: 'USD',
-    label: '余额',
-    windows: [
-      { id: '5h', label: '5 小时', used: 1.58, total: 10 },
-      { id: 'week', label: '本周', used: 6.2, total: 30 }
-    ],
-    checkedAt: Date.now()
-  }))
+  /*
+   * 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
+   * 截进验收图会被当成真 bug。数据与 shots.mjs 一致。
+   *
+   * `commandcode` 这个 provider 在视觉矩阵里**只有** `quotatone` 状态会用（fixture 会话
+   * 是 openai-codex），所以这里可以按 provider 名分支返回三档数据，而不是另造一个名字
+   * —— 图上显示的就是真实供应商名。真实额度永远落不到 70 / 95 这两个分界上，
+   * 所以这组截图得自己造数据；但走的仍是真实渲染路径（状态脚本改 store 里的
+   * provider → 额度区自己来查）。
+   */
+  ipcMain.handle('yan:providerQuota', (_e, provider) => {
+    if (provider === 'commandcode') {
+      return {
+        provider: 'commandcode',
+        supported: true,
+        currency: 'USD',
+        label: '本月已用',
+        used: 10,
+        total: 10,
+        remaining: 0,
+        checkedAt: Date.now(),
+        windows: [
+          { id: 'fiveHour', label: '5 小时', used: 6.9, total: 10 },
+          { id: 'weekly', label: '每周', used: 7.5, total: 10 },
+          { id: 'monthly', label: '本月', used: 10, total: 10, exceeded: true, estimated: true }
+        ]
+      }
+    }
+    return {
+      provider: provider || 'openai-codex',
+      supported: true,
+      remaining: 8.42,
+      currency: 'USD',
+      label: '余额',
+      windows: [
+        { id: '5h', label: '5 小时', used: 1.58, total: 10 },
+        { id: 'week', label: '本周', used: 6.2, total: 30 }
+      ],
+      checkedAt: Date.now()
+    }
+  })
   /* 其余启动期拉取：给空值，让界面停在“没有更多数据”而不是报 IPC 错 */
   ipcMain.handle('yan:listSessions', () => [])
   ipcMain.handle('yan:listCommands', () => [])
@@ -841,7 +868,15 @@ const GROUPS = [
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] }
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
+  /*
+   * 单开一组：额度三档配色（绿 / 黄 / 红 + 「已用完」）。
+   * 为什么单独一组而不塞进组 0：那个状态会把会话的 provider 换成受控桩名，
+   * 同一组里后面的状态接着截图就会带着这个假 provider（会话已经被改了）。
+   * 新组只含这一个状态，不影响任何旧图。
+   */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['quotatone'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['quotatone'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -2679,6 +2714,70 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       await sleep(400);
       return document.querySelector('.sp-err') ? 'ok' : 'no-err';
     })()
+  `,
+  /*
+   * 额度三档配色（<70 绿 / 70–95 黄 / ≥95 红）。
+   * 数据来自上面对 `commandcode` 的桩；这里只把会话的 provider 换成它，
+   * 剩下的查询与渲染跟真实额度完全同路。
+   */
+  quotatone: `
+    (async () => {
+      try {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        window.__yanStore.setState({ rightPanelOpen: true, filePreview: null });
+        const s = window.__yanStore.getState().session;
+        window.__yanStore.setState({
+          session: {
+            ...(s ?? {}),
+            sessionId: s?.sessionId ?? 'matrix-quota',
+            thinkingLevel: s?.thinkingLevel ?? 'medium',
+            availableThinkingLevels: s?.availableThinkingLevels ?? [],
+            isStreaming: false,
+            isCompacting: false,
+            model: { provider: 'commandcode', id: 'matrix/quotatone' }
+          }
+        });
+        for (let i = 0; i < 40; i++) {
+          if (document.querySelector('[data-testid="quota-win-monthly-reached"]')) {
+            /*
+             * 不只看类名：把三档的实际颜色与设计令牌对一下（--ok / --warn / --err）。
+             * 类名对、颜色没变（比如令牌被覆盖）的回归不能靠肉眼在 1440px 截图上发现。
+             */
+            const cssVar = (name) => {
+              const probe = document.createElement('span');
+              probe.style.color = 'var(' + name + ')';
+              document.body.appendChild(probe);
+              const v = getComputedStyle(probe).color;
+              probe.remove();
+              return v;
+            };
+            const colorOf = (testid) => {
+              const el = document.querySelector('[data-testid="' + testid + '"]');
+              return el ? getComputedStyle(el).color : 'missing';
+            };
+            const got = {
+              low: colorOf('quota-win-fiveHour-pct'),
+              mid: colorOf('quota-win-weekly-pct'),
+              high: colorOf('quota-win-monthly-pct'),
+              main: colorOf('quota-main-value')
+            };
+            const want = { low: cssVar('--ok'), mid: cssVar('--warn'), high: cssVar('--err'), main: cssVar('--err') };
+            if (got.low !== want.low || got.mid !== want.mid || got.high !== want.high || got.main !== want.main) {
+              return 'bad-colors:' + JSON.stringify({ got, want });
+            }
+            return 'ok';
+          }
+          await sleep(120);
+        }
+        const panel = document.querySelector('[data-testid="rp-quota"]');
+        return 'no-quota-windows:' + (panel ? panel.textContent.slice(0, 120) : 'no-panel');
+      } catch (e) {
+        return 'error:' + (e && (e.message || String(e)));
+      }
+    })()
   `
 }
 
@@ -2720,6 +2819,13 @@ const MUST_HAVE = {
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
+  quotatone: [
+    '[data-testid="rp-quota"]',
+    '[data-testid="quota-win-fiveHour-pct"]',
+    '[data-testid="quota-win-weekly-pct"]',
+    '[data-testid="quota-win-monthly-pct"]',
+    '[data-testid="quota-main-value"]'
+  ],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
   /* 实施-09 S2：后台会话在等输入的 `?` 槽、以及与失败槽（第四批） */
   railwaiting: ['[data-testid="rail-session"]', '[data-testid="rail-waiting"]', '[data-testid="rail-failed"]'],

@@ -1,6 +1,7 @@
 import { net } from 'electron'
 import type { ProviderQuota, QuotaWindow } from '../shared/ipc'
 import { resolveCodexAccountId, resolveProviderSecret } from './credentials'
+import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 
 /**
  * 取额度用的 HTTP 客户端。
@@ -141,17 +142,27 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
        *   5 小时 / 每周 / 每月，各自有上限，超了就 429。
        * `/alpha/billing/credits` 用 pi 里同一把 user_ key 就能读（实测）。
        *
-       * ⚠️ 接口只返回 fiveHour / weekly 两个窗口，**月度是官网自己算的**：
-       *    月度已用 = credits.monthlyCredits，分母 = 套餐额度的总额度。
-       *    实测：34.9988 / 70 = 50% —— 与官网 usage 页显示的正好一致
+       * ⚠️ 两个字段的口径不一样，**这是个踩过的坑**（2026-09 实测）：
+       *    · windowLimits.fiveHour / weekly → 窗口**已用**（used / cap / exceeded / resetAt）
+       *    · credits.monthlyCredits        → 本月**剩余**，不是已用
+       *    证据：weekly.cap = 35 ⇒ 套餐总额度 70；
+       *    几乎没消耗的月份接口给 monthlyCredits = 69.996221407，
+       *    而 fiveHour.used = weekly.used = 0.003778593，70 − 0.003778593 正好是它。
+       *    曾经按「已用」解释 → 面板显示已用 99.99%（看着像本月已经用完），
+       *    而官网 usage 页是 0% —— 方向正好反了。
        *    （GOAT=$70；weekly cap $35=一半、fiveHour cap $14=五分之一，
-       *      所以那两个窗口的 cap 也确实是按套餐总额度切出来的）。
+       *      所以那两个窗口的 cap 也确实是按套餐总额度切出来的。）
        *    之前只显示 5h/周，漏了月度 —— 而月度才是「这个月总共能用多少」，
        *    用户看官网时对不上就是这个原因。
        *
        * 没有硬编码 $70：分母由 weekly cap × 2 反推
        * （实测每个套餐都按固定比例切：weekly = 总额度的一半），
        * 反推不出来就只展示前两个窗口，绝不编一个数。
+       */
+      /*
+       * 三个窗口（5 小时 / 每周 / 本月）的解析在 `quota-commandcode.ts`：
+       * 那里有一个**方向相反**的口径坑（weekly.used 是已用、monthlyCredits 是剩余），
+       * 已经用接口真实快照写成单测钉住。这里只负责取数据。
        */
       const cr = await fetch('https://api.commandcode.ai/alpha/billing/credits', {
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(10_000)
@@ -169,45 +180,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
           return Number.isFinite(t) ? t : undefined
         })
         .catch(() => undefined)
-      const windows: QuotaWindow[] = []
-      const add = (id: string, label: string, w?: CommandCodeWindow, estimated = false): void => {
-        const cap = Number(w?.cap)
-        if (!w || !Number.isFinite(cap) || cap <= 0) return
-        windows.push({
-          id,
-          label,
-          used: Number(w.used ?? 0),
-          total: cap,
-          resetAt: typeof w.resetAt === 'number' ? w.resetAt : undefined,
-          exceeded: w.exceeded === true,
-          ...(estimated ? { estimated: true } : {})
-        })
-      }
-      add('fiveHour', '5 小时', wl.fiveHour)
-      add('weekly', '每周', wl.weekly)
-
-      /*
-       * 月度：分母反推。接口里 monthlyCredits 是**已用**，不是上限。
-       * 套餐总额度 = 月度上限 = weekly.cap × 2（见上）。
-       * 重置时间接口里没有，得从订阅周期拿（官网就是这么做的）—— 拿不到就不显示。
-       */
-      const planCredits = Number(wl.weekly?.cap) * 2
-      const usedMonthly = Number(credits.credits?.monthlyCredits)
-      if (Number.isFinite(planCredits) && planCredits > 0 && Number.isFinite(usedMonthly)) {
-        windows.push({
-          id: 'monthly',
-          label: '本月',
-          used: usedMonthly,
-          total: planCredits,
-          resetAt: periodEnd,
-          exceeded: usedMonthly >= planCredits,
-          /*
-           * 月度上限是**反推**的（weekly.cap × 2），不是接口给的官方字段。
-           * 标出来，UI 才能如实写「月度上限推算」而不是假装精确。
-           */
-          estimated: true
-        })
-      }
+      const windows = commandCodeWindows(credits, periodEnd)
 
       if (windows.length === 0) {
         return { provider, supported: true, error: wl.limited === false ? '套餐未启用额度窗口' : '未返回额度窗口', checkedAt }
@@ -237,29 +210,6 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
     return { provider, supported: false, error: '该供应商没有可用的公开余额 API', checkedAt }
   } catch (e) {
     return { provider, supported: true, error: e instanceof Error ? e.message : String(e), checkedAt }
-  }
-}
-
-/** Command Code `/alpha/billing/credits` 里单个窗口的形状 */
-interface CommandCodeWindow {
-  used?: number
-  cap?: number
-  exceeded?: boolean
-  resetAt?: number
-}
-
-/** `/alpha/billing/credits` 的整体形状 */
-interface CommandCodeCredits {
-  credits?: {
-    monthlyCredits?: number
-    purchasedCredits?: number
-    freeCredits?: number
-  }
-  windowLimits?: {
-    limited?: boolean
-    exceeded?: string
-    fiveHour?: CommandCodeWindow
-    weekly?: CommandCodeWindow
   }
 }
 
