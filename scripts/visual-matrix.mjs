@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1745,6 +1745,45 @@ const STATES = {
       if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
       await new Promise((r) => setTimeout(r, 350));
       const row = document.querySelector('[data-testid="ctx-last-compaction"]');
+      if (row) row.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 250));
+      return 'ok';
+    })()
+  `,
+  /*
+   * C-2：压缩到底回收了多少 + 压完到现在又新增多少。
+   * 与 `compaction` 状态的分工：那张图看的是「失败时必须有话说」，
+   * 这张看的是「成功那次的两个派生量」。
+   */
+  compactionreclaim: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isCompacting: false,
+          compaction: undefined,
+          lastCompaction: {
+            status: 'completed',
+            reason: 'threshold',
+            triggeredBy: 'policy',
+            policyStage: 'compact',
+            startedAt: Date.now() - 360000,
+            endedAt: Date.now() - 300000,
+            beforeTokens: 36230,
+            afterTokens: 18400
+          }
+        },
+        stats: { ...st.stats, contextUsage: { tokens: 30000, contextWindow: 400000, percent: 7.5 } }
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const row = document.querySelector('[data-testid="ctx-last-compaction-reclaim"]');
       if (row) row.scrollIntoView({ block: 'center' });
       await new Promise((r) => setTimeout(r, 250));
       return 'ok';
@@ -3170,6 +3209,11 @@ const MUST_HAVE = {
     '[data-testid="ctx-last-compaction"]',
     '[data-testid="ctx-last-compaction-error"]',
     '[data-testid="ctx-project-ignored"]'
+  ],
+  compactionreclaim: [
+    '[data-testid="rp-context"]',
+    '[data-testid="ctx-last-compaction"]',
+    '[data-testid="ctx-last-compaction-reclaim"]'
   ],
   browserboundary: [
     '[data-testid="browser-surface"]',
