@@ -39,6 +39,23 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 
 /*
+ * 回合计时口径（src/shared/turn-timing.ts）。
+ *
+ * 与 turns.ts 一样是共享层纯函数，主进程构建不会单独输出它；
+ * 现场编译一份，避免测试依赖主进程的摇树结果（实施-11 H-1）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/turn-timing.ts'],
+    outfile: 'out/test/turn-timing.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
  * 界面缩放的纯计算（src/main/zoom-math.ts）。
  *
  * 为什么不直接从 out/main/zoom-math.js import：它现在已经进了主进程
@@ -111,6 +128,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
+const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
@@ -1260,6 +1278,7 @@ await rm(piTmp, { recursive: true, force: true })
 
 // 回合分组 / 段落拆分 / 缓存命中率（纯函数，不启动 Electron）
 await runTurnTests(ok)
+await runTurnTimingTests(ok)
 
 
 // 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）

@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1725,6 +1725,43 @@ const STATES = {
    * fixture 默认把会话摆成「流式中」（那时显示的是「生成中 Ns」），
    * 所以这里显式置为已结束，并确认真的渲染出了耗时项。
    */
+  /*
+   * 回合页脚（实施-11 H-1）：助手顶部不再有「砚 / N 步 / 标准」，
+   * 整轮用时 / 步数 / 完成时刻只在回合**底部**出现一次。
+   * 两张信息：多工具回合（显示「2 步」）与单工具回合（不显示步数）。
+   * 零费用：完全在渲染端注入，不调模型。
+   */
+  turnfooter: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+        const T = Date.UTC(2026, 8, 21, 4, 42, 8);
+        const tool = (id, name, args) => ({ id, name, args, status: 'ok' });
+        window.__yanStore.setState({
+          messages: [
+            ...st.messages,
+            { id: 'vf-u1', role: 'user', text: '把标题改成独立进程', timestamp: T },
+            { id: 'vf-a1', role: 'assistant', text: '我先看看实现', toolCalls: [tool('vf-t1', 'read', { path: 'src/main/app.ts' })], elapsedMs: 8000, timestamp: T + 8000 },
+            { id: 'vf-a2', role: 'assistant', text: '找到了，改成独立进程。', toolCalls: [tool('vf-t2', 'edit', { path: 'src/main/app.ts' })], elapsedMs: 31000, timestamp: T + 31000 },
+            { id: 'vf-a3', role: 'assistant', text: '改好了，两处改动：启动流程与退出钩子。', elapsedMs: 42000, timestamp: T + 42000 },
+            { id: 'vf-u2', role: 'user', text: '测试跑一下。', timestamp: T + 60000 },
+            { id: 'vf-b1', role: 'assistant', text: '两个测试都通过。', toolCalls: [tool('vf-t3', 'bash', { command: 'npm test' })], elapsedMs: 18000, timestamp: T + 78000 }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 350));
+        return document.querySelectorAll('[data-testid="turn-footer"]').length ? 'ok' : 'no-footer';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
   usageelapsed: `
     (async () => {
       const st = window.__yanStore.getState();

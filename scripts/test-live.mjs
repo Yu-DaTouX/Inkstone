@@ -1472,6 +1472,38 @@ const CASES = {
    * 配置与授权都落 sandbox（YAN_MCP_SERVERS_FILE），不碰用户真实配置。
    */
   mcpregister: { probe: 'scripts/probe/mcp-register.js', delay: 9000, cost: 0, usesMcpRegisterFixture: true },
+
+  /*
+   * 实施-11 H-1：回合页脚的阅读秩序与整轮用时（cost 0）。
+   *
+   * 不调模型：注入多轮**已结束**的回合（含多工具 / 单工具 / 无用时 / 无元数据），
+   * 验助手顶部不再有「砚 / N 步 / 标准」、整轮用时只在底部出现一次且在正文之后、
+   * 用时带「含工具往返」的悬停说明、单工具不显示步数、没有点赞点踩。
+   * 整轮耗时**怎么算**不在这里断言 —— 那由 `test-turn-timing.mjs` 的纯逻辑钉住。
+   */
+  turnfooter: { probe: 'scripts/probe/turn-footer.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-11 H-1：**真实回合**的整轮用时（cost 1，会调模型）。
+   *
+   * 发一条必定调 bash 的消息，然后把界面上显示的整轮用时对上三件事：探针量的
+   * 墙钟、主进程推的 `elapsedMs`、以及由 output/speed 推导的生成时间（必须明显小于
+   * 整轮）。若速度改用回合起点、或页脚改用最后一次生成时间，这三条会同时红。
+   */
+  turnfooterlive: {
+    probe: 'scripts/probe/turn-footer-live.js',
+    /*
+     * 必须用 fixture 沙盒（`fixture-project/repo`，没有 AGENTS.md）：
+     * 本机 27B 量化模型在仓库完整上下（~8.6K）下**不调工具**，只回话；
+     * 在短项目上下文 + 不可猜任务下才稳定调工具（与历史 `local-tool-test` 一致）。
+     */
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 240000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
+  },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()

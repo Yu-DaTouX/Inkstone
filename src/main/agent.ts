@@ -40,6 +40,7 @@ import {
   type ResolvedContextPolicy
 } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { turnTiming } from '../shared/turn-timing'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
@@ -374,6 +375,8 @@ export class AgentController extends EventEmitter {
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
+  /** 当前 agent 回合的宿主起点；与单条 assistant 消息的首 token 时间分开。 */
+  private turnStartedAt?: number
   private turnResponseDetail: ResponseDetail = 'unknown'
   /** 文本脏（有新的流式文本待推） */
   private dirty = false
@@ -3359,7 +3362,7 @@ export class AgentController extends EventEmitter {
 
         // 以 message_end 的 usage 为准（流式期间的可能是 0 或旧值）
         const finalUsage = toUsage(m.usage) ?? s.usage
-        const sp = this.speedOf({ ...s, usage: finalUsage })
+        const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turnStartedAt)
         const msg: UIMessage = {
           id,
           role: 'assistant',
@@ -3491,6 +3494,7 @@ export class AgentController extends EventEmitter {
       /* ---- 会话级 ---- */
       case 'agent_start':
         this.turnResponseDetail = this.currentResponseDetail()
+        this.turnStartedAt = Date.now()
         this.markStreaming(true)
         this.setAgentRunning(true)
         break
@@ -3498,6 +3502,7 @@ export class AgentController extends EventEmitter {
       case 'agent_settled':
         this.markStreaming(false)
         this.setAgentRunning(false)
+        this.turnStartedAt = undefined
         void this.refreshState()
         /* 回合结束是唯一允许按工作集动手的时机（这次刷新顺带做判定） */
         void this.refreshStats({ allowPolicyTrigger: true })
@@ -3777,7 +3782,7 @@ export class AgentController extends EventEmitter {
     s.pushedText = s.text.length
     s.pushedThinking = s.thinking.length
 
-    const sp = this.speedOf(s)
+    const sp = this.speedOf(s, Date.now(), this.turnStartedAt)
     this.push({
       ch: 'msg-update',
       payload: {
@@ -3801,23 +3806,28 @@ export class AgentController extends EventEmitter {
   }
 
   /**
-   * 算输出速率（token/秒）。
+   * 算输出速率（token/秒）与整轮用时。
    *
-   * 用「首个内容 token 到达」到最后的时间，而不是整个回合 ——
-   * 排队、首包延迟、工具往返都不该算进生成速度，否则会偏低。
-   *
-   * 拿不到 usage.output 时返回 undefined（宁可不显示，也不拿字符数瞎猜）。
+   * 口径本身在 `shared/turn-timing.ts`（纯函数、有单测）：速度用
+   * 「首个内容 token 到达」，整轮用时用 agent 回合起点，所以工具往返与重试
+   * 只进后者。这里只是把流式对象里的字段喂进去，不重复实现算法。
    */
-  private speedOf(s: {
-    usage?: Usage
-    firstTokenAt?: number
-    startedAt?: number
-  }, endedAt = Date.now()): { speed?: number; elapsedMs?: number } {
-    const out = s.usage?.output ?? 0
-    const from = s.firstTokenAt ?? s.startedAt
-    if (!out || !from) return {}
-    const ms = Math.max(1, endedAt - from)
-    return { speed: out / (ms / 1000), elapsedMs: ms }
+  private speedOf(
+    s: {
+      usage?: Usage
+      firstTokenAt?: number
+      startedAt?: number
+    },
+    endedAt = Date.now(),
+    turnStartedAt?: number
+  ): { speed?: number; elapsedMs?: number } {
+    return turnTiming({
+      usage: s.usage,
+      firstTokenAt: s.firstTokenAt,
+      startedAt: s.startedAt,
+      turnStartedAt,
+      endedAt
+    })
   }
 
   /*
