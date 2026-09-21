@@ -3247,6 +3247,7 @@ const MUST_HAVE = {
     '[data-testid="ctx-stages"]',
     '[data-testid="ctx-stage-mark"]',
     '[data-testid="ctx-next-stage"]',
+    '[data-testid="ctx-working-set-line"]',
     '[data-testid="ctx-working-set"]'
   ],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */

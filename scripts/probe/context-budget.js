@@ -124,7 +124,28 @@
   ok(main?.getAttribute('data-mode') === 'working-set', `主值切到工作集视角（data-mode=${main?.getAttribute('data-mode')}）`)
   const tokensText = text('[data-testid="ctx-tokens"]')
   const fmtK = (n) => `${Math.round(n / 1000)}k`
-  ok(tokensText.endsWith(`/ ${fmtK(pushed.budget.workingSet)}`), `主值分母是工作集（实际 ${JSON.stringify(tokensText)}）`)
+  /*
+   * C-5：主值分母是**有效模型窗口**，不是工作集 —— `240k / 240k = 100%`
+   * 会被读成「1M 模型满了」，而砚的动手线（工作集）单独占一行。
+   */
+  ok(
+    tokensText.endsWith(`/ ${fmtK(pushed.budget.contextWindow)}`),
+    `主值分母是有效模型窗口（实际 ${JSON.stringify(tokensText)}）`
+  )
+  const wsLine = text('[data-testid="ctx-working-set-line"]')
+  ok(
+    wsLine.includes(fmtK(pushed.budget.workingSet)),
+    `工作集单独一行，不被窗口分母盖掉（实际 ${JSON.stringify(wsLine)}）`
+  )
+  /* 进度条本体的填充宽度也得按窗口比例（不能改了文字不改条） */
+  {
+    const bar = q('.rp-meter i')
+    const box = q('.rp-meter')
+    const bw = box?.getBoundingClientRect().width ?? 0
+    const fw = bar?.getBoundingClientRect().width ?? 0
+    const expect = ((S().stats?.contextUsage?.tokens ?? 0) / pushed.budget.contextWindow) * bw
+    ok(bw > 0 && Math.abs(fw - expect) <= 3, `进度条填充按窗口比例（${Math.round(fw)}px ≈ ${Math.round(expect)}px）`)
+  }
 
   /* 三条阶段标记：只有压缩会真的触发 */
   const marks = qa('[data-testid="ctx-stage-mark"]')
@@ -151,8 +172,13 @@
     const el = marks.find((m) => kindOf(m) === kind)
     if (!el || !mr) continue
     const r = el.getBoundingClientRect()
-    const expect = mr.left + mr.width * ratio
-    ok(Math.abs(r.left - expect) <= 3, `${kind} 刻度画在 ${Math.round(ratio * 100)}% 处（偏差 ${Math.round(r.left - expect)}px）`)
+    /* 刻度画在窗口尺度上：工作集 × 阶段比例 ÷ 窗口 */
+    const expect =
+      mr.left + mr.width * ((pushed.budget.workingSet * ratio) / pushed.budget.contextWindow)
+    ok(
+      Math.abs(r.left - expect) <= 3,
+      `${kind} 刻度在窗口尺度上的位置正确（偏差 ${Math.round(r.left - expect)}px）`
+    )
   }
 
   /* 「下一步」只预报真的会执行的阶段，而且取**最先到的那条** */
@@ -319,8 +345,13 @@
   )
   const tokens2 = text('[data-testid="ctx-tokens"]')
   ok(
-    tokens2.endsWith(`/ ${fmtK(ipc2.budget.workingSet)}`),
-    `用量条分母跟着设置改（实际 ${JSON.stringify(tokens2)}）`
+    tokens2.endsWith(`/ ${fmtK(win)}`),
+    `分母仍是物理窗口，不随 cap 变（实际 ${JSON.stringify(tokens2)}）`
+  )
+  const wsLine2 = text('[data-testid="ctx-working-set-line"]')
+  ok(
+    wsLine2.includes(fmtK(ipc2.budget.workingSet)),
+    `工作集那一行跟着设置改（实际 ${JSON.stringify(wsLine2)}）`
   )
 
   /* 设置面板里的来源与回填（打开上下文 tab） */
