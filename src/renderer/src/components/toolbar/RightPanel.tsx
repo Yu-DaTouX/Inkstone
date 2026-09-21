@@ -5,6 +5,8 @@ import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import {
+  compactionGrowthText,
+  compactionReclaimText,
   compactionRunningText,
   compactionSummary,
   compactionTokensText,
@@ -1377,6 +1379,23 @@ function ContextSection() {
               {compactionTokensText(lastCompaction) ? (
                 <div className="rp-dim" data-testid="ctx-last-compaction-tokens">
                   {compactionTokensText(lastCompaction)}
+                </div>
+              ) : null}
+              {/*
+               * C-2 的两个派生量：这次回收了多少、以及压完到现在又新增多少。
+               *
+               * `used` 只在 pi 报了当前用量时才有值（刚压缩完它会故意报 null），
+               * 所以「此后新增」拿不到数就不显示 —— 不能把“还没测”写成“没新增”。
+               * 「回收 XX%」在压缩完成后总是给一句（含「待测」），因为它回答的是
+               * 用户看完压缩后最直接的问题：这次到底有没有用。
+               */}
+              {lastCompaction.status === 'completed' ? (
+                <div className="rp-dim" data-testid="ctx-last-compaction-reclaim">
+                  {compactionReclaimText(t, lastCompaction)}
+                  {(() => {
+                    const growth = compactionGrowthText(t, lastCompaction, known ? used : undefined)
+                    return growth ? ` · ${growth}` : ''
+                  })()}
                 </div>
               ) : null}
               {/*

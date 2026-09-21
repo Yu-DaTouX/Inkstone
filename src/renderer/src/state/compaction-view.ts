@@ -74,6 +74,55 @@ export function compactionTokensText(run: CompactionRun): string | null {
 }
 
 /**
+ * 压缩回收比例（C-2「回收比例」）。
+ *
+ * 只在 before / after 都是可用数且 before > 0 时给值；`after > before`
+ * （压完反而更大：摘要比原文长）夹到 0% —— 那是真实的“没回收到”，
+ * 不该用负数或直接隐藏把它吞掉。缺任一端就返回 `null`，由界面写「待测」。
+ */
+export function compactionReclaimPercent(run: CompactionRun): number | null {
+  const { beforeTokens, afterTokens } = run
+  if (typeof beforeTokens !== 'number' || typeof afterTokens !== 'number') return null
+  if (!Number.isFinite(beforeTokens) || beforeTokens <= 0) return null
+  if (!Number.isFinite(afterTokens) || afterTokens < 0) return null
+  const saved = beforeTokens - afterTokens
+  return Math.max(0, Math.min(100, Math.round((saved / beforeTokens) * 100)))
+}
+
+/**
+ * 「回收 90%」/「回收待测」。
+ *
+ * 为什么“待测”而不是不显示：用户问的是“这次压得到底有没有用”，
+ * 而 pi 不一定报压缩后的 token。没数时不能说“没回收”（那是个结论），
+ * 也不能编一个百分比（那是假证据）—— 只能明说还没测出来。
+ */
+export function compactionReclaimText(t: TFunc, run: CompactionRun): string {
+  const percent = compactionReclaimPercent(run)
+  if (percent === null) return t('ctx.reclaimPending')
+  return t('ctx.reclaimed', { percent: String(percent) })
+}
+
+/**
+ * 「此后新增 12k」—— 上一次压缩到现在又涨回来多少（C-2「此后新增量」）。
+ *
+ * 为什么在界面算而不是落进那次压缩的记录：它随**当前**用量变化，写进历史快照
+ * 就成了会变的历史。两个前提缺一不可（有 `afterTokens`、当前用量已知），
+ * 否则返回 `null` 不显示 —— 只增量为 0 不显示也是意：那是“没新增”，
+ * 而这里常常只是“还没拿到下一条带 usage 的消息”。
+ */
+export function compactionGrowthText(
+  t: TFunc,
+  run: CompactionRun,
+  currentTokens: number | undefined
+): string | null {
+  if (typeof run.afterTokens !== 'number') return null
+  if (typeof currentTokens !== 'number' || !Number.isFinite(currentTokens)) return null
+  const growth = Math.round(currentTokens - run.afterTokens)
+  if (growth <= 0) return null
+  return t('ctx.growthAfter', { tokens: formatTokens(growth) })
+}
+
+/**
  * 进行中那一行：「压缩中 · 已达阈值」。
  *
  * 拿不到原因时退回 `status.compacting`（pi 只说了在做，没说为什么）。

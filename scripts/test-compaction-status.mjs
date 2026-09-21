@@ -260,6 +260,49 @@ export function runCompactionStatusTests(ok, mod, view) {
   ok(view.compactionTokensText({ status: 'completed', beforeTokens: 100 }) === null, 'token 段：只有一端有数就不显示')
   ok(view.compactionTokensText({ status: 'failed' }) === null, 'token 段：失败时没有 token 段')
 
+  /* ---- 6.5 C-2：回收比例与「此后新增量」（全在渲染端派生） ---- */
+  console.log('\n--- C-2 压缩可观测性的两个派生量 ---')
+  {
+    const { compactionReclaimPercent, compactionReclaimText, compactionGrowthText } = view
+    const completed = { status: 'completed', beforeTokens: 36_230, afterTokens: 18_400 }
+    ok(compactionReclaimPercent(completed) === 49, `回收比例四舍五入到整数（${compactionReclaimPercent(completed)}）`)
+    ok(compactionReclaimText(t, completed) === 'ctx.reclaimed(49)', '有前后 token 时给百分比')
+
+    ok(
+      compactionReclaimPercent({ status: 'completed', beforeTokens: 1000, afterTokens: 1200 }) === 0,
+      '压完反而更大（摘要比原文长）→ 0%，不显示负数'
+    )
+    ok(
+      compactionReclaimPercent({ status: 'completed', afterTokens: 160 }) === null,
+      '缺压缩前 token → 不能算比例'
+    )
+    ok(
+      compactionReclaimPercent({ status: 'completed', beforeTokens: 0, afterTokens: 0 }) === null,
+      '压缩前为 0 → 不能算比例（不能除零，也不能报 100%）'
+    )
+    ok(
+      compactionReclaimText(t, { status: 'completed', beforeTokens: 1000 }) === 'ctx.reclaimPending',
+      '没有压缩后 token 时写「回收待测」，不编百分比'
+    )
+
+    ok(
+      compactionGrowthText(t, { status: 'completed', afterTokens: 1000 }, 12_000)?.startsWith('ctx.growthAfter('),
+      '有当前用量时给「此后新增」'
+    )
+    ok(
+      compactionGrowthText(t, { status: 'completed', afterTokens: 12_000 }, 10_000) === null,
+      '当前用量低于压缩后估算 → 不显示（不是“没新增”，是还没测准）'
+    )
+    ok(
+      compactionGrowthText(t, { status: 'completed', afterTokens: 1000 }, undefined) === null,
+      '当前用量未知（刚压完 pi 故意报 null）→ 不显示'
+    )
+    ok(
+      compactionGrowthText(t, { status: 'completed', beforeTokens: 36_230 }, 99_999) === null,
+      '缺压缩后 token → 不显示（没有基准就没有“新增”）'
+    )
+  }
+
   /* ---- 7. 项目信任（D21）：决定项目级设置算不算生效 ---- */
   console.log('\n--- D21 项目信任判定 ---')
 

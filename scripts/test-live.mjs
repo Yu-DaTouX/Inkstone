@@ -1527,6 +1527,15 @@ const CASES = {
   },
 
   /*
+   * 实施-11 C-2：压缩可观测性的两个派生量（回收比例 / 此后新增量，cost 0）。
+   */
+  compactionview: {
+    probe: 'scripts/probe/compaction-view.js',
+    delay: 10000,
+    cost: 0
+  },
+
+  /*
    * 实施-11 C-4：宿主把生效策略（分层覆盖）交给薄层（cost 0）。
    * 探针改一个数值覆盖，退出后核对 `data/context-policy.effective.json`。
    */

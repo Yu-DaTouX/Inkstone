@@ -95,7 +95,7 @@
 | 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | 未开始 |
 | 5 | H-7 | 时间呈现统一与可访问 | 方案 §13.1 | — | **已交付**（六栏见 HANDOFF；`submittedAt` 未实现） |
 | 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则；估算精度与行为口径的剩余归 C-4b / C-6） |
-| 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | 未开始 |
+| 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | **部分交付**：回收比例 / 此后新增量 / 「待测」口径已闭环；三类动作分别统计归 C-2b |
 | 8 | C-6 | 三类整理门槛与防抖标定 | 审阅 §5.2、§3.3、§5.1 | C-4、C-2 | 未开始 |
 | 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | 未开始 |
 | 10 | C-3 | 大窗口策略验证矩阵 | 审阅 §7 | C-1、C-6 | 未开始 |
@@ -179,16 +179,17 @@
   数字对齐不等于行为对齐。
 - 禁区不变：不改默认 240K；不绕过输出预留与物理闸门。
 
-**C-2 · 压缩可观测性（位次 7）**
+**C-2 · 压缩可观测性（位次 7，部分交付）**
 
-- 来源：审阅 §5.2(3)、§6 展开项。
-- 出口：能回答“为什么现在压缩、为什么这次没压缩、压缩后是否真的回落”，字段包括
-  当前精确 provider/model、模型登记窗口与实际请求窗口（可得时）、当前 prompt / input 用量、
-  工作集线 / 折叠线 / 压缩线 / 物理兜底线、最近一次阶段与触发原因、压缩前后用量、回收比例、耗时、
-  此后新增量、失败 / 取消 / 重试窗口。
-- 三类动作分别统计：**轻量整理（sweep）/ 状态刷新 / 整轮压缩** 不能都显示成“正在压缩”。
-- 无压缩后 token 时显示“待测”，不能补一个想象值或没有供应商证据的百分比。
-- 防抖策略与参数标定不在这里，见 C-6。
+- **已交付（C-2a，证据见 HANDOFF）**：
+  1. **回收比例**（`compactionReclaimPercent` / `compactionReclaimText`）：`after > before` 夹到 0%，缺任一端返回 `null` → 界面写「回收待测」，不编百分比；
+  2. **此后新增量**（`compactionGrowthText`）：当前用量 − 压缩后估算，当前用量未知（pi 刚压完故意报 null）时不显示，不写成 0；
+  3. 失败 / 取消 / 跳过各有文案且不显示回收行（已有，本片保持）；
+  4. 压缩前后用量、耗时、触发原因、发起方（砚 / 阈值 / 溢出）已有（N21-2）。
+- **未交付（C-2b）**：三类动作分别统计 —— 轻量整理（tool-sweep）与状态刷新（episode-fold）
+  不产生 pi 的 `compaction_*` 事件，需扩展侧留痕（写 `YAN_DATA_DIR` 下的操作日志），宿主读并在 UI 分开显示。
+- **未交付（归 C-6）**：失败 / 取消之后的**重试窗口**（下次何时再试）；防抖参数标定。
+- 口径不变：无压缩后 token 时显示「待测」，不补想象值或没有供应商证据的百分比。
 - 落点：`src/main/agent.ts`（热点）、`src/main/context-watermark.ts`、`src/shared/context-state.ts`、
   `resources/pi-extensions/context*.js`（留痕，不改业务阈值）。
 
@@ -451,9 +452,10 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4b、C-5、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4287/4287**（含 `test-turn-timing.mjs`、`test-turn-timing-store.mjs`、`test-duration.mjs`、C-1 的 6 条试行档、C-4 两侧的 17 条）；其余切片的单测与文档审计待各片补齐。 |
-| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；H-7 `turnfooter` 新增 6 条；H-6 `turnrestore`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`（宿主写盘 + afterExit 核对）。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-5、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4297/4297**（含 turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条、C-2 的 10 条）。 |
+| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；H-7 `turnfooter`；H-6 `turnrestore`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`（写盘 + afterExit）；C-2 `compactionview`（11 条）。 |
+| 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 各有深浅两张（`matrix-{turnfooter,rightresources,ctxmodelpresets,turntime,turnstatus,filelink,compactionreclaim}-*`）；C-4 不改 UI，沿用上下文状态图。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
 | 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |
