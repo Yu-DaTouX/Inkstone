@@ -403,6 +403,7 @@ html[data-theme='light'] .op-title::before {
 
 /* 回合级统计放在正文之后，避免模型品牌 / 步数 / 回复档位打断阅读。 */
 .turn-footer {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -419,6 +420,38 @@ html[data-theme='light'] .op-title::before {
 
 .turn-time {
   cursor: help;
+}
+
+/*
+ * 完整时间的第二条通道。
+ *
+ * `title` 只有鼠标悬停才出，键盘与触摸都读不到；`aria-label` 只服务
+ * 屏幕阅读器。这里让可聚焦的时间在 focus 时用伪元素弹出完整时间 ——
+ * 用 `:focus` 而不是 `:focus-visible`：触摸 / 脚本聚焦也要出，
+ * outline 则只给键盘（`:focus-visible`）。
+ * `pointer-events: none` 保证浮层不吃点击，位置相对 `.turn-footer`。
+ */
+.turn-time:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+.turn-time:focus::after {
+  content: attr(data-full);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .msg.user .turn-footer {

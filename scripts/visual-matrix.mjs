@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1855,6 +1855,46 @@ const STATES = {
         const names = tabs.map((el) => (el.textContent ?? '').replace('×', '').trim()).join('|');
         if (!document.querySelector('[data-testid="file-preview"]')) return 'no-preview';
         return tabs.length >= 3 ? 'ok:' + names : 'few-tabs:' + names;
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
+  /*
+   * 完整时间的键盘 / 触摸通道（实施-11 H-7）。
+   *
+   * 窗口 `show: true`（见本文件头部注释）：隐藏窗口里 `:focus` 不匹配，
+   * 也就拍不到聚焦浮层。这里注入一条带时间戳的回合，滚到底部后把最后
+   * 一个 `.turn-time` 真正 focus 掉再截图。
+   */
+  turntime: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+        const T = Date.UTC(2026, 8, 21, 4, 42, 8);
+        const tool = (id, name, args) => ({ id, name, args, status: 'ok' });
+        window.__yanStore.setState({
+          messages: [
+            ...st.messages,
+            { id: 'vt-u1', role: 'user', text: '这次跑完大概多久？', timestamp: T },
+            { id: 'vt-a1', role: 'assistant', text: '先看一眼实现再回答。', toolCalls: [tool('vt-t1', 'read', { path: 'src/main/app.ts' })], elapsedMs: 8000, timestamp: T + 8000 },
+            { id: 'vt-a2', role: 'assistant', text: '整轮包含工具往返，用时在下面。', elapsedMs: 42000, timestamp: T + 42000 }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 350));
+        const times = [...document.querySelectorAll('.turn-time')];
+        const target = times[times.length - 1];
+        if (!target) return 'no-time';
+        target.focus();
+        await new Promise((r) => setTimeout(r, 400));
+        return document.activeElement === target ? 'ok' : 'not-focused';
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
       }
@@ -2953,6 +2993,7 @@ const MUST_HAVE = {
   ],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
+  turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
   quotatone: [

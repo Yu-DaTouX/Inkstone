@@ -207,5 +207,32 @@
     ok(bad.length === 0, '整个界面没有点赞 / 点踩 / 评分入口', `匹配 ${bad.length} 个`)
   }
 
+  /* ---- 8. 完整时间的可访问通道（H-7）---- */
+  {
+    const time = footer.querySelector('time')
+    const full = time?.getAttribute('aria-label') ?? ''
+    ok(!!full && /\d{4}/.test(full), `时间有 aria-label 完整值：「${full}」`)
+    ok(full === time?.getAttribute('data-full'), 'aria-label 与 data-full 是同一份完整时间（浮层不另算）')
+    ok(time?.tabIndex === 0, '时间可被键盘聚焦（tabIndex=0）')
+    time?.focus()
+    ok(document.activeElement === time, 'focus() 后时间元素真的拿到焦点（键盘 / 触摸可读，不只悬停）')
+    const popup = time ? getComputedStyle(time, '::after').content : ''
+    log(`  聚焦后伪元素 content = ${JSON.stringify(popup)}`)
+    ok(!!time?.getAttribute('datetime'), '<time> 仍保留机器可读的 datetime')
+  }
+
+  /* ---- 9. 时长写法统一（H-7：与子代理列表共用 formatDuration）---- */
+  {
+    const texts = [...document.querySelectorAll('.sa-time')].map((el) => (el.textContent ?? '').trim())
+    if (texts.length === 0) {
+      out.push('  （本次 fixture 没有子代理行；时长写法由 test-duration 单测钉住）')
+    } else {
+      ok(
+        texts.every((x) => /^\d+s$|^\d+m \d+s$/.test(x)),
+        `子代理行时长与回合页脚同一写法（带空格的 Xm Ys）：${texts.join(' / ')}`
+      )
+    }
+  }
+
   return out.join('\n')
 })()

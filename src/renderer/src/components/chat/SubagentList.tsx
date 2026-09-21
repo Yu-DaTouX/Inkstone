@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { formatDuration } from '../../../../shared/duration'
 import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
 import { SubagentDetails } from './SubagentDetails'
 
@@ -103,13 +104,9 @@ export function SubagentList() {
   )
 }
 
-/** 已运行时长（秒 / 分） */
+/** 已运行时长（秒 / 分）—— 与回合页脚共用 `formatDuration`，不再各写一份。 */
 function duration(run: { startedAt: number; endedAt?: number }, now: number): string {
-  const ms = (run.endedAt ?? now) - run.startedAt
-  const secs = Math.max(1, Math.round(ms / 1000))
-  if (secs < 60) return `${secs}s`
-  const mins = Math.floor(secs / 60)
-  return `${mins}m${secs % 60}s`
+  return formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
 }
 
 /**
