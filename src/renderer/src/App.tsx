@@ -169,6 +169,14 @@ export default function App() {
    */
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
+  /**
+   * 导航轨跳转期间，忽略尚未送达的旧 scroll 事件。
+   *
+   * 直接给 `.stream.scrollTop` 赋值会异步派发 scroll 事件；如果用户刚在
+   * 底部点击导航轨，那个事件可能在点击回调之后才到达，并把 stick 又算回
+   * true。随后的贴底 effect 就会把刚定位好的回合重新拉到底部。
+   */
+  const suppressStickScrollRef = useRef(false)
   const setStickNow = (v: boolean): void => {
     stickRef.current = v
     setStick(v)
@@ -326,6 +334,7 @@ export default function App() {
   const onScroll = () => {
     const el = streamRef.current
     if (!el) return
+    if (suppressStickScrollRef.current) return
     setStickNow(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
   }
 
@@ -346,8 +355,6 @@ export default function App() {
        * scroll 事件之间有一段时间，其间若来一条消息推送，
        * 贴底 effect 会把用户拉回底部。同步写 ref 就把这个窗口封死了。
        */
-      setStickNow(false)
-
       /*
        * 导航轨的「第 N 轮」= 第 N 个**用户回合**。
        *
@@ -361,8 +368,15 @@ export default function App() {
       const target = userTurns[turnIndex]
       if (target === undefined) return
 
+      suppressStickScrollRef.current = true
+      setStickNow(false)
+
       if (virtual) {
         vlistRef.current?.scrollToIndex(target, { align: 'start' })
+        requestAnimationFrame(() => {
+          suppressStickScrollRef.current = false
+          setStickNow(false)
+        })
         return
       }
 
@@ -398,20 +412,24 @@ export default function App() {
          * 点击导航格后 scrollTop 仍停在底部。用相对几何坐标只影响这一个容器，
          * 且不依赖 DOM 的 offsetParent 结构。
          */
-        const applyTargetScroll = (): void => {
-          const box = streamRef.current
-          const el = box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
-          if (!box || !el) return
-          const targetTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
-          box.scrollTop = Math.max(0, targetTop)
-        }
-        applyTargetScroll()
+          const applyTargetScroll = (): void => {
+            const box = streamRef.current
+            const el = box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
+            if (!box || !el) return
+            const targetTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
+            box.scrollTop = Math.max(0, targetTop)
+          }
+          applyTargetScroll()
         /*
          * 这里可能同时经历 setStickNow(false) 触发的提交、列表重排和滚动
          * 事件。下一帧再确认一次，避免旧提交的贴底 effect 把刚完成的定位
          * 覆盖掉；第二次使用当前 ref，兼容滚动节点在这一帧被替换的情况。
          */
-        requestAnimationFrame(applyTargetScroll)
+        requestAnimationFrame(() => {
+          applyTargetScroll()
+          suppressStickScrollRef.current = false
+          setStickNow(false)
+        })
       })
     })
   }, [turns, virtual, registerScrollToTurn])
