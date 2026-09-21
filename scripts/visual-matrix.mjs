@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1327,6 +1327,44 @@ const STATES = {
     })()
   `,
   /*
+   * 大窗口模型级试行档（实施-11 C-1）。
+   *
+   * 当前模型必须**明确登记**到 ~1M 窗口，按钮才会启用 —— 这一张验的是：
+   * 两档入口存在、说明写明“只写入当前精确模型”、窗口不足时是禁用态而不是
+   * 静默写一个裸上限。状态脚本同时返回 disabled / ok，避免用一张“按钮在”
+   * 的图冒充“按钮可用”。
+   */
+  ctxmodelpresets: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      S().setRailPinned(true);
+      S().closeSettings();
+      window.__yanStore.setState({
+        session: {
+          ...S().session,
+          model: {
+            id: 'meituan/LongCat-2.0:free',
+            name: 'LongCat 2.0',
+            provider: 'commandcode',
+            reasoning: false,
+            contextWindow: 1048576
+          }
+        },
+        settings: { ...S().settings, contextPolicyByModel: {} }
+      });
+      await sleep(300);
+      S().openSettings('context');
+      await sleep(600);
+      const target = document.querySelector('[data-testid="ctx-model-presets"]');
+      target?.scrollIntoView({ block: 'center' });
+      await sleep(500);
+      const balanced = document.querySelector('[data-testid="ctx-model-large-balanced"]');
+      if (!target || !balanced) return 'missing';
+      return balanced.disabled ? 'disabled' : 'ok';
+    })()
+  `,
+  /*
    * 项目知识页（实施-03 S5）。
    *
    * 数据是桩（`yan:knowledge:list` 在矩阵主进程里直接返回）—— 这一张验的是
@@ -1757,6 +1795,66 @@ const STATES = {
         if (box) box.scrollTop = box.scrollHeight;
         await new Promise((r) => setTimeout(r, 350));
         return document.querySelectorAll('[data-testid="turn-footer"]').length ? 'ok' : 'no-footer';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
+  /*
+   * 右栏资源并存（实施-11 H-2）：浏览器 / 审查 / 文件预览三个资源同时打开，
+   * 活动窗口切到「文件」。原生 WebContentsView 会盖住 DOM，所以必须先切到文件
+   *（switchWindow('file') 会 setVisible(false)）—— 这张图才能直接看到
+   *「三个标签同时存在、活动的是文件」，而不是「切页把别的资源关掉了」。
+   */
+  rightresources: `
+    (async () => {
+      try {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const S = () => window.__yanStore.getState();
+        S().closeSettings();
+        S().setRailPinned(true);
+        /*
+         * 直接注入三个资源，不走 IPC：截图脚本**刻意不注册**数据 / 写入型
+         * handler（否则空返回值会把 fixture 注入的 store 覆盖掉）。
+         * 所以 setRightPanelOpen / openBrowser / previewFile 这类会调 IPC 的
+         * store 方法在这里不能用 —— 它们是真实应用的路径，由 live 探针去验。
+         * （这段注释在模板字符串里，不能出现反引号，否则会截断脚本源码。）
+         */
+        window.__yanStore.setState({
+          rightPanelOpen: true,
+          settings: { ...S().settings, rightPanelOpen: true },
+          browserState: {
+            ...S().browserState,
+            open: true,
+            url: 'about:blank',
+            title: 'about:blank',
+            loading: false,
+            activeTabId: 'vt-1',
+            tabs: [{ id: 'vt-1', url: 'about:blank', title: 'about:blank', active: true }]
+          },
+          reviewOpen: true,
+          filePreview: {
+            path: 'docs/PROJECT.md',
+            cwd: '.',
+            loading: false,
+            data: {
+              ok: true,
+              kind: 'text',
+              name: 'PROJECT.md',
+              abs: 'C:/work/pi-desktop/docs/PROJECT.md',
+              size: 23073,
+              text: '# 项目实现总览 — 每个功能怎么实现、要改它该动哪里。右侧是同一份文档的预览窗口，切标签不会把它关掉。'
+            }
+          }
+        });
+        await sleep(700);
+        const fileTab = document.querySelector('[data-testid="right-window-tab-file"]');
+        fileTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await sleep(800);
+        const tabs = [...document.querySelectorAll('[data-testid="right-window-tabs"] .review-tab')];
+        const names = tabs.map((el) => (el.textContent ?? '').replace('×', '').trim()).join('|');
+        if (!document.querySelector('[data-testid="file-preview"]')) return 'no-preview';
+        return tabs.length >= 3 ? 'ok:' + names : 'few-tabs:' + names;
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
       }
@@ -2854,6 +2952,7 @@ const MUST_HAVE = {
     '[data-testid="kn-export-copy"]'
   ],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
+  ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
   quotatone: [

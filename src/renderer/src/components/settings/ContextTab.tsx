@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { CONTEXT_POLICY_PRESETS } from '../../../../shared/context-policy'
+import { CONTEXT_POLICY_PRESETS, LARGE_CONTEXT_POLICY_PRESETS } from '../../../../shared/context-policy'
 import type { ContextPolicyOverrides } from '../../../../shared/ipc'
 
 /**
@@ -36,6 +36,9 @@ export function ContextTab() {
   const byModel = settings?.contextPolicyByModel ?? {}
   const modelKey = model?.provider && model.id ? `${model.provider}/${model.id}` : undefined
   const modelOver = modelKey ? byModel[modelKey] : undefined
+  const modelLargePreset = largePresetOf(modelOver)
+  /* 只给有明确运行时窗口的当前模型显示试行档；登记值仍需用户自行确认。 */
+  const largeWindowCandidate = (model?.contextWindow ?? 0) >= 800_000
 
   const [draft, setDraft] = useState(() => fields(user))
   const [modelDraft, setModelDraft] = useState(() => fields(modelOver))
@@ -57,6 +60,12 @@ export function ContextTab() {
   const removeModel = (key: string): void => {
     const next = { ...byModel }
     delete next[key]
+    void patchSettings({ contextPolicyByModel: next })
+  }
+  const applyModelLargePreset = (preset: 'balanced' | 'long'): void => {
+    if (!modelKey || !largeWindowCandidate) return
+    const next = { ...byModel, [modelKey]: { ...LARGE_CONTEXT_POLICY_PRESETS[preset] } }
+    setModelDraft(fields(next[modelKey]))
     void patchSettings({ contextPolicyByModel: next })
   }
 
@@ -218,6 +227,32 @@ export function ContextTab() {
 
       {modelKey ? (
         <>
+          <div className="set-row col" data-testid="ctx-model-presets">
+            <div className="set-label">
+              <div className="set-name">{tk('set.ctxModelPreset')}</div>
+              <div className="set-desc">
+                {tk(largeWindowCandidate ? 'set.ctxModelPresetDesc' : 'set.ctxModelPresetUnavailable')}
+              </div>
+            </div>
+            <div className="set-ctl seg">
+              <button
+                className={`seg-btn ${modelLargePreset === 'balanced' ? 'sel' : ''}`}
+                data-testid="ctx-model-large-balanced"
+                disabled={!largeWindowCandidate}
+                onClick={() => applyModelLargePreset('balanced')}
+              >
+                {tk('set.ctxModelPresetBalanced')}
+              </button>
+              <button
+                className={`seg-btn ${modelLargePreset === 'long' ? 'sel' : ''}`}
+                data-testid="ctx-model-large-long"
+                disabled={!largeWindowCandidate}
+                onClick={() => applyModelLargePreset('long')}
+              >
+                {tk('set.ctxModelPresetLong')}
+              </button>
+            </div>
+          </div>
           <NumRow
             label={t('set.ctxCap')}
             desc={t('set.ctxCapDesc')}
@@ -362,6 +397,23 @@ function presetOf(o: ContextPolicyOverrides): 'default' | 'reference' | undefine
     o.workingSetCap === ref.workingSetCap &&
     o.windowRatio === ref.windowRatio
   return sameRef ? 'reference' : undefined
+}
+
+/** 只识别完整的模型级试行档；混合覆盖仍显示为自定义。 */
+function largePresetOf(o: ContextPolicyOverrides | undefined): 'balanced' | 'long' | undefined {
+  if (!o) return undefined
+  const keys = Object.keys(o)
+  for (const preset of ['balanced', 'long'] as const) {
+    const target = LARGE_CONTEXT_POLICY_PRESETS[preset]
+    if (
+      keys.length === 2 &&
+      o.workingSetCap === target.workingSetCap &&
+      o.windowRatio === target.windowRatio
+    ) {
+      return preset
+    }
+  }
+  return undefined
 }
 
 function summary(o: ContextPolicyOverrides): string {

@@ -377,6 +377,79 @@
     const modelCapInput = q('[data-testid="ctx-model-cap"]')
     ok(modelCapInput?.value === String(modelLevelCap), `设置面板回填了模型级覆盖（实际 ${JSON.stringify(modelCapInput?.value)}）`)
     ok(!!q('[data-testid="ctx-model-remove"]'), '有「移除模型级覆盖」的入口')
+
+    /* 实施-11：大窗口试行档是显式的 provider/model 操作，不是全局开关。 */
+    const balancedPreset = q('[data-testid="ctx-model-large-balanced"]')
+    const longPreset = q('[data-testid="ctx-model-large-long"]')
+    ok(!!balancedPreset && !!longPreset, '设置面板有两档大窗口试行入口')
+    if (win >= 800_000) {
+      ok(!balancedPreset.disabled && !longPreset.disabled, `明确登记的 ${win} 窗口允许试行档按钮`)
+      const trialWorkingSet = (cap) => {
+        const reserve = Math.max(16_000, Math.min(32_000, Math.round(win * 0.25)))
+        const margin = Math.max(8_000, Math.round(win * 0.02))
+        return Math.min(cap, Math.round(win * 0.7), win - reserve - margin)
+      }
+      const balancedWorkingSet = trialWorkingSet(600_000)
+      balancedPreset.click()
+      for (let i = 0; i < 40; i++) {
+        if (
+          S().session?.contextPolicy?.source === 'model' &&
+          S().settings?.contextPolicyByModel?.[modelKey]?.workingSetCap === 600_000 &&
+          Number(S().session?.contextPolicy?.budget?.workingSet) === balancedWorkingSet
+        ) break
+        await sleep(250)
+      }
+      ok(
+        S().session?.contextPolicy?.source === 'model' &&
+          S().session?.contextPolicy?.sourceKey === modelKey &&
+          S().settings?.contextPolicyByModel?.[modelKey]?.workingSetCap === 600_000 &&
+          Number(S().session?.contextPolicy?.budget?.workingSet) === balancedWorkingSet,
+        `均衡试行档精确写入当前 ${modelKey}（工作集 ${S().session?.contextPolicy?.budget?.workingSet}）`
+      )
+      const longWorkingSet = trialWorkingSet(700_000)
+      longPreset.click()
+      for (let i = 0; i < 40; i++) {
+        if (
+          S().session?.contextPolicy?.source === 'model' &&
+          S().settings?.contextPolicyByModel?.[modelKey]?.workingSetCap === 700_000 &&
+          Number(S().session?.contextPolicy?.budget?.workingSet) === longWorkingSet
+        ) break
+        await sleep(250)
+      }
+      ok(
+        S().session?.contextPolicy?.source === 'model' &&
+          S().session?.contextPolicy?.sourceKey === modelKey &&
+          S().settings?.contextPolicyByModel?.[modelKey]?.workingSetCap === 700_000 &&
+          Number(S().session?.contextPolicy?.budget?.workingSet) === longWorkingSet,
+        `长材料试行档精确写入当前 ${modelKey}（工作集 ${S().session?.contextPolicy?.budget?.workingSet}）`
+      )
+    } else {
+      ok(balancedPreset.disabled && longPreset.disabled, `未登记大窗口的 ${win} 模型禁用试行档按钮`)
+    }
+
+    /*
+     * 反向：窗口不够大时两档必须在 DOM 里**禁用**。
+     * 否则用户会在 128K / 未知窗口的模型上点到 600K，而设置页看起来像是
+     * 「这个模型支持大窗口」—— 这正是 C-1 要堵的误导。
+     * 这里用注入 model 形状而不是等一个真实小窗口模型：测试环境可用模型
+     * 窗口均 ≥ 800K（下一节实测 deepseek-v4-flash 是 1000000），靠列表
+     * 挑不出小窗口样例；注入仍然走真实的 ContextTab 渲染与 disabled 计算。
+     */
+    const originalModel = S().session?.model
+    window.__yanStore.setState({
+      session: { ...S().session, model: { ...originalModel, contextWindow: 131072 } }
+    })
+    await sleep(600)
+    const smallBalanced = q('[data-testid="ctx-model-large-balanced"]')
+    const smallLong = q('[data-testid="ctx-model-large-long"]')
+    ok(!!smallBalanced && !!smallLong, '小窗口（131072）下两档入口仍在 DOM 里')
+    ok(
+      !!smallBalanced?.disabled && !!smallLong?.disabled,
+      '窗口 < 800K → 两档禁用（避免在普通窗口模型上写 600K 裸上限）'
+    )
+    window.__yanStore.setState({ session: { ...S().session, model: originalModel } })
+    await sleep(400)
+    ok(!q('[data-testid="ctx-model-large-balanced"]')?.disabled, '恢复大窗口模型后两档重新可用')
     S().closeSettings?.()
     await sleep(200)
 

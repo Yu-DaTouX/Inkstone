@@ -2081,9 +2081,9 @@ export const useStore = create<Store>((rawSet, get) => {
   openBrowser: async (url) => {
     /*
      * 浏览器与文件预览占同一块区域，而且原生网页视图永远盖在 DOM 之上 ——
-     * 打开浏览器时先把预览收掉，否则会看到「预览在下面、网页在上面」的叠影。
+     * 这里仅让主进程打开网页；右栏窗口协调器负责显隐，不能因为切到浏览器
+     * 就丢掉用户刚打开的文件标签。
      */
-    if (get().filePreview) set({ filePreview: null })
     try {
       set({ browserState: await window.yan.browser.open(url) })
     } catch (error) {
@@ -2123,8 +2123,6 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   closeReview: () => {
     set({ reviewOpen: false })
-    /* 浏览器还开着 → 把原生视图恢复出来 */
-    if (get().browserState.open) void window.yan.browser.setVisible(true)
   },
   setReviewScope: (scope) => set({ reviewScope: scope }),
 
@@ -2140,8 +2138,6 @@ export const useStore = create<Store>((rawSet, get) => {
 
   closePreview: () => {
     set({ filePreview: null })
-    /* 浏览器还开着 → 把原生视图恢复出来 */
-    if (get().browserState.open) void window.yan.browser.setVisible(true)
   },
 
   /* ---- 子代理（方案第 8 节）---- */

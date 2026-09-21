@@ -127,21 +127,28 @@ export function RightPanel() {
     return () => document.removeEventListener('mousedown', close)
   }, [quickMenuOpen])
 
-  /* 外部入口打开浏览器/文件/审查时，把窗口切到对应标签。 */
+  /* 外部入口打开浏览器/文件/审查时，把窗口切到对应标签。资源本身不随切页销毁。 */
   const previousBrowserOpen = useRef(browserOpen)
+  const previousReviewOpen = useRef(reviewOpen)
+  const previousFilePreview = useRef(!!filePreview)
   useEffect(() => {
     if (filePreview && !open) void setRightPanelOpen(true)
   }, [filePreview, open, setRightPanelOpen])
 
   useEffect(() => {
     const opened = browserOpen && !previousBrowserOpen.current
+    const reviewOpened = reviewOpen && !previousReviewOpen.current
+    const fileOpened = !!filePreview && !previousFilePreview.current
     previousBrowserOpen.current = browserOpen
+    previousReviewOpen.current = reviewOpen
+    previousFilePreview.current = !!filePreview
     setWindowView((current) => {
-      if (reviewOpen) return 'review'
-      if (filePreview) return 'file'
-      if (!browserOpen && current === 'browser') return 'tools'
+      if (reviewOpened) return 'review'
+      if (fileOpened) return 'file'
       if (opened) return 'browser'
+      if (!browserOpen && current === 'browser') return filePreview ? 'file' : 'tools'
       if (current === 'review' && !reviewOpen) return browserOpen ? 'browser' : 'tools'
+      if (current === 'file' && !filePreview) return browserOpen ? 'browser' : 'tools'
       return current
     })
   }, [browserOpen, filePreview, reviewOpen])
@@ -151,31 +158,26 @@ export function RightPanel() {
     setWindowView(next)
 
     if (next === 'tools') {
-      if (reviewOpen) closeReview()
-      if (filePreview) closePreview()
-      if (browserOpen) void closeBrowser()
+      /* 切页只是隐藏当前资源；关闭标签才释放浏览器 / 预览。 */
+      if (browserOpen) void window.yan.browser.setVisible(false)
       return
     }
 
     if (next === 'review') {
-      if (filePreview) closePreview()
+      if (browserOpen) void window.yan.browser.setVisible(false)
       openReview()
       return
     }
 
     if (next === 'browser') {
-      if (reviewOpen) closeReview()
-      if (filePreview) closePreview()
       if (browserOpen) void window.yan.browser.setVisible(true)
       else void openBrowser()
       return
     }
 
     /* 文件窗口没有原生视图，文件树和文件预览共用这个表面。 */
-    if (reviewOpen) closeReview()
     if (browserOpen) {
       void window.yan.browser.setVisible(false)
-      void closeBrowser()
     }
     if (!open) void setRightPanelOpen(true)
   }
@@ -185,21 +187,29 @@ export function RightPanel() {
     if (which === 'review') {
       closeReview()
       setWindowView(browserOpen ? 'browser' : filePreview ? 'file' : 'tools')
+      if (browserOpen && !filePreview) void window.yan.browser.setVisible(true)
     } else if (which === 'browser') {
       setWindowView('tools')
       void closeBrowser()
     } else {
       closePreview()
       setWindowView('tools')
+      if (browserOpen) void window.yan.browser.setVisible(false)
     }
   }
 
-  const activeView: RightWindowView = reviewOpen ? 'review' : filePreview ? 'file' : windowView
+  const activeView: RightWindowView = windowView
   const reviewMode = activeView === 'review' && reviewOpen
-  const browserMode = activeView === 'browser' && browserOpen && !reviewOpen && !filePreview
-  const fileMode = activeView === 'file' && !reviewOpen
-  const toolsMode = activeView === 'tools' && open && !reviewOpen
+  const browserMode = activeView === 'browser' && browserOpen
+  const fileMode = activeView === 'file'
+  const toolsMode = activeView === 'tools' && open
   const hasVisibleSurface = reviewMode || browserMode || fileMode || toolsMode
+
+  /* 原生网页的显隐只有一个协调点；切标签不等于销毁网页资源。 */
+  useEffect(() => {
+    if (!browserOpen) return
+    void window.yan.browser.setVisible(activeView === 'browser')
+  }, [activeView, browserOpen])
 
   /* 浏览器收起工具栏时不再保留一行空标签，让原生网页占满右列。 */
   if (!hasVisibleSurface) return null
