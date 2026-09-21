@@ -13,6 +13,7 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { PiRpc } from './protocol'
 import type { CapabilityHandlers, YanCliEnv } from './capability-server'
@@ -33,6 +34,7 @@ import {
   contextBudget,
   contextPolicyStep,
   INITIAL_POLICY_STATE,
+  rearmAfterCompaction,
   type ContextPolicyState,
   type ContextTrigger,
   type ResolvedContextPolicy
@@ -40,7 +42,7 @@ import {
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
-import { readSessionMessages } from './session-reader'
+import { readSessionMessages, type ReadResult } from './session-reader'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
 import { isSafeSessionId } from './context-state-store'
@@ -48,6 +50,26 @@ import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from '.
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
+import { searchCapabilities } from '../shared/capabilities'
+import { buildCatalog, type McpCatalogEntry } from './capabilities/catalog'
+import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
+import { AcquisitionService, operationIdOf, stagingDirOf } from './capabilities/acquisition-service'
+import { PackageAuthorizationService } from './capabilities/package-authorization-service'
+import { readRepoState } from './git-service'
+import { fetchNpmPackageMetadata } from './capabilities/npm-artifact'
+import { stageNpmAcquisition } from './capabilities/npm-acquisition'
+import { resolveMcpPackage, smokeMcpPackage } from './capabilities/mcp-package'
+import { McpRegistrationService, type McpRegistrationOutcome } from './capabilities/registration-service'
+import { draftRemoteMcpRegistration, type AcquireAuthorization } from '../shared/mcp-registration'
+import { discoverCapabilities, planForCandidate } from './capabilities/discovery/discover'
+import type { AcquisitionPlan, CapabilityCandidate } from '../shared/discovery'
+import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
+import { activeSkillArgs, declaredSkillFile, stageSkillFiles } from './capabilities/skill-files'
+import { fetchSkillFiles } from './capabilities/skill-source'
+import { McpConnectionManager } from './mcp/connection-manager'
+import { loadMcpServers, mcpServersForProject } from './mcp/config'
+import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
+import { schemaRevisionOf } from '../shared/mcp'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
@@ -81,6 +103,7 @@ import type {
   UIToolCall,
   Usage
 } from '../shared/ipc'
+import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
 
 /** 流式文本的推送节流：60 帧够了，再多是给 IPC 白干活 */
 const FLUSH_MS = 16
@@ -159,6 +182,31 @@ export interface SubagentCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
+/**
+ * `yan goal …` 的宿主实现入口（实施-05 S3）。
+ *
+ * 为什么不在这里实现：会话文件键、模式 store 都在 `index.ts` 一侧；
+ * agent 实例只负责把命令转过去（与 `subagentHost` 同一个理由）。
+ */
+export interface GoalCommandHost {
+  run(
+    command: string,
+    params: Record<string, unknown>,
+    context: { sessionId: string; projectId: string }
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
+}
+
+export type CapabilityAuthorizationChoice = 'deny' | 'allow' | 'allow-with-lifecycle-scripts'
+export type CapabilityAuthorizationPrompt = {
+  kind: 'remote-mcp' | 'local-package'
+  title: string
+  source: string
+  projectId: string
+  cwd: string
+  digest: string
+  endpoint?: string
+}
+
 /* ------------------------------------------------------------ 任务清单 */
 /**
  * pi 的队列模式字段是自由字符串（协议文档只保证这两个值）。
@@ -177,6 +225,12 @@ export class AgentController extends EventEmitter {
   private piBin?: string
   private browserExtension?: string
   private questionExtension?: string
+  /** 工作模式的工具策略执行（实施-05 S3）：澄清档收紧工具表 + 兜底阻断。 */
+  private workModeExtension?: string
+  /** 就绪转移之后的内部门续行（实施-05 S3b）：custom 消息 + 触发一次回合。 */
+  private goalResumeExtension?: string
+  /** 交接包生成（实施-05 S5b-2）：它只做「调一次 completion」那件 RPC 做不到的事。 */
+  private handoffsExtension?: string
   private responseDetailExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
   private languageExtension?: string
@@ -194,6 +248,8 @@ export class AgentController extends EventEmitter {
    * 检索与预算全在宿主（`main/project-knowledge.ts`）。
    */
   private projectKnowledgeExtension?: string
+  /** 读界面历史（实施-05 S5b-4）；缺省用 `readSessionMessages` 读单文件。 */
+  private readHistory?: (sessionFile: string) => Promise<ReadResult | null>
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
   private browserEnv?: NodeJS.ProcessEnv
@@ -207,6 +263,12 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   /** `yan subagent …` 的宿主实现；不把它注册为 pi 工具。 */
   private subagentHost?: SubagentCommandHost
+  /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
+  private goalHost?: GoalCommandHost
+  /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
+  private confirmCapabilityAuthorization?: (
+    request: CapabilityAuthorizationPrompt
+  ) => Promise<CapabilityAuthorizationChoice>
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -225,14 +287,24 @@ export class AgentController extends EventEmitter {
   /** 能力服务参数（由 RunnerRegistry 工厂传入）。 */
   private capabilityOpts?: {
     sessionId: string
+    runnerGeneration: number
     projectId: string
     opsDir: string
     binDir: string
     /** 开发态 resources 目录（打包态用 process.resourcesPath）。 */
     devResourcesDir?: string
+    getWorkMode?: () => Promise<WorkMode>
+    getCapabilityStrategy?: () => Promise<CapabilityStrategy>
   }
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
+  /**
+   * MCP 连接管理器（实施-04 S3）。懒创建：没配 MCP 服务的机器上不付任何代价，
+   * 也不起多余进程。与 agent 同生命周期 —— `stop()` 时关掉，不留孤儿子进程。
+   */
+  private mcpManager?: McpConnectionManager
+  /** 配置本身的毛病（坏条目 / 重复 id）；调用时如实带回，不静默。 */
+  private mcpConfigError?: string
 
   /** 权威消息列表 */
   private messages: UIMessage[] = []
@@ -334,6 +406,17 @@ export class AgentController extends EventEmitter {
    */
   private pendingUi = new Set<string>()
 
+  /**
+   * 读界面历史：有注入就用注入的（交接过的会话要按段拼接），否则读单文件。
+   *
+   * 失败一律回 `null`，调用方回退到 pi 的 `get_messages` —— 历史读不出来
+   * 不应该比「只看到当前上下文」更糟。
+   */
+  private async readHistoryOf(sessionFile: string): Promise<ReadResult | null> {
+    const read = this.readHistory ?? ((file: string) => readSessionMessages(file))
+    return read(sessionFile).catch(() => null)
+  }
+
   /** 当前直执行的 bash（RPC bash 命令，不走 LLM）。流式输出靠它累积。 */
   private bash: {
     reqId: string
@@ -348,6 +431,9 @@ export class AgentController extends EventEmitter {
     piBin?: string
     browserExtension?: string
     questionExtension?: string
+    workModeExtension?: string
+    goalResumeExtension?: string
+    handoffsExtension?: string
     /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
     responseDetailExtension?: string
     /**
@@ -370,6 +456,14 @@ export class AgentController extends EventEmitter {
     contextExtension?: string
     /** 项目知识注入扩展（实施-03 S3）：读宿主写的注入文件并放到用户消息之前 */
     projectKnowledgeExtension?: string
+    /**
+     * 读界面历史（实施-05 S5b-4）。
+     *
+     * 默认是 `readSessionMessages`（单文件）；交接过的会话在链上，
+     * 宿主注入链感知版本后会按段拼成一条时间线。agent 不认识「链」——
+     * 那是宿主的关系，这里只留一个口子。
+     */
+    readHistory?: (sessionFile: string) => Promise<ReadResult | null>
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
     browserEnv?: NodeJS.ProcessEnv
@@ -382,6 +476,11 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     /** 子代理宿主入口，由 index.ts 注入，按当前 runner 绑定父会话。 */
     subagentHost?: SubagentCommandHost
+    /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
+    goalHost?: GoalCommandHost
+    confirmCapabilityAuthorization?: (
+      request: CapabilityAuthorizationPrompt
+    ) => Promise<CapabilityAuthorizationChoice>
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -390,7 +489,10 @@ export class AgentController extends EventEmitter {
       projectId: string
       opsDir: string
       binDir: string
+      runnerGeneration?: number
       devResourcesDir?: string
+      getWorkMode?: () => Promise<WorkMode>
+      getCapabilityStrategy?: () => Promise<CapabilityStrategy>
     }
   }) {
     super()
@@ -402,17 +504,25 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.browserExtension = opts.browserExtension
     this.questionExtension = opts.questionExtension
+    this.workModeExtension = opts.workModeExtension
+    this.goalResumeExtension = opts.goalResumeExtension
+    this.handoffsExtension = opts.handoffsExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.languageExtension = opts.languageExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextExtension = opts.contextExtension
     this.projectKnowledgeExtension = opts.projectKnowledgeExtension
+    this.readHistory = opts.readHistory
     this.getResponseDetail = opts.getResponseDetail
     this.browserEnv = opts.browserEnv
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
+    this.goalHost = opts.goalHost
+    this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
+      ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
+      : undefined
   }
 
   /**
@@ -534,6 +644,9 @@ export class AgentController extends EventEmitter {
     /* 先起能力服务：pi 的环境变量里要有它的地址与令牌。 */
     await this.ensureCapability()
 
+    const managedSkillArgs = this.capabilityOpts?.projectId
+      ? await activeSkillArgs(YAN_DIR, this.capabilityOpts.projectId)
+      : []
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -541,6 +654,15 @@ export class AgentController extends EventEmitter {
         ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
         // 内置提问扩展（模型可主动向用户提问；自主模式时改为自行决策）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
+        /*
+         * 工作模式的工具策略（实施-05 S3）：澄清档把非只读工具从表里拿掉。
+         * 放最后加载：它要在其它扩展注册完工具之后再收紧工具表。
+         */
+        ...(this.workModeExtension ? ['--extension', this.workModeExtension] : []),
+        /* 续行（实施-05 S3b）：就绪转移后由它发一条 custom 控制消息并触发回合 */
+        ...(this.goalResumeExtension ? ['--extension', this.goalResumeExtension] : []),
+        /* 交接包生成（实施-05 S5b-2）：宿主写请求，它调一次 completion 写结果 */
+        ...(this.handoffsExtension ? ['--extension', this.handoffsExtension] : []),
         // 回复详细程度（简洁 / 标准 / 详细）：standard 档不注入任何东西
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
@@ -557,6 +679,8 @@ export class AgentController extends EventEmitter {
          * 与其它薄层成员一样：只做「钩子能做、CLI / RPC 做不到」的那一步。
          */
         ...(this.projectKnowledgeExtension ? ['--extension', this.projectKnowledgeExtension] : []),
+        /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
+        ...managedSkillArgs,
         /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
@@ -574,13 +698,29 @@ export class AgentController extends EventEmitter {
       ],
       env: {
         ...this.browserEnv,
-        // 让内置扩展能读到桌面端设置（自主模式存在 desktop.json 里）。
+        // 让内置扩展能读到桌面端设置（工作模式快照存在 desktop.json 旁边）。
         // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
         YAN_DATA_DIR: YAN_DIR,
         // 便携版必须让 pi 也使用 EXE 同级的私有目录；否则它会回退到 ~/.pi。
         PI_CODING_AGENT_DIR: PI_AGENT_DIR,
         /*
-         * 宿主能力服务的地址与身份（`yan` CLI 用）。
+         * 实例身份：薄层扩展靠它找到**自己那份**文件（工作模式快照、
+         * 项目知识注入）。
+         *
+         * ⚠️ 必须与能力服务是否启动**解耦**：以前它只跟着 yanCliEnv 注入，
+         * 一旦能力服务没起来（端口失败 / 测试里没给 capability），扩展就
+         * 不知道自己是哪个实例 —— 模式快照读不到，自主档反而会弹窗
+         *（ask 场景第 6 节实测抽到）。同一个值由两处保证：这里无条件注入，
+         * 下面 yanCliEnv 再给一份（`yan` CLI 用）。
+         */
+        ...(this.capabilityOpts?.sessionId
+          ? { YAN_SESSION_ID: this.capabilityOpts.sessionId }
+          : {}),
+        ...(this.capabilityOpts?.projectId
+          ? { YAN_PROJECT_ID: this.capabilityOpts.projectId }
+          : {}),
+        /*
+         * 宿主能力服务的地址（`yan` CLI 用）。
          *
          * 只在 pi 子进程里出现：不落盘、不进日志、不进渲染端。
          * PATH 前置启动器目录而**不改用户系统 PATH** —— pi 的 bash 工具
@@ -590,8 +730,6 @@ export class AgentController extends EventEmitter {
           ? {
               YAN_CLI_URL: this.yanCliEnv.url,
               YAN_CLI_TOKEN: this.yanCliEnv.token,
-              YAN_SESSION_ID: this.yanCliEnv.sessionId,
-              YAN_PROJECT_ID: this.yanCliEnv.projectId,
               PATH: `${this.yanCliEnv.binDir}${delimiter}${process.env.PATH ?? ''}`
             }
           : {})
@@ -669,7 +807,7 @@ export class AgentController extends EventEmitter {
      * 这也是切换会话时 peek（同样走文件）与 sync 一致的原因 —— 不再先铺全量、
      * 再被权威快照压短（用户报的「切换会话历史丢失」）。
      */
-    const fromFile = sessionFile ? await readSessionMessages(sessionFile).catch(() => null) : null
+    const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
     if (fromFile?.messages.length) {
       this.messages = fromFile.messages
     } else {
@@ -805,14 +943,1364 @@ export class AgentController extends EventEmitter {
         projectId: this.capabilityOpts?.projectId
       })
     }
+    if (command === 'capabilities.search') {
+      return this.runCapabilitiesSearch(params)
+    }
+    if (command === 'capabilities.discover') {
+      return this.runCapabilitiesDiscover(params)
+    }
+    if (command === 'capabilities.prepare') {
+      return this.runCapabilitiesPrepare(params)
+    }
+    if (command === 'capabilities.acquire') {
+      return this.runCapabilitiesAcquire(params)
+    }
+    if (command === 'skill.read') {
+      return this.runSkillRead(params)
+    }
+    if (command.startsWith('mcp.')) {
+      return this.runMcpCommand(command.slice('mcp.'.length), params)
+    }
     if (command.startsWith('knowledge.')) {
       return this.runKnowledgeCommand(command.slice('knowledge.'.length), params)
+    }
+    /*
+     * 目标状态（实施-05 S3）：`goal.ready` 是「澄清档就绪 → 切标准」的唯一入口。
+     * 实现落在 index.ts —— 会话文件键与模式 store 都在那边，
+     * 在这里再拼一份就会有两套「这是哪个会话」的真相。
+     */
+    if (command.startsWith('goal.')) {
+      if (!this.goalHost) {
+        throw new CapabilityCommandError('goal_unavailable', '目标状态入口当前不可用（宿主未注入）')
+      }
+      return this.goalHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
     }
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
       default:
         throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：${command}`)
+    }
+  }
+
+  /* ------------------------------------------------ 能力目录与技能（实施-04 S2） */
+
+  /**
+   * 来源搜索入口的可用性（实施-07 S4）。
+   *
+   * 方案对「网页搜索」的硬条件是「只在已发现兼容搜索能力时启用」——
+   * 所以这个方法的职责是**判断**，不是实现搜索：把当前目录（内置 + 已装 Skill +
+   * 已接 MCP 工具）交给纯函数的判定，命中就返回那条能力，否则 `available: false`。
+   * 目录取不到时也当「没有」：入口是增益，不该因为能力服务抖动而弹错。
+   */
+  async webSearchAvailability(): Promise<WebSearchAvailability> {
+    try {
+      const commands = await this.rawCommands()
+      const mcp = await this.collectMcpCatalog()
+      const catalog = buildCatalog(commands, mcp.tools)
+      return webSearchAvailability(catalog.capabilities)
+    } catch {
+      return { available: false }
+    }
+  }
+
+  /**
+   * `yan capabilities search`：把「这个会话现在能用什么」变成模型可读的候选列表。
+   *
+   * 只覆盖**已装 / 已加载**范围（S2）；联网发现是 S5 的 `capabilities.discover`。
+   * 目录里出现**不代表授权**：调用仍走各自命令的身份与边界校验（实施-04 §6）。
+   */
+  /**
+   * 把已配置 MCP 服务的工具接进能力目录（实施-04 S4）。
+   *
+   * 为什么必须连一次服务：MCP 工具名对 pi **完全不可见**（S1 预检四条证据），
+   * 模型唯一能“自己发现”它们的入口就是这份目录 —— 所以 `capabilities search`
+   * 必须能列出工具，而不是只列内置命令与技能。这正是 S4 的出口：
+   * 「工具不直接出现在初始 prompt 也能用」。
+   *
+   * 两个刻意的取舍：
+   * 1. **连不上的服务不冒充可用**：单列一条 `mcpServers` 状态，
+   *    带 `disconnected` / `needs-auth` 与真实原因，模型据此知道“有这个服务但连不上”，
+   *    而不是去猜自己命令写错了。
+   * 2. **总超时有界**：不能因为一个服务挂着就把整次 search 拖死；
+   *    超时的服务与连不上同样处理。
+   */
+  private async collectMcpCatalog(): Promise<{
+    tools: McpCatalogEntry[]
+    servers: Array<Record<string, unknown>>
+  }> {
+    const manager = this.mcpConnectionManager()
+    const tools: McpCatalogEntry[] = []
+    const servers: Array<Record<string, unknown>> = []
+    const serverIds = manager.listServerIds()
+    const projectScopeById = new Map(manager.list().map((server) => [server.id, server.projectScope]))
+    if (serverIds.length === 0) {
+      return {
+        tools,
+        servers: this.mcpConfigError ? [{ serverId: null, status: 'config-error', error: this.mcpConfigError }] : []
+      }
+    }
+
+    await Promise.all(
+      serverIds.map(async (serverId) => {
+        try {
+          const listed = await this.withCatalogTimeout(manager.listToolsCached(serverId), serverId)
+          for (const tool of listed) {
+            tools.push({
+              serverId,
+              toolName: tool.name,
+              ...(tool.description ? { description: tool.description } : {}),
+              schemaRevision: schemaRevisionOf(tool.inputSchema),
+              /* 服务自报 readOnlyHint 不当权限（§4）：目录里一律标 unknown。 */
+              effect: 'unknown',
+              ...(projectScopeById.get(serverId) ? { projectScope: projectScopeById.get(serverId) } : {})
+            })
+          }
+          const status = manager.statusOf(serverId)
+          servers.push({
+            serverId,
+            status: status.status === 'disconnected' && listed.length > 0 ? 'ready' : status.status,
+            toolCount: listed.length,
+            ...(status.error ? { error: status.error } : {})
+          })
+        } catch (error) {
+          const status = manager.statusOf(serverId)
+          servers.push({
+            serverId,
+            status: status.status,
+            toolCount: 0,
+            error: status.error ?? (error instanceof Error ? error.message : String(error))
+          })
+        }
+      })
+    )
+
+    if (this.mcpConfigError) servers.push({ serverId: null, status: 'config-error', error: this.mcpConfigError })
+    tools.sort((a, b) => a.serverId.localeCompare(b.serverId) || a.toolName.localeCompare(b.toolName))
+    servers.sort((a, b) => String(a.serverId).localeCompare(String(b.serverId)))
+    return { tools, servers }
+  }
+
+  /** 目录收集的硬超时：比单次调用短得多，因为它在**每次 search** 都要跑。 */
+  private async withCatalogTimeout<T>(work: Promise<T>, serverId: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`列出 ${serverId} 的工具超时（3000ms）`)), 3000)
+    })
+    try {
+      return await Promise.race([work, timeout])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  /**
+   * 本轮发现到的候选（仅宿主持有）。
+   *
+   * 为什么不让模型把候选原样传回 `prepare`：那等于让模型自己决定「要装什么」，
+   * 而 §8 明确要求**主进程负责结构校验与来源一致性**。模型只能回传 ID，
+   * 候选内容从这条缓存里取 —— 缓存过期（10 分钟）就要求重新检索。
+   */
+  private readonly discoveryCandidates = new Map<string, { candidate: CapabilityCandidate; at: number }>()
+
+  /**
+   * 最近生成过的接入计划（仅宿主持有）。
+   *
+   * `prepare` 只把 `planId` 交给模型，`acquire` 拿回同一个 ID 时要从这里取回
+   * 完整计划与候选 —— 否则模型可以把任意字符串当计划传回来（§8：主进程负责
+   * 结构校验与来源一致性）。TTL 与候选一致（10 分钟）。
+   */
+  private readonly acquisitionPlans = new Map<
+    string,
+    { plan: AcquisitionPlan; candidate: CapabilityCandidate; digest: string; at: number }
+  >()
+
+  /** `yan capabilities discover`：联网检索缺失能力（实施-04 §7）。 */
+  private async runCapabilitiesDiscover(params: Record<string, unknown>) {
+    const strategy = await this.capabilityOpts?.getCapabilityStrategy?.()
+    if (strategy === 'existing-only') {
+      throw new CapabilityCommandError(
+        'capability_policy_existing_only',
+        '当前能力策略为「仅已有能力」，不会联网搜索。可在设置 → 能力中更改策略。'
+      )
+    }
+    const queryText = this.knowledgeString(params, ['queryText', 'query-text', 'query', 'text']) ?? ''
+    const goalText = this.knowledgeString(params, ['goal', 'goalText', 'goal-text'])
+    const timeoutMs = this.knowledgeNumber(params, 'timeoutMs')
+    const outcome = await discoverCapabilities({
+      queryText,
+      ...(goalText ? { goalText } : {}),
+      ...(timeoutMs ? { timeoutMs } : {})
+    })
+
+    const now = Date.now()
+    for (const { candidate } of outcome.candidates) {
+      this.discoveryCandidates.set(candidate.candidateId, { candidate, at: now })
+    }
+    for (const [id, entry] of this.discoveryCandidates) {
+      if (now - entry.at > 10 * 60_000) this.discoveryCandidates.delete(id)
+    }
+
+    return {
+      data: {
+        query: outcome.query,
+        reason: outcome.reason,
+        sources: outcome.sources,
+        candidates: outcome.candidates.map(({ candidate, score, reasons }) => ({
+          ...candidate,
+          score,
+          scoreReasons: reasons
+        })),
+        /*
+         * 说清这一层能做到什么：目录元数据**只证明发布来源存在**，
+         * 不等于已审计、也不等于能在这台机器上跑（§8）。
+         */
+        notice:
+          '候选来自公开目录的元数据（verification=metadata-only）：只证明发布来源存在，不等于代码已审计，也不等于已验证可用。' +
+          '下一步用 yan capabilities prepare --candidate <候选ID> 生成接入计划（S5 只生成，不执行）。'
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'discover',
+        query: outcome.query,
+        count: outcome.candidates.length,
+        sourceOk: outcome.sources.filter((s) => s.ok).length,
+        sourceFailed: outcome.sources.filter((s) => !s.ok).map((s) => s.sourceId),
+        reason: outcome.reason,
+        candidateIds: outcome.candidates.map((c) => c.candidate.candidateId)
+      }
+    }
+  }
+
+  /** `yan capabilities prepare`：把已检索到的候选变成接入计划（**不执行**）。 */
+  private async runCapabilitiesPrepare(params: Record<string, unknown>) {
+    const candidateId = this.knowledgeString(params, ['candidateId', 'candidate', 'candidate-id', 'id'])
+    if (!candidateId) {
+      throw new CapabilityCommandError(
+        'candidate_required',
+        '需要 --candidate <候选ID>（先跑 yan capabilities discover 拿候选）'
+      )
+    }
+    const entry = this.discoveryCandidates.get(candidateId)
+    if (!entry) {
+      throw new CapabilityCommandError(
+        'candidate_unknown',
+        `没有这个候选：${candidateId}。候选只由宿主在 discover 后短暂保留（10 分钟），请重新检索。`
+      )
+    }
+    let candidate = entry.candidate
+    if (candidate.localPackage?.registryType === 'npm') {
+      try {
+        const metadata = await fetchNpmPackageMetadata({
+          name: candidate.localPackage.identifier,
+          version: candidate.localPackage.version ?? '',
+          ...(candidate.integrity ? { expectedIntegrity: candidate.integrity } : {})
+        })
+        candidate = { ...candidate, integrity: metadata.integrity }
+        /* prepare 之后候选指纹含精确 tarball SRI；后续不能被同版本 registry 漂移替换。 */
+        this.discoveryCandidates.set(candidateId, { candidate, at: entry.at })
+      } catch (error) {
+        throw new CapabilityCommandError(
+          'package_metadata_failed',
+          `无法为固定 npm 候选取到可校验的 exact-version manifest：${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    }
+    const { plan, digest } = planForCandidate({
+      candidate,
+      goalId: this.capabilityOpts?.sessionId ?? 'unknown-goal',
+      projectId: this.capabilityOpts?.projectId ?? 'unknown-project'
+    })
+    const now = Date.now()
+    this.acquisitionPlans.set(plan.planId, { plan, candidate, digest, at: now })
+    for (const [id, cached] of this.acquisitionPlans) {
+      if (now - cached.at > 10 * 60_000) this.acquisitionPlans.delete(id)
+    }
+    return {
+      data: {
+        plan,
+        artifactDigest: digest,
+        candidate,
+        executable: false,
+        notice:
+          'S5 到这里为止：计划已生成但**不会执行**（下载 / 安装 / 登记是 S6）。' +
+          'policyResult=needs-authorization 表示需要用户或策略授权才能继续。'
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'prepare',
+        candidateId,
+        planId: plan.planId,
+        policyResult: plan.policyResult,
+        pinnedSource: plan.pinnedSource
+      }
+    }
+  }
+
+  /**
+   * `yan capabilities acquire`：执行接入计划（实施-04 §10）。
+   *
+   * 分三档如实处理，**不把「建了事务」当「装好了」**：
+   *   · `needs-auth` / `unsupported` —— 候选自身缺条件，直接停住（`--authorize` 也绕不过去）；
+   *   · `remote` MCP —— **真的登记**：核验端点 → 写受管配置 → 复核 → `resumed`（S6b-1）；
+   *   · npm `pi-package` —— 获精确项目级代码授权后下载 / 校验并落受管 staging，安装仍等安全边界；
+   *   · 其它本地 installKind —— 未获精确授权时停住；相应下载 / 安装器未接通时保持 `pending-boundary`。
+   */
+  private async runCapabilitiesAcquire(params: Record<string, unknown>) {
+    const planId = this.knowledgeString(params, ['plan', 'planId', 'plan-id', 'id'])
+    if (!planId) {
+      throw new CapabilityCommandError(
+        'plan_required',
+        '需要 --plan <计划ID>（先跑 yan capabilities prepare --candidate <候选ID>）'
+      )
+    }
+    const entry = this.acquisitionPlans.get(planId)
+    if (!entry) {
+      throw new CapabilityCommandError(
+        'plan_unknown',
+        `没有这个计划：${planId}。计划只由宿主在 prepare 后短暂保留（10 分钟），请重新 prepare。`
+      )
+    }
+    const { plan, candidate, digest } = entry
+    const workMode = await this.capabilityOpts?.getWorkMode?.()
+    if (workMode === 'clarify') {
+      throw new CapabilityCommandError(
+        'capability_mode_clarify',
+        '澄清模式允许搜索与查看候选，但不允许接入能力；切换到标准或自主模式后再继续。'
+      )
+    }
+    const strategy = await this.capabilityOpts?.getCapabilityStrategy?.()
+    if (strategy === 'existing-only') {
+      return {
+        data: {
+          plan,
+          candidate,
+          executable: false,
+          state: 'policy-blocked',
+          notice: '当前能力策略为「仅已有能力」，接入被宿主阻止；可在设置 → 能力中更改策略。'
+        },
+        summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, state: 'policy-blocked', executed: false }
+      }
+    }
+    if (strategy === 'search-and-recommend') {
+      return {
+        data: {
+          plan,
+          candidate,
+          executable: false,
+          state: 'recommendation-only',
+          notice: '当前策略只搜索并推荐，不会连接、下载或安装候选；请在设置 → 能力中改用授权范围内自动接入。'
+        },
+        summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, state: 'recommendation-only', executed: false }
+      }
+    }
+    const operationId = operationIdOf({ planId: plan.planId, planRevision: plan.revision })
+    const explicitAuthorize = params.authorize === true || params.authorize === 'true'
+
+    if (plan.policyResult === 'needs-auth' || plan.policyResult === 'unsupported') {
+      const notice =
+        plan.policyResult === 'needs-auth'
+          ? '这个候选需要认证：先按其发布方说明配置凭证（砚不代填、也不把凭证写进提示词）。'
+          : '当前环境不支持这个候选（缺运行时 / 平台不符），未执行任何安装。'
+      return {
+        data: { plan, candidate, operationId, executable: false, state: plan.policyResult, notice },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: plan.policyResult,
+          executed: false
+        }
+      }
+    }
+
+    /* §10：远程 MCP 不下载 —— 直接「核验端点 → 登记配置 → 连接 → 枚举工具」。 */
+    if (candidate.installKind === 'remote') {
+      return this.acquireRemoteMcp({ plan, candidate, digest, operationId, explicitAuthorize })
+    }
+
+    let packageGrant = await new PackageAuthorizationService(YAN_DIR).find({
+      candidateId: candidate.candidateId,
+      digest,
+      projectId: plan.projectId
+    })
+    if (!packageGrant && explicitAuthorize) {
+      const choice = await this.confirmCapabilityAuthorization?.({
+        kind: 'local-package',
+        title: candidate.title,
+        source: candidate.candidateId,
+        projectId: plan.projectId,
+        cwd: this.cwd,
+        digest
+      }) ?? 'deny'
+      if (choice !== 'deny') {
+        packageGrant = await new PackageAuthorizationService(YAN_DIR).grant({
+          candidateId: candidate.candidateId,
+          digest,
+          projectId: plan.projectId,
+          allowLifecycleScripts: choice === 'allow-with-lifecycle-scripts'
+        })
+      }
+    }
+    if (!packageGrant) {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          executable: false,
+          state: !packageGrant ? 'needs-authorization' : plan.policyResult,
+          notice:
+            '本地包 / Skill 可能执行代码或改变模型后续行为。模型不能自行授权；用 `--authorize` 发起砚的确认对话框并由你选择后，才会保存精确候选 + 指纹 + 项目级授权。'
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: 'needs-authorization',
+          executed: false
+        }
+      }
+    }
+
+    const service = new AcquisitionService({ root: YAN_DIR })
+    /* begin 是幂等的：同一个计划第二次进来拿回同一条事务，不会又装一遍（§10）。 */
+    const created = await service.begin({
+      planId: plan.planId,
+      planRevision: plan.revision,
+      candidateId: candidate.candidateId,
+      digest,
+      projectId: plan.projectId
+    })
+    let tx = created
+    const explicitRetry = params.retry === true || params.retry === 'true'
+    if (tx.state === 'failed' && explicitRetry) tx = await service.retry(tx.operationId)
+
+    /* skill-files：固定声明的本地文件先 staging；active 与 runner 重载交给安全边界调度器。 */
+    if (candidate.installKind === 'skill-files') {
+      const declared = candidate.skillFiles ?? []
+      try {
+        if (tx.state === 'prepared') {
+          const remoteFileUrls = candidate.skillFileUrls
+          const files = remoteFileUrls
+            ? (await fetchSkillFiles({
+                fileUrls: remoteFileUrls,
+                expectedHashes: candidate.skillFileHashes ?? {},
+                allowedOrigins: candidate.sourceUrls,
+                timeoutMs: 15_000
+              })).map(({ path, content }) => ({ path, content }))
+            : await Promise.all(declared.map(async (path) => {
+                const source = declaredSkillFile(this.cwd, path)
+                return { path: source.path, content: await readFile(source.absolute) }
+              }))
+          await stageSkillFiles({
+            root: YAN_DIR,
+            operationId: tx.operationId,
+            candidateId: candidate.candidateId,
+            projectId: plan.projectId,
+            files,
+            ...(candidate.skillFileHashes ? { expectedHashes: candidate.skillFileHashes } : {})
+          })
+          tx = await service.markBoundary(tx.operationId, 'Skill 文件已完成 staging 与 hash 复核；等待下一次 runner 安全启动')
+        }
+        const sessionFile = this.getState()?.sessionFile
+        const runnerId = this.capabilityOpts?.sessionId
+        const projectId = this.capabilityOpts?.projectId
+        if (tx.state === 'pending-boundary' && !tx.skillFilesTarget && sessionFile && runnerId && projectId) {
+          const goalStatus = this.goalHost
+            ? await this.goalHost.run('goal.status', {}, { sessionId: runnerId, projectId })
+            : null
+          const goal = (goalStatus?.data as { goal?: { goalId?: unknown; revision?: unknown } } | undefined)?.goal
+          if (this.goalHost && (!goal || !Number.isSafeInteger(goal.revision) || (goal.revision as number) < 0)) {
+            throw new CapabilityCommandError('goal_snapshot_unavailable', '无法固定当前目标修订，事务保持待处理且不会自动激活')
+          }
+          const goalIdFromStatus = typeof goal?.goalId === 'string' && goal.goalId ? goal.goalId : undefined
+          const goalRevisionFromStatus = Number.isSafeInteger(goal?.revision) && (goal?.revision as number) >= 0
+            ? (goal?.revision as number)
+            : undefined
+          const goalId = goalIdFromStatus ?? plan.goalId
+          const goalRevision = goalRevisionFromStatus ?? 0
+          const sourceHead = (await readRepoState(this.cwd, { withRefs: false }))?.head ?? null
+          tx = await service.bindSkillFilesTarget(tx.operationId, {
+            runnerId,
+            runnerGeneration: this.capabilityOpts?.runnerGeneration ?? 1,
+            cwd: this.cwd,
+            sessionFile,
+            projectId,
+            goalId,
+            goalRevision,
+            sourceHead,
+            continueId: tx.operationId
+          })
+        }
+        return { data: { plan, candidate, operationId, transaction: tx, executable: false, state: tx.state, skills: declared }, summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, operationId, state: tx.state, executed: tx.state === 'pending-boundary' } }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        tx = await service.fail(tx.operationId, detail)
+        return { data: { plan, candidate, operationId, state: 'failed', notice: detail }, summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, operationId, state: 'failed', executed: false } }
+      }
+    }
+
+    let npmStaged = false
+    let npmFailure: string | undefined
+    const localPackage = candidate.localPackage
+    const canStageNpmPackage =
+      (candidate.installKind === 'pi-package' || candidate.installKind === 'mcp-package') &&
+      localPackage?.registryType === 'npm' &&
+      typeof localPackage.identifier === 'string' &&
+      typeof (localPackage.version ?? candidate.version) === 'string' &&
+      typeof candidate.integrity === 'string'
+
+    if (tx.state === 'prepared' && canStageNpmPackage) {
+      try {
+        const staged = await stageNpmAcquisition({
+          root: YAN_DIR,
+          operationId: tx.operationId,
+          candidateId: candidate.candidateId,
+          digest,
+          projectId: plan.projectId,
+          name: localPackage.identifier,
+          version: localPackage.version ?? candidate.version!,
+          integrity: candidate.integrity!,
+          ...(localPackage.fileSha256 ? { expectedSha256: localPackage.fileSha256 } : {})
+        })
+        tx = await service.get(tx.operationId) ?? tx
+        if (tx.state === 'verifying') {
+          const verified = await service.verifyStaged(tx.operationId)
+          if (!verified.ok) throw new Error(`staging 复核失败：${verified.problems.join('；')}`)
+          tx = await service.markBoundary(
+            tx.operationId,
+            `固定 npm 制品已校验并落入受管 staging（${staged.manifest.files.length} 个文件）；等待项目 runner 空闲后再安装`
+          )
+        }
+        npmStaged = tx.state === 'pending-boundary'
+      } catch (error) {
+        npmFailure = error instanceof Error ? error.message : String(error)
+        const latest = await service.get(tx.operationId)
+        if (latest && latest.state !== 'failed' && latest.state !== 'cancelled' && latest.state !== 'resumed') {
+          tx = await service.fail(tx.operationId, npmFailure)
+        } else if (latest) {
+          tx = latest
+        }
+      }
+    } else if (tx.state === 'verifying') {
+      /* 崩溃若发生在 stage 落盘后、pending-boundary 写入前，重放时补齐边界状态。 */
+      const verified = await service.verifyStaged(tx.operationId)
+      if (verified.ok) {
+        tx = await service.markBoundary(tx.operationId, '受管 npm staging 已复核；等待项目 runner 空闲后再安装')
+      } else {
+        npmFailure = `staging 复核失败：${verified.problems.join('；')}`
+        tx = await service.fail(tx.operationId, npmFailure)
+      }
+    } else if (tx.state === 'prepared') {
+      tx = await service.markBoundary(
+        tx.operationId,
+        `等待对应下载 / 安装器（installKind=${candidate.installKind}${localPackage?.registryType ? `, registryType=${localPackage.registryType}` : ''}；当前不执行不支持的来源）`
+      )
+    }
+
+    if (candidate.installKind === 'mcp-package' && tx.state === 'pending-boundary' && !npmStaged && !npmFailure) {
+      const checked = await service.verifyStaged(tx.operationId)
+      if (checked.ok) npmStaged = true
+      else npmFailure = `受管 MCP staging 复核失败：${checked.problems.join('；')}`
+    }
+
+    /*
+     * MCP npm 包由砚直接管理，不经过 pi install，也不要求重建当前 runner：
+     * 受管 stdio 配置登记后，当前 AgentController 下一次调用会懒加载新服务。
+     * 这里仍然保留 acquiring → verifying → activated → resumed 的证据链，
+     * 以免「包在 staging」被误报成「服务可用」。
+     */
+    if (candidate.installKind === 'mcp-package') {
+      return this.finishMcpPackageAcquire({
+        service,
+        tx,
+        plan,
+        candidate,
+        digest,
+        operationId,
+        npmStaged,
+        npmFailure,
+        localPackage
+      })
+    }
+
+    if (npmStaged && localPackage?.identifier && (localPackage.version ?? candidate.version)) {
+      const sessionFile = this.getState()?.sessionFile
+      const runnerId = this.capabilityOpts?.sessionId
+      const projectId = this.capabilityOpts?.projectId
+      if (sessionFile && runnerId && projectId) {
+        const goalStatus = this.goalHost
+          ? await this.goalHost.run('goal.status', {}, { sessionId: runnerId, projectId })
+          : null
+        const goal = (goalStatus?.data as { goal?: { goalId?: unknown; revision?: unknown } } | undefined)?.goal
+        if (this.goalHost && (!goal || !Number.isSafeInteger(goal.revision) || (goal.revision as number) < 0)) {
+          throw new CapabilityCommandError('goal_snapshot_unavailable', '无法固定当前目标修订，事务保持待处理且不会自动激活')
+        }
+        const goalId = typeof goal?.goalId === 'string' && goal.goalId ? goal.goalId : plan.goalId
+        const goalRevision = Number.isSafeInteger(goal?.revision) && (goal?.revision as number) >= 0
+          ? (goal?.revision as number)
+          : 0
+        const sourceHead = (await readRepoState(this.cwd, { withRefs: false }))?.head ?? null
+        tx = await service.bindPiPackageTarget(tx.operationId, {
+          runnerId,
+          runnerGeneration: this.capabilityOpts?.runnerGeneration ?? 1,
+          cwd: this.cwd,
+          sessionFile,
+          projectId,
+          goalId,
+          goalRevision,
+          sourceHead,
+          continueId: tx.operationId,
+          packageName: localPackage.identifier,
+          packageVersion: localPackage.version ?? candidate.version!
+        })
+      }
+    }
+
+    const stateNotice = npmFailure
+      ? `npm 下载 / staging 失败：${npmFailure}。同一计划可显式使用 --retry 重试（最多一次）。`
+      : npmStaged
+        ? tx.piPackageTarget
+          ? 'npm tarball 已按 prepare 固定的 SHA-512 校验并落入受管 staging；已持久绑定原项目 / runner / 会话，未运行 npm lifecycle、pi install 或包代码，等待目标项目 runner 安全边界调度。'
+          : 'npm tarball 已按 prepare 固定的 SHA-512 校验并落入受管 staging；未运行 npm lifecycle、pi install 或包代码。当前会话尚无可持久恢复的目标绑定，需等会话保存后重试 acquire。'
+        : tx.state === 'failed'
+          ? `这个接入事务已失败：${tx.failure?.detail ?? '无更多错误细节'}。如尚有重试次数，可对同一计划使用 --retry。`
+        : tx.state === 'pending-boundary'
+          ? '事务正在等待安全边界；本次未执行安装、运行包代码或重启 runner。'
+          : `这个候选的 installKind 是 ${candidate.installKind}，对应下载 / 安装 / 隔离验证仍待实施。`
+    return {
+      data: {
+        plan,
+        candidate,
+        operationId: tx.operationId,
+        transaction: tx,
+        executable: false,
+        state: tx.state,
+        downloaded: npmStaged,
+        installed: false,
+        notice: stateNotice
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'acquire',
+        planId: plan.planId,
+        operationId: tx.operationId,
+        state: tx.state,
+        executed: false,
+        downloaded: npmStaged,
+        installed: false
+      }
+    }
+  }
+
+  private async finishMcpPackageAcquire(input: {
+    service: AcquisitionService
+    tx: Awaited<ReturnType<AcquisitionService['get']>>
+    plan: AcquisitionPlan
+    candidate: CapabilityCandidate
+    digest: string
+    operationId: string
+    npmStaged: boolean
+    npmFailure?: string
+    localPackage?: CapabilityCandidate['localPackage']
+  }) {
+    const { service, plan, candidate, digest, operationId, localPackage } = input
+    let tx = input.tx
+    if (!tx) throw new CapabilityCommandError('acquire_failed', '接入事务已经不存在')
+    if (input.npmFailure || !input.npmStaged || !localPackage?.identifier || !(localPackage.version ?? candidate.version)) {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          transaction: tx,
+          executable: false,
+          state: tx.state,
+          downloaded: input.npmStaged,
+          installed: false,
+          notice: input.npmFailure
+            ? `MCP npm 包下载 / staging 失败：${input.npmFailure}。同一计划可显式使用 --retry 重试（最多一次）。`
+            : 'MCP npm 包已登记接入事务，但固定制品尚未完成 staging；没有运行包代码。'
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: tx.state,
+          executed: false
+        }
+      }
+    }
+
+    const packageRoot = join(stagingDirOf(YAN_DIR, operationId), 'payload', 'package')
+    let resolved: Awaited<ReturnType<typeof resolveMcpPackage>>
+    try {
+      resolved = await resolveMcpPackage({
+        packageRoot,
+        candidateId: candidate.candidateId,
+        title: candidate.title,
+        expectedName: localPackage.identifier,
+        expectedVersion: localPackage.version ?? candidate.version!
+      })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      await service.fail(operationId, `MCP 包入口解析失败：${detail}`).catch(() => undefined)
+      throw new CapabilityCommandError('acquire_failed', detail)
+    }
+
+    const registration = new McpRegistrationService({ root: YAN_DIR })
+    /* 幂等重放：已登记的本地 MCP 只重新核验，不重新写配置或启动多余副本。 */
+    if (tx.state === 'activated' || tx.state === 'resumed') {
+      const managed = (await registration.listManaged()).find((record) => record.serverId === resolved.config.id)
+      const check = managed
+        ? await registration.reverify(managed)
+        : { ok: false, reasons: ['受管记录里没有这个本地 MCP 服务'] }
+      if (!check.ok) {
+        return {
+          data: {
+            plan,
+            candidate,
+            operationId,
+            serverId: resolved.config.id,
+            executable: false,
+            state: tx.state,
+            replayed: true,
+            warnings: check.reasons,
+            notice: `本地 MCP 服务 ${resolved.config.id} 的幂等复核未通过：${check.reasons.join('；')}`
+          },
+          summary: {
+            kind: 'capabilities',
+            action: 'acquire',
+            planId: plan.planId,
+            operationId,
+            serverId: resolved.config.id,
+            state: tx.state,
+            executed: false,
+            replayed: true
+          }
+        }
+      }
+      if (tx.state === 'activated') tx = await service.markResumed(operationId, '同一计划的本地 MCP 连接复核通过')
+      this.mcpManager = undefined
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          serverId: resolved.config.id,
+          executable: true,
+          state: tx.state,
+          replayed: true,
+          tools: managed?.tools ?? [],
+          notice: `这个计划已经登记过本地 MCP 服务 ${resolved.config.id}，本次只做连接复核。`
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          serverId: resolved.config.id,
+          state: tx.state,
+          executed: false,
+          replayed: true
+        }
+      }
+    }
+
+    if (tx.state !== 'pending-boundary') {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          executable: false,
+          state: tx.state,
+          transaction: tx,
+          notice: `本地 MCP 事务当前处于 ${tx.state}，没有执行包代码。`
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: tx.state,
+          executed: false
+        }
+      }
+    }
+
+    try {
+      tx = await service.markAcquiring(operationId, '受管 staging 已复核，开始本地 MCP 无副作用协议冒烟')
+      const smoke = await smokeMcpPackage({ config: resolved.config })
+      if (!smoke.ok) {
+        await service.fail(operationId, `本地 MCP 冒烟失败：${smoke.problems.join('；')}`)
+        throw new CapabilityCommandError('acquire_failed', smoke.problems.join('；'))
+      }
+      tx = await service.markVerifying(operationId, `MCP tools/list 冒烟通过，列到 ${smoke.tools.length} 个工具`)
+      const outcome = await registration.registerStdio({
+        config: resolved.config,
+        projectId: plan.projectId,
+        operationId,
+        /* smoke 已经用同一份 command + args 真连并列出工具；把这份
+         * receipt 交给登记层，避免在写配置前无意义地再启动一次第三方进程。 */
+        probe: async (config) => {
+          if (
+            config.command !== resolved.config.command ||
+            JSON.stringify(config.args ?? []) !== JSON.stringify(resolved.config.args ?? [])
+          ) {
+            throw new Error('本地 MCP 登记配置与刚通过 smoke 的入口不一致')
+          }
+          return { tools: smoke.tools.map((tool) => tool.name) }
+        }
+      })
+      tx = await service.activate({
+        operationId,
+        receipt: {
+          planId: plan.planId,
+          planRevision: plan.revision,
+          candidateId: candidate.candidateId,
+          digest,
+          scope: 'project-managed',
+          projectId: plan.projectId,
+          installedPaths: [outcome.configPath, resolved.packageRoot],
+          verification: 'protocol-reachable'
+        },
+        verify: async () => ({ ok: true, problems: [] })
+      })
+      const managed = (await registration.listManaged()).find((record) => record.serverId === outcome.serverId)
+      const check = managed
+        ? await service.resumeCheck({
+            operationId,
+            expected: { planId: plan.planId, planRevision: plan.revision, digest },
+            verify: async () => {
+              const reverified = await registration.reverify(managed)
+              return { ok: reverified.ok, problems: reverified.reasons }
+            }
+          })
+        : { ok: false, reasons: ['受管登记记录缺失（本地 MCP 登记没完成）'] }
+      tx = check.ok
+        ? await service.markResumed(operationId, '本地 MCP 冒烟、登记与连接复核通过，可继续原目标')
+        : await service.fail(operationId, `本地 MCP 激活后复核没通过：${check.reasons.join('；')}`)
+      this.mcpManager = undefined
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          serverId: outcome.serverId,
+          tools: outcome.tools,
+          configPath: outcome.configPath,
+          executable: check.ok,
+          state: tx.state,
+          installed: check.ok,
+          resume: { goalId: plan.goalId, continueHint: '本地 MCP 已登记；原目标可以继续' },
+          ...(check.ok ? {} : { problems: check.reasons }),
+          notice: check.ok
+            ? `已接入本地 MCP 服务 ${outcome.serverId}（工具 ${outcome.tools.length} 个）：固定 npm 制品、无副作用冒烟与项目隔离登记均通过。`
+            : `本地 MCP 服务 ${outcome.serverId} 已处理，但激活后复核没通过：${check.reasons.join('；')}`
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          serverId: outcome.serverId,
+          state: tx.state,
+          executed: check.ok
+        }
+      }
+    } catch (error) {
+      if (error instanceof CapabilityCommandError) throw error
+      const detail = error instanceof Error ? error.message : String(error)
+      await service.fail(operationId, detail).catch(() => undefined)
+      throw new CapabilityCommandError('acquire_failed', detail)
+    }
+  }
+
+  /**
+   * 远程 MCP 的**自动登记**（实施-04 S6b-1）。
+   *
+   * 授权是这一片的关键分界（§9）：目录元数据（`metadata-only`）不足以自动接入，
+   * `--authorize` 只请求 Electron 确认对话框；用户点允许后，同一 host + project
+   * 才成为持久策略 —— 不每次都问一遍，也不把目录内容或模型参数当用户授权。
+   */
+  private async acquireRemoteMcp(input: {
+    plan: AcquisitionPlan
+    candidate: CapabilityCandidate
+    digest: string
+    operationId: string
+    explicitAuthorize: boolean
+  }) {
+    const { plan, candidate, digest, operationId, explicitAuthorize } = input
+    const draftResult = draftRemoteMcpRegistration(candidate)
+    if (!draftResult.ok) {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          executable: false,
+          state: 'unsupported',
+          notice: draftResult.detail
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: 'unsupported',
+          executed: false
+        }
+      }
+    }
+    const { draft } = draftResult
+    const registration = new McpRegistrationService({ root: YAN_DIR })
+    let authorization: AcquireAuthorization | null = null
+    let authorized =
+      plan.policyResult === 'automatic' || (await registration.isAuthorized(draft.endpoint, plan.projectId))
+    if (!authorized && explicitAuthorize) {
+      const choice = await this.confirmCapabilityAuthorization?.({
+        kind: 'remote-mcp',
+        title: candidate.title,
+        source: candidate.candidateId,
+        projectId: plan.projectId,
+        cwd: this.cwd,
+        digest,
+        endpoint: draft.endpoint
+      }) ?? 'deny'
+      if (choice === 'allow') {
+        authorization = await registration.authorize({
+          url: draft.endpoint,
+          via: 'user-confirmed-dialog',
+          projectId: plan.projectId
+        })
+        authorized = true
+      }
+    }
+    if (!authorized) {
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId,
+          endpoint: draft.endpoint,
+          serverId: draft.serverId,
+          executable: false,
+          state: 'needs-authorization',
+          warnings: draft.warnings,
+          notice:
+            '候选来自公开目录（metadata-only），不足以自动登记。可以用 ' +
+            '`yan capabilities acquire --plan <计划ID> --authorize` 请求砚显示确认对话框；只有你在对话框里允许后才会持久授权这个 host（只记 host，不记凭证）。'
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId,
+          state: 'needs-authorization',
+          executed: false,
+          endpoint: draft.endpoint
+        }
+      }
+    }
+
+    const service = new AcquisitionService({ root: YAN_DIR })
+    const created = await service.begin({
+      planId: plan.planId,
+      planRevision: plan.revision,
+      candidateId: candidate.candidateId,
+      digest,
+      projectId: plan.projectId
+    })
+    /* 幂等重放：已经登记过的计划不重复写配置，只复核一次（§10「不能装两次」）。 */
+    if (created.state === 'activated' || created.state === 'resumed') {
+      const managed = (await registration.listManaged()).find((record) => record.serverId === draft.serverId)
+      const check = managed ? await registration.reverify(managed) : { ok: false, reasons: ['受管记录里没有这个服务'] }
+      const tx =
+        check.ok && created.state === 'activated'
+          ? await service.markResumed(created.operationId, '复核通过（同一计划的幂等重放）')
+          : created
+      return {
+        data: {
+          plan,
+          candidate,
+          operationId: tx.operationId,
+          serverId: draft.serverId,
+          executable: true,
+          state: tx.state,
+          replayed: true,
+          ...(check.ok ? {} : { warnings: check.reasons }),
+          notice: check.ok
+            ? `这个计划已经登记过 ${draft.serverId}，本次只做复核，没有重复写入配置。`
+            : `这个计划登记过 ${draft.serverId}，但复核没通过：${check.reasons.join('；')}`
+        },
+        summary: {
+          kind: 'capabilities',
+          action: 'acquire',
+          planId: plan.planId,
+          operationId: tx.operationId,
+          state: tx.state,
+          executed: false,
+          replayed: true
+        }
+      }
+    }
+
+    await service.markAcquiring(operationId, `登记远程 MCP（核验 ${draft.endpoint} 后写入受管配置）`)
+    let outcome: McpRegistrationOutcome
+    try {
+      outcome = await registration.registerRemote({
+        draft,
+        projectId: plan.projectId,
+        operationId
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await service.fail(operationId, message).catch(() => undefined)
+      throw new CapabilityCommandError('acquire_failed', message)
+    }
+
+    await service.markVerifying(operationId, `端点核验通过，列到 ${outcome.tools.length} 个工具`)
+    await service.activate({
+      operationId,
+      receipt: {
+        planId: plan.planId,
+        planRevision: plan.revision,
+        candidateId: candidate.candidateId,
+        digest,
+        scope: 'project-managed',
+        projectId: plan.projectId,
+        installedPaths: [outcome.configPath],
+        /* 真的连上并枚举过工具 —— 不是「文件在」那种弱验证（§10 第 5 条）。 */
+        verification: 'protocol-reachable'
+      },
+      /* 核验已由 registerRemote 的真实 probe 完成；这里不重复连一次。 */
+      verify: async () => ({ ok: true, problems: [] })
+    })
+    /* `resumed` 必须由**真正的连接证据**置位（§10.2）：这里再复核一次。 */
+    const managed = (await registration.listManaged()).find((record) => record.serverId === outcome.serverId)
+    const check = managed
+      ? await service.resumeCheck({
+          operationId,
+          expected: { planId: plan.planId, digest, planRevision: plan.revision },
+          verify: async () => {
+            const reverified = await registration.reverify(managed)
+            return { ok: reverified.ok, problems: reverified.reasons }
+          }
+        })
+      : { ok: false, reasons: ['受管登记记录缺失（登记没完成）'] }
+    const tx = check.ok
+      ? await service.markResumed(operationId, '登记 + 连接复核通过，可继续原目标')
+      : await service.fail(operationId, `激活后复核没通过：${check.reasons.join('；')}`)
+
+    /* 让下一次能力目录 / mcp 调用重新读配置：新服务**当场可见**，不需要重启（§10.1）。 */
+    this.mcpManager = undefined
+
+    return {
+      data: {
+        plan,
+        candidate,
+        operationId,
+        serverId: outcome.serverId,
+        endpoint: draft.endpoint,
+        tools: outcome.tools,
+        configPath: outcome.configPath,
+        executable: true,
+        state: tx.state,
+        ...(authorization ? { authorization } : {}),
+        warnings: outcome.warnings,
+        resume: { goalId: plan.goalId, continueHint: '登记完成；原目标可以继续（能力目录里已经能看到它）' },
+        ...(check.ok ? {} : { problems: check.reasons }),
+        notice: check.ok
+          ? `已登记远程 MCP 服务 ${outcome.serverId}（工具 ${outcome.tools.length} 个）：一次真连核验通过后才写配置，写的是受管配置。`
+          : `服务 ${outcome.serverId} 已写入配置，但激活后复核没通过：${check.reasons.join('；')}`
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'acquire',
+        planId: plan.planId,
+        operationId,
+        serverId: outcome.serverId,
+        state: tx.state,
+        executed: check.ok,
+        toolCount: outcome.tools.length
+      }
+    }
+  }
+
+  private async runCapabilitiesSearch(params: Record<string, unknown>) {
+    const queryText = this.knowledgeString(params, ['queryText', 'query-text', 'query', 'text']) ?? ''
+    const limit = this.knowledgeNumber(params, 'limit')
+    const scope = this.knowledgeString(params, ['scope'])
+    if (scope && scope !== 'available') {
+      throw new CapabilityCommandError(
+        'capability_scope_unsupported',
+        `capabilities search 目前只支持 scope=available（收到 ${scope}）；联网发现是 capabilities.discover`
+      )
+    }
+    const commands = await this.rawCommands()
+    const mcp = await this.collectMcpCatalog()
+    const catalog = buildCatalog(commands, mcp.tools)
+    const result = searchCapabilities(catalog.capabilities, {
+      queryText,
+      limit,
+      projectId: this.capabilityOpts?.projectId
+    })
+    return {
+      data: {
+        query: queryText,
+        considered: result.considered,
+        reason: result.reason,
+        conflicts: catalog.conflicts,
+        /* 已登记的 MCP 服务状态：连不上时也要让模型看到原因（不是沉默地少列几条）。 */
+        mcpServers: mcp.servers,
+        hits: result.hits.map((hit) => ({
+          id: hit.capability.id,
+          kind: hit.capability.kind,
+          title: hit.capability.title,
+          description: hit.capability.description,
+          location: hit.capability.source.location,
+          owner: hit.capability.source.owner,
+          availability: hit.capability.availability,
+          effect: hit.capability.effect,
+          ...(hit.capability.schemaRevision ? { schemaRevision: hit.capability.schemaRevision } : {}),
+          score: hit.score,
+          matched: hit.matched
+        }))
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'search',
+        count: result.hits.length,
+        considered: result.considered,
+        mcpToolCount: mcp.tools.length,
+        ids: result.hits.map((hit) => hit.capability.id)
+      }
+    }
+  }
+
+  /** `yan skill read`：按需读技能正文（记录内容 hash，正文变了要重读）。 */
+  private async runSkillRead(params: Record<string, unknown>) {
+    const id = this.knowledgeString(params, ['id', 'skillId', 'skill-id'])
+    if (!id) {
+      throw new CapabilityCommandError('skill_id_required', 'skill read 需要 --id <技能ID>（形如 skill:<名称>）')
+    }
+    const commands = await this.rawCommands()
+    try {
+      const skill = await readSkillById(commands, id)
+      return {
+        data: skill,
+        summary: {
+          kind: 'skill',
+          action: 'read',
+          id: skill.id,
+          name: skill.name,
+          contentHash: skill.contentHash,
+          bytes: Buffer.byteLength(skill.body, 'utf8')
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new CapabilityCommandError('skill_unavailable', message)
+    }
+  }
+
+  /* ------------------------------------------------ MCP（实施-04 S3） */
+
+  /** 懒创建连接管理器；配置坏掉时把原因留着，调用时一并回报。 */
+  private mcpConnectionManager(): McpConnectionManager {
+    if (!this.mcpManager) {
+      const loaded = loadMcpServers()
+      this.mcpConfigError = loaded.error
+      this.mcpManager = new McpConnectionManager(
+        mcpServersForProject(loaded.servers, this.capabilityOpts?.projectId)
+      )
+    }
+    return this.mcpManager
+  }
+
+  /** 安全投影给设置页：不回传命令参数、环境变量、认证引用或完整端点 URL。 */
+  async capabilitySettingsSnapshot() {
+    const skills = skillsFromCommands(await this.rawCommands()).map(({ capability }) => ({
+      id: capability.id,
+      title: capability.title,
+      description: capability.description
+    }))
+    const manager = this.mcpConnectionManager()
+    const servers = manager.list().map((server) => {
+      let endpointOrigin: string | undefined
+      if (server.transport === 'http' && server.url) {
+        try {
+          endpointOrigin = new URL(server.url).origin
+        } catch {
+          /* 配置校验已报错；UI 不需要拿到可能含凭证的原始字符串。 */
+        }
+      }
+      return {
+        id: server.id,
+        title: server.title ?? server.id,
+        transport: server.transport,
+        enabled: server.enabled !== false,
+        effect: server.effect ?? 'unknown',
+        projectScoped: Boolean(server.projectScope),
+        ...(endpointOrigin && endpointOrigin !== 'null' ? { endpointOrigin } : {}),
+        status: manager.statusOf(server.id).status,
+        toolCount: manager.toolCountOf(server.id)
+      }
+    })
+    return { skills, servers, configWarning: Boolean(this.mcpConfigError) }
+  }
+
+  /** 只在用户明确点击「检查」时连接并刷新 MCP 工具表。 */
+  async verifyCapabilityMcp(serverId: string) {
+    const manager = this.mcpConnectionManager()
+    if (!manager.listServerIds().includes(serverId)) throw new Error('当前 runner 没有这个 MCP 服务')
+    const tools = await manager.listToolsCached(serverId, { refresh: true })
+    return { status: manager.statusOf(serverId).status, toolCount: tools.length }
+  }
+
+  /** 只断开该 runner 的一个已登记服务；可用于中止握手或工具表刷新。 */
+  async disconnectCapabilityMcp(serverId: string): Promise<boolean> {
+    return this.mcpConnectionManager().disconnect(serverId)
+  }
+
+  /** 设置页的手动目录搜索；继续复用模型 CLI 的脱敏、限额与候选缓存规则。 */
+  async discoverCapabilitiesForSettings(queryText: string) {
+    const result = await this.runCapabilitiesDiscover({ queryText })
+    const data = result.data as {
+      query: string
+      reason: string | null
+      sources: Array<{ sourceId: string; ok: boolean; pages: number; candidateCount: number }>
+      candidates: Array<{
+        candidateId: string
+        kind: 'skill' | 'mcp-server'
+        title: string
+        summary: string
+        publisher?: string
+        version?: string
+        requirements: string[]
+        verification: 'metadata-only' | 'source-checked' | 'smoke-passed'
+        installKind: 'skill-files' | 'pi-package' | 'mcp-package' | 'remote'
+        score: number
+        scoreReasons: string[]
+      }>
+    }
+    const sourceIds = new Set(['npm-registry', 'mcp-registry', 'skill-directory'])
+    return {
+      query: data.query,
+      reason: data.reason
+        ? (data.sources.length > 0 && data.sources.every((source) => !source.ok) ? 'unavailable' : 'no-candidates')
+        : null,
+      sources: data.sources
+        .filter((source) => sourceIds.has(source.sourceId))
+        .map(({ sourceId, ok, pages, candidateCount }) => ({ sourceId, ok, pages, candidateCount })),
+      candidates: data.candidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        kind: candidate.kind,
+        title: candidate.title,
+        summary: candidate.summary,
+        ...(candidate.publisher ? { publisher: candidate.publisher } : {}),
+        ...(candidate.version ? { version: candidate.version } : {}),
+        requirements: candidate.requirements,
+        verification: candidate.verification,
+        installKind: candidate.installKind,
+        score: candidate.score,
+        scoreReasons: candidate.scoreReasons
+      }))
+    }
+  }
+
+  /**
+   * `yan mcp describe` / `yan mcp call`。
+   *
+   * 配置只在宿主文件里（`YAN_DIR/mcp-servers.json`）—— 模型只能**用**已登记的服务，
+   * 不能新增一个（新增等于给模型一个任意命令执行入口）。
+   */
+  private async runMcpCommand(action: string, params: Record<string, unknown>) {
+    if (action !== 'describe' && action !== 'call') {
+      throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：mcp.${action}`)
+    }
+    const serverId = this.knowledgeString(params, ['serverId', 'server', 'server-id'])
+    const toolName = this.knowledgeString(params, ['toolName', 'tool', 'name', 'tool-name'])
+    if (!serverId) {
+      throw new CapabilityCommandError(
+        'mcp_server_required',
+        this.mcpConfigError
+          ? `需要 --server <服务ID>；另外 MCP 配置有问题：${this.mcpConfigError}`
+          : '需要 --server <服务ID>（服务在 YAN_DIR/mcp-servers.json 里登记）'
+      )
+    }
+    if (!toolName) {
+      throw new CapabilityCommandError('mcp_tool_required', '需要 --tool <工具名>（先用 yan mcp describe 拿 schema）')
+    }
+
+    const manager = this.mcpConnectionManager()
+    if (action === 'call' && (await this.capabilityOpts?.getWorkMode?.()) === 'clarify') {
+      const server = manager.list().find((entry) => entry.id === serverId)
+      if (server?.effect !== 'read') {
+        throw new CapabilityCommandError(
+          'capability_mode_clarify',
+          '澄清模式只允许调用配置明确标记为 read 的 MCP 工具；当前服务的副作用未被确认为只读。'
+        )
+      }
+    }
+    try {
+      if (action === 'describe') {
+        const described = await describeMcpTool(manager, serverId, toolName)
+        return {
+          data: described,
+          summary: {
+            kind: 'mcp',
+            action: 'describe',
+            serverId,
+            toolName,
+            schemaRevision: described.schemaRevision,
+            /* 如实透传服务自报值，并明确标注它**不是**权限。 */
+            selfReportedReadOnly: described.selfReportedReadOnly,
+            ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
+          }
+        }
+      }
+
+      const rawArgs = params.arguments ?? params.args
+      const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
+      const expectedRevision = this.knowledgeString(params, [
+        'schemaRevision',
+        'schema-revision',
+        'expectedRevision',
+        'expected-revision'
+      ])
+      const outcome = await callMcpTool(manager, serverId, toolName, args, {
+        resultsDir: join(YAN_DIR, 'mcp-results'),
+        ...(expectedRevision ? { expectedRevision } : {})
+      })
+      return {
+        data: outcome,
+        summary: {
+          kind: 'mcp',
+          action: 'call',
+          serverId,
+          toolName,
+          /* 工具级失败是**结果**，不是崩溃 —— 两个字段让模型能分开处理。 */
+          toolError: outcome.toolError,
+          bytes: outcome.bytes,
+          ...(outcome.resultFile ? { resultFile: outcome.resultFile } : {}),
+          ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
+        }
+      }
+    } catch (error) {
+      if (error instanceof McpToolError) {
+        throw new CapabilityCommandError(error.code, error.message, error.data)
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      throw new CapabilityCommandError('mcp_unavailable', `MCP 调用失败：${message}`)
     }
   }
 
@@ -1750,6 +3238,17 @@ export class AgentController extends EventEmitter {
           ch: 'msg-update',
           payload: { id, patch: msg }
         })
+        if (m.stopReason === 'error') {
+          /*
+           * 模型侧错误（实施-05 S5c）：宿主据此决定要不要自动继续。
+           * 这个事件不带错误文本（只有 `stopReason`），所以 `text` 允许为空 ——
+           * 分类器把空文本当「未知但可重试」，并与 `auto_retry_end` 的同一错误去重。
+           */
+          this.push({
+            ch: 'agent-error',
+            payload: { message: '模型返回错误', text: '', source: 'stop-reason' }
+          })
+        }
         this.markStreaming(false)
         break
       }
@@ -1941,6 +3440,7 @@ export class AgentController extends EventEmitter {
 
       case 'auto_retry_end':
         if (evt.success === false) {
+          const finalError = typeof evt.finalError === 'string' ? evt.finalError : ''
           this.push({
             ch: 'notify',
             payload: {
@@ -1949,6 +3449,11 @@ export class AgentController extends EventEmitter {
               notifyType: 'error',
               message: '重试失败，本轮结束。'
             }
+          })
+          /* pi 的重试已用尽；把错误文本交给宿主（自动继续要靠它做分类，S5c） */
+          this.push({
+            ch: 'agent-error',
+            payload: { message: '模型返回错误', text: finalError, source: 'auto-retry' }
           })
         }
         break
@@ -2226,7 +3731,17 @@ export class AgentController extends EventEmitter {
       if (started) next = { ...next, running: { ...next.running!, ...stamp } }
       else if (ended) next = { ...next, last: { ...next.last!, ...stamp } }
       /* 本次调用已经落定（成功或失败都算）：来源标记不再属于下一笔 */
-      if (ended && !next.running) this.policyOrigin = null
+      if (ended && !next.running) {
+        this.policyOrigin = null
+        /*
+         * 压缩**成功** → 重新上膛（N21-4 尾，压力测试发现）。
+         * 不能只靠「用量回落到线下」：当基线开销（系统提示 + 工具定义）本身就
+         * 压在工作集线上时，那条路永远不会成立，策略会退化成 5 分钟一次。
+         */
+        if (next.last?.status === 'completed') {
+          this.policyState = rearmAfterCompaction(this.policyState)
+        }
+      }
     }
     this.compactionState = next
     if (!this.state) return
@@ -2487,6 +4002,43 @@ export class AgentController extends EventEmitter {
     await this.prepareKnowledge(text)
     const res = await this.rpc!.command('follow_up', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
+  }
+
+  /**
+   * 运行时重载前的队列快照。会话 JSONL 不包含尚未投递的 steering / follow-up，
+   * 因此资源更新后重建 pi 时必须单独保存并恢复它们。
+   */
+  queueSnapshot(): { steering: string[]; followUp: string[] } {
+    return {
+      steering: this.queueState.steering.map((item) => item.text),
+      followUp: this.queueState.followUp.map((item) => item.text)
+    }
+  }
+
+  /**
+   * 在空闲的新实例里恢复重载前的队列；调用方须先确保目标会话已经载入。
+   * 队列变化由 pi 的 `queue_update` 事件回传，本地也同步一份以覆盖无事件的版本。
+   */
+  async restoreQueueSnapshot(snapshot: { steering: string[]; followUp: string[] }): Promise<{ ok: boolean; error?: string }> {
+    const steering = snapshot.steering.map((text) => String(text)).filter((text) => text.length > 0)
+    const followUp = snapshot.followUp.map((text) => String(text)).filter((text) => text.length > 0)
+    if (steering.length === 0 && followUp.length === 0) return { ok: true }
+    if (!this.rpc?.running) return { ok: false, error: 'pi 尚未就绪，无法恢复排队消息' }
+    if (this.queueState.steering.length > 0 || this.queueState.followUp.length > 0) {
+      const existing = {
+        steering: this.queueState.steering.map((item) => item.text),
+        followUp: this.queueState.followUp.map((item) => item.text)
+      }
+      if (JSON.stringify(existing) === JSON.stringify({ steering, followUp })) return { ok: true }
+      return { ok: false, error: '新实例已有不同的排队消息；为避免丢失或重复，拒绝覆盖' }
+    }
+    try {
+      await this.refillQueue(steering, followUp)
+      this.publishQueue(steering, followUp)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   /**
@@ -3114,6 +4666,43 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  /**
+   * pi 的**原始**命令面（含 `sourceInfo.path`）。
+   *
+   * 能力目录必须看这个，而不是 `listCommands()`：后者经 `command-registry`
+   * 归一化成渲染端斜杠命令的形状，只看顶层 `location`；而 pi 把技能路径放在
+   * `sourceInfo.path` 里 —— 用归一化结果会把技能全部丢掉（04-S2 实测踩过：
+   * 目录只剩内置能力，`considered` 恒等于内置条数）。
+   */
+  private async rawCommands(): Promise<RawSkillCommand[]> {
+    if (!this.rpc) return []
+    try {
+      const res = await this.rpc.command<{ commands?: unknown[] }>('get_commands')
+      return res.success ? ((res.data?.commands ?? []) as RawSkillCommand[]) : []
+    } catch {
+      return []
+    }
+  }
+
+  /** Runtime project identity used by durable capability activation bindings. */
+  get capabilityProjectId(): string | null {
+    return this.capabilityOpts?.projectId ?? null
+  }
+
+  /** Runtime-reported paths for loaded extension commands and skills. */
+  async runtimeCommandPaths(): Promise<string[]> {
+    const paths = new Set<string>()
+    for (const command of await this.rawCommands()) {
+      if (typeof command.path === 'string' && command.path.trim()) paths.add(command.path.trim())
+      if (typeof command.location === 'string' && command.location.trim()) paths.add(command.location.trim())
+      if (command.sourceInfo && typeof command.sourceInfo === 'object') {
+        const path = (command.sourceInfo as { path?: unknown }).path
+        if (typeof path === 'string' && path.trim()) paths.add(path.trim())
+      }
+    }
+    return [...paths]
+  }
+
   /* ------------------------------------------------------------ 查询 */
 
   async getMessages(): Promise<UIMessage[]> {
@@ -3237,6 +4826,13 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
+  /** RunnerRegistry increments this when an in-process runner changes sessions. */
+  setRunnerGeneration(generation: number): void {
+    if (this.capabilityOpts && Number.isSafeInteger(generation) && generation > 0) {
+      this.capabilityOpts.runnerGeneration = generation
+    }
+  }
+
   /**
    * 给 token 统计加上模型身份。
    *
@@ -3267,6 +4863,9 @@ export class AgentController extends EventEmitter {
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
+    /* MCP 会起子进程；不停掉就会留下孤儿（Windows 上不会自己收）。 */
+    await this.mcpManager?.close().catch(() => undefined)
+    this.mcpManager = undefined
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.streaming = null

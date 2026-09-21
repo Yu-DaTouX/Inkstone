@@ -217,22 +217,130 @@ export interface SourceListing {
   /** 目录总数（方案要求「目录仅授予可浏览范围」，所以这里只报数，不列内容） */
   imageCount: number
   dir: string
+  /** 「来源 ↔ 消息」的关联（同一份数据也由 listLinks 单独读） */
+  links: SourceLink[]
   error?: string
 }
 
 export function listImagesForSession(sessionId: string): SourceListing {
   try {
     const images = listImages(sessionId)
-    return { ok: true, images, imageCount: images.length, dir: sourcesDir(sessionId) }
+    return { ok: true, images, imageCount: images.length, dir: sourcesDir(sessionId), links: listLinks(sessionId) }
   } catch (error) {
     return {
       ok: false,
       images: [],
       imageCount: 0,
       dir: sourcesDir(sessionId),
+      links: [],
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/**
+ * 来源与消息的关联（方案 §8 的 S1「定位消息」）。
+ *
+ * ── 为什么得单独存 ──
+ * 「这条来源参与了哪条消息」在现有数据里**不存在**：图片只知道字节哈希、
+ * 文件只知道路径指纹、网页只有 URL，而消息 id 属于会话 JSONL。两边没有交集，
+ * 所以这里记一张小表（每会话一个 `links.json`，与图片副本同目录、同生命周期）。
+ *
+ * ── 为什么不写进会话 JSONL ──
+ * 会话文件是 pi 的资产（我们要能从磁盘重放历史），往里面塞宿主自己的字段会把
+ * 「pi 写的文件」和「砚补的字段」混在一起 —— 与任务日志不进 JSONL 是同一条理由。
+ */
+export interface SourceLink {
+  sourceId: string
+  messageId: string
+  /** 建立关联的时间（界面上按它排序、也用于淘汰最旧记录） */
+  at: number
+}
+
+const LINKS_FILE = 'links.json'
+/** 每个会话最多记这么多条关联（超出丢最旧）—— 防的是无上限增长，不是正常使用 */
+const MAX_LINKS = 500
+
+function linksFile(sessionId: string): string {
+  return join(sourcesDir(sessionId), LINKS_FILE)
+}
+
+/** 读关联表。文件坏了/不存在都当空表 —— 「跳不过去」比「菜单打不开」轻得多 */
+function readLinks(sessionId: string): SourceLink[] {
+  try {
+    const raw = readFileSync(linksFile(sessionId), 'utf8')
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (x): x is SourceLink =>
+        !!x &&
+        typeof (x as SourceLink).sourceId === 'string' &&
+        typeof (x as SourceLink).messageId === 'string'
+    )
+  } catch {
+    return []
+  }
+}
+
+/** 形状校验：sourceId 必须带类前缀，messageId 只收安全字符（它们会被拼进查询选择器） */
+function safeSourceId(value: string): string | null {
+  const raw = String(value ?? '')
+  return /^(image|file|web):[A-Za-z0-9._-]{1,96}$/.test(raw) ? raw : null
+}
+
+function safeMessageId(value: string): string | null {
+  const raw = String(value ?? '')
+  /* pi 的消息 id 形如 uuid / entryId；这里只放行可安全放进 `[data-msg-id="…"]` 的字符 */
+  return /^[A-Za-z0-9._:-]{1,160}$/.test(raw) ? raw : null
+}
+
+/** 列出这个会话的全部关联 */
+export function listLinks(sessionId: string): SourceLink[] {
+  return readLinks(sessionId)
+}
+
+/**
+ * 建立「这几份来源参与了这条消息」的关联。
+ *
+ * 幂等：同一对 `(sourceId, messageId)` 重复登记不会堆第二条。
+ * 形状不对的 sourceId 直接丢掉（**不**报错）—— 一条对不上不该让整批失败，
+ * 但也不会被静默当成成功：`added` 与 `skipped` 如实报数。
+ */
+export function linkSources(params: {
+  sessionId: string
+  sourceIds: string[]
+  messageId: string
+}): { ok: boolean; added: number; skipped: number; error?: string } {
+  const messageId = safeMessageId(params.messageId)
+  if (!messageId) return { ok: false, added: 0, skipped: 0, error: '消息 id 形状不对' }
+  const ids = [...new Set((params.sourceIds ?? []).map((x) => safeSourceId(String(x))))].filter(
+    (x): x is string => !!x
+  )
+  const skipped = (params.sourceIds ?? []).length - ids.length
+  if (ids.length === 0) return { ok: true, added: 0, skipped }
+
+  const existing = readLinks(params.sessionId)
+  const key = (x: { sourceId: string; messageId: string }): string => `${x.sourceId}\u0000${x.messageId}`
+  const seen = new Set(existing.map(key))
+  const now = Date.now()
+  const fresh: SourceLink[] = []
+  for (const sourceId of ids) {
+    const item = { sourceId, messageId, at: now }
+    if (seen.has(key(item))) continue
+    seen.add(key(item))
+    fresh.push(item)
+  }
+  if (fresh.length === 0) return { ok: true, added: 0, skipped }
+
+  const next = [...existing, ...fresh].slice(-MAX_LINKS)
+  try {
+    const dir = sourcesDir(params.sessionId)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(linksFile(params.sessionId), JSON.stringify(next, null, 2))
+  } catch (error) {
+    return { ok: false, added: 0, skipped, error: error instanceof Error ? error.message : String(error) }
+  }
+  return { ok: true, added: fresh.length, skipped }
 }
 
 /**

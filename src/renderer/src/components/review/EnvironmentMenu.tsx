@@ -18,10 +18,12 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type {
+  ForkRefsReportView,
   GitActionResult,
   GitRefOption,
   WorktreeBlocker,
-  WorktreeInfo
+  WorktreeInfo,
+  WorktreeLinkView
 } from '../../../../shared/ipc'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
@@ -92,6 +94,19 @@ export function EnvironmentMenu() {
   const [newBranch, setNewBranch] = useState('')
   const [showWorktrees, setShowWorktrees] = useState(false)
   const [trees, setTrees] = useState<WorktreeInfo[]>([])
+  /** 每个工作树目录的信任状态（键是目录路径）；点「信任」后只改这一条 */
+  const [trustMap, setTrustMap] = useState<Record<string, { trusted: boolean; entry: string | null }>>({})
+  /**
+   * 每个工作树的「文件引用重绑定」报告（实施-07 S2b-3，键是目录路径）。
+   *
+   * 内容是把**当前会话**里 `@` 过的仓库内文件拿到那个工作树的仓库根下重新解析的结果 ——
+   * 用户点「派生新会话」之前就能看到「我在源会话里提到的文件，在这个工作树里还剩几个能对上」。
+   */
+  const [forkRefs, setForkRefs] = useState<Record<string, ForkRefsReportView>>({})
+  /** 「会话 ↔ 工作树」的来源关系（当前会话的用 `myOrigin` 取） */
+  const [origins, setOrigins] = useState<WorktreeLinkView[]>([])
+  /** 当前会话是从哪个工作树派生的（没登记过就是 undefined —— 那时什么都不画） */
+  const myOrigin = session?.sessionId ? origins.find((x) => x.sessionId === session.sessionId) : undefined
   const [wtBranch, setWtBranch] = useState('')
   const [wtPath, setWtPath] = useState('')
   const [wtDeleteBranch, setWtDeleteBranch] = useState(false)
@@ -165,6 +180,26 @@ export function EnvironmentMenu() {
       alive = false
     }
   }, [open, showBranches, project])
+
+  /*
+   * 来源关系（实施-07 S2）跟菜单一起拉：数据量很小（旁挂的一张表），
+   * 而「这个会话是不是从某个工作树派生的」要在菜单一打开就知道。
+   */
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    void window.yan.git
+      .worktreeLinks()
+      .then((res) => {
+        if (alive) setOrigins(Array.isArray(res) ? res : [])
+      })
+      .catch(() => {
+        /* 读不到就少一行追溯，不影响菜单其余部分 */
+      })
+    return () => {
+      alive = false
+    }
+  }, [open])
 
   /*
    * 工作树列表也只在展开时拉：它是一条 git 命令 + 一次目录检查，
@@ -263,6 +298,71 @@ export function EnvironmentMenu() {
     }
   }, [open, project, repoView.repo?.head])
 
+  /*
+   * 工作树的项目信任状态（实施-07 S2b-2）。
+   *
+   * 为何要逐个工作树去查：pi 的信任是**按目录**记在 `trust.json` 里的，
+   * 而工作树目录通常在仓库旁边（不在主仓库路径之下）—— 「主仓库被信任」
+   * 不代表「工作树被信任」。而 RPC 模式没有信任弹窗，用户不处理的话
+   * 项目级 `.pi/settings.json` 会被整份忽略。
+   *
+   * 只在展开工作树区时查（不多花 IPC）；`alive` 防的是「查完前菜单已关」时写回旧值。
+   */
+  useEffect(() => {
+    if (!open || !showWorktrees) return
+    const targets = trees.filter((w) => !w.main).map((w) => w.path)
+    if (!targets.length) return
+    let alive = true
+    void Promise.all(
+      targets.map((p) =>
+        window.yan.trust
+          .status(p)
+          .then((st) => [p, { trusted: st.trusted, entry: st.entry }] as const)
+          .catch(() => null)
+      )
+    ).then((rows) => {
+      if (!alive) return
+      const next: Record<string, { trusted: boolean; entry: string | null }> = {}
+      for (const row of rows) if (row) next[row[0]] = row[1]
+      setTrustMap(next)
+    })
+    return () => {
+      alive = false
+    }
+  }, [open, showWorktrees, trees])
+
+  /*
+   * 工作树的「文件引用重绑定」（实施-07 S2b-3）。
+   *
+   * 输入是**当前会话**（用户正准备从它派生）：主进程把会话里 `@` 过的仓库内文件
+   * 拿到目标工作树根下重新解析。**只在有引用时显示** —— 没有可对照的东西就不占位置
+   * （与 S4 来源搜索同一口径：有则出现、无则隐藏）。
+   *
+   * 依赖 `session?.sessionId`：切会话后要重算（旧会话的引用不能留在新会话的菜单里）。
+   */
+  useEffect(() => {
+    if (!open || !showWorktrees) return
+    const targets = trees.filter((w) => !w.main).map((w) => w.path)
+    if (!targets.length) return
+    let alive = true
+    void Promise.all(
+      targets.map((p) =>
+        window.yan.git
+          .forkFileRefs({ worktree: p, sourceFile: session?.sessionFile, sourceCwd: session?.cwd })
+          .then((report) => [p, report] as const)
+          .catch(() => null)
+      )
+    ).then((rows) => {
+      if (!alive) return
+      const next: Record<string, ForkRefsReportView> = {}
+      for (const row of rows) if (row) next[row[0]] = row[1]
+      setForkRefs(next)
+    })
+    return () => {
+      alive = false
+    }
+  }, [open, showWorktrees, trees, session?.sessionId, session?.sessionFile, session?.cwd])
+
   /* 打开时把焦点放进菜单，键盘用户能继续 Tab */
   useEffect(() => {
     if (open) firstRef.current?.focus()
@@ -281,6 +381,24 @@ export function EnvironmentMenu() {
   }, [open])
 
   const changed = repo?.changedCount ?? 0
+
+  /**
+   * 「对不上」的明细（放在 title 里，一行一条）。
+   *
+   * 为什么不用状态名显示：用户看到 `missing` 不知道是「工作树里没有」还是
+   * 「仓库外的东西本来就不搬」—— 这两件事的处理方式完全不同（前者要去 git 里找，
+   * 后者是设计如此）。
+   */
+  const forkRefsTip = (report: ForkRefsReportView): string => {
+    const problems = report.summary.problems
+    if (!problems.length) return t('env.forkRefsAllOk')
+    return problems
+      .map(
+        (item) =>
+          `${item.state === 'outside' ? t('env.forkRefsOutside') : item.state === 'missing' ? t('env.forkRefsMissing') : t('env.forkRefsMismatch')} · ${item.ref}`
+      )
+      .join('\n')
+  }
   const branchLabel = repo?.detached
     ? t('env.detached')
     : repo?.unborn
@@ -534,6 +652,19 @@ export function EnvironmentMenu() {
 
               {showWorktrees ? (
                 <div className="env-branches env-worktrees" data-testid="env-worktree-list">
+                  {/*
+                   * 这个会话是从哪个工作树派生的（实施-07 S2）。
+                   * 只在**确实登记过**时才画 —— 方案 §6.3 的硬要求是
+                   * 「做不到就不显示无缝继续」，这里同理：不猜、不写死文案。
+                   */}
+                  {myOrigin ? (
+                    <div className="env-carry-hint" data-testid="env-worktree-origin">
+                      {t('env.worktreeOrigin', {
+                        name: myOrigin.branch || t('env.detached'),
+                        dir: myOrigin.worktree
+                      })}
+                    </div>
+                  ) : null}
                   {trees.map((w) => (
                     <div className="env-worktree" key={w.path}>
                       <span className="env-branch-name" title={w.path}>
@@ -541,6 +672,34 @@ export function EnvironmentMenu() {
                       </span>
                       {w.main ? <span className="env-branch-tag">{t('env.worktreeMain')}</span> : null}
                       {!w.main && w.ours ? <span className="env-branch-tag">{t('env.worktreeOurs')}</span> : null}
+                      {!w.main ? (
+                        trustMap[w.path]?.trusted ? (
+                          <span className="env-branch-tag" data-testid="env-worktree-trusted">
+                            {t('env.trusted')}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="env-mini"
+                            data-testid="env-worktree-trust"
+                            title={t('env.trustAllowNote')}
+                            onClick={() => {
+                              /*
+                               * 信任是**用户显式动作**：不因为「同一个 Git 仓库」「remote 相同」
+                               * 就自动把源目录的信任搬过来（形态决策里的反模式之一）。
+                               * 成功后就地改这一条，不重查（避免整个列表闪一下）。
+                               */
+                              void window.yan.trust.allow(w.path).then((res) => {
+                                if (res?.ok) {
+                                  setTrustMap((m) => ({ ...m, [w.path]: { trusted: true, entry: res.entry } }))
+                                }
+                              })
+                            }}
+                          >
+                            {t('env.trustAllow')}
+                          </button>
+                        )
+                      ) : null}
                       {!w.main ? (
                         <>
                         <button
@@ -556,14 +715,62 @@ export function EnvironmentMenu() {
                              * 附件授权与上下文派生状态，并在新实例里接着原来的历史。
                              * 这些没有一件是可以靠改一个 cwd 字段完成的，所以按方案的
                              * 要求：**只开新会话**，并在按钮的 title 与下面的说明里
-                             * 把「不带走什么」讲清楚 —— 不显示「无缝继续」。
+                             * 把「不带什么」讲清楚 —— 不显示「无缝继续」。
+                             *
+                             * ⚠️ 形态已定（2026-09-19，S2b-1）：这条路是 **Fork** ——
+                             * 新会话 + 来源关系（`YAN_DIR/worktree-links.json`），默认不整段注入源历史。
+                             * 判据见 `docs/plan/决策记录-07-S2b-工作树会话形态-2026-09-19.md`。
+                             * 四片里 S2b-2（在工作树目录重新建立信任）、S2b-3（仓库相对路径重绑定）、
+                             * S2b-4（接手上下文草稿）已经做完，`env.worktreeForkCarry` / `env.worktreeForkSkip`
+                             * 两行文案已同步到这一步的事实；**S2b-5（附件不迁移）还没做** ——
+                             * 做完那片之前，文案里不得出现“附件也带过来”。
                              *
                              * 先 setCwd 再 newSession：newSession 会把当前 cwd 作为
                              * 新会话的起点，晚一步设置就落回旧目录了。
                              */
                             void (async () => {
+                              /*
+                               * 来源关系要在**切之前**取：`newSession` 会把
+                               * `session` 换成新的那一份，之后再读就是新会话自己。
+                               */
+                              const before = useStore.getState().session
                               await changeCwd(w.path)
-                              await newSession({ cwd: w.path })
+                              const made = await newSession({ cwd: w.path })
+                              if (made.ok && made.sessionId) {
+                                /*
+                                 * 登记失败**不静默**：它就是这块功能的全部证据。
+                                 * 但仍不阻断切会话 —— 会话已经起来了，退回反而更糟。
+                                 */
+                                await window.yan.git
+                                  .worktreeLink({
+                                    sessionId: made.sessionId,
+                                    worktree: w.path,
+                                    branch: w.branch ?? '',
+                                    fromSessionId: before?.sessionId ?? '',
+                                    fromSessionFile: before?.sessionFile ?? '',
+                                    fromCwd: before?.cwd ?? ''
+                                  })
+                                  .catch(() => undefined)
+                                /*
+                                 * 语义注入（S2b-4）：把「接手必须知道的」放进**新会话的输入框草稿**。
+                                 *
+                                 * 为何不自动发送：这一下花的是用户的额度、还替他定了第一句话；
+                                 * 而草稿他能看一眼、补一句、也能直接删掉 —— 要的是“知道上下文”，
+                                 * 不是“替他说了”。环境派生状态在主进程那边**在目标工作树上重读**，
+                                 * 所以这里只给目录与来源，不把源会话的任何状态传过去。
+                                 */
+                                await window.yan.git
+                                  .forkContext({
+                                    worktree: w.path,
+                                    sourceFile: before?.sessionFile,
+                                    sourceCwd: before?.cwd,
+                                    sourceSessionId: before?.sessionId
+                                  })
+                                  .then((ctx) => {
+                                    if (ctx?.text) useStore.getState().injectComposerText(ctx.text)
+                                  })
+                                  .catch(() => undefined)
+                              }
                               setOpen(false)
                             })()
                           }}
@@ -600,12 +807,33 @@ export function EnvironmentMenu() {
                         </button>
                         </>
                       ) : null}
+                      {/*
+                       * 文件引用重绑定（实施-07 S2b-3）：只在**确实有引用**时占位。
+                       * 明细放在 `title` 里 —— 菜单已经很挤，而“哪几个对不上”是查时才需要的。
+                       */}
+                      {!w.main && (forkRefs[w.path]?.summary.total ?? 0) > 0 ? (
+                        <div className="env-fork-refs" data-testid="env-fork-refs" title={forkRefsTip(forkRefs[w.path])}>
+                          {t('env.forkRefs', {
+                            total: String(forkRefs[w.path].summary.total),
+                            resolved: String(forkRefs[w.path].summary.resolved)
+                          })}
+                          {forkRefs[w.path].summary.problems.length > 0
+                            ? ' · ' + t('env.forkRefsProblems', { n: String(forkRefs[w.path].summary.problems.length) })
+                            : ''}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
 
                   {trees.some((w) => !w.main) ? (
-                    <div className="env-carry-hint" data-testid="env-worktree-open-note">
-                      {t('env.worktreeOpenNote')}
+                    <div className="env-carry-hint env-fork-note" data-testid="env-worktree-open-note">
+                      <div className="env-fork-title">{t('env.worktreeForkTitle')}</div>
+                      <div className="env-fork-carry" data-testid="env-worktree-fork-carry">
+                        {t('env.worktreeForkCarry')}
+                      </div>
+                      <div className="env-fork-skip" data-testid="env-worktree-fork-skip">
+                        {t('env.worktreeForkSkip')}
+                      </div>
                     </div>
                   ) : null}
 
@@ -871,7 +1099,7 @@ export function EnvironmentMenu() {
                 关联外部任务链接（方案 §6.4）。文案里的边界是硬要求：
                 不宣称上传代码 / 同步会话 / 远程执行。
               */}
-              <SourceMenu sessionId={session?.sessionId ?? 'default'} open={open} />
+              <SourceMenu sessionId={session?.sessionId ?? 'default'} open={open} onClose={() => setOpen(false)} />
             </>
           ) : (
             <div className="env-item env-static" data-testid="env-notgit" title={t('env.notGitHint')}>

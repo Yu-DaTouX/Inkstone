@@ -11,7 +11,7 @@
  *   · 面板收放时开关**不动**（这才是「收起后找不到入口」的正解）
  *   · 收起 = 0 宽（不需要留槽）
  *   · 收起状态下导航轨仍贴着正文列（错位 bug 的回归断言）
- *   · 左栏「砚 ⌄」模式菜单：入口在、当前模式可选、其余明确未接入
+ *   · 左栏「砚 + 开关」模式入口：点击直接切换编码 / 日常两态
  */
 ;(async () => {
   const out = []
@@ -125,44 +125,27 @@
     await until(() => store.getState().settings?.rightPanelOpen, 3000)
     await sleep(600)
 
-    out.push('\n=== 4. 左栏「砚 ⌄」模式菜单（先只做入口）===')
-    const mb = document.querySelector('[data-testid="mode-menu-btn"]')
-    if (!mb) bad('没有模式菜单入口')
+    out.push('\n=== 4. 左栏「砚 + 开关」模式切换 ===')
+    const mb = document.querySelector('[data-testid="mode-switch"]')
+    if (!mb) bad('没有模式开关入口')
     else {
       out.push('  入口文案: ' + JSON.stringify(mb.textContent.trim()))
-      if (/砚/.test(mb.textContent)) ok('软件名仍在入口上（砚 + 箭头）')
+      if (/砚/.test(mb.textContent)) ok('软件名仍在开关上')
       else bad('入口上没有软件名')
-      if (mb.querySelector('svg')) ok('带下拉箭头')
-      else bad('没有箭头（看不出可点）')
+      if (mb.getAttribute('role') === 'switch') ok('语义角色为 switch')
+      else bad('没有 switch 语义角色')
+      const before = store.getState().workMode?.mode ?? 'standard'
+      const target = before === 'autonomous' ? 'standard' : 'autonomous'
       click(mb)
-      const opened = await until(() => document.querySelector('[data-testid="mode-menu"]'), 3000)
-      if (opened) ok('点开后出现模式菜单')
-      else bad('点不开')
-      const items = [...document.querySelectorAll('.rmm-item')].map((x) => x.textContent.trim())
-      out.push('  菜单项: ' + JSON.stringify(items))
-      /*
-       * ⚠️ 数目从 3+ 收敛为 2（用户确认：设计上就是「编码 / 日常」两种）。
-       *    所以不再断言「越多越好」，改为断言「正好列全」。
-       */
-      const WANT_MODES = 2
-      if (items.length === WANT_MODES) ok(`列出了全部 ${WANT_MODES} 个模式`)
-      else bad(`模式数量不对：${items.length}（设计上是 ${WANT_MODES}）`)
-      const cur = document.querySelector('.rmm-item.cur')
-      out.push('  当前模式: ' + JSON.stringify(cur?.textContent?.trim()))
-      if (cur) ok('标出了当前模式')
-      else bad('没有当前模式标记')
-      const disabled = [...document.querySelectorAll('.rmm-item:disabled')].length
-      out.push('  未接入（disabled）: ' + disabled + ' 个')
-      if (disabled === items.length - 1) ok('除当前模式外都明确不可选（不做假状态）')
-      else bad('未接入项没被禁用：' + disabled + '/' + items.length)
-      const foot = document.querySelector('.rmm-foot')?.textContent ?? ''
-      if (/尚未接入|即将支持/.test(foot + items.join(''))) ok('文案说明尚未接入')
-      else bad('没有说明未接入')
-      // 点外面关掉
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      await sleep(300)
-      if (!document.querySelector('[data-testid="mode-menu"]')) ok('点外面能关掉')
-      else bad('关不掉')
+      const switched = await until(() => store.getState().workMode?.mode === target, 3000)
+      if (switched) ok(`开关切到真实 ${target} 工作模式`)
+      else bad(`开关没有切到 ${target} 工作模式`)
+      if (mb.getAttribute('aria-checked') === String(target === 'autonomous')) ok('aria-checked 与实际模式同步')
+      else bad('aria-checked 没有与实际模式同步')
+      click(mb)
+      const restored = await until(() => store.getState().workMode?.mode === before, 3000)
+      if (restored) ok(`开关切回真实 ${before} 工作模式`)
+      else bad(`开关没有切回 ${before} 工作模式`)
     }
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')

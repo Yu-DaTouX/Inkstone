@@ -13,8 +13,9 @@
  * `process.resourcesPath/` 找 —— 路径错了应用**能启动但连不上**，
  * 开发态测试全绿也照样复现不了。这个脚本就是专门补那个缝。
  */
-import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { request as httpRequest } from 'node:http'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -33,6 +34,52 @@ function fail(msg, extra = '') {
   console.error(`\n${C.err('✗')} ${msg}`)
   if (extra) console.error(C.dim(extra))
   process.exit(1)
+}
+
+/*
+ * electron-builder 的 Windows portable wrapper 会把真正的 Electron 主进程
+ * 脱离 wrapper 留在后台；`child.kill()` 只结束外层自解压器，不能递归结束
+ * GPU / renderer / pi 子进程。若不在验收结束时按本次 sandbox 标记收口，
+ * 临时目录会被这些进程占用，最后的 rmSync 会把一次成功探针误报成 EPERM。
+ *
+ * 这里仅按本次随机 sandbox 路径寻找进程，并把命中的进程向上补到宿主、向下
+ * 补齐子树；不会按进程名泛杀，也不会碰真实用户的 Electron 或本地模型进程。
+ */
+function terminatePackagedProcesses(marker) {
+  if (process.platform !== 'win32') return
+  /* Keep the literal sandbox path out of PowerShell's own command line; otherwise
+     the discovery pass would see the cleanup helper as another target. */
+  const markerBase64 = Buffer.from(marker, 'utf8').toString('base64')
+  const script = [
+    '$marker = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(' + JSON.stringify(markerBase64) + '))',
+    '$all = @(Get-CimInstance Win32_Process)',
+    '$ids = New-Object System.Collections.Generic.HashSet[uint32]',
+    'foreach ($p in $all) { if (($p.CommandLine -as [string]) -like ("*" + $marker + "*")) { [void]$ids.Add([uint32]$p.ProcessId) } }',
+    '[void]$ids.Remove([uint32]$PID)',
+    '$changed = $true',
+    'while ($changed) {',
+    '  $changed = $false',
+    '  foreach ($p in $all) {',
+    /* Only walk the packaged app image. The portable wrapper is also named 砚*.exe,
+       while the current Node test runner must never be pulled into the kill set. */
+    '    $isPackaged = ($p.Name -as [string]) -like "砚*.exe"',
+    '    if ($isPackaged -and $ids.Contains([uint32]$p.ProcessId) -and $p.ParentProcessId) { $parent = $all | Where-Object { $_.ProcessId -eq $p.ParentProcessId } | Select-Object -First 1; if ($parent -and (($parent.Name -as [string]) -like "砚*.exe") -and $ids.Add([uint32]$p.ParentProcessId)) { $changed = $true } }',
+    '    if ($isPackaged -and $ids.Contains([uint32]$p.ParentProcessId)) { if ($ids.Add([uint32]$p.ProcessId)) { $changed = $true } }',
+    '  }',
+    '}',
+    /* Kill from each packaged root so Windows also tears down renderer/GPU/pi
+       descendants that do not carry the sandbox path in their own argv. */
+    'foreach ($p in $all) { if ($ids.Contains([uint32]$p.ProcessId) -and -not $ids.Contains([uint32]$p.ParentProcessId)) { & taskkill.exe /PID ([string]$p.ProcessId) /T /F *> $null } }'
+  ].join('; ')
+  try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: 10_000
+    })
+  } catch {
+    /* cleanup is best effort; the final directory removal remains the evidence */
+  }
 }
 
 /* 0. 前置：打包产物在不在 */
@@ -84,6 +131,17 @@ if (exeFromArg) {
 }
 /* 2. 隔离沙盒（绕不开真实会话、派生状态与 localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
+/*
+ * 便携 wrapper 会把 PORTABLE_EXECUTABLE_DIR 指向被启动 EXE 的同级目录。
+ * 不能直接从 release/ 启动它，否则真实的 release/砚数据/会被测试写入。
+ * 把单文件复制到本次沙盒后再启动，便携数据也会随现场一起保留。
+ */
+if (exeFromArg && basename(exePath).toLowerCase().includes('portable')) {
+  const sandboxExe = join(sandbox, basename(exePath))
+  copyFileSync(exePath, sandboxExe)
+  exePath = sandboxExe
+  console.log(C.dim(`  便携副本：${exePath}`))
+}
 const dirs = {
   YAN_USER_DATA: join(sandbox, 'userData'),
   YAN_SESSIONS_DIR: join(sandbox, 'sessions'),
@@ -91,7 +149,57 @@ const dirs = {
   YAN_PI_DIR: join(sandbox, 'pi-agent')
 }
 for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true })
-writeFileSync(join(dirs.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ cwd: root, lang: 'zh-CN' }), 'utf8')
+
+/*
+ * 2a. 一个**真的** git 仓库（实施-07 的包内写操作证据用）。
+ *
+ * 为何不能在开发仓库或用户仓库里验：写操作会真的改工作区——只能在一个临时仓库里做。
+ * 它同时是「项目列表」里的一项，所以渲染端能像用户选项目那样选到它。
+ */
+const gitRepo = join(sandbox, 'gitrepo')
+mkdirSync(gitRepo, { recursive: true })
+const gitRun = (args, cwd = gitRepo) => spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true })
+gitRun(['init', '-q'])
+gitRun(['config', 'user.email', 'pkg-probe@local'])
+gitRun(['config', 'user.name', 'pkg-probe'])
+writeFileSync(join(gitRepo, 'tracked.txt'), 'one\n', 'utf8')
+gitRun(['add', 'tracked.txt'])
+gitRun(['commit', '-q', '-m', 'init'])
+/* 制造一个未暂存的改动：探针要把它 stage 掉 */
+writeFileSync(join(gitRepo, 'tracked.txt'), 'one\ntwo\n', 'utf8')
+const gitPristine = gitRun(['status', '--porcelain']).stdout.trim()
+if (gitPristine !== 'M tracked.txt' && gitPristine !== ' M tracked.txt') {
+  fail('临时 git 仓库的初始状态不对', `status = ${JSON.stringify(gitPristine)}`)
+}
+/*
+ * 这次改动的**数量**先由 Node 侧算一次。下面探针里的审查断言
+ * （`tracked.txt` 增 1 行、删 0 行、新增行文本是 `two`）必须与它一致 ——
+ * 否则「审查面板读到了真实改动」就只在探针自己的说法里成立。
+ */
+const gitNumstat = gitRun(['diff', '--numstat']).stdout.trim()
+/* git 的 numstat 是 `<新增行>\t<删除行>\t<路径>`：这里是 `one` → `one\ntwo`，所以新增 1 行。 */
+if (gitNumstat !== '1\t0\ttracked.txt') {
+  fail('临时 git 仓库的改动数量与预期不符', `numstat = ${JSON.stringify(gitNumstat)}`)
+}
+
+writeFileSync(
+  join(dirs.YAN_DATA_DIR, 'desktop.json'),
+  JSON.stringify({
+    cwd: root,
+    lang: 'zh-CN',
+    projects: [
+      {
+        id: 'pkg-git-repo',
+        cwd: gitRepo,
+        name: 'pkg-git-repo',
+        archived: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    ]
+  }),
+  'utf8'
+)
 console.log(C.dim(`  隔离目录 ${sandbox}`))
 
 /*
@@ -194,7 +302,21 @@ const probeEnv = cleanEnv({
   YAN_PROBE_DELAY: String(delay),
   YAN_PROBE_OUT: outFile
 })
-const child = spawn(exePath, [], {
+const child = spawn(exePath, [
+  /*
+   * portable wrapper 在某些版本不会把测试环境完整传给解压后的 GUI 子进程。
+   * 参数是同一探针的显式兜底；生产启动不带这些参数，也不会改变生产数据路径。
+   */
+  `--yan-probe=${join(root, 'scripts', 'probe', 'packaged.js')}`,
+  `--yan-probe-delay=${delay}`,
+  `--yan-probe-out=${outFile}`,
+  /* Electron 的内置开关同时隔离单实例锁；其余目录由 paths.ts 读取。 */
+  `--user-data-dir=${dirs.YAN_USER_DATA}`,
+  `--yan-user-data=${dirs.YAN_USER_DATA}`,
+  `--yan-sessions-dir=${dirs.YAN_SESSIONS_DIR}`,
+  `--yan-data-dir=${dirs.YAN_DATA_DIR}`,
+  `--yan-pi-dir=${dirs.YAN_PI_DIR}`
+], {
   cwd: root,
   env: probeEnv,
   windowsHide: true
@@ -203,6 +325,30 @@ const child = spawn(exePath, [], {
 let buf = ''
 child.stdout.on('data', (d) => (buf += d))
 child.stderr.on('data', (d) => (buf += d))
+
+/*
+ * 实例已经跑起来之后再探一次默认远程端口（实施-08 包验收：「服务默认关闭」）。
+ * 为什么必须等实例活着：启动前端口本来就没监听，那种探测什么都证明不了。
+ * 判据是「连不上」——连接被拒 / 超时都算未监听；真连上了反而是回归。
+ */
+const remoteDefaultPort = 37892
+const remoteProbe = new Promise((resolveProbe) => {
+  setTimeout(() => {
+    const req = httpRequest(
+      { host: '127.0.0.1', port: remoteDefaultPort, path: '/remote/v1/health', method: 'GET', timeout: 2000 },
+      (res) => {
+        res.resume()
+        resolveProbe({ reachable: true, status: res.statusCode })
+      }
+    )
+    req.on('timeout', () => {
+      req.destroy()
+      resolveProbe({ reachable: false, why: 'timeout' })
+    })
+    req.on('error', (err) => resolveProbe({ reachable: false, why: err.code ?? err.message }))
+    req.end()
+  }, 4000)
+})
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const deadline = Date.now() + delay + 150_000
@@ -224,6 +370,8 @@ while (Date.now() < deadline) {
 }
 
 child.kill()
+terminatePackagedProcesses(sandbox)
+await sleep(600)
 
 /*
  * 4. 随包 `yan` 在**运行时**真的可用（实施-02 S5）。
@@ -258,6 +406,123 @@ if (!exeFromArg) {
 }
 
 /*
+ * 4a. 包内 git 写操作真的落到了仓库（实施-07 包验收）。
+ *
+ * 这一条必须由 Node 侧跑：探针里 `git.action` 返回 `ok` 只能说明主进程说成了，
+ * 到底有没有真的改到 index，只有重新跑一遍 `git status --porcelain` 才知道 ——
+ * `M ` （M 在第一列、第二列空白）= 改动已进暂存区。
+ *
+ * 只读那半（审查面板的 snapshot / patch / content）在探针里断言，它的改动数量
+ * 基准在 2a 由 Node 侧算好（`gitNumstat`）—— 两边合起来才是完整的一件事。
+ */
+{
+  const porcelain = gitRun(['status', '--porcelain']).stdout.trim()
+  runChecks.push([
+    /^M {2}tracked\.txt$/m.test(porcelain),
+    `包内 stage 真的写进了 index（git status → ${JSON.stringify(porcelain)}）`
+  ])
+}
+
+/*
+ * 4b. 交接模块真的进了包（实施-05 S6）。
+ *
+ * `app.asar` 是归档，但内容是明文的（主进程 bundle + 资源）。
+ * 为何在这里做而不在探针里：这些都是**主进程**的常量与文件名，渲染端看不到；
+ * 而「打包后少了交接代码」的症状是运行时静默不交接，没有报错可查 ——
+ * 只能在包里找证据。
+ */
+if (!exeFromArg) {
+  const asarPath = join(unpacked, 'resources', 'app.asar')
+  if (existsSync(asarPath)) {
+    const asar = readFileSync(asarPath)
+    for (const [needle, label] of [
+      ['yan-handoff-resume', '续接标记（shared/handoff-resume）'],
+      ['handoff-transactions.json', '交接事务日志文件名'],
+      ['session-chains.json', '会话链文件名'],
+      ['resumeAttempts', '防盲发两遍的尝试计数'],
+      /* 下面几条是各主题的「应用与包」栏（实施-09 S4）：它们验证的是
+         「功能代码真的进了包」，而不是「开发态能跑」。 */
+      ['context-state', '派生状态目录名（实施-06）'],
+      ['src-websearch', '来源菜单里的搜索入口（实施-07 S4）'],
+      ['worktree-links.json', '工作树来源关系表（实施-07 S2a）'],
+      ['/remote/v1/health', '远程管理路由（实施-08 第一阶段）']
+    ]) {
+      runChecks.push([asar.includes(needle), `包内含 ${label}（${needle}）`])
+    }
+  } else {
+    runChecks.push([false, 'app.asar 存在（静态索引检查的前提）'])
+  }
+}
+
+/*
+ * 4c. 远程管理服务在解包产物里**默认不监听**（实施-08 包验收 / §2 安全边界第一条）。
+ *
+ * 这条不能用「读代码看到 `YAN_REMOTE_ENABLE` 判断」代替：真正的风险是打包后的
+ * 启动路径上有人无条件调了 `startRemoteServer()`，而那在开发态与包内可能不同。
+ * token **不落盘**那一半由协议单测覆盖（test-remote），这里只验「默认关着」。
+ */
+{
+  const probe = await remoteProbe
+  runChecks.push([
+    probe.reachable === false,
+    `远程服务默认不监听（127.0.0.1:${remoteDefaultPort} 连不上：${probe.why ?? 'ok'}）`
+  ])
+}
+
+/*
+ * 4d. 远程服务**显式开启后可启动**（实施-08 包验收的另一半）。
+ *
+ * 为何要真起第二个实例：默认关闭 + 代码在包里不能推出「打开它就能用」——
+ * 打包后可能踩的是另一类坑（环境变量没透传、端口被占、单实例锁）。
+ * 单实例锁按 **userData** 分，所以第二个实例用一套独立目录（否则它会被锁挡住）。
+ */
+{
+  const remotePort = 37957
+  const remoteToken = 'pkg-probe-token-0123456789'
+  const remoteDirs = {
+    YAN_USER_DATA: join(sandbox, 'remote-userData'),
+    YAN_SESSIONS_DIR: join(sandbox, 'remote-sessions'),
+    YAN_DATA_DIR: join(sandbox, 'remote-data'),
+    YAN_PI_DIR: join(sandbox, 'remote-pi')
+  }
+  for (const d of Object.values(remoteDirs)) mkdirSync(d, { recursive: true })
+  const remoteChild = spawn(exePath, [], {
+    cwd: root,
+    windowsHide: true,
+    env: cleanEnv({
+      ...remoteDirs,
+      YAN_REMOTE_ENABLE: '1',
+      YAN_REMOTE_PORT: String(remotePort),
+      YAN_REMOTE_TOKEN: remoteToken
+    })
+  })
+  const hit = async (path, token) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${remotePort}${path}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(2500)
+      })
+      return res.status
+    } catch {
+      return 0
+    }
+  }
+  let health = 0
+  for (let i = 0; i < 30 && health !== 200; i += 1) {
+    await sleep(700)
+    health = await hit('/remote/v1/health')
+  }
+  runChecks.push([health === 200, `显式开启后远程服务起得来（/health → ${health || '连不上'}）`])
+  const noToken = await hit('/remote/v1/status')
+  runChecks.push([noToken === 401, `不带 token 打 /status 被拒（${noToken}）`])
+  const withToken = await hit('/remote/v1/status', remoteToken)
+  runChecks.push([withToken === 200, `带 token 打 /status 通过（${withToken}）`])
+  remoteChild.kill()
+  terminatePackagedProcesses(sandbox)
+  await sleep(600)
+}
+
+/*
  * 5. 解包里的 `yan.mjs` 真能跑（`--help` 不需要宿主服务）。
  * 上一轮就是这一类「只验文件存在、不真跑程序」的洞漏掉了一个语法错（见证据-02-S4 §2）。
  */
@@ -276,6 +541,27 @@ if (!exeFromArg) {
     runChecks.push([/tasks apply/.test(out), '用法里含任务写入（模型能从 help 里发现它）'])
     /* 知识子命令也必须在包里可发现（实施-03 S4/S6） */
     runChecks.push([/knowledge search/.test(out), '用法里含项目知识检索'])
+    /*
+     * MCP 子命令同样要在包里可发现 + 能跑（实施-04 S3）。
+     *
+     * 为什么这条属于「应用与包」而不是重复验证：MCP SDK 是本项目**第一个**
+     * 被 main 侧引用的 `dependencies`，而 electron-builder.yml 里有
+     * `!node_modules/**`。当时的选择是把它 bundle 进 `out/main`（见 electron.vite.config.ts 注释），
+     * 所以「打包后还能不能用」必须真跑一次才能下结论 —— 而主进程能启动只是
+     * **间接**证据（SDK 加载失败会让它直接起不来）。
+     */
+    runChecks.push([/mcp describe/.test(out), '用法里含 MCP describe（模型能从 help 里发现它）'])
+    const rMcp = spawnSync(exePath, [cliPath, 'mcp', 'describe', '--server', 'x', '--tool', 'y'], {
+      env: cleanEnv({ ELECTRON_RUN_AS_NODE: '1' }),
+      encoding: 'utf8',
+      timeout: 60_000,
+      windowsHide: true
+    })
+    const outMcp = `${rMcp.stdout ?? ''}${rMcp.stderr ?? ''}`
+    /* 参数给齐（让校验先过），才测得到「连不上宿主」那一段。 */
+    runChecks.push([rMcp.status === 3, `无宿主环境下 mcp describe 报宿主不可用（退出码 ${rMcp.status}）`])
+    runChecks.push([/宿主能力服务不可用/.test(outMcp), 'mcp 在无宿主时报可读原因（不是堆栈）'])
+    runChecks.push([!/\n\s+at\s+\S/.test(outMcp), 'mcp 无宿主时不吐 Node 堆栈'])
 
     /*
      * 再跑一次**子命令**（不花 token、也不需要宿主在跑）：
@@ -336,11 +622,11 @@ if (!exeFromArg) {
   }
 }
 
-rmSync(sandbox, { recursive: true, force: true })
-
 if (body == null) {
+  terminatePackagedProcesses(sandbox)
   console.error(`\n${C.err('✗')} 没拿到 PROBE 输出 —— 打包后的应用可能启动失败`)
   console.error(C.dim(buf.slice(-3000) || '(child 没有任何输出，也没写结果文件)'))
+  console.error(C.dim(`隔离现场已保留：${sandbox}`))
   process.exit(1)
 }
 
@@ -357,7 +643,12 @@ if (runChecks.length) {
 }
 
 if (/✗/.test(body) || runFailed) {
+  terminatePackagedProcesses(sandbox)
   console.error(`\n${C.err('✗ 打包验收失败')}`)
+  console.error(C.dim(`隔离现场已保留：${sandbox}`))
   process.exit(1)
 }
+terminatePackagedProcesses(sandbox)
+await sleep(600)
+rmSync(sandbox, { recursive: true, force: true })
 console.log(`\n${C.ok('✓ 打包验收通过')} ${C.dim('内置 pi 在安装目录里可用')}`)

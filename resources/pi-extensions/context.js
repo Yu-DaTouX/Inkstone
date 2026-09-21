@@ -125,6 +125,13 @@ import {
   renderWorkingTrace,
   turnKeyOf
 } from './context-deep.js'
+import {
+  budgetOf,
+  budgetOverridesFromPolicy,
+  estimateMessagesTokens,
+  estimateRequestTokens,
+  requestBudgetLevel
+} from './context-budget.js'
 
 /* ---------------------------------------------------------------- 环境与设置 */
 
@@ -135,6 +142,93 @@ function dataDir() {
 
 function stateDir() {
   return join(dataDir(), 'context-state')
+}
+
+/**
+ * 这一轮该用哪份预算（实施-05 S4）。
+ *
+ * 窗口从 `ctx.model.contextWindow` 拿（06-S4 的 `contextrefresh` 已证它在真实链路可用）；
+ * 取不到就交回 `null`（判定为 `unknown`，策略不生效，回落 pi 原生压缩）。
+ * 覆盖值直接读同一个 `YAN_CONTEXT_POLICY`（与主进程同一份 env）——
+ * 公式仍是 `shared/context-policy.ts` 那一套（`context-budget.js` 与它交叉校验）。
+ */
+function requestBudgetFor(ctx) {
+  const raw = process.env.YAN_CONTEXT_POLICY
+  let overrides = {}
+  if (raw && raw.trim()) {
+    try {
+      overrides = budgetOverridesFromPolicy(JSON.parse(raw))
+    } catch {
+      overrides = {}
+    }
+  }
+  const win = ctx?.model?.contextWindow
+  return budgetOf(typeof win === 'number' ? win : 0, overrides)
+}
+
+/**
+ * `before_provider_request`：请求真的发出去之前的最后一眼（实施-05 S4）。
+ *
+ * 做两件事，顺序不能反：
+ *   ① **记诊断**（`request-budget`）：估算体积 / 三档判定 / 当时的预算线。
+ *      没有这一行，「它为什么没发出去」就只能靠猜 —— 而估算是**估算**，
+ *      与真实 usage 的偏差正是要靠这条日志长期校准的。
+ *   ② 只在 `physical` 时**拒绝发送**（`ctx.abort()`）：连「估算 + 输出预留」都超过
+ *      窗口的请求，provider 只会报错 —— 发出去的唯一效果是把这一轮白烧掉。
+ *      代价是这一轮以 `Request aborted` 结束（S1 实测），所以必须写清原因：
+ *      会话留痕 + 诊断行，两边都能看到「是预算把它挡下的，不是崩了」。
+ *
+ * `soft` 不在这里处理：清扫要改 messages（属于 `context` 钩子的活），
+ * 压缩要跨回合（属于宿主 settled 后的活）。这里只观察与止损。
+ */
+function onBeforeProviderRequest(event, ctx, pi) {
+  const payload = event?.payload
+  const budget = requestBudgetFor(ctx)
+  const usage = estimateRequestTokens(payload)
+  const verdict = requestBudgetLevel({ estimatedTokens: usage.total, budget })
+  const sessionId = sessionIdOf(ctx)
+
+  trace(`request-budget-${verdict.level}`, {
+    sessionId,
+    messages: usage.messages,
+    tools: usage.tools,
+    system: usage.system,
+    estimatedTokens: verdict.estimatedTokens,
+    projectedTokens: verdict.projectedTokens,
+    reason: verdict.reason,
+    window: budget?.contextWindow ?? null,
+    workingSet: budget?.workingSet ?? null,
+    emergency: budget?.emergency ?? null,
+    responseReserve: budget?.responseReserve ?? null
+  })
+
+  if (verdict.level !== 'physical') return
+
+  /* 留痕：会话文件里能查到「这一轮为什么没跑起来」（appendEntry 不进模型上下文） */
+  try {
+    pi?.appendEntry?.('yan-budget-abort', {
+      at: Date.now(),
+      estimatedTokens: verdict.estimatedTokens,
+      projectedTokens: verdict.projectedTokens,
+      contextWindow: budget?.contextWindow ?? null,
+      reason: verdict.reason
+    })
+  } catch (err) {
+    trace('budget-abort-entry-failed', { sessionId, error: errorText(err) })
+  }
+
+  try {
+    ctx?.abort?.()
+    trace('budget-abort', {
+      sessionId,
+      aborted: true,
+      estimatedTokens: verdict.estimatedTokens,
+      projectedTokens: verdict.projectedTokens,
+      contextWindow: budget?.contextWindow ?? null
+    })
+  } catch (err) {
+    trace('budget-abort-failed', { sessionId, error: errorText(err) })
+  }
 }
 
 function trace(hook, payload) {
@@ -587,6 +681,17 @@ async function onContext(event, ctx) {
       expiredRecalls = cleaned.changed
     }
 
+    /*
+     * 预算驱动的清扫（实施-05 S4）：估算已到工作集线时，**跳过收益门槛**再清一次 ——
+     * 平时「收益太小、不值得动上下文」的判据，在这里让位于「这一轮本来就快装不下」。
+     *
+     * 为什么不在 `before_provider_request` 里做：清扫要改 messages，那是这个钩子的活；
+     * 那边只能看与止损（abort）。两处用**同一份**预算与估算口径，诊断才对得上。
+     */
+    const budget = requestBudgetFor(ctx)
+    const transcriptTokens = estimateMessagesTokens(next)
+    const overWorkingSet = !!budget && transcriptTokens >= budget.workingSet
+
     /* ② Tool Sweep */
     if (kindEnabled(p, 'tool-sweep')) {
       const entryIds = entryIdsFor(ctx, next)
@@ -598,13 +703,23 @@ async function onContext(event, ctx) {
           entryIds,
           watermark,
           recentTail: p.recentTail,
-          sweep: p.sweep,
+          sweep: overWorkingSet ? { ...p.sweep, minReclaimTokens: 0, minReclaimRatio: 0 } : p.sweep,
           /*
            * 硬约束①：**本回合正在动的文件**不得清扫。呼叫方只给路径清单，判定在 context-safety。
            * 旧回合的编辑不在此列 —— 它们已经不在“正在使用”，否则清扫永远压不动。
            */
           opts: { activePaths: activePathsOf(next) }
         })
+        if (overWorkingSet) {
+          trace('context', {
+            sessionId,
+            hook: 'sweep-forced-by-budget',
+            transcriptTokens,
+            workingSet: budget?.workingSet ?? null,
+            applied: planned.ok,
+            reason: planned.ok ? null : planned.reason
+          })
+        }
         if (planned.ok) {
           const applied = applyToolSweep(next, planned.plan)
           if (applied.changed > 0) {
@@ -963,6 +1078,12 @@ function messagePairsFromEntries(entries) {
 
 /** 生成器一次调用的墙钟上限（§16.6.1 建议 20s；超时保留旧状态，绝不落半成品） */
 const PRODUCER_TIMEOUT_MS = 20_000
+/*
+ * 本地模型通常把结构化 JSON 生成放在同一个 llama.cpp 槽位里，
+ * 速度明显慢于在线模型；只放宽它，不改变在线模型的 20s 失败边界。
+ * 仍然是有界等待，超时继续保留旧状态，绝不落半成品。
+ */
+const LOCAL_PRODUCER_TIMEOUT_MS = 45_000
 /** 输出上限：状态是短 JSON，给太多会让模型写散文 */
 const PRODUCER_MAX_TOKENS = 1_200
 
@@ -1318,7 +1439,8 @@ async function produceAndCommit(sessionId, ctx) {
       episodeWin
     })
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), PRODUCER_TIMEOUT_MS)
+    const producerTimeoutMs = model?.provider === 'local' ? LOCAL_PRODUCER_TIMEOUT_MS : PRODUCER_TIMEOUT_MS
+    const timer = setTimeout(() => controller.abort(), producerTimeoutMs)
     let response
     try {
       response = await registry.complete(
@@ -1557,6 +1679,11 @@ export default function contextExtension(pi) {
     log: !!process.env.YAN_CONTEXT_EXT_LOG
   })
   pi.on('context', (event, ctx) => onContext(event, ctx))
+  /*
+   * 请求前的最后一眼（实施-05 S4）：估算超物理线就不发，并留诊断。
+   * 位置有意放在 `context` 之后：清扫已经跑过，这里量到的是**真正要发**的体积。
+   */
+  pi.on('before_provider_request', (event, ctx) => onBeforeProviderRequest(event, ctx, pi))
   pi.on('session_before_compact', (event, ctx) => onBeforeCompact(event, ctx))
   /*
    * N21-4 生成器：`agent_settled` 是「这一轮真的结束」的稳定边界。
@@ -1573,6 +1700,8 @@ export default function contextExtension(pi) {
 export const __internals = {
   policy,
   onContext,
+  onBeforeProviderRequest,
+  requestBudgetFor,
   onBeforeCompact,
   onAgentSettled,
   mergeArchive,

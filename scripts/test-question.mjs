@@ -4,18 +4,29 @@
  * 不启动 pi / Electron：直接 import 扩展、喂一个假的 `pi` API，
  * 把注册的 tool 与 before_agent_start 处理器抓出来断言。
  *
- * 覆盖三件事：
- *   · 系统提示按「自主模式」切换（问 vs 不问）
- *   · 自主模式下 execute 不弹 UI、直接让模型自行决策
- *   · 普通模式下 select / 自定义输入 / 取消 都能正确回填并返回工具结果
+ * 覆盖四件事：
+ *   · 工作模式（实施-05）从**宿主写的每会话快照**读，三档提示不同；
+ *   · 快照缺失时的回退链（新字段 defaultWorkMode → 旧布尔 autonomous → 标准）；
+ *   · 自主模式下 execute 不弹 UI、直接让模型自行决策；
+ *   · 其余模式 select / 自定义输入 / 取消 都能正确回填并返回工具结果。
  */
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export async function runQuestionTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-question-'))
   process.env.YAN_DATA_DIR = dir
+  /* 宿主注入的运行实例 id —— 扩展按它找模式快照文件 */
+  process.env.YAN_SESSION_ID = 'r1'
+
+  const modeFile = join(dir, 'work-mode', 'r1.json')
+  const setModeFile = async (mode) => {
+    await mkdir(join(dir, 'work-mode'), { recursive: true })
+    await writeFile(modeFile, JSON.stringify({ version: 1, mode }), 'utf8')
+  }
+  const clearModeFile = () => rm(modeFile, { force: true })
+  const setSettings = (raw) => writeFile(join(dir, 'desktop.json'), JSON.stringify(raw), 'utf8')
 
   const mod = await import(new URL('../resources/pi-extensions/question.js', import.meta.url))
   const factory = mod.default
@@ -36,21 +47,37 @@ export async function runQuestionTests(ok) {
   ok(typeof handlers.before_agent_start === 'function', '注册了 before_agent_start')
   ok(tool.executionMode === 'sequential', 'question 工具串行执行（多个问题不会互相覆盖弹窗）')
 
-  const setMode = (autonomous) =>
-    writeFile(join(dir, 'desktop.json'), JSON.stringify({ autonomous }), 'utf8')
-
-  /* ---- 系统提示随模式切换 ---- */
-  await setMode(false)
-  const ask = handlers.before_agent_start({ systemPrompt: 'BASE' })
+  /* ---- 系统提示随会话模式切换 ---- */
+  await setModeFile('standard')
+  const std = handlers.before_agent_start({ systemPrompt: 'BASE' })
   ok(
-    typeof ask?.systemPrompt === 'string' && ask.systemPrompt.includes('BASE') && /Interactive questions/.test(ask.systemPrompt),
-    '默认模式：系统提示注入「可提问」指引'
+    typeof std?.systemPrompt === 'string' && std.systemPrompt.includes('BASE') && /Interactive questions/.test(std.systemPrompt),
+    '标准模式：系统提示注入「模糊时先问」指引'
   )
-  await setMode(true)
+  await setModeFile('clarify')
+  const clarify = handlers.before_agent_start({ systemPrompt: 'BASE' })
+  ok(/Clarify mode is ON/.test(clarify?.systemPrompt ?? ''), '澄清模式：系统提示注入「先把目标问清」指引')
+  await setModeFile('autonomous')
   const auto = handlers.before_agent_start({ systemPrompt: 'BASE' })
   ok(/Autonomous mode is ON/.test(auto?.systemPrompt ?? ''), '自主模式：系统提示注入「不要提问」指引')
 
+  /* ---- 回退链（快照缺失时）---- */
+  await clearModeFile()
+  await setSettings({ defaultWorkMode: 'clarify', autonomous: true })
+  const byNewField = handlers.before_agent_start({ systemPrompt: 'BASE' })
+  ok(
+    /Clarify mode is ON/.test(byNewField?.systemPrompt ?? ''),
+    '回退链：新字段 defaultWorkMode 优先于旧布尔 autonomous'
+  )
+  await setSettings({ autonomous: true })
+  const byLegacy = handlers.before_agent_start({ systemPrompt: 'BASE' })
+  ok(/Autonomous mode is ON/.test(byLegacy?.systemPrompt ?? ''), '回退链：没有新字段时旧布尔 true → 自主')
+  await setSettings({})
+  const byDefault = handlers.before_agent_start({ systemPrompt: 'BASE' })
+  ok(/Interactive questions/.test(byDefault?.systemPrompt ?? ''), '回退链：都没有时回到标准模式')
+
   /* ---- execute：自主模式不弹 UI ---- */
+  await setModeFile('autonomous')
   let uiCalls = 0
   const ctxAuto = {
     hasUI: true,
@@ -70,8 +97,8 @@ export async function runQuestionTests(ok) {
   ok(uiCalls === 0, '自主模式下不弹出任何 UI')
   ok(/Autonomous mode/i.test(resAuto.content[0].text), '自主模式返回「请自行决策」')
 
-  /* ---- execute：普通模式选择选项 ---- */
-  await setMode(false)
+  /* ---- execute：标准 / 澄清模式都照常提问 ---- */
+  await setModeFile('standard')
   const opts = { question: '使用哪种数据库？', options: [{ label: 'SQLite' }, { label: 'PostgreSQL' }] }
   let selectTitle = ''
   uiCalls = 0
@@ -88,9 +115,14 @@ export async function runQuestionTests(ok) {
     }
   }
   const resPick = await tool.execute('t2', opts, undefined, undefined, ctxPick)
-  ok(uiCalls === 1 && selectTitle === '使用哪种数据库？', '普通模式调用一次 select，标题是问题原文')
+  ok(uiCalls === 1 && selectTitle === '使用哪种数据库？', '标准模式调用一次 select，标题是问题原文')
   ok(resPick.details.answer === 'SQLite', '选择结果回填进 details.answer')
   ok(/User selected: SQLite/.test(resPick.content[0].text), '工具结果文本含用户答案')
+
+  await setModeFile('clarify')
+  uiCalls = 0
+  const resClarify = await tool.execute('t2b', opts, undefined, undefined, ctxPick)
+  ok(uiCalls === 1 && resClarify.details.answer === 'SQLite', '澄清模式同样弹窗并把答案回填')
 
   /* ---- execute：选「其他」→ 输入自定义答案 ---- */
   const ctxCustom = {
@@ -118,4 +150,5 @@ export async function runQuestionTests(ok) {
 
   await rm(dir, { recursive: true, force: true })
   delete process.env.YAN_DATA_DIR
+  delete process.env.YAN_SESSION_ID
 }

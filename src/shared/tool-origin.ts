@@ -25,9 +25,9 @@
 const SHELL_TOOLS = new Set(['bash', 'shell', 'run', 'exec'])
 
 /**
- * `yan tasks apply` 的识别。
+ * `yan <组> <动作>` 的识别（两个内置组各一条）。
  *
- * 允许的形式：
+ * 允许的形式（以 tasks apply 为例，goal 同理）：
  *   yan tasks apply …
  *   yan.cmd tasks apply …          （Windows 启动器）
  *   "C:\...\yan.cmd" tasks apply … （带路径 / 带引号）
@@ -38,6 +38,9 @@ const SHELL_TOOLS = new Set(['bash', 'shell', 'run', 'exec'])
  * 但用户会以为迁移没生效）。
  */
 const YAN_TASKS_APPLY = /(^|[\s"'`;&|(])(?:[^\s"'`]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?["'`]?\s+tasks\s+apply(?:[\s"'`;&|)]|$)/i
+
+/** `yan goal ready|report|status`：目标状态（实施-05 S3）。 */
+const YAN_GOAL = /(^|[\s"'`;&|(])(?:[^\s"'`]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?["'`]?\s+goal\s+(?:ready|report|status)(?:[\s"'`;&|)]|$)/i
 
 /** 从工具调用的参数里取命令行文本（pi 的 bash 工具是 `{command}`）。 */
 function commandTextOf(args: unknown): string {
@@ -63,6 +66,20 @@ export function taskPlanCommand(name: unknown, args: unknown): string | null {
 }
 
 /**
+ * 这条调用是不是「砚内置目标状态」（`yan goal …`，实施-05 S3）？
+ *
+ * 同 `taskPlanCommand`：**只是展示标记**，写入权永远在宿主（`yan:goal.*` 命令）。
+ * 要认出 `goal ready` / `report` / `status` 三个动作 —— 只认 `ready` 会让
+ * 「读了 status 才提交」那一步看起来像模型在乱敲命令。
+ */
+export function goalCommand(name: unknown, args: unknown): string | null {
+  if (typeof name !== 'string' || !SHELL_TOOLS.has(name)) return null
+  const text = commandTextOf(args)
+  if (!text) return null
+  return YAN_GOAL.test(text) ? text : null
+}
+
+/**
  * 卡片上显示的命令摘要。
  *
  * 折叠掉连续空白与换行：命令里常带 heredoc，原样铺会把一行卡撑成好几行。
@@ -72,3 +89,6 @@ export function summarizeTaskPlanCommand(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length > 120 ? `${one.slice(0, 119)}…` : one
 }
+
+/** 语义化别名：目标状态卡也用同一套摘要规则（折叠空白 + 截断）。 */
+export const summarizeYanCommand = summarizeTaskPlanCommand

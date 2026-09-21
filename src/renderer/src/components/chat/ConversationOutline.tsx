@@ -90,6 +90,8 @@ export function ConversationOutline() {
      */
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight <= 32
     if (atBottom && turns.length > 0) return turns.length - 1
+    /* 顶部同样是明确边界：不要让首条消息的 padding / 布局时序把高亮留在旧位置。 */
+    if (box.scrollTop <= 1 && turns.length > 0) return 0
 
     /*
      * 拿 DOM 里真实存在的回合（虚拟化时只有可见的那几个）。
@@ -124,10 +126,16 @@ export function ConversationOutline() {
 
   /* 滚动时按几何重算（rAF 节流）。自己发起的滚动在 300ms 内不解除钉住 */
   useEffect(() => {
-    const box = document.querySelector('.stream')
-    if (!box) return
     let raf = 0
-    const onScroll = (): void => {
+    /*
+     * `.stream` 在普通列表 / 虚拟列表之间切换时会被替换。
+     * 如果只给 effect 执行当时的那个节点绑监听，替换后滚动仍然发生，
+     * 但导航轨永远读不到，于是高亮会卡在旧回合。对稳定的 document 做
+     * 捕获监听，只筛选真正的滚动容器，就不依赖某一次渲染得到的节点身份。
+     */
+    const onScroll = (event: Event): void => {
+      const target = event.target
+      if (!(target instanceof HTMLElement) || !target.classList.contains('stream')) return
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
@@ -136,9 +144,9 @@ export function ConversationOutline() {
         setActive(activeFromGeometry())
       })
     }
-    box.addEventListener('scroll', onScroll, { passive: true })
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
     return () => {
-      box.removeEventListener('scroll', onScroll)
+      document.removeEventListener('scroll', onScroll, true)
       if (raf) cancelAnimationFrame(raf)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

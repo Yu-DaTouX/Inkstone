@@ -31,6 +31,29 @@
   margin-left: -4px;
 }
 
+/* 墨色工作空间：品牌入口是一个轻量锚点，不用字符星标或高饱和底色。 */
+.tb-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.brand-mark {
+  display: block;
+  flex: none;
+  color: var(--fg);
+}
+
+.tb-brand .brand-mark {
+  color: var(--accent);
+}
+
+.tb-name {
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
 /* 通用图标按钮（非窗口控制） */
 .tb-icon {
   display: inline-flex;
@@ -300,4 +323,30 @@
 
 .statusbar .spacer {
   flex: 1;
+}
+/* 主题切换：新主题从中心向外扩张，旧主题在底层保持稳定。 */
+::view-transition-old(root) {
+  animation: none;
+  z-index: 0;
+}
+
+::view-transition-new(root) {
+  z-index: 1;
+  animation: theme-reveal 380ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at 50% 50%);
+  }
+  to {
+    clip-path: circle(150vmax at 50% 50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
 }

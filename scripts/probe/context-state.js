@@ -36,8 +36,14 @@
     out.push(`  会话数 = ${sessions.length}`)
     const byPath = new Map(sessions.map((s) => [s.path, s]))
 
-    /* 当前会话禁止删除，挑一条未选中的 */
-    const row = qa('.srow-wrap').find((w) => w.querySelector('.srow') && !w.querySelector('.srow.sel'))
+    /* 全量场景可能在上一条探针里把项目 / 分叉树折叠状态落了盘，先展开项目。 */
+    for (const fold of qa('[data-testid="rail-project-fold"]')) {
+      if (fold.getAttribute('aria-expanded') === 'false') click(fold)
+    }
+    await sleep(350)
+    /* 当前会话禁止删除；优先选稳定的普通 fixture，避开分叉父会话的级联语义。 */
+    const rows = qa('.srow-wrap').filter((w) => w.querySelector('.srow') && !w.querySelector('.srow.sel'))
+    const row = rows.find((w) => /yan-plain-fixture|yan-todo-fixture/i.test(w.getAttribute('data-session-path') ?? '')) ?? rows[0]
     if (!ok(!!row, '找到一条非当前会话（当前会话禁止删除）')) return out.join('\n')
 
     const sessionPath = row.getAttribute('data-session-path') ?? ''

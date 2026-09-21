@@ -228,6 +228,8 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 **改动注意点**：
 
 - 隔离模块只处理文件系统 / Git 边界，**不启动 pi**，也不把差异正文推到渲染端。
+- **终态要看 `stopReason`**：pi 的**模型失败**也会走到 `agent_settled`（错误只体现在 assistant 消息的 `stopReason === 'error'` 上）。不记它就会把「模型报错了」落成 `status: 'done'`，详情卡显示「已完成」（2026-09-19 修真，证据 `test:live -- subagentfail`）。
+- 运行上限可用 `YAN_SUBAGENT_TIMEOUT_MS` 覆盖（只为测试压短；提示文本按**实际**上限拼，不是写死的 10 分钟）。
 - 子代理**不是会话级状态**：`session-runtime.ts` 不缓存 `subagent` 事件，它只进全局 store —— 否则切个会话就看不到正在跑的委派任务。
 - 任何新 run（包括模型通过 `yan subagent start` 启动的）都会把详情指向它，否则模型委派只能悄悄出现在列表里（能力说明向模型承诺的是「用户能看到实时转录」）。
 - `yan subagent …` 与 UI 使用**同一个控制器**：模型启动的任务会推给渲染端，但没有合并 / 放弃入口（worktree 归属仍由用户在详情卡里审阅）。
@@ -289,7 +291,7 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 | 开关（P2-7） | 设置面板「上下文」tab 有两个开关，**默认方向相反**：**深度上下文**（`ctx-deep`，默认关 —— 每轮同步多跑一次模型调用）与**任务状态记忆**（`ctx-fold`，默认开 —— 对应 `episode-fold`，会话够长且这一回合真改过东西才动手）。两者都写 `desktop.json`、由扩展**每轮读文件**（1 秒缓存），所以改完立即生效、不重建实例；`YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它是测试通道、优先于界面开关。主进程侧与扩展侧读的是同一份默认值，但**生效值的折算分别在两边**（主进程 `resolveContextPolicy` 的 `foldEnabled` 层 / 扩展 `applyFoldSwitch`） |
 | 可观测 | `compaction_start/end` → `SessionState.compaction`（进行中，带原因）+ `.lastCompaction`（已结束，带 status/error/前后 token）；发起方由砚盖章，pi 报的 `manual` 不会显示成「手动」 |
 | 界面 | 工作集模式下主值是工作集（不是物理窗口），进度条上三条阶段刻度（清理/折叠/压缩，未接管的画虚线）；关掉「自动压缩」开关就整个退回物理窗口视角 |
-| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（按 **freshness 分档**：完全一致最好、“有效但较早”也接并标 stale、对不上才降级回 pi 摘要；`buildStructuredSummary` 的 `requiredFields` 默认空数组，不再要求六类字段齐备）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**2026-09-18 起在默认接管集里**（用户拍板）—— 但**不是每轮都跑**：会话级门槛与脏判定都还在，短会话照样不花钱；闸内还有 **`state.{generate,inject}` 两条分路**（`inject:false` = shadow 模式，**压缩接手也走这一路**）与一道**会话级 gate**（`foldEligible`：≥4 用户回合且转录 ≥48k，或本会话已经清扫过东西；命中后会话内 sticky）；注入块带 **authority 契约头**（`derived/authoritative/freshness/sourceHead` + 一句固定优先级），生成器输入会**自净掉** synthetic 内容（注入块 / 墓碑 / 召回正文），dirty 的「落后 ≥2」按**回合**而不是条目数算（见[归档 §1.11](archive/2026-09-17-已完成归档.md)）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**还缺**：`symbolsTouched`（需语言级解析）、20+ 回合压力测试（§12.11 第 10 条）。~~EpisodeState 的语义生成~~ **已完成（2026-09-18，默认关 + shadow）**：边界用 `episodeWindow` 的**确定性规则**算（`recentTail` 窗口之外 + 上一版 Episode 的终点，扇叠只会向前推进），收束由模型的 `unresolved` 判（非空即不扇叠），生成后**只落盘、不消费**（进不进压缩摘要由 `buildStructuredSummary` 的 `includeEpisodes` 控制）；`state.{episodeGenerate,episodeInject}` 两道门**都默认关**——实测在提示词里多要一个嵌套对象会拉低整次生成（含 TaskState）的成功率；~~增量 delta~~ 已决策不做（方案 §18）；~~三阶段独立 Rearm/Cooldown~~ **已完成（2026-09-18）**：新纯函数模块 `resources/pi-extensions/context-stage-runtime.js`，`sweep` / `fold` 各持一份会话级运行状态（sweep 只留痕、不上锁；fold 在**模型调用之前**判上膛与冷却，成功与失败都上锁，由 5 分钟重试窗口节流）；~~`episode-fold` 是否进默认接管集~~ —— **已拍板进（2026-09-18）**。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（按 **freshness 分档**：完全一致最好、“有效但较早”也接并标 stale、对不上才降级回 pi 摘要；`buildStructuredSummary` 的 `requiredFields` 默认空数组，不再要求六类字段齐备）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**2026-09-18 起在默认接管集里**（用户拍板）—— 但**不是每轮都跑**：会话级门槛与脏判定都还在，短会话照样不花钱；闸内还有 **`state.{generate,inject}` 两条分路**（`inject:false` = shadow 模式，**压缩接手也走这一路**）与一道**会话级 gate**（`foldEligible`：≥4 用户回合且转录 ≥48k，或本会话已经清扫过东西；命中后会话内 sticky）；注入块带 **authority 契约头**（`derived/authoritative/freshness/sourceHead` + 一句固定优先级），生成器输入会**自净掉** synthetic 内容（注入块 / 墓碑 / 召回正文），dirty 的「落后 ≥2」按**回合**而不是条目数算（见[归档 §1.11](archive/2026-09-17-已完成归档.md)）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**尾项已处置（2026-09-19，实施-06 S3）**：`symbolsTouched` **明确不做**（不为此在薄层引入语言级解析器，字段保留但刻意不填；见方案 §13.1 第 23 条）；**20+ 回合压力测试已做**（`test:live -- contextpressure`，22 个真实回合、压缩 3 次、峰值 1.05×），并据此修掉“策略压缩成功后不重新上膛”的真缺陷、给出 sweep 门槛的实测标定（方案 §12.11 第 10 条 / §12.12 P2）。~~EpisodeState 的语义生成~~ **已完成（2026-09-18，默认关 + shadow）**：边界用 `episodeWindow` 的**确定性规则**算（`recentTail` 窗口之外 + 上一版 Episode 的终点，扇叠只会向前推进），收束由模型的 `unresolved` 判（非空即不扇叠），生成后**只落盘、不消费**（进不进压缩摘要由 `buildStructuredSummary` 的 `includeEpisodes` 控制）；`state.{episodeGenerate,episodeInject}` 两道门**都默认关**——实测在提示词里多要一个嵌套对象会拉低整次生成（含 TaskState）的成功率；~~增量 delta~~ 已决策不做（方案 §18）；~~三阶段独立 Rearm/Cooldown~~ **已完成（2026-09-18）**：新纯函数模块 `resources/pi-extensions/context-stage-runtime.js`，`sweep` / `fold` 各持一份会话级运行状态（sweep 只留痕、不上锁；fold 在**模型调用之前**判上膛与冷却，成功与失败都上锁，由 5 分钟重试窗口节流）；~~`episode-fold` 是否进默认接管集~~ —— **已拍板进（2026-09-18）**。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
 | 阶段 4 契约 | 提点审核（2026-09-16）把阶段 4 的开工契约定在方案 §12：原子上下文单元与 `recentTail` 切割、`EpisodeState` / `CodingState` 两个 schema、禁止递归摘要、Recall 独立预算与生命周期、每阶段独立的上膛/冷却/收益门槛、失败退回 pi 原生行为 |
 
 **改动注意点**
@@ -500,10 +502,31 @@ agent 目录**的路径。所以：元信息要按 source 的形状解析（不�
 ### 2.20 会话来源（方案 §8 的 S1）
 
 ```
-yan:sources:list / addImage / verifyFiles / removeImage / readImage
+yan:sources:list / addImage / verifyFiles / removeImage / readImage / link / webSearch
   └── main/sources.ts      图片副本落在 <YAN_DATA_DIR>/sources/<会话>/
+  │                        「来源 ↔ 消息」的关联落在同目录的 links.json
   └── components/review/SourceMenu.tsx   环境菜单里的「来源」
 ```
+
+**「定位消息」（实施-07 S3）**：来源菜单里能从一条来源跳到它参与过的那条消息。
+关联**不在会话 JSONL 里**，而是每会话一张 `links.json`（与图片副本同目录、同生命周期）——
+与「任务日志不写进会话 JSONL」同一条理由：pi 写的文件和砚补的字段不能混在一起。
+
+建立时机是**发送之后**：发送时把附件换算成来源 id 排队（图片 = 内容指纹，渲染端自己算；
+文件 = 主进程复核时给的 id；网页不进附件流），等 pi 写出那条 user 条目、渲染端收到
+`msg-add` 时把队首那批绑上去。之所以要排队：**消息 id 在发送那一刻还不存在**。
+绑定幂等（同一对不堆第二条），形状不对的 id 只记进 `skipped` 而不让整批失败。
+跳转是命令式的：按 `[data-msg-id="…"]` 找节点 → `scrollIntoView` → 加 1.8 秒的高亮 class
+（只回答「跳到了哪」，不留选中态）。
+
+**网页搜索入口（实施-07 S4）**：方案对网页搜索的硬条件是「只在已发现兼容搜索能力时
+启用」且**不自造私有搜索后端**。所以这里的产物是**发现 + 如实暴露**：
+`shared/web-search.ts` 从能力目录里认一条搜索能力（**只看外部接入的 MCP 工具 / 已装 Skill**
+—— 内置的 `knowledge.search` 是项目知识检索，算进来入口会在每台机器上都出现），
+`yan:sources:webSearch` 把这个判定结果交给界面，菜单据此**有则出现、无则隐藏**。
+命中时那枚入口只把一段草稿**注入输入框**（能力名 + 调用形状 + 关键词），
+不代发、也不执行 —— 执行能力是模型的事。往输入框注入走 `store.injectComposerText`：
+外部写 `setSessionDraft` 对当前输入框不可见（草稿只在切会话时同步一次）。
 
 **三类来源的存在方式不同，这决定了实现**：
 
@@ -600,6 +623,228 @@ yan:git:prStatus → main/hosting.ts
 **未登记时不能裸回退旧算法**：它只取路径前 27 字节，会让 `<repo>` 与 `<repo>-worktrees/feat`
 共用一个 id，于是工作树读到主仓库的知识，违反实施-03 §4）；② 「需复核」是**每请求重算**的派生状态（分支 / 路径 / 来源会话），不要存进条目里；
 ③ 「确认」是唯一能把条目升为 `active` 的路径 —— 不要给它加一个「模型自证」的后门。
+
+### 2.23 工作模式：标准 / 澄清 / 自主（实施-05 S2：会话级状态 + 迁移 + 菜单）
+
+```text
+用户点菜单 / 按 Tab 快切 → Composer 的 WorkModePicker
+        → store.setWorkMode → yan:setWorkMode(mode, expectedRevision)（main/index.ts）
+        → WorkModeStore（YAN_DIR/work-modes.json）：CAS 提交 → revision+1
+        → 写 YAN_DIR/work-mode/<runnerId>.json（扩展读的那份）+ 推 work-mode（带 runtime 封套）
+
+模型侧 → question.js：before_agent_start 按模式选提示；execute 在自主模式直接让模型自行决策
+```
+
+**为什么是会话级、不是全局开关**：旧实现是一个布尔 `desktop.json.autonomous` ——
+A 会话切自主会连带改变 B 会话的提问行为。现在按会话存，界面只投影当前会话的那份。
+旧布尔仍是**迁移输入**（新字段优先，幂等）：`migrateLegacyAutonomous`。
+
+**存储键是会话文件路径，不是 `state.sessionId`** —— 这是真实验链路抽出来的：
+同一份会话文件切走再切回，pi 报回的 sessionId 会变（文件没变），拿它作键会
+让用户刚设的模式当场丢回默认值。pi 给出文件名之前用 `pending:<runnerId>` 占位，
+拿到后 `adopt()` 迁过去（迁移不算一次用户提交，revision 不变）。
+
+**两份文件各管一段**：`work-modes.json` 是宿主的存储（按会话、带 revision）；
+`work-mode/<runnerId>.json` 是给薄层扩展的**每实例快照**（扩展只能从 `YAN_SESSION_ID`
+知道自己是哪个实例）。快照在推送 / 切换会话 / 提交时重写，所以「切回标准」下一轮就生效。
+
+**界面与键位**（实施-05 §3）：菜单三档各带一句说明；`Tab` 循环（设置里可关；
+补全菜单有候选、IME 组合态、长文模式一律让路）；`Shift+Tab` 仍是思考强度；
+无补全时 `Esc` 从输入框把焦点送到模式按钮。自主档才有运行光带。
+
+**S3 待接**：澄清档的「就绪后自动转标准并开工」是宿主验证的原子转移（§4），
+当前只有提示与提问行为；「运行中切换只对下一轮生效」的 pending 标记也在那一片。
+（→ 已接一部分，见 §2.24）
+
+### 2.24 目标状态与澄清就绪转移（实施-05 S3a）
+
+```text
+模型（澄清档）→ bash → `yan goal ready --transition-id … --goal … --mode-revision …`
+        → 能力服务（身份校验）→ index.ts 的 goalCapabilityHost
+        → 校验（shared/goal.ts 纯函数：五栏 / 置信度 / revision 不过期）
+        → GoalStore.commitReady（YAN_DIR/goals.json：**幂等记录先查** → 落盘）
+        → WorkModeStore.set('standard') + pushWorkMode（快照 + 推送）
+        → 回执里明说「本轮仍只读，下一轮开始执行」
+
+模型（自主档）→ `yan goal report --phase …` → 校验 → 推进
+                （completed 要证据、blocked 要原因、同一失败签名连续两次**强制** blocked）
+界面（只读）→ yan:getGoal，一次往返拿到「目标 + 当前模式」
+```
+
+**门禁顺序**（[证据-05-S1](plan/证据-05-S1-钩子与安全点.md) 实验 1 定的）：
+**工具表（主）→ `tool_call` block（兜底）→ 提示词（说明）**。
+执行者是薄层 `resources/pi-extensions/work-mode.js` —— `setActiveTools` 只有扩展 API 有，
+pi 的 RPC **没有**工具面（实测 `get_tools` / `set_active_tools` 都回 Unknown command）。
+策略真源仍是宿主写的那份模式快照，扩展只执行。
+
+**澄清档不能写文件 → 提交必须支持内联参数**。白名单 = `read/grep/find/ls/question/context_recall`
++ **受限的 bash**：只接受 `yan goal status|ready|report` 这一种形状，
+且整条命令不得出现 shell 元字符（`;` `&&` `|` `>` 反引号 `$` 换行……）。
+把 bash 完全拿掉，澄清档就永远提交不了（CLI 就得用 bash 敲）；完全放开就等于没门禁。
+
+**为什么目标状态要单独一份文件**（`goals.json`，与 `work-modes.json` 分开）：
+模式的写者是界面（低频、CAS 抗抢），目标的写者是模型（高频、要幂等记录）。
+混在一份里会让模式那份承担两种并发语义。
+
+**「恰好一次」靠什么**：`transitionId` / `reportId` 在 `commitReady` / `report` 里
+**先于**校验被查——重放直接返回已提交结果。顺序不能反：重放时模式 revision
+已经被**这次转移**改过了，先校验会让重试收到「模式已过期」，看起来像失败。
+
+**跨轮自动续行（S3b）**：就绪转移后宿主写一份「待发续行」快照
+（`YAN_DIR/goal-resume/<runnerId>.json`，与转移**同一次落盘**），薄层
+`resources/pi-extensions/goal-resume.js` 在回合空闲时把它变成一条 **`custom` 角色**消息并
+**触发一次回合**（`pi.sendMessage({customType,content,display},{triggerTurn:true})`）。
+
+为什么这段只能在薄层：只有扩展 API 能发 `custom` 消息并触发回合，
+RPC 面没有对应命令 —— 而 `custom` 角色正是「**这不是用户说的话**」的机器可判形式（§4）。
+
+三道防护都落在实现里：① 唯一 `operationId`（就是 `transitionId`）；
+② **消费幂等**（发之前先写 `goal-resume/<runnerId>.consumed.json`，崩溃后不盲发两次）；
+③ **用户消息优先**（`message_end` 之后 1.8s 二次确认，期间用户又发话或又调工具就放弃）。
+用户按停止或把档位改回非标准，则**撤销未发续行**（`yan:abort` / `yan:setWorkMode` 里清）。
+
+**自主档「接着干」（S3c）**：这就是「给 agent 一个非常大的任务，让它自己规划完成」的那条链路 ——
+自主档下模型每 `yan goal report` 一次（阶段还在 `planning/executing/verifying`），宿主就
+`GoalStore.armContinue` 写一条 **`kind=continue`** 的续行（正文 = 当前阶段 + 未完成步骤 +
+「不要问我，接着干」），薄层按 `kind` 发 `yan-goal-continue` 而不是 `yan-goal-ready`。
+于是**用户只说一句话**，模型报完进展就能一轮轮被叫起来，直到 `completed` / `blocked`。
+
+四个边界：① 上限 `AUTONOMOUS_CONTINUE_LIMIT = 8`（连续 —— 用户一旦发言 `yan:send` 就归零，
+到上限只在 `goal.report` 回执里告知模型停下交代）；② 目标从没被报告过（`revision <= 0`）**不 arm**
+—— 否则自主档里任何一场普通对话都会被无限叫醒；③ 目标进终态或用户停止时**同一次落盘**清掉未发续行
+（否则它在完成后才发出去）；④ 只有自主档 arm（标准档用户在旁边，不该自己往下跑）。
+
+**请求前预算门（S4）**：`context` 钩子改完消息之后、请求真的发出去之前，
+扩展在 `before_provider_request` 里估算**这个请求体**（messages + 工具表 + 顶层 system），
+按同一份预算公式判三档：`normal` / `soft`（≥ 工作集线 → `context` 钩子**跳过清扫收益门槛**
+再清一次旧工具结果）/ `physical`（估算 + 输出预留 > 窗口 → `ctx.abort()` **不发送**，
+并写一条 `yan-budget-abort` 会话留痕 + `request-budget-physical` 诊断）。
+
+三条边界：① 公式的唯一真源仍是 `shared/context-policy.ts`，
+扩展侧 `resources/pi-extensions/context-budget.js` 是它的 JS 副本（扩展不能 import TS），
+**单测交叉校验两边逐项相等**；② `physical` 与 `emergency` **不是同一条线** ——
+前者管「请求能不能发」，后者管「settled 后该不该压」，合并会把 pi 原生自动压缩一起废掉；
+③ 判定是**估算**（4 字符/token 口径），physical 线留了完整输出预留当误差缓冲；
+真实 usage 只用于校准，不当精确值。
+
+**跨会话交接的计数与资格（S5a）**：`YAN_DIR/handoffs.json`（与模式 / 目标同一套键：会话文件路径）记
+「本片段成功自动完整压缩了几次」—— 只计**完成且自动**的（`triggeredBy: policy` 或 pi 原生
+`threshold` / `overflow`），手动 / 失败 / 取消 / declined 一律不计；`state` 推送会把 `lastCompaction`
+重放很多遍，所以用**稳定键**去重（摘要条目 id，缺了就用「起止时间 + 原因」合成）。
+到 2 次之后还要看四个条件（目标在推进 / 自主档 / 不忙）才谈得上交接，不满足时给**可读原因**。
+交接包的**形状**（`shared/handoff.ts` 的 `HandoffPackage`）也已定稿：由**模型**写、宿主校验
+（两栏必填、列表宽容读法、来源字段一律由宿主覆盖）。
+**生成链路（S5b-2）与事务接线（S5b-3b）已完成；只剩界面接线（S5b-4）。**
+
+**会话链：后台多段、前端一条（S5b-1）**：用户 2026-09-19 拍板 —— 后台确实切成两份
+（两个 JSONL，各自是 pi 的会话），但砚把它们当**同一条会话**显示：侧栏只列一条
+（代表 = 链上最后一段）、历史按段拼成一条连续时间线（不插可见分界）、发送永远发到当前活动段。
+关系旁挂在 `YAN_DIR/session-chains.json`（`link(from, to, handoffId)`），**不改写任何 JSONL** ——
+pi 的一个会话文件就是一个上下文窗口的账本，交接正是因为这段上下文该换了。
+判定函数（`isRepresentative` / `planHistoryRead`）已在 `shared/session-chain.ts` 定下来，
+**写侧（S5b-3b）与读侧（S5b-4）都已接线**：交接提交时写链；侧栏只列代表段、
+历史由 `main/session-history.ts` 按段拼成一条时间线、删除按链整体处理。
+**唯一没接的是导出 / 复制**（pi 的 `export_html` 与 fork 是单文件语义，本阶段如实记为限制）。
+
+**交接包由模型写（S5b-2）**：§8 的包不是机械拼出来的 —— 它要写「用户目标是什么、
+接到手先干什么」这类只有读过这段对话才说得清的东西。分工按「能落地宿主的就不留扩展」切：
+
+- **宿主**：判资格（§7 四条；阈值可被测试通道覆盖）→ `renderHandoffPrompt` 渲染提示词
+  → 写 `YAN_DIR/handoff-request/<runnerId>.json` → 轮询结果 → **三道闸门**
+  （两个 id 对得上 / 原文能解析出 JSON / 清洗过两栏必填）→ 落盘 `handoffs.json`。
+- **薄层** `resources/pi-extensions/handoffs.js`：在 `agent_settled` 时读请求，
+  调一次 `ctx.modelRegistry.complete(...)`（无工具、60s 上限），把**原文**写回结果文件。
+  虽然只有它调模型（RPC 没这个能力），但**提示词与校验都在宿**——
+  「交接包该有哪些字段」只有一份真源。
+
+三个实现细节值得记住：① **触发有两个时机**（压缩完成 / 回合结束）—— `goal report` 发生在回合
+**中途**，那一刻实例是忙的，只靠压缩事件会让「先报告后压缩」的顺序漏掉；
+② **解析要括号平衡扫描**（只取第一个完整对象）—— 「首尾截取」在模型多吐一句时会把两份内容
+连起来、整份白白丢掉；③ **失败就是失败**：解析不过 / 缺两栏必填 → 丢掉并告知用户，
+**不重试、不降级成半份包**（宁可重做，不要把半个任务交给新会话）。
+只读 `yan:getHandoff`（`HandoffView`）给探针与界面用（S5b-3b 起还带 `transaction` / `autoCommit`）。
+
+**交接事务：先写日志再动外部状态（S5b-3a）**：§8 的七个阶段现在是可执行的状态机
+（`shared/handoff-transaction.ts`）。它的价值不在「怎么走」，而在**崩了怎么办**：
+交接连着两个会话，失败的后果是「两边都在干活」或「两边都不干」——比「干脆没交接」更糟。
+三条硬规则：① **不许跳步**（没有包不能 `validated`，没有目的会话不能 `committed`）；
+② `resumed` 只能由**磁盘证据**（目的会话 JSONL 里那条 resume）置位，
+发送与确认之间正是进程会死的窗口 —— `recoveryAction` 把这一格写成
+「有证据 → 补记完成，无证据 → **重发一次**（消费去重挡住重复），更早阶段 → **回源**」；
+③ 每一步**先落盘再动作**（`YAN_DIR/handoff-transactions.json`，按 `handoffId` 索引，
+未终结的事务一条都不裁）。
+接线（建目的会话 / `runners.ts` 同 cwd 租约 / 发 resume / `link` 会话链）是 S5b-3b ——
+而 §7 明写「先完成真实长任务验证后再开启默认值」，所以**默认是否自动交接需要用户拍板**。
+
+**前端一条会话的接线（S5b-4）**：口径定下来之后，真正需要改的**不是渲染组件**，
+而是三个数据出口：
+
+- **历史拼接**（`main/session-history.ts` 的 `readChainMessages`）：按 `planHistoryRead` 从旧到新读每段，
+  拼成一条时间线；链上读不到的段**如实计入 `missing`**（用户少看一段历史必须能被发现），
+  全部读不到才回退 `get_messages`。三个落点：`agent.ts` 的新注入口 `readHistory`
+  （agent 不认识「链」——那是宿主的关系）、切会话时先铺内容的 `yan:peekSession`、安卓远程历史。
+- **侧栏列表**（`yan:listSessions`）：只列代表段（`isRepresentative`），代表段没有标题时用**链首段**标题顶上；
+  路径与 id 仍是代表段的（打开 / 发送都落在当前活动段）。
+- **删除**（`yan:deleteSession`）：删整条链（多个撤销 token 用 `|` 拼给界面，`restoreSession` 逐个恢复），
+  删完调 `SessionChainStore.forget()` —— 链记录留着会指向不存在的文件，侧栏会把另一段也藏起来。
+
+**顺手修掉一条真缺陷（与本片无关）**：切会话时 `runners` 推送会把运行实例的**空缓存**投影上来，
+把 `peekSession` 刚铺好的历史打回 0（用户看到闪一下空白，实测 `0→482→0→482`）。
+修法是新 `projectSnapshotKeepingPeek`：缓存 `messages` 为空且界面正拿着 peek 内容时不覆盖 `messages`
+（stats / todos / queue 照常投影），四处投影共用。**定性靠 A/B 反向验证**：
+`YAN_NO_CHAIN_HISTORY=1` 关掉链感知后照样红，证与本片无关；修完 `historyswitch` 全绿。
+
+**交接接线：先停源、再建目的（S5b-3b）**：事务的动作层现在真的跑起来了
+（`shared/handoff-resume.ts` + `main/handoff-runner.ts`，依赖全注入所以能单测）。
+顺序是与同 cwd 防线对齐的：**停源实例（释放租约）→ 同 cwd 建目的会话 → `setDestination` /
+`destination-created` → 写会话链 → `committed` → 发一次 resume（发送**之前**记 attempt）→
+等磁盘证据 → `resumed`**。四条不能破：① 两个忙实例不能共用物理 cwd，所以停源必须在建目的之前，
+而且走的是与界面切会话**同一条路**（`runners.select`，不绕实例上限与 cwd 重建规则）；
+② 链只在目的会话真的建出来之后写（链一写，侧栏就只显示代表段）；
+③ `resumed` 只认**磁盘证据**（目的会话 JSONL 里那条 `[yan-handoff-resume:<id>]`）；
+④ `resumeAttempts` 防「盲发两遍」（发送前记；恢复时 `>= 2` 次仍无证据就停下等人）。
+失败一律**回源**（`failed` + 把视图交还源会话）；发送失败 / 证据未到**不记 failed**
+（那样会把「其实已经发出去了」判死），留在 `committed` 等下次启动核对；
+启动时 `recoverHandoffs()` 收尾所有未终结事务。
+**自动交接默认开**（用户 2026-09-19 拍板；`YAN_HANDOFF_COMMIT=0` 关，解析在 `handoffCommitEnabled` 且有单测钉默认值）：
+「打开」只是**允许**交接，实际仍要过四条资格（够数 / 目标在推进 / 自主档 / 不忙）。
+恢复**不受开关影响** —— 磁盘上已有的未终结事务必须收尾。
+**联调口径（S6）**：交接成功后 `inheritWorkMode` 把工作模式复制到目的段
+（模式是「用户对这条会话的意图」，掉回默认档会让自主续接当场失效）；
+而 **goal 不迁移**（§8：不能把旧总结升级成事实）——
+改为在 resume 正文里要求模型「先 `yan goal status` 再 `yan goal report` 把目标重新登记
+（新会话从 rev0 开始，不照搬进度）」。
+三个只有在真链路里才会暴露的坑（已修）：事务查询必须**归一化**会话键（pi 给反斜杠、
+调用方给正斜杠，不归一化就「刚交接完的会话查不到自己的事务」）；
+`yan:getHandoff` 要**沿链回首段**取计数与包（否则交接一完成，界面上的数字当场归零）；
+`SessionChainStore.link` 在「目的已属于另一条链」时返回**那条链**，
+只看返回值非空会把「拒绝」当成功（前端会出现两条会话）。
+
+**模型出错后的自动继续（S5c）**：用户报「有时候模型会报错」—— 界面停在一行红色的
+「模型返回错误」，得自己再敲一句继续。pi 自己会就地重试几次（`auto_retry_start` /
+`auto_retry_end`，可用 `yan:setAutoRetry` 关），用尽之后由砚这一层接手：
+`agent.ts` 把错误**结构化**推出来（新推送通道 `agent-error`，来自
+`auto_retry_end {success:false}` 的 `finalError` 或 assistant 的 `stopReason === 'error'`），
+`index.ts` 用 `shared/auto-continue.ts` 分类并决定要不要再起一轮。
+
+**为什么不能无脑重试**：429 重试照样 429（还可能把额度烧在空转上）、401/403 不换凭证永远不行、
+上下文超限该走 S4 的预算门、用户已取消更不该自作主张 —— 这四类一律停手并说明原因。
+可重试的按 3s / 10s / 30s 退避再起一轮，连续上限 3 次（计数落 `YAN_DIR/auto-continue.json`，
+**重启不忘记**；用户发言 / 停止 / 一轮真的产出都归零）。
+续行**复用 S3b/S3c 那条通道** —— 只是 `kind` 换成 `retry`、消息标签换成 `yan-auto-continue`，
+所以「消费幂等 + 用户消息优先 + 不伪造用户消息」三道防护照旧；
+正文里额外要求模型「上一轮可能已经产生副作用，先检查再动手」。
+
+**剩下的尾巴**：控制消息在界面历史里还看不到（`session-reader` 只读 `type:"message"`）、
+目标级「停止目标」没有界面入口、真实多轮模糊请求的逐步澄清未做场景、
+自主续接（S3c）到上限时只有回执没有界面提示（上限也是常量、不可配置）、
+**自动继续（S5c）默认开且没有界面开关**（上限 / 退避是常量，只靠 `YAN_AUTO_CONTINUE` 测试通道调）、
+模型正常结束但**内容为空**（免费模型常见）不算错误、
+预算档位在界面上看不到（只在诊断与会话留痕里）——
+**跨会话交接（S5）全部完成**（S5a–S5b-4 + S6：计数 / 资格 / 模型写包 / 事务 /
+建目的会话 / resume 与消费证据 / 侧栏代表段 / 历史拼接 / 删除按链 / 模式继承 / 包验收），
+只剩两条如实登记的限制（导出 / 复制仍单段；自动交接没有界面开关）。
+在那之前，超长任务仍是同一个会话里续，撞上下文预算由 S4 的硬闸门兜住。
 
 ## 修改前按需阅读
 

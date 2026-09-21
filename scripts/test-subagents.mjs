@@ -216,6 +216,139 @@ export async function runSubagentControllerTests(ok, SubagentController) {
   }
 
   /*
+   * L03 尾巴：模型自己失败不能被 settled 当成「已完成」。
+   *
+   * pi 的失败回合也会走到 `agent_settled`，错误只体现在 assistant 消息的
+   * `stopReason` 上；不看它的后果是子代理面板显示「已完成」、`error=null`
+   *（2026-09-19 在真实窗口用坏模型名实测到的就是这两个值）。
+   */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    const res = await ctrl.start('模型会失败', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    rpc.emit('event', {
+      type: 'message_end',
+      message: { role: 'assistant', id: 'm1', content: [], stopReason: 'error' }
+    })
+    rpc.emit('event', { type: 'agent_settled' })
+    const run = ctrl.get(res.run?.id)
+    ok(run?.status === 'error', '模型报错时终态是 error（不是 done）', String(run?.status))
+    ok(/模型返回错误/.test(run?.error ?? ''), 'error 带可读原因', JSON.stringify(run?.error))
+    ok(run?.latestActivity !== '已完成', '列表里的活动也不是「已完成」', String(run?.latestActivity))
+    await ctrl.stopAll()
+  }
+
+  /* 对照：`stopReason: 'stop'`（或压根没这个字段）仍算正常结束 —— 空回复不是失败 */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    const res = await ctrl.start('正常空回复', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    rpc.emit('event', {
+      type: 'message_end',
+      message: { role: 'assistant', id: 'm1', content: [], stopReason: 'stop' }
+    })
+    rpc.emit('event', { type: 'agent_settled' })
+    const run = ctrl.get(res.run?.id)
+    ok(run?.status === 'done', 'stopReason=stop 时终态仍是 done', String(run?.status))
+    ok(!run?.error, '对照下没有 error', JSON.stringify(run?.error))
+    await ctrl.stopAll()
+  }
+
+  /* ---- L03：pi 起不来时必须报错并回收，不留僵尸任务 ---- */
+  {
+    const created = []
+    const createRpc = ({ cwd, args }) => {
+      const handlers = new Map()
+      const rpc = {
+        cwd,
+        args,
+        running: false,
+        closed: false,
+        on(event, listener) {
+          const list = handlers.get(event) ?? []
+          list.push(listener)
+          handlers.set(event, list)
+          return rpc
+        },
+        /* spawn 什么也不做：模拟「进程起不来」（真实链路的坏 pi 入口） */
+        spawn() {},
+        async command() {
+          return { success: true }
+        },
+        async close() {
+          rpc.closed = true
+        },
+        emit(event, ...payload) {
+          for (const listener of handlers.get(event) ?? []) listener(...payload)
+        }
+      }
+      created.push(rpc)
+      return rpc
+    }
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    const res = await ctrl.start('pi 起不来', undefined, 'controlled-cwd')
+    ok(res.ok === false, '起不来时 start 返回失败而不是假装启动成功', JSON.stringify(res.error))
+    ok(/启动超时/.test(res.error ?? ''), '错误说的是启动超时', JSON.stringify(res.error))
+    /* start 失败时不回 run（回它反而像“启动了”），所以从列表里按任务找 */
+    const run = ctrl.list().find((r) => r.task === 'pi 起不来')
+    ok(run?.status === 'error', 'run 停在 error（不留在「运行中」）', String(run?.status))
+    ok(created[0]?.closed === true, '起不来的进程也被 close 掉')
+    await ctrl.stopAll()
+  }
+
+  /*
+   * L03：运行超时要真的能触发。
+   * 10 分钟等不起 —— 用 `YAN_SUBAGENT_TIMEOUT_MS` 压到 200ms（真实验证同一先例：
+   * `YAN_AUTO_CONTINUE` 把退避压短）。断言到点后转 error + 进程被收。
+   */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    process.env.YAN_SUBAGENT_TIMEOUT_MS = '200'
+    const res = await ctrl.start('挂着不动', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    let timedOut = false
+    try {
+      timedOut = await waitFor(() => {
+        const r = ctrl.get(res.run?.id ?? '')
+        return r?.status === 'error' && /运行超时/.test(r.error ?? '')
+      }, 5000)
+    } finally {
+      /*
+       * 覆盖值必须留到超时**真的触发**之后：`runTimeoutText()` 在触发时
+       * 才读 env（实测提前 delete 会让提示写成「超过 10 分钟」而实际是 200ms）。
+       */
+      delete process.env.YAN_SUBAGENT_TIMEOUT_MS
+    }
+    ok(timedOut, '到点后转 error 且原因写着运行超时', String(ctrl.get(res.run?.id ?? '')?.error))
+    ok(!/10 分钟/.test(ctrl.get(res.run?.id ?? '')?.error ?? ''), '提示报的是覆盖后的上限（不是写死的 10 分钟）')
+    ok(rpc?.closed === true, '超时后 pi 子进程被收掉（不留僵尸）')
+    await ctrl.stopAll()
+  }
+
+  /*
    * 流式事件序列：id 不能漂移。
    *
    * 子代理的转录 id 是按序号生成的（`m{序号}`），所以“序号 = 下一条新消息”

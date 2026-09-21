@@ -36,7 +36,8 @@ import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
 import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
-import { summarizeTaskPlanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
+import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
+import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
 
 
@@ -91,7 +92,17 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
    * 展开后仍然是完整的命令行与输出（判定依据与边界见 shared/tool-origin.ts）。
    */
   const taskPlan = taskPlanCommand(call.name, call.args)
-  const target = taskPlan ? summarizeTaskPlanCommand(taskPlan) : summarize(call)
+  /*
+   * 实施-05 S3：`yan goal ready|report|status` 同样是砚内置能力（宿主持目标状态），
+   * 卡片必须说出来 —— 否则用户只看到一行 bash，不知道那是「澄清档的就绪提交」。
+   * 与任务计划互斥：一行命令不会同时属于两个组。
+   */
+  const goalCmd = taskPlan ? null : goalCommand(call.name, call.args)
+  const target = taskPlan
+    ? summarizeTaskPlanCommand(taskPlan)
+    : goalCmd
+      ? summarizeYanCommand(goalCmd)
+      : summarize(call)
   const secs = durationSecs(call)
 
   /* 动词：Codex 是「正在运行 / 已在 Ns 内运行」，我们按工具类型分 */
@@ -106,7 +117,7 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
       className={`trow ${open ? 'open' : ''}`}
       data-state={call.status}
       data-tool={call.name}
-      {...(taskPlan ? { 'data-origin': 'yan-task-plan' } : {})}
+      {...(taskPlan ? { 'data-origin': 'yan-task-plan' } : goalCmd ? { 'data-origin': 'yan-goal' } : {})}
       ref={rowRef}
     >
       <button
@@ -120,11 +131,15 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
         data-testid="tool-row"
       >
         <span className="trow-ico" aria-hidden>
-          {running ? <Icon name="refresh" size={12} className="spin" /> : toolGlyph(call.name, failed)}
+          {running ? <ThinkingOrbIndicator state={orbStateForTool(call.name)} /> : toolGlyph(call.name, failed)}
         </span>
-        {taskPlan ? (
-          <span className="trow-src" data-testid="tool-src" data-origin="yan-task-plan">
-            {t('tool2.yanTaskPlan')}
+        {taskPlan || goalCmd ? (
+          <span
+            className="trow-src"
+            data-testid="tool-src"
+            data-origin={taskPlan ? 'yan-task-plan' : 'yan-goal'}
+          >
+            {taskPlan ? t('tool2.yanTaskPlan') : t('tool2.yanGoal')}
           </span>
         ) : null}
         <span className="trow-verb">{verb}</span>
@@ -168,6 +183,15 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
       ) : null}
     </div>
   )
+}
+
+/** 把工具的可观察意图映射为 Orb 的动作语义；未知工具保持中性的 working。 */
+function orbStateForTool(name: string): import('thinking-orbs').OrbState {
+  const value = name.toLowerCase()
+  if (/search|grep|rg|find|web|browser|fetch|curl|wget|url/.test(value)) return 'searching'
+  if (/connect|remote|ssh|login|auth|socket/.test(value)) return 'connecting'
+  if (/write|edit|patch|create|compose|save|move|rename/.test(value)) return 'composing'
+  return 'working'
 }
 
 /**

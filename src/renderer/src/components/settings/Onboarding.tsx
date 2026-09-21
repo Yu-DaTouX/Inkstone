@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import { BrandMark } from '../shell/BrandMark'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 
@@ -116,7 +117,9 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     <div className="ob-scrim" role="dialog" aria-modal="true" aria-label={t('ob.title')}>
       <div className="ob-card" ref={card} data-testid="onboarding">
         <div className="ob-head">
-          <span className="ob-logo">✦</span>
+          <span className="ob-logo">
+            <BrandMark size={22} decorative />
+          </span>
           <div>
             <div className="ob-title">{t('ob.title')}</div>
             <div className="ob-sub">{t('ob.sub')}</div>

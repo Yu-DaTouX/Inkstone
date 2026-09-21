@@ -273,7 +273,8 @@ N12 的按会话缓存（`sessionRuntimes`）会被投影回顶层字段。它�
 如果**同样失败**，就不是这次改出来的：
 
 - `compactionstatus`：改回 `get_messages` 版 hydrate 后同样红 → 前提过期（pi 0.85.1 不再按
-  `reserveTokens` 在回合结束自动压），不是本轮回归；
+  `reserveTokens` 在回合结束自动压），不是本轮回归。**已处置（2026-09-19）：按实施-06 §2
+  选项 ② 降级为说明**（场景与探针保留、不再列入待跑清单）；
 - 免费模型当天返回空文本时，`tokens` / `subagent` / `contexttakeover` 会整片红 ——
   先换 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`，不可用或触顶时再换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free` 复跑就能分辨。
 

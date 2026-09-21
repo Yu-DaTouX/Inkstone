@@ -51,7 +51,7 @@
 | `--w-rail-collapsed` | `48px` | **layout**: 48px |
 | `--w-right` | `var(--w-panel-user, 264px)` | **redesign**: var(--w-panel-user, 264px) |
 | `--w-status` | `328px` | **tokens**: 328px |
-| `--w-stream` | `900px` | **tokens**: 900px |
+| `--w-stream` | `800px` | **tokens**: 800px |
 
 ## `html[data-theme='dark']`　29 个变量
 
@@ -140,4 +140,3 @@
 - 同一选择器内被重复定义（真冗余）：**0**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。
-

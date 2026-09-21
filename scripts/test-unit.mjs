@@ -71,6 +71,12 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     bundle: true,
     format: 'esm',
     platform: 'node',
+    /*
+     * MCP SDK 必须 external：它依赖 CJS 包（cross-spawn），内联进 ESM bundle
+     * 会把 `require` 变成 `Dynamic require ... is not supported`（04-S3 实测踩到）。
+     * 运行时不从项目 node_modules 解析，与主进程构建的 externalize 行为一致。
+     */
+    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
     logLevel: 'silent'
   })
 )
@@ -171,6 +177,8 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
+const { runWorkModeTests } = await import('./test-work-mode.mjs')
+const { runGoalTests } = await import('./test-goal.mjs')
 
 /*
  * 任务计划的纯逻辑（实施-02 S2）：校验 / reducer / 幂等 / 历史解析。
@@ -244,6 +252,247 @@ const projectMemorySearch = await import('../node_modules/esbuild/lib/main.js').
   }).then(() => import('../out/test/project-memory-search.mjs'))
 )
 const { runProjectKnowledgeSearchTests } = await import('./test-project-memory-search.mjs')
+
+/*
+ * 能力目录与技能服务（实施-04 S2）：shared 侧纯逻辑保持平台中立，
+ * main 侧要真读 SKILL.md，所以两份分开编译。
+ */
+const capabilityCatalogShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/capabilities.ts'],
+    outfile: 'out/test/capabilities.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/capabilities.mjs'))
+)
+const capabilitySkillService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/skill-service.ts'],
+    outfile: 'out/test/capabilities-skill.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/capabilities-skill.mjs'))
+)
+const capabilityCatalogMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/catalog.ts'],
+    outfile: 'out/test/capabilities-catalog.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/capabilities-catalog.mjs'))
+)
+const { runCapabilityCatalogTests } = await import('./test-capabilities.mjs')
+
+/*
+ * 联网发现（实施-04 S5）：契约用 node:crypto 算指纹，所以两份都走 node 平台。
+ */
+const discoveryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/discovery.ts'],
+    outfile: 'out/test/discovery.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/discovery.mjs'))
+)
+const discoveryMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/discovery/discover.ts'],
+    outfile: 'out/test/discovery-src.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/discovery-src.mjs'))
+)
+const { runDiscoveryTests } = await import('./test-discovery.mjs')
+
+/*
+ * 接入事务（实施-04 S6a）：契约是纯逻辑，服务要真读写受管目录。
+ * 两份分开编译 —— 共享层带 node:crypto 的话渲染端就用不了它。
+ */
+const acquisitionShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/acquisition.ts'],
+    outfile: 'out/test/acquisition.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/acquisition.mjs'))
+)
+const acquisitionService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/acquisition-service.ts'],
+    outfile: 'out/test/acquisition-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/acquisition-service.mjs'))
+)
+const piPackageScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/pi-package-scheduler.ts'],
+    outfile: 'out/test/pi-package-scheduler.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/pi-package-scheduler.mjs'))
+)
+const npmArtifact = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/npm-artifact.ts'],
+    outfile: 'out/test/npm-artifact.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['tar'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/npm-artifact.mjs'))
+)
+const npmAcquisition = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/npm-acquisition.ts'],
+    outfile: 'out/test/npm-acquisition.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['tar'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/npm-acquisition.mjs'))
+)
+const packageAuthorizationShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/package-authorization.ts'],
+    outfile: 'out/test/package-authorization.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/package-authorization.mjs'))
+)
+const packageAuthorizationService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/package-authorization-service.ts'],
+    outfile: 'out/test/package-authorization-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/package-authorization-service.mjs'))
+)
+const piPackageSmoke = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/pi-package-smoke.ts'],
+    outfile: 'out/test/pi-package-smoke.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['tar'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/pi-package-smoke.mjs'))
+)
+const { runAcquisitionTests } = await import('./test-acquisition.mjs')
+const { runPiPackageSchedulerTests } = await import('./test-pi-package-scheduler.mjs')
+const { runPiPackageSmokeTests } = await import('./test-pi-package-smoke.mjs')
+
+/*
+ * MCP（实施-04 S3）：契约是纯逻辑；连接与工具服务要真起子进程（走官方 SDK）。
+ * SDK 保持 external —— 真跑时从项目 node_modules 解析，不塞进 bundle。
+ */
+const mcpShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/mcp.ts'],
+    outfile: 'out/test/mcp.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp.mjs'))
+)
+const mcpConfig = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/mcp/config.ts'],
+    outfile: 'out/test/mcp-config.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp-config.mjs'))
+)
+const mcpManager = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/mcp/connection-manager.ts'],
+    outfile: 'out/test/mcp-manager.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp-manager.mjs'))
+)
+const mcpToolService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/mcp/tool-service.ts'],
+    outfile: 'out/test/mcp-tool.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp-tool.mjs'))
+)
+const { runMcpTests } = await import('./test-mcp.mjs')
+
+/*
+ * 远程 MCP 登记（实施-04 S6b-1）：契约是纯逻辑；登记服务要真写文件、
+ * 默认 probe 还要真连 HTTP。SDK 保持 external（与连接管理器同一处置）。
+ */
+const mcpRegistrationShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/mcp-registration.ts'],
+    outfile: 'out/test/mcp-registration.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp-registration.mjs'))
+)
+const mcpRegistrationService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/registration-service.ts'],
+    outfile: 'out/test/registration-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/registration-service.mjs'))
+)
+const { runMcpRegistrationTests } = await import('./test-mcp-registration.mjs')
+
+/* 本地 MCP npm 包（实施-04 S6b-2）：固定 staging → bin 解析 → 真 stdio tools/list 冒烟。 */
+const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capabilities/mcp-package.ts'],
+    outfile: 'out/test/mcp-package.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/mcp-package.mjs'))
+)
+const { runMcpPackageTests } = await import('./test-mcp-package.mjs')
 
 /* 项目知识的注入链（实施-03 S3）：宿主准备文件 + 薄层扩展读文件注入。 */
 const projectKnowledge = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -985,10 +1234,270 @@ await runStreamWidthTests(ok)
 
 // 内置提问扩展（不启动 pi：import 后喂假 pi API）
 await runQuestionTests(ok)
+
+/*
+ * 工作模式（实施-05 S2）：契约纯逻辑 + 会话级存储。
+ * 两份分开编译：shared 那份是跨进程契约（可给 CLI 用），main 那份碰真文件。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/work-mode.ts'],
+    outfile: 'out/test/work-mode.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/work-mode-service.ts'],
+    outfile: 'out/test/work-mode-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+await runWorkModeTests(ok)
+
+/*
+ * 目标与澄清就绪（实施-05 S3）：契约纯逻辑 + 会话级存储（幂等 / 先落盘）。
+ * 与工作模式同样分两份编译：shared 那份是跨进程契约，main 那份碰真文件。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/goal.ts'],
+    outfile: 'out/test/goal.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/goal-service.ts'],
+    outfile: 'out/test/goal-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+await runGoalTests(ok)
+
+/*
+ * 会话链（实施-05 S5b）：后台多段、前端一条。
+ * 键归一化要与 `work-mode-service` 交叉校验，所以两份都要编出来。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/session-chain.ts'],
+    outfile: 'out/test/session-chain.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/session-chain-service.ts'],
+    outfile: 'out/test/session-chain-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runSessionChainTests } = await import('./test-session-chain.mjs')
+await runSessionChainTests(ok, await import('../out/test/work-mode-service.mjs'))
+/*
+ * 链感知历史（实施-05 S5b-4）：按段从旧到新拼接、缺段如实计数、没有链就是单文件。
+ * 真实 JSONL + 真目录 —— 拼接逻辑不能靠 mock 验。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/session-history.ts'],
+    outfile: 'out/test/session-history.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runSessionHistoryTests } = await import('./test-session-history.mjs')
+await runSessionHistoryTests(
+  ok,
+  await import('../out/test/session-history.mjs'),
+  await import('../out/test/session-chain-service.mjs')
+)
+
+/*
+ * 模型出错后的自动继续（实施-05 S5c）：分类 / 退避 / 上限 / 幂等 / 存储。
+ * 与其它 store 同样分两份编译：shared 那份是判定，main 那份碰真文件。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/auto-continue.ts'],
+    outfile: 'out/test/auto-continue.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/auto-continue-service.ts'],
+    outfile: 'out/test/auto-continue-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runAutoContinueTests } = await import('./test-auto-continue.mjs')
+await runAutoContinueTests(ok)
+
+/*
+ * 跨会话交接的计数与契约（实施-05 S5a）：与目标状态同样分两份编译 ——
+ * shared 那份是契约与纯逻辑，main 那份碰真文件（幂等 / 重启不归零）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff.ts'],
+    outfile: 'out/test/handoff.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/handoff-service.ts'],
+    outfile: 'out/test/handoff-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffTests } = await import('./test-handoff.mjs')
+await runHandoffTests(ok)
+/*
+ * 交接包生成（实施-05 S5b-2）：请求 / 结果契约、模型输出解析、真目录上的文件交换、
+ * 以及「请求 → 结果 → 解析 → 清洗 → 落盘」的全链路（不调模型）。
+ * 顺带把薄层的 `safeKey()` 拿来做交叉校验 —— 两侧文件名规则不一致是静默失效。
+ */
+const { runHandoffRequestTests } = await import('./test-handoff-request.mjs')
+await runHandoffRequestTests(
+  ok,
+  await import('../out/test/handoff.mjs'),
+  await import('../out/test/handoff-service.mjs'),
+  await import('../resources/pi-extensions/goal-resume.js')
+)
+/* 交接事务（实施-05 S5b-3a）：阶段顺序 / 幂等 / 崩溃恢复 / 事务日志 */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff-transaction.ts'],
+    outfile: 'out/test/handoff-transaction.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/handoff-transaction-service.ts'],
+    outfile: 'out/test/handoff-transaction-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffTransactionTests } = await import('./test-handoff-transaction.mjs')
+await runHandoffTransactionTests(
+  ok,
+  await import('../out/test/handoff-transaction.mjs'),
+  await import('../out/test/handoff-transaction-service.mjs'),
+  await import('../out/test/handoff.mjs')
+)
+/*
+ * 交接续接消息与消费证据 + 执行器（实施-05 S5b-3b）：
+ * 标记与正文、以及「先停源 → 建目的 → 写链 → 发 resume → 证据」的全顺序与失败路径。
+ * 执行器只靠注入的假依赖，不碰真 agent / runners。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff-resume.ts'],
+    outfile: 'out/test/handoff-resume.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/handoff-runner.ts'],
+    outfile: 'out/test/handoff-runner.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffResumeTests } = await import('./test-handoff-resume.mjs')
+await runHandoffResumeTests(
+  ok,
+  await import('../out/test/handoff-resume.mjs'),
+  await import('../out/test/handoff.mjs')
+)
+const { runHandoffRunnerTests } = await import('./test-handoff-runner.mjs')
+await runHandoffRunnerTests(
+  ok,
+  await import('../out/test/handoff-runner.mjs'),
+  await import('../out/test/handoff-transaction-service.mjs'),
+  await import('../out/test/session-chain-service.mjs'),
+  await import('../out/test/handoff.mjs')
+)
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)
 await runProjectMemoryTests(ok, { memory: projectMemory, store: projectMemoryStore })
+await runCapabilityCatalogTests(ok, {
+  capabilities: capabilityCatalogShared,
+  skill: capabilitySkillService,
+  catalog: capabilityCatalogMain
+})
+
+await runDiscoveryTests(ok, { shared: discoveryShared, discover: discoveryMain })
+await runAcquisitionTests(ok, {
+  shared: acquisitionShared,
+  service: acquisitionService,
+  npmArtifact,
+  npmAcquisition,
+  packageAuthorizationShared,
+  packageAuthorizationService
+})
+await runPiPackageSchedulerTests(ok, {
+  AcquisitionService: acquisitionService.AcquisitionService,
+  PiPackageActivationScheduler: piPackageScheduler.PiPackageActivationScheduler
+})
+await runPiPackageSmokeTests(ok, piPackageSmoke)
+await runMcpTests(ok, {
+  mcp: mcpShared,
+  config: mcpConfig,
+  manager: mcpManager,
+  toolService: mcpToolService
+})
+await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared, service: mcpRegistrationService })
+await runMcpPackageTests(ok, mcpPackage)
 runProjectKnowledgeSearchTests(ok, projectMemorySearch)
 await runProjectKnowledgeInjectionTests(ok, {
   prepare: projectKnowledge,
@@ -1145,6 +1654,14 @@ const { runContextPolicyTests } = await import('./test-context-policy.mjs')
 runContextPolicyTests(ok, contextPolicy, contextPolicyEnv, contextView)
 
 /*
+ * 请求前预算诊断（实施-05 S4）：扩展侧 JS 公式与 shared 交叉校验 + 三档边界。
+ * 直接 import 随包源码（与 context-safety / context-transform 同一做法）。
+ */
+const contextBudgetExtension = await import('../resources/pi-extensions/context-budget.js')
+const { runContextBudgetTests } = await import('./test-context-budget.mjs')
+runContextBudgetTests(ok, contextBudgetExtension, contextPolicy)
+
+/*
  * 界面语言扩展（resources/pi-extensions/language.js）。
  *
  * 它是**待分发的源码**（随包进 resources/pi-extensions），不是要构建的 src ——
@@ -1286,6 +1803,81 @@ const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
 await runIpcErrorTests(ok, ipcError)
 
 /*
+ * 「兼容搜索能力」判定（src/shared/web-search.ts，实施-07 S4）：来源菜单里那枚
+ * 搜索入口只在命中时出现 —— 判松了会出现假能力（内置的 knowledge.search 就是最近的一条），
+ * 判紧了功能永远不可达。纯函数，不连任何服务。
+ */
+const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/web-search.ts'],
+    outfile: 'out/test/web-search.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/web-search.mjs'))
+)
+const { runWebSearchTests } = await import('./test-web-search.mjs')
+await runWebSearchTests(ok, webSearch)
+
+/*
+ * 工作树 Fork 的路径重绑定（src/shared/fork-rebind.ts，实施-07 S2b-3）：把源会话的文件引用
+ * 拿到**工作树的仓库根**下重新解析并验证存在性。纯函数（文件系统由调用方注入）——
+ * 这里必须钉住的是「`outside` 与 `missing` 不能混」、「`..` 与仓库外绝对路径不迁」、
+ * 「Windows 大小写/分隔符差异不能当成“文件没了”」这三件容易写错的事。
+ */
+const forkRebind = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/fork-rebind.ts'],
+    outfile: 'out/test/fork-rebind.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/fork-rebind.mjs'))
+)
+const { runForkRebindTests } = await import('./test-fork-rebind.mjs')
+await runForkRebindTests(ok, forkRebind)
+
+/*
+ * Fork 的语义注入正文（src/shared/fork-context.ts，实施-07 S2b-4）：新会话拿到的
+ * 那段「接手必须知道的」。环境派生状态只能来自传入的 `env`，没有交接包时不许编造 ——
+ * 这两条错了都不会报错，只会让新会话误解自己的处境。
+ */
+const forkContextMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/fork-context.ts'],
+    outfile: 'out/test/fork-context.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/fork-context.mjs'))
+)
+const { runForkContextTests } = await import('./test-fork-context.mjs')
+await runForkContextTests(ok, forkContextMod)
+
+/*
+ * N21-9 A/B 基准的口径（src/shared/context-bench.ts，实施-06 S2）：四组策略怎么用
+ * 现有开关表达、一条回答算不算守住约束、主判据与三项副指标的边界。
+ * 纯函数，不跑模型 —— 真实对照跑批要额度，见 `npm run bench:context`。
+ */
+const contextBench = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/context-bench.ts'],
+    outfile: 'out/test/context-bench.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-bench.mjs'))
+)
+const { runContextBenchTests } = await import('./test-context-bench.mjs')
+/* 任务集是数据（不随包分发），但它的约束必须能被判分规则正确区分 —— 所以拉进来自检 */
+const contextBenchTasks = await import('./bench/context-tasks.mjs')
+await runContextBenchTests(ok, contextBench, contextPolicy, contextBenchTasks)
+
+/*
  * Git 审查的纯解析（src/shared/git.ts）：`git status/diff` 的 NUL 分隔输出、
  * rename 多占一段、二进制的 `-`、未跟踪文件的补全、unified diff 的行号。
  * 平台用 neutral —— 这个模块**不依赖 node 内置**（渲染端也要 import 它）。
@@ -1368,6 +1960,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
+      entryPoints: ['src/main/worktree-links.ts'],
+      outfile: 'out/test/worktree-links.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
       entryPoints: ['src/main/packages.ts'],
       outfile: 'out/test/packages.mjs',
       bundle: true,
@@ -1388,11 +1988,14 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 const { runGitRepoTests } = await import('./test-git-repo.mjs')
 const { runPackagesTests } = await import('./test-packages.mjs')
 const { runSourcesTests } = await import('./test-sources.mjs')
+const { runWorktreeLinkTests } = await import('./test-worktree-links.mjs')
 const { runHostingTests } = await import('./test-hosting.mjs')
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 await runPackagesTests(ok)
 console.log('\n--- S1. 会话来源的持久化引用 ---')
 await runSourcesTests(ok)
+console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
+await runWorktreeLinkTests(ok)
 console.log('\n--- G3. PR 状态（纯解析 + 一次真实 API）---')
 await runHostingTests(ok)
 await runGitRepoTests(ok)
@@ -1563,6 +2166,8 @@ await runGitRepoTests(ok)
   ok(/subagent start/.test(help.stdout ?? ''), 'yan CLI：主帮助里写了子代理启动入口')
   const subagentHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'subagent', '--help'], { encoding: 'utf8' })
   ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
+  const capabilityHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'capabilities', '--help'], { encoding: 'utf8' })
+  ok(capabilityHelp.status === 0 && /--retry/.test(capabilityHelp.stdout ?? '') && /受管 staging/.test(capabilityHelp.stdout ?? ''), 'yan CLI：能力接入帮助说明固定 SRI staging 与显式重试')
 
   await rm(binDir, { recursive: true, force: true })
 }
@@ -1851,6 +2456,27 @@ await runGitRepoTests(ok)
     encoding: 'utf8'
   })
   ok(knowledgeHelp.status === 0 && /search/.test(knowledgeHelp.stdout ?? ''), 'yan CLI：knowledge 分组帮助可按需读取')
+
+  /*
+   * 目标状态（实施-05 S3）：三道必须同时成立 ——
+   * CLI 有动作表、用法里每个动作都有说明、宿主 KNOWN_COMMANDS 已登记。
+   * 漏一处就是模型看到命令、发起请求，然后收到「unknown_command」这类接线语。
+   */
+  const goalActions = specActions('goal')
+  ok(
+    goalActions.join(',') === 'ready,report,status',
+    'yan CLI：目标状态动作表已登记（ready / report / status）',
+    goalActions.join(', ')
+  )
+  const goalUndocumented = goalActions.filter((action) => !usageText('goal').includes(action))
+  ok(goalUndocumented.length === 0, 'yan CLI：目标状态每个动作都在用法里（不漏文案）', goalUndocumented.join(', '))
+  const goalHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'goal', '--help'], { encoding: 'utf8' })
+  ok(goalHelp.status === 0 && /ready/.test(goalHelp.stdout ?? ''), 'yan CLI：goal 分组帮助可按需读取')
+  const capabilityServerText = await readFile('src/main/capability-server.ts', 'utf8')
+  const unregistered = goalActions
+    .map((action) => `goal.${action}`)
+    .filter((command) => !capabilityServerText.includes(`'${command}'`))
+  ok(unregistered.length === 0, 'yan CLI：目标状态命令已在宿主 KNOWN_COMMANDS 登记', unregistered.join(', '))
 }
 
 console.log(`\n${pass}/${pass + fail} 通过`)

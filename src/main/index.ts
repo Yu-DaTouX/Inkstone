@@ -9,13 +9,19 @@ import { join, dirname, basename, extname, resolve } from 'node:path'
 import { constants as fsConstants, existsSync } from 'node:fs'
 import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { AgentController, type SubagentCommandHost } from './agent'
+import {
+  AgentController,
+  type CapabilityAuthorizationChoice,
+  type CapabilityAuthorizationPrompt,
+  type GoalCommandHost,
+  type SubagentCommandHost
+} from './agent'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
 import { moveSessionLayout, rememberSession } from './session-layout'
-import { readSessionMessages } from './session-reader'
+import { readChainMessages } from './session-history'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
@@ -24,11 +30,20 @@ import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
 import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
-import { configurePackageContext, listPackages, runPackageAction } from './packages'
+import { configurePackageContext, installManagedPiPackage, listPackages, runPackageAction } from './packages'
+import { AcquisitionService } from './capabilities/acquisition-service'
+import { PackageAuthorizationService } from './capabilities/package-authorization-service'
+import { createPiPackageActivationHostPorts } from './capabilities/pi-package-activation-host'
+import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
+import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
+import { createSkillFilesActivationHostPorts } from './capabilities/skill-files-activation-host'
+import { SkillFilesActivationScheduler } from './capabilities/skill-files-scheduler'
 import { prStatus } from './hosting'
-import { listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from './sources'
+import { linkSources, listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from './sources'
 import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
+import { allowTrust, trustStatus } from './project-trust'
+import { forkContext, forkFileRefs } from './fork-rebind-service'
 import { activeContextPolicy, setContextPolicySettings } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
 import { modelKeyOf } from '../shared/model-capabilities'
@@ -36,6 +51,27 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import { GoalStore, writeGoalResumeSnapshot } from './goal-service'
+import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
+import { HandoffTransactionStore } from './handoff-transaction-service'
+import { SessionChainStore } from './session-chain-service'
+import { WorktreeLinkStore } from './worktree-links'
+import { HandoffRunner, type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
+import { normalizeChainKey, isRepresentative, chainForFile, planHistoryRead } from '../shared/session-chain'
+import {
+  HANDOFF_AUTO_COMPACT_THRESHOLD,
+  handoffCommitEnabled,
+  handoffEligibility,
+  handoffSummary,
+  parseHandoffOutput,
+  renderHandoffPrompt,
+  sanitizeHandoffPackage,
+  type HandoffPackage
+} from '../shared/handoff'
+import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
+import { AUTO_CONTINUE_LIMIT, retryResumeSummary, type AutoContinuePlan } from '../shared/auto-continue'
+import { randomUUID } from 'node:crypto'
+import { AUTONOMOUS_CONTINUE_LIMIT, goalSummary, normalizeReadyParams, normalizeReportParams } from '../shared/goal'
 import { CapabilityCommandError } from './capability-server'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
@@ -45,6 +81,13 @@ import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
+import {
+  WorkModeStore,
+  normalizeSessionFileKey,
+  pendingWorkModeKey,
+  writeWorkModeSnapshot
+} from './work-mode-service'
+import { DEFAULT_WORK_MODE, normalizeWorkMode, type WorkMode, type WorkModeState } from '../shared/work-mode'
 import { commitKnowledge, deleteKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeRelativeRef, type KnowledgeCommitRequest } from '../shared/project-memory'
 import {
@@ -57,13 +100,15 @@ import {
 import type {
   Attachment,
   AttentionNotify,
+  CompactionRun,
   FileRequestContext,
   FileSearchRequest,
   GitScopeRequest,
   MainPush,
   RunnerStatus,
   SessionState,
-  SessionSummary
+  SessionSummary,
+  UIMessage
 } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -177,6 +222,31 @@ if (!hasSingleInstanceLock) {
  * 这三个开只用开关就是为这种场景准备的，而且**只在有 YAN_PROBE 时加**，
  * 不影响用户实际使用的行为（他们本来就是聚焦窗口）。
  */
+/*
+ * electron-builder 的 portable 单文件 wrapper 在部分版本 / 启动方式下不会把
+ * 父进程的环境变量完整地带到解压后的 GUI 子进程。验收脚本因此同时传一组
+ * 明确的命令行参数；它们只恢复已有的测试探针开关，不改变正常启动路径。
+ * 环境变量仍是首选，命令行只在对应变量缺失时兜底。
+ */
+function probeArg(name: string): string | undefined {
+  const prefix = `--${name}=`
+  const hit = process.argv.find((arg) => arg.startsWith(prefix))
+  return hit ? hit.slice(prefix.length) : undefined
+}
+
+if (!process.env.YAN_PROBE) {
+  const probe = probeArg('yan-probe')
+  if (probe) process.env.YAN_PROBE = probe
+}
+if (!process.env.YAN_PROBE_DELAY) {
+  const delay = probeArg('yan-probe-delay')
+  if (delay) process.env.YAN_PROBE_DELAY = delay
+}
+if (!process.env.YAN_PROBE_OUT) {
+  const output = probeArg('yan-probe-out')
+  if (output) process.env.YAN_PROBE_OUT = output
+}
+
 if (process.env.YAN_PROBE) {
   app.commandLine.appendSwitch('disable-background-timer-throttling')
   app.commandLine.appendSwitch('disable-renderer-backgrounding')
@@ -213,7 +283,7 @@ let tray: Tray | null = null
 let trayLanguage: string | undefined
 let isQuitting = false
 let exitRequestInFlight: Promise<{
-  action: 'cancelled' | 'save-and-exit' | 'interrupt-exit'
+  action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
 }> | null = null
 /**
  * 会话运行实例注册表（N12）。
@@ -222,6 +292,11 @@ let exitRequestInFlight: Promise<{
  * 切换会话不再复用同一个进程，所以「切走」不会把后台任务停掉。
  */
 let runners: RunnerRegistry | null = null
+let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
+let skillFilesActivationScheduler: SkillFilesActivationScheduler | null = null
+let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
+let piPackageActivationInFlight = false
+let piPackageActivationAgain = false
 let browser: BrowserController | null = null
 let subagents: SubagentController | null = null
 /**
@@ -235,6 +310,26 @@ let subagentCapabilityHost: SubagentCommandHost | null = null
 const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
 let remoteServer: RemoteServer | null = null
+
+type CapabilityVerification = {
+  operationId: string
+  runnerId: string
+  generation: number
+  agent: AgentController
+  serverId: string
+  state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
+  toolCount?: number
+  updatedAt: number
+}
+/** UI 只持有不可预测的 operationId；runner 身份 / generation 始终由主进程绑定。 */
+const capabilityVerifications = new Map<string, CapabilityVerification>()
+
+function pruneCapabilityVerifications(): void {
+  const cutoff = Date.now() - 5 * 60_000
+  for (const [id, operation] of capabilityVerifications) {
+    if (operation.updatedAt < cutoff && operation.state !== 'connecting') capabilityVerifications.delete(id)
+  }
+}
 
 /**
  * 当前**正在查看**的会话实例。
@@ -275,6 +370,49 @@ function questionExtensionPath(): string | undefined {
     process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'question.js') : '',
     join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'question.js'),
     join(process.cwd(), 'resources', 'pi-extensions', 'question.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 工作模式的工具策略扩展的路径（实施-05 S3）。
+ *
+ * 只有它能在运行中收紧工具表（RPC 没有工具面），所以澄清档的门禁靠它执行。
+ */
+function workModeExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'work-mode.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'work-mode.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'work-mode.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 就绪转移之后的内部续行扩展（实施-05 S3b）。
+ *
+ * 只有扩展 API 能发 `custom` 角色消息并触发回合，所以这段必须留在薄层。
+ */
+function goalResumeExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'goal-resume.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'goal-resume.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'goal-resume.js')
+  ].filter(Boolean)
+  return candidates.find((p) => existsSync(p))
+}
+
+/**
+ * 交接包生成扩展的路径（实施-05 S5b-2）。
+ *
+ * 只有扩展 API 能调 `ctx.modelRegistry.complete`（RPC 面没有），所以这段必须留在薄层；
+ * 但提示词与校验都在宿主 —— 它只负责「把这一次调用发出去并把原文写回来」。
+ */
+function handoffsExtensionPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'handoffs.js') : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'handoffs.js'),
+    join(process.cwd(), 'resources', 'pi-extensions', 'handoffs.js')
   ].filter(Boolean)
   return candidates.find((p) => existsSync(p))
 }
@@ -391,6 +529,457 @@ function push(msg: MainPush): void {
  * 渲染端靠 `sessionKey` 判断：这条输出是「我在看的这个会话」的，
  * 还是后台另一个会话的 —— 后者不得写进当前视图。
  */
+/**
+ * 交接计数（实施-05 S5a）：把 `state` 推送里那次压缩并进本会话的计数。
+ *
+ * 三条边界：
+ *   ① 只有 `completed` 的自动压缩值得往下走（其余连 store 都不用碰）；
+ *   ② 键用 `workModeKeyFor`（= 会话文件路径），与模式 / 目标同一套 ——
+ *      压缩发生在会话进行中，此时稳定键一定已经有了；
+ *   ③ 计数失败**不影响会话**（吞掉错误）：它决定的是「要不要交接」，而当前这一轮
+ *      该干什么与它无关。
+ */
+async function observeCompaction(id: string, state: unknown): Promise<void> {
+  const run = (state as { lastCompaction?: CompactionRun } | null | undefined)?.lastCompaction
+  if (!run || run.status !== 'completed') return
+  const key = workModeKeyFor(id)
+  if (!key) return
+  try {
+    await handoffs.load()
+    await handoffs.recordCompaction(key, run)
+  } catch {
+    /* 计不上就计不上：下一次 state 推送还会带着同一份记录重来（幂等） */
+  }
+  /*
+   * 计完顺手看一眼要不要交接（§7）。不在计数里直接 arm 是因为资格还有另外三个条件，
+   * 而它们可能在计数之后才成立（目标被报成 executing、模式切到自主档）。
+   */
+  void maybeArmHandoff(id, 'compaction')
+}
+
+/**
+ * 交接计数与交接包的存储（实施-05 S5a）。
+ *
+ * 与目标状态分两份文件：目标是「这一轮做到哪」（模型高频写、带幂等记录），
+ * 计数是「这个片段压了几次」（宿主写、阈值只在交接资格判定里用）。
+ */
+const handoffs = new HandoffStore()
+
+/* ────────────────────────────────── 交接事务接线（实施-05 S5b-3b） */
+
+/**
+ * 会话链（前端「后台两份、前端一条」的关系）与交接事务日志。
+ *
+ * 两者都由主进程独占写：链决定侧栏显示什么（一个段只属于一条链），
+ * 事务日志决定重启后该补记 / 重发还是回源。
+ */
+const sessionChains = new SessionChainStore()
+const handoffTransactions = new HandoffTransactionStore()
+/**
+ * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。
+ * 只用于追溯与展示（「这个会话来自哪个工作树」），**不参与历史拼接** ——
+ * 那是会话链的事，两者语义不同（见 `worktree-links.ts` 的头注释）。
+ */
+const worktreeOrigins = new WorktreeLinkStore()
+
+/**
+ * 自动交接的开关（**默认开**，用户 2026-09-19 拍板）。
+ *
+ * 解析在 [shared/handoff.ts] 的 `handoffCommitEnabled`（可单测）：
+ * 默认开，`YAN_HANDOFF_COMMIT=0`（`false` / `off` / `no` 同样）显式关闭。
+ *
+ * §7 原先的「先完成真实长任务验证再开默认值」前置已满足：`handoffcommit`（cost 1）
+ * 真的跑通了建目的会话 / 写链 / 发 resume / 消费证据，崩溃恢复有单测全矩阵与磁盘核对。
+ *
+ * 「打开」只是**允许**交接：实际发生仍要过四条资格（够数 + 目标在推进 + 自主档 + 不忙），
+ * 标准档会话不会被它带走。
+ */
+const HANDOFF_COMMIT_ENABLED = handoffCommitEnabled(process.env)
+
+/** 交接相关的用户可见提示（推给当前视图；没有活动实例就全局推）。 */
+function handoffAlert(message: string, notifyType: 'info' | 'warning' | 'error'): void {
+  const msg: MainPush = {
+    ch: 'notify',
+    payload: { id: `handoff-${Date.now()}`, method: 'notify', notifyType, message }
+  }
+  const active = runners?.activeRunnerId
+  if (active) pushFrom(active, msg)
+  else push(msg)
+}
+
+/**
+ * 交接的执行器（§8 第 4–6 步）。
+ *
+ * 不直接 import runner / agent：全部经依赖注入，单测用假依赖就能覆盖
+ * 「先停源再建目的」「链只在会话建好后写」「resumed 只认磁盘证据」三条顺序。
+ */
+const handoffRunner = new HandoffRunner({
+  transactions: handoffTransactions,
+  chains: sessionChains,
+  stopRunner: async (runId) => (await runners?.stopOne(runId)) ?? false,
+  openSession: (target) => openHandoffSession(target),
+  send: async (runId, text) => (await runners?.agentOf(runId)?.send(text)) ?? { ok: false, error: '实例不存在' },
+  readSessionText: (sessionFile) => readFile(sessionFile, 'utf8'),
+  notify: handoffAlert
+})
+
+/*
+ * 模型出错后的自动继续（实施-05 S5c）。
+ *
+ * 与交接计数同因：状态要落盘（重启不忘记连续失败了几次），判定要单测。
+ * `YAN_AUTO_CONTINUE` 是测试通道（`{limit, delays}`）—— 真实验证时用它把退避压短。
+ */
+const autoContinueOptions = autoContinueOptionsFromEnv(process.env.YAN_AUTO_CONTINUE)
+const autoContinues = new AutoContinueStore(autoContinueOptions)
+const AUTO_CONTINUE_LIMIT_EFFECTIVE = autoContinueOptions.limit ?? AUTO_CONTINUE_LIMIT
+
+/**
+ * 待发的自动继续（每个 runner 至多一个）。
+ *
+ * 用 `token` 而不是只存 timer：延时期间用户可能發话 / 按停止，
+ * 那会把 map 里的条目换掉或删掉 —— 回调醒来时先验明正身，避免「取消之后还是发了」。
+ */
+const autoContinueTimers = new Map<string, { timer: NodeJS.Timeout; token: string }>()
+
+function cancelAutoContinue(id: string): void {
+  const entry = autoContinueTimers.get(id)
+  if (!entry) return
+  clearTimeout(entry.timer)
+  autoContinueTimers.delete(id)
+}
+
+/** 用户發言 / 用户停止 / 一轮真的成功 → 计数归零（下一轮错误从第 1 次算）。 */
+async function resetAutoContinue(id: string): Promise<void> {
+  cancelAutoContinue(id)
+  const key = workModeKeyFor(id)
+  if (!key) return
+  try {
+    await autoContinues.load()
+    await autoContinues.reset(key)
+  } catch {
+    /* 归零失败不影响会话：下一次错误会再试 */
+  }
+}
+
+/**
+ * 延时到点后写「待发续行」快照，薄层会在回合空闲时发一条 `custom` 消息（不是用户消息）。
+ *
+ * 为什么退避在**宿主**而在薄层：薄层的 1.8s 只是「确认回合真的空闲」，
+ * 与「上游刚挂了、给它几秒再试」是两件事，混在一起就调不动了。
+ */
+function scheduleAutoContinue(id: string, plan: Extract<AutoContinuePlan, { action: 'retry' }>): void {
+  cancelAutoContinue(id)
+  const token = randomUUID()
+  const timer = setTimeout(() => {
+    const current = autoContinueTimers.get(id)
+    if (!current || current.token !== token) return
+    autoContinueTimers.delete(id)
+    void writeGoalResumeSnapshot(id, {
+      operationId: randomUUID(),
+      at: Date.now(),
+      kind: 'retry',
+      summary: retryResumeSummary({
+        error: plan.error,
+        attempt: plan.attempt,
+        limit: AUTO_CONTINUE_LIMIT_EFFECTIVE
+      })
+    }).catch(() => {
+      /* 快照写不进去 → 这一次不继续；下一次错误还会再来（不会静默丢掉整条链） */
+    })
+  }, plan.delayMs)
+  /* 不阻止应用退出：用户关窗口时不该等这个定时器 */
+  timer.unref?.()
+  autoContinueTimers.set(id, { timer, token })
+}
+
+/**
+ * 模型报错之后的处置（实施-05 S5c）。
+ *
+ * 幂等与去重都在 store 里：`auto_retry_end` 与 `stopReason === 'error'` 会同时报同一件事，
+ * 第二次到达会拿到 `duplicate: true`（不计数、不通知、不安排）。
+ */
+async function handleModelError(id: string, payload: { text: string; source: string }): Promise<void> {
+  const key = workModeKeyFor(id)
+  if (!key) return
+  let result: { plan: AutoContinuePlan | null; duplicate: boolean }
+  try {
+    await autoContinues.load()
+    result = await autoContinues.noteFailure(key, payload.text)
+  } catch {
+    return
+  }
+  const { plan, duplicate } = result
+  if (!plan || duplicate) return
+
+  const notify = (message: string, notifyType: 'info' | 'warning' | 'error'): void => {
+    pushFrom(id, {
+      ch: 'notify',
+      payload: { id: `auto-continue-${Date.now()}`, method: 'notify', notifyType, message }
+    })
+  }
+
+  if (plan.action === 'stop') {
+    notify(plan.note, plan.reason === 'limit' ? 'error' : 'info')
+    return
+  }
+  notify(plan.note, 'warning')
+  scheduleAutoContinue(id, plan)
+}
+
+/* ────────────────────────────────────────────── 交接包生成（实施-05 S5b-2） */
+
+/*
+ * §8 的交接包由**模型写**（用户 2026-09-19 拍板），宿主只给提示与校验。分工：
+ *   · 宿主：判资格 → 渲染提示词 → 写请求文件 → 轮询结果 → 解析 / 校验 / 落盘；
+ *   · 薄层 `handoffs.js`：在 `agent_settled` 时读请求 → 调一次 completion → 写结果文件。
+ *
+ * 为什么提示词在**宿主**渲染：`renderHandoffPrompt` 是 TS，扩展用不了它；
+ * 让扩展自己拼一份，等于把「交接包该有哪些字段」变成两处真源。
+ */
+const handoffRequests = new HandoffRequestStore()
+
+/**
+ * 阈值覆盖（测试通道）。
+ *
+ * 真实链路要攒够两次**真实自动压缩**才会触发交接，而那是最贵的场景之一。
+ * 把阈值压到 0 就能在不改任何生产逻辑的前提下把「判资格 → 写请求 → 薄层生成 →
+ * 校验落盘」整条链跑一遍（`YAN_HANDOFF_THRESHOLD=0` 只在测试里设）。
+ */
+const HANDOFF_THRESHOLD_EFFECTIVE = (() => {
+  const raw = Number(process.env.YAN_HANDOFF_THRESHOLD)
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : HANDOFF_AUTO_COMPACT_THRESHOLD
+})()
+
+/** 等薄层写包的会话（防重复 arm，也用来停轮询）。`request` 整份留着，校验时要用它的来源字段。 */
+const handoffPending = new Map<string, { request: ReturnType<typeof buildHandoffRequest>; timer: NodeJS.Timeout }>()
+
+/**
+ * 资格评估的节流。
+ *
+ * `state` 推送很勤（流起停 / 用量刷新都推），而评估要 load 三份 store + 解析模式 ——
+ * 每次推送都做一遍不值得。流式期间本来就在“忙”那一步早退了（不碰 IO），
+ * 真正会走到这里的只有「回合刚结束」那一两次，1 秒窗口足够。
+ */
+const handoffLastCheck = new Map<string, number>()
+const HANDOFF_CHECK_INTERVAL_MS = 1_000
+
+/** 写包是一次额外模型调用：给 90 秒，之后放弃（会话该干什么干什么，不卡用户）。 */
+const HANDOFF_WAIT_MS = 90_000
+const HANDOFF_POLL_MS = 1_000
+
+function handoffNotify(id: string, message: string, notifyType: 'info' | 'warning' | 'error'): void {
+  pushFrom(id, {
+    ch: 'notify',
+    payload: { id: `handoff-${Date.now()}`, method: 'notify', notifyType, message }
+  })
+}
+
+/**
+ * 判一次资格；够格就 arm 一次生成。
+ *
+ * `reason` 只进提示词与排障（哪条路径想起交接的）—— 资格本身按 §7 的四条走，
+ * 与触发路径无关（压缩后 / 目标报告后都只是「再看一眼」）。
+ */
+async function maybeArmHandoff(id: string, reason: string): Promise<void> {
+  if (handoffPending.has(id)) return
+  const key = workModeKeyFor(id)
+  const agent = runners?.agentOf(id)
+  if (!key || !agent) return
+  const state = agent.getState()
+  if (!state) return
+  /* 忙：§7 的「有未完成子代理 / 长命令先等待，不遗弃后台工作」 */
+  if (state.isAgentRunning || state.isStreaming) return
+  const now = Date.now()
+  if (now - (handoffLastCheck.get(id) ?? 0) < HANDOFF_CHECK_INTERVAL_MS) return
+  handoffLastCheck.set(id, now)
+  try {
+    await handoffs.load()
+    await goals.load()
+    const tally = handoffs.state(key).tally
+    const goal = goals.state(key)
+    const mode = await resolveWorkMode(id)
+    const verdict = handoffEligibility({
+      tally,
+      goal,
+      mode: mode.mode,
+      busy: false,
+      threshold: HANDOFF_THRESHOLD_EFFECTIVE
+    })
+    if (!verdict.eligible) return
+
+    let messages: UIMessage[] = []
+    try {
+      messages = await agent.getMessages()
+    } catch {
+      /* 拿不到界面历史也照样能写包：提示词里少一段「最近用户消息」，模型会在 notes 里说 */
+    }
+    const recentUser = messages
+      .filter((message) => message.role === 'user' && String(message.text ?? '').trim())
+      .slice(-8)
+      .map((message) => String(message.text).trim().slice(0, 600))
+    const request = buildHandoffRequest({
+      handoffId: randomUUID(),
+      operationId: randomUUID(),
+      sessionKey: key,
+      prompt: renderHandoffPrompt({
+        goal,
+        cwd: state.cwd ?? '',
+        recentUser,
+        extra: `本次交接由「${reason}」触发；本片段已完成 ${tally.count} 次自动压缩。`
+      }),
+      sourceHead: messages.at(-1)?.id ?? null,
+      mode: mode.mode,
+      model: state.model?.id ?? null
+    })
+    const written = await handoffRequests.writeRequest(id, request).catch(() => false)
+    if (!written) return
+    handoffNotify(id, '正在为跨会话交接写一份交接包（一次额外模型调用）…', 'info')
+    const timer = setInterval(() => void collectHandoffResult(id), HANDOFF_POLL_MS)
+    timer.unref?.()
+    handoffPending.set(id, { request, timer })
+    /* 超时也走同一条出口（清现场 + 告一声），不会把会话卡住 */
+    setTimeout(() => void abandonHandoff(id, 'timeout'), HANDOFF_WAIT_MS).unref?.()
+  } catch {
+    /* 交接是「有更好、没有也能活」的优化：任何一步失败都不该影响会话本身 */
+  }
+}
+
+/** 放弃一次生成（超时 / 会话结束）：清请求与结果，别让下一次交接拿到上一份遗物。 */
+async function abandonHandoff(id: string, why: string): Promise<void> {
+  const pending = handoffPending.get(id)
+  if (!pending) return
+  clearInterval(pending.timer)
+  handoffPending.delete(id)
+  await handoffRequests.clearResult(id).catch(() => {})
+  await handoffRequests.clearRequest(id).catch(() => {})
+  if (why === 'timeout') handoffNotify(id, '交接包生成超时，已放弃（会话不受影响）', 'warning')
+}
+
+/**
+ * 取结果：薄层写完结果文件后，这里校验并落盘。
+ *
+ * 三道闸门（与 §8 的「模型写、宿主校验」一致）：
+ *   ① 结果必须是**这次**生成写的（`handoffId` + `operationId` 都对）；
+ *   ② 原文要能解析出 JSON 对象；
+ *   ③ 清洗必须过（两栏必填、列表形状合法、**来源字段由宿主覆盖**）。
+ * 任何一道不过 → 丢掉这份包并告知用户，**不把半份包写进事务**。
+ */
+async function collectHandoffResult(id: string): Promise<void> {
+  const pending = handoffPending.get(id)
+  if (!pending) return
+  let result
+  try {
+    result = await handoffRequests.readResult(id)
+  } catch {
+    return
+  }
+  if (!result) return
+  if (result.handoffId !== pending.request.handoffId || result.operationId !== pending.request.operationId) return
+
+  clearInterval(pending.timer)
+  handoffPending.delete(id)
+  await handoffRequests.clearResult(id).catch(() => {})
+  await handoffRequests.clearRequest(id).catch(() => {})
+
+  if (result.error) {
+    handoffNotify(id, `交接包生成失败：${result.error.slice(0, 120)}`, 'error')
+    return
+  }
+  const parsed = parseHandoffOutput(result.text)
+  if (!parsed.ok) {
+    handoffNotify(id, `交接包不能用（${parsed.reason}），已丢弃这份`, 'error')
+    return
+  }
+  const pkg = sanitizeHandoffPackage(parsed.value, {
+    sourceSession: pending.request.sessionKey,
+    sourceHead: pending.request.sourceHead,
+    mode: pending.request.mode,
+    model: pending.request.model
+  })
+  if (!pkg) {
+    handoffNotify(id, '交接包缺必填栏（目标 / 交付物），已丢弃这份', 'error')
+    return
+  }
+  try {
+    await handoffs.setPackage(pending.request.sessionKey, pkg)
+  } catch {
+    handoffNotify(id, '交接包落盘失败，已放弃（下一次压缩后再试）', 'error')
+    return
+  }
+  handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
+  /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
+  if (HANDOFF_COMMIT_ENABLED) {
+    void commitHandoff({
+      runnerId: id,
+      handoffId: pending.request.handoffId,
+      sessionKey: pending.request.sessionKey,
+      pkg
+    })
+  }
+}
+
+/**
+ * 把一份刚生成的交接包推入事务（§8 第 3–6 步）。
+ *
+ * 触发点与「生成」同一处（包落盘之后）：生成是资格判定的结果，而
+ * 「够格」与「愿意真的换会话」是两件事 —— 后者由开关控制。
+ *
+ * cwd / projectId 从**源实例当时的状态**取：交接的意思是「同一个项目继续」，
+ * 不是「在当前设置的项目里继续」。
+ */
+async function commitHandoff(input: {
+  runnerId: string
+  handoffId: string
+  sessionKey: string
+  pkg: HandoffPackage
+}): Promise<void> {
+  const agent = runners?.agentOf(input.runnerId)
+  const state = agent?.getState()
+  if (!agent || !state) return
+  const cwd = state.cwd ?? ''
+  const settings = await getSettings()
+  const projectId = projectIdForCwd(settings, cwd)
+  try {
+    const result = await handoffRunner.commit({
+      handoffId: input.handoffId,
+      sourceRunId: input.runnerId,
+      sourceSession: input.sessionKey,
+      cwd,
+      ...(projectId ? { projectId } : {}),
+      pkg: input.pkg
+    })
+    if (!result.ok) {
+      console.log(`[handoff] 交接停在 ${result.stage}：${result.error ?? ''}`)
+      return
+    }
+    await inheritWorkMode(input.sessionKey, result.destinationSession)
+  } catch (error) {
+    console.error('[handoff] 交接执行失败：', error)
+  }
+}
+
+/**
+ * 交接之后把**工作模式**带到目的会话（实施-05 S6 联调）。
+ *
+ * 为什么模式继承、而目标状态（goal）不继承：
+ *   · 模式是**用户对这条会话的意图**（「这个长任务让它自己往下跑」），
+ *     交接的是同一条会话的下一段 —— 掉回默认档会让自主续接（S3c）当场失效；
+ *   · goal 是「这一轮做到哪」的**事实**，§8 明写不能把旧总结升级成事实，
+ *     所以由模型按交接包重新登记（resume 正文里有明确要求，也有单测钉着）。
+ */
+async function inheritWorkMode(sourceKey: string, destFile: string | null): Promise<void> {
+  const destKey = normalizeChainKey(destFile)
+  if (!destKey || !sourceKey) return
+  await workModes.load()
+  const source = workModes.state(sourceKey, agentDefaultWorkMode)
+  /* 源本来就是默认档（无记录）→ 目的不必落键，保持「默认态不写盘」的约定 */
+  if (source.revision === 0 && source.mode === agentDefaultWorkMode) return
+  await workModes.set(destKey, source.mode).catch(() => undefined)
+  /* 扩展只认 `work-mode/<runnerId>.json`：切到目的实例之后要重写一份 + 推给界面 */
+  const active = runners?.activeRunnerId
+  if (active) await pushWorkMode(active).catch(() => undefined)
+}
+
 function pushFrom(runnerId: string, msg: MainPush): void {
   const runtime = runners?.runtimeOf(runnerId)
   push({
@@ -400,6 +989,42 @@ function pushFrom(runnerId: string, msg: MainPush): void {
     sessionKey: runnerId
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
+  if (msg.ch === 'state' || msg.ch === 'proc') requestPiPackageActivationTick()
+  /*
+   * 每一次 `state` 推送都可能是「一次压缩刚结束」（`lastCompaction`）。
+   * 交接计数的幂等压在 store 里（同一份记录只会计一次），所以这里可以无条件看它 ——
+   * 不在这里做去重，就不会出现「两份去重逻辑想不到一块去」。
+   */
+  if (msg.ch === 'state') void observeCompaction(runnerId, msg.payload)
+  /*
+   * 交接资格第二个评估时机（实施-05 S5b-2）：**回合刚结束**。
+   *
+   * 为什么需要它：`goal report` 发生在回合**中途**（工具调用），那一刻实例是忙的，
+   * 资格判定会正确地拒掉；而「目标在推进 + 自主档 + 不忙」三条同时成立的真实时刻，
+   * 恰恰是这一轮收尾之后。`maybeArmHandoff` 自己是幂等 + 节流的，
+   * 所以这里可以无条件看一眼（忙的时候它内部直接早退，不碰 IO）。
+   */
+  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
+    void maybeArmHandoff(runnerId, 'settled')
+  }
+  /*
+   * 模型报错 → 自动继续（实施-05 S5c）。
+   * 单开一条通道而不是复用 `notify`：拿提示文案做判据太脆（改一句话就静默失效）。
+   */
+  if (msg.ch === 'agent-error') void handleModelError(runnerId, msg.payload)
+  /*
+   * 一轮真的产出了（assistant 有文本或工具调用、且没标错）→ 连续失败计数归零。
+   * 流式期间会反复推 `msg-update`，但归零只在真的变过时落盘（store 里判），
+   * 所以这里不必自己节流。
+   */
+  if (
+    msg.ch === 'msg-update' &&
+    msg.payload?.patch?.role === 'assistant' &&
+    !msg.payload.patch.error &&
+    (msg.payload.patch.text || msg.payload.patch.toolCalls?.length)
+  ) {
+    void resetAutoContinue(runnerId)
+  }
   /*
    * 每次 `state` 推送都顺带刷一次 `runners` 快照。
    *
@@ -418,10 +1043,295 @@ function pushFrom(runnerId: string, msg: MainPush): void {
   if (msg.ch === 'state') pushRunners()
 }
 
+/** Debounced safe-boundary activation; all trust/authorization decisions remain in the scheduler. */
+function requestPiPackageActivationTick(): void {
+  if (!piPackageActivationScheduler && !skillFilesActivationScheduler) return
+  if (piPackageActivationInFlight) {
+    piPackageActivationAgain = true
+    return
+  }
+  if (piPackageActivationTimer) clearTimeout(piPackageActivationTimer)
+  piPackageActivationTimer = setTimeout(() => {
+    piPackageActivationTimer = null
+    const schedulers = [piPackageActivationScheduler, skillFilesActivationScheduler].filter(
+      (scheduler): scheduler is NonNullable<typeof scheduler> => scheduler !== null
+    )
+    if (schedulers.length === 0) return
+    if (piPackageActivationInFlight) {
+      piPackageActivationAgain = true
+      return
+    }
+    piPackageActivationInFlight = true
+    void Promise.all(schedulers.map((scheduler) => scheduler.tick())).then((groups) => {
+      for (const result of groups.flat()) {
+        if (result.state === 'resumed' || result.state === 'failed') {
+          push({
+            ch: 'log',
+            payload: {
+              text: result.state === 'resumed'
+                ? `[能力接入] ${result.operationId} 已激活并续接原目标`
+                : `[能力接入] ${result.operationId} 未能激活：${result.detail}`
+            }
+          })
+        }
+      }
+    }).catch((error) => {
+      reportMainError('pi-package-activation', error)
+    }).finally(() => {
+      piPackageActivationInFlight = false
+      if (piPackageActivationAgain) {
+        piPackageActivationAgain = false
+        requestPiPackageActivationTick()
+      }
+    })
+  }, 300)
+}
+
 /** 把所有运行实例的状态推给渲染端（左栏状态槽） */
 function pushRunners(): void {
   push({ ch: 'runners', payload: runners?.statuses() ?? [] })
   refreshTrayMenu()
+}
+
+/**
+ * 工作模式（实施-05）的存储。
+ *
+ * 按会话保存；新会话在 pi 给出稳定 sessionId 之前用 `pending:<runnerId>` 占位。
+ * 单例：它自己缓存整份文档，多处各建一个会互相覆盖。
+ */
+const workModes = new WorkModeStore()
+
+/**
+ * 新会话的默认工作模式（`desktop.json.defaultWorkMode`）。
+ *
+ * 缓存一份的理由与 `agentResponseDetail` 相同：读取路径里不能到处 await
+ * `getSettings()`；两个写入点（启动 / 改设置）会同步它。
+ */
+let agentDefaultWorkMode: WorkMode = DEFAULT_WORK_MODE
+
+/**
+ * 运行实例当前该读哪个键。
+ *
+ * ⚠️ 优先**会话文件路径**，不用 `state.sessionId`：实测切走再切回同一份
+ * 会话文件时，pi 报回的 sessionId 会变（文件还是那个文件）—— 用 sessionId 作
+ * 键会让用户刚设的模式在切换后当场丢回默认值（真实链路抽到的，见探针第 5 节）。
+ * 文件路径在 pi 给出之前用 `pending:<runnerId>` 占位，拿到后再迁移。
+ */
+function workModeKeyFor(id: string): string {
+  const file = normalizeSessionFileKey(runners?.agentOf(id)?.getState()?.sessionFile)
+  return file ?? pendingWorkModeKey(id)
+}
+
+/**
+ * 解析一个运行实例当前会话的模式，并顺手把 pending 键迁到稳定键。
+ *
+ * 迁移放在这里而不是「会话建立事件」里：稳定键何时出现由 pi 决定，
+ * 而读模式的所有调用点都已经拿到过实例 —— 在这里做能保证「第一次读」
+ * 就一定是对的键，不会出现“刚答完的会话又被当成新会话”。
+ */
+async function resolveWorkMode(id: string): Promise<WorkModeState> {
+  await workModes.load()
+  const stable = normalizeSessionFileKey(runners?.agentOf(id)?.getState()?.sessionFile)
+  const pendingKey = pendingWorkModeKey(id)
+  if (!stable) return workModes.state(pendingKey, agentDefaultWorkMode)
+  if (workModes.snapshot().entries[pendingKey]) await workModes.adopt(pendingKey, stable)
+  return workModes.state(stable, agentDefaultWorkMode)
+}
+
+/**
+ * 把该实例的当前模式写给模型侧并推给界面。
+ *
+ * 两个出口一次做完，否则会出现「界面已自主而扩展仍标准」：
+ *   · `work-mode/<runnerId>.json` —— 薄层扩展只认 `YAN_SESSION_ID`（= runner id），
+ *     文件缺失 / 读不到时它回退到旧 `autonomous` 或标准模式；
+ *   · `work-mode` 推送 —— 带 `runtime` 封套，后台会话切模式不会串到当前视图。
+ */
+async function pushWorkMode(id: string): Promise<WorkModeState> {
+  const state = await resolveWorkMode(id)
+  await writeWorkModeSnapshot(id, state).catch(() => {})
+  pushFrom(id, { ch: 'work-mode', payload: state })
+  return state
+}
+
+/**
+ * 把该实例的「待发续行」写给薄层（实施-05 S3b）。
+ *
+ * 与模式快照同一个理由：`goals.json` 按**会话文件路径**索引，
+ * 而扩展只认自己是哪个 runner（`YAN_SESSION_ID`）。
+ */
+async function applyGoalResume(id: string): Promise<void> {
+  await goals.load()
+  await writeGoalResumeSnapshot(id, goals.resumeOf(workModeKeyFor(id))).catch(() => {})
+}
+
+/**
+ * 抦销未发续行（用户停止 / 用户改档）。
+ *
+ * ⚠️ 必须连**快照**一起清：扩展只读快照，不读 `goals.json` ——
+ * 只清后者等于没清，下一轮它照发。
+ */
+async function cancelGoalResume(id: string): Promise<void> {
+  await goals.load()
+  await goals.clearResume(workModeKeyFor(id)).catch(() => {})
+  await writeGoalResumeSnapshot(id, null).catch(() => {})
+}
+
+/**
+ * 目标状态（实施-05 S3）的存储。
+ *
+ * 为什么与模式分两份文件：模式是「用户选什么」（低频、界面驱动），目标是
+ * 「这一轮做到哪」（高频、模型驱动、带幂等记录）—— 混在一份里会让
+ * 模式那份承担两个写者的并发语义。
+ */
+const goals = new GoalStore()
+
+/**
+ * `yan goal …` 的实现点（实施-05 S3）。
+ *
+ * 三条规则落在这里：
+ *   ① **身份来自宿主**：会话键用 `workModeKeyFor`（= 会话文件路径），
+ *      不接受请求里的会话 / 项目 id；
+ *   ② **就绪转移是原子的**：先把目标推进到 executing（落盘），再切模式；
+ *      模式写失败就不报成功（否则会出现「目标说已开工、模式还是澄清」）；
+ *   ③ **校验在纯函数里**（`shared/goal.ts`）：五栏 / 置信度 / revision 过期。
+ *
+ * ⚠️ 模式切到标准**不会**改写本轮已经生效的工具表（工具集按轮次生效，
+ *    S1 实测）：本轮仍是澄清档的只读集，所以回执里要明说
+ *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
+ */
+const goalCapabilityHost: GoalCommandHost = {
+  async run(command, params, context) {
+    await goals.load()
+    const key = workModeKeyFor(context.sessionId)
+    const modeState = await resolveWorkMode(context.sessionId)
+    const goal = goals.state(key)
+
+    if (command === 'goal.ready') {
+      const res = await goals.commitReady(
+        key,
+        normalizeReadyParams(params),
+        { modeRevision: modeState.revision, goalRevision: goal.revision },
+        goal.goalId || `goal-${context.sessionId}`
+      )
+      if (!res.ok) {
+        throw new CapabilityCommandError(res.code, res.message, {
+          goal: res.goal,
+          mode: modeState.mode,
+          modeRevision: modeState.revision
+        })
+      }
+      if (!res.replayed) {
+        const switched = await workModes.set(key, 'standard', modeState.revision)
+        if (!switched.ok) {
+          throw new CapabilityCommandError(
+            'mode_switch_failed',
+            `就绪已提交，但模式切换失败（${switched.error ?? 'unknown'}）；重试时带同一个 transitionId 就会回放已提交结果`,
+            { goal: res.goal, currentMode: switched.state }
+          )
+        }
+        await pushWorkMode(context.sessionId)
+        /* 先落盘（commitReady 里已做）再告诉薄层可以开工：顺序不能反（§4） */
+        await applyGoalResume(context.sessionId)
+      }
+      return {
+        data: {
+          replayed: res.replayed,
+          goal: res.goal,
+          transition: res.result,
+          note: res.replayed
+            ? '这次是重放：就绪转移已经提交过，不会重复切换模式'
+            : '模式已切标准（下一轮生效）。本轮工具集仍是只读：先收尾，不要在这一轮里改文件。'
+        },
+        summary: {
+          kind: 'goal',
+          action: 'ready',
+          replayed: res.replayed,
+          goalId: res.result.goalId,
+          goalRevision: res.goal.revision,
+          phase: res.goal.phase,
+          mode: 'standard'
+        }
+      }
+    }
+
+    if (command === 'goal.report') {
+      const res = await goals.report(key, normalizeReportParams(params))
+      if (!res.ok) {
+        throw new CapabilityCommandError(res.code, res.message, {
+          goal: res.goal,
+          mode: modeState.mode,
+          modeRevision: modeState.revision
+        })
+      }
+      /*
+       * 顺路看一眼要不要开始交接（S5b-2）：资格四条里「目标在推进」正是在这里才可能成立 ——
+       * 只靠压缩事件驱动会在「先报告、后压缩」的顺序下漏掉。
+       * 生产上阈值没到就什么都不会发生（阈值覆盖只在测试里设）。
+       */
+      if (!res.replayed) void maybeArmHandoff(context.sessionId, 'goal-report')
+      /*
+       * 自主档的「接着干」（S3c）：报完进展就安排下一次续接，
+       * 让模型在**没有人再发消息**的情况下自己一轮轮往下推。
+       *
+       * 为什么只认自主档：标准档下用户就在旁边看着，自己往下跑会抢他的话；
+       * 澄清档是只读的，根本谈不上「执行」。
+       * 能不能真发出去由薄层的空闲判定决定（本轮没结束就留着，见 goal-resume.js）。
+       */
+      let continueNote: string | null = null
+      let continueRound: number | null = null
+      if (!res.replayed && modeState.mode === 'autonomous') {
+        const armed = await goals.armContinue(key)
+        if (armed.armed) {
+          continueRound = armed.round
+          /* 先落盘（armContinue 已 await persist）再告诉薄层 —— 顺序不能反（§4） */
+          await applyGoalResume(context.sessionId)
+          continueNote =
+            `已安排第 ${armed.round} 次自动续接：本轮的活干完就收尾，` +
+            '之后会有一条控制消息把你叫回来继续，不要停下来等用户确认。'
+        } else if (armed.reason === 'limit') {
+          continueNote =
+            `已达自动续接上限（${AUTONOMOUS_CONTINUE_LIMIT} 次），不再自动叫你：` +
+            '请在本轮里把进展、结论与需要用户决定的事写清楚。'
+        }
+      }
+      return {
+        data: {
+          replayed: res.replayed,
+          goal: res.goal,
+          summary: goalSummary(res.goal),
+          ...(continueNote ? { note: continueNote } : {}),
+          ...(continueRound ? { autoContinueRound: continueRound } : {})
+        },
+        summary: {
+          kind: 'goal',
+          action: 'report',
+          replayed: res.replayed,
+          phase: res.goal.phase,
+          goalRevision: res.goal.revision,
+          stepsDone: res.goal.steps.filter((step) => step.status === 'done').length,
+          stepsTotal: res.goal.steps.length,
+          blocked: res.goal.phase === 'blocked',
+          autoContinueArmed: continueRound != null
+        }
+      }
+    }
+
+    if (command === 'goal.status') {
+      return {
+        data: { goal, mode: modeState, modeRevision: modeState.revision, summary: goalSummary(goal) },
+        summary: {
+          kind: 'goal',
+          action: 'status',
+          phase: goal.phase,
+          goalRevision: goal.revision,
+          mode: modeState.mode,
+          modeRevision: modeState.revision
+        }
+      }
+    }
+
+    throw new CapabilityCommandError('unknown_command', `未知的 goal 动作：${command}`)
+  }
 }
 
 /**
@@ -447,6 +1357,8 @@ async function pushRunnerSnapshot(id: string): Promise<void> {
     })
     .catch(() => {})
   void ag.refreshTodos().catch(() => {})
+  /* 工作模式跟随实例推送：切会话 / 新建 / 启动都经这里，一处覆盖所有路径 */
+  await pushWorkMode(id)
   pushRunners()
 }
 
@@ -488,7 +1400,7 @@ async function shutdown(): Promise<void> {
 }
 
 type ExitChoice = 'cancel' | 'save' | 'interrupt'
-type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' }
+type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }
 
 /** live 探针用环境变量选择退出分支，真实用户仍走原生对话框。 */
 function probeExitChoice(): ExitChoice | undefined {
@@ -636,12 +1548,44 @@ async function remoteSnapshot(): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * 侧栏列表只显示**代表段**（实施-05 S5b-4）。
+ *
+ * 交接后磁盘上确实是两份 JSONL，但用户看到的是**同一条会话** —— 把旧段也列出来
+ * 会让用户以为凭空多了两条。规则：
+ *   · 不在任何链上 / 是链的最后一段 → 显示；
+ *   · 是链上的旧段 → 隐藏；
+ *   · 代表段的标题为空（新段往往还没标题）→ 用**链首段**的标题顶上，
+ *     否则侧栏上那条会话会变成一行「未命名」（用户看到自己的会话“换了名字”）。
+ *
+ * 路径与 id 仍是代表段的：打开 / 发送都落在当前活动段。
+ */
+async function filterChainRepresentatives(list: SessionSummary[]): Promise<SessionSummary[]> {
+  await sessionChains.load()
+  const chains = sessionChains.chains()
+  if (!chains.length) return list
+  const out: SessionSummary[] = []
+  for (const item of list) {
+    if (!isRepresentative(chains, item.path)) continue
+    const chain = chainForFile(chains, item.path)
+    if (chain && chain.segments.length > 1 && !String(item.title ?? '').trim()) {
+      const headPath = normalizeChainKey(chain.segments[0].sessionFile)
+      const head = list.find((session) => normalizeChainKey(session.path) === headPath)
+      out.push(head?.title ? { ...item, title: head.title } : item)
+      continue
+    }
+    out.push(item)
+  }
+  return out
+}
+
 async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
-  const result = await readSessionMessages(summary.path)
+  /* 链感知：远程端看到的也是「一条会话」（与桌面端口径一致） */
+  const result = await readChainMessages(summary.path, sessionChains)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
   const messages = result.messages.slice(-limit)
   return {
@@ -707,28 +1651,66 @@ async function remoteNewSession(): Promise<RemoteOperationResult> {
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
+/** 直接向目标会话发送，不改变桌面当前视图；必要时创建后台 runner。 */
+async function remoteSendToSession(sessionId: string, text: string): Promise<RemoteOperationResult> {
+  const settings = await getSettings()
+  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+
+  if (!runners) {
+    const started = await startAgent()
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+  }
+  const cwdResult = await validateCwd(summary.cwd)
+  if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
+  const projectId = summary.scope === 'global'
+    ? undefined
+    : (summary.projectId ?? projectIdForCwd(settings, cwdResult.cwd))
+  const selected = await runners!.select({
+    sessionFile: summary.path,
+    sessionId: summary.id,
+    cwd: cwdResult.cwd,
+    projectId,
+    scope: summary.scope,
+    activate: false
+  })
+  if (!selected.ok || !selected.id) {
+    return { ok: false, status: 409, error: selected.error ?? '无法为目标会话准备后台运行实例' }
+  }
+  if (runners!.hasBusyCwd(cwdResult.cwd, selected.id)) {
+    return { ok: false, status: 409, error: '同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入' }
+  }
+  await rememberRunnerSession(selected, {
+    sessionFile: summary.path,
+    cwd: cwdResult.cwd,
+    projectId,
+    scope: summary.scope
+  })
+  const agent = runners!.agentOf(selected.id)
+  if (!agent) return { ok: false, status: 503, error: '目标运行实例已退出' }
+  pushRunners()
+  const result = await agent.send(text)
+  return result.ok
+    ? { ok: true, data: { ...result, runId: selected.runId, sessionId } }
+    : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
+}
+
 async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
   if (command.action === 'select') return remoteSelectSession(command.sessionId)
   if (command.action === 'new') return remoteNewSession()
 
   if (command.action === 'send') {
-    if (command.sessionId) {
-      const selected = await remoteSelectSession(command.sessionId)
-      if (!selected.ok) return selected
-    }
-    if (!ac()?.running) {
-      const started = await startAgent()
-      if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
-    }
-    const result = await ac()?.send(command.text)
-    return result?.ok
-      ? { ok: true, data: result }
-      : { ok: false, status: 409, error: result?.error ?? 'pi 未运行' }
+    return remoteSendToSession(command.sessionId, command.text)
   }
 
   if (command.action === 'abort') {
-    if (!ac()?.running) return { ok: false, status: 409, error: '当前没有正在运行的任务' }
-    return { ok: true, data: await ac()!.abort() }
+    const agent = runners?.agentOf(command.runId)
+    if (!agent) return { ok: false, status: 404, error: '找不到目标运行实例' }
+    const state = agent.getState()
+    if (!state?.isAgentRunning && !state?.isStreaming && !state?.isCompacting && !agent.hasRunningBash()) {
+      return { ok: false, status: 409, error: '目标 runId 当前没有正在运行的任务' }
+    }
+    return { ok: true, data: { runId: command.runId, ...(await agent.abort()) } }
   }
 
   const settings = await getSettings()
@@ -856,7 +1838,13 @@ async function dispatchControlCommand(command: ControlCommand): Promise<void> {
 
 /** 真正退出应用；关闭按钮不进入这里，只负责隐藏到托盘。 */
 function requestExit(): Promise<ExitResult> {
-  if (isQuitting) return Promise.resolve({ action: 'interrupt-exit' })
+  /*
+   * 已经进入退出流程：如实告诉调用方「不用再请求了」。
+   * 这里以前返回 `interrupt-exit` —— 但它不是**这次请求**的结果，
+   * 界面上会把「重复点击」显示成「已按中断退出」（preload 的类型里
+   * 本来就有 `already-exiting` 这一档，只是主进程从没返回过）。
+   */
+  if (isQuitting) return Promise.resolve({ action: 'already-exiting' })
   if (exitRequestInFlight) return exitRequestInFlight
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
@@ -1109,6 +2097,72 @@ async function rememberRunnerSession(
 }
 
 /**
+ * 等 pi 报出会话文件（新建会话的路径由 pi 决定，异步落地）。
+ *
+ * 不能拿「select 成功了」当「文件有了」：交接要把它写进会话链与事务日志，
+ * 写一个不存在的路径会让侧栏指向一个没人能打开的东西。
+ */
+async function waitForSessionFile(runId: string, timeoutMs = 10_000): Promise<string | undefined> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const file = runners?.agentOf(runId)?.getState()?.sessionFile
+    if (file && normalizeSessionFileKey(file)) return file
+    if (Date.now() >= deadline) return undefined
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+}
+
+/**
+ * 交接专用的「打开会话」实现（§8 第 4 步）。
+ *
+ * 与界面切会话走同一条路（`runners.select`），所以同 cwd 防线、实例上限、
+ * cwd 更换要重建进程这些既有规则一条也不会绕过 —— 交接不是特权路径。
+ * `cwd` 为空 = 崩溃恢复路径，用当前项目目录兜底（恢复只是把实例接回来）。
+ */
+async function openHandoffSession(target: HandoffSessionTarget): Promise<HandoffSessionHandle> {
+  if (!runners) return { ok: false, error: 'pi 未运行' }
+  const settings = await getSettings()
+  const cwdResult = await validateCwd(target.cwd || settings.cwd)
+  if (!cwdResult.ok) return { ok: false, error: cwdResult.error }
+  const projectId = target.projectId ?? projectIdForCwd(settings, cwdResult.cwd)
+  const res = await runners.select({
+    cwd: cwdResult.cwd,
+    ...(projectId ? { projectId } : {}),
+    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {})
+  })
+  if (!res.ok || !res.id) return { ok: false, error: res.error ?? '打开会话失败' }
+  await rememberRunnerSession(res, {
+    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
+    ...(projectId ? { projectId } : {}),
+    cwd: cwdResult.cwd,
+    scope: projectId ? 'project' : 'global'
+  })
+  pushRunners()
+  const sessionFile = await waitForSessionFile(res.id)
+  if (!sessionFile) return { ok: false, error: '新会话文件还没落地' }
+  void pushRunnerSnapshot(res.id)
+  return { ok: true, runId: res.id, sessionFile }
+}
+
+/**
+ * 启动时的交接崩溃恢复（§8 第 6/7 条）。
+ *
+ * **不受提交开关影响**：开关只决定「要不要开始新的交接」，而磁盘上已有的
+ * 未终结事务（上一次开着的时候产生的）必须收尾 —— 否则重启后会出现
+ * 「日志说已提交、但没人接着干」的静默停住。
+ */
+async function recoverHandoffs(): Promise<void> {
+  try {
+    const actions = await handoffRunner.recover()
+    for (const item of actions) {
+      console.log(`[handoff] 恢复 ${item.handoffId}: ${item.action} → ${item.stage}`)
+    }
+  } catch (error) {
+    console.error('[handoff] 恢复交接事务失败：', error)
+  }
+}
+
+/**
  * 启动 pi 的**单飞**（single-flight）锁。
  *
  * 为什么需要：应用启动（app.whenReady）与「界面语言变了要重启」都会调
@@ -1161,6 +2215,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
   const settings = await getSettings()
   agentResponseDetail = settings.responseDetail
+  /* 工作模式（实施-05）：新会话的初值；已存过的会话仍用会话自己的值 */
+  agentDefaultWorkMode = settings.defaultWorkMode
   /* 上下文策略的设置层（N21-7）：新起的 pi 实例直接按这份策略跑 */
   setContextPolicySettings({
     user: settings.contextPolicy,
@@ -1171,13 +2227,16 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
   runners = new RunnerRegistry({
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
-    createAgent: (id, cwd) =>
+    createAgent: (id, cwd, generation) =>
       new AgentController({
         push: (m) => pushFrom(id, m),
         cwd,
         piBin: settings.piBin,
         browserExtension: browserExtensionPath(),
         questionExtension: questionExtensionPath(),
+        workModeExtension: workModeExtensionPath(),
+        goalResumeExtension: goalResumeExtensionPath(),
+        handoffsExtension: handoffsExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
         browserEnv: browser?.bridgeEnv(),
@@ -1197,11 +2256,18 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             return subagentCapabilityHost.run(command, params, context)
           }
         },
+        /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
+        goalHost: goalCapabilityHost,
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextExtension: contextExtensionPath(),
         /* 项目知识注入（实施-03 S3）：检索在宿主，扩展只负责放到用户消息之前 */
         projectKnowledgeExtension: projectKnowledgeExtensionPath(),
+        /*
+         * 界面历史（实施-05 S5b-4）：交接过的会话在链上，按段从旧到新拼成
+         * **一条时间线**。agent 不认识「链」—— 那是宿主的关系。
+         */
+        readHistory: (sessionFile) => readChainMessages(sessionFile, sessionChains),
         /*
          * 宿主能力服务：模型经 `yan` CLI 触达砚的能力（见 capability-server.ts）。
          *
@@ -1210,6 +2276,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          */
         capability: {
           sessionId: id ?? 'primary',
+          runnerGeneration: generation ?? 1,
           /*
            * 项目 id 必须存在（要与 CLI 回传的值逐一比对）。
            * 设置里查不到时用 cwd 派生一个稳定的：
@@ -1219,11 +2286,162 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           projectId: knowledgeProjectId(settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
           binDir: join(YAN_DIR, 'bin'),
-          devResourcesDir: join(app.getAppPath(), 'resources')
+          devResourcesDir: join(app.getAppPath(), 'resources'),
+          getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
+          getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy
+        },
+        /*
+         * `--authorize` 只能请求显示这条主进程对话框，本身不构成同意。
+         * 远程 host 授权与本地代码执行授权分开；后者还单独选择是否允许运行
+         * npm lifecycle scripts。若 Pi 项目尚未信任，允许本地包也会明确说明
+         * 并持久写入 cwd 到 trust.json（这是加载项目资源所必需的宽权限）。
+         * 对话框没有可用窗口时一律拒绝。
+         */
+        confirmCapabilityAuthorization: async (
+          request: CapabilityAuthorizationPrompt
+        ): Promise<CapabilityAuthorizationChoice> => {
+          const endpointUrl = request.endpoint ? new URL(request.endpoint) : null
+          const loopback =
+            endpointUrl &&
+            (endpointUrl.hostname === 'localhost' ||
+              endpointUrl.hostname === '127.0.0.1' ||
+              endpointUrl.hostname === '[::1]')
+          /*
+           * cost-0 `mcpregister` 的隔离 fixture 不能点原生 UI。仅在隐藏 live 探针、
+           * 显式 test flag、精确 fixture 候选与 loopback 端点四项同时满足时模拟允许；
+           * 生产 UI 不读这个 flag，也不允许任意远程 host 走该分支。
+           */
+          if (
+            process.env.YAN_PROBE_HIDDEN === '1' &&
+            process.env.YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP === '1' &&
+            request.kind === 'remote-mcp' &&
+            request.source === 'mcp-registry:yan/fixture-remote@1.0.0' &&
+            loopback
+          ) {
+            return 'allow'
+          }
+          if (!win || win.isDestroyed()) return 'deny'
+          const isRemote = request.kind === 'remote-mcp'
+          const trust = isRemote ? null : await trustStatus(request.cwd)
+          const buttons = isRemote
+            ? ['拒绝', '允许此项目连接该 host']
+            : trust?.trusted
+              ? ['拒绝', '允许（禁用 lifecycle scripts）', '允许（包含 lifecycle scripts）']
+              : [
+                  '拒绝',
+                  '允许并信任此项目（禁用 lifecycle scripts）',
+                  '允许并信任此项目（包含 lifecycle scripts）'
+                ]
+          const response = await dialog.showMessageBox(win, {
+            type: 'warning',
+            title: isRemote ? '授权远程 MCP 服务' : '授权本地能力包',
+            message: isRemote
+              ? `是否允许当前项目连接「${request.title}」？`
+              : `是否允许当前项目接入「${request.title}」并运行其本机代码？`,
+            detail: [
+              `候选：${request.source}`,
+              `项目：${request.projectId}`,
+              `内容指纹：${request.digest}`,
+              ...(request.endpoint ? [`远程端点：${request.endpoint}`, '该服务会收到本任务发送给它的请求内容。'] : []),
+              ...(!isRemote
+                ? [
+                    '本地包可在 pi 重载后以当前 Windows 用户权限运行；staging 不是沙箱。',
+                    '禁用 lifecycle scripts 只影响安装脚本，不会隔离包的运行时代码。',
+                    ...(trust?.trusted
+                      ? ['此项目已经在 trust.json 中显式信任；本次不会改写信任设置。']
+                      : [
+                          '此项目尚未信任。允许后会把当前目录写入 Pi 的 trust.json；该项目现有及未来的 .pi 设置、扩展、技能等资源都将允许加载，不只限于本候选。请仅对你信任的项目允许。'
+                        ])
+                  ]
+                : []),
+              '授权仅绑定此候选 / host 与当前项目；拒绝时不会登记或执行。'
+            ].join('\n'),
+            buttons,
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true
+          })
+          if (isRemote) return response.response === 1 ? 'allow' : 'deny'
+          const choice = response.response === 2
+            ? 'allow-with-lifecycle-scripts'
+            : response.response === 1
+              ? 'allow'
+              : 'deny'
+          if (choice !== 'deny' && trust && !trust.trusted) {
+            const saved = await allowTrust(request.cwd)
+            if (!saved.ok) {
+              await dialog.showMessageBox(win, {
+                type: 'error',
+                title: '无法信任项目',
+                message: '项目包授权未保存',
+                detail: saved.error ?? '写入 Pi trust.json 失败。没有保存候选授权。',
+                buttons: ['确定'],
+                noLink: true
+              })
+              return 'deny'
+            }
+          }
+          return choice
         }
       }),
-    onChanged: () => pushRunners()
+    onChanged: () => {
+      pushRunners()
+      requestPiPackageActivationTick()
+    }
   })
+
+  const piProbe = resolvePi(settings.piBin ? { override: settings.piBin } : {})
+  const piBin = piProbe.args.at(-1)
+  configurePackageContext({
+    bin: () => piBin ?? null,
+    agentDir: () => PI_AGENT_DIR,
+    hasRunningTask: (projectCwd) => runners?.hasBusyCwd(projectCwd) === true,
+    isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
+  })
+  const acquisitions = new AcquisitionService({ root: YAN_DIR })
+  const packageAuthorizations = new PackageAuthorizationService(YAN_DIR)
+  piPackageActivationScheduler = new PiPackageActivationScheduler(
+    acquisitions,
+    createPiPackageActivationHostPorts({
+      root: YAN_DIR,
+      agentDir: PI_AGENT_DIR,
+      service: acquisitions,
+      authorizations: packageAuthorizations,
+      goals,
+      runners: {
+        activationSnapshot: (target) => runners?.activationSnapshot(target) ?? null,
+        agentOf: (id) => runners?.agentOf(id) ?? null,
+        restartOne: (id) => runners?.restartOne(id) ?? Promise.resolve({ ok: false, error: '运行实例注册表尚未就绪' }),
+        hasBusyCwd: (cwd) => runners?.hasBusyCwd(cwd) ?? false
+      },
+      isTrusted: async (cwd) => (await trustStatus(cwd)).trusted,
+      sourceHead: async (cwd) => (await readRepoState(cwd, { withRefs: false }))?.head ?? null,
+      listPackages,
+      install: installManagedPiPackage,
+      smoke: (tx) => smokeStagedPiPackage({
+        root: YAN_DIR,
+        operationId: tx.operationId,
+        ...(piBin ? { piBin } : {})
+      })
+    })
+  )
+  skillFilesActivationScheduler = new SkillFilesActivationScheduler(
+    acquisitions,
+    createSkillFilesActivationHostPorts({
+      root: YAN_DIR,
+      service: acquisitions,
+      authorizations: packageAuthorizations,
+      goals,
+      runners: {
+        activationSnapshot: (target) => runners?.activationSnapshot(target) ?? null,
+        agentOf: (id) => runners?.agentOf(id) ?? null,
+        restartOne: (id) => runners?.restartOne(id) ?? Promise.resolve({ ok: false, error: '运行实例注册表尚未就绪' }),
+        hasBusyCwd: (cwd) => runners?.hasBusyCwd(cwd) ?? false
+      },
+      isTrusted: async (cwd) => (await trustStatus(cwd)).trusted,
+      sourceHead: async (cwd) => (await readRepoState(cwd, { withRefs: false }))?.head ?? null
+    })
+  )
 
   const projectId = projectIdForCwd(settings, settings.cwd)
   /*
@@ -1241,6 +2459,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   pushRunners()
   /* 接回来的会话要把内容推给渲染端（switch 路径自己会推，start 路径不会） */
   if (res.ok && res.id) await pushRunnerSnapshot(res.id)
+  /*
+   * 未终结的交接事务在启动时收尾（§8 第 6 条）。
+   * 放在推快照**之后**：恢复可能把视图切到目的会话，那一次切换自己会再推一帧。
+   */
+  if (res.ok) await recoverHandoffs()
+  requestPiPackageActivationTick()
   return res.ok ? { ok: true } : { ok: false, error: res.error }
 }
 
@@ -1404,6 +2628,18 @@ function registerIpc(): void {
       const r = await startAgent()
       if (!r.ok) return r
     }
+    /*
+     * 用户发话了：自主档的**连续**自动续接计数归零（S3c）。
+     * 上限只约束「无人看管的连续自动轮」—— 有人参与就重新给满额度。
+     */
+    const id = runners?.activeRunner()?.id
+    if (id) {
+      await goals.load()
+      /* await：用户发言必须先于模型接下来的 arm 落地，否则竞态下计数不会被归零 */
+      await goals.resetAutoContinues(workModeKeyFor(id)).catch(() => {})
+      /* 用户发话了 = 他接手了：自动继续作废、连续失败计数归零（S5c） */
+      await resetAutoContinue(id)
+    }
     return ac()!.send(text, images, mode)
   })
 
@@ -1414,6 +2650,15 @@ function registerIpc(): void {
   handle('yan:abort', async () => {
     // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
     const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
+    /*
+     * 用户按了停止 —— 除了停当前回合，还要**抦销未发出的续行**（§5：用户停止优先）。
+     * 只清续行、不标 `stopped`：停止一个回合不等于放弃目标；
+     * 目标级的 `stopped` 留给显式入口。
+     */
+    const id = runners?.activeRunner()?.id
+    if (id) void cancelGoalResume(id)
+    /* 用户停止 = 立刻停手：未到点的自动继续也要撤掉，并归零（S5c） */
+    if (id) void resetAutoContinue(id)
     return cleared
   })
 
@@ -1434,18 +2679,39 @@ function registerIpc(): void {
   })
   handle('yan:deleteSession', async (path: string) => {
     try {
-      /* 删之前先把跑在它上面的实例停掉（N12：作用域只到这一个会话） */
-      await runners?.stopBySessionFile(path)
-      const undoToken = await deleteSession(path, ac()?.getState()?.sessionFile)
+      await sessionChains.load()
+      const chain = sessionChains.chainOf(path)
+      /*
+       * 删除按**链**整体处理（实施-05 S5b-4）：交接过的会话在磁盘上是两份 JSONL，
+       * 只删其中一份会让历史拼接断成两截（看上去像内容丢了）。
+       * 顺序仍是「先停实例、再删文件」，与单段删除同一条路。
+       */
+      const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
+      const current = ac()?.getState()?.sessionFile
+      /* 当前正在用的会话在链上任何一段都算“在用”（防止把正在看的会话删掉） */
+      for (const target of targets) await runners?.stopBySessionFile(target)
+      const tokens: string[] = []
+      for (const target of targets) {
+        tokens.push(await deleteSession(target, current))
+      }
+      /* 段都进回收站了，链记录再留着就会指向不存在的文件（侧栏会把另一段也藏起来） */
+      await sessionChains.forget(path).catch(() => false)
       pushRunners()
-      return { ok: true, undoToken }
+      /* 多个 token 用 `|` 拼成一个（IPC 形状不变）：撤销时要整链一起恢复 */
+      return { ok: true, undoToken: tokens.join('|') }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
   handle('yan:restoreSession', async (undoToken: string) => {
     try {
-      await restoreSession(undoToken)
+      /* 链删除返回的是多个 token（`|` 分隔）：整链一起恢复，否则历史又会断 */
+      const tokens = String(undoToken ?? '')
+        .split('|')
+        .map((item) => item.trim())
+        .filter(Boolean)
+      if (!tokens.length) return { ok: false, error: '没有可撤销的删除' }
+      for (const token of tokens) await restoreSession(token)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -1592,6 +2858,104 @@ function registerIpc(): void {
     async (enabled: boolean) => ac()?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
 
+  /*
+   * 工作模式（实施-05）。
+   *
+   * 读写都针对**当前实例所在的会话**（不是全局设置）：A 会话切自主不得
+   * 改变 B 会话的提问行为。界面提交时带 `expectedRevision`，不一致就拒绝
+   * 并回传当前值 —— 界面据此恢复显示，不会出现「UI 已自主而扩展仍标准」。
+   */
+  handle('yan:getWorkMode', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { mode: agentDefaultWorkMode, revision: 0 } satisfies WorkModeState
+    return resolveWorkMode(id)
+  })
+  /**
+   * 当前会话的目标状态（实施-05 S3，只读）。
+   *
+   * 与模式同一个键（会话文件路径）：目标也是**按会话**的 ——
+   * 切会话后界面看到的是那个会话自己的进度，不是刚离开那个。
+   */
+  handle('yan:getGoal', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { goal: goals.state(''), mode: { mode: agentDefaultWorkMode, revision: 0 } }
+    await goals.load()
+    return { goal: goals.state(workModeKeyFor(id)), mode: await resolveWorkMode(id) }
+  })
+  /*
+   * 交接状态（实施-05 S5b-2）——**只读**。
+   *
+   * 写入通道只有一条：宿主自己（薄层只产原文，校验与落盘都在主进程）。
+   * 界面（与探针）要看的是「压了几次、包写了没有、这一次在不在生成中」——
+   * 没有这个入口，带模型的真实取证就只能靠读文件，
+   * 而「包已经写好」这件事在界面上永远是看不见的（§9 的 UI 与观测）。
+   */
+  handle('yan:getHandoff', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) {
+      return {
+        sessionKey: '',
+        tally: null,
+        package: null,
+        pending: false,
+        threshold: HANDOFF_THRESHOLD_EFFECTIVE,
+        transaction: null,
+        autoCommit: HANDOFF_COMMIT_ENABLED
+      }
+    }
+    const key = workModeKeyFor(id)
+    await handoffs.load()
+    await handoffTransactions.load()
+    /*
+     * 交接之后当前实例跑在**目的段**上，而计数与包是按**源段**（片段键）存的。
+     * 前端口径是「一条会话」，所以这里沿链回到首段去取 —— 否则交接一完成，
+     * 界面上的「已压 N 次 / 包写好了没有」当场归零（看上去像功能坏了）。
+     */
+    await sessionChains.load()
+    const chain = sessionChains.chainOf(key)
+    const head = chain?.segments?.[0]?.sessionFile ?? key
+    const entry = handoffs.state(head)
+    const tx = handoffTransactions.latestForSession(key)
+    return {
+      sessionKey: key,
+      tally: entry.tally,
+      package: entry.package,
+      pending: handoffPending.has(id),
+      threshold: HANDOFF_THRESHOLD_EFFECTIVE,
+      transaction: tx
+        ? {
+            handoffId: tx.handoffId,
+            stage: tx.stage,
+            /*
+             * 归一化后回传：与 `sessionKey` 同一口径。
+             * pi 给的会话文件路径在 Windows 上是反斜杠，直接回传会让前端
+             * 「当前段 === 目的段」永远不相等（看上去像视图没切过去）。
+             */
+            destinationSession: normalizeChainKey(tx.destinationSession)
+          }
+        : null,
+      autoCommit: HANDOFF_COMMIT_ENABLED
+    }
+  })
+  handle('yan:setWorkMode', async (mode: WorkMode, expectedRevision?: number) => {
+    const id = runners?.activeRunner()?.id
+    if (!id) {
+      return { ok: false, state: { mode: normalizeWorkMode(mode), revision: 0 }, error: 'pi 未运行' }
+    }
+    await workModes.load()
+    const res = await workModes.set(workModeKeyFor(id), mode, expectedRevision)
+    /*
+     * 用户把档位改回非标准（或切到别的档）= 放弃那次自动开工：
+     * 未发的续行必须作废，否则下一轮它又自己跑起来（与按停止同因）。
+     * ⚠️ 就绪转移**不走这里**（宿主内部直接调 `workModes.set`），所以不会误伤自己。
+     */
+    if (res.ok && mode !== 'standard') void cancelGoalResume(id)
+    /* 失败也要写 + 推：界面要拿当前值恢复，扩展也不能继续读旧值 */
+    await writeWorkModeSnapshot(id, res.state).catch(() => {})
+    pushFrom(id, { ch: 'work-mode', payload: res.state })
+    return res
+  })
+
   /* ---- 队列模式 / 轮换（pi 自带能力，TUI 里都有对应快捷键） ---- */
   handle(
     'yan:setSteeringMode',
@@ -1699,7 +3063,14 @@ function registerIpc(): void {
   handle('yan:refreshTodos', async () => ac()?.refreshTodos() ?? [])
   handle('yan:listSessions', async () => {
     const settings = await getSettings()
-    return listSessions(200, settings.projects)
+    /*
+     * 生产端保持 200 条的桌面快照边界。隔离 live 回归会在一个批次里
+     * 生成大量临时会话；它们只是测试夹具，不应把批次开始时种下的
+     * 目标会话挤出列表，所以允许测试进程显式提高这一次 IPC 快照上限。
+     */
+    const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
+    const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
+    return filterChainRepresentatives(await listSessions(limit, settings.projects))
   })
 
   /**
@@ -1716,7 +3087,8 @@ function registerIpc(): void {
    */
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
-    return readSessionMessages(path)
+    /* 链感知：切到交接过的会话时，锦上的历史也必须是完整的一条时间线 */
+    return readChainMessages(path, sessionChains)
   })
 
   /* ---- 模型接入（凭证） ---- */
@@ -1784,6 +3156,8 @@ function registerIpc(): void {
       })
     }
     if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
+    /* 工作模式（实施-05）：新会话默认模式改完立即生效（已存过的会话不受影响） */
+    if (patch.defaultWorkMode !== undefined) agentDefaultWorkMode = next.defaultWorkMode
     /*
      * 上下文策略数值改了就当场生效（N21-7）：登记设置层 + 让所有实例重推一帧。
      * 不能等下一次回合：用户改完设置回头看右栏，工作集与“下一步”必须已经是新值，
@@ -2059,6 +3433,65 @@ function registerIpc(): void {
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
     const s = await getSettings()
     return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
+  })
+
+  /*
+   * 项目信任（实施-07 S2b-2）。
+   *
+   * 为何只给「读」与「用户显式信任一个目录」两件事：
+   * 工作树目录通常在仓库旁边（不在主仓库路径之下），所以「源目录被信任」不等于
+   * 「工作树目录被信任」—— 而 RPC 模式没有信任弹窗，用户不改 trust.json 就永远
+   * 看不到项目级设置生效。**不做自动继承**（形态决策里的反模式之一）。
+   *
+   * ⚠️ 这两个句柄**故意不读 settings**（调用方必须把目录传进来）：
+   *   `getSettings()` 与 `patchSettings()` 的读-改-写不是原子的（见 settings.ts 的
+   *   `writeQueue` 注释），多一个“顺手读一下设置”的调用方就多一次交错机会 ——
+   *   2026-09-19 真实踩到：这两个句柄原本会 fallback 到 `settings.cwd`，
+   *   于是工作树创建后「登记为项目」的写入被并发读盘缓存盖掉（项目从列表里消失）。
+   */
+  rawHandle('yan:trust:status', async (_e, cwd: unknown) => {
+    const dir = typeof cwd === 'string' ? cwd.trim() : ''
+    if (!dir) return { cwd: '', trusted: false, entry: null }
+    return trustStatus(dir)
+  })
+  rawHandle('yan:trust:allow', async (_e, cwd: unknown) => {
+    const dir = typeof cwd === 'string' ? cwd.trim() : ''
+    if (!dir) return { ok: false, entry: '', error: '缺少目录' }
+    return allowTrust(dir)
+  })
+
+  /*
+   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
+   *
+   * 渲然端给「目标工作树 + 当前会话文件与 cwd」，主进程把源会话里 `@` 过的
+   * 仓库内文件拿到目标仓库根下重新解析 —— 一律用**仓库相对路径**，
+   * 仓库外的路径报 `outside`（不迁移）。这里的 `explicitRefs` 只给测试与将来的
+   * 显式交接用（写死一份引用比伪造会话文件诚实）。
+   */
+  rawHandle('yan:fork:fileRefs', async (_e, arg: unknown) =>
+    forkFileRefs((arg ?? {}) as Parameters<typeof forkFileRefs>[0])
+  )
+
+  /*
+   * Fork 的语义注入正文（实施-07 S2b-4）。
+   *
+   * 渲染端在「派生新会话」成功后调它，拿到的文本作为**输入框草稿**注入（不自动发送）：
+   * 用户能看一眼、补一句、也可以直接删掉。正文里只有「接手必须知道的」：
+   * 在**目标工作树重算过的**分支 / HEAD / 变更数、源会话的文件引用对照、以及
+   * 源会话**交接包里可迁移的知识**（没有就明说没有）。
+   */
+  rawHandle('yan:fork:context', async (_e, arg: unknown) => {
+    const req = (arg ?? {}) as Parameters<typeof forkContext>[0]
+    await handoffs.load()
+    const packageOf = (sessionFile: string): HandoffPackage | null => {
+      try {
+        const key = normalizeSessionFileKey(sessionFile)
+        return key ? handoffs.state(key).package : null
+      } catch {
+        return null
+      }
+    }
+    return forkContext(req, packageOf)
   })
   /*
    * 工作集预算（N21-3）：**只算不决策**。
@@ -2486,6 +3919,38 @@ function registerIpc(): void {
   })
 
   /*
+   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。
+   *
+   * 登记发生在渲染端：「开新会话」是在**新目录**里开一条新会话，
+   * 而主进程这边 `newSession` / `select` 并不知道用户是从哪个工作树按钮点过来的。
+   * 读回是全量的 —— 界面要回答「这个会话从哪来」，而列表本身很小。
+   */
+  handle('yan:git:worktreeLink', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return await worktreeOrigins.link({
+        sessionId: String(raw.sessionId ?? ''),
+        sessionFile: typeof raw.sessionFile === 'string' ? raw.sessionFile : undefined,
+        worktree: String(raw.worktree ?? ''),
+        branch: typeof raw.branch === 'string' ? raw.branch : undefined,
+        fromSessionId: typeof raw.fromSessionId === 'string' ? raw.fromSessionId : undefined,
+        fromSessionFile: typeof raw.fromSessionFile === 'string' ? raw.fromSessionFile : undefined,
+        fromCwd: typeof raw.fromCwd === 'string' ? raw.fromCwd : undefined
+      })
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  handle('yan:git:worktreeLinks', async () => {
+    try {
+      await worktreeOrigins.load()
+      return worktreeOrigins.links()
+    } catch {
+      return []
+    }
+  })
+
+  /*
    * remote 的托管网页地址（方案 §7 的托管网页比较，只读）。
    * 渲染端拿到的只是一个 https 链接 —— 它**不能**让主进程跑任意 git 命令，
    * 这条通道也一样（remote 名字由主进程自己挑）。
@@ -2578,6 +4043,19 @@ function registerIpc(): void {
     }
   })
 
+  handle('yan:sources:link', async (req: unknown) => {
+    const raw = (req ?? {}) as Record<string, unknown>
+    try {
+      return linkSources({
+        sessionId: String(raw.sessionId ?? ''),
+        sourceIds: Array.isArray(raw.sourceIds) ? raw.sourceIds.map((x) => String(x)) : [],
+        messageId: String(raw.messageId ?? '')
+      })
+    } catch (error) {
+      return { ok: false, added: 0, skipped: 0, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   handle('yan:sources:removeImage', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     try {
@@ -2596,6 +4074,13 @@ function registerIpc(): void {
     }
   })
 
+  /*
+   * 来源搜索入口的可用性（实施-07 S4）。只读查询：不装、不连、不搜。
+   * 没发现兼容搜索能力时如实回 `available:false`，界面据此**隐藏**入口
+   *（方案：网页搜索只在已发现兼容搜索能力时启用，且不自造私有搜索后端）。
+   */
+  handle('yan:sources:webSearch', async () => (await ac()?.webSearchAvailability()) ?? { available: false })
+
   handle('yan:packages:list', async (cwd: string) => {
     try {
       return listPackages(String(cwd ?? ''))
@@ -2611,6 +4096,101 @@ function registerIpc(): void {
    */
   handle('yan:capabilities:builtin', async () => builtinCapabilities(yanThinExtensionPaths()))
 
+  /*
+   * 能力页初次打开只取 pi 已加载的 Skill 与本 runner 可见的 MCP 配置；不握手、不启动 stdio。
+   * 验证操作由主进程分配 operationId 并固定到 runnerId + generation，渲染端不能指定项目。
+   */
+  handle('yan:capabilities:settings', async () => {
+    const agent = ac()
+    return agent ? agent.capabilitySettingsSnapshot() : { skills: [], servers: [], configWarning: false }
+  })
+  handle('yan:capabilities:discover', async (value: unknown) => {
+    const queryText = typeof value === 'string' ? value.slice(0, 500) : ''
+    const agent = ac()
+    if (!agent) return { query: '', reason: '当前没有可用的运行实例', sources: [], candidates: [] }
+    try {
+      return await agent.discoverCapabilitiesForSettings(queryText)
+    } catch {
+      return {
+        query: '',
+        reason: 'unavailable',
+        sources: [],
+        candidates: []
+      }
+    }
+  })
+  handle('yan:capabilities:verify', async (value: unknown) => {
+    const serverId = typeof value === 'string' ? value.trim() : ''
+    if (!serverId) return { ok: false, error: '缺少 MCP 服务 ID' }
+    const agent = ac()
+    const runner = runners?.activeRunner()
+    const runtime = runner ? runners?.runtimeOf(runner.id) : null
+    if (!agent || !runner || !runtime) return { ok: false, error: '当前没有可验证的运行实例' }
+    pruneCapabilityVerifications()
+    if ([...capabilityVerifications.values()].filter((op) => op.state === 'connecting').length >= 8) {
+      return { ok: false, error: '同时验证的 MCP 服务过多，请稍后再试' }
+    }
+    const operationId = randomUUID()
+    const operation: CapabilityVerification = {
+      operationId,
+      runnerId: runner.id,
+      generation: runtime.generation,
+      agent,
+      serverId,
+      state: 'connecting',
+      updatedAt: Date.now()
+    }
+    capabilityVerifications.set(operationId, operation)
+    void agent.verifyCapabilityMcp(serverId).then(
+      (result) => {
+        if (operation.state === 'cancelled') return
+        const current = runners?.runtimeOf(operation.runnerId)
+        if (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== agent) {
+          operation.state = 'stale'
+        } else {
+          operation.state = result.status === 'ready' ? 'ready' : 'error'
+          operation.toolCount = result.toolCount
+        }
+        operation.updatedAt = Date.now()
+      },
+      () => {
+        if (operation.state !== 'cancelled') operation.state = 'error'
+        operation.updatedAt = Date.now()
+      }
+    )
+    return { ok: true, operationId }
+  })
+  handle('yan:capabilities:verification', async (value: unknown) => {
+    const operationId = typeof value === 'string' ? value : ''
+    pruneCapabilityVerifications()
+    const operation = capabilityVerifications.get(operationId)
+    if (!operation) return null
+    const current = runners?.runtimeOf(operation.runnerId)
+    if (operation.state === 'connecting' && (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== operation.agent)) {
+      operation.state = 'stale'
+      operation.updatedAt = Date.now()
+    }
+    return {
+      operationId,
+      state: operation.state,
+      ...(operation.toolCount !== undefined ? { toolCount: operation.toolCount } : {})
+    }
+  })
+  handle('yan:capabilities:cancelVerification', async (value: unknown) => {
+    const operation = capabilityVerifications.get(typeof value === 'string' ? value : '')
+    if (!operation || operation.state !== 'connecting') return { ok: false, error: '验证已结束或不存在' }
+    const current = runners?.runtimeOf(operation.runnerId)
+    if (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== operation.agent) {
+      operation.state = 'stale'
+      operation.updatedAt = Date.now()
+      return { ok: false, error: '运行实例已切换，未对新实例执行断开操作' }
+    }
+    const disconnected = await operation.agent.disconnectCapabilityMcp(operation.serverId)
+    operation.state = disconnected ? 'cancelled' : 'stale'
+    operation.updatedAt = Date.now()
+    return { ok: disconnected, ...(disconnected ? {} : { error: 'MCP 服务已不存在' }) }
+  })
+
   handle('yan:packages:action', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
     try {
@@ -2623,7 +4203,10 @@ function registerIpc(): void {
        */
       const st = await getSettings()
       configurePackageContext({
-        bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null
+        bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null,
+        agentDir: () => PI_AGENT_DIR,
+        hasRunningTask: (projectCwd) => runners?.hasBusyCwd(projectCwd) === true,
+        isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
       })
       return await runPackageAction({
         kind,
@@ -3227,8 +4810,16 @@ function createWindow(): void {
             let keyTask: Promise<void> | null = null
             if (keys) {
               keyTask = (async () => {
-                // 等探针脚本挂好监听器
-                await new Promise((r) => setTimeout(r, 1800))
+                /*
+                 * 等探针脚本挂好监听器 / 把界面准备到能收键的状态。
+                 *
+                 * 默认 1800ms 只够挂监听器；**渲染端**消费的按键
+                 *（例如输入框里的 Tab 快切）还需要焦点在输入框上，而探针
+                 * 得先把首次引导层关掉 —— 那种场景用 `YAN_PROBE_KEYS_DELAY`
+                 * 把第一枚按键往后推（全局快捷键不需要，保持默认即可）。
+                 */
+                const delay = Number(process.env.YAN_PROBE_KEYS_DELAY) || 1800
+                await new Promise((r) => setTimeout(r, delay))
                 for (const combo of keys.split(',').map((s) => s.trim()).filter(Boolean)) {
                   const parts = combo.toLowerCase().split('+')
                   const key = parts.pop() ?? ''

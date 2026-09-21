@@ -38,10 +38,19 @@ const outDir = process.env.YAN_SHOT_DIR
  * 截图的日期戳。
  *
  * 新批次用新名，旧图**原样保留**（AGENTS.md：`docs/design/preview/` 里的截图是用户
- * 视觉证据，不删不覆盖；要更新就另存新名）。`YAN_MATRIX_STAMP` 可以在不改这个
- * 常量的前提下跑一批临时截图（调样式时反复重跑用）。
+ * 视觉证据，不删不覆盖；要更新就另存新名）。`YAN_MATRIX_STAMP` 可以覆盖它
+ *（调样式时反复重跑用）。
+ *
+ * ⚠️ 默认值曾经是写死的 \`2026-09-18\` —— 结果是不带环境变量跑一次整组，
+ * 就把那一天的 **28 张旧图全部覆盖了**（它们本来都是“另存新名”的批次），
+ * 与上面那条规则直接冲突。现在默认带上**时分**：同一分钟内重复跑才会撞名，
+ * 正常使用只会新增文件。要拍一个固定名批次，请显式给 \`YAN_MATRIX_STAMP\`。
  */
-const STAMP = process.env.YAN_MATRIX_STAMP || '2026-09-18'
+function defaultStamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+}
+const STAMP = process.env.YAN_MATRIX_STAMP || defaultStamp()
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -187,6 +196,42 @@ function gitStubSnapshot() {
     generatedAt: Date.now(),
     /* 写操作的预期版本（少了它，界面上的暂存 / 提交按钮会一直是 disabled） */
     expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
+  }
+}
+
+/**
+ * 非 Git 目录的合成状态（实施-07 S1 的取证）。
+ *
+ * 真实链路里 `yan:git:state` 对非仓库目录返回 `repo: null` —— 那是**正常结果**，
+ * 不是错误（见 src/main/git-diff.ts 的注释）。截图要证的正是界面据此走
+ * 「未使用 Git」分支：环境菜单不给写操作入口、审查面板说清没有改动可审查。
+ */
+const NON_GIT_STUB_CWD = 'C:/work/notes-notgit'
+/**
+ * 主进程侧的切换开关（不是“按 cwd 判断”）。
+ *
+ * 起初写的是“cwd 落在合成目录就返回 repo: null”，但那样必须同时改
+ * `session.cwd` —— 实测会让渲染端卡住（cwd 一变，一批依赖它的组件开始
+ * 重新拉数据，矩阵的 `executeJavaScript` 再不返回）。截图需要的只是
+ *「数据源变成非 Git」，不需要真的换目录，所以改成主循环按状态切换开关。
+ */
+let stubNonGit = false
+/** 需要“非 Git 数据源”的两个状态；主循环据此切换 `stubNonGit` */
+const NON_GIT_STATES = new Set(['envnotgit', 'reviewnotgit'])
+function gitStubNonGitState() {
+  return { repo: null, expected: undefined }
+}
+function gitStubNonGitSnapshot() {
+  return {
+    ok: true,
+    repo: null,
+    scope: { kind: 'working' },
+    files: [],
+    stats: { files: 0, additions: 0, deletions: 0, binary: 0, truncated: false },
+    notes: [],
+    truncated: false,
+    requestId: 'stub-notgit',
+    generatedAt: Date.now()
   }
 }
 
@@ -409,10 +454,16 @@ function registerStubHandlers() {
    * 内容都来自 `yan:git:*`。没有桩就只会截到「正在读取…」，
    * 那就不是在验收布局与配色。数据是合成的，**绝不进用户真实仓库**。
    */
-  ipcMain.handle('yan:git:state', () => ({
-    repo: gitStubRepo(),
-    expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
-  }))
+  /* `stubNonGit` 由主循环按状态切换：截图需要的是“数据源变成非 Git”
+     （cwd 不变 —— 见模块顶部 NON_GIT_STUB_CWD 的注释） */
+  ipcMain.handle('yan:git:state', () =>
+    stubNonGit
+      ? gitStubNonGitState()
+      : {
+          repo: gitStubRepo(),
+          expected: { head: 'a'.repeat(40), indexDigest: 'stub-idx', statusDigest: 'stub-status' }
+        }
+  )
   /* 写操作：矩阵只看界面，返回一个「成功且状态更新」的结果即可 */
   ipcMain.handle('yan:git:action', (_e, req) => ({
     ok: true,
@@ -431,6 +482,17 @@ function registerStubHandlers() {
    */
   const png1x1 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  /*
+   * 来源搜索入口（实施-07 S4）：界面的可见性就是这条 IPC 回什么 ——
+   * 桩返回一条“已发现的搜索能力”，张图才能看到那枚入口（真链路证据在 live 的 sourcecap）。
+   */
+  ipcMain.handle('yan:sources:webSearch', () => ({
+    available: true,
+    capabilityId: 'mcp:fixture/web_search',
+    title: 'fixture · web_search',
+    location: 'yan mcp describe --server fixture --tool web_search',
+    owner: 'mcp'
+  }))
   ipcMain.handle('yan:sources:list', () => ({
     ok: true,
     dir: 'C:/Users/me/AppData/Roaming/yan/sources/sess-1',
@@ -446,6 +508,17 @@ function registerStubHandlers() {
         addedAt: Date.now() - 60_000,
         available: true,
         size: 20_480
+      }
+    ],
+    /*
+     * 来源 ↔ 消息的关联（实施-07 S3）：有它菜单里才会出现「定位消息」入口。
+     * 视觉矩阵里只要求按钮画得出来，跳转本身由 `sourcelink` 探针断言。
+     */
+    links: [
+      {
+        sourceId: 'image:aaaa1111bbbb2222cccc3333dddd4444',
+        messageId: 'u1',
+        at: Date.now() - 45_000
       }
     ]
   }))
@@ -541,6 +614,42 @@ function registerStubHandlers() {
     { id: 'context', file: 'context.js' },
     { id: 'project-knowledge', file: 'project-knowledge.js' }
   ])
+  ipcMain.handle('yan:capabilities:settings', () => ({
+    configWarning: false,
+    skills: [
+      { id: 'skill:release-check', title: '发布验收', description: '检查构建、解包与发布证据。' },
+      { id: 'skill:project-knowledge', title: '项目知识', description: '读取当前项目的已确认知识。' }
+    ],
+    servers: [{
+      id: 'fixture',
+      title: '本地 MCP Fixture',
+      transport: 'stdio',
+      enabled: true,
+      effect: 'unknown',
+      projectScoped: true,
+      endpointOrigin: null,
+      status: 'disconnected',
+      toolCount: null
+    }]
+  }))
+  ipcMain.handle('yan:capabilities:discover', () => ({
+    sources: [
+      { sourceId: 'npm-registry', ok: true, pages: 1, candidateCount: 1 },
+      { sourceId: 'mcp-registry', ok: true, pages: 1, candidateCount: 1 }
+    ],
+    candidates: [{
+      candidateId: 'fixture:capability@1.0.0',
+      title: '本地能力示例',
+      summary: '用于视觉矩阵的安全目录候选。',
+      kind: 'skill',
+      installKind: 'pi-package',
+      version: '1.0.0',
+      verification: 'metadata-only'
+    }]
+  }))
+  ipcMain.handle('yan:capabilities:verify', () => ({ ok: false, error: '视觉矩阵不执行连接' }))
+  ipcMain.handle('yan:capabilities:verification', () => null)
+  ipcMain.handle('yan:capabilities:cancelVerification', () => ({ ok: false, error: '视觉矩阵不执行连接' }))
   /*
    * 项目知识页（实施-03 S5）的桩数据。
    *
@@ -649,8 +758,51 @@ function registerStubHandlers() {
       }
     ]
   }))
+  /*
+   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。视觉矩阵不跑 registerIpc，
+   * 所以这里给一条真的（sessionId 与 `envworktrees` 状态脚本里那个会话 id 对齐）。
+   */
+  ipcMain.handle('yan:git:worktreeLinks', () => [
+    {
+      sessionId: 'sess-1',
+      sessionFile: 'C:/Users/me/.pi/agent/sessions/sess-1.jsonl',
+      worktree: 'C:/work/pi-desktop-worktrees/git-review',
+      branch: 'feat/git-review',
+      fromSessionId: 'sess-src',
+      fromSessionFile: 'C:/Users/me/.pi/agent/sessions/sess-src.jsonl',
+      fromCwd: 'C:/work/pi-desktop',
+      at: Date.now() - 90_000
+    }
+  ])
   ipcMain.handle('yan:git:worktreeCreate', () => ({ ok: true, path: 'C:/work/x', branch: 'x', notes: [] }))
   ipcMain.handle('yan:git:worktreeRemove', () => ({ ok: true, summary: '已移除工作树' }))
+  /*
+   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
+   * 桩成「3 条引用、2 个能对上、1 个没有」—— 截图要展示的就是那行小字
+   * （有引用才出现；空数组时它必须消失，这是同一口径的“有则出现、无则隐藏”）。
+   */
+  ipcMain.handle('yan:fork:fileRefs', () => ({
+    worktree: 'C:/work/pi-desktop-worktrees/git-review',
+    root: 'C:/work/pi-desktop-worktrees/git-review',
+    sourceRoot: 'C:/work/pi-desktop',
+    sourceFile: 'C:/Users/me/.pi/agent/sessions/sess-src.jsonl',
+    refs: [
+      { ref: 'src/renderer/src/components/review/EnvironmentMenu.tsx', state: 'resolved', abs: 'C:/work/pi-desktop-worktrees/git-review/src/renderer/src/components/review/EnvironmentMenu.tsx', kind: 'file' },
+      { ref: 'docs/plan/实施-07-Git与环境菜单收尾-已完成.md', state: 'resolved', abs: 'C:/work/pi-desktop-worktrees/git-review/docs/plan/实施-07-Git与环境菜单收尾-已完成.md', kind: 'file' },
+      { ref: 'src/main/worktree-links.ts', state: 'missing', abs: 'C:/work/pi-desktop-worktrees/git-review/src/main/worktree-links.ts', kind: null }
+    ],
+    summary: {
+      total: 3,
+      resolved: 2,
+      missing: 1,
+      mismatch: 0,
+      outside: 0,
+      problems: [
+        { ref: 'src/main/worktree-links.ts', state: 'missing', abs: 'C:/work/pi-desktop-worktrees/git-review/src/main/worktree-links.ts', kind: null }
+      ]
+    }
+  }))
+  ipcMain.handle('yan:trust:status', () => ({ cwd: 'C:/work/pi-desktop-worktrees/git-review', trusted: false, entry: null }))
   ipcMain.handle('yan:git:refs', () => ({
     ok: true,
     busyBranches: [],
@@ -660,7 +812,7 @@ function registerStubHandlers() {
       { ref: 'feature/review-panel', label: 'refs/heads/feature/review-panel', kind: 'local', current: false }
     ]
   }))
-  ipcMain.handle('yan:git:snapshot', () => gitStubSnapshot())
+  ipcMain.handle('yan:git:snapshot', () => (stubNonGit ? gitStubNonGitSnapshot() : gitStubSnapshot()))
   ipcMain.handle('yan:git:patch', (_e, req) => gitStubPatch(String(req?.path ?? '')))
   ipcMain.handle('yan:git:content', (_e, req) => gitStubContent(String(req?.path ?? ''), req?.side === 'new' ? 'new' : 'old'))
 }
@@ -681,12 +833,12 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'envlinks', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewwrite', 'subagentlaunch', 'subagent']
+    states: ['main', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentfailed', 'chainjoin', 'railwaiting']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'reasoning', 'settings', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewwrite', 'subagentlaunch', 'subagent'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentfailed', 'chainjoin', 'railwaiting'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] }
 ]
@@ -719,8 +871,10 @@ const STATES = {
   /*
    * 自主模式：输入框边框上的两条对称光带（DESIGN §4.2）。
    *
+   * 实施-05 起“是不是自主”由**会话级工作模式**决定，不再是全局布尔 —— 所以
+   * 这里直接注入 store 的 `workMode`（视觉矩阵是 mock 环境，没有 IPC）。
    * 静态图只能证明「这个状态存在」且「两条都在」；相位是否真对称（相隔半个周期）
-   * 靠 `autonomous` 探针断言 `animation-delay`，以及现场看一眼。
+   * 靠 `workmode` 探针断言 `animation-delay`，以及现场看一眼。
    */
   autonomous: `
     (async () => {
@@ -729,10 +883,60 @@ const STATES = {
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      /* 视觉矩阵是 mock 环境（没注册数据型 IPC），不能走 patchSettings */
-      window.__yanStore.setState({ settings: { ...(st.settings ?? {}), autonomous: true } });
+      window.__yanStore.setState({ workMode: { mode: 'autonomous', revision: 1 } });
       /* 真实使用时输入框就是聚焦的（聚焦时边框更亮，光带也更容易看清） */
       document.querySelector('[data-testid="composer"]')?.focus();
+      return 'ok';
+    })()
+  `,
+  /*
+   * 自主模式 + **任务真的在跑**（实施-09 N10 的尾项）。
+   *
+   * 与 `autonomous` 的差别：那张是“刚切到自主、还什么都没发生”，
+   * 这张是“自主模式下有一回合在跑”——用户真正会盯着看的状态。
+   * 光带动画是常驻的（不区分跑没跑），所以这里证的是它与运行态界面
+   *（停止按钮 / 流式提示 / 左栏运行中那一行）同屏正常。
+   * 动画“真的在跑”由 `workmode` 探针量（playState + currentTime 递增）。
+   */
+  autonomousrunning: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const file = cwd + '/autorun.jsonl';
+      window.__yanStore.setState({
+        workMode: { mode: 'autonomous', revision: 1 },
+        session: { ...(st.session ?? {}), cwd, sessionFile: file, isStreaming: true, isAgentRunning: true },
+        activeRunnerId: 'vs-autorun',
+        runners: [{
+          id: 'vs-autorun', runId: 'vs-autorun', cwd, sessionFile: file, sessionId: 'autorun',
+          generation: 1, running: true, waiting: false, failed: false,
+          conn: 'ready', createdAt: stamp, lastActiveAt: stamp, isActive: true
+        }]
+      });
+      document.querySelector('[data-testid="composer"]')?.focus();
+      return 'ok';
+    })()
+  `,
+  /*
+   * 工作模式菜单（实施-05 §3）：原位显示「标准 / 澄清 / 自主 ▾」，
+   * 菜单里每项带一句说明。状态为「澄清 + 菜单展开」——这正是用户第一次
+   * 接触三档时要看到的样子。
+   */
+  workmodemenu: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false, workMode: { mode: 'clarify', revision: 2 } });
+      await sleep(60);
+      document.querySelector('[data-testid="work-mode-button"]')?.click();
+      await sleep(120);
       return 'ok';
     })()
   `,
@@ -855,6 +1059,27 @@ const STATES = {
       return 'ok';
     })()
   `,
+  /* 能力设置页（实施-04 S7）：安全快照 + 三档策略 + MCP 状态卡。 */
+  capabilities: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({ settings: { ...st.settings, capabilityStrategy: 'auto-connect' } });
+      st.openSettings('capabilities');
+      return 'ok';
+    })()
+  `,
+  capabilitiesmcp: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({ settings: { ...st.settings, capabilityStrategy: 'auto-connect' } });
+      st.openSettings('capabilities');
+      return 'ok';
+    })()
+  `,
   /*
    * 上下文设置（N21-7）：工作集阀值可配 + 生效来源。
    * 单独一个状态而不是只拍 appearance —— 新 tab 的排版（数值输入、
@@ -914,6 +1139,69 @@ const STATES = {
     })()
   `,
   /* 悬着的消息（用户 2026-09-19）：生成中发出去的先悬在输入框上方 */
+  /*
+   * 后台会话「等待输入」的状态槽（实施-09 S2 第二批）。
+   *
+   * 单独一个状态、不复用 `railsessions`：那个状态的会话列表会被后面几个状态
+   * 用到的 fixture，而这里只需要「一行在跑 / 一行挂着问题等回答」。
+   * 注入的是 `runners` 里的 `waiting: true` —— 这正是 `Rail` 渲染 `?` 的**真实判据**
+   *（`RunnerStatus.waiting = agent.getPendingUiCount() > 0`，真实链路见场景 `askbackground`）。
+   * 第四批（N12 失败态）又加了第三条：`failed: true` 的那一行画 `alert-circle`
+   *（真源 `conn === 'error' || conn === 'exited'`，真实故障见场景 `runnerfailed`）。
+   * 放在整组最末，并用 AFTER_STATE 把假实例撤走。
+   */
+  railwaiting: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const sessions = [
+        {
+          id: 'vsw-0', path: cwd + '/vsw-0.jsonl', cwd, projectId: 'vsw-proj',
+          title: '会话 1 · 正在跑', named: true,
+          createdAt: stamp, updatedAt: stamp, lastActivityAt: stamp, messageCount: 4
+        },
+        {
+          id: 'vsw-1', path: cwd + '/vsw-1.jsonl', cwd, projectId: 'vsw-proj',
+          title: '会话 2 · 后台等你回答', named: true,
+          createdAt: stamp - 60000, updatedAt: stamp - 60000, lastActivityAt: stamp - 60000, messageCount: 6
+        },
+        {
+          id: 'vsw-2', path: cwd + '/vsw-2.jsonl', cwd, projectId: 'vsw-proj',
+          title: '会话 3 · 实例起来了又崩了', named: true,
+          createdAt: stamp - 120000, updatedAt: stamp - 120000, lastActivityAt: stamp - 120000, messageCount: 2
+        }
+      ];
+      window.__yanStore.setState({
+        sessions,
+        session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path },
+        activeRunnerId: 'vsw-r1',
+        runners: [
+          {
+            id: 'vsw-r1', runId: 'vsw-r1', cwd, projectId: 'vsw-proj',
+            sessionFile: sessions[1].path, sessionId: 'vsw-1',
+            generation: 1, running: false, waiting: true, failed: false,
+            conn: 'ready', createdAt: stamp, lastActiveAt: stamp, isActive: true
+          },
+          /* 失败态：真源是 conn 不是 ready（RunnerStatus.failed = conn 为 error 或 exited） */
+          {
+            id: 'vsw-r2', runId: 'vsw-r2', cwd, projectId: 'vsw-proj',
+            sessionFile: sessions[2].path, sessionId: 'vsw-2',
+            generation: 1, running: false, waiting: false, failed: true,
+            conn: 'exited', createdAt: stamp, lastActiveAt: stamp, isActive: false
+          }
+        ]
+      });
+      st.patchSettings({
+        projectGroups: [],
+        projects: [{ id: 'vsw-proj', cwd, name: 'pi-desktop', archived: false, createdAt: stamp, updatedAt: stamp }],
+        recentCwds: [cwd]
+      });
+      return 'ok';
+    })()
+  `,
   pendingcards: `
     (() => {
       const st = window.__yanStore.getState();
@@ -957,6 +1245,55 @@ const STATES = {
       window.__yanStore.setState({
         sessions,
         session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path }
+      });
+      st.patchSettings({
+        projectGroups: [],
+        projects: [{ id: 'vs-proj', cwd, name: 'pi-desktop', archived: false, createdAt: stamp, updatedAt: stamp }],
+        recentCwds: [cwd]
+      });
+      return 'ok';
+    })()
+  `,
+  /*
+   * 交接之后的「一条会话」（实施-05 S5b-4）。
+   *
+   * 这一张要证明的是**渲染层的形态**：侧栏只出现一条（链上的旧段不显示），
+   * 而历史里两段的内容排在**同一条时间线**上（fixture 的旧消息 + 新段那条交接消息）。
+   *
+   * ⚠️ 过滤逻辑本身归主进程（`test:live -- handoffcommit` 用真 IPC 验
+   *    “列表里只有代表段”），这里不伪造「前端自己会过滤」的假象。
+   */
+  chainjoin: `
+    (() => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({ rightPanelOpen: false });
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const sessions = [
+        {
+          id: 'vs-chain-dest', path: cwd + '/vs-chain-dest.jsonl', cwd, projectId: 'vs-proj',
+          title: '长任务续接 · 导入提速', named: false,
+          createdAt: stamp, updatedAt: stamp, messageCount: 5
+        },
+        {
+          id: 'vs-other', path: cwd + '/vs-other.jsonl', cwd, projectId: 'vs-proj',
+          title: '另一个会话', named: true,
+          createdAt: stamp - 9000, updatedAt: stamp - 9000, messageCount: 2
+        }
+      ];
+      const resume = {
+        id: 'shot-handoff-resume',
+        role: 'user',
+        text: '这是一个跨会话交接：上面的对话换了新会话继续，下面是上一个会话留下的交接包。 / [yan-handoff-resume:demo] / 用户目标：把导入做快 / 交付物：可用的批量导入 / 下一步：加进度条',
+        createdAt: stamp
+      };
+      window.__yanStore.setState({
+        sessions,
+        session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path },
+        messages: [...st.messages, resume]
       });
       st.patchSettings({
         projectGroups: [],
@@ -1714,6 +2051,54 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
    * 这些控件的位置与可用性是截图才能验收的东西：它们挤在文件行右侧、
    * 行内还有「已查看」，谁在谁左边、忙的时候什么样，只有图说得清。
    */
+  /*
+   * 非 Git 目录 · 环境菜单（实施-07 S1）。
+   *
+   * 不能复用 `envmenu` 的截图：那张图里全是 Git 才有的区块。
+   * 这里把会话 cwd 换成合成目录，`yan:git:state` 就返回 `repo: null`，
+   * 菜单落进 `env-notgit` 分支（不给变更数、不给写操作入口）。
+   */
+  envnotgit: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      /* 菜单是开关：先确保关掉，再点开 */
+      const btn = () => document.querySelector('[data-testid="session-project"]');
+      if (btn()?.getAttribute('aria-expanded') === 'true') btn().click();
+      await sleep(250);
+      /* 仓库状态是组件级缓存，只认 cwd 变化与窗口获焦（2s 防抖）——
+         这里的 focus 是同一个监听、同一条刷新路径，不是绕开它 */
+      window.dispatchEvent(new Event('focus'));
+      await sleep(900);
+      btn()?.click();
+      await sleep(800);
+      return document.querySelector('[data-testid="env-notgit"]') ? 'ok' : 'no-notgit';
+    })()
+  `,
+  /* 非 Git 目录 · 审查面板：说清「没有改动可审查」，而不是给一个空的 diff */
+  reviewnotgit: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true });
+      const btn = document.querySelector('[data-testid="session-project"]');
+      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
+      /* 上一条 review 可能已经把面板挂上了；先关再开，让快照重新拉一次 */
+      st.closeReview?.();
+      await sleep(200);
+      st.openReview({ kind: 'working' });
+      await sleep(600);
+      window.dispatchEvent(new Event('focus'));
+      await sleep(1000);
+      return document.querySelector('[data-testid="review-notgit"]') ? 'ok' : 'no-notgit';
+    })()
+  `,
   reviewwrite: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1790,6 +2175,24 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="set-packages"]') ? 'ok' : 'no-packages-tab';
     })()
   `,
+  sourcesearch: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: true });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      await sleep(300);
+      /* 菜单是开关：前一个状态可能把它留着开着（与 envlinks 同一处理） */
+      if (!document.querySelector('[data-testid="env-menu"]')) {
+        document.querySelector('[data-testid="session-project"]')?.click();
+        await sleep(700);
+      }
+      return document.querySelector('[data-testid="src-websearch"]') ? 'ok' : 'no-entry';
+    })()
+  `,
   envlinks: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1833,6 +2236,55 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return ok ? 'ok' : 'no-links';
     })()
   `,
+  /*
+   * 派生到工作树之后的「接手上下文」草稿（实施-07 S2b-4）。
+   *
+   * 输入框里应该已经有一段标了来源、并写清「环境状态是在这个工作树**重算**的」的草稿 ——
+   * 用户可以直接发、补一句、或删掉。这张图证的是它“长得不像一句模板”且与正常
+   * 输入框共存正常；内容正确性（分支来自目标工作树、没有自动发送）由 `gitwrite` 断言管。
+   */
+  forkdraft: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      window.__yanStore.setState({ rightPanelOpen: false });
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      st.injectComposerText([
+        '[yan-fork-context:6b0f2c1e-7d31-4a55-9f80-2c1f4a7b8d90]',
+        '这段上下文来自砚的工作树派生（Fork）：我从另一个会话派生到这条工作树上接手，不是同一条会话的继续 —— 源会话的对话历史没有带过来。需要哪一段直接说，我按需去读源会话文件，不要凭印象复述。',
+        '',
+        '当前工作树的状态（接手时在目标目录重新读的，不是从源会话抄来的）：',
+        '- 目录：C:/work/pi-desktop-worktrees/git-review（仓库 pi-desktop）',
+        '- 分支：feat/git-review @ a1b2c3d4，相对 upstream +2/-1 个提交',
+        '- 工作区：3 个未提交变更',
+        '- 来源会话：sess-src（原工作目录 C:/work/pi-desktop）',
+        '',
+        '源会话里提到过的文件在这个工作树里的对照：共 3 个，2 个能对上；对不上的：',
+        '- src/main/worktree-links.ts（这个工作树里没有）',
+        '',
+        '源会话里有 1 个图片附件没有带过来（附件不迁移）。需要哪张就在新会话里重新添加/截图发给我 —— 不要去猜它们的内容。',
+        '',
+        '上一个会话没有留下交接包：只有上面这些（工作树状态 + 文件对照）。缺什么直接问。',
+        '',
+        '按上面的定位继续推进：不要重新确认已经确认过的信息、不要重做已经完成的部分。'
+      ].join('\\n'));
+      await sleep(250);
+      /*
+       * 滚到草稿尾部：输入框高度有限，而这张图要证明的是**正文里写了什么**
+       * （文件对照、附件不迁移、没有交接包那几行在靠后的位置）。先 focus 再设 scrollTop ——
+       * focus 会把光标放到末尾并可能重置滚动。
+       */
+      const el = document.querySelector('[data-testid="composer"]');
+      if (el) {
+        el.focus();
+        el.scrollTop = el.scrollHeight;
+      }
+      return 'ok';
+    })()
+  `,
   envworktrees: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1851,6 +2303,13 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       document.querySelector('[data-testid="session-project"]')?.click();
       await sleep(500);
 }
+      /*
+       * 当前会话 id 固定成 stub 那条（worktreeLinks 的桩按它返回）——
+       * 否则「这个会话从哪来」那一行永远不会出现，图里也就看不见它。
+       */
+      window.__yanStore.setState({
+        session: { ...window.__yanStore.getState().session, sessionId: 'sess-1' }
+      });
       document.querySelector('[data-testid="env-worktrees"]')?.click();
       await sleep(700);
       return document.querySelector('[data-testid="env-worktree-list"]') ? 'ok' : 'no-worktrees';
@@ -1968,6 +2427,50 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       await sleep(400);
       return document.querySelector('[data-testid="subagent-preview"]') ? 'ok' : 'no-detail';
     })()
+  `,
+  /*
+   * 子代理「模型自己失败」的形态（实施-09 S2 第六批）。
+   *
+   * 与上一态只差 status/error 两处，但正是用户看得见的那两处：列表行变 ✕、
+   * 详情卡状态写「失败」、meta 行多一段红字的原因。真实链路证据在 live 的
+   * `subagentfail`（那里用坏模型名真跑了一次）。
+   */
+  subagentfailed: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      const launch = document.querySelector('[data-testid="subagent-new"]');
+      if (launch && launch.getAttribute('aria-expanded') === 'true') launch.click();
+      const startedAt = Date.now() - 96_000;
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        subagentPreviewId: 'sub-failed',
+        subagents: [{
+          id: 'sub-failed',
+          task: '把登录流程的错误分支补上测试并跑一遍',
+          cwd: 'C:/yan-worktrees/sub-failed',
+          parentSessionId: 'session-preview',
+          parentRunId: 'run-preview',
+          isolation: 'worktree',
+          model: 'deepseek/deepseek-v4.1-flash',
+          status: 'error',
+          startedAt,
+          endedAt: startedAt + 96_000,
+          latestActivity: '模型返回错误',
+          review: 'none',
+          error: '模型返回错误（这一轮没有产出可用结果）',
+          transcript: [
+            { id: 'sub-f1', role: 'user', text: '把登录流程的错误分支补上测试并跑一遍' },
+            { id: 'sub-f2', role: 'assistant', text: '', error: '模型返回错误' }
+          ]
+        }]
+      });
+      await sleep(400);
+      return document.querySelector('.sp-err') ? 'ok' : 'no-err';
+    })()
   `
 }
 
@@ -1977,12 +2480,17 @@ const MUST_HAVE = {
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
   /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
-  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="autonomous-toggle"][data-on="1"]'],
+  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]'],
+  /* 自主 + 任务在跑（N10）：光带在，且输入框那个键已经变成「停止」形态 */
+  autonomousrunning: ['.composer-wrap[data-autonomous="1"]', '[data-testid="send"].abort', '[data-testid="work-mode-button"][data-mode="autonomous"]'],
+  workmodemenu: ['[data-testid="work-mode-button"][data-mode="clarify"]', '[data-testid="work-mode-menu"]', '[data-testid="work-mode-option-autonomous"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   toolgroup: ['.tgroup.open'],
   toolterm: ['.trow.open .term'],
   reasoning: ['[data-testid="reasoning-toggle"]'],
   settings: ['.settings'],
+  capabilities: ['.settings', '[data-testid="set-capabilities"]', '[data-testid="cap-strategy"]', '[data-testid="cap-mcp-server"]'],
+  capabilitiesmcp: ['.settings', '[data-testid="cap-skills"]', '[data-testid="cap-mcp"]', '[data-testid="cap-mcp-server"]'],
   knowledgetab: [
     '.settings',
     '[data-testid="kn-toggle"]',
@@ -1993,7 +2501,10 @@ const MUST_HAVE = {
   ],
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   railmini: ['[data-testid="rail-toggle"]'],
+  chainjoin: ['[data-testid="rail-session"]', '.stream'],
   railsessions: ['[data-testid="rail-more-sessions"]', '[data-testid="rail-session"]'],
+  /* 实施-09 S2：后台会话在等输入的 `?` 槽、以及与失败槽（第四批） */
+  railwaiting: ['[data-testid="rail-session"]', '[data-testid="rail-waiting"]', '[data-testid="rail-failed"]'],
   pendingcards: ['[data-testid="queue-pending"]', '[data-testid="pending-steer"]', '[data-testid="pending-follow"]'],
   envmenu: ['[data-testid="env-menu"]', '[data-testid="env-changes"]', '[data-testid="env-pr"]', '[data-testid="env-compare"]'],
   envbranches: [
@@ -2003,6 +2514,15 @@ const MUST_HAVE = {
     '[data-testid="env-new-branch-name"]',
     '[data-testid="env-fetch"]',
     '[data-testid="env-push"]'
+  ],
+  sourcesearch: [
+    '[data-testid="env-menu"]',
+    '[data-testid="env-source-menu"]',
+    '[data-testid="src-websearch"]',
+    '[data-testid="src-search-query"]',
+    '[data-testid="src-search-run"]',
+    /* 入口与手工添加网址同时在场：这就是「有搜索能力时长什么样」 */
+    '[data-testid="src-url"]'
   ],
   settingspkg: [
     '[data-testid="set-packages"]',
@@ -2020,7 +2540,9 @@ const MUST_HAVE = {
     '[data-testid="env-source-menu"]',
     '[data-testid="src-list"]',
     '[data-testid="src-url"]',
-    '[data-testid="env-compare-web"]'
+    '[data-testid="env-compare-web"]',
+    /* 实施-07 S3：有落盘关联的来源必须带「定位消息」入口。缺了这张图就没意义 */
+    '[data-testid="src-locate"]'
   ],
   extdiag: ['[data-testid="rp-log"]', '[data-testid="log-body"]'],
   taskhost: [
@@ -2037,7 +2559,9 @@ const MUST_HAVE = {
     '[data-testid="env-worktree-remove"]',
     '[data-testid="env-worktree-branch"]',
     '[data-testid="env-worktree-create"]',
-    '[data-testid="env-worktree-path"]'
+    '[data-testid="env-worktree-path"]',
+    /* 实施-07 S2：「这个会话从哪来」必须画得出来，缺了这张图就没意义 */
+    '[data-testid="env-worktree-origin"]'
   ],
   reviewwrite: [
     '[data-testid="review-panel"]',
@@ -2046,6 +2570,9 @@ const MUST_HAVE = {
     '[data-testid="commit-message"]',
     '[data-testid="commit-submit"]'
   ],
+  /* 非 Git 目录：两张图各自的关键元素（菜单走了 env-notgit 分支 / 面板说了原因） */
+  envnotgit: ['[data-testid="env-menu"]', '[data-testid="env-notgit"]', '.env-sub'],
+  reviewnotgit: ['[data-testid="review-panel"]', '[data-testid="review-notgit"]', '[data-testid="review-scope"]'],
   review: [
     '[data-testid="review-panel"]',
     '[data-testid="review-scope"]',
@@ -2111,6 +2638,13 @@ const MUST_HAVE = {
     '[data-testid="subagent-review"]',
     '.sp-main'
   ],
+  /* 失败态：状态写成失败、meta 行带原因、紧凑列表那一行也在 */
+  subagentfailed: [
+    '[data-testid="subagent-preview"]',
+    '.sp-state.error',
+    '.sp-err',
+    '[data-testid="subagent-sub-failed"]'
+  ],
   /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
   railreorder: [
     '.rail',
@@ -2122,6 +2656,16 @@ const MUST_HAVE = {
 
 /** 截完图要做的复位（目前只有：把为拍模型菜单而放空的“忙”状态改回去） */
 const AFTER_STATE = {
+  /*
+   * 把 `railwaiting` 注入的假实例撤走：同一组后面的状态（以及下一次跑整组）
+   * 不该看到一个并不存在的会话在等输入。
+   */
+  railwaiting: `
+    (() => {
+      window.__yanStore.setState({ runners: [] });
+      return 'ok';
+    })()
+  `,
   modelmenu: `
     (() => {
       const st = window.__yanStore.getState();
@@ -2131,13 +2675,46 @@ const AFTER_STATE = {
     })()
   `,
   /*
-   * 自主模式必须在同组里关掉：它是设置项，打开后会一直留在后续每张图的
-   * 输入框边框上（同一组共用同一个窗口）。
+   * 自主模式必须在同组里关掉：它会在后续每张图的输入框边框上留下光带
+   *（同一组共用同一个窗口）。实施-05 起模式在 store 的 `workMode` 上。
    */
   autonomous: `
     (() => {
-      const st = window.__yanStore.getState();
-      window.__yanStore.setState({ settings: { ...(st.settings ?? {}), autonomous: false } });
+      window.__yanStore.setState({ workMode: null });
+      return 'ok';
+    })()
+  `,
+  /* 收尾：把 `autonomousrunning` 注入的假实例与模式都撤走（同一组共用窗口） */
+  autonomousrunning: `
+    (() => {
+      window.__yanStore.setState({ workMode: null, runners: [], activeRunnerId: null });
+      return 'ok';
+    })()
+  `,
+  /*
+   * 非 Git 的两张图都要把 cwd 还原：`session.cwd` 是同一组共用窗口上的全局状态，
+   * 不复位会让后面每张图都跟着显示成非 Git。菜单 / 审查面板也顺手关掉。
+   */
+  envnotgit: `
+    (() => {
+      const btn = document.querySelector('[data-testid="session-project"]');
+      if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click();
+      return 'ok';
+    })()
+  `,
+  reviewnotgit: `
+    (() => {
+      window.__yanStore.getState().closeReview?.();
+      return 'ok';
+    })()
+  `,
+  /* 菜单展开状态也要复位：后面的图不能让浮层挡着 */
+  workmodemenu: `
+    (() => {
+      window.__yanStore.setState({ workMode: null });
+      /* 组件自己监听 document mousedown 关菜单 —— 模拟一次点外部，
+         而不是直接移 DOM（浮层由 React 管，手拆会与它的状态不一致） */
+      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       return 'ok';
     })()
   `,
@@ -2342,6 +2919,8 @@ async function main() {
 
     for (const state of g.states) {
       if (ONLY.length && !ONLY.includes(state)) continue
+      /* 非 Git 状态切换主进程的 Git 桩（见 NON_GIT_STUB_CWD 的注释） */
+      stubNonGit = NON_GIT_STATES.has(state)
       console.log(`  · ${state}`)
       /*
        * 模型菜单需要先把“忙”放开（picker 在忙时 disabled）。
@@ -2362,6 +2941,17 @@ async function main() {
       if (!String(res).startsWith('ok')) failures.push(`${size}@${pct} ${state}: 状态脚本返回 ${res}`)
       if (String(res) !== 'ok') console.log(`    （${state} 状态脚本：${res}）`)
       await wait(420)
+      if (state === 'capabilitiesmcp') {
+        await win.webContents.executeJavaScript(`
+          (() => {
+            const body = document.querySelector('.settings-body');
+            if (!body) return 'no-settings-body';
+            body.scrollTop = body.scrollHeight;
+            return 'scrolled';
+          })()
+        `)
+        await wait(220)
+      }
       const geometry = await win.webContents.executeJavaScript(probeGeometry(MUST_HAVE[state] ?? []))
       await shot(`matrix-${state}-${size}-${pct}-${g.theme}-${STAMP}.png`, geometry)
       if (AFTER_STATE[state]) await win.webContents.executeJavaScript(AFTER_STATE[state])

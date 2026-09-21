@@ -56,11 +56,14 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan capabilities search --query-file query.json [--scope available]
   yan capabilities discover --query-file query.json
   yan capabilities prepare --candidate <ID>
-  yan capabilities acquire --plan <ID>
+  yan capabilities acquire --plan <ID> [--authorize] [--retry]
   yan skill read --id <技能ID>
   yan mcp describe --server <ID> --tool <名称>
   yan mcp call --request-file request.json
   yan tasks apply --request-file task-update.json
+  yan goal ready --request-file ready.json
+  yan goal report --request-file report.json
+  yan goal status
   yan knowledge search --query-file query.json
   yan subagent start --request-file subagent.json
   yan subagent list
@@ -90,6 +93,91 @@ const USAGE = `yan — 砚宿主能力 CLI
  * `src/main/agent.ts` 的 `runBrowserCommand` 三处必须一致。
  */
 const GROUP_USAGE = {
+  capabilities: `yan capabilities <动作> [选项]
+
+动作：
+  search  列出 / 检索**已装**能力（砚内置命令 + pi 已加载技能），返回候选与来源。两种写法：
+            yan capabilities search --query-text "压缩上下文"
+            yan capabilities search --query-file query.json
+          query.json: {"queryText":"…","limit":12}
+          只覆盖已装范围；缺能力要联网补齐走 discover（实施-04 S5 起）。
+  discover  联网检索**缺失**能力（公开目录元数据；Skill 走 npm registry，MCP 走官方 Registry）：
+              yan capabilities discover --query-text "read excel files"
+              yan capabilities discover --query-file discover.json
+            discover.json: {"queryText":"…","goalText":"…"}
+            检索词先脱敏（去掉路径 / 密钥 / 文件名）再外发；
+            返回候选与**每个源是否可用**；候选只证明发布来源（verification=metadata-only），
+            不等于已审计、也不等于能在这台机器上跑。
+            源全挂时如实说「暂时无法搜索」，**不会**编造包名。
+  prepare   由候选 ID 生成**接入计划**（只生成，不执行）：
+              yan capabilities prepare --candidate "mcp-registry:...@1.0.0"
+            候选由宿主在 discover 后短暂保留（10 分钟），模型只能回传 ID。
+  acquire   执行接入计划（实施-04 §10）。
+              yan capabilities acquire --plan <计划ID>
+              yan capabilities acquire --plan <计划ID> --authorize
+              yan capabilities acquire --plan <计划ID> --retry
+            远程 MCP：核验端点 → 写受管配置 → 连接复核，**当场可用**（不需要重启）。
+            目录候选是 metadata-only，默认停在 needs-authorization；
+            --authorize 表示你同意这个 host 的来源（只记 host，不记凭证，之后同类来源自动通过）。
+            已授权的 npm pi-package 会下载固定版本并校验 SRI，放入受管 staging；不会运行包代码。
+            安装、隔离 smoke 与激活仍等待安全边界 / 后续 S6b 实施。失败事务可对同一计划使用 --retry（最多一次）。
+            本地 MCP 包与 Skill 文件的下载 / 安装器仍待实施，会明确停在 pending-boundary。
+
+`,
+  skill: `yan skill <动作> [选项]
+
+动作：
+  read    读取一个已加载技能的正文（按需加载；返回 contentHash，正文变了要重读）。
+            yan skill read --id skill:probe-skill
+          技能来自 pi 的发现结果，id 形如 skill:<名称>（先用 capabilities search 找）。
+
+`,
+  mcp: `yan mcp <动作> [选项]
+
+动作：
+  describe  看一个已登记 MCP 工具的参数定义（返回 inputSchema 与 schemaRevision）。
+              yan mcp describe --server <服务ID> --tool <工具名>
+  call      调用一个 MCP 工具：
+              yan mcp call --request-file call.json
+            call.json: {"serverId":"…","toolName":"…","arguments":{…},
+                        "schemaRevision":"<从 describe 拿的>"}
+            传了 schemaRevision 且已变化时，回**可重试**的 schema-changed（不会拿旧参数硬调）。
+            工具自己失败是 toolError:true 的结果（不是崩溃）；结果过大时会落盘，stdout 只回摘要。
+            服务在宿主文件 YAN_DIR/mcp-servers.json 里登记——模型不能新增服务。
+
+`,
+  goal: `yan goal <动作> [选项]
+
+动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
+  ready  声明「信息已经问清，可以开工」。两种写法都行：
+         · 内联（**澄清档只能这样**——那一档不能写文件）：
+           yan goal ready --transition-id tr-<唯一> --confidence 0.97 --goal "…" \
+             --deliverable "…" --scope "…" --constraints "…" --acceptance "…" \
+             --mode-revision <从 goal status 读> --goal-revision <从 goal status 读>
+         · 请求文件（--request-file ready.json，字段与内联同名）：
+           {"transitionId":"tr-<唯一>","confidence":0.97,
+            "understanding":{"goal":"…","deliverable":"…","scope":"…","constraints":"…","acceptance":"…"},
+            "openQuestions":[],"modeRevision":<从 goal status 读>,"goalRevision":<从 goal status 读>}
+        宿主会自己校验五栏 / 置信度 / revision：不齐就拒，并把缺什么告诉你。
+        通过后**模式自动切成标准**（下一轮生效），同一 transitionId 重放只生效一次。
+  report 报告推进情况（--request-file 或内联参数）：
+         yan goal report --report-id rp-<唯一> --phase completed \
+           --goal-revision <从 goal status 读> --evidence "npm run test:unit 2879/2879"
+        请求文件示例：
+        {"reportId":"rp-<唯一>","phase":"executing","goalRevision":<从 goal status 读>,
+         "steps":[{"title":"…","status":"done"}],"evidence":["npm run test:unit 全绿"]}
+        · phase=completed 必须带 evidence（任务清单勾选不算证据）；
+        · phase=blocked 必须写 blocker；
+        · stopped 只能由用户产生，别自己报；
+        · 同一失败签名连续两次会被判 blocked（换路径才能继续）。
+  status                        看当前目标阶段、revision 与当前工作模式
+
+说明：
+  · 必须先 goal status 拿到最新 revision 再提交，过期提交会被拒（这是
+    「两条腿同时到达时只有一次能生效」的机制，不是故障）；
+  · 拒绝不是失败：回执里有 code 与当前状态，照着补齐再提交一次即可。
+`,
+
   knowledge: `yan knowledge <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -168,6 +256,32 @@ function fail(code, message, extra) {
  * `src/main/agent.ts` 的 `runBrowserCommand` 一一对应。
  */
 const GROUP_SPECS = {
+  capabilities: {
+    actions: ['search', 'discover', 'prepare', 'acquire'],
+    required: { prepare: ['candidate'] }
+  },
+
+  skill: {
+    actions: ['read'],
+    required: {
+      read: ['id']
+    }
+  },
+
+  mcp: {
+    actions: ['describe', 'call'],
+    required: {
+      /* describe 常用内联写法；call 走 --request-file（参数在文件里，由宿主校验）。 */
+      describe: ['server', 'tool']
+    }
+  },
+
+  goal: {
+    actions: ['ready', 'report', 'status'],
+    /* 都走 --request-file；缺文件里字段由宿主报可读错误（它才看得懂当前状态） */
+    required: {}
+  },
+
   knowledge: {
     actions: ['search', 'read', 'propose'],
     required: {

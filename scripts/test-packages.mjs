@@ -26,6 +26,7 @@ export async function runPackagesTests(ok) {
     readPackageSources,
     listPackages,
     runPackageAction,
+    installManagedPiPackage,
     configurePackageContext,
     writePackageSourcesForTest
   } = await import('../out/test/packages.mjs')
@@ -102,7 +103,8 @@ export async function runPackagesTests(ok) {
     configurePackageContext({
       agentDir: () => agent,
       bin: () => cli,
-      hasRunningTask: () => false
+      hasRunningTask: () => false,
+      isProjectTrusted: () => true
     })
 
     ok(existsSync(cli), '内置 pi CLI 在（单测要真跑它）', cli)
@@ -137,6 +139,92 @@ export async function runPackagesTests(ok) {
     ok(failed.ok === false, '不存在的包 → 失败', String(failed.ok))
     ok((failed.detail ?? '').length > 0, '失败时带回原始输出（排查第一现场）', (failed.detail ?? '').slice(0, 60))
     ok(listPackages(root).entries.length === 0, '失败没有留下半条登记', String(listPackages(root).entries.length))
+
+    /* 受管下载包只能从 staging 安装，且默认阻止生命周期脚本。 */
+    const stagedRoot = join(root, 'managed-staging')
+    const stagedPackage = join(stagedRoot, 'op-1', 'payload')
+    const lifecycleMarker = join(stagedPackage, 'lifecycle-ran.txt')
+    const configuredExtension = join(stagedRoot, 'existing-project-extension.js')
+    const configuredExtensionMarker = join(stagedRoot, 'existing-project-extension-ran.txt')
+    mkdirSync(join(stagedPackage, 'extensions'), { recursive: true })
+    writeFileSync(
+      join(stagedPackage, 'package.json'),
+      JSON.stringify({
+        name: 'yan-managed-ext',
+        version: '4.5.6',
+        scripts: { prepare: "node -e \"require('fs').writeFileSync('lifecycle-ran.txt', 'ran')\"" }
+      })
+    )
+    writeFileSync(join(stagedPackage, 'extensions', 'index.js'), 'export default {}\n')
+    writeFileSync(
+      configuredExtension,
+      `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(configuredExtensionMarker)}, 'ran'); export default {};\n`
+    )
+    const escaped = await installManagedPiPackage({
+      sourceDir: ext,
+      managedRoot: stagedRoot,
+      cwd: root,
+      name: 'yan-test-ext',
+      version: '1.2.3',
+      allowLifecycleScripts: false
+    })
+    ok(escaped.ok === false && /staging/.test(escaped.error ?? ''), '受管包安装：拒绝 staging 根外的来源')
+    mkdirSync(join(root, '.pi'), { recursive: true })
+    writeFileSync(join(agent, 'trust.json'), JSON.stringify({ [root]: true }, null, 2))
+    writeFileSync(
+      join(root, '.pi', 'settings.json'),
+      JSON.stringify({ extensions: [configuredExtension], packages: [] }, null, 2)
+    )
+    const beforeUntrustedInstall = readPackageSources(join(root, '.pi', 'settings.json'))
+    configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false, isProjectTrusted: () => false })
+    const untrustedInstall = await installManagedPiPackage({
+      sourceDir: stagedPackage,
+      managedRoot: stagedRoot,
+      cwd: root,
+      name: 'yan-managed-ext',
+      version: '4.5.6',
+      allowLifecycleScripts: false
+    })
+    ok(!untrustedInstall.ok && /尚未获 Pi 项目信任/.test(untrustedInstall.error ?? ''), '受管包：未信任项目时拒绝项目级安装')
+    ok(
+      JSON.stringify(readPackageSources(join(root, '.pi', 'settings.json'))) === JSON.stringify(beforeUntrustedInstall),
+      '受管包：未信任时没有改项目配置'
+    )
+    configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false, isProjectTrusted: () => true })
+    const managedInstalled = await installManagedPiPackage({
+      sourceDir: stagedPackage,
+      managedRoot: stagedRoot,
+      cwd: root,
+      name: 'yan-managed-ext',
+      version: '4.5.6',
+      allowLifecycleScripts: false
+    })
+    ok(managedInstalled.ok, '受管包：从精确 staging 目录做项目级安装', managedInstalled.detail ?? managedInstalled.error ?? '')
+    ok(!existsSync(configuredExtensionMarker), 'pi 包管理命令不会加载既有项目扩展')
+    ok(!existsSync(lifecycleMarker), '受管包：Pi 本地目录登记不执行 lifecycle scripts')
+    const managedSource = managedInstalled.listing?.entries.find((e) => e.name === 'yan-managed-ext')?.source
+    ok(!!managedSource, '受管包：pi 清单核实了候选名与精确版本')
+    if (managedSource) {
+      /* 项目扩展回归探针只覆盖 package 命令；删除后续 remove 用到的配置负担。 */
+      writeFileSync(join(root, '.pi', 'settings.json'), JSON.stringify({ packages: [managedSource] }, null, 2))
+      const removedManaged = await runPackageAction({ kind: 'remove', source: managedSource, local: true, cwd: root })
+      ok(removedManaged.ok, '受管包 fixture 可按项目作用域移除', removedManaged.error ?? '')
+      const scriptsAllowed = await installManagedPiPackage({
+        sourceDir: stagedPackage,
+        managedRoot: stagedRoot,
+        cwd: root,
+        name: 'yan-managed-ext',
+        version: '4.5.6',
+        allowLifecycleScripts: true
+      })
+      ok(scriptsAllowed.ok, '受管包：已授权时生命周期脚本策略可显式打开', scriptsAllowed.error ?? '')
+      ok(!existsSync(lifecycleMarker), 'pi 对本地 staging 目录的登记不执行 lifecycle scripts（脚本执行应只发生在专用 npm 安装步骤）')
+      const finalSource = scriptsAllowed.listing?.entries.find((e) => e.name === 'yan-managed-ext')?.source
+      if (finalSource) {
+        const cleanup = await runPackageAction({ kind: 'remove', source: finalSource, local: true, cwd: root })
+        ok(cleanup.ok, '受管包 fixture 在隔离项目中清理完成')
+      }
+    }
 
     /* 参数注入：以 - 开头的 source 在**发起前**就被挡下 */
     const inject = await runPackageAction({ kind: 'install', source: '--no-approve', cwd: root })

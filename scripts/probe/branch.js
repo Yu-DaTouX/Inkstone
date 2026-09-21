@@ -16,6 +16,9 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const sessionPath = (el) => el?.closest('.srow-wrap')?.getAttribute('data-session-path') || ''
+  /* 会话标题会被后续 session_info 改写；夹具身份只能看稳定文件路径。 */
+  const isFamilyPath = (value) => String(value ?? '').toLowerCase().includes('yan-family-parent-')
+  const hasFamilyRow = () => qa('.srow').some((el) => isFamilyPath(sessionPath(el)))
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const until = async (fn, ms = 15000) => {
     const t0 = Date.now()
@@ -43,22 +46,56 @@
     }
     store.getState().setRailPinned(true)
     await until(() => store.getState().conn === 'ready', 25000)
+    /* 全量场景下前一条探针可能刚切过会话；显式刷新一次，避免拿到首帧的旧列表。 */
+    await store.getState().refreshSessions?.()
     await until(
-      () => store.getState().sessions.some((s) => String(s.title).includes('YAN-FAMILY')),
+      () => store.getState().sessions.some((s) => isFamilyPath(s.path)),
       20000
     )
+    await until(hasFamilyRow, 20000)
     await sleep(900)
-    /* 项目行现在拆成「切项目」+「折叠」（N05）：展开要点折叠按钮 */
-    for (const h of qa('[data-testid="rail-project-fold"]')) {
-      if (h.getAttribute('aria-expanded') === 'false') click(h)
+    /*
+     * 项目行现在拆成「切项目」+「折叠」（N05）。全量回归会把前面的场景
+     * 产生的项目 / localStorage 状态带进来：项目区可能本身收起，合成项目
+     * 也可能落在「更多项目」之后。这里按可见 UI 逐层打开，不能只点一遍
+     * 初始 DOM，否则刚好在项目列表异步刷新时就会把“找不到父会话”误报成
+     * 分叉树回归。
+     */
+    const revealFamily = async () => {
+      for (let i = 0; i < 20; i++) {
+        const head = q('[data-testid="rail-projects-head"]')
+        if (head?.classList.contains('collapsed')) click(head)
+        const more = q('[data-testid="rail-more-projects"]')
+        if (more && more.getAttribute('data-expanded') !== '1') click(more)
+        for (const h of qa('[data-testid="rail-project-fold"]')) {
+          if (h.getAttribute('aria-expanded') === 'false') click(h)
+        }
+        /* 全量回归时，合成家族可能落在某个项目的第 6 个会话之后；
+         * 只展开项目本身仍会把它藏在「更多会话」下面。把每个项目的会话
+         * 预览也打开，避免探针依赖前置场景恰好留下的 rail 展开状态。 */
+        for (const moreSessions of qa('[data-testid="rail-more-sessions"]')) {
+          if (moreSessions.getAttribute('data-expanded') !== '1') click(moreSessions)
+        }
+        if (hasFamilyRow()) return true
+        await sleep(250)
+      }
+      return false
     }
+    await revealFamily()
     await sleep(600)
+    if (!hasFamilyRow()) {
+      const familyState = store.getState().sessions.filter((s) => isFamilyPath(s.path))
+      log(`  [诊断] 分叉会话状态=${familyState.map((s) => `${s.title}|${s.cwd}|${s.path}`).join(' || ')}`)
+      log(`  [诊断] 项目头=${qa('[data-testid="rail-projects-head"]').map((e) => `${e.textContent}|${e.className}`).join(' || ')}`)
+      log(`  [诊断] 项目折叠=${qa('[data-testid="rail-project-fold"]').map((e) => e.getAttribute('aria-expanded')).join(',')} 更多=${q('[data-testid="rail-more-projects"]')?.getAttribute('data-expanded') ?? 'none'}`)
+      log(`  [诊断] 可见项目=${qa('[data-testid="rail-project"]').map((e) => e.getAttribute('title')).join(' || ')}`)
+    }
 
     log('=== 1. 会话栏不再有「分支」动作按钮 ===')
     ok(!q('[data-testid="rail-branches"]'), '没有右侧的分支动作按钮（创建分支只在对话窗口里）')
 
     log('=== 2. 分叉树：默认折叠，子会话不提前出现在根列表 ===')
-    const familyRoot = qa('.srow').find((e) => /YAN-FAMILY/.test(e.textContent))
+    const familyRoot = qa('.srow').find((e) => isFamilyPath(sessionPath(e)))
     const familyPath = sessionPath(familyRoot)
     ok(!!familyRoot && !!familyPath, '找到合成家族父会话及其 data-session-path')
     const familyRows = qa('.srow-wrap').filter((e) => sessionPath(e) === familyPath)

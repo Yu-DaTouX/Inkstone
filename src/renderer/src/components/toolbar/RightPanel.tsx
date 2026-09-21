@@ -1302,6 +1302,12 @@ function TodoSection() {
    * 用受控 open 传给 Section（之前 Section 自己管，外面插不进去）。
    */
   const [open, setOpen] = useState(true)
+  const prevTodoCount = useRef(todos.length)
+  useEffect(() => {
+    /* 从无任务会话切回有任务会话时，任务本体不能继承上一份空态的收起状态。 */
+    if (todos.length > 0 && prevTodoCount.current === 0) setOpen(true)
+    prevTodoCount.current = todos.length
+  }, [todos.length])
   const allDone = todos.length > 0 && done === todos.length
   const prevAllDone = useRef(allDone)
   useEffect(() => {

@@ -103,6 +103,36 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
 
 **以后加需要视觉的新场景**：在 `CASES` 对应项里写 `model: TEST_VISION_MODEL`。
 
+### 例外：需要工具调用的场景（默认免费档不调工具）
+
+2026-09-19 实测：默认的 `commandcode/longcat-2.0:free` **不会调用工具** ——
+场景里那句「你必须先调用 bash 工具执行 seq 1 2000」会被它忽视，于是
+`回合已发出=true｜真的跑起来=true｜消息数=4` 但 `工具输出长度=[]`，
+断言「模型真的调用了工具」必红。**换能力模型即绿**（实测）：
+
+```bash
+YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run check
+```
+
+受影响的场景（都要求模型真的动工具）：`contextsweep` / `contextproduce` /
+`contextepisode` / `contextfoldpref` / `subagent` 等。
+**跑全量门槛时统一带上这个变量**，否则会把“模型不干”当成“代码坏了”。
+（本机的本地 llama.cpp 模型也能跑这些场景，但需先在 pi 的 models.json 里
+注册 provider；它同样需要模型真的肯调工具——单跑一次验证一下再批量用。）
+
+### 例外：需要真实可见窗口的场景（`visible: true`）
+
+隐藏窗口（`YAN_PROBE_HIDDEN=1`，测试的默认）里 Chromium 会把定时器**节流到 1 秒**，
+于是量出来的耗时会是 `1000.1ms` / `1000.2ms` / `1000.4ms` 这种**整数秒**，
+而性能断言的阈值是 250ms（左/右栏收放）、400ms（最坏一次）——必红。
+
+所以 `scripts/test-live.mjs` 的场景配置支持 `visible: true`：
+**只给这一个场景**要求可见窗口，其他场景仍然默认不上屏。
+当前用它的是 `perf` / `virtual` / `outlinepos`（都是性能或几何量）。
+
+加新场景时：**断言里出现毫秒阈值、或依赖“元素真的被渲染出来”时，就加 `visible: true`**；
+反过来，不要为了让它过而把阈值放宽到 1000ms —— 那会让真实的性能回归失去哨兵。
+
 ## 哪些场景会真的调模型（花钱/耗额度）
 
 在 `CASES` 里标了 `cost: 1` 的场景：
@@ -116,12 +146,20 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
 | `ask` | **问答功能**：模型主动提问 → 弹窗 → 回答 → 回填；含自主模式不弹窗 | 默认（LongCat），不可用时 Laguna |
 | `image` | 图片真的发给模型 | **视觉模型** |
 | `subagentpair` | **两个并发写入子代理**：worktree 隔离 / 合并 / 放弃 / 同一行冲突 / 只读封堵 / 退出归档 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的写文件） |
-| `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具） |
+| `askbackground` | **后台会话「等待输入」**（实施-09 S2，N12）：A 触发真实 `question` → 主进程 `waiting=true` → 左栏 A 行 `?` → **切到 B 后 A 行仍在等**，B 行没有该槽 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的调用 question 工具）。⚠️ 必须先 `setWorkMode('standard')`；探针里 `waitFor` 的谓词是 async，必须 `await fn()` |
+| `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 / **未读（实施-09 S2）** —— A 在后台**自然跑完**之后左栏出现未读点，点回去后消失 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具）。⚠️ 未读那节**不能**用 `stopRunner` 制造（实例会被移出注册表，`runnersSeen` 不比较）；也**不要**在退出后检查里写死 `sleep <秒数>`（那是可调参数） |
 | `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
+| `goal` | **澄清档就绪转移 + 跨轮续行**（实施-05 S3a/S3b）：切澄清档 → 模型用内联参数敲 `yan goal ready` → 宿主校验 / 幂等 / 落盘 → **模式自动切标准** + 目标 `executing` + 工具卡「目标 · 砚内置」→ **续行自动起一个新回合**；退出后核对 `goals.json`（转移只记一条、五栏完整）、`goal-resume/` 快照与消费证据、会话文件里的 `yan-goal-resume` / `yan-goal-ready` 条目。**探针判空闲必须用 `session.isAgentRunning`**（顶层没有这个字段，读错会在两次请求的空档就判收尾） | 默认（LongCat），不可用时 Laguna |
 | `taskcli` | **宿主任务服务**（实施-02 S3）：模型 `bash` → `yan tasks apply` → 界面清单 → `complete` → 切会话读回；退出后核对日志文件与会话 JSONL | `commandcode/laguna-s-2.1-free`（不可用或空回复时 `deepseek/deepseek-v4.1-flash`） |
+| `goalloop` | **自主档持续续接**（实施-05 S3c）：切自主档 → 探针**只发一条**用户消息（要求模型跑一次 `yan goal report` 就收尾）→ 回合空闲后宿主续行**自动叫醒**（全程无第二条用户消息）→ 目标被继续推进；退出后核对 `goals.json` 的 `autoContinues`、会话文件里的 `yan-goal-continue`、`goal-resume/` 快照 + consumed 证据、扩展日志的 `kind=continue` | **固定 `deepseek/deepseek-v4.1-flash`**：默认 LongCat 实测只回文本不调工具（假红） |
+| `sourcelinklive` | **来源「定位消息」的发送链路**（实施-07 S3）：附件进输入区 → 发送 → 渲染端把附件对应的来源 id 绑到 pi 刚写出的那条 user 条目上；断言关联的表里 sourceId 对得上、**而且指向的那条消息文本就是刚发的那条**（不是历史里的旧消息）。退出后从 Node 侧读沙箱里的 `links.json`（渲染端伪造不了那一层） | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役 403）；不进 `check`（要额度） |
+| `budgetgate` | **请求前预算门的真实冒烟**（实施-05 S4）：工作集线压到 3000（`YAN_CONTEXT_POLICY`）→ 只发一句话 → 这一轮必须正常跑完，磁盘诊断必须有 `request-budget-soft`（说明窗口读到了、钩子活着），而 `request-budget-physical` 与 `budget-abort` **必须为 0**（真实窗口下误拦是灾难性回归）。**不拿模型文本判红**（模型可能空回复） | **固定 `deepseek/deepseek-v4.1-flash`**：默认 LongCat 免费档已退役（403） |
+| `handoffpack` | **交接包由模型写**（实施-05 S5b-2）：自主档 + `yan goal report`（让「目标在推进」成立）+ `YAN_HANDOFF_THRESHOLD=0`（真实要攒两次真实压缩，太贵）→ 回合结束后宿主判资格、写请求 → 薄层在 `agent_settled` 调**一次额外 completion** → 宿主三道闸门（id 对 / 能解析 / 清洗过）后落盘。探针经只读 `yan:getHandoff` 断言两栏必填 / `generator=model` / 水位有值 / 来源字段由宿主填；退出后核对包已落盘、**计数仍为 0**、请求与结果目录**已清空**，扩展日志有 `produced`（真调过模型）。**不拿包的内容好坏判红** | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役 403）；**`handoffExtLog: true`**（诊断写沙箱，afterExit 读它） |
 | `contextsweep` | **Tool Sweep 真实回合**（N21-4 / S2–S6）：三个回合，末轮确认上一轮的召回正文被清成存根；退出后查归档元数据与 `ctx://` 指得回原始条目 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验（含「注入的契约档位」与「`episodes` 为空」） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextgate` | **会话级 gate 真实回合**（N21-5 前置硬化，与 `contextproduce` 是反向对照）：kinds 开 `episode-fold` 但门槛保持**默认**（≥4 回合且转录 ≥48k）→ 一个真实回合后断言 gate 被评估、判为 `too-early`、**0 次 committed、0 份状态文件**（短会话不花钱） | 同上 |
+| `contextpressure` | **20+ 回合压力测试**（N21-4 尾，实施-06 S3）：`YAN_CONTEXT_POLICY` 把工作集压到 20000 + pi `keepRecentTokens=1`，跑 **22 个真实回合**（每轮 `seq 1 2000` ≈ 3k token）→ 探针读 pi 的 `contextUsage.tokens` 断言**峰值 ≤ 工作集 × 1.6** 且**压缩 ≥ 2 次**；退出后查请求诊断（物理线 / abort 都为 0、最小余量 > 0）与会话文件未被破坏。**cost 1、单场约 2.5 分钟 → 不进 `npm run check`** | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役） |
+| `contextpressurelow` | 同上 probe，但工作集压到 **6000**（低于 pi 的基线开销约 10k）→ 专测 `rearmAfterCompaction`：修复前 22 回合只压 1 次、峰值 7.8×，修复后压 5 次（A/B 反向验证就是这么做的）；该场景**不判峰值比率**（工作集低于基线时压无可压） | 同上 |
 | `browserboundary` | **L04 浏览器边界**（9 节，cost 0，**需公网 → 不进 check**）：真实权限请求的拒绝/授权/撤销、本地预览放行、远程 302 借道本机被拦、DNS 重绑定被拦 + 负对照、内置与本机 Chrome 两条下载（带来源、不自动打开）、Cookie 真实复制到 Chrome（只比哈希）、拦截明细几何可见 | 不需要模型（只起 pi） |
 
 浏览器边界场景 `browserboundary`（**cost 0，不进 `npm run check`**）要**公网**：
@@ -187,6 +225,84 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
   `afterExit: taskFixtureReadonly`（`todos` 也挂同一道）再比会话文件：
   **前缀逐字节不变 + 只允许追加 + 追加里不得有任务类 custom entry** ——
   为什么不是比整文件 sha：pi 载入会话时会自己追加 `thinking_level_change`（证据-02-S1 §4.3）。
+- `workmode`（实施-05 S2，cost 0，**已进 `check`**）：**会话级工作模式 + 旧配置迁移 + 菜单键盘**。
+  case 预置一份**只有旧布尔**的 `desktop.json`（`legacyAutonomous: true`），验：「旧 `autonomous=true`
+  → 新字段 `defaultWorkMode=autonomous`」（新字段优先、幂等），以及新会话按默认值启动。
+  菜单与键盘：三档各带一句说明、方向键移动高亮、`Esc` 关闭并把焦点送回触发按钮。
+  **Tab 快切用真按键**（`keys: 'tab,tab'` + `keysDelay: 15000`）—— 它在**渲染端**消费，
+  合成事件验不到「焦点真的没被移走」；探针得先把首次引导关掉、把焦点放进输入框，
+  所以第一枚按键用 `YAN_PROBE_KEYS_DELAY` 推到 15s（默认 1800ms 只够挂监听器）。
+  **A/B 隔离**：两个真会话各自切档，互相切回后各自的值还在（旧实现是一个全局布尔，这条就是它的反例）。
+  **光带“真的在跑”（实施-09 S2 第三批）**：不只断言 `animation-name` —— 还断言两条伪元素动画
+  `playState === 'running'`，并隔 450ms 两次采样 `currentTime` 都在增长。名字对不代表在动：
+  `paused` / 祖先 `display:none` / media query 拦掉都会让名字还在、画面不动。
+- `runnerfailed`（实施-09 S2 第四批，**cost 0，已进 `check`**）：**pi 起不来时的失败态**。
+  场景把 `YAN_PI_BIN` 指向一个**存在但立即 `exit(3)`** 的文件（写进沙箱，见 `brokenPi` 字段）。
+  ⚠️ 两点别踩：① 必须**真写文件** —— `resolvePi` 对 `YAN_PI_BIN` 只做 `existsSync`，
+  不存在的路径会被静默忽略并回落到内置 pi；② 启动时的主实例挂在一条**空会话**上，
+  而空会话不进 `listSessions`，所以**左栏没有可画失败槽的那一行**（探针显式跳过并打印原因，
+  不伪造断言）—— 用户看到的是「模型未就绪」+ 发消息时的错误提示。
+  **第 4 节（实施-09 S2 第六批）**：同一条坏入口下启动**子代理** —— 断言它也走到终态、
+  `status=error`、错误文本可读（实测 `pi 子进程提前退出`）、隔离工作区定态（`review=none` / `diff=0`）。
+- `subagentfail`（实施-09 S2 第六批，**cost 0，已进 `check`**）：**子代理「模型自己失败」的恢复**（L03 尾巴）。
+  用**坏模型名**（`deepseek/deepseek-nonexistent`，与 `autocontinue` 同一手法）：pi 接受这个名称
+  （只 warn），失败发生在上游请求 —— 回 400 且**不产生用量**，所以是 cost 0。
+  修前实测的形状：子代理显示 `status=done` / `latestActivity="已完成"` / `error=null`，
+  只有转录里那条 assistant 自己带着 `error="模型返回错误"`（pi 的 `stopReason==='error'` 被 settled 吃掉了）。
+  修法：`message_*` 时记住 `stopReason`，`agent_settled` 时据此落 `status=error`。
+  断言：终态 error + `error` 可读 + `latestActivity` 不是「已完成」+ 转录里 assistant 真的带 error；
+  等 `diff` 出现（不是等 `review`，它初始就是 `none`）再断言 `review=none` / `diff.files=0`，
+  `afterExit: subagentFail` 再核对归档元数据（`status=error` / `review=none` / 有起止时间）
+  与临时目录无残留。**反向验证**：把 `modelFailed` 写死 `false` → 前三条断言红、
+  「转录里 assistant 带 error」仍绿（pi 侧证据与宿主判定是两回事）。
+  同批单测（假 Rpc，不花额度）：模型失败 / `stopReason=stop` 对照 / pi 起不来（启动超时 + 进程被 close）/
+  运行超时（`YAN_SUBAGENT_TIMEOUT_MS=200` 压短，断言提示报的是**实际**上限）。
+- `exitsave` / `exitinterrupt`（实施-09 S2 第五批，**cost 0，已进 `check`**）：**N12 退出变体**。
+  托盘退出四个分支里 `tray` 覆盖「取消」（两次都留在托盘），这两条覆盖**保存并退出 / 中断退出**
+  与**退出进行中重复请求**。场景用 `YAN_EXIT_CHOICE=save|interrupt` —— 那是主进程里原生对话框的
+  **probe 替身**（`probeExitChoice()` 只在 `YAN_PROBE` 下生效），只跳过「选哪个」这一步，
+  写快照 / 收实例 / 退出的链路完全相同。探针断言 `requestExit()` 返回 `save-and-exit` / `interrupt-exit`、
+  重复请求返回 `already-exiting`，并打印 `expect-mode=` / `probe-at=` / `runners=` 供 Node 侧核对；
+  `afterExit: exitSnapshot` 读沙箱 `data/exit-snapshot.json`：`version=1`、`mode` 与本次请求一致、
+  `at` 落在探针时刻之后 120s 内（沙箱整批共用，必须能分辨陈留文件）、`runners` 条数与窗口里一致、
+  条目带 `cwd/conn/running` 且**不含消息正文**、没有写一半的 `.tmp`。
+  **两次反向验证**：① 重复请求改回返回 `interrupt-exit` → 只有那条断言红；② `mode` 写死成 `save` →
+  `exitinterrupt` 的 mode 断言红。⚠️ 探针做不到的一维如实登记：真实 **busy + 原生对话框**期间
+  重复点托盘（`exitRequestInFlight` 去重那一支）在探针里不可达（probe 替身不 `await` 对话框），
+  只能靠代码审阅；「中断退出真的掐断正在跑的回合」同理，由全局孤儿进程检查 + `stopAll` 的既有证据兜。
+- `sourcecap`（实施-07 S4，**cost 0，已进 `check`**）：**来源搜索入口「有则出现」**。
+  方案对网页搜索的硬条件是「**只在已发现兼容搜索能力时启用**」且不自造搜索后端，
+  所以这条验的是**发现 + 如实暴露**：场景给一份真实 MCP 配置（同一个 stdio fixture，
+  工具表里新增了 `web_search`），宿主真的把它接进能力目录 —— 断言
+  `window.yan.sources.webSearch()` 报 `available:true` 且带可执行的 `location`、
+  环境菜单里出现 `[data-testid="src-websearch"]`、没输词时按钮禁用、
+  输词点击后**只把草稿注入输入框**（含关键词 + 能力名 + 调用形状）而**不代发消息**、写完菜单自己关。
+  **反向验证**：把 fixture 里那个工具的**名字与描述**都去掉搜索语义（`web_lookup` + 「查本地索引」）
+  → `available:false`、菜单里只剩手工添加网址那几项 —— 「无则隐藏」因此也是实测过的。
+  ⚠️ 只改工具名不改描述**验不出来**：判定里有一条弱证据规则（描述同时含「搜索 + 网页/联网」）。
+- `mcpregister`（实施-04 S6b-1，**cost 0，已进 `check`**）：**远程 MCP 自动登记闭环**。
+  从「确认未配置」开始，不调模型：真目录 fixture（`YAN_MCP_REGISTRY_URL` 指向本地）→ `discover`
+  拿到候选 → `prepare` 停在 `needs-authorization` → 未授权 `acquire` **不登记** → `--authorize`
+  后真连核验（官方 SDK 的 Streamable HTTP MCP fixture）并 `resumed` → `capabilities search`
+  **当场可见** → `yan mcp call` 返回值真的来自 fixture → 同一计划重放 `replayed:true`。
+  配置与授权都落沙箱（`YAN_MCP_SERVERS_FILE`），不碰用户真实配置；npm 源同样指向本地，
+  所以这条 cost 0 场景**不需要公网**。**反向验证**：去掉授权门槛 → 恰好 4 条断言红。
+  逐条实现见 [HANDOFF](HANDOFF.md) 的「本轮（2026-09-20）实施-04 S6b-1」。
+- `remoteroutes`（实施-08 S0，**cost 0，已进 `check`**）：真实隔离 Electron HTTP 服务，经 Node 客户端覆盖 health / 鉴权 / 新建会话 / 按 sessionId 定向发送 / 按 runId 中止。目标是合成沙箱会话；本机 OpenAI 兼容 provider 故意保持流式不结束，退出后确认**目标消息对应的流**被 abort 关闭，桌面当前会话未因发送或中止而切换。场景使用独立临时 `YAN_PI_DIR`、虚构凭证与本机 fixture provider，不读取真实 `auth.json` / `models.json`，不连外网 / 云模型。
+- `contextbench`（实施-06 S2 前半，**不启场景，只单测**）：N21-9 的 A/B 口径 —— 四组策略（A 原始长上下文 / B 传统摘要 / C State-First / D State-First + Trace）**只用 `kinds` 区分**、规则式判分（`must-include` / `must-exclude` / `must-match` / `must-not-match`，带 `flags`）、主判据（LCR 相对下降 ≥ 25% 且成功率不低于基线 −3pp）与副指标（`stateOverhead > 25%`、矛盾率三档）。**两条关键自检**：① D 的 `kinds` 必须等于产品默认集、B ⊂ C ⊂ D（否则四组之间的差异不是一个变量）；② 任务集里**每条约束自带 `kept` / `violated` 两个样例**，单测拿它们跑判分规则 —— 2026-09-19 首次跑就抓出 **4 条写错的约束**（3 条用了 JS 不认的 `(?m)` / `(?i)` 内联标志、1 条禁止项样例自己命中）。**真实跑批（四策略 × 3 任务 × 多回合）必须真实额度，未做** —— 跑批器要另做一片，不要拿这套单测当“跑过对照”。
+- `autocontinue`（实施-05 S5c，**cost 0，已进 `check`**）：**模型出错后的自动继续**。
+  模型名故意写坏（`deepseek/deepseek-s5c-nonexistent`）—— pi 不拒启动（只 warn）、上游回 **400**、
+  **请求被拒所以不产生用量** → 错误文本不含额度 / 认证 / 上下文关键词 → 判「可重试」。
+  探针先 `setAutoRetry(false)` **关掉 pi 自带重试**（这一片验的是砚这一层），然后**只发一条**消息：
+  期望 3 条标错助手（初次 1 + 自动 2）、全程用户消息 **1** 条、收尾后不在流式中。
+  `afterExit: autoContinuePersisted` 再核对磁盘：`auto-continue.json` 计数**停在上限**
+  （没有无限重试）、会话里有 `yan-auto-continue` 且**没有**混入 `yan-goal-ready` / `yan-goal-continue`
+  （触发源没搞错）、`goal-resume/` 消费证据 + 扩展日志的 `kind=retry`。
+  **退避由 `YAN_AUTO_CONTINUE` 压到 1.2s**（真实默认 3s/10s/30s 等不起）。
+  `afterExit: workModePersisted` 再核对磁盘：`work-modes.json` 两条不同会话的值、
+  `work-mode/<runnerId>.json` 快照真的写了、旧 `autonomous` 未被抹掉、关掉再开的开关不在磁盘留键。
+  ⚠️ 这把会话键钉在**会话文件路径**上：实测切走再切回同一份文件时 pi 会报新的 `sessionId`，
+  拿它作键会让模式当场丢回默认值（首次跑这个场景就抽到了，已修 + 反向验证）。
 - `taskcli`（实施-02 S3，cost 1，**不进 `check`**）：**宿主任务服务的真实链路**。
   模型 → `bash` → `yan tasks apply --request-file tasks/task-set.json` → 界面出现清单 →
   第二条 `complete` → 切走清空 → **切回从磁盘读回**（这是「重启后读得回」的等价物）。
@@ -219,6 +335,9 @@ LongCat 2.0 free 是**纯文本**测试模型（`input: ["text"]`），发图会
   ⚠️ 它可能因模型不照做而红 —— 判据全部落在工具调用 / 界面 / 磁盘上，
   **不拿模型的自然语言当证据**（实测助手最后一条回复是空白）。
 - `slashcmd`（N18，cost 0，**已进 `check`**，20 节）：本地命令路由 + 菜单行为 + 来源分布。
+- `projectopened`（实施-09 S3，cost 0，**已进 `check`**）：验「每个项目最后一个会话」恢复哪一个。fixture 造两条同项目会话 —— `hot`（消息时间更新、从没被打开过）与 `opened`（消息旧，探针会真的打开一次）。断言链：前提成立（hot 活动更新）→ 打开后主进程回读出现 `lastOpenedAt` → **决策输入里真的带着它**（必须先 `refreshSessions()`，否则读的是旧快照 → 反向验证会假绿）→ 停掉全部实例 → `pickProjectSession` 选 `opened` 而不是 `hot`；退出后读 `data/session-layout.json` 核对落盘（opened 有、hot 没有）。⚠️ fixture 的 `skew` 是**加到偏移上**的（`TS(690 - skew)` ⇒ skew 越大消息越新），与直觉相反。
+- `gitwrite`（实施-07 S2a，cost 0，**已进 `check`**）第 12 节新增一段：点「开新会话」后主进程必须多出一条工作树来源关系（来源会话 = **点按钮之前**那个），环境菜单工作树区要显示来源行；退出后再从 Node 侧读 `data/worktree-links.json` 核对（会话 id / 工作树 / 源会话不同 / 时间戳）。⚠️ 源会话 id 必须在点按钮**之前**取。
+- `sourcelink`（实施-07 S3，cost 0，**已进 `check`**）：验「关联已存在」之后的链路 —— 写一张图 + 登记关联（幂等）→ 主进程 `list` 回读 → 菜单里出现「定位消息」→ 点下去**按 `data-msg-id` 精确高亮那一条**、1.8 秒后自己掉。退出后从 Node 侧读 `links.json` 核对。⚠️ cwd 必须是 fixture 的 **git** 子目录（来源区只在「这是 git 项目」那个分支里渲染），会话要选 `yan-ab-a`（cwd=fixture/repo 且带 user 消息）—— 所以场景要开 `abSessions`。
   **S4 改了两处**：第 3 节从「`/panel` 或 `/footer` 可见但禁用」改成
   「`/footer` 可见且禁用 + `/panel` **不**在候选里 + 注册表里仍 `hiddenInMenu`」；
   新增第 20 节：手打 `/panel` → 逐字符断言草稿未变、合成附件仍在、给出可读原因、没发给模型。
@@ -311,7 +430,11 @@ Remove-Item Env:YAN_CONTEXT_POLICY
 - 这个变量只影响**阈值参数**，触发路径（决策 → `compact()` RPC → 事件归一化 →
   界面文案）全是真的；与 N21-2 把 `reserveTokens` 调到比窗口还大是同一个手法。
 - 非法字段一律忽略并退回生产默认值（写错参数不会变成 NaN 预算）。
+- `contexttakeover` 退出后还会顺带核对**交接计数**（实施-05 S5a）：这一次压缩是「完成 + 自动」的，
+  所以 `data/handoffs.json` 里必须有该会话的 `count ≥ 1` 与去重键 —— 计数是「同一个片段压够两次
+  就换会话」的唯一依据，而真实的压缩事件只有这个场景能拿到（不为它再烧一次额度）。
 - 两个场景都不进 `npm run check`（要额度）。
+- **接管档位可达性**（实施-06 S4 前半）：`npm run test:live -- contexttakeovergap`（cost 1，不进 `check`）试两种构造去命中 `fresh` / `stale-soft`（让 pi 用 `reserveTokens = 窗口 − 25k` 在回合中途压；回合 2 明确禁止工具调用），**两次实测都是 `tier=stale-hard`、`gap=3`** —— 压缩总在回合结束之后，水位后至少已有 `user + assistant + compaction` 三条。所以真实链路只会落到 `stale-hard`；另两档的判定由 `test-context-producer.mjs` 的单测钉住。场景会把会话条目序列一并打印（诊断辅助）。
 
 ## 隔离与安全
 
@@ -325,6 +448,10 @@ Remove-Item Env:YAN_CONTEXT_POLICY
   `app.getPath('downloads')`，默认是用户真实下载目录，不能让测试往里丢文件）
 - `YAN_CONTEXT_POLICY`（工作集策略参数覆盖，JSON；见上一节 —— 只在需要
   “用小额度走完整触发路径”的场景里给，不是日常隔离变量）
+- `YAN_AUTO_CONTINUE`（自动继续的上限与退避覆盖，JSON `{limit, delays}`；只在 `autocontinue`
+  场景用 —— 真实默认是 **3 次 / 3s、10s、30s**，测试里等不起）
+- `YAN_HANDOFF_THRESHOLD`（交接阈值覆盖；`0` = 「够数」这一条先成立 ——
+  真实链路要攒够两次真实自动压缩，那是全项目最贵的场景之一。**只在 `handoffpack` 场景里设**，不改任何生产判定）
 
 指到临时目录，**不碰真实数据**。
 
@@ -456,6 +583,34 @@ fixture 里还有一个最小的 **Git 仓库** `repo/`（`git init` + 一次提
 - `npm run vendor:pi:check`：内置运行时能不能启动、RPC 握手是否正常。
 - `npm run probe-pi`：单独验证「pi 能不能被找到并启动」。
 
+## 不用真模型也能验 pi 的行为：假 provider + 钩子实测
+
+有一类问题**真实模型答不了**：预算门、压缩时序、模式切换的判据都是
+「**第几个请求到底发出去了**」「请求体里有什么」「钩子按什么顺序跑」。
+这类问题用 `scripts/hook-probe.mjs`：它起一个假 provider（本机 127.0.0.1，不联网、不花钱），
+跑一次 `pi --print`，把收到的请求清单 / 钩子时序 / 会话 JSONL 全部打印出来。
+
+```bash
+node scripts/hook-probe.mjs plain     # 对照
+node scripts/hook-probe.mjs block     # tool_call 返回 {block:true}
+node scripts/hook-probe.mjs abort     # 请求前调 ctx.abort()
+node scripts/hook-probe.mjs compact   # 钩子里调 ctx.compact()
+node scripts/hook-probe.mjs payload   # 返回改过的 payload
+node scripts/hook-probe.mjs workmode          # 05-S3a：clarify + 写文件命令 → 应被拦
+node scripts/hook-probe.mjs workmode-standard # 05-S3a：standard + 同一条命令 → 应执行（对照）
+node scripts/hook-probe.mjs workmode-allow    # 05-S3a：clarify + \`yan goal status\` → 应放行
+node scripts/hook-probe.mjs budget            # 05-S4：输出预留拉到 195k → 第 2 个请求应当**不发**
+node scripts/hook-probe.mjs budget-soft       # 05-S4 对照：同一份消息 + 同一个大结果 → 2 个请求全发、0 abort
+```
+
+它**不进 `check`**：不进三层里的任何一层（不启 Electron、不用真实模型），
+但它比断言更难伪造 —— 「第 2 个请求没发出」是假 provider 侧的计数。
+改钩子相关行为（预算门 / 压缩 / 工具门禁）时重跑并把结论写回
+[证据-05-S1](../plan/证据-05-S1-钩子与安全点.md)（钩子能力边界）与
+[证据-05-S4](../plan/证据-05-S4-请求前预算门.md)（预算门）。
+两个必知的坑：spawn pi 时 **stdin 必须断开**（否则 `--print` 等 stdin，表现为卡死）；
+假 provider 的工具命令里**只能用相对路径**（反斜杠会被当转义吃掉）。
+
 ## 视觉矩阵（截图证据）
 
 不属于上面三层，但补的是同一类缺口（真实窗口证据）：
@@ -473,6 +628,13 @@ fixture 里还有一个最小的 **Git 仓库** `repo/`（`git init` + 一次提
 
 数据一律来自 `scripts/shot-fixture.js`（合成）：截图会进仓库，**绝不要**把真实会话截进去。
 
+**真实模型的截图**（少见的例外）：N04 的「长中英混排推理流」必须真调模型 —— 合成 fixture
+只能证明渲染，而那一项缺的正是「真的有一段推理在流」。用法是
+`YAN_SHOT=<png> YAN_SHOT_SETUP=scripts/shot-setup/reasoning-live.js`（隔离三件套 + `YAN_TEST_MODEL`
+见 [实施-09 §2 N04](../plan/实施-09-交付与验收收尾.md)）；前置脚本会在**推理仍在流式**时返回，
+因为回合结束后推理块按契约自动折叠，截晚了就没有流。⚠️ 这类图带真实会话内容（虽然只有一条提问）
+并消耗额度，只用于一次性人工验收，**不要**接进 `check`。
+
 它不进 `npm run check`：依赖真实窗口与合成器，而且在部分环境上跑满会崩（见 [MAINTENANCE](MAINTENANCE.md)），属于人工/按需验收。
 
 ## 相关文件
@@ -481,7 +643,13 @@ fixture 里还有一个最小的 **Git 仓库** `repo/`（`git init` + 一次提
 |---|---|
 | `scripts/test-live.mjs` | live 场景注册表（`CASES`）+ 隔离 + 测试模型注入 |
 | `scripts/test-unit.mjs` | 单元测试入口（纯逻辑） |
+| `scripts/hook-probe.mjs` | 假 provider 下的钩子 / 请求时序实测（不联网、不花钱，见上一节） |
 | `scripts/probe/*.js` | 各 live 场景的探针脚本（在真实渲染进程里执行）；`subagentpair.js` 是唯一带退出后检查的场景 |
 | `scripts/visual-matrix.mjs` + `scripts/visual-matrix-run.mjs` | 视觉矩阵：真实窗口截图（分组跑批，每组一个进程） |
+| `scripts/shot-setup/reasoning-live.js` | 真实思考模型的推理流截图前置（N04；配合 `YAN_SHOT_SETUP`） |
+| `src/shared/web-search.ts` | 「兼容搜索能力」判定（实施-07 S4）：纯函数，决定来源菜单里那枚搜索入口出不出现 |
+| `scripts/bench/context-tasks.mjs` | N21-9 的合成任务集（数据，**不随包分发**）：3 个任务 / 13 条约束，每条自带 `kept` / `violated` 样例供单测自检 |
+| `scripts/bench/context-bench.mjs` | N21-9 跑批器：`npm run bench:context -- --mock|--live`（mock cost 0 只验装置；**live 要额度**，第一次跑先 `--mock` 再 `--live --tasks=1 --strategies=A`）。⚠️ 它不自己做判分 —— 口径全部来自 `src/shared/context-bench.ts`，它只负责编排与出报告 |
+| `scripts/probe/upgrade-read.js` | 升级读取验证的探针（配合 `scripts/test-upgrade-read.mjs`；`npm run test:upgrade`） |
 | `scripts/test-*.mjs` | 各模块的单测（在 `test-unit.mjs` 里用 esbuild 现场编译源码后跑） |
 | `resources/pi-extensions/question.js` | 内置「提问」扩展（问答功能的模型侧） |

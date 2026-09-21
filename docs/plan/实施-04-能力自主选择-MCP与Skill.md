@@ -258,6 +258,19 @@ type AcquisitionPlan = {
 主进程持久化 `operationId`、`planRevision`、`runner/generation`、`goal/sourceHead`、已下载文件与恢复点；
 `acquire` 重试使用**同一个** `operationId`，不能多次安装同一候选。
 
+> **远程 MCP 那条路已落地（S6b-1，2026-09-20）**：`installKind: 'remote'` 分支现在是**真登记**，
+> 不经过下载器（§10 原文就是「不能为了统一界面伪造下载步骤」）：
+> `capabilities.acquire --plan <ID> [--authorize]` —— `metadata-only` 候选默认停在 `needs-authorization`（目录只是线索）；
+> `--authorize` 记下 **host 级持久授权**（不记凭证、跨项目隔离）后，宿主真连端点核验 → 原子写
+> `YAN_DIR/mcp-servers.json` → 写受管记录（`capabilities/mcp-managed.json`）→ `resumed`；
+> 核验失败**一个字节都不写**，同名不同端点**拒绝覆盖**；登记后能力目录**当场可见**
+> （`mcpManager` 失效重建，无需重启），同一计划重放只复核不重复登记。
+> **S6b-2 当前状态（2026-09-21）**：npm `pi-package` 下载 / 调度已接 Electron runtime adapter；本地 Pi smoke 使用临时、离线、无工具 / 无会话 / 无凭证环境；相对资源路径 glob、globstar 与 `!` 排除已实现并以离线 Pi fixture 验证。staging 的 hash manifest 复核现会拒绝未登记 / 缺失文件、符号链接与特殊文件。**`mcp-package` 本轮已接通**：精确 npm staging、包内 `bin` 解析、官方 SDK `tools/list` smoke、项目范围 stdio 配置的原子登记 / 受管记录 / 复核 / 幂等重放；stdio 子进程环境采用 allowlist 加显式配置变量。**固定项目内 `skill-files` 的安全生效边界也已接通**：acquire 只写受管 staging 并绑定 `runnerId + generation + cwd + projectId + goalRevision + sourceHead + continueId`，当前回合结束后由单飞调度器在 runner 空闲、信任 / 来源 / 目标仍匹配且凭证可用时复核 manifest、物化 active 文件、重建同一 runner，并验证 `--skill` 路径、续接 ID 与 `resumed` 回执；忙碌 runner 只延后，不重启无关实例。**独立 Skill 来源边界已补齐**：可选目录适配器只接受带版本 / commit、逐文件 HTTPS URL 与 SHA-256 的条目；接入时通过来源白名单、UTF-8 / 大小 / 跳转 / hash 复核，再复用现有 Skill staging 与安全激活边界。尚无真实外部目录检索证据，未获授权外部候选的整链验收仍待做。历史事务可能停在 `pending-boundary`，不是此类候选的全局终态。
+
+> **S7 当前状态（2026-09-21）**：主要实现与真实运行接线已完成：能力设置页展示内置能力、已加载 Skill、MCP 服务与用户触发的目录搜索；模式策略为「仅现有能力 / 搜索并推荐 / 自动接入」，策略在主进程执行；MCP 私有服务按 runner 的项目身份过滤，无身份 fail-closed；MCP 核验只在用户点击后发生，取消绑定 `runnerId + generation + operationId`，迟到握手不能恢复已取消连接。`capsettings`（包括设置页、安全快照、核验 / 取消 / ready 状态）、`mcpcli`、`capcli` 真实运行通过，单测为 **4158/4158**，`typecheck` / `build` 通过。`visual:matrix` 已生成并看图核对深 / 浅主题能力页（策略、能力目录、Skill、MCP 服务状态卡），4 张截图溢出均为 `0px`。`dist:dir` + `test:packaged` 已在解包、便携版和全新 NSIS 安装后 EXE 中取得完整运行探针；包形态不再是当前限制。当前仍未获授权真实外部候选整链，独立 Skill 目录也只有离线边界证据，不能把它写成联网检索已通过。
+
+> **S6b-2 自动证据（登记时）**：本轮最新 `typecheck` / `build` / 单测为 **4149/4149**；新增 staging manifest 精确文件集真文件回归，以及 `mcp-package` 的临时 npm 包解析 / 官方 SDK `tools/list` / stdio 登记复核、受保护环境变量拒绝与超时清理回归。本地 Pi 自写 fixture 真实启动 RPC 并通过 glob + `!` 排除加载、`session_start`、环境变量隔离。生产适配已接精确授权 / 持久信任 / `pi install -l` / 项目清单 / 目标 runner / 原目标续接端口；没有真实外部候选 acquire、安装、激活、续接或包内证据，详见 [技术预检 §6](证据-04-S6-技术预检.md)。未随 tarball 提供的依赖仍 fail-closed。
+
 1. 在 `YAN_DIR` 的受管 staging 目录下载，**不往项目根或用户真实技能目录散落文件**。
 2. 校验 archive 路径、大小、文件数量、符号链接、hash 与来源；拒绝路径穿越与解压膨胀。
 3. 首版自动接入覆盖：Skill 文件、已验证的 pi npm / git 包、本地已有 Node 环境可运行的 MCP 包、远程 HTTP MCP。
@@ -269,6 +282,8 @@ type AcquisitionPlan = {
    业务调用待授权任务执行，**不能随意调用写工具「测试」**。
 6. 原子登记能力及 receipt，激活成功后**继续原 goal**；失败只清理本次受管 staging / 依赖，
    **不碰**用户已有安装。
+
+**pi 项目资源信任边界（2026-09-20 实测修订）**：`pi install <source> -l` 在未信任项目会拒绝写 `.pi/settings.json`；`--no-approve` 同样不能完成安装，`--approve` 则是单命令的项目资源信任覆盖，不可由自动接入器暗中追加。安装前检查 pi `trust.json` 的**持久项目级信任**；若尚未信任，授权对话框必须明确说明这会信任该项目当前及未来的 `.pi` 设置、扩展与技能（范围大于单个候选），由用户明确选择后才写信任并继续。最终命令仅由宿主构造为 `pi install <verified-path> -l`，不使用两个信任覆盖标记；信任状态无法确认或持久化失败时 fail closed。隔离实测与适用限制见[技术预检](证据-04-S6-技术预检.md) §2。
 
 ### 10.1 与 pi 包管理、运行中任务的冲突
 
@@ -283,6 +298,7 @@ type AcquisitionPlan = {
 | 共享包目录 | 检查所有受影响 runner；**不中断**无关任务或更新它正在使用的依赖。优先项目受管目录固定版本并存；无法安全隔离则等明确空闲或选替代候选 |
 
 - 使用**同一** `resolvePi` 与 `PI_AGENT_DIR`，**不出现**装到 A、运行 B。
+- pi 项目包安装只允许在项目已持久信任后进行；安装命令不得靠 `--approve` / `--no-approve` 覆盖信任状态。
 - 安装后的资源重载 / 重建必须验证 `session`、队列、模式、模型、文件引用不丢。
 - 纯 Skill 与宿主 MCP **至少各有一条**无需用户手动新建会话的闭环。
 - pi 包若需要重启：保存 `sourceHead` 与 `continueId`，以既有会话重建 + 一次性内部继续完成；
@@ -317,7 +333,7 @@ type AcquisitionPlan = {
 | **S3** | C2 MCP 连接：本地 stdio fixture + 远程 HTTP fixture | 1–1.5 天 | 握手、分页、schema、认证失败、结果格式；`tool error` 与协议错误分开 |
 | **S4** | C3 模型发现 → `describe` → `invoke` → 验证完整链 | 1 天 | 工具不直接出现在初始 prompt 也能用 |
 | **S5** | C4 联网发现适配器、候选来源、排序与接入计划 | 1–1.5 天 | **真实目录检索证据**（不能只用 fixture 断言排名） |
-| **S6** | C5 自动下载 / 安装 / 连接、隔离验证、运行中安全激活、继续原任务 | 1–2 天 | 无死锁、队列 / 会话不丢、其他 runner 不被重启、`continueId` 仅消费一次 |
+| **S6** | C5 自动下载 / 安装 / 连接、隔离验证、运行中安全激活、继续原任务 | 1–2 天 | 无死锁、队列 / 会话不丢、其他 runner 不被重启、`continueId` 仅消费一次 —— **S6a（接入事务内核 + 受管 staging）已完成（2026-09-20）**：状态机与合法迁移 / 归档上限与路径校验（路径穿越·绝对路径·symlink·解压膨胀）/ 确定性 `operationId`（重试复用同一事务，≤2 次）/ receipt / 恢复复核**重算 hash 而不看日志**；`AcquisitionService` 受管落盘（`YAN_DIR/capabilities/staging/<operationId>`）失败只清本次；`capabilities.acquire` 已接通（策略判定 → `needs-auth` / `needs-authorization`，自动档建事务并停在 `pending-boundary`）。**剩 S6b：下载器 / `pi install` / 远程 MCP 登记 / 隔离冒烟 / 运行中激活 / 原目标续接（本片一行未碰网络与安装）** —— **S6b-1 已完成（2026-09-20）**：**远程 MCP 自动登记闭环**（§10「不伪造下载步骤」那条路）—— 新增 `src/shared/mcp-registration.ts`（端点选取 / 服务 ID / 配置草案与 URL 安全 / 授权匹配）与 `src/main/capabilities/registration-service.ts`（真连核验 → 写 `YAN_DIR/mcp-servers.json` → 受管记录：失败只清本次、核验失败一个字节不写、同名不同端点拒覆盖、`authorizations.json` 持久策略）；`AcquisitionService` 加 `markAcquiring/markVerifying/markResumed` 与可注入 `verify`（远程走「再连一次」而不是 staging hash）；`capabilities.acquire` 分三档，远程分支**真登记** + `--authorize`，登记后**当场可见**；候选新增显式 `remoteUrl`（不再从 `sourceUrls` 猜端点）。审证：单测 **+58**（**3948 全绿**）、新场景 `mcpregister`（cost 0，已进 `check`）+ `capcli` / `mcpcli` 回归绿、反向验证 4 条红。**剩 S6b-2：下载器 / `pi install` / 本地 MCP 包 / Skill 文件（仍停 `pending-boundary`）**；技术预检（落点与信任边界）见 [证据-04-S6](证据-04-S6-技术预检.md) |
 | **S7** | C6 模式限制、项目隔离、取消 / 重连、视觉与包 | 1 天 | 见 §13；六栏齐备 |
 
 **只做 S2–S4 不算完成本方案**（那只覆盖「现有能力自动选用」，缺「缺失能力联网补齐」）。
@@ -369,8 +385,8 @@ type AcquisitionPlan = {
 |---|---|
 | [01 架构迁移](实施-01-默认pi架构迁移.md) | 提供 `yan` CLI、宿主服务骨架、结果文件、能力获取分流规则（§8） |
 | [02 任务](实施-02-任务工具内置化-已完成.md) | 提供 `builtin` 来源 |
-| [03 项目知识](实施-03-项目知识与旧记忆清理.md) | 提供项目知识检索（登记为 `builtin`） |
-| [05 模式](实施-05-工作模式与长任务续接.md) | 提供模式快照 / 执行门禁 / 总预算；**模式门禁必须在真实执行入口施加**，此文档的模式限制不能只靠目录隐藏 |
+| [03 项目知识](实施-03-项目知识与旧记忆清理-已完成.md) | 提供项目知识检索（登记为 `builtin`） |
+| [05 模式](实施-05-工作模式与长任务续接-已完成.md) | 提供模式快照 / 执行门禁 / 总预算；**模式门禁必须在真实执行入口施加**，此文档的模式限制不能只靠目录隐藏 |
 
 **共同使用**：`RuntimeEnvelope`、`schemaVersion`、来源 provenance、有限预算；
 **不要**分别创建全局 `activeProject` 单例绕过 runner。

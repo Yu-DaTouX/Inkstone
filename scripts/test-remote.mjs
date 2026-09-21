@@ -75,7 +75,13 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: '远程消息' })
     })
-    ok(message.response.status === 200 && calls.at(-1).action === 'send' && calls.at(-1).text === '远程消息', '远程 messages 校验并发送文本')
+    ok(
+      message.response.status === 200 &&
+        calls.at(-1).action === 'send' &&
+        calls.at(-1).sessionId === 's-1' &&
+        calls.at(-1).text === '远程消息',
+      '远程 messages 将稳定 sessionId 与文本一起传递，不要求切换桌面视图'
+    )
 
     const renamed = await json('/remote/v1/sessions/s-1/rename', {
       method: 'POST',
@@ -87,8 +93,27 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     const created = await json('/remote/v1/sessions/new', { method: 'POST' })
     ok(created.response.status === 200 && calls.at(-1).action === 'new', '远程 new 创建新会话')
 
-    const aborted = await json('/remote/v1/runs/abort', { method: 'POST' })
-    ok(aborted.response.status === 200 && calls.at(-1).action === 'abort', '远程 abort 走任务控制接口')
+    const noRunId = await json('/remote/v1/runs/abort', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    })
+    ok(noRunId.response.status === 400, '远程 abort 缺少目标 runId 时在协议层拒绝')
+    const badRunId = await json('/remote/v1/runs/abort', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: 'active' })
+    })
+    ok(badRunId.response.status === 400, '远程 abort 拒绝不属于 RunnerRegistry 的 runId 形状')
+    const aborted = await json('/remote/v1/runs/abort', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: 'r2' })
+    })
+    ok(
+      aborted.response.status === 200 && calls.at(-1).action === 'abort' && calls.at(-1).runId === 'r2',
+      '远程 abort 只把指定 runId 交给任务控制器'
+    )
 
     const events = await fetch(base + '/remote/v1/events', { headers })
     const reader = events.body.getReader()

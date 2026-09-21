@@ -83,6 +83,7 @@ export default function App() {
   const { lang, setLang } = useI18n()
   const t = useT()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
+  const themeMounted = useRef(false)
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
   /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
@@ -243,8 +244,30 @@ export default function App() {
     return () => window.removeEventListener('yan:theme', onTheme)
   }, [])
 
-  /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */  useEffect(() => {
-    document.documentElement.dataset.theme = theme
+  /* ---- 主题令牌挂在 <html data-theme>（DESIGN §2.6） ---- */
+  useEffect(() => {
+    const root = document.documentElement
+    const apply = (): void => {
+      root.dataset.theme = theme
+    }
+
+    /*
+     * Chromium 的 View Transition 把新主题放在旧主题之上，配合 clip-path
+     * 从中心向外展开，颜色切换不会像整页硬切。老版本 Electron 或减少动效
+     * 环境直接改 data-theme，主题功能本身不依赖动画。
+     */
+    const transitionDocument = document as Document & {
+      startViewTransition?: (update: () => void) => unknown
+    }
+    const reduceMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const firstThemeApply = !themeMounted.current
+    themeMounted.current = true
+    if (!firstThemeApply && typeof transitionDocument.startViewTransition === 'function' && !reduceMotion) {
+      transitionDocument.startViewTransition(apply)
+    } else {
+      apply()
+    }
     try {
       localStorage.setItem('yan.theme', theme)
     } catch {
@@ -274,7 +297,7 @@ export default function App() {
    * 为什么用 CSS 变量而不是给每个元素传宽度：
    *   正文列 / 输入框 / 用量条 / 导航轨的定位**全都**从 --w-stream 取值，
    *   改一个变量就整体对齐，不会出现「正文宽了但输入框还窄」的错位。
-   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（900px）。
+   * 0 = 删掉变量，回落到 tokens.css 的设计默认值（800px）。
    *
    * 改完发一个 `yan:stream-width` 事件：导航轨的横向位置是 JS 实测的，
    * 它需要重新量一次（尤其虚拟化长会话里没有 .stream-inner 可观察）。
@@ -353,9 +376,6 @@ export default function App() {
        * 推到下一帧（提交后）再滚，就不会被取消。
        */
       requestAnimationFrame(() => {
-        const el = streamRef.current?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
-        if (!el) return
-
         /*
          * **一律瞬移，不用平滑滚动。**
          *
@@ -372,7 +392,26 @@ export default function App() {
          * 现在直接不用平滑：「跳到第 N 轮」本来就是**定位**，不是看动画。
          * 代价只是少一个滚动动效，换来的是它真的能用。
          */
-        el.scrollIntoView({ behavior: 'auto', block: 'start' })
+        /*
+         * 直接写滚动容器，而不是调用 scrollIntoView：Electron/Chromium 在
+         * `.stream` 内还有一层内容列时，后者可能把外层页面当成目标，表现为
+         * 点击导航格后 scrollTop 仍停在底部。用相对几何坐标只影响这一个容器，
+         * 且不依赖 DOM 的 offsetParent 结构。
+         */
+        const applyTargetScroll = (): void => {
+          const box = streamRef.current
+          const el = box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`)
+          if (!box || !el) return
+          const targetTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
+          box.scrollTop = Math.max(0, targetTop)
+        }
+        applyTargetScroll()
+        /*
+         * 这里可能同时经历 setStickNow(false) 触发的提交、列表重排和滚动
+         * 事件。下一帧再确认一次，避免旧提交的贴底 effect 把刚完成的定位
+         * 覆盖掉；第二次使用当前 ref，兼容滚动节点在这一帧被替换的情况。
+         */
+        requestAnimationFrame(applyTargetScroll)
       })
     })
   }, [turns, virtual, registerScrollToTurn])

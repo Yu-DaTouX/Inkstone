@@ -1269,6 +1269,42 @@ button.env-item:hover {
   color: var(--fg-4);
 }
 
+/*
+ * 工作树派生的「会带 / 不带」两行（实施-07 S2b-1）。
+ *
+ * 一段笼统的免责声明不够：用户要能一眼看到**差在哪**，所以分两行、
+ * 「会带」比「不带」亮一档（它是这条路径唯一的正向价值：来源关系可追溯）。
+ */
+.env-fork-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.env-fork-title {
+  color: var(--fg-4);
+}
+
+.env-fork-carry {
+  color: var(--fg-3);
+}
+
+.env-fork-skip {
+  color: var(--fg-4);
+}
+
+/*
+ * 「源会话 N 个文件引用 · M 个能对上」（实施-07 S2b-3）。
+ * 一行小字，明细在 title 里 —— 不展开新的层级。
+ */
+.env-fork-refs {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-4);
+  cursor: help;
+}
+
 /* 关联外部任务链接（方案 §6.4）：一行一条 + 两个输入 + 一句边界说明 */
 .env-links {
   margin: 6px 6px 0;

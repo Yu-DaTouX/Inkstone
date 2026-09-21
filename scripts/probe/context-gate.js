@@ -67,16 +67,23 @@
 
   /** 一个回合：发出 → 等到真的开始跑 → 等到停下 */
   const turn = async (text, ms) => {
+    const beforeMessages = (S().messages ?? []).length
     if (!(await send(text))) return { sent: false, started: false }
     let started = false
     const t0 = Date.now()
     while (Date.now() - t0 < ms) {
       const running = !!S().session?.isAgentRunning || !!S().session?.isStreaming
       if (running) started = true
-      else if (started) return { sent: true, started: true }
+      else {
+        /* 本地模型的极短回复可能在两次 400ms 轮询之间完成；这时运行标志
+         * 从未被采到，但新增 assistant 条目仍是回合真实执行过的证据。 */
+        const assistantReply = (S().messages ?? []).slice(beforeMessages).some((m) => m?.role === 'assistant')
+        if (started || assistantReply) return { sent: true, started: true }
+      }
       await sleep(400)
     }
-    return { sent: true, started }
+    const assistantReply = (S().messages ?? []).slice(beforeMessages).some((m) => m?.role === 'assistant')
+    return { sent: true, started: started || assistantReply }
   }
 
   log('')
