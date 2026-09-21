@@ -47,7 +47,7 @@ import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { allowTrust, trustStatus } from './project-trust'
 import { forkContext, forkFileRefs } from './fork-rebind-service'
-import { activeContextPolicy, setContextPolicySettings } from './context-policy'
+import { activeContextPolicy, setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
 import { modelKeyOf } from '../shared/model-capabilities'
 import { providerQuota } from './quota'
@@ -2250,6 +2250,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     /* `undefined` 语义留在设置层里（= 没改过 = 按默认开），所以这里先归一成布尔 */
     foldEnabled: settings.contextFold?.enabled !== false
   })
+  /* 把同一份覆盖交给薄层（C-4）：扩展按它算阈值，与界面说的同一个数 */
+  void syncEffectivePolicyFile(YAN_DIR, {
+    user: settings.contextPolicy,
+    byModel: settings.contextPolicyByModel,
+    foldEnabled: settings.contextFold?.enabled !== false
+  })
 
   runners = new RunnerRegistry({
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
@@ -3214,6 +3220,12 @@ function registerIpc(): void {
      */
     if ('contextPolicy' in patch || 'contextPolicyByModel' in patch || 'contextFold' in patch) {
       setContextPolicySettings({
+        user: next.contextPolicy,
+        byModel: next.contextPolicyByModel,
+        foldEnabled: next.contextFold?.enabled !== false
+      })
+      /* 设置一改就重写交给薄层的那份（C-4），扩展下一轮就读到新值 */
+      void syncEffectivePolicyFile(YAN_DIR, {
         user: next.contextPolicy,
         byModel: next.contextPolicyByModel,
         foldEnabled: next.contextFold?.enabled !== false

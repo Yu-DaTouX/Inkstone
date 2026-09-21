@@ -18,11 +18,15 @@
  * 之后同步解析 —— 与 `agentResponseDetail` 是同一个模式。
  */
 import {
+  buildEffectivePolicyDocument,
+  contextPolicyRevision,
   resolveContextPolicy,
   type ContextPolicyLayers,
   type ResolvedContextPolicy
 } from '../shared/context-policy'
 import type { ContextPolicyOverrides } from '../shared/ipc'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 /** 设置层的两种覆盖（形状与 AppSettings 的两个字段一致） */
 export interface ContextPolicySettingsLayer {
@@ -88,4 +92,45 @@ export function activeContextPolicy(
     foldEnabled: settingsLayer.foldEnabled
   }
   return resolveContextPolicy(layers)
+}
+
+/**
+ * 把生效策略写给薄层（实施-11 C-4）。
+ *
+ * 为什么需要：数值覆盖住在 `desktop.json`，而 pi 扩展按设计不读它 ——
+ * 扩展按默认 240K 算阈值、界面按用户设置的 300K 显示，两边说的不是一件事。
+ * 这里把**分层覆盖**落成一个独立文件（`<dataDir>/context-policy.effective.json`），
+ * 扩展读它并按同一个 `contextBudget()` 公式算阈值。
+ *
+ * 三个边界：
+ *   · 内容没变（revision 相同）不落盘 —— 每轮 setStateFrom 都会走到这里；
+ *   · 写失败只吞掉，不影响设置生效（薄层回落默认，与今天的行为一致）；
+ *   · **不写 `YAN_CONTEXT_POLICY`**：那个 env 的优先级高于设置面板，
+ *     宿主自己写它会让用户设置被静默忽略。
+ */
+let lastEffectiveRevision: string | null = null
+
+export async function syncEffectivePolicyFile(
+  dataDir: string,
+  input: {
+    user?: ContextPolicyOverrides
+    byModel?: Record<string, ContextPolicyOverrides>
+    foldEnabled?: boolean
+  }
+): Promise<string | null> {
+  const revision = contextPolicyRevision(input)
+  if (revision === lastEffectiveRevision) return revision
+  const doc = buildEffectivePolicyDocument(input)
+  try {
+    await mkdir(dataDir, { recursive: true })
+    await writeFile(
+      join(dataDir, 'context-policy.effective.json'),
+      `${JSON.stringify(doc)}\n`,
+      'utf8'
+    )
+    lastEffectiveRevision = revision
+    return revision
+  } catch {
+    return null
+  }
 }

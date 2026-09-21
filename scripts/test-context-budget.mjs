@@ -168,6 +168,47 @@ export function runContextBudgetTests(ok, mod, policyMod) {
   const unknown = requestBudgetLevel({ estimatedTokens: 123, budget: null })
   ok(unknown.level === 'unknown' && /原生/.test(unknown.reason), '窗口未知 → unknown 且说明回落原生压缩')
 
+
+  /* ------------------------------------------- C-4：宿主交过来的生效策略 */
+
+  const { overridesOfEffectiveDocument, mergeBudgetOverrides, EFFECTIVE_POLICY_VERSION } = mod
+
+  const hostDoc = {
+    v: EFFECTIVE_POLICY_VERSION,
+    revision: 'r1',
+    updatedAt: 1,
+    default: { workingSetCap: 300000, windowRatio: 0.75 },
+    byModel: { 'a/b': { workingSetCap: 600000 }, a: { workingSetCap: 111000 } },
+    foldEnabled: true
+  }
+  ok(
+    overridesOfEffectiveDocument(hostDoc, 'a/b').workingSetCap === 600000,
+    '精确 provider/model 命中模型级覆盖'
+  )
+  ok(
+    overridesOfEffectiveDocument(hostDoc, 'a/c').workingSetCap === 111000,
+    '没有精确项时回落到 provider 段'
+  )
+  ok(
+    overridesOfEffectiveDocument(hostDoc, 'z/y').workingSetCap === 300000,
+    '两个都没命中时用文档默认层（用户级设置）'
+  )
+  ok(overridesOfEffectiveDocument({ ...hostDoc, v: 99 }, 'a/b').workingSetCap === undefined, '未知版本当作没有这份文档')
+  ok(overridesOfEffectiveDocument(null, 'a/b').workingSetCap === undefined, '没有文档时返回空覆盖')
+
+  const merged = mergeBudgetOverrides({ workingSetCap: 1000 }, { workingSetCap: 300000, windowRatio: 0.5 })
+  ok(merged.workingSetCap === 1000, 'env（测试通道）逐字段盖过宿主文档')
+  ok(merged.windowRatio === 0.5, '逐字段合并：env 没给的字段保留文档值（不是整份替换）')
+
+  /* 交叉校验：同一份文档，扩展侧挑出的覆盖必须能算出与公式一致的工作集 */
+  const hostForBudget = { workingSetCap: 300000, windowRatio: 0.75 }
+  const viaHost = budgetOf(400000, overridesOfEffectiveDocument(hostDoc, 'z/y'))
+  const viaDirect = budgetOf(400000, hostForBudget)
+  ok(
+    viaHost.workingSet === viaDirect.workingSet && viaHost.triggers.sweep === viaDirect.triggers.sweep,
+    `宿主文档算出的预算与直接用同一覆盖算的一致（${viaHost.workingSet}）`
+  )
+
   const negative = requestBudgetLevel({ estimatedTokens: -5, budget })
   ok(negative.estimatedTokens === 0 && negative.level === 'normal', '负估算被夹到 0（脏值不制造假 soft）')
 }

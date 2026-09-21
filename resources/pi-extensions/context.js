@@ -130,6 +130,8 @@ import {
   budgetOverridesFromPolicy,
   estimateMessagesTokens,
   estimateRequestTokens,
+  mergeBudgetOverrides,
+  overridesOfEffectiveDocument,
   requestBudgetLevel
 } from './context-budget.js'
 
@@ -145,23 +147,47 @@ function stateDir() {
 }
 
 /**
- * 这一轮该用哪份预算（实施-05 S4）。
+ * 宿主交给薄层的生效策略（一种读盘 + 一个缓存，与 desktopSettings 同一个约定）。
+ *
+ * 为什么不让宿主写 `YAN_CONTEXT_POLICY`：那个 env 的优先级**高于**设置面板
+ * （测试通道），宿主自己写它会把用户设置静默盖掉。所以走独立文件。
+ */
+let effectivePolicyCache = { at: 0, value: null }
+function hostPolicyDocument() {
+  const now = Date.now()
+  if (now - effectivePolicyCache.at < 1000) return effectivePolicyCache.value
+  const raw = readJson(join(dataDir(), 'context-policy.effective.json'))
+  effectivePolicyCache = { at: now, value: raw && typeof raw === 'object' ? raw : null }
+  return effectivePolicyCache.value
+}
+
+/**
+ * 这一轮该用哪份预算（实施-05 S4 / 实施-11 C-4）。
  *
  * 窗口从 `ctx.model.contextWindow` 拿（06-S4 的 `contextrefresh` 已证它在真实链路可用）；
  * 取不到就交回 `null`（判定为 `unknown`，策略不生效，回落 pi 原生压缩）。
- * 覆盖值直接读同一个 `YAN_CONTEXT_POLICY`（与主进程同一份 env）——
+ *
+ * 覆盖值的两个来源，优先级从高到低：
+ *   ① `YAN_CONTEXT_POLICY`（测试通道，与主进程同一份 env）；
+ *   ② 宿主的 `context-policy.effective.json`（用户级 / 模型级设置的投影）。
  * 公式仍是 `shared/context-policy.ts` 那一套（`context-budget.js` 与它交叉校验）。
  */
 function requestBudgetFor(ctx) {
   const raw = process.env.YAN_CONTEXT_POLICY
-  let overrides = {}
+  let envOverrides = {}
   if (raw && raw.trim()) {
     try {
-      overrides = budgetOverridesFromPolicy(JSON.parse(raw))
+      envOverrides = budgetOverridesFromPolicy(JSON.parse(raw))
     } catch {
-      overrides = {}
+      envOverrides = {}
     }
   }
+  const modelKey =
+    ctx?.model?.provider && ctx?.model?.id ? `${ctx.model.provider}/${ctx.model.id}` : undefined
+  const hostOverrides = budgetOverridesFromPolicy(
+    overridesOfEffectiveDocument(hostPolicyDocument(), modelKey)
+  )
+  const overrides = mergeBudgetOverrides(envOverrides, hostOverrides)
   const win = ctx?.model?.contextWindow
   return budgetOf(typeof win === 'number' ? win : 0, overrides)
 }

@@ -94,7 +94,7 @@
 | 4 | H-6 | 回合计时契约与 usage 口径 | 方案 §4.2 | H-1 | **已部分交付**（落盘 / 读回 / 终止原因 / 未记录；稳定回合身份、等待分段、usage 聚合归 H-6b） |
 | 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | 未开始 |
 | 5 | H-7 | 时间呈现统一与可访问 | 方案 §13.1 | — | **已交付**（六栏见 HANDOFF；`submittedAt` 未实现） |
-| 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | 未开始 |
+| 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则；估算精度与行为口径的剩余归 C-4b / C-6） |
 | 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | 未开始 |
 | 8 | C-6 | 三类整理门槛与防抖标定 | 审阅 §5.2、§3.3、§5.1 | C-4、C-2 | 未开始 |
 | 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | 未开始 |
@@ -166,20 +166,18 @@
 公式单测、设置页接线、禁用态与视觉证据已齐（HANDOFF「C-1」），
 **真实 1M 端点验证**仍归 C-3，需要用户明确允许与可控额度。
 
-**C-4 · 统一策略来源与计量口径（位次 6）**
+**C-4 · 统一策略来源与计量口径（位次 6，已交付）**
 
-- 来源：审阅 §5.3、§3.1；以及 §9.3 第 4 条“不把 1M 硬编码成某一个数”。
-- 内容：宿主解析出一份**带 revision 的有效策略**（窗口、soft、sweep、fold、reserve、实际 max output）
-  交给薄层；扩展侧不再独立推导出不同的业务阈值（保留现有 TS/JS 交叉验证作为迁移保护）。
-- 必须一并修掉的口径问题：
-  1. 界面 sweep 阶段线与真实清扫启动线不一致 —— 要么让执行遵守统一门槛，要么把 UI 改称“预算阶段参考线”，
-     不能继续暗示到线以前不会整理；
-  2. “1M”按运行时实际 `contextWindow` 计算，不硬编码某个数；
-  3. 请求估算目前以字符为主（宽字符约 1 字符 = 1 token，其他按长度 / 4），对图片和各 provider
-     特殊结构覆盖不足 —— 未知成本不得当零，也不能据此宣称硬闸门精确可靠。
-- 落点：`src/shared/context-policy.ts`、`src/main/context-policy.ts`、
-  `resources/pi-extensions/context-budget.js`、`context.js`、`context-producer.js`。
-- 禁区：不改默认 240K；不绕过输出预留与物理闸门。
+- 已交付（六栏见 HANDOFF「C-4」）：
+  1. 宿主把**分层覆盖**写进 `<YAN_DATA_DIR>/context-policy.effective.json`（`v` / `revision` / `default` / `byModel` / `foldEnabled`），内容不变不落盘；
+  2. 扩展的 `requestBudgetFor()` 改为 **env > 宿主文件 > 默认**，逐字段合并；阈值仍由两侧同一套 `contextBudget()` 算（交叉校验在单测里）；
+  3. “1M”仍按运行时实际 `contextWindow` 计算，不硬编码；
+  4. 走独立文件而**不写 `YAN_CONTEXT_POLICY`** —— 那个 env 优先级高于设置面板。
+- **未交付（C-4b）**：请求估算仍以字符为主（宽字符 ≈ 1 token、其余 /4），图片与 provider
+  特殊结构覆盖不足；“未知成本不得当零”尚未逐 provider 验证。
+- **未交付（归 C-6）**：“到线以前不会整理”这个措辞仍不准（`tool-sweep` 另有收益门槛与防抖）——
+  数字对齐不等于行为对齐。
+- 禁区不变：不改默认 240K；不绕过输出预留与物理闸门。
 
 **C-2 · 压缩可观测性（位次 7）**
 
@@ -453,9 +451,9 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4、C-5、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4267/4267**（含 `test-turn-timing.mjs`、`test-turn-timing-store.mjs`、`test-duration.mjs` 与 C-1 的 6 条试行档断言）；其余切片的单测与文档审计待各片补齐。 |
-| 真实运行 | H-1 有 `turnfooter` / `turnfooterlive`；H-2 有 `rightresources`（cost 0，21 条）；C-1 由 `contextbudget`（cost 0）取证；H-7 由 `turnfooter` 新增 6 条断言覆盖；H-6 有 `turnrestore`（cost 1）；H-4a 有 `filelink`（cost 0，11 条）。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4b、C-5、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4287/4287**（含 `test-turn-timing.mjs`、`test-turn-timing-store.mjs`、`test-duration.mjs`、C-1 的 6 条试行档、C-4 两侧的 17 条）；其余切片的单测与文档审计待各片补齐。 |
+| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；H-7 `turnfooter` 新增 6 条；H-6 `turnrestore`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`（宿主写盘 + afterExit 核对）。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
 | 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |

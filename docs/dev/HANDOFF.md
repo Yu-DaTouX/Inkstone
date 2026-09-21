@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -14,6 +14,20 @@
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-22）· 实施-11 C-4：生效策略交给薄层
+
+> 队列位次 6。原始问题：数值覆盖住在桌面端设置里，而 pi 扩展按设计不读它 ——
+> 扩展永远按默认 240K 算阈值，界面却按用户设置的 300K 显示（“界面上的数 ≠ 真正在用的数”）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 `contextPolicyRevision()` / `buildEffectivePolicyDocument()` / `overridesOfEffectiveDocument()`（[`shared/context-policy.ts`](../../src/shared/context-policy.ts)，纯函数、两侧共用规则）；[`main/context-policy.ts`](../../src/main/context-policy.ts) 的 `syncEffectivePolicyFile()` 把**分层覆盖**（默认层 + 模型层 + `foldEnabled` + revision + 时间）写进 `<YAN_DATA_DIR>/context-policy.effective.json`，内容不变不落盘；`index.ts` 在两个设置登记点调用（启动读盘 / `patchSettings`）。扩展侧 [`context-budget.js`](../../resources/pi-extensions/context-budget.js) 新增同规则的 `overridesOfEffectiveDocument` / `mergeBudgetOverrides`，[`context.js`](../../resources/pi-extensions/context.js) 的 `requestBudgetFor()` 改为 **env（测试通道）> 宿主文件 > 默认**，逐字段合并。**不写 `YAN_CONTEXT_POLICY`**（那个 env 优先级高于设置面板，写了会把用户设置静默盖掉）。 |
+| 自动检查 | `npm run typecheck` / `build` 通过；`npm run test:unit` **4287/4287** —— `test-context-policy.mjs` 新增 10 条（revision 对键序不敏感 / 对开关与数值敏感、文档形状、四层挑选取值），`test-context-budget.mjs` 新增 7 条（精确命中 / provider 回落 / 默认层 / 未知版本、逐字段合并、宿主文档算出的预算 = 直接用同一覆盖算的）。 |
+| 真实运行 | 新场景 `npm run test:live -- policyfile`（**cost 0**）：改设置后会话 `source=user`、`workingSet=333000`、清扫线 `233100` 跟着重算；退出后 `afterExit` 核对磁盘文件：`v=1`、`revision=ivkbu5`、`default.workingSetCap=333000`、`windowRatio=0.6`、`foldEnabled=true`、带写入时间。 |
+| 视觉验收 | **本片不改 UI**，沿用既有上下文状态图（`matrix-contextbudget-*` 等：工作集主值 + 三档参考线 + 来源行）。本片改变的是这些数字的**来源**，不是画法。 |
+| 应用与包 | 未因本片重跑 `dist:dir` / `test:packaged`，包级证据归 H-5 与实施-09。 |
+| 剩余限制 | ① **扩展真正采用文件**没有 cost 1 端到端证据（本片给到“宿主写盘”与“两侧纯函数同规则”两段；跑一轮真实 pi 看阈值仍待 C-3 矩阵或本机模型）；② 请求估算仍以字符为主（宽字符 ≈ 1 token、其余 /4），对图片与 provider 特殊结构的覆盖不足，**未知成本不当零**这一点尚未逐 provider 验证 → C-4b；③ “到线以前不会整理”这个措辞仍不准 —— `tool-sweep` 另有收益门槛与防抖，数字对齐不等于行为对齐，归 **C-6**；④ 链式 / 多计划会话同时跑时，文件只有一份分层覆盖（按 `provider/model` 分），未验证多实例并发切换的时序。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 H-4a：文件链接解析与呈现
 

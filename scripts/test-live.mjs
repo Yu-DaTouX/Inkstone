@@ -1527,6 +1527,18 @@ const CASES = {
   },
 
   /*
+   * 实施-11 C-4：宿主把生效策略（分层覆盖）交给薄层（cost 0）。
+   * 探针改一个数值覆盖，退出后核对 `data/context-policy.effective.json`。
+   */
+  policyfile: {
+    probe: 'scripts/probe/policy-file.js',
+    delay: 10000,
+    budget: 150000,
+    cost: 0,
+    afterExit: 'effectivePolicyFile'
+  },
+
+  /*
    * 实施-11 H-6：整轮计时的落盘与读回（cost 1，会调模型一次）。
    *
    * 前面两条计时场景验的是「算得对、显示得对」；这条验的是 **pi 会话 JSONL
@@ -5170,6 +5182,7 @@ const AFTER_EXIT = {
   workModePersisted: checkWorkModePersisted,
   goalPersisted: checkGoalPersisted,
   turnTimingPersisted: checkTurnTimingPersisted,
+  effectivePolicyFile: checkEffectivePolicyFile,
   goalLoopPersisted: checkGoalLoopPersisted,
   autoContinuePersisted: checkAutoContinuePersisted,
   handoffPackPersisted: checkHandoffPackPersisted,
@@ -5446,6 +5459,46 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
       `终止原因与界面一致（${last?.terminalReason} vs ${expectedReason}）`
     )
   }
+  return { ok, lines }
+}
+
+/**
+ * 退出后检查：宿主写给薄层的生效策略文件（实施-11 C-4）。
+ *
+ * 渲染进程看不到 `YAN_DATA_DIR`，而「扩展到底能读到什么」完全取决于这个文件 ——
+ * 所以断言只能在退出后从磁盘上做。
+ */
+async function checkEffectivePolicyFile(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const file = join(sandboxRoot, 'data', 'context-policy.effective.json')
+  if (!existsSync(file)) {
+    say(false, `没有写出生效策略文件（${file}）`)
+    return { ok, lines }
+  }
+  let doc = null
+  try {
+    doc = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    say(false, `文件不是合法 JSON：${error?.message ?? error}`)
+    return { ok, lines }
+  }
+  lines.push(`  文件 = ${file}`)
+  say(doc?.v === 1, `带版本号（v=${doc?.v}）`)
+  say(typeof doc?.revision === 'string' && doc.revision.length > 0, `带策略指纹（revision=${doc?.revision}）`)
+  say(doc?.default?.workingSetCap === 333_000, `默认层写进了用户级覆盖（cap=${doc?.default?.workingSetCap}）`)
+  say(doc?.default?.windowRatio === 0.6, `比例字段一并写入（ratio=${doc?.default?.windowRatio}）`)
+  say(doc?.foldEnabled === true, `foldEnabled 归一成布尔（${doc?.foldEnabled}）`)
+  say(Number.isFinite(doc?.updatedAt) && doc.updatedAt > 0, '带写入时间')
   return { ok, lines }
 }
 
