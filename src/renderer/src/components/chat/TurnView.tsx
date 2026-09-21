@@ -7,6 +7,7 @@ import { Markdown } from './MessageParts'
 import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup, ToolRow } from './ToolRow'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
+import { formatDuration } from '../../../../shared/duration'
 import type { SubagentRun } from '../../../../shared/ipc'
 
 /**
@@ -207,7 +208,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
 /** 回合底部只保留可验证的统计；模型名、回复档位与工具步数不再占据正文顶部。 */
 function TurnFooter({ turn }: { turn: AssistantTurn }) {
   const t = useT()
-  const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatElapsed(turn.elapsedMs) : null
+  const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const hasMeta = !!elapsed || !!turn.timestamp || turn.tools.length > 1
   if (!hasMeta) return null
 
@@ -244,8 +245,22 @@ function TurnTime({ timestamp }: { timestamp: number }) {
     second: '2-digit',
     timeZoneName: 'short'
   }).format(date)
+  /*
+   * 完整时间不能只有鼠标悬停才能读到：
+   *   · `aria-label` 给屏幕阅读器；
+   *   · `tabIndex=0` + `data-full` 让键盘 / 触摸聚焦时由 CSS 弹出浮层
+   *     （见 motion.css 的 `.turn-time:focus-visible::after`）；
+   *   · `dateTime` 仍是机器可读的 ISO，复制 / 分叉沿用原消息时间。
+   */
   return (
-    <time className="turn-footer-item turn-time" dateTime={iso} title={full}>
+    <time
+      className="turn-footer-item turn-time"
+      dateTime={iso}
+      title={full}
+      aria-label={full}
+      data-full={full}
+      tabIndex={0}
+    >
       {clock}
     </time>
   )
@@ -346,7 +361,7 @@ function ImageProgressList({ items }: { items: AssistantTurn['imageProgress'] })
               <strong>生成图片</strong>
               <span className="image-progress-stage">{imageStageLabel(item.stage)}</span>
               <span className="spacer" />
-              <span className="image-progress-time">{formatElapsed(elapsed)}</span>
+              <span className="image-progress-time">{formatDuration(elapsed)}</span>
             </div>
             <div className="image-progress-track" aria-hidden="true"><span /></div>
             {item.detail ? <div className="image-progress-detail">{item.detail}</div> : null}
@@ -368,11 +383,6 @@ function imageStageLabel(stage: AssistantTurn['imageProgress'][number]['stage'])
     case 'done': return '已完成'
     case 'error': return '失败'
   }
-}
-
-function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000))
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 function fmtArtifactBytes(n: number): string {

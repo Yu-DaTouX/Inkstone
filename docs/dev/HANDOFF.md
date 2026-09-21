@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -14,6 +14,20 @@
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-22）· 实施-11 H-7：时间呈现统一与可访问
+
+> 队列位次 5。目标：完整时间不能只有鼠标悬停才能读到；同一个时长在消息区与
+> 子代理列表必须是同一种写法。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 [`shared/duration.ts`](../../src/shared/duration.ts) 的 `formatDuration()` —— 回合页脚、图片生成进度、子代理列表共用它；`TurnView.tsx` 的私有 `formatElapsed` 与 `SubagentList.tsx` 的私有 `duration` 删除（后者原来写成 `1m30s`，与消息区的 `1m 30s` 不一致）。`TurnView.tsx` 的 `TurnTime` 加 `aria-label` / `data-full` / `tabIndex=0`；[`motion.css`](../../src/renderer/src/styles/motion.css) 加 `.turn-time:focus::after` 浮层（`:focus-visible` 只负责 outline，`:focus` 让触摸 / 脚本聚焦也弹），`title` 仍作鼠标悬停兜底。 |
+| 自动检查 | `npm run typecheck` / `build` 通过；`npm run test:unit` **4240/4240**（新增 [`test-duration.mjs`](../../scripts/test-duration.mjs) 13 条：0s / 59.4s / 59.5s 进位成 `1m 0s` / 90s → `1m 30s` / 负数与 NaN 与 Infinity 钳到 0 / `minSeconds`）。 |
+| 真实运行 | `npm run test:live -- turnfooter`（cost 0）新增 6 条断言并全通过：`aria-label` 与 `data-full` 是同一份完整时间（实测「2026/09/21 GMT+10 22:42:50」）、`tabIndex === 0`、`focus()` 后 `document.activeElement` 就是该时间、`datetime` 仍是 ISO。探针另打印聚焦伪元素 content —— 隐藏窗口（`YAN_PROBE_HIDDEN=1`）下为 `none`，因为 `:focus` 在不可见窗口不匹配，所以浮层本身由下面真实可见窗口的视觉状态取证。 |
+| 视觉验收 | 新状态 `turntime`（组 0 / 1）：注入一条带时间戳的回合，滚到底部后真 focus 最后一个 `.turn-time` 再截图。看图核对：`14:43` 有聚焦描边（外描边只给键盘），上方浮层给出完整时间「2026/09/21 GMT+10 14:42:50」，深浅均无溢出 —— [`matrix-turntime-1440x900-100-dark-2026-09-22-h7.png`](../design/preview/matrix-turntime-1440x900-100-dark-2026-09-22-h7.png)、[`matrix-turntime-1440x900-100-light-2026-09-22-h7.png`](../design/preview/matrix-turntime-1440x900-100-light-2026-09-22-h7.png)。 |
+| 应用与包 | 未因本片重跑 `dist:dir` / `test:packaged`，包级证据归 H-5 与实施-09。 |
+| 剩余限制 | ① 发送队列的「待发送」标记本来就有（`Composer` 的 `queue.hold`），本片没改；② `submittedAt`（点击发送的时刻）未实现 —— 界面目前不需要展示它，也就不会用组件挂载时刻伪造一个值；③ 子代理行分钟档从 `1m30s` 改为 `1m 30s`，旧 `matrix-subagent*` 截图是旧写法；④ 触摸设备上的浮层没有真机验证，靠在真实可见窗口里 focus 取证。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 H-2 / C-1：右栏资源保留与大窗口试行档
 
