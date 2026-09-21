@@ -209,7 +209,16 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
 function TurnFooter({ turn }: { turn: AssistantTurn }) {
   const t = useT()
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
-  const hasMeta = !!elapsed || !!turn.timestamp || turn.tools.length > 1
+  const stopped = turn.terminalReason === 'stopped'
+  const failed = turn.terminalReason === 'failed'
+  const interrupted = turn.terminalReason === 'interrupted'
+  /*
+   * 旧历史没有宿主计时记录（H-6）：如实写「用时未记录」，而不是静默省略。
+   * 省掉会让用户以为这一轮真的没花时间；显示一个别的数则是伪装。
+   */
+  const unrecorded = !elapsed && !turn.timingRecorded && !!turn.timestamp
+  const hasMeta =
+    !!elapsed || !!turn.timestamp || turn.tools.length > 1 || stopped || failed || interrupted
   if (!hasMeta) return null
 
   return (
@@ -225,6 +234,17 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
         <span className="turn-footer-item" title={t('tok.elapsedTip')}>
           {t('tok.elapsed')} {elapsed}
         </span>
+      ) : unrecorded ? (
+        <span className="turn-footer-item" title={t('tok.elapsedUnrecordedTip')}>
+          {t('tok.elapsedUnrecorded')}
+        </span>
+      ) : null}
+      {stopped ? <span className="turn-footer-item turn-footer-tag">{t('turn.stopped')}</span> : null}
+      {failed ? (
+        <span className="turn-footer-item turn-footer-tag err">{t('turn.failed')}</span>
+      ) : null}
+      {interrupted ? (
+        <span className="turn-footer-item turn-footer-tag">{t('turn.interrupted')}</span>
       ) : null}
       {turn.timestamp ? <TurnTime timestamp={turn.timestamp} /> : null}
     </div>

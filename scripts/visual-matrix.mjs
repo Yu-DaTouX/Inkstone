@@ -861,9 +861,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1895,6 +1895,52 @@ const STATES = {
         target.focus();
         await new Promise((r) => setTimeout(r, 400));
         return document.activeElement === target ? 'ok' : 'not-focused';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
+  /*
+   * 回合终止原因与「未记录」的呈现（实施-11 H-6）。
+   *
+   * 四神回合各一种：正常完成 / 被停止 / 失败 / 旧历史（无计时记录）。
+   * 前三神来自宿主元数据日志（`turnTiming`），第四种什么都没有 —— 界面必须
+   * 如实说「用时未记录」，而不是省掉那一段让人以为没花时间。
+   */
+  turnstatus: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+        const T = Date.UTC(2026, 8, 21, 4, 42, 8);
+        const meta = (id, ms, reason) => ({
+          logicalTurnId: id,
+          startedAt: T,
+          endedAt: T + ms,
+          elapsedMs: ms,
+          terminalReason: reason
+        });
+        window.__yanStore.setState({
+          messages: [
+            { id: 'vs-u1', role: 'user', text: '跑一遍测试', timestamp: T },
+            { id: 'vs-a1', role: 'assistant', text: '两个测试都通过。', elapsedMs: 18000, timestamp: T + 18000, turnTiming: meta('vs-a1', 18000, 'completed') },
+            { id: 'vs-u2', role: 'user', text: '再试试中途停止', timestamp: T + 20000 },
+            { id: 'vs-a2', role: 'assistant', text: '写到一半被停下来了。', elapsedMs: 6000, timestamp: T + 26000, turnTiming: meta('vs-a2', 6000, 'stopped') },
+            { id: 'vs-u3', role: 'user', text: '再来一次', timestamp: T + 30000 },
+            { id: 'vs-a3', role: 'assistant', text: '', error: '模型返回错误', elapsedMs: 900, timestamp: T + 30900, turnTiming: meta('vs-a3', 900, 'failed') },
+            { id: 'vs-u4', role: 'user', text: '这是旧会话里的问题', timestamp: T + 40000 },
+            { id: 'vs-a4', role: 'assistant', text: '旧历史里的回答没有计时记录。', timestamp: T + 45000 }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 350));
+        const texts = [...document.querySelectorAll('[data-testid="turn-footer"]')].map((el) => el.textContent ?? '');
+        return texts.length >= 3 ? 'ok:' + texts.length : 'few:' + texts.length;
       } catch (e) {
         return 'err:' + (e && e.message ? e.message : String(e));
       }
@@ -2994,6 +3040,7 @@ const MUST_HAVE = {
   ctxsettings: ['.settings', '[data-testid="ctx-source"]', '[data-testid="ctx-cap"]', '[data-testid="ctx-preset"]', '[data-testid="ctx-fold"]', '[data-testid="ctx-deep"]'],
   ctxmodelpresets: ['.settings', '[data-testid="ctx-model-presets"]', '[data-testid="ctx-model-large-balanced"]', '[data-testid="ctx-model-large-long"]'],
   turntime: ['.stream', '[data-testid="turn-footer"]', '.turn-time'],
+  turnstatus: ['.stream', '[data-testid="turn-footer"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
   quotatone: [

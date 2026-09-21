@@ -98,4 +98,64 @@ export async function runTurnTimingTests(ok) {
     ok(a?.kind === 'assistant', '三块合成一个助手回合')
     ok(a.elapsedMs === 13800, '回合用时取最后一条（= 整轮，不是某一条的生成时间）', `实际 ${a.elapsedMs}`)
   }
+
+  /* ---- 8. 宿主元数据恢复（H-6）：重载后从日志拿回用时与终止原因 ---- */
+  {
+    const turns = groupIntoTurns([
+      { id: 'r-u1', role: 'user', text: '跑一下', timestamp: 1 },
+      { id: 'r-a1', role: 'assistant', text: '第一条', timestamp: 2 },
+      {
+        id: 'r-a2',
+        role: 'assistant',
+        text: '第二条',
+        timestamp: 3,
+        turnTiming: {
+          logicalTurnId: 'r-a1',
+          startedAt: 1000,
+          endedAt: 51000,
+          elapsedMs: 50000,
+          terminalReason: 'completed'
+        }
+      }
+    ])
+    const t = turns.find((x) => x.kind === 'assistant')
+    ok(t?.elapsedMs === 50000, '重载后从宿主元数据恢复整轮用时', `实际 ${t?.elapsedMs}`)
+    ok(t?.timingRecorded === true, '标记「这一轮有记录」')
+    ok(t?.terminalReason === 'completed', '终止原因跟着恢复', t?.terminalReason)
+  }
+
+  /* ---- 9. 旧历史：没有记录就不伪造 ---- */
+  {
+    const turns = groupIntoTurns([
+      { id: 'o-u1', role: 'user', text: '旧会话', timestamp: 1 },
+      { id: 'o-a1', role: 'assistant', text: '回答', timestamp: 2 }
+    ])
+    const t = turns.find((x) => x.kind === 'assistant')
+    ok(t?.elapsedMs === undefined, '旧历史没有用时就是没有（不拿时间戳差冒充）')
+    ok(t?.timingRecorded !== true, '旧历史不标记为「有记录」（界面据此说未记录）')
+  }
+
+  /* ---- 10. 推送值优先，终止原因仍取日志 ---- */
+  {
+    const turns = groupIntoTurns([
+      { id: 'p-u1', role: 'user', text: 'x', timestamp: 1 },
+      {
+        id: 'p-a1',
+        role: 'assistant',
+        text: 'y',
+        timestamp: 2,
+        elapsedMs: 1234,
+        turnTiming: {
+          logicalTurnId: 'p-a1',
+          startedAt: 1,
+          endedAt: 2,
+          elapsedMs: 9999,
+          terminalReason: 'stopped'
+        }
+      }
+    ])
+    const t = turns.find((x) => x.kind === 'assistant')
+    ok(t?.elapsedMs === 1234, '推送来的本轮用时优先于日志值', `实际 ${t?.elapsedMs}`)
+    ok(t?.terminalReason === 'stopped', '终止原因仍取日志（推送不带它）', t?.terminalReason)
+  }
 }

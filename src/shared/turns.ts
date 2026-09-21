@@ -34,7 +34,7 @@
  *   这与 craft-agents 的 fallback 行为一致，避免整轮在界面上没有正文。
  * ══════════════════════════════════════════════════════════════════
  */
-import type { ImageGenerationProgress, ResponseDetail, UIMessage, Usage } from './ipc'
+import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, Usage } from './ipc'
 
 /** 一段文字（解说或回答） */
 export interface TurnText {
@@ -78,6 +78,13 @@ export interface AssistantTurn {
   elapsedMs?: number
   /** 最后一条助手消息的时间戳；缺失时不伪造时刻。 */
   timestamp?: number
+  /**
+   * 回合终止原因（实施-11 H-6）：停止 / 失败不能假装成正常完成。
+   * 旧历史没有元数据时为 undefined —— 界面说「未记录」，不猜。
+   */
+  terminalReason?: TurnTerminalReason
+  /** 是否从宿主元数据日志恢复出了整轮计时（旧历史为 false）。 */
+  timingRecorded?: boolean
   model?: string
   responseDetail?: ResponseDetail
   error?: string
@@ -185,6 +192,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     responseDetail: ResponseDetail
     last: UIMessage | undefined
     timestamp?: number
+    /** 从宿主元数据日志恢复出来的整轮计时（H-6） */
+    timing?: TurnTimingMeta
     /** 是否还在流式（由调用方传入的 streamingId 决定） */
     streaming: boolean
   } | null = null
@@ -249,8 +258,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       streaming: cur.streaming,
       usage: cur.last?.usage,
       speed: cur.last?.speed,
-      elapsedMs: cur.last?.elapsedMs,
+      /* 推送来的 elapsedMs 优先（那是本轮真值）；没有就回退到宿主元数据日志。 */
+      elapsedMs: cur.last?.elapsedMs ?? cur.timing?.elapsedMs,
       timestamp: cur.timestamp,
+      ...(cur.timing
+        ? { terminalReason: cur.timing.terminalReason, timingRecorded: true }
+        : {}),
       model: cur.last?.model,
       responseDetail: cur.responseDetail,
       error: cur.last?.error,
@@ -312,6 +325,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
 
     /* 时间戳属于回合的装饰元数据，始终取这一回合最后一条助手消息的值。 */
     if (m.timestamp !== undefined) cur.timestamp = m.timestamp
+    /* 宿主落盘的计时记录挂在哪条消息上，就从那里恢复整轮用时与终止原因。 */
+    if (m.turnTiming) cur.timing = m.turnTiming
 
     if (hasText(m.text)) {
       // 一条消息里可能有好几段 —— 拆开，好让界面按段落排
@@ -323,7 +338,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
 
     /*
      * 取哪条消息的元数据（usage / speed / elapsedMs / model / error）：
-     *   · usage 是**累计**的，所以取最后一条带的（后续消息不会更少）
+     *   · usage 取最后一条带的 —— 实测 pi 的 JSONL 里每条 assistant 消息的
+     *     usage 是**该次请求的独立用量**（input 1387 → 12404 → 13255 不是累计），
+     *     界面把最后一条当「最近一次请求」用；整轮聚合是另一件事（实施-11 H-6b）。
      *   · error 一旦出现就要留下 —— 不能因为后面来了条正常消息就看不见了
      */
     if (m.usage) cur.last = m

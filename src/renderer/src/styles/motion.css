@@ -418,6 +418,19 @@ html[data-theme='light'] .op-title::before {
   white-space: nowrap;
 }
 
+/* 停止 / 失败 / 中断：文字标记，不只靠颜色（可访问性）。 */
+.turn-footer-tag {
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+}
+
+.turn-footer-tag.err {
+  border-color: var(--err);
+  color: var(--err);
+}
+
 .turn-time {
   cursor: help;
 }

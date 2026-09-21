@@ -41,6 +41,13 @@ import {
 } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { turnTiming } from '../shared/turn-timing'
+import {
+  appendTurnTiming,
+  applyTurnTimings,
+  readTurnTimings,
+  timingKey,
+  TURN_TIMING_VERSION
+} from './turn-timing-store'
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
@@ -108,7 +115,7 @@ import type {
   UIToolCall,
   Usage
 } from '../shared/ipc'
-import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
+import type { CapabilityStrategy, TurnTerminalReason, WorkMode } from '../shared/ipc'
 
 /** 流式文本的推送节流：60 帧够了，再多是给 IPC 白干活 */
 const FLUSH_MS = 16
@@ -377,6 +384,21 @@ export class AgentController extends EventEmitter {
   private agentRunning = false
   /** 当前 agent 回合的宿主起点；与单条 assistant 消息的首 token 时间分开。 */
   private turnStartedAt?: number
+  /**
+   * 当前回合的**单调**起点（`performance.now()`）。
+   *
+   * 为什么不用 `Date.now()`：墙钟会被系统对时 / 手动调整改掉，算出负数或
+   * 凭空的几十秒。整轮用时只用于展示与落盘，用单调差值才稳定（H-6）。
+   */
+  private turnStartedMono?: number
+  /** 这一轮归属的 assistant 消息 id，按出现顺序；终止时写进元数据日志。 */
+  private turnMessageIds: string[] = []
+  /** 本轮终止原因；默认完成，abort / 模型错误各自覆盖。 */
+  private turnTerminal: TurnTerminalReason = 'completed'
+  /** 本轮最后一次算出的用时（单调口径），落盘时用。 */
+  private turnElapsedMs?: number
+  /** 本轮是否已经写过至少一条元数据记录（中间写一次、终止时再更新一次）。 */
+  private turnPersisted = false
   private turnResponseDetail: ResponseDetail = 'unknown'
   /** 文本脏（有新的流式文本待推） */
   private dirty = false
@@ -856,6 +878,17 @@ export class AgentController extends EventEmitter {
     if (sessionFile) {
       this.messages = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
         .hydrateMessages(sessionFile, this.messages)
+    }
+
+    /*
+     * 回合计时元数据（H-6）：pi 的 JSONL 不存 `elapsedMs`，所以这里把宿主
+     * 自己记的那份挂回消息。挂不上（分叉裁掉、会话文件换过）的记录会被丢弃，
+     * 宁可不显示用时，也不把它挂到别的回合上。
+     */
+    const timingBucket = timingKey(this.state?.sessionFile)
+    if (timingBucket) {
+      const records = await readTurnTimings(YAN_DIR, timingBucket).catch(() => [])
+      if (records.length) this.messages = applyTurnTimings(this.messages, records)
     }
 
     /*
@@ -3381,6 +3414,22 @@ export class AgentController extends EventEmitter {
           error: m.stopReason === 'error' ? '模型返回错误' : undefined
         }
         this.messages.push(msg)
+        /* 这一轮归属的消息 id（H-6）：终止时写成元数据日志的 `sourceIds`。 */
+        this.turnMessageIds.push(id)
+        if (this.turnStartedMono !== undefined) {
+          this.turnElapsedMs = Math.max(1, Math.round(performance.now() - this.turnStartedMono))
+        } else if (sp.elapsedMs !== undefined) {
+          this.turnElapsedMs = sp.elapsedMs
+        }
+        /* 推送值用单调口径覆盖：墙钟被调整时不至于让用时变负数或凭空变长。 */
+        if (this.turnElapsedMs !== undefined) msg.elapsedMs = this.turnElapsedMs
+        /*
+         * 每条消息收尾就先落一次（final=false，只在还没写过时写）。
+         * 为什么不全押在 agent_settled：失败 / 中断的回合不一定走到那里，
+         * 而“用时丢了”正是 H-6 要修的原始问题；同一 logicalTurnId 重写时
+         * 读回取后者，所以不会多出回合。
+         */
+        void this.persistTurnTiming(false)
         this.push({
           ch: 'msg-update',
           payload: { id, patch: msg }
@@ -3395,6 +3444,8 @@ export class AgentController extends EventEmitter {
             ch: 'agent-error',
             payload: { message: '模型返回错误', text: '', source: 'stop-reason' }
           })
+          /* 失败也是终止原因：不能落盘成「正常完成」（H-6）。 */
+          this.turnTerminal = 'failed'
         }
         this.markStreaming(false)
         break
@@ -3495,6 +3546,11 @@ export class AgentController extends EventEmitter {
       case 'agent_start':
         this.turnResponseDetail = this.currentResponseDetail()
         this.turnStartedAt = Date.now()
+        this.turnStartedMono = performance.now()
+        this.turnMessageIds = []
+        this.turnTerminal = 'completed'
+        this.turnElapsedMs = undefined
+        this.turnPersisted = false
         this.markStreaming(true)
         this.setAgentRunning(true)
         break
@@ -3503,6 +3559,9 @@ export class AgentController extends EventEmitter {
         this.markStreaming(false)
         this.setAgentRunning(false)
         this.turnStartedAt = undefined
+        this.turnStartedMono = undefined
+        /* 回合结束才写元数据日志：中途写会得到一堆半截记录（H-6）。 */
+        void this.persistTurnTiming()
         void this.refreshState()
         /* 回合结束是唯一允许按工作集动手的时机（这次刷新顺带做判定） */
         void this.refreshStats({ allowPolicyTrigger: true })
@@ -3514,6 +3573,12 @@ export class AgentController extends EventEmitter {
 
       case 'turn_end':
       case 'agent_end':
+        /*
+         * 兜底写一次：失败 / 被中断的回合不一定走到 `agent_settled`，
+         * 那条路上整轮计时同样不能丢（H-6 出口 4）。
+         * 同一 `logicalTurnId` 重写不会多出回合（读回时后者胜）。
+         */
+        void this.persistTurnTiming()
         void this.refreshStats()
         break
 
@@ -3812,6 +3877,54 @@ export class AgentController extends EventEmitter {
    * 「首个内容 token 到达」，整轮用时用 agent 回合起点，所以工具往返与重试
    * 只进后者。这里只是把流式对象里的字段喂进去，不重复实现算法。
    */
+  /**
+   * 把这一轮的整轮用时写进元数据日志（H-6）。
+   *
+   * 三个前提缺一不写：有会话身份、有用时、有归属消息 —— 否则读回来也不知道
+   * 该挂给谁（挂不上的记录比没有记录更坏）。写失败只吞掉，不打断会话。
+   *
+   * `logicalTurnId` 取本轮第一条 assistant 消息 id：同一回合重写时 id 不变，
+   * 读回时后者胜，所以不会因为重试 / 多写一次就多出一个回合。
+   */
+  private async persistTurnTiming(final = true): Promise<void> {
+    /*
+     * 分桶 key 用会话**文件名**，不用 `this.state.sessionId` —— pi 的 get_state
+     * 在部分版本里不给 sessionId，用它会让记录静默写不出来（实测踩过）。
+     */
+    const bucket = timingKey(this.state?.sessionFile)
+    const elapsedMs = this.turnElapsedMs
+    const sourceIds = [...this.turnMessageIds]
+    const terminalReason = this.turnTerminal
+    if (final) {
+      this.turnMessageIds = []
+      this.turnElapsedMs = undefined
+      this.turnTerminal = 'completed'
+    }
+    if (!bucket || elapsedMs === undefined || sourceIds.length === 0) return
+    if (!final && this.turnPersisted) return
+    /*
+     * 锚定用户消息：两侧的用户消息 id 都是 `normalizeMessage` 生成的 `m<idx>`。
+     * 临时 assistant id 在重读历史时对不上，不能拿它当锤。
+     */
+    const anchorId = [...this.messages]
+      .reverse()
+      .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+    const endedAt = Date.now()
+    const record = {
+      v: TURN_TIMING_VERSION,
+      logicalTurnId: sourceIds[0],
+      /* 墙钟起点是反推的（用时本身是单调口径），只用于展示这一轮什么时候开始 */
+      startedAt: endedAt - elapsedMs,
+      endedAt,
+      elapsedMs,
+      terminalReason,
+      ...(anchorId ? { anchorId } : {}),
+      sourceIds,
+      monotonicMs: elapsedMs
+    }
+    if (await appendTurnTiming(YAN_DIR, bucket, record)) this.turnPersisted = true
+  }
+
   private speedOf(
     s: {
       usage?: Usage
@@ -4300,6 +4413,8 @@ export class AgentController extends EventEmitter {
   }
 
   async abort(): Promise<{ steering: string[]; followUp: string[] }> {
+    /* 用户主动停止：用时冻结在当下，并标明这不是正常完成（H-6）。 */
+    this.turnTerminal = 'stopped'
     // 按 pi 的约定：先 clear_queue 再 abort，把排队的文本拿回来。
     // 否则用户打了一半又改主意的话，那几句话就白打了（rpc.md §clear_queue）。
     let cleared: { steering: string[]; followUp: string[] } = { steering: [], followUp: [] }
