@@ -17,6 +17,7 @@ import {
   type GoalCommandHost,
   type SubagentCommandHost
 } from './agent'
+import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
@@ -582,7 +583,23 @@ const artifactStore = new ArtifactStore(join(YAN_DIR, 'artifacts'))
 
 /** 逐段恢复 artifact manifest，确保链式会话的旧图片 / 文件也能回到原消息。 */
 function readHistoryWithArtifacts(sessionFile: string) {
-  return readChainMessages(sessionFile, sessionChains, (file, messages) => artifactStore.hydrateMessages(file, messages))
+  return readChainMessages(sessionFile, sessionChains, (file, messages) =>
+    artifactStore.hydrateMessages(file, messages)
+  ).then(async (result) => {
+    /*
+     * 回合计时元数据（实施-11 H-6）。
+     *
+     * `agent.hydrate()` 已经挂过一次；peek 是**另一条读历史的路**（切会话时
+     * 先拿它铺上内容），不挂就会出现「刚切过去时用时没了、等 pi 推 sync 又
+     * 回来了」的闪烁。两条路用同一个纯函数，结果一致。
+     */
+    if (!result) return result
+    const bucket = timingKey(sessionFile)
+    if (!bucket) return result
+    const records = await readTurnTimings(YAN_DIR, bucket).catch(() => [])
+    if (!records.length) return result
+    return { ...result, messages: applyTurnTimings(result.messages, records) }
+  })
 }
 /**
  * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。

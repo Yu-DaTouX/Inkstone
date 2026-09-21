@@ -73,6 +73,22 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 
 /*
+ * 回合计时元数据存储（src/main/turn-timing-store.ts）。
+ *
+ * 走 node 平台（真的写临时目录），不依赖主进程构建图（实施-11 H-6）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/turn-timing-store.ts'],
+    outfile: 'out/test/turn-timing-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+
+/*
  * 界面缩放的纯计算（src/main/zoom-math.ts）。
  *
  * 为什么不直接从 out/main/zoom-math.js import：它现在已经进了主进程
@@ -147,6 +163,7 @@ await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runDurationTests } = await import('./test-duration.mjs')
+const { runTurnTimingStoreTests } = await import('./test-turn-timing-store.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
@@ -1298,6 +1315,7 @@ await rm(piTmp, { recursive: true, force: true })
 await runTurnTests(ok)
 await runTurnTimingTests(ok)
 await runDurationTests(ok)
+await runTurnTimingStoreTests(ok)
 
 
 // 界面缩放（纯函数：DPI 取整 / 夹取 / 梯子）

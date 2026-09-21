@@ -112,6 +112,25 @@ export interface UIToolCall {
   endedAt?: number
 }
 
+/** 回合的终止原因（实施-11 H-6）。停止 / 失败不能假装成功。 */
+export type TurnTerminalReason = 'completed' | 'stopped' | 'failed' | 'interrupted'
+
+/**
+ * 宿主侧记录的整轮计时（实施-11 H-6）。
+ *
+ * 与 `elapsedMs` 的区别：`elapsedMs` 是**推送时**附在消息上的 UI 字段，
+ * pi 的 JSONL 不存它；这里是宿主另外落盘的版本化元数据，重载历史后用它
+ * 把用时与终止原因恢复回来。两者同时存在时以推送值为准（那是本轮真实值）。
+ */
+export interface TurnTimingMeta {
+  /** 稳定回合身份：同一回合的所有消息共用一个值（自动继续不会另起一个） */
+  logicalTurnId: string
+  startedAt: number
+  endedAt: number
+  elapsedMs: number
+  terminalReason: TurnTerminalReason
+}
+
 export interface UIMessage {
   id: string
   role: 'user' | 'assistant' | 'bash'
@@ -145,6 +164,14 @@ export interface UIMessage {
   speed?: number
   /** 本轮从开始生成到结束的墙钟耗时（ms），含工具往返 */
   elapsedMs?: number
+  /**
+   * 宿主自己记录的整轮计时（实施-11 H-6）。
+   *
+   * pi 的会话 JSONL **不存** `elapsedMs`（它只是推送时附上的 UI 字段），
+   * 所以切会话 / 重载后这一轮用时只剩宿主元数据日志里有。读历史时把
+   * 记录挂回该回合的最后一条消息上，界面据此恢复用时与终止原因。
+   */
+  turnTiming?: TurnTimingMeta
   /** 本轮实际采用的回复详细程度；旧历史缺失时为 unknown。 */
   responseDetail?: ResponseDetail
   /** 该消息是否属于某次工具结果的容器（不渲染为独立消息） */

@@ -91,7 +91,8 @@
 | 1 | H-1 | 整轮时间与回合页脚 | 方案 §4.1–4.2、§9 S1 | — | **已交付**（六栏见 HANDOFF；包级归 H-5） |
 | 2 | H-2 | 右栏资源保留 | 方案 §5.3、§9 S2 | — | **已交付**（六栏见 HANDOFF；多标签持久化归 H-3） |
 | 3 | C-1 | 大窗口模型级试行档 | 审阅 §5.1 | — | **已交付**（六栏见 HANDOFF；真实端点归 C-3） |
-| 4 | H-6 | 回合计时契约与 usage 口径 | 方案 §4.2 | H-1 | 未开始 |
+| 4 | H-6 | 回合计时契约与 usage 口径 | 方案 §4.2 | H-1 | **已部分交付**（落盘 / 读回 / 终止原因 / 未记录；稳定回合身份、等待分段、usage 聚合归 H-6b） |
+| 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | 未开始 |
 | 5 | H-7 | 时间呈现统一与可访问 | 方案 §13.1 | — | **已交付**（六栏见 HANDOFF；`submittedAt` 未实现） |
 | 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | 未开始 |
 | 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | 未开始 |
@@ -131,19 +132,20 @@
   4. 本机 27B 量化模型在仓库完整上下文下不调工具，cost 1 工具场景需 fixture 沙盒（见 HANDOFF §已知偶发）。
 - 禁区：不把工具等待计入生成速度；本期不联动修改工作模式 / 回复详细度 / 工作区模式的实际值。
 
-**H-6 · 回合计时契约与 usage 口径（位次 4）**
+**H-6 · 回合计时契约与 usage 口径（位次 4，已部分交付）**
 
 - 来源：方案 §4.2（含 `TurnTiming` 字段建议、settled 与 continuation 边界、崩溃恢复、旧历史无计时）。
-- 落点：`src/shared/turns.ts`、`src/shared/ipc.ts`、`src/main/agent.ts`（**能力面热点**）、
-  `src/main/session-history.ts`、`YAN_DATA_DIR` 下的版本化元数据。
-- 出口：
-  1. 稳定 `logicalTurnId` 覆盖自动继续与跨会话链交接，不因每次 `agent_end` 冻结成新回合；
-  2. 持久化 `startedAt / endedAt / terminalReason / waitSpans`，运行态用单调计时，避免时钟调整出负数；
-  3. 并行工具 / 子代理按真实经过时间算，不相加分支时长；父回答结束后台子代理继续时父用时冻结；
-  4. 停止 / 失败冻结当时用时并标注，不装作成功；崩溃 / 退出恢复为中断或待确认；
-  5. 旧历史无整轮记录时显示“未记录”，不得用最后一条 `elapsedMs` 伪装；
-  6. usage 以请求 / 消息 ID 去重后聚合，未知不显示 —— 先核实 pi 会话 JSONL 的 usage 是
-     “同一请求流式累计”还是“多个 API 请求的独立用量”。
+- 已交付（六栏见 HANDOFF「H-6（部分）」）：
+  1. 宿主侧版本化元数据日志 `YAN_DATA_DIR/turn-timing/<会话文件>.jsonl`（只追加、坏行跳过、同 `logicalTurnId` 后者胜）；
+  2. 运行态用单调计时（`performance.now()`），落盘 `startedAt / endedAt / elapsedMs / terminalReason`；
+  3. `peekSession` 与 `hydrate()` 两条读历史路径都挂回计时，锚点是用户消息 id；
+  4. 停止 / 失败冻结用时并标注（`已停止 · 用时冻结` / `失败`）；
+  5. 旧历史无记录时显示「用时未记录」，不用最后一条 `elapsedMs` 伪装。
+- **未交付（归 H-6b）**：
+  1. 稳定 `logicalTurnId` 覆盖自动继续与跨会话链交接（现在等于本轮第一条 assistant 消息 id）；
+  2. `waitSpans`：工具 / 子代理等待按真实经过时间分段，并行分支不相加；父回答结束后台子代理继续时父用时冻结；
+  3. 崩溃 / 退出恢复为「中断 / 待确认」；
+  4. usage 按请求 / 消息 ID 去重后聚合（**语义已核实**：pi 的 JSONL 里 usage 是单次请求的独立用量，不是流式累计）。
 - 禁区：不生成平行历史（消息仍读 pi 会话 JSONL，元数据只装饰已有消息）；不猜 provider usage。
 
 **H-7 · 时间呈现统一与可访问（位次 5，已交付）**
@@ -442,12 +444,12 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7 已交付（计时口径纯函数 + 右栏资源保留 + 大窗口试行档 + 唯一时长写法与时间可访问）；DSH 的文件链接解析、`TabDomain` 生命周期和压缩事务顺序尚待搬运 / 接线；H-3、H-4、H-6、H-8、H-9、H-10、H-11、C-2、C-3、C-4、C-5、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4240/4240**（含 `test-turn-timing.mjs`、`test-duration.mjs` 与 C-1 的 6 条试行档断言）；其余切片的单测与文档审计待各片补齐。 |
-| 真实运行 | H-1 已有 cost 0 与 cost 1 两条隔离场景（后者用本地模型 `local/qwen3-local`）；H-2 有 `rightresources`（cost 0，21 条）；C-1 的写入 / 禁用 / 切模型不继承已由 `contextbudget`（cost 0）真实窗口取证；H-7 由 `turnfooter` 新增 6 条断言覆盖。 |
-| 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
+| 实现 | H-1、H-2、C-1、H-7 已交付，H-6 部分交付（计时落盘 / 读回 / 终止原因）；DSH 的文件链接解析、`TabDomain` 生命周期和压缩事务顺序尚待搬运 / 接线；H-3、H-4、H-6b、H-8、H-9、H-10、H-11、C-2、C-3、C-4、C-5、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4267/4267**（含 `test-turn-timing.mjs`、`test-turn-timing-store.mjs`、`test-duration.mjs` 与 C-1 的 6 条试行档断言）；其余切片的单测与文档审计待各片补齐。 |
+| 真实运行 | H-1 有 `turnfooter` / `turnfooterlive`；H-2 有 `rightresources`（cost 0，21 条）；C-1 由 `contextbudget`（cost 0）取证；H-7 由 `turnfooter` 新增 6 条断言覆盖；H-6 有 `turnrestore`（cost 1，真实回合 → 落盘 → peek 读回 → 退出后核对日志）。 |
+| 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
-| 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**`elapsedMs` 尚未落盘**（重载后整轮用时丢失，H-6）；`usage` 语义与 sweep 阶段线口径尚未核实。 |
+| 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |
 
 ## 5. 参考实现位置
 

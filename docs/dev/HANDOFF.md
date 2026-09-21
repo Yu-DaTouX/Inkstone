@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -14,6 +14,24 @@
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-22）· 实施-11 H-6（部分）：整轮计时落盘与恢复
+
+> 队列位次 4。原始问题：`elapsedMs` 是推送时附上的 UI 字段，pi 的会话 JSONL
+> **不存它**，所以切会话 / 重载后整轮用时丢失（H-1 登记的已知限制）。
+> 本片交付「落盘 + 读回 + 终止原因 + 未记录不伪造」；稳定逻辑回合身份、
+> 等待分段与 usage 聚合归 **H-6b**（见下）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 [`main/turn-timing-store.ts`](../../src/main/turn-timing-store.ts)：`YAN_DATA_DIR/turn-timing/<会话文件名>.jsonl`，只追加、带版本号 `v:1`、坏行 / 未知版本跳过、同一 `logicalTurnId` 后者胜。`agent.ts` 在每条 assistant 消息收尾写一次、回合终止（`agent_settled` / `agent_end`）再更新一次；用时用 `performance.now()` 单调差（时钟调整不影响）。读回：`hydrate()` 与 `peekSession` 两条历史路径共用 `applyTurnTimings()`；挂点用**用户消息 id**（`m<idx>`，两侧同一套 `normalizeMessage` 生成）定位，读不到就静默丢弃。终止原因 `completed / stopped / failed` 由 agent 标注（abort / 模型错误）。页脚新增「已停止 · 用时冻结」「失败」「用时未记录」。 |
+| 自动检查 | `npm run typecheck` / `build` 通过；`npm run test:unit` **4267/4267** —— 新增 [`test-turn-timing-store.mjs`](../../scripts/test-turn-timing-store.mjs) 10 条（会话 id 白名单 / 往返 / 去重 / 坏行 / 挂点与回退）与 `test-turn-timing.mjs` 里 6 条分组恢复（含「推送值优先于日志值」）。 |
+| 真实运行 | 新场景 `npm run test:live -- turnrestore`（**cost 1**，真实回合）：界面 `elapsedMs=132ms` → 落盘 → `peekSession()` 读回**1 条 132ms 记录**，与界面同值；`afterExit` 核对 `data/turn-timing/*.jsonl`：2 条记录、`v=1`、带 `sourceIds`、终止原因 `failed` 与消息 `error` 一致。⚠️ 本次免费模型返回错误，所以走的是 **failed 路径**（恰好验证「失败不装成功」）；`completed` 路径由 `turnfooterlive` 与单测覆盖。 |
+| 视觉验收 | 新状态 `turnstatus`（组 0 / 1）注入四种回合，看图核对：正常「用时 18s」、停止「用时 6s + 已停止 · 用时冻结」、失败「用时 1s + 失败（红框，上方错误条）」、旧历史「用时未记录」，深浅均无溢出 —— [`matrix-turnstatus-1440x900-100-dark-2026-09-22-h6.png`](../design/preview/matrix-turnstatus-1440x900-100-dark-2026-09-22-h6.png)、[`...-light-...png`](../design/preview/matrix-turnstatus-1440x900-100-light-2026-09-22-h6.png)。 |
+| 应用与包 | 未因本片重跑 `dist:dir` / `test:packaged`，包级证据归 H-5 与实施-09。 |
+| 剩余限制 | ① `logicalTurnId` 目前是本轮第一条 assistant 消息 id（宿主临时 id），**自动继续 / 跨会话链交接**时的稳定回合身份（H-6 出口 1）未做；② `waitSpans`（工具 / 子代理等待的真实分段、并行不相加，出口 3）未做；③ 崩溃 / 退出恢复为「中断」未做（出口 4 后半）—— 现在崩溃那一轮没有记录，界面显示「用时未记录」而不是「中断」；④ **usage 语义已核实**：pi 的 JSONL 里每条 assistant 消息的 usage 是**该次请求独立用量**（实测 `input` 1387 → 12404 → 13255 非单调），`turns.ts` 原先写的「累计」是错的，已改注释；但「按请求 / 消息去重聚合」（出口 6）未实现，`UsageBar` 仍按「最近一次请求」显示；⑤ 链式会话按段分文件存日志，跨段恢复未验证。 |
+
+→ 上述①–③⑤ 与④的后半合起来记为 **H-6b**（在实施-11 里单列），完成前 H-6 不写「已交付」。
 
 ### 本轮增量（2026-09-22）· 实施-11 H-7：时间呈现统一与可访问
 

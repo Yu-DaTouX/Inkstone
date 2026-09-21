@@ -1513,6 +1513,23 @@ const CASES = {
    * 再走“切走 → 切回 → 收起右栏 → 逐个关标签”。
    */
   rightresources: { probe: 'scripts/probe/right-resources.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-11 H-6：整轮计时的落盘与读回（cost 1，会调模型一次）。
+   *
+   * 前面两条计时场景验的是「算得对、显示得对」；这条验的是 **pi 会话 JSONL
+   * 不存 elapsedMs 时用时还能不能找回来** —— 真实回合 → peekSession 读文件 →
+   * 消息上带 turnTiming；退出后由 afterExit 核对 `YAN_DATA_DIR/turn-timing/`。
+   */
+  turnrestore: {
+    probe: 'scripts/probe/turn-timing-store-live.js',
+    delay: 12000,
+    budget: 300000,
+    cost: 1,
+    fixture: true,
+    fixtureSub: 'repo',
+    afterExit: 'turnTimingPersisted'
+  },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
@@ -5140,6 +5157,7 @@ const AFTER_EXIT = {
   taskPlanMultiStep: checkTaskPlanMultiStep,
   workModePersisted: checkWorkModePersisted,
   goalPersisted: checkGoalPersisted,
+  turnTimingPersisted: checkTurnTimingPersisted,
   goalLoopPersisted: checkGoalLoopPersisted,
   autoContinuePersisted: checkAutoContinuePersisted,
   handoffPackPersisted: checkHandoffPackPersisted,
@@ -5355,6 +5373,70 @@ async function checkTaskFixtureReadonly() {
  * 证明 commitReady 真做到了「先落盘再返回」，而且**恰好一次**：
  * transitions 里只有一条、goal.revision 只推进一步。
  */
+/**
+ * 退出后检查：整轮计时的元数据日志真的落盘了（实施-11 H-6）。
+ *
+ * 渲染进程按设计看不到 `YAN_DATA_DIR`，所以「谁写了文件、写了什么」只能在
+ * 退出后从磁盘上核对（与 context / goal 系场景同一条分工）。
+ */
+async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const liveMs = Number(/turn-timing\.liveElapsedMs=(\d+)/.exec(probeText)?.[1] ?? 0)
+  const dir = join(sandboxRoot, 'data', 'turn-timing')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+  lines.push(`  目录 = ${dir}`)
+  lines.push(`  文件 = ${JSON.stringify(files)}`)
+  say(files.length >= 1, `至少一个会话的计时日志（${files.length}）`)
+
+  const records = []
+  for (const file of files) {
+    for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      try {
+        records.push(JSON.parse(line))
+      } catch {
+        /* 坏行不致命（单测里单独验证过） */
+      }
+    }
+  }
+  say(records.length >= 1, `至少一条记录（${records.length}）`)
+  const last = records[records.length - 1]
+  say(last?.v === 1, `记录带版本号（v=${last?.v}）`)
+  say(Number(last?.elapsedMs) > 0, `记录里的用时是正数（${last?.elapsedMs}ms）`)
+  if (liveMs > 0 && last) {
+    say(
+      Math.abs(Number(last.elapsedMs) - liveMs) <= Math.max(1500, liveMs * 0.2),
+      `落盘用时与界面一致（${last.elapsedMs} ≈ ${liveMs}）`
+    )
+  }
+  say(
+    Array.isArray(last?.sourceIds) && last.sourceIds.length >= 1,
+    '记录带归属消息 id（否则读回来不知道该挂给哪个回合）'
+  )
+  const expectedReason = /turn-timing\.expectedReason=(\w+)/.exec(probeText)?.[1] ?? ''
+  say(
+    ['completed', 'failed', 'stopped', 'interrupted'].includes(String(last?.terminalReason)),
+    `终止原因是四个合法值之一（实际 ${last?.terminalReason}）`
+  )
+  if (expectedReason) {
+    say(
+      last?.terminalReason === expectedReason,
+      `终止原因与界面一致（${last?.terminalReason} vs ${expectedReason}）`
+    )
+  }
+  return { ok, lines }
+}
+
 async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
   const lines = []
   let ok = true
