@@ -92,7 +92,7 @@
 | 2 | H-2 | 右栏资源保留 | 方案 §5.3、§9 S2 | — | **已交付**（六栏见 HANDOFF；多标签持久化归 H-3） |
 | 3 | C-1 | 大窗口模型级试行档 | 审阅 §5.1 | — | **已交付**（六栏见 HANDOFF；真实端点归 C-3） |
 | 4 | H-6 | 回合计时契约与 usage 口径 | 方案 §4.2 | H-1 | **已部分交付**（落盘 / 读回 / 终止原因 / 未记录；稳定回合身份、等待分段、usage 聚合归 H-6b） |
-| 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | 未开始 |
+| 4b | H-6b | 稳定逻辑回合、等待分段与 usage 聚合 | 方案 §4.2 出口 1/3/6 | H-6 | **部分交付**（崩溃 / 退出→中断的写侧 `final` 字段与读侧归一已闭环；稳定回合身份、waitSpans、usage 聚合未做） |
 | 5 | H-7 | 时间呈现统一与可访问 | 方案 §13.1 | — | **已交付**（六栏见 HANDOFF；`submittedAt` 未实现） |
 | 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则；估算精度与行为口径的剩余归 C-4b / C-6） |
 | 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | **部分交付**：回收比例 / 此后新增量 / 「待测」口径已闭环；三类动作分别统计归 C-2b |
@@ -141,11 +141,17 @@
   3. `peekSession` 与 `hydrate()` 两条读历史路径都挂回计时，锚点是用户消息 id；
   4. 停止 / 失败冻结用时并标注（`已停止 · 用时冻结` / `失败`）；
   5. 旧历史无记录时显示「用时未记录」，不用最后一条 `elapsedMs` 伪装。
-- **未交付（归 H-6b）**：
+- **已交付（H-6b-1，六栏见 HANDOFF）**：崩溃 / 退出→「中断」的**写侧与读侧**：
+  1. 写入的记录带 `final` —— 回合中途（`message_end`）写 `false`，终止收尾写 `true`；
+  2. 读回时 `final === false` 归一为 `interrupted`（旧记录无此字段按已收尾处理，不误报）；
+  3. 界面显示「已中断」（`TurnView` 原有分支，本片之前没有任何产出路径）。
+- **未交付（H-6b-2）**：**真实中途快照**的端到端证据 —— 需要 restart 双探针 + 在两次启动之间
+  向沙箱注入一条 `final: false` 记录，再让第二个探针 peek 并断言界面显示「已中断」。
+  现有测试框架只能做「启动前 seed」，没有「restart 前 seed」钩子（`knowledgeIsolationSeed` 只在首次启动前跑）。
+- **未交付（H-6b）**：
   1. 稳定 `logicalTurnId` 覆盖自动继续与跨会话链交接（现在等于本轮第一条 assistant 消息 id）；
   2. `waitSpans`：工具 / 子代理等待按真实经过时间分段，并行分支不相加；父回答结束后台子代理继续时父用时冻结；
-  3. 崩溃 / 退出恢复为「中断 / 待确认」；
-  4. usage 按请求 / 消息 ID 去重后聚合（**语义已核实**：pi 的 JSONL 里 usage 是单次请求的独立用量，不是流式累计）。
+  3. usage 按请求 / 消息 ID 去重后聚合（**语义已核实**：pi 的 JSONL 里 usage 是单次请求的独立用量，不是流式累计）。
 - 禁区：不生成平行历史（消息仍读 pi 会话 JSONL，元数据只装饰已有消息）；不猜 provider usage。
 
 **H-7 · 时间呈现统一与可访问（位次 5，已交付）**
@@ -452,8 +458,8 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-5、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4297/4297**（含 turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条、C-2 的 10 条）。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断的写侧 + 读侧归一），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-6b-2、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-5、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4304/4304**（含 turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条、C-2 的 10 条、H-6b 的 6 条）。 |
 | 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；H-7 `turnfooter`；H-6 `turnrestore`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`（写盘 + afterExit）；C-2 `compactionview`（11 条）。 |
 | 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 各有深浅两张（`matrix-{turnfooter,rightresources,ctxmodelpresets,turntime,turnstatus,filelink,compactionreclaim}-*`）；C-4 不改 UI，沿用上下文状态图。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |

@@ -38,6 +38,15 @@ export interface TurnTimingRecord extends TurnTimingMeta {
   sourceIds: string[]
   /** 单调毫秒（诊断用）：能看出墙钟是否被调整过，不用于展示 */
   monotonicMs?: number
+  /**
+   * 写入这次快照时这一轮**是否已经收尾**（H-6b）。
+   *
+   * 为什么需要这个布尔：回合中途会写一次（`message_end`），终止时再写一次。
+   * 如果应用在两者之间被强杀，盘上就只剩中途那条 —— 而“没有终止记录”
+   * 本身就是一个结论：这一轮是被中断的，不是正常完成的。
+   * 旧记录没有这个字段，按 `true`（已收尾）处理，不把历史误报成中断。
+   */
+  final?: boolean
 }
 
 const TERMINAL_REASONS: TurnTerminalReason[] = ['completed', 'stopped', 'failed', 'interrupted']
@@ -124,8 +133,21 @@ function parseRecord(line: string): TurnTimingRecord | null {
     sourceIds,
     ...(typeof item.monotonicMs === 'number' && Number.isFinite(item.monotonicMs)
       ? { monotonicMs: item.monotonicMs }
-      : {})
+      : {}),
+    ...(typeof item.final === 'boolean' ? { final: item.final } : {})
   }
+}
+
+/**
+ * 一条记录**最终**该报的终止原因（H-6b）。
+ *
+ * 只有一种改写：记录带着 `final === false`（中途快照）——那说明这一轮
+ * 从来没有走到收尾，进程是在飞行中被拿掉的，所以是 `interrupted`。
+ * 其余（`final === true` 或旧记录没这个字段）原样返回：宁可把中断显示成
+ * 完成，也不能把正常结束的历史误报成中断。
+ */
+export function effectiveTerminalReason(record: TurnTimingRecord): TurnTerminalReason {
+  return record.final === false ? 'interrupted' : record.terminalReason
 }
 
 /**
@@ -197,7 +219,7 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
       startedAt: record.startedAt,
       endedAt: record.endedAt,
       elapsedMs: record.elapsedMs,
-      terminalReason: record.terminalReason
+      terminalReason: effectiveTerminalReason(record)
     })
   }
   if (!patch.size) return messages
