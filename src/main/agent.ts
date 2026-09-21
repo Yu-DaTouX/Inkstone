@@ -73,6 +73,8 @@ import { schemaRevisionOf } from '../shared/mcp'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
+import { ArtifactStore } from './artifacts'
+import { codexAuthAvailable, generateImage, resolveImageProvider, type ImageGenerationRequest } from './image-generation'
 import {
   capabilitySnapshot,
   modelKeyOf,
@@ -90,6 +92,8 @@ import type {
   CustomEntry,
   ForkPoint,
   MainPush,
+  AssistantArtifact,
+  ImageGenerationProgress,
   ModelInfo,
   QueueItem,
   QueueMode,
@@ -171,6 +175,7 @@ export interface SubagentCommandContext {
   cwd: string
   parentSessionId?: string
   parentRunId?: string
+  parentMessageId?: string
   projectId?: string
 }
 
@@ -196,6 +201,14 @@ export interface GoalCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
+export interface ExternalApiConfirmationRequest {
+  provider: 'openai' | 'compatible'
+  endpoint: string
+  model: string
+  prompt: string
+  cwd: string
+}
+
 export type CapabilityAuthorizationChoice = 'deny' | 'allow' | 'allow-with-lifecycle-scripts'
 export type CapabilityAuthorizationPrompt = {
   kind: 'remote-mcp' | 'local-package'
@@ -214,6 +227,23 @@ export type CapabilityAuthorizationPrompt = {
  */
 function normalizeQueueMode(v: unknown): QueueMode | undefined {
   return v === 'all' || v === 'one-at-a-time' ? v : undefined
+}
+
+function imageFailureDetail(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code ?? 'image_generation_failed')
+    : error instanceof Error
+      ? error.message
+      : 'image_generation_failed'
+  const labels: Record<string, string> = {
+    external_api_denied: '已取消外部图像 API 请求',
+    image_provider_unavailable: '没有可用的图像模型',
+    image_result_empty: '图像服务返回了空文件',
+    artifact_empty: '生成结果为空文件',
+    codex_image_result_missing: '图像服务没有返回图片数据',
+    image_api_result_missing: '图像 API 没有返回图片数据'
+  }
+  return labels[code] ?? `生成失败：${code}`
 }
 
 /* AgentController */
@@ -269,6 +299,7 @@ export class AgentController extends EventEmitter {
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
+  private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -291,6 +322,7 @@ export class AgentController extends EventEmitter {
     projectId: string
     opsDir: string
     binDir: string
+    artifactDir: string
     /** 开发态 resources 目录（打包态用 process.resourcesPath）。 */
     devResourcesDir?: string
     getWorkMode?: () => Promise<WorkMode>
@@ -481,6 +513,7 @@ export class AgentController extends EventEmitter {
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
+    confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -489,6 +522,7 @@ export class AgentController extends EventEmitter {
       projectId: string
       opsDir: string
       binDir: string
+      artifactDir: string
       runnerGeneration?: number
       devResourcesDir?: string
       getWorkMode?: () => Promise<WorkMode>
@@ -519,6 +553,7 @@ export class AgentController extends EventEmitter {
     this.subagentHost = opts.subagentHost
     this.goalHost = opts.goalHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
+    this.confirmExternalApi = opts.confirmExternalApi
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
@@ -815,6 +850,10 @@ export class AgentController extends EventEmitter {
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
       this.messages = Array.isArray(raw) ? normalizeHistory(raw) : []
     }
+    if (sessionFile) {
+      this.messages = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
+        .hydrateMessages(sessionFile, this.messages)
+    }
 
     /*
      * 全量替换了消息列表 → 工具索引必须跟着重建。
@@ -940,6 +979,7 @@ export class AgentController extends EventEmitter {
         /* state.sessionId 是真正的父会话；新会话尚未落盘时退回 runner id。 */
         parentSessionId: this.state?.sessionId ?? this.capabilityOpts?.sessionId,
         parentRunId: this.capabilityOpts?.sessionId,
+        parentMessageId: this.latestAssistantMessageId(),
         projectId: this.capabilityOpts?.projectId
       })
     }
@@ -978,11 +1018,115 @@ export class AgentController extends EventEmitter {
         projectId: this.capabilityOpts?.projectId ?? ''
       })
     }
+    if (command === 'image.generate') return this.runImageCommand(params)
+    if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
       default:
         throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：${command}`)
+    }
+  }
+
+  /** 取当前工具所属的真实 assistant 消息，避免产物变成游离 UI 卡片。 */
+  private latestAssistantMessageId(): string {
+    if (this.streaming?.id) return this.streaming.id
+    for (let i = this.messages.length - 1; i >= 0; i -= 1) {
+      if (this.messages[i].role === 'assistant') return this.messages[i].id
+    }
+    return `artifact-${Date.now().toString(36)}`
+  }
+
+  private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId()): Promise<void> {
+    const message = this.messages.find((item) => item.id === messageId)
+    if (message) message.artifacts = [...(message.artifacts ?? []), artifact]
+    this.push({ ch: 'artifact', payload: { messageId, artifact } })
+  }
+
+  private async runArtifactAttachCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const sourcePath = typeof params.path === 'string' ? params.path.trim() : ''
+    if (!sourcePath) throw new CapabilityCommandError('artifact_path_missing', 'artifact.attach 需要 path')
+    const sessionFile = this.state?.sessionFile ?? join(YAN_DIR, 'artifact-sessions', this.capabilityOpts?.sessionId ?? 'primary')
+    const artifact = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts')).attach({
+      sessionFile,
+      messageId: this.latestAssistantMessageId(),
+      cwd: this.cwd,
+      sourcePath,
+      description: typeof params.description === 'string' ? params.description : undefined
+    })
+    await this.attachArtifact(artifact)
+    return {
+      data: { artifact },
+      summary: { artifactId: artifact.id, filename: artifact.filename, kind: artifact.kind, bytes: artifact.bytes }
+    }
+  }
+
+  private async runImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const request = params as unknown as ImageGenerationRequest
+    const prompt = typeof request.prompt === 'string' ? request.prompt.trim() : ''
+    if (!prompt) throw new CapabilityCommandError('image_prompt_missing', 'image.generate 需要 prompt')
+    const requestedProvider = request.provider
+    const resolved = resolveImageProvider(
+      requestedProvider,
+      await codexAuthAvailable(),
+      !!process.env.OPENAI_API_KEY?.trim()
+    )
+    const messageId = this.latestAssistantMessageId()
+    const progressId = `image-${randomUUID()}`
+    const startedAt = Date.now()
+    const provider = resolved === 'unavailable' ? undefined : resolved
+    const model = typeof request.model === 'string' && request.model.trim() ? request.model.trim() : 'gpt-image-2'
+    const publishProgress = (stage: ImageGenerationProgress['stage'], detail?: string): void => {
+      const terminal = stage === 'done' || stage === 'error'
+      const progress: ImageGenerationProgress = {
+        id: progressId,
+        stage,
+        startedAt,
+        updatedAt: Date.now(),
+        ...(terminal ? { endedAt: Date.now() } : {}),
+        ...(provider ? { provider } : {}),
+        model,
+        ...(detail ? { detail } : {})
+      }
+      const message = this.messages.find((item) => item.id === messageId)
+      if (message) {
+        message.imageProgress = [
+          ...(message.imageProgress ?? []).filter((item) => item.id !== progressId),
+          progress
+        ]
+      }
+      this.push({ ch: 'msg-update', payload: { id: messageId, patch: { imageProgress: [progress] } } })
+    }
+
+    publishProgress('queued', '已加入当前回合')
+    try {
+      if (resolved === 'openai' || resolved === 'compatible') {
+        publishProgress('confirming', '等待确认外部图像 API 请求')
+        const allowed = await this.confirmExternalApi?.({
+          provider: resolved,
+          endpoint: resolved === 'compatible' ? (process.env.YAN_IMAGE_API_BASE ?? '') : 'https://api.openai.com/v1',
+          model,
+          prompt,
+          cwd: this.cwd
+        })
+        if (!allowed) throw new CapabilityCommandError('external_api_denied', '已取消：未获得 OpenAI-compatible API 请求确认')
+      }
+    const sessionFile = this.state?.sessionFile ?? join(YAN_DIR, 'artifact-sessions', this.capabilityOpts?.sessionId ?? 'primary')
+    const result = await generateImage({ ...request, prompt }, {
+      sessionFile,
+      messageId,
+      artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
+      onProgress: publishProgress
+    })
+    await this.attachArtifact(result.artifact)
+    publishProgress('done', `${result.artifact.filename} · ${result.artifact.bytes} bytes`)
+    return {
+      data: { artifact: result.artifact, provider: result.provider, model: result.model, revisedPrompt: result.revisedPrompt },
+      summary: { provider: result.provider, model: result.model, artifactId: result.artifact.id, filename: result.artifact.filename, bytes: result.artifact.bytes }
+    }
+    } catch (error) {
+      publishProgress('error', imageFailureDetail(error))
+      throw error
     }
   }
 

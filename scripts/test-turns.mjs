@@ -203,6 +203,22 @@ export async function runTurnTests(ok) {
     ok(a.response?.text.startsWith('改完了'), '最后阶段之后的才是回复')
   }
 
+  // 11.13 宿主生图进度挂在助手回合上，阶段更新按 id 替换而不是堆重复条目
+  {
+    const t = groupIntoTurns([
+      usr('u1', '生成一张图'),
+      asst('a1', '我开始生成。', {
+        imageProgress: [{ id: 'img-1', stage: 'generating', startedAt: 10, updatedAt: 20 }]
+      }),
+      asst('a2', '', {
+        imageProgress: [{ id: 'img-1', stage: 'done', startedAt: 10, updatedAt: 30, endedAt: 30 }]
+      })
+    ])
+    const a = t[1]
+    ok(a.imageProgress.length === 1, '生图进度同一 id 不重复堆叠')
+    ok(a.imageProgress[0]?.stage === 'done', '生图进度保留最新终态')
+  }
+
   /* ---------------------------------------------------- 12. 段落拆分 */
 
   console.log('\n--- 12. 段落拆分（按段落显示）---')

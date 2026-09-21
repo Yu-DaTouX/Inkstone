@@ -120,6 +120,7 @@ export interface SubagentOptions {
   piBin?: string
   parentSessionId?: string
   parentRunId?: string
+  parentMessageId?: string
   projectId?: string
   /** 退出 / 重启时的可恢复补丁目录。 */
   archiveDir?: string
@@ -153,7 +154,7 @@ export class SubagentController {
    * 子代理属于启动它的父会话。切换查看对象不会改已有 run 的归属，
    * 但下一次 `/subagent` 应使用新的当前会话 / cwd。
    */
-  setContext(context: { cwd: string; parentSessionId?: string; parentRunId?: string; projectId?: string }): void {
+  setContext(context: { cwd: string; parentSessionId?: string; parentRunId?: string; parentMessageId?: string; projectId?: string }): void {
     this.opts = { ...this.opts, ...context }
   }
 
@@ -165,6 +166,7 @@ export class SubagentController {
       cwd: run.cwd,
       parentSessionId: run.parentSessionId,
       parentRunId: run.parentRunId,
+      parentMessageId: run.parentMessageId,
       projectId: run.projectId,
       isolation: run.isolation,
       resultPath: run.resultPath,
@@ -261,6 +263,7 @@ export class SubagentController {
       cwd: workspace.cwd,
       parentSessionId: ctx.parentSessionId,
       parentRunId: ctx.parentRunId,
+      parentMessageId: ctx.parentMessageId,
       projectId: ctx.projectId,
       isolation: workspace.isolation,
       model,
@@ -493,6 +496,7 @@ export class SubagentController {
             task: run.task,
             parentSessionId: run.parentSessionId,
             parentRunId: run.parentRunId,
+            parentMessageId: run.parentMessageId,
             projectId: run.projectId,
             rootCwd: run.workspace.rootCwd,
             isolation: run.isolation,

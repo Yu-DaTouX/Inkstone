@@ -91,45 +91,16 @@
   const label = (q('[data-testid="work-mode-label"]')?.textContent ?? '').trim()
   ok(/自主|Autonomous/.test(label), `按钮写的是档位名（实际 ${JSON.stringify(label)}）`)
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '1', '自主模式才有运行光带状态')
-  /* 与旧场景同样的两条对称光带断言（视觉矩阵只证存在，相位靠这里） */
+  /*
+   * 自主态现在采用静态靛蓝边界：宽扁输入框不再生成两条动态光带，
+   * 避免光斑成为第二个视觉重心。这里保留反向断言，防止旧动画样式又被带回。
+   */
   const composerEl = q('.composer-wrap .composer')
   const bandA = composerEl ? getComputedStyle(composerEl, '::before') : null
   const bandB = composerEl ? getComputedStyle(composerEl, '::after') : null
-  ok(bandA?.animationName === 'yan-autonomous-border', '第一条光带在跑')
-  ok(bandB?.animationName === 'yan-autonomous-border', '第二条光带在跑（::after）')
-  ok(
-    Math.abs(Math.abs((parseFloat(bandB?.animationDelay) || 0) - (parseFloat(bandA?.animationDelay) || 0)) - 1.6) < 0.05,
-    '两条相位差半个周期（周期 3.2s）'
-  )
-  /*
-   * 实施-09 N10 的尾项：「光带**运行中**截图 / 证据」。
-   *
-   * 上面两条只证「动画名字对、相位差对」——名字对不代表真的在跑（被
-   * `animation-play-state: paused`、祖先 `display: none`、media query 拦掉都会
-   * 让名字仍在、画面不动）。这里量的是⾳动画器本身：
-   * `playState === 'running'`，而且隔一段时间 `currentTime` **真的在增长**。
-   * 相位是 CSS 自己算的，所以这条断言不依赖截图 —— 截图只能证明“某一瞬有光带”，
-   * 证明不了“它在跑”。
-   */
-  const ct = (a) => (typeof a.currentTime === 'number' ? a.currentTime : Number(a.currentTime?.value ?? 0))
-  const bands = composerEl ? composerEl.getAnimations({ subtree: true }) : []
-  const named = bands.filter((a) => a.animationName === 'yan-autonomous-border')
-  ok(named.length >= 2, `两条光带动画都挂在输入框上（实得 ${named.length}）`)
-  const runningBands = named.filter((a) => a.playState === 'running')
-  ok(runningBands.length >= 2, `两条光带都在运行中（playState=running，实得 ${runningBands.length}）`)
-  const t1 = runningBands.map(ct)
-  await sleep(450)
-  const t2 = composerEl
-    ? composerEl
-        .getAnimations({ subtree: true })
-        .filter((a) => a.animationName === 'yan-autonomous-border')
-        .map(ct)
-    : []
-  ok(
-    t1.length >= 2 && t2.length >= 2 && t2.every((v, i) => v > t1[i]),
-    '相位真的在推进（隔 450ms 两次采样，currentTime 都变大了）',
-    `${JSON.stringify(t1)} → ${JSON.stringify(t2)}`
-  )
+  ok(bandA?.display === 'none' && bandB?.display === 'none', '自主模式采用静态边界，不生成动画光带')
+  const legacyBands = composerEl?.getAnimations({ subtree: true }).filter((a) => a.animationName === 'yan-autonomous-border') ?? []
+  ok(legacyBands.length === 0, `旧版自主光带动画已移除（实得 ${legacyBands.length}）`)
 
   /* ---------------------------------------------------------- 2. 菜单 */
   out.push('')

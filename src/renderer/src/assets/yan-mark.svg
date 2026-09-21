@@ -1,0 +1,14 @@
+<!-- Generated renderer copy of build/yan-mark.svg; keep geometry and viewBox identical. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">砚 · 极简字标</title>
+  <desc id="desc">深色圆角方形中的抽象砚台与墨滴标记</desc>
+  <rect width="512" height="512" rx="112" fill="#101318"/>
+  <rect x="17" y="17" width="478" height="478" rx="96" stroke="#303A47" stroke-width="4"/>
+  <g stroke="#F3F4F6" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M157 154H355C368 154 378 164 378 177V318C378 331 368 341 355 341H157C144 341 134 331 134 318V177C134 164 144 154 157 154Z"/>
+    <path d="M194 218L248 272L194 326"/>
+    <path d="M282 326H331"/>
+  </g>
+  <path d="M355 154V206" stroke="#6674FF" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="355" cy="154" r="13" fill="#6674FF"/>
+</svg>

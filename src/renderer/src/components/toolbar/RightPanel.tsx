@@ -21,10 +21,15 @@ import { BrowserSurface } from '../browser/BrowserSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
 
+type RightWindowView = 'tools' | 'review' | 'browser' | 'file'
+
 /**
- * 右侧工具面板：按用户配置排列上下文、任务、队列、文件、扩展、日志和操作分区。
- * 仅显示真实会话数据；空分区不参与排序。浏览器视图占用面板下方独立区域。
- * 收起后释放布局宽度，不以浮层覆盖对话。
+ * 右侧窗口区：工具栏、审查、浏览器和文件都使用同一条窗口标签栏。
+ *
+ * 这里故意只保留一个活动表面。浏览器是原生 WebContentsView，不能和
+ * DOM 面板在同一块坐标上叠放；把几个表面变成同一组窗口标签后，切换时
+ * 不会再出现「工具栏标题压在浏览器上」或「文件预览与代码区重叠」的情况。
+ * 工具栏内部仍按用户配置排列上下文、任务、队列、文件、扩展、日志和操作分区。
  */
 export function RightPanel() {
   const t = useT()
@@ -41,8 +46,20 @@ export function RightPanel() {
    * DOM 之上，两个一起显示必然有一个看不见；而审查打开时用户就是在看代码。
    */
   const reviewOpen = useStore((s) => s.reviewOpen)
-  const browserHeight = useStore((s) => s.settings?.browserHeight ?? 0)
+  const openBrowser = useStore((s) => s.openBrowser)
+  const closeBrowser = useStore((s) => s.closeBrowser)
+  const openReview = useStore((s) => s.openReview)
+  const closeReview = useStore((s) => s.closeReview)
+  const closePreview = useStore((s) => s.closePreview)
+  const setRightPanelOpen = useStore((s) => s.setRightPanelOpen)
   const [libOpen, setLibOpen] = useState(false)
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false)
+  const [windowView, setWindowView] = useState<RightWindowView>(() => {
+    if (reviewOpen) return 'review'
+    if (filePreview) return 'file'
+    if (browserOpen) return 'browser'
+    return 'tools'
+  })
 
   /*
    * 空判据需要的几个字段分别选出来（选对象会让 zustand 每帧返回新引用 → 无限重渲染）。
@@ -96,46 +113,228 @@ export function RightPanel() {
   )
 
 
-  /** 跟着鼠标的小标签：告诉用户「正在搬的这块叫什么」 */
-  /** 右栏自身：浏览器高度分隔条需要从它里面量浏览器区域的高度 */
+  /** 右栏自身：工具菜单的外点关闭需要从它里面判断命中。 */
   const asideRef = useRef<HTMLElement>(null)
 
-  /*
-   * 浏览器与工具栏**解耦**（用户要求）。
-   *
-   * 两者的开关互相独立：
-   *   · 只开工具栏  → 只渲染工具分区
-   *   · 只开浏览器  → 浏览器**独占整列**（工具栏收起时不再拖着一排空标题）
-   *   · 都开        → 上浏览器 / 下工具分区，中间可拖高度
-   * 浏览器入口在**标题栏**（与左右栏开关同一处，位置永不漂移），
-   * 不再占用工具栏标题行 —— 这样「收起工具栏」对浏览器完全无影响。
-   * pi 工具也可以直接打开浏览器；此时即使工具栏原本收起，也把浏览器显示出来。
-   */
-  if (!open && !browserOpen && !filePreview && !reviewOpen) return null
+  useEffect(() => {
+    if (!quickMenuOpen) return undefined
+    const close = (event: MouseEvent): void => {
+      if (event.target instanceof Node && asideRef.current?.contains(event.target)) return
+      setQuickMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [quickMenuOpen])
+
+  /* 外部入口打开浏览器/文件/审查时，把窗口切到对应标签。 */
+  const previousBrowserOpen = useRef(browserOpen)
+  useEffect(() => {
+    if (filePreview && !open) void setRightPanelOpen(true)
+  }, [filePreview, open, setRightPanelOpen])
+
+  useEffect(() => {
+    const opened = browserOpen && !previousBrowserOpen.current
+    previousBrowserOpen.current = browserOpen
+    setWindowView((current) => {
+      if (reviewOpen) return 'review'
+      if (filePreview) return 'file'
+      if (!browserOpen && current === 'browser') return 'tools'
+      if (opened) return 'browser'
+      if (current === 'review' && !reviewOpen) return browserOpen ? 'browser' : 'tools'
+      return current
+    })
+  }, [browserOpen, filePreview, reviewOpen])
+
+  const switchWindow = (next: RightWindowView): void => {
+    setQuickMenuOpen(false)
+    setWindowView(next)
+
+    if (next === 'tools') {
+      if (reviewOpen) closeReview()
+      if (filePreview) closePreview()
+      if (browserOpen) void closeBrowser()
+      return
+    }
+
+    if (next === 'review') {
+      if (filePreview) closePreview()
+      openReview()
+      return
+    }
+
+    if (next === 'browser') {
+      if (reviewOpen) closeReview()
+      if (filePreview) closePreview()
+      if (browserOpen) void window.yan.browser.setVisible(true)
+      else void openBrowser()
+      return
+    }
+
+    /* 文件窗口没有原生视图，文件树和文件预览共用这个表面。 */
+    if (reviewOpen) closeReview()
+    if (browserOpen) {
+      void window.yan.browser.setVisible(false)
+      void closeBrowser()
+    }
+    if (!open) void setRightPanelOpen(true)
+  }
+
+  const closeWindow = (which: Exclude<RightWindowView, 'tools'>): void => {
+    setQuickMenuOpen(false)
+    if (which === 'review') {
+      closeReview()
+      setWindowView(browserOpen ? 'browser' : filePreview ? 'file' : 'tools')
+    } else if (which === 'browser') {
+      setWindowView('tools')
+      void closeBrowser()
+    } else {
+      closePreview()
+      setWindowView('tools')
+    }
+  }
+
+  const activeView: RightWindowView = reviewOpen ? 'review' : filePreview ? 'file' : windowView
+  const reviewMode = activeView === 'review' && reviewOpen
+  const browserMode = activeView === 'browser' && browserOpen && !reviewOpen && !filePreview
+  const fileMode = activeView === 'file' && !reviewOpen
+  const toolsMode = activeView === 'tools' && open && !reviewOpen
+  const hasVisibleSurface = reviewMode || browserMode || fileMode || toolsMode
+
+  /* 浏览器收起工具栏时不再保留一行空标签，让原生网页占满右列。 */
+  if (!hasVisibleSurface) return null
+
+  const showWindowBar = !browserMode || open
 
   return (
     <aside
       ref={asideRef}
-      className={`rightpanel ${browserOpen && !reviewOpen ? 'browser-mode' : ''} ${open ? '' : 'tools-collapsed'} ${reviewOpen ? 'review-mode' : ''}`}
+      className={`rightpanel right-window-panel window-${activeView} ${browserMode ? 'browser-mode' : ''} ${fileMode && filePreview ? 'file-preview-mode' : ''} ${!open && browserMode ? 'tools-collapsed' : ''} ${reviewMode ? 'review-mode' : ''}`}
       data-testid="rightpanel"
-      style={browserHeight > 0 ? ({ '--h-browser': `${browserHeight}px` } as React.CSSProperties) : undefined}
     >
       {/*
        * 宽度把手放在 aside **内部**并绝对定位。
        * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
        * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 redesign.css §23b）。
-       */}
+      */}
       <Resizer side="panel" />
 
-      {open && !reviewOpen ? (
-        <>
-          <div className="rp-top">
+      {showWindowBar ? (
+        <div
+          className={`review-tabbar rp-windowbar ${activeView === 'tools' ? 'rp-top' : ''}`}
+          role="tablist"
+          aria-label="右栏窗口"
+          data-testid="right-window-tabs"
+        >
+          <div
+            className={`review-tab rp-window-tab ${activeView === 'tools' ? 'active' : ''}`}
+            role="tab"
+            aria-selected={activeView === 'tools'}
+            data-testid="right-window-tab-tools"
+            onClick={() => switchWindow('tools')}
+          >
+            <Icon name="layers" size={12} />
             <span className="rp-title">{t('rp.title')}</span>
-            <span className="spacer" />
-            {/*
-             * 工具库。放在标题旁边（用户问「库放哪」时给的备选之一）——
-             * 库管的就是工具栏的内容，入口贴着工具栏标题最直。
-             */}
+          </div>
+
+          {reviewOpen ? (
+            <div
+              className={`review-tab rp-window-tab ${activeView === 'review' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={activeView === 'review'}
+              data-testid="review-tab"
+              onClick={() => switchWindow('review')}
+            >
+              <Icon name="check-circle" size={12} />
+              <span>审查</span>
+              <button
+                type="button"
+                className="review-tab-close"
+                onClick={(event) => { event.stopPropagation(); closeWindow('review') }}
+                aria-label={t('review.close')}
+                title={t('review.close')}
+              >×</button>
+            </div>
+          ) : null}
+
+          {browserOpen ? (
+            <div
+              className={`review-tab rp-window-tab ${activeView === 'browser' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={activeView === 'browser'}
+              data-testid="right-window-tab-browser"
+              onClick={() => switchWindow('browser')}
+            >
+              <Icon name="globe" size={12} />
+              <span>浏览器</span>
+              <button
+                type="button"
+                className="review-tab-close"
+                onClick={(event) => { event.stopPropagation(); closeWindow('browser') }}
+                aria-label="关闭浏览器"
+                title="关闭浏览器"
+              >×</button>
+            </div>
+          ) : null}
+
+          {activeView === 'file' || filePreview ? (
+            <div
+              className={`review-tab rp-window-tab ${activeView === 'file' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={activeView === 'file'}
+              data-testid="right-window-tab-file"
+              onClick={() => switchWindow('file')}
+            >
+              <Icon name="folder" size={12} />
+              <span>文件</span>
+              <button
+                type="button"
+                className="review-tab-close"
+                onClick={(event) => { event.stopPropagation(); closeWindow('file') }}
+                aria-label="关闭文件窗口"
+                title="关闭文件窗口"
+              >×</button>
+            </div>
+          ) : null}
+
+          <span className="spacer" />
+
+          <div className="rp-tool-launcher-wrap">
+            <button
+              className={`review-tab-plus rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
+              type="button"
+              title="打开工作区工具"
+              aria-label="打开工作区工具"
+              aria-expanded={quickMenuOpen}
+              data-testid="right-tool-menu"
+              onClick={() => setQuickMenuOpen((value) => !value)}
+            >＋</button>
+            {quickMenuOpen ? (
+              <div className="rp-tool-menu" role="menu" data-testid="right-tool-menu-popover">
+                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('review')}>
+                  <Icon name="check-circle" size={12} />
+                  <span>审查</span>
+                  <kbd>Ctrl+Shift+G</kbd>
+                </button>
+                <button type="button" className="rp-tool-menu-item" role="menuitem" disabled title="终端面板尚未接入">
+                  <Icon name="activity" size={12} />
+                  <span>终端</span>
+                  <kbd>Ctrl+`</kbd>
+                </button>
+                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('browser')}>
+                  <Icon name="globe" size={12} />
+                  <span>浏览器</span>
+                  <kbd>Ctrl+T</kbd>
+                </button>
+                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('file')}>
+                  <Icon name="folder" size={12} />
+                  <span>文件</span>
+                  <kbd>Ctrl+P</kbd>
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {activeView === 'tools' ? (
             <button
               className={`rp-x ${libOpen ? 'on' : ''}`}
               onClick={() => setLibOpen((v) => !v)}
@@ -145,25 +344,17 @@ export function RightPanel() {
             >
               <Icon name="layers" size={12} />
             </button>
-          </div>
-
-          {libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
-        </>
+          ) : null}
+        </div>
       ) : null}
 
-      {reviewOpen ? (
-        <ReviewPanel />
-      ) : (
-        <>
-          {browserOpen ? <BrowserSurface /> : null}
-          {filePreview ? <FilePreviewPane /> : null}
-        </>
-      )}
-      {browserOpen && open && !reviewOpen ? <BrowserHeightSplitter asideRef={asideRef} /> : null}
+      {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
-
-      {open && !reviewOpen ? (
+      {reviewMode ? <ReviewPanel /> : null}
+      {browserMode ? <BrowserSurface /> : null}
+      {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
+          {fileMode && filePreview ? <FilePreviewPane /> : null}
           {visible.map((id, i) => (
             <SectionSlot
               key={id}
@@ -179,84 +370,6 @@ export function RightPanel() {
         </div>
       ) : null}
     </aside>
-  )
-}
-
-/* 浏览器高度分隔条
-   只在浏览器与工具栏同时显示时出现。拖动时直接改 aside 上的
-   `--h-browser`（CSS 变量，零重渲染）；松手才把最终值落盘。
-   双击复原成设计默认（55%）。 */
-function BrowserHeightSplitter({ asideRef }: { asideRef: React.RefObject<HTMLElement | null> }) {
-  const t = useT()
-  const patchSettings = useStore((s) => s.patchSettings)
-  const [dragging, setDragging] = useState(false)
-  const startRef = useRef<{ y: number; base: number } | null>(null)
-
-  /** 浏览器区域当前高度（从真实布局量，避免再维护一份 state） */
-  const browserEl = (): HTMLElement | null =>
-    asideRef.current?.querySelector('.browser-surface') as HTMLElement | null
-  /* 与主进程夹的区间一致（主进程会再夹一次，防脏值） */
-  const clamp = (h: number): number => {
-    const available = (asideRef.current?.clientHeight ?? 900) - 140
-    return Math.round(Math.min(Math.max(120, available), Math.max(120, h)))
-  }
-
-  const onDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    if (e.button !== 0) return
-    const el = browserEl()
-    if (!el) return
-    e.preventDefault()
-    startRef.current = { y: e.clientY, base: el.getBoundingClientRect().height }
-    setDragging(true)
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      /* 拿不到 capture 也能拖 */
-    }
-    document.body.classList.add('resizing')
-  }
-
-  const onMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    const st = startRef.current
-    if (!st || !asideRef.current) return
-    const next = clamp(st.base + (e.clientY - st.y))
-    asideRef.current.style.setProperty('--h-browser', `${next}px`)
-  }
-
-  const onUp = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    const st = startRef.current
-    if (!st) return
-    startRef.current = null
-    setDragging(false)
-    document.body.classList.remove('resizing')
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    } catch {
-      /* ignore */
-    }
-    const h = browserEl()?.getBoundingClientRect().height ?? 0
-    if (h > 0) void patchSettings({ browserHeight: clamp(h) })
-  }
-
-  const reset = (): void => {
-    asideRef.current?.style.removeProperty('--h-browser')
-    void patchSettings({ browserHeight: 0 })
-  }
-
-  return (
-    <button
-      className={`browser-splitter ${dragging ? 'on' : ''}`}
-      title={t('browser.resizeHint')}
-      aria-label={t('browser.resizeHint')}
-      role="separator"
-      aria-orientation="horizontal"
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      onPointerCancel={onUp}
-      onDoubleClick={reset}
-      data-testid="browser-splitter"
-    />
   )
 }
 

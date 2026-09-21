@@ -67,6 +67,7 @@ app.setPath('userData', join(sandbox, 'userData'))
 app.setPath('sessionData', join(sandbox, 'sessionData'))
 /* 截图不需要 GPU 加速；关掉后 GPU 进程不会成为失败点 */
 app.disableHardwareAcceleration()
+const MATRIX_ARTIFACT_SVG_PATH = join(sandbox, 'yan-artifact.svg')
 
 /**
  * 只影响「截图好看程度」的两个 IPC 桩（与 `scripts/shots.mjs` 同源）。
@@ -833,9 +834,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentfailed', 'chainjoin', 'railwaiting']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentfailed', 'chainjoin', 'railwaiting'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -865,6 +866,176 @@ const STATES = {
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      return 'ok';
+    })()
+  `,
+  /* Codex 风格的右栏工具启动器：紧凑列出审查 / 终端 / 浏览器 / 文件。 */
+  righttoolmenu: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.closeReview?.();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: true, filePreview: null });
+      await sleep(200);
+      const button = document.querySelector('[data-testid="right-tool-menu"]');
+      if (!button) return 'no-launcher';
+      button.click();
+      await sleep(180);
+      return document.querySelector('[data-testid="right-tool-menu-popover"]') ? 'ok' : 'no-popover';
+    })()
+  `,
+  /* 右栏窗口标签：同一条标签栏同时承载工具栏、审查、浏览器和文件预览。 */
+  rightwindows: `
+    (async () => {
+      try {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.closeReview?.();
+        st.closePreview?.();
+        st.setRailPinned(true);
+        window.__yanStore.setState({ rightPanelOpen: true, filePreview: null });
+        await sleep(250);
+      /* 视觉矩阵不注册原生浏览器 IPC；用真实 BrowserState 让 BrowserSurface
+       * 渲染出来，原生 WebContentsView 的坐标生命周期仍由 live browser 场景验证。 */
+      window.__yanStore.setState({
+        browserState: {
+          open: true,
+          url: 'about:blank',
+          title: '浏览器窗口',
+          loading: false,
+          canGoBack: false,
+          canGoForward: false,
+          mode: 'embedded',
+          tabs: [{ id: 'matrix-browser-tab', title: '浏览器窗口', url: 'about:blank' }],
+          activeTabId: 'matrix-browser-tab'
+        }
+      });
+      await sleep(650);
+      /* 视觉矩阵只注册布局相关 IPC，不注册 readPreview；直接摆真实 FilePreviewState
+       * 的渲染输入，仍然走 FilePreviewPane，不为截图专门造 HTML。 */
+      const cwd = window.__yanStore.getState().session?.cwd || window.__yanStore.getState().settings?.cwd || 'C:/yan-preview';
+      window.__yanStore.setState({
+        filePreview: {
+          path: 'src/main/agent.ts',
+          cwd,
+          loading: false,
+          data: {
+            ok: true,
+            path: 'src/main/agent.ts',
+            abs: cwd + '/src/main/agent.ts',
+            name: 'agent.ts',
+            size: 4920,
+            kind: 'text',
+            text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
+          }
+        }
+      });
+      await sleep(650);
+      /* 直接落 reviewOpen，避免视觉矩阵未注册的 browser.setVisible IPC 干扰标签截图。 */
+      window.__yanStore.setState({
+        reviewOpen: true,
+        reviewScope: { kind: 'working' },
+        rightPanelOpen: true
+      });
+      await sleep(800);
+      /* 文件树在工具窗口首次挂载时会清理旧预览；审查窗口打开后再放回文件预览，
+       * 才能在同一张图里稳定展示四个并列窗口入口，而不改变真实运行时语义。 */
+      window.__yanStore.setState({
+        filePreview: {
+          path: 'src/main/agent.ts',
+          cwd,
+          loading: false,
+          data: {
+            ok: true,
+            path: 'src/main/agent.ts',
+            abs: cwd + '/src/main/agent.ts',
+            name: 'agent.ts',
+            size: 4920,
+            kind: 'text',
+            text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
+          }
+        }
+      });
+      await sleep(350);
+        const tabs = [...document.querySelectorAll('[data-testid="right-window-tabs"] [role="tab"]')]
+          .map((el) => el.textContent?.replace('×', '').trim())
+          .filter(Boolean);
+        return tabs.length >= 4 ? 'ok' : 'tabs=' + JSON.stringify(tabs);
+      } catch (error) {
+        return 'error:' + (error?.stack || error?.message || String(error));
+      }
+    })()
+  `,
+  /* AI 文件产物：走真实 TurnView → ArtifactCard，不用截图专用 HTML。 */
+  artifact: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closePreview?.();
+      window.__yanStore.setState({ rightPanelOpen: false });
+      const artifact = {
+        id: 'matrix-artifact-svg',
+        sourceId: 'matrix-artifact-svg',
+        filename: 'yan-mark.svg',
+        path: ${JSON.stringify(MATRIX_ARTIFACT_SVG_PATH)},
+        mediaType: 'image/svg+xml',
+        kind: 'svg',
+        bytes: 436,
+        createdAt: Date.now(),
+        previewable: true,
+        provider: 'codex',
+        model: 'gpt-image-2',
+        description: 'AI 生成的砚图标（真实 artifact 卡片）'
+      };
+      const messages = window.__yanStore.getState().messages;
+      const host = messages.find((m) => m.role === 'assistant');
+      if (!host) return 'no-assistant';
+      window.__yanStore.setState({
+        messages: messages.map((m) => m.id === host.id ? { ...m, artifacts: [artifact] } : m)
+      });
+      await sleep(650);
+      const card = document.querySelector('[data-testid="turn-artifacts"] .artifact-card');
+      if (!card) return 'no-card';
+      card.scrollIntoView({ block: 'center' });
+      await sleep(250);
+      return 'ok';
+    })()
+  `,
+  /* 生图中：验证进度条目存在、会显示阶段和实时用时，而不是静默等待。 */
+  imageprogress: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ rightPanelOpen: false });
+      const messages = window.__yanStore.getState().messages;
+      const host = messages.find((m) => m.role === 'assistant');
+      if (!host) return 'no-assistant';
+      window.__yanStore.setState({
+        messages: messages.map((m) => m.id === host.id ? {
+          ...m,
+          imageProgress: [{
+            id: 'matrix-image-progress',
+            stage: 'generating',
+            startedAt: Date.now() - 24000,
+            updatedAt: Date.now(),
+            provider: 'codex',
+            model: 'gpt-image-2',
+            detail: '正在生成图片'
+          }]
+        } : m)
+      });
+      await sleep(700);
+      const card = document.querySelector('[data-testid="image-progress-list"]');
+      if (!card) return 'no-progress';
+      card.scrollIntoView({ block: 'center' });
+      await sleep(250);
       return 'ok';
     })()
   `,
@@ -2428,6 +2599,43 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="subagent-preview"]') ? 'ok' : 'no-detail';
     })()
   `,
+  /* 模型触发的子代理：卡片必须出现在触发它的助手回合内，且不抢开右栏详情。 */
+  subagentinline: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      const host = st.messages.find((message) => message.role === 'assistant');
+      if (!host) return 'no-assistant';
+      window.__yanStore.setState({
+        rightPanelOpen: false,
+        subagentPreviewId: null,
+        subagents: [{
+          id: 'sub-inline-preview',
+          task: '检查登录失败分支并把测试结果带回当前回合',
+          cwd: 'C:/yan-worktrees/sub-inline',
+          parentSessionId: 'session-preview',
+          parentRunId: 'run-preview',
+          parentMessageId: host.id,
+          isolation: 'worktree',
+          model: 'deepseek/deepseek-v4.1-flash',
+          status: 'running',
+          startedAt: Date.now() - 18_000,
+          latestActivity: '正在检查登录失败分支',
+          review: 'none',
+          transcript: [
+            { id: 'sub-inline-t1', role: 'assistant', text: '我会把结果直接带回当前助手回合。' }
+          ]
+        }]
+      });
+      await sleep(400);
+      return document.querySelector('[data-testid="subagent-inline-list"]') && document.querySelector('[data-testid="subagent-inline-sub-inline-preview"]')
+        ? 'ok'
+        : 'no-inline-card';
+    })()
+  `,
   /*
    * 子代理「模型自己失败」的形态（实施-09 S2 第六批）。
    *
@@ -2479,6 +2687,16 @@ const MUST_HAVE = {
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
+  rightwindows: [
+    '[data-testid="right-window-tabs"]',
+    '[data-testid="right-window-tab-tools"]',
+    '[data-testid="right-window-tab-browser"]',
+    '[data-testid="right-window-tab-file"]',
+    '[data-testid="review-tab"]',
+    '[data-testid="review-panel"]'
+  ],
+  artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-download'],
+  imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
   /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
   autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]'],
   /* 自主 + 任务在跑（N10）：光带在，且输入框那个键已经变成「停止」形态 */
@@ -2575,6 +2793,7 @@ const MUST_HAVE = {
   reviewnotgit: ['[data-testid="review-panel"]', '[data-testid="review-notgit"]', '[data-testid="review-scope"]'],
   review: [
     '[data-testid="review-panel"]',
+    '[data-testid="review-tab"]',
     '[data-testid="review-scope"]',
     '[data-testid="review-stats"]',
     '[data-testid="review-diff"]',
@@ -2637,6 +2856,11 @@ const MUST_HAVE = {
     '[data-testid="subagent-preview-body"]',
     '[data-testid="subagent-review"]',
     '.sp-main'
+  ],
+  subagentinline: [
+    '[data-testid="subagent-inline-list"]',
+    '[data-testid="subagent-inline-sub-inline-preview"]',
+    '.subagent-inline-task'
   ],
   /* 失败态：状态写成失败、meta 行带原因、紧凑列表那一行也在 */
   subagentfailed: [
@@ -2798,6 +3022,11 @@ async function main() {
   muteMissingHandlerNoise()
   registerStubHandlers()
   await app.whenReady()
+  await writeFile(
+    MATRIX_ARTIFACT_SVG_PATH,
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="32" fill="#16171a"/><path d="M31 31h46c11 0 20 9 20 20v26c0 11-9 20-20 20H51c-11 0-20-9-20-20V51c0-11 9-20 20-20Z" fill="none" stroke="#f4f1e9" stroke-width="12"/><circle cx="87" cy="38" r="9" fill="#4fc3f7"/></svg>',
+    'utf8'
+  )
 
   const win = new BrowserWindow({
     width: 1440,
@@ -2820,7 +3049,6 @@ async function main() {
       backgroundThrottling: false
     }
   })
-
   await win.loadFile(join(root, 'out/renderer/index.html'))
   await win.webContents.executeJavaScript(`
     try {

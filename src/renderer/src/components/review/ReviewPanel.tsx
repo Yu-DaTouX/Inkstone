@@ -203,7 +203,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
           data-testid="review-close"
           onClick={closeReview}
         >
-          <Icon name="menu" size={12} />
+          <span className="review-close-glyph" aria-hidden="true">×</span>
         </button>
       </div>
 

@@ -36,7 +36,7 @@
  */
 :root {
   --w-rail: var(--w-rail-user, 248px);
-  --w-right: var(--w-panel-user, 320px);
+  --w-right: var(--w-panel-user, 336px);
   /*
    * 收起 = **0 宽**。用户 2026-09-18 要求「左栏完全折叠，不要留下一个边框」：
    * 之前这里是 48px 的紧凑快捷轨，它在消息区左边就是一条颜色不同的竖条。

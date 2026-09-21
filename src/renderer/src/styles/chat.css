@@ -173,12 +173,38 @@
  * 角色区分靠位置、标题和留白，不再使用彩色右线或提示符装饰。
  */
 .msg.user .bubble {
-  max-width: 85%;
+  width: fit-content;
+  max-width: min(680px, 72%);
   margin-left: auto;
   border-radius: var(--r-md);
   border: 1px solid var(--border-soft);
   background: var(--bg-2);
   padding: var(--sp-3) var(--sp-4);
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+/* 用户消息、附件和标签共用同一条右内容轴；不要靠消息区的额外 padding 推位置。 */
+.msg.user .msg-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.msg.user .msg-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.msg.user .msg-images {
+  justify-content: flex-end;
+  width: fit-content;
+  max-width: min(680px, 72%);
+  margin-left: auto;
 }
 
 /* 助手正文：无容器，只留一条左侧竖线作为「这是它说的话」的标记 */
@@ -186,6 +212,304 @@
   border-left: none;
   padding-left: 0;
   margin-left: 0;
+}
+
+/* AI 文件产物：内联预览，同时保留右侧只读预览和下载出口。 */
+.turn-artifacts {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 4px;
+  max-width: min(620px, 100%);
+}
+
+.artifact-card {
+  overflow: hidden;
+  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel, #17191d) 92%, white 8%);
+}
+
+.artifact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--text, #e8eaed);
+}
+
+.artifact-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.artifact-meta,
+.artifact-provider {
+  color: var(--muted, #8f96a3);
+  font-size: 11px;
+}
+
+.artifact-description {
+  padding: 0 10px 8px;
+  color: var(--muted, #a7adba);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.artifact-image-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 14px;
+  background: #101318;
+}
+
+.artifact-image {
+  display: block;
+  width: min(240px, 100%);
+  max-width: 240px;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.artifact-image-wrap.failed {
+  min-height: 92px;
+  color: var(--err, #ff7777);
+  font-size: 12px;
+}
+
+.artifact-preview-error {
+  padding: 12px;
+}
+
+.artifact-code {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  color: var(--text, #e8eaed);
+  background: #101318;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.artifact-binary {
+  padding: 18px 12px;
+  color: var(--muted, #a7adba);
+  font-size: 12px;
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line, rgba(255,255,255,.08));
+}
+
+.image-progress-list {
+  display: grid;
+  gap: 8px;
+  max-width: min(620px, 100%);
+  margin: 10px 0 8px;
+}
+
+.image-progress {
+  padding: 9px 11px 10px;
+  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel, #17191d) 94%, white 6%);
+}
+
+.image-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text, #e8eaed);
+  font-size: 12px;
+}
+
+.image-progress-head > .ico {
+  flex: none;
+  color: var(--accent, #62b5ff);
+}
+
+.image-progress-head strong {
+  font-weight: 600;
+}
+
+.image-progress-stage,
+.image-progress-time,
+.image-progress-detail {
+  color: var(--muted, #8f96a3);
+  font-size: 11px;
+}
+
+.image-progress-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.image-progress-track {
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #62b5ff) 18%, transparent);
+}
+
+.image-progress-track span {
+  display: block;
+  width: 34%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #62b5ff);
+}
+
+.image-progress.running .image-progress-track span {
+  animation: image-progress-slide 1.25s ease-in-out infinite;
+}
+
+.image-progress.failed {
+  border-color: color-mix(in srgb, var(--err, #ff7777) 44%, var(--line, rgba(255,255,255,.12)));
+}
+
+.image-progress.failed .image-progress-head > .ico,
+.image-progress.failed .image-progress-stage {
+  color: var(--err, #ff7777);
+}
+
+.image-progress.failed .image-progress-track span {
+  width: 100%;
+  background: var(--err, #ff7777);
+}
+
+.image-progress-detail {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+@keyframes image-progress-slide {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(330%); }
+}
+
+.artifact-actions button,
+.artifact-download {
+  border: 0;
+  padding: 3px 0;
+  color: var(--accent, #62b5ff);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+/* 模型自动委派的子代理：挂在触发它的助手回合内，不再漂浮在输入框上方。 */
+.subagent-inline-list {
+  display: grid;
+  gap: 6px;
+  max-width: min(620px, 100%);
+  margin: 10px 0 8px;
+}
+
+.subagent-inline {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel, #17191d) 94%, white 6%);
+}
+
+.subagent-inline.running {
+  border-color: color-mix(in srgb, var(--accent, #62b5ff) 42%, var(--line, rgba(255,255,255,.12)));
+}
+
+.subagent-inline-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text, #e8eaed);
+  font-size: 12px;
+}
+
+.subagent-inline-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent, #62b5ff);
+  font-size: 12px;
+}
+
+.subagent-inline:not(.running) .subagent-inline-icon {
+  color: var(--ok, #53d39a);
+}
+
+.subagent-inline.error .subagent-inline-icon,
+.subagent-inline.cancelled .subagent-inline-icon {
+  color: var(--err, #ff7777);
+}
+
+.subagent-inline-state {
+  overflow: hidden;
+  flex: 1;
+  color: var(--muted, #8f96a3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-inline-open {
+  flex: none;
+  border: 0;
+  padding: 2px 4px;
+  color: var(--accent, #62b5ff);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.subagent-inline-task,
+.subagent-inline-preview {
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--muted, #a7adba);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-inline-task {
+  color: var(--text, #e8eaed);
+}
+
+.subagent-inline-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #62b5ff) 30%, transparent);
+  border-top-color: var(--accent, #62b5ff);
+  border-radius: 50%;
+  animation: subagent-inline-spin .8s linear infinite;
+}
+
+@keyframes subagent-inline-spin {
+  to { transform: rotate(360deg); }
+}
+
+.artifact-actions button:hover,
+.artifact-download:hover {
+  color: var(--text, #fff);
 }
 
 /* 60. 推理流（限高省略 / 显示最新 / 结束折叠 / 保留开关 / 无推理不显示）

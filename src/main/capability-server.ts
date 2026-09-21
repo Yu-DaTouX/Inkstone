@@ -135,6 +135,8 @@ const KNOWN_COMMANDS = new Set([
   'mcp.describe',
   'mcp.call',
   'tasks.apply',
+  'artifact.attach',
+  'image.generate',
   /* 目标状态（实施-05 S3）：澄清档就绪转移与自主档推进报告。 */
   'goal.ready',
   'goal.report',

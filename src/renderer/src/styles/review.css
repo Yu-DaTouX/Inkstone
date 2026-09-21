@@ -191,6 +191,71 @@ button.env-item:hover {
   border-bottom: 1px solid var(--border-soft);
 }
 
+/* 顶部标签参照 Codex 的审查页：标签是上下文身份，不和操作按钮挤在一行。 */
+.review-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 42px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-1);
+}
+
+.review-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  font-size: var(--fs-sm);
+}
+
+.review-tab.active {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.review-tab > .ico {
+  color: var(--accent);
+}
+
+.review-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-tab-close:hover {
+  color: var(--fg);
+  background: var(--bg-2);
+}
+
+.review-tab-plus {
+  color: var(--fg-mute);
+  font-size: 18px;
+}
+
+.review-close-glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .review-scope,
 .review-ref {
   appearance: none;

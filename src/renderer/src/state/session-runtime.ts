@@ -140,6 +140,16 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
   return out
 }
 
+function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
+  const index = list.findIndex((message) => message.id === messageId)
+  if (index < 0) return list
+  const current = list[index]
+  if (current.artifacts?.some((item) => item.id === artifact.id)) return list
+  const out = list.slice()
+  out[index] = { ...current, artifacts: [...(current.artifacts ?? []), artifact] }
+  return out
+}
+
 function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDelta?: string): UIMessage[] {
   const index = list.findIndex((message) => message.id === msgId)
   if (index < 0) return list
@@ -186,6 +196,9 @@ export function reduceSessionRuntime(
       break
     case 'msg-update':
       next = { ...next, messages: patchMessage(next.messages, message.payload.id, message.payload.patch) }
+      break
+    case 'artifact':
+      next = { ...next, messages: patchArtifact(next.messages, message.payload.messageId, message.payload.artifact) }
       break
     case 'msg-remove':
       next = { ...next, messages: next.messages.filter((item) => item.id !== message.payload) }

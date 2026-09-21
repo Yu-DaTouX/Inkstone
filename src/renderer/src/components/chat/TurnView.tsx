@@ -1,11 +1,13 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import { useStore } from '../../state/store'
 import { forkFromText } from '../../lib/fork'
 import { Markdown } from './MessageParts'
 import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup, ToolRow } from './ToolRow'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
+import type { SubagentRun } from '../../../../shared/ipc'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -105,6 +107,16 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 
 function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
   const t = useT()
+  const allSubagents = useStore((s) => s.subagents)
+  const attachedSubagents = allSubagents.filter((run) =>
+    !!run.parentMessageId && (run.parentMessageId === turn.id || turn.sourceIds.includes(run.parentMessageId))
+  )
+  /*
+   * 成功进度只是过程状态：artifact 已经落盘后，用户需要看到的是最终文件，
+   * 不是一张永远停在「已完成」的进度卡。失败则保留，方便解释原因并重试。
+   * 进度数据仍留在回合模型里，历史 / 调试不会丢失，只是不再占用消息流。
+   */
+  const visibleImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
   const actualDetail = turn.responseDetail === 'brief'
     ? t('detail.brief')
     : turn.responseDetail === 'detailed'
@@ -118,6 +130,9 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
     !!turn.response ||
     turn.tools.length > 0 ||
     !!turn.thinking ||
+    turn.artifacts.length > 0 ||
+    visibleImageProgress.length > 0 ||
+    attachedSubagents.length > 0 ||
     !!turn.error
   if (!hasBody && !streaming) return null
 
@@ -167,13 +182,27 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
           </div>
         ) : null}
 
+        {visibleImageProgress.length ? <ImageProgressList items={visibleImageProgress} /> : null}
+
         {/* 2. 工作执行栏：思考 + 全部工具（合并后只有一条可展开的条） */}
         <TurnActivity turn={turn} streaming={streaming} />
+
+        {attachedSubagents.length ? (
+          <div className="subagent-inline-list" data-testid="subagent-inline-list">
+            {attachedSubagents.map((run) => <InlineSubagentCard key={run.id} run={run} />)}
+          </div>
+        ) : null}
 
         {/* 3. 回复 */}
         {turn.response ? (
           <div className="turn-response" data-testid="turn-response">
             <Paragraph text={turn.response.text} primary />
+          </div>
+        ) : null}
+
+        {turn.artifacts.length ? (
+          <div className="turn-artifacts" data-testid="turn-artifacts">
+            {turn.artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}
           </div>
         ) : null}
 
@@ -191,6 +220,136 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
       </div>
     </article>
   )
+}
+
+function InlineSubagentCard({ run }: { run: SubagentRun }) {
+  const t = useT()
+  const openSubagent = useStore((s) => s.openSubagent)
+  const running = run.status === 'running' || run.status === 'starting'
+  const lastTranscript = run.transcript.at(-1)
+  const preview = lastTranscript?.text?.trim().replace(/\s+/g, ' ').slice(-180)
+  const stateText = running
+    ? run.latestActivity || t('sa.waiting')
+    : run.status === 'done'
+      ? t('sa.done')
+      : run.error || t('sa.stopped')
+  return (
+    <section className={`subagent-inline ${running ? 'running' : run.status}`} data-testid={`subagent-inline-${run.id}`}>
+      <div className="subagent-inline-head">
+        <span className="subagent-inline-icon" aria-hidden>{running ? <span className="subagent-inline-spinner" /> : run.status === 'done' ? '✓' : '!'}</span>
+        <strong>子代理</strong>
+        <span className="subagent-inline-state">{stateText}</span>
+        <button type="button" className="subagent-inline-open" onClick={() => openSubagent(run.id)}>{t('sa.view')}</button>
+      </div>
+      <div className="subagent-inline-task" title={run.task}>{run.task}</div>
+      {preview ? <div className="subagent-inline-preview">{preview}</div> : null}
+    </section>
+  )
+}
+
+function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][number] }) {
+  const previewFile = useStore((s) => s.previewFile)
+  const [text, setText] = useState<string | null>(null)
+  const fileUrl = `file:///${encodeURI(artifact.path.replace(/\\/g, '/').replace(/^\/+/, ''))}`
+  const isCode = artifact.kind === 'code'
+  const unavailable = artifact.unavailable === true || artifact.bytes <= 0
+
+  useEffect(() => {
+    let alive = true
+    if (!isCode || unavailable) return () => { alive = false }
+    void window.yan.readPreview(artifact.path).then((result) => {
+      if (alive && result.ok) setText(result.text ?? '')
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [artifact.path, isCode, unavailable])
+
+  return (
+    <section className="artifact-card" data-artifact-id={artifact.id}>
+      <div className="artifact-head">
+        <Icon name={artifact.kind === 'image' || artifact.kind === 'svg' ? 'sparkles' : 'tag'} size={12} />
+        <strong title={artifact.description}>{artifact.filename}</strong>
+        <span className="artifact-meta">{fmtArtifactBytes(artifact.bytes)}</span>
+        <span className="spacer" />
+        {artifact.provider ? <span className="artifact-provider">{artifact.provider}{artifact.model ? ` · ${artifact.model}` : ''}</span> : null}
+      </div>
+      {artifact.description ? <div className="artifact-description">{artifact.description}</div> : null}
+      {artifact.previewable && (artifact.kind === 'image' || artifact.kind === 'svg') ? (
+        <div className={`artifact-image-wrap ${unavailable ? 'failed' : ''}`}>
+          {!unavailable ? <img src={fileUrl} alt={artifact.filename} className="artifact-image" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.parentElement?.classList.add('failed') }} /> : null}
+          {unavailable ? <span className="artifact-preview-error">{artifact.error || '原始文件不可用，无法预览。'}</span> : null}
+        </div>
+      ) : null}
+      {isCode ? (
+        <pre className="artifact-code"><code>{unavailable ? (artifact.error || '原始文件不可用，无法预览。') : text ?? '正在读取文件…'}</code></pre>
+      ) : null}
+      {!artifact.previewable ? <div className="artifact-binary">{unavailable ? (artifact.error || '原始文件不可用。') : '文件已生成，可下载或在资源管理器中查看。'}</div> : null}
+      {!unavailable ? (
+        <div className="artifact-actions">
+          <a className="artifact-download" href={fileUrl} download={artifact.filename}>下载文件</a>
+          <button type="button" onClick={() => void previewFile(artifact.path)} title="在右侧预览">右侧预览</button>
+          <button type="button" onClick={() => void window.yan.revealPath(artifact.path)} title="在资源管理器中显示">打开位置</button>
+          <button type="button" onClick={() => void navigator.clipboard.writeText(artifact.path)} title="复制受控文件路径">复制路径</button>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function ImageProgressList({ items }: { items: AssistantTurn['imageProgress'] }) {
+  const [now, setNow] = useState(() => Date.now())
+  const active = items.some((item) => item.stage !== 'done' && item.stage !== 'error')
+
+  useEffect(() => {
+    if (!active) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [active])
+
+  return (
+    <div className="image-progress-list" data-testid="image-progress-list">
+      {items.map((item) => {
+        const running = item.stage !== 'done' && item.stage !== 'error'
+        const elapsed = Math.max(0, (item.endedAt ?? now) - item.startedAt)
+        return (
+          <div className={`image-progress ${running ? 'running' : ''} ${item.stage === 'error' ? 'failed' : ''}`} key={item.id} data-stage={item.stage}>
+            <div className="image-progress-head">
+              <Icon name={item.stage === 'error' ? 'alert-circle' : 'sparkles'} size={12} />
+              <strong>生成图片</strong>
+              <span className="image-progress-stage">{imageStageLabel(item.stage)}</span>
+              <span className="spacer" />
+              <span className="image-progress-time">{formatElapsed(elapsed)}</span>
+            </div>
+            <div className="image-progress-track" aria-hidden="true"><span /></div>
+            {item.detail ? <div className="image-progress-detail">{item.detail}</div> : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function imageStageLabel(stage: AssistantTurn['imageProgress'][number]['stage']): string {
+  switch (stage) {
+    case 'queued': return '已排队'
+    case 'preparing': return '准备请求'
+    case 'confirming': return '等待确认'
+    case 'requesting': return '请求模型'
+    case 'generating': return '生成中'
+    case 'saving': return '保存文件'
+    case 'done': return '已完成'
+    case 'error': return '失败'
+  }
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+function fmtArtifactBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 /**

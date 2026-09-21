@@ -34,7 +34,7 @@
  *   这与 craft-agents 的 fallback 行为一致，避免整轮在界面上没有正文。
  * ══════════════════════════════════════════════════════════════════
  */
-import type { ResponseDetail, UIMessage, Usage } from './ipc'
+import type { ImageGenerationProgress, ResponseDetail, UIMessage, Usage } from './ipc'
 
 /** 一段文字（解说或回答） */
 export interface TurnText {
@@ -65,6 +65,10 @@ export interface AssistantTurn {
   commentary: TurnText[]
   /** 整个回合的工具调用（合并后按时间排） */
   tools: NonNullable<UIMessage['toolCalls']>
+  /** 该回合生成或接管的文件产物 */
+  artifacts: NonNullable<UIMessage['artifacts']>
+  /** 该回合宿主生图的实时状态；不落盘，重载历史后自然消失。 */
+  imageProgress: ImageGenerationProgress[]
   /** 最终回答；末尾停在工具上时会把最后一条解说提升上来 */
   response: TurnText | null
   streaming: boolean
@@ -174,6 +178,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     /** 按时间顺序缓存的「有文字」的段，带位置标记 */
     texts: TurnText[]
     tools: NonNullable<UIMessage['toolCalls']>
+    artifacts: NonNullable<UIMessage['artifacts']>
+    imageProgress: ImageGenerationProgress[]
     responseDetail: ResponseDetail
     last: UIMessage | undefined
     /** 是否还在流式（由调用方传入的 streamingId 决定） */
@@ -225,6 +231,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       thinkingLive: cur.thinkingLive,
       commentary,
       tools: cur.tools,
+      artifacts: cur.artifacts,
+      imageProgress: cur.imageProgress,
       // 多段回复用双换行拼成一段（渲染时 Markdown 自己会分段）
       response: responseParts.length
         ? {
@@ -271,6 +279,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         thinkingLive: false,
         texts: [],
         tools: [],
+        artifacts: [],
+        imageProgress: [],
         responseDetail: m.responseDetail ?? 'unknown',
         streaming: false,
         last: undefined
@@ -287,6 +297,14 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.thinkingLive !== undefined) cur.thinkingLive = m.thinkingLive
 
     if (m.toolCalls?.length) cur.tools.push(...m.toolCalls)
+    if (m.artifacts?.length) cur.artifacts.push(...m.artifacts)
+    if (m.imageProgress?.length) {
+      for (const progress of m.imageProgress) {
+        const index = cur.imageProgress.findIndex((item) => item.id === progress.id)
+        if (index < 0) cur.imageProgress.push(progress)
+        else cur.imageProgress[index] = progress
+      }
+    }
 
     if (hasText(m.text)) {
       // 一条消息里可能有好几段 —— 拆开，好让界面按段落排
