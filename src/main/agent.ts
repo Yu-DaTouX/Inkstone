@@ -3918,6 +3918,11 @@ export class AgentController extends EventEmitter {
       endedAt,
       elapsedMs,
       terminalReason,
+      /*
+       * H-6b：中途快照带 `final: false`。应用在飞行中被拿掉时盘上只剩它，
+       * 读回就能把这一轮认成「被中断」而不是「正常完成」。
+       */
+      final,
       ...(anchorId ? { anchorId } : {}),
       sourceIds,
       monotonicMs: elapsedMs

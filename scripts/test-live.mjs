@@ -5462,6 +5462,14 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
     ['completed', 'failed', 'stopped', 'interrupted'].includes(String(last?.terminalReason)),
     `终止原因是四个合法值之一（实际 ${last?.terminalReason}）`
   )
+  /*
+   * H-6b：收尾写入必须带 `final: true`。
+   *
+   * 反过来说：盘上最后一条记录若带 `final: false`，说明应用是在回合飞行中
+   * 被拿掉的 —— 读回时会被归一成「中断」。这一条断言就是那个判据的另一半：
+   * 正常跑完的回合**不能**留下中途快照（否则历史会集体误报崩溃）。
+   */
+  say(last?.final === true, `收尾记录带 final: true（实际 ${String(last?.final)}）`)
   if (expectedReason) {
     say(
       last?.terminalReason === expectedReason,

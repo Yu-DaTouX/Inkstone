@@ -21,6 +21,7 @@ export async function runTurnTimingStoreTests(ok) {
     appendTurnTiming,
     readTurnTimings,
     applyTurnTimings,
+    effectiveTerminalReason,
     sanitizeSessionId,
     turnTimingFile,
     TURN_TIMING_VERSION
@@ -115,6 +116,61 @@ export async function runTurnTimingStoreTests(ok) {
     { ...record, anchorId: 'm-gone' }
   ])
   ok(orphan[0]?.turnTiming === undefined, '一条都对不上时不挂（宁可不显示，也不挂错回合）')
+
+  /* ---- 7.5 H-6b：飞行中被拿掉的那一轮 = 中断 ---- */
+  {
+    ok(
+      effectiveTerminalReason({ ...record, final: false }) === 'interrupted',
+      '中途快照（final: false）→ 报「被中断」'
+    )
+    ok(
+      effectiveTerminalReason({ ...record, final: true }) === record.terminalReason,
+      '已收尾（final: true）→ 用记录自己的终止原因'
+    )
+    ok(
+      effectiveTerminalReason({ ...record, final: undefined }) === record.terminalReason,
+      '旧记录没有 final 字段 → 不误报中断（宁可把中断写成完成）'
+    )
+
+    /* 真写一遍：中途快照 + 正常收尾写在同一回合上，后者胜 */
+    const crashSession = 'crash-sess'
+    await appendTurnTiming(dir, crashSession, {
+      ...record,
+      v: TURN_TIMING_VERSION,
+      logicalTurnId: 'a-mid',
+      anchorId: 'm0',
+      anchorId: 'm0',
+      elapsedMs: 3000,
+      terminalReason: 'completed',
+      final: false
+    })
+    const onlyMid = await readTurnTimings(dir, crashSession)
+    ok(onlyMid.length === 1 && onlyMid[0].final === false, '中途快照的 final 字段能读回')
+    const crashMsgs = [
+      { id: 'm0', role: 'user' },
+      { id: 'a1', role: 'assistant' }
+    ]
+    ok(
+      applyTurnTimings(crashMsgs, onlyMid)[1]?.turnTiming?.terminalReason === 'interrupted',
+      '盘上只剩中途快照时，挂回的消息就是「中断」（强杀后的真实写照）'
+    )
+
+    await appendTurnTiming(dir, crashSession, {
+      ...record,
+      v: TURN_TIMING_VERSION,
+      logicalTurnId: 'a-mid',
+      anchorId: 'm0',
+      elapsedMs: 9000,
+      terminalReason: 'stopped',
+      final: true
+    })
+    const settled = await readTurnTimings(dir, crashSession)
+    ok(settled.length === 1 && settled[0].final === true, '后来正常收尾的同回合记录覆盖中途快照')
+    ok(
+      applyTurnTimings(crashMsgs, settled)[1]?.turnTiming?.terminalReason === 'stopped',
+      '正常收尾后不再报中断（不能把已结束的回合误报成崩溃）'
+    )
+  }
 
   await rm(dir, { recursive: true, force: true })
 }
