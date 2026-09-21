@@ -68,6 +68,11 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         ) : null}
 
         {msg.text ? <div className="bubble">{msg.text}</div> : null}
+        {msg.timestamp ? (
+          <div className="turn-footer">
+            <TurnTime timestamp={msg.timestamp} />
+          </div>
+        ) : null}
       </div>
     </article>
   )
@@ -106,7 +111,6 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 /* ------------------------------------------------------------------ 助手 */
 
 function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
-  const t = useT()
   const allSubagents = useStore((s) => s.subagents)
   const attachedSubagents = allSubagents.filter((run) =>
     !!run.parentMessageId && (run.parentMessageId === turn.id || turn.sourceIds.includes(run.parentMessageId))
@@ -117,14 +121,6 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
    * 进度数据仍留在回合模型里，历史 / 调试不会丢失，只是不再占用消息流。
    */
   const visibleImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
-  const actualDetail = turn.responseDetail === 'brief'
-    ? t('detail.brief')
-    : turn.responseDetail === 'detailed'
-      ? t('detail.detailed')
-      : turn.responseDetail === 'standard'
-        ? t('detail.standard')
-        : t('detail.unknown')
-
   const hasBody =
     turn.commentary.length > 0 ||
     !!turn.response ||
@@ -147,21 +143,6 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
         <Icon name="sparkle" size={12} />
       </div>
       <div className="msg-body">
-        <div className="msg-label">
-          <span>{t('chat.assistant')}</span>
-          {/* 合并的证据：一个回合里有几次工具往返，标出来 */}
-          {turn.tools.length > 1 ? (
-            <span className="msg-turn-count" title={t('turn.merged', { n: turn.sourceIds.length })}>
-              {t('turn.steps', { n: turn.tools.length })}
-            </span>
-          ) : null}
-          {turn.responseDetail ? (
-            <span className="msg-turn-detail" data-testid="response-detail" title={t('detail.actual')}>
-              {actualDetail}
-            </span>
-          ) : null}
-        </div>
-
         {/*
          * 渲染顺序：**模型说话 → 工作执行栏 → 回复**（用户指定）。
          *
@@ -217,8 +198,56 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
         {streaming && !turn.response && !turn.commentary.length && !turn.tools.length && !turn.thinking ? (
           <span className="cursor" />
         ) : null}
+        <TurnFooter turn={turn} />
       </div>
     </article>
+  )
+}
+
+/** 回合底部只保留可验证的统计；模型名、回复档位与工具步数不再占据正文顶部。 */
+function TurnFooter({ turn }: { turn: AssistantTurn }) {
+  const t = useT()
+  const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatElapsed(turn.elapsedMs) : null
+  const hasMeta = !!elapsed || !!turn.timestamp || turn.tools.length > 1
+  if (!hasMeta) return null
+
+  return (
+    <div className="turn-footer" data-testid="turn-footer">
+      {turn.tools.length > 1 ? (
+        <span className="turn-footer-item" title={t('turn.merged', { n: turn.sourceIds.length })}>
+          {t('turn.steps', { n: turn.tools.length })}
+        </span>
+      ) : null}
+      {elapsed ? (
+        /* 悬停要能解释口径：这里是**整轮**墙钟时间（含工具往返与重试），
+           不是单条消息的生成时间（后者在用量条里单独表达）。 */
+        <span className="turn-footer-item" title={t('tok.elapsedTip')}>
+          {t('tok.elapsed')} {elapsed}
+        </span>
+      ) : null}
+      {turn.timestamp ? <TurnTime timestamp={turn.timestamp} /> : null}
+    </div>
+  )
+}
+
+function TurnTime({ timestamp }: { timestamp: number }) {
+  const date = new Date(timestamp)
+  if (!Number.isFinite(date.getTime())) return null
+  const iso = date.toISOString()
+  const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date)
+  const full = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short'
+  }).format(date)
+  return (
+    <time className="turn-footer-item turn-time" dateTime={iso} title={full}>
+      {clock}
+    </time>
   )
 }
 

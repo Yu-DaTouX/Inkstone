@@ -117,8 +117,31 @@ YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run check
 受影响的场景（都要求模型真的动工具）：`contextsweep` / `contextproduce` /
 `contextepisode` / `contextfoldpref` / `subagent` 等。
 **跑全量门槛时统一带上这个变量**，否则会把“模型不干”当成“代码坏了”。
-（本机的本地 llama.cpp 模型也能跑这些场景，但需先在 pi 的 models.json 里
-注册 provider；它同样需要模型真的肯调工具——单跑一次验证一下再批量用。）
+
+### 本地 llama.cpp 模型（用户环境的 `local/qwen3-local`）
+
+`127.0.0.1:8081`（pi 的 `models.json` 里已注册 provider `local`），GGUF 在
+`E:\AI\opencode\models\Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp\`，二进制是
+`E:\AI\opencode\llama.cpp\llama-server.exe`。启动（与用户 `llama-webui/launcher.py` 同参数，
+端口按 `models.json` 取 8081）：
+
+```bash
+llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
+  --cache-type-k q4_0 --cache-type-v q4_0 --flash-attn on -ngl 99 \
+  --jinja --parallel 1 --host 127.0.0.1 --port 8081
+```
+
+2026-09-22 实测（实施-11 H-1）：
+
+- **它调工具，但对上下文长度敏感**：在仓库根（含 `AGENTS.md`，system + 工具约 6.8–8.6K）
+  连续 9 次“必须调工具”都不调、只回话；换到 `fixture: true` / `fixtureSub: 'repo'` 的
+  沙盒（~3K）后一次就调。**写 cost 1 工具场景时用 fixture 沙盒**，别拿仓库根当 cwd。
+- **任务要不可猜**：“执行 `echo hi` 并回报输出”会被直接回答；要读一个模型不知道内容的文件。
+- 先用一条 curl / fetch 单独验工具调用形状（应回 `finish_reason=tool_calls`，1–2 秒）。
+
+判读探针里的工具调用时：**工具挂在回合较早的 assistant 消息上**，最后一条往往只是纯文本
+回复。要按“最后一个 user 消息之后”汇总整轮，并用 DOM 的 `data-tools` / `.trow` 交叉验证，
+否则会误判成“模型没调工具”（H-1 第一版就这样白查了三轮）。
 
 ### 例外：需要真实可见窗口的场景（`visible: true`）
 
@@ -325,7 +348,7 @@ YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run check
   而本场景验的是宿主写入链。`afterExit: taskCliLog` 再核对磁盘：日志按**会话 id** 命名、
   两行、`revision` 1→2、每行带 `schemaVersion` / `round` / `at`，
   且**会话 JSONL 里没有任务条目**（宿主日志写在 `YAN_DATA_DIR/task-plans/`，不写会话文件，
-  判定过程见 [证据-02-S3 §1](../plan/证据-02-S3-宿主任务服务.md)）。
+  判定过程见 [证据-02-S3 §1](../archive/evidence/证据-02-S3-宿主任务服务.md)）。
   免费模型本轮实测会空回复或不调工具（日志里是 `[错误] 重试失败，本轮结束。`），
   建议直接 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`。
   **S4 又加 4 条**：工具行被标为砚内置任务计划、标记的仍是 `bash` 卡、徐标写「任务计划」、
@@ -620,8 +643,8 @@ node scripts/hook-probe.mjs budget-soft       # 05-S4 对照：同一份消息 +
 它**不进 `check`**：不进三层里的任何一层（不启 Electron、不用真实模型），
 但它比断言更难伪造 —— 「第 2 个请求没发出」是假 provider 侧的计数。
 改钩子相关行为（预算门 / 压缩 / 工具门禁）时重跑并把结论写回
-[证据-05-S1](../plan/证据-05-S1-钩子与安全点.md)（钩子能力边界）与
-[证据-05-S4](../plan/证据-05-S4-请求前预算门.md)（预算门）。
+[证据-05-S1](../archive/evidence/证据-05-S1-钩子与安全点.md)（钩子能力边界）与
+[证据-05-S4](../archive/evidence/证据-05-S4-请求前预算门.md)（预算门）。
 两个必知的坑：spawn pi 时 **stdin 必须断开**（否则 `--print` 等 stdin，表现为卡死）；
 假 provider 的工具命令里**只能用相对路径**（反斜杠会被当转义吃掉）。
 
