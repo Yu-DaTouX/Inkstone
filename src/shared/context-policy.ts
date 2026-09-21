@@ -113,6 +113,19 @@ export const CONTEXT_POLICY_PRESETS: Record<'default' | 'reference', ContextPoli
 }
 
 /**
+ * 大窗口的模型级试行档。
+ *
+ * 这两档不是新的全局默认，也不是对“模型名带 1M”作出的自动判断；
+ * 设置页只把它们写入当前精确的 `provider/model` 覆盖。真正生效时仍会
+ * 经过 `contextBudget()` 的窗口、输出预留与安全余量三重 `min` 约束，
+ * 因此切到较小窗口模型不会继承一个裸的 600K/700K 上限。
+ */
+export const LARGE_CONTEXT_POLICY_PRESETS: Record<'balanced' | 'long', ContextPolicyOverrides> = {
+  balanced: { workingSetCap: 600_000, windowRatio: 0.7 },
+  long: { workingSetCap: 700_000, windowRatio: 0.7 }
+}
+
+/**
  * 算工作集预算。
  *
  * 窗口未知（0 / NaN）或**小到装不下预留与余量**时返回 `null` —— 策略在这种模型上

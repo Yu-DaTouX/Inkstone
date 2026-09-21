@@ -1504,6 +1504,15 @@ const CASES = {
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
+
+  /*
+   * 实施-11 H-2：右栏资源保留（cost 0）。
+   *
+   * 切右栏标签过去会 `closeBrowser()` —— 网页会话直接丢掉。现在切成“只隐藏、
+   * 不释放”，只有显式关标签才释放对应那一个。场景真开一个 about:blank 浏览器，
+   * 再走“切走 → 切回 → 收起右栏 → 逐个关标签”。
+   */
+  rightresources: { probe: 'scripts/probe/right-resources.js', delay: 10000, cost: 0 },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()

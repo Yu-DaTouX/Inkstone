@@ -142,9 +142,22 @@ export function FileTree() {
     setVisibleLimit(FS_PAGE)
   }, [cwd, generation, projectId, showHidden])
 
+  /*
+   * 工作目录 / 项目 / 运行代次变了 → 旧预览已经不属于当前项目，关掉它。
+   *
+   * ⚠️ 必须排除「首次挂载」：这个分区会随右栏标签切换反复挂载，而挂载时
+   *    `cwd` 永远有值 —— 无条件 `closePreview()` 会在用户切到工具标签时
+   *    把他刚打开的文件预览关掉，与「切页只隐藏、不销毁资源」直接矛盾
+   *    （实施-11 H-2 实测到：切到浏览器标签再回来，文件预览没了）。
+   *    所以只有身份**真的变了**才清，首帧不算变化。
+   */
+  const previewScope = `${cwd ?? ''}\u0000${projectId ?? ''}\u0000${generation ?? 0}`
+  const lastPreviewScopeRef = useRef(previewScope)
   useEffect(() => {
+    if (lastPreviewScopeRef.current === previewScope) return
+    lastPreviewScopeRef.current = previewScope
     if (cwd) closePreview()
-  }, [closePreview, cwd, generation, projectId])
+  }, [closePreview, cwd, previewScope])
 
   const load = useCallback(
     async (path: string) => {

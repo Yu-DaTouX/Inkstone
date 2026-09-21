@@ -351,7 +351,8 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       resolveContextPolicy,
       sanitizeContextPolicyOverrides,
       sanitizeContextPolicyByModel,
-      CONTEXT_POLICY_PRESETS
+      CONTEXT_POLICY_PRESETS,
+      LARGE_CONTEXT_POLICY_PRESETS
     } = mod
     const { setContextPolicySettings } = mainMod
 
@@ -451,6 +452,41 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '参考方案预设是 300k / 0.75'
     )
     ok(Object.keys(CONTEXT_POLICY_PRESETS.default).length === 0, '默认预设是空覆盖（用完默认）')
+
+    /*
+     * 实施-11：1M 模型试行档只允许落在精确的 provider/model 覆盖上。
+     * 这里不测 React 按钮，而是把按钮最终写入的纯数据与预算公式钉住：
+     * 全局默认不能被污染，较小窗口也不能把裸上限照搬进去。
+     */
+    ok(
+      LARGE_CONTEXT_POLICY_PRESETS.balanced.workingSetCap === 600_000 &&
+        LARGE_CONTEXT_POLICY_PRESETS.balanced.windowRatio === 0.7,
+      '大窗口平衡试行档是 600k / 70%'
+    )
+    ok(
+      LARGE_CONTEXT_POLICY_PRESETS.long.workingSetCap === 700_000 &&
+        LARGE_CONTEXT_POLICY_PRESETS.long.windowRatio === 0.7,
+      '大窗口长上下文试行档是 700k / 70%'
+    )
+    ok(
+      contextBudget(1_000_000)?.workingSet === DEFAULT_CONTEXT_POLICY.workingSetCap,
+      '试行档不会改变全局默认 240k'
+    )
+    ok(
+      contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.balanced })?.workingSet ===
+        600_000,
+      '平衡试行档写入精确模型后得到 600k 工作集'
+    )
+    ok(
+      contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.long })?.workingSet ===
+        700_000,
+      '长上下文试行档写入精确模型后得到 700k 工作集'
+    )
+    ok(
+      contextBudget(800_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.long })?.workingSet ===
+        560_000,
+      '较小窗口不会照搬 700k 裸上限（受 70% 窗口约束）'
+    )
 
     /* 主进程入口：登记设置层后按当前模型查表，env 仍然最高 */
     setContextPolicySettings({ user: { workingSetCap: 42_000 }, byModel: { 'm/a': { windowRatio: 0.5 } } })

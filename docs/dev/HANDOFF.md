@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -14,6 +14,34 @@
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-22）· 实施-11 H-2 / C-1：右栏资源保留与大窗口试行档
+
+> 队列位次 2、3。两片都是「代码已落、缺证据」的收尾：H-2 让切右栏标签只隐藏、
+> 不销毁已打开的资源；C-1 让 600K / 700K 只作为**当前精确 `provider/model`** 的
+> 试行档写下去，其余模型仍走原覆盖链。
+
+#### H-2 右栏资源保留
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`RightPanel.tsx`](../../src/renderer/src/components/toolbar/RightPanel.tsx)：`switchWindow()` 切页不再 `closeBrowser / closePreview / closeReview`，只切活动窗口并把浏览器原生视图隐掉；新增 effect 作为**唯一**显隐协调点（`activeView === 'browser'`）；`activeView` 不再被「资源存在」反向覆盖。[`store.ts`](../../src/renderer/src/state/store.ts)：`openBrowser` 不再清 `filePreview`，`closeReview / closePreview` 不再自行恢复浏览器视图（交给协调器）。[`FileTree.tsx`](../../src/renderer/src/components/toolbar/FileTree.tsx)：修掉真正的元凶 —— 右栏标签切换会让文件区重挂载，而 mount effect 无条件 `closePreview()`，于是「切到浏览器再回来，用户刚打开的文件没了」；现在只在 `cwd/projectId/generation` 真变化时清，首帧不算变化。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4227/4227**。 |
+| 真实运行 | `npm run test:live -- rightresources`（**cost 0**，21 条断言）全通过。实测：打开浏览器 → 切工具 / 文件 / 再切回浏览器，`browserState.open` 与 URL 始终不变（旧行为会在这几步关掉网页）；浏览器 + 审查 + 文件三者并存；收起右栏后三者也都还在（仅审查 + 收起时 `rightpanel` 宽 576px；所有资源关掉后宽 0px、退出布局）；显式关浏览器只释放浏览器（`reviewOpen / filePreview` 仍为 true），关文件 / 关审查各自只释放自己，全部关掉后回到「工具」标签。 |
+| 视觉验收 | 新状态 `rightresources`（组 0 / 1），看图核对：右栏标签行同时有 工具 / 审查 / 浏览器 / 文件，活动的是文件且 `PROJECT.md` 预览在下方（浏览器原生视图已让位），溢出 0px —— [`matrix-rightresources-1440x900-100-dark-2026-09-22-h2b.png`](../design/preview/matrix-rightresources-1440x900-100-dark-2026-09-22-h2b.png)、[`matrix-rightresources-1440x900-100-light-2026-09-22-0550.png`](../design/preview/matrix-rightresources-1440x900-100-light-2026-09-22-0550.png)。⚠️ 另有一张旧的 `...-h2.png` 是状态脚本被模板字符串里的反引号截断、状态没生效的产物（图上右栏只剩「工具」），**不要引用**；脚本已修并在 h2b 重拍。 |
+| 应用与包 | 未因本片重跑 `dist:dir` / `test:packaged`，包级证据归 H-5 与实施-09 统一复跑。 |
+| 剩余限制 | ① 仍只有一个活动内容区，`tabs / activeTabId / width / version` 的会话级持久化是 **H-3**；② 浏览器导航 revision、草稿与已提交地址分离、错误态是 **H-9**；③ 关闭浏览器标签是否 abort 正在跑的导航未单独取证；④ 未验证 A/B 会话切换时的资源归属（H-3 出口）。 |
+
+#### C-1 大窗口模型级试行档
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`shared/context-policy.ts`](../../src/shared/context-policy.ts) 新增 `LARGE_CONTEXT_POLICY_PRESETS`（`balanced = 600K / 0.7`、`long = 700K / 0.7`），只作为「当前 `provider/model` 覆盖」的候选值，不碰全局默认。[`ContextTab.tsx`](../../src/renderer/src/components/settings/ContextTab.tsx) 在模型级覆盖区新增两档分段按钮，只有 `contextWindow >= 800_000` 的当前模型才可点；`applyModelLargePreset()` 只写 `contextPolicyByModel[provider/model]`。中英文文案同步。 |
+| 自动检查 | [`test-context-policy.mjs`](../../scripts/test-context-policy.mjs) 新增 6 条：两档参数就是 600K / 700K 且 `windowRatio=0.7`；`contextBudget(1M)` 仍是 240K（不污染默认）；写入 balanced / long 后工作集分别是 600K / 700K；**800K 窗口下 long 只拿到 560K**（70% 窗口约束生效，不会照搬裸上限）。全套 `test:unit` 4227/4227。 |
+| 真实运行 | `npm run test:live -- contextbudget`（cost 0，真实窗口 + 真实模型）新增断言并全通过：当前 `commandcode/meituan/LongCat-2.0:free`（登记窗口 1048576）两档可点；点「均衡」后 `source=model`、`contextPolicyByModel[key].workingSetCap=600000` 且 `budget.workingSet=600000`；点「长材料」同样精确到 700000；把 model 形状注入成 131072 后两档**立刻禁用**、恢复后重新可用；换到 `deepseek/deepseek-v4-flash` 后来源回到 default、工作集重算 240000；切回原模型覆盖重新生效、清理无副作用。 |
+| 视觉验收 | 新状态 `ctxmodelpresets`（组 0 / 1），看图核对：模型级覆盖点名 `commandcode/meituan/LongCat-2.0:free`，下方「大窗口试行档」有「均衡 · 600K / 长材料 · 700K」两个按钮，说明是「仅写入当前精确模型；先确认端点容量与本次输出预算，参数仍需实测」，深浅均无溢出 —— [`matrix-ctxmodelpresets-1440x900-100-dark-2026-09-22-c1.png`](../design/preview/matrix-ctxmodelpresets-1440x900-100-dark-2026-09-22-c1.png)、[`matrix-ctxmodelpresets-1440x900-100-light-2026-09-22-c1.png`](../design/preview/matrix-ctxmodelpresets-1440x900-100-light-2026-09-22-c1.png)。 |
+| 应用与包 | 同上，未重跑包级，归 H-5 / 实施-09。 |
+| 剩余限制 | ① **没有真实 1M 端点证据**：600K / 700K 是试行参数，不是容量承诺或性能结论，端点验证归 C-3（需要用户明确允许与可控额度）；② 未验证端点实际窗口与 pi 登记窗口不一致时的表现（C-4 / C-3）；③ 本片不涉及压缩门槛与防抖标定（C-6）；④ 单测只钉了 800K 一个缩放点，没有覆盖 600K / 700K 之间与更小窗口的连续矩阵（那正是 C-3）。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 H-1：回合页脚与整轮计时口径
 
