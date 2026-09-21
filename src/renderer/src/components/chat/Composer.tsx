@@ -818,6 +818,9 @@ export function Composer() {
   }, [])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    /* 原生 capture 兜底已经处理过的 Tab 不得再被 React 处理一次。 */
+    if (e.defaultPrevented) return
+
     /*
      * 补全菜单的键盘导航。
      *
@@ -967,6 +970,28 @@ export function Composer() {
       modeButtonRef.current?.focus()
     }
   }
+
+  /*
+   * Electron 的真实 Tab 事件有时会在 React 合成事件到达前被原生焦点移动吞掉。
+   * 在 document capture 阶段再守一层，但只针对输入框本身：其它控件仍保持系统
+   * 的 Tab 焦点遍历，补全 / IME / 长文 / 显式关掉开关也不被抢。
+   */
+  useEffect(() => {
+    if (!workModeTab) return undefined
+    const onCapture = (event: KeyboardEvent): void => {
+      if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+      if (event.isComposing || expanded || disabled) return
+      const target = event.target
+      if (!(target instanceof HTMLTextAreaElement) || target.dataset.testid !== 'composer') return
+      const completionOpen = menu.open && (slashMatches.length > 0 || atMatches.length > 0)
+      if (completionOpen) return
+      event.preventDefault()
+      event.stopPropagation()
+      void setWorkMode(nextWorkMode(activeWorkMode))
+    }
+    document.addEventListener('keydown', onCapture, true)
+    return () => document.removeEventListener('keydown', onCapture, true)
+  }, [activeWorkMode, atMatches.length, disabled, expanded, menu.open, setWorkMode, slashMatches.length, workModeTab])
 
   return (
     <div

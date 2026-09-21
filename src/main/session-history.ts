@@ -18,6 +18,9 @@
 import { planHistoryRead } from '../shared/session-chain'
 import { readSessionMessages, type ReadResult } from './session-reader'
 import type { SessionChainStore } from './session-chain-service'
+import type { UIMessage } from '../shared/ipc'
+
+export type HistorySegmentHydrator = (sessionFile: string, messages: UIMessage[]) => Promise<UIMessage[]>
 
 /**
  * 读一条会话的**完整历史**（若它在链上，按段从旧到新拼接）。
@@ -28,14 +31,22 @@ import type { SessionChainStore } from './session-chain-service'
  */
 export async function readChainMessages(
   headFile: string,
-  chains: SessionChainStore | null | undefined
+  chains: SessionChainStore | null | undefined,
+  hydrate?: HistorySegmentHydrator
 ): Promise<ReadResult | null> {
   /*
    * A/B 反向验证通道（只用于定位「链感知是否引入时序变化」）：
    * 禁用链拼接，退回与改动前逐字一致的单文件读法。默认不开。
    */
-  if (process.env.YAN_NO_CHAIN_HISTORY === '1') return readSessionMessages(headFile).catch(() => null)
-  if (!chains) return readSessionMessages(headFile).catch(() => null)
+  const readOne = async (file: string): Promise<ReadResult | null> => {
+    const result = await readSessionMessages(file).catch(() => null)
+    if (!result || !hydrate) return result
+    const messages = await hydrate(file, result.messages).catch(() => result.messages)
+    return { ...result, messages }
+  }
+
+  if (process.env.YAN_NO_CHAIN_HISTORY === '1') return readOne(headFile)
+  if (!chains) return readOne(headFile)
   await chains.load()
   const plan = planHistoryRead(chains.chainOf(headFile))
   const files = plan.length ? plan : [headFile]
@@ -49,7 +60,7 @@ export async function readChainMessages(
   let missing = 0
 
   for (const file of files) {
-    const result = await readSessionMessages(file).catch(() => null)
+    const result = await readOne(file)
     if (!result) {
       missing += 1
       continue
@@ -63,7 +74,7 @@ export async function readChainMessages(
     read += 1
   }
 
-  if (!read) return readSessionMessages(headFile).catch(() => null)
+  if (!read) return readOne(headFile)
   return {
     messages,
     total,

@@ -1227,6 +1227,22 @@
   margin-left: 5px;
 }
 
+/* 文件树预览与工具栏共用右栏，但不能再让 grid 自动创建隐式行。
+   预览固定为上方的紧凑区域，下面的工具区拿剩余空间；这样点文件树
+   不会把文件头、工具栏和代码内容叠在同一行。 */
+.rightpanel.file-preview-mode:not(.tools-collapsed) {
+  grid-template-rows: auto minmax(120px, min(38%, 320px)) minmax(0, 1fr);
+}
+
+.rightpanel.file-preview-mode:has(> .tool-lib):not(.tools-collapsed) {
+  grid-template-rows: auto auto minmax(120px, min(38%, 320px)) minmax(0, 1fr);
+}
+
+.rightpanel.file-preview-mode .fp {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* 21. 右栏 —— 任务进度 */
 .rightpanel {
   background: var(--bg-1);
@@ -1396,7 +1412,8 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 4px var(--sp-2);
+  min-height: 30px;
+  padding: 3px var(--sp-2);
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-sm);
   color: var(--fg-dim);
@@ -1472,8 +1489,8 @@
   margin: 0;
   padding: 0 0 var(--sp-3);
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  line-height: 18px;
+  font-size: var(--fs-xs);
+  line-height: 16px;
 }
 
 .fp-row {
@@ -1482,7 +1499,7 @@
 
 .fp-gutter {
   flex: none;
-  width: 46px;
+  width: 34px;
   padding-right: var(--sp-2);
   text-align: right;
   color: var(--fg-mute);
@@ -1522,8 +1539,8 @@
 }
 
 .fp-image img {
-  max-width: 100%;
-  max-height: 60vh;
+  max-width: min(240px, 100%);
+  max-height: 240px;
   object-fit: contain;
   border-radius: var(--r-sm);
 }
@@ -1784,4 +1801,333 @@
   justify-content: flex-end;
   padding: var(--sp-2);
   border-top: 1px solid var(--border);
+}
+
+/*
+ * 66. 右栏上下文面板：参考 ChatGPT / IDE Inspector 的信息层级。
+ *
+ * 右栏不是一组互相争夺高度的 Dashboard 卡片，而是一个固定标题 + 一个
+ * 唯一滚动内容区；每个 Section 是可折叠的分组行。这样文件、任务、扩展和
+ * 最近活动的层级由缩进 / 色阶表达，滚轮也不会在多个容器之间跳来跳去。
+ */
+.rightpanel:not(.browser-mode):not(.review-mode):not(.file-preview-mode) {
+  grid-template-rows: 44px minmax(0, 1fr);
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode):not(.file-preview-mode):has(> .tool-lib) {
+  grid-template-rows: 44px auto minmax(0, 1fr);
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-top {
+  box-sizing: border-box;
+  position: relative;
+  min-height: 44px;
+  padding: 0 10px;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-title {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 0 16px;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
+  min-width: 0;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec {
+  min-width: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec + .rp-sec {
+  margin-top: 0;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-row {
+  min-height: 40px;
+  align-items: center;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-grip {
+  /*
+   * 把手仍保留独立的键盘/拖拽命中区，但不再把它当成 20px 的常驻栏位。
+   * 之前的 20px + 4px 左边距会把每个分区的箭头和标题整体推远，
+   * 在窄右栏里就表现成标题左侧一大片空白。
+   */
+  width: 12px;
+  height: 20px;
+  margin-left: 0;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 40px;
+  padding: 0 6px 0 0;
+  gap: 2px;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head .chev {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  flex: none;
+  opacity: 0.75;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body {
+  min-width: 0;
+  /* 内容从箭头槽附近起步；文件树自己的层级缩进仍由 .rp-fs-row 负责。 */
+  padding: 0 6px 10px 12px;
+  gap: 6px;
+}
+
+/* Codex 风格的右栏工作区启动器：紧凑、靠右，不额外占一整行。 */
+.rp-tool-launcher-wrap {
+  position: relative;
+  flex: none;
+}
+
+.rp-tool-launcher {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  background: transparent;
+}
+
+.rp-tool-launcher:hover,
+.rp-tool-launcher.on {
+  border-color: var(--border-soft);
+  color: var(--fg);
+  background: var(--bg-2);
+}
+
+.rp-tool-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: min(250px, calc(100vw - 24px));
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 28%);
+}
+
+.rp-tool-menu-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rp-tool-menu-item:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--bg-2);
+}
+
+.rp-tool-menu-item:disabled {
+  opacity: .42;
+  cursor: default;
+}
+
+.rp-tool-menu-item kbd {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-full);
+  color: var(--fg-mute);
+  background: var(--bg-3);
+  font: inherit;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-fs,
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-log {
+  min-width: 0;
+}
+
+/*
+ * 67. 右栏窗口标签：工具栏 / 审查 / 浏览器 / 文件共用一个窗口壳。
+ *
+ * 这组规则放在工具栏样式末尾，是右栏布局的最终真源。旧的 browser-mode
+ * 与 file-preview-mode 规则仍保留给历史兼容路径，但新的 right-window-panel
+ * 只让一个表面进入第二行，避免原生浏览器和 DOM 面板互相抢高度。
+ */
+.rightpanel.right-window-panel.window-tools:not(.tools-collapsed) {
+  grid-template-rows: 42px minmax(0, 1fr) !important;
+}
+
+.rightpanel.right-window-panel.window-tools:not(.tools-collapsed):has(> .tool-lib) {
+  grid-template-rows: 42px auto minmax(0, 1fr) !important;
+}
+
+.rightpanel.right-window-panel.window-review,
+.rightpanel.right-window-panel.window-file,
+.rightpanel.right-window-panel.window-browser:not(.tools-collapsed) {
+  grid-template-rows: 42px minmax(0, 1fr) !important;
+}
+
+.rightpanel.right-window-panel.window-browser.tools-collapsed {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+.rightpanel.right-window-panel .rp-windowbar {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+}
+
+.rightpanel.right-window-panel .rp-windowbar::-webkit-scrollbar {
+  display: none;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .rp-window-tab {
+  flex: 0 1 auto;
+  min-width: 128px;
+  max-width: 220px;
+  height: 30px;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .rp-window-tab:not(.active):hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.rightpanel.right-window-panel .rp-window-tab > span:not(.spacer) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .rp-window-plus {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  color: var(--fg-mute);
+  background: transparent;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .rp-window-plus:hover,
+.rightpanel.right-window-panel .rp-windowbar .rp-window-plus.on {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.rightpanel.right-window-panel .rp-windowbar .rp-tool-launcher-wrap {
+  z-index: 20;
+  flex: none;
+}
+
+.rightpanel.right-window-panel.window-browser .browser-surface,
+.rightpanel.right-window-panel.window-review .review,
+.rightpanel.right-window-panel.window-file .rp-body {
+  min-width: 0;
+  min-height: 0;
+}
+
+.rightpanel.right-window-panel.window-browser .browser-surface {
+  height: 100%;
+}
+
+.rightpanel.right-window-panel.window-review .review {
+  overflow: hidden;
+}
+
+.rightpanel.right-window-panel.window-file .rp-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+  background: var(--bg-1);
+}
+
+.rightpanel.right-window-panel.window-file .rp-body:has(> .fp) {
+  grid-template-rows: minmax(120px, min(38%, 320px)) minmax(0, 1fr);
+}
+
+.rightpanel.right-window-panel.window-file .rp-body > .fp {
+  grid-row: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rightpanel.right-window-panel.window-file .rp-body > .rp-slot {
+  display: none;
+}
+
+.rightpanel.right-window-panel.window-file .rp-body > .rp-slot[data-tool-id='files'] {
+  display: block;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden auto;
+}
+
+.rightpanel.right-window-panel.window-file .rp-body:has(> .fp) > .rp-slot[data-tool-id='files'] {
+  grid-row: 2;
+}
+
+.rightpanel.right-window-panel.window-file .rp-body > .rp-slot[data-tool-id='files'] > .rp-sec {
+  min-width: 0;
+  min-height: 0;
 }

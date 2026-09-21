@@ -134,18 +134,21 @@
       else bad('入口上没有软件名')
       if (mb.getAttribute('role') === 'switch') ok('语义角色为 switch')
       else bad('没有 switch 语义角色')
-      const before = store.getState().workMode?.mode ?? 'standard'
-      const target = before === 'autonomous' ? 'standard' : 'autonomous'
+      const before = store.getState().workspaceMode ?? 'daily'
+      const agentBefore = store.getState().workMode?.mode ?? 'standard'
+      const target = before === 'coding' ? 'daily' : 'coding'
       click(mb)
-      const switched = await until(() => store.getState().workMode?.mode === target, 3000)
-      if (switched) ok(`开关切到真实 ${target} 工作模式`)
-      else bad(`开关没有切到 ${target} 工作模式`)
-      if (mb.getAttribute('aria-checked') === String(target === 'autonomous')) ok('aria-checked 与实际模式同步')
-      else bad('aria-checked 没有与实际模式同步')
+      const switched = await until(() => store.getState().workspaceMode === target, 3000)
+      if (switched) ok(`开关切到独立工作区 ${target}`)
+      else bad(`开关没有切到工作区 ${target}`)
+      if ((store.getState().workMode?.mode ?? 'standard') === agentBefore) ok('工作区切换没有改动 AgentMode')
+      else bad('工作区切换错误改动了 AgentMode')
+      if (mb.getAttribute('aria-checked') === String(target === 'coding')) ok('aria-checked 与工作区同步')
+      else bad('aria-checked 没有与工作区同步')
       click(mb)
-      const restored = await until(() => store.getState().workMode?.mode === before, 3000)
-      if (restored) ok(`开关切回真实 ${before} 工作模式`)
-      else bad(`开关没有切回 ${before} 工作模式`)
+      const restored = await until(() => store.getState().workspaceMode === before, 3000)
+      if (restored) ok(`开关切回工作区 ${before}，AgentMode 不受影响`)
+      else bad(`开关没有切回工作区 ${before}`)
     }
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')

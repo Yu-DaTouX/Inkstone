@@ -419,11 +419,12 @@
 
     /* ---------------------------------------------------------- */
     out.push('')
-    out.push('=== 8. 与内置浏览器共存（右栏上半浏览器 / 下半文件树） ===')
+    out.push('=== 8. 右栏窗口标签（浏览器 / 文件单一活动表面） ===')
     /*
      * 内置浏览器是原生 `WebContentsView`，永远盖在渲染层之上，位置由主进程
-     * 按 `zoomFactor` 换算。探针量不到原生视图本身，但能钉死渲染层这一侧：
-     * 占位区与右栏同宽、与下方文件树**不重叠**、打开浏览器不把文件树挤掉。
+     * 按 `zoomFactor` 换算。现在浏览器和文件不是上下共存的两块，而是右栏
+     * 共同标签栏里的两个窗口；探针钉住的是活动窗口、标签存在和切换后的
+     * 文件树恢复，避免把旧的“浏览器上半 / 文件树下半”契约当成回归标准。
      */
     const browserToggle = q('[data-testid="browser-view-toggle"]')
     if (!browserToggle) {
@@ -440,35 +441,51 @@
       const surface = q('[data-testid="browser-surface"]')
       const viewport = surface?.querySelector('.browser-viewport')
       const body = q('[data-testid="rp-body"]')
+      const browserTab = q('[data-testid="right-window-tab-browser"]')
       const wAfterBrowser = widthOf(rpEl())
       const sRect = surface?.getBoundingClientRect()
       const vRect = viewport?.getBoundingClientRect()
-      const bRect = body?.getBoundingClientRect()
       out.push(
-        `  右栏 ${wBeforeBrowser} → ${wAfterBrowser}；浏览器占位 ${vRect ? Math.round(vRect.width) + '×' + Math.round(vRect.height) : '无'}；文件树区 ${bRect ? Math.round(bRect.width) + '×' + Math.round(bRect.height) : '无'}`
+        `  右栏 ${wBeforeBrowser} → ${wAfterBrowser}；浏览器占位 ${vRect ? Math.round(vRect.width) + '×' + Math.round(vRect.height) : '无'}；工具正文 ${body ? '仍在' : '已卸载'}`
       )
       ok(Math.abs(wAfterBrowser - wBeforeBrowser) <= 1, '打开浏览器不改变右栏宽度')
       ok(!!sRect && sRect.width > 0 && sRect.width <= wAfterBrowser + 1, '浏览器面板在右栏内，未撑破')
       ok(!!vRect && vRect.width > 0 && vRect.height > 0, '渲染层给原生视图留出了占位区')
-      ok(!!bRect && bRect.width > 0 && bRect.height > 0, '下方文件树分区还在（没被浏览器挤掉）')
-      if (sRect && bRect) {
-        ok(sRect.bottom <= bRect.top + 1, '浏览器与文件树不重叠', `${Math.round(sRect.bottom)} ≤ ${Math.round(bRect.top)}`)
-      } else {
-        ok(false, '量不到浏览器/文件树的几何，共存无法判定')
-      }
-      const rowsInBrowserMode = rowsOf().length
-      out.push('  共存时文件树行数 = ' + rowsInBrowserMode)
-      ok(rowsInBrowserMode > 1, '浏览器打开时文件树仍有内容')
-      const overBrowserMode = rowsOf().filter((r) => r.scrollWidth > r.clientWidth + 1)
-      ok(overBrowserMode.length === 0, '共存时文件树行仍不横向溢出')
+      ok(!!browserTab && browserTab.getAttribute('aria-selected') === 'true', '浏览器以活动窗口标签显示')
+      ok(!body, '浏览器活动时工具栏正文已卸载，不与原生网页叠放')
 
-      /* 关掉浏览器：文件树恢复，且右栏宽度仍然正常（不留空列） */
-      browserToggle.click()
-      const closed = await until(() => !q('[data-testid="browser-surface"]'), 8000)
-      ok(closed, '再次点击开关能关掉内置浏览器')
-      await sleep(800)
-      const bodyAfter = q('[data-testid="rp-body"]')
-      ok(!!bodyAfter && widthOf(bodyAfter) > 0, '关掉浏览器后文件树分区恢复')
+      /* 点“工具栏”标签返回工具窗口，再从同一条标签栏的菜单打开文件窗口。 */
+      const toolsTab = q('[data-testid="right-window-tab-tools"]')
+      if (!toolsTab) {
+        ok(false, '浏览器窗口没有工具栏标签')
+      } else {
+        toolsTab.click()
+        const browserClosed = await until(() => !q('[data-testid="browser-surface"]'), 8000)
+        ok(browserClosed, '切回工具栏窗口后浏览器表面关闭')
+        const launcher = q('[data-testid="right-tool-menu"]')
+        if (!launcher) {
+          ok(false, '工具栏窗口没有窗口入口按钮')
+        } else {
+          launcher.click()
+          const menu = await until(() => !!q('[data-testid="right-tool-menu-popover"]'), 3000)
+          ok(menu, '窗口入口菜单可打开')
+          const fileItem = qa('.rp-tool-menu-item').find((el) => /文件/.test(el.textContent || ''))
+          if (!fileItem) {
+            ok(false, '窗口入口菜单没有文件项')
+          } else {
+            fileItem.click()
+            const fileWindow = await until(() => !!q('.rightpanel.window-file'), 5000)
+            ok(fileWindow, '文件以独立窗口表面打开')
+            ok(!!q('[data-testid="right-window-tab-file"]'), '文件窗口有自己的标签')
+            ok(!!q('[data-testid="rp-body"] [data-tool-id="files"]'), '文件窗口保留文件树')
+            ok(!q('[data-testid="browser-surface"]'), '文件窗口不与浏览器表面叠放')
+          }
+        }
+        const toolsAgain = q('[data-testid="right-window-tab-tools"]')
+        if (toolsAgain) toolsAgain.click()
+        const bodyAfter = await until(() => !!q('[data-testid="rp-body"]') && !q('.rightpanel.window-file'), 5000)
+        ok(bodyAfter, '切回工具栏窗口后文件树分区恢复')
+      }
     }
   } catch (e) {
     ok(false, '抛异常：' + (e && e.message ? e.message : String(e)))

@@ -41,6 +41,7 @@ import type {
   ZoomState
 } from '../../../shared/ipc'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
+import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
@@ -68,6 +69,12 @@ function attentionTitle(event: SoundEvent): string {
     case 'error':
       return en ? 'Error' : '出错'
   }
+}
+
+function initialWorkspaceMode(): WorkspaceMode {
+  if (typeof localStorage === 'undefined') return 'daily'
+  const value = localStorage.getItem('yan.workspace-mode')
+  return isWorkspaceMode(value) ? value : 'daily'
 }
 
 /**
@@ -317,6 +324,8 @@ interface Store {
    * 后台会话各自的值在 `sessionRuntimes` 里，切回去时主进程会再推一份权威值。
    */
   workMode: WorkModeState | null
+  /** 左栏工作区入口；与当前会话的 AgentMode 完全独立。 */
+  workspaceMode: WorkspaceMode
 
   /* 动作 */
   bootstrap: () => Promise<void>
@@ -467,6 +476,7 @@ interface Store {
    * 这里收到拒绝后把显示恢复成权威值，不让界面出现“已自主”的假象。
    */
   setWorkMode: (mode: WorkMode) => Promise<void>
+  setWorkspaceMode: (mode: WorkspaceMode) => void
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   /**
@@ -580,6 +590,16 @@ function runtimeForState(
     projectId: runner?.projectId,
     generation: runner?.generation ?? 0
   }
+}
+
+function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
+  const index = list.findIndex((message) => message.id === messageId)
+  if (index < 0) return list
+  const current = list[index]
+  if (current.artifacts?.some((item) => item.id === artifact.id)) return list
+  const out = list.slice()
+  out[index] = { ...current, artifacts: [...(current.artifacts ?? []), artifact] }
+  return out
 }
 
 /** 把后台缓存投影回顶层；主进程随后仍会用权威 sync/state 校正它。 */
@@ -892,6 +912,7 @@ export const useStore = create<Store>((rawSet, get) => {
   runners: [],
   sessionRuntimes: {},
   workMode: null,
+  workspaceMode: initialWorkspaceMode(),
 
   models: [],
   thinkingLevels: [],
@@ -1180,6 +1201,9 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'msg-update':
         set({ messages: patchMessage(s.messages, m.payload.id, m.payload.patch) })
         break
+      case 'artifact':
+        set({ messages: patchArtifact(s.messages, m.payload.messageId, m.payload.artifact) })
+        break
       case 'msg-remove':
         set({ messages: s.messages.filter((x) => x.id !== m.payload) })
         break
@@ -1271,23 +1295,16 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ queue: m.payload })
         break
       case 'subagent': {
-        /*
-         * 整条快照覆盖 / 追加（主进程已把转录限制在 200 条以内）。
-         *
-         * 新 run 同时把详情面板指向它：模型用 `yan subagent start` 启动时
-         * 没有经过任何 UI 点击（`startSubagent` 那条路才有），如果这里不接上，
-         * 模型委派的子代理只会静静地出现在列表里 —— 而能力说明向模型承诺的是
-         * 「启动后用户能看到同一个任务的实时转录」。已存在的 run 按 id 就地覆盖，
-         * 不动用户当前打开的详情。
-         */
+        /* 整条快照覆盖 / 追加（主进程已把转录限制在 200 条以内）。
+         * 模型启动的 run 会由回合内联卡片展示；不再抢占右侧详情面板，
+         * 否则模型一调用子代理，用户正在看的浏览器 / 文件 / 审查就会被强行盖住。 */
         const run = m.payload
         const idx = s.subagents.findIndex((r) => r.id === run.id)
         set({
           subagents:
             idx >= 0
               ? s.subagents.map((r) => (r.id === run.id ? run : r))
-              : [...s.subagents, run],
-          ...(idx < 0 ? { subagentPreviewId: run.id } : {})
+              : [...s.subagents, run]
         })
         break
       }
@@ -2242,6 +2259,11 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  setWorkspaceMode: (mode) => {
+    set({ workspaceMode: mode })
+    if (typeof localStorage !== 'undefined') localStorage.setItem('yan.workspace-mode', mode)
+  },
+
   /**
    * 改面板宽度（0 = 用设计默认值）。
    *
@@ -2517,9 +2539,29 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   openSettings: (tab) => {
+    /*
+     * WebContentsView 不受 renderer 的 z-index 约束。
+     * 先隐藏原生浏览器，再挂载设置层，避免设置打开时出现一帧穿透或整块盖住。
+     */
+    if (get().browserState.open) void window.yan.browser.setVisible(false)
     set({ settingsOpen: true, settingsTab: tab ?? 'appearance' })
   },
-  closeSettings: () => set({ settingsOpen: false }),
+  closeSettings: () => {
+    set({ settingsOpen: false })
+    /*
+     * 恢复要晚一拍：让 Settings 先从 DOM 卸载 / 结束退出帧。
+     * 只有浏览器仍打开且没有其它原生视图占用者时才恢复；否则会把文件预览、
+     * Git 审查或子代理详情重新盖住。
+     */
+    const restore = (): void => {
+      const state = get()
+      if (!state.settingsOpen && state.browserState.open && !state.filePreview && !state.reviewOpen && !state.subagentPreviewId) {
+        void window.yan.browser.setVisible(true)
+      }
+    }
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(restore)
+    else window.setTimeout(restore, 0)
+  },
   /**
    * 左栏是否展开。
    *

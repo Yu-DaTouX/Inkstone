@@ -13,7 +13,76 @@
 
 ## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
 
-> 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4152/4152**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`），但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+> 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+
+### 本轮增量（2026-09-21）· Codex 风格审查 / 右栏启动器与模式正交
+
+> 本片承接用户对 Codex 右栏、审查标签、Tab 快切、子代理归属和历史文件预览的反馈。
+> 参考图只作为交互与密度输入；下面的运行和视觉结论来自当前仓库自己的 Electron 证据。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 左栏“编码 / 日常”改为独立 `WorkspaceMode`，不再映射到当前回合的 AgentMode（标准 / 澄清 / 自主）；输入框的裸 Tab 增加 document-capture 兜底，保留补全、IME、长文和设置关闭时的正常焦点行为。模型委派的子代理通过 `parentMessageId` 绑定到触发它的助手回合，默认以内嵌卡片显示，不再自动抢占右侧详情；用户手动启动的子代理仍可打开详情。历史 artifact manifest 按会话链逐段恢复，源文件缺失时保留“不可用”卡片而不是静默消失。右栏标题行加入 Codex 风格紧凑工具启动器（审查 / 终端 / 浏览器 / 文件）；审查面板加入顶部“审查”标签与关闭入口；左栏导引线和右栏分区缩进按当前密度收紧。 |
+| 自动检查 | `npm run typecheck` 通过（TypeScript、18 份 CSS 约束、layer 自检 10 用例）；`npm run build` 通过；`npm run test:unit` **4160/4160**；artifact 单测新增“历史源文件被删除仍保留 unavailable 卡片”。`work-mode` 探针同步当前产品边界：自主态是静态靛蓝边界，不再要求已废止的旧版动画光带；模型子代理探针同步改为检查 `parentMessageId`、消息内卡片和“不强制打开详情”。 |
+| 真实运行 | `npm run test:live -- panels browser topbar settings` 通过；`npm run test:live -- workmode` 通过，真实 Electron 验证工作区切换不改 AgentMode、两次 Tab 循环、焦点不离开输入框、设置关闭 Tab 后恢复系统焦点行为，以及 A/B 会话模式隔离；浏览器原生视图场景通过，全部测试结束无残留 pi RPC 孤儿进程。 |
+| 视觉验收 | 视觉矩阵组 0 新增并看图核对：`matrix-righttoolmenu-1440x900-100-dark-2026-09-21-review-sidebar.png`、`matrix-review-1440x900-100-dark-2026-09-21-review-sidebar.png`、`matrix-main-1440x900-100-dark-2026-09-21-review-sidebar.png`、`matrix-subagentinline-1440x900-100-dark-2026-09-21-subagent-inline.png`，均溢出 **0px**。右栏菜单为四行紧凑启动器；审查页为独立标签 + diff + 变更树；子代理截图证明卡片位于触发回合正文轴内，右栏没有被强制切换。当前新增批次只覆盖 1440×900 深色组，浅色 / 窄窗 / 高 DPI 未在本片新增看图。 |
+| 应用与包 | 已通过 `启动-砚.cmd` 按最新源码重新构建并启动；当前开发构建包含本片 renderer / main 修改。尚未因本片重新生成 `dist:dir`、便携包或 NSIS 安装包，因此不把包内运行级证据前移。 |
+| 剩余限制 | 右栏启动器中的“终端”仍是明确禁用项，宿主终端面板尚未接入；快捷键胶囊目前承担可发现性，未为未接入的终端动作伪造快捷键。审查打开时接管整个右栏，宽度仍为右栏档位而非主内容区可拖拽列。缺失的历史产物会显示不可用卡片，但无法恢复已删除的原始字节。模型自主触发子代理的 cost 1 `subagentmodel` 场景已按新语义更新探针，本片未再次调用远程额度；若要把这一条也更新成最新运行证据，应在用户确认的本地模型可用时重跑。Android 仍按用户决定放到最后。 |
+
+### 本轮增量（2026-09-21）· 右栏统一窗口标签（工具栏 / 审查 / 浏览器 / 文件）
+
+> 用户要求右栏工具栏也采用审查页的窗口形态，并把浏览器与文件纳入同一套窗口入口。
+> 本片把几个表面收敛为一个活动窗口区；截图中的 Codex 页面只作为密度与层级参考，
+> 不替代本仓库的运行证据。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `RightPanel.tsx` 新增统一 `right-window-panel` 标签栏：工具栏、审查、浏览器、文件使用同级标签和关闭入口；工具窗口保留工具库与单一 `.rp-body` 滚动区，文件窗口在同一 `.rp-body` 中保持 `FileTree`，打开文件时把 `FilePreviewPane` 放在上方预览行，避免目录树被卸载；审查页移除重复的内部标签栏，避免双层窗口头；浏览器只在活动时渲染 DOM 壳，收起右栏时隐藏标签栏并让原生网页占满右列。`tools.css` 新增窗口表面布局、标签滚动与文件窗口约束。 |
+| 自动检查 | 本片最终 `npm run typecheck`、`npm run build`、`git diff --check` 均通过。构建仍只有 zod / virtua 第三方注释位置告警，没有本片错误。 |
+| 真实运行 | `npm run test:live -- panels browser settings` 通过；`npm run test:live -- fsedge` 通过，真实验证浏览器活动时工具正文卸载、切回工具栏关闭原生浏览器、文件窗口保留文件树、浏览器与文件表面不叠放、切回工具栏后文件树恢复；全部场景结束无残留 pi RPC 孤儿进程。 |
+| 视觉验收 | `visual:matrix` 组 0 的 `rightwindows` 通过，1440×900 深色截图溢出 **0px**，并已看图核对四个同级入口（工具栏 / 审查 / 浏览器 / 文件）与右侧 `＋` 启动器：[`matrix-rightwindows-1440x900-100-dark-2026-09-21-2041.png`](../design/preview/matrix-rightwindows-1440x900-100-dark-2026-09-21-2041.png)。 |
+| 应用与包 | 已通过 `启动-砚.cmd` 按最新源码重新构建并成功启动，当前开发构建已包含本片 renderer / CSS 修改；尚未因本片重新生成 `dist:dir`、便携 ZIP 或 NSIS 安装包，因此不把包内运行级证据前移。 |
+| 剩余限制 | 终端仍是禁用入口；窗口标签是单活动表面，不提供多个浏览器 / 文件文档同时并排；浏览器关闭标签会结束当前原生浏览器状态而不是保存一个隐藏标签。Android 仍按用户决定放到最后。 |
+
+### 本轮增量（2026-09-21）· 右栏工具栏左侧留白收敛
+
+> 用户指出右栏工具栏靠左仍有大片空白。本片只收紧右栏分区的几何占位，保留排序、折叠和文件树行为。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `tools.css` 将普通右栏分区的排序把手从 20px + 4px 左边距收为 12px + 0px；折叠箭头槽收为 14px，箭头与标题间距收为 2px；普通分区正文左缩进由 36px 收为 12px。标题保留层级箭头，内容直接从箭头附近起步；文件树自身继续使用 4px / 14px 的目录层级缩进，拖拽把手仍保留独立键盘 / 指针命中区。`DESIGN.md` 同步记录当前几何规则。 |
+| 自动检查 | 最终版本 `npm run typecheck` 通过（TypeScript、18 份 CSS 约束、layer 自检 10 用例）；`npm run build` 通过；`git diff --check` 通过。构建仍只有既有 zod / virtua 第三方 Rollup 注释告警。 |
+| 真实运行 | 最终构建后的 `npm run test:live -- panels settings` 通过；右栏存在、分区顺序、文件树、设置面板和左右栏收放均通过；测试结束无残留 pi RPC 孤儿进程。随后通过 `启动-砚.cmd --rebuild` 的项目入口重新构建并成功启动开发版本。 |
+| 视觉验收 | `visual:matrix` 组 0 的 `main` 与 `righttoolmenu` 均通过，1440×900 深色截图溢出 **0px**，并已看图核对：[`matrix-main-1440x900-100-dark-2026-09-21-rightbar-left-compact.png`](../design/preview/matrix-main-1440x900-100-dark-2026-09-21-rightbar-left-compact.png)、[`matrix-righttoolmenu-1440x900-100-dark-2026-09-21-rightbar-left-compact.png`](../design/preview/matrix-righttoolmenu-1440x900-100-dark-2026-09-21-rightbar-left-compact.png)。本片新增的是深色 1440×900 证据，浅色 / 窄窗 / 高 DPI 未新增看图。 |
+| 应用与包 | 最新 `out/` 已由入口脚本按源码重新生成并启动；尚未因本片重新生成 `dist:dir`、便携 ZIP 或 NSIS 安装包，因此不把包内运行级证据前移。 |
+| 剩余限制 | 本片只处理普通工具栏分区的左侧密度，不改变右栏宽度、浏览器原生视图的生命周期或 Android 范围。排序把手在非悬停状态仍是低可见度控件；若用户把右栏缩到 296px 以下，长标题仍会按省略号处理。Android 仍按用户决定放到最后。 |
+
+### 本轮增量（2026-09-21）· AI 文件产物展示与 GPT Image（实施-10）
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 `src/main/artifacts.ts` 受控 artifact 仓、`src/main/image-generation.ts` 生图适配、`yan artifact attach` / `yan image generate` 能力入口；assistant 消息携带 artifact 元数据，历史读取通过 manifest 恢复；renderer 直接展示图片 / SVG，代码文件展示预览并提供下载、定位和复制路径。任何 `openai` / `compatible` provider 都在主进程 `fetch` 前走可见确认，拒绝错误为 `external_api_denied`。本轮补上 Codex 风格的生图进度条目（排队、请求、生成、保存、完成 / 失败）、空响应与 0 字节文件拒绝、旧空附件清理和损坏图片兜底；文件预览改为独立网格行，左栏模式开关和 artifact / SVG 预览收紧。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` 已通过；单测 **4160/4160**。新增回归明确验证兼容 API 被拒时 `fetch` 未被调用、进度阶段按序更新，以及空文件被 `artifact_empty` 拒绝。 |
+| 真实运行 | 本机 Codex OAuth 登录态已只读确认；当前构建用小尺寸 / 低质量测试 prompt 实际返回 `provider=codex`、`model=gpt-image-2` 的 PNG，并完成落盘与 assistant artifact push。真实响应要求 `store=false`，否则服务端返回 400；已修正并复验成功。 |
+| 视觉验收 | 旧的真实 Electron `capturePage` 证据仍保留：`docs/design/preview/matrix-artifact-1440x900-100-dark-2026-09-21-artifact.png`。本轮为补拍 compact artifact / 生图进度状态启动了 `visual:matrix`，但进程在首个状态后无继续输出且未生成新截图，已中止，**不把本轮视觉复验标为通过**；原生 Computer Use 当前仍为 `apps: []`，无法替代截图看图。 |
+| 应用与包 | 已用 `启动-砚.cmd` 按最新源码重新构建并成功启动；此前 `npm run dist:dir` 与 `npm run test:packaged` 的打包证据仍有效，但本轮 UI / 进度补丁之后尚未重新生成包并重跑包内探针。artifact 根目录由主进程绑定到 `YAN_DIR/artifacts`，不在安装目录。 |
+| 剩余限制 | OpenAI-compatible 编辑模式尚未接入参考图上传；PDF 目前是可下载文件而非内嵌阅读器；真实 Codex 图像通道依赖当前 OAuth 登录态和套餐额度；当前生图进度条是阶段型 / 不定进度条，上游未提供可验证百分比，因此不伪造百分比；仍需在视觉矩阵可稳定运行后补拍最终截图；Android 仍按用户决定放到最后。 |
+
+### 本轮增量（2026-09-21）· UI 收尾：右栏、原生视图隔离与生图终态
+
+> 用户补充了右栏结构、模式开关错位、设置层与内置浏览器冲突、用户消息胶囊错位，
+> 以及“生图完成后进度条不会消失”。设计取向先交给内置浏览器中的 GPT 做参考，
+> 再按仓库现有组件和原生 `WebContentsView` 生命周期落地；外部意见只是设计输入，
+> 不是运行证据。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 右栏整理为固定 52px 标题 + 单一 `.rp-body` 滚动层 + 40px 分区行，保留现有功能分区和文件树；默认右栏宽度调整为 336px（设计范围 296–400px）。模式开关改成固定三列网格 `20px / minmax(0, 1fr) / 36px`，移除与它争夺空间的额外 flex 占位，图标、文字和轨道不再互相挤压。打开设置时先隐藏原生浏览器视图，关闭设置后在下一帧、且没有文件预览 / 审查 / 子代理预览时恢复，避免把原生层误当成 renderer 的 z-index 问题。用户消息改为 `fit-content` 胶囊，最大宽度 `min(680px, 72%)`，和正文内容轴右对齐。`TurnView` 对 `stage=done` 的生图进度条不再渲染，最终 artifact 保留；失败条目继续保留以便解释和重试。同步更新 `docs/design/DESIGN.md` 的右栏结构规则。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`git diff --check` 通过；`npm run test:unit` **4160/4160**。构建只有既有 zod / virtua 第三方 Rollup 注释告警，没有本轮错误。 |
+| 真实运行 | `启动-砚.cmd` 按最新源码重新构建并成功启动；`npm run test:live -- panels browser topbar` 通过，`npm run test:live -- settings` 通过。真实 browser 场景确认原生视图存在、边界有效且右栏 / 中栏关系保持；topbar 场景确认模式 switch 的语义、`aria-checked` 与真实工作模式同步；settings 场景确认设置面板可打开、三栏结构和右栏分区正常。四组场景结束均无残留 pi RPC 孤儿进程。 |
+| 视觉验收 | 新跑视觉矩阵组 0 的 4 个暗色状态，均溢出 **0px** 并已实际看图：`matrix-main-1440x900-100-dark-2026-09-21-ui-fix.png`、`matrix-artifact-1440x900-100-dark-2026-09-21-ui-fix.png`、`matrix-imageprogress-1440x900-100-dark-2026-09-21-ui-fix.png`、`matrix-settings-1440x900-100-dark-2026-09-21-ui-fix.png`。其中 `imageprogress` 证明进行中的阶段卡仍显示，`artifact` 证明完成后的最终文件卡独立展示；代码逻辑另保证成功进度卡消失、失败进度卡保留。浅色、窄窗和高 DPI 尚未在本片新增看图证据。 |
+| 应用与包 | 开发构建已包含本轮 renderer / main 修改；`启动-砚.cmd` 启动成功。此前的 `dist:dir` / `test:packaged` 证据仍有效，但本轮 UI 修复后尚未重新生成 Windows 包并重跑包内探针。 |
+| 剩余限制 | 本片没有扩大到 Android；Android 仍按用户决定最后处理。设置与 browser 的行为分别已有真实场景覆盖，但尚未新增一条“打开原生浏览器后直接点击设置”的专门视觉探针；当前代码以打开前隐藏原生视图、关闭后带条件恢复作为生命周期边界。真实 provider 的失败网络分支没有另跑耗额度场景，失败卡保留由状态归一化和单测覆盖。 |
 
 ### 本轮增量（2026-09-21）· 墨色工作空间 UI 核心实施片
 

@@ -25,6 +25,8 @@ export function SubagentList() {
   const clearSubagents = useStore((s) => s.clearSubagents)
   const loadSubagents = useStore((s) => s.loadSubagents)
   const previewId = useStore((s) => s.subagentPreviewId)
+  /* 已挂回助手回合的模型子代理由 TurnView 直接渲染，列表只保留独立任务。 */
+  const detachedRuns = runs.filter((run) => !run.parentMessageId)
   const [now, setNow] = useState(() => Date.now())
 
   /* 挂载时拉一次（重开应用后能看到本进程里仍在跑的） */
@@ -32,8 +34,8 @@ export function SubagentList() {
     void loadSubagents()
   }, [loadSubagents])
 
-  const active = runs.filter((r) => r.status === 'running' || r.status === 'starting')
-  const finished = runs.length - active.length
+  const active = detachedRuns.filter((r) => r.status === 'running' || r.status === 'starting')
+  const finished = detachedRuns.length - active.length
   const hasFinished = finished > 0
 
   /* 没有新事件时也要让耗时继续走，避免用户误以为子代理卡住。 */
@@ -46,7 +48,7 @@ export function SubagentList() {
   return (
     <div className="subagent-zone">
       <SubagentLauncher activeCount={active.length} />
-      {runs.length > 0 ? (
+      {detachedRuns.length > 0 ? (
         <div className="sa-strip" data-testid="subagent-strip">
           <div className="sa-head">
             <Icon name="layers" size={12} />
@@ -61,7 +63,7 @@ export function SubagentList() {
             ) : null}
           </div>
 
-          {runs.map((run) => {
+          {detachedRuns.map((run) => {
             const running = run.status === 'running' || run.status === 'starting'
             return (
               <div key={run.id} className={`sa-row ${run.status}`} data-testid={`subagent-${run.id}`}>
@@ -96,7 +98,7 @@ export function SubagentList() {
           })}
         </div>
       ) : null}
-      {previewId ? <SubagentDetails placement="main" /> : null}
+      {previewId && !runs.find((run) => run.id === previewId)?.parentMessageId ? <SubagentDetails placement="main" /> : null}
     </div>
   )
 }

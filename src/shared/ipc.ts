@@ -131,6 +131,10 @@ export interface UIMessage {
    */
   thinkingLive?: boolean
   toolCalls?: UIToolCall[]
+  /** 由砚宿主受控落盘的 AI 文件产物；不把任意本机路径当成附件。 */
+  artifacts?: AssistantArtifact[]
+  /** 宿主生图进度；只用于当前回合的实时展示，不写入 pi 会话历史。 */
+  imageProgress?: ImageGenerationProgress[]
   usage?: Usage
   /**
    * 本轮的**输出速度**（token/秒）。
@@ -149,6 +153,51 @@ export interface UIMessage {
   /** bash 直执行（RPC bash 命令，非 LLM 工具） */
   bash?: { command: string; exitCode: number | null; cancelled: boolean }
   error?: string
+}
+
+export type ImageGenerationStage =
+  | 'queued'
+  | 'preparing'
+  | 'confirming'
+  | 'requesting'
+  | 'generating'
+  | 'saving'
+  | 'done'
+  | 'error'
+
+export interface ImageGenerationProgress {
+  id: string
+  stage: ImageGenerationStage
+  startedAt: number
+  updatedAt: number
+  endedAt?: number
+  provider?: string
+  model?: string
+  detail?: string
+}
+
+/**
+ * AI 产物统一视图。
+ *
+ * `path` 只允许指向砚自己的受控 artifact 目录；渲染端不会凭模型输出
+ * 直接读取任意路径。产物同时进入会话消息与 artifact manifest，重启后可恢复。
+ */
+export interface AssistantArtifact {
+  id: string
+  sourceId: string
+  filename: string
+  path: string
+  mediaType: string
+  kind: 'image' | 'svg' | 'code' | 'document' | 'binary'
+  bytes: number
+  createdAt: number
+  previewable: boolean
+  /** 历史 manifest 仍在，但受控文件已被移动 / 删除时保留卡片。 */
+  unavailable?: boolean
+  error?: string
+  provider?: string
+  model?: string
+  description?: string
 }
 
 /**
@@ -1554,6 +1603,8 @@ export interface SubagentRun {
   /** 启动时的父会话 / 运行实例；查看对象切换不改变这两个归属。 */
   parentSessionId?: string
   parentRunId?: string
+  /** 模型在某条助手消息中委派时，用它把子代理卡片挂回原回合。 */
+  parentMessageId?: string
   projectId?: string
   /** worktree = 默认写入隔离；controlled-cwd = 显式只读受控目录。 */
   isolation: 'worktree' | 'controlled-cwd'
@@ -1604,6 +1655,8 @@ export type MainPushBody =
   | { ch: 'msg-add'; payload: UIMessage }
   /** 增量更新一条消息（流式文本会高频触发，见 MessagePatch 的 delta 说明） */
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
+  /** 把宿主生成/接管的文件产物挂到真实 assistant 消息上。 */
+  | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }
   /** 删掉一条消息 */
   | { ch: 'msg-remove'; payload: string }
   /** 工具调用状态变化 */

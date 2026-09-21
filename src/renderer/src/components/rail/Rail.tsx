@@ -10,7 +10,7 @@ import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
-import type { WorkMode } from '../../../../shared/work-mode'
+import { nextWorkspaceMode, type WorkspaceMode } from '../../../../shared/workspace-mode'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -32,20 +32,16 @@ import type { WorkMode } from '../../../../shared/work-mode'
  *   · 去掉卡片式边框，全部靠背景色与缩进表达层级
  */
 /**
- * 左栏的两档快捷模式，映射到已经接入宿主的工作模式：
- *   编码 = 自主推进；日常 = 标准执行、信息不足时先问。
- * 澄清模式仍保留在输入框模式菜单里，避免左栏入口变成三层菜单。
+ * 左栏的两档工作区入口只改变导航语境，不改变当前会话 AgentMode。
+ * 编码 / 日常与标准 / 澄清 / 自主是两个正交维度；AgentMode 仍由输入框
+ * 的模式控件和 Tab 快捷键负责。
  */
 const RAIL_MODES = [
-  { id: 'coding', labelKey: 'mode.coding', workMode: 'autonomous' },
-  { id: 'ask', labelKey: 'mode.daily', workMode: 'standard' }
+  { id: 'coding', labelKey: 'mode.coding' },
+  { id: 'daily', labelKey: 'mode.daily' }
 ] as const
 
 type RailModeId = (typeof RAIL_MODES)[number]['id']
-
-function railModeForWorkMode(mode: WorkMode): RailModeId {
-  return mode === 'autonomous' ? 'coding' : 'ask'
-}
 /**
  * 左栏默认展开多少个项目（N17）。
  * 超出的收在「更多项目（N）」后面；这只是**显示层**的限制，
@@ -151,11 +147,10 @@ export function Rail() {
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
-  /** 左栏品牌开关当前对应的两档快捷工作模式。 */
-  const workMode = useStore((s) => s.workMode)
-  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const setWorkMode = useStore((s) => s.setWorkMode)
-  const activeRailMode = railModeForWorkMode(workMode?.mode ?? defaultWorkMode)
+  /** 左栏工作区入口；不读取也不改当前会话的 AgentMode。 */
+  const workspaceMode = useStore((s) => s.workspaceMode)
+  const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
+  const activeRailMode: RailModeId = workspaceMode
   const activeRailModeConfig = RAIL_MODES.find((m) => m.id === activeRailMode)!
   const [projectMenu, setProjectMenu] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
@@ -783,28 +778,24 @@ export function Rail() {
           <button
             className={`rail-mode-btn ${activeRailMode === 'coding' ? 'on' : ''}`}
             onClick={() => {
-              const next = RAIL_MODES.find((m) => m.id !== activeRailMode)!
-              void setWorkMode(next.workMode)
+              void setWorkspaceMode(nextWorkspaceMode(workspaceMode as WorkspaceMode))
             }}
             data-testid="mode-switch"
             role="switch"
             aria-checked={activeRailMode === 'coding'}
-            aria-label={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}`}
-            title={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}`}
+            aria-label={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}（工作区）`}
+            title={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}（工作区，不改变模型模式）`}
           >
-            <span className="rail-brand">
-              <BrandMark size={20} />
-              <span className="rail-brand-name">砚</span>
-            </span>
-            <span className="rail-mode-switch" aria-hidden="true">
+            <span className="rail-mode-icon" aria-hidden="true"><BrandMark size={18} /></span>
+            <span className="rail-mode-copy">
+              <span className="rail-mode-brand">砚</span>
               <span className="rail-mode-value">{t(activeRailModeConfig.labelKey)}</span>
-              <span className="rail-switch-track">
-                <span className="rail-switch-thumb" />
-              </span>
+            </span>
+            <span className="rail-switch-track" aria-hidden="true">
+              <span className="rail-switch-thumb" />
             </span>
           </button>
         </div>
-        <span className="rail-spacer" />
         <button
           ref={searchBtnRef}
           className={`rail-icon ${searching ? 'on' : ''}`}

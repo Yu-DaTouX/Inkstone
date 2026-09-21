@@ -13,6 +13,7 @@ import {
   AgentController,
   type CapabilityAuthorizationChoice,
   type CapabilityAuthorizationPrompt,
+  type ExternalApiConfirmationRequest,
   type GoalCommandHost,
   type SubagentCommandHost
 } from './agent'
@@ -22,6 +23,7 @@ import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
 import { moveSessionLayout, rememberSession } from './session-layout'
 import { readChainMessages } from './session-history'
+import { ArtifactStore } from './artifacts'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
@@ -575,6 +577,13 @@ const handoffs = new HandoffStore()
  */
 const sessionChains = new SessionChainStore()
 const handoffTransactions = new HandoffTransactionStore()
+
+const artifactStore = new ArtifactStore(join(YAN_DIR, 'artifacts'))
+
+/** 逐段恢复 artifact manifest，确保链式会话的旧图片 / 文件也能回到原消息。 */
+function readHistoryWithArtifacts(sessionFile: string) {
+  return readChainMessages(sessionFile, sessionChains, (file, messages) => artifactStore.hydrateMessages(file, messages))
+}
 /**
  * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。
  * 只用于追溯与展示（「这个会话来自哪个工作树」），**不参与历史拼接** ——
@@ -1585,7 +1594,7 @@ async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOp
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
   /* 链感知：远程端看到的也是「一条会话」（与桌面端口径一致） */
-  const result = await readChainMessages(summary.path, sessionChains)
+  const result = await readHistoryWithArtifacts(summary.path)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
   const messages = result.messages.slice(-limit)
   return {
@@ -2267,7 +2276,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          * 界面历史（实施-05 S5b-4）：交接过的会话在链上，按段从旧到新拼成
          * **一条时间线**。agent 不认识「链」—— 那是宿主的关系。
          */
-        readHistory: (sessionFile) => readChainMessages(sessionFile, sessionChains),
+        readHistory: (sessionFile) => readHistoryWithArtifacts(sessionFile),
         /*
          * 宿主能力服务：模型经 `yan` CLI 触达砚的能力（见 capability-server.ts）。
          *
@@ -2286,6 +2295,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           projectId: knowledgeProjectId(settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
           binDir: join(YAN_DIR, 'bin'),
+          artifactDir: join(YAN_DIR, 'artifacts'),
           devResourcesDir: join(app.getAppPath(), 'resources'),
           getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
           getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy
@@ -2382,6 +2392,28 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             }
           }
           return choice
+        },
+        confirmExternalApi: async (request: ExternalApiConfirmationRequest): Promise<boolean> => {
+          if (!win || win.isDestroyed()) return false
+          const endpoint = request.endpoint || '未配置的 OpenAI-compatible endpoint'
+          const response = await dialog.showMessageBox(win, {
+            type: 'warning',
+            title: '确认外部图像 API 请求',
+            message: `即将通过 ${request.provider === 'compatible' ? 'OpenAI-compatible API' : 'OpenAI API'} 生成图片`,
+            detail: [
+              `端点：${endpoint}`,
+              `模型：${request.model}`,
+              `项目：${request.cwd}`,
+              `提示词：${request.prompt.slice(0, 800)}${request.prompt.length > 800 ? '…' : ''}`,
+              '',
+              '这会把提示词（以及将来接入的参考图片）发送到外部服务，并可能产生 API 费用。拒绝后不会发送请求，也不会自动切换到其他供应商。'
+            ].join('\n'),
+            buttons: ['取消', '继续发送'],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true
+          })
+          return response.response === 1
         }
       }),
     onChanged: () => {
@@ -3088,7 +3120,7 @@ function registerIpc(): void {
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
     /* 链感知：切到交接过的会话时，锦上的历史也必须是完整的一条时间线 */
-    return readChainMessages(path, sessionChains)
+    return readHistoryWithArtifacts(path)
   })
 
   /* ---- 模型接入（凭证） ---- */

@@ -80,6 +80,36 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+
+/*
+ * AI 文件产物与生图适配层。
+ *
+ * 这两个模块依赖 node fs / fetch，但不依赖 Electron；现场 bundle 让单测
+ * 能在没有窗口、没有真实 API 请求的情况下钉住 manifest、SVG 清理、
+ * provider 选择和受控目录边界。真实 Codex/API 调用另由本轮验收记录。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/artifacts.ts'],
+    outfile: 'out/test/artifacts.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/image-generation.ts'],
+    outfile: 'out/test/image-generation.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runArtifactTests } = await import('./test-artifacts.mjs')
+await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
