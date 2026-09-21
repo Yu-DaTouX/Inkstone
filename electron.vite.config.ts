@@ -30,7 +30,28 @@ const define = { __YAN_BUILD__: JSON.stringify(buildInfo) }
 export default defineConfig({
   main: {
     define,
-    plugins: [externalizeDepsPlugin()],
+    /*
+     * MCP SDK **不能 externalize**（实施-04 S3）。
+     *
+     * `externalizeDepsPlugin()` 默认把 `dependencies` 全部留给运行时的
+     * node_modules 解析，而本项目的 `electron-builder.yml` 里有一条
+     * `'!node_modules/**'`（之前 main 侧确实一个 dependencies 都不用，
+     * 那是安全的）。加了 SDK 之后，externalize 的后果是：**装出来的应用里
+     * 没有这个包**，而它是 ESM 静态 import —— 主进程会直接起不来。
+     * 所以把它排除在 externalize 之外，真的 bundle 进 out/main。
+     */
+    plugins: [
+      externalizeDepsPlugin({
+        /*
+         * 这两个依赖都在主进程启动链上被静态 import：MCP SDK 是宿主
+         * 能力协议，tar 是 npm 制品的受限解包器。electron-builder 的
+         * app.asar 明确不带 node_modules，所以它们必须留在 bundle 里；
+         * 否则开发态 / 解包目录静态检查会通过，安装后的主进程却会在
+         * import 阶段弹出 ERR_MODULE_NOT_FOUND。
+         */
+        exclude: ['@modelcontextprotocol/sdk', 'tar']
+      })
+    ],
     build: {
       rollupOptions: {
         input: {

@@ -8,6 +8,7 @@ import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
+import { WORK_MODES, nextWorkMode, type WorkMode } from '../../../../shared/work-mode'
 import { parseSubagentCommand } from '../../../../shared/subagent-command'
 
 /**
@@ -111,7 +112,19 @@ export function Composer() {
   const setModel = useStore((s) => s.setModel)
   const models = useStore((s) => s.models)
   const openBrowser = useStore((s) => s.openBrowser)
-  const autonomous = useStore((s) => s.settings?.autonomous === true)
+  /*
+   * 工作模式（实施-05）：状态在**会话级**（主进程推 `work-mode`），
+   * 启动早期还没收到推送时按设置里的新会话默认值渲染 —— 不能拿一个
+   * 全局布尔当当前模式（那正是这次要拆掉的东西）。
+   */
+  const workModeState = useStore((s) => s.workMode)
+  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  const setWorkMode = useStore((s) => s.setWorkMode)
+  const workModeTab = useStore((s) => s.settings?.workModeTab !== false)
+  const activeWorkMode: WorkMode = workModeState?.mode ?? defaultWorkMode
+  const autonomous = activeWorkMode === 'autonomous'
+  /** 模式按钮：Esc 从输入框把焦点送到这里（避开键盘陷阱） */
+  const modeButtonRef = useRef<HTMLButtonElement>(null)
   const editorInject = useStore((s) => s.editorInject)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
   const queueRestore = useStore((s) => s.queueRestore)
@@ -871,6 +884,33 @@ export function Composer() {
     }
 
     /*
+     * Tab 快切工作模式（实施-05 §3）。
+     *
+     * 优先级（从上到下，已经在前面处理掉的不会走到这里）：
+     *   ① IME 组合态 —— 输入法的 Tab 不能抢（菜单分支已检查，这里再查一次）；
+     *   ② 补全菜单有候选 —— Tab 是「填入」，不能切模式；
+     *   ③ 长文模式 —— 保持原编辑 / 焦点行为，不抢；
+     *   ④ 无修饰键的裸 Tab —— 循环 标准 → 澄清 → 自主；
+     *   ⑤ 带修饰键的 Tab（Shift/Alt/Ctrl）不拦，保持系统焦点移动。
+     * 切换只改模式，**不发送、不清草稿、不动选区与附件**。
+     */
+    if (
+      e.key === 'Tab' &&
+      workModeTab &&
+      !expanded &&
+      !disabled &&
+      !e.nativeEvent.isComposing &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey
+    ) {
+      e.preventDefault()
+      void setWorkMode(nextWorkMode(activeWorkMode))
+      return
+    }
+
+    /*
      * 发送键。
      *
      * 三种规则（用户可在设置里选，见 AppSettings.sendKey）：
@@ -913,6 +953,18 @@ export function Composer() {
     if (e.key === 'Escape' && busy) {
       e.preventDefault()
       void abort()
+    }
+
+    /*
+     * Esc → 焦点送到模式按钮（实施-05 §3）。
+     *
+     * 为什么要有：Tab 快切把 Tab 键从「移动焦点」里拿走了，键盘用户若只会用
+     * Tab 就会被困在输入框里。无补全、非长文、不在跑回合时把焦点交出去，
+     * 模式按钮上方向键 / Enter 都能用。
+     */
+    if (e.key === 'Escape' && !expanded && !busy && !disabled) {
+      e.preventDefault()
+      modeButtonRef.current?.focus()
     }
   }
 
@@ -1093,8 +1145,8 @@ export function Composer() {
               <Icon name="plus" size={12} />
             </button>
 
-            {/* 自主模式：放进输入栏（用户要求，原先在输入框下方单独一行） */}
-            <AutonomousToggle />
+            {/* 工作模式（实施-05）：原位显示当前模式 + 菜单，Tab 可快切 */}
+            <WorkModePicker buttonRef={modeButtonRef} />
 
             {/*
              * 当前发送规则 —— **常显**（不只是长文模式）。
@@ -1291,33 +1343,147 @@ function QueueStack() {
 }
 
 /**
- * 自主模式开关（用户要求：放进输入栏，去掉「未开启」字样，做成开/关动效）。
+ * 工作模式菜单（实施-05 §3）。
  *
- * 放在 composer 的工具行里。打开后：
- *   · 内置 question 扩展不再弹窗，直接让模型自行决策
- *   · 系统提示里也会追加「不要提问」的规则（下一轮生效）
- * 关掉则恢复「模糊时先问」的默认行为。
+ * 原位显示「标准 / 澄清 / 自主 ▾」，菜单单选项带一句说明。三种输入方式：
+ *   · 鼠标：点按钮 → 点选项；
+ *   · 键盘：按钮上 ↑↓ 打开，菜单里 ↑↓ 移动、Enter / Space 选定、Esc 关闭；
+ *   · Tab 快切（可在设置里关）：输入框里裸 Tab 循环三档。
+ *
+ * ⚠️ 模式是**按会话**的：这里读 store 里当前会话的投影；提交失败（版本冲突）
+ *    时把显示恢复成主进程回传的当前值 —— 不能出现「界面已自主而模型仍标准」。
  */
-function AutonomousToggle() {
+function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonElement | null> }) {
   const t = useT()
-  const autonomous = useStore((s) => s.settings?.autonomous === true)
-  const patchSettings = useStore((s) => s.patchSettings)
+  const stored = useStore((s) => s.workMode)
+  const fallback = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  const setWorkMode = useStore((s) => s.setWorkMode)
+  const state: WorkMode = stored?.mode ?? fallback
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  /**
+   * 菜单坐标（fixed 定位）。
+   *
+   * 为何不 absolute 贴按钮：`.composer` 有 `overflow: hidden`（圆角与自主光带
+   * 需要它），absolute 菜单会被整块裁掉 —— 模型选择器踩过同一个坑
+   *（见 redesign.css 的 `.mt-pop`）。所以量按钮 rect，向上弹。
+   */
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const MENU_WIDTH = 288
+
+  /* 打开时高亮当前档、量坐标、并把焦点交给菜单 —— 否则方向键到不了这里 */
+  useEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    setIndex(Math.max(0, WORK_MODES.indexOf(state)))
+    const el = buttonRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
+      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
+    }
+    menuRef.current?.focus()
+  }, [open, state, buttonRef])
+
+  /* 点外部关闭（菜单是浮层，不能一直挡着输入区） */
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const commit = (mode: WorkMode) => {
+    setOpen(false)
+    buttonRef.current?.focus()
+    if (mode !== state) void setWorkMode(mode)
+  }
+
   return (
-    <button
-      className={`ctool auto-toggle ${autonomous ? 'on' : ''}`}
-      data-testid="autonomous-toggle"
-      data-on={autonomous ? '1' : '0'}
-      role="switch"
-      aria-checked={autonomous}
-      title={autonomous ? t('autonomous.onTip') : t('autonomous.offTip')}
-      onClick={() => void patchSettings({ autonomous: !autonomous })}
-    >
-      <Icon name="sparkles" size={12} />
-      <span className="auto-label">{t('autonomous.label')}</span>
-      <span className="auto-track" aria-hidden>
-        <span className="auto-thumb" />
-      </span>
-    </button>
+    <div className="mode-picker" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        className="ctool mode-button"
+        data-testid="work-mode-button"
+        data-mode={state}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t(`workMode.desc.${state}`)}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            setOpen(true)
+          } else if (e.key === 'Escape' && open) {
+            e.preventDefault()
+            setOpen(false)
+          }
+        }}
+      >
+        <Icon name="sparkles" size={12} />
+        <span className="mode-label" data-testid="work-mode-label">
+          {t(`workMode.label.${state}`)}
+        </span>
+        <span className="mode-caret" aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          className="mode-menu"
+          role="menu"
+          data-testid="work-mode-menu"
+          data-mode={state}
+          ref={menuRef}
+          tabIndex={-1}
+          style={{
+            width: MENU_WIDTH,
+            ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {})
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setIndex((i) => (i + 1) % WORK_MODES.length)
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setIndex((i) => (i - 1 + WORK_MODES.length) % WORK_MODES.length)
+            } else if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              commit(WORK_MODES[index])
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setOpen(false)
+              buttonRef.current?.focus()
+            }
+            /* Tab：不拦 —— 焦点自然离开菜单（tabIndex=-1 的容器不在 Tab 序列里） */
+          }}
+        >
+          {WORK_MODES.map((mode, i) => (
+            <button
+              key={mode}
+              role="menuitemradio"
+              aria-checked={mode === state}
+              tabIndex={-1}
+              className={`mode-item ${i === index ? 'active' : ''} ${mode === state ? 'current' : ''}`}
+              data-testid={`work-mode-option-${mode}`}
+              data-mode={mode}
+              onMouseEnter={() => setIndex(i)}
+              onClick={() => commit(mode)}
+            >
+              <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
+              <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

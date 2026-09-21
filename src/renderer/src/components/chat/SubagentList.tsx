@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Spinner } from './Reasoning'
+import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
 import { SubagentDetails } from './SubagentDetails'
 
 /**
@@ -66,7 +66,7 @@ export function SubagentList() {
             return (
               <div key={run.id} className={`sa-row ${run.status}`} data-testid={`subagent-${run.id}`}>
                 <span className="sa-ico" aria-hidden>
-                  {running ? <Spinner /> : run.status === 'done' ? '✓' : '✕'}
+                  {running ? <ThinkingOrbIndicator state="working" /> : run.status === 'done' ? '✓' : '✕'}
                 </span>
                 <span className="sa-task" title={run.task}>
                   {run.task}

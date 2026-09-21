@@ -11,6 +11,9 @@ out/
 build/*
 !build/icon.ico
 !build/icon.png
+!build/prompt-stone.svg
+!build/installerSidebar.bmp
+!build/installer-sidebar-generated.png
 release/
 *.tsbuildinfo
 

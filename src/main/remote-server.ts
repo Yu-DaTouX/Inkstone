@@ -13,8 +13,8 @@ export const REMOTE_API_VERSION = 1
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
   | { action: 'new' }
-  | { action: 'send'; sessionId?: string; text: string }
-  | { action: 'abort' }
+  | { action: 'send'; sessionId: string; text: string }
+  | { action: 'abort'; runId: string }
   | { action: 'rename'; sessionId: string; name: string }
 
 export interface RemoteOperationResult {
@@ -85,6 +85,11 @@ function clampHistoryLimit(value: string | null): number {
 
 function validSessionId(value: string): boolean {
   return value.length > 0 && value.length <= SESSION_ID_MAX && !/[\r\n]/.test(value)
+}
+
+/** RunnerRegistry 的公开 runId 形状；中止必须明确指向一个实例。 */
+function validRunId(value: unknown): value is string {
+  return typeof value === 'string' && /^r[1-9]\d{0,8}$/.test(value)
 }
 
 function validText(value: unknown, max: number): value is string {
@@ -359,7 +364,12 @@ export class RemoteServer {
     }
 
     if (req.method === 'POST' && url.pathname === '/remote/v1/runs/abort') {
-      this.writeOperation(res, await this.options.handlers.command({ action: 'abort' }))
+      const body = await this.readJson(req)
+      if (!validRunId(body.runId)) {
+        writeError(res, 400, '中止操作必须提供有效的目标 runId')
+        return
+      }
+      this.writeOperation(res, await this.options.handlers.command({ action: 'abort', runId: body.runId }))
       return
     }
 

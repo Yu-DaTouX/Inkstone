@@ -23,6 +23,8 @@ export async function runSourcesTests(ok) {
     registerFile,
     verifyFiles,
     listImagesForSession,
+    listLinks,
+    linkSources,
     removeImage,
     readImage,
     dropSession
@@ -121,6 +123,57 @@ export async function runSourcesTests(ok) {
 
     ok(registerFile({ sessionId: session, path: root }) === null, '目录不是文件 → 不登记')
     ok(registerFile({ sessionId: session, path: join(root, 'nope.txt') }) === null, '不存在的路径 → 不登记')
+  }
+
+  /*
+   * ── 3.5 来源 ↔ 消息的关联（方案 §8 的 S1「定位消息」）──
+   *
+   * 这一层的存在理由是「这份来源参与了哪条消息」在别处**根本没有**：
+   * 图片只有字节哈希、文件只有路径指纹、网页只有 URL，三者与消息 id 没有交集。
+   * 所以断言不看返回值，而是**真的去读那个文件**。
+   */
+  {
+    const linked = linkSources({ sessionId: session, sourceIds: [`image:${'a'.repeat(32)}`], messageId: 'msg-1' })
+    ok(linked.ok === true && linked.added === 1, '关联真的写进去了', JSON.stringify(linked))
+
+    const file = join(sourcesDir(session), 'links.json')
+    ok(existsSync(file), 'links.json 真的在会话目录里（不是只活在内存）', file)
+    const onDisk = JSON.parse(readFileSync(file, 'utf8'))
+    ok(Array.isArray(onDisk) && onDisk[0]?.messageId === 'msg-1', '磁盘上的内容就是刚才那条关联', JSON.stringify(onDisk))
+
+    /* 幂等：同一对重复登记不堆第二条（否则菜单里的“N 条”会越点越大） */
+    const again = linkSources({ sessionId: session, sourceIds: [`image:${'a'.repeat(32)}`], messageId: 'msg-1' })
+    ok(again.added === 0, '同一对重复登记 → added: 0（幂等）', JSON.stringify(again))
+    ok(listLinks(session).length === 1, '磁盘上仍然只有一条', String(listLinks(session).length))
+
+    /* 一批多份来源 + 只去重、不报错 */
+    const batch = linkSources({
+      sessionId: session,
+      sourceIds: [`file:${'b'.repeat(24)}`, `web:web-1`, 'not-a-source', 'image:带空格 的'],
+      messageId: 'msg-2'
+    })
+    ok(batch.ok === true && batch.added === 2, '合法的那两份进来了', JSON.stringify(batch))
+    ok(batch.skipped === 2, '形状不对的进 skipped（不报错、也不静默算成功）', String(batch.skipped))
+
+    /* 消息 id 是唯一硬闸：它会被拼进 `[data-msg-id="…"]` */
+    const bad = linkSources({ sessionId: session, sourceIds: [`image:${'a'.repeat(32)}`], messageId: 'ms"g]' })
+    ok(bad.ok === false && bad.added === 0, '消息 id 带不安全字符 → 拒绝（不是存进去再说）', JSON.stringify(bad))
+
+    /* list 一并把关联带回来（菜单一次调用就能拿到） */
+    const listing = listImagesForSession(session)
+    ok(Array.isArray(listing.links) && listing.links.length === 3, 'listImagesForSession 也带回了关联表', String(listing.links?.length))
+
+    /* 坏文件容错：「跳不过去」比「菜单打不开」轻得多 */
+    writeFileSync(file, '{ 这不是 JSON')
+    ok(listLinks(session).length === 0, 'links.json 坏了 → 当空表（不让菜单整个报错）')
+
+    /* 上限：超出丢最旧（防的是无上限增长，不是正常使用） */
+    const many = Array.from({ length: 520 }, (_, i) => ({ sourceId: `web:w-${i}`, messageId: `m-${i}`, at: i }))
+    writeFileSync(file, JSON.stringify(many))
+    linkSources({ sessionId: session, sourceIds: ['web:last'], messageId: 'm-last' })
+    const capped = listLinks(session)
+    ok(capped.length === 500, '超过上限 → 截到 500 条', String(capped.length))
+    ok(capped[capped.length - 1]?.sourceId === 'web:last', '新记录在，丢的是最旧的')
   }
 
   /* ── 4. 会话数据清理 ─────────────────────────────────── */

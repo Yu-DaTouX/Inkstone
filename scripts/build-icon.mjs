@@ -7,13 +7,12 @@
  * 为什么用 Electron 而不是引一个图形库：项目里已经有 Electron 了，
  * 用它离屏渲染 SVG 再截图，零新增依赖，且字面路径与真实渲染一致。
  *
- * 图案：深色圆角方块 + 青色四角星（＝「砚」在对话里的角色符号 ✦）。
- * 不用「砚」字本身，是因为任务栏/开始菜单里最小会缩到 16px，
- * 汉字在那个尺寸会糊成一团；四角星在 16px 下仍可辨认。
+ * 图案来源：build/prompt-stone.svg（「提示砚」品牌图标）。
+ * 应用图标只在外层提供深色底与青色描边，不改动图标本身的几何形状。
  */
 import './lib/stdio-guard.mjs'  /* 先装护栏：日志管道断了也不能弹框/挂死（见该文件头注释） */
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,19 +22,20 @@ const outDir = join(root, 'build')
 // 令牌取自 src/renderer/src/styles/tokens.css（深色主题）：--bg-0 / --fact
 const BG = '#0b0d0e'
 const EDGE = '#22303a'
-const STAR = '#22d3ee'
+const MARK = '#22d3ee'
+
+const promptStone = readFileSync(join(outDir, 'prompt-stone.svg'), 'utf8')
+  .replace(/^\s*<svg\b[^>]*>/i, '')
+  .replace(/<\/svg>\s*$/i, '')
 
 const svg = (size) => `
 <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 512 512">
   <rect x="16" y="16" width="480" height="480" rx="104" ry="104" fill="${BG}"/>
   <rect x="16.75" y="16.75" width="478.5" height="478.5" rx="103.25" ry="103.25"
         fill="none" stroke="${EDGE}" stroke-width="1.5"/>
-  <path d="M256 92
-           C 268 190, 322 244, 420 256
-           C 322 268, 268 322, 256 420
-           C 244 322, 190 268, 92 256
-           C 190 244, 244 190, 256 92 Z"
-        fill="${STAR}"/>
+  <svg x="112" y="112" width="288" height="288" viewBox="0 0 100 100" color="${MARK}">
+    ${promptStone}
+  </svg>
 </svg>`
 
 const html = (size) => `<!doctype html><meta charset="utf-8">

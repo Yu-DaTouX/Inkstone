@@ -72,6 +72,8 @@ export interface SelectTarget {
   projectId?: string
   /** 新建/选择时的产品范围；runner 本身不负责持久化，只透传给上层。 */
   scope?: SessionScope
+  /** false 时只准备后台运行实例，不改变桌面当前选中的 runner。 */
+  activate?: boolean
   cwd: string
 }
 
@@ -94,12 +96,14 @@ export class RunnerRegistry {
   private seq = 0
   /** 防止两个快速点击的会话切换交叉执行。 */
   private selectTail: Promise<void> = Promise.resolve()
+  /** 同一 runner 的资源激活请求合并，避免同时启动两个替代 pi 进程。 */
+  private restartOperations = new Map<string, Promise<SelectResult>>()
 
   constructor(
     private opts: {
       limit?: number
       /** 造一个新的 pi 会话实例。id 用于给 IPC 事件标身份 */
-      createAgent: (id: string, cwd: string) => AgentController
+      createAgent: (id: string, cwd: string, generation?: number) => AgentController
       /** 实例集合或状态变化时通知主进程（推给渲染端） */
       onChanged?: () => void
     }
@@ -214,7 +218,7 @@ export class RunnerRegistry {
         (target.sessionFile ? this.findBySessionFile(target.sessionFile) : undefined)
       if (hit) {
         hit.lastActiveAt = Date.now()
-        this.activeId = hit.id
+        if (target.activate !== false) this.activeId = hit.id
         this.opts.onChanged?.()
         return this.result(hit, 'hit')
       }
@@ -240,13 +244,14 @@ export class RunnerRegistry {
 
     /* 复用空闲实例：不忙的那个可以被切到别的会话（旧会话已落盘，随时能载回） */
     const idle = [...this.runners.values()]
-      .filter((r) => !this.busy(r))
+      .filter((runner) => !this.busy(runner) && (target.activate !== false || runner.id !== this.activeId))
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {
       const oldGeneration = idle.generation
       const oldProjectId = idle.projectId
       idle.generation += 1
+      idle.agent.setRunnerGeneration(idle.generation)
       idle.projectId = target.projectId
       this.opts.onChanged?.()
 
@@ -262,7 +267,7 @@ export class RunnerRegistry {
        */
       if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
         const previous = idle.agent
-        const replacement = this.opts.createAgent(idle.id, target.cwd)
+        const replacement = this.opts.createAgent(idle.id, target.cwd, idle.generation)
         const started = await replacement.start()
         if (!started.ok) {
           /* 新进程没起来也要收掉，别留下半个 pi。 */
@@ -272,6 +277,7 @@ export class RunnerRegistry {
             /* 已经死了 */
           }
           idle.generation = oldGeneration
+          idle.agent.setRunnerGeneration(oldGeneration)
           idle.projectId = oldProjectId
           this.opts.onChanged?.()
           return { ok: false, error: started.error }
@@ -290,13 +296,14 @@ export class RunnerRegistry {
         : await idle.agent.newSession()
       if (!res.ok) {
         idle.generation = oldGeneration
+        idle.agent.setRunnerGeneration(oldGeneration)
         idle.projectId = oldProjectId
         this.opts.onChanged?.()
         return { ok: false, error: res.error }
       }
       idle.cwd = target.cwd
       idle.lastActiveAt = Date.now()
-      this.activeId = idle.id
+      if (target.activate !== false) this.activeId = idle.id
       this.opts.onChanged?.()
       return this.result(idle, 'reuse')
     }
@@ -311,7 +318,7 @@ export class RunnerRegistry {
     }
 
     const id = `r${++this.seq}`
-    const agent = this.opts.createAgent(id, target.cwd)
+    const agent = this.opts.createAgent(id, target.cwd, 1)
     const runner: Runner = {
       id,
       agent,
@@ -323,7 +330,7 @@ export class RunnerRegistry {
     }
     const previousActive = this.activeId
     this.runners.set(id, runner)
-    this.activeId = id
+    if (target.activate !== false) this.activeId = id
 
     // 新实例一旦失败就不能只摘登记：`stopAll` 只遍历仍登记的对象，
     // 漏登记等于漏回收（R02）。start / switch 的失败返回和抛异常都走同一条回收路径。
@@ -371,6 +378,81 @@ export class RunnerRegistry {
       return runner ? this.result(runner, 'hit') : { ok: true, id: id ?? undefined, via: 'hit' }
     }
     return this.select({ cwd, sessionFile, projectId, scope: 'project' })
+  }
+
+  /**
+   * 只重建指定的空闲 runner，并载回原会话及未投递队列。
+   *
+   * pi 扩展在进程启动时加载；安装包后切会话不会刷新它们。该路径专供受管能力
+   * 激活：不停止其它 runner；先让替代进程启动并载入原会话，失败则保留旧进程；
+   * 只有新进程和队列都恢复成功后才关闭旧进程。整个目标 cwd 必须空闲，避免
+   * 同一工作树的其它会话在资源切换窗口继续写入。
+   */
+  restartOne(id: string): Promise<SelectResult> {
+    const current = this.restartOperations.get(id)
+    if (current) return current
+    const operation = this.restartOneNow(id)
+    this.restartOperations.set(id, operation)
+    void operation.finally(() => {
+      if (this.restartOperations.get(id) === operation) this.restartOperations.delete(id)
+    }).catch(() => undefined)
+    return operation
+  }
+
+  private async restartOneNow(id: string): Promise<SelectResult> {
+    const runner = this.runners.get(id)
+    if (!runner) return { ok: false, error: `运行实例不存在：${id}` }
+    if (this.busy(runner)) return { ok: false, error: '目标运行实例仍忙，拒绝重载' }
+    if (this.hasBusyCwd(runner.cwd, id)) {
+      return { ok: false, error: '同一工作目录还有其它运行实例在工作，拒绝重载' }
+    }
+    const sessionFile = runner.agent.getState()?.sessionFile
+    if (!sessionFile) return { ok: false, error: '目标会话尚无已保存的会话文件，无法安全重载' }
+
+    const previous = runner.agent
+    const previousGeneration = runner.generation
+    const queue = previous.queueSnapshot()
+    const replacement = this.opts.createAgent(runner.id, runner.cwd, runner.generation + 1)
+    runner.agent = replacement
+    runner.generation += 1
+    this.opts.onChanged?.()
+
+    let failure: string | undefined
+    try {
+      const started = await replacement.start()
+      if (!started.ok) failure = started.error ?? '替代运行实例启动失败'
+      if (!failure) {
+        const switched = await replacement.switchSession(sessionFile)
+        if (!switched.ok) failure = switched.error ?? '替代运行实例载入原会话失败'
+      }
+      if (!failure) {
+        const restored = await replacement.restoreQueueSnapshot(queue)
+        if (!restored.ok) failure = restored.error ?? '替代运行实例恢复排队消息失败'
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+
+    if (failure) {
+      runner.agent = previous
+      runner.generation = previousGeneration
+      try {
+        await replacement.stop()
+      } catch {
+        /* 保留的 previous 才是可继续使用的实例；尽力回收半启动的新进程。 */
+      }
+      this.opts.onChanged?.()
+      return { ok: false, error: failure }
+    }
+
+    try {
+      await previous.stop()
+    } catch {
+      /* 替代实例已就绪；旧实例停止失败不应切回一个可能已半停的进程。 */
+    }
+    runner.lastActiveAt = Date.now()
+    this.opts.onChanged?.()
+    return this.result(runner, 'reuse')
   }
 
   /** 当前实例的 id（渲染端回报事件身份时用得上） */
@@ -435,6 +517,56 @@ export class RunnerRegistry {
   /** 有实例正在干活（重启前要等它们） */
   hasBusy(): boolean {
     return [...this.runners.values()].some((r) => this.busy(r))
+  }
+
+  /** 指定工作目录是否有会被包变更 / 重载打扰的运行实例。 */
+  hasBusyCwd(cwd: string, exceptRunId?: string): boolean {
+    const key = canonicalCwd(cwd)
+    return [...this.runners.values()].some(
+      (runner) => runner.id !== exceptRunId && canonicalCwd(runner.cwd) === key && this.busy(runner)
+    )
+  }
+
+  /**
+   * Recover the process-local runner for a durable capability target.
+   * Runner ids/generations can reset after an app restart; the session file,
+   * cwd and AgentController's bound project identity are the stable match.
+   */
+  activationSnapshot(target: {
+    runnerId: string
+    cwd: string
+    sessionFile: string
+    projectId: string
+  }): {
+    id: string
+    generation: number
+    cwd: string
+    sessionFile: string | null
+    projectId: string | null
+    ready: boolean
+    busy: boolean
+  } | null {
+    const expectedCwd = canonicalCwd(target.cwd)
+    const expectedSession = canonicalCwd(target.sessionFile)
+    const matches = [...this.runners.values()].filter((runner) => {
+      const state = runner.agent.getState()
+      const projectId = runner.agent.capabilityProjectId ?? runner.projectId ?? null
+      return canonicalCwd(runner.cwd) === expectedCwd &&
+        canonicalCwd(state?.sessionFile ?? '') === expectedSession &&
+        projectId === target.projectId
+    })
+    const runner = matches.find((item) => item.id === target.runnerId) ?? matches[0]
+    if (!runner) return null
+    const state = runner.agent.getState()
+    return {
+      id: runner.id,
+      generation: runner.generation,
+      cwd: runner.cwd,
+      sessionFile: state?.sessionFile ?? null,
+      projectId: runner.agent.capabilityProjectId ?? runner.projectId ?? null,
+      ready: runner.agent.getConn().state === 'ready',
+      busy: this.busy(runner)
+    }
   }
 
   /** 当前视图对应的状态（渲染端拉取 / 推送都用它） */

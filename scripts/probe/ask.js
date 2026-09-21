@@ -44,10 +44,10 @@
     } else await sleep(120)
   }
 
-  if (store.getState().settings?.autonomous) {
-    await store.getState().patchSettings({ autonomous: false })
-    await sleep(400)
-  }
+  /* 工作模式（实施-05）是**会话级**的：开始前把它归到标准，
+     否则显式请求的 question 可能因上一场景留下的自主模式而被吞掉 */
+  await store.getState().setWorkMode('standard')
+  await sleep(400)
 
   const ready = await waitFor(() => store.getState().conn === 'ready' && true, 250)
   ok(!!ready, 'pi 已连接')
@@ -118,16 +118,41 @@
 
   out.push('')
   out.push('=== 6. 自主模式：不再弹窗 ===')
-  await store.getState().patchSettings({ autonomous: true })
+  /* 自主模式现在是**本会话的工作模式**（实施-05），不再是全局布尔；
+     它的作用点：系统提示 + question 工具的开头就会返回「请自行决策」 */
+  await store.getState().setWorkMode('autonomous')
   await sleep(600)
+  const m6 = await window.yan.getWorkMode()
+  out.push('  当前会话模式：' + JSON.stringify(m6))
+  ok(m6.mode === 'autonomous', '宿主侧已切到自主（模式按会话存）')
   await store.getState().send(
     '请调用 question 工具询问我「用哪种数据库？」（选项 SQLite / PostgreSQL），并且只做这一件事。'
   )
   // 给模型一次机会去触发；自主模式下不应出现任何提问 UI
   let sawModal = false
   for (let i = 0; i < 50 && Date.now() < deadline; i++) {
-    if (q(PANEL) || q('.modal')) {
+    const hit = q(PANEL) ?? q('.modal')
+    if (hit) {
       sawModal = true
+      /* 把命中的到底是什么打出来：`.modal` 是**通用**扩展 UI 弹层，
+         它不等于 question 面板 —— 不区分会在排查时白跑一趟 */
+      out.push('  命中元素：' + hit.className + ' :: ' + (hit.outerHTML || '').slice(0, 160))
+      out.push(
+        '  未应答的 UI 请求：' +
+          JSON.stringify(
+            store.getState().uiRequests.map((r) => ({
+              id: r.id,
+              method: r.method,
+              title: r.title,
+              sensitive: r.sensitive === true
+            }))
+          )
+      )
+      const calls = store
+        .getState()
+        .messages.flatMap((m) => (m.toolCalls ?? []).filter((c) => c.name === 'question'))
+        .map((c) => ({ id: c.id, status: c.status, out: (c.output ?? '').slice(0, 140) }))
+      out.push('  question 工具调用：' + JSON.stringify(calls.slice(-3)))
       break
     }
     await sleep(500)
@@ -144,8 +169,8 @@
     return !s?.isStreaming && !s?.isAgentRunning ? true : null
   }, 400)
   // 还原，避免影响同批次后续场景
-  await store.getState().patchSettings({ autonomous: false })
-  out.push('  已还原自主模式 → 关')
+  await store.getState().setWorkMode('standard')
+  out.push('  已还原工作模式 → 标准')
 
   return out.join('\n')
 })()

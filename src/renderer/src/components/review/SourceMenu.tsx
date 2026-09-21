@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import type { SourceRefView } from '../../../../shared/ipc'
+import { useStore } from '../../state/store'
+import type { SourceLinkView, SourceRefView } from '../../../../shared/ipc'
 
 /**
  * 来源菜单（方案 §8 的 S1）。
@@ -73,17 +74,29 @@ function normalizeUrl(input: string): string | null {
   }
 }
 
-export function SourceMenu({ sessionId, open }: { sessionId: string; open: boolean }): React.JSX.Element {
+export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; open: boolean; onClose?: () => void }): React.JSX.Element {
   const t = useT()
+  const locateMessage = useStore((s) => s.locateMessage)
+  const injectComposerText = useStore((s) => s.injectComposerText)
   const [images, setImages] = useState<SourceRefView[]>([])
   const [files, setFiles] = useState<SourceRefView[]>([])
   const [webs, setWebs] = useState<SourceRefView[]>([])
+  const [links, setLinks] = useState<SourceLinkView[]>([])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [filter, setFilter] = useState<SourceFilter>('all')
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [bad, setBad] = useState(false)
   const [dir, setDir] = useState('')
+  /*
+   * 网页**搜索**入口（实施-07 S4）：只有在已发现兼容搜索能力时才出现。
+   *
+   * 为什么不在这里自己发搜索请求：方案明写「不要自造私有搜索后端」——
+   * 搜索能力由用户接入的 MCP 工具 / 技能提供，宿主只负责“发现 + 把它交给模型”。
+   * 所以这个入口做的事是**往输入区写一条草稿**，让用户确认后发送。
+   */
+  const [webSearch, setWebSearch] = useState<{ available: boolean; title?: string; location?: string } | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   /*
    * 迟到的响应要丢掉：来源按会话隔离，切会话后上一轮的 list/verifyFiles 可能
    * 才回来 —— 那会把 A 会话的来源画到 B 会话的面板上。
@@ -98,6 +111,7 @@ export function SourceMenu({ sessionId, open }: { sessionId: string; open: boole
       if (gate.current !== mine) return
       setImages(listed.images ?? [])
       setDir(listed.dir ?? '')
+      setLinks(listed.links ?? [])
     } catch {
       if (gate.current === mine) setImages([])
     }
@@ -109,7 +123,8 @@ export function SourceMenu({ sessionId, open }: { sessionId: string; open: boole
     } catch {
       if (gate.current === mine) setFiles([])
     }
-    /* 网页：纯本地记录，不联网（方案要求「网页搜索只在已发现兼容搜索能力时启用」—— 我们没有，所以不做） */
+    /* 网页：纯本地记录（登记 URL + 标题，不抓正文）。**搜索**是另一件事：
+       只有已发现兼容搜索能力时菜单里才出现那枚入口，见下方 `webSearch` */
     const links = loadJson<WebLink>(WEB_KEY).filter((x) => x.sessionId === current)
     if (gate.current !== mine) return
     setWebs(
@@ -130,6 +145,24 @@ export function SourceMenu({ sessionId, open }: { sessionId: string; open: boole
   useEffect(() => {
     if (open) void refresh()
   }, [open, refresh])
+
+  /* 能力目录查询单独一次（它会真连 MCP 服务，不能跟着每次 refresh 跑） */
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    void (async () => {
+      try {
+        const res = await window.yan.sources.webSearch()
+        if (alive) setWebSearch(res ?? { available: false })
+      } catch {
+        /* 查不到就当没有：入口是增益，不该因为能力服务抖动而报错 */
+        if (alive) setWebSearch({ available: false })
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [open])
 
   /* 缩略图按需读：一次读一张，失败就留着占位（不静默消失） */
   useEffect(() => {
@@ -265,6 +298,23 @@ export function SourceMenu({ sessionId, open }: { sessionId: string; open: boole
                 </span>
               </div>
 
+              {/* 关联：只显示“能证明的”—— 有落盘关联才出现定位入口 */}
+              {(() => {
+                const mine = links.filter((l) => l.sourceId === item.sourceId)
+                if (mine.length === 0) return null
+                const latest = mine[mine.length - 1]
+                return (
+                  <button
+                    type="button"
+                    className="env-mini"
+                    data-testid="src-locate"
+                    title={t('src.locateHint', { n: mine.length })}
+                    onClick={() => locateMessage(latest.messageId)}
+                  >
+                    {t('src.locate')}
+                  </button>
+                )
+              })()}
               <button
                 type="button"
                 className="env-mini"
@@ -293,6 +343,44 @@ export function SourceMenu({ sessionId, open }: { sessionId: string; open: boole
       ) : null}
 
       {/* 网页来源：粘贴图片与文件走附件流，网址只能手填 */}
+      {/*
+        搜索入口：**没发现兼容搜索能力时整块不渲染** —— 不做“点了才知道不行”的按钮。
+        它只写草稿（不替用户发言），因此也不需要任何网络权限。
+      */}
+      {webSearch?.available && webSearch.title ? (
+        <div className="env-link-add" data-testid="src-websearch">
+          <input
+            className="env-branch-input"
+            data-testid="src-search-query"
+            placeholder={t('src.searchPlaceholder')}
+            value={searchQuery}
+            spellCheck={false}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <button
+            type="button"
+            className="env-mini"
+            data-testid="src-search-run"
+            disabled={!searchQuery.trim()}
+            onClick={() => {
+              const query = searchQuery.trim()
+              if (!query) return
+              const hint = webSearch.location ? `（能力入口：${webSearch.location}）` : ''
+              /*
+               * 用 `injectComposerText` 而不是 `setSessionDraft`：草稿只在切会话时
+               * 同步进输入框，外部写它对当前这一屏不可见（实测踩到过）。
+               */
+              injectComposerText(
+                `请用「${webSearch.title}」搜索网页：${query}\n${hint}搜到的链接与标题请作为网页来源登记。`
+              )
+              setSearchQuery('')
+              onClose?.()
+            }}
+          >
+            {t('src.searchWith', { name: webSearch.title })}
+          </button>
+        </div>
+      ) : null}
       <div className="env-link-add">
         <input
           className="env-branch-input"

@@ -119,7 +119,7 @@
      * 而一个 `sleep` 工具调用能让它真地忙碌起来，而且 running 位是确定的。
      */
     const LONG_TASK =
-      'YAN-AB-LONG 请先用 bash 工具执行命令 sleep 90（必须真的调用工具执行，不要假装、不要省略工具调用），' +
+      'YAN-AB-LONG 请先用 bash 工具执行命令 sleep 30（必须真的调用工具执行，不要假装、不要省略工具调用），' +
       '等它返回后再回复一句“完成”。'
     let ta = null
     let sendable = false
@@ -201,12 +201,63 @@
     ok(!!q('.notices .notice.error'), '提示渲染到了界面上（不只是进了 store）')
     ok(await runningOf(A.path), '被拒之后 A 还在跑')
 
+    /*
+     * ---- 3.5 未读（N12 的第三种后台状态，真实窗口）----
+     *
+     * 规则（`Rail.tsx` 的 `runnersSeen`）：某个实例从 running 变 not running，
+     * 且窗口不在前台 → 把那行标未读。这里故意**在 B 上停掉 A**：
+     * 此刻当前会话是 B、窗口是隐藏的（test-live 默认 `YAN_PROBE_HIDDEN=1`），
+     * 于是 A 应该被标未读 —— 这正是「后台会话干完了活，用户还不知道」的形态。
+     * 放在第 3 节**之后**：那里有一条「被拒之后 A 还在跑」，提前停会把它变成假红。
+     */
+    out.push('')
+    out.push('=== 3.5 未读：后台会话完成 ===')
+    const unreadRow = () => qa('[data-session-path]').find((e) => e.dataset.sessionPath === A.path)
+    out.push(`  窗口有焦点 = ${document.hasFocus()}（未读只在“不在前台”时标）`)
+    ok(!!unreadRow(), '（前提）左栏找得到 A 那一行')
+    /*
+     * 必须是**自然跑完**，不能 `stopRunner`。
+     *
+     * 未读的判据是「上一次快照 `running=true` → 这次 `running=false`」（Rail 的
+     * `runnersSeen`）—— 而 `stopRunner` 会把这个实例从注册表里**删掉**，
+     * 下一次快照里根本没有它，循环也就不会去比较。第一版就是这么写的，
+     * 结果标记永远不出现（而且“切回后未读清掉”那条还会假绿）。
+     */
+    const t0fin = Date.now()
+    let finished = false
+    /* 本地 llama.cpp 的工具回合可能在 90s 后才收到最终 assistant 事件；
+     * 这条断言验证的是“后台自然结束”，不应把本地模型速度当成并发回归。 */
+    while (Date.now() - t0fin < 180000) {
+      await store.getState().syncRunners()
+      const r = runnersNow().find((x) => x.sessionFile === A.path)
+      if (r && r.running === false) {
+        finished = true
+        break
+      }
+      await sleep(1000)
+    }
+    ok(finished, 'A 在后台**自然**跑完（实例还在，只是不再 running）', `${Math.round((Date.now() - t0fin) / 1000)}s`)
+    const dot = await until(() => !!unreadRow()?.querySelector('[data-testid="rail-unread"]'), 12000)
+    ok(!!dot, '后台会话跑完之后，左栏那一行出现未读标记')
+
     /* ---- 4. 切回 A：内容还在、不串 ---- */
     out.push('')
     out.push('=== 4. 切回 A：内容不丢、不串 ===')
     await store.getState().switchSession(A.path)
+    /*
+     * 切回去要**点左栏那一行**，不能用 `store.switchSession`。
+     * 清除未读就在 `select()` 里（点了才算看过）—— 直接调 action 会绕过它，
+     * 于是「切回后未读消掉」这条断言会假红（第一版就是这样）。
+     */
+    const rowA = qa('[data-session-path]').find((e) => e.dataset.sessionPath === A.path)
+    const nameBtn = rowA?.querySelector('button.srow')
+    ok(!!nameBtn, '（前提）左栏那一行有可点的会话按钮')
+    if (nameBtn) nameBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     const backA = await until(() => store.getState().session?.sessionFile === A.path, 15000)
     ok(backA, '切回 A')
+    /* 打开就清未读：用户已经看到那条结果了（未读标记的语义就是“还没看”） */
+    const cleared = await until(() => !unreadRow()?.querySelector('[data-testid="rail-unread"]'), 8000)
+    ok(!!cleared, '切回之后 A 的未读标记消掉了')
     if (backA) {
       const msgs = store.getState().messages
       ok(
@@ -250,7 +301,7 @@
         ok(stopped, '停止运行之后 A 确实停了')
       }
     } else {
-      out.push('  （A 的长任务在断言前已自然结束，跳过停止断言）')
+      out.push('  （A 已在 3.5 节自然跑完，这里跳过停止断言）')
     }
     const settled = await until(() => !q('.cursor'), 15000)
     ok(settled, '停止后没有残留的流式光标')

@@ -131,7 +131,8 @@
 
     const adds = await waitFor(() => $$('.rdiff-line.add').length, 8000)
     ok(adds > 0, 'diff 里有新增行（带 + 号与行号）', String(adds))
-    const dels = $$('.rdiff-line.del').length
+    /* 每个文件的 patch 是懒加载的；新增文件先返回时，删除文件可能还在 IPC 中。 */
+    const dels = await waitFor(() => $$('.rdiff-line.del').length, 8000)
     ok(dels > 0, 'diff 里有删除行', String(dels))
 
     const firstAdd = $('.rdiff-line.add')

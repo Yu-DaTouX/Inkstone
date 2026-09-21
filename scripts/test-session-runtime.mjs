@@ -98,4 +98,22 @@ export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeK
     }
   })
   ok(!Object.prototype.hasOwnProperty.call(map['session-a'], 'subagents'), '全局子代理事件不进入会话缓存')
+
+  /*
+   * 已回答的 UI 请求必须能**从缓存里**也被清掉（真实缺陷：`ask` 场景第 6 节）。
+   * 只清顶层的话，下一次 `runners` 推送会把缓存投影回顶层 —— 面板复活。
+   */
+  /* 用**独立会话键**：前面几节已经把 session-a 的代次推高，复用它会被闸门丢掉 */
+  const runtimeUi = { sessionId: 'session-ui', runId: 'r-ui', generation: 1 }
+  map = reduceSessionRuntime(map, runtimeUi, {
+    ch: 'ui-request',
+    payload: { id: 'ui-1', method: 'select', title: '选一个', options: ['a', 'b'], createdAt: 1 }
+  })
+  ok(map['session-ui'].uiRequests.length === 1, 'ui-request 进了会话缓存')
+  map = updateSessionRuntime(map, runtimeUi, { uiRequests: [] })
+  ok(map['session-ui'].uiRequests.length === 0, 'uiRequests 可以由缓存补丁清空（防止投影时复活）')
+
+  /* 清空后再来一条 `runners` 式的投影源：缓存里没有旧请求，就不会复活 */
+  map = reduceSessionRuntime(map, runtimeUi, { ch: 'todos', payload: [] })
+  ok(map['session-ui'].uiRequests.length === 0, '后续事件不会把已清的请求带回来')
 }

@@ -29,6 +29,7 @@ import {
 import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
+import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode } from '../shared/work-mode'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -100,8 +101,14 @@ const DEFAULTS: AppSettings = {
   toolDetail: false,
   // 0 = 用设计默认宽度（见 AppSettings 的注释）
   streamWidth: 0,
-  // 提问优先（自主模式默认关）
+  /*
+   * 旧的全自主开关（**实施-05 起不再是界面开关**）。
+   * 保留字段：旧版本读过它、用户磁盘上也有值；迁移与兜底还要用。
+   */
   autonomous: false,
+  /* 新会话的默认工作模式；旧 `autonomous` 只是迁移输入（见下方清洗） */
+  defaultWorkMode: DEFAULT_WORK_MODE,
+  capabilityStrategy: 'auto-connect',
   /*
    * 发送键默认 auto —— 保持用户已有的习惯：短输入框 Enter 发送，
    * 长文模式里 Enter 换行。**不改变默认行为**，只是把它变成可配、
@@ -316,6 +323,22 @@ function sanitizeProjectOrder(v: unknown): string[] {
 
 let cached: AppSettings | null = null
 
+/**
+ * 设置写入的**串行队列**（N01 尾巴，2026-09-19 拓到）。
+ *
+ * ── 为什么必须有它 ──
+ * `patchSettings()` 是「读盘 → 合并 → 写盘」，而它不是原子的：两个并发调用会
+ * 各自读到同一份旧内容，后写的那个把前一个的结果**整份盖掉**。
+ * 2026-09-19 真踩到：工作树创建后要 `patchSettings({projects:[...已有, 新工作树]})`，
+ * 同时另一个调用方（信任查询）在 `getSettings()` 里读了同一份旧文件并缓存 ——
+ * 结果界面上项目列表里**新工作树不见了**，而 git 侧工作树明明建成功。
+ *
+ * 修法是把写入排成一条链：每个 patch 拿到的是**上一个写完之后的**磁盘内容。
+ * 读（`getSettings`）不进队列 —— 它不会改文件，且高频调用（界面每次渲染都可能读）
+ * 若要排队反而会把写拖慢。
+ */
+let writeQueue: Promise<unknown> = Promise.resolve()
+
 /** 清掉内存缓存（下次 getSettings 重新读盘） */
 function invalidate(): void {
   cached = null
@@ -327,6 +350,12 @@ export async function getSettings(): Promise<AppSettings> {
     const raw = await readFile(FILE, 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     cached = { ...DEFAULTS, ...parsed }
+    /*
+     * 工作模式迁移的输入必须是**文件里的原值**，不能用合并后的：
+     * DEFAULTS 里有 `defaultWorkMode: 'standard'`，合完之后永远“合法”，
+     * 旧用户的 `autonomous: true` 就再也迁不过来了（探针会当场抓住）。
+     */
+    const fileWorkMode = parsed.defaultWorkMode
     // 语言：文件里没有合法值就跟随系统（用户手动选过就听用户的）
     if (!LANGS.includes(cached.lang as (typeof LANGS)[number])) cached.lang = detectLang()
     if (!Array.isArray(cached.recentCwds)) cached.recentCwds = []
@@ -368,6 +397,19 @@ export async function getSettings(): Promise<AppSettings> {
     }
     cached.streamWidth = clampStreamWidth(cached.streamWidth)
     cached.autonomous = cached.autonomous === true
+    /*
+     * 工作模式（实施-05）：
+     *   · `defaultWorkMode` 合法就听它的；否则拿旧 `autonomous === true`
+     *     迁成 `autonomous`，其余 `standard` —— 迁移是幂等的（反复读同一份文件结果相同）。
+     *   · `workModeTab` 只有明确写 `false` 才算关，其余（含缺失）保持 undefined
+     *     = 开（“没改过”在磁盘上真的没有这个键，以后再调默认值不会把改过的人一起改掉）。
+     */
+    cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
+    cached.capabilityStrategy =
+      cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
+        ? cached.capabilityStrategy
+        : 'auto-connect'
+    cached.workModeTab = cached.workModeTab === false ? false : undefined
     // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
     cached.sendKey =
       cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'
@@ -409,6 +451,13 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  /* 排队：上一个写完才轮到本个（失败也不能断链，否则后面的永远等不到） */
+  const task = writeQueue.then(() => applyPatch(patch), () => applyPatch(patch))
+  writeQueue = task.catch(() => undefined)
+  return task
+}
+
+async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   /*
    * 先清掉内存缓存，让下面 getSettings 重新读盘。
    *
@@ -476,6 +525,9 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSet
   /* 同上：关闭时写 `{enabled:false}`（它是「开着」的默认态），「没改过」写 `undefined` */
   if ('contextFold' in patch) next.contextFold = sanitizeContextFold(next.contextFold)
   if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
+  /* 工作模式（实施-05）：默认模式要合法；Tab 快切只有明确关才落 false */
+  if ('defaultWorkMode' in patch) next.defaultWorkMode = normalizeWorkMode(next.defaultWorkMode)
+  if ('workModeTab' in patch) next.workModeTab = next.workModeTab === false ? false : undefined
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

@@ -132,7 +132,6 @@
     ok(/fixture-project/i.test(rootRow?.textContent ?? ''), '根行显示 fixture 项目名', rootRow?.textContent?.trim())
 
     const rootCount = rowsOf().length - 1 /* 根行自己 */
-    const expectedFirstBatch = Math.max(0, 50 - 1 - rootCount)
     const bigRow = rowOf('big')
     if (!bigRow) {
       ok(false, '找不到 big 目录行')
@@ -140,9 +139,23 @@
       click(bigRow)
       const gotBatch = await until(() => rowsUnder('big/').length > 0, 8000)
       const firstBatch = rowsUnder('big/').length
+      /*
+       * 预算怎么算（2026-09-19 修）：
+       *
+       * 产品的语义是「**当前渲染的总行数**不超过一批（50）」—— 展开 big 时树会收起
+       * 兄弟目录，所以“已用额度”不等于“根层项数”。原来的期望写成 `50 - 1 - 根层项数`，
+       * 于是在根层 18 项时算出 31，而产品实际渲染 48 行（48 + 根行 + big 行 = 50，正好一批）。
+       * 改成：先数**展开后**的非 big 行，期望 = 50 − 它们；并直接钉住总行数 = 50。
+       * 这两条一起才能守住“一次性铺满 60 行”这类真缺陷（那时总行数会 > 50）。
+       */
+      const nonBigRows = rowsOf().filter((r) => !(r.dataset.path ?? '').startsWith('big/')).length
+      const expectedFirstBatch = Math.max(0, 50 - nonBigRows)
       const more = q('[data-testid="fs-more"]')
-      out.push(`  根层 ${rootCount} 项 → 展开 big 后首次渲染 ${firstBatch} 行（预算 ${expectedFirstBatch}）`)
+      out.push(
+        `  根层 ${rootCount} 项 → 展开 big 后首次渲染 ${firstBatch} 行（非 big 已占 ${nonBigRows} 行，预算 ${expectedFirstBatch}）`
+      )
       ok(gotBatch && firstBatch === expectedFirstBatch, '大目录首屏只渲染剩余额度内的行（50 一批）', `${firstBatch}/${expectedFirstBatch}`)
+      ok(rowsOf().length === 50, '展开后总渲染行数正好是一批（50）', String(rowsOf().length))
       ok(firstBatch < 60, '没有一次性铺满 60 行')
       ok(!!more, '超出一批时出现「显示更多」按钮')
       if (more) {

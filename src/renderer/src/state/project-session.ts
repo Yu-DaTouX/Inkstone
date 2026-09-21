@@ -13,17 +13,30 @@ import type { RunnerStatus, SessionSummary } from '../../../shared/ipc'
  *   ① **运行实例**（`runners`）优先 —— 它带着 `sessionFile`，是「这个项目
  *      刚才在看哪个会话」最直接的证据；而且刚建、还没写进 JSONL 的会话
  *      **不会**出现在 `sessions` 列表里（`listSessions` 解析不出 head 就跳过）；
- *   ② 其次才是会话列表：给了 `projectId` 就按归属匹配，没给就按 cwd 匹配（取
- *      最近活动的那条）。
+ *   ② 其次才是会话列表：给了 `projectId` 就按归属匹配，没给就按 cwd 匹配，
+ *      取排序第一的（见下）。
  *      ⚠️ 没给 `projectId` 时**不能**要求 `!x.projectId`：`listSessions` 会给
  *      cwd 命中项目的会话挂上 `projectId`（`decorateSessions`），那样会把该项目的
  *      会话全部排除掉，表现就是“明明有会话却返回 undefined 去新建”。
+ *
+ * ── 排序键：先「打开过」再「活跃过」（实施-09 S3）──
+ * `lastOpenedAt` 是**用户在砚里真的打开过**的时间（宿主记的）；`lastActivityAt`
+ * 是会话文件里最后一条 message 的时间。两者不等价：后台跑过消息的会话（自动继续、
+ * 子代理写回）活动更新，但用户上次看的是另一个 —— 恢复哪一个应该听用户的。
+ * 两个都没有时回落到 `updatedAt`（旧数据 / 刚迁移的会话）。
+ *
+ * 口径（[实施-09 §4](../plan/实施-09-交付与验收收尾.md)）要求**不新增第二份真源**：
+ * 会话文件始终是唯一真源，排序全部在扫描结果上做，**不存 project → sessionId 映射**。
+ * `lastOpenedAt` 丢了 / 被清了也不会让人认不出会话——它只影响“先选哪个”的顺序。
  */
 export function pickProjectSession(input: {
   cwd: string
   projectId?: string
   runners: Pick<RunnerStatus, 'cwd' | 'projectId' | 'sessionFile' | 'lastActiveAt'>[]
-  sessions: Pick<SessionSummary, 'path' | 'cwd' | 'projectId' | 'scope' | 'lastActivityAt' | 'updatedAt'>[]
+  sessions: Pick<
+    SessionSummary,
+    'path' | 'cwd' | 'projectId' | 'scope' | 'lastActivityAt' | 'lastOpenedAt' | 'updatedAt'
+  >[]
 }): string | undefined {
   const { cwd, projectId, runners, sessions } = input
 
@@ -39,8 +52,30 @@ export function pickProjectSession(input: {
 
   const recent = sessions
     .filter((x) => (projectId ? x.projectId === projectId : sameCwd(x.cwd, cwd)))
-    .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))[0]
+    .sort(compareRecency)[0]
   return recent?.path
+}
+
+/**
+ * 排序：「打开过」的整个类别排在「只在后台活跃过」之前（实施-09 S3）。
+ *
+ * 为什么不直接比两个时间戳的大小：它们的语义不同 —— `lastOpenedAt` 是
+ * 「用户上次看它」，`lastActivityAt` 是「它自己最近动过」（后台续行、子代理写回、
+ * 另一个窗口发消息都会刷新它）。直接混比会让「用户三周前看的那个会话」输给
+ * 「一小时前后台跑过一句的会话」—— 那不是「项目最后一个会话」。同类内再比时间。
+ *
+ * 两个类别都是空的（旧数据 / 刚从别处拷来的会话）→ 回落到 `updatedAt`，
+ * 而**不依赖文件 mtime**（口径里写死的：复制、恢复备份、系统时钟都会污染 mtime）。
+ */
+function compareRecency(
+  a: Pick<SessionSummary, 'lastActivityAt' | 'lastOpenedAt' | 'updatedAt'>,
+  b: Pick<SessionSummary, 'lastActivityAt' | 'lastOpenedAt' | 'updatedAt'>
+): number {
+  const aOpened = a.lastOpenedAt ?? 0
+  const bOpened = b.lastOpenedAt ?? 0
+  if (aOpened > 0 !== bOpened > 0) return aOpened > 0 ? -1 : 1
+  if (aOpened > 0 && bOpened > 0) return bOpened - aOpened
+  return (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt)
 }
 
 /**

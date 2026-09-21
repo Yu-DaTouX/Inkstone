@@ -29,6 +29,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
+import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
 
 /** 系统是否要求减少动态效果 */
 function prefersReducedMotion(): boolean {
@@ -155,12 +156,12 @@ function ReasoningCapsuleImpl({
     >
       <button className="reason-head" onClick={toggleOpen} aria-expanded={open} data-testid="reasoning-toggle">
         {/*
-         * 推理中用 spinner（它在动 = 模型在动），结束后换成 chevron
+         * 推理中用 Orb（它在动 = 模型在动），结束后换成 chevron
          * （一个静止的 spinner 会让人以为还在跑）。
          */}
         {live ? (
           <span className="reason-spin" aria-hidden>
-            <Spinner />
+            <ThinkingOrbIndicator state="solving" />
           </span>
         ) : (
           <Icon name="chevron-right" size={12} className="chev" />
@@ -388,16 +389,4 @@ export function useTypewriter(text: string, enabled: boolean): string {
   }, [enabled, render, start])
 
   return shown
-}
-
-/** 盲文 spinner —— 与输入框边框上那个同一套帧（pi 的 loader.js） */
-const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-export function Spinner() {
-  const [i, setI] = useState(0)
-  useEffect(() => {
-    if (prefersReducedMotion()) return
-    const id = setInterval(() => setI((v) => (v + 1) % SPIN.length), 80)
-    return () => clearInterval(id)
-  }, [])
-  return <>{SPIN[i]}</>
 }

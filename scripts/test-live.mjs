@@ -71,15 +71,36 @@ const electronBin = createRequire(import.meta.url)('electron')
 const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
+/*
+ * 某些旧场景曾为远程免费模型写死 `model:`，用来绕过当时的供应商波动。
+ * 当调用方明确选择本地模型时，这些「正常模型」不应偷偷把请求切回远程；
+ * 仍保留故意不存在的模型与本地路由 fixture，因为它们本身就是失败 / 路由测试。
+ */
+const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
+function modelForCase(fallback) {
+  if (USE_LOCAL_TEST_MODEL && fallback && !/nonexistent|route-probe/i.test(fallback)) return TEST_MODEL
+  return fallback ?? TEST_MODEL
+}
+
 /** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
   // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
+  // 08-S0：隔离 Electron 远程 API → 指定后台 runner → 精确 runId 中止（本机 provider，cost 0）
+  remoteroutes: {
+    probe: 'scripts/probe/remote-routes.js',
+    delay: 15000,
+    budget: 120000,
+    cost: 0,
+    driver: driveRemoteRoutes,
+    afterExit: 'remoteRoutes'
+  },
   // 推理胶囊：渲染 / 展开 / 折叠 / 无推理不占位（不烧 token，注入数据）
   reasoning: { probe: 'scripts/probe/reasoning.js', delay: 9000, cost: 0 },
   // 模型未知时选择器仍可见（用户报的「看不到模型选择」）
   // 连接就绪后模型/思考档位列表要能补上（端到端）
   capabilityload: { probe: 'scripts/probe/capabilityload.js', delay: 9000, cost: 0 },
+  capsettings: { probe: 'scripts/probe/capabilities-tab.js', delay: 12000, cost: 0, budget: 150000 },
   modelnotready: { probe: 'scripts/probe/modelnotready.js', delay: 9000, cost: 0 },
   // 全局快捷键：Ctrl+P 换模型 / Shift+Tab 换强度
   // ⚠️ 必须用**真实**按键（sendInputEvent），因为快捷键是主进程
@@ -129,8 +150,8 @@ const CASES = {
     cost: 0,
     wins: ['1440x900', '940x640']
   },
-  // 子代理：真起一个独立 pi 子进程（方案第 8 节；用免费模型）
-  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0 },
+  // 子代理：真起一个独立 pi 子进程（方案第 8 节；本地模型也可能需要更长冷启动）
+  subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0, budget: 240000 },
   /*
    * 两个并发写入子代理的真实矩阵（L03）：真起两个 pi 子进程，各自在
    * `HEAD` 的独立 worktree 里写文件，然后走合并 / 放弃 / 冲突 / 只读
@@ -154,6 +175,20 @@ const CASES = {
     afterExit: 'subagentArchive'
   },
   /*
+   * L03 尾巴：子代理**模型自身失败**时的恢复（实施-09 S2 第六批）。
+   * 坏模型名 → pi 只 warn、上游 400、**不产生用量**，所以是 cost 0。
+   */
+  subagentfail: {
+    probe: 'scripts/probe/subagent-fail.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 14000,
+    budget: 300000,
+    cost: 0,
+    model: 'deepseek/deepseek-nonexistent',
+    afterExit: 'subagentFail'
+  },
+  /*
    * N12：真实 A/B 会话的后台生命周期。
    *
    * A（cwd=fixture/repo）发一个长任务跑起来，然后：
@@ -170,11 +205,38 @@ const CASES = {
     fixture: true,
     abSessions: true,
     delay: 14000,
-    budget: 200000,
+    budget: 300000,
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'sessionabArchive'
   },
+  /*
+   * 实施-09 S2 第二批：后台会话「等待输入」的真实窗口证据（cost 1）。
+   *
+   * 与 `ask` 的区别：那条证的是提问链路（扩展 → pi → 面板 → 回填），
+   * 全程停在**前台**；这条只证 N12 缺的那一态 —— 用户切走之后，
+   * 那个会话还挂着问题，左栏那一行要一直显示「等待输入」。
+   *
+   * 不复用 `ask`：它刻意不建第二条会话（切会话会让问题面板失去归属，
+   * 把原本稳的断言弄脏）；这里反过来，开场就只要两条会话与那次切走。
+   */
+  askbackground: {
+    probe: 'scripts/probe/ask-background.js',
+    fixture: true,
+    abSessions: true,
+    delay: 12000,
+    budget: 200000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
+  },
+  /*
+   * N12 失败态（实施-09 S2 第四批）：把 pi 入口指向一个「存在但立刻退出」的文件，
+   * 模拟内置运行时损坏 / 版本不匹配 —— 这是用户机器上真会出现的事。
+   * ⚠️ 为什么必须真写一个文件：`resolvePi` 对 `YAN_PI_BIN` 只做 `existsSync`
+   *    检查，不存在的路径会被**静默忽略**并回落到内置 pi（刻意的降级，
+   *    坏设置不该把应用弄成打不开）。所以不能拿一个编出来的路径做测试。
+   */
+  runnerfailed: { probe: 'scripts/probe/runner-failed.js', fixture: true, fixtureSub: 'repo', delay: 9000, budget: 120000, cost: 0, brokenPi: true },
   /*
    * 渲染异常兜底（D8）：故意把 sessions 置成非法值把整棵树搞崩，
    * 验证出现的是可读的兜底界面 + 重新加载出口（而不是整屏白）。
@@ -203,7 +265,13 @@ const CASES = {
   // 左栏搜索：入口稳定 / 过滤 / 清空与关闭后的焦点（P1 4.1）
   railsearch: { probe: 'scripts/probe/railsearch.js', delay: 11000, cost: 0 },
   // 性能实测：流式更新 / 面板收放 / 虚拟化窗口（方案 P2 要求先测量）
-  perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0 },
+  /*
+   * 性能基线：断言量的是**真实动画/渲染耗时**，而隐藏窗口里 Chromium 会把定时器
+   * 节流到 1 秒（实测 1000.1ms / 1000.4ms）——所以这条必须上屏跑。
+   * `visible: true` 就是给这种场景开的：单个场景要求可见窗口，
+   * 而其他场景仍然默认不上屏（用户要求测试不要弹窗）。
+   */
+  perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0, visible: true },
   // 增量推送协议：textDelta / thinkingDelta / outputDelta 的拼接与兜底
   deltas: { probe: 'scripts/probe/deltas.js', delay: 12000, cost: 0 },
   // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
@@ -235,7 +303,8 @@ const CASES = {
   // 标题栏两端的面板开关 + 左栏模式菜单（参考 Codex）
   topbar: { probe: 'scripts/probe/topbar.js', delay: 9000, cost: 0 },
   // 导航轨与消息列的对齐（收起/展开时距离必须稳定）
-  outlinepos: { probe: 'scripts/probe/outlinepos.js', delay: 9000, cost: 0 },
+  /* 几何测量（阅读位置不能被拉回底部）：同上，位置类断言在隐藏/未渲染窗口里不可信 */
+  outlinepos: { probe: 'scripts/probe/outlinepos.js', delay: 9000, cost: 0, visible: true },
   // 窄窗口 + 面板收起态（三档宽度都要过 —— 那三个 bug 只在窄窗口暴露）
   narrow: {
     probe: 'scripts/probe/narrow.js',
@@ -269,12 +338,140 @@ const CASES = {
   railtitle: { probe: 'scripts/probe/railtitle.js', delay: 9000, cost: 0 },
   // 收起侧栏的 mini 项目文件夹（N14）：图标 / 名称 / 当前标记 / 全部项目浮层
   railmini: { probe: 'scripts/probe/railmini.js', delay: 9000, cost: 0 },
-  // 自主模式开关（在输入栏里 / 落盘）
-  autonomous: { probe: 'scripts/probe/autonomous.js', delay: 9000, cost: 0 },
+  /*
+   * 工作模式（实施-05 S2）：旧配置迁移 / 菜单与键盘 / 会话级隔离。
+   *
+   * 两个关键设置：
+   *   · `legacyAutonomous: true` —— 预置一份**只有旧布尔**的 desktop.json，
+   *     验「旧 autonomous=true → 新会话自主」（新字段优先、迁移幂等）；
+   *   · `keys + keysDelay` —— Tab 快切是**渲染端**消费的真按键，探针得先
+   *     关掉首次引导、把焦点放进输入框，所以把第一枚按键推到 12s。
+   */
+  workmode: {
+    probe: 'scripts/probe/work-mode.js',
+    delay: 18000,
+    cost: 0,
+    budget: 120000,
+    legacyAutonomous: true,
+    keys: 'tab,tab',
+    keysDelay: 15000,
+    afterExit: 'workModePersisted'
+  },
+  /*
+   * 澄清就绪转移端到端（实施-05 S3，**花一次模型**）：
+   * 切澄清档 → 让模型用内联参数敲 `yan goal ready` → 宿主校验/幂等/落盘 →
+   * 模式自动切标准 + 工具卡认成「目标 · 砚内置」。
+   *
+   * 为何必须是真模型：整条链路（bash → `yan` 启动器 → 环境变量注入 → 身份校验）
+   * 里任何一段断了，单测都看不出来（与 `taskcli` 同一个理由）。
+   */
+  goal: {
+    probe: 'scripts/probe/goal.js',
+    delay: 12000,
+    cost: 1,
+    budget: 240000,
+    goalResumeExtLog: true,
+    afterExit: 'goalPersisted'
+  },
+  /*
+   * 自主档「大任务自己往下推」端到端（实施-05 S3c，**花一次模型**）：
+   * 切自主档 → 模型只用 `yan goal report` 报一次进展就收尾 →
+   * 宿主 arm 的续行把它自动叫回来（全程不再有用户消息）。
+   *
+   * 与 `goal` 分开的理由：那边证的是「就绪 → 开工」的一次性续行，
+   * 这边证的是「每报一次进展 → 再叫醒一次」的**可重复**链路，
+   * 消息标签也不同（`yan-goal-continue`）。合并成一个场景会让失败原因说不清。
+   */
+  goalloop: {
+    probe: 'scripts/probe/goal-loop.js',
+    delay: 12000,
+    cost: 1,
+    budget: 360000,
+    goalResumeExtLog: true,
+    /*
+     * 固定模型：默认那个免费模型（longcat-2.0:free）实测**没跑通** ——
+     * 它收到「跑这条命令再收尾」后只回了一段文本、一次工具都没调
+     * （2026-09-19 实测：目标停在 rev0、续行根本没机会发生，属于假红）。
+     * 同免费档的 deepseek 一闪模型一次跑通，与 browserclimodel 同一个处置。
+     */
+    model: 'deepseek/deepseek-v4.1-flash',
+    afterExit: 'goalLoopPersisted'
+  },
+  /*
+   * 模型出错后的自动继续（实施-05 S5c，**不花额度**）。
+   *
+   * 模型名故意写坏：pi 不拒启动（只 warn），上游回 400（请求被拒，不产生用量），
+   * 那个错误不含额度/认证/上下文关键词 → 砚判为「可重试」→
+   * 没人说话的情况下自己再起最多 2 轮（退避压到 1.2s），然后收手。
+   *
+   * 为何与 `goalloop` 分开：那边续行的理由是「模型报告了进展」，
+   * 这边是「模型根本没回话」—— 两条触发源、两个消息标签，必须各证各的。
+   */
+  autocontinue: {
+    probe: 'scripts/probe/auto-continue.js',
+    delay: 16000,
+    cost: 0,
+    budget: 60000,
+    model: 'deepseek/deepseek-s5c-nonexistent',
+    env: { YAN_AUTO_CONTINUE: JSON.stringify({ limit: 2, delays: [1200, 1200] }) },
+    goalResumeExtLog: true,
+    afterExit: 'autoContinuePersisted'
+  },
+  /*
+   * 交接包生成（实施-05 S5b-2，**花一次模型**）。
+   *
+   * 自主档 + `yan goal report`（让「目标在推进」成立）+ `YAN_HANDOFF_THRESHOLD=0`
+   * （真实链路要攒够两次真实自动压缩，而那是全项目最贵的场景之一）
+   * → 回合结束后宿主判资格 → 写请求 → 薄层在 `agent_settled` 调一次 completion
+   * → 宿主解析 / 清洗 / 落盘。
+   *
+   * 与 `contexttakeover`（S5a 借它验计数）的分工：那边验的是**计数**，
+   * 这一片验的是**包本身**（模型真写得出两栏必填 + 来源字段由宿主填）。
+   */
+  handoffpack: {
+    probe: 'scripts/probe/handoff-pack.js',
+    delay: 22000,
+    cost: 1,
+    budget: 240000,
+    model: 'deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    env: { YAN_HANDOFF_THRESHOLD: '0' },
+    afterExit: 'handoffPackPersisted'
+  },
+  /*
+   * 交接提交（实施-05 S5b-3b，**会多起一个会话并多跑一轮模型**）。
+   *
+   * 与 `handoffpack` 的分工：那边验「模型写得出一份包」，这一片验
+   * 「包真的被用掉了」—— 停源实例 → 同 cwd 建目的会话 → 写会话链 →
+   * 发 resume → 目的会话文件里拿到消费证据。
+   *
+   * **不设 `YAN_HANDOFF_COMMIT`**：自动交接自 2026-09-19 用户拍板起**默认开**，
+   * 这一场顺手把「默认开真的生效」当断言（`initial.autoCommit === true`）。
+   * 唯一测试通道是把阈值压到 0（真实链路要攒两次真实自动压缩才够数）。
+   */
+  handoffcommit: {
+    probe: 'scripts/probe/handoff-commit.js',
+    delay: 25000,
+    cost: 1,
+    budget: 400000,
+    model: 'deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    env: { YAN_HANDOFF_THRESHOLD: '0' },
+    afterExit: 'handoffCommitPersisted'
+  },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
   /*
    * N21-2 压缩可观测：真实触发一次自动压缩 + 真实的手动压缩失败。
+   *
+   * ⚠️ **前提已过期（2026-09-19 处置：实施-06 §2 选项 ②，降级为说明）**。
+   * pi 0.85.1 不再按 `reserveTokens` 在回合结束自动压，所以下面那个「触发线落到 ≤ 0」
+   * 的手法已经失效 —— 跑起来会在「自动压缩真的发生」那一节红，**不是回归**。
+   * 不要再为了让它变绿去修这套前提；砚侧自动压缩链路的覆盖改用
+   * `contexttakeover`（`YAN_CONTEXT_POLICY` 驱动）与 `contexttakeoverstate`（接管成功分支）。
+   * 条目与探针保留在原处，以便将来 pi 恢复或被重新设计时能拿回来对照。
    *
    * 为什么要 `piSettings`：pi 的自动压缩只在「上下文 > 窗口 − reserveTokens」时触发。
    * 默认 reserveTokens=16384，意味着要把上下文填到接近整个窗口 —— 即使拿最大的
@@ -406,6 +603,8 @@ const CASES = {
     budget: 420000,
     contextExtLog: true,
     afterExit: 'contextTakeoverState',
+    /* 固定模型：默认免费档 LongCat 已退役（403），不固定会让场景假红 */
+    model: 'deepseek/deepseek-v4.1-flash',
     env: {
       YAN_CONTEXT_POLICY:
         '{"workingSetCap":20000,"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
@@ -413,10 +612,42 @@ const CASES = {
     /* 不调小它，pi 会说 `Nothing to compact (session too small)` */
     piSettings: { compaction: { keepRecentTokens: 1 } }
   },
+  /*
+   * **压缩接管的档位可达性**（N21-6 尾，实施-06 S4 前半，cost 1）
+   *
+   * S4 的出口是「`fresh` / `stale-soft` / `stale-hard` 每档至少一次真实接管
+   * 或明确的降级记录」—— `stale-hard` 已由 `contexttakeoverstate` 取证。
+   * 本场景试了两种构造去命中另两档：
+   *   · 让 **pi 自己**在回合中途压（`reserveTokens = 窗口 − 25k`）；
+   *   · 让回合 2 明确禁止工具调用（水位后只有 user + assistant 两条）。
+   * 两次实测结果**完全一样**：`tier=stale-hard`、`gap=3`，会话条目序列也都是
+   * `… user | assistant | compaction | …` —— 即压缩（不管谁发起）**总在回合结束之后**，
+   * 水位后至少已有 user + assistant + compaction 三条，gap 永远 ≥ 3。
+   *
+   * 所以本场景的命题从「命中某档」改成**如实量出可达性**：断言真实链路里
+   * 只会出现 `stale-hard`，并把条目序列一并打印作为机制证据。
+   * `fresh` / `stale-soft` 两档的**判定正确性**由单测钉住
+   *（`scripts/test-context-producer.mjs` 的 `applyFreshness` / `pendingOnly` 各组）。
+   */
+  contexttakeovergap: {
+    probe: 'scripts/probe/context-takeover-tier.js',
+    delay: 10000,
+    cost: 1,
+    budget: 420000,
+    contextExtLog: true,
+    afterExit: 'contextTakeoverGap',
+    model: 'deepseek/deepseek-v4.1-flash',
+    env: {
+      YAN_CONTEXT_POLICY:
+        '{"workingSetCap":20000,"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
+    },
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
   contextswitchguard: {
     probe: 'scripts/probe/context-switch-guard.js',
     delay: 10000,
     cost: 0,
+    contextGuardSeed: true,
     budget: 90000,
     /*
      * 两条线都压到极低：切到任何有内容的旧会话都必然“在线上”，
@@ -532,13 +763,39 @@ const CASES = {
     probe: 'scripts/probe/context-episode.js',
     delay: 12000,
     cost: 1,
-    budget: 300000,
+    budget: 600000,
     contextExtLog: true,
     afterExit: 'contextEpisode',
     env: {
       YAN_CONTEXT_POLICY:
         '{"recentTail":{"target":10,"max":100},"episodes":{"minEntries":1,"minTokens":1},"state":{"gate":{"minTurns":1,"minTokens":1},"rearmMs":1000,"cooldownMs":1000,"episodeGenerate":true}}'
     }
+  },
+  /*
+   * 请求前预算门的真实模型冒烟（实施-05 S4，cost 1）。
+   *
+   * 与 `hook-probe budget` / `budget-soft`（假 provider，cost 0）成对：
+   * 那边验「判得对、拦得住」；这边只验反面 —— **不误拦**。
+   * 工作集线压到 3000，真实对话第一轮就过线（soft），但物理线远在窗口那头：
+   * 这一轮必须照常发出并拿到回答，磁盘上只能有 soft，不能有 physical / abort。
+   */
+  budgetgate: {
+    probe: 'scripts/probe/budget-gate.js',
+    delay: 12000,
+    cost: 1,
+    budget: 240000,
+    contextExtLog: true,
+    afterExit: 'budgetGate',
+    /*
+     * 固定模型：默认那个免费档（LongCat 2.0）已于 2026-09-19 退役
+     * （`403 permission_error`：免费层下线），不固定就会变成一条无意义的红。
+     *
+     * 本场景**不看模型答了什么**（只要这一轮正常跑完）：deepseek 一闪模型在 RPC 链路的
+     * 极短问题上偶发空回复（手动 `--print` 同模型同提示正常）——那是模型侧，
+     * 判「有没有被误拦」的根据是磁盘上的 physical / budget-abort 断言（都为 0）。
+     */
+    model: 'deepseek/deepseek-v4.1-flash',
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":3000}' }
   },
   contextgate: {
     probe: 'scripts/probe/context-gate.js',
@@ -572,6 +829,67 @@ const CASES = {
         '{"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":100000000,"refreshRatio":0.000001}}}'
     }
   },
+  /*
+   * N21-4 尾 / §12.11 第 10 条：**连续 20+ 长回合压力测试**（cost 1）。
+   *
+   * 前面所有上下文场景最多跑 3 个回合 —— 能证触发路径通，证不了
+   * 「连续很多轮都贴着工作集跑时，冷却 / 收益门槛 / 输出预留还守不守得住」。
+   * 这里把两条件都挪近（工作集 6000、尾部 1000）让每一轮都在线上，
+   * 跑 22 个真实回合；断言（贴线占比 / 恒不越窗口预留 / 原始会话不被破坏）
+   * 全在退出后的 `checkContextPressure` 里读扩展诊断与会话文件。
+   *
+   * 固定模型：默认那个免费档已退役（见 `budgetgate` 的注释）；压力测试
+   * 要的是稳定的工具调用行为，不能因为模型侧波动把“回合数不够”报成代码红。
+   */
+  contextpressure: {
+    probe: 'scripts/probe/context-pressure.js',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    contextExtLog: true,
+    afterExit: 'contextPressure',
+    model: 'deepseek/deepseek-v4.1-flash',
+    /*
+     * `keepRecentTokens: 1` 与 `contexttakeover` 同一理由：pi 的压缩默认会保留
+     * 最近一大段，那就看不出“砚的策略线到底压不压得住”——转录会停在 pi 的
+     * 保留量上、而不是工作集上，压力测试会变成在验 pi 的参数。压到 1 才是有效压力条件。
+     */
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: {
+      /*
+       * 工作集 20000 是「压到小额度但仍然在基线之上」的取值：pi 报的 `contextUsage`
+       * 包含系统提示 + 工具定义（本机实测约 10k），工作集低于它时压缩后用量仍过线，
+       * 会退化成“一直压”。取 20000（90% = 18000 > 基线）才能让“回落到线下”真的发生，
+       * 压力测试量的也才是“转录能不能维持在工作集附近”。
+       * 刻意**不压近 `recentTail`**（默认 32k）：转录从未超过它，所以这条场景
+       * 量的是**压缩**，不是清扫；清扫的取值由 `contextsweep` 那组覆盖。
+       */
+      YAN_CONTEXT_POLICY: '{"workingSetCap":20000}'
+    }
+  },
+  /*
+   * 压力测试的**低线变体**（cost 1）：工作集压到 6000，**低于** pi 的基线开销
+   *（系统提示 + 工具定义，本机约 10k）。
+   *
+   * 这一条专测 `rearmAfterCompaction`（N21-4 尾的修复）：“回落到线下”的恢复路径
+   * 要求 `usage < 工作集 × 0.9 = 5400`，而基线开销就有约 10k —— 那条路**永远不成立**。
+   * 修复前 `armed` 回不来，只能等 5 分钟重试窗口 → 22 个回合只压 1–2 次；
+   * 修复后每次压缩成功都重新上膛，30s 冷却一到就能再压。
+   * 本场景**不判峰值比率**（工作集低于基线，压无可压），只判“压缩能不能持续发生”。
+   */
+  contextpressurelow: {
+    probe: 'scripts/probe/context-pressure.js',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    contextExtLog: true,
+    afterExit: 'contextPressure',
+    model: 'deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: {
+      YAN_CONTEXT_POLICY: '{"workingSetCap":6000}'
+    }
+  },
 /* 同上，但把工作集抬到天上、兜底压到极低 → 命中的是 90% 物理兜底那条线 */
   contextemergency: {
     probe: 'scripts/probe/context-takeover.js',
@@ -602,6 +920,23 @@ const CASES = {
   atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
   // 项目切换（N05）：视图与文件树跟着 cwd 走 / 草稿按实例隔离 / 附件绝对路径 / 失效与无权限目录的真实反馈
   projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
+  /*
+   * 「每个项目最后一个会话」的恢复判断（实施-09 S3，cost 0）：不调模型。
+   *
+   * 与 `projectswitch` 的差别：那个验的是切过去之后草稿/文件树对不对；
+   * 这个验**恢复哪一个会话** —— 前提是 fixture 里有两条同项目的会话，
+   * 「消息最新的」与「用户真的打开过的」是**不同**的两条。
+   */
+  projectopened: {
+    probe: 'scripts/probe/project-opened.js',
+    fixture: true,
+    projectSessions: true,
+    openedSessions: true,
+    delay: 10000,
+    budget: 180000,
+    cost: 0,
+    afterExit: 'projectOpenedLayout'
+  },
   /*
    * shell / 第三方工具的变更归属（L05）。cost 0：走直执行 shell 通道
    *（`window.yan.runBash`），不需要模型生成。必须在**隔离的 fixture 目录**里跑，
@@ -642,6 +977,46 @@ const CASES = {
     afterExit: 'gitWriteApplied'
   },
   // 文件树（工具栏「文件」分区）：懒加载 / 排序 / 缩进 / 点文件插 @路径 / 溢出
+  /*
+   * 来源「定位消息」（方案 §8 的 S1，cost 0）：**不调模型** —— 它验的是
+   * 「关联已存在」之后的全部链路（落盘 / 菜单入口 / 跳到那条消息）。
+   * 发送时建立关联那一段需要模型回合，所以那一段只能在手动场景里跑。
+   */
+  sourcelink: {
+    probe: 'scripts/probe/source-locate.js',
+    fixture: true,
+    /*
+     * 必须是**有 git 仓库的** fixture 子目录：来源区与环境菜单的其它分区
+     * 一起渲染在「这个是 git 项目」那个分支里（非 git 目录下整块换成一行提示），
+     * 所以 cwd 指到普通目录时 `env-source-menu` 根本不会出现。
+     * 选 `review`（只读仓库）而不是 `write` —— 本场景不写 git 任何东西。
+     */
+    fixtureSub: 'review',
+    /*
+     * N12 的 A/B 合成会话（cwd = fixture/repo，带 user 消息）—— 本场景需要
+     * 「在 git 项目里、且带可定位消息」的会话：plain fixture 的 cwd 是家目录
+     *（非 git 仓库，来源区整块不渲染），而默认打开的那个是空会话。
+     */
+    abSessions: true,
+    delay: 11000,
+    budget: 150000,
+    cost: 0,
+    afterExit: 'sourceLocateLinked'
+  },
+  /*
+   * 来源「定位消息」的**发送链路**（同上一片，cost 1）：验的是关联怎么产生的 ——
+   * 发一条带图的消息，渲染端把附件对应的来源绑到 pi 刚写出的那条 user 条目上。
+   * 这一步需要真实模型回合（消息 id 由 pi 生成），所以**不进 `npm run check`**。
+   */
+  sourcelinklive: {
+    probe: 'scripts/probe/source-locate-send.js',
+    fixture: true,
+    delay: 9000,
+    budget: 200000,
+    cost: 1,
+    model: 'deepseek/deepseek-v4.1-flash',
+    afterExit: 'sourceLocateLinked'
+  },
   /*
    * pi 包管理（方案 §9 的 P2，cost 0）：**真实**调用 pi 的 CLI 装一个本地包
    * 再卸掉。用专属 fixture（`fixtureSub: 'pkgs'`）—— 它会在隔离的
@@ -786,7 +1161,8 @@ const CASES = {
     readonlySession: 'yan-todo-fixture'
   },
   // 长会话虚拟化
-  virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0 },
+  /* 虚拟滚动：首屏渲染行数与滚动位置都是几何量 → 需要真实可见窗口 */
+  virtual: { probe: 'scripts/probe/virtual.js', delay: 9000, cost: 0, visible: true },
   // 会话切换 + 新建会话
   sessions: { probe: 'scripts/probe/sessions.js', delay: 9000, cost: 0 },
   // 切换会话不能丢历史（含「切语言重建实例之后」这条路）
@@ -795,6 +1171,13 @@ const CASES = {
   sessionlayout: { probe: 'scripts/probe/sessionlayout.js', delay: 9000, cost: 0 },
   // 窗口关闭隐藏到托盘，退出取消路径可重复
   tray: { probe: 'scripts/probe/tray.js', delay: 9000, cost: 0, env: { YAN_EXIT_CHOICE: 'cancel' } },
+  //
+  // N12 退出变体（实施-09 S2 第五批）：保存并退出 + 退出进行中重复请求。
+  // `YAN_EXIT_CHOICE` 是原生对话框的 probe 替身 —— 只跳过“选哪个”这一步，
+  // 写快照 / 收实例 / 退出的链路完全相同；快照与进程表在 afterExit 看。
+  exitsave: { probe: 'scripts/probe/exit-save.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'save' } },
+  // 同一套前置，换中断分支：快照 mode=interrupt（差别的判据在落盘文件里）
+  exitinterrupt: { probe: 'scripts/probe/exit-interrupt.js', delay: 9000, cost: 0, afterExit: 'exitSnapshot', env: { YAN_EXIT_CHOICE: 'interrupt' } },
   // 运行实例：身份过滤 + 左栏状态槽 + 单独停止（N12，注入合成推送）
   sessionrunners: { probe: 'scripts/probe/sessionrunners.js', delay: 9000, cost: 0 },
   // 运行实例选择：真实主进程注册表路径（N12，不跑回合）
@@ -933,7 +1316,18 @@ const CASES = {
     afterExit: 'taskPlanMultiStep'
   },
   // 问答功能端到端：模型主动提问 → 弹窗 → 回答 → 回填（真调模型）
-  ask: { probe: 'scripts/probe/ask.js', delay: 9000, cost: 1 },
+  /*
+   * 问答（cost 1）：真弹窗 → 选答案 → 回填；第 6 节是「自主档不弹窗」。
+   * `questionExtLog` 把扩展读到的模式写成诊断行 —— 不弹窗可能是扩展拦住了，
+   * 也可能是模型自己没问，这两件事必须分开（afterExit 核对）。
+   */
+  ask: {
+    probe: 'scripts/probe/ask.js',
+    delay: 9000,
+    cost: 1,
+    questionExtLog: true,
+    afterExit: 'questionModeLog'
+  },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
@@ -985,6 +1379,77 @@ const CASES = {
      */
     model: 'deepseek/deepseek-v4.1-flash'
   },
+
+  /*
+   * 实施-04 S2：能力目录 + 按需读技能正文的**模型端到端**。
+   *
+   * 它验的是「发现 → 读取 → 按目标执行」整条链：模型得自己从能力说明
+   * 找到 `yan capabilities search`，从候选里挑出技能，再 `skill read` 读正文。
+   * 提示词**不给命令名也不给技能名** —— 给了就只验执行链，验不到发现链。
+   * 需要专属 piDir（多一个技能），见下面 sandbox 准备区。不在默认门槛里（cost 1）。
+   */
+  capsearch: {
+    probe: 'scripts/probe/capability-search-model.js',
+    delay: 10000,
+    cost: 1,
+    budget: 260000,
+    model: 'deepseek/deepseek-v4.1-flash'
+  },
+
+  /*
+   * 实施-04 S4：**模型自己发现 MCP 工具并调用**（cost 1）。
+   * 提示词不给服务名 / 工具名 / MCP 字样，验的就是发现链（mcpcli 只验执行链）。
+   */
+  capmcp: {
+    probe: 'scripts/probe/mcp-search-model.js',
+    delay: 10000,
+    cost: 1,
+    budget: 260000,
+    model: 'deepseek/deepseek-v4.1-flash'
+  },
+
+  /*
+   * 实施-04 S5：`yan capabilities discover/prepare` 的宿主链路 + **真实目录检索**（cost 0）。
+   * 两个源都不可用时**跳过**（离线环境），不假装验过 —— 与 probe:chrome 同一口径。
+   */
+  discnet: { probe: 'scripts/probe/discovery-cli.js', delay: 9000, cost: 0 },
+
+  /*
+   * 实施-04 S2：`yan capabilities search` / `yan skill read` 的**宿主链路**（cost 0）。
+   *
+   * 为什么不是「capsearch 已经验过就不用验」：`capsearch` 实测发现模型读技能
+   * 走的是 pi 原生 `read` 工具，根本没碰 `yan skill read` —— 那样就没人验它了。
+   * 这里直连宿主把发现 / 读取 / 内容 hash / 错误可分支四条确定性钉住。
+   * 复用同一份带技能的 piDir。
+   */
+  capcli: { probe: 'scripts/probe/capability-cli.js', delay: 9000, cost: 0 },
+
+  /*
+   * 实施-04 S3：`yan mcp describe` / `yan mcp call` 的**宿主链路**（cost 0）。
+   *
+   * 连的是一个**真的 MCP 服务**（官方 SDK 的 stdio server，scripts/lib/mcp-stdio-fixture.mjs）：
+   * 验 describe 给 schemaRevision、正常调用、**工具级失败**与可重试的两类错
+   * （invalid_arguments / schema-changed）、大结果落盘。服务配置由 YAN_MCP_SERVERS_FILE 注入。
+   */
+  mcpcli: { probe: 'scripts/probe/mcp-cli.js', delay: 9000, cost: 0 },
+
+  /*
+   * 实施-07 S4：来源搜索入口**有则出现**（cost 0）。
+   *
+   * 场景给一份真实 MCP 配置（同一个 stdio fixture，工具表里有 `web_search`），
+   * 宿主真的把它接进能力目录 —— 判定读的就是那份目录，不是占位开关。
+   */
+  sourcecap: { probe: 'scripts/probe/source-capability.js', delay: 9000, cost: 0 },
+
+  /*
+   * 实施-04 S6b-1：远程 MCP 的**自动登记闭环**（cost 0）。
+   *
+   * 从「确认未配置」开始：真目录 fixture → discover 拿到候选 → 未授权不登记 →
+   * `--authorize` 真核验（本地 Streamable HTTP MCP fixture，官方 SDK 握手）→
+   * 写受管配置 → 能力目录当场可见 → `mcp call` 真的调得通 → 同一计划重放不重复登记。
+   * 配置与授权都落 sandbox（YAN_MCP_SERVERS_FILE），不碰用户真实配置。
+   */
+  mcpregister: { probe: 'scripts/probe/mcp-register.js', delay: 9000, cost: 0, usesMcpRegisterFixture: true },
 }
 
 const TS = (offsetSec = 0) => new Date(Date.now() - offsetSec * 1000).toISOString()
@@ -1217,7 +1682,7 @@ function buildFixtureProject(base) {
   /* 关掉 autocrlf：行数在不同平台要一致，否则断言会随机器变 */
   rgit(['config', 'core.autocrlf', 'false'])
   put(join('review', 'modify.txt'), 'one\ntwo\nthree\n')
-  put(join('review', 'removed.txt'), 'bye\n')
+  put(join('review', 'a-deleted.txt'), 'bye\n')
   put(join('review', 'renamed.txt'), 'rename me\n')
   {
     /* 80 行的文件：待会儿只改首尾两行 → diff 里会出现两个 hunk，
@@ -1247,7 +1712,7 @@ function buildFixtureProject(base) {
     put(join('review', 'multi.txt'), lines.join('\n') + '\n')
   }
   /* ③ 未暂存删除 */
-  rmSync(join(reviewRepo, 'removed.txt'), { force: true })
+  rmSync(join(reviewRepo, 'a-deleted.txt'), { force: true })
   /* ④ 已暂存重命名 */
   rgitC('mv', 'renamed.txt', 'renamed-new.txt')
   /* ⑤ 已暂存新增 */
@@ -1449,6 +1914,37 @@ function seedSessions(destRoot) {
   return n
 }
 
+function writeRemoteRouteSession(root, cwd) {
+  const id = 'yan-remote-route-target'
+  const timestamp = new Date().toISOString()
+  const file = join(root, `2026-09-20T00-00-00-000Z_${id}.jsonl`)
+  const lines = [
+    { type: 'session', version: 3, id, timestamp, cwd },
+    { type: 'model_change', id: 'mc0', parentId: null, timestamp, provider: 'yanrouteprobe', modelId: 'route-probe' },
+    {
+      type: 'message',
+      id: 'u0',
+      parentId: 'mc0',
+      timestamp,
+      message: { role: 'user', content: [{ type: 'text', text: 'Isolated remote route fixture' }] }
+    },
+    {
+      type: 'message',
+      id: 'a0',
+      parentId: 'u0',
+      timestamp,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Ready for a local route check.' }],
+        usage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: 'stop'
+      }
+    }
+  ]
+  writeFileSync(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf8')
+  return { id, file }
+}
+
 function writeTodoSession(dir, idBase) {
   const id = `${idBase}-${Date.now().toString(36)}`
   const file = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`)
@@ -1618,6 +2114,58 @@ function writePlainSession(dir, idBase, count) {
   writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
 }
 
+/*
+ * N21-3 的切会话守卫需要一个确定性「已经越过两条线」的旧会话。
+ * 不能依赖运行机器上碰巧存在的大会话：隔离 fixture 可能只有几条小 JSONL，
+ * 那样探针测到的是“前提不存在”，而不是切换没有触发压缩。
+ * 这个文件只在 contextswitchguard 场景启动前写入，场景结束后立即删除。
+ */
+function writeContextGuardSession(dir) {
+  const id = `yan-context-guard-${Date.now().toString(36)}`
+  const file = join(dir, `2026-01-06T00-00-00-000Z_${id}.jsonl`)
+  const text = 'context guard fixture '.repeat(320)
+  const timestamp = new Date(Date.now() - 120_000).toISOString()
+  const lines = [
+    { type: 'session', version: 3, id, timestamp, cwd: homedir() },
+    {
+      type: 'model_change',
+      id: 'mc0',
+      parentId: null,
+      timestamp,
+      provider: 'commandcode',
+      modelId: 'deepseek/deepseek-v4.1-flash'
+    },
+    {
+      type: 'message',
+      id: 'u0',
+      parentId: 'mc0',
+      timestamp,
+      message: { role: 'user', content: [{ type: 'text', text: 'YAN-CONTEXT-GUARD fixture' }] }
+    },
+    {
+      type: 'message',
+      id: 'a0',
+      parentId: 'u0',
+      timestamp,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text }],
+        usage: {
+          input: 256,
+          output: 256,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 512,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+        },
+        stopReason: 'stop'
+      }
+    }
+  ]
+  writeFileSync(file, lines.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8')
+  return file
+}
+
 /**
  * N12 的 A/B 会话：三个合成会话，cwd 指向 fixture 项目。
  *
@@ -1760,6 +2308,23 @@ function writeProjectSwitchSessions(root, cwdA, cwdB, opts = {}) {
     one('d', opts.peerCwd, 0)
     one('e', opts.peerCwd, 100)
   }
+  /*
+   * 09-S3（S3）：同一个项目目录里的两条会话，用来验「恢复哪一个」。
+   *
+   *   hot    —— 消息时间比 `opened` 新（模拟后台跑过消息的会话）；
+   *   opened —— 消息时间旧，稍后由探针真的打开一次。
+   *
+   * ⚠️ 这里的 `skew` 是**加到偏移上**的（`TS(690 - skew)` ⇒ skew 越大消息越新），
+   * 与上下文的直觉相反 —— 第一版写反了，结果是 `opened` 的消息反而更新，
+   * “只按活动时间排会选错”这个前提直接不成立。
+   * 两条都故意把 mtime 拨到更旧（skew 大）—— mtime 不参与判定，
+   * 但没必要让它去影响别的场景的列表顺序。
+   * ⚠️ 只在明确要求时造：摆在 cwdA 旁边会参与 `projectswitch` 的挑选。
+   */
+  if (opts.opened) {
+    one('hot', cwdA, 300)
+    one('opened', cwdA, 50)
+  }
   return made
 }
 
@@ -1869,9 +2434,12 @@ function checkContextStateCleanup(sandboxRoot, _tempBefore, probeText = '') {
   lines.push(`  剩下 = ${JSON.stringify(stateFiles)}`)
 
   say(!files.includes(`${deletedId}.json`), `被删会话的状态文件已清理（${deletedId}.json）`)
+  const present = new Set(stateFiles)
+  const preservedSeedIds = [...new Set(seeded)].filter((id) => id && id !== deletedId)
+  const preservedCount = preservedSeedIds.filter((id) => present.has(`${id}.json`)).length
   say(
-    stateFiles.length === seeded.length - 1,
-    `其它会话的状态一个没少（${stateFiles.length} / 期望 ${seeded.length - 1}）`
+    preservedCount === preservedSeedIds.length,
+    `其它种子会话的状态一个没少（${preservedCount} / 期望 ${preservedSeedIds.length}；允许场景期间新增的派生文件）`
   )
   say(
     !files.some((f) => f.endsWith('.tmp')),
@@ -2410,6 +2978,113 @@ async function checkContextTakeoverState(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
+/**
+ * 压缩接管的**档位可达性**实测（N21-6 尾 / 实施-06 S4 前半）。
+ *
+ * 不把「必须命中 fresh / stale-soft」写成断言 —— 两次构造（pi 中途压、
+ * 回合 2 禁用工具）实测都得到 `tier=stale-hard`、`gap=3`。真实的断言是：
+ * 接管写的是**可接管的真实档位**、水位不是完全一致、摘要里有目标；
+ * 再把它实际命中的档位打印出来（结论回写 HANDOFF / 方案）。
+ */
+async function checkContextTakeoverGap(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const ownId = ownSessionIdFrom(probeText, 'ctxtiertakeover')
+  const own = ownId ? records.filter((r) => !r.sessionId || r.sessionId === ownId) : records
+
+  const compact = own.filter((r) => r?.stage === 'compact')
+  const takeovers = compact.filter((r) => r.hook === 'takeover')
+  const fallbacks = compact.filter((r) => r.hook === 'fallback')
+  const tiers = takeovers.map((t) => t.tier)
+  lines.push(`  接管 ${takeovers.length} 次｜降级 ${fallbacks.length} 次｜实测档位 = ${JSON.stringify(tiers)}`)
+  for (const t of takeovers) {
+    lines.push(`    · takeover tier=${t.tier} gap=${t.gap} fields=${JSON.stringify(t.fields)}`)
+  }
+  for (const f of fallbacks.slice(0, 4)) lines.push(`    · fallback: ${JSON.stringify(f).slice(0, 180)}`)
+
+  const hit = takeovers.length >= 1
+  say(hit, `压缩真的走了接管分支（takeover ${takeovers.length} 次 / fallback ${fallbacks.length} 次）`)
+
+  if (takeovers.length) {
+    const last = takeovers[takeovers.length - 1]
+    const realTiers = ['fresh', 'stale-soft', 'stale-hard']
+    say(realTiers.includes(last.tier), `接管写的是可接管的真实档位（${last.tier}）`)
+    say(Number.isFinite(last.gap) && last.gap >= 1, `水位是有界陈旧而不是完全一致（gap=${last.gap}）`)
+    const fields = last.fields ?? {}
+    say(fields.task === true, `接管摘要里有目标（objective 非空，tier=${last.tier}）`)
+    /*
+     * 实测结论（见场景注释）：真实链路里压缩**总在回合结束之后**，
+     * 水位后至少已有 user + assistant + compaction 三条 → gap ≥ 3 → 只会落到 stale-hard。
+     * 这里不把「必须 stale-hard」写成硬断言（将来实现变了不该假红），
+     * 只把实际情况打印出来，结论回写 HANDOFF / 方案。
+     */
+    lines.push(
+      last.tier === 'stale-hard'
+        ? `  → 实测：真实链路只出现 stale-hard（gap=${last.gap}）；fresh / stale-soft 不可达（两档判定由单测覆盖）`
+        : `  → 实测：命中了非 hard 档（tier=${last.tier} gap=${last.gap}）—— 与场景注释里的旧结论不同，需要回写文档`
+    )
+  } else {
+    say(false, '一次接管都没有')
+  }
+
+  const errors = own.filter((r) => r.hook === 'error')
+  say(errors.length === 0, `扩展没有报错（${errors.length} 条 error）`)
+
+  /*
+   * 诊断辅助：把本会话的条目序列打出来。
+   * `gap` 是「当前 entryCount − 水位 entryCount」，只看数字没法知道
+   * 那几条是什么（回合 2 到底新增了 user/assistant/还是 pi 的包装条目）。
+   * 这是调档位时的必需证据，也顺带证明会话文件只追加、没被改写。
+   */
+  try {
+    const sessionsDir = join(sandboxRoot, 'sessions')
+    const files = existsSync(sessionsDir)
+      ? readdirSync(sessionsDir, { recursive: true })
+          .map((n) => String(n))
+          .filter((n) => n.endsWith('.jsonl') && (!ownId || n.includes(ownId)))
+      : []
+    for (const name of files) {
+      const text = readFileSync(join(sessionsDir, name), 'utf8')
+      const seq = text
+        .split('\n')
+        .filter(Boolean)
+        .flatMap((line) => {
+          try {
+            const e = JSON.parse(line)
+            return [`${e?.type ?? '?'}:${e?.message?.role ?? ''}`]
+          } catch {
+            return ['?']
+          }
+        })
+      lines.push(`  会话条目（${seq.length} 条）：${seq.join(' | ')}`)
+    }
+  } catch (error) {
+    lines.push('  （读会话文件失败：' + (error instanceof Error ? error.message : String(error)) + '）')
+  }
+  return { ok, lines }
+}
+
 async function checkContextDeep(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -2539,7 +3214,33 @@ async function checkContextTakeoverHook(sandboxRoot) {
       ? '  → 钩子**确实被调到了**：压缩接管在真实链路里是可用的'
       : '  → 钩子一次都没被调到（`stage` 已确认修对，这个结论现在可信）'
   )
-  return { ok: true, lines }
+
+  /*
+   * 交接计数（实施-05 S5a）：这次压缩是**砚自己发起的自动完整压缩**，
+   * 所以它必须被计进 `handoffs.json` —— 计数是「压够两次就换会话」的唯一依据，
+   * 记不上就等于那件事永远不会发生。
+   */
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  try {
+    const file = join(sandboxRoot, 'data', 'handoffs.json')
+    const doc = JSON.parse(readFileSync(file, 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(
+      `  handoffs.json：${entries
+        .map(([k, v]) => `${String(k).split(/[\\/]/).pop()}=${v?.tally?.count ?? 0}`)
+        .join(', ') || '（空）'}`
+    )
+    const tally = entries.map(([, v]) => v?.tally).find((t) => (t?.count ?? 0) > 0)
+    say(!!tally, '自动压缩被计进交接计数（≥ 1 次）')
+    if (tally) say(Array.isArray(tally.keys) && tally.keys.length >= 1, '计数的去重键也落了盘')
+  } catch (error) {
+    say(false, '读 handoffs.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+  return { ok, lines }
 }
 
 /**
@@ -3587,6 +4288,116 @@ async function checkContextSweepArchiveImpl(sandboxRoot) {
 }
 
 /**
+ * N21-4 尾 / §12.11 第 10 条：**连续 20+ 长回合压力测试**的退出后断言。
+ *
+ * 这一场不验“某个功能通不通”（那由 `contextsweep` / `contextproduce` 等覆盖），
+ * 验的是连续很多轮都贴着工作集跑时的**稳定性**：
+ *   ① 压力条件真的成立（够多回合在线上）；
+ *   ② 转录没有一路爆上去（工作集附近的回合占比）；
+ *   ③ 没有任何一次请求越过「窗口 − 输出预留」；
+ *   ④ 会话文件不被破坏（原始条目一条不少、没有重复 id）——
+ *      清扫 / 接管只改**发给模型的窗口**，绝不改磁盘。
+ *
+ * 数据来源只有两个：扩展诊断（`ctx-ext.log`，每轮一条 `sweep-forced-by-budget`
+ * 记下当时的 `transcriptTokens`）与会话文件本身。与其它上下文场景同一边界：
+ * 探针不读 `YAN_DATA_DIR`，断言在 Node 侧做。
+ */
+async function checkContextPressure(sandboxRoot) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logPath = join(sandboxRoot, 'ctx-ext.log')
+  const logText = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+  const logLines = logText
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l)
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+  lines.push(`  诊断行数 = ${logLines.length}`)
+
+  /* ---------- ① 每一轮都留下了请求诊断（真实链路跑完的证据） ---------- */
+  const budgetRows = logLines.filter((l) => typeof l.hook === 'string' && l.hook.startsWith('request-budget-'))
+  const physical = budgetRows.filter((l) => l.hook === 'request-budget-physical')
+  const aborts = logLines.filter((l) => l.hook === 'budget-abort')
+  lines.push(`  请求诊断行 = ${budgetRows.length}`)
+  say(budgetRows.length >= 18, `每个回合都真的发了请求（${budgetRows.length} 条诊断）`)
+  say(physical.length === 0, `没有被物理线拦下的请求（physical ${physical.length} 条）`)
+  say(aborts.length === 0, `没有 budget-abort（${aborts.length} 条）`)
+
+  /* ---------- ② 恒不越窗口预留 ---------- */
+  {
+    const worst = budgetRows
+      .map((r) => ({ est: Number(r.estimatedTokens), win: Number(r.window) }))
+      .filter((r) => Number.isFinite(r.est) && Number.isFinite(r.win))
+      .map((r) => ({ est: r.est, win: r.win, headroom: r.win - r.est }))
+      .sort((a, b) => a.headroom - b.headroom)[0]
+    if (worst) {
+      lines.push(`  最小余量 = ${worst.headroom} token（窗口 ${worst.win}｜最大估算 ${worst.est}）`)
+      say(worst.headroom > 0, '每一次请求的估算都在窗口之内（余量 > 0）')
+    } else {
+      say(false, '没有带 window / estimatedTokens 的诊断行')
+    }
+  }
+
+  /* ---------- ④ 会话文件不被破坏 ---------- */
+  let sessionFiles = []
+  const sessionsDir = join(sandboxRoot, 'sessions')
+  if (existsSync(sessionsDir)) {
+    sessionFiles = readdirSync(sessionsDir, { recursive: true })
+      .map((n) => join(sessionsDir, String(n)))
+      .filter((p) => p.endsWith('.jsonl'))
+  }
+  lines.push(`  会话文件 = ${sessionFiles.length}`)
+  const texts = sessionFiles.map((p) => (existsSync(p) ? readFileSync(p, 'utf8') : ''))
+  const all = texts.join('\n')
+  const marks = Array.from({ length: 22 }, (_, i) => `pressure-${i + 1}`)
+  const seenMarks = marks.filter((m) => all.includes(m))
+  say(seenMarks.length >= 20, `会话文件里保留了压力回合的用户消息（${seenMarks.length}/22）`)
+  /*
+   * 「原始 session 不被破坏」的核心证据：那些很大的工具输出**还在文件里**。
+   * 清扫只把墓碑写进发给模型的窗口，磁盘上必须仍是原文；否则“可召回”是假的。
+   */
+  const bigOutputs = texts.flatMap((t) =>
+    t
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+      .map((entry) => JSON.stringify(entry))
+      .filter((raw) => raw.length > 3000)
+  )
+  lines.push(`  大块条目（>3000 字符的原始行）= ${bigOutputs.length}`)
+  say(bigOutputs.length >= 10, `磁盘上仍保留着大块工具输出原文（${bigOutputs.length} 行）`)
+
+  const errors = logLines.filter((l) => l.hook === 'error')
+  say(errors.length === 0, `扩展没有报错（${errors.length} 条 error）`)
+
+  return { ok, lines }
+}
+
+/**
  * 退出后的落盘检查（L03）。
  *
  * 子代理的合并 / 放弃 / 冲突 / 只读封堵 / 退出归档，最终都体现在
@@ -3745,11 +4556,14 @@ function checkSessionabArchive(sandboxRoot) {
 
   lines.push(`  A 落盘：${msgsA.length} 条消息，助手正文 ${aText.length} 字`)
   /*
-   * 不期望“长回复”：任务是个 `sleep 90`，而探针在它跑完之前就把它停了。
    * 要证的是**后台会话真的在执行工具**——工具参数落在它自己的会话记录里，
    * 而不是只存在于渲染层的内存里。
+   *
+   * ⚠️ 匹配 `sleep \d+` 而不是写死的 `sleep 90`：探针 3.5 节要等它**自然跑完**
+   * 才能验未读，所以那个秒数为了控制场景时长改过（现为 30）。
+   * 写死秒数就等于把测试与实现里的参数绑在一起，改一处红一处。
    */
-  say(JSON.stringify(msgsA).includes('sleep 90'), 'A 的会话记录里有那次工具调用（真执行了）')
+  say(/sleep \d+/.test(JSON.stringify(msgsA)), 'A 的会话记录里有那次工具调用（真执行了）')
   /*
    * 模型自己那个助手回合（fixture 里本来已有一个）——被中断时不一定写出正文，
    * 所以数条数而不是找文本。
@@ -3950,13 +4764,288 @@ function checkGitWriteApplied(sandboxRoot, _tempBefore, probeText = '') {
   }
 
   say(/\[gitwrite\]/.test(probeText), '探针确实跑到了写操作场景（输出里有 [gitwrite] 小结）')
+
+  /*
+   * 实施-07 S2b-2：`trust.json` 里真的多了两条（主仓库 + 工作树），且值为 true。
+   * 这一步只能 Node 侧做 —— 探针里读到的 "trusted: true" 只是主进程的回话，
+   * 磁盘上到底写没写、写成什么形状，得直接读文件才知道。
+   */
+  try {
+    const trustFile = join(sandboxRoot, 'pi-agent', 'trust.json')
+    const table = JSON.parse(readFileSync(trustFile, 'utf8'))
+    const keys = Object.keys(table)
+    const wtKey = keys.find((k) => /live-carry/i.test(k))
+    say(keys.length >= 2, 'trust.json 里至少有两条（主仓库 + 工作树）：' + keys.length)
+    say(!!wtKey, '其中一条是工作树目录：' + String(wtKey ?? '(无)'))
+    say(keys.every((k) => table[k] === true), '两条的值都是 true（没有写出 false 条目）')
+  } catch (error) {
+    say(false, '退出后读 trust.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
   if (/\[gitwrite\]\s+[1-9]\d*\s+条失败/.test(probeText)) say(false, '探针自身有失败项（见上面的 ✗）')
+
+  /*
+   * 工作树来源关系（实施-07 S2）：探针已经用**主进程回读**验过一遍，
+   * 这里再从 Node 侧读那份 `worktree-links.json` —— 退出之后看磁盘，
+   * 是这套取证里最强的一层（渲染进程伪造不了它）。
+   */
+  const sessionId = /worktreelink\.sessionId=([A-Za-z0-9._-]+)/.exec(probeText)?.[1]
+  const worktree = /worktreelink\.worktree=(.+)/.exec(probeText)?.[1]?.trim()
+  say(!!sessionId && !!worktree, `探针报告了新会话与工作树（${sessionId} / ${worktree}）`)
+  const linkFile = join(sandboxRoot, 'data', 'worktree-links.json')
+  if (!existsSync(linkFile)) {
+    say(false, `没有找到 ${linkFile}（关系没落盘）`)
+  } else {
+    let parsed = null
+    try {
+      parsed = JSON.parse(readFileSync(linkFile, 'utf8'))
+    } catch {
+      /* 下面如实报失败 */
+    }
+    const item = Array.isArray(parsed?.links) ? parsed.links.find((x) => x?.sessionId === sessionId) : null
+    say(!!item, '磁盘上的那条关系就是探针登记的那条（会话 id 对得上）', JSON.stringify(item ?? null))
+    if (item) {
+      say(item.worktree === worktree, '工作树目录对得上', String(item.worktree))
+      say(!!item.fromSessionId, '源会话记下来了（不是一条孤立记录）', String(item.fromSessionId))
+      say(item.fromSessionId !== item.sessionId, '源会话与新会话不是同一条（方向没写反）')
+      say(Number.isFinite(item.at) && item.at > 0, '带时间戳', String(item.at))
+    }
+  }
 
   return { ok, lines }
 }
 
+/**
+ * 「每个项目最后一个会话」的退出后检查（实施-09 S3，cost 0，进 `check`）。
+ *
+ * 探针已经用主进程回读验过一遍；这里再从 Node 侧读 `session-layout.json`，
+ * 确认那条「打开过」的记录**真的落盘**，而且 `hot` 那条没有被误写。
+ */
+async function checkProjectOpenedLayout(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text, extra = '') => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text + (extra ? '  ' + extra : ''))
+    if (!good) ok = false
+  }
+  const text = String(probeText ?? '')
+  const openedId = /projectopened\.sessionId=([A-Za-z0-9._-]+)/.exec(text)?.[1]
+  say(!!openedId, `探针报告了被打开的会话（${openedId}）`)
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok, lines }
+  }
+  const file = join(sandboxRoot, 'data', 'session-layout.json')
+  if (!existsSync(file)) {
+    say(false, `没有找到 ${file}（打开记录没落盘）`)
+    return { ok, lines }
+  }
+  let doc = null
+  try {
+    doc = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    /* 下面如实报失败 */
+  }
+  const entries = Array.isArray(doc?.entries) ? doc.entries : null
+  say(!!entries, 'session-layout.json 是合法的（有 entries 数组）')
+  if (!entries) return { ok, lines }
+  const opened = entries.find((e) => e?.sessionId === openedId)
+  const hot = entries.find((e) => String(e?.sessionId ?? '').includes('yan-n05-hot'))
+  say(!!opened, '被打开的那条在布局索引里')
+  if (opened) say(Number.isFinite(opened.lastOpenedAt) && opened.lastOpenedAt > 0, '它的 lastOpenedAt 真的落盘了', String(opened.lastOpenedAt))
+  say(!!hot, 'hot 那条也在索引里（对照项没有缺席）')
+  if (hot) say(!hot.lastOpenedAt, 'hot 那条没有被写上 lastOpenedAt（没打开过就不该有）', String(hot.lastOpenedAt ?? '无'))
+  return { ok, lines }
+}
+
 /** 退出后检查的注册表：CASES 里用 `afterExit: '子代理归档'` 引用 */
+/**
+ * 来源「定位消息」的退出后检查（实施-07 S3，cost 0，进 `check`）。
+ *
+ * 探针已经说过「关联写进了主进程」—— 但那只是渲染端自己的话。这里从 Node 侧
+ * 直接读沙箱里的 `links.json`：文件真的在、里面真的是那一条、而且只有一条。
+ * 「落盘」这件事只能这样证明。
+ */
+async function checkSourceLocateLinked(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text, extra = '') => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text + (extra ? '  ' + extra : ''))
+    if (!good) ok = false
+  }
+  const text = String(probeText ?? '')
+  const sid = /sourcelink\.sessionId=([A-Za-z0-9._-]+)/.exec(text)?.[1]
+  const messageId = /sourcelink\.messageId=([A-Za-z0-9._:-]+)/.exec(text)?.[1]
+  const sourceId = /sourcelink\.sourceId=(image:[A-Za-z0-9._-]+)/.exec(text)?.[1]
+  say(!!sid && !!messageId && !!sourceId, `探针报告了定位信息（${sid} / ${messageId} / ${sourceId}）`)
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok, lines }
+  }
+
+  const safe = String(sid ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
+  const hits = []
+  const walk = (dir, depth = 0) => {
+    if (depth > 6) return
+    let entries = []
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) walk(full, depth + 1)
+      else if (e.name === 'links.json' && full.includes(safe)) hits.push(full)
+    }
+  }
+  walk(sandboxRoot)
+  say(hits.length === 1, `磁盘上找得到 links.json（${hits.length} 个）`, hits[0] ?? '')
+  if (hits.length === 1) {
+    let parsed = null
+    try {
+      parsed = JSON.parse(readFileSync(hits[0], 'utf8'))
+    } catch {
+      /* 下面会如实报失败 */
+    }
+    say(Array.isArray(parsed), '文件是合法 JSON 数组')
+    const item = Array.isArray(parsed) ? parsed.find((x) => x?.sourceId === sourceId) : null
+    say(!!item && item.messageId === messageId, '文件里那条关联的 sourceId + messageId 都对得上', JSON.stringify(item))
+    say(Array.isArray(parsed) && parsed.length === 1, '只有一条（幂等：重复登记没写第二条）', String(parsed?.length))
+  }
+  return { ok, lines }
+}
+
+/**
+ * N12 退出变体（实施-09 S2 第五批）：退出快照的落盘证据。
+ *
+ * 探针在渲染端只能看到 `requestExit` 的返回值；快照文件得等 Electron 退出后
+ * 再看 —— 探针按设计读不到 `YAN_DATA_DIR`，让它去读就是破坏测试边界。
+ * 期望的 `mode` 与写盘时刻由探针打印在 PROBE 输出里，Node 侧照着核对，
+ * 于是 `save` / `interrupt` 两个场景共用同一个检查，也不会退化成
+ * 「只要文件存在就算过」（沙箱是整个批次共用的，陈留文件必须能分辨出来）。
+ */
+function checkExitSnapshot(sandboxRoot, tempBefore, lastProbeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text, extra = '') => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text + (extra ? '  ' + extra : ''))
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dir = join(sandboxRoot, 'data')
+  const file = join(dir, 'exit-snapshot.json')
+  const expectMode = /expect-mode=(\w+)/.exec(lastProbeText)?.[1] ?? null
+  const probeAt = Number(/probe-at=(\d+)/.exec(lastProbeText)?.[1] ?? 0)
+  const runnerCount = Number(/^runners=(\d+)$/m.exec(lastProbeText)?.[1] ?? -1)
+
+  say(!!expectMode, `探针声明了期望的 mode（${expectMode ?? '缺失'}）`)
+  say(probeAt > 0, `探针报了自己的时刻（${probeAt || '缺失'}）`)
+  if (!existsSync(file)) {
+    say(false, '退出快照 exit-snapshot.json 已写下', file)
+    return { ok, lines }
+  }
+  say(true, '退出快照 exit-snapshot.json 已写下')
+
+  let snapshot = null
+  try {
+    snapshot = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    /* 下面会如实报失败 */
+  }
+  if (!snapshot) {
+    say(false, '文件是合法 JSON')
+    return { ok, lines }
+  }
+
+  say(snapshot.version === 1, 'version=1（格式契约）', String(snapshot.version))
+  say(
+    !!expectMode && snapshot.mode === expectMode,
+    `mode 与本次请求一致（期望 ${expectMode}，实际 ${snapshot.mode}）`
+  )
+  say(
+    typeof snapshot.at === 'number' && snapshot.at >= probeAt && snapshot.at - probeAt < 120_000,
+    'at 是这次退出写的（探针时刻之后、120s 之内）',
+    `at-probe=${(snapshot.at ?? 0) - probeAt}ms`
+  )
+
+  const runners = Array.isArray(snapshot.runners) ? snapshot.runners : null
+  say(!!runners, 'runners 是数组')
+  if (runners) {
+    say(
+      runnerCount >= 0 && runners.length === runnerCount,
+      `runners 条数与窗口里看到的一致（窗口 ${runnerCount} / 快照 ${runners.length}）`
+    )
+    const shaped = runners.every((r) => r && typeof r.cwd === 'string' && typeof r.conn === 'string' && typeof r.running === 'boolean')
+    say(shaped, '每条都带 cwd / conn / running（元数据，不含消息正文）')
+    const bodies = JSON.stringify(snapshot)
+    say(!/"(content|text|message|messages)"\s*:/.test(bodies), '快照里没有消息正文/消息数组字段')
+    lines.push(`    实例：${runners.map((r) => `${r.id}@${r.conn}${r.running ? '(running)' : ''}`).join(' ') || '（空）'}`)
+  }
+
+  const temps = existsSync(dir)
+    ? readdirSync(dir).filter((f) => f.startsWith('exit-snapshot.json.') && f.endsWith('.tmp'))
+    : []
+  say(temps.length === 0, '没有留下写一半的 .tmp（原子写：tmp → rename）', temps.join(' '))
+  return { ok, lines }
+}
+
+/**
+ * L03 尾巴：子代理「模型自己失败」的退出后证据（实施-09 S2 第六批）。
+ *
+ * 探针看得到终态与转录，看不到两件事：归档元数据里怎么记的、临时 worktree
+ * 有没有收掉。这两件都在 Electron 退出后查 —— 与 `subagentArchive` 同一套方法。
+ */
+function checkSubagentFail(sandboxRoot, tempBefore) {
+  const lines = []
+  let ok = true
+  const say = (good, text, extra = '') => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text + (extra ? '  ' + extra : ''))
+    if (!good) ok = false
+  }
+
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dir = join(sandboxRoot, 'data', 'subagents')
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')) : []
+  const records = []
+  for (const f of files) {
+    try {
+      records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')))
+    } catch {
+      /* 写了一半的文件当作记录缺失，下面会报出来 */
+    }
+  }
+  lines.push(`  元数据 ${records.length} 份：${files.join(' ') || '（空）'}`)
+
+  const run = records.find((r) => String(r.task ?? '').includes('YAN-SUBFAIL'))
+  say(!!run, '找到 YAN-SUBFAIL 的归档记录', String(run?.task ?? ''))
+  if (run) {
+    say(run.status === 'error', `归档里 status=error（实际 ${run.status}）`)
+    say(run.review === 'none', `没有改动 → review=none（实际 ${run.review}）`)
+    say(run.endedAt > 0 && run.startedAt > 0, '有起止时间（可追溯）')
+  }
+
+  /* 退出后不能留下孤儿 worktree 容器（与 subagentArchive 同一条判据） */
+  const leftovers = readdirSync(tmpdir()).filter(
+    (n) => n.startsWith('yan-subagent-') && !(tempBefore ?? new Set()).has(n)
+  )
+  say(leftovers.length === 0, `退出后没有残留的隔离目录（新增 ${leftovers.length} 个）`, leftovers.join(' '))
+
+  return { ok, lines }
+}
+
 const AFTER_EXIT = {
+  exitSnapshot: checkExitSnapshot,
+  remoteRoutes: checkRemoteRoutes,
+  subagentFail: checkSubagentFail,
   subagentArchive: checkSubagentArchive,
   knowledgeInject: checkKnowledgeInject,
   knowledgeCli: checkKnowledgeCli,
@@ -3968,10 +5057,14 @@ const AFTER_EXIT = {
   contextStateCleanup: checkContextStateCleanup,
   contextSweepArchive: checkContextSweepArchive,
   contextProduce: checkContextProduce,
+  contextPressure: checkContextPressure,
   contextGate: checkContextGate,
   contextRefresh: checkContextRefresh,
   contextTakeoverSummary: checkContextTakeoverSummary,
   contextTakeoverState: checkContextTakeoverState,
+  contextTakeoverGap: checkContextTakeoverGap,
+  sourceLocateLinked: checkSourceLocateLinked,
+  projectOpenedLayout: checkProjectOpenedLayout,
   contextDeepPref: checkContextDeepPref,
   contextFoldPref: checkContextFoldPref,
   contextEpisode: checkContextEpisode,
@@ -3981,7 +5074,131 @@ const AFTER_EXIT = {
   gitWriteApplied: checkGitWriteApplied,
   taskFixtureReadonly: checkTaskFixtureReadonly,
   taskCliLog: checkTaskCliLog,
-  taskPlanMultiStep: checkTaskPlanMultiStep
+  taskPlanMultiStep: checkTaskPlanMultiStep,
+  workModePersisted: checkWorkModePersisted,
+  goalPersisted: checkGoalPersisted,
+  goalLoopPersisted: checkGoalLoopPersisted,
+  autoContinuePersisted: checkAutoContinuePersisted,
+  handoffPackPersisted: checkHandoffPackPersisted,
+  handoffCommitPersisted: checkHandoffCommitPersisted,
+  budgetGate: checkBudgetGate,
+  questionModeLog: checkQuestionModeLog
+}
+
+/**
+ * 提问扩展的模式诊断（实施-05 S2）。
+ *
+ * `ask` 第 6 节的断言是「自主档不弹窗」—— 但“不弹窗”有两种原因：
+ *   ① 扩展真的读到了自主模式并在 `execute` 里拦下（正确）；
+ *   ② 模型这一轮压根没调 `question`（假通过）。
+ * 诊断行把两者分开：每行带 `{hook,mode,sessionId,file}`。
+ */
+async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  /* 与 language 场景同一做法：诊断写 tmpdir 固定文件（沙箱会被清掉） */
+  const logFile = join(tmpdir(), 'yan-question-ext.log')
+  const records = (existsSync(logFile) ? readFileSync(logFile, 'utf8') : '')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+  lines.push(`  诊断行数 = ${records.length}`)
+  for (const r of records.slice(0, 12)) {
+    lines.push(`    ${r.hook} mode=${r.mode} sid=${r.sessionId ?? '-'}`)
+  }
+  say(records.length >= 1, '扩展真的被调用并写下模式')
+  say(
+    records.some((r) => r.mode === 'autonomous'),
+    '自主档真的到达扩展（不靠 defaultWorkMode 猜）'
+  )
+  say(
+    records.some((r) => r.hook === 'execute' && r.mode === 'autonomous'),
+    'question.execute 在自主模式下被调到（模型试着提问，被扩展拦下）'
+  )
+  return { ok, lines }
+}
+
+/**
+ * 工作模式（实施-05 S2）退出后的磁盘核对。
+ *
+ * 界面上“切了模式”只是内存里的一个值；真正要钉的是：
+ *   ① 每个会话各自一份（`work-modes.json` 里两条不同的值）；
+ *   ② 模型侧读的那份快照真的落了盘（`work-mode/<runnerId>.json`）；
+ *   ③ 迁移与「默认态不落盘」没有反过来擅自改写用户的 desktop.json。
+ */
+async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(`  work-modes.json 条目：${entries.map(([k, v]) => `${k}=${v.mode}(rev${v.revision})`).join(', ')}`)
+    say(entries.length >= 2, `至少两个会话各自存了一份（实际 ${entries.length}）`)
+    say(entries.some(([, v]) => v.mode === 'autonomous'), '存下了自主模式（A 会话）')
+    say(entries.some(([, v]) => v.mode === 'clarify'), '存下了澄清模式（B 会话）')
+    say(entries.every(([, v]) => Number.isFinite(v.revision) && v.revision >= 1), '每条都有 revision（提交过）')
+  } catch (error) {
+    say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 模型侧（薄层扩展）读的那份快照 */
+  try {
+    const snapDir = join(dataDir, 'work-mode')
+    const files = readdirSync(snapDir).filter((n) => n.endsWith('.json'))
+    lines.push(`  work-mode/ 快照：${files.join(', ') || '(空)'}`)
+    say(files.length >= 1, '写了至少一份模型侧快照')
+    const records = files.map((n) => JSON.parse(readFileSync(join(snapDir, n), 'utf8')))
+    say(
+      records.every((r) => ['standard', 'clarify', 'autonomous'].includes(r?.mode)),
+      '每份快照的 mode 都是合法值（扩展读它决定提不提问）'
+    )
+    say(
+      records.some((r) => r.mode === 'clarify') || records.some((r) => r.mode === 'autonomous'),
+      '快照内容跟随会话（不是一直停在默认值）'
+    )
+  } catch (error) {
+    say(false, '读 work-mode/ 快照失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* desktop.json：旧字段保留、新字段不擅自回写、关掉的开关恢复后删键 */
+  try {
+    const settings = JSON.parse(readFileSync(join(dataDir, 'desktop.json'), 'utf8'))
+    say(settings.autonomous === true, '旧 autonomous 原样留在磁盘上（不抹掉用户已写下的值）')
+    say(
+      settings.defaultWorkMode === 'autonomous',
+      '迁移结果随写入固化到新字段（与旧值语义相同，幂等）'
+    )
+    say(!('workModeTab' in settings), '关掉再打开的开关不落盘（默认态无键）')
+  } catch (error) {
+    say(false, '读 desktop.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  return { ok, lines }
 }
 
 /*
@@ -4068,6 +5285,573 @@ async function checkTaskFixtureReadonly() {
  * 界面侧的证据（清单真的出现、切会话来回读得回）在探针里 ——
  * 这一支只回答「磁盘上是什么」。
  */
+/**
+ * 澄清就绪转移的磁盘核对（实施-05 S3，`goal` 场景）。
+ *
+ * 探针看到的 `getGoal()` 是**内存态**；这里在窗口关掉之后读磁盘，
+ * 证明 commitReady 真做到了「先落盘再返回」，而且**恰好一次**：
+ * transitions 里只有一条、goal.revision 只推进一步。
+ */
+async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(
+      `goals.json 条目：${entries.map(([k, v]) => `${short(k)}=${v?.goal?.phase}(rev${v?.goal?.revision})`).join(', ') || '（空）'}`
+    )
+    say(entries.length === 1, `恰好一条会话记录（实际 ${entries.length}）`)
+    const entry = entries[0]?.[1]
+    say(entry?.goal?.phase === 'executing', `目标已进入 executing（实际 ${entry?.goal?.phase}）`)
+    say(entry?.goal?.revision === 1, `目标只推进过一次（实际 rev${entry?.goal?.revision}）`)
+    const transitions = Object.entries(entry?.transitions ?? {})
+    say(transitions.length === 1, `就绪转移只记了一条（实际 ${transitions.length}）`)
+    say(String(transitions[0]?.[0] ?? '') === 'tr-probe-1', `幂等键就是探针给的那个（${transitions[0]?.[0] ?? '无'}）`)
+    const understanding = transitions[0]?.[1]?.result?.understanding ?? {}
+    say(String(understanding.acceptance ?? '').includes('CSV'), '五栏（含验收标准）真的传到了宿主')
+    say(transitions[0]?.[1]?.result?.mode === 'standard', '转移记录里写着「模式切标准」')
+
+    /*
+     * 续行留痕（实施-05 S3b）：两类自定义条目都得在**会话文件**里 ——
+     * `yan-goal-resume` 是扩展写的消费证据，`yan-goal-ready` 是那条控制消息。
+     * 会话文件路径就是 goals.json 的键（宿主按会话文件索引）。
+     */
+    const sessionFile = String(entries[0]?.[0] ?? '')
+    if (sessionFile && existsSync(sessionFile)) {
+      const text = readFileSync(sessionFile, 'utf8')
+      say(text.includes('"customType":"yan-goal-resume"'), '会话里有续行的消费证据条目（yan-goal-resume）')
+      say(text.includes('"customType":"yan-goal-ready"'), '会话里有那条控制消息（yan-goal-ready，角色不是 user）')
+      const role = /"customType":"yan-goal-ready"[^}]*/.exec(text)?.[0] ?? ''
+      say(!role.includes('"role":"user"'), '控制消息不是伪造的用户消息')
+    } else {
+      say(false, '从 goals.json 的键找不到会话文件：' + (sessionFile || '（无）'))
+    }
+  } catch (error) {
+    say(false, '读 goals.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(
+      `work-modes.json 条目：${entries.map(([k, v]) => `${short(k)}=${v.mode}(rev${v.revision})`).join(', ') || '（空）'}`
+    )
+    say(entries.some(([, v]) => v.mode === 'standard'), '磁盘上的模式已是标准（就绪转移的另一半）')
+    say(
+      entries.some(([, v]) => Number.isFinite(v.revision) && v.revision >= 2),
+      '模式 revision 至少推进两次（切澄清 + 就绪切标准）'
+    )
+  } catch (error) {
+    say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 宿主写给薄层的续行快照（没有它，扩展再对也发不出去） */
+  try {
+    const dir = join(dataDir, 'goal-resume')
+    const files = existsSync(dir) ? readdirSync(dir) : []
+    lines.push(`goal-resume/ 快照：${files.join(', ') || '（空）'}`)
+    for (const name of files) {
+      if (!name.endsWith('.json')) continue
+      const rec = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+      lines.push(`    ${name}: operationId=${rec?.operationId ?? '(null)'}`)
+    }
+    say(files.includes('r1.json'), '写了续行快照（按 runnerId 命名，扩展据此判断）')
+  } catch (error) {
+    say(false, '读 goal-resume/ 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 续行扩展诊断（实施-05 S3b）：把「不该发」「发失败」「被活动抢了」分开 */
+  const resumeLog = join(tmpdir(), 'yan-goal-resume.log')
+  if (existsSync(resumeLog)) {
+    const rows = readFileSync(resumeLog, 'utf8').trim().split('\n').filter(Boolean)
+    lines.push(`  续行扩展诊断（${rows.length} 行）：`)
+    for (const row of rows.slice(-6)) lines.push('    ' + row)
+  } else {
+    lines.push('  续行扩展诊断：没有文件（扩展没跑过 message_end，或没开日志）')
+  }
+
+  return { ok, lines }
+}
+
+/**
+ * 自主档连续续接的磁盘核对（实施-05 S3c，`goalloop` 场景）。
+ *
+ * 探针证明「新回合真的起了」；这里回答磁盘上的三个问题：
+ *   ① 那是**继续**续行（`yan-goal-continue`），不是就绪续行；
+ *   ② 宿主真的记了连续次数（`autoContinues`）；
+ *   ③ 薄层的消费证据与诊断日志都留下了。
+ *
+ * 为何不硬断 `phase === 'executing'`：模型可能在续接轮里把目标报到
+ * `completed` / `blocked`，那是合法推进（甚至更好）—— 那时计数按设计归零，
+ * 不能用它判红。
+ */
+/**
+ * 请求前预算门的真实模型核对（实施-05 S4，`budgetgate` 场景）。
+ *
+ * 探针只能证「模型回了话」；磁盘上要回答三件事：
+ *   ① 诊断真的记了（否则链路上根本没跑）；
+ *   ② 只到 `soft`，**没有** `physical` / `budget-abort`（真实窗口下误拦是灾难性回归）；
+ *   ③ 估算与真实 `usage.input` **同量级** —— 估算是拿来判生死的，估偏了就等于闸门失准。
+ */
+async function checkBudgetGate(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const logFile = join(sandboxRoot, 'ctx-ext.log')
+  const raw = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+  const records = raw
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)]
+      } catch {
+        return []
+      }
+    })
+  const budgetRows = records.filter((r) => String(r?.hook ?? '').startsWith('request-budget-'))
+  lines.push(`  诊断行 = ${records.length}（其中请求前预算 ${budgetRows.length} 行）`)
+  say(budgetRows.length >= 1, '请求前预算诊断真的记了（钩子在真实链路里跑起来了）')
+  for (const row of budgetRows) {
+    lines.push(
+      `    ${row.hook}：messages ${row.messages} + tools ${row.tools} + system ${row.system} = 估算 ${row.estimatedTokens} ` +
+        `/ 工作集 ${row.workingSet} / 窗口 ${row.window} / 预留 ${row.responseReserve}`
+    )
+  }
+  const soft = budgetRows.filter((r) => r.hook === 'request-budget-soft')
+  say(soft.length >= 1, '工作集线压到 3000 后，真实对话到了 soft')
+  const physical = budgetRows.filter((r) => r.hook === 'request-budget-physical')
+  say(physical.length === 0, '没有误判 physical（真实窗口下不该拦）')
+  const aborted = records.filter((r) => r.hook === 'budget-abort')
+  say(aborted.length === 0, '没有 abort（真实请求照常发出）')
+
+  /* 估算 vs 真实 usage.input（同量级即算通过；数字如实打印出来校准估算） */
+  const sessionId = budgetRows.find((r) => r.sessionId)?.sessionId ?? null
+  const sessionsDir = join(sandboxRoot, 'sessions')
+  let usageInput = null
+  if (sessionId && existsSync(sessionsDir)) {
+    const files = readdirSync(sessionsDir, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.jsonl') && f.includes(sessionId))
+    if (files.length) {
+      const rows = readFileSync(join(sessionsDir, files[files.length - 1]), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)]
+          } catch {
+            return []
+          }
+        })
+      for (const row of rows) {
+        const usage = row?.message?.usage
+        if (row?.message?.role === 'assistant' && Number(usage?.input) > 0) usageInput = Number(usage.input)
+      }
+    }
+  }
+  const estimate = budgetRows.length ? Number(budgetRows[budgetRows.length - 1].estimatedTokens) : 0
+  /*
+   * 估算 vs 真实 `usage.input` **只打印、不判红**：
+   * 这个场景的模型可能返回空内容（上游波动，与预算无关），那时 usage 只是
+   * 一个失败响应的数字，拿它当基准会把「模型侧抽风」误判成「闸门失准」。
+   * 估算精度的确定性证据在 `hook-probe budget-soft`：估算 13621 token ↔
+   * 真实请求体 55054 字符（4 字符/token 口径下偏差 ~1%）。
+   */
+  if (usageInput == null) {
+    lines.push('  · 没读到真实 usage.input（本轮模型可能返回空）：只核对诊断，不比数字')
+  } else {
+    lines.push(`  参考：估算 ${estimate} / 真实 usage.input ${usageInput}（不判红，空回复时不可比）`)
+  }
+
+  return { ok, lines }
+}
+
+async function checkGoalLoopPersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(
+      `goals.json 条目：${entries
+        .map(([k, v]) => `${short(k)}=${v?.goal?.phase}(rev${v?.goal?.revision}) auto=${v?.autoContinues ?? 0}`)
+        .join(', ') || '（空）'}`
+    )
+    const entry = entries[0]?.[1]
+    say((entry?.goal?.revision ?? 0) >= 1, `目标至少推进过一次（实际 rev${entry?.goal?.revision ?? '?'}）`)
+    say(
+      Object.keys(entry?.reports ?? {}).length >= 1,
+      `目标报告落了盘（${Object.keys(entry?.reports ?? {}).length} 条）`
+    )
+    const phase = entry?.goal?.phase
+    const active = phase === 'planning' || phase === 'executing' || phase === 'verifying'
+    if (active) {
+      say(
+        Number.isFinite(entry?.autoContinues) && entry.autoContinues >= 1,
+        `宿主记了连续续接次数（实际 ${entry?.autoContinues ?? '无'}；0 说明报告后根本没 arm）`
+      )
+    } else {
+      lines.push(`  · 目标已进终态（${phase}）→ autoContinues 按设计归零（实际 ${entry?.autoContinues ?? '无'}）`)
+    }
+
+    const sessionFile = String(entries[0]?.[0] ?? '')
+    if (sessionFile && existsSync(sessionFile)) {
+      const text = readFileSync(sessionFile, 'utf8')
+      say(text.includes('"customType":"yan-goal-resume"'), '会话里有续行的消费证据条目（yan-goal-resume）')
+      say(
+        text.includes('"customType":"yan-goal-continue"'),
+        '会话里有**继续**那条控制消息（yan-goal-continue；只有就绪续行说明 S3c 没接上）'
+      )
+      const role = /"customType":"yan-goal-continue"[^}]*/.exec(text)?.[0] ?? ''
+      say(!role.includes('"role":"user"'), '控制消息不是伪造的用户消息')
+    } else {
+      say(false, '从 goals.json 的键找不到会话文件：' + (sessionFile || '（无）'))
+    }
+  } catch (error) {
+    say(false, '读 goals.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 宿主写的快照 + 薄层的消费证据（没有它，扩展再对也发不出去） */
+  try {
+    const dir = join(dataDir, 'goal-resume')
+    const files = existsSync(dir) ? readdirSync(dir) : []
+    lines.push(`goal-resume/ 文件：${files.join(', ') || '（空）'}`)
+    say(files.includes('r1.json'), '有宿主写的续行快照（按 runnerId 命名）')
+    const consumed = files.find((name) => name.endsWith('.consumed.json'))
+    if (consumed) {
+      const rec = JSON.parse(readFileSync(join(dir, consumed), 'utf8'))
+      say(
+        typeof rec?.operationId === 'string' && rec.operationId.length > 0,
+        '消费证据记了 operationId（先留证据再发送）'
+      )
+    } else {
+      say(false, '没有 consumed.json：续行没被消费过（= 自动续接没发生）')
+    }
+  } catch (error) {
+    say(false, '读 goal-resume/ 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 诊断日志：区分「不该发」「被活动抢了」「发失败」 */
+  const resumeLog = join(tmpdir(), 'yan-goal-resume.log')
+  if (existsSync(resumeLog)) {
+    const rows = readFileSync(resumeLog, 'utf8').trim().split('\n').filter(Boolean)
+    lines.push(`  续行扩展诊断（${rows.length} 行，末 6 行）：`)
+    for (const row of rows.slice(-6)) lines.push('    ' + row)
+    say(
+      rows.some((row) => row.includes('"kind":"continue"') && row.includes('resume_sent')),
+      '日志里有 kind=continue 的发送记录'
+    )
+  } else {
+    say(false, '没有续行扩展诊断文件（扩展没跑过 message_end，或没开日志）')
+  }
+
+  return { ok, lines }
+}
+
+/**
+ * 模型出错后自动继续的磁盘核对（实施-05 S5c，`autocontinue` 场景）。
+ *
+ * 探针能证「没人说话也起了新轮次」；磁盘要回答三件事：
+ *   ① 宿主真的把「连续失败几次」记下来并**停在上限**（不是每轮都无限重试）；
+ *   ② 续行是 `yan-auto-continue`（不是 S3b/S3c 的 ready/continue ——
+ *      出现那两个就说明触发源搞错了，虽然“也起了轮次”）；
+ *   ③ 薄层的消费证据与诊断都留下了（否则「没继续」与「继续了但没发出去」分不开）。
+ */
+async function checkAutoContinuePersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+  const limit = 2 /* 与 CASES.autocontinue 的 YAN_AUTO_CONTINUE 对齐 */
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'auto-continue.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(
+      `auto-continue.json：${entries.map(([k, v]) => `${short(k)} attempts=${v?.attempts}`).join(', ') || '（空）'}`
+    )
+    const max = entries.reduce((acc, [, value]) => Math.max(acc, Number(value?.attempts) || 0), 0)
+    say(entries.length >= 1, '宿主真的记了连续失败次数（否则链路上根本没跑到自动继续）')
+    say(max === limit, `计数停在上限（实际 ${max}，limit=${limit}）`)
+    say(
+      entries.some(([, value]) => Boolean(value?.lastError)),
+      '记了最后一次错误文本（排障与界面提示都要用）'
+    )
+
+    const sessionFile = String(entries[0]?.[0] ?? '')
+    if (sessionFile && existsSync(sessionFile)) {
+      const text = readFileSync(sessionFile, 'utf8')
+      say(text.includes('"customType":"yan-auto-continue"'), '会话里有自动继续的控制消息（yan-auto-continue）')
+      say(
+        !text.includes('"customType":"yan-goal-ready"') && !text.includes('"customType":"yan-goal-continue"'),
+        '没有混入 S3b/S3c 的续行标签（触发源没有搞错）'
+      )
+      const around = /"customType":"yan-auto-continue"[^}]*/.exec(text)?.[0] ?? ''
+      say(!around.includes('"role":"user"'), '控制消息不是伪造的用户消息')
+      const count = text.split('"customType":"yan-auto-continue"').length - 1
+      lines.push(`  会话里的 yan-auto-continue 条目：${count} 条（limit=${limit}）`)
+      say(count >= 1 && count <= limit + 1, `自动继续条数落在上限内（${count} ≤ ${limit + 1}）`)
+    } else {
+      say(false, '从 auto-continue.json 的键找不到会话文件：' + (sessionFile || '（无）'))
+    }
+  } catch (error) {
+    say(false, '读 auto-continue.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 宿主写的快照 + 薄层的消费证据（没有它，扩展再对也发不出去） */
+  try {
+    const dir = join(dataDir, 'goal-resume')
+    const files = existsSync(dir) ? readdirSync(dir) : []
+    lines.push(`goal-resume/ 文件：${files.join(', ') || '（空）'}`)
+    const consumed = files.find((name) => name.endsWith('.consumed.json'))
+    if (consumed) {
+      const rec = JSON.parse(readFileSync(join(dir, consumed), 'utf8'))
+      say(
+        typeof rec?.operationId === 'string' && rec.operationId.length > 0,
+        '消费证据记了 operationId（先留证据再发送）'
+      )
+    } else {
+      say(false, '没有 consumed.json：续行没被消费过（= 自动继续没发生）')
+    }
+  } catch (error) {
+    say(false, '读 goal-resume/ 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 诊断日志：区分「不该发」「被活动抢了」「发失败」 */
+  const resumeLog = join(tmpdir(), 'yan-goal-resume.log')
+  if (existsSync(resumeLog)) {
+    const rows = readFileSync(resumeLog, 'utf8').trim().split('\n').filter(Boolean)
+    lines.push(`  续行扩展诊断里 kind=retry 的行（末 5 条）：`)
+    for (const row of rows.filter((r) => r.includes('"kind":"retry"')).slice(-5)) lines.push('    ' + row)
+    say(
+      rows.some((row) => row.includes('"kind":"retry"') && row.includes('resume_sent')),
+      '日志里有 kind=retry 的发送记录'
+    )
+  } else {
+    say(false, '没有续行扩展诊断文件（扩展没跑过 message_end，或没开日志）')
+  }
+
+  return { ok, lines }
+}
+
+/**
+ * 交接包生成的磁盘核对（实施-05 S5b-2，`handoffpack` 场景）。
+ *
+ * 探针用 `yan:getHandoff` 证「界面上看得到包」；磁盘要回答四件事：
+ *   ① 包真的落进了 `handoffs.json`（不是只在内存里好看）；
+ *   ② 必填栏与**来源字段**都对（来源由宿主填，模型不能自称）；
+ *   ③ 薄层真的调了模型（扩展日志有 `produced`，而不是“文件交换假装成功”）；
+ *   ④ 请求 / 结果文件已被清理 —— 否则下一次交接会拿到这次的遗物。
+ */
+async function checkHandoffPackPersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'handoffs.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    lines.push(`handoffs.json：${entries.map(([k, v]) => `${short(k)} count=${v?.tally?.count ?? 0} pkg=${v?.package ? '有' : '无'}`).join(', ') || '（空）'}`)
+    const entry = entries[0]?.[1]
+    const pkg = entry?.package
+    say(!!pkg, '交接包真的落盘了')
+    if (pkg) {
+      say(typeof pkg.goal === 'string' && pkg.goal.trim().length > 0, '必填栏 goal 非空')
+      say(typeof pkg.deliverable === 'string' && pkg.deliverable.trim().length > 0, '必填栏 deliverable 非空')
+      say(pkg.generator === 'model', `generator=model（实际 ${pkg.generator}）`)
+      say(/\.jsonl$/.test(String(pkg.sourceSession)), `sourceSession 是会话文件（${short(pkg.sourceSession)}）`)
+      say(typeof pkg.sourceHead === 'string' && pkg.sourceHead.length > 0, `记了水位 sourceHead=${String(pkg.sourceHead).slice(0, 24)}`)
+      say(pkg.mode === 'autonomous', `来源模式是自主档（实际 ${pkg.mode}）`)
+      const lists = ['constraints', 'acceptance', 'done', 'remaining', 'nextActions', 'blockers', 'files', 'notes']
+      say(
+        lists.every((field) => Array.isArray(pkg[field])),
+        '八个列表栏都是数组（宽容读法真的生效了）'
+      )
+    }
+    say(Number(entry?.tally?.count ?? -1) === 0, `阈值覆盖不改计数（实际 count=${entry?.tally?.count}）`)
+  } catch (error) {
+    say(false, '读 handoffs.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 扩展日志：证「真的调了一次 completion」 */
+  const extLog = join(sandboxRoot, 'handoff-ext.log')
+  if (existsSync(extLog)) {
+    const rows = readFileSync(extLog, 'utf8').trim().split('\n').filter(Boolean)
+    lines.push(`  交接扩展诊断（${rows.length} 行）：`)
+    for (const row of rows.slice(-6)) lines.push('    ' + row)
+    const produced = rows
+      .map((row) => {
+        try {
+          return JSON.parse(row)
+        } catch {
+          return null
+        }
+      })
+      .filter((row) => row && row.hook === 'produced')
+    say(produced.length >= 1, '扩展日志里有 produced（模型真的被调了一次）')
+    const good = produced.find((row) => !row.error && row.chars > 0)
+    say(!!good, `模型返回了非空原文（chars=${good?.chars ?? 0}，ms=${good?.ms ?? '-' }）`)
+  } else {
+    say(false, '没有交接扩展诊断文件（扩展没加载 / 没跑到 agent_settled）')
+  }
+
+  /* 请求 / 结果文件必须已被消费清理（不留下一次交接的遗物） */
+  for (const dir of ['handoff-request', 'handoff-result']) {
+    const path = join(dataDir, dir)
+    const files = existsSync(path) ? readdirSync(path) : []
+    say(files.length === 0, `${dir}/ 已清空（${files.join(', ') || '空'}）`)
+  }
+
+  return { ok, lines }
+}
+
+/**
+ * 交接提交的磁盘核对（实施-05 S5b-3b，`handoffcommit` 场景）。
+ *
+ * 探针在渲染端能看到「视图切到了目的段、事务到了 resumed」；磁盘要回答的是
+ * 那些**只有真文件才知道**的事：
+ *   ① 事务日志真的记到了 resumed，且步骤一个不缺（不是内存里改的）；
+ *   ② 会话链真的有两段、目的段的 `handoffId` 对得上（前端“一条会话”的依据）；
+ *   ③ 目的会话文件里真的有那条 resume 的标记行（消费证据，不是「我发过了」）；
+ *   ④ 源会话还在、包还在（§8：失败 / 回滚都要靠它们）。
+ */
+async function checkHandoffCommitPersisted(sandboxRoot, _tempBefore, _probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+  /* 链里存的是归一化后的键（正斜杠、无尾斜杠），比较时必须用同一口径 */
+  const norm = (value) => String(value ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+
+  let handoffId = ''
+  let source = ''
+  let destination = ''
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'handoff-transactions.json'), 'utf8'))
+    const txs = Object.values(doc?.transactions ?? {})
+    lines.push(
+      `handoff-transactions.json：${txs.map((t) => `${String(t.handoffId).slice(0, 8)}…=${t.stage}(attempts=${t.resumeAttempts ?? 0})`).join(', ') || '（空）'}`
+    )
+    const tx = txs.find((t) => t.stage === 'resumed') ?? txs[0]
+    say(!!tx, '有交接事务')
+    if (tx) {
+      handoffId = String(tx.handoffId)
+      source = String(tx.sourceSession ?? '')
+      destination = String(tx.destinationSession ?? '')
+      say(tx.stage === 'resumed', `事务走到 resumed（实际 ${tx.stage}）`)
+      say((tx.resumeAttempts ?? 0) >= 1, `记了 resume 发送尝试（${tx.resumeAttempts ?? 0} 次）`)
+      const steps = Array.isArray(tx.steps) ? tx.steps : []
+      const order = steps.map((s) => s.to).join(',')
+      say(order === 'snapshot,validated,destination-created,committed,resumed', `五个阶段一个不缺：${order}`)
+      say(!!destination && destination !== source, '目的会话与源会话是两份文件（后台真的切开了）')
+    }
+  } catch (error) {
+    say(false, '读 handoff-transactions.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'session-chains.json'), 'utf8'))
+    const chains = Array.isArray(doc?.chains) ? doc.chains : []
+    const chain = chains.find((c) => (c.segments ?? []).length >= 2)
+    lines.push(`session-chains.json：${chains.length} 条链${chain ? ` · 最长 ${chain.segments.length} 段` : ''}`)
+    say(!!chain, '有一条两段以上的会话链（前端据此只显示一条会话）')
+    if (chain) {
+      const segments = chain.segments ?? []
+      say(segments.some((s) => norm(s.sessionFile) === norm(source)), '链上有源段')
+      const dest = segments.find((s) => norm(s.sessionFile) === norm(destination))
+      say(!!dest, '链上有目的段')
+      say(dest?.handoffId === handoffId, '目的段记的 handoffId 与事务一致')
+      say(segments[0] !== undefined && norm(segments[0].sessionFile) === norm(source), '源段在前（链只向后延伸）')
+    }
+  } catch (error) {
+    say(false, '读 session-chains.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  if (destination && existsSync(destination)) {
+    const text = readFileSync(destination, 'utf8')
+    say(text.includes(`[yan-handoff-resume:${handoffId}]`), '目的会话文件里有 resume 的消费证据（标记行）')
+    say(text.includes('跨会话交接'), '目的会话里那条消息是交接正文（不是空壳）')
+    lines.push(`  目的会话文件大小：${text.length} 字符`)
+  } else {
+    say(false, `找不到目的会话文件：${destination || '（未记）'}`)
+  }
+  say(!!source && existsSync(source), '源会话文件还在（交接不删旧会话，回滚只能靠它）')
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'handoffs.json'), 'utf8'))
+    const entry = Object.values(doc?.entries ?? {})[0]
+    say(!!entry?.package, '交接包仍在 handoffs.json 里（事务日志里也留了一份）')
+  } catch (error) {
+    say(false, '读 handoffs.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 请求 / 结果目录必须已被消费清理（不留下一次交接的遗物） */
+  for (const dir of ['handoff-request', 'handoff-result']) {
+    const path = join(dataDir, dir)
+    const files = existsSync(path) ? readdirSync(path) : []
+    say(files.length === 0, `${dir}/ 已清空（${files.join(', ') || '空'}）`)
+  }
+
+  return { ok, lines }
+}
+
 async function checkTaskCliLog(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -4308,8 +6092,242 @@ function orphanPiProcesses() {
  */
 const BOUNDARY_PORT = 39873
 const BOUNDARY_ORIGIN = `http://127.0.0.1:${BOUNDARY_PORT}`
+const REMOTE_ROUTE_API_PORT = 37893
+const REMOTE_ROUTE_TOKEN = 'yan-remote-route-probe-token-2026'
+let remoteRouteProbeState = null
 /** Cookie 值哨兵：它**只能**出现在网络里，不许出现在任何日志/状态/结果里 */
 const BOUNDARY_SECRET = `yan-probe-cookie-${Date.now()}`
+
+function startRemoteRouteProvider() {
+  const state = {
+    requests: 0,
+    canceledStreams: 0,
+    completedStreams: 0,
+    targetRequests: 0,
+    canceledTargetStreams: 0,
+    completedTargetStreams: 0,
+    responses: new Set()
+  }
+  const server = createServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+      res.writeHead(404).end()
+      return
+    }
+    let raw = ''
+    req.setEncoding('utf8')
+    req.on('data', (part) => (raw += part))
+    req.on('end', () => {
+      state.requests++
+      const isTargetRequest = raw.includes('Reply briefly. This is an isolated local route test; do not use tools.')
+      if (isTargetRequest) state.targetRequests++
+      try {
+        const payload = JSON.parse(raw)
+        state.models ??= []
+        state.models.push(payload.model)
+      } catch {
+        state.invalidBodies = (state.invalidBodies ?? 0) + 1
+      }
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive'
+      })
+      state.responses.add(res)
+      res.write(
+        `data: ${JSON.stringify({
+          id: 'remote-route-probe',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'route-probe',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'local route fixture' }, finish_reason: null }]
+        })}\n\n`
+      )
+      const finish = setTimeout(() => {
+        if (res.destroyed) return
+        state.completedStreams++
+        if (isTargetRequest) state.completedTargetStreams++
+        res.end('data: [DONE]\n\n')
+      }, 60_000)
+      finish.unref()
+      res.on('close', () => {
+        clearTimeout(finish)
+        state.responses.delete(res)
+        if (!res.writableFinished) {
+          state.canceledStreams++
+          if (isTargetRequest) state.canceledTargetStreams++
+        }
+      })
+    })
+  })
+  server.unref()
+  return new Promise((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject)
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        reject(new Error('远程路由本机 provider 未分配 TCP 端口'))
+        return
+      }
+      remoteRouteProbeState = state
+      resolvePromise({ server, port: address.port, state })
+    })
+  })
+}
+
+async function closeRemoteRouteProvider(provider) {
+  if (!provider) return
+  for (const response of provider.state.responses) response.destroy()
+  await new Promise((resolvePromise) => provider.server.close(() => resolvePromise()))
+}
+
+async function assertPortAvailable(port) {
+  const server = createServer()
+  await new Promise((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(port, '127.0.0.1', () => {
+      server.close((error) => (error ? reject(error) : resolvePromise()))
+    })
+  })
+}
+
+async function checkRemoteRoutes(_sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  say(String(probeText ?? '').includes('remote-routes.driver.ok=true'), 'Node 客户端对真实 Electron 远程路由的断言全绿')
+  const state = remoteRouteProbeState
+  lines.push(
+    `本机 provider：总请求 ${state?.requests ?? 0}；测试消息请求 ${state?.targetRequests ?? 0}；目标流取消 ${state?.canceledTargetStreams ?? 0}`
+  )
+  say((state?.targetRequests ?? 0) === 1, '本机 provider 收到且只收到一次目标消息请求')
+  say(
+    (state?.canceledTargetStreams ?? 0) === 1 && (state?.completedTargetStreams ?? 0) === 0,
+    '定向 abort 关闭了该目标消息对应的未完成 provider 流'
+  )
+  say((state?.invalidBodies ?? 0) === 0, '本机 provider 收到有效的 OpenAI 兼容请求体')
+  return { ok, lines }
+}
+
+async function driveRemoteRoutes() {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '✓ ' : '✗ ') + text)
+    if (!good) ok = false
+  }
+  const origin = `http://127.0.0.1:${REMOTE_ROUTE_API_PORT}/remote/v1`
+  const token = REMOTE_ROUTE_TOKEN
+  const request = async (path, { auth = true, method = 'GET', body, timeoutMs = 2500 } = {}) => {
+    const headers = {}
+    if (auth) headers.authorization = `Bearer ${token}`
+    if (body !== undefined) headers['content-type'] = 'application/json'
+    const response = await fetch(`${origin}${path}`, {
+      method,
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {})
+    })
+    let json = null
+    try {
+      json = await response.json()
+    } catch {
+      /* 无效 JSON 会由后续数据断言标红 */
+    }
+    return { status: response.status, json }
+  }
+  const untilStatus = async (predicate, timeoutMs = 12000) => {
+    const deadline = Date.now() + timeoutMs
+    let latest = null
+    while (Date.now() < deadline) {
+      try {
+        latest = await request('/status')
+      } catch (error) {
+        latest = { status: 0, error }
+      }
+      if (latest.status === 200 && predicate(latest.json?.data)) return latest.json.data
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    return latest?.json?.data ?? null
+  }
+
+  try {
+    const healthDeadline = Date.now() + 20000
+    let health = null
+    while (Date.now() < healthDeadline) {
+      try {
+        health = await request('/health', { auth: false, timeoutMs: 800 })
+        if (health.status === 200) break
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+      }
+    }
+    say(health?.status === 200 && health.json?.ok === true, `真实 Electron 远程 health 路由返回 ${health?.status ?? '无响应'}`)
+
+    const denied = await request('/status', { auth: false })
+    say(denied.status === 401, `无 token 的受保护路由返回 401（实际 ${denied.status}）`)
+
+    const before = await request('/status')
+    const activeBefore = before.json?.data?.agent?.activeSessionId
+    const targetSessionId = before.json?.data?.sessions?.find((session) => session.id === 'yan-remote-route-target')?.id
+    say(before.status === 200 && typeof activeBefore === 'string', '带 token 的状态路由给出桌面当前会话 id')
+    say(typeof targetSessionId === 'string' && targetSessionId !== activeBefore, '隔离沙箱中存在独立的后台目标会话')
+    if (!targetSessionId) throw new Error('状态快照中找不到合成目标会话')
+
+    const created = await request('/sessions/new', { method: 'POST', body: {} })
+    const selectedSessionId = created.json?.data?.sessionId
+    say(created.status === 200 && typeof selectedSessionId === 'string', '新建会话路由返回稳定 sessionId')
+    if (!selectedSessionId) throw new Error('新建会话路由没有返回 sessionId')
+    const active = await untilStatus((data) => data?.agent?.activeSessionId === selectedSessionId)
+    say(active?.agent?.activeSessionId === selectedSessionId, '新建会话成为桌面当前视图')
+    say(active?.sessions?.some((session) => session.id === targetSessionId), '原目标会话仍在会话列表中')
+
+    const sendRequest = request(`/sessions/${encodeURIComponent(targetSessionId)}/messages`, {
+      method: 'POST',
+      body: { text: 'Reply briefly. This is an isolated local route test; do not use tools.' },
+      timeoutMs: 60000
+    }).catch((error) => ({ status: 0, error }))
+    const running = await untilStatus((data) =>
+      data?.agent?.runners?.some((runner) => runner.sessionId === targetSessionId && runner.running)
+    )
+    const targetRunner = running?.agent?.runners?.find(
+      (runner) => runner.sessionId === targetSessionId && runner.running
+    )
+    const runId = targetRunner?.runId
+    say(/^r[1-9]\d{0,8}$/.test(runId ?? ''), `目标 runner 运行中并公开精确 runId（${runId ?? '缺失'}）`)
+    if (!runId) throw new Error('目标后台 runner 未进入运行态')
+    say(targetRunner.isActive === false, '目标会话由后台 runner 执行，未切换桌面视图')
+    say(running?.agent?.activeSessionId === selectedSessionId, '发送期间桌面当前会话未变化')
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const aborted = await request('/runs/abort', { method: 'POST', body: { runId } })
+    say(aborted.status === 200 && aborted.json?.data?.runId === runId, `按精确 runId 中止成功（HTTP ${aborted.status}）`)
+
+    const sent = await Promise.race([
+      sendRequest,
+      new Promise((resolve) => setTimeout(() => resolve({ status: 0, error: 'timeout waiting for send route response' }), 8000))
+    ])
+    say(
+      sent.status === 200 && sent.json?.data?.sessionId === targetSessionId && sent.json?.data?.runId === runId,
+      `消息路由最终回报了匹配的 sessionId / runId（HTTP ${sent.status}）`
+    )
+
+    const settled = await untilStatus((data) =>
+      data?.agent?.runners?.some((runner) => runner.runId === runId && !runner.running)
+    )
+    const finalTarget = settled?.agent?.runners?.find((runner) => runner.runId === runId)
+    say(finalTarget?.sessionId === targetSessionId && finalTarget.running === false, '中止后精确目标 runner 已停止')
+    say(settled?.agent?.activeSessionId === selectedSessionId, '中止目标任务后桌面当前会话未改变')
+  } catch (error) {
+    say(false, `远程路由驱动异常：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  lines.push(`remote-routes.driver.ok=${ok}`)
+  return { ok, text: lines.join('\n') }
+}
 
 function startBoundaryServer() {
   const secretHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
@@ -4436,7 +6454,7 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   })
 }
 
-function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
+function runProbe({ probe, delay, keys, keysDelay, env: caseEnv, budget, visible, driver }, env) {
   return new Promise((resolvePromise) => {
     const probeEnv = {
       ...env,
@@ -4451,8 +6469,10 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
        * 之前默认是 `showInactive()`（不抢焦点但仍会出现在屏幕上）；
        * 连跑十几个场景时，窗口不断出现本身就是在打断用户。
        */
-      ...(process.env.YAN_SHOW_WINDOW ? {} : { YAN_PROBE_HIDDEN: '1' }),
-      ...(keys ? { YAN_PROBE_KEYS: keys } : {})
+      ...(process.env.YAN_SHOW_WINDOW || visible ? {} : { YAN_PROBE_HIDDEN: '1' }),
+      ...(keys ? { YAN_PROBE_KEYS: keys } : {}),
+      /* 用例自己调第一枚按键的延时（探针要先关引导 / 拿到输入框焦点时用） */
+      ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
     }
     // GUI 进程不能带 ELECTRON_RUN_AS_NODE：否则 Electron 二进制退化成纯 Node，
     // 无窗口、静默 exit 0，探针什么都拿不到（详见 scripts/test-packaged.mjs）。
@@ -4481,6 +6501,11 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
       windowsHide: true
     })
     activeChild = child
+    const driverPromise = driver
+      ? Promise.resolve()
+          .then(() => driver())
+          .catch((error) => ({ ok: false, text: `✗ 外部验收驱动异常：${error?.message ?? error}` }))
+      : null
 
     let buf = ''
     child.stdout.on('data', (d) => {
@@ -4490,8 +6515,8 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
       buf += d
     })
 
-    // 预发按键会额外占时间（每个组合等 1.4s）
-    const keyCost = keys ? keys.split(',').length * 1500 : 0
+    // 预发按键会额外占时间（第一枚前可自定义延时，之后每个组合等 1.5s）
+    const keyCost = keys ? (keysDelay ?? 0) + keys.split(',').length * 1500 : 0
     const killChild = () => killTree(child)
     /*
      * delay 是“窗口显示后等多久才执行探针”（给应用启动/连上 pi 用），
@@ -4501,9 +6526,10 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
      */
     const kill = setTimeout(killChild, delay + keyCost + (budget ?? 90_000))
 
-    child.on('exit', (code) => {
+    child.on('exit', async (code) => {
       clearTimeout(kill)
       if (activeChild === child) activeChild = null
+      const driven = driverPromise ? await driverPromise : null
 
       const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
       if (!m) {
@@ -4515,7 +6541,7 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
         const hadOutput = buf.trim().length > 0
         resolvePromise({
           ok: false,
-          text: buf.slice(-3000),
+          text: [buf.slice(-3000), driven?.text].filter(Boolean).join('\n'),
           hint: hadOutput
             ? '没抓到 PROBE 输出（但有其它输出）—— 应用可能启动失败，先跑 `npm run probe-pi`。'
             : `一句输出都没有 —— 进程在探针打印前就被结束了。先看场景预算够不够：delay ${delay}ms + budget ${budget ?? 90_000}ms`
@@ -4525,10 +6551,11 @@ function runProbe({ probe, delay, keys, env: caseEnv, budget }, env) {
 
       const body = m[1]
       // 断言失败标记：✗ 或 “=0（应为 1）” 之类的显式否定
-      const bad = /✗/.test(body)
+      const combined = [body, driven?.text].filter(Boolean).join('\n')
+      const bad = /✗/.test(combined)
       resolvePromise({
-        ok: !bad && code === 0,
-        text: body + '\n',
+        ok: !bad && code === 0 && (driven?.ok ?? true),
+        text: combined + '\n',
         hint: bad ? '输出里有 ✗ 的行' : undefined
       })
     })
@@ -4562,7 +6589,7 @@ async function main() {
   const spends = names.filter((n) => CASES[n].cost > 0)
   if (spends.length) {
     for (const n of spends) {
-      console.log(`⚠️  ${n} 会真的调用模型（花少量额度）→ ${CASES[n].model ?? TEST_MODEL}`)
+      console.log(`⚠️  ${n} 会真的调用模型（花少量额度）→ ${modelForCase(CASES[n].model)}`)
     }
   }
 
@@ -4579,6 +6606,10 @@ async function main() {
      YAN_DATA_DIR       桌面端设置（desktop.json） */
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
+  if (names.includes('remoteroutes') && !sandboxRoot) {
+    console.error('✗ remoteroutes 必须运行在隔离 sandbox 中；拒绝触碰真实用户数据。')
+    process.exit(2)
+  }
 
   /*
    * 合成 fixture 项目树（`fixture: true` 的场景把它当 cwd）。
@@ -4606,6 +6637,17 @@ async function main() {
       process.exit(2)
     }
   }
+  if (names.includes('remoteroutes')) {
+    try {
+      await assertPortAvailable(REMOTE_ROUTE_API_PORT)
+      console.log(`  远程 API 测试端口：${REMOTE_ROUTE_API_PORT}（仅 127.0.0.1）`)
+    } catch (error) {
+      console.error(`✗ 远程 API 测试端口 ${REMOTE_ROUTE_API_PORT} 不可用：${error?.message ?? error}`)
+      console.error('  为避免探针误连到其它服务，本场景不自动换端口。')
+      process.exit(2)
+    }
+  }
+  let remoteRouteProvider = null
 
   /*
    * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
@@ -4685,15 +6727,20 @@ async function main() {
      */
     const sourceAgentDir = process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent')
     const copied = []
-    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
-      const src = join(sourceAgentDir, f)
-      if (existsSync(src)) {
-        copyFileSync(src, join(piDir, f))
-        copied.push(f)
+    const routeOnly = names.length === 1 && names[0] === 'remoteroutes'
+    if (!routeOnly) {
+      for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+        const src = join(sourceAgentDir, f)
+        if (existsSync(src)) {
+          copyFileSync(src, join(piDir, f))
+          copied.push(f)
+        }
       }
     }
     if (copied.length) {
       console.log(`  pi 文件：已复制 ${copied.join(' / ')} 到隔离目录（仅本次测试，不进包）`)
+    } else if (routeOnly) {
+      console.log('  pi 文件：远程路由场景使用独立本机 provider，不读取真实 auth.json / models.json')
     } else {
       console.log('  pi 文件：没找到凭证/模型目录 —— 依赖 pi 就绪的场景会失败')
     }
@@ -4720,6 +6767,9 @@ async function main() {
       YAN_SESSIONS_DIR: sessions,
       YAN_DATA_DIR: data,
       YAN_PI_DIR: piDir,
+      /* 完整隔离批次会产生超过默认桌面快照上限的临时会话；不改变生产口径，
+       * 只让本次测试保留自己种下的早期 fixture。 */
+      YAN_TEST_SESSION_LIST_LIMIT: '500',
       /*
        * 下载必须隔离：内置浏览器与本机 Chrome 都写 `app.getPath('downloads')`，
        * 而那默认是**用户真实的下载目录** —— 测试往里丢文件，
@@ -4728,6 +6778,47 @@ async function main() {
       YAN_DOWNLOADS_DIR: join(sandboxRoot, 'downloads')
     }
     mkdirSync(join(sandboxRoot, 'downloads'), { recursive: true })
+
+    if (names.includes('remoteroutes')) {
+      try {
+        remoteRouteProvider = await startRemoteRouteProvider()
+        const routePiDir = join(sandboxRoot ?? fixtureBase, 'pi-agent-remote-routes')
+        mkdirSync(routePiDir, { recursive: true })
+        writeFileSync(
+          join(routePiDir, 'models.json'),
+          JSON.stringify({
+            providers: {
+              yanrouteprobe: {
+                name: 'Yan Remote Route Probe',
+                baseUrl: `http://127.0.0.1:${remoteRouteProvider.port}/v1`,
+                api: 'openai-completions',
+                models: [{ id: 'route-probe', name: 'Route Probe', contextWindow: 32768, maxTokens: 256 }]
+              }
+            }
+          }),
+          'utf8'
+        )
+        writeFileSync(
+          join(routePiDir, 'auth.json'),
+          JSON.stringify({ yanrouteprobe: { type: 'api_key', key: 'local-route-fixture-only' } }),
+          'utf8'
+        )
+        CASES.remoteroutes.model = 'yanrouteprobe/route-probe'
+        CASES.remoteroutes.env = {
+          YAN_PI_DIR: routePiDir,
+          PI_OFFLINE: '1',
+          YAN_REMOTE_ENABLE: '1',
+          YAN_REMOTE_HOST: '127.0.0.1',
+          YAN_REMOTE_PORT: String(REMOTE_ROUTE_API_PORT),
+          YAN_REMOTE_TOKEN: REMOTE_ROUTE_TOKEN
+        }
+        console.log(`  远程路由本机 provider：127.0.0.1:${remoteRouteProvider.port}（无上游转发）`)
+      } catch (error) {
+        console.error(`✗ 无法启动远程路由本机 provider：${error?.message ?? error}`)
+        process.exit(2)
+      }
+    }
+
     /* 服务句柄不能让事件循环挂住 —— 跑完要关。 */
     if (boundaryServer) {
       process.once('exit', () => boundaryServer.close())
@@ -4737,6 +6828,10 @@ async function main() {
     // 为什么要拷：有些场景（切会话、长会话虚拟化）需要真实数据才有意义；
     // 为什么是拷贝而不是直接引用：测试会改名/删除会话，不能动原件。
     const seeded = seedSessions(sessions)
+    if (names.includes('remoteroutes')) {
+      const routeSession = writeRemoteRouteSession(sessions, fixtureProject)
+      console.log(`  远程路由目标会话：${routeSession.id}（仅隔离 sandbox）`)
+    }
 
     /*
      * N12 的 A/B 会话：cwd 必须是 fixture 项目的绝对路径，而那个路径
@@ -4755,7 +6850,9 @@ async function main() {
       const made = writeProjectSwitchSessions(sessions, fixtureProject, join(fixtureProject, 'other'), {
         /* 只有明确要“同 cwd 第二条会话”的场景才造，而且造在另一个子目录里 */
         peers: names.some((n) => CASES[n]?.projectPeers),
-        peerCwd: join(fixtureProject, 'repo')
+        peerCwd: join(fixtureProject, 'repo'),
+        /* 09-S3：造「活动新但没打开过」/「活动旧但将被打工」的一对（见该函数注释） */
+        opened: names.some((n) => CASES[n]?.openedSessions)
       })
       console.log(`  N05 项目会话：${made.map((m) => m.tag.toUpperCase() + '→' + m.cwd).join('，')}`)
     }
@@ -4798,6 +6895,174 @@ async function main() {
       'utf8'
     )
     CASES.slashcmd.env = { YAN_PI_DIR: piDirSkill }
+
+    /*
+     * 实施-04 S2：`capsearch` 要验「模型自己发现技能 → 读正文 → 按目标执行」。
+     * 所以单独一份 piDir：与主 piDir 同样能起 pi，另外多一个**回执技能**，
+     * 其正文里带一行只有它才有的标记 —— 模型必须真的读到正文才写得出来。
+     * 其它场景看不到它，命令列表与系统提示不受影响。
+     */
+    const piDirCapability = join(sandboxRoot, 'pi-agent-capability')
+    for (const d of [piDirCapability, join(piDirCapability, 'skills', 'yan-capability-probe')])
+      mkdirSync(d, { recursive: true })
+    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+      const src = join(sourceAgentDir, f)
+      if (existsSync(src)) copyFileSync(src, join(piDirCapability, f))
+    }
+    writeFileSync(
+      join(piDirCapability, 'skills', 'yan-capability-probe', 'SKILL.md'),
+      [
+        '---',
+        'name: yan-capability-probe',
+        'description: 能力探测回执技能。用户要求「验证能力发现 / 按技能产出回执」时使用，会生成一份回执文件。',
+        '---',
+        '',
+        '# 能力探测回执技能',
+        '',
+        '照下面步骤做，不要跳步：',
+        '',
+        '1. 在系统的临时目录里创建文件 `yan-capability-probe.txt`（`/tmp` 或 `$TEMP` 都可以），内容**恰好**是这一行：',
+        '   `YAN-CAPABILITY-PROBE-OK 7f3a91`',
+        '2. 用 bash 把该文件读回来，确认内容一致。',
+        '3. 在最终回复里原样包含这一行标记。',
+        '',
+        '这行标记只出现在本技能正文里；没读到本技能就写不出它。'
+      ].join('\n'),
+      'utf8'
+    )
+    CASES.capsearch.env = { YAN_PI_DIR: piDirCapability }
+    CASES.capcli.env = { YAN_PI_DIR: piDirCapability }
+
+    /*
+     * 实施-04 S3：`mcpcli` 要连一个真 MCP 服务。配置指向官方 SDK 的 stdio fixture；
+     * `command` 用当前 Node（test-live 就是 node 起的），不碰用户真实配置。
+     */
+    const mcpServersFile = join(sandboxRoot, 'mcp-servers.json')
+    writeFileSync(
+      mcpServersFile,
+      JSON.stringify(
+        {
+          servers: [
+            {
+              id: 'fixture',
+              title: 'MCP 单测夹具服务',
+              transport: 'stdio',
+              command: process.execPath,
+              args: [join(process.cwd(), 'scripts', 'lib', 'mcp-stdio-fixture.mjs')]
+            }
+          ]
+        },
+        null,
+        2
+      ),
+      'utf8'
+    )
+    CASES.mcpcli.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
+    CASES.capsettings.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
+    /* 实施-07 S4：同一个 fixture 服务，但这条验的是「它能不能被认成搜索能力」 */
+    CASES.sourcecap.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
+
+    /*
+     * 实施-04 S6b-1：`mcpregister` 要两个**真的本地服务**——
+     *   ① 目录 fixture（MCP Registry 返回形状）→ 让 discover 拿到远程候选；
+     *   ② Streamable HTTP MCP fixture（官方 SDK）→ 让 acquire 的端点核验真握手。
+     * npm 源也指向本地：这条场景验的是 MCP 路径，没必要为它真连公网。
+     * 两个服务都只绑 127.0.0.1；起不来就直失败（不静默降级成「没候选」）。
+     */
+    if (names.some((n) => CASES[n].usesMcpRegisterFixture)) {
+      const MCP_REG_FIXTURE_PORT = 39341
+      const MCP_REG_CATALOG_PORT = 39342
+      const mcpRegCatalogOrigin = `http://127.0.0.1:${MCP_REG_CATALOG_PORT}`
+      const mcpRegCatalog = createServer((req, res) => {
+        const url = new URL(req.url ?? '/', mcpRegCatalogOrigin)
+        res.setHeader('content-type', 'application/json; charset=utf-8')
+        if (url.pathname.startsWith('/npm')) {
+          /* npm 侧返回空目录：这条场景只验 MCP 路径。 */
+          res.end(JSON.stringify({ objects: [] }))
+          return
+        }
+        res.end(
+          JSON.stringify({
+            servers: [
+              {
+                server: {
+                  name: 'yan/fixture-remote',
+                  title: '砚远程登记夹具服务',
+                  description: '仅用于验证「目录候选 → 授权 → 端点核验 → 登记 → 可用」闭环的远程 MCP 服务。',
+                  version: '1.0.0',
+                  remotes: [{ type: 'streamable-http', url: `http://127.0.0.1:${MCP_REG_FIXTURE_PORT}/mcp` }]
+                }
+              }
+            ]
+          })
+        )
+      })
+      const mcpRegHttpFixture = spawn(process.execPath, [join(root, 'scripts', 'lib', 'mcp-http-fixture.mjs')], {
+        env: { ...process.env, YAN_MCP_HTTP_PORT: String(MCP_REG_FIXTURE_PORT) },
+        stdio: ['ignore', 'ignore', 'pipe']
+      })
+      try {
+        await new Promise((resolvePromise, rejectPromise) => {
+          mcpRegCatalog.once('error', rejectPromise)
+          mcpRegCatalog.listen(MCP_REG_CATALOG_PORT, '127.0.0.1', resolvePromise)
+        })
+        await new Promise((resolvePromise, rejectPromise) => {
+          let settled = false
+          const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            rejectPromise(new Error('MCP HTTP fixture 10s 内没起来'))
+          }, 10_000)
+          mcpRegHttpFixture.stderr.on('data', (chunk) => {
+            if (settled) return
+            if (String(chunk).includes('listening')) {
+              settled = true
+              clearTimeout(timer)
+              resolvePromise()
+            }
+          })
+          mcpRegHttpFixture.once('exit', (code) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            rejectPromise(new Error(`MCP HTTP fixture 提前退出（code=${code}）`))
+          })
+        })
+      } catch (error) {
+        console.error(`✗ mcpregister 的本地 fixture 起不了：${error?.message ?? error}`)
+        process.exit(2)
+      }
+      console.log(`  本地 fixture 服务：目录 ${mcpRegCatalogOrigin} + MCP HTTP 127.0.0.1:${MCP_REG_FIXTURE_PORT}/mcp`)
+      CASES.mcpregister.env = {
+        YAN_MCP_REGISTRY_URL: `${mcpRegCatalogOrigin}/v0/servers`,
+        YAN_NPM_SEARCH_URL: `${mcpRegCatalogOrigin}/npm`,
+        YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json'),
+        /* 仅隐藏 live fixture 能模拟本机确认；产品 CLI 参数本身不是授权。 */
+        YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP: '1'
+      }
+      process.on('exit', () => {
+        try {
+          mcpRegCatalog.close()
+        } catch {
+          /* 进程都要退了，关不掉也不影响结论 */
+        }
+        try {
+          mcpRegHttpFixture.kill()
+        } catch {
+          /* 同上 */
+        }
+      })
+    }
+
+    /*
+     * 实施-04 S4：`capmcp` 除了同一份 MCP 配置，还要 MARKER ——
+     * fixture 在 `compute` 被调用时往它 append 一行，那是「调用真的到了服务端」的
+     * 唯一硬证据（回复里的数字可能是模型自己编的）。文件放 sandbox，不污染仓库。
+     */
+    CASES.capmcp.env = {
+      YAN_MCP_SERVERS_FILE: mcpServersFile,
+      YAN_MCP_FIXTURE_MARKER: join(sandboxRoot, 'mcp-probe-marker.txt')
+    }
 
     /*
      * 实施-02 S1：`taskext` 要验「旧任务扩展与砚同时存在」，所以单独一份 piDir。
@@ -4891,6 +7156,10 @@ async function main() {
      * 于是全量跑时 `contextstate` 的计数对不上。
      * 它跟 `desktop.json` 的“每场景重置”是同一个道理。
      */
+    /* 提问扩展诊断：每次跑前清空，退出后检查只看这一轮的（实施-05 S2） */
+    if (c.questionExtLog) rmSync(join(tmpdir(), 'yan-question-ext.log'), { force: true })
+    if (c.goalResumeExtLog) rmSync(join(tmpdir(), 'yan-goal-resume.log'), { force: true })
+
     if (c.contextStateSeed && sandboxRoot) {
       contextStateSeed = await seedContextStates(join(sandboxRoot, 'sessions'), join(sandboxRoot, 'data'))
       console.log(`  S1 派生状态：种下 ${contextStateSeed.ids.length} 份 → ${contextStateSeed.dir}`)
@@ -4928,10 +7197,13 @@ async function main() {
     }
     /* 隔离 fixture 的“只种一次”门（wins 多档时不能重复建工作树 / 重复写会话） */
     let isolationSeeded = false
+    let contextGuardFixturePath = null
 
     for (const win of wins) {
       if (sandboxRoot) {
         const desktop = { cwd: caseCwd, lang: 'zh-CN' }
+        /* 工作模式迁移场景：只留旧布尔，验「旧 true → 新字段」的真实清洗 */
+        if (c.legacyAutonomous) desktop.autonomous = true
         if (c.knowledgeSeed) {
           /*
            * 项目登记决定 `projectId`（宿主用登记里的 id，而不是现场派生）：
@@ -4986,8 +7258,18 @@ async function main() {
           await seedKnowledgeIsolation(sandboxRoot, fixtureProject, caseCwd)
           isolationSeeded = true
         }
+        if (c.contextGuardSeed && !contextGuardFixturePath) {
+          contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
+          console.log(`  上下文守卫 fixture：${basename(contextGuardFixturePath)}（仅本场景）`)
+        }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
+      /* 坏 pi 入口：内容无所谓，只要立即退出（spawn 得到 code 不 0 的退出） */
+      let brokenPiBin
+      if (c.brokenPi && sandboxRoot) {
+        brokenPiBin = join(sandboxRoot, 'broken-pi.js')
+        writeFileSync(brokenPiBin, 'process.exit(3)\n', 'utf8')
+      }
       const out = await runProbe(c, {
         ...env,
         ...(win ? { YAN_WIN: win } : {}),
@@ -4995,9 +7277,35 @@ async function main() {
         ...(c.contextExtLog && sandboxRoot ? { YAN_CONTEXT_EXT_LOG: join(sandboxRoot, 'ctx-ext.log') } : {}),
         /* 项目知识注入的诊断（同上，实施-03 S3） */
         ...(c.knowledgeExtLog && sandboxRoot ? { YAN_KNOWLEDGE_EXT_LOG: join(sandboxRoot, 'knowledge-ext.log') } : {}),
+        /*
+         * 提问扩展的模式诊断（实施-05 S2）：确认「自主档」真的到达扩展。
+         * 写 tmpdir 固定文件（与 language 场景同一做法）—— 场景失败时
+         * 沙箱会被清掉，写沙箱里就等于没有证据。
+         */
+        ...(c.questionExtLog ? { YAN_QUESTION_EXT_LOG: join(tmpdir(), 'yan-question-ext.log') } : {}),
+        /* 续行扩展诊断（实施-05 S3b）：没发出时要知道是「不该发」还是「发失败」 */
+        ...(c.goalResumeExtLog ? { YAN_GOAL_RESUME_EXT_LOG: join(tmpdir(), 'yan-goal-resume.log') } : {}),
+        /*
+         * 场景自己的环境变量（实施-05 S5c 首位使用者：`YAN_AUTO_CONTINUE` 压短退避 ——
+         * 真实验证不能等 3s+10s+30s）。放在 `YAN_TEST_MODEL` 之前，
+         * 让场景也能覆盖模型之外的开关。
+         */
+        ...(c.env ?? {}),
+        /* N12 失败态：见上面 brokenPiBin 的说明 */
+        ...(brokenPiBin ? { YAN_PI_BIN: brokenPiBin } : {}),
+        /* 交接包生成的诊断（实施-05 S5b-2）：区分「没跑」「跑了失败」「写了但不能解析」 */
+        ...(c.handoffExtLog && sandboxRoot ? { YAN_HANDOFF_EXT_LOG: join(sandboxRoot, 'handoff-ext.log') } : {}),
         // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
-        YAN_TEST_MODEL: c.model ?? TEST_MODEL
+        YAN_TEST_MODEL: modelForCase(c.model)
       })
+      if (contextGuardFixturePath) {
+        rmSync(contextGuardFixturePath, { force: true })
+        contextGuardFixturePath = null
+      }
+      if (name === 'remoteroutes' && remoteRouteProvider) {
+        await closeRemoteRouteProvider(remoteRouteProvider)
+        remoteRouteProvider = null
+      }
       process.stdout.write(out.text)
       lastProbeText = out.text
       if (!out.ok) {
@@ -5042,7 +7350,7 @@ async function main() {
       console.log(`\n─── 重启（第二次启动，同一份 YAN_DATA_DIR）───`)
       const out2 = await runProbe(
         { ...c.restart },
-        { ...env, YAN_TEST_MODEL: c.restart.model ?? c.model ?? TEST_MODEL }
+        { ...env, YAN_TEST_MODEL: modelForCase(c.restart.model ?? c.model) }
       )
       process.stdout.write(out2.text)
       /* 两轮输出拼在一起：afterExit 要同时看到首次与重启后的两份证据 */

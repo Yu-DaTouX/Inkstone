@@ -36,6 +36,8 @@ import type {
   UIMessage,
   UIToolCall,
   UserProfile,
+  WorkMode,
+  WorkModeState,
   ZoomState
 } from '../../../shared/ipc'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
@@ -260,6 +262,21 @@ interface Store {
   title: string | null
   /** 待发送的图片附件 */
   attachments: Attachment[]
+  /**
+   * 来源定位消息（方案 §8 的 S1）：刚发出去、**还没绑定到消息**的来源 id。
+   *
+   * 为什么不直接拿 pi 的消息 id：发送是「先交给 pi、它写完 user 条目才回推」，
+   * 这个 id 在发送那一刻并不存在。所以先排队，等第一条新的 user 消息到达时
+   * 把队首那批绑上（发送是串行的，队首就是这次那条）。
+   */
+  pendingSourceLinks: { sessionId: string; sourceIds: string[] }[]
+  /**
+   * 滚到某条消息并短暂高亮（来源菜单的「定位消息」）。
+   *
+   * 用**命令式滚动**而不是 state：滚动位置本来就是浏览器的东西，
+   * 把它搬进 store 只会多一层同步。高亮靠临时 class，2 秒后自己掉。
+   */
+  locateMessage: (messageId: string) => boolean
 
   /**
    * 当前消息是**直读文件**来的（还没经过 pi 确认）。
@@ -293,6 +310,13 @@ interface Store {
   runners: RunnerStatus[]
   /** 后台会话的增量缓存；顶层字段仍是当前查看会话的投影。 */
   sessionRuntimes: SessionRuntimeMap
+  /**
+   * 当前会话的工作模式（实施-05）。
+   *
+   * null = 还没从主进程拿到（启动早期）—— 界面按 `settings.defaultWorkMode` 渲染。
+   * 后台会话各自的值在 `sessionRuntimes` 里，切回去时主进程会再推一份权威值。
+   */
+  workMode: WorkModeState | null
 
   /* 动作 */
   bootstrap: () => Promise<void>
@@ -306,6 +330,15 @@ interface Store {
   loadAuthProviders: () => Promise<void>
   /** 把当前输入框草稿写入当前会话运行时缓存（不保存图片二进制）。 */
   setSessionDraft: (value: string) => void
+  /**
+   * 往输入框**追加**一段文本（不发送）。
+   *
+   * 为什么不直接用 `setSessionDraft`：草稿只在**切会话**时从 store 同步进输入框
+   * （Composer 的恢复 effect 依赖 runtime key 变化），外部写草稿对当前输入框不可见。
+   * 这条走的是与 pi 扩展 `set_editor_text` 同一个字段 —— 二者在界面上是同一件事，
+   * 区别只在发起方。（2026-09-19 实现来源菜单搜索入口时踩到的就是这个区别。）
+   */
+  injectComposerText: (text: string) => void
   /** 重新探测 pi 内核（版本 / 来源），pi 之前没找到时会顺便重新拉起 */
   redetectPi: () => Promise<void>
   /**
@@ -347,7 +380,16 @@ interface Store {
   abort: () => Promise<void>
   runBash: (command: string) => Promise<void>
   abortBash: () => Promise<void>
-  newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => Promise<void>
+  /**
+   * 新建会话。返回新会话的身份 —— 调用方需要它把「这个会话从哪来」记下来
+   *（实施-07 S2 的工作树来源关系），而不必去猜 `session` 什么时候刷新。
+   */
+  newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => Promise<{
+    ok: boolean
+    sessionId?: string
+    runId?: string
+    error?: string
+  }>
   switchSession: (path: string) => Promise<void>
   /**
    * 切项目时选「该项目最近访问的会话」（N05）：运行实例优先，其次会话列表。
@@ -418,6 +460,13 @@ interface Store {
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
   /** 通用设置写入（设置面板用）。主进程会做校验 */
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
+  /**
+   * 切换当前会话的工作模式（实施-05）。
+   *
+   * 提交带乐观锁：主进程用当前 revision 比对，不一致就拒绝并回传当前值 ——
+   * 这里收到拒绝后把显示恢复成权威值，不让界面出现“已自主”的假象。
+   */
+  setWorkMode: (mode: WorkMode) => Promise<void>
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   /**
@@ -550,6 +599,25 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
     commandsAt: snapshot.commands.length ? Date.now() : 0
   }
   if (snapshot.session) projection.session = snapshot.session
+  if (snapshot.workMode) projection.workMode = snapshot.workMode
+  return projection
+}
+
+/**
+ * 投影缓存，但**不让空缓存把刚铺好的文件历史打回 0**。
+ *
+ * `peekSession` 是「先给用户看内容」的优化（不等 pi）；而运行实例的空快照
+ * 只说明「这个实例还没收到 pi 的 sync」，**不是**「这条会话没有历史」。
+ * 切会话时 `runners` / `syncRunners` 的投影会先到 —— 没有这道保护，
+ * 用户会看到历史闪一下空白（`historyswitch` 探针抓的就是 `482→0→482`）。
+ *
+ * 只抑制 `messages`：stats / todos / queue 这些字段属于同一条会话，照常投影。
+ */
+function projectSnapshotKeepingPeek(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
+  const projection = projectRuntimeSnapshot(snapshot)
+  if (snapshot.messages.length === 0 && state.messages.length > 0 && state.peekedPath) {
+    delete projection.messages
+  }
   return projection
 }
 
@@ -607,6 +675,60 @@ export interface FilePreviewState {
 /** 附件上限（方案 5.1：最多 20 个附件，图片合计 20MB） */
 const MAX_ATTACHMENTS = 20
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+/** base64 字节的 sha256 前 32 位 hex —— 与主进程 `saveImage` 算指纹的方式**必须一致** */
+async function imageFingerprint(base64: string): Promise<string | null> {
+  try {
+    const at = globalThis.atob
+    if (typeof at !== 'function') return null
+    const bin = at(String(base64 ?? ''))
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 32)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把将要发出去的附件换成**来源 id**（方案 §8 的 S1）。
+ *
+ * 三类各自的存在方式不同（见 `sources.ts` 的头注释），所以不能一刀切：
+ *   · 图片：内容指纹 = sourceId，渲染端能自己算（base64 就在手里）—— **不绕 IPC**；
+ *   · 文件：sourceId 含 `size:mtime`，渲染端没有，只能请主进程复核一次；
+ *   · 网页：不进附件流（只能手填），所以在这个函数里根本不会出现。
+ * 拿不到的一律跳过，不阻断发送。
+ */
+async function collectSourceIds(attachments: Attachment[], sessionId: string): Promise<string[]> {
+  const out: string[] = []
+  const files: string[] = []
+  for (const a of attachments) {
+    if (a.kind === 'file') {
+      if (a.path) files.push(a.path)
+      continue
+    }
+    if (!a.data) continue
+    const fp = await imageFingerprint(a.data)
+    if (fp) out.push(`image:${fp}`)
+  }
+  if (files.length) {
+    try {
+      const refs = await window.yan.sources.verifyFiles({
+        sessionId,
+        entries: files.map((path) => ({ path }))
+      })
+      /* 不在 / 被改过的**照旧登记** —— 关联是历史事实，不因为文件后来不在了就抹掉 */
+      for (const r of refs) if (r?.sourceId) out.push(r.sourceId)
+    } catch {
+      /* 复核失败就只记图片那部分 */
+    }
+  }
+  return [...new Set(out)]
+}
 
 /** 连接状态心跳是否已在跑（startConnWatch 单例，避免重复挂载开出多条） */
 let connWatchActive = false
@@ -769,6 +891,7 @@ export const useStore = create<Store>((rawSet, get) => {
   activeRunnerId: null,
   runners: [],
   sessionRuntimes: {},
+  workMode: null,
 
   models: [],
   thinkingLevels: [],
@@ -821,6 +944,7 @@ export const useStore = create<Store>((rawSet, get) => {
   queueRestore: null,
   title: null,
   attachments: [],
+  pendingSourceLinks: [],
   peekedPath: null,
   peekedSessionId: null,
   peekNote: null,
@@ -895,7 +1019,7 @@ export const useStore = create<Store>((rawSet, get) => {
       if (active) {
         const runtime = runtimeFromRunner(active)
         const snapshot = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
-        if (snapshot) set(projectRuntimeSnapshot(snapshot))
+        if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
       }
     } catch {
       /* 主进程还没起来 —— 下一帧会有推送 */
@@ -931,7 +1055,15 @@ export const useStore = create<Store>((rawSet, get) => {
         sessionRuntimes: cache,
         ...(s.activeRunnerId ? {} : { activeRunnerId: m.runtime.runId })
       })
-      if (!active) return
+      /*
+       * 同一个 runner 可以在切会话时复用。此时旧会话的推送仍然会带着
+       * 同一个 runId，单靠 active 判定挡不住它；peekedSessionId 才是当前
+       * 视图已经铺上的目标身份。缓存要继续收，但 todos / stats / state 等
+       * 顶层投影不能让旧会话迟到的帧覆盖新会话。
+       */
+      const viewing = viewingSessionId(s)
+      const belongsToView = !viewing || !m.runtime.sessionId || m.runtime.sessionId === viewing
+      if (!active || !belongsToView) return
     } else if (m.sessionKey) {
       if (!s.activeRunnerId) set({ activeRunnerId: m.sessionKey })
       else if (s.activeRunnerId !== m.sessionKey) return
@@ -956,6 +1088,10 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'todos':
         set({ todos: m.payload })
         break
+      case 'work-mode':
+        /* 当前会话的模式：后台会话的已经写进 sessionRuntimes，上面已 return */
+        set({ workMode: m.payload })
+        break
       case 'runners':
         /* 全局快照（N12）：左栏状态槽用。不参与上面的实例身份过滤 */
         {
@@ -973,7 +1109,7 @@ export const useStore = create<Store>((rawSet, get) => {
               get(),
               findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
             )
-            if (snapshot) set(projectRuntimeSnapshot(snapshot))
+            if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
           }
         }
         break
@@ -1001,7 +1137,7 @@ export const useStore = create<Store>((rawSet, get) => {
             runId
           )
           set({
-            ...(snapshot ? projectRuntimeSnapshot(snapshot) : {}),
+            ...(snapshot ? projectSnapshotKeepingPeek(get(), snapshot) : {}),
             queue: snapshot?.queue ?? EMPTY_QUEUE,
             activeRunnerId: runId ?? null
           })
@@ -1101,6 +1237,31 @@ export const useStore = create<Store>((rawSet, get) => {
         const patch: Partial<Store> = { messages: [...s.messages, m.payload] }
         if (s.startupPhase) patch.startupPhase = false
         set(patch)
+        /*
+         * 来源定位消息（S1）：刚到达的这条 user 消息就是队首那批来源参与的那条。
+         * 只绑 role=user 的消息 —— assistant 的 id 不属于「用户把这份来源发出去」
+         * 这件事；而队首要等到真的绑定才出队，否则一次失败就永久错位。
+         */
+        if (m.payload.role === 'user') {
+          const head = get().pendingSourceLinks[0]
+          const sid = get().session?.sessionId
+          if (head && sid && head.sessionId === sid) {
+            void window.yan.sources
+              .link({ sessionId: sid, sourceIds: head.sourceIds, messageId: m.payload.id })
+              .then((res) => {
+                /*
+                 * `ok: false` 是形状不对（id 里带了不安全字符）—— 重试也没用，
+                 * 出队免得卡住后面所有待绑定的批次；IPC 异常（catch）则保留重试。
+                 */
+                if (res && !res.ok) {
+                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x !== head) })
+                } else if (res?.ok) {
+                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x !== head) })
+                }
+              })
+              .catch(() => undefined)
+          }
+        }
         break
       }
       case 'stats':
@@ -1342,6 +1503,8 @@ export const useStore = create<Store>((rawSet, get) => {
     })
   },
 
+  injectComposerText: (text) => set({ editorInject: text }),
+
   redetectPi: async () => {
     const info = await window.yan.redetectPi().catch(() => null)
     if (info) set({ piInfo: info })
@@ -1364,11 +1527,38 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------------------- 对话 */
 
   send: async (text, images, mode) => {
+    /*
+     * 來源定位消息（S1）：把这次要发出去的附件换成来源 id，先排队。
+     * 拿不到 id 的（算不出指纹/文件已不在）就静静跳过 —— 一条来源定位不上
+     * 不该阻断发送，而菜单里那份来源仍然在（只是没有“定位”入口）。
+     */
+    const sessionId = get().session?.sessionId
+    const sourceIds = sessionId ? await collectSourceIds(get().attachments, sessionId) : []
+    if (sourceIds.length) {
+      set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
+    }
     const res = await piCall(() => window.yan.send(text, images, mode))
     if (!res.ok) {
+      /* 没发出去：把刚排的那批撤掉，否则会绑到下一条真正发出去的消息上 */
+      if (sourceIds.length) {
+        set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
+      }
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '发送失败') })
       return false
     }
+    return true
+  },
+
+  locateMessage: (messageId) => {
+    const id = String(messageId ?? '')
+    if (!id) return false
+    /* 用属性选择器找消息节点（`TurnView` 的 `data-msg-id`）；id 里的引号转义掉 */
+    const el = document.querySelector(`[data-msg-id="${id.replace(/["\\]/g, '\\$&')}"]`)
+    if (!el) return false
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    /* 只滚不标，用户回头找不到"跳到了哪"—— 高亮 1.8 秒自己掉 */
+    el.classList.add('msg-located')
+    window.setTimeout(() => el.classList.remove('msg-located'), 1800)
     return true
   },
 
@@ -1454,7 +1644,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() => window.yan.newSession(target))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
-      return
+      return { ok: false, error: res.error }
     }
     /*
      * N12：新会话可能落在**新实例**上（当前实例忙着的时候）。
@@ -1468,6 +1658,7 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().reloadModels()
     void get().reloadCommands()
     await get().refreshSessions()
+    return { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
   },
 
   /**
@@ -1557,7 +1748,7 @@ export const useStore = create<Store>((rawSet, get) => {
      */
     const usable = snapshotForView(get(), snapshot)
     set({
-      ...(usable ? projectRuntimeSnapshot(usable) : {}),
+      ...(usable ? projectSnapshotKeepingPeek(get(), usable) : {}),
       queue: usable?.queue ?? EMPTY_QUEUE,
       ...(runId ? { activeRunnerId: runId } : {})
     })
@@ -2029,6 +2220,28 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ settings: await window.yan.patchSettings(p) })
   },
 
+  setWorkMode: async (mode) => {
+    const current = get().workMode
+    try {
+      const res = await window.yan.setWorkMode(mode, current?.revision)
+      /*
+       * 无论成功还是被拒，都采纳主进程回传的状态：
+       * 被拒时它是当前权威值，界面据此恢复显示（不能停在用户刚点的那个档）；
+       * 失败也推了 `work-mode`，这里的 set 是同一帧的兑底。
+       */
+      set({ workMode: res.state })
+      if (!res.ok) {
+        const message = res.error === 'version-mismatch'
+          ? '模式已被另一个入口改过，已恢复为当前值。'
+          : (res.error ?? '切换工作模式失败')
+        set({ notices: pushNotice(get().notices, 'error', message) })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      set({ notices: pushNotice(get().notices, 'error', `切换工作模式失败：${message}`) })
+    }
+  },
+
   /**
    * 改面板宽度（0 = 用设计默认值）。
    *
@@ -2210,7 +2423,23 @@ export const useStore = create<Store>((rawSet, get) => {
     window.yan.respondUi(res)
     const drafts = { ...get().uiDrafts }
     delete drafts[res.id]
-    set({ uiRequests: get().uiRequests.filter((r) => r.id !== res.id), uiDrafts: drafts })
+    /*
+     * 顶层与**当前实例的缓存**必须一起改。
+     *
+     * ⚠️ 只改顶层会留下一个“复活”缺陷：`runners` 推送（每次 `state` 推送都会带一条）
+     *    会把缓存快照投影回顶层（`projectRuntimeSnapshot`），缓存里那条旧请求
+     *    就被重新放回界面 —— 用户看到已经回答过的问题又冒出来。
+     *    `ask` 场景第 6 节就是这个现象（面板里的 id 还是第 1 节那条）。
+     */
+    const next = get().uiRequests.filter((r) => r.id !== res.id)
+    const runtime = runtimeForState(get())
+    set({
+      uiRequests: next,
+      uiDrafts: drafts,
+      ...(runtime
+        ? { sessionRuntimes: updateSessionRuntime(get().sessionRuntimes, runtime, { uiRequests: next }) }
+        : {})
+    })
   },
 
   setUiCollapsed: (v) => set({ uiCollapsed: v }),
@@ -2221,7 +2450,16 @@ export const useStore = create<Store>((rawSet, get) => {
     // 超时的对话框：不回应答（pi 侧会自己超时），只从列表移除
     const drafts = { ...get().uiDrafts }
     delete drafts[id]
-    set({ uiRequests: get().uiRequests.filter((r) => r.id !== id), uiDrafts: drafts })
+    const next = get().uiRequests.filter((r) => r.id !== id)
+    const runtime = runtimeForState(get())
+    set({
+      uiRequests: next,
+      uiDrafts: drafts,
+      /* 同上：缓存那份也要清，否则下一次 `runners` 推送把它投影回来 */
+      ...(runtime
+        ? { sessionRuntimes: updateSessionRuntime(get().sessionRuntimes, runtime, { uiRequests: next }) }
+        : {})
+    })
   },
 
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),

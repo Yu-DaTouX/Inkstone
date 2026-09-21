@@ -34,6 +34,15 @@ import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure }
    这里只做转发，渲染端不必知道存储层。 */
 import type { KnowledgeCounts, KnowledgeEntryView } from './project-knowledge-view'
 import type { KnowledgeKind } from './project-memory'
+/* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
+   这里转发给渲染端，界面不必知道存储层。 */
+import type { WorkMode, WorkModeState } from './work-mode'
+import type { GoalState } from './goal'
+import type { HandoffView } from './handoff'
+import type { WebSearchAvailability } from './web-search'
+export type { WorkMode, WorkModeState } from './work-mode'
+export type { GoalState, GoalPhase } from './goal'
+export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
 /* Git 审查的类型与纯解析在 `./git` 里（它们要能在没有 Electron 的环境下单测），
@@ -646,6 +655,9 @@ export interface ProjectGroup {
   createdAt: number
 }
 
+/** 用户选择的能力发现与接入策略；宿主执行入口也必须强制执行。 */
+export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
+
 export interface AppSettings {
   cwd: string
   theme: 'dark' | 'light'
@@ -747,7 +759,7 @@ export interface AppSettings {
    */
   toolHeights: Record<string, number>
   /**
-   * 对话内容列的宽度（px）。**0 = 用设计默认值**（--w-stream，当前 900）。
+   * 对话内容列的宽度（px）。**0 = 用设计默认值**（--w-stream，当前 800）。
    *
    * 与 railWidth / panelWidth 同一个约定：只在用户手动调过之后才落盘一个数字，
    * 以后改默认值时没调过的人会跟着变。对话正文、输入框、用量条、导航轨
@@ -757,11 +769,30 @@ export interface AppSettings {
   /**
    * 自主模式。
    *
-   * 开启后模型**不再向用户提问**（内置提问扩展会跳过弹窗并自行决策，
-   * 系统提示也会明确要求不要问）。默认 false —— 提问是更有帮助的默认行为，
-   * 自主模式是用户为了“别打断我”主动打开的。
+   * ⚠️ **实施-05 起不再作为界面开关**：提问行为改成会话级工作模式
+   * （`defaultWorkMode` + 每会话状态）。这个字段只剩两个用途：
+   *   ① 旧配置迁移的输入（旧 `true` → `autonomous`，见 `migrateLegacyAutonomous`）；
+   *   ② 极旧版本的薄层扩展读 `desktop.json` 时的兜底。
+   * 新代码不得再读它决定行为，也不要删用户已写下的值。
    */
   autonomous: boolean
+  /**
+   * 新会话的默认工作模式（实施-05）。
+   *
+   * 模式本身**按会话保存**（`YAN_DIR/work-modes.json`），这里只是新会话的初值。
+   * 迁移规则：新字段合法就听它的，否则旧 `autonomous === true` → `autonomous`，
+   * 其余 → `standard`（幂等）。
+   */
+  defaultWorkMode: WorkMode
+  /** 默认在已授权来源与权限范围内自动接入。 */
+  capabilityStrategy: CapabilityStrategy
+  /**
+   * 输入框 `Tab` 快切工作模式（实施-05 §3）。
+   *
+   * `undefined` = 没改过 = **开**；只有明确关掉才落 `false`
+   * （与 `contextFold` 同一个「默认态不落盘」约定）。
+   */
+  workModeTab?: boolean
   /**
    * 发送键。
    *
@@ -1025,6 +1056,19 @@ export function clampStreamWidth(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n <= 0) return 0
   return Math.round(Math.min(STREAM_MAX, Math.max(STREAM_MIN, n)))
+}
+
+/**
+ * 项目信任的视图（实施-07 S2b-2）。
+ *
+ * `entry` 是**让结果是这个值的那条条目的键**（可能是父目录的那条）：
+ * 只回一句「已信任 / 未信任」的话，用户没法判断该改哪一条。
+ * 详见 `src/main/project-trust.ts`。
+ */
+export interface TrustStatusView {
+  cwd: string
+  trusted: boolean
+  entry: string | null
 }
 
 /**
@@ -1574,12 +1618,28 @@ export type MainPushBody =
   | { ch: 'queue'; payload: QueueState }
   /** 会话里的任务清单变了（扩展通过 panel_todos 维护） */
   | { ch: 'todos'; payload: SessionTodo[] }
+  /**
+   * 当前会话的工作模式变了（实施-05）。
+   * 带 `runtime` 封套：A 会话切模式不得影响 B 会话的显示与提问行为。
+   */
+  | { ch: 'work-mode'; payload: WorkModeState }
   /** 全部任务清单快照（含最新）。界面用它做「历史任务」模块 */
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   /** 扩展要弹窗，需要应答 */
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
   /** 扩展的 fire-and-forget 通知 */
   | { ch: 'notify'; payload: ExtensionUiRequest }
+  /**
+   * 模型侧错误（实施-05 S5c）。
+   *
+   * 为何单开一条而不是复用 `notify`：宿主要用它做**自动继续**的判据 ——
+   * 拿 `notify.message` 做文案匹配太脆（改一句文案就静默失效）。
+   *
+   * **消费者是宿主自己**（`main/index.ts` 的 `pushFrom` → `handleModelError`），
+   * 渲染端**不接**这条（用户看到的提示由宿主另发 `notify`）—— 所以
+   * `audit:refs` 会把它列进 `producedNotConsumed`，那是预期的，不是漏接线。
+   */
+  | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
   /** 状态栏条目（setStatus） */
   | { ch: 'status'; payload: { key: string; text?: string } }
   /** 窗口标题（setTitle） */
@@ -1728,6 +1788,106 @@ export interface GitBridge {
   worktrees(cwd: string): Promise<WorktreeListing>
   worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
   worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
+  /**
+   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）：登记 + 读回。
+   *
+   * 与 `session-chains.json` 是两回事：那边是「**同一条会话**的多个段」，
+   * 这边是「A 派生出**新**会话 B，B 在新目录里」—— 两条会话。
+   */
+  worktreeLink(req: {
+    sessionId: string
+    sessionFile?: string
+    worktree: string
+    branch?: string
+    fromSessionId?: string
+    fromSessionFile?: string
+    fromCwd?: string
+  }): Promise<{ ok: boolean; link?: WorktreeLinkView; error?: string }>
+  worktreeLinks(): Promise<WorktreeLinkView[]>
+  /**
+   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
+   *
+   * 把**当前会话**里 `@` 过的仓库内文件拿到目标工作树的仓库根下重新解析：
+   * 一律用仓库相对路径（绝对路径先转相对，转不了报 `outside` 不迁移）。
+   * 界面拿 `summary` 回答「我在源会话里提到的文件，在这个工作树里还能对上几个」。
+   */
+  forkFileRefs(input: {
+    worktree: string
+    sourceFile?: string
+    sourceCwd?: string
+    /** 显式引用（测试 / 将来的显式交接用）：给了就不再从会话里提取 */
+    explicitRefs?: string[]
+  }): Promise<ForkRefsReportView>
+  /**
+   * Fork 的语义注入正文（实施-07 S2b-4）。
+   *
+   * 返回的 `text` 由渲染端作为**输入框草稿**注入（不自动发送）：环境派生状态一律
+   * 在目标工作树重算，可迁移知识只来自源会话的交接包（没有就明说没有）。
+   */
+  forkContext(input: {
+    worktree: string
+    sourceFile?: string
+    sourceCwd?: string
+    sourceSessionId?: string
+    /** 显式附件数（测试 / 将来的显式交接用）：给了就不去看源会话 */
+    explicitAttachmentCount?: number
+  }): Promise<ForkContextResultView>
+}
+
+/** 「会话 ↔ 工作树」的来源关系（界面上用来回答「这个会话从哪来」） */
+export interface WorktreeLinkView {
+  sessionId: string
+  sessionFile: string
+  worktree: string
+  branch: string
+  fromSessionId: string
+  fromSessionFile: string
+  fromCwd: string
+  at: number
+}
+
+/** 工作树 Fork 的文件引用重绑定报告（实施-07 S2b-3）；界面只看 `summary` 与其中的 `problems` */
+export interface ForkRefsResolutionView {
+  ref: string
+  state: 'resolved' | 'missing' | 'type-mismatch' | 'outside'
+  abs: string | null
+  kind: 'file' | 'dir' | null
+}
+
+export interface ForkRefsSummaryView {
+  total: number
+  resolved: number
+  missing: number
+  mismatch: number
+  outside: number
+  problems: ForkRefsResolutionView[]
+}
+
+export interface ForkRefsReportView {
+  worktree: string
+  root: string | null
+  sourceRoot: string | null
+  sourceFile: string | null
+  refs: ForkRefsResolutionView[]
+  summary: ForkRefsSummaryView
+  error?: string
+}
+
+export interface ForkContextResultView {
+  forkId: string
+  text: string
+  branch: string | null
+  head: string | null
+  detached: boolean
+  changedCount: number
+  ahead: number
+  behind: number
+  refsTotal: number
+  refsResolved: number
+  /** 源会话里的图片附件数（不迁移，只在正文里如实告知） */
+  attachments: number
+  hasPackage: boolean
+  error?: string
 }
 
 export interface WorktreeInfo {
@@ -1930,6 +2090,73 @@ export interface BuiltinCapabilitiesBridge {
   list(): Promise<BuiltinCapabilityView[]>
 }
 
+export interface CapabilitySkillSettingView {
+  id: string
+  title: string
+  description: string
+}
+
+export interface CapabilityMcpServerSettingView {
+  id: string
+  title: string
+  transport: 'stdio' | 'http'
+  enabled: boolean
+  effect: 'read' | 'write' | 'external-action' | 'unknown'
+  projectScoped: boolean
+  endpointOrigin?: string
+  status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
+  toolCount: number | null
+}
+
+export interface CapabilitySettingsSnapshot {
+  skills: CapabilitySkillSettingView[]
+  servers: CapabilityMcpServerSettingView[]
+  /** 仅提示配置存在问题，不回传可能包含本地路径的原始错误。 */
+  configWarning: boolean
+}
+
+export interface CapabilitySearchSourceView {
+  sourceId: string
+  ok: boolean
+  pages: number
+  candidateCount: number
+}
+
+export interface CapabilitySearchCandidateView {
+  candidateId: string
+  kind: 'skill' | 'mcp-server'
+  title: string
+  summary: string
+  publisher?: string
+  version?: string
+  requirements: string[]
+  verification: 'metadata-only' | 'source-checked' | 'smoke-passed'
+  installKind: 'skill-files' | 'pi-package' | 'mcp-package' | 'remote'
+  score: number
+  scoreReasons: string[]
+}
+
+export interface CapabilitySearchResultView {
+  query: string
+  reason: 'unavailable' | 'no-candidates' | null
+  sources: CapabilitySearchSourceView[]
+  candidates: CapabilitySearchCandidateView[]
+}
+
+export interface CapabilityVerificationStatus {
+  operationId: string
+  state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
+  toolCount?: number
+}
+
+export interface CapabilitiesBridge {
+  snapshot(): Promise<CapabilitySettingsSnapshot>
+  discover(queryText: string): Promise<CapabilitySearchResultView>
+  verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
+  verification(operationId: string): Promise<CapabilityVerificationStatus | null>
+  cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
+}
+
 /* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
 
 export type SourceKindView = 'image' | 'file' | 'web'
@@ -1950,17 +2177,36 @@ export interface SourceRefView {
   size?: number
 }
 
+/** 「来源 ↔ 消息」的关联（方案 §8 的 S1 「定位消息」） */
+export interface SourceLinkView {
+  sourceId: string
+  /** 那条消息在界面上的 id（= 消息节点的 `data-msg-id`） */
+  messageId: string
+  at: number
+}
+
 export interface SourcesBridge {
-  /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类） */
-  list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; error?: string }>
+  /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类）与来源关联表 */
+  list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
   /** 存一张图片（base64，不带 data: 前缀）。同一份字节幂等 */
   addImage(req: { sessionId: string; name: string; mimeType: string; base64: string }): Promise<SourceRefView | null>
   /** 复核文件引用：还在不在、有没有被改过（我们不复制大文件） */
   verifyFiles(req: { sessionId: string; entries: { path: string; name?: string; addedAt?: number }[] }): Promise<SourceRefView[]>
+  /**
+   * 登记「这几份来源参与了这条消息」。幂等（同一对重复登记不会堆第二条）。
+   * 形状不对的 sourceId 不报错、只记进 `skipped` —— 一条对不上不该让整批失败。
+   */
+  link(req: { sessionId: string; sourceIds: string[]; messageId: string }): Promise<{ ok: boolean; added: number; skipped: number; error?: string }>
   /** 移除**我们存的副本**。文件引用永远不删 —— 那是用户的原文件 */
   removeImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; error?: string }>
   /** 读回图片字节（缩略图） */
   readImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; base64?: string; mime?: string; error?: string }>
+  /**
+   * 来源搜索入口的可用性（实施-07 S4）。**只读**：宿主不装也不调任何搜索服务，
+   * 只回答「当前有没有已接入的兼容搜索能力」—— 没命中就 `available:false`，
+   * 界面据此隐藏入口（方案明写：不自造私有搜索后端）。
+   */
+  webSearch(): Promise<WebSearchAvailability>
 }
 
 export interface YanBridge {
@@ -2047,6 +2293,30 @@ export interface YanBridge {
   /* 开关 */
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
   setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }>
+
+  /* 工作模式（实施-05）：按**当前会话**读写，不是全局设置 */
+  getWorkMode(): Promise<WorkModeState>
+  setWorkMode(mode: WorkMode, expectedRevision?: number): Promise<{
+    ok: boolean
+    state: WorkModeState
+    error?: string
+  }>
+
+  /*
+   * 目标状态（实施-05 S3）：**只读**。
+   *
+   * 写入通道只有一条 —— 模型经 `yan goal ready|report`（宿主 CLI）。
+   * 这里不提供「界面直接改目标」的入口：否则就有两条腿改同一份状态，
+   * 幂等与 revision 的语义会被绕开。界面要看的是「现在到哪了」。
+   */
+  getGoal(): Promise<{ goal: GoalState; mode: WorkModeState }>
+  /**
+   * 交接状态（实施-05 S5b-2）——**只读**。
+   *
+   * 写入通道只有一条：宿主自己（薄层只产原文，解析与落盘都在主进程）。
+   * 界面与探针需要的是「压了几次 / 包写了没有 / 这一刻在不在生成中」。
+   */
+  getHandoff(): Promise<HandoffView>
 
   /* 队列模式 */
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
@@ -2238,6 +2508,18 @@ export interface YanBridge {
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
   /**
+   * 项目信任（实施-07 S2b-2）。
+   *
+   * pi 的规则：目录不在 `trust.json` 里被标成 `true` 时，它会**整份忽略**该目录的
+   * 项目级配置；而 RPC 模式没有信任弹窗。工作树目录通常在仓库旁边，
+   * 所以「源目录被信任」不等于「工作树目录被信任」——这两个接口就是让用户
+   * **看得到、能显式处理**，而不是自己去终端跑一次 pi。**不自动继承**。
+   */
+  trust: {
+    status(cwd?: string): Promise<TrustStatusView>
+    allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
+  }
+  /**
    * 工作集预算（N21-3）。只算不决策：返回当前生效的策略与某个窗口下的预算。
    * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
    */
@@ -2256,6 +2538,8 @@ export interface YanBridge {
   knowledge: KnowledgeBridge
   /** 受信内置能力的只读查询（实施-02 S4）；与 packages 刻意分开 */
   builtinCapabilities: BuiltinCapabilitiesBridge
+  /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
+  capabilities: CapabilitiesBridge
   git: GitBridge
 
   /* 内置浏览器 */

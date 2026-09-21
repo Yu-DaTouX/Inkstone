@@ -2,9 +2,16 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
   BuiltinCapabilityView,
+  CapabilitySettingsSnapshot,
+  CapabilitySearchResultView,
+  CapabilityVerificationStatus,
   PackageActionResultView,
   PackageListingView,
   SourceRefView,
+  SourceLinkView,
+  ForkContextResultView,
+  ForkRefsReportView,
+  WorktreeLinkView,
   Attachment,
   AttentionNotify,
   BrowserBounds,
@@ -14,6 +21,7 @@ import type {
   AuthProviderInfo,
   CodexLoginResult,
   CompactionInfo,
+  TrustStatusView,
   ContextPolicyResolution,
   CustomEntry,
   DirListing,
@@ -54,10 +62,13 @@ import type {
   SubagentRun,
   SlashCommand,
   UIMessage,
+  GoalState,
+  HandoffView,
+  WorkModeState,
   YanBridge,
   ZoomState
 } from '../shared/ipc'
-
+import type { WebSearchAvailability } from '../shared/web-search'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -134,6 +145,14 @@ const api: YanBridge = {
   setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
   setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
 
+  /* ---- 工作模式（实施-05，按当前会话） ---- */
+  getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
+  getGoal: () => invoke<{ goal: GoalState; mode: WorkModeState }>('yan:getGoal'),
+  /* 交接状态（实施-05 S5b-2）：只读快照，探针与（后续）界面共用 */
+  getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
+  setWorkMode: (mode, expectedRevision) =>
+    invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
+
   /* ---- 队列模式 / 轮换（pi 自带能力） ---- */
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
@@ -207,11 +226,14 @@ const api: YanBridge = {
    * 而且只写数据目录下属于**这个会话**的那份副本。
    */
   sources: {
-    list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; error?: string }>('yan:sources:list', sessionId),
+    list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>('yan:sources:list', sessionId),
     addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
     verifyFiles: (req) => invoke<SourceRefView[]>('yan:sources:verifyFiles', req),
+    link: (req) => invoke('yan:sources:link', req),
     removeImage: (req) => invoke('yan:sources:removeImage', req),
-    readImage: (req) => invoke('yan:sources:readImage', req)
+    readImage: (req) => invoke('yan:sources:readImage', req),
+    /* 来源搜索入口的可用性（实施-07 S4）：只读查询，没命中就隐藏入口 */
+    webSearch: () => invoke<WebSearchAvailability>('yan:sources:webSearch')
   },
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
@@ -235,6 +257,15 @@ const api: YanBridge = {
   builtinCapabilities: {
     list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
   },
+  capabilities: {
+    snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
+    discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
+    verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
+    verification: (operationId: string) =>
+      invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
+    cancelVerification: (operationId: string) =>
+      invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId)
+  },
   git: {
     state: (cwd) =>
       invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),
@@ -250,7 +281,24 @@ const api: YanBridge = {
     prStatus: (cwd) => invoke('yan:git:prStatus', cwd),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd),
     worktreeCreate: (req) => invoke<WorktreeCreateResult>('yan:git:worktreeCreate', req),
-    worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req)
+    worktreeRemove: (req) => invoke<WorktreeRemoveResult>('yan:git:worktreeRemove', req),
+    worktreeLink: (req) => invoke('yan:git:worktreeLink', req),
+    worktreeLinks: () => invoke<WorktreeLinkView[]>('yan:git:worktreeLinks'),
+    /* 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）：仓库相对路径 + 存在性验证 */
+    forkFileRefs: (input: {
+      worktree: string
+      sourceFile?: string
+      sourceCwd?: string
+      explicitRefs?: string[]
+    }) => invoke<ForkRefsReportView>('yan:fork:fileRefs', input),
+    /* Fork 的语义注入正文（实施-07 S2b-4）：拿回来当输入框草稿，不自动发送 */
+    forkContext: (input: {
+      worktree: string
+      sourceFile?: string
+      sourceCwd?: string
+      sourceSessionId?: string
+      explicitAttachmentCount?: number
+    }) => invoke<ForkContextResultView>('yan:fork:context', input)
   },
 
   /* ---- 设置 ---- */
@@ -278,6 +326,11 @@ const api: YanBridge = {
   /* ---- 文件树 ---- */
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   compactionInfo: (win) => invoke<CompactionInfo>('yan:compactionInfo', win),
+  /* 项目信任（实施-07 S2b-2）：只读状态 + 用户显式信任一个目录（**不自动继承**） */
+  trust: {
+    status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
+    allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd)
+  },
   contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 

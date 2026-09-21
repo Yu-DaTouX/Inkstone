@@ -15,8 +15,9 @@
  */
 .md {
   font-family: var(--font-body);
+  font-size: var(--fs-body);
   letter-spacing: -0.01em;
-  line-height: 1.6;
+  line-height: var(--lh-body);
 }
 .md strong {
   font-weight: 700;
@@ -124,6 +125,29 @@
   animation: text-in 180ms ease-out;
 }
 
+/*
+ * 「定位消息」的落点高亮（来源菜单 → 跳到这条）。
+ *
+ * 只亮 1.8 秒（与 `store.locateMessage` 里移除 class 的时间一致）：它回答的是
+ * 「跳到了哪」，不是「这条被选中了」—— 所以不用持久选中态，也不改滚动位置语义。
+ */
+.msg.msg-located {
+  animation: msg-located 1.8s ease-out;
+  border-radius: 8px;
+}
+
+@keyframes msg-located {
+  0%,
+  60% {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
 /* 42. 终端风格重做（用户要求「跟终端版本差不多」）
    参考：pi 自己的 TUI / OpenCode 的输出形态。共同特征：
    · 圆角几乎为零（2px），没有阴影
@@ -139,29 +163,29 @@
   opacity: 0.9;
 }
 
+/* 新 UI 不用提示符作为角色装饰；命令回合仍可保留 `$` 作为技术内容语义。 */
+.msg.user .gutter-prompt {
+  display: none;
+}
+
 /*
- * 用户消息：底色 + **右侧**强调条（用户要求）。
- *
- * 为什么在右边：用户气泡是靠右对齐的，内容从右边“长出”。
- * 竖线在左侧时，它离气泡的左边缘很远、看起来属于正文区
- * （与助手消息的左侧竖线混在一起，分不清是谁的）。
- * 放到右边就跟右对齐的方向一致了。
+ * 用户消息：低对比、靠右的消息块。
+ * 角色区分靠位置、标题和留白，不再使用彩色右线或提示符装饰。
  */
 .msg.user .bubble {
-  border-radius: var(--r-xs);
-  border-left: none;
-  border-right: 2px solid var(--cyan);
+  max-width: 85%;
+  margin-left: auto;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-soft);
   background: var(--bg-2);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
 }
 
 /* 助手正文：无容器，只留一条左侧竖线作为「这是它说的话」的标记 */
 .msg.assistant .msg-body {
-  border-left: 1px solid var(--border-soft);
-  padding-left: var(--sp-3);
-  margin-left: -1px;
-  border-left: 1px solid var(--border-soft);
-  padding-left: var(--sp-3);
+  border-left: none;
+  padding-left: 0;
+  margin-left: 0;
 }
 
 /* 60. 推理流（限高省略 / 显示最新 / 结束折叠 / 保留开关 / 无推理不显示）
@@ -213,10 +237,17 @@
 
 .reason-spin {
   display: inline-flex;
-  width: 12px;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
   color: var(--accent);
-  font-size: 11px;
   line-height: 1;
+}
+
+.thinking-orb {
+  display: block;
+  flex: none;
 }
 
 /* 折叠时的单行预览：不用展开也知道它在想什么 */
@@ -384,8 +415,8 @@
  * 它本身就是那个「折叠回去的按钮」。
  *
  * 高度 = **25 行工具调用**（用户 2026-09-19：「改为 25 条」），**不是** vh：
- *   行步进实测 ≈ 24.8px（`.trow-head` 一行 + `.tgroup-body` 的 1px gap），
- *   25 行 ≈ 618px，再留几像素余量让第 25 行完整可见（不只看半截）。
+ *   行步进实测约 25px（`.trow-head` 一行 + `.tgroup-body` 的 1px gap），
+ *   25 行需要至少 625px，确保第 25 行完整可见（不只看半截）。
  *   矮窗口下退回 80vh —— 那时物理上放不下 25 行，宁可让列表自己滚。
  *   （`toolgroup` 探针按实测行步进算出可见条数并要求 ≥ 25，改数值会直接变红。）
  *
@@ -396,7 +427,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: min(623px, 80vh);
+  max-height: min(625px, 80vh);
   overflow: auto;
   /* 在列表里滚到底不要把消息区一起带着滚 */
   overscroll-behavior: contain;
@@ -433,7 +464,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
+  width: 20px;
+  height: 20px;
   color: var(--fg-mute);
 }
 

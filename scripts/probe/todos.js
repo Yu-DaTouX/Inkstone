@@ -13,6 +13,14 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
+  const until = async (fn, ms = 8000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (fn()) return true
+      await sleep(100)
+    }
+    return false
+  }
 
   log('=== 扩展集成：任务清单 + 启动通知 ===')
 
@@ -56,11 +64,9 @@
   const piReady = store.getState().conn === 'ready'
 
   await store.getState().switchSession(target.path)
-  // 切会话要等 pi 加载 + hydrate，实测约 3-5 秒
-  for (let i = 0; i < 30; i++) {
-    await sleep(400)
-    if (store.getState().todos.length > 0) break
-  }
+  // 先等会话身份确认，再等任务投影；只看 todos 长度会把上一条会话的迟到帧当成结果。
+  const targetReady = await until(() => store.getState().session?.sessionFile === target.path, 15000)
+  await until(() => targetReady && store.getState().todos.length > 0, 15000)
 
   const todos = store.getState().todos
   log('  store.todos = ' + JSON.stringify(todos))
@@ -130,11 +136,9 @@
   let noTask = null
   for (const cand of store.getState().sessions.filter((x) => x.path !== target.path)) {
     await store.getState().switchSession(cand.path)
-    for (let i = 0; i < 25; i++) {
-      await sleep(400)
-      if (store.getState().todos.length === 0) break
-    }
-    if (store.getState().todos.length === 0) { noTask = cand; break }
+    const candReady = await until(() => store.getState().session?.sessionFile === cand.path, 15000)
+    await until(() => candReady && store.getState().todos.length === 0, 15000)
+    if (candReady && store.getState().todos.length === 0) { noTask = cand; break }
   }
   if (noTask) {
     ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空（' + noTask.title + '）')
@@ -167,9 +171,17 @@
    * **且回合真的在跑**。所以注入任务前必须把会话标成运行中 ——
    * 否则这里断言的就是「停下也硬说有人在跑」那个旧行为。
    */
+  const PROBE_SESSION_ID = '__yan-todos-probe__'
   const setRunning = (v) => {
     const s = tstore.getState().session
-    tstore.setState({ session: { ...(s ?? {}), isAgentRunning: v, isStreaming: v } })
+    /*
+     * 给这段纯渲染断言一个独立身份。否则真实 pi 在切换无任务会话后
+     * 迟到的 state/todos 帧仍属于同一个 runner，会把探针刚注入的状态
+     * 覆盖掉；这不是本段要测的会话切换链路。
+     */
+    tstore.setState({
+      session: { ...(s ?? {}), sessionId: PROBE_SESSION_ID, isAgentRunning: v, isStreaming: v }
+    })
   }
   /*
    * ⚠️ 先等一次「静默」，再注入合成的运行中状态。
@@ -253,7 +265,8 @@
   tstore.setState({ todos: tmk(5, 3) })
   await sleep(200)
   ok(!!tmeter(), '进度条节点稳定（不是被重建）')
-  ok(tmeter().dataset.pct === '60', '勾完变 60%（实际 ' + tmeter().dataset.pct + '）')
+  const meterAfterDone = tmeter()
+  ok(meterAfterDone?.dataset.pct === '60', '勾完变 60%（实际 ' + (meterAfterDone?.dataset.pct ?? 'undefined') + '）')
   ok(qa('.rp-todo.flash').length === 1, '刚勾完那条带 flash（确认反馈）')
 
   /*

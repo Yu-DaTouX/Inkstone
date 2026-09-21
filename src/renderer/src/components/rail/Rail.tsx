@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
+import { BrandMark } from '../shell/BrandMark'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
@@ -9,6 +10,7 @@ import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
+import type { WorkMode } from '../../../../shared/work-mode'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -30,20 +32,20 @@ import { ancestorPaths, useSidebarValue } from './sidebar-state'
  *   · 去掉卡片式边框，全部靠背景色与缩进表达层级
  */
 /**
- * 模式列表（入口先做出来，只有当前模式可选 —— 其余标「即将支持」）。
- *
- * 为什么先只做入口（用户的原话）：模式的**行为**差异（工具集、提示词、
- * 默认思考档……）需要先定清楚，先把入口/文案/交互定下来，
- * 接入时只换这份数据。这也是本项目的惯例：
- * 不做假状态 —— 未接入的项明确写「即将支持」而不是让它看着能用。
+ * 左栏的两档快捷模式，映射到已经接入宿主的工作模式：
+ *   编码 = 自主推进；日常 = 标准执行、信息不足时先问。
+ * 澄清模式仍保留在输入框模式菜单里，避免左栏入口变成三层菜单。
  */
-const MODES = [
-  { id: 'coding', labelKey: 'mode.coding' },
-  { id: 'ask', labelKey: 'mode.daily' }
+const RAIL_MODES = [
+  { id: 'coding', labelKey: 'mode.coding', workMode: 'autonomous' },
+  { id: 'ask', labelKey: 'mode.daily', workMode: 'standard' }
 ] as const
 
-/** 当前模式（暂时只有一个） */
-const MODE_ID = 'coding'
+type RailModeId = (typeof RAIL_MODES)[number]['id']
+
+function railModeForWorkMode(mode: WorkMode): RailModeId {
+  return mode === 'autonomous' ? 'coding' : 'ask'
+}
 /**
  * 左栏默认展开多少个项目（N17）。
  * 超出的收在「更多项目（N）」后面；这只是**显示层**的限制，
@@ -149,8 +151,12 @@ export function Rail() {
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
-  /** 模式菜单（用户要求：软件名加一个菜单用来切换模式，先只做入口） */
-  const [modeMenu, setModeMenu] = useState(false)
+  /** 左栏品牌开关当前对应的两档快捷工作模式。 */
+  const workMode = useStore((s) => s.workMode)
+  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  const setWorkMode = useStore((s) => s.setWorkMode)
+  const activeRailMode = railModeForWorkMode(workMode?.mode ?? defaultWorkMode)
+  const activeRailModeConfig = RAIL_MODES.find((m) => m.id === activeRailMode)!
   const [projectMenu, setProjectMenu] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
@@ -243,18 +249,6 @@ export function Rail() {
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [menuFor, projectMenu, groupMenu])
-
-  /* 模式菜单：点外面关掉（与其它浮层同一套做法） */
-  useEffect(() => {
-    if (!modeMenu) return
-    const close = (): void => setModeMenu(false)
-    // 延后一帧挂，免得打开的那一下点击立刻把它关掉
-    const id = setTimeout(() => document.addEventListener('mousedown', close), 0)
-    return () => {
-      clearTimeout(id)
-      document.removeEventListener('mousedown', close)
-    }
-  }, [modeMenu])
 
   /** 按项目（cwd）分组；当前项目永远排最前，其余按最近活动排 */
   const projects = useMemo(() => {
@@ -737,6 +731,16 @@ export function Rail() {
      * 列表）—— 只看 `sessions` 会漏掉「刚建、还没落盘就切走」的会话，那种情况
      * 下会新建一个空会话，用户之前敲的草稿（按 sessionId 存在运行时缓存里）就丢了。
      */
+    /*
+     * 先把会话列表拉新（实施-09 S3）。
+     *
+     * `pickProjectSession` 的判据 `lastOpenedAt` 是主进程记在布局索引里的，
+     * 而这里的 `sessions` 是**切会话之前**的快照 —— 不刷新的话，「刚才打开的是哪个」
+     * 这层信息根本不在输入里（S3 的反向验证就是这么暴露的：换回旧排序也照样绿，
+     * 因为两条会话都读不到 `lastOpenedAt`）。
+     * 一次目录扫描与解析，切项目本来就慢，这点开销换的是“恢复对的那一个”。
+     */
+    await store.refreshSessions()
     const target = store.pickProjectSession(cwd, projectId)
     if (target) await store.switchSession(target)
     else await store.newSession({ cwd, ...(projectId ? { projectId } : {}), scope: projectId ? 'project' : 'global' })
@@ -772,53 +776,33 @@ export function Rail() {
 
   return (
     <aside className="rail">
-      {/* ---- 顶部：品牌（带模式菜单）+ 动作 ---- */}
+      {/* ---- 顶部：品牌模式开关 + 动作 ---- */}
       <div className="rail-top">
-        {/*
-         * 品牌字 + 模式菜单（用户要求，参考 Codex 的「Codex ⌄」）。
-         *
-         * 「先只做入口」：菜单里列出模式，但除当前模式外都标**未接入** ——
-         * 不做假状态（同左栏头像那个「登录（尚未接入）」的做法）。
-         * 这样入口、交互、文案都定下来了，接入时只需换掉菜单数据。
-         */}
+        {/* 品牌标记同时是二态工作模式开关；标题栏不再重复显示品牌图标。 */}
         <div className="rail-mode-wrap">
           <button
-            className={`rail-mode-btn ${modeMenu ? 'open' : ''}`}
-            onClick={() => setModeMenu((v) => !v)}
-            data-testid="mode-menu-btn"
-            aria-expanded={!!modeMenu}
-            aria-haspopup="menu"
-            title={t('mode.switch')}
+            className={`rail-mode-btn ${activeRailMode === 'coding' ? 'on' : ''}`}
+            onClick={() => {
+              const next = RAIL_MODES.find((m) => m.id !== activeRailMode)!
+              void setWorkMode(next.workMode)
+            }}
+            data-testid="mode-switch"
+            role="switch"
+            aria-checked={activeRailMode === 'coding'}
+            aria-label={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}`}
+            title={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}`}
           >
-            <span className="rail-brand">砚</span>
-            <Icon name="chevron-right" size={12} className="rail-mode-chev" />
+            <span className="rail-brand">
+              <BrandMark size={20} />
+              <span className="rail-brand-name">砚</span>
+            </span>
+            <span className="rail-mode-switch" aria-hidden="true">
+              <span className="rail-mode-value">{t(activeRailModeConfig.labelKey)}</span>
+              <span className="rail-switch-track">
+                <span className="rail-switch-thumb" />
+              </span>
+            </span>
           </button>
-          {modeMenu ? (
-            <div className="rail-mode-menu" role="menu" data-testid="mode-menu">
-              <div className="rmm-head">{t('mode.title')}</div>
-              {MODES.map((m) => (
-                <button
-                  key={m.id}
-                  className={`rmm-item ${m.id === MODE_ID ? 'cur' : ''}`}
-                  role="menuitem"
-                  data-testid={`mode-${m.id}`}
-                  disabled={m.id !== MODE_ID}
-                  onClick={() => {
-                    /* 只有当前模式是可选的；其余明确提示未接入 */
-                    if (m.id === MODE_ID) setModeMenu(false)
-                  }}
-                >
-                  <span className="rmm-dot" aria-hidden />
-                  <span className="rmm-name">{t(m.labelKey)}</span>
-                  <span className="spacer" />
-                  <span className="rmm-tag">
-                    {m.id === MODE_ID ? t('mode.current') : t('mode.soon')}
-                  </span>
-                </button>
-              ))}
-              <div className="rmm-foot">{t('mode.foot')}</div>
-            </div>
-          ) : null}
         </div>
         <span className="rail-spacer" />
         <button
@@ -1385,7 +1369,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
         ) : null}
 
-        {waiting ? <span className="session-status waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" title={t('rail.unread')}>●</span> : null}
+        {waiting ? <span className="session-status waiting" data-testid="rail-waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" data-testid="rail-failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" data-testid="rail-unread" title={t('rail.unread')}>●</span> : null}
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
         <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>

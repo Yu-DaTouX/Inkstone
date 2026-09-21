@@ -20,31 +20,21 @@
 
 /* 1. 令牌 */
 :root {
-  /* ── 字体分三级（DESIGN §2.1）──
-     --font-mono  代码 / diff / 终端 / 路径。等宽栅格对齐的**前提**
-     --font-code  --font-mono 的别名。历史上 chat.css / tools.css 各写过一次，
-                  而它**从没在 tokens 里定义过** —— 那两条 font-family 一直在
-                  静默失效（字体回退到继承值，看着像“样式没生效”）。保留别名
-                  是为了不改那两处的选择器语义。
-     --font-ui    界面外壳：按钮 / 标签 / 列表 / 树 / 状态。保持等宽，这是
-                  「终端骨架」的来源（DESIGN §1 原则 1）。
-     --font-body  正文与多行输入。中文长段落用等宽读起来很累（字距过大），
-                  这里改用可读性优先的无衬线栈；**代码仍是 --font-mono**。
-     三级的分工而不是“全部等宽”或“全部无衬线”：栅格对齐只在需要对齐的
-     地方（代码 / 表格 / diff）是硬需求，正文的硬需求是读得不累。 */
+  /* 墨色工作空间：UI / 正文使用无衬线，代码 / diff / 终端保留等宽栅格。 */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
   --font-code: var(--font-mono);
-  --font-ui: var(--font-mono);
-  --font-body: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-ui: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-body: var(--font-ui);
 
-  /* 基准 12.5px（汉字格 15.00px 整，栅格零偏差）；代码 12px */
-  --fs-xs: 10px;
-  --fs-sm: 11px;
-  --fs-code: 12px;
-  --fs-base: 12.5px;
-  --fs-lg: 14px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-code: 12.5px;
+  --fs-base: 13px;
+  --fs-body: 14px;
+  --fs-lg: 15px;
   --lh-tight: 1.45;
-  --lh-base: 1.65;
+  --lh-base: 1.55;
+  --lh-body: 1.7;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -64,32 +54,28 @@
   --d-section-gap: 3px;  /* 右栏分区之间 */
   --d-message-gap: 32px; /* 消息回合之间（= 原来的 --sp-6） */
 
-  /* 圆角：组件使用分级令牌，胶囊和圆形控件使用 --r-full。
-     ⚠️ 这些是**评审收紧后**的最终值（原本这里是 sm=6/md=8/lg=10/xl=14，
-        后来被 redesign.css 覆盖成现在这套）。归并到这里之后，改圆角
-        只需要改这一处 —— 之前得知道“最后生效的是 redesign 里的那条”。
-        来源与覆盖链见 docs/design/CSS-令牌清单.md。 */
-  --r-xs: 2px;
-  --r-sm: 3px;
-  --r-md: 4px;
-  --r-lg: 6px;
-  --r-xl: 8px;
+  /* 4 / 6 / 8 / 12px 分级；大容器不再使用胶囊式圆角。 */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 12px;
   /* 圆形组件（头像状、开关、滚动条）用 */
   --r-full: 999px;
 
-  --h-titlebar: 36px;
+  --h-titlebar: 40px;
   /*
    * 左栏宽度不在 tokens 里定 —— 它是**布局变量**，由 layout.css 统一管
    * （依赖 --w-rail-user 用户值，并且要按窗口宽度分档夹取）。
    * 这里曾经写死 300px，先后被 redesign 和 layout 覆盖两次，
    * 改它完全看不到效果。
    */
-  --w-status: 328px;
+  --w-status: 320px;
   /* 中栏内容最大宽度。
      曾经是 760px —— 那是有 328px 右栏时定的。右栏搬进设置后中间栏
      多出 328px，760 的上限会让内容像「挤在左边」。放宽到 900。
      （上限仍必要：1920px 下不加限制会行长得读不了） */
-  --w-stream: 900px;
+  --w-stream: 800px;
   --tree-indent: 13px;
   /*
    * 推理省略态的高度上限（2026-09-15 用户确认）。
@@ -105,14 +91,11 @@
 }
 
 html[data-theme='dark'] {
-  /* 调色板对齐 Agents-Anywhere（纯中性灰 R=G=B，色阶跨度大）：
-     之前我用的是偏蓝的灰（#1a1a20）且跨度只有 7~9，
-     视觉上"糊"；中性灰 + 大跨度（13~15）看着更脆、层次更清楚。 */
-  --bg-0: #0a0a0a; /* 主内容区 */
-  --bg-1: #171717; /* 侧栏 / 卡片 */
-  --bg-2: #262626; /* 悬停 / 浮起 */
-  --bg-3: #303030; /* 激活 */
-  --bg-4: #3d3d3d; /* 滚动条 / 输入框 */
+  --bg-0: #151515;
+  --bg-1: #1b1b1a;
+  --bg-2: #222221;
+  --bg-3: #2b2b29;
+  --bg-4: #393936;
 
   /* 描边用**半透明白**而不是实色 ——
      实色边界只在特定底色上对，一挪到卡片上就不对了。
@@ -122,13 +105,13 @@ html[data-theme='dark'] {
   --border-str: rgba(255, 255, 255, 0.16);
   --edge: rgba(255, 255, 255, 0.07);
 
-  --fg: #fafafa;
-  --fg-dim: #d4d4d4;
-  --fg-mute: #a1a1a1;
+  --fg: #ecece8;
+  --fg-dim: #b4b4ac;
+  --fg-mute: #92928a;
 
-  --accent: #4c7ef3;
-  --accent-soft: rgba(76, 126, 243, 0.16);
-  --accent-line: rgba(76, 126, 243, 0.5);
+  --accent: #93a4f4;
+  --accent-soft: rgba(147, 164, 244, 0.16);
+  --accent-line: rgba(147, 164, 244, 0.52);
   --ok: #34d399;
   --ok-soft: rgba(52, 211, 153, 0.16);
   --warn: #fbbf24;
@@ -136,7 +119,7 @@ html[data-theme='dark'] {
   --err: #ff6467;
   --err-soft: rgba(255, 100, 103, 0.16);
   --magenta: #c084fc;
-  --cyan: #22d3ee;
+  --cyan: var(--accent);
   /* --fact / --fact-soft 已删除：它们是记忆模块的「已确认事实」色，
      而记忆模块整体移除后这两个名字在 src/ 与设计稿里都是**零引用**
      （只在自己这一行上出现）。留着一个没人用的语义色只会误导后来人
@@ -151,22 +134,22 @@ html[data-theme='dark'] {
 }
 
 html[data-theme='light'] {
-  --bg-0: #ffffff;
-  --bg-1: #fafafa;
-  --bg-2: #f5f5f5;
-  --bg-3: #ededed;
-  --bg-4: #e0e0e0;
+  --bg-0: #fcfcfa;
+  --bg-1: #f3f3f0;
+  --bg-2: #ffffff;
+  --bg-3: #eaeae6;
+  --bg-4: #deded9;
   --border-soft: rgba(0, 0, 0, 0.07);
   --border: rgba(0, 0, 0, 0.13);
   --border-str: rgba(0, 0, 0, 0.2);
   --edge: rgba(0, 0, 0, 0.04);
   /* 浅色下 whitespace 上「淡」很快变成「读不到」，所以 dim/mute 都比深色主题更黑 */
-  --fg: #0a0a0a;
-  --fg-dim: #333333;
-  --fg-mute: #5f5f5f;
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.1);
-  --accent-line: rgba(37, 99, 235, 0.4);
+  --fg: #252522;
+  --fg-dim: #66665f;
+  --fg-mute: #73736b;
+  --accent: #5264c8;
+  --accent-soft: rgba(82, 100, 200, 0.1);
+  --accent-line: rgba(82, 100, 200, 0.42);
   --ok: #059669;
   --ok-soft: rgba(5, 150, 105, 0.1);
   --warn: #b45309;
@@ -174,7 +157,7 @@ html[data-theme='light'] {
   --err: #dc2626;
   --err-soft: rgba(220, 38, 38, 0.1);
   --magenta: #9333ea;
-  --cyan: #0891b2;
+  --cyan: var(--accent);
 
   /* 代码块：白底上不能再用深色底（否则就是“白页面上一个黑框”）。
      用 GitHub Light 的浅灰底 + 深色字，语法色在 highlight.css 里另给。」 */

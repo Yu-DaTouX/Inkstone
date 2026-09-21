@@ -49,6 +49,8 @@
     toolDetail: false,
     streamWidth: 940,
     autonomous: false,
+    /* 工作模式（实施-05）：新会话默认值；界面在未收到推送时按它渲染 */
+    defaultWorkMode: 'standard',
     sound: { enabled: false, volume: 0.4, notifications: true, events: { done: true, question: true, error: true } }
   }
 

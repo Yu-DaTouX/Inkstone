@@ -119,20 +119,32 @@
 
     /* ================= 3. 任务清单来自会话文件（只读） ================= */
     log('\n--- 3. 共存时的任务清单来源 ---')
-    const target = store
-      .getState()
-      .sessions.find((s) => s.path.includes('yan-todo-fixture') || s.title.includes('YAN-TODO'))
+    /* 前置场景可能刚改过会话标题 / 视图；先拿一次主进程索引，避免在
+     * 旧的渲染投影里选到目标但随后读的是上一条会话的任务状态。 */
+    await store.getState().refreshSessions?.()
+    const sessionRows = store.getState().sessions
+    const target = sessionRows.find((s) => s.path.includes('yan-todo-fixture') || s.title.includes('YAN-TODO'))
     if (!target) {
       log('  ✗ fixture 里没有带任务的会话 —— 场景前提不成立')
       return out.join('\n')
     }
-    await store.getState().switchSession(target.path)
     /*
-     * 判据钉在**本次要断言的字段**上：切会话时 runtime 投影会先把
-     * `todoHistory` 清空，而 `todos` 可能还带着上一条投影的值 ——
-     * 只等 `todos` 会读到「有清单、历史空」的中间态（实测过这一次假红）。
+     * 身份与内容分两步确认：切会话时旧 runner 的 runtime 推送可能迟到，
+     * 只等 `todos` 会读到上一条投影的中间态（全量运行中确实撞到过一次）。
+     * 全量批次还可能让第一次选择落在迟到帧上；最多重走两次同一个稳定路径，
+     * 不放宽断言，也不接受“看起来像任务”的其它会话。
      */
-    await until(() => store.getState().todos.length === 4, 15000)
+    let targetReady = false
+    let tasksReady = false
+    for (let attempt = 0; attempt < 3 && !tasksReady; attempt++) {
+      if (attempt > 0) await store.getState().refreshSessions?.()
+      await store.getState().switchSession(target.path)
+      targetReady = await until(() => store.getState().session?.sessionFile === target.path, 10000)
+      tasksReady = await until(
+        () => targetReady && store.getState().session?.sessionFile === target.path && store.getState().todos.length === 4,
+        10000
+      )
+    }
     const todos = store.getState().todos
     log('  todos = ' + JSON.stringify(todos.map((t) => t.text)))
     ok(todos.length === 4, `读到 fixture 会话里的 4 条（实际 ${todos.length}）`)
@@ -199,8 +211,9 @@
       log('  （只有一个会话，跳过）')
     } else {
       await store.getState().switchSession(other.path)
-      await until(() => store.getState().todos.length === 0, 15000)
-      ok(store.getState().todos.length === 0, '切到别的会话后清单清空（不拿上一个会话的残留冒充）')
+      const otherReady = await until(() => store.getState().session?.sessionFile === other.path, 15000)
+      await until(() => otherReady && store.getState().todos.length === 0, 15000)
+      ok(otherReady && store.getState().todos.length === 0, '切到别的会话后清单清空（不拿上一个会话的残留冒充）')
     }
 
     return out.join('\n')

@@ -11,11 +11,14 @@
  */
 export function runRunnerTests(ok, RunnerRegistry) {
   const mkAgent = () => {
-    const calls = { start: 0, stop: 0, switchSession: [], newSession: 0 }
+    const calls = { start: 0, stop: 0, switchSession: [], newSession: 0, restoredQueues: [] }
     return {
       calls,
       state: { sessionId: 's', sessionFile: undefined, isAgentRunning: false, isStreaming: false, isCompacting: false, cwd: 'C:/p' },
       pending: 0,
+      queue: { steering: [], followUp: [] },
+      capabilityGeneration: 1,
+      restoreResult: { ok: true },
       /** 直执行 shell 是否在跑（L05：它也算“忙”，见 runners.ts 的 busy） */
       bashRunning: false,
       getState() {
@@ -29,6 +32,9 @@ export function runRunnerTests(ok, RunnerRegistry) {
       },
       getConn() {
         return { state: 'ready', detail: '' }
+      },
+      setRunnerGeneration(generation) {
+        this.capabilityGeneration = generation
       },
       async start() {
         calls.start++
@@ -46,6 +52,15 @@ export function runRunnerTests(ok, RunnerRegistry) {
         calls.newSession++
         this.state = { ...this.state, sessionFile: undefined }
         return { ok: true }
+      },
+      queueSnapshot() {
+        return structuredClone(this.queue)
+      },
+      async restoreQueueSnapshot(snapshot) {
+        calls.restoredQueues.push(structuredClone(snapshot))
+        if (!this.restoreResult.ok) return this.restoreResult
+        this.queue = structuredClone(snapshot)
+        return { ok: true }
       }
     }
   }
@@ -55,9 +70,10 @@ export function runRunnerTests(ok, RunnerRegistry) {
     const agents = []
     const reg = new RunnerRegistry({
       limit: 2,
-      createAgent: (id) => {
+      createAgent: (id, _cwd, generation) => {
         const a = mkAgent()
         a.id = id
+        if (generation !== undefined) a.setRunnerGeneration(generation)
         agents.push(a)
         made.push(a)
         return a
@@ -87,6 +103,8 @@ export function runRunnerTests(ok, RunnerRegistry) {
 
       /* ---- 3. 忙碌实例不被复用：另开一个 ---- */
       first.state = { ...first.state, isAgentRunning: true }
+      ok(reg.hasBusyCwd('c:/a/') === true, '按规范化 cwd 可识别忙碌实例（包管理必须据此拒绝变更）')
+      ok(reg.hasBusyCwd('C:/other') === false, '不同 cwd 不受忙碌实例影响')
       const r3 = await reg.select({ cwd: 'C:/b', sessionFile: 'C:/s2.jsonl' })
       ok(r3.ok && r3.via === 'new', '实例忙着时不会复用/打断它（另开实例）', `via=${r3.via}`)
       ok(first.calls.stop === 0, '忙碌实例没有被停止')
@@ -121,6 +139,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const b1 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z1.jsonl' })
         ok(b1.ok, '先建一个实例用于 shell 忙碌判定')
         madeB[0].bashRunning = true
+        ok(regB.hasBusyCwd('c:/z/') === true, 'cwd 忙碌查询也包含直执行 bash')
         const b2 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
         ok(!b2.ok, '直执行 shell 在跑时，同 cwd 的切换被拒绝', JSON.stringify(b2))
         ok(/同一工作目录/.test(b2.error ?? ''), '理由仍是“同一工作目录已有运行中的会话”', JSON.stringify(b2.error))
@@ -146,6 +165,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(first.calls.switchSession.includes('C:/s3.jsonl'), '复用 = 让它切到新会话')
       ok(first.calls.stop === 0, '同项目复用不会停止实例（跨项目换进程见第 13 组）')
       ok((r5.generation ?? 0) > 1, '复用会话时 generation 递增')
+      ok(first.capabilityGeneration === r5.generation, '复用后 capability 守卫同步到当前 generation')
       const envelope = reg.runtimeOf(first.id)
       ok(envelope?.runId === first.id && envelope?.generation === r5.generation, '运行时封套包含 runId 与当前代次')
 
@@ -224,6 +244,48 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(agents[1].calls.switchSession.includes('C:/s-p2.jsonl'), '新进程切到目标会话')
         ok(reg.activeRunner()?.cwd === 'C:/p2', '注册表里的 cwd 指向新项目', reg.activeRunner()?.cwd)
         ok((moved.generation ?? 0) > 1, '换项目同样让 generation 递增（迟到事件失效）')
+        ok(agents[1].capabilityGeneration === moved.generation, '跨项目替代实例带着注册表的新 generation 启动')
+      }
+
+      /* ---- 13b. 后台定向会话不得改变桌面当前视图（远程 send） ---- */
+      {
+        const { reg, agents } = make()
+        const foreground = await reg.select({ cwd: 'C:/foreground', sessionFile: 'C:/foreground.jsonl' })
+        const background = await reg.select({
+          cwd: 'C:/background',
+          sessionFile: 'C:/background.jsonl',
+          activate: false
+        })
+        ok(background.ok && background.via === 'new', '后台定向发送创建独立 runner，不复用前台实例')
+        ok(background.id !== foreground.id && agents.length === 2, '前后台会话各有自己的实例')
+        ok(reg.activeRunnerId === foreground.id, '创建后台 runner 后桌面当前视图保持不变', reg.activeRunnerId)
+        const repeated = await reg.select({
+          cwd: 'C:/background',
+          sessionFile: 'C:/background.jsonl',
+          activate: false
+        })
+        ok(repeated.ok && repeated.via === 'hit' && repeated.id === background.id, '后台定向发送复用同一目标 runner')
+        ok(reg.activeRunnerId === foreground.id, '命中后台 runner 也不会抢走桌面视图', reg.activeRunnerId)
+        const nextBackground = await reg.select({
+          cwd: 'C:/background-next',
+          sessionFile: 'C:/background-next.jsonl',
+          activate: false
+        })
+        ok(nextBackground.ok && nextBackground.via === 'reuse' && nextBackground.id === background.id, '只复用非前台空闲 runner 来承接另一个后台会话')
+        ok(reg.activeRunnerId === foreground.id, '跨项目复用后台 runner 仍保留前台视图', reg.activeRunnerId)
+      }
+      {
+        const { reg, agents } = make()
+        const foreground = await reg.select({ cwd: 'C:/same', sessionFile: 'C:/same-front.jsonl' })
+        const background = await reg.select({
+          cwd: 'C:/same',
+          sessionFile: 'C:/same-back.jsonl',
+          activate: false
+        })
+        agents[0].state = { ...agents[0].state, isAgentRunning: true }
+        ok(reg.hasBusyCwd('C:/same', background.id), '定向发送可检测目标外同 cwd runner 正在工作')
+        ok(!reg.hasBusyCwd('C:/same', foreground.id), '按 runId 排除后不会把目标自身误判为冲突')
+        ok(reg.activeRunnerId === foreground.id, '同 cwd 冲突查询不改变桌面视图')
       }
 
       /* ---- 14. 跨项目换进程失败时回退，不把旧实例弄丢 ---- */
@@ -245,6 +307,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(agents[0].calls.stop === 0, '失败时旧进程没有被停掉')
         ok(agents[1].calls.stop === 1, '起不来的半个进程被收掉')
         ok(first.id === reg.activeRunner()?.id, '实例身份没有被换掉')
+        ok(agents[0].capabilityGeneration === first.generation, '跨项目启动失败后旧实例 capability generation 回滚')
       }
       /* ---- 15. 新实例切换失败：必须回收进程，不能只摘登记（R02） ---- */
       {
@@ -310,6 +373,113 @@ export function runRunnerTests(ok, RunnerRegistry) {
           ok(reg.activeRunner()?.id === firstId, `${mode}：activeId 已还原`)
           await reg.stopAll()
         }
+      }
+
+      /* ---- 17. 受管资源激活只重载目标 runner，并保住会话与队列 ---- */
+      {
+        const agents = []
+        const reg = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id, cwd, generation) => {
+            const a = mkAgent()
+            a.id = id
+            a.generation = generation
+            a.state = { ...a.state, cwd }
+            agents.push(a)
+            return a
+          }
+        })
+        const target = await reg.select({ cwd: 'C:/same', projectId: 'p', sessionFile: 'C:/same-target.jsonl' })
+        const other = await reg.select({
+          cwd: 'C:/same',
+          projectId: 'p',
+          sessionFile: 'C:/same-other.jsonl',
+          activate: false
+        })
+        /* 先让 r2 暂时忙起来，防止创建第三个实例时按正常策略复用它。 */
+        reg.agentOf(other.id).state = { ...reg.agentOf(other.id).state, isAgentRunning: true }
+        const unrelated = await reg.select({
+          cwd: 'C:/elsewhere',
+          projectId: 'q',
+          sessionFile: 'C:/elsewhere.jsonl',
+          activate: false
+        })
+        const originalTarget = reg.agentOf(target.id)
+        const otherAgent = reg.agentOf(other.id)
+        const unrelatedAgent = reg.agentOf(unrelated.id)
+        originalTarget.queue = { steering: ['先处理 A'], followUp: ['之后处理 B'] }
+
+        const sameCwdBusy = await reg.restartOne(target.id)
+        ok(!sameCwdBusy.ok && /同一工作目录/.test(sameCwdBusy.error ?? ''), '同 cwd 的其它 runner 忙时拒绝重载')
+        ok(agents.length === 3 && originalTarget.calls.stop === 0, '拒绝期间没有创建替代进程或停止旧实例')
+
+        otherAgent.state = { ...otherAgent.state, isAgentRunning: false }
+        unrelatedAgent.state = { ...unrelatedAgent.state, isAgentRunning: true }
+        const restartRequest = reg.restartOne(target.id)
+        const duplicateRestart = reg.restartOne(target.id)
+        ok(restartRequest === duplicateRestart, '同一 runner 的并发重载请求合并为同一操作')
+        const restarted = await restartRequest
+        const replacement = reg.agentOf(target.id)
+        ok(restarted.ok && restarted.id === target.id, '目标 runner 成功单独重载且身份稳定')
+        ok(replacement !== originalTarget && agents.length === 4, '目标换成新 AgentController')
+        ok(replacement.generation === restarted.generation, '替代 AgentController 获得注册表即将启用的 generation')
+        ok(replacement.state.sessionFile === 'C:/same-target.jsonl', '新进程载回同一会话文件')
+        ok(
+          JSON.stringify(replacement.queue) === JSON.stringify({ steering: ['先处理 A'], followUp: ['之后处理 B'] }),
+          'steering / follow-up 队列都恢复且顺序不变',
+          JSON.stringify(replacement.queue)
+        )
+        ok(originalTarget.calls.stop === 1, '替代实例就绪后才停止目标旧进程')
+        ok(otherAgent.calls.stop === 0 && unrelatedAgent.calls.stop === 0, '同项目其它 runner 与无关目录 runner 均未停止')
+        ok(unrelatedAgent.state.isAgentRunning && reg.agentOf(unrelated.id) === unrelatedAgent, '重载不影响无关目录正在运行的任务')
+        ok(reg.activeRunnerId === target.id, '重载保留当前前台 runner')
+        ok((restarted.generation ?? 0) > (target.generation ?? 0), '重载递增 generation 以隔离迟到事件')
+      }
+
+      /* ---- 18. 新实例恢复队列失败时回滚到仍存活的旧实例 ---- */
+      {
+        const agents = []
+        const reg = new RunnerRegistry({
+          createAgent: (id, cwd) => {
+            const a = mkAgent()
+            a.id = id
+            a.state = { ...a.state, cwd }
+            if (agents.length === 1) a.restoreResult = { ok: false, error: '队列恢复失败' }
+            agents.push(a)
+            return a
+          }
+        })
+        const selected = await reg.select({ cwd: 'C:/rollback', sessionFile: 'C:/rollback.jsonl' })
+        const previous = reg.agentOf(selected.id)
+        previous.queue = { steering: ['未发出的消息'], followUp: [] }
+        const failed = await reg.restartOne(selected.id)
+        ok(!failed.ok && /队列恢复失败/.test(failed.error ?? ''), '队列恢复失败让重载明确失败')
+        ok(reg.agentOf(selected.id) === previous, '失败后注册表恢复旧实例')
+        ok(previous.calls.stop === 0, '失败回滚时旧进程保持存活')
+        ok(agents[1].calls.stop === 1, '失败的替代进程已回收')
+        ok(reg.runtimeOf(selected.id)?.generation === selected.generation, '失败回滚恢复原 generation')
+      }
+
+      /* ---- 19. 持久能力目标跨 app runner id 变化按会话身份恢复 ---- */
+      {
+        const { reg } = make()
+        const selected = await reg.select({ cwd: 'C:/durable', projectId: 'project-durable', sessionFile: 'C:/sessions/durable.jsonl' })
+        const snapshot = reg.activationSnapshot({
+          runnerId: 'stale-runner-id',
+          cwd: 'c:/DURABLE/',
+          sessionFile: 'c:/SESSIONS/DURABLE.JSONL',
+          projectId: 'project-durable'
+        })
+        ok(snapshot?.id === selected.id, '能力目标：旧 runner id 失效时按同 cwd / session / project 找回当前实例')
+        ok(snapshot?.ready === true && snapshot.busy === false, '能力目标：恢复快照报告真实 ready / idle 状态')
+        const wrongProject = reg.activationSnapshot({
+          runnerId: selected.id,
+          cwd: 'C:/durable',
+          sessionFile: 'C:/sessions/durable.jsonl',
+          projectId: 'another-project'
+        })
+        ok(wrongProject === null, '能力目标：projectId 漂移不能只凭会话路径通过')
+        await reg.stopAll()
       }
     })()
   }

@@ -11,12 +11,14 @@ import { AuthTab } from './AuthTab'
 import { ContextTab } from './ContextTab'
 import { KnowledgeTab } from './KnowledgeTab'
 import { PackagesTab } from './PackagesTab'
+import { CapabilitiesTab } from './CapabilitiesTab'
 
 export type SettingsTab =
   | 'auth'
   | 'appearance'
   | 'context'
   | 'knowledge'
+  | 'capabilities'
   | 'sound'
   | 'packages'
   | 'status'
@@ -85,6 +87,7 @@ export function Settings({
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'context', label: t('set.context'), icon: 'layers' },
     { id: 'knowledge', label: t('set.knowledge'), icon: 'checklist' },
+    { id: 'capabilities', label: t('set.capabilities'), icon: 'sparkles' },
     { id: 'sound', label: t('set.sound'), icon: 'sparkles' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'packages', label: t('set.packages'), icon: 'layers' },
@@ -137,6 +140,8 @@ export function Settings({
             <ContextTab />
           ) : tab === 'knowledge' ? (
             <KnowledgeTab />
+          ) : tab === 'capabilities' ? (
+            <CapabilitiesTab />
           ) : tab === 'sound' ? (
             <SoundTab />
           ) : tab === 'packages' ? (
@@ -205,6 +210,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
+  /* 工作模式（实施-05）：默认值只影响新会话；Tab 快切是全局输入偏好 */
+  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  const workModeTab = useStore((s) => s.settings?.workModeTab !== false)
   /** 界面密度（方案 A1） */
   const density = useStore((s) => s.settings?.density) ?? 'standard'
   const zoom = useStore((s) => s.zoom)
@@ -334,6 +342,46 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 
       <div className="set-row">
         <div className="set-label">
+          <div className="set-name">{t('set.defaultWorkMode')}</div>
+          <div className="set-desc">{t('set.defaultWorkModeDesc')}</div>
+        </div>
+        <div className="set-ctl seg" data-testid="set-default-work-mode">
+          {(['standard', 'clarify', 'autonomous'] as const).map((mode) => (
+            <button
+              key={mode}
+              className={`seg-btn ${defaultWorkMode === mode ? 'sel' : ''}`}
+              data-mode={mode}
+              data-on={defaultWorkMode === mode ? '1' : '0'}
+              title={t(`workMode.desc.${mode}`)}
+              onClick={() => void patchSettings({ defaultWorkMode: mode })}
+            >
+              {t(`workMode.label.${mode}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
+          <div className="set-name">{t('set.workModeTab')}</div>
+          <div className="set-desc">{t('set.workModeTabDesc')}</div>
+        </div>
+        <div className="set-ctl">
+          {/* 开 = 不落盘（“没改过”的默认态），关才写 false —— 见 AppSettings.workModeTab */}
+          <button
+            className={`seg-btn ${workModeTab ? 'sel' : ''}`}
+            onClick={() => void patchSettings({ workModeTab: !workModeTab })}
+            data-testid="set-work-mode-tab"
+            data-on={workModeTab ? '1' : '0'}
+          >
+            <Icon name="sparkle" size={12} />
+            <span>{workModeTab ? t('set.on') : t('set.off')}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div className="set-label">
           <div className="set-name">{t('set.streamWidth')}</div>
           <div className="set-desc">{t('set.streamWidthDesc')}</div>
           <div className="set-desc set-num" data-testid="set-stream-width-now">
@@ -442,7 +490,6 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 /** 主题存在 App 的 state + 主进程设置里；这里通过事件让 App 处理 */
 function useThemeSetter(): (t: 'dark' | 'light') => void {
   return (next) => {
-    document.documentElement.dataset.theme = next
     try {
       localStorage.setItem('yan.theme', next)
     } catch {

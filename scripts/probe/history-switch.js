@@ -109,7 +109,10 @@
   const unsub = store.subscribe((s, p) => {
     if (s.messages !== p.messages && s.messages.length !== p.messages.length) {
       if (p.messages.length > 0 && s.messages.length === 0) dipped = true
-      trans.push(`messages ${p.messages.length}→${s.messages.length} peeked=${s.peekedPath ? 'yes' : 'no'}`)
+      trans.push(
+        `messages ${p.messages.length}→${s.messages.length} peeked=${s.peekedPath ? 'yes' : 'no'}` +
+          ` runner=${s.activeRunnerId ?? '-'} sid=${String(s.session?.sessionId ?? '').slice(0, 8)}`
+      )
     }
   })
   const peeked = await until(

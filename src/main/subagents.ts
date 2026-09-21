@@ -42,6 +42,23 @@ import {
 const MAX_CONCURRENT = 2
 /** 单次运行上限：到点标记失败并杀进程，避免僵尸任务占着额度 */
 const RUN_TIMEOUT_MS = 10 * 60 * 1000
+/**
+ * 实际用的运行上限。
+ *
+ * `YAN_SUBAGENT_TIMEOUT_MS` 只为测试能真跑一次超时分支（真实验证等不起 10 分钟）——
+ * 与 `YAN_AUTO_CONTINUE` 同一个先例；不设时就是上面那个常量。
+ */
+function runTimeoutMs(): number {
+  const override = Number(process.env.YAN_SUBAGENT_TIMEOUT_MS)
+  return Number.isFinite(override) && override > 0 ? override : RUN_TIMEOUT_MS
+}
+
+/** 超时提示要报**实际上限**：测试把它压到几百毫秒时不能再写「超过 10 分钟」 */
+function runTimeoutText(ms: number): string {
+  if (ms >= 60_000) return `运行超时（超过 ${Math.round(ms / 60_000)} 分钟）`
+  if (ms >= 1_000) return `运行超时（超过 ${Math.round(ms / 1000)} 秒）`
+  return `运行超时（超过 ${ms} 毫秒）`
+}
 /** 转录最多保留多少条 */
 const MAX_TRANSCRIPT = 200
 /**
@@ -90,6 +107,11 @@ interface Run extends SubagentRun {
   msgSeq: number
   /** 正在流式的那条消息（message_start 打开、message_end 关闭） */
   streamingId?: string
+  /**
+   * 这一轮最后一个 `stopReason`（pi 把「模型返回错误」只放在这里）。
+   * 子代理以前不看它，于是模型失败会被 settled 当成「已完成」（实测 2026-09-19）。
+   */
+  stopReason?: string
 }
 
 export interface SubagentOptions {
@@ -255,7 +277,12 @@ export class SubagentController {
       timer: setTimeout(() => undefined, 0)
     }
     clearTimeout(run.timer)
-    run.timer = setTimeout(() => void this.fail(id, '运行超时（超过 10 分钟）'), RUN_TIMEOUT_MS)
+    /*
+     * 上限在**排定时就固定**（而不是等回调里再读 env）：
+     * 否则测试提前清掉覆盖值时，提示会写成另一个数。
+     */
+    const timeoutMs = runTimeoutMs()
+    run.timer = setTimeout(() => void this.fail(id, runTimeoutText(timeoutMs)), timeoutMs)
 
     rpc.on('event', (evt: Record<string, unknown>) => this.handleEvent(run, evt))
     rpc.on('exit', () => {
@@ -570,6 +597,16 @@ export class SubagentController {
       if (!raw) return
 
       /*
+       * 先记住这一轮的结束原因。
+       *
+       * pi 不会给「模型失败」发一个单独的 error 事件：回合照常走到
+       * `agent_settled`，错误只体现在 assistant 消息的 `stopReason` 上。
+       * 不记住它，settled 就无法分辨「真答完了」与「模型报错了」
+       *（实测：坏模型名下子代理显示「已完成」、`error=null`）。
+       */
+      if (raw.role === 'assistant' && raw.stopReason) run.stopReason = raw.stopReason
+
+      /*
        * `toolResult` 不是新消息，而是对已有工具调用的**回填**（也不占用序号）。
        * 主会话的历史回放（normalizeHistory）就是这么做的；子代理这边原先
        * 直接 push，于是同一个调用在详情面板里显示成两条（一条默认 ok、
@@ -622,9 +659,18 @@ export class SubagentController {
       if (run.settled) return
       run.settled = true
       clearTimeout(run.timer)
-      run.status = run.status === 'cancelled' ? 'cancelled' : 'done'
+      /*
+       * 模型自己失败也要如实落成 `error`（L03 尾巴）。
+       *
+       * 判据是 `stopReason === 'error'`，而不是「转录里有没有文本」：
+       * 失败回合的 assistant 消息往往为空文本，拿空文本判会把空回复
+       * 误判成失败；反过来只看 settled 则把失败当成功。
+       */
+      const modelFailed = run.status !== 'cancelled' && run.stopReason === 'error'
+      run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
       run.endedAt = Date.now()
-      run.latestActivity = '已完成'
+      if (modelFailed) run.error = run.error ?? '模型返回错误（这一轮没有产出可用结果）'
+      run.latestActivity = modelFailed ? '模型返回错误' : '已完成'
       this.emit(run)
       /*
        * 跑完的子代理进程必须收掉（D16）。

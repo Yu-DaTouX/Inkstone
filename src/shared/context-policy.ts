@@ -418,6 +418,24 @@ export const POLICY_REARM_RATIO = 0.9
  */
 export const POLICY_REARM_MS = 5 * 60_000
 
+/**
+ * 策略发起的压缩**成功结束后**重新上膛。
+ *
+ * 为什么需要（2026-09-19 压力测试发现）：`armed` 的恢复原本只靠「用量回落到线下」
+ * 或 5 分钟重试窗口。当工作集上限接近、甚至小于「系统提示 + 工具定义」的基线开销时
+ * （测试通道会把工作集压到几千 token；真实用户也可能把窗口调得很小），压缩完成后
+ * `tokens` 仍然高于 `工作集 × 0.9` —— 于是 `armed` 永远回不来，策略退化成
+ * **每 5 分钟才压一次**：22 个连续回合只压了 2 次，转录涨到工作集的 3 倍。
+ *
+ * 而「压缩成功结束」本身就是上下文一定变小了的确凿证据（pi 的 `compaction_end`
+ * 带 `tokensBefore` / `estimatedTokensAfter`）。此时重新上膛，让下一次过线由
+ * 30 秒冷却约束，而不是由 5 分钟兜底窗口约束。
+ * 只认 `completed`：失败 / 被取消的压缩没有让上下文变小，仍按原规则等回落。
+ */
+export function rearmAfterCompaction(state: ContextPolicyState): ContextPolicyState {
+  return state.armed ? state : { ...state, armed: true }
+}
+
 export interface ContextPolicyState {
   /** 可以触发一次新的压缩（回落到线下后重新为 true） */
   armed: boolean

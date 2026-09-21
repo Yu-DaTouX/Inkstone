@@ -60,6 +60,15 @@ export interface ReadResult {
   bytes: number
   /** 会话 id（文件头 `type:"session"` 那条；旧文件读不到就不给） */
   sessionId?: string
+  /**
+   * 这段历史由几个会话文件拼成（实施-05 S5b-4）。
+   *
+   * `>1` 说明这条会话是**交接过的链**（后台两份 JSONL、前端一条时间线），
+   * 界面靠它知道「现在看到的不是单个文件」。
+   */
+  segments?: number
+  /** 链上读不到的段数（文件被删 / 移走）。**不静默丢段**，如实计数 */
+  missing?: number
 }
 
 /**

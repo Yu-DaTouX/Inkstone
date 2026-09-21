@@ -3,7 +3,7 @@
  *
  * 断言三件事：
  *   ① 设置里的 streamWidth 会写进 CSS 变量 --w-stream，并被内容列采用
- *   ② 0 = 恢复设计默认（变量被移除，回到 tokens.css 的 900px）
+ *   ② 0 = 恢复设计默认（变量被移除，回到 tokens.css 的 800px）
  *   ③ 导航轨（消息指引柄）在宽度变化后重新测量、仍贴在正文左侧
  *      （这正是用户特意提醒的「注意消息指引柄的位置」）
  */
@@ -76,7 +76,7 @@
     document.documentElement.style.getPropertyValue('--w-stream') === '',
     '内联 --w-stream 已被移除（回落到设计默认值）'
   )
-  ok(contentMax() === '900px', `内容列回到设计默认 900px（实际 ${contentMax()}）`)
+  ok(contentMax() === '800px', `内容列回到设计默认 800px（实际 ${contentMax()}）`)
 
   out.push('')
   out.push('=== 4. 设置里的滑块 ===')

@@ -22,8 +22,8 @@
  * "安排安全的生效时机"，代价是用户要多点一下。
  */
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 
 /** 一个已登记的包在 settings.json 里的样子（`packages` 数组的元素） */
@@ -225,6 +225,8 @@ export function validatePackageSource(source: string): string | null {
 export interface PackageContext {
   /** 这个目录有没有跑着的任务（装/卸会让扩展集合变化，别在有回合时动手） */
   hasRunningTask?: (cwd: string) => boolean
+  /** 项目级 pi 包写入前必须已有用户明确保存的项目信任；不能靠 --approve 绕过。 */
+  isProjectTrusted?: (cwd: string) => boolean | Promise<boolean>
   /**
    * pi 的 CLI 入口。**必须**由 index.ts 用 resolvePi() 解析后注入 ——
    * 用户可能用设置项 piBin 覆盖或用系统安装，这里不能自己拼内置路径，
@@ -248,7 +250,11 @@ export function configurePackageContext(next: PackageContext): void {
   ctx = next
 }
 
-function runPi(args: string[], cwd: string): Promise<{ ok: boolean; output: string }> {
+function runPi(
+  args: string[],
+  cwd: string,
+  envOverrides: Record<string, string | undefined> = {}
+): Promise<{ ok: boolean; output: string }> {
   const bin = ctx.bin?.() ?? null
   if (!bin) {
     return Promise.resolve({ ok: false, output: '找不到 pi 的可执行入口（resolvePi 没解析出来）' })
@@ -265,6 +271,7 @@ function runPi(args: string[], cwd: string): Promise<{ ok: boolean; output: stri
         encoding: 'utf8',
         env: {
           ...process.env,
+          ...envOverrides,
           /* 与 Yan 启动 pi 时同一个 agent 目录 —— 否则装的是一处、跑的是另一处 */
           PI_CODING_AGENT_DIR: agentDirNow(),
           ELECTRON_RUN_AS_NODE: '1',
@@ -277,6 +284,84 @@ function runPi(args: string[], cwd: string): Promise<{ ok: boolean; output: stri
       }
     )
   })
+}
+
+/**
+ * 由接入事务调用的精确、本地、项目级 pi 包安装。
+ *
+ * 与普通设置页安装分开：来源必须位于传入的受管 staging 根内，manifest 身份须与
+ * prepare 锁定的一致，参数由宿主构造，并且默认通过 npm 的 ignore-scripts 关闭
+ * 生命周期脚本。允许脚本只能来自绑定到候选指纹 + 项目的单独授权记录。
+ */
+export async function installManagedPiPackage(request: {
+  sourceDir: string
+  managedRoot: string
+  cwd: string
+  name: string
+  version: string
+  allowLifecycleScripts: boolean
+}): Promise<PackageActionResult> {
+  const sourceDir = resolve(String(request.sourceDir ?? ''))
+  const managedRoot = resolve(String(request.managedRoot ?? ''))
+  const rel = relative(managedRoot, sourceDir)
+  if (!isAbsolute(request.sourceDir) || !rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return { ok: false, error: '受管包路径无效（来源必须位于该事务的 staging 目录内）' }
+  }
+  try {
+    if (lstatSync(sourceDir).isSymbolicLink() || !lstatSync(sourceDir).isDirectory()) {
+      return { ok: false, error: '受管包目录必须是普通目录，拒绝符号链接' }
+    }
+    const realRoot = realpathSync(managedRoot)
+    const realSource = realpathSync(sourceDir)
+    const realRel = relative(realRoot, realSource)
+    if (!realRel || realRel === '..' || realRel.startsWith(`..${sep}`) || isAbsolute(realRel)) {
+      return { ok: false, error: '受管包目录真实路径逃出了 staging 根' }
+    }
+    const manifestPath = join(realSource, 'package.json')
+    const manifestInfo = lstatSync(manifestPath)
+    const manifest = readJson<{ name?: unknown; version?: unknown }>(manifestPath)
+    if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile() || manifest?.name !== request.name || manifest.version !== request.version) {
+      return { ok: false, error: 'staging 内 package.json 与已固定的包名 / 版本不一致' }
+    }
+    const cwd = String(request.cwd ?? '')
+    if (!cwd) return { ok: false, error: '缺少当前项目目录，拒绝改为用户级安装' }
+    if (ctx.hasRunningTask?.(cwd)) {
+      return {
+        ok: false,
+        error: '这个目录仍有会话在运行，等待安全边界后再安装',
+        detail: 'pi 包在启动时加载；不能在该项目任何 runner 忙碌时更改项目包配置。'
+      }
+    }
+    if (!(await ctx.isProjectTrusted?.(cwd))) {
+      return {
+        ok: false,
+        error: '当前项目尚未获 Pi 项目信任；请先在环境菜单中由你显式信任该目录，再重试安装',
+        detail: '拒绝用 --approve 临时扩大本次命令的信任范围。Pi 安装命令只允许在 trust.json 已明确包含该项目时修改项目级包配置。'
+      }
+    }
+    const env: Record<string, string | undefined> = {
+      /* npm lifecycle 脚本与是否加载包代码是两件事；默认禁用脚本并不构成沙箱。 */
+      npm_config_ignore_scripts: request.allowLifecycleScripts ? 'false' : 'true'
+    }
+    /* 项目信任已由用户在 trust.json 明确保存；不使用 --approve / --no-approve 覆盖它。 */
+    const installed = await runPi(['install', realSource, '-l'], cwd, env)
+    if (!installed.ok) return { ok: false, error: 'pi 项目级包安装失败', detail: installed.output }
+    const listing = listPackages(cwd)
+    const match = listing.entries.find(
+      (entry) => entry.scope === 'project' && entry.name === request.name && entry.version === request.version && entry.installed
+    )
+    if (!listing.ok || !match) {
+      return {
+        ok: false,
+        error: 'pi 返回成功，但当前项目清单未确认到固定版本的已安装包',
+        detail: installed.output,
+        listing
+      }
+    }
+    return { ok: true, output: installed.output || 'ok', listing }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /**

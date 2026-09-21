@@ -767,6 +767,41 @@ export async function runContextTransformTests(ok, deps) {
     delete process.env.YAN_CONTEXT_POLICY
   }
 
+  /* ============ L. 请求前预算诊断（实施-05 S4） ============ */
+  console.log('\n— L. 预算驱动清扫：过工作集线时跳过收益门槛 —')
+  {
+    const branch = branchFixture()
+    const messages = messagesOf(branch)
+    /*
+     * 门槛高到「常规判定永远不动手」：所以下面那次清扫
+     * **只可能**是预算驱动的（S4 要证的正是这条接线）。
+     */
+    const highThreshold = {
+      recentTail: { target: 1, max: 1 },
+      sweep: { minTokens: 10, minReclaimTokens: 1_000_000_000, minReclaimRatio: 1 }
+    }
+    const tombstonesOf = (out) => (out?.messages ?? []).filter((m) => T.isTombstoneText(T.messageText(m))).length
+
+    /* 对照 A：窗口未知 → 预算不生效 → 高门槛说了算 → 一条都不清 */
+    setPolicy({ ...highThreshold, workingSetCap: 1000 })
+    const noWindow = await EXT.__internals.onContext({ messages }, fakeCtx(branch))
+    ok(tombstonesOf(noWindow) === 0, '窗口未知时不越权清扫（高门槛仍然有效）')
+
+    /* 对照 B：同一份消息、同一个高门槛，只多知道窗口 + 工作集线很低 → soft → 门槛归零 */
+    setPolicy({ ...highThreshold, workingSetCap: 100 })
+    const withWindow = await EXT.__internals.onContext(
+      { messages },
+      { ...fakeCtx(branch), model: { contextWindow: 200_000 } }
+    )
+    ok(tombstonesOf(withWindow) > 0, `过工作集线时跳过收益门槛，真的清了（墓碑 ${tombstonesOf(withWindow)} 条）`)
+
+    /* 接线：窗口读得到、算得出；读不到就交回 null（回落原生压缩） */
+    delete process.env.YAN_CONTEXT_POLICY
+    ok(EXT.__internals.requestBudgetFor({ model: { contextWindow: 0 } }) === null, '窗口 0 → 无预算')
+    const b = EXT.__internals.requestBudgetFor({ model: { contextWindow: 64_000 } })
+    ok(b?.workingSet === 40_000, `requestBudgetFor 读到窗口并算出工作集（${b?.workingSet}）`)
+  }
+
   /* ---------------------------------------------------------------- 收尾 */
   delete process.env.YAN_CONTEXT_POLICY
   if (savedDataDir === undefined) delete process.env.YAN_DATA_DIR

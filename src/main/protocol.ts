@@ -289,6 +289,8 @@ export interface PiRpcOptions {
   piBin?: string
   /** 给扩展注入的额外环境变量（例如内置浏览器桥接 token） */
   env?: NodeJS.ProcessEnv
+  /** Replace rather than inherit the parent environment (for credential-isolated smoke runs). */
+  inheritEnv?: boolean
 }
 
 type Pending = {
@@ -335,7 +337,11 @@ export class PiRpc extends EventEmitter {
 
     // ELECTRON_RUN_AS_NODE：让 Electron 二进制当纯 Node 跑，
     // 这样不依赖用户系统里装了哪个版本的 node。
-    const env: NodeJS.ProcessEnv = { ...process.env, ...(this.opts.env ?? {}), ELECTRON_RUN_AS_NODE: '1' }
+    const env: NodeJS.ProcessEnv = {
+      ...(this.opts.inheritEnv === false ? {} : process.env),
+      ...(this.opts.env ?? {}),
+      ELECTRON_RUN_AS_NODE: '1'
+    }
     // 去掉可能干扰子进程的 Electron 变量
     delete env.ELECTRON_NO_ATTACH_CONSOLE
     delete env.ELECTRON_FORCE_IS_PACKAGED

@@ -27,78 +27,22 @@
  * 在短边几乎停住；而旋转的伪元素与矩形边框形状也不匹配，边角处会跳变 ——
  * 用户报的「光效有位置问题」就是这个。
  *
- * ── 现在的做法：沿边框路径跑 ──
- * 一个短光带用 `offset-path: rect(...)` 沿 `.composer` 的 padding box 周长运动，
- * `offset-distance` 从 0% 到 100%。`rect()` 的路径方向本身就是顺时针（左上起），
- * 而且按**弧长**匀速 —— 四条边速度一致，圆角处由 `round` 跟随，这才是
- * 「沿着输入框边缘按顺时针方向循环」。
- * `offset-rotate: auto` 让拖尾始终指向运动方向。
+ * 当前实现：自主档只保留静态的靛蓝边界与模式文字。
+ * 动态光带曾用于旧视觉方案；它会让宽扁输入框同时出现多个视觉重心，
+ * 与新的“固定状态位置、克制反馈”规则冲突，因此不再生成伪元素。
  */
-@keyframes yan-autonomous-border {
-  to {
-    offset-distance: 100%;
-  }
-}
-
 .composer-wrap.autonomous .composer {
-  border-color: transparent;
+  border-color: var(--accent-line);
 }
 
-/*
- * 两条**对称**的光带（用户要求：一条不够明显）。
- *
- * 对称指的是「相位差半个周期」：同一段路径、同一个 keyframes，
- * 第二条用 `animation-delay: -1.6s` 从 50% 处起步 —— 于是两条永远停在
- * 边框路径的相对两端（一条在上边时另一条在下边，一条拐到右边时另一条在左边）。
- * 直接复制一条**同相位**的没用：两条会完全重叠，看上去还是一条。
- *
- * 顺带把亮度提上来：原来那条 3px 细光贴在 1px 边框上，暗色主题里几乎看不出。
- * 拖尾加宽到 112px，并加一层同色辉光（`drop-shadow`）—— 这才像“灯”而不是“线”。
- */
+/* 状态保留在固定位置，避免光带、彩线和旋转标识同时竞争注意力。 */
 .composer-wrap.autonomous .composer::before,
 .composer-wrap.autonomous .composer::after {
-  content: '';
-  position: absolute;
-  /* 拖尾：尾端透明、头部亮，方向与运动方向一致（offset-rotate: auto） */
-  width: 112px;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, var(--accent));
-  filter: drop-shadow(0 0 5px var(--accent));
-  offset-path: rect(0 100% 100% 0 round var(--r-xl));
-  offset-rotate: auto;
-  offset-distance: 0%;
-  z-index: 0;
-  pointer-events: none;
-  animation: yan-autonomous-border 3.2s linear infinite;
+  display: none;
 }
 
-/* 第二条：半个周期相位差 —— 与首灯分处路径的两端 */
-.composer-wrap.autonomous .composer::after {
-  animation-delay: -1.6s;
-}
-
-.composer-wrap.autonomous .composer > * {
-  position: relative;
-  z-index: 1;
-}
-
-/*
- * 减少动画：不跑光带，退回一条静态强调色边框。
- * 这里必须显式恢复 border-color —— 上面把它设成了 transparent。
- */
+/* 兼容旧浏览器：静态边界仍然明确可见。 */
 @media (prefers-reduced-motion: reduce) {
-  .composer-wrap.autonomous .composer {
-    border-color: var(--accent-line);
-  }
-  .composer-wrap.autonomous .composer::before,
-  .composer-wrap.autonomous .composer::after {
-    display: none;
-  }
-}
-
-/* 不支持 offset-path: rect() 的运行时同样退回静态边框，不退化成“没有提示” */
-@supports not (offset-path: rect(0 0 0 0)) {
   .composer-wrap.autonomous .composer {
     border-color: var(--accent-line);
   }
@@ -119,6 +63,50 @@
 .send:hover:not(:disabled) {
   filter: none;
   opacity: 0.9;
+}
+
+/* 核心输入区：一层边界、稳定的圆角和克制的聚焦反馈。 */
+.composer-wrap {
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+
+.composer {
+  border-radius: var(--r-lg);
+  border-color: var(--border);
+  background: var(--bg-2);
+  box-shadow: none;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.composer-wrap.autonomous .composer {
+  border-color: var(--accent-line);
+}
+
+.composer-wrap.dropping .composer {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+
+.composer textarea {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+.composer textarea::placeholder {
+  color: var(--fg-mute);
+}
+
+.send {
+  min-width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--bg-0);
 }
 
 /* 忙碌时按钮变「中止」：给文字留位置 */
@@ -612,53 +600,78 @@
   white-space: nowrap;
 }
 
-/* 65. 自主模式开关（用户要求：放进输入栏、去掉「未开启」字样、有开/关动效）
-   与 composer 的其它工具同高（.ctool 26px），做成一枚小胶囊：
-   · 关：中性灰，轨道灰、滑块靠左
-   · 开：强调色，轨道 accent、滑块滑到右侧
-   文案不再显示「未开启 / 已开启」——开关本身就能表达。 */
-.auto-toggle.on {
+/* 65. 工作模式菜单（实施-05：原位显示「标准 / 澄清 / 自主 ▾」）
+
+   三种形态的区分不靠颜色堆装饰：
+   · 触发器是一枚 .ctool 胶囊，当前档位写出来（不是“未开启”这种模糊话）；
+   · 自主档用强调色边界表达状态，避免持续光带；
+   · 菜单是浮层（fixed），每项一行标签 + 一行说明 —— 用户不需要猜“澄清”是什么。
+
+   ⚠️ 菜单必须 position: fixed：`.composer` 有 overflow: hidden（圆角 + 输入区边界），
+   absolute 会被整块裁掉。坐标由组件按按钮 rect 写进 inline style。 */
+.mode-picker {
+  display: inline-flex;
+}
+
+.mode-button[data-mode='autonomous'] {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.auto-toggle .auto-label {
+.mode-button .mode-label {
   color: inherit;
   font-size: var(--fs-sm);
 }
 
-.auto-toggle .auto-track {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 26px;
-  height: 14px;
-  padding: 2px;
-  border-radius: var(--r-full);
-  background: var(--bg-4);
-  transition: background var(--dur) var(--ease);
+.mode-button .mode-caret {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 1;
 }
 
-.auto-toggle.on .auto-track {
-  background: var(--accent);
+.mode-button[data-mode='autonomous'] .mode-caret {
+  color: inherit;
+  opacity: 0.7;
 }
 
-.auto-toggle .auto-thumb {
-  display: block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--fg-mute);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transform: translateX(0);
-  transition:
-    transform 160ms var(--ease),
-    background var(--dur) var(--ease);
+.mode-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-sm);
+  box-shadow: 0 4px 14px -8px rgba(0, 0, 0, 0.65);
 }
 
-.auto-toggle.on .auto-thumb {
-  background: #fff;
-  transform: translateX(12px);
+.mode-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px var(--sp-2);
+  border-radius: var(--r-xs);
+  text-align: left;
+}
+
+.mode-item.active {
+  background: var(--bg-3);
+}
+
+.mode-item-label {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.mode-item.current .mode-item-label {
+  color: var(--accent);
+}
+
+.mode-item-desc {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
 }
 
 /* 66. 排队消息（输入框上方）

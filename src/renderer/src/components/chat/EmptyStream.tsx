@@ -1,4 +1,5 @@
 import { Icon } from '../../icons/Icon'
+import { BrandMark } from '../shell/BrandMark'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 
@@ -58,7 +59,7 @@ export function EmptyStream() {
   return (
     <div className="empty-stream">
       <div className="empty-mark" aria-hidden>
-        <span>✦</span>
+        <BrandMark size={48} decorative />
       </div>
 
       <div className="empty-title">{t('chat.empty')}</div>

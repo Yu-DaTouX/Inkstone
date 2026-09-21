@@ -21,7 +21,12 @@
  * 实测模型**不服从**（界面英文、用户中文提问，回复仍是中文；推理里也看不到
  * 这条要求）。而同样的句子交给 `--append-system-prompt`（位置在提示**前部**，
  * 约 1900 字符处）时模型服从。换成「贴近用户消息的一条独立 developer 消息」后，
- * 实测 2/2 服从。所以：
+ * 实测 2/2 服从。所以默认仍然走这条路径；但本地 llama.cpp 的 Qwen chat
+ * template 只允许开头出现 system 消息，不接受历史中间再插 system。对明确
+ * 标成 `local` 的 provider，改为把同一句追加到最后一条 user 内容，保持消息
+ * 形状合法，同时仍然贴近当前问题。
+ *
+ * 所以：
  *   · ① `before_provider_request`：在最后一条用户消息**前面**插一条独立消息
  *        （主通道，位置最强，且不动提示前缀，缓存友好）；
  *   · ② `before_agent_start`：仍把同一句追加到系统提示末尾
@@ -81,7 +86,7 @@ function trace(hook, extra) {
 
 export default function languageExtension(pi) {
   /** 在最后一条 user 消息前插一条独立消息（位置最强，见文件头实测说明） */
-  pi.on('before_provider_request', (event) => {
+  pi.on('before_provider_request', (event, ctx) => {
     const payload = event?.payload
     const messages = payload?.messages
     if (!payload || !Array.isArray(messages) || messages.length === 0) return
@@ -102,6 +107,19 @@ export default function languageExtension(pi) {
      * 角色跟着该 provider 已经在用的写法：pi 会把 system 映射成 developer
      * （openai 系新模型只认 developer），照抄第一个系统角色的写法最安全。
      */
+    if (ctx?.model?.provider === 'local') {
+      const current = messages[at]
+      const suffix = `\n\n${text}`
+      const content = current?.content
+      const nextContent =
+        typeof content === 'string'
+          ? `${content}${suffix}`
+          : Array.isArray(content)
+            ? [...content, { type: 'text', text: suffix }]
+            : `${String(content ?? '')}${suffix}`
+      const next = messages.map((message, index) => (index === at ? { ...message, content: nextContent } : message))
+      return { ...payload, messages: next }
+    }
     const already = messages.find((m) => m?.role === 'system' || m?.role === 'developer')?.role
     const role = already === 'system' || already === 'developer' ? already : 'system'
     const next = [...messages.slice(0, at), { role, content: text }, ...messages.slice(at)]

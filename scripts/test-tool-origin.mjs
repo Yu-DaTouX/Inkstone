@@ -11,7 +11,7 @@
  *    写入是否真的发生由宿主权威决定，所以标签不是安全边界。
  */
 export function runToolOriginTests(ok, origin) {
-  const { taskPlanCommand, summarizeTaskPlanCommand } = origin
+  const { taskPlanCommand, summarizeTaskPlanCommand, goalCommand } = origin
 
   console.log('\n--- 工具来源判定（任务计划）---')
 
@@ -56,4 +56,33 @@ export function runToolOriginTests(ok, origin) {
   ok(sum.length === 120, `超长截断到 120 字符（实际 ${sum.length}）`)
   ok(sum.endsWith('…'), '截断有明确省略号（不是静默切掉）')
   ok(summarizeTaskPlanCommand('  ') === '', '全空白→空串（卡片会退回「无参数」）')
+
+  /*
+   * 目标状态（实施-05 S3）：与任务计划同一套判定与边界。
+   * 三个动作都要认 —— 只认 `ready` 会让「先读 status 再提交」那一步
+   * 看起来像模型在乱敲命令。
+   */
+  console.log('\n--- 工具来源判定（目标状态）---')
+
+  const goal = (command) => goalCommand('bash', { command })
+  ok(goal('yan goal ready --request-file ready.json') !== null, 'ready 被认出')
+  ok(goal('yan goal report --request-file report.json') !== null, 'report 被认出')
+  ok(goal('yan goal status') !== null, 'status 被认出')
+  ok(goal('yan.cmd goal status') !== null, 'Windows 启动器')
+  ok(
+    goal('"C:\\Users\\me\\AppData\\Local\\yan\\bin\\yan.cmd" goal report --request-file r.json') !== null,
+    '带引号的绝对路径'
+  )
+  ok(goal('cd /repo && yan goal status') !== null, '&& 之后') 
+  ok(goal('yan goal bogus') === null, '未知动作不算')
+  ok(goal('yan tasks apply -f t.json') === null, '任务计划不算目标状态')
+  ok(goal('yan goals status') === null, '组名要整个匹配（goals ≠ goal）')
+  ok(goalCommand('read', { path: 'yan goal status' }) === null, 'read 工具不算')
+  ok(goalCommand('bash', null) === null, '参数为 null 不算')
+
+  /* 同一条命令不能同时属于两个组（ToolRow 用它做互斥） */
+  ok(
+    taskPlanCommand('bash', { command: 'yan goal status' }) === null,
+    '目标状态不会被判成任务计划'
+  )
 }

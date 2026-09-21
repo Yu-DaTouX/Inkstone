@@ -17,6 +17,7 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
+  WorkModeState,
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
@@ -34,6 +35,8 @@ export interface SessionRuntimeSnapshot {
   widgets: Record<string, string[]>
   /** 输入框草稿；图片二进制不进缓存，避免把大块数据挂在会话状态上。 */
   draft: string
+  /** 当前会话的工作模式（实施-05）。null = 还没收到主进程推送，按默认渲染。 */
+  workMode: WorkModeState | null
   /** 当前会话最近一次成功拉到的能力/命令快照。 */
   models: ModelInfo[]
   thinkingLevels: string[]
@@ -56,6 +59,7 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     queue: { steering: [], followUp: [] },
     todos: [],
     todoHistory: [],
+    workMode: null,
     uiRequests: [],
     statuses: {},
     widgets: {},
@@ -67,7 +71,7 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
 }
 
 export type SessionRuntimeDataPatch = Partial<
-  Pick<SessionRuntimeSnapshot, 'draft' | 'models' | 'thinkingLevels' | 'commands'>
+  Pick<SessionRuntimeSnapshot, 'draft' | 'models' | 'thinkingLevels' | 'commands' | 'uiRequests'>
 >
 
 /**
@@ -109,6 +113,7 @@ export function migrateSessionRuntime(
         ...target,
         runtime: target.runtime.generation >= runtime.generation ? target.runtime : runtime,
         draft: target.draft || pending.draft,
+        workMode: target.workMode ?? pending.workMode,
         models: target.models.length ? target.models : pending.models,
         thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : pending.thinkingLevels,
         commands: target.commands.length ? target.commands : pending.commands
@@ -206,6 +211,9 @@ export function reduceSessionRuntime(
       break
     case 'todos':
       next = { ...next, todos: message.payload }
+      break
+    case 'work-mode':
+      next = { ...next, workMode: message.payload }
       break
     case 'todo-history':
       next = { ...next, todoHistory: message.payload }

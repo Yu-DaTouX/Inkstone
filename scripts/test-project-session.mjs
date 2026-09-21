@@ -36,7 +36,9 @@ export function runProjectSessionTests(ok, mod) {
     updatedAt: o.at,
     lastActivityAt: o.at,
     messageCount: 1,
-    projectId: o.projectId
+    projectId: o.projectId,
+    /* 只有显式传了才带 —— 与真实 SessionSummary 一致（没有就是 undefined） */
+    ...(o.opened !== undefined ? { lastOpenedAt: o.opened } : {})
   })
 
   ok(sameCwd('C:\\work\\alpha', 'c:/work/alpha/') === true, 'sameCwd 忽略分隔符、大小写与尾斜杠')
@@ -97,4 +99,73 @@ export function runProjectSessionTests(ok, mod) {
     sessions: [sess({ id: 's1', path: 'a.jsonl', cwd: A, at: 5 })]
   })
   ok(noFile === 'a.jsonl', '实例还没有会话文件时退回会话列表', String(noFile))
+
+  /*
+   * ⑦ 实施-09 S3：「打开过」优先于「活跃过」。
+   *
+   * `hot` 是后台跑过消息的会话（活动更新），`opened` 是用户上次真的打开的那个
+   *（消息旧）。恢复哪一个应该听用户的 —— 这条就是 S3 的全部意义。
+   */
+  const byOpened = pickProjectSession({
+    cwd: A,
+    runners: [],
+    sessions: [
+      sess({ id: 'hot', path: 'hot.jsonl', cwd: A, at: 99 }),
+      sess({ id: 'opened', path: 'opened.jsonl', cwd: A, at: 10, opened: 50 })
+    ]
+  })
+  ok(byOpened === 'opened.jsonl', '打开过的会话优先于活动更新的会话（S3）', String(byOpened))
+
+  /* 两个都打开过 → 比打开时间 */
+  const twoOpened = pickProjectSession({
+    cwd: A,
+    runners: [],
+    sessions: [
+      sess({ id: 'o1', path: 'o1.jsonl', cwd: A, at: 99, opened: 10 }),
+      sess({ id: 'o2', path: 'o2.jsonl', cwd: A, at: 5, opened: 80 })
+    ]
+  })
+  ok(twoOpened === 'o2.jsonl', '两条都打开过 → 比打开时间（不是比消息时间）', String(twoOpened))
+
+  /* 一条都没打开过（老数据 / lastOpenedAt 丢了）→ 回落到活动时间，不能因此选不出来 */
+  const noOpened = pickProjectSession({
+    cwd: A,
+    runners: [],
+    sessions: [
+      sess({ id: 'x1', path: 'x1.jsonl', cwd: A, at: 10 }),
+      sess({ id: 'x2', path: 'x2.jsonl', cwd: A, at: 40 })
+    ]
+  })
+  ok(noOpened === 'x2.jsonl', '没有打开记录时回落到活动时间（扫描推导仍能用）', String(noOpened))
+
+  /*
+   * 一条有打开记录、一条没有（混选）→ 有记录的赢，**即使它的活动时间更旧**。
+   * 与 ⑦ 的区别：这次对手是「没记录」而不是「有更晚的记录」，
+   * 分开写是因为两者走的是不同的分支（?? 的两侧）。
+   */
+  const mixed = pickProjectSession({
+    cwd: A,
+    runners: [],
+    sessions: [
+      sess({ id: 'never', path: 'never.jsonl', cwd: A, at: 999 }),
+      sess({ id: 'was', path: 'was.jsonl', cwd: A, at: 1, opened: 5 })
+    ]
+  })
+  ok(mixed === 'was.jsonl', '有打开记录的那条赢（不管活动时间）', String(mixed))
+
+  /*
+   * 「分类优先」的极端情形：打开记录很旧，对手今天还在动 —— 仍然选打开过的那条。
+   * 这条是这套排序的**语义底线**：`lastActivityAt` 会被后台续行 / 子代理写回 / 别的
+   * 窗口刷新，如果让它掺进同一个大小比较里，“项目最后一个会话”就会变成
+   * “最近被模型碰过的会话”。
+   */
+  const staleButMine = pickProjectSession({
+    cwd: A,
+    runners: [],
+    sessions: [
+      sess({ id: 'busy', path: 'busy.jsonl', cwd: A, at: 9_000_000 }),
+      sess({ id: 'mine', path: 'mine.jsonl', cwd: A, at: 1_000, opened: 2_000 })
+    ]
+  })
+  ok(staleButMine === 'mine.jsonl', '打开过（哪怕很早）仍优先于今天还在后台活动的会话', String(staleButMine))
 }

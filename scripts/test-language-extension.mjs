@@ -96,6 +96,22 @@ export async function runLanguageExtensionTests(ok, mod) {
   ok(withLang?.messages?.[3]?.role === 'developer', '角色跟着 provider 已有的写法（developer）', String(withLang?.messages?.[3]?.role))
   ok(withLang?.messages?.[4]?.content === '第二个问题', '插在**最后一条 user 之前**（位置最强）')
   ok(payload.messages.length === 4, '不改动传进来的原数组（无副作用）')
+  const localPayload = {
+    model: 'qwen3-local',
+    messages: [
+      { role: 'system', content: 'BASE' },
+      { role: 'user', content: '本地模型的问题' }
+    ]
+  }
+  const localOut = withSettings('zh-CN', () =>
+    provider({ type: 'before_provider_request', payload: localPayload }, { model: { provider: 'local' } })
+  )
+  ok(localOut?.messages?.length === 2, '本地 provider 不插入中间 system 消息')
+  ok(
+    localOut?.messages?.[1]?.content === `本地模型的问题\n\n${zh}`,
+    '本地 provider 把同一句语言约束贴到最后一条 user 消息'
+  )
+  ok(localOut?.messages?.[1]?.role === 'user', '本地 provider 保持 Qwen chat template 可接受的 user 角色')
   ok(
     withSettings('zh-CN', () => provider({ type: 'before_provider_request', payload: { ...payload } }, {}) )?.messages?.[3]
       ?.content === zh,

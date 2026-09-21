@@ -19,6 +19,7 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     contextPolicyStep,
     nextContextStage,
     policyFrom,
+    rearmAfterCompaction,
     INITIAL_POLICY_STATE,
     POLICY_COOLDOWN_MS,
     POLICY_REARM_MS
@@ -201,6 +202,34 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     ok(
       tight.emergency <= tight.contextWindow - tight.responseReserve,
       '把比例压到 0.001 也仍然不突破输出预留'
+    )
+  }
+
+  /* ---- 8b. 压缩成功后重新上膛（N21-4 尾压力测试发现） ---- */
+  {
+    const cold = { armed: false, lastTriggerAt: 1_000_000 }
+    const warm = rearmAfterCompaction(cold)
+    ok(warm.armed === true, '未上膛时，压缩成功结束 → 重新上膛')
+    ok(warm.lastTriggerAt === cold.lastTriggerAt, '重新上膛不会改动上次触发时间（冷却仍按它算）')
+    ok(rearmAfterCompaction(warm) === warm, '已经上膛时是幂等（返回同一个对象）')
+    /*
+     * 为什么这条值得单独立测：`armed` 只有「回落到线下」与 5 分钟窗口两条恢复路径，
+     * 当基线开销本身就压在工作集线上时两条都走不通 —— 策略会退化成 5 分钟压一次。
+     * 真实线索：22 个连续回合只压了 2 次、转录涨到工作集的 3 倍（压力测试）。
+     */
+    const overLine = { armed: false, lastTriggerAt: 1_000_000 }
+    const after = rearmAfterCompaction(overLine)
+    const step2 = contextPolicyStep({
+      state: after,
+      tokens: 9_000,
+      budget: contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, workingSetCap: 6_000 }),
+      policy: { ...DEFAULT_CONTEXT_POLICY, workingSetCap: 6_000 },
+      busy: false,
+      now: 1_000_000 + POLICY_COOLDOWN_MS + 1
+    })
+    ok(
+      step2.trigger === 'compact',
+      '即使 tokens 仍高于工作集（基线开销压线），重新上膛后过冷却就能再压'
     )
   }
 

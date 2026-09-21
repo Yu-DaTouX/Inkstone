@@ -427,6 +427,22 @@
             return (st.projects ?? []).some((x) => norm(x.cwd) === norm(created?.path)) ? st : null
           }, 15000)
           ok(!!reg, '新建的工作树已登记为项目（可独立打开）')
+          if (!reg) {
+            /*
+             * 失败时把实情打出来：这两条断言在 2026-09-19 被观察到**偶发**失败
+             * （同一版本重跑一次就变），而「只说不对」的断言要再花一轮才知道是什么。
+             * 打的是主进程回的 projects 列表（前几条路径足够看出“根本没登记”还是“时序”）。
+             */
+            const dbg = await window.yan.getSettings()
+            out.push(
+              '  诊断：projects=' +
+                JSON.stringify((dbg.projects ?? []).map((x) => x.cwd)) +
+                ' 新建路径=' +
+                String(created?.path ?? '(空)') +
+                ' worktrees=' +
+                JSON.stringify(((await window.yan.git.worktrees(cwd)).worktrees ?? []).map((w) => w.path))
+            )
+          }
           ok(
             !!reg &&
               (reg.projects ?? []).filter(
@@ -547,12 +563,32 @@
      * 以及界面上**明说**了不带走什么。
      */
     const openNote = await waitFor(() => testid('env-worktree-open-note'), 8000)
-    ok(!!openNote, '工作树区里明说「新会话不带走历史与权限」', textOf(openNote).slice(0, 50))
+    ok(!!openNote, '工作树区里明说「派生新会话」的取舍', textOf(openNote).slice(0, 80))
+    /*
+     * 实施-07 S2b-1：形态定为 **Fork**（新会话 + 来源关系）后，界面不再只写一句免责声明，
+     * 而是**分两行如实列出「会带什么 / 不带什么」**。这两行分开验：
+     *   · 「会带」必须写的是**来源关系**（那是这条路径唯一的正向价值）；
+     *   · 「不带」必须逐项覆盖历史 / 权限 / 附件（少写一项 = 夸大能力）。
+     * 只断言“元素在”不够 —— 文案是给人看的，断言要看到关键词。
+     */
+    const carryLine = await waitFor(() => testid('env-worktree-fork-carry'), 8000)
+    const skipLine = await waitFor(() => testid('env-worktree-fork-skip'), 8000)
+    ok(!!carryLine && !!skipLine, '「会带 / 不带」分两行列出（不是一句笼统话）')
+    if (carryLine) ok(/来源关系/.test(textOf(carryLine)), '「会带」写的是来源关系（可追溯）', textOf(carryLine).slice(0, 70))
+    if (skipLine) {
+      const s = textOf(skipLine)
+      ok(/历史/.test(s) && /权限/.test(s) && /附件/.test(s), '「不带」逐项写了历史 / 权限 / 附件', s.slice(0, 70))
+    }
     const openBtn = await waitFor(() => {
       const list = [...document.querySelectorAll('[data-testid="env-worktree-open"]')]
       return list.length ? list[list.length - 1] : null
     }, 8000)
     ok(!!openBtn, '每条非主工作树都有「开新会话」')
+    /*
+     * 来源关系要在**点之前**取：点完之后 `session` 已经换成新会话了 ——
+     * 拿错的话下面「来源会话是哪个」就成了拿新会话与自己比，永远绿。
+     */
+    const fromSession = store.getState().session?.sessionId ?? ''
     if (openBtn) {
       await click(openBtn)
       const switched = await waitFor(() => {
@@ -560,9 +596,155 @@
         return now.replace(/\\/g, '/').toLowerCase().includes('live-carry') ? now : null
       }, 20000)
       ok(!!switched, '点击后真的在新工作树目录里开了会话', String(switched ?? '超时'))
+      /*
+       * 来源关系（实施-07 S2）：主进程那边应该在切会话之后多出一条。
+       * 这是新数据 —— UI 改一个 cwd 不会产生它，所以必须拿主进程回读来证。
+       */
+      const link = await waitFor(async () => {
+        const list = await window.yan.git.worktreeLinks()
+        return (list ?? []).find((x) => String(x.worktree ?? '').replace(/\\/g, '/').toLowerCase().includes('live-carry')) ?? null
+      }, 12000, 250)
+      ok(!!link, '工作树来源关系真的登记了', JSON.stringify(link ?? null))
+      if (link) {
+        ok(link.fromSessionId === fromSession, '来源会话就是点按钮之前那个', link.fromSessionId)
+        ok(!!link.branch, '分支记下来了', link.branch)
+        out.push(`  worktreelink.sessionId=${link.sessionId}`)
+        out.push(`  worktreelink.worktree=${link.worktree}`)
+      }
       /* 等菜单**消失**（谓词返回 true 才算成立），不是「等它出现」 */
       const gone = await waitFor(() => (testid('env-menu') ? null : true), 8000)
       ok(!!gone, '开完新会话后环境菜单自动收起（不再挡着对话）')
+      /*
+       * 界面：重新打开菜单并展开工作树，必须看到「这个会话从哪来」。
+       * 只断言按钮存在不算 —— 方案 §6.3 的硬要求是**用户能看到**这件事。
+       */
+      await openEnvMenu()
+      await click(testid('env-worktrees'))
+      const origin = await waitFor(() => testid('env-worktree-origin'), 8000)
+      ok(!!origin, '环境菜单里显示了这个会话的来源工作树', textOf(origin).slice(0, 60))
+      if (origin) ok(textOf(origin).includes('live-carry'), '显示的是真实分支/目录（不是一句模板文案）', textOf(origin).slice(0, 60))
+
+      /*
+       * 实施-07 S2b-4：派生到工作树之后，新会话的输入框里应该已经放好一段接手上下文
+       *（草稿，**不自动发送**）。这里除“有没有”之外还要验三件事：
+       *   ① 环境派生状态是**目标工作树重算**的（分支名对得上工作树，不是主仓库的）；
+       *   ② 如实说明源会话历史没带过来（不说的话模型会假装记得）；
+       *   ③ **确实没有发出去** —— 消息列表里不该出现它（否则就花了额度、替用户说了话）。
+       */
+      const composerEl = testid('composer')
+      const draft = composerEl ? String(composerEl.value ?? '') : ''
+      ok(/\[yan-fork-context:[^\]]+\]/.test(draft), '输入框里有一段 Fork 上下文草稿（带标记行）', draft.slice(0, 70))
+      ok(draft.includes('live-carry'), '草稿里写的是这个工作树（不是通用模板）', draft.slice(0, 70))
+      ok(/没有带过来/.test(draft), '草稿如实说明源会话历史没带过来')
+      const sentFork = (store.getState().messages ?? []).some((m) => String(m.text ?? '').includes('yan-fork-context'))
+      ok(sentFork === false, '草稿**没有**被自动发送（不花额度、不替用户说话）')
+
+      const treesNow = await window.yan.git.worktrees(store.getState().session?.cwd ?? '')
+      const carryTree = (treesNow?.worktrees ?? []).find((w) => !w.main)
+      const ctxDiag = await window.yan.git.forkContext({
+        worktree: carryTree?.path ?? '',
+        sourceCwd: link?.fromCwd ?? ''
+      })
+      ok(!!ctxDiag?.text, '主进程侧也能算出这段正文（不依赖界面状态）')
+      ok(
+        !!carryTree?.branch && String(ctxDiag?.branch) === String(carryTree.branch),
+        '诊断：分支取自**目标工作树**（而不是源会话所在的仓库）',
+        `${String(ctxDiag?.branch)} vs ${String(carryTree?.branch)}`
+      )
+      ok(typeof ctxDiag?.changedCount === 'number', '诊断：变更数是个数字（真的读过工作区）', String(ctxDiag?.changedCount))
+      ok(ctxDiag?.hasPackage === false, '沙箱里没有交接包 → 正文里如实说没有', String(ctxDiag?.hasPackage))
+      /*
+       * 附件（实施-07 S2b-5）：沙箱里的源会话没有图片附件 → 正文里**不该**出现附件段落；
+       * 显式给一个数量时（模拟“源会话里带了图”）则必须如实报出来，
+       * 并且**只能**说“没有带过来”。
+       */
+      ok(ctxDiag?.attachments === 0, '沙箱源会话里没有图片附件 → 计数为 0', String(ctxDiag?.attachments))
+      ok(!String(ctxDiag?.text ?? '').includes('附件'), '没有附件时正文里不出现附件段落')
+      const withAttach = await window.yan.git.forkContext({
+        worktree: carryTree?.path ?? '',
+        sourceCwd: link?.fromCwd ?? '',
+        explicitAttachmentCount: 2
+      })
+      ok(withAttach?.attachments === 2, '显式给了附件数就按它算（不读会话）', String(withAttach?.attachments))
+      ok(String(withAttach?.text ?? '').includes('2 个图片附件'), '正文里写清有几个附件没带过来')
+      ok(/没有带过来/.test(String(withAttach?.text ?? '')), '附件一律说“没有带过来”（不假装能带）')
+    }
+
+    /* ── 12b. 项目信任（实施-07 S2b-2）─────────────────────────
+     *
+     * 这一节验的是「pi 的信任是**按目录**的」这件事实：先把**主仓库**显式信任，
+     * 再确认**工作树目录没有跟着被信任**（形态决策里明禁的“自动继承”）。
+     * 然后走界面上的入口把工作树也显式信任 —— 写入由 Node 侧读盘核对。
+     */
+    const wtAll = await window.yan.git.worktrees(store.getState().session?.cwd ?? '')
+    const mainTree = (wtAll?.worktrees ?? []).find((w) => w.main)
+    const nonMainTree = (wtAll?.worktrees ?? []).find((w) => !w.main)
+    if (mainTree && nonMainTree) {
+      const beforeMain = await window.yan.trust.status(mainTree.path)
+      ok(beforeMain.trusted === false, '主仓库初始未被信任（沙箱里没预置 trust.json）', JSON.stringify(beforeMain))
+      const allowed = await window.yan.trust.allow(mainTree.path)
+      ok(allowed?.ok === true, '显式信任主仓库成功', JSON.stringify(allowed ?? null))
+      const afterMain = await window.yan.trust.status(mainTree.path)
+      ok(afterMain.trusted === true, '主仓库现在是受信任的', JSON.stringify(afterMain))
+      /* 关键一行：不继承 */
+      const wtBefore = await window.yan.trust.status(nonMainTree.path)
+      ok(wtBefore.trusted === false, '工作树目录**没有**跟着被信任（不自动继承）', JSON.stringify(wtBefore))
+      /* 走界面：工作树行上的「信任这个目录」→ 变「已受信任」 */
+      const trustBtn = await waitFor(() => testid('env-worktree-trust'), 8000)
+      ok(!!trustBtn, '工作树行上有「信任这个目录」入口（不用去终端跑 pi）')
+      if (trustBtn) {
+        await click(trustBtn)
+        const trustedTag = await waitFor(() => testid('env-worktree-trusted'), 8000)
+        ok(!!trustedTag, '点一下之后那一行变成「已受信任」')
+        const wtAfter = await window.yan.trust.status(nonMainTree.path)
+        ok(wtAfter.trusted === true, '主进程侧也确认工作树已被信任', JSON.stringify(wtAfter))
+      }
+    } else {
+      ok(false, '没拿到主 / 非主工作树清单（夹具仓库没建工作树？）')
+    }
+
+    /* ── 12c. 文件引用重绑定（实施-07 S2b-3）─────────────────
+     *
+     * 这里验三件事：① 仓库相对引用在**目标工作树**里解析并对得上 / 对不上；
+     * ② `..` 与仓库外绝对路径报 `outside`（不迁移）；
+     * ③ **没做**绝对路径前缀替换 —— 把源仓库里**真实存在**的绝对路径传进去，
+     *    它必须仍是 `outside`（因为它在源仓库根下、不在工作树根下）。
+     *    如果实现里写了一句 `replace(源根, 目标根)`，这一条就会当场变红。
+     */
+    const wtAll2 = await window.yan.git.worktrees(store.getState().session?.cwd ?? '')
+    const targetTree = (wtAll2?.worktrees ?? []).find((w) => !w.main)
+    const repoTree = (wtAll2?.worktrees ?? []).find((w) => w.main)
+    if (targetTree && repoTree) {
+      const probeRefs = [
+        'a.txt',
+        'no-such-file.ts',
+        `${repoTree.path}/a.txt`,
+        '../escape.txt'
+      ]
+      const rep = await window.yan.git.forkFileRefs({ worktree: targetTree.path, explicitRefs: probeRefs })
+      ok(!!rep?.root, '算出了目标工作树的仓库根', String(rep?.root ?? '(空)'))
+      ok(rep?.summary?.total === 4, '四条引用都过了（不静默丢）', String(rep?.summary?.total))
+      const byRef = Object.fromEntries((rep?.refs ?? []).map((r) => [r.ref, r.state]))
+      ok(byRef['no-such-file.ts'] === 'missing', '目标里没有的文件报 missing', String(byRef['no-such-file.ts']))
+      ok(byRef['../escape.txt'] === 'outside', '`..` 报 outside（不迁移）', String(byRef['../escape.txt']))
+      /* 反模式反向验证：源仓库的绝对路径不许被“前缀替换”成目标里的路径 */
+      const absState = (rep?.refs ?? []).find((r) => String(r.ref).toLowerCase().endsWith('/a.txt') && r.ref.includes(':'))?.state
+      ok(absState === 'outside', '源仓库的绝对路径仍是 outside（证明没做前缀替换）', String(absState))
+      ok(
+        typeof byRef['a.txt'] === 'string' && byRef['a.txt'] !== 'outside',
+        '相对引用 `a.txt` 被当成仓库内路径解析（resolved 或 missing，但绝不是 outside）',
+        String(byRef['a.txt'])
+      )
+      /* 走真实提取：当前会话里 `@` 过的文件（没有引用时就是个空数组，不虚构） */
+      const live = window.yan.git.forkFileRefs({
+        worktree: targetTree.path,
+        sourceFile: store.getState().session?.sessionFile,
+        sourceCwd: store.getState().session?.cwd
+      })
+      const liveRep = await live
+      ok(Array.isArray(liveRep?.refs), '真实提取这条路能跑（refs 是数组）', String(liveRep?.refs?.length ?? '(空)'))
+    } else {
+      ok(false, '没拿到目标 / 主工作树（后面几条信任与引用断言都依赖它）')
     }
 
     /* ── 13. 关联外部任务链接 + 托管网页比较（H1 / G3）──────── */

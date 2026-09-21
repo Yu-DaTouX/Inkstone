@@ -74,7 +74,9 @@ export function TitleBar({
         >
           <Icon name="sidebar-left" size={14} />
         </button>
-        <span className="tb-name">砚</span>
+        <span className="tb-brand">
+          <span className="tb-name">砚</span>
+        </span>
         {/*
          * 会话名胶囊**已删**（用户要求）。
          * 理由：会话标题已经在**中栏顶部**常驻（SessionHeader），
