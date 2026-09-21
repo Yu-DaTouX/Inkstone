@@ -1007,13 +1007,20 @@ function ContextSection() {
   const policy = session?.contextPolicy
   const workingSet = policy && policy.budget.workingSet > 0 ? policy.budget.workingSet : 0
   const workingSetMode = workingSet > 0
-  const limit = workingSetMode ? workingSet : win
-  const pct = known
-    ? workingSetMode
-      ? (used / workingSet) * 100
-      : (cu?.percent ?? (used && win ? (used / win) * 100 : 0))
-    : 0
-  const tone = pct >= 95 ? 'err' : pct >= 85 ? 'warn' : 'ok'
+  /*
+   * C-5：主值与进度条的分母是**有效模型窗口**，砚真正动手的那条线（工作集）
+   * 画成条上的软标记，并在下面单独给一行。
+   *
+   * 两个方向都是真话，但不能只说一半：拿工作集当分母会出现 `240k / 240k = 100%`，
+   * 被读成「1M 模型满了」；只给窗口尺度又会让人以为「还早得很」，
+   * 而砚在 240k 就已经会动手。所以主值给物理尺度，下面那行给策略尺度。
+   */
+  const policyWindow = policy?.budget.contextWindow
+  const effectiveWin = policyWindow && policyWindow > 0 ? policyWindow : win
+  const pctWindow = known && effectiveWin > 0 ? (used / effectiveWin) * 100 : 0
+  /* 压力色只看工作集 —— 它才是砚的动手线（物理窗口满之前早就过线了） */
+  const pctWork = known && workingSetMode ? (used / workingSet) * 100 : pctWindow
+  const tone = pctWork >= 95 ? 'err' : pctWork >= 85 ? 'warn' : 'ok'
   const cost = [...messages].reverse().find((m) => m.role === 'assistant' && m.usage)?.usage?.cost ?? 0
 
   /* 压缩的可观测状态（N21-2）：进行中的原因 + 已结束的最近一次，都来自主进程的 RPC 事件归一化 */
@@ -1069,12 +1076,28 @@ function ContextSection() {
        */}
       <div className="rp-ctx-main" data-testid="ctx-main" data-mode={workingSetMode ? 'working-set' : 'window'}>
         <span className="rp-k">{t('rp.context')}</span>
-        <span className={`rp-v big ${known ? tone : ''}`}>{known ? `${pct.toFixed(0)}%` : '—'}</span>
+        <span className={`rp-v big ${known ? tone : ''}`}>{known ? `${pctWindow.toFixed(0)}%` : '—'}</span>
         <span className="spacer" />
         <span className="rp-u" data-testid="ctx-tokens">
-          {known ? `${fmtK(used)} / ${fmtK(limit)}` : '—'}
+          {known ? `${fmtK(used)} / ${fmtK(effectiveWin)}` : '—'}
         </span>
       </div>
+
+      {/*
+       * 工作集那一行（C-5）：主值是物理尺度，这里说清砚什么时候动手。
+       * 没有策略（工作集不可得）时不显示 —— 不编一条不存在的线。
+       */}
+      {workingSetMode ? (
+        <div className="rp-dim" data-testid="ctx-working-set-line">
+          {known
+            ? t('ctx.workingSetLine', {
+                used: fmtK(used),
+                cap: fmtK(workingSet),
+                pct: pctWork.toFixed(0)
+              })
+            : t('ctx.workingSetLineUnknown', { cap: fmtK(workingSet) })}
+        </div>
+      ) : null}
 
       <div
         className={`rp-meter ${known ? tone : 'unknown'}`}
@@ -1084,14 +1107,14 @@ function ContextSection() {
               ? t('ctx.tipWorkingSet', {
                   used: nf.format(used),
                   cap: nf.format(workingSet),
-                  pct: pct.toFixed(1),
-                  win: nf.format(policy?.budget.contextWindow ?? win)
+                  pct: pctWork.toFixed(1),
+                  win: nf.format(effectiveWin)
                 })
-              : t('ctx.tip', { used: nf.format(used), win: nf.format(win), pct: pct.toFixed(1) })
+              : t('ctx.tip', { used: nf.format(used), win: nf.format(effectiveWin), pct: pctWindow.toFixed(1) })
             : t('ctx.afterCompact')
         }
       >
-        <i style={{ width: `${Math.min(100, pct)}%` }} />
+        <i style={{ width: `${Math.min(100, pctWindow)}%` }} />
         {workingSetMode ? (
           /*
            * 工作集刻度（N21-3）：三条线都在同一个尺度上（工作集 × 70/85/100%），
@@ -1102,7 +1125,8 @@ function ContextSection() {
           CONTEXT_STAGES.map((kind) => {
             const at = kind === 'tool-sweep' ? policy!.budget.triggers.sweep : kind === 'episode-fold' ? policy!.budget.triggers.fold : policy!.budget.triggers.compact
             const active = policy!.kinds.includes(kind)
-            const left = Math.max(0, Math.min(100, workingSet > 0 ? (at / workingSet) * 100 : 0))
+            /* 刻度画在**窗口尺度**上（与分母一致），否则会跑到条外去 */
+            const left = Math.max(0, Math.min(100, effectiveWin > 0 ? (at / effectiveWin) * 100 : 0))
             return (
               <b
                 key={kind}

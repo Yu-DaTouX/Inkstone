@@ -97,7 +97,7 @@
 | 6 | C-4 | 统一策略来源与计量口径 | 审阅 §5.3、§3.1 | — | **已交付**（生效策略文件 + 两侧同规则；估算精度与行为口径的剩余归 C-4b / C-6） |
 | 7 | C-2 | 压缩可观测性 | 审阅 §5.2(3)、§6 | C-4 | **部分交付**：回收比例 / 此后新增量 / 「待测」口径已闭环；三类动作分别统计归 C-2b |
 | 8 | C-6 | 三类整理门槛与防抖标定 | 审阅 §5.2、§3.3、§5.1 | C-4、C-2 | 未开始 |
-| 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | 未开始 |
+| 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | **已交付**（分母口径：主值走物理尺度 + 工作集单独一行 + 刻度改窗口尺度；档位名与来源展示留作剩余） |
 | 10 | C-3 | 大窗口策略验证矩阵 | 审阅 §7 | C-1、C-6 | 未开始 |
 | 11 | H-3 | 工作窗口状态模型 | 方案 §5.3、§9 S2 | H-2 | 未开始 |
 | 12 | H-4 | 文件与文档窗口 | 方案 §3、§8、§9 S3 | H-3 | **部分交付**：解析 / 呈现切片（`#L42` / 范围 / 点击预览）已闭环（见 HANDOFF「H-4a」）；文件标签、目录树联动、Markdown 源码切换、大文件与资源身份待 H-3 后做 |
@@ -224,17 +224,20 @@
 - 落点：`src/shared/context-policy.ts`、`src/main/context-policy.ts`、`context-budget.js`、
   `context.js`、`context-producer.js`、`context-stage-runtime.js`。
 
-**C-5 · 上下文窗口 UI 分层（位次 9）**
+**C-5 · 上下文窗口 UI 分层（位次 9，已交付）**
 
-- 来源：审阅 §6。
-- 默认行：`上下文 242K / 1M · 24%` + 档位名 + “预计 600K 整理” + 最近压缩（无实际记录时显示“待测”）。
-- 展开项：原始窗口与本次有效输入预算、输出预留、容量来源；当前工作集与清扫 / 状态摘要 / 整轮压缩的
-  **实际**门槛及策略覆盖来源；最近操作类型、触发原因、前后 token、回收比例、耗时、此后新增量。
-- 进度条分母必须是**有效模型窗口**，另画软压缩标记 —— 不能把 `240K / 240K` 显示成 100% 让用户
-  误以为 1M 模型满了。
-- 落点：`src/renderer/src/components/settings/ContextTab.tsx` 与现有水位显示处
-  （实现时先核对该水位组件的真实落点，不在本文预设）。
-- 禁区：示例数值不是运行状态；不显示没有来源的百分比。
+- **已交付（六栏见 HANDOFF）**：
+  1. **进度条分母 = 有效模型窗口**（策略窗口优先，否则物理窗口）：主值百分比、`ctx-tokens`、条本体填充全按它；
+  2. 新增工作集单行（`ctx-working-set-line`）：`工作集 36k / 240k · 15%` —— 即审阅要求的「另画软压缩标记」的文字形式；
+  3. 三档阶段刻度改画在窗口尺度上（`at / 窗口`），位置仍由工作集比例算出；
+  4. 压力色（黄 / 红）只看工作集：物理窗口满之前早就过线了，拿它当压力会漏报；
+  5. 无策略（自动压缩关）时退回物理窗口视角，工作集行消失。
+- **未交付**：
+  1. 默认行里的**档位名**（600K / 700K 试行档）未写出来 —— 设置页有，右栏只有「下一步：…」；
+  2. 展开项里的**容量来源**（默认 / 用户 / 模型级 / env）仍只在设置面板的 `ctx-source`；
+  3. 三类动作分别统计（sweep / fold / compaction）归 **C-2b**。
+- 口径不变：示例数值不是运行状态；不显示没有来源的百分比。
+- 落点：`src/renderer/src/components/toolbar/RightPanel.tsx`（真实水位落点）与设置页的 `ContextTab.tsx`。
 
 **C-3 · 大窗口策略验证矩阵（位次 10）**
 
@@ -458,10 +461,10 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7、C-4 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断：写侧 + 读侧 + restart 端到端），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-5、C-6 尚未闭环。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断：写侧 + 读侧 + restart 端到端），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-4b、C-6 尚未闭环。 |
 | 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4304/4304**（含 turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条、C-2 的 10 条、H-6b 的 6 条）。 |
-| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；H-7 `turnfooter`；H-6 `turnrestore`（cost 1）；H-6b `turnrestore`（`final: true` 断言）+ `turninterrupted`（cost 1，restart 双探针）；H-4a `filelink`（11 条）；C-4 `policyfile`（写盘 + afterExit）；C-2 `compactionview`（11 条）。 |
-| 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 各有深浅两张（`matrix-{turnfooter,rightresources,ctxmodelpresets,turntime,turnstatus,filelink,compactionreclaim}-*`）；C-4 不改 UI，沿用上下文状态图。 |
+| 真实运行 | H-1 `turnfooter` / `turnfooterlive`；H-2 `rightresources`（21 条）；C-1 `contextbudget`；C-5 `contextbudget`（分母 / 工作集行 / 填充比例 / 刻度位置）；H-7 `turnfooter`；H-6 `turnrestore`（cost 1）；H-6b `turnrestore` + `turninterrupted`（cost 1，restart 双探针）；H-4a `filelink`（11 条）；C-4 `policyfile`；C-2 `compactionview`（11 条）。 |
+| 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 / C-5 各有深浅两张（stamp 见 HANDOFF；C-5 为 `2026-09-22-c5`）。 |
 | 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
 | 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
 | 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |
