@@ -2151,11 +2151,11 @@ function writeContextGuardSession(dir) {
         role: 'assistant',
         content: [{ type: 'text', text }],
         usage: {
-          input: 256,
-          output: 256,
+          input: 1024,
+          output: 1024,
           cacheRead: 0,
           cacheWrite: 0,
-          totalTokens: 512,
+          totalTokens: 2048,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
         },
         stopReason: 'stop'
