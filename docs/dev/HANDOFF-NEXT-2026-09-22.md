@@ -14,18 +14,20 @@
 
 1. 先读根目录 [`AGENTS.md`](../../AGENTS.md)、[`docs/plan/README.md`](../plan/README.md)、[`docs/dev/HANDOFF.md`](HANDOFF.md) 和本文件。
 2. 执行 `git status --short`、`git log -1 --oneline`，确认当前工作树，不要假定脏改动是缓存。
-3. 保留本交接前已有的文档改动和用户数据。最近一个已授权检查点是 `131c66c chore: checkpoint current workspace`；本轮文档整理尚未提交。
+3. 当前工作树已在 `9be856d chore: checkpoint current Yan progress` 完成本地检查点，`git status --short` 应为空。保留用户数据和后续新改动，不要把当前检查点误当成可随意清理的缓存。
 4. 先读目标活动正文，再读对应源码和现有测试；不要只按历史 HANDOFF 中的“下一步”动手。
 5. 开任何真实 Electron 场景前，先 `npm run build`；测试数据必须使用独立的 `YAN_USER_DATA`、`YAN_SESSIONS_DIR`、`YAN_DATA_DIR`、`YAN_PI_DIR`。调模型前先确认模型、额度和 `docs/dev/TESTING.md` 的 cost 约定。
 6. 每完成一个切片，立即把六栏证据写回活动正文和 `docs/dev/HANDOFF.md`，不要积累到最后再凭记忆补。
 
-当前文档整理产生的未提交改动主要在以下文件：
+最近一次检查点已包含以下文档与源码进度；后续若继续修改，应以当前源码和活动正文为准：
 
 - `docs/plan/README.md`、`docs/plan/active/README.md`；
 - `docs/design/active/README.md`；
 - `docs/dev/HANDOFF.md`；
 - `docs/plan/active/实施-01-默认pi架构迁移.md`、`实施-04-能力自主选择-MCP与Skill.md`、`实施-06-上下文管理收尾.md`、`实施-09-交付与验收收尾.md`、`实施-10-AI产物展示与GPT-Image.md`、`实施-11-Harness工作窗口与1M模型策略融合.md`；
 - `docs/plan/active/编排-并行代理分工-2026-09-19.md`（已明确标成历史波次文件，不是独立待办）。
+
+本检查点同时包含能力 / Skill 安全、上下文召回、CLI / probe / 测试和视觉证据的现有进度；不要因为这些文件已经提交就把对应主题误判为六栏全部完成。
 
 不要用 `git reset`、`git checkout`、`git clean`、`rm` 或“清理工作区”的方式处理它们。根目录真实 `nul` 已在检查点按项目约定处理，不能重新创建、删除或覆盖。
 
@@ -182,7 +184,7 @@
 2. 主题全部闭环后，更新 `docs/plan/README.md` 的 P0 / P1、活动索引和已完成索引；只有六栏齐全才能把正文移入 `docs/archive/plan/`。
 3. 文档调整后运行 `git diff --check` 和 `npm run audit:refs`；代码调整按影响范围补 `typecheck`、`build`、单测、live、视觉、包证据。
 4. 把“本轮未跑”的项目和原因保留在 HANDOFF，不要用历史证据覆盖当前缺口。
-5. 本交接任务本身没有授权自动提交。提交前先向用户确认，或等待用户明确说“提交”；提交时只纳入明确属于本轮的文件，不使用 `git add -A` 掩盖不相关改动。
+5. 后续提交仍需以用户明确授权为准；本轮已由用户授权并完成 `9be856d` 检查点。新的提交应先复核文件范围，不使用 `git add -A` 掩盖不相关改动。
 6. 最终回复要给出：已完成切片、仍阻塞的授权 / 外部条件、实际测试和包证据、未完成限制、工作树 / commit 状态。
 
 ## 7. 可以安全并行的范围
