@@ -16,6 +16,7 @@ import type {
   ChromeSyncReport,
   ExtensionUiRequest,
   FilePreview,
+  GoalState,
   GitScopeRequest,
   MainPush,
   MessagePatch,
@@ -324,6 +325,8 @@ interface Store {
    * 后台会话各自的值在 `sessionRuntimes` 里，切回去时主进程会再推一份权威值。
    */
   workMode: WorkModeState | null
+  /** 当前会话的内置目标 / 计划；null = 还没与主进程对齐。 */
+  goal: GoalState | null
   /** 左栏工作区入口；与当前会话的 AgentMode 完全独立。 */
   workspaceMode: WorkspaceMode
 
@@ -331,6 +334,8 @@ interface Store {
   bootstrap: () => Promise<void>
   /** 重新对齐运行实例状态（N12）：拉一次快照 + 同步当前视图 id */
   syncRunners: () => Promise<void>
+  /** 拉取当前会话的内置目标快照（启动 / 切会话时的兜底）。 */
+  loadGoal: () => Promise<void>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
@@ -620,6 +625,7 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   }
   if (snapshot.session) projection.session = snapshot.session
   if (snapshot.workMode) projection.workMode = snapshot.workMode
+  projection.goal = snapshot.goal
   return projection
 }
 
@@ -912,6 +918,7 @@ export const useStore = create<Store>((rawSet, get) => {
   runners: [],
   sessionRuntimes: {},
   workMode: null,
+  goal: null,
   workspaceMode: initialWorkspaceMode(),
 
   models: [],
@@ -1022,6 +1029,7 @@ export const useStore = create<Store>((rawSet, get) => {
     // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
     void get().loadZoom()
     void get().reloadCommands()
+    void get().loadGoal()
     /* 运行实例身份与状态（N12）：bootstrap 后对齐一次 */
     void get().syncRunners()
   },
@@ -1112,6 +1120,10 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'work-mode':
         /* 当前会话的模式：后台会话的已经写进 sessionRuntimes，上面已 return */
         set({ workMode: m.payload })
+        break
+      case 'goal':
+        /* 当前会话的目标：后台会话已经归并到 sessionRuntimes，上面已 return。 */
+        set({ goal: m.payload })
         break
       case 'runners':
         /* 全局快照（N12）：左栏状态槽用。不参与上面的实例身份过滤 */
@@ -1431,6 +1443,15 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  loadGoal: async () => {
+    try {
+      const res = await window.yan.getGoal()
+      set({ goal: res.goal })
+    } catch {
+      /* 主进程尚未就绪时保持现状；后续 goal 推送会补齐。 */
+    }
+  },
+
   reloadModels: async () => {
     const request = ++capabilityRequestSeq
     const initial = get()
@@ -1668,12 +1689,13 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
      */
     if (res.id || res.runId) {
-      set({ queue: EMPTY_QUEUE, pendingSends: [], activeRunnerId: res.runId ?? res.id, messages: [] })
+      set({ queue: EMPTY_QUEUE, pendingSends: [], activeRunnerId: res.runId ?? res.id, messages: [], goal: null })
     }
     else set({ queue: EMPTY_QUEUE, pendingSends: [] })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
+    void get().loadGoal()
     await get().refreshSessions()
     return { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
   },
@@ -1713,6 +1735,8 @@ export const useStore = create<Store>((rawSet, get) => {
      * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
      */
     const sum = get().sessions.find((x) => x.path === path)
+    /* 在新会话的权威快照到达前，不继续展示上一条会话的目标。 */
+    set({ goal: null })
 
     // ① 立即显示（不等 pi）
     try {
@@ -1772,6 +1796,7 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
+    void get().loadGoal()
   },
 
   moveSession: async (sessionId, projectId) => {

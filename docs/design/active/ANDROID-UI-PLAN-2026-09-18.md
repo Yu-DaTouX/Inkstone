@@ -6,7 +6,7 @@
 
 Android 是电脑端砚的随身工作入口：看进度、读结果、继续对话、处理需要关注的任务。模型、pi、工具执行、项目文件和供应商凭证留在电脑上。电脑离线时只能阅读已缓存内容与保存草稿。
 
-依据：当前 [HANDOFF](../dev/HANDOFF.md)、[远程协议](../dev/REMOTE-CONTROL.md)、[DESIGN](DESIGN.md)、[实际样式令牌](../../src/renderer/src/styles/tokens.css)、[主界面实测截图](preview/matrix-main-1440x900-100-dark-2026-09-17.png)，并核对了 [远程服务](../../src/main/remote-server.ts) 和 [主进程接入](../../src/main/index.ts)。截图是已有桌面证据，本方案没有启动新窗口或做 Android 运行验证。
+依据：当前 [HANDOFF](../../dev/HANDOFF.md)、[远程协议](../../dev/REMOTE-CONTROL.md)、[DESIGN](../DESIGN.md)、[实际样式令牌](../../../src/renderer/src/styles/tokens.css)、[主界面实测截图](../preview/matrix-main-1440x900-100-dark-2026-09-17.png)，并核对了 [远程服务](../../../src/main/remote-server.ts) 和 [主进程接入](../../../src/main/index.ts)。截图是已有桌面证据，本方案没有启动新窗口或做 Android 运行验证。
 
 DESIGN 部分早期章节的三栏尺寸、偏蓝灰配色和圆角，与当前 tokens.css / 实测图存在差异。本提案取当前中性灰、小圆角的视觉结果为参考；实施移动令牌前必须回填 DESIGN 的移动端章节，不能把本提案变成第二份令牌真源。本次不调整桌面令牌。
 

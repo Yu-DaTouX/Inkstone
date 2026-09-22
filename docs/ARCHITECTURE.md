@@ -263,7 +263,7 @@ sequenceDiagram
 
 - **默认开启**：上下文工作集预算、Tool Sweep、`context_recall`、压缩接管框架及失败降级，以及 `episode-fold` 的 TaskState 生成/注入（2026-09-18 起进默认接管集；**短会话由会话级门槛挡住，不是每轮都生成**）。
 - **默认关闭**：Deep Context Pass 1（`ctx.modelRegistry.complete()` 的额外调用）—— 只有用户在设置面板打开或策略显式指定才会走这条模型路径。
-- **主动移除**：旧全局记忆系统（存储、`remember/recall/forget`、记忆扩展、提示词注入）与旧会话树 `get_tree` 浏览链路；不要把它们画成缺失实现。**「项目知识」是独立新功能**（`docs/plan/实施-03-项目知识与旧记忆清理-已完成.md`，**S0–S5 已实施：存储 + 检索 + 注入 + `yan knowledge` CLI + 设置页**），既不等于恢复旧记忆，也不自动导入旧存储。
+- **主动移除**：旧全局记忆系统（存储、`remember/recall/forget`、记忆扩展、提示词注入）与旧会话树 `get_tree` 浏览链路；不要把它们画成缺失实现。**「项目知识」是独立新功能**（`docs/archive/plan/实施-03-项目知识与旧记忆清理-已完成.md`，**S0–S5 已实施：存储 + 检索 + 注入 + `yan knowledge` CLI + 设置页**），既不等于恢复旧记忆，也不自动导入旧存储。
 - **仍有发布闭环尾项**：安装包/便携包最终验收、校验和清单、便携真实数据副本升级读取验证，需要按 `HANDOFF.md` 当前表格继续复核。
 - **测试分层**：纯逻辑单测验证函数边界；`test:live` 验证真实 Electron 接线；模型调用场景会消耗额度，不能拿静态探针代替真实运行证据。
 
@@ -275,5 +275,4 @@ sequenceDiagram
 - 工程验收六栏口径：[`docs/dev/ENGINEERING-CHECKLIST-2026-09-15.md`](dev/ENGINEERING-CHECKLIST-2026-09-15.md)
 - 上下文实施方案：[`docs/dev/实施方案-2026-09-15.md`](dev/实施方案-2026-09-15.md)
 - 设计令牌与视觉边界：[`docs/design/DESIGN.md`](design/DESIGN.md)
-
 

@@ -8,7 +8,7 @@
 |---|---|---|
 | `src/` | 应用源码：主进程、预加载、界面及共享协议 | **核心源码**，修改功能从这里开始 |
 | `scripts/` | 启动、构建辅助、测试和诊断 | **维护工具**，详见下表 |
-| `docs/` | 设计规范、原型、截图与开发交接 | **参考资料**，入口为 [文档索引](README.md) |
+| `docs/` | 当前状态、活动计划、设计输入、历史证据与开发交接 | **参考资料**，入口为 [文档索引](README.md) |
 | `build/icon.ico`、`build/icon.png` | Windows 打包图标 | **保留资源**；虽位于 build，仍受版本管理，不应整目录清理 |
 | `resources/pi-runtime/` | 随应用分发的 pi 运行时 | **生成物**，Git 忽略；通过 `npm run vendor:pi` 生成，不手改 |
 | `resources/pi-extensions/` | 随应用分发的内置 pi 扩展（浏览器、提问、界面语言、回复详细度、上下文管理） | **源码资源**，随打包分发；主进程用 `--extension` 加载 |
@@ -27,6 +27,21 @@
 | `README.md`、`LICENSE` | 产品介绍、使用说明与许可证 | **项目文档** |
 | `AGENTS.md` | 交给 pi / AI 助手的项目须知；会被自动加载进会话的系统提示（生成标题的短任务已显式排除） | **项目文档**，只放「每次都得知道」的内容，细节一律指向 `docs/dev/HANDOFF.md` |
 
+## 文档分层
+
+| 路径 | 内容 | 判定口径 |
+|---|---|---|
+| `docs/dev/` | 当前状态、测试、发布、维护和协议边界 | 当前事实与验证入口；`HANDOFF.md` 是状态真源 |
+| `docs/plan/` | 活动实施索引与 `active/` 未完成主题 | 正式活动正文只读 `docs/plan/active/`；完成主题只读 `docs/archive/plan/` |
+| `docs/plan/active/` | 未完成实施主题与并行编排 | 只放仍有切片、验证限制或发布门槛的工作 |
+| `docs/design/` | 当前设计令牌真源、自动生成清单、字体调研、图标资源和设计辅助脚本 | `DESIGN.md` / 自动生成文件是当前设计资料；提案正文只读 `docs/design/active/` |
+| `docs/design/active/` | 尚未实施或仍需验证的设计提案 | 设计输入，不等于已交付 |
+| `docs/design/font-test/` | 字体候选与缩放对比试验 | 辅助资料，不是产品设计真源 |
+| `docs/archive/plan/` | 已完成主题、历史决策和旧计划快照 | 仅备份与追溯，不是当前待办 |
+| `docs/archive/evidence/` | 已完成 `证据-*` 验收记录 | 历史证据；当前结论以 HANDOFF 复核为准 |
+| `docs/archive/reference/` | 外部评审 / 外部方案原文 | 参考材料，不视为执行指令 |
+| `docs/design/preview/` | 真实窗口截图和视觉证据 | 保留，不覆盖；新证据另存新名 |
+
 
 ## 常用入口
 
@@ -40,6 +55,8 @@
 | 查浏览器四层结构 | [CODE-MAP](dev/CODE-MAP.md) §4.4、§6 |
 | 查设计稿 / 实测图 | `docs/design/prototype.html` / `docs/design/preview/` |
 | 查设计辅助脚本 | `docs/design/` 的 check、measure-design、build-icons、extract-icons、embed-icons 脚本 |
-| 查旧原型 / 阶段记录 | `docs/design/archive/` / [archive](archive/README.md) |
+| 查旧原型 / 阶段记录 | `docs/design/preview/` / [archive](archive/README.md) |
+| 查活动方案 | [`docs/design/active/`](design/active/) / [`docs/plan/active/`](plan/active/) |
+| 查已完成备份 | [`docs/archive/plan/`](archive/plan/) / [`docs/archive/evidence/`](archive/evidence/) / [`docs/archive/reference/`](archive/reference/) |
 
 以上分类用于定位，不是删除清单。备份、用户数据、图标、截图和旧名样式均需保留；清理前先核对引用与用途。

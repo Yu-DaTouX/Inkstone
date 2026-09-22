@@ -170,7 +170,7 @@
    *    现在把行定义成 auto/auto/1fr/auto，并给对话区与输入区**显式行号**：
    *    连接条在不在，都不影响对话区拿到剩余空间。
    */
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-height: 0;
   background: var(--bg-0);
 }
@@ -182,11 +182,8 @@
 .center > .qpanel {
   grid-row: 4;
 }
-.center > .subagent-zone {
-  grid-row: 5;
-}
 .center > .composer-wrap {
-  grid-row: 6;
+  grid-row: 5;
 }
 
 .stream {

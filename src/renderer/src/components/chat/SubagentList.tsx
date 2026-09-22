@@ -9,8 +9,8 @@ import { SubagentDetails } from './SubagentDetails'
 /**
  * 子代理运行列表（方案 8.3）。
  *
- * 位置：输入区上方的主对话区域 —— 子任务是「正在发生的事」，
- * 与推理/工具同类，不该塞进右栏的工具分区里（那里是「查看」）。
+ * 位置：右侧工作区 —— 独立子任务是跨回合的后台资源，不应该固定占据
+ * 主对话的输入区上方；挂回某个助手回合的子代理仍由 TurnView 就地显示。
  *
  * 形态：紧凑一行一条，和工具行同一套读法：
  *   ● 检查附件流程   正在读取 Composer.tsx   18s   [查看] [停止]
@@ -18,7 +18,7 @@ import { SubagentDetails } from './SubagentDetails'
  *
  * ⚠️ 关闭预览**不**停止任务（方案 8.3）：停止是明确的按钮。
  */
-export function SubagentList() {
+export function SubagentList({ placement = 'main' }: { placement?: 'main' | 'right' }) {
   const t = useT()
   const runs = useStore((s) => s.subagents)
   const openSubagent = useStore((s) => s.openSubagent)
@@ -47,7 +47,7 @@ export function SubagentList() {
   }, [active.length])
 
   return (
-    <div className="subagent-zone">
+    <div className={`subagent-zone subagent-zone-${placement}`} data-testid={`subagent-zone-${placement}`}>
       <SubagentLauncher activeCount={active.length} />
       {detachedRuns.length > 0 ? (
         <div className="sa-strip" data-testid="subagent-strip">
@@ -99,7 +99,9 @@ export function SubagentList() {
           })}
         </div>
       ) : null}
-      {previewId && !runs.find((run) => run.id === previewId)?.parentMessageId ? <SubagentDetails placement="main" /> : null}
+      {previewId && !runs.find((run) => run.id === previewId)?.parentMessageId ? (
+        <SubagentDetails placement={placement} />
+      ) : null}
     </div>
   )
 }
@@ -110,11 +112,11 @@ function duration(run: { startedAt: number; endedAt?: number }, now: number): st
 }
 
 /**
- * 输入区上方的显式调用入口，位置与任务进度条相邻。
+ * 独立子代理的显式调用入口；列表在哪个表面展示由 SubagentList 的 placement 决定。
  *
  * `/subagent` 仍然保留给熟悉命令的用户；这个入口解决的是“能力存在但
  * 用户必须记住一条隐藏命令”的发现性问题。启动后的同一条 run 会立即
- * 进入列表，并默认打开主工作区里的实时详情。
+ * 进入右侧工作区列表，并默认打开对应的实时详情。
  */
 function SubagentLauncher({ activeCount }: { activeCount: number }) {
   const t = useT()

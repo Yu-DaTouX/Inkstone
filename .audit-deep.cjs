@@ -169,16 +169,22 @@ const report = {}
 {
   const mdFiles = [...walk('docs').filter((p) => p.endsWith('.md')), 'README.md', 'AGENTS.md']
   const broken = []
+  const archivedRaw = []
   for (const f of mdFiles) {
     const text = rd(f)
     for (const m of text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
       const target = m[1]
       if (/^[a-z]+:/i.test(target) || target.startsWith('//')) continue
       const resolved = path.normalize(path.join(path.dirname(f), decodeURI(target)))
-      if (!exists(resolved)) broken.push({ file: f, target, resolved })
+      if (!exists(resolved)) {
+        // 外部原文必须逐字保留；其中的旧仓库路径是历史内容，不把它伪装成当前断链。
+        if (f.startsWith('docs/archive/reference/')) archivedRaw.push({ file: f, target, resolved })
+        else broken.push({ file: f, target, resolved })
+      }
     }
   }
   report.brokenDocLinks = broken
+  report.archivedRawDocLinks = archivedRaw
 }
 
 /* ---------- 10. 文档提到的源码文件是否存在 ---------- */

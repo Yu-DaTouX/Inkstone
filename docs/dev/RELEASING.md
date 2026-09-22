@@ -40,7 +40,7 @@
 1. 按 [TESTING](TESTING.md) 检查最终源码；通过根目录 `启动-砚.cmd` 应用构建，并记录真实运行与视觉结果。
 2. 检查内置 pi：`npm run vendor:pi:check`；缺失时用 vendor:pi，升级用 upgrade:pi。新版 runtime 需重启应用。
 3. 执行 dist:dir 和 test:packaged；核对包内运行时、`yan` 能力入口和路径，不用开发态测试替代包内验收。
-   `test:packaged` 同时承担 01–08 的「应用与包」栏（逐项清单见[实施-09 §3](../plan/实施-09-交付与验收收尾.md)）：
+   `test:packaged` 同时承担 01–08 的「应用与包」栏（逐项清单见[实施-09 §3](../plan/active/实施-09-交付与验收收尾.md)）：
    除内置 pi / `yan` CLI / 项目知识隔离 / 旧数据哨兵外，还断言**上下文策略设置项在包内可写可读**、
    包里含 `src-websearch` 与 `worktree-links.json`、**远程管理默认不监听**且**显式开启后可启动并通过鉴权**、**在临时 git 仓库上真做一次 stage**（退出后 `git status --porcelain` 确认为 `M  tracked.txt`）（解包 / 便携版 / 安装版各跑一次）。
    ⚠️ 唯一已知缺口与保留：`npm run check` 全量要额度；**静默卸载未验成**（`Uninstall 砚.exe /S` 返回 0 但目录未删，详见实施-09 §3.5）。

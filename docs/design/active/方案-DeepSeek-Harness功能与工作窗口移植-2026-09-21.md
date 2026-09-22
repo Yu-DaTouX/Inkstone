@@ -9,7 +9,7 @@
 
 建议把砚推进为“**对话 + 工作窗口**”：左侧管理项目与会话，中间阅读、输入，右侧承载文件、网页、工具和子代理详情。移植 Harness 最有价值的部分，是清晰的入口、统一的资源窗口，以及过程信息退出正文后的阅读秩序。
 
-延续砚当前 [DESIGN.md](./DESIGN.md) 的“墨色工作空间”：中文无衬线正文、暖中性色、单一靛蓝交互强调、代码等宽。参考图用于确定信息层级与行为，不原样照搬字体、比例与插件架构。
+延续砚当前 [DESIGN.md](../DESIGN.md) 的“墨色工作空间”：中文无衬线正文、暖中性色、单一靛蓝交互强调、代码等宽。参考图用于确定信息层级与行为，不原样照搬字体、比例与插件架构。
 
 用户需求落成以下决定：
 
@@ -29,7 +29,7 @@
 
 ## 2. 源码对比结论
 
-以下“已有”只代表本轮源码确认；以前的运行证据可查 [HANDOFF](../dev/HANDOFF.md)，不冒充本轮复测。
+以下“已有”只代表本轮源码确认；以前的运行证据可查 [HANDOFF](../../dev/HANDOFF.md)，不冒充本轮复测。
 
 | 项目 | Harness 的实际落点 | 砚现状 | 处理方式 |
 |---|---|---|---|
@@ -249,7 +249,7 @@ type WorkbenchTab =
 
 ## 10. 验收要点
 
-依据 [TESTING](../dev/TESTING.md) 和 [工程清单 §6](../dev/ENGINEERING-CHECKLIST-2026-09-15.md)，实现时按六栏交付。
+依据 [TESTING](../../dev/TESTING.md) 和 [工程清单 §6](../../dev/ENGINEERING-CHECKLIST-2026-09-15.md)，实现时按六栏交付。
 
 - **实现**：记录实际字段、IPC、状态迁移及历史兼容。先更新 DESIGN 的已确定规则，再同步 CSS；本文候选尺寸不直接当现有规范。
 - **自动检查**：类型/CSS、构建、相应单测；重点覆盖 turn 归属/去重、路径编码/行号、tab reducer、异步结果过期、资源显隐。先 build，再运行依赖 out 的测试。
@@ -262,14 +262,14 @@ type WorkbenchTab =
 
 ### 砚
 
-- [助手回合渲染](../../src/renderer/src/components/chat/TurnView.tsx)
-- [回合数据聚合](../../src/shared/turns.ts) / [消息与子代理契约](../../src/shared/ipc.ts)
-- [模型事件和生成速度](../../src/main/agent.ts) / [历史读取](../../src/main/session-history.ts)
-- [链接分类](../../src/shared/links.ts) / [Markdown 渲染与点击](../../src/renderer/src/components/chat/MessageParts.tsx)
-- [文件预览](../../src/renderer/src/components/toolbar/FilePreview.tsx) / [目录树](../../src/renderer/src/components/toolbar/FileTree.tsx)
-- [右栏窗口](../../src/renderer/src/components/toolbar/RightPanel.tsx) / [状态与资源操作](../../src/renderer/src/state/store.ts)
-- [浏览器视图壳](../../src/renderer/src/components/browser/BrowserSurface.tsx) / [浏览器宿主](../../src/main/browser.ts)
-- [会话头](../../src/renderer/src/components/chat/SessionHeader.tsx) / [子代理列表](../../src/renderer/src/components/chat/SubagentList.tsx) / [子代理详情](../../src/renderer/src/components/chat/SubagentDetails.tsx) / [子代理控制器](../../src/main/subagents.ts)
+- [助手回合渲染](../../../src/renderer/src/components/chat/TurnView.tsx)
+- [回合数据聚合](../../../src/shared/turns.ts) / [消息与子代理契约](../../../src/shared/ipc.ts)
+- [模型事件和生成速度](../../../src/main/agent.ts) / [历史读取](../../../src/main/session-history.ts)
+- [链接分类](../../../src/shared/links.ts) / [Markdown 渲染与点击](../../../src/renderer/src/components/chat/MessageParts.tsx)
+- [文件预览](../../../src/renderer/src/components/toolbar/FilePreview.tsx) / [目录树](../../../src/renderer/src/components/toolbar/FileTree.tsx)
+- [右栏窗口](../../../src/renderer/src/components/toolbar/RightPanel.tsx) / [状态与资源操作](../../../src/renderer/src/state/store.ts)
+- [浏览器视图壳](../../../src/renderer/src/components/browser/BrowserSurface.tsx) / [浏览器宿主](../../../src/main/browser.ts)
+- [会话头](../../../src/renderer/src/components/chat/SessionHeader.tsx) / [子代理列表](../../../src/renderer/src/components/chat/SubagentList.tsx) / [子代理详情](../../../src/renderer/src/components/chat/SubagentDetails.tsx) / [子代理控制器](../../../src/main/subagents.ts)
 
 ### DeepSeek Harness（本机参考目录）
 

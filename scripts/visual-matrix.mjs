@@ -1799,7 +1799,7 @@ const STATES = {
    */
   /*
    * 本轮用时（用户要求）：回合结束后，底部用量条上要能看到「用时 Ns」。
-   * fixture 默认把会话摆成「流式中」（那时显示的是「生成中 Ns」），
+   * fixture 默认把会话摆成「流式中」（那时显示的是「生成中」状态），
    * 所以这里显式置为已结束，并确认真的渲染出了耗时项。
    */
   /*
@@ -2028,12 +2028,16 @@ const STATES = {
       const box = document.querySelector('.stream');
       if (box) box.scrollTop = box.scrollHeight;
       await new Promise((r) => setTimeout(r, 250));
-      return document.querySelector('[data-testid="ub-elapsed"]') ? 'ok' : 'no-elapsed';
+      const bar = document.querySelector('[data-testid="usagebar"]');
+      const footer = document.querySelector('[data-testid="turn-footer"]');
+      if (!bar) return 'no-usagebar';
+      if (bar.querySelector('[data-testid="ub-elapsed"]')) return 'duplicate-elapsed';
+      return footer ? 'ok' : 'no-turn-footer';
     })()
   `,
   /*
    * 新一轮刚开始（R03）：会话里上一轮有非零 usage 与 speed，现在追加一条
-   * 用户消息并回到流式 —— 用量条必须显示「生成中 Ns」，**不能**把上一轮的
+   * 用户消息并回到流式 —— 用量条必须显示「生成中」状态，**不能**把上一轮的
    * 46 tok/s 标成实时速度，输入/输出/缓存也要是「—」而不是旧值。
    * 零费用：完全在渲染端注入状态，不调模型。
    */
@@ -3233,7 +3237,7 @@ const MUST_HAVE = {
   fileincontext: ['[data-testid="fs-tree"]', '[data-testid="file-preview"]', '[data-testid="fs-inctx-src/main/agent.ts"]', '[data-testid="composer"]'],
   usageelapsed: [
     '[data-testid="usagebar"]',
-    '[data-testid="ub-elapsed"]',
+    '[data-testid="turn-footer"]',
     '.usagebar .ub-item',
     '[data-testid="composer"]'
   ],

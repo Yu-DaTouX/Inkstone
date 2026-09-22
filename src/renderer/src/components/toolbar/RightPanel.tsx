@@ -23,6 +23,8 @@ import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
+import { SubagentList } from '../chat/SubagentList'
+import { GoalSection } from './GoalSection'
 
 type RightWindowView = 'tools' | 'review' | 'browser' | 'file'
 
@@ -173,7 +175,14 @@ export function RightPanel() {
 
     if (next === 'browser') {
       if (browserOpen) void window.yan.browser.setVisible(true)
-      else void openBrowser()
+      else {
+        void openBrowser().then(() => {
+          /* 打开失败时没有 browserState 事件，不能把右栏永远留在空的 browser tab。 */
+          if (!useStore.getState().browserState.open) {
+            setWindowView((current) => current === 'browser' ? 'tools' : current)
+          }
+        })
+      }
       return
     }
 
@@ -205,7 +214,10 @@ export function RightPanel() {
   const browserMode = activeView === 'browser' && browserOpen
   const fileMode = activeView === 'file'
   const toolsMode = activeView === 'tools' && open
-  const hasVisibleSurface = reviewMode || browserMode || fileMode || toolsMode
+  /* 异步打开浏览器的瞬间仍保留面板；否则 activeView 切过去后组件会卸载，
+     本地 windowView 又回到 tools，最终表现就是点击“＋”没有反应。 */
+  const pendingSurface = (activeView === 'browser' && !browserOpen) || (activeView === 'review' && !reviewOpen)
+  const hasVisibleSurface = reviewMode || browserMode || fileMode || toolsMode || pendingSurface
 
   /* 原生网页的显隐只有一个协调点；切标签不等于销毁网页资源。 */
   useEffect(() => {
@@ -365,8 +377,15 @@ export function RightPanel() {
 
       {reviewMode ? <ReviewPanel /> : null}
       {browserMode ? <BrowserSurface /> : null}
+      {pendingSurface ? (
+        <div className="rp-pending-surface" data-testid="right-window-pending">
+          {activeView === 'browser' ? '正在打开浏览器…' : '正在打开审查…'}
+        </div>
+      ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
+          {toolsMode ? <GoalSection /> : null}
+          {toolsMode ? <SubagentList placement="right" /> : null}
           {fileMode && filePreview ? <FilePreviewPane /> : null}
           {visible.map((id, i) => (
             <SectionSlot

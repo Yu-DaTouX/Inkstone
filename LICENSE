@@ -41,6 +41,7 @@ SOFTWARE.
 | [virtua](https://github.com/inokawa/virtua) | MIT | 长列表虚拟化 |
 | [react-markdown](https://github.com/remarkjs/react-markdown) / [remark-gfm](https://github.com/remarkjs/remark-gfm) / [rehype-highlight](https://github.com/rehypejs/rehype-highlight) | MIT | Markdown 渲染 |
 | [typebox](https://github.com/sinclairzx81/typebox) | MIT | （pi 的依赖，间接使用） |
+| DeepSeek Harness（`parseFileLink`，来源 commit `ddefc45fbc`） | MIT | 仅搬运本地 Markdown 文件链接 / `#L42` 解析纯逻辑；代码内保留来源说明，不引入其 UI / 运行时架构 |
 
 ### 设计与调研参考
 

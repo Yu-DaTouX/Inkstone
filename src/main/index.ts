@@ -54,7 +54,7 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
-import { GoalStore, writeGoalResumeSnapshot } from './goal-service'
+import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
@@ -74,7 +74,13 @@ import {
 import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
 import { AUTO_CONTINUE_LIMIT, retryResumeSummary, type AutoContinuePlan } from '../shared/auto-continue'
 import { randomUUID } from 'node:crypto'
-import { AUTONOMOUS_CONTINUE_LIMIT, goalSummary, normalizeReadyParams, normalizeReportParams } from '../shared/goal'
+import {
+  AUTONOMOUS_CONTINUE_LIMIT,
+  goalSummary,
+  isActiveGoalPhase,
+  normalizeReadyParams,
+  normalizeReportParams
+} from '../shared/goal'
 import { CapabilityCommandError } from './capability-server'
 import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
@@ -1032,6 +1038,7 @@ function pushFrom(runnerId: string, msg: MainPush): void {
    */
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
     void maybeArmHandoff(runnerId, 'settled')
+    void maybeArmAutonomousGoal(runnerId)
   }
   /*
    * 模型报错 → 自动继续（实施-05 S5c）。
@@ -1179,6 +1186,13 @@ async function pushWorkMode(id: string): Promise<WorkModeState> {
   return state
 }
 
+/** 把该实例当前会话的目标 / 计划事实快照推给右栏。 */
+async function pushGoal(id: string): Promise<void> {
+  await goals.load()
+  const state = goals.state(workModeKeyFor(id))
+  pushFrom(id, { ch: 'goal', payload: state })
+}
+
 /**
  * 把该实例的「待发续行」写给薄层（实施-05 S3b）。
  *
@@ -1210,6 +1224,49 @@ async function cancelGoalResume(id: string): Promise<void> {
  * 模式那份承担两个写者的并发语义。
  */
 const goals = new GoalStore()
+
+/*
+ * 自主档的兜底续接（S3c）。
+ *
+ * 模型通常会在工具回合里调用 `yan goal report`，但这不是可靠的唯一出口：
+ * 它可能只给出一段普通文本，或因同一个 reportId 重试而让旧实现返回
+ * `autoContinueArmed: false`。回合真正空闲后，如果目标仍在推进、模式仍是
+ * 自主、且上一条续行已经被消费，就再补 arm 一次。串行闸门避免多条 state
+ * 推送把同一轮 arm 两次；用户停止 / 改档仍通过上面的取消路径优先生效。
+ */
+const autonomousArmInFlight = new Set<string>()
+
+async function maybeArmAutonomousGoal(id: string): Promise<void> {
+  if (autonomousArmInFlight.has(id)) return
+  autonomousArmInFlight.add(id)
+  try {
+    const mode = await resolveWorkMode(id)
+    if (mode.mode !== 'autonomous') return
+
+    await goals.load()
+    const key = workModeKeyFor(id)
+    const goal = goals.state(key)
+    if (!goal.goalId || !isActiveGoalPhase(goal.phase) || goal.revision <= 0) return
+
+    const resume = goals.resumeOf(key)
+    if (resume) {
+      /* 还没消费的续行仍交给 goal-resume 扩展，不能覆盖它。 */
+      if (resume.kind !== 'continue') return
+      if (!(await goalResumeContinuationWasConsumed(id, resume.operationId))) return
+      /* 旧的 continue 已消费，当前空闲回合需要一个新的 operationId。 */
+    }
+
+    const armed = await goals.armContinue(key)
+    if (armed.armed) {
+      await applyGoalResume(id)
+      await pushGoal(id)
+    }
+  } catch {
+    /* 自动兜底是增强路径；失败时保留目标状态，不让它影响当前会话。 */
+  } finally {
+    autonomousArmInFlight.delete(id)
+  }
+}
 
 /**
  * `yan goal …` 的实现点（实施-05 S3）。
@@ -1259,6 +1316,7 @@ const goalCapabilityHost: GoalCommandHost = {
         /* 先落盘（commitReady 里已做）再告诉薄层可以开工：顺序不能反（§4） */
         await applyGoalResume(context.sessionId)
       }
+      await pushGoal(context.sessionId)
       return {
         data: {
           replayed: res.replayed,
@@ -1319,7 +1377,18 @@ const goalCapabilityHost: GoalCommandHost = {
             `已达自动续接上限（${AUTONOMOUS_CONTINUE_LIMIT} 次），不再自动叫你：` +
             '请在本轮里把进展、结论与需要用户决定的事写清楚。'
         }
+      } else if (res.replayed && modeState.mode === 'autonomous' && isActiveGoalPhase(res.goal.phase)) {
+        /*
+         * reportId 重放是正常的 RPC / 模型重试，不应把已经存在的续行说成
+         * 没有安排。这里只复述仍待消费的那一条，不再重复 arm，避免多启动一轮。
+         */
+        const existing = goals.resumeOf(key)
+        if (existing?.kind === 'continue' && !(await goalResumeContinuationWasConsumed(context.sessionId, existing.operationId))) {
+          continueRound = goals.autoContinueCount(key)
+          continueNote = `第 ${continueRound} 次自动续接已经安排，等待当前回合收尾后继续。`
+        }
       }
+      await pushGoal(context.sessionId)
       return {
         data: {
           replayed: res.replayed,
@@ -1385,6 +1454,7 @@ async function pushRunnerSnapshot(id: string): Promise<void> {
   void ag.refreshTodos().catch(() => {})
   /* 工作模式跟随实例推送：切会话 / 新建 / 启动都经这里，一处覆盖所有路径 */
   await pushWorkMode(id)
+  await pushGoal(id)
   pushRunners()
 }
 
@@ -2690,8 +2760,16 @@ function registerIpc(): void {
     const id = runners?.activeRunner()?.id
     if (id) {
       await goals.load()
+      const mode = await resolveWorkMode(id)
+      const key = workModeKeyFor(id)
+      if (mode.mode === 'autonomous') {
+        /* 用户重新接管时，旧的自动续行不能在本轮之后又插进来。 */
+        await cancelGoalResume(id)
+        if (text.trim()) await goals.ensureAutonomousGoal(key, text)
+        await pushGoal(id)
+      }
       /* await：用户发言必须先于模型接下来的 arm 落地，否则竞态下计数不会被归零 */
-      await goals.resetAutoContinues(workModeKeyFor(id)).catch(() => {})
+      await goals.resetAutoContinues(key).catch(() => {})
       /* 用户发话了 = 他接手了：自动继续作废、连续失败计数归零（S5c） */
       await resetAutoContinue(id)
     }

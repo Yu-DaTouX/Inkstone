@@ -229,8 +229,8 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
         </span>
       ) : null}
       {elapsed ? (
-        /* 悬停要能解释口径：这里是**整轮**墙钟时间（含工具往返与重试），
-           不是单条消息的生成时间（后者在用量条里单独表达）。 */
+        /* 悬停要能解释口径：这里是**整轮**墙钟时间（含工具往返与重试）。
+           用量条只展示 token / 速度，不再重复占用时长。 */
         <span className="turn-footer-item" title={t('tok.elapsedTip')}>
           {t('tok.elapsed')} {elapsed}
         </span>

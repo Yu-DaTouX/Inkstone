@@ -344,6 +344,58 @@ export class GoalStore {
     return this.doc.entries[key]?.resume ?? null
   }
 
+  /** 当前会话已经连续自动续接了几轮（用于回执与排障，不改状态）。 */
+  autoContinueCount(sessionKey: string): number {
+    const key = normalizeSessionFileKey(sessionKey)
+    if (!key) return 0
+    return this.doc.entries[key]?.autoContinues ?? 0
+  }
+
+  /**
+   * 自主档收到用户请求时先登记一个目标。
+   *
+   * 旧链路要求模型先调用 `yan goal report` 才有目标，因此模型一次没有
+   * 上报就会停在普通回答；自主档的职责是把这件事交给宿主先做。这里把
+   * 用户请求压成一个可读步骤并立即落盘，后续仍由模型用 report 推进阶段、
+   * 补证据或说明阻塞。已有活动目标视为用户对同一任务的补充，不另起一条。
+   */
+  async ensureAutonomousGoal(
+    sessionKey: string,
+    request: string
+  ): Promise<{ created: boolean; goal: GoalState }> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return { created: false, goal: emptyGoal(this.now()) }
+
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      if (entry.goal.goalId && isActiveGoalPhase(entry.goal.phase)) {
+        return { created: false, goal: entry.goal }
+      }
+
+      const at = this.now()
+      const text = request.trim().replace(/\s+/g, ' ')
+      const preview = Array.from(text).slice(0, 180).join('')
+      const title = preview ? `完成用户请求：${preview}${text.length > 180 ? '…' : ''}` : '完成用户请求'
+      entry.goal = {
+        ...emptyGoal(at),
+        goalId: `goal-${randomUUID()}`,
+        /* 自主档先给模型一个不打断用户的计划阶段，再由它推进执行。 */
+        phase: 'planning',
+        /* 这是宿主登记目标的版本；模型第一次 report 从 rev1 开始。 */
+        revision: 1,
+        steps: [{ title, status: 'pending' }]
+      }
+      entry.transitions = {}
+      entry.reports = {}
+      entry.resume = null
+      entry.autoContinues = 0
+      entry.updatedAt = at
+      this.trim(entry)
+      await this.persist()
+      return { created: true, goal: entry.goal }
+    })
+  }
+
   /**
    * 撤销未发续行（用户停止 / 用户把模式改回非标准档）。
    *
@@ -479,8 +531,8 @@ export class GoalStore {
    *
    * 三个条件同时成立才 arm：
    *   ① 目标还在推进阶段（终态不 arm）；
-   *   ② 目标**真的被报告过**（`revision > 0`）—— 否则自主档里任何一场普通对话
-   *      都会因为「phase 默认是 planning」被无限叫醒；
+   *   ② 目标已经开始推进（`revision > 0`）—— 目标可以由宿主在自主档收到
+   *      用户请求时登记，也可以由模型的第一份 report 建立；
    *   ③ 连续续接次数还没到上限。
    *
    * 返回值要能让调用方区分「没到可续接的状态」与「到上限了」：

@@ -140,9 +140,9 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 启动后 `main/extensions-inventory.ts` 把「用户扩展 / 砚薄层」写进日志（诊断样例）——
 旧条目只读、两者不会互相覆盖。
 ⚠️ 宿主日志**不写进会话 JSONL**（pi 的 RPC 没有追加 custom entry 的命令，且 01 §5 禁止外部编辑在用的 JSONL）；
-代价是用户拿 pi 终端打开同一会话看不到这些任务（判定过程见 [证据-02-S3 §1](plan/证据-02-S3-宿主任务服务.md)）。
-契约在 `shared/task-plan.ts`；剩余切片见 [实施-02](plan/实施-02-任务工具内置化-已完成.md)，
-本轮证据见 [证据-02-S3](plan/证据-02-S3-宿主任务服务.md) 与 [证据-02-S4](plan/证据-02-S4-UI与命令接线.md)。
+代价是用户拿 pi 终端打开同一会话看不到这些任务（判定过程见 [证据-02-S3 §1](archive/evidence/证据-02-S3-宿主任务服务.md)）。
+契约在 `shared/task-plan.ts`；剩余切片见 [实施-02](archive/plan/实施-02-任务工具内置化-已完成.md)，
+本轮证据见 [证据-02-S3](archive/evidence/证据-02-S3-宿主任务服务.md) 与 [证据-02-S4](archive/evidence/证据-02-S4-UI与命令接线.md)。
 
 **S4 的界面接线（2026-09-18）**：
 
@@ -157,7 +157,7 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 结果「工具调用 / 界面清单 / 磁盘日志」三处逐条一致；`taskcli`（含取消一节）/ `taskext`（**旧任务扩展 + 无关扩展**共存）/
 `slashcmd` / `todos` / `todonew` / `sessions` / `historyswitch` 全绿；打包后启动器写进 `YAN_DIR/bin` 并指向
 **解包目录**里的 `yan.mjs`，CLI 在安装目录里真跑 `--help`、无宿主时报可读错误。
-证据见 [证据-02-S5](plan/证据-02-S5-真实运行与验收.md)。
+证据见 [证据-02-S5](archive/evidence/证据-02-S5-真实运行与验收.md)。
 
 ### 2.6 推理内容
 
@@ -293,7 +293,7 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 | 开关（P2-7） | 设置面板「上下文」tab 有两个开关，**默认方向相反**：**深度上下文**（`ctx-deep`，默认关 —— 每轮同步多跑一次模型调用）与**任务状态记忆**（`ctx-fold`，默认开 —— 对应 `episode-fold`，会话够长且这一回合真改过东西才动手）。两者都写 `desktop.json`、由扩展**每轮读文件**（1 秒缓存），所以改完立即生效、不重建实例；`YAN_CONTEXT_POLICY` 显式给了 `kinds` 时它是测试通道、优先于界面开关。主进程侧与扩展侧读的是同一份默认值，但**生效值的折算分别在两边**（主进程 `resolveContextPolicy` 的 `foldEnabled` 层 / 扩展 `applyFoldSwitch`） |
 | 可观测 | `compaction_start/end` → `SessionState.compaction`（进行中，带原因）+ `.lastCompaction`（已结束，带 status/error/前后 token）；发起方由砚盖章，pi 报的 `manual` 不会显示成「手动」 |
 | 界面 | 工作集模式下主值是工作集（不是物理窗口），进度条上三条阶段刻度（清理/折叠/压缩，未接管的画虚线）；关掉「自动压缩」开关就整个退回物理窗口视角 |
-| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（按 **freshness 分档**：完全一致最好、“有效但较早”也接并标 stale、对不上才降级回 pi 摘要；`buildStructuredSummary` 的 `requiredFields` 默认空数组，不再要求六类字段齐备）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**2026-09-18 起在默认接管集里**（用户拍板）—— 但**不是每轮都跑**：会话级门槛与脏判定都还在，短会话照样不花钱；闸内还有 **`state.{generate,inject}` 两条分路**（`inject:false` = shadow 模式，**压缩接手也走这一路**）与一道**会话级 gate**（`foldEligible`：≥4 用户回合且转录 ≥48k，或本会话已经清扫过东西；命中后会话内 sticky）；注入块带 **authority 契约头**（`derived/authoritative/freshness/sourceHead` + 一句固定优先级），生成器输入会**自净掉** synthetic 内容（注入块 / 墓碑 / 召回正文），dirty 的「落后 ≥2」按**回合**而不是条目数算（见[归档 §1.11](archive/2026-09-17-已完成归档.md)）。证据见[方案 §17](design/方案-上下文工具内的自动压缩-2026-09-15.md)。**尾项已处置（2026-09-19，实施-06 S3）**：`symbolsTouched` **明确不做**（不为此在薄层引入语言级解析器，字段保留但刻意不填；见方案 §13.1 第 23 条）；**20+ 回合压力测试已做**（`test:live -- contextpressure`，22 个真实回合、压缩 3 次、峰值 1.05×），并据此修掉“策略压缩成功后不重新上膛”的真缺陷、给出 sweep 门槛的实测标定（方案 §12.11 第 10 条 / §12.12 P2）。~~EpisodeState 的语义生成~~ **已完成（2026-09-18，默认关 + shadow）**：边界用 `episodeWindow` 的**确定性规则**算（`recentTail` 窗口之外 + 上一版 Episode 的终点，扇叠只会向前推进），收束由模型的 `unresolved` 判（非空即不扇叠），生成后**只落盘、不消费**（进不进压缩摘要由 `buildStructuredSummary` 的 `includeEpisodes` 控制）；`state.{episodeGenerate,episodeInject}` 两道门**都默认关**——实测在提示词里多要一个嵌套对象会拉低整次生成（含 TaskState）的成功率；~~增量 delta~~ 已决策不做（方案 §18）；~~三阶段独立 Rearm/Cooldown~~ **已完成（2026-09-18）**：新纯函数模块 `resources/pi-extensions/context-stage-runtime.js`，`sweep` / `fold` 各持一份会话级运行状态（sweep 只留痕、不上锁；fold 在**模型调用之前**判上膛与冷却，成功与失败都上锁，由 5 分钟重试窗口节流）；~~`episode-fold` 是否进默认接管集~~ —— **已拍板进（2026-09-18）**。证据见[方案 §15](design/方案-上下文工具内的自动压缩-2026-09-15.md) |
+| 阶段 4 · 生成器（S7，2026-09-17） | 阶段 4 的**执行层**已交付（N21-4 / S2–S6，2026-09-17）：内置扩展 `resources/pi-extensions/context.js` 做 Tool Sweep（旧工具输出 → 墓碑 + `ctx://` 引用）、Task State 前置注入、`context_recall`（预算 / TTL / 审计）、结构化压缩接管闸门（按 **freshness 分档**：完全一致最好、“有效但较早”也接并标 stale、对不上才降级回 pi 摘要；`buildStructuredSummary` 的 `requiredFields` 默认空数组，不再要求六类字段齐备）。**默认清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；墓碑带 `ctx://` 引用可 `context_recall` 取回，本回合正在动的文件不清扫）。**状态生成器（S7）已交付（2026-09-17）**：扩展在 `agent_settled` 上跑一次无工具 completion（`ctx.modelRegistry.complete()`）产出 TaskState 的**语义字段**，`files` / `commandsRun` / `testsRun` 由确定性 reducer 从真实工具调用里抄（落盘前**覆盖**模型返回的同名字段）；`revision` CAS 拦迟到结果；读时按 **freshness 分档**（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）。**2026-09-18 起在默认接管集里**（用户拍板）—— 但**不是每轮都跑**：会话级门槛与脏判定都还在，短会话照样不花钱；闸内还有 **`state.{generate,inject}` 两条分路**（`inject:false` = shadow 模式，**压缩接手也走这一路**）与一道**会话级 gate**（`foldEligible`：≥4 用户回合且转录 ≥48k，或本会话已经清扫过东西；命中后会话内 sticky）；注入块带 **authority 契约头**（`derived/authoritative/freshness/sourceHead` + 一句固定优先级），生成器输入会**自净掉** synthetic 内容（注入块 / 墓碑 / 召回正文），dirty 的「落后 ≥2」按**回合**而不是条目数算（见[归档 §1.11](archive/2026-09-17-已完成归档.md)）。证据见[方案 §17](design/active/方案-上下文工具内的自动压缩-2026-09-15.md)。**尾项已处置（2026-09-19，实施-06 S3）**：`symbolsTouched` **明确不做**（不为此在薄层引入语言级解析器，字段保留但刻意不填；见方案 §13.1 第 23 条）；**20+ 回合压力测试已做**（`test:live -- contextpressure`，22 个真实回合、压缩 3 次、峰值 1.05×），并据此修掉“策略压缩成功后不重新上膛”的真缺陷、给出 sweep 门槛的实测标定（方案 §12.11 第 10 条 / §12.12 P2）。~~EpisodeState 的语义生成~~ **已完成（2026-09-18，默认关 + shadow）**：边界用 `episodeWindow` 的**确定性规则**算（`recentTail` 窗口之外 + 上一版 Episode 的终点，扇叠只会向前推进），收束由模型的 `unresolved` 判（非空即不扇叠），生成后**只落盘、不消费**（进不进压缩摘要由 `buildStructuredSummary` 的 `includeEpisodes` 控制）；`state.{episodeGenerate,episodeInject}` 两道门**都默认关**——实测在提示词里多要一个嵌套对象会拉低整次生成（含 TaskState）的成功率；~~增量 delta~~ 已决策不做（方案 §18）；~~三阶段独立 Rearm/Cooldown~~ **已完成（2026-09-18）**：新纯函数模块 `resources/pi-extensions/context-stage-runtime.js`，`sweep` / `fold` 各持一份会话级运行状态（sweep 只留痕、不上锁；fold 在**模型调用之前**判上膛与冷却，成功与失败都上锁，由 5 分钟重试窗口节流）；~~`episode-fold` 是否进默认接管集~~ —— **已拍板进（2026-09-18）**。证据见[方案 §15](design/active/方案-上下文工具内的自动压缩-2026-09-15.md) |
 | 阶段 4 契约 | 提点审核（2026-09-16）把阶段 4 的开工契约定在方案 §12：原子上下文单元与 `recentTail` 切割、`EpisodeState` / `CodingState` 两个 schema、禁止递归摘要、Recall 独立预算与生命周期、每阶段独立的上膛/冷却/收益门槛、失败退回 pi 原生行为 |
 
 **改动注意点**
@@ -675,7 +675,7 @@ A 会话切自主会连带改变 B 会话的提问行为。现在按会话存，
 界面（只读）→ yan:getGoal，一次往返拿到「目标 + 当前模式」
 ```
 
-**门禁顺序**（[证据-05-S1](plan/证据-05-S1-钩子与安全点.md) 实验 1 定的）：
+**门禁顺序**（[证据-05-S1](archive/evidence/证据-05-S1-钩子与安全点.md) 实验 1 定的）：
 **工具表（主）→ `tool_call` block（兜底）→ 提示词（说明）**。
 执行者是薄层 `resources/pi-extensions/work-mode.js` —— `setActiveTools` 只有扩展 API 有，
 pi 的 RPC **没有**工具面（实测 `get_tools` / `set_active_tools` 都回 Unknown command）。

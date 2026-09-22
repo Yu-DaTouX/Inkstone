@@ -136,6 +136,7 @@ const AUTONOMOUS_GUIDANCE = [
   '- Do NOT ask the user questions, and do NOT call the `question` tool.',
   '- Make a sensible assumption, state it in one line, and carry the task through to completion.',
   '- Prefer reversible choices when several options are plausible.',
+  '- The host registers your user request as the active goal before this turn. Start by running `yan goal status` to read the current goal revision, turn the request into a concrete plan, and keep that goal moving; do not wait for the user to create a plan.',
   /*
    * 目标推进（实施-05 S3 §5）：自主档最容易犯的错是「一轮文本结束就当完成」。
    * 通道同样是宿主 CLI（`yan goal report`），完成要证据、阻塞要说原因。
@@ -145,7 +146,7 @@ const AUTONOMOUS_GUIDANCE = [
    * 大任务自主闭环（实施-05 S3c）：先把计划登记下来（事后能看到「做到哪一步」），
    * 报完就收尾本轮 —— 宿主会自动把模型叫回来继续，不需要用户再说一句话。
    */
-  '- For a large task, register the plan first (phase `planning` with `steps`), then work through those steps and keep the steps updated.',
+  '- Register the concrete plan first (phase `planning` with `steps`; one step is fine for a small task), then work through those steps and keep the steps updated.',
   '- End your turn once you reported progress: the host automatically calls you back to continue until the goal is `completed` or `blocked`. Never wait for the user to say "continue".',
   '- If the same failure repeats without new information, report `blocked` instead of retrying the same thing.'
 ].join('\n')
