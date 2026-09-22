@@ -444,7 +444,13 @@ export function applyPursuedGoal(
  *   · `retry`    —— 模型侧出错之后的「自动继续」（S5c）。
  * 三者共用一个落盘通道与同一个薄层消费器，区别只在正文与消息标签。
  */
-export type ResumeKind = 'ready' | 'continue' | 'retry'
+/**
+ * 续行种类。
+ *
+ * `handoff` 是实施-14 F4 加的：**交接**的 resume 也走这条自定义消息通道，
+ * 不再用 `agent.send`（那是真用户消息，会冒充用户、也会被当成新的逻辑回合）。
+ */
+export type ResumeKind = 'ready' | 'continue' | 'retry' | 'handoff'
 
 /**
  * 自主档**连续**自动续接的上限（S3c）。
@@ -475,7 +481,7 @@ export interface ResumeRecord {
 /** 记录（或脏值）实际代表的续行种类 —— 旧记录一律当就绪续行。 */
 export function resumeKindOf(resume: ResumeRecord | null | undefined): ResumeKind {
   const kind = resume?.kind
-  return kind === 'continue' || kind === 'retry' ? kind : 'ready'
+  return kind === 'continue' || kind === 'retry' || kind === 'handoff' ? kind : 'ready'
 }
 
 /** 目标是不是「还在推进」的阶段：只有这些阶段才值得自动续接。 */

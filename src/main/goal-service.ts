@@ -331,7 +331,14 @@ function sanitizeResume(raw: unknown): ResumeRecord | null {
   const operationId = sanitizeWorkModeKey(item.operationId)
   const summary = typeof item.summary === 'string' ? item.summary.trim() : ''
   if (!operationId || !summary) return null
-  const kind: ResumeKind = item.kind === 'continue' ? 'continue' : item.kind === 'retry' ? 'retry' : 'ready'
+  const kind: ResumeKind =
+    item.kind === 'continue'
+      ? 'continue'
+      : item.kind === 'retry'
+        ? 'retry'
+        : item.kind === 'handoff'
+          ? 'handoff'
+          : 'ready'
   return {
     operationId,
     at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : 0,
@@ -781,6 +788,53 @@ export class GoalStore {
       if (!entry || entry.paused === paused) return false
       entry.paused = paused
       entry.updatedAt = this.now()
+      await this.persist()
+      return true
+    })
+  }
+
+  /**
+   * 把源片段的**宿主级目标事实**迁到目的片段（实施-14 F3 / §5.1）。
+   *
+   * 交接换的是物理片段，用户看到的是同一条会话 —— 所以「用户要什么」
+   * （目标 / 验收标准 / pursue / 暂停）不该丢；而「这一段执行到哪」的幂等记录
+   * 与待发续行属于源片段的执行租约，**不能**带过去：
+   *
+   *   · 继承：`goal`（同一 `goalId` / `revision` / 阶段 / 步骤 / 证据）、
+   *     `pursue` 与 `brief`（在 goal 里）、`paused`；
+   *   · 不继承：`transitions` / `reports`（幂等记录按会话键）、`resume`
+   *     （目的段的续行由交接 resume 驱动）、`autoContinues`（新片段重新给满额度）、
+   *     `repeatCursor`（拦下计数属于源片段）。
+   *
+   * `goalId` 保持不变是**有意**的：它表达「还是同一件事」，也是 A4 里
+   * 「新目标不承担历史拦下」的判据 —— 换片段不该被当成换目标。
+   *
+   * 幂等：目的段已经有自己的记录且目标不同时，不覆盖（避免重放把真实进展抹掉）。
+   * 返回是否真的写了盘。
+   */
+  async inheritTo(sourceKey: string, destKey: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const from = normalizeSessionFileKey(sourceKey)
+      const to = normalizeSessionFileKey(destKey)
+      if (!from || !to || from === to) return false
+      const source = this.doc.entries[from]
+      if (!source) return false
+      const existing = this.doc.entries[to]
+      if (existing && existing.goal.goalId && existing.goal.goalId !== source.goal.goalId) {
+        /* 目的段已经有另一个目标：不把它抹掉（宁可少继承，也不能丢进展） */
+        return false
+      }
+      const at = this.now()
+      this.doc.entries[to] = {
+        goal: source.goal,
+        transitions: {},
+        reports: {},
+        resume: null,
+        autoContinues: 0,
+        paused: source.paused,
+        repeatCursor: null,
+        updatedAt: at
+      }
       await this.persist()
       return true
     })

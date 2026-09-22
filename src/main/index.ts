@@ -54,9 +54,10 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
-import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot } from './goal-service'
+import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
+import { decideSessionWork, ownsHandoffOperation } from '../shared/handoff-schedule'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
@@ -557,7 +558,7 @@ async function observeCompaction(id: string, state: unknown): Promise<void> {
    * 计完顺手看一眼要不要交接（§7）。不在计数里直接 arm 是因为资格还有另外三个条件，
    * 而它们可能在计数之后才成立（目标被报成 executing、模式切到自主档）。
    */
-  void maybeArmHandoff(id, 'compaction')
+  void scheduleSessionWork(id, 'compaction')
 }
 
 /**
@@ -654,9 +655,28 @@ const handoffRunner = new HandoffRunner({
   chains: sessionChains,
   stopRunner: async (runId) => (await runners?.stopOne(runId)) ?? false,
   openSession: (target) => openHandoffSession(target),
-  send: async (runId, text) => (await runners?.agentOf(runId)?.send(text)) ?? { ok: false, error: '实例不存在' },
+  /*
+   * 交接 resume 走薄层的 `custom` 通道（实施-14 F4）：与目标续行共用同一个槽位
+   * （`goal-resume/<runnerId>.json`）与同一套防护（消费幂等、先写证据再发、
+   * 发送方优先 ctx 后 pi）。宿主只写快照，**不再**用 `agent.send` ——
+   * 那是真用户消息，会把交接包冒充成用户说的话，也会多出一个伪逻辑回合。
+   */
+  send: async (runId, text, resumeId) => {
+    const written = await writeGoalResumeSnapshotIfVacant(runId, {
+      operationId: resumeId,
+      at: Date.now(),
+      kind: 'handoff',
+      summary: text
+    }).catch(() => false)
+    if (!written) return { ok: false, error: '续行槽位正被另一个操作占用（等它被消费后重试）' }
+    return { ok: true }
+  },
   readSessionText: (sessionFile) => readFile(sessionFile, 'utf8'),
-  notify: handoffAlert
+  notify: handoffAlert,
+  /* 后台交接不抢用户当前视图（实施-14 F3） */
+  shouldActivate: (sourceRunId) => runners?.activeRunnerId === sourceRunId,
+  /* 目的片段建好、resume 之前：继承模式与用户级目标事实（实施-14 F3） */
+  onDestinationReady: (info) => inheritForHandoff(info)
 })
 
 /*
@@ -787,18 +807,28 @@ const HANDOFF_THRESHOLD_EFFECTIVE = (() => {
 })()
 
 /** 等薄层写包的会话（防重复 arm，也用来停轮询）。`request` 整份留着，校验时要用它的来源字段。 */
-const handoffPending = new Map<
-  string,
-  {
-    request: ReturnType<typeof buildHandoffRequest>
-    timer: NodeJS.Timeout
-    /**
-     * 「结果文件里的 id 与本次生成对不上」只记一条事件（实施-14 F0）。
-     * 不设这个闸的话，一份遗留结果文件会让 1 秒一次轮询刷出 90 条同样的诊断。
-     */
-    mismatchNoted?: boolean
-  }
->()
+/**
+ * 等薄层写包的会话（防重复 arm，也用来停轮询）。
+ *
+ * ⚠️ 每一项都是**一次具体操作**的所有权（实施-14 F2 / H2）：
+ * `request.operationId` 是它的身份，`interval` / `timeout` 是它的两条定时器。
+ * 回调醒来时必须先核对 `operationId` 仍是当前值 —— 否则一次旧操作
+ * （提前完成、被替换、被停止）留下的超时会把**新**操作清掉。
+ */
+interface HandoffPendingEntry {
+  request: ReturnType<typeof buildHandoffRequest>
+  interval: NodeJS.Timeout
+  timeout: NodeJS.Timeout
+  /** 写请求那一刻的目标身份（提交前复核：用户可能已经换了目标） */
+  goalId: string
+  /**
+   * 「结果文件里的 id 与本次生成对不上」只记一条事件（实施-14 F0）。
+   * 不设这个闸的话，一份遗留结果文件会让 1 秒一次轮询刷出 90 条同样的诊断。
+   */
+  mismatchNoted?: boolean
+}
+
+const handoffPending = new Map<string, HandoffPendingEntry>()
 
 /**
  * 资格评估的节流。
@@ -822,24 +852,29 @@ function handoffNotify(id: string, message: string, notifyType: 'info' | 'warnin
 }
 
 /**
- * 判一次资格；够格就 arm 一次生成。
+ * 判一次资格；够格就 arm 一次生成。返回「这次真的启动了生成」。
  *
  * `reason` 只进提示词与排障（哪条路径想起交接的）—— 资格本身按 §7 的四条走，
  * 与触发路径无关（压缩后 / 目标报告后都只是「再看一眼」）。
+ *
+ * ⚠️ 启动成功就**冻结源续跑**（§5.2「先登记操作所有权并冻结源续跑」）：
+ * 既然要换片段，源片段就不该再 arm 一条新的「接着干」——
+ * 否则交接与续跑同时在跑，谁先落地都不对。冻结只针对*未发出*的那一条；
+ * 交接失败 / 放弃时会用 `maybeArmGoalContinue` 把续跑放回来。
  */
-async function maybeArmHandoff(id: string, reason: string): Promise<void> {
-  if (handoffPending.has(id)) return
+async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
+  if (handoffPending.has(id)) return false
   const key = workModeKeyFor(id)
   const agent = runners?.agentOf(id)
-  if (!key || !agent) return
+  if (!key || !agent) return false
   const state = agent.getState()
-  if (!state) return
+  if (!state) return false
   /* 忙：§7 的「有未完成子代理 / 长命令先等待，不遗弃后台工作」
    * 这里是**流式期间每份 state 推送都会走到**的热路径，所以不记事件（那是正常等待，不是异常）。
-   * 真的等不来安全边界由 `safety-boundary` 事件反映（在下面的提交入口）。 */
-  if (state.isAgentRunning || state.isStreaming) return
+   * 真的等不来安全边界由 `safety-boundary` 事件反映（在提交入口的复核里）。 */
+  if (state.isAgentRunning || state.isStreaming) return false
   const now = Date.now()
-  if (now - (handoffLastCheck.get(id) ?? 0) < HANDOFF_CHECK_INTERVAL_MS) return
+  if (now - (handoffLastCheck.get(id) ?? 0) < HANDOFF_CHECK_INTERVAL_MS) return false
   handoffLastCheck.set(id, now)
   try {
     await handoffs.load()
@@ -868,7 +903,7 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
         sessionKey: key,
         detail: { count: verdict.count, threshold: verdict.threshold, trigger: reason, mode: mode.mode }
       })
-      return
+      return false
     }
 
     let messages: UIMessage[] = []
@@ -881,6 +916,7 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
       .filter((message) => message.role === 'user' && String(message.text ?? '').trim())
       .slice(-8)
       .map((message) => String(message.text).trim().slice(0, 600))
+    const sourceHead = messages.at(-1)?.id ?? null
     const request = buildHandoffRequest({
       handoffId: randomUUID(),
       operationId: randomUUID(),
@@ -891,7 +927,7 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
         recentUser,
         extra: `本次交接由「${reason}」触发；本片段已完成 ${tally.count} 次自动压缩。`
       }),
-      sourceHead: messages.at(-1)?.id ?? null,
+      sourceHead,
       mode: mode.mode,
       model: state.model?.id ?? null
     })
@@ -906,14 +942,24 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
         runnerId: id,
         sessionKey: key
       })
-      return
+      return false
     }
+    /* 冻结源续跑：换片段之前不许再 arm 新的「接着干」（§5.2） */
+    await cancelGoalResume(id).catch(() => {})
     /* 时间线锚点：排障时用它对比扩展日志里 `check` 行的 `ageMs`（谁晚、晚了多久） */
     console.log(`[handoff] 已写生成请求（${reason}）：${request.operationId}`)
     handoffNotify(id, '正在为跨会话交接写一份交接包（一次额外模型调用）…', 'info')
-    const timer = setInterval(() => void collectHandoffResult(id), HANDOFF_POLL_MS)
-    timer.unref?.()
-    handoffPending.set(id, { request, timer })
+    const interval = setInterval(() => void collectHandoffResult(id, request.operationId), HANDOFF_POLL_MS)
+    interval.unref?.()
+    /* 超时也走同一条出口，但**带着这次操作的 id** —— 它不能清掉后来的操作（H2） */
+    const timeout = setTimeout(() => void abandonHandoff(id, 'timeout', request.operationId), HANDOFF_WAIT_MS)
+    timeout.unref?.()
+    handoffPending.set(id, {
+      request,
+      interval,
+      timeout,
+      goalId: goal.goalId ?? ''
+    })
     handoffDiag.record({
       stage: 'generate',
       outcome: 'request-written',
@@ -924,8 +970,7 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
       reason,
       detail: { count: tally.count, threshold: HANDOFF_THRESHOLD_EFFECTIVE, mode: mode.mode }
     })
-    /* 超时也走同一条出口（清现场 + 告一声），不会把会话卡住 */
-    setTimeout(() => void abandonHandoff(id, 'timeout'), HANDOFF_WAIT_MS).unref?.()
+    return true
   } catch (error) {
     /* 交接是「有更好、没有也能活」的优化：失败不该影响会话本身 —— 但要留得下痕迹 */
     handoffDiag.record({
@@ -936,20 +981,29 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
       sessionKey: key,
       detail: { trigger: reason }
     })
+    return false
   }
 }
 
-/** 放弃一次生成（超时 / 会话结束）：清请求与结果，别让下一次交接拿到上一份遗物。 */
-async function abandonHandoff(id: string, why: string): Promise<void> {
+/**
+ * 放弃一次生成（超时 / 用户插话 / 水位过期 / 会话结束）：清请求与结果，别让下一次交接拿到上一份遗物。
+ *
+ * `operationId` 是所有权校验（H2）：**旧操作的回调不许清理新操作**。
+ * 不带它时按当前操作处理（内部调用点都带）。
+ */
+async function abandonHandoff(id: string, why: string, operationId?: string): Promise<void> {
   const pending = handoffPending.get(id)
   if (!pending) return
+  /* 旧操作的回调不许清理新操作（实施-14 H2） */
+  if (!ownsHandoffOperation(pending.request.operationId, operationId)) return
   /*
    * 超时前的最后一次收集：薄层的模型调用上限是 60 秒，碰到长输出时
    * 结果可能刚好压线写盘 —— 这一读把「只差几十毫秒」的假超时挡掉
    * （否则用户看到失败提示，而包其实已经落盘了）。
    */
-  if (why === 'timeout' && (await collectHandoffResult(id))) return
-  clearInterval(pending.timer)
+  if (why === 'timeout' && (await collectHandoffResult(id, operationId))) return
+  clearInterval(pending.interval)
+  clearTimeout(pending.timeout)
   handoffPending.delete(id)
   await handoffRequests.clearResult(id).catch(() => {})
   await handoffRequests.clearRequest(id).catch(() => {})
@@ -969,6 +1023,12 @@ async function abandonHandoff(id: string, why: string): Promise<void> {
     sessionKey: pending.request.sessionKey,
     detail: { waitedMs: HANDOFF_WAIT_MS }
   })
+  /*
+   * 冻结过的源续跑要放回来：交接没成，这一轮还得自己往下走。
+   * 只调续跑入口（不再走完整调度）—— 否则会立刻重新判资格、再 arm 一次交接，
+   * 形成「失败 → 重试 → 失败」的 90 秒循环。
+   */
+  void maybeArmGoalContinue(id).catch(() => undefined)
 }
 
 /**
@@ -984,9 +1044,14 @@ async function abandonHandoff(id: string, why: string): Promise<void> {
  * 薄层可能刚好在边界写完（它自己也有 60 秒的模型时限），这一读能把
  * 「只差几十毫秒」的假超时挡掉。
  */
-async function collectHandoffResult(id: string): Promise<boolean> {
+async function collectHandoffResult(id: string, operationId?: string): Promise<boolean> {
   const pending = handoffPending.get(id)
   if (!pending) return false
+  /*
+   * 所有权校验（H2）：轮询与超时两条定时器都带自己的 `operationId`。
+   * 旧操作的回调（比如上一次生成遗留的 interval）不能碰这一次的现场。
+   */
+  if (!ownsHandoffOperation(pending.request.operationId, operationId)) return false
   let result
   try {
     result = await handoffRequests.readResult(id)
@@ -1019,7 +1084,8 @@ async function collectHandoffResult(id: string): Promise<boolean> {
     return false
   }
 
-  clearInterval(pending.timer)
+  clearInterval(pending.interval)
+  clearTimeout(pending.timeout)
   handoffPending.delete(id)
   await handoffRequests.clearResult(id).catch(() => {})
   await handoffRequests.clearRequest(id).catch(() => {})
@@ -1076,14 +1142,69 @@ async function collectHandoffResult(id: string): Promise<boolean> {
   handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
   /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
   if (HANDOFF_COMMIT_ENABLED) {
-    void commitHandoff({
+    /*
+     * `await`（不是 `void`）：提交与调度共用一条串行链（实施-14 F2 / H1）——
+     * 提交的同时再跑一次调度决策，就会出现「一边停源建目的、一边 arm 续跑」。
+     */
+    await commitHandoff({
       runnerId: id,
       handoffId: pending.request.handoffId,
+      operationId: pending.request.operationId,
       sessionKey: pending.request.sessionKey,
+      goalId: pending.goalId,
+      sourceHead: pending.request.sourceHead,
       pkg
     })
   }
   return true
+}
+
+/**
+ * 提交前的复核（实施-14 F2 / §5.2）。
+ *
+ * 为什么不能把「写包那一刻的结论」当成立：写包是一次额外模型调用（最长 90 秒），
+ * 这期间用户完全可能插话、按停止、改档、换目标，或切到别的会话。
+ * 拿一个过期的包去停源换段，轻则把用户新输入留在旧片段，
+ * 重则停掉刚被用户接管的实例。
+ *
+ * 五个条件（任一不成立就放弃这一次交接，保留包与源会话）：
+ *   ① 操作身份没被替换（新的生成没有顶替它）；
+ *   ② 实例存在且真的空闲（安全边界）；
+ *   ③ 实例仍指向源会话（没被切走）；
+ *   ④ 目标仍是在推进的那一个，且档位仍允许自己跑（自主档或 pursue）——用户意图未变；
+ *   ⑤ 源会话水位未前进（用户没插话）。
+ */
+async function revalidateHandoff(input: {
+  runnerId: string
+  operationId: string
+  sessionKey: string
+  goalId: string
+  sourceHead: string | null
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const pending = handoffPending.get(input.runnerId)
+  if (pending && pending.request.operationId !== input.operationId) return { ok: false, reason: 'operation-replaced' }
+  const agent = runners?.agentOf(input.runnerId)
+  const state = agent?.getState()
+  if (!agent || !state) return { ok: false, reason: 'runner-gone' }
+  if (state.isAgentRunning || state.isStreaming) return { ok: false, reason: 'not-idle' }
+  /* 源会话键：`workModeKeyFor` 读的就是实例当前段落，比对即可看出“用户切走了” */
+  if (workModeKeyFor(input.runnerId) !== input.sessionKey) return { ok: false, reason: 'source-session-changed' }
+  await goals.load()
+  const goal = goals.state(input.sessionKey)
+  if (!isActiveGoalPhase(goal.phase) || (goal.goalId ?? '') !== input.goalId) {
+    return { ok: false, reason: 'goal-changed' }
+  }
+  const mode = await resolveWorkMode(input.runnerId)
+  if (!keepsGoalResumeOnModeChange(mode.mode, goal.pursue === true)) return { ok: false, reason: 'mode-changed' }
+  let head: string | null
+  try {
+    head = (await agent.getMessages()).at(-1)?.id ?? null
+  } catch {
+    /* 拿不到历史就不断水位判（宁可放过，不因为读失败而卡住交接） */
+    return { ok: true }
+  }
+  if ((input.sourceHead ?? null) !== head) return { ok: false, reason: 'source-watermark-moved' }
+  return { ok: true }
 }
 
 /**
@@ -1098,12 +1219,30 @@ async function collectHandoffResult(id: string): Promise<boolean> {
 async function commitHandoff(input: {
   runnerId: string
   handoffId: string
+  operationId: string
   sessionKey: string
+  goalId: string
+  sourceHead: string | null
   pkg: HandoffPackage
 }): Promise<void> {
   const agent = runners?.agentOf(input.runnerId)
   const state = agent?.getState()
   if (!agent || !state) return
+  const verdict = await revalidateHandoff(input)
+  if (!verdict.ok) {
+    handoffDiag.record({
+      stage: 'safety-boundary',
+      outcome: 'rejected',
+      reason: verdict.reason,
+      op: input.operationId,
+      handoffId: input.handoffId,
+      runnerId: input.runnerId,
+      sessionKey: input.sessionKey
+    })
+    /* 过期的包不提交：放弃这次操作（保留包，下次判定再看）并把续跑放回来 */
+    await abandonHandoff(input.runnerId, verdict.reason, input.operationId)
+    return
+  }
   const cwd = state.cwd ?? ''
   const settings = await getSettings()
   const projectId = projectIdForCwd(settings, cwd)
@@ -1152,10 +1291,10 @@ async function commitHandoff(input: {
       sessionKey: input.sessionKey,
       detail: { stage: result.stage, destination: result.destinationSession ?? null }
     })
-    await inheritWorkMode(input.sessionKey, result.destinationSession)
+    /* 用户级状态（模式 / 目标 / 暂停）已在 `onDestinationReady` 继承过 —— 比 resume 早 */
     handoffDiag.record({
       stage: 'resume',
-      outcome: 'work-mode-inherited',
+      outcome: 'resume-confirmed',
       op: input.handoffId,
       handoffId: input.handoffId,
       runnerId: input.runnerId,
@@ -1185,17 +1324,115 @@ async function commitHandoff(input: {
  *   · goal 是「这一轮做到哪」的**事实**，§8 明写不能把旧总结升级成事实，
  *     所以由模型按交接包重新登记（resume 正文里有明确要求，也有单测钉着）。
  */
-async function inheritWorkMode(sourceKey: string, destFile: string | null): Promise<void> {
-  const destKey = normalizeChainKey(destFile)
-  if (!destKey || !sourceKey) return
-  await workModes.load()
-  const source = workModes.state(sourceKey, agentDefaultWorkMode)
-  /* 源本来就是默认档（无记录）→ 目的不必落键，保持「默认态不写盘」的约定 */
-  if (source.revision === 0 && source.mode === agentDefaultWorkMode) return
-  await workModes.set(destKey, source.mode).catch(() => undefined)
-  /* 扩展只认 `work-mode/<runnerId>.json`：切到目的实例之后要重写一份 + 推给界面 */
-  const active = runners?.activeRunnerId
-  if (active) await pushWorkMode(active).catch(() => undefined)
+/**
+ * 交接后把**用户级状态**带到目的片段（实施-14 F3）。
+ *
+ * 时机是硬要求：由 `HandoffRunner` 在 `destination-created` 之后、**发 resume 之前**调用。
+ * 旧实现在 `commit()` 返回之后才做，而且写的是**当前 active runner** 的快照 ——
+ * 于是目的片段第一轮按默认档 / 空目标启动，后台交接时还会把模式写到别的实例上。
+ *
+ * 继承两件事：
+ *   · 工作模式（用户对这条会话的意图：自主档不能被交接降级）；
+ *   · 宿主级目标事实（目标 / 验收标准 / pursue / 暂停）—— 见 `GoalStore.inheritTo`。
+ * 模型写的 done/remaining 不进宿主事实，由交接包按摘要交给下一个片段。
+ */
+async function inheritForHandoff(info: {
+  sessionFile: string
+  runId: string
+  sourceSession: string
+}): Promise<void> {
+  const destKey = normalizeChainKey(info.sessionFile)
+  const sourceKey = normalizeChainKey(info.sourceSession)
+  if (!destKey || !sourceKey || sourceKey === destKey) return
+  let modeInherited = false
+  try {
+    await workModes.load()
+    const source = workModes.state(sourceKey, agentDefaultWorkMode)
+    /* 源本来就是默认档（无记录）→ 目的不必落键，保持「默认态不写盘」的约定 */
+    if (!(source.revision === 0 && source.mode === agentDefaultWorkMode)) {
+      modeInherited = (await workModes.set(destKey, source.mode)).ok
+    }
+  } catch {
+    /* 继承失败不阻断交接：下一轮按默认档起步也能继续 */
+  }
+  let goalInherited = false
+  try {
+    goalInherited = await goals.inheritTo(sourceKey, destKey)
+  } catch {
+    /* 同上 */
+  }
+  /*
+   * 快照必须写给**目的 runner**：薄层只认 `work-mode/<runnerId>.json` 与
+   * `goal-resume/<runnerId>.json`，写给 active runner 时后台交接会串到别人身上。
+   */
+  try {
+    const state = await resolveWorkMode(info.runId)
+    await writeWorkModeSnapshot(info.runId, state)
+    /* 目的段的续行由交接那条 resume 驱动，源片段残留的「接着干」不许跟过来 */
+    await applyGoalResume(info.runId)
+  } catch {
+    /* 快照写失败时扩展会回退到默认档；不能让继承失败把交接拖死 */
+  }
+  handoffDiag.record({
+    stage: 'resume',
+    outcome: 'state-inherited',
+    runnerId: info.runId,
+    sessionKey: destKey,
+    detail: { modeInherited, goalInherited, source: sourceKey }
+  })
+}
+
+/* ────────────────────────────── 同一会话的单一调度（实施-14 F2 / H1） */
+
+/**
+ * 每个会话的「下一步动作」串行决定。
+ *
+ * 旧实现是两个 `void` 并发：同一份 `state` 推送里 `maybeArmHandoff` 与
+ * `maybeArmGoalContinue` 各自起跑 —— 交接在准备包的同时，续跑也可能被 arm 出去。
+ * 现在只有**一个**决定器，按固定优先级挑一件事做：
+ *
+ *   0. 已安排模型错误重试 → 什么都不做（它有自己的退避与上限）；
+ *   1. 交接正在准备包 → 冻结源续跑，等它提交或放弃；
+ *   2. 实例不空闲 → 不做决策（安全边界还没到，交给下一次收尾）；
+ *   3. 重复拦下先计入（可能把目标打成 blocked，那就不该再 arm）；
+ *   4. 交接资格够 → 只做交接；
+ *   5. 否则 → 普通续跑。
+ *
+ * 串行链按 runnerId 分开：不同会话之间没有共享状态，没必要互相阻塞。
+ */
+const sessionWorkTails = new Map<string, Promise<void>>()
+
+function scheduleSessionWork(id: string, reason: string): Promise<void> {
+  const previous = sessionWorkTails.get(id) ?? Promise.resolve()
+  const next = previous.then(
+    () => runScheduledWork(id, reason),
+    () => runScheduledWork(id, reason)
+  )
+  sessionWorkTails.set(id, next)
+  void next.finally(() => {
+    if (sessionWorkTails.get(id) === next) sessionWorkTails.delete(id)
+  })
+  return next.catch(() => undefined)
+}
+
+async function runScheduledWork(id: string, reason: string): Promise<void> {
+  const agent = runners?.agentOf(id)
+  const state = agent?.getState()
+  if (!agent || !state) return
+  const decision = decideSessionWork({
+    busy: state.isAgentRunning === true || state.isStreaming === true,
+    handoffPending: handoffPending.has(id),
+    errorRetryPending: autoContinueTimers.has(id),
+    handoffAllowed: true
+  })
+  /* 三个 `wait-*` 都是「现在不做决定」（安全边界未到 / 已有更高优先级的事） */
+  if (decision === 'wait-busy' || decision === 'wait-error-retry' || decision === 'wait-handoff') return
+  /* 重复拦下先计入：它可能把目标打成 blocked（终态），那就不能 arm 任何东西 */
+  await consumeRepeatBlocks(id).catch(() => undefined)
+  /* consumeRepeatBlocks 可能改掉交接现场（目标终态会清续行），再核一次 */
+  if (handoffPending.has(id)) return
+  if (await tryArmHandoff(id, reason)) return
+  await maybeArmGoalContinue(id).catch(() => undefined)
 }
 
 function pushFrom(runnerId: string, msg: MainPush): void {
@@ -1223,14 +1460,13 @@ function pushFrom(runnerId: string, msg: MainPush): void {
    * 所以这里可以无条件看一眼（忙的时候它内部直接早退，不碰 IO）。
    */
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
-    void maybeArmHandoff(runnerId, 'settled')
-    void maybeArmGoalContinue(runnerId)
     /*
-     * 单轮重复动作兜底（2026-09-22）：薄层拦下的重复调用在这里计入目标失败签名。
-     * 放收尾时刻的理由与交接资格相同：拦下发生于回合中途，而目标状态的落盘
-     * 已由 `report` 串行化了 —— 这里只需在真正空下来时补记一次（幂等）。
+     * 单一调度（实施-14 F2 / H1）：交接、普通续跑、重复拦下这三件事
+     * 都在同一条串行链里决定，不再各自 `void` 起跑。
+     * 单轮重复动作兜底也在这里（拦下发生于回合中途，而目标状态的落盘
+     * 已由 `report` 串行化了 —— 这里只需在真正空下来时补记一次，幂等）。
      */
-    void consumeRepeatBlocks(runnerId)
+    void scheduleSessionWork(runnerId, 'settled')
   }
   /*
    * 模型报错 → 自动继续（实施-05 S5c）。
@@ -1491,6 +1727,8 @@ const autonomousArmInFlight = new Set<string>()
 
 async function maybeArmGoalContinue(id: string): Promise<void> {
   if (autonomousArmInFlight.has(id)) return
+  /* 交接正在准备包：源续跑已被冻结（H1）——即便有人绕过调度器直接调这里，也不能破 */
+  if (handoffPending.has(id)) return
   autonomousArmInFlight.add(id)
   try {
     const mode = await resolveWorkMode(id)
@@ -1661,7 +1899,7 @@ const goalCapabilityHost: GoalCommandHost = {
        * 只靠压缩事件驱动会在「先报告、后压缩」的顺序下漏掉。
        * 生产上阈值没到就什么都不会发生（阈值覆盖只在测试里设）。
        */
-      if (!res.replayed) void maybeArmHandoff(context.sessionId, 'goal-report')
+      if (!res.replayed) void scheduleSessionWork(context.sessionId, 'goal-report')
       /*
        * 自主档（或带 pursue 的持续目标）的「接着干」（S3c）：报完进展就安排下一次续接，
        * 让模型在**没有人再发消息**的情况下自己一轮轮往下推。
@@ -2555,7 +2793,8 @@ async function openHandoffSession(target: HandoffSessionTarget): Promise<Handoff
   const res = await runners.select({
     cwd: cwdResult.cwd,
     ...(projectId ? { projectId } : {}),
-    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {})
+    ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
+    ...(target.activate === false ? { activate: false } : {})
   })
   if (!res.ok || !res.id) return { ok: false, error: res.error ?? '打开会话失败' }
   await rememberRunnerSession(res, {
@@ -3437,6 +3676,8 @@ function registerIpc(): void {
       return {
         sessionKey: '',
         tally: null,
+        segmentTally: null,
+        chainSegments: 0,
         package: null,
         pending: false,
         threshold: HANDOFF_THRESHOLD_EFFECTIVE,
@@ -3461,6 +3702,9 @@ function registerIpc(): void {
     return {
       sessionKey: key,
       tally: entry.tally,
+      /* 阈值看的是**本片段**又压了几次；`tally` 是链首的历史口径（实施-14 F5） */
+      segmentTally: handoffs.state(key).tally,
+      chainSegments: chain?.segments.length ?? 1,
       package: entry.package,
       pending: handoffPending.has(id),
       threshold: HANDOFF_THRESHOLD_EFFECTIVE,
@@ -3480,6 +3724,27 @@ function registerIpc(): void {
       events: handoffDiag.recent(40),
       autoCommit: HANDOFF_COMMIT_ENABLED
     }
+  })
+  /*
+   * 用户点「重试」（实施-14 F5）：清掉残留的生成现场，再走一遍单一调度。
+   * 它不是「强行交接」—— 资格不够时照旧如实拒绝，只在诊断里多一条 `manual-retry`。
+   */
+  handle('yan:retryHandoff', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false, error: 'pi 未运行' }
+    await handoffDiag.load()
+    handoffDiag.record({
+      stage: 'generate',
+      outcome: 'manual-retry',
+      runnerId: id,
+      sessionKey: workModeKeyFor(id)
+    })
+    /* 清掉可能残留的现场（没有就不做） */
+    await abandonHandoff(id, 'manual-retry')
+    /* 资格评估有 1 秒节流；用户明确要求重试，就让它现在真的判一次 */
+    handoffLastCheck.delete(id)
+    void scheduleSessionWork(id, 'manual-retry')
+    return { ok: true }
   })
   handle('yan:setWorkMode', async (mode: WorkMode, expectedRevision?: number) => {
     const id = runners?.activeRunner()?.id

@@ -168,13 +168,29 @@
     const seen = sessions.filter((s) => norm(s.path) === current).length
     ok(seen === 1, `侧栏列表里当前这条会话只出现一次（实际 ${seen} 次）`)
     ok(!sessions.some((s) => norm(s.path) === norm(sourceKey)), '链上的旧段（源会话）没有单独出现在侧栏列表里')
-    /* 历史拼接：源段的消息 + resume 那条都要在同一条时间线里 */
-    const joined = await waitFor(() => {
-      const texts = store.getState().messages.map((m) => String(m.text ?? m.content ?? ''))
-      return texts.some((t) => t.includes('跨会话交接')) ? texts : null
-    }, 30000, 600)
-    ok(!!joined, '历史里出现 resume 那条交接消息')
-    ok(!!joined?.some((t) => t.includes('这是一次功能自测')), '历史里保留源段的消息（两段拼成一条时间线）')
+    /*
+     * 历史拼接：源段的消息要留在同一条时间线里。
+     *
+     * ⚠️ 实施-14 F4：交接的 resume 现在是**custom 控制消息**（`yan-handoff-resume`），
+     * 不再冒充用户消息 —— 所以它不进界面消息流。判据改成宿主侧的消费证据
+     *（与 F0 的诊断事件同源），而不是在界面文本里找那句话。
+     */
+    const resumeConfirmed = await waitFor(async () => {
+      const h = await window.yan.getHandoff()
+      return h.events.some((e) => e.outcome === 'resume-confirmed') ? h : null
+    }, 60000, 800)
+    ok(!!resumeConfirmed, '交接 resume 已确认（custom 控制消息，不冒充用户消息）')
+    const timeline = store.getState().messages.map((m) => String(m.text ?? m.content ?? ''))
+    if (!timeline.some((t) => t.includes('这是一次功能自测'))) {
+      out.push(
+        `  时间线（${timeline.length} 条）：` +
+          timeline.map((t) => `${String(t).replace(/\s+/g, ' ').slice(0, 24)}…`).join(' | ')
+      )
+    }
+    ok(
+      timeline.some((t) => t.includes('这是一次功能自测')),
+      '历史里保留源段的消息（两段拼成一条时间线）'
+    )
     out.push(`  同一条时间线里的消息数：${store.getState().messages.length}`)
     /* 联调（S6）：模式要跟着会话走，否则自主续接（S3c）在目的段当场失效 */
     const modeAfter = await window.yan.getWorkMode()

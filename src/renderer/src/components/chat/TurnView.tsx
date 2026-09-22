@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, Fragment, useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -6,7 +6,7 @@ import { forkFromText } from '../../lib/fork'
 import { Markdown } from './MessageParts'
 import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup, ToolRow } from './ToolRow'
-import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
+import type { AssistantTurn, BashTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import type { SubagentRun } from '../../../../shared/ipc'
 
@@ -122,6 +122,13 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
    * 进度数据仍留在回合模型里，历史 / 调试不会丢失，只是不再占用消息流。
    */
   const visibleImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
+  /*
+   * 多段正文（自主续跑）时必须**按段渲染**（实施-14 F6 / R1）：
+   * 整轮聚合会把「正文 A」与「正文 B」拼成一条回复，于是第 2 段推理
+   * 排到了正文 A 前面 —— 正是用户报的顺序问题。
+   * 只有一段正文时继续走旧渲染（DOM 与样式零变化）。
+   */
+  const segmented = turn.segments.filter((segment) => segment.response).length > 1
   const hasBody =
     turn.commentary.length > 0 ||
     !!turn.response ||
@@ -155,30 +162,60 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
          * 「干了多少活」隔开，最后才是结论。
          */}
 
-        {/* 1. 模型说话：按段落排 */}
-        {turn.commentary.length ? (
-          <div className="turn-commentary" data-testid="turn-commentary">
-            {turn.commentary.map((p) => (
-              <Paragraph key={p.id} text={p.text} />
-            ))}
-          </div>
-        ) : null}
-
         {visibleImageProgress.length ? <ImageProgressList items={visibleImageProgress} /> : null}
 
-        {/* 2. 工作执行栏：思考 + 全部工具（合并后只有一条可展开的条） */}
-        <TurnActivity turn={turn} streaming={streaming} />
+        {segmented ? (
+          /*
+           * 多段正文：推理与工具跟在**它自己那一段**的正文后面，
+           * 不再全部堆回整轮靠前的位置（实施-14 F6 / R1）。
+           */
+          turn.segments.map((segment, index) => (
+            <Fragment key={segment.id}>
+              {segment.commentary.length ? (
+                <div className="turn-commentary" data-testid="turn-commentary">
+                  {segment.commentary.map((p) => (
+                    <Paragraph key={p.id} text={p.text} />
+                  ))}
+                </div>
+              ) : null}
+              <TurnActivity
+                turn={turn}
+                segment={segment}
+                streaming={streaming && index === turn.segments.length - 1}
+              />
+              {segment.response ? (
+                <div className="turn-response" data-testid="turn-response">
+                  <Paragraph text={segment.response.text} primary />
+                </div>
+              ) : null}
+            </Fragment>
+          ))
+        ) : (
+          <>
+            {/* 1. 模型说话：按段落排 */}
+            {turn.commentary.length ? (
+              <div className="turn-commentary" data-testid="turn-commentary">
+                {turn.commentary.map((p) => (
+                  <Paragraph key={p.id} text={p.text} />
+                ))}
+              </div>
+            ) : null}
+
+            {/* 2. 工作执行栏：思考 + 全部工具（合并后只有一条可展开的条） */}
+            <TurnActivity turn={turn} streaming={streaming} />
+
+            {/* 3. 回复 */}
+            {turn.response ? (
+              <div className="turn-response" data-testid="turn-response">
+                <Paragraph text={turn.response.text} primary />
+              </div>
+            ) : null}
+          </>
+        )}
 
         {attachedSubagents.length ? (
           <div className="subagent-inline-list" data-testid="subagent-inline-list">
             {attachedSubagents.map((run) => <InlineSubagentCard key={run.id} run={run} />)}
-          </div>
-        ) : null}
-
-        {/* 3. 回复 */}
-        {turn.response ? (
-          <div className="turn-response" data-testid="turn-response">
-            <Paragraph text={turn.response.text} primary />
           </div>
         ) : null}
 
@@ -460,9 +497,23 @@ const Paragraph = memo(ParagraphImpl, (a, b) => a.text === b.text && a.primary =
  *   · 失败 → 只把摘要行标红，**不自动展开**（失败输出经常几十行）
  *   · 用户手动点过之后不再被自动规则推翻
  */
-function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
-  const tools = turn.tools
-  const hasThinking = !!turn.thinking
+function TurnActivity({
+  turn,
+  segment,
+  streaming
+}: {
+  turn: AssistantTurn
+  /**
+   * 只渲染**这一段**的推理与工具（实施-14 F6）。缺省 = 整轮（旧行为）。
+   */
+  segment?: TurnSegment
+  streaming?: boolean
+}) {
+  const tools = segment ? segment.tools : turn.tools
+  const thinking = segment ? segment.thinking : turn.thinking
+  const thinkingMs = segment ? segment.thinkingMs : turn.thinkingMs
+  const thinkingLive = segment ? segment.thinkingLive : turn.thinkingLive
+  const hasThinking = !!thinking
 
   /*
    * ⚠️ 这里曾经是个 bug（用户报「为什么我看不到推理」）：
@@ -498,9 +549,9 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
           结束才折叠，不能因为「第一段思考结束、开始调工具」就藏起来 */}
       {hasThinking ? (
         <ReasoningCapsule
-          text={turn.thinking}
-          ms={turn.thinkingMs}
-          live={turn.thinkingLive}
+          text={thinking}
+          ms={thinkingMs}
+          live={thinkingLive}
           turnLive={streaming}
         />
       ) : null}

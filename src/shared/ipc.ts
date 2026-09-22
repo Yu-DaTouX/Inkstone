@@ -2437,6 +2437,11 @@ export interface YanBridge {
    * 界面与探针需要的是「压了几次 / 包写了没有 / 这一刻在不在生成中」。
    */
   getHandoff(): Promise<HandoffView>
+  /**
+   * 用户点「重试」（实施-14 F5）：清掉残留的生成现场再走一遍调度。
+   * 不是「强行交接」—— 资格不够时照旧如实拒绝（界面拿 `getHandoff().events` 看原因）。
+   */
+  retryHandoff(): Promise<{ ok: boolean; error?: string }>
 
   /* 队列模式 */
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>

@@ -415,7 +415,7 @@
   "pkg.showRaw": "Show raw output",
   "pkg.sourceLine": "Source: {src}",
   "pkg.update": "Update",
-"pkg.warn": "Packages may run code as you on this machine after installation. Yan does not provide an OS sandbox; Skill-file activation also performs static malicious-content review, blocks high-risk findings, and keeps medium-risk warnings—even when you specified the source. Review the source, permissions, and repository before installing other packages.",
+  "pkg.warn": "Packages may run code as you on this machine after installation. Yan does not provide an OS sandbox; Skill-file activation also performs static malicious-content review, blocks high-risk findings, and keeps medium-risk warnings—even when you specified the source. Review the source, permissions, and repository before installing other packages.",
   "pkg.working": "Working…",
   "pr.checks.failure": "checks failed",
   "pr.checks.none": "no checks",
@@ -1156,5 +1156,10 @@
   "workMode.label.clarify": "Plan",
   "workMode.label.standard": "Standard",
   "workMode.switchFailed": "Could not switch the work mode",
-  "workMode.tabTip": "Ctrl+Tab cycles the work mode (rebind or disable it in Settings)"
+  "workMode.tabTip": "Ctrl+Tab cycles the work mode (rebind or disable it in Settings)",
+  "handoff.working": "Tidying context — work continues",
+  "handoff.done": "Context tidied — work continues",
+  "handoff.failed": "Tidying did not finish — progress kept",
+  "handoff.retry": "Retry",
+  "handoff.stop": "Stop"
 }

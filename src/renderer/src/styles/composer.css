@@ -1569,3 +1569,66 @@
   background: var(--bg-1);
   overflow: hidden;
 }
+
+/*
+ * 交接 / 上下文整理的一行状态（实施-14 F5 / H5）。
+ *
+ * 位置在问题面板与输入区之间：它报的是「正在发生 / 刚刚发生」的事，
+ * 不属于消息流（那条流以 JSONL 为准），也不该挤占历史。
+ * 没事时组件返回 null —— 这一片样式只在真的有状态可报时才被用到。
+ */
+.handoff-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(560px, 100%);
+  margin: 0 auto 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-1);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.handoff-note-text {
+  white-space: nowrap;
+}
+
+.handoff-note-reason {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg-mute);
+}
+
+.handoff-note.tone-working .handoff-note-text {
+  color: var(--accent);
+}
+
+.handoff-note.tone-failed {
+  border-color: var(--warn);
+}
+
+.handoff-note.tone-failed .handoff-note-text {
+  color: var(--warn);
+}
+
+.handoff-note-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.handoff-note-action {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.handoff-note-action:hover {
+  text-decoration: underline;
+}

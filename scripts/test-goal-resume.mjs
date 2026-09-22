@@ -201,6 +201,26 @@ export async function runGoalResumeExtTests(ok) {
     ok((await readConsumed())?.operationId === 'op-new-after-consumed', 'A5：消费证据推进到新指令')
 
     /*
+     * ── 5c. F4（实施-14）：交接 resume 走同一条 custom 通道 ──
+     *
+     * 以前它是宿主 `agent.send` 的真用户消息 —— 会冒充用户，也会多出一个伪逻辑回合。
+     */
+    const sentBefore5c = sent.length
+    await writeResume('op-handoff', 'handoff')
+    handlers.agent_settled({}, ctx)
+    const handoffSent = await waitFor(async () =>
+      sent.some((entry) => textOf(entry).includes('op-handoff')) ? sent : null
+    )
+    ok(!!handoffSent, 'F4：交接 resume 也能被薄层消费')
+    const handoffEntry = sent.find((entry) => textOf(entry).includes('op-handoff'))
+    ok(
+      handoffEntry?.message.customType === 'yan-handoff-resume',
+      'F4：交接 resume 的 customType 是 yan-handoff-resume（不冒充用户消息）'
+    )
+    ok(handoffEntry?.options?.triggerTurn === true, 'F4：交接 resume 也带 triggerTurn（真的要起一个回合）')
+    ok(sent.length === sentBefore5c + 1, 'F4：交接 resume 只发一次')
+
+    /*
      * ── 6. 发送一律走 `pi`（2026-09-22 的根因） ──
      *
      * pi 0.85.1 的钩子 ctx 里**没有** `sendMessage`（`createContext()` 只给 cwd / model /

@@ -864,9 +864,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -2293,6 +2293,55 @@ const STATES = {
    *
    * 数字前应带 `≥`，悬停说明原因（不能假装这是完整账单）。
    */
+  /*
+   * 实施-14 F6：有序工作段 —— 推理跟随聊天正式回复的位置。
+   *
+   * 一个逻辑回合里有两次「推理 → 工具 → 正文」：第 2 段的推理必须显示在
+   * 正文 A **之后**，而不是被整轮聚合顶回最前面（用户 2026-09-23 的要求）。
+   */
+  segmented: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        const now = Date.now();
+        window.__yanStore.setState({
+          messages: [
+            { id: 'm0', role: 'user', text: '把这个长任务自己往下推：先改数据层，再改界面。', timestamp: now - 30000 },
+            {
+              id: 'a1',
+              role: 'assistant',
+              text: '先看数据层。',
+              thinking: '第一段推理：先摸清存储的键是怎么算的。',
+              thinkingMs: 3200,
+              toolCalls: [{ id: 't1', name: 'read', args: {}, status: 'ok', startedAt: now - 26000, endedAt: now - 24000 }],
+              timestamp: now - 24000
+            },
+            { id: 'a2', role: 'assistant', text: '数据层已经改好：键换成会话文件路径，并补了幂等。', timestamp: now - 20000 },
+            {
+              id: 'a3',
+              role: 'assistant',
+              text: '',
+              thinking: '第二段推理：界面这侧要跟着改，否则切会话会读错键。',
+              thinkingMs: 4100,
+              toolCalls: [{ id: 't2', name: 'edit', args: {}, status: 'ok', startedAt: now - 18000, endedAt: now - 15000 }],
+              timestamp: now - 15000
+            },
+            { id: 'a4', role: 'assistant', text: '界面也改完了：切会话不再读错键，回归已跑。', timestamp: now - 9000 }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 250));
+        return 'ok';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
   usagepartial: `
     (async () => {
       try {

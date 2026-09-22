@@ -32,8 +32,9 @@ const RESUME_HEADER = '这是一个**跨会话交接**：上面的对话换了�
 
 const RESUME_FOOTER =
   '请按交接包**继续推进**，不要重新确认已经确认过的信息、不要重做已经完成的部分；先做接下来该做的事。\n' +
-  '接手后先跑一次 `yan goal status` 看当前 revision，再用 `yan goal report` 把目标登记回来 —— ' +
-  '新会话的目标是**全新的**（从 rev0 开始），不要照搬交接包里写的进度。'
+  '接手后先跑一次 `yan goal status` 看当前 revision（宿主已经把目标与验收标准带过来了），' +
+  '再用 `yan goal report` 把**这一段的**进展与证据登记上 —— 交接包里写的进度是上一段的复述，' +
+  '不能当作新的完成证据。'
 
 /** `resumeId` 的标记行（证据检测认这一行）。 */
 export function resumeMarker(resumeId: string): string {
@@ -90,8 +91,10 @@ export function containsResumeEvidence(rawText: unknown, resumeId: string): bool
 /**
  * 从消息列表里判证据（探针 / 诊断用；主进程走 `containsResumeEvidence`）。
  *
- * 要求**角色是 user**：`custom` 消息（砚自己的控制消息）不计入 ——
- * 那类消息不触发回合，把它当「发过了」会让交接静默停住。
+ * 认两种角色：
+ *   · `user` —— 旧链路（宿主 `agent.send`）留下的记录，只读识别，不再产生；
+ *   · `custom` —— 实施-14 F4 之后的薄层控制消息（`yan-handoff-resume`）。
+ * 助手 / 工具的复述不算。
  */
 export function hasResumeEvidence(
   messages: { role?: string; text?: unknown; content?: unknown }[],
@@ -100,7 +103,7 @@ export function hasResumeEvidence(
   const marker = resumeMarker(resumeId)
   if (!resumeId || marker === `[${RESUME_ID_TAG}:]`) return false
   return messages.some((message) => {
-    if (message?.role !== 'user') return false
+    if (message?.role !== 'user' && message?.role !== 'custom') return false
     const body =
       typeof message.text === 'string'
         ? message.text

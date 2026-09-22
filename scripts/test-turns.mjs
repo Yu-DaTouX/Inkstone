@@ -401,5 +401,71 @@ export async function runTurnTests(ok) {
       ok(scope.length === 2, '工具往返的多条 assistant 都在本轮范围内', `实际 ${scope.length}`)
       ok(scope[scope.length - 1].speed === 55, '范围里能拿到本轮最新的速度')
     }
+
+    /*
+     * ------------------------------------------- 16. 工作段与推理位置
+     *
+     * 用户 2026-09-23 的要求：自主线跑时，**后一段的推理要显示在上一段正文之后**，
+     * 而不是全部写回整轮靠前的旧推理块（R1）。
+     */
+    console.log('\n--- 16. 工作段（推理跟随正文位置）---')
+
+    // 16.1 推理1 → 正文A → 推理2 → 工具 → 正文B
+    {
+      const t = groupIntoTurns([
+        usr('u1', '接着干'),
+        asst('a1', '先看看代码', { thinking: '第一段推理', toolCalls: [tool('t1', 'read')] }),
+        asst('a2', '正文A'),
+        asst('a3', '', { thinking: '第二段推理', toolCalls: [tool('t2', 'edit')] }),
+        asst('a4', '正文B')
+      ])
+      const a = t[1]
+      ok(a.segments.length === 3, '三段工作段（推理+工具 / 正文A / 正文B）', `实际 ${a.segments.length}`)
+      ok(a.segments[0].thinking.includes('第一段推理'), '第 1 段带第 1 段推理')
+      ok(a.segments[0].commentary[0]?.text === '先看看代码', '带工具的文字是解说（不冒充正文）')
+      ok(a.segments[1].response?.text === '正文A', '正文 A 单独成段（不被后续推理顶到后面）')
+      ok(a.segments[2].thinking.includes('第二段推理'), '第 2 段推理归属后半段')
+      ok(a.segments[2].tools.length === 1 && a.segments[2].response?.text === '正文B', '第 2 段的工具与正文 B 在同一段')
+      ok(
+        a.segments.every((s, i) => (i === 0 ? true : s.id !== a.segments[i - 1].id)),
+        '每段 id 互不相同（DOM 可以用它做 stable key）'
+      )
+      /* 整轮聚合字段仍然对（页脚 / 用量不因分段而变） */
+      ok(a.tools.length === 2 && a.thinking.includes('第二段推理'), '整轮聚合仍包含全部工具与推理')
+      /*
+       * 整轮 response 是**拼接口径**（正文A + 正文B）—— 这正是界面不能继续用它渲染的原因：
+       * 多段时必须按 segments 逐段渲染，否则正文 A 会被拼到第 2 段推理后面。
+       */
+      ok(
+        a.response?.text.includes('正文A') && a.response?.text.includes('正文B'),
+        '整轮回复仍是拼接口径（界面多段时不用它）'
+      )
+      ok(a.segments.filter((s) => s.response).length === 2, '两段正文 → 界面切到分段渲染路径')
+    }
+
+    // 16.2 普通回合（解说 + 回复）：只有一段正文 → 界面保持旧渲染路径
+    {
+      const t = groupIntoTurns([
+        usr('u1', '改个标题'),
+        asst('a1', '先看实现', { toolCalls: [tool('t1', 'read')] }),
+        asst('a2', '改好了')
+      ])
+      const a = t[1]
+      ok(a.segments.length === 2, '解说与回复各成一段', `实际 ${a.segments.length}`)
+      ok(a.segments.filter((s) => s.response).length === 1, '只有一段正文 → 界面仍走旧渲染（零回归）')
+      ok(a.segments.find((s) => s.response)?.response?.text === '改好了', '段内回复就是最后那条正文')
+      ok(a.segments[0].commentary.length === a.commentary.length, '段内解说与整轮解说一致')
+    }
+
+    // 16.3 段落拆分不改文案：正文 A 不因分段被改字或括起
+    {
+      const t = groupIntoTurns([usr('u1', 'x'), asst('a1', '正文A'), asst('a2', '正文B')])
+      const a = t[1]
+      ok(
+        a.segments.map((s) => s.response?.text).join('|') === '正文A|正文B',
+        '段内正文保持原顺序与原文字',
+        a.segments.map((s) => s.response?.text).join('|')
+      )
+    }
   }
 }

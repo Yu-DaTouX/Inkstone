@@ -519,7 +519,19 @@ export interface HandoffView {
   sessionKey: string
   /** 本片段压了几次（`null` = 没有活动会话） */
   tally: HandoffTally | null
-  /** 最近一次生成的交接包（`null` = 还没生成过） */
+  /**
+   * **当前片段**的压缩计数（实施-14 F5）。
+   *
+   * 与 `tally` 区分开：那个按链首取（历史口径，用来回答「这条会话一共交接/压缩过多少」），
+   * 而交接阈值看的是**本片段**又压了几次。两者混用会让用户在交接之后
+   * 看到一个永远不再增长（或被重置）的数字。
+   */
+  segmentTally: HandoffTally | null
+  /** 链上共有几段（1 = 没交接过的单文件） */
+  chainSegments: number
+  /**
+   * 最近一次生成的交接包（`null` = 还没生成过）
+   */
   package: HandoffPackage | null
   /** 这一次是否正在等待薄层写包 */
   pending: boolean

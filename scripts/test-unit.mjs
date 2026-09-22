@@ -1658,6 +1658,38 @@ await runHandoffDiagnosticsTests(
   await import('../out/test/handoff-diagnostics.mjs'),
   await import('../out/test/handoff-diagnostics-main.mjs')
 )
+/*
+ * 单一调度与操作所有权（实施-14 F2 / H1+H2）：纯函数，但正是现场那两类
+ * 故障（一边交接一边续跑、旧 timeout 清新操作）的判定点。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff-schedule.ts'],
+    outfile: 'out/test/handoff-schedule.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffScheduleTests } = await import('./test-handoff-schedule.mjs')
+await runHandoffScheduleTests(ok, await import('../out/test/handoff-schedule.mjs'))
+/*
+ * 交接状态一行提示（实施-14 F5）：窗口边界与优先级。
+ * 判松会让每轮都显示“正在整理”，判紧就回到用户报的“没有提示”。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff-notice.ts'],
+    outfile: 'out/test/handoff-notice.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffNoticeTests } = await import('./test-handoff-notice.mjs')
+await runHandoffNoticeTests(ok, await import('../out/test/handoff-notice.mjs'))
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)

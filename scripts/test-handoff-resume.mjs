@@ -48,7 +48,8 @@ export async function runHandoffResumeTests(ok, resume, handoffShared) {
     ok(text.includes(part), `正文带上了内容栏：${part}`)
   }
   ok(!/sourceSession|generatedAt|generator/.test(text), '正文不带宿主元数据（对模型没意义、只占 token）')
-  ok(/yan goal report/.test(text), '正文要求接手后重新登记目标（新会话从 rev0 开始，不照搬进度）')
+  ok(/yan goal report/.test(text), '正文要求接手后重新登记这一段的进展（交接包里的进度不算新证据）')
+  ok(!/从 rev0 开始/.test(text), 'F4：不再告诉模型「目标全新从 rev0 开始」（宿主已经把目标带过来了）')
   ok(text.length < 4000, `正文有界（${text.length} 字符）—— 交接不把历史灌进来`)
 
   const noPkg = resume.buildResumeText(null, 'rs-10')
@@ -61,9 +62,17 @@ export async function runHandoffResumeTests(ok, resume, handoffShared) {
     { role: 'assistant', text: `我复述一下 ${resume.resumeMarker('rs-11')}` },
     { role: 'user', text: '别的话' }
   ]
-  ok(!resume.hasResumeEvidence(users, 'rs-11'), '助手复述不算证据（只有 user 消息才真的发出去了）')
+  ok(!resume.hasResumeEvidence(users, 'rs-11'), '助手复述不算证据（只有 user / custom 消息才真的发出去了）')
   users.push({ role: 'user', content: text.replace('rs-9', 'rs-11') })
   ok(resume.hasResumeEvidence(users, 'rs-11'), 'user 消息带标记 → 有证据（content 形态也认）')
+
+  /* 实施-14 F4：交接 resume 以后的形态是 custom 控制消息（旧 user 只读识别） */
+  const customs = [{ role: 'custom', text: `控制消息 ${resume.resumeMarker('rs-12')}` }]
+  ok(resume.hasResumeEvidence(customs, 'rs-12') === true, 'F4：custom 控制消息带标记 → 也算证据')
+  ok(
+    resume.hasResumeEvidence([{ role: 'tool', text: resume.resumeMarker('rs-13') }], 'rs-13') === false,
+    'F4：工具结果复述不算证据'
+  )
 
   ok(resume.resumePreview('  一行\n  很长   的话  ', 6) === '一行 很长 …', '预览压平空白并截断')
   ok(resume.resumePreview('短') === '短', '预览短文本原样返回')

@@ -37,6 +37,37 @@
 import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
 
 /** 一段文字（解说或回答） */
+/**
+ * 一个**工作段**（实施-14 F6 / R1）。
+ *
+ * 为什么不能只要「整轮推理字符串 + 整轮回复字符串」：自动继续会把一个逻辑回合
+ * 拆成多次「推理 → 工具 → 正文」。整轮聚合会把第 2、3 次的推理全部塞回
+ * **正文 A 之前** 的那一坨里 —— 用户看到的顺序就不对了（用户 2026-09-23 的要求：
+ * 推理随聊天里的正式回复位置走）。
+ *
+ * 一段的定义是「两次正文输出之间」：正文一输出，后面的推理与工具属于下一段。
+ */
+export interface TurnSegment {
+  /** 稳定 id（DOM key；同一条消息拆出的段不会重排） */
+  id: string
+  /** 这一段从哪条原始消息开始（排障 / 将来接 runId） */
+  sourceMessageId: string
+  /** 生成这一段的 run（目前宿主没有把它挂到消息上，先留 null） */
+  runId: string | null
+  /** 这一段的推理（可能多次，用双换行拼） */
+  thinking: string
+  thinkingMs?: number
+  thinkingLive: boolean
+  /** 这一段的工具调用（按时间序） */
+  tools: NonNullable<UIMessage['toolCalls']>
+  /** 这一段里的正文（按原消息顺序） */
+  texts: TurnText[]
+  /** 正式回复（无工具调用的文字） */
+  response: TurnText | null
+  /** 解说（带工具调用的文字，即那批工具的前言） */
+  commentary: TurnText[]
+}
+
 export interface TurnText {
   id: string
   text: string
@@ -63,6 +94,13 @@ export interface AssistantTurn {
   thinkingLive: boolean
   /** 中间解说，按时间顺序；每条是一段 */
   commentary: TurnText[]
+  /**
+   * 有序工作段（实施-14 F6）：推理 / 工具 / 正文按**真实发生顺序**归段。
+   *
+   * 单段时（绝大多数回合）聚合字段 `thinking` / `tools` / `response` 与它等价，
+   * 界面可以继续走旧渲染路径；多段时才需要按它逐段渲染。
+   */
+  segments: TurnSegment[]
   /** 整个回合的工具调用（合并后按时间排） */
   tools: NonNullable<UIMessage['toolCalls']>
   /**
@@ -193,6 +231,19 @@ export function splitParagraphs(text: string): string[] {
  *   两条无工具消息里的（结论 + 「说一声就走。」），
  *   只取最后一条就把 1600 字的正文全归到解说里去了。
  */
+/** 累积中的工作段（内部形态；交付给界面时换成 `TurnSegment`）。 */
+interface SegmentAccumulator {
+  id: string
+  sourceMessageId: string
+  thinking: string[]
+  thinkingMs: number
+  thinkingLive: boolean
+  tools: NonNullable<UIMessage['toolCalls']>
+  texts: TurnText[]
+  /** 正文一输出就封段：后面的推理与工具属于下一段 */
+  closed: boolean
+}
+
 export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Turn[] {
   const turns: Turn[] = []
   /** 正在累积的助手回合 */
@@ -204,6 +255,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     thinkingLive: boolean
     /** 按时间顺序缓存的「有文字」的段，带位置标记 */
     texts: TurnText[]
+    /** 工作段（实施-14 F6）：推理 / 工具 / 正文按真实顺序归段 */
+    segments: SegmentAccumulator[]
     tools: NonNullable<UIMessage['toolCalls']>
     artifacts: NonNullable<UIMessage['artifacts']>
     imageProgress: ImageGenerationProgress[]
@@ -259,6 +312,40 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       commentary.push(...beforeWork.slice(0, -1))
     }
 
+    /*
+     * 工作段（实施-14 F6）：逐段算好「回复 / 解说」—— 规则与整轮一致，
+     * 只是作用域换成段内。单段时它与顶层聚合等价（旧渲染路径不会变）。
+     */
+    const segments: TurnSegment[] = cur.segments
+      .filter((raw) => raw.thinking.length || raw.tools.length || raw.texts.length)
+      .map((raw) => {
+        /*
+         * 段内分类与整轮同一口径：**无工具的文字 = 正式回复，带工具的文字 = 解说**。
+         * 不做「提升最后一条」的兼底 —— 那个兼底只属于整轮（界面走旧渲染时才用）。
+         */
+        const afterWork = raw.texts.filter((x) => !x.hasTools)
+        const beforeWork = raw.texts.filter((x) => x.hasTools)
+        const response: TurnText | null = afterWork.length
+          ? {
+              id: afterWork[0].id,
+              text: afterWork.map((x) => x.text).join('\n\n'),
+              hasTools: false
+            }
+          : null
+        return {
+          id: raw.id,
+          sourceMessageId: raw.sourceMessageId,
+          runId: null,
+          thinking: raw.thinking.join('\n\n'),
+          ...(raw.thinkingMs ? { thinkingMs: raw.thinkingMs } : {}),
+          thinkingLive: raw.thinkingLive,
+          tools: raw.tools,
+          texts: raw.texts,
+          response,
+          commentary: beforeWork
+        }
+      })
+
     turns.push({
       kind: 'assistant',
       id: cur.firstId,
@@ -266,6 +353,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       thinkingMs: cur.thinkingMs || undefined,
       thinkingLive: cur.thinkingLive,
       commentary,
+      segments,
       tools: cur.tools,
       ...(waitSpans.length ? { waitSpans, waitMs: waitSpansMs(waitSpans) } : {}),
       artifacts: cur.artifacts,
@@ -321,6 +409,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         thinkingMs: 0,
         thinkingLive: false,
         texts: [],
+        segments: [],
         tools: [],
         artifacts: [],
         imageProgress: [],
@@ -334,14 +423,45 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     cur.sourceIds.push(m.id)
     if (m.id === streamingId) cur.streaming = true
 
+    /*
+     * 工作段（实施-14 F6）：段内按真实顺序放推理 / 工具 / 正文，
+     * 正文一进就把段封上 —— 后面的推理与工具归下一段。
+     * 这样界面就能把「第 2 段推理」放在正文 A **之后**、正文 B **之前**。
+     */
+    const seg = (): SegmentAccumulator => {
+      const last = cur!.segments[cur!.segments.length - 1]
+      if (last && !last.closed) return last
+      const created = {
+        id: `${m.id}#seg${cur!.segments.length}`,
+        sourceMessageId: m.id,
+        thinking: [] as string[],
+        thinkingMs: 0,
+        thinkingLive: false,
+        tools: [] as NonNullable<UIMessage['toolCalls']>,
+        texts: [] as TurnText[],
+        closed: false
+      }
+      cur!.segments.push(created)
+      return created
+    }
+
     if (hasText(m.thinking)) {
       cur.thinking.push(m.thinking!.trim())
       cur.thinkingMs += m.thinkingMs ?? 0
+      const target = seg()
+      target.thinking.push(m.thinking!.trim())
+      target.thinkingMs += m.thinkingMs ?? 0
     }
     // 取最新一条的「正在思考」信号（同一回合可能想好几次）
-    if (m.thinkingLive !== undefined) cur.thinkingLive = m.thinkingLive
+    if (m.thinkingLive !== undefined) {
+      cur.thinkingLive = m.thinkingLive
+      seg().thinkingLive = m.thinkingLive
+    }
 
-    if (m.toolCalls?.length) cur.tools.push(...m.toolCalls)
+    if (m.toolCalls?.length) {
+      cur.tools.push(...m.toolCalls)
+      seg().tools.push(...m.toolCalls)
+    }
     if (m.artifacts?.length) cur.artifacts.push(...m.artifacts)
     if (m.imageProgress?.length) {
       for (const progress of m.imageProgress) {
@@ -359,9 +479,14 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (hasText(m.text)) {
       // 一条消息里可能有好几段 —— 拆开，好让界面按段落排
       const hasTools = (m.toolCalls?.length ?? 0) > 0
+      const target = seg()
       for (const p of splitParagraphs(m.text)) {
-        cur.texts.push({ id: `${m.id}#${cur.texts.length}`, text: p, hasTools })
+        const item = { id: `${m.id}#${cur.texts.length}`, text: p, hasTools }
+        cur.texts.push(item)
+        target.texts.push(item)
       }
+      /* 正文已输出：这一段到此为止（后面的推理属于下一段） */
+      target.closed = true
     }
 
     /*
