@@ -158,7 +158,7 @@ const KNOWN_COMMANDS = new Set([
   'image.generate',
   'question.ask',
   'context.recall',
-  /* 目标状态（实施-05 S3）：澄清档就绪转移与自主档推进报告。 */
+  /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */
   'goal.ready',
   'goal.report',
   'goal.status',

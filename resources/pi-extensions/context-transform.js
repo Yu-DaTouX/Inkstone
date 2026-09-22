@@ -421,7 +421,8 @@ export function renderTombstone({ tool, target, tokens, ref }) {
   if (target) lines.push(`Target: ${target}`)
   lines.push(`Original tokens: ${Number(tokens) || 0}`)
   lines.push(`Ref: ${ref}`)
-  lines.push('Call the context_recall tool with this Ref to read the original content.')
+  /* 回读入口是随包 CLI，不是模型工具（见 context.js 头注 ③）。 */
+  lines.push('Read it back with: yan context recall --ref <Ref> (stdout resultFile holds the raw text as managed plain text).')
   return lines.join('\n')
 }
 
@@ -708,7 +709,7 @@ export function renderTaskState(task, opts = {}) {
   }
   const refs = (Array.isArray(task.archiveRefs) ? task.archiveRefs : []).filter(Boolean)
   if (refs.length) {
-    lines.push('Archived history (use context_recall):', ...refs.map((r) => `- ${r}`))
+    lines.push('Archived history (read back with `yan context recall --ref`):', ...refs.map((r) => `- ${r}`))
     content = true
   }
   lines.push('</TASK_STATE>')
@@ -810,7 +811,7 @@ export function stripStaleRecalls(messages, currentTurn) {
       content: [
         {
           type: 'text',
-          text: `${RECALL_STUB_PREFIX} ref=${parsed.ref ?? 'unknown'} — the full text is no longer in context; call context_recall again if needed.`
+          text: `${RECALL_STUB_PREFIX} ref=${parsed.ref ?? 'unknown'} — the full text is no longer in context; call \`yan context recall --ref ${parsed.ref ?? '<ref>'}\` again if needed.`
         }
       ]
     }

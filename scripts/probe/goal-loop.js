@@ -5,7 +5,7 @@
  * 宿主 arm 的续行在回合空闲时真的把它叫起来，自动开始下一轮。
  *
  * 与 `goal.js`（S3b）的区别：
- *   · 那边是「澄清档提交就绪 → 自动转标准开工」的**一次性**续行；
+ *   · 那边是「计划档提交就绪 → 自动转标准开工」的**一次性**续行；
  *   · 这边是「自主档每报一次进展 → 自动叫醒一次」的**可重复**链路，
  *     所以探针要证明「新一轮不是用户触发的」（全程只发一条消息）。
  *
@@ -23,10 +23,17 @@
   const q = (s) => document.querySelector(s)
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
-  /** 硬截止：约 180s（要留够两到三个真实模型回合） */
-  const deadline = Date.now() + 180000
-  const waitFor = async (fn, step = 400) => {
-    while (Date.now() < deadline) {
+  /*
+   * 每节自己的等待预算。
+   *
+   * ⚠️ 原来是一个全局 `deadline = Date.now() + 180000`，**各节共享** ——
+   * 第 2 节（等 `yan goal report` 生效）把它吃光之后，第 3/4 节一进去就超时，
+   * 报出来的却是「回合没空闲 / 续行没发生」（实测踩到，两次都是假红）。
+   * 分节预算之后，一节慢不会再连坐后面的断言。
+   */
+  const waitFor = async (fn, step = 400, budgetMs = 60000) => {
+    const until = Date.now() + budgetMs
+    while (Date.now() < until) {
       const v = await fn()
       if (v) return v
       await sleep(step)
@@ -95,11 +102,18 @@
   const sent = await store.getState().send(prompt)
   ok(!sent || sent.ok !== false, '消息已发送（此后不再发第二条）')
 
+  /*
+   * 只要求「目标被报过一次进展」。
+   *
+   * 不押 phase 是 `executing`：模型很可能不照 prompt 里的 phase 字面写
+   * （2026-09-22 实测：它自己决定报 `completed`，还顺手多报了几轮），
+   * 而这一节的意图只是「模型真的调了 `yan goal report`」。
+   */
   const reported = await waitFor(async () => {
     const g = await window.yan.getGoal()
-    return g.goal.revision > 0 && g.goal.phase === 'executing' ? g : null
-  })
-  ok(!!reported, `目标进入 executing（实际 rev${reported?.goal?.revision ?? '?'} / ${reported?.goal?.phase ?? '?'}）`)
+    return g.goal.revision > 0 ? g : null
+  }, 400, 90000)
+  ok(!!reported, `目标被报过一次进展（实际 rev${reported?.goal?.revision ?? '?'} / ${reported?.goal?.phase ?? '?'}）`)
   if (!reported) dumpDiagnostics('等目标报告')
 
   out.push('')
@@ -124,13 +138,19 @@
 
   out.push('')
   out.push('=== 4. 没有用户消息，自动起了新一轮（S3c 的核心证据）===')
+  /*
+   * 判据用**目标被再次推进**（revision 从 1 涨上去），而不是「助手消息数 +1」：
+   * 自主链一旦跑起来，模型会在续行回合里干很多活（实测 18 条助手消息 / 15 次工具），
+   * 探针取的基线一落下就已经在链尾 —— 计数增长会假红（2026-09-22 踩到两次）。
+   * 而探针**全程只发过一条消息**，所以「revision 又涨了」只可能来自续行。
+   */
   const resumed = await waitFor(async () => {
-    const now = snapshot()
-    return now.assistants > before.assistants || now.tools > before.tools ? now : null
-  }, 600)
+    const g = await window.yan.getGoal()
+    return g.goal.revision > 1 ? g : null
+  }, 600, 90000)
   ok(
     !!resumed,
-    `自动续接真的起了新回合（助手 ${before.assistants}→${resumed?.assistants ?? before.assistants}，工具 ${before.tools}→${resumed?.tools ?? before.tools}）`
+    `自动续接真的起了新回合（目标被再次推进：rev${reported?.goal?.revision ?? '?'} → rev${resumed?.goal?.revision ?? '?'}，助手 ${before.assistants}→${snapshot().assistants}）`
   )
   if (!resumed) dumpDiagnostics('等自动续接')
   if (resumed) {

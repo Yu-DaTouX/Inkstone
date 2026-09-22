@@ -7,6 +7,13 @@ import { STREAM_MAX, STREAM_MIN, clampStreamWidth } from '../../../../shared/ipc
 import type { SoundEvent, SoundSettings } from '../../../../shared/ipc'
 import { previewSound } from '../../lib/sound'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
+import {
+  DEFAULT_WORK_MODE_BINDING,
+  bindingFromKey,
+  formatKeyBinding,
+  isUsableKeyBinding,
+  parseKeyBinding
+} from '../../../../shared/work-mode'
 import { AuthTab } from './AuthTab'
 import { ContextTab } from './ContextTab'
 import { KnowledgeTab } from './KnowledgeTab'
@@ -210,9 +217,47 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
   const uiScale = useStore((s) => s.settings?.uiScale) ?? 0
   const setUiScale = useStore((s) => s.setUiScale)
   const sendKey = useStore((s) => s.settings?.sendKey) ?? 'auto'
-  /* 工作模式（实施-05）：默认值只影响新会话；Tab 快切是全局输入偏好 */
+  /* 工作模式（实施-05）：默认值只影响新会话；快捷键是全局输入偏好（2026-09-22） */
   const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const workModeTab = useStore((s) => s.settings?.workModeTab !== false)
+  const workModeShortcutOn = useStore((s) => s.settings?.workModeShortcutEnabled !== false)
+  const workModeShortcut = useStore((s) => s.settings?.workModeShortcut)
+  const shortcutRecording = useStore((s) => s.shortcutRecording)
+  /** 录音时按了裸键：不是错，但要告诉用户为什么没收 */
+  const [shortcutNeedsModifier, setShortcutNeedsModifier] = useState(false)
+
+  /*
+   * 录新的模式快捷键（2026-09-22）。
+   *
+   * 为什么录音要占一个全局 capture 监听：用户按的就是**真实组合键**（Ctrl+Shift+K），
+   * 得先把它原样接下来当值，而不是让他去选下拉。三条边界：
+   *   ① 只按修饰键本身不算（`bindingFromKey` 返回 null）—— 继续等；
+   *   ② 裸键（无 Ctrl / Alt / Shift）不收：快捷键全局生效，裸键会抢掉正常输入；
+   *   ③ Esc 取消。
+   * 录音期间 `App` 里的模式快捷键会让路（读 store 的 `shortcutRecording`）。
+   */
+  useEffect(() => {
+    if (!shortcutRecording) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.key === 'Escape') {
+        setShortcutNeedsModifier(false)
+        useStore.setState({ shortcutRecording: false })
+        return
+      }
+      const binding = bindingFromKey(event)
+      if (!binding) return
+      if (!isUsableKeyBinding(binding)) {
+        setShortcutNeedsModifier(true)
+        return
+      }
+      setShortcutNeedsModifier(false)
+      useStore.setState({ shortcutRecording: false })
+      void patchSettings({ workModeShortcut: formatKeyBinding(binding) })
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [patchSettings, shortcutRecording])
   /** 界面密度（方案 A1） */
   const density = useStore((s) => s.settings?.density) ?? 'standard'
   const zoom = useStore((s) => s.zoom)
@@ -363,19 +408,50 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 
       <div className="set-row">
         <div className="set-label">
-          <div className="set-name">{t('set.workModeTab')}</div>
-          <div className="set-desc">{t('set.workModeTabDesc')}</div>
+          <div className="set-name">{t('set.workModeKey')}</div>
+          <div className="set-desc">{t('set.workModeKeyDesc')}</div>
         </div>
         <div className="set-ctl">
-          {/* 开 = 不落盘（“没改过”的默认态），关才写 false —— 见 AppSettings.workModeTab */}
+          {/*
+           * 三个按钮：键位（点击进入录音）/ 恢复默认（只有改过才显示）/ 开·关。
+           * 键位按钮把当前组合键**写在自己身上**（`data-binding`）—— 探针与
+           * 视觉矩阵据此断言，不用去猜文案。
+           */}
           <button
-            className={`seg-btn ${workModeTab ? 'sel' : ''}`}
-            onClick={() => void patchSettings({ workModeTab: !workModeTab })}
-            data-testid="set-work-mode-tab"
-            data-on={workModeTab ? '1' : '0'}
+            className={`seg-btn ${shortcutRecording ? 'sel' : ''}`}
+            onClick={() => {
+              setShortcutNeedsModifier(false)
+              useStore.setState({ shortcutRecording: !shortcutRecording })
+            }}
+            data-testid="set-work-mode-key"
+            data-binding={workModeShortcut ?? DEFAULT_WORK_MODE_BINDING}
+            title={shortcutNeedsModifier ? t('set.workModeKeyInvalid') : undefined}
           >
             <Icon name="sparkle" size={12} />
-            <span>{workModeTab ? t('set.on') : t('set.off')}</span>
+            <span>
+              {shortcutRecording
+                ? t('set.workModeKeyRecording')
+                : formatKeyBinding(parseKeyBinding(workModeShortcut ?? DEFAULT_WORK_MODE_BINDING)!)}
+            </span>
+          </button>
+          {workModeShortcut ? (
+            <button
+              className="seg-btn"
+              onClick={() => void patchSettings({ workModeShortcut: undefined })}
+              data-testid="set-work-mode-key-reset"
+            >
+              <span>{t('set.workModeKeyReset')}</span>
+            </button>
+          ) : null}
+          {/* 开 = 不落盘（“没改过”的默认态），关才写 false —— 见 AppSettings.workModeShortcutEnabled */}
+          <button
+            className={`seg-btn ${workModeShortcutOn ? 'sel' : ''}`}
+            onClick={() => void patchSettings({ workModeShortcutEnabled: !workModeShortcutOn })}
+            data-testid="set-work-mode-key-enabled"
+            data-on={workModeShortcutOn ? '1' : '0'}
+          >
+            <Icon name="sparkle" size={12} />
+            <span>{workModeShortcutOn ? t('set.on') : t('set.off')}</span>
           </button>
         </div>
       </div>

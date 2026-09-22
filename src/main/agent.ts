@@ -30,7 +30,7 @@ import {
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, reduceCompaction, type CompactionState } from './compaction'
-import { activeContextPolicy } from './context-policy'
+import { activeContextPolicy, contextPolicySettings } from './context-policy'
 import {
   contextBudget,
   contextPolicyStep,
@@ -42,6 +42,7 @@ import {
 } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { turnTiming } from '../shared/turn-timing'
+import { toolWaitSpans } from '../shared/turns'
 import {
   appendTurnTiming,
   applyTurnTimings,
@@ -130,6 +131,18 @@ const FLUSH_MS = 16
  * 几十万字的累积文本吃穿，所以让它自然降频到 10~20fps 比卡顿好。
  */
 const MAX_FLUSH_MS = 120
+
+/**
+ * `compact` 命令的超时（默认 30s 不够用）。
+ *
+ * 为什么不能沿用 `REQUEST_TIMEOUT`：`compact` 不是元数据查询，它要**调一次模型
+ * 生成摘要** —— 长会话上跑几分钟很正常。用 30s 的结果是：压缩还在进行、
+ * 砚已经当它失败（实测报错「命令 compact 超时（30000ms）」），
+ * 而且策略路径当时是 `void` 出去的，直接把错误变成了未捕获的 rejection。
+ *
+ * 超时仍留一个上限：压不动时得让用户看到失败，而不是无限等。
+ */
+const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
 
 /** 推送补丁到渲染端（主进程注入） */
@@ -271,9 +284,8 @@ export class AgentController extends EventEmitter {
   private push: Push
   private cwd: string
   private piBin?: string
-  private browserExtension?: string
   private questionExtension?: string
-  /** 工作模式的工具策略执行（实施-05 S3）：澄清档收紧工具表 + 兜底阻断。 */
+  /** 工作模式的工具策略执行（实施-05 S3）：计划档收紧工具表 + 兜底阻断。 */
   private workModeExtension?: string
   /** 就绪转移之后的内部门续行（实施-05 S3b）：custom 消息 + 触发一次回合。 */
   private goalResumeExtension?: string
@@ -296,11 +308,15 @@ export class AgentController extends EventEmitter {
    * 检索与预算全在宿主（`main/project-knowledge.ts`）。
    */
   private projectKnowledgeExtension?: string
+  /**
+   * 单轮重复动作兜底（2026-09-22）：`tool_call` 看参数、连续相同就提醒或拦下。
+   * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
+   */
+  private repeatGuardExtension?: string
   /** 读界面历史（实施-05 S5b-4）；缺省用 `readSessionMessages` 读单文件。 */
   private readHistory?: (sessionFile: string) => Promise<ReadResult | null>
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
   private getResponseDetail?: () => ResponseDetail
-  private browserEnv?: NodeJS.ProcessEnv
   /**
    * 浏览器服务取用口（宿主能力服务用）。
    *
@@ -411,6 +427,16 @@ export class AgentController extends EventEmitter {
   private turnElapsedMs?: number
   /** 本轮是否已经写过至少一条元数据记录（中间写一次、终止时再更新一次）。 */
   private turnPersisted = false
+  /**
+   * 当前 **run** 的标识（实施-11 H-6b）。
+   *
+   * 为什么需要与 `logicalTurnId` 分开：一个逻辑回合（= 一次用户请求 + 自动继续）
+   * 会跑多次 pi 的 agent 回合。同一个 run 内的中途快照与终止快照**是同一段工作**
+   * （后者覆盖前者），而不同 run 是串起来的另一段工作（用时**相加**）。
+   * 读回时靠这个字段区分「覆盖」与「累加」，不能只看 logicalTurnId。
+   */
+  private turnRunSeq = 0
+  private turnRunId?: string
   private turnResponseDetail: ResponseDetail = 'unknown'
   /** 文本脏（有新的流式文本待推） */
   private dirty = false
@@ -500,7 +526,6 @@ export class AgentController extends EventEmitter {
     push: Push
     cwd: string
     piBin?: string
-    browserExtension?: string
     questionExtension?: string
     workModeExtension?: string
     goalResumeExtension?: string
@@ -527,6 +552,8 @@ export class AgentController extends EventEmitter {
     contextExtension?: string
     /** 项目知识注入扩展（实施-03 S3）：读宿主写的注入文件并放到用户消息之前 */
     projectKnowledgeExtension?: string
+    /** 单轮重复动作兜底（2026-09-22）：连续相同调用 → 提醒 / 拦下 */
+    repeatGuardExtension?: string
     /**
      * 读界面历史（实施-05 S5b-4）。
      *
@@ -537,7 +564,6 @@ export class AgentController extends EventEmitter {
     readHistory?: (sessionFile: string) => Promise<ReadResult | null>
     /** 读取当前有效档位；每个 agent_start 只调用一次。 */
     getResponseDetail?: () => ResponseDetail
-    browserEnv?: NodeJS.ProcessEnv
     /**
      * 浏览器服务取用口（`yan browser …` 的实现要调它）。
      *
@@ -577,7 +603,6 @@ export class AgentController extends EventEmitter {
     }
     this.cwd = opts.cwd
     this.piBin = opts.piBin
-    this.browserExtension = opts.browserExtension
     this.questionExtension = opts.questionExtension
     this.workModeExtension = opts.workModeExtension
     this.goalResumeExtension = opts.goalResumeExtension
@@ -587,9 +612,9 @@ export class AgentController extends EventEmitter {
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.contextExtension = opts.contextExtension
     this.projectKnowledgeExtension = opts.projectKnowledgeExtension
+    this.repeatGuardExtension = opts.repeatGuardExtension
     this.readHistory = opts.readHistory
     this.getResponseDetail = opts.getResponseDetail
-    this.browserEnv = opts.browserEnv
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.goalHost = opts.goalHost
@@ -734,11 +759,10 @@ export class AgentController extends EventEmitter {
          */
         '--no-extensions',
         '--no-skills',
-        ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
          // 工作模式的提问指引薄层（真正入口是宿主 yan question ask）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         /*
-         * 工作模式的工具策略（实施-05 S3）：澄清档把非只读工具从表里拿掉。
+         * 工作模式的工具策略（实施-05 S3）：计划档把非只读工具从表里拿掉。
          * 放最后加载：它要在其它扩展注册完工具之后再收紧工具表。
          */
         ...(this.workModeExtension ? ['--extension', this.workModeExtension] : []),
@@ -762,6 +786,11 @@ export class AgentController extends EventEmitter {
          * 与其它薄层成员一样：只做「钩子能做、CLI / RPC 做不到」的那一步。
          */
         ...(this.projectKnowledgeExtension ? ['--extension', this.projectKnowledgeExtension] : []),
+        /*
+         * 单轮重复动作兜底（2026-09-22）：连续 3 次相同调用提醒、5 次拦下。
+         * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
+         */
+        ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
         /*
@@ -780,7 +809,6 @@ export class AgentController extends EventEmitter {
         // 让 pi 用首条用户消息当标题，才真正可辨认。
       ],
       env: {
-        ...this.browserEnv,
         // 让内置扩展能读到桌面端设置（工作模式快照存在 desktop.json 旁边）。
         // 测试时 YAN_DATA_DIR 指向隔离目录，扩展会读到那份设置。
         YAN_DATA_DIR: YAN_DIR,
@@ -1064,7 +1092,7 @@ export class AgentController extends EventEmitter {
       return this.runKnowledgeCommand(command.slice('knowledge.'.length), params)
     }
     /*
-     * 目标状态（实施-05 S3）：`goal.ready` 是「澄清档就绪 → 切标准」的唯一入口。
+     * 目标状态（实施-05 S3）：`goal.ready` 是「计划档就绪 → 切标准」的唯一入口。
      * 实现落在 index.ts —— 会话文件键与模式 store 都在那边，
      * 在这里再拼一份就会有两套「这是哪个会话」的真相。
      */
@@ -1600,7 +1628,7 @@ export class AgentController extends EventEmitter {
     if (workMode === 'clarify') {
       throw new CapabilityCommandError(
         'capability_mode_clarify',
-        '澄清模式允许搜索与查看候选，但不允许接入能力；切换到标准或自主模式后再继续。'
+        '计划模式允许搜索与查看候选，但不允许接入能力；切换到标准或自主模式后再继续。'
       )
     }
     const strategy = await this.capabilityOpts?.getCapabilityStrategy?.()
@@ -2630,7 +2658,7 @@ export class AgentController extends EventEmitter {
       if (server?.effect !== 'read') {
         throw new CapabilityCommandError(
           'capability_mode_clarify',
-          '澄清模式只允许调用配置明确标记为 read 的 MCP 工具；当前服务的副作用未被确认为只读。'
+          '计划模式只允许调用配置明确标记为 read 的 MCP 工具；当前服务的副作用未被确认为只读。'
         )
       }
     }
@@ -2834,11 +2862,10 @@ export class AgentController extends EventEmitter {
   /**
    * `yan browser <动作>` 的实现点。
    *
-   * ── 为什么直接调宿主服务，而不是复用 loopback bridge ──
-   *   bridge（`src/main/browser.ts` 的 `startBridge`）存在的理由是
-   *   「扩展是**进程外**的、拿不到 Electron 对象」。宿主自己就在同一个进程里，
-   *   再绕一层 HTTP + token 只是把本地函数调用做成网络调用：多一个失败点、
-   *   多一次序列化，安全上不多一分。
+   * ── 为什么直接调宿主服务，而不是复用旧的 loopback bridge ──
+   *   浏览器控制器归宿主独占（01-S5d 已删掉只服务于旧 `browser.js` 扩展的
+   *   HTTP bridge）。再绕一层网络调用只会多一个失败点与一次序列化，
+   *   安全上不多一分。
    *
    * ── 失败分两类（见 capability-server.ts 的注释）──
    *   · 「浏览器没开 / 地址不是 http(s) / 正在由用户接管」= **业务失败**，
@@ -3143,11 +3170,11 @@ export class AgentController extends EventEmitter {
   }
 
   /**
-   * 把宿主文案里残留的旧工具名换成现在真的能用的 CLI 写法。
+   * 兜底：把文案里残留的旧工具名换成现在真的能用的 CLI 写法。
    *
-   * 浏览器服务仍有少量历史错误提示（例如 browser_observe），但模型侧
-   * 的真实入口已经是 yan browser observe；在能力回执边界统一改写，避免
-   * 模型拿到一个无法调用的旧工具名。
+   * 浏览器服务内部文案已在 01-S5d 收尾时统一成 `yan browser …` 写法
+   * （见 `browser.ts` / `browser/ElementRegistry.ts`）；这里保留一道改写，
+   * 防止以后新增的错误提示又写出 `browser_observe` 这种不存在的工具名。
    */
   private cliHint(message: string): string {
     return message.replace(/\bbrowser_([a-z_]+)\b/g, (_all, action: string) => {
@@ -3341,13 +3368,20 @@ export class AgentController extends EventEmitter {
   private contextPolicyView(): ContextPolicyView | undefined {
     const { resolved, policy, budget } = this.effectivePolicy()
     if (!policy.enabled || !budget) return undefined
+    /*
+     * 精确模型层的原文（C-5 尾）：右栏据此说「现在用的是均衡 600K 档」。
+     * 只看 `source === 'model'` 不够 —— 模型级也可能是用户手填的自定义数。
+     */
+    const modelKey = modelKeyOf(this.state?.model)
+    const modelOverrides = modelKey ? contextPolicySettings().byModel?.[modelKey] : undefined
     return {
       enabled: true,
       kinds: policy.kinds,
       budget,
       source: resolved.source,
       ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
-      overridden: resolved.overridden
+      overridden: resolved.overridden,
+      ...(modelOverrides ? { modelOverrides } : {})
     }
   }
 
@@ -3464,6 +3498,13 @@ export class AgentController extends EventEmitter {
         this.policyOrigin = null
         console.error('[agent] 工作集压缩失败：', res.error)
       }
+    } catch (err) {
+      /*
+       * 兜底：这条链是 `void` 出去的（见 refreshStats 的调用点），
+       * 异常没人接就会变成主进程的 unhandledRejection —— 2026-09-22 实测到过。
+       */
+      this.policyOrigin = null
+      console.error('[agent] 工作集压缩异常：', err instanceof Error ? err.message : err)
     } finally {
       this.policyTriggering = false
     }
@@ -3754,6 +3795,9 @@ export class AgentController extends EventEmitter {
         this.turnTerminal = 'completed'
         this.turnElapsedMs = undefined
         this.turnPersisted = false
+        /* 每个 pi 回合一个 run id（H-6b）：自动继续会开新 run、归同一个逻辑回合。 */
+        this.turnRunSeq += 1
+        this.turnRunId = `run-${this.turnRunSeq}-${Date.now().toString(36)}`
         this.markStreaming(true)
         this.setAgentRunning(true)
         break
@@ -4112,10 +4156,26 @@ export class AgentController extends EventEmitter {
     const anchorId = [...this.messages]
       .reverse()
       .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+    /*
+     * 逻辑回合身份（H-6b）：优先用**用户消息 id**。
+     * 同一次请求触发的自动继续会开新的 pi agent 回合（新 runId），
+     * 但用户消息没变 —— 用 anchorId 才能把它们归成同一个逻辑回合，
+     * 而不是每次 agent_end 就冻结出一个新回合。分叉 / 压缩换过历史
+     * 导致锚对不上时，回退到首条 assistant id（旧行为，仍然自洽）。
+     */
+    const logicalTurnId = anchorId ?? sourceIds[0]
+    /* 工具等待分段（H-6b）：从本轮消息的工具调用派生，并行分支不重复计。 */
+    const waitSpans = toolWaitSpans(
+      this.messages
+        .filter((m) => sourceIds.includes(m.id))
+        .flatMap((m) => m.toolCalls ?? [])
+    )
     const endedAt = Date.now()
     const record = {
       v: TURN_TIMING_VERSION,
-      logicalTurnId: sourceIds[0],
+      logicalTurnId,
+      /* run id 让读回时能区分「同一段工作的两次快照」与「自动继续的另一段」。 */
+      ...(this.turnRunId ? { runId: this.turnRunId } : {}),
       /* 墙钟起点是反推的（用时本身是单调口径），只用于展示这一轮什么时候开始 */
       startedAt: endedAt - elapsedMs,
       endedAt,
@@ -4128,6 +4188,7 @@ export class AgentController extends EventEmitter {
       final,
       ...(anchorId ? { anchorId } : {}),
       sourceIds,
+      ...(waitSpans.length ? { waitSpans } : {}),
       monotonicMs: elapsedMs
     }
     if (await appendTurnTiming(YAN_DIR, bucket, record)) this.turnPersisted = true
@@ -4986,7 +5047,17 @@ export class AgentController extends EventEmitter {
      * 会把他自己点的那次标成「工作集」。
      */
     if (!opts.fromPolicy) this.policyOrigin = null
-    const res = await this.rpc!.command('compact')
+    /*
+     * 契约是「不抛」：调用方有两类 —— 用户点的 `/compact`（会把它当提示弹出来）
+     * 和策略触发的自动压缩（在 `void` 出去的异步链上）。后者没人接异常，
+     * 一抛就是一条 `unhandledRejection` 控制台报错，所以超时/进程没了都归成 `{ ok: false }`。
+     */
+    let res: Awaited<ReturnType<PiRpc['command']>>
+    try {
+      res = await this.rpc!.command('compact', {}, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 

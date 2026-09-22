@@ -15,8 +15,11 @@
 export function runContextPolicyTests(ok, mod, mainMod, view) {
   const {
     DEFAULT_CONTEXT_POLICY,
+    LARGE_CONTEXT_POLICY_PRESETS,
+    LARGE_PRESET_NAME_KEYS,
     contextBudget,
     contextPolicyStep,
+    largePresetOf,
     nextContextStage,
     policyFrom,
     rearmAfterCompaction,
@@ -546,5 +549,40 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     )
     setContextPolicySettings(null)
     ok(activeContextPolicy({}).source === 'default', '清空设置层后回到默认值')
+  }
+
+  /*
+   * C-5 尾：大窗口试行档的**识别**。
+   *
+   * 设置页（哪个按钮亮）与右栏（现在用哪一档）必须用同一个判据，
+   * 所以这个纯函数是两份界面唯一的真相源。判据是「恰好等于预设原文」——
+   * 「接近」就认的话，用户手填 650K 会被界面叫成「均衡 600K」。
+   */
+  console.log('\n--- C-5 尾 试行档识别（largePresetOf）---')
+  {
+    ok(largePresetOf({ ...LARGE_CONTEXT_POLICY_PRESETS.balanced }) === 'balanced', '均衡档（预设原文）被识别')
+    ok(largePresetOf({ ...LARGE_CONTEXT_POLICY_PRESETS.long }) === 'long', '长材料档被识别')
+    ok(
+      largePresetOf({ workingSetCap: 600_000 }) === 'balanced',
+      '只留上限也算均衡档（预设的 windowRatio 与默认相同，落盘时会被设置层丢掉）'
+    )
+    ok(
+      largePresetOf({ workingSetCap: 600_000, windowRatio: 0.65 }) === undefined,
+      '上限同、比例不同 → 自定义（行为不等价）'
+    )
+    ok(
+      largePresetOf({ workingSetCap: 650_000, windowRatio: 0.7 }) === undefined,
+      '数值接近但不等 → 自定义'
+    )
+    ok(
+      largePresetOf({ ...LARGE_CONTEXT_POLICY_PRESETS.balanced, responseReservePreferred: 40_000 }) === undefined,
+      '多改一个字段 → 自定义'
+    )
+    ok(largePresetOf(undefined) === undefined, '没有模型级覆盖 → 不显示档位行')
+    ok(
+      LARGE_PRESET_NAME_KEYS.balanced === 'set.ctxModelPresetBalanced' &&
+        LARGE_PRESET_NAME_KEYS.long === 'set.ctxModelPresetLong',
+      '档位名 i18n key 与设置页按钮同源（不手拼字符串）'
+    )
   }
 }

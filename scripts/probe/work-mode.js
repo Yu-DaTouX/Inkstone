@@ -140,20 +140,31 @@
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '0', '离开自主后光带消失')
   ok(!q('[data-testid="work-mode-menu"]'), '选完菜单关闭')
 
-  /* ------------------------------------------------- 4. Tab 快切（真按键） */
+  /* ------------------------------------- 4. 模式快捷键（真按键，全局） */
   out.push('')
-  out.push('=== 4. Tab 快切（主进程发的真按键）===')
-  const ta = q('[data-testid="composer"]')
-  ta?.focus()
-  ok(document.activeElement === ta, '焦点先放进输入框')
-  /* 两次 Tab：standard → clarify → autonomous（间隔 1.6s，第一枚在 keysDelay 后） */
+  out.push('=== 4. 模式快捷键 Ctrl+Tab（主进程发的真按键）===')
+  /*
+   * 用户口径（2026-09-22）：快捷键是**全局**的，不再只在输入框里管用。
+   * 所以这里故意把焦点放在模式按钮上（非 textarea）—— 探针要能证明
+   * 「焦点不在输入框也生效」。
+   */
+  const modeBtn = q('[data-testid="work-mode-button"]')
+  modeBtn?.focus()
+  ok(document.activeElement !== q('[data-testid="composer"]'), '按键前焦点不在输入框（验证全局生效）')
+  /* 两次 Ctrl+Tab：standard → clarify → autonomous（间隔 1.6s，第一枚在 keysDelay 后） */
   await sleep(15000)
   const tabbed = await window.yan.getWorkMode()
-  ok(tabbed.mode === 'autonomous', `两次 Tab 循环到自主（实际 ${tabbed.mode}）`)
-  ok(tabbed.revision >= 3, `两次 Tab 各提交一次（revision=${tabbed.revision}，至少 3）`)
-  ok(document.activeElement === ta, 'Tab 没有把焦点移走（preventDefault 生效）')
+  ok(tabbed.mode === 'autonomous', `两次 Ctrl+Tab 循环到自主（实际 ${tabbed.mode}）`)
+  ok(tabbed.revision >= 3, `两次按键各提交一次（revision=${tabbed.revision}，至少 3）`)
   ok(q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'autonomous', '按钮跟上按键结果')
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '1', '自主光带随按键状态出现')
+  /*
+   * 裸 Tab 恢复“移动焦点”：不再被拦（这正是改快捷键要解决的问题）。
+   * 用合成事件就够 —— 这里验的是“我们的代码不 preventDefault”。
+   */
+  const bareTab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  document.body.dispatchEvent(bareTab)
+  ok(!bareTab.defaultPrevented, '裸 Tab 不再被拦（恢复系统焦点移动）')
 
   /* ---------------------------------------------------- 5. A/B 会话隔离 */
   out.push('')
@@ -188,7 +199,7 @@
   out.push(`  B: sid=${bId} file=${bFile.split(/[\\/]/).pop()}`)
   await store.getState().setWorkMode('clarify')
   await sleep(500)
-  ok((await window.yan.getWorkMode()).mode === 'clarify', 'B 会话切到澄清')
+  ok((await window.yan.getWorkMode()).mode === 'clarify', 'B 会话切到计划')
 
   await store.getState().switchSession(aFile)
   const backA = await waitActiveFile(aFile)
@@ -211,32 +222,92 @@
   const bBack = await window.yan.getWorkMode()
   ok(
     bBack.mode === 'clarify' && bBack.revision >= 1,
-    `再切到 B：仍是澄清（mode=${bBack.mode} rev=${bBack.revision}）`
+    `再切到 B：仍是计划（mode=${bBack.mode} rev=${bBack.revision}）`
   )
   ok(
     q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'clarify',
-    'B 的按钮显示澄清'
+    'B 的按钮显示计划'
   )
 
-  /* ------------------------------------------- 6. Tab 快切开关（设置） */
+  /* ------------------------------------ 6. 快捷键开关（设置） */
   out.push('')
-  out.push('=== 6. 设置里关掉 Tab 快切 ===')
-  await store.getState().patchSettings({ workModeTab: false })
+  out.push('=== 6. 设置里关掉模式快捷键 ===')
+  await store.getState().patchSettings({ workModeShortcutEnabled: false })
   await sleep(400)
-  ok((await window.yan.getSettings()).workModeTab === false, '关掉 Tab 快切并落盘')
+  ok((await window.yan.getSettings()).workModeShortcutEnabled === false, '关掉快捷键并落盘')
   const beforeOff = (await window.yan.getWorkMode()).mode
-  const taOff = q('[data-testid="composer"]')
-  taOff?.focus()
-  const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
-  taOff?.dispatchEvent(ev)
+  const offEv = new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+  window.dispatchEvent(offEv)
   await sleep(400)
-  ok((await window.yan.getWorkMode()).mode === beforeOff, '关掉后 Tab 不再切模式')
-  ok(!ev.defaultPrevented, '关掉后 Tab 不被拦（焦点照常移动）')
+  ok((await window.yan.getWorkMode()).mode === beforeOff, '关掉后 Ctrl+Tab 不再切模式')
+  ok(!offEv.defaultPrevented, '关掉后按键不被拦（交给系统）')
   /* 再打开：应当**删掉**磁盘上的键（默认态不落盘）——
      注意读的是 IPC 返回的对象，未落盘的键在内存里是 `undefined` */
-  await store.getState().patchSettings({ workModeTab: true })
+  await store.getState().patchSettings({ workModeShortcutEnabled: true })
   await sleep(400)
-  ok((await window.yan.getSettings()).workModeTab === undefined, '恢复开 = 不再有这个键（默认态不落盘）')
+  ok(
+    (await window.yan.getSettings()).workModeShortcutEnabled === undefined,
+    '恢复开 = 不再有这个键（默认态不落盘）'
+  )
+
+  /* --------------------------------- 7. 自定义快捷键（录音 → 真生效） */
+  out.push('')
+  out.push('=== 7. 自定义快捷键：录音 Ctrl+Shift+K 后旧键失效 ===')
+  await store.getState().openSettings('appearance')
+  let keyBtn = null
+  for (let i = 0; i < 40 && !keyBtn; i += 1) {
+    keyBtn = q('[data-testid="set-work-mode-key"]')
+    if (!keyBtn) await sleep(100)
+  }
+  ok(!!keyBtn, '设置页里有模式快捷键的键位按钮')
+  ok(keyBtn?.getAttribute('data-binding') === 'Ctrl+Tab', '默认键位显示为 Ctrl+Tab')
+  keyBtn?.click()
+  await sleep(300)
+  ok(store.getState().shortcutRecording === true, '点键位进入录音态')
+  const modeBeforeRecord = (await window.yan.getWorkMode()).mode
+  /* 录音期间按下的组合键归录音用 —— 不能同时把模式切走 */
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+  )
+  await sleep(500)
+  ok(
+    (await window.yan.getSettings()).workModeShortcut === 'Ctrl+Shift+K',
+    `录到 Ctrl+Shift+K 并落盘（实际 ${(await window.yan.getSettings()).workModeShortcut ?? '-'}）`
+  )
+  ok(store.getState().shortcutRecording === false, '录完自动退出录音态')
+  ok((await window.yan.getWorkMode()).mode === modeBeforeRecord, '录音那次按键没有把模式切走')
+  /* 新键生效 */
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+  )
+  await sleep(500)
+  ok((await window.yan.getWorkMode()).mode !== modeBeforeRecord, '新组合键能切模式')
+  /* 旧键失效（改键真的生效，而不是“两套都在”） */
+  const afterCustom = (await window.yan.getWorkMode()).mode
+  const oldTab = new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+  window.dispatchEvent(oldTab)
+  await sleep(400)
+  ok((await window.yan.getWorkMode()).mode === afterCustom, '旧的 Ctrl+Tab 不再触发（改键真的生效）')
+  ok(!oldTab.defaultPrevented, '改键后旧组合键不被拦')
+  /* 恢复默认：键位回到 Ctrl+Tab，且磁盘上不再有自定义值 */
+  q('[data-testid="set-work-mode-key-reset"]')?.click()
+  await sleep(500)
+  ok((await window.yan.getSettings()).workModeShortcut === undefined, '「默认」按钮清掉自定义键')
+  ok(
+    q('[data-testid="set-work-mode-key"]')?.getAttribute('data-binding') === 'Ctrl+Tab',
+    '键位显示回 Ctrl+Tab'
+  )
+  await store.getState().closeSettings()
+  await sleep(300)
+  /*
+   * 把当前（B）会话切回计划档。
+   *
+   * 退出后的 `workModePersisted` 检查靠“A=自主、B=计划”这两个前提，
+   * 而第 7 节为了验新键生效已经把 B 切走了 —— 不还回去就是假红。
+   */
+  await store.getState().setWorkMode('clarify')
+  await sleep(500)
+  ok((await window.yan.getWorkMode()).mode === 'clarify', '自定义快捷键验完把 B 会话切回计划档')
 
   return out.join('\n')
 })()

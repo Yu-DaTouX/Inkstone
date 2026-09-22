@@ -32,6 +32,7 @@
 import type { CompactionRun } from './ipc'
 import { isActiveGoalPhase, type GoalState } from './goal'
 import type { HandoffStage } from './handoff-transaction'
+import type { HandoffEvent } from './handoff-diagnostics'
 
 /** 同一片段里成功自动完整压缩到这个数，下一次正常压缩需求优先尝试交接（§7）。 */
 export const HANDOFF_AUTO_COMPACT_THRESHOLD = 2
@@ -531,6 +532,14 @@ export interface HandoffView {
    * 外面完全看不出区别 —— 只看 `package` 有没有是判不了「交接到哪一步」的。
    */
   transaction: { handoffId: string; stage: HandoffStage; destinationSession: string | null } | null
+  /**
+   * 最近的阶段诊断事件（实施-14 F0，由旧到新）。
+   *
+   * 它的存在就是为了回答「为什么什么都没发生」：资格没过（`eligibility:rejected`）、
+   * 请求没写成功、结果对不上、提交停在哪个阶段、resume 有没有拿到证据。
+   * 只看 `tally` / `package` 区分不出这几种，而它们的修法完全不同。
+   */
+  events: HandoffEvent[]
   /** 自动交接开关是否打开（**默认开**；`YAN_HANDOFF_COMMIT=0` 显式关闭） */
   autoCommit: boolean
 }

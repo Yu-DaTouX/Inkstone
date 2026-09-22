@@ -1,11 +1,81 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-04 S6b-2 用户授权外部 Skill 文件整链与恶意内容审查**、**实施-01 S5a 默认发现边界**、**实施-11 C-4b 估算口径（图片/附件不当零）**、**实施-11 C-5 上下文窗口 UI 分层**、**实施-11 H-6b 崩溃→中断**、**实施-11 C-2 压缩可观测性（回收比例与新增量）**、**实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。当前已有一个获授权外部 Skill 文件候选完成 acquire / 安全审查 / 激活 / 原目标续接；其它资源类型的包级证据与最终发布门槛仍未完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-23**，最新增量为 **实施-11 H-6b 稳定逻辑回合 / 等待分段 / 用量聚合**，同日本轮早些时候为 **实施-01 S5d 空壳 `browser.js` 与死代码 loopback bridge 删除 + 宿主浏览器能力登记**；上一批包括 **实施-04 S6b-2 用户授权外部 Skill 文件整链与恶意内容审查**、**实施-01 S5a 默认发现边界**、**实施-11 C-4b 估算口径（图片/附件不当零）**、**实施-11 C-5 上下文窗口 UI 分层**、**实施-11 H-6b 崩溃→中断**、**实施-11 C-2 压缩可观测性（回收比例与新增量）**、**实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。当前已有一个获授权外部 Skill 文件候选完成 acquire / 安全审查 / 激活 / 原目标续接；其它资源类型的包级证据与最终发布门槛仍未完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
 
 ## 接手顺序
+
+### 2026-09-23 · 实施-14 F0+F1：阶段诊断事件 + 目标控制修复
+
+> 实施-14 的 F0（现场诊断）与 F1（目标控制）已实施；F2–F7（交接事务隔离、无感切片、内部续接、状态 UI、推理顺序、联合验收）**仍未实施**。
+> 本轮未跑 cost 1 场景，未做真实交接链路取证 —— 那属于 F7。
+
+| 六栏 | 本轮范围 |
+|---|---|
+| 实现 | ① **F0 阶段诊断**：新增 [`shared/handoff-diagnostics.ts`](../../src/shared/handoff-diagnostics.ts)（阶段枚举、事件形状、`redactDiagnosticText` 凭证替换与截断、脏行清洗）与 [`main/handoff-diagnostics.ts`](../../src/main/handoff-diagnostics.ts)（内存环 + 整份重写落在 `YAN_DATA_DIR/handoff/events.jsonl`，失败不抛）；[`index.ts`](../../src/main/index.ts) 在资格拒绝 / 写请求失败 / 生成中断 / 结果对不上 / 解析或落盘失败 / 提交各阶段 / resume 未确认 / 目标续接 arm·limit·暂停·终态清理处埋点；[`HandoffView.events`](../../src/shared/handoff.ts) + `yan:getHandoff` 回传最近 40 条。② **F1 目标控制**：A1 目标进终态（report / 重复拦下）时**同时**清 `goals.json` 与薄层快照；A2 新增 `GoalEntry.paused` + `setPaused`/`isPaused`，`yan:abort` 改成「先暂停清快照 → 再停回合」，新增 `yan:stopGoal` 作为与暂停分开的终态出口；A3 `yan:setWorkMode` 按「自主档 or pursue」判断是否保留续行（旧实现切回标准档时漏清）；A4 [`repeat-guard`](../../src/shared/repeat-guard.ts) 的 `pendingRepeatFailures(counted, blocks)` 改用**独立按目标分立的消费游标** `GoalEntry.repeatCursor`（不再用 `failure.count` 当账本，新目标只建基线）；A5 [`goal-resume.js`](../../resources/pi-extensions/goal-resume.js) 把「读到已消费的旧记录」也纳入等待窗口，不再直接 return；A6 `GoalStore.armContinue` 对同一待发操作幂等（`reason: 'pending'`），不再重复递增轮数。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4572/4572** —— 新增 [`test-handoff-diagnostics.mjs`](../../scripts/test-handoff-diagnostics.mjs)（≈30 条：凭证与长文本不得进日志 / 未知类型降级 / JSONL 跨实例读回 / 坏行跳过 / 落盘行数有界 / 写失败不抛），`test-goal.mjs` 新增 17 条（A2 暂停≠放弃、A3 改档保留判据、A6 幂等不烧轮数、A4 基线·增量·换目标重建），`test-goal-resume.mjs` 新增 3 条（A5 已消费旧记录不阻塞新指令、只发一次）。 |
+| 真实运行 | **cost 0**：`npm run test:live -- autocontinue` 全绿（2 条自动继续、上限停住、控制消息非伪造用户、无残留 pi 进程）—— 覆盖与本次改动共用的宿主 arm → 薄层消费链路。**cost 1 未跑**：`goal` / `goalloop` / `handoffpack` / `handoffcommit` 需要用户当次授权模型与额度。 |
+| 视觉验收 | 不涉及界面改动（本轮只改主进程、共享契约与随包薄层）。F5 才会把 `HandoffView.events` 接到界面。 |
+| 应用与包 | 未重跑 `dist:dir` / `test-packaged` / 便携包 / NSIS；未新增随包文件（`resources/pi-extensions` 只改了既有 `goal-resume.js`）。 |
+| 剩余限制 | ① **F2–F7 全部未做**：交接的单一调度所有者、timer/poll 的 operationId 隔离（H1/H2）、用户会话与物理会话解耦（H3）、控制消息不冒充用户（H4）、持久交接状态 UI（H5）、推理随正文位置（R1）仍按实施-14 正文推进；② 用户现场「两次压缩后交接无提示且偶发报错」**仍未现场归因** —— 本轮给的是可观测性与目标控制修复，真实链路证据等 F7；③ `armContinue` 的轮数仍在 arm 时递增（靠幂等而非“真实启动确认”）；④ `HandoffView.events` 尚无可视化出口。 |
+
+### 2026-09-23 · 自主目标与同会话无感交接修复档案（F0/F1 已实施）
+
+用户反馈两次完整压缩后交接缺提示、偶发报错，要求底层交接后台完成且前端始终同一会话；另已确认推理窗口跟随的是**聊天中的正式回复位置**。唯一活动正文 [实施-14](../plan/active/实施-14-自主目标与无感交接修复.md) 收录上一轮 7 项审查问题及新增交接/推理缺口，给出 F0–F7、文件域、依赖、失败恢复与验收矩阵。**F0（阶段诊断）与 F1（目标控制 A1–A6）已于本轮实施**（见上一节六栏）；F2–F7 仍未实施，用户偶发错误的现场根因也仍未归因。
+
+| 六栏 | 本轮范围 |
+|---|---|
+| 实现 | 修复档案 + F0/F1；F2–F7 未实施。 |
+| 自动检查 | 本轮 F0/F1 的自动检查见上一节；档案轮只做了文档链接与格式检查。 |
+| 真实运行 | F0/F1 跑了 cost 0 的 `autocontinue`；cost 1 交接 / 目标链路未跑。 |
+| 视觉验收 | 未生成新截图；推理跟随聊天正文及后台交接仍是已确认的产品要求。 |
+| 应用与包 | F0/F1 未构建安装包、未应用、未打包。 |
+| 剩余限制 | 按实施-14 完成交接调度/身份/控制消息和推理顺序修复，再分别记录真实运行与视觉证据。 |
+
+### 2026-09-23 · 侧栏、子代理与全局 UI 规划（非实现交付）
+
+用户本轮要求整合/补齐方案并切片，后续由其指派 agent；已确认“收起左侧项目栏时折叠更多会话”。已新增 [侧栏交互设计](../design/active/方案-侧栏工作台与子代理交互-2026-09-23.md)、[实施-12](../plan/active/实施-12-侧栏交互与可移动工具磁贴.md)、[实施-13](../plan/active/实施-13-全局UI精修与设计验收.md)，并完善实施-11 §5 的 H-3/H-9/H-10。核对既有源码与本表后，纠正图标准则“整项尚未实施”的过期描述；墨色工作空间核心已有实现，全局精修/完整验收仍待做。
+
+| 六栏 | 本轮范围 |
+|---|---|
+| 实现 | 仅规划文档、索引与两张用户参考图副本；应用源码未改。 |
+| 自动检查 | `npm run audit:refs` 的 `brokenDocLinks=[]`；本轮文档范围 `git diff --check` 通过。全工作树检查另报已有 `scripts/test-work-mode.mjs:54` 尾空格，未修改无关源码；引用审计其余静态告警未在本轮收口。不把文档检查当应用测试。 |
+| 真实运行 | 未启动/重启应用，未调用模型。 |
+| 视觉验收 | 用户图只作参考；没有新的产品窗口视觉验收。 |
+| 应用与包 | 未构建、未应用、未打包。 |
+| 剩余限制 | 新切片均待指派；尺寸/放置约束是设计基线，V-0 将补当前窗口证据；真实行为、视觉和包按各片分别收口。 |
+
+### 2026-09-23 · 实施-11 H-6b：稳定逻辑回合、等待分段与用量聚合
+
+> 队列位次 4b 的剩余三项（H-6b）。用户授权用 `deepseek/deepseek-v4.1-flash` 跑 cost 1 场景。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | ① [`shared/turns.ts`](../../src/shared/turns.ts)：新增 `turnUsageOf` / `addUsage` / `hasUsageNumbers`（整轮用量按消息 id 相加，有请求没报用量时 `partial`）、`toolWaitSpans` / `waitSpansMs`（区间并集，并行不重复计）；`groupIntoTurns` 输出 `usagePartial` / `waitSpans` / `waitMs`；② [`UsageBar.tsx`](../../src/renderer/src/components/chat/UsageBar.tsx) 改用聚合用量，下限标 `≥` 并在 tooltip 说明；③ [`TurnView.tsx`](../../src/renderer/src/components/chat/TurnView.tsx) 的用时 tooltip 补「其中等工具 N」；④ [`agent.ts`](../../src/main/agent.ts)：`turnRunId`（每个 pi 回合一个）、`logicalTurnId = anchorId`（用户消息 id）、落盘 `runId` 与 `waitSpans`；⑤ [`turn-timing-store.ts`](../../src/main/turn-timing-store.ts)：解析 `runId` / `waitSpans` + `mergeTurnRecords`（同 run 覆盖、不同 run 用时累加、旧记录无 `runId` 保持后者胜）；⑥ i18n 中英各 2 个 key；⑦ **附带修**：`ContextTab` 对 `policy.overridden` 容错（缺字段时整树白屏）、visual-matrix 两处 contextPolicy 桩补齐 `source` / `overridden`。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4473/4473** —— `test-turns.mjs` 新增聚合 / partial / 区间并集 / `waitMs` 断言，`test-turn-timing-store.mjs` 新增同 run 覆盖、不同 run 累加、旧记录不翻倍。`audit:refs` 的 `brokenDocLinks = []`；`git diff --check` 干净。 |
+| 真实运行 | **cost 0**：新场景 `usageagg`（10 条断言，已进 `npm run check` 列表）全绿 —— 输出 100 = 10+90、输入 3.00k、缺用量时 `≥90`、页脚 tooltip「其中等工具 2s」（两段重叠的 3s 不重复计）。**cost 1**（`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）：`tokens`（真实单请求账单；顺手修掉一条 H-1 之后过期的「用量条上有用时」断言）、`turnrestore`（新增断言：记录锚定 `m0`、`logicalTurnId` = anchorId、带 `runId`）、`goalloop`（**16 条记录 / 1 个逻辑回合 / 4 个 run**；用时累加 36709ms > 单段最大 19016ms）。均无残留 pi 进程。 |
+| 视觉验收 | `matrix-usageagg-1440x900-100-{dark,light}-2026-09-23-0312.png` 与 `matrix-usagepartial-…`（`YAN_MATRIX_ONLY=usageagg,usagepartial`，组 0/1 全绿、溢出 0px）；**已看图三张**：用量条显示 `输入 3.60k / 输出 120`（聚合值），下限态显示 `≥2.40k / ≥96`（深浅主题都可读）。 |
+| 应用与包 | 未重跑 `dist:dir` / `test-packaged`；本片只改宿主与渲染层（未新增随包文件），包级证据归 09。 |
+| 剩余限制 | ① **跨会话链交接**（handoff 换会话文件）的 `logicalTurnId` 归属未取证 —— 自动继续已由 `goalloop` 端到端验过，跨文件需要新场景；② 真 SIGKILL 的中途快照仍是未实测边界（H-6b 旧项）；③ `waitSpans` 未单列「等待用户」；④ **视觉矩阵组 0 仍有 9 个状态失败**（`autonomous` / `goalpursued` / `envbranches` / `envworktrees` / `envlinks` / `sourcesearch` / `subagentlaunch` / `subagent` / `subagentfailed`）—— 状态脚本自己返回 `no-branches` / `no-launcher` 等，说明是这些状态依赖的主进程数据桩与当前 UI 不同步（既存债，与本片文件域无交集）；本片顺手修的 ContextTab 白屏曾让其后 10 余个状态连带失败，修后组 0 失败从 21 项降到 9 项。 |
+
+### 2026-09-23 · 实施-01 S5d：空壳扩展与死代码 bridge 收尾
+
+> 01-S5 的尾巴之一：那个「什么都不注册」的空壳扩展。AGENTS.md 的迁移边界写着
+> 「不保留空壳扩展」，它只是 pi 的加载占位，能力早已全部在 `yan browser …`。
+> 删完扩展又顺着调用链发现：只服务于它的 loopback HTTP bridge 也没有消费者了。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 删除 `resources/pi-extensions/browser.js`；[`src/main/index.ts`](../../src/main/index.ts) 去掉 `browserExtensionPath()` 并把它从 `yanThinExtensionPaths()` / `AgentController` 构造里移除；[`src/main/agent.ts`](../../src/main/agent.ts) 去掉 `browserExtension` 字段 / 选项与 `--extension` 参数；[`extensions-inventory.ts`](../../src/main/extensions-inventory.ts) 的 `builtinCapabilities()` 把「内置浏览器」登记为**宿主能力**（固定 id、无 `file`，与 `task-plan` 同形）；i18n 中英 `pkg.builtin.browserDesc` 改写为「宿主提供的原生浏览器视图；模型经 `yan browser …` 看网页、截图」；并删除只服务于它的 loopback bridge（`browser.ts` 的 `startBridge` / `bridgeEnv` / `readBody` / `handleRequest` / `json()` / `server` / `token` / `port` / `MAX_BODY` 与 `node:http` 导入，`index.ts` 的 `startBridge()` 与 `browserEnv` 注入，`agent.ts` 的 `browserEnv` 字段 / 选项 / `env` 展开）；另把 `browser.ts` / `browser/ElementRegistry.ts` 的两处 STALE_ELEMENT 文案从 `browser_observe` 改成 `yan browser observe`，`cliHint()` 保留为兜底。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4443/4443**（`test-unit.mjs` 的 browser 守卫改成「空壳文件不存在」并新增「宿主文案不点名旧工具名」静态断言，`test-extension-inventory.mjs` 更新内置清单断言）；`npm run audit:refs` 的 `brokenDocLinks = []`；`git diff --check` 干净。 |
+| 真实运行 | `npm run test:live -- pkgs browser browserboundary browsercli`（cost 0）全绿：`pkgs` 新增 3 条断言（内置能力区列出宿主「内置浏览器」/ 该条不带扩展文件名 / 不再出现 `browser.js`）；`browser` 场景（Google 标题、右栏、元素数、标签页与原生 bounds）不受影响；删 bridge 后 `browserboundary`（授权 / 网络 / 下载边界）与 `browsercli`（进程外 CLI、press 带回新观察、用户接管门禁）也重新跑通（视觉矩阵自身全 10 组通过）。无残留 pi 进程。 |
+| 视觉验收 | `matrix-settingspkg-1440x900-100-{dark,light}-2026-09-23-0221.png`；**两张都已看图**：内置能力区依次为「任务计划 内置」（无文件名）→「内置浏览器 内置」+ 新描述（无 `browser.js` 文件名）→ 其余薄层扩展仍带文件名；溢出 0px。 |
+| 应用与包 | 未重跑 `dist:dir` / `test-packaged`；打包路径 `resources/pi-extensions → yan-thin` 不变，包级证据归 09。 |
+| 剩余限制 | ① bridge 删除后，**不再存在**供第三方进程读写浏览器的 HTTP 通道（有意收窄：01-S5 后砚不加载用户扩展，也不给第二个入口；将来若要恢复需重新设计，不重建旧 token 通道）；② 内部文案已改完，但 `cliHint()` 仍只是**字符串改写**而不是编译期约束（靠静态断言防回归）；③ 04 其它资源类型包级候选证据与最终发布门槛仍待复核。 |
+
+### 常规接手步骤
 
 1. 阅读根目录 [AGENTS.md](../../AGENTS.md)，检查 `git status --short`，保留已有改动。
 2. 从下面的「当前未完成」选一组任务；**执行顺序与切片看 [实施计划](../plan/README.md)**；用 [PROJECT](../PROJECT.md) 和 [CODE-MAP](CODE-MAP.md) 定位实现。
@@ -15,6 +85,132 @@
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；随后 `skillacquire` 在用户明确授权下完成了一个外部 Skill 文件候选的 acquire → staging → 安全审查 → active → 同一 runner 重载 → 原目标 `resumed`，当前未覆盖的是其它资源类型的外部候选包级证据及其解包 / 便携 / NSIS 包内运行级证据。工作区仍有大量已有未提交改动，保留不清理。
 > **本轮更正（2026-09-22）**：上一句“没有获授权外部候选……”是本轮开始前基线；随后用户明确授权后，`skillacquire` 已对一个真实 SkillMD 候选取得 acquire → staging → 安全审查 → active → 同一 runner 重载 → 原目标 `resumed` 证据。其它资源类型的包级候选与最终发布门槛仍按“当前未完成”保留。
+
+### 本轮增量（2026-09-22）· 自主档不会自动续行（报障：续行消息发给了不存在的通道）
+
+> 用户观察：自主档下报完进展就停住，不会自己接着干。
+> 现场硬证据：`goal-resume/r1.json`（15:06:55）已写入，但 `r1.consumed.json` 里还是
+> 14:43 那个旧 `operationId` —— 续行写了、从来没人消费。
+> **真因（两条，都要修）**：① **主因** —— 发送写的是 `context.sendMessage?.()`，而 pi 0.85.1 的
+> 钩子 ctx **没有** `sendMessage`（`createContext()` 只给 `cwd / model / modelRegistry /
+> sessionManager` 等 getter）；可选链把失败吞了 —— 日志里写着 `resume_sent`、
+> `operationId` 也记成已消费，而消息从未发出去。② **次因** —— 检查点 `message_end` 比宿主的
+> arm（挂在 `state` 推送、即 `agent_settled` 之后）更早，只读一次盘会整轮错过。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`resources/pi-extensions/goal-resume.js`](../../resources/pi-extensions/goal-resume.js)：① 发送方改成 `pi`（`ctx` 带 `sendMessage` 时优先用 ctx —— 重载后 `pi` 会被 invalidate，`test-handoff-request.mjs` 里有这条护栏）；两边都没有时**不写消费证据**并记 `resume_failed(reason=no-sendMessage)`；`appendEntry` 同理（对比 `context.js` 用的 `pi.appendEntry` 才是对的写法）。② 检查点加 `agent_settled`（更接近宿主 arm 完成的一刻，不累加 activity，靠 token 让后者接管前者）+ `maybeResume` **窗口化读盘**（读空后每 1.2s 再读、最多 8 次 ≈9.6s，每次重试复查 token）。③ 诊断补 `resume_sending.via=pi|ctx`、`agent_settled.hasContext`、`before_agent_start`。测试通道 `YAN_GOAL_RESUME_DELAY_MS / POLL_TRIES / POLL_MS`。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4441/4441**（`scripts/test-goal-resume.mjs` 15 条：晚到 resume 也能消费 / 只发 `agent_settled` 也能消费 / 幂等不重发 / 二次确认与窗口轮询期间让位 / 让位的那份留到下一次 / **ctx 没有 sendMessage 时走 pi** / **新 ctx 带 sendMessage 时换成它** / **没有发送方时不发也不写消费证据**） |
+| 真实运行 | `test:live -- goalloop`（cost 1，真模型）**通过**：第 4 节「自动续接真的起了新回合（目标被再次推进：rev1 → rev2，助手 2→7）」；退出后检查三条全绿 —— 会话里有 `yan-goal-resume` 消费证据、有 **`yan-goal-continue` 控制消息**、且它不是伪造的用户消息。薄层日志链路：`resume_sending via=pi` → `resume_sent` → 新回合的 `before_agent_start`。 |
+| 视觉验收 | 不涉及界面。 |
+| 应用与包 | 未重跑打包；只改随包薄层文件。 |
+| 剩余限制 | ① 这是**跨版本 API 漂移**（pi 升级后 ctx 语义变了）：薄层里其它 ctx 用法已复查，只剩 `ctx.model` / `ctx.sessionManager`，都是 `createContext()` 提供的；② 「宿主写文件 + 薄层在 pi 事件里读」仍然靠窗口 + 轮询，没有「请求已就绪」的通知通道；③ 顺手修了 `goal-loop.js` 探针的**全局 deadline**（原来一节慢会让后面全红）与两处过时判据（不再押 `phase`、允许自主链在一轮里跑很多回合）；④ 交接链路的同类窗口修复见上一节。 |
+
+### 本轮增量（2026-09-22）· 两条超时报障修复（compact / 交接包）
+
+> 用户同一天报回两个超时。**根因不同**：一个是 RPC 默认超时用在模型调用命令上，
+> 一个是宿主与薄层的请求文件竞态。排障经验已记入 `MAINTENANCE.md`。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | ① `agent.ts` 新增 `COMPACT_REQUEST_TIMEOUT_MS = 300_000`：`compact` 是**模型调用**（长会话几分钟很正常），不能沿用 `REQUEST_TIMEOUT = 30_000`；`compact()` 契约改成**不抛**（超时/进程挂了都归 `{ ok: false }`），`evaluateContextPolicy` 再补 `catch` —— 它的调用点是 `void` 出去的，原来会直接把异常变成主进程 `unhandledRejection`。② `resources/pi-extensions/handoffs.js`：`agent_settled` 后给请求文件落盘留**等待窗口**（默认 **20×1000ms**，`YAN_HANDOFF_SETTLE_TRIES/MS` 是测试通道）—— 宿主的 arm 链（收 state 推送 → load store → 写请求）天然晚于 pi 同时发出的 `agent_settled`，原来只读一次盘就 return，请求再没人处理，用户只能等到 90 秒后的弹窗；同时把**独占锁前移到等待之前**（否则两次触发会各调一次模型），并在 `check` 行里记 `ageMs`（宿主请求写下来到 `agent_settled` 的间隔）。③ 宿主侧两道：`abandonHandoff` 在 90 秒超时放弃**之前**再收一次结果（挡掉「只差几十毫秒」的假超时，`collectHandoffResult` 因此改成返回 `boolean`）；写请求 / 超时各留一行 `[handoff] …` 控制台日志。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4398/4398**（新增 `scripts/test-handoff-ext.mjs` 18 条：请求晚到也能生成 / 确实等过（`attempts`）/ **默认窗口 ≥ 15 秒**（读源码断言，防调参拆护栏）/ 过期遗物不重做且清请求 / 同 operationId 不重复调模型 / 无模型注册表不写结果 / 真没请求时不凭空造包） |
+| 真实运行 | `test:live -- handoffpack`（cost 1，真模型，自主档 + 阈值 0）修复后两次都过。**关键证据**：扩展日志 `check {hasRequest:true, attempts:1, ageMs:1005}` —— 宿主的请求写下来时距 `agent_settled` 已过 **约 1 秒**，所以修复前（窗口为 0）这条链**每次都超时**（与用户报的「自主模式交接」吐合：交接要「目标在推进 + 不忙」才 arm，自主链连续跑回合，arm 推到链尾之后）；`produced ms≈4.7s, chars≈1.2k`。 |
+| 视觉验收 | 不涉及界面（改了主进程与薄层的超时 / 时序）；弹窗文案未变。 |
+| 应用与包 | 未重跑打包；未新增随包文件（只改 `resources/pi-extensions/handoffs.js`）。 |
+| 剩余限制 | ① 其它可能超 30 秒的命令未动（如 `export_html` —— 长会话导出）——无实测证据，按下不改成；② 交接链路的现场仍需要 `YAN_HANDOFF_EXT_LOG` 才能看见，生产默认不开（宿主侧的 `[handoff] …` 行是一半，另一半在薄层）；③ 超时放弃前的那次「最后收集」属边界时序，**没有自动化覆盖**（要 90 秒 + 压线写入才能构造），这次只做了代码审查；④ 本期两处修复不涉及第 4–6 步。 |
+
+### 本轮增量（2026-09-22）· `+` 菜单 codex 化 + 持续目标（目标 f74930c3 第 1–4/6 步）
+
+> 目标：把输入区的 `+` 做成 codex 式「添加」菜单。本片只做**入口与两项**；
+> 「目标」、档位定位、可配置快捷键、重复动作兜底是后续四步。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `+` 从「直接开图片选择器」改成 `PlusMenu`（`Composer.tsx`）：**文件和文件夹**（新 `yan:pickFiles` → **只回路径** → 复用 `addFileRefPaths` 的校验/来源登记链路）、**图片**（原 `pickImages`）、**能力**分组（打开时才拉 `capabilities.snapshot()`，列已装技能与 MCP 服务器；点击把「使用能力「X」：」插到光标处，`insertAtCursor` 保留用户已写位置）；空态整块可点直达 设置 → 能力。契约 / 桥 / 主进程三处同步（`shared/ipc.ts` 的 `pickFilePaths`、`preload/index.ts`、`main/index.ts`）。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4370/4370** |
+| 真实运行 | 新场景 **`plusmenu`（cost 0）16 条全绿**：菜单默认收起 / 点开 / 三项与文案 / **几何**（w=320 且整体落在视口内 —— 专防 `.composer` 的 `overflow:hidden` 把浮层裁掉）/ 能力分组给出空态或已装项 / 点外部与 `Esc` 都收起 / 收起后还能重开。回归 `workmode`（cost 0）通过。 |
+| 视觉验收 | 新状态 `plusmenu` → `matrix-plusmenu-1440x900-100-{dark,light}-2026-09-22-plusmenu.png`，**两张都已看图**：菜单在输入框上方完整可见（未被裁）、三项与说明文案正确、能力分组列出了已装能力（发布验收 / 项目知识 / 本地 MCP Fixture），溢出 0px。 |
+| 应用与包 | 未重跑打包；随包资源清单未变（没新增薄层文件）。 |
+| 剩余限制 | ① 「目标」入口、档位定位、Ctrl+Tab 可配置快捷键、单轮重复动作兜底是后续四步；② 「文件和文件夹」与「图片」会开系统对话框，探针只验存在与几何，真实点击留给人工视觉验收；③ 能力分组的点击语义目前是「把能力引用插进消息」，不是开关连接器。 |
+
+#### 第 2 步 · 持续目标（`+` 菜单 → 目标）
+
+> 口径：**目标与档位正交**（用户 2026-09-22 拍板）——“持续目标”是目标语义，
+> 自主档是档位语义；设了目标，非自主档也会在回合收尾后继续被叫醒。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 契约 [`shared/goal.ts`](../../src/shared/goal.ts)：`GoalState` 新增 `pursue: boolean` 与 `brief: PursuedBrief \{ goal, outcome \}`，新纯函数 `applyPursuedGoal`（重开计划 + 置 pursue + revision+1），`goalContinueSummary` **复述用户原话与达成判据**（不让模型自己把目标做小），`normalizeGoalState` 对旧记录 / 脏值宽容。存储 `main/goal-service.ts` 新增 `startPursued`（真落盘、清旧步骤 / 幂等记录 / 未发续行、续接计数归零）。接线 `main/index.ts`：`maybeArmAutonomousGoal` → **`maybeArmGoalContinue`**（`mode !== autonomous` 时还要看 `goal.pursue`），新 handler `yan:setGoal`（身份只取当前会话，两栏必填，拒收不回可读原因）。界面：`+` 菜单第二层目标表单（两栏 + 开始 / 返回，填不齐则按钮禁用），成功后才把 `[持续目标] … / 达成判据：…` 写进输入框（`insertAtCursor`）；右栏 [`GoalSection.tsx`](../../src/renderer/src/components/toolbar/GoalSection.tsx) 新增「持续目标」标记与 `goal-brief`（用户写的目标与判据原样显示在模型登记的步骤之上）。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4380/4380**（新增 10 条：pursue 置位 / 原话与判据落盘 / 续行正文含判据 / 重设目标清旧步骤且计数归零 / 磁盘往返 / 旧记录与脏值不得凭空造身份） |
+| 真实运行 | `plusmenu`（cost 0）**扩到 27 条全绿**：目标项与说明 / 进表单 / 空栏与半填时「开始」禁用 / 两栏齐了才可点 / 开始后菜单收起且输入框出现模板 / **`getGoal` 里 `pursue=true` 且判据原样存下** / 右栏目标面板出现。本场景会真建目标（写隔离的 `goals.json`），但**不产生模型调用** —— 续行只在 `message_end` 被消费，而该场景没有模型回合。 |
+| 视觉验收 | 新状态 `plusgoal`（表单，两栏已填）与 `goalpursued`（建立后的右栏面板）→ `matrix-{plusgoal,goalpursued}-1440x900-100-{dark,light}-2026-09-22-goal.png`。**已看图**：`goalpursued` 深浅两张显示「持续目标」标记 + 目标 / 达成判据 + 计划第 3 版 · 2/4 步 + 完成证据；`plusgoal` 的表单（标题 / 两栏 / 开始·返回）在 dark 图里看过。溢出 0px。 |
+| 应用与包 | 未重跑打包；未新增随包薄层文件。 |
+| 剩余限制 | ① 目标达成仍靠模型 `yan goal report` + 证据（沿用既有契约，没新增自动验收器）；② 用户手写的目标只在本会话生效（与目标存储同键），不跨会话/交接迁移；③ 档位定位、快捷键、重复动作兜底仍是后续三步。 |
+
+#### 第 4 步 · 模式快捷键改成全局 `Ctrl+Tab`（可改键 / 可关）
+
+> 用户口径（2026-09-22）：模式切换改成 `Ctrl+Tab`，**焦点不在输入框也生效**，
+> 设置里可改键、可禁用。旧的裸 Tab 快切下线（不再保留第二个入口）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 纯逻辑 [`shared/work-mode.ts`](../../src/shared/work-mode.ts)：`DEFAULT_WORK_MODE_BINDING = 'Ctrl+Tab'`、`KeyBinding` / `parseKeyBinding` / `formatKeyBinding` / `bindingFromKey` / `isUsableKeyBinding` / `normalizeWorkModeShortcut` / `matchesKeyBinding`、`isWorkModeShortcutEnabled`（替掉 `isWorkModeTabShortcut`）。设置 [`ipc.ts`](../../src/shared/ipc.ts)：新增 `workModeShortcut?: string`（`undefined` = 默认 / `''` = 无绑定 / 其余是规范化组合键）+ `workModeShortcutEnabled?: boolean`，**删除 `workModeTab`**；[`settings.ts`](../../src/main/settings.ts) 读时迁移（旧 `workModeTab === false` → 关，幂等，不再写回）+ patch 清洗。界面：全局监听改在 [`App.tsx`](../../src/renderer/src/App.tsx)（`window` capture；录音中让路；repeat 只算一次），[`Composer.tsx`](../../src/renderer/src/components/chat/Composer.tsx) 删掉裸 Tab 分支与那层 capture 兜底（`Esc` → 焦点到模式按钮保留）；设置页把「Tab 快切」那行换成「模式快捷键」：**键位按钮（点一下录音，键位写在 `data-binding` 上）+ 「默认」重置 + 开·关**，录音时只按修饰键不算、裸键拒收并提示原因。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4415/4415**（新增 18 条纯逻辑断言：默认值是 `Ctrl+Tab` / 脏写法规范化 / 裸键与非法值不收 / `Cmd`=`Meta` / 只按修饰键不算 / 空格叫 `Space` / 未设置时按默认比 / 裸 Tab 不匹配 / 大小写无关 / **多按修饰键不算命中**） |
+| 真实运行 | `test:live -- workmode`（cost 0）全绿。新第 4 节用**主进程真按键**（`keys: 'ctrl+tab,ctrl+tab'`）：先把焦点放在**模式按钮**（不在输入框）再按键 → 两次循环到自主，并断言**裸 Tab 不再被拦**（`defaultPrevented === false`）；第 6 节开关（关掉后按键不被拦、重置后不落盘）；第 7 节**录音改键**（点键位 → 按 Ctrl+Shift+K → 落盘 / 录音那次不切模式 / 新键能切 / 旧 Ctrl+Tab 失效 / 「默认」按钮清掉自定义值）。 |
+| 视觉验收 | 新状态 `workmodekey` → `matrix-workmodekey-1440x900-100-{dark,light}-2026-09-22-wmkey2.png`；另重拍 `workmodemenu` 两张（同 stamp）——**已看图**：设置页「模式快捷键」行为「在任何地方按下它，循环标准 → 计划 → 自主；必须带 Ctrl / Alt / Shift」+ 键位按钮 `Ctrl+Tab` + 「已开启」，上一行说明也换成「（Ctrl+Tab 切换）」，溢出 0px |
+| 应用与包 | 未重跑打包；未新增随包薄层文件。 |
+| 剩余限制 | ① 快捷键是**渲染层**消费的 —— 窗口未聚焦时不生效（不做 OS 级全局热键）；② 旧 `workModeTab` 只读不写，磁盘上残留的旧键不再清（幂等迁移，无副作用）；③ 录到系统保留组合（如 Ctrl+Alt+Del）时我们只能存不能用，未做冲突检测（探针也不模拟）；④ 只验了中英两套文案与当前主题下的外观。 |
+
+#### 第 3 步 · 档位定位：计划档 + 自主档
+
+> 用户口径（2026-09-22）：澄清档「偏向作为计划模型推进」；自主档「不询问问题，自行分析问题并解决」。
+> **内部 id 仍叫 `clarify`**（它是 `work-modes.json` 里的存量值，改 id 要写迁移而迁移无用户可见收益）；
+> 界面名与提示词里是「计划」。代码注释与测试文案里的中文也统一成「计划档」，
+> 免得下一会话读代码时以为界面叫澄清。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`question.js`](../../resources/pi-extensions/question.js)：计划档从「把目标问清楚」改为**产出计划** —— 新增「先用 read/grep/find/ls 读现状」「用 `yan goal report`（phase `planning` + 具体 `steps`）把计划登记下来；只活在回复里的计划不算计划」，保留只读限制与 `yan goal ready` 出口；自主档从「自己拿主意」改为**自行诊断** —— 新增「先找出真正的成因或约束（读代码 / 跑失败用例 / 看真状态），不要停在第一个看起来合理的猜测上」「选你能辩护的方案、一行说明理由、实施并自证」。界面：`workMode.label.clarify` → **计划**、`workMode.desc.clarify` → 「先读代码、出计划；确认后再动手」、`workMode.desc.autonomous` → 「不问问题，自己分析问题并解决」、`set.workModeTabDesc` 同步。模型可见的其它文案：`agent.ts` 两条能力门禁拒因、`capabilities/catalog.ts` 的 `goal.ready` / `goal.status` 描述、`shared/goal.ts` 的 `readyResumeSummary`（“计划阶段结束”）。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4380/4380**（`test-question.mjs` 两条断言从 `/Clarify mode is ON/` 改为 `/Plan mode is ON/`，并补回「2-4 个具体选项」那条） |
+| 真实运行 | `test:live -- workmode`（cost 0）通过：菜单三档、Tab 真按键快切、A/B 会话不串档、退出后 `work-modes.json` 落盘校验均正常 |
+| 视觉验收 | `matrix-workmodemenu-1440x900-100-{dark,light}-2026-09-22-planmode.png`（另有一张 900x520）：**已看图** —— 菜单三档为「标准 · 正常执行；信息不足时先问你」「**计划** · 先读代码、出计划；确认后再动手」「**自主** · 不问问题，自己分析问题并解决」，输入区模式按钮显示「计划」，溢出 0px |
+| 应用与包 | 未重跑打包；未新增随包薄层文件。 |
+| 剩余限制 | ① 计划档仍**只读**（工具表收紧 + bash 白名单不变）—— “按计划推进”指的是先用 `yan goal report` 登记步骤、就绪后 `ready` 转标准执行，不是允许计划档直接改代码；② 提示词是软约束，真实模型是否真的先诊断再动手由 `goalloop` / `goal` 场景（cost 1）覆盖，本片未重跑；③ 快捷键与重复动作兜底仍是后续两步。 |
+
+### 本轮增量（2026-09-22）· 实施-11 C-5 尾：右栏档位名与容量来源
+
+> 队列位次 9 的剩余两项（原 C-5 增量把它们留作「剩余限制 ①③」）。
+> 修的是同一个问题：右栏只给数字，用户没法从右栏回答「我在哪一档、这些数谁定的」。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`shared/context-policy.ts`](../../src/shared/context-policy.ts) 新增 `largePresetOf()`（试行档识别，设置页按钮与右栏共用）+ `LARGE_PRESET_NAME_KEYS`；`ContextPolicyView` 增加 `modelOverrides`（精确模型层原文，`agent.ts` 与 `yan:contextBudget` 两处同口径）；[`RightPanel.tsx`](../../src/renderer/src/components/toolbar/RightPanel.tsx) 新增 `ctx-preset` 行（默认行下方）与详情里的 `ctx-source-line`；i18n 中英各 3 个 key。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4370/4370**（`test-context-policy.mjs` 新增 8 条：预设原文命中、**只留上限也算均衡档**（设置层会丢掉与默认相同的 `windowRatio`）、比例 / 数值 / 额外字段不同则自定义、无覆盖不显示、i18n key 与设置页同源）。 |
+| 真实运行 | `npm run test:live -- contextbudget`（cost 0）全绿：写入「长材料」试行档后右栏出现 `data-preset="long"`、文案「档位 长材料 · 700K（写在当前模型上）」；展开详情读到「容量来源 模型级 · commandcode/…」；`context`（cost 0）回归通过。 |
+| 视觉验收 | 新状态 `ctxpreset`（数字自洽：均衡档 600K 在 400k 窗口上被 min() 压到 280k）—— `matrix-ctxpreset-1440x900-100-{dark,light}-2026-09-22-c5tail.png`，**两张都已看图**：`档位 均衡 · 600K（写在当前模型上）`、`工作集 36k / 280k · 13%`、详情里 `容量来源 模型级 · deepseek/deepseek-v4.1-flash`，溢出 0px、无遮挡。 |
+| 应用与包 | 未因本片重跑 `dist:dir` / 便携包 / NSIS；包级证据归 09（**用户 2026-09-22 明确：暂无发布计划，全量门槛不着急**）。 |
+| 剩余限制 | ① 三类动作分别统计仍是 **C-2b**；② 曾登记的「详情展开后被 store 推送收回」已自查**更正为探针自身的 bug**（无条件 `click()` + 在 React 提交前读 DOM），现为幂等探针 + 四条真护栏（进入本节仍展开 / 静置 400ms / store 推送后 / 再点一次才收起），未发现右栏重挂载；教训已归 `MAINTENANCE.md`；③ 档位名只对「精确 `provider/model` 覆盖」生效，用户级预设仍只在设置页展示。 |
+
+> **当晚追加（同一片）**：同一探针新增四条护栏 —— 详情展开态「进入本节仍展开 / 静置 400ms /
+> store 推送后 / 再点一次才收起」；并把先前登记的「展开态被推送收回」自行**更正为探针 bug**
+>（无条件 `click()` 把已展开的详情又关上了，而读取跑在 React 提交之前，读到旧 DOM）——
+> 产品侧未发现重挂载；教训归 `docs/dev/MAINTENANCE.md`。
+
+### 本轮增量（2026-09-22）· 实施-01 S5c：`context_recall` 迁到宿主 CLI（薄层不再注册模型工具）
+
+> 这是 01-S5 的最后一段尾巴（此前 S5a 关默认发现链、S5b 把 `question` 交给宿主）。
+> 迁移前薄层是 16 个文件里唯一还注册模型工具的地方；迁移后三个入口各归其位：
+> `yan browser` / `yan question ask` / `yan context recall`。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 删除 [`context.js`](../../resources/pi-extensions/context.js) 的 `registerRecallTool` 与它专用的 `rawTextOf` / `textResult` / `audit`（`findArchiveEntry` / `mergeArchive` / `loadLedger` / `saveLedger` 仍被归档查询与 TTL 钩子使用，保留）；[`context-transform.js`](../../resources/pi-extensions/context-transform.js) 的三处**模型可见**文案（墓碑、`<TASK_STATE>` 归档引用行、TTL 存根）统一改成 `yan context recall --ref …`；[`extensions-inventory.ts`](../../src/main/extensions-inventory.ts) 的来源诊断改为「只承载无 CLI / RPC 等价物的钩子，不注册模型工具」。宿主侧实现（`src/main/context-recall.ts`：预算 / 审计 / 并发串行 / 逐字原文）此前已就绪，本片只收口入口。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4362/4362** —— 新增 [`test-context-recall.mjs`](../../scripts/test-context-recall.mjs)（13 条宿主侧确定性断言），`test-context-transform.mjs` 旧工具用例换成「扩展不注册模型工具 + 墓碑指向 CLI」，[`test-extension-inventory.mjs`](../../scripts/test-extension-inventory.mjs) 新增静态扫描（16 个薄层文件无 `registerTool` / `registerCommand`）；`git diff --check` 干净。 |
+| 真实运行 | `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- contextsweep`（**cost 1**）全绿：模型侧 `context_recall` 工具调用 **0 次**，改由 `bash` 调 `yan context recall --ref ctx://tool/49e3ab3c`（真实回执 `{"kind":"context","action":"recall","tokens":2224,"turn":2}`）；退出后审计由**宿主**写入 `result: ok / tokens: 2224`，下一轮 `expiredRecalls≥1` —— 宿主的 `[Recalled context]` 包装头仍被薄层 TTL 钩子认得。同批 `contextstate`（cost 0）通过；`context`（cost 0）顺带修掉一条 C-5 遗留的陈旧分母断言（旧断言还要求主值分母换成工作集）。 |
+| 视觉验收 | 无 UI / CSS 改动：墓碑与召回存根是**发给模型的消息**，不进界面转录，不以截图替代运行证据。 |
+| 应用与包 | 本轮未重新生成 `dist:dir` / 便携包 / NSIS；打包路径不变（`resources/pi-extensions → yan-thin`），包级证据仍归 H-5 与实施-09。 |
+| 剩余限制 | ① 归档正文超过受管文件上限（4 MiB）仍「拒绝并解释」，不切片；② 模型是否**主动**回读仍取决于模型行为 —— 可信的是它已没有任何 `context_recall` 工具可调；③ recall 类策略的整体收益仍按 06 的 N21-9 结论（收益不成立），本片只收口载体，不重开收益评估；④ `browser.js` 空占位与其它资源类型的包级候选证据仍按「当前未完成」保留。 |
 
 ### 本轮增量（2026-09-22）· 工具栏拖拽回归与 H-1 探针同步
 
@@ -1367,7 +1563,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 真实运行 | `test:live -- browsercli`（cost 0，默认不上屏）**全绿**；`YAN_SHOW_WINDOW=1` 补 `scroll`（347ms）/ `screenshot`（PNG 1564B，魔数正确）；**`test:live -- browserclimodel`（cost 1）通过两次** —— 模型自己 `yan --help` → `yan browser --help` → `navigate` → `state` → `observe` 并答出 URL（**端到端最小闭环**）；回归 `browser` / `browserboundary`(L04) / `slashcmd` **3/3 通过**（边界未放宽）；错误全是**带 code 的可读 JSON**（`browser_not_open` / `missing_ref` / `invalid_number` / `USER_CONTROL_ACTIVE`），未知子命令退码 2、无堆栈 |
 | 视觉验收 | 不适用 + 原因：无界面改动（内置浏览器面板 UX 未动） |
 | 应用与包 | 不适用 + 原因：打包归 09-S4（`yan.mjs` 在 extraResources 的落位由既有 `test-packaged` 覆盖） |
-| 剩余限制 | ① `click` / `type` **无常驻自动断言**（需带元素的本地页面 fixture，**待拍板**）；② **隐藏测试窗口下 `mouseWheel` / `captureScreenshot` 不返回**（20s 超时）—— **迁移前就存在**，本片只记录复现，建议另开片；③ `ElementRegistry.ts` / `browser.ts` 的 `STALE_ELEMENT` 文案仍含旧工具名（非本片文件域，`agent.ts` 已把回给模型的文案改写成 `yan browser observe`）；④ `browsercli` 尚未加入 `npm run check` 清单（那一行在 `package.json`）；⑤ 空占位 `browser.js` 与已失效的 loopback bridge 建议 01-S5 一并清理 —— **对 S5 的能力影响：零** |
+| 剩余限制 | ① `click` / `type` **无常驻自动断言**（需带元素的本地页面 fixture，**待拍板**）；② **隐藏测试窗口下 `mouseWheel` / `captureScreenshot` 不返回**（20s 超时）—— **迁移前就存在**，本片只记录复现，建议另开片；③ `ElementRegistry.ts` / `browser.ts` 的 `STALE_ELEMENT` 文案仍含旧工具名（非本片文件域，`agent.ts` 已把回给模型的文案改写成 `yan browser observe`；**2026-09-23 S5d 已把内部文案也改掉**）；④ `browsercli` 尚未加入 `npm run check` 清单（那一行在 `package.json`）；⑤ 空占位 `browser.js` 与已失效的 loopback bridge 建议 01-S5 一并清理 —— **对 S5 的能力影响：零**（**2026-09-23 S5d 已一并删除**） |
 
 **卡面数字纠正**：实施-01 §4/§5 写「18 个 `browser_*`」，实测是 **15 处 `registerTool` = 16 个工具 + 1 个 pi 斜杠命令**（已在证据文档登记）。
 
@@ -1637,6 +1833,13 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > **按顺序待做**：
 >
 > **本轮校正**：下面第 1 项的 `4119/4119`、`4158/4158` 与第 2 项的“视觉 / 包验收未做”是本轮开始前的旧描述；当前证据已更新为单测 **4347/4347**，S7 视觉矩阵与三种包形态运行级验收已通过，且上方新增了一个真实用户授权 Skill 文件候选的完整链路与恶意内容审查证据。以下清单保留未完成主线，但以本段上方最新六栏和当前基线为准。
+>
+> **本轮校正（2026-09-22 晚）**：01-S5 的最后一段尾巴已闭合 —— **S5c** 把归档回读迁到宿主
+> `yan context recall`，薄层 16 个文件里不再有任何 `pi.registerTool`（静态扫描 + 运行时假 pi 对象双断言），
+> `contextsweep`（cost 1）实测模型侧 `context_recall` 工具调用 **0 次**、宿主 CLI 回执 `tokens=2224`。
+> 同日晚还补齐了 **C-5 尾**（右栏档位名 + 容量来源，含真实截图），单测当前 **4370/4370**。
+> 因此第 4 项「最终发布重跑（09-S5 + 01-S5）」里的 01-S5 只剩
+> `browser.js` 空占位与包级重跑，**且用户已明确本轮暂无发布计划、不着急跑全量 `check`**。
 > 1. **04-S6b-2（进行中）**：npm `pi-package` 的 Electron 适配已接通：精确候选授权、项目 trust、source HEAD、goal revision、同 cwd runner 空闲门禁；hash 复核后在临时 Pi 离线 smoke，再受管 `pi install -l`、核对包清单、定向重载并要求 `continueId` 消费证据。`pi.extensions` / `pi.skills` 的相对 glob、globstar、`!` 排除已实现并用离线 Pi fixture 取证；staging 复核现在要求 payload 文件集合与 manifest 精确一致，`pi.skills` 在 smoke / active 复核前还会经过同一恶意内容审查器。**本轮已补 `mcp-package`、固定项目内 `skill-files` 安全调度和独立 Skill 目录来源边界，并由 `skillacquire` 完成一个用户授权外部 Skill 文件候选的 acquire → staging → 恶意内容审查 → active → 原目标续接：**前者具备精确 npm staging、bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 原子配置 / 受管记录 / 复核 / 幂等重放；固定 Skill 具备 staging → 空闲边界复核 → active 文件物化 → 同 runner 重建 → 精确 `--skill` / `continueId` / `resumed` 证据；独立目录只接受带版本 / commit、逐文件 HTTPS URL 与 SHA-256 的候选，接入时逐文件复核后才进入既有 staging。单测当前 **4347/4347**，`test:skill-source` / `test:skill-files` 通过。**剩余**：其它资源类型的外部候选 acquire → install → activation → resume 与包内整链验收；未随 tarball 提供的依赖仍 fail-closed；纯自定义工具且 RPC 不报告 command / Skill 路径的包暂不能确认 active。临时 Pi 不是 OS 沙箱，候选仍以当前用户权限执行。
 >    ⚠️ 远程 MCP 登记与设置页 / 模式 / 取消重连主链均已完成；当前剩余是 S6b-2 的其它资源类型外部候选和包级证据，不包括已通过的 Skill 文件样本。
 > 2. **04-S7（主要实现与包验收已完成）**：模式限制 / 项目隔离 / 取消与重连 / 视觉与包（MCP 与发现的界面）。服务端 runner 隔离、设置 UI、三档策略、显式 MCP 核验、用户取消 / 重连已实现并通过 `capsettings` / `mcpcli` / `capcli`；本轮 `typecheck` / `build` / 单测 **4347/4347**，视觉矩阵、解包应用能力页验收、便携运行探针和全新 NSIS 安装后 EXE 运行探针均已通过。安装器侧栏资源也已接入并随新产物构建。**剩余**：S6b-2 其它资源类型的获授权外部候选整链与包级证据，以及最终发布重跑；这不包括已通过的本地 / 解包 / 安装态包运行验收。

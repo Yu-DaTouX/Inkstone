@@ -199,11 +199,11 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 
 | 层 | 位置 | 职责 |
 |---|---|---|
-| 主进程控制器 | `main/browser.ts` | 内嵌视图 + 外部 Chrome 代理标签，统一标签栏 / `activeMode` 路由；起一个只监听 127.0.0.1、带 token 的 loopback bridge |
+| 主进程控制器 | `main/browser.ts` | 内嵌视图 + 外部 Chrome 代理标签，统一标签栏 / `activeMode` 路由；**宿主独占**（01-S5d 起不再有 loopback HTTP bridge，模型侧走 `yan browser …`） |
 | 底层 | `main/browser/` | `CDPBridge`（Electron 调试器）与 `RawCdp`（外部 Chrome 的 WebSocket）实现**同一个** `CdpChannel` 接口；`Observer` 出可交互元素表、`ElementRegistry` 管 ref、`InputController` 发输入、`BrowserPolicy` 拦高风险动作 |
 | 原生视图 | 主进程持有 `WebContentsView` | **不是 iframe**，永远盖在渲染层之上 |
 | UI | `components/browser/BrowserSurface.tsx` | 只画工具栏 + 把可见区域坐标同步给主进程 |
-| pi 工具 | `resources/pi-extensions/browser.js` | 只访问 bridge，不碰 Electron 对象 |
+| 模型入口 | `yan browser …`（`capability-server.ts` → `AgentController.runBrowserCommand`） | 模型经 `bash` 调 CLI；不直接碰 Electron 对象（旧 `pi-extensions/browser.js` 已于 01-S5 收尾删除） |
 
 **改动注意点**
 
@@ -632,10 +632,10 @@ yan:git:prStatus → main/hosting.ts
 共用一个 id，于是工作树读到主仓库的知识，违反实施-03 §4）；② 「需复核」是**每请求重算**的派生状态（分支 / 路径 / 来源会话），不要存进条目里；
 ③ 「确认」是唯一能把条目升为 `active` 的路径 —— 不要给它加一个「模型自证」的后门。
 
-### 2.23 工作模式：标准 / 澄清 / 自主（实施-05 S2：会话级状态 + 迁移 + 菜单）
+### 2.23 工作模式：标准 / 计划 / 自主（实施-05 S2；2026-09-22 快捷键改成全局 Ctrl+Tab）
 
 ```text
-用户点菜单 / 按 Tab 快切 → Composer 的 WorkModePicker
+用户点菜单 / 按 Ctrl+Tab（可在设置里改键或关掉）→ App 的全局快捷键（window capture）→ Composer 的 WorkModePicker
         → store.setWorkMode → yan:setWorkMode(mode, expectedRevision)（main/index.ts）
         → WorkModeStore（YAN_DIR/work-modes.json）：CAS 提交 → revision+1
         → 写 YAN_DIR/work-mode/<runnerId>.json（扩展读的那份）+ 推 work-mode（带 runtime 封套）

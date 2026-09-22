@@ -607,12 +607,13 @@ export async function runContextTransformTests(ok, deps) {
     delete process.env.YAN_CONTEXT_EXT_LOG
   }
 
-  /* ============ K. context_recall 工具（execute 直调） ============ */
-  console.log('\n— K. context_recall 工具（召回链路的确定性覆盖） —')
+  /* ============ K. 扩展不注册模型工具（01 §1 架构检查）+ 墓碑指向宿主 CLI ============ */
+  console.log('\n— K. 扩展不注册模型工具（召回走宿主 yan context recall） —')
   {
     /*
-     * 用假的 pi 对象把扩展注册的钩子与工具掏出来，直接调 execute ——
-     * 这是「扩展到模型的召回链路」里唯一不依赖模型行为的部分。
+     * 架构检查的可执行版本：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
+     * 生命周期钩子。这里把扩展拿到的 pi 对象记下来 —— 谁再往薄层里塞
+     * `registerTool`，这条断言就会变红（01 §1 的白名单只覆盖钩子）。
      */
     const handlers = {}
     const tools = {}
@@ -627,90 +628,25 @@ export async function runContextTransformTests(ok, deps) {
     })
     ok(typeof handlers.context?.[0] === 'function', '扩展注册了 context 钩子')
     ok(typeof handlers.session_before_compact?.[0] === 'function', '扩展注册了 session_before_compact 钩子')
-    ok(!!tools.context_recall, '扩展注册了 context_recall 工具')
     ok(
-      tools.context_recall?.parameters?.required?.includes('ref'),
-      '工具参数 schema 要求 ref',
-      JSON.stringify(Object.keys(tools.context_recall?.parameters ?? {}))
+      Object.keys(tools).length === 0,
+      '扩展不注册任何模型工具（context_recall 已迁到宿主 yan context recall）',
+      JSON.stringify(Object.keys(tools))
     )
 
-    const branch = branchFixture()
-    const ctx = fakeCtx(branch)
-    const call = (params) => tools.context_recall.execute('call-1', params, undefined, undefined, ctx)
-    const textOf = (result) => result?.content?.[0]?.text ?? ''
+    /* 墓碑是模型唯一能读到「怎么取回」的地方，必须指向真实存在的入口 */
+    const tombstone = T.renderTombstone({ tool: 'read', target: 'src/a.ts', tokens: 1234, ref: 'ctx://tool/m3' })
+    ok(tombstone.includes('yan context recall --ref'), '墓碑给出宿主 CLI 取回方式', JSON.stringify(tombstone))
+    ok(!tombstone.includes('context_recall tool'), '墓碑不再指向已移除的模型工具')
+    ok(tombstone.includes('Ref: ctx://tool/m3'), '墓碑保留可复制的 ctx:// 引用')
 
-    /* 归档里有 m3（H 节钩子写进去的） */
-    setPolicy({ kinds: ['tool-sweep'], recall: { maxTokensPerCall: 20_000, maxActiveRecallTokens: 40_000, maxEntriesPerCall: 3 } })
-    await rm(join(dataDir, 'context-state', 'sess0001.recall.json'), { force: true })
-    await rm(join(dataDir, 'context-state', 'sess0001.recall.jsonl'), { force: true })
-
-    const good = await call({ ref: 'ctx://tool/m3' })
-    const goodText = textOf(good)
-    ok(goodText.startsWith(T.RECALL_PREFIX), '召回成功时返回带标记的原文', JSON.stringify(goodText.slice(0, 40)))
-    ok(goodText.includes(BIG.slice(0, 40)), '返回的是会话里的原文')
-    ok(/turn=\d+ ref=ctx:\/\/tool\/m3/.test(goodText.split('\n')[0]), '包装里带回合号与引用')
-    const ledger = EXT.__internals.loadLedger('sess0001')
-    ok(ledger.activeTokens > 0, '召回量计入 active 预算', String(ledger.activeTokens))
-    const audits = (await readFile(join(dataDir, 'context-state', 'sess0001.recall.jsonl'), 'utf8'))
-      .trim()
-      .split('\n')
-      .map((l) => JSON.parse(l))
-    ok(audits.length === 1 && audits[0].result === 'ok' && audits[0].by === 'agent', '每次召回留审计（时间 / 大小 / 发起方 / ref）', JSON.stringify(audits[0]))
-
-    /* 单次超限：拒绝并解释，不截断 */
-    setPolicy({ kinds: ['tool-sweep'], recall: { maxTokensPerCall: 10 } })
-    const rejected = textOf(await call({ ref: 'ctx://tool/m3' }))
-    ok(rejected.includes('拒绝') && rejected.includes('10'), '超单次上限 → 拒绝并给出可解释文案', JSON.stringify(rejected))
-    ok(!rejected.includes(BIG.slice(0, 40)), '拒绝时没有泄漏半份原文（不静默截断）')
-
-    /* 累计超限 */
-    setPolicy({ kinds: ['tool-sweep'], recall: { maxTokensPerCall: 20_000, maxActiveRecallTokens: 10 } })
-    const activeRejected = textOf(await call({ ref: 'ctx://tool/m3' }))
-    ok(activeRejected.includes('拒绝'), '累计超限 → 拒绝', JSON.stringify(activeRejected.slice(0, 60)))
-
-    /* 非法 ref / 不可召回 / 找不到条目 / 过期 */
-    ok(textOf(await call({ ref: 'not-a-ref' })).includes('不是合法'), '非法 ref 被拒')
-    ok(textOf(await call({ ref: 'ctx://tool/nope' })).includes('没有这条记录'), '归档里没有的 ref 被拒')
-    await EXT.__internals.mergeArchive(
-      'sess0001',
-      [
-        {
-          ref: 'ctx://tool/manual1',
-          kind: 'tool',
-          label: 'manual',
-          tokens: 1,
-          recallable: 'manual',
-          sourceRange: { from: 'm3', to: 'm3' },
-          watermark: T.watermarkOfEntries(branch)
-        }
-      ],
-      Date.now(),
-      T.watermarkOfEntries(branch)
-    )
-    ok(textOf(await call({ ref: 'ctx://tool/manual1' })).includes('不允许模型自行取回'), 'recallable=manual 时模型不能取回（三态语义）')
-    const expired = Date.now() - 1000
-    await EXT.__internals.mergeArchive(
-      'sess0001',
-      [
-        {
-          ref: 'ctx://tool/expired1',
-          kind: 'tool',
-          label: 'expired',
-          tokens: 1,
-          recallable: 'agent',
-          sourceRange: { from: 'm3', to: 'm3' },
-          watermark: T.watermarkOfEntries(branch)
-        }
-      ],
-      Date.now(),
-      T.watermarkOfEntries(branch)
-    )
-    /* 手改 expiresAt 后重新读（mergeArchive 不写 expiresAt，这里直接写文件） */
-    const archiveRaw = JSON.parse(await readFile(archiveFile, 'utf8'))
-    const target = archiveRaw.entries.find((e) => e.ref === 'ctx://tool/expired1')
-    target.expiresAt = expired
-    await writeFile(archiveFile, JSON.stringify(archiveRaw), 'utf8')
-    ok(textOf(await call({ ref: 'ctx://tool/expired1' })).includes('已过期'), '过期的归档不可召回')
+    /* TTL 存根同理：过期召回只留引用 + 一条可执行的取回提示，不保留正文 */
+    const recalled = T.wrapRecall('原始正文', 'ctx://tool/m3', 1)
+    const stubbed = T.stripStaleRecalls([{ role: 'toolResult', content: [{ type: 'text', text: recalled }] }], 2)
+    const stubText = stubbed.messages?.[0]?.content?.[0]?.text ?? ''
+    ok(stubbed.changed === 1, '过期召回正文被替换成存根', `changed=${stubbed.changed}`)
+    ok(stubText.includes('yan context recall --ref ctx://tool/m3'), '存根给出宿主 CLI 取回方式', JSON.stringify(stubText))
+    ok(!stubText.includes('原始正文'), '存根不再保留正文')
   }
 
   /* ============ K. 默认接管集与硬约束① ============ */

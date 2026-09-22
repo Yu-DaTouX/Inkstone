@@ -354,13 +354,18 @@ const CASES = {
     cost: 0,
     budget: 120000,
     legacyAutonomous: true,
-    keys: 'tab,tab',
+    keys: 'ctrl+tab,ctrl+tab',
     keysDelay: 15000,
     afterExit: 'workModePersisted'
   },
   /*
-   * 澄清就绪转移端到端（实施-05 S3，**花一次模型**）：
-   * 切澄清档 → 让模型用内联参数敲 `yan goal ready` → 宿主校验/幂等/落盘 →
+   * `+` 菜单（2026-09-22）：文件和文件夹 / 图片 / 能力。
+   * cost 0：只验菜单结构、文案与几何，不点会开系统对话框的两项。
+   */
+  plusmenu: { probe: 'scripts/probe/plus-menu.js', delay: 15000, cost: 0, budget: 120000 },
+  /*
+   * 计划就绪转移端到端（实施-05 S3，**花一次模型**）：
+   * 切计划档 → 让模型用内联参数敲 `yan goal ready` → 宿主校验/幂等/落盘 →
    * 模式自动切标准 + 工具卡认成「目标 · 砚内置」。
    *
    * 为何必须是真模型：整条链路（bash → `yan` 启动器 → 环境变量注入 → 身份校验）
@@ -659,7 +664,7 @@ const CASES = {
   /*
    * N21-4 / S2 真实接管（cost 1）：真实回合里把「上一回合的大块工具输出」
    * 换成墓碑（`ctx://tool/<原始 entryId>`），扩展写归档元数据，模型再用
-   * `context_recall` 取回原文。
+   * `yan context recall`（宿主 CLI，回读实现见 `src/main/context-recall.ts`）取回原文。
    *
    * 为什么把 recentTail 与门槛压到最小：默认 32k 尾部以下的小会话
    * 永远不会 sweep（整个历史都在尾部里）。压到最小后，只要有两个回合
@@ -1573,6 +1578,19 @@ const CASES = {
     budget: 150000,
     cost: 0,
     afterExit: 'effectivePolicyFile'
+  },
+
+  /*
+   * 实施-11 H-6b：整轮用量聚合与工具等待分段（cost 0）。
+   *
+   * 注入多轮工具调用的回合，验：多条助手消息的 usage 相加（不是只显示末条）、
+   * 有请求没报用量时标下限、回合页脚 tooltip 给出「其中等工具」（区间并集）。
+   * 真实 provider 的单请求链路仍由 cost 1 的 `tokens` 覆盖。
+   */
+  usageagg: {
+    probe: 'scripts/probe/usage-agg.js',
+    delay: 10000,
+    cost: 0
   },
 
   /*
@@ -4442,7 +4460,7 @@ async function checkContextSweepArchiveImpl(sandboxRoot) {
       const expired = logLines.filter((l) => l.hook === 'context' && Number(l.expiredRecalls) >= 1)
       say(expired.length >= 1, '下一轮把上一轮的召回正文清成存根（expiredRecalls≥1）')
     } else {
-      lines.push('  （本次模型没有调用 recall —— 召回链路由单测覆盖）')
+      lines.push('  （本次模型没有调用 recall —— 召回链路由宿主单测 test-context-recall.mjs 覆盖）')
     }
   }
   return { ok, lines }
@@ -5439,7 +5457,7 @@ async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
     lines.push(`  work-modes.json 条目：${entries.map(([k, v]) => `${k}=${v.mode}(rev${v.revision})`).join(', ')}`)
     say(entries.length >= 2, `至少两个会话各自存了一份（实际 ${entries.length}）`)
     say(entries.some(([, v]) => v.mode === 'autonomous'), '存下了自主模式（A 会话）')
-    say(entries.some(([, v]) => v.mode === 'clarify'), '存下了澄清模式（B 会话）')
+    say(entries.some(([, v]) => v.mode === 'clarify'), '存下了计划模式（B 会话）')
     say(entries.every(([, v]) => Number.isFinite(v.revision) && v.revision >= 1), '每条都有 revision（提交过）')
   } catch (error) {
     say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
@@ -5472,7 +5490,7 @@ async function checkWorkModePersisted(sandboxRoot, _tempBefore, _probeText) {
       settings.defaultWorkMode === 'autonomous',
       '迁移结果随写入固化到新字段（与旧值语义相同，幂等）'
     )
-    say(!('workModeTab' in settings), '关掉再打开的开关不落盘（默认态无键）')
+    say(!('workModeShortcutEnabled' in settings) && !('workModeShortcut' in settings), '关掉再打开的快捷键不落盘（默认态无键）')
   } catch (error) {
     say(false, '读 desktop.json 失败：' + (error instanceof Error ? error.message : String(error)))
   }
@@ -5565,7 +5583,7 @@ async function checkTaskFixtureReadonly() {
  * 这一支只回答「磁盘上是什么」。
  */
 /**
- * 澄清就绪转移的磁盘核对（实施-05 S3，`goal` 场景）。
+ * 计划就绪转移的磁盘核对（实施-05 S3，`goal` 场景）。
  *
  * 探针看到的 `getGoal()` 是**内存态**；这里在窗口关掉之后读磁盘，
  * 证明 commitReady 真做到了「先落盘再返回」，而且**恰好一次**：
@@ -5634,6 +5652,22 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
    * 正常跑完的回合**不能**留下中途快照（否则历史会集体误报崩溃）。
    */
   say(last?.final === true, `收尾记录带 final: true（实际 ${String(last?.final)}）`)
+  /*
+   * H-6b：逻辑回合身份与 run 分段。
+   *
+   * 这三条一起看才完整：`anchorId` 锚定用户消息（重读历史对得上）、
+   * `logicalTurnId` 等于它（自动继续归同一个逻辑回合、不会另起一个）、
+   * `runId` 区分同一逻辑回合里的多次 pi 回合（决定读回时覆盖还是累加）。
+   */
+  say(/^m\d+$/.test(String(last?.anchorId ?? '')), `记录锚定用户消息 id（${last?.anchorId}）`)
+  say(
+    last?.logicalTurnId === last?.anchorId,
+    `逻辑回合身份 = 用户消息 id（${last?.logicalTurnId}）`
+  )
+  say(
+    typeof last?.runId === 'string' && String(last.runId).startsWith('run-'),
+    `记录带 runId（${last?.runId}）`
+  )
   if (expectedReason) {
     say(
       last?.terminalReason === expectedReason,
@@ -5844,7 +5878,7 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(entries.some(([, v]) => v.mode === 'standard'), '磁盘上的模式已是标准（就绪转移的另一半）')
     say(
       entries.some(([, v]) => Number.isFinite(v.revision) && v.revision >= 2),
-      '模式 revision 至少推进两次（切澄清 + 就绪切标准）'
+      '模式 revision 至少推进两次（切计划 + 就绪切标准）'
     )
   } catch (error) {
     say(false, '读 work-modes.json 失败：' + (error instanceof Error ? error.message : String(error)))
@@ -6034,6 +6068,54 @@ async function checkGoalLoopPersisted(sandboxRoot, _tempBefore, _probeText) {
     }
   } catch (error) {
     say(false, '读 goals.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /*
+   * H-6b：自动继续必须归**同一个逻辑回合**。
+   *
+   * 每次续行都是一个新的 pi agent 回合（新 `runId`），但用户消息没变 ——
+   * 所以盘上会有多条记录、却只应该有一个 `logicalTurnId`（= anchorId）。
+   * 若这里出现多个 logicalTurnId，说明每次 agent_end 又冻结成了新回合。
+   */
+  try {
+    const dir = join(dataDir, 'turn-timing')
+    const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')) : []
+    const records = []
+    for (const file of files) {
+      for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
+        if (!line.trim()) continue
+        try {
+          records.push(JSON.parse(line))
+        } catch {
+          /* 坏行不致命（单测里单独验证过） */
+        }
+      }
+    }
+    const byTurn = new Map()
+    for (const r of records) {
+      const list = byTurn.get(r.logicalTurnId) ?? []
+      list.push(r)
+      byTurn.set(r.logicalTurnId, list)
+    }
+    lines.push(`turn-timing 记录：${records.length} 条 / ${byTurn.size} 个逻辑回合`)
+    say(records.length >= 1, `自动继续的计时记录落了盘（${records.length} 条）`)
+    say(byTurn.size === 1, `自动继续归同一个逻辑回合（实际 ${byTurn.size} 个 logicalTurnId）`)
+    const [turnId, list] = [...byTurn.entries()][0] ?? []
+    if (list) {
+      const runs = new Set(list.map((r) => r.runId).filter(Boolean))
+      lines.push(`  逻辑回合 ${turnId}：${list.length} 条快照 / ${runs.size} 个 run`)
+      say(runs.size >= 2, `续行确实开了新的 pi 回合（runId ${runs.size} 个）`)
+      say(/^m\d+$/.test(String(turnId ?? '')), `逻辑回合身份是用户消息 id（${turnId}）`)
+      say(list.every((r) => r.anchorId === turnId), '每条快照都锚定同一个用户消息')
+      const latestPerRun = new Map()
+      for (const r of list) if (r.runId) latestPerRun.set(r.runId, r)
+      const perRun = [...latestPerRun.values()].map((r) => Number(r.elapsedMs || 0))
+      const summed = perRun.reduce((n, v) => n + v, 0)
+      const maxOne = Math.max(...perRun, 0)
+      say(summed > maxOne, `整轮用时是各 run 累加（${summed}ms > 单段最大 ${maxOne}ms）`)
+    }
+  } catch (error) {
+    say(false, '读 turn-timing 失败：' + (error instanceof Error ? error.message : String(error)))
   }
 
   /* 宿主写的快照 + 薄层的消费证据（没有它，扩展再对也发不出去） */

@@ -4,7 +4,7 @@
  * ══════════════════════════════════════════════════════════════════
  * 为什么这件事留在薄层里（而不是宿主）
  * ══════════════════════════════════════════════════════════════════
- * 澄清档的验收口径是「工具集**真的**受限」，而限制工具集只有两条路：
+ * 计划档的验收口径是「工具集**真的**受限」，而限制工具集只有两条路：
  *   · `--tools`（启动参数，运行中改不了）；
  *   · `setActiveTools`（**扩展 API**）。
  * pi 的 RPC 面**没有**工具命令 —— 实测 `get_tools` / `set_active_tools`
@@ -15,14 +15,14 @@
  * `YAN_DATA_DIR/work-mode/<YAN_SESSION_ID>.json`，这里只负责执行。
  *
  * ── 门禁顺序（证据-05-S1 实验 1 定的）──
- *   ① 工具表（主）：澄清档把非只读工具**从表里拿掉** —— 模型看不到它，
+ *   ① 工具表（主）：计划档把非只读工具**从表里拿掉** —— 模型看不到它，
  *      连「试图调用再被拒」都不会发生；
  *   ② `tool_call` 兜底：万一工具表没刷新成功（或第三方工具不在白名单里），
  *      直接 block。实测这是真门禁（同一条命令在对照组真写了文件）；
  *   ③ 提示词（说明）：在 `question.js` 里，只负责让模型知道为什么。
  *
  * ⚠️ 白名单必须**显式列全**：`grep` / `find` / `ls` 默认不在激活集里（01-S1 实测）。
- *    提问不再是模型工具；澄清档通过下面的受限 `yan question ask` bash 形状完成。
+ *    提问不再是模型工具；计划档通过下面的受限 `yan question ask` bash 形状完成。
  */
 
 import { appendFileSync, readFileSync } from 'node:fs'
@@ -30,12 +30,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * 澄清档允许的工具：只读查询 + **受限的 bash**。
+ * 计划档允许的工具：只读查询 + **受限的 bash**。
  *
  * 为什么**不**放 `write` / `edit`：那是真正的写入口，直接拿掉。
  * 为什么要放 `bash`（但这不等于放行 bash）：
- *   澄清档的「就绪提交」通道是宿主 CLI（`yan goal ready`，实施-05 §4 定的），
- *   而敲 CLI 要用 bash 工具 —— 把 bash 拿掉，澄清档就永远提交不了、也就永远好不了。
+ *   计划档的「就绪提交」通道是宿主 CLI（`yan goal ready`，实施-05 §4 定的），
+ *   而敲 CLI 要用 bash 工具 —— 把 bash 拿掉，计划档就永远提交不了、也就永远好不了。
  *   所以 bash 留着，但**命令形状**由下面的白名单卡死（见 `isAllowedBashCommand`）：
  *   只接受 `yan goal status|ready|report`、`yan question ask` 或严格形状的
  *   `yan context recall --ref ctx://…`，且整条命令里**不得出现
@@ -43,11 +43,11 @@ import { join } from 'node:path'
  *   这不是「对任意 shell 命令做脆弱的只读判断」（§4 禁止的那种），
  *   而是「只允许这一条经审查的命令」—— 白名单，不是启发式。
  *
- * 归档回读也走宿主 CLI；提问与回读都不向澄清档恢复业务模型工具。
+ * 归档回读也走宿主 CLI；提问与回读都不向计划档恢复业务模型工具。
  */
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash']
 
-/** 澄清档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
+/** 计划档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
 const GOAL_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+(?:status|ready|report)(?:\s|$)/
 const QUESTION_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+question\s+ask(?:\s|$)/
 const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
@@ -135,7 +135,7 @@ function toolName(entry) {
 export default function workModePolicy(pi) {
   /** 宿主给的原始激活集（`--tools` 决定）。**只在第一次收紧前记录**，之后它是恢复用的基线。 */
   let baseTools = null
-  /** 当前是否处于「已被本扩展收紧」的状态（决定退出澄清档时要不要恢复）。 */
+  /** 当前是否处于「已被本扩展收紧」的状态（决定退出计划档时要不要恢复）。 */
   let restricted = false
   /** 最近一次读到的模式（`tool_call` 兜底要用）。 */
   let mode = 'standard'
@@ -161,7 +161,7 @@ export default function workModePolicy(pi) {
       return
     }
     /*
-     * 非澄清档**一律不动工具表**（除了从澄清档退回来的那一次）。
+     * 非计划档**一律不动工具表**（除了从计划档退回来的那一次）。
      *
      * 为什么：这个扩展在所有会话里都加载。若每轮都无条件 `setActiveTools`，
      * 就等于拿一个「启动时的快照」去覆盖工具表 —— 其他薄层
@@ -175,7 +175,7 @@ export default function workModePolicy(pi) {
   })
 
   /*
-   * 兜底：澄清档下除了「只读集 + 允许形状的宿主 CLI」一律拒绝。
+   * 兜底：计划档下除了「只读集 + 允许形状的宿主 CLI」一律拒绝。
    *
    * ⚠️ 返回值的 `content` / `isError` 会被 pi 忽略（实测固定成
    *    「Tool execution was blocked」+ isError），所以这里不要费劲写文案 ——

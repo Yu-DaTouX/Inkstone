@@ -419,6 +419,129 @@ CX="$LOCALAPPDATA/OpenAI/Codex/bin/<hash>/codex.exe"   # hash 目录随版本变
 判断依据也是一个通用套路：**把"点击"与"直接调用同一个 API"对照**，两者结论不一致就是引用/命中问题，
 不是产品缺陷。
 
+## 自主档不续行：续行消息发给了不存在的通道（2026-09-22）
+
+用户观察：自主档下报完进展就停住，不会自己接着干（要手动推一下）。
+
+**现场硬证据**（真实数据目录，只读）：
+
+```
+goals.json  entry: phase=executing rev=10 autoContinues=1
+            resume = {operationId: 9d849ba1…, kind: continue, at: 15:06:55.220}
+goal-resume/r1.json          mtime 15:06:55.225   ← 宿主确实写了
+r1.consumed.json             内容 operationId=6d60b137…  （14:43 的旧值）
+```
+
+即：**续行写下来了，但从来没人消费**（consumed 里的 operationId 与它在场的不一致，
+而且时间早于这份 resume）。薄层没跑而不是「发了但没生效」。
+
+**根因（两条，缺一不可）**：
+
+① **主因：续行消息发给了不存在的通道。** 代码写的是 `context.sendMessage?.()`，
+而 pi 0.85.1 的钩子 ctx **没有** `sendMessage` —— `createContext()` 只给
+`ui / mode / cwd / sessionManager / modelRegistry / model / isIdle / compact …`。
+那个 `?.` 把失败吞得干干净净：日志里写着 `resume_sent`、`operationId` 也记成已消费，
+而消息从未发出去。**正确写法是 `pi.sendMessage` / `pi.appendEntry`**
+（`context.js` 用的就是 `pi.appendEntry`）。现场一眼看出的办法：日志里
+`resume_sending hasSendMessage:false` 后面紧跟着 `resume_sent`。
+
+② **次因：检查点比宿主的 arm 更早。** 薄层的触发只有 `message_end`；
+而宿主的 arm 链挂在 `state` 推送（`isAgentRunning === false`）上 —— 那是
+`agent_settled` **之后**，它还要先 `resolveWorkMode` → load 三份 store → `persist`
+才写 resume 文件。读空就 return 的后果是**死锁**：不会再有第二个 `message_end`。
+
+**修法**（三层）：
+
+1. 发送走 `pi`；只有当某个钩子的 ctx 真带 `sendMessage` 时才换成它
+   （重载 / 切会话后 `pi` 会被 invalidate —— `test-handoff-request.mjs` 有这条护栏）；
+   两边都没有就**不写消费证据**并记 `resume_failed(reason=no-sendMessage)`；
+2. `agent_settled` 也作为检查点（宿主的 arm 就在这附近完成），靠 `schedule` 的 token
+   让更晚的检查点接管更早的；
+3. `maybeResume` **窗口化读盘**：读空后每 1.2s 再读、最多 8 次（≈9.6s），
+   每次重试都重新确认 token（窗口里用户说话就让位：宁可晚一次，不盲发两次）。
+   消费幂等（`operationId`）保证多读几次也不会重复续行。
+
+**可复用的教训**：**可选链 + 不存在的 API = 静默失败**。
+凡是「日志说成功、用户说没反应」的链路，先把每一个 `?.` 调用点的
+「这个对象上真的有这个方法吗」验一遍（打印 `typeof x.method` 一行就够）。
+同一个形状已经踩过两次（交接包 90s 超时 / 本次续行不动）：
+只要「宿主写一个请求文件 + 薄层在 pi 事件里读它」，就一定会撞上「宿主比 pi 的事件晚」。
+
+**排查提示**：这一层的现场只有 `YAN_GOAL_RESUME_EXT_LOG`（生产默认不开）。
+`check` 行看 `hasResume` / `attempts`：没有 resume = 宿主没 arm；
+有 resume 且 `consumed` 对不上 = 薄层看到了但让位了（会出现 `resume_skipped`，`reason` 写清原因）。
+
+## 两个「超时」长得像、根因完全不同（2026-09-22）
+
+用户同一天报回两个超时。它们的共同点只有一个：都不是业务逻辑错。
+
+### ① `[主进程/unhandledRejection] 命令 compact 超时（30000ms）`
+
+- `protocol.ts` 的 `REQUEST_TIMEOUT = 30_000` 是按**元数据查询**定的，
+  而 `compact` 要**调一次模型生成摘要** —— 长会话上跑几分钟很正常。
+- 后果有两层：压缩还在跑、砚已当它失败（用户手动 `/compact` 会看到「压缩失败」）；
+  更糟的是策略触发那条链是 `void` 出去的（`refreshStats` → `evaluateContextPolicy`），
+  没人接异常 → 直接变成控制台里的 `unhandledRejection`。
+- 修法：`compact` 单独给 `COMPACT_REQUEST_TIMEOUT_MS = 300_000`，
+  并且把 `compact()` 的契约改成**不抛**（超时 / 进程没了都归 `{ ok: false }`），
+  策略链再补一层 `catch` 兜底。
+- 排查提示：**看报错里的命令名**。凡是「要模型算一会儿」的命令（压缩 / 导出 / 生成）
+  都不该用默认超时；凡是 `void this.someAsync()` 的调用点，都要问一句「它抛了谁接」。
+
+### ② 弹窗「交接包生成超时，已放弃（会话不受影响）」
+
+- 这是宿主 `HANDOFF_WAIT_MS = 90_000` 等薄层写结果等到超时，**不是 RPC 超时**，
+  所以按①去查 `REQUEST_TIMEOUT` 会查不到任何东西。
+- 真因是**竞态**：宿主 arm 请求的链是「收到 state 推送 → load 三份 store →
+  渲染提示词 → 写请求文件」，而薄层的 `agent_settled` 是 pi 进程**同时**发出的。
+  薄层原来只读一次盘：读到「没有请求」就 return —— 宿主随后写好的请求再没人处理，
+  只能等下一次 `agent_settled`（用户再发一条消息）。用户发完就走了 = 100% 超时。
+- 修法：薄层给请求落盘留等待窗口（默认 **20 秒**，`YAN_HANDOFF_SETTLE_TRIES` /
+  `YAN_HANDOFF_SETTLE_MS` 是测试通道），并把独占锁**前移到等待之前**
+  （否则两次 `agent_settled` 会各等一遍、各调一次模型）。
+- **实测数字（关键）**：`handoffpack` 场景修复后的扩展日志是
+  `check {hasRequest:true, attempts:1, ageMs:1005}` —— 宿主的请求写下来时，
+  距 `agent_settled` 已经过了 **约 1 秒**。也就是说修复前（窗口为 0）
+  这条链**不是偶发、而是每次都超时**，而且与「自主档」完全吐合：
+  交接要在「目标在推进 + 不忙」时才 arm，自主链是连续跑回合的，
+  真正的 arm 推到了链尾那一轮之后。`ageMs` 就是为下一次报障留的标尺。
+- 另一道保险：宿主在 90 秒超时放弃**之前**再收一次结果
+  （`abandonHandoff` → `collectHandoffResult`）—— 薄层的模型时限是 60 秒，
+  长输出可能刚好压线写盘，这一读能挡掉「只差几十毫秒」的假超时。
+  宿主写请求 / 超时也各留一行 `[handoff] …` 控制台日志，两边时间线能对上。
+- 排查提示：交接链路的现场只有扩展诊断日志（`YAN_HANDOFF_EXT_LOG`，宿主侧
+  `handoffExtLog: true` 的 live 场景会开）。`check` 行能看到 `hasRequest` 与 `attempts`：
+  **没有请求 = 宿主没 arm**；有请求但没有 `produced` 行 = 模型或写入出了事。
+  薄层不写结果文件的几种情形（没请求 / 拿不到模型注册表 / 已在跑 / 幂等命中 / TTL 过期）
+  都会留一行 `skipped` 说明理由 —— 这也是单测 `test-handoff-ext.mjs` 断言的地方。
+
+## 探针里「点一下再立刻读」会读到未提交的 DOM（2026-09-22）
+
+症状：右栏「详情」在探针里展开后，接着断言它开着 —— 要么**假红**，要么反过来
+**该失败的检查反而通过**。
+
+根因有两层，必须一起解决：
+
+1. `element.click()` / `dispatchEvent(new MouseEvent('click'))` 之后，React 的 state
+   更新是**异步提交**的。立刻 `querySelector` 读到的还是旧 DOM —— 所以
+   「点开 → 立刻断言元素存在」会通过，而 300ms 后那个元素其实已经不在了。
+2. 如果这个按钮在**更早的步骤里已经被点开过**，无条件再点一次就是**把它关上**。
+   探针因此自己造出「展开态莫名丢失」的假象（本次被误判成产品缺陷、登记了一轮，
+   后来用 `MutationObserver` + 给 DOM 打自定义属性 + 临时插桩记录 `onClick` 栈才拆开）。
+
+规则：**幂等 + 等稳定**。
+
+```js
+for (let i = 0; i < 20; i++) {
+  if (q('[data-testid="x"]')?.getAttribute('aria-expanded') === 'true') break
+  q('[data-testid="x"]')?.click()
+  await sleep(100)
+}
+```
+
+判真假用**稳定后的属性**（`aria-expanded`）而不是「元素在不在」；要证「展开态没被
+无关推送收回」，先静置一段（≥300ms）再读。
+
 ## 「没有写出状态文件」这类否定断言必须按会话隔离
 
 所有 live 场景**共用同一个沙箱**（`sandboxRoot` 在场景循环之前就创建了），所以

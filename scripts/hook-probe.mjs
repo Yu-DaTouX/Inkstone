@@ -142,7 +142,7 @@ const args = [
   '--model',
   's1mock/mock',
   '--tools',
-  /* 门禁实验要**故意多给**写工具：这样「澄清档把它们拿掉」才看得出来 */
+  /* 门禁实验要**故意多给**写工具：这样「计划档把它们拿掉」才看得出来 */
   GATE_MODES[MODE] ? 'bash,read,write,edit' : 'bash,read',
   '请执行一次 bash 命令，然后回答 S1-DONE。'
 ]

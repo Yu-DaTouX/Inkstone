@@ -1,5 +1,5 @@
 /**
- * 目标与澄清就绪（实施-05 S3）的纯逻辑与存储测试。
+ * 目标与计划就绪（实施-05 S3）的纯逻辑与存储测试。
  *
  * 分两层：
  *   · `src/shared/goal.ts`   契约与纯函数（就绪校验 / 报告校验 / 推进 / 清洗）；
@@ -11,7 +11,7 @@
  *
  * 用法：npm run test:unit
  */
-import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -460,11 +460,15 @@ export async function runGoalTests(ok) {
       ok(resumeC?.kind === 'continue', 'arm 出来的是「接着干」续行（不是就绪续行）')
       ok(String(resumeC?.summary ?? '').includes('第 1 次'), '续行正文带本轮序号')
 
-      /* 用户没插话：连续 arm 到上限 */
+      /* 用户没插话：连续 arm 到上限。
+       *
+       * ⚠️ 必须显式模拟「上一条已经被薄层消费」：`armContinue` 现在对同一待发操作幂等
+       * （实施-14 A6），不传 `consumed` 就会被当成「还没发出去」而拒掉。 */
+      const armAsConsumed = () => auto.armContinue(keyC, { consumed: async () => true })
       let armedTimes = 1
       let lastArm = first
       for (let i = 0; i < shared.AUTONOMOUS_CONTINUE_LIMIT + 2; i++) {
-        lastArm = await auto.armContinue(keyC)
+        lastArm = await armAsConsumed()
         if (lastArm.armed) armedTimes += 1
       }
       ok(
@@ -475,7 +479,7 @@ export async function runGoalTests(ok) {
 
       /* 用户说话了 → 计数归零，重新给满额度 */
       await auto.resetAutoContinues(keyC)
-      const again = await auto.armContinue(keyC)
+      const again = await armAsConsumed()
       ok(again.armed === true && again.round === 1, '用户介入后重新计数（有人看管时不必限轮）')
 
       /* 目标完成：未发的续行必须清掉 */
@@ -499,6 +503,102 @@ export async function runGoalTests(ok) {
       ok((await auto.armContinue(keyD)).reason === 'not_active', '已停止的目标不再 arm')
     } finally {
       await rm(rootAuto, { recursive: true, force: true })
+    }
+
+    /*
+     * ------------------------------------------- 实施-14 F1：暂停 / 幂等 / 消费游标
+     *
+     * 这三条都是上一轮代码审查拿到的真缺陷（A2 / A4 / A6），而且都是
+     * 「本地单测全绿、真实链路才复现」的那一类：暂停状态没被持久化、
+     * 重复 arm 把轮数空转到上限、旧 blocks 被算到新目标头上。
+     */
+    const rootF1 = await mkdtemp(join(tmpdir(), 'yan-goal-f1-'))
+    try {
+      const store = new service.GoalStore({ root: rootF1, now: () => 9000 })
+      await store.load()
+      const key = 'C:/tmp/sessions/f1.jsonl'
+      await store.report(key, { reportId: 'rp-f1', phase: 'executing', goalRevision: 0 })
+
+      /* A2：暂停 ≠ 放弃 */
+      await store.setPaused(key, true)
+      ok(store.isPaused(key) === true, 'A2：暂停意图落盘（不是只在内存里）')
+      const pausedArm = await store.armContinue(key)
+      ok(pausedArm.armed === false && pausedArm.reason === 'paused', 'A2：暂停后不再安排自动续接')
+      ok(shared.isActiveGoalPhase(store.state(key).phase), 'A2：暂停不改变目标阶段（区别于放弃目标）')
+      await store.setPaused(key, false)
+      const resumedArm = await store.armContinue(key)
+      ok(resumedArm.armed === true && resumedArm.round === 1, 'A2：用户明确恢复后重新可以安排')
+
+      /* A6：同一条待发操作幂等 */
+      const pendingOp = store.resumeOf(key)?.operationId
+      const roundBefore = store.autoContinueCount(key)
+      const duplicate = await store.armContinue(key, { consumed: async () => false })
+      ok(duplicate.armed === false && duplicate.reason === 'pending', 'A6：已有未消费的续行时不重复 arm')
+      ok(store.autoContinueCount(key) === roundBefore, 'A6：重复 arm 不消耗轮数额度（报告 8 次也不该烧完 8 轮）')
+      ok(store.resumeOf(key)?.operationId === pendingOp, 'A6：旧的待发操作不会被覆盖（新 operationId 不凭空出现）')
+      const afterConsumed = await store.armContinue(key, { consumed: async () => true })
+      ok(afterConsumed.armed === true && afterConsumed.round === roundBefore + 1, 'A6：真实消费之后才安排下一轮')
+
+      /* A4：重复拦下的消费游标独立于目标失败记录 */
+      const keyR = 'C:/tmp/sessions/f1-repeat.jsonl'
+      /* 目录名 / 键清洗从真源取（不在这里硬编码，否则改名时两边会静默错开） */
+      const repeatGuard = await import('../out/test/repeat-guard.mjs')
+      const guardDir = join(rootF1, repeatGuard.REPEAT_GUARD_DIR)
+      const guardFile = join(guardDir, `${repeatGuard.repeatGuardKey('runner-f1')}.json`)
+      await mkdir(guardDir, { recursive: true })
+      const writeBlocks = async (blocks) =>
+        writeFile(guardFile, JSON.stringify({ blocks, tool: 'bash', updatedAt: 1 }), 'utf8')
+
+      await store.ensureAutonomousGoal(keyR, '把重复拦下记成失败签名')
+      await store.report(keyR, {
+        reportId: 'rp-r1',
+        phase: 'executing',
+        goalRevision: store.state(keyR).revision
+      })
+      await writeBlocks(2)
+      const baseline = await store.consumeRepeatBlocks('runner-f1', keyR)
+      ok(baseline === false, 'A4：新目标第一次消费只建立基线（历史 blocks 不算进来）')
+      ok(store.state(keyR).phase !== 'blocked', 'A4：旧 blocks 不会让全新目标立刻 blocked')
+
+      await writeBlocks(3)
+      const counted = await store.consumeRepeatBlocks('runner-f1', keyR)
+      ok(counted === true && store.state(keyR).failure?.count === 1, 'A4：基线之后的新增拦下才计入失败签名')
+      await store.consumeRepeatBlocks('runner-f1', keyR)
+      ok(store.state(keyR).failure?.count === 1, 'A4：同一水位重复消费不重复记账')
+
+      /* 报进展（failure 被清）→ 旧 blocks 不能再计一遍（旧实现就是在这里把人打成 blocked） */
+      await store.report(keyR, {
+        reportId: 'rp-r2',
+        phase: 'executing',
+        goalRevision: store.state(keyR).revision,
+        evidence: ['已经换了一条路']
+      })
+      await store.consumeRepeatBlocks('runner-f1', keyR)
+      ok(store.state(keyR).phase !== 'blocked', 'A4：报进展清掉 failure 后旧 blocks 不再计一遍')
+
+      /* 换目标：游标按目标身份重建，新目标不承担旧痕迹 */
+      const oldGoalId = store.state(keyR).goalId
+      await store.startPursued(keyR, { goal: '换一件事', outcome: '做完了' })
+      ok(store.state(keyR).goalId !== oldGoalId, 'A4：换目标（用例前置）')
+      await store.consumeRepeatBlocks('runner-f1', keyR)
+      ok(store.state(keyR).failure === null, 'A4：新目标不承担上一个目标欠下的拦下次数')
+
+      /* A2 的另一半：放弃目标会把暂停一并收掉（目标已终态，暂停没有意义） */
+      const keyStop = 'C:/tmp/sessions/f1-stop.jsonl'
+      await store.report(keyStop, { reportId: 'rp-s1', phase: 'executing', goalRevision: 0 })
+      await store.setPaused(keyStop, true)
+      const stopped = await store.stop(keyStop, null)
+      ok(stopped?.phase === 'stopped', 'A2：显式放弃目标进入 stopped 终态')
+      ok(store.isPaused(keyStop) === false, 'A2：放弃目标时暂停标志一并收掉')
+      ok((await store.armContinue(keyStop)).reason === 'not_active', 'A2：已放弃的目标不再 arm')
+
+      /* A3：改档后未消费的续行该不该留 —— 纯判据（handler 只负责调它） */
+      ok(shared.keepsGoalResumeOnModeChange('autonomous', false) === true, 'A3：切到自主档保留续行')
+      ok(shared.keepsGoalResumeOnModeChange('standard', true) === true, 'A3：pursue 目标与档位正交（标准档也留）')
+      ok(shared.keepsGoalResumeOnModeChange('standard', false) === false, 'A3：自主切回标准档且非 pursue → 作废续行')
+      ok(shared.keepsGoalResumeOnModeChange('clarify', false) === false, 'A3：切到计划档同样作废')
+    } finally {
+      await rm(rootF1, { recursive: true, force: true })
     }
 
     /* 旧文件兼容：S3c 之前的 goals.json 没有 kind / autoContinues */
@@ -540,5 +640,50 @@ export async function runGoalTests(ok) {
     }
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+
+  /* ------------------- 持续目标（`+` 菜单 → 目标，与档位正交） ------------------- */
+  {
+    const root = await mkdtemp(join(tmpdir(), 'yan-goal-pursue-'))
+    try {
+      const store = new service.GoalStore({ root })
+      await store.load()
+      const key = 'C:/tmp/sessions/pursue.jsonl'
+      const brief = { goal: '把加号菜单做成 codex 式', outcome: '菜单三项可点 + 两张截图' }
+
+      const goal = await store.startPursued(key, brief)
+      ok(goal.pursue === true, 'startPursued 置上 pursue（与档位正交的判据）')
+      ok(
+        goal.brief?.goal === brief.goal && goal.brief?.outcome === brief.outcome,
+        '用户的原话与达成判据都存下来了'
+      )
+      ok(goal.phase === 'planning' && goal.revision === 1, '从 planning / rev1 起步')
+
+      /* 续行正文必须复述判据：模型自己总结的目标容易越做越小 */
+      const summary = shared.goalContinueSummary(goal, 1)
+      ok(summary.includes(brief.outcome), '续行正文带上达成判据（不许模型自己改写验收标准）')
+
+      /* 重新设一个目标是**换事**：旧步骤清掉、续接计数归零 */
+      await store.armContinue(key)
+      const again = await store.startPursued(key, { goal: '换一件事', outcome: '换一件事做完' })
+      ok(again.revision === 2, '重设目标推进 revision')
+      ok(again.steps.length === 0, '重设目标清掉旧步骤（留着只会让续行正文列一堆无关步骤）')
+      ok(store.autoContinueCount(key) === 0, '重设目标把连续续接计数归零')
+
+      /* 磁盘往返：pursue / brief 必须真的落盘 */
+      const reread = new service.GoalStore({ root })
+      await reread.load()
+      const back = reread.state(key)
+      ok(back.pursue === true && back.brief?.outcome === '换一件事做完', 'pursue 与 brief 真的写进了 goals.json')
+
+      /* 脏值不造身份：旧记录与脏值读进来必须是 false */
+      ok(
+        shared.normalizeGoalState({ goalId: 'g', phase: 'executing' }).pursue === false,
+        '旧记录（没有 pursue 字段）读进来是 false'
+      )
+      ok(shared.normalizeGoalState({ pursue: 'yes' }).pursue === false, '脏值不凭空造一个持续目标')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   }
 }

@@ -674,6 +674,94 @@
   line-height: var(--lh-tight);
 }
 
+/* 67. `+` 菜单（2026-09-22）
+   外观复用 `.mode-menu` / `.mode-item`，只补「分组标题」这一层：
+   能力可能很多，没有标题时「文件和文件夹」与「某个 MCP 服务器」
+   看上去是同一类东西。 */
+.plus-menu {
+  /* 能力很多时菜单不能无限长：内部滚动，不把发送按钮顶出窗口 */
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.plus-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+
+.plus-group-label {
+  padding: 2px var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* 目标表单（`+` 菜单的第二层）：两栏 + 一行动作 */
+.plus-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+}
+
+.plus-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plus-field-label {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.plus-input {
+  width: 100%;
+  resize: vertical;
+  padding: 4px 6px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+}
+
+.plus-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.plus-actions {
+  display: flex;
+  gap: var(--sp-1);
+  justify-content: flex-end;
+}
+
+.plus-start,
+.plus-back {
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+}
+
+.plus-start {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 两栏没写全就不该能开始：按住禁用的按钮只是制造一次无声失败 */
+.plus-start:disabled {
+  color: var(--fg-mute);
+  background: transparent;
+  cursor: not-allowed;
+}
+
 /* 66. 排队消息（输入框上方）
    每行：[图标] 文本 ................ [插队]
    插队按钮只在 follow-up 行出现（steering 已经在插话了，显示状态即可）。 */

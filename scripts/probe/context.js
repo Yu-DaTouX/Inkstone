@@ -127,9 +127,24 @@
   await sleep(300)
   const sum3 = q('[data-testid="rp-context"] .rp-ctx-main')?.textContent ?? ''
   const tokensLine3 = q('[data-testid="ctx-tokens"]')?.textContent ?? ''
-  out.push('  摘要: ' + JSON.stringify(sum3) + ' / tokens 行: ' + JSON.stringify(tokensLine3))
-  ok(tokensLine3.includes('128k') && tokensLine3.includes('184k'), '同样的 128k，分母换成工作集 184k')
-  ok(sum3.includes('70%'), '百分比按工作集算（128/183.5 ≈ 70%）')
+  const wsLine = q('[data-testid="ctx-working-set-line"]')?.textContent ?? ''
+  out.push(
+    '  摘要: ' +
+      JSON.stringify(sum3) +
+      ' / tokens 行: ' +
+      JSON.stringify(tokensLine3) +
+      ' / 工作集行: ' +
+      JSON.stringify(wsLine)
+  )
+  /*
+   * C-5（2026-09-22）改了分母口径：主值分母是**有效模型窗口**，工作集单独一行。
+   * 旧断言要求「同样的 128k，分母换成工作集」是改版前的设计 —— 留着它
+   * 只会永远假红（`128k / 240k = 100%` 会被读成「1M 模型满了」）。
+   */
+  ok(tokensLine3.includes('128k') && tokensLine3.includes('262k'), '主值分母仍是有效模型窗口 262k（C-5）')
+  ok(sum3.includes('49%'), '主百分比按窗口算（128/262 ≈ 49%，C-5）')
+  ok(wsLine.includes('128k') && wsLine.includes('184k'), '工作集单独一行：128k / 184k')
+  ok(wsLine.includes('70%'), '工作集行的百分比按工作集算（128/183.5 ≈ 70%）')
   ok(q('[data-testid="ctx-main"]')?.getAttribute('data-mode') === 'working-set', 'data-mode=working-set')
   ok(qa('[data-testid="ctx-stage-mark"]').length === 3, '进度条上有三条阶段刻度')
   ok(!!q('[data-testid="ctx-next-stage"]'), '有「下一步」说明行')

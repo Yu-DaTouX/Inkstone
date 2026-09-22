@@ -154,7 +154,7 @@ const GROUP_USAGE = {
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
   ready  声明「信息已经问清，可以开工」。两种写法都行：
-         · 内联（**澄清档只能这样**——那一档不能写文件）：
+         · 内联（**计划档只能这样**——那一档不能写文件）：
            yan goal ready --transition-id tr-<唯一> --confidence 0.97 --goal "…" \
              --deliverable "…" --scope "…" --constraints "…" --acceptance "…" \
              --mode-revision <从 goal status 读> --goal-revision <从 goal status 读>

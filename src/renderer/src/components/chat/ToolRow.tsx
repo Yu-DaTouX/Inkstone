@@ -94,7 +94,7 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
   const taskPlan = taskPlanCommand(call.name, call.args)
   /*
    * 实施-05 S3：`yan goal ready|report|status` 同样是砚内置能力（宿主持目标状态），
-   * 卡片必须说出来 —— 否则用户只看到一行 bash，不知道那是「澄清档的就绪提交」。
+   * 卡片必须说出来 —— 否则用户只看到一行 bash，不知道那是「计划档的就绪提交」。
    * 与任务计划互斥：一行命令不会同时属于两个组。
    */
   const goalCmd = taskPlan ? null : goalCommand(call.name, call.args)

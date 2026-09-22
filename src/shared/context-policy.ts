@@ -126,6 +126,58 @@ export const LARGE_CONTEXT_POLICY_PRESETS: Record<'balanced' | 'long', ContextPo
 }
 
 /**
+ * 与设置层同口径的归一化：**与默认值相同的字段不会留在覆盖里**。
+ *
+ * 为什么必须照做：`LARGE_CONTEXT_POLICY_PRESETS` 的 `windowRatio: 0.7` 与默认值一样，
+ * 落盘后会被丢掉，于是覆盖只剩 `{ workingSetCap: 600_000 }`。
+ * 拿「键的数量」当判据会让设置页与右栏都说「这不是试行档」，
+ * 而用户明明点的是试行档按钮 —— 2026-09-22 的真实 Electron 探针就是这样踩到的。
+ */
+function effectiveOverrides(overrides: ContextPolicyOverrides): Record<string, unknown> {
+  const base = DEFAULT_CONTEXT_POLICY as unknown as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined || value === null) continue
+    if (base[key] === value) continue
+    out[key] = value
+  }
+  return out
+}
+
+/**
+ * 这份模型级覆盖是否**行为等价于**某个大窗口试行档（混合覆盖一律返回 undefined）。
+ *
+ * 设置页（哪个按钮亮）与右栏（现在用的是哪档）必须用同一个判据：
+ * 各写一份的话，用户会在右栏看到「均衡 600K」而设置页显示「自定义」——
+ * 这正是 C-5 要消除的那类「界面上的数不等于真正在用的数」。
+ * 「等价」而不是「字面相等」：只设 `workingSetCap: 600_000` 与
+ * `{ workingSetCap: 600_000, windowRatio: 0.7 }`（= 默认 0.7）是同一件事。
+ */
+export function largePresetOf(overrides?: ContextPolicyOverrides): 'balanced' | 'long' | undefined {
+  if (!overrides) return undefined
+  const mine = effectiveOverrides(overrides)
+  for (const preset of ['balanced', 'long'] as const) {
+    const target = effectiveOverrides(LARGE_CONTEXT_POLICY_PRESETS[preset])
+    const keys = new Set([...Object.keys(mine), ...Object.keys(target)])
+    let same = true
+    for (const key of keys) {
+      if (mine[key] !== target[key]) {
+        same = false
+        break
+      }
+    }
+    if (same) return preset
+  }
+  return undefined
+}
+
+/** 试行档的显示名 i18n key（设置页按钮与右栏档位行共用，不手拼字符串） */
+export const LARGE_PRESET_NAME_KEYS: Record<'balanced' | 'long', string> = {
+  balanced: 'set.ctxModelPresetBalanced',
+  long: 'set.ctxModelPresetLong'
+}
+
+/**
  * 算工作集预算。
  *
  * 窗口未知（0 / NaN）或**小到装不下预留与余量**时返回 `null` —— 策略在这种模型上

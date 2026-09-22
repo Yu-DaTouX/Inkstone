@@ -8,7 +8,7 @@ import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
-import { WORK_MODES, nextWorkMode, type WorkMode } from '../../../../shared/work-mode'
+import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
 import { parseSubagentCommand } from '../../../../shared/subagent-command'
 
 /**
@@ -105,7 +105,6 @@ export function Composer() {
   const addFileRefPaths = useStore((s) => s.addFileRefPaths)
   const removeAttachment = useStore((s) => s.removeAttachment)
   const clearAttachments = useStore((s) => s.clearAttachments)
-  const pickImages = useStore((s) => s.pickImages)
   const startSubagent = useStore((s) => s.startSubagent)
   const newSession = useStore((s) => s.newSession)
   const compact = useStore((s) => s.compact)
@@ -119,8 +118,6 @@ export function Composer() {
    */
   const workModeState = useStore((s) => s.workMode)
   const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const setWorkMode = useStore((s) => s.setWorkMode)
-  const workModeTab = useStore((s) => s.settings?.workModeTab !== false)
   const activeWorkMode: WorkMode = workModeState?.mode ?? defaultWorkMode
   const autonomous = activeWorkMode === 'autonomous'
   /** 模式按钮：Esc 从输入框把焦点送到这里（避开键盘陷阱） */
@@ -817,6 +814,26 @@ export function Composer() {
     setCursor(el.selectionStart)
   }, [])
 
+  /**
+   * 把一段文本插到光标处（`+` 菜单里的「能力」用它把引用写进输入框）。
+   *
+   * 为何不直接 `setValue(value + text)`：那会把光标丢到末尾，
+   * 用户接着写的位置就没了。这里插在光标处，并把光标移到插入内容之后。
+   */
+  const insertAtCursor = (text: string): void => {
+    const el = ref.current
+    const at = el && document.activeElement === el ? el.selectionStart : (cursor ?? value.length)
+    const next = `${value.slice(0, at)}${text}${value.slice(at)}`
+    setValue(next)
+    const pos = at + text.length
+    setCursor(pos)
+    /* 选区必须在 React 写完 value 之后设，否则会被这一帧的渲染覆盖 */
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(pos, pos)
+    })
+  }
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     /* 原生 capture 兜底已经处理过的 Tab 不得再被 React 处理一次。 */
     if (e.defaultPrevented) return
@@ -887,31 +904,12 @@ export function Composer() {
     }
 
     /*
-     * Tab 快切工作模式（实施-05 §3）。
+     * 工作模式快切（实施-05 §3）在 2026-09-22 改成**全局快捷键**（默认 `Ctrl+Tab`）。
      *
-     * 优先级（从上到下，已经在前面处理掉的不会走到这里）：
-     *   ① IME 组合态 —— 输入法的 Tab 不能抢（菜单分支已检查，这里再查一次）；
-     *   ② 补全菜单有候选 —— Tab 是「填入」，不能切模式；
-     *   ③ 长文模式 —— 保持原编辑 / 焦点行为，不抢；
-     *   ④ 无修饰键的裸 Tab —— 循环 标准 → 澄清 → 自主；
-     *   ⑤ 带修饰键的 Tab（Shift/Alt/Ctrl）不拦，保持系统焦点移动。
-     * 切换只改模式，**不发送、不清草稿、不动选区与附件**。
+     * 这里不再拦裸 Tab：那是输入框里唯一的「移到下一个控件」键，被抢掉后
+     * 键盘用户只能靠 Esc 逃出输入框，Tab 补全弹窗也要绕开它。
+     * 快捷键的实现在 `App.tsx`（焦点在哪都生效），与输入框无关。
      */
-    if (
-      e.key === 'Tab' &&
-      workModeTab &&
-      !expanded &&
-      !disabled &&
-      !e.nativeEvent.isComposing &&
-      !e.shiftKey &&
-      !e.ctrlKey &&
-      !e.altKey &&
-      !e.metaKey
-    ) {
-      e.preventDefault()
-      void setWorkMode(nextWorkMode(activeWorkMode))
-      return
-    }
 
     /*
      * 发送键。
@@ -961,37 +959,15 @@ export function Composer() {
     /*
      * Esc → 焦点送到模式按钮（实施-05 §3）。
      *
-     * 为什么要有：Tab 快切把 Tab 键从「移动焦点」里拿走了，键盘用户若只会用
-     * Tab 就会被困在输入框里。无补全、非长文、不在跑回合时把焦点交出去，
-     * 模式按钮上方向键 / Enter 都能用。
+     * 快捷键改成 `Ctrl+Tab` 之后这条依然有用：键盘用户得先能**走到**模式按钮上
+     * （按钮上方向键 / Enter 都能用），而不是只能记住一个组合键。
+     * 无补全、非长文、不在跑回合时把焦点交出去。
      */
     if (e.key === 'Escape' && !expanded && !busy && !disabled) {
       e.preventDefault()
       modeButtonRef.current?.focus()
     }
   }
-
-  /*
-   * Electron 的真实 Tab 事件有时会在 React 合成事件到达前被原生焦点移动吞掉。
-   * 在 document capture 阶段再守一层，但只针对输入框本身：其它控件仍保持系统
-   * 的 Tab 焦点遍历，补全 / IME / 长文 / 显式关掉开关也不被抢。
-   */
-  useEffect(() => {
-    if (!workModeTab) return undefined
-    const onCapture = (event: KeyboardEvent): void => {
-      if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
-      if (event.isComposing || expanded || disabled) return
-      const target = event.target
-      if (!(target instanceof HTMLTextAreaElement) || target.dataset.testid !== 'composer') return
-      const completionOpen = menu.open && (slashMatches.length > 0 || atMatches.length > 0)
-      if (completionOpen) return
-      event.preventDefault()
-      event.stopPropagation()
-      void setWorkMode(nextWorkMode(activeWorkMode))
-    }
-    document.addEventListener('keydown', onCapture, true)
-    return () => document.removeEventListener('keydown', onCapture, true)
-  }, [activeWorkMode, atMatches.length, disabled, expanded, menu.open, setWorkMode, slashMatches.length, workModeTab])
 
   return (
     <div
@@ -1161,14 +1137,7 @@ export function Composer() {
               <span className="mode-badge cmd">{t('composer.cmdMode')}</span>
             ) : null}
 
-            <button
-              className="ctool"
-              onClick={() => void pickImages()}
-              title={t('composer.attach')}
-              data-testid="composer-attach"
-            >
-              <Icon name="plus" size={12} />
-            </button>
+            <PlusMenu onInsert={insertAtCursor} />
 
             {/* 工作模式（实施-05）：原位显示当前模式 + 菜单，Tab 可快切 */}
             <WorkModePicker buttonRef={modeButtonRef} />
@@ -1370,7 +1339,7 @@ function QueueStack() {
 /**
  * 工作模式菜单（实施-05 §3）。
  *
- * 原位显示「标准 / 澄清 / 自主 ▾」，菜单单选项带一句说明。三种输入方式：
+ * 原位显示「标准 / 计划 / 自主 ▾」，菜单单选项带一句说明。三种输入方式：
  *   · 鼠标：点按钮 → 点选项；
  *   · 键盘：按钮上 ↑↓ 打开，菜单里 ↑↓ 移动、Enter / Space 选定、Esc 关闭；
  *   · Tab 快切（可在设置里关）：输入框里裸 Tab 循环三档。
@@ -1506,6 +1475,273 @@ function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonEl
               <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
             </button>
           ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * `+` 菜单（2026-09-22）：codex 式「添加」入口。
+ *
+ * 为什么不再让 `+` 直接开图片选择器：图片只是**其中一种**能加进来的东西。
+ * 「文件和文件夹」「图片」「能力」并排之后，用户不用先猜 `+` 会做什么。
+ *
+ * ⚠️ 菜单是 `fixed` 定位：`.composer` 有 `overflow: hidden`（圆角与自主光带
+ *    需要它），`absolute` 会被整块裁掉 —— 与 `.mode-menu` / `.mt-pop` 同一个坑。
+ */
+function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
+  const t = useT()
+  const pickImages = useStore((s) => s.pickImages)
+  const pickFiles = useStore((s) => s.pickFiles)
+  const setGoal = useStore((s) => s.setGoal)
+  const openSettings = useStore((s) => s.openSettings)
+  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const [caps, setCaps] = useState<{ id: string; title: string; hint: string }[] | null>(null)
+  /* 目标表单：菜单内的第二层，不另开浮层（浮层叠浮层在窄屏上会互相遮） */
+  const [composing, setComposing] = useState(false)
+  const [goalText, setGoalText] = useState('')
+  const [outcomeText, setOutcomeText] = useState('')
+  const rootRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const goalInputRef = useRef<HTMLTextAreaElement>(null)
+  const MENU_WIDTH = 340
+
+  /* 打开时量按钮坐标并把焦点交给菜单 —— 否则方向键到不了菜单里 */
+  useEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    const el = buttonRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
+      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
+    }
+    menuRef.current?.focus()
+  }, [open])
+
+  /* 点外部关闭（菜单是浮层，不能一直挡着输入区） */
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  /*
+   * 能力清单**打开时才拉**：它要读磁盘上的技能目录与 MCP 配置，
+   * 每次渲染都拉会把输入区变成一个会打磁盘的组件。
+   */
+  useEffect(() => {
+    if (!open || caps) return
+    let alive = true
+    void (async () => {
+      try {
+        const snap = await window.yan.capabilities.snapshot()
+        if (!alive) return
+        setCaps([
+          ...snap.skills.map((s) => ({ id: `skill:${s.id}`, title: s.title, hint: s.description })),
+          ...snap.servers.map((s) => ({
+            id: `mcp:${s.id}`,
+            title: s.title,
+            hint: s.enabled ? s.transport : `${s.transport} · ${t('cap.disabled')}`
+          }))
+        ])
+      } catch {
+        /* 读不到就当没有能力 —— 菜单本身仍然可用 */
+        if (alive) setCaps([])
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [open, caps, t])
+
+  const close = (): void => {
+    setOpen(false)
+    setComposing(false)
+    buttonRef.current?.focus()
+  }
+
+  /* 进目标表单时把焦点交给第一栏 —— 否则键盘用户要 Tab 一路找过去 */
+  useEffect(() => {
+    if (open && composing) goalInputRef.current?.focus()
+  }, [open, composing])
+
+  /** 建立持续目标：成功才把消息模板写进输入框（失败时输入框不该被动过） */
+  const startGoal = async (): Promise<void> => {
+    const goal = goalText.trim()
+    const outcome = outcomeText.trim()
+    if (!goal || !outcome) return
+    const res = await setGoal({ goal, outcome })
+    if (!res.ok) return
+    close()
+    onInsert(t('plus.goalSeed', { goal, outcome }))
+    setGoalText('')
+    setOutcomeText('')
+  }
+
+  return (
+    <div className="mode-picker" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        className="ctool"
+        title={t('composer.attach')}
+        data-testid="composer-attach"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+          } else if (e.key === 'Escape' && open) {
+            e.preventDefault()
+            close()
+          }
+        }}
+      >
+        <Icon name="plus" size={12} />
+      </button>
+
+      {open ? (
+        <div
+          className="mode-menu plus-menu"
+          role="menu"
+          data-testid="plus-menu"
+          ref={menuRef}
+          tabIndex={-1}
+          style={{ width: MENU_WIDTH, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
+        >
+          {composing ? (
+            /*
+             * 目标表单：目标 + **可衡量的成果**两栏。
+             * 第二栏不是可选的 —— 「不达成不结束」需要一条能验收的判据，
+             * 否则模型永远可以宣布自己完成了。
+             */
+            <div className="plus-compose" data-testid="plus-goal-compose">
+              <span className="plus-group-label">{t('plus.goalTitle')}</span>
+              <label className="plus-field">
+                <span className="plus-field-label">{t('plus.goalField')}</span>
+                <textarea
+                  ref={goalInputRef}
+                  className="plus-input"
+                  data-testid="plus-goal-text"
+                  rows={2}
+                  value={goalText}
+                  placeholder={t('plus.goalPlaceholder')}
+                  onChange={(e) => setGoalText(e.target.value)}
+                />
+              </label>
+              <label className="plus-field">
+                <span className="plus-field-label">{t('plus.outcomeField')}</span>
+                <textarea
+                  className="plus-input"
+                  data-testid="plus-outcome-text"
+                  rows={2}
+                  value={outcomeText}
+                  placeholder={t('plus.outcomePlaceholder')}
+                  onChange={(e) => setOutcomeText(e.target.value)}
+                />
+              </label>
+              <div className="plus-actions">
+                <button
+                  className="plus-start"
+                  data-testid="plus-goal-start"
+                  disabled={!goalText.trim() || !outcomeText.trim()}
+                  onClick={() => void startGoal()}
+                >
+                  {t('plus.goalStart')}
+                </button>
+                <button
+                  className="plus-back"
+                  data-testid="plus-goal-back"
+                  onClick={() => setComposing(false)}
+                >
+                  {t('plus.goalBack')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+          <button
+            className="mode-item"
+            role="menuitem"
+            data-testid="plus-files"
+            onClick={() => {
+              close()
+              void pickFiles()
+            }}
+          >
+            <span className="mode-item-label">{t('plus.files')}</span>
+            <span className="mode-item-desc">{t('plus.filesHint')}</span>
+          </button>
+          <button
+            className="mode-item"
+            role="menuitem"
+            data-testid="plus-images"
+            onClick={() => {
+              close()
+              void pickImages()
+            }}
+          >
+            <span className="mode-item-label">{t('plus.images')}</span>
+            <span className="mode-item-desc">{t('plus.imagesHint')}</span>
+          </button>
+          <button
+            className="mode-item"
+            role="menuitem"
+            data-testid="plus-goal"
+            onClick={() => setComposing(true)}
+          >
+            <span className="mode-item-label">{t('plus.goal')}</span>
+            <span className="mode-item-desc">{t('plus.goalHint')}</span>
+          </button>
+
+          <div className="plus-group" data-testid="plus-capabilities">
+            <span className="plus-group-label">{t('plus.capabilities')}</span>
+            {caps === null ? null : caps.length === 0 ? (
+              /*
+               * 空态可直接点：用户看到「去设置里加」时的下一个动作就是去那里，
+               * 让他再自己找一遍设置入口是多一层无用功。
+               */
+              <button
+                className="mode-item plus-empty"
+                data-testid="plus-cap-empty"
+                onClick={() => {
+                  close()
+                  openSettings('capabilities')
+                }}
+              >
+                <span className="mode-item-label">{t('plus.capEmpty')}</span>
+                <span className="mode-item-desc">{t('plus.capEmptyHint')}</span>
+              </button>
+            ) : (
+              caps.map((cap) => (
+                <button
+                  key={cap.id}
+                  className="mode-item"
+                  role="menuitem"
+                  data-testid={`plus-cap-${cap.id}`}
+                  onClick={() => {
+                    close()
+                    onInsert(t('plus.useCapability', { title: cap.title }))
+                  }}
+                >
+                  <span className="mode-item-label">{cap.title}</span>
+                  <span className="mode-item-desc">{cap.hint}</span>
+                </button>
+              ))
+            )}
+          </div>
+            </>
+          )}
         </div>
       ) : null}
     </div>

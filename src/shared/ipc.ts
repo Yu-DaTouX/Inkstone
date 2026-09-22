@@ -37,11 +37,11 @@ import type { KnowledgeKind } from './project-memory'
 /* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
-import type { GoalState } from './goal'
+import type { GoalState, PursuedBrief } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 export type { WorkMode, WorkModeState } from './work-mode'
-export type { GoalState, GoalPhase } from './goal'
+export type { GoalState, GoalPhase, PursuedBrief } from './goal'
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
@@ -863,12 +863,21 @@ export interface AppSettings {
   /** 默认在已授权来源与权限范围内自动接入。 */
   capabilityStrategy: CapabilityStrategy
   /**
-   * 输入框 `Tab` 快切工作模式（实施-05 §3）。
+   * 模式快捷键的开关（2026-09-22，替代旧的 `workModeTab`）。
    *
    * `undefined` = 没改过 = **开**；只有明确关掉才落 `false`
    * （与 `contextFold` 同一个「默认态不落盘」约定）。
+   * 旧字段 `workModeTab: false`（裸 Tab 快切关掉）在读取时迁到这里，之后不再写回。
    */
-  workModeTab?: boolean
+  workModeShortcutEnabled?: boolean
+  /**
+   * 模式快捷键的组合键文本（例如 `Ctrl+Tab` / `Ctrl+Shift+M`）。
+   *
+   * - `undefined` = 没设过 = 用默认的 `Ctrl+Tab`；
+   * - `''` = 显式不要快捷键（与开关字段分工不同：这里表达「没有绑定」）；
+   * - 其余必须是合法组合键，规范化后再落盘（`normalizeWorkModeShortcut`）。
+   */
+  workModeShortcut?: string
   /**
    * 发送键。
    *
@@ -1347,6 +1356,13 @@ export interface ContextPolicyView {
   sourceKey?: string
   /** 被覆盖（非默认）的字段名，界面据此解释“哪些值不是默认” */
   overridden: string[]
+  /**
+   * 当前**精确** `provider/model` 层的覆盖原文（没有精确覆盖时不传）。
+   *
+   * 只给界面判断「现在是不是在用某个大窗口试行档」（`largePresetOf`）——
+   * 只传 `source: 'model'` 不够：模型级也可以是自定义数值。
+   */
+  modelOverrides?: ContextPolicyOverrides
 }
 
 /**
@@ -2398,6 +2414,23 @@ export interface YanBridge {
    */
   getGoal(): Promise<{ goal: GoalState; mode: WorkModeState }>
   /**
+   * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果。
+   *
+   * 两栏都必填：允许缺「可衡量的成果」等于造一个永远没法验收的目标。
+   * 一旦设上，非自主档也会在回合收尾后继续被叫醒（与档位正交）。
+   */
+  setGoal(brief: PursuedBrief): Promise<
+    { ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }
+  >
+  /**
+   * 放弃当前目标（实施-14 A2）。
+   *
+   * 与「按停止」（`yan:abort` → paused，可恢复）分开：这里是目标级终态
+   * （`phase: 'stopped'`），下一次要重新开工必须重新设目标或重新推进。
+   * 两者混在一起就会出现「停一下 = 目标没了」或「目标完了还能被自动叫醒」。
+   */
+  stopGoal(): Promise<{ ok: boolean; goal?: GoalState | null; error?: string }>
+  /**
    * 交接状态（实施-05 S5b-2）——**只读**。
    *
    * 写入通道只有一条：宿主自己（薄层只产原文，解析与落盘都在主进程）。
@@ -2506,6 +2539,14 @@ export interface YanBridge {
   /* 附件 */
   /** 弹系统文件选择框，读成 base64（图片） */
   pickImages(): Promise<Attachment[]>
+  /**
+   * 「文件和文件夹」入口（`+` 菜单）：只返回**路径**，不读内容。
+   *
+   * 为什么不在这里读成附件：文件引用要过 `describeFiles` 的统一校验
+   * （越界、可读性、大小），并与拖入 / 文件树走同一条登记链路；
+   * 更要紧的是大文件**不能被复制进上下文**，只有路径才安全。
+   */
+  pickFilePaths(): Promise<string[]>
 
   /* 设置 */
   getSettings(): Promise<AppSettings>

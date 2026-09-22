@@ -54,9 +54,9 @@ export async function runQuestionTests(ok) {
     await setModeFile('clarify')
     const clarify = handlers.before_agent_start({ systemPrompt: 'BASE' })
     ok(
-      /Clarify mode is ON/.test(clarify?.systemPrompt ?? '') &&
+      /Plan mode is ON/.test(clarify?.systemPrompt ?? '') &&
         /yan question ask/.test(clarify?.systemPrompt ?? ''),
-      '澄清模式：系统提示允许通过宿主 CLI 提问'
+      '计划模式：系统提示允许通过宿主 CLI 提问'
     )
 
     await setModeFile('autonomous')
@@ -71,7 +71,7 @@ export async function runQuestionTests(ok) {
     await clearModeFile()
     await setSettings({ defaultWorkMode: 'clarify', autonomous: true })
     const byNewField = handlers.before_agent_start({ systemPrompt: 'BASE' })
-    ok(/Clarify mode is ON/.test(byNewField?.systemPrompt ?? ''), '回退链：新字段 defaultWorkMode 优先于旧布尔 autonomous')
+    ok(/Plan mode is ON/.test(byNewField?.systemPrompt ?? ''), '回退链：新字段 defaultWorkMode 优先于旧布尔 autonomous')
 
     await setSettings({ autonomous: true })
     const byLegacy = handlers.before_agent_start({ systemPrompt: 'BASE' })

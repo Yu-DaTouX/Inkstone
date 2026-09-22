@@ -4,7 +4,7 @@
  * ══════════════════════════════════════════════════════════════════
  * 它守的是什么
  * ══════════════════════════════════════════════════════════════════
- * 澄清档能不能「自动开工」，取决于一件事：**就绪转移只发生一次**。
+ * 计划档能不能「自动开工」，取决于一件事：**就绪转移只发生一次**。
  * 所以这一层不是「存个状态」，而是把三条不变式钉在磁盘上：
  *
  *   1. **键 = 会话文件路径**（不是 pi 的 `sessionId`）。
@@ -22,12 +22,15 @@
 
 import { mkdir, rename, writeFile, rm } from 'node:fs/promises'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
 import {
   applyGoalReport,
+  applyPursuedGoal,
   applyReadyTransition,
+  applyRepeatFailure,
   AUTONOMOUS_CONTINUE_LIMIT,
   checkGoalReport,
   checkReadySubmission,
@@ -38,12 +41,35 @@ import {
   readyResumeSummary,
   type GoalReportInput,
   type GoalState,
+  type PursuedBrief,
   type ReadySubmission,
   type ReadyTransitionResult,
   type ResumeKind,
   type ResumeRecord
 } from '../shared/goal'
 import { normalizeSessionFileKey, sanitizeWorkModeKey } from './work-mode-service'
+import {
+  parseRepeatGuardSnapshot,
+  pendingRepeatFailures,
+  REPEAT_BLOCK_SIGNATURE,
+  REPEAT_GUARD_DIR,
+  repeatGuardKey
+} from '../shared/repeat-guard'
+
+/**
+ * 读薄层写的「重复动作被拦下」计数（不存在 / 脏值一律当 0）。
+ *
+ * 同步读：调用点在回合收尾（轮结束的 state 推送）上，文件很小，
+ * 而且这里**不能**因为一个计数文件而把收尾链路变成 async 分支 ——
+ * 读不到就当没有（宁可少记一次失败，不拖慢回合）。
+ */
+function readRepeatGuardCounter(root: string, runtimeKey: string): unknown {
+  try {
+    return JSON.parse(readFileSync(join(root, REPEAT_GUARD_DIR, `${repeatGuardKey(runtimeKey)}.json`), 'utf8'))
+  } catch {
+    return null
+  }
+}
 
 export const GOAL_FILE_NAME = 'goals.json'
 
@@ -80,14 +106,44 @@ export interface GoalEntry {
    * 只在用户没有插话时累加：用户发一句话（`resetAutoContinues`）就归零。
    * 到 `AUTONOMOUS_CONTINUE_LIMIT` 就不再 arm 续行，等用户介入 ——
    * 这是「无人看管时不能无限烧额度」的落点。
+   *
+   * ⚠️ 它只数**真的安排了**的续接：同一条待发操作被重复 arm 不会把它推高（A6）。
    */
   autoContinues: number
+  /**
+   * 用户按了停止（实施-14 A2）。
+   *
+   * 与「放弃目标」（`phase: 'stopped'`）是两件事：停止一个回合只是
+   * 「现在别跑了」，目标本身还在推进阶段。分开的理由是**恢复的出口不同** ——
+   * 暂停要用户再发一句话 / 明确改档才继续，而放弃是目标级终态。
+   * 持久化（不是进程内标志）：重启后也不能把用户刚按下的停止悄悄忘掉。
+   */
+  paused: boolean
+  /**
+   * 「重复动作被拦下」计入失败签名的消费游标（实施-14 A4）。
+   *
+   * 按**目标身份**分立：`goalId` 与当前目标不同就只重建基线、不记账 ——
+   * 上一个目标欠下的拦下次数不该由新目标承担。
+   * 不用目标自己的 `failure.count` 当账本：它会被「换签名 / 报进展」清掉，
+   * 于是同一批旧 blocks 会被再计一遍，把正常推进的目标打成 blocked。
+   */
+  repeatCursor: { goalId: string; blocks: number } | null
   updatedAt: number
 }
 
 export interface GoalDocument {
   version: 1
   entries: Record<string, GoalEntry>
+}
+
+/** 一次「接着干」的 arm 结果；`reason` 的每一种都有对应的可读出口（实施-14 A6）。 */
+export type ArmContinueReason = 'not_active' | 'limit' | 'paused' | 'pending'
+
+export interface ArmContinueResult {
+  armed: boolean
+  reason?: ArmContinueReason
+  /** 已安排的连续续接轮数（`armed:false` 时是当前计数）。 */
+  round: number
 }
 
 export interface GoalCommitResult {
@@ -246,7 +302,26 @@ async function writeGoalResumeSnapshotUnlocked(
 }
 
 function emptyEntry(): GoalEntry {
-  return { goal: emptyGoal(), transitions: {}, reports: {}, resume: null, autoContinues: 0, updatedAt: 0 }
+  return {
+    goal: emptyGoal(),
+    transitions: {},
+    reports: {},
+    resume: null,
+    autoContinues: 0,
+    paused: false,
+    repeatCursor: null,
+    updatedAt: 0
+  }
+}
+
+/** 脏消费游标一律当「没有」—— 重建基线比错记失败安全。 */
+function sanitizeRepeatCursor(raw: unknown): { goalId: string; blocks: number } | null {
+  if (!raw || typeof raw !== 'object') return null
+  const item = raw as { goalId?: unknown; blocks?: unknown }
+  const goalId = typeof item.goalId === 'string' ? item.goalId.trim() : ''
+  const blocks = Number(item.blocks)
+  if (!goalId || !Number.isFinite(blocks) || blocks < 0) return null
+  return { goalId, blocks: Math.floor(blocks) }
 }
 
 /** 脏续行记录一律当「没有」（宁可少发一次，也不能拿半个记录去发消息）。 */
@@ -299,6 +374,9 @@ export function sanitizeGoalDocument(raw: unknown): GoalDocument {
         typeof item.autoContinues === 'number' && Number.isFinite(item.autoContinues) && item.autoContinues > 0
           ? Math.floor(item.autoContinues)
           : 0,
+      /* 旧记录没有这两个字段：一律当「没暂停、没有游标」，不凭空造状态 */
+      paused: item.paused === true,
+      repeatCursor: sanitizeRepeatCursor(item.repeatCursor),
       updatedAt: typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : 0
     }
   }
@@ -389,10 +467,43 @@ export class GoalStore {
       entry.reports = {}
       entry.resume = null
       entry.autoContinues = 0
+      /* 新目标：用户没暂停过它，重复拦下的消费游标也从零（A4） */
+      entry.paused = false
+      entry.repeatCursor = null
       entry.updatedAt = at
       this.trim(entry)
       await this.persist()
       return { created: true, goal: entry.goal }
+    })
+  }
+
+  /**
+   * 用户显式设定持续目标（`+` 菜单 → 目标）。
+   *
+   * 与 `ensureAutonomousGoal` 的区别：那个是**档位**行为（自主档先替模型登记），
+   * 这个是人**明确要求做成的事**，所以：
+   *   · 重开一个目标（旧步骤清掉）—— 用户重新写了一遍目标，就是换了一件事；
+   *   · 置 `pursue`，于是非自主档也会在回合收尾后继续被叫醒（与档位正交）。
+   */
+  async startPursued(sessionKey: string, brief: PursuedBrief): Promise<GoalState> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return emptyGoal(this.now())
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      const at = this.now()
+      entry.goal = applyPursuedGoal(entry.goal, brief, `goal-${randomUUID()}`, at)
+      /* 换了目标：旧的幂等记录与未发续行全部作废，续接计数从零开始 */
+      entry.transitions = {}
+      entry.reports = {}
+      entry.resume = null
+      entry.autoContinues = 0
+      /* 换目标就是用户明确重新开工：暂停意图与新目标的拦下游标都重置（A2 / A4） */
+      entry.paused = false
+      entry.repeatCursor = null
+      entry.updatedAt = at
+      this.trim(entry)
+      await this.persist()
+      return entry.goal
     })
   }
 
@@ -475,6 +586,8 @@ export class GoalStore {
       }
       /* 新目标开工：连续续接计数从零开始（S3c 与就绪转移共用这一份账） */
       entry.autoContinues = 0
+      /* 明确开工 = 不再暂停（A2）；重复拦下的游标属于同一目标，保留 */
+      entry.paused = false
       /* 先落盘再返回：调用方拿到 ok 时，续行的前提已经成立。 */
       entry.updatedAt = at
       this.trim(entry)
@@ -524,23 +637,101 @@ export class GoalStore {
   }
 
   /**
+   * 把薄层「重复动作被拦下」的累计计数计入目标失败签名（2026-09-22）。
+   *
+   * 为什么不放在 `report` 里：这两条链路完全不相干 —— 重复拦下可能发生在
+   * 一个还没报过目标的会话里（那时目标不存在，也就不该凭空建一个）。
+   * 所以这里**只改已经存在且还在推进的目标**，其余一律不碰。
+   *
+   * 「已经记过几次」用**独立持久化的消费游标**（`entry.repeatCursor`），
+   * 不用目标自己的 `failure.count`（实施-14 A4）：后者会被「换签名 / 报进展」清掉，
+   * 于是同一批旧 blocks 会被再计一遍，把正常推进的目标一瞬间打成 blocked。
+   * 游标按 `goalId` 分立 —— 换了目标只重建基线，不把上一个目标欠下的痕迹算过来。
+   *
+   * 返回是否真的落盘（调用方只用于日志）。
+   */
+  async consumeRepeatBlocks(runtimeKey: string, sessionKey: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return false
+      const entry = this.doc.entries[key]
+      if (!entry) return false
+      if (!isActiveGoalPhase(entry.goal.phase) || !entry.goal.goalId) return false
+
+      /* 计数文件按**运行实例 id** 命名（薄层用的是 `YAN_SESSION_ID`，与续行快照同一个约定） */
+      const snapshot = parseRepeatGuardSnapshot(readRepeatGuardCounter(this.root, runtimeKey))
+      const goalId = entry.goal.goalId
+      const cursor = entry.repeatCursor?.goalId === goalId ? entry.repeatCursor.blocks : null
+      const at = this.now()
+
+      /*
+       * 首次见到这个目标（或换了目标）：**只建立基线**，不记账。
+       * 这是 A4 现场的那一步 —— 旧 blocks 属于上一个目标 / 上一段历史，
+       * 新目标不该因为“上一次被拦过两次”就直接 blocked。
+       */
+      if (cursor === null) {
+        entry.repeatCursor = { goalId, blocks: snapshot.blocks }
+        entry.updatedAt = at
+        await this.persist()
+        return false
+      }
+
+      const pending = pendingRepeatFailures(cursor, snapshot.blocks)
+      if (pending <= 0) {
+        /* 薄层把计数清零（用户发言 / 目标报进展）→ 游标跟着回落，否则永远数不动 */
+        if (snapshot.blocks < cursor) {
+          entry.repeatCursor = { goalId, blocks: snapshot.blocks }
+          entry.updatedAt = at
+          await this.persist()
+        }
+        return false
+      }
+
+      for (let i = 0; i < pending; i++) {
+        entry.goal = applyRepeatFailure(entry.goal, REPEAT_BLOCK_SIGNATURE, at)
+      }
+      /* 消费到新的水位（不是“加上 pending”——脏文件下两者不等，会再次重复计） */
+      entry.repeatCursor = { goalId, blocks: snapshot.blocks }
+      entry.updatedAt = at
+      /*
+       * 进了终态（`blocked`）就把没发出的续行清掉 —— 与 `report` 同一条规则：
+       * 不然「停在 executing 时 arm 的那条继续」会在目标已经被拦停之后才发出去，
+       * 把模型重新叫起来干那件刚被拦下的事。
+       */
+      if (!isActiveGoalPhase(entry.goal.phase)) {
+        entry.resume = null
+        entry.autoContinues = 0
+      }
+      await this.persist()
+      return true
+    })
+  }
+
+  /**
    * 安排一次「自主档接着干」的续接（S3c）。
    *
    * 只负责**判断与落盘**，「模式是不是自主档」由调用方（宿主）判 ——
    * 这一层不该知道工作模式（那是另一份文档的另一份状态）。
    *
-   * 三个条件同时成立才 arm：
+   * 五个条件同时成立才 arm：
    *   ① 目标还在推进阶段（终态不 arm）；
    *   ② 目标已经开始推进（`revision > 0`）—— 目标可以由宿主在自主档收到
    *      用户请求时登记，也可以由模型的第一份 report 建立；
-   *   ③ 连续续接次数还没到上限。
+   *   ③ 用户没有按停止（`paused`，实施-14 A2）；
+   *   ④ 连续续接次数还没到上限；
+   *   ⑤ 没有**还没被消费的**「接着干」（实施-14 A6）—— 同一条待发操作必须幂等，
+   *      否则模型的每一份进展报告都会覆盖上一条未发出的指令，而轮数已经空转到上限。
    *
-   * 返回值要能让调用方区分「没到可续接的状态」与「到上限了」：
-   * 后者要告诉模型停下来向用户交代，不能默默不续。
+   * `options.consumed` 是「这条续行薄层发出去没有」的查询（按 runner 的消费文件）；
+   * 不传就视为**没消费**（宁可少 arm 一次，也不能重复执行）。
+   *
+   * 返回值要能让调用方区分「没到可续接的状态」与「到上限 / 被暂停 / 已有待发」：
+   * 每一种都要有可读出口，不能默默不续。
    */
   async armContinue(
-    sessionKey: string
-  ): Promise<{ armed: boolean; reason?: 'not_active' | 'limit'; round: number }> {
+    sessionKey: string,
+    options: { consumed?: (operationId: string) => Promise<boolean> } = {}
+  ): Promise<ArmContinueResult> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
       if (!key) return { armed: false, reason: 'not_active' as const, round: 0 }
@@ -550,7 +741,14 @@ export class GoalStore {
       if (!isActiveGoalPhase(entry.goal.phase) || entry.goal.revision <= 0) {
         return { armed: false, reason: 'not_active' as const, round }
       }
+      if (entry.paused) return { armed: false, reason: 'paused' as const, round }
       if (round >= AUTONOMOUS_CONTINUE_LIMIT) return { armed: false, reason: 'limit' as const, round }
+
+      const existing = entry.resume
+      if (existing?.kind === 'continue') {
+        const consumed = options.consumed ? await options.consumed(existing.operationId) : false
+        if (!consumed) return { armed: false, reason: 'pending' as const, round }
+      }
 
       const at = this.now()
       entry.autoContinues = round + 1
@@ -564,6 +762,35 @@ export class GoalStore {
       await this.persist()
       return { armed: true, round: round + 1 }
     })
+  }
+
+  /**
+   * 用户按了停止 / 明确改档：登记或解除暂停意图（实施-14 A2）。
+   *
+   * 只改 `paused`，**不动** `resume`：撤销待发续行由 `clearResume` /
+   * 快照清理负责。分开的理由是它们不总是同时发生 —— 例如目标级
+   * `stopped` 会清续行，而“暂停”只是让下一次 arm 不被安排。
+   *
+   * 返回「是否真的改过」（调用方用于日志，不用于判定成功）。
+   */
+  async setPaused(sessionKey: string, paused: boolean): Promise<boolean> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return false
+      const entry = this.doc.entries[key]
+      if (!entry || entry.paused === paused) return false
+      entry.paused = paused
+      entry.updatedAt = this.now()
+      await this.persist()
+      return true
+    })
+  }
+
+  /** 读暂停意图（不落盘；没读过盘也先看内存）。 */
+  isPaused(sessionKey: string): boolean {
+    const key = normalizeSessionFileKey(sessionKey)
+    if (!key) return false
+    return this.doc.entries[key]?.paused === true
   }
 
   /**
@@ -584,8 +811,10 @@ export class GoalStore {
     })
   }
 
-  /** 用户停止：撤销未消费的转移资格（§4「用户停止则废弃未消费的转移」）。 */
-  async stop(sessionKey: string, goal: GoalState): Promise<GoalState | null> {
+  /** 用户放弃目标：撤销未消费的转移资格并进入终态（§4「用户停止则废弃未消费的转移」）。
+   *
+   * `goal` 传 null 表示用当前存储里的目标（不再叠加一份副本）。 */
+  async stop(sessionKey: string, goal: GoalState | null): Promise<GoalState | null> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
       if (!key) return null
@@ -603,6 +832,8 @@ export class GoalStore {
       /* 用户停止优先：未发出的续行一并作废（§5）；连续续接计数也归零（S3c） */
       entry.resume = null
       entry.autoContinues = 0
+      /* 目标已放弃：暂停标志没有意义了（A2） */
+      entry.paused = false
       entry.updatedAt = at
       await this.persist()
       return entry.goal

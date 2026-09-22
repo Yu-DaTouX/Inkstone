@@ -112,20 +112,28 @@
   log('=== 2. 第二回合（让上一次的工具结果落到 recentTail 之外） ===')
   const t2 = await turn(
     '上一轮那个很长的工具结果已经被归档成一条以 "[Archived tool result]" 开头的占位，里面有一行 "Ref:"。' +
-      '请先调用 context_recall 工具（ref 用那一行的值），然后只回复原文第一行是什么。',
+      '请先用 bash 工具执行 `yan context recall --ref <那一行的值>`，再读它 stdout 里 resultFile 指向的文件，只回复该文件第一行是什么。',
     180_000
   )
   ok(t2.sent, '第二回合已发出')
   /*
-   * 模型会不会去调 context_recall 是模型行为，不是代码行为 —— 只报告、
-   * 不作断言。召回链路的确定性证据在单测里（直接调工具的 execute），
-   * 以及退出后的审计文件（有就报出来）。
+   * 模型会不会去用 `yan context recall` 是模型行为，不是代码行为 —— 只报告。
+   * 召回链路的确定性证据在宿主单测（[test-context-recall.mjs](../test-context-recall.mjs)
+   * 直接调 `recallArchivedContext`）与退出后的审计文件里。
+   * 这里额外拿一条**反向信号**：薄层不再注册模型工具（01 S5 收口），
+   * 所以模型侧不应该再出现 `context_recall` 这个工具名 —— 这条是断言，
+   * 因为它证的是代码事实（工具表），不是模型偏好。
    */
-  const recallCalls = (S().messages ?? [])
+  const recallToolCalls = (S().messages ?? [])
     .flatMap((m) => m.toolCalls ?? [])
     .filter((t) => t.name === 'context_recall')
-    .map((t) => (t.output ?? '').slice(0, 120))
-  log('  context_recall 调用（只报告）: ' + JSON.stringify(recallCalls))
+  ok(recallToolCalls.length === 0, '模型侧不再有 context_recall 工具调用（回读已走宿主 CLI）', `${recallToolCalls.length} 次`)
+
+  const cliRecallCalls = (S().messages ?? [])
+    .flatMap((m) => m.toolCalls ?? [])
+    .filter((t) => /"action":"recall"|"kind":"context"/.test(String(t.output ?? '')))
+    .map((t) => ({ name: t.name, output: String(t.output ?? '').slice(0, 160) }))
+  log('  yan context recall 调用（只报告）: ' + JSON.stringify(cliRecallCalls))
 
   /*
    * ---------------- 3. 第三回合：过期召回正文应被清成存根 ----------------

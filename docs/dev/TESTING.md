@@ -163,6 +163,7 @@ llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
 | 场景 | 做什么 | 用哪个模型 |
 |---|---|---|
 | `tokens` | 用量 / 速度 | 默认（LongCat），不可用时 Laguna |
+| `usageagg`（cost 0） | **整轮用量聚合与工具等待分段**（实施-11 H-6b）：注入多轮工具调用的回合 → 用量条显示合计（不是末条）、缺用量时标 `≥`、页脚 tooltip 给出「其中等工具」（区间并集） | 不调模型 |
 | `conn` | 连接状态竞态 | 默认（LongCat），不可用时 Laguna |
 | `e2e` | 真发一条消息（流式 + 工具） | 默认（LongCat），不可用时 Laguna |
 | `queue` | 排队 + Esc 回收 + **N09 边界**（四路并发入队 / 相同文本两条 / 对同文本撤回） | 默认（LongCat），不可用时 Laguna |
@@ -268,9 +269,11 @@ llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
   case 预置一份**只有旧布尔**的 `desktop.json`（`legacyAutonomous: true`），验：「旧 `autonomous=true`
   → 新字段 `defaultWorkMode=autonomous`」（新字段优先、幂等），以及新会话按默认值启动。
   菜单与键盘：三档各带一句说明、方向键移动高亮、`Esc` 关闭并把焦点送回触发按钮。
-  **Tab 快切用真按键**（`keys: 'tab,tab'` + `keysDelay: 15000`）—— 它在**渲染端**消费，
-  合成事件验不到「焦点真的没被移走」；探针得先把首次引导关掉、把焦点放进输入框，
+  **模式快捷键用真按键**（`keys: 'ctrl+tab,ctrl+tab'` + `keysDelay: 15000`）—— 它在**渲染端**消费，
+  合成事件验不到「全局生效」；探针故意把焦点放在模式按钮上（**不在输入框**）再等按键，
   所以第一枚按键用 `YAN_PROBE_KEYS_DELAY` 推到 15s（默认 1800ms 只够挂监听器）。
+  同一场还有：裸 Tab 不再被拦（断言 `defaultPrevented === false`）、关掉开关、
+  以及**录音改键**（Ctrl+Shift+K 落盘 → 新键生效 / 旧 Ctrl+Tab 失效 → 「默认」按钮清掉自定义值）。
   **A/B 隔离**：两个真会话各自切档，互相切回后各自的值还在（旧实现是一个全局布尔，这条就是它的反例）。
   **光带“真的在跑”（实施-09 S2 第三批）**：不只断言 `animation-name` —— 还断言两条伪元素动画
   `playState === 'running'`，并隔 450ms 两次采样 `currentTime` 都在增长。名字对不代表在动：

@@ -1,10 +1,10 @@
 /**
- * 目标状态与「澄清就绪」转移（实施-05 S3 的契约与纯逻辑）。
+ * 目标状态与「计划就绪」转移（实施-05 S3 的契约与纯逻辑）。
  *
  * ══════════════════════════════════════════════════════════════════
  * 它解决什么
  * ══════════════════════════════════════════════════════════════════
- * 澄清档（`clarify`）的目标是：**把目标问清楚，然后自动开工**。
+ * 计划档（`clarify`）的目标是：**把目标问清楚，然后自动开工**。
  * 「清楚」不能由模型自己说了算，也不能靠一句「可以开始了吗？」——
  * 所以这里定三件事：
  *
@@ -55,6 +55,17 @@ export interface GoalStep {
   evidence?: string[]
 }
 
+/**
+ * 用户**显式设定**的持续目标（`+` 菜单 → 目标）。
+ *
+ * `outcome` 就是界面那句「定义可衡量的成果」：达成判据必须能被检查，
+ * 而不是「我觉得做完了」。
+ */
+export interface PursuedBrief {
+  goal: string
+  outcome: string
+}
+
 export interface FailureTrack {
   /** 失败签名：模型给的稳定文本（同一签名视为「同一无变化失败」）。 */
   signature: string
@@ -72,6 +83,16 @@ export interface GoalState {
   evidence: string[]
   /** `blocked` 时必填。 */
   blocker: string | null
+  /**
+   * 用户**显式设定**的持续目标（`+` 菜单 → 目标）。
+   *
+   * 为何要单独一位：自主档的「接着干」是**档位**行为，而「我就是要你把
+   * 这件事做成」是**目标**行为 —— 两者正交（2026-09-22 用户口径）。
+   * 置位后，非自主档也会在回合收尾时继续被叫醒，直到 `completed` / `blocked`。
+   */
+  pursue: boolean
+  /** 用户的原话（目标 + 可衡量成果）：续行时复述，避免模型自己把目标做小。 */
+  brief: PursuedBrief | null
   /** 同一失败签名的连续次数。 */
   failure: FailureTrack | null
   updatedAt: number
@@ -86,6 +107,8 @@ export function emptyGoal(now = 0): GoalState {
     steps: [],
     evidence: [],
     blocker: null,
+    pursue: false,
+    brief: null,
     failure: null,
     updatedAt: now
   }
@@ -346,6 +369,33 @@ export function applyGoalReport(
   }
 }
 
+/**
+ * 记一次「薄层拦下的重复动作」为失败签名（2026-09-22 的单轮兜底）。
+ *
+ * 与 `applyGoalReport` 里的那条失败累计**共用同一个阈値与形状**
+ * （`FAILURE_BLOCK_THRESHOLD` / `FailureTrack`），差别只有两点：
+ *   · 它不接 `report`：拦下只说明「又被拦了一次」，不代表目标阶段变了，
+ *     所以没到阈値时**不动 `phase`**（否则一次重复就能把 executing 改写掉）；
+ *   · 到了阈値一律 `blocked` —— 与 §5 的「同一失败连续两次 → blocked」对齐，
+ *     且 `blocked` 不假装完成（这就是兜底想要的结局：停住等人看）。
+ *
+ * 签名由调用方传入（约定为 `REPEAT_BLOCK_SIGNATURE`，见 `shared/repeat-guard.ts`）。
+ */
+export function applyRepeatFailure(current: GoalState, signature: string, now = Date.now()): GoalState {
+  const same = !!current.failure && current.failure.signature === signature
+  const count = same ? current.failure!.count + 1 : 1
+  const blocked =
+    count >= FAILURE_BLOCK_THRESHOLD && current.phase !== 'completed' && current.phase !== 'blocked'
+  return {
+    ...current,
+    phase: blocked ? 'blocked' : current.phase,
+    blocker: blocked ? (current.blocker ?? `同一失败连续 ${count} 次（${signature}）`) : current.blocker,
+    failure: blocked ? null : { signature, count },
+    revision: current.revision + 1,
+    updatedAt: now
+  }
+}
+
 /** 就绪转移后的目标状态（原子提交的另一半：模式切标准由调用方一起做）。 */
 export function applyReadyTransition(current: GoalState, result: ReadyTransitionResult, now = Date.now()): GoalState {
   return {
@@ -355,6 +405,9 @@ export function applyReadyTransition(current: GoalState, result: ReadyTransition
     steps: current.steps,
     evidence: current.evidence,
     blocker: null,
+    /* 就绪转移不改「持续目标」身份：那是用户在 `+` 菜单里单独设的 */
+    pursue: current.pursue,
+    brief: current.brief,
     failure: null,
     updatedAt: now
   }
@@ -363,8 +416,30 @@ export function applyReadyTransition(current: GoalState, result: ReadyTransition
 /* ------------------------------------------------- 续行（S3b / S3c） */
 
 /**
+ * 用户设定了持续目标（`+` 菜单 → 目标）：重开一个计划，并把「不达成不结束」标记上。
+ *
+ * 为何要清空 steps / evidence：旧目标的步骤对新目标毫无意义，留着只会让
+ * 续行正文给模型列一堆无关步骤 —— 那比空更坏（它会接着做上一件事）。
+ */
+export function applyPursuedGoal(
+  current: GoalState,
+  brief: PursuedBrief,
+  goalId: string,
+  now = Date.now()
+): GoalState {
+  return {
+    ...emptyGoal(now),
+    goalId,
+    phase: 'planning',
+    revision: current.revision + 1,
+    pursue: true,
+    brief
+  }
+}
+
+/**
  * 续行的来源：
- *   · `ready`    —— 澄清档就绪转移之后的「开始执行」（S3b）；
+ *   · `ready`    —— 计划档就绪转移之后的「开始执行」（S3b）；
  *   · `continue` —— 自主档目标还在推进时的「接着干」（S3c）；
  *   · `retry`    —— 模型侧出错之后的「自动继续」（S5c）。
  * 三者共用一个落盘通道与同一个薄层消费器，区别只在正文与消息标签。
@@ -409,6 +484,21 @@ export function isActiveGoalPhase(phase: GoalPhase): boolean {
 }
 
 /**
+ * 用户改档之后，未消费的续行还该不该留着（实施-14 A3）。
+ *
+ * 两种会「接着干」的情形：
+ *   · 新档是**自主档** —— 档位本身就意味着让它自己跑；
+ *   · 目标带 `pursue` —— 用户在 `+` 菜单里明确要求的持续目标，与档位正交，
+ *     标准档下同样要推进。
+ *
+ * 其余（切到标准 / 计划且只是档位驱动）都要作废：旧实现用 `mode !== 'standard'` 判，
+ * 于是**从自主切回标准档**时，上一条「接着干」仍留在快照里，下一轮又自己跑起来。
+ */
+export function keepsGoalResumeOnModeChange(mode: string, pursue: boolean): boolean {
+  return mode === 'autonomous' || pursue === true
+}
+
+/**
  * 自主档续接的正文（S3c）。
  *
  * 与就绪续行不同：这里没有「刚刚确认的理解」可复述，任务已经跑起来了，
@@ -423,6 +513,14 @@ export function goalContinueSummary(goal: GoalState, round: number): string {
     '目标还没完成：不要问我、不要等我确认，接着干。',
     `- 当前阶段：${goal.phase}`
   ]
+  /*
+   * 用户设定的持续目标要把**原话与达成判据**复述一遍：模型自己总结的目标
+   * 容易越做越小（“先搭个架子就行”），而判据是用户写的，不许由模型改写。
+   */
+  if (goal.brief) {
+    lines.push(`- 用户原话：${goal.brief.goal}`)
+    lines.push(`- 达成判据（必须自己验证，不能自己说了算）：${goal.brief.outcome}`)
+  }
   if (pending.length) {
     lines.push('- 未完成步骤：')
     for (const step of pending.slice(0, 12)) {
@@ -439,7 +537,7 @@ export function goalContinueSummary(goal: GoalState, round: number): string {
 /** 就绪摘要的正文：既进会话（留痕），也进控制消息（模型看到的就是它）。 */
 export function readyResumeSummary(understanding: ReadyUnderstanding): string {
   return [
-    '工作模式已切到标准档（澄清阶段结束）。请开始执行这个已经确认过的目标：',
+    '工作模式已切到标准档（计划阶段结束）。请开始执行这个已经确认过的目标：',
     `- 目标：${understanding.goal}`,
     `- 交付物：${understanding.deliverable}`,
     `- 范围：${understanding.scope}`,
@@ -508,7 +606,7 @@ function asList(value: unknown): string[] {
 /**
  * 把 `yan goal ready` 的参数归一到就绪提交。
  *
- * 为什么必须有内联形态：澄清档**不能写文件**（那正是这个档位存在的意义），
+ * 为什么必须有内联形态：计划档**不能写文件**（那正是这个档位存在的意义），
  * 所以提交不能只支持 `--request-file`：
  *
  *   yan goal ready --transition-id tr-1 --confidence 0.97 \
@@ -581,6 +679,11 @@ export function normalizeGoalState(raw: unknown): GoalState {
     failureRaw && typeof failureRaw.signature === 'string' && typeof failureRaw.count === 'number'
       ? { signature: failureRaw.signature, count: Math.max(1, Math.floor(failureRaw.count)) }
       : null
+  const briefRaw = item.brief as Partial<PursuedBrief> | undefined
+  const brief =
+    briefRaw && typeof briefRaw.goal === 'string' && typeof briefRaw.outcome === 'string'
+      ? { goal: briefRaw.goal.trim(), outcome: briefRaw.outcome.trim() }
+      : null
   return {
     goalId: typeof item.goalId === 'string' ? item.goalId : '',
     phase,
@@ -588,6 +691,9 @@ export function normalizeGoalState(raw: unknown): GoalState {
     steps: sanitizeSteps(item.steps),
     evidence: Array.isArray(item.evidence) ? item.evidence.map((e) => text(e)).filter(Boolean) : [],
     blocker: typeof item.blocker === 'string' && item.blocker.trim() ? item.blocker.trim() : null,
+    /* 只有真的办了设定才置位 —— 脏值不能凭空造一个「持续目标」。 */
+    pursue: item.pursue === true,
+    brief,
     failure,
     updatedAt: typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : 0
   }

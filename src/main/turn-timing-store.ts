@@ -20,11 +20,23 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TurnTerminalReason, TurnTimingMeta, UIMessage } from '../shared/ipc'
+import type { WaitSpan } from '../shared/turns'
 
 export const TURN_TIMING_VERSION = 1
 
 export interface TurnTimingRecord extends TurnTimingMeta {
   v: number
+  /**
+   * 这一段工作的 **run** id（实施-11 H-6b）。
+   *
+   * 一个 `logicalTurnId` 下可能有多个 run（自动继续会开新的 pi 回合）：
+   * 同一 run 的中途快照与终止快照是同一段工作（后者覆盖前者），
+   * 不同 run 是串起来的另一段工作（用时相加）。旧记录没有这个字段，
+   * 读回时保持「同一 ID 后者胜」的旧语义，不把历史翻倍。
+   */
+  runId?: string
+  /** 工具等待分段（H-6b）：并行分支不重复计，求和走区间并集。 */
+  waitSpans?: WaitSpan[]
   /**
    * 锚定的**用户消息 id**（`m<idx>`）。
    *
@@ -134,7 +146,66 @@ function parseRecord(line: string): TurnTimingRecord | null {
     ...(typeof item.monotonicMs === 'number' && Number.isFinite(item.monotonicMs)
       ? { monotonicMs: item.monotonicMs }
       : {}),
-    ...(typeof item.final === 'boolean' ? { final: item.final } : {})
+    ...(typeof item.final === 'boolean' ? { final: item.final } : {}),
+    ...(typeof item.runId === 'string' && item.runId ? { runId: item.runId } : {}),
+    ...(Array.isArray(item.waitSpans) ? { waitSpans: parseWaitSpans(item.waitSpans) } : {})
+  }
+}
+
+/** 等待分段容错解析：只收形状完整、且区间不反向的条目。 */
+function parseWaitSpans(raw: unknown[]): WaitSpan[] {
+  const spans: WaitSpan[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const s = item as Partial<WaitSpan>
+    if (typeof s.id !== 'string' || !s.id) continue
+    if (typeof s.name !== 'string') continue
+    if (typeof s.startedAt !== 'number' || typeof s.endedAt !== 'number') continue
+    if (!Number.isFinite(s.startedAt) || !Number.isFinite(s.endedAt)) continue
+    if (s.endedAt < s.startedAt) continue
+    spans.push({ id: s.id, name: s.name, startedAt: s.startedAt, endedAt: s.endedAt })
+  }
+  return spans
+}
+
+/**
+ * 同一逻辑回合的多条记录 → 一条（H-6b）。
+ *
+ * 两类重复必须分开处理，这是本函数存在的理由：
+ *   · **同一 run**（中途快照 + 终止快照）：是同一段工作的两次快照 → 后者胜；
+ *   · **不同 run**（自动继续）：是串起来的另一段真实工作 → 用时**相加**。
+ *
+ * 旧记录（没有 `runId`）无法区分这两种，保持原来的「后者胜」——
+ * 宁可少算，也不能把旧历史的时间翻倍。
+ */
+export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimingRecord {
+  const withRun = list.filter((r) => !!r.runId)
+  if (!withRun.length) return list[list.length - 1]
+  /* 同一 run 后者胜（顺序写入，Map 覆盖即得）。 */
+  const byRun = new Map<string, TurnTimingRecord>()
+  for (const r of withRun) byRun.set(r.runId as string, r)
+  const runs = [...byRun.values()].sort((a, b) => a.startedAt - b.startedAt)
+  if (runs.length === 1) return runs[0]
+
+  const last = runs[runs.length - 1]
+  const sourceIds: string[] = []
+  for (const r of runs) {
+    for (const sid of r.sourceIds) if (!sourceIds.includes(sid)) sourceIds.push(sid)
+  }
+  const waitSpans: WaitSpan[] = []
+  for (const r of runs) {
+    for (const s of r.waitSpans ?? []) waitSpans.push(s)
+  }
+  const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
+  return {
+    ...last,
+    logicalTurnId: id,
+    elapsedMs: Math.max(1, runs.reduce((n, r) => n + r.elapsedMs, 0)),
+    startedAt: Math.min(...runs.map((r) => r.startedAt)),
+    endedAt: Math.max(...runs.map((r) => r.endedAt)),
+    sourceIds,
+    ...(anchorId ? { anchorId } : {}),
+    ...(waitSpans.length ? { waitSpans } : {})
   }
 }
 
@@ -151,10 +222,11 @@ export function effectiveTerminalReason(record: TurnTimingRecord): TurnTerminalR
 }
 
 /**
- * 读回一个会话的全部记录。
+ * 读回一个会话的全部记录（每个**逻辑回合**一条）。
  *
- * 同一 `logicalTurnId` 可能出现多次（回合未结束时写过一次、终止时又写一次）——
- * **后者胜**，因为那才是最终终止原因与最终用时。
+ * 盘上同一 `logicalTurnId` 可能出现多条：中途快照 / 终止快照 / 自动继续。
+ * 合并规则见 `mergeTurnRecords()` —— 同 run 后者胜、不同 run 用时相加。
+ * 旧记录（无 `runId`）保持「后者胜」，不改变已有行为。
  */
 export async function readTurnTimings(
   dataDir: string,
@@ -166,13 +238,16 @@ export async function readTurnTimings(
   } catch {
     return []
   }
-  const byId = new Map<string, TurnTimingRecord>()
+  const byId = new Map<string, TurnTimingRecord[]>()
   for (const line of text.split('\n')) {
     if (!line.trim()) continue
     const record = parseRecord(line)
-    if (record) byId.set(record.logicalTurnId, record)
+    if (!record) continue
+    const list = byId.get(record.logicalTurnId)
+    if (list) list.push(record)
+    else byId.set(record.logicalTurnId, [record])
   }
-  return [...byId.values()]
+  return [...byId.entries()].map(([id, list]) => mergeTurnRecords(id, list))
 }
 
 /**

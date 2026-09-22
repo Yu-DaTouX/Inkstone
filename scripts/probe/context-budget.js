@@ -485,6 +485,107 @@
     await sleep(200)
 
     /*
+     * C-5 尾：右栏也要说清「我现在在哪一档」。
+     * 设置页写着「长材料 · 700K」，回到右栏只看得到一个工作集数字的话，
+     * 用户没法把「这个数怎么来的」对上档位 —— 判据与设置页按钮同源（`largePresetOf`）。
+     * 关设置页后右栏分区要重挂载，这里轮询等它回来。
+     */
+    let presetRow = null
+    for (let i = 0; i < 30; i++) {
+      presetRow = q('[data-testid="ctx-preset"]')
+      if (presetRow) break
+      await sleep(200)
+    }
+    if (!presetRow) {
+      /* 失败时把“为什么看不到”一并留下，不留一个只有 ✗ 的无信息条目 */
+      log(
+        '  · 诊断：contextPolicy=' +
+          JSON.stringify({
+            source: S().session?.contextPolicy?.source ?? null,
+            sourceKey: S().session?.contextPolicy?.sourceKey ?? null,
+            hasModelOverrides: JSON.stringify(S().session?.contextPolicy?.modelOverrides ?? null),
+            hasBudget: !!S().session?.contextPolicy?.budget
+          }) +
+          ' / ctx-main=' +
+          JSON.stringify(q('[data-testid="ctx-main"]')?.textContent ?? null) +
+          ' / ws-line=' +
+          JSON.stringify(q('[data-testid="ctx-working-set-line"]')?.textContent ?? null) +
+          ' / details-toggle=' +
+          JSON.stringify(!!q('[data-testid="ctx-details-toggle"]'))
+      )
+    }
+    if (win >= 800_000) {
+      ok(
+        presetRow?.getAttribute('data-preset') === 'long',
+        `右栏显示当前档位（data-preset=${presetRow?.getAttribute('data-preset')}）`
+      )
+      ok(
+        (presetRow?.textContent ?? '').includes('700K'),
+        `档位行带档位名（实际 ${JSON.stringify(presetRow?.textContent)}）`
+      )
+      /*
+       * 详情默认收起 —— 容量来源属于「算得清才信得过」那一类，展开才看。
+       *
+       * 这里必须**幂等**：第 2 节为了核对预算数字已经展开过一次；无条件
+       * `click()` 会把它翻成收起，而紧随其后的读取还跑在 React 提交之前，
+       * 读到旧 DOM 反而让断言「通过」（2026-09-22 实际踩到，详见本节末尾的注释）。
+       */
+      for (let i = 0; i < 20; i++) {
+        const open = q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded') === 'true'
+        if (open) break
+        q('[data-testid="ctx-details-toggle"]')?.click()
+        await sleep(100)
+      }
+      ok(
+        q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded') === 'true',
+        '点「详情」后展开（幂等：已经开着就不动它）'
+      )
+      const sourceLine = q('[data-testid="ctx-source-line"]')
+      if (!sourceLine) {
+        log(
+          '  · 诊断 details=' +
+            JSON.stringify((q('[data-testid="ctx-details"]')?.textContent ?? null)?.slice(0, 200)) +
+            ' / aria-expanded=' +
+            JSON.stringify(q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded'))
+        )
+      }
+      ok(
+        (sourceLine?.textContent ?? '').includes('模型级'),
+        `详情里给出容量来源（实际 ${JSON.stringify(sourceLine?.textContent)}）`
+      )
+      /*
+       * 回归：详情一旦展开，就该一直开着 —— 无关的 store 推送不该把它收回去。
+       *
+       * ⚠️ 这一段曾经误报（2026-09-22）：上一版在**已经展开**的状态下又无条件
+       *    `click()` 了一次，收起其实是探针自己点出来的；而紧跟其后的读取跑在
+       *    React 提交之前，读到的还是旧 DOM，断言反而「通过」。
+       *    教训：Electron 里「点完立刻读」会读到未提交的 DOM，必须等状态稳定再读。
+       */
+      const expNow = q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded')
+      ok(expNow === 'true', `进入本节时详情仍处于展开（实际 ${JSON.stringify(expNow)}）`)
+      await sleep(400)
+      ok(
+        q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded') === 'true' &&
+          !!q('[data-testid="ctx-details"]'),
+        '静置 400ms 后详情仍展开（没有被后台推送收回）'
+      )
+      window.__yanStore.setState({
+        stats: { ...(S().stats ?? {}), toolCalls: (S().stats?.toolCalls ?? 0) + 1 }
+      })
+      await sleep(400)
+      ok(
+        q('[data-testid="ctx-details-toggle"]')?.getAttribute('aria-expanded') === 'true' &&
+          !!q('[data-testid="ctx-details"]'),
+        'store 推送后详情仍展开（右栏分区的本地展开态不受无关推送影响）'
+      )
+      q('[data-testid="ctx-details-toggle"]')?.click()
+      await sleep(300)
+      ok(!q('[data-testid="ctx-details"]'), '再点一次才收起（探针不留副作用）')
+    } else {
+      ok(!presetRow, '没用试行档时不显示档位行（不编一个档位名）')
+    }
+
+    /*
      * 真换模型：`setModel` 走的是与界面同一条件 IPC。
      * 换到另一个模型后，刚才那条 override 必须**不再生效** —— 这是“按模型配”相对于
      * “按用户配”的全部意义所在（否则它就只是个更麻烦的用户级设置）。

@@ -17,6 +17,7 @@ import type {
   ExtensionUiRequest,
   FilePreview,
   GoalState,
+  PursuedBrief,
   GitScopeRequest,
   MainPush,
   MessagePatch,
@@ -172,6 +173,13 @@ interface Store {
 
   /* UI */
   settings: AppSettings | null
+  /**
+   * 设置页正在录新的模式快捷键（2026-09-22）。
+   *
+   * 放 store 而不是设置页局部状态：全局快捷键监听听在 `App` 上，
+   * 它必须知道「这次按键是在录音」，否则用户按 Ctrl+Shift+K 时会边录边切模式。
+   */
+  shortcutRecording: boolean
   /** 设置面板开关与当前 tab（放 store 里，好让 ContextBar 等组件能直接打开） */
   settingsOpen: boolean
   settingsTab: string
@@ -336,6 +344,13 @@ interface Store {
   syncRunners: () => Promise<void>
   /** 拉取当前会话的内置目标快照（启动 / 切会话时的兜底）。 */
   loadGoal: () => Promise<void>
+  /**
+   * 设定持续目标（`+` 菜单 → 目标）。
+   *
+   * 返回 `ok:false` 时**不**清空现有目标：拒收只表示这次没成立，
+   * 不影响已经在推进的那个目标（否则用户写错一栏就会把任务抹掉）。
+   */
+  setGoal: (brief: PursuedBrief) => Promise<{ ok: boolean }>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
@@ -513,6 +528,11 @@ interface Store {
   removeAttachment: (id: string) => void
   clearAttachments: () => void
   pickImages: () => Promise<void>
+  /**
+   * `+` 菜单的「文件和文件夹」：选完交给 `addFileRefPaths`。
+   * 复用那条链路而不是自己造一份：越界校验、来源菜单记录、去重都在那里。
+   */
+  pickFiles: () => Promise<void>
 
   answerUi: (res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }) => void
   /** 收起 / 展开问题面板（不取消请求） */
@@ -929,6 +949,7 @@ export const useStore = create<Store>((rawSet, get) => {
   commandUse: readCommandUse(),
 
   settings: null,
+  shortcutRecording: false,
   settingsOpen: false,
   settingsTab: 'appearance',
   /**
@@ -1464,6 +1485,21 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ goal: res.goal })
     } catch {
       /* 主进程尚未就绪时保持现状；后续 goal 推送会补齐。 */
+    }
+  },
+
+  setGoal: async (brief) => {
+    try {
+      const res = await window.yan.setGoal(brief)
+      if (!res.ok) {
+        get().notify('error', res.error === 'incomplete' ? '目标和可衡量的成果都要写' : '当前没有可用会话')
+        return { ok: false }
+      }
+      set({ goal: res.goal })
+      return { ok: true }
+    } catch (error) {
+      get().notify('error', error instanceof Error ? error.message : '设定目标失败')
+      return { ok: false }
     }
   },
 
@@ -2473,6 +2509,11 @@ export const useStore = create<Store>((rawSet, get) => {
 
   pickImages: async () => {
     get().addAttachments(await window.yan.pickImages())
+  },
+
+  pickFiles: async () => {
+    const paths = await window.yan.pickFilePaths()
+    if (paths.length) await get().addFileRefPaths(paths)
   },
 
   /* ----------------------------------------------------------------- UI */
