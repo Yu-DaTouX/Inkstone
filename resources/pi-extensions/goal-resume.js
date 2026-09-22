@@ -116,15 +116,19 @@ function readResume() {
   if (!operationId || !summary) return null
   /* 旧快照没有 kind：一律当就绪续行（S3b 的行为不能因为 S3c / S5c 而变） */
   const rawKind = raw?.kind
-  const kind = rawKind === 'continue' || rawKind === 'retry' ? rawKind : 'ready'
+  const kind = rawKind === 'continue' || rawKind === 'retry' || rawKind === 'handoff' ? rawKind : 'ready'
   return { operationId, summary, kind }
 }
 
-/** 续行种类 → 会话里的消息标签（界面 / 会话文件据此分辨是哪种续行）。 */
+/** 续行种类 → 会话里的消息标签（界面 / 会话文件据此分辨是哪种续行）。
+ *
+ * `handoff`（实施-14 F4）是交接的 resume：与目标续行同一套防护、同一个发送方，
+ * 但**不是**同一个语义 —— 它带的是交接包，而且必须是 `custom`（不冒充用户消息）。 */
 const CUSTOM_TYPES = {
   ready: 'yan-goal-ready',
   continue: 'yan-goal-continue',
-  retry: 'yan-auto-continue'
+  retry: 'yan-auto-continue',
+  handoff: 'yan-handoff-resume'
 }
 
 function consumedOperationId() {

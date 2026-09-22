@@ -159,6 +159,8 @@ const api: YanBridge = {
   stopGoal: () => invoke<{ ok: boolean; goal?: GoalState | null; error?: string }>('yan:stopGoal'),
   /* 交接状态（实施-05 S5b-2）：只读快照，探针与（后续）界面共用 */
   getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
+  /* 交接状态的「重试」（实施-14 F5）：只重跑一次调度判定，不强行换段 */
+  retryHandoff: () => invoke<Ok>('yan:retryHandoff'),
   setWorkMode: (mode, expectedRevision) =>
     invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
 

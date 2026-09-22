@@ -415,7 +415,7 @@
   "pkg.showRaw": "展开原始输出",
   "pkg.sourceLine": "来源：{src}",
   "pkg.update": "更新",
-"pkg.warn": "插件 / 包可能执行代码：安装后会以你的身份在这台机器上运行。砚不提供 OS 沙箱；Skill 文件接入会额外做静态恶意内容审查，高风险会拒绝，中风险会保留提醒，即使来源由你指定也不会跳过。其他包仍请核对来源、权限与仓库地址。",
+  "pkg.warn": "插件 / 包可能执行代码：安装后会以你的身份在这台机器上运行。砚不提供 OS 沙箱；Skill 文件接入会额外做静态恶意内容审查，高风险会拒绝，中风险会保留提醒，即使来源由你指定也不会跳过。其他包仍请核对来源、权限与仓库地址。",
   "pkg.working": "处理中…",
   "pr.checks.failure": "检查失败",
   "pr.checks.none": "无检查",
@@ -1156,5 +1156,10 @@
   "workMode.label.clarify": "计划",
   "workMode.label.standard": "标准",
   "workMode.switchFailed": "切换工作模式失败",
-  "workMode.tabTip": "Ctrl+Tab 循环工作模式（可在设置里改键或关掉）"
+  "workMode.tabTip": "Ctrl+Tab 循环工作模式（可在设置里改键或关掉）",
+  "handoff.working": "正在整理上下文，任务继续中",
+  "handoff.done": "上下文已整理，任务继续",
+  "handoff.failed": "整理未完成，已保留当前进度",
+  "handoff.retry": "重试",
+  "handoff.stop": "停止"
 }

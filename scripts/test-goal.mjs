@@ -601,6 +601,65 @@ export async function runGoalTests(ok) {
       await rm(rootF1, { recursive: true, force: true })
     }
 
+    /* ------------------- 实施-14 F3：宿主级目标事实跨片段继承 ------------------- */
+    const rootInherit = await mkdtemp(join(tmpdir(), 'yan-goal-inherit-'))
+    try {
+      const store = new service.GoalStore({ root: rootInherit, now: () => 11000 })
+      await store.load()
+      const src = 'C:/tmp/sessions/inherit-src.jsonl'
+      const dst = 'C:/tmp/sessions/inherit-dst.jsonl'
+      await store.startPursued(src, { goal: '把 X 做完', outcome: 'X 可点且有两张截图' })
+      await store.report(src, {
+        reportId: 'rp-i1',
+        phase: 'executing',
+        goalRevision: store.state(src).revision,
+        steps: [{ title: '第一步', status: 'done' }],
+        evidence: ['npm run test:unit 全绿']
+      })
+      await store.armContinue(src, { consumed: async () => true })
+      await store.setPaused(src, true)
+      const sourceGoal = store.state(src)
+
+      const wrote = await store.inheritTo(src, dst)
+      ok(wrote === true, 'F3：继承写了盘')
+      const dest = store.state(dst)
+      ok(dest.goalId === sourceGoal.goalId, 'F3：目的段保持同一目标身份（换片段不等于换目标）')
+      ok(
+        dest.phase === 'executing' && dest.revision === sourceGoal.revision,
+        'F3：阶段与 revision 原样延续（不重算、不降级）'
+      )
+      ok(dest.evidence.length === sourceGoal.evidence.length, 'F3：已有证据跟着走（同一件事的进展）')
+      ok(dest.pursue === true && dest.brief?.outcome === 'X 可点且有两张截图', 'F3：用户原话与验收标准跨片段保留')
+      ok(store.isPaused(dst) === true, 'F3：用户按过的暂停也跨片段保留')
+      ok(store.resumeOf(dst) === null, 'F3：源片段待发的续行不跟过来（目的段由交接 resume 驱动）')
+      ok(store.autoContinueCount(dst) === 0, 'F3：新片段重新给满自动续接额度')
+
+      await store.inheritTo(src, dst)
+      ok(store.state(dst).goalId === sourceGoal.goalId && store.resumeOf(dst) === null, 'F3：重复继承幂等')
+
+      /* 目的段已有另一个目标：不覆盖（宁可不继承，也不丢真实进展） */
+      const other = 'C:/tmp/sessions/inherit-other.jsonl'
+      await store.startPursued(other, { goal: '另一件事', outcome: '另一件事做完' })
+      const blocked = await store.inheritTo(src, other)
+      ok(blocked === false && store.state(other).brief?.goal === '另一件事', 'F3：目的段已有别的目标时不覆盖')
+
+      const reread = new service.GoalStore({ root: rootInherit })
+      await reread.load()
+      ok(reread.state(dst).goalId === sourceGoal.goalId, 'F3：继承真的落盘（跨实例读回）')
+    } finally {
+      await rm(rootInherit, { recursive: true, force: true })
+    }
+
+    /* F4：续行种类多了 handoff（旧记录仍归 ready） */
+    ok(
+      shared.resumeKindOf({ operationId: 'h-1', at: 1, summary: '交接', kind: 'handoff' }) === 'handoff',
+      'F4：handoff 续行种类被识别'
+    )
+    ok(
+      shared.resumeKindOf({ operationId: 'x', at: 1, summary: '旧' }) === 'ready',
+      'F4：没有 kind 的旧记录仍然当就绪续行'
+    )
+
     /* 旧文件兼容：S3c 之前的 goals.json 没有 kind / autoContinues */
     const rootOld = await mkdtemp(join(tmpdir(), 'yan-goal-old-'))
     try {

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
+import { identityForAwait, useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { ModelThinkingPicker } from '../Pickers'
 import { UsageBar } from './UsageBar'
@@ -1579,8 +1579,14 @@ function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     const goal = goalText.trim()
     const outcome = outcomeText.trim()
     if (!goal || !outcome) return
+    /*
+     * A7（实施-14 F5）：await 之前记下会话身份，回来先核对。
+     * 用户在等响应的这几百毫秒里切了会话时，不能把目标模板插到另一条会话的输入框。
+     */
+    const before = identityForAwait(useStore.getState())
     const res = await setGoal({ goal, outcome })
     if (!res.ok) return
+    if (identityForAwait(useStore.getState()) !== before) return
     close()
     onInsert(t('plus.goalSeed', { goal, outcome }))
     setGoalText('')

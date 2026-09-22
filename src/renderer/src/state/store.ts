@@ -17,6 +17,7 @@ import type {
   ExtensionUiRequest,
   FilePreview,
   GoalState,
+  HandoffView,
   PursuedBrief,
   GitScopeRequest,
   MainPush,
@@ -335,6 +336,13 @@ interface Store {
   workMode: WorkModeState | null
   /** 当前会话的内置目标 / 计划；null = 还没与主进程对齐。 */
   goal: GoalState | null
+  /**
+   * 交接 / 压缩整理状态（实施-14 F5）。
+   *
+   * `null` = 还没与主进程对齐。它不是会话状态，而是「这段工作正在发生的整理」——
+   * 所以界面只在真的有事可报时显示一行（详见 `HandoffNote`）。
+   */
+  handoff: HandoffView | null
   /** 左栏工作区入口；与当前会话的 AgentMode 完全独立。 */
   workspaceMode: WorkspaceMode
 
@@ -496,6 +504,10 @@ interface Store {
    * 这里收到拒绝后把显示恢复成权威值，不让界面出现“已自主”的假象。
    */
   setWorkMode: (mode: WorkMode) => Promise<void>
+  /** 拉一次交接状态（面板挂载 / 回合收尾 / 手动重试后）。 */
+  refreshHandoff: () => Promise<void>
+  /** 用户点「重试」：清残留现场再走一遍调度判定（不强行换段）。 */
+  retryHandoff: () => Promise<void>
   setWorkspaceMode: (mode: WorkspaceMode) => void
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
@@ -600,6 +612,18 @@ function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
     projectId: runner.projectId,
     generation: runner.generation
   }
+}
+
+/**
+ * 一次 await 跨过的会话身份（实施-14 F5 / A7）。
+ *
+ * 主进程的响应回来时，用户可能已经切到别的会话 —— 用它比对就能看出
+ * 「这个结果还属于眼前这条会话吗」。带 `generation`：同一个实例被复用到
+ * 新会话时 runId 不变而代次会变（N12），只比 runId 会漏掉那一种。
+ */
+export function identityForAwait(state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>): string {
+  const runtime = runtimeForState(state)
+  return runtime ? `${runtime.runId}|${runtime.sessionId}|${runtime.generation}` : ''
 }
 
 /** 从渲染端当前投影拼出能力/草稿缓存所需的运行实例身份。 */
@@ -939,6 +963,7 @@ export const useStore = create<Store>((rawSet, get) => {
   sessionRuntimes: {},
   workMode: null,
   goal: null,
+  handoff: null,
   workspaceMode: initialWorkspaceMode(),
 
   models: [],
@@ -1466,6 +1491,38 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  refreshHandoff: async () => {
+    const initial = get()
+    const runnerId = initial.activeRunnerId
+    const sessionId = initial.session?.sessionId
+    try {
+      const res = await window.yan.getHandoff()
+      const current = get()
+      /*
+       * 与 `loadGoal` 同一条理由：交接快照也是会话级事实，
+       * 切会话期间晚到的响应不能盖到刚切过去的那条上。
+       */
+      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return
+      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return
+      set({ handoff: res })
+    } catch {
+      /* 主进程尚未就绪时保持现状 */
+    }
+  },
+
+  retryHandoff: async () => {
+    try {
+      const res = await window.yan.retryHandoff()
+      if (!res.ok) {
+        get().notify('error', res.error ?? '重试交接失败')
+        return
+      }
+      await get().refreshHandoff()
+    } catch (error) {
+      get().notify('error', error instanceof Error ? error.message : '重试交接失败')
+    }
+  },
+
   loadGoal: async () => {
     const initial = get()
     const runnerId = initial.activeRunnerId
@@ -1489,12 +1546,19 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   setGoal: async (brief) => {
+    /*
+     * A7（实施-14 F5）：记下发起时的会话身份，await 回来先核对。
+     * 用户可能在等回复的这几百毫秒里切了会话 —— 那时把目标投影到新视图上
+     * 就是在另一条会话里“凭空多出一个目标”。
+     */
+    const before = identityForAwait(get())
     try {
       const res = await window.yan.setGoal(brief)
       if (!res.ok) {
         get().notify('error', res.error === 'incomplete' ? '目标和可衡量的成果都要写' : '当前没有可用会话')
         return { ok: false }
       }
+      if (identityForAwait(get()) !== before) return { ok: true }
       set({ goal: res.goal })
       return { ok: true }
     } catch (error) {

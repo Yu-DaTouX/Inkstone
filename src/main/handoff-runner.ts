@@ -55,6 +55,13 @@ export interface HandoffSessionTarget {
   projectId?: string
   /** 缺省 = 新建会话（交接的默认路径） */
   sessionFile?: string
+  /**
+   * 打开后是否把它设为**当前选中会话**（缺省 true）。
+   *
+   * 后台交接必须传 false（实施-14 F3）：用户可能正在看另一条会话，
+   * 一次后台换段不该把他的视图抢走。
+   */
+  activate?: boolean
 }
 
 export interface HandoffSessionHandle {
@@ -76,11 +83,33 @@ export interface HandoffRunnerDeps {
    * 实现方用当前项目目录兜底 —— 恢复只是把实例接回来，不重新决定工作目录。
    */
   openSession: (target: HandoffSessionTarget) => Promise<HandoffSessionHandle>
-  /** 向实例发一条用户消息（会真的触发一轮） */
-  send: (runId: string, text: string) => Promise<{ ok: boolean; error?: string }>
+  /**
+   * 把交接 resume 交给实例（实施-14 F4）。
+   *
+   * `resumeId` 一并给出：宿主侧用它写续行快照（薄层按 `operationId` 做消费幂等），
+   * 也从它拼出磁盘证据标记。
+   */
+  send: (runId: string, text: string, resumeId: string) => Promise<{ ok: boolean; error?: string }>
   /** 读会话文件原文（判消费证据；读不到返回 null） */
   readSessionText: (sessionFile: string) => Promise<string | null>
   notify: (message: string, type: 'info' | 'warning' | 'error') => void
+  /**
+   * 这次交接的源实例是不是用户当前正在看的那一个（实施-14 F3）。
+   * 决定目的片段要不要抢选中：后台交接传 false。缺省 true（保留旧行为）。
+   */
+  shouldActivate?: (sourceRunId: string) => boolean
+  /**
+   * 目的片段已建好、**resume 还没发**：宿主在这里继承模式与宿主级目标事实
+   * （实施-14 F3）。必须比 resume 早 —— 否则目的段第一轮会按默认档 /
+   * 空目标启动，用户看到的自主长任务会停在第一个回合。
+   *
+   * 回调自身抛错不阻断交接（继承失败不该让整次换段失败），但宿主应自己留诊断。
+   */
+  onDestinationReady?: (info: {
+    sessionFile: string
+    runId: string
+    sourceSession: string
+  }) => Promise<void>
   now?: () => number
   /** 等证据的轮询（单测注入一个立即返回的实现） */
   pollEvidence?: (probe: () => Promise<boolean>, timeoutMs: number) => Promise<boolean>
@@ -169,10 +198,18 @@ export class HandoffRunner {
       return this.finishCommit(input, tx)
     }
 
+    /*
+     * ⚠️ 是否激活必须在**停源之前**问（实施-14 F3）：`stopRunner` 之后
+     * `activeRunnerId` 已经不是源了，再问只会得到 false —— 后果是新建的目的
+     * 实例永远不被激活，交接后 `getGoal` / `getHandoff` 全部读到「无活动实例」
+     *（探针现场：`rev0 phase=planning mode=standard`，全部是空值）。
+     */
+    const activate = this.deps.shouldActivate?.(input.sourceRunId) ?? true
     /* ③ 释放源租约 → 建目的会话（同 cwd 防线不允许两步并行） */
     await this.deps.stopRunner(input.sourceRunId)
     const opened = await this.deps.openSession({
       cwd: input.cwd,
+      activate,
       ...(input.projectId ? { projectId: input.projectId } : {})
     })
     if (!opened.ok || !opened.sessionFile || !opened.runId) {
@@ -189,6 +226,16 @@ export class HandoffRunner {
     if (!created.advanced || !created.tx) {
       await this.reopenSource(input.sourceSession, input.cwd)
       return this.fail(input, `目的会话阶段没能落盘（${created.reason}）`)
+    }
+    /*
+     * 目的片段已建好、**resume 还没发**：把模式与用户级目标事实继承过去
+     * （实施-14 F3）。失败不阻断交接 —— 宁可第一轮按默认档起步，
+     * 也不能把一次已经走完大半的健康交接卡在继承上。
+     */
+    if (this.deps.onDestinationReady) {
+      await this.deps
+        .onDestinationReady({ sessionFile: opened.sessionFile, runId: opened.runId, sourceSession: input.sourceSession })
+        .catch(() => undefined)
     }
     return this.finishCommit(input, created.tx, opened.runId)
   }
@@ -236,7 +283,7 @@ export class HandoffRunner {
      */
     await this.deps.transactions.noteResumeAttempt(input.handoffId)
     const text = buildResumeText(tx.package, tx.resumeId)
-    const sent = await this.deps.send(runId, text)
+    const sent = await this.deps.send(runId, text, tx.resumeId)
     if (!sent.ok) return this.midway(input, dest, `resume 发送失败：${sent.error ?? '未知原因'}`)
 
     const confirmed = await this.poll(
@@ -299,7 +346,7 @@ export class HandoffRunner {
         const runId = await this.openDestination('', undefined, dest)
         if (runId) {
           await transactions.noteResumeAttempt(tx.handoffId)
-          await this.deps.send(runId, buildResumeText(tx.package, tx.resumeId)).catch(() => undefined)
+          await this.deps.send(runId, buildResumeText(tx.package, tx.resumeId), tx.resumeId).catch(() => undefined)
           if (await this.poll(() => this.hasEvidence(dest, tx.resumeId), RESUME_EVIDENCE_TIMEOUT_MS)) {
             const moved = await transactions.step(tx.handoffId, 'resumed', 'recovered:evidence-found')
             out.push({ handoffId: tx.handoffId, action: 'complete', stage: moved.tx?.stage ?? tx.stage })

@@ -17,6 +17,7 @@ import {
 } from '../../shared/work-mode'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
+import { HandoffNote } from './components/chat/HandoffNote'
 import { QuestionPanel } from './components/chat/QuestionPanel'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
@@ -666,6 +667,8 @@ export default function App() {
              * 用户要能一边看历史一边回答，所以不再用遮罩 + 焦点圈定的模态框。
              */}
             <QuestionPanel />
+            {/* 交接 / 上下文整理的一行非阻塞状态（实施-14 F5）：没事就不占地方 */}
+            <HandoffNote />
             <Composer />
           </section>
 

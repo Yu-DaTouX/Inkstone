@@ -7,6 +7,20 @@
 
 ## 接手顺序
 
+### 2026-09-23 · 实施-14 F2–F7：交接调度、稳定身份、内部续接、状态 UI 与推理位置
+
+> 接上一节（F0/F1）。本轮把实施-14 剩下的 F2–F6 实施完并做了 F7 的联合验收。
+> 用户授权用 `deepseek/deepseek-v4.1-flash` 跑 cost 1（本阶段跑了 `handoffcommit` 三次：一次定位回归、一次修复后验证、一次补断言后终验）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | ① **F2 单一调度**：新增 [`shared/handoff-schedule.ts`](../../src/shared/handoff-schedule.ts)（`decideSessionWork` 优先级：忙 > 错误重试 > 交接进行中 > 交接 > 续跑；`ownsHandoffOperation` 操作所有权）；`index.ts` 的 `scheduleSessionWork` 取代了 `pushFrom` 里三个 `void` 并发；`handoffPending` 带 `interval`+`timeout`+`goalId`，超时/轮询回调都带 `operationId` 并校验；`commitHandoff` 前新增 `revalidateHandoff`（操作身份 / 空闲 / 源会话未切走 / 目标未变 / 档位未变 / **源水位未前进**）；交接开始时冻结源续跑，放弃时放回。② **F3 稳定身份**：`HandoffSessionTarget.activate` + `shouldActivate`（后台交接不抢用户视图，**在停源之前判定**）；新增 `onDestinationReady` 回调，在 `destination-created` 之后、**发 resume 之前**继承模式与用户级目标事实（`GoalStore.inheritTo`：同一 goalId/revision/取证/pursue/brief/暂停，不带幂等记录与待发续行），快照写给**目的 runner**。③ **F4 内部续接**：交接 resume 改走薄层的 `custom` 通道（`ResumeKind` 加 `handoff` → `yan-handoff-resume`，复用 `goal-resume/<runnerId>.json` 槽位与消费幂等），不再用 `agent.send` 冒充用户消息；`hasResumeEvidence` 认 `custom`（旧 `user` 只读识别）。④ **F5 状态与异步隔离**：新增 [`shared/handoff-notice.ts`](../../src/shared/handoff-notice.ts)（进行中 / 已整理 / 整理未完成的判定 + 原因翻人话）与 [`HandoffNote.tsx`](../../src/renderer/src/components/chat/HandoffNote.tsx)（输入区上方一行非阻塞状态 + 重试 / 停止），`HandoffView` 加 `segmentTally` / `chainSegments`（区分当前片段与整条会话）与 `events`；新增 `yan:retryHandoff`；A7：`identityForAwait` 挡住 await 后往别的会话写 `goal`/草稿。⑤ **F6 推理位置**：[`shared/turns.ts`](../../src/shared/turns.ts) 新增 `TurnSegment` 与 `segments`（推理/工具/正文按真实顺序归段，正文一输出就封段），[`TurnView.tsx`](../../src/renderer/src/components/chat/TurnView.tsx) 在**多段正文**时按段渲染（单段正文仍走原路径，零回归）。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4639/4639** —— 新增 `test-handoff-schedule.mjs`（14 条：五种决定的优先级与所有权校验）、`test-handoff-notice.mjs`（13 条：窗口边界、失败后成功、`result-mismatch` 不算失败、原因文案）、`test-turns.mjs` 新增 13 条（多段顺序、正文 A 不被搬动、单段零回归）、`test-goal.mjs` 新增 10 条（`inheritTo` 幂等 / 不覆盖别的目标 / 暂停与 pursue 跟随）、`test-handoff-runner.mjs` 新增 4 条（继承早于 resume、后台不抢选中、**激活判定必须在停源之前**）、`test-goal-resume.mjs` 3 条与 `test-handoff-resume.mjs` 3 条（`handoff` kind 与 custom 证据）。 |
+| 真实运行 | **cost 0**：`test:live -- reasoning toolgroup autocontinue` 全绿。**cost 1**（`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）：`handoffcommit` **通过**（交接包生成 → 事务 `committed → resumed` → 视图切到目的段 → 链上两段拼成一条时间线 → 模式继承 autonomous → 目的会话文件里有 `"customType":"yan-handoff-resume"` 且**不冒充用户消息** → 源会话保留 → 请求/结果文件清空）。过程中用 `handoff/events.jsonl` 定位到一个真实回归：`shouldActivate` 原本在 `stopRunner` **之后**询问，导致目的实例永不激活（现场 `rev0 phase=planning mode=standard` 全是空壳），修正后完全恢复。顺手把探针的「历史里出现 resume 那条交接消息」改成用宿主侧消费证据判定（F4 后它不再进消息流）。 |
+| 视觉验收 | 新增矩阵状态 `segmented`（两次「推理 → 工具 → 正文」）：`matrix-segmented-1440x900-100-dark-2026-09-23-0535.png`，溢出 0px，**已看图**：顺序为「解说 → 推理1（已推理 3 秒）→ 工具 → 正文A → **推理2（第二段推理：界面这侧要跟着改…）** → 工具 → 正文B → 页脚 2 步」，正文 A 保持在原位。light 组因 Electron GPU/network 进程崩溃未出图（记入剩余限制）。`HandoffNote` 尚无视觉证据（矩阵桩会被 4 秒轮询的真 IPC 覆盖）。 |
+| 应用与包 | 未重跑 `dist:dir` / `test-packaged` / 便携 / NSIS；本片新增的文件都在 `src/` 与 `scripts/`（随包只改了既有 `goal-resume.js`）。 |
+| 剩余限制 | ① **F7 的「默认阈值 2 的真实自动完整压缩 → 后台交接」未跑**（需要真实长会话与更多额度，且压缩触发本身昂贵）；本轮跑的是 `YAN_HANDOFF_THRESHOLD=0` 的通道，所以「阈值 2 下也会交接」没有直接证据；② 阈值 0 时因目标继承会**连续交接**（每次换段后仍够格）—— 这是测试通道行为，生产阈值 2 下不会发生，但未加冷却；③ **前端 runtime 原地替换（H3 的最后一段）未做**：交接仍会 `select` 到目的实例（现在是「源是当前会话才激活」，后台交接不抢，但当前会话仍会经历一次实例切换）；`logicalTurnId` 跨片段归属未取证；④ `HandoffNote` 没有视觉证据，且只覆盖「交接」而不含三类压缩统计；⑤ light 主题的 `segmented` 截图缺失；⑥ 崩溃恢复的「启动确认」仍只能区分 persisted / started 的近似（`resume-confirmed` 来自磁盘标记，不是 run 启动回执）。 |
+
 ### 2026-09-23 · 实施-14 F0+F1：阶段诊断事件 + 目标控制修复
 
 > 实施-14 的 F0（现场诊断）与 F1（目标控制）已实施；F2–F7（交接事务隔离、无感切片、内部续接、状态 UI、推理顺序、联合验收）**仍未实施**。

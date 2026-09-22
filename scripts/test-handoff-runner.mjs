@@ -71,6 +71,17 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
       },
       readSessionText: async (path) => files.get(path) ?? null,
       notify: (message, type) => notices.push({ message, type }),
+      /* 实施-14 F3：目的片段建好后、发 resume 之前的继承回调（默认只记顺序） */
+      shouldActivate: opts.shouldActivate
+        ? (sourceRunId) => {
+            events.push(`activate-ask:${sourceRunId}`)
+            return opts.shouldActivate(sourceRunId)
+          }
+        : undefined,
+      onDestinationReady: async (info) => {
+        events.push(`dest-ready:${info.sessionFile}`)
+        if (opts.onDestinationReady) await opts.onDestinationReady(info, { events })
+      },
       now: () => 1000,
       /* 默认“立刻拿到证据”：真实链路的轮询由 live 场景覆盖 */
       pollEvidence: opts.pollEvidence ?? (async (probe) => probe())
@@ -288,6 +299,79 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
         threw = true
       }
       ok(threw, '事务日志落盘失败时抛错（交接宁可停下，也不能「内存里提交了、磁盘没有」）')
+    } finally {
+      await h.cleanup()
+    }
+  }
+
+  /* --------------------------- 8. 实施-14 F3：继承时机与「后台不抢视图」 */
+
+  {
+    /* 继承必须比 resume 早：晚一步就会让目的片段第一轮按默认档 / 空目标起步 */
+    const h = await harness()
+    try {
+      const res = await h.runner.commit(commitInput(h))
+      ok(res.ok === true, 'F3：提交成功（继承时机用例的前置）')
+      const iReady = h.events.findIndex((e) => e.startsWith('dest-ready:'))
+      const iSend = h.events.findIndex((e) => e.startsWith('send:'))
+      ok(iReady >= 0 && iSend >= 0 && iReady < iSend, 'F3：用户级状态在发 resume 之前继承（不是提交之后补写）')
+    } finally {
+      await h.cleanup()
+    }
+  }
+
+  {
+    /* 后台交接（用户正在看别的会话）不能把当前选中抢过去 */
+    const opens = []
+    const h = await harness({
+      shouldActivate: () => false,
+      openSession: async (target, ctx) => {
+        opens.push(target.activate === false ? 'false' : 'true')
+        const runId = 'r-new-x'
+        ctx.runFiles.set(runId, DEST)
+        return { ok: true, runId, sessionFile: DEST }
+      }
+    })
+    try {
+      const res = await h.runner.commit(commitInput(h))
+      ok(res.ok === true, 'F3：后台交接仍然能完成')
+      ok(opens[0] === 'false', 'F3：源不是当前选中会话时，目的片段不抢选中（activate: false）')
+    } finally {
+      await h.cleanup()
+    }
+  }
+
+  {
+    /* 缺省（源就是用户正在看的）：保持旧行为，激活目的片段 */
+    const opens = []
+    const h = await harness({
+      openSession: async (target, ctx) => {
+        opens.push(target.activate === false ? 'false' : 'true')
+        const runId = 'r-new-y'
+        ctx.runFiles.set(runId, DEST)
+        return { ok: true, runId, sessionFile: DEST }
+      }
+    })
+    try {
+      await h.runner.commit(commitInput(h))
+      ok(opens[0] === 'true', 'F3：没有 shouldActivate 时保持原行为（激活目的片段）')
+    } finally {
+      await h.cleanup()
+    }
+  }
+
+  {
+    /*
+     * 顺序：激活判定必须在停源**之前**问。
+     * `stopRunner` 之后 `activeRunnerId` 已经不是源了 —— 晚问一步就会
+     * 让新建的目的实例永远不被激活（现场：交接后 getGoal/getHandoff 全读到空壳）。
+     */
+    const h = await harness({ shouldActivate: () => true })
+    try {
+      await h.runner.commit(commitInput(h))
+      const iAsk = h.events.findIndex((e) => e.startsWith('activate-ask:'))
+      const iStop = h.events.findIndex((e) => e.startsWith('stop:'))
+      ok(iAsk >= 0 && iStop >= 0 && iAsk < iStop, 'F3：激活判定发生在停源之前（否则目的实例永远不被激活）')
     } finally {
       await h.cleanup()
     }

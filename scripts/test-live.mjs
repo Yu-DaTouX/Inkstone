@@ -6403,6 +6403,17 @@ async function checkHandoffCommitPersisted(sandboxRoot, _tempBefore, _probeText)
     const text = readFileSync(destination, 'utf8')
     say(text.includes(`[yan-handoff-resume:${handoffId}]`), '目的会话文件里有 resume 的消费证据（标记行）')
     say(text.includes('跨会话交接'), '目的会话里那条消息是交接正文（不是空壳）')
+    /*
+     * 实施-14 F4：交接 resume 走薄层的 `custom` 通道（与目标续行同一条），
+     * 不再是宿主 `agent.send` 出去的真用户消息 —— 否则它会冒充用户说的话，
+     * 也会多出一个伪逻辑回合。
+     */
+    say(
+      text.includes('"customType":"yan-handoff-resume"'),
+      'F4：交接 resume 是 custom 控制消息（会话文件里有 customType）'
+    )
+    const around = /"customType":"yan-handoff-resume"[^}]*/.exec(text)?.[0] ?? ''
+    say(!around.includes('"role":"user"'), 'F4：交接控制消息不冒充用户消息')
     lines.push(`  目的会话文件大小：${text.length} 字符`)
   } else {
     say(false, `找不到目的会话文件：${destination || '（未记）'}`)
