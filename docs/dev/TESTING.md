@@ -166,10 +166,11 @@ llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
 | `conn` | 连接状态竞态 | 默认（LongCat），不可用时 Laguna |
 | `e2e` | 真发一条消息（流式 + 工具） | 默认（LongCat），不可用时 Laguna |
 | `queue` | 排队 + Esc 回收 + **N09 边界**（四路并发入队 / 相同文本两条 / 对同文本撤回） | 默认（LongCat），不可用时 Laguna |
-| `ask` | **问答功能**：模型主动提问 → 弹窗 → 回答 → 回填；含自主模式不弹窗 | 默认（LongCat），不可用时 Laguna |
+| `ask` | **问答功能**：模型经 `bash` 调宿主 `yan question ask` → 真实面板 → 回答 → 回填；含自主模式不弹窗、不猜答案 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的调用宿主 CLI） |
 | `image` | 图片真的发给模型 | **视觉模型** |
 | `subagentpair` | **两个并发写入子代理**：worktree 隔离 / 合并 / 放弃 / 同一行冲突 / 只读封堵 / 退出归档 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的写文件） |
-| `askbackground` | **后台会话「等待输入」**（实施-09 S2，N12）：A 触发真实 `question` → 主进程 `waiting=true` → 左栏 A 行 `?` → **切到 B 后 A 行仍在等**，B 行没有该槽 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的调用 question 工具）。⚠️ 必须先 `setWorkMode('standard')`；探针里 `waitFor` 的谓词是 async，必须 `await fn()` |
+| `questioncli` | **宿主问答 CLI 基础链路**（cost 0）：隔离请求文件 → `yan question ask` → 标准档真实面板 / 选项 / 结果文件；自主档结构化返回且不弹窗 | 不调用模型 |
+| `askbackground` | **后台会话「等待输入」**（实施-09 S2，N12）：A 经宿主 `yan question ask` 进入等待 → 主进程 `waiting=true` → 左栏 A 行 `?` → **切到 B 后 A 行仍在等**，B 行没有该槽 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的经 bash 调宿主 CLI）。⚠️ 必须先 `setWorkMode('standard')`；探针里 `waitFor` 的谓词是 async，必须 `await fn()` |
 | `sessionab` | **A/B/C 三会话**：切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 / **未读（实施-09 S2）** —— A 在后台**自然跑完**之后左栏出现未读点，点回去后消失 | `commandcode/deepseek/deepseek-v4.1-flash`（要求模型真的执行那个耗时工具）。⚠️ 未读那节**不能**用 `stopRunner` 制造（实例会被移出注册表，`runnersSeen` 不比较）；也**不要**在退出后检查里写死 `sleep <秒数>`（那是可调参数） |
 | `atrefsend` | **`@` 引用的真实发送**：补全选中 → 发送 → 退出后查会话 JSONL 确认引用到达（且模型能按路径读到文件） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `goal` | **澄清档就绪转移 + 跨轮续行**（实施-05 S3a/S3b）：切澄清档 → 模型用内联参数敲 `yan goal ready` → 宿主校验 / 幂等 / 落盘 → **模式自动切标准** + 目标 `executing` + 工具卡「目标 · 砚内置」→ **续行自动起一个新回合**；退出后核对 `goals.json`（转移只记一条、五栏完整）、`goal-resume/` 快照与消费证据、会话文件里的 `yan-goal-resume` / `yan-goal-ready` 条目。**探针判空闲必须用 `session.isAgentRunning`**（顶层没有这个字段，读错会在两次请求的空档就判收尾） | 默认（LongCat），不可用时 Laguna |
@@ -184,6 +185,7 @@ llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
 | `contextpressure` | **20+ 回合压力测试**（N21-4 尾，实施-06 S3）：`YAN_CONTEXT_POLICY` 把工作集压到 20000 + pi `keepRecentTokens=1`，跑 **22 个真实回合**（每轮 `seq 1 2000` ≈ 3k token）→ 探针读 pi 的 `contextUsage.tokens` 断言**峰值 ≤ 工作集 × 1.6** 且**压缩 ≥ 2 次**；退出后查请求诊断（物理线 / abort 都为 0、最小余量 > 0）与会话文件未被破坏。**cost 1、单场约 2.5 分钟 → 不进 `npm run check`** | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役） |
 | `contextpressurelow` | 同上 probe，但工作集压到 **6000**（低于 pi 的基线开销约 10k）→ 专测 `rearmAfterCompaction`：修复前 22 回合只压 1 次、峰值 7.8×，修复后压 5 次（A/B 反向验证就是这么做的）；该场景**不判峰值比率**（工作集低于基线时压无可压） | 同上 |
 | `browserboundary` | **L04 浏览器边界**（9 节，cost 0，**需公网 → 不进 check**）：真实权限请求的拒绝/授权/撤销、本地预览放行、远程 302 借道本机被拦、DNS 重绑定被拦 + 负对照、内置与本机 Chrome 两条下载（带来源、不自动打开）、Cookie 真实复制到 Chrome（只比哈希）、拦截明细几何可见 | 不需要模型（只起 pi） |
+| `skillacquire` | **外部 Skill 整链**（实施-04 S6b-2，cost 1，**不进 check**）：真实 SkillMD 候选 → commit/raw/SHA-256 固定 → 精确授权 → staging 前 / active 前静态恶意内容审查 → 同 runner 重载 → 原目标续接；退出后复核 `resumed`、active 文件、授权绑定和 `continueId` 消费。Skill 正文不执行，且高风险必须 fail-closed；中风险只保留提醒。 | `commandcode/deepseek/deepseek-v4.1-flash` |
 
 浏览器边界场景 `browserboundary`（**cost 0，不进 `npm run check`**）要**公网**：
 它用真实站点（example.com）当远程页面、用真实 302 服务（httpbin.org）构造「远程页面借道访问本机服务」、
@@ -610,10 +612,13 @@ fixture 里还有一个最小的 **Git 仓库** `repo/`（`git init` + 一次提
 
 - **纯逻辑**（`npm run test:unit`）：`scripts/test-question.mjs` 直接 import
   内置扩展 `resources/pi-extensions/question.js`，喂假 `pi` API，断言
-  系统提示随自主模式切换、自主模式不弹 UI、select/自定义/取消的回填。
-- **端到端**（会调模型）：`npm run test:live -- ask`。流程：
-  发一条要求提问的消息 → 等 UiBridge 弹窗 → 选答案 → 断言
-  `question` 工具行完成、答案回填进模型回复；最后开自主模式，断言**不再弹窗**。
+  它只注册 `before_agent_start` 模式提示、不注册 `question` 模型工具，且三档模式指引正确。
+- **宿主 CLI（不调模型）**：`npm run test:live -- questioncli`。流程：
+  写隔离请求文件 → 运行 `yan question ask` → 等真实 QuestionPanel → 选择答案 → 断言
+  stdout 回执与 `resultFile`；再切自主档，断言结构化返回且**不弹窗**。
+- **端到端（会调模型）**：`npm run test:live -- ask`；模型经 `bash` 调宿主 CLI，
+  真实面板回答后回填，随后自主档不弹窗且消息里没有 `question` 模型工具调用。
+  `npm run test:live -- askbackground` 额外验证 A 会话等待时切到 B 不会丢失等待槽。
 
 ## 内置 pi 功能怎么核
 
@@ -696,4 +701,4 @@ provider 下返回三档受控数据），塞进组 0 会让同一进程里后�
 | `scripts/bench/context-bench.mjs` | N21-9 跑批器：`npm run bench:context -- --mock|--live`（mock cost 0 只验装置；**live 要额度**，第一次跑先 `--mock` 再 `--live --tasks=1 --strategies=A`）。⚠️ 它不自己做判分 —— 口径全部来自 `src/shared/context-bench.ts`，它只负责编排与出报告 |
 | `scripts/probe/upgrade-read.js` | 升级读取验证的探针（配合 `scripts/test-upgrade-read.mjs`；`npm run test:upgrade`） |
 | `scripts/test-*.mjs` | 各模块的单测（在 `test-unit.mjs` 里用 esbuild 现场编译源码后跑） |
-| `resources/pi-extensions/question.js` | 内置「提问」扩展（问答功能的模型侧） |
+| `resources/pi-extensions/question.js` | 内置「提问」模式指引薄层；交互入口是宿主 `yan question ask`，不注册模型工具 |

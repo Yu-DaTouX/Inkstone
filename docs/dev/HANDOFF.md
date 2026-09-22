@@ -1,6 +1,6 @@
 # 开发交接 · 砚
 
-整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-11 C-4b 估算口径（图片/附件不当零）**、**实施-11 C-5 上下文窗口 UI 分层**、**实施-11 H-6b 崩溃→中断**、**实施-11 C-2 压缩可观测性（回收比例与新增量）**、**实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。S6b-2 已有独立 Skill 目录的只读发现证据，但仍缺获授权外部候选的 acquire / install / 激活 / 原目标续接整链，不能据目录发现或内部 fixture 声称完成。本文是**当前状态与验证基线的唯一入口**；
+整理日期：**2026-09-17**（最后一轮更新：**2026-09-22**，最新增量包括 **实施-04 S6b-2 用户授权外部 Skill 文件整链与恶意内容审查**、**实施-01 S5a 默认发现边界**、**实施-11 C-4b 估算口径（图片/附件不当零）**、**实施-11 C-5 上下文窗口 UI 分层**、**实施-11 H-6b 崩溃→中断**、**实施-11 C-2 压缩可观测性（回收比例与新增量）**、**实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。当前已有一个获授权外部 Skill 文件候选完成 acquire / 安全审查 / 激活 / 原目标续接；其它资源类型的包级证据与最终发布门槛仍未完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
@@ -11,9 +11,10 @@
 2. 从下面的「当前未完成」选一组任务；**执行顺序与切片看 [实施计划](../plan/README.md)**；用 [PROJECT](../PROJECT.md) 和 [CODE-MAP](CODE-MAP.md) 定位实现。
 3. 按 [TESTING](TESTING.md) 做相应检查，把证据登记回本表（六栏口径见文末）；打包按 [RELEASING](RELEASING.md)。
 
-## 当前基线（最近一次自动验证：2026-09-21；部分真实运行仍为 2026-09-20）
+## 当前基线（最近一次自动验证：2026-09-22；部分真实运行仍为 2026-09-20）
 
-> 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
+> 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；随后 `skillacquire` 在用户明确授权下完成了一个外部 Skill 文件候选的 acquire → staging → 安全审查 → active → 同一 runner 重载 → 原目标 `resumed`，当前未覆盖的是其它资源类型的外部候选包级证据及其解包 / 便携 / NSIS 包内运行级证据。工作区仍有大量已有未提交改动，保留不清理。
+> **本轮更正（2026-09-22）**：上一句“没有获授权外部候选……”是本轮开始前基线；随后用户明确授权后，`skillacquire` 已对一个真实 SkillMD 候选取得 acquire → staging → 安全审查 → active → 同一 runner 重载 → 原目标 `resumed` 证据。其它资源类型的包级候选与最终发布门槛仍按“当前未完成”保留。
 
 ### 本轮增量（2026-09-22）· 工具栏拖拽回归与 H-1 探针同步
 
@@ -24,7 +25,7 @@
 | 真实运行 | `env -u ELECTRON_RUN_AS_NODE npm run test:live -- tools motion` 全绿：工具栏拖拽插入位置与 `toolOrder` 落盘均通过；motion 也通过。 |
 | 视觉验收 | 本片没有视觉改动；沿用 H-1 的助手回合页脚与左侧砚图标视觉证据。 |
 | 应用与包 | `out/` 已按本片源码重新构建；未重新生成 `dist:dir` / 便携包 / NSIS，包级证据仍以既有发布验收为准。 |
-| 剩余限制 | `elementFromPoint` 在合成事件下的回退已覆盖，但未新增跨缩放比例的视觉矩阵；外部候选能力整链、Android 客户端与最终发布门槛仍按下方当前未完成清单处理。 |
+| 剩余限制 | `elementFromPoint` 在合成事件下的回退已覆盖，但未新增跨缩放比例的视觉矩阵；其它资源类型的外部候选包级整链、Android 客户端与最终发布门槛仍按下方当前未完成清单处理；一个用户授权 Skill 文件候选的开发态整链已由 `skillacquire` 单独取证。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 H-3/H-4b：工作窗口保留与 Markdown 阅读出口
 
@@ -35,7 +36,7 @@
 | 真实运行 | `env -u ELECTRON_RUN_AS_NODE npm run test:live -- rightresources filelink tools motion` 全绿（4 场景）；`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- subagent` 全绿：真实 worktree 子代理、RPC 转录、详情、停止与孤儿进程回收；同时覆盖了 `nul` 导致的 Windows checkout 回退。 |
 | 视觉验收 | 沿用 `matrix-filelink-*`、`matrix-subagent*` 与右栏资源既有截图；本片没有新增截图，不把未重拍视觉矩阵写成新证据。 |
 | 应用与包 | `npm run dist:dir` 成功生成最新 `release/win-unpacked`；`npm run test:packaged` 全绿：解包态内置 pi、项目知识、Git、上下文策略、能力页、yan CLI 与远程服务边界均通过。本片未生成 NSIS / 便携包。 |
-| 剩余限制 | 工作窗口仍是单活动表面，不是多文档 WorkbenchState；保留设备名会在隔离 worktree 中显示为缺失（不伪造为可读文件）；Git 状态审计仍受已跟踪 `nul` 的 Windows 限制，但审计脚本已隔离并显式报告；外部候选、Android、真实 1M / 完整 Harness 证据仍未闭环。 |
+| 剩余限制 | 工作窗口仍是单活动表面，不是多文档 WorkbenchState；保留设备名会在隔离 worktree 中显示为缺失（不伪造为可读文件）；Git 状态审计仍受已跟踪 `nul` 的 Windows 限制，但审计脚本已隔离并显式报告；其它资源类型的外部候选包级证据、Android、真实 1M / 完整 Harness 证据仍未闭环；Skill 文件候选开发态整链已单独取证。 |
 
 ### 本轮增量（2026-09-22）· 实施-11 C-4b：估算口径（图片 / 附件不再当零）
 
@@ -342,7 +343,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 
 仍未能勾选为“全部完成”的项目边界：
 
-- 独立 Skill 目录的**只读发现**已有真实证据；但未获授权外部候选从 acquire → install → 激活 → 原目标续接的真实整链仍缺证据。当前完成的是固定项目内 Skill 文件安全边界、SkillMD 风格目录解析，以及已实现的本地 / 远程接入基础。
+- 独立 Skill 目录的**只读发现**已有真实证据；本轮又完成了一个用户授权外部 Skill 文件候选从 acquire → staging → 安全审查 → 激活 → 原目标续接的真实整链。其它资源类型的外部候选与包级整链证据仍待补齐；当前完成的固定项目内 Skill 文件安全边界、SkillMD 风格目录解析，以及本地 / 远程接入基础不受影响。
 - Android UI / APK、配对、TLS / 外部连通性仍是方案或桌面端 API 基础，不应写成移动端已交付；pi、工具、模型调用、项目文件和凭证仍留在桌面端。
 - 当前源码对应的 `dist:dir` / `test:packaged` 已于本节更新后重新跑并通过：解包态、便携版和全新 NSIS 安装态 EXE 都取得了内置 pi、项目知识、Git、能力设置页、随包 CLI 和隔离哨兵的运行证据；包形态本身不再是当前阻塞项。
 
@@ -355,6 +356,17 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 应用与包 | **2026-09-21 最新复核**：`dist:dir` + `test:packaged`、便携版 `--exe`、全新 NSIS 安装后 EXE `--exe` 均通过完整运行探针；`npm run dist` 已重建三产物与 `SHA256SUMS.txt`，`npm run test:upgrade` 仍以真实用户数据副本验证且原目录 60 个文件逐字节不变。此前“安装包未跑安装流程 / 全量 check 未跑”是旧状态，不再作为当前限制。其余历史包证据保留如下：**2026-09-19（实施-09 S4/S5）**：`vendor:pi:check` ✓；包内开发日志污染已修（`files` 改白名单，无本机路径）。**2026-09-19（实施-05 S6）**：解包态交接恢复与包内静态索引全绿。**P0-8 已完成（2026-09-18，六步走完）** |
 | 已知偶发 | 免费模型可能因日配额或供应商状态返回空文本/零 usage；这会让 `tokens` `subagent` `contexttakeover` 等需要真实 usage 的场景变红 | 先用 `YAN_TEST_MODEL=commandcode/longcat-2.0:free`；不可用或触顶时换 `YAN_TEST_MODEL=commandcode/laguna-s-2.1-free`，再分辨「模型当时不可用」还是「代码回归」。**2026-09-17 晚实测**：同一夜连跑 `contextproduce` 6 次只有 1 次成功，失败形态分别是 `aborted`（20s 生成超时）/ `not-json`（返回空文本）/ `error`；换备用模型也一样。**2026-09-17 深夜已确证原因**：`commandcode/longcat-2.0:free` **当日 100 次免费额度用尽**（pi 原样报回 `429 You've used all 100 free LongCat 2.0 requests for today`，配额 `2026-09-18T00:00:00Z` 重置），换 `laguna-s-2.1-free` 则报上游暂不可用。**规则**：看到 429 就直接停手（每跑一次都是在烧剩余额度，而且拿不到结论）。**换模型**：用户指定 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`（1M 窗口、支持思考）后，`contextsweep` / `contexttakeover` 均真实通过 —— 免费模型不可用时的首选替代。**另一个易踩的坑**：探针变慢以后没同步加 `budget`，进程会在打印前被 kill，而 `buf` 为空又被报成「应用可能启动失败」（`contexttakeover` 就此白查三轮，现已在提示里区分这两种情况） |
 
+### 本轮增量（2026-09-22）· 实施-04 S6b-2：用户授权外部 Skill 整链与恶意内容审查
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | `src/shared/skill-security.ts` 是无 IO / 网络 / 执行副作用的纯静态扫描器；Skill 文件在 staging 前与 active 前各审查一次。prompt injection、凭证读取、凭证外发组合、破坏性操作、提权 / 绕过和代码执行模式为 high 并 fail-closed；命令、网络、环境变量模式保留为 medium 提醒。审查回执写入 transaction / receipt；用户指定候选也不跳过审查。带 `pi.skills` 的 `pi-package` 在离线 smoke 和已安装包 active 复核前也走审查器，high / 审查截断 fail-closed。另修正 Skill 调度器的一次重载、`session_start` 新上下文、延迟重试和忙碌 runner 不阻塞探针边界。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` **4347/4347**、`npm run test:skill-files`、`npm run test:skill-source`、`npm run audit:refs`、`git diff --check`，以及相关脚本 `node --check` 均通过；构建只有既有第三方 Rollup annotation warning。 |
+| 真实运行 | `npm run test:live -- skillacquire` 全绿（cost 1，`commandcode/deepseek/deepseek-v4.1-flash`）：候选 `skill-directory:futurediffusion/filesystem#98812f139d731776fc9d138c59139cb868b520a0`，commit `98812f139d731776fc9d138c59139cb868b520a0`，raw `SKILL.md` SHA-256 `fe67575862006d083eaaab95378588c4cda801821c359525da306feabc4367b9`；1 个文件 / 1030 bytes，0 high、3 个 medium `command-execution` 提醒。operation `75d4176fa0a7f4f171633031` 最终 `resumed`，历史含 `verifying → activated → resumed`；隔离 active 文件、精确授权、goal-resume 消费证据和无孤儿 pi 均核对通过，测试没有执行 Skill 正文。 |
+| 视觉验收 | `YAN_MATRIX_ONLY=settingspkg YAN_MATRIX_STAMP=2026-09-22-skill-security npm run visual:matrix` 通过，10 组退出码均为 0；深 / 浅 `settingspkg` 均 `溢出=0px`，截图为 [`matrix-settingspkg-1440x900-100-dark-2026-09-22-skill-security.png`](../design/preview/matrix-settingspkg-1440x900-100-dark-2026-09-22-skill-security.png) 与 [`matrix-settingspkg-1440x900-100-light-2026-09-22-skill-security.png`](../design/preview/matrix-settingspkg-1440x900-100-light-2026-09-22-skill-security.png)，已目视检查；文案改动未造成布局回归。 |
+| 应用与包 | 当前源码 build 通过；`npm run test:live -- pkgs` 在隔离 fixture 中完成真实包的安装 → 列表 / 详情 → 卸载闭环，并核对无 OS 沙箱与 Skill 高风险拒绝文案。本片未重新生成 `dist:dir`、便携包或 NSIS 安装包，因此不把普通构建或 `pkgs` 开发态探针写成包内安全审查证明。既有三种包形态运行证据仍有效，但其它资源类型的外部候选包级证据和最终发布重跑仍未完成。 |
+| 剩余限制 | 这是启发式静态审查，不是 OS sandbox；通用 pi 包 / MCP 包仍以当前用户权限运行。Skill 文件本次只做固定来源、hash、审查和激活链，未执行 Skill 脚本；外部 SkillMD 内容仍可能变化，固定 commit / raw hash 是本次边界。`pi-package` / `mcp-package` 的其它外部候选包级整链及 09 最终发布门槛仍待完成。 |
+
 ### 本轮增量（2026-09-21）· 真实外部 Skill 目录只读发现
 
 > 本片只验证“外部目录 → 精确候选元数据”的发现边界，不自动安装、激活或执行第三方 Skill。目录请求通过显式 `YAN_SKILL_DIRECTORY_URL` 开启，默认仍不联网；现场来源为 [SkillMD 机器 API](https://skillmd.com/docs) 的公开搜索接口。
@@ -362,11 +374,11 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 六栏 | 证据 |
 |---|---|
 | 实现 | `src/main/capabilities/discovery/discover.ts` 新增对 SkillMD `items` 列表的适配：搜索条目缺少精确 commit 时，只按 raw URL 的同源路径构造详情地址，校验同源 HTTPS 后读取详情固定 `commit_sha`；再读取同源 `raw_url`，以限长 UTF-8 文本计算 SHA-256，映射为 `skill-files` 候选。单页条目并行读取但逐条失败闭合；目录未配置时不产生额外联网请求。新增 `scripts/probe/skill-directory.js` 与非默认 `skilldirnet` 场景。 |
-| 自动检查 | `npm run typecheck`、`npm run build` 通过；`npm run test:unit` **4158/4158**；`npm run test:skill-source` 与 `npm run test:skill-files` 通过。 |
+| 自动检查 | `npm run typecheck`、`npm run build` 通过；`npm run test:unit` **4347/4347**；`npm run test:skill-source` 与 `npm run test:skill-files` 通过。 |
 | 真实运行 | `npm run test:live -- skilldirnet` 全绿：真实 Electron → `yan capabilities discover --query-text "futurediffusion filesystem"` → SkillMD `items` → 同源详情 commit `98812f…` → raw `SKILL.md` SHA-256 `fe6757…` → `skill-directory:futurediffusion/filesystem#…` 候选；候选为 `installKind=skill-files`、`verification=metadata-only`，且探针确认 `discover` 不返回可执行接入结果。`npm run test:live -- discnet` 也回归通过，npm / MCP 各返回 40 条并保持 `metadata-only` 与未知 acquire 拒绝。两条 live 场景均无残留 Pi 进程。 |
 | 视觉验收 | 不适用：本片只改主进程发现 / 测试探针，没有渲染端行为或布局改动。 |
 | 应用与包 | `typecheck` / `build` 已验证普通构建链；本片未重跑 `dist:dir` / `test:packaged`，也没有把外部 Skill 写入真实用户目录或包内资源。 |
-| 剩余限制 | 真实证据到“发现 + 来源 / commit / hash 固定”为止；还没有在用户授权下执行外部候选的 acquire → staging → runner 激活 → 原目标续接整链。独立来源默认关闭；SkillMD 搜索结果是外部可变数据，`skilldirnet` 不纳入默认 `check`。npm 包缺依赖时仍 fail-closed，纯自定义工具若 RPC 不报告 command / Skill 路径仍不能确认 active；Android UI / APK 仍按用户决定最后处理。 |
+| 剩余限制 | 本片 `skilldirnet` 仍只证明“发现 + 来源 / commit / hash 固定”；同日的 `skillacquire` 另行证明了一个用户授权 Skill 文件候选的整链。独立来源默认关闭；SkillMD 搜索结果是外部可变数据，`skilldirnet` / `skillacquire` 不纳入默认 `check`。npm 包缺依赖时仍 fail-closed，纯自定义工具若 RPC 不报告 command / Skill 路径仍不能确认 active；Android UI / APK 仍按用户决定最后处理。 |
 
 ### 本轮（2026-09-20）档案与计划整理（非工程片，不填六栏）
 
@@ -405,7 +417,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 真实运行 | `npm run test:live -- capsettings` 全绿：真实 Electron 主进程 / 渲染端设置页、MCP 安全快照、显式核验后工具数与 ready 状态、无敏感字段；`mcpcli` 全绿（stdio / HTTP、工具错误、schema 变化、超大结果）；`capcli` 全绿；均无孤儿 Pi 进程。`YAN_SHOW_WINDOW=1 npm run test:live -- capsettings` 也通过。 |
 | 视觉验收 | **已通过**：`visual:matrix` 的真实 Electron 窗口生成并核对深 / 浅主题截图：`matrix-capabilities-1440x900-100-{dark,light}-2026-09-21-cap2.png` 证明策略 / 搜索 / 内置能力和布局；`matrix-capabilitiesmcp-1440x900-100-{dark,light}-2026-09-21-cap2.png` 证明当前 Skill / MCP 服务卡和检查入口；4 张均溢出 `0px`，已实际看图。 |
 | 应用与包 | `npm run dist:dir` + `npm run test:packaged`、便携版 `--exe` 与全新 NSIS 安装后 EXE `--exe` 均已通过：解包 / 便携 / 安装态真实应用启动，内置 pi / 随包 CLI / IPC / asar 资源、能力快照脱敏、能力策略 / 搜索 / 内置能力 / MCP 区域和远程服务边界均绿。 |
-| 剩余限制 | S7 的实现、自动检查、真实运行、视觉证据与三种包形态的运行级证据已补齐。此前 portable wrapper / NSIS 安装态未继承隔离变量的问题已通过新的临时沙盒探针解决；此前写入 `release/砚数据` 的现场按用户数据边界保留，未清理、覆盖或回滚。S6b-2 现在新增了独立 Skill 目录条目解析与逐文件来源 / hash 下载器的离线边界测试，但还没有真实外部目录检索和获授权外部候选整链证据；纯自定义包若 RPC 不报告 Skill 路径仍会 fail-closed。Android S1+ 仍等待范围确认。 |
+| 剩余限制 | S7 的实现、自动检查、真实运行、视觉证据与三种包形态的运行级证据已补齐。此前 portable wrapper / NSIS 安装态未继承隔离变量的问题已通过新的临时沙盒探针解决；此前写入 `release/砚数据` 的现场按用户数据边界保留，未清理、覆盖或回滚。S6b-2 已取得一个用户授权 Skill 文件候选整链证据，但其它资源类型的外部候选与包级证据仍未覆盖；纯自定义包若 RPC 不报告 Skill 路径仍会 fail-closed。Android S1+ 仍等待范围确认。 |
 
 ### 本轮增量（2026-09-21）· S6b-2 本地 `mcp-package` 接入边界
 
@@ -415,8 +427,8 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 自动检查 | `npm run test:unit` **4149/4149**；新增 `scripts/test-mcp-package.mjs`（官方 MCP SDK 客户端真实握手 / `tools/list`、入口解析、多入口拒绝与 `main`-only 拒绝）以及 `test-mcp-registration.mjs` 的 stdio 项目隔离、幂等、冲突和复核回归；新增受保护环境变量拒绝与超时清理回归；`typecheck` / `build` 仍通过。 |
 | 真实运行 | 单测在临时目录中真实启动本地 Node MCP fixture 并通过官方 SDK `tools/list`，随后走项目范围登记与复核路径；没有运行未获授权的第三方候选，也没有调用真实业务工具。 |
 | 视觉验收 | 不适用：本片没有渲染端改动。 |
-| 应用与包 | 新代码已进入普通构建链；尚未取得外部候选的 Electron acquire → 安装 → runner 激活 → 原目标续接证据，也未取得便携 / NSIS 安装态的 renderer 探针证据。 |
-| 剩余限制 | `skill-files` 独立来源仍未接线；外部候选整链与包内验收仍缺。历史批次曾用本地模型 `local/qwen3-local` 在 `127.0.0.1:8081` 完成真实响应与工具调用核验；本机服务随后按用户要求停止。Android S1+ 仍需范围确认。 |
+| 应用与包 | 新代码已进入普通构建链；`skillacquire` 已取得一个 Skill 文件候选的开发态 Electron acquire → staging → runner 激活 → 原目标续接证据，但本片不覆盖 `pi-package` / `mcp-package` 外部包候选，也未取得外部候选在便携 / NSIS 安装态的 renderer 探针证据。 |
+| 剩余限制 | `skill-files` 独立来源已接线并由 `skillacquire` 取得一个真实候选整链证据；其它外部候选的包内验收仍缺。历史批次曾用本地模型 `local/qwen3-local` 在 `127.0.0.1:8081` 完成真实响应与工具调用核验；本机服务随后按用户要求停止。Android S1+ 仍需范围确认。 |
 
 ### 本轮增量（2026-09-21）· acquisition staging 的精确文件集复核
 
@@ -427,7 +439,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 | 真实运行 | `node scripts/probe/pi-package-smoke.js` 重跑通过：真实启动随包 Pi 的离线 RPC，扩展资源 glob / 排除、`session_start` 与环境隔离均通过；单测另在系统临时目录做真实文件写入、枚举与 hash 复核。未运行 Electron / 外部包代码。 |
 | 视觉验收 | 不适用：无渲染端改动。 |
 | 应用与包 | 本轮 build 通过；未重跑解包 / 便携包验收。 |
-| 剩余限制 | 这是 staging 完整性加固，不解决未随 tarball 提供依赖的可复现解析 / 授权问题；04-S6b-2 仍缺获授权候选整链与包内验收。 |
+| 剩余限制 | 这是 staging 完整性加固，不解决未随 tarball 提供依赖的可复现解析 / 授权问题；Skill 文件候选开发态整链已由同日 `skillacquire` 取得，本片仍不覆盖 `pi-package` / `mcp-package` 外部包候选或包内落位、启动、激活和续接验收。 |
 
 ### 本轮（2026-09-20）实施-04 S6b-2 · Electron 调度接线与 Pi 离线 smoke（仍待获授权候选验证）
 
@@ -1610,7 +1622,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > 随后又做完 **06-S4 前半**：`contexttakeovergap` 实测压缩接管的档位可达性 ——
 > 两种构造都只得到 `tier=stale-hard`、`gap=3`（压缩总在回合结束之后），
 > 因此 `fresh` / `stale-soft` 在真实链路**不可达**，两档判定交给单测；结论已写回实施-06 与方案 §17。
-> 06 现在**只剩 S2（N21-9 A/B）与 S5（包，随 09）**。
+> 06 的 N21-9 A/B 与 S5 包验收已完成；当前只保留真实长会话证据限制，以及随 01-S5 收口的最终载体 / 唯一入口边界。
 >
 > ⏭️ **当前待办与建议顺序（2026-09-20，按实际工作树更新）**：
 >
@@ -1620,21 +1632,21 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > **2026-09-21 收尾复核**：`npm run check` 最近一次批量运行在工具组高度修正前为 **80/83**；其中 `taskext`、`streamwidth`、`perf` 已在批量中通过，`virtual` / `outlinepos` 在隔离与组合运行中通过，`toolgroup` 暴露的是当前真实行步进下 `623px` 只能显示 24 行的契约错误，已将当前实现、探针与文档统一为 `625px`。修正后 `npm run test:live -- toolgroup` 通过（25 行可见、内部滚动、组头固定），`npm run typecheck`、`npm run build`、`npm run audit:refs` 也通过；因此当前没有已复现的隔离场景红，但尚未把资源敏感的 83 场景批量运行重新宣称为全绿。重新构建后的解包版、便携版、全新临时 NSIS 安装版均再次通过 `test:packaged` 运行探针。
 >
 > 最近三片见上方「本轮」三节：07/09 包内审查面板证据、**04-S6a**（接入事务内核 + 受管 staging）、
-> **04-S6b-1**（远程 MCP 自动登记闭环 —— `mcpregister` cost 0 已进 `check`）及本轮 **S6b-2 Electron 适配 + 本地 Pi smoke**（无获授权候选整链）。
+> **04-S6b-1**（远程 MCP 自动登记闭环 —— `mcpregister` cost 0 已进 `check`）及本轮 **S6b-2 Electron 适配 + 本地 Pi smoke**；随后已补一个用户授权 Skill 文件候选的开发态整链，仍缺其它资源类型的包级候选证据。
 >
 > **按顺序待做**：
 >
-> **本轮校正**：下面第 1 项的 `4119/4119` 与第 2 项的“视觉 / 包验收未做”是本轮开始前的旧描述；当前证据已更新为单测 **4158/4158**，S7 视觉矩阵与三种包形态运行级验收已通过。以下清单保留未完成主线，但以本段上方最新六栏和当前基线为准。
-> 1. **04-S6b-2（进行中）**：npm `pi-package` 的 Electron 适配已接通：精确候选授权、项目 trust、source HEAD、goal revision、同 cwd runner 空闲门禁；hash 复核后在临时 Pi 离线 smoke，再受管 `pi install -l`、核对包清单、定向重载并要求 `continueId` 消费证据。`pi.extensions` / `pi.skills` 的相对 glob、globstar、`!` 排除已实现并用离线 Pi fixture 取证；staging 复核现在要求 payload 文件集合与 manifest 精确一致。**本轮已补 `mcp-package`、固定项目内 `skill-files` 安全调度和独立 Skill 目录来源边界：**前者具备精确 npm staging、bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 原子配置 / 受管记录 / 复核 / 幂等重放；固定 Skill 具备 staging → 空闲边界复核 → active 文件物化 → 同 runner 重建 → 精确 `--skill` / `continueId` / `resumed` 证据；独立目录只接受带版本 / commit、逐文件 HTTPS URL 与 SHA-256 的候选，接入时逐文件复核后才进入既有 staging。单测当前 **4158/4158**，`test:skill-source` / `test:skill-files` 通过。**剩余**：真实外部目录检索、未获授权外部候选 acquire → install → activation → resume 与包内整链验收；未随 tarball 提供的依赖仍 fail-closed；纯自定义工具且 RPC 不报告 command / Skill 路径的包暂不能确认 active。临时 Pi 不是 OS 沙箱，候选仍以当前用户权限执行。
->    ⚠️ 远程 MCP 已不必再做；`--authorize` 的 host 级授权已实现，只差设置页（归 S7）。
-> 2. **04-S7（主要实现与包验收已完成）**：模式限制 / 项目隔离 / 取消与重连 / 视觉与包（MCP 与发现的界面）。服务端 runner 隔离、设置 UI、三档策略、显式 MCP 核验、用户取消 / 重连已实现并通过 `capsettings` / `mcpcli` / `capcli`；本轮 `typecheck` / `build` / 单测 **4158/4158**，视觉矩阵、解包应用能力页验收、便携运行探针和全新 NSIS 安装后 EXE 运行探针均已通过。安装器侧栏资源也已接入并随新产物构建。**剩余**：S6b-2 的真实外部目录 / 外部候选整链仍未完成；这不包括已通过的本地 / 解包 / 安装态包运行验收。
+> **本轮校正**：下面第 1 项的 `4119/4119`、`4158/4158` 与第 2 项的“视觉 / 包验收未做”是本轮开始前的旧描述；当前证据已更新为单测 **4347/4347**，S7 视觉矩阵与三种包形态运行级验收已通过，且上方新增了一个真实用户授权 Skill 文件候选的完整链路与恶意内容审查证据。以下清单保留未完成主线，但以本段上方最新六栏和当前基线为准。
+> 1. **04-S6b-2（进行中）**：npm `pi-package` 的 Electron 适配已接通：精确候选授权、项目 trust、source HEAD、goal revision、同 cwd runner 空闲门禁；hash 复核后在临时 Pi 离线 smoke，再受管 `pi install -l`、核对包清单、定向重载并要求 `continueId` 消费证据。`pi.extensions` / `pi.skills` 的相对 glob、globstar、`!` 排除已实现并用离线 Pi fixture 取证；staging 复核现在要求 payload 文件集合与 manifest 精确一致，`pi.skills` 在 smoke / active 复核前还会经过同一恶意内容审查器。**本轮已补 `mcp-package`、固定项目内 `skill-files` 安全调度和独立 Skill 目录来源边界，并由 `skillacquire` 完成一个用户授权外部 Skill 文件候选的 acquire → staging → 恶意内容审查 → active → 原目标续接：**前者具备精确 npm staging、bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 原子配置 / 受管记录 / 复核 / 幂等重放；固定 Skill 具备 staging → 空闲边界复核 → active 文件物化 → 同 runner 重建 → 精确 `--skill` / `continueId` / `resumed` 证据；独立目录只接受带版本 / commit、逐文件 HTTPS URL 与 SHA-256 的候选，接入时逐文件复核后才进入既有 staging。单测当前 **4347/4347**，`test:skill-source` / `test:skill-files` 通过。**剩余**：其它资源类型的外部候选 acquire → install → activation → resume 与包内整链验收；未随 tarball 提供的依赖仍 fail-closed；纯自定义工具且 RPC 不报告 command / Skill 路径的包暂不能确认 active。临时 Pi 不是 OS 沙箱，候选仍以当前用户权限执行。
+>    ⚠️ 远程 MCP 登记与设置页 / 模式 / 取消重连主链均已完成；当前剩余是 S6b-2 的其它资源类型外部候选和包级证据，不包括已通过的 Skill 文件样本。
+> 2. **04-S7（主要实现与包验收已完成）**：模式限制 / 项目隔离 / 取消与重连 / 视觉与包（MCP 与发现的界面）。服务端 runner 隔离、设置 UI、三档策略、显式 MCP 核验、用户取消 / 重连已实现并通过 `capsettings` / `mcpcli` / `capcli`；本轮 `typecheck` / `build` / 单测 **4347/4347**，视觉矩阵、解包应用能力页验收、便携运行探针和全新 NSIS 安装后 EXE 运行探针均已通过。安装器侧栏资源也已接入并随新产物构建。**剩余**：S6b-2 其它资源类型的获授权外部候选整链与包级证据，以及最终发布重跑；这不包括已通过的本地 / 解包 / 安装态包运行验收。
 > 3. **06-S2（N21-9 A/B）已完成，不再重跑**：v7 的 48 次真实调用已证伪「把 A 组丢失率抬到 20–40%」这一校准目标（A=11.1%，丢失集中于单一任务）；差异不足以支持策略收益，不应继续加样本。详见 [证据-06-S2](../archive/evidence/证据-06-S2-N21-9基准-2026-09-19.md) §6。
-> 4. **最终发布重跑（09-S5 + 01-S5）**：包运行态复核已齐；仍需在外部候选与独立 `skill-files` 来源边界明确后，按最终范围重跑发布前门槛
+> 4. **最终发布重跑（09-S5 + 01-S5）**：包运行态复核已齐；仍需在其它资源类型的外部候选 / 包级证据与本轮安全审查、文案改动稳定后，按最终范围重跑发布前门槛
 >    `YAN_TEST_MODEL=<provider/model> npm run check`（全量含真实模型场景；**优先使用已注册且验证能调用工具的本地 llama.cpp 模型**；只有本地服务不可用时才可用已授权远程模型）。本轮在 pi `models.json` 找到本地注册项 `local/qwen3-local`，并实际发起了 `GET /v1/models` 与 `POST /v1/chat/completions` 检查；当前配置已切到 `127.0.0.1:8081` 的新 Qwen 27B GGUF，并完成本地推理 / 工具调用验证。
 >    本轮已经手动启动 llama.cpp：`GET /v1/models` 返回 Qwen 27B，普通 `POST /v1/chat/completions` 返回 `READY`，强制工具调用返回 `finish_reason=tool_calls`；项目别名 `local/qwen3-local` 可直接调用。最终门槛改为使用该本地模型，不切换未授权远程模型。
 >    本轮 `npm run dist` 已成功生成三产物，`release/SHA256SUMS.txt` 已按本轮文件重写；随后 `npm run test:upgrade` 已通过（从真实用户数据只读副本启动，60 个原目录文件逐字节不变）。包内敏感串审计仍沿用既有白名单验收，未把 checksum 单独当成运行验收。
 > 5. **08-S1+（安卓客户端）**：依赖链最长，**开工前需要用户确认范围**（S0 状态机已冻结，零代码）。
-> 6. **P0-8 / 安装包那半边**：用户已明确要求**放最后**。
+> 6. **P0-8 / 安装包那半边**：已有解包 / 便携 / 全新 NSIS 安装态运行证据；不再单列为缺失，随最终范围重跑即可。
 > 7. **08-S0 两条远程 API 缺陷已完成真实端到端复核**（2026-09-20）：`npm run test:live -- remoteroutes` 通过。隔离 Electron 上 health / 鉴权 / 新建会话 / 指定 `sessionId` 消息 / 指定 `runId` abort 全绿；目标在后台 runner 运行、桌面当前会话不变；Node 侧本机 provider 确认目标请求的流被取消。无上游调用，不读取真实 pi 凭证或模型配置。该 cost 0 场景已加入 `check`。
 >
 > **开工前三件事**（每次一样）：读本文件「当前未完成」→ [实施计划](../plan/README.md) 主题总表 →
@@ -1650,7 +1662,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > [实施-02](../archive/plan/实施-02-任务工具内置化-已完成.md) 的完成记录；最后一片是
 > [S5 证据](../archive/evidence/证据-02-S5-真实运行与验收.md)（真实多步任务三处一致 + 包）。
 > **实施-01**：S4（迁移对照）**已登记完**（2026-09-19，结论表见
-> [实施-01 §4](../plan/active/实施-01-默认pi架构迁移.md)）；S5（发布切换）仍等 02–06。
+> [实施-01 §4](../plan/active/实施-01-默认pi架构迁移.md)）；S5（发布切换）仍等 04 / 06 的最终边界确认与发布重跑。
 >
 > ✅ **01-S4b（原硬阻塞）已完成（2026-09-19）**：`resources/pi-extensions/browser.js`
 > 已**零注册**（实测是 **16 个 `browser_*` 工具 + 1 个 pi 斜杠命令**，卡面写的「18 个」不准），
@@ -1658,7 +1670,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > **01-S5 的前置已满足** —— 移除默认扩展装载后浏览器能力不会丢（`test:live -- browserclimodel`，cost 1，
 > 模型自己发现入口并完成 `navigate` → `observe`；L04 边界回归绿）。证据：[证据-01-S4b](../archive/evidence/证据-01-S4b-browser-CLI迁移.md)。
 > 它占用过的 `agent.ts` / `capability-server.ts` / `yan.mjs` 三件套（[能力面串行队列](../plan/active/编排-并行代理分工-2026-09-19.md) §5）
-> **已释放** —— 队列下一位是 **05-S2（模式服务）**，然后是 03-S4、04-S3。
+> **已释放**；“下一位是 05-S2、再到 03-S4 / 04-S3”属于历史波次顺序，当前优先级以本文件 2026-09-22 待办段和实施计划为准。
 >
 > ✅ **05-S1 已完成（2026-09-19）** —— 钩子能力边界与安全点五组对照实测（假 provider，不联网不花钱）；
 > 结论见 [证据-05-S1](../archive/evidence/证据-05-S1-钩子与安全点.md)：`tool_call` 的 `{block:true}` 是真门禁、
@@ -1668,15 +1680,16 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > ✅ **05-S2 已完成（2026-09-19）** —— 会话级工作模式（标准 / 澄清 / 自主）、旧配置迁移、菜单与 `Tab` 快切、
 > `question` 按会话模式工作；证据见本文「本轮 · 实施-05 S2」。它占用的
 > `settings.ts` / `shared/ipc.ts` / `preload` / `store.ts` / `Composer.tsx` 已释放，
-> 队列里剩下的片仍见 [并行代理编排](../plan/active/编排-并行代理分工-2026-09-19.md)。
+> 旧队列只作文件域追溯；当前未闭环切片见实施计划和各活动正文，不从旧队列判断完成度。
 >
 > ✅ **05-S3a / S3b 已完成（2026-09-19）** —— 澄清档硬门禁（工具表主 + `tool_call` 兑底，
 > 薄层 `pi-extensions/work-mode.js` 执行）+ `yan goal ready|report|status` 通道 +
 > 会话级目标状态（幂等、先落盘、同因两次强制 blocked）+ **跨轮自动续行**
 > （`pi-extensions/goal-resume.js`：custom 控制消息 + `triggerTurn`，带消费证据与用户优先）；
 > 证据见本文「本轮 · 实施-05 S3a / S3b」与 [证据-05-S3a](../archive/evidence/证据-05-S3a-门禁与就绪转移.md)。
-> 同类的「薄层内注册模型工具」还剩两处，归属明确：`question.js` → 05-S3、
-> `context.js` 的 `context_recall` → 06 的 N21-9 A/B 结论决定去留。
+> 同类的「薄层内注册模型工具」历史上有两处：`question.js` 的 05-S3 已在 2026-09-22 收口为宿主
+> `yan question ask`，扩展只保留模式提示；`context.js` 的 `context_recall` 的 N21-9 A/B 基准也已完成，
+> 但它仍是当前唯一需要继续登记 carrier / 未满足边界的模型工具例外。
 > 详见 [实施-01 §4 的判定表](../plan/active/实施-01-默认pi架构迁移.md)。
 >
 > **实施-06**：S1（分支判定）**已完成**（2026-09-19）—— 结论 **分支 A 成立**：
@@ -1684,7 +1697,31 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > `session_before_compact` / `agent_settled`）都在且载荷够用（`session_before_compact` 已由真实压缩的
 > `takeover 1 / fallback 0` 取证），**没有任何一项落进止损表**（止损表降为「将来钩子被移除时的预案」）。
 > 除 `context_recall` 外全部有落点；`context_recall` 是唯一「必须注册模型工具」的项，
-> 已按出口 ③ 如实登记为未满足，去留交给 N21-9。**剩**：S2（N21-9 A/B 基准）、S3、S4、S5。
+> 已按出口 ③ 如实登记为未满足；N21-9 已完成，`question` 则已由宿主 CLI 承载。**剩**：真实长会话证据限制与 `context_recall` 最终边界记录。
+
+### 本轮（2026-09-22）实施-01 S5a · 默认发现链收口
+
+> 这是一片 **S5 的部分收口**，不是 01 主题完成证明。它先验证「用户目录里的旧扩展 / Skill 不会被砚默认 runner 自动带入」，并保留显式传入的砚薄层；`question` 随后已改走宿主唯一入口，`context_recall` 仍按 01 / 06 的最终边界处理。
+
+| 验收栏 | 证据 |
+|---|---|
+| 实现 | `agent.ts` / `subagents.ts` 默认参数加入 `--no-extensions`、`--no-skills`；`index.ts` 的受管薄层路径在开发态读 `resources/pi-extensions`、打包态读 `resources/yan-thin`，并覆盖实际 10 个显式薄层文件；`electron-builder.yml` 的目标目录改为 `yan-thin`；扩展来源诊断改为「用户扩展可见但默认不加载」。 |
+| 自动检查 | 默认发现切片的 `typecheck`、`build`、`audit:refs`、`git diff --check` 证据保留；question 收口后的当前单测为 **4347/4347**。`audit:refs` 的当前报告 `brokenDocLinks: []`；其余 orphan / archive 提示是既有审计信息，不在本片伪装成零提示。 |
+| 真实运行 | `npm run test:live -- taskext` 通过（cost 0，`YAN_*` 隔离）：升级 fixture 中两个旧扩展都未加载，旧 `/panel` 没有回到默认命令来源，历史 4 条任务仍可读；退出后原会话 JSONL 逐字节不变、未追加任务快照；Electron 关闭后无孤儿 pi 进程。受影响的浏览器接线另以 `npm run test:live -- browser`（cost 0）复核通过，Google 标题 / 右栏 / 元素数 / 标签页 / 原生 bounds 均有回执。 |
+| 视觉验收 | 未做新截图；本片无界面 / CSS / 布局修改，运行证据集中在 Electron 日志、命令来源和会话文件。 |
+| 应用与包 | 打包配置与 `test-packaged` / 单测的 `yan-thin` 静态哨兵已同步；本片未重新打包，未把静态资源存在写成包内真实验收。最终包验收仍需覆盖 04-S6b-2 剩余的其它资源类型包级候选证据，并按 09 重跑。 |
+| 剩余限制 | 01-S5 仍未完整闭环：`context.js` 的 `context_recall` 模型工具 carrier 尚未完成最终边界收口；`question` 已转为宿主 `yan question ask`；`browser.js` 空占位仍在；04 已有一个用户授权 Skill 文件候选的开发态 acquire → staging → 安全审查 → active → resume 整链，`pi-package` / `mcp-package` 的其它外部候选及包内整链仍未完成。 |
+
+### 本轮（2026-09-22）实施-01 S5b · `question` 宿主唯一入口
+
+| 面 | 证据 |
+|---|---|
+| 实现 | `question.ask` 已加入 `KNOWN_COMMANDS`、`yan.mjs` help / action 表和 `AgentController`；宿主承载输入、选项、自定义答案、取消 / 超时及请求关联；`question.js` 只保留 `before_agent_start` 模式提示，`work-mode.js` 只放行受限的 `yan question ask` 形状，扩展不再注册 `question` 模型工具。 |
+| 自动检查 | `npm run typecheck`、`npm run build` 通过；`npm run test:unit` 当前 **4347/4347**；`scripts/test-question.mjs`、扩展清单断言、相关 Node 语法检查通过。 |
+| 真实运行 | `npm run test:live -- questioncli`（cost 0）验证标准 / 自主两条宿主 CLI；`ask`（cost 1，`commandcode/deepseek/deepseek-v4.1-flash`）验证模型 → `bash` → CLI → 真实面板 → 答案回填；`askbackground` 验证 A/B 会话等待隔离。三条均无 `question` 模型工具调用、无孤儿 pi。 |
+| 视觉验收 | 使用真实 `QuestionPanel` live 交互取证；没有 CSS / 布局改动，因此未新增视觉矩阵截图，也未把 fixture 当作视觉证据。 |
+| 应用与包 | CLI 与薄层继续走显式受管路径；本轮未重新生成 `dist:dir` / 安装包，最终包门槛仍随 09 重跑。 |
+| 剩余限制 | `context_recall` 仍是唯一未完成 carrier 的模型工具例外；question host CLI 的取消 / 超时实现已接线，但本轮 live 主要验证正常回答、自主不提问和后台等待；模式提示仍是软指导，不能替代模型行为保证。 |
 
 ### 代码与文档审阅（2026-09-17，R01–R04 已修复、D01–D06 已同步）
 
@@ -1709,7 +1746,7 @@ D01–D06 的文档/注释漂移已按当前实现改写。
 
 [代码功能实现清单](../archive/2026-09-17-代码功能实现清单.md)按现有实现列出产品能力和上下文细项。
 
-### 一、P1 · 上下文管理（唯一还缺的大功能）
+### 一、P1 · 上下文管理（N21 收尾与证据限制；不是新增大功能）
 
 方案唯一真源：[design/方案-上下文工具内的自动压缩](../design/active/方案-上下文工具内的自动压缩-2026-09-15.md)
 （§12 = 阶段 4 开工契约与验收，§13 = 对外部参考方案的对齐结论）。
@@ -1722,11 +1759,11 @@ D01–D06 的文档/注释漂移已按当前实现改写。
 |---|---|---|---|
 | **N21-4 多阶段与归档** | **✅ S1–S7 已交付并真实验证（2026-09-17）** | S1（State / Archive 基础设施）证据见[方案 §14](../design/active/方案-上下文工具内的自动压缩-2026-09-15.md#14-阶段-4--s1-落地记录state--archive-基础设施2026-09-17)；
 S2–S6 证据见[方案 §15](../design/active/方案-上下文工具内的自动压缩-2026-09-15.md#15-阶段-4--s2s6-落地记录扩展执行层--recall--降级2026-09-17)：`context` 钩子做 Tool Sweep（墓碑 + `ctx://` 引用）、Task State 前置注入（水位一致才注入）、`context_recall`（预算 / TTL / 审计）、`session_before_compact` 接管闸门（缺字段/无状态一律降级回 pi 摘要），默认**清扫 + 可召回墓碑 + 压缩**（`kinds` 默认含 `episode-fold`（2026-09-18 拍板，见方案 §17.5.7），2026-09-17 用户拍板：清理默认开但保留必要引用；本回合正在动的文件不清扫）。**剩下**：① ~~EpisodeState 的语义生成~~ —— **已完成（2026-09-18，但两道门默认关）**：边界用 `episodeWindow` 的**确定性规则**算（尾部窗口之外 + 上一版终点），收束由模型的 `unresolved` 判（非空即不折），生成后**只落盘、不消费**（`episodeGenerate` / `episodeInject` 都默认关）；真实链路已验证位、落盘与 schema，见[归档 §1.25](../archive/2026-09-17-已完成归档.md)。**开它之前先要有质量数据**；② ~~`symbolsTouched`（需语言级解析，目前为空）~~ —— **已明确不做（2026-09-19，实施-06 S3）**：不为此在薄层引入语言级解析器，字段保留但刻意不填（方案 §13.1 第 23 条）；③ ~~§12.11 第 10 条 20+ 回合压力测试~~ —— **已完成（2026-09-19，实施-06 S3）**：`test:live -- contextpressure` / `contextpressurelow`，22 个真实回合、压缩 3 次、峰值 1.05×，并修掉“策略压缩成功后不重新上膛”的真缺陷（见下方「本轮」）。~~三阶段独立 Rearm / Cooldown~~ —— **已完成（2026-09-18）**：新模块 `context-stage-runtime.js` + `context.js` 的 sweep / fold 接线，30 条单测 + 3 次反向验证，见[归档 §1.24](../archive/2026-09-17-已完成归档.md)；~~增量 delta（现为全量快照）~~ —— **已决策不做**（方案 §18）。**另：S7（状态生成器）已于 2026-09-17 落地** —— 混合式（确定性 reducer 提供 files / commands / tests + 一次无工具 completion 产出语义字段，落盘前 reducer 覆盖模型返回的同名字段）、`revision` CAS、freshness 分档（gap 1–2 标 stale / 3–6 丢语义 / >6 不注入）、状态自身预算与裁剪；**默认在接管集里**（2026-09-18 拍板；但短会话由会话级门槛挡住，不是每轮都跑）。证据见方案 §17。以下为这批交付前的描述（供回溯）：EpisodeState / TaskState 的语义生成器（**扩展内即可完成** —— 方案 §16.1 更正了「扩展侧没有推理 API」的误判：`agent_settled` 事件 + `ctx.modelRegistry.complete()` 就能跑一次无工具归纳；实施级契约（coordinator/CAS/freshness/预算与裁剪/dirty 阈值/注入切分）见**方案 §16.6**，由第三轮外部评审经内置浏览器对话取得并经源码核查；开工前的三项待决中**第 1 项已定**：复用已验证的浏览器 loopback bridge 落盘，见方案 §16.6.3）、三阶段独立 Rearm/Cooldown（**已于 2026-09-18 完成**，见[归档 §1.24](../archive/2026-09-17-已完成归档.md)） | N21-3（已完成） |
-| **N21-5～N21-9 状态化压缩** | **N21-5 / N21-6 / N21-7 / N21-8 全部完成（2026-09-17～18）**，只剩 **N21-9（A/B 基准）未开工**。N21-6 的接管**成功分支**已在真实链路取证（`contexttakeoverstate`：`takeover 1 次 / fallback 0 次`，[归档 §1.21](../archive/2026-09-17-已完成归档.md)）；N21-8 已闭环（默认关 + 设置面板开关 + 视觉证据，[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。方案 §19 的结论仍然成立：pi **没有 system 注入通道**（`convertToLlm` 把 `custom` 一律映射成 user、`default` 直接丢弃），要做 system 级注入只能走 `before_provider_request` | 任务表见 [实施-06 上下文管理收尾](../plan/active/实施-06-上下文管理收尾.md)。**③ 阈值可配 + 模型级 override 已落地**（N21-7，见[归档 §1.8](../archive/2026-09-17-已完成归档.md#18-n21-7-上下文阈值可配置化--模型级-override2026-09-17已完成)：lookup `env > model(provider/model) > provider > user > default`、设置面板「上下文」tab、`contextbudget` 第 7 节 + 20 条单测 + 两张 `ctxsettings` 截图）。**剩余**：① ~~增量 delta（全量快照）~~ —— **已决策不做**（方案 §18：量化后收益 ≤900 token/次且已有硬 cap，成本是合并语义与新的正确性面；N21-5 不再是「未完成」）；② `episode-fold` 默认值：**2026-09-18 已取得第五轮外部意见，它修正立场为「现在默认关是对的」**（原文存档于 `docs/archive/reference/参考-episode-fold 默认策略（第五轮·ChatGPT·原文）-2026-09-18.md`）；它把 `supportingEntryIds`（provenance）定为默认开的前置，而本项目核查确认「语义递归经 `<previous_state>` 仍在」—— 与现状一致，**默认值保持关**（方案 §17.5.6）—— 2026-09-17 晚已取得**第四轮外部意见**并做完源码核查（§17.5），随后**把与开关无关的硬化项全部落地**（[归档 §1.11](../archive/2026-09-17-已完成归档.md)：synthetic 输入自净 / 注入 authority 契约头 / `generate`+`inject` 分路 / episode 旁路防线 / **回合口径修正** / 会话级 gate + 新增 `contextgate` 场景）；它用的三个 gate 信号里「settled turn 计数」已补上（`turnsSince`），另两个（离压缩还有多远）仍需主进程的工作集；**第四轮复核又定掉三条**（Sweep 不得绕过最低回合数 / `inject` 的语义写死为「允许参与任何模型可见上下文」/ 「落后 1 条未 settled 的 user 算 fresh」，见方案 §17.7）；③ Deep Context Mode 默认关闭、开工前先做两项前置调查（其中「扩展侧到底能不能自己调模型」已在方案 §16.1 更正并核实）。方案 §13.5 的开工前三问与 §16.4 的四个拍板点，除②（等价于 §16.4 的默认值项）外都已随实现定下，原文保留仅供回溯；外部评审提的改进项（字段级 freshness、ancestry + 有界陈旧、富墓碑等）已登记在方案 §16.2（**待评估、未排期**）；另有一轮**本机 Codex** 的第三方核对（一致处与分歧见方案 §16.5，它额外指出 TaskState 自适应裁剪、生成器重入/迟到结果 CAS、归档回滚三项硬要求） | N21-4；用户拍板 |
+| **N21-5～N21-9 状态化压缩** | **N21-5 / N21-6 / N21-7 / N21-8 / N21-9 全部完成（2026-09-17～19）**。N21-6 的接管**成功分支**已在真实链路取证（`contexttakeoverstate`：`takeover 1 次 / fallback 0 次`，[归档 §1.21](../archive/2026-09-17-已完成归档.md)）；N21-8 已闭环（默认关 + 设置面板开关 + 视觉证据，[归档 §1.20](../archive/2026-09-17-已完成归档.md)）。方案 §19 的结论仍然成立：pi **没有 system 注入通道**（`convertToLlm` 把 `custom` 一律映射成 user、`default` 直接丢弃），要做 system 级注入只能走 `before_provider_request` | 任务表见 [实施-06 上下文管理收尾](../plan/active/实施-06-上下文管理收尾.md)。**③ 阈值可配 + 模型级 override 已落地**（N21-7，见[归档 §1.8](../archive/2026-09-17-已完成归档.md#18-n21-7-上下文阈值可配置化--模型级-override2026-09-17已完成)：lookup `env > model(provider/model) > provider > user > default`、设置面板「上下文」tab、`contextbudget` 第 7 节 + 20 条单测 + 两张 `ctxsettings` 截图）。**剩余**：① ~~增量 delta（全量快照）~~ —— **已决策不做**（方案 §18：量化后收益 ≤900 token/次且已有硬 cap，成本是合并语义与新的正确性面；N21-5 不再是「未完成」）；② `episode-fold` 默认值：**2026-09-18 已取得第五轮外部意见，它修正立场为「现在默认关是对的」**（原文存档于 `docs/archive/reference/参考-episode-fold 默认策略（第五轮·ChatGPT·原文）-2026-09-18.md`）；它把 `supportingEntryIds`（provenance）定为默认开的前置，而本项目核查确认「语义递归经 `<previous_state>` 仍在」—— 与现状一致，**默认值保持关**（方案 §17.5.6）—— 2026-09-17 晚已取得**第四轮外部意见**并做完源码核查（§17.5），随后**把与开关无关的硬化项全部落地**（[归档 §1.11](../archive/2026-09-17-已完成归档.md)：synthetic 输入自净 / 注入 authority 契约头 / `generate`+`inject` 分路 / episode 旁路防线 / **回合口径修正** / 会话级 gate + 新增 `contextgate` 场景）；它用的三个 gate 信号里「settled turn 计数」已补上（`turnsSince`），另两个（离压缩还有多远）仍需主进程的工作集；**第四轮复核又定掉三条**（Sweep 不得绕过最低回合数 / `inject` 的语义写死为「允许参与任何模型可见上下文」/ 「落后 1 条未 settled 的 user 算 fresh」，见方案 §17.7）；③ Deep Context Mode 默认关闭、开工前先做两项前置调查（其中「扩展侧到底能不能自己调模型」已在方案 §16.1 更正并核实）。方案 §13.5 的开工前三问与 §16.4 的四个拍板点，除②（等价于 §16.4 的默认值项）外都已随实现定下，原文保留仅供回溯；外部评审提的改进项（字段级 freshness、ancestry + 有界陈旧、富墓碑等）已登记在方案 §16.2（**待评估、未排期**）；另有一轮**本机 Codex** 的第三方核对（一致处与分歧见方案 §16.5，它额外指出 TaskState 自适应裁剪、生成器重入/迟到结果 CAS、归档回滚三项硬要求） | N21-4；用户拍板 |
 
-### 二、P2 · 已取证项的尾巴（都不阻塞主链路，可批量补）
+### 二、P2 · 已取证项的尾巴（历史基线；09-S2 已完成批量收口，不再作为当前待办）
 
-| ID | 已取证的部分 | 还差什么 |
+| ID | 已取证的部分（历史基线） | 当时还差什么（历史记录） |
 |---|---|---|
 | **N12 会话运行** | 切走不停 / 切回不串 / 同 cwd 拒绝 / 单独停止 / 退出落盘（`-- sessionab`、`-- sessionrunners`）；**「无孤儿进程」的进程表观测已补（2026-09-18）**：`test-live` 收尾统一查一次（判据「命令行含 `--mode rpc` 且父进程已不在表里」，只报告不杀进程），并做过反向验证 | 等待输入 / 失败 / 未读三种后台状态的**真实窗口**证据；退出变体（保存 / 中断 / 取消 / 重复） |
 | **L03 子代理审阅** | 并发矩阵、冲突、只读封堵、退出归档与无残留（`-- subagentpair` + 单测）；**孤儿进程观测已补（2026-09-18，与 N12 共用同一条检查）** | 模型自身失败 / 超时的恢复（10 分钟上限目前只有代码审阅 + 单测） |

@@ -335,6 +335,9 @@ export class SubagentController {
     isolation: 'worktree' | 'controlled-cwd'
   ): SubagentRpc {
     const args = [
+      /* 子代理也走默认 pi 边界：用户目录里的扩展 / Skill 不会被隐式带入。 */
+      '--no-extensions',
+      '--no-skills',
       ...(ctx.extensions?.flatMap((p) => ['--extension', p]) ?? []),
       ...(ctx.appendSystemPrompt ? ['--append-system-prompt', ctx.appendSystemPrompt] : []),
       /* 只读任务把工具白名单交给 pi 兜底（D4），不依赖上层自觉。 */

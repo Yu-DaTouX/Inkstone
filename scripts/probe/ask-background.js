@@ -5,8 +5,8 @@
  * 左栏那一行的 `?` 状态槽（`rail.waiting`），真源是
  * `RunnerStatus.waiting = agent.getPendingUiCount() > 0`，也就是
  * **这个会话有一个还没回答的提问面板**。它的产生路径是真东西：
- * 内置 `question` 扩展调 `ctx.ui.select` → pi 发 `extension_ui_request`
- * → 主进程记进 `pendingUi` → `runners` 快照里那一行 `waiting=true`。
+ * 模型经原生 bash 调 `yan question ask` → 宿主问题面板 → 主进程记进
+ * `pendingUi` → `runners` 快照里那一行 `waiting=true`。
  *
  * ── 为什么单独一条场景 ──
  * `ask`（cost 1）已经证了提问链路本身，但它全程停在**前台**；
@@ -63,7 +63,7 @@
     }
 
     /*
-     * 工作模式必须是标准：自主模式下 `question` 工具一开头就返回
+     * 工作模式必须是标准：自主模式下宿主 question ask 会直接返回
      * 「请自行决策」，根本不发 ui-request（这是它的设计，不是故障）。
      */
     await store.getState().setWorkMode('standard')
@@ -96,10 +96,44 @@
     const onA = await waitFor(() => (norm(store.getState().session?.sessionFile) === norm(A.path) ? true : null), 400)
     ok(!!onA, 'A 成为当前会话')
 
+    const bashMessages = () => store.getState().messages.filter((m) => m.role === 'bash')
+    const runBash = async (command) => {
+      const before = new Set(bashMessages().map((m) => m.id))
+      const promise = window.yan.runBash(command)
+      await promise
+      const message = await waitFor(() => {
+        const candidate = bashMessages().find((m) => {
+          if (before.has(m.id)) return false
+          const call = m.toolCalls?.[0]
+          return call && call.status !== 'running' && call.status !== 'pending' ? m : null
+        })
+        return candidate
+      }, 150)
+      return { message, exitCode: message?.bash?.exitCode ?? null }
+    }
+    const tempDirResult = await runBash(`node -e "process.stdout.write(require('os').tmpdir())"`)
+    const tempDir = String(tempDirResult.message?.toolCalls?.[0]?.output ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .pop()
+    const requestPath = `${tempDir}\\yan-question-background.json`
+    const requestB64 = btoa(
+      unescape(
+        encodeURIComponent(
+          JSON.stringify({ question: '后台会话请选择数据库', options: ['SQLite', 'PostgreSQL'], timeout: 60_000 })
+        )
+      )
+    )
+    const prepared = await runBash(
+      `node -e "const fs=require('fs'),p=require('path');fs.writeFileSync(p.join(require('os').tmpdir(),'yan-question-background.json'),Buffer.from('${requestB64}','base64'))"`
+    )
+    ok(!!tempDir && prepared.exitCode === 0, '已在 A 的隔离临时目录准备 question ask 请求文件')
+
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
     const prompt =
-      '这是一次功能自测。请只做一件事：调用 question 工具询问我「用哪种数据库？」，' +
-      '选项给 SQLite 和 PostgreSQL。不要用普通文字提问，不要做其它事，不要执行命令。'
+      `这是一次功能自测。请只做一件事：使用 bash 执行 yan question ask --request-file "${requestPath}"，` +
+      '不要调用名为 question 的模型工具，不要用普通文字提问，不要执行其它命令。'
     let sendable = false
     for (let i = 0; i < 20 && Date.now() < deadline; i++) {
       const ta = q('[data-testid="composer"]')
@@ -132,7 +166,7 @@
     ok(!!pending, '主进程收到了 pi 的 UI 请求（pendingUi 非空）', String(pending?.reqs?.length ?? 0))
     if (!pending) {
       out.push('  最近助手文字：' + JSON.stringify(String(store.getState().messages.at(-1)?.text ?? '').slice(0, 200)))
-      out.push('  question 工具行：' + qa('.trow').some((r) => r.getAttribute('data-tool') === 'question'))
+       out.push('  question 模型工具行：' + qa('.trow').some((r) => r.getAttribute('data-tool') === 'question'))
       return out.join('\n')
     }
     ok(pending.r.waiting === true, 'A 的运行实例被标成 waiting（主进程侧的真源）', JSON.stringify(pending.r.waiting))

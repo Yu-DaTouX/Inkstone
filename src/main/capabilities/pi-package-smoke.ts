@@ -2,6 +2,7 @@ import { glob, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'n
 import { tmpdir } from 'node:os'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PiRpc, resolvePi } from '../protocol'
+import { formatSkillSecurityReview, reviewSkillFiles, type SkillSecurityReview } from '../../shared/skill-security'
 import { stagingDirOf, type AcquisitionService } from './acquisition-service'
 import type { PiPackageCheck } from './pi-package-scheduler'
 
@@ -100,6 +101,55 @@ async function expandPackagePaths(packageRoot: string, values: unknown[]): Promi
   }).sort(lexical)
 }
 
+const MAX_SKILL_SCAN_FILES = 512
+const MAX_SKILL_SCAN_BYTES = 8 * 1024 * 1024
+
+async function collectSkillFiles(packageRoot: string, entries: readonly string[]): Promise<{ path: string; content: Uint8Array }[]> {
+  const files: { path: string; content: Uint8Array }[] = []
+  let totalBytes = 0
+  const visit = async (path: string): Promise<void> => {
+    await rejectSymlinkPath(packageRoot, path)
+    const info = await lstat(path)
+    if (info.isFile()) {
+      if (files.length >= MAX_SKILL_SCAN_FILES) throw new Error(`pi 包 Skill 文件超过安全扫描上限 ${MAX_SKILL_SCAN_FILES}`)
+      const content = await readFile(path)
+      totalBytes += content.byteLength
+      if (totalBytes > MAX_SKILL_SCAN_BYTES) throw new Error(`pi 包 Skill 内容超过安全扫描上限 ${MAX_SKILL_SCAN_BYTES} bytes`)
+      files.push({
+        path: relative(packageRoot, path).replaceAll('\\', '/'),
+        content
+      })
+      return
+    }
+    if (!info.isDirectory()) throw new Error('pi 包 Skill 资源必须是普通文件或目录')
+    const children = (await readdir(path, { withFileTypes: true })).sort((a, b) => lexical(a.name, b.name))
+    for (const child of children) {
+      const childPath = join(path, child.name)
+      if (child.isSymbolicLink()) throw new Error(`pi 包 Skill 目录包含符号链接：${child.name}`)
+      await visit(childPath)
+    }
+  }
+  for (const entry of entries) await visit(entry)
+  return files
+}
+
+/** Review every file that a pi package declares through `pi.skills` before Pi can load it. */
+export async function reviewPiPackageSkills(packageRoot: string, manifest: unknown): Promise<SkillSecurityReview> {
+  const pkg = object(manifest)
+  const pi = object(pkg?.pi)
+  const rawSkills = pi
+    ? (pi.skills ?? [])
+    : (await lstat(join(packageRoot, 'skills')).then(() => ['skills']).catch(() => []))
+  if (!Array.isArray(rawSkills) || !rawSkills.every((value) => typeof value === 'string')) {
+    throw new Error('pi.skills 必须是字符串路径数组')
+  }
+  const entries = await expandPackagePaths(packageRoot, rawSkills)
+  const files = await collectSkillFiles(packageRoot, entries)
+  const review = reviewSkillFiles(files)
+  if (!review.ok) throw new Error(formatSkillSecurityReview(review))
+  return review
+}
+
 async function rejectSymlinkPath(root: string, path: string): Promise<void> {
   const rel = relative(resolve(root), resolve(path))
   let current = resolve(root)
@@ -193,6 +243,7 @@ export async function resolvePiPackageSmokeResources(
     const info = await lstat(skill)
     if (!info.isFile() && !info.isDirectory()) throw new Error('Skill 资源必须是普通文件或目录')
   }
+  if (skills.length > 0) await reviewPiPackageSkills(packageRoot, manifest)
   return { extensions, skills }
 }
 

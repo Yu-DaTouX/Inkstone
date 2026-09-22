@@ -426,6 +426,16 @@ const acquisitionShared = await import('../node_modules/esbuild/lib/main.js').th
     logLevel: 'silent'
   }).then(() => import('../out/test/acquisition.mjs'))
 )
+const skillSecurity = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/skill-security.ts'],
+    outfile: 'out/test/skill-security.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/skill-security.mjs'))
+)
 const acquisitionService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/capabilities/acquisition-service.ts'],
@@ -500,6 +510,7 @@ const piPackageSmoke = await import('../node_modules/esbuild/lib/main.js').then(
   }).then(() => import('../out/test/pi-package-smoke.mjs'))
 )
 const { runAcquisitionTests } = await import('./test-acquisition.mjs')
+const { runSkillSecurityTests } = await import('./test-skill-security.mjs')
 const { runPiPackageSchedulerTests } = await import('./test-pi-package-scheduler.mjs')
 const { runPiPackageSmokeTests } = await import('./test-pi-package-smoke.mjs')
 
@@ -1618,6 +1629,7 @@ await runAcquisitionTests(ok, {
   packageAuthorizationShared,
   packageAuthorizationService
 })
+await runSkillSecurityTests(ok, skillSecurity)
 await runPiPackageSchedulerTests(ok, {
   AcquisitionService: acquisitionService.AcquisitionService,
   PiPackageActivationScheduler: piPackageScheduler.PiPackageActivationScheduler
@@ -2349,6 +2361,7 @@ await runGitRepoTests(ok)
   const builder = readFileSync('electron-builder.yml', 'utf8')
   ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
   ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
+  ok(/from: resources\/pi-extensions[\s\S]*to: yan-thin/.test(builder), '打包：砚薄层与 pi 用户扩展目录分离')
 }
 
 /*

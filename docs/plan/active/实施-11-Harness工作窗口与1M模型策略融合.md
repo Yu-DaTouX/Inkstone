@@ -1,6 +1,6 @@
 # 实施-11 · Harness 工作窗口与 1M 模型策略融合
 
-状态：**进行中**（2026-09-21 首批切片已开始；本文已把两份设计输入整理成有序队列，尚未宣称整项完成）
+状态：**进行中**（首批切片已部分交付，仍按 17 位队列推进；本文已把两份设计输入整理成有序队列，尚未宣称整项完成）
 
 本实施文档把两份 2026-09-21 设计输入拆成可以逐片验收的工程任务：
 
@@ -467,7 +467,7 @@
 | 六栏 | 当前结论 |
 |---|---|
 | 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 / H-6b 部分交付，H-4a + H-3/H-4b 部分交付（链接解析、会话级工作窗口、Markdown 阅读 / 源码、缺失重试）；H-3 的多文档 / 完整资源身份、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`npm run test:unit` **4334/4334**，`git diff --check`、`vendor:pi:check`、`env -u ELECTRON_RUN_AS_NODE npm run measure:design`、`audit:refs` 通过；最终 `npm run dist:dir` 成功。审计明确记录跟踪 `nul` 使 Git status 无法读取，未伪造干净状态。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，单测通过；具体数量以 HANDOFF 最新记录为准。`git diff --check`、`vendor:pi:check`、设计测量、`audit:refs` 和最终 `dist:dir` 证据按对应切片记录。审计明确记录跟踪 `nul` 使 Git status 无法读取，未伪造干净状态。 |
 | 真实运行 | H-2 `rightresources`、H-4a + H-4b `filelink`、工具 / 动效 `tools motion` 全绿；H-10 现有 `subagent`（`deepseek/deepseek-v4.1-flash`，真实 worktree / RPC / 停止）全绿；其余已取证场景见 HANDOFF。 |
 | 视觉验收 | 沿用 H-1 / H-2 / H-4a / 子代理既有深浅截图；本片只新增真实运行证据，未把未重拍截图写成新视觉通过。 |
 | 应用与包 | `npm run test:packaged` 全绿，证明最新解包产物中的内置 pi、知识、Git、上下文策略、能力页、yan CLI 与远程边界可用；未生成 NSIS / 便携包。 |

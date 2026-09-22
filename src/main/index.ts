@@ -304,8 +304,25 @@ let runners: RunnerRegistry | null = null
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
 let skillFilesActivationScheduler: SkillFilesActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
+let piPackageActivationRetryTimer: ReturnType<typeof setTimeout> | null = null
 let piPackageActivationInFlight = false
 let piPackageActivationAgain = false
+/** Same deferred reason is quiet; a changed reason remains visible for diagnosis. */
+const piPackageActivationDeferred = new Map<string, string>()
+
+/**
+ * `goal-resume` 会先写消费证据再调用 `sendMessage`；某些 pi 版本不会为这
+ * 个 custom 消息再推一帧宿主可见的 `state/proc` 事件。只对「等待消费证据」
+ * 的结果安排一次有界复核，不能靠它重新触发 runner 重载。
+ */
+function schedulePiPackageActivationRetry(): void {
+  if (piPackageActivationRetryTimer) return
+  piPackageActivationRetryTimer = setTimeout(() => {
+    piPackageActivationRetryTimer = null
+    requestPiPackageActivationTick()
+  }, 2_500)
+  piPackageActivationRetryTimer.unref?.()
+}
 let browser: BrowserController | null = null
 let subagents: SubagentController | null = null
 /**
@@ -360,27 +377,36 @@ const SUBAGENT_SYSTEM_PROMPT = [
   '- Finish with a concise report: what you changed or found, and how you verified it.'
 ].join('\n')
 
-function browserExtensionPath(): string | undefined {
+/**
+ * 砚薄层的资源查找顺序：
+ *
+ *   · 打包态放在 `resources/yan-thin`，不伪装成 pi 的用户扩展目录；
+ *   · 开发态继续从仓库里的 `resources/pi-extensions` 读源码；
+ *   · 最后一项给从仓库根目录启动的开发入口兜底。
+ *
+ * 这些文件仍通过 `--extension` 显式传入；改目录名只收紧随包边界，
+ * 不把薄层变成可被 pi 自动发现的第三方扩展集合。
+ */
+function yanThinResourcePath(file: string): string | undefined {
   const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'browser.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'browser.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'browser.js')
+    process.resourcesPath ? join(process.resourcesPath, 'yan-thin', file) : '',
+    join(__dirname_, '..', '..', 'resources', 'pi-extensions', file),
+    join(process.cwd(), 'resources', 'pi-extensions', file)
   ].filter(Boolean)
   return candidates.find((p) => existsSync(p))
 }
 
+function browserExtensionPath(): string | undefined {
+  return yanThinResourcePath('browser.js')
+}
+
 /**
- * 内置「提问」扩展的路径。
- * 让模型在信息不足时主动问用户；自主模式打开时改为自行决策。
+ * 内置「提问」工作模式指引薄层的路径。
+ * 真正的交互入口是宿主 `yan question ask`；自主模式会明确禁止调用它。
  * 与 browser.js 同一套查找顺序（打包后 / 开发期）。
  */
 function questionExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'question.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'question.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'question.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('question.js')
 }
 
 /**
@@ -389,12 +415,7 @@ function questionExtensionPath(): string | undefined {
  * 只有它能在运行中收紧工具表（RPC 没有工具面），所以澄清档的门禁靠它执行。
  */
 function workModeExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'work-mode.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'work-mode.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'work-mode.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('work-mode.js')
 }
 
 /**
@@ -403,12 +424,7 @@ function workModeExtensionPath(): string | undefined {
  * 只有扩展 API 能发 `custom` 角色消息并触发回合，所以这段必须留在薄层。
  */
 function goalResumeExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'goal-resume.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'goal-resume.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'goal-resume.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('goal-resume.js')
 }
 
 /**
@@ -418,12 +434,7 @@ function goalResumeExtensionPath(): string | undefined {
  * 但提示词与校验都在宿主 —— 它只负责「把这一次调用发出去并把原文写回来」。
  */
 function handoffsExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'handoffs.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'handoffs.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'handoffs.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('handoffs.js')
 }
 
 /**
@@ -431,12 +442,7 @@ function handoffsExtensionPath(): string | undefined {
  * 它在 before_agent_start 里按档位注入系统提示；standard 档不注入。
  */
 function responseDetailExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'response-detail.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'response-detail.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'response-detail.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('response-detail.js')
 }
 
 /**
@@ -447,12 +453,7 @@ function responseDetailExtensionPath(): string | undefined {
  * 启动时生效，切语言就得重建实例（会掐掉后台会话、并让界面短暂失去历史）。
  */
 function languageExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'language.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'language.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'language.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('language.js')
 }
 
 /**
@@ -462,14 +463,7 @@ function languageExtensionPath(): string | undefined {
  * 否则模型根本不会去用它（见 resources/pi-extensions/capability-guide.js）。
  */
 function capabilityGuideExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath
-      ? join(process.resourcesPath, 'pi-extensions', 'capability-guide.js')
-      : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'capability-guide.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'capability-guide.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('capability-guide.js')
 }
 
 /**
@@ -482,12 +476,7 @@ function capabilityGuideExtensionPath(): string | undefined {
  * 与 language.js 同一套查找顺序（打包后 / 开发期）。
  */
 function contextExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'context.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'context.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'context.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('context.js')
 }
 
 /**
@@ -498,12 +487,7 @@ function contextExtensionPath(): string | undefined {
  * 检索与预算全在宿主（见 `main/project-knowledge.ts`）。
  */
 function projectKnowledgeExtensionPath(): string | undefined {
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, 'pi-extensions', 'project-knowledge.js') : '',
-    join(__dirname_, '..', '..', 'resources', 'pi-extensions', 'project-knowledge.js'),
-    join(process.cwd(), 'resources', 'pi-extensions', 'project-knowledge.js')
-  ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  return yanThinResourcePath('project-knowledge.js')
 }
 
 /**
@@ -518,6 +502,9 @@ function yanThinExtensionPaths(): string[] {
   return [
     browserExtensionPath(),
     questionExtensionPath(),
+    workModeExtensionPath(),
+    goalResumeExtensionPath(),
+    handoffsExtensionPath(),
     responseDetailExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
@@ -1096,8 +1083,21 @@ function requestPiPackageActivationTick(): void {
     }
     piPackageActivationInFlight = true
     void Promise.all(schedulers.map((scheduler) => scheduler.tick())).then((groups) => {
-      for (const result of groups.flat()) {
+      const results = groups.flat()
+      for (const result of results) {
+        if (result.state === 'deferred') {
+          const previous = piPackageActivationDeferred.get(result.operationId)
+          if (previous !== result.detail) {
+            piPackageActivationDeferred.set(result.operationId, result.detail)
+            push({
+              ch: 'log',
+              payload: { text: `[能力接入] ${result.operationId} 暂缓：${result.detail}` }
+            })
+          }
+          continue
+        }
         if (result.state === 'resumed' || result.state === 'failed') {
+          piPackageActivationDeferred.delete(result.operationId)
           push({
             ch: 'log',
             payload: {
@@ -1107,6 +1107,11 @@ function requestPiPackageActivationTick(): void {
             }
           })
         }
+      }
+      if (results.some((result) =>
+        result.state === 'deferred' && result.detail.includes('等待薄层一次性续接消费证据')
+      )) {
+        schedulePiPackageActivationRetry()
       }
     }).catch((error) => {
       reportMainError('pi-package-activation', error)
@@ -2391,7 +2396,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           artifactDir: join(YAN_DIR, 'artifacts'),
           devResourcesDir: join(app.getAppPath(), 'resources'),
           getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
-          getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy
+          getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy,
+          onBashSettled: () => requestPiPackageActivationTick()
         },
         /*
          * `--authorize` 只能请求显示这条主进程对话框，本身不构成同意。

@@ -1,11 +1,13 @@
+import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { SkillFilesActivationTarget } from '../../shared/acquisition'
 import { goalContinueSummary, isActiveGoalPhase } from '../../shared/goal'
+import { formatSkillSecurityReview, reviewSkillFiles } from '../../shared/skill-security'
 import { GoalStore, clearGoalResumeSnapshotIfOperation, goalResumeContinuationWasConsumed, writeGoalResumeSnapshotIfVacant } from '../goal-service'
 import type { AgentController } from '../agent'
 import { AcquisitionService } from './acquisition-service'
 import { PackageAuthorizationService } from './package-authorization-service'
-import { activateStagedSkillFiles, readActiveSkillFiles } from './skill-files'
+import { activateStagedSkillFiles, readActiveSkillFiles, reviewStagedSkillFiles, SkillSecurityError } from './skill-files'
 import type { PiPackageRunnerSnapshot } from './pi-package-scheduler'
 import type { SkillFilesCheck, SkillFilesSchedulerPorts } from './skill-files-scheduler'
 
@@ -34,8 +36,8 @@ function samePath(a: string, b: string): boolean {
   return resolve(a).replace(/[\\/]+/g, '/').toLowerCase() === resolve(b).replace(/[\\/]+/g, '/').toLowerCase()
 }
 
-function failed(problems: string[]): SkillFilesCheck {
-  return { ok: false, problems }
+function failed(problems: string[], securityReview?: SkillFilesCheck['securityReview']): SkillFilesCheck {
+  return { ok: false, problems, ...(securityReview ? { securityReview } : {}) }
 }
 
 /** Production ports for the Skill-file scheduler; all runner effects stay behind this adapter. */
@@ -45,12 +47,24 @@ export function createSkillFilesActivationHostPorts(deps: SkillFilesActivationHo
   const verifyFiles = async (tx: Parameters<SkillFilesSchedulerPorts['verifyFiles']>[0]): Promise<SkillFilesCheck> => {
     const target = tx.skillFilesTarget
     if (!target) return failed(['事务没有绑定 Skill 文件激活目标'])
-    const active = await readActiveSkillFiles(deps.root, tx.projectId)
+    let active: Awaited<ReturnType<typeof readActiveSkillFiles>>
+    try {
+      active = await readActiveSkillFiles(deps.root, tx.projectId)
+    } catch (error) {
+      if (error instanceof SkillSecurityError) return failed([formatSkillSecurityReview(error.review)], error.review)
+      return failed([error instanceof Error ? error.message : String(error)])
+    }
     if (active.length === 0) return failed(['项目 active 清单没有有效 Skill 文件'])
     const paths = active.map((skill) => skill.path)
-    return paths.every((path) => within(resolve(deps.root, 'capabilities', 'active', tx.projectId), path))
-      ? { ok: true, problems: [], paths }
-      : failed(['active Skill 文件路径逃出受管目录'])
+    if (!paths.every((path) => within(resolve(deps.root, 'capabilities', 'active', tx.projectId), path))) {
+      return failed(['active Skill 文件路径逃出受管目录'])
+    }
+    const review = reviewSkillFiles(await Promise.all(active.map(async (skill) => ({
+      path: skill.relativePath,
+      content: await readFile(skill.path)
+    }))))
+    if (!review.ok) return failed([formatSkillSecurityReview(review)], review)
+    return { ok: true, problems: [], paths, securityReview: review }
   }
 
   const verifyActive = async (tx: Parameters<SkillFilesSchedulerPorts['verifyActive']>[0]): Promise<SkillFilesCheck> => {
@@ -84,12 +98,21 @@ export function createSkillFilesActivationHostPorts(deps: SkillFilesActivationHo
       const target = tx.skillFilesTarget
       if (!target) return failed(['事务没有绑定 Skill 文件激活目标'])
       try {
+        const staged = await deps.service.verifyStaged(tx.operationId)
+        if (!staged.ok) return failed([`Skill staging 复核失败：${staged.problems.join('；')}`])
+        const securityReview = await reviewStagedSkillFiles(deps.root, tx.operationId)
+        if (!securityReview.ok) return failed([formatSkillSecurityReview(securityReview)], securityReview)
         const skills = await activateStagedSkillFiles(deps.root, {
           operationId: tx.operationId,
           candidateId: tx.candidateId,
           projectId: tx.projectId
-        })
-        return { ok: skills.length > 0, problems: skills.length > 0 ? [] : ['没有可激活的 Skill 文件'], paths: skills.map((skill) => skill.path) }
+        }, securityReview)
+        return {
+          ok: skills.length > 0,
+          problems: skills.length > 0 ? [] : ['没有可激活的 Skill 文件'],
+          paths: skills.map((skill) => skill.path),
+          securityReview
+        }
       } catch (error) {
         return failed([error instanceof Error ? error.message : String(error)])
       }
@@ -110,7 +133,10 @@ export function createSkillFilesActivationHostPorts(deps: SkillFilesActivationHo
         throw new Error('续接前目标身份 / 修订已变化或目标已结束')
       }
       const pending = deps.goals.resumeOf(target.sessionFile)
-      if (pending && pending.operationId !== target.continueId) throw new Error('该会话另有尚未消费的目标续行，不能覆盖')
+      if (pending && pending.operationId !== target.continueId) {
+        const pendingConsumed = await goalResumeContinuationWasConsumed(snapshot.id, pending.operationId, deps.root)
+        if (!pendingConsumed) throw new Error('该会话另有尚未消费的目标续行，不能覆盖')
+      }
       const written = await writeGoalResumeSnapshotIfVacant(snapshot.id, {
         operationId: target.continueId,
         at: Date.now(),

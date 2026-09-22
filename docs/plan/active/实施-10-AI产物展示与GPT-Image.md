@@ -55,7 +55,7 @@ yan artifact attach --path build/icon.svg --description "砚应用图标"
 | 六栏 | 口径 |
 |---|---|
 | 实现 | `src/main/artifacts.ts`、`src/main/image-generation.ts`、`src/main/agent.ts`、`src/shared/turns.ts`、`yan` CLI、主进程 artifact push、assistant 历史恢复、renderer artifact card 与生图进度条。右侧文件预览改为显式 grid 行，左侧模式开关和图片 / 代码预览均有紧凑限高。 |
-| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` 均通过；单测 **4160/4160**。新增覆盖 mock 生图阶段更新、同一进度 id 的终态替换、空文件拒绝和空历史附件过滤；既有覆盖 manifest 恢复、SVG 清理、项目路径边界、provider 选择，以及“兼容 API 被拒后 `fetch` 不调用”。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` 均通过；具体单测数量以 HANDOFF 最新记录为准。新增覆盖 mock 生图阶段更新、同一进度 id 的终态替换、空文件拒绝和空历史附件过滤；既有覆盖 manifest 恢复、SVG 清理、项目路径边界、provider 选择，以及“兼容 API 被拒后 `fetch` 不调用”。 |
 | 真实运行 | 当前构建已实际走 Codex OAuth 图像通道，返回 `provider=codex`、`model=gpt-image-2` 的 PNG，完成受控目录落盘和 assistant artifact push；不记录 token。Codex Responses 图像工具要求 `store=false`，已按服务端实际错误修正并复验。 |
 | 视觉验收 | 已有产物卡视觉证据：`docs/design/preview/matrix-artifact-1440x900-100-dark-2026-09-21-artifact.png`。本轮 CSS 已将图片限制到 240px、代码区域限制到 220px，并新增进度条视觉状态脚本；本次隔离视觉矩阵因 Electron 无进一步输出而中止，不能把新截图验收误报为已完成。 |
 | 应用与包 | `启动-砚.cmd` 强制构建启动通过；`npm run dist:dir` / `npm run test:packaged` 通过。打包态确认内置 pi、CLI、能力设置页和用户数据隔离；artifact 根目录绑定 `YAN_DIR/artifacts`，不写安装目录。 |

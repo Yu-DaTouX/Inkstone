@@ -42,23 +42,27 @@ export async function runExtensionInventoryTests(ok) {
     ok(withUser.length === 3, `有用户扩展时 3 行（实际 ${withUser.length}）`)
     ok(withUser[0].includes('用户扩展 3 项'), '第一行列出来源与数量')
     ok(withUser[0].includes('left-info-panel.ts'), '第一行含具体条目名')
+    ok(withUser[0].includes('--no-extensions') && withUser[0].includes('不加载'), '第一行说明砚默认不加载用户扩展')
     ok(withUser[1].includes('language.js') && withUser[1].includes('薄层'), '第二行是砚薄层（用 basename）')
+    ok(
+      withUser[1].includes('context_recall'),
+      '薄层诊断包含 context_recall 的当前边界'
+    )
+    ok(
+      withUser[1].includes('yan question ask') && withUser[1].includes('未满足'),
+      '薄层诊断说明提问走宿主 CLI，context_recall 仍未满足'
+    )
     ok(
       withUser[2].includes('left-panel-tasks') && withUser[2].includes('只读'),
       '有用户扩展时说明旧条目的只读语义'
     )
-    /*
-     * S4 后文案要跟 S3 的事实对齐（宿主真在写）：
-     *   · 不能说「砚只读不写」—— 那是 S3 之前的真相；
-     *   · 要说清同一轮两者的优先关系（否则用户排障时会猜错谁写的）。
-     */
     ok(
-      withUser[2].includes('宿主日志') && withUser[2].includes('以宿主日志为准'),
-      '说明两条写入路径与「宿主日志优先」的规则'
+      withUser[2].includes('宿主日志') && withUser[2].includes('不会覆盖或回写'),
+      '说明宿主日志与旧条目不会被覆盖 / 回写'
     )
     ok(
-      !withUser[2].includes('砚只读取并显示'),
-      '不再声称砚只读不写（宿主从 S3 起真在写）'
+      withUser[2].includes('默认启动不会加载'),
+      '说明默认启动不会加载用户扩展'
     )
 
     // 4. 没有用户扩展：两行，且明确说「未检测到」

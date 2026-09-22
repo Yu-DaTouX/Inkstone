@@ -392,7 +392,7 @@
   "pkg.showRaw": "Show raw output",
   "pkg.sourceLine": "Source: {src}",
   "pkg.update": "Update",
-  "pkg.warn": "Packages run code: once installed it runs on this machine as you. Yan only hands it to pi — there is no sandbox and no security review. The source and repository are listed above; check them before installing.",
+"pkg.warn": "Packages may run code as you on this machine after installation. Yan does not provide an OS sandbox; Skill-file activation also performs static malicious-content review, blocks high-risk findings, and keeps medium-risk warnings—even when you specified the source. Review the source, permissions, and repository before installing other packages.",
   "pkg.working": "Working…",
   "pr.checks.failure": "checks failed",
   "pr.checks.none": "no checks",

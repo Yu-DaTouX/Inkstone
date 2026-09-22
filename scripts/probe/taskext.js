@@ -1,19 +1,17 @@
 /**
- * 旧任务扩展与砚**同时存在**（实施-02 S1 · 兼容性与契约定稿）。
+ * 带历史扩展的升级目录（实施-01 S5 · 默认发现链收口）。
  *
  * 场景前提：专属 piDir 里放了一份 fixture 旧扩展（`scripts/fixtures/task-ext`），
  * 它注册同名 `panel_todos`、写旧标识 `left-panel-tasks`、注册 `/panel` 命令，
- * 并在 `session_start` 发一条 TUI 风格的通知 —— 与用户本机那份的关键行为一致。
+ * 并在 `session_start` 发一条 TUI 风格的通知 —— 用来证明默认 runner 没有偷偷加载它。
  *
- * 这一片**不要求 UI 已经改好**（`/panel` 的反馈与草稿保留是 S4）。
- * 它要做的是把「两套来源同时存在时实际发生了什么」记录下来，并钉住两条底线：
- *   · 砚**只读**旧条目，不写、不转换、不伪造任务调用；
- *   · 旧扩展的写入与砚的读取**不互相覆盖**（宿主不碰旧标识）。
- * 所以第 4 节对 `/panel` 的现状是**记录**，硬断言只钉「没有当自然语言发出去」——
- * S4 改完之后这条断言仍然成立（那时草稿还会留着），不会变成假红。
+ * 它要做的是把「目录里有旧扩展，但砚默认不加载」记录下来，并钉住两条底线：
+ *   · 旧扩展没有 session_start 通知、工具或 `/notes` 命令进入当前 runner；
+ *   · 历史会话里的旧任务条目仍能被砚只读显示，不会被迁移路径覆盖。
+ * 第 4 节保留 `/panel` 的当前兼容行为记录，硬断言仍是「没有当自然语言发出去」。
  *
  * S5 把 piDir 扩成**两个扩展**（旧任务扩展 + 一个与任务无关的）：
- * 诊断计数、命令列表、清单来源判定都可能被无关扩展影响，只放一个验不出来。
+ * 诊断计数、命令列表、清单来源判定都必须证明两者都没有被默认加载。
  *
  * 另外解释一下为什么不在这里验「旧 JSONL 逐字节」：那要等 Electron 退出，
  * 由 `afterExit: taskFixtureReadonly` 在 Node 侧比（见 test-live.mjs）。
@@ -52,7 +50,7 @@
       } else await sleep(150)
     }
 
-    log('=== 旧任务扩展共存：行为记录（实施-02 S1）===')
+    log('=== 带历史扩展目录：默认 pi 不加载（实施-01 S5）===')
 
     /* ================= 1. 启动期：通知降级 + 来源诊断 ================= */
     log('\n--- 1. 启动期通知与来源诊断 ---')
@@ -62,7 +60,7 @@
 
     const extNotify = logs().filter((l) => l.includes('信息面板已启用'))
     log('  扩展 notify 落日志: ' + extNotify.length + (extNotify[0] ? ' → ' + JSON.stringify(extNotify[0].slice(0, 70)) : ''))
-    ok(extNotify.length > 0, '旧扩展真的被 pi 加载了（它的 session_start 通知进了日志）')
+    ok(extNotify.length === 0, '旧任务扩展没有被默认 pi 加载（没有 session_start 通知）')
     ok(
       !notices().some((n) => (n.text ?? '').includes('信息面板已启用')),
       '启动期通知没有弹成浮层（TUI 措辞不该打断桌面端）'
@@ -78,6 +76,7 @@
     log('  来源诊断（薄层）: ' + JSON.stringify(thinLine ?? null))
     ok(!!userLine, '诊断里有「用户扩展」清单')
     ok(!!userLine && userLine.includes('left-info-panel.ts'), '清单里点出了具体扩展名')
+    ok(!!userLine && userLine.includes('--no-extensions') && userLine.includes('不加载'), '诊断说明默认 runner 不加载用户扩展')
     /*
      * S5：诊断计的是**全部**用户扩展，不是只挑跟任务有关的那一个。
      * 这一条能红的场景是真存在的：按名字/关键词过滤扩展时，
@@ -90,35 +89,34 @@
     )
     const notesNotify = logs().filter((l) => l.includes('笔记面板已启用'))
     log('  无关扩展 notify 落日志: ' + notesNotify.length)
-    ok(notesNotify.length > 0, '无关扩展真的被加载且跑到了 session_start')
+    ok(notesNotify.length === 0, '无关扩展也没有被默认 pi 加载')
     ok(!!thinLine, '诊断里有「砚内置薄层」清单')
     const taskLine = logs().find((l) => l.includes('left-panel-tasks'))
     ok(!!taskLine, '诊断说明了旧任务条目的只读语义', taskLine ? '' : '（缺这句话，用户无法判断两套清单的关系）')
 
-    /* ================= 2. pi 侧确实加载了旧扩展 ================= */
-    log('\n--- 2. pi 侧加载证据 ---')
+    /* ================= 2. pi 侧没有加载旧扩展 ================= */
+    log('\n--- 2. pi 侧默认发现边界 ---')
     await until(() => store.getState().commands.length > 0, 10000)
     const panelAll = store.getState().commands.filter((c) => c.name.toLowerCase() === 'panel')
     const panelFromExt = panelAll.find((c) => c.source === 'extension')
     log('  commands 里的 panel: ' + JSON.stringify(panelFromExt ?? panelAll[0] ?? null))
     log('  同名 panel 条数: ' + panelAll.length + ' → ' + JSON.stringify(panelAll.map((c) => c.source)))
     /*
-     * 必须能看到 **extension 来源**的那条：本地兼容表里也有一条 panel
-     * （`compatibility`，不可执行）。只看「有 panel 这个名字」会把本地那条
-     * 当证据 —— 那证明不了旧扩展真的被加载了。
+     * 这里反过来要求没有 **extension 来源**：本地兼容表里可能仍有一条 panel
+     *（`compatibility`，不可执行），但它不能被误当成旧扩展已经加载。
      */
-    ok(!!panelFromExt, 'pi 把旧扩展注册的 /panel 报了上来（source=extension）')
-    ok(panelAll.length >= 2, '同名命令没有被静默吞掉（兼容项与扩展项都在）')
-    /* S5：无关扩展的命令也照常报上来（砚不因为迁移任务就吞掉别的扩展） */
+    ok(!panelFromExt, '旧扩展注册的 /panel 没有进入默认 pi（没有 source=extension）')
+    ok(panelAll.every((c) => c.source !== 'extension'), '当前 runner 的 panel 没有用户扩展来源')
+    /* S5：无关扩展的命令也不能从用户目录偷偷进入当前 runner。 */
     const notesAll = store.getState().commands.filter((c) => c.name.toLowerCase() === 'notes')
     log('  commands 里的 notes: ' + JSON.stringify(notesAll.map((c) => c.source)))
     ok(
-      notesAll.some((c) => c.source === 'extension'),
-      '无关扩展注册的 /notes 照常可用（source=extension）'
+      notesAll.length === 0,
+      '无关扩展注册的 /notes 没有进入默认 pi'
     )
 
     /* ================= 3. 任务清单来自会话文件（只读） ================= */
-    log('\n--- 3. 共存时的任务清单来源 ---')
+    log('\n--- 3. 默认不加载时的历史任务清单来源 ---')
     /* 前置场景可能刚改过会话标题 / 视图；先拿一次主进程索引，避免在
      * 旧的渲染投影里选到目标但随后读的是上一条会话的任务状态。 */
     await store.getState().refreshSessions?.()

@@ -1,8 +1,9 @@
 import type { AcquisitionTransaction, SkillFilesActivationTarget } from '../../shared/acquisition'
+import type { SkillSecurityReview } from '../../shared/skill-security'
 import { AcquisitionService } from './acquisition-service'
 import type { PiPackageCheck, PiPackageGrant, PiPackageRunnerSnapshot } from './pi-package-scheduler'
 
-export type SkillFilesCheck = PiPackageCheck & { paths?: string[] }
+export type SkillFilesCheck = PiPackageCheck & { paths?: string[]; securityReview?: SkillSecurityReview }
 
 export interface SkillFilesSchedulerPorts {
   authorization(tx: AcquisitionTransaction): Promise<PiPackageGrant | null>
@@ -58,10 +59,12 @@ export class SkillFilesActivationScheduler {
     const pending = this.inFlight.get(operationId)
     if (pending) return pending
     const work = this.enqueueByCwd(operationId).catch(async (error): Promise<SkillFilesScheduleResult> => {
-      const latest = await this.service.get(operationId).catch(() => null)
       return {
         operationId,
-        state: latest?.state ?? 'deferred',
+        /* An exception after activation is still an unfinished boundary step.
+         * Returning the durable state here used to make `activated` look final
+         * and hid the retry reason from the host log. */
+        state: 'deferred',
         detail: `调度步骤异常，保持事务现场等待复核：${error instanceof Error ? error.message : String(error)}`
       }
     }).finally(() => {
@@ -107,17 +110,20 @@ export class SkillFilesActivationScheduler {
       tx = await this.service.markAcquiring(operationId, '目标 runner 空闲，开始项目 Skill 文件激活')
     }
 
+    let securityReview: SkillSecurityReview | undefined
     if (tx.state === 'acquiring') {
       const activatedFiles = await this.ports.activateFiles(tx)
-      if (!activatedFiles.ok) return this.fail(tx, `Skill 文件激活失败：${activatedFiles.problems.join('；')}`)
+      if (!activatedFiles.ok) return this.fail(tx, `Skill 文件激活失败：${activatedFiles.problems.join('；')}`, activatedFiles.securityReview)
+      securityReview = activatedFiles.securityReview
       tx = await this.service.markVerifying(operationId, '项目 Skill 文件已写入受管 active 目录，开始复核')
     }
 
     if (tx.state === 'verifying') {
       const files = await this.ports.verifyFiles(tx)
       if (!files.ok || !files.paths?.length) {
-        return this.fail(tx, `Skill 文件 active 复核失败：${files.problems.join('；') || '没有可用 Skill 文件'}`)
+        return this.fail(tx, `Skill 文件 active 复核失败：${files.problems.join('；') || '没有可用 Skill 文件'}`, files.securityReview)
       }
+      securityReview = files.securityReview ?? securityReview
       tx = await this.service.activate({
         operationId,
         receipt: {
@@ -128,7 +134,8 @@ export class SkillFilesActivationScheduler {
           scope: 'project-managed',
           projectId: tx.projectId,
           installedPaths: files.paths,
-          verification: 'files-present'
+          verification: 'files-present',
+          ...(securityReview ? { securityReview } : {})
         },
         verify: async () => {
           const checked = await this.ports.verifyFiles(tx!)
@@ -153,7 +160,11 @@ export class SkillFilesActivationScheduler {
     let active = await this.ports.verifyActive(tx)
     let consumed = await this.ports.continuationConsumed(tx, runner)
     const alreadyRestarted = runner.generation > target.runnerGeneration
-    if ((!active.ok && !alreadyRestarted) || (active.ok && !consumed)) {
+    /* One reload is enough. Give the thin layer time to pass its idle
+     * confirmation; repeatedly replacing the runner here resets that timer and
+     * makes continuation consumption impossible. */
+    const needsRestart = !alreadyRestarted && (!active.ok || !consumed)
+    if (needsRestart) {
       const beforeGeneration = runner.generation
       await this.ports.writeContinuation(tx, runner)
       const restarted = await this.ports.restartRunner(target, runner)
@@ -169,7 +180,7 @@ export class SkillFilesActivationScheduler {
       consumed = await this.ports.continuationConsumed(tx, runner)
     }
 
-    if (!active.ok) return this.fail(tx, `重载后运行时验证失败：${active.problems.join('；')}`)
+    if (!active.ok) return this.fail(tx, `重载后运行时验证失败：${active.problems.join('；')}`, active.securityReview)
     const resumeCheck = await this.service.resumeCheck({
       operationId,
       expected: { planId: tx.planId, digest: tx.digest, planRevision: tx.planRevision },
@@ -211,8 +222,14 @@ export class SkillFilesActivationScheduler {
       Number.isSafeInteger(runner.generation) && runner.generation > 0
   }
 
-  private async fail(tx: AcquisitionTransaction, detail: string): Promise<SkillFilesScheduleResult> {
-    const failed = await this.service.fail(tx.operationId, detail)
+  private async fail(
+    tx: AcquisitionTransaction,
+    detail: string,
+    securityReview?: SkillSecurityReview
+  ): Promise<SkillFilesScheduleResult> {
+    const failed = securityReview
+      ? await this.service.fail(tx.operationId, detail, new Date().toISOString(), securityReview)
+      : await this.service.fail(tx.operationId, detail)
     const runner = tx.skillFilesTarget ? await this.ports.runner(tx.skillFilesTarget).catch(() => null) : null
     await this.ports.clearContinuation(tx, runner).catch(() => undefined)
     return { operationId: tx.operationId, state: failed.state, detail }

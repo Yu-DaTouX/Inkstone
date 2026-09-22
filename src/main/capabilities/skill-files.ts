@@ -2,6 +2,11 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import {
+  formatSkillSecurityReview,
+  reviewSkillFiles,
+  type SkillSecurityReview
+} from '../../shared/skill-security'
 import { AcquisitionService, acquisitionRoot, stagingDirOf, type StagedManifest } from './acquisition-service'
 
 export type SkillFileInput = { path: string; content: string | Uint8Array }
@@ -13,7 +18,14 @@ export type ManagedSkill = {
   relativePath: string
   sha256: string
 }
-export type SkillActiveFile = { version: 1; projectId: string; skills: ManagedSkill[] }
+export type SkillActiveFile = { version: 1; projectId: string; skills: ManagedSkill[]; securityReview?: SkillSecurityReview }
+
+export class SkillSecurityError extends Error {
+  constructor(readonly review: SkillSecurityReview) {
+    super(formatSkillSecurityReview(review))
+    this.name = 'SkillSecurityError'
+  }
+}
 
 const ACTIVE = 'skill-files-active.json'
 
@@ -49,7 +61,7 @@ export function skillFilesActivePath(root: string, projectId: string): string {
 export async function stageSkillFiles(input: {
   root: string; operationId: string; candidateId: string; projectId: string
   files: readonly SkillFileInput[]; expectedHashes?: Record<string, string>
-}): Promise<{ manifest: StagedManifest; skills: ManagedSkill[] }> {
+}): Promise<{ manifest: StagedManifest; skills: ManagedSkill[]; securityReview: SkillSecurityReview }> {
   if (input.files.length === 0) throw new Error('Skill 候选没有声明文件')
   const seen = new Set<string>()
   const files = input.files.map((file) => {
@@ -61,8 +73,10 @@ export async function stageSkillFiles(input: {
     if (expected && expected !== hash) throw new Error(`Skill 文件 hash 与固定声明不符：${path}`)
     return { path, content: file.content }
   })
+  const securityReview = reviewSkillFiles(files)
+  if (!securityReview.ok) throw new SkillSecurityError(securityReview)
   const service = new AcquisitionService({ root: input.root })
-  const manifest = await service.stage({ operationId: input.operationId, files })
+  const manifest = await service.stage({ operationId: input.operationId, files, securityReview })
   const verified = await service.verifyStaged(input.operationId)
   if (!verified.ok) throw new Error(`Skill staging 复核失败：${verified.problems.join('；')}`)
   const skills = files.map((file) => ({
@@ -73,10 +87,33 @@ export async function stageSkillFiles(input: {
     relativePath: file.path,
     sha256: createHash('sha256').update(Buffer.from(file.content)).digest('hex')
   }))
-  return { manifest, skills }
+  return { manifest, skills, securityReview }
 }
 
-export async function writeActiveSkillFiles(root: string, projectId: string, skills: ManagedSkill[]): Promise<void> {
+/**
+ * 从受管 staging 重新读取 Skill 正文并复审。激活前不信任第一次扫描结果：
+ * hash / manifest 证明文件没有被换掉，而这一步保证真正进入 active 的内容仍
+ * 通过同一版本扫描器。调用方应先跑 `verifyStaged`，这里只负责内容审查。
+ */
+export async function reviewStagedSkillFiles(root: string, operationId: string): Promise<SkillSecurityReview> {
+  const dir = stagingDirOf(root, operationId)
+  const manifest = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8')) as StagedManifest
+  if (manifest.version !== 1 || manifest.operationId !== operationId || !Array.isArray(manifest.files) || manifest.files.length === 0) {
+    throw new Error('Skill staging manifest 无效，无法进行内容审查')
+  }
+  const files = await Promise.all(manifest.files.map(async (file) => {
+    const declared = declaredSkillFile(join(dir, 'payload'), file.path)
+    return { path: declared.path, content: await readFile(declared.absolute) }
+  }))
+  return reviewSkillFiles(files)
+}
+
+export async function writeActiveSkillFiles(
+  root: string,
+  projectId: string,
+  skills: ManagedSkill[],
+  securityReview?: SkillSecurityReview
+): Promise<void> {
   const activeDir = join(acquisitionRoot(root), 'active', projectId)
   const recordPath = join(activeDir, ACTIVE)
   await mkdir(activeDir, { recursive: true })
@@ -97,14 +134,15 @@ export async function writeActiveSkillFiles(root: string, projectId: string, ski
     materialized.push({ ...skill, path: target, relativePath, sha256 })
   }
   const tmp = `${recordPath}.tmp-${Date.now()}`
-  await writeFile(tmp, JSON.stringify({ version: 1, projectId, skills: materialized }, null, 2), 'utf8')
+  await writeFile(tmp, JSON.stringify({ version: 1, projectId, skills: materialized, ...(securityReview ? { securityReview } : {}) }, null, 2), 'utf8')
   await rename(tmp, recordPath)
 }
 
 /** Materialize only the verified operation payload; callers must run verifyStaged first. */
 export async function activateStagedSkillFiles(
   root: string,
-  operation: { operationId: string; candidateId: string; projectId: string }
+  operation: { operationId: string; candidateId: string; projectId: string },
+  securityReview?: SkillSecurityReview
 ): Promise<ManagedSkill[]> {
   const manifest = JSON.parse(await readFile(join(stagingDirOf(root, operation.operationId), 'manifest.json'), 'utf8')) as StagedManifest
   if (manifest.version !== 1 || manifest.operationId !== operation.operationId || !Array.isArray(manifest.files) || manifest.files.length === 0) {
@@ -118,7 +156,7 @@ export async function activateStagedSkillFiles(
     relativePath: file.path,
     sha256: file.sha256
   }))
-  await writeActiveSkillFiles(root, operation.projectId, skills)
+  await writeActiveSkillFiles(root, operation.projectId, skills, securityReview)
   return skills
 }
 
@@ -139,8 +177,16 @@ export async function readActiveSkillFiles(root: string, projectId: string): Pro
       if (createHash('sha256').update(content).digest('hex') !== skill.sha256) continue
       valid.push(skill)
     }
+    const review = reviewSkillFiles(await Promise.all(valid.map(async (skill) => ({
+      path: skill.relativePath,
+      content: await readFile(skill.path)
+    }))))
+    if (!review.ok) throw new SkillSecurityError(review)
     return valid
-  } catch { return [] }
+  } catch (error) {
+    if (error instanceof SkillSecurityError) throw error
+    return []
+  }
 }
 
 export async function activeSkillArgs(root: string, projectId: string): Promise<string[]> {

@@ -272,7 +272,7 @@ runners[0] = { id:"r1", runId:"r1", … }        // runId 恒等于实例 id
 | 项 | 实现 |
 |---|---|
 | asar 内容 | 白名单：`out/**`、`build/icon.png`、`package.json`；排除 `node_modules/**`、`out/test/**`、`**/*.{map,md,ts,tsx,tsbuildinfo}` |
-| 随包资源 | `extraResources`：`resources/pi-runtime/{dist,node_modules,package.json}` + `resources/pi-extensions` |
+| 随包资源 | `extraResources`：`resources/pi-runtime/{dist,node_modules,package.json}` + `resources/yan-thin`（来源为 `resources/pi-extensions`） |
 | 文档 / 源码 / 脚本 | **不进包**（不在白名单） |
 
 **改动注意点**
@@ -498,7 +498,11 @@ agent 目录**的路径。所以：元信息要按 source 的形状解析（不�
 
 三条边界：**不直接改生成的 pi-runtime**（只让 pi 自己的 CLI 动手）；作用域跟着
 `PI_AGENT_DIR` 走（不拼 `~/.pi/agent`）；扩展**会执行代码**，界面上说明来源与
-实际影响，**不做沙箱、不做安全审查、也不宣称有**。
+实际影响，通用 pi 包**不做 OS 沙箱**。独立 Skill 文件接入另经
+`src/shared/skill-security.ts` 做静态恶意内容审查：高风险 fail-closed，中风险保留提醒；
+这不是对包 / 服务器的运行时沙箱，也不会因为用户指定来源而跳过。带有
+`pi.skills` 的 `pi-package` 还会在离线 smoke 和已安装包 active 复核前走同一审查器；
+已知 high 风险或审查截断均 fail-closed。
 
 参数注入：以 `-` 开头的 source 在发起前就被拒（否则渲染端等于间接控制命令行）。
 有任务在跑时直接拒绝改包（扩展是启动时加载的，现在动手没有即时效果）。
@@ -636,7 +640,7 @@ yan:git:prStatus → main/hosting.ts
         → WorkModeStore（YAN_DIR/work-modes.json）：CAS 提交 → revision+1
         → 写 YAN_DIR/work-mode/<runnerId>.json（扩展读的那份）+ 推 work-mode（带 runtime 封套）
 
-模型侧 → question.js：before_agent_start 按模式选提示；execute 在自主模式直接让模型自行决策
+模型侧 → `question.js`：`before_agent_start` 按模式注入提示；真正的交互经 `bash` 调宿主 `yan question ask`，自主模式由宿主返回结构化的“不提问”结果
 ```
 
 **为什么是会话级、不是全局开关**：旧实现是一个布尔 `desktop.json.autonomous` ——
@@ -681,7 +685,7 @@ A 会话切自主会连带改变 B 会话的提问行为。现在按会话存，
 pi 的 RPC **没有**工具面（实测 `get_tools` / `set_active_tools` 都回 Unknown command）。
 策略真源仍是宿主写的那份模式快照，扩展只执行。
 
-**澄清档不能写文件 → 提交必须支持内联参数**。白名单 = `read/grep/find/ls/question/context_recall`
+**澄清档不能写文件 → 提交必须支持内联参数**。白名单 = `read/grep/find/ls`，另放行受限的宿主命令 `yan goal …` 与 `yan question ask …`；`question` 不再是模型工具，`context_recall` 仍是待收口的历史例外。
 + **受限的 bash**：只接受 `yan goal status|ready|report` 这一种形状，
 且整条命令不得出现 shell 元字符（`;` `&&` `|` `>` 反引号 `$` 换行……）。
 把 bash 完全拿掉，澄清档就永远提交不了（CLI 就得用 bash 敲）；完全放开就等于没门禁。

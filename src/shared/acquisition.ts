@@ -99,6 +99,8 @@ export class AcquisitionTransitionError extends Error {
 
 /* ---------------------------------------------------------------- 事务形状 */
 
+import type { SkillSecurityReview } from './skill-security'
+
 /** §10.2：每个接入事务**一次**正常重试 —— 也就是最多执行两次。 */
 export const MAX_ACQUIRE_ATTEMPTS = 2
 
@@ -136,6 +138,8 @@ export type CapabilityReceipt = {
   installedPaths: string[]
   verification: 'files-present' | 'protocol-reachable' | 'smoke-passed'
   activatedAt: string
+  /** Skill 正文的静态审查回执；其它能力类型不需要此字段。 */
+  securityReview?: SkillSecurityReview
 }
 
 /**
@@ -184,6 +188,8 @@ export type AcquisitionTransaction = {
   stagingDir?: string
   piPackageTarget?: PiPackageActivationTarget
   skillFilesTarget?: SkillFilesActivationTarget
+  /** 即使高危内容被拒，也把审查结果留在事务里，便于诊断而不落正文。 */
+  securityReview?: SkillSecurityReview
   receipt?: CapabilityReceipt
   failure?: { code: AcquisitionFailureCode; detail: string }
   history: AcquisitionStep[]
@@ -221,7 +227,14 @@ export function newAcquisitionTransaction(input: {
 export function advanceAcquisition(
   tx: AcquisitionTransaction,
   to: AcquisitionState,
-  patch: { at: string; detail?: string; stagingDir?: string; receipt?: CapabilityReceipt; failure?: { code: AcquisitionFailureCode; detail: string } } = {
+  patch: {
+    at: string
+    detail?: string
+    stagingDir?: string
+    receipt?: CapabilityReceipt
+    securityReview?: SkillSecurityReview
+    failure?: { code: AcquisitionFailureCode; detail: string }
+  } = {
     at: new Date().toISOString()
   }
 ): AcquisitionTransaction {
@@ -235,6 +248,7 @@ export function advanceAcquisition(
   }
   if (patch.stagingDir !== undefined) next.stagingDir = patch.stagingDir
   if (patch.receipt !== undefined) next.receipt = patch.receipt
+  if (patch.securityReview !== undefined) next.securityReview = patch.securityReview
   if (patch.failure !== undefined) next.failure = patch.failure
   /*
    * `pending-boundary → acquiring` 是同一次尝试从下载阶段续到安装阶段，不能额外耗掉

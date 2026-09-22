@@ -54,8 +54,11 @@ extraResources:
     filter: ['**/*']
   - from: resources/pi-runtime/package.json
     to: pi-runtime/package.json
+  # 砚薄层是源码资源，但不是 pi 的用户扩展目录：主进程只通过显式
+  # --extension 路径加载它们。单独命名为 yan-thin，避免包内边界被误读成
+  # 「把一个 pi-extensions 目录随包塞回默认发现链」。
   - from: resources/pi-extensions
-    to: pi-extensions
+    to: yan-thin
     filter: ['**/*']
   # 随包的 `yan` CLI（宿主能力入口，模型在 bash 里调它）。
   # 启动器由主进程写进 YAN_DIR/bin 并前置到 pi 子进程的 PATH，

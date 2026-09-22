@@ -21,8 +21,8 @@
  *      直接 block。实测这是真门禁（同一条命令在对照组真写了文件）；
  *   ③ 提示词（说明）：在 `question.js` 里，只负责让模型知道为什么。
  *
- * ⚠️ 白名单必须**显式列全**：`grep` / `find` / `ls` 默认不在激活集里（01-S1 实测），
- *    而 `question` 是提问工具 —— 漏掉它澄清档就没法澄清了。
+ * ⚠️ 白名单必须**显式列全**：`grep` / `find` / `ls` 默认不在激活集里（01-S1 实测）。
+ *    提问不再是模型工具；澄清档通过下面的受限 `yan question ask` bash 形状完成。
  */
 
 import { appendFileSync, readFileSync } from 'node:fs'
@@ -30,25 +30,30 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * 澄清档允许的工具：只读查询 + 提问 + **受限的 bash**。
+ * 澄清档允许的工具：只读查询 + **受限的 bash**。
  *
  * 为什么**不**放 `write` / `edit`：那是真正的写入口，直接拿掉。
  * 为什么要放 `bash`（但这不等于放行 bash）：
  *   澄清档的「就绪提交」通道是宿主 CLI（`yan goal ready`，实施-05 §4 定的），
  *   而敲 CLI 要用 bash 工具 —— 把 bash 拿掉，澄清档就永远提交不了、也就永远好不了。
- *   所以 bash 留着，但**命令形状**由下面的白名单卡死（见 `isGoalCommand`）：
- *   只接受 `yan goal status|ready|report` 这一种形状，且整条命令里**不得出现
+ *   所以 bash 留着，但**命令形状**由下面的白名单卡死（见 `isAllowedBashCommand`）：
+ *   只接受 `yan goal status|ready|report`、`yan question ask` 或严格形状的
+ *   `yan context recall --ref ctx://…`，且整条命令里**不得出现
  *   任何 shell 元字符**（`;` `&&` `|` `>` 反引号 `$` 换行……）。
  *   这不是「对任意 shell 命令做脆弱的只读判断」（§4 禁止的那种），
  *   而是「只允许这一条经审查的命令」—— 白名单，不是启发式。
  *
- * 为什么含 `question` / `context_recall`：前者是澄清档唯一的推进手段，
- * 后者是只读的归档回读 —— 都不写任何东西。
+ * 归档回读也走宿主 CLI；提问与回读都不向澄清档恢复业务模型工具。
  */
-const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'question', 'context_recall', 'bash']
+const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash']
 
-/** 澄清档里唯一允许的 bash 形状：`yan goal <动作> …`。 */
+/** 澄清档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
 const GOAL_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+(?:status|ready|report)(?:\s|$)/
+const QUESTION_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+question\s+ask(?:\s|$)/
+const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
+const CONTEXT_RECALL_COMMAND = new RegExp(
+  `^\\s*(?:"[^"]*[\\\\/])?yan(?:\\.(?:cmd|exe|mjs))?\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
+)
 
 /**
  * 元字符一律拒。
@@ -113,11 +118,11 @@ function note(hook, payload) {
   }
 }
 
-/** 这条 bash 命令是不是「允许的 `yan goal` 形状」？ */
-function isGoalCommand(command) {
+/** 这条 bash 命令是不是允许的宿主 CLI 形状？ */
+function isAllowedBashCommand(command) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
-  return GOAL_COMMAND.test(command)
+  return GOAL_COMMAND.test(command) || QUESTION_COMMAND.test(command) || CONTEXT_RECALL_COMMAND.test(command)
 }
 
 /** 工具名归一：`getActiveTools()` 在 0.85.1 回字符串数组，这里顺手兼容对象形态。 */
@@ -159,7 +164,7 @@ export default function workModePolicy(pi) {
      * 非澄清档**一律不动工具表**（除了从澄清档退回来的那一次）。
      *
      * 为什么：这个扩展在所有会话里都加载。若每轮都无条件 `setActiveTools`，
-     * 就等于拿一个「启动时的快照」去覆盖工具表 —— 别的扩展（question / context_recall）
+     * 就等于拿一个「启动时的快照」去覆盖工具表 —— 其他薄层
      * 或后续注册的工具会被沏掉，而且症状与本次改动毫无关系，很难查。
      */
     if (restricted) {
@@ -170,7 +175,7 @@ export default function workModePolicy(pi) {
   })
 
   /*
-   * 兜底：澄清档下除了「只读集 + 允许形状的 `yan goal`」一律拒绝。
+   * 兜底：澄清档下除了「只读集 + 允许形状的宿主 CLI」一律拒绝。
    *
    * ⚠️ 返回值的 `content` / `isError` 会被 pi 忽略（实测固定成
    *    「Tool execution was blocked」+ isError），所以这里不要费劲写文案 ——
@@ -181,7 +186,7 @@ export default function workModePolicy(pi) {
     if (mode !== 'clarify' || !name) return undefined
     if (name === 'bash') {
       const command = String((event?.input ?? {})?.command ?? '')
-      if (isGoalCommand(command)) return undefined
+       if (isAllowedBashCommand(command)) return undefined
       note('tool_call_blocked', { mode, tool: name, command: command.slice(0, 140) })
       return { block: true }
     }

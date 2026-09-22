@@ -16,8 +16,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { PiRpc } from './protocol'
-import type { CapabilityHandlers, YanCliEnv } from './capability-server'
+import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
+import { ContextRecallError, recallArchivedContext } from './context-recall'
 import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
@@ -72,8 +73,9 @@ import { draftRemoteMcpRegistration, type AcquireAuthorization } from '../shared
 import { discoverCapabilities, planForCandidate } from './capabilities/discovery/discover'
 import type { AcquisitionPlan, CapabilityCandidate } from '../shared/discovery'
 import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
-import { activeSkillArgs, declaredSkillFile, stageSkillFiles } from './capabilities/skill-files'
+import { activeSkillArgs, declaredSkillFile, SkillSecurityError, stageSkillFiles } from './capabilities/skill-files'
 import { fetchSkillFiles } from './capabilities/skill-source'
+import { formatSkillSecurityReview } from '../shared/skill-security'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
 import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
@@ -132,6 +134,14 @@ const MAX_FLUSH_MS = 120
 
 /** 推送补丁到渲染端（主进程注入） */
 type Push = (msg: MainPush) => void
+
+type HostUiResponse = { value?: string; confirmed?: boolean; cancelled?: boolean }
+
+type PendingHostUi = {
+  resolve: (response: HostUiResponse) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
 
 /* -------------------------------------------------- 浏览器（宿主能力服务） */
 
@@ -335,6 +345,8 @@ export class AgentController extends EventEmitter {
     devResourcesDir?: string
     getWorkMode?: () => Promise<WorkMode>
     getCapabilityStrategy?: () => Promise<CapabilityStrategy>
+    /** 直执行 bash 收尾后给受管能力调度器一个安全边界机会。 */
+    onBashSettled?: () => void
   }
   /** 模型/思考能力变更串行化，避免快速点击时旧响应覆盖新状态。 */
   private capabilityChangeTail: Promise<void> = Promise.resolve()
@@ -462,6 +474,8 @@ export class AgentController extends EventEmitter {
    * 用来给「后台会话正在等输入」这个状态提供依据。
    */
   private pendingUi = new Set<string>()
+  /** `yan question ask` 走同一套 UI 请求通道，但不经过 pi 的 extension_ui_request。 */
+  private pendingHostUi = new Map<string, PendingHostUi>()
 
   /**
    * 读界面历史：有注入就用注入的（交接过的会话要按段拼接），否则读单文件。
@@ -552,6 +566,8 @@ export class AgentController extends EventEmitter {
       devResourcesDir?: string
       getWorkMode?: () => Promise<WorkMode>
       getCapabilityStrategy?: () => Promise<CapabilityStrategy>
+      /** 直执行 bash 收尾后给受管能力调度器一个安全边界机会。 */
+      onBashSettled?: () => void
     }
   }) {
     super()
@@ -711,8 +727,15 @@ export class AgentController extends EventEmitter {
       cwd: this.cwd,
       piBin: this.piBin,
       args: [
+        /*
+         * 01-S5：砚默认启动不接管用户的 pi 扩展 / Skill 自动发现。
+         * 下面的 --extension / --skill 仍是砚自己明确传入的受管资源，
+         * 因此不会把允许的薄层或当前项目 active Skill 一并关掉。
+         */
+        '--no-extensions',
+        '--no-skills',
         ...(this.browserExtension ? ['--extension', this.browserExtension] : []),
-        // 内置提问扩展（模型可主动向用户提问；自主模式时改为自行决策）
+         // 工作模式的提问指引薄层（真正入口是宿主 yan question ask）
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         /*
          * 工作模式的工具策略（实施-05 S3）：澄清档把非只读工具从表里拿掉。
@@ -1002,7 +1025,7 @@ export class AgentController extends EventEmitter {
   private async runCapabilityCommand(
     command: string,
     params: Record<string, unknown>
-  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+  ): Promise<CapabilityCommandResult> {
     if (command.startsWith('browser.')) {
       return this.runBrowserCommand(command.slice('browser.'.length), params)
     }
@@ -1056,6 +1079,8 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
+    if (command === 'question.ask') return this.runQuestionCommand(params)
+    if (command === 'context.recall') return this.runContextRecallCommand(params)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
@@ -1071,6 +1096,132 @@ export class AgentController extends EventEmitter {
       if (this.messages[i].role === 'assistant') return this.messages[i].id
     }
     return `artifact-${Date.now().toString(36)}`
+  }
+
+  /**
+   * `yan question ask` 的宿主实现。
+   *
+   * 这是一个普通能力命令，不是 pi 模型工具：模型通过原生 `bash` 调 CLI，
+   * 主进程把请求推给现有问题面板，答案再由 renderer IPC 回到这里。这样既
+   * 保留同一请求 id 的等待 / 取消语义，也不让薄层注册第二个业务工具。
+   */
+  private async runQuestionCommand(
+    params: Record<string, unknown>
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const question = typeof params.question === 'string' ? params.question.trim() : ''
+    if (!question) throw new CapabilityCommandError('question_missing', 'question ask 需要 question')
+    if (question.length > 4000) throw new CapabilityCommandError('question_too_long', '问题不能超过 4000 个字符')
+
+    const rawOptions = params.options
+    const options = Array.isArray(rawOptions)
+      ? rawOptions.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+      : []
+    if (options.length > 8) throw new CapabilityCommandError('question_options_too_many', '问题最多提供 8 个选项')
+    if (options.some((option) => option.length > 500)) {
+      throw new CapabilityCommandError('question_option_too_long', '问题选项不能超过 500 个字符')
+    }
+
+    const mode = await this.capabilityOpts?.getWorkMode?.()
+    if (mode === 'autonomous') {
+      return {
+        data: { question, options, answer: null, autonomous: true, cancelled: false },
+        summary: { kind: 'question', action: 'ask', mode, answered: false, autonomous: true }
+      }
+    }
+
+    const rawTimeout = Number(params.timeout)
+    const timeout = Number.isFinite(rawTimeout) && rawTimeout > 0
+      ? Math.min(Math.max(Math.floor(rawTimeout), 5_000), 10 * 60_000)
+      : 120_000
+    const customLabel = '其他（自行输入） / Other (type your own)'
+    let response: HostUiResponse
+    if (options.length === 0) {
+      response = await this.requestHostUi({
+        method: 'input',
+        title: '需要你的回答',
+        message: question,
+        timeout
+      })
+    } else {
+      response = await this.requestHostUi({
+        method: 'select',
+        title: '需要你的选择',
+        message: question,
+        options: [...options, customLabel],
+        timeout
+      })
+      if (!response.cancelled && response.value === customLabel) {
+        response = await this.requestHostUi({
+          method: 'input',
+          title: '请输入自定义回答',
+          message: question,
+          timeout
+        })
+      }
+    }
+
+    const answer = typeof response.value === 'string' && response.value.trim()
+      ? response.value.trim()
+      : null
+    const cancelled = response.cancelled === true || (answer === null && response.confirmed !== true)
+    return {
+      data: { question, options, answer, cancelled, autonomous: false },
+      summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', answered: answer !== null, cancelled }
+    }
+  }
+
+  /**
+   * `yan context recall` 的宿主实现。
+   *
+   * 归档正文只从当前 AgentController 已绑定的原始会话读出；CLI 参数只能选
+   * `ctx://` 引用，不能改会话、JSONL 路径、归档目录或结果文件。成功后交给
+   * CapabilityServer 写为逐字保留的受管 `.txt`，native read 读到的前缀仍能
+   * 被 context 薄层的 TTL 钩子识别。
+   */
+  private async runContextRecallCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const sessionId = this.state?.sessionId
+    const sessionFile = this.state?.sessionFile
+    if (!isSafeSessionId(sessionId) || !sessionFile) {
+      throw new CapabilityCommandError('context_session_unavailable', '当前还没有可安全回读的会话')
+    }
+    try {
+      return await recallArchivedContext({
+        sessionId,
+        sessionFile,
+        ref: params.ref,
+        reason: params.reason
+      })
+    } catch (error) {
+      if (error instanceof ContextRecallError) {
+        throw new CapabilityCommandError(error.code, error.message)
+      }
+      throw new CapabilityCommandError('context_recall_unavailable', '归档回读暂时不可用；未返回正文')
+    }
+  }
+
+  /** 通过现有 `ui-request` / `yan:respondUi` 桥等待一次宿主问题。 */
+  private requestHostUi(request: {
+    method: 'select' | 'input'
+    title: string
+    message: string
+    options?: string[]
+    timeout: number
+  }): Promise<HostUiResponse> {
+    const id = `yan-question-${randomUUID()}`
+    return new Promise<HostUiResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingHostUi.delete(id)
+        this.pendingUi.delete(id)
+        reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
+      }, request.timeout)
+      this.pendingHostUi.set(id, { resolve, reject, timer })
+      this.uiSeen.add(id)
+      this.pendingUi.add(id)
+      this.push({
+        ch: 'ui-request',
+        payload: { id, method: request.method, title: request.title, message: request.message, timeout: request.timeout, ...(request.options ? { options: request.options } : {}) } as never
+      })
+    })
   }
 
   private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId()): Promise<void> {
@@ -1578,7 +1729,7 @@ export class AgentController extends EventEmitter {
                 const source = declaredSkillFile(this.cwd, path)
                 return { path: source.path, content: await readFile(source.absolute) }
               }))
-          await stageSkillFiles({
+          const staged = await stageSkillFiles({
             root: YAN_DIR,
             operationId: tx.operationId,
             candidateId: candidate.candidateId,
@@ -1586,7 +1737,21 @@ export class AgentController extends EventEmitter {
             files,
             ...(candidate.skillFileHashes ? { expectedHashes: candidate.skillFileHashes } : {})
           })
-          tx = await service.markBoundary(tx.operationId, 'Skill 文件已完成 staging 与 hash 复核；等待下一次 runner 安全启动')
+          const securityNotice = staged.securityReview.findings.length > 0
+            ? `${formatSkillSecurityReview(staged.securityReview)}；即使候选由用户指定，仍保留这份风险提醒。`
+            : undefined
+          if (securityNotice) {
+            this.push({
+              ch: 'log',
+              payload: { text: `[能力接入] ${securityNotice}` }
+            })
+          }
+          tx = await service.markBoundary(
+            tx.operationId,
+            'Skill 文件已完成 staging、hash 复核与内容安全审查；等待下一次 runner 安全启动',
+            new Date().toISOString(),
+            staged.securityReview
+          )
         }
         const sessionFile = this.getState()?.sessionFile
         const runnerId = this.capabilityOpts?.sessionId
@@ -1618,11 +1783,49 @@ export class AgentController extends EventEmitter {
             continueId: tx.operationId
           })
         }
-        return { data: { plan, candidate, operationId, transaction: tx, executable: false, state: tx.state, skills: declared }, summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, operationId, state: tx.state, executed: tx.state === 'pending-boundary' } }
+        return {
+          data: {
+            plan,
+            candidate,
+            operationId,
+            transaction: tx,
+            securityReview: tx.securityReview,
+            executable: false,
+            state: tx.state,
+            skills: declared,
+            ...(tx.securityReview?.findings.length
+              ? { notice: `${formatSkillSecurityReview(tx.securityReview)}；即使候选由用户指定，仍保留这份风险提醒。` }
+              : {})
+          },
+          summary: {
+            kind: 'capabilities',
+            action: 'acquire',
+            planId: plan.planId,
+            operationId,
+            state: tx.state,
+            executed: tx.state === 'pending-boundary'
+          }
+        }
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
-        tx = await service.fail(tx.operationId, detail)
-        return { data: { plan, candidate, operationId, state: 'failed', notice: detail }, summary: { kind: 'capabilities', action: 'acquire', planId: plan.planId, operationId, state: 'failed', executed: false } }
+        const securityReview = error instanceof SkillSecurityError ? error.review : undefined
+        if (securityReview) {
+          this.push({ ch: 'log', payload: { text: `[能力接入] ${formatSkillSecurityReview(securityReview)}；已阻止激活。` } })
+        }
+        tx = securityReview
+          ? await service.fail(tx.operationId, detail, new Date().toISOString(), securityReview)
+          : await service.fail(tx.operationId, detail)
+        return {
+          data: { plan, candidate, operationId, state: 'failed', securityReview: tx.securityReview, notice: detail },
+          summary: {
+            kind: 'capabilities',
+            action: 'acquire',
+            planId: plan.planId,
+            operationId,
+            state: 'failed',
+            executed: false
+          }
+        }
       }
     }
 
@@ -4078,9 +4281,27 @@ export class AgentController extends EventEmitter {
   }
 
   /** 渲染端回答案（由 IPC 调） */
-  respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void {
+  respondUi(res: HostUiResponse & { id: string }): void {
+    const hostPending = this.pendingHostUi.get(res.id)
+    if (hostPending) {
+      clearTimeout(hostPending.timer)
+      this.pendingHostUi.delete(res.id)
+      this.pendingUi.delete(res.id)
+      hostPending.resolve(res)
+      return
+    }
     if (res.id) this.pendingUi.delete(res.id)
     this.rpc?.respondUi(res as Record<string, unknown>)
+  }
+
+  private rejectPendingHostUi(reason: string): void {
+    const error = new Error(reason)
+    for (const [id, pending] of this.pendingHostUi) {
+      clearTimeout(pending.timer)
+      this.pendingHostUi.delete(id)
+      this.pendingUi.delete(id)
+      pending.reject(error)
+    }
   }
 
   /* ------------------------------------------------------------- 队列身份 */
@@ -4610,6 +4831,13 @@ export class AgentController extends EventEmitter {
         }
       }
     })
+    /*
+     * 直执行 bash 也可能完成 `yan capabilities acquire`，把事务推进到
+     * pending-boundary。它不会像模型回合那样稳定地产生 state/proc 事件，
+     * 所以在 bash 自己收尾后主动给能力调度器一次安全边界机会；调度器仍
+     * 会重新检查 trust / authorization / goal / runner 空闲条件。
+     */
+    this.capabilityOpts?.onBashSettled?.()
   }
 
   async abortBash(): Promise<void> {
@@ -5149,6 +5377,7 @@ export class AgentController extends EventEmitter {
     this.callIndex.clear()
     this.callOwner.clear()
     this.pushedOut.clear()
+    this.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.pendingUi.clear()
     await this.rpc?.close()
     this.rpc = null

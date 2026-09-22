@@ -1154,13 +1154,13 @@ const CASES = {
     readonlySession: 'yan-todo-fixture'
   },
   /*
-   * 实施-02 S1 / S5：旧任务扩展与砚**同时存在**，外加一个**无关扩展**。
+   * 实施-01 S5：带历史扩展的升级目录，验证默认 pi 的发现边界。
    *
    * 用专属 piDir（里面多一份 scripts/fixtures/task-ext 的 fixture 旧扩展，
    * 它注册同名 `panel_todos` 并写旧标识 `left-panel-tasks`；另一个
    * `notes-panel.ts` 与任务无关，只注册 `/notes`）。
-   * 验四件事：启动期通知降级、来源诊断能说清是谁（两项都数到）、
-   * 无关扩展照常可用、砚只读不写（退出后字节比对）。
+   * 验四件事：来源诊断能列全但明确不加载、两个扩展的通知 / 命令均不进入
+   * 当前 runner、历史会话仍可只读显示、砚不改旧会话（退出后字节比对）。
    */
   taskext: {
     probe: 'scripts/probe/taskext.js',
@@ -1334,9 +1334,16 @@ const CASES = {
     probe: 'scripts/probe/ask.js',
     delay: 9000,
     cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     questionExtLog: true,
     afterExit: 'questionModeLog'
   },
+  /*
+   * 01-S5 唯一提问入口（cost 0）：不让模型参与，直接走真实 renderer →
+   * yan question ask → CapabilityServer → 问题面板 → resultFile，确保 question
+   * 不会因为移除模型工具而退化成静态提示。
+   */
+  questioncli: { probe: 'scripts/probe/question-cli.js', delay: 9000, cost: 0, budget: 180000 },
   // 图片真的发给模型（花 token —— 需要视觉模型，Ling 是纯文本的）
   image: { probe: 'scripts/probe/image.js', delay: 9000, cost: 1, model: TEST_VISION_MODEL },
   // 排队 + Esc 回收：需要真流式，也花 token
@@ -1435,6 +1442,26 @@ const CASES = {
     delay: 12000,
     cost: 0,
     env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' }
+  },
+
+  /*
+   * 实施-04 S6b-2：用户已明确授权后的外部 Skill 整链。
+   *
+   * 这条场景使用与 skilldirnet 相同的真实 SkillMD 候选，但会继续走
+   * prepare → 精确隔离授权 → acquire → staging 前审查 → active 复审 →
+   * runner 重载 → 原目标续接。它不进默认 check，也不执行 Skill 正文脚本。
+   */
+  skillacquire: {
+    probe: 'scripts/probe/skill-acquire.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 240000,
+    cost: 1,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    env: { YAN_SKILL_DIRECTORY_URL: 'https://api.skillmd.com/v1/search' },
+    goalResumeExtLog: true,
+    afterExit: 'skillDirAcquire'
   },
 
   /*
@@ -5212,6 +5239,84 @@ function seedInterruptedSnapshot(sandboxRoot) {
   return `${basename(file)}：追加中途快照（final=false，logicalTurnId=${last.logicalTurnId}）`
 }
 
+/** 外部 Skill acquire 的退出后磁盘证据（实施-04 S6b-2）。 */
+async function checkSkillDirAcquire(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let allOk = true
+  const say = (condition, text, extra = '') => {
+    lines.push(`  ${condition ? '✓' : '✗'} ${text}${extra ? `  ${extra}` : ''}`)
+    if (!condition) allOk = false
+  }
+  if (!sandboxRoot) return { ok: false, lines: ['✗ skillacquire 必须在隔离 sandbox 中运行'] }
+
+  const acquisitionPath = join(sandboxRoot, 'data', 'capabilities', 'acquisition.json')
+  const operationId = /(?:^|\n)skillacquire\.operationId=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
+  let activePath = /(?:^|\n)skillacquire\.activePath=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
+  const runnerId = /(?:^|\n)skillacquire\.runnerId=([^\r\n]+)/.exec(probeText)?.[1]?.trim() ?? ''
+  say(Boolean(operationId), '探针输出了 operationId', operationId)
+  say(Boolean(runnerId), '探针输出了 runnerId', runnerId)
+
+  let log = null
+  try { log = JSON.parse(readFileSync(acquisitionPath, 'utf8')) } catch (error) {
+    say(false, '退出后能读取 acquisition.json', error instanceof Error ? error.message : String(error))
+    return { ok: false, lines }
+  }
+  const tx = operationId ? log?.transactions?.[operationId] : null
+  say(Boolean(tx), 'acquisition.json 中存在同一 operationId')
+  if (!tx) return { ok: false, lines }
+  if (!activePath) activePath = tx.receipt?.installedPaths?.[0] ?? ''
+  say(Boolean(activePath), '探针或事务回执提供了 active Skill 路径', activePath)
+
+  say(tx.state === 'resumed', '事务磁盘终态是 resumed', JSON.stringify({ state: tx.state, failure: tx.failure ?? null }))
+  const history = Array.isArray(tx.history) ? tx.history.map((step) => step.to) : []
+  say(history.includes('verifying'), '历史包含 verifying', JSON.stringify(history))
+  say(history.includes('activated'), '历史包含 activated', JSON.stringify(history))
+  say(history.includes('resumed'), '历史包含 resumed', JSON.stringify(history))
+  const review = tx.securityReview ?? tx.receipt?.securityReview
+  say(review?.version === 1, '事务 / receipt 保存结构化安全审查回执')
+  say(review?.scannerVersion === 'yan-skill-security-1', '审查回执固定 scannerVersion', String(review?.scannerVersion))
+  say(review?.ok === true, 'Skill 内容审查结论为 ok=true')
+  say(!review?.findings?.some((finding) => finding.severity === 'high'), '高风险 finding 数量为 0')
+  say(
+    review?.findings?.some((finding) => finding.code === 'command-execution' && finding.severity === 'medium'),
+    'medium 命令执行风险被保留为提醒'
+  )
+  say(Array.isArray(tx.receipt?.installedPaths) && tx.receipt.installedPaths.length > 0, 'receipt 保存 installedPaths', JSON.stringify(tx.receipt?.installedPaths ?? []))
+  say(activePath === tx.receipt?.installedPaths?.[0], '探针输出路径与 receipt 一致', JSON.stringify({ activePath, receipt: tx.receipt?.installedPaths?.[0] }))
+  say(existsSync(activePath) && statSync(activePath).isFile(), 'active Skill 文件退出后仍存在')
+  if (existsSync(activePath)) say(readFileSync(activePath, 'utf8').length > 0, 'active Skill 正文非空')
+  say(activePath.startsWith(join(sandboxRoot, 'data', 'capabilities', 'active')), 'active 路径仍在隔离受管目录内', activePath)
+
+  let grant = null
+  try { grant = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'capabilities', 'package-authorizations.json'), 'utf8')) } catch (error) {
+    say(false, '退出后能读取精确授权记录', error instanceof Error ? error.message : String(error))
+  }
+  const grantItem = Array.isArray(grant?.items)
+    ? grant.items.find((item) => item.candidateId === tx.candidateId && item.digest === tx.digest && item.projectId === tx.projectId)
+    : null
+  say(Boolean(grantItem), '授权记录精确绑定 candidateId + digest + projectId')
+  say(grantItem?.allowLifecycleScripts === false, '授权明确禁用 lifecycle scripts')
+  say(grantItem?.via === 'settings-ui', '授权记录沿用正式 settings-ui grant 形状')
+
+  const safeRunnerId = runnerId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
+  const consumedPath = join(sandboxRoot, 'data', 'goal-resume', `${safeRunnerId}.consumed.json`)
+  let consumed = null
+  try { consumed = JSON.parse(readFileSync(consumedPath, 'utf8')) } catch (error) {
+    say(false, '退出后存在 goal-resume 消费证据', error instanceof Error ? error.message : String(error))
+  }
+  say(consumed?.operationId === operationId, 'goal-resume 消费了同一 operationId', JSON.stringify(consumed ?? null))
+  say(/即使候选由用户指定，仍保留这份风险提醒/.test(probeText), '用户指定候选也没有跳过安全提醒')
+  const resumeLogPath = join(tmpdir(), 'yan-goal-resume.log')
+  if (existsSync(resumeLogPath)) {
+    const resumeRows = readFileSync(resumeLogPath, 'utf8').trim().split(/\r?\n/).filter(Boolean).slice(-12)
+    lines.push(`  续接扩展尾部诊断：${resumeRows.join(' | ')}`)
+  } else {
+    lines.push('  续接扩展尾部诊断：没有日志文件')
+  }
+  say(!/✗/.test(probeText), '探针没有留下失败标记')
+  return { ok: allOk, lines }
+}
+
 const AFTER_EXIT = {
   exitSnapshot: checkExitSnapshot,
   remoteRoutes: checkRemoteRoutes,
@@ -5255,16 +5360,16 @@ const AFTER_EXIT = {
   handoffPackPersisted: checkHandoffPackPersisted,
   handoffCommitPersisted: checkHandoffCommitPersisted,
   budgetGate: checkBudgetGate,
-  questionModeLog: checkQuestionModeLog
+  questionModeLog: checkQuestionModeLog,
+  skillDirAcquire: checkSkillDirAcquire
 }
 
 /**
- * 提问扩展的模式诊断（实施-05 S2）。
+ * 提问薄层的模式诊断（实施-05 S2）。
  *
- * `ask` 第 6 节的断言是「自主档不弹窗」—— 但“不弹窗”有两种原因：
- *   ① 扩展真的读到了自主模式并在 `execute` 里拦下（正确）；
- *   ② 模型这一轮压根没调 `question`（假通过）。
- * 诊断行把两者分开：每行带 `{hook,mode,sessionId,file}`。
+ * `ask` 第 6 节的断言是「自主档不弹窗」。现在 question.js 只负责
+ * `before_agent_start` 指引，宿主 `yan question ask` 在自主档由主进程直接短路；
+ * 因此退出核对确认薄层真的读到了自主模式，并确认没有旧的 `execute` 钩子。
  */
 async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
   const lines = []
@@ -5300,9 +5405,10 @@ async function checkQuestionModeLog(sandboxRoot, _tempBefore, _probeText) {
     '自主档真的到达扩展（不靠 defaultWorkMode 猜）'
   )
   say(
-    records.some((r) => r.hook === 'execute' && r.mode === 'autonomous'),
-    'question.execute 在自主模式下被调到（模型试着提问，被扩展拦下）'
+    records.some((r) => r.hook === 'before_agent_start' && r.mode === 'autonomous'),
+    '自主档真的经过 question.js 的工作模式提示钩子'
   )
+  say(!records.some((r) => r.hook === 'execute'), 'question.js 没有恢复旧的模型工具 execute 钩子')
   return { ok, lines }
 }
 
@@ -7452,11 +7558,10 @@ async function main() {
     }
 
     /*
-     * 实施-02 S1：`taskext` 要验「旧任务扩展与砚同时存在」，所以单独一份 piDir。
-     *
+     * 实施-01 S5：`taskext` 要验带历史扩展的升级目录，所以单独一份 piDir。
      * 旧扩展从 `scripts/fixtures/task-ext/` 现拷（**不是**用户本机那份）——
      * fixture 必须自包含，否则换一台机器场景就变成「不存在旧扩展」而静默变形。
-     * 只读它的行为在本文件的场景注释里说明。
+     * 默认不加载与历史只读行为在场景注释里说明。
      */
     const piDirTaskExt = join(sandboxRoot, 'pi-agent-task-ext')
     for (const d of [piDirTaskExt, join(piDirTaskExt, 'extensions')]) mkdirSync(d, { recursive: true })

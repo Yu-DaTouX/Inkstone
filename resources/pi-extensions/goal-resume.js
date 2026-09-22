@@ -129,17 +129,25 @@ export default function goalResume(pi) {
    */
   let activity = 0
   let scheduledFor = -1
+  /*
+   * `start()` 后紧接着 `switchSession()` 时，扩展最初拿到的 pi/ctx 会被
+   * pi 标成 stale；`session_start` 的第二个参数才是这次会话可用的新 ctx。
+   * 定时器必须捕获它，否则重载续行会先写消费证据、再在 sendMessage 处
+   * 失败，留下「已经消费但没有真正续接」的不可重试窗口。
+   */
+  let activeContext = pi
 
-  const schedule = () => {
+  const schedule = (context = activeContext) => {
+    activeContext = context ?? activeContext
     const token = ++activity
     const timer = setTimeout(() => {
-      void maybeResume(token)
+      void maybeResume(token, context ?? activeContext)
     }, RESUME_DELAY_MS)
     /* 不阻止 pi 退出：用户关窗口时不该等这个定时器 */
     timer.unref?.()
   }
 
-  const maybeResume = async (token) => {
+  const maybeResume = async (token, context = activeContext) => {
     /* ③ 用户消息优先：等待期间又有活动 → 这次不发（resume 仍留着） */
     if (token !== activity) {
       note('resume_skipped', { reason: 'activity', token, activity })
@@ -162,12 +170,12 @@ export default function goalResume(pi) {
     rememberConsumed(resume.operationId)
     try {
       /* 会话里的留痕（自定义条目，不进模型上下文）；`kind` 让排障时能分辨是哪种续行 */
-      pi.appendEntry?.('yan-goal-resume', { operationId: resume.operationId, kind: resume.kind, at: Date.now() })
+      context.appendEntry?.('yan-goal-resume', { operationId: resume.operationId, kind: resume.kind, at: Date.now() })
     } catch (err) {
       note('entry_failed', { error: String(err?.message ?? err) })
     }
     try {
-      await pi.sendMessage?.(
+      await context.sendMessage?.(
         {
           customType: CUSTOM_TYPES[resume.kind] ?? 'yan-goal-ready',
           content: [{ type: 'text', text: resume.summary }],
@@ -191,19 +199,19 @@ export default function goalResume(pi) {
    * session switch and reload all pass through `session_start`; run the same
    * delayed idle check there. Other activity still invalidates the timer.
    */
-  pi.on('session_start', (event) => {
+  pi.on('session_start', (event, context) => {
     note('session_start', { reason: event?.reason ?? null })
-    schedule()
+    schedule(context ?? pi)
   })
   pi.on('tool_call', () => {
     activity += 1
   })
-  pi.on('message_end', (event) => {
+  pi.on('message_end', (event, context) => {
     note('message_end', { role: event?.message?.role, turnEnd: looksLikeTurnEnd(event) })
     if (!looksLikeTurnEnd(event)) return
     /* 同一条 assistant 消息可能触发多次 message_end（流结束 / 工具后），去重 */
     if (scheduledFor === activity) return
     scheduledFor = activity
-    schedule()
+    schedule(context ?? activeContext)
   })
 }

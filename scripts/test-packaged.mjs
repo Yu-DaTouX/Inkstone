@@ -119,6 +119,8 @@ const must = [
    * 漏了它的症状是：应用能启动、模型一敲 `yan` 就「不是内部或外部命令」。
    */
   ['yan-cli', join(unpacked, 'resources', 'yan-cli', 'yan.mjs')],
+  /* 实施-01 S5：显式加载的砚薄层与 pi 用户扩展目录分离。 */
+  ['yan-thin', join(unpacked, 'resources', 'yan-thin', 'question.js')],
   ['app.asar', join(unpacked, 'resources', 'app.asar')]
 ]
 if (exeFromArg) {
@@ -127,7 +129,7 @@ if (exeFromArg) {
   for (const [label, p] of must) {
     if (!existsSync(p)) fail(`extraResources 缺件：${label}`, p)
   }
-  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / yan-cli / app.asar）`)
+  console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / yan-thin / yan-cli / app.asar）`)
 }
 /* 2. 隔离沙盒（绕不开真实会话、派生状态与 localStorage） */
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
