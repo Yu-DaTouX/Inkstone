@@ -1983,6 +1983,240 @@
   white-space: nowrap;
 }
 
+/* 异步工作区窗口在资源真正打开前也要保留一个可见状态，避免点击“＋”后
+   右栏因 activeView 尚未 ready 而整块卸载。 */
+.rp-pending-surface {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  padding: var(--sp-4);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+/* 独立子代理是跨回合后台资源，放在右侧工作区而不是输入框上方。 */
+.subagent-zone-right {
+  min-width: 0;
+  margin: 0 6px 8px;
+}
+
+.subagent-zone-right .sa-launcher {
+  margin: 0 0 6px;
+}
+
+.subagent-zone-right .sa-strip {
+  margin: 0;
+}
+
+.subagent-zone-right .sa-row {
+  flex-wrap: wrap;
+}
+
+.subagent-zone-right .sa-task {
+  max-width: calc(100% - 28px);
+}
+
+.subagent-zone-right .sa-activity {
+  flex-basis: calc(100% - 28px);
+  margin-left: 22px;
+}
+
+.subagent-zone-right .sp {
+  flex: none;
+  height: min(46vh, 420px);
+  min-height: 180px;
+  margin-top: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+/* 目标 / 计划是砚宿主的固定能力，不参与可拖拽工具分区排序。 */
+.goal-panel {
+  min-width: 0;
+  margin: 0 6px 8px;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg-2) 72%, var(--bg-1));
+}
+
+.goal-panel-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.goal-panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.goal-panel-title .ico {
+  color: var(--accent);
+}
+
+.goal-panel-phase {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  color: var(--fg-dim);
+  background: var(--bg-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.goal-panel-empty,
+.goal-panel-pending {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.goal-panel-empty small {
+  color: var(--fg-mute);
+  font: inherit;
+}
+
+.goal-panel-content {
+  min-width: 0;
+  margin-top: 8px;
+}
+
+.goal-panel-meta {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-steps {
+  display: grid;
+  max-height: min(32vh, 260px);
+  gap: 2px;
+  margin: 7px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.goal-step {
+  display: grid;
+  grid-template-columns: 14px 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.goal-step-icon {
+  display: grid;
+  place-items: center;
+  min-height: 16px;
+  color: var(--fg-mute);
+}
+
+.goal-step-done .goal-step-icon {
+  color: var(--ok, #70c49a);
+}
+
+.goal-step-blocked .goal-step-icon,
+.goal-panel-blocker {
+  color: var(--danger, #e07b7b);
+}
+
+.goal-step-index {
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.goal-step-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-step-done .goal-step-title {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-str);
+}
+
+.goal-step-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 5px auto 0;
+  border: 1px solid currentColor;
+  border-radius: var(--r-full);
+}
+
+.goal-panel-blocker {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 6px 7px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.goal-panel-blocker span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.goal-panel-evidence {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.goal-panel-subtitle {
+  color: var(--fg-mute);
+  font-weight: 600;
+}
+
+.goal-evidence-row {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-completed {
+  border-color: color-mix(in srgb, var(--ok, #70c49a) 30%, var(--border-soft));
+}
+
+.goal-blocked {
+  border-color: color-mix(in srgb, var(--danger, #e07b7b) 32%, var(--border-soft));
+}
+
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-fs,
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-log {
   min-width: 0;

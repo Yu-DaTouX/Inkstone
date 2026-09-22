@@ -1703,6 +1703,13 @@ export type MainPushBody =
    * 带 `runtime` 封套：A 会话切模式不得影响 B 会话的显示与提问行为。
    */
   | { ch: 'work-mode'; payload: WorkModeState }
+  /**
+   * 当前会话的内置目标 / 计划状态（实施-05 S3）。
+   *
+   * 目标和工作模式都按会话隔离，但它是模型推进的事实快照，不能并入
+   * 可编辑的工具栏分区；右栏会把它作为独立的砚内置能力展示。
+   */
+  | { ch: 'goal'; payload: GoalState }
   /** 全部任务清单快照（含最新）。界面用它做「历史任务」模块 */
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   /** 扩展要弹窗，需要应答 */

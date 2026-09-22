@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -23,8 +22,8 @@ import { cacheHitRate, currentTurnMessages, formatHitRate } from '../../../../sh
  *   实测这个 provider 到结束才报 usage（138 个流式事件里只有 2 个带 usage，
  *   第一个在第 137 位），所以流式期间算不出真实 tok/s。
  *   又实测过「字符数 ÷ 时间」不可靠（tokens/char 在 0.4~93 之间跳，
- *   因为 output 含 thinking 与工具参数）。所以拿不到就显示「生成中 Ns」，
- *   而不是编一个看着精确的假数字。
+ *   因为 output 含 thinking 与工具参数）。所以拿不到就显示「生成中」状态，
+ *   而不是编一个看着精确的假数字。用时本身留在回合页脚，这里不再重复显示。
  *
  * ⚠️ **模型 + 思考强度选择器不在这里**（用户要求：放回输入框内部）：
  *   它在 `Composer.tsx` 的 `.composer-bar` 里（`Pickers.tsx` 的
@@ -39,24 +38,6 @@ export function UsageBar() {
   const messages = useStore((s) => s.messages)
   const streaming = useStore((s) => !!s.session?.isStreaming)
 
-  /* ---- 流式计时（拿不到实时 usage 时用） ---- */
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    if (!streaming) return
-    const id = setInterval(() => setTick((v) => v + 1), 200)
-    return () => clearInterval(id)
-  }, [streaming])
-
-  // 计时基准：**流式开始那一刻**。
-  // 不能按「当前消息 id 变了」记 —— 流式刚开始最后一条还是用户消息，
-  // 助手消息 message_start 后才新建，id 一变计时就归零，看着像卡了一下。
-  const startRef = useRef(0)
-  const wasStreaming = useRef(false)
-  if (streaming && !wasStreaming.current) startRef.current = Date.now()
-  wasStreaming.current = streaming
-  void tick
-  const elapsedSec = streaming && startRef.current ? (Date.now() - startRef.current) / 1000 : 0
-
   /* ---- 本轮用量 ---- */
   // 全 0 的 usage 不算数：流式途中 provider 可能先报一个全 0
   // （pi 文档：may remain zero until completion），否则会闪一下 "输入 0 输出 0"
@@ -67,22 +48,11 @@ export function UsageBar() {
    * ⚠️ 只在**当前回合**里找用量/速度（`currentTurnMessages`）。
    *    在整个历史里倒着找「最近一次非零 usage」会把上一轮的数字标成本轮实时值：
    *    新一轮刚开始流式时还没报 usage，旧轮有值 —— 于是速度带上了 live 标记、
-   *    「生成中 Ns」被跳过；新一轮最终不报 usage 时，账单也一直在显示旧轮数据。
+   *    「生成中」状态被跳过；新一轮最终不报 usage 时，账单也一直在显示旧轮数据。
    */
   const turnMessages = currentTurnMessages(messages)
   const last = [...turnMessages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
   const u = last?.usage
-
-  /*
-   * 本轮用时：回合结束后**一直显示**（用户报「会话结束的时候看不到本次用时」）。
-   *
-   * 数字用 pi 给的 `elapsedMs`（本轮从开始生成到结束的墙钟耗时，含工具往返），
-   * 不自己计时——自己算的话切走再回来、或跨多段流式（工具往返）就对不上了。
-   * 取最后一条助手消息，**不要求它带 usage**：本轮没报用量时也应该看得到耗时。
-   */
-  const lastAssistant = [...turnMessages].reverse().find((m) => m.role === 'assistant')
-  const turnMs = !streaming ? lastAssistant?.elapsedMs : undefined
-  const elapsed = turnMs ? fmtElapsed(turnMs) : undefined
 
   /* ---- 缓存命中率（算法在 shared/turns.ts，有单测） ---- */
   const hit = cacheHitRate(u)
@@ -125,7 +95,6 @@ export function UsageBar() {
         <span className="ub-item" title={t('tok.liveTip')}>
           <span className="ub-value">
             {t('tok.generating')}
-            <span className="ub-unit">{elapsedSec.toFixed(1)}s</span>
             <span className="ub-live" />
           </span>
         </span>
@@ -145,20 +114,6 @@ export function UsageBar() {
       )}
 
       <span className="ub-dot" />
-
-      {/* 本轮用时：只在回合结束后显示（流式期间那个位置是「生成中 Ns」） */}
-      {elapsed ? (
-        <>
-          <Item
-            label={t('tok.elapsed')}
-            value={elapsed.value}
-            unit={elapsed.unit}
-            title={t('tok.elapsedTip')}
-            testId="ub-elapsed"
-          />
-          <span className="ub-dot" />
-        </>
-      ) : null}
 
       <span className="ub-turn">
         <Item
@@ -245,14 +200,4 @@ function fmtTok(n: number): string {
 /** 速度：整数 + tok/s，慢的时候给一位小数 */
 function fmtSpeed(v: number): string {
   return v >= 10 ? v.toFixed(0) : v.toFixed(1)
-}
-/**
- * 本轮用时：一分钟以内给秒（一位小数），更长给 `m:sss`。
- * 不四舍五入到分钟——用户看的是「这一轮到底花了多久」。
- */
-function fmtElapsed(ms: number): { value: string; unit?: string } {
-  const total = ms / 1000
-  if (total < 60) return { value: total.toFixed(1), unit: 's' }
-  const m = Math.floor(total / 60)
-  return { value: `${m}m${String(Math.round(total % 60)).padStart(2, '0')}s` }
 }

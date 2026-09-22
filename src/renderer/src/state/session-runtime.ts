@@ -17,6 +17,7 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
+  GoalState,
   WorkModeState,
   UIMessage,
   UIToolCall
@@ -37,6 +38,8 @@ export interface SessionRuntimeSnapshot {
   draft: string
   /** 当前会话的工作模式（实施-05）。null = 还没收到主进程推送，按默认渲染。 */
   workMode: WorkModeState | null
+  /** 当前会话的目标 / 计划事实快照。 */
+  goal: GoalState
   /** 当前会话最近一次成功拉到的能力/命令快照。 */
   models: ModelInfo[]
   thinkingLevels: string[]
@@ -60,6 +63,16 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     todos: [],
     todoHistory: [],
     workMode: null,
+    goal: {
+      goalId: '',
+      phase: 'planning',
+      revision: 0,
+      steps: [],
+      evidence: [],
+      blocker: null,
+      failure: null,
+      updatedAt: 0
+    },
     uiRequests: [],
     statuses: {},
     widgets: {},
@@ -114,6 +127,7 @@ export function migrateSessionRuntime(
         runtime: target.runtime.generation >= runtime.generation ? target.runtime : runtime,
         draft: target.draft || pending.draft,
         workMode: target.workMode ?? pending.workMode,
+        goal: target.goal.goalId || target.goal.revision > 0 ? target.goal : pending.goal,
         models: target.models.length ? target.models : pending.models,
         thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : pending.thinkingLevels,
         commands: target.commands.length ? target.commands : pending.commands
@@ -227,6 +241,9 @@ export function reduceSessionRuntime(
       break
     case 'work-mode':
       next = { ...next, workMode: message.payload }
+      break
+    case 'goal':
+      next = { ...next, goal: message.payload }
       break
     case 'todo-history':
       next = { ...next, todoHistory: message.payload }

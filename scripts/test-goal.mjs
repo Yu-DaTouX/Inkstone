@@ -428,6 +428,18 @@ export async function runGoalTests(ok) {
       await auto.load()
       const keyC = 'C:/tmp/sessions/c.jsonl'
 
+      const keyHost = 'C:/tmp/sessions/host-autonomous.jsonl'
+      const hostStart = await auto.ensureAutonomousGoal(keyHost, '把自主模式改成收到请求后自动推进并完成')
+      ok(hostStart.created === true, '自主档收到用户请求时由宿主自动登记目标')
+      ok(
+        hostStart.goal.phase === 'planning' && hostStart.goal.revision === 1 && hostStart.goal.steps.length === 1,
+        '宿主登记的目标先进入 planning / rev1，并保留用户请求步骤'
+      )
+      const hostAgain = await auto.ensureAutonomousGoal(keyHost, '补充同一个自主任务')
+      ok(hostAgain.created === false && hostAgain.goal.goalId === hostStart.goal.goalId, '活动目标收到补充消息时复用同一目标')
+      const hostArm = await auto.armContinue(keyHost)
+      ok(hostArm.armed === true && hostArm.round === 1, '宿主登记的目标也可以自动安排第一轮续接')
+
       const notYet = await auto.armContinue(keyC)
       ok(
         notYet.armed === false && notYet.reason === 'not_active',

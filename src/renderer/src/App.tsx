@@ -13,7 +13,6 @@ import { groupIntoTurns } from '../../shared/turns'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
 import { QuestionPanel } from './components/chat/QuestionPanel'
-import { SubagentList } from './components/chat/SubagentList'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
@@ -634,8 +633,6 @@ export default function App() {
              * 用户要能一边看历史一边回答，所以不再用遮罩 + 焦点圈定的模态框。
              */}
             <QuestionPanel />
-            {/* 子代理运行列表：与问题面板同一区域（主对话内，方案 8.3） */}
-            <SubagentList />
             <Composer />
           </section>
 
