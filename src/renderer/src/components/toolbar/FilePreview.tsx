@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -24,9 +26,17 @@ export function FilePreviewPane() {
   const t = useT()
   const preview = useStore((s) => s.filePreview)
   const closePreview = useStore((s) => s.closePreview)
+  const previewFile = useStore((s) => s.previewFile)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const [mode, setMode] = useState<'read' | 'source'>('read')
 
   const data = preview?.data
+  const isMarkdown = data?.kind === 'text' && /\.(?:md|markdown|mdown)$/i.test(data.name)
+
+  /* 新资源默认阅读模式；带行号优先源码定位，但用户仍可切回阅读。 */
+  useEffect(() => {
+    setMode(preview?.line ? 'source' : 'read')
+  }, [preview?.path, preview?.cwd, preview?.line])
   const lines = useMemo(() => {
     if (!data?.text) return []
     const all = data.text.split('\n')
@@ -65,6 +75,12 @@ export function FilePreviewPane() {
         </span>
         {data?.line ? <span className="fp-line-no">{data.line}</span> : null}
         {data?.size ? <span className="fp-size">{fmtSize(data.size)}</span> : null}
+        {isMarkdown ? (
+          <div className="fp-mode" role="group" aria-label="文件阅读模式">
+            <button type="button" className={mode === 'read' ? 'on' : ''} onClick={() => setMode('read')} data-testid="file-preview-read">阅读</button>
+            <button type="button" className={mode === 'source' ? 'on' : ''} onClick={() => setMode('source')} data-testid="file-preview-source">源码</button>
+          </div>
+        ) : null}
         <span className="spacer" />
         <button
           className="fp-act"
@@ -116,10 +132,17 @@ export function FilePreviewPane() {
           <div className="fp-note err" role="alert">
             {data.error ?? t('fp.failed')}
             <div className="fp-path-line">{preview.path}</div>
+            <button type="button" className="fp-retry" onClick={() => void previewFile(preview.path, preview.line, preview.cwd)} data-testid="file-preview-retry">重试</button>
           </div>
         ) : null}
 
-        {isText ? (
+        {isText && isMarkdown && mode === 'read' ? (
+          <div className="fp-markdown prose" data-testid="file-preview-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.text ?? ''}</ReactMarkdown>
+          </div>
+        ) : null}
+
+        {isText && (!isMarkdown || mode === 'source') ? (
           <>
             <pre className="fp-code">
               {lines.map((line, i) => (

@@ -29,7 +29,14 @@ const report = {}
 {
   const tracked = cp.execFileSync('git', ['ls-files', '-z'], { maxBuffer: 64 << 20 }).toString().split('\0').filter(Boolean)
   report.missingTracked = tracked.filter((p) => !exists(p))
-  const status = cp.execFileSync('git', ['status', '--porcelain', '-z'], { maxBuffer: 64 << 20 }).toString().split('\0').filter(Boolean)
+  let status = []
+  try {
+    status = cp.execFileSync('git', ['status', '--porcelain', '-z'], { maxBuffer: 64 << 20 }).toString().split('\0').filter(Boolean)
+  } catch (error) {
+    /* Windows 的保留设备名可能让 Git 读 index 报 short read；审计其余引用关系仍应继续，
+     * 但把这个事实写进报告，不能把“无法读取状态”伪装成干净。 */
+    report.gitStatusError = String(error?.stderr ?? error?.message ?? error).trim()
+  }
   report.deletedUnstaged = status.filter((s) => /^ ?D /.test(s)).map((s) => s.slice(3))
   report.renames = status.filter((s) => /^R/.test(s)).length
 }

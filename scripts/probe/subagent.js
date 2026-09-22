@@ -59,8 +59,13 @@
     if (taskInput && taskSetter) {
       taskSetter.call(taskInput, '请只回答两个字：收到')
       taskInput.dispatchEvent(new Event('input', { bubbles: true }))
+      taskInput.dispatchEvent(new Event('change', { bubbles: true }))
     }
-    q('[data-testid="subagent-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    /* React 的受控 textarea 需要一帧把 onChange 的状态写回按钮 disabled。 */
+    await sleep(250)
+    const startButton = q('[data-testid="subagent-start"]')
+    ok(!!startButton && !startButton.disabled, '任务文本已写入，启动按钮可用')
+    startButton?.click()
     await sleep(800)
     let started = null
     for (let i = 0; i < 30; i++) {

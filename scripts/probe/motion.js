@@ -304,8 +304,9 @@
       }
     } else {
       out.push('  ⚠️ 没有同时含解说与执行栏的回合')
-      const label = q('.msg.assistant .msg-label')
-      ok(!!label, '助手回合有标签（砚）')
+      /* H-1 移除了助手正文顶部的品牌 / 步数标签；回合仍保留左侧砚图标。 */
+      const mark = q('.msg.assistant .gutter .ico, .msg.assistant .gutter svg')
+      ok(!!mark, '助手回合有左侧砚图标')
       const single = qa('.msg.assistant').length
       out.push(`  助手回合数 = ${single}`)
     }

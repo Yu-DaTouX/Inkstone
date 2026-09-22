@@ -1089,7 +1089,23 @@ const STATES = {
       st.setRailPinned(true);
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      window.__yanStore.setState({ workMode: { mode: 'autonomous', revision: 1 } });
+      window.__yanStore.setState({
+        workMode: { mode: 'autonomous', revision: 1 },
+        goal: {
+          goalId: 'matrix-goal',
+          phase: 'executing',
+          revision: 2,
+          steps: [
+            { title: '确认用户要解决的问题', status: 'done' },
+            { title: '执行修改并验证', status: 'running' },
+            { title: '汇报结果与限制', status: 'pending' }
+          ],
+          evidence: ['已建立会话级目标', '正在执行第 2 步'],
+          blocker: null,
+          failure: null,
+          updatedAt: Date.now()
+        }
+      });
       /* 真实使用时输入框就是聚焦的（聚焦时边框更亮，光带也更容易看清） */
       document.querySelector('[data-testid="composer"]')?.focus();
       return 'ok';
@@ -1116,6 +1132,20 @@ const STATES = {
       const file = cwd + '/autorun.jsonl';
       window.__yanStore.setState({
         workMode: { mode: 'autonomous', revision: 1 },
+        goal: {
+          goalId: 'matrix-goal-running',
+          phase: 'executing',
+          revision: 2,
+          steps: [
+            { title: '确认用户要解决的问题', status: 'done' },
+            { title: '执行修改并验证', status: 'running' },
+            { title: '汇报结果与限制', status: 'pending' }
+          ],
+          evidence: ['目标已自动建立'],
+          blocker: null,
+          failure: null,
+          updatedAt: Date.now()
+        },
         session: { ...(st.session ?? {}), cwd, sessionFile: file, isStreaming: true, isAgentRunning: true },
         activeRunnerId: 'vs-autorun',
         runners: [{
@@ -3093,9 +3123,9 @@ const MUST_HAVE = {
   artifact: ['.stream', '[data-testid="turn-artifacts"]', '[data-artifact-id="matrix-artifact-svg"]', '.artifact-image', '.artifact-download'],
   imageprogress: ['.stream', '[data-testid="image-progress-list"]', '.image-progress[data-stage="generating"]', '.image-progress-track'],
   /* 自主模式：数据属性是探针/检查的钩子，光带本身在现场看（§4.2） */
-  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]'],
+  autonomous: ['[data-testid="composer"]', '.composer-wrap[data-autonomous="1"]', '[data-testid="work-mode-button"][data-mode="autonomous"]', '[data-testid="goal-panel"]', '[data-goal-phase="executing"]', '.goal-step'],
   /* 自主 + 任务在跑（N10）：光带在，且输入框那个键已经变成「停止」形态 */
-  autonomousrunning: ['.composer-wrap[data-autonomous="1"]', '[data-testid="send"].abort', '[data-testid="work-mode-button"][data-mode="autonomous"]'],
+  autonomousrunning: ['.composer-wrap[data-autonomous="1"]', '[data-testid="send"].abort', '[data-testid="work-mode-button"][data-mode="autonomous"]', '[data-testid="goal-panel"]', '.goal-step'],
   workmodemenu: ['[data-testid="work-mode-button"][data-mode="clarify"]', '[data-testid="work-mode-menu"]', '[data-testid="work-mode-option-autonomous"]'],
   modelmenu: ['[data-testid="model-picker"]', '[data-testid="model-menu"]'],
   toolgroup: ['.tgroup.open'],
@@ -3256,6 +3286,7 @@ const MUST_HAVE = {
   ],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
   subagentlaunch: [
+    '[data-testid="subagent-zone-right"]',
     '[data-testid="subagent-new"]',
     '[data-testid="subagent-launch-panel"]',
     '[data-testid="subagent-task"]',
@@ -3264,10 +3295,11 @@ const MUST_HAVE = {
   ],
   /* 运行中的子代理详情：任务、转录、变更审阅摘要都要在图里 */
   subagent: [
+    '[data-testid="subagent-zone-right"]',
     '[data-testid="subagent-preview"]',
     '[data-testid="subagent-preview-body"]',
     '[data-testid="subagent-review"]',
-    '.sp-main'
+    '.subagent-zone-right .sp'
   ],
   subagentinline: [
     '[data-testid="subagent-inline-list"]',
@@ -3316,7 +3348,7 @@ const AFTER_STATE = {
    */
   autonomous: `
     (() => {
-      window.__yanStore.setState({ workMode: null });
+      window.__yanStore.setState({ workMode: null, goal: null });
       return 'ok';
     })()
   `,

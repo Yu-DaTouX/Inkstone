@@ -15,6 +15,28 @@
 
 > 上一轮完整 `npm run check` **全部通过（83 个 live 场景）**；其中 `npm run typecheck` / `npm run build` / `npm run test:unit` **4158/4158**、`vendor:pi:check`、设计测量均通过。那一轮实际调用模型的场景使用本地 llama.cpp；随后按用户要求停止本机模型服务，当前不把本地模型作为运行前提。随后按最新源码重跑 `npm run dist:dir` 与 `npm run test:packaged`，解包、便携版与全新 NSIS 安装态 EXE 的运行探针均通过。能力设置页的安全快照、显式 MCP 核验 / 取消 / 重连与项目隔离回归仍在矩阵内；本轮也保留 acquisition staging manifest 精确文件集核对（拒绝未登记文件、缺失文件及符号链接），并新增 `mcp-package` 的精确 bin 解析、官方 SDK `tools/list` smoke、项目范围 stdio 登记 / 复核回归、受保护环境变量拒绝和超时清理回归。Pi 离线 RPC smoke 通过。能力设置页已用真实 Electron 视觉矩阵生成并看图核对：深浅主题的策略 / 能力目录 / Skill / MCP 服务状态均无溢出，截图见 `matrix-capabilities*` 与 `matrix-capabilitiesmcp*`（2026-09-21-cap2）。Computer Use 原生后端仍未配置（`apps: []`)，但不影响本次独立的 `capturePage` 视觉证据。Pi 自写无副作用 fixture 以资源 glob 加 `!` 排除成功加载并触发 `session_start`，且父进程注入的 sentinel 环境变量未传入 Pi；没有获授权外部候选 acquire / install / 目标 runner 重载或原目标续接证据。工作区仍有大量已有未提交改动，保留不清理。
 
+### 本轮增量（2026-09-22）· 工具栏拖拽回归与 H-1 探针同步
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`RightPanel.tsx`](../../src/renderer/src/components/toolbar/RightPanel.tsx) 的指针拖拽收尾以 `elementFromPoint` 为首选，并回退到 `toolDropTarget` 共享落点，确保合成 PointerEvent 下仍执行排序与落盘；[`scripts/probe/motion.js`](../../scripts/probe/motion.js) 按 H-1 当前契约检查助手回合左侧砚图标，不再要求已移除的正文顶部品牌标签。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` **4322/4322**、`git diff --check` 通过。 |
+| 真实运行 | `env -u ELECTRON_RUN_AS_NODE npm run test:live -- tools motion` 全绿：工具栏拖拽插入位置与 `toolOrder` 落盘均通过；motion 也通过。 |
+| 视觉验收 | 本片没有视觉改动；沿用 H-1 的助手回合页脚与左侧砚图标视觉证据。 |
+| 应用与包 | `out/` 已按本片源码重新构建；未重新生成 `dist:dir` / 便携包 / NSIS，包级证据仍以既有发布验收为准。 |
+| 剩余限制 | `elementFromPoint` 在合成事件下的回退已覆盖，但未新增跨缩放比例的视觉矩阵；外部候选能力整链、Android 客户端与最终发布门槛仍按下方当前未完成清单处理。 |
+
+### 本轮增量（2026-09-22）· 实施-11 H-3/H-4b：工作窗口保留与 Markdown 阅读出口
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 [`state/workbench.ts`](../../src/renderer/src/state/workbench.ts)：按 `sessionFile/sessionId` 隔离并持久化版本化 tabs、活动资源、宽度、展开态；[`RightPanel.tsx`](../../src/renderer/src/components/toolbar/RightPanel.tsx) 接入后，浏览器 / 文件 / 审查 / 子代理资源切换不再销毁。[`FilePreview.tsx`](../../src/renderer/src/components/toolbar/FilePreview.tsx) 对 Markdown 增加安全的 GFM 阅读 / 源码切换，错误态提供重试；[`subagent-isolation.ts`](../../src/main/subagent-isolation.ts) 遇到 Windows 已跟踪保留设备名（本工作区的 `nul`）时，以 `--no-checkout` + 有效路径 index 恢复隔离 worktree，不删除或改写原文件。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、`npm run test:unit` **4334/4334**、`git diff --check`、`npm run vendor:pi:check -- --if-present`、`env -u ELECTRON_RUN_AS_NODE npm run measure:design`、`npm run audit:refs` 通过；最终还重跑 `npm run dist:dir`。审计报告明确记录 Git 因跟踪 `nul` 无法读取 status（`short read while indexing nul`），未把它伪装成干净。 |
+| 真实运行 | `env -u ELECTRON_RUN_AS_NODE npm run test:live -- rightresources filelink tools motion` 全绿（4 场景）；`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- subagent` 全绿：真实 worktree 子代理、RPC 转录、详情、停止与孤儿进程回收；同时覆盖了 `nul` 导致的 Windows checkout 回退。 |
+| 视觉验收 | 沿用 `matrix-filelink-*`、`matrix-subagent*` 与右栏资源既有截图；本片没有新增截图，不把未重拍视觉矩阵写成新证据。 |
+| 应用与包 | `npm run dist:dir` 成功生成最新 `release/win-unpacked`；`npm run test:packaged` 全绿：解包态内置 pi、项目知识、Git、上下文策略、能力页、yan CLI 与远程服务边界均通过。本片未生成 NSIS / 便携包。 |
+| 剩余限制 | 工作窗口仍是单活动表面，不是多文档 WorkbenchState；保留设备名会在隔离 worktree 中显示为缺失（不伪造为可读文件）；Git 状态审计仍受已跟踪 `nul` 的 Windows 限制，但审计脚本已隔离并显式报告；外部候选、Android、真实 1M / 完整 Harness 证据仍未闭环。 |
+
 ### 本轮增量（2026-09-22）· 实施-11 C-4b：估算口径（图片 / 附件不再当零）
 
 > C-4 的剩余项：“请求估算仍以字符为主，对图片与 provider 特殊结构覆盖不足；

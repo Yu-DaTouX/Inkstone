@@ -2765,13 +2765,15 @@ function registerIpc(): void {
       if (mode.mode === 'autonomous') {
         /* 用户重新接管时，旧的自动续行不能在本轮之后又插进来。 */
         await cancelGoalResume(id)
-        if (text.trim()) await goals.ensureAutonomousGoal(key, text)
-        await pushGoal(id)
       }
       /* await：用户发言必须先于模型接下来的 arm 落地，否则竞态下计数不会被归零 */
       await goals.resetAutoContinues(key).catch(() => {})
       /* 用户发话了 = 他接手了：自动继续作废、连续失败计数归零（S5c） */
       await resetAutoContinue(id)
+      if (mode.mode === 'autonomous') {
+        if (text.trim()) await goals.ensureAutonomousGoal(key, text)
+        await pushGoal(id)
+      }
     }
     return ac()!.send(text, images, mode)
   })

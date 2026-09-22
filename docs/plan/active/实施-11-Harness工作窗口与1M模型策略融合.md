@@ -99,8 +99,8 @@
 | 8 | C-6 | 三类整理门槛与防抖标定 | 审阅 §5.2、§3.3、§5.1 | C-4、C-2 | 未开始 |
 | 9 | C-5 | 上下文窗口 UI 分层 | 审阅 §6 | C-2 | **已交付**（分母口径：主值走物理尺度 + 工作集单独一行 + 刻度改窗口尺度；档位名与来源展示留作剩余） |
 | 10 | C-3 | 大窗口策略验证矩阵 | 审阅 §7 | C-1、C-6 | 未开始 |
-| 11 | H-3 | 工作窗口状态模型 | 方案 §5.3、§9 S2 | H-2 | 未开始 |
-| 12 | H-4 | 文件与文档窗口 | 方案 §3、§8、§9 S3 | H-3 | **部分交付**：解析 / 呈现切片（`#L42` / 范围 / 点击预览）已闭环（见 HANDOFF「H-4a」）；文件标签、目录树联动、Markdown 源码切换、大文件与资源身份待 H-3 后做 |
+| 11 | H-3 | 工作窗口状态模型 | 方案 §5.3、§9 S2 | H-2 | **部分交付**：`sessionFile/sessionId` 隔离的版本化 tabs / active / width / expanded 已落地并接入右栏；真正多文档 WorkbenchState、滚动 / 导航 revision 与完整资源身份仍待做 |
+| 12 | H-4 | 文件与文档窗口 | 方案 §3、§8、§9 S3 | H-3 | **部分交付**：解析 / 呈现切片与 Markdown 阅读 / 源码切换、缺失重试已闭环（见 HANDOFF「H-4a」及 2026-09-22 H-3/H-4b）；文件树联动、大文件窗口化、变化提示、资源身份仍待做 |
 | 13 | H-9 | 浏览器窗口融合 | 方案 §6、§9 S4 | H-3 | 未开始 |
 | 14 | H-10 | 子代理展示与累计统计 | 方案 §7、§9 S5 | H-3 | 未开始 |
 | 15 | H-8 | 图标接入统一 | 方案 §13.2 | H-3（形态确定后） | 未开始 |
@@ -264,7 +264,7 @@
 见 §3.2。切页只隐藏、不销毁；显式关标签才释放对应资源。
 多标签 / 多文档的会话级持久化是下一片 H-3，不在本片声称完成。
 
-**H-3 · 工作窗口状态模型（位次 11）**
+**H-3 · 工作窗口状态模型（位次 11，部分交付）**
 
 - 来源：方案 §5.3、§9 S2；生命周期思想来自 DSH `tab-domain.ts`。
 - 内容：按会话（稳定会话链身份）保存 `tabs / activeTabId / width / expanded / version`；
@@ -284,6 +284,7 @@
 - 迁移与存储：保留 `rightPanelOpen`、宽度、`toolOrder` / `toolHidden`；存储带版本号与未知标签回退；
   浏览器恢复只保存必要 URL / 标题等布局信息，**不把 Cookie / 凭证放进布局 JSON**。
   落盘前先定会话边界与旧数据兼容策略，不能因新增字段破坏现有会话 JSONL。
+- 当前实现：`state/workbench.ts` 按 `sessionFile/sessionId` 隔离并持久化版本化 tabs、活动标签、宽度与展开态；`RightPanel` 已接入浏览器 / 文件 / 审查 / 子代理资源保留。真实运行证据见 HANDOFF 2026-09-22 H-3/H-4b。
 - 禁区：不同时引入多列 docking、拖出独立 OS 窗口或复杂分屏树；不新增第二份“布局真源”。
 
 **H-4 · 文件与文档窗口（位次 12，部分交付）**
@@ -291,8 +292,9 @@
 - **已交付（H-4a，证据见 HANDOFF）**：`shared/links.ts` 的 `parseFileLink`（DSH 搬运）
   与 `classifyLink` 接入；支持 `path#L42` / `path#L42-L60` / `file://…#L7`；
   `LinkAnchor` 的 `data-line` 与带行号的 title；点击仍走 `previewFile(path, line)`。
-- **未交付（依赖 H-3）**：单击文件 / 目录打开标签并联动文件树、Markdown 阅读 / 源码切换、
-  >2000 行定位的窗口化、文件变化提示、文件缺失保留标签、
+- **已补交（H-4b，证据见 HANDOFF）**：文件预览对 Markdown 提供安全 GFM 阅读 / 源码切换，带行号时默认源码定位；读取失败保留预览上下文并提供重试。
+- **未交付（依赖 H-3）**：单击文件 / 目录打开标签并联动文件树、
+  >2000 行定位的窗口化、文件变化提示、文件缺失的定位父目录、
   `projectId + workspaceRoot + canonicalPath` 资源身份、范围高亮、
   相对路径按所属消息 / 文档上下文解析。
 - 下面的出口清单保留原样；其中未在上一条列到的，就是本片的剩余项。
@@ -464,13 +466,12 @@
 
 | 六栏 | 当前结论 |
 |---|---|
-| 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 部分交付（计时落盘 / 读回 / 终止原因），H-6b 部分交付（崩溃→中断：写侧 + 读侧 + restart 端到端），H-4a 部分交付（文件链接解析与呈现）；H-3、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-6 尚未闭环。 |
-| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`test:unit` **4318/4318**（turn-timing 两份、`test-duration.mjs`、C-1 的 6 条、C-4 两侧的 17 条 + C-4b 估算 14 条、C-2 的 10 条、H-6b 的 6 条）。 |
-| 真实运行 | H-1 `turnfooter`；H-2 `rightresources`（21 条）；C-1 / C-5 `contextbudget`；H-7 `turnfooter`；H-6 / H-6b / C-4b `turnrestore`（cost 1，含扩展估算留痕）；H-6b `turninterrupted`（cost 1）；H-4a `filelink`（11 条）；C-4 `policyfile`；C-2 `compactionview`（11 条）。 |
-| 视觉验收 | H-1 / H-2 / C-1 / H-7 / H-6 / H-4a / C-2 / C-5 各有深浅两张（stamp 见 HANDOFF；C-5 为 `2026-09-22-c5`）。 |
-| 视觉验收 | H-1 `matrix-turnfooter-*`、H-2 `matrix-rightresources-*`（dark 引 h2b）、C-1 `matrix-ctxmodelpresets-*`、H-7 `matrix-turntime-*`、H-6 `matrix-turnstatus-*` 深浅各一张并看图核对；C-2 / C-5 的上下文窗口证据仍未取。 |
-| 应用与包 | 尚未按本片重新运行 `启动-砚.cmd`、`dist:dir` 或打包探针；不把旧 `out/` / `release/` 文件当成本片证据。 |
-| 剩余限制 | 未完成真正的 `WorkbenchState`、多标签 / 多文档、终端入口和真实 1M 端点验证；600K / 700K 仍是模型级试行参数，不是性能承诺；**整轮计时已能落盘与读回（H-6），但自动继续 / 跨会话链的稳定回合身份、等待分段与 usage 聚合仍未做（H-6b）**；sweep 阶段线口径尚未核实（C-4）。 |
+| 实现 | H-1、H-2、C-1、H-7、C-4、C-5 已交付，C-2 部分交付（回收比例 / 新增量 / 待测口径），H-6 / H-6b 部分交付，H-4a + H-3/H-4b 部分交付（链接解析、会话级工作窗口、Markdown 阅读 / 源码、缺失重试）；H-3 的多文档 / 完整资源身份、H-4 其余出口、H-8、H-9、H-10、H-11、C-2b、C-3、C-6 尚未闭环。 |
+| 自动检查 | 本片 `npm run typecheck` / `build` 通过，`npm run test:unit` **4334/4334**，`git diff --check`、`vendor:pi:check`、`env -u ELECTRON_RUN_AS_NODE npm run measure:design`、`audit:refs` 通过；最终 `npm run dist:dir` 成功。审计明确记录跟踪 `nul` 使 Git status 无法读取，未伪造干净状态。 |
+| 真实运行 | H-2 `rightresources`、H-4a + H-4b `filelink`、工具 / 动效 `tools motion` 全绿；H-10 现有 `subagent`（`deepseek/deepseek-v4.1-flash`，真实 worktree / RPC / 停止）全绿；其余已取证场景见 HANDOFF。 |
+| 视觉验收 | 沿用 H-1 / H-2 / H-4a / 子代理既有深浅截图；本片只新增真实运行证据，未把未重拍截图写成新视觉通过。 |
+| 应用与包 | `npm run test:packaged` 全绿，证明最新解包产物中的内置 pi、知识、Git、上下文策略、能力页、yan CLI 与远程边界可用；未生成 NSIS / 便携包。 |
+| 剩余限制 | 当前 `WorkbenchState` 是会话隔离的 tabs / active / width / expanded 初版，仍非完整多文档工作台；终端入口、真实 1M 端点、外部候选能力整链与 Android 客户端仍未交付；600K / 700K 仍是模型级试行参数，不是性能承诺；H-6b 的稳定回合身份 / waitSpans / usage 聚合、C-2b / C-3 / C-6 仍待做。 |
 
 ## 5. 参考实现位置
 

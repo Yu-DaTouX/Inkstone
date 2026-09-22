@@ -1172,11 +1172,13 @@ export const useStore = create<Store>((rawSet, get) => {
           set({
             ...(snapshot ? projectSnapshotKeepingPeek(get(), snapshot) : {}),
             queue: snapshot?.queue ?? EMPTY_QUEUE,
-            activeRunnerId: runId ?? null
+            activeRunnerId: runId ?? null,
+            goal: snapshot?.goal ?? null
           })
           void get().syncRunners()
           void get().reloadModels()
           void get().reloadCommands()
+          void get().loadGoal()
         })()
         break
       }
@@ -1444,8 +1446,21 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   loadGoal: async () => {
+    const initial = get()
+    const runnerId = initial.activeRunnerId
+    const sessionId = initial.session?.sessionId
+    const sessionFile = initial.session?.sessionFile
     try {
       const res = await window.yan.getGoal()
+      const current = get()
+      /*
+       * getGoal() 是异步 IPC。切会话期间，旧请求可能晚于新会话返回；
+       * 目标是会话级事实，不能让旧快照覆盖刚切过去的目标。
+       * sessionFile 用来覆盖 sessionId 尚未从 pending 过渡完成的启动窗口。
+       */
+      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return
+      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return
+      if (sessionFile && current.session?.sessionFile && current.session.sessionFile !== sessionFile) return
       set({ goal: res.goal })
     } catch {
       /* 主进程尚未就绪时保持现状；后续 goal 推送会补齐。 */
