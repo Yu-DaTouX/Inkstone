@@ -213,10 +213,10 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
   const failed = turn.terminalReason === 'failed'
   const interrupted = turn.terminalReason === 'interrupted'
   /*
-   * 旧历史没有宿主计时记录（H-6）：如实写「用时未记录」，而不是静默省略。
-   * 省掉会让用户以为这一轮真的没花时间；显示一个别的数则是伪装。
+   * 旧历史没有宿主计时记录时不补一个“用时未记录”字段：
+   * 这会把完成时刻误读成计时信息。保留真实 timestamp 即可，
+   * 有宿主记录的回合才显示整轮用时。
    */
-  const unrecorded = !elapsed && !turn.timingRecorded && !!turn.timestamp
   const hasMeta =
     !!elapsed || !!turn.timestamp || turn.tools.length > 1 || stopped || failed || interrupted
   if (!hasMeta) return null
@@ -233,10 +233,6 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
            用量条只展示 token / 速度，不再重复占用时长。 */
         <span className="turn-footer-item" title={t('tok.elapsedTip')}>
           {t('tok.elapsed')} {elapsed}
-        </span>
-      ) : unrecorded ? (
-        <span className="turn-footer-item" title={t('tok.elapsedUnrecordedTip')}>
-          {t('tok.elapsedUnrecorded')}
         </span>
       ) : null}
       {stopped ? <span className="turn-footer-item turn-footer-tag">{t('turn.stopped')}</span> : null}

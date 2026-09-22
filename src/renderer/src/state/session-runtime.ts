@@ -127,7 +127,7 @@ export function migrateSessionRuntime(
         runtime: target.runtime.generation >= runtime.generation ? target.runtime : runtime,
         draft: target.draft || pending.draft,
         workMode: target.workMode ?? pending.workMode,
-        goal: target.goal.goalId || target.goal.revision > 0 ? target.goal : pending.goal,
+        goal: (target.goal.goalId || target.goal.revision > 0) ? target.goal : pending.goal,
         models: target.models.length ? target.models : pending.models,
         thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : pending.thinkingLevels,
         commands: target.commands.length ? target.commands : pending.commands

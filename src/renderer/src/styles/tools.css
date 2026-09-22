@@ -1447,6 +1447,29 @@
   font-size: var(--fs-xs);
 }
 
+.fp-mode {
+  display: inline-flex;
+  flex: none;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.fp-mode button {
+  border: 0;
+  border-radius: 2px;
+  padding: 1px 5px;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.fp-mode button.on {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
 .fp-act {
   flex: none;
   display: flex;
@@ -1523,6 +1546,25 @@
 
 .fp-note.err {
   color: var(--err);
+}
+
+.fp-retry {
+  display: block;
+  margin-top: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.fp-markdown {
+  padding: var(--sp-3);
+  color: var(--fg-dim);
+}
+
+.fp-markdown > :first-child {
+  margin-top: 0;
 }
 
 .fp-path-line {

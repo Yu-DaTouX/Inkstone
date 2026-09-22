@@ -25,8 +25,18 @@ import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
 import { SubagentList } from '../chat/SubagentList'
 import { GoalSection } from './GoalSection'
+import {
+  activateWorkbenchTab,
+  closeWorkbenchTab,
+  loadWorkbenchState,
+  saveWorkbenchState,
+  viewFromWorkbench,
+  workbenchSessionKey,
+  type WorkbenchState,
+  type WorkbenchView
+} from '../../state/workbench'
 
-type RightWindowView = 'tools' | 'review' | 'browser' | 'file'
+type RightWindowView = Exclude<WorkbenchView, 'subagent'>
 
 /**
  * 右侧窗口区：工具栏、审查、浏览器和文件都使用同一条窗口标签栏。
@@ -57,14 +67,35 @@ export function RightPanel() {
   const closeReview = useStore((s) => s.closeReview)
   const closePreview = useStore((s) => s.closePreview)
   const setRightPanelOpen = useStore((s) => s.setRightPanelOpen)
+  const session = useStore((s) => s.session)
+  const workbenchKey = workbenchSessionKey(session?.sessionFile, session?.sessionId)
+  const [workbench, setWorkbench] = useState<WorkbenchState>(() => loadWorkbenchState(workbenchKey))
   const [libOpen, setLibOpen] = useState(false)
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
   const [windowView, setWindowView] = useState<RightWindowView>(() => {
-    if (reviewOpen) return 'review'
-    if (filePreview) return 'file'
-    if (browserOpen) return 'browser'
-    return 'tools'
+    const initial = loadWorkbenchState(workbenchKey)
+    const available = new Set<WorkbenchView>(['tools', ...(reviewOpen ? ['review' as const] : []), ...(filePreview ? ['file' as const] : []), ...(browserOpen ? ['browser' as const] : [])])
+    return viewFromWorkbench(initial, available) as RightWindowView
   })
+
+  /* 工作窗口按稳定会话文件隔离；切会话只恢复布局，不复制会话正文或资源凭证。 */
+  useEffect(() => {
+    const next = loadWorkbenchState(workbenchKey)
+    setWorkbench(next)
+    const available = new Set<WorkbenchView>(['tools', ...(reviewOpen ? ['review' as const] : []), ...(filePreview ? ['file' as const] : []), ...(browserOpen ? ['browser' as const] : [])])
+    setWindowView(viewFromWorkbench(next, available) as RightWindowView)
+    setLibOpen(false)
+    setQuickMenuOpen(false)
+  }, [workbenchKey])
+
+  useEffect(() => {
+    saveWorkbenchState(workbenchKey, workbench)
+  }, [workbenchKey, workbench])
+
+  const activateWindow = (next: RightWindowView): void => {
+    setWindowView(next)
+    setWorkbench((current) => activateWorkbenchTab(current, next))
+  }
 
   /*
    * 空判据需要的几个字段分别选出来（选对象会让 zustand 每帧返回新引用 → 无限重渲染）。
@@ -147,19 +178,27 @@ export function RightPanel() {
     previousReviewOpen.current = reviewOpen
     previousFilePreview.current = !!filePreview
     setWindowView((current) => {
-      if (reviewOpened) return 'review'
-      if (fileOpened) return 'file'
-      if (opened) return 'browser'
-      if (!browserOpen && current === 'browser') return filePreview ? 'file' : 'tools'
-      if (current === 'review' && !reviewOpen) return browserOpen ? 'browser' : 'tools'
-      if (current === 'file' && !filePreview) return browserOpen ? 'browser' : 'tools'
-      return current
+      const next = reviewOpened
+        ? 'review'
+        : fileOpened
+          ? 'file'
+          : opened
+            ? 'browser'
+            : !browserOpen && current === 'browser'
+              ? (filePreview ? 'file' : 'tools')
+              : current === 'review' && !reviewOpen
+                ? (browserOpen ? 'browser' : 'tools')
+                : current === 'file' && !filePreview
+                  ? (browserOpen ? 'browser' : 'tools')
+                  : current
+      if (next !== current) setWorkbench((state) => activateWorkbenchTab(state, next))
+      return next
     })
   }, [browserOpen, filePreview, reviewOpen])
 
   const switchWindow = (next: RightWindowView): void => {
     setQuickMenuOpen(false)
-    setWindowView(next)
+    activateWindow(next)
 
     if (next === 'tools') {
       /* 切页只是隐藏当前资源；关闭标签才释放浏览器 / 预览。 */
@@ -180,6 +219,7 @@ export function RightPanel() {
           /* 打开失败时没有 browserState 事件，不能把右栏永远留在空的 browser tab。 */
           if (!useStore.getState().browserState.open) {
             setWindowView((current) => current === 'browser' ? 'tools' : current)
+            setWorkbench((state) => closeWorkbenchTab(state, 'browser'))
           }
         })
       }
@@ -197,14 +237,18 @@ export function RightPanel() {
     setQuickMenuOpen(false)
     if (which === 'review') {
       closeReview()
-      setWindowView(browserOpen ? 'browser' : filePreview ? 'file' : 'tools')
+      const next = browserOpen ? 'browser' : filePreview ? 'file' : 'tools'
+      activateWindow(next)
+      setWorkbench((state) => closeWorkbenchTab(state, 'review'))
       if (browserOpen && !filePreview) void window.yan.browser.setVisible(true)
     } else if (which === 'browser') {
-      setWindowView('tools')
+      activateWindow('tools')
+      setWorkbench((state) => closeWorkbenchTab(state, 'browser'))
       void closeBrowser()
     } else {
       closePreview()
-      setWindowView('tools')
+      activateWindow('tools')
+      setWorkbench((state) => closeWorkbenchTab(state, 'file'))
       if (browserOpen) void window.yan.browser.setVisible(false)
     }
   }
@@ -508,14 +552,22 @@ function SectionSlot({
       /* 指针没了也无所谓 */
     }
 
+    /*
+     * Electron 的合成 PointerEvent / 隐藏探针里，elementFromPoint 可能命中
+     * 事件源而不是指针坐标对应的分区。pointermove 已经把同一落点写进
+     * store，因此这里以几何命中为首选、以共享落点为回退；否则拖拽会在
+     * 视觉上移动了却静默不落盘。
+     */
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
-    const targetId = target?.dataset.toolId as ToolSectionId | undefined
+    const drop = useStore.getState().toolDropTarget
+    const targetId = (target?.dataset.toolId ?? drop?.id) as ToolSectionId | undefined
     setToolDropTarget(null)
-    if (!target || !targetId || targetId === id) return
+    if (!targetId || targetId === id) return
 
-    // 放在目标之前还是之后：用指针在目标盒子里的相对位置决定
-    const r = target.getBoundingClientRect()
-    onMove(id, targetId, e.clientY > r.top + r.height / 2)
+    // 放在目标之前还是之后：优先使用落点所在盒子的几何位置，回退到 pointermove 记录。
+    const r = target?.getBoundingClientRect()
+    const after = r ? e.clientY > r.top + r.height / 2 : !!drop?.after
+    onMove(id, targetId, after)
   }
 
   /**

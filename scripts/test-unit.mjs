@@ -167,6 +167,7 @@ const { runTurnTimingStoreTests } = await import('./test-turn-timing-store.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
+const { runWorkbenchTests } = await import('./test-workbench.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
@@ -189,6 +190,20 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/links.ts'],
     outfile: 'out/test/links.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 工作窗口布局：按稳定会话身份隔离标签，不能把标题或 DOM 当作资源 id。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/workbench.ts'],
+    outfile: 'out/test/workbench.mjs',
     bundle: true,
     format: 'esm',
     platform: 'neutral',
@@ -1328,6 +1343,10 @@ await runFileRefTests(ok)
 
 // 链接路由：网页 / 文件 / 行号 / 危险协议（安全判断）
 await runLinkTests(ok)
+
+
+// 工作窗口状态：稳定会话身份 / 标签恢复 / 资源缺失回退
+await runWorkbenchTests(ok)
 
 
 // 回复详细程度扩展：三档注入 / standard 不注入 / 脏值回落

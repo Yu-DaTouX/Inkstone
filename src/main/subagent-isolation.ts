@@ -46,14 +46,27 @@ interface GitOutput {
 }
 
 async function git(cwd: string, args: string[], timeout = 30_000): Promise<GitOutput> {
+  return runGit(cwd, args, timeout)
+}
+
+async function runGit(cwd: string, args: string[], timeout = 30_000, input?: string): Promise<GitOutput> {
   try {
-    const result = await execFileAsync('git', args, {
-      cwd,
-      windowsHide: true,
-      timeout,
-      maxBuffer: GIT_MAX_BUFFER,
-      encoding: 'utf8'
-    })
+    const options = { cwd, windowsHide: true, timeout, maxBuffer: GIT_MAX_BUFFER, encoding: 'utf8' as const }
+    if (input !== undefined) {
+      const result = await new Promise<GitOutput>((resolvePromise, rejectPromise) => {
+        const child = execFile('git', args, options, (error, stdout, stderr) => {
+          if (error) {
+            const detail = String(stderr || stdout || error.message || error).trim()
+            rejectPromise(new Error(detail || 'git 命令失败'))
+            return
+          }
+          resolvePromise({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
+        })
+        child.stdin?.end(input)
+      })
+      return result
+    }
+    const result = await execFileAsync('git', args, options)
     return {
       stdout: String((result as { stdout?: unknown }).stdout ?? ''),
       stderr: String((result as { stderr?: unknown }).stderr ?? '')
@@ -63,6 +76,32 @@ async function git(cwd: string, args: string[], timeout = 30_000): Promise<GitOu
     const detail = String(e.stderr ?? e.stdout ?? e.message ?? error).trim()
     throw new Error(detail || 'git 命令失败')
   }
+}
+
+/* Windows 无法检出 CON/NUL 等设备名；逐条列出有效路径，避免整棵树被 Git 拒绝。 */
+function isWindowsInvalidPath(path: string): boolean {
+  return path.split('/').some((segment) => {
+    const trimmed = segment.replace(/[ .]+$/g, '')
+    if (!trimmed || /[<>:"\\|?*\u0000-\u001f]/.test(segment)) return true
+    const stem = trimmed.split('.')[0]?.toUpperCase() ?? ''
+    return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem)
+  })
+}
+
+async function checkoutWindowsSafeTree(worktreePath: string): Promise<void> {
+  const tree = await git(worktreePath, ['ls-tree', '-r', '-z', 'HEAD'])
+  const indexLines: string[] = []
+  for (const record of tree.stdout.split('\0')) {
+    const tab = record.indexOf('\t')
+    if (tab < 0) continue
+    const [mode, , sha] = record.slice(0, tab).split(/\s+/)
+    const path = record.slice(tab + 1)
+    if (!mode || !sha || !path || isWindowsInvalidPath(path)) continue
+    indexLines.push(`${mode} ${sha}\t${path}\n`)
+  }
+  /* --no-checkout 留下空 index；先恢复可检出的条目，再由 checkout-index 写文件。 */
+  await runGit(worktreePath, ['update-index', '--index-info'], 30_000, indexLines.join(''))
+  await git(worktreePath, ['checkout-index', '-a'])
 }
 
 /** 返回 cwd 所属的 Git 根目录；非 Git 项目返回 null。 */
@@ -103,7 +142,15 @@ export async function prepareWorkspace(
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))
   const worktreePath = join(containerPath, 'worktree')
   try {
-    await git(repoRoot, ['worktree', 'add', '--detach', worktreePath, 'HEAD'], 60_000)
+    try {
+      await git(repoRoot, ['worktree', 'add', '--detach', worktreePath, 'HEAD'], 60_000)
+    } catch (error) {
+      /* 用户仓库若含已跟踪的 Windows 保留设备名，普通 checkout 会整段失败；
+       * 保留 Git worktree / index 语义，只跳过无法落地的那几个路径。 */
+      if (!/invalid path/i.test(String(error))) throw error
+      await git(repoRoot, ['worktree', 'add', '--detach', '--no-checkout', worktreePath, 'HEAD'], 60_000)
+      await checkoutWindowsSafeTree(worktreePath)
+    }
     return { isolation, rootCwd: root, cwd: worktreePath, repoRoot, worktreePath, containerPath }
   } catch (error) {
     await rm(containerPath, { recursive: true, force: true }).catch(() => {})
