@@ -71,10 +71,11 @@ export class PiPackageActivationScheduler {
     const pending = this.inFlight.get(operationId)
     if (pending) return pending
     const work = this.enqueueByCwd(operationId).catch(async (error): Promise<PiPackageScheduleResult> => {
-      const latest = await this.service.get(operationId).catch(() => null)
       return {
         operationId,
-        state: latest?.state ?? 'deferred',
+        /* Keep exceptions retryable and visible; the durable state may already
+         * be `activated`, but the post-activation boundary is not complete. */
+        state: 'deferred',
         detail: `调度步骤异常，保持事务现场等待复核：${error instanceof Error ? error.message : String(error)}`
       }
     }).finally(() => {
@@ -190,7 +191,10 @@ export class PiPackageActivationScheduler {
     let consumed = await this.ports.continuationConsumed(tx, runner)
     const alreadyRestarted = runner.generation > target.runnerGeneration
     const resumeNeedsKick = !consumed
-    if ((!active.ok && !alreadyRestarted) || (active.ok && resumeNeedsKick)) {
+    /* Do not restart again while the thin layer's one-shot continuation is
+     * waiting for its idle confirmation; a second reload resets that timer. */
+    const needsRestart = !alreadyRestarted && (!active.ok || resumeNeedsKick)
+    if (needsRestart) {
       const beforeGeneration = runner.generation
       await this.ports.writeContinuation(tx, runner)
       const restarted = await this.ports.restartRunner(target, runner)

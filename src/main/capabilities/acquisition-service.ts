@@ -41,6 +41,7 @@ import {
   type PiPackageActivationTarget,
   type SkillFilesActivationTarget
 } from '../../shared/acquisition'
+import type { SkillSecurityReview } from '../../shared/skill-security'
 
 export const ACQUISITION_DIRNAME = 'capabilities'
 export const ACQUISITION_LOG_FILENAME = 'acquisition.json'
@@ -62,6 +63,8 @@ export type StagedManifest = {
   createdAt: string
   files: StagedManifestFile[]
   totalBytes: number
+  /** 仅 Skill-files staging 会写入；是内容审查的可回读证据。 */
+  securityReview?: SkillSecurityReview
 }
 
 export class AcquisitionStagingError extends Error {
@@ -205,7 +208,12 @@ export class AcquisitionService {
    * 顺序是刻意的：**先校验元数据 → 再落盘 → 最后写 manifest**。
    * 任何一步失败都会把**本次** staging 整个删掉再抛 —— 不给下一次留下半份。
    */
-  async stage(input: { operationId: string; files: readonly StagedFileInput[]; at?: string }): Promise<StagedManifest> {
+  async stage(input: {
+    operationId: string
+    files: readonly StagedFileInput[]
+    at?: string
+    securityReview?: SkillSecurityReview
+  }): Promise<StagedManifest> {
     const at = input.at ?? new Date().toISOString()
     const current = await this.get(input.operationId)
     if (!current) {
@@ -263,7 +271,8 @@ export class AcquisitionService {
         operationId: input.operationId,
         createdAt: at,
         files: manifestFiles,
-        totalBytes
+        totalBytes,
+        ...(input.securityReview ? { securityReview: input.securityReview } : {})
       }
       await writeFileAtomic(join(dir, MANIFEST_FILENAME), JSON.stringify(manifest, null, 2))
       await this.saveTransaction(
@@ -462,11 +471,20 @@ export class AcquisitionService {
    * 等边界（§10.1）：确实需要安装但**本轮不能装**（例如 pi 包要等当前回合安全结束）时，
    * 停在 `pending-boundary` 而不是假装激活 —— 调度器随后从这条事务继续。
    */
-  async markBoundary(operationId: string, detail: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
+  async markBoundary(
+    operationId: string,
+    detail: string,
+    at = new Date().toISOString(),
+    securityReview?: SkillSecurityReview
+  ): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
     if (tx.state === 'pending-boundary') return tx
-    return this.saveTransaction(advanceAcquisition(tx, 'pending-boundary', { at, detail }))
+    return this.saveTransaction(advanceAcquisition(tx, 'pending-boundary', {
+      at,
+      detail,
+      ...(securityReview ? { securityReview } : {})
+    }))
   }
 
   /**
@@ -567,13 +585,23 @@ export class AcquisitionService {
   }
 
   /** 标记失败：分类由 `classifyAcquisitionFailure` 决定，认不出来就如实说 unknown。 */
-  async fail(operationId: string, detail: string, at = new Date().toISOString()): Promise<AcquisitionTransaction> {
+  async fail(
+    operationId: string,
+    detail: string,
+    at = new Date().toISOString(),
+    securityReview?: SkillSecurityReview
+  ): Promise<AcquisitionTransaction> {
     const tx = await this.get(operationId)
     if (!tx) throw new AcquisitionStagingError('unknown-operation', `没有这个接入事务：${operationId}`)
     if (tx.state === 'failed' || tx.state === 'cancelled') return tx
     const code: AcquisitionFailureCode = classifyAcquisitionFailure(detail)
     return this.saveTransaction(
-      advanceAcquisition(tx, 'failed', { at, failure: { code, detail }, detail: `失败（${code}）` })
+      advanceAcquisition(tx, 'failed', {
+        at,
+        failure: { code, detail },
+        detail: `失败（${code}）`,
+        ...(securityReview ? { securityReview } : {})
+      })
     )
   }
 

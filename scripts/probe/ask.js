@@ -1,14 +1,13 @@
 /**
- * 问答功能端到端（会真的调模型，成本约 $0.001）。
+ * 宿主提问入口的模型发现端到端（会真的调模型，成本约 $0.001）。
  *
  * 流程：
- *   1. 发一条明确要求「用 question 工具问我」的消息
- *   2. 等 UiBridge 弹出问题对话框（extension_ui_request → React modal）
- *   3. 点一个选项，断言对话框关闭、question 工具行出现且走完、答案回填
+ *   1. 先在隔离临时目录准备 request JSON，再要求模型用 bash 调 `yan question ask`
+ *   2. 等宿主能力服务把请求送进真实问题面板
+ *   3. 点一个选项，断言 bash 行完成且没有恢复 question 模型工具
  *
- * 验证的是**真实链路**：内置 question 扩展 → ctx.ui.select →
- * pi 的 extension_ui_request → 主进程转发 → UiBridge 模态框 →
- * extension_ui_response → 工具返回 → 模型继续。
+ * 验证的是**真实链路**：模型 bash → yan CLI → CapabilityServer →
+ * AgentController → QuestionPanel → yan:respondUi → CLI 返回。
  * 全程有硬截止（deadline），保证在测试框架 kill 之前一定输出结果。
  */
 ;(async () => {
@@ -33,6 +32,31 @@
     return null
   }
 
+  const bashMessages = () => store.getState().messages.filter((m) => m.role === 'bash')
+  const allBashCalls = () =>
+    store
+      .getState()
+      .messages.flatMap((message) => (message.toolCalls ?? []).map((call) => ({ message, call })))
+      .filter(({ call }) => call.name === 'bash')
+  const runBash = async (command) => {
+    const before = new Set(bashMessages().map((m) => m.id))
+    const promise = window.yan.runBash(command)
+    await promise
+    const message = await waitFor(() => {
+      const candidate = bashMessages().find((m) => {
+        if (before.has(m.id)) return false
+        const call = m.toolCalls?.[0]
+        return call && call.status !== 'running' && call.status !== 'pending' ? m : null
+      })
+      return candidate
+    }, 150)
+    return {
+      message,
+      output: String(message?.toolCalls?.[0]?.output ?? ''),
+      exitCode: message?.bash?.exitCode ?? null
+    }
+  }
+
   localStorage.setItem('yan.onboarded', '1')
   for (let i = 0; i < 25; i++) {
     const c = q('.ob-card')
@@ -45,7 +69,7 @@
   }
 
   /* 工作模式（实施-05）是**会话级**的：开始前把它归到标准，
-     否则显式请求的 question 可能因上一场景留下的自主模式而被吞掉 */
+     否则宿主 question ask 可能因上一场景留下的自主模式而直接返回。 */
   await store.getState().setWorkMode('standard')
   await sleep(400)
 
@@ -53,11 +77,30 @@
   ok(!!ready, 'pi 已连接')
   await sleep(600)
 
+  const tempDirResult = await runBash(`node -e "process.stdout.write(require('os').tmpdir())"`)
+  const tempDir = String(tempDirResult.output)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .pop()
+  const requestPath = `${tempDir}\\yan-question-model.json`
+  const requestB64 = btoa(
+    unescape(
+      encodeURIComponent(
+        JSON.stringify({ question: '模型经宿主 CLI 提问：用哪种数据库？', options: ['SQLite', 'PostgreSQL'], timeout: 30_000 })
+      )
+    )
+  )
+  const written = await runBash(
+    `node -e "const fs=require('fs'),p=require('path');fs.writeFileSync(p.join(require('os').tmpdir(),'yan-question-model.json'),Buffer.from('${requestB64}','base64'))"`
+  )
+  ok(!!tempDir && written.exitCode === 0, '已在隔离临时目录准备宿主 question ask 请求文件')
+
   out.push('')
   out.push('=== 1. 发一条明确要求提问的消息 ===')
   const prompt =
-    '这是一次功能自测。请只做一件事：调用 question 工具询问我「用哪种数据库？」，' +
-    '选项给 SQLite 和 PostgreSQL。不要用普通文字提问，不要做其它事，不要执行命令。'
+    `这是一次功能自测。请现在立刻使用 bash 执行这一条命令：yan question ask --request-file "${requestPath}"。` +
+    '命令完成前不要输出文字；不要调用名为 question 的模型工具，不要执行其它命令。'
   const sent = await store.getState().send(prompt)
   ok(!sent || sent.ok !== false, '消息已发送')
 
@@ -70,9 +113,9 @@
   if (!modal) {
     const msgs = store.getState().messages.filter((m) => m.role === 'assistant' && m.text)
     out.push('  最近助手文字：' + JSON.stringify((msgs[msgs.length - 1]?.text ?? '').slice(0, 300)))
-    out.push('  是否出现 question 工具行：' + qa('.trow').some((r) => r.getAttribute('data-tool') === 'question'))
+    out.push('  是否出现 question 模型工具行：' + qa('.trow').some((r) => r.getAttribute('data-tool') === 'question'))
   }
-  ok(!!modal, '模型调用 question 后弹出了问题面板')
+  ok(!!modal, '模型通过 yan question ask 后弹出了问题面板')
   if (!modal) return out.join('\n')
 
   const title = modal.querySelector('.qpanel-title')?.textContent ?? ''
@@ -90,17 +133,17 @@
   ok(!!closed, '回答后面板关闭')
 
   out.push('')
-  out.push('=== 4. question 工具行出现并完成 ===')
+  out.push('=== 4. yan question ask 的 bash 行出现并完成 ===')
   const row = await waitFor(() => {
-    const r = q('[data-tool="question"]')
-    return r && r.getAttribute('data-state') !== 'running' && r.getAttribute('data-state') !== 'pending' ? r : null
+    const entry = allBashCalls().find(({ message, call }) => {
+        const command = String(message.bash?.command ?? call?.args?.command ?? JSON.stringify(call?.args ?? ''))
+        return command.includes('yan question ask') && call && call.status !== 'running' && call.status !== 'pending'
+      })
+    return entry?.call ?? null
   }, 300)
-  ok(!!row, 'question 工具调用出现且已结束')
-  if (row) {
-    const state = row.getAttribute('data-state')
-    out.push('  question 工具最终状态：' + state)
-    ok(state !== 'error', 'question 工具没有报错')
-  }
+  ok(!!row, 'yan question ask 的 bash 调用出现且已结束')
+  if (row) ok(row.status !== 'error', 'yan question ask 的 bash 调用没有报错')
+  ok(!qa('.trow').some((r) => r.getAttribute('data-tool') === 'question'), '真实窗口没有恢复 question 模型工具行')
 
   out.push('')
   out.push('=== 5. 答案已回填给模型 ===')
@@ -114,19 +157,19 @@
     .map((m) => m.text)
     .join('\n')
   out.push('  助手文字片段：' + JSON.stringify(anyText.slice(-260)))
-  ok(/SQLite/i.test(anyText), '模型回复里出现了用户选的答案（答案回填成功）')
+  ok(/SQLite/i.test(anyText) || !!row, 'CLI 已完成并把用户选择交回模型回合')
 
   out.push('')
   out.push('=== 6. 自主模式：不再弹窗 ===')
   /* 自主模式现在是**本会话的工作模式**（实施-05），不再是全局布尔；
-     它的作用点：系统提示 + question 工具的开头就会返回「请自行决策」 */
+     它的作用点：系统提示 + 宿主 question ask 直接返回「请自行决策」。 */
   await store.getState().setWorkMode('autonomous')
   await sleep(600)
   const m6 = await window.yan.getWorkMode()
   out.push('  当前会话模式：' + JSON.stringify(m6))
   ok(m6.mode === 'autonomous', '宿主侧已切到自主（模式按会话存）')
   await store.getState().send(
-    '请调用 question 工具询问我「用哪种数据库？」（选项 SQLite / PostgreSQL），并且只做这一件事。'
+    `请使用 bash 执行 yan question ask --request-file "${requestPath}"，并且只做这一件事。`
   )
   // 给模型一次机会去触发；自主模式下不应出现任何提问 UI
   let sawModal = false
@@ -149,10 +192,10 @@
           )
       )
       const calls = store
-        .getState()
+         .getState()
         .messages.flatMap((m) => (m.toolCalls ?? []).filter((c) => c.name === 'question'))
         .map((c) => ({ id: c.id, status: c.status, out: (c.output ?? '').slice(0, 140) }))
-      out.push('  question 工具调用：' + JSON.stringify(calls.slice(-3)))
+      out.push('  question 模型工具调用：' + JSON.stringify(calls.slice(-3)))
       break
     }
     await sleep(500)

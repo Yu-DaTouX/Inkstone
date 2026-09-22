@@ -636,6 +636,9 @@ function registerStubHandlers() {
     { id: 'task-plan' },
     { id: 'browser', file: 'browser.js' },
     { id: 'question', file: 'question.js' },
+    { id: 'work-mode', file: 'work-mode.js' },
+    { id: 'goal-resume', file: 'goal-resume.js' },
+    { id: 'handoffs', file: 'handoffs.js' },
     { id: 'response-detail', file: 'response-detail.js' },
     { id: 'language', file: 'language.js' },
     { id: 'capability-guide', file: 'capability-guide.js' },
@@ -2206,8 +2209,8 @@ const STATES = {
        */
       window.__yanStore.setState({
         logs: [
-          '[来源] 用户扩展 1 项：left-info-panel.ts（pi 启动时会自动发现并加载它们；砚不删除、不改写）',
-          '[来源] 砚内置薄层 6 项：browser.js、question.js、response-detail.js、language.js、capability-guide.js、context.js（显式传入，只挂生命周期钩子，不注册模型工具）',
+          '[来源] 用户扩展 1 项：left-info-panel.ts（砚默认启动使用 --no-extensions，不加载；不删除、不改写）',
+          '[来源] 砚内置薄层 10 项：browser.js、question.js、work-mode.js、goal-resume.js、handoffs.js、response-detail.js、language.js、capability-guide.js、context.js、project-knowledge.js（显式传入；question / context_recall 的模型工具最终归属仍待 01-S5 / 06 收口）',
           '[来源] 检测到用户扩展：当前任务清单仍由扩展写入 \`left-panel-tasks\`，砚只读取并显示；砚内置任务计划落地后写入改走宿主日志，旧条目保持只读（两者不会互相覆盖）'
         ]
       });

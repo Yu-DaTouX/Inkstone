@@ -143,6 +143,8 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const res = await ctrl.start('只读审查', undefined, 'controlled-cwd')
     ok(res.ok === true, '只读子代理可以启动', res.error ?? '')
     const args = factory.created[0]?.args ?? []
+    ok(args.includes('--no-extensions'), '子代理关闭用户扩展自动发现', JSON.stringify(args))
+    ok(args.includes('--no-skills'), '子代理关闭用户 Skill 自动发现', JSON.stringify(args))
     const at = args.indexOf('--tools')
     ok(at >= 0, '只读子代理把工具白名单交给 pi（--tools）', JSON.stringify(args))
     ok(args[at + 1] === 'read,grep,find,ls', '白名单只含只读工具', args[at + 1])

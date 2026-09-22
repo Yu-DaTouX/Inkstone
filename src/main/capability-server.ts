@@ -31,8 +31,14 @@ import { join } from 'node:path'
 /** 协议版本：CLI 与宿主必须一致，避免旧 CLI 打到新宿主上做错事。 */
 export const CAPABILITY_API_VERSION = 1
 
-/** 单个结果文件的落盘上限（超过就截断并标记，避免把磁盘写满）。 */
-const MAX_RESULT_BYTES = 4 * 1024 * 1024
+/**
+ * 单个结果文件的落盘上限。
+ *
+ * JSON 结果沿用历史行为：超过上限时截断并在摘要路径里保留结果文件；
+ * 原始文本结果（例如 context recall）则必须完整可读，超过上限一律拒绝，
+ * 不能把半份历史伪装成一次成功的召回。
+ */
+export const CAPABILITY_RESULT_MAX_BYTES = 4 * 1024 * 1024
 
 /**
  * 注入给 pi 子进程的 CLI 环境（配合 [YanCliEnv] 使用）。
@@ -55,6 +61,19 @@ export interface CapabilityContext {
   projectId: string
 }
 
+/**
+ * 一条宿主能力命令的受管结果。
+ *
+ * `data` 是普通结构化 JSON；`resultText` 是必须逐字保留的受管文本文件。
+ * 两者互斥：前者可在大小上限内按既有策略截断，后者用于会被下游协议识别
+ * 的文本（例如 `[Recalled context]`），不能 JSON 转义、更不能截半。
+ */
+export interface CapabilityCommandResult {
+  data?: unknown
+  resultText?: string
+  summary: Record<string, unknown>
+}
+
 export interface CapabilityHandlers {
   /**
    * 执行一条命令。返回 `data` 会被写进结果文件，`summary` 回给 stdout。
@@ -71,7 +90,7 @@ export interface CapabilityHandlers {
     command: string,
     params: Record<string, unknown>,
     ctx: CapabilityContext
-  ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
+  ): Promise<CapabilityCommandResult>
 }
 
 /**
@@ -137,6 +156,8 @@ const KNOWN_COMMANDS = new Set([
   'tasks.apply',
   'artifact.attach',
   'image.generate',
+  'question.ask',
+  'context.recall',
   /* 目标状态（实施-05 S3）：澄清档就绪转移与自主档推进报告。 */
   'goal.ready',
   'goal.report',
@@ -327,7 +348,7 @@ export class CapabilityServer {
         command === 'operations.status'
           ? this.describeOps(params)
           : await this.handlers.run(command, params, bound)
-      const file = this.writeResult(opId, out.data)
+      const file = this.writeResult(opId, out)
       this.remember({ id: opId, command, at: Date.now(), ok: true })
       reply(200, {
         ok: true,
@@ -345,7 +366,7 @@ export class CapabilityServer {
        */
       const code = err instanceof CapabilityCommandError ? err.code : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined
-      const file = data === undefined ? null : this.writeResult(opId, data)
+      const file = data === undefined ? null : this.writeResult(opId, { data })
       this.remember({ id: opId, command, at: Date.now(), ok: false, error: message })
       reply(200, {
         ok: false,
@@ -373,16 +394,20 @@ export class CapabilityServer {
    * 为什么必须落文件：CLI 的 stdout 会**原样进入模型上下文**。
    * 让模型读一个文件、只挑需要的片段，比把几 MB JSON 直接喷进上下文便宜得多。
    */
-  private writeResult(opId: string, data: unknown): { path: string; bytes: number } | null {
-    if (data === undefined) return null
+  private writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data' | 'resultText'>): { path: string; bytes: number } | null {
+    if (out.data !== undefined && out.resultText !== undefined) {
+      throw new CapabilityCommandError('result_shape_invalid', '宿主命令不能同时返回 JSON 数据与原始文本结果')
+    }
+    if (out.resultText !== undefined) return this.writeRawTextResult(opId, out.resultText)
+    if (out.data === undefined) return null
     let text: string
     try {
-      text = JSON.stringify(data, null, 2)
+      text = JSON.stringify(out.data, null, 2)
     } catch {
       text = JSON.stringify({ error: 'result_not_serializable' })
     }
-    const truncated = Buffer.byteLength(text) > MAX_RESULT_BYTES
-    if (truncated) text = text.slice(0, MAX_RESULT_BYTES)
+    const truncated = Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES
+    if (truncated) text = text.slice(0, CAPABILITY_RESULT_MAX_BYTES)
     const path = join(this.opsDir, `${opId}.json`)
     try {
       writeFileSync(path, text, 'utf8')
@@ -390,6 +415,30 @@ export class CapabilityServer {
       return null
     }
     return { path, bytes: Buffer.byteLength(text) }
+  }
+
+  /**
+   * 写一份必须逐字保留的文本结果。
+   *
+   * 不能复用 JSON 结果的“超限截断”路径：调用方把这个文本交给 native `read`
+   * 后，扩展还会按固定前缀识别它的生命周期。截断既会误导模型，也可能绕过
+   * TTL 清理，所以大小和写盘错误都 fail closed。
+   */
+  private writeRawTextResult(opId: string, text: string): { path: string; bytes: number } {
+    const bytes = Buffer.byteLength(text)
+    if (bytes > CAPABILITY_RESULT_MAX_BYTES) {
+      throw new CapabilityCommandError(
+        'result_too_large',
+        `原始文本结果 ${bytes} 字节超过受管上限 ${CAPABILITY_RESULT_MAX_BYTES}，未写出半份结果`
+      )
+    }
+    const path = join(this.opsDir, `${opId}.txt`)
+    try {
+      writeFileSync(path, text, 'utf8')
+    } catch {
+      throw new CapabilityCommandError('result_write_failed', '无法写出受管文本结果；内容没有返回给模型')
+    }
+    return { path, bytes }
   }
 
   private remember(op: { id: string; command: string; at: number; ok: boolean; error?: string }): void {

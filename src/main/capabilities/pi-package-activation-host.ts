@@ -1,11 +1,14 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PiPackageActivationTarget } from '../../shared/acquisition'
 import { goalContinueSummary, isActiveGoalPhase } from '../../shared/goal'
+import { formatSkillSecurityReview } from '../../shared/skill-security'
 import { GoalStore, clearGoalResumeSnapshotIfOperation, goalResumeContinuationWasConsumed, writeGoalResumeSnapshotIfVacant } from '../goal-service'
 import type { PackageListing } from '../packages'
 import type { AgentController } from '../agent'
 import { AcquisitionService, stagingDirOf } from './acquisition-service'
 import { PackageAuthorizationService } from './package-authorization-service'
+import { reviewPiPackageSkills } from './pi-package-smoke'
 import type { PiPackageCheck, PiPackageInstallCheck, PiPackageRunnerSnapshot, PiPackageSchedulerPorts } from './pi-package-scheduler'
 
 export type PiPackageActivationHostDeps = {
@@ -70,6 +73,13 @@ export function createPiPackageActivationHostPorts(deps: PiPackageActivationHost
     if (!installed.ok || !installed.installed || !installed.path) return {
       ok: false,
       problems: installed.problems.length ? installed.problems : ['项目包尚未安装']
+    }
+    try {
+      const manifest = JSON.parse(await readFile(join(installed.path, 'package.json'), 'utf8')) as unknown
+      const skillReview = await reviewPiPackageSkills(installed.path, manifest)
+      if (!skillReview.ok) return { ok: false, problems: [formatSkillSecurityReview(skillReview)] }
+    } catch (error) {
+      return { ok: false, problems: [error instanceof Error ? error.message : String(error)] }
     }
     const activeRunner = await runner(target)
     if (!activeRunner || !activeRunner.ready || !activeRunner.sessionFile) {
@@ -139,7 +149,8 @@ export function createPiPackageActivationHostPorts(deps: PiPackageActivationHost
       }
       const pending = deps.goals.resumeOf(target.sessionFile)
       if (pending && pending.operationId !== target.continueId) {
-        throw new Error('该会话另有尚未消费的目标续行，不能覆盖')
+        const pendingConsumed = await goalResumeContinuationWasConsumed(snapshot.id, pending.operationId, deps.root)
+        if (!pendingConsumed) throw new Error('该会话另有尚未消费的目标续行，不能覆盖')
       }
       const written = await writeGoalResumeSnapshotIfVacant(snapshot.id, {
         operationId: target.continueId,

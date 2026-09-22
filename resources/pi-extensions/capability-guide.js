@@ -40,6 +40,8 @@ export const CAPABILITY_GUIDE = [
   '- 不确定有没有对应能力：`yan capabilities search --query-file query.json`',
   '- 查看一次操作的结果：`yan operations status --id <操作ID>`',
   '- 读写任务清单：`yan tasks apply --request-file task-update.json`',
+  '- 信息不足且需要用户决定时：先写 `question.json`，再调用 `yan question ask --request-file question.json`；完整回答在 `resultFile`，取消 / 超时会如实返回，不要猜答案。',
+  '- 需要读回墓碑上的 `ctx://` 归档：`yan context recall --ref <ctx://...>`；stdout 的 `resultFile` 是受管原始文本，用 read 按需取需要的片段。它以 `[Recalled context]` 开头，并会在下一次用户输入时过期为存根。',
   '- 生成图片文件：先写 `image.json`，再调用 `yan image generate --request-file image.json`；生成结果会自动挂到当前助手消息并在对话中直接预览。',
   '- 展示已有文件：`yan artifact attach --path <项目内文件> --description "说明"`；结果会复制到砚的受控目录并挂到当前助手消息。',
   '- 图片生图默认优先使用当前 ChatGPT/Codex 订阅通道；如果选择 `openai` 或 `compatible` API，砚会先弹出确认，未确认不会发出请求。',

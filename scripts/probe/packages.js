@@ -97,8 +97,9 @@
              * 这句是产品边界，不是提示语 —— 所以要有断言读它。
              */
             const warn = document.querySelector('[data-testid="pkg-warn"]')?.textContent ?? ''
-            if (/不做沙箱隔离/.test(warn)) ok('详情写明「会执行代码、不做沙箱隔离」（§9 的硬要求）')
-            else bad('详情缺边界声明', warn.slice(0, 50))
+            if (/OS 沙箱/.test(warn) && /Skill 文件/.test(warn) && /高风险会拒绝/.test(warn) && /不会跳过/.test(warn)) {
+              ok('详情写明「当前用户权限运行、无 OS 沙箱，Skill 高风险拒绝且用户指定也不跳过审查」')
+            } else bad('详情缺边界声明', warn.slice(0, 120))
             if (/MIT/.test(text)) ok('详情里有许可（来源可信度的一部分）')
           } else bad('「详情」点了没展开')
         } else bad('有插件但没有「详情」按钮')

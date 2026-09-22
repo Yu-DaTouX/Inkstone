@@ -75,21 +75,28 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume) {
       }
       const handlers = {}
       const sent = []
+      const freshEntries = []
+      const staleCalls = []
       const pi = {
         on(name, handler) { handlers[name] = handler },
-        appendEntry() {},
+        appendEntry() { staleCalls.push('appendEntry') },
+        async sendMessage() { staleCalls.push('sendMessage'); throw new Error('stale context should not be used') }
+      }
+      const freshContext = {
+        appendEntry(name, payload) { freshEntries.push({ name, payload }) },
         async sendMessage(message, options) { sent.push({ message, options }) }
       }
       goalResume.default(pi)
       ok(typeof handlers.session_start === 'function', 'goal resume 注册 session_start（runner 重载入口）')
-      handlers.session_start({ reason: 'reload' })
+      handlers.session_start({ reason: 'reload' }, freshContext)
       ok(timers.length === 1, 'session_start 延迟执行一次安全空闲检查')
       timers[0].callback()
       await Promise.resolve()
       await Promise.resolve()
       ok(
-        sent.length === 1 && sent[0].message.customType === 'yan-goal-continue' && sent[0].options.triggerTurn === true,
-        '重载后消费同一条 continue 快照并触发原目标续接'
+        sent.length === 1 && sent[0].message.customType === 'yan-goal-continue' && sent[0].options.triggerTurn === true &&
+          freshEntries.length === 1 && freshEntries[0].name === 'yan-goal-resume' && staleCalls.length === 0,
+        '重载后使用 session_start 新 ctx 消费快照并触发原目标续接'
       )
       const consumed = JSON.parse(await readFile(join(rootResume, 'goal-resume', 'resume-runner.consumed.json'), 'utf8'))
       ok(consumed.operationId === 'acq-continue-1', '重载唤醒先写 continueId 消费证据')

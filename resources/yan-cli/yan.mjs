@@ -63,6 +63,8 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan tasks apply --request-file task-update.json
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan image generate --request-file image.json
+  yan question ask --request-file question.json
+  yan context recall --ref <ctx://...>
   yan goal ready --request-file ready.json
   yan goal report --request-file report.json
   yan goal status
@@ -123,7 +125,7 @@ const GROUP_USAGE = {
             --authorize 表示你同意这个 host 的来源（只记 host，不记凭证，之后同类来源自动通过）。
             已授权的 npm pi-package 会下载固定版本并校验 SRI，放入受管 staging；不会运行包代码。
             安装、隔离 smoke 与激活仍等待安全边界 / 后续 S6b 实施。失败事务可对同一计划使用 --retry（最多一次）。
-            本地 MCP 包与 Skill 文件的下载 / 安装器仍待实施，会明确停在 pending-boundary。
+本地 MCP 包与 Skill 文件会先走受管 staging、来源 / hash 复核和安全边界；Skill 正文还会做静态恶意内容审查：高风险 fail-closed，中风险保留提醒（即使候选由用户指定也不跳过）。包和服务器仍不提供 OS 沙箱，未提供依赖时明确停在 pending-boundary。
 
 `,
   skill: `yan skill <动作> [选项]
@@ -211,6 +213,27 @@ const GROUP_USAGE = {
 
 provider=auto 优先使用本机 Codex ChatGPT 登录态；使用 OpenAI 或 OpenAI-compatible
 API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供应商。
+`,
+  question: `yan question <动作> [选项]
+
+动作：
+  ask     在砚的当前会话里向用户提出一个问题；这是宿主 UI 请求，不是模型工具。
+          yan question ask --request-file question.json
+          question.json: {"question":"…","options":["选项 A","选项 B"],"timeout":120000}
+          options 为空或省略时显示文本输入；有选项时用户也可以选择「其他」自行输入。
+          完整答案落在 resultFile，stdout 只回摘要；取消 / 超时会如实返回，不猜答案。
+
+`,
+  context: `yan context <动作> [选项]
+
+动作：
+  recall  读取当前会话中一个已归档墓碑的原始正文；这不是模型工具。
+          yan context recall --ref ctx://tool/<entryId>
+          只接受当前会话里墓碑展示的 ctx:// 引用；不能指定会话、JSONL、归档目录或输出路径。
+          stdout 只给结果文件路径。需要正文时，用 read 按需读取 resultFile；正文以
+          [Recalled context] 开头，会在下一次用户输入时由上下文生命周期清理为存根。
+          归档权限、过期时间、单次/累计预算和受管文件大小都由宿主检查；拒绝时不会给半份内容。
+
 `,
   subagent: `yan subagent <动作> [选项]
 
@@ -324,6 +347,14 @@ const GROUP_SPECS = {
   image: {
     actions: ['generate'],
     required: { generate: ['prompt'] }
+  },
+  question: {
+    actions: ['ask'],
+    required: {}
+  },
+  context: {
+    actions: ['recall'],
+    required: { recall: ['ref'] }
   },
   browser: {
     actions: [

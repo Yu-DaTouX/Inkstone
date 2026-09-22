@@ -22,6 +22,33 @@ export class SkillSourceError extends Error {
 
 type FetchLike = typeof fetch
 
+const TRANSIENT_SOURCE_ATTEMPTS = 3
+const TRANSIENT_SOURCE_DELAYS_MS = [250, 750]
+
+function retryableSourceStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+async function fetchSkillSource(
+  fetchImpl: FetchLike,
+  url: string,
+  timeoutMs: number
+): Promise<Response> {
+  let response: Response | undefined
+  for (let attempt = 0; attempt < TRANSIENT_SOURCE_ATTEMPTS; attempt += 1) {
+    response = await fetchImpl(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'manual',
+      headers: { accept: 'text/markdown, text/plain;q=0.9, application/octet-stream;q=0.5' }
+    })
+    if (response.ok || !retryableSourceStatus(response.status) || attempt === TRANSIENT_SOURCE_ATTEMPTS - 1) {
+      return response
+    }
+    await new Promise((resolve) => setTimeout(resolve, TRANSIENT_SOURCE_DELAYS_MS[attempt] ?? 750))
+  }
+  return response as Response
+}
+
 function safeOrigin(value: string): string {
   let parsed: URL
   try {
@@ -110,11 +137,7 @@ export async function fetchSkillFiles(input: {
   for (const [rawPath, rawUrl] of entries) {
     const path = normalizeSkillFilePath(rawPath)
     const url = checkedUrl(rawUrl, allowedOrigins)
-    const response = await fetchImpl(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'manual',
-      headers: { accept: 'text/markdown, text/plain;q=0.9, application/octet-stream;q=0.5' }
-    })
+    const response = await fetchSkillSource(fetchImpl, url, timeoutMs)
     if (!response.ok) throw new SkillSourceError('http', `Skill 文件返回 HTTP ${response.status}：${path}`)
     const actualUrl = response.url || url
     if (safeOrigin(actualUrl) !== safeOrigin(url)) {
