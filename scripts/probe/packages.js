@@ -117,7 +117,22 @@
       } else bad('列表项里没有「卸载」按钮')
     }
 
-    /* ⑦ 收尾：关掉设置面板 */
+    /* ⑦ 内置能力区：浏览器是**宿主能力**（01-S5 删掉了那个不注册任何东西的空壳 browser.js） */
+    const builtins = qa('[data-testid="builtin-cap"]')
+    if (builtins.length === 0) bad('内置能力区是空的（至少应列出宿主任务计划与宿主浏览器）')
+    else {
+      const browserCap = builtins.find((el) => el.getAttribute('data-cap-id') === 'browser')
+      if (browserCap) {
+        ok('内置能力区列出宿主「内置浏览器」')
+        if (!browserCap.querySelector('.pkg-ver')) ok('浏览器条目不带扩展文件名（能力由 `yan browser` CLI 提供）')
+        else bad('浏览器条目还挂着 browser.js 文件名', browserCap.textContent ?? '')
+      } else bad('内置能力区没有 browser 条目')
+      const stale = builtins.filter((el) => (el.querySelector('.pkg-ver')?.textContent ?? '') === 'browser.js')
+      if (stale.length === 0) ok('内置能力区不再出现 browser.js 空壳文件')
+      else bad('内置能力区仍有 browser.js', String(stale.length))
+    }
+
+    /* ⑧ 收尾：关掉设置面板 */
     store.getState().closeSettings()
     await until(() => qa('.set-group').length === 0, 3000)
   } catch (error) {

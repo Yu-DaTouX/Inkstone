@@ -70,6 +70,8 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
       steps: [],
       evidence: [],
       blocker: null,
+      pursue: false,
+      brief: null,
       failure: null,
       updatedAt: 0
     },

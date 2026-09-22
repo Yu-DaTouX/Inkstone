@@ -13,7 +13,7 @@ import {
   compactionTone
 } from '../../state/compaction-view'
 import { CONTEXT_STAGES, contextStageLabel, contextStageTip, nextContextStageText } from '../../state/context-view'
-import { nextContextStage } from '../../../../shared/context-policy'
+import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf } from '../../../../shared/context-policy'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import { HandleProvider } from './ToolSection'
@@ -1076,6 +1076,14 @@ function ContextSection() {
    * 而砚在 240k 就会动手。预算由主进程随会话状态推送（同一个对象，不重算）。
    */
   const policy = session?.contextPolicy
+  /** 运行期拼出来的 i18n key（`set.ctxSource.model` 这类）要断言一次，见 ContextTab 同款注释 */
+  const tk = (key: string): string => t(key as MessageKey)
+  /*
+   * C-5 尾：默认行要不要说「现在用的是哪一档」。
+   * 判据只看**精确模型层原文** —— `source === 'model'` 也可能是用户手填的自定义数，
+   * 那种情况不该被叫成「均衡 600K」档。
+   */
+  const presetName = policy?.modelOverrides ? largePresetOf(policy.modelOverrides) : undefined
   const workingSet = policy && policy.budget.workingSet > 0 ? policy.budget.workingSet : 0
   const workingSetMode = workingSet > 0
   /*
@@ -1167,6 +1175,17 @@ function ContextSection() {
                 pct: pctWork.toFixed(0)
               })
             : t('ctx.workingSetLineUnknown', { cap: fmtK(workingSet) })}
+        </div>
+      ) : null}
+
+      {/*
+        档位行（C-5 尾）：区分「试行档」与「自定义数值」——
+        之前 600K/700K 的名字只在设置页，右栏只写工作集数字，
+        用户没法从右栏回答「我现在到底在哪个档上」。
+      */}
+      {presetName ? (
+        <div className="rp-dim" data-testid="ctx-preset" data-preset={presetName}>
+          {t('ctx.presetLine', { name: tk(LARGE_PRESET_NAME_KEYS[presetName]) })}
         </div>
       ) : null}
 
@@ -1440,6 +1459,20 @@ function ContextSection() {
           {compact?.projectIgnored ? (
             <div className="rp-dim warn" data-testid="ctx-project-ignored" title={t('ctx.projectIgnoredTip')}>
               {t('ctx.projectIgnored')}
+            </div>
+          ) : null}
+          {/*
+            容量来源（C-5 尾）：这些数到底是默认、用户设的、还是模型级 / env 推的。
+            设置页的 `ctx-source` 早就有这条，但用户看右栏数字时不该被逼回设置页 ——
+            「界面上的数 ≠ 真正在用的数」正是这一块最不能容忍的错。
+          */}
+          {policy ? (
+            <div className="rp-kv" data-testid="ctx-source-line" title={t('ctx.sourceLineTip')}>
+              <span className="rp-k">{t('ctx.sourceLine')}</span>
+              <span className="spacer" />
+              <span className="rp-v">
+                {`${tk(`set.ctxSource.${policy.source}`)}${policy.sourceKey ? ` · ${policy.sourceKey}` : ''}`}
+              </span>
             </div>
           ) : null}
           <div className="rp-group">{t('ctx.groupSpend')}</div>

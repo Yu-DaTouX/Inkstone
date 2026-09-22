@@ -29,7 +29,7 @@ import {
 import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
-import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode } from '../shared/work-mode'
+import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -401,15 +401,20 @@ export async function getSettings(): Promise<AppSettings> {
      * 工作模式（实施-05）：
      *   · `defaultWorkMode` 合法就听它的；否则拿旧 `autonomous === true`
      *     迁成 `autonomous`，其余 `standard` —— 迁移是幂等的（反复读同一份文件结果相同）。
-     *   · `workModeTab` 只有明确写 `false` 才算关，其余（含缺失）保持 undefined
-     *     = 开（“没改过”在磁盘上真的没有这个键，以后再调默认值不会把改过的人一起改掉）。
+     *   · 模式快捷键（2026-09-22）：开关只有明确写 `false` 才算关，其余（含缺失）
+     *     保持 undefined = 开；旧字段 `workModeTab` 只在这里读一次（迁完不再写回）。
+     *     组合键要过 `normalizeWorkModeShortcut`（脏值回落成「没设过」）。
      */
     cached.defaultWorkMode = migrateLegacyAutonomous(fileWorkMode, cached.autonomous)
     cached.capabilityStrategy =
       cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
         ? cached.capabilityStrategy
         : 'auto-connect'
-    cached.workModeTab = cached.workModeTab === false ? false : undefined
+    /* 旧字段只在这里读一次（迁完不再写回）：`workModeTab === false` 等价于关掉模式快捷键 */
+    const legacyWorkModeTab = (cached as AppSettings & { workModeTab?: unknown }).workModeTab
+    cached.workModeShortcutEnabled =
+      cached.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
+    cached.workModeShortcut = normalizeWorkModeShortcut(cached.workModeShortcut)
     // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
     cached.sendKey =
       cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'
@@ -525,9 +530,12 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   /* 同上：关闭时写 `{enabled:false}`（它是「开着」的默认态），「没改过」写 `undefined` */
   if ('contextFold' in patch) next.contextFold = sanitizeContextFold(next.contextFold)
   if ('projectKnowledge' in patch) next.projectKnowledge = sanitizeProjectKnowledge(next.projectKnowledge)
-  /* 工作模式（实施-05）：默认模式要合法；Tab 快切只有明确关才落 false */
+  /* 工作模式（实施-05）：默认模式要合法；快捷键开关只有明确关才落 false，组合键要规范化 */
   if ('defaultWorkMode' in patch) next.defaultWorkMode = normalizeWorkMode(next.defaultWorkMode)
-  if ('workModeTab' in patch) next.workModeTab = next.workModeTab === false ? false : undefined
+  if ('workModeShortcutEnabled' in patch) {
+    next.workModeShortcutEnabled = next.workModeShortcutEnabled === false ? false : undefined
+  }
+  if ('workModeShortcut' in patch) next.workModeShortcut = normalizeWorkModeShortcut(next.workModeShortcut)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

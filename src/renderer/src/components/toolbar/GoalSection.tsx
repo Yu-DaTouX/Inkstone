@@ -46,6 +46,11 @@ export function GoalSection() {
           <Icon name="checklist" size={14} />
           <span>{t('goal.title')}</span>
         </div>
+        {activeGoal?.pursue ? (
+          <span className="goal-panel-pursue" data-testid="goal-pursue" title={t('goal.pursueHint')}>
+            {t('goal.pursue')}
+          </span>
+        ) : null}
         {activeGoal ? <span className="goal-panel-phase">{t(PHASE_LABEL[activeGoal.phase])}</span> : null}
       </div>
 
@@ -56,6 +61,23 @@ export function GoalSection() {
         </div>
       ) : (
         <div className="goal-panel-content">
+          {activeGoal.brief ? (
+            /*
+             * 用户自己写的目标与达成判据要**原样**显示在最上面：
+             * 下面那些步骤是模型登记的，而这两行是用户的验收标准 ——
+             * 不显示出来，用户就无从判断模型有没有把目标做小。
+             */
+            <div className="goal-brief" data-testid="goal-brief">
+              <div className="goal-brief-row">
+                <span className="goal-brief-key">{t('goal.briefGoal')}</span>
+                <span className="goal-brief-value">{activeGoal.brief.goal}</span>
+              </div>
+              <div className="goal-brief-row">
+                <span className="goal-brief-key">{t('goal.briefOutcome')}</span>
+                <span className="goal-brief-value">{activeGoal.brief.outcome}</span>
+              </div>
+            </div>
+          ) : null}
           <div className="goal-panel-meta">
             <span>{t('goal.revision', { n: activeGoal.revision })}</span>
             {steps.length ? <span>{t('goal.progress', { done, total: steps.length })}</span> : null}

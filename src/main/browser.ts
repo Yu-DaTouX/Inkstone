@@ -2,17 +2,19 @@
  * 内置浏览器控制器。
  *
  * 架构：页面是主进程持有的原生 WebContentsView（不是 iframe），renderer 只画
- * 工具栏并把可见区域坐标同步过来；pi 通过一个只监听 127.0.0.1 的 loopback
- * bridge（随机端口 + 随机 token）驱动同一份视图。
+ * 工具栏并把可见区域坐标同步过来；模型侧入口是 `yan browser …`（01-S4b），
+ * 由 `AgentController.runBrowserCommand` 直接调本类方法。
  *
  *   renderer(BrowserSurface) ──IPC──► BrowserController ──CDP──► 网页
- *   pi extension(browser.js) ──HTTP──► 同一个 bridge
+ *   pi ──bash──► `yan browser …` ──能力服务──► 同一个 BrowserController
+ *
+ * 01-S5d（2026-09-23）删掉了 `browser.js` 空壳扩展与只服务于它的 loopback
+ * HTTP bridge：宿主自己在同一进程里，不需要网络层与 token。
  *
  * 底层算法拆在 ./browser/：CDPBridge / Observer / ElementRegistry /
  * InputController / BrowserPolicy / geometry。可读性从上往下读本文件即可，
  * 细节再进子目录。
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { ChildProcess } from 'node:child_process'
 import { app, shell, WebContentsView, type BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
@@ -56,7 +58,6 @@ type BrowserActionResult = { ok: boolean; error?: string; code?: string }
 const INITIAL_URL = 'https://www.google.com/'
 /** 接入本机 Chrome 时默认打开的页面（用户要操作的 ChatGPT 网页版） */
 const EXTERNAL_CHROME_URL = 'https://chatgpt.com'
-const MAX_BODY = 1024 * 1024
 
 function safeUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
@@ -93,12 +94,6 @@ function normalizePermissionOrigin(value: unknown): string | null {
 
 function permissionKey(permission: string, origin: string): string {
   return `${permission}\u0000${origin}`
-}
-
-function json(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status
-  res.setHeader('content-type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify(body))
 }
 
 interface BrowserTab {
@@ -158,13 +153,10 @@ interface TargetParts {
   input: InputController
 }
 
-/** Electron-owned browser runtime. Pi only sees the authenticated loopback API. */
+/** 浏览器运行时（**宿主独占**）。模型侧入口是 `yan browser …`，不再提供 HTTP bridge。 */
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
   private activeTabId: string | null = null
-  private server: Server | null = null
-  private token = randomBytes(24).toString('hex')
-  private port = 0
   private userControl = false
   private lastDownload: BrowserState['lastDownload']
   private nativeBounds: BrowserBounds | undefined
@@ -225,33 +217,6 @@ export class BrowserController {
     private readonly getWindow: () => BrowserWindow | null,
     private readonly push: Push
   ) {}
-
-  async startBridge(): Promise<void> {
-    if (this.server) return
-    this.server = createServer((req, res) => void this.handleRequest(req, res))
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error): void => {
-        this.server?.off('listening', onListening)
-        reject(error)
-      }
-      const onListening = (): void => {
-        this.server?.off('error', onError)
-        const address = this.server?.address()
-        this.port = typeof address === 'object' && address ? address.port : 0
-        resolve()
-      }
-      this.server!.once('error', onError)
-      this.server!.once('listening', onListening)
-      this.server!.listen(0, '127.0.0.1')
-    })
-  }
-
-  bridgeEnv(): NodeJS.ProcessEnv {
-    return {
-      YAN_BROWSER_BRIDGE_URL: `http://127.0.0.1:${this.port}`,
-      YAN_BROWSER_BRIDGE_TOKEN: this.token
-    }
-  }
 
   getState(): BrowserState {
     const ext = this.external
@@ -1078,11 +1043,6 @@ export class BrowserController {
 
   async dispose(): Promise<void> {
     await this.close()
-    await new Promise<void>((resolve) => {
-      if (!this.server) return resolve()
-      this.server.close(() => resolve())
-      this.server = null
-    })
   }
 
   async observe(): Promise<BrowserObservation> {
@@ -1276,7 +1236,7 @@ export class BrowserController {
   private actionError(error: unknown): BrowserActionResult {
     const message = error instanceof Error ? error.message : String(error)
     if (/detached|Could not find node|No node with given id|Cannot find context/i.test(message)) {
-      return { ok: false, code: 'STALE_ELEMENT', error: `元素引用已失效，请重新调用 browser_observe。（${message}）` }
+      return { ok: false, code: 'STALE_ELEMENT', error: `元素引用已失效，请重新调用 yan browser observe。（${message}）` }
     }
     if (error && typeof error === 'object' && 'code' in error) {
       const typed = error as { code: string; message: string }
@@ -1310,63 +1270,5 @@ export class BrowserController {
 
   private pushError(detail: string): void {
     this.push({ ch: 'notify', payload: { id: `browser-${Date.now()}`, method: 'notify', notifyType: 'error', message: detail } })
-  }
-
-  private async readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-    const chunks: Buffer[] = []
-    let size = 0
-    for await (const chunk of req) {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
-      size += buf.byteLength
-      if (size > MAX_BODY) throw new Error('请求过大')
-      chunks.push(buf)
-    }
-    if (!chunks.length) return {}
-    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
-  }
-
-  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (req.headers['x-yan-browser-token'] !== this.token) return json(res, 401, { ok: false, error: '未授权' })
-    const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname
-    try {
-      const body = req.method === 'POST' ? await this.readBody(req) : {}
-      if (req.method === 'GET' && path === '/state') return json(res, 200, this.getState())
-      if (req.method === 'POST' && path === '/navigate') return json(res, 200, await this.navigate(String(body.url ?? '')))
-      if (req.method === 'POST' && path === '/new-tab') return json(res, 200, await this.newTab(String(body.url ?? INITIAL_URL)))
-      if (req.method === 'POST' && path === '/switch-tab') return json(res, 200, await this.switchTab(String(body.id ?? '')))
-      if (req.method === 'POST' && path === '/close-tab') return json(res, 200, await this.closeTab(String(body.id ?? '')))
-      if (req.method === 'POST' && path === '/back') return json(res, 200, await this.back())
-      if (req.method === 'POST' && path === '/forward') return json(res, 200, await this.forward())
-      if (req.method === 'POST' && path === '/reload') return json(res, 200, await this.reload())
-      if (req.method === 'GET' && path === '/observe') return json(res, 200, await this.observe())
-      if (req.method === 'POST' && path === '/click') return json(res, 200, await this.click(String(body.ref ?? '')))
-      if (req.method === 'POST' && path === '/type') return json(res, 200, await this.type(String(body.ref ?? ''), String(body.text ?? '')))
-      if (req.method === 'POST' && path === '/press') return json(res, 200, await this.press(String(body.key ?? '')))
-      if (req.method === 'POST' && path === '/scroll') return json(res, 200, await this.scroll(Number(body.deltaX ?? 0), Number(body.deltaY ?? 0)))
-      if (req.method === 'GET' && path === '/screenshot') {
-        const p = this.parts()
-        if (!p) return json(res, 409, { ok: false, error: '浏览器尚未打开' })
-        const data = (await p.cdp.screenshot()).toString('base64')
-        return json(res, 200, { ok: true, mimeType: 'image/png', data })
-      }
-      // 外部 Chrome（本机已安装的浏览器）——供 pi 扩展主动接入/断开
-      if (req.method === 'POST' && path === '/external/open') {
-        return json(res, 200, await this.openExternalChrome(String(body.url ?? EXTERNAL_CHROME_URL)))
-      }
-      if (req.method === 'POST' && path === '/external/close') {
-        return json(res, 200, await this.closeExternalChrome())
-      }
-      if (req.method === 'POST' && path === '/request-user-control') return json(res, 200, this.requestUserControl())
-      if (req.method === 'POST' && path === '/set-user-control') return json(res, 200, this.setUserControl(Boolean(body.value)))
-      if (req.method === 'POST' && path === '/evaluate') {
-        // 不提供任意页面 JavaScript：能力面只保留结构化的 observe/click/type/…，
-        // 避免把“执行任意脚本”变成一个隐式工具。
-        return json(res, 403, { ok: false, error: '默认禁止任意页面 JavaScript；请使用结构化浏览器工具' })
-      }
-      return json(res, 404, { ok: false, error: '未知浏览器操作' })
-    } catch (error) {
-      json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
-    }
   }
 }

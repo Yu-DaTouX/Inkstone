@@ -6,13 +6,17 @@
  * ══════════════════════════════════════════════════════════════════
  * ① **Tool Sweep**（§12.5）：把 `recentTail` 之外的大块工具输出换成
  *    指向 `ctx://tool/<原始 entryId>` 的墓碑。原文一条不动 ——
- *    模型需要时用 `context_recall` 取回。确定性、不调模型、幂等。
+ *    模型需要时用随包 CLI 的 `yan context recall --ref <ctx://…>` 取回。
+ *    确定性、不调模型、幂等。
  * ② **Task State 前置注入**（§13.1 第 1 条）：状态文件存在且水位与
  *    当前会话**完全一致**时，把 `<TASK_STATE>` 放在历史**之前**。
  *    没有状态文件就不注入（绝不拿过期状态去误导模型）。
- * ③ **Recall + 预算 / TTL / 审计**（§12.9）：`context_recall` 工具按
- *    单次上限与累计上限拒绝超预算请求，召回内容带回合号，
- *    下一轮用户输入到来时正文被清成只留引用的存根。
+ * ③ **召回**的 TTL / 账本（§12.9）：回读入口**不在本扩展里** —— 模型经
+ *    `yan context recall` 请求宿主（实现见 `src/main/context-recall.ts`），
+ *    由宿主按单次 / 累计上限拒绝超预算请求、写审计、把逐字原文落成受管文件。
+ *    本扩展只做两件配套的事：用真实消息重算召回账本，以及下一轮用户输入
+ *    到来时把上一轮的召回正文清成只留引用的存根（`[Recalled context]` 前缀）。
+ *    扩展**不注册任何模型工具**（01 §1 的架构检查）。
  *
  * 另外接管 `session_before_compact`（§12.8）——但**只在**已经有一份
  * 水位一致、六类字段齐备的 Task State 时才接管；否则原样返回
@@ -71,13 +75,11 @@ import {
   mergeEpisodeRefs,
   messageText,
   planToolSweep,
-  recallBudget,
   renderTaskState,
   stripStaleRecalls,
   sweepViolations,
   userTurnCount,
   watermarkOfEntries,
-  wrapRecall
 } from './context-transform.js'
 import {
   PRODUCER_SYSTEM_PROMPT,
@@ -626,8 +628,9 @@ function findArchiveEntry(sessionId, ref) {
 
 /**
  * 召回账本（`<sessionId>.recall.json`）：只记「当前 active context 里
- * 召回内容占了多少 token」与「当前回合号」。工具用它做累计预算判定；
- * 上下文钩子每轮用真实消息重算一遍（账本与真实上下文对不上时以钩子为准）。
+ * 召回内容占了多少 token」与「当前回合号」。宿主（`yan context recall`）
+ * 用它做累计预算判定并回写；上下文钩子每轮用真实消息重算一遍
+ * （账本与真实上下文对不上时以钩子为准）。
  */
 function loadLedger(sessionId) {
   const ledger = readJson(sessionFilePath(sessionId, '.recall.json'))
@@ -640,14 +643,6 @@ function loadLedger(sessionId) {
 
 function saveLedger(sessionId, ledger) {
   writeJsonAtomic(sessionFilePath(sessionId, '.recall.json'), ledger)
-}
-
-function audit(sessionId, record) {
-  try {
-    appendFileSync(sessionFilePath(sessionId, '.recall.jsonl'), JSON.stringify(record) + '\n')
-  } catch {
-    /* 审计失败不影响召回本身 */
-  }
 }
 
 /* ---------------------------------------------------------------- 钩子实现 */
@@ -1595,97 +1590,6 @@ async function produceAndCommit(sessionId, ctx) {
   }
 }
 
-/**
- * `context_recall` 工具。
- *
- * 原文来自**会话本身**（`sessionManager.getEntry`），不是归档副本 ——
- * 与「原始 JSONL 是事实源」一致，S1 的归档也只存元数据。
- * 预算超限一律**拒绝并解释**，不静默截断（§12.9）。
- */
-function registerRecallTool(pi) {
-  pi.registerTool({
-    name: 'context_recall',
-    label: 'Context recall',
-    description:
-      'Read back the original content of an archived tool result (a message you see as "[Archived tool result]" with a Ref). ' +
-      'Archived content does NOT stay in context: recalling it counts against the context budget, and it expires after this turn. ' +
-      'Prefer recalling only when the tombstone metadata is not enough.',
-    parameters: {
-      type: 'object',
-      properties: {
-        ref: { type: 'string', description: 'The ctx://tool/<id> reference shown on the archived result' },
-        reason: { type: 'string', description: 'Optional: why the original content is needed' }
-      },
-      required: ['ref'],
-      additionalProperties: false
-    },
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const ref = String(params?.ref ?? '').trim()
-      if (!/^ctx:\/\/(tool|file|diff|episode)\/[A-Za-z0-9._~%:-]{1,200}$/.test(ref)) {
-        return textResult(`无法召回：${ref || '(空)'} 不是合法的 ctx:// 引用。`)
-      }
-      const sessionId = sessionIdOf(ctx)
-      if (!sessionId) return textResult('无法召回：当前会话没有可用的存储位置。')
-
-      const now = Date.now()
-      const entry = findArchiveEntry(sessionId, ref)
-      if (!entry) {
-        return textResult(`无法召回 ${ref}：归档元数据里没有这条记录（可能已被清理）。`)
-      }
-      if (entry.recallable !== 'agent') {
-        return textResult(`无法召回 ${ref}：这条内容不允许模型自行取回（recallable=${entry.recallable}）。`)
-      }
-      if (Number.isFinite(entry.expiresAt) && entry.expiresAt <= now) {
-        return textResult(`无法召回 ${ref}：这条归档内容已过期（expiresAt=${new Date(entry.expiresAt).toISOString()}）。`)
-      }
-
-      const entryId = ref.slice(ref.lastIndexOf('/') + 1)
-      const raw = rawTextOf(ctx, entryId)
-      if (raw === null) {
-        return textResult(`无法召回 ${ref}：原始会话里已经找不到这条内容了（可能被压缩或裁剪）。`)
-      }
-      const tokens = estimateTokens(raw)
-      const ledger = loadLedger(sessionId)
-      const p = policy()
-      const decision = recallBudget(p.recall, { tokens, count: 1 }, { tokens: ledger.activeTokens })
-      if (!decision.ok) {
-        audit(sessionId, { ts: now, kind: 'recall', ref, tokens, by: 'agent', result: 'rejected', reason: decision.reason })
-        const message =
-          decision.reason === 'too-large'
-            ? `这次召回约 ${tokens} token，超过单次上限 ${decision.limit}；请缩小范围（例如只召回其中一段）。`
-            : decision.reason === 'active-budget'
-              ? `当前已召回内容约 ${decision.active} token，再加这次 ${tokens} 会超过上限 ${decision.limit}；请先整理已有结论。`
-              : `一次最多召回 ${decision.limit} 条，本次请求被拒绝。`
-        return textResult(`召回被拒绝：${message}`)
-      }
-
-      saveLedger(sessionId, { turn: ledger.turn, activeTokens: ledger.activeTokens + tokens })
-      audit(sessionId, { ts: now, kind: 'recall', ref, tokens, by: 'agent', result: 'ok', reason: params?.reason ?? null })
-      return textResult(wrapRecall(raw, ref, ledger.turn))
-    }
-  })
-}
-
-/** 从会话里按原始 entry id 取回工具结果的原文（取不到返回 null） */
-function rawTextOf(ctx, entryId) {
-  try {
-    const manager = ctx?.sessionManager
-    if (!manager || typeof manager.getEntry !== 'function') return null
-    const entry = manager.getEntry(entryId)
-    if (!entry) return null
-    if (entry.type === 'message') return messageText(entry.message) || null
-    if (typeof entry.summary === 'string') return entry.summary
-    if (typeof entry.content === 'string') return entry.content
-    return null
-  } catch {
-    return null
-  }
-}
-
-function textResult(text, details = {}) {
-  return { content: [{ type: 'text', text }], details }
-}
-
 function errorText(error) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -1716,7 +1620,6 @@ export default function contextExtension(pi) {
    * 只在 `kinds` 含 `episode-fold` 时才真的会调模型（见 onAgentSettled）。
    */
   pi.on('agent_settled', (event, ctx) => onAgentSettled(event, ctx))
-  registerRecallTool(pi)
 }
 
 /**
@@ -1733,8 +1636,6 @@ export const __internals = {
   mergeArchive,
   findArchiveEntry,
   loadState,
-  rawTextOf,
-  audit,
   loadLedger,
   saveLedger,
   messagePairsFromEntries,

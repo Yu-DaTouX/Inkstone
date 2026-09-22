@@ -1,5 +1,5 @@
 /**
- * 澄清就绪转移的端到端（实施-05 S3，**会真的调一次模型**）。
+ * 计划就绪转移的端到端（实施-05 S3，**会真的调一次模型**）。
  *
  * 验的是 S3 的核心出口：「条件齐全 → 自动标准执行**恰好一次**」。
  * 整条链路没有一个环节是模拟的：
@@ -7,8 +7,8 @@
  *   模型 → bash 工具 → `yan` CLI → 宿主能力服务（身份校验）→ goal 服务（校验 +
  *   幂等 + 落盘）→ 模式 store（切 standard）+ 快照（扩展读）→ 界面（工具卡归属）
  *
- * 探针只做两件事：把模式切到澄清档、把要跑的命令**原封不动**交给模型。
- * 命令是内联参数形式 —— 澄清档禁写文件，所以提交必须能不带请求文件完成
+ * 探针只做两件事：把模式切到计划档、把要跑的命令**原封不动**交给模型。
+ * 命令是内联参数形式 —— 计划档禁写文件，所以提交必须能不带请求文件完成
  * （这正是 `normalizeReadyParams` 存在的理由）。
  */
 ;(async () => {
@@ -49,16 +49,16 @@
   await sleep(800)
 
   out.push('')
-  out.push('=== 1. 切到澄清档（就绪转移的起点）===')
+  out.push('=== 1. 切到计划档（就绪转移的起点）===')
   await store.getState().setWorkMode('clarify')
   await sleep(600)
   const mode0 = await window.yan.getWorkMode()
   const goal0 = await window.yan.getGoal()
-  ok(mode0.mode === 'clarify', `宿主侧已切到澄清档（${JSON.stringify(mode0)}）`)
+  ok(mode0.mode === 'clarify', `宿主侧已切到计划档（${JSON.stringify(mode0)}）`)
   ok(goal0.goal.phase === 'planning' && goal0.goal.revision === 0, '目标还没开始（planning / rev0）')
 
   out.push('')
-  out.push('=== 2. 让模型用内联参数提交就绪（澄清档不能写文件）===')
+  out.push('=== 2. 让模型用内联参数提交就绪（计划档不能写文件）===')
   /*
    * revision 必须**当场读**再拼进命令：模型拿旧值提交会被宿主判过期，
    * 那是设计（两条腿同时到达只有一次生效），不是故障。

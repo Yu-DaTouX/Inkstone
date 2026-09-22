@@ -1,8 +1,7 @@
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { Usage } from '../../../../shared/ipc'
-import { cacheHitRate, currentTurnMessages, formatHitRate } from '../../../../shared/turns'
+import { cacheHitRate, currentTurnMessages, formatHitRate, hasUsageNumbers, turnUsageOf } from '../../../../shared/turns'
 
 /**
  * 底部的用量条。
@@ -17,6 +16,10 @@ import { cacheHitRate, currentTurnMessages, formatHitRate } from '../../../../sh
  *
  * ⚠️ 命中率的算法在 shared/turns.ts 的 `cacheHitRate()`，**不在**这里 ——
  *   因为它的分母容易写错（见那边的说明），值得单测钉住。
+ *
+ * ⚠️ 用量是**整轮聚合**（实施-11 H-6b）：输入 / 输出 / 缓存都是回合内各次请求
+ *    相加的结果（每条助手消息的 usage 是该次请求的独立用量）。若本轮有请求没报
+ *    用量，合计只是下限 —— 值前会标 `≥`，悬停说明原因。
  *
  * 关于「输出速度」的诚实做法（别改成估算）：
  *   实测这个 provider 到结束才报 usage（138 个流式事件里只有 2 个带 usage，
@@ -39,11 +42,6 @@ export function UsageBar() {
   const streaming = useStore((s) => !!s.session?.isStreaming)
 
   /* ---- 本轮用量 ---- */
-  // 全 0 的 usage 不算数：流式途中 provider 可能先报一个全 0
-  // （pi 文档：may remain zero until completion），否则会闪一下 "输入 0 输出 0"
-  const hasNumbers = (x?: Usage): boolean =>
-    !!x && (x.input > 0 || x.output > 0 || x.cacheRead > 0 || x.cacheWrite > 0)
-
   /*
    * ⚠️ 只在**当前回合**里找用量/速度（`currentTurnMessages`）。
    *    在整个历史里倒着找「最近一次非零 usage」会把上一轮的数字标成本轮实时值：
@@ -51,8 +49,17 @@ export function UsageBar() {
    *    「生成中」状态被跳过；新一轮最终不报 usage 时，账单也一直在显示旧轮数据。
    */
   const turnMessages = currentTurnMessages(messages)
-  const last = [...turnMessages].reverse().find((m) => m.role === 'assistant' && hasNumbers(m.usage))
-  const u = last?.usage
+  /* 速度取**最近一次生成段**（不跨请求累加 —— 那会被工具等待摊薄）。 */
+  const last = [...turnMessages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && hasUsageNumbers(m.usage))
+  /*
+   * ⚠️ 用量是**整轮聚合**（实施-11 H-6b），不是最后一条：pi 每条助手消息的
+   *    usage 是该次请求的独立用量，多轮工具调用时取末条只反映最后一次请求。
+   *    `partial` = 回合内有请求没报用量 → 合计只是下限，界面标「≥」。
+   */
+  const { usage: u, partial: usagePartial } = turnUsageOf(turnMessages)
+  const shortOf = usagePartial && u !== undefined
 
   /* ---- 缓存命中率（算法在 shared/turns.ts，有单测） ---- */
   const hit = cacheHitRate(u)
@@ -66,7 +73,7 @@ export function UsageBar() {
    *    于是拿不到任何结论；而跨回合取旧 usage 又会让比例看着像本轮的。
    */
   const lastMsg = turnMessages[turnMessages.length - 1]
-  const settled = !streaming || (lastMsg?.role === 'assistant' && hasNumbers(lastMsg.usage))
+  const settled = !streaming || (lastMsg?.role === 'assistant' && hasUsageNumbers(lastMsg.usage))
   const cacheExtra = settled ? (hitLabel ?? (u ? '—' : undefined)) : t('tok.settling')
 
   const liveSpeed = streaming && (u?.output ?? 0) > 0 ? last?.speed : undefined
@@ -118,15 +125,17 @@ export function UsageBar() {
       <span className="ub-turn">
         <Item
           label={t('tok.in')}
-          value={u ? fmtTok(u.input) : '—'}
+          value={u ? (shortOf ? `≥${fmtTok(u.input)}` : fmtTok(u.input)) : '—'}
           unit={u ? t('tok.unit') : undefined}
+          title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || streaming}
         />
         <span className="ub-dot" />
         <Item
           label={t('tok.out')}
-          value={u ? fmtTok(u.output) : '—'}
+          value={u ? (shortOf ? `≥${fmtTok(u.output)}` : fmtTok(u.output)) : '—'}
           unit={u ? t('tok.unit') : undefined}
+          title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || (streaming && !liveSpeed)}
         />
         <span className="ub-dot" />

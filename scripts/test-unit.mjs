@@ -276,6 +276,9 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTodoHistoryTests } = await import('./test-todo-history.mjs')
 const { runWorkModeTests } = await import('./test-work-mode.mjs')
+const { runGoalResumeExtTests } = await import('./test-goal-resume.mjs')
+const { runRepeatGuardTests } = await import('./test-repeat-guard.mjs')
+
 const { runGoalTests } = await import('./test-goal.mjs')
 
 /*
@@ -1406,7 +1409,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 await runWorkModeTests(ok)
 
 /*
- * 目标与澄清就绪（实施-05 S3）：契约纯逻辑 + 会话级存储（幂等 / 先落盘）。
+ * 目标与计划就绪（实施-05 S3）：契约纯逻辑 + 会话级存储（幂等 / 先落盘）。
  * 与工作模式同样分两份编译：shared 那份是跨进程契约，main 那份碰真文件。
  */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1429,6 +1432,18 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/repeat-guard.ts'],
+    outfile: 'out/test/repeat-guard.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await runGoalResumeExtTests(ok)
+await runRepeatGuardTests(ok)
 await runGoalTests(ok)
 
 /*
@@ -1602,6 +1617,8 @@ await runHandoffResumeTests(
   await import('../out/test/handoff-resume.mjs'),
   await import('../out/test/handoff.mjs')
 )
+const { runHandoffExtTests } = await import('./test-handoff-ext.mjs')
+await runHandoffExtTests(ok)
 const { runHandoffRunnerTests } = await import('./test-handoff-runner.mjs')
 await runHandoffRunnerTests(
   ok,
@@ -1609,6 +1626,37 @@ await runHandoffRunnerTests(
   await import('../out/test/handoff-transaction-service.mjs'),
   await import('../out/test/session-chain-service.mjs'),
   await import('../out/test/handoff.mjs')
+)
+/*
+ * 交接 / 目标续接的阶段诊断（实施-14 F0）：脱敏与有界落盘。
+ * 分两份编译：shared 那份管「什么能写进日志」（凭证与提示词全文不能），
+ * main 那份管「写不写得坏」（坏行跳过 / 超限重写 / 失败不抛）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/handoff-diagnostics.ts'],
+    outfile: 'out/test/handoff-diagnostics.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/handoff-diagnostics.ts'],
+    outfile: 'out/test/handoff-diagnostics-main.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runHandoffDiagnosticsTests } = await import('./test-handoff-diagnostics.mjs')
+await runHandoffDiagnosticsTests(
+  ok,
+  await import('../out/test/handoff-diagnostics.mjs'),
+  await import('../out/test/handoff-diagnostics-main.mjs')
 )
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
@@ -1881,6 +1929,27 @@ await runContextStateTests(ok, {
   watermark: contextWatermark,
   store: contextStateStore
 })
+
+/*
+ * 实施-01 S5 / 06 出口③：归档回读已迁到宿主（`yan context recall`）。
+ *
+ * 这组断言的上一版写在上面的薄层测试里（直接调扩展注册的模型工具）。薄层不再
+ * 注册任何模型工具之后，同一批能力边界（原文来源、预算拒绝、账本、审计、身份）
+ * 必须由宿主的实现来承担 —— 所以它跟 context-state-store 打包在一起跑，
+ * 而不是留在扩展侧。真实链路（模型经 CLI 取回）由 live 场景取。
+ */
+const contextRecall = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-recall.ts'],
+    outfile: 'out/test/context-recall.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-recall.mjs'))
+)
+const { runContextRecallTests } = await import('./test-context-recall.mjs')
+await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStore })
 
 /*
  * N21-4 / S2–S6：上下文变换（Tool Sweep / Task State / Recall / 结构化压缩闸门）。
@@ -2435,12 +2504,11 @@ await runGitRepoTests(ok)
 }
 
 /*
- * 实施-01 S4b：`yan browser` CLI + 薄层不再注册任何东西。
+ * 实施-01 S4b/S5：`yan browser` CLI + 薄层不再注册任何东西。
  *
  * 四条一起看才站得住（缺一条就是“命令已接通但会报错”那一类）：
- *   ① `browser.js` 调 default(pi) 时**什么都不注册** —— 这是「薄层不注册模型工具、
- *      不注册 pi 命令、不挂钩子」的永久守卫点（模型工具表没有 RPC 出口，
- *      只能在扩展侧钉）；
+ *   ① `browser.js` **空壳扩展已删除** —— 01-S5 收尾时把那个「什么都不注册」的
+ *      文件从随包薄层移除（它只是 pi 的加载占位，对能力零贡献），能力全部走 CLI；
  *   ② `browser.*` 真的登在 `KNOWN_COMMANDS` 里（且 `browser.evaluate` **有意不在**）；
  *   ③ `yan browser --help` 真能跑（S3 那次 yan.mjs 语法错只被 cost 1 场景抳到）；
  *   ④ 拼错子命令 / 漏参数给可读 JSON + 用法退出码，不是 Node 堆栈。
@@ -2450,20 +2518,25 @@ await runGitRepoTests(ok)
 {
   const { spawnSync } = await import('node:child_process')
   const { readFile } = await import('node:fs/promises')
+  const { existsSync } = await import('node:fs')
   const { build } = await import('../node_modules/esbuild/lib/main.js')
 
   console.log('\n--- 01-S4b 浏览器 CLI ---')
 
-  /* ① 扩展不再注册任何东西 */
-  const browserExt = await import(new URL('../resources/pi-extensions/browser.js', import.meta.url))
-  const registered = []
-  browserExt.default({
-    registerTool: (tool) => registered.push(`tool:${tool?.name}`),
-    registerCommand: (name) => registered.push(`command:${name}`),
-    on: (name) => registered.push(`on:${name}`)
-  })
-  ok(registered.length === 0, 'browser.js：不注册模型工具 / pi 命令 / 钩子', registered.join(', '))
-  ok(typeof browserExt.default === 'function', 'browser.js：仍保留默认导出（pi 加载扩展要求）')
+  /* ① 空壳扩展已随 01-S5 收尾移除（能力在 yan browser CLI 里，见 ②—④） */
+  const shellExt = new URL('../resources/pi-extensions/browser.js', import.meta.url)
+  ok(!existsSync(shellExt), 'browser.js 空壳扩展已从随包薄层移除')
+
+  /*
+   * ①b 宿主文案不再点名旧工具名（01-S5d）：内部错误提示统一成 `yan browser …`。
+   * 断言「调用 browser_」这个特征串；`browser_observe_failed` 这类 code 名不受影响。
+   */
+  const legacyHint = []
+  for (const file of ['src/main/browser.ts', 'src/main/browser/ElementRegistry.ts']) {
+    const source = await readFile(file, 'utf8')
+    if (/调用\s*browser_/.test(source)) legacyHint.push(file)
+  }
+  ok(legacyHint.length === 0, '浏览器内部文案不点名旧工具名（统一写 yan browser …）', legacyHint.join('、'))
 
   /* ② browser.* 已登记（用真实端点验，而不是读源码字符串） */
   await build({

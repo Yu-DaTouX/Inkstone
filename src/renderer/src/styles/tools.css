@@ -2116,6 +2116,50 @@
   white-space: nowrap;
 }
 
+/* 「持续目标」标记：它与档位无关，得让人一眼看出这个目标是自己设的 */
+.goal-panel-pursue {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/*
+ * 用户写的目标 + 达成判据。
+ * 两句都可能很长（用户会写一整句验收标准），所以允许换行且不省略 ——
+ * 这里省略掉的信息恰好是「凭什么算做完」的关键那一句。
+ */
+.goal-brief {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 6px;
+  padding: 5px 6px;
+  background: var(--bg-2);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.goal-brief-row {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.goal-brief-key {
+  flex: none;
+  color: var(--fg-mute);
+}
+
+.goal-brief-value {
+  min-width: 0;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+
 .goal-panel-empty,
 .goal-panel-pending {
   display: grid;

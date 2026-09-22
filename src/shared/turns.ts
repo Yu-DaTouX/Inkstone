@@ -34,7 +34,7 @@
  *   这与 craft-agents 的 fallback 行为一致，避免整轮在界面上没有正文。
  * ══════════════════════════════════════════════════════════════════
  */
-import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, Usage } from './ipc'
+import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
 
 /** 一段文字（解说或回答） */
 export interface TurnText {
@@ -65,6 +65,16 @@ export interface AssistantTurn {
   commentary: TurnText[]
   /** 整个回合的工具调用（合并后按时间排） */
   tools: NonNullable<UIMessage['toolCalls']>
+  /**
+   * 工具等待分段（实施-11 H-6b）：每次工具调用真实占用的区间。
+   *
+   * 为什么需要它：整轮 `elapsedMs` 是墙钟，回答的是「用户等了多久」；
+   * 而「其中多少时间在等工具」需要区间数据。并行分支**不重复计**，
+   * 所以求和要走 `waitSpansMs()` 的区间并集，不是逐段相加。
+   */
+  waitSpans?: WaitSpan[]
+  /** 工具等待的**墙钟区间并集**（ms）；没有工具调用时为 undefined。 */
+  waitMs?: number
   /** 该回合生成或接管的文件产物 */
   artifacts: NonNullable<UIMessage['artifacts']>
   /** 该回合宿主生图的实时状态；不落盘，重载历史后自然消失。 */
@@ -72,8 +82,16 @@ export interface AssistantTurn {
   /** 最终回答；末尾停在工具上时会把最后一条解说提升上来 */
   response: TurnText | null
   streaming: boolean
-  /** 取这一轮最后一条带 usage 的消息（provider 报的是累计值） */
+  /**
+   * 整轮用量（实施-11 H-6b）：回合内各次请求的 usage **相加**。
+   *
+   * 为什么是相加：pi 的 JSONL 里每条助手消息的 usage 是**该次请求的独立用量**
+   * （实测 input 1387 → 12404 → 13255 不是累计，是上下文增长），所以取最后一条
+   * 只反映最后一次请求。按消息 id 去重后相加才是这一轮真实账单。
+   */
   usage?: Usage
+  /** 聚合不完整（回合内有请求没报用量）—— 界面可标「≥」。 */
+  usagePartial?: boolean
   speed?: number
   elapsedMs?: number
   /** 最后一条助手消息的时间戳；缺失时不伪造时刻。 */
@@ -190,6 +208,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     artifacts: NonNullable<UIMessage['artifacts']>
     imageProgress: ImageGenerationProgress[]
     responseDetail: ResponseDetail
+    usage?: Usage
+    /** 回合内是否有请求没报用量（H-6b） */
+    usagePartial: boolean
     last: UIMessage | undefined
     timestamp?: number
     /** 从宿主元数据日志恢复出来的整轮计时（H-6） */
@@ -213,6 +234,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
      * 用一个更直接的实现：记录每一段文字对应的**消息是否带工具**。
      * 这样不用去反查 sourceIds 的下标。
      */
+    /* 工具等待分段（H-6b）：并行分支不重复计 → 用区间并集。 */
+    const waitSpans = toolWaitSpans(cur.tools)
+
     const responseParts: TurnText[] = []
     const commentary: TurnText[] = []
     const afterWork = texts.filter((x) => !x.hasTools)
@@ -243,6 +267,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       thinkingLive: cur.thinkingLive,
       commentary,
       tools: cur.tools,
+      ...(waitSpans.length ? { waitSpans, waitMs: waitSpansMs(waitSpans) } : {}),
       artifacts: cur.artifacts,
       imageProgress: cur.imageProgress,
       // 多段回复用双换行拼成一段（渲染时 Markdown 自己会分段）
@@ -256,7 +281,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
           }
         : null,
       streaming: cur.streaming,
-      usage: cur.last?.usage,
+      usage: cur.usage,
+      ...(cur.usagePartial && cur.usage ? { usagePartial: true } : {}),
       speed: cur.last?.speed,
       /* 推送来的 elapsedMs 优先（那是本轮真值）；没有就回退到宿主元数据日志。 */
       elapsedMs: cur.last?.elapsedMs ?? cur.timing?.elapsedMs,
@@ -300,6 +326,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         imageProgress: [],
         responseDetail: m.responseDetail ?? 'unknown',
         streaming: false,
+        usage: undefined,
+        usagePartial: false,
         last: undefined
       }
     }
@@ -338,12 +366,15 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
 
     /*
      * 取哪条消息的元数据（usage / speed / elapsedMs / model / error）：
-     *   · usage 取最后一条带的 —— 实测 pi 的 JSONL 里每条 assistant 消息的
-     *     usage 是**该次请求的独立用量**（input 1387 → 12404 → 13255 不是累计），
-     *     界面把最后一条当「最近一次请求」用；整轮聚合是另一件事（实施-11 H-6b）。
+     *   · usage：**按消息 id 去重后相加**（H-6b）—— 每条助手消息的 usage 是
+     *     该次请求的独立用量（input 1387 → 12404 → 13255 不是累计），
+     *     取末条只反映最后一次请求；累积在 `cur.usage` 上。
+     *   · speed / elapsedMs / model：取最后一条相关的 —— speed 是最近一次
+     *     生成段的速率，**不跨请求累加**（那会被工具等待摊薄）。
      *   · error 一旦出现就要留下 —— 不能因为后面来了条正常消息就看不见了
      */
-    if (m.usage) cur.last = m
+    if (hasUsageNumbers(m.usage)) cur.usage = addUsage(cur.usage, m.usage)
+    else cur.usagePartial = true
     if (m.error) cur.last = m
     if (!cur.last) cur.last = m
     if (m.elapsedMs !== undefined || m.speed !== undefined) cur.last = m
@@ -376,15 +407,99 @@ export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
 }
 
 /**
- * 一轮的用量。
+ * 一段工具等待（实施-11 H-6b）。
  *
- * ⚠️ 我们**不**把一轮里 N 次 API 往返的 usage 相加。
- *   为什么：pi 报的 usage 本身就是**这一轮的累计值**（同一条消息的 usage
- *   会随往返次数增大），相加会重复计数。所以取最后一条即可。
- *
- * 保留这个函数是为了把「取哪一份 usage」这个决定集中在一处 ——
- * 调用方不必知道这个细节。
+ * 只包含**有真实起止时间**的调用：`startedAt` / `endedAt` 都是宿主在
+ * `tool_execution_start` / `end` 时记的墙钟（同一进程、同一时钟源）。
+ * 还在跑（没有 endedAt）的调用不进分段 —— 那一截由「整轮仍在进行」表达。
  */
+export interface WaitSpan {
+  /** 工具调用 id（与 `UIToolCall.id` 同源，便于与工具行对上）。 */
+  id: string
+  name: string
+  startedAt: number
+  endedAt: number
+}
+
+/** 从工具调用表派生等待分段（丢掉没有完整起止的）。 */
+export function toolWaitSpans(tools: readonly UIToolCall[]): WaitSpan[] {
+  const spans: WaitSpan[] = []
+  for (const c of tools) {
+    if (c.startedAt === undefined || c.endedAt === undefined) continue
+    if (c.endedAt < c.startedAt) continue
+    spans.push({ id: c.id, name: c.name, startedAt: c.startedAt, endedAt: c.endedAt })
+  }
+  return spans
+}
+
+/**
+ * 等待分段的总时长 = **区间并集**长度。
+ *
+ * 为什么不是逐段相加：并行工具（或并行子代理）的时间窗会重叠，
+ * 相加会把同一段墙钟重复计入 —— 方案 §4.2 明确要求「算真实经过时间，
+ * 不把各分支时长相加」。
+ */
+export function waitSpansMs(spans: readonly WaitSpan[]): number {
+  if (!spans.length) return 0
+  const sorted = [...spans].sort((a, b) => a.startedAt - b.startedAt)
+  let total = 0
+  let start = sorted[0].startedAt
+  let end = sorted[0].endedAt
+  for (let i = 1; i < sorted.length; i += 1) {
+    const s = sorted[i]
+    if (s.startedAt > end) {
+      total += end - start
+      start = s.startedAt
+      end = s.endedAt
+    } else if (s.endedAt > end) {
+      end = s.endedAt
+    }
+  }
+  return Math.max(0, total + (end - start))
+}
+
+/** 有意义的用量（全 0 不算：流式途中 provider 可能先报一个全 0）。 */
+export function hasUsageNumbers(u?: Usage): boolean {
+  return !!u && (u.input > 0 || u.output > 0 || u.cacheRead > 0 || u.cacheWrite > 0)
+}
+
+/** 逐字段相加；缺一端时原样返回另一端（不把 undefined 当 0）。 */
+export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
+  if (!a) return b
+  if (!b) return a
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    totalTokens: a.totalTokens + b.totalTokens,
+    cost: a.cost + b.cost
+  }
+}
+
+/**
+ * 一段消息（通常是一个回合）的聚合用量。
+ *
+ * ⚠️ 语义已核实（实施-11 H-6b）：pi 的 JSONL 里每条助手消息的 usage 是
+ *   **该次请求独立上报的用量**，不是流式累计 —— 所以要**相加**而不是取末条。
+ *   流式期间同一消息会被多次更新，但它在消息数组里仍是同一条，
+ *   「按消息 id 去重」天然成立（不会重复计数 delta）。
+ *
+ * `partial`：回合内有请求没报用量时，聚合值只是下限，界面应说明而不是假装准确。
+ */
+export function turnUsageOf(messages: readonly UIMessage[]): { usage?: Usage; partial: boolean } {
+  let usage: Usage | undefined
+  let missing = false
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue
+    if (hasUsageNumbers(m.usage)) usage = addUsage(usage, m.usage)
+    else missing = true
+  }
+  /* 一条都没报 → 是「未知」而不是「部分」；界面显示 —，不标 ≥。 */
+  return { usage, partial: missing && usage !== undefined }
+}
+
+/** 一轮的聚合用量（`groupIntoTurns` 已经算好，这里只是统一取值口径）。 */
 export function turnUsage(turn: AssistantTurn): Usage | undefined {
   return turn.usage
 }

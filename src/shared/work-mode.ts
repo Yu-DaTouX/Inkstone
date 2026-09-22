@@ -49,7 +49,7 @@ export function normalizeWorkMode(value: unknown): WorkMode {
   return isWorkMode(value) ? value : DEFAULT_WORK_MODE
 }
 
-/** Tab 快切顺序：标准 → 澄清 → 自主 → 标准。 */
+/** Tab 快切顺序：标准 → 计划 → 自主 → 标准。 */
 export function nextWorkMode(current: WorkMode): WorkMode {
   const index = WORK_MODES.indexOf(normalizeWorkMode(current))
   return WORK_MODES[(index + 1) % WORK_MODES.length]
@@ -69,11 +69,133 @@ export function migrateLegacyAutonomous(defaultWorkMode: unknown, legacyAutonomo
 }
 
 /**
- * 输入框 Tab 快切的用户开关。
+ * 模式快捷键的用户开关。
  *
- * `undefined` = 没改过 = **开**（快切是用户要求的功能）；
+ * `undefined` = 没改过 = **开**（快捷键是用户要求的功能）；
  * 只有明确写 `false` 才关（与 `contextFold` 同一个「默认态不落盘」约定）。
+ * 旧字段 `workModeTab` 在读取时迁到这里（见 `settings.ts`），不再写回。
  */
-export function isWorkModeTabShortcut(value: unknown): boolean {
+export function isWorkModeShortcutEnabled(value: unknown): boolean {
   return value !== false
+}
+
+/**
+ * 默认的模式快捷键。
+ *
+ * 2026-09-22 用户拍板：模式切换从**裸 Tab** 改成 `Ctrl+Tab`。
+ * 理由：裸 Tab 是输入框里唯一的「移到下一个控件」键，被抢掉后键盘用户
+ * 只能靠 Esc 逃出输入框（且 Tab 补全弹窗与它互相打架）。
+ */
+export const DEFAULT_WORK_MODE_BINDING = 'Ctrl+Tab'
+
+export interface KeyBinding {
+  ctrl: boolean
+  alt: boolean
+  shift: boolean
+  meta: boolean
+  /** 规范化后的主键（字符键大写，空格叫 `Space`） */
+  key: string
+}
+
+/** 事件的最小形状：纯逻辑不依赖 DOM，node 里也能测 */
+export interface KeyLike {
+  key: string
+  ctrlKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+  metaKey: boolean
+}
+
+/** 只按修饰键本身不算一次组合（用户还没按完） */
+const MODIFIER_KEY_NAMES = ['Control', 'Alt', 'Shift', 'Meta', 'AltGraph', 'CapsLock']
+
+/** `e.key` 的规范化：单字符一律大写（CapsLock / Shift 让大小写漂移），空格另有名字 */
+export function normalizeKeyName(key: string): string {
+  if (key === ' ') return 'Space'
+  return key.length === 1 ? key.toUpperCase() : key
+}
+
+/** 序列化：修饰键顺序固定，保证同一组合只有一种写法（存盘与比较都靠它） */
+export function formatKeyBinding(binding: KeyBinding): string {
+  const mods: string[] = []
+  if (binding.ctrl) mods.push('Ctrl')
+  if (binding.alt) mods.push('Alt')
+  if (binding.shift) mods.push('Shift')
+  if (binding.meta) mods.push('Meta')
+  return [...mods, binding.key].join('+')
+}
+
+/** 解析存储 / 用户输入里的组合键文本；非法（缺主键 / 认不得的修饰键）返回 null */
+export function parseKeyBinding(text: unknown): KeyBinding | null {
+  if (typeof text !== 'string') return null
+  const parts = text
+    .split('+')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return null
+  const binding: KeyBinding = {
+    ctrl: false,
+    alt: false,
+    shift: false,
+    meta: false,
+    /* 主键也归一：存盘的值必须与事件比较用同一套写法（`e.key` 会大小写漂移） */
+    key: normalizeKeyName(parts[parts.length - 1])
+  }
+  for (const part of parts.slice(0, -1)) {
+    const lower = part.toLowerCase()
+    if (lower === 'ctrl' || lower === 'control') binding.ctrl = true
+    else if (lower === 'alt') binding.alt = true
+    else if (lower === 'shift') binding.shift = true
+    else if (lower === 'meta' || lower === 'cmd' || lower === 'super') binding.meta = true
+    else return null
+  }
+  return binding
+}
+
+/** 从一次真实按键构造组合键；只按了修饰键时返回 null */
+export function bindingFromKey(key: KeyLike): KeyBinding | null {
+  if (MODIFIER_KEY_NAMES.includes(key.key)) return null
+  return {
+    ctrl: key.ctrlKey,
+    alt: key.altKey,
+    shift: key.shiftKey,
+    meta: key.metaKey,
+    key: normalizeKeyName(key.key)
+  }
+}
+
+/**
+ * 可用的组合键必须带修饰键。
+ *
+ * 为什么拒收裸键：快捷键是**全局**生效的（焦点不在输入框也拦），裸键会抢掉正常输入 ——
+ * 用户录到单键时我们要说清原因，而不是默默接受。
+ */
+export function isUsableKeyBinding(binding: KeyBinding | null): binding is KeyBinding {
+  return !!binding && (binding.ctrl || binding.alt || binding.shift || binding.meta)
+}
+
+/**
+ * 规范化要存盘的快捷键值：
+ *   · `''` → 保持 `''`（显式禁用，与开关那个字段是两回事）；
+ *   · 合法的组合键 → 规范化后的文本（`ctrl+shift+k` → `Ctrl+Shift+K`）；
+ *   · 非法 / 脏值 → `undefined`（当作没设过 = 回到默认的 `Ctrl+Tab`）。
+ */
+export function normalizeWorkModeShortcut(value: unknown): string | undefined {
+  if (value === '') return ''
+  const binding = parseKeyBinding(value)
+  if (!binding || !isUsableKeyBinding(binding)) return undefined
+  return formatKeyBinding(binding)
+}
+
+/** 这次按键是不是命中这个快捷键（未设置时按默认值比） */
+export function matchesKeyBinding(text: string | undefined, key: KeyLike): boolean {
+  const binding = parseKeyBinding(text || DEFAULT_WORK_MODE_BINDING)
+  if (!binding) return false
+  return (
+    binding.key === normalizeKeyName(key.key) &&
+    binding.ctrl === key.ctrlKey &&
+    binding.alt === key.altKey &&
+    binding.shift === key.shiftKey &&
+    binding.meta === key.metaKey
+  )
 }

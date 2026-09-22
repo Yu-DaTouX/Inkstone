@@ -74,7 +74,7 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
 
   lines.push(
     `[来源] 砚内置薄层 ${thin.length} 项：${thin.join('、') || '（无）'}` +
-      `（显式传入；生命周期钩子由薄层承载；交互提问走宿主 yan question ask，context_recall 当前按 06 登记为未满足）`
+      `（显式传入；只承载宿主没有 CLI / RPC 等价物的生命周期钩子，不注册模型工具；交互提问走宿主 yan question ask，归档回读走 yan context recall）`
   )
 
   if (user.length) {
@@ -101,11 +101,11 @@ export interface BuiltinCapability {
   /**
    * 稳定 id —— 渲染端用它翻文案。
    *
-   * 扩件取文件名去后缀（`browser.js` → `browser`）；
-   * 宿主服务用固定 id（任务计划是 `task-plan`）。
+   * 薄层扩展取文件名去后缀（`language.js` → `language`）；
+   * 宿主服务 / CLI 能力用固定 id（任务计划是 `task-plan`，内置浏览器是 `browser`）。
    */
   id: string
-  /** 实际加载的扩展文件名；宿主服务没有这一项。 */
+  /** 实际加载的扩展文件名；宿主服务 / CLI 能力没有这一项。 */
   file?: string
 }
 
@@ -117,14 +117,18 @@ export interface BuiltinCapability {
  * 或者反过来以为内置能力也能卸载。两者必须分开：内置能力**随砚分发**、
  * 没有卸载按钮、也不是从 pi 的包目录加载的。
  *
- * ── 清単来自「实际加载路径」而不是另写一份 ──
+ * ── 清单来自「实际加载路径」而不是另写一份 ──
  * 传入的是主进程真正传给 pi 的 `--extension` 路径，所以清单不会与
  * 实际加载的东西漂移（新加一个薄层扩展就自动出现在这里）。
  * 未在渲染端登记的 id 不会消失 —— 界面退而成显示文件名，
  * 让「新扩展忘了配文案」成为一个看得见的缺口。
+ *
+ * 宿主服务 / CLI 能力没有对应扩展文件，因此固定登记在最前面：
+ * 任务计划走 `yan tasks apply`，内置浏览器走 `yan browser …`（01-S5 收尾时
+ * 移除了那个不注册任何东西的空壳 `browser.js`，能力本身没有变化）。
  */
 export function builtinCapabilities(thinPaths: readonly string[]): BuiltinCapability[] {
-  const list: BuiltinCapability[] = [{ id: 'task-plan' }]
+  const list: BuiltinCapability[] = [{ id: 'task-plan' }, { id: 'browser' }]
   const seen = new Set(list.map((c) => c.id))
   for (const p of thinPaths) {
     const file = basename(p)

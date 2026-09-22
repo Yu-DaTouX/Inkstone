@@ -95,7 +95,7 @@ export async function runHandoffTests(ok) {
   ok(eligible({ goal: goal({ phase: 'completed' }) }).reason === 'goal-not-active', '目标已完成 → 不交代')
   ok(eligible({ goal: goal({ phase: 'blocked' }) }).reason === 'goal-not-active', '目标阻塞 → 不交接（要先解决阻塞）')
   ok(eligible({ mode: 'standard' }).reason === 'not-autonomous', '标准档 → 不自动交接')
-  ok(eligible({ mode: 'clarify' }).reason === 'not-autonomous', '澄清档 → 不自动交接')
+  ok(eligible({ mode: 'clarify' }).reason === 'not-autonomous', '计划档 → 不自动交接')
   ok(eligible({ busy: true }).reason === 'busy', '有后台工作（子代理 / 长命令）→ 先等，不遗弃')
 
   /* --------------------------------------------------- 交接包清洗 */

@@ -63,6 +63,7 @@ import type {
   SlashCommand,
   UIMessage,
   GoalState,
+  PursuedBrief,
   HandoffView,
   WorkModeState,
   YanBridge,
@@ -148,6 +149,14 @@ const api: YanBridge = {
   /* ---- 工作模式（实施-05，按当前会话） ---- */
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
   getGoal: () => invoke<{ goal: GoalState; mode: WorkModeState }>('yan:getGoal'),
+  /* 设定持续目标（`+` 菜单 → 目标）：两栏都必填，拒收只回可读原因 */
+  setGoal: (brief: PursuedBrief) =>
+    invoke<{ ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }>(
+      'yan:setGoal',
+      brief
+    ),
+  /* 放弃目标（实施-14 A2）：与按停止（暂停）分开的终态出口 */
+  stopGoal: () => invoke<{ ok: boolean; goal?: GoalState | null; error?: string }>('yan:stopGoal'),
   /* 交接状态（实施-05 S5b-2）：只读快照，探针与（后续）界面共用 */
   getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
   setWorkMode: (mode, expectedRevision) =>
@@ -192,6 +201,8 @@ const api: YanBridge = {
 
   /* ---- 附件 ---- */
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
+  /* 只回路径：校验与登记由 `describeFiles` 那条既有链路做，不在这里读文件 */
+  pickFilePaths: () => invoke<string[]>('yan:pickFiles'),
 
   /* ---- 文件引用（拖入 / 加入上下文的普通文件） ---- */  /*
    * `webUtils.getPathForFile` 必须在渲染进程的 File 对象上调用，

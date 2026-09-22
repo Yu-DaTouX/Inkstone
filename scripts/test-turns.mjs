@@ -14,7 +14,7 @@
  */
 
 export async function runTurnTests(ok) {
-  const { groupIntoTurns, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, currentTurnMessages } =
+  const { groupIntoTurns, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, turnUsageOf, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs, currentTurnMessages } =
     await import('../out/test/turns.mjs')
 
   /* ---------------------------------------------------------------- 构造 */
@@ -271,23 +271,77 @@ export async function runTurnTests(ok) {
     ok(formatHitRate(99.995) === '99.99%', '99.995% 同样截断，不显示 ≈ 也不显示 100%')
   }
 
-  /* ----------------------------------------------------- 14. turnUsage */
+  /* ------------------------------------------- 14. 整轮用量聚合（H-6b） */
 
-  console.log('\n--- 14. turnUsage ---')
+  console.log('\n--- 14. 整轮用量聚合（H-6b） ---')
   {
+    const msg = (over = {}) =>
+      ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, ...over })
+
+    /* 多轮工具调用：每条助手消息的 usage 是该次请求的**独立用量** → 相加 */
     const t = groupIntoTurns([
       usr('u1', 'x'),
-      asst('a1', '中间', {
-        toolCalls: [tool('t1', 'read')],
-        usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11, cost: 0 }
-      }),
-      asst('a2', '答完', {
-        usage: { input: 10, output: 50, cacheRead: 900, cacheWrite: 0, totalTokens: 960, cost: 0 }
-      })
+      asst('a1', '中间', { toolCalls: [tool('t1', 'read')], usage: msg({ input: 10, output: 1, totalTokens: 11 }) }),
+      asst('a2', '答完', { usage: msg({ input: 10, output: 50, cacheRead: 900, cacheWrite: 5, totalTokens: 960, cost: 0.02 }) })
     ])
     const u = turnUsage(t[1])
-    ok(u?.output === 50, 'usage 取最后一条（pi 报的是累计值，不能相加）')
-    ok(u?.cacheRead === 900, 'cacheRead 同步取最后一条')
+    ok(u?.output === 51, '整轮输出 = 1 + 50（每条消息是该次请求的独立用量，不是累计值）', `实际 ${u?.output}`)
+    ok(u?.input === 20, '整轮输入 = 10 + 10', `实际 ${u?.input}`)
+    ok(u?.cacheRead === 900 && u?.cacheWrite === 5, 'cacheRead / cacheWrite 同步相加')
+    ok(Math.abs((u?.cost ?? 0) - 0.02) < 1e-9, 'cost 相加')
+    ok(t[1].usagePartial === undefined, '两条都报了用量 → 不标 partial')
+
+    /* 有请求没报用量 → 聚合只是下限，界面标 ≥ */
+    const t2 = groupIntoTurns([
+      usr('u1', 'x'),
+      asst('a1', '中间', { toolCalls: [tool('t1', 'read')] }),
+      asst('a2', '答完', { usage: msg({ input: 10, output: 5 }) })
+    ])
+    ok(t2[1].usage?.output === 5, '没有用量的那条不参与相加', `实际 ${t2[1].usage?.output}`)
+    ok(t2[1].usagePartial === true, '有请求没报用量 → 标 partial（界面显示 ≥）')
+
+    /* 一条都没报 → 是「未知」而不是「部分」 */
+    const t3 = groupIntoTurns([usr('u1', 'x'), asst('a1', '答完')])
+    ok(t3[1].usage === undefined, '一条都没报 → 无用量')
+    ok(t3[1].usagePartial === undefined, '一条都没报不算 partial（未知 ≠ 部分）')
+
+    /* 纯函数自身 */
+    ok(addUsage(undefined, undefined) === undefined, 'addUsage 两端都空 → undefined')
+    ok(addUsage(undefined, msg({ output: 3 }))?.output === 3, 'addUsage 缺一端 → 原样返回另一端')
+    ok(hasUsageNumbers(undefined) === false, '缺失不算有用量')
+    ok(hasUsageNumbers(msg()) === false, '全 0 不算有用量（流式途中可能先报全 0）')
+    ok(hasUsageNumbers(msg({ cacheWrite: 1 })) === true, '只有 cacheWrite 也算有用量')
+    ok(turnUsageOf([usr('u1', 'x'), asst('a1', '答', { usage: msg({ output: 7 }) })]).usage?.output === 7, 'turnUsageOf 直接从消息算聚合')
+  }
+
+  /* --------------------------------------- 14.5 工具等待分段（H-6b） */
+
+  console.log('\n--- 14.5 工具等待分段（H-6b） ---')
+  {
+    const t1 = { id: 't1', name: 'bash', args: {}, status: 'ok', startedAt: 1000, endedAt: 2000 }
+    const t2 = { id: 't2', name: 'bash', args: {}, status: 'ok', startedAt: 1500, endedAt: 3000 }
+    const t3 = { id: 't3', name: 'read', args: {}, status: 'ok', startedAt: 5000, endedAt: 5500 }
+    const spans = toolWaitSpans([t1, t2, t3])
+    ok(spans.length === 3, '有完整起止的调用都进分段', String(spans.length))
+    ok(
+      waitSpansMs(spans) === 2500,
+      '重叠区间只算一次（1000~3000 + 5000~5500 = 2500，并行不相加）',
+      String(waitSpansMs(spans))
+    )
+
+    ok(toolWaitSpans([{ id: 't9', name: 'bash', args: {}, status: 'running', startedAt: 100 }]).length === 0, '还在跑的调用不进分段（无结束时间）')
+    ok(toolWaitSpans([{ id: 't8', name: 'bash', args: {}, status: 'ok' }]).length === 0, '没有起止时间的调用不进分段')
+    ok(waitSpansMs([]) === 0, '没有分段 → 0')
+
+    const turns = groupIntoTurns([
+      usr('u1', 'x'),
+      asst('a1', '干活', { toolCalls: [t1] })
+    ])
+    ok(turns[1].waitMs === 1000, '回合的 waitMs = 区间并集', String(turns[1].waitMs))
+    ok(turns[1].waitSpans?.length === 1, '回合带 waitSpans 明细')
+
+    const noWait = groupIntoTurns([usr('u1', 'x'), asst('a1', '直接答')])
+    ok(noWait[1].waitMs === undefined && noWait[1].waitSpans === undefined, '没有工具调用就不写等待字段')
   }
 
   /* ----------------------------------------- 15. currentTurnMessages */

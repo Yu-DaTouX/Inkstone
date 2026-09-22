@@ -8,7 +8,7 @@
 
 export async function runExtensionInventoryTests(ok) {
   const { readUserExtensions, extensionDiagnostics, builtinCapabilities } = await import('../out/test/extensions-inventory.mjs')
-  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+  const { mkdtemp, mkdir, writeFile, rm, readFile, readdir } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
 
@@ -45,12 +45,12 @@ export async function runExtensionInventoryTests(ok) {
     ok(withUser[0].includes('--no-extensions') && withUser[0].includes('不加载'), '第一行说明砚默认不加载用户扩展')
     ok(withUser[1].includes('language.js') && withUser[1].includes('薄层'), '第二行是砚薄层（用 basename）')
     ok(
-      withUser[1].includes('context_recall'),
-      '薄层诊断包含 context_recall 的当前边界'
+      withUser[1].includes('yan context recall'),
+      '薄层诊断点明归档回读走宿主 CLI'
     )
     ok(
-      withUser[1].includes('yan question ask') && withUser[1].includes('未满足'),
-      '薄层诊断说明提问走宿主 CLI，context_recall 仍未满足'
+      withUser[1].includes('yan question ask') && withUser[1].includes('不注册模型工具'),
+      '薄层诊断说明提问 / 回读都走宿主 CLI，薄层不注册模型工具'
     )
     ok(
       withUser[2].includes('left-panel-tasks') && withUser[2].includes('只读'),
@@ -82,31 +82,56 @@ export async function runExtensionInventoryTests(ok) {
      * 与 pi 真正加载的扩展漂移（那正是「不要把内置冒充成用户装的包」的反面）。
      */
     const caps = builtinCapabilities([
-      '/x/resources/pi-extensions/browser.js',
       '/x/resources/pi-extensions/capability-guide.js',
       '/x/resources/pi-extensions/language.js'
     ])
     ok(caps[0].id === 'task-plan', '第一条恒为宿主任务计划（它是服务，不是扩展文件）')
     ok(caps[0].file === undefined, '宿主任务计划没有文件名（界面不能拿它去指目录）')
+    ok(caps[1].id === 'browser', '第二条是宿主内置浏览器（空壳扩展已移除，能力仍在清单里）')
+    ok(caps[1].file === undefined, '宿主浏览器能力没有文件名（它由 yan browser CLI 提供）')
     ok(caps.length === 4, `四个条目（实际 ${caps.length}）`)
     ok(
       caps.map((c) => c.id).join('|') === 'task-plan|browser|capability-guide|language',
-      'id 按文件名去后缀、且保持传入顺序'
+      '宿主固定项在前，薄层扩展按文件名去后缀、保持传入顺序'
     )
-    ok(caps[1].file === 'browser.js', '保留文件名（未登记文案时的兜底显示）')
+    ok(caps[2].file === 'capability-guide.js', '保留文件名（未登记文案时的兜底显示）')
 
     const dedup = builtinCapabilities(['/a/language.js', '/b/language.js'])
     ok(dedup.filter((c) => c.id === 'language').length === 1, '同名扩展只列一次（不同安装形态同源）')
 
     const empty = builtinCapabilities([])
-    ok(empty.length === 1 && empty[0].id === 'task-plan', '没有薄层文件时仍列出宿主任务计划')
+    ok(empty.length === 2 && empty[0].id === 'task-plan' && empty[1].id === 'browser', '没有薄层文件时仍列出两个宿主能力')
 
     const suffixes = builtinCapabilities(['/x/foo.mjs', '/x/bar.ts', '/x/baz.cjs'])
     ok(
-      suffixes.map((c) => c.id).join('|') === 'task-plan|foo|bar|baz',
+      suffixes.map((c) => c.id).join('|') === 'task-plan|browser|foo|bar|baz',
       '各种后缀都能去掉（.mjs / .ts / .cjs）'
     )
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+
+  /*
+   * 5. 架构检查（静态版）：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
+   * 生命周期钩子 —— 不得注册模型工具，也不得注册 pi 命令（01 §1）。
+   *
+   * 运行时那一条写在 `test-context-transform.mjs`（把假 pi 对象塞进扩展，看它
+   * 调不调 registerTool）；这里扫源码，因为「某个还没被单测加载的扩展偷偷注册了
+   * 一个工具」运行时断言看不见。两者互补，不互相替代。
+   */
+  {
+    const dir = join('resources', 'pi-extensions')
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.js')).sort()
+    const offenders = []
+    for (const file of files) {
+      const source = await readFile(join(dir, file), 'utf8')
+      if (/\.registerTool\s*\(/.test(source)) offenders.push(`${file}:registerTool`)
+      if (/\.registerCommand\s*\(/.test(source)) offenders.push(`${file}:registerCommand`)
+    }
+    ok(
+      offenders.length === 0,
+      `薄层不注册模型工具 / pi 命令（扫了 ${files.length} 个文件）`,
+      offenders.join('、')
+    )
   }
 }

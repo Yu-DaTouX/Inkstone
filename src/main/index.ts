@@ -47,7 +47,7 @@ import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { allowTrust, trustStatus } from './project-trust'
 import { forkContext, forkFileRefs } from './fork-rebind-service'
-import { activeContextPolicy, setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
+import { activeContextPolicy, contextPolicySettings, setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
 import { modelKeyOf } from '../shared/model-capabilities'
 import { providerQuota } from './quota'
@@ -56,6 +56,7 @@ import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom
 import { BrowserController } from './browser'
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
+import { HandoffDiagnostics } from './handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
@@ -78,6 +79,7 @@ import {
   AUTONOMOUS_CONTINUE_LIMIT,
   goalSummary,
   isActiveGoalPhase,
+  keepsGoalResumeOnModeChange,
   normalizeReadyParams,
   normalizeReportParams
 } from '../shared/goal'
@@ -396,14 +398,10 @@ function yanThinResourcePath(file: string): string | undefined {
   return candidates.find((p) => existsSync(p))
 }
 
-function browserExtensionPath(): string | undefined {
-  return yanThinResourcePath('browser.js')
-}
-
 /**
  * 内置「提问」工作模式指引薄层的路径。
  * 真正的交互入口是宿主 `yan question ask`；自主模式会明确禁止调用它。
- * 与 browser.js 同一套查找顺序（打包后 / 开发期）。
+ * 与其它薄层同一套查找顺序（打包后 / 开发期）。
  */
 function questionExtensionPath(): string | undefined {
   return yanThinResourcePath('question.js')
@@ -412,7 +410,7 @@ function questionExtensionPath(): string | undefined {
 /**
  * 工作模式的工具策略扩展的路径（实施-05 S3）。
  *
- * 只有它能在运行中收紧工具表（RPC 没有工具面），所以澄清档的门禁靠它执行。
+ * 只有它能在运行中收紧工具表（RPC 没有工具面），所以计划档的门禁靠它执行。
  */
 function workModeExtensionPath(): string | undefined {
   return yanThinResourcePath('work-mode.js')
@@ -491,6 +489,15 @@ function projectKnowledgeExtensionPath(): string | undefined {
 }
 
 /**
+ * 单轮重复动作兜底的薄层路径（2026-09-22）。
+ *
+ * 只有它能在运行时拦下一次工具调用（`tool_call` 钩子），RPC 面没有这个事件。
+ */
+function repeatGuardExtensionPath(): string | undefined {
+  return yanThinResourcePath('repeat-guard.js')
+}
+
+/**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
  *
  * 抽成一个函数是为了只有一份清单：来源诊断（[reportExtensionSources]）与
@@ -500,7 +507,6 @@ function projectKnowledgeExtensionPath(): string | undefined {
  */
 function yanThinExtensionPaths(): string[] {
   return [
-    browserExtensionPath(),
     questionExtensionPath(),
     workModeExtensionPath(),
     goalResumeExtensionPath(),
@@ -509,7 +515,8 @@ function yanThinExtensionPaths(): string[] {
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
     contextExtensionPath(),
-    projectKnowledgeExtensionPath()
+    projectKnowledgeExtensionPath(),
+    repeatGuardExtensionPath()
   ].filter((p): p is string => !!p)
 }
 
@@ -560,6 +567,16 @@ async function observeCompaction(id: string, state: unknown): Promise<void> {
  * 计数是「这个片段压了几次」（宿主写、阈值只在交接资格判定里用）。
  */
 const handoffs = new HandoffStore()
+
+/**
+ * 交接 / 目标续接的阶段诊断（实施-14 F0）。
+ *
+ * 它不是第二份状态：`handoffs.json` 与事务日志回答「现在到哪一步」，
+ * 这里回答「过程里发生过什么、为什么停下」—— 资格没过、写请求失败、
+ * 结果对不上、提交停在哪个阶段，这些从状态里看不出来。
+ * 文本已在下层脱敏（`redactDiagnosticText`），不记提示词全文与凭证。
+ */
+const handoffDiag = new HandoffDiagnostics()
 
 /* ────────────────────────────────── 交接事务接线（实施-05 S5b-3b） */
 
@@ -770,7 +787,18 @@ const HANDOFF_THRESHOLD_EFFECTIVE = (() => {
 })()
 
 /** 等薄层写包的会话（防重复 arm，也用来停轮询）。`request` 整份留着，校验时要用它的来源字段。 */
-const handoffPending = new Map<string, { request: ReturnType<typeof buildHandoffRequest>; timer: NodeJS.Timeout }>()
+const handoffPending = new Map<
+  string,
+  {
+    request: ReturnType<typeof buildHandoffRequest>
+    timer: NodeJS.Timeout
+    /**
+     * 「结果文件里的 id 与本次生成对不上」只记一条事件（实施-14 F0）。
+     * 不设这个闸的话，一份遗留结果文件会让 1 秒一次轮询刷出 90 条同样的诊断。
+     */
+    mismatchNoted?: boolean
+  }
+>()
 
 /**
  * 资格评估的节流。
@@ -806,7 +834,9 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
   if (!key || !agent) return
   const state = agent.getState()
   if (!state) return
-  /* 忙：§7 的「有未完成子代理 / 长命令先等待，不遗弃后台工作」 */
+  /* 忙：§7 的「有未完成子代理 / 长命令先等待，不遗弃后台工作」
+   * 这里是**流式期间每份 state 推送都会走到**的热路径，所以不记事件（那是正常等待，不是异常）。
+   * 真的等不来安全边界由 `safety-boundary` 事件反映（在下面的提交入口）。 */
   if (state.isAgentRunning || state.isStreaming) return
   const now = Date.now()
   if (now - (handoffLastCheck.get(id) ?? 0) < HANDOFF_CHECK_INTERVAL_MS) return
@@ -824,7 +854,22 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
       busy: false,
       threshold: HANDOFF_THRESHOLD_EFFECTIVE
     })
-    if (!verdict.eligible) return
+    /*
+     * 资格没过曾经是**静默 return** —— 用户看到的就是「压了两次但什么都没发生」。
+     * 四种原因的修法完全不同（等够数 / 建目标 / 换自主档 / 等后台工作），
+     * 所以每一种都留一条事件。
+     */
+    if (!verdict.eligible) {
+      handoffDiag.record({
+        stage: 'eligibility',
+        outcome: 'rejected',
+        reason: verdict.reason,
+        runnerId: id,
+        sessionKey: key,
+        detail: { count: verdict.count, threshold: verdict.threshold, trigger: reason, mode: mode.mode }
+      })
+      return
+    }
 
     let messages: UIMessage[] = []
     try {
@@ -851,15 +896,46 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
       model: state.model?.id ?? null
     })
     const written = await handoffRequests.writeRequest(id, request).catch(() => false)
-    if (!written) return
+    if (!written) {
+      handoffDiag.record({
+        stage: 'generate',
+        outcome: 'request-write-failed',
+        reason: 'request-file-not-written',
+        op: request.operationId,
+        handoffId: request.handoffId,
+        runnerId: id,
+        sessionKey: key
+      })
+      return
+    }
+    /* 时间线锚点：排障时用它对比扩展日志里 `check` 行的 `ageMs`（谁晚、晚了多久） */
+    console.log(`[handoff] 已写生成请求（${reason}）：${request.operationId}`)
     handoffNotify(id, '正在为跨会话交接写一份交接包（一次额外模型调用）…', 'info')
     const timer = setInterval(() => void collectHandoffResult(id), HANDOFF_POLL_MS)
     timer.unref?.()
     handoffPending.set(id, { request, timer })
+    handoffDiag.record({
+      stage: 'generate',
+      outcome: 'request-written',
+      op: request.operationId,
+      handoffId: request.handoffId,
+      runnerId: id,
+      sessionKey: key,
+      reason,
+      detail: { count: tally.count, threshold: HANDOFF_THRESHOLD_EFFECTIVE, mode: mode.mode }
+    })
     /* 超时也走同一条出口（清现场 + 告一声），不会把会话卡住 */
     setTimeout(() => void abandonHandoff(id, 'timeout'), HANDOFF_WAIT_MS).unref?.()
-  } catch {
-    /* 交接是「有更好、没有也能活」的优化：任何一步失败都不该影响会话本身 */
+  } catch (error) {
+    /* 交接是「有更好、没有也能活」的优化：失败不该影响会话本身 —— 但要留得下痕迹 */
+    handoffDiag.record({
+      stage: 'generate',
+      outcome: 'arm-threw',
+      reason: error instanceof Error ? error.message : String(error),
+      runnerId: id,
+      sessionKey: key,
+      detail: { trigger: reason }
+    })
   }
 }
 
@@ -867,11 +943,32 @@ async function maybeArmHandoff(id: string, reason: string): Promise<void> {
 async function abandonHandoff(id: string, why: string): Promise<void> {
   const pending = handoffPending.get(id)
   if (!pending) return
+  /*
+   * 超时前的最后一次收集：薄层的模型调用上限是 60 秒，碰到长输出时
+   * 结果可能刚好压线写盘 —— 这一读把「只差几十毫秒」的假超时挡掉
+   * （否则用户看到失败提示，而包其实已经落盘了）。
+   */
+  if (why === 'timeout' && (await collectHandoffResult(id))) return
   clearInterval(pending.timer)
   handoffPending.delete(id)
   await handoffRequests.clearResult(id).catch(() => {})
   await handoffRequests.clearRequest(id).catch(() => {})
-  if (why === 'timeout') handoffNotify(id, '交接包生成超时，已放弃（会话不受影响）', 'warning')
+  if (why === 'timeout') {
+    console.warn(
+      `[handoff] 交接包生成超时：宿主等了 ${Math.round(HANDOFF_WAIT_MS / 1000)}s 也没等到结果（请求已清）`
+    )
+    handoffNotify(id, '交接包生成超时，已放弃（会话不受影响）', 'warning')
+  }
+  handoffDiag.record({
+    stage: 'generate',
+    outcome: 'abandoned',
+    reason: why,
+    op: pending.request.operationId,
+    handoffId: pending.request.handoffId,
+    runnerId: id,
+    sessionKey: pending.request.sessionKey,
+    detail: { waitedMs: HANDOFF_WAIT_MS }
+  })
 }
 
 /**
@@ -882,32 +979,75 @@ async function abandonHandoff(id: string, why: string): Promise<void> {
  *   ② 原文要能解析出 JSON 对象；
  *   ③ 清洗必须过（两栏必填、列表形状合法、**来源字段由宿主覆盖**）。
  * 任何一道不过 → 丢掉这份包并告知用户，**不把半份包写进事务**。
+ *
+ * 返回值：是否「收到并处理了」这次生成的结果。`abandonHandoff` 超时前会再调一次 ——
+ * 薄层可能刚好在边界写完（它自己也有 60 秒的模型时限），这一读能把
+ * 「只差几十毫秒」的假超时挡掉。
  */
-async function collectHandoffResult(id: string): Promise<void> {
+async function collectHandoffResult(id: string): Promise<boolean> {
   const pending = handoffPending.get(id)
-  if (!pending) return
+  if (!pending) return false
   let result
   try {
     result = await handoffRequests.readResult(id)
   } catch {
-    return
+    return false
   }
-  if (!result) return
-  if (result.handoffId !== pending.request.handoffId || result.operationId !== pending.request.operationId) return
+  if (!result) return false
+  if (result.handoffId !== pending.request.handoffId || result.operationId !== pending.request.operationId) {
+    /*
+     * 对不上就是「这份结果不是这次生成写的」：留在磁盘上等下次覆盖（不删别人的文件）。
+     * 只在第一次记事件 —— 轮询每秒一次，不设闸会把一份遗留结果刷成几十条。
+     */
+    if (!pending.mismatchNoted) {
+      pending.mismatchNoted = true
+      handoffDiag.record({
+        stage: 'generate',
+        outcome: 'result-mismatch',
+        reason: 'result-not-for-this-operation',
+        op: pending.request.operationId,
+        handoffId: pending.request.handoffId,
+        runnerId: id,
+        sessionKey: pending.request.sessionKey,
+        detail: {
+          gotHandoffId: result.handoffId,
+          gotOperationId: result.operationId,
+          ms: result.ms
+        }
+      })
+    }
+    return false
+  }
 
   clearInterval(pending.timer)
   handoffPending.delete(id)
   await handoffRequests.clearResult(id).catch(() => {})
   await handoffRequests.clearRequest(id).catch(() => {})
 
+  const base = {
+    op: pending.request.operationId,
+    handoffId: pending.request.handoffId,
+    runnerId: id,
+    sessionKey: pending.request.sessionKey
+  }
+
   if (result.error) {
+    handoffDiag.record({ stage: 'generate', outcome: 'failed', reason: result.error, ...base, detail: { ms: result.ms } })
     handoffNotify(id, `交接包生成失败：${result.error.slice(0, 120)}`, 'error')
-    return
+    return true
   }
   const parsed = parseHandoffOutput(result.text)
   if (!parsed.ok) {
+    handoffDiag.record({
+      stage: 'generate',
+      outcome: 'unparsable',
+      reason: parsed.reason,
+      ...base,
+      /* 只留长度，不留原文 —— 模型输出可能含用户内容 */
+      detail: { chars: result.text.length, ms: result.ms }
+    })
     handoffNotify(id, `交接包不能用（${parsed.reason}），已丢弃这份`, 'error')
-    return
+    return true
   }
   const pkg = sanitizeHandoffPackage(parsed.value, {
     sourceSession: pending.request.sessionKey,
@@ -916,15 +1056,23 @@ async function collectHandoffResult(id: string): Promise<void> {
     model: pending.request.model
   })
   if (!pkg) {
+    handoffDiag.record({ stage: 'generate', outcome: 'incomplete', reason: 'missing-required-fields', ...base })
     handoffNotify(id, '交接包缺必填栏（目标 / 交付物），已丢弃这份', 'error')
-    return
+    return true
   }
   try {
     await handoffs.setPackage(pending.request.sessionKey, pkg)
-  } catch {
+  } catch (error) {
+    handoffDiag.record({
+      stage: 'generate',
+      outcome: 'persist-failed',
+      reason: error instanceof Error ? error.message : String(error),
+      ...base
+    })
     handoffNotify(id, '交接包落盘失败，已放弃（下一次压缩后再试）', 'error')
-    return
+    return true
   }
+  handoffDiag.record({ stage: 'generate', outcome: 'package-ready', ...base })
   handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
   /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
   if (HANDOFF_COMMIT_ENABLED) {
@@ -935,6 +1083,7 @@ async function collectHandoffResult(id: string): Promise<void> {
       pkg
     })
   }
+  return true
 }
 
 /**
@@ -958,6 +1107,15 @@ async function commitHandoff(input: {
   const cwd = state.cwd ?? ''
   const settings = await getSettings()
   const projectId = projectIdForCwd(settings, cwd)
+  handoffDiag.record({
+    stage: 'commit',
+    outcome: 'started',
+    op: input.handoffId,
+    handoffId: input.handoffId,
+    runnerId: input.runnerId,
+    sessionKey: input.sessionKey,
+    detail: { cwd, projectId: projectId ?? null }
+  })
   try {
     const result = await handoffRunner.commit({
       handoffId: input.handoffId,
@@ -969,11 +1127,52 @@ async function commitHandoff(input: {
     })
     if (!result.ok) {
       console.log(`[handoff] 交接停在 ${result.stage}：${result.error ?? ''}`)
+      /*
+       * `committed` 不是失败：resume 已发出但磁盘证据未到（或发送失败），
+       * 下次启动恢复会按证据补记 / 重发。这个区别必须在诊断里看得出来。
+       */
+      handoffDiag.record({
+        stage: result.stage === 'committed' ? 'resume' : 'commit',
+        outcome: result.stage === 'committed' ? 'unconfirmed' : 'halted',
+        reason: result.error ?? result.stage,
+        op: input.handoffId,
+        handoffId: input.handoffId,
+        runnerId: input.runnerId,
+        sessionKey: input.sessionKey,
+        detail: { stage: result.stage, destination: result.destinationSession ?? null }
+      })
       return
     }
+    handoffDiag.record({
+      stage: 'commit',
+      outcome: 'ok',
+      op: input.handoffId,
+      handoffId: input.handoffId,
+      runnerId: input.runnerId,
+      sessionKey: input.sessionKey,
+      detail: { stage: result.stage, destination: result.destinationSession ?? null }
+    })
     await inheritWorkMode(input.sessionKey, result.destinationSession)
+    handoffDiag.record({
+      stage: 'resume',
+      outcome: 'work-mode-inherited',
+      op: input.handoffId,
+      handoffId: input.handoffId,
+      runnerId: input.runnerId,
+      sessionKey: input.sessionKey,
+      detail: { destination: result.destinationSession ?? null }
+    })
   } catch (error) {
     console.error('[handoff] 交接执行失败：', error)
+    handoffDiag.record({
+      stage: 'commit',
+      outcome: 'threw',
+      reason: error instanceof Error ? error.message : String(error),
+      op: input.handoffId,
+      handoffId: input.handoffId,
+      runnerId: input.runnerId,
+      sessionKey: input.sessionKey
+    })
   }
 }
 
@@ -1025,7 +1224,13 @@ function pushFrom(runnerId: string, msg: MainPush): void {
    */
   if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
     void maybeArmHandoff(runnerId, 'settled')
-    void maybeArmAutonomousGoal(runnerId)
+    void maybeArmGoalContinue(runnerId)
+    /*
+     * 单轮重复动作兜底（2026-09-22）：薄层拦下的重复调用在这里计入目标失败签名。
+     * 放收尾时刻的理由与交接资格相同：拦下发生于回合中途，而目标状态的落盘
+     * 已由 `report` 串行化了 —— 这里只需在真正空下来时补记一次（幂等）。
+     */
+    void consumeRepeatBlocks(runnerId)
   }
   /*
    * 模型报错 → 自动继续（实施-05 S5c）。
@@ -1222,6 +1427,49 @@ async function cancelGoalResume(id: string): Promise<void> {
 }
 
 /**
+ * 把薄层「重复动作被拦下」的计数计入目标失败签名（2026-09-22）。
+ *
+ * 薄层只写得到计数文件（没有 `yan` CLI，也不该知道目标存储），所以这一步在宿主：
+ * 读 `<YAN_DATA_DIR>/repeat-guard/<runnerId>.json` → 对差值各记一次固定签名失败。
+ * 同一签名连续两次 → `blocked`（与 §5 的失败签名同一套阈值，见 `shared/goal.ts`）。
+ *
+ * 失败不影响回合收尾（没有计数文件 / 目标不在推进期都是正常的）。
+ */
+async function consumeRepeatBlocks(id: string): Promise<void> {
+  const key = workModeKeyFor(id)
+  const changed = await goals.consumeRepeatBlocks(id, key).catch((err: unknown) => {
+    console.error('[goal] 重复动作计数计入失败签名失败：', err)
+    handoffDiag.record({
+      stage: 'goal-continue',
+      outcome: 'repeat-guard-failed',
+      reason: err instanceof Error ? err.message : String(err),
+      runnerId: id,
+      sessionKey: key
+    })
+    return false
+  })
+  if (!changed) return
+  const goal = goals.state(key)
+  console.log(
+    `[goal] 重复动作被拦下已计入失败签名（会话 ${id}）：phase=${goal.phase} failure=${goal.failure?.count ?? 0}`
+  )
+  handoffDiag.record({
+    stage: 'goal-continue',
+    outcome: isActiveGoalPhase(goal.phase) ? 'repeat-counted' : 'blocked-by-repeat',
+    runnerId: id,
+    sessionKey: key,
+    detail: { phase: goal.phase, failures: goal.failure?.count ?? 0 }
+  })
+  /*
+   * 进终态就把薄层可见的续行一并清掉（实施-14 A1）：
+   * 只清 `goals.json` 不够 —— 快照里那条「接着干」会照样发出去，
+   * 把模型重新叫起来干刚被拦下的那件事。
+   */
+  if (!isActiveGoalPhase(goal.phase)) await applyGoalResume(id)
+  pushFrom(id, { ch: 'goal', payload: goal })
+}
+
+/**
  * 目标状态（实施-05 S3）的存储。
  *
  * 为什么与模式分两份文件：模式是「用户选什么」（低频、界面驱动），目标是
@@ -1241,17 +1489,23 @@ const goals = new GoalStore()
  */
 const autonomousArmInFlight = new Set<string>()
 
-async function maybeArmAutonomousGoal(id: string): Promise<void> {
+async function maybeArmGoalContinue(id: string): Promise<void> {
   if (autonomousArmInFlight.has(id)) return
   autonomousArmInFlight.add(id)
   try {
     const mode = await resolveWorkMode(id)
-    if (mode.mode !== 'autonomous') return
 
     await goals.load()
     const key = workModeKeyFor(id)
     const goal = goals.state(key)
     if (!goal.goalId || !isActiveGoalPhase(goal.phase) || goal.revision <= 0) return
+    /*
+     * 谁有资格被自动叫醒（2026-09-22）：
+     *   · 自主档 —— 档位本身就意味着「接着干」；
+     *   · 或者目标带 `pursue`（用户在 `+` 菜单里明确设定的持续目标）——
+     *     那是**目标**语义，与档位正交，所以标准 / 计划档下也要继续推进。
+     */
+    if (mode.mode !== 'autonomous' && !goal.pursue) return
 
     const resume = goals.resumeOf(key)
     if (resume) {
@@ -1261,13 +1515,44 @@ async function maybeArmAutonomousGoal(id: string): Promise<void> {
       /* 旧的 continue 已消费，当前空闲回合需要一个新的 operationId。 */
     }
 
-    const armed = await goals.armContinue(key)
+    /*
+     * `paused`（用户按过停止）与 `pending`（已有未消费的续行）都在这一层取。
+     * 两者都是「本次不 arm」的正常状态，不记事件（每次回合收尾都会走到，记了只会刷屏）。
+     * 用户停止那一次由 `yan:abort` 的 `goal-continue:cancelled` 负责留痕。
+     */
+    const armed = await goals.armContinue(key, {
+      consumed: (operationId) => goalResumeContinuationWasConsumed(id, operationId)
+    })
     if (armed.armed) {
       await applyGoalResume(id)
       await pushGoal(id)
+      handoffDiag.record({
+        stage: 'goal-continue',
+        outcome: 'armed',
+        reason: 'settled-fallback',
+        runnerId: id,
+        sessionKey: key,
+        detail: { round: armed.round, mode: mode.mode, pursue: goal.pursue === true }
+      })
+    } else if (armed.reason === 'limit') {
+      /* 到上限是**要让用户看见**的暂停原因（A6）：arm 不会再发生，所以每次收尾都记 */
+      handoffDiag.record({
+        stage: 'goal-continue',
+        outcome: 'limit',
+        reason: 'autonomous-continue-limit',
+        runnerId: id,
+        sessionKey: key,
+        detail: { round: armed.round, limit: AUTONOMOUS_CONTINUE_LIMIT }
+      })
     }
-  } catch {
-    /* 自动兜底是增强路径；失败时保留目标状态，不让它影响当前会话。 */
+  } catch (error) {
+    /* 自动兜底是增强路径；失败时保留目标状态，不让它影响当前会话 —— 但要留痕 */
+    handoffDiag.record({
+      stage: 'goal-continue',
+      outcome: 'arm-threw',
+      reason: error instanceof Error ? error.message : String(error),
+      runnerId: id
+    })
   } finally {
     autonomousArmInFlight.delete(id)
   }
@@ -1280,11 +1565,11 @@ async function maybeArmAutonomousGoal(id: string): Promise<void> {
  *   ① **身份来自宿主**：会话键用 `workModeKeyFor`（= 会话文件路径），
  *      不接受请求里的会话 / 项目 id；
  *   ② **就绪转移是原子的**：先把目标推进到 executing（落盘），再切模式；
- *      模式写失败就不报成功（否则会出现「目标说已开工、模式还是澄清」）；
+ *      模式写失败就不报成功（否则会出现「目标说已开工、模式还是计划」）；
  *   ③ **校验在纯函数里**（`shared/goal.ts`）：五栏 / 置信度 / revision 过期。
  *
  * ⚠️ 模式切到标准**不会**改写本轮已经生效的工具表（工具集按轮次生效，
- *    S1 实测）：本轮仍是澄清档的只读集，所以回执里要明说
+ *    S1 实测）：本轮仍是计划档的只读集，所以回执里要明说
  *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
  */
 const goalCapabilityHost: GoalCommandHost = {
@@ -1353,27 +1638,55 @@ const goalCapabilityHost: GoalCommandHost = {
         })
       }
       /*
+       * 目标进终态（completed / blocked / stopped）→ **立刻**把薄层可见的续行清掉。
+       *
+       * `GoalStore.report` 已经在同一次落盘里把 `entry.resume` 置空了，但那只是
+       * `goals.json`；薄层读的是 `goal-resume/<runnerId>.json` 快照（实施-14 A1）。
+       * 两份不同步时，停在 executing 时 arm 的那条「接着干」会在目标已经交付之后
+       * 才发出去，把模型重新叫起来干一件已经完的事。
+       */
+      if (!isActiveGoalPhase(res.goal.phase)) {
+        await applyGoalResume(context.sessionId)
+        handoffDiag.record({
+          stage: 'goal-continue',
+          outcome: 'terminal-cleared',
+          reason: res.goal.phase,
+          runnerId: context.sessionId,
+          sessionKey: key,
+          detail: { goalId: res.goal.goalId }
+        })
+      }
+      /*
        * 顺路看一眼要不要开始交接（S5b-2）：资格四条里「目标在推进」正是在这里才可能成立 ——
        * 只靠压缩事件驱动会在「先报告、后压缩」的顺序下漏掉。
        * 生产上阈值没到就什么都不会发生（阈值覆盖只在测试里设）。
        */
       if (!res.replayed) void maybeArmHandoff(context.sessionId, 'goal-report')
       /*
-       * 自主档的「接着干」（S3c）：报完进展就安排下一次续接，
+       * 自主档（或带 pursue 的持续目标）的「接着干」（S3c）：报完进展就安排下一次续接，
        * 让模型在**没有人再发消息**的情况下自己一轮轮往下推。
        *
-       * 为什么只认自主档：标准档下用户就在旁边看着，自己往下跑会抢他的话；
-       * 澄清档是只读的，根本谈不上「执行」。
+       * 为什么标准档默认不 arm：用户就在旁边看着，自己往下跑会抢他的话；
+       * 而 `pursue` 是**目标**语义（用户在 `+` 菜单里明确要求持续推进），与档位正交。
        * 能不能真发出去由薄层的空闲判定决定（本轮没结束就留着，见 goal-resume.js）。
        */
       let continueNote: string | null = null
       let continueRound: number | null = null
-      if (!res.replayed && modeState.mode === 'autonomous') {
-        const armed = await goals.armContinue(key)
+      if (!res.replayed && (modeState.mode === 'autonomous' || res.goal.pursue)) {
+        const armed = await goals.armContinue(key, {
+          consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId)
+        })
         if (armed.armed) {
           continueRound = armed.round
           /* 先落盘（armContinue 已 await persist）再告诉薄层 —— 顺序不能反（§4） */
           await applyGoalResume(context.sessionId)
+          handoffDiag.record({
+            stage: 'goal-continue',
+            outcome: 'armed',
+            runnerId: context.sessionId,
+            sessionKey: key,
+            detail: { round: armed.round, mode: modeState.mode, pursue: res.goal.pursue === true }
+          })
           continueNote =
             `已安排第 ${armed.round} 次自动续接：本轮的活干完就收尾，` +
             '之后会有一条控制消息把你叫回来继续，不要停下来等用户确认。'
@@ -1381,6 +1694,19 @@ const goalCapabilityHost: GoalCommandHost = {
           continueNote =
             `已达自动续接上限（${AUTONOMOUS_CONTINUE_LIMIT} 次），不再自动叫你：` +
             '请在本轮里把进展、结论与需要用户决定的事写清楚。'
+        } else if (armed.reason === 'pending') {
+          /*
+           * A6：同一条待发操作还在（模型重复 report，或上一轮还没发出），
+           * **不新建也不递增轮数** —— 如实复述已有的那一条。
+           */
+          continueRound = goals.autoContinueCount(key)
+          continueNote = `第 ${continueRound} 次自动续接已经安排，等待当前回合收尾后继续。`
+        } else if (armed.reason === 'paused') {
+          /*
+           * A2：用户按过停止。不自动继续，也不装作“已经安排”——
+           * 让模型在本轮里把现场交代清楚，等用户明确发话再恢复。
+           */
+          continueNote = '用户已暂停自动推进：本轮收尾后不会自动继续，需要用户明确发话或恢复档位。'
         }
       } else if (res.replayed && modeState.mode === 'autonomous' && isActiveGoalPhase(res.goal.phase)) {
         /*
@@ -2339,14 +2665,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         push: (m) => pushFrom(id, m),
         cwd,
         piBin: settings.piBin,
-        browserExtension: browserExtensionPath(),
         questionExtension: questionExtensionPath(),
         workModeExtension: workModeExtensionPath(),
         goalResumeExtension: goalResumeExtensionPath(),
         handoffsExtension: handoffsExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,
-        browserEnv: browser?.bridgeEnv(),
         /*
          * `yan browser …` 的实现入口（01-S4b）。
          *
@@ -2370,6 +2694,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         contextExtension: contextExtensionPath(),
         /* 项目知识注入（实施-03 S3）：检索在宿主，扩展只负责放到用户消息之前 */
         projectKnowledgeExtension: projectKnowledgeExtensionPath(),
+        /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
+        repeatGuardExtension: repeatGuardExtensionPath(),
         /*
          * 界面历史（实施-05 S5b-4）：交接过的会话在链上，按段从旧到新拼成
          * **一条时间线**。agent 不认识「链」—— 那是宿主的关系。
@@ -2768,10 +3094,17 @@ function registerIpc(): void {
       await goals.load()
       const mode = await resolveWorkMode(id)
       const key = workModeKeyFor(id)
-      if (mode.mode === 'autonomous') {
-        /* 用户重新接管时，旧的自动续行不能在本轮之后又插进来。 */
+      const goal = goals.state(key)
+      const pending = goals.resumeOf(key)
+      /*
+       * 用户发言 = 明确接管（实施-14 A2/A3）：旧自动续行作废、**暂停解除**。
+       * 不再只看自主档 —— `pursue` 目标在标准档下同样会自己往下跑，
+       * 而用户这一句话就是「我来接手」的意思。
+       */
+      if (mode.mode === 'autonomous' || goal.pursue === true || pending !== null || goals.isPaused(key)) {
         await cancelGoalResume(id)
       }
+      await goals.setPaused(key, false).catch(() => {})
       /* await：用户发言必须先于模型接下来的 arm 落地，否则竞态下计数不会被归零 */
       await goals.resetAutoContinues(key).catch(() => {})
       /* 用户发话了 = 他接手了：自动继续作废、连续失败计数归零（S5c） */
@@ -2789,18 +3122,62 @@ function registerIpc(): void {
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:abort', async () => {
-    // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
-    const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
     /*
-     * 用户按了停止 —— 除了停当前回合，还要**抦销未发出的续行**（§5：用户停止优先）。
-     * 只清续行、不标 `stopped`：停止一个回合不等于放弃目标；
-     * 目标级的 `stopped` 留给显式入口。
+     * 用户停止优先（实施-14 A2）：**先失效续接资格，再停当前回合**。
+     *
+     * 顺序反过来会留一个窗口：`abort()` 期间实例已经空闲，一次 `state` 推送
+     * 就能让 `maybeArmGoalContinue` 重新 arm 一条续行 —— 用户按了停止，
+     * 下一轮却自己跑起来。所以这里是「登记暂停（代次失效）→ 清快照 → 停回合」，
+     * 而且**同步 awaited**：不能让异步清理跑到后面去。
      */
     const id = runners?.activeRunner()?.id
-    if (id) void cancelGoalResume(id)
+    if (id) {
+      await goals.load()
+      const key = workModeKeyFor(id)
+      await goals.setPaused(key, true).catch(() => {})
+      await cancelGoalResume(id).catch(() => {})
+      handoffDiag.record({
+        stage: 'goal-continue',
+        outcome: 'cancelled',
+        reason: 'user-stop',
+        runnerId: id,
+        sessionKey: key,
+        detail: { paused: true }
+      })
+    }
+    // 把 clear_queue 拿回来的排队文本一并返回，客户端应放回输入框
+    const cleared = (await ac()?.abort()) ?? { steering: [], followUp: [] }
     /* 用户停止 = 立刻停手：未到点的自动继续也要撤掉，并归零（S5c） */
     if (id) void resetAutoContinue(id)
+    /* 停止只是暂停，不是放弃目标 —— 目标级 `stopped` 走 `yan:stopGoal` */
     return cleared
+  })
+
+  /*
+   * 放弃目标（实施-14 A2）：与「按停止」分开的显式入口。
+   *
+   * 语义区别：`yan:abort` 是「现在别跑了」（paused，可恢复），
+   * 这里是「这件事不做了」（phase → stopped，终态）。
+   * 界面按钮在 F5 接；先固定宿主与语义，避免只有暂停、没有放弃。
+   */
+  handle('yan:stopGoal', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false, error: 'pi 未运行' }
+    await goals.load()
+    const key = workModeKeyFor(id)
+    const goal = await goals.stop(key, null)
+    /* 目标作废的同时把薄层可见的续行也清掉（只清存储不够，快照照样会被发出去） */
+    await applyGoalResume(id)
+    await pushGoal(id)
+    handoffDiag.record({
+      stage: 'goal-continue',
+      outcome: 'goal-stopped',
+      reason: 'user-stop-goal',
+      runnerId: id,
+      sessionKey: key,
+      detail: { goalId: goal?.goalId ?? null }
+    })
+    return { ok: true, goal }
   })
 
   /* ---- 直执行 bash ---- */
@@ -3023,6 +3400,28 @@ function registerIpc(): void {
     await goals.load()
     return { goal: goals.state(workModeKeyFor(id)), mode: await resolveWorkMode(id) }
   })
+
+  /**
+   * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果。
+   *
+   * 身份只取宿主绑定的当前会话键（与 `yan:getGoal` 同一表达式）：请求里带
+   * 别的会话 id 一律不看 —— 否则渲染端一个笔误就能把目标写到别的会话上。
+   *
+   * 这里**不**预写续行：用户接着还要把这条消息发出去，续行会在那一轮收尾时
+   * 由 `maybeArmGoalContinue` 统一 arm（早 arm 会多跑一轮空转）。
+   */
+  handle('yan:setGoal', async (brief: { goal?: unknown; outcome?: unknown }) => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false as const, error: 'no_session' as const }
+    const goalText = String(brief?.goal ?? '').trim()
+    const outcome = String(brief?.outcome ?? '').trim()
+    /* 少一栏就拒收：允许缺「可衡量的成果」等于造一个无法验收的目标 */
+    if (!goalText || !outcome) return { ok: false as const, error: 'incomplete' as const }
+    await goals.load()
+    const goal = await goals.startPursued(workModeKeyFor(id), { goal: goalText, outcome })
+    await pushGoal(id)
+    return { ok: true as const, goal }
+  })
   /*
    * 交接状态（实施-05 S5b-2）——**只读**。
    *
@@ -3032,6 +3431,7 @@ function registerIpc(): void {
    * 而「包已经写好」这件事在界面上永远是看不见的（§9 的 UI 与观测）。
    */
   handle('yan:getHandoff', async () => {
+    await handoffDiag.load()
     const id = runners?.activeRunner()?.id
     if (!id) {
       return {
@@ -3041,6 +3441,7 @@ function registerIpc(): void {
         pending: false,
         threshold: HANDOFF_THRESHOLD_EFFECTIVE,
         transaction: null,
+        events: handoffDiag.recent(40),
         autoCommit: HANDOFF_COMMIT_ENABLED
       }
     }
@@ -3075,6 +3476,8 @@ function registerIpc(): void {
             destinationSession: normalizeChainKey(tx.destinationSession)
           }
         : null,
+      /* 最近的过程事件（实施-14 F0）：界面 / 探针据此区分「没资格 / 没生成 / 没提交 / 没确认」 */
+      events: handoffDiag.recent(40),
       autoCommit: HANDOFF_COMMIT_ENABLED
     }
   })
@@ -3086,11 +3489,32 @@ function registerIpc(): void {
     await workModes.load()
     const res = await workModes.set(workModeKeyFor(id), mode, expectedRevision)
     /*
-     * 用户把档位改回非标准（或切到别的档）= 放弃那次自动开工：
-     * 未发的续行必须作废，否则下一轮它又自己跑起来（与按停止同因）。
-     * ⚠️ 就绪转移**不走这里**（宿主内部直接调 `workModes.set`），所以不会误伤自己。
+     * 档位是用户对这条会话的明确意图（实施-14 A3）：
+     *   · 新档仍然会「接着干」→ 保留未消费的续行（自主档，或 pursue 目标 —— 与档位正交）；
+     *   · 其余情况（切到标准 / 计划）→ 作废未消费续行。
+     * 旧实现只在 `mode !== 'standard'` 时清，于是**切回标准档**时自主档留下的
+     * 续行仍然有效，下一轮它自己又跑起来。
+     * ⚠️ 就绪转移不走这里（宿主内部直接调 `workModes.set`），所以不会误伤自己。
      */
-    if (res.ok && mode !== 'standard') void cancelGoalResume(id)
+    if (res.ok) {
+      await goals.load()
+      const key = workModeKeyFor(id)
+      const pursue = goals.state(key).pursue === true
+      /* 改档是明确动作：解除“用户按过停止”留下的暂停（A2） */
+      await goals.setPaused(key, false).catch(() => {})
+      const stillRuns = keepsGoalResumeOnModeChange(mode, pursue)
+      if (!stillRuns) {
+        await cancelGoalResume(id).catch(() => {})
+        handoffDiag.record({
+          stage: 'goal-continue',
+          outcome: 'cancelled',
+          reason: 'work-mode-changed',
+          runnerId: id,
+          sessionKey: key,
+          detail: { mode, pursue }
+        })
+      }
+    }
     /* 失败也要写 + 推：界面要拿当前值恢复，扩展也不能继续读旧值 */
     await writeWorkModeSnapshot(id, res.state).catch(() => {})
     pushFrom(id, { ch: 'work-mode', payload: res.state })
@@ -3445,6 +3869,24 @@ function registerIpc(): void {
     return out
   })
 
+  /*
+   * ---- 附件：选文件 / 文件夹 → 只回路径 ----
+   *
+   * 与 `yan:pickImages` 分开：图片要读成 base64（视觉模型靠它看图），
+   * 而普通文件/目录只登记路径 —— 内容由模型按需 read。
+   * 这里**不做**校验：路径回到渲染端后会走 `yan:describeFiles`，
+   * 与拖入、文件树拖拽完全同一条审查链路（否则就多出一套口径）。
+   */
+  handle('yan:pickFiles', async (): Promise<string[]> => {
+    if (!win) return []
+    const r = await dialog.showOpenDialog(win, {
+      title: '选择文件或文件夹',
+      /* 目录与文件一起选：pi 的文件引用本来就接受目录 */
+      properties: ['openFile', 'openDirectory', 'multiSelections']
+    })
+    return r.canceled ? [] : r.filePaths
+  })
+
   /* ---- 选目录（换工作目录） ---- */
   handle('yan:pickCwd', async () => {
     if (!win) return null
@@ -3650,13 +4092,17 @@ function registerIpc(): void {
      * 用**当前会话模型**查表（N21-7）：模型级覆盖生效时，界面看到的预算
      * 必须与 agent 真正用的那份一致 —— 探针的“界面数 = 主进程数”靠这条。
      */
-    const resolved = activeContextPolicy(process.env, modelKeyOf(ac()?.getState()?.model))
+    const modelKey = modelKeyOf(ac()?.getState()?.model)
+    const resolved = activeContextPolicy(process.env, modelKey)
+    /* 与 `AgentController.contextPolicyView()` 同口径：档位名要靠精确模型层原文判断 */
+    const modelOverrides = modelKey ? contextPolicySettings().byModel?.[modelKey] : undefined
     return {
       policy: resolved.policy,
       budget: contextBudget(typeof win === 'number' ? win : 0, resolved.policy),
       source: resolved.source,
       ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
-      overridden: resolved.overridden
+      overridden: resolved.overridden,
+      ...(modelOverrides ? { modelOverrides } : {})
     }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
@@ -5064,7 +5510,6 @@ function createWindow(): void {
 /* 启动 */
 app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
-  await browser.startBridge()
   registerIpc()
   await createTray()
   createWindow()

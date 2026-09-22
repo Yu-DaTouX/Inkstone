@@ -152,7 +152,7 @@
       '没有 source=extension 的 browser 命令（扩展的 registerCommand 已移除）'
     )
     ok(browserCommands.some((c) => c.source === 'yan'), 'Yan 自己的 /browser 仍在本机命令表里')
-    note('模型工具面（getAllTools）没有 RPC 出口；「browser.js 注册 0 项」由 test:unit 断言')
+    note('模型工具面（getAllTools）没有 RPC 出口；空壳 browser.js 已随 01-S5 收尾删除，由 test:unit 断言文件不存在')
 
     /* ─────────────────────────────────────────── 1. --help ─────────── */
     out.push('')

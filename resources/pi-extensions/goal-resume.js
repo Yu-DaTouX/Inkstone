@@ -1,5 +1,5 @@
 /*
- * 内部续行：澄清 → 标准转移之后开工（S3b），以及自主档目标未完成时接着干（S3c）。
+ * 内部续行：计划 → 标准转移之后开工（S3b），以及自主档目标未完成时接着干（S3c）。
  *
  * ══════════════════════════════════════════════════════════════════
  * 为什么只能由薄层做
@@ -35,7 +35,35 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 /** 二次确认的等待时长：够让「工具还在跑 / 用户接着说话」暴露出来。 */
-const RESUME_DELAY_MS = 1800
+const RESUME_DELAY_MS = envInt('YAN_GOAL_RESUME_DELAY_MS', 1800)
+
+/*
+ * 二次确认之后的「等宿主把 resume 写下来」窗口（2026-09-22）。
+ *
+ * 真问题：宿主的 arm 链挂在 `state`（`isAgentRunning === false`）上，
+ * 而那是 `agent_settled` **之后**的事；这里的触发点却只有 `message_end`（更早）。
+ * 宿主要先 resolveWorkMode → load 三份 store → persist → 才写 resume 文件，
+ * 1.8 秒那一次读盘常常还是空的。读空就 return 的后果是**死锁**：
+ * 不会再有第二个 `message_end`，刚写好的 resume 没人看 ——
+ * 用户看到的就是「目标停在 executing、会话不动了，要手动推一下」（真实报障）。
+ *
+ * 所以读空之后再等一小段、再读：默认 8 × 1.2s ≈ 9.6 秒，
+ * 而宿主窗口（换会话 / 关窗口前）远大于它。消费幂等（operationId）保证
+ * 多读几次也不会重复续行。
+ *
+ * 测试通道：`YAN_GOAL_RESUME_POLL_TRIES` / `YAN_GOAL_RESUME_POLL_MS`。
+ */
+const RESUME_POLL_TRIES = envInt('YAN_GOAL_RESUME_POLL_TRIES', 8)
+const RESUME_POLL_MS = envInt('YAN_GOAL_RESUME_POLL_MS', 1_200)
+
+function envInt(name, fallback) {
+  const raw = Number(process.env[name])
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : fallback
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function dataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
@@ -135,47 +163,106 @@ export default function goalResume(pi) {
    * 定时器必须捕获它，否则重载续行会先写消费证据、再在 sendMessage 处
    * 失败，留下「已经消费但没有真正续接」的不可重试窗口。
    */
-  let activeContext = pi
+  /*
+   * 发送方的选择（兼顾两种真实情况）
+   *
+   *   ① **pi 0.85.1 的钩子 ctx 里没有 `sendMessage`** —— `createContext()` 只给
+   *      `ui / mode / cwd / sessionManager / modelRegistry / model / isIdle / compact …`。
+   *      2026-09-22 的现场：日志里写着 `resume_sent`、`operationId` 也记成已消费，
+   *      而消息**从未发出去** —— 因为旧代码是 `context.sendMessage?.()`，可选链把失败吞了。
+   *   ② 但**重载 / 切会话后 `pi` 会被 invalidate**（`runtime.invalidate(...)`）——
+   *      那时得用 `session_start` 给的新 ctx（`test-handoff-request.mjs` 里有这条护栏）。
+   *
+   * 于是：以 `pi` 为底，哪个钩子给了带 `sendMessage` 的 ctx 就换成它；
+   * 两边都没有就**不写消费证据**（宁可少发一次，也不能留一份假证据）。
+   */
+  let sender = typeof pi?.sendMessage === 'function' ? pi : null
+  let entryWriter = typeof pi?.appendEntry === 'function' ? pi : null
+  const rememberSender = (context) => {
+    if (typeof context?.sendMessage === 'function') sender = context
+    else if (!sender && typeof pi?.sendMessage === 'function') sender = pi
+    /* 留痕（appendEntry）同理：ctx 有就用 ctx，否则用 pi —— 重载后连它也不能碰旧的 */
+    if (typeof context?.appendEntry === 'function') entryWriter = context
+    else if (!entryWriter && typeof pi?.appendEntry === 'function') entryWriter = pi
+    return sender
+  }
 
-  const schedule = (context = activeContext) => {
-    activeContext = context ?? activeContext
+  const schedule = (context) => {
+    rememberSender(context)
     const token = ++activity
     const timer = setTimeout(() => {
-      void maybeResume(token, context ?? activeContext)
+      void maybeResume(token, context)
     }, RESUME_DELAY_MS)
     /* 不阻止 pi 退出：用户关窗口时不该等这个定时器 */
     timer.unref?.()
   }
 
-  const maybeResume = async (token, context = activeContext) => {
+  const maybeResume = async (token, context) => {
     /* ③ 用户消息优先：等待期间又有活动 → 这次不发（resume 仍留着） */
     if (token !== activity) {
       note('resume_skipped', { reason: 'activity', token, activity })
       return
     }
-    const resume = readResume()
-    note('check', { hasResume: !!resume, operationId: resume?.operationId ?? null })
+    /*
+     * 窗口化读盘：宿主的 arm 比 `message_end` 晚，读空不等于「没有续行」。
+     *
+     * A5（实施-14）：判据不是「读到东西了没有」，而是「读到的东西**还没被消费过**没有」。
+     * 以前读到「已消费的那条旧记录」就直接 return —— 而宿主把新指令写进同一个文件
+     * 往往就晚几十到几百毫秒（它的 arm 挂在 `state` 推送之后）。那一次 return
+     * 会把新 operationId 整个漏掉：不会再有第二个 `message_end`，会话就停在那里。
+     * 每一次重试都要重新确认 token —— 窗口里用户说话了就让位。
+     */
+    let resume = null
+    let attempts = 0
+    for (;;) {
+      const candidate = readResume()
+      if (candidate && consumedOperationId() !== candidate.operationId) {
+        resume = candidate
+        break
+      }
+      if (attempts >= RESUME_POLL_TRIES) {
+        if (candidate) {
+          note('resume_skipped', { reason: 'consumed', operationId: candidate.operationId, attempts })
+        }
+        break
+      }
+      attempts += 1
+      await sleep(RESUME_POLL_MS)
+      if (token !== activity) {
+        note('resume_skipped', { reason: 'activity', token, activity, attempts })
+        return
+      }
+    }
+    note('check', { hasResume: !!resume, operationId: resume?.operationId ?? null, attempts })
     if (!resume) return
-    /* ② 消费幂等：同一个 operationId 只发一次 */
-    if (consumedOperationId() === resume.operationId) {
-      note('resume_skipped', { reason: 'consumed', operationId: resume.operationId })
+
+    const target = rememberSender(context)
+    if (!target) {
+      /* 发不出去就别装成“已消费”：否则这份续行再也不会被重试（用户只能手动推） */
+      note('resume_failed', { operationId: resume.operationId, kind: resume.kind, reason: 'no-sendMessage' })
       return
     }
-
     /*
      * 顺序不能反（§4 的「不盲发两次」）：**先留证据，再发消息**。
      * 极端情况下（写完就崩）会少发一次 —— 那是可接受的失败方向：
      * 用户能看到目标停在 executing，重新发一句话就能继续。
      */
     rememberConsumed(resume.operationId)
+    /* 发出前记录用的哪个对象：以后再改 API 时一看日志就知道 */
+    note('resume_sending', {
+      operationId: resume.operationId,
+      kind: resume.kind,
+      token,
+      via: target === pi ? 'pi' : 'ctx'
+    })
     try {
       /* 会话里的留痕（自定义条目，不进模型上下文）；`kind` 让排障时能分辨是哪种续行 */
-      context.appendEntry?.('yan-goal-resume', { operationId: resume.operationId, kind: resume.kind, at: Date.now() })
+      entryWriter?.appendEntry?.('yan-goal-resume', { operationId: resume.operationId, kind: resume.kind, at: Date.now() })
     } catch (err) {
       note('entry_failed', { error: String(err?.message ?? err) })
     }
     try {
-      await context.sendMessage?.(
+      await target.sendMessage(
         {
           customType: CUSTOM_TYPES[resume.kind] ?? 'yan-goal-ready',
           content: [{ type: 'text', text: resume.summary }],
@@ -190,6 +277,8 @@ export default function goalResume(pi) {
   }
 
   pi.on('before_agent_start', () => {
+    /* 回合真的起来了才会有这行 —— 用它区分「续行没发出去」与「发出去了但没起回合」 */
+    note('before_agent_start', { activity: activity + 1 })
     activity += 1
   })
   /*
@@ -201,10 +290,22 @@ export default function goalResume(pi) {
    */
   pi.on('session_start', (event, context) => {
     note('session_start', { reason: event?.reason ?? null })
-    schedule(context ?? pi)
+    schedule(context)
   })
   pi.on('tool_call', () => {
     activity += 1
+  })
+  /*
+   * `agent_settled`：回合**真的**结束（比 `message_end` 更晚，更接近宿主 arm 完成的一刻）。
+   *
+   * 2026-09-22 加的：以前只看 `message_end`，而宿主的续行是在那之后的
+   * `state` 推送里才写下来的 —— 检查点比目标晚，就会永远错过。
+   * 这里**不**累加 activity：它不是用户活动，只是「再看一眼」；
+   * `schedule` 的 token 会让更晚的检查点接管前一个定时器。
+   */
+  pi.on('agent_settled', (_event, context) => {
+    note('agent_settled', { hasContext: !!(context && typeof context.sendMessage === 'function') })
+    schedule(context)
   })
   pi.on('message_end', (event, context) => {
     note('message_end', { role: event?.message?.role, turnEnd: looksLikeTurnEnd(event) })
@@ -212,6 +313,6 @@ export default function goalResume(pi) {
     /* 同一条 assistant 消息可能触发多次 message_end（流结束 / 工具后），去重 */
     if (scheduledFor === activity) return
     scheduledFor = activity
-    schedule(context ?? activeContext)
+    schedule(context)
   })
 }

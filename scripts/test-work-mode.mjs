@@ -20,12 +20,12 @@ export async function runWorkModeTests(ok) {
 
   /* ------------------------------------------------------------ 纯逻辑 */
 
-  ok(shared.WORK_MODES.join(',') === 'standard,clarify,autonomous', '模式顺序固定：标准 → 澄清 → 自主')
+  ok(shared.WORK_MODES.join(',') === 'standard,clarify,autonomous', '模式顺序固定：标准 → 计划 → 自主')
   ok(shared.isWorkMode('clarify') && !shared.isWorkMode('bogus') && !shared.isWorkMode(1), 'isWorkMode 只认三档字符串')
   ok(shared.normalizeWorkMode('autonomous') === 'autonomous', 'normalizeWorkMode 保留合法值')
   ok(shared.normalizeWorkMode('bogus') === 'standard', 'normalizeWorkMode 脏值回落标准')
-  ok(shared.nextWorkMode('standard') === 'clarify', '循环：标准 → 澄清')
-  ok(shared.nextWorkMode('clarify') === 'autonomous', '循环：澄清 → 自主')
+  ok(shared.nextWorkMode('standard') === 'clarify', '循环：标准 → 计划')
+  ok(shared.nextWorkMode('clarify') === 'autonomous', '循环：计划 → 自主')
   ok(shared.nextWorkMode('autonomous') === 'standard', '循环：自主 → 标准')
   ok(shared.nextWorkMode('bogus') === 'clarify', '循环对脏值先归一（脏值按标准处理）')
 
@@ -38,9 +38,46 @@ export async function runWorkModeTests(ok) {
   const twice = shared.migrateLegacyAutonomous(once, true)
   ok(once === twice && twice === 'autonomous', '迁移幂等（第二次读同一份输入结果不变）')
 
-  ok(shared.isWorkModeTabShortcut(undefined) === true, 'Tab 快切：没改过 = 开')
-  ok(shared.isWorkModeTabShortcut(true) === true, 'Tab 快切：显式 true = 开')
-  ok(shared.isWorkModeTabShortcut(false) === false, 'Tab 快切：只有明确 false 才关')
+  ok(shared.isWorkModeShortcutEnabled(undefined) === true, '模式快捷键：没改过 = 开')
+  ok(shared.isWorkModeShortcutEnabled(true) === true, '模式快捷键：显式 true = 开')
+  ok(shared.isWorkModeShortcutEnabled(false) === false, '模式快捷键：只有明确 false 才关')
+
+  /*
+   * 组合键工具（2026-09-22：模式切换从裸 Tab 改成 Ctrl+Tab，并且可改键）。
+   * 这里全是纯逻辑，所以能直接拿假事件对象验。
+   */
+  ok(shared.DEFAULT_WORK_MODE_BINDING === 'Ctrl+Tab', '默认绑定是 Ctrl+Tab')
+  ok(shared.formatKeyBinding(shared.parseKeyBinding('ctrl+shift+k')) === 'Ctrl+Shift+K', '解析后序列化会规范化（大小写与修饰键顺序）')
+  ok(shared.parseKeyBinding('Cmd+Alt+Del')?.meta === true && shared.parseKeyBinding('Cmd+Alt+Del')?.alt === true, 'Meta/Cmd 是同一个修饰键')
+  ok(shared.parseKeyBinding('Ctrl+Foo+Tab') === null, '认不得的修饰键 → 解析失败')
+  ok(shared.normalizeWorkModeShortcut('') === '', '空串 = 显式不要快捷键（不回落成默认）')
+  ok(shared.normalizeWorkModeShortcut('Ctrl+K') === 'Ctrl+K', '合法组合键原样保留')
+  ok(shared.normalizeWorkModeShortcut('ctrl+shift+k') === 'Ctrl+Shift+K', '脏写法也会规范化再存')
+  ok(shared.normalizeWorkModeShortcut('K') === undefined, '裸键不收（全局快捷键会抢正常输入）')
+  ok(shared.normalizeWorkModeShortcut(123) === undefined, '非字符串脏值当没设过')
+  ok(shared.bindingFromKey({ key: 'Control', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }) === null, '只按修饰键本身不算一次组合')
+  ok(
+    shared.bindingFromKey({ key: ' ', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false })?.key === 'Space',
+    '空格键有正式名字（`e.key` 里是单个空格）'
+  )
+  ok(shared.isUsableKeyBinding(shared.parseKeyBinding('Ctrl+Tab')) === true, '带修饰键的组合可用')
+  ok(shared.isUsableKeyBinding(shared.parseKeyBinding('Tab')) === false, '没有修饰键的组合不可用')
+  ok(
+    shared.matchesKeyBinding(undefined, { key: 'Tab', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }) === true,
+    '未设置时按默认 Ctrl+Tab 匹配'
+  )
+  ok(
+    shared.matchesKeyBinding(undefined, { key: 'Tab', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false }) === false,
+    '裸 Tab 不匹配（这正是改快捷键要的效果）'
+  )
+  ok(
+    shared.matchesKeyBinding('Ctrl+Shift+K', { key: 'k', ctrlKey: true, altKey: false, shiftKey: true, metaKey: false }) === true,
+    '字母大小写不影响匹配'
+  )
+  ok(
+    shared.matchesKeyBinding('Ctrl+K', { key: 'K', ctrlKey: true, altKey: false, shiftKey: true, metaKey: false }) === false,
+    '多按了修饰键就不算命中（不能“模糊匹配”）'
+  )
 
   /* ------------------------------------------------------------ 存储层 */
 

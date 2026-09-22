@@ -15,7 +15,7 @@ export class StaleElementError extends Error {
   readonly code = 'STALE_ELEMENT'
 
   constructor(ref: string) {
-    super(`元素引用已失效：${ref}。请重新调用 browser_observe。`)
+    super(`元素引用已失效：${ref}。请重新调用 yan browser observe。`)
     this.name = 'StaleElementError'
   }
 }

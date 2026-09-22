@@ -230,8 +230,16 @@ function TurnFooter({ turn }: { turn: AssistantTurn }) {
       ) : null}
       {elapsed ? (
         /* 悬停要能解释口径：这里是**整轮**墙钟时间（含工具往返与重试）。
+           有工具等待分段时补一句「其中等待工具 X」——那是 H-6b 的 waitSpans。
            用量条只展示 token / 速度，不再重复占用时长。 */
-        <span className="turn-footer-item" title={t('tok.elapsedTip')}>
+        <span
+          className="turn-footer-item"
+          title={
+            turn.waitMs
+              ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) })
+              : t('tok.elapsedTip')
+          }
+        >
           {t('tok.elapsed')} {elapsed}
         </span>
       ) : null}

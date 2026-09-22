@@ -10,6 +10,11 @@ import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
+import {
+  isWorkModeShortcutEnabled,
+  matchesKeyBinding,
+  nextWorkMode
+} from '../../shared/work-mode'
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
 import { QuestionPanel } from './components/chat/QuestionPanel'
@@ -152,6 +157,9 @@ export default function App() {
   const applyPush = useStore((s) => s.applyPush)
   const piInfo = useStore((s) => s.piInfo)
   const models = useStore((s) => s.models)
+  /* 全局模式快捷键要用到当前模式与会话默认模式（见下面的快捷键 effect） */
+  const setWorkMode = useStore((s) => s.setWorkMode)
+  const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
 
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
@@ -204,6 +212,31 @@ export default function App() {
   const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
 
   const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
+
+  /*
+   * 模式快捷键（2026-09-22）：**全局**生效。
+   *
+   * 用户口径：模式切换不该只在输入框里管用（以前是裸 Tab，只在 textarea 里拦）。
+   * 这里用 window 的 capture 阶段：不管焦点在侧栏、右栏还是消息区，都能切。
+   *
+   * 三条边界：
+   *   ① 设置页正在录新键（`shortcutRecording`）—— 那次按键归录音，不切模式；
+   *   ② 长按重复（`repeat`）只算一次；
+   *   ③ 快捷键关掉了 / 组合键不匹配 —— 直接放行，不 preventDefault。
+   */
+  useEffect(() => {
+    if (!isWorkModeShortcutEnabled(settings?.workModeShortcutEnabled)) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) return
+      if (useStore.getState().shortcutRecording) return
+      if (!matchesKeyBinding(settings?.workModeShortcut, event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      void setWorkMode(nextWorkMode(useStore.getState().workMode?.mode ?? defaultWorkMode))
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [defaultWorkMode, setWorkMode, settings?.workModeShortcut, settings?.workModeShortcutEnabled])
 
   /* ---- 主进程推送 → store；并做一次全量 bootstrap ---- */
   useEffect(() => {

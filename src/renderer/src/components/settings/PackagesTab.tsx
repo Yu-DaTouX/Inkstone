@@ -275,7 +275,7 @@ export function PackagesTab(): React.JSX.Element {
                */
               const text = BUILTIN_TEXT[cap.id]
               return (
-                <div className="pkg-item" key={cap.id} data-testid="builtin-cap">
+                <div className="pkg-item" key={cap.id} data-testid="builtin-cap" data-cap-id={cap.id}>
                   <div className="pkg-item-main">
                     <span className="pkg-name" data-testid="builtin-cap-name">
                       {text ? t(text.name) : (cap.file ?? cap.id)}

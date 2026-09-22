@@ -628,13 +628,13 @@ function registerStubHandlers() {
   ipcMain.handle('yan:packages:action', () => ({ ok: true, output: 'Installed npm:pi-zh-cn' }))
   /*
    * 受信内置能力（实施-02 S4）：设置页「插件」里的内置能力区。
-   * 桩数据与主进程 `builtinCapabilities()` 同形：第一条是宿主任务计划
-   *（没有 file），其余按**实际加载的扩展文件名**派生 id。
+   * 桩数据与主进程 `builtinCapabilities()` 同形：前两条是宿主服务 / CLI 能力
+   *（task-plan、browser，没有 file），其余按**实际加载的扩展文件名**派生 id。
    * 漏了这个桩，那张截图里就会缺掉整块（渲染端拉不到就为空）。
    */
   ipcMain.handle('yan:capabilities:builtin', () => [
     { id: 'task-plan' },
-    { id: 'browser', file: 'browser.js' },
+    { id: 'browser' },
     { id: 'question', file: 'question.js' },
     { id: 'work-mode', file: 'work-mode.js' },
     { id: 'goal-resume', file: 'goal-resume.js' },
@@ -864,9 +864,9 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim']
+    states: ['main', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
@@ -1162,8 +1162,8 @@ const STATES = {
     })()
   `,
   /*
-   * 工作模式菜单（实施-05 §3）：原位显示「标准 / 澄清 / 自主 ▾」，
-   * 菜单里每项带一句说明。状态为「澄清 + 菜单展开」——这正是用户第一次
+   * 工作模式菜单（实施-05 §3）：原位显示「标准 / 计划 / 自主 ▾」，
+   * 菜单里每项带一句说明。状态为「计划 + 菜单展开」——这正是用户第一次
    * 接触三档时要看到的样子。
    */
   workmodemenu: `
@@ -1367,6 +1367,146 @@ const STATES = {
    * 静默写一个裸上限。状态脚本同时返回 disabled / ok，避免用一张“按钮在”
    * 的图冒充“按钮可用”。
    */
+  /*
+   * C-5 尾：右栏在「大窗口试行档」下要说清自己在哪一档。
+   *
+   * 数字必须自洽：均衡档的 cap 600k 在 400k 窗口上被 min() 压到 280k，
+   * 所以工作集与三条刻度都按 280k 算 —— 否则截图上「档位 均衡 600K」
+   * 配着 240k 工作集，正是 D21 那类「同一个面板里的数自相矛盾」。
+   */
+  ctxpreset: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isAgentRunning: false,
+          contextPolicy: {
+            enabled: true,
+            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
+            source: 'model',
+            sourceKey: 'deepseek/deepseek-v4.1-flash',
+            overridden: ['workingSetCap'],
+            modelOverrides: { workingSetCap: 600000 },
+            budget: {
+              contextWindow: 400000,
+              responseReserve: 32000,
+              safetyMargin: 8000,
+              workingSet: 280000,
+              triggers: { sweep: 196000, fold: 238000, compact: 280000 },
+              emergency: 360000
+            }
+          }
+        }
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      /* 详情展开：容量来源那一行只在展开态存在（C-5 尾） */
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      await new Promise((r) => setTimeout(r, 350));
+      return 'ok';
+    })()
+  `,
+  /*
+   * `+` 菜单（2026-09-22）：codex 式「添加」入口。
+   * 能力分组走**空态**（截图环境没装技能 / MCP）—— 空态也是要给人看的形态之一。
+   */
+  plusmenu: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      const btn = document.querySelector('[data-testid="composer-attach"]');
+      if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
+      await new Promise((r) => setTimeout(r, 450));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 目标表单（2026-09-22）：目标 + **可衡量的成果**。
+   * 截的是「两栏都写好、可以开始」的那一刻 —— 空态与禁用态由探针覆盖。
+   */
+  plusgoal: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      const btn = document.querySelector('[data-testid="composer-attach"]');
+      if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
+      await new Promise((r) => setTimeout(r, 300));
+      document.querySelector('[data-testid="plus-goal"]')?.click();
+      await new Promise((r) => setTimeout(r, 300));
+      const setVal = (sel, text) => {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        setter?.call(el, text);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      setVal('[data-testid="plus-goal-text"]', '把加号菜单做成 codex 式添加菜单');
+      setVal('[data-testid="plus-outcome-text"]', '三项可点 + 深浅两张截图 + 探针全绿');
+      await new Promise((r) => setTimeout(r, 350));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 设了持续目标之后：右栏面板要显示**用户写的目标与达成判据**，
+   * 以及「持续目标」标记（它与档位无关，所以必须有可见标识）。
+   *
+   * ⚠️ 这里直接写 store 而不走 `setGoal` IPC：截图脚本只注册了一部分
+   * 数据型 IPC（见脚本末尾的“未注册”说明），走 IPC 会挂在没 handler 上。
+   */
+  goalpursued: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      /* 矩阵是同一页面连着跑多个状态：上一个状态（plusgoal）把 `+` 菜单开着，
+       * 不收掉就会混进这张图（实测踩到）—— 这一张要的是右栏面板。 */
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      window.__yanStore.setState({
+        goal: {
+          goalId: 'goal-screenshot',
+          phase: 'executing',
+          revision: 3,
+          steps: [
+            { title: '加号菜单三档并排', status: 'done' },
+            { title: '目标表单与目标存储接线', status: 'done' },
+            { title: '单轮重复动作兜底', status: 'pending' },
+            { title: '计划档 / 自主档定位调整', status: 'pending' }
+          ],
+          evidence: ['plusmenu 场景 27 条断言全绿'],
+          blocker: null,
+          pursue: true,
+          brief: {
+            goal: '把加号菜单做成 codex 式添加菜单',
+            outcome: '三项可点 + 深浅两张截图 + 探针全绿'
+          },
+          failure: null,
+          updatedAt: Date.now()
+        }
+      });
+      await new Promise((r) => setTimeout(r, 450));
+      return 'ok';
+    })()
+  `,
+  /*
+   * 模式快捷键那行（2026-09-22）。
+   *
+   * 需要滚到它：外观页很长，不滚的话截出来是别的一行（脚本只截元素框）。
+   */
+  workmodekey: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.openSettings('appearance');
+      await new Promise((r) => setTimeout(r, 600));
+      const key = document.querySelector('[data-testid="set-work-mode-key"]');
+      key?.closest('.set-row')?.scrollIntoView?.({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 500));
+      return 'ok';
+    })()
+  `,
   ctxmodelpresets: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2103,6 +2243,94 @@ const STATES = {
       }
     })()
   `,
+  /*
+   * 实施-11 H-6b：整轮用量聚合。
+   *
+   * 注入一个多轮工具调用的回合（两条助手消息各报一次用量）—— 用量条应该
+   * 显示**合计**（3.60k / 120），而不是只显示最后一次请求（这是本片修的错）。
+   */
+  usageagg: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        const u = (o) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, ...o });
+        const now = Date.now();
+        window.__yanStore.setState({
+          messages: [
+            { id: 'm0', role: 'user', text: '把用量统计改对：多轮工具调用时要合计，不是只显示最后一次。', timestamp: now - 9000 },
+            {
+              id: 'a1',
+              role: 'assistant',
+              text: '先看一下现在的口径。',
+              toolCalls: [{ id: 't1', name: 'bash', args: {}, status: 'ok', startedAt: now - 8000, endedAt: now - 6000 }],
+              usage: u({ input: 1200, output: 24 })
+            },
+            {
+              id: 'a2',
+              role: 'assistant',
+              text: '改完了，跑一遍单测确认。',
+              toolCalls: [{ id: 't2', name: 'bash', args: {}, status: 'ok', startedAt: now - 5000, endedAt: now - 1200 }],
+              elapsedMs: 7800,
+              usage: u({ input: 2400, output: 96, cacheRead: 9000 })
+            }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 250));
+        return 'ok';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
+  /*
+   * 实施-11 H-6b：回合内有请求没报用量 → 合计是**下限**。
+   *
+   * 数字前应带 `≥`，悬停说明原因（不能假装这是完整账单）。
+   */
+  usagepartial: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        const u = (o) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, ...o });
+        const now = Date.now();
+        window.__yanStore.setState({
+          messages: [
+            { id: 'm0', role: 'user', text: '这一轮有两次请求，其中一次没报用量。', timestamp: now - 6000 },
+            {
+              id: 'a1',
+              role: 'assistant',
+              text: '先看一下现有实现。',
+              toolCalls: [{ id: 't1', name: 'bash', args: {}, status: 'ok', startedAt: now - 5000, endedAt: now - 3000 }]
+            },
+            {
+              id: 'a2',
+              role: 'assistant',
+              text: '结论：合计只能标为下限。',
+              toolCalls: [{ id: 't2', name: 'read', args: {}, status: 'ok', startedAt: now - 2500, endedAt: now - 900 }],
+              elapsedMs: 5200,
+              usage: u({ input: 2400, output: 96, cacheRead: 9000 })
+            }
+          ],
+          session: { ...st.session, isStreaming: false, isAgentRunning: false }
+        });
+        await new Promise((r) => setTimeout(r, 600));
+        const box = document.querySelector('.stream');
+        if (box) box.scrollTop = box.scrollHeight;
+        await new Promise((r) => setTimeout(r, 250));
+        return 'ok';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
+    })()
+  `,
   contextbudget: `
     (async () => {
       const st = window.__yanStore.getState();
@@ -2117,6 +2345,9 @@ const STATES = {
           contextPolicy: {
             enabled: true,
             kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
+            /* 形状与主进程推送一致：设置页读 overridden，缺它会让 ContextTab 崩 */
+            source: 'default',
+            overridden: [],
             budget: {
               /*
                * 窗口必须与截图 fixture 的模型一致（400k，见 shot-fixture.js），
@@ -2163,6 +2394,9 @@ const STATES = {
           contextPolicy: {
             enabled: true,
             kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
+            /* 形状与主进程推送一致：设置页读 overridden，缺它会让 ContextTab 崩 */
+            source: 'default',
+            overridden: [],
             budget: {
               /*
                * 用真实模型的窗口（262144，与用户机器一致）而不是整数 400k：
@@ -2210,7 +2444,7 @@ const STATES = {
       window.__yanStore.setState({
         logs: [
           '[来源] 用户扩展 1 项：left-info-panel.ts（砚默认启动使用 --no-extensions，不加载；不删除、不改写）',
-          '[来源] 砚内置薄层 10 项：browser.js、question.js、work-mode.js、goal-resume.js、handoffs.js、response-detail.js、language.js、capability-guide.js、context.js、project-knowledge.js（显式传入；question / context_recall 的模型工具最终归属仍待 01-S5 / 06 收口）',
+          '[来源] 砚内置薄层 9 项：question.js、work-mode.js、goal-resume.js、handoffs.js、response-detail.js、language.js、capability-guide.js、context.js、project-knowledge.js（显式传入；只承载宿主没有 CLI / RPC 等价物的生命周期钩子，不注册模型工具；交互提问走宿主 yan question ask，归档回读走 yan context recall）',
           '[来源] 检测到用户扩展：当前任务清单仍由扩展写入 \`left-panel-tasks\`，砚只读取并显示；砚内置任务计划落地后写入改走宿主日志，旧条目保持只读（两者不会互相覆盖）'
         ]
       });
@@ -3280,6 +3514,13 @@ const MUST_HAVE = {
     '.usagebar .ub-item',
     '[data-testid="composer"]'
   ],
+  /* 实施-11 H-6b：整轮用量聚合 / 下限标记要真的渲染出来 */
+  usageagg: [
+    '[data-testid="usagebar"]',
+    '.usagebar .ub-item',
+    '[data-testid="turn-footer"]'
+  ],
+  usagepartial: ['[data-testid="usagebar"]', '.usagebar .ub-item'],
   contextbudget: [
     '[data-testid="ctx-stages"]',
     '[data-testid="ctx-stage-mark"]',
@@ -3287,6 +3528,22 @@ const MUST_HAVE = {
     '[data-testid="ctx-working-set-line"]',
     '[data-testid="ctx-working-set"]'
   ],
+  /* C-5 尾：右栏「档位」行（大窗口试行档）—— 这一行不存在这张图就没意义 */
+  ctxpreset: [
+    '[data-testid="ctx-preset"]',
+    '[data-testid="ctx-working-set-line"]',
+    '[data-testid="ctx-stages"]'
+  ],
+  /* `+` 菜单：菜单本体与入口按钮都要在图里 */
+  plusmenu: ['[data-testid="plus-menu"]', '[data-testid="composer-attach"]'],
+  plusgoal: ['[data-testid="plus-goal-compose"]', '[data-testid="plus-goal-start"]'],
+  goalpursued: [
+    '[data-testid="goal-panel"]',
+    '[data-testid="goal-brief"]',
+    '[data-testid="goal-pursue"]'
+  ],
+  /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
+  workmodekey: ['.set-row:has([data-testid="set-work-mode-key"])'],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
   subagentlaunch: [
     '[data-testid="subagent-zone-right"]',

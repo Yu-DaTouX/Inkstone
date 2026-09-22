@@ -81,23 +81,14 @@
   log('  elapsedMs: ' + last?.elapsedMs)
 
   /*
-   * 本轮用时（用户要求：会话/回合结束时能看到本次用了多久）。
+   * 本轮用时的位置（实施-11 H-1 之后的**当前口径**）。
    *
-   * 值必须来自 pi 的 `elapsedMs`（含工具往返的墙钟耗时），
-   * 不是界面自己计的秒 —— 所以这里拿 store 里的真实字段对一遍，
-   * 并确认它在**回合结束后**仍然在条上（不是只在流式期间一闪而过）。
+   * 用时只在**回合页脚**显示（`turn-footer`），用量条不再重复占一格 ——
+   * 所以这里反过来断言：条上没有「用时」项。值本身仍来自 pi 的 `elapsedMs`
+   * （回合页脚那一条由 `turnfooter` / `usageelapsed` 覆盖）。
    */
   const elapsedItem = toks.find((x) => x.querySelector('.ub-label')?.textContent === '用时')
-  ok(!!elapsedItem, '回合结束后用量条上有「用时」')
-  if (elapsedItem) {
-    const shown = elapsedItem.querySelector('.ub-value')?.textContent ?? ''
-    log('  用时显示: ' + JSON.stringify(shown))
-    ok(/\d/.test(shown), '用时是个数字，不是「—」', shown)
-    const ms = last?.elapsedMs ?? 0
-    const expect = ms >= 60_000 ? `${Math.floor(ms / 60000)}m${String(Math.round((ms % 60000) / 1000)).padStart(2, '0')}s` : `${(ms / 1000).toFixed(1)}s`
-    ok(shown.replace(/\s/g, '') === expect, `用时 = ${shown}（应 ${expect}，来自 elapsedMs=${ms}）`)
-    ok(!!elapsedItem.getAttribute('title'), '用时项有 tooltip 说明口径')
-  }
+  ok(!elapsedItem, '用量条不再显示「用时」（H-1 起只在回合页脚）')
 
   ok(last?.usage?.output > 0, `output = ${last?.usage?.output}（应 > 0）`)
   ok(last?.usage?.input > 0 || last?.usage?.cacheRead > 0, '有输入侧用量')

@@ -172,5 +172,64 @@ export async function runTurnTimingStoreTests(ok) {
     )
   }
 
+  /* ---- H-6b：runId 决定「覆盖」还是「累加」 ---- */
+  {
+    const s = 'sess-runs'
+    const base = {
+      v: TURN_TIMING_VERSION,
+      anchorId: 'm0',
+      startedAt: 1000,
+      endedAt: 4000,
+      elapsedMs: 3000,
+      terminalReason: 'completed',
+      sourceIds: ['a1'],
+      waitSpans: [{ id: 't1', name: 'bash', startedAt: 1200, endedAt: 2200 }]
+    }
+    /* 同一 run：中途快照 + 收尾 → 后者胜，**不累加** */
+    await appendTurnTiming(dir, s, { ...base, logicalTurnId: 'm0', runId: 'run-1', final: false })
+    await appendTurnTiming(dir, s, {
+      ...base,
+      logicalTurnId: 'm0',
+      runId: 'run-1',
+      elapsedMs: 3200,
+      endedAt: 4200,
+      final: true
+    })
+    const same = await readTurnTimings(dir, s)
+    ok(same.length === 1, '同一逻辑回合只出一条记录', String(same.length))
+    ok(same[0].elapsedMs === 3200, '同一 run 的收尾覆盖中途快照（不累加）', String(same[0].elapsedMs))
+    ok(same[0].final === true, '快照的 final 取收尾那条')
+
+    /* 不同 run（自动继续）：同一 anchor → 归一个逻辑回合、用时相加 */
+    await appendTurnTiming(dir, s, {
+      ...base,
+      logicalTurnId: 'm0',
+      runId: 'run-2',
+      final: true,
+      startedAt: 9000,
+      endedAt: 11000,
+      elapsedMs: 2000,
+      sourceIds: ['a2'],
+      waitSpans: [{ id: 't2', name: 'read', startedAt: 9200, endedAt: 9800 }]
+    })
+    const merged = await readTurnTimings(dir, s)
+    ok(merged.length === 1, '自动继续归同一个逻辑回合（不另起一条）', String(merged.length))
+    ok(merged[0].elapsedMs === 5200, '自动继续的用时相加（3200 + 2000）', String(merged[0].elapsedMs))
+    ok(merged[0].sourceIds.join('|') === 'a1|a2', 'sourceIds 合并去重', merged[0].sourceIds.join('|'))
+    ok(merged[0].startedAt === 1000 && merged[0].endedAt === 11000, 'startedAt 取最早、endedAt 取最晚')
+    ok((merged[0].waitSpans ?? []).length === 2, 'waitSpans 合并（两段工作各一条）')
+
+    /* 旧记录（没有 runId）保持「后者胜」，不把历史翻倍 */
+    const legacy = 'sess-legacy'
+    await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 1000 })
+    await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 2000 })
+    const old = await readTurnTimings(dir, legacy)
+    ok(
+      old.length === 1 && old[0].elapsedMs === 2000,
+      '旧记录（无 runId）保持后者胜，不把历史翻倍',
+      String(old[0].elapsedMs)
+    )
+  }
+
   await rm(dir, { recursive: true, force: true })
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { CONTEXT_POLICY_PRESETS, LARGE_CONTEXT_POLICY_PRESETS } from '../../../../shared/context-policy'
+import { CONTEXT_POLICY_PRESETS, LARGE_CONTEXT_POLICY_PRESETS, largePresetOf } from '../../../../shared/context-policy'
 import type { ContextPolicyOverrides } from '../../../../shared/ipc'
 
 /**
@@ -146,7 +146,7 @@ export function ContextTab() {
               : t('set.ctxSource.off')}
           </div>
           <div className="set-desc set-num">
-            {policy && policy.overridden.length
+            {policy?.overridden?.length
               ? t('set.ctxOverridden', { fields: policy.overridden.map((f) => tk(`set.ctxField.${f}`)).join(' / ') })
               : t('set.ctxAllDefault')}
           </div>
@@ -397,23 +397,6 @@ function presetOf(o: ContextPolicyOverrides): 'default' | 'reference' | undefine
     o.workingSetCap === ref.workingSetCap &&
     o.windowRatio === ref.windowRatio
   return sameRef ? 'reference' : undefined
-}
-
-/** 只识别完整的模型级试行档；混合覆盖仍显示为自定义。 */
-function largePresetOf(o: ContextPolicyOverrides | undefined): 'balanced' | 'long' | undefined {
-  if (!o) return undefined
-  const keys = Object.keys(o)
-  for (const preset of ['balanced', 'long'] as const) {
-    const target = LARGE_CONTEXT_POLICY_PRESETS[preset]
-    if (
-      keys.length === 2 &&
-      o.workingSetCap === target.workingSetCap &&
-      o.windowRatio === target.windowRatio
-    ) {
-      return preset
-    }
-  }
-  return undefined
 }
 
 function summary(o: ContextPolicyOverrides): string {

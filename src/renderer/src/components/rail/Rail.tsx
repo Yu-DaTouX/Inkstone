@@ -33,7 +33,7 @@ import { nextWorkspaceMode, type WorkspaceMode } from '../../../../shared/worksp
  */
 /**
  * 左栏的两档工作区入口只改变导航语境，不改变当前会话 AgentMode。
- * 编码 / 日常与标准 / 澄清 / 自主是两个正交维度；AgentMode 仍由输入框
+ * 编码 / 日常与标准 / 计划 / 自主是两个正交维度；AgentMode 仍由输入框
  * 的模式控件和 Tab 快捷键负责。
  */
 const RAIL_MODES = [

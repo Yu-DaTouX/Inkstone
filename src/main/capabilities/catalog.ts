@@ -48,7 +48,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'goal.ready',
     '目标就绪',
-    '澄清已足够时提交目标就绪报告，触发从澄清档切到标准档开始执行（需要五栏齐全）。',
+    '计划已足够时提交目标就绪报告，触发从计划档切到标准档开始执行（需要五栏齐全）。',
     'write',
     'yan goal ready --request-file <file>'
   ),
@@ -62,7 +62,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'goal.status',
     '目标状态查询',
-    '只读查询当前会话的目标阶段与待办，用于判断是否该继续还是先澄清。',
+    '只读查询当前会话的目标阶段与待办，用于判断是否该继续还是先定计划。',
     'read',
     'yan goal status'
   ),
