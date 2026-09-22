@@ -126,6 +126,29 @@ export function Rail() {
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
   /** 哪些项目已点开「更多会话」（按项目 id 记；默认只显示前 SESSION_PREVIEW 条） */
   const [shownAllSessions, setShownAllSessions] = useSidebarValue<string[]>('expanded-sessions', [])
+  /*
+   * 左栏收起（`railPinned` true → false）时只收回「更多会话」（实施-12 U-1）。
+   *
+   * 为什么必须显式监听而不是靠组件卸载：收起只是布局上的折叠，Rail 一直挂着
+   *（hover 展开时还要用），卸载根本不会发生 —— 那样用户收起再打开会看到
+   * 上次展开的几十条会话，与「收起 = 复位到预览」的用户口径不一致。
+   *
+   * 用 ref 记上一次的值：只在**真的发生 true→false 那一次**复位，
+   * 而不是每次渲染都写状态（在 render 中写状态会多出一轮渲染）。
+   * `setShownAllSessions` 来自 useSidebarValue（就是 setState），引用稳定。
+   */
+  const railPinned = useStore((s) => s.railPinned)
+  const railWasPinned = useRef(railPinned)
+  useEffect(() => {
+    if (railWasPinned.current && !railPinned) {
+      setShownAllSessions([])
+      /* 临时菜单不能留在折叠起来的栏里（下次展开时它会磍在一个看不见的位置） */
+      setMenuFor(null)
+      setProjectMenu(null)
+      setGroupMenu(null)
+    }
+    railWasPinned.current = railPinned
+  }, [railPinned, setShownAllSessions])
   const [expanded, setExpanded] = useSidebarValue<string[]>('expanded-branches', [])
   const [pinned, setPinned] = useSidebarValue<string[]>('pinned', [])
   const archived = useMemo(() => projectRecords.filter((p) => p.archived).map((p) => p.cwd), [projectRecords])
