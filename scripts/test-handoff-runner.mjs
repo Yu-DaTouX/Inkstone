@@ -100,6 +100,22 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
     ...over
   })
 
+  for (const boundary of ['before-stop', 'after-open', 'after-inherit']) {
+    let allowed = boundary !== 'before-stop'
+    const h = await harness({ onDestinationReady: async () => { if (boundary === 'after-inherit') allowed = false } })
+    if (boundary === 'after-open') {
+      const open = h.deps.openSession
+      h.deps.openSession = async (target) => { const result = await open(target); allowed = false; return result }
+    }
+    try {
+      const result = await h.runner.commit(commitInput(h, { canContinue: () => allowed }))
+      ok(!result.ok, `用户停止在 ${boundary} 边界使交接失效`)
+      ok(!h.events.some((event) => event.startsWith('send:')), `${boundary} 不发送自动续接`)
+      if (boundary === 'before-stop') ok(h.events.length === 0, '暂停目标不停止源实例、不创建新会话')
+      if (boundary === 'after-open') ok(h.events.includes('stop:r-new-1'), '停止创建中的交接会清理未提交目的实例')
+    } finally { await h.cleanup() }
+  }
+
   /* --------------------------------------------------- 1. 成功路径与顺序 */
 
   {
@@ -124,7 +140,15 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
       ok(tx.stage === 'resumed' && tx.destinationSession === DEST, '事务日志也记到了 resumed + 目的会话')
       ok(tx.steps.length === 5, `五个前进步骤都留了日志（实际 ${tx.steps.length}）`)
       ok(tx.steps.every((s, i, all) => i === 0 || all[i - 1].to === s.from), '步骤日志首尾相连，没有跳步')
-      ok(h.notices.some((n) => /交接完成/.test(n.message)), '给用户留了一句可读的完成提示')
+      /*
+       * 文案口径（实施-14 F5）：用户要的是「无感」——不再提「交接」这件事，
+       * 只说「上下文已整理，正在继续」。所以断言跟的是这条可读提示，
+       * 不是旧版的「交接完成」（旧文案已被有意替换）。
+       */
+      ok(
+        h.notices.some((n) => n.type === 'info' && /上下文已整理/.test(n.message)),
+        '给用户留了一句可读的完成提示'
+      )
     } finally {
       await h.cleanup()
     }

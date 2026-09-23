@@ -110,6 +110,7 @@ export interface HandoffRunnerDeps {
     runId: string
     sourceSession: string
   }) => Promise<void>
+  onLinked?: (sourceRunId: string, destinationRunId: string) => Promise<void>
   now?: () => number
   /** 等证据的轮询（单测注入一个立即返回的实现） */
   pollEvidence?: (probe: () => Promise<boolean>, timeoutMs: number) => Promise<boolean>
@@ -124,6 +125,8 @@ export interface HandoffCommitInput {
   pkg: HandoffPackage
   /** 证据等待上限覆盖（测试用） */
   evidenceTimeoutMs?: number
+  /** 用户停止使本次操作失效，异步边界后重新检查。 */
+  canContinue?: () => boolean
 }
 
 export interface HandoffCommitResult {
@@ -206,6 +209,7 @@ export class HandoffRunner {
      */
     const activate = this.deps.shouldActivate?.(input.sourceRunId) ?? true
     /* ③ 释放源租约 → 建目的会话（同 cwd 防线不允许两步并行） */
+    if (input.canContinue?.() === false) return this.fail(input, '交接已取消')
     await this.deps.stopRunner(input.sourceRunId)
     const opened = await this.deps.openSession({
       cwd: input.cwd,
@@ -217,13 +221,20 @@ export class HandoffRunner {
       return this.fail(input, opened.error ?? '目的会话没能建起来')
     }
 
+    if (input.canContinue?.() === false) {
+      await this.deps.stopRunner(opened.runId)
+      await this.reopenSource(input.sourceSession, input.cwd)
+      return this.fail(input, '交接已取消')
+    }
     const attachedDest = await transactions.setDestination(input.handoffId, opened.sessionFile)
     if (!attachedDest.ok || !attachedDest.tx) {
+      await this.deps.stopRunner(opened.runId)
       await this.reopenSource(input.sourceSession, input.cwd)
       return this.fail(input, `目的会话没能记进事务日志（${attachedDest.reason}）`)
     }
     const created = await transactions.step(input.handoffId, 'destination-created', 'destination-opened')
     if (!created.advanced || !created.tx) {
+      await this.deps.stopRunner(opened.runId)
       await this.reopenSource(input.sourceSession, input.cwd)
       return this.fail(input, `目的会话阶段没能落盘（${created.reason}）`)
     }
@@ -256,6 +267,8 @@ export class HandoffRunner {
      *    所以判据必须是「这条链上真的有源和目的两段」。
      */
     if (!(await this.ensureLinked(input.sourceSession, dest, input.handoffId))) {
+      if (knownRunId) await this.deps.stopRunner(knownRunId)
+      await this.reopenSource(input.sourceSession, input.cwd)
       return this.fail(input, '会话链没写成（前端会出现两条会话）')
     }
 
@@ -265,11 +278,13 @@ export class HandoffRunner {
       tx = committed.tx
     }
 
+    if (knownRunId) await this.deps.onLinked?.(input.sourceRunId, knownRunId)
+
     /* 已在 committed：先看磁盘证据，有就直接补记完成（崩溃后不重发） */
     if (await this.hasEvidence(dest, tx.resumeId)) {
       const done = await this.deps.transactions.step(input.handoffId, 'resumed', 'evidence-found')
       if (done.tx) tx = done.tx
-      this.deps.notify('交接已在目的会话继续（磁盘证据确认）。', 'info')
+      this.deps.notify('上下文已整理，续接记录已确认。', 'info')
       return { ok: true, stage: tx.stage, destinationSession: dest }
     }
 
@@ -281,8 +296,10 @@ export class HandoffRunner {
      * **发送之前**先记一次尝试：崩溃在发送途中也算「已经发过」——
      * 记在发送之后的话，恰好那个窗口会丢计数，下次启动又当成从没发过。
      */
+    if (input.canContinue?.() === false) return this.fail(input, '交接已暂停，不发送续接')
     await this.deps.transactions.noteResumeAttempt(input.handoffId)
     const text = buildResumeText(tx.package, tx.resumeId)
+    if (input.canContinue?.() === false) return this.fail(input, '交接已暂停，不发送续接')
     const sent = await this.deps.send(runId, text, tx.resumeId)
     if (!sent.ok) return this.midway(input, dest, `resume 发送失败：${sent.error ?? '未知原因'}`)
 
@@ -295,7 +312,7 @@ export class HandoffRunner {
     }
     const done = await this.deps.transactions.step(input.handoffId, 'resumed', 'evidence-found')
     if (done.tx) tx = done.tx
-    this.deps.notify(`交接完成，已在新会话继续：${resumePreview(text)}`, 'info')
+    this.deps.notify(`上下文已整理，正在继续当前任务：${resumePreview(text)}`, 'info')
     return { ok: true, stage: tx.stage, destinationSession: dest }
   }
 

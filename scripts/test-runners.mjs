@@ -481,6 +481,22 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(wrongProject === null, '能力目标：projectId 漂移不能只凭会话路径通过')
         await reg.stopAll()
       }
+
+      for (const switchAway of [false, true]) {
+        const { reg } = make()
+        const source = await reg.select({ cwd: 'C:/source', sessionFile: 'C:/source.jsonl' })
+        await reg.stopOne(source.id, true)
+        ok(reg.activeRunnerId === source.id, '交接停源保留当前会话的选中占位')
+        const dest = await reg.select({ cwd: 'C:/source', activate: false, hidden: true })
+        ok(!reg.statuses().some((r) => r.id === dest.id), '未提交的目的片段不出现在实例列表')
+        let other
+        if (switchAway) other = await reg.select({ cwd: 'C:/other', sessionFile: 'C:/other.jsonl' })
+        const active = reg.publishReplacement(source.id, dest.id)
+        ok(active === !switchAway, '仅用户仍在源会话时原位接续')
+        ok(reg.activeRunnerId === (other?.id ?? dest.id), '交接提交不抢走用户刚切换的会话')
+        ok(reg.statuses().some((r) => r.id === dest.id), '提交后才发布目的实例')
+        await reg.stopAll()
+      }
     })()
   }
 }

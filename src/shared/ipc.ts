@@ -273,6 +273,9 @@ export interface PiInfo {
 
 /** 会话状态快照（get_state 的归一化） */
 export interface SessionState {
+  /** 用户可见会话身份在内部片段切换期间保持不变。 */
+  conversationId?: string
+  conversationFile?: string
   sessionId: string
   sessionFile?: string
   sessionName?: string
@@ -1787,6 +1790,7 @@ export type MainPushBody =
    * 运行实例状态快照（N12）。
    * 它是**全局**推送（不属于某个会话）—— 左栏需要一次拿到所有实例的画法。
    */
+  | { ch: 'handoff-rebind'; payload: { sourceRunId: string; sourceSessionId: string; runtime: RuntimeEnvelope; state: SessionState; active: boolean } }
   | { ch: 'runners'; payload: RunnerStatus[] }
   /** 托盘菜单要求渲染端新建一个全局会话。 */
   | { ch: 'tray-new-session'; payload: null }

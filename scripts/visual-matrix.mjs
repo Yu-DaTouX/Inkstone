@@ -316,6 +316,23 @@ function gitStubContent(path, side) {
 
 function registerStubHandlers() {
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
+  ipcMain.handle('yan:getHandoff', async (event) => {
+    /* Keep a handoff fixture stable when HandoffNote's four-second poll fires. */
+    const fixture = await event.sender.executeJavaScript('window.__yanStore?.getState()?.handoff ?? null')
+    if (fixture?.sessionKey === 'matrix-session') return fixture
+    return {
+      sessionKey: '',
+      tally: null,
+      segmentTally: null,
+      chainSegments: 0,
+      package: null,
+      pending: false,
+      threshold: 2,
+      transaction: null,
+      events: [],
+      autoCommit: true
+    }
+  })
   /*
    * 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
    * 截进验收图会被当成真 bug。数据与 shots.mjs 一致。
@@ -879,7 +896,9 @@ const GROUPS = [
    * 新组只含这一个状态，不影响任何旧图。
    */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['quotatone'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['quotatone'] }
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['quotatone'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['segmented', 'handoffnote', 'handofftally'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['segmented', 'handoffnote', 'handofftally'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -896,6 +915,54 @@ const ONBOARDING_GROUPS = [
  * 否则上一个状态留下的菜单/面板会串进下一张图（截出来的是两态叠加）。
  */
 const STATES = {
+  handoffnote: [
+    '(async () => {',
+    '  const st = window.__yanStore.getState();',
+    '  st.closeSettings();',
+    '  st.setRailPinned(true);',
+    '  const now = Date.now();',
+    '  const tally = { segmentId: \"matrix-segment\", count: 2, keys: [\"c1\", \"c2\"], updatedAt: now };',
+    '  window.__yanStore.setState({ handoff: {',
+    '    sessionKey: \"matrix-session\", tally, segmentTally: tally, chainSegments: 1,',
+    '    package: null, pending: false, threshold: 2, transaction: null, autoCommit: true,',
+    '    events: [{ at: now - 1000, stage: \"generate\", outcome: \"failed\", op: \"matrix-op\",',
+    '      handoffId: \"matrix-handoff\", runnerId: \"matrix-runner\", sessionKey: \"matrix-session\",',
+    '      reason: \"timeout\", detail: {} }]',
+    '  } });',
+    '  await new Promise((resolve) => setTimeout(resolve, 240));',
+    '  const note = document.querySelector(\"[data-testid=handoff-note]\");',
+    '  const retry = document.querySelector(\"[data-testid=handoff-retry]\");',
+    '  const stop = document.querySelector(\"[data-testid=handoff-stop]\");',
+    '  return note && note.dataset.tone === \"failed\" && retry && stop ? \"ok\" : \"bad-handoff-note\";',
+    '})()'
+  ].join('\n'),
+  /*
+   * 整理完成态 + 两个计数（实施-14 F7 / H5）。
+   * 为什么要单独一个状态：失败态那张图只证明「原因 + 重试/停止」能显示，
+   * 证明不了「本片段 2/2」与「整条会话 3 段」这两个数真的分开。
+   */
+  handofftally: [
+    '(async () => {',
+    '  const st = window.__yanStore.getState();',
+    '  st.closeSettings();',
+    '  st.setRailPinned(true);',
+    '  const now = Date.now();',
+    '  const tally = { segmentId: \"matrix-segment\", count: 2, keys: [\"c1\", \"c2\"], updatedAt: now };',
+    '  window.__yanStore.setState({ handoff: {',
+    '    sessionKey: \"matrix-session\", tally, segmentTally: tally, chainSegments: 3,',
+    '    package: null, pending: false, threshold: 2, transaction: null, autoCommit: true,',
+    '    events: [{ at: now - 1000, stage: \"resume\", outcome: \"resume-confirmed\", op: \"matrix-op\",',
+    '      handoffId: \"matrix-handoff\", runnerId: \"matrix-runner\", sessionKey: \"matrix-session\",',
+    '      reason: null, detail: {} }]',
+    '  } });',
+    '  await new Promise((resolve) => setTimeout(resolve, 240));',
+    '  const note = document.querySelector(\"[data-testid=handoff-note]\");',
+    '  const tallyEl = document.querySelector(\"[data-testid=handoff-tally]\");',
+    '  const okTone = note && note.dataset.tone === \"done\";',
+    '  const okTally = tallyEl && tallyEl.dataset.done === \"2\" && tallyEl.dataset.threshold === \"2\" && tallyEl.dataset.segments === \"3\";',
+    '  return okTone && okTally ? \"ok\" : \"bad-handoff-tally:\" + (note ? note.dataset.tone : \"no-note\") + \":\" + (tallyEl ? JSON.stringify(tallyEl.dataset) : \"no-tally\");',
+    '})()'
+  ].join('\n'),
   /* 主界面：右栏打开、左栏展开、没有浮层 */
   main: `
     (() => {
@@ -3435,6 +3502,17 @@ const MUST_HAVE = {
   filelink: ['.stream', 'a.md-link[data-link-kind="file"]'],
   railmini: ['[data-testid="rail-toggle"]'],
   chainjoin: ['[data-testid="rail-session"]', '.stream'],
+  handoffnote: [
+    '[data-testid="handoff-note"][data-tone="failed"]',
+    '[data-testid="handoff-retry"]',
+    '[data-testid="handoff-stop"]',
+    '.center > .composer-wrap'
+  ],
+  handofftally: [
+    '[data-testid="handoff-note"][data-tone="done"]',
+    '[data-testid="handoff-tally"]',
+    '.center > .composer-wrap'
+  ],
   quotatone: [
     '[data-testid="rp-quota"]',
     '[data-testid="quota-win-fiveHour-pct"]',
@@ -3767,10 +3845,10 @@ const WANT_ONBOARDING = GROUP_ONLY.length === 0 || GROUP_ONLY.includes('onboardi
 
 async function main() {
   /*
-   * 截图/测量脚本**故意**不注册拉取型 IPC（返回空值会覆盖 fixture 注入的 store）：
-   * Electron 会把每次失败调用刷成一整段堆栈，既是这次 EPIPE 事故里被淹没的
-   * “原始错误”，也会把真错误顶出屏幕。这里显式静音并计数（结尾汇总），
-   * 其余 console.error 原样透传。
+   * 截图/测量脚本只注册必要的只读桩：HandoffNote 需要基线状态，失败提示夹具
+   * 则在 store 中保持稳定。其余拉取型 IPC 故意留空；Electron 会把每次失败调用
+   * 刷成一整段堆栈，既是 EPIPE 事故里被淹没的“原始错误”，也会把真错误顶出屏幕。
+   * 这里显式静音并计数（结尾汇总），其余 console.error 原样透传。
    */
   muteMissingHandlerNoise()
   registerStubHandlers()
@@ -3867,11 +3945,18 @@ async function main() {
     const missing = Object.entries(geometry.must)
       .filter(([, okFlag]) => !okFlag)
       .map(([sel]) => sel)
-    const good = over <= 1 && missing.length === 0
-    if (!good) failures.push(`${name}（溢出 ${over}px${missing.length ? '，缺 ' + missing.join(',') : ''}）`)
+    const isHandoffNote = name.startsWith('matrix-handoffnote-')
+    const note = geometry.boxes['[data-testid="handoff-note"][data-tone="failed"]']
+    const composer = geometry.boxes['.center > .composer-wrap']
+    const noteGap = note && composer ? composer.y - (note.y + note.h) : null
+    const handoffPlacementGood = !isHandoffNote || (noteGap !== null && noteGap >= 0 && noteGap <= 48)
+    const good = over <= 1 && missing.length === 0 && handoffPlacementGood
+    const layoutIssue = isHandoffNote && !handoffPlacementGood ? '，交接提示未处于输入框上方' : ''
+    if (!good) failures.push(`${name}（溢出 ${over}px${missing.length ? '，缺 ' + missing.join(',') : ''}${layoutIssue}）`)
     console.log(
       `  ${good ? '✓' : '✗'} ${name}  溢出=${over}px  缩放=${geometry.uiScale}  主题=${geometry.theme}` +
-        (missing.length ? `  缺=${missing.join(',')}` : '')
+        (missing.length ? `  缺=${missing.join(',')}` : '') +
+        (isHandoffNote ? `  提示距输入框=${noteGap ?? '未知'}px` : '')
     )
     return geometry
   }
@@ -3895,7 +3980,20 @@ async function main() {
     console.log(`\n▶ ${size} @ ${pct}% ${g.theme}`)
     win.setSize(g.w, g.h)
     await wait(260)
-    await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${g.theme}'`)
+    /*
+     * 主题要同时写进 store 与 <html data-theme>：只改 DOM 时，任何一次
+     * settings 更新（applyScale / 状态脚本）都会让 App 的 theme effect 把
+     * dataset 写回 store 里的旧值 —— 实测 light 组会静默地截出深色图
+     * （文件名还写着 light）。两处一起写才能真的换肤。
+     */
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const st = window.__yanStore.getState();
+        if (st.settings) window.__yanStore.setState({ settings: { ...st.settings, theme: '${g.theme}' } });
+        document.documentElement.dataset.theme = '${g.theme}';
+        return 'ok';
+      })()
+    `)
     await applyScale(g.scale)
 
     for (const state of g.states) {

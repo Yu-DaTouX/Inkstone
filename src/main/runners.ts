@@ -61,6 +61,7 @@ interface Runner {
   generation: number
   createdAt: number
   lastActiveAt: number
+  hidden?: boolean
 }
 
 export interface SelectTarget {
@@ -74,6 +75,8 @@ export interface SelectTarget {
   scope?: SessionScope
   /** false 时只准备后台运行实例，不改变桌面当前选中的 runner。 */
   activate?: boolean
+  /** 未提交的交接片段不复用其它会话，也不暴露到侧栏。 */
+  hidden?: boolean
   cwd: string
 }
 
@@ -244,7 +247,7 @@ export class RunnerRegistry {
 
     /* 复用空闲实例：不忙的那个可以被切到别的会话（旧会话已落盘，随时能载回） */
     const idle = [...this.runners.values()]
-      .filter((runner) => !this.busy(runner) && (target.activate !== false || runner.id !== this.activeId))
+      .filter((runner) => !target.hidden && !runner.hidden && !this.busy(runner) && (target.activate !== false || runner.id !== this.activeId))
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {
@@ -326,6 +329,7 @@ export class RunnerRegistry {
       projectId: target.projectId,
       generation: 1,
       createdAt: Date.now(),
+      hidden: target.hidden,
       lastActiveAt: Date.now()
     }
     const previousActive = this.activeId
@@ -465,11 +469,11 @@ export class RunnerRegistry {
    * 停止并移除一个实例。作用域**只到这一个会话**
    * （用户单独停 B 不该影响 A）。
    */
-  async stopOne(id: string): Promise<boolean> {
+  async stopOne(id: string, preserveSelection = false): Promise<boolean> {
     const r = this.runners.get(id)
     if (!r) return false
     this.runners.delete(id)
-    if (this.activeId === id) this.activeId = null
+    if (this.activeId === id && !preserveSelection) this.activeId = null
     try {
       await r.agent.stop()
     } catch {
@@ -569,9 +573,19 @@ export class RunnerRegistry {
     }
   }
 
+  /** 只在用户仍选中源时原地接续；用户中途切走则保留其选择。 */
+  publishReplacement(sourceId: string, destinationId: string): boolean {
+    const runner = this.runners.get(destinationId)
+    if (!runner) return false
+    runner.hidden = false
+    const activate = this.activeId === sourceId
+    if (activate) this.activeId = destinationId
+    return activate
+  }
+
   /** 当前视图对应的状态（渲染端拉取 / 推送都用它） */
   statuses(): RunnerStatus[] {
-    return [...this.runners.values()].map((r) => {
+    return [...this.runners.values()].filter((r) => !r.hidden).map((r) => {
       const st: SessionState | null = r.agent.getState()
       const conn = r.agent.getConn().state
       return {

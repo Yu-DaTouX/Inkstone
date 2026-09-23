@@ -34,8 +34,8 @@ export function SessionHeader() {
    *   ④ 首条用户消息（本地兜底）
    *   ⑤ 「新会话」
    */
-  const fromModel = session?.sessionId ? titles[session.sessionId] : undefined
-  const fromList = sessions.find((x) => x.path === session?.sessionFile)?.title
+  const fromModel = session?.sessionId ? titles[session.conversationId ?? session.sessionId] : undefined
+  const fromList = sessions.find((x) => x.path === (session?.conversationFile ?? session?.sessionFile))?.title
   const fromFirst = messages.find((m) => m.role === 'user')?.text
   const title =
     fromModel ||

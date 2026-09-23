@@ -1161,5 +1161,6 @@
   "handoff.done": "上下文已整理，任务继续",
   "handoff.failed": "整理未完成，已保留当前进度",
   "handoff.retry": "重试",
-  "handoff.stop": "停止"
+  "handoff.stop": "停止",
+  "handoff.tally": "本片段 {done}/{threshold} · 整条会话 {segments} 段"
 }

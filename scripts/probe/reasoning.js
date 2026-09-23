@@ -327,5 +327,25 @@
     window.matchMedia = realMM
   }
 
+
+  // A completed response followed by a thinking-only continuation must already render below A.
+  {
+    const messages = [
+      { id: 'segment-user', role: 'user', text: '连续完成任务' },
+      { id: 'segment-a', role: 'assistant', text: '已完成第一部分', thinking: '第一段思考' },
+      { id: 'segment-b', role: 'assistant', text: '', thinking: '第二段正在思考', thinkingLive: true }
+    ]
+    store.getState().applyPush({ ch: 'sync', payload: messages })
+    setTurnStreaming(true)
+    for (let i = 0; i < 30 && document.querySelectorAll('[data-testid="reasoning"]').length < 2; i++) await sleep(50)
+    const caps = [...document.querySelectorAll('[data-testid="reasoning"]')]
+    const firstResponse = q('[data-testid="turn-response"]')
+    ok(caps.length === 2 && !!firstResponse && !!(firstResponse.compareDocumentPosition(caps[1]) & Node.DOCUMENT_POSITION_FOLLOWING), '第二段还没正文时，推理就跟在第一段正式回复后')
+    store.getState().applyPush({ ch: 'msg-update', payload: { id: 'segment-b', patch: { text: '第二部分完成', thinkingLive: false } } })
+    for (let i = 0; i < 30 && document.querySelectorAll('[data-testid="turn-response"]').length < 2; i++) await sleep(50)
+    const updatedCaps = [...document.querySelectorAll('[data-testid="reasoning"]')]
+    ok(caps.length === 2 && updatedCaps[0] === caps[0] && updatedCaps[1] === caps[1], '第二段正文到达不重挂推理节点，保留展开状态')
+  }
+
   return out.join('\n')
 })()

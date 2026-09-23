@@ -57,19 +57,36 @@ export async function runAutoContinueTests(ok) {
   const plan = (patch = {}) =>
     shared.planAutoContinue({ state: state(0), error: errRetryable, ...patch })
 
-  ok(shared.AUTO_CONTINUE_LIMIT === 3, '默认上限 3 次')
-  ok(shared.AUTO_CONTINUE_DELAYS_MS[0] === 3000, '第一次退避 3 秒')
+  ok(shared.AUTO_CONTINUE_LIMIT === 5, '默认上限 5 次（供应商抽风时多给几次机会）')
+  ok(shared.AUTO_CONTINUE_DELAYS_MS[0] === 10_000, '第一次退避 10 秒')
+  ok(
+    shared.AUTO_CONTINUE_DELAYS_MS.length === shared.AUTO_CONTINUE_LIMIT,
+    '退避表与上限一一对应（每次尝试都有确定的等待）'
+  )
+  ok(
+    shared.AUTO_CONTINUE_DELAYS_MS.every((ms, i, all) => i === 0 || ms > all[i - 1]),
+    '退避单调递增（越往后等得越久）'
+  )
 
   const p1 = plan()
-  ok(p1.action === 'retry' && p1.attempt === 1 && p1.delayMs === 3000, '第一次：retry(1) / 3 秒')
-  ok(/第 1\/3 次/.test(p1.note) && /3 秒后自动继续/.test(p1.note), `提示写清第几次与多久（${p1.note}）`)
+  ok(
+    p1.action === 'retry' && p1.attempt === 1 && p1.delayMs === shared.AUTO_CONTINUE_DELAYS_MS[0],
+    '第一次：retry(1) / 10 秒'
+  )
+  ok(/第 1\/5 次/.test(p1.note) && /10 秒后自动继续/.test(p1.note), `提示写清第几次与多久（${p1.note}）`)
   const p2 = plan({ state: state(1) })
-  ok(p2.action === 'retry' && p2.attempt === 2 && p2.delayMs === 10000, '第二次：retry(2) / 10 秒')
-  const p3 = plan({ state: state(2) })
-  ok(p3.action === 'retry' && p3.attempt === 3 && p3.delayMs === 30000, '第三次：retry(3) / 30 秒')
-  const p4 = plan({ state: state(3) })
-  ok(p4.action === 'stop' && p4.reason === 'limit', '到上限 → 停（不再自动继续）')
-  ok(/连续 3 次/.test(p4.note), `到上限的提示要说清连续几次（${p4.note}）`)
+  ok(
+    p2.action === 'retry' && p2.attempt === 2 && p2.delayMs === shared.AUTO_CONTINUE_DELAYS_MS[1],
+    '第二次：retry(2) / 30 秒'
+  )
+  const p5 = plan({ state: state(4) })
+  ok(
+    p5.action === 'retry' && p5.attempt === 5 && p5.delayMs === shared.AUTO_CONTINUE_DELAYS_MS[4],
+    '第五次用最后一段退避（4 分钟）'
+  )
+  const pOver = plan({ state: state(5) })
+  ok(pOver.action === 'stop' && pOver.reason === 'limit', '到上限 → 停（不再自动继续）')
+  ok(/连续 5 次/.test(pOver.note), `到上限的提示要说清连续几次（${pOver.note}）`)
 
   for (const [text, why] of [
     ['429 Too Many Requests', 'quota'],
@@ -144,25 +161,23 @@ export async function runAutoContinueTests(ok) {
     ok(store.state(key).attempts === 1, '重复上报不推进计数')
 
     clock += 5_000
-    const second = await store.noteFailure(key, 'Internal Server Error')
-    ok(second.plan?.action === 'retry' && second.plan.attempt === 2, '过了窗口的同一错误 → 第 2 次续')
-    ok(store.state(key).attempts === 2, '计数落成 2')
-
-    clock += 5_000
-    const third = await store.noteFailure(key, 'Internal Server Error')
-    ok(third.plan?.action === 'retry' && third.plan.attempt === 3, '第 3 次续')
-    clock += 5_000
+    for (let i = 2; i <= 5; i++) {
+      const next = await store.noteFailure(key, 'Internal Server Error')
+      ok(next.plan?.action === 'retry' && next.plan.attempt === i, i === 2 ? '过了窗口的同一错误 → 第 2 次续' : `第 ${i} 次续`)
+      ok(store.state(key).attempts === i, `计数落成 ${i}`)
+      clock += 5_000
+    }
     const over = await store.noteFailure(key, 'Internal Server Error')
-    ok(over.plan?.action === 'stop' && over.plan.reason === 'limit', '第 4 次 → 停（到上限）')
-    ok(store.state(key).attempts === 3, '到上限后计数保持（不会自己归零再试）')
+    ok(over.plan?.action === 'stop' && over.plan.reason === 'limit', '第 6 次 → 停（到上限）')
+    ok(store.state(key).attempts === 5, '到上限后计数保持（不会自己归零再试）')
 
     /* 文件真的落盘 + 重启不忘记 */
     const file = join(root, service.AUTO_CONTINUE_FILE_NAME)
     const onDisk = JSON.parse(await readFile(file, 'utf8'))
-    ok(Object.values(onDisk.entries)[0]?.attempts === 3, '计数真的落盘')
+    ok(Object.values(onDisk.entries)[0]?.attempts === 5, '计数真的落盘')
     const reopened = new service.AutoContinueStore({ root })
     await reopened.load()
-    ok(reopened.state(key).attempts === 3, '重启后计数还在（重启不重新给满额度）')
+    ok(reopened.state(key).attempts === 5, '重启后计数还在（重启不重新给满额度）')
 
     /* 用户发言 / 用户停止 → 归零 */
     await store.reset(key)

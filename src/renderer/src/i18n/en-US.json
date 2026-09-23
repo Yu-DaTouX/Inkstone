@@ -1161,5 +1161,6 @@
   "handoff.done": "Context tidied — work continues",
   "handoff.failed": "Tidying did not finish — progress kept",
   "handoff.retry": "Retry",
-  "handoff.stop": "Stop"
+  "handoff.stop": "Stop",
+  "handoff.tally": "this segment {done}/{threshold} · {segments} in the session"
 }

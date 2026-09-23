@@ -84,6 +84,7 @@ export function Composer() {
     const sessionId = s.session?.sessionId ?? runner?.sessionId
     return sessionId || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
   })
+  const conversationKey = useStore((s) => s.session?.conversationId) ?? activeRuntimeKey
   const cachedDraft = useStore((s) =>
     activeRuntimeKey ? s.sessionRuntimes[activeRuntimeKey]?.draft ?? '' : ''
   )
@@ -306,23 +307,23 @@ export function Composer() {
 
   /* ---- 按会话恢复 / 保存输入框草稿 ---- */
   useEffect(() => {
-    hydratedDraftKey.current = activeRuntimeKey || null
+    hydratedDraftKey.current = conversationKey || null
     /* 这次 value 变化来自“换会话”而不是用户输入，跳过一次回写。 */
     skipDraftPersist.current = true
     setValue(activeRuntimeKey ? cachedDraft : '')
     setCursor(activeRuntimeKey ? cachedDraft.length : null)
     // cachedDraft 只在 activeRuntimeKey 变化时取一次，避免每次敲字都重置输入框。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRuntimeKey])
+  }, [conversationKey])
 
   useEffect(() => {
     if (skipDraftPersist.current) {
       skipDraftPersist.current = false
       return
     }
-    if (!activeRuntimeKey || hydratedDraftKey.current !== activeRuntimeKey) return
+    if (!activeRuntimeKey || hydratedDraftKey.current !== conversationKey) return
     setSessionDraft(value)
-  }, [activeRuntimeKey, setSessionDraft, value])
+  }, [activeRuntimeKey, conversationKey, setSessionDraft, value])
 
   /* ---- 自动长高 ---- */
   useEffect(() => {

@@ -653,7 +653,7 @@ function handoffAlert(message: string, notifyType: 'info' | 'warning' | 'error')
 const handoffRunner = new HandoffRunner({
   transactions: handoffTransactions,
   chains: sessionChains,
-  stopRunner: async (runId) => (await runners?.stopOne(runId)) ?? false,
+  stopRunner: async (runId) => (await runners?.stopOne(runId, handoffPending.has(runId))) ?? false,
   openSession: (target) => openHandoffSession(target),
   /*
    * 交接 resume 走薄层的 `custom` 通道（实施-14 F4）：与目标续行共用同一个槽位
@@ -662,6 +662,8 @@ const handoffRunner = new HandoffRunner({
    * 那是真用户消息，会把交接包冒充成用户说的话，也会多出一个伪逻辑回合。
    */
   send: async (runId, text, resumeId) => {
+    await goals.load()
+    if (goals.isPaused(workModeKeyFor(runId))) return { ok: false, error: '目标已暂停' }
     const written = await writeGoalResumeSnapshotIfVacant(runId, {
       operationId: resumeId,
       at: Date.now(),
@@ -676,8 +678,39 @@ const handoffRunner = new HandoffRunner({
   /* 后台交接不抢用户当前视图（实施-14 F3） */
   shouldActivate: (sourceRunId) => runners?.activeRunnerId === sourceRunId,
   /* 目的片段建好、resume 之前：继承模式与用户级目标事实（实施-14 F3） */
-  onDestinationReady: (info) => inheritForHandoff(info)
+  onDestinationReady: async (info) => {
+    for (const pending of handoffPending.values()) {
+      if (pending.request.sessionKey === normalizeChainKey(info.sourceSession)) pending.destinationRunId = info.runId
+    }
+    await inheritForHandoff(info)
+  },
+  onLinked: publishHandoffReplacement
 })
+
+async function publishHandoffReplacement(sourceId: string, destId: string): Promise<void> {
+  const pending = handoffPending.get(sourceId)
+  const source = pending?.sourceState
+  const state = runners?.agentOf(destId)?.getState()
+  const runtime = runners?.runtimeOf(destId)
+  if (!source || !state || !runtime) return
+  const identity = {
+    sessionId: state.sessionId,
+    conversationId: source.conversationId ?? source.sessionId,
+    conversationFile: source.conversationFile ?? source.sessionFile
+  }
+  handoffIdentities.set(destId, identity)
+  const active = runners?.publishReplacement(sourceId, destId) ?? false
+  push({ ch: 'handoff-rebind', payload: {
+    sourceRunId: sourceId, sourceSessionId: source.sessionId, runtime,
+    state: { ...state, ...identity }, active
+  } })
+  pushRunners()
+  await rememberRunnerSession({ ok: true, id: destId, sessionId: state.sessionId }, {
+    cwd: state.cwd ?? '', projectId: runtime.projectId ?? undefined,
+    scope: runtime.projectId ? 'project' : 'global'
+  })
+  await pushRunnerSnapshot(destId, { chainHistory: true })
+}
 
 /*
  * 模型出错后的自动继续（实施-05 S5c）。
@@ -826,9 +859,21 @@ interface HandoffPendingEntry {
    * 不设这个闸的话，一份遗留结果文件会让 1 秒一次轮询刷出 90 条同样的诊断。
    */
   mismatchNoted?: boolean
+  collecting?: boolean
+  settled?: Promise<void>
+  settle?: () => void
+  cancelled?: boolean
+  destinationRunId?: string
+  sourceState?: SessionState
 }
 
 const handoffPending = new Map<string, HandoffPendingEntry>()
+const handoffIdentities = new Map<string, { sessionId: string; conversationId: string; conversationFile?: string }>()
+
+function hasHandoffOperation(id: string): boolean {
+  return handoffPending.has(id) || [...handoffPending.values()].some((op) => op.destinationRunId === id)
+}
+
 
 /**
  * 资格评估的节流。
@@ -863,7 +908,7 @@ function handoffNotify(id: string, message: string, notifyType: 'info' | 'warnin
  * 交接失败 / 放弃时会用 `maybeArmGoalContinue` 把续跑放回来。
  */
 async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
-  if (handoffPending.has(id)) return false
+  if (hasHandoffOperation(id)) return false
   const key = workModeKeyFor(id)
   const agent = runners?.agentOf(id)
   if (!key || !agent) return false
@@ -879,6 +924,7 @@ async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
   try {
     await handoffs.load()
     await goals.load()
+    if (goals.isPaused(key)) return false
     const tally = handoffs.state(key).tally
     const goal = goals.state(key)
     const mode = await resolveWorkMode(id)
@@ -944,11 +990,19 @@ async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
       })
       return false
     }
+    if (goals.isPaused(key) || goals.state(key).goalId !== goal.goalId) {
+      await handoffRequests.clearRequest(id).catch(() => {})
+      return false
+    }
     /* 冻结源续跑：换片段之前不许再 arm 新的「接着干」（§5.2） */
     await cancelGoalResume(id).catch(() => {})
+    if (goals.isPaused(key) || goals.state(key).goalId !== goal.goalId) {
+      await handoffRequests.clearRequest(id).catch(() => {})
+      return false
+    }
     /* 时间线锚点：排障时用它对比扩展日志里 `check` 行的 `ageMs`（谁晚、晚了多久） */
     console.log(`[handoff] 已写生成请求（${reason}）：${request.operationId}`)
-    handoffNotify(id, '正在为跨会话交接写一份交接包（一次额外模型调用）…', 'info')
+    handoffNotify(id, '正在整理上下文，当前任务将在此继续…', 'info')
     const interval = setInterval(() => void collectHandoffResult(id, request.operationId), HANDOFF_POLL_MS)
     interval.unref?.()
     /* 超时也走同一条出口，但**带着这次操作的 id** —— 它不能清掉后来的操作（H2） */
@@ -1001,10 +1055,17 @@ async function abandonHandoff(id: string, why: string, operationId?: string): Pr
    * 结果可能刚好压线写盘 —— 这一读把「只差几十毫秒」的假超时挡掉
    * （否则用户看到失败提示，而包其实已经落盘了）。
    */
+  if (why === 'timeout' && pending.collecting) {
+    pending.timeout = setTimeout(() => void abandonHandoff(id, why, operationId), HANDOFF_POLL_MS)
+    pending.timeout.unref?.()
+    return
+  }
   if (why === 'timeout' && (await collectHandoffResult(id, operationId))) return
+  if (handoffPending.get(id) !== pending) return
+  pending.cancelled = true
   clearInterval(pending.interval)
   clearTimeout(pending.timeout)
-  handoffPending.delete(id)
+  if (!pending.collecting) handoffPending.delete(id)
   await handoffRequests.clearResult(id).catch(() => {})
   await handoffRequests.clearRequest(id).catch(() => {})
   if (why === 'timeout') {
@@ -1052,111 +1113,125 @@ async function collectHandoffResult(id: string, operationId?: string): Promise<b
    * 旧操作的回调（比如上一次生成遗留的 interval）不能碰这一次的现场。
    */
   if (!ownsHandoffOperation(pending.request.operationId, operationId)) return false
-  let result
+  if (pending.collecting || pending.cancelled) return false
+  pending.collecting = true
+  pending.settled = new Promise<void>((resolve) => { pending.settle = resolve })
+  let handled = false
   try {
-    result = await handoffRequests.readResult(id)
-  } catch {
-    return false
-  }
-  if (!result) return false
-  if (result.handoffId !== pending.request.handoffId || result.operationId !== pending.request.operationId) {
-    /*
-     * 对不上就是「这份结果不是这次生成写的」：留在磁盘上等下次覆盖（不删别人的文件）。
-     * 只在第一次记事件 —— 轮询每秒一次，不设闸会把一份遗留结果刷成几十条。
-     */
-    if (!pending.mismatchNoted) {
-      pending.mismatchNoted = true
+    let result
+    try {
+      result = await handoffRequests.readResult(id)
+    } catch {
+      return false
+    }
+    if (handoffPending.get(id) !== pending || pending.cancelled) return false
+    if (!result) return false
+    if (result.handoffId !== pending.request.handoffId || result.operationId !== pending.request.operationId) {
+      /*
+       * 对不上就是「这份结果不是这次生成写的」：留在磁盘上等下次覆盖（不删别人的文件）。
+       * 只在第一次记事件 —— 轮询每秒一次，不设闸会把一份遗留结果刷成几十条。
+       */
+      if (!pending.mismatchNoted) {
+        pending.mismatchNoted = true
+        handoffDiag.record({
+          stage: 'generate',
+          outcome: 'result-mismatch',
+          reason: 'result-not-for-this-operation',
+          op: pending.request.operationId,
+          handoffId: pending.request.handoffId,
+          runnerId: id,
+          sessionKey: pending.request.sessionKey,
+          detail: {
+            gotHandoffId: result.handoffId,
+            gotOperationId: result.operationId,
+            ms: result.ms
+          }
+        })
+      }
+      return false
+    }
+
+    clearInterval(pending.interval)
+    clearTimeout(pending.timeout)
+    handled = true
+    await handoffRequests.clearResult(id).catch(() => {})
+    await handoffRequests.clearRequest(id).catch(() => {})
+
+    const base = {
+      op: pending.request.operationId,
+      handoffId: pending.request.handoffId,
+      runnerId: id,
+      sessionKey: pending.request.sessionKey
+    }
+
+    if (result.error) {
+      handoffDiag.record({ stage: 'generate', outcome: 'failed', reason: result.error, ...base, detail: { ms: result.ms } })
+      handoffNotify(id, `交接包生成失败：${result.error.slice(0, 120)}`, 'error')
+      return true
+    }
+    const parsed = parseHandoffOutput(result.text)
+    if (!parsed.ok) {
       handoffDiag.record({
         stage: 'generate',
-        outcome: 'result-mismatch',
-        reason: 'result-not-for-this-operation',
-        op: pending.request.operationId,
-        handoffId: pending.request.handoffId,
+        outcome: 'unparsable',
+        reason: parsed.reason,
+        ...base,
+        /* 只留长度，不留原文 —— 模型输出可能含用户内容 */
+        detail: { chars: result.text.length, ms: result.ms }
+      })
+      handoffNotify(id, `交接包不能用（${parsed.reason}），已丢弃这份`, 'error')
+      return true
+    }
+    const pkg = sanitizeHandoffPackage(parsed.value, {
+      sourceSession: pending.request.sessionKey,
+      sourceHead: pending.request.sourceHead,
+      mode: pending.request.mode,
+      model: pending.request.model
+    })
+    if (!pkg) {
+      handoffDiag.record({ stage: 'generate', outcome: 'incomplete', reason: 'missing-required-fields', ...base })
+      handoffNotify(id, '交接包缺必填栏（目标 / 交付物），已丢弃这份', 'error')
+      return true
+    }
+    try {
+      await handoffs.setPackage(pending.request.sessionKey, pkg)
+    } catch (error) {
+      handoffDiag.record({
+        stage: 'generate',
+        outcome: 'persist-failed',
+        reason: error instanceof Error ? error.message : String(error),
+        ...base
+      })
+      handoffNotify(id, '交接包落盘失败，已放弃（下一次压缩后再试）', 'error')
+      return true
+    }
+    handoffDiag.record({ stage: 'generate', outcome: 'package-ready', ...base })
+    handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
+    /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
+    if (HANDOFF_COMMIT_ENABLED) {
+      /*
+       * `await`（不是 `void`）：提交完成前保留 pending，调度器据此冻结续行——
+       * 提交的同时再跑一次调度决策，就会出现「一边停源建目的、一边 arm 续跑」。
+       */
+      await commitHandoff({
         runnerId: id,
+        handoffId: pending.request.handoffId,
+        operationId: pending.request.operationId,
         sessionKey: pending.request.sessionKey,
-        detail: {
-          gotHandoffId: result.handoffId,
-          gotOperationId: result.operationId,
-          ms: result.ms
-        }
+        goalId: pending.goalId,
+        sourceHead: pending.request.sourceHead,
+        pkg
       })
     }
-    return false
-  }
-
-  clearInterval(pending.interval)
-  clearTimeout(pending.timeout)
-  handoffPending.delete(id)
-  await handoffRequests.clearResult(id).catch(() => {})
-  await handoffRequests.clearRequest(id).catch(() => {})
-
-  const base = {
-    op: pending.request.operationId,
-    handoffId: pending.request.handoffId,
-    runnerId: id,
-    sessionKey: pending.request.sessionKey
-  }
-
-  if (result.error) {
-    handoffDiag.record({ stage: 'generate', outcome: 'failed', reason: result.error, ...base, detail: { ms: result.ms } })
-    handoffNotify(id, `交接包生成失败：${result.error.slice(0, 120)}`, 'error')
     return true
+  } finally {
+    pending.collecting = false
+    if ((handled || pending.cancelled) && handoffPending.get(id) === pending) {
+      handoffPending.delete(id)
+      if (!pending.cancelled) await maybeArmGoalContinue(pending.destinationRunId ?? id).catch(() => undefined)
+    }
+    pending.settle?.()
   }
-  const parsed = parseHandoffOutput(result.text)
-  if (!parsed.ok) {
-    handoffDiag.record({
-      stage: 'generate',
-      outcome: 'unparsable',
-      reason: parsed.reason,
-      ...base,
-      /* 只留长度，不留原文 —— 模型输出可能含用户内容 */
-      detail: { chars: result.text.length, ms: result.ms }
-    })
-    handoffNotify(id, `交接包不能用（${parsed.reason}），已丢弃这份`, 'error')
-    return true
-  }
-  const pkg = sanitizeHandoffPackage(parsed.value, {
-    sourceSession: pending.request.sessionKey,
-    sourceHead: pending.request.sourceHead,
-    mode: pending.request.mode,
-    model: pending.request.model
-  })
-  if (!pkg) {
-    handoffDiag.record({ stage: 'generate', outcome: 'incomplete', reason: 'missing-required-fields', ...base })
-    handoffNotify(id, '交接包缺必填栏（目标 / 交付物），已丢弃这份', 'error')
-    return true
-  }
-  try {
-    await handoffs.setPackage(pending.request.sessionKey, pkg)
-  } catch (error) {
-    handoffDiag.record({
-      stage: 'generate',
-      outcome: 'persist-failed',
-      reason: error instanceof Error ? error.message : String(error),
-      ...base
-    })
-    handoffNotify(id, '交接包落盘失败，已放弃（下一次压缩后再试）', 'error')
-    return true
-  }
-  handoffDiag.record({ stage: 'generate', outcome: 'package-ready', ...base })
-  handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
-  /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
-  if (HANDOFF_COMMIT_ENABLED) {
-    /*
-     * `await`（不是 `void`）：提交与调度共用一条串行链（实施-14 F2 / H1）——
-     * 提交的同时再跑一次调度决策，就会出现「一边停源建目的、一边 arm 续跑」。
-     */
-    await commitHandoff({
-      runnerId: id,
-      handoffId: pending.request.handoffId,
-      operationId: pending.request.operationId,
-      sessionKey: pending.request.sessionKey,
-      goalId: pending.goalId,
-      sourceHead: pending.request.sourceHead,
-      pkg
-    })
-  }
-  return true
 }
 
 /**
@@ -1182,7 +1257,8 @@ async function revalidateHandoff(input: {
   sourceHead: string | null
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const pending = handoffPending.get(input.runnerId)
-  if (pending && pending.request.operationId !== input.operationId) return { ok: false, reason: 'operation-replaced' }
+  if (!pending || pending.cancelled) return { ok: false, reason: 'operation-cancelled' }
+  if (pending.request.operationId !== input.operationId) return { ok: false, reason: 'operation-replaced' }
   const agent = runners?.agentOf(input.runnerId)
   const state = agent?.getState()
   if (!agent || !state) return { ok: false, reason: 'runner-gone' }
@@ -1190,6 +1266,7 @@ async function revalidateHandoff(input: {
   /* 源会话键：`workModeKeyFor` 读的就是实例当前段落，比对即可看出“用户切走了” */
   if (workModeKeyFor(input.runnerId) !== input.sessionKey) return { ok: false, reason: 'source-session-changed' }
   await goals.load()
+  if (goals.isPaused(input.sessionKey)) return { ok: false, reason: 'user-paused' }
   const goal = goals.state(input.sessionKey)
   if (!isActiveGoalPhase(goal.phase) || (goal.goalId ?? '') !== input.goalId) {
     return { ok: false, reason: 'goal-changed' }
@@ -1228,6 +1305,8 @@ async function commitHandoff(input: {
   const agent = runners?.agentOf(input.runnerId)
   const state = agent?.getState()
   if (!agent || !state) return
+  const operation = handoffPending.get(input.runnerId)
+  if (operation) operation.sourceState = { ...state, ...handoffIdentities.get(input.runnerId) }
   const verdict = await revalidateHandoff(input)
   if (!verdict.ok) {
     handoffDiag.record({
@@ -1262,8 +1341,16 @@ async function commitHandoff(input: {
       sourceSession: input.sessionKey,
       cwd,
       ...(projectId ? { projectId } : {}),
-      pkg: input.pkg
+      pkg: input.pkg,
+      canContinue: () => {
+        const op = handoffPending.get(input.runnerId)
+        return !!op && op.request.operationId === input.operationId && !op.cancelled && !goals.isPaused(input.sessionKey)
+      }
     })
+    if (operation?.cancelled && operation.destinationRunId) {
+      await goals.setPaused(workModeKeyFor(operation.destinationRunId), true)
+      await cancelGoalResume(operation.destinationRunId)
+    }
     if (!result.ok) {
       console.log(`[handoff] 交接停在 ${result.stage}：${result.error ?? ''}`)
       /*
@@ -1421,7 +1508,7 @@ async function runScheduledWork(id: string, reason: string): Promise<void> {
   if (!agent || !state) return
   const decision = decideSessionWork({
     busy: state.isAgentRunning === true || state.isStreaming === true,
-    handoffPending: handoffPending.has(id),
+    handoffPending: hasHandoffOperation(id),
     errorRetryPending: autoContinueTimers.has(id),
     handoffAllowed: true
   })
@@ -1436,7 +1523,13 @@ async function runScheduledWork(id: string, reason: string): Promise<void> {
 }
 
 function pushFrom(runnerId: string, msg: MainPush): void {
+  const identity = handoffIdentities.get(runnerId)
+  if (msg.ch === 'state' && identity && msg.payload.sessionId === identity.sessionId) {
+    msg = { ...msg, payload: { ...msg.payload, ...identity } }
+  }
   const runtime = runners?.runtimeOf(runnerId)
+  // 停源是后台换段的一部分；旧进程的退出事件不能把当前聊天变成断线状态。
+  if (!runtime && handoffPending.get(runnerId)?.sourceState) return
   push({
     ...msg,
     ...(runtime ? { runtime } : {}),
@@ -1728,7 +1821,7 @@ const autonomousArmInFlight = new Set<string>()
 async function maybeArmGoalContinue(id: string): Promise<void> {
   if (autonomousArmInFlight.has(id)) return
   /* 交接正在准备包：源续跑已被冻结（H1）——即便有人绕过调度器直接调这里，也不能破 */
-  if (handoffPending.has(id)) return
+  if (hasHandoffOperation(id)) return
   autonomousArmInFlight.add(id)
   try {
     const mode = await resolveWorkMode(id)
@@ -1758,6 +1851,7 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
      * 两者都是「本次不 arm」的正常状态，不记事件（每次回合收尾都会走到，记了只会刷屏）。
      * 用户停止那一次由 `yan:abort` 的 `goal-continue:cancelled` 负责留痕。
      */
+    if (hasHandoffOperation(id)) return
     const armed = await goals.armContinue(key, {
       consumed: (operationId) => goalResumeContinuationWasConsumed(id, operationId)
     })
@@ -1910,7 +2004,7 @@ const goalCapabilityHost: GoalCommandHost = {
        */
       let continueNote: string | null = null
       let continueRound: number | null = null
-      if (!res.replayed && (modeState.mode === 'autonomous' || res.goal.pursue)) {
+      if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
         const armed = await goals.armContinue(key, {
           consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId)
         })
@@ -2003,14 +2097,27 @@ const goalCapabilityHost: GoalCommandHost = {
  *
  * 为什么必须做：渲染端对**非当前实例**的事件是直接丢弃的，切过去之后
  * 必须有一份完整快照（状态 + 消息 + 统计）作为新视图的起点。
+ *
+ * `chainHistory` 只给「刚完成一次交接」那一步用：
+ *   §5.3 要求交接后前端**不清空旧消息**。而 `agent.getMessages()` 是 pi
+ *   **当前片段**的上下文（交接后的新片段只含摘要 + 最近几轮），拿它当界面
+ *   历史会把源段整段“变没”（实测：交接后时间线只剩最后一段）。界面历史的
+ *   权威来源一直是链上的 JSONL（AGENTS.md：历史就是会话文件），所以这一步
+ *   改读链历史；拿不到时回到原行为，不把“读盘失败”变成空时间线。
  */
-async function pushRunnerSnapshot(id: string): Promise<void> {
+async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } = {}): Promise<void> {
   const ag = runners?.agentOf(id)
   if (!ag) return
   const st = ag.getState()
   if (st) pushFrom(id, { ch: 'state', payload: st })
   try {
-    pushFrom(id, { ch: 'sync', payload: await ag.getMessages() })
+    let payload = await ag.getMessages()
+    if (opts.chainHistory && st?.sessionFile) {
+      const chain = await readHistoryWithArtifacts(st.sessionFile).catch(() => null)
+      /* 只接受“真的不更短”的链历史：读盘给空时不能把界面清空 */
+      if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
+    }
+    pushFrom(id, { ch: 'sync', payload })
   } catch {
     /* 拿不到就当空会话，下一次事件会补 */
   }
@@ -2790,14 +2897,16 @@ async function openHandoffSession(target: HandoffSessionTarget): Promise<Handoff
   const cwdResult = await validateCwd(target.cwd || settings.cwd)
   if (!cwdResult.ok) return { ok: false, error: cwdResult.error }
   const projectId = target.projectId ?? projectIdForCwd(settings, cwdResult.cwd)
+  const rollback = target.sessionFile ? [...handoffPending.entries()].find(([, op]) => op.request.sessionKey === normalizeChainKey(target.sessionFile!)) : undefined
   const res = await runners.select({
     cwd: cwdResult.cwd,
     ...(projectId ? { projectId } : {}),
     ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
-    ...(target.activate === false ? { activate: false } : {})
+    ...(!target.sessionFile ? { activate: false, hidden: true } : rollback ? { activate: false } : target.activate === false ? { activate: false } : {})
   })
   if (!res.ok || !res.id) return { ok: false, error: res.error ?? '打开会话失败' }
-  await rememberRunnerSession(res, {
+  if (rollback) rollback[1].destinationRunId = res.id
+  if (target.sessionFile) await rememberRunnerSession(res, {
     ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
     ...(projectId ? { projectId } : {}),
     cwd: cwdResult.cwd,
@@ -2805,8 +2914,12 @@ async function openHandoffSession(target: HandoffSessionTarget): Promise<Handoff
   })
   pushRunners()
   const sessionFile = await waitForSessionFile(res.id)
-  if (!sessionFile) return { ok: false, error: '新会话文件还没落地' }
-  void pushRunnerSnapshot(res.id)
+  if (!sessionFile) {
+    if (!target.sessionFile) await runners.stopOne(res.id)
+    return { ok: false, error: '新会话文件还没落地' }
+  }
+  if (rollback) await publishHandoffReplacement(rollback[0], res.id)
+  else void pushRunnerSnapshot(res.id)
   return { ok: true, runId: res.id, sessionFile }
 }
 
@@ -3320,15 +3433,32 @@ function registerIpc(): void {
   })
 
   handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp') => {
-    if (!ac()?.running) {
+    let targetId = runners?.activeRunnerId
+    const handoffEntry = targetId ? [...handoffPending.entries()].find(([sourceId, op]) => sourceId === targetId || op.destinationRunId === targetId) : undefined
+    const handoff = handoffEntry?.[1]
+    if (handoff?.collecting) {
+      await handoff.settled
+      if (handoff.cancelled) return { ok: false, error: '交接已停止，请重新发送' }
+      targetId = handoff.destinationRunId ?? targetId
+      if (targetId && handoffPending.get(targetId) === handoff) {
+        await abandonHandoff(targetId, 'user-message', handoff.request.operationId)
+      }
+    } else if (handoff && targetId) {
+      await abandonHandoff(handoffEntry![0], 'user-message', handoff.request.operationId)
+    }
+    if (handoff && targetId && !runners?.agentOf(targetId)?.running) {
+      return { ok: false, error: '会话正在恢复，请稍后重新发送' }
+    }
+    if (!targetId || !runners?.agentOf(targetId)?.running) {
       const r = await startAgent()
       if (!r.ok) return r
+      targetId = runners?.activeRunnerId
     }
     /*
      * 用户发话了：自主档的**连续**自动续接计数归零（S3c）。
      * 上限只约束「无人看管的连续自动轮」—— 有人参与就重新给满额度。
      */
-    const id = runners?.activeRunner()?.id
+    const id = targetId
     if (id) {
       await goals.load()
       const mode = await resolveWorkMode(id)
@@ -3353,7 +3483,7 @@ function registerIpc(): void {
         await pushGoal(id)
       }
     }
-    return ac()!.send(text, images, mode)
+    return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
   })
 
   handle('yan:steer', async (text: string) => ac()?.steer(text) ?? { ok: false, error: 'pi 未运行' })
@@ -3369,9 +3499,20 @@ function registerIpc(): void {
      * 下一轮却自己跑起来。所以这里是「登记暂停（代次失效）→ 清快照 → 停回合」，
      * 而且**同步 awaited**：不能让异步清理跑到后面去。
      */
-    const id = runners?.activeRunner()?.id
+    const id = runners?.activeRunnerId
     if (id) {
       await goals.load()
+      for (const [sourceId, pending] of handoffPending) {
+        if (sourceId !== id && pending.destinationRunId !== id) continue
+        pending.cancelled = true
+        await goals.setPaused(pending.request.sessionKey, true)
+        if (pending.destinationRunId) {
+          await goals.setPaused(workModeKeyFor(pending.destinationRunId), true)
+          await cancelGoalResume(pending.destinationRunId)
+          await runners?.agentOf(pending.destinationRunId)?.abort()
+        }
+        await abandonHandoff(sourceId, 'user-stop', pending.request.operationId)
+      }
       const key = workModeKeyFor(id)
       await goals.setPaused(key, true).catch(() => {})
       await cancelGoalResume(id).catch(() => {})

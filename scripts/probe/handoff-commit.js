@@ -156,17 +156,45 @@
     ok(committed.sessionKey === committed.transaction.destinationSession, '当前视图已经切到目的段（同一条会话的下一段）')
     ok(committed.sessionKey !== sourceKey, '目的会话与源会话是两份不同的文件（后台真的切开了）')
     out.push(`  目的会话：${String(committed.sessionKey).split(/[\\/]/).pop()}`)
+    /*
+     * 阈值 0 下「目标继承 + 计数归零」会让它**连续交接**（测试通道行为，
+     * 生产阈值 2 下不会）。不停住的话，下面「当前这条会话只出现一次」
+     * 查的是已经被当成链中间段隐藏掉的旧目的段 —— 实测就是这么红的。
+     */
+    await window.yan.stopGoal().catch(() => null)
     /* resume 会真的触发一轮：等它落定，免得退出时掐断 */
     await waitFor(() => store.getState().session?.isAgentRunning !== true, 60000, 500)
     ok(store.getState().messages.length >= 0, '目的会话界面已能渲染（历史推送没报错）')
 
     out.push('')
     out.push('=== 4b. 前端仍是「一条会话」（S5b-4）===')
-    const norm = (v) => String(v ?? '').trim().split('\\').join('/').replace(/\/+$/, '')
-    const sessions = await window.yan.listSessions()
+    /*
+     * 交接后 `sessionKey` 来自 pi 上报，而列表路径来自 Node fs ——
+     * Windows 上两边的盘符大小写可能不一致，比较必须忽略大小写，
+     * 否则会把「列表里确实有」误判成「列表里没有」（实测到过 0 次）。
+     */
+    const norm = (v) => String(v ?? '').trim().split('\\').join('/').replace(/\/+$/, '').toLowerCase()
+    const sessions = await (async () => {
+      /*
+       * 目的段文件刚建立时，JSONL 头部可能还没写完 —— `listSessions` 会把它跳过
+       * （readHead 失败＝不列出），所以这里必须轮询等它出现，
+       * 而不是拿交接刚完成那一瞬间的快照断言。
+       */
+      const listed = await waitFor(async () => {
+        const list = await window.yan.listSessions()
+        return list.filter((s) => norm(s.path) === norm(committed.sessionKey)).length === 1 ? list : null
+      }, 45000, 900)
+      return listed ?? (await window.yan.listSessions())
+    })()
     const current = norm(committed.sessionKey)
     const seen = sessions.filter((s) => norm(s.path) === current).length
     ok(seen === 1, `侧栏列表里当前这条会话只出现一次（实际 ${seen} 次）`)
+    if (seen !== 1) {
+      const peek = await window.yan.peekSession(committed.sessionKey).catch(() => null)
+      out.push(`  当前段=${committed.sessionKey}`)
+      out.push(`  peek 当前段：${peek ? (peek.messages ?? []).length + ' 条消息（文件可读）' : '读不到（文件不在/读不了）'}`)
+      out.push(`  列表（${sessions.length} 条）：${sessions.map((s) => s.path).join(' | ')}`)
+    }
     ok(!sessions.some((s) => norm(s.path) === norm(sourceKey)), '链上的旧段（源会话）没有单独出现在侧栏列表里')
     /*
      * 历史拼接：源段的消息要留在同一条时间线里。
@@ -208,7 +236,12 @@
   out.push('=== 5. 收尾：没有残留的生成中状态 ===')
   const final = await window.yan.getHandoff()
   ok(final.pending === false, '生成中状态已清（轮询停了）')
-  ok(store.getState().session?.isStreaming !== true, '界面不在流式中')
+  /* 目的段刚跑完 resume 回合，还在流式中很正常 —— 等它静下来再说“界面不在流式” */
+  const idle = await waitFor(() => {
+    const s = store.getState().session
+    return s?.isStreaming !== true && s?.isAgentRunning !== true ? true : null
+  }, 60000, 500)
+  ok(!!idle, '界面不在流式中')
 
   return out.join('\n')
 })()

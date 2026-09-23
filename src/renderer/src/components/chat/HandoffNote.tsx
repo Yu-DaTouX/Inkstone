@@ -41,6 +41,17 @@ export function HandoffNote(): React.ReactElement | null {
   const notice = handoffNoticeOf(handoff, now)
   if (!notice) return null
   const reason = handoffReasonText(notice.reason)
+  /*
+   * 两个计数必须分开说（H5）：`segmentTally` 是**当前片段**又压了几次
+   *（交接阈值看的就是它），`chainSegments` 是整条会话一共几段。
+   * 拿其中一个冒充另一个，用户就会看到「压了 2 次却迟迟不交接」这种困惑。
+   * 只在两个数都拿得到时显示 —— 宁可少一行，不编数字。
+   */
+  const tally = handoff?.segmentTally?.count
+  const threshold = handoff?.threshold
+  const segments = handoff?.chainSegments
+  const showTally =
+    typeof tally === 'number' && typeof threshold === 'number' && threshold > 0 && typeof segments === 'number'
 
   return (
     <div className={`handoff-note tone-${notice.tone}`} data-testid="handoff-note" data-tone={notice.tone}>
@@ -48,6 +59,17 @@ export function HandoffNote(): React.ReactElement | null {
       {reason ? (
         <span className="handoff-note-reason" title={notice.reason ?? undefined}>
           {reason}
+        </span>
+      ) : null}
+      {showTally ? (
+        <span
+          className="handoff-note-tally"
+          data-testid="handoff-tally"
+          data-done={tally}
+          data-threshold={threshold}
+          data-segments={segments}
+        >
+          {t('handoff.tally', { done: tally, threshold, segments })}
         </span>
       ) : null}
       {notice.canRetry ? (

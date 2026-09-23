@@ -467,6 +467,67 @@ const CASES = {
     env: { YAN_HANDOFF_THRESHOLD: '0' },
     afterExit: 'handoffCommitPersisted'
   },
+  /*
+   * 实施-14 F7：真实自动压缩达到默认阈值后，由宿主生成交接包、提交新片段，
+   * 并由目的片段继续完成可验证的工具任务。交接阈值不覆盖；只把上下文工作集
+   * 降到测试档，使完整压缩能在有限轮次内真实发生。
+   */
+  handoffautocompact: {
+    probe: 'scripts/probe/handoff-auto-compaction.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    model: 'deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{\"workingSetCap\":6000}' },
+    afterExit: 'handoffAutoCompactionPersisted'
+  },
+  /*
+   * 实施-14 F7：交接包生成失败后的**故障恢复**（cost 0）。
+   *
+   * 用隔离的本机 fixture provider：普通回合回一段长文本（把上下文推长，
+   * 让宿主策略压缩真实触发），交接包生成请求回一段非 JSON 文本
+   * （模拟「模型没能写出交接包」）。验的是失败之后：
+   * 占用释放、会话不换、目标不虚报完成、源片段恢复续跑。
+   * 它是故障恢复证据，不是模型写包质量的证据（后者在 handoffpack）。
+   */
+  handoffrecover: {
+    probe: 'scripts/probe/handoff-recover.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 0,
+    budget: 420000,
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{\"workingSetCap\":6000}' },
+    afterExit: 'handoffRecoverPersisted'
+  },
+  /*
+   * 实施-14 F7：**连续两次交接**（cost 1，阈值 0 测试通道）。
+   *
+   * `handoffautocompact` 已经验过「默认阈值 2 的真实压缩→一次交接」；
+   * 这一场验的是「已经换过一段之后，再换一段」：第二次要在目的实例上
+   * 重做停源 / 建目的 / 写链 / 发内部续接，单次交接验不出这类问题。
+   * 阈值 0 是测试通道（生产默认 2）；其余资格、生成、提交、续接、
+   * 身份继承全部是真的。
+   */
+  handoffchain: {
+    probe: 'scripts/probe/handoff-chain.js',
+    delay: 25000,
+    cost: 1,
+    budget: 500000,
+    model: 'deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    env: { YAN_HANDOFF_THRESHOLD: '0' },
+    afterExit: 'handoffChainPersisted'
+  },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
   /*
@@ -5377,6 +5438,9 @@ const AFTER_EXIT = {
   autoContinuePersisted: checkAutoContinuePersisted,
   handoffPackPersisted: checkHandoffPackPersisted,
   handoffCommitPersisted: checkHandoffCommitPersisted,
+  handoffAutoCompactionPersisted: checkHandoffAutoCompactionPersisted,
+  handoffRecoverPersisted: checkHandoffRecoverPersisted,
+  handoffChainPersisted: checkHandoffChainPersisted,
   budgetGate: checkBudgetGate,
   questionModeLog: checkQuestionModeLog,
   skillDirAcquire: checkSkillDirAcquire
@@ -6438,6 +6502,223 @@ async function checkHandoffCommitPersisted(sandboxRoot, _tempBefore, _probeText)
   return { ok, lines }
 }
 
+/**
+ * F7 默认阈值真实压缩→交接→目的片段工具续跑的退出后核对。
+ */
+async function checkHandoffAutoCompactionPersisted(sandboxRoot, tempBefore, probeText) {
+  const base = await checkHandoffCommitPersisted(sandboxRoot, tempBefore, probeText)
+  const lines = [...base.lines]
+  let ok = base.ok
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    say(false, '非隔离模式没有可复核的 F7 数据')
+    return { ok: false, lines }
+  }
+  const text = String(probeText ?? '')
+  const sourceKey = /^handoffautocompact\.sourceKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const compactions = Number(/^handoffautocompact\.compactions=(\d+)$/m.exec(text)?.[1] ?? 0)
+  const threshold = Number(/^handoffautocompact\.threshold=(\d+)$/m.exec(text)?.[1] ?? 0)
+  say(threshold === 2, '运行时交接阈值为默认值 2（实际 ' + (threshold || '未知') + '）')
+  say(compactions >= 2, 'Electron 状态实际观察到至少两次压缩（' + compactions + ' 次）')
+
+  const normalize = (value) => String(value ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  try {
+    const doc = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'handoffs.json'), 'utf8'))
+    const entry = Object.entries(doc?.entries ?? {}).find(([key]) => normalize(key) === normalize(sourceKey))?.[1]
+    say(!!sourceKey && !!entry, '真实压缩来源片段在 handoffs.json 中有独立记录')
+    say((entry?.tally?.count ?? 0) >= 2, '源片段落盘计数达到默认阈值（' + (entry?.tally?.count ?? 0) + ' 次）')
+    say(Array.isArray(entry?.tally?.keys) && entry.tally.keys.length >= 2, '至少两份压缩记录有稳定去重键')
+    say(entry?.package?.generator === 'model', '源片段交接包由模型生成并落盘')
+  } catch (error) {
+    say(false, '读 handoffs.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  const proof = join(sandboxRoot, 'fixture-project', 'repo', 'handoff-f7-proof.txt')
+  try {
+    const contents = readFileSync(proof, 'utf8')
+    say(contents.includes('F7_HANDOFF_RESUMED'), '目的片段续跑后创建并读回 proof 文件')
+  } catch {
+    say(false, '目的片段没有写下 handoff-f7-proof.txt')
+  }
+  say(/^handoffautocompact\.goalCompleted=true$/m.test(text), '目标通过宿主 goal report 报告完成')
+  return { ok, lines }
+}
+
+/** 实施-14 F7：生成失败后的恢复——退出后复核落盘与残留。 */
+async function checkHandoffRecoverPersisted(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可复核的故障恢复数据，跳过）')
+    return { ok: true, lines }
+  }
+  const text = String(probeText ?? '')
+  const sourceKey = /^handoffrecover\.sourceKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const tally = Number(/^handoffrecover\.tally=(\d+)$/m.exec(text)?.[1] ?? 0)
+  const failureOutcome = /^handoffrecover\.failureOutcome=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  say(tally >= 2, '探针侧记录两次真实策略压缩（' + tally + ' 次）')
+  say(
+    failureOutcome === 'unparsable' || failureOutcome === 'failed',
+    '探针侧看到的失败阶段是生成失败（' + (failureOutcome || '未知') + '）'
+  )
+  say(/^handoffrecover\.resumed=true$/m.test(text), '探针确认源片段恢复续跑')
+  say(
+    (handoffFailureState?.handoffRequests ?? 0) >= 1,
+    '本机 provider 真的收到过交接包生成请求（' + (handoffFailureState?.handoffRequests ?? 0) + ' 次）'
+  )
+
+  const normalize = (value) => String(value ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  try {
+    const doc = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'handoffs.json'), 'utf8'))
+    const entry = Object.entries(doc?.entries ?? {}).find(([key]) => normalize(key) === normalize(sourceKey))?.[1]
+    say(!!sourceKey && !!entry, '源片段在 handoffs.json 中有记录')
+    say((entry?.tally?.count ?? 0) >= 2, '源片段落盘计数达到阈值（' + (entry?.tally?.count ?? 0) + ' 次）')
+    say(!entry?.package, '失败的那一份交接包没有落盘（package 为空）')
+  } catch (error) {
+    say(false, '读 handoffs.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /*
+   * 失败那一次的请求 / 结果文件必须被消费掉 —— 否则下一次会拿旧文件当新操作。
+   *
+   * 但「失败后重新排队的新尝试」是**预期行为**（§9：交回正常续行调度），
+   * 所以请求目录允许有残留，判据是：残留的那一份不是失败那一次的操作身份。
+   */
+  const failedOp = /^handoffrecover\.failedOp=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const resultDir = join(sandboxRoot, 'data', 'handoff-result')
+  const resultLeft = existsSync(resultDir) ? readdirSync(resultDir) : []
+  say(resultLeft.length === 0, '失败那一次的结果文件已被消费（' + (resultLeft.length ? resultLeft.join('、') : '无残留') + '）')
+
+  const requestDir = join(sandboxRoot, 'data', 'handoff-request')
+  const requestLeft = existsSync(requestDir) ? readdirSync(requestDir) : []
+  let staleRequest = null
+  for (const file of requestLeft) {
+    try {
+      const body = JSON.parse(readFileSync(join(requestDir, file), 'utf8'))
+      if (failedOp && body?.operationId === failedOp) staleRequest = file
+    } catch {
+      staleRequest = staleRequest ?? file
+    }
+  }
+  say(!staleRequest, '失败那一次的生成请求已被清理' + (staleRequest ? '（残留 ' + staleRequest + '）' : ''))
+  if (requestLeft.length) {
+    lines.push('  · 失败后已重新排队 ' + requestLeft.length + ' 份新请求（重新尝试是预期行为）')
+  }
+
+  try {
+    const events = readFileSync(join(sandboxRoot, 'data', 'handoff', 'events.jsonl'), 'utf8')
+    say(/"(unparsable|failed)"/.test(events), '诊断事件文件里留下了可追溯的生成失败原因')
+  } catch (error) {
+    say(false, '读 handoff/events.jsonl 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+  return { ok, lines }
+}
+
+/** 实施-14 F7：连续两次交接——退出后复核链、事务与跨片段计时归属。 */
+async function checkHandoffChainPersisted(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可复核的连续交接数据，跳过）')
+    return { ok: true, lines }
+  }
+  const text = String(probeText ?? '')
+  const norm = (value) => String(value ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  const short = (key) => String(key ?? '').split(/[\\/]/).pop() ?? ''
+  const source = /^handoffchain\.sourceKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const first = /^handoffchain\.firstKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const second = /^handoffchain\.secondKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const conversationId = /^handoffchain\.conversationId=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  say(!!source && !!first && !!second, '探针记录了源段与两次目的段')
+  say(!!conversationId, '探针记录了跨两次换段不变的 conversationId')
+  say(/^handoffchain\.segments=3$/m.test(text), '探针侧链上停在 3 段')
+
+  /* 链：必须是一条三段链，且按源 → 一 → 二的顺序向后延伸 */
+  try {
+    const doc = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'session-chains.json'), 'utf8'))
+    const chains = Array.isArray(doc?.chains) ? doc.chains : []
+    const chain = chains.find((entry) => (entry.segments ?? []).length >= 3) ?? chains[0]
+    say(!!chain && (chain?.segments ?? []).length >= 3, '落盘的链里有三段以上（实际 ' + ((chain?.segments ?? []).length || 0) + '）')
+    const segments = chain?.segments ?? []
+    say(
+      segments.length >= 3 && norm(segments[0].sessionFile) === norm(source),
+      '链的第一段是源片段'
+    )
+    say(
+      segments.length >= 3 && norm(segments[2].sessionFile) === norm(second),
+      '链的第三段是第二次交接的目的片段'
+    )
+    const ids = segments.map((segment) => String(segment.handoffId ?? ''))
+    say(new Set(ids).size === ids.length, '每一段记的 handoffId 互不相同（两次交接各一份）')
+  } catch (error) {
+    say(false, '读 session-chains.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 事务：两次 resumed，且第二次的源就是第一次的目的 */
+  try {
+    const doc = JSON.parse(readFileSync(join(sandboxRoot, 'data', 'handoff-transactions.json'), 'utf8'))
+    const txs = Object.values(doc?.transactions ?? {}).filter((tx) => tx?.stage === 'resumed')
+    lines.push('resumed 事务数：' + txs.length)
+    say(txs.length >= 2, '两次交接事务都走到 resumed')
+    if (txs.length >= 2) {
+      const ordered = [...txs].sort((a, b) => Number(a?.committedAt ?? a?.createdAt ?? 0) - Number(b?.committedAt ?? b?.createdAt ?? 0))
+      const [a, b] = ordered
+      say(
+        norm(a.destinationSession) === norm(b.sourceSession),
+        '第二次交接的源片段就是第一次的目的片段（真的链式前进）'
+      )
+    }
+  } catch (error) {
+    say(false, '读 handoff-transactions.json 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+
+  /* 计时归属：源段与第二段各自记录，logicalTurnId 不得跨段重复计入 */
+  try {
+    const dir = join(sandboxRoot, 'data', 'turn-timing')
+    const files = existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith('.jsonl')) : []
+    const readIds = (sessionKey) => {
+      const file = join(dir, short(sessionKey).replace(/\.jsonl$/i, '') + '.jsonl')
+      if (!existsSync(file)) return null
+      return readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line)
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean)
+    }
+    const sourceRows = readIds(source)
+    const secondRows = readIds(second)
+    lines.push('计时文件：' + (files.join('、') || '（空）'))
+    say(!!sourceRows && sourceRows.length > 0, '源片段有自己的整轮计时记录')
+    say(!!secondRows && secondRows.length > 0, '第二次交接后的片段也有自己的整轮计时记录')
+    if (sourceRows && secondRows) {
+      const sourceIds = new Set(sourceRows.map((row) => String(row.logicalTurnId)))
+      const secondIds = new Set(secondRows.map((row) => String(row.logicalTurnId)))
+      const overlap = [...sourceIds].filter((id) => secondIds.has(id))
+      say(overlap.length === 0, '两段的 logicalTurnId 不重叠（用量/计时不会跨片段重复累加）')
+    }
+  } catch (error) {
+    say(false, '读 turn-timing 失败：' + (error instanceof Error ? error.message : String(error)))
+  }
+  return { ok, lines }
+}
+
 async function checkTaskCliLog(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -6681,6 +6962,8 @@ const BOUNDARY_ORIGIN = `http://127.0.0.1:${BOUNDARY_PORT}`
 const REMOTE_ROUTE_API_PORT = 37893
 const REMOTE_ROUTE_TOKEN = 'yan-remote-route-probe-token-2026'
 let remoteRouteProbeState = null
+/* 交接故障 provider 的请求统计：afterExit 在场景结束后仍要读它 */
+let handoffFailureState = null
 /** Cookie 值哨兵：它**只能**出现在网络里，不许出现在任何日志/状态/结果里 */
 const BOUNDARY_SECRET = `yan-probe-cookie-${Date.now()}`
 
@@ -6762,6 +7045,124 @@ function startRemoteRouteProvider() {
 }
 
 async function closeRemoteRouteProvider(provider) {
+  if (!provider) return
+  for (const response of provider.state.responses) response.destroy()
+  await new Promise((resolvePromise) => provider.server.close(() => resolvePromise()))
+}
+
+/**
+ * 实施-14 F7 故障恢复用的本机 OpenAI 兼容 provider（**不发往外部**）。
+ *
+ * 两种回复，靠请求里有没有「跨会话交接」区分：
+ *   · 普通回合（含压缩摘要）→ 一段长文本，把上下文推长，让宿主策略压缩真实触发；
+ *   · 交接包生成请求（system prompt 由 `shared/handoff.ts` 给出，含那句话）
+ *     → 一句不是 JSON 的话，模拟「模型没能写出交接包」。
+ *
+ * 它只是 fixture：本场景验的是宿主/薄层在失败后的恢复行为，不是模型能力。
+ * usage 按请求 / 回复的真实字符量估算并回报（不凭空造 token 数）。
+ */
+function startHandoffFailureProvider() {
+  const state = {
+    requests: 0,
+    turnRequests: 0,
+    handoffRequests: 0,
+    promptTokensLast: 0,
+    responses: new Set()
+  }
+  const server = createServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+      res.writeHead(404).end()
+      return
+    }
+    let raw = ''
+    req.setEncoding('utf8')
+    req.on('data', (part) => (raw += part))
+    req.on('end', () => {
+      state.requests++
+      const isHandoff = raw.includes('跨会话交接')
+      if (isHandoff) state.handoffRequests++
+      else state.turnRequests++
+      let promptChars = 0
+      let wantsStream = true
+      try {
+        const payload = JSON.parse(raw)
+        promptChars = JSON.stringify(payload.messages ?? []).length
+        /* pi 对压缩摘要可能发非流式请求：那种情况下回 SSE 它解析不了 */
+        wantsStream = payload?.stream !== false
+      } catch {
+        /* 坏 body 也照样按普通回合处理 */
+      }
+      state.promptTokensLast = Math.ceil(promptChars / 2)
+      const text = isHandoff
+        ? '这一次只回了一句话，没有按交接包要求的 JSON 形状输出。'
+        : 'F7R_FILL ' + '这段文本只是把上下文写长，让真实的策略压缩能够触发。'.repeat(160)
+      const completionTokens = Math.max(1, Math.ceil(text.length / 2))
+      const usage = {
+        prompt_tokens: state.promptTokensLast,
+        completion_tokens: completionTokens,
+        total_tokens: state.promptTokensLast + completionTokens
+      }
+      const id = 'handoff-failure-fixture'
+      if (!wantsStream) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            id,
+            object: 'chat.completion',
+            created: 0,
+            model: 'handoff-fail-fixture',
+            choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+            usage
+          })
+        )
+        return
+      }
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive'
+      })
+      state.responses.add(res)
+      res.write(
+        `data: ${JSON.stringify({
+          id,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'handoff-fail-fixture',
+          choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }]
+        })}\n\n`
+      )
+      res.write(
+        `data: ${JSON.stringify({
+          id,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'handoff-fail-fixture',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+          usage
+        })}\n\n`
+      )
+      res.end('data: [DONE]\n\n')
+      res.on('close', () => state.responses.delete(res))
+    })
+  })
+  server.unref()
+  return new Promise((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject)
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        reject(new Error('交接故障本机 provider 未分配 TCP 端口'))
+        return
+      }
+      handoffFailureState = state
+      resolvePromise({ server, port: address.port, state })
+    })
+  })
+}
+
+async function closeHandoffFailureProvider(provider) {
   if (!provider) return
   for (const response of provider.state.responses) response.destroy()
   await new Promise((resolvePromise) => provider.server.close(() => resolvePromise()))
@@ -7234,6 +7635,7 @@ async function main() {
     }
   }
   let remoteRouteProvider = null
+  let handoffFailureProvider = null
 
   /*
    * sandbox 里现在有 **pi 凭证副本**（为了让 pi 能起来），所以清理不能再只靠
@@ -7401,6 +7803,62 @@ async function main() {
         console.log(`  远程路由本机 provider：127.0.0.1:${remoteRouteProvider.port}（无上游转发）`)
       } catch (error) {
         console.error(`✗ 无法启动远程路由本机 provider：${error?.message ?? error}`)
+        process.exit(2)
+      }
+    }
+
+    if (names.includes('handoffrecover')) {
+      try {
+        handoffFailureProvider = await startHandoffFailureProvider()
+        /*
+         * ⚠️ provider 必须写进**默认的** pi 目录（`sandboxRoot/pi-agent`），
+         * 不能另建一个 `YAN_PI_DIR`：`piSettings`（`keepRecentTokens: 1`）是写进
+         * 那个目录的 `settings.json` 的，另建目录会让压缩参数失效 ——
+         * 实测后果是 pi 每次都报「Nothing to compact (session too small)」，
+         * 压缩计数永远攒不到阈值（整场场景白跑）。
+         */
+        mkdirSync(piDir, { recursive: true })
+        const modelsFile = join(piDir, 'models.json')
+        let models = {}
+        try {
+          models = JSON.parse(readFileSync(modelsFile, 'utf8'))
+        } catch {
+          models = {}
+        }
+        models.providers = {
+          ...(models.providers ?? {}),
+          yanhandofffail: {
+            name: 'Yan Handoff Failure Fixture',
+            baseUrl: `http://127.0.0.1:${handoffFailureProvider.port}/v1`,
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'handoff-fail-fixture',
+                name: 'Handoff Fail Fixture',
+                contextWindow: 32768,
+                maxTokens: 4096
+              }
+            ]
+          }
+        }
+        writeFileSync(modelsFile, JSON.stringify(models, null, 2), 'utf8')
+        const authFile = join(piDir, 'auth.json')
+        let auth = {}
+        try {
+          auth = JSON.parse(readFileSync(authFile, 'utf8'))
+        } catch {
+          auth = {}
+        }
+        auth.yanhandofffail = { type: 'api_key', key: 'local-handoff-failure-fixture' }
+        writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8')
+        CASES.handoffrecover.model = 'yanhandofffail/handoff-fail-fixture'
+        CASES.handoffrecover.env = {
+          ...(CASES.handoffrecover.env ?? {}),
+          PI_OFFLINE: '1'
+        }
+        console.log(`  交接故障本机 provider：127.0.0.1:${handoffFailureProvider.port}（不发往外部）`)
+      } catch (error) {
+        console.error(`✗ 无法启动交接故障本机 provider：${error?.message ?? error}`)
         process.exit(2)
       }
     }
@@ -7890,6 +8348,12 @@ async function main() {
       if (name === 'remoteroutes' && remoteRouteProvider) {
         await closeRemoteRouteProvider(remoteRouteProvider)
         remoteRouteProvider = null
+      }
+      if (name === 'handoffrecover' && handoffFailureProvider) {
+        /* 保留 state：afterExit 要用它断言「确实调过一次交接包生成」 */
+        handoffFailureState = handoffFailureProvider.state
+        await closeHandoffFailureProvider(handoffFailureProvider)
+        handoffFailureProvider = null
       }
       process.stdout.write(out.text)
       lastProbeText = out.text
