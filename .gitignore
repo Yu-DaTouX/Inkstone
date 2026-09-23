@@ -34,6 +34,8 @@ npm-debug.log*
 /* 一次性调试脚本（`.tmp-diag.mjs` 这类）——文件名带前缀，不是目录 */
 .tmp-*
 temp/
+/* 砚本机能力的请求 / 回执文件（`yan question ask` / `goal report` / 子代理请求等） */
+.yan-tmp/
 
 # ---- 编辑器 / 系统 ----
 .vscode/*
