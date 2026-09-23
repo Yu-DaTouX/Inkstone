@@ -68,7 +68,7 @@ export function RightPanel() {
   const closePreview = useStore((s) => s.closePreview)
   const setRightPanelOpen = useStore((s) => s.setRightPanelOpen)
   const session = useStore((s) => s.session)
-  const workbenchKey = workbenchSessionKey(session?.sessionFile, session?.sessionId)
+  const workbenchKey = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
   const [workbench, setWorkbench] = useState<WorkbenchState>(() => loadWorkbenchState(workbenchKey))
   const [libOpen, setLibOpen] = useState(false)
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)

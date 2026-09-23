@@ -180,6 +180,8 @@ llama-server.exe -m <gguf> --alias qwen3-local -c 65536 \
 | `sourcelinklive` | **来源「定位消息」的发送链路**（实施-07 S3）：附件进输入区 → 发送 → 渲染端把附件对应的来源 id 绑到 pi 刚写出的那条 user 条目上；断言关联的表里 sourceId 对得上、**而且指向的那条消息文本就是刚发的那条**（不是历史里的旧消息）。退出后从 Node 侧读沙箱里的 `links.json`（渲染端伪造不了那一层） | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役 403）；不进 `check`（要额度） |
 | `budgetgate` | **请求前预算门的真实冒烟**（实施-05 S4）：工作集线压到 3000（`YAN_CONTEXT_POLICY`）→ 只发一句话 → 这一轮必须正常跑完，磁盘诊断必须有 `request-budget-soft`（说明窗口读到了、钩子活着），而 `request-budget-physical` 与 `budget-abort` **必须为 0**（真实窗口下误拦是灾难性回归）。**不拿模型文本判红**（模型可能空回复） | **固定 `deepseek/deepseek-v4.1-flash`**：默认 LongCat 免费档已退役（403） |
 | `handoffpack` | **交接包由模型写**（实施-05 S5b-2）：自主档 + `yan goal report`（让「目标在推进」成立）+ `YAN_HANDOFF_THRESHOLD=0`（真实要攒两次真实压缩，太贵）→ 回合结束后宿主判资格、写请求 → 薄层在 `agent_settled` 调**一次额外 completion** → 宿主三道闸门（id 对 / 能解析 / 清洗过）后落盘。探针经只读 `yan:getHandoff` 断言两栏必填 / `generator=model` / 水位有值 / 来源字段由宿主填；退出后核对包已落盘、**计数仍为 0**、请求与结果目录**已清空**，扩展日志有 `produced`（真调过模型）。**不拿包的内容好坏判红** | **固定 `deepseek/deepseek-v4.1-flash`**（默认免费档已退役 403）；**`handoffExtLog: true`**（诊断写沙箱，afterExit 读它） |
+| `handoffrecover` | **交接包生成失败后的故障恢复**（实施-14 F7，cost 0）：本机 fixture provider（普通回合回长文本推上下文、交接包请求回一段非 JSON）→ 真实策略压缩 2 次、宿主写请求、薄层拿回坏输出 → 断言生成失败 `unparsable`、占用释放、会话仍在源片段、目标未伪报、源片段恢复续跑；退出后核对 `handoffs.json`、请求 / 结果残留与 `handoff/events.jsonl`。**provider 必须写在默认 pi 目录**（`piSettings.keepRecentTokens=1` 在那里） | 不需要模型（本机 fixture，**不发外网**） |
+| `handoffchain` | **连续两次交接**（实施-14 F7，cost 1，**不进 check**）：自主档 + `YAN_HANDOFF_THRESHOLD=0` 测试通道 → 两次交接都到 `resumed`、链上 3 段、`conversationId` 跨两次换段不变、模式 / 目标原话 / 时间线保留；退出后比对 `session-chains.json`（三段、`handoffId` 互异、第二段的源就是第一段的目的）、`handoff-transactions.json`（两次 resumed）与 `turn-timing/*.jsonl`（两段 `logicalTurnId` 不重叠）。阈值 0 是测试通道，**不代表生产默认 2 下也会连着交接** | **固定 `deepseek/deepseek-v4.1-flash`**；**`handoffExtLog: true`** |
 | `contextsweep` | **Tool Sweep 真实回合**（N21-4 / S2–S6）：三个回合，末轮确认上一轮的召回正文被清成存根；退出后查归档元数据与 `ctx://` 指得回原始条目 | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextproduce` | **状态生成器真实回合**（N21-4 / S7）：回合 1 让模型调一次 bash → 生成并落盘（`revision` CAS）→ 回合 2 是 `<TASK_STATE>` 注入点；退出后查状态文件 + 诊断 + 主进程读路径校验（含「注入的契约档位」与「`episodes` 为空」） | `commandcode/longcat-2.0:free`（不可用时 Laguna） |
 | `contextgate` | **会话级 gate 真实回合**（N21-5 前置硬化，与 `contextproduce` 是反向对照）：kinds 开 `episode-fold` 但门槛保持**默认**（≥4 回合且转录 ≥48k）→ 一个真实回合后断言 gate 被评估、判为 `too-early`、**0 次 committed、0 份状态文件**（短会话不花钱） | 同上 |
@@ -491,7 +493,7 @@ Remove-Item Env:YAN_CONTEXT_POLICY
 - `YAN_CONTEXT_POLICY`（工作集策略参数覆盖，JSON；见上一节 —— 只在需要
   “用小额度走完整触发路径”的场景里给，不是日常隔离变量）
 - `YAN_AUTO_CONTINUE`（自动继续的上限与退避覆盖，JSON `{limit, delays}`；只在 `autocontinue`
-  场景用 —— 真实默认是 **3 次 / 3s、10s、30s**，测试里等不起）
+  场景用 —— 真实默认是 **5 次 / 10s、30s、1m、2m、4m**，测试里等不起）
 - `YAN_HANDOFF_THRESHOLD`（交接阈值覆盖；`0` = 「够数」这一条先成立 ——
   真实链路要攒够两次真实自动压缩，那是全项目最贵的场景之一。**只在 `handoffpack` 场景里设**，不改任何生产判定）
 

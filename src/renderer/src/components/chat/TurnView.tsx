@@ -126,9 +126,9 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
    * 多段正文（自主续跑）时必须**按段渲染**（实施-14 F6 / R1）：
    * 整轮聚合会把「正文 A」与「正文 B」拼成一条回复，于是第 2 段推理
    * 排到了正文 A 前面 —— 正是用户报的顺序问题。
-   * 只有一段正文时继续走旧渲染（DOM 与样式零变化）。
+   * 从首段开始保持同一 DOM 结构；后续推理出现时不卸载已有正文和展开状态。
    */
-  const segmented = turn.segments.filter((segment) => segment.response).length > 1
+  const segmented = turn.segments.length > 0
   const hasBody =
     turn.commentary.length > 0 ||
     !!turn.response ||
@@ -166,7 +166,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
 
         {segmented ? (
           /*
-           * 多段正文：推理与工具跟在**它自己那一段**的正文后面，
+           * 按段显示：每段推理与工具位于该段正文之前、上一段正文之后，
            * 不再全部堆回整轮靠前的位置（实施-14 F6 / R1）。
            */
           turn.segments.map((segment, index) => (

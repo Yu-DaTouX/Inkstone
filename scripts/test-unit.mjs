@@ -745,7 +745,7 @@ const { RunnerRegistry } = await import('../node_modules/esbuild/lib/main.js').t
  * 后台会话运行时缓存（src/renderer/src/state/session-runtime.ts）。
  * 这是与 DOM 无关的归并器，单测直接覆盖事件身份、增量和 generation 闸门。
  */
-const { migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const { rebindSessionRuntime, migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/session-runtime.ts'],
     outfile: 'out/test/session-runtime.mjs',
@@ -1544,6 +1544,8 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+const { runHandoffHostRegressionTests } = await import('./test-handoff-host-regression.mjs')
+await runHandoffHostRegressionTests(ok)
 const { runHandoffTests } = await import('./test-handoff.mjs')
 await runHandoffTests(ok)
 /*
@@ -1774,7 +1776,7 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 
 {
   const { runSessionRuntimeTests } = await import('./test-session-runtime.mjs')
-  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime)
+  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime, rebindSessionRuntime)
 }
 
 {

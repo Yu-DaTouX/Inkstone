@@ -282,3 +282,20 @@ export function reduceSessionRuntime(
 
   return { ...map, [key]: next }
 }
+
+/** 接续只替换运行身份，用户草稿和完整历史保留；新实例的空快照不能覆盖它们。 */
+export function rebindSessionRuntime(
+  map: SessionRuntimeMap,
+  sourceSessionId: string,
+  runtime: RuntimeEnvelope,
+  state: SessionState
+): SessionRuntimeMap {
+  const source = map[sourceSessionId]
+  const target = map[sessionRuntimeKey(runtime)]
+  const base = source ?? target ?? emptyRuntime(runtime)
+  return { ...map, [sessionRuntimeKey(runtime)]: {
+    ...base, runtime, session: state,
+    goal: target?.goal.goalId ? target.goal : base.goal,
+    workMode: target?.workMode ?? base.workMode
+  } }
+}

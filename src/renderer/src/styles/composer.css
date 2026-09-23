@@ -1603,6 +1603,17 @@
   color: var(--fg-mute);
 }
 
+/*
+ * 压缩计数（实施-14 F7 / H5）：一段弱色小字，跟在状态文案后面。
+ * 它不参与任何交互（不能点、不换行）—— 只是把「够不够数」这件事说清楚。
+ */
+.handoff-note-tally {
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .handoff-note.tone-working .handoff-note-text {
   color: var(--accent);
 }

@@ -5,6 +5,51 @@
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
 
+
+### 2026-09-23 · 自动继续上限与退避放宽（用户：重试五次、时间拉长）
+
+> 用户口径：「修改一下自动重试系统，重试五次，时间拉长一些，有时候供应商会抽风」。
+> pi 自己的重试（`auto_retry`）次数/退避写在 pi 的 `settings.json`（砚刻意不写那个文件，
+> RPC 也只有开关），所以放宽的是砚这层「模型出错后的自动继续」——
+> 它正是 pi 重试用尽之后接着干的那一环。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | [`shared/auto-continue.ts`](../../src/shared/auto-continue.ts)：`AUTO_CONTINUE_LIMIT` 3 → **5**；`AUTO_CONTINUE_DELAYS_MS` `[3s, 10s, 30s]` → **`[10s, 30s, 1m, 2m, 4m]`**（单调递增、与上限一一对应）。判定语义**未变**：429 / 限流、401 / 403、上下文超限、用户取消仍然不重试；用户发言或停止仍然立刻归零；续行仍然是 `custom` 消息且带「先检查再动手」。只放宽「值得重试」那类的次数与间隔。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4682/4682**（日志 `out/retry-unit2.log`）—— [`test-auto-continue.mjs`](../../scripts/test-auto-continue.mjs) 改成从常量派生断言，并新增「退避表长度 = 上限」「退避单调递增」「第五次用最后一段退避」三条；存储层用例从第 2 次循环到第 5 次，到限改在第 6 次断言。 |
+| 真实运行 | 未跑 live：`autocontinue` 场景用 `YAN_AUTO_CONTINUE` 显式覆盖 `limit` / `delays`（1.2s），默认值改动不影响该路径；真实默认退避最长 4 分钟，不适合放进自动化场景（会拖垮整批）。 |
+| 视觉验收 | 不涉及界面：提示文案里的「第 N/5 次」「连续 5 次」由 `planAutoContinue` 按 `limit` 生成，没有硬编码数字需要同步。 |
+| 应用与包 | 未重启用户现有窗口，未重跑解包 / 便携 / 安装包。 |
+| 剩余限制 | 未在真实供应商故障上验证「5 次 / 最长 4 分钟」是否够用或过长（这是拍板的默认值，不是实测标定）；pi 自身的 `auto_retry` 次数仍由 pi 的 `settings.json` 决定（砚不写那个文件）。 |
+
+### 2026-09-23 · 实施-14 F7 收口：故障恢复、连续两次交接与跨片段归属
+
+> 用户指出「实施-14 的修复记录」仍未闭环的部分：故障恢复与两次连续交接只有单测/vm 证据，
+> 跨片段计时归属没有端到端取证，`HandoffNote` 视觉未覆盖计数。
+> 本节把这几项补齐，过程中发现并修掉两个真实缺陷（界面历史被当前片段覆盖、矩阵 light 组静默出深色图）。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | ① **故障恢复（cost 0）**：新增 [`handoff-recover.js`](../../scripts/probe/handoff-recover.js) 与场景 `handoffrecover`；`scripts/test-live.mjs` 新增本机 fixture provider `startHandoffFailureProvider`（写进**默认** pi 目录，因为 `piSettings.keepRecentTokens=1` 在那个目录里；另建 `YAN_PI_DIR` 会让压缩参数失效，实测会一直 `Nothing to compact (session too small)`）：普通回合回长文本推上下文、交接包请求（system prompt 含「跨会话交接」）回一段非 JSON 文本，于是宿主走 `unparsable` 恢复路径。退出后检查 `handoffs.json` / 请求结果文件 / `handoff/events.jsonl`。② **连续两次交接 + 跨片段计时（cost 1）**：新增 [`handoff-chain.js`](../../scripts/probe/handoff-chain.js) 与场景 `handoffchain`（`YAN_HANDOFF_THRESHOLD=0` 测试通道）：两次交接 → 链上 3 段、两次事务都 `resumed`、第二次的源就是第一次的目的、`conversationId` 跨两次换段不变、模式/目标/用户原话保留、源段消息仍在时间线里、停目标后不再排第三次；退出后比对 `session-chains.json` / `handoff-transactions.json` / `turn-timing/*.jsonl`（两段 `logicalTurnId` 不重叠，用量与计时不跨片段重复累加）。③ **修真实缺陷（界面历史）**：[`index.ts`](../../src/main/index.ts) 的 `pushRunnerSnapshot` 新增 `{ chainHistory: true }`，`publishHandoffReplacement` 改用它 —— 原来交接后用 `agent.getMessages()`（pi **当前片段**的上下文）覆盖前端时间线，交接后历史只剩最后一段（`handoffchain` 探针实测 `messages` 全是空文本）；现在读链上的 JSONL（与 AGENTS.md「界面历史就是会话文件」一致），拿不到时回退原行为。④ **F7 视觉计数**：[`HandoffNote.tsx`](../../src/renderer/src/components/chat/HandoffNote.tsx) 增加 `data-testid="handoff-tally"`，显示「本片段 {done}/{threshold} · 整条会话 {segments} 段」（H5 要求两个计数分开，不能拿链首旧计数冒充当前进度）；i18n 中英各 1 key、`composer.css` 加 `.handoff-note-tally`、视觉矩阵新增状态 `handofftally`。⑤ **矩阵修复**：[`visual-matrix.mjs`](../../scripts/visual-matrix.mjs) 的主题同时写进 store 与 `<html data-theme>` —— 只改 DOM 时任何一次 settings 更新都会让 App 的 theme effect 写回旧值，light 组会静默截出深色图（文件名却写 light）；另修过期断言 [`test-handoff-runner.mjs`](../../scripts/test-handoff-runner.mjs)（F5 起完成提示是「上下文已整理…」，不再是「交接完成」）。 |
+| 自动检查 | `npm run typecheck` / `npm run build` 通过；`npm run test:unit` **4675/4675**（含修好的过期断言；日志 `out/f7-unit.log`）。 |
+| 真实运行 | **cost 0**：`npm run test:live -- handoffrecover` 全绿 —— 默认阈值 2 未覆盖、真实策略压缩 2 次、交接包生成失败（`unparsable` / `no-json-object`）、占用释放（`pending=false`）、会话仍在源片段（`chainSegments=1`）、目标未被伪报完成、失败后源片段又收到新回合；退出后：源片段计数 2、`package` 为空、失败那次的结果文件已消费且请求已清理（残留 1 份是失败后重新排的新尝试，预期行为）。**cost 1**（`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）：`npm run test:live -- handoffchain` 全绿 —— 两次交接都到 `resumed`、链 3 段、`conversationId` 不变、模式/目标保留、链历史与前端时间线都含源段用户消息、退出后两次事务链式相接、两段 `logicalTurnId` 不重叠。均无残留 pi 进程。**回归**：`npm run test:live -- handoffcommit` 也重新跑绿（一次交接链路 + 退出后事务 / 链 / 续接证据），过程中修掉探针自身的两处过时假设 —— `YAN_HANDOFF_THRESHOLD=0` 下它会**连续交接**（旧目的段随即变成链中间段被侧栏隐藏，拿交接那一刻的 `sessionKey` 去查列表必然 0 次），现在交接后先 `stopGoal` 停住再断言；另加列表刷新与流式收尾的轮询。 |
+| 视觉验收 | `npm run visual:matrix -- 9 10` 全绿（1440×900 / 100% / 横向溢出 0px），两张已看图：[`handofftally 深色`](../design/preview/matrix-handofftally-1440x900-100-dark-2026-09-23-1719.png)、[`handofftally 浅色`](../design/preview/matrix-handofftally-1440x900-100-light-2026-09-23-1719.png) —— 输入框正上方一行「上下文已整理，任务继续　本片段 2/2 · 整条会话 3 段」，深浅主题都可读；同组的 `segmented` / `handoffnote` 也随之重新出图（light 组这次**真的**是浅色）。 |
+| 应用与包 | 未重启用户现有窗口，未重跑 `dist:dir` / `test-packaged` / 便携 / NSIS；新增文件都在 `scripts/` 与渲染端。 |
+| 剩余限制 | ① `handoffchain` 用的是**阈值 0 测试通道**（生产默认 2 下，第二次交接同样要再攒两次真实压缩）——「默认阈值 2 的连续两次交接」仍无直接证据；② 崩溃恢复的「启动确认」仍是磁盘标记近似（`resume-confirmed` 不等于 run 启动回执）；③ 正式应用窗口与包未复验；④ `handoffrecover` 的失败类型只覆盖「模型吐坏 JSON」（`unparsable`），落盘失败 / 目的创建失败仍只有 vm 单测；⑤ 阈值 0 下「目标继承 → 计数归零 → 立即再够格」会连续交接，这是测试通道行为（生产阈值 2 下不会），但**没有冷却机制** —— 探针靠 `stopGoal` 收尾。 |
+
+### 2026-09-23 · 实施-14 复审修复（不调用模型）
+
+本次按用户“节约额度”的要求修复复审发现的五项问题；不使用 cost 1 场景。以下覆盖本次修改范围，早前 F2/F3/F6 的描述以此处为准。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 暂停状态在交接资格、提交与发送边界复核；停止使在途交接失效。结果收集先认领、读后核对，pending 保留至提交结束，超时不与提交重复消费。生成错误、解析失败、缺字段、持久化失败统一释放占用并恢复续行。目的实例私有创建，提交时重新核对当前选择，以 `handoff-rebind` 原位替换运行身份，保留完整历史、草稿及逻辑会话标识，右栏与标题使用逻辑身份；失败回源也沿用此路径。推理从首段开始按段渲染，后续正文出现不切换 DOM 结构。 |
+| 自动检查 | `typecheck`、`build` 通过；全量单测 **4671/4671**；后续交接边界调整另跑当前源码定向测试 **76/76**。新增生产宿主函数注入 IO 的竞态测试、执行器停止边界、实例发布与缓存保留测试。日志：`out/review-fixes-unit.log`、`out/review-fixes-types.log`、`out/review-fixes-build.log`。 |
+| 真实运行 | 隔离、隐藏窗口、cost 0 的 `reasoning` 与 `toolgroup` 通过。`reasoning` 新增真实 DOM 顺序和节点引用断言，覆盖“第二段只有推理”和“第二段正文到达”。日志：`out/review-fixes-reasoning.log`、`out/review-fixes-toolgroup.log`。 |
+| 视觉验收 | 本次未进行人工上屏、截图或多主题视觉验收；隐藏窗口的 DOM 测量不等同人工视觉验收。 |
+| 应用与包 | 当前源码已构建至 `out/`；未重启用户现有窗口，未制作便携版或安装包。 |
+| 剩余限制 | 本次模型调用为零。默认阈值 2 的真实压缩→交接→继续执行未重跑；真实模型续接与用户窗口焦点连续性仍需单独验收，不能以本次单测或 marker 代替。 |
+
 ## 接手顺序
 
 ### 2026-09-23 · 实施-12 U-1：左栏收起时复位「更多会话」
@@ -34,11 +79,22 @@
 | 真实运行 | **cost 0**：`test:live -- reasoning toolgroup autocontinue` 全绿。**cost 1**（`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`）：`handoffcommit` **通过**（交接包生成 → 事务 `committed → resumed` → 视图切到目的段 → 链上两段拼成一条时间线 → 模式继承 autonomous → 目的会话文件里有 `"customType":"yan-handoff-resume"` 且**不冒充用户消息** → 源会话保留 → 请求/结果文件清空）。过程中用 `handoff/events.jsonl` 定位到一个真实回归：`shouldActivate` 原本在 `stopRunner` **之后**询问，导致目的实例永不激活（现场 `rev0 phase=planning mode=standard` 全是空壳），修正后完全恢复。顺手把探针的「历史里出现 resume 那条交接消息」改成用宿主侧消费证据判定（F4 后它不再进消息流）。 |
 | 视觉验收 | 新增矩阵状态 `segmented`（两次「推理 → 工具 → 正文」）：`matrix-segmented-1440x900-100-dark-2026-09-23-0535.png`，溢出 0px，**已看图**：顺序为「解说 → 推理1（已推理 3 秒）→ 工具 → 正文A → **推理2（第二段推理：界面这侧要跟着改…）** → 工具 → 正文B → 页脚 2 步」，正文 A 保持在原位。light 组因 Electron GPU/network 进程崩溃未出图（记入剩余限制）。`HandoffNote` 尚无视觉证据（矩阵桩会被 4 秒轮询的真 IPC 覆盖）。 |
 | 应用与包 | 未重跑 `dist:dir` / `test-packaged` / 便携 / NSIS；本片新增的文件都在 `src/` 与 `scripts/`（随包只改了既有 `goal-resume.js`）。 |
-| 剩余限制 | ① **F7 的「默认阈值 2 的真实自动完整压缩 → 后台交接」未跑**（需要真实长会话与更多额度，且压缩触发本身昂贵）；本轮跑的是 `YAN_HANDOFF_THRESHOLD=0` 的通道，所以「阈值 2 下也会交接」没有直接证据；② 阈值 0 时因目标继承会**连续交接**（每次换段后仍够格）—— 这是测试通道行为，生产阈值 2 下不会发生，但未加冷却；③ **前端 runtime 原地替换（H3 的最后一段）未做**：交接仍会 `select` 到目的实例（现在是「源是当前会话才激活」，后台交接不抢，但当前会话仍会经历一次实例切换）；`logicalTurnId` 跨片段归属未取证；④ `HandoffNote` 没有视觉证据，且只覆盖「交接」而不含三类压缩统计；⑤ light 主题的 `segmented` 截图缺失；⑥ 崩溃恢复的「启动确认」仍只能区分 persisted / started 的近似（`resume-confirmed` 来自磁盘标记，不是 run 启动回执）。 |
+| 剩余限制 | 本表记录时默认阈值 2 的真实自动完整压缩→交接未跑，阈值 0 下连续交接也未验收；这两项及视觉证据已在下方 F7 补验更新。复审后已用 `handoff-rebind` 原位替换 runtime；跨片段 `logicalTurnId` 归属仍未取证。`HandoffNote` 视觉还未覆盖三类压缩统计；崩溃恢复的「启动确认」仍是磁盘标记近似（`resume-confirmed` 不等于 run 启动回执）。 |
+
+#### F7 补验（2026-09-23）
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | 新增 `handoffautocompact` 隔离 cost 1 场景：交接阈值不覆盖，确认运行时默认值 2；只将测试工作集压至 6000、将 `keepRecentTokens` 设为 1 以在有限轮次触发真实策略压缩。探针要求达到两次成功自动完整压缩后才建立持续目标并切入自主档，再验证模型生成交接包、后台事务续接、目的片段写入并读取 proof、目标完成。退出后复查 `handoffs.json` 和 fixture 文件。视觉矩阵增加 `segmented` 与失败态 `HandoffNote` 的深浅主题状态；修正 `.center` 网格行，将提示放在输入框正上方；只读 IPC 桩保留提示 fixture，避免轮询清掉它。 |
+| 自动检查 | `npm run typecheck`、`npm run build`、新增探针与视觉脚本的 `node --check` 通过；`test:live -- handoffautocompact` 的运行中与退出后断言通过。此补验没有重跑单测（F2–F6 最近一次基线仍为 4639/4639）。 |
+| 真实运行 | `npm run test:live -- handoffautocompact` 通过：隔离 Electron 实际确认阈值 2，记录至少两次策略触发的成功完整压缩；随后模型生成交接包，事务到 `resumed`，链新增目的片段且计数归零，目的片段执行工具写入并读回 `F7_HANDOFF_RESUMED`，宿主将目标记录为 `completed`。交接阈值没有环境覆盖。 |
+| 视觉验收 | `visual:matrix -- 9 10` 在布局修正后通过，四图均 1440×900 / 100%，横向溢出 0px，并逐张看图：[`segmented 深色`](../design/preview/matrix-segmented-1440x900-100-dark-2026-09-23-1554.png)、[`HandoffNote 深色`](../design/preview/matrix-handoffnote-1440x900-100-dark-2026-09-23-1554.png)、[`segmented 浅色`](../design/preview/matrix-segmented-1440x900-100-light-2026-09-23-1555.png)、[`HandoffNote 浅色`](../design/preview/matrix-handoffnote-1440x900-100-light-2026-09-23-1555.png)。推理按正文段落顺序呈现；失败提示在输入框正上方显示原因与「重试 / 停止」，矩阵另断言它距输入框 6px。 |
+| 应用与包 | 构建产物已更新，cost 1 在隔离测试数据目录运行，矩阵在独立 Electron 窗口取图；未重启用户主应用，也未重跑解包、便携或安装包验收。 |
+| 剩余限制 | F7 仍部分完成：还需为故障恢复与连续两次交接补真实证据（见 §7.2）；未验证正式应用窗口与包。`logicalTurnId` 跨片段归属仍未取证；崩溃恢复的启动确认仍是磁盘标记近似；`HandoffNote` 视觉只覆盖交接失败状态，未覆盖三类压缩统计。 |
 
 ### 2026-09-23 · 实施-14 F0+F1：阶段诊断事件 + 目标控制修复
 
-> 实施-14 的 F0（现场诊断）与 F1（目标控制）已实施；F2–F7（交接事务隔离、无感切片、内部续接、状态 UI、推理顺序、联合验收）**仍未实施**。
+> 此处保留 F0/F1 完成时的状态快照：当时 F2–F7 尚未实施。后续实施与当前验收状态见上方 F2–F7 及 F7 补验记录。
 > 本轮未跑 cost 1 场景，未做真实交接链路取证 —— 那属于 F7。
 
 | 六栏 | 本轮范围 |
@@ -52,7 +108,7 @@
 
 ### 2026-09-23 · 自主目标与同会话无感交接修复档案（F0/F1 已实施）
 
-用户反馈两次完整压缩后交接缺提示、偶发报错，要求底层交接后台完成且前端始终同一会话；另已确认推理窗口跟随的是**聊天中的正式回复位置**。唯一活动正文 [实施-14](../plan/active/实施-14-自主目标与无感交接修复.md) 收录上一轮 7 项审查问题及新增交接/推理缺口，给出 F0–F7、文件域、依赖、失败恢复与验收矩阵。**F0（阶段诊断）与 F1（目标控制 A1–A6）已于本轮实施**（见上一节六栏）；F2–F7 仍未实施，用户偶发错误的现场根因也仍未归因。
+用户反馈两次完整压缩后交接缺提示、偶发报错，要求底层交接后台完成且前端始终同一会话；另已确认推理窗口跟随的是**聊天中的正式回复位置**。唯一活动正文 [实施-14](../plan/active/实施-14-自主目标与无感交接修复.md) 收录上一轮 7 项审查问题及新增交接/推理缺口，给出 F0–F7、文件域、依赖、失败恢复与验收矩阵。**此历史记录当时**只完成 F0（阶段诊断）与 F1（目标控制 A1–A6）；F2–F7 的后续状态见上方更新记录，用户偶发错误的现场根因仍需用故障恢复用例归因。
 
 | 六栏 | 本轮范围 |
 |---|---|

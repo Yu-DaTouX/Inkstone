@@ -49,6 +49,7 @@ import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
 import {
+  rebindSessionRuntime,
   migrateSessionRuntime,
   reduceSessionRuntime,
   updateSessionRuntime,
@@ -1145,6 +1146,18 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     switch (m.ch) {
+      case 'handoff-rebind': {
+        const p = m.payload
+        const cache = rebindSessionRuntime(s.sessionRuntimes, p.sourceSessionId, p.runtime, p.state)
+        const viewingSource = s.activeRunnerId === p.sourceRunId &&
+          (!s.peekedSessionId || s.peekedSessionId === p.sourceSessionId)
+        set({ sessionRuntimes: cache, ...(viewingSource && p.active ? {
+          activeRunnerId: p.runtime.runId,
+          session: p.state,
+          peekedPath: null, peekedSessionId: null
+        } : {}) })
+        break
+      }
       case 'sync': {
         /*
          * pi 推来的权威版本。
