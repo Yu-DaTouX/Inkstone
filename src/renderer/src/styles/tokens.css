@@ -128,9 +128,10 @@ html[data-theme='dark'] {
   /* 代码块（highlight.css 用）。深色主题就是 GitHub Dark 的底色 */
   --code-bg: #0d1117;
   --code-fg: #c9d1d9;
-  /* 行内代码：比代码块淡，不抢正文视线 */
-  --code-inline-bg: rgba(255, 255, 255, 0.06);
-  --code-inline-fg: #7ee7f7;
+  /* 行内代码：靠等宽 + 淡底区分，**不用彩色** ——
+     高饱和青蓝在密麻代码里会变成一串跳动的灯，正文反而读不进去。 */
+  --code-inline-bg: rgba(255, 255, 255, 0.07);
+  --code-inline-fg: #cdd6dc;
 }
 
 html[data-theme='light'] {
@@ -163,8 +164,9 @@ html[data-theme='light'] {
      用 GitHub Light 的浅灰底 + 深色字，语法色在 highlight.css 里另给。」 */
   --code-bg: #f6f8fa;
   --code-fg: #24292f;
-  --code-inline-bg: rgba(9, 105, 218, 0.08);
-  --code-inline-fg: #0a5fa8;
+  /* 同深色主题：中性灰（浅色底上蓝色小标签最显眼） */
+  --code-inline-bg: rgba(0, 0, 0, 0.055);
+  --code-inline-fg: #45525a;
 }
 
 /* 2. 基础 */

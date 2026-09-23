@@ -21,6 +21,38 @@
   const store = window.__yanStore
   const q = (s) => document.querySelector(s)
 
+  /*
+   * 颜色解析。
+   *
+   * `color-mix()` / `oklab()` 这类颜色在 computed style 里会序列化成
+   * `color(srgb r g b)`（0–1 的小数，且第一个词就是字面的 `srgb`）。
+   * 用 `match(/\d+/g)` 去抽数字会把 `srgb` 里的 0 当成红色通道，
+   * 于是浅色面板被读成纯黑（2026-09-23 实际误报过 `.goal-panel`）。
+   * 所以两种写法都显式支持。
+   */
+  const parseColor = (value) => {
+    const str = String(value || '').trim()
+    const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/.exec(str)
+    if (srgb) {
+      return {
+        r: Number(srgb[1]) * 255,
+        g: Number(srgb[2]) * 255,
+        b: Number(srgb[3]) * 255,
+        a: srgb[4] === undefined ? 1 : Number(srgb[4])
+      }
+    }
+    const m = str.match(/[\d.]+/g)
+    if (!m || m.length < 3) return null
+    return {
+      r: Number(m[0]),
+      g: Number(m[1]),
+      b: Number(m[2]),
+      a: m.length >= 4 ? Number(m[3]) : 1
+    }
+  }
+  const luma = (rgba, fallback = 0) =>
+    rgba ? (rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114) / 255 : fallback
+
   for (let i = 0; i < 80; i++) {
     if (store.getState().conn === 'ready') break
     await sleep(500)
@@ -63,8 +95,7 @@
   const code = q('.md pre code')
   if (code) {
     const bg = getComputedStyle(code).backgroundColor
-    const rgb = bg.match(/\d+/g)?.map(Number) ?? []
-    const lum = rgb.length >= 3 ? (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 255 : 0
+    const lum = luma(parseColor(bg))
     out.push(`  pre code bg = ${bg}（亮度 ${lum.toFixed(2)}）`)
     ok(lum > 0.6, `浅色主题下代码块是**浅底**（亮度 ${lum.toFixed(2)}，> 0.6）`)
   } else {
@@ -115,8 +146,7 @@
   if (head) {
     // 浅色下的可读性标准：颜色不能是“黑的不彻底、浅的不明显”
     const col = getComputedStyle(head).color
-    const rgb = col.match(/\d+/g)?.map(Number) ?? []
-    const lum = rgb.length >= 3 ? (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 255 : 1
+    const lum = luma(parseColor(col), 1)
     out.push(`  .trow-head color=${col}（亮度 ${lum.toFixed(2)}）`)
     ok(lum < 0.75, `工具行文字够深（亮度 ${lum.toFixed(2)}，< 0.75）`)
   } else {
@@ -170,11 +200,10 @@
      */
     const TERM_LUMA = 12 / 255 // .term 的 #0c0c0c
     const lumOn = (el, prop) => {
-      const m = String(getComputedStyle(el)[prop]).match(/[\d.]+/g)?.map(Number) ?? []
-      if (m.length < 3) return null
-      const a = m.length >= 4 ? m[3] : 1
-      const ch = (c) => (c / 255) * a + TERM_LUMA * (1 - a)
-      return ch(m[0]) * 0.299 + ch(m[1]) * 0.587 + ch(m[2]) * 0.114
+      const rgba = parseColor(getComputedStyle(el)[prop])
+      if (!rgba) return null
+      const ch = (c) => (c / 255) * rgba.a + TERM_LUMA * (1 - rgba.a)
+      return ch(rgba.r) * 0.299 + ch(rgba.g) * 0.587 + ch(rgba.b) * 0.114
     }
     const termLum = lumOn(term, 'backgroundColor')
     out.push(`  .term bg=${getComputedStyle(term).backgroundColor}（亮度 ${termLum?.toFixed(2)}）`)
@@ -231,11 +260,10 @@
       if (el.closest('.term')) continue
       const rect = el.getBoundingClientRect()
       if (rect.width * rect.height < DARK_BOX_MIN_AREA) continue
-      const m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g)
-      if (!m) continue
-      const a = m.length >= 4 ? Number(m[3]) : 1
-      if (a < 0.9) continue
-      const l = (m[0] * 0.299 + m[1] * 0.587 + m[2] * 0.114) / 255
+      const rgba = parseColor(getComputedStyle(el).backgroundColor)
+      if (!rgba) continue
+      if (rgba.a < 0.9) continue
+      const l = (rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114) / 255
       if (l < 0.25) {
         hits.push(
           `.${String(el.className).split(/\s+/).filter(Boolean).join('.')}(${Math.round(rect.width)}×${Math.round(rect.height)},${l.toFixed(2)})`
@@ -259,6 +287,103 @@
   await sleep(300)
 
   ok(dark.length + darkSettings.length === 0, '浅色主题下没有意外的深色块')
+
+  /* ---- 主题切换的方向与时长（DESIGN §5）----
+     必须走**真实入口**（设置面板改主题 dispatch 的就是 `yan:theme`）：
+     方向标记是 App 的 effect 写的，直接改 `dataset.theme` 验不到它。 */
+  {
+    /*
+     * 读**过渡伪元素**的动画名。
+     * `document.getAnimations()` 看不到 View Transition 的伪元素树（实测总数为 0 条 theme-*），
+     * 而 `getComputedStyle(el, '::view-transition-new(root)')` 在过渡进行中是可读的 ——
+     * 它验的也正是“我们定义的那条动画真的应用上了”。
+     */
+    const pseudoAnim = (sel) => {
+      try {
+        return String(getComputedStyle(document.documentElement, sel).animationName || '')
+      } catch {
+        return ''
+      }
+    }
+    const liveNames = () =>
+      [pseudoAnim('::view-transition-new(root)'), pseudoAnim('::view-transition-old(root)')].filter(
+        (n) => n && n !== 'none'
+      )
+    /* 上一次过渡要跑 760ms，没结束就读伪元素会读到**上一次**的动画名（实测误判过）。 */
+    const settle = async () => {
+      for (let i = 0; i < 40; i++) {
+        if (!liveNames().length) return
+        await sleep(30)
+      }
+    }
+
+    const kick = async (next, expect) => {
+      await settle()
+      window.dispatchEvent(new CustomEvent('yan:theme', { detail: next }))
+      let names = []
+      for (let i = 0; i < 50; i++) {
+        const now = liveNames()
+        if (now.includes(expect)) {
+          names = now
+          break
+        }
+        if (now.length) names = now
+        await sleep(30)
+      }
+      return { next, names, sawExpect: names.includes(expect), dir: document.documentElement.dataset.themeDir }
+    }
+
+    out.push(
+      `  过渡能力：startViewTransition=${typeof document.startViewTransition}、` +
+        `reduced-motion=${window.matchMedia('(prefers-reduced-motion: reduce)').matches}`
+    )
+
+    /*
+     * 四次（dark → light → dark → light）：本文件前面是**直接改 dataset**
+     * 验证浅色渲染的，App 的 theme state 未必与之一致 —— 万一某次 dispatch
+     * 的值就是当前 state，那一次不会产生过渡。四次能保证两个方向都真的跑到。
+     */
+    const expectOf = (t) => (t === 'dark' ? 'theme-spread' : 'theme-collapse')
+    const runs = []
+    for (const next of ['dark', 'light', 'dark', 'light']) runs.push(await kick(next, expectOf(next)))
+    const darkRuns = runs.filter((r) => r.next === 'dark' && r.names.includes('theme-spread'))
+    const lightRuns = runs.filter((r) => r.next === 'light' && r.names.includes('theme-collapse'))
+    const dirs = (list) => list.map((r) => r.dir).join('/') || '—'
+
+    ok(
+      darkRuns.length > 0 && lightRuns.length > 0,
+      `两个方向都真的触发了 View Transition（${runs.map((r) => r.next + ':' + (r.names.join('+') || '无')).join(' / ')}）`
+    )
+    ok(darkRuns.length > 0, '切到深色跑的是**向外晕开**（theme-spread）')
+    ok(lightRuns.length > 0, '切到浅色跑的是**向心收拢**（theme-collapse）')
+    ok(
+      darkRuns.length > 0 && darkRuns.every((r) => r.dir === 'out'),
+      `切到深色 → 方向 out（新层从中心向外晕开，实际 ${dirs(darkRuns)}）`
+    )
+    ok(
+      lightRuns.length > 0 && lightRuns.every((r) => r.dir === 'in'),
+      `切到浅色 → 方向 in（旧层从外缘向中心收拢，实际 ${dirs(lightRuns)}）`
+    )
+
+    const cssText = [...document.styleSheets]
+      .flatMap((sheet) => {
+        try {
+          return [...sheet.cssRules].map((rule) => rule.cssText)
+        } catch {
+          return []
+        }
+      })
+      .join('\n')
+      .replace(/\s+/g, ' ')
+    ok(
+      /view-transition-new\(root\)[^}]{0,160}theme-spread/.test(cssText) && cssText.includes('760ms'),
+      '向外扩散挂在**新层**上，且时长是 760ms（比原来的 380ms 慢一截）'
+    )
+    ok(
+      /view-transition-old\(root\)[^}]{0,160}theme-collapse/.test(cssText),
+      '向心收拢挂在**旧层**上（新层不动，否则两层一起动会糊）'
+    )
+  }
 
   /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */
   document.documentElement.dataset.theme = 'dark'
