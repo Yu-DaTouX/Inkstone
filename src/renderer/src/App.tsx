@@ -84,6 +84,37 @@ function readTheme(parent: Theme | undefined): Theme {
   return 'dark'
 }
 
+/** 设置面板里那两颗主题按钮 */
+const THEME_BUTTON_SELECTOR = '[data-testid^="theme-"]'
+
+/**
+ * 主题切换动画的圆心：优先用**刚被点的那颗按钮**。
+ *
+ * 为什么不能只信事件载荷：设置面板带了按钮中心，但一旦有任何一条路径
+dispatch 了不带位置的主题事件（或载荷在中间被吃掉），动画就会默默回退
+ * 到屏幕中心 —— 而那看起来就是「按钮定位不对」。所以这里再从 DOM 找一次：
+ * 先看焦点（鼠标点过的按钮就是 activeElement），再退到面板里的主题按钮。
+ * 面板没开时两者都找不到 → 返回 null，让 CSS 回退屏幕中心。
+ */
+function themeButtonOrigin(): { x: number; y: number } | null {
+  const center = (el: Element | null | undefined): { x: number; y: number } | null => {
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    if (!rect.width && !rect.height) return null
+    /*
+     * 必须在**真的看得见**才行：设置面板关掉后还会留在 DOM 里一小段时间
+     * （退场动画 / `usePresence`），它的 rect 仍然算得出来 —— 拿它当圆心
+     * 会让下一次切换从一个看不见的位置开始。
+     */
+    const style = getComputedStyle(el)
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) < 0.05) return null
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  }
+  const focused = document.activeElement
+  const byFocus = focused instanceof Element ? focused.closest(THEME_BUTTON_SELECTOR) : null
+  return center(byFocus) ?? center(document.querySelector(THEME_BUTTON_SELECTOR))
+}
+
 export default function App() {
   const { lang, setLang } = useI18n()
   const t = useT()
@@ -91,6 +122,8 @@ export default function App() {
   const themeMounted = useRef(false)
   /** 最近一次主题切换的动画圆心（设置面板传的按钮中心）；没有就回退屏幕中心 */
   const themeOrigin = useRef<{ x: number; y: number } | null>(null)
+  /** 主题过渡是否在跑（同一时间只允许一次 —— 并发会被 Chromium 跳过） */
+  const themeTransitionRunning = useRef(false)
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
   /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
@@ -313,10 +346,11 @@ export default function App() {
     root.dataset.themeDir = theme === 'dark' ? 'out' : 'in'
     /*
      * 动画圆心（DESIGN §5）：默认屏幕中心；从设置面板切主题时，圆心就是**那个按钮**
-     *（“我点的那一下让主题从这儿铺开 / 收拢”）。
+     *（“我点的那一下让主题从这儿铺开 / 收拢”）。载荷里没带位置时再从 DOM 找一次
+     *（`themeButtonOrigin`）—— 两条路都拿不到才真的回退屏幕中心。
      * 同样必须在 startViewTransition 之前落到行内样式上，否则首帧会从屏幕中心闪一下。
      */
-    const origin = themeOrigin.current
+    const origin = themeOrigin.current ?? themeButtonOrigin()
     themeOrigin.current = null
     if (origin) {
       root.style.setProperty('--theme-origin-x', `${Math.round(origin.x)}px`)
@@ -330,16 +364,51 @@ export default function App() {
      * Chromium 的 View Transition 把新主题放在旧主题之上，配合 clip-path
      * 从中心向外展开，颜色切换不会像整页硬切。老版本 Electron 或减少动效
      * 环境直接改 data-theme，主题功能本身不依赖动画。
+     *
+     * ⚠️ 两条防坑（都是实测踩出来的）：
+     *   ① **同一时间只跑一次过渡**。上一次还没结束就再起一次，Chromium 会把新的跳过 ——
+     *      被跳过的那次 `updateCallback` 不执行，`data-theme` 就停在旧值上
+     *      （用户看到的是「点了没反应」，而且下一次动画的圆心还是上一次的）。
+     *      所以过渡进行中就直接改令牌、不上动画。
+     *   ② **被跳过也要把主题落上**：`updateCallbackDone` 反了（skip / 回调抛错）就再 apply 一次，
+     *      宁可少一次动画，不能少一次换肤。
      */
     const transitionDocument = document as Document & {
-      startViewTransition?: (update: () => void) => unknown
+      startViewTransition?: (update: () => void) => { finished?: Promise<void>; updateCallbackDone?: Promise<void> } | undefined
     }
     const reduceMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const firstThemeApply = !themeMounted.current
     themeMounted.current = true
-    if (!firstThemeApply && typeof transitionDocument.startViewTransition === 'function' && !reduceMotion) {
-      transitionDocument.startViewTransition(apply)
+    const canTransition =
+      !firstThemeApply && typeof transitionDocument.startViewTransition === 'function' && !reduceMotion
+    if (canTransition && !themeTransitionRunning.current) {
+      themeTransitionRunning.current = true
+      const done = (): void => {
+        themeTransitionRunning.current = false
+      }
+      const transition = transitionDocument.startViewTransition(apply)
+      if (transition?.updateCallbackDone) transition.updateCallbackDone.then(undefined, apply)
+      if (transition?.finished) {
+        /*
+         * 兜底定时器用**动画时长**而不是一个拍脑袋的 2 秒：
+         * `finished` 在窗口不可见（后台标签 / 探针隐藏窗口）时会被节流到很晚，
+         * 光等它会让接下来的一两次切换都退化成瞬时换肤。
+         */
+        const timer = window.setTimeout(done, 900)
+        transition.finished.then(
+          () => {
+            window.clearTimeout(timer)
+            done()
+          },
+          () => {
+            window.clearTimeout(timer)
+            done()
+          }
+        )
+      } else {
+        done()
+      }
     } else {
       apply()
     }

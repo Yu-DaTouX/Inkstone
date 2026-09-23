@@ -14,6 +14,13 @@
  *      失败态一直留到用户处理（重试 / 停止）或下一次成功；
  *   ③ **不循环弹技术错误**：原因翻成人话，明细留在 `getHandoff().events`。
  *
+ * ── 第四条（2026-09-23 用户现场补上）──
+ *   ④ **常态不算失败**：资格不够（`below-threshold` / `no-goal` / `not-autonomous` / `busy`）、
+ *      安全边界拒绝（`source-watermark-moved` 这类）、以及用户自己打断的中止都不弹提示。
+ *      每次回合结束都会评估一次资格，**每个新会话第一眼就会有一条** `below-threshold` ——
+ *      把它当失败，用户会在一条什么都没发生的会话里看到「整理未完成」
+ *      （原文案甚至会说「这个片段还没有压够次数」）。想查「为什么没交接」去 events。
+ *
  * ⚠️ 判据只用 `HandoffView` 里已有的字段（`pending` / `events`），
  * 不引入第二份状态 —— 否则事件与显示迟早会不一致。
  */
@@ -38,6 +45,12 @@ const SUCCESS_OUTCOMES = new Set(['package-ready', 'ok', 'resume-confirmed', 'st
  *
  * ⚠️ 不含 `result-mismatch`：那只是说明磁盘上有一份**别的**操作的结果文件，
  * 本次操作还在正常等待 —— 把它当失败会在每秒轮询里刷出一个假故障。
+ *
+ * ⚠️ 也**不含 `rejected`**（2026-09-23 改）：资格拒绝（`below-threshold` / `no-goal` /
+ * `not-autonomous` / `busy` / `goal-not-active`）与安全边界拒绝（`source-watermark-moved` /
+ * `goal-changed` / `mode-changed`）全是**常态**，不是故障 —— “这次不交接，因为还没到时候”。
+ * 它们每个回合结束都会记一条（诊断日志本来就是干这个的），但界面照它弹提示，
+ * 就会出现“每个对话都说整理未完成”（用户现场原文）。
  */
 const FAILED_OUTCOMES = new Set([
   'request-write-failed',
@@ -50,9 +63,23 @@ const FAILED_OUTCOMES = new Set([
   'halted',
   'threw',
   'unconfirmed',
-  'rejected',
   'repeat-guard-failed'
 ])
+
+/**
+ * `abandoned` 要看原因：只有「等超时」是故障。
+ *
+ * 用户发言 / 停止 / 点重试（`user-message` / `user-stop` / `manual-retry`）
+ * 导致的中止是**用户自己的动作**，并且他会看到自己刚做的事 —— 再弹一行红只会添乱。
+ */
+const FAILED_ABANDON_REASONS = new Set(['timeout'])
+
+/** 这条事件算不算「失败」（`abandoned` 要连原因一起看）。 */
+function isFailureEvent(event: { outcome: string; reason?: string | null }): boolean {
+  if (!FAILED_OUTCOMES.has(event.outcome)) return false
+  if (event.outcome === 'abandoned') return FAILED_ABANDON_REASONS.has(String(event.reason ?? ''))
+  return true
+}
 
 /** 成功态保留多久（过期后这一行收起 —— 成功不需要一直占地方）。 */
 export const HANDOFF_DONE_WINDOW_MS = 60_000
@@ -77,7 +104,7 @@ export function handoffNoticeOf(
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
     if (lastSuccessAt === null && SUCCESS_OUTCOMES.has(event.outcome)) lastSuccessAt = event.at
-    if (lastFailureAt === null && FAILED_OUTCOMES.has(event.outcome)) {
+    if (lastFailureAt === null && isFailureEvent(event)) {
       lastFailureAt = event.at
       lastFailureReason = event.reason ?? event.outcome
     }

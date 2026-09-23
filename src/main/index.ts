@@ -57,7 +57,7 @@ import { BrowserController } from './browser'
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
-import { decideSessionWork, ownsHandoffOperation } from '../shared/handoff-schedule'
+import { decideSessionWork, ownsHandoffOperation, EligibilityRejectLog } from '../shared/handoff-schedule'
 import { eventsForSession } from '../shared/handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
@@ -886,6 +886,13 @@ function hasHandoffOperation(id: string): boolean {
 const handoffLastCheck = new Map<string, number>()
 const HANDOFF_CHECK_INTERVAL_MS = 1_000
 
+/**
+ * 常态资格拒绝的记账去重（实施-14 F8）—— 逻辑在 `shared/handoff-schedule.ts`，
+ * 这里只持有实例。没有它，每次回合收尾都会记一条「还没压够次数」，
+ * 很快就把 400 条的诊断环占满。
+ */
+const handoffEligibilityLog = new EligibilityRejectLog()
+
 /** 写包是一次额外模型调用：给 90 秒，之后放弃（会话该干什么干什么，不卡用户）。 */
 const HANDOFF_WAIT_MS = 90_000
 const HANDOFF_POLL_MS = 1_000
@@ -939,9 +946,10 @@ async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
     /*
      * 资格没过曾经是**静默 return** —— 用户看到的就是「压了两次但什么都没发生」。
      * 四种原因的修法完全不同（等够数 / 建目标 / 换自主档 / 等后台工作），
-     * 所以每一种都留一条事件。
+     * 所以每一种都留一条事件 —— 但**同一结论不重复记**（见 `shouldRecordEligibilityReject`）。
      */
     if (!verdict.eligible) {
+      if (!handoffEligibilityLog.shouldRecord(id, verdict.reason, verdict.count)) return false
       handoffDiag.record({
         stage: 'eligibility',
         outcome: 'rejected',
