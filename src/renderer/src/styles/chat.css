@@ -224,9 +224,9 @@
 
 .artifact-card {
   overflow: hidden;
-  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--panel, #17191d) 92%, white 8%);
+  background: color-mix(in srgb, var(--bg-2) 92%, white 8%);
 }
 
 .artifact-head {
@@ -235,7 +235,7 @@
   gap: 8px;
   min-height: 34px;
   padding: 0 10px;
-  color: var(--text, #e8eaed);
+  color: var(--fg);
 }
 
 .artifact-head strong {
@@ -248,13 +248,13 @@
 
 .artifact-meta,
 .artifact-provider {
-  color: var(--muted, #8f96a3);
+  color: var(--fg-mute);
   font-size: 11px;
 }
 
 .artifact-description {
   padding: 0 10px 8px;
-  color: var(--muted, #a7adba);
+  color: var(--fg-dim);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -278,7 +278,7 @@
 
 .artifact-image-wrap.failed {
   min-height: 92px;
-  color: var(--err, #ff7777);
+  color: var(--err);
   font-size: 12px;
 }
 
@@ -291,7 +291,7 @@
   margin: 0;
   overflow: auto;
   padding: 10px;
-  color: var(--text, #e8eaed);
+  color: var(--fg);
   background: #101318;
   font-size: 11px;
   line-height: 1.5;
@@ -300,7 +300,7 @@
 
 .artifact-binary {
   padding: 18px 12px;
-  color: var(--muted, #a7adba);
+  color: var(--fg-dim);
   font-size: 12px;
 }
 
@@ -310,7 +310,7 @@
   gap: 8px;
   align-items: center;
   padding: 9px 12px;
-  border-top: 1px solid var(--line, rgba(255,255,255,.08));
+  border-top: 1px solid var(--border-soft);
 }
 
 .image-progress-list {
@@ -322,9 +322,9 @@
 
 .image-progress {
   padding: 9px 11px 10px;
-  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--panel, #17191d) 94%, white 6%);
+  background: color-mix(in srgb, var(--bg-2) 94%, white 6%);
 }
 
 .image-progress-head {
@@ -332,13 +332,13 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
-  color: var(--text, #e8eaed);
+  color: var(--fg);
   font-size: 12px;
 }
 
 .image-progress-head > .ico {
   flex: none;
-  color: var(--accent, #62b5ff);
+  color: var(--accent);
 }
 
 .image-progress-head strong {
@@ -348,7 +348,7 @@
 .image-progress-stage,
 .image-progress-time,
 .image-progress-detail {
-  color: var(--muted, #8f96a3);
+  color: var(--fg-mute);
   font-size: 11px;
 }
 
@@ -361,7 +361,7 @@
   margin-top: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent, #62b5ff) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .image-progress-track span {
@@ -369,7 +369,7 @@
   width: 34%;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent, #62b5ff);
+  background: var(--accent);
 }
 
 .image-progress.running .image-progress-track span {
@@ -377,17 +377,17 @@
 }
 
 .image-progress.failed {
-  border-color: color-mix(in srgb, var(--err, #ff7777) 44%, var(--line, rgba(255,255,255,.12)));
+  border-color: color-mix(in srgb, var(--err) 44%, var(--border));
 }
 
 .image-progress.failed .image-progress-head > .ico,
 .image-progress.failed .image-progress-stage {
-  color: var(--err, #ff7777);
+  color: var(--err);
 }
 
 .image-progress.failed .image-progress-track span {
   width: 100%;
-  background: var(--err, #ff7777);
+  background: var(--err);
 }
 
 .image-progress-detail {
@@ -404,7 +404,7 @@
 .artifact-download {
   border: 0;
   padding: 3px 0;
-  color: var(--accent, #62b5ff);
+  color: var(--accent);
   background: transparent;
   font: inherit;
   font-size: 11px;
@@ -423,13 +423,13 @@
 .subagent-inline {
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid var(--line, rgba(255,255,255,.12));
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--panel, #17191d) 94%, white 6%);
+  background: color-mix(in srgb, var(--bg-2) 94%, white 6%);
 }
 
 .subagent-inline.running {
-  border-color: color-mix(in srgb, var(--accent, #62b5ff) 42%, var(--line, rgba(255,255,255,.12)));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
 .subagent-inline-head {
@@ -437,7 +437,7 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
-  color: var(--text, #e8eaed);
+  color: var(--fg);
   font-size: 12px;
 }
 
@@ -447,23 +447,23 @@
   flex: none;
   width: 16px;
   height: 16px;
-  color: var(--accent, #62b5ff);
+  color: var(--accent);
   font-size: 12px;
 }
 
 .subagent-inline:not(.running) .subagent-inline-icon {
-  color: var(--ok, #53d39a);
+  color: var(--ok);
 }
 
 .subagent-inline.error .subagent-inline-icon,
 .subagent-inline.cancelled .subagent-inline-icon {
-  color: var(--err, #ff7777);
+  color: var(--err);
 }
 
 .subagent-inline-state {
   overflow: hidden;
   flex: 1;
-  color: var(--muted, #8f96a3);
+  color: var(--fg-mute);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -472,7 +472,7 @@
   flex: none;
   border: 0;
   padding: 2px 4px;
-  color: var(--accent, #62b5ff);
+  color: var(--accent);
   background: transparent;
   font: inherit;
   font-size: 11px;
@@ -483,7 +483,7 @@
 .subagent-inline-preview {
   overflow: hidden;
   margin-top: 5px;
-  color: var(--muted, #a7adba);
+  color: var(--fg-dim);
   font-size: 11px;
   line-height: 1.45;
   text-overflow: ellipsis;
@@ -491,14 +491,14 @@
 }
 
 .subagent-inline-task {
-  color: var(--text, #e8eaed);
+  color: var(--fg);
 }
 
 .subagent-inline-spinner {
   width: 10px;
   height: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent, #62b5ff) 30%, transparent);
-  border-top-color: var(--accent, #62b5ff);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: subagent-inline-spin .8s linear infinite;
 }
@@ -509,14 +509,11 @@
 
 .artifact-actions button:hover,
 .artifact-download:hover {
-  color: var(--text, #fff);
+  color: var(--fg);
 }
 
-/* 60. 推理流（限高省略 / 显示最新 / 结束折叠 / 保留开关 / 无推理不显示）
-   2026-09-15 用户确认：默认展开但钉高，超出部分裁掉**开头**并顶部渐隐。
-   这里刻意**不用可滚动容器** —— overflow:hidden 的元素仍可由脚本设
-   scrollTop 贴底（见 Reasoning.tsx），但用户滚不动它，所以不会出现
-   「第二条滚动条」和「上滚阅读被拽回底部」两个问题。 */
+/* 60. 推理流：默认只显示最新一句，头部按钮原位开合限高全文。
+   开合不跟流式状态自动变化（手动展开后回合结束也保持），见 Reasoning.tsx。 */
 .reason {
   margin-bottom: var(--sp-2);
   border-left: 2px solid var(--border-str);
@@ -574,7 +571,9 @@
   flex: none;
 }
 
-/* 折叠时的单行预览：不用展开也知道它在想什么 */
+/* 折叠时的单行预览：一行最新句。元素本身带 dir="rtl"（见 Reasoning.tsx），
+   内层 dir="ltr" 隔离 bidi —— 溢出因此发生在左侧，尾端（最新内容）可见；
+   peekText 再兜底只保留尾段，不往 DOM 里放大段文本。 */
 .reason-peek {
   max-width: 62%;
   overflow: hidden;
@@ -595,28 +594,8 @@
   user-select: text;
 }
 
-/* 省略态：钉住高度，溢出被裁（内容由脚本 scrollTop 贴底 = 看最新） */
-.reason-body.clip {
-  max-height: var(--reason-max-h);
-  overflow: hidden;
-}
-
-/* 只在真的被裁掉时渐隐；短推理不该被无故淡化 */
-.reason-body.clip.is-clipped {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
-}
-
-/*
- * 「展开全部」后也**不是**无限高（用户 2026-09-18：「推理过程同理」）。
- *
- * ⚠️ 这里与旧边界不同：以前 `.expanded` 是 `max-height: none`，理由是
- *    「不引入第二条滚动条」。那条理由针对的是**默认态** —— 默认展开只显示
- *    最新一段、由脚本贴底，不需要滚动条。而「展开全部」是用户主动要求看全文，
- *    全文可以很长；给它一个固定范围 + 内部滚动后，`.reason-head`（胶囊）
- *    因此始终留在上方可见，收起入口不会滚丢（用户明确要求保留那个胶囊）。
- */
-.reason-body.clip.expanded {
+/* 展开后正文限高；头部始终保留折叠入口。 */
+.reason-body.open {
   max-height: min(70vh, 620px);
   overflow: auto;
   overscroll-behavior: contain;
@@ -624,26 +603,6 @@
 
 .reason-body[hidden] {
   display: none;
-}
-
-/* 「展开全部 / 收起」：必须在 .reason-body 外面，否则会被自己裁掉 */
-.reason-more {
-  display: block;
-  margin: 0 0 1px var(--sp-3);
-  padding: 0;
-  background: none;
-  border: 0;
-  color: var(--fg-mute);
-  font-family: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.4;
-  text-align: left;
-  cursor: pointer;
-}
-
-.reason-more:hover {
-  color: var(--fg-dim);
-  text-decoration: underline;
 }
 
 /* 新增尾部 140ms 淡入：只作用在最后一个 span，稳定文本不重复动画 */
@@ -1762,9 +1721,23 @@
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
-  max-height: 88%;
-  overflow: hidden;
+  max-height: 100%;
+  /* 长会话（几十轮）的刻度会超过对话区高度：允许在轨道内滚动，
+     键盘 Tab 到末项时浏览器会把它自动滚进来（V-2b 的「末项可达」）。
+     细滚动条不挤掉命中区宽度。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   pointer-events: auto;
+}
+
+.outline-track::-webkit-scrollbar {
+  width: 4px;
+}
+
+.outline-track::-webkit-scrollbar-thumb {
+  background: var(--border-str);
+  border-radius: 2px;
 }
 
 /* 命中区：透明；刻度锚在命中区左侧（向右长，最长 34 < 容器 44） */

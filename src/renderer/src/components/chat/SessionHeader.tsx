@@ -1,6 +1,8 @@
 import { useT } from '../../i18n'
+import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { EnvironmentMenu } from '../review/EnvironmentMenu'
+import { GoalPopover } from '../toolbar/GoalPopover'
 
 /**
  * 主区域顶部 —— 对齐 Codex 的头部。
@@ -41,7 +43,7 @@ export function SessionHeader() {
     fromModel ||
     session?.sessionName ||
     fromList ||
-    (fromFirst ? truncate(fromFirst, 60) : t('header.untitled'))
+    (fromFirst ? shortTitle(fromFirst, 60).short : t('header.untitled'))
 
   return (
     <div className="shead" data-testid="session-header">
@@ -52,6 +54,9 @@ export function SessionHeader() {
 
         {/* 环境菜单（项目胶囊即入口）：变更 / 本地 / 分支 / PR / 比较分支 */}
         <EnvironmentMenu />
+
+        {/* 目标入口（U-3a）：点开是只读浮层，不再占工具页的一块 */}
+        <GoalPopover />
 
         {/*
          * 模型胶囊**已删**（用户要求）。
@@ -70,14 +75,6 @@ export function SessionHeader() {
       </div>
     </div>
   )
-}
-
-function truncate(s: string, n: number): string {
-  const clean = s
-    .replace(/\s+/g, ' ')
-    .replace(/<[^>]{1,40}>/g, '')
-    .trim()
-  return clean.length > n ? `${clean.slice(0, n)}…` : clean
 }
 
 // 兼容既有 import 路径

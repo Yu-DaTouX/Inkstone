@@ -38,6 +38,14 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+/* tab 按钮组：role=tablist 的容器，继续沿用导航列的竖排间距 */
+.settings-tabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
 .settings-tab {
   display: flex;
   align-items: center;
@@ -230,8 +238,8 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 .stream-width-ctl .range:focus-visible::-webkit-slider-thumb {
-  outline: 2px solid var(--accent-line);
-  outline-offset: 2px;
+  outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 /* 恢复默认按钮：与 seg-btn 同款，但在这行里不要撑得那么宽 */
 .stream-width-ctl .seg-btn {

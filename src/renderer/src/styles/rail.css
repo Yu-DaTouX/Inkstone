@@ -903,7 +903,7 @@ body.rail-dragging .proj-group-heading {
 }
 
 .srow-menu-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1108,8 +1108,9 @@ body.rail-dragging .proj-group-heading {
 }
 
 .rail-mode-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  /* 窄栏里的小按钮：用强调档宽度（V-1 焦点环唯一来源） */
+  outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .rail-mode-icon {
@@ -1493,7 +1494,7 @@ body.rail-dragging .proj-group-heading {
 
 /* 未接入的项：明确不可选（不做假状态），但仍然列出来让人知道有这回事 */
 .rmm-item:disabled {
-  opacity: 0.55;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 

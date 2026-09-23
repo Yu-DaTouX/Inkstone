@@ -445,8 +445,8 @@ html[data-theme='light'] .op-title::before {
  * `pointer-events: none` 保证浮层不吃点击，位置相对 `.turn-footer`。
  */
 .turn-time:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
   border-radius: var(--r-xs);
 }
 

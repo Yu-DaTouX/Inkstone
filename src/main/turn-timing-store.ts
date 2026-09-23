@@ -51,6 +51,14 @@ export interface TurnTimingRecord extends TurnTimingMeta {
   /** 单调毫秒（诊断用）：能看出墙钟是否被调整过，不用于展示 */
   monotonicMs?: number
   /**
+   * 本轮模型报出的**输出 token**（实施-15 A-2 预算要用）。
+   *
+   * 为什么不存输入侧：pi 只在部分 provider 上报 input，缺失时拿它当 0
+   * 会把预算算得比真实小（反而更早停）。宁可只存确定有的那一半。
+   * 旧记录没有这个字段——读到就是 undefined，不当 0。
+   */
+  outputTokens?: number
+  /**
    * 写入这次快照时这一轮**是否已经收尾**（H-6b）。
    *
    * 为什么需要这个布尔：回合中途会写一次（`message_end`），终止时再写一次。
@@ -146,6 +154,9 @@ function parseRecord(line: string): TurnTimingRecord | null {
     ...(typeof item.monotonicMs === 'number' && Number.isFinite(item.monotonicMs)
       ? { monotonicMs: item.monotonicMs }
       : {}),
+    ...(typeof item.outputTokens === 'number' && Number.isFinite(item.outputTokens) && item.outputTokens > 0
+      ? { outputTokens: Math.round(item.outputTokens) }
+      : {}),
     ...(typeof item.final === 'boolean' ? { final: item.final } : {}),
     ...(typeof item.runId === 'string' && item.runId ? { runId: item.runId } : {}),
     ...(Array.isArray(item.waitSpans) ? { waitSpans: parseWaitSpans(item.waitSpans) } : {})
@@ -197,6 +208,15 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     for (const s of r.waitSpans ?? []) waitSpans.push(s)
   }
   const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
+  /*
+   * output token 跨 run **相加**：自动继续会开新的 pi 回合（新 runId），
+   * 目标预算要的是这个逻辑回合一共吐了多少，不是最后那一段。
+   * 没有任何一段报过就是 undefined（"未知"）——不要当成 0 去让预算失效。
+   */
+  const reported = runs.filter((r) => typeof r.outputTokens === 'number')
+  const outputTokens = reported.length
+    ? reported.reduce((n, r) => n + (r.outputTokens ?? 0), 0)
+    : undefined
   return {
     ...last,
     logicalTurnId: id,
@@ -205,7 +225,8 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     endedAt: Math.max(...runs.map((r) => r.endedAt)),
     sourceIds,
     ...(anchorId ? { anchorId } : {}),
-    ...(waitSpans.length ? { waitSpans } : {})
+    ...(waitSpans.length ? { waitSpans } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {})
   }
 }
 

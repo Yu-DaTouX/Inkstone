@@ -46,16 +46,30 @@
       } else await sleep(150)
     }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
-    // 显式复位布局（不假设起始状态）
-    await store.getState().setToolLayout({ toolOrder: [], toolHidden: [] })
-    await sleep(700)
+    const ALL = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions']
+    /* U-4：布局真源是版本化 toolLayout（旧 toolOrder/toolHidden 已不参与写入） */
+    const layoutNow = () => store.getState().settings?.toolLayout
+    const dockedOrder = () =>
+      (layoutNow()?.tiles ?? []).filter((t) => t.placement === 'docked').sort((a, b) => a.order - b.order).map((t) => t.id)
+    const placementOf = (id) => (layoutNow()?.tiles ?? []).find((t) => t.id === id)?.placement
+    const putLayout = async (tiles) => {
+      await store.getState().setToolLayout({ version: 2, revision: (layoutNow()?.revision ?? 0) + 1, tiles })
+      await sleep(700)
+    }
+    const putAllDocked = () => putLayout(ALL.map((id, i) => ({ id, placement: 'docked', order: i })))
+    /* 显式复位布局（不假设起始状态） */
+    await putAllDocked()
+    /* H-3b：新会话默认停在「开始」页，工具分区在「工具」固定页里。 */
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
+    await sleep(300)
+    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(500)
 
     /*
      * 默认顺序 —— 与 shared/ipc.ts 的 TOOL_SECTIONS **必须一致**。
      * 改一处要改两处（探针是独立文件，拿不到那个常量）。
      * 2026-09 评审：任务提到最前（它回答“现在该我做什么”）。
      */
-    const ALL = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions']
     const st = store.getState()
     /** 按 isEmpty 规则推导「应该渲染哪些」——与实现保持同一判据 */
     const expectEmpty = []
@@ -96,8 +110,8 @@
     out.push('  ' + JSON.stringify(before) + ' → ' + JSON.stringify(after))
     if (after[0] === before[1] && after[1] === before[0]) ok('Alt+↓ 与下一项交换')
     else bad('交换失败')
-    const saved = store.getState().settings?.toolOrder
-    out.push('  落盘 toolOrder=' + JSON.stringify(saved))
+    const saved = dockedOrder()
+    out.push('  落盘停靠顺序=' + JSON.stringify(saved))
     /*
      * 落盘断言要看**相对次序**，不能看绝对下标。
      * 因为排序是在「完整顺序」（含当前不可见的分区）上做的 ——
@@ -159,7 +173,7 @@
       const ai = after2.indexOf(anchorId)
       if (di > ai) ok('拖到 ' + anchorId + ' 下半区 → ' + dragId + ' 排到它之后')
       else bad('拖拽插入位置不对：' + dragId + '@' + di + ' ' + anchorId + '@' + ai)
-      const savedOrder = store.getState().settings?.toolOrder
+      const savedOrder = dockedOrder()
       if (Array.isArray(savedOrder) && savedOrder.indexOf(dragId) > savedOrder.indexOf(anchorId)) {
         ok('拖拽结果已落盘')
       } else {
@@ -193,7 +207,7 @@
       out.push('  收起 queue 后工具栏：' + JSON.stringify(afterHide))
       if (!afterHide.includes('queue')) ok('收进库的分区不在工具栏里显示（是移出，不是折叠）')
       else bad('还在工具栏里')
-      if (store.getState().settings?.toolHidden?.includes('queue')) ok('toolHidden 已落盘')
+      if (placementOf('queue') === 'library') ok('queue 已收进库（toolLayout 已落盘）')
       else bad('没收进库（未落盘）')
 
       // 拿回来
@@ -203,12 +217,12 @@
       out.push('  拿回后：' + JSON.stringify(back))
       if (back.includes('queue')) ok('能从库拿回工具栏')
       else bad('拿不回来')
-      if (!store.getState().settings?.toolHidden?.includes('queue')) ok('toolHidden 已移除该项')
-      else bad('toolHidden 没清掉')
+      if (placementOf('queue') === 'docked') ok('能从库拿回工具页')
+      else bad('拿不回来')
 
       /* 库里的上移 / 下移（按钮，不依赖拖拽） */
       out.push('\n=== 5b. 工具库的上移 / 下移 ===')
-      const orderNow = [...(store.getState().settings?.toolOrder ?? [])]
+      const orderNow = [...dockedOrder()]
       const li = orderNow.indexOf('log')
       const upBtn = document.querySelector('[data-testid="tl-up-log"]')
       const downBtn = document.querySelector('[data-testid="tl-down-log"]')
@@ -219,20 +233,19 @@
       } else {
         click(upBtn)
         await sleep(700)
-        const afterUp = [...(store.getState().settings?.toolOrder ?? [])]
+        const afterUp = [...dockedOrder()]
         if (afterUp.indexOf('log') === li - 1) ok('上移一位（' + li + ' → ' + afterUp.indexOf('log') + '）')
         else bad('上移无效：' + li + ' → ' + afterUp.indexOf('log'))
         click(downBtn)
         await sleep(700)
-        const afterDown = [...(store.getState().settings?.toolOrder ?? [])]
+        const afterDown = [...dockedOrder()]
         if (afterDown.indexOf('log') === li) ok('下移回到原位')
         else bad('下移无效：' + afterDown.indexOf('log') + ' 期望 ' + li)
       }
 
       out.push('\n=== 6. 恢复默认布局 ===')
       // 先弄乱
-      await store.getState().setToolLayout({ toolOrder: [...ALL].reverse(), toolHidden: ['log'] })
-      await sleep(700)
+      await putLayout([...ALL].reverse().map((id, i) => ({ id, placement: id === 'log' ? 'library' : 'docked', order: i })))
       if (!document.querySelector('[data-testid="tool-lib"]')) {
         click(document.querySelector('[data-testid="tool-lib-btn"]'))
         await until(() => document.querySelector('[data-testid="tool-lib"]'), 3000)
@@ -247,8 +260,8 @@
         out.push('  复位后：' + JSON.stringify(reset))
         if (JSON.stringify(reset) === JSON.stringify(expected)) ok('一键恢复默认布局（含空分区规则）')
         else bad('没恢复：' + JSON.stringify(reset) + ' 期望 ' + JSON.stringify(expected))
-        if ((store.getState().settings?.toolHidden ?? []).length === 0) ok('隐藏集合已清空')
-        else bad('隐藏集合没清')
+        if (placementOf('log') === 'docked' && (layoutNow()?.tiles ?? []).every((t) => t.placement !== 'library')) ok('库位已清空（全部回工具页）')
+        else bad('库位没清')
       }
       // 收尾：关掉库，别影响后面的场景
       if (document.querySelector('[data-testid="tool-lib"]')) {

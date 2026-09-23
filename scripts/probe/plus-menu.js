@@ -130,8 +130,10 @@
     goalRes.goal.brief?.outcome === '菜单三项可点且两张截图齐备',
     `达成判据原样存进目标（实际 ${JSON.stringify(goalRes.goal.brief?.outcome)}）`
   )
+  /* U-3a：目标改成标题栏入口 + 浮层（不再在工具页常驻）。 */
+  document.querySelector('[data-testid="goal-entry"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await waitFor(() => q('[data-testid="goal-panel"]'), 5000)
-  ok(!!q('[data-testid="goal-panel"]'), '右栏出现目标面板')
+  ok(!!q('[data-testid="goal-panel"]'), '目标浮层里出现目标面板')
 
   /* 点外部收起 */
   document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))

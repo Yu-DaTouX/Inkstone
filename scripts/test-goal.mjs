@@ -741,6 +741,233 @@ export async function runGoalTests(ok) {
         '旧记录（没有 pursue 字段）读进来是 false'
       )
       ok(shared.normalizeGoalState({ pursue: 'yes' }).pursue === false, '脏值不凭空造一个持续目标')
+
+      /* ------------------------------------------------ U-3b 结构化链接 */
+      {
+        const linksOk = [
+          { kind: 'file', target: 'src/main/goal-service.ts', label: '宿主校验' },
+          { kind: 'url', target: 'https://example.com/spec', label: '规格' },
+          { kind: 'artifact', target: 'out/evidence.png' }
+        ]
+        const cleaned = shared.sanitizeGoalLinks(linksOk, 1000)
+        ok(cleaned.length === 3, '三种 kind 都收（file / url / artifact）')
+        ok(cleaned.every((l) => l.addedAt === 1000), '缺 addedAt 时由宿主回填')
+
+        /* 坏链接一律丢掉，不报错（目标还得推进） */
+        const dirty = shared.sanitizeGoalLinks(
+          [
+            { kind: 'exe', target: 'calc.exe' }, // kind 不在白名单
+            { kind: 'url', target: 'javascript:alert(1)' }, // scheme 不支持
+            { kind: 'url', target: 'file:///C:/Windows' }, // url 必须是 http/https
+            { kind: 'file', target: 'C:/ok.txt' }, // Windows 绝对路径要收
+            { kind: 'file', target: 'https://example.com' }, // file 塞了个 url
+            { kind: 'file', target: '   ' }, // 空白
+            { kind: 'file', target: 'A/B.txt' }, // 重复（大小写不同）
+            { kind: 'file', target: 'a/b.TXT' }
+          ],
+          2000
+        )
+        ok(Array.isArray(cleaned), '脏输入不抛错，只丢掉非法项')
+        ok(
+          dirty.map((l) => l.target).join(',') === 'C:/ok.txt,A/B.txt',
+          '只留下合法且去重的链接'
+        )
+        ok(
+          dirty.every((l) => l.kind === 'file'),
+          '被丢掉的是非法项（kind 白名单 / scheme / 空白 / 重复）'
+        )
+
+        /* 上限：单目标最多 GOAL_LINK_LIMIT 条 */
+        const many = Array.from({ length: 40 }, (_, i) => ({ kind: 'file', target: `f${i}.txt` }))
+        ok(shared.sanitizeGoalLinks(many, 1).length === shared.GOAL_LINK_LIMIT, '超上限截断')
+
+        /* 合并：同 kind+target 只算一次，并按上限封顶 */
+        const merged = shared.mergeGoalLinks(
+          [{ kind: 'file', target: 'a.ts', addedAt: 1 }],
+          [
+            { kind: 'file', target: 'A.TS', addedAt: 2 },
+            { kind: 'url', target: 'https://x.dev', addedAt: 3 }
+          ]
+        )
+        ok(merged.length === 2 && merged[0].addedAt === 1, '合并去重且保留先登记的那条')
+
+        /* 存储层：报告带 links → 落盘 → 重读；归属被宿主覆盖成当前会话 */
+        const linkRoot = await mkdtemp(join(tmpdir(), 'yan-goal-links-'))
+        try {
+          const svc = new service.GoalStore({ root: linkRoot })
+          await svc.load()
+          const keyA = 'C:/sessions/yan-a.jsonl'
+          const keyB = 'C:/sessions/yan-b.jsonl'
+          await svc.report(keyA, {
+            reportId: 'r1',
+            phase: 'executing',
+            goalRevision: 0,
+            links: [{ kind: 'file', target: 'a.ts', source: { sessionId: '伪造的会话', messageId: 'm1' } }]
+          })
+          const gA = svc.state(keyA)
+          ok(gA.links.length === 1, '报告里的链接写进了目标状态')
+          ok(
+            gA.links[0].source?.sessionId === keyA,
+            '归属被宿主覆盖为当前会话（不信自报的 sessionId）'
+          )
+          ok(gA.links[0].source?.messageId === 'm1', 'messageId 保留')
+          ok(svc.state(keyB).links.length === 0, 'A 的链接不会出现在 B（目标隔离）')
+
+          /* ---- A-1：宿主只读核验（存在性，不执行、不联网） ---- */
+          const checkRoot = await mkdtemp(join(tmpdir(), 'yan-goal-check-'))
+          try {
+            const svc2 = new service.GoalStore({ root: checkRoot })
+            await svc2.load()
+            const realFile = join(checkRoot, 'real.txt')
+            await writeFile(realFile, 'hello', 'utf8')
+            await svc2.report('C:/sessions/c.jsonl', {
+              reportId: 'rc1',
+              phase: 'executing',
+              goalRevision: 0,
+              links: [
+                { kind: 'file', target: realFile, label: '真实文件' },
+                { kind: 'file', target: join(checkRoot, 'nope.txt'), label: '不存在' },
+                { kind: 'url', target: 'https://example.com/x', label: '链接' }
+              ]
+            })
+            const g2 = svc2.state('C:/sessions/c.jsonl')
+            ok(g2.links.length === 3, '三条链接都登记了')
+            ok(g2.links[0].check?.ok === true, '存在的文件 → 核验通过')
+            ok(
+              (g2.links[0].check?.detail ?? '').includes('字节'),
+              '核验说明带大小（只说存在性，不冒充内容校验）'
+            )
+            ok(g2.links[1].check?.ok === false, '不存在的文件 → 核验失败')
+            ok(
+              (g2.links[1].check?.detail ?? '').includes('不存在'),
+              '失败原因可读（界面拿它做提示）'
+            )
+            ok(
+              g2.links[2].check?.ok === true && (g2.links[2].check?.detail ?? '').includes('不联网'),
+              'url 只做形态校验，明确标注不联网'
+            )
+            ok(g2.links.every((l) => l.check?.method === 'exists'), '核验方式只能是 exists（不执行命令）')
+
+            /* 过期证据：文件没了 → 下一次报告重新核验就变 false */
+            await rm(realFile, { force: true })
+            await svc2.report('C:/sessions/c.jsonl', {
+              reportId: 'rc2',
+              phase: 'executing',
+              goalRevision: 1,
+              links: []
+            })
+            const after = svc2.state('C:/sessions/c.jsonl')
+            ok(
+              after.links[0].check?.ok === false,
+              '文件被删后再次报告 → 旧链接重新核验为失败（不是永远停在当初那次）'
+            )
+            ok(after.links.length === 3, '重新核验不会多出链接')
+
+            /* 旧文档没有 check 字段：读回来就是 undefined，不报错 */
+            ok(
+              shared.normalizeGoalState({ links: [{ kind: 'file', target: 'a.ts' }] }).links[0].check ===
+                undefined,
+              '旧文档里的链接没有核验结果也不报错'
+            )
+          } finally {
+            await rm(checkRoot, { recursive: true, force: true })
+          }
+
+          /* 重放同一 reportId 不会把链接加两遍 */
+          await svc.report(keyA, {
+            reportId: 'r1',
+            phase: 'executing',
+            goalRevision: 1,
+            links: [{ kind: 'file', target: 'a.ts' }]
+          })
+          ok(svc.state(keyA).links.length === 1, '幂等重放不会重复登记链接')
+
+          /* 旧文档（完全没有 links 字段）读回来是空数组 */
+          const reread = new service.GoalStore({ root: linkRoot })
+          await reread.load()
+          ok(reread.state(keyA).links.length === 1, '重启后 links 真的从磁盘读回来了')
+          ok(
+            shared.normalizeGoalState({ goalId: 'g', phase: 'executing' }).links.length === 0,
+            '旧目标（没有 links 字段）读进来是空数组'
+          )
+          ok(shared.normalizeGoalState({ links: 'nonsense' }).links.length === 0, 'links 是脏值时归空')
+        } finally {
+          await rm(linkRoot, { recursive: true, force: true })
+        }
+      }
+
+      /* ------------------------------------------------ A-2 目标级预算 */
+      {
+        const noBudget = shared.checkGoalBudget(null, { tokens: 999999, elapsedMs: 1e9 })
+        ok(noBudget.stopped === false, '没设预算就不管（不替用户做成本承诺）')
+
+        const budget = { tokens: 1000, ms: 60_000 }
+        ok(
+          shared.checkGoalBudget(budget, { tokens: 10, elapsedMs: 1000 }).stopped === false,
+          '未到上限 → 不停'
+        )
+        const byTokens = shared.checkGoalBudget(budget, { tokens: 1000, elapsedMs: 1000 })
+        ok(byTokens.stopped === true && byTokens.reason === 'tokens', 'token 到上限 → 停')
+        const byTime = shared.checkGoalBudget(budget, { tokens: 10, elapsedMs: 60_000 })
+        ok(byTime.stopped === true && byTime.reason === 'time', '时间到上限 → 停')
+
+        /* 未知用量：不编数字，也不当作“够用” */
+        const unknown = shared.checkGoalBudget(budget, { tokens: null, elapsedMs: 10 })
+        ok(unknown.stopped === false, 'token 用量未知时不因预算停（无法判断）')
+        ok((unknown.note ?? '').includes('未知'), '但要说明未知（界面可以显示未知）')
+
+        ok(shared.sanitizeGoalBudget({ tokens: -1 }) === null, '脏预算当没设')
+        ok(shared.sanitizeGoalBudget({ tokens: 100, ms: 'x' })?.tokens === 100, '只收合法的那部分')
+        ok(shared.normalizeGoalState({ budget: 5 }).budget === null, '旧文档/脏值 → budget 为 null')
+
+        /* 存储层：预算耗尽只停“安排新轮”，不改 phase、能恢复 */
+        const budgetRoot = await mkdtemp(join(tmpdir(), 'yan-goal-budget-'))
+        try {
+          const svcB = new service.GoalStore({ root: budgetRoot })
+          await svcB.load()
+          const keyC = 'C:/sessions/budget.jsonl'
+          await svcB.report(keyC, {
+            reportId: 'b1',
+            phase: 'executing',
+            goalRevision: 0,
+            evidence: ['x']
+          })
+          await svcB.setBudget(keyC, { tokens: 100 })
+
+          const over = await svcB.armContinue(keyC, { usage: { tokens: 150, elapsedMs: 1000 } })
+          ok(over.armed === false && over.reason === 'budget', '超预算 → 不安排新轮')
+          ok((over.detail ?? '').includes('150'), '停止原因带实际用量')
+          ok(svcB.state(keyC).phase === 'executing', '只停新轮，**不改 phase**（不是失败）')
+
+          /* 重启读回：停止记录要落盘（用户得看到“为什么没继续”） */
+          const rereadB = new service.GoalStore({ root: budgetRoot })
+          await rereadB.load()
+          ok(rereadB.snapshot().entries[keyC]?.goal.budgetStop?.reason === 'tokens', '预算停止记录真的落盘了')
+
+          const within = await svcB.armContinue(keyC, { usage: { tokens: 10, elapsedMs: 1000 } })
+          ok(within.armed === true, '没超时仍然能继续（不是一停就死）')
+
+          /* 用户明确放宽预算 → 清掉停止记录 */
+          await svcB.setBudget(keyC, null)
+          ok(svcB.snapshot().entries[keyC]?.goal.budgetStop === null, '清 / 改预算会清掉旧的停止记录（恢复出口）')
+
+          /* 用量快照：不管超没超预算都要落下来（界面要显示“已用多少”） */
+          await svcB.armContinue(keyC, { usage: { tokens: 42, elapsedMs: 1000 } })
+          ok(svcB.state(keyC).budgetUsage?.tokens === 42, '用量快照写进目标状态（有值时）')
+          await svcB.armContinue(keyC, { usage: { tokens: null, elapsedMs: 2000 } })
+          ok(svcB.state(keyC).budgetUsage?.tokens === null, '拿不到用量时如实记 null（不当 0）')
+
+          /* token 预算真的能停：有真实用量时超上限就停 */
+          await svcB.setBudget(keyC, { tokens: 10 })
+          const overTokens = await svcB.armContinue(keyC, { usage: { tokens: 42, elapsedMs: 1000 } })
+          ok(
+            overTokens.armed === false && overTokens.reason === 'budget',
+            'token 超上限 → 不安排新轮（不再因为拿不到用量而失效）'
+          )
+        } finally {
+          await rm(budgetRoot, { recursive: true, force: true })
+        }
+      }
     } finally {
       await rm(root, { recursive: true, force: true })
     }

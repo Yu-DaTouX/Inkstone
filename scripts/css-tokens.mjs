@@ -14,32 +14,16 @@
  * 用法： node scripts/css-tokens.mjs [--md]
  *   --md  写入 docs/design/CSS-令牌清单.md
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readStyleOrder } from './lib/css-order.mjs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/** 与 App.tsx 的 import 顺序一致 */
-const ORDER = [
-  'tokens.css',
-  'app.css',
-  'stage1.css',
-  'redesign.css',
-  'motion.css',
-  'settings.css',
-  'electron.css',
-  'highlight.css',
-  'layout.css',
-  'shell.css',
-  'rail.css',
-  'chat.css',
-  'composer.css',
-  'tools.css',
-  'browser.css',
-  'dialog.css'
-]
+/* 顺序不再手写：直接读 App.tsx（见 scripts/lib/css-order.mjs 的头注释） */
+const ORDER = readStyleOrder(root)
 
 /**
  * 栈式扫描顶层规则（含 @media 内的）。
@@ -194,9 +178,21 @@ L('  它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并
 L()
 
 const out = md.join('\n')
-if (process.argv.includes('--md')) {
+/* 末尾只留一个换行：md 数组最后常是空行，直接 +'\n' 会多出一个空行（diff-check 会报） */
+const content = out.replace(/\n+$/, '') + '\n'
+if (process.argv.includes('--check')) {
+  /* 门禁：清单必须与当前样式一致，防止加载顺序/令牌又被改而文档没跟上（V-0 D1） */
   const target = join(root, 'docs/design/CSS-令牌清单.md')
-  writeFileSync(target, out + '\n', 'utf8')
+  const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
+  if (existing !== content) {
+    console.error(`✗ ${target} 与当前样式不一致 —— 跑 npm run measure:css 重新生成`)
+    process.exitCode = 1
+  } else {
+    console.log(`✓ ${target} 与当前样式一致`)
+  }
+} else if (process.argv.includes('--md')) {
+  const target = join(root, 'docs/design/CSS-令牌清单.md')
+  writeFileSync(target, content, 'utf8')
   console.log(`已写入 ${target}`)
   console.log(`  选择器分组 ${selOrder.length} 个 / 变量 ${totalVars} 个 / 其中重复定义 ${redundant} 个`)
 } else {

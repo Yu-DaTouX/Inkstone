@@ -211,7 +211,7 @@
 }
 
 .rp-fs-row:focus-visible {
-  outline: 1px solid var(--accent-line);
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
   outline-offset: -1px;
 }
 
@@ -450,7 +450,7 @@
 }
 
 .rp-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -688,7 +688,7 @@
 }
 
 .rp-act:disabled {
-  opacity: 0.45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1139,7 +1139,7 @@
 }
 
 .tl-move:disabled {
-  opacity: 0.25;
+  opacity: var(--ctl-disabled-opacity);
 }
 
 .tl-toggle {
@@ -2010,7 +2010,7 @@
 }
 
 .rp-tool-menu-item:disabled {
-  opacity: .42;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -2295,6 +2295,84 @@
   white-space: nowrap;
 }
 
+/*
+ * 产物 / 参考（U-3b）：只有宿主校验过的结构化链接会登记进来。
+ * file / artifact 走系统打开，url 走外部浏览器 —— 两条都是既有通道。
+ */
+.goal-panel-links {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.goal-link-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.goal-link-row:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+/* 宿主只读核验失败的链接（A-1）：说清哪一条不在了，而不是让用户点了才发现 */
+.goal-link-row-bad {
+  color: var(--err);
+}
+
+.goal-link-row-bad:hover {
+  background: var(--bg-2);
+  color: var(--err);
+}
+
+/* 目标级预算（A-2）：显示上限与“为什么没继续”—— 不是失败，所以用警示色而非错误色 */
+.goal-panel-budget {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.goal-budget-row {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-budget-stop {
+  color: var(--warn, var(--fg));
+}
+
+.goal-link-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-link-kind {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
 .goal-completed {
   border-color: color-mix(in srgb, var(--ok, #70c49a) 30%, var(--border-soft));
 }
@@ -2450,4 +2528,498 @@
 .rightpanel.right-window-panel.window-file .rp-body > .rp-slot[data-tool-id='files'] > .rp-sec {
   min-width: 0;
   min-height: 0;
+}
+
+/* H-3b：右栏默认「开始」页。
+   只做导航，不承载磁贴；高窗口垂直中段偏上，矮窗口顶部留白并允许滚动。
+   卡片组宽度 min(360px, 100% - 32px)，行高 44px、间距 6px。 */
+.rp-start {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 18vh 16px 24px;
+}
+
+.rp-start-group {
+  width: min(360px, calc(100% - 32px));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rp-start-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-mute);
+  letter-spacing: 0.04em;
+  margin: 0 2px 4px;
+}
+
+.rp-start-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.rp-start-item:hover {
+  background: var(--bg-3);
+  border-color: var(--border);
+}
+
+.rp-start-item:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.rp-start-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  flex: none;
+}
+
+.rp-start-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.rp-start-label {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.rp-start-desc {
+  font-size: 11px;
+  color: var(--fg-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-start-go {
+  color: var(--fg-dim);
+  flex: none;
+  display: inline-flex;
+}
+
+@media (max-height: 560px) {
+  .rp-start {
+    align-items: flex-start;
+    padding-top: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-start-item {
+    transition-duration: 1ms;
+  }
+}
+
+/* H-10a：子代理详情三页签（概览 / 过程 / 变更）。
+   执行状态在头部，审阅状态在概览与变更页，两者不共用一个颜色。 */
+.sp-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.sp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sp-tab:hover {
+  color: var(--fg);
+}
+
+.sp-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.sp-tab:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-w));
+}
+
+.sp-overview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp-ov-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.sp-ov-label {
+  flex: none;
+  width: 64px;
+  color: var(--fg-mute);
+}
+
+.sp-ov-value {
+  min-width: 0;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-ov-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+
+.sp-ov-text {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+/* U-3a：目标入口（标题栏）+ 浮层。
+   入口只占一行；浮层内容复用 .goal-panel（只读）。打开期间领 overlay blocker。 */
+.goal-entry-wrap {
+  position: relative;
+  flex: none;
+}
+
+.goal-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.goal-entry:hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.goal-entry.on,
+.goal-entry.goal-executing,
+.goal-entry.goal-verifying {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.goal-entry.goal-blocked {
+  color: var(--err);
+  border-color: var(--err);
+  background: var(--err-soft);
+}
+
+.goal-entry:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.goal-entry-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-entry-count {
+  flex: none;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+
+.goal-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-popover, 40);
+  width: min(420px, 80vw);
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.32));
+}
+
+.goal-popover .goal-panel {
+  border: none;
+  border-radius: 0;
+}
+
+.goal-panel-error {
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.goal-panel-error small {
+  color: var(--err);
+  word-break: break-all;
+}
+
+.goal-brief:not(.expanded) .goal-brief-value {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.goal-brief-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.goal-brief-toggle:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   浮动工具磁贴（实施-12 U-4 / U-5）
+   ──────────────────────────────────────────────────────────────
+   层级：这一层在 DOM 内容区之上、模态/对话框之下。原生 WebContentsView
+   永远盖在 DOM 之上（CSS z-index 压不住），所以拖动期间由 H-9a 的 overlay
+   blocker 暂隐网页；放开时落点避开网页矩形（见 shared/tool-layout 的
+   avoidFloatObstacle）。
+   ══════════════════════════════════════════════════════════════ */
+.rp-float-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  /* 层本身不吃事件：只有磁贴可交互，否则会挡住整个内容区 */
+  pointer-events: none;
+}
+
+.rp-float-tile {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+}
+
+.rp-float-tile.dragging {
+  opacity: 0.94;
+  box-shadow: 0 16px 36px rgb(0 0 0 / 0.36);
+}
+
+/* 工具库「定位」的反馈：闪一下轮廓，不动布局、不抢焦点 */
+.rp-float-tile.locate-flash {
+  animation: rp-float-flash 900ms var(--ease);
+}
+
+@keyframes rp-float-flash {
+  0%, 100% { outline: 0 solid transparent; }
+  20% { outline: 2px solid var(--accent); outline-offset: 1px; }
+}
+
+.rp-float-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* 头高与 shared/tool-layout 的 TILE_HEAD_H 保持一致（几何夹取按它算） */
+  height: 32px;
+  padding: 0 6px;
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  /* 拖动时不要顺带滚动/选中（触摸与笔输入） */
+  touch-action: none;
+  user-select: none;
+}
+
+body.tile-dragging,
+body.tile-dragging .rp-float-head {
+  cursor: grabbing;
+}
+
+.rp-float-grip {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rp-float-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-float-head .spacer {
+  flex: 1;
+}
+
+.rp-float-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 28px 命中区（实施-13 §3.2 的紧凑图标下限），但视觉不占满整头 */
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+
+.rp-float-btn:hover {
+  background: var(--bg-2);
+  color: var(--accent);
+}
+
+.rp-float-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 5px 8px 7px;
+}
+
+/* 磁贴头就是标题：内容里不再重复一遍分区标题 */
+.rp-float-body .rp-sec-row {
+  display: none;
+}
+
+.rp-float-body .rp-sec {
+  padding-top: 0;
+}
+
+.rp-float-empty {
+  padding: 4px 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.rp-float-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+}
+
+/* 工具页里浮动磁贴留下的占位（内容不重复挂载，位置不塌） */
+.rp-float-ph {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0;
+  padding: 3px 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.rp-float-ph .spacer {
+  flex: 1;
+}
+
+.rp-float-ph-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-float-ph-tag {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--bg-3);
+  font-size: var(--fs-xs);
+}
+
+/* 工具库里每行的位置标签 */
+.tl-pos {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.tl-index {
+  flex: none;
+  min-width: 14px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }

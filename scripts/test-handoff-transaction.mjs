@@ -170,6 +170,95 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
     } finally {
       await rm(badRoot, { recursive: true, force: true })
     }
+
+    /* ------------------------------------------------ A-3 续接回执（三边界） */
+    {
+      /* ① 已投递但未运行：标记行在、后面没有助手输出 */
+      const resumeId = 'r-receipt'
+      /*
+       * 现场编译一份：本测试在 test-unit 里的调用点比 handoff-resume 的编译步骤早，
+       * 直接用 `out/test/handoff-resume.mjs` 会拿到上一次运行的旧产物。
+       */
+      await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+        build({
+          entryPoints: ['src/shared/handoff-resume.ts'],
+          outfile: 'out/test/handoff-resume.mjs',
+          bundle: true,
+          format: 'esm',
+          platform: 'neutral',
+          logLevel: 'silent'
+        })
+      )
+      const hresume = await import('../out/test/handoff-resume.mjs')
+      const marker = hresume.resumeMarker(resumeId)
+      const persistedOnly = `{"role":"custom","text":"${marker}"}\n`
+      ok(hresume.containsResumeEvidence(persistedOnly, resumeId), '标记行在 → 已投递')
+      ok(
+        !hresume.hasRunStartedAfterMarker(persistedOnly, resumeId),
+        '只有标记行时不算“已运行”（marker 不等于跑起来）'
+      )
+
+      /* ② 已运行：标记之后有助手输出 */
+      const withAssistant =
+        persistedOnly + `{"role":"assistant","content":[{"type":"text","text":"继续"}]}\n`
+      ok(hresume.hasRunStartedAfterMarker(withAssistant, resumeId), '标记之后的助手输出 → 已运行')
+      ok(
+        !hresume.hasRunStartedAfterMarker(`{"role":"assistant"}\n${persistedOnly}`, resumeId),
+        '助手输出在标记**之前**的不算（那是交前的历史）'
+      )
+      ok(!hresume.hasRunStartedAfterMarker('', resumeId), '空文本不报“已运行”')
+
+      /* ③ 回执落盘与幂等：同一 kind 只记第一次；脏值丢掉 */
+      const receiptRoot = await mkdtemp(join(tmpdir(), 'yan-handoff-receipt-'))
+      try {
+        const store = new service.HandoffTransactionStore({ root: receiptRoot, now: () => 1000 })
+        await store.load()
+        await store.begin({ handoffId: 'h-r', sourceSession: 'C:/s/a.jsonl', resumeId })
+        await store.noteReceipt('h-r', 'sent')
+        const again = await store.noteReceipt('h-r', 'sent')
+        ok(again?.receipts.sentAt === 1000, 'sent 回执落盘')
+        await store.noteReceipt('h-r', 'persisted')
+        await store.noteReceipt('h-r', 'started')
+        const tx = store.snapshot().transactions['h-r']
+        ok(
+          tx.receipts.sentAt === 1000 && tx.receipts.persistedAt === 1000 && tx.receipts.startedAt === 1000,
+          '三条回执都在（sent / persisted / started 分开记）'
+        )
+        ok(tx.stage === 'pending', '回执不推进阶段（不是状态转移）')
+
+        /* 重启读回：回执必须真的写进文件 */
+        const reread = new service.HandoffTransactionStore({ root: receiptRoot, now: () => 2000 })
+        await reread.load()
+        const back = reread.snapshot().transactions['h-r']
+        ok(back.receipts.startedAt === 1000, '重启后回执读得回来')
+
+        /*
+         * 人工确认（A-3）：先推到 committed、且确认「已发出」之后，才能靠用户确认了结。
+         * 这条路径走的是与自动证据同一条 step（只换 source），
+         * 所以不需要第二套状态机。
+         */
+        await store.step('h-r', 'snapshot', 'test')
+        /* 硬前提：没包就不能 validated，没目的会话就不能 destination-created / committed */
+        await store.setPackage(
+          'h-r',
+          handoffShared.sanitizeHandoffPackage(
+            { goal: 'g', deliverable: 'd', nextActions: ['a'] },
+            { sourceSession: 'C:/s/a.jsonl', sourceHead: 'm-1', mode: 'autonomous', model: 'x', now: 5 }
+          )
+        )
+        await store.setDestination('h-r', 'C:/s/b.jsonl')
+        await store.step('h-r', 'destination-created', 'test')
+        await store.step('h-r', 'committed', 'test')
+        const manual = await store.step('h-r', 'resumed', 'manual-confirmed')
+        ok(manual.advanced && manual.tx?.stage === 'resumed', '人工确认能把事务推到已续接')
+        ok(
+          store.snapshot().transactions['h-r'].steps.some((s) => s.detail === 'manual-confirmed'),
+          '转移日志里留下 manual-confirmed（区分“自动证据”与“人看的”）'
+        )
+      } finally {
+        await rm(receiptRoot, { recursive: true, force: true })
+      }
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }

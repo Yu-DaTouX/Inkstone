@@ -231,5 +231,47 @@ export async function runTurnTimingStoreTests(ok) {
     )
   }
 
+  /* ---- 8. output token 落盘与跨 run 聚合（实施-15 A-2） ---- */
+  {
+    const ttDir = await mkdtemp(join(tmpdir(), 'yan-tt-tokens-'))
+    const base = {
+      v: TURN_TIMING_VERSION,
+      logicalTurnId: 'm-1',
+      startedAt: 1000,
+      endedAt: 2000,
+      elapsedMs: 1000,
+      terminalReason: 'completed',
+      sourceIds: ['m-1']
+    }
+    ok(await appendTurnTiming(ttDir, 'tok', { ...base, runId: 'r1', outputTokens: 120 }), '带 token 的记录写入成功')
+    ok(await appendTurnTiming(ttDir, 'tok', { ...base, runId: 'r2', outputTokens: 80 }), '第二个 run 写入成功')
+    ok(await appendTurnTiming(ttDir, 'tok', { ...base, runId: 'r3', startedAt: 3000, endedAt: 4000 }), '第三个 run 没报 token')
+    const back2 = await readTurnTimings(ttDir, 'tok')
+    ok(back2.length === 1, '三个 run 合成一个逻辑回合', `实际 ${back2.length}`)
+    ok(
+      back2[0]?.outputTokens === 200,
+      '跨 run 的 output token **相加**（目标预算要的是整回合）',
+      String(back2[0]?.outputTokens)
+    )
+
+    /* 同一 run 的两次快照：累积值，后者胜（不相加） */
+    ok(await appendTurnTiming(ttDir, 'dup', { ...base, runId: 'r1', outputTokens: 50 }), '中途快照写入')
+    ok(await appendTurnTiming(ttDir, 'dup', { ...base, runId: 'r1', outputTokens: 150 }), '终止快照写入')
+    const dup = await readTurnTimings(ttDir, 'dup')
+    ok(dup.length === 1 && dup[0].outputTokens === 150, '同一 run 只算最后一次（累积值不相加）', String(dup[0]?.outputTokens))
+
+    /* 一条都没报 → undefined（未知），不是 0 */
+    ok(await appendTurnTiming(ttDir, 'none', { ...base, runId: 'r1' }), '无 token 记录写入')
+    const none = await readTurnTimings(ttDir, 'none')
+    ok(none[0]?.outputTokens === undefined, '一条都没报时是 undefined（界面显示未知，不当 0）')
+
+    /* 脏值丢掉：负数 / 字符串 / NaN 都不收 */
+    ok(await appendTurnTiming(ttDir, 'dirty', { ...base, runId: 'r1', outputTokens: -5 }), '脏值写入（负）')
+    const dirty = await readTurnTimings(ttDir, 'dirty')
+    ok(dirty[0]?.outputTokens === undefined, '负 token 被丢掉')
+
+    await rm(ttDir, { recursive: true, force: true })
+  }
+
   await rm(dir, { recursive: true, force: true })
 }

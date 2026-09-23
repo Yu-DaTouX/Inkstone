@@ -326,7 +326,7 @@ kbd {
   filter: brightness(1.1);
 }
 .send:disabled {
-  opacity: 0.45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
   filter: none;
 }

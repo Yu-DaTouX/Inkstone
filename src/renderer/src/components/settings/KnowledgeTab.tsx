@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createLatestOnly, type LatestOnly } from '../../lib/latest-only'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView } from '../../../../shared/ipc'
@@ -26,6 +27,12 @@ export function KnowledgeTab() {
   const switchSession = useStore((s) => s.switchSession)
   const closeSettings = useStore((s) => s.closeSettings)
   const enabled = settings?.projectKnowledge?.enabled === true
+  /**
+   * 当前会话的 cwd —— 项目身份变了，列表必须跟着重取。
+   * 只依赖 enabled 是不够的（R10）：设置页开着时切会话，界面会停在旧项目，
+   * 而宿主的写操作按「此刻的会话」选项目 —— 这就是身份漂移。
+   */
+  const sessionCwd = useStore((s) => s.session?.cwd)
 
   const [view, setView] = useState<KnowledgeListView | null>(null)
   const [loading, setLoading] = useState(true)
@@ -36,11 +43,35 @@ export function KnowledgeTab() {
   const [replacing, setReplacing] = useState<{ id: string; text: string } | null>(null)
   const [asking, setAsking] = useState<{ id: string; permanent: boolean } | null>(null)
 
+  /**
+   * 请求代次：迟到的旧结果不得覆盖新结果（切会话 / 快速重试）。
+   * 另外卸载时也作废一次 —— 面板关掉之后到达的响应不许再 setState。
+   */
+  const guardRef = useRef<LatestOnly | null>(null)
+  if (guardRef.current === null) guardRef.current = createLatestOnly()
+  /** 上一次真正渲染出来的项目身份（用来判断是不是换了项目） */
+  const projectRef = useRef<string | null>(null)
+
   const refresh = useCallback(async () => {
+    const guard = guardRef.current as LatestOnly
+    const token = guard.begin()
     setLoading(true)
     try {
-      setView(await window.yan.knowledge.list())
+      const next = await window.yan.knowledge.list()
+      if (!guard.isCurrent(token)) return
+      setView(next)
+      /*
+       * 项目换了就把就地编辑收起来：编辑框里是上一个项目的文本，
+       * 现在列的是另一个项目的条目 —— 留着它只会让人误改。
+       */
+      if ((next.projectId ?? null) !== projectRef.current) {
+        projectRef.current = next.projectId ?? null
+        setEditing(null)
+        setReplacing(null)
+        setAsking(null)
+      }
     } catch (error) {
+      if (!guard.isCurrent(token)) return
       setView({
         ok: false,
         enabled,
@@ -49,13 +80,21 @@ export function KnowledgeTab() {
         error: error instanceof Error ? error.message : String(error)
       })
     } finally {
-      setLoading(false)
+      if (guard.isCurrent(token)) setLoading(false)
     }
   }, [enabled])
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [refresh, sessionCwd])
+
+  /* 卸载后到达的结果一律丢弃 */
+  useEffect(
+    () => () => {
+      ;(guardRef.current as LatestOnly).invalidate()
+    },
+    []
+  )
 
   const entries = view?.entries ?? []
   const counts = view?.counts ?? { all: 0, active: 0, candidate: 0, review: 0 }
@@ -73,7 +112,8 @@ export function KnowledgeTab() {
     setBusy(id)
     setNotice(null)
     try {
-      const res = await window.yan.knowledge.action(req)
+      /* 带上界面当时显示的项目：宿主据此拒绝身份漂移（R10） */
+      const res = await window.yan.knowledge.action({ ...req, expectedProjectId: view?.projectId })
       if (!res.ok) {
         /*
          * CAS 冲突要说清是「有人先改了」而不是「你没权限」——
@@ -104,6 +144,7 @@ export function KnowledgeTab() {
   /** 来源跳转：拿会话文件路径（只有主进程知道）→ 切会话 → 关设置。 */
   const jumpTo = async (sessionId: string): Promise<void> => {
     setBusy(sessionId)
+    setNotice(null)
     try {
       const res = await window.yan.knowledge.sourceSession(sessionId)
       if (!res.ok || !res.path) {
@@ -112,6 +153,12 @@ export function KnowledgeTab() {
       }
       closeSettings()
       await switchSession(res.path)
+    } catch (error) {
+      /* IPC 自己抛错（通道断了 / 参数不合法）：必须就地告诉用户，不能静默 */
+      setNotice({
+        kind: 'err',
+        text: error instanceof Error ? error.message : tk('set.knIpcFailed')
+      })
     } finally {
       setBusy(null)
     }
@@ -139,6 +186,12 @@ export function KnowledgeTab() {
       }
       if (res.canceled) return
       setNotice({ kind: 'ok', text: `${tk('set.knExportSaved')}：${res.path ?? ''}` })
+    } catch (error) {
+      /* 同上：导出通道出错要看得见 */
+      setNotice({
+        kind: 'err',
+        text: error instanceof Error ? error.message : tk('set.knIpcFailed')
+      })
     } finally {
       setBusy(null)
     }

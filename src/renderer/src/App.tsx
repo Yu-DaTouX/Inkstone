@@ -5,6 +5,7 @@ import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
 import { RightPanel } from './components/toolbar/RightPanel'
+import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
@@ -54,6 +55,8 @@ import './styles/tools.css'
 import './styles/browser.css'
 /* 审查与环境菜单（方案 G1）：与其它模块化层同为最后加载 */
 import './styles/review.css'
+/* 跨模块的语义图标反馈（H-8a/b）：要在各模块的状态色之后加载 */
+import './styles/icon-state.css'
 
 /**
  * 超过这么多条消息才开启虚拟化。
@@ -787,6 +790,8 @@ export default function App() {
           </section>
 
           <RightPanel />
+          {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
+          <FloatingTiles />
         </div>
       </div>
 

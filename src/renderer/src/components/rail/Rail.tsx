@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from '../shell/BrandMark'
+import { ContextMenu } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
@@ -175,7 +176,7 @@ export function Rail() {
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
   const activeRailMode: RailModeId = workspaceMode
   const activeRailModeConfig = RAIL_MODES.find((m) => m.id === activeRailMode)!
-  const [projectMenu, setProjectMenu] = useState<string | null>(null)
+  const [projectMenu, setProjectMenu] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
   const [groupDraft, setGroupDraft] = useState('')
@@ -1037,7 +1038,7 @@ export function Rail() {
                    */
                   <div
                     className={`proj-head ${pOpen ? '' : 'collapsed'}${dragItem?.kind === 'project' && dragItem.id === p.projectId ? ' is-dragging' : ''}${dropHint?.kind === 'project' && dropHint.id === p.projectId ? (dropHint.after ? ' drop-after' : ' drop-before') : ''}`}
-                    onContextMenu={(e) => { e.preventDefault(); if (p.projectId) setProjectMenu(p.id) }}
+                    onContextMenu={(e) => { e.preventDefault(); if (p.projectId) setProjectMenu({ id: p.id, x: e.clientX, y: e.clientY, trigger: e.currentTarget }) }}
                     title={p.cwd}
                     data-testid="rail-project-row"
                     data-current={p.isCurrent ? '1' : '0'}
@@ -1081,11 +1082,13 @@ export function Rail() {
                         role="button"
                         tabIndex={0}
                         title={t('rail.more')}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setProjectMenu(p.id) } }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setProjectMenu({ id: p.id, x: r.left, y: r.bottom, trigger: e.currentTarget as HTMLElement }) } }}
                         onClick={(event) => {
                           event.stopPropagation()
                           // ⚠️ Electron 不支持 window.prompt（返回 null，什么都发生不了）
-                          setProjectMenu(projectMenu === p.id ? null : p.id)
+                          if (projectMenu?.id === p.id) { setProjectMenu(null); return }
+                          const r = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                          setProjectMenu({ id: p.id, x: r.left, y: r.bottom, trigger: event.currentTarget as HTMLElement })
                         }}
                       ><Icon name="menu" size={12} /></span>
                     ) : null}
@@ -1103,17 +1106,33 @@ export function Rail() {
                   </div>
                   )}
 
-                  {projectMenu === p.id && p.projectId ? <div className="project-menu" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={async () => { setProjectMenu(null); const r = await window.yan.setCwd(p.cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else { await newSession({ cwd: p.cwd, projectId: p.projectId, scope: 'project' }); await useStore.getState().refreshSessions() } }}>{t('rail.new')}</button>
-                    <button onClick={() => { setProjectMenu(null); setProjDraft(p.label); setProjRename(p.cwd) }}>{t('rail.renameProject')}</button>
-                    <button onClick={() => { void window.yan.revealPath(p.cwd); setProjectMenu(null) }}>{t('rail.reveal')}</button>
-                    <button onClick={() => { void navigator.clipboard.writeText(p.cwd); setProjectMenu(null) }}>{t('rail.copyPath')}</button>
-                    <button onClick={() => {
-                      void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) })
-                      setProjectMenu(null)
-                    }}>{showArchived ? t('rail.restoreProject') : t('rail.archiveProject')}</button>
-                    <button onClick={() => { setGroupingProject(p.cwd); setGroupDraft(''); setProjectMenu(null) }}>{t('rail.moveGroup')}</button>
-                  </div> : null}
+                  <ContextMenu
+                    open={projectMenu?.id === p.id && !!p.projectId}
+                    anchor={projectMenu?.id === p.id ? projectMenu : null}
+                    testid="rail-project-menu-panel"
+                    onClose={() => { const trigger = projectMenu?.trigger; setProjectMenu(null); trigger?.focus?.() }}
+                    items={[
+                      {
+                        id: 'rail-project-new',
+                        label: t('rail.new'),
+                        icon: 'plus',
+                        onSelect: async () => {
+                          const r = await window.yan.setCwd(p.cwd)
+                          if (!r.ok) setProjectError(r.error || t('rail.projectError'))
+                          else { await newSession({ cwd: p.cwd, projectId: p.projectId, scope: 'project' }); await useStore.getState().refreshSessions() }
+                        }
+                      },
+                      { id: 'rail-project-rename', label: t('rail.renameProject'), icon: 'tag', onSelect: () => { setProjDraft(p.label); setProjRename(p.cwd) } },
+                      { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd) } },
+                      { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd) } },
+                      {
+                        id: 'rail-project-archive',
+                        label: showArchived ? t('rail.restoreProject') : t('rail.archiveProject'),
+                        onSelect: () => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) }) }
+                      },
+                      { id: 'rail-project-group', label: t('rail.moveGroup'), icon: 'layers', onSelect: () => { setGroupingProject(p.cwd); setGroupDraft('') } }
+                    ]}
+                  />
                   {groupingProject === p.cwd ? <div className="project-menu project-group-menu">
                     <input autoFocus value={groupDraft} placeholder={t('rail.newGroup')} onChange={(e) => setGroupDraft(e.target.value)} />
                     <button onClick={() => {

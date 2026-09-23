@@ -44,6 +44,11 @@
 
   out.push('')
   out.push('=== 日志模块可见 ===')
+  /* H-3b：日志分区在「工具」固定页；切会话后回到默认页，需重新点工具页。 */
+  if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+  await sleep(300)
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(500)
   const logSec = q('[data-testid="rp-log"]')
   const logCount = q('[data-testid="log-count"]')
   ok(!!logSec || !!logCount, '存在日志分区（rp-log）')

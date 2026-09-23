@@ -85,7 +85,9 @@
     }
 
     out.push('\n=== 3. 右栏标题是「工具栏」===')
-    const ttl = document.querySelector('.rp-title')?.textContent
+    /* H-3b 后标签行第一项是固定「开始」页，所以按工具标签的标题断言，不取第一个 .rp-title。 */
+    const ttl = document.querySelector('[data-testid="right-window-tab-tools"] .rp-title')?.textContent
+      ?? document.querySelector('.rp-title')?.textContent
     out.push('  .rp-title = ' + JSON.stringify(ttl))
     if (ttl === '工具栏') ok('右栏已更名为工具栏')
     else bad('右栏标题不对')

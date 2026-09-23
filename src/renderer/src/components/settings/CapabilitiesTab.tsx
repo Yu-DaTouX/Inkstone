@@ -155,7 +155,7 @@ export function CapabilitiesTab(): React.JSX.Element {
               {search.candidates.map((candidate) => (
                 <article className="pkg-item" key={candidate.candidateId} data-testid="cap-candidate">
                   <div className="pkg-item-main">
-                    <span className="pkg-name">{candidate.title}</span>
+                    <span className="pkg-name" title={candidate.title}>{candidate.title}</span>
                     {candidate.version ? <span className="pkg-ver">{candidate.version}</span> : null}
                     <span className={`pkg-scope ${candidate.verification === 'metadata-only' ? 'project' : 'user'}`}>
                       {t(`cap.verification.${candidate.verification}` as MessageKey)}
@@ -185,7 +185,7 @@ export function CapabilitiesTab(): React.JSX.Element {
           {builtin.map((item) => (
             <div className="pkg-item" key={item.id} data-testid="cap-builtin">
               <div className="pkg-item-main">
-                <span className="pkg-name">{item.id}</span>
+                <span className="pkg-name" title={item.id}>{item.id}</span>
                 {item.file ? <span className="pkg-ver">{item.file}</span> : null}
                 <span className="pkg-scope user">{t('cap.builtinBadge')}</span>
               </div>
@@ -204,7 +204,7 @@ export function CapabilitiesTab(): React.JSX.Element {
           {snapshot?.skills.map((skill) => (
             <div className="pkg-item" key={skill.id} data-testid="cap-skill">
               <div className="pkg-item-main">
-                <span className="pkg-name">{skill.title}</span>
+                <span className="pkg-name" title={skill.title}>{skill.title}</span>
                 <span className="pkg-spacer" />
                 <span className="pkg-scope user">{t('cap.ready')}</span>
               </div>
@@ -227,7 +227,7 @@ export function CapabilitiesTab(): React.JSX.Element {
             return (
               <article className="pkg-item" key={server.id} data-testid="cap-mcp-server">
                 <div className="pkg-item-main">
-                  <span className="pkg-name">{server.title}</span>
+                  <span className="pkg-name" title={server.title}>{server.title}</span>
                   <span className="pkg-ver">{server.transport}</span>
                   <span className="pkg-scope user">{t(`cap.status.${server.status}` as MessageKey)}</span>
                   {server.projectScoped ? <span className="pkg-scope project">{t('cap.projectScoped')}</span> : null}

@@ -83,7 +83,8 @@ import {
   isActiveGoalPhase,
   keepsGoalResumeOnModeChange,
   normalizeReadyParams,
-  normalizeReportParams
+  normalizeReportParams,
+  type BudgetUsage
 } from '../shared/goal'
 import { CapabilityCommandError } from './capability-server'
 import { localCommandDescriptors } from './command-registry'
@@ -1698,6 +1699,38 @@ let agentDefaultWorkMode: WorkMode = DEFAULT_WORK_MODE
  * 键会让用户刚设的模式在切换后当场丢回默认值（真实链路抽到的，见探针第 5 节）。
  * 文件路径在 pi 给出之前用 `pending:<runnerId>` 占位，拿到后再迁移。
  */
+/**
+ * 目标到目前为止的用量（A-2）。
+ *
+ * 口径写在这里，免得以后被当成「总共花了多少」：
+ *   · 只算**目标开始之后**的回合（`GoalStore.startOf`）——同一个会话可以先后
+ *     做多个目标；
+ *   · 只累加模型真报出来的 output token（H-6b 的 `usage.output`）；输入侧没有
+ *     可靠来源，**不估算、不编数字**；
+ *   · 一条 usage 都没有 → `tokens: null`，界面显示“未知”而不是 0。
+ *
+ * 拿不到会话文件时返回 `undefined` —— 装配方明确说“我无法判定”，
+ * 而不是给一个看着像 0 的数字（0 会让预算永不触发）。
+ */
+async function goalBudgetUsage(id: string, startedAt: number): Promise<BudgetUsage | undefined> {
+  const sessionFile = runners?.agentOf(id)?.getState()?.sessionFile
+  const bucket = timingKey(sessionFile)
+  if (!bucket) return undefined
+  const records = await readTurnTimings(YAN_DIR, bucket).catch(() => [])
+  if (!records.length) return undefined
+  const since = startedAt > 0 ? startedAt : 0
+  /*
+   * 只算**目标开始之后**的回合，并且只累加 provider 真的报了的 output token（H-6b 已落盘）。
+   * 一条都没报 → `tokens: null`（未知），让界面显示未知、判定也不因此停。
+   */
+  const inGoal = records.filter((r) => (r.startedAt ?? 0) >= since)
+  const reported = inGoal.filter((r) => typeof r.outputTokens === 'number')
+  return {
+    tokens: reported.length ? reported.reduce((sum, r) => sum + (r.outputTokens ?? 0), 0) : null,
+    elapsedMs: since > 0 ? Date.now() - since : 0
+  }
+}
+
 function workModeKeyFor(id: string): string {
   const file = normalizeSessionFileKey(runners?.agentOf(id)?.getState()?.sessionFile)
   return file ?? pendingWorkModeKey(id)
@@ -1862,7 +1895,8 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
      */
     if (hasHandoffOperation(id)) return
     const armed = await goals.armContinue(key, {
-      consumed: (operationId) => goalResumeContinuationWasConsumed(id, operationId)
+      consumed: (operationId) => goalResumeContinuationWasConsumed(id, operationId),
+      usage: await goalBudgetUsage(id, goals.startOf(key))
     })
     if (armed.armed) {
       await applyGoalResume(id)
@@ -2015,7 +2049,8 @@ const goalCapabilityHost: GoalCommandHost = {
       let continueRound: number | null = null
       if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
         const armed = await goals.armContinue(key, {
-          consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId)
+          consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId),
+          usage: await goalBudgetUsage(context.sessionId, goals.startOf(key))
         })
         if (armed.armed) {
           continueRound = armed.round
@@ -3876,7 +3911,10 @@ function registerIpc(): void {
              * pi 给的会话文件路径在 Windows 上是反斜杠，直接回传会让前端
              * 「当前段 === 目的段」永远不相等（看上去像视图没切过去）。
              */
-            destinationSession: normalizeChainKey(tx.destinationSession)
+            destinationSession: normalizeChainKey(tx.destinationSession),
+            receipts: tx.receipts ?? {},
+            steps: tx.steps.slice(-4),
+            resumeAttempts: tx.resumeAttempts
           }
         : null,
       /* 最近的过程事件（实施-14 F0）：界面 / 探针据此区分「没资格 / 没生成 / 没提交 / 没确认」 */
@@ -3884,6 +3922,31 @@ function registerIpc(): void {
       autoCommit: HANDOFF_COMMIT_ENABLED
     }
   })
+  /*
+   * 人工确认「续接确实已经在跑」（实施-15 A-3）。
+   *
+   * 为什么需要这个出口：`resumed` 一直靠「会话文件里有标记」判，而标记只能证明
+   * **已投递**（那段正文是本地拼的）。用户去看了一眼目的会话、确认模型真在跑了
+   * 之后，需要一个**不重发**的了结 —— 否则 `resumeAttempts` 到 2 以后就只剩干等。
+   *
+   * 只允许在「已经发过」之后确认：没发过就跳过发送直接标完成是假的。
+   */
+  handle('yan:confirmHandoff', async (handoffId: string) => {
+    await handoffTransactions.load()
+    const tx = handoffTransactions.snapshot().transactions[String(handoffId ?? '')]
+    if (!tx) return { ok: false, error: 'not-found' }
+    if (typeof tx.receipts?.sentAt !== 'number') return { ok: false, error: 'not-sent' }
+    const done = await handoffTransactions.step(tx.handoffId, 'resumed', 'manual-confirmed')
+    handoffDiag.record({
+      stage: 'commit',
+      outcome: 'manual-confirmed',
+      reason: 'user-verified',
+      runnerId: runners?.activeRunner()?.id ?? '',
+      sessionKey: tx.sourceSession
+    })
+    return { ok: done.advanced || done.tx?.stage === 'resumed' }
+  })
+
   /*
    * 用户点「重试」（实施-14 F5）：清掉残留的生成现场，再走一遍单一调度。
    * 它不是「强行交接」—— 资格不够时照旧如实拒绝，只在诊断里多一条 `manual-retry`。
@@ -4251,7 +4314,15 @@ function registerIpc(): void {
   })
 
   handle('yan:openPath', async (p: string) => {
-    if (p && existsSync(dirname(p))) await shell.openPath(dirname(p))
+    /*
+     * 失败要能说出来（2026-09-23，U-3b）：以前目标不存在就静默什么都不做，
+     * 界面无法区分「已打开」与「文件已经不在了」。
+     * 「打开所在目录」的语义保留，只补上目标存在性校验与错误回传。
+     */
+    if (!p) return { ok: false, error: 'empty path' }
+    if (!existsSync(p)) return { ok: false, error: 'missing' }
+    const err = await shell.openPath(existsSync(dirname(p)) ? dirname(p) : p)
+    return err ? { ok: false, error: err } : { ok: true }
   })
 
   /** 在系统文件管理器里选中某个文件（比 openPath 精确） */
@@ -5300,9 +5371,17 @@ function registerIpc(): void {
   handle('yan:knowledge:list', () => knowledgeSnapshot())
 
   handle('yan:knowledge:action', async (req: unknown) => {
-    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown }
+    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; expectedProjectId?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown }
     const identity = await knowledgeIdentity()
     if (!identity) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    /*
+     * 项目身份 CAS（R10）：界面上的列表属于某个项目，而这里按「此刻的当前会话」
+     * 选项目 —— 用户在设置页开着的时候切了会话，点确认就会打到别的项目上。
+     * 带了期望身份就严格校验；缺省接受（旧调用/CLI 不受影响）。
+     */
+    if (typeof raw.expectedProjectId === 'string' && raw.expectedProjectId && raw.expectedProjectId !== identity.projectId) {
+      return { ok: false, error: '项目已切换，刷新后再改' }
+    }
     const id = typeof raw.id === 'string' ? raw.id : ''
     const expectedRevision = Number(raw.expectedRevision)
     if (!id || !Number.isInteger(expectedRevision) || expectedRevision < 1) {

@@ -38,7 +38,7 @@
     "shot": "electron scripts/shot.mjs",
     "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs fsedge atpathedge projectswitch gitreview workspacechanges branch topbar outlinepos narrow todonew sendkey railmini pending slashcmd tools vheight panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename railreorder usageagg",
+    "check": "npm run typecheck && npm run check:shell-icons && npm run check:css-docs && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs fsedge atpathedge projectswitch knowledgeasync gitreview workspacechanges branch topbar controlstates iconsurface goallinks outlinepos iconstate narrow todonew sendkey railmini pending slashcmd tools vheight tooltiles tilerestart settingstabs resourceheads panels symmetry titlebar motion atPath auth authEnv reasoning terminal streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename railreorder usageagg",
     "test:unit": "node scripts/test-unit.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-skill-files-scheduler.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
@@ -48,6 +48,8 @@
     "lint:css": "node scripts/lint-css.mjs",
     "lint:layers": "node scripts/css-layer-check.mjs --selftest",
     "measure:design": "electron docs/design/measure-design.mjs",
+    "measure:css": "node scripts/css-drift.mjs --md",
+    "check:css-docs": "node scripts/css-tokens.mjs --check && node scripts/css-inventory.mjs --check && node scripts/css-drift.mjs --check",
     "vendor:pi": "node scripts/vendor-pi.mjs",
     "vendor:pi:check": "node scripts/vendor-pi.mjs --check",
     "upgrade:pi": "node scripts/upgrade-pi.mjs",
@@ -63,7 +65,8 @@
     "dist:check": "npm run dist:dir && npm run test:packaged",
     "icon": "electron scripts/build-icon.mjs",
     "installer:sidebar": "electron scripts/build-installer-sidebar.mjs",
-    "visual:matrix": "node scripts/visual-matrix-run.mjs"
+    "visual:matrix": "node scripts/visual-matrix-run.mjs",
+    "check:shell-icons": "node scripts/check-shell-icons.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

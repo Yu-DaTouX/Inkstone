@@ -11,6 +11,11 @@
 
   for (let i = 0; i < 60; i++) { if (store.getState().conn === 'ready') break; await sleep(500) }
   store.getState().closeSettings(); await sleep(400)
+  /* H-3b：新会话默认停在「开始」页，工具分区在「工具」固定页里。 */
+  if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+  await sleep(400)
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(500)
 
   out.push('=== 1. 用量条已合并（只剩一条） ===')
   const old1 = q('.ctxbar'), old2 = q('.tokbar')

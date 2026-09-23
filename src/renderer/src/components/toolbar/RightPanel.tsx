@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
-import { Section } from './ToolSection'
+import { Section, SECTION_TITLE } from './ToolSection'
 import { useStore } from '../../state/store'
 import {
   compactionGrowthText,
@@ -16,6 +16,16 @@ import { CONTEXT_STAGES, contextStageLabel, contextStageTip, nextContextStageTex
 import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf } from '../../../../shared/context-policy'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
+import {
+  defaultFloatRect,
+  defaultToolLayout,
+  isTileFloatable,
+  moveTile,
+  setTilePlacement,
+  type ToolLayout,
+  type ToolRect,
+  type ToolTile
+} from '../../../../shared/tool-layout'
 import { HandleProvider } from './ToolSection'
 import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
@@ -24,19 +34,30 @@ import { BrowserSurface } from '../browser/BrowserSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
 import { SubagentList } from '../chat/SubagentList'
-import { GoalSection } from './GoalSection'
+import { shortTitle } from '../../../../shared/short-title'
+import { StartPage } from './StartPage'
+import { SubagentPreview } from './SubagentPreview'
 import {
   activateWorkbenchTab,
+  activeWorkbenchView,
   closeWorkbenchTab,
+  isCurrentWorkbenchOpen,
   loadWorkbenchState,
+  newWorkbenchOpenRequest,
+  reconcileWorkbench,
   saveWorkbenchState,
-  viewFromWorkbench,
   workbenchSessionKey,
+  type WorkbenchOpenRequest,
   type WorkbenchState,
   type WorkbenchView
 } from '../../state/workbench'
 
-type RightWindowView = Exclude<WorkbenchView, 'subagent'>
+type RightWindowView = WorkbenchView
+
+/** 活动标签的渲染页；未知/无标签时回工具页 */
+function currentWindowView(state: WorkbenchState): RightWindowView {
+  return activeWorkbenchView(state) ?? 'tools'
+}
 
 /**
  * 右侧窗口区：工具栏、审查、浏览器和文件都使用同一条窗口标签栏。
@@ -49,8 +70,6 @@ type RightWindowView = Exclude<WorkbenchView, 'subagent'>
 export function RightPanel() {
   const t = useT()
   const open = useStore((s) => s.settings?.rightPanelOpen ?? true)
-  const order = useStore((s) => s.settings?.toolOrder)
-  const hidden = useStore((s) => s.settings?.toolHidden)
   const setToolLayout = useStore((s) => s.setToolLayout)
   const browserOpen = useStore((s) => s.browserState.open)
   /** 只读文件预览：与浏览器详情占同一块区域（方案 5.2） */
@@ -67,34 +86,74 @@ export function RightPanel() {
   const closeReview = useStore((s) => s.closeReview)
   const closePreview = useStore((s) => s.closePreview)
   const setRightPanelOpen = useStore((s) => s.setRightPanelOpen)
+  const setBrowserSurfaceActive = useStore((s) => s.setBrowserSurfaceActive)
+  const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const session = useStore((s) => s.session)
+  const subagentPreviewId = useStore((s) => s.subagentPreviewId)
+  const subagentRuns = useStore((s) => s.subagents)
+  const openSubagent = useStore((s) => s.openSubagent)
   const workbenchKey = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
-  const [workbench, setWorkbench] = useState<WorkbenchState>(() => loadWorkbenchState(workbenchKey))
+  /*
+   * 布局和它所属的会话 key 绑在一起存（`{key, state}`）：切会话时即使某个渲染
+   * 周期还拿着上一会话的 state，落盘也只会写回**它自己的 key**，不会把 A 的
+   * 布局写进 B（H-3a「订阅保存按所属会话 key 固定」）。
+   */
+  const [bench, setBench] = useState<{ key: string; state: WorkbenchState }>(() => ({
+    key: workbenchKey,
+    state: loadWorkbenchState(workbenchKey)
+  }))
   const [libOpen, setLibOpen] = useState(false)
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
-  const [windowView, setWindowView] = useState<RightWindowView>(() => {
-    const initial = loadWorkbenchState(workbenchKey)
-    const available = new Set<WorkbenchView>(['tools', ...(reviewOpen ? ['review' as const] : []), ...(filePreview ? ['file' as const] : []), ...(browserOpen ? ['browser' as const] : [])])
-    return viewFromWorkbench(initial, available) as RightWindowView
-  })
+
+  const updateWorkbench = useCallback((fn: (state: WorkbenchState) => WorkbenchState): void => {
+    setBench((current) => ({ key: current.key, state: fn(current.state) }))
+  }, [])
+
+  const workbench = bench.state
+  const workbenchKeyRef = useRef(workbenchKey)
+  workbenchKeyRef.current = workbenchKey
+  /* 异步打开浏览器用：序号自增，迟到返回不写状态 */
+  const openRequestIdRef = useRef(0)
+  const openRequestRef = useRef<WorkbenchOpenRequest | null>(null)
+
+  /* 资源可用集合：固定页始终可用，其余看资源自己是否打开 */
+  const available = useMemo<Set<WorkbenchView>>(() => {
+    const set = new Set<WorkbenchView>(['start', 'tools'])
+    if (reviewOpen) set.add('review')
+    if (browserOpen) set.add('browser')
+    if (filePreview) set.add('file')
+    return set
+  }, [reviewOpen, browserOpen, filePreview])
+  const availableRef = useRef(available)
+  availableRef.current = available
 
   /* 工作窗口按稳定会话文件隔离；切会话只恢复布局，不复制会话正文或资源凭证。 */
   useEffect(() => {
-    const next = loadWorkbenchState(workbenchKey)
-    setWorkbench(next)
-    const available = new Set<WorkbenchView>(['tools', ...(reviewOpen ? ['review' as const] : []), ...(filePreview ? ['file' as const] : []), ...(browserOpen ? ['browser' as const] : [])])
-    setWindowView(viewFromWorkbench(next, available) as RightWindowView)
+    const next = reconcileWorkbench(loadWorkbenchState(workbenchKey), availableRef.current)
+    setBench({ key: workbenchKey, state: next })
     setLibOpen(false)
     setQuickMenuOpen(false)
   }, [workbenchKey])
 
+  /* 只把布局写回它自己的 key；切会话的中途渲染不会污染新会话。 */
   useEffect(() => {
-    saveWorkbenchState(workbenchKey, workbench)
-  }, [workbenchKey, workbench])
+    saveWorkbenchState(bench.key, bench.state)
+  }, [bench])
 
-  const activateWindow = (next: RightWindowView): void => {
-    setWindowView(next)
-    setWorkbench((current) => activateWorkbenchTab(current, next))
+  /* H-10a：列表 / 回合入口打开同一个 run → 激活同一个资源标签，不叠加副本 */
+  useEffect(() => {
+    if (!subagentPreviewId) return
+    updateWorkbench((state) => activateWorkbenchTab(state, 'subagent', subagentPreviewId))
+  }, [subagentPreviewId, updateWorkbench])
+
+  const closeSubagentTab = (id: string): void => {
+    setQuickMenuOpen(false)
+    updateWorkbench((state) => closeWorkbenchTab(state, id))
+    openSubagent(null)
+  }
+
+  const activateWindow = (next: RightWindowView, resourceKey?: string): void => {
+    updateWorkbench((current) => activateWorkbenchTab(current, next, resourceKey))
   }
 
   /*
@@ -109,44 +168,98 @@ export function RightPanel() {
   const widgets = useStore((s) => s.widgets)
 
   /**
-   * 完整顺序（含当前不可见的）：设置里的顺序规范化到 7 项。
-   * 排序操作在**它**上面做 —— 这样「因空而不显示」的分区不会被挤到末尾。
+   * 磁贴布局真源（实施-12 U-4）：停靠顺序 / 浮动位置 / 收进库都在这里。
+   * 旧 `toolOrder/toolHidden` 只在读盘时迁移过一次，界面不再写它们。
    */
-  const fullOrder = useMemo<ToolSectionId[]>(() => {
-    const saved = order?.length ? order : [...TOOL_SECTIONS]
-    const known = new Set<string>(TOOL_SECTIONS)
-    const out = saved.filter((x): x is ToolSectionId => known.has(x))
-    for (const id of TOOL_SECTIONS) if (!out.includes(id)) out.push(id)
-    return out
-  }, [order])
-
-  /** 实际渲染出来的（再减去收进库的与内容为空的） */
-  const visible = useMemo<ToolSectionId[]>(() => {
-    const hiddenSet = new Set(hidden ?? [])
-    const state = { todos, logs, statuses, widgets }
-    return fullOrder.filter((id) => {
-      if (hiddenSet.has(id)) return false
-      const isEmpty = SECTION_REGISTRY[id].isEmpty
-      return isEmpty ? !isEmpty(state) : true
-    })
-  }, [fullOrder, hidden, todos, logs, statuses, widgets])
+  const storedLayout = useStore((s) => s.settings?.toolLayout)
+  const layout = useMemo<ToolLayout>(
+    () => storedLayout ?? defaultToolLayout(TOOL_SECTIONS),
+    [storedLayout]
+  )
 
   /**
-   * 把 `id` 移到 `targetId` 的前/后（在**完整顺序**上操作）。
-   * 集中在这里做：键盘与拖拽只是「目标是谁、放前还是放后」不同，
-   * 移动算法不该写两遍。
+   * 「什么算空」由注册表声明（任务/扩展/日志为空时整个不渲染）。
+   * 选择器返回**布尔**（不是对象）—— zustand v5 用 Object.is 比较。
+   */
+  const isEmptySection = useCallback(
+    (id: ToolSectionId): boolean => {
+      const probe = SECTION_REGISTRY[id].isEmpty
+      return probe ? probe({ todos, logs, statuses, widgets }) : false
+    },
+    [todos, logs, statuses, widgets]
+  )
+
+  /** 工具页里实际渲染的停靠磁贴：布局顺序 → 去掉内容为空的 */
+  const visible = useMemo<ToolSectionId[]>(() => {
+    return layout.tiles
+      .filter((tile) => tile.placement === 'docked')
+      .sort((a, b) => a.order - b.order)
+      .map((tile) => tile.id as ToolSectionId)
+      .filter((id) => !isEmptySection(id))
+  }, [layout, isEmptySection])
+
+  /** 已浮动 / 已收进库的磁贴（工具页里给浮动项一个轻量占位，内容不重复挂载） */
+  const floatingTiles = useMemo(
+    () => layout.tiles.filter((tile) => tile.placement === 'floating').sort((a, b) => a.order - b.order),
+    [layout]
+  )
+  const libraryCount = useMemo(
+    () => layout.tiles.filter((tile) => tile.placement === 'library').length,
+    [layout]
+  )
+
+  /**
+   * 工具页里的渲染序列：停靠磁贴 + 已浮动磁贴的轻量占位。
+   * 两者按同一个 `order` 混排 —— 磁贴移出后占位还留在原位置，
+   * 不会让其余分区莫名向上跳。
+   */
+  const sequence = useMemo(() => {
+    const orderOf = new Map(layout.tiles.map((tile) => [tile.id, tile.order]))
+    const docked = visible.map((id) => ({ id, placement: 'docked' as const, order: orderOf.get(id) ?? 0 }))
+    const floats = floatingTiles.map((tile) => ({ id: tile.id, placement: 'floating' as const, order: tile.order }))
+    return [...docked, ...floats].sort((a, b) => a.order - b.order)
+  }, [visible, floatingTiles, layout])
+  /** 停靠磁贴的可见下标（键盘 Alt+↑↓ 以**可见**邻居为边界） */
+  const dockIndex = useMemo(() => new Map(visible.map((id, i) => [id, i])), [visible])
+
+  /**
+   * 把 `id` 移到 `targetId` 的前/后。
+   * 键盘与拖拽只是「目标是谁、放前还是放后」不同，移动算法不写两遍。
    */
   const move = useCallback(
     (id: ToolSectionId, targetId: ToolSectionId, after: boolean) => {
-      if (id === targetId) return
-      const next = fullOrder.filter((x) => x !== id)
-      const at = next.indexOf(targetId)
-      if (at < 0) return
-      next.splice(after ? at + 1 : at, 0, id)
-      void setToolLayout({ toolOrder: next })
+      void setToolLayout(moveTile(layout, id, targetId, after))
     },
-    [fullOrder, setToolLayout]
+    [layout, setToolLayout]
   )
+
+  /**
+   * 移出到应用内容区（浮动）/ 放回工具页。
+   * U-5 的拖放手势复用**同一个命令**，不另写一套放置逻辑。
+   */
+  const floatTile = useCallback(
+    (id: ToolSectionId) => {
+      const tile = layout.tiles.find((t) => t.id === id)
+      if (!tile || tile.placement === 'floating' || !isTileFloatable(id)) return
+      void setToolLayout(setTilePlacement(layout, id, 'floating', floatRectFor(layout)))
+    },
+    [layout, setToolLayout]
+  )
+  const dockTile = useCallback(
+    (id: ToolSectionId) => {
+      const tile = layout.tiles.find((t) => t.id === id)
+      if (!tile || tile.placement === 'docked') return
+      void setToolLayout(setTilePlacement(layout, id, 'docked'))
+    },
+    [layout, setToolLayout]
+  )
+  /** 定位到已浮动的磁贴（工具页占位行的「定位」）——闪烁一下，不抢焦点 */
+  const locateTile = useCallback((id: string) => {
+    const el = document.querySelector(`[data-float-id="${id}"]`)
+    if (!(el instanceof HTMLElement)) return
+    el.classList.add('locate-flash')
+    window.setTimeout(() => el.classList.remove('locate-flash'), 900)
+  }, [])
 
 
   /** 右栏自身：工具菜单的外点关闭需要从它里面判断命中。 */
@@ -154,13 +267,18 @@ export function RightPanel() {
 
   useEffect(() => {
     if (!quickMenuOpen) return undefined
+    /* 打开的工作区工具菜单也是 overlay：领 token 把原生网页藏住，关闭只释放自己。 */
+    const release = acquireOverlayBlocker('right-quick-menu')
     const close = (event: MouseEvent): void => {
       if (event.target instanceof Node && asideRef.current?.contains(event.target)) return
       setQuickMenuOpen(false)
     }
     document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [quickMenuOpen])
+    return () => {
+      document.removeEventListener('mousedown', close)
+      release()
+    }
+  }, [quickMenuOpen, acquireOverlayBlocker])
 
   /* 外部入口打开浏览器/文件/审查时，把窗口切到对应标签。资源本身不随切页销毁。 */
   const previousBrowserOpen = useRef(browserOpen)
@@ -177,8 +295,9 @@ export function RightPanel() {
     previousBrowserOpen.current = browserOpen
     previousReviewOpen.current = reviewOpen
     previousFilePreview.current = !!filePreview
-    setWindowView((current) => {
-      const next = reviewOpened
+    updateWorkbench((state) => {
+      const current = currentWindowView(state)
+      const next: RightWindowView = reviewOpened
         ? 'review'
         : fileOpened
           ? 'file'
@@ -191,83 +310,90 @@ export function RightPanel() {
                 : current === 'file' && !filePreview
                   ? (browserOpen ? 'browser' : 'tools')
                   : current
-      if (next !== current) setWorkbench((state) => activateWorkbenchTab(state, next))
-      return next
+      return next === current ? state : activateWorkbenchTab(state, next)
     })
-  }, [browserOpen, filePreview, reviewOpen])
+  }, [browserOpen, filePreview, reviewOpen, updateWorkbench])
 
-  const switchWindow = (next: RightWindowView): void => {
+  const switchWindow = (next: RightWindowView, resourceKey?: string): void => {
     setQuickMenuOpen(false)
-    activateWindow(next)
+    activateWindow(next, resourceKey)
 
-    if (next === 'tools') {
-      /* 切页只是隐藏当前资源；关闭标签才释放浏览器 / 预览。 */
-      if (browserOpen) void window.yan.browser.setVisible(false)
+    if (next === 'tools' || next === 'start') {
+      /* 固定导航页；切页只隐藏原生网页，不释放资源 */
       return
     }
 
     if (next === 'review') {
-      if (browserOpen) void window.yan.browser.setVisible(false)
       openReview()
       return
     }
 
     if (next === 'browser') {
-      if (browserOpen) void window.yan.browser.setVisible(true)
-      else {
+      if (browserOpen) return
+      {
+        /*
+         * 异步打开带 requestId + sessionKey：切了会话或又发了新请求后，
+         * 迟到的返回不写状态，也不把旧会话的空浏览器标签留在新会话。
+         */
+        const request = newWorkbenchOpenRequest(workbenchKey, openRequestIdRef.current)
+        openRequestIdRef.current = request.requestId
+        openRequestRef.current = request
         void openBrowser().then(() => {
+          if (!isCurrentWorkbenchOpen(request, workbenchKeyRef.current, openRequestIdRef.current)) return
           /* 打开失败时没有 browserState 事件，不能把右栏永远留在空的 browser tab。 */
-          if (!useStore.getState().browserState.open) {
-            setWindowView((current) => current === 'browser' ? 'tools' : current)
-            setWorkbench((state) => closeWorkbenchTab(state, 'browser'))
-          }
+          if (!useStore.getState().browserState.open) updateWorkbench((state) => closeWorkbenchTab(state, 'browser'))
         })
       }
       return
     }
 
     /* 文件窗口没有原生视图，文件树和文件预览共用这个表面。 */
-    if (browserOpen) {
-      void window.yan.browser.setVisible(false)
-    }
     if (!open) void setRightPanelOpen(true)
   }
 
-  const closeWindow = (which: Exclude<RightWindowView, 'tools'>): void => {
+  const closeWindow = (which: Exclude<RightWindowView, 'tools' | 'start'>): void => {
     setQuickMenuOpen(false)
     if (which === 'review') {
       closeReview()
       const next = browserOpen ? 'browser' : filePreview ? 'file' : 'tools'
       activateWindow(next)
-      setWorkbench((state) => closeWorkbenchTab(state, 'review'))
-      if (browserOpen && !filePreview) void window.yan.browser.setVisible(true)
+      updateWorkbench((state) => closeWorkbenchTab(state, 'review'))
     } else if (which === 'browser') {
       activateWindow('tools')
-      setWorkbench((state) => closeWorkbenchTab(state, 'browser'))
+      updateWorkbench((state) => closeWorkbenchTab(state, 'browser'))
       void closeBrowser()
     } else {
       closePreview()
       activateWindow('tools')
-      setWorkbench((state) => closeWorkbenchTab(state, 'file'))
-      if (browserOpen) void window.yan.browser.setVisible(false)
+      updateWorkbench((state) => closeWorkbenchTab(state, 'file'))
     }
   }
 
-  const activeView: RightWindowView = windowView
+  const activeView: RightWindowView = currentWindowView(workbench)
+  const startMode = activeView === 'start'
   const reviewMode = activeView === 'review' && reviewOpen
   const browserMode = activeView === 'browser' && browserOpen
   const fileMode = activeView === 'file'
   const toolsMode = activeView === 'tools' && open
-  /* 异步打开浏览器的瞬间仍保留面板；否则 activeView 切过去后组件会卸载，
-     本地 windowView 又回到 tools，最终表现就是点击“＋”没有反应。 */
+  /* H-10a：子代理详情是工作台资源标签 `subagent:<runId>` */
+  const subagentMode = activeView === 'subagent' && !!subagentPreviewId
+  /* 异步打开浏览器的瞬间仍保留面板；否则 activeView 切过去后组件会卸载。 */
   const pendingSurface = (activeView === 'browser' && !browserOpen) || (activeView === 'review' && !reviewOpen)
-  const hasVisibleSurface = reviewMode || browserMode || fileMode || toolsMode || pendingSurface
+  /*
+   * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏标签、网页满列」）。
+   * 收起时整个右栏渲染为 null，布局的 `:has(.rightpanel)` 会把 --w-right 置 0。
+   */
+  const hasVisibleSurface = open && (startMode || reviewMode || browserMode || fileMode || toolsMode || subagentMode || pendingSurface)
+  const subagentTabs = workbench.tabs.filter((tab) => tab.kind === 'subagent')
 
-  /* 原生网页的显隐只有一个协调点；切标签不等于销毁网页资源。 */
+  /*
+   * 原生网页显隐的唯一协调点在 store（browser-visibility）：这里只报告
+   * 「活动页是不是浏览器」，不直接 setVisible，避免多个浮层互相覆盖。
+   */
+  const activeBrowserSurface = activeView === 'browser'
   useEffect(() => {
-    if (!browserOpen) return
-    void window.yan.browser.setVisible(activeView === 'browser')
-  }, [activeView, browserOpen])
+    setBrowserSurfaceActive(activeBrowserSurface)
+  }, [activeBrowserSurface, setBrowserSurfaceActive])
 
   /* 浏览器收起工具栏时不再保留一行空标签，让原生网页占满右列。 */
   if (!hasVisibleSurface) return null
@@ -277,7 +403,7 @@ export function RightPanel() {
   return (
     <aside
       ref={asideRef}
-      className={`rightpanel right-window-panel window-${activeView} ${browserMode ? 'browser-mode' : ''} ${fileMode && filePreview ? 'file-preview-mode' : ''} ${!open && browserMode ? 'tools-collapsed' : ''} ${reviewMode ? 'review-mode' : ''}`}
+      className={`rightpanel right-window-panel window-${activeView} ${browserMode ? 'browser-mode' : ''} ${fileMode && filePreview ? 'file-preview-mode' : ''} ${reviewMode ? 'review-mode' : ''}`}
       data-testid="rightpanel"
     >
       {/*
@@ -294,6 +420,18 @@ export function RightPanel() {
           aria-label="右栏窗口"
           data-testid="right-window-tabs"
         >
+      {/* 固定导航：开始 + 工具 */}
+          <div
+            className={`review-tab rp-window-tab ${activeView === 'start' ? 'active' : ''}`}
+            role="tab"
+            aria-selected={activeView === 'start'}
+            data-testid="right-window-tab-start"
+            onClick={() => switchWindow('start')}
+          >
+            <Icon name="sparkle" size={12} />
+            <span className="rp-title">开始</span>
+          </div>
+
           <div
             className={`review-tab rp-window-tab ${activeView === 'tools' ? 'active' : ''}`}
             role="tab"
@@ -365,6 +503,32 @@ export function RightPanel() {
             </div>
           ) : null}
 
+          {subagentTabs.map((tab) => {
+            const run = subagentRuns.find((r) => r.id === tab.resourceKey)
+            const label = shortTitle(run?.task ?? tab.resourceKey ?? '子代理', 18).short
+            const active = activeView === 'subagent' && workbench.activeTabId === tab.id
+            return (
+              <div
+                key={tab.id}
+                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                role="tab"
+                aria-selected={active}
+                data-testid={`right-window-tab-subagent-${tab.resourceKey}`}
+                onClick={() => switchWindow('subagent', tab.resourceKey)}
+              >
+                <Icon name="layers" size={12} />
+                <span title={run?.task}>{label}</span>
+                <button
+                  type="button"
+                  className="review-tab-close"
+                  onClick={(event) => { event.stopPropagation(); closeSubagentTab(tab.id) }}
+                  aria-label={t('sa.close')}
+                  title={t('sa.close')}
+                >×</button>
+              </div>
+            )
+          })}
+
           <span className="spacer" />
 
           <div className="rp-tool-launcher-wrap">
@@ -409,6 +573,7 @@ export function RightPanel() {
               onClick={() => setLibOpen((v) => !v)}
               title={t('tl.open')}
               data-testid="tool-lib-btn"
+              data-lib-count={libraryCount}
               aria-expanded={libOpen}
             >
               <Icon name="layers" size={12} />
@@ -417,6 +582,8 @@ export function RightPanel() {
         </div>
       ) : null}
 
+      {subagentMode ? <SubagentPreview placement="right" /> : null}
+      {startMode ? <StartPage onOpen={(entry) => switchWindow(entry)} /> : null}
       {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
       {reviewMode ? <ReviewPanel /> : null}
@@ -428,21 +595,36 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
-          {toolsMode ? <GoalSection /> : null}
           {toolsMode ? <SubagentList placement="right" /> : null}
           {fileMode && filePreview ? <FilePreviewPane /> : null}
-          {visible.map((id, i) => (
-            <SectionSlot
-              key={id}
-            id={id}
-            index={i}
-            total={visible.length}
-            /* 键盘用：下一个/上一个**可见**邻居 */
-            prevId={visible[i - 1]}
-            nextId={visible[i + 1]}
-            onMove={move}
-          />
-        ))}
+          {sequence.map((tile) => {
+            if (tile.placement === 'floating') {
+              return (
+                <FloatPlaceholder
+                  key={tile.id}
+                  tile={layout.tiles.find((t) => t.id === tile.id) as ToolTile}
+                  onLocate={locateTile}
+                  onDock={dockTile}
+                />
+              )
+            }
+            const i = dockIndex.get(tile.id as ToolSectionId) ?? 0
+            return (
+              <SectionSlot
+                key={tile.id}
+                id={tile.id as ToolSectionId}
+                index={i}
+                total={visible.length}
+                /* 键盘用：下一个/上一个**可见**邻居 */
+                prevId={visible[i - 1]}
+                nextId={visible[i + 1]}
+                onMove={move}
+                floatable={isTileFloatable(tile.id)}
+                onFloat={floatTile}
+                onDock={dockTile}
+              />
+            )
+          })}
         </div>
       ) : null}
     </aside>
@@ -464,7 +646,10 @@ function SectionSlot({
   total,
   prevId,
   nextId,
-  onMove
+  onMove,
+  floatable,
+  onFloat,
+  onDock
 }: {
   id: ToolSectionId
   /** 在**可见**分区里的序号（键盘边界用） */
@@ -475,6 +660,10 @@ function SectionSlot({
   prevId?: ToolSectionId
   nextId?: ToolSectionId
   onMove: (id: ToolSectionId, targetId: ToolSectionId, after: boolean) => void
+  /** 该项能否移出为浮动磁贴（todo / files 不能，见设计 §5.1） */
+  floatable: boolean
+  onFloat: (id: ToolSectionId) => void
+  onDock: (id: ToolSectionId) => void
 }) {
   const t = useT()
   const [dragging, setDragging] = useState(false)
@@ -576,6 +765,17 @@ function SectionSlot({
    * 那样按一下会「没反应」）。
    */
   const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>): void => {
+    /* Alt+← / Alt+→：移出为浮动 / 放回工具页（与工具库按钮是同一条命令） */
+    if (e.altKey && e.key === 'ArrowLeft') {
+      e.preventDefault()
+      if (floatable) onFloat(id)
+      return
+    }
+    if (e.altKey && e.key === 'ArrowRight') {
+      e.preventDefault()
+      onDock(id)
+      return
+    }
     if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
     e.preventDefault()
     if (e.key === 'ArrowUp') {
@@ -686,8 +886,7 @@ function SectionSlot({
           <button
             className="rp-grip"
             title={t('rp.dragHint')}
-            aria-label={t('rp.dragHint')}
-            tabIndex={0}
+            aria-label={t('rp.dragHint')}            tabIndex={0}
             data-testid={`grip-${id}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -718,8 +917,56 @@ function SectionSlot({
   )
 }
 
+/**
+ * 已浮动磁贴在工具页留下的**轻量占位**（设计 §5.1）。
+ *
+ * 为什么不能只把磁贴从列表里抽掉：其余分区会集体上跳，而磁贴与它的
+ * order 不变 —— 界面看起来像“被删了”。占位保留位置，并给两个出口：
+ * 「定位」闪烁已浮动的那块、「放回工具页」。
+ */
+function FloatPlaceholder({
+  tile,
+  onLocate,
+  onDock
+}: {
+  tile: ToolTile
+  onLocate: (id: string) => void
+  onDock: (id: ToolSectionId) => void
+}) {
+  const t = useT()
+  const id = tile.id as ToolSectionId
+  return (
+    <div className="rp-float-ph" data-tool-id={tile.id} data-testid={`float-ph-${tile.id}`}>
+      <Icon name="layers" size={12} />
+      <span className="rp-float-ph-name">{t(SECTION_TITLE[id])}</span>
+      <span className="rp-float-ph-tag">{t('tl.floating')}</span>
+      <span className="spacer" />
+      <button className="rp-btn" onClick={() => onLocate(tile.id)} data-testid={`float-locate-${tile.id}`}>
+        {t('tl.locate')}
+      </button>
+      <button className="rp-btn" onClick={() => onDock(id)} data-testid={`float-dock-${tile.id}`}>
+        {t('tl.dockBack')}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 新建浮动磁贴的默认位置（设计 §5.2：初始宽 300，最窄 240，最宽 420）。
+ *
+ * 坐标是**相对应用内容区的归一化值**（U-0 冻结契约，x/y/w/h 均 0–1），
+ * 所以宽度用「目标像素 ÷ 可用宽度」换算；测不到 DOM（测试环境）按 900px 估。
+ * 逐个错开，避免多块磁贴叠在同一处。
+ */
+function floatRectFor(layout: ToolLayout): ToolRect {
+  const host = document.querySelector('.workspace')
+  const box = host?.getBoundingClientRect()
+  const n = layout.tiles.filter((tile) => tile.placement === 'floating').length
+  return defaultFloatRect(n, box?.width ?? 900, box?.height ?? 700)
+}
+
 /** 每个分区自己的内容与头部声明（与 SectionFrame 分开，避免把顺序逻辑重复七遍） */
-const SECTION_REGISTRY: Record<
+export const SECTION_REGISTRY: Record<
   ToolSectionId,
   {
     /** 这个分区自己的内容 */

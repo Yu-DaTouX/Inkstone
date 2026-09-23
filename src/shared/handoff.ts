@@ -543,7 +543,27 @@ export interface HandoffView {
    * 只读给探针与界面用：事务一旦停在 `committed`（resume 发出但没拿到证据），
    * 外面完全看不出区别 —— 只看 `package` 有没有是判不了「交接到哪一步」的。
    */
-  transaction: { handoffId: string; stage: HandoffStage; destinationSession: string | null } | null
+  transaction: {
+    handoffId: string
+    stage: HandoffStage
+    destinationSession: string | null
+    /**
+     * 续接回执（实施-15 A-3）：已投递（`persistedAt`）与已运行（`startedAt`）分开。
+     *
+     * 为什么要分开给界面：`stage==='resumed'` 只说明**已投递**（标记是本地写的），
+     * 界面不能据此说「模型已经在跑」；有 `startedAt` 才是真的看到了助手输出。
+     */
+    receipts: { sentAt?: number; persistedAt?: number; startedAt?: number }
+    /**
+     * 最近几步转移（旧→新，最多 4 条）。
+     *
+     * 给恢复视图用：用户/探针能回答「最后**确认**到哪一步了」——
+     * 只看 `stage` 区分不出「已提交但续接还没发」与「已发但没证据」。
+     */
+    steps: { at: number; from: HandoffStage; to: HandoffStage; detail?: string }[]
+    /** 已尝试发送续接的次数（≥2 = 已重发过一次仍无证据，需人工判断）。 */
+    resumeAttempts: number
+  } | null
   /**
    * 最近的阶段诊断事件（实施-14 F0，由旧到新）。
    *

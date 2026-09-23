@@ -112,10 +112,16 @@
     const center = rect('.center')
     out.push('  center=' + JSON.stringify(center) + ' inner=' + JSON.stringify(inner) + ' tick=' + JSON.stringify(tick))
     if (inner && tick && center) {
-      const gap = inner.x + 24 - (tick.x + tick.w)
-      out.push('  刻度距正文 ' + gap.toFixed(0) + 'px')
-      if (gap >= 6 && gap <= 34) ok('导航轨贴着正文左侧（不压字、不错位）')
-      else bad('导航轨离正文 ' + gap.toFixed(0) + 'px')
+      /*
+       * V-2b 后轨道贴的是**会话可用区左边缘**（两栏收起 = 整窗），正文仍居中。
+       * 所以旧的「轨道贴正文左缘」公式不再成立；正确的不变量是：
+       * ① 轨道在会话区左边缘附近；② 刻度命中区不压到正文内容。
+       */
+      const atEdge = tick.x - center.x <= 16
+      const overlap = (tick.x + tick.w) - inner.x
+      out.push(`  轨道距会话区左缘 ${(tick.x - center.x).toFixed(0)}px；与正文重叠 ${overlap.toFixed(0)}px`)
+      if (atEdge && overlap <= 0) ok('导航轨贴会话区左缘且不压正文')
+      else bad(`导航轨位置不对：距左缘 ${(tick.x - center.x).toFixed(0)}px / 重叠 ${overlap.toFixed(0)}px`)
     }
 
     // 展开回来

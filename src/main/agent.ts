@@ -425,6 +425,14 @@ export class AgentController extends EventEmitter {
   private turnTerminal: TurnTerminalReason = 'completed'
   /** 本轮最后一次算出的用时（单调口径），落盘时用。 */
   private turnElapsedMs?: number
+  /**
+   * 本轮模型报出的**输出** token 数（A-2 预算要用）。
+   *
+   * 取各次消息的最大值而不是相加：provider 报的是**累积值**
+   *（同一条流里后到的覆盖面更大），相加会算重。
+   * 一个逻辑回合下多个 run（自动继续）各落一条记录，读回时相加（见 mergeTurnRecords）。
+   */
+  private turnOutputTokens?: number
   /** 本轮是否已经写过至少一条元数据记录（中间写一次、终止时再更新一次）。 */
   private turnPersisted = false
   /**
@@ -3639,6 +3647,10 @@ export class AgentController extends EventEmitter {
 
         // 以 message_end 的 usage 为准（流式期间的可能是 0 或旧值）
         const finalUsage = toUsage(m.usage) ?? s.usage
+        if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
+          /* 累积值：取最大，不相加（相加会把同一轮的中间快照重复计入） */
+          this.turnOutputTokens = Math.max(this.turnOutputTokens ?? 0, finalUsage.output)
+        }
         const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turnStartedAt)
         const msg: UIMessage = {
           id,
@@ -4145,6 +4157,7 @@ export class AgentController extends EventEmitter {
     if (final) {
       this.turnMessageIds = []
       this.turnElapsedMs = undefined
+      this.turnOutputTokens = undefined
       this.turnTerminal = 'completed'
     }
     if (!bucket || elapsedMs === undefined || sourceIds.length === 0) return
@@ -4189,6 +4202,7 @@ export class AgentController extends EventEmitter {
       ...(anchorId ? { anchorId } : {}),
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
+      ...(this.turnOutputTokens ? { outputTokens: this.turnOutputTokens } : {}),
       monotonicMs: elapsedMs
     }
     if (await appendTurnTiming(YAN_DIR, bucket, record)) this.turnPersisted = true

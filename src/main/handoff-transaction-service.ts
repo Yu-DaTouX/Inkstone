@@ -32,6 +32,9 @@ import {
   handoffStages,
   isTerminalStage,
   recordResumeAttempt,
+  recordReceipt,
+  type HandoffReceipts,
+  type ReceiptKind,
   type HandoffStage,
   type HandoffStep,
   type HandoffTransaction
@@ -59,6 +62,22 @@ export function handoffTransactionDocumentPath(root: string = YAN_DIR): string {
 function safeStage(raw: unknown): HandoffStage {
   const stages = handoffStages()
   return stages.includes(raw as HandoffStage) ? (raw as HandoffStage) : 'pending'
+}
+
+/** 回执只收正数时间戳：脏值一律丢掉（宁可显示“没到过”，也不显示一个假时刻）。 */
+function sanitizeReceipts(raw: unknown): HandoffReceipts {
+  if (!raw || typeof raw !== 'object') return {}
+  const item = raw as Partial<HandoffReceipts>
+  const at = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined
+  const out: HandoffReceipts = {}
+  const sentAt = at(item.sentAt)
+  const persistedAt = at(item.persistedAt)
+  const startedAt = at(item.startedAt)
+  if (sentAt !== undefined) out.sentAt = sentAt
+  if (persistedAt !== undefined) out.persistedAt = persistedAt
+  if (startedAt !== undefined) out.startedAt = startedAt
+  return out
 }
 
 function sanitizeStep(raw: unknown): HandoffStep | null {
@@ -112,6 +131,7 @@ export function sanitizeHandoffTransaction(raw: unknown): HandoffTransaction | n
     package: pkg,
     resumeId,
     resumeAttempts,
+    receipts: sanitizeReceipts(item.receipts),
     stage: safeStage(item.stage),
     steps,
     error: typeof item.error === 'string' && item.error ? item.error : null,
@@ -278,6 +298,20 @@ export class HandoffTransactionStore {
       const tx = this.doc.transactions[handoffId]
       if (!tx) return null
       const next = recordResumeAttempt(tx, this.now())
+      this.doc.transactions[handoffId] = next
+      this.doc.updatedAt = next.updatedAt
+      await this.persist()
+      return next
+    })
+  }
+
+  /** 记一条回执（A-3）：`sent` / `persisted` / `started`，同一个只记第一次。 */
+  async noteReceipt(handoffId: string, kind: ReceiptKind): Promise<HandoffTransaction | null> {
+    return this.enqueue(async () => {
+      const tx = this.doc.transactions[handoffId]
+      if (!tx) return null
+      const next = recordReceipt(tx, kind, this.now())
+      if (next === tx) return tx
       this.doc.transactions[handoffId] = next
       this.doc.updatedAt = next.updatedAt
       await this.persist()

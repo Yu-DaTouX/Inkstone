@@ -86,22 +86,22 @@
   }
 
   /*
-   * 用户要求：浏览器与工具栏**独立** —— 收起工具栏时浏览器要独占整列，
-   * 不能再留着一排工具栏标题/分区。这里按住这个回归点。
+   * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏工具栏、
+   * 网页仍满列」的旧语义）。这里按住新回归点：收起后右栏不在布局里，
+   * 原生网页也不可见；展开后资源与页面都恢复。
    */
   const surfaceBox = () => document.querySelector('[data-testid="browser-surface"]')?.getBoundingClientRect()
-  const beforeH = surfaceBox()?.height ?? 0
   const panelToggle = document.querySelector('[data-testid="rightpanel-toggle"]')
   if (panelToggle) {
     panelToggle.click()
     await new Promise((r) => setTimeout(r, 700))
-    const rpTopGone = !document.querySelector('.rp-top')
-    const bodyGone = !document.querySelector('[data-testid="rp-body"]')
+    const panelGone = !document.querySelector('[data-testid="rightpanel"]')
     const afterH = surfaceBox()?.height ?? 0
-    if (!rpTopGone || !bodyGone) throw new Error('收起工具栏后仍渲染了工具栏内容（浏览器没有独占右栏）')
-    if (!(afterH > beforeH)) throw new Error(`收起工具栏后浏览器没有变高：${beforeH} -> ${afterH}`)
+    if (!panelGone) throw new Error('收起右栏后工作栏仍在布局里')
+    if (afterH > 0) throw new Error(`收起右栏后原生网页没有隐藏，仍有高度 ${afterH}`)
     panelToggle.click()
     await new Promise((r) => setTimeout(r, 700))
+    if (!((surfaceBox()?.height ?? 0) > 0)) throw new Error('重新展开后浏览器没有恢复')
   }
 
   return JSON.stringify({ open: state.open, hasUrl: Boolean(state.url), rightPanel: true, centerUnchanged: !centerMode, title: state.title, generation: observation.generationId, elements: observation.elements.length, tabs: finalState.tabs?.length || 0, viewport: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, finalViewport: finalRect && { x: finalRect.x, y: finalRect.y, width: finalRect.width, height: finalRect.height }, nativeBounds: finalState.nativeBounds })

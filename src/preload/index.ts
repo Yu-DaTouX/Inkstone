@@ -161,6 +161,7 @@ const api: YanBridge = {
   getHandoff: () => invoke<HandoffView>('yan:getHandoff'),
   /* 交接状态的「重试」（实施-14 F5）：只重跑一次调度判定，不强行换段 */
   retryHandoff: () => invoke<Ok>('yan:retryHandoff'),
+  confirmHandoff: (handoffId) => invoke<Ok>('yan:confirmHandoff', handoffId),
   setWorkMode: (mode, expectedRevision) =>
     invoke<{ ok: boolean; state: WorkModeState; error?: string }>('yan:setWorkMode', mode, expectedRevision),
 
@@ -329,7 +330,7 @@ const api: YanBridge = {
 
   /* ---- 诊断 ---- */
   probePi: () => invoke<PiProbe>('yan:probePi'),
-  openPath: (p) => invoke<void>('yan:openPath', p),
+  openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
   revealPath: (p) => invoke<void>('yan:revealPath', p),
 
   /* ---- 界面缩放（0 = 自动） ---- */

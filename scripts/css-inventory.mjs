@@ -13,29 +13,12 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readStyleOrder } from './lib/css-order.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/** 与 App.tsx 的 import 顺序**必须一致** —— 覆盖关系全看它 */
-const ORDER = [
-  'tokens.css',
-  'app.css',
-  'stage1.css',
-  'redesign.css',
-  'motion.css',
-  'settings.css',
-  'electron.css',
-  'highlight.css',
-  /* ── 模块化收敛层（最后加载）：原 sidebar-review.css 按模块拆开 ── */
-  'layout.css',
-  'shell.css',
-  'rail.css',
-  'chat.css',
-  'composer.css',
-  'tools.css',
-  'browser.css',
-  'dialog.css'
-]
+/* 顺序不再手写：直接读 App.tsx（见 scripts/lib/css-order.mjs 的头注释） */
+const ORDER = readStyleOrder(root)
 
 const dir = join(root, 'src/renderer/src/styles')
 
@@ -166,9 +149,20 @@ if (conflicts.length > 120) L(`| … | 另有 ${conflicts.length - 120} 个 |`)
 L()
 
 const out = md.join('\n')
-if (process.argv.includes('--md')) {
+const content = out.replace(/\n+$/, '') + '\n'
+if (process.argv.includes('--check')) {
+  /* 门禁：归属表必须与当前样式一致（V-0 D1） */
   const target = join(root, 'docs/design/CSS-归属表.md')
-  writeFileSync(target, out + '\n', 'utf8')
+  const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
+  if (existing !== content) {
+    console.error(`✗ ${target} 与当前样式不一致 —— 跑 npm run measure:css 重新生成`)
+    process.exitCode = 1
+  } else {
+    console.log(`✓ ${target} 与当前样式一致`)
+  }
+} else if (process.argv.includes('--md')) {
+  const target = join(root, 'docs/design/CSS-归属表.md')
+  writeFileSync(target, content, 'utf8')
   console.log(`已写入 ${target}`)
   console.log(`  文件 ${stats.filter((s) => !s.missing).length} 个 / 合计 ${totalLines} 行`)
   console.log(`  唯一选择器 ${totalUniq} 个，其中 ${conflicts.length} 个被 ≥2 个文件定义`)
