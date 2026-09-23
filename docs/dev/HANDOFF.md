@@ -9,16 +9,39 @@
 ### 2026-09-23 · 整理提示的会话归属（F8）与主题切换圆心
 
 > 用户现场两件：① 「整理未完成的提示应该在对应会话内显示，现在是在每个对话内显示」；
-> ② 「这个动画的中心位置应该依对应按钮的位置」。
+> ② 「这个动画的中心位置应该依对应按钮的位置」——第二轮又报「位置还是不对」，
+> 并给出真实窗口截图（构建 `5e6dc64`）。
 
 | 六栏 | 证据 |
 |---|---|
-| 实现 | ① **提示只属于它自己那条会话**：`shared/handoff-diagnostics.ts` 新增纯函数 `eventsForSession(events, { keys, runnerId })`（`sessionKey` 落在本条会话的**链**上——交接后的旧段也算；无归属事件只认**当前实例**）；`yan:getHandoff` 先筛再取最近 40 条；`store.ts` 在 `switchSession` / `newSession` 同步清 `handoff`（与 `goal` 同理：会话级事实不跟着跑）。② **根因：常态拒绝被当成失败**（用户第二轮截图：**新会话**显示「整理未完成 · 这个片段还没有压够次数」）。查真实 `handoff/events.jsonl` 看到那条事件的 `sessionKey` 就是新会话、`reason=below-threshold, count=0` —— 筛选没错，是**口径**错：资格不够（`below-threshold` / `no-goal` / `not-autonomous` / `busy` / `goal-not-active`）与安全边界拒绝（`source-watermark-moved` 这类）都是常态，每次回合收尾都会评估一次。`handoff-notice.ts` 因此把 `rejected` 从 `FAILED_OUTCOMES` 里拿出（新增注释说明「常态不是故障」），并把 `abandoned` 改成**只看原因**（只有 `timeout` 算失败，用户发言 / 停止 / 点重试导致的中止不算）。③ **常态拒绝不再刷屏诊断日志**：`shared/handoff-schedule.ts` 新增 `EligibilityRejectLog`（同一实例、同一原因与次数只记一条），测试里一条会话从 10 条同义事件降到 2 条。④ **主题圆心双保险**：`Settings.tsx` 派事件时带按钮中心，`App.tsx` 写 `--theme-origin-x/y`；载荷拿不到时再从 DOM 找（焦点上的主题按钮 → 面板里的主题按钮，且**必须可见**——面板关掉后元素会留在 DOM 一小段时间）；两条都没有才回退屏幕中心。⑤ **过渡串行化**：同一时间只跑一次（并发会被 Chromium 跳过，被跳过的那次 `updateCallback` 不执行 → `data-theme` 停在旧值，用户看到的就是「点了没反应」），并且 `updateCallbackDone` 失败时再 `apply()` 一次兜底 —— 宁可少一次动画，不能少一次换肤。 |
+| 实现 | ① **提示只属于它自己那条会话**：`shared/handoff-diagnostics.ts` 新增纯函数 `eventsForSession(events, { keys, runnerId })`（`sessionKey` 落在本条会话的**链**上——交接后的旧段也算；无归属事件只认**当前实例**）；`yan:getHandoff` 先筛再取最近 40 条；`store.ts` 在 `switchSession` / `newSession` 同步清 `handoff`（与 `goal` 同理：会话级事实不跟着跑）。② **根因：常态拒绝被当成失败**（用户第二轮截图：**新会话**显示「整理未完成 · 这个片段还没有压够次数」）。查真实 `handoff/events.jsonl` 看到那条事件的 `sessionKey` 就是新会话、`reason=below-threshold, count=0` —— 筛选没错，是**口径**错：资格不够（`below-threshold` / `no-goal` / `not-autonomous` / `busy` / `goal-not-active`）与安全边界拒绝（`source-watermark-moved` 这类）都是常态，每次回合收尾都会评估一次。`handoff-notice.ts` 因此把 `rejected` 从 `FAILED_OUTCOMES` 里拿出（新增注释说明「常态不是故障」），并把 `abandoned` 改成**只看原因**（只有 `timeout` 算失败，用户发言 / 停止 / 点重试导致的中止不算）。③ **常态拒绝不再刷屏诊断日志**：`shared/handoff-schedule.ts` 新增 `EligibilityRejectLog`（同一实例、同一原因与次数只记一条），测试里一条会话从 10 条同义事件降到 2 条。④ **主题圆心双保险**：`Settings.tsx` 派事件时带按钮中心，`App.tsx` 写 `--theme-origin-x/y`；载荷拿不到时再从 DOM 找（焦点上的主题按钮 → 面板里的主题按钮，且**必须可见**——面板关掉后元素会留在 DOM 一小段时间）；两条都没有才回退屏幕中心。⑤ **过渡串行化**：同一时间只跑一次（并发会被 Chromium 跳过，被跳过的那次 `updateCallback` 不执行 → `data-theme` 停在旧值，用户看到的就是「点了没反应」），并且 `updateCallbackDone` 失败时再 `apply()` 一次兜底 —— 宁可少一次动画，不能少一次换肤。⑥ **圆心坐标系本身不可信 + 两道保险**：见本节末尾「圆心第二轮」。 |
 | 自动检查 | `typecheck` / `build` 通过；`test:unit` **4697/4697** —— `test-handoff-diagnostics.mjs` 新增 5 条（只留本会话 / 别实例一律不留 / 斜杠方向不同仍命中 / 无范围返回空 / 空流水不报错），`test-handoff-notice.mjs` 新增 4 条（常态拒绝一行都不显示，但混在里面的真失败照旧显示；「别的会话失败 → 本条不弹」串起来跑），`test-handoff-schedule.mjs` 新增 5 条（`EligibilityRejectLog` 去重口径）。 |
-| 真实运行 | `npm run test:live -- light`（cost 0）**全绿**：点设置面板里真的主题按钮 —— 读过渡伪元素的 computed `clip-path`，深色 `at 927px 118px`、浅色 `at 1000px 118px`，与按钮中心逐像素相等；载荷不带位置时从 DOM 找回按钮（`at 927px 118px`）；面板关掉后回退 `at 50% 50%`；缩放 125% 下仍落在按钮中心。`npm run test:live -- handoffrecover`（cost 0）**全绿**，新增两节：**2b** 只有常态拒绝（`below-threshold`）时提示一行都不显示、**6** 失败态提示在源会话可见 → 新建会话后消失 → 切回又出现。回归 `npm run test:live -- sessions`（cost 0）与 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- goal`（cost 1）全绿。 |
+| 真实运行 | 本轮（百分比 + 钉死盒子）**按用户要求先交付、未重跑**；下面的绿灯是改动前那一轮的记录，判据已同步改成「解出圆心再与按钮中心比」（与 px / 百分比写法无关）。改动前那一轮：`npm run test:live -- light`（cost 0）**全绿**：点设置面板里真的主题按钮 —— 读过渡伪元素的 computed `clip-path`，深色 `at 927px 118px`、浅色 `at 1000px 118px`，与按钮中心逐像素相等；载荷不带位置时从 DOM 找回按钮（`at 927px 118px`）；面板关掉后回退 `at 50% 50%`；缩放 125% 下仍落在按钮中心。`npm run test:live -- handoffrecover`（cost 0）**全绿**，新增两节：**2b** 只有常态拒绝（`below-threshold`）时提示一行都不显示、**6** 失败态提示在源会话可见 → 新建会话后消失 → 切回又出现。回归 `npm run test:live -- sessions`（cost 0）与 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- goal`（cost 1）全绿。 |
 | 视觉验收 | 本轮没有新增样式改动（提示沿用 F5 的 `.handoff-note`，动画圆心是几何而非配色），因此不重跑视觉矩阵。圆心位置由探针读**真实渲染值**取证，比截图能看到动画中间帧更直接。 |
 | 应用与包 | 未重启用户主应用；未重跑解包 / 便携 / 安装包。 |
-| 剩余限制 | ① 提示归属只验了**失败态**（进行中本来按当前实例判，未单独取证；成功态 60s 窗口同理）；② 圆心在探针环境（含 125% 缩放）逐像素正确，但**用户报的现象是圆心在屏幕中心**——那只能是「起这次过渡时没有按钮位置可用」（无载荷且面板不在 DOM），或他看到的本来就是更早版本；已加上 DOM 兜底，仍需他在重启后看一眼才算闭环；③ 隐藏窗口下过渡的“起播”会被 Chromium 节流（探针轮询因此放宽到 12s），所以「点击到动画开始」的延迟在探针里不代表真实窗口；④ 动画观感仍需用户在本机看一眼。 |
+| 剩余限制 | ① 提示归属只验了**失败态**（进行中本来按当前实例判，未单独取证；成功态 60s 窗口同理）；② 圆心虽已双重钉住（见下），但**仍需用户重启后看一眼才算闭环**——我这边量不到他的窗口；③ 隐藏窗口下过渡的“起播”会被 Chromium 节流（探针轮询因此放宽到 12s），所以「点击到动画开始」的延迟在探针里不代表真实窗口；④ 动画观感仍需用户在本机看一眼。 |
+
+#### 圆心第二轮：坐标系本身不可信（用户截图定案）
+
+我把用户的截图当数据量了一遍（解码 PNG → 逐行找圆弧 → 最小二乘拟合）：
+圆心约在 `(442, 143)` CSS，而设置面板里的「深色」按钮实际在右侧控制列（`x ≈ 700`），
+两者**既不是同一个点、也不是屏幕中心**——说明问题不在“值写错”，
+1. 在**参考框**：`clip-path` 里的长度基准是过渡伪元素自己的 border box，
+   而 root 这层的盒子由 **Chromium 用行内 style** 给出（`width/height` + `transform`）。
+   新旧两帧快照尺寸一旦不一致（页面缩放、滚动条、布局抖动都会），这层就带一个
+   **非单位 transform**，写进去的 px 到屏幕上就不是那个位置了 —— 偏差能到屏幕宽度的四成。
+2. 两道保险（先改 `DESIGN.md §5` 再落地）：
+   · `shell.css` 把 `html[data-theme-dir]::view-transition-group(root)` 钉成
+     `position:fixed; inset:0; width/height:auto; transform:none !important`
+     （行内样式只能被 `!important` 盖；只作用于过渡那一瞬间，元素级过渡不受影响）；
+   · `App.tsx` 的圆心改写成**相对视口的百分比**（`x / innerWidth`）——
+     盒子被缩放时百分比跟着走，正常时与 px 完全等价。
+3. 本轮同时把“圆心一定找得到”补上：事件载荷拿不到位置时再从 DOM 找（先看
+   `document.activeElement` 上的主题按钮，再看面板里的主题按钮，**且必须可见**——
+   面板关掉后元素会留在 DOM 一小段时间），两条都没有才回退屏幕中心。
+4. 并发过渡会被 Chromium 跳过（被跳过那次 `updateCallback` 不执行 → `data-theme`
+   停在旧值，表现是“点了没反应”）：改成同一时间只跑一次，且 `updateCallbackDone`
+   失败时再 `apply()` 一次兜底。
 
 **顺带记录一个环境坑**：本轮曾不带 `YAN_TEST_MODEL` 跑 `test:live -- sessions goal`，`goal` 变红 —— 与代码无关：cost 1 场景必须显式给 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`，默认免费档已退役。换模型后一次全绿。
 

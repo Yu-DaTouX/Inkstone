@@ -403,6 +403,30 @@
         return ''
       }
     }
+
+    /*
+     * 过渡伪元素树的真实几何。
+     *
+     * clip-path 里的 px 到底相对哪个盒子，是「圆心看着不对」这类问题的第一现场 ——
+     * 所以把每层的尺寸、位置、transform 都量出来，而不是只看 clip 字符串。
+     */
+    const boxOf = (selector) => {
+      try {
+        const cs = getComputedStyle(document.documentElement, selector)
+        const t = cs.transform === 'none' ? '∅' : cs.transform
+        return `${selector.split('::')[1]} ${cs.width}×${cs.height} @ ${cs.top},${cs.left} tf=${t}`
+      } catch (err) {
+        return `${selector} 读不到（${err.message}）`
+      }
+    }
+    const geometry = () => [
+      `视口 ${window.innerWidth}×${window.innerHeight} dpr=${window.devicePixelRatio} vv=${window.visualViewport?.width}×${window.visualViewport?.height}@${window.visualViewport?.offsetTop}`,
+      `  ${boxOf('::view-transition(root)')}`,
+      `  ${boxOf('::view-transition-group(root)')}`,
+      `  ${boxOf('::view-transition-image-pair(root)')}`,
+      `  ${boxOf('::view-transition-new(root)')}`,
+      `  ${boxOf('::view-transition-old(root)')}`
+    ]
     /** 两个层哪一层在动就读哪一层（方向决定是新层还是旧层） */
     const clipAny = () => {
       const fresh = clipAt('::view-transition-new(root)')
@@ -442,6 +466,31 @@
       return document.documentElement.dataset.theme === value
     }
 
+    /*
+     * 把 clip 里的圆心解出来，统一换成 CSS px。
+     *
+     * 圆心可能是 px 也可能是百分比（宿主写的是相对视口的百分比，见 App 注释）——
+     * 百分比按视口尺寸还原，这样断言读的是「圆真的落在哪个点」，与写法无关。
+     */
+    const originOf = (clip) => {
+      const m = /at\s+([\d.]+)(px|%)\s+([\d.]+)(px|%)/.exec(clip || '')
+      if (!m) return null
+      const axis = (v, unit, total) => (unit === '%' ? (Number(v) / 100) * total : Number(v))
+      return { x: axis(m[1], m[2], window.innerWidth), y: axis(m[3], m[4], window.innerHeight) }
+    }
+    /** 圆心与按钮中心是否重合（亚像素容差） */
+    const onPoint = (clip, ...points) => {
+      const o = originOf(clip)
+      if (!o) return false
+      return points.some((p) => Math.abs(o.x - p.x) < 1 && Math.abs(o.y - p.y) < 1)
+    }
+    /** 元素中心（视口坐标） */
+    const centerOf = (el) => {
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }
+    const show = (p) => (p ? `x=${p.x.toFixed(1)} y=${p.y.toFixed(1)}` : '—')
+
     const clickTheme = async (which) => {
       const button = document.querySelector(`[data-testid="theme-${which}"]`)
       const pseudo = which === 'light' ? '::view-transition-old(root)' : '::view-transition-new(root)'
@@ -449,11 +498,12 @@
       /* 先等上一次过渡跑完：它会把面板重排，早量的矩形与点击那一刻不一致 */
       await settle()
       const rect = button.getBoundingClientRect()
-      const want = `at ${Math.round(rect.left + rect.width / 2)}px ${Math.round(rect.top + rect.height / 2)}px`
+      const want = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       button.click()
       const clip = await readClip(pseudo)
       /* 读不到时把两侧样本打出来（只在失败路径噪音） */
       if (!clip) {
+        out.push('  [几何]', ...geometry())
         const samples = []
         for (let i = 0; i < 8; i++) {
           samples.push(`new=${clipAt('::view-transition-new(root)') || '∅'}|old=${clipAt('::view-transition-old(root)') || '∅'}`)
@@ -465,7 +515,8 @@
       const style = document.documentElement.style
       return {
         clicked: true,
-        want,
+        want: show(want),
+        wantPoint: want,
         clip,
         rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
         vars: `${style.getPropertyValue('--theme-origin-x') || '∅'} / ${style.getPropertyValue('--theme-origin-y') || '∅'}`
@@ -479,13 +530,13 @@
     const toDark = await clickTheme('dark')
     ok(toDark.clicked, '设置面板里有主题按钮（data-testid=theme-dark）')
     ok(
-      toDark.clicked && toDark.clip.includes(toDark.want),
-      `切到深色的圆心落在按钮中心（要 ${toDark.want}，实际 ${toDark.clip || '没读到'}）`
+      toDark.clicked && onPoint(toDark.clip, toDark.wantPoint),
+      `切到深色的圆心落在按钮中心（要 ${toDark.want}，实际 ${show(originOf(toDark.clip))}；clip=${toDark.clip || '没读到'}）`
     )
     const toLight = await clickTheme('light')
     ok(
-      toLight.clicked && toLight.clip.includes(toLight.want),
-      `切到浅色的圆心也落在按钮中心（要 ${toLight.want}，实际 ${toLight.clip || '没读到'}；` +
+      toLight.clicked && onPoint(toLight.clip, toLight.wantPoint),
+      `切到浅色的圆心也落在按钮中心（要 ${toLight.want}，实际 ${show(originOf(toLight.clip))}；` +
         `按钮 ${JSON.stringify(toLight.rect)}，变量 ${toLight.vars}）`
     )
 
@@ -498,15 +549,12 @@
     const themeBtnCenters = ['theme-dark', 'theme-light']
       .map((id) => document.querySelector(`[data-testid="${id}"]`))
       .filter(Boolean)
-      .map((el) => {
-        const rect = el.getBoundingClientRect()
-        return `at ${Math.round(rect.left + rect.width / 2)}px ${Math.round(rect.top + rect.height / 2)}px`
-      })
+      .map((el) => centerOf(el))
     window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'dark' }))
     const fromDom = await readClip('::view-transition-new(root)')
     ok(
-      themeBtnCenters.length > 0 && themeBtnCenters.some((want) => fromDom.includes(want)),
-      `事件载荷没带位置时，从 DOM 找回主题按钮（要 ${themeBtnCenters.join(' 或 ')}，实际 ${fromDom || '没读到'}）`
+      onPoint(fromDom, ...themeBtnCenters),
+      `事件载荷没带位置时，从 DOM 找回主题按钮（要 ${themeBtnCenters.map(show).join(' 或 ')}，实际 ${show(originOf(fromDom))}）`
     )
 
     /* 面板关了 → 真的没有按钮可依，回退屏幕中心 */
@@ -515,7 +563,10 @@
     await settle()
     window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'light' }))
     const centered = await readClip('::view-transition-old(root)')
-    ok(centered.includes('at 50% 50%'), `没有按钮可依时回退屏幕中心（实际 ${centered || '没读到'}）`)
+    ok(
+      onPoint(centered, { x: window.innerWidth / 2, y: window.innerHeight / 2 }),
+      `没有按钮可依时回退屏幕中心（实际 ${show(originOf(centered))}，clip=${centered || '没读到'}）`
+    )
     await settle()
 
     /*
@@ -534,8 +585,8 @@
     const zoomed = await clickTheme('dark')
     out.push(`  缩放 ${window.devicePixelRatio} 下的圆心：${zoomed.clip || '没读到'}`)
     ok(
-      zoomed.clicked && zoomed.clip.includes(zoomed.want),
-      `缩放 125% 下圆心仍在按钮中心（要 ${zoomed.want}，实际 ${zoomed.clip || '没读到'}；按钮 ${JSON.stringify(zoomed.rect)}）`
+      zoomed.clicked && onPoint(zoomed.clip, zoomed.wantPoint),
+      `缩放 125% 下圆心仍在按钮中心（要 ${zoomed.want}，实际 ${show(originOf(zoomed.clip))}；按钮 ${JSON.stringify(zoomed.rect)}）`
     )
     store.getState().closeSettings()
     await window.yan.setUiScale(before)
