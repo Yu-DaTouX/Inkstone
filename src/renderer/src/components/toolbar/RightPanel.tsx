@@ -680,22 +680,18 @@ export function RightPanel() {
                 <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('review')}>
                   <Icon name="check-circle" size={12} />
                   <span>审查</span>
-                  <kbd>Ctrl+Shift+G</kbd>
                 </button>
                 <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('terminal')}>
                   <Icon name="activity" size={12} />
                   <span>终端</span>
-                  <kbd>Ctrl+`</kbd>
                 </button>
                 <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('browser')}>
                   <Icon name="globe" size={12} />
                   <span>浏览器</span>
-                  <kbd>Ctrl+T</kbd>
                 </button>
                 <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('file')}>
                   <Icon name="folder" size={12} />
                   <span>文件</span>
-                  <kbd>Ctrl+P</kbd>
                 </button>
               </div>
             ) : null}

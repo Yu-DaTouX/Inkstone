@@ -1017,7 +1017,17 @@ const GROUPS = [
    * 截完由 `terminal` 的清理把它 kill 掉。
    */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['ctxincompressible', 'terminal'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['ctxincompressible', 'terminal'] }
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['ctxincompressible', 'terminal'] },
+  /*
+   * 实施-12 / 实施-13 已交付切片的剩余覆盖：侧栏工具磁贴与资源窗口、上下文设置。
+   * 为什么补：旧矩阵的宽窄 / 缩放组只含 main、settings、knowledgetab 这几个状态，
+   * 而这些切片（工具磁贴、右栏资源、上下文档位）恰恰是**最先在窄窗口上崩裂**的那类
+   * 密集控件，之前只有 1440x900 的证据。这里纯新增，不覆盖任何旧图。
+   */
+  { w: 940, h: 620, scale: 1, theme: 'light', states: ['righttoolmenu', 'rightresources'] },
+  { w: 900, h: 520, scale: 1, theme: 'light', states: ['rightresources', 'ctxsettings'] },
+  { w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['main', 'righttoolmenu'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', 'rightresources'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -2330,6 +2340,13 @@ const STATES = {
             path: 'docs/PROJECT.md',
             cwd: '.',
             loading: false,
+            /*
+             * 必须带资源身份键（H-4）：文件标签现在是工作窗口的一类资源，
+             * 由 RightPanel 监听到 filePreview.key 的变化才激活。缺了它这张图只能
+             * 靠前序状态（如 fileincontext）残留的文件标签碰巧通过 ——
+             * 单开一组时就会退化成 no-preview（实测踩过）。
+             */
+            key: '-|' + encodeURIComponent('C:/work/pi-desktop') + '|' + encodeURIComponent('C:/work/pi-desktop/docs/PROJECT.md'),
             data: {
               ok: true,
               kind: 'text',
@@ -4139,11 +4156,15 @@ async function main() {
   await win.webContents.reload()
 
   /* 等字体栅格就绪（Maple），否则汉字会回退成别的字体：截图证据就不可比了。
-     带超时兜底：`document.fonts.ready` 在字体加载失败时可能永不 resolve，
+     用 `document.fonts.load(...)` **主动触发「国」的分片加载**再测，不能用 `document.fonts.ready`：
+     后者在“此刻没有 pending 字体请求”时立刻就 resolve，而本脚本用的是每次全新的
+     临时 userData（字体缓存是冷的），于是测量跑在分片落地之前 —— 汉字回退成 1em，
+     报出假的“字体未生效”（实测在未改动的旧组上同样复现，是工具竞态而非产品缺陷）。
+     带超时兜底：字体加载失败时这条 promise 可能永不 resolve，
      而这里卡住的表现是“什么也不打印”，极难当场看出原因（实测踩过一次）。 */
   let cnWidth = await win.webContents.executeJavaScript(`
     Promise.race([
-      document.fonts.ready.then(() => {
+      document.fonts.load('12.5px "Maple Mono CN"', '国').then(() => {
         const el = document.createElement('span');
         el.style.cssText = 'position:fixed;visibility:hidden;font:12.5px "Maple Mono CN"';
         el.textContent = '国';
@@ -4152,7 +4173,7 @@ async function main() {
         el.remove();
         return w;
       }),
-      new Promise((r) => setTimeout(() => r(-1), 5000))
+      new Promise((r) => setTimeout(() => r(-1), 8000))
     ])
   `)
 
