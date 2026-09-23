@@ -58,6 +58,7 @@ import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, 
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
 import { decideSessionWork, ownsHandoffOperation } from '../shared/handoff-schedule'
+import { eventsForSession } from '../shared/handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
@@ -3840,6 +3841,15 @@ function registerIpc(): void {
     const head = chain?.segments?.[0]?.sessionFile ?? key
     const entry = handoffs.state(head)
     const tx = handoffTransactions.latestForSession(key)
+    /*
+     * 诊断流水是**全局**的：不过滤就会把别的会话的整理失败也渲染到这条会话里
+     *（用户 2026-09-23 报「这个提示在每个对话内都显示」）。
+     * 一条会话 = 一条链，所以按链上的键筛（交接后的旧段仍属于它）；
+     * 先筛再取最近 40 条 —— 反过来会被别处的噪音把本条挤掉。
+     */
+    const chainKeys = new Set<string>([key])
+    for (const segment of chain?.segments ?? []) chainKeys.add(segment.sessionFile)
+    const events = eventsForSession(handoffDiag.recent(), { keys: chainKeys, runnerId: id }).slice(-40)
     return {
       sessionKey: key,
       tally: entry.tally,
@@ -3862,7 +3872,7 @@ function registerIpc(): void {
           }
         : null,
       /* 最近的过程事件（实施-14 F0）：界面 / 探针据此区分「没资格 / 没生成 / 没提交 / 没确认」 */
-      events: handoffDiag.recent(40),
+      events,
       autoCommit: HANDOFF_COMMIT_ENABLED
     }
   })

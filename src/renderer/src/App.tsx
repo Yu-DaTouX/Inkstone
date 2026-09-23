@@ -89,6 +89,8 @@ export default function App() {
   const t = useT()
   const [theme, setTheme] = useState<Theme>(() => readTheme(undefined))
   const themeMounted = useRef(false)
+  /** 最近一次主题切换的动画圆心（设置面板传的按钮中心）；没有就回退屏幕中心 */
+  const themeOrigin = useRef<{ x: number; y: number } | null>(null)
   /** 首次使用引导（默认关；启动后按条件自动开） */
   const [onboarding, setOnboarding] = useState(false)
   /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
@@ -275,7 +277,17 @@ export default function App() {
   /* ---- 设置面板里改主题时同步 App 的 state ---- */
   useEffect(() => {
     const onTheme = (e: Event): void => {
-      const next = (e as CustomEvent).detail
+      const detail = (e as CustomEvent).detail as
+        | 'dark'
+        | 'light'
+        | { theme?: 'dark' | 'light'; origin?: { x: number; y: number } }
+        | undefined
+      /* 两种载荷都收：字符串（老调用点 / 探针）与 `{ theme, origin }`（设置面板带按钮位置） */
+      const next = typeof detail === 'string' ? detail : detail?.theme
+      const origin = typeof detail === 'object' && detail ? detail.origin : undefined
+      if (origin && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+        themeOrigin.current = { x: origin.x, y: origin.y }
+      }
       if (next === 'dark' || next === 'light') {
         userTouched.current.theme = true
         setTheme(next)
@@ -299,6 +311,20 @@ export default function App() {
      * 才匹配，提前写能保证首帧就是正确方向，不会先闪一下反方向。
      */
     root.dataset.themeDir = theme === 'dark' ? 'out' : 'in'
+    /*
+     * 动画圆心（DESIGN §5）：默认屏幕中心；从设置面板切主题时，圆心就是**那个按钮**
+     *（“我点的那一下让主题从这儿铺开 / 收拢”）。
+     * 同样必须在 startViewTransition 之前落到行内样式上，否则首帧会从屏幕中心闪一下。
+     */
+    const origin = themeOrigin.current
+    themeOrigin.current = null
+    if (origin) {
+      root.style.setProperty('--theme-origin-x', `${Math.round(origin.x)}px`)
+      root.style.setProperty('--theme-origin-y', `${Math.round(origin.y)}px`)
+    } else {
+      root.style.removeProperty('--theme-origin-x')
+      root.style.removeProperty('--theme-origin-y')
+    }
 
     /*
      * Chromium 的 View Transition 把新主题放在旧主题之上，配合 clip-path

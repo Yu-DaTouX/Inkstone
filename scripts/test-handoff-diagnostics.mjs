@@ -37,6 +37,48 @@ export async function runHandoffDiagnosticsTests(ok, shared, main) {
 
   ok(shared.redactDiagnosticText('') === null && shared.redactDiagnosticText(123) === null, '空 / 非字符串返回 null')
 
+  /*
+   * 按会话筛事件（实施-14 F8）。
+   * 这是「整理未完成的提示在每个对话里都显示」的直接防线：诊断流水是**全局**的，
+   * 界面只该看到自己这条会话的。
+   */
+  {
+    const ev = (sessionKey, runnerId, outcome) => ({
+      at: 1,
+      stage: 'generate',
+      outcome,
+      op: null,
+      handoffId: null,
+      runnerId,
+      sessionKey,
+      reason: null,
+      detail: {}
+    })
+    const all = [
+      ev('C:\\tmp\\sessions\\a.jsonl', 'run-a', 'package-ready'),
+      ev('c:/tmp/sessions/b.jsonl', 'run-b', 'unparsable'),
+      ev('C:/tmp/sessions/a-old.jsonl', 'run-a', 'committed'),
+      ev(null, 'run-a', 'halted'),
+      ev(null, 'run-b', 'threw')
+    ]
+    const mine = shared.eventsForSession(all, {
+      keys: ['C:\\tmp\\sessions\\a.jsonl', 'C:/tmp/sessions/a-old.jsonl'],
+      runnerId: 'run-a'
+    })
+    ok(mine.length === 3, '只留本条会话的事件（含链上旧段与本人的无归属事件）', String(mine.length))
+    ok(
+      mine.every((e) => e.runnerId === 'run-a'),
+      '别的实例的事件一条都不留（包括没有会话归属的）',
+      mine.map((e) => e.outcome).join(',')
+    )
+    ok(
+      shared.eventsForSession(all, { keys: ['c:\\tmp\\sessions\\b.jsonl'], runnerId: null }).length === 1,
+      '斜杠方向不同的同一个文件仍算命中（pi 给反斜杠、Node 给正斜杠）'
+    )
+    ok(shared.eventsForSession(all, { keys: [], runnerId: null }).length === 0, '没有范围 → 一条都不给')
+    ok(shared.eventsForSession(null, { keys: ['a'] }).length === 0, '空流水不报错')
+  }
+
   const detail = shared.sanitizeHandoffDetail({
     count: 2.3456,
     busy: false,

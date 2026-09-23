@@ -207,6 +207,25 @@
   ok(historyKept, '原有用户消息仍在（失败没有清历史）')
 
   out.push('')
+  out.push('=== 6. 整理提示只属于**它自己**那条会话（F8） ===')
+  /*
+   * 用户 2026-09-23 报：「整理未完成的提示在每个对话内都显示」。
+   * 根因是诊断流水是**全局**的，而界面照着它渲染 —— 别的会话的
+   * `eligibility:rejected` （比如「当前不是自主档」）会跟着跑到每条会话里。
+   *
+   * 先停掉目标：不再产生新的交接尝试，免得这次切会话影响退出后的
+   * 「结果文件已消费」清理检查。
+   */
+  await window.yan.stopGoal().catch(() => null)
+  const noteEl = () => document.querySelector('[data-testid="handoff-note"]')
+  ok(await waitFor(() => (noteEl() ? true : null), 15000, 400), '失败态提示显示在**源会话**里')
+  const created = await state().newSession()
+  ok(created?.ok !== false, '新建一条会话（用它验证提示不会跟过去）')
+  ok(await waitFor(() => (noteEl() ? null : true), 20000, 400), '切到别的会话后提示消失（不再每个对话都显示）')
+  await state().switchSession(sourceKey)
+  ok(await waitFor(() => (noteEl() ? true : null), 30000, 400), '切回源会话后提示又出现（筛得准，不是筛没了）')
+
+  out.push('')
   out.push('handoffrecover.sourceKey=' + sourceKey)
   out.push('handoffrecover.tally=' + tally)
   out.push('handoffrecover.pressureTurns=' + pressureTurns)

@@ -383,6 +383,81 @@
       /view-transition-old\(root\)[^}]{0,160}theme-collapse/.test(cssText),
       '向心收拢挂在**旧层**上（新层不动，否则两层一起动会糊）'
     )
+
+    /*
+     * 动画圆心 = **触发它的那个按钮**（DESIGN §5）。
+     *
+     * 走真实入口：打开设置面板、点真的主题按钮（`element.click()` 会带
+     * `currentTarget`，与用户按下去同一条路径），再读过渡伪元素的 computed
+     * `clip-path` —— 里面就写着圆心坐标。从屏幕中心改成按钮位置如果没生效，
+     * 这里会看到 `at 50% 50%`。
+     */
+    const clipAt = (selector) => {
+      try {
+        return String(getComputedStyle(document.documentElement, selector).clipPath || '')
+      } catch {
+        return ''
+      }
+    }
+    const clickTheme = async (which) => {
+      const button = document.querySelector(`[data-testid="theme-${which}"]`)
+      if (!button) return { clicked: false, want: '', clip: '', rect: null, vars: '' }
+      /* 先等上一次过渡跑完：它会把面板重排，早量的矩形与点击那一刻不一致 */
+      await settle()
+      const rect = button.getBoundingClientRect()
+      const want = `at ${Math.round(rect.left + rect.width / 2)}px ${Math.round(rect.top + rect.height / 2)}px`
+      const pseudo = which === 'light' ? '::view-transition-old(root)' : '::view-transition-new(root)'
+      button.click()
+      let clip = ''
+      for (let i = 0; i < 50; i++) {
+        const now = clipAt(pseudo)
+        if (now.includes('circle(')) {
+          clip = now
+          break
+        }
+        await sleep(30)
+      }
+      const style = document.documentElement.style
+      return {
+        clicked: true,
+        want,
+        clip,
+        rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+        vars: `${style.getPropertyValue('--theme-origin-x') || '∅'} / ${style.getPropertyValue('--theme-origin-y') || '∅'}`
+      }
+    }
+
+    store.getState().openSettings('appearance')
+    await sleep(700)
+    /* 先深后浅：每次按下都与当前主题不同，两次都会真的产生过渡 */
+    const toDark = await clickTheme('dark')
+    ok(toDark.clicked, '设置面板里有主题按钮（data-testid=theme-dark）')
+    ok(
+      toDark.clicked && toDark.clip.includes(toDark.want),
+      `切到深色的圆心落在按钮中心（要 ${toDark.want}，实际 ${toDark.clip || '没读到'}）`
+    )
+    const toLight = await clickTheme('light')
+    ok(
+      toLight.clicked && toLight.clip.includes(toLight.want),
+      `切到浅色的圆心也落在按钮中心（要 ${toLight.want}，实际 ${toLight.clip || '没读到'}；` +
+        `按钮 ${JSON.stringify(toLight.rect)}，变量 ${toLight.vars}）`
+    )
+
+    /* 没有按钮位置可依时（托盘 / 快捷键）回退屏幕中心 */
+    await settle()
+    window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'dark' }))
+    let fallback = ''
+    for (let i = 0; i < 50; i++) {
+      const now = clipAt('::view-transition-new(root)')
+      if (now.includes('circle(')) {
+        fallback = now
+        break
+      }
+      await sleep(30)
+    }
+    ok(fallback.includes('at 50% 50%'), `没有按钮位置时回退屏幕中心（实际 ${fallback || '没读到'}）`)
+    store.getState().closeSettings()
+    await sleep(300)
   }
 
   /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */

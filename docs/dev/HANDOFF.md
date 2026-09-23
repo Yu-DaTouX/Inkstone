@@ -6,6 +6,22 @@
 工程标准看[工程清单](ENGINEERING-CHECKLIST-2026-09-15.md)，架构与依赖看[实施方案](实施方案-2026-09-15.md)。
 
 
+### 2026-09-23 · 整理提示的会话归属（F8）与主题切换圆心
+
+> 用户现场两件：① 「整理未完成的提示应该在对应会话内显示，现在是在每个对话内显示」；
+> ② 「这个动画的中心位置应该依对应按钮的位置」。
+
+| 六栏 | 证据 |
+|---|---|
+| 实现 | ① **提示只属于它自己那条会话**：`shared/handoff-diagnostics.ts` 新增纯函数 `eventsForSession(events, { keys, runnerId })`（`sessionKey` 落在本条会话的**链**上——交接后的旧段也算；无归属事件只认**当前实例**）；`yan:getHandoff` 先筛再取最近 40 条（之前是全局流水原样回传，所以别的会话的 `eligibility:rejected` 会跑到每条会话里）；`store.ts` 在 `switchSession` / `newSession` 同步清 `handoff`（与 `goal` 同理：会话级事实不跟着跑）。② **主题切换圆心 = 触发它的按钮**：`Settings.tsx` 派事件时带上按钮中心（`detail: { theme, origin }`，兼容旧的字符串载荷），`App.tsx` 在 `startViewTransition` 之前把它写成 `--theme-origin-x/y`（量不到就移除 → CSS 回退屏幕中心），`shell.css` 的两条 keyframes 圆心改用它。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4690/4690** —— `test-handoff-diagnostics.mjs` 新增 5 条（只留本会话 / 别实例一律不留 / 斜杠方向不同仍命中 / 无范围返回空 / 空流水不报错），`test-handoff-notice.mjs` 新增 3 条把「别的会话失败 → 本条不弹」串起来跑。 |
+| 真实运行 | `npm run test:live -- light`（cost 0）**全绿**：新增「设置面板里点真的主题按钮」——读过渡伪元素的 computed `clip-path`，切深色 `circle(0px at 916px 134px)`、切浅色 `circle(1877px at 1000px 118px)`，与按钮中心逐像素相等；无按钮位置时回退 `at 50% 50%`。`npm run test:live -- handoffrecover`（cost 0）**全绿**，新增第 6 节：失败态提示在源会话可见 → 新建会话后消失 → 切回源会话又出现，退出后落盘核对照旧全绿。回归 `npm run test:live -- sessions`（cost 0）全绿；`YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash npm run test:live -- goal`（cost 1）全绿。 |
+| 视觉验收 | 本轮没有新增样式改动（提示沿用 F5 的 `.handoff-note`，动画圆心是几何而非配色），因此不重跑视觉矩阵。圆心位置由探针读**真实渲染值** 取证，比截图能看到动画中间帧更直接。 |
+| 应用与包 | 未重启用户主应用；未重跑解包 / 便携 / 安装包。 |
+| 剩余限制 | ① 提示归属只验了**失败态**（进行中本来按当前实例判，未单独取证；成功态 60s 窗口同理）；② 圆心只在设置面板那条路径取证（托盘 / 快捷键确实回退屏幕中心，但那是「没传 origin」的默认分支，不是另一条入口）；③ 动画观感仍需用户在本机看一眼。 |
+
+**顺带记录一个环境坑**：本轮曾不带 `YAN_TEST_MODEL` 跑 `test:live -- sessions goal`，`goal` 变红 —— 与代码无关：cost 1 场景必须显式给 `YAN_TEST_MODEL=deepseek/deepseek-v4.1-flash`，默认免费档已退役。换模型后一次全绿。
+
 ### 2026-09-23 · 行内代码配色与主题切换动效（用户：太跳 / 动画要慢、两个方向）
 
 | 六栏 | 证据 |

@@ -8,7 +8,7 @@
  *
  * 用法：npm run test:unit
  */
-export async function runHandoffNoticeTests(ok, notice) {
+export async function runHandoffNoticeTests(ok, notice, diagnostics) {
   const ev = (stage, outcome, at, reason = null) => ({ at, stage, outcome, reason, op: null, handoffId: null, runnerId: null, sessionKey: null, detail: {} })
   const view = (over = {}) => ({
     sessionKey: 'C:/s/a.jsonl',
@@ -79,4 +79,43 @@ export async function runHandoffNoticeTests(ok, notice) {
   ok(notice.handoffReasonText('timeout')?.includes('超时'), '登记过的原因翻成人话')
   ok(notice.handoffReasonText('some-new-code') === 'some-new-code', '没登记的原因原样回传')
   ok(notice.handoffReasonText(null) === null && notice.handoffReasonText('  ') === null, '空原因返回 null')
+
+  /*
+   * 「提示只属于它自己那条会话」（实施-14 F8，用户 2026-09-23 报）。
+   *
+   * 两者串起来才是完整链路：`getHandoff()` 先用 `eventsForSession` 把别的会话的
+   * 事件剪掉，`handoffNoticeOf` 再判该不该显示。这里把「B 会话失败了，A 会话的提示
+   * 不该变」这个用户可见的结论钉成单测。
+   */
+  if (typeof diagnostics?.eventsForSession !== 'function') throw new Error('缺少 shared/handoff-diagnostics 的 eventsForSession')
+  {
+    const mine = 'C:/tmp/sessions/a.jsonl'
+    const other = 'C:/tmp/sessions/b.jsonl'
+    const failedOther = {
+      at: NOW - 1_000,
+      stage: 'eligibility',
+      outcome: 'rejected',
+      op: null,
+      handoffId: null,
+      runnerId: 'run-b',
+      sessionKey: other,
+      reason: 'not-autonomous',
+      detail: {}
+    }
+    const visible = (events) => notice.handoffNoticeOf(view({ sessionKey: mine, events }), NOW)
+    ok(visible([failedOther])?.tone === 'failed', '前提：这条事件本身确实是「失败」口气')
+    ok(
+      visible(diagnostics.eventsForSession([failedOther], { keys: [mine], runnerId: 'run-a' })) === null,
+      '别的会话的失败不会让本条会话弹出「整理未完成」'
+    )
+    ok(
+      visible(
+        diagnostics.eventsForSession([failedOther, { ...failedOther, runnerId: 'run-a', sessionKey: mine }], {
+          keys: [mine],
+          runnerId: 'run-a'
+        })
+      )?.tone === 'failed',
+      '自己会话的失败照旧显示（筛得准，不是筛没了）'
+    )
+  }
 }
