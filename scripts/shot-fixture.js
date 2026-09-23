@@ -148,7 +148,9 @@
     {
       id: 'u2',
       role: 'user',
-      text: '顺手把工具调用详情做成一个能调大小的终端窗口，然后跑一遍检查。',
+      text:
+        '顺手把工具调用详情做成一个能调大小的终端窗口（入口 \u0060yan browser\u0060、配置 \u0060settings.json\u0060），' +
+        '然后跑一遍 \u0060npm run check\u0060。',
       timestamp: now - 180000
     },
     {
@@ -166,7 +168,9 @@
       thinkingLive: false,
       text:
         '终端窗口接上了：**正在运行**的调用会自动展开，结束的保持一行——点开才看详情。' +
-        '下边缘调高度、右边缘调宽度、右下角一起调，双击把手或按 Home 复位。现在跑一遍检查。',
+        '下边缘调高度、右边缘调宽度、右下角一起调，双击把手或按 Home 复位。现在跑一遍检查。' +
+        '入口脚本 \u0060yan browser\u0060、配置 \u0060settings.json\u0060、命令 \u0060npm run check\u0060 ' +
+        '这类标识走等宽字体，正文里靠淡底把它们跟普通名词分开（不靠颜色）。',
       model: 'GPT-6 Astra',
       usage: { input: 12400, output: 820, cacheRead: 9000, cacheWrite: 120, totalTokens: 13340, cost: 0.007 },
       toolCalls: [

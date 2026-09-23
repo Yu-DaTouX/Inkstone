@@ -291,6 +291,14 @@ export default function App() {
     const apply = (): void => {
       root.dataset.theme = theme
     }
+    /*
+     * 切换方向（DESIGN §5）：切到深色是「从中心向外晕开」，
+     * 切到浅色是「从外缘向中心收拢」。
+     *
+     * 属性必须在 startViewTransition **之前**写：过渡伪元素的样式在动画开始时
+     * 才匹配，提前写能保证首帧就是正确方向，不会先闪一下反方向。
+     */
+    root.dataset.themeDir = theme === 'dark' ? 'out' : 'in'
 
     /*
      * Chromium 的 View Transition 把新主题放在旧主题之上，配合 clip-path

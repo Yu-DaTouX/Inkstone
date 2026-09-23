@@ -324,23 +324,58 @@
 .statusbar .spacer {
   flex: 1;
 }
-/* 主题切换：新主题从中心向外扩张，旧主题在底层保持稳定。 */
-::view-transition-old(root) {
+/*
+ * 主题切换（DESIGN §5）：两个方向都做，但**只让一层动** ——
+ * 两层同时动会糊成一团，看不出是「谁在长、谁在退」。
+ *
+ *   · 切到深色（data-theme-dir="out"）：新主题（深色）从中心向外晕开，像墨滴落纸；
+ *   · 切到浅色（data-theme-dir="in"）：旧主题（深色）从外缘向中心收拢，
+ *     露出压在下面的浅色层 —— 这就是用户说的「从外到内收缩」。
+ *
+ * 760ms 比常见的 300–400ms 慢一截：主题是整屏换色，快了像闪屏。
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
   animation: none;
+}
+
+::view-transition-old(root) {
   z-index: 0;
 }
 
 ::view-transition-new(root) {
   z-index: 1;
-  animation: theme-reveal 380ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
 }
 
-@keyframes theme-reveal {
+html[data-theme-dir='out']::view-transition-new(root) {
+  animation: theme-spread 760ms cubic-bezier(0.25, 0.7, 0.25, 1) both;
+}
+
+/* 收缩要让旧层压在新层上面，否则它的动画被新层盖住、看不见 */
+html[data-theme-dir='in']::view-transition-old(root) {
+  z-index: 1;
+  animation: theme-collapse 760ms cubic-bezier(0.25, 0.7, 0.25, 1) both;
+}
+
+html[data-theme-dir='in']::view-transition-new(root) {
+  z-index: 0;
+}
+
+@keyframes theme-spread {
   from {
     clip-path: circle(0 at 50% 50%);
   }
   to {
     clip-path: circle(150vmax at 50% 50%);
+  }
+}
+
+@keyframes theme-collapse {
+  from {
+    clip-path: circle(150vmax at 50% 50%);
+  }
+  to {
+    clip-path: circle(0 at 50% 50%);
   }
 }
 

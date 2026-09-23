@@ -367,13 +367,13 @@ pi 吐事件
 
 | 文件 | 行 | 角色 |
 |---|---|---|
-| `tokens.css` | 290 | **设计令牌**；唯一真源在 `DESIGN.md §2`（先改文档再改这里） |
+| `tokens.css` | 290 | **设计令牌**；唯一真源在 `DESIGN.md §2`（先改文档再改这里）。行内代码 `--code-inline-*` 刻意用中性灰不用彩色（§2.6） |
 | `app.css` | 474 | 应用骨架、标题栏、通用控件 |
 | `layout.css` | 167 | 三栏网格（弹性列一律 `minmax(0, 1fr)`，`lint-css.mjs` 会拦） |
 | `rail.css` / `chat.css` / `composer.css` / `tools.css` / `browser.css` / `settings.css` | 1542 / 1362 / 1154 / 1535 / 377 / 305 | 各区域样式 |
 | `stage1.css` / `redesign.css` | 204 / 1284 | 历史层，**名字旧 ≠ 无用**，删除前核对导入顺序与覆盖 |
 | `motion.css` | 1383 | 动效系统（含 `prefers-reduced-motion` 分支） |
-| `shell.css` / `dialog.css` / `electron.css` / `highlight.css` | 303 / 79 / 34 / 172 | 外壳 / 对话框 / Electron 适配 / 代码高亮主题 |
+| `shell.css` / `dialog.css` / `electron.css` / `highlight.css` | 303 / 79 / 34 / 172 | 外壳（含**主题切换**的两个方向动效：`data-theme-dir` 驱动 `theme-spread` / `theme-collapse`，见 DESIGN §5）/ 对话框 / Electron 适配 / 代码高亮主题 |
 | `review.css` | 844 | 环境菜单 + Git 审查面板（G1）；含 diff 的底色 / 行号 / 未修改区与图片对照的棋盘格 |
 
 ---
