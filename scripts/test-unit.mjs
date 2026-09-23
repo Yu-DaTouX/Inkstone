@@ -1679,6 +1679,7 @@ await runHandoffScheduleTests(ok, await import('../out/test/handoff-schedule.mjs
 /*
  * 交接状态一行提示（实施-14 F5）：窗口边界与优先级。
  * 判松会让每轮都显示“正在整理”，判紧就回到用户报的“没有提示”。
+ * 同时验「提示只属于它自己那条会话」（F8）：拿事件筛器与判定串起来跑。
  */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1691,7 +1692,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runHandoffNoticeTests } = await import('./test-handoff-notice.mjs')
-await runHandoffNoticeTests(ok, await import('../out/test/handoff-notice.mjs'))
+await runHandoffNoticeTests(ok, await import('../out/test/handoff-notice.mjs'), await import('../out/test/handoff-diagnostics.mjs'))
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)

@@ -28,6 +28,8 @@
  *   执行仍在 `handoff-runner.ts`。
  */
 
+import { normalizeChainKey } from './session-chain'
+
 /**
  * 阶段清单。
  *
@@ -179,4 +181,33 @@ export function handoffEventSummary(event: HandoffEvent): string {
   const parts = [`${event.stage}:${event.outcome}`]
   if (event.reason) parts.push(event.reason)
   return parts.join(' · ')
+}
+
+/**
+ * 只留属于**这一条会话**的事件。
+ *
+ * 为什么必须筛：`HandoffDiagnostics` 是**全局**流水（所有实例、所有会话共写一个文件），
+ * 而 `getHandoff()` 把它直接喂给界面 —— 不筛就会出现「在 A 会话里弹 B 会话的整理失败」
+ * （2026-09-23 用户报：「整理未完成的提示在每个对话内都显示」）。
+ *
+ * 归属判定：
+ *   · `sessionKey` 落在这一条会话的链上 → 算（一条会话 = 一条链，交接后的旧段也是它）；
+ *   · 没有会话归属的事件 → 只认**当前实例**的（`runnerId` 相同），
+ *     别的实例的没头事件同样不能出现在这条会话里。
+ */
+export function eventsForSession(
+  events: HandoffEvent[],
+  scope: { keys: Iterable<string>; runnerId?: string | null }
+): HandoffEvent[] {
+  const keys = new Set<string>()
+  for (const key of scope.keys) {
+    const normalized = normalizeChainKey(key)
+    if (normalized) keys.add(normalized)
+  }
+  const runnerId = scope.runnerId ?? null
+  return (events ?? []).filter((event) => {
+    const key = normalizeChainKey(event.sessionKey)
+    if (key) return keys.has(key)
+    return Boolean(runnerId) && event.runnerId === runnerId
+  })
 }

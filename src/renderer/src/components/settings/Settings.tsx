@@ -289,7 +289,8 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             <button
               key={x}
               className={`seg-btn ${theme === x ? 'sel' : ''}`}
-              onClick={() => setTheme(x)}
+              data-testid={`theme-${x}`}
+              onClick={(event) => setTheme(x, centerOf(event.currentTarget))}
             >
               <Icon name={x === 'dark' ? 'moon' : 'sun'} size={12} />
               <span>{x === 'dark' ? t('set.dark') : t('set.light')}</span>
@@ -564,17 +565,28 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
 }
 
 /** 主题存在 App 的 state + 主进程设置里；这里通过事件让 App 处理 */
-function useThemeSetter(): (t: 'dark' | 'light') => void {
-  return (next) => {
+function useThemeSetter(): (t: 'dark' | 'light', origin?: { x: number; y: number }) => void {
+  return (next, origin) => {
     try {
       localStorage.setItem('yan.theme', next)
     } catch {
       /* 忽略 */
     }
     void window.yan.patchSettings({ theme: next })
-    // 让 App 的 state 跟上（它监听 localStorage 不可靠，直接派事件）
-    window.dispatchEvent(new CustomEvent('yan:theme', { detail: next }))
+    /*
+     * 让 App 的 state 跟上（它监听 localStorage 不可靠，直接派事件）。
+     * 捎上按钮中心：主题扩散 / 收拢的圆心就在用户点的那一下（DESIGN §5）。
+     */
+    window.dispatchEvent(new CustomEvent('yan:theme', { detail: { theme: next, origin } }))
   }
+}
+
+/** 元素中心（视口坐标）—— 主题切换动画的圆心；量不到就不给，让 CSS 回退到屏幕中心 */
+function centerOf(el: Element | null | undefined): { x: number; y: number } | undefined {
+  if (!el) return undefined
+  const rect = el.getBoundingClientRect()
+  if (!rect.width && !rect.height) return undefined
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
 }
 
 /** ------------------------------------------------------------- 声音提示 */

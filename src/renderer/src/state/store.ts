@@ -1817,7 +1817,15 @@ export const useStore = create<Store>((rawSet, get) => {
      * 不先对齐 id，新实例的 sync/state 会被身份过滤当成「后台会话」丢掉。
      */
     if (res.id || res.runId) {
-      set({ queue: EMPTY_QUEUE, pendingSends: [], activeRunnerId: res.runId ?? res.id, messages: [], goal: null })
+      set({
+        queue: EMPTY_QUEUE,
+        pendingSends: [],
+        activeRunnerId: res.runId ?? res.id,
+        messages: [],
+        goal: null,
+        /* 交接状态也是会话级事实：新会话不能接着显示上一条的「整理未完成」 */
+        handoff: null
+      })
     }
     else set({ queue: EMPTY_QUEUE, pendingSends: [] })
     void get().syncRunners()
@@ -1863,8 +1871,11 @@ export const useStore = create<Store>((rawSet, get) => {
      * 「刚铺上的内容」与随后 pi 的 sync 认成同一条会话。
      */
     const sum = get().sessions.find((x) => x.path === path)
-    /* 在新会话的权威快照到达前，不继续展示上一条会话的目标。 */
-    set({ goal: null })
+    /*
+     * 在新会话的权威快照到达前，不继续展示上一条会话的目标与交接状态
+     *（两者都是**会话级事实**；交接提示尤其显眼，留着会看着像「每条对话都在整理」）。
+     */
+    set({ goal: null, handoff: null })
 
     // ① 立即显示（不等 pi）
     try {
