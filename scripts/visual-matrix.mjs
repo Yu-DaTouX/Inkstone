@@ -1176,6 +1176,8 @@ const STATES = {
           updatedAt: Date.now()
         }
       });
+      /* U-3a：目标现在是标题栏浮层，截图要把浮层打开 */
+      window.__yanStore.getState().setGoalPopoverOpen(true);
       /* 真实使用时输入框就是聚焦的（聚焦时边框更亮，光带也更容易看清） */
       document.querySelector('[data-testid="composer"]')?.focus();
       return 'ok';
@@ -1224,6 +1226,7 @@ const STATES = {
           conn: 'ready', createdAt: stamp, lastActiveAt: stamp, isActive: true
         }]
       });
+      window.__yanStore.getState().setGoalPopoverOpen(true);
       document.querySelector('[data-testid="composer"]')?.focus();
       return 'ok';
     })()
@@ -1554,6 +1557,7 @@ const STATES = {
           updatedAt: Date.now()
         }
       });
+      window.__yanStore.getState().setGoalPopoverOpen(true);
       await new Promise((r) => setTimeout(r, 450));
       return 'ok';
     })()

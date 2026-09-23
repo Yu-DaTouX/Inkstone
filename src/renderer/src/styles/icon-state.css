@@ -1,0 +1,29 @@
+/*
+ * 语义图标的通用反馈（实施-11 H-8a/b）。
+ *
+ * 图标图形的颜色**由父控件或状态决定**，这里不重新定义语义：
+ * `Icon` 的 sprite 全部用 `stroke="currentColor"`（见 icons/Icon.tsx），
+ * 所以 selected / disabled / error 各态都在所属模块里设 `color`。
+ *
+ * 这里只补一个缺口：`color` 切换本身的过渡。
+ * 像 `.tb-icon.on .ico { color: var(--accent) }` 这类规则是**直接写在图标上**的，
+ * 父容器上的 `transition: color` 不会作用到它 —— 少了这条，选中/展开/悬停时
+ * 图标颜色是瞬间跳变的，而同一行的文字是渐变的。
+ *
+ * 边界：
+ *   · 按压反馈（位移 + 缩放）在 motion.css 的 `mo-press`（180ms），不在这里；
+ *   · 图标不参与持续动画：进行态旋转只挂在真实 running 类上
+ *     （chat.css 的 `.image-progress.running` / `.subagent-inline-spinner`），
+ *     停止或完成后类名移走，动画随之停；
+ *   · `prefers-reduced-motion` 下压到 1ms 而不是删掉 —— 与项目其它过渡一致，
+ *     保留状态语义（颜色照变，只是没有过程）。
+ */
+.ico {
+  transition: color var(--dur) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ico {
+    transition-duration: 1ms;
+  }
+}

@@ -297,7 +297,13 @@ export function ContextTab() {
           <div className="set-label">
             <div className="set-name">{t('set.ctxModelOthers')}</div>
             {otherKeys.map((k) => (
-              <div className="set-desc set-num" key={k} data-testid="ctx-model-other">
+              <div
+                className="set-desc set-num"
+                key={k}
+                data-testid="ctx-model-other"
+                /* 长 `provider/model` 在窄栏会被截断：完整值用 title 给出口 */
+                title={`${k} · ${summary(byModel[k])}`}
+              >
                 {k} · {summary(byModel[k])}
                 <button className="ctx-link" onClick={() => removeModel(k)}>
                   {t('set.ctxModelRemove')}

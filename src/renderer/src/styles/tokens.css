@@ -70,21 +70,24 @@
    * 这里曾经写死 300px，先后被 redesign 和 layout 覆盖两次，
    * 改它完全看不到效果。
    */
-  --w-status: 320px;
   /* 中栏内容最大宽度。
      曾经是 760px —— 那是有 328px 右栏时定的。右栏搬进设置后中间栏
      多出 328px，760 的上限会让内容像「挤在左边」。放宽到 900。
      （上限仍必要：1920px 下不加限制会行长得读不了） */
   --w-stream: 800px;
-  --tree-indent: 13px;
-  /*
-   * 推理省略态的高度上限（2026-09-15 用户确认）。
-   * 推理内容是「过程」不是「结果」，默认展开但不能无限撑高；
-   * 超出部分由 .reason-body.clip 裁掉，并靠 scrollTop 贴底显示**最新**内容，
-   * 顶部用 mask 渐隐表示「上面还有」。矮窗口交给 vh 兜底。
-   * 260px ÷ (11px × 1.55) ≈ 15 行，与 --fs-sm 对齐。
-   */
-  --reason-max-h: min(32vh, 260px);
+
+  /* ── 控件状态（V-1，2026-09-23）──
+     「禁用」与「键盘焦点」原来在各模块各写一份：禁用不透明度实测有 9 个值、
+     焦点环 4 种组合。这里给出唯一来源：
+       · 控件禁用 = --ctl-disabled-opacity；更低的 0.25~0.4 属于「半失效 /
+         过期」语义（.ub-item.dim / .tl-dot.off 那类），不套默认值。
+       · 键盘焦点默认 --focus-ring-*；只有小目标 / 浮层里空间紧张时才用
+         --focus-ring-w-strong（2px），不要另写颜色。 */
+  --ctl-disabled-opacity: 0.5;
+  --focus-ring-color: var(--accent);
+  --focus-ring-w: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-w-strong: 2px;
 
   --dur: 120ms;
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
@@ -224,8 +227,8 @@ textarea {
   background: var(--border-str);
 }
 :focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
   border-radius: var(--r-sm);
 }
 @media (prefers-reduced-motion: reduce) {

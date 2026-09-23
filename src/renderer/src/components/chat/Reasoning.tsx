@@ -1,30 +1,20 @@
 /**
- * 推理流（用户确认的最终方向）。
+ * 推理流（2026-09-23 用户决定的最终形态）。
  *
- * 上游只返回可展示的思考文本时，按字素流式放进聊天主流。
- * 结束后默认折叠，但仍保留手动打开入口。
+ * **默认折叠成一行**，只显示模型原文里的最新一句（正在成形的末句也算）。
+ * 单击头部就在**当前聊天位置**展开完整原文，限高 `min(70vh, 620px)` 并内部滚动；
+ * 展开态在头部**同一个按钮**上收起。
  *
- * ── 三个决定 ──
- * ① **逐字**：模型给的是**块**（一次几十上百字），直接贴上去是「一大段突然出现」。
- *    这里用 `useTypewriter` 把它按字吐出来 —— 追不上时按积压量加速，
- *    所以既像逐字输出，又不会越落越远（详见 hook 的注释）。
- * ② **回合结束前不折叠**：正在推理时胶囊是展开的（用户就是要「看着它在想」），
- *    但折叠的时机是**整个助手回合结束**（`turnLive`）——不是单段推理结束。
- *    结束后自动折叠成一行，**保留开关**。
- * ③ **没有推理就不显示**：`text` 为空直接返回 null —— 不占位、不留空壳。
- *
- * 2026-09-15 改版：限高省略（用户确认，废止 N04「不用内部滚动」那条）
- *   · 默认展开但钉在 `--reason-max-h`，超出部分裁掉；
- *   · 裁掉的是**开头**：靠 scrollTop 贴底，所以始终看得到最新一句；
- *   · 顶部 mask 渐隐表示「上面还有」，只在真被裁剪时出现，短推理不淡化；
- *   · 「展开全部 / 收起」是显式出口，展开后解除限高；
- *   · `overflow: hidden` 不产生第二条滚动条 —— 用户也无法用滚轮滚它，
- *     所以不存在「上滚阅读时被新内容拽回底部」的问题；
- *   · 正在运行时保持展开，**整个助手回合结束**后自动折叠；
- *   · 折叠时保留首行预览和打开开关；
- *   · 逐字按**字素**推进（中文标点 / emoji / 组合字符不会被切开），
- *     新增的尾部做 140ms 透明度过渡，稳定历史文本不做重复动画；
- *   · 遵从 `prefers-reduced-motion`：直接显示完整文本。
+ * ── 边界 ──
+ * ① 开合只由用户动作驱动：流式期间不自动弹开，回合结束后**也不自动收起**
+ *    （旧「整轮结束自动折叠」已废止）。`live` / `turnLive` 只影响标题与光标。
+ * ② 展开后仅在仍贴底时跟随新增内容；用户上滚阅读期间位置保持，新流不抢回底部。
+ * ③ `text` 为空直接返回 null —— 不占位、不留空壳。
+ * ④ 模型原文是唯一真源：预览只做展示层截取，不改写文本、不注入提示词。
+ * ⑤ 逐字按**字素**推进（中文标点 / emoji / 组合字符不被切开），尾部 140ms 淡入；
+ *    `prefers-reduced-motion` 直接给全文，且**运行中切换偏好也生效**。
+ * ⑥ 展开状态不跨会话：上层给每段推理的是带消息 id 的 key
+ *    （`shared/turns.ts` 的 `${msgId}#segN`），切会话即重挂组件。
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
@@ -43,6 +33,10 @@ function prefersReducedMotion(): boolean {
 const SEGMENTER =
   typeof Intl !== 'undefined' && 'Segmenter' in Intl
     ? new Intl.Segmenter('zh', { granularity: 'grapheme' })
+    : null
+const SENTENCE_SEGMENTER =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter('zh', { granularity: 'sentence' })
     : null
 
 /** 把字符串切成「用户眼里的字」（中文标点 / emoji / 组合字符不拆开） */
@@ -65,64 +59,34 @@ function ReasoningCapsuleImpl({
   live?: boolean
   /**
    * 整个助手回合是否还在进行（含工具执行、后续再思考）。
-   * 推理窗口的**展开与折叠时机**跟它走，不跟单段推理走。
+   * 只影响逐字推进与光标，**不控制开合**（开合是用户动作）。
    */
   turnLive?: boolean
 }) {
   const t = useT()
-  /** 用户手动开关；null = 还没手动干预过（此时跟随 turnLive） */
-  const [manual, setManual] = useState<boolean | null>(null)
-  /** 是否展开了完整推理；false = 省略态（钉高 + 显示最新） */
-  const [expanded, setExpanded] = useState(false)
-  /** 省略态下内容是否真的被裁掉了（决定要不要加渐隐和「展开全部」） */
-  const [clipped, setClipped] = useState(false)
+  /** 正文是否展开全文。默认 false = 一行最新句预览（不跟流式状态自动变化）。 */
+  const [open, setOpen] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
-  /** 没有回合级信号时（历史消息）退回到单段信号 */
+  const followRef = useRef(true)
+  /** 没有回合级信号时（历史消息）退回到单段信号，仅用于逐字启停 */
   const streaming = turnLive ?? live
   /** 逐字显示用的文本（逐步追上 text）；减少动态效果时直接给全文 */
-  const reduced = useRef(prefersReducedMotion()).current
+  const [reduced, setReduced] = useState(prefersReducedMotion)
   const shown = useTypewriter(text, !!streaming && !reduced)
-  const open = manual ?? !!streaming
 
-  // 推理结束 → 自动折叠；如果用户手动改过，就尊重用户的开关。
-  const wrappedRef = useRef(false)
   useEffect(() => {
-    /*
-     * 「展开全部」不跨回合：新回合开始与回合结束都收回。
-     * 否则用户在折叠态展开过历史推理后，下一个回合会直接以完整高度开始。
-     */
-    setExpanded(false)
-    if (streaming) {
-      wrappedRef.current = false
-      return
-    }
-    if (!wrappedRef.current) {
-      wrappedRef.current = true
-      setManual((m) => m ?? false)
-    }
-  }, [streaming])
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = (): void => setReduced(media.matches)
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
 
-  /*
-   * 省略态：钉住高度 + 贴底显示**最新**内容。
-   *
-   * ⚠️ 两个坑：
-   *   ① 折叠时 `hidden` 让 clientHeight = 0，会被误判成「被裁剪」→ 先排除 !open。
-   *   ② 读 scrollHeight 会强制一次同步布局；这里只在 shown 真正变化时跑
-   *      （rAF 循环已经节流），量级可接受。不要挪进 scroll 事件里。
-   *
-   * 为什么用 scrollTop 贴底而不是 flex `column-reverse`：
-   *   后者会把 head / tail 两个 span 的渲染顺序反过来（尾部跑到上面）。
-   */
+  /* 展开时仅在用户仍贴底阅读的情况下跟随流式更新。 */
   useLayoutEffect(() => {
     const el = bodyRef.current
-    if (!el || !open || expanded) {
-      setClipped(false)
-      return
-    }
-    const over = el.scrollHeight > el.clientHeight + 1
-    setClipped((c) => (c === over ? c : over))
-    if (over) el.scrollTop = el.scrollHeight
-  }, [shown, open, expanded])
+    if (el && open && followRef.current) el.scrollTop = el.scrollHeight
+  }, [shown, open])
 
   if (!text.trim()) return null
 
@@ -146,12 +110,15 @@ function ReasoningCapsuleImpl({
    */
   const { head, tail } = splitTail(shown, !!live && shown.length <= 4000)
 
-  const toggleOpen = (): void => setManual(!open)
+  const toggleOpen = (): void => {
+    setOpen(!open)
+    followRef.current = true
+  }
 
   return (
     <div
       className={`reason ${open ? 'open' : ''} ${live ? 'live' : ''}`}
-      data-layout="clip"
+      data-layout="reasoning"
       data-testid="reasoning"
     >
       <button className="reason-head" onClick={toggleOpen} aria-expanded={open} data-testid="reasoning-toggle">
@@ -168,17 +135,26 @@ function ReasoningCapsuleImpl({
         )}
         <span className="reason-label">{label}</span>
         <span className="spacer" />
-        {/* 折叠时给一行预览（用户不用展开就知道它在想什么） */}
-        {!open && !live ? <span className="reason-peek">{firstLine(text)}</span> : null}
+        {/* 默认预览原文最新一句（长句保留尾端，见 peekText）；单击头部在当前位置打开全文。
+            dir 分工：外层 rtl 让溢出发生在左侧（省略号在左、尾端贴右），
+            内层 ltr 隔离 bidi，中英混排的顺序不会被重排。 */}
+        {!open ? (
+          <span className="reason-peek" data-testid="reasoning-preview" dir="rtl">
+            <span dir="ltr">{peekText(latestSentence(shown))}</span>
+          </span>
+        ) : null}
         {live ? <span className="cursor cursor-inline" /> : null}
       </button>
 
       <div
         ref={bodyRef}
-        className={`reason-body clip ${expanded ? 'expanded' : ''} ${clipped ? 'is-clipped' : ''}`}
-        data-clipped={clipped ? '1' : undefined}
+        className={`reason-body ${open ? 'open' : ''}`}
         aria-hidden={!open}
         hidden={!open}
+        onScroll={(event) => {
+          const el = event.currentTarget
+          followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
+        }}
       >
         <div data-testid="reasoning-body">
           {head}
@@ -190,18 +166,6 @@ function ReasoningCapsuleImpl({
           {live ? <span className="cursor cursor-inline" /> : null}
         </div>
       </div>
-
-      {/* 省略出口：放在 body **外面**，否则会被自己裁掉。
-          展开后 clipped 会变回 false，所以条件是 clipped || expanded。 */}
-      {open && (clipped || expanded) ? (
-        <button
-          className="reason-more"
-          onClick={() => setExpanded((v) => !v)}
-          data-testid="reasoning-expand"
-        >
-          {expanded ? t('reason.less') : t('reason.more')}
-        </button>
-      ) : null}
     </div>
   )
 }
@@ -226,11 +190,50 @@ export const ReasoningCapsule = memo(
   (a, b) => a.text === b.text && a.ms === b.ms && a.live === b.live && a.turnLive === b.turnLive
 )
 
-/** 取第一行做预览（去掉 markdown 记号，太长的截断） */
-function firstLine(s: string): string {
-  const line = s.split('\n').map((x) => x.trim()).find((x) => x.length > 0) ?? ''
-  const plain = line.replace(/^[#>*\-\s]+/, '').replace(/[*`_]/g, '')
-  return plain.length > 60 ? plain.slice(0, 60) + '…' : plain
+/** 展示层取最新一句；断行视作句界，未完成的末句优先保留。 */
+export function latestSentence(s: string): string {
+  const lines = s.split('\n').map((line) => line.trim()).filter(Boolean)
+  const line = lines.at(-1) ?? ''
+  if (!line) return ''
+  const sentences = SENTENCE_SEGMENTER
+    ? [...SENTENCE_SEGMENTER.segment(line)].map((part) => part.segment.trim()).filter(Boolean)
+    : fallbackSentences(line)
+  const candidate = sentences.at(-1) ?? line
+  return candidate.replace(/^[#>*\-\s]+/u, '')
+}
+
+/**
+ * 单行预览的**尾端**保留：一行放不下整句时截掉的是**开头**（尾端才是最新内容）。
+ * 按字素切，不把 emoji / 组合字符劈开；只影响预览，正文仍是模型原文。
+ *
+ * 这是 CSS 之外的一道兜底：`.reason-peek` 用外层 rtl 把溢出挤到左边，
+ * 但它依赖内层 `dir="ltr"` 隔离 bidi；这条长度上限保证即使隔离失效，
+ * 窄窗下也看不到“截掉尾端”（见 DESIGN V-2a）。
+ */
+const PEEK_UNITS = 60
+export function peekText(s: string): string {
+  const units = toUnits(s)
+  if (units.length <= PEEK_UNITS) return s
+  return '…' + units.slice(-PEEK_UNITS).join('')
+}
+
+/** Intl.Segmenter fallback: group punctuation and closing quotes with the sentence. */
+function fallbackSentences(text: string): string[] {
+  const units = toUnits(text)
+  const result: string[] = []
+  let start = 0
+  for (let i = 0; i < units.length; i++) {
+    const stop = /[。！？!?]/u.test(units[i]) || (units[i] === '.' && (i === units.length - 1 || /\s/u.test(units[i + 1])))
+    if (!stop) continue
+    let end = i + 1
+    while (end < units.length && /[。！？!?]/u.test(units[end])) end++
+    while (end < units.length && /["'”’）)】\]}]/u.test(units[end])) end++
+    result.push(units.slice(start, end).join(''))
+    start = end
+    i = end - 1
+  }
+  if (start < units.length) result.push(units.slice(start).join(''))
+  return result
 }
 
 /**

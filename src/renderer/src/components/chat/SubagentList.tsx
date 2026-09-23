@@ -1,33 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { formatDuration } from '../../../../shared/duration'
+import { selectSubagentRuns } from '../../state/subagent-view'
 import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
-import { SubagentDetails } from './SubagentDetails'
+
+type SubagentFilter = 'all' | 'running' | 'review' | 'ended'
 
 /**
- * 子代理运行列表（方案 8.3）。
+ * 子代理运行列表（实施-11 H-10a）。
  *
- * 位置：右侧工作区 —— 独立子任务是跨回合的后台资源，不应该固定占据
- * 主对话的输入区上方；挂回某个助手回合的子代理仍由 TurnView 就地显示。
+ * 位置：右侧工作区工具页 —— 独立子任务是跨回合的后台资源，不固定占据主对话。
+ * 数据：只显示**明确归属当前会话**的任务（`selectSubagentRuns`）；挂回助手回合的
+ * 模型子代理仍由 TurnView 就地显示，同一 run 不会出现两份列表/两份详情。
+ * 详情由右侧工作台资源标签 `subagent:<runId>` 承载（见 RightPanel），本组件只列表。
  *
- * 形态：紧凑一行一条，和工具行同一套读法：
- *   ● 检查附件流程   正在读取 Composer.tsx   18s   [查看] [停止]
- *   ✓ 审阅样式       已完成                        [查看]
- *
- * ⚠️ 关闭预览**不**停止任务（方案 8.3）：停止是明确的按钮。
+ * ⚠️ 关闭详情**不**停止任务：停止是明确的按钮。
  */
 export function SubagentList({ placement = 'main' }: { placement?: 'main' | 'right' }) {
   const t = useT()
   const runs = useStore((s) => s.subagents)
+  const session = useStore((s) => s.session)
   const openSubagent = useStore((s) => s.openSubagent)
   const stopSubagent = useStore((s) => s.stopSubagent)
   const clearSubagents = useStore((s) => s.clearSubagents)
   const loadSubagents = useStore((s) => s.loadSubagents)
-  const previewId = useStore((s) => s.subagentPreviewId)
-  /* 已挂回助手回合的模型子代理由 TurnView 直接渲染，列表只保留独立任务。 */
-  const detachedRuns = runs.filter((run) => !run.parentMessageId)
+  const [filter, setFilter] = useState<SubagentFilter>('all')
   const [now, setNow] = useState(() => Date.now())
 
   /* 挂载时拉一次（重开应用后能看到本进程里仍在跑的） */
@@ -35,62 +34,107 @@ export function SubagentList({ placement = 'main' }: { placement?: 'main' | 'rig
     void loadSubagents()
   }, [loadSubagents])
 
-  const active = detachedRuns.filter((r) => r.status === 'running' || r.status === 'starting')
-  const finished = detachedRuns.length - active.length
-  const hasFinished = finished > 0
+  const groups = useMemo(
+    () => selectSubagentRuns(runs, { sessionIds: [session?.sessionId, session?.conversationId].filter((x): x is string => !!x) }),
+    [runs, session?.sessionId, session?.conversationId]
+  )
+
+  const running = groups.running
+  const reviewPending = groups.all.filter((r) => r.review === 'pending' || r.review === 'conflict').length
+  const ended = groups.all.length - running
 
   /* 没有新事件时也要让耗时继续走，避免用户误以为子代理卡住。 */
   useEffect(() => {
-    if (active.length === 0) return
+    if (running === 0) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [active.length])
+  }, [running])
+
+  /** 运行中在前，其余按结束时间倒序 —— 键盘浏览时不因排序更新跳焦点 */
+  const ordered = useMemo(() => {
+    const list = [...groups.detached]
+    list.sort((a, b) => {
+      const aRunning = a.status === 'running' || a.status === 'starting'
+      const bRunning = b.status === 'running' || b.status === 'starting'
+      if (aRunning !== bRunning) return aRunning ? -1 : 1
+      return (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt)
+    })
+    return list
+  }, [groups.detached])
+
+  const visible = ordered.filter((run) => {
+    if (filter === 'running') return run.status === 'running' || run.status === 'starting'
+    if (filter === 'review') return run.review === 'pending' || run.review === 'conflict'
+    if (filter === 'ended') return run.status !== 'running' && run.status !== 'starting'
+    return true
+  })
 
   return (
     <div className={`subagent-zone subagent-zone-${placement}`} data-testid={`subagent-zone-${placement}`}>
-      <SubagentLauncher activeCount={active.length} />
-      {detachedRuns.length > 0 ? (
+      <SubagentLauncher activeCount={running} />
+      {groups.detached.length > 0 ? (
         <div className="sa-strip" data-testid="subagent-strip">
           <div className="sa-head">
             <Icon name="layers" size={12} />
-            <span className="sa-title">
-              {t('sa.title', { active: active.length, done: finished })}
-            </span>
+            <span className="sa-title">{t('sa.title', { active: running, done: ended })}</span>
             <span className="spacer" />
-            {hasFinished ? (
+            {ended > 0 ? (
               <button className="sa-act-btn" onClick={() => void clearSubagents()} data-testid="subagent-clear">
                 {t('sa.clear')}
               </button>
             ) : null}
           </div>
 
-          {detachedRuns.map((run) => {
-            const running = run.status === 'running' || run.status === 'starting'
+          <div className="sa-filters" role="tablist" aria-label={t('sa.section')}>
+            {([
+              ['all', t('sa.filterAll')],
+              ['running', t('sa.filterRunning')],
+              ['review', t('sa.filterReview')],
+              ['ended', t('sa.filterEnded')]
+            ] as [SubagentFilter, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={filter === id}
+                className={`sa-filter ${filter === id ? 'on' : ''}`}
+                data-testid={`subagent-filter-${id}`}
+                onClick={() => setFilter(id)}
+              >
+                {label}
+                {id === 'running' && running > 0 ? <span className="sa-filter-n">{running}</span> : null}
+                {id === 'review' && reviewPending > 0 ? <span className="sa-filter-n">{reviewPending}</span> : null}
+              </button>
+            ))}
+          </div>
+
+          {visible.length === 0 ? (
+            <div className="sa-empty" data-testid="subagent-empty">
+              {t('sa.emptyFilter')}
+            </div>
+          ) : null}
+
+          {visible.map((run) => {
+            const isRunning = run.status === 'running' || run.status === 'starting'
+            const reviewState = run.review === 'pending' || run.review === 'conflict'
             return (
-              <div key={run.id} className={`sa-row ${run.status}`} data-testid={`subagent-${run.id}`}>
+              <div key={run.id} className={`sa-row ${run.status}`} data-testid={`subagent-${run.id}`} data-run-id={run.id}>
                 <span className="sa-ico" aria-hidden>
-                  {running ? <ThinkingOrbIndicator state="working" /> : run.status === 'done' ? '✓' : '✕'}
+                  {isRunning ? <ThinkingOrbIndicator state="working" /> : run.status === 'done' ? '✓' : '✕'}
                 </span>
                 <span className="sa-task" title={run.task}>
                   {run.task}
                 </span>
                 <span className="sa-activity" title={run.latestActivity}>
-                  {running ? run.latestActivity || t('sa.waiting') : run.status === 'done' ? t('sa.done') : run.error ?? t('sa.stopped')}
+                  {isRunning ? run.latestActivity || t('sa.waiting') : run.status === 'done' ? t('sa.done') : run.error ?? t('sa.stopped')}
                 </span>
+                {reviewState ? <span className="sa-badge review" data-testid={`subagent-review-badge-${run.id}`}>{t('sa.reviewPending')}</span> : null}
                 <span className="sa-time">{duration(run, now)}</span>
-                <button
-                  className="sa-act-btn"
-                  onClick={() => openSubagent(run.id)}
-                  data-testid={`subagent-view-${run.id}`}
-                >
+                <button className="sa-act-btn" onClick={() => openSubagent(run.id)} data-testid={`subagent-view-${run.id}`}>
                   {t('sa.view')}
                 </button>
-                {running ? (
-                  <button
-                    className="sa-act-btn danger"
-                    onClick={() => void stopSubagent(run.id)}
-                    data-testid={`subagent-stop-${run.id}`}
-                  >
+                {isRunning ? (
+                  <button className="sa-act-btn danger" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-stop-${run.id}`}>
                     {t('sa.stop')}
                   </button>
                 ) : null}
@@ -98,9 +142,6 @@ export function SubagentList({ placement = 'main' }: { placement?: 'main' | 'rig
             )
           })}
         </div>
-      ) : null}
-      {previewId && !runs.find((run) => run.id === previewId)?.parentMessageId ? (
-        <SubagentDetails placement={placement} />
       ) : null}
     </div>
   )
@@ -112,11 +153,11 @@ function duration(run: { startedAt: number; endedAt?: number }, now: number): st
 }
 
 /**
- * 独立子代理的显式调用入口；列表在哪个表面展示由 SubagentList 的 placement 决定。
+ * 独立子代理的显式调用入口。
  *
  * `/subagent` 仍然保留给熟悉命令的用户；这个入口解决的是“能力存在但
- * 用户必须记住一条隐藏命令”的发现性问题。启动后的同一条 run 会立即
- * 进入右侧工作区列表，并默认打开对应的实时详情。
+ * 用户必须记住一条隐藏命令”的发现性问题。启动成功后由 RightPanel 打开
+ * 对应的资源标签详情。
  */
 function SubagentLauncher({ activeCount }: { activeCount: number }) {
   const t = useT()
@@ -124,14 +165,20 @@ function SubagentLauncher({ activeCount }: { activeCount: number }) {
   const [open, setOpen] = useState(false)
   const [task, setTask] = useState('')
   const [readOnly, setReadOnly] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const submit = async (): Promise<void> => {
     const text = task.trim()
-    if (!text) return
-    await startSubagent(text, undefined, readOnly ? 'controlled-cwd' : 'worktree')
-    setTask('')
-    setReadOnly(false)
-    setOpen(false)
+    if (!text || submitting) return
+    setSubmitting(true)
+    try {
+      await startSubagent(text, undefined, readOnly ? 'controlled-cwd' : 'worktree')
+      setTask('')
+      setReadOnly(false)
+      setOpen(false)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -188,7 +235,7 @@ function SubagentLauncher({ activeCount }: { activeCount: number }) {
             <button className="sa-act-btn" type="button" onClick={() => setOpen(false)}>
               {t('sa.cancel')}
             </button>
-            <button className="sa-act-btn primary" type="button" disabled={!task.trim()} onClick={() => void submit()} data-testid="subagent-start">
+            <button className="sa-act-btn primary" type="button" disabled={!task.trim() || submitting} onClick={() => void submit()} data-testid="subagent-start">
               {t('sa.start')}
             </button>
           </div>

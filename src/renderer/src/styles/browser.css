@@ -147,7 +147,7 @@
 }
 
 .browser-nav:disabled {
-  opacity: .35;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -204,7 +204,7 @@
 }
 
 .browser-action:disabled {
-  opacity: .45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -363,7 +363,7 @@
 }
 
 .browser-ext-resync:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 

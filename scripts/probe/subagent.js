@@ -50,7 +50,12 @@
      * 会真的起一个独立 pi 子进程，并把详情面板自动打开。
      */
     const noticesBefore = store.getState().notices.length
-    ok(!!q('[data-testid="subagent-new"]'), '输入区上方有显式的子代理调用按钮')
+    /* H-3b：子代理调用入口在「工具」固定页；新会话默认停在「开始」页。 */
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+    await sleep(300)
+    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(500)
+    ok(!!q('[data-testid="subagent-new"]'), '右侧工具页有显式的子代理调用按钮')
     q('[data-testid="subagent-new"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(200)
     ok(!!q('[data-testid="subagent-launch-panel"]'), '点击后打开子代理任务面板')
@@ -140,7 +145,9 @@
     }
     ok(hasReply, '转录里有模型的回复文本')
 
-    /* 详情面板里能真的看到输出 */
+    /* 详情面板里能真的看到输出（H-10a 后默认在「概览」，先切到「过程」） */
+    q('[data-testid="subagent-tab-process"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(300)
     const body = q('[data-testid="subagent-preview-body"]')?.textContent ?? ''
     out.push(`  详情正文长度 = ${body.length}`)
     ok(body.length > 0, '详情面板里有内容')

@@ -89,6 +89,22 @@ export function containsResumeEvidence(rawText: unknown, resumeId: string): bool
 }
 
 /**
+ * 在会话文件文本里判「续行之后**真的跑起来了**」（实施-15 A-3 / 审核 R6）。
+ *
+ * 与 `containsResumeEvidence` 的差别就是「已投递」与「已运行」：
+ * 标记行是宿主拼的本地文本（写文件不需要模型参与），而助手输出只能由模型产生 ——
+ * 所以看标记**之后**有没有 `"role":"assistant"`。
+ */
+export function hasRunStartedAfterMarker(rawText: unknown, resumeId: string): boolean {
+  const text = typeof rawText === 'string' ? rawText : ''
+  const marker = resumeMarker(resumeId)
+  if (!text || marker === `[${RESUME_ID_TAG}:]`) return false
+  const at = text.indexOf(marker)
+  if (at < 0) return false
+  return /"role"\s*:\s*"assistant"/.test(text.slice(at + marker.length))
+}
+
+/**
  * 从消息列表里判证据（探针 / 诊断用；主进程走 `containsResumeEvidence`）。
  *
  * 认两种角色：

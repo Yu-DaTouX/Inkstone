@@ -22,7 +22,7 @@
 
 import { mkdir, rename, writeFile, rm } from 'node:fs/promises'
 import { readFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -31,6 +31,8 @@ import {
   applyPursuedGoal,
   applyReadyTransition,
   applyRepeatFailure,
+  checkGoalBudget,
+  sanitizeGoalBudget,
   AUTONOMOUS_CONTINUE_LIMIT,
   checkGoalReport,
   checkReadySubmission,
@@ -39,6 +41,10 @@ import {
   isActiveGoalPhase,
   normalizeGoalState,
   readyResumeSummary,
+  type BudgetUsage,
+  type GoalBudget,
+  type GoalLink,
+  type GoalLinkCheck,
   type GoalReportInput,
   type GoalState,
   type PursuedBrief,
@@ -128,6 +134,13 @@ export interface GoalEntry {
    * 于是同一批旧 blocks 会被再计一遍，把正常推进的目标打成 blocked。
    */
   repeatCursor: { goalId: string; blocks: number } | null
+  /**
+   * 目标开始的时间（A-2）：首次报告 / 就绪转移时落一次，之后不再改。
+   *
+   * 为什么要它：预算要用「**这个目标**花了多少」而不是「这个会话花了多少」——
+   * 同一个会话可以先做完一个目标再开下一个。
+   */
+  startedAt: number
   updatedAt: number
 }
 
@@ -137,13 +150,15 @@ export interface GoalDocument {
 }
 
 /** 一次「接着干」的 arm 结果；`reason` 的每一种都有对应的可读出口（实施-14 A6）。 */
-export type ArmContinueReason = 'not_active' | 'limit' | 'paused' | 'pending'
+export type ArmContinueReason = 'not_active' | 'limit' | 'paused' | 'pending' | 'budget'
 
 export interface ArmContinueResult {
   armed: boolean
   reason?: ArmContinueReason
   /** 已安排的连续续接轮数（`armed:false` 时是当前计数）。 */
   round: number
+  /** `reason==='budget'` 时说明是哪条预算用完了。 */
+  detail?: string
 }
 
 export interface GoalCommitResult {
@@ -310,6 +325,7 @@ function emptyEntry(): GoalEntry {
     autoContinues: 0,
     paused: false,
     repeatCursor: null,
+    startedAt: 0,
     updatedAt: 0
   }
 }
@@ -384,10 +400,36 @@ export function sanitizeGoalDocument(raw: unknown): GoalDocument {
       /* 旧记录没有这两个字段：一律当「没暂停、没有游标」，不凭空造状态 */
       paused: item.paused === true,
       repeatCursor: sanitizeRepeatCursor(item.repeatCursor),
+      startedAt: typeof item.startedAt === 'number' && Number.isFinite(item.startedAt) ? item.startedAt : 0,
       updatedAt: typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : 0
     }
   }
   return { version: 1, entries }
+}
+
+/**
+ * 只读核验一条链接（实施-15 A-1）。
+ *
+ * 边界（与 `GoalLinkCheck` 的注释一致，代码也是这么做的）：
+ *   · 看存在性与大小 / 修改时间，**不执行**任何命令、不解析内容；
+ *   · `url` 不联网，只当“形态合法”处理（scheme 已在 sanitizeGoalLinks 限定过）。
+ * 所以它只能回答「还在不在」，回答不了「内容对不对」—— 那是用户验收的事。
+ */
+function verifyGoalLink(link: GoalLink, now: number): GoalLinkCheck {
+  if (link.kind === 'url') {
+    return { at: now, ok: true, method: 'exists', detail: 'url 仅做形态校验（宿主不联网）' }
+  }
+  try {
+    const st = statSync(link.target)
+    return {
+      at: now,
+      ok: true,
+      method: 'exists',
+      detail: `${st.size} 字节 · ${new Date(st.mtimeMs).toISOString()}`
+    }
+  } catch {
+    return { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' }
+  }
 }
 
 export interface GoalStoreOptions {
@@ -625,7 +667,22 @@ export class GoalStore {
       }
 
       const at = this.now()
+      /*
+       * 归属由**宿主**覆盖：链接里的 sessionId 一律改成这条会话。
+       * 不信调用方自报 —— 否则 A 目标的报告可以把链接挂到 B 目标上。
+       */
+      for (const link of check.links) {
+        link.source = { ...(link.source ?? {}), sessionId: key }
+      }
       entry.goal = applyGoalReport(entry.goal, check, at)
+      /* 首次推进目标时记开始时间（预算的参照起点） */
+      if (!entry.startedAt) entry.startedAt = at
+      /*
+       * 每次报告都把**全部**链接重新只读核验一遍（含先前登记的）——
+       * 这样「文件后来被删/被换」在下一次报告里就变成 ok:false，
+       * 而不是永远停在当初那一次的结果上。
+       */
+      entry.goal.links = entry.goal.links.map((link) => ({ ...link, check: verifyGoalLink(link, at) }))
       entry.reports[replayId ?? randomUUID()] = { at, result: entry.goal }
       /*
        * 目标进终态（completed / blocked）时，**同一次落盘里**把还没发出的续行清掉：
@@ -735,9 +792,39 @@ export class GoalStore {
    * 返回值要能让调用方区分「没到可续接的状态」与「到上限 / 被暂停 / 已有待发」：
    * 每一种都要有可读出口，不能默默不续。
    */
+  /** 目标开始时间（A-2 预算用）；没开始过就是 0。 */
+  startOf(sessionKey: string): number {
+    const key = normalizeSessionFileKey(sessionKey)
+    return key ? (this.doc.entries[key]?.startedAt ?? 0) : 0
+  }
+
+  /**
+   * 用户设 / 清目标级预算（A-2）。
+   *
+   * 只改预算与停止记录：**不删目标、不改 phase**。收紧到当前已超的额度不会
+   * 当场把目标打成失败；下一次收尾评估时才会停止安排新轮（并记下原因）。
+   * 放宽（或置 null）时清掉旧的停止记录，下次就能继续。
+   */
+  async setBudget(sessionKey: string, budget: GoalBudget | null): Promise<GoalState> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return emptyGoal(this.now())
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      const at = this.now()
+      entry.goal = { ...entry.goal, budget: sanitizeGoalBudget(budget), budgetStop: null, updatedAt: at }
+      entry.updatedAt = at
+      await this.persist()
+      return entry.goal
+    })
+  }
+
   async armContinue(
     sessionKey: string,
-    options: { consumed?: (operationId: string) => Promise<boolean> } = {}
+    options: {
+      consumed?: (operationId: string) => Promise<boolean>
+      /** 目标到目前为止的用量（装配方给，宿主不自算）。不传 = 无法判定预算。 */
+      usage?: BudgetUsage
+    } = {}
   ): Promise<ArmContinueResult> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
@@ -750,6 +837,28 @@ export class GoalStore {
       }
       if (entry.paused) return { armed: false, reason: 'paused' as const, round }
       if (round >= AUTONOMOUS_CONTINUE_LIMIT) return { armed: false, reason: 'limit' as const, round }
+      /*
+       * 目标级预算（A-2）：耗尽时**只停“安排新轮”**——
+       * 不动 phase、不删目标、不当作失败。用户调了预算或主动发消息就恢复。
+       * 用量未知时不判（无法算），界面显示未知即可。
+       */
+      if (options.usage) {
+        /* 先把用量快照写下去：即使没超预算，用户也该在界面上看到“已用多少” */
+        entry.goal = {
+          ...entry.goal,
+          budgetUsage: { tokens: options.usage.tokens, at: this.now() }
+        }
+        const verdict = checkGoalBudget(entry.goal.budget, options.usage)
+        if (verdict.stopped) {
+          entry.goal = {
+            ...entry.goal,
+            budgetStop: { at: this.now(), reason: verdict.reason, detail: verdict.detail }
+          }
+          entry.updatedAt = this.now()
+          await this.persist()
+          return { armed: false, reason: 'budget' as const, round, detail: verdict.detail }
+        }
+      }
 
       const existing = entry.resume
       if (existing?.kind === 'continue') {
@@ -833,6 +942,7 @@ export class GoalStore {
         autoContinues: 0,
         paused: source.paused,
         repeatCursor: null,
+        startedAt: source.startedAt,
         updatedAt: at
       }
       await this.persist()

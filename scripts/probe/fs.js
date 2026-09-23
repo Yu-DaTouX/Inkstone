@@ -36,8 +36,13 @@
       if (btn) { click(btn); await sleep(300) } else await sleep(150)
     }
 
-    /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */
-    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
+    /* H-3b：新会话默认停在「开始」页；文件分区在「工具」页。 */
+    if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+    await sleep(400)
+    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(500)
+
+    /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     out.push('=== 0. 工作目录 ===')
     out.push('  cwd = ' + cwd)
     if (!/pi-desktop/i.test(cwd)) {

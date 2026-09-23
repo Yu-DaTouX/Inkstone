@@ -309,7 +309,7 @@ button.env-item:hover {
 }
 
 .review-act:disabled {
-  opacity: 0.4;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -525,7 +525,7 @@ button.env-item:hover {
 
 .rdiff-gap:disabled {
   cursor: default;
-  opacity: 0.6;
+  opacity: var(--ctl-disabled-opacity);
 }
 
 /*
@@ -949,7 +949,7 @@ button.env-item:hover {
 }
 
 .rcard-stage:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1021,7 +1021,7 @@ button.env-item:hover {
 }
 
 .commit-btn:disabled {
-  opacity: 0.45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1554,7 +1554,7 @@ button.env-item:hover {
 }
 
 .src-filter:disabled {
-  opacity: 0.45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 

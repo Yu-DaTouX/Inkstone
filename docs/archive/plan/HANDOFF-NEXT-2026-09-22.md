@@ -1,8 +1,10 @@
+> 历史交接，已由 2026-09-23 审核融合入口取代；以下状态与任务顺序不作为当前指令。
+
 # 下一会话交接：完成 pi-desktop 当前待办
 
 > 交接日期：2026-09-22
 >
-> 这是一份给下一会话 agent 的可执行交接。它不替代当前状态入口 [`docs/dev/HANDOFF.md`](HANDOFF.md)，也不替代路线图 [`docs/plan/README.md`](../plan/README.md)：状态以 HANDOFF 和源码为准，任务顺序以 plan/active 正文为准。
+> 这是一份给下一会话 agent 的可执行交接。它不替代当前状态入口 [`docs/dev/HANDOFF.md`](../../dev/HANDOFF.md)，也不替代路线图 [`docs/plan/README.md`](../../plan/README.md)：状态以 HANDOFF 和源码为准，任务顺序以 plan/active 正文为准。
 
 ## 一句话结论
 
@@ -12,7 +14,7 @@
 
 ## 0. 下一会话开始时必须做的事
 
-1. 先读根目录 [`AGENTS.md`](../../AGENTS.md)、[`docs/plan/README.md`](../plan/README.md)、[`docs/dev/HANDOFF.md`](HANDOFF.md) 和本文件。
+1. 先读根目录 [`AGENTS.md`](../../../AGENTS.md)、[`docs/plan/README.md`](../../plan/README.md)、[`docs/dev/HANDOFF.md`](../../dev/HANDOFF.md) 和本文件。
 2. 执行 `git status --short`、`git log -1 --oneline`，确认当前工作树，不要假定脏改动是缓存。
 3. 当前工作树已在 `9be856d chore: checkpoint current Yan progress` 完成本地检查点，`git status --short` 应为空。保留用户数据和后续新改动，不要把当前检查点误当成可随意清理的缓存。
 4. 先读目标活动正文，再读对应源码和现有测试；不要只按历史 HANDOFF 中的“下一步”动手。
@@ -49,7 +51,7 @@
 
 ### P0-1：实施-04 S6b-2 —— 真实外部候选整链
 
-权威正文：[`实施-04-能力自主选择-MCP与Skill.md`](../plan/active/实施-04-能力自主选择-MCP与Skill.md)。
+权威正文：[`实施-04-能力自主选择-MCP与Skill.md`](../../plan/active/实施-04-能力自主选择-MCP与Skill.md)。
 
 #### 授权门槛
 
@@ -72,7 +74,7 @@
 
 ### P0-2：实施-01 S5 —— 默认 pi 唯一入口收口
 
-权威正文：[`实施-01-默认pi架构迁移.md`](../plan/active/实施-01-默认pi架构迁移.md)。
+权威正文：[`实施-01-默认pi架构迁移.md`](../../plan/active/实施-01-默认pi架构迁移.md)。
 
 执行要求：
 
@@ -86,11 +88,11 @@
 
 ### P0-3：实施-09 —— 最终发布门槛
 
-权威正文：[`实施-09-交付与验收收尾.md`](../plan/active/实施-09-交付与验收收尾.md)。必须在 04-S6b-2 和 01-S5 的源码边界稳定后重跑，不得把 2026-09-19 的历史数字当作最终当前证据。
+权威正文：[`实施-09-交付与验收收尾.md`](../../plan/active/实施-09-交付与验收收尾.md)。必须在 04-S6b-2 和 01-S5 的源码边界稳定后重跑，不得把 2026-09-19 的历史数字当作最终当前证据。
 
 建议顺序：
 
-1. 阅读 [`docs/dev/TESTING.md`](TESTING.md)，确认模型、额度、cost 1 场景和隔离目录。
+1. 阅读 [`docs/dev/TESTING.md`](../../dev/TESTING.md)，确认模型、额度、cost 1 场景和隔离目录。
 2. 跑 `npm run typecheck`、`npm run build`、`npm run test:unit`、`npm run vendor:pi:check -- --if-present`、`npm run audit:refs`；全量门槛按授权条件执行 `YAN_TEST_MODEL=<已验证的provider/model> npm run check`。
 3. 按 09 的当前清单分别验证 `npm run dist:dir` + `npm run test:packaged`、便携版、全新 NSIS 安装态和 `npm run test:upgrade`；必要时重写 `release/SHA256SUMS.txt`，并记录实际文件大小 / 哈希，不能沿用旧产物数字。
 4. 包内验证要覆盖内置 pi、正式 `yan` CLI、项目知识 / 设置读回、远程服务默认关闭与显式开启、Git / 文件数据边界、能力设置页和新增的 04 / 01 断言。
@@ -102,7 +104,7 @@
 
 ### 3.1 实施-06：只做剩余边界，不重做 N21-9
 
-权威正文：[`实施-06-上下文管理收尾.md`](../plan/active/实施-06-上下文管理收尾.md)。N21-9（浏览器 CLI 迁移与相关基线）已经完成，不要重跑并重新列为待办。
+权威正文：[`实施-06-上下文管理收尾.md`](../../plan/active/实施-06-上下文管理收尾.md)。N21-9（浏览器 CLI 迁移与相关基线）已经完成，不要重跑并重新列为待办。
 
 只处理：
 
@@ -115,7 +117,7 @@
 
 ### 3.2 实施-11：Harness / Workbench / 1M
 
-权威正文：[`实施-11-Harness工作窗口与1M模型策略融合.md`](../plan/active/实施-11-Harness工作窗口与1M模型策略融合.md)。这是唯一详细队列；历史并行分工文件不能替代它。
+权威正文：[`实施-11-Harness工作窗口与1M模型策略融合.md`](../../plan/active/实施-11-Harness工作窗口与1M模型策略融合.md)。这是唯一详细队列；历史并行分工文件不能替代它。
 
 按依赖串行推进：
 
@@ -139,7 +141,7 @@
 
 ### 3.3 实施-10：最终视觉矩阵
 
-权威正文：[`实施-10-AI产物展示与GPT-Image.md`](../plan/active/实施-10-AI产物展示与GPT-Image.md)。
+权威正文：[`实施-10-AI产物展示与GPT-Image.md`](../../plan/active/实施-10-AI产物展示与GPT-Image.md)。
 
 - 只对当前源码重新生成并实际查看深 / 浅主题矩阵和相关产物展示场景；截图使用新文件名，不覆盖 `docs/design/preview/` 的用户视觉证据。
 - 分别写静态、真实运行和视觉结论；不能把 mock 生图、静态 DOM 或已有旧截图写成当前全绿。

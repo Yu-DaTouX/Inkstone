@@ -1,5 +1,287 @@
 # 开发交接 · 砚
 
+## 2026-09-23 · 实施-13 V-3 剩余设置页 / V-4 资源表面结构 / V-6 文档收敛
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **V-3**：Settings 外壳补 `role=tablist/tab/tabpanel` + `aria-selected` 与方向键切页（切换后焦点跟到新 tab，不移出 Tab 序）；长 `provider/model`（ContextTab `ctx-model-other`）与包名（PackagesTab `pkg-name`、CapabilitiesTab 候选/内置/技能/MCP）补 `title` 全文出口。**V-4**：开始/工具/文件/审查结构统一经核对已成立（共用 `.rp-windowbar`；文件缺失保留标签+路径+重试；审查非 Git/空/错误有真实提示），本片只补验证，未为凑改动重写已合规表面。**V-6**：DESIGN 新增「可移动工具磁贴契约」，§3.3 的过时排序表（HTML5 DnD + localStorage）改为当前实现（pointer 拖动 + `toolLayout` 真源 + revision 仲裁）；架构收敛删除未接线的重复模块 `src/shared/tile-layout.ts`。 |
+| 自动检查 | typecheck / build；`test:unit` **4873/4873**；`check:css-docs` 三份重生成后一致；lint-css / layer 检查通过。 |
+| 真实运行 | 新增 `test:live -- settingstabs`（cost 0，已进 CASES）：九 tab 键盘切换、每页真实锚点/空态、安装按钮空源禁用、能力页不把「发现」写成「已安装」、Esc 关闭不留实例——全绿。新增 `test:live -- resourceheads`（cost 0）：开始/工具/文件/审查标题与关闭位、缺失文件保留标签 + 重试、审查不画假 diff——全绿。回归 `dialog`（设置内 33 控件可 Tab）/ `settings` / `rightresources` / `panels` / `symmetry` / `narrow` / `topbar` / `tools` / `vheight` / `toollayout` / `overlayblockers` 全绿。 |
+| 视觉验收 | **未采集本轮真实截图**：深/浅 × 窄矮 × 125/150% 矩阵未重跑，所以不写入看图结论。形状/行为由探针覆盖。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 真实 provider 连接/登录与真实安装包的端到端行为需额度与环境；真实截图矩阵、V-5 的 Windows 外壳/安装器包验收仍缺；发布门槛由实施-09 持有，本片不标「全 UI 重构完成」。 |
+
+## 2026-09-23 · 实施-12 U-4/U-5/U-6 可移动工具磁贴
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **U-4**：工具页改读 `AppSettings.toolLayout`（U-0 契约）唯一真源，旧 `toolOrder/toolHidden` 界面侧不再写入；`ToolLibrary` 升级为三处位置目录（浮动/定位/放回/收进库/上移下移/恢复默认），浮动必须带 rect（否则 `setTilePlacement` 按契约收回停靠）；新增 `FloatingTiles.tsx` 浮动层挂 `.workspace`（不随右栏收起消失），一个 id 只有一个主实例，工具页留 `FloatPlaceholder`（已浮动·定位）；可浮动 registry 排除 `todo`/`files`；把手键盘 `Alt+↑↓` 排序、`Alt+←` 移出浮动、`Alt+→` 放回，与工具库按钮共用 `setTilePlacement`/`moveTile`。**U-5**：pointer 拖动状态机（≥6 CSS px 才进 dragging、`setPointerCapture`、拖动中领 `tile-drag` overlay blocker 暂隐原生网页、Esc/失焦/切会话 cancel、只 commit 写盘）；`shared/tool-layout.ts` 新增 `TILE_DEFAULT_W/MIN_W/MAX_W/HEAD_H`、`NON_FLOATING_TILE_IDS`/`isTileFloatable`/`setTileCollapsed`/`moveTileToIndex`/`dockedTileIds`/`commitTileLayout`/`defaultFloatRect`、像素级 `clampFloatPixels`/`avoidFloatObstacle`/`pxRectToNormalized`。i18n +14 键，tools.css 加浮动/占位/位置标签样式。 |
+| 自动检查 | typecheck / build；`test:unit` **4873/4873**（`test-tool-layout.mjs` 新增 14 条：不可浮动回收、折叠、位次放置、写入仲裁、像素夹取/避障/归一化往返）；`check:css-docs` 重生成一致。 |
+| 真实运行 | 新增 `test:live -- tooltiles`（cost 0，已进 CASES）14 条全绿：工具库三处位置、单实例、Alt+←/→、拖动阈值内不写盘→跟手→放开落盘、Esc/cancel 还原且 revision 不变、越界夹回内容区、收起右栏后仍在、恢复默认不动业务数据。新增 `test:live -- tilerestart`（cost 0，两次启动同一 YAN_DATA_DIR）：浮动坐标读回一致、界面仍渲染、无第二实例、恢复默认——全绿。回归 `tools` / `vheight` / `toollayout` 全绿。 |
+| 视觉验收 | **未采集本轮真实截图**：U-6 要求的深浅/窄矮/缩放矩阵与「打开网页看遮挡」现场证据未采；层级与几何由探针断言覆盖，不冒充看图。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 真实截图矩阵待补；U-2 的分组/会话菜单仍是残余；「切会话后磁贴内容重绑」由既有 session 用例间接覆盖，未做磁贴专项探针；浮动布局为应用级（设计如此），跨会话保留布局但内容随会话重绑。 |
+
+## 2026-09-23 · U-2 项目上下文菜单（实施-12）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增通用 `components/common/ContextMenu.tsx`：`createPortal` 到 `body` + `fixed` 定位（四周夹回视口），打开领 `context-menu` overlay blocker；roving focus（打开聚焦首项，↑/↓/Home/End，Enter/Space 选中，Esc/Tab 关闭），外点关闭，关闭后把焦点还给触发元素。`Rail.tsx` 的项目菜单改为它：`projectMenu` 从 `string` 改为 `{id,x,y,trigger}`，右键取 `clientX/clientY`、省略号取按钮 rect；六个原动作（新对话/重命名/定位/复制/归档/移组）原样迁入并保留各自错误处理。项目 ID 与 anchor 分开保存。CSS `.ctx-menu/.ctx-menu-item`。**分组/会话菜单未复用**（仍为行内），已在剩余限制列清。 |
+| 自动检查 | typecheck / build / `test:unit` 4859/4859；`check:css-docs` 三份已重生成。 |
+| 真实运行 | 新增 `test:live -- contextmenu`（cost 0，已进 CASES）：省略号/右键开、Portal 到 body、role=menu、六项、打开不动行 y（190.3→190.3）不改 scrollHeight（573→573）、首项聚焦、↓/End、Esc 关闭并还焦点、外点关闭。全绿。回归 `railreorder`/`projectlimit`/`grouprename`/`railmini` 全绿。 |
+| 视觉验收 | 未单独截图（四角/窄窗/150% 缩放的真实窗口截图待视觉验收轮；几何断言已覆盖视口夹取）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 只迁了**项目**菜单；分组菜单（`rail-group-menu-panel`）与会话行菜单（`srow-menu`）仍是行内渲染，未复用 `ContextMenu`（未做全覆盖，不冒充）；浏览器与菜单同屏的真实截图、四角/缩放 150% 实测图未采。 |
+
+## 2026-09-23 · U-3a 目标浮层与文本（实施-12）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 目标从「工具页常驻一块」改为**标题栏入口 + 只读浮层**：`GoalPopover`（入口显示短标题 + 相位色 + 完成数，`goal-entry`）包裹 `GoalContent`（由 `GoalSection` 重命名，只读）。浮层打开领 `goal-popover` overlay blocker，Esc/外部点击关闭。`loadGoal` 加 `goalLoading`/`goalError`（失败不与「暂无目标」混淆）与 stale guard；失败态给重试。brief 长文支持「展开原文」（`goal-brief-toggle`）；`evidence`/`links` 缺字段时不再整树崩。新增共用 `shared/short-title.ts`（字素截断，H-10a 的右栏标签已改用它）。i18n +5，tools.css 追加入口/浮层样式。 |
+| 自动检查 | typecheck / build / `test:unit` **4859/4859**（新增 `test-short-title.mjs` 8 条：空/空白/标签/字素/emoji ZWJ/旗帜）。 |
+| 真实运行 | 新增 `test:live -- goalpopover`（cost 0，已进 CASES）：入口默认不开、点击开合、六个相位都反映到 `data-goal-phase`、完成数格式、受阻原因、空标题回落、emoji 不切坏、超长截断、加载失败/重试、查看不创建也不停止。全绿。回归 `goallinks` / `plusmenu` / `topbar` 全绿（目标入口从工具页搬到标题栏的适配）。 |
+| 视觉验收 | visual-matrix 的 `autonomous`/`autonomousrunning`/`goalpursued` 设置已改为打开浮层；未本机重跑截图（受 GPU/环境限制），留待视觉验收轮。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 浮层是应用级入口（不跟随右栏）；未做「目标切换时不展示前一会话证据」的真窗口专项（`loadGoal` stale guard 已覆盖会话/runner 维度）；`visual-matrix` 三张目标截图待重采。 |
+
+## 2026-09-23 · U-0 工具磁贴布局契约（实施-12）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增纯模块 `shared/tool-layout.ts`：版本化 `ToolLayout{version:2,tiles,revision}`、`ToolPlacement=docked|floating|library`、registry 参数化（`ids`）。函数：`defaultToolLayout` / `migrateToolLayout(order,hidden,ids)`（旧字段一次性迁移：顺序保留、隐藏进库、未知丢弃、重复归一）/ `normalizeToolLayout`（版本显式分支、未知 id 过滤、rect 归一夹取、浮动缺 rect 退停靠）/ `setTilePlacement` / `moveTile`（不变异输入）/ `clampRectToBounds` / `isStaleLayoutWrite`。`AppSettings.toolLayout?` 接入（ipc），`settings.ts` 读盘时：有版本化真源就归一化，没有就从 `toolOrder/toolHidden` 迁移。**UI 仍读旧字段，本片只到“契约完成，界面待 U-4”**。 |
+| 自动检查 | typecheck / build / `test:unit` **4851/4851**（新增 `test-tool-layout.mjs` 15 条：迁移/归一/未知版本/重复/无效坐标/浮动缺 rect/移动不变异/夹取/迟到写）。 |
+| 真实运行 | 新增 `test:live -- toollayout`（cost 0，已进 CASES）：settings 有版本化 toolLayout、迁移覆盖 8 分区无重复；写 floating → 空 patch 让主进程**重读盘** → 仍在；越界 rect 读盘归一夹回；恢复后不动业务数据。全绿。 |
+| 视觉验收 | 不适用（无界面改动）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 只有 U-4 接管 UI 后旧 `toolOrder/toolHidden` 才真正变只读；本片保存→重读盘是**同进程重读**（非整进程重启）；跨容器拖放/磁贴视图属于 U-4/U-5。 |
+
+## 2026-09-23 · H-10a 收尾（三页签/状态拆分）+ H-10b 子代理累计 usage（实施-11 §5）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **H-10a 收尾**：`SubagentPreview` 拆成「概览 / 过程 / 变更」三页签（`subagent-tab-*`），切换 run 回概览；头部只放**执行状态**（running/done/error/cancelled），审阅状态在概览与变更页独立展示，两者不再共用一个颜色；概览给最新活动/耗时/审阅/变更摘要与结果，变更页保留 diff 与合并/放弃。启动按钮加 **submitting 防重复点击**（失败保留草稿）。**H-10b**：`shared/subagent-usage.ts`（`ingestUsageSnapshot` 按消息 id 保存最后一份快照、`accumulateUsage` 求和、`reportedMessages=0→null 未知`、`normalizeSubagentUsage` 旧记录兼容）；`SubagentRun.usage?: SubagentUsageTotals`（ipc 契约）；`subagents.ts` 在 message 事件里用 `toUsage` 收快照并按 id 去重，`snapshot()` 回传累计；详情概览仅在 `run.usage` 存在时显示用量行。i18n +14 键。 |
+| 自动检查 | typecheck / build / `test:unit` **4831/4831**：`test-subagent-view.mjs` 增补 0/1/20 + 重复推送去重；新增 `test-subagent-usage.mjs`（8 条：空快照未知 / 同 id 覆盖不翻倍 / 重放不翻倍 / 不同消息相加 / 缓存分计 / 空 id 丢弃 / 旧记录兼容 / 转录截尾不影响）；`test-subagents.mjs` D17 假 RPC 事件回放：流式→final 只算 final、多条相加。 |
+| 真实运行 | `test:live -- subagent`（cost 0）结构断言全绿：启动面板/run id/worktree/父会话/列表渲染/**资源标签详情**均通过；两个失败是免费测试模型本轮无输出（非本次改动）。 |
+| 视觉验收 | 未单独截图（三页签沿用 `.sp-*` 视觉。筛选与页签行为由成本 0 探针/单测覆盖）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | H-10a 的“跨会话推送真实推送”、“长任务过程上滚”仍只由单测/事件回放覆盖，未做专项真实窗口探针；H-10b 未做“host 事件回放落盘→重启读回”的独立 cost 0 探针（控制器层 D17 已覆盖去重语义），真实 provider 计数需额度；子代理 usage 不并入父回合（有意，避免重复计费）。 |
+
+## 2026-09-23 · H-10a 子代理信息架构（实施-11 §5，**部分交付**）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增纯选择器 `state/subagent-view.ts`：`selectSubagentRuns(runs,{sessionIds})` 按**显式 `parentSessionId`/会话链**分组为 attached（挂回助手消息）/ detached（独立）/ foreign（别的会话，不混入）/ unattributed（旧记录无归属字段，不猜），按 `runId` 去重（保留最后一份状态），带 running 计数；`subagentTabId(runId)`。`SubagentList` 改用选择器只显示当前会话任务，新增「全部/运行中/待审阅/已结束」筛选与待审阅徽标，运行中在前、其余按结束时间倒序；不再内嵌详情。**详情改为工作台资源标签 `subagent:<runId>`**：`RightPanel` 监听 `subagentPreviewId` 激活对应标签，标签行按 run 显示短标题 + 关闭，渲染 `SubagentPreview`（同一 run 多入口（列表/回合短入口）只开一份）。i18n +6 键（筛选/空态），composer.css 筛选与徽标样式。 |
+| 自动检查 | typecheck / build / `test:unit` **4811/4811**（新增 `test-subagent-view.mjs` 11 条：attached/detached/foreign/unattributed、去重保留最新、链归属、空集）；`check:css-docs` 三份文档已 `--md` 重生成。 |
+| 真实运行 | `test:live -- subagent`（cost 0）：启动入口/任务面板/run id/worktree/父会话身份/列表渲染/**详情打开**均通过；两个失败是模型返回错误（free 测试模型本轮无输出）导致，非本次改动。 |
+| 视觉验收 | 未单独截图（列表/标签沿用既有 `.sa-*`/标签视觉，筛选行为由探针验证）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | **本片未完全收口**：预览内部尚未拆成「概览 / 过程 / 变更」三页签，执行态与审阅态尚未拆成两个独立字段展示；0/1/20 任务、跨会话推送、启动重复点击去重的专项探针未做。选择器已把归属与去重固定，后续接线不再重造。证据见 HANDOFF 顶部。 |
+
+## 2026-09-23 · H-3b 默认开始页与工具页（实施-11 §5）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增右栏「开始」页 `StartPage.tsx`：固定导航入口审查 / 浏览器 / 文件 / 工具（终端未接入 **不放灰按钮**）。`workbench.ts`：默认标签变 `[start, tools]`，活动页 `start`；`HOME_TAB_ID`；归一化保证两个固定页都存在；关闭最后一个资源回**开始页**（不再回工具页）；`viewFromWorkbench`/`reconcileWorkbench` 回退开始页。`RightPanel.tsx`：活动页含 `start`，标签行加「开始」固定标签，收起整个工作栏时连原生网页一起不可见（`hasVisibleSurface = open && ...`，删掉旧 `tools-collapsed` 语义）；浏览器打开时若右栏收着则展开。`tools.css` 加 `.rp-start*`（卡片组 `min(360px, 100%-32px)`、行高 44px、矮窗口顶部留白 + 滚动，reduced-motion）。 |
+| 自动检查 | typecheck / build / `test:unit` **4800/4800**（工作台断言更新为开始页默认：新会话从开始页起、关闭最后资源回开始、未知版本只存两个固定页）；`check:css-docs`（令牌/归属/散落值三份文档已 `--md` 重新生成）。 |
+| 真实运行 | 新截图脚本 `scripts/shot-start.mjs`（真实窗口 capturePage）：`start-page-dark-1280x800`、`start-page-light-1280x800`，已**看图**确认标签「开始」高亮、四项入口齐全。回归修复：`tools / todos / layout / browser / fs / fsedge / settings / vheight / context / quota / plusmenu / goallinks / logs / topbar / panels` 均重新跑绿（这些探针原本假设默认页是工具页，已改为先点「工具」固定标签；`browser` 的「收起=网页变高」旧契约改成「收起=连原生网页一起隐藏」；`topbar` 的导航轨断言从「贴正文左缘」改为贴会话区左缘且不压正文——V-2b 后的正确几何）。 |
+| 视觉验收 | 深/浅两张真窗口截图已出并看图；**窄窗截图未出**：940×620 下 capturePage 卡住/GPU 退出（已改成单独模式仍不稳），窄窗可达性暂靠 `narrow`/`outlinepos` 与 CSS 矮窗口规则，已在剩余限制单列。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 窄窗开始页截图待补；终端入口等 H-11；成本 1 探针（contextsweep/produce/episode/foldpref 等）本次未跑（需额度，不是 H-3b 结论）；`slashcmd` 的技能命令发现失败与右栏无关（分片前就存在的环境问题，未在本片范围内修）。开始页文案暂硬编码中文，未进 i18n（与旧标签行同口径）。 |
+
+## 2026-09-23 · H-9a 原生视图与 overlay 协调（实施-11 §5）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增 `state/browser-visibility.ts`：`shouldShowBrowser(input)` 纯判定（**浏览器打开 + 右栏展开 + 活动页就是浏览器 + 无 overlay blocker** 四条件）+ `OverlayBlockers`（token→计数，嵌套领取只释放自己的）。`store.ts` 收成唯一协调点 `applyBrowserVisibility`：`browserNativeVisible` 可观察，各处不再自己 `browser.setVisible`；新增 action `setBrowserSurfaceActive` / `acquireOverlayBlocker`。接入点：设置（`settings` token，删掉原来「关设置时全局猜着恢复」的 rAF restore）、工作区工具菜单（`right-quick-menu` token）、子代理详情旧 right 路径（`subagent-preview` token，**删掉原来无条件的 `setVisible(true)` 清理路径**）、收起右栏（`setRightPanelOpen` 直接重算）。`RightPanel` 删掉 7 处直接 `setVisible`，只报告「活动页是不是浏览器」。审查/文件改由活动页切换自动隐藏。 |
+| 自动检查 | typecheck（19 文件）/ build / `test:unit` **4798/4798**（新增 `test-browser-visibility.mjs` 13 条：四条件、嵌套 token、释放只归自己）；`check:css-docs` 保持通过。 |
+| 真实运行 | 新增 `test:live -- overlayblockers`（cost 0，已进 CASES）：活动页是浏览器→可见；切工具→隐藏但资源保留；设置浮层打开→隐藏、关闭恢复；审查打开→隐藏且不销毁浏览器；收起右栏→隐藏、展开恢复；两个 token 只释放自己；子代理详情关闭只释放自己的 blocker。全绿。回归 `test:live -- rightresources` 全绿（切页不销毁、逐个关闭语义不变）。 |
+| 视觉验收 | **未单独截图**：本仓截图走 `webContents.capturePage()`，而原生 `WebContentsView` 不进 capturePage，需 OS 级真窗口捕获才能看到遮挡；遮挡结论目前来自 `browserNativeVisible` 探针而非看图。已在剩余限制单列，不拿 DOM 截图冒充遮挡证据。 |
+| 应用与包 | `npm run build` 已刷新 out 三端；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 目标浮层（U-3a）与项目菜单（U-2）尚未做成浮层，所以 H-9a 出口里的「网页→目标→另一菜单→依次关闭」只能等 U-2/U-3a 落地后再验；当前已接入的是设置/工具菜单/子代理详情/收右栏。125/150% 与隐藏时导航保留的边界照旧归 H-4/H-9。真正遮挡的 OS 级真窗口截图待补。 |
+
+## 2026-09-23 · H-3a 工作台状态与接口契约（实施-11 §5 主线首片）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `state/workbench.ts` 重写为 **version 2** 契约：`WorkbenchView` 增加 `start`；`resourceTabId(kind, resourceKey)` 把**资源身份**（文件 canonicalPath / 子代理 `runId` / 浏览器 page / 审查对象）与只决定渲染器的 `kind` 分离；`start`/`tools` 为固定导航页（`isFixedView`，关闭是 no-op）；`normalizeWorkbenchState` **显式分支版本**（只认 1/2，未知版本只保宽度/展开、资源回固定页，v1 结构兼容升级）；`activeWorkbenchView` 成为唯一活动页真源；`closeWorkbenchTab` 关闭活动页回**顺序前一个**资源、关闭固定页 no-op；`pickWorkbenchState` 让临时 `pending` 布局只被一个真实会话采用一次（采用后由 `loadWorkbenchState` 删除，不共享）；`reconcileWorkbench` 载入时把不可用活动资源对到可用固定页；`newWorkbenchOpenRequest`/`isCurrentWorkbenchOpen` 给异步打开加 `requestId + sessionKey` 守卫。`RightPanel.tsx`：删掉本地 `windowView` 第二份真源，活动页改为从活动标签派生；布局与所属会话 key 存成 `{key, state}` 并只写回自己的 key（修掉切会话时把 A 布局写进 B 的竞态）；浏览器异步打开用请求守卫，迟到返回不写状态。 |
+| 自动检查 | typecheck（19 文件）/ `check:css-docs` / build / `test:unit` **4785/4785**（H-3a 新增 22 条：v1→v2 迁移 / 未知版本只保宽度与固定页 / 同名不同根文件不撞 id / 两个子代理不同资源 / 关闭活动与非活动标签 / 固定页不可关 / pending 只采用一次 / 迟到返回作废）。 |
+| 真实运行 | `test:live -- rightresources`（cost 0）全绿：切页不销毁、三资源并存、收起只改布局、逐个显式关闭后回工具页 —— 证明把活动页真源换成活动标签后资源保留语义不变。 |
+| 视觉验收 | 本片是状态契约，无外观改动、无新截图（沿用既有右栏截图）。 |
+| 应用与包 | `npm run build` 已刷新 out 三端；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 资源本身的重建（完整文件树 / 多网页 / 滚动与导航 revision）仍归 H-4/H-9，本片只到「状态契约完成」，不宣称多文档完整交付。`start` 页在 **H-3b** 才有渲染器，当前 `RightPanel` 把 `start` 对到工具页；未知版本降级后**不保留**读不懂的资源（有意，避免把未来布局硬塞进当前渲染器）。异步打开守卫目前只接浏览器，审查/文件打开路径沿用既有同步/selectors。 |
+
+## 2026-09-23 · A-3 续接回执、恢复视图与人工确认（实施-15 / 审核 R6）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **回执**：`HandoffReceipts{sentAt,persistedAt,startedAt}` + `recordReceipt`（同一 kind 只记第一次；`recordResumeAttempt` 同时记 `sentAt`）。**判定**：`hasRunStartedAfterMarker()`（标记**之后**有没有助手输出）。**恢复视图**：`getHandoff` 回传 `receipts` / `steps`（末 4 条）/ `resumeAttempts`；`HandoffNote` 可展开详情，显示「最后确认步骤」与两种不确定状态（待核实 / 已投递未确认）。**外部副作用分级**：已发出但看不到标记 → 不自动重发（`resumeAttempts` 到 2 就停）+ 提供「我确认它已在运行」（新 `yan:confirmHandoff`，只允许在已发出之后确认，没发过会被宿主拒 `not-sent`）。i18n 12 条。 |
+| 自动检查 | typecheck（19 文件）/ check:css-docs / build / test:unit **4763/4763**（新增 11 条：标记在≠已运行 / 标记后助手输出→已运行 / 助手输出在标记前不算 / 空文本不算 / 三条回执分开记 / 回执不推进阶段 / 重启读回 / 人工确认推进 + 转移日志留 `manual-confirmed`）/ audit:refs / git diff --check 全通过。 |
+| 真实运行 | cost 0 回归 `test:live -- handoffrecover` 全绿（阈值 2、两次真实策略压缩、生成失败、占用释放、回源续跑、退出后落盘核对）——未改交接主流程。**未跑** cost 1 的 handoffautocompact / handoffchain（需额度）。 |
+| 视觉验收 | 4 张真实窗口图 `docs/design/preview/handoff-receipt-{dark,light}[-detail]-1440x900-2026-09-23.png`（脚本 `scripts/shot-handoff.mjs`）。已看图：深色展开态显示「续接已发出，等待确认 / 最后确认步骤：已切到目的会话（23:32:29）/ 续接已发出（第 1 次），目的会话里还没看到标记——待核实，不会自动重发」+ 三个选择（我确认它已在运行 / 详情 / 停止），警示行橙色可辨。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口。 |
+| 剩余限制 | **`resumed` 仍以 `persistedAt`（已投递）为准**，`startedAt` 只做附加观察 —— 这是**有意选择**：把「模型真的开跑」当门槛会让模型不响应时交接长时间挂住；不确定的情况改为向用户说明 + 给人工确认出口。未做：不可确认副作用后的「自动回滚”（不做，也不声称能做）；三种崩溃点的 cost 0 注入探针（目前由单测覆盖这三边界）。 |
+
+## 2026-09-23 · A-2 目标级预算与停止理由（实施-15）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `shared/goal.ts`：`GoalBudget{tokens?,ms?}`、`BudgetUsage{tokens:number|null,elapsedMs}`、`checkGoalBudget`（未知用量**不判**但给 note）、`sanitizeGoalBudget/sanitizeBudgetStop`；`GoalState.budget`、`GoalState.budgetStop`。`main/goal-service.ts`：`ArmContinueReason` 加 `'budget'`、`ArmContinueResult.detail`、`GoalEntry.startedAt`、`GoalStore.startOf/setBudget`；`armContinue` 收 `usage` 并在耗尽时**只停新轮**（落 `goal.budgetStop` 后返回 reason:budget），不动 phase、不删目标。`main/index.ts`：新增 `goalBudgetUsage()`，两处 armContinue 调用点接入。`GoalSection`：预算行 + 停止原因。i18n 三条。 |
+| 自动检查 | typecheck（19 文件）/ check:css-docs / build / test:unit **4737/4737**（新增 15 条：无预算不管 / 未到上限 / token 与时间各一条 / 未知不判但说明 / 脏预算 / 超预算不 arm / phase 不变 / 重启读回 / 仍在限额内能继续 / 改预算清记录）/ audit:refs / git diff --check 全通过。 |
+| 真实运行 | `test:live -- goallinks`（cost 0，已进 check）全绿：面板显示「预算 / token 上限 200000（用量未知，不估算） / 时间上限 10 分钟 / 已用 700s，达到时间预算 600s」。日志 `out/goallinks-a2-20260923.log`。 |
+| 视觉验收 | 未单独截图（右栏目标面板多两行，由真实窗口探针确认渲染与文案）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口。 |
+| 剩余限制 | `goalBudgetUsage()` 的 token 用量来自 H-6b 的回合记录（新增 `outputTokens`）：**只累加 provider 真的报了的输出 token**，输入侧 provider 常常不报、不当 0（宁可低估也不把预算算小），一条都没报时仍报 `null` 并在界面显示未知。子代理 usage 的去重聚合、交接换 runner 后的用量归属、软阈值提示仍未做。真实 provider 的 token 计数行为需 cost 1 场景另取。 |
+
+## 2026-09-23 · A-1 交付证据核验（实施-15）
+
+分工：**模型报告**（`GoalState.evidence`，字符串）与**宿主核验**（`GoalLink.check`）分列，不互相冒充。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `shared/goal.ts`：`GoalLinkCheck { at, ok, method:'exists', detail }`，`GoalLink.check?` 可选并参与清洗（脏值丢弃）。`main/goal-service.ts`：`verifyGoalLink()` 只读核验（`statSync` 取大小/修改时间；`url` 不联网，只当形态合法），每次 `report()` 对**全部**链接重算一遍（含先前登记的）→ 文件后来被删就会变 `ok:false`。`GoalSection`：核验失败的链接标红、`title` 带核验说明，点击直接说原因（不先去试打开）。`tools.css` 加 `.goal-link-row-bad`。 |
+| 自动检查 | typecheck（19 文件）/ check:css-docs / build / test:unit **4722/4722**（新增 10 条：存在的文件 / 不存在 / url 不联网 / method 只能是 exists / 删文件后重报变失败 / 旧文档无 check 不报错）/ audit:refs / git diff --check 全通过。 |
+| 真实运行 | `test:live -- goallinks`（cost 0，已进 check）全绿：面板三条链接都带核验标记（2 false / 1 true），点“不存在的文件”得到就地的「文件不存在」提示，无 unhandled rejection。日志 `out/goallinks-a1-20260923.log`。 |
+| 视觉验收 | 未单独截图；失败行标红与提示文案由真实窗口探针确认（非视觉审美项）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口。 |
+| 剩余限制 | 核验只到「还在不在」这一层：**不验内容、不执行命令、不联网**（这是设计边界，不是缺口）。「用户规定的验收检查才决定 verified」尚未实现 —— `phase=completed` 仍只看 evidence 非空 + 链接存在；真正的“用户验收门”需单独切片设计。 |
+
+## 2026-09-23 · U-3b 产物与参考的真实归属（实施-12）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `shared/goal.ts`：新增 `GoalLinkKind`（file/url/artifact）、`GoalLink`、`GOAL_LINK_LIMIT=20`、`GOAL_LINK_TEXT_MAX`、`sanitizeGoalLinks`、`mergeGoalLinks`；`GoalState.links` 必填数组，`normalizeGoalState` 兼容旧文档与脏值；`checkGoalReport` 丢掉非法链接并回报 `discardedLinks`；`applyGoalReport` 合并（去重 + 封顶）。`main/goal-service.ts`：`report()` 用当前会话**覆盖** `source.sessionId`。`shared/ipc.ts` 重导出 `GoalLink`。`GoalSection.tsx`：新增「产物 / 参考」区块与点击。`tools.css`：`.goal-panel-links` / `.goal-link-row`。i18n 新增 `goal.links` / `goal.linkFailed`。**顺手修真缺陷**：`yan:openPath` 以前对不存在的新目标静默无动作（返回 void），现返回 `{ok,error}` + 存在性校验，preload/ipc 同步。 |
+| 自动检查 | typecheck（19 文件合规）/ check:css-docs（三份清单一致）/ build / test:unit **4712/4712**（新增 15 条链接用例）/ audit:refs（brokenDocLinks=0）/ git diff --check 全通过。新探针 `goallinks`（cost 0）已进 `npm run check`。 |
+| 真实运行 | `test:live -- goallinks` 全绿：fixture 给 8 个会话各写一份带 links 的 `goals.json` → 真 IPC `getGoal()` 读回 3 条（file/url/artifact）→ 面板画出 3 行且 kind 一致 → 点“不存在的文件”得到就地失败提示、全程 0 unhandled rejection。日志 `out/goallinks-u3b-20260923.log`。 |
+| 视觉验收 | 本轮未单独截图（右栏目标面板区块，已用真实窗口探针确认渲染与点击；外观沿用既有 `.goal-*` 视觉）。 |
+| 应用与包 | `npm run build` 已刷新 out 三端；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 真实模型经 `yan goal report` 上报 links 的行为证据未取（需额度）；`url` 那一条在回归里**故意不点击**（会拉起外部浏览器），所以只有“可达且 kind 正确”的证据；相对路径按项目根解析、仍受宿主存在性校验，但“相对路径解析规则”尚无独立单测。 |
+
+## 2026-09-23 · A-0 能力差额盘点（实施-15 第一片）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **只读盘点，未改任何代码**。新增 [能力盘点-A0](../dev/能力盘点-A0-Agent执行可靠性-2026-09-23.md)：15 项需求逐项映射到已有/部分/未有 + 真实代码位置。 |
+| 自动检查 | typecheck / check:css-docs / build / test:unit 4697/4697 / audit:refs（brokenDocLinks=0）/ git diff --check 全通过。 |
+| 真实运行 | 不适用（本片不启动应用、不跑模型）。核对方式是源码调用链追踪：`capability-server.ts:162-164` → `GoalStore`；续接走 `YAN_DIR/goal-resume/*.json` + 薄层 `goal-resume.js`；交接走 `handoff-runner.ts` + 两份 JSON 存储；用量走 `agent.ts` → `turn-timing-store.ts`。 |
+| 视觉验收 | 不适用（无界面改动）。 |
+| 应用与包 | 未打包；未重启用户窗口。 |
+| 剩余限制 | A-0 只给出差额，不等于实现。结论里的新增范围：A-1 依赖 U-3b（字符串 evidence → 可验证产物）先落地；A-2 要接 H-6b 的 usage 归属；A-3 跟 F7 的启动回执。真实运行与包级行为需在各自切片另列证据。 |
+
+## 2026-09-23 · H-8c 图标触点与无障碍名（实施-11）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 本轮**没有改产品源码** —— H-8c 是在现有工作台/资源触点上复核「是不是同一个接口」。新增探针 `scripts/probe/iconsurface.js`（cost 0，已进 `npm run check`）。`docs/dev/TESTING.md` 新增「隐藏窗口的样式重算会被节流」一条（探针踩到的坑）。 |
+| 自动检查 | typecheck（19 文件合规）/ `check:css-docs` / build / test:unit 4697/4697 / audit:refs（brokenDocLinks=0）/ git diff --check 均通过。 |
+| 真实运行 | `test:live -- iconsurface` 全绿：sprite 引用覆盖标题栏/会话轨/会话流/输入区/右栏工具/浏览器/设置各区域（内联 svg 只剩品牌与图形，如标题栏 logo、会话流 48×48 徽标）；**81 个图标钮 100% 有可访问名**；sprite **28 个 symbol 全是 currentColor**（写死颜色 0 个）；按身份对位的 **37 个可见图标切主题后 37 个跟随变色**（dark `rgb(147,164,244)` → light `rgb(82,100,200)`）；尺寸只有 12/14/16 三档。日志 `out/iconsurface-h8c-20260923.log`。 |
+| 视觉验收 | 沿用既有浅色/深色图标截图（`icon-l3-*`、`controls-v1-*`）+ 视觉矩阵 123 张；本轮无新截图（未改外观）。 |
+| 应用与包 | **Windows 外壳 / 安装器图标：静态核验已做、包验收未做**。新增 `scripts/check-shell-icons.mjs`（已进 `npm run check`）：`icon.ico` 含 16/32/48/64/128/256、`icon.png` 512×512 带透明通道、`installerSidebar.bmp` 164×314、配置未被覆盖 —— 全部通过。装完才看得见的 8 项列在 [包验收单](../dev/包验收-Windows外壳图标-2026-09-23.md)，**不自动打包**。 |
+| 剩余限制 | H-8 仍**不整段勾选**：Windows 外壳图标未验（需一次真实打包 + 干净 Windows） + 后续新增工作台触点（等 H-3/H-4 稳定）。过程里踩到一个探针陷阱：隐藏窗口下改主题变量后立刻读元素 `color` 会拿到旧值（变量已变、样式重算未落地），不加 reflow flush 会把 37 个图标全误判成「颜色不随主题变」—— 已修并写入 TESTING。 |
+
+## 2026-09-23 · V-1 通用控件与视觉基础（实施-13）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 纯 CSS 与文档改动，未改 TS 逻辑。`tokens.css` 新增 `--ctl-disabled-opacity: 0.5` 与 `--focus-ring-color/w/w-strong/offset`；删掉无引用的 `--w-status`/`--tree-indent`（V-0 D3）。21 处 `:disabled` 的不透明度改为令牌；4 处硬编码焦点环改为令牌（`motion.css` .turn-time、`rail.css` .rail-mode-btn、`settings.css` range thumb、`tools.css` .rp-fs-row）。`DESIGN.md` 同步：§2.5 尺寸表与两栏折叠修正、新增 §2.6 控件状态。新增 `scripts/shot-controls.mjs`（主进程真实按键/缩放截图）。 |
+| 自动检查 | typecheck（19 文件合规）/ `check:css-docs`（三份清单一致）/ build / test:unit 4697/4697 / audit:refs（brokenDocLinks=0）/ git diff --check 均通过。新探针 `controlstates`（cost 0）已进 `npm run check`。 |
+| 真实运行 | `test:live -- controlstates` 全绿：禁用样本 21 个不透明度只有一个值 `0.5`（= 令牌）；20 条 `:focus-visible` 规则无一写死焦点环值；命中区 `.tb-icon` 26.0×24.0、`.wbtn` 46.0×24.0、`.rail-icon` 26.0×26.0、`.send` 32.0×32.0、`.rp-btn` 61.4×24.4；对比度 13.44 / 8.26 / 5.50 / 7.70 / 8.26 :1；密度三档 `--d-message-gap` = 32/16/48px。日志 `out/controlstates-v1c-20260923.log`。 |
+| 视觉验收 | 6 张真实窗口图 `docs/design/preview/controls-v1-*.png`（深/浅基准 + 深/浅真键盘焦点 + 125% + 150%）。看上图：150% 下右栏任务文案换行但无溢出、无遮挡；深浅两主题的焦点环颜色随 `--accent` 变。真实 Tab 焦点链实测：普通控件 `0.8px solid`（×1.25 zoom = 声明 1px）、`.rail-mode-btn` `1.6px`（= 声明 2px 强调档）。 |
+| 应用与包 | 本轮 `npm run build` 已刷新 out 三端；未重新打包、未重启用户窗口、未提交。 |
+| 剩余限制 | `cursor`（`default` 20 处 / `not-allowed` 3 处）未统一（建议）；「危险/加载」未发现重复定义故未动；无 fixture 内容的窗口下 `.msg` 随密度档变化那条断言如实跳过；未重跑 density/light/dialog 等既有场景（改动为纯令牌替换）。 |
+
+## 2026-09-23 · V-0 UI 基线盘点（实施-13 第一片）
+
+零产品源码交付：只加扫描工具、重生成清单、加漂移门禁。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增 `scripts/lib/css-order.mjs`（样式加载顺序的**单一真源**，从 `App.tsx` 解析导入顺序）；新增 `scripts/css-drift.mjs`（散落值扫描，含 `--md`/`--check`）；`css-tokens.mjs` / `css-inventory.mjs` 改用单一真源并加 `--check`；`npm run check` 新增 `check:css-docs`，新增 `measure:css`。**未改任何产品源码。** |
+| 自动检查 | typecheck（19 文件合规）/ `check:css-docs`（三份清单与代码一致）/ build / test:unit 4697/4697 / audit:refs（brokenDocLinks=0）/ git diff --check 均通过。 |
+| 真实运行 | `YAN_SHOT_DIR=out/shots-v0 YAN_MATRIX_STAMP=v0-20260923 npm run visual:matrix -- 0 1`：**123 张**（深 68 / 浅 55，1440×900×100%），**123/123 横向溢出 0px**；23 条采样未渲染出自己声明的关键元素（既有覆盖缺口，非产品缺陷）。日志 `out/matrix-v0-20260923.log`、图 `out/shots-v0/`。 |
+| 视觉验收 | 抽看深/浅主界面、设置、工具、子代理等；未见新缺陷（基线图为当前构建）。详细分歧与真源表见 [证据-V0](../design/证据-V0-UI基线盘点-2026-09-23.md)。 |
+| 应用与包 | out 三端产物为上一轮 build；本轮未重新打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 125%/150%、窄窗（940×620、900×520）、键盘路线、密度三档、reduced-motion 均未采样（归 V-1/V-6）；散落值 76 色 / 1395 px / 48 时长未迁移；未被引用的令牌 2 个（`--tree-indent`、`--w-status`）未处理；D4 的 23 条矩阵覆盖缺口待 V-6。 |
+
+## 2026-09-23 · V-3 设置页异步与项目漂移（实施-13，审核 R10·R11）
+
+按待办顺序继续。**先复现再定范围**：R10/R11 都在真实窗口里复现了（见「真实运行」）。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `KnowledgeTab.tsx`：refresh 依赖加 `session.cwd`（设置页开着时切会话会重取）；请求代次（新模块 `renderer/lib/latest-only.ts`）丢弃迟到的旧结果、卸载作废；写操作带 `expectedProjectId`；jumpTo / exportMarkdown 补 catch → 就地 notice（原先是 unhandled rejection）。`shared/ipc.ts` 的 `KnowledgeActionRequest` 加 `expectedProjectId?`；`main/index.ts` 的 `yan:knowledge:action` 校验身份漂移（**带字段才校验**，兼容 CLII/旧调用）。i18n 加两条文案。 |
+| 自动检查 | typecheck / build / test:unit（4697 + 新增 `scripts/test-latest-only.mjs`，输出 `out/test/latest-only.mjs`）/ audit:refs（brokenDocLinks=0）/ git diff --check 均通过。 |
+| 真实运行 | **复现（修复前）**：`test:live -- knowledgeasync` 3 条红 —— 设置页开着切会话后项目标识仍是旧的、导出 IPC 抛错后 notice=null。**修复后全绿**：切会话后身份跟着刷新；带错误 `expectedProjectId` 的写操作被宿主拒绝（`项目已切换，刷新后再改`）；不带该字段仍走旧行为。回归 `test:live -- knowledgetab` 全绿（确认/编辑/逻辑删除/来源跳转带身份后不变）。日志 out/knowledgeasync-repro-20260923.log（复现）、out/knowledgeasync-final-20260923.log（修复后）、out/knowledgetab-regress-20260923.log。 |
+| 视觉验收 | 本轮是行为修复，未改外观，无新截图（沿用设置页既有截图）。 |
+| 应用与包 | out 三端产物随本轮 build 更新；未重启用户窗口、未打包、未提交。 |
+| 剩余限制 | 「迟到旧结果覆盖」与「IPC reject 就地反馈」两条**无法在 live 注入验证**：`window.yan` 与 `window.yan.knowledge` 实测都是 contextBridge 只读（writable=false / configurable=false），探针如实跳过、不伪造通过；代次已由 `test-latest-only` 单测覆盖，reject 的 catch 只有源码与 typecheck 证据。V-0（性能基线）与 V-1（通用控件）未做；V-3 目前只覆盖 KnowledgeTab，Settings 外壳 / ContextTab / AuthTab / CapabilitiesTab / PackagesTab 未逐条过。 |
+
+## 2026-09-23 · L3 图标状态与浅色适配（实施-11 H-8a/b）
+
+按待办顺序继续（L1 / V-2a、L2 / V-2b 已收口，本轮 L3）。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 审查并接入 `icon-state.css`：只保留 `.ico` 的 `color` 过渡（选中/展开颜色不再瞬跳），删掉草稿里没有对应变化的 `transform` 过渡，补 reduced-motion 压到 1ms；App.tsx 末尾 import。`chat.css` 里 artifact / 图片进度 / 子代理内联卡引用的 `--text/--panel/--line/--muted`（tokens 里**不存在**）共 31 处 → `--fg / --bg-2 / --border（--border-soft） / --fg-mute与--fg-dim`，状态色保留 accent/ok/err。新增 cost 0 探针 `scripts/probe/iconstate.js` 并注册进 CASES。 |
+| 自动检查 | typecheck / build / test:unit（4697/4697）/ audit:refs（brokenDocLinks=0）/ git diff --check 均通过。 |
+| 真实运行 | `test:live -- iconstate`（cost 0）全绿：深浅两态正文 14.96:1、次要 5.63:1、更次 4.65:1，图形色 ≥ 4.7:1；`.ico` transition = color 0.12s，reduced-motion 分支存在；`.image-progress` 去掉 running 类后 animation-name = none；子代理 spinner 在 running 态。日志 out/iconstate-h8-20260923.log。 |
+| 视觉验收 | 浅色真实截图：`docs/design/preview/icon-l3-artifact-light-1440x900-2026-09-23.png`（artifact 卡片白底深字，标题/元信息/操作按钮均可读）、`icon-l3-main-light-1440x900-2026-09-23.png`。另跑浅色视觉矩阵（组 1，55 张，输出 out/shots-h8）并抽看 reasoning / subagentinline 等。 |
+| 应用与包 | out 三端产物随本轮 build 更新；未重启用户窗口、未打包、未提交。 |
+| 剩余限制 | H-8c（工作台/资源触点）与 Windows 外壳图标未做，H-8 不整段勾选；浅色矩阵组退出码 1、失败项仍是 subagent/goal 缺元素（与本次改动无关）；100/125/150% 缩放下图标未单独截图；Orb 的 auto 主题本轮未单独复测。 |
+
+## 2026-09-23 · L2 会话导航柄边缘化（实施-13 V-2b）
+
+用户要求按待办顺序自行推进；L1 已收口，本轮做 L2。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `ConversationOutline.tsx`：删掉 `textLeft - 44` 的正文锚定定位与 `Math.max(0, …)` 夹取；槽位改成 CSS 常量；新增 `--outline-avoid` 避让量测量（只在值真变时写、RO 回调经 rAF 合并）；纵向改由 JS 跟随 `.stream` 矩形（grid area containing block 在当前 Chromium 下实测未生效）；预览卡按会话区宽度压缩并夹取左右缘。`redesign.css`：`.outline` 常量槽 + `.center:has(.outline) .stream-inner/.stream-row` 避让 padding；`chat.css`：`.outline-track` 改为受限滚动（细滚动条，键盘 Tab 到末项自动滚入）。 |
+| 自动检查 | typecheck / build / test:unit（4697/4697）/ audit:refs（brokenDocLinks=0）/ git diff --check 均通过。 |
+| 真实运行 | `test:live -- outlinepos`（cost 0）全绿：40 轮下槽边距 4px；命中区与正文内容、正文块/链接/按钮均不相交（左栏开合两态 + 817px 窄窗）；轨道不伸进输入区；聚焦末项自动滚入；预览卡不出会话区。`test:live -- outline`（cost 0）导航行为无回归。日志 out/outline-l2e-20260923.log、out/outline-l2-nav-20260923.log。 |
+| 视觉验收 | 三张真实主进程截图（`YAN_SHOT` + 合成 40 轮会话，新名入 `docs/design/preview/`）：宽深 `outline-l2-wide-dark-1440x900`、窄深 `outline-l2-narrow-dark-940x620`、窄浅 `outline-l2-narrow-light-900x520`。看图确认轨道贴会话区左缘、正文让位、预览卡在可用区内、深浅都可读。 |
+| 应用与包 | out 三端产物随本轮 build 更新；未重启用户窗口、未打包、未提交。截图走隔离 YAN_* 沙箱（out/shots-l2-sandbox）。 |
+| 剩余限制 | 100/125/150% 缩放下未单独截图；`window.resizeTo` 在 live 探针里不生效（已记录当前窗口本身是 817×538，两态覆盖）；注入 40 轮虚拟化会话时出现一次 `ResizeObserver loop` 告警（空态没有、本组件的 RO 已 rAF 合并、宽窗下根本没写避让变量，判断为既有组件的现象，未追）；V-5 图标未开工，icon-state.css 仍未 import。 |
+
+## 2026-09-23 · L1 推理收口（实施-13 V-2a）
+
+接手暂停的 L1：先修探针旧契约，再收口源码。本轮只做 L1，未动 L2/L3。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | `Reasoning.tsx`：冗余 `manual`/`expanded` 双态合并为单一 `open`；默认折叠只显最新一句，长句由 `peekText` 按字素保留尾段（60 字素）；预览外层 `dir=rtl` + 内层 `dir=ltr` 隔离 bidi，尾端贴右、省略号在左；清掉顶部与 JSX 过期注释。`chat.css` 推理段改 `.reason-body.open`，`.reason-peek` 注释按新机制重写；`tokens.css` 删除不再引用的 `--reason-max-h`。探针 `scripts/probe/reasoning.js` 按新契约重写：默认折叠/原位展开限高/上滚保持/回合结束不自动收起/reduced-motion 运行中切换/切会话隔离/长句尾端，保留 F6 顺序与 DOM 节点身份断言。DESIGN 同步 V-2a 尾端可见机制。 |
+| 自动检查 | `npm run typecheck`（CSS 约定/layer 全过）、`npm run build`、`npm run test:unit`（4697/4697）、`git diff --check`、`npm run audit:refs`（brokenDocLinks=0）均通过。 |
+| 真实运行 | 隐藏隔离 `npm run test:live -- reasoning`（cost 0）全部通过，日志 [reasoning-l1](../../out/reasoning-l1-20260923f.log)；无残留 pi 进程；未调模型额度。 |
+| 视觉验收 | 4 张真实窗口截图（合成 fixture，新名入 `docs/design/preview/`）：折叠态深/浅 `reasoning-l1-collapsed-*`、展开态深/浅 `reasoning-l1-expanded-*`。逐张看图：折叠态省略号在左、句末完整可见；浅色对比度可读；展开态限高生效且头部入口不随内部滚动移动。 |
+| 应用与包 | out 三端产物随本轮 build 更新；未重启用户窗口、未打包、未提交。 |
+| 剩余限制 | light 组视觉矩阵退出码 1，失败项是 subagent/goal/railwaiting 缺元素（与推理无关，未追）；窄窗（940/900）与 125/150% 缩放下推理预览未单独截图；V-2b 导航柄、V-5 图标仍未开工，icon-state.css 仍未 import。 |
+
+## 2026-09-23 · 构建恢复与暂停交接
+
+用户要求先查构建失败并交接；两位 Luna 已中断，不再继续 UI 实施。详细状态与可复制提示词见 [构建恢复交接](交接-构建恢复与UI剩余任务-2026-09-23.md)。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 修复 Reasoning fallbackSentences 的 Unicode 正则非法双引号转义；保留未完成的 L1 及图标草稿。L2 尚未改源码。 |
+| 自动检查 | build/typecheck 均退出 0；git diff --check 通过；日志 out/build-recovery-20260923.log、out/typecheck-recovery-20260923.log。 |
+| 真实运行 | 隔离隐藏 cost 0 reasoning 失败（退出1），日志 out/reasoning-recovery-20260923.log；探针存在重复状态操作及旧契约，F6 顺序/节点身份断言通过。不能标整个 L1 完成；无残留 pi 进程。 |
+| 视觉验收 | 未生成新图；新 UI 未验收。 |
+| 应用与包 | out 三端产物已更新（约20:32 Sydney），未重启用户窗口、未打包。 |
+| 剩余限制 | 先修 reasoning 用例状态和收口 L1，再 L2，再集成 L3；icon-state.css 未 import。交接文档逐项记录未修主题变量、滚动/长句/键盘/深浅验收及后台待办。 |
+
+
+## 2026-09-23 · 审核融合与 Luna 执行入口
+
+当前优先范围：[审核融合与任务提示词](../plan/active/执行-2026-09-23-审核融合与任务提示词.md)。用户要求先审核整理，再由 GPT-6 Luna 工作。V-2a 最新一句推理、V-2b 会话导航轨靠边、H-8a/b 图标主题与动效覆盖旧规范冲突；新增实施-15 是能力方案，不代表已实现。后续各片证据另列，不沿用此文档轮证明代码完成。
+
+| 六栏 | 本轮文档阶段 |
+|---|---|
+| 实现 | 已审核推理/导航/图标、工作台状态、目标证据与交接回执调用点；合并任务到 11/13，新增 15 方案与逐主题提示词；精简 AGENTS/NEXT，旧日期交接归档；修 U-1/F0–F6/薄层职责等过期入口。应用代码尚未修改。 |
+| 自动检查 | `node .audit-deep.cjs`：正式 brokenDocLinks=0；外部原文旧链接单列保留。`git diff --check` 通过。TESTING/CODE-MAP/实施-06 的过期 bench:context 命令已改为实际 node 入口，未重跑基准。 |
+| 真实运行 | 文档阶段未运行应用。 |
+| 视觉验收 | 本轮尚无新窗口证据；用户报告的遮挡与图标问题列为需复现；源码可以证明旧推理默认态与新要求冲突。 |
+| 应用与包 | 未应用、重启或打包。 |
+| 剩余限制 | 本次静态审核覆盖上述关键调用链，并非全仓代码/安全认证；Luna 按 L1→L2→L3 实施后分别验收；Agent 新能力先 A-0 盘点，Android/发布仍冻结。 |
+
+
 整理日期：**2026-09-17**（最后一轮更新：**2026-09-23**，最新增量为 **实施-11 H-6b 稳定逻辑回合 / 等待分段 / 用量聚合**，同日本轮早些时候为 **实施-01 S5d 空壳 `browser.js` 与死代码 loopback bridge 删除 + 宿主浏览器能力登记**；上一批包括 **实施-04 S6b-2 用户授权外部 Skill 文件整链与恶意内容审查**、**实施-01 S5a 默认发现边界**、**实施-11 C-4b 估算口径（图片/附件不当零）**、**实施-11 C-5 上下文窗口 UI 分层**、**实施-11 H-6b 崩溃→中断**、**实施-11 C-2 压缩可观测性（回收比例与新增量）**、**实施-11 C-4 生效策略交给薄层**、**实施-11 H-4a 文件链接解析与呈现**、**实施-11 H-6（部分）整轮计时落盘与恢复**、**实施-11 H-7 时间呈现统一与可访问**、**实施-11 H-2 右栏资源保留 / C-1 大窗口模型级试行档**、**实施-11 H-1 回合页脚与整轮计时口径**、**额度：Command Code 月度口径修复与三档色阶**、**04-S7 能力设置页、模式策略、MCP 显式核验的取消 / 重连与项目隔离**、**04-S6b-2 staging manifest 精确文件集复核**，以及固定项目内 `skill-files` 的安全边界调度器；既有进展包括 Pi 包 Electron 运行时适配器 + 本地离线 Pi smoke，以及 08-S0 远程消息定向与 abort 的隔离 Electron 端到端证据。当前已有一个获授权外部 Skill 文件候选完成 acquire / 安全审查 / 激活 / 原目标续接；其它资源类型的包级证据与最终发布门槛仍未完成。本文是**当前状态与验证基线的唯一入口**；
 **接下来做什么**看 [实施计划](../plan/README.md)（按主题切成「一次会话一片」）。
 已完成的任务、缺陷明细（D1–D41）与逐轮记录见 [2026-09-17 已完成归档](../archive/2026-09-17-已完成归档.md)；
@@ -734,7 +1016,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
    另：[`docs/archive/evidence/证据-04-S6-技术预检.md`](../archive/evidence/证据-04-S6-技术预检.md) 此前是**孤儿证据**
    （全仓库无任何文档引用），已在实施-04 §12 的 S6 行补上链接。
 4. **查过但按规则不动的**：`docs/archive/README.md` 索引已覆盖全部 26 份归档件（不需补）；
-   [`编排-并行代理分工-2026-09-19.md`](../plan/active/编排-并行代理分工-2026-09-19.md) 自己写明「不记录完成度」，
+   [`编排-并行代理分工-2026-09-19.md`](../archive/plan/编排-并行代理分工-2026-09-19.md) 自己写明「不记录完成度」，
    且文件域信息（`agent.ts` / `capability-server.ts` / `yan.mjs` 三件套是共享热点）仍然有效 → 保留在活动区；
    `audit:refs` 的 `missingTracked: scripts/probe/autonomous.js` 是**归档文档（历史快照）**里的提及，
    按规则不改归档件，留作已知噪音。
@@ -1685,7 +1967,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 
 ### 本轮（2026-09-19）并行编排 W1 · 四个子代理片（01-S4b / 03-S2 / 04-S1 / 08-S0）
 
-> 编排方式见 [并行代理编排](../plan/active/编排-并行代理分工-2026-09-19.md)。这三片由**本机 `pi -p` 非交互子代理**
+> 编排方式见 [并行代理编排](../archive/plan/编排-并行代理分工-2026-09-19.md)。这三片由**本机 `pi -p` 非交互子代理**
 > 并行完成（同一工作区，靠**文件域隔离**）；主编排者已核对文件域与 mtime（未碰该文 §0.2 的五个热点）。
 > 证据取自各自的产出文档与子代理报告；**`build` 未由编排者复跑**（当时 01-S4b 正占用 `out/`）。
 
@@ -2009,7 +2291,7 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 > 等价物 **`yan browser …` 已登记 19 个命令**（`browser.evaluate` 有意不做）。
 > **01-S5 的前置已满足** —— 移除默认扩展装载后浏览器能力不会丢（`test:live -- browserclimodel`，cost 1，
 > 模型自己发现入口并完成 `navigate` → `observe`；L04 边界回归绿）。证据：[证据-01-S4b](../archive/evidence/证据-01-S4b-browser-CLI迁移.md)。
-> 它占用过的 `agent.ts` / `capability-server.ts` / `yan.mjs` 三件套（[能力面串行队列](../plan/active/编排-并行代理分工-2026-09-19.md) §5）
+> 它占用过的 `agent.ts` / `capability-server.ts` / `yan.mjs` 三件套（[能力面串行队列](../archive/plan/编排-并行代理分工-2026-09-19.md) §5）
 > **已释放**；“下一位是 05-S2、再到 03-S4 / 04-S3”属于历史波次顺序，当前优先级以本文件 2026-09-22 待办段和实施计划为准。
 >
 > ✅ **05-S1 已完成（2026-09-19）** —— 钩子能力边界与安全点五组对照实测（假 provider，不联网不花钱）；

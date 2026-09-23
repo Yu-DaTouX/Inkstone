@@ -178,19 +178,17 @@ button, .label, .tab, .rail-item { font-variant-ligatures: none; }
 
 ```css
 --h-titlebar:   40px;
---w-rail:       248px;   /* 左：会话列表 + 任务 */
---w-status:     336px;   /* 右：上下文面板 + 文件树；可在 296–400px 间拖动 */
+--w-rail:       248px;   /* 左：会话列表 + 任务（实际由 layout.css 按用户值/窗口宽度分档夹取） */
 --w-stream:     800px;   /* 中：内容列上限（关键，防止宽屏行长失控） */
---tree-indent:  13px;    /* 文件树每级缩进 */
---reason-max-h: min(32vh, 260px); /* 推理省略态上限（约 15 行 @ --fs-sm） */
 ```
 
-> ⚠️ 推理块（`.reason`）**默认展开但限高**：超出 `--reason-max-h` 的部分裁掉，
-> 用 `scrollTop` 贴底显示**最新**内容，顶部 `mask-image` 渐隐表示「上面还有」。
-> 这里**不引入第二条滚动条** —— 用户无法用滚轮滚它，所以也不存在
-> 「上滚阅读时被新内容拽回底部」的问题。完整内容由「展开全部」显式打开。
-> 早期方案（N04 / 实施方案 6.2）曾要求「不设固定高度、不用内部滚动」，
-> 该条已于 2026-09-15 由用户确认废止，见 `docs/dev/HANDOFF.md`。
+> **2026-09-23（V-1）**：`--w-status` 与 `--tree-indent` 已从 `tokens.css` 删除 —— 右栏
+> 搬进设置后没有使用点（`var()` 与 `getPropertyValue` 都没有）；本文下方提到
+> 的 `.tnode[data-d]` 文件树也不再是当前实现。
+
+> **2026-09-23 新决定，实施入口 V-2a**：默认只显示最新一句/正在形成的末句，一行尾端可见，不改写原文。一次点击在当前聊天位置展开全文，限高 `min(70vh, 620px)`，折叠头可达；上滚阅读不被流式更新抢回。旧 `--reason-max-h` 多行裁剪是迁移前源码状态，已从令牌与样式中删除，不再作为设计目标。默认无内部滚动条；全文主动展开允许内部滚动。实现证据见 HANDOFF。
+>
+> 「尾端可见」由两层保证：`.reason-peek` 外层 `dir="rtl"` 把溢出挤到左侧（省略号在左、尾端贴右），内层 `dir="ltr"` 隔离 bidi 以免中英混排被重排；展示层 `peekText` 再按字素只保留尾段做兜底。不要用 `unicode-bidi:plaintext`——它会把方向反回去、变回截尾（2026-09-23 截图实测）；截断只作用于预览，正文仍是模型原文。
 
 三栏比例 **248 : 1fr : 320**，中栏内部再套 `max-width:800px` 居中。
 
@@ -201,6 +199,9 @@ button, .label, .tab, .rail-item { font-variant-ligatures: none; }
 > `data-d="2"` 这类 HTML 属性**不会**生成同名的自定义属性，`var(--d)` 会求值为空，
 > 整条 `padding` 声明失效 —— 而且不报错，树只是「没有缩进」而已。
 > 正确写法是属性选择器：`.tnode[data-d="2"]{padding-left:calc(var(--tree-indent)*2 + 4px)}`。
+>
+> 历史注：`--tree-indent` 与 `.tnode` 已随旧右栏文件树一并移除（2026-09-23 V-1），
+> 但这条陷阱对任何「想用同名自定义属性接数据属性」的写法仍然成立。
 
 #### 两栏折叠
 
@@ -209,7 +210,29 @@ button, .label, .tab, .rail-item { font-variant-ligatures: none; }
 | 类 | 效果 |
 |---|---|
 | `.app.rail-off` | `--w-rail:0` + `.rail{display:none}` |
-| `.app.status-off` | `--w-status:0` + `.status{display:none}` |
+
+> `.app.status-off` 与其 `--w-status` 已不存在：右栏（上下文 / 文件树）搬进了设置页，
+> 标题栏右侧不再有折叠钮（2026-09-23 核对源码，V-1 同步文档）。
+
+### 2.6 控件状态：禁用与键盘焦点（V-1，2026-09-23）
+
+这两个状态以前各自散在各模块里，同一个意图有很多种写法（实测禁用不透明度 9 个值、
+焦点环 4 种组合）。现在只有一个来源：
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `--ctl-disabled-opacity` | 0.5 | 所有 `:disabled` 控件的不透明度 |
+| `--focus-ring-color` | `var(--accent)` | 键盘焦点环颜色 |
+| `--focus-ring-w` | 1px | 默认焦点环宽度 |
+| `--focus-ring-offset` | 1px | 默认焦点环偏移 |
+| `--focus-ring-w-strong` | 2px | 小目标 / 浮层里空间紧张时 |
+
+- 全局 `:focus-visible`（`tokens.css`）用默认档；**. 不要另写焦点环颜色**。
+- 结构性把手（`.resizer` / `.grip` / `.browser-splitter` / `.rp-vgrip`）用 `outline:none`
+  加自身 `::after` / 背景高亮表达焦点 —— 这是有意例外，不是遗漏。
+- 输入框沿用边框变色（`.set-input:focus-visible` → `--accent-line`），不叠外圈。
+- 比 0.5 更低的 0.25~0.4 不透明度属于「半失效 / 过期」语义
+  （`.ub-item.dim`、`.tok.dim`、`.tl-dot.off`），不是控件禁用。
 
 标题栏最左的 `sidebar-left` 图标钮折叠左栏，最右的 `sidebar-right` 钮折叠右栏。
 宽度**拖拽**（`248` ↔ `320` 之间自由调整）保留用户偏好，设计稿只表达可折叠。
@@ -495,10 +518,11 @@ pi **无权限弹窗、写入立即落盘**（`docs/usage.md:309`），所以不
 
 | 方式 | 实现 |
 |---|---|
-| 鼠标 | 分区标题左侧的把手（`menu` 图标）`draggable`，HTML5 DnD |
-| 键盘 | 把手可聚焦，`Alt+↑` / `Alt+↓` 与相邻分区交换 |
-| 持久化 | `localStorage["pi-desktop.status-order"]` 存 id 数组 |
-| 重置 | 面板头部「重置顺序」按钮 |
+| 鼠标 | 分区标题左侧的把手（`⠿`）按住拖动；也可从工具库拖出/放回 |
+| 键盘 | 把手可聚焦：`Alt+↑` / `Alt+↓` 排序，`Alt+←` 移出为浮动，`Alt+→` 放回工具页 |
+| 浮动 | 磁贴可停在工具页、浮在应用内容区、或收进工具库；一个 id 只有一份实例 |
+| 持久化 | `AppSettings.toolLayout`（version 2 + `revision`）—— 见文末「可移动工具磁贴契约」 |
+| 重置 | 工具库里的「恢复默认布局」（只重置布局，不动业务数据） |
 
 三个细节：
 
@@ -563,13 +587,12 @@ pi **无权限弹窗、写入立即落盘**（`docs/usage.md:309`），所以不
 | 左栏 | **0 宽**（`--w-rail-collapsed: 0px`）+ 容器 `display: none` | 用户拖出来的宽度 | 「不要留下一个边框」：48px 的紧凑图标轨在深色主题下就是消息区左边一条颜色不同的竖条。展开入口只剩标题栏那个开关 |
 | 项目下的会话 | 前 **5** 条（`SESSION_PREVIEW`） | 「更多会话（N）」→ 全部 | 左栏是导航不是列表；**当前会话**落在折叠段里时自动多展开到它那一行（不能把自己藏起来） |
 | 工具**组**展开后的列表 | 折叠（一次调用都不渲染） | **约 25 行**（`min(625px, 80vh)`；行步进实测约 25px）+ 内部滚动 | 用户原话：「主动展开调用工具/命令栏的时候，**给展开的条目一个显示范围，而不是铺开到整个界面**」—— 一次 `npm run check` 能产生一百多条调用，不限高就把整段对话顶走。**列表的单位是“条”，所以上限也按条数（25 条）定，不跟着 vh 走**。组头（「调用了 N 次工具/命令」）在 body 外面，限高后始终留在上方 |
-| 工具**详情** / 推理全文 | 默认折叠（工具）/ 最新一段（推理，`--reason-max-h`） | 同上的值 + 内部滚动 | 「展开时应该有一个固定的范围，或者在最上方显示折叠回去的按钮」：卡住高度后行头 / 胶囊留在上方，它们本身就是那个按钮，不必另加 |
+| 工具**详情** / 推理全文 | 默认折叠（工具）/ 最新一句（推理，V-2a） | `min(70vh, 620px)` + 内部滚动 | 「展开时应该有一个固定的范围，或者在最上方显示折叠回去的按钮」：卡住高度后行头 / 胶囊留在上方，它们本身就是那个按钮，不必另加 |
 
 ⚠️ 两条例外，改选择器前先看：
 
 - 命令类详情是**终端窗口**（自带高度与缩放手柄，尺寸记在 `localStorage`），详情上限的选择器写成 `.trow-body > :not(.term)` —— 套上它会出现「终端外面还有一层滚动条」。
-- 推理的**默认态**（未展开）仍靠脚本贴底显示最新内容、不用滚动条；
-  只有用户主动点「展开全部」才给固定范围 + 内部滚动。
+- 推理的**默认态**只显示最新一句、不用滚动条；一次点击打开固定范围全文，用户主动上滚时保留阅读位置。
 
 ---
 
@@ -956,3 +979,49 @@ node docs/design/embed-icons.mjs --check        # 图标子集是否最新
 | 设计稿内联图标子集 | `file://` 不允许跨文档 `<use>`；实现阶段无此限制，见 §2.7 |
 | 助手消息仍无容器 | 用户气泡 vs 助手裸文本的不对称是刻意的：贴近终端，且让「谁在说」靠左侧符号槽区分（**待用户确认**） |
 | 工作区「检查状态」是启发式的 | `✓ npm test` / `✗ tsc --noEmit` 目前由命令名猜出来的，不是真实检查框架集成（**待用户确认**） |
+
+## 2026-09-23 导航柄与图标补充契约
+
+会话导航轨固定在会话可用区域左边缘的独立槽内，视觉边距建议 4–8 CSS px；命中区与正文交互元素不得相交。预览卡不得出可用区，键盘焦点与鼠标同等可用。V-2b 持有实现与验收，不改标题栏左栏开关。
+
+> **实现机制（2026-09-23 收口）**：槽位是 `.outline` 上的常量 `--outline-slot-inset/w/gap`（4 / 44 / 8px）。正文的避让槽用 `--outline-avoid` —— ConversationOutline.tsx 量出内容列在**不加避让**时的左缘，差额才写进变量（宽窗正文离得远，值为 0），CSS 把它加在 `.stream-inner` / `.stream-row` 的左内边距上。纵向不走 CSS：absolute 子项的 grid area containing block 在当前 Chromium 下实测没生效（`grid-row` 解析成 3，`bottom` 仍取会话区 padding box，轨道会压住输入区），改由 tsx 跟随 `.stream` 的矩形。长轨在轨道内受限滚动（键盘 Tab 到末项时浏览器自动滚入）。
+
+语义图标继承 currentColor 与主题 token，深浅各态必须可辨；动效用于 hover/focus/press/展开和真实运行状态，建议 120–180ms，reduced-motion 去除持续旋转和位移。既有 Icon/sprite/Orb 是复用基础，新增规范不表示过去完全没有主题或动画支持。H-8a/b 持有实际触点盘点与验收。
+
+> **实现机制（2026-09-23 收口）**：图标颜色一律来自 `currentColor`（sprite 无硬编码色），状态色由所属控件给；跨模块只补 `.ico` 的 `color` 过渡（`icon-state.css`，reduced-motion 压到 1ms）。artifact / 图片进度 / 子代理内联卡原先引用不存在的 `--text / --panel / --line / --muted`，已分别映射到 `--fg / --bg-2 / --border〔`--border-soft`〕/ --fg-mute（更次）与 --fg-dim`，状态色保持 `--accent / --ok / --err`。进行态旋转只挂在真实 running 条件上（`.image-progress.running`、`ub-live`、`.spin` 仅在 compacting/loggingIn 下）。
+
+## 2026-09-23 可移动工具磁贴契约（实施-12 U-4 / U-5）
+
+设计规格唯一来源仍为 [方案-侧栏工作台与子代理交互 §5](active/方案-侧栏工作台与子代理交互-2026-09-23.md)；这里只回填**已经生效的实现参数**，避免同一件事在设计与代码里各写一套。
+
+### 布局真源
+
+- 唯一真源：`AppSettings.toolLayout`（[`src/shared/tool-layout.ts`](../../src/shared/tool-layout.ts)），
+  形态 `{ version: 2, tiles: [{ id, placement, order, rect?, collapsed? }], revision }`。
+- `placement` 三选一：`docked`（工具页）/ `floating`（应用内容区）/ `library`（工具库）。
+- `revision` 单调递增；写入仲裁 `commitTileLayout` 丢弃 revision 不大于当前的写入
+  —— 连续拖动的晚返回不会覆盖新位置。重置布局也必须递增 revision。
+- 旧 `toolOrder` / `toolHidden` 只在读盘时一次性迁移；界面侧不再写入（旧字段成为只读遗留）。
+
+### 几何
+
+| 项 | 值 |
+|---|---|
+| 归一化坐标 | `rect.x/y/w/h` 均 0–1，相对 `.workspace` 内容区（U-0 冻结契约） |
+| 默认宽 | 目标 300px（`TILE_DEFAULT_W`） |
+| 最窄 / 最宽 | 240 / 420px（`TILE_MIN_W` / `TILE_MAX_W`） |
+| 磁贴头 | 32px（`TILE_HEAD_H`），折叠后整体只剩这一条 |
+| 内容最大高 | `min(360px, 50vh)`；长内容在磁贴内部滚动 |
+| 夹取 | `clampFloatPixels` / `clampRectToBounds`：缩窗、缩放后磁贴完整留在可用区 |
+| 网页避让 | `avoidFloatObstacle`：与原生网页矩形相交时吸附到最近可用 DOM 区；无处可放则退回工具页并就地说明（不永久遮住网页） |
+
+### 交互
+
+- 可浮动 registry 排除 `todo`（保持工具页原布局）与 `files`（完整文件树留在文件页）；
+  它们仍可停靠 / 排序 / 收进库。
+- 拖动状态机：按下头部 → 位移 ≥6 CSS px 才进入 dragging → 放开 commit；正文选字与按钮不触发拖动。
+- 拖动期间领取 H-9a 的 overlay blocker（原生网页暂隐），只 commit 时写盘；Esc / pointercancel /
+  失焦 / 切会话取消并释放捕获。
+- 一个磁贴 id 只有一个主实例：工具页只留「已浮动 · 定位」轻量占位，不挂第二份订阅。
+- 工具库是工具页内的稳定面板，列出全部 id 与三处位置，按钮完成移出 / 定位 / 放回 / 收进库 /
+  上移下移 / 恢复默认；键盘与按钮共用同一组 `setTilePlacement` / `moveTile` 命令。

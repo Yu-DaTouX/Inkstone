@@ -43,11 +43,14 @@ import type {
   WorkModeState,
   ZoomState
 } from '../../../shared/ipc'
+import { TOOL_SECTIONS } from '../../../shared/ipc'
+import { commitTileLayout, defaultToolLayout, type ToolLayout } from '../../../shared/tool-layout'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
+import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import {
   rebindSessionRuntime,
   migrateSessionRuntime,
@@ -228,6 +231,8 @@ interface Store {
   alwaysOnTop: boolean
   /** 内置浏览器状态；页面本体由主进程 WebContentsView 承载 */
   browserState: BrowserState
+  /** H-9a：协调器算出的原生网页当前是否应可见（供探针/调试观察，不驱动 UI） */
+  browserNativeVisible: boolean
   /** 右侧的只读文件预览（消息里的文件链接 / 拖入的文件） */
   filePreview: FilePreviewState | null
   /**
@@ -353,6 +358,13 @@ interface Store {
   syncRunners: () => Promise<void>
   /** 拉取当前会话的内置目标快照（启动 / 切会话时的兜底）。 */
   loadGoal: () => Promise<void>
+  /** 目标加载中（区分「还没拉到」与「真的没有目标」） */
+  goalLoading: boolean
+  /** 目标加载失败原因；有它时不能显示成「暂无目标」 */
+  goalError: string | null
+  /** 目标浮层（标题栏入口）开关 */
+  goalPopoverOpen: boolean
+  setGoalPopoverOpen: (open: boolean) => void
   /**
    * 设定持续目标（`+` 菜单 → 目标）。
    *
@@ -509,14 +521,19 @@ interface Store {
   refreshHandoff: () => Promise<void>
   /** 用户点「重试」：清残留现场再走一遍调度判定（不强行换段）。 */
   retryHandoff: () => Promise<void>
+  /** 人工确认续接已在目的会话跑起来（A-3）：不重发，只了结待核实状态。 */
+  confirmHandoff: (handoffId: string) => Promise<void>
   setWorkspaceMode: (mode: WorkspaceMode) => void
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   /**
-   * 改工具栏分区布局（顺序 / 哪些收进库）。
-   * 与 setPanelWidth 分开命名：一个管几何，一个管内容。
+   * 提交一次工具磁贴布局（停靠顺序 / 浮动 / 收进库）。
+   *
+   * 只接受**算好的整份 ToolLayout**：真源唯一（`AppSettings.toolLayout`），
+   * 旧 `toolOrder/toolHidden` 已不参与写入。传入 revision 不大于当前值时
+   * 直接丢弃 —— 连续拖动的晚返回不能覆盖更新的位置。
    */
-  setToolLayout: (p: { toolOrder?: string[]; toolHidden?: string[] }) => Promise<void>
+  setToolLayout: (next: ToolLayout) => Promise<void>
   /**
    * 正在从工具库拖往工具栏的分区（null = 没在拖）。
    *
@@ -584,6 +601,10 @@ interface Store {
   /** 右栏展开 / 收起（落盘到设置，重启后保持） */
   setRightPanelOpen: (v: boolean) => Promise<void>
   toggleRightPanel: () => Promise<void>
+  /** H-9a：右栏报告「活动页是不是浏览器」，不再各处直接 setVisible */
+  setBrowserSurfaceActive: (active: boolean) => void
+  /** H-9a：领取/释放一个 overlay blocker token；返回释放函数 */
+  acquireOverlayBlocker: (token: string) => () => void
   /** App 把它自己的滚动实现注册进来 */
   registerScrollToTurn: (fn: (i: number) => void) => void
   setSettingsTab: (tab: string) => void
@@ -866,7 +887,6 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
 
 /** 通知上限：超过就不显示。扩展刷屏时界面不能被遮没。 */
 const MAX_NOTICES = 3
-
 /** 统一的通知入口：去重 + 限流 + 保留最近 N 条 */
 /**
  * 调一条 pi 命令，把「主进程抛错」归一成 `{ ok: false, error }`。
@@ -921,6 +941,31 @@ function pushNotice(
   return next.slice(-MAX_NOTICES)
 }
 
+/*
+ * H-9a：原生网页显隐的唯一协调点。
+ *
+ * 各处不再自己 browser.setVisible，而是改输入（活动页 / 右栏 / blocker），
+ * 由这里统一判定；纯判定见 state/browser-visibility.ts。
+ */
+let browserSurfaceActive = false
+const overlayBlockers = new OverlayBlockers()
+let settingsBlockerRelease: (() => void) | null = null
+
+function browserVisibilityFor(state: Store): boolean {
+  return shouldShowBrowser({
+    browserOpen: state.browserState.open,
+    rightPanelOpen: state.settings?.rightPanelOpen ?? true,
+    activeBrowserSurface: browserSurfaceActive,
+    overlayBlockers: overlayBlockers.size
+  })
+}
+
+function applyBrowserVisibility(get: () => Store): void {
+  const desired = browserVisibilityFor(get())
+  if (get().browserNativeVisible !== desired) useStore.setState({ browserNativeVisible: desired })
+  void window.yan.browser.setVisible(desired)
+}
+
 export const useStore = create<Store>((rawSet, get) => {
   /*
    * 包装 set：凡是新增的 **error 通知**，同时写一份进日志抽屉
@@ -964,6 +1009,9 @@ export const useStore = create<Store>((rawSet, get) => {
   sessionRuntimes: {},
   workMode: null,
   goal: null,
+  goalLoading: false,
+  goalError: null,
+  goalPopoverOpen: false,
   handoff: null,
   workspaceMode: initialWorkspaceMode(),
 
@@ -999,6 +1047,7 @@ export const useStore = create<Store>((rawSet, get) => {
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
+  browserNativeVisible: false,
   filePreview: null,
   reviewOpen: false,
   reviewScope: { kind: 'working' },
@@ -1262,6 +1311,7 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'browser-state':
         set({ browserState: m.payload })
+        applyBrowserVisibility(get)
         break
       case 'log':
         // 主进程未捕获异常 / 未处理 Promise：与 pi stderr 共用同一条日志抽屉，
@@ -1536,25 +1586,48 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  confirmHandoff: async (handoffId) => {
+    try {
+      const res = await window.yan.confirmHandoff(handoffId)
+      if (!res.ok) {
+        /* 没发过时宿主会拒（`not-sent`）：不能凭空标一个没发生过的续接 */
+        get().notify('error', res.error ?? '确认交接失败')
+        return
+      }
+      await get().refreshHandoff()
+    } catch (error) {
+      get().notify('error', error instanceof Error ? error.message : '确认交接失败')
+    }
+  },
+
+  setGoalPopoverOpen: (open) => set({ goalPopoverOpen: open }),
+
   loadGoal: async () => {
     const initial = get()
     const runnerId = initial.activeRunnerId
     const sessionId = initial.session?.sessionId
     const sessionFile = initial.session?.sessionFile
+    const stale = (): boolean => {
+      const current = get()
+      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return true
+      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return true
+      if (sessionFile && current.session?.sessionFile && current.session.sessionFile !== sessionFile) return true
+      return false
+    }
+    set({ goalLoading: true, goalError: null })
     try {
       const res = await window.yan.getGoal()
-      const current = get()
       /*
        * getGoal() 是异步 IPC。切会话期间，旧请求可能晚于新会话返回；
        * 目标是会话级事实，不能让旧快照覆盖刚切过去的目标。
        * sessionFile 用来覆盖 sessionId 尚未从 pending 过渡完成的启动窗口。
        */
-      if (runnerId && current.activeRunnerId && current.activeRunnerId !== runnerId) return
-      if (sessionId && current.session?.sessionId && current.session.sessionId !== sessionId) return
-      if (sessionFile && current.session?.sessionFile && current.session.sessionFile !== sessionFile) return
-      set({ goal: res.goal })
-    } catch {
-      /* 主进程尚未就绪时保持现状；后续 goal 推送会补齐。 */
+      if (stale()) return
+      set({ goal: res.goal, goalLoading: false, goalError: null })
+    } catch (error) {
+      if (stale()) return
+      /* 失败要能说清并重试，不能把 IPC 失败显示成「暂无目标」。 */
+      set({ goalLoading: false, goalError: error instanceof Error ? error.message : String(error) })
     }
   },
 
@@ -2249,7 +2322,11 @@ export const useStore = create<Store>((rawSet, get) => {
      * 就丢掉用户刚打开的文件标签。
      */
     try {
-      set({ browserState: await window.yan.browser.open(url) })
+      const browserState = await window.yan.browser.open(url)
+      set({ browserState })
+      /* 浏览器是右栏资源：右栏收着就展开它，否则用户看不到刚打开的网页 */
+      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+      applyBrowserVisibility(get)
     } catch (error) {
       /*
        * 这里不走 `piCall`（成功返回的是 BrowserState 而不是 `{ok}`），
@@ -2263,6 +2340,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   closeBrowser: async () => {
     set({ browserState: await window.yan.browser.close() })
+    applyBrowserVisibility(get)
   },
 
   /*
@@ -2283,7 +2361,7 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ reviewOpen: true, ...(scope ? { reviewScope: scope } : {}) })
     /* 审查就在右栏里 —— 用户点名要看它，右栏收着就把它展开 */
     if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-    if (get().browserState.open) void window.yan.browser.setVisible(false)
+    /* 原生网页由活动页切换（→review）自动隐藏，不再单独 setVisible */
   },
   closeReview: () => {
     set({ reviewOpen: false })
@@ -2292,7 +2370,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   previewFile: async (path, line, cwd) => {
     set({ filePreview: { path, cwd, line, loading: true, data: null } })
-    if (get().browserState.open) void window.yan.browser.setVisible(false)
+    /* 原生网页由活动页切换（→file）自动隐藏，不再单独 setVisible */
     const data = await window.yan.readPreview(path, line, cwd)
     /* 期间用户可能已经换了别的文件 / 关掉了预览：只认最后一次请求 */
     const cur = get().filePreview
@@ -2434,8 +2512,12 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
   },
 
-  setToolLayout: async (patch) => {
-    set({ settings: await window.yan.patchSettings(patch as Partial<AppSettings>) })
+  setToolLayout: async (next) => {
+    const current = get().settings?.toolLayout ?? defaultToolLayout(TOOL_SECTIONS)
+    const { layout, applied } = commitTileLayout(current, next)
+    /* 迟到的旧 revision 不写盘；等 revision 的重复写也跳过（幂等） */
+    if (!applied) return
+    set({ settings: await window.yan.patchSettings({ toolLayout: layout }) })
   },
 
   toolDropTarget: null,
@@ -2705,27 +2787,18 @@ export const useStore = create<Store>((rawSet, get) => {
 
   openSettings: (tab) => {
     /*
-     * WebContentsView 不受 renderer 的 z-index 约束。
-     * 先隐藏原生浏览器，再挂载设置层，避免设置打开时出现一帧穿透或整块盖住。
+     * WebContentsView 不受 renderer 的 z-index 约束。设置层是一个 overlay：
+     * 领一个自己的 blocker token 把原生网页藏起来，关闭时只释放自己的，
+     * 不依赖「关设置时顺便恢复浏览器」这种全局假设。
      */
-    if (get().browserState.open) void window.yan.browser.setVisible(false)
+    if (!settingsBlockerRelease) settingsBlockerRelease = get().acquireOverlayBlocker('settings')
     set({ settingsOpen: true, settingsTab: tab ?? 'appearance' })
   },
   closeSettings: () => {
     set({ settingsOpen: false })
-    /*
-     * 恢复要晚一拍：让 Settings 先从 DOM 卸载 / 结束退出帧。
-     * 只有浏览器仍打开且没有其它原生视图占用者时才恢复；否则会把文件预览、
-     * Git 审查或子代理详情重新盖住。
-     */
-    const restore = (): void => {
-      const state = get()
-      if (!state.settingsOpen && state.browserState.open && !state.filePreview && !state.reviewOpen && !state.subagentPreviewId) {
-        void window.yan.browser.setVisible(true)
-      }
-    }
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(restore)
-    else window.setTimeout(restore, 0)
+    /* 释放自己的 token，协调器会按当时状态重算显隐（不需要延后一拍） */
+    settingsBlockerRelease?.()
+    settingsBlockerRelease = null
   },
   /**
    * 左栏是否展开。
@@ -2763,11 +2836,26 @@ export const useStore = create<Store>((rawSet, get) => {
     // 乐观更新：右栏要立刻响应，不能等 IPC 往返
     const s = get().settings
     if (s) set({ settings: { ...s, rightPanelOpen: v } })
+    /* 收起整个工作栏时，原生网页也必须一起不可见（新语义） */
+    applyBrowserVisibility(get)
     const next = await window.yan.patchSettings({ rightPanelOpen: v })
     set({ settings: next })
+    applyBrowserVisibility(get)
   },
   toggleRightPanel: async () => {
     await get().setRightPanelOpen(!(get().settings?.rightPanelOpen ?? true))
+  },
+  setBrowserSurfaceActive: (active) => {
+    browserSurfaceActive = active
+    applyBrowserVisibility(get)
+  },
+  acquireOverlayBlocker: (token) => {
+    overlayBlockers.acquire(token)
+    applyBrowserVisibility(get)
+    return () => {
+      overlayBlockers.release(token)
+      applyBrowserVisibility(get)
+    }
   },
   registerScrollToTurn: (fn) => set({ scrollToTurn: fn }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),

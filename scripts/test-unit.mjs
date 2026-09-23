@@ -158,6 +158,19 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+/* 渲染端的代次守卫（纯逻辑）：现场编译一份，不依赖构建产物 */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/lib/latest-only.ts'],
+    outfile: 'out/test/latest-only.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runLatestOnlyTests } = await import('./test-latest-only.mjs')
+await runLatestOnlyTests()
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
@@ -168,6 +181,11 @@ const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
 const { runWorkbenchTests } = await import('./test-workbench.mjs')
+const { runSubagentViewTests } = await import('./test-subagent-view.mjs')
+const { runSubagentUsageTests } = await import('./test-subagent-usage.mjs')
+const { runToolLayoutTests } = await import('./test-tool-layout.mjs')
+const { runShortTitleTests } = await import('./test-short-title.mjs')
+const { runBrowserVisibilityTests } = await import('./test-browser-visibility.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
@@ -204,6 +222,76 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/state/workbench.ts'],
     outfile: 'out/test/workbench.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 短标题（U-3a/H-10a）：纯函数，不依赖 Electron。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/short-title.ts'],
+    outfile: 'out/test/short-title.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 工具磁贴布局契约（U-0）：纯函数，不依赖 Electron。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/tool-layout.ts'],
+    outfile: 'out/test/tool-layout.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 子代理累计 usage（H-10b）：纯函数，不依赖 Electron。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/subagent-usage.ts'],
+    outfile: 'out/test/subagent-usage.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 子代理运行归属（H-10a）：纯函数，不依赖 Electron。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/subagent-view.ts'],
+    outfile: 'out/test/subagent-view.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 原生网页显隐协调（H-9a）：纯函数 + blocker 计数，不依赖 Electron。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/browser-visibility.ts'],
+    outfile: 'out/test/browser-visibility.mjs',
     bundle: true,
     format: 'esm',
     platform: 'neutral',
@@ -1361,6 +1449,26 @@ await runLinkTests(ok)
 
 // 工作窗口状态：稳定会话身份 / 标签恢复 / 资源缺失回退
 await runWorkbenchTests(ok)
+
+
+// 原生网页显隐协调（H-9a）：四条件判定 + blocker 计数
+await runBrowserVisibilityTests(ok)
+
+
+// 子代理运行归属（H-10a）：attached/detached/foreign/unattributed
+await runSubagentViewTests(ok)
+
+
+// 子代理累计 usage（H-10b）：按消息 id 去重累计
+await runSubagentUsageTests(ok)
+
+
+// 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
+await runToolLayoutTests(ok)
+
+
+// 短标题（U-3a/H-10a）：字素截断
+await runShortTitleTests(ok)
 
 
 // 回复详细程度扩展：三档注入 / standard 不注入 / 脏值回落

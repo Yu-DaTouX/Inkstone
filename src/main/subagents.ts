@@ -28,7 +28,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { YAN_DIR } from './paths'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
-import { normalizeMessage, type PiMessage } from './normalize'
+import { normalizeMessage, toUsage, type PiMessage } from './normalize'
+import { accumulateUsage, ingestUsageSnapshot, type UsageSnapshots } from '../shared/subagent-usage'
 import { PiRpc } from './protocol'
 import {
   applyPatch,
@@ -112,6 +113,8 @@ interface Run extends SubagentRun {
    * 子代理以前不看它，于是模型失败会被 settled 当成「已完成」（实测 2026-09-19）。
    */
   stopReason?: string
+  /** H-10b：按消息 id 保存最后一份 usage 快照，重放/流式增量不会重复相加 */
+  usageSnapshots: UsageSnapshots
 }
 
 export interface SubagentOptions {
@@ -178,7 +181,8 @@ export class SubagentController {
       transcript: run.transcript,
       diff: run.diff,
       review: run.review,
-      error: run.error
+      error: run.error,
+      usage: run.usage
     }
   }
 
@@ -272,6 +276,7 @@ export class SubagentController {
       latestActivity: '启动中…',
       transcript: [],
       review: 'none',
+      usageSnapshots: {},
       rpc,
       workspace,
       settled: false,
@@ -647,6 +652,12 @@ export class SubagentController {
       const idx = run.transcript.findIndex((m: UIMessage) => m.id === msg.id)
       if (idx >= 0) run.transcript[idx] = msg
       else run.transcript.push(msg)
+      /* H-10b：按消息 id 收 usage 快照；同一 id 只留最后一份（流式→final 不重复） */
+      const usage = toUsage(raw.usage)
+      if (usage) {
+        run.usageSnapshots = ingestUsageSnapshot(run.usageSnapshots, msg.id, usage)
+        run.usage = accumulateUsage(run.usageSnapshots)
+      }
       if (type === 'message_end') run.streamingId = undefined
       if (run.transcript.length > MAX_TRANSCRIPT) {
         run.transcript.splice(0, run.transcript.length - MAX_TRANSCRIPT)

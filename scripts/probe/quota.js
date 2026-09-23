@@ -49,6 +49,9 @@
       } else await sleep(150)
     }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
+    /* H-3b：新会话默认停在「开始」页；额度分区在「工具」页。 */
+    await sleep(300)
+    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     const hasPanel = await until(() => q('[data-testid="rp-quota"]'), 6000)
     if (!hasPanel) ok(false, '右面板没有「额度」分区（工具布局把它隐藏了？）')
 

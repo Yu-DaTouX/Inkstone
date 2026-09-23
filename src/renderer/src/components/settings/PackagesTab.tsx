@@ -199,7 +199,7 @@ export function PackagesTab(): React.JSX.Element {
             {listing.entries.map((e) => (
               <div className="pkg-item" key={`${e.scope}:${e.source}`} data-testid="pkg-item">
                 <div className="pkg-item-main">
-                  <span className="pkg-name" data-testid="pkg-name">
+                  <span className="pkg-name" data-testid="pkg-name" title={e.name}>
                     {e.name}
                   </span>
                   {e.version ? <span className="pkg-ver">{e.version}</span> : null}

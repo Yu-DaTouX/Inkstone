@@ -110,32 +110,23 @@
     st().closePreview()
     await sleep(500)
     /*
-     * 卸载右栏只在**没有任何资源**时发生：`RightPanel` 的早退条件是
-     * `hasVisibleSurface`（浏览器 / 审查 / 文件预览 / 工具面板任一）。
-     * 所以这里先只留下审查，先验“收起不销毁审查”，再用另一个分支验真的收起。
+     * H-3b：收起整个工作栏 = 连原生网页一起不可见，右栏渲染为 null（0 宽）。
+     * 资源本身不销毁；展开后回到原来的活动页。
      */
     await st().setRightPanelOpen(false)
     await sleep(800)
-    const panelEl = q('[data-testid="rightpanel"]')
-    const panelW = panelEl ? Math.round(panelEl.getBoundingClientRect().width) : 0
-    out.push(
-      `  仅审查 + 收起：rightpanel 在 DOM=${!!panelEl} 宽=${panelW} ` +
-        `rightPanelOpen=${String(st().settings?.rightPanelOpen)}`
-    )
+    const collapsedEl = q('[data-testid="rightpanel"]')
+    const collapsedW = collapsedEl ? Math.round(collapsedEl.getBoundingClientRect().width) : 0
+    out.push(`  收起：rightpanel 在 DOM=${!!collapsedEl} 宽=${collapsedW}`)
+    ok(!collapsedEl || collapsedW < 1, '收起右栏后右栏不占布局宽度（含原生网页）')
     ok(!!st().reviewOpen, '收起右栏后审查资源仍在（收起只改布局，不销毁资源）')
     ok(!!st().browserState.open, '收起右栏后浏览器资源仍在')
+    ok(st().browserNativeVisible === false, '收起右栏时原生网页也不可见')
 
-    /* 真的收起：连浏览器与审查也关掉，此时右栏应该从布局里消失 */
-    st().closeReview()
-    await sleep(500)
-    await st().closeBrowser()
-    await sleep(800)
-    const panelEl2 = q('[data-testid="rightpanel"]')
-    const panelW2 = panelEl2 ? Math.round(panelEl2.getBoundingClientRect().width) : 0
-    out.push(`  关闭所有资源后：rightpanel 在 DOM=${!!panelEl2} 宽=${panelW2}`)
-    ok(!panelEl2 || panelW2 < 1, '没有任何资源时右栏不占布局宽度', `宽度 ${panelW2}px`)
     await st().setRightPanelOpen(true)
     await sleep(700)
+    ok(!!q('[data-testid="rightpanel"]'), '展开右栏后工作栏回到布局')
+    ok(st().reviewOpen && st().browserState.open, '展开后资源都没丢')
 
     /* ---- 5. 显式关闭只释放对应的那一个 ---- */
     out.push('')
@@ -189,7 +180,7 @@
     ok(closedReview, '审查标签上有显式关闭按钮')
     await sleep(700)
     ok(!st().reviewOpen, '点关闭后审查被释放')
-    ok(!!q('[data-testid="right-window-tab-tools"]'), '全部关掉后回到「工具」标签（不是空白）')
+    ok(!!q('[data-testid="right-window-tab-start"]'), '全部关掉后固定导航仍在（回到开始页，不是空白）')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }

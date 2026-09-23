@@ -63,6 +63,26 @@ export interface HandoffStep {
   detail?: string
 }
 
+/**
+ * 续接的**回执**（实施-15 A-3 / 审核 R6）。
+ *
+ * 为什么要分开记：`resumed` 一直是用「会话文件里出现了续行标记」判的，
+ * 那只能证明**已投递**，证明不了「模型真的开始跑了」（正文是本地拼的，
+ * 写进文件不需要模型参与）。把三件事分开落盘之后，
+ * 界面与恢复都能说清楚「到哪一步了」：
+ *   · `sentAt` —— 已经把续行交给目的实例；
+ *   · `persistedAt` —— 已在目的会话文件里看到（= 现在 `resumed` 的依据）；
+ *   · `startedAt` —— 标记之后真的出现了助手输出（**运行**证据）。
+ *
+ * 现状（如实）：`resumed` 仍以 `persistedAt` 为准，`startedAt` 只做附加观察，
+ * **未当门槛** —— 把它当门槛会让交接在模型未启动时长时间挂住。
+ */
+export interface HandoffReceipts {
+  sentAt?: number
+  persistedAt?: number
+  startedAt?: number
+}
+
 export interface HandoffTransaction {
   handoffId: string
   /** 源会话文件路径（宿主侧的键） */
@@ -83,6 +103,8 @@ export interface HandoffTransaction {
    * `>= 2` 说明已经重发过一次仍无证据 → 不再自动重发，交给人判断。
    */
   resumeAttempts: number
+  /** 续接回执（A-3）：见 `HandoffReceipts` 的注释。 */
+  receipts: HandoffReceipts
   stage: HandoffStage
   /** 每一步的转移日志（可恢复日志的最小形态） */
   steps: HandoffStep[]
@@ -202,6 +224,7 @@ export function createTransaction(input: {
     package: null,
     resumeId: input.resumeId,
     resumeAttempts: 0,
+    receipts: {},
     stage: 'pending',
     steps: [],
     error: null,
@@ -254,7 +277,34 @@ export function recoveryAction(
  * 但它是「不盲发两遍」的判据 —— 只留在内存里等于没记（恰恰是崩溃会丢的部分）。
  */
 export function recordResumeAttempt(tx: HandoffTransaction, at = Date.now()): HandoffTransaction {
-  return { ...tx, resumeAttempts: Math.max(0, Math.floor(tx.resumeAttempts ?? 0)) + 1, updatedAt: at }
+  return {
+    ...tx,
+    resumeAttempts: Math.max(0, Math.floor(tx.resumeAttempts ?? 0)) + 1,
+    receipts: { ...(tx.receipts ?? {}), sentAt: tx.receipts?.sentAt ?? at },
+    updatedAt: at
+  }
+}
+
+/** 回执种类（与 `HandoffReceipts` 的字段一一对应，调用方只管说“哪一步”）。 */
+export type ReceiptKind = 'sent' | 'persisted' | 'started'
+
+const RECEIPT_FIELD: Record<ReceiptKind, keyof HandoffReceipts> = {
+  sent: 'sentAt',
+  persisted: 'persistedAt',
+  started: 'startedAt'
+}
+
+/**
+ * 记一条回执（A-3）。
+ *
+ * 同一个 kind 只记**第一次**：回执的意义是「什么时候第一次到达这一步」，
+ * 反复重写会把「早就到了」的时间推后，反而看不出真实的停顿发生在哪。
+ */
+export function recordReceipt(tx: HandoffTransaction, kind: ReceiptKind, at = Date.now()): HandoffTransaction {
+  const field = RECEIPT_FIELD[kind]
+  const receipts = tx.receipts ?? {}
+  if (typeof receipts[field] === 'number') return tx
+  return { ...tx, receipts: { ...receipts, [field]: at }, updatedAt: at }
 }
 
 /** 一行摘要（界面 / 日志）。 */

@@ -54,6 +54,24 @@
 都不启动 Electron 窗口，属于最安全的跑法。**要验证 pi 本身时优先用它们**，
 不要为了「顺手看看界面」去起 `test:live`。
 
+### 隐藏窗口的样式重算会被节流（2026-09-23 实测）
+
+不上屏时窗口是 `show: false`，**元素级的样式重算可能一直不落地**：只改 CSS 变量
+（`document.documentElement.dataset.theme = 'light'`）后，`getComputedStyle` 读
+`--fg` / `--accent` 这类**变量值**会立刻更新，但读**元素的 `color`** 可能还是旧主题的值。
+
+实测代价：`iconsurface` 探针不加处理时把 37 个图标全判成「颜色不随主题变化」，
+差点当成 H-8 的真缺陷去修。修法是读颜色前先强制一次 reflow 并等两帧：
+
+```js
+void document.documentElement.offsetHeight
+await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+void document.body.offsetHeight
+```
+
+加完之后同一批 37 个图标全部跟随主题。**教训**：探针里断言「计算样式随某状态变化」时，
+先确认这次重算真的发生过；否则会得到稳定的假阴性。
+
 ## 测试模型（重要）
 
 ### 默认模型（以脚本配置为准）
@@ -703,7 +721,7 @@ provider 下返回三档受控数据），塞进组 0 会让同一进程里后�
 | `scripts/shot-setup/reasoning-live.js` | 真实思考模型的推理流截图前置（N04；配合 `YAN_SHOT_SETUP`） |
 | `src/shared/web-search.ts` | 「兼容搜索能力」判定（实施-07 S4）：纯函数，决定来源菜单里那枚搜索入口出不出现 |
 | `scripts/bench/context-tasks.mjs` | N21-9 的合成任务集（数据，**不随包分发**）：3 个任务 / 13 条约束，每条自带 `kept` / `violated` 样例供单测自检 |
-| `scripts/bench/context-bench.mjs` | N21-9 跑批器：`npm run bench:context -- --mock|--live`（mock cost 0 只验装置；**live 要额度**，第一次跑先 `--mock` 再 `--live --tasks=1 --strategies=A`）。⚠️ 它不自己做判分 —— 口径全部来自 `src/shared/context-bench.ts`，它只负责编排与出报告 |
+| `scripts/bench/context-bench.mjs` | N21-9 跑批器：`node scripts/bench/context-bench.mjs --mock|--live`（mock cost 0 只验装置；**live 要额度**，第一次跑先 `--mock` 再 `--live --tasks=1 --strategies=A`）。⚠️ 它不自己做判分 —— 口径全部来自 `src/shared/context-bench.ts`，它只负责编排与出报告 |
 | `scripts/probe/upgrade-read.js` | 升级读取验证的探针（配合 `scripts/test-upgrade-read.mjs`；`npm run test:upgrade`） |
 | `scripts/test-*.mjs` | 各模块的单测（在 `test-unit.mjs` 里用 esbuild 现场编译源码后跑） |
 | `resources/pi-extensions/question.js` | 内置「提问」模式指引薄层；交互入口是宿主 `yan question ask`，不注册模型工具 |

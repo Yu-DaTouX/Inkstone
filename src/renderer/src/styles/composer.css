@@ -212,7 +212,7 @@
 }
 
 .mt-trigger:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -461,7 +461,7 @@
 }
 
 .mt-stop:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -902,7 +902,7 @@
 
 .slash-item:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: var(--ctl-disabled-opacity);
 }
 
 .slash-item.compat .slash-name {
@@ -976,7 +976,7 @@
 }
 
 .pick:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1547,7 +1547,7 @@
 }
 
 .sa-act-btn:disabled {
-  opacity: 0.45;
+  opacity: var(--ctl-disabled-opacity);
   cursor: default;
 }
 
@@ -1579,6 +1579,7 @@
  */
 .handoff-note {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   width: fit-content;
@@ -1590,6 +1591,36 @@
   background: var(--bg-1);
   font-size: 12px;
   color: var(--fg-dim);
+}
+
+/* 展开恢复详情时不再是胶囊：胶囊里放多行文字会很难读 */
+.handoff-note:has(.handoff-detail) {
+  align-items: flex-start;
+  border-radius: var(--r-lg);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/*
+ * 恢复视图（实施-15 A-3）：最后确认步骤 / 待核实 / 不确定状态。
+ * 它只是一行状态里的展开区，不新建面板 —— 交接的观察入口仍然只有这一个。
+ */
+.handoff-detail {
+  flex-basis: 100%;
+  display: grid;
+  gap: 2px;
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.handoff-detail-row {
+  min-width: 0;
+}
+
+.handoff-detail-row.tone-await {
+  color: var(--warn, var(--fg));
 }
 
 .handoff-note-text {
@@ -1642,4 +1673,74 @@
 
 .handoff-note-action:hover {
   text-decoration: underline;
+}
+
+/* H-10a：子代理列表的筛选与状态徽标。
+   运行中在前、其余按结束时间倒序；筛选只改视图，不改变 run 身份。 */
+.sa-filters {
+  display: flex;
+  gap: 4px;
+  padding: 2px 8px 6px;
+  flex-wrap: wrap;
+}
+
+.sa-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sa-filter:hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.sa-filter.on {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.sa-filter:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.sa-filter-n {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+
+.sa-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--fg-mute);
+}
+
+.sa-badge {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+}
+
+.sa-badge.review {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-soft);
 }

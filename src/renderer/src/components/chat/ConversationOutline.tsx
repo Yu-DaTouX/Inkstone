@@ -164,56 +164,113 @@ export function ConversationOutline() {
   const [hoverRatio, setHoverRatio] = useState(0)
 
   /**
-   * 导航轨的横向位置**由 JS 实测**（用户要求：随窗口缩放）。
+   * 导航轨的**避让槽**（2026-09-23 V-2b）。
    *
-   * 纯 CSS 做不到：
-   *   · 内容列是居中限宽的，刻度要贴在它左边；
-   *   · 窗口窄时内容列占满，左边只剩内边距（24px）——
-   *     而悬停时刻度要长到 34px，CSS 里没有“有边距就放外边、
-   *     没边距就夹进内边距”这种分支。
-   * 用 `textLeft - 44`（刻度列宽 + 让位）算，两种情形都对，
-   * 而且窗口一变就重算。
+   * 轨道自己固定贴在会话区左边缘（CSS 里的 `--outline-slot-*`），
+   * 不再跟着正文列跑。但正文列是 `max-width + margin:auto` 居中的：
+   * 宽窗时它离边界很远，轨道落在留白里；窄窗时它伸到边界，就会被轨道压住。
+   * 所以这里算出「正文内容左缘距边界」的差额，写成 `--outline-avoid`，
+   * 由 CSS 加在正文列的左内边距上。
+   *
+   * 为什么还得用 JS：这个量取决于内容列当前的实际位置，
+   * 而「有留白就不动、没留白就让位」这种分支纯 CSS 写不出来。
    */
   const root = useRef<HTMLDivElement>(null)
-  const [leftPx, setLeftPx] = useState<number | null>(null)
   useLayoutEffect(() => {
-    const host = root.current?.offsetParent as HTMLElement | null
-    if (!host) return
+    const el = root.current
+    const host = el?.offsetParent as HTMLElement | null
+    if (!el || !host) return
 
-    const OUTLINE_W = 44
+    /* 槽参数只有一份真源：CSS 变量（见 redesign.css 的 .outline） */
+    const cs = getComputedStyle(el)
+    const inset = parseFloat(cs.getPropertyValue('--outline-slot-inset')) || 0
+    const slotW = parseFloat(cs.getPropertyValue('--outline-slot-w')) || 0
+    const gap = parseFloat(cs.getPropertyValue('--outline-slot-gap')) || 0
+    const need0 = inset + slotW + gap
+
     /*
-     * 取当前内容列的元素。
-     *
      * ⚠️ 不能只找 `.stream-inner`：虚拟化的长会话走 `.stream-row`，
-     *    根本没有 `.stream-inner` —— 旧实现此时直接 return，
-     *    leftPx 永远是 null，导航轨就钉死在 CSS 的 left:0（用户报的错位）。
-     *    两者的内边距与 max-width 完全一致，量哪一个都行。
+     *    根本没有 `.stream-inner`（旧实现此时直接 return，导航轨就钉死在
+     *    CSS 的 left:0）。两者的内边距与 max-width 完全一致，量哪个都行。
      */
     const innerOf = (): HTMLElement | null =>
       document.querySelector<HTMLElement>('.stream-inner, .stream-row')
 
+    const streamOf = (): HTMLElement | null => document.querySelector<HTMLElement>('.stream')
+
     const measure = (): void => {
+      /*
+       * ① 纵向：轨道只覆盖对话区，不伸进输入区。
+       *    `.center` 是 grid 容器，absolute 子项理论上能用 grid-row 把
+       *    containing block 钉到 `.stream` 那一行；实测当前 Chromium 仍按
+       *    padding box 解析（grid-row 量到了 3，bottom 却等于会话区底边，
+       *    轨道会压住输入区），所以这里直接跟随 `.stream` 的矩形。
+       */
+      const stream = streamOf()
+      if (stream) {
+        const hb0 = host.getBoundingClientRect()
+        const sb = stream.getBoundingClientRect()
+        /* 只在值真变时写：每次无脑写样式会让布局失效、再触发 ResizeObserver，
+           浏览器会报「loop completed with undelivered notifications」。 */
+        const top = `${Math.round(sb.top - hb0.top)}px`
+        const height = `${Math.round(sb.height)}px`
+        if (el.style.top !== top) el.style.top = top
+        if (el.style.height !== height) el.style.height = height
+        if (el.style.bottom !== 'auto') el.style.bottom = 'auto'
+      }
+
+      /* ② 横向：正文避让槽 */
       const inner = innerOf()
       if (!inner) return
+      const applied = parseFloat(host.style.getPropertyValue('--outline-avoid')) || 0
       const hb = host.getBoundingClientRect()
       const ib = inner.getBoundingClientRect()
-      // 正文左缘 = 内容列左缘 + 它自己的左内边距（--sp-5 = 24）
-      const textLeft = ib.left + 24
-      setLeftPx(Math.max(0, Math.round(textLeft - hb.left - OUTLINE_W)))
+      const padLeft = parseFloat(getComputedStyle(inner).paddingLeft) || 0
+      /* 减掉**已应用**的避让量：否则每次测量都把上一次的位移再算一遍，会震荡 */
+      const base = ib.left + padLeft - hb.left - applied
+      const need = Math.max(0, need0 - base)
+      const next = `${Math.round(need)}px`
+      if (host.style.getPropertyValue('--outline-avoid') !== next) {
+        host.style.setProperty('--outline-avoid', next)
+      }
     }
     measure()
-    const ro = new ResizeObserver(measure)
+    /*
+     * RO 回调只**调度**，不直接写样式：回调里读几何 + 写样式会让布局失效，
+     * 同一帧内再触发通知，浏览器就报「loop completed with undelivered
+     * notifications」。合并到下一帧就稳定了。
+     */
+    let raf = 0
+    const schedule = (): void => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        measure()
+      })
+    }
+    const ro = new ResizeObserver(schedule)
     ro.observe(host)
-    /* 观察内容列本身：改对话宽度 / 收放面板时它的宽度都会变 */
+    /* 内容列本身也要看：改对话宽度 / 收放面板时它都会变 */
     const inner0 = innerOf()
     if (inner0) ro.observe(inner0)
+    /* 对话区自己的尺寸（含虚拟化切换后新建的节点）也要跟踪 */
+    const stream0 = streamOf()
+    if (stream0) ro.observe(stream0)
+    /* 输入区高度一变，对话区高度也跟着变 */
+    const composer0 = document.querySelector<HTMLElement>('.composer-wrap')
+    if (composer0) ro.observe(composer0)
     window.addEventListener('resize', measure)
-    /* 设置里改对话宽度后，App 会派这个事件（虚拟化时没有可观察的常驻元素） */
+    /* 设置里改对话宽度后，App 会派这个事件 */
     window.addEventListener('yan:stream-width', measure)
     return () => {
+      if (raf) cancelAnimationFrame(raf)
       ro.disconnect()
       window.removeEventListener('resize', measure)
       window.removeEventListener('yan:stream-width', measure)
+      host.style.removeProperty('--outline-avoid')
+      el.style.removeProperty('top')
+      el.style.removeProperty('height')
+      el.style.removeProperty('bottom')
     }
   }, [turns.length])
 
@@ -241,7 +298,6 @@ export function ConversationOutline() {
     <div
       className="outline"
       ref={root}
-      style={leftPx != null ? { left: `${leftPx}px` } : undefined}
       data-testid="outline"
       role="navigation"
       aria-label={t('outline.label')}
@@ -346,6 +402,22 @@ function OutlinePreview({
     const host = el?.offsetParent as HTMLElement | null
     const anchor = el?.parentElement?.querySelector<HTMLElement>('.outline-track')
     if (!el || !host || !anchor) return
+
+    /*
+     * 先量水平：卡片挂在槽的右侧，宽度不够就压缩，
+     * 保证右缘不越出会话可用区（V-2b：不能盖住正文/右栏控件）。
+     * 必须在量高度**之前**改宽度 —— 否则 top 是旧高度算的。
+     */
+    const area = host.offsetParent as HTMLElement | null
+    if (area) {
+      const ab = area.getBoundingClientRect()
+      const hb0 = host.getBoundingClientRect()
+      const slotW = parseFloat(getComputedStyle(host).getPropertyValue('--outline-slot-w')) || 44
+      const left = slotW + 6
+      const maxW = ab.right - 8 - (hb0.left + left)
+      el.style.left = `${left}px`
+      el.style.width = `${Math.round(Math.max(160, Math.min(320, maxW)))}px`
+    }
 
     const a = anchor.getBoundingClientRect()
     const hb = host.getBoundingClientRect()

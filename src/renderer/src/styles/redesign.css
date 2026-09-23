@@ -551,7 +551,7 @@
   /* 文字只在忙碌时（中止）显示，正常状态只有一个箭头 */
 }
 .send:disabled {
-  opacity: 0.3;
+  opacity: var(--ctl-disabled-opacity);
 }
 @keyframes sheadflash {
   0%,
@@ -1179,17 +1179,25 @@
    以前这条轨的样式散在两节里（旧节的 .outline-tick 已改成 .outline-bar，
    类名对不上 → 那些规则是死的；两节的 .outline 又互相打架），
    而且 op-title / op-answer / op-empty 根本没有样式。这里合并成一节。
-   两条设计约束（用户报的问题）：
-   ① **刻度要向右长 → 会压到正文**。现在整列被 JS 推到正文左侧的空隙里，
-   刻度向左锚定、向右最多长 34px（刻度列 44px），永远到不了正文。
-   ② 「随窗口缩放」：横向位置由 tsx 实测内容列左缘算出（见那里的注释）——
-   纯 CSS 没“有边距就放外边、没边距就夹进内边距”这种分支。 */
+
+   2026-09-23 V-2b：轨道改成**会话可用区域左边缘的独立槽**，不再跟正文列走。
+   · 旧实现用 `textLeft - 44` 把整列推到正文左侧，窄窗再用 `Math.max(0, …)`
+     夹回来 —— 夹到 0 时 44px 的命中区正好压在正文上（用户报的遮挡），
+     而且正文一居中轨道位置就跟着漂。
+   · 现在槽位是常量（--outline-slot-*），正文反过来让出避让槽
+     （--outline-avoid，由 ConversationOutline.tsx 实测写入）。
+   · 纵向不走 CSS：absolute 子项的 grid area containing block 在当前
+     Chromium 下实测没生效（grid-row 解析成 3，bottom 仍取 padding box，
+     轨道会压住输入区），改由 tsx 跟随 `.stream` 的矩形（那里有注释）。 */
 .outline {
+  --outline-slot-inset: 4px;
+  --outline-slot-w: 44px;
+  --outline-slot-gap: 8px;
   position: absolute;
-  left: 0; /* JS 覆写（随窗口/面板宽度重算） */
-  top: 96px; /* 让开连续性带 */
-  bottom: 0;
-  width: 44px;
+  left: var(--outline-slot-inset);
+  top: 0; /* JS 覆写为对话区上缘 */
+  bottom: 0; /* JS 覆写为对话区底边（bottom:auto + height） */
+  width: var(--outline-slot-w);
   z-index: 4;
   display: flex;
   align-items: center;
@@ -1197,13 +1205,20 @@
   pointer-events: none; /* 只有刻度本身可点，空白处不挡消息流 */
 }
 
+/* 正文避让槽：轨道脚下要让出 inset + 槽宽 + 间隙。
+   --outline-avoid 只在正文真的要伸进来时才 >0（宽窗时正文离得远，就是 0）。 */
+.center:has(.outline) .stream-inner,
+.center:has(.outline) .stream-row {
+  padding-left: calc(var(--sp-5) + var(--outline-avoid, 0px));
+}
+
 /* ---- 悬停预览卡（top 由 JS 覆写，锚在被指的那一格） ---- */
 .outline-preview {
   position: absolute;
-  left: calc(100% + 6px);
+  /* left / width 由 JS 夹进会话可用区（见 OutlinePreview 的注释） */
+  left: 50px;
   top: 0;
   width: 320px;
-  max-width: 42vw;
   padding: var(--sp-2) var(--sp-3);
   background: var(--bg-1);
   border: 1px solid var(--border-str);
@@ -1246,4 +1261,54 @@
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-style: italic;
+}
+
+/* 通用上下文菜单（实施-12 U-2）：Portal 到 body，fixed 定位。
+   行内渲染会被 overflow 裁掉、顶大 scrollHeight，所以必须脱离行。 */
+.ctx-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 168px;
+  max-width: min(320px, 80vw);
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--fg-dim);
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ctx-menu-item:hover,
+.ctx-menu-item:focus-visible {
+  color: var(--fg);
+  background: var(--bg-3);
+  outline: none;
+}
+
+.ctx-menu-item.danger {
+  color: var(--err);
+}
+
+.ctx-menu-item[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
 }

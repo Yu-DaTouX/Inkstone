@@ -995,6 +995,7 @@ const CASES = {
   atpathedge: { probe: 'scripts/probe/at-path-edge.js', delay: 11000, cost: 0, fixture: true },
   // 项目切换（N05）：视图与文件树跟着 cwd 走 / 草稿按实例隔离 / 附件绝对路径 / 失效与无权限目录的真实反馈
   projectswitch: { probe: 'scripts/probe/project-switch.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
+  knowledgeasync: { probe: 'scripts/probe/knowledge-async.js', delay: 10000, cost: 0, fixture: true, budget: 180000, projectSessions: true },
   /*
    * 「每个项目最后一个会话」的恢复判断（实施-09 S3，cost 0）：不调模型。
    *
@@ -1167,6 +1168,13 @@ const CASES = {
   features: { probe: 'scripts/probe/features.js', delay: 9000, cost: 0 },
   // 对话导航轨：间距拉长 + 鼠标靠近动态展开
   outline: { probe: 'scripts/probe/outline.js', delay: 9000, cost: 0 },
+  iconstate: { probe: 'scripts/probe/iconstate.js', delay: 9000, cost: 0 },
+  // 控件状态（V-1）：禁用只有一个值 / 焦点环只有一个来源 / 命中区 / 密度三档
+  controlstates: { probe: 'scripts/probe/controlstates.js', delay: 9000, cost: 0, fixture: true },
+  // 图标触点与无障碍名（H-8c）：sprite 接口 / 可访问名 / currentColor / 尺寸
+  iconsurface: { probe: 'scripts/probe/iconsurface.js', delay: 9000, cost: 0, fixture: true },
+  // 目标的产物/参考（U-3b）：真 IPC 读回 / 展示 / 打开失败有反馈
+  goallinks: { probe: 'scripts/probe/goallinks.js', delay: 10000, cost: 0, fixture: true, goalSeed: true },
   // 布局：用量条合并 / 消息无上下文 / 右栏任务 / 左栏自动隐藏
   layout: { probe: 'scripts/probe/layout.js', delay: 9000, cost: 0 },
   // 用量条（输入/输出/缓存命中/输出速度）—— 会真调模型
@@ -1607,6 +1615,60 @@ const CASES = {
    * 再走“切走 → 切回 → 收起右栏 → 逐个关标签”。
    */
   rightresources: { probe: 'scripts/probe/right-resources.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-11 H-9a：原生网页显隐协调（cost 0）。
+   * 四条件判定 + overlay blocker token 归属：设置/审查/收起右栏/子代理详情
+   * 都不再各自 setVisible，而是由协调器按输入重算。
+   */
+  overlayblockers: { probe: 'scripts/probe/overlayblockers.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-12 U-0：磁贴布局契约（cost 0）。
+   * 写 floating → 空 patch 触发重读盘 → 仍在；越界坐标被归一夹回。
+   */
+  toollayout: { probe: 'scripts/probe/toollayout.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-12 U-4/U-5：工具磁贴的位置切换、单实例、键盘与拖动（cost 0）。
+   * 工具库 → 浮动 → 放回、键盘 Alt+←/→、拖动阈值/取消、越界夹取、恢复默认。
+   */
+  tooltiles: { probe: 'scripts/probe/tooltiles.js', delay: 11000, cost: 0 },
+
+  /*
+   * 实施-13 V-3：设置外壳与 Context/Auth/Capabilities/Packages 页（cost 0）。
+   * 键盘切 tab、真实锚点/空态、禁用防重复提交、长 id 全文出口。
+   */
+  settingstabs: { probe: 'scripts/probe/settingstabs.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-13 V-4：右侧资源表面结构统一（cost 0）。
+   * 开始/工具/文件/审查各自的标题、关闭、空态/失败态。
+   */
+  resourceheads: { probe: 'scripts/probe/resourceheads.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-12 U-6：浮动位置跨重启（cost 0，两次启动同一份 YAN_DATA_DIR）。
+   * 第一次写 floating → 退出 → 新进程里断言 rect 与渲染都还在。
+   */
+  tilerestart: {
+    probe: 'scripts/probe/tile-restart.js',
+    restart: { probe: 'scripts/probe/tile-restart-restart.js', delay: 10000, cost: 0 },
+    delay: 10000,
+    cost: 0
+  },
+
+  /*
+   * 实施-12 U-3a：目标浮层（cost 0 fixture）。
+   * 各相位/完成数/空标题/emoji/超长/加载失败与重试/点击不创建不停止。
+   */
+  goalpopover: { probe: 'scripts/probe/goalpopover.js', delay: 10000, cost: 0 },
+
+  /*
+   * 实施-12 U-2：项目上下文菜单（cost 0）。
+   * Portal/无布局位移/键盘/外点关闭。
+   */
+  contextmenu: { probe: 'scripts/probe/contextmenu.js', delay: 10000, cost: 0 },
 
   /*
    * 实施-11 H-4（解析 / 呈现切片）：Markdown 文件链接的 `#L42` 与点击（cost 0）。
@@ -3560,6 +3622,92 @@ const KNOWLEDGE_FIXTURE_CANDIDATE_TEXT = 'out/ 是构建产物目录，跑单测
  * 手写一个 16 位 hex 也许能过形状校验，但那是 fixture 在替产品说谎，
  * 而这条场景的全部意义就是「真检索、真注入」。
  */
+/**
+ * 预置一份带结构化链接的目标文档（U-3b，2026-09-23）。
+ *
+ * 为什么用预置而不是让探针写：写入通道只有 `yan goal report`（宿主 CLI），
+ * 渲染进程内没有第二写入口 —— 探针能验的正是「读回来并对不对」。
+ * 一条 `file` 故意指向不存在的路径（验失败反馈），一条 `url` 不会被点击
+ * （不打开外部浏览器）。
+ */
+async function seedGoalDocument(dataDir, sessionsDir) {
+  const now = Date.now()
+  /*
+   * 每个会话都种一份：目标状态按**会话文件路径**索引，而哪个会话是当前窗口的
+   * 活动会话由 fixture 决定 —— 只种一个会碰运气（第一次实跑就碰空了）。
+   * 每份的 links 都自带 source.sessionId（指向自己）。
+   */
+  const goalFor = (sessionKey) => ({
+    goalId: 'g-probe-links',
+    phase: 'executing',
+    revision: 3,
+    steps: [
+      { title: '接上结构化链接', status: 'done' },
+      { title: '验产物/参考展示', status: 'pending' }
+    ],
+    evidence: ['npm run test:unit 4712/4712'],
+    /* A-2：预算与“为什么没继续”——预置成“时间已到”的状态，看界面会不会说 */
+    budget: { tokens: 200000, ms: 600000 },
+    /* 宿主算出的用量快照（A-2）：预置成已超上限，与下面的 budgetStop 一致 */
+    budgetUsage: { tokens: 312000, at: now },
+    budgetStop: { at: now, reason: 'tokens', detail: '已用 312000 tokens，达到预算 200000' },
+    links: [
+      {
+        kind: 'file',
+        target: 'probe-missing-file.txt',
+        label: '不存在的文件（验失败反馈）',
+        source: { sessionId: sessionKey, messageId: 'm-probe' },
+        /* 模拟宿主先前已核验过：文件不在 → ok:false。核验逻辑本身由单测盯。 */
+        check: { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' },
+        addedAt: now
+      },
+      {
+        kind: 'url',
+        target: 'https://example.com/spec',
+        label: '规格（不会被点击）',
+        check: { at: now, ok: true, method: 'exists', detail: 'url 仅做形态校验（宿主不联网）' },
+        addedAt: now
+      },
+      {
+        kind: 'artifact',
+        target: 'out/probe.png',
+        label: '产物',
+        check: { at: now, ok: false, method: 'exists', detail: '文件不存在（可能已被移动或删除）' },
+        addedAt: now
+      }
+    ],
+    blocker: null,
+    pursue: false,
+    brief: null,
+    failure: null,
+    updatedAt: now
+  })
+  const entries = {}
+  let files = []
+  try {
+    files = readdirSync(sessionsDir, { recursive: true })
+      .map((name) => String(name))
+      .filter((name) => name.endsWith('.jsonl'))
+  } catch {
+    files = []
+  }
+  for (const rel of files) {
+    const key = join(sessionsDir, rel)
+    entries[key] = {
+      goal: goalFor(key),
+      transitions: {},
+      reports: {},
+      resume: null,
+      autoContinues: 0,
+      paused: false,
+      repeatCursor: null,
+      updatedAt: now
+    }
+  }
+  writeFileSync(join(dataDir, 'goals.json'), JSON.stringify({ version: 1, entries }, null, 2), 'utf8')
+  return files.length
+}
+
 async function seedProjectKnowledge(dataDir, opts = {}) {
   const projectId = KNOWLEDGE_FIXTURE_PROJECT_ID
   const { pathToFileURL } = await import('node:url')
@@ -8240,6 +8388,7 @@ async function main() {
     }
     /* 隔离 fixture 的“只种一次”门（wins 多档时不能重复建工作树 / 重复写会话） */
     let isolationSeeded = false
+    let goalSeeded = false
     let contextGuardFixturePath = null
 
     for (const win of wins) {
@@ -8304,6 +8453,12 @@ async function main() {
         if (c.contextGuardSeed && !contextGuardFixturePath) {
           contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
           console.log(`  上下文守卫 fixture：${basename(contextGuardFixturePath)}（仅本场景）`)
+        }
+        /* U-3b：目标文档带结构化链接（key = 真实会话文件路径，与宿主一致） */
+        if (c.goalSeed && !goalSeeded) {
+          const count = await seedGoalDocument(join(sandboxRoot, 'data'), join(sandboxRoot, 'sessions'))
+          console.log(`  目标链接 fixture：${count} 个会话各一份`)
+          goalSeeded = count > 0
         }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)

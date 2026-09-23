@@ -13,12 +13,23 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useT } from '../../i18n'
+import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { handoffNoticeOf, handoffReasonText } from '../../../../shared/handoff-notice'
 
 /** 前端观察交接状态的间隔：它只在回合收尾 / 生成 / 提交这些低频时刻变化。 */
 const POLL_MS = 4_000
+
+/** 事务阶段的中文说明（恢复视图里的「最后确认步骤」用） */
+const STAGE_LABEL: Record<string, MessageKey> = {
+  pending: 'handoff.stagePending',
+  snapshot: 'handoff.stageSnapshot',
+  validated: 'handoff.stageValidated',
+  'destination-created': 'handoff.stageDestination',
+  committed: 'handoff.stageCommitted',
+  resumed: 'handoff.stageResumed',
+  failed: 'handoff.stageFailed'
+}
 
 export function HandoffNote(): React.ReactElement | null {
   const t = useT()
@@ -27,6 +38,7 @@ export function HandoffNote(): React.ReactElement | null {
   const refreshHandoff = useStore((s) => s.refreshHandoff)
   const retryHandoff = useStore((s) => s.retryHandoff)
   const abort = useStore((s) => s.abort)
+  const confirmHandoff = useStore((s) => s.confirmHandoff)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -39,8 +51,51 @@ export function HandoffNote(): React.ReactElement | null {
   }, [refreshHandoff, activeRunnerId])
 
   const notice = handoffNoticeOf(handoff, now)
-  if (!notice) return null
-  const reason = handoffReasonText(notice.reason)
+  /*
+   * 「已投递但尚未确认运行」（实施-15 A-3 / R6）：
+   * `stage==='resumed'` 只说明标记写进了目的会话（那是本地拼的文本），
+   * 不等于模型真的开始跑了。等 30s 还没有助手输出就把这个不确定状态说出来，
+   * 而不是让用户以为“已经在继续了”。
+   */
+  const tx = handoff?.transaction
+  const receipts = tx?.receipts
+  const [detailOpen, setDetailOpen] = useState(false)
+  const lastStep = tx?.steps?.length ? tx.steps[tx.steps.length - 1] : null
+  /*
+   * 已发出但还没在目的会话看到标记 —— 「待核实」，不会自动重发（resumeAttempts 到 2 就停）。
+   * 这也是一种需要**主动告诉用户**的状态：没有它，用户只能看到一个没头没尾的旧状态。
+   */
+  const awaitingDelivery = typeof receipts?.sentAt === 'number' && typeof receipts?.persistedAt !== 'number'
+  /* 已投递但看不到模型输出 —— 「不确定它到底跑没跑」 */
+  const deliveredUnconfirmed =
+    typeof receipts?.persistedAt === 'number' && typeof receipts?.startedAt !== 'number'
+  const uncertain =
+    tx?.stage === 'resumed' &&
+    typeof receipts?.persistedAt === 'number' &&
+    typeof receipts.startedAt !== 'number' &&
+    now - receipts.persistedAt > 30_000
+  if (!notice && !uncertain && !awaitingDelivery) return null
+  /** 回执行、待核实与 notice 三选一显示，都走同一个壳 */
+  const tone =
+    awaitingDelivery && !notice
+      ? 'warn'
+      : uncertain && !notice
+        ? 'warn'
+        : (notice?.tone ?? 'warn')
+  /* 模板字符串推不出 MessageKey，显式映射一次 */
+  const toneKey: MessageKey =
+    awaitingDelivery && !notice
+      ? 'handoff.awaitingShort'
+      : uncertain && !notice
+        ? 'handoff.receiptDelivered'
+        : tone === 'done'
+          ? 'handoff.done'
+          : tone === 'failed'
+            ? 'handoff.failed'
+            : tone === 'warn'
+              ? 'handoff.receiptDelivered'
+              : 'handoff.working'
+  const reason = handoffReasonText(notice?.reason ?? null)
   /*
    * 两个计数必须分开说（H5）：`segmentTally` 是**当前片段**又压了几次
    *（交接阈值看的就是它），`chainSegments` 是整条会话一共几段。
@@ -54,10 +109,17 @@ export function HandoffNote(): React.ReactElement | null {
     typeof tally === 'number' && typeof threshold === 'number' && threshold > 0 && typeof segments === 'number'
 
   return (
-    <div className={`handoff-note tone-${notice.tone}`} data-testid="handoff-note" data-tone={notice.tone}>
-      <span className="handoff-note-text">{t(`handoff.${notice.tone}`)}</span>
+    <div
+      className={`handoff-note tone-${tone}`}
+      data-testid="handoff-note"
+      data-tone={tone}
+      data-receipt={uncertain ? 'delivered-unconfirmed' : (receipts?.startedAt ? 'started' : 'none')}
+    >
+      <span className="handoff-note-text">
+        {t(toneKey)}
+      </span>
       {reason ? (
-        <span className="handoff-note-reason" title={notice.reason ?? undefined}>
+        <span className="handoff-note-reason" title={notice?.reason ?? undefined}>
           {reason}
         </span>
       ) : null}
@@ -72,15 +134,58 @@ export function HandoffNote(): React.ReactElement | null {
           {t('handoff.tally', { done: tally, threshold, segments })}
         </span>
       ) : null}
-      {notice.canRetry ? (
+      {notice?.canRetry || tx ? (
         <span className="handoff-note-actions">
-          <button className="handoff-note-action" data-testid="handoff-retry" onClick={() => void retryHandoff()}>
-            {t('handoff.retry')}
-          </button>
+          {notice?.canRetry ? (
+            <button className="handoff-note-action" data-testid="handoff-retry" onClick={() => void retryHandoff()}>
+              {t('handoff.retry')}
+            </button>
+          ) : null}
+          {/* 已发出、但磁盘上看不到证据：给一个「我看过了，它确实在跑」的出口（A-3） */}
+          {awaitingDelivery ? (
+            <button
+              className="handoff-note-action"
+              data-testid="handoff-confirm"
+              onClick={() => tx && void confirmHandoff(tx.handoffId)}
+            >
+              {t('handoff.confirm')}
+            </button>
+          ) : null}
+          {tx ? (
+            <button
+              className="handoff-note-action"
+              data-testid="handoff-detail-toggle"
+              aria-expanded={detailOpen}
+              onClick={() => setDetailOpen((v) => !v)}
+            >
+              {t('handoff.detail')}
+            </button>
+          ) : null}
           <button className="handoff-note-action" data-testid="handoff-stop" onClick={() => void abort()}>
             {t('handoff.stop')}
           </button>
         </span>
+      ) : null}
+      {detailOpen && tx ? (
+        <div className="handoff-detail" data-testid="handoff-detail">
+          {/* 最后**确认**到哪一步：只看 stage 区分不出「已提交未发」与「已发无证据」 */}
+          <div className="handoff-detail-row" data-testid="handoff-last-step">
+            {t('handoff.lastStep', {
+              stage: t(STAGE_LABEL[tx.stage]),
+              time: lastStep ? new Date(lastStep.at).toLocaleTimeString() : '—'
+            })}
+          </div>
+          {awaitingDelivery ? (
+            <div className="handoff-detail-row tone-await" data-testid="handoff-awaiting">
+              {t('handoff.awaitingDelivery', { n: tx.resumeAttempts })}
+            </div>
+          ) : null}
+          {deliveredUnconfirmed ? (
+            <div className="handoff-detail-row tone-await" data-testid="handoff-unconfirmed">
+              {t('handoff.unconfirmedRun')}
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

@@ -199,6 +199,45 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     await ctrl.stopAll()
   }
 
+  /* ---- D17：usage 按消息 id 去重累计（流式→final 不翻倍，多条相加） ---- */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    const res = await ctrl.start('统计用量', undefined, 'controlled-cwd')
+    const id = res.run?.id
+    const rpc = factory.created[0]
+    const usage = (input, output) => ({
+      input,
+      output,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: input + output,
+      cost: { total: 0 }
+    })
+    rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [], usage: usage(10, 5) } })
+    rpc.emit('event', { type: 'message_update', message: { role: 'assistant', content: [], usage: usage(100, 50) } })
+    rpc.emit('event', {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], usage: usage(100, 50) }
+    })
+    const run = ctrl.get(id)
+    ok(run?.usage?.input === 100 && run?.usage?.output === 50, '流式→final 只算 final，不翻倍', JSON.stringify(run?.usage))
+    ok(run?.usage?.reportedMessages === 1, 'reportedMessages 为消息数')
+
+    rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [], usage: usage(7, 3) } })
+    rpc.emit('event', {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'ok2' }], usage: usage(7, 3) }
+    })
+    ok(ctrl.get(id)?.usage?.input === 107, '不同消息相加')
+    await ctrl.stopAll()
+  }
+
   /* ---- D16：任务结束后子代理进程必须收掉 ---- */
   {
     const factory = makeRpcFactory()

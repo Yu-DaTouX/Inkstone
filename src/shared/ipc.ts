@@ -40,8 +40,9 @@ import type { WorkMode, WorkModeState } from './work-mode'
 import type { GoalState, PursuedBrief } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
+import type { ToolLayout } from './tool-layout'
 export type { WorkMode, WorkModeState } from './work-mode'
-export type { GoalState, GoalPhase, PursuedBrief } from './goal'
+export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief } from './goal'
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
@@ -809,6 +810,11 @@ export interface AppSettings {
    * 在这里面的分区不是删除，随时可以从库里拿回来。
    */
   toolHidden: string[]
+  /**
+   * 可移动工具磁贴的布局真源（实施-12 U-0）。
+   * 旧 `toolOrder` / `toolHidden` 仅在读盘时做一次迁移；U-4 接管 UI 后它们变成只读遗留。
+   */
+  toolLayout?: ToolLayout
   /**
    * 运行中的工具调用是否**自动展开成详情**（N03）。
    *
@@ -1640,6 +1646,18 @@ export interface SubagentDiffSummary {
   patchPath?: string
 }
 
+/** 子代理 usage 累计（H-10b）；字段为 null 表示该项未知 */
+export interface SubagentUsageTotals {
+  input: number | null
+  output: number | null
+  cacheRead: number | null
+  cacheWrite: number | null
+  totalTokens: number | null
+  cost: number | null
+  /** 收到过 usage 的消息数；0 表示未知 */
+  reportedMessages: number
+}
+
 export interface SubagentRun {
   id: string
   /** 派给它的任务描述 */
@@ -1667,6 +1685,8 @@ export interface SubagentRun {
   diff?: SubagentDiffSummary
   review: SubagentReviewState
   error?: string
+  /** H-10b：按消息 id 去重后的 usage 累计；没收到过就是 undefined（界面显示未知） */
+  usage?: SubagentUsageTotals
 }
 
 /** 子代理控制器对外暴露的能力 */
@@ -2143,11 +2163,25 @@ export interface KnowledgeListView {
  * 写操作。四种都要 `expectedRevision`（CAS）：
  * 界面拿到的是某一版，用户点下去时若磁盘已变，宁可报「请刷新」也不静默覆盖。
  */
+/**
+ * 写操作的公共字段。
+ *
+ * `expectedRevision` 是**条目**的 CAS：磁盘上版本对不上就报错，不静默覆盖。
+ * `expectedProjectId` 是**项目身份**的 CAS：界面显示的是某个项目的列表，
+ * 而宿主按「此刻的当前会话」选项目 —— 用户在这中间切了会话（或设置页一直
+ * 开着）就会打到另一个项目上。带上这个字段让宿主拒绝身份漂移；
+ * 缺省仍接受（兼容内部/旧调用），但设置页必须传。
+ */
+export interface KnowledgeActionBase {
+  expectedRevision: number
+  expectedProjectId?: string
+}
+
 export type KnowledgeActionRequest =
-  | { action: 'confirm'; id: string; expectedRevision: number }
-  | { action: 'update'; id: string; expectedRevision: number; text?: string; tags?: string[]; kind?: KnowledgeKind }
-  | { action: 'supersede'; id: string; expectedRevision: number; text: string; kind?: KnowledgeKind; tags?: string[] }
-  | { action: 'delete'; id: string; expectedRevision: number; permanent?: boolean }
+  | ({ action: 'confirm'; id: string } & KnowledgeActionBase)
+  | ({ action: 'update'; id: string; text?: string; tags?: string[]; kind?: KnowledgeKind } & KnowledgeActionBase)
+  | ({ action: 'supersede'; id: string; text: string; kind?: KnowledgeKind; tags?: string[] } & KnowledgeActionBase)
+  | ({ action: 'delete'; id: string; permanent?: boolean } & KnowledgeActionBase)
 
 export interface KnowledgeActionResult {
   ok: boolean
@@ -2447,6 +2481,14 @@ export interface YanBridge {
    */
   retryHandoff(): Promise<{ ok: boolean; error?: string }>
 
+  /**
+   * 用户人工确认「续接确实已在目的会话里跑起来」（实施-15 A-3）。
+   *
+   * 用在「已发出但磁盘上看不到证据」的情况：点一下就把事务判为已续接，
+   * **不重发**。没发过时宿主会拒绝（`not-sent`），不会凭空标完成。
+   */
+  confirmHandoff(handoffId: string): Promise<{ ok: boolean; error?: string }>
+
   /* 队列模式 */
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
@@ -2574,7 +2616,7 @@ export interface YanBridge {
 
   /* 诊断 */
   probePi(): Promise<PiProbe>
-  openPath(p: string): Promise<void>
+  openPath(p: string): Promise<{ ok: boolean; error?: string }>
   /** 在系统文件管理器里定位一个文件 */
   revealPath(p: string): Promise<void>
 

@@ -56,6 +56,111 @@ export interface GoalStep {
 }
 
 /**
+ * 目标级预算（实施-15 A-2）：**可选**的上限。
+ *
+ * 为什么可选、为什么不给默认值：这里的“费用”是 token 数，不同模型单价差几个
+ * 数量级；给一个默认上限等于替用户做了一次他没做过的成本承诺。不填就是不管，
+ * 填了才停。未知用量就显示未知 —— 不用估算数字冒充硬上限。
+ */
+export interface GoalBudget {
+  /** token 上限（输入 + 输出，口径由 H-6b 的逐消息聚合给）。 */
+  tokens?: number
+  /** 墙钟上限（毫秒）。 */
+  ms?: number
+}
+
+/** 到目前为止的用量（装配方给，宿主不自己算使用量）。 */
+export interface BudgetUsage {
+  /** 已知的累计 token；`null` = 未知（模型没报 usage）。 */
+  tokens: number | null
+  /** 目标开始到现在的墙钟时间。 */
+  elapsedMs: number
+}
+
+export type BudgetStop =
+  | { stopped: false; note?: string }
+  | { stopped: true; reason: 'tokens' | 'time'; detail: string }
+
+/**
+ * 预算判定。
+ *
+ * 两条规则是为「不承诺做不到的事」写的：
+ *   · 用量**未知**时不因 tokens 停（无法判断），但在 `note` 里说明——界面能显示“未知”而
+ *     不是假装够用；
+ *   · **只停“安排新轮”**，不改 phase、不删目标、不把暂停当成失败：耗尽后用户可以
+ *     调预算或主动继续（A-2 出口：“硬阈值暂停不删除目标”）。
+ */
+export function checkGoalBudget(budget: GoalBudget | null | undefined, used: BudgetUsage): BudgetStop {
+  if (!budget) return { stopped: false }
+  const notes: string[] = []
+  if (typeof budget.ms === 'number' && budget.ms > 0 && used.elapsedMs >= budget.ms) {
+    return {
+      stopped: true,
+      reason: 'time',
+      detail: `已用 ${Math.round(used.elapsedMs / 1000)}s，达到时间预算 ${Math.round(budget.ms / 1000)}s`
+    }
+  }
+  if (typeof budget.tokens === 'number' && budget.tokens > 0) {
+    if (used.tokens === null) {
+      notes.push('token 用量未知（模型未报 usage），这一条先不算')
+    } else if (used.tokens >= budget.tokens) {
+      return {
+        stopped: true,
+        reason: 'tokens',
+        detail: `已用 ${used.tokens} tokens，达到预算 ${budget.tokens}`
+      }
+    }
+  }
+  return notes.length ? { stopped: false, note: notes.join('；') } : { stopped: false }
+}
+
+/**
+ * 交付证据里的**结构化链接**（实施-12 U-3b）。
+ *
+ * 为什么不能只有字符串：`evidence: string[]` 里写什么都算数 —— 模型报一句
+ * 「已生成 build/out.exe」就算证据。这里把「产物 / 参考」拆成可校验的形状：
+ * kind 白名单、url 只收 http/https、单目标和单条都有长度上限，
+ * **归属由宿主覆盖**（不信调用方自报的 sessionId）。
+ */
+export const GOAL_LINK_KINDS = ['file', 'url', 'artifact'] as const
+export type GoalLinkKind = (typeof GOAL_LINK_KINDS)[number]
+
+/** 单目标最多登记多少条（防止把状态文件当垃圾桶）。 */
+export const GOAL_LINK_LIMIT = 20
+/** 单条 target / label 的长度上限。 */
+export const GOAL_LINK_TEXT_MAX = 500
+
+export interface GoalLink {
+  kind: GoalLinkKind
+  /** `file`/`artifact` 是路径（相对项目根或绝对），`url` 是 http/https 地址。 */
+  target: string
+  label?: string
+  /** 谁登记的。宿主会用当前会话覆盖 sessionId。 */
+  source?: { sessionId?: string; messageId?: string }
+  /** 宿主上一次的**只读**核验结果（实施-15 A-1）。 */
+  check?: GoalLinkCheck
+  addedAt: number
+}
+
+/**
+ * 宿主对一条链接的只读核验（实施-15 A-1）。
+ *
+ * 边界写在这里，避免以后被当成安全扫描：
+ *   · **只读**：只看存在性与大小/修改时间，**不执行**任何命令、不解析内容；
+ *   · **不联网**：`url` 只做 scheme 形态校验（在 `sanitizeGoalLinks` 里）；
+ *   · 「存在」**不等于**「内容正确」—— 判据仍由用户自己规定的验收检查决定。
+ */
+export interface GoalLinkCheck {
+  /** 核验时间（每次目标报告都会重新核验，所以能看出「过期」）。 */
+  at: number
+  ok: boolean
+  /** 核验方式（目前只有存在性这一种，不冒充内容校验）。 */
+  method: 'exists'
+  /** 结果说明：文件大小与修改时间，或缺失原因。 */
+  detail: string
+}
+
+/**
  * 用户**显式设定**的持续目标（`+` 菜单 → 目标）。
  *
  * `outcome` 就是界面那句「定义可衡量的成果」：达成判据必须能被检查，
@@ -81,6 +186,25 @@ export interface GoalState {
   steps: GoalStep[]
   /** 完成证据（§5：任务清单勾选不算证据）。 */
   evidence: string[]
+  /** 结构化产物 / 参考（U-3b）；旧文档没有这一项，读到就是空数组。 */
+  links: GoalLink[]
+  /** 用户设的目标级预算（A-2）；没设就是 null（不代替用户做成本承诺）。 */
+  budget: GoalBudget | null
+  /**
+   * 最近一次「因预算停止安排新轮」的原因（A-2）。
+   *
+   * 放在目标状态里（而不是存储条目的旁路字段）的理由：它是用户该看到的**事实**
+   * ——「为什么没继续」；同时它**不是失败**（phase 不动、不删目标）。
+   */
+  budgetStop: { at: number; reason: 'tokens' | 'time'; detail: string } | null
+  /**
+   * 宿主最近一次算出的用量快照（A-2）。
+   *
+   * 为什么由**宿主**写进目标状态：用量是事实（来自 H-6b 的回合记录），
+   * 不是模型报告的内容；`tokens: null` = 拿不到（界面显示“未知”而非 0）。
+   * 可选：旧文档没有它。
+   */
+  budgetUsage?: { tokens: number | null; at: number } | null
   /** `blocked` 时必填。 */
   blocker: string | null
   /**
@@ -106,6 +230,10 @@ export function emptyGoal(now = 0): GoalState {
     revision: 0,
     steps: [],
     evidence: [],
+    links: [],
+    budget: null,
+    budgetStop: null,
+    budgetUsage: null,
     blocker: null,
     pursue: false,
     brief: null,
@@ -235,6 +363,8 @@ export interface GoalReportInput {
   goalRevision: number
   steps?: GoalStep[]
   evidence?: string[]
+  /** 结构化产物 / 参考（U-3b，可选）。 */
+  links?: GoalLink[]
   blocker?: string
   /** 本次失败的稳定签名（同一签名连续两次 → 强制 blocked）。 */
   failureSignature?: string
@@ -255,10 +385,109 @@ export type ReportCheck =
       phase: GoalPhase
       steps: GoalStep[]
       evidence: string[]
+      /** 校验通过的结构化链接（非法项已被丢弃，数量见 discardedLinks）。 */
+      links: GoalLink[]
+      /** 因 kind / scheme / 长度 / 重复被丢掉的数量（0 表示全部通过）。 */
+      discardedLinks: number
       blocker: string | null
       failureSignature: string | null
     }
   | { ok: false; code: ReportRejectCode; message: string }
+
+/**
+ * 清洗结构化链接。
+ *
+ * 这里**不抛错**：一条坏链接不该让整份报告作废（目标还得推进）。
+ * 丢掉多少条会通过 `checkGoalReport` 的 `discardedLinks` 告诉调用方，
+ * 所以“被丢掉的不会计入产物/参考”是可核对的。
+ */
+export function sanitizeGoalLinks(value: unknown, now = Date.now()): GoalLink[] {
+  if (!Array.isArray(value)) return []
+  const out: GoalLink[] = []
+  const seen = new Set<string>()
+  for (const raw of value) {
+    if (out.length >= GOAL_LINK_LIMIT) break
+    if (!raw || typeof raw !== 'object') continue
+    const item = raw as Partial<GoalLink>
+    const kind = GOAL_LINK_KINDS.includes(item.kind as GoalLinkKind) ? (item.kind as GoalLinkKind) : null
+    if (!kind) continue
+    const target = text(item.target).slice(0, GOAL_LINK_TEXT_MAX)
+    if (!target) continue
+    /* 不支持的 scheme 一律不登记：宿主不执行、也不计入产物 */
+    if (kind === 'url') {
+      if (!/^https?:\/\//i.test(target)) continue
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(target) && !/^[a-z]:[\\/]/i.test(target)) {
+      continue
+    }
+    const key = `${kind}:${target.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const label = text(item.label).slice(0, GOAL_LINK_TEXT_MAX)
+    const srcRaw = (item.source ?? {}) as { sessionId?: unknown; messageId?: unknown }
+    const sessionId = text(srcRaw.sessionId)
+    const messageId = text(srcRaw.messageId)
+    const checkRaw = item.check as Partial<GoalLinkCheck> | undefined
+    const check =
+      checkRaw && typeof checkRaw.ok === 'boolean' && typeof checkRaw.detail === 'string'
+        ? {
+            at: typeof checkRaw.at === 'number' && Number.isFinite(checkRaw.at) ? checkRaw.at : 0,
+            ok: checkRaw.ok,
+            method: 'exists' as const,
+            detail: checkRaw.detail.slice(0, GOAL_LINK_TEXT_MAX)
+          }
+        : undefined
+    out.push({
+      kind,
+      target,
+      ...(label ? { label } : {}),
+      ...(sessionId || messageId ? { source: { ...(sessionId ? { sessionId } : {}), ...(messageId ? { messageId } : {}) } } : {}),
+      ...(check ? { check } : {}),
+      addedAt: typeof item.addedAt === 'number' && Number.isFinite(item.addedAt) ? item.addedAt : now
+    })
+  }
+  return out
+}
+
+/** 清洗用户设的预算：只收正数，脏值一律当「没设」。 */
+export function sanitizeGoalBudget(value: unknown): GoalBudget | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<GoalBudget>
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined
+  const tokens = num(raw.tokens)
+  const ms = num(raw.ms)
+  if (tokens === undefined && ms === undefined) return null
+  return { ...(tokens !== undefined ? { tokens } : {}), ...(ms !== undefined ? { ms } : {}) }
+}
+
+/** 清洗预算停止记录：脏值一律当「没有」。 */
+export function sanitizeBudgetStop(
+  value: unknown
+): { at: number; reason: 'tokens' | 'time'; detail: string } | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as { at?: unknown; reason?: unknown; detail?: unknown }
+  const reason = item.reason === 'tokens' || item.reason === 'time' ? item.reason : null
+  if (!reason || typeof item.detail !== 'string' || !item.detail.trim()) return null
+  return {
+    at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : 0,
+    reason,
+    detail: item.detail.trim().slice(0, GOAL_LINK_TEXT_MAX)
+  }
+}
+
+/** 把新登记的链接并进目标：先登记的留着，同 kind+target 只算一次，总数封顶。 */
+export function mergeGoalLinks(current: GoalLink[], incoming: GoalLink[]): GoalLink[] {
+  const out = [...current]
+  const seen = new Set(out.map((l) => `${l.kind}:${l.target.toLowerCase()}`))
+  for (const link of incoming) {
+    if (out.length >= GOAL_LINK_LIMIT) break
+    const key = `${link.kind}:${link.target.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(link)
+  }
+  return out
+}
 
 function sanitizeSteps(value: unknown): GoalStep[] {
   if (!Array.isArray(value)) return []
@@ -317,11 +546,16 @@ export function checkGoalReport(input: Partial<GoalReportInput>, current: GoalSt
     return { ok: false, code: 'blocked_needs_reason', message: '报 blocked 必须写清阻塞原因' }
   }
   const signature = text(input.failureSignature) || null
+  /* 链接只做清洗：一条坏链接不该让整份报告作废，丢掉多少由 discardedLinks 交代 */
+  const links = sanitizeGoalLinks(input.links)
+  const discardedLinks = Array.isArray(input.links) ? Math.max(0, input.links.length - links.length) : 0
   return {
     ok: true,
     phase: input.phase,
     steps: sanitizeSteps(input.steps),
     evidence,
+    links,
+    discardedLinks,
     blocker: blocker || null,
     failureSignature: input.phase === 'blocked' ? null : signature
   }
@@ -363,6 +597,7 @@ export function applyGoalReport(
     revision: current.revision + 1,
     steps: report.steps.length ? report.steps : current.steps,
     evidence: report.evidence.length ? report.evidence : current.evidence,
+    links: mergeGoalLinks(current.links ?? [], report.links),
     blocker: phase === 'blocked' ? (blocker ?? current.blocker) : null,
     failure,
     updatedAt: now
@@ -404,6 +639,10 @@ export function applyReadyTransition(current: GoalState, result: ReadyTransition
     revision: current.revision + 1,
     steps: current.steps,
     evidence: current.evidence,
+    links: current.links ?? [],
+    budget: current.budget ?? null,
+    budgetStop: current.budgetStop ?? null,
+    budgetUsage: current.budgetUsage ?? null,
     blocker: null,
     /* 就绪转移不改「持续目标」身份：那是用户在 `+` 菜单里单独设的 */
     pursue: current.pursue,
@@ -696,6 +935,26 @@ export function normalizeGoalState(raw: unknown): GoalState {
     revision,
     steps: sanitizeSteps(item.steps),
     evidence: Array.isArray(item.evidence) ? item.evidence.map((e) => text(e)).filter(Boolean) : [],
+    /* 旧文档没有 links（U-3b 之前写的）：读到就是空数组，不报错、不造数据 */
+    links: sanitizeGoalLinks(item.links),
+    /* 预算是用户设的：脏值一律当「没设」，不凭空造上限 */
+    budget: sanitizeGoalBudget(item.budget),
+    /* 脏的停止原因一律当「没有」：显示一个不存在的停止原因比不显示更糟 */
+    budgetStop: sanitizeBudgetStop(item.budgetStop),
+    /* 用量快照：tokens 可以是 null（未知），但必须是显式给的 */
+    budgetUsage:
+      item.budgetUsage && typeof item.budgetUsage === 'object'
+        ? {
+            tokens:
+              typeof (item.budgetUsage as { tokens?: unknown }).tokens === 'number'
+                ? Math.max(0, Math.round((item.budgetUsage as { tokens: number }).tokens))
+                : null,
+            at:
+              typeof (item.budgetUsage as { at?: unknown }).at === 'number'
+                ? ((item.budgetUsage as { at: number }).at as number)
+                : 0
+          }
+        : null,
     blocker: typeof item.blocker === 'string' && item.blocker.trim() ? item.blocker.trim() : null,
     /* 只有真的办了设定才置位 —— 脏值不能凭空造一个「持续目标」。 */
     pursue: item.pursue === true,

@@ -34,6 +34,7 @@ import type { HandoffPackage } from '../shared/handoff'
 import {
   buildResumeText,
   containsResumeEvidence,
+  hasRunStartedAfterMarker,
   resumeMarker,
   resumePreview
 } from '../shared/handoff-resume'
@@ -282,6 +283,7 @@ export class HandoffRunner {
 
     /* 已在 committed：先看磁盘证据，有就直接补记完成（崩溃后不重发） */
     if (await this.hasEvidence(dest, tx.resumeId)) {
+      await this.noteResumeReceipts(input.handoffId, dest, tx.resumeId)
       const done = await this.deps.transactions.step(input.handoffId, 'resumed', 'evidence-found')
       if (done.tx) tx = done.tx
       this.deps.notify('上下文已整理，续接记录已确认。', 'info')
@@ -310,6 +312,7 @@ export class HandoffRunner {
     if (!confirmed) {
       return this.midway(input, dest, 'resume 已发出，但还没在会话文件里看到证据（下次启动会核对，不重发）')
     }
+    await this.noteResumeReceipts(input.handoffId, dest, tx.resumeId)
     const done = await this.deps.transactions.step(input.handoffId, 'resumed', 'evidence-found')
     if (done.tx) tx = done.tx
     this.deps.notify(`上下文已整理，正在继续当前任务：${resumePreview(text)}`, 'info')
@@ -385,6 +388,21 @@ export class HandoffRunner {
   private async hasEvidence(sessionFile: string, resumeId: string): Promise<boolean> {
     const text = await this.deps.readSessionText(sessionFile).catch(() => null)
     return containsResumeEvidence(text, resumeId)
+  }
+
+  /**
+   * 记录续接的两条回执（A-3）：**已投递**与**已运行**。
+   *
+   * 为什么不把 `started` 当门槛：正文是本地拼的，标记写进文件不需要模型参与；
+   * 但把“模型真的开跑了”当成交接完成的条件，会让模型长时间不响应时
+   * 交接一直挂住。所以这里只**如实记下来**，让界面与恢复能说清楚到哪一步。
+   */
+  private async noteResumeReceipts(handoffId: string, dest: string, resumeId: string): Promise<void> {
+    await this.deps.transactions.noteReceipt(handoffId, 'persisted')
+    const text = await this.deps.readSessionText(dest).catch(() => null)
+    if (hasRunStartedAfterMarker(text, resumeId)) {
+      await this.deps.transactions.noteReceipt(handoffId, 'started')
+    }
   }
 
   /**

@@ -24,6 +24,12 @@
 
   log('=== 扩展集成：任务清单 + 启动通知 ===')
 
+  /* H-3b：新会话默认停在「开始」页，任务分区在「工具」固定页里。 */
+  if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+  await sleep(400)
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(500)
+
   /* ================= 1. 启动期通知不弹窗 ================= */
   log('\n--- 1. 启动期通知降级 ---')
   // 用户的 left-info-panel 扩展每次启动都会 notify（「信息面板已启用（overlay 44 列）…」），
@@ -67,6 +73,11 @@
   // 先等会话身份确认，再等任务投影；只看 todos 长度会把上一条会话的迟到帧当成结果。
   const targetReady = await until(() => store.getState().session?.sessionFile === target.path, 15000)
   await until(() => targetReady && store.getState().todos.length > 0, 15000)
+
+  /* H-3b：切会话会恢复到该会话的默认页（开始）；任务在「工具」页，重新点一次。 */
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await until(() => !!q('.rp-body'), 5000)
+  await sleep(300)
 
   const todos = store.getState().todos
   log('  store.todos = ' + JSON.stringify(todos))
@@ -162,6 +173,10 @@
 
 
   log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
+
+  /* H-3b：第 4 节切到的会话默认停在「开始」页；本段只验注入后的渲染，先把工具页点回来。 */
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(300)
 
   const tstore = window.__yanStore
   /**

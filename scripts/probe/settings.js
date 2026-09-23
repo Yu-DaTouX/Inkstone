@@ -136,9 +136,13 @@
 
   log('')
   log('=== 6. 右栏状态栏的分区 ===')
-  // 关掉设置看右栏
+  // 关掉设置看右栏；H-3b 后新会话默认在「开始」页，分区在「工具」页
   store.getState().closeSettings()
   await sleep(400)
+  if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
+  await sleep(300)
+  document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(500)
   const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
   log('  右栏分区: ' + JSON.stringify(secs))
   ok(secs.includes('rp-context'), '右栏有「上下文」分区')

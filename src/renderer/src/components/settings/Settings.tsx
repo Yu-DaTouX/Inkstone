@@ -64,6 +64,8 @@ export function Settings({
   const { lang, setLang } = useI18n()
   const scrim = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  /** tab 按钮引用：方向键切换后把焦点跟过去（roving focus） */
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   // 退场：面板体量大，进度比其他浮层长一点
   const presence = usePresence(open, prefersReducedMotion() ? 1 : 110)
 
@@ -119,17 +121,51 @@ export function Settings({
         {/* 左：导航 */}
         <nav className="settings-nav">
           <div className="settings-nav-title">{t('set.title')}</div>
-          {tabs.map((x, i) => (
-            <button
-              key={x.id}
-              className={`settings-tab ${tab === x.id ? 'sel' : ''}`}
-              style={{ '--i': i } as React.CSSProperties}
-              onClick={() => onTabChange(x.id)}
-            >
-              <Icon name={x.icon as never} size={12} />
-              <span>{x.label}</span>
-            </button>
-          ))}
+          {/*
+           * tablist + 方向键：只用键盘也要能切页（不是只能 Tab+Enter 逐个走）。
+           * 不把未选中 tab 设成 tabindex=-1：那会让「所有控件可 Tab 到达」
+           * 这条无障碍规则失效（dialog 探针会把它当焦点坑）。方向键照样能用。
+           * 切换后焦点跟到新 tab，否则 Enter 激活后焦点留在旧项。
+           */}
+          <div className="settings-tabs" role="tablist" aria-label={t('set.title')}>
+            {tabs.map((x, i) => (
+              <button
+                key={x.id}
+                ref={(el) => {
+                  tabRefs.current[i] = el
+                }}
+                className={`settings-tab ${tab === x.id ? 'sel' : ''}`}
+                style={{ '--i': i } as React.CSSProperties}
+                role="tab"
+                id={`settings-tab-${x.id}`}
+                aria-selected={tab === x.id}
+                aria-controls="settings-tabpanel"
+                onClick={() => onTabChange(x.id)}
+                onKeyDown={(e) => {
+                  const cur = tabs.findIndex((item) => item.id === tab)
+                  const to =
+                    e.key === 'ArrowDown' || e.key === 'ArrowRight'
+                      ? cur + 1
+                      : e.key === 'ArrowUp' || e.key === 'ArrowLeft'
+                        ? cur - 1
+                        : e.key === 'Home'
+                          ? 0
+                          : e.key === 'End'
+                            ? tabs.length - 1
+                            : null
+                  if (to === null) return
+                  e.preventDefault()
+                  const next = (to + tabs.length) % tabs.length
+                  onTabChange(tabs[next].id)
+                  /* 用 setTimeout 而不是 rAF：隐藏窗口里 rAF 会被节流甚至不触发 */
+                  window.setTimeout(() => tabRefs.current[next]?.focus(), 0)
+                }}
+              >
+                <Icon name={x.icon as never} size={12} />
+                <span>{x.label}</span>
+              </button>
+            ))}
+          </div>
           <span className="spacer" />
           <button className="settings-tab" onClick={onClose}>
             <Icon name="chevron-right" size={12} className="chev-flip" />
@@ -138,7 +174,13 @@ export function Settings({
         </nav>
 
         {/* 右：内容。key 跟着 tab 走 —— 切 tab 时新节点会重演一次淡入 */}
-        <div className="settings-body" key={tab}>
+        <div
+          className="settings-body"
+          key={tab}
+          id="settings-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${tab}`}
+        >
           {tab === 'auth' ? (
             <AuthTab />
           ) : tab === 'appearance' ? (

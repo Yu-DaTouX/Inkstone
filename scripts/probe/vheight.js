@@ -20,8 +20,19 @@
     for (let i = 0; i < 25; i++) { const c = document.querySelector('.ob-card'); if (!c) break
       const b = [...c.querySelectorAll('button')].find((x) => /开始使用|完成/.test(x.textContent)); if (b) { click(b); await sleep(300) } else await sleep(150) }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
-    await store.getState().setToolLayout({ toolOrder: [], toolHidden: [] })
+    const ALL = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions']
+    {
+      const cur = store.getState().settings?.toolLayout
+      await store.getState().setToolLayout({
+        version: 2,
+        revision: (cur?.revision ?? 0) + 1,
+        tiles: ALL.map((id, i) => ({ id, placement: 'docked', order: i }))
+      })
+    }
     await sleep(900)
+    /* H-3b：新会话默认停在「开始」页；分区在「工具」页。 */
+    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(500)
 
     out.push('=== 1. 只有可滚动的分区有高度把手 ===')
     const grips = [...document.querySelectorAll('.rp-vgrip')].map((x) => x.dataset.testid)

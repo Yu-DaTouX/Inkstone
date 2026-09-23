@@ -30,6 +30,7 @@ import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
+import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -379,6 +380,11 @@ export async function getSettings(): Promise<AppSettings> {
     // 分区顺序/隐藏集合：未知 id 一律丢掉（版本升级后旧 id 不该一直占位）
     cached.toolOrder = normalizeToolOrder(cached.toolOrder)
     cached.toolHidden = normalizeToolHidden(cached.toolHidden)
+    /* 磁贴布局：有版本化真源就归一化；没有就从旧的 order/hidden 一次性迁移 */
+    const storedToolLayout = cached.toolLayout as { version?: unknown } | undefined
+    cached.toolLayout = storedToolLayout && storedToolLayout.version !== undefined
+      ? normalizeToolLayout(storedToolLayout, TOOL_SECTIONS)
+      : migrateToolLayout(cached.toolOrder, cached.toolHidden, TOOL_SECTIONS)
     cached.toolHeights = normalizeHeights(cached.toolHeights)
     /*
      * toolDetail 的迁移历史（见 AppSettings.toolDetail 的注释）：

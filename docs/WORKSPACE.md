@@ -11,7 +11,7 @@
 | `docs/` | 当前状态、活动计划、设计输入、历史证据与开发交接 | **参考资料**，入口为 [文档索引](README.md) |
 | `build/icon.ico`、`build/icon.png` | Windows 打包图标 | **保留资源**；虽位于 build，仍受版本管理，不应整目录清理 |
 | `resources/pi-runtime/` | 随应用分发的 pi 运行时 | **生成物**，Git 忽略；通过 `npm run vendor:pi` 生成，不手改 |
-| `resources/pi-extensions/` | 砚薄层源码（浏览器、提问、界面语言、回复详细度、上下文管理） | **源码资源**；开发态从这里读取，打包态落在 `resources/yan-thin/`，主进程用 `--extension` 显式加载 |
+| `resources/pi-extensions/` | 砚薄层源码（界面语言、回复详细度、上下文策略及生命周期桥接；浏览器/提问/召回走宿主 yan CLI） | **源码资源**；开发态从这里读取，打包态落在 `resources/yan-thin/`，主进程用 `--extension` 显式加载 |
 | `out/` | Electron/Vite 编译输出及测试编译文件 | **生成物**，Git 忽略；应用和部分测试依赖它，清理后需构建 |
 | `release/` | 安装包、便携版、解包目录及打包元数据 | **分发产物**，Git 忽略；保留需要交付的版本后再考虑清理 |
 | `node_modules/` | npm 安装的依赖 | **依赖产物**，Git 忽略；可按锁文件重新安装 |
