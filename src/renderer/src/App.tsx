@@ -353,8 +353,19 @@ export default function App() {
     const origin = themeOrigin.current ?? themeButtonOrigin()
     themeOrigin.current = null
     if (origin) {
-      root.style.setProperty('--theme-origin-x', `${Math.round(origin.x)}px`)
-      root.style.setProperty('--theme-origin-y', `${Math.round(origin.y)}px`)
+      /*
+       * 圆心写成**相对视口的百分比**，不是 px。
+       *
+       * `circle(at X Y)` 的长度基准是过渡伪元素自己的 border box。正常时那个
+       * 盒子就是视口，px 与百分比等价；但 Chromium 会在快照尺寸变化时给这层加
+       * 缩放/平移，px 就落到屏幕上的另一个地方了（用户现场：在设置里点深色，
+       * 圆却从别处展开）。百分比跟着盒子缩放走，不会跑偏 —— 这是「圆心一定在
+       * 按钮上」的其中一道保险，另一道在 shell.css（把 root 组的盒子钉回视口）。
+       */
+      const vw = window.innerWidth || 1
+      const vh = window.innerHeight || 1
+      root.style.setProperty('--theme-origin-x', `${((origin.x / vw) * 100).toFixed(3)}%`)
+      root.style.setProperty('--theme-origin-y', `${((origin.y / vh) * 100).toFixed(3)}%`)
     } else {
       root.style.removeProperty('--theme-origin-x')
       root.style.removeProperty('--theme-origin-y')

@@ -325,6 +325,26 @@
   flex: 1;
 }
 /*
+ * 圆心坐标系要钉死 —— 否则写进去的坐标可能不是屏幕上的那个点。
+ *
+ * `clip-path` 里的长度基准是**伪元素自己的 border box**，而 root 这层的盒子
+ * 由 Chromium 用行内 style 给出（`width`/`height` + `transform`）。只要新旧
+ * 两帧快照尺寸不一致（页面缩放、滚动条、布局抖动都会），这层就带一个**非单位
+ * transform**，px 到了屏幕上就不再是那个位置 —— 用户现场的表现就是
+ * 「点了设置里的按钮，圆却从屏幕另一处展开」。
+ *
+ * 行内样式只能用 `!important` 盖。选择器限定在 `html[data-theme-dir]`（只在过渡
+ * 那一瞬间写），所以元素级过渡不受影响。
+ */
+html[data-theme-dir]::view-transition-group(root) {
+  position: fixed !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
+}
+
+/*
  * 主题切换（DESIGN §5）：两个方向都做，但**只让一层动** ——
  * 两层同时动会糊成一团，看不出是「谁在长、谁在退」。
  *
@@ -332,8 +352,8 @@
  *   · 切到浅色（data-theme-dir="in"）：旧主题（深色）从外缘向中心收拢，
  *     露出压在下面的浅色层 —— 这就是用户说的「从外到内收缩」。
  *
- * 圆心用 `--theme-origin-x/y`（App 按触发它的那个按钮中心写入），
- * 量不到就回退屏幕中心。
+ * 圆心用 `--theme-origin-x/y`（App 按触发它的那个按钮中心写入，写成相对视口的
+ * 百分比），量不到就回退屏幕中心。
  *
  * 760ms 比常见的 300–400ms 慢一截：主题是整屏换色，快了像闪屏。
  */
