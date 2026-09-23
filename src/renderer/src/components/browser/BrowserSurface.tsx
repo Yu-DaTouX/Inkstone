@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { nextAddressInput } from '../../../../shared/browser-navigation'
 
 /**
  * 浏览器主体。网页本身不是 iframe，而是主进程的 WebContentsView；
@@ -30,6 +31,13 @@ export function BrowserSurface() {
   const external = state.external
   const externalActive = state.mode === 'external' ? external : undefined
   const [address, setAddress] = useState(state.url)
+  /**
+   * 用户是否正在编辑地址栏（H-9 第二阶段）。
+   * 打开时不动草稿：后台导航（重定向 / 另一个标签 / 页面自己跳）
+   * 不能把用户正在输入的地址冲掉。提交后回到“跟随已提交地址”。
+   */
+  const [addressDirty, setAddressDirty] = useState(false)
+  const navSeq = useRef(0)
   const [error, setError] = useState('')
   const [syncNotice, setSyncNotice] = useState('')
   const syncCookies = async (): Promise<void> => {
@@ -53,8 +61,8 @@ export function BrowserSurface() {
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setAddress(state.url)
-  }, [state.url])
+    setAddress((prev) => nextAddressInput(state.url, prev, addressDirty))
+  }, [state.url, addressDirty])
 
   /* 菜单：点外面 / 按 Esc 收起 —— 否则它会一直悬在那儿挡地址栏 */
   useEffect(() => {
@@ -110,11 +118,18 @@ export function BrowserSurface() {
     }
   }, [])
 
-  const navigate = async (): Promise<void> => {
-    let value = address.trim()
+  const navigate = async (target?: string): Promise<void> => {
+    let value = (target ?? address).trim()
     if (!value) return
     if (!/^[a-z][a-z\d+.-]*:/i.test(value)) value = `https://${value}`
+    /*
+     * 导航序号：只让**最后一次**导航的结果说话。
+     * 连续敲两次回车时，第一次的失败不能盖掉第二次的成功。
+     */
+    const seq = ++navSeq.current
     const result = await window.yan.browser.navigate(value)
+    if (seq !== navSeq.current) return
+    setAddressDirty(false)
     if (!result.ok) setError(result.error ?? t('browser.navigateError'))
     else setError('')
   }
@@ -162,7 +177,15 @@ export function BrowserSurface() {
             void navigate()
           }}
         >
-          <input value={address} onChange={(event) => setAddress(event.target.value)} aria-label={t('browser.address')} />
+          <input
+            value={address}
+            onChange={(event) => {
+              setAddress(event.target.value)
+              setAddressDirty(true)
+            }}
+            aria-label={t('browser.address')}
+            data-testid="browser-address-input"
+          />
         </form>
 
         {/*
@@ -209,6 +232,13 @@ export function BrowserSurface() {
        */}
       {menuOpen ? (
         <div className="browser-actions" data-testid="browser-menu">
+          {state.lastDownload ? (
+            <span className="browser-sync-result" data-testid="browser-download-menu" title={state.lastDownload.path}>
+              {t('browser.downloaded', { name: state.lastDownload.filename })}
+              {state.lastDownload.source ? ` · ${downloadHost(state.lastDownload.source)}` : ''} ·{' '}
+              {t('browser.downloadNotOpened')}
+            </span>
+          ) : null}
           {external ? <button className="browser-action" disabled={syncing} onClick={() => void syncCookies()} title={t('browser.cookieScope')}>
             {syncing ? t('browser.syncing') : state.mode === 'external' ? t('browser.cookiesToEmbedded') : t('browser.cookiesToChrome')}
           </button> : null}
@@ -312,9 +342,37 @@ export function BrowserSurface() {
             </button>
           ) : null}
         </div>
-      ) : state.loading || error || state.userControl || state.lastDownload || state.blockedRequests?.length ? (
+      ) : state.loading || error || state.loadError || state.userControl || state.lastDownload || state.blockedRequests?.length ? (
         <div className="browser-status" data-testid="browser-status">
           {state.loading ? <span className="browser-loading">{t('browser.loading')}</span> : null}
+          {/*
+           * 打不开该页面（H-9 第二阶段）：显示原因 + 两个出口 + **保留原地址**。
+           * 地址不能丢：用户要靠它判断“刚才到底打开的是什么”。
+           */}
+          {state.loadError ? (
+            <div className="browser-loaderror" data-testid="browser-load-error" role="alert">
+              <span className="browser-error" title={state.loadError.description}>
+                {t('browser.pageFailed')}
+              </span>
+              <button
+                className="browser-action"
+                data-testid="browser-error-retry"
+                onClick={() => void navigate(state.loadError?.url)}
+              >
+                {t('browser.retry')}
+              </button>
+              <button
+                className="browser-action"
+                data-testid="browser-error-external"
+                onClick={() => void window.yan.browser.openExternal(state.loadError?.url ?? state.url)}
+              >
+                {t('browser.openExternal')}
+              </button>
+              <span className="browser-error-url" title={state.loadError.url} data-testid="browser-error-url">
+                {state.loadError.url}
+              </span>
+            </div>
+          ) : null}
           {/*
            * 被拦下的请求也要在**收起菜单时可见**：那正是“页面打不开”的
            * 原因，藏在「⋯」里等于让用户去猜。

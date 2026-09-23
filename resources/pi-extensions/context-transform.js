@@ -73,7 +73,45 @@ export const DEFAULT_SWEEP = {
   /** 一次 sweep 至少要腾出这么多，否则「整理了但没变化」 */
   minReclaimTokens: 2_000,
   /** 相对当前用量的最低回收比例 */
-  minReclaimRatio: 0.03
+  minReclaimRatio: 0.03,
+  /*
+   * 达到工作集线时用的门槛（实施-11 C-6）。
+   *
+   * 旧行为是把 `minReclaimTokens` / `minReclaimRatio` **清零** —— 于是“到线”本身
+   * 就构成清扫理由，哪怕只能腾出几十一百个 token。C-6 要求普通内容清扫仍然
+   * “达到统一压力门槛**或**更明确的回收收益条件”，所以默认值**等于普通门槛**，
+   * 不再无条件放宽；确实需要更激进的档位可以显式把这两个数调低（包括 0）。
+   */
+  forcedMinReclaimTokens: 2_000,
+  forcedMinReclaimRatio: 0.03
+}
+
+/**
+ * 大窗口档的近期尾部（实施-11 C-6 候选 64K–96K）。
+ *
+ * 小窗口保留 32K / 48K；工作集进入大窗口档后，为了不把 1M 模型的近端原文
+ * 贴得太紧（否则一次 sweep 就会动到刚用过的上下文），把尾部放宽一倍。
+ * 阈值用一个与档位不同的量（工作集 ≥ 512K）判断，而不是直接认 600K / 700K ——
+ * 用户自定义覆盖时它也跟着工作集走。
+ */
+export const LARGE_RECENT_TAIL = { target: 64_000, max: 96_000 }
+/** 工作集达到这个量就启用大窗口尾部（不是模型窗口，是生效的工作集） */
+export const LARGE_TAIL_WORKING_SET = 512_000
+
+/**
+ * 按生效工作集挑近期尾部容量。未知 / 小窗口回落给定的 base。
+ *
+ * 纯函数，与 `foldEligible` 同一约定：门槛由**调用点**把真实工作集传进来，
+ * 扩展自己不猜档位。
+ */
+export function recentTailFor(workingSet, base = DEFAULT_RECENT_TAIL) {
+  const w = Number(workingSet)
+  const fallback = { ...base }
+  if (!Number.isFinite(w) || w < LARGE_TAIL_WORKING_SET) return fallback
+  return {
+    target: Math.max(Number(base?.target) || 0, LARGE_RECENT_TAIL.target),
+    max: Math.max(Number(base?.max) || 0, LARGE_RECENT_TAIL.max)
+  }
 }
 
 /** Recall 的默认预算（§12.9；N21-7 会把它做成设置项） */

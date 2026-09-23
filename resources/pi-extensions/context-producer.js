@@ -1174,6 +1174,15 @@ export const FOLD_MIN_TOKENS = 48_000
  */
 export const FOLD_REFRESH_RATIO = 0.42
 
+/**
+ * 大窗口档的准备线（实施-11 C-6 候选）：整轮软线的这个比例就准备状态刷新。
+ *
+ * 为什么需要：固定 48K 在 1M 窗口上会在整轮软线（600K）的 **8%** 处就开资格，
+ * 而 42% 窗口近似也要 420K —— 两者差得很远，“大窗口不再单凭 48K 启动语义摘要”
+ * 要的就是把这个固定值换成与**整轮软线**挂钩的值（600K × 0.6 = 360K）。
+ */
+export const FOLD_PREPARE_RATIO = 0.6
+
 export function foldEligible({
   settledTurns = 0,
   transcriptTokens = 0,
@@ -1181,7 +1190,14 @@ export function foldEligible({
   windowTokens = 0,
   refreshRatio = FOLD_REFRESH_RATIO,
   minTurns = FOLD_MIN_TURNS,
-  minTokens = FOLD_MIN_TOKENS
+  minTokens = FOLD_MIN_TOKENS,
+  /*
+   * 整轮软线（`budget.triggers.compact`，主进程算的工作集）。
+   * 扩展侧只在**拿到了这个数**时才用 `prepareRatio` 抬高 `minTokens` ——
+   * 拿不到（窗口未知 / 预算不生效）就保持原来那三个信号，不猜绝对值。
+   */
+  softLine = 0,
+  prepareRatio = FOLD_PREPARE_RATIO
 } = {}) {
   /*
    * 最低回合数是**全局地板**（第四轮复核 Q1 第 2 条）：早期一个回合产生一个巨大的工具输出
@@ -1190,7 +1206,21 @@ export function foldEligible({
    */
   if (Number(settledTurns) < minTurns) return { eligible: false, reason: 'too-early' }
   if (firstSweep) return { eligible: true, reason: 'first-sweep' }
-  if (Number(transcriptTokens) >= minTokens) return { eligible: true, reason: 'long-session' }
+  /*
+   * 准备线 = max(固定下限, 整轮软线 × 0.6)；软线拿不到时就是固定下限。
+   *
+   * **显式给了 `minTokens` 时不用自动准备线**：那是测试 / 标定通道
+   * （`YAN_CONTEXT_POLICY.state.gate.minTokens`，`contextproduce` /
+   * `contextrefresh` 靠它把门槛压到 1 或抬到天文数字），自动抬高会把
+   * 场景想验的分支直接藏掉。只有走默认值时（= 生产路径）才与软线挂钩。
+   */
+  const explicitGate = Number(minTokens) !== FOLD_MIN_TOKENS
+  const prepareTokens = explicitGate
+    ? Number(minTokens)
+    : Number(softLine) > 0
+      ? Math.max(Number(minTokens) || 0, Math.round(Number(softLine) * Number(prepareRatio)))
+      : Number(minTokens)
+  if (Number(transcriptTokens) >= prepareTokens) return { eligible: true, reason: 'long-session' }
   /*
    * State Refresh 档（N21-6）：转录接近窗口就算「够长了」。它排在三档之后，
    * 但**仍然在地板之后** —— 短会话不会因为窗口小而误触发。

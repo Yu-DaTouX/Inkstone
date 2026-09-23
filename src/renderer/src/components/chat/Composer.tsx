@@ -1504,6 +1504,14 @@ function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
   const [composing, setComposing] = useState(false)
   const [goalText, setGoalText] = useState('')
   const [outcomeText, setOutcomeText] = useState('')
+  /*
+   * 可选补充栏（实施-16 G-1）：默认收起 —— 不展开时仍是原来的「目标 + 成果」两栏流程，
+   * 菜单长度和维护习惯不变；空字符串 = 用户没写，不往目标里塞默认句。
+   */
+  const [extrasOpen, setExtrasOpen] = useState(false)
+  const [deliverableText, setDeliverableText] = useState('')
+  const [scopeText, setScopeText] = useState('')
+  const [constraintsText, setConstraintsText] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -1580,18 +1588,37 @@ function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
     const goal = goalText.trim()
     const outcome = outcomeText.trim()
     if (!goal || !outcome) return
+    const deliverable = deliverableText.trim()
+    const scope = scopeText.trim()
+    const constraints = constraintsText.trim()
     /*
      * A7（实施-14 F5）：await 之前记下会话身份，回来先核对。
      * 用户在等响应的这几百毫秒里切了会话时，不能把目标模板插到另一条会话的输入框。
      */
     const before = identityForAwait(useStore.getState())
-    const res = await setGoal({ goal, outcome })
+    const res = await setGoal({
+      goal,
+      outcome,
+      ...(deliverable ? { deliverable } : {}),
+      ...(scope ? { scope } : {}),
+      ...(constraints ? { constraints } : {})
+    })
     if (!res.ok) return
     if (identityForAwait(useStore.getState()) !== before) return
     close()
-    onInsert(t('plus.goalSeed', { goal, outcome }))
+    /* 种子消息带上用户写全的契约：模型第一轮就该看到补充字段，而不是只看到两栏 */
+    const extra = [
+      deliverable ? t('plus.goalSeedDeliverable', { value: deliverable }) : '',
+      scope ? t('plus.goalSeedScope', { value: scope }) : '',
+      constraints ? t('plus.goalSeedConstraints', { value: constraints }) : ''
+    ].filter(Boolean)
+    onInsert([t('plus.goalSeed', { goal, outcome }), ...extra].join('\n'))
     setGoalText('')
     setOutcomeText('')
+    setDeliverableText('')
+    setScopeText('')
+    setConstraintsText('')
+    setExtrasOpen(false)
   }
 
   return (
@@ -1657,6 +1684,52 @@ function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
                   onChange={(e) => setOutcomeText(e.target.value)}
                 />
               </label>
+              <button
+                type="button"
+                className="plus-extras-toggle"
+                data-testid="plus-goal-extras-toggle"
+                aria-expanded={extrasOpen}
+                onClick={() => setExtrasOpen((v) => !v)}
+              >
+                {t('plus.extrasToggle')}
+              </button>
+              {extrasOpen ? (
+                <>
+                  <label className="plus-field">
+                    <span className="plus-field-label">{t('plus.deliverableField')}</span>
+                    <textarea
+                      className="plus-input"
+                      data-testid="plus-deliverable-text"
+                      rows={2}
+                      value={deliverableText}
+                      placeholder={t('plus.deliverablePlaceholder')}
+                      onChange={(e) => setDeliverableText(e.target.value)}
+                    />
+                  </label>
+                  <label className="plus-field">
+                    <span className="plus-field-label">{t('plus.scopeField')}</span>
+                    <textarea
+                      className="plus-input"
+                      data-testid="plus-scope-text"
+                      rows={2}
+                      value={scopeText}
+                      placeholder={t('plus.scopePlaceholder')}
+                      onChange={(e) => setScopeText(e.target.value)}
+                    />
+                  </label>
+                  <label className="plus-field">
+                    <span className="plus-field-label">{t('plus.constraintsField')}</span>
+                    <textarea
+                      className="plus-input"
+                      data-testid="plus-constraints-text"
+                      rows={2}
+                      value={constraintsText}
+                      placeholder={t('plus.constraintsPlaceholder')}
+                      onChange={(e) => setConstraintsText(e.target.value)}
+                    />
+                  </label>
+                </>
+              ) : null}
               <div className="plus-actions">
                 <button
                   className="plus-start"

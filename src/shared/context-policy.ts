@@ -473,6 +473,21 @@ export const POLICY_COOLDOWN_MS = 30_000
 /** 用量回落到触发线的这个比例以下才重新“上膛”，避免刚压完又被判定过线 */
 export const POLICY_REARM_RATIO = 0.9
 /**
+ * 压缩**实际回收后**的占用回落到软线这个比例以下 → 视为压力已解除（C-6）。
+ *
+ * 与 `POLICY_REARM_RATIO`（0.9）的分工：那个回答“自动压缩还允不允许再压”，
+ * 这个回答“上一轮压缩是否真的把上下文降下来了”。0.8 是 C-6 的候选值，
+ * 比 0.9 更严 —— 只降到 85% 不算“压下来了”，那种低回收的重复压缩正是要防的。
+ */
+export const POLICY_RESET_RATIO = 0.8
+/**
+ * 压缩后仍高于软线时，此后新增至少要达到这个绝对值才允许再压（C-6 候选值）。
+ * 与 `POLICY_GROWTH_RATIO` 取 `max`；两者都夹在软线以内，见 `contextPolicyStep`。
+ */
+export const POLICY_GROWTH_MIN_TOKENS = 16_000
+/** 压缩后“此后新增”相对软线的最低比例（C-6 的 `max(16K, 软线×5%)` 那一半） */
+export const POLICY_GROWTH_RATIO = 0.05
+/**
  * 超过这个时间还没等到上下文回落，就允许再试一次。
  *
  * 为什么需要：`armed = false` 的本意是「等上一次压缩真的把上下文降下来」。但如果
@@ -497,8 +512,53 @@ export const POLICY_REARM_MS = 5 * 60_000
  * 30 秒冷却约束，而不是由 5 分钟兜底窗口约束。
  * 只认 `completed`：失败 / 被取消的压缩没有让上下文变小，仍按原规则等回落。
  */
-export function rearmAfterCompaction(state: ContextPolicyState): ContextPolicyState {
-  return state.armed ? state : { ...state, armed: true }
+export function rearmAfterCompaction(
+  state: ContextPolicyState,
+  tokensAfter?: number | null
+): ContextPolicyState {
+  /*
+   * 把这次压缩**实际压到多少**记下来（`compaction_end` 的 `estimatedTokensAfter`）。
+   * 它是下一步防抖的基准：没有它，防抖只能退化回“软线以下的整体回落”，
+   * 而基线开销本身就在软线以上时那条路永远不成立（见下）。
+   * 认不出的数值记 `null`（不是 0）—— “不知道压到多少”与“压到 0”是两件事。
+   */
+  const mark = Number.isFinite(tokensAfter) && (tokensAfter as number) > 0 ? Math.round(tokensAfter as number) : null
+  if (state.armed && state.tokensAfterCompaction === mark) return state
+  return { ...state, armed: true, tokensAfterCompaction: mark }
+}
+
+/**
+ * 压缩后“此后新增多少才允许再压”的门槛（C-6）：`max(16k, 软线×5%)`，
+ * 并夹在软线以内。`contextPolicyStep` 与界面的「不可压缩基础开销」提示共用它，
+ * 避免两处各写一份而慢慢漂移。
+ */
+export function policyGrowthMinTokens(budget: ContextBudget | null): number {
+  if (!budget) return 0
+  const line = budget.triggers.compact
+  if (line <= 0) return 0
+  return Math.min(line, Math.max(POLICY_GROWTH_MIN_TOKENS, Math.round(line * POLICY_GROWTH_RATIO)))
+}
+
+/**
+ * 「主要为不可压缩基础开销」提示的判据（C-6）。
+ *
+ * 能得出的只是一个**观察**，不是一个更聪明的策略：
+ *   · 上一次成功的压缩压完仍然停在软线 80% 以上（低回收）；
+ *   · 且当前用量还没到「软线 + 新增门槛」（所以现在真的不会动手）。
+ * 两条同时成立时，把“为什么不着手”说给用户听（而不是一直显示“已达工作集”却不动作）。
+ * 数据不齐（没压过 / pi 没给 `estimatedTokensAfter`）一律不显示 —— 不编原因。
+ */
+export function incompressibleBaselineNotice(
+  tokens: number | null,
+  budget: ContextBudget | null,
+  afterTokens: number | null | undefined
+): boolean {
+  if (!budget || tokens === null || !Number.isFinite(tokens)) return false
+  if (typeof afterTokens !== 'number' || !Number.isFinite(afterTokens) || afterTokens <= 0) return false
+  const line = budget.triggers.compact
+  if (line <= 0) return false
+  if (afterTokens < line * POLICY_RESET_RATIO) return false
+  return tokens < line + policyGrowthMinTokens(budget)
 }
 
 export interface ContextPolicyState {
@@ -506,6 +566,11 @@ export interface ContextPolicyState {
   armed: boolean
   /** 上一次由策略发起的压缩时间 */
   lastTriggerAt: number | null
+  /**
+   * 上一次成功压缩之后的估算占用（`estimatedTokensAfter`）；未知 / 没压过是 `null`。
+   * 只用于 C-6 的“此后新增多少才再压”防抖，不参与预算计算。
+   */
+  tokensAfterCompaction?: number | null
 }
 
 export const INITIAL_POLICY_STATE: ContextPolicyState = { armed: true, lastTriggerAt: null }
@@ -552,18 +617,40 @@ export function contextPolicyStep(input: PolicyStepInput): PolicyStepResult {
     return { state, trigger: null }
   }
 
+  const retryReached = state.lastTriggerAt !== null && now - state.lastTriggerAt >= POLICY_REARM_MS
   const armed =
-    state.armed ||
-    tokens < budget.triggers.compact * POLICY_REARM_RATIO ||
-    (state.lastTriggerAt !== null && now - state.lastTriggerAt >= POLICY_REARM_MS)
+    state.armed || tokens < budget.triggers.compact * POLICY_REARM_RATIO || retryReached
+
+  /*
+   * C-6：`armed` 只说明“允许再压”，不说明“值得再压”。上一次压缩**实际压到了多少**
+   * 才是防抖基准 —— 低回收（压完还在软线上）且此后几乎没新增时，再压一次几乎必然
+   * 只是重复摘要（`<YAN_DATA_DIR>/context-actions/` 与 pi 事件里会看到连续两次
+   * 成功的压缩，而正文几乎没变）。三条放行里任意一条成立才继续：
+   *   ① 回落：实际占用已到软线 80% 以下 —— 压力真的解除了；
+   *   ② 增长：此后新增达到 `max(16k, 软线×5%)` —— 确实又长出了新内容；
+   *   ③ 重试窗口：`POLICY_REARM_MS` 到了 —— 上次可能压根没压成。
+   * `tokensAfterCompaction` 未知（老状态 / 只跑过测试通道）时不加这道额外条件，
+   * 保持 S3 的“成功后重新上膛”语义不被削弱。
+   * 增长门槛夹在软线以内：工作集被压到低于基线开销时（`contextpressurelow`，
+   * 那正是 S3 的场景），门槛不能长得比软线还高，否则策略又退化成永不触发。
+   */
+  const growthMin = policyGrowthMinTokens(budget)
+  const after = state.tokensAfterCompaction
+  const settled =
+    after === null ||
+    after === undefined ||
+    tokens < budget.triggers.compact * POLICY_RESET_RATIO ||
+    tokens - after >= growthMin ||
+    retryReached
+
   const rearmed: ContextPolicyState = { ...state, armed }
 
   const crossed: ContextTrigger | null =
     tokens >= budget.emergency ? 'emergency' : tokens >= budget.triggers.compact ? 'compact' : null
   if (!crossed) return { state: rearmed, trigger: null }
 
-  /* 兜底那条线不看是否上膛：它本来就是“策略已经不灵了”的最后一道 */
-  if (crossed === 'compact' && !armed) return { state: rearmed, trigger: null }
+  /* 兜底那条线不看是否上膛、也不看防抖：它本来就是“策略已经不灵了”的最后一道 */
+  if (crossed === 'compact' && (!armed || !settled)) return { state: rearmed, trigger: null }
   if (busy) return { state: rearmed, trigger: null }
   if (state.lastTriggerAt !== null && now - state.lastTriggerAt < cooldown) {
     return { state: rearmed, trigger: null }

@@ -224,6 +224,27 @@
   display: none;
 }
 
+/*
+ * 打不开该页面（H-9 第二阶段）：原因 + 重试 + 外部打开 + **原地址**。
+ * 地址要能读完看得见（不是只放 title）——用户靠它判断刚才打开的是什么。
+ */
+.browser-loaderror {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.browser-error-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
 /* 浏览器高度分隔条（水平） */
 .browser-splitter {
   position: relative;

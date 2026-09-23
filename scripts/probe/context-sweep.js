@@ -147,6 +147,47 @@
   const t3 = await turn('只回复 ok，不要用任何工具。', 180_000)
   ok(t3.sent, '第三回合已发出')
 
+  /*
+   * ---------------- 4. C-2b：界面把「清扫」单独显示出来 ----------------
+   *
+   * 这一回合真的发生了 sweep（退出后的账本检查是权威证据，不靠界面自证）；
+   * 这里断言**界面读到了同一份账本** —— 否则用户只能从“上下文突然短了”去猜。
+   */
+  log('')
+  log('=== 4. 三类整理：清扫单独显示（C-2b）===')
+  if (!S().settings?.rightPanelOpen) await S().setRightPanelOpen(true)
+  await sleep(300)
+  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(500)
+  const ctxSec = q('[data-testid="rp-context"]')
+  const ctxHead = ctxSec?.querySelector('button')
+  if (ctxHead && ctxHead.getAttribute('aria-expanded') === 'false') {
+    ctxHead.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(200)
+  }
+  const detailsToggle = q('[data-testid="ctx-details-toggle"]')
+  if (detailsToggle && detailsToggle.getAttribute('aria-expanded') !== 'true') {
+    detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(400)
+  }
+  /* 账本由主进程读；界面显示的是它的投影（界面数 = 主进程数） */
+  const actionLedger = await window.yan.contextActions()
+  const sweepSummary = (actionLedger?.kinds ?? []).find((k) => k.kind === 'tool-sweep')
+  log(
+    `  账本: tool-sweep=${sweepSummary?.count ?? 0} applied=${sweepSummary?.applied ?? 0} reclaimed=${sweepSummary?.reclaimed ?? 0}`
+  )
+  ok((sweepSummary?.count ?? 0) >= 1, '宿主读到了扩展写的清扫记录（C-2b 的真实链路）')
+  ok((sweepSummary?.reclaimed ?? 0) >= 1, '账本里有真实的整理条数（不是零收益也算过）')
+  const sweepRow = q('[data-testid="ctx-action-tool-sweep"]')
+  ok(!!sweepRow, '上下文详情里清扫与状态刷新、压缩是分开的三行')
+  ok(
+    /[1-9]/.test(sweepRow?.textContent ?? ''),
+    '清扫行显示的是真实次数，而不是「未发生」',
+    JSON.stringify((sweepRow?.textContent ?? '').slice(0, 80))
+  )
+  q('[data-testid="ctx-details-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await sleep(150)
+
   out.push(`  ctxsweep.sessionId=${sessionId}`)
   return out.join('\n')
 })()

@@ -36,6 +36,7 @@ import type {
   SlashCommand,
   SoundEvent,
   SubagentRun,
+  TerminalSessionInfo,
   UIMessage,
   UIToolCall,
   UserProfile,
@@ -50,6 +51,7 @@ import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-m
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
+import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import {
   rebindSessionRuntime,
@@ -233,8 +235,20 @@ interface Store {
   browserState: BrowserState
   /** H-9a：协调器算出的原生网页当前是否应可见（供探针/调试观察，不驱动 UI） */
   browserNativeVisible: boolean
+  /**
+   * 交互终端（实施-11 H-11）。
+   * 真源在主进程的 PTY 服务；这里只留列表与活动身份供标签栏渲染。
+   * 输出正文不进 store（高频），由 `TerminalSurface` 直接写进 xterm。
+   */
+  terminals: TerminalSessionInfo[]
+  activeTerminalId: string | null
+  /** 原生依赖是否加载成功；false 时终端页显示不可用原因，而不是一个永久灰按钮 */
+  terminalAvailable: boolean
+  terminalError: string | null
   /** 右侧的只读文件预览（消息里的文件链接 / 拖入的文件） */
   filePreview: FilePreviewState | null
+  /** 已打开的文件资源（key → 状态）。标签真源仍是工作台 tabs，这里只存数据。 */
+  filePreviews: Record<string, FilePreviewState>
   /**
    * Git 审查面板是否打开（方案 G1）。
    *
@@ -482,8 +496,20 @@ interface Store {
   setUiScale: (v: number) => Promise<void>
   openBrowser: (url?: string) => Promise<void>
   closeBrowser: () => Promise<void>
+  /* ---- 交互终端（实施-11 H-11） ---- */
+  /** 从宿主拉一次会话列表与可用性（启用 / 面板打开 / 重连时调） */
+  refreshTerminals: () => Promise<void>
+  startTerminal: (options?: { cols?: number; rows?: number; cwd?: string }) => Promise<TerminalSessionInfo | null>
+  closeTerminal: (id: string) => Promise<void>
+  setActiveTerminal: (id: string | null) => void
   /** 打开只读文件预览（相对路径由主进程按会话 cwd 解析） */
-  previewFile: (path: string, line?: number, cwd?: string) => Promise<void>
+  previewFile: (path: string, line?: number, cwd?: string, lineEnd?: number) => Promise<void>
+  /** 只查当前文件变没变（H-4 变化提示）：只 stat，不读内容 */
+  checkPreviewStale: () => Promise<void>
+  /** 切到已打开的文件标签（数据从 `filePreviews` 恢复，不重新读盘） */
+  activateFileTab: (key: string) => void
+  /** 关闭一个文件资源标签（实施-11 H-4：同一工作窗口可以开多个文件） */
+  closeFileTab: (key: string) => void
   closePreview: () => void
   /* ---- 子代理 ---- */
   loadSubagents: () => Promise<void>
@@ -760,8 +786,17 @@ export interface FilePreviewState {
   /** 发起预览时绑定的项目根，避免切换项目后旧响应写入新面板。 */
   cwd?: string
   line?: number
+  /** `#L42-L60` 的范围末行（H-4 范围高亮）；没有范围时不存在 */
+  lineEnd?: number
   loading: boolean
   data: FilePreview | null
+  /**
+   * 资源身份键（实施-11 H-4）：`projectId|workspaceRoot|canonicalPath`。
+   * 读盘回来（拿到 realpath）后才存在 —— 加载中的状态还没有身份。
+   */
+  key?: string
+  /** 磁盘上的内容已经变了（H-4 变化提示）；不自动重载，不打断阅读位置 */
+  stale?: boolean
 }
 
 /** 附件上限（方案 5.1：最多 20 个附件，图片合计 20MB） */
@@ -1048,7 +1083,12 @@ export const useStore = create<Store>((rawSet, get) => {
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   browserNativeVisible: false,
+  terminals: [],
+  activeTerminalId: null,
+  terminalAvailable: true,
+  terminalError: null,
   filePreview: null,
+  filePreviews: {},
   reviewOpen: false,
   reviewScope: { kind: 'working' },
   subagents: [],
@@ -1312,6 +1352,19 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'browser-state':
         set({ browserState: m.payload })
         applyBrowserVisibility(get)
+        break
+      case 'terminal':
+        /*
+         * 只处理“退出”：输出正文（kind=data）不进 store —— 它由 `TerminalSurface`
+         * 直连 onPush 写进 xterm，走 store 会对每个 chunk 触发一次订阅重算。
+         */
+        if (m.payload.kind === 'exit') {
+          set({
+            terminals: s.terminals.map((term) =>
+              term.id === m.payload.id ? { ...term, alive: false, exitCode: m.payload.exitCode ?? null } : term
+            )
+          })
+        }
         break
       case 'log':
         // 主进程未捕获异常 / 未处理 Promise：与 pi stderr 共用同一条日志抽屉，
@@ -2344,6 +2397,59 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   /*
+   * 交互终端（H-11）：所有真操作在主进程的 PTY 服务里，这里只是薄代理。
+   * 列表来自宿主（不是本地构造），所以重启渲染进程 / 重开面板都能接回原会话。
+   */
+  refreshTerminals: async () => {
+    try {
+      const availability = await window.yan.terminal.available()
+      if (!availability.available) {
+        set({ terminalAvailable: false, terminalError: availability.error ?? null, terminals: [], activeTerminalId: null })
+        return
+      }
+      const list = await window.yan.terminal.list()
+      set({ terminalAvailable: true, terminalError: null, terminals: list })
+    } catch (error) {
+      set({ terminalAvailable: false, terminalError: error instanceof Error ? error.message : String(error), terminals: [] })
+    }
+  },
+
+  startTerminal: async (options) => {
+    const snapshot = await window.yan.terminal.start(options)
+    if (!snapshot) {
+      /*
+       * 启不来不是静默失败：把宿主给的原因带出来（原生依赖 / spawn 失败）。
+       * 与 `openBrowser` 同一约定：这里不走 `piCall`，手动剥 IPC 壳。
+       */
+      const availability = await window.yan.terminal.available().catch(() => ({ available: false, error: undefined }))
+      const reason = availability.error ?? ''
+      set({
+        terminalAvailable: false,
+        terminalError: reason || null,
+        notices: pushNotice(get().notices, 'error', reason || '启动终端失败')
+      })
+      return null
+    }
+    set({
+      terminals: [...get().terminals.filter((term) => term.id !== snapshot.id), snapshot],
+      activeTerminalId: snapshot.id
+    })
+    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+    return snapshot
+  },
+
+  closeTerminal: async (id) => {
+    await window.yan.terminal.kill(id).catch(() => false)
+    const terminals = get().terminals.filter((term) => term.id !== id)
+    set({
+      terminals,
+      activeTerminalId: get().activeTerminalId === id ? terminals[terminals.length - 1]?.id ?? null : get().activeTerminalId
+    })
+  },
+
+  setActiveTerminal: (id) => set({ activeTerminalId: id }),
+
+  /*
    * 只读文件预览（方案 5.2）。
    *
    * ⚠️ 原生 `WebContentsView` 永远盖在 DOM 之上：浏览器开着的时候，
@@ -2368,17 +2474,96 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   setReviewScope: (scope) => set({ reviewScope: scope }),
 
-  previewFile: async (path, line, cwd) => {
-    set({ filePreview: { path, cwd, line, loading: true, data: null } })
+  previewFile: async (path, line, cwd, lineEnd) => {
+    set({ filePreview: { path, cwd, line, lineEnd, loading: true, data: null } })
     /* 原生网页由活动页切换（→file）自动隐藏，不再单独 setVisible */
-    const data = await window.yan.readPreview(path, line, cwd)
+    const data = await window.yan.readPreview(path, line, cwd, lineEnd)
     /* 期间用户可能已经换了别的文件 / 关掉了预览：只认最后一次请求 */
     const cur = get().filePreview
-    if (!cur || cur.path !== path || cur.cwd !== cwd || cur.line !== line) return
-    set({ filePreview: { path, cwd, line, loading: false, data } })
+    if (!cur || cur.path !== path || cur.cwd !== cwd || cur.line !== line || cur.lineEnd !== lineEnd) return
+    /*
+     * 资源身份用 realpath 后的 `abs`（H-4）：链接里写的相对路径、`..`、
+     * 软链接都不会另外造一个身份；项目与工作树一起进键，
+     * 不同工作树的同名文件不共用一个标签。
+     */
+    const settings = get().settings
+    const workspaceRoot = cwd || get().session?.cwd || settings?.cwd || ''
+    const projectId =
+      settings?.projects.find(
+        (project) => project.cwd.toLowerCase() === String(workspaceRoot).toLowerCase()
+      )?.id ?? null
+    /*
+     * 失败态（文件不存在 / 越界 / 目录 / 二进制不可预览）也要有身份。
+     *
+     * 为什么：工作窗口拿不到身份就不切页（H-4 的“无身份不建标签”），
+     * 结果是缺失文件表现为“点了没反应”，连“保留原路径 + 重试 + 定位父目录”
+     * 那套失败界面都没机会显示。
+     * 为什么安全：能 realpath 时**永远**优先用 `abs`；只有失败态才退回
+     * 用户给的原路径（同一个请求得到同一个键，同文件不会凭空多一个身份）。
+     */
+    const canonical = data?.abs || path
+    const key = canonical
+      ? fileResourceKey({ projectId: projectId ?? null, workspaceRoot, canonicalPath: canonical })
+      : undefined
+    const next: FilePreviewState = {
+      path,
+      cwd,
+      line,
+      lineEnd,
+      loading: false,
+      data,
+      ...(key ? { key } : {})
+    }
+    set({
+      filePreview: next,
+      filePreviews: key ? { ...get().filePreviews, [key]: next } : get().filePreviews
+    })
+  },
+
+  activateFileTab: (key) => {
+    const target = get().filePreviews[key]
+    if (!target) return
+    set({ filePreview: target })
+  },
+
+  checkPreviewStale: async () => {
+    const current = get().filePreview
+    const abs = current?.data?.abs
+    const loadedMtime = current?.data?.mtimeMs
+    if (!current || !abs || !current.data?.ok || typeof loadedMtime !== 'number') return
+    const found = await window.yan.statPreview(abs, current.cwd)
+    /* 期间用户可能换了文件 / 关了预览：只对同一条预览生效 */
+    const now = get().filePreview
+    if (!now || now.data?.abs !== abs) return
+    /* 文件消失也算“变了”：提示重新加载，让错误就地出现在原位置 */
+    const stale = !found.ok || found.mtimeMs !== loadedMtime
+    if (!!now.stale === stale) return
+    const next: FilePreviewState = { ...now, stale }
+    set({
+      filePreview: next,
+      filePreviews: next.key ? { ...get().filePreviews, [next.key]: next } : get().filePreviews
+    })
+  },
+
+  closeFileTab: (key) => {
+    const rest = { ...get().filePreviews }
+    delete rest[key]
+    const current = get().filePreview
+    const leaving = current?.key === key
+    /* 关掉当前标签就回到还开着的最后一个；全关了就回到“没有预览” */
+    const fallbackKey = Object.keys(rest).pop()
+    set({
+      filePreviews: rest,
+      filePreview: leaving ? (fallbackKey ? rest[fallbackKey] : null) : current
+    })
   },
 
   closePreview: () => {
+    const current = get().filePreview
+    if (current?.key) {
+      get().closeFileTab(current.key)
+      return
+    }
     set({ filePreview: null })
   },
 

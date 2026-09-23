@@ -17,6 +17,8 @@ import type {
   BrowserBounds,
   BrowserObservation,
   BrowserState,
+  TerminalAvailability,
+  TerminalSnapshot,
   ChromeSyncReport,
   AuthProviderInfo,
   CodexLoginResult,
@@ -70,6 +72,7 @@ import type {
   ZoomState
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
+import type { ContextActionSummary } from '../shared/context-actions'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -215,7 +218,13 @@ const api: YanBridge = {
   pathForFile: (file) => webUtils.getPathForFile(file),
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
-  readPreview: (p, line, cwd) => invoke<FilePreview>('yan:readPreview', p, line, cwd),
+  readPreview: (p, line, cwd, lineEnd) => invoke<FilePreview>('yan:readPreview', p, line, cwd, lineEnd),
+  statPreview: (p, cwd) =>
+    invoke<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>(
+      'yan:statPreview',
+      p,
+      cwd
+    ),
 
   /* ---- 子代理（方案第 8 节） ---- */
   subagents: {
@@ -346,6 +355,8 @@ const api: YanBridge = {
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd)
   },
   contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
+  /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
+  contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   /* ---- 内置浏览器 ---- */
@@ -372,6 +383,17 @@ const api: YanBridge = {
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
+  },
+
+  /* ---- 交互终端（实施-11 H-11） ---- */
+  terminal: {
+    available: () => invoke<TerminalAvailability>('yan:terminal:available'),
+    list: () => invoke<TerminalSnapshot[]>('yan:terminal:list'),
+    start: (request) => invoke<TerminalSnapshot | null>('yan:terminal:start', request),
+    write: (id, data) => invoke<boolean>('yan:terminal:write', id, data),
+    resize: (id, cols, rows) => invoke<boolean>('yan:terminal:resize', id, cols, rows),
+    kill: (id) => invoke<boolean>('yan:terminal:kill', id),
+    attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id)
   },
 
   /* ---- 窗口 ---- */

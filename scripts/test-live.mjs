@@ -528,8 +528,32 @@ const CASES = {
     env: { YAN_HANDOFF_THRESHOLD: '0' },
     afterExit: 'handoffChainPersisted'
   },
+  /*
+   * 实施-14 F7 剩余项：**默认阈值 2 下的连续两次交接**（cost 1）。
+   *
+   * `handoffchain` 走阈值 0 通道（快、便宜），但生产是阈值 2。这一场不覆盖阈值，
+   * 只把上下文工作集降到测试档（与 `handoffautocompact` 同一手法），
+   * 让“两次真实压缩 → 交接”在同一条链上真的发生**两轮**。
+   * 代价是四次以上真实压缩，所以它是本项目最贵的场景之一，不进 `check`。
+   */
+  handoffchaindefault: {
+    probe: 'scripts/probe/handoff-chain.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 20000,
+    cost: 1,
+    budget: 2400000,
+    model: 'deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":6000}' },
+    afterExit: 'handoffChainPersisted'
+  },
   // 上下文分区：压缩后 tokens=null 的诚实显示 + 花费行对齐
   context: { probe: 'scripts/probe/context.js', delay: 9000, cost: 0 },
+  // C-2b：三类整理（清扫 / 状态刷新 / 整轮压缩）在界面上分开显示，界面数 = 主进程数
+  contextactions: { probe: 'scripts/probe/contextactions.js', delay: 9000, cost: 0 },
   /*
    * N21-2 压缩可观测：真实触发一次自动压缩 + 真实的手动压缩失败。
    *
@@ -1212,6 +1236,11 @@ const CASES = {
   toolgroup: { probe: 'scripts/probe/toolgroup.js', delay: 9000, cost: 0 },
   // 终端窗口：结构 / 三个拖拽把手 / 拖动与键盘调大小 / 展开恢复（不烧 token）
   terminal: { probe: 'scripts/probe/terminal.js', delay: 9000, cost: 0 },
+  /*
+   * 交互终端表面（实施-11 H-11）：开始页入口 → xterm 挂载 → 真实输入输出 →
+   * 断线重连 → 关标签真的 kill。原生依赖的包内真跑在 `test:packaged`。
+   */
+  terminalsurface: { probe: 'scripts/probe/terminal-surface.js', delay: 11000, cost: 0, budget: 120000 },
   // 对话宽度自定义 + 导航轨跟随（不烧 token）
   streamwidth: { probe: 'scripts/probe/streamwidth.js', delay: 9000, cost: 0 },
   // 「正在处理」提示在整个 agent 回合内常驻（不烧 token）
@@ -1958,6 +1987,17 @@ function buildFixtureProject(base) {
   const repo = join(dir, 'repo')
   mk('repo')
   put(join('repo', 'README.md'), '# fixture repo\n\nLINE-BASE: 初始内容\n')
+  /*
+   * 5000 行文件（H-4 大文件窗口化）：真实定位到第 4000 行时，
+   * 读进来的应该只是围绕它的窗口，而不是前 2000 行。
+   */
+  put(
+    join('repo', 'big.txt'),
+    Array.from({ length: 5000 }, (_, i) => `line ${String(i + 1).padStart(4, '0')}`).join('\n') + '\n'
+  )
+  /* 文档内相对链接（H-4 出口 3）：`../README.md` 相对的是本文档目录 */
+  mk('repo', 'docs')
+  put(join('repo', 'docs', 'a.md'), '# fixture 文档\n\n[返回上一级](../README.md)\n')
   const gitEnv = ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test']
   try {
     execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'ignore' })
@@ -3679,6 +3719,39 @@ async function seedGoalDocument(dataDir, sessionsDir) {
     blocker: null,
     pursue: false,
     brief: null,
+    /*
+     * G-2：目标级核验快照。fixture 直接写文档（不走 `yan goal report`），
+     * 所以这里模拟宿主已经算过的结果 —— 与上面 links 的 check 同一批事实。
+     * 「宿主真的会算」由单测（GoalStore.report → 真文件 stat）盯。
+     */
+    verification: {
+      status: 'failed',
+      at: now,
+      checks: [
+        {
+          target: 'probe-missing-file.txt',
+          kind: 'file',
+          ok: false,
+          detail: '文件不存在（可能已被移动或删除）',
+          at: now
+        },
+        {
+          target: 'https://example.com/spec',
+          kind: 'url',
+          ok: true,
+          detail: 'url 仅做形态校验（宿主不联网）',
+          at: now
+        },
+        {
+          target: 'out/probe.png',
+          kind: 'artifact',
+          ok: false,
+          detail: '文件不存在（可能已被移动或删除）',
+          at: now
+        }
+      ],
+      detail: '2 项本地产物不存在（可能已被移动或删除）'
+    },
     failure: null,
     updatedAt: now
   })
@@ -4619,6 +4692,31 @@ async function checkContextSweepArchiveImpl(sandboxRoot) {
     )
     const sameRange = toolEntries.every((e) => e.sourceRange?.from === e.sourceRange?.to && entryIds.has(e.sourceRange?.from))
     say(toolEntries.length > 0 && sameRange, 'sourceRange 是单条原始 entry（不是数组下标 / token 偏移）')
+
+    /*
+     * C-2b：三类动作账本（扩展写、宿主读）—— 清扫**不产生** pi 的
+     * `compaction_*` 事件，所以这份账本是“清扫真的发生过”的唯一证据。
+     */
+    const actionsDir = join(sandboxRoot, 'data', 'context-actions')
+    const actionFiles = existsSync(actionsDir) ? readdirSync(actionsDir) : []
+    say(actionFiles.length >= 1, `扩展写出了动作账本（${actionFiles.length} 份）`)
+    const ledger = actionFiles.flatMap((name) => {
+      try {
+        return readFileSync(join(actionsDir, name), 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+      } catch {
+        return []
+      }
+    })
+    const appliedSweep = ledger.filter((item) => item?.kind === 'tool-sweep' && item?.status === 'applied')
+    say(appliedSweep.length >= 1, `账本记下了真实清扫（applied ${appliedSweep.length} 次）`)
+    say(
+      appliedSweep.every((item) => (item.reclaimed ?? 0) >= 1 && typeof item.savedTokens === 'number'),
+      '账本里带了整理条数与估算省下的 token'
+    )
 
     /* 扩展诊断 */
     const logPath = join(sandboxRoot, 'ctx-ext.log')
@@ -6063,6 +6161,15 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(transitions[0]?.[1]?.result?.mode === 'standard', '转移记录里写着「模式切标准」')
 
     /*
+     * G-2：就绪转移（ready）**不是**完成回执 —— 它不触发核验，
+     * 所以这里应该是「没有核验结论」，而不是某个被当成通过的状态。
+     */
+    say(
+      !entry?.goal?.verification,
+      `G-2：只做了 ready（没 report）→ 没有核验结论（实际 ${entry?.goal?.verification?.status ?? 'null'}）`
+    )
+
+    /*
      * 续行留痕（实施-05 S3b）：两类自定义条目都得在**会话文件**里 ——
      * `yan-goal-resume` 是扩展写的消费证据，`yan-goal-ready` 是那条控制消息。
      * 会话文件路径就是 goals.json 的键（宿主按会话文件索引）。
@@ -6253,6 +6360,25 @@ async function checkGoalLoopPersisted(sandboxRoot, _tempBefore, _probeText) {
     say(
       Object.keys(entry?.reports ?? {}).length >= 1,
       `目标报告落了盘（${Object.keys(entry?.reports ?? {}).length} 条）`
+    )
+    /*
+     * G-2：模型真的经 `yan goal report` 报过一次，宿主就该在同一次落盘里
+     * 算出核验；它不声明任何产物，所以只能是 `not_checked` ——
+     * 正是要证明「没有机器判据 ≠ 通过」（而不是跟着“模型报了”写个绿的）。
+     */
+    const verification = entry?.goal?.verification
+    say(!!verification, 'G-2：报告落盘时带上了宿主核验结果')
+    say(
+      verification?.status === 'not_checked',
+      `G-2：没有声明任何产物 → not_checked（实际 ${verification?.status ?? '(无)'}）`
+    )
+    say(
+      Array.isArray(verification?.checks) && verification.checks.length === 0,
+      'G-2：not_checked 不带检查项'
+    )
+    say(
+      typeof verification?.at === 'number' && verification.at > 0,
+      'G-2：核验带了宿主时间（能看出结论是不是过期的）'
     )
     const phase = entry?.goal?.phase
     const active = phase === 'planning' || phase === 'executing' || phase === 'verifying'

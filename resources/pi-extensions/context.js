@@ -75,6 +75,7 @@ import {
   mergeEpisodeRefs,
   messageText,
   planToolSweep,
+  recentTailFor,
   renderTaskState,
   stripStaleRecalls,
   sweepViolations,
@@ -269,6 +270,64 @@ function trace(hook, payload) {
   }
 }
 
+/* ---------------------------------------------------------------- 三类动作账本（C-2b） */
+
+/**
+ * 整理动作账本（实施-11 C-2b）。
+ *
+ * 为什么必须由扩展写：`tool-sweep` 与 `episode-fold` **不产生** pi 的
+ * `compaction_*` 事件 —— 宿主没有别的途径知道“这一轮到底动没动上下文”。
+ * 写进 `<YAN_DATA_DIR>/context-actions/<sessionId>.jsonl`，宿主读出来，
+ * 界面上把三类（清扫 / 状态刷新 / 整轮压缩）**分开**显示。
+ *
+ * 与 `trace()` 的分工：`trace` 是排查用的诊断线（默认关，走 env 指定的
+ * 任意路径）；账本是**产品口径**的读数，宿主必读，所以路径固定、默认开。
+ *
+ * 只记动作口径：做了什么、动了多少条、省了多少**估算** token、为什么没做。
+ * 不记消息正文 —— 账本是诊断，不是第二份转录。
+ */
+const ACTION_LOG_MAX_LINES = 500
+const ACTION_LOG_KEEP_LINES = 300
+/** 已写入行数（省掉每次 append 前都读整文件） */
+const actionLineCounts = new Map()
+
+function actionsFile(sessionId) {
+  return join(dataDir(), 'context-actions', `${sessionId}.jsonl`)
+}
+
+function countLines(file) {
+  try {
+    return readFileSync(file, 'utf8').split('\n').filter(Boolean).length
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * `sessionId` 必须已经过 `sessionIdOf()` 的合法校验（与宿主的
+ * `isSafeSessionId` 同一条判据）—— 这里不再做第二套清洗，
+ * 否则两边文件名会不一致，宿主就读不到。
+ */
+function recordAction(sessionId, action) {
+  if (!sessionId) return
+  try {
+    const file = actionsFile(sessionId)
+    mkdirSync(dirname(file), { recursive: true })
+    appendFileSync(file, JSON.stringify({ at: Date.now(), ...action }) + '\n')
+    const known = actionLineCounts.get(file)
+    const count = typeof known === 'number' ? known + 1 : countLines(file)
+    actionLineCounts.set(file, count)
+    /* 有界：只留最后一段。账本是读数，不是无限增长的历史。 */
+    if (count > ACTION_LOG_MAX_LINES) {
+      const kept = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-ACTION_LOG_KEEP_LINES)
+      writeFileSync(file, kept.join('\n') + '\n')
+      actionLineCounts.set(file, kept.length)
+    }
+  } catch {
+    /* 账本写不进去不影响变换本身 */
+  }
+}
+
 /**
  * 扩展侧的策略读取。
  *
@@ -346,11 +405,18 @@ function policy() {
   const kinds = kindsFromEnv
     ? parsed.kinds.filter((k) => typeof k === 'string')
     : base.kinds
-  const pick = (source, defaults) => {
+  const pick = (source, defaults, zeroKeys) => {
     const out = { ...defaults }
     if (source && typeof source === 'object' && !Array.isArray(source)) {
       for (const [key, value] of Object.entries(source)) {
         if (typeof value === 'number' && Number.isFinite(value) && value > 0) out[key] = value
+        else if (
+          typeof value === 'number' &&
+          Number.isFinite(value) &&
+          value === 0 &&
+          zeroKeys && zeroKeys.has(key)
+        )
+          out[key] = 0
         else if (key === 'ttl' && (value === 'turn' || value === 'episode')) out.ttl = value
       }
     }
@@ -359,7 +425,11 @@ function policy() {
   return {
     kinds,
     recentTail: pick(parsed.recentTail, base.recentTail),
-    sweep: pick(parsed.sweep, base.sweep),
+    /*
+     * `forcedMinReclaim*` 允许显式写 0（= 到线后无条件清扫，旧行为）。
+     * 其余字段仍然是“正数才生效” —— 写坏的值不得把预算变成 0。
+     */
+    sweep: pick(parsed.sweep, base.sweep, new Set(['forcedMinReclaimTokens', 'forcedMinReclaimRatio'])),
     recall: pick(parsed.recall, base.recall),
     episodes: pick(parsed.episodes, base.episodes),
     state: stateSwitches(parsed.state, kinds),
@@ -723,8 +793,19 @@ async function onContext(event, ctx) {
           messages: next,
           entryIds,
           watermark,
-          recentTail: p.recentTail,
-          sweep: overWorkingSet ? { ...p.sweep, minReclaimTokens: 0, minReclaimRatio: 0 } : p.sweep,
+          /* 大窗口档把近期末尾放宽到 64K–96K（C-6）；小窗口保持 32K/48K */
+          recentTail: recentTailFor(budget?.workingSet, p.recentTail),
+          /*
+           * 到线只放宽到 `forced*` 这一组（默认等于普通门槛）—— C-6 之前是直接清零，
+           * “到线”本身就成了清扫理由。需要更激进时由策略显式调低这两个数。
+           */
+          sweep: overWorkingSet
+            ? {
+                ...p.sweep,
+                minReclaimTokens: p.sweep.forcedMinReclaimTokens ?? p.sweep.minReclaimTokens,
+                minReclaimRatio: p.sweep.forcedMinReclaimRatio ?? p.sweep.minReclaimRatio
+              }
+            : p.sweep,
           /*
            * 硬约束①：**本回合正在动的文件**不得清扫。呼叫方只给路径清单，判定在 context-safety。
            * 旧回合的编辑不在此列 —— 它们已经不在“正在使用”，否则清扫永远压不动。
@@ -749,6 +830,17 @@ async function onContext(event, ctx) {
               next = applied.messages
               swept = applied.changed
               sweepSeen.add(sessionId)
+              /*
+               * C-2b：轻量整理不产生 pi 的 `compaction_*` 事件，
+               * 所以这一个动作只能由扩展自己留痕，否则界面上看不到它发生过。
+               * `savedTokens` 是估算差（不是供应商口径）。
+               */
+              recordAction(sessionId, {
+                kind: 'tool-sweep',
+                status: 'applied',
+                reclaimed: applied.changed,
+                savedTokens: Math.max(0, transcriptTokens - estimateMessagesTokens(next))
+              })
               mergeArchive(sessionId, planned.archiveEntries ?? [], Date.now(), watermark)
               /*
                * 阶段运行状态：sweep **只留痕、不上锁**（幂等且便宜，冷却会压住
@@ -763,13 +855,16 @@ async function onContext(event, ctx) {
               )
             } else {
               trace('context', { sessionId, hook: 'sweep-rejected', violations: bad })
+              recordAction(sessionId, { kind: 'tool-sweep', status: 'rejected', reason: 'violations' })
             }
           }
         } else {
           trace('context', { sessionId, hook: 'sweep-skipped', reason: planned.reason, details: planned.details ?? null })
+          recordAction(sessionId, { kind: 'tool-sweep', status: 'skipped', reason: planned.reason })
         }
       } else {
         trace('context', { sessionId, hook: 'sweep-skipped', reason: 'entry-identity-unavailable' })
+        recordAction(sessionId, { kind: 'tool-sweep', status: 'skipped', reason: 'entry-identity-unavailable' })
       }
     }
 
@@ -799,6 +894,12 @@ async function onContext(event, ctx) {
              * 所以这条诊断行就是“契约头到底写了什么”在真实链路里的唯一取证点。
              */
             if (injected.injected) {
+              recordAction(sessionId, {
+                kind: 'episode-fold',
+                status: 'injected',
+                freshness: freshnessLabel(applied.tier),
+                tokens: estimateTokens(text)
+              })
               trace('context', {
                 sessionId,
                 hook: 'task-state-injected',
@@ -832,6 +933,11 @@ async function onContext(event, ctx) {
         } else {
           /* 太旧 / 对不上：**不注入**比注入一份过期世界模型安全（宁少不错） */
           trace('context', { sessionId, hook: 'task-state-skipped', reason: `freshness-${applied.tier}`, gap: fresh.gap })
+          recordAction(sessionId, {
+            kind: 'episode-fold',
+            status: 'skipped',
+            reason: `freshness-${applied.tier}`
+          })
         }
       }
     }
@@ -1273,11 +1379,17 @@ function onAgentSettled(_event, ctx) {
      * 把值一并记进诊断，以后再出问题不用猜。
      */
     const windowTokens = Number(ctx?.model?.contextWindow) || 0
+    /*
+     * 整轮软线（C-6）：状态刷新的准备线不再只看固定 48K，
+     * 而是 `max(48K, 软线 × 60%)`。拿不到预算时 softLine=0，行为与以前一致。
+     */
+    const foldBudget = requestBudgetFor(ctx)
     const gate = foldEligible({
       settledTurns: stats.userTurns,
       transcriptTokens: stats.tokens,
       firstSweep: sweepSeen.has(sessionId),
       windowTokens,
+      softLine: foldBudget?.triggers?.compact ?? 0,
       ...(p.state.minTurns ? { minTurns: p.state.minTurns } : {}),
       ...(p.state.minTokens ? { minTokens: p.state.minTokens } : {}),
       ...(p.state.refreshRatio ? { refreshRatio: p.state.refreshRatio } : {})
@@ -1474,6 +1586,7 @@ async function produceAndCommit(sessionId, ctx) {
       )
     } catch (error) {
       trace('producer', { sessionId, stage: 'producer', hook: 'error', message: errorText(error) })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: 'model-error' })
       noteFoldRun(sessionId, false)
       return
     } finally {
@@ -1481,6 +1594,7 @@ async function produceAndCommit(sessionId, ctx) {
     }
     if (response?.stopReason === 'aborted') {
       trace('producer', { sessionId, stage: 'producer', hook: 'aborted', usage: producerUsage(prompt, '', response) })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: 'aborted' })
       noteFoldRun(sessionId, false)
       return
     }
@@ -1490,12 +1604,14 @@ async function produceAndCommit(sessionId, ctx) {
     const parsed = parseProducerOutput(text)
     if (!parsed.ok) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: parsed.reason, sample: text.slice(0, 200), usage: usageTokens })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: parsed.reason })
       noteFoldRun(sessionId, false)
       return
     }
     const merged = mergeTaskState({ semantics: parsed.value, evidence, previous: previous?.task, directives, citable, now: Date.now() })
     if (!merged) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'merge-failed', usage: usageTokens })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: 'merge-failed' })
       noteFoldRun(sessionId, false)
       return
     }
@@ -1516,6 +1632,7 @@ async function produceAndCommit(sessionId, ctx) {
     const clipped = clipTaskStateToBudget(merged, 0)
     if (clipped.over) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: 'over-budget', tokens: clipped.tokens, usage: usageTokens })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: 'over-budget' })
       noteFoldRun(sessionId, false)
       return
     }
@@ -1534,6 +1651,7 @@ async function produceAndCommit(sessionId, ctx) {
     })
     if (!allowed.ok) {
       trace('producer', { sessionId, stage: 'producer', hook: 'rejected', reason: allowed.reason, expected: allowed.expected, revision: allowed.revision })
+      recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: allowed.reason })
       noteFoldRun(sessionId, false)
       return
     }
@@ -1560,6 +1678,17 @@ async function produceAndCommit(sessionId, ctx) {
     })
     writeJsonAtomic(sessionFilePath(sessionId, '.json'), state)
     noteFoldRun(sessionId, true)
+    /*
+     * C-2b：状态刷新（episode-fold）同样不产生 pi 事件 ——
+     * 成功也要留痕，否则「这一轮状态到底刷过没」在界面上无从得知。
+     */
+    recordAction(sessionId, {
+      kind: 'episode-fold',
+      status: 'applied',
+      reason: decision.reason,
+      tokens: clipped.tokens,
+      reclaimed: episodeMerge.added ? 1 : 0
+    })
     trace('producer', {
       sessionId,
       stage: 'producer',

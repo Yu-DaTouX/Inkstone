@@ -77,6 +77,76 @@
     st().setGoalPopoverOpen(false)
     await sleep(150)
 
+    /* ── G-2 / G-3：完成声明与核验结果分开显示（实施-16） ── */
+    await openWith(
+      goalOf('completed', {
+        brief: {
+          goal: '做完这件事',
+          outcome: '测试全绿',
+          deliverable: '安装包',
+          constraints: '不新增依赖'
+        },
+        verification: {
+          status: 'passed',
+          at: Date.now(),
+          checks: [{ target: 'a.ts', kind: 'file', ok: true, detail: '1 字节', at: Date.now() }],
+          detail: '1 项本地产物都存在（只证明存在，不证明内容正确）'
+        }
+      })
+    )
+    const passedStatus = q('[data-testid="goal-verification-status"]')
+    ok(!!q('[data-testid="goal-model-claim"]'), 'G-3：completed 相位写明「模型报告完成」')
+    ok(
+      passedStatus?.dataset.verificationStatus === 'passed' &&
+        (passedStatus.textContent ?? '').includes('通过'),
+      'G-3：核验通过单独成行（与完成声明分开写）'
+    )
+    ok(
+      !!q('[data-testid="goal-brief-deliverable"]') &&
+        !!q('[data-testid="goal-brief-constraints"]') &&
+        !q('[data-testid="goal-brief-scope"]'),
+      'G-3：只显示用户写了的补充字段'
+    )
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
+    /* 未核验 / 未检查都不能被渲染成成功 */
+    await openWith(goalOf('executing', { verification: null }))
+    ok(!q('[data-testid="goal-verification"]'), 'G-3：没有核验结果时不渲染核验区块（不假装已核验）')
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
+    await openWith(
+      goalOf('executing', {
+        verification: {
+          status: 'not_checked',
+          at: Date.now(),
+          checks: [],
+          detail: '目标还没有声明可核验的产物'
+        }
+      })
+    )
+    const notChecked = q('[data-testid="goal-verification-status"]')
+    ok(
+      notChecked?.dataset.verificationStatus === 'not_checked' &&
+        (notChecked.textContent ?? '').includes('未核验'),
+      'G-3：not_checked 写作「未核验」，不是通过'
+    )
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
+    await openWith(
+      goalOf('completed', {
+        verification: { status: 'manual_review', at: Date.now(), checks: [], detail: '需要人工确认' }
+      })
+    )
+    ok(
+      (q('[data-testid="goal-verification-status"]')?.textContent ?? '').includes('人工'),
+      'G-3：manual_review 写明需人工审阅'
+    )
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
     /* 空标题 / emoji / 超长标题：入口标签不能空、emoji 不能切坏、超长要截断 */
     window.__yanStore.setState({ goal: goalOf('executing', { brief: { goal: '', outcome: '' } }) })
     await sleep(60)

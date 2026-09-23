@@ -53,6 +53,8 @@ import './styles/chat.css'
 import './styles/composer.css'
 import './styles/tools.css'
 import './styles/browser.css'
+/* 交互终端（H-11）：xterm 主题与终端表面布局 */
+import './styles/terminal.css'
 /* 审查与环境菜单（方案 G1）：与其它模块化层同为最后加载 */
 import './styles/review.css'
 /* 跨模块的语义图标反馈（H-8a/b）：要在各模块的状态色之后加载 */

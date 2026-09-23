@@ -28,7 +28,7 @@ import { ArtifactStore } from './artifacts'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
-import { grantFiles, readGrantedText, readPreview } from './file-refs'
+import { grantFiles, readGrantedText, readPreview, statPreview } from './file-refs'
 import { SubagentController } from './subagents'
 import { fileContent, filePatch, reviewSnapshot } from './git-diff'
 import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
@@ -54,6 +54,18 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
+import {
+  attachTerminal,
+  disposeTerminals,
+  killTerminal,
+  listTerminals,
+  resizeTerminal,
+  setTerminalSink,
+  startTerminal,
+  terminalAvailable,
+  terminalLoadError,
+  writeTerminal
+} from './terminal'
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
@@ -83,6 +95,7 @@ import {
   isActiveGoalPhase,
   keepsGoalResumeOnModeChange,
   normalizeReadyParams,
+  normalizePursuedBrief,
   normalizeReportParams,
   type BudgetUsage
 } from '../shared/goal'
@@ -92,6 +105,7 @@ import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
+import { readContextActions } from './context-actions'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
@@ -122,6 +136,7 @@ import type {
   RunnerStatus,
   SessionState,
   SessionSummary,
+  TerminalStartRequest,
   UIMessage
 } from '../shared/ipc'
 
@@ -2213,6 +2228,12 @@ async function shutdown(): Promise<void> {
   } catch {
     /* 浏览器视图已死 */
   }
+  /* 交互终端：杀掉所有 PTY，不留孤儿子壳（与 pi 子进程同一条边界） */
+  try {
+    disposeTerminals()
+  } catch {
+    /* 已经退出的会话 kill 会抛，忽略 */
+  }
 }
 
 type ExitChoice = 'cancel' | 'save' | 'interrupt'
@@ -3834,15 +3855,18 @@ function registerIpc(): void {
    * 这里**不**预写续行：用户接着还要把这条消息发出去，续行会在那一轮收尾时
    * 由 `maybeArmGoalContinue` 统一 arm（早 arm 会多跑一轮空转）。
    */
-  handle('yan:setGoal', async (brief: { goal?: unknown; outcome?: unknown }) => {
+  handle('yan:setGoal', async (brief: unknown) => {
     const id = runners?.activeRunner()?.id
     if (!id) return { ok: false as const, error: 'no_session' as const }
-    const goalText = String(brief?.goal ?? '').trim()
-    const outcome = String(brief?.outcome ?? '').trim()
-    /* 少一栏就拒收：允许缺「可衡量的成果」等于造一个无法验收的目标 */
-    if (!goalText || !outcome) return { ok: false as const, error: 'incomplete' as const }
+    /*
+     * 表单 / IPC / 读盘共用同一归一化（G-1）：
+     * 必填的「目标 + 可衡量的成果」缺任一则拒收（允许缺等于造一个无法验收的目标），
+     * 交付物 / 范围 / 约束是可选补充，只 trim、空即不落字段。
+     */
+    const normalized = normalizePursuedBrief(brief)
+    if (!normalized) return { ok: false as const, error: 'incomplete' as const }
     await goals.load()
-    const goal = await goals.startPursued(workModeKeyFor(id), { goal: goalText, outcome })
+    const goal = await goals.startPursued(workModeKeyFor(id), normalized)
     await pushGoal(id)
     return { ok: true as const, goal }
   })
@@ -4454,10 +4478,21 @@ function registerIpc(): void {
   handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
   handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
   /* 只读预览（消息里的文件链接）：相对路径按**当前会话 cwd** 解析 */
-  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string) => {
+  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
     const s = await getSettings()
     const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
-    return readPreview(String(p ?? ''), cwd, typeof line === 'number' ? line : undefined)
+    return readPreview(
+      String(p ?? ''),
+      cwd,
+      typeof line === 'number' ? line : undefined,
+      typeof lineEnd === 'number' ? lineEnd : undefined
+    )
+  })
+  /* 变化提示：只 stat（不读内容），与 readPreview 同一条越界校验链 */
+  handle('yan:statPreview', async (p: string, requestedCwd?: string) => {
+    const s = await getSettings()
+    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
+    return statPreview(String(p ?? ''), cwd)
   })
 
   /* ---- 文件树 ---- */
@@ -4601,6 +4636,13 @@ function registerIpc(): void {
     }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
+
+  /*
+   * 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold`
+   * 不产生 pi 的 `compaction_*` 事件，界面只能从这里读到它们真实发生过。
+   * 读不到就返回空统计 —— 诊断读数不该让界面报错。
+   */
+  rawHandle('yan:contextActions', () => readContextActions(ac()?.getState()?.sessionId ?? null))
 
   /* ---- 子代理（方案第 8 节）---- */
   const subagentCtrl = async (): Promise<SubagentController> => {
@@ -5561,6 +5603,25 @@ function registerIpc(): void {
   rawHandle('yan:browser:setVisible', (_e, visible: unknown) => {
     browser?.setViewVisible(visible !== false)
   })
+
+  /* ---- 交互终端（实施-11 H-11） ---- */
+  rawHandle('yan:terminal:available', () => ({ available: terminalAvailable(), error: terminalLoadError() ?? undefined }))
+  rawHandle('yan:terminal:list', () => listTerminals())
+  rawHandle('yan:terminal:start', (_e, request?: TerminalStartRequest) =>
+    startTerminal({
+      cwd: request?.cwd,
+      /* 兜底用当前活动会话的工作目录：终端默认就开在项目里 */
+      fallbackCwd: ac()?.getState()?.cwd,
+      cols: request?.cols,
+      rows: request?.rows
+    })
+  )
+  rawHandle('yan:terminal:write', (_e, id: string, data: string) => writeTerminal(String(id ?? ''), String(data ?? '')))
+  rawHandle('yan:terminal:resize', (_e, id: string, cols: number, rows: number) =>
+    resizeTerminal(String(id ?? ''), Number(cols), Number(rows))
+  )
+  rawHandle('yan:terminal:kill', (_e, id: string) => killTerminal(String(id ?? '')))
+  rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
@@ -6013,6 +6074,16 @@ function createWindow(): void {
 /* 启动 */
 app.whenReady().then(async () => {
   browser = new BrowserController(() => win, push)
+  /* 终端输出转成渲染端可消费的推送（H-11）：只有活动窗口时才有接收方 */
+  setTerminalSink((event) => {
+    push({
+      ch: 'terminal',
+      payload:
+        event.kind === 'data'
+          ? { id: event.id, kind: 'data', data: event.data, seq: event.seq }
+          : { id: event.id, kind: 'exit', exitCode: event.exitCode }
+    })
+  })
   registerIpc()
   await createTray()
   createWindow()

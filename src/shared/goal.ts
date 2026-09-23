@@ -161,7 +161,111 @@ export interface GoalLinkCheck {
 }
 
 /**
- * 用户**显式设定**的持续目标（`+` 菜单 → 目标）。
+ * 目标级完成核验（实施-16 G-2）。
+ *
+ * 为什么与 `phase` 分开：`completed` 只表示**模型提交了完成声明**，
+ * 而「宿主真的检查过」是另一件事。把两者混在一个字段里，就会出现
+ * 「模型说完了」被当成「已经核验通过」（实施-15 R8 的缺口）。
+ */
+export const GOAL_VERIFICATION_STATUSES = ['not_checked', 'passed', 'failed', 'manual_review'] as const
+export type GoalVerificationStatus = (typeof GOAL_VERIFICATION_STATUSES)[number]
+
+/** 一条被检查对象的只读结果（与 `GoalLink.check` 同一时刻、同一事实）。 */
+export interface GoalVerificationCheck {
+  /** 被检查的对象：链接 target（本地路径或 URL）。 */
+  target: string
+  kind: GoalLinkKind
+  ok: boolean
+  detail: string
+  at: number
+}
+
+export interface GoalVerification {
+  status: GoalVerificationStatus
+  at: number
+  /** 对应当前 links 的检查快照；`not_checked` 时为空。 */
+  checks: GoalVerificationCheck[]
+  /** 一句人话，说明为什么是这个状态。 */
+  detail: string
+}
+
+/**
+ * 把一批只读检查结果汇总成核验状态（纯函数，宿主在报告落盘时调用）。
+ *
+ * 规则（方案 §3.2 / §6）：
+ *   · 没有任何声明产物 → `not_checked`（没有适用的机器核验条件）；
+ *   · 只有 URL → `manual_review`（宿主不联网，不把可达性当事实）；
+ *   · 本地产物有一项不存在 → `failed`；
+ *   · 本地产物都在、但还混有需人工判断的条件 → `manual_review`；
+ *   · 全部为本地产物且都存在 → `passed`（**只能证明存在**，不能证明内容正确）。
+ *
+ * 注意：这里**不看文本 evidence** —— 那是模型的解释，不自动提升为核验事实。
+ */
+export function summarizeVerification(
+  checks: GoalVerificationCheck[],
+  now = Date.now()
+): GoalVerification {
+  if (checks.length === 0) {
+    return { status: 'not_checked', at: now, checks: [], detail: '目标还没有声明可核验的产物' }
+  }
+  const remote = checks.filter((c) => c.kind === 'url')
+  const local = checks.filter((c) => c.kind !== 'url')
+  if (local.length === 0) {
+    return {
+      status: 'manual_review',
+      at: now,
+      checks,
+      detail: '只声明了链接；宿主不联网核验，需人工确认'
+    }
+  }
+  const missing = local.filter((c) => !c.ok)
+  if (missing.length) {
+    return {
+      status: 'failed',
+      at: now,
+      checks,
+      detail: `${missing.length} 项本地产物不存在（可能已被移动或删除）`
+    }
+  }
+  if (remote.length) {
+    return {
+      status: 'manual_review',
+      at: now,
+      checks,
+      detail: `本地产物都存在，另有 ${remote.length} 条链接需人工确认`
+    }
+  }
+  return {
+    status: 'passed',
+    at: now,
+    checks,
+    detail: `${local.length} 项本地产物都存在（只证明存在，不证明内容正确）`
+  }
+}
+
+function normalizeVerification(raw: unknown): GoalVerification | null {
+  if (!raw || typeof raw !== 'object') return null
+  const item = raw as Partial<GoalVerification>
+  if (!GOAL_VERIFICATION_STATUSES.includes(item.status as GoalVerificationStatus)) return null
+  return {
+    status: item.status as GoalVerificationStatus,
+    at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : 0,
+    checks: Array.isArray(item.checks)
+      ? item.checks
+          .filter((c): c is GoalVerificationCheck => !!c && typeof c === 'object')
+          .map((c) => ({
+            target: text(c.target),
+            kind: GOAL_LINK_KINDS.includes(c.kind as GoalLinkKind) ? (c.kind as GoalLinkKind) : 'file',
+            ok: c.ok === true,
+            detail: text(c.detail),
+            at: typeof c.at === 'number' && Number.isFinite(c.at) ? c.at : 0
+          }))
+      : [],
+    detail: text(item.detail)
+  }
+}
+
+/** 用户**显式设定**的持续目标（`+` 菜单 → 目标）。
  *
  * `outcome` 就是界面那句「定义可衡量的成果」：达成判据必须能被检查，
  * 而不是「我觉得做完了」。
@@ -169,6 +273,17 @@ export interface GoalLinkCheck {
 export interface PursuedBrief {
   goal: string
   outcome: string
+  /**
+   * 可选：这次要交出的东西（实施-16 G-1）。
+   *
+   * 为什么可选：不是每个目标都有独立产物（有些就是“查清楚再说”）。
+   * 缺省表示**用户没写**，界面与续行正文都不代填默认句子。
+   */
+  deliverable?: string
+  /** 可选：这次做到哪里为止（不做什么）。同样只在用户真的写了时存在。 */
+  scope?: string
+  /** 可选：必须遵守的限制（不许动的东西、必须走的方式）。 */
+  constraints?: string
 }
 
 export interface FailureTrack {
@@ -188,6 +303,13 @@ export interface GoalState {
   evidence: string[]
   /** 结构化产物 / 参考（U-3b）；旧文档没有这一项，读到就是空数组。 */
   links: GoalLink[]
+  /**
+   * 宿主对目标交付的只读核验结果（G-2）。
+   *
+   * `null` = 还没有做过核验（旧文档、或刚建目标）；一旦报告过就是四种状态之一。
+   * 由宿主写，模型不能提交核验结论。
+   */
+  verification: GoalVerification | null
   /** 用户设的目标级预算（A-2）；没设就是 null（不代替用户做成本承诺）。 */
   budget: GoalBudget | null
   /**
@@ -231,6 +353,7 @@ export function emptyGoal(now = 0): GoalState {
     steps: [],
     evidence: [],
     links: [],
+    verification: null,
     budget: null,
     budgetStop: null,
     budgetUsage: null,
@@ -598,6 +721,12 @@ export function applyGoalReport(
     steps: report.steps.length ? report.steps : current.steps,
     evidence: report.evidence.length ? report.evidence : current.evidence,
     links: mergeGoalLinks(current.links ?? [], report.links),
+    /*
+     * 完成回执**只触发核验**（G-2）：这里先清掉旧结果，真实状态由宿主在
+     * 同一次落盘里重新算。若宿主因为异常没算，界面显示的是「未核验」而不是
+     * 上一轮的 `passed`（宁可不显示，也不能显示过期结论）。
+     */
+    verification: phase === 'completed' ? null : current.verification,
     blocker: phase === 'blocked' ? (blocker ?? current.blocker) : null,
     failure,
     updatedAt: now
@@ -640,6 +769,8 @@ export function applyReadyTransition(current: GoalState, result: ReadyTransition
     steps: current.steps,
     evidence: current.evidence,
     links: current.links ?? [],
+    /* 就绪转移不改核验结果：链接没变，上一轮算出的只读事实仍然成立（G-2） */
+    verification: current.verification ?? null,
     budget: current.budget ?? null,
     budgetStop: current.budgetStop ?? null,
     budgetUsage: current.budgetUsage ?? null,
@@ -765,6 +896,10 @@ export function goalContinueSummary(goal: GoalState, round: number): string {
   if (goal.brief) {
     lines.push(`- 用户原话：${goal.brief.goal}`)
     lines.push(`- 达成判据（必须自己验证，不能自己说了算）：${goal.brief.outcome}`)
+    /* 补充字段（G-1）只在用户真写了时复述：没写就不占一行，不给模型造约束 */
+    if (goal.brief.deliverable) lines.push(`- 交付物：${goal.brief.deliverable}`)
+    if (goal.brief.scope) lines.push(`- 范围：${goal.brief.scope}`)
+    if (goal.brief.constraints) lines.push(`- 约束：${goal.brief.constraints}`)
   }
   if (pending.length) {
     lines.push('- 未完成步骤：')
@@ -908,7 +1043,33 @@ export function goalSummary(state: GoalState): string {
     parts.push(`${state.steps.filter((s) => s.status === 'done').length}/${state.steps.length} 步已完成`)
   }
   if (state.blocker) parts.push(`阻塞：${state.blocker}`)
+  /* 核验与相位分开报：`completed` 不等于「宿主核验通过」（G-2） */
+  if (state.verification) parts.push(`核验：${state.verification.status}`)
   return parts.join(' · ')
+}
+
+/**
+ * 持续目标 brief 的归一化（实施-16 G-1）。
+ *
+ * 界面表单、IPC 与读盘走的是**同一个**归一化：
+ *   · `goal` / `outcome` 仍必填 —— 少任一栏返回 `null`，调用方按 `incomplete` 拒收；
+ *   · 交付物 / 范围 / 约束可选，只 trim；空字符串不落字段（不造用户没写过的句子）。
+ * 旧文档没有这三个字段：读到就是 `undefined`，不报错也不写回。
+ */
+export function normalizePursuedBrief(raw: unknown): PursuedBrief | null {
+  if (!raw || typeof raw !== 'object') return null
+  const item = raw as Partial<PursuedBrief>
+  const goal = text(item.goal)
+  const outcome = text(item.outcome)
+  if (!goal || !outcome) return null
+  const brief: PursuedBrief = { goal, outcome }
+  const deliverable = text(item.deliverable)
+  if (deliverable) brief.deliverable = deliverable
+  const scope = text(item.scope)
+  if (scope) brief.scope = scope
+  const constraints = text(item.constraints)
+  if (constraints) brief.constraints = constraints
+  return brief
 }
 
 /** 脏文档一律回落到空目标（不能因为磁盘上一条坏记录把会话弄坏）。 */
@@ -924,11 +1085,7 @@ export function normalizeGoalState(raw: unknown): GoalState {
     failureRaw && typeof failureRaw.signature === 'string' && typeof failureRaw.count === 'number'
       ? { signature: failureRaw.signature, count: Math.max(1, Math.floor(failureRaw.count)) }
       : null
-  const briefRaw = item.brief as Partial<PursuedBrief> | undefined
-  const brief =
-    briefRaw && typeof briefRaw.goal === 'string' && typeof briefRaw.outcome === 'string'
-      ? { goal: briefRaw.goal.trim(), outcome: briefRaw.outcome.trim() }
-      : null
+  const brief = normalizePursuedBrief(item.brief)
   return {
     goalId: typeof item.goalId === 'string' ? item.goalId : '',
     phase,
@@ -937,6 +1094,8 @@ export function normalizeGoalState(raw: unknown): GoalState {
     evidence: Array.isArray(item.evidence) ? item.evidence.map((e) => text(e)).filter(Boolean) : [],
     /* 旧文档没有 links（U-3b 之前写的）：读到就是空数组，不报错、不造数据 */
     links: sanitizeGoalLinks(item.links),
+    /* 核验结果：宿主写的只读事实；脏值当「没核验过」而不是当通过 */
+    verification: normalizeVerification(item.verification),
     /* 预算是用户设的：脏值一律当「没设」，不凭空造上限 */
     budget: sanitizeGoalBudget(item.budget),
     /* 脏的停止原因一律当「没有」：显示一个不存在的停止原因比不显示更糟 */

@@ -17,6 +17,20 @@ function normPath(p: string): string {
   return p.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
+/**
+ * 绝对路径 → 相对 cwd 的 posix 路径（H-4 联动定位用）。
+ *
+ * 不在 cwd 里就返回 null：工作树外的文件本来就不在树里，
+ * 不能因为“展开到它”就把树拉到一个不存在的分支上。
+ */
+function relativeToCwd(cwd: string, abs: string): string | null {
+  const root = cwd.replace(/[\\/]+$/, '').replace(/[\\/]/g, '/')
+  const target = abs.replace(/[\\/]/g, '/')
+  if (target.toLowerCase() === root.toLowerCase()) return ''
+  if (!target.toLowerCase().startsWith(root.toLowerCase() + '/')) return null
+  return target.slice(root.length + 1)
+}
+
 /** 「显示更多」每次追加的可见行数（UI 展示批次，不是文件系统加载批次） */
 const FS_PAGE = 50
 
@@ -280,6 +294,50 @@ export function FileTree() {
     [cache, load]
   )
 
+  /**
+   * H-4 联动定位：当前预览文件在 cwd 内时，算出它在树里的相对路径。
+   *
+   * 用 `data.abs`（realpath）而不是 `path`：链接里写的可能是相对路径、
+   * 绝对路径或带 `..` 的写法，只有 realpath 能稳定地对上树里的节点。
+   */
+  const previewRelPath = useMemo(() => {
+    const abs = filePreview?.data?.abs
+    if (!abs || !cwd) return undefined
+    const rel = relativeToCwd(cwd, abs)
+    return rel ? rel : undefined
+  }, [filePreview?.data?.abs, cwd])
+
+  /*
+   * 从聊天链接/搜索等入口打开文件后，把树展开到它并选中它 ——
+   * 否则用户切到工具页时看到的是“树停在上一个位置”，还得自己一层层点。
+   * 已定位过的路径不重跑（避免 cache 变化时反复抢焦点）。
+   */
+  const locatedPathRef = useRef('')
+  useEffect(() => {
+    const rel = previewRelPath
+    if (!rel || locatedPathRef.current === rel) return
+    locatedPathRef.current = rel
+    const parts = rel.split('/').filter(Boolean)
+    const dirs: string[] = ['']
+    for (let i = 0; i < parts.length - 1; i++) dirs.push(parts.slice(0, i + 1).join('/'))
+    setOpen((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      for (const dir of dirs) {
+        if (!next.has(dir)) {
+          next.add(dir)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+    for (const dir of dirs) if (cache[dir] === undefined && !loading.has(dir)) void load(dir)
+    setFocusPath(rel)
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-testid="fs-row-${rel}"]`)?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [previewRelPath, cache, loading, load])
+
   const refresh = useCallback(() => {
     // 只刷新**已展开**的层，不把没看过的目录也拉一遍
     for (const p of open) void load(p)
@@ -499,7 +557,7 @@ export function FileTree() {
               onFocusPath={focusTreePath}
               visibleSet={visibleSet}
               inContextPaths={inContextPaths}
-              previewPath={filePreview?.path}
+              previewPath={previewRelPath}
             />
           ) : null}
           {/*

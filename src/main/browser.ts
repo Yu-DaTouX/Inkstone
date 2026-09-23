@@ -31,6 +31,7 @@ import type {
   MainPush
 } from '../shared/ipc'
 import { BrowserPolicy } from './browser/BrowserPolicy'
+import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
@@ -235,6 +236,8 @@ export class BrowserController {
       activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
       userControl: this.userControl,
       lastDownload: this.lastDownload,
+      /* 外部 Chrome 的失败不在这里表达（它有自己的同步报告） */
+      loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
       blockedRequests: this.blockedRequests,
       nativeBounds: this.nativeBounds,
@@ -298,6 +301,8 @@ export class BrowserController {
     }
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
+      /* 新一次导航开始：上一次的失败提示到此为止 */
+      tab.state.loadError = undefined
       this.updateState()
     })
     view.webContents.on('did-stop-loading', () => {
@@ -310,6 +315,7 @@ export class BrowserController {
     view.webContents.on('did-navigate', (_event, url) => {
       tab.state.url = url
       tab.committedUrl = url
+      tab.state.loadError = undefined
       this.pendingMainFrameUrl = null
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
@@ -319,6 +325,7 @@ export class BrowserController {
     view.webContents.on('did-navigate-in-page', (_event, url) => {
       tab.state.url = url
       tab.committedUrl = url
+      tab.state.loadError = undefined
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -333,14 +340,27 @@ export class BrowserController {
       tab.registry.clear()
       this.updateState()
     })
-    /* 导航失败（含被网络边界拦住）也要把在途标记清掉，别让它留到下一次导航 */
-    view.webContents.on('did-fail-load', () => {
+    /*
+     * 导航失败（含被网络边界拦住）也要把在途标记清掉，别让它留到下一次导航。
+     *
+     * H-9 第二阶段：主框架失败要把原因**推给界面** —— 否则用户看到的就是
+     * “点了没反应”，只能自己猜。子框架失败（广告 iframe）不打扰用户，
+     * 被取消的导航（ERR_ABORTED）也不算失败。
+     */
+    view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       this.pendingMainFrameUrl = null
       tab.state.loading = false
+      if (shouldSurfaceLoadError(errorCode, isMainFrame !== false)) {
+        tab.state.loadError = {
+          code: errorCode,
+          description: errorDescription,
+          url: failureUrl(validatedURL, tab.state.url)
+        }
+      }
       this.updateState()
     })
     view.webContents.setWindowOpenHandler(({ url }) => {
-      if (safeUrl(url)) void this.newTab(url)
+      if (safeUrl(url)) void this.openBackgroundTab(url)
       return { action: 'deny' }
     })
     view.webContents.on('will-navigate', (event, url) => {
@@ -531,6 +551,36 @@ export class BrowserController {
     this.syncTabNavigation(tab)
     this.updateState()
     return this.getState()
+  }
+
+  /**
+   * 网页自己开的窗口（`window.open` / `target=_blank`）。
+   *
+   * H-9 第二阶段：新标签要真建出来（内容不丢），但**不能夺走**用户
+   * 正在阅读的那一页 —— 广告或授权弹窗把页面切走，用户会以为“点坏了”。
+   * 与 `newTab()` 的区别只有一条：不改 `activeTabId`、新视图不设为可见。
+   */
+  private async openBackgroundTab(rawUrl: string): Promise<void> {
+    const url = safeUrl(rawUrl)
+    if (!url) return
+    const tab = this.createTab()
+    const win = this.getWindow()
+    if (win) {
+      this.removeForeignBrowserViews(win)
+      win.contentView.addChildView(tab.view)
+    }
+    tab.view.setVisible(false)
+    tab.state.url = url
+    tab.state.loading = true
+    this.pendingMainFrameUrl = url
+    this.updateState()
+    try {
+      await tab.view.webContents.loadURL(url)
+    } catch {
+      /* 后台页加载失败只留在它自己的标签里（loadError），不打断当前阅读 */
+    }
+    this.syncTabNavigation(tab)
+    this.updateState()
   }
 
   async newTab(rawUrl = INITIAL_URL): Promise<BrowserState> {

@@ -15,7 +15,7 @@
  *   · 异步打开用 `WorkbenchOpenRequest`（requestId + sessionKey）校验，
  *     迟到的返回不写进已切换的会话（`isCurrentWorkbenchOpen`）。
  */
-export type WorkbenchView = 'start' | 'tools' | 'review' | 'browser' | 'file' | 'subagent'
+export type WorkbenchView = 'start' | 'tools' | 'review' | 'browser' | 'file' | 'subagent' | 'terminal'
 
 /** 需要真实资源身份、可关闭的页面 */
 export type WorkbenchResourceView = Exclude<WorkbenchView, 'start' | 'tools'>
@@ -46,7 +46,7 @@ export const HOME_TAB_ID = 'start'
 
 const STORAGE_KEY = 'yan.workbench.v1'
 const CURRENT_VERSION = 2
-const VIEWS: readonly WorkbenchView[] = ['start', 'tools', 'review', 'browser', 'file', 'subagent']
+const VIEWS: readonly WorkbenchView[] = ['start', 'tools', 'review', 'browser', 'file', 'subagent', 'terminal']
 const FIXED_VIEWS = new Set<WorkbenchView>(['start', 'tools'])
 
 function isView(value: unknown): value is WorkbenchView {
@@ -86,6 +86,18 @@ function sanitizeTabs(value: unknown): WorkbenchTab[] {
     if (!tab || typeof tab !== 'object') return []
     const item = tab as Partial<WorkbenchTab>
     if (typeof item.id !== 'string' || !isView(item.kind)) return []
+    /*
+     * 旧版的文件窗口只有一个无身份的 `file` 标签（H-4 之前）。
+     * 它现在没有意义：文件标签必顶带 `projectId|root|realpath` 身份，
+     * 否则第二个文件会把第一个顶掉（正是 H-4 要修的）。直接丢弃它，
+     * 当前开着的预览会由身份 effect 重新建一个带 key 的标签。
+     */
+    if (item.kind === 'file' && typeof item.resourceKey !== 'string') return []
+    /*
+     * 终端（H-11）同 H-4 的道理：它必顶带 PTY 会话 id 身份，
+     * 否则重开面板时找不回真会话（就变成“一个假终端”）。
+     */
+    if (item.kind === 'terminal' && typeof item.resourceKey !== 'string') return []
     return [{
       id: item.id,
       kind: item.kind,

@@ -66,6 +66,21 @@
       return out.join('\n')
     }
 
+    /* ---- G-2：目标级完成核验（与逐条 check 同一批事实） ---- */
+    const verification = viaIpc?.goal?.verification
+    out.push(
+      `  verification=${JSON.stringify(verification?.status ?? null)} detail=${JSON.stringify(verification?.detail ?? null)}`
+    )
+    ok(!!verification, 'G-2：IPC 不丢目标级核验字段')
+    ok(
+      verification?.status === 'failed',
+      `G-2：有本地产物缺失 → failed（实际 ${verification?.status}）`
+    )
+    ok(
+      (verification?.checks?.length ?? 0) === links.length,
+      'G-2：核验快照覆盖全部声明产物'
+    )
+
     /* ---- ② 面板展示 ---- */
     /* U-3a：目标改成标题栏入口 + 浮层（不再在工具页常驻）。 */
     q('[data-testid="goal-entry"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -89,6 +104,27 @@
     ok(flags.includes('true'), '有核验通过的链接')
     ok(flags.includes('false'), '有核验失败的链接（不存在的文件）')
     ok(flags.filter((f) => f !== 'true' && f !== 'false').length === 0, '没有未核验的链接（宿主每次报告都会重算）')
+
+    /* ---- G-2 / G-3：目标级核验要画在面板上（不是只存在于数据里） ---- */
+    const verBox = q('[data-testid="goal-verification"]')
+    const verStatus = q('[data-testid="goal-verification-status"]')
+    out.push(`  核验状态：${JSON.stringify(verStatus?.textContent?.trim() ?? null)}`)
+    ok(!!verBox && !!verStatus, 'G-3：面板显示宿主核验区块')
+    ok(
+      verStatus?.dataset.verificationStatus === 'failed' &&
+        (verStatus.textContent ?? '').includes('未通过'),
+      'G-3：failed 明确写作「核验未通过」'
+    )
+    const verChecks = qa('[data-testid="goal-verification-check"]')
+    ok(verChecks.length === 3, 'G-3：每条声明产物都有核验行')
+    ok(
+      verChecks.some((el) => el.dataset.checkOk === 'false'),
+      'G-3：失败的检查项单独标出'
+    )
+    ok(
+      !!q('[data-testid="goal-model-claim"]') === false,
+      'G-3：executing 相位不写「模型报告完成」（没有完成声明就不写）'
+    )
 
     /* A-2：预算与停止原因要能看到（“为什么没继续”） */
     const budgetBox = q('[data-testid="goal-budget"]')

@@ -28,6 +28,7 @@ import { mkdtempSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -314,7 +315,118 @@ function gitStubContent(path, side) {
   }
 }
 
+/**
+ * 交互终端的矩阵桩（H-11 视觉验收）。
+ *
+ * 矩阵 harness 里其它 IPC 都是伪造的；终端的桩用**真的 node-pty**，
+ * 因为这张图要证的就是“真 PTY + 真 xterm”的观感 —— 拿一段固定文本画上去
+ * 等于什么都没验。产品侧的 IPC 接线由 `test:live -- terminalsurface`
+ * 与 `test:packaged`（asarUnpack 后的原生依赖）覆盖。
+ */
+function registerTerminalStub() {
+  const require_ = createRequire(import.meta.url)
+  const pty = require_('node-pty')
+  const { randomUUID } = require_('node:crypto')
+  const sessions = new Map()
+  const snapshotOf = (entry) => ({
+    id: entry.id,
+    title: entry.title,
+    shell: entry.shell,
+    cwd: entry.cwd,
+    cols: entry.cols,
+    rows: entry.rows,
+    alive: entry.alive,
+    exitCode: entry.exitCode,
+    buffer: entry.buffer.slice(-16000),
+    seq: entry.seq
+  })
+  ipcMain.handle('yan:terminal:available', () => ({ available: true }))
+  ipcMain.handle('yan:terminal:list', () => [...sessions.values()].map(snapshotOf))
+  ipcMain.handle('yan:terminal:start', (event, request = {}) => {
+    const shell = process.env.ComSpec || 'cmd.exe'
+    const cwd = process.cwd()
+    const cols = Math.max(2, Math.min(400, Math.round(request.cols ?? 80)))
+    const rows = Math.max(2, Math.min(200, Math.round(request.rows ?? 24)))
+    const entry = { id: randomUUID(), shell, cwd, cols, rows, alive: true, exitCode: null, buffer: '', seq: 0 }
+    entry.title = shell.split(/[\\/]/).pop().replace(/\.exe$/i, '') + ' · ' + (cwd.split(/[\\/]/).pop() || cwd)
+    entry.pty = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd,
+      /*
+       * 矩阵 harness 里显式关掉 ConPTY：Electron 主进程不一定挂着控制台，
+       * node-pty 的 `conpty_console_list_agent` 会 `AttachConsole failed` 并拖垬整个
+       * harness。winpty 分支不依赖附到控制台，截图要的只是 surface 的真实渲染。
+       * 产品进程里走的是默认（ConPTY），那条路已由 `test:live -- terminalsurface`
+       * 与 `test:packaged` 在真实应用上验证。
+       */
+      useConpty: false,
+      env: { ...process.env, TERM: 'xterm-256color' }
+    })
+    entry.pty.onData((data) => {
+      entry.buffer += data
+      entry.seq += 1
+      if (entry.buffer.length > 120000) entry.buffer = entry.buffer.slice(-80000)
+      try {
+        event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'data', data, seq: entry.seq } })
+      } catch {
+        /* 窗口已关 */
+      }
+    })
+    entry.pty.onExit(({ exitCode }) => {
+      entry.alive = false
+      entry.exitCode = exitCode ?? null
+      try {
+        event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'exit', exitCode: entry.exitCode } })
+      } catch {
+        /* 窗口已关 */
+      }
+    })
+    sessions.set(entry.id, entry)
+    return snapshotOf(entry)
+  })
+  ipcMain.handle('yan:terminal:write', (_e, id, data) => {
+    const entry = sessions.get(String(id))
+    if (!entry || !entry.alive) return false
+    entry.pty.write(String(data))
+    return true
+  })
+  ipcMain.handle('yan:terminal:resize', (_e, id, cols, rows) => {
+    const entry = sessions.get(String(id))
+    if (!entry || !entry.alive) return false
+    entry.cols = Math.max(2, Math.min(400, Math.round(Number(cols) || entry.cols)))
+    entry.rows = Math.max(2, Math.min(200, Math.round(Number(rows) || entry.rows)))
+    entry.pty.resize(entry.cols, entry.rows)
+    return true
+  })
+  ipcMain.handle('yan:terminal:kill', (_e, id) => {
+    const entry = sessions.get(String(id))
+    if (!entry) return false
+    try {
+      entry.pty.kill()
+    } catch {
+      /* 已退出 */
+    }
+    sessions.delete(String(id))
+    return true
+  })
+  ipcMain.handle('yan:terminal:attach', (event, id) => {
+    const entry = sessions.get(String(id))
+    if (!entry) return null
+    if (entry.buffer) {
+      try {
+        event.sender.send('yan:push', { ch: 'terminal', payload: { id: entry.id, kind: 'data', data: entry.buffer, seq: entry.seq } })
+      } catch {
+        /* 窗口已关 */
+      }
+    }
+    return snapshotOf(entry)
+  })
+}
+
 function registerStubHandlers() {
+  registerTerminalStub()
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
   ipcMain.handle('yan:getHandoff', async (event) => {
     /* Keep a handoff fixture stable when HandoffNote's four-second poll fires. */
@@ -898,7 +1010,14 @@ const GROUPS = [
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['quotatone'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['quotatone'] },
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['segmented', 'handoffnote', 'handofftally'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['segmented', 'handoffnote', 'handofftally'] }
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['segmented', 'handoffnote', 'handofftally'] },
+  /*
+   * 单开两组：C-6 低回收提示 + H-11 交互终端（各深浅一张）。
+   * 终端会起一个真实 PTY，所以放在单独一组里，不干扰其它状态的 fixture；
+   * 截完由 `terminal` 的清理把它 kill 掉。
+   */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['ctxincompressible', 'terminal'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['ctxincompressible', 'terminal'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -1951,6 +2070,97 @@ const STATES = {
       if (card) card.scrollIntoView({ block: 'center' });
       await new Promise((r) => setTimeout(r, 250));
       return cards.length ? 'ok' : 'no-card';
+    })()
+  `,
+  /*
+   * C-6 低回收提示：上一次压缩后仍停在软线 80% 以上、且新增还没到门槛，
+   * 界面要直说“当前主要为不可压缩的基础开销” —— 而不是停在“已达工作集”不动手。
+   * 数据全部注入（与主进程推来的同构），不重算公式。
+   */
+  ctxincompressible: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      if (!st.settings?.rightPanelOpen) await st.setRightPanelOpen(true);
+      await new Promise((r) => setTimeout(r, 200));
+      /* 这一组第一张就是它：先把右栏切到工具页（否则停在开始页，找不到上下文分区） */
+      document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 300));
+      document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
+      window.__yanStore.setState({
+        session: {
+          ...st.session,
+          isStreaming: false,
+          isAgentRunning: false,
+          contextPolicy: {
+            enabled: true,
+            kinds: ['tool-sweep', 'recall', 'episode-fold', 'compaction'],
+            source: 'default',
+            overridden: [],
+            budget: {
+              contextWindow: 400000,
+              responseReserve: 32000,
+              safetyMargin: 8000,
+              workingSet: 240000,
+              triggers: { sweep: 168000, fold: 204000, compact: 240000 },
+              emergency: 360000
+            }
+          },
+          lastCompaction: {
+            status: 'completed',
+            reason: 'threshold',
+            triggeredBy: 'policy',
+            policyStage: 'compact',
+            startedAt: Date.now() - 360000,
+            endedAt: Date.now() - 300000,
+            beforeTokens: 37200,
+            afterTokens: 231000
+          }
+        },
+        stats: { ...st.stats, contextUsage: { tokens: 245000, contextWindow: 400000, percent: 61.25 } }
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      const toggle = document.querySelector('[data-testid="ctx-details-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      await new Promise((r) => setTimeout(r, 350));
+      const row = document.querySelector('[data-testid="ctx-incompressible"]');
+      if (row) row.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 250));
+      return document.querySelector('[data-testid="ctx-incompressible"]') ? 'ok' : 'no-row';
+    })()
+  `,
+  /*
+   * 交互终端（实施-11 H-11）：真实 PTY + 真实 xterm。
+   * 图里要能同时看到终端标题栏 / 命令回显与执行结果 / 工作窗口的终端标签。
+   * 输出是宿主真的 PTY 打的，不是渲染端伪造的文本。
+   */
+  terminal: `
+    (async () => {
+      try {
+        const st = window.__yanStore.getState();
+        st.closeSettings();
+        st.setRailPinned(true);
+        if (!st.settings?.rightPanelOpen) await st.setRightPanelOpen(true);
+        const term = await st.startTerminal({ cols: 92, rows: 20 });
+        if (!term) return 'no-pty';
+        await new Promise((r) => setTimeout(r, 900));
+        await window.yan.terminal.write(term.id, 'echo 砚 · 交互终端 H-11\\r\\n');
+        await new Promise((r) => setTimeout(r, 900));
+        await window.yan.terminal.write(term.id, 'node -v\\r\\n');
+        await new Promise((r) => setTimeout(r, 1200));
+        await window.yan.terminal.write(term.id, 'dir /b src\\r\\n');
+        await new Promise((r) => setTimeout(r, 1500));
+        window.__yanStore.getState().setActiveTerminal(term.id);
+        document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 400));
+        const entry = document.querySelector('[data-testid="start-terminal"]');
+        entry?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 1000));
+        return document.querySelector('[data-testid="terminal-surface"]') ? 'ok' : 'no-surface';
+      } catch (e) {
+        return 'err:' + (e && e.message ? e.message : String(e));
+      }
     })()
   `,
   /*
@@ -3665,6 +3875,19 @@ const MUST_HAVE = {
     '[data-testid="ctx-working-set-line"]',
     '[data-testid="ctx-stages"]'
   ],
+  /* C-6 低回收提示：这一行 + 工作集视角两件套都要在图里（下一步那行被有意抑制） */
+  ctxincompressible: [
+    '[data-testid="ctx-incompressible"]',
+    '[data-testid="ctx-working-set-line"]',
+    '[data-testid="ctx-stages"]'
+  ],
+  /* H-11 交互终端：表面 / xterm / 标题栏 / 工作窗口标签缺一不可 */
+  terminal: [
+    '[data-testid="terminal-surface"]',
+    '[data-testid="terminal-bar"]',
+    '[data-testid="terminal-host"] .xterm',
+    '[data-testid="right-window-tab-terminal"]'
+  ],
   /* `+` 菜单：菜单本体与入口按钮都要在图里 */
   plusmenu: ['[data-testid="plus-menu"]', '[data-testid="composer-attach"]'],
   plusgoal: ['[data-testid="plus-goal-compose"]', '[data-testid="plus-goal-start"]'],
@@ -3803,6 +4026,19 @@ const AFTER_STATE = {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return 'ok';
     })()
+  `,
+  /*
+   * 终端图截完把 PTY 收掉：截图之后才跑清理，所以不影响那张图；
+   * 不收的话同一组里后面若还有别的状态会带着一个活的子进程，
+   * 且整组退出时也可能留下孤儿子壳。
+   */
+  terminal: `
+    (async () => {
+      const id = window.__yanStore.getState().activeTerminalId;
+      if (id) await window.yan.terminal.kill(id).catch(() => false);
+      window.__yanStore.setState({ terminals: [], activeTerminalId: null });
+      return 'ok';
+    })()
   `
 }
 
@@ -3883,6 +4119,13 @@ async function main() {
        */
       backgroundThrottling: false
     }
+  })
+
+  /* 渲染端报错要看得见：状态脚本抛错时 Electron 只肯说“Script failed to execute” */
+  win.webContents.on('console-message', (event) => {
+    const level = Number(event?.level ?? 0)
+    const message = String(event?.message ?? '')
+    if (level >= 2) console.log('  [renderer] ' + message)
   })
   await win.loadFile(join(root, 'out/renderer/index.html'))
   await win.webContents.executeJavaScript(`

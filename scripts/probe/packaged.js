@@ -257,5 +257,40 @@
     ok(false, `解包态能力设置页验收报错：${error?.message ?? error}`)
   }
 
+  log('')
+  log('=== 交互终端（H-11，原生依赖包内真跑）===')
+  try {
+    const avail = await window.yan.terminal.available()
+    log('  terminal.available = ' + JSON.stringify(avail))
+    ok(avail?.available === true, '解包态原生 PTY 依赖加载成功（asarUnpack 生效）')
+    if (avail?.available) {
+      const snap = await window.yan.terminal.start({ cols: 80, rows: 24 })
+      ok(!!snap?.id && !!snap?.cwd, `终端已启动（${snap?.shell} @ ${snap?.cwd}）`)
+      let seen = ''
+      const off = window.yan.onPush((msg) => {
+        if (msg.ch === 'terminal' && msg.payload.kind === 'data' && msg.payload.id === snap.id) {
+          seen += msg.payload.data
+        }
+      })
+      const token = 'YAN_PTY_OK'
+      await window.yan.terminal.write(snap.id, `echo ${token}\r\n`)
+      for (let i = 0; i < 48 && seen.split(token).length - 1 < 2; i += 1) await sleep(250)
+      off()
+      /* 出现两次：一次是输入回显，一次是命令真的执行后的输出 */
+      const hits = seen.split(token).length - 1
+      ok(hits >= 2, `真实 PTY 输入 / 输出往返成功（${token} 出现 ${hits} 次）`)
+      ok((await window.yan.terminal.resize(snap.id, 100, 30)) === true, 'resize 成功（原生 PTY 接受新尺寸）')
+      const again = await window.yan.terminal.attach(snap.id)
+      ok(again?.cols === 100 && again?.rows === 30, 'attach 快照反映新尺寸（断线重连可恢复）')
+      ok(typeof again?.seq === 'number' && again.seq > 0, '快照带输出序号（重连去重依据）')
+      ok((again?.buffer ?? '').includes(token), '重连缓冲带着之前的输出（不是空壳）')
+      ok((await window.yan.terminal.kill(snap.id)) === true, '关闭终端成功')
+      await sleep(400)
+      ok((await window.yan.terminal.attach(snap.id)) === null, '关掉的会话不再可 attach（不返回幽灵快照）')
+    }
+  } catch (error) {
+    ok(false, `解包态交互终端验收报错：${error?.message ?? error}`)
+  }
+
   return out.join('\n')
 })()
