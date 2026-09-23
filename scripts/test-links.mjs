@@ -45,6 +45,21 @@ export async function runLinkTests(ok) {
   /* ---- DSH 搬运的 GitHub 风格行号片段 ---- */
   ok(parseFileLink('src/main/index.ts#L42')?.line === 42, '#L42 解析为首行')
   ok(parseFileLink('src/main/index.ts#L42-L60')?.line === 42, '#L42-L60 取首行')
+  /* 范围高亮（H-4）：末行只在真有范围时出现，`#L42-L42` 与 `#L42` 等价 */
+  ok(parseFileLink('src/main/index.ts#L42-L60')?.lineEnd === 60, '#L42-L60 带出范围末行')
+  ok(parseFileLink('src/main/index.ts#L42')?.lineEnd === undefined, '单行链接不写末行（界面不画一行高的范围）')
+  ok(parseFileLink('src/main/index.ts#L42-L42')?.lineEnd === undefined, '#L42-L42 当作单行（不造空范围）')
+  ok(
+    classifyLink('src/main/index.ts#L42-L60').kind === 'file' &&
+      classifyLink('src/main/index.ts#L42-L60').lineEnd === 60,
+    '分类结果把范围一并带出去（路径不含 `#L42-L60`）'
+  )
+  const ranged = classifyLink('src/main/index.ts#L42-L60')
+  ok(ranged.kind === 'file' && ranged.path === 'src/main/index.ts', '范围不当文件名的一部分')
+  ok(
+    classifyLink('file:///C:/a/b.ts#L7-L9').lineEnd === 9,
+    'file URL 也支持范围'
+  )
   ok(classifyLink('src/main/index.ts#L42').line === 42, '显式文件链接接入 #L42')
   ok(classifyLink('file:///C:/a/b.ts#L7').path === 'C:/a/b.ts', 'file URL 兼容 #L7 路径')
   ok(classifyLink('file:///C:/a/b.ts#L7').line === 7, 'file URL 兼容 #L7 行号')

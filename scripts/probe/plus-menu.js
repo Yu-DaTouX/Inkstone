@@ -114,6 +114,26 @@
   await sleep(150)
   ok(q('[data-testid="plus-goal-start"]')?.disabled === false, '两栏都填了才能开始')
 
+  /*
+   * 补充范围（实施-16 G-1）：默认收起 —— 不展开时还是原来的两栏流程；
+   * 展开后三栏都真的写进目标，空白栏不落字段。
+   */
+  ok(!q('[data-testid="plus-deliverable-text"]'), 'G-1：补充范围默认收起（不展开就是两栏流程）')
+  const extrasToggle = q('[data-testid="plus-goal-extras-toggle"]')
+  ok(!!extrasToggle, 'G-1：有「补充范围」入口')
+  extrasToggle?.click()
+  await sleep(150)
+  ok(!!q('[data-testid="plus-deliverable-text"]'), 'G-1：展开后出现交付物栏')
+  ok(
+    !!q('[data-testid="plus-scope-text"]') && !!q('[data-testid="plus-constraints-text"]'),
+    'G-1：展开后范围与约束栏都在'
+  )
+  fill('[data-testid="plus-deliverable-text"]', '可运行安装包')
+  fill('[data-testid="plus-constraints-text"]', '不新增模型工具')
+  fill('[data-testid="plus-scope-text"]', '   ')
+  await sleep(150)
+  ok(q('[data-testid="plus-goal-start"]')?.disabled === false, 'G-1：补充栏不影响必填判定')
+
   q('[data-testid="plus-goal-start"]')?.click()
   await waitFor(() => !q('[data-testid="plus-menu"]'), 5000)
   ok(!q('[data-testid="plus-menu"]'), '开始后菜单收起')
@@ -122,6 +142,11 @@
     seeded.includes('[持续目标]') && seeded.includes('达成判据'),
     `输入框里写下目标模板（实际 ${JSON.stringify(seeded.slice(0, 40))}）`
   )
+  ok(
+    seeded.includes('交付物：可运行安装包') && seeded.includes('约束：不新增模型工具'),
+    `G-1：种子消息带上补充字段（实际 ${JSON.stringify(seeded)}）`
+  )
+  ok(!seeded.includes('范围：'), 'G-1：空白补充栏不进种子消息（不造用户没写的句子）')
 
   /* 宿主侧真的建立了目标 —— 界面填空不能只改一个本地 state */
   const goalRes = await window.yan.getGoal()
@@ -129,6 +154,12 @@
   ok(
     goalRes.goal.brief?.outcome === '菜单三项可点且两张截图齐备',
     `达成判据原样存进目标（实际 ${JSON.stringify(goalRes.goal.brief?.outcome)}）`
+  )
+  ok(
+    goalRes.goal.brief?.deliverable === '可运行安装包' &&
+      goalRes.goal.brief?.constraints === '不新增模型工具' &&
+      goalRes.goal.brief?.scope === undefined,
+    `G-1：补充字段写进宿主目标，空白栏不落字段（实际 ${JSON.stringify(goalRes.goal.brief)}）`
   )
   /* U-3a：目标改成标题栏入口 + 浮层（不再在工具页常驻）。 */
   document.querySelector('[data-testid="goal-entry"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))

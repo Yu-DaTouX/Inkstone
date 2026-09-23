@@ -14,6 +14,19 @@ const PHASE_LABEL: Record<GoalState['phase'], MessageKey> = {
 }
 
 /**
+ * 核验状态的文案（实施-16 G-2/G-3）。
+ *
+ * 四态各自一句话，刻意不用「成功 / 失败」两个词就包完：
+ * `not_checked` 与 `manual_review` 都不是通过，不能渲染成绿色对钩。
+ */
+const VERIFICATION_LABEL: Record<NonNullable<GoalState['verification']>['status'], MessageKey> = {
+  not_checked: 'goal.verNotChecked',
+  passed: 'goal.verPassed',
+  failed: 'goal.verFailed',
+  manual_review: 'goal.verManual'
+}
+
+/**
  * 砚内置的目标 / 计划面板。
  *
  * 它不属于可拖拽的扩展工具分区：目标是宿主按会话维护的事实状态，
@@ -126,7 +139,32 @@ export function GoalContent() {
                 <span className="goal-brief-key">{t('goal.briefOutcome')}</span>
                 <span className="goal-brief-value">{activeGoal.brief.outcome}</span>
               </div>
-              {(activeGoal.brief.goal + activeGoal.brief.outcome).length > 140 ? (
+              {/* G-1 的可选补充字段：用户写了才显示，不代填 */}
+              {activeGoal.brief.deliverable ? (
+                <div className="goal-brief-row" data-testid="goal-brief-deliverable">
+                  <span className="goal-brief-key">{t('goal.briefDeliverable')}</span>
+                  <span className="goal-brief-value">{activeGoal.brief.deliverable}</span>
+                </div>
+              ) : null}
+              {activeGoal.brief.scope ? (
+                <div className="goal-brief-row" data-testid="goal-brief-scope">
+                  <span className="goal-brief-key">{t('goal.briefScope')}</span>
+                  <span className="goal-brief-value">{activeGoal.brief.scope}</span>
+                </div>
+              ) : null}
+              {activeGoal.brief.constraints ? (
+                <div className="goal-brief-row" data-testid="goal-brief-constraints">
+                  <span className="goal-brief-key">{t('goal.briefConstraints')}</span>
+                  <span className="goal-brief-value">{activeGoal.brief.constraints}</span>
+                </div>
+              ) : null}
+              {[
+                activeGoal.brief.goal,
+                activeGoal.brief.outcome,
+                activeGoal.brief.deliverable,
+                activeGoal.brief.scope,
+                activeGoal.brief.constraints
+              ].join('').length > 140 ? (
                 <button
                   type="button"
                   className="goal-brief-toggle"
@@ -143,6 +181,46 @@ export function GoalContent() {
             <span>{t('goal.revision', { n: activeGoal.revision })}</span>
             {steps.length ? <span>{t('goal.progress', { done, total: steps.length })}</span> : null}
           </div>
+
+          {/*
+           * G-2/G-3：相位与核验分开写。`completed` 只说明模型交了完成声明，
+           * 它本身不是「已核验」——两句话必须在界面上同时看得到。
+           */}
+          {activeGoal.phase === 'completed' ? (
+            <div className="goal-panel-claim" data-testid="goal-model-claim">
+              {t('goal.modelClaim')}
+            </div>
+          ) : null}
+
+          {activeGoal.verification ? (
+            <div className="goal-panel-verification" data-testid="goal-verification">
+              <div className="goal-panel-subtitle">{t('goal.verificationTitle')}</div>
+              <div
+                className={`goal-verification-status goal-verification-${activeGoal.verification.status}`}
+                data-testid="goal-verification-status"
+                data-verification-status={activeGoal.verification.status}
+              >
+                {t(VERIFICATION_LABEL[activeGoal.verification.status])}
+              </div>
+              <div className="goal-verification-detail">{activeGoal.verification.detail}</div>
+              {activeGoal.verification.checks.length ? (
+                <div className="goal-verification-checks">
+                  {activeGoal.verification.checks.slice(0, 6).map((check, index) => (
+                    <div
+                      className={`goal-verification-check${check.ok ? '' : ' goal-verification-check-bad'}`}
+                      data-testid="goal-verification-check"
+                      data-check-ok={String(check.ok)}
+                      key={`${check.kind}-${check.target}-${index}`}
+                      title={`${check.target}\n${check.detail}`}
+                    >
+                      <Icon name={check.ok ? 'check-circle' : 'alert-circle'} size={12} />
+                      <span className="goal-verification-target">{check.target}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {steps.length ? (
             <ol className="goal-steps">

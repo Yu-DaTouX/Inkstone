@@ -699,7 +699,7 @@
   font-size: var(--fs-xs);
 }
 
-/* 目标表单（`+` 菜单的第二层）：两栏 + 一行动作 */
+/* 目标表单（`+` 菜单的第二层）：两栏（+ 可选补充范围）+ 一行动作 */
 .plus-compose {
   display: flex;
   flex-direction: column;
@@ -734,6 +734,26 @@
 .plus-input:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+/*
+ * 「补充范围」折叠入口（实施-16 G-1）：默认收起——不展开就是原来的两栏流程。
+ * 外观接近链接而不是按钮：它是可选路径，不该抢「开始」的注意力。
+ */
+.plus-extras-toggle {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.plus-extras-toggle:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .plus-actions {

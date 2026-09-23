@@ -45,7 +45,12 @@
     await sleep(300)
     ok(!!q('[data-testid="right-start-page"]'), '开始页渲染')
     const entries = qa('.rp-start-item')
-    ok(entries.length === 4, `开始页有 4 个入口（${entries.length}）`)
+    /*
+     * 5 个：审查 / 浏览器 / 文件 / 终端（H-11）/ 工具。
+     * 之前是 4 个（终端未接入）—— 这个数字改过一次，就是 H-11 真的接线了。
+     */
+    ok(entries.length === 5, `开始页有 5 个入口（${entries.length}）`)
+    ok(!!q('[data-testid="start-terminal"]'), '终端入口在（H-11 可用后才会有）')
     ok(
       entries.every((e) => !!e.querySelector('.rp-start-label') && !!e.querySelector('.rp-start-desc')),
       '每个入口都有标签 + 说明（不是只有图标）'

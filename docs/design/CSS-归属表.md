@@ -21,12 +21,13 @@
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
 | 12 | `rail.css` | 1547 | 219 | 225 | 0 | 0 |
 | 13 | `chat.css` | 1884 | 260 | 264 | 2 | 2 |
-| 14 | `composer.css` | 1747 | 248 | 251 | 1 | 0 |
-| 15 | `tools.css` | 3026 | 429 | 436 | 2 | 4 |
-| 16 | `browser.css` | 392 | 54 | 54 | 0 | 0 |
-| 17 | `review.css` | 1567 | 228 | 228 | 2 | 0 |
-| 18 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **15544** | **2052** | | | |
+| 14 | `composer.css` | 1767 | 250 | 253 | 1 | 0 |
+| 15 | `tools.css` | 3134 | 446 | 453 | 2 | 4 |
+| 16 | `browser.css` | 413 | 56 | 56 | 0 | 0 |
+| 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
+| 18 | `review.css` | 1567 | 228 | 228 | 2 | 0 |
+| 19 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
+| | **合计** | **15775** | **2081** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -46,16 +47,17 @@
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
 | `rail.css` | 219 |
-| `chat.css` | 260 |
-| `composer.css` | 247 |
-| `tools.css` | 429 |
-| `browser.css` | 54 |
+| `chat.css` | 258 |
+| `composer.css` | 249 |
+| `tools.css` | 446 |
+| `browser.css` | 56 |
+| `terminal.css` | 10 |
 | `review.css` | 228 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **89** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **91** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
@@ -147,4 +149,6 @@
 | `.op-title` | redesign → motion |
 | `.op-empty` | redesign → motion |
 | `.settings-scrim` | motion → settings |
+| `.term-bar` | chat → terminal |
+| `.term-bar .spacer` | chat → terminal |
 | `.review` | composer → review |

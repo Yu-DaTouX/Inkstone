@@ -1502,6 +1502,36 @@
   white-space: nowrap;
 }
 
+/*
+ * 变化提示（H-4）：就地说一句 + 一个重载按钮。
+ * 用警示色而不是错误色 —— 文件被改写不是错误，也不该自动抢走阅读位置。
+ */
+.fp-updated {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--sp-2);
+  color: var(--warn, var(--fg));
+  font-size: var(--fs-xs);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.fp-reload {
+  margin-left: auto;
+  padding: 1px 6px;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+
+.fp-reload:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .fp-body {
   flex: 1;
   min-height: 0;
@@ -1518,6 +1548,15 @@
 
 .fp-row {
   display: flex;
+}
+
+/*
+ * 范围高亮（H-4）：`#L42-L60` 的那 19 行。
+ * 用很淡的底色 + 左侧竖线，不抢正文也不遮选字。
+ */
+.fp-row-range {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .fp-gutter {
@@ -1556,6 +1595,13 @@
   padding: 2px 8px;
   background: var(--bg-2);
   color: var(--fg);
+}
+
+/* 失败态的动作行：重试 / 定位父目录并排（H-4） */
+.fp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
 }
 
 .fp-markdown {
@@ -2354,6 +2400,68 @@
 
 .goal-budget-stop {
   color: var(--warn, var(--fg));
+}
+
+/*
+ * 完成核验（实施-16 G-2 / G-3）：与相位分开呈现。
+ * `not_checked` / `manual_review` 刻意不用成功绿 ——「没检查」和
+ * 「要人看」都不能被读成通过。
+ */
+.goal-panel-claim {
+  margin-top: 6px;
+  color: var(--fg-mute);
+}
+
+.goal-panel-verification {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.goal-verification-status {
+  font-weight: 600;
+}
+
+.goal-verification-passed {
+  color: var(--ok);
+}
+
+.goal-verification-failed {
+  color: var(--err);
+}
+
+.goal-verification-not_checked,
+.goal-verification-manual_review {
+  color: var(--warn);
+}
+
+.goal-verification-detail {
+  color: var(--fg-mute);
+  overflow-wrap: anywhere;
+}
+
+.goal-verification-checks {
+  display: grid;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.goal-verification-check {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.goal-verification-check-bad {
+  color: var(--err);
+}
+
+.goal-verification-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .goal-link-label {

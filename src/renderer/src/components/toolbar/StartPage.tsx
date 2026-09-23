@@ -7,12 +7,13 @@ import { Icon, type IconName } from '../../icons/Icon'
  * 工具页（承载上下文/任务等磁贴）是另一个固定页，由标签行切换。
  * 终端入口要等 H-11 真的可用；未接入时不放一个永久灰按钮（能力说明里标注即可）。
  */
-export type StartEntry = 'review' | 'browser' | 'file' | 'tools'
+export type StartEntry = 'review' | 'browser' | 'file' | 'tools' | 'terminal'
 
 const ENTRIES: { id: StartEntry; icon: IconName; label: string; desc: string }[] = [
   { id: 'review', icon: 'check-circle', label: '审查', desc: '查看当前工作区的改动' },
   { id: 'browser', icon: 'globe', label: '浏览器', desc: '在内置网页里打开页面' },
   { id: 'file', icon: 'folder', label: '文件', desc: '浏览并预览工作区文件' },
+  { id: 'terminal', icon: 'activity', label: '终端', desc: '在工作目录里开一个交互终端' },
   { id: 'tools', icon: 'layers', label: '工具', desc: '上下文、任务与运行信息' }
 ]
 

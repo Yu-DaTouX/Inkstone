@@ -84,14 +84,16 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
     e.preventDefault()
     e.stopPropagation()
     if (target.kind === 'url') void openBrowser(target.url)
-    else if (target.kind === 'file') void previewFile(target.path, target.line)
+    else if (target.kind === 'file') void previewFile(target.path, target.line, undefined, target.lineEnd)
     /* invalid：什么也不做（title 已说明原因） */
   }
 
   const title =
     target.kind === 'file'
       ? t('link.preview', {
-          path: target.line ? `${target.path}:${target.line}` : target.path
+          path: target.line
+            ? `${target.path}:${target.line}${target.lineEnd ? `-${target.lineEnd}` : ''}`
+            : target.path
         })
       : target.kind === 'invalid'
         ? t('link.blocked')
@@ -102,8 +104,9 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
       href={target.kind === 'url' ? target.url : '#'}
       className={`md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
-      /* 行号给测试与后续「范围高亮」用；不带行号时不写属性（别把 undefined 写成字符串）。 */
+      /* 行号给测试与范围高亮用；不带行号时不写属性（别把 undefined 写成字符串）。 */
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
+      data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
       title={title}
       onClick={onClick}
       onAuxClick={(e) => e.preventDefault()}

@@ -56,6 +56,23 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 
 /*
+ * 文件资源身份（src/shared/file-resource.ts，实施-11 H-4）。
+ *
+ * 主进程构建会把共享模块摇树进各自的产物，但这里是纯函数模块，
+ * 现场编译一份，让测试盯住“标签身份”这一个语义。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/file-resource.ts'],
+    outfile: 'out/test/file-resource.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
  * 人读时长（src/shared/duration.ts）。
  *
  * 回合页脚 / 图片进度 / 子代理列表共用它；同样是共享层纯函数，现场编译一份，
@@ -180,12 +197,15 @@ const { runTurnTimingStoreTests } = await import('./test-turn-timing-store.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
+const { runFileResourceTests } = await import('./test-file-resource.mjs')
 const { runWorkbenchTests } = await import('./test-workbench.mjs')
 const { runSubagentViewTests } = await import('./test-subagent-view.mjs')
 const { runSubagentUsageTests } = await import('./test-subagent-usage.mjs')
 const { runToolLayoutTests } = await import('./test-tool-layout.mjs')
 const { runShortTitleTests } = await import('./test-short-title.mjs')
 const { runBrowserVisibilityTests } = await import('./test-browser-visibility.mjs')
+const { runBrowserNavigationTests } = await import('./test-browser-navigation.mjs')
+const { runContextActionTests } = await import('./test-context-actions.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
@@ -213,6 +233,54 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     platform: 'neutral',
     logLevel: 'silent'
   })
+)
+
+/*
+ * 浏览器导航状态（H-9 第二阶段）：失败判定 / 草稿取舍 / 出错地址保留。
+ * 纯函数，主进程与渲染端共用，所以从 shared 现场编译。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/browser-navigation.ts'],
+    outfile: 'out/test/browser-navigation.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
+/*
+ * 三类整理动作账本（实施-11 C-2b）：解析容错 + 分开累计，
+ * 以及宿主侧真文件读取（含路径穿越判据）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  Promise.all([
+    build({
+      entryPoints: ['src/shared/context-actions.ts'],
+      outfile: 'out/test/context-actions.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      logLevel: 'silent'
+    }),
+    build({
+      entryPoints: ['src/main/context-actions.ts'],
+      outfile: 'out/test/context-actions-host.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'node',
+      logLevel: 'silent'
+    }),
+    build({
+      entryPoints: ['src/renderer/src/state/context-actions-view.ts'],
+      outfile: 'out/test/context-actions-view.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      logLevel: 'silent'
+    })
+  ])
 )
 
 /*
@@ -1445,6 +1513,7 @@ await runFileRefTests(ok)
 
 // 链接路由：网页 / 文件 / 行号 / 危险协议（安全判断）
 await runLinkTests(ok)
+await runFileResourceTests(ok)
 
 
 // 工作窗口状态：稳定会话身份 / 标签恢复 / 资源缺失回退
@@ -1453,6 +1522,14 @@ await runWorkbenchTests(ok)
 
 // 原生网页显隐协调（H-9a）：四条件判定 + blocker 计数
 await runBrowserVisibilityTests(ok)
+
+
+// 浏览器导航状态（H-9b）：失败是否显示 / 草稿是否保留 / 出错地址保留
+await runBrowserNavigationTests(ok)
+
+
+// 三类整理动作账本（C-2b）：解析容错 / 两类分开累计 / 宿主读取判据
+await runContextActionTests(ok)
 
 
 // 子代理运行归属（H-10a）：attached/detached/foreign/unattributed

@@ -6,7 +6,7 @@ Electron + React + TypeScript。pi 以 `--mode rpc` 子进程提供模型循环�
 
 1. 读 [实施计划](docs/plan/README.md)、[当前状态](docs/dev/HANDOFF.md)，再读用户指定的 `docs/plan/active/` 正文。
 2. `git status --short` 核对并保留已有修改，不预设工作树干净。目录导航读 [WORKSPACE](docs/WORKSPACE.md)，代码定位读 [PROJECT](docs/PROJECT.md)。
-3. 当前任务提示词见 [审核融合入口](docs/plan/active/执行-2026-09-23-审核融合与任务提示词.md)。design/active 是设计输入，archive 是历史，不是执行清单。
+3. 上一轮任务提示词见 [审核融合入口](docs/plan/active/执行-2026-09-23-审核融合与任务提示词.md)（该轮卡片已收口，通用模板与各主题索引仍可用）；2026-09-24 新登记待办见 [实施-16](docs/plan/active/实施-16-持续目标契约与核验增强.md)。design/active 是设计输入，archive 是历史，不是执行清单。
 
 ## 工作区边界
 

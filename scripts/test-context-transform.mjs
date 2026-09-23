@@ -464,6 +464,24 @@ export async function runContextTransformTests(ok, deps) {
     const branch = branchFixture()
     const messages = messagesOf(branch)
     const ctx = fakeCtx(branch)
+    /*
+     * C-2b 的动作账本：扩展写、宿主读。
+     * 这里断言的是**真实写入点**（onContext 真的跑了一遍），
+     * 而不是把账本内容当成给定条件。
+     */
+    const actionFile = join(dataDir, 'context-actions', 'sess0001.jsonl')
+    const readActions = async () => {
+      try {
+        const text = await readFile(actionFile, 'utf8')
+        return text
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+      } catch {
+        return []
+      }
+    }
 
     setPolicy({ kinds: ['tool-sweep'], recentTail: { target: 1, max: 1 }, sweep: { minTokens: 10, minReclaimTokens: 10, minReclaimRatio: 0 } })
     const out = await EXT.__internals.onContext({ messages }, ctx)
@@ -482,6 +500,40 @@ export async function runContextTransformTests(ok, deps) {
       EXT.__internals.loadLedger('sess0001').turn === T.userTurnCount(messages),
       '钩子把当轮回合号写进召回账本（首个召回不会拿到 0）',
       `ledger=${JSON.stringify(EXT.__internals.loadLedger('sess0001'))}`
+    )
+
+    /*
+     * C-2b：清扫必须自己留痕 —— pi 不会为它发 `compaction_*` 事件，
+     * 账本是界面唯一能知道“清扫真的发生过”的来源。
+     */
+    const sweptActions = await readActions()
+    const sweepAction = sweptActions.find((item) => item.kind === 'tool-sweep')
+    ok(!!sweepAction, 'C-2b：清扫在动作账本里留痕（真实写入点）')
+    ok(
+      sweepAction?.status === 'applied' && sweepAction?.reclaimed >= 1,
+      'C-2b：账本记下清扫状态与整理条数',
+      JSON.stringify(sweepAction)
+    )
+    ok(
+      typeof sweepAction?.savedTokens === 'number' && sweepAction.savedTokens >= 0,
+      'C-2b：账本同时记下估算省下的 token',
+      JSON.stringify(sweepAction)
+    )
+
+    /* 收益门槛没过（没真做）时同样留痕：失败与“没干”必须能区分开 */
+    await rm(actionFile, { force: true })
+    setPolicy({
+      kinds: ['tool-sweep'],
+      recentTail: { target: 1, max: 1 },
+      /* 两个收益门槛都要“达不到”才叫没收益 —— 只抬一个不会拦住（见 planToolSweep） */
+      sweep: { minTokens: 10, minReclaimTokens: 10_000_000, minReclaimRatio: 1 }
+    })
+    await EXT.__internals.onContext({ messages }, ctx)
+    const skippedAction = (await readActions()).find((item) => item.kind === 'tool-sweep')
+    ok(
+      skippedAction?.status === 'skipped' && !!skippedAction?.reason,
+      'C-2b：清扫因收益门槛没做时也留痕（带原因）',
+      JSON.stringify(skippedAction)
     )
 
     /* kinds 不含 tool-sweep 时什么都不做（用户可把清理关掉） */
@@ -723,19 +775,55 @@ export async function runContextTransformTests(ok, deps) {
     const noWindow = await EXT.__internals.onContext({ messages }, fakeCtx(branch))
     ok(tombstonesOf(noWindow) === 0, '窗口未知时不越权清扫（高门槛仍然有效）')
 
-    /* 对照 B：同一份消息、同一个高门槛，只多知道窗口 + 工作集线很低 → soft → 门槛归零 */
+    /*
+     * 对照 B：同一份消息、同一个高门槛，只多知道窗口 + 工作集线很低 → soft →
+     * 用 `forced*` 那一组门槛（默认仍为 2000 / 0.03，不是把它清零，见 C-6）。
+     */
     setPolicy({ ...highThreshold, workingSetCap: 100 })
     const withWindow = await EXT.__internals.onContext(
       { messages },
       { ...fakeCtx(branch), model: { contextWindow: 200_000 } }
     )
-    ok(tombstonesOf(withWindow) > 0, `过工作集线时跳过收益门槛，真的清了（墓碑 ${tombstonesOf(withWindow)} 条）`)
+    ok(tombstonesOf(withWindow) > 0, `过工作集线时用 forced 门槛，真的清了（墓碑 ${tombstonesOf(withWindow)} 条）`)
+
+    /*
+     * 对照 C（C-6）：到线**不再**等于“无条件清扫”。把 forced 门槛也抬到天上，
+     * 同样过了工作集线就一条也不清 —— 这就是“普通内容清扫仍需回收收益条件”。
+     */
+    setPolicy({
+      workingSetCap: 100,
+      recentTail: { target: 1, max: 1 },
+      sweep: {
+        minTokens: 10,
+        minReclaimTokens: 1_000_000_000,
+        minReclaimRatio: 1,
+        forcedMinReclaimTokens: 1_000_000_000,
+        forcedMinReclaimRatio: 1
+      }
+    })
+    const gated = await EXT.__internals.onContext(
+      { messages },
+      { ...fakeCtx(branch), model: { contextWindow: 200_000 } }
+    )
+    ok(tombstonesOf(gated) === 0, '到线也有收益门槛：forced 门槛高时仍然不清')
 
     /* 接线：窗口读得到、算得出；读不到就交回 null（回落原生压缩） */
     delete process.env.YAN_CONTEXT_POLICY
     ok(EXT.__internals.requestBudgetFor({ model: { contextWindow: 0 } }) === null, '窗口 0 → 无预算')
     const b = EXT.__internals.requestBudgetFor({ model: { contextWindow: 64_000 } })
     ok(b?.workingSet === 40_000, `requestBudgetFor 读到窗口并算出工作集（${b?.workingSet}）`)
+  }
+
+  /* ============ M. C-6：三类整理门槛与防抖候选参数 ============ */
+  console.log('\n— M. C-6 门槛标定（近期尾部 / 清扫门槛 / 状态准备线）—')
+  {
+    /* 近期尾部：小窗口不动，大窗口放宽到 64K–96K */
+    ok(T.recentTailFor(100_000).target === 32_000, '小窗口保持 32K 尾部')
+    ok(T.recentTailFor(511_999).max === 48_000, '差一个 token 到大窗口档：仍用 48K 上限')
+    const big = T.recentTailFor(600_000)
+    ok(big.target === 64_000 && big.max === 96_000, `大窗口档放宽到 64K–96K（${big.target}/${big.max}）`)
+    ok(T.recentTailFor(600_000, { target: 100_000, max: 120_000 }).target === 100_000, '用户显式给的更大的尾部不被改小')
+    ok(T.recentTailFor(0).target === 32_000 && T.recentTailFor(NaN).target === 32_000, '工作集未知 → 回落小窗口值（不猜）')
   }
 
   /* ---------------------------------------------------------------- 收尾 */

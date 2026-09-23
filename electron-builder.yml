@@ -31,7 +31,15 @@ files:
   - build/icon.png
   - package.json
   - '!node_modules/**'
-  # 单测产物（test-unit.mjs 用 esbuild 把被测模块编译到这里）只给 npm run test:unit 用
+  #
+  # 唯一的运行时 node_modules 例外：`node-pty`（实施-11 H-11 交互终端）。
+  # 它是**原生模块**，不能像 MCP SDK / tar 那样被 Vite 打进 bundle ——
+  # `.node` 与 `winpty-agent.exe` / `conpty.dll` 必须在磁盘上（见 asarUnpack）。
+  # 它走 `createRequire(import.meta.url)` 从 app.asar 内的 node_modules 解析，
+  # 所以只排除它一个包不行 —— 还得把它的依赖（`nan`）一起带上。
+  - 'node_modules/node-pty/**'
+  #
+  # 开发/调试产物不进包。
   - '!out/test/**'
   - '!**/*.{map,md,ts,tsx,tsbuildinfo}'
 
@@ -69,6 +77,25 @@ extraResources:
 
 asar: true
 compression: normal
+
+#
+# 不重编原生模块（实施-11 H-11）。
+#
+# `node-pty@1.1.0` 用 **N-API 预编译**（包内自带 `prebuilds/win32-x64/pty.node`
+# 与 `conpty/`、`winpty-agent.exe`），N-API 跨 Node / Electron 的 ABI 稳定，
+# 不需要也不能重编：electron-builder 默认会跑 @electron/rebuild，在本机
+# Visual Studio BuildTools 上因缺 Spectre 缓解库（MSB8040）直接失败。
+# 关掉重建后，包里用的就是随包发布的预编译二进制 —— 已在
+# `test:packaged` 里用真实应用验证（`terminal.available() === true`）。
+npmRebuild: false
+
+#
+# 原生模块必须解包成**真实文件**：Electron 的 asar 垫片能让 `require()` 读到
+# 包内文件，但子进程要执行的 `winpty-agent.exe` / `conpty/OpenConsole.exe`
+# 不能直接从归档里启动。整包解包后 `__dirname` 指向 app.asar.unpacked，
+# node-pty 自己算的 prebuild 路径就是真实路径。
+asarUnpack:
+  - node_modules/node-pty/**
 
 win:
   # ZIP 解压一次后直接运行，避免 portable 单文件版每次启动都自解压到临时目录。

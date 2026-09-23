@@ -1,5 +1,95 @@
 # 开发交接 · 砚
 
+## 2026-09-24 · 实施-11 C-6 / H-11 + 实施-14 F7 剩余 + 截图矩阵 + 打包
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **C-6 三类整理门槛与防抖**：① 前置核实 —— pi 0.85.1 的原生自动压缩是 `shouldCompact = contextTokens > contextWindow − reserveTokens`（`DEFAULT_COMPACTION_SETTINGS.reserveTokens = 16384`），由 agent harness 在每轮助手应答前 `_compactBeforeNextAssistantResponse` 触发 `threshold` 压缩，另有 `prepareOverflowCompaction` 溢出路径；请求的 `maxTokens` 取 `model.maxTokens`（能力字段），**不是**每次硬预留 393216 —— 所以 1M − 16384 − 20k 余量 ≈ 963k，600K/700K 无须下调。② Tool Sweep 到线**不再清零**收益门槛：新增 `DEFAULT_SWEEP.forcedMinReclaimTokens/Ratio`（默认等于普通门槛），策略显式给 0 才回到旧行为；大窗口档（工作集 ≥ 512K）近期尾部放宽到 `LARGE_RECENT_TAIL` 64K–96K（`recentTailFor`）。③ 状态摘要准备线从固定 48K 改为 `max(48K, 整轮软线 × 60%)`（`FOLD_PREPARE_RATIO`），**显式给 `minTokens` 时不抬高**（测试/标定通道）。④ 整轮 compaction 防抖：`rearmAfterCompaction` 记下 `estimatedTokensAfter`，`contextPolicyStep` 在“已上膛”之外再加一条 —— 回落软线 80% 以下、或此后新增 ≥ `max(16K, 软线×5%)`（夹在软线内）、或到 5 分钟重试窗口；低回收 + 低新增时延后，右栏显示「主要为不可压缩基础开销」并抑制“本回合结束后自动压缩”那行。**H-11 交互终端**：新增 `src/main/terminal.ts`（node-pty 惰性加载 + 有界回滚缓冲 + 输出序号）、7 个 IPC、`preload.terminal`、`store` 的 terminal 分区、`components/terminal/TerminalSurface.tsx`（xterm + FitAddon，主题从 tokens 读，attach 前排队避免快照/实时交错）与 `styles/terminal.css`；工作窗口新增 `terminal` 资源 kind（开始页第 5 个入口、标签栏、`+` 菜单启用）。 |
+| 自动检查 | `typecheck` / `build` 通过；`check:css-docs` 三份重生成后一致；`test:unit` **5044/5044**（C-6 新增：预算不吞 600K/700K、`policyGrowthMinTokens` 三档、低回收/回落/重试/硬压力四分支、`incompressibleBaselineNotice` 数据不齐不显示、`recentTailFor` 大小窗口、`foldEligible` softLine 与显式门槛两条反向）。 |
+| 真实运行 | **cost 1（`deepseek/deepseek-v4.1-flash`）**：`contextsweep` 全绿（账本 6 次 / applied 4 / 整理 5 条 / 省约 8.7k，非零门槛下清扫仍发生）；`contextpressurelow` 全绿（22 回合 3 次真实压缩、physical 0、无 budget-abort）；`contextproduce` / `contextfoldpref` / `contextepisode` / `contextrefresh` / `contextgate` 全绿；`handoffchaindefault`（新场景，**生产默认阈值 2**）全绿 —— 源段与目的段各自攒够两次真实压缩，链 3 段、`conversationId` 不变、两次事务都 `resumed`、跨片段计时不重叠、停目标后不再排第三次；`handoffchain`（阈值 0）回归绿。**cost 0**：`terminalsurface`（新场景）15 条全绿（开始页入口 → xterm 挂载 → 真实命令输出进 xterm 行 → resize 落到宿主 → 切走切回缓冲回放 → 关标签真的 kill）；`resourceheads` / `panels` / `rightresources` / `symmetry` / `titlebar` / `terminal` / `tools` / `tooltiles` / `tilerestart` / `fs` / `fileref` / `linkpreview` / `filelink` 共 14 个场景全绿。 |
+| 视觉验收 | `visual:matrix` 组 11/12（新组）补采 4 张：`matrix-terminal-1440x900-100-{dark,light}-2026-09-24-0625/0626.png`、`matrix-ctxincompressible-1440x900-100-{dark,light}-2026-09-24-0625/0626.png`，1440×900、100%、横向溢出 0px；逐张看图（像素复核 xterm/标题行底色：深 21,21,21 / 浅 252,252,250）。矩阵尾声的「汉字格宽 = 12.50px（字体未生效）→ 退出码 1」在**未改动的组 9** 上同样出现，是环境性的，不是本片回归。 |
+| 应用与包 | `npm run dist` 产出 `release/砚-0.2.0-setup.exe`（123M）、`砚-0.2.0-portable.exe`（123M）、`砚-0.2.0-portable-fast.zip`（165M）；`test:packaged` 全绿，其中 H-11 段：解包态原生 PTY 加载成功、终端启动（cmd @ 项目目录）、输入/输出往返、resize、attach 快照带序号与缓冲、kill 后不可再 attach。打包配置：`npmRebuild: false`（node-pty 是 N-API 预编译，本机 VS BuildTools 缺 Spectre 库会让默认重编直接失败）+ `asarUnpack: node_modules/node-pty/**` + `files` 里单独放行 `node_modules/node-pty/**`。 |
+| 剩余限制 | C-6 的参数是**候选值标定**而非“已验证最优”：增长门槛的绝对值只在小工作集压力场景被反向覆盖过；sticky 状态刷新仍只在窗口近似上。H-11：终端只有 Windows 默认壳（未做壳选择/配置文件/多窗口组）、回滚缓冲 200K 字符后截断、`Ctrl+`` 只是菜单提示未接全局热键、ConPTY 在无控制台宿主下会走 winpty（矩阵桩显式关 ConPTY，产品进程走默认）。F7：崩溃启动确认仍是磁盘标记近似、生成失败只覆盖“模型吐坏 JSON”一类。截图矩阵的字体告警与 V-5 外壳包验收仍未收口。 |
+
+## 2026-09-24 · 实施-11 C-2b（三类整理分开统计）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **扩展侧留痕**：`resources/pi-extensions/context.js` 新增 `recordAction()`，写 `<YAN_DATA_DIR>/context-actions/<sessionId>.jsonl`（有界：超 500 行只留最后 300）。记录点覆盖清扫的 applied / skipped / rejected、状态刷新的 injected / skipped、生成器的 applied 与五类 failed（model-error / aborted / 解析拒收 / merge-failed / over-budget / CAS）。只记动作口径（条数 / 估算 token / 原因），不记消息正文。**共用契约**：`src/shared/context-actions.ts`（解析容错 + 三类分开累计 + 固定顺序；账本只含扩展能记的两类，**不重抄一份 compaction**）。**宿主读数**：`src/main/context-actions.ts` 复用 `isSafeSessionId` 拼路径，读不到返回空统计；新增 IPC `yan:contextActions`（取**当前活动会话**，界面不自报身份）。**界面**：`state/context-actions-view.ts` 把账本 / pi 事件投影成三行（清扫 / 状态刷新 / 整轮压缩），RightPanel 上下文详情里分行显示，未发生写「未发生」而不是留空；i18n 中英各 +11 键。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **5008/5008**（`test-context-actions.mjs` 21 条：坏行不毁整份统计、只留最后 N 条、两类分开累计、路径穿越拒绝、界面三行结构与“不编造”；`test-context-transform.mjs` +4 条：**真实调用 `onContext`** 后账本真的落盘，含 applied 与 skipped 两种分支）。 |
+| 真实运行 | `test:live -- contextsweep`（cost 1，`deepseek-v4.1-flash`）：真实回合触发清扫后，退出检查读到账本 **`tool-sweep` 6 次 / applied 4 次 / 整理 5 条**（另 2 次 `no-candidates` 跳过），窗口内清扫行显示「轻量整理 6 次 整理 5 条 · 省约 8.7k token · 跳过 2 次」。`test:live -- contextactions`（cost 0，新场景）：三行分别渲染、顺序固定、压缩行来自 pi 事件（无记录写「未发生」）、界面读数 = `window.yan.contextActions()`。回归 `context` 全绿。 |
+| 视觉验收 | 未单独截图（并入截图矩阵步骤）；探针断言了行的存在、顺序与文案内容。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 真实 1M 端点的三类阈值标定仍归 C-6 / C-3；账本里的 `savedTokens` 是**估算口径**（界面写“约”）；“跳过原因”修复（最近一条是 applied 时仍显示上一次原因）在真实链路运行**之后**完成，其正确性由单测覆盖，未重跑 cost 1 取新文案；账本只保最后 300 条，更早的统计不累计。 |
+
+## 2026-09-24 · 实施-11 H-9 第二阶段（导航状态、错误体验、多标签归属）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | 新增纯模块 `shared/browser-navigation.ts`（`shouldSurfaceLoadError` / `nextAddressInput` / `failureUrl` / `sameCommittedUrl` / `ERR_ABORTED`）。主进程：`did-fail-load` 只对**主框架**且非 `ERR_ABORTED` 的失败记录 `loadError{code,description,url}`，新导航 / `did-start-loading` / `did-navigate*` 清空，`getState()` 顶层只暴露**活动标签**的错误；`setWindowOpenHandler` 改走新的 `openBackgroundTab()` —— 网页自己开的窗口新开标签但**不夺走**用户当前阅读页。渲染端：地址栏草稿与已提交地址分离（`addressDirty`，后台导航不冲掉正在输入的内容）；导航序号 `navSeq` 保证旧导航结果不覆盖新状态；失败行显示「打不开该页面」+ 重试（真实重发导航）+ 在外部浏览器打开 + **保留原地址**（可读、可复制）；「⋯」菜单里补上最近下载（名称 + 来源 + “已保存，不会自动打开”）。i18n 中英各 +3 键；`browser.css` 加失败行样式。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4971/4971**（新增 `test-browser-navigation.mjs` 13 条：主框架/子框架/取消、草稿优先、出错地址保留、旧结果判定）；`check:css-docs` 重生成后一致。 |
+| 真实运行 | `test:live -- browser`（cost 0，真实 Electron + 真实网络）新增断言全绿：主框架失败后出现失败行、文案「打不开该页面」、**保留原地址** `127.0.0.1:1`、重试真的重发导航（仍失败且不假装成功）、正在输入的草稿不被 push 的新地址冲掉、新标签不夺走阅读页（切回原标签）、错误归属于**活动标签**（切到正常页错误消失、切回仍在且地址正确、关另一个标签不连坐）。回归 `browserboundary` / `overlayblockers` / `rightresources` 全绿。 |
+| 视觉验收 | 未单独截图（并入截图矩阵步骤）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 网页自己 `window.open` 的**后台开标签**路径已实现但未端到端取证（沙箱里没有可控的本地页面来触发 `window.open`，只有代码路径与单测，已写入实施-11 剩余）；下载只有最近一条记录（没有下载列表 / 暂停）；权限列表在菜单里按 origin 逐条展示，未做按 origin 分组折叠；未接真实阻塞服务（不可达端口已覆盖）。 |
+
+## 2026-09-24 · 实施-11 H-4 第二批（联动定位 / 大文件窗口化 / 范围高亮 / 文档相对路径 / 定位父目录）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **范围高亮（出口 2）**：`parseFileLink` 带出 `lineEnd`（`#L42-L42` 视为单行、`end<line` 拒收），`LinkTarget` / `readPreview` / `FilePreview` / store / 预览面板全链路透传；源码视图按**真实行号**标出区间（`.fp-row-range` + `data-in-range`），头部显示 `1–5`。**大文件窗口化（出口 5）**：`readPreview` 超过 2000 行时只切出「目标行前 200 / 后 400」的真实窗口，返回 `windowStart` / `windowEnd` / `totalLines`；界面行号从真实起始行开始、先标「显示第 X–Y 行（共 N 行）」，滚动不再跨窗口估算。**联动定位（出口 4）**：`FileTree` 用 realpath 相对 cwd 算相对路径，打开文件后自动展开父目录、设焦点并滚到该行（`aria-current`）；工作树外文件不造越界节点。**文档相对路径（出口 3）**：新增纯函数 `resolveRelativePath`；阅读模式加自定义链接组件，相对链接以**文档所在目录**为基准解析（`../README.md`），URL 仍进内部浏览器。**定位父目录（出口 7）**：`resolvePreviewTarget` 在“文件不存在 / 不是普通文件”时返回父目录（越界类错误**不**给，不把工作区外路径当导航目标），失败态加「定位父目录」按钮。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4958/4958**（file-resource +7 条相对路径、filerefs +8 条窗口化与父目录、links +6 条范围解析）；`check:css-docs` 重生成后一致。 |
+| 真实运行 | `test:live -- filelink`（cost 0）新增：范围链接 `data-line-end` 与 title `1-5`、点击后 1–5 行高亮且第 6 行不高亮、头部显示范围；大文件 `#L4000` 窗口 `windowStart=3800 windowEnd=4400 totalLines=5001`、首行就是 3800、目标行真的渲染、文件开头没被当成第一行；不存在文件保留原路径 + 重试 + 定位父目录；文档内 `../README.md` 真的打开上一级的 README。`test:live -- fs` 新增 5d：从绝对路径打开后树自动展开到 `src/main/agent.ts` 并标为当前，工作树外不造越界节点。回归 `fs` / `fsedge` / `fileref` / `linkpreview` / `detail` / `panels` / `goallinks` 共 **8 个场景全绿**。 |
+| 视觉验收 | 未单独截图（并入截图矩阵步骤）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 聊天引用仍按**当前会话 cwd** 解析；“历史消息保留来源根目录 / 工作树，不一律套当前 cwd”未做（需要消息级来源记录，属单独切片）；窗口化只覆盖已读的 2MB（目标行超出 2MB 时不在此窗口，界面仍说明总行数与截断）；真实窗口截图矩阵未采。 |
+
+## 2026-09-24 · 实施-11 H-4 第一批（资源身份多标签 + 文件变化提示）
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **资源身份（出口 8）**：新增纯模块 `shared/file-resource.ts`（`FileResourceIdentity` / `fileResourceKey` / `parseFileResourceKey` / `fileResourceLabel` / `sameResourcePath`，段用 `encodeURIComponent`，含 `\|` / 中文 / 空格的路径能准确往返）。`store`：`FilePreviewState.key` + `filePreviews`（key → 状态），`previewFile` 拿到 realpath 后用「项目 + 工作树 + canonicalPath」算身份并写入 map；`activateFileTab`（切标签从 map 恢复，**不重新读盘**）、`closeFileTab`（关当前回退到还开着的最后一个）、`closePreview` 委托。`workbench.sanitizeTabs` 丢弃无身份的旧 `file` 标签（迁移）。`RightPanel`：文件资源多标签渲染（标题=文件名 + 单独关闭）、`filePreview.key` effect 激活/新建标签、视图切换对 file **不再**建无身份标签。**变化提示（出口 6）**：主进程 `readPreview` 返回 `mtimeMs`，抽出 `resolvePreviewTarget` 与 `statPreview` 共用同一条越界校验链，新增 IPC `yan:statPreview` + preload；`FilePreviewPane` 轮询（默认 5s，探针可用 `window.__YAN_PREVIEW_POLL_MS` 放快）、就牴提示条 + 「重新加载」按钮，**不自动重载、不抢回阅读位置**。i18n 中英各 +2 键；`tools.css` 加提示条样式。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4933/4933**（新增 `test-file-resource.mjs` 22 条：键往返 / 脏输入 / 同名不同根 / 大小写不猜；`test-filerefs.mjs` +8 条：mtime 基准与预览一致、改写后 mtime 变、越界/目录/不存在都拦）；`check:css-docs` 重生成后一致。 |
+| 真实运行 | `test:live -- fs`（cost 0）新增 5b/5c 共 13 条全绿：两个文件→两个标签、标签显示各自文件名（不再是都叫「文件」）、切回旧标签恢复内容不叠副本、关一个留一个且被关的真的不在；mtime 未变不误报、mtime 不同时自动轮询提示、文案为「内容已更新」、点重载后提示消失（真的重读）。回归 `fsedge` / `fileref` / `linkpreview` / `detail` / `panels` 全绿。 |
+| 视觉验收 | 未单独截图（并入截图矩阵步骤）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | **H-4 未完**：文件树联动定位（从聊天链接打开时展开父目录并选中）、>2000 行定位窗口化、范围高亮（`#L42-L60`）、相对路径按所属消息/文档上下文解析、缺失态「定位父目录」均未做。变化提示的真实“外部进程改写”未跑（探针用真实 IPC stat + 人为旧 mtime 组合覆盖检测链，不是外部进程真的改写文件）。 |
+
+## 2026-09-24 · 实施-16 G-5 联调与证据回填
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | G-5 本身不新增产品代码：本轮把 G-1…G-3 的边界逐条对齐到已有测试与探针（映射见下），并修正两处真断言：① `goal` 场景的 ready 路径**不产生核验结论**（就绪转移不是完成回执）；② 预算停止不得改写核验（G-5 新增单测断言）。 |
+| 自动检查 | `test:unit` **4903/4903**。边界映射：旧目标读取 / 脏值 → `null`、字段 round-trip、重复/迟到 ready（`transitionId` 幂等 + `stale_goal`/`stale_mode` 拒收）、切会话隔离（新增 B 会话不写 A 核验）、停目标不改核验、四态判定规则、预算耗尽不误报完成 —— 均在 `test-goal.mjs`。 |
+| 真实运行 | **cost 1（用户批准的 `commandcode/deepseek/deepseek-v4.1-flash`）**：`test:live -- goal` 全绿（ready → 目标 executing rev1、转移仅一条、五栏到位、续行消费证据齐全；`verification` 为 `null`，证明就绪不是完成回执）；`test:live -- goalloop` 全绿（模型真的 `yan goal report` → 宿主同一次落盘算核验 → `not_checked` + 宿主时间 + 无检查项）。**cost 0**：`goallinks` / `goalpopover` / `plusmenu` 覆盖 `failed` 展示与四态文案。 |
+| 视觉验收 | 未单独截图（并入截图矩阵步骤）。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 真实模型链路只覆盖了 `not_checked`；`passed` / `failed` 的真实模型分支（模型在 report 里声明本地链接）未单独跑，目前由单测（真文件 `stat`）与 cost 0 的 `goallinks` fixture 覆盖；G-4（计划审阅关口）本轮未做，其「批准期间切档」边界不适用。 |
+
+## 2026-09-24 · 实施-16 G-2 完成核验状态 + G-3 展示
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **契约（G-2）**：`shared/goal.ts` 新增 `GOAL_VERIFICATION_STATUSES`（`not_checked` / `passed` / `failed` / `manual_review`）、`GoalVerification` / `GoalVerificationCheck` 与纯函数 `summarizeVerification`（无声明产物 → `not_checked`；只有 URL → `manual_review`；本地产物有缺失 → `failed`；本地都在但混有链接 → `manual_review`；全本地且都在 → `passed`）；`GoalState.verification` 接入 `emptyGoal` / `normalizeGoalState`（脏值 → `null`，旧文档无字段 → `null`）/ `applyReadyTransition`；`applyGoalReport` 在相位变 `completed` 时**清空**旧结论（完成回执只触发核验，不自证通过）；`goalSummary` 追加核验行。**宿主（G-2）**：`goal-service.report()` 在同一批 `verifyGoalLink` 结果上汇总写入 `verification`（与逐条 `link.check` 同一时刻、同一事实，不重算两遍）。**展示（G-3）**：`GoalSection.tsx` 增 brief 补充字段行（写了才显示）、`completed` 时的「模型报告完成（不等于已核验）」、宿主核验区块（四态文案 + detail + 逐项检查行，失败项单独标色，`title` 给全文）；`not_checked` / `manual_review` 用警示色而非成功色。i18n 中英各 +11 键；`tools.css` 加核验样式。 |
+| 自动检查 | `typecheck` / `build` 通过；`test:unit` **4900/4900**（`test-goal.mjs` 新增 17 条：四态判定规则、`not_checked` 不带检查项、完成回执清旧结论、相位与 revision 不变、旧文档/脏值 → `null`、合法结果原样读回、摘要报核验）；`check:css-docs` 重生成后一致。 |
+| 真实运行 | `test:live -- goallinks`（cost 0）新增：IPC 不丢 `verification`、`failed` 与 3 条快照覆盖、面板显示核验区块与「核验未通过」文案、失败项单独标出、`executing` 不写完成声明；`test:live -- goalpopover`（cost 0）注入五态：`completed` 写模型完成声明、`passed` 单独成行、`verification: null` 不渲染核验区块（不假装已核验）、`not_checked` 写作「未核验」、`manual_review` 写明需人工审阅、只显示用户写了的补充字段。均全绿；`plusmenu` / `goalpopover` 回归绿。 |
+| 视觉验收 | 未单独截图（样式规则已进 CSS 归属表）；深浅 × 缩放下的真实截图并入截图矩阵步骤。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | **真实模型链路未复核**：模型 `yan goal report completed` → 宿主算核验这一步，单测用真文件 `stat` 覆盖，但未跑 cost 1 的 `goal` 场景重验；核验只有 `exists` 一种判据（`nonempty_file` 等需单独验收）；目标级核验不写回 `link.check`（两者并列展示，不复用）。 |
+
+## 2026-09-24 · 实施-16 G-0 契约冻结 + G-1 持续目标补充字段
+
+用户 2026-09-24 授权「所有待办都算」并批准额度档 `commandcode/deepseek/deepseek-v4.1-flash`、H-11 原生依赖与自行安排视觉验收；本轮先落地实施-16 的前两片。
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **G-0**：实施-16 新增 §5「G-0 现状映射与契约冻结」——按符号列明就绪五项（`READY_FIELDS` / 0.95 / revision 过期拒收）、就绪幂等（`transitions` / `reports`，上限 50）、持续目标 brief、`GoalDocument v1` 持久化、链接级 `GoalLink.check` 现状、完成判据缺口（R8）、UI 写入面、mode transition，并冻结 6 条边界（写通道唯一、目标级与链接级核验分字段、版本保持 1 不做写回迁移、沿用 revision + transitionId/reportId 幂等、不动 READY_FIELDS/预算/续接上限/工具集、本轮未提交文档改动保留）。**G-1**：`PursuedBrief` 增可选 `deliverable` / `scope` / `constraints`；新增 `normalizePursuedBrief`（必填两栏 trim 后为空即 `null`；可选栏空字符串**不落字段**），`normalizeGoalState` 改用它（旧目标无新字段照常读，不写回）；`goalContinueSummary` 只在用户真写了时复述交付物/范围/约束；`yan:setGoal` handler 改走同一归一化；`+` 菜单目标表单加「补充范围」**折叠区**（默认收起，不展开仍是原来的两栏流程，符合设计真源），展开后三栏；种子消息按用户填写的字段追加「交付物/范围/约束」行；i18n 中英各 +7 键；`composer.css` 加 `.plus-extras-toggle`（复用 focus-ring 令牌）。 |
+| 自动检查 | `typecheck`（含 CSS 约定 + layer 自检）通过；`build` 成功；`test:unit` **4883/4883**（`test-goal.mjs` 新增 10 条：必填/trip、空白可选栏不落字段、缺判据拒收、空白目标拒收、非对象输入、旧目标照读、进状态、续行复述、落盘往返）；`check:css-docs` 三份重生成后一致（归属表 + 散落值清单因新增规则重生成）。 |
+| 真实运行 | `test:live -- plusmenu`（cost 0）新增 8 条 G-1 断言全绿：补充范围默认收起、展开后三栏齐全、补充栏不影响必填判定、种子消息带补充字段、**空白栏不进种子消息**、`getGoal` 里补充字段真的落到宿主目标且 `scope` 不落字段；`test:live -- goalpopover`（cost 0）全绿回归。无模型调用。 |
+| 视觉验收 | **本片未单独截图**（表单展开态的真实深浅截图并入后续截图矩阵步骤）；折叠/展开与字段可见性由探针断言覆盖，未拿 DOM 测量冒充看图。 |
+| 应用与包 | `npm run build` 已刷新 out；未打包、未重启用户窗口、未提交。 |
+| 剩余限制 | 补充字段的**读回展示**（GoalSection 逐字段显示）归 G-3；表单→种子→模型回合的端到端只有 `goal` 场景（免费档）间接覆盖，未用额度档重跑；真实截图矩阵待补。 |
+
 ## 2026-09-23 · 实施-13 V-3 剩余设置页 / V-4 资源表面结构 / V-6 文档收敛
 
 | 六栏 | 当前证据 |
@@ -256,7 +346,7 @@
 
 ## 2026-09-23 · 构建恢复与暂停交接
 
-用户要求先查构建失败并交接；两位 Luna 已中断，不再继续 UI 实施。详细状态与可复制提示词见 [构建恢复交接](交接-构建恢复与UI剩余任务-2026-09-23.md)。
+用户要求先查构建失败并交接；两位 Luna 已中断，不再继续 UI 实施。详细状态与可复制提示词见 [构建恢复交接](../archive/plan/交接-构建恢复与UI剩余任务-2026-09-23.md)（已归档，当轮快照）。
 
 | 六栏 | 当前证据 |
 |---|---|
@@ -2218,6 +2308,8 @@ README 清单覆盖活动、完成主题、16 份验收证据和 6 份外部原�
 **推理语言**的边界（别改回去）：语言是**软约束** —— 注入发生在每一轮（有 `YAN_LANG_EXT_LOG` 取证），但模型可能「用英文想、按界面语言答」（实测 deepseek-v4.1-flash 就会）。所以 `language` 探针把推理语言列为**只报告**、不作硬断言；回复语言按「多次尝试里出现过符合期望的一次」判。机制确定性由 `scripts/test-language-extension.mjs`（909 单测里的一部分）钉住。
 
 ## 当前未完成
+
+> ⚠️ **本节是 2026-09-20 前后的历史索引，已被本文件顶部条目与 [实施计划](../plan/README.md) 取代。** 其中的“按顺序待做”、单测数字和各主题状态不再代表当前事实，只作排障追溯；开工前请读本文件顶部、[实施计划](../plan/README.md) 与目标活动正文。
 
 > 本节是**状态与证据**的索引。**执行口径（会话切片、出口、六栏验收）在 [实施计划](../plan/README.md)**，对应关系：
 > N21 系列 → [实施-06](../plan/active/实施-06-上下文管理收尾.md)；P2 取证尾巴 / P0-8 / 两条遗留缺陷 → [实施-09](../plan/active/实施-09-交付与验收收尾.md)；

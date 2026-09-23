@@ -13,7 +13,9 @@ import {
   compactionTone
 } from '../../state/compaction-view'
 import { CONTEXT_STAGES, contextStageLabel, contextStageTip, nextContextStageText } from '../../state/context-view'
-import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf } from '../../../../shared/context-policy'
+import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf, incompressibleBaselineNotice } from '../../../../shared/context-policy'
+import { contextActionRows } from '../../state/context-actions-view'
+import type { ContextActionSummary } from '../../../../shared/context-actions'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import {
@@ -31,20 +33,24 @@ import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
+import { TerminalSurface } from '../terminal/TerminalSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
 import { SubagentList } from '../chat/SubagentList'
 import { shortTitle } from '../../../../shared/short-title'
+import { fileResourceLabel } from '../../../../shared/file-resource'
 import { StartPage } from './StartPage'
 import { SubagentPreview } from './SubagentPreview'
 import {
   activateWorkbenchTab,
+  activeWorkbenchTab,
   activeWorkbenchView,
   closeWorkbenchTab,
   isCurrentWorkbenchOpen,
   loadWorkbenchState,
   newWorkbenchOpenRequest,
   reconcileWorkbench,
+  resourceTabId,
   saveWorkbenchState,
   workbenchSessionKey,
   type WorkbenchOpenRequest,
@@ -74,6 +80,14 @@ export function RightPanel() {
   const browserOpen = useStore((s) => s.browserState.open)
   /** 只读文件预览：与浏览器详情占同一块区域（方案 5.2） */
   const filePreview = useStore((s) => s.filePreview)
+  /* 已打开文件的数据（key → 预览状态）：切标签时从它恢复，不重新读盘 */
+  const filePreviews = useStore((s) => s.filePreviews)
+  const activateFileTab = useStore((s) => s.activateFileTab)
+  const closeFileTab = useStore((s) => s.closeFileTab)
+  /* 交互终端（H-11）：会话列表与操件都在 store（真源在主进程 PTY 服务） */
+  const terminals = useStore((s) => s.terminals)
+  const closeTerminal = useStore((s) => s.closeTerminal)
+  const setActiveTerminal = useStore((s) => s.setActiveTerminal)
   /**
    * 审查：同一区域的**最高**优先级。
    * 它盖住其它三个的原因很实际：原生 `WebContentsView`（浏览器）永远盖在
@@ -122,8 +136,10 @@ export function RightPanel() {
     if (reviewOpen) set.add('review')
     if (browserOpen) set.add('browser')
     if (filePreview) set.add('file')
+    /* 终端：真源是宿主 PTY 会话列表，不靠一个本地开关 */
+    if (terminals.length > 0) set.add('terminal')
     return set
-  }, [reviewOpen, browserOpen, filePreview])
+  }, [reviewOpen, browserOpen, filePreview, terminals.length])
   const availableRef = useRef(available)
   availableRef.current = available
 
@@ -145,6 +161,16 @@ export function RightPanel() {
     if (!subagentPreviewId) return
     updateWorkbench((state) => activateWorkbenchTab(state, 'subagent', subagentPreviewId))
   }, [subagentPreviewId, updateWorkbench])
+
+  /*
+   * H-4：预览读到 realpath 后就有了资源身份 → 用它激活/新建文件标签。
+   * 同一个文件重复打开只是激活（不叠加副本），不同工作树的同名文件互不覆盖。
+   */
+  useEffect(() => {
+    const key = filePreview?.key
+    if (!key) return
+    updateWorkbench((state) => activateWorkbenchTab(state, 'file', key))
+  }, [filePreview?.key, updateWorkbench])
 
   const closeSubagentTab = (id: string): void => {
     setQuickMenuOpen(false)
@@ -310,12 +336,41 @@ export function RightPanel() {
                 : current === 'file' && !filePreview
                   ? (browserOpen ? 'browser' : 'tools')
                   : current
-      return next === current ? state : activateWorkbenchTab(state, next)
+      if (next === current) return state
+      /*
+       * H-4：文件标签必须带资源身份 —— 这里只负责“切到文件视图”，
+       * 标签的创建/激活统一由下面那个 `filePreview.key` 的 effect 做。
+       * 拿不到 key（还在 loading）就不动视图，等它到位，
+       * 否则会先建出一个无法区分的无身份标签。
+       */
+      if (next === 'file') {
+        return filePreview?.key ? activateWorkbenchTab(state, 'file', filePreview.key) : state
+      }
+      return activateWorkbenchTab(state, next)
     })
   }, [browserOpen, filePreview, reviewOpen, updateWorkbench])
 
   const switchWindow = (next: RightWindowView, resourceKey?: string): void => {
     setQuickMenuOpen(false)
+    /*
+     * 终端必顶带会话身份（与文件标签同一约定）：没有身份就不建标签。
+     * 这里先确定目标会话，再一次性 activate；不能先建一个无身份标签再补。
+     */
+    if (next === 'terminal') {
+      const state = useStore.getState()
+      const target = resourceKey ?? state.activeTerminalId ?? state.terminals[0]?.id
+      if (target) {
+        activateWindow('terminal', target)
+        setActiveTerminal(target)
+      } else {
+        /* 一个会话都没有 → 现开一个；标签由 startTerminal 写入的快照建立 */
+        void state.startTerminal({ cols: 80, rows: 24 }).then((snapshot) => {
+          if (snapshot) activateWindow('terminal', snapshot.id)
+        })
+      }
+      if (!open) void setRightPanelOpen(true)
+      return
+    }
     activateWindow(next, resourceKey)
 
     if (next === 'tools' || next === 'start') {
@@ -353,6 +408,24 @@ export function RightPanel() {
 
   const closeWindow = (which: Exclude<RightWindowView, 'tools' | 'start'>): void => {
     setQuickMenuOpen(false)
+    if (which === 'terminal') {
+      /* 动“关闭”就真的 kill PTY，不只是藏起来 */
+      const id = useStore.getState().activeTerminalId
+      if (id) void closeTerminal(id)
+      const rest = useStore.getState().terminals
+      const nextId = rest[0]?.id
+      if (nextId) {
+        setActiveTerminal(nextId)
+        activateWindow('terminal', nextId)
+      } else {
+        activateWindow('tools')
+      }
+      updateWorkbench((state) => {
+        const activeTab = activeWorkbenchTab(state)
+        return activeTab?.kind === 'terminal' ? closeWorkbenchTab(state, activeTab.id) : state
+      })
+      return
+    }
     if (which === 'review') {
       closeReview()
       const next = browserOpen ? 'browser' : filePreview ? 'file' : 'tools'
@@ -363,9 +436,16 @@ export function RightPanel() {
       updateWorkbench((state) => closeWorkbenchTab(state, 'browser'))
       void closeBrowser()
     } else {
-      closePreview()
-      activateWindow('tools')
-      updateWorkbench((state) => closeWorkbenchTab(state, 'file'))
+      /* 只关当前这一个文件标签；其它文件标签保留（H-4） */
+      const currentKey = filePreview?.key
+      if (currentKey) closeFileTab(currentKey)
+      else closePreview()
+      const nextTab = fileTabs.find((tab) => tab.resourceKey !== currentKey)
+      if (nextTab?.resourceKey) activateFileTab(nextTab.resourceKey)
+      else {
+        activateWindow('tools')
+      }
+      if (currentKey) updateWorkbench((state) => closeWorkbenchTab(state, resourceTabId('file', currentKey)))
     }
   }
 
@@ -377,14 +457,20 @@ export function RightPanel() {
   const toolsMode = activeView === 'tools' && open
   /* H-10a：子代理详情是工作台资源标签 `subagent:<runId>` */
   const subagentMode = activeView === 'subagent' && !!subagentPreviewId
+  /* 交互终端（H-11）：纯 DOM 资源，与文件一样走工作窗口标签 */
+  const terminalMode = activeView === 'terminal'
   /* 异步打开浏览器的瞬间仍保留面板；否则 activeView 切过去后组件会卸载。 */
   const pendingSurface = (activeView === 'browser' && !browserOpen) || (activeView === 'review' && !reviewOpen)
   /*
    * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏标签、网页满列」）。
    * 收起时整个右栏渲染为 null，布局的 `:has(.rightpanel)` 会把 --w-right 置 0。
    */
-  const hasVisibleSurface = open && (startMode || reviewMode || browserMode || fileMode || toolsMode || subagentMode || pendingSurface)
+  const hasVisibleSurface = open && (startMode || reviewMode || browserMode || fileMode || toolsMode || subagentMode || terminalMode || pendingSurface)
   const subagentTabs = workbench.tabs.filter((tab) => tab.kind === 'subagent')
+  /* 文件资源标签（实施-11 H-4）：一个文件一个标签，身份是 projectId+root+canonicalPath */
+  const fileTabs = workbench.tabs.filter((tab) => tab.kind === 'file')
+  /* 终端资源标签（H-11）：一个 PTY 会话一个标签，身份是会话 id */
+  const terminalTabs = workbench.tabs.filter((tab) => tab.kind === 'terminal')
 
   /*
    * 原生网页显隐的唯一协调点在 store（browser-visibility）：这里只报告
@@ -483,25 +569,41 @@ export function RightPanel() {
             </div>
           ) : null}
 
-          {activeView === 'file' || filePreview ? (
-            <div
-              className={`review-tab rp-window-tab ${activeView === 'file' ? 'active' : ''}`}
-              role="tab"
-              aria-selected={activeView === 'file'}
-              data-testid="right-window-tab-file"
-              onClick={() => switchWindow('file')}
-            >
-              <Icon name="folder" size={12} />
-              <span>文件</span>
-              <button
-                type="button"
-                className="review-tab-close"
-                onClick={(event) => { event.stopPropagation(); closeWindow('file') }}
-                aria-label="关闭文件窗口"
-                title="关闭文件窗口"
-              >×</button>
-            </div>
-          ) : null}
+          {fileTabs.map((tab) => {
+            const key = tab.resourceKey ?? ''
+            const state = filePreviews[key]
+            const label = state?.data?.name || fileResourceLabel(key) || '文件'
+            const active = activeView === 'file' && workbench.activeTabId === tab.id
+            return (
+              <div
+                key={tab.id}
+                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                role="tab"
+                aria-selected={active}
+                data-testid="right-window-tab-file"
+                data-file-key={key}
+                onClick={() => {
+                  activateFileTab(key)
+                  switchWindow('file', key)
+                }}
+              >
+                <Icon name="folder" size={12} />
+                <span title={state?.data?.abs || state?.path}>{label}</span>
+                <button
+                  type="button"
+                  className="review-tab-close"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    closeFileTab(key)
+                    updateWorkbench((state) => closeWorkbenchTab(state, tab.id))
+                    setQuickMenuOpen(false)
+                  }}
+                  aria-label="关闭文件"
+                  title="关闭文件"
+                >×</button>
+              </div>
+            )
+          })}
 
           {subagentTabs.map((tab) => {
             const run = subagentRuns.find((r) => r.id === tab.resourceKey)
@@ -529,6 +631,38 @@ export function RightPanel() {
             )
           })}
 
+          {terminalTabs.map((tab) => {
+            const info = terminals.find((item) => item.id === tab.resourceKey)
+            const active = activeView === 'terminal' && workbench.activeTabId === tab.id
+            return (
+              <div
+                key={tab.id}
+                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                role="tab"
+                aria-selected={active}
+                data-testid="right-window-tab-terminal"
+                data-terminal-id={tab.resourceKey}
+                onClick={() => {
+                  if (tab.resourceKey) setActiveTerminal(tab.resourceKey)
+                  switchWindow('terminal', tab.resourceKey)
+                }}
+              >
+                <Icon name="activity" size={12} />
+                <span title={info?.cwd}>{info?.title ?? t('term.tab')}</span>
+                <button
+                  type="button"
+                  className="review-tab-close"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    closeWindow('terminal')
+                  }}
+                  aria-label={t('term.close')}
+                  title={t('term.close')}
+                >×</button>
+              </div>
+            )
+          })}
+
           <span className="spacer" />
 
           <div className="rp-tool-launcher-wrap">
@@ -548,7 +682,7 @@ export function RightPanel() {
                   <span>审查</span>
                   <kbd>Ctrl+Shift+G</kbd>
                 </button>
-                <button type="button" className="rp-tool-menu-item" role="menuitem" disabled title="终端面板尚未接入">
+                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('terminal')}>
                   <Icon name="activity" size={12} />
                   <span>终端</span>
                   <kbd>Ctrl+`</kbd>
@@ -587,6 +721,7 @@ export function RightPanel() {
       {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
       {reviewMode ? <ReviewPanel /> : null}
+      {terminalMode ? <TerminalSurface /> : null}
       {browserMode ? <BrowserSurface /> : null}
       {pendingSurface ? (
         <div className="rp-pending-surface" data-testid="right-window-pending">
@@ -1353,8 +1488,37 @@ function ContextSection() {
   const compaction = session?.compaction
   const lastCompaction = session?.lastCompaction
 
+  /*
+   * 三类整理的动作账本（实施-11 C-2b）。
+   *
+   * 为什么要单独读：`tool-sweep`（清扫）与 `episode-fold`（状态刷新）
+   * **不产生** pi 的 `compaction_*` 事件 —— 只看 `lastCompaction` 的话，
+   * 「清扫跑了、状态刷新没跑」和「两个都没跑」在界面上长得一模一样。
+   * 账本由扩展写、宿主读；读不到（还没发生过 / 旧会话）就是空统计。
+   */
+  const [actions, setActions] = useState<ContextActionSummary | null>(null)
+  useEffect(() => {
+    let live = true
+    void window.yan
+      .contextActions()
+      .then((value) => {
+        if (live) setActions(value)
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [session?.sessionId, lastCompaction?.endedAt, lastCompaction?.status])
+  const actionRows = useMemo(() => contextActionRows(t, actions, lastCompaction), [t, actions, lastCompaction])
+
   /* 工作集刻度的下一步（N21-3）：只预报**真的会执行**的阶段 */
   const nextStage = policy ? nextContextStage(known ? used : null, policy.budget, policy.kinds) : null
+  /*
+   * 低回收提示（C-6）：上一次压缩后仍停在软线 80% 以上、且新增还没到门槛时，
+   * 直说“为什么现在不着手”。数据不齐时不显示（不编原因）。
+   */
+  const incompressible =
+    policy && incompressibleBaselineNotice(known ? used : null, policy.budget, lastCompaction?.afterTokens)
 
   const nf = new Intl.NumberFormat('en-US')
 
@@ -1493,10 +1657,23 @@ function ContextSection() {
       {/*
         工作集模式下的「下一步」（N21-3）：只预报真的会执行的那个阶段。
         已过线时改说“已达工作集上限” —— 站在线上还报“约 240k 时”是废话。
+
+        C-6：低回收且新增不足时**抑制这一行** —— 它上面会写“本回合结束后自动压缩”，
+        而防抖其实把这次压缩延后了，两行摆在一起是自相矛盾的。
       */}
-      {workingSetMode && nextStage ? (
+      {workingSetMode && nextStage && !incompressible ? (
         <div className={nextStage.reached ? 'rp-dim warn' : 'rp-dim'} data-testid="ctx-next-stage" data-kind={nextStage.kind} data-reached={nextStage.reached ? '1' : '0'}>
           {nextContextStageText(t, nextStage)}
+        </div>
+      ) : null}
+
+      {/*
+        低回收提示（C-6）：上次压缩压不动、新增也还没到门槛时，说清“为什么不着手”——
+        否则界面停在“已达工作集”却不动作，看起来像坏了。
+      */}
+      {workingSetMode && incompressible ? (
+        <div className="rp-dim warn" data-testid="ctx-incompressible">
+          {t('ctx.incompressible')}
         </div>
       ) : null}
 
@@ -1788,6 +1965,29 @@ function ContextSection() {
               ) : null}
             </>
           ) : null}
+
+          {/*
+            C-2b：三类整理**分开**显示。
+            前两类来自扩展写的动作账本，第三类来自 pi 事件 —— 行首没有合并，
+            所以“清扫跑了但状态没刷新”看得出来。没发生过就写「未发生」，
+            不用空白让它看起来像“没这一项”。
+          */}
+          <div className="rp-group" data-testid="ctx-actions-group">
+            {t('ctx.actions')}
+          </div>
+          {actionRows.map((row) => (
+            <div key={row.kind} data-testid={`ctx-action-${row.kind}`}>
+              <div
+                className="rp-kv"
+                title={row.fromLedger ? t('ctx.actionsTip') : t('ctx.lastCompactionTip')}
+              >
+                <span className="rp-k">{t(row.labelKey as MessageKey)}</span>
+                <span className="spacer" />
+                <span className="rp-v">{row.countText ?? t('ctx.actionNone')}</span>
+              </div>
+              {row.detail ? <div className="rp-dim">{row.detail}</div> : null}
+            </div>
+          ))}
         </div>
       ) : null}
     </Section>

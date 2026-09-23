@@ -37,6 +37,8 @@ import type { KnowledgeKind } from './project-memory'
 /* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
+import type { BrowserLoadFailure } from './browser-navigation'
+import type { ContextActionSummary } from './context-actions'
 import type { GoalState, PursuedBrief } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
@@ -1444,6 +1446,44 @@ export interface PiProbe {
 /* 内置浏览器 */
 
 /** 应用内浏览器的可观察状态。 */
+/**
+ * 交互终端（实施-11 H-11）。
+ *
+ * 与浏览器 / 文件同属**资源**：有自己的稳定身份（`id`）与标题，可多标签、
+ * 可重连。它是宿主 PTY 服务的前端投影 —— 渲染端只拿这三个字段，
+ * 拿不到也不需要进程句柄。
+ */
+export interface TerminalSessionInfo {
+  id: string
+  title: string
+  shell: string
+  cwd: string
+  cols: number
+  rows: number
+  alive: boolean
+  exitCode?: number | null
+}
+
+/** 重连 / 首次打开时的一份完整快照（含已有输出的尾部） */
+export interface TerminalSnapshot extends TerminalSessionInfo {
+  buffer: string
+  /** 缓冲对应的输出序号（与实时推送同一单调序列，重连时用来去重） */
+  seq: number
+}
+
+export interface TerminalStartRequest {
+  cwd?: string
+  fallbackCwd?: string
+  cols?: number
+  rows?: number
+}
+
+/** 终端能力可用性（原生依赖装不上时为 false，并附上原因） */
+export interface TerminalAvailability {
+  available: boolean
+  error?: string
+}
+
 export interface BrowserState {
   open: boolean
   url: string
@@ -1471,6 +1511,8 @@ export interface BrowserState {
   nativeBounds?: BrowserBounds
   /** 统一标签栏当前激活的是内嵌 WebContentsView 还是外部 Chrome 代理标签 */
   mode?: 'embedded' | 'external'
+  /** 当前活动内嵌标签的主框架加载失败（外部 Chrome 不适用） */
+  loadError?: BrowserLoadFailure
   /** 外部 Chrome 连接状态；连接存在时保留，与当前是否激活无关 */
   external?: BrowserExternalState
 }
@@ -1540,6 +1582,8 @@ export interface BrowserTabState {
   loading: boolean
   canGoBack: boolean
   canGoForward: boolean
+  /** 主框架加载失败（H-9 第二阶段）：界面据此给出重试 / 外部打开，并保留原 URL */
+  loadError?: BrowserLoadFailure
 }
 
 export interface BrowserObservation {
@@ -1798,6 +1842,11 @@ export type MainPushBody =
   | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
   /** 内置浏览器状态（WebContentsView 与 pi browser extension 共用） */
   | { ch: 'browser-state'; payload: BrowserState }
+  /**
+   * 交互终端的实时输出 / 退出（H-11）。
+   * 按会话身份 `id` 分流：多标签时每条数据只进它自己的 xterm。
+   */
+  | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit'; data?: string; seq?: number; exitCode?: number | null } }
   /**
    * 主进程自己产生的日志（未捕获异常 / 未处理 Promise）。
    * 为什么要走 UI：Electron 默认会为 uncaughtException 弹一个原生
@@ -2452,9 +2501,10 @@ export interface YanBridge {
    */
   getGoal(): Promise<{ goal: GoalState; mode: WorkModeState }>
   /**
-   * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果。
+   * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果 + 可选补充。
    *
-   * 两栏都必填：允许缺「可衡量的成果」等于造一个永远没法验收的目标。
+   * 前两栏必填：允许缺「可衡量的成果」等于造一个永远没法验收的目标。
+   * 交付物 / 范围 / 约束（实施-16 G-1）可选，缺省就是用户没写。
    * 一旦设上，非自主档也会在回合收尾后继续被叫醒（与档位正交）。
    */
   setGoal(brief: PursuedBrief): Promise<
@@ -2683,7 +2733,9 @@ export interface YanBridge {
    * 相对路径按会话 cwd 解析，绝对路径也允许（但一律 realpath 校验）。
    * `line` 来自 `path:42` 形式，界面用它滚到目标行。
    */
-  readPreview(path: string, line?: number, cwd?: string): Promise<FilePreview>
+  readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
+  /** 只查文件变没变（H-4 变化提示）：只 stat，不读内容 */
+  statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
   /** 自动压缩的生效设置与触发点（只读 pi 的 settings.json） */
   compactionInfo(contextWindow: number): Promise<CompactionInfo>
   /**
@@ -2703,6 +2755,11 @@ export interface YanBridge {
    * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
    */
   contextBudget(contextWindow: number): Promise<ContextPolicyResolution>
+  /**
+   * 三类整理动作账本（实施-11 C-2b）。读取的是**当前活动会话**：
+   * 会话身份由主进程决定，界面不自报（与 `contextBudget` 同一约定）。
+   */
+  contextActions(): Promise<ContextActionSummary>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /* 子代理（方案第 8 节） */
@@ -2752,6 +2809,20 @@ export interface YanBridge {
     setBounds(bounds: BrowserBounds): Promise<void>
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
     setVisible(visible: boolean): Promise<void>
+  }
+  /**
+   * 交互终端（实施-11 H-11）：宿主 PTY 服务的薄接口。
+   * 写入 / 缩放 / 关闭都按会话身份 `id`；不暴露任何进程句柄。
+   */
+  terminal: {
+    available(): Promise<TerminalAvailability>
+    list(): Promise<TerminalSnapshot[]>
+    start(request?: TerminalStartRequest): Promise<TerminalSnapshot | null>
+    write(id: string, data: string): Promise<boolean>
+    resize(id: string, cols: number, rows: number): Promise<boolean>
+    kill(id: string): Promise<boolean>
+    /** 重新订阅一个已存在会话（重连）：回放已有缓冲并返回快照 */
+    attach(id: string): Promise<TerminalSnapshot | null>
   }
 }
 
@@ -2946,7 +3017,19 @@ export interface FilePreview {
   /** 只对文本文件有值（前 2MB） */
   text?: string
   truncated?: boolean
+  /** 读到的内容里有多少行（截断时是**已读部分**的行数，界面据此说明） */
+  totalLines?: number
+  /** 大文件窗口化（H-4）：本次 text 从第几行开始（1 起；缺省即从第 1 行） */
+  windowStart?: number
+  /** 窗口的最后一行（含） */
+  windowEnd?: number
+  /** 修改时间（ms）：变化提示（H-4）拿它比对，不靠重新读内容 */
+  mtimeMs?: number
   /** 从 `path:42` 解析出的行号（1 起） */
   line?: number
+  /** `#L42-L60` 的范围末行（仅在真的比 line 长时出现，H-4 范围高亮） */
+  lineEnd?: number
+  /** 读不到时的父目录（H-4「定位父目录」）；越界类错误不带 */
+  dir?: string
   error?: string
 }

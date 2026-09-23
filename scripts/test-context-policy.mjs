@@ -25,7 +25,10 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     rearmAfterCompaction,
     INITIAL_POLICY_STATE,
     POLICY_COOLDOWN_MS,
-    POLICY_REARM_MS
+    POLICY_REARM_MS,
+    POLICY_RESET_RATIO,
+    policyGrowthMinTokens,
+    incompressibleBaselineNotice
   } = mod
   const { activeContextPolicy } = mainMod
 
@@ -584,5 +587,97 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
         LARGE_PRESET_NAME_KEYS.long === 'set.ctxModelPresetLong',
       '档位名 i18n key 与设置页按钮同源（不手拼字符串）'
     )
+  }
+
+  /*
+   * C-6 前置核实：大窗口档不会被输出预留吞掉。
+   *
+   * 之前悬着的问题是“本次请求实际输出预留是多少”——如果是模型能力字段
+   * 393216 那种量级，1M 减去预留与余量后只剩 586784，连 600K 都要下调。
+   * 核实结果（pi 0.85.1，见实施-11 §C-6 前置核实）：压缩守护用
+   * `reserveTokens=16384`，请求的 maxTokens 就是 `model.maxTokens` 能力值、
+   * 不是每次硬预留；所以 1M − 16384 − 20k 余量 ≈ 963k，600K/700K 都有空间。
+   * 这里把“预留与余量确实被减掉了、但档位仍能到位”钉在预算函数上。
+   */
+  console.log('\n--- C-6 前置核实：大窗口档与输出预留 ---')
+  {
+    const balanced = contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.balanced })
+    const long = contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.long })
+    ok(balanced?.workingSet === 600_000, `1M + 均衡档：工作集到 600K（${balanced?.workingSet}）`)
+    ok(long?.workingSet === 700_000, `1M + 长材料档：工作集到 700K（${long?.workingSet}）`)
+    ok(
+      !!long && long.workingSet + long.responseReserve + long.safetyMargin <= long.contextWindow,
+      '先减输出预留与安全余量，档位不能突破它们'
+    )
+    ok(!!long && long.responseReserve === 32_000, '1M 下输出预留仍按公式封顶 32K（不是模型能力字段）')
+}
+
+  /*
+   * C-6：压缩防抖的“新增量”与“回落”两条放行口径。
+   */
+  console.log('\n--- C-6 整轮压缩防抖（回落 80% / 新增门槛）---')
+  {
+    const b = contextBudget(1_000_000)
+    ok(policyGrowthMinTokens(b) === 16_000, `默认软线 240K：新增门槛取 16K（${policyGrowthMinTokens(b)}）`)
+    const big = contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, ...LARGE_CONTEXT_POLICY_PRESETS.balanced })
+    ok(policyGrowthMinTokens(big) === 30_000, `600K 软线：新增门槛 = 软线×5% = 30K（${policyGrowthMinTokens(big)}）`)
+    const tiny = contextBudget(1_000_000, { ...DEFAULT_CONTEXT_POLICY, workingSetCap: 6_000 })
+    ok(policyGrowthMinTokens(tiny) === 6_000, `工作集 6K（低于基线）：门槛夹在软线以内，不高于 6000（${policyGrowthMinTokens(tiny)}）`)
+
+    const step = (tokens, over = {}) =>
+      contextPolicyStep({
+        state: INITIAL_POLICY_STATE,
+        tokens,
+        budget: b,
+        policy: DEFAULT_CONTEXT_POLICY,
+        busy: false,
+        now: 1_000_000,
+        ...over
+      })
+
+    /* 低回收：压完还在 232K（软线 240K 的 96%），此后只长了 2K → 不重复压 */
+    const low = rearmAfterCompaction({ armed: false, lastTriggerAt: 1_000_000 }, 232_000)
+    ok(low.armed === true && low.tokensAfterCompaction === 232_000, '压缩成功记录实际占用（232K）')
+    const cooled = 1_000_000 + POLICY_COOLDOWN_MS + 1
+    ok(
+      contextPolicyStep({ state: low, tokens: 234_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === null,
+      '低回收 + 低新增：冷却到了也不重复压'
+    )
+    /* 此后新增到 16K → 放行（232K + 16K = 248K，仍在软线之上） */
+    ok(
+      contextPolicyStep({ state: low, tokens: 248_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'compact',
+      '此后新增达 16K：允许再压'
+    )
+    /* 回落到软线 80% 以下 → 放行（此时 tokens 仍过线，但基准已重置） */
+    const fell = rearmAfterCompaction({ armed: false, lastTriggerAt: 1_000_000 }, 150_000)
+    ok(
+      contextPolicyStep({ state: fell, tokens: 240_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'compact',
+      '回落到软线 80% 以下：压力解除，允许再压'
+    )
+    /* 重试窗口仍然有效（上次可能压根没压成） */
+    ok(
+      contextPolicyStep({
+        state: low,
+        tokens: 241_000,
+        budget: b,
+        policy: DEFAULT_CONTEXT_POLICY,
+        busy: false,
+        now: 1_000_000 + POLICY_REARM_MS
+      }).trigger === 'compact',
+      '重试窗口到了：即使低回收也允许再试一次'
+    )
+    /* 物理兜底不受防抖限制 */
+    ok(
+      contextPolicyStep({ state: low, tokens: 900_000, budget: b, policy: DEFAULT_CONTEXT_POLICY, busy: false, now: cooled }).trigger === 'emergency',
+      '硬压力不被防抖放行拦住'
+    )
+
+    /* 界面提示：低回收 + 新增不足 → true；数据不齐 → false */
+    ok(incompressibleBaselineNotice(234_000, b, 232_000) === true, '低回收且新增不足 → 显示“主要为不可压缩基础开销”')
+    ok(incompressibleBaselineNotice(256_000, b, 232_000) === false, '新增到了门槛 → 不再显示（它又要动手了）')
+    ok(incompressibleBaselineNotice(234_000, b, 100_000) === false, '上次回收很好 → 不显示')
+    ok(incompressibleBaselineNotice(234_000, b, undefined) === false, 'pi 没给压缩后占用 → 不显示（不编原因）')
+    ok(incompressibleBaselineNotice(null, b, 232_000) === false, '用量未知 → 不显示')
+    ok(POLICY_RESET_RATIO === 0.8, '回落比例是文档里的 80%')
   }
 }

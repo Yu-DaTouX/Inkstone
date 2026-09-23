@@ -4289,7 +4289,7 @@ export class AgentController extends EventEmitter {
          * 压在工作集线上时，那条路永远不会成立，策略会退化成 5 分钟一次。
          */
         if (next.last?.status === 'completed') {
-          this.policyState = rearmAfterCompaction(this.policyState)
+          this.policyState = rearmAfterCompaction(this.policyState, next.last?.afterTokens ?? null)
         }
       }
     }

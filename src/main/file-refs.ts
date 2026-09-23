@@ -19,11 +19,21 @@
  *   · 读取只认 `granted` 里的 realpath
  */
 import { open, realpath, stat } from 'node:fs/promises'
-import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path'
+import type { Stats } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import type { FilePreview, FileRefInfo, FileRefKind, FileTextResult } from '../shared/ipc'
 
 /** 单文件文本上限（方案 5.3 建议预览 2MB；超限截断，**不**因此拒绝引用） */
 const MAX_TEXT = 2 * 1024 * 1024
+/**
+ * 大文件窗口化阈值（H-4）：超过这么多行就不把全文铺给界面。
+ * 与界面一次渲染上限（`MAX_RENDER_LINES`）保持一致，
+ * 否则会出现「界面只画前 2000 行、目标在第 4000 行」这种无法定位的组合。
+ */
+const WINDOW_TRIGGER_LINES = 2000
+/** 窗口在目标行前 / 后各留多少行（上下文够用，又不会把窗口变成全文） */
+const WINDOW_BEFORE = 200
+const WINDOW_AFTER = 400
 /** 图片上限（方案 5.1 建议 20MB） */
 const MAX_IMAGE = 20 * 1024 * 1024
 /** 其它文件的上限（防呆：不要把整个磁盘镜像拖进来） */
@@ -212,6 +222,73 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
 }
 
 /**
+ * 解析一个预览目标：越界 / 不存在 / 不是普通文件都在这里拦下。
+ *
+ * 抽出来是为了让「读内容」与「只查变化」（`statPreview`）共用同一条校验链 ——
+ * 两条路径各写一份，迟早会出现一边能读到工作区外的文件。
+ */
+async function resolvePreviewTarget(
+  rawPath: string,
+  cwd: string
+): Promise<
+  | { ok: true; real: string; st: Stats }
+  | { ok: false; error: string; dir?: string }
+> {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: '路径为空' }
+  if (rawPath.includes('\0')) return { ok: false, error: '路径非法' }
+
+  const absolute = isAbsolute(rawPath)
+  const target = absolute ? rawPath : join(cwd || process.cwd(), rawPath.split('/').join(sep))
+
+  /* 相对路径先做一次字符串级检查（早退，少一次系统调用） */
+  if (!absolute && rawPath.replace(/\\/g, '/').split('/').includes('..')) {
+    /* 越界不告诉界面父目录：那等于把工作区外的路径当导航目标泄露出去 */
+    return { ok: false, error: '路径越界' }
+  }
+
+  let real: string
+  try {
+    real = await realpath(target)
+  } catch {
+    /*
+     * 文件不在了也要能“去它的目录看看”（H-4 出口 7）：
+     * 这里给的是**请求路径解析后**的父目录，不是工作区外的任意位置。
+     */
+    return { ok: false, error: '文件不存在', dir: dirname(target) }
+  }
+
+  if (!absolute) {
+    const root = await realpath(cwd || process.cwd()).catch(() => resolve(cwd || process.cwd()))
+    if (real !== root && !real.startsWith(root + sep)) return { ok: false, error: '路径越界' }
+  }
+
+  let st
+  try {
+    st = await stat(real)
+  } catch {
+    return { ok: false, error: '无法读取文件信息', dir: dirname(real) }
+  }
+  if (st.isDirectory()) return { ok: false, error: '这是文件夹', dir: dirname(real) }
+  if (!st.isFile()) return { ok: false, error: '不是普通文件', dir: dirname(real) }
+  return { ok: true, real, st }
+}
+
+/**
+ * 只读查一下文件变没变（H-4 的「内容已更新」提示）。
+ *
+ * 只 `stat`，**不读内容**：轮询时不能为了看一眼 mtime 就把 2MB 再读一遍。
+ * 与 `readPreview` 同一条校验链，所以工作区外的相对路径一样会被拦。
+ */
+export async function statPreview(
+  rawPath: string,
+  cwd: string
+): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }> {
+  const resolved = await resolvePreviewTarget(rawPath, cwd)
+  if (!resolved.ok) return { ok: false, abs: '', mtimeMs: 0, size: 0, error: resolved.error }
+  return { ok: true, abs: resolved.real, mtimeMs: resolved.st.mtimeMs, size: resolved.st.size }
+}
+
+/**
  * 只读预览一个链接指向的文件（方案 5.2）。
  *
  * 与附件授权的区别（很重要，别合并）：
@@ -222,46 +299,26 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
  * 相对路径按**会话 cwd** 解析，并且解析后必须落在 cwd 内 ——
  * 否则 `[点我](../../../../etc/passwd)` 这种写法就成了任意文件读取。
  */
-export async function readPreview(rawPath: string, cwd: string, line?: number): Promise<FilePreview> {
-  const bad = (error: string): FilePreview => ({
+export async function readPreview(
+  rawPath: string,
+  cwd: string,
+  line?: number,
+  lineEnd?: number
+): Promise<FilePreview> {
+  const bad = (error: string, dir?: string): FilePreview => ({
     ok: false,
     path: rawPath,
     abs: '',
     name: basename(rawPath) || rawPath,
     size: 0,
     kind: 'other',
-    error
+    error,
+    ...(dir ? { dir } : {})
   })
 
-  if (typeof rawPath !== 'string' || !rawPath.trim()) return bad('路径为空')
-  if (rawPath.includes('\0')) return bad('路径非法')
-
-  const absolute = isAbsolute(rawPath)
-  const target = absolute ? rawPath : join(cwd || process.cwd(), rawPath.split('/').join(sep))
-
-  /* 相对路径先做一次字符串级检查（早退，少一次系统调用） */
-  if (!absolute && rawPath.replace(/\\/g, '/').split('/').includes('..')) return bad('路径越界')
-
-  let real: string
-  try {
-    real = await realpath(target)
-  } catch {
-    return bad('文件不存在')
-  }
-
-  if (!absolute) {
-    const root = await realpath(cwd || process.cwd()).catch(() => resolve(cwd || process.cwd()))
-    if (real !== root && !real.startsWith(root + sep)) return bad('路径越界')
-  }
-
-  let st
-  try {
-    st = await stat(real)
-  } catch {
-    return bad('无法读取文件信息')
-  }
-  if (st.isDirectory()) return bad('这是文件夹')
-  if (!st.isFile()) return bad('不是普通文件')
+  const resolved = await resolvePreviewTarget(rawPath, cwd)
+  if (!resolved.ok) return bad(resolved.error, resolved.dir)
+  const { real, st } = resolved
 
   const name = basename(real)
   const { kind } = classify(name)
@@ -271,8 +328,12 @@ export async function readPreview(rawPath: string, cwd: string, line?: number): 
     abs: real,
     name,
     size: st.size,
+    /* 变化提示（H-4）拿它比对：内容被外部改写时 mtime 会变 */
+    mtimeMs: st.mtimeMs,
     kind,
-    ...(line && Number.isFinite(line) ? { line } : {})
+    ...(line && Number.isFinite(line) ? { line } : {}),
+    /* 范围高亮（H-4）：只在真的比 line 长时才带出去 */
+    ...(line && lineEnd && Number.isFinite(lineEnd) && lineEnd > line ? { lineEnd } : {})
   }
 
   /* 只有文本给内容；图片/二进制/PDF 由界面显示元信息 + 打开位置 */
@@ -284,7 +345,31 @@ export async function readPreview(rawPath: string, cwd: string, line?: number): 
     try {
       const buf = Buffer.alloc(size)
       await fh.read(buf, 0, size, 0)
-      return { ...base, text: buf.toString('utf8'), truncated: st.size > MAX_TEXT }
+      const text = buf.toString('utf8')
+      const truncated = st.size > MAX_TEXT
+      const allLines = text.split('\n')
+      /*
+       * 大文件定位（H-4）：超过阈值就不把几万行全铺给界面 ——
+       * 只围绕目标行给一段**真实切出来**的窗口，并说清“这是第几到第几行、共多少行”。
+       * 不估算滚动位置：窗口的每行都是读出来的，行号也是真的。
+       */
+      const anchor = line && Number.isFinite(line) ? line : undefined
+      if (anchor && anchor > WINDOW_TRIGGER_LINES) {
+        const start = Math.max(1, anchor - WINDOW_BEFORE)
+        const end = Math.min(
+          allLines.length,
+          Math.max(anchor, lineEnd ?? anchor) + WINDOW_AFTER
+        )
+        return {
+          ...base,
+          text: allLines.slice(start - 1, end).join('\n'),
+          truncated,
+          totalLines: allLines.length,
+          ...(start > 1 ? { windowStart: start } : {}),
+          windowEnd: end
+        }
+      }
+      return { ...base, text, truncated, totalLines: allLines.length }
     } finally {
       await fh.close()
     }

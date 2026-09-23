@@ -23,17 +23,18 @@
 | `rail.css` | 1 | 0 | 186 | 130 | 0 | 0 |
 | `chat.css` | 30 | 10 | 175 | 118 | 12 | 0 |
 | `composer.css` | 6 | 1 | 158 | 109 | 1 | 0 |
-| `tools.css` | 9 | 3 | 348 | 239 | 7 | 5 |
-| `browser.css` | 1 | 1 | 41 | 27 | 0 | 0 |
+| `tools.css` | 9 | 3 | 358 | 248 | 7 | 5 |
+| `browser.css` | 1 | 1 | 42 | 28 | 0 | 0 |
+| `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `review.css` | 4 | 0 | 247 | 172 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **80** | **28** | **1510** | **1026** | **49** | **6** |
+| **合计** | **80** | **28** | **1521** | **1036** | **49** | **6** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
 | 值 | 类别 | 出现次数 | 文件 |
 | --- | --- | ---: | --- |
-| `5px` | length | 107 | app.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, settings.css, shell.css, stage1.css, tools.css |
+| `5px` | length | 108 | app.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, settings.css, shell.css, stage1.css, tools.css |
 | `10px` | length | 52 | browser.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, stage1.css, tools.css |
 | `26px` | length | 30 | app.css, browser.css, composer.css, rail.css, redesign.css, review.css, settings.css, shell.css, tools.css |
 | `20px` | length | 28 | app.css, chat.css, composer.css, rail.css, redesign.css, review.css, shell.css, tools.css |
@@ -146,4 +147,4 @@
 ## 5. 概况
 
 - 令牌总数：83（被引用 83）
-- 令牌引用点：3120（含组件内联 style）
+- 令牌引用点：3167（含组件内联 style）

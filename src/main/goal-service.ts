@@ -33,6 +33,7 @@ import {
   applyRepeatFailure,
   checkGoalBudget,
   sanitizeGoalBudget,
+  summarizeVerification,
   AUTONOMOUS_CONTINUE_LIMIT,
   checkGoalReport,
   checkReadySubmission,
@@ -683,6 +684,21 @@ export class GoalStore {
        * 而不是永远停在当初那一次的结果上。
        */
       entry.goal.links = entry.goal.links.map((link) => ({ ...link, check: verifyGoalLink(link, at) }))
+      /*
+       * 目标级核验（实施-16 G-2）：把刚刚算出的逐条只读结果汇总成四种状态之一。
+       * 与 links 的 check 用同一批事实，不再算第二遍（否则两处会不一致）；
+       * 它是宿主写的事实，模型报告不能直接提交结论，也不单独推 revision。
+       */
+      entry.goal.verification = summarizeVerification(
+        entry.goal.links.map((link) => ({
+          target: link.target,
+          kind: link.kind,
+          ok: link.check?.ok === true,
+          detail: link.check?.detail ?? '未核验',
+          at
+        })),
+        at
+      )
       entry.reports[replayId ?? randomUUID()] = { at, result: entry.goal }
       /*
        * 目标进终态（completed / blocked）时，**同一次落盘里**把还没发出的续行清掉：

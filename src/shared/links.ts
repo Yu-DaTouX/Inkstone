@@ -19,10 +19,18 @@
 
 export type LinkTarget =
   | { kind: 'url'; url: string }
-  | { kind: 'file'; path: string; line?: number }
+  | { kind: 'file'; path: string; line?: number; lineEnd?: number }
   | { kind: 'invalid'; reason: 'empty' | 'protocol' }
 
-export function parseFileLink(value: string): { path: string; line?: number } | undefined {
+/**
+ * 解析 `path#L42` / `path#L42-L60`。
+ *
+ * `lineEnd` 只在**真的有范围**时出现（`#L42-L42` 与 `#L42` 一样）——
+ * 界面与预览层不必再自己判断“范围是不是就是单行”。
+ */
+export function parseFileLink(
+  value: string
+): { path: string; line?: number; lineEnd?: number } | undefined {
   const hash = value.indexOf('#')
   const destination = hash < 0 ? value : value.slice(0, hash)
   if (destination.includes('?')) return undefined
@@ -43,7 +51,7 @@ export function parseFileLink(value: string): { path: string; line?: number } | 
   const line = Number(match[1])
   const end = match[2] === undefined ? line : Number(match[2])
   if (!Number.isSafeInteger(line) || !Number.isSafeInteger(end) || end < line) return undefined
-  return { path, line }
+  return { path, line, ...(end > line ? { lineEnd: end } : {}) }
 }
 
 /** 明确否决的协议：能在渲染端执行脚本或内联数据的一律不放行 */
@@ -134,7 +142,12 @@ export function classifyLink(href: string | undefined | null): LinkTarget {
       const parsed = parseFileLink(raw.slice('file://'.length))
       if (parsed) {
         const path = /^\/[a-zA-Z]:[\\/]/.test(parsed.path) ? parsed.path.slice(1) : parsed.path
-        return { kind: 'file', path, ...(parsed.line ? { line: parsed.line } : {}) }
+        return {
+          kind: 'file',
+          path,
+          ...(parsed.line ? { line: parsed.line } : {}),
+          ...(parsed.lineEnd ? { lineEnd: parsed.lineEnd } : {})
+        }
       }
       const { path, line } = splitLine(fileUrlToPath(raw))
       return { kind: 'file', path, ...(line ? { line } : {}) }

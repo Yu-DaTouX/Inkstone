@@ -742,6 +742,52 @@ export async function runGoalTests(ok) {
       )
       ok(shared.normalizeGoalState({ pursue: 'yes' }).pursue === false, '脏值不凭空造一个持续目标')
 
+      /* ------------------------------------------ G-1 持续目标补充字段（实施-16） */
+      const richBrief = shared.normalizePursuedBrief({
+        goal: '  完成所有待办  ',
+        outcome: '测试全绿 + 打包成功',
+        deliverable: ' 可运行安装包 ',
+        scope: '   ',
+        constraints: '不新增模型工具'
+      })
+      ok(
+        richBrief?.goal === '完成所有待办' && richBrief.outcome === '测试全绿 + 打包成功',
+        'G-1：必填两栏 trim 后保留'
+      )
+      ok(richBrief?.deliverable === '可运行安装包', 'G-1：交付物 trim 后保留')
+      ok(
+        richBrief?.scope === undefined && richBrief.constraints === '不新增模型工具',
+        'G-1：空白可选栏不落字段（不造用户没写过的句子）'
+      )
+      ok(shared.normalizePursuedBrief({ goal: '只有目标' }) === null, 'G-1：缺达成判据仍然拒收')
+      ok(shared.normalizePursuedBrief({ goal: ' ', outcome: 'x' }) === null, 'G-1：空白目标不算写了')
+      ok(shared.normalizePursuedBrief(null) === null, 'G-1：非对象输入返回 null')
+      ok(
+        shared.normalizeGoalState({ goalId: 'g-old', brief: { goal: '旧目标', outcome: '旧判据' } }).brief
+          ?.deliverable === undefined,
+        'G-1：旧目标（只有两栏）照常读，不迁移不报错'
+      )
+
+      /* 补充字段：进状态 → 落盘往返 → 续行正文复述 */
+      const richGoal = await store.startPursued(key, {
+        goal: '把补充字段做出来',
+        outcome: '表单能填、落盘能读',
+        deliverable: '目标表单 + 探针',
+        constraints: '不新增依赖'
+      })
+      ok(richGoal.brief?.deliverable === '目标表单 + 探针', 'G-1：补充字段进目标状态')
+      const richSummary = shared.goalContinueSummary(richGoal, 1)
+      ok(
+        richSummary.includes('交付物：目标表单 + 探针') && richSummary.includes('约束：不新增依赖'),
+        'G-1：续行正文复述补充字段'
+      )
+      const richBack = new service.GoalStore({ root })
+      await richBack.load()
+      ok(
+        richBack.state(key).brief?.deliverable === '目标表单 + 探针',
+        'G-1：补充字段真的写进 goals.json'
+      )
+
       /* ------------------------------------------------ U-3b 结构化链接 */
       {
         const linksOk = [
@@ -869,6 +915,120 @@ export async function runGoalTests(ok) {
                 undefined,
               '旧文档里的链接没有核验结果也不报错'
             )
+
+            /* ─────────── G-2 目标级完成核验（实施-16） ─────────── */
+            ok(
+              g2.verification?.status === 'failed',
+              `G-2：报告里有不存在的本地产物 → verification=failed（实际 ${g2.verification?.status}）`
+            )
+            ok(
+              g2.verification?.checks.length === 3,
+              'G-2：核验快照覆盖当前声明的全部产物（与 links 同一批事实）'
+            )
+            ok(
+              (g2.verification?.detail ?? '').includes('不存在'),
+              'G-2：失败原因可读（界面拿它做提示）'
+            )
+            ok(
+              after.verification?.status === 'failed',
+              'G-2：文件被删后再次报告，核验跟着变（不留在旧结论上）'
+            )
+            ok(
+              svc.state(keyA).verification?.status === 'failed',
+              'G-2：相对路径不存在也计失败（不因模型报了完成就当通过）'
+            )
+
+            /* 判定规则（纯函数）：四种状态各有明确入口 */
+            const V = shared.summarizeVerification
+            ok(V([], 7).status === 'not_checked', 'G-2：没有任何声明产物 → not_checked')
+            ok(V([], 7).checks.length === 0 && V([], 7).at === 7, 'G-2：not_checked 不带检查项，时间由宿主填')
+            ok(
+              V([{ target: 'https://x.dev', kind: 'url', ok: true, detail: '', at: 7 }], 7).status ===
+                'manual_review',
+              'G-2：只声明了链接 → manual_review（不联网就不冒充通过）'
+            )
+            ok(
+              V([{ target: 'a.ts', kind: 'file', ok: true, detail: '', at: 7 }], 7).status === 'passed',
+              'G-2：本地产物都存在 → passed（只证明存在）'
+            )
+            ok(
+              V(
+                [
+                  { target: 'a.ts', kind: 'file', ok: true, detail: '', at: 7 },
+                  { target: 'https://x.dev', kind: 'url', ok: true, detail: '', at: 7 }
+                ],
+                7
+              ).status === 'manual_review',
+              'G-2：本地都在但还有链接 → manual_review（不能报全通过）'
+            )
+            ok(
+              V([{ target: 'gone.ts', kind: 'file', ok: false, detail: '', at: 7 }], 7).status ===
+                'failed',
+              'G-2：本地产物缺失 → failed'
+            )
+
+            /* 完成回执只触发核验：旧结论必须先失效，不能自证通过 */
+            const completed = shared.applyGoalReport(
+              {
+                ...shared.emptyGoal(1),
+                verification: { status: 'passed', at: 1, checks: [], detail: '上一轮的结论' }
+              },
+              {
+                ok: true,
+                phase: 'completed',
+                steps: [],
+                evidence: ['模型说自己做完了'],
+                links: [],
+                discardedLinks: 0,
+                blocker: null,
+                failureSignature: null
+              },
+              2
+            )
+            ok(
+              completed.verification === null,
+              'G-2：完成回执先清掉旧核验结论（真实状态由宿主同一次落盘重算）'
+            )
+            ok(
+              completed.phase === 'completed' && completed.revision === 1,
+              'G-2：清核验不改相位与 revision 语义'
+            )
+
+            /* 兼容与脏值：旧文档无字段 → null；脏状态不当成通过 */
+            ok(
+              shared.normalizeGoalState({ phase: 'completed' }).verification === null,
+              'G-2：旧文档（无 verification 字段）读回 null，不报错'
+            )
+            ok(
+              shared.normalizeGoalState({ verification: { status: 'yes' } }).verification === null,
+              'G-2：脏核验状态读回 null，不当成通过'
+            )
+            ok(
+              shared.normalizeGoalState({
+                verification: {
+                  status: 'passed',
+                  at: 5,
+                  checks: [{ target: 'a.ts', kind: 'file', ok: true, detail: 'x', at: 5 }],
+                  detail: 'd'
+                }
+              }).verification?.checks[0].target === 'a.ts',
+              'G-2：合法核验结果原样读回'
+            )
+            ok(
+              shared
+                .goalSummary({
+                  ...completed,
+                  verification: { status: 'passed', at: 3, checks: [], detail: 'd' }
+                })
+                .includes('completed') &&
+                shared
+                  .goalSummary({
+                    ...completed,
+                    verification: { status: 'passed', at: 3, checks: [], detail: 'd' }
+                  })
+                  .includes('核验：passed'),
+              'G-2：状态摘要同时报相位与核验（两者不合并）'
+            )
           } finally {
             await rm(checkRoot, { recursive: true, force: true })
           }
@@ -881,6 +1041,18 @@ export async function runGoalTests(ok) {
             links: [{ kind: 'file', target: 'a.ts' }]
           })
           ok(svc.state(keyA).links.length === 1, '幂等重放不会重复登记链接')
+
+          /* G-2：核验按会话隔离；没有声明产物就是 not_checked（不是 passed） */
+          const beforeIsolation = svc.state(keyA).verification?.status
+          await svc.report(keyB, { reportId: 'rb1', phase: 'executing', goalRevision: 0, links: [] })
+          ok(
+            svc.state(keyA).verification?.status === beforeIsolation,
+            'G-2：B 会话的核验不会写到 A 目标上'
+          )
+          ok(
+            svc.state(keyB).verification?.status === 'not_checked',
+            'G-2：目标没有任何声明产物 → not_checked（不冒充通过）'
+          )
 
           /* 旧文档（完全没有 links 字段）读回来是空数组 */
           const reread = new service.GoalStore({ root: linkRoot })
@@ -963,6 +1135,14 @@ export async function runGoalTests(ok) {
           ok(
             overTokens.armed === false && overTokens.reason === 'budget',
             'token 超上限 → 不安排新轮（不再因为拿不到用量而失效）'
+          )
+          /*
+           * G-5：预算是「不安排新轮」而不是失败 —— 它不能改写完成判据。
+           * 没有声明产物的目标停在 `not_checked`，不允许被任何旁路写成 `passed`。
+           */
+          ok(
+            svcB.state(keyC).verification?.status !== 'passed',
+            `G-5：预算耗尽不会把核验写成通过（实际 ${svcB.state(keyC).verification?.status ?? 'null'}）`
           )
         } finally {
           await rm(budgetRoot, { recursive: true, force: true })

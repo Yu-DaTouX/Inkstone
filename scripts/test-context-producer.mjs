@@ -497,6 +497,55 @@ export async function runContextProducerTests(ok, { producer, transform, extensi
       foldEligible({ settledTurns: 4, transcriptTokens: 50, windowTokens: 1_000, refreshRatio: 0.01 }).eligible,
       'refreshRatio 可被策略覆盖（测试与调参用）'
     )
+    /*
+     * C-6：状态准备线不再只看固定 48K —— 拿到整轮软线时
+     * 用 `max(48K, 软线 × 60%)`。固定 48K 在 1M 档上是软线（600K）的 8%，
+     * 等于“大窗口一涨就开语义摘要”。
+     */
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 48_000, softLine: 64_000 }).reason === 'long-session',
+      '小软线（64K，准备线 38.4K）：48K 就够资格（max 取到固定下限）'
+    )
+    ok(
+      !foldEligible({ settledTurns: 5, transcriptTokens: 48_000, softLine: 240_000 }).eligible,
+      '默认 240K 软线：48K 不再够资格（准备线是 144K）'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 144_000, softLine: 240_000 }).reason === 'long-session',
+      '默认 240K 软线：到 144K 才够资格'
+    )
+    ok(
+      !foldEligible({ settledTurns: 5, transcriptTokens: 200_000, softLine: 600_000 }).eligible,
+      '600K 软线：200K 不再够资格（准备线是 360K）'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 360_000, softLine: 600_000 }).reason === 'long-session',
+      '600K 软线：到 360K 才够资格'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 60_000 }).eligible,
+      '拿不到软线（softLine=0）时保持旧行为：48K 够资格'
+    )
+    ok(
+      !foldEligible({ settledTurns: 3, transcriptTokens: 700_000, softLine: 600_000 }).eligible,
+      '软线再大也先过回合地板'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 1_000, softLine: 600_000, firstSweep: true }).reason === 'first-sweep',
+      '清扫过直接开资格（sticky 语义不变）'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 600_000, softLine: 600_000, prepareRatio: 0.9 }).reason === 'long-session',
+      'prepareRatio 可被覆盖（标定用）'
+    )
+    ok(
+      foldEligible({ settledTurns: 5, transcriptTokens: 100, softLine: 600_000, minTokens: 1 }).eligible,
+      '显式给 minTokens（测试/标定通道）时不被自动准备线抬高'
+    )
+    ok(
+      !foldEligible({ settledTurns: 5, transcriptTokens: 100_000, softLine: 600_000, minTokens: 100_000_000 }).eligible,
+      '显式抬高 minTokens 时也不被自动准备线拉低'
+    )
   }
 
   /* ---------------------------------------------------------- 5.7 pending-only 与注入视角 */

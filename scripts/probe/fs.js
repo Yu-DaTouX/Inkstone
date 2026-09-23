@@ -393,6 +393,152 @@
       await until(() => !document.querySelector('[data-testid="fs-search"]'), 2000)
     }
 
+    /*
+     * ---- 5b. H-4：一个文件一个标签（身份 = 项目 + 工作树 + realpath） ----
+     *
+     * 断言的是「两个不同文件不共用一个标签」以及切 / 关时不丢另一个。
+     * 同名不同工作树的分离由单测（test-file-resource）盯，这里跑真窗口链路。
+     */
+    out.push('\n=== 5b. 文件资源身份与多标签 ===')
+    if (!document.querySelector('.rp-fs-row')) {
+      bad('文件树不可见，多标签断言跳过（不改判为通过）')
+    } else {
+      const fileTabs = () => qa('[data-testid="right-window-tab-file"]')
+      const tabLabels = () => fileTabs().map((el) => (el.textContent ?? '').trim())
+      const currentName = () => (document.querySelector('.fp-name')?.textContent ?? '').trim()
+      const openRow = async (rel) => {
+        const row = qa('.rp-fs-row').find((r) => r.dataset.path === rel)
+        if (!row) return false
+        click(row)
+        return until(() => currentName().length > 0, 6000)
+      }
+
+      if (await openRow('src/main/agent.ts')) {
+        const one = await until(() => fileTabs().length >= 1, 4000)
+        if (one && tabLabels().some((l) => l.includes('agent.ts'))) ok('打开文件生成带文件名的资源标签')
+        else bad('文件标签不对：' + JSON.stringify(tabLabels()))
+      } else bad('找不到 src/main/agent.ts 行')
+
+      if (await openRow('src/main/goal-service.ts')) {
+        const two = await until(() => fileTabs().length >= 2, 6000)
+        out.push('  标签 = ' + JSON.stringify(tabLabels()) + '，当前 = ' + JSON.stringify(currentName()))
+        if (two) ok('两个不同文件 → 两个标签（不共用同一个）')
+        else bad('第二个文件没有生成新标签：' + JSON.stringify(tabLabels()))
+        if (tabLabels().some((l) => l.includes('agent.ts')) && tabLabels().some((l) => l.includes('goal-service.ts'))) {
+          ok('每个标签显示自己的文件名（不是都叫「文件」）')
+        } else bad('标签标题不对：' + JSON.stringify(tabLabels()))
+        if (currentName().includes('goal-service.ts')) ok('新打开的文件是当前预览')
+        else bad('当前预览不是刚打开的文件：' + JSON.stringify(currentName()))
+
+        /* 切回旧标签：内容跟着恢复（不是空白、也不叠一份新的） */
+        const first = fileTabs().find((el) => (el.textContent ?? '').includes('agent.ts'))
+        click(first)
+        const restored = await until(() => currentName().includes('agent.ts'), 4000)
+        if (restored) ok('切回旧标签恢复该文件（不空白、不重新叠一份）')
+        else bad('切回旧标签后当前文件 = ' + JSON.stringify(currentName()))
+        if (fileTabs().length === 2) ok('切换标签不会新增副本')
+        else bad('切换后标签数 = ' + fileTabs().length)
+
+        /* 关掉当前标签：另一个必须还在 */
+        const closeBtn = fileTabs()
+          .find((el) => (el.textContent ?? '').includes('agent.ts'))
+          ?.querySelector('.review-tab-close')
+        if (closeBtn) click(closeBtn)
+        const oneLeft = await until(() => fileTabs().length === 1, 5000)
+        if (oneLeft) ok('关闭一个文件标签后另一个保留')
+        else bad('关闭后标签数 = ' + fileTabs().length)
+        if (!fileTabs().some((el) => (el.textContent ?? '').includes('agent.ts'))) ok('被关掉的标签真的不在了')
+        else bad('被关掉的标签还在')
+      } else bad('找不到 src/main/goal-service.ts 行')
+      store.getState().closePreview()
+      await until(() => fileTabs().length === 0, 4000)
+    }
+
+    /* ---- 5c. H-4：文件变化提示（只 stat，不自动重载） ---- */
+    out.push('\n=== 5c. 文件变化提示 ===')
+    {
+      /* 把轮询放快；产品默认 5s（探针不想等） */
+      window.__YAN_PREVIEW_POLL_MS = 200
+      const row = qa('.rp-fs-row').find((r) => r.dataset.path === 'src/main/agent.ts')
+      if (!row) bad('找不到 src/main/agent.ts 行，变化提示断言跳过')
+      else {
+        click(row)
+        await until(() => !!store.getState().filePreview?.data?.abs, 6000)
+        await sleep(700)
+        if (!document.querySelector('[data-testid="file-preview-updated"]')) ok('mtime 未变时不误报「内容已更新」')
+        else bad('还没改文件就报了「内容已更新」')
+
+        /*
+         * 模拟「读进来的是旧版本」：把读入时的 mtime 改成 1，
+         * 自动轮询会走真实 IPC stat 拿到磁盘上的新 mtime ——
+         * 检测链（stat → 比对 → 提示）全程是真的，没有直接写 stale 标志。
+         */
+        const cur = store.getState().filePreview
+        store.setState({ filePreview: { ...cur, data: { ...cur.data, mtimeMs: 1 } } })
+        const shown = await until(
+          () => !!document.querySelector('[data-testid="file-preview-updated"]'),
+          4000
+        )
+        if (shown) ok('磁盘 mtime 与读入时不同 → 自动轮询就地问一句')
+        else bad('文件变了（mtime 不同）但没有提示')
+
+        const updatedText = document.querySelector('[data-testid="file-preview-updated"]')?.textContent ?? ''
+        if (updatedText.includes('内容已更新')) ok('提示文案是「内容已更新」')
+        else bad('提示文案不对：' + JSON.stringify(updatedText))
+
+        const reload = document.querySelector('[data-testid="file-preview-reload"]')
+        if (reload) {
+          click(reload)
+          const gone = await until(
+            () => !document.querySelector('[data-testid="file-preview-updated"]'),
+            4000
+          )
+          if (gone) ok('点「重新加载」后提示消失（真的重读了一遍）')
+          else bad('重新加载后提示还在')
+        } else bad('变化提示里没有重新加载按钮')
+      }
+      delete window.__YAN_PREVIEW_POLL_MS
+      store.getState().closePreview()
+      await sleep(200)
+    }
+
+    /* ---- 5d. H-4：从链接打开文件 → 文件树展开到它并选中 ---- */
+    out.push('\n=== 5d. 文件树联动定位 ===')
+    {
+      const q = (s) => document.querySelector(s)
+      const srcRow = qa('.rp-fs-row').find((r) => r.dataset.path === 'src')
+      if (!srcRow) {
+        bad('文件树不可见，联动定位断言跳过（不改判为通过）')
+      } else {
+        /*
+         * 真实入口：按**绝对路径**打开（聊天链接 / 搜索就是这条链路）。
+         * 打开后右栏会切到文件页，工具页连树一起卸载；
+         * 切回工具页时树重挂并应当自动展开到那个文件 —— 所以这里先切回来再断言。
+         */
+        const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
+        await store.getState().previewFile(`${cwd}\\src\\main\\agent.ts`, undefined, cwd)
+        await until(() => !!q('[data-testid="file-preview"]'), 6000)
+        click(q('[data-testid="right-window-tab-tools"]'))
+        await sleep(1200)
+
+        const expanded = q('[data-testid="fs-row-src"]')?.getAttribute('aria-expanded')
+        if (expanded === 'true') ok('从链接打开文件后，树自动展开到它（不用用户一层层点）')
+        else bad('父目录没有自动展开：aria-expanded=' + JSON.stringify(expanded))
+        const row = q('[data-testid="fs-row-src/main/agent.ts"]')
+        if (row) ok('目标文件行在树里可见（定位到了真实节点）')
+        else bad('目标文件行没出现')
+        if (row?.getAttribute('aria-current') === 'true') ok('被打开的文件行标为当前（选中）')
+        else bad('文件行没有标为当前：' + JSON.stringify(row?.getAttribute('aria-current')))
+
+        /* 工作树外的文件不能把树拉到不存在的分支上 */
+        const outside = q('[data-testid="fs-row-.."]')
+        if (!outside) ok('工作树外的文件不会在树里造出越界节点')
+        else bad('树里出现了越界节点')
+      }
+      store.getState().closePreview()
+      await sleep(200)
+    }
+
     /* ---- 6. 隐藏项：文案是「已隐藏」+ 有开关能显示出来 ---- */
     out.push('\n=== 6. 隐藏项与开关 ===')
     const skipped = document.querySelector('[data-testid="fs-skipped"]')

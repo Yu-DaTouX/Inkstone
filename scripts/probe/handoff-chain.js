@@ -92,18 +92,63 @@
    * 所以这里记下当前**物理**身份，换段后再断言 conversationId 绑定到了它。
    */
   const sessionId0 = String(state().session?.sessionId ?? '')
-  ok(initial.threshold === 0, '阈值被测试通道压到 0（实际 ' + initial.threshold + '）')
+  /*
+   * 阈值两种跑法：
+   *   · 0 —— 测试通道（快、便宜，只验“换段链”本身）；
+   *   · 2 —— **生产默认值**：`handoffchaindefault` 用小工作集让两次真实压缩
+   *          在有限轮次内凑得齐，验的就是“默认阈值下也能连续两次交接”。
+   * 其它值不认：那说明设置被意外改了，不该静默当作某一支跑。
+   */
+  const threshold = Number(initial.threshold)
+  const thresholdOk = threshold === 0 || threshold === 2
+  ok(thresholdOk, '阈值是 0（测试通道）或 2（生产默认），实际 ' + initial.threshold)
   ok(initial.autoCommit === true, '自动交接默认开启（本场景不设开关）')
   ok(initial.chainSegments === 1, '起点只有一段（实际 ' + initial.chainSegments + '）')
   ok(!!sourceKey, '源片段可识别')
   ok(!!sessionId0, '源片段有物理会话身份')
-  if (initial.threshold !== 0 || !sourceKey || !sessionId0) {
+  if (!thresholdOk || !sourceKey || !sessionId0) {
     await dump('前提不符')
     return out.join('\n')
   }
 
   out.push('')
   out.push('=== 2. 建立持续目标并让模型报一次进展 ===')
+  /*
+   * 生产阈值 2 需要本片段真的攒够两次压缩。阈值 0 的那一支不需要。
+   *
+   * 为什么把压力轮放在**目标之前**（与 `handoffautocompact` 同一手法）：
+   * 带目标时会自动续跑，压力轮会和“交接包生成”抢时间 —— 实测生成请求写出之后
+   * 水位还在动，`safety-boundary` 会以 `source-watermark-moved` 放弃生成。
+   * 先把计数攒够、回到静止，再上目标，交接才干净。
+   *
+   * 压力轮走 `standard` 档：关掉自动续跑，回合边界可数。
+   */
+  const pressurize = async (deadlineMs) => {
+    const prevMode = String((await window.yan.getWorkMode())?.mode ?? 'autonomous')
+    await state().setWorkMode('standard')
+    const deadline = Date.now() + deadlineMs
+    for (let i = 1; i <= 22 && Date.now() < deadline; i += 1) {
+      const before = (state().messages ?? []).length
+      const sent = await state().send(
+        'F7 链式交接压力轮 ' + i + '：必须使用 bash 运行 seq 1 900，然后只回复 F7_CHAIN_' + i + '。'
+      )
+      if (sent && sent.ok === false) break
+      await waitFor(() => {
+        const current = state()
+        const settled = (current.messages ?? []).slice(before).some((m) => m.role === 'assistant')
+        const busy = current.session?.isAgentRunning === true || current.session?.isStreaming === true
+        return settled && !busy ? true : null
+      }, 150000, 350)
+      const tally = Number((await handoff())?.segmentTally?.count ?? 0)
+      if (tally >= threshold) break
+    }
+    if (prevMode !== 'standard') await state().setWorkMode(prevMode)
+    return Number((await handoff())?.segmentTally?.count ?? 0)
+  }
+  if (threshold === 2) {
+    const driven = await pressurize(300000)
+    out.push('  本片段压缩计数 = ' + driven + '（阈值 ' + threshold + '）')
+  }
   const target = await state().setGoal({
     goal: '验证同一条逻辑会话连续两次后台换段：身份、历史、模式与目标都不丢。',
     outcome: '链上出现第三段、两次事务都到 resumed、conversationId 保持不变、源段消息仍在时间线里。'
@@ -151,6 +196,10 @@
 
   out.push('')
   out.push('=== 4. 第二次交接（在同一份目的片段上再来一遍） ===')
+  if (threshold === 2) {
+    const driven2 = await pressurize(360000)
+    out.push('  目的片段压缩计数 = ' + driven2 + '（阈值 ' + threshold + '）')
+  }
   const second = await waitFor(async () => {
     const h = await handoff()
     return h.transaction?.stage === 'resumed' && h.chainSegments >= 3 && h.sessionKey !== firstKey ? h : null
