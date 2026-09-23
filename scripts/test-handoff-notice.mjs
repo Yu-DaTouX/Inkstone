@@ -69,6 +69,30 @@ export async function runHandoffNoticeTests(ok, notice, diagnostics) {
     '结果文件 id 对不上不算失败（本次操作还在正常等待）'
   )
 
+  /*
+   * 常态不算失败（2026-09-23 用户现场：新会话第一眼就显示「整理未完成 ·
+   * 这个片段还没有压够次数」）。
+   *
+   * 资格检查每回合结束都跑一次，所以每个会话都会留下 `below-threshold` ——
+   * 把它当失败就等于「所有对话都在报错」。`getHandoff().events` 里仍然查得到它。
+   */
+  const routine = [
+    ev('eligibility', 'rejected', NOW - 1_000, 'below-threshold'),
+    ev('eligibility', 'rejected', NOW - 2_000, 'no-goal'),
+    ev('eligibility', 'rejected', NOW - 3_000, 'not-autonomous'),
+    ev('eligibility', 'rejected', NOW - 4_000, 'busy'),
+    ev('safety-boundary', 'rejected', NOW - 5_000, 'source-watermark-moved'),
+    ev('generate', 'abandoned', NOW - 6_000, 'user-message'),
+    ev('generate', 'abandoned', NOW - 7_000, 'user-stop'),
+    ev('generate', 'abandoned', NOW - 8_000, 'manual-retry')
+  ]
+  ok(notice.handoffNoticeOf(view({ events: routine }), NOW) === null, '常态拒绝 / 用户自己打断 → 一行都不显示')
+  ok(
+    notice.handoffNoticeOf(view({ events: [...routine, ev('generate', 'unparsable', NOW - 500, 'no-json-object')] }), NOW)
+      ?.tone === 'failed',
+    '混在常态里的**真失败**照旧显示（不是把这一层筛没了）'
+  )
+
   const boundary = notice.handoffNoticeOf(
     view({ events: [ev('generate', 'package-ready', NOW - notice.HANDOFF_DONE_WINDOW_MS)] }),
     NOW
@@ -93,13 +117,13 @@ export async function runHandoffNoticeTests(ok, notice, diagnostics) {
     const other = 'C:/tmp/sessions/b.jsonl'
     const failedOther = {
       at: NOW - 1_000,
-      stage: 'eligibility',
-      outcome: 'rejected',
+      stage: 'generate',
+      outcome: 'unparsable',
       op: null,
       handoffId: null,
       runnerId: 'run-b',
       sessionKey: other,
-      reason: 'not-autonomous',
+      reason: 'no-json-object',
       detail: {}
     }
     const visible = (events) => notice.handoffNoticeOf(view({ sessionKey: mine, events }), NOW)

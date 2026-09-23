@@ -154,6 +154,30 @@
   }
 
   out.push('')
+  out.push('=== 2b. 常态拒绝不该弹提示（F8 用户现场）===')
+  /*
+   * 用户 2026-09-23 现场：**新会话第一眼**就显示「整理未完成 · 这个片段还没有压够次数」。
+   * 根因不是会话归属（那只是把别的会话的真失败隔开），而是
+   * `eligibility:rejected` 这种**常态**被当成了失败 —— 每次回合收尾都会评估一次资格，
+   * 所以每个会话都会留下一条。
+   *
+   * 这一段就停在“只有常态拒绝、还没出真故障”的时刻：事件要在，提示不能有。
+   */
+  const routineRejects = await waitFor(async () => {
+    const h = await handoff()
+    const hit = (h.events ?? []).filter((event) => event.stage === 'eligibility' && event.outcome === 'rejected')
+    return hit.length ? hit : null
+  }, 30000, 500)
+  ok(
+    !!routineRejects,
+    '资格检查留下了常态拒绝事件（' + (routineRejects?.map((event) => event.reason).join('、') ?? '没等到') + '）'
+  )
+  ok(
+    !document.querySelector('[data-testid="handoff-note"]'),
+    '只有常态拒绝时，输入区上方一行都不显示（任务也没在整理）'
+  )
+
+  out.push('')
   out.push('=== 3. 建立持续目标并切自主档，让资格成立 ===')
   const target = await state().setGoal({
     goal: '在隔离 fixture 中验证交接包生成失败后原会话继续推进，不虚报已继续。',

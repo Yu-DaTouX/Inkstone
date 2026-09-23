@@ -61,4 +61,13 @@ export async function runHandoffScheduleTests(ok, shared) {
   ok(ownsHandoffOperation('', '') === true, 'H2：空身份等同「没带」')
   ok(ownsHandoffOperation('op-1', '  ') === true, 'H2：空白身份等同「没带」')
   ok(ownsHandoffOperation(' op-1 ', 'op-1') === true, 'H2：身份比较前先去空白')
+
+  /* ---------------------------------------------- 常态拒绝记账去重（F8） */
+
+  const log = new shared.EligibilityRejectLog()
+  ok(log.shouldRecord('r1', 'below-threshold', 0) === true, 'F8：同一结论第一次出现 → 记一条')
+  ok(log.shouldRecord('r1', 'below-threshold', 0) === false, 'F8：同一个结论（原因与次数都没变）→ 不再刷屏')
+  ok(log.shouldRecord('r1', 'below-threshold', 1) === true, 'F8：次数变了 → 结论变了，再记一条')
+  ok(log.shouldRecord('r1', 'no-goal', 1) === true, 'F8：原因变了 → 再记一条')
+  ok(log.shouldRecord('r2', 'below-threshold', 1) === true, 'F8：另一个实例各算各的')
 }

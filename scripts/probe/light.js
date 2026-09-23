@@ -309,12 +309,16 @@
       [pseudoAnim('::view-transition-new(root)'), pseudoAnim('::view-transition-old(root)')].filter(
         (n) => n && n !== 'none'
       )
-    /* 上一次过渡要跑 760ms，没结束就读伪元素会读到**上一次**的动画名（实测误判过）。 */
+    /*
+     * 切下一次之前先等干净。
+     *
+     * 过渡 760ms；而宿主**有意**把「上一次还没跑完就再切」降级成瞬时换肤
+     *（并发会被 Chromium 跳过，得不偿失）—— 探针里撞上这个窗口就会读到
+     *「没动画」。所以这里固定等满一秒，再确认伪元素已消失。
+     */
     const settle = async () => {
-      for (let i = 0; i < 40; i++) {
-        if (!liveNames().length) return
-        await sleep(30)
-      }
+      await sleep(1000)
+      for (let i = 0; i < 40 && liveNames().length; i++) await sleep(50)
     }
 
     const kick = async (next, expect) => {
@@ -399,23 +403,64 @@
         return ''
       }
     }
+    /** 两个层哪一层在动就读哪一层（方向决定是新层还是旧层） */
+    const clipAny = () => {
+      const fresh = clipAt('::view-transition-new(root)')
+      if (fresh.includes('circle(')) return fresh
+      const old = clipAt('::view-transition-old(root)')
+      return old.includes('circle(') ? old : ''
+    }
+    /**
+     * 等一次真实过渡的动画读出来（方向决定看新层还是旧层）。
+     *
+     * 轮询窗口给得很宽（~12s）：窗口**隐藏**时 Chromium 会把合成/帧节流，
+     * 下一次过渡的“起播”可能要等上一两次秒 —— 实测过动画完全正确、
+     * 只是比点击晚了一大截才出现。判据仍然是 clip 里的圆心坐标。
+     */
+    const readClip = async (pseudo) => {
+      for (let i = 0; i < 240; i++) {
+        const now = pseudo ? clipAt(pseudo) : clipAny()
+        if (now.includes('circle(')) return now
+        await sleep(50)
+      }
+      return ''
+    }
+
+    /**
+     * 把主题切到目标值，并确认它**真的落到了** `data-theme`。
+     *
+     * 为什么要确认：连续切得太快时宿主会有意把后一次降级成瞬时换肤
+     *（并发过渡会被 Chromium 跳过，得不偿失）—— 探针要的是真实动画，
+     * 所以先归位、再动手。
+     */
+    const reachTheme = async (value) => {
+      for (let i = 0; i < 4 && document.documentElement.dataset.theme !== value; i++) {
+        window.dispatchEvent(new CustomEvent('yan:theme', { detail: value }))
+        await settle()
+        await sleep(600)
+      }
+      return document.documentElement.dataset.theme === value
+    }
+
     const clickTheme = async (which) => {
       const button = document.querySelector(`[data-testid="theme-${which}"]`)
+      const pseudo = which === 'light' ? '::view-transition-old(root)' : '::view-transition-new(root)'
       if (!button) return { clicked: false, want: '', clip: '', rect: null, vars: '' }
       /* 先等上一次过渡跑完：它会把面板重排，早量的矩形与点击那一刻不一致 */
       await settle()
       const rect = button.getBoundingClientRect()
       const want = `at ${Math.round(rect.left + rect.width / 2)}px ${Math.round(rect.top + rect.height / 2)}px`
-      const pseudo = which === 'light' ? '::view-transition-old(root)' : '::view-transition-new(root)'
       button.click()
-      let clip = ''
-      for (let i = 0; i < 50; i++) {
-        const now = clipAt(pseudo)
-        if (now.includes('circle(')) {
-          clip = now
-          break
+      const clip = await readClip(pseudo)
+      /* 读不到时把两侧样本打出来（只在失败路径噪音） */
+      if (!clip) {
+        const samples = []
+        for (let i = 0; i < 8; i++) {
+          samples.push(`new=${clipAt('::view-transition-new(root)') || '∅'}|old=${clipAt('::view-transition-old(root)') || '∅'}`)
+          await sleep(120)
         }
-        await sleep(30)
+        out.push(`  ✗ 未读到 ${which} 的动画（theme=${document.documentElement.dataset.theme}）`)
+        for (const line of samples) out.push(`    ${line}`)
       }
       const style = document.documentElement.style
       return {
@@ -429,7 +474,8 @@
 
     store.getState().openSettings('appearance')
     await sleep(700)
-    /* 先深后浅：每次按下都与当前主题不同，两次都会真的产生过渡 */
+    /* 起点先归位：每次点击都要与当前主题不同，才会产生真实过渡 */
+    ok(await reachTheme('light'), '先把主题切到浅色，作为起点')
     const toDark = await clickTheme('dark')
     ok(toDark.clicked, '设置面板里有主题按钮（data-testid=theme-dark）')
     ok(
@@ -443,21 +489,57 @@
         `按钮 ${JSON.stringify(toLight.rect)}，变量 ${toLight.vars}）`
     )
 
-    /* 没有按钮位置可依时（托盘 / 快捷键）回退屏幕中心 */
-    await settle()
+    /*
+     * 事件**没带位置**时，从 DOM 再找一次主题按钮。
+     *
+     * 为什么要有这一层：只靠事件载荷，任何一条不带位置的主题事件都会让动画
+     * 默默回退到屏幕中心 —— 用户看到的就是「按钮定位不对」。
+     */
+    const themeBtnCenters = ['theme-dark', 'theme-light']
+      .map((id) => document.querySelector(`[data-testid="${id}"]`))
+      .filter(Boolean)
+      .map((el) => {
+        const rect = el.getBoundingClientRect()
+        return `at ${Math.round(rect.left + rect.width / 2)}px ${Math.round(rect.top + rect.height / 2)}px`
+      })
     window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'dark' }))
-    let fallback = ''
-    for (let i = 0; i < 50; i++) {
-      const now = clipAt('::view-transition-new(root)')
-      if (now.includes('circle(')) {
-        fallback = now
-        break
-      }
-      await sleep(30)
-    }
-    ok(fallback.includes('at 50% 50%'), `没有按钮位置时回退屏幕中心（实际 ${fallback || '没读到'}）`)
+    const fromDom = await readClip('::view-transition-new(root)')
+    ok(
+      themeBtnCenters.length > 0 && themeBtnCenters.some((want) => fromDom.includes(want)),
+      `事件载荷没带位置时，从 DOM 找回主题按钮（要 ${themeBtnCenters.join(' 或 ')}，实际 ${fromDom || '没读到'}）`
+    )
+
+    /* 面板关了 → 真的没有按钮可依，回退屏幕中心 */
     store.getState().closeSettings()
-    await sleep(300)
+    for (let i = 0; i < 40 && document.querySelector('[data-testid^="theme-"]'); i++) await sleep(50)
+    await settle()
+    window.dispatchEvent(new CustomEvent('yan:theme', { detail: 'light' }))
+    const centered = await readClip('::view-transition-old(root)')
+    ok(centered.includes('at 50% 50%'), `没有按钮可依时回退屏幕中心（实际 ${centered || '没读到'}）`)
+    await settle()
+
+    /*
+     * 非 100% 缩放下还准不准。
+     *
+     * 用户的「自动」缩放会把字号对齐到整数设备像素（125% 屏上约 1.15），
+     * 也就是说真实窗口里 zoomFactor 往往不是 1 —— 而边界坐标有两套坐标系
+     *（网页 CSS px 与快照），这里量的是**用户实际会看到的那个值**。
+     */
+    const before = store.getState().settings?.uiScale ?? 0
+    await window.yan.setUiScale(1.25)
+    await sleep(1500)
+    store.getState().openSettings('appearance')
+    await sleep(700)
+    ok(await reachTheme('light'), '缩放前把主题归位到浅色')
+    const zoomed = await clickTheme('dark')
+    out.push(`  缩放 ${window.devicePixelRatio} 下的圆心：${zoomed.clip || '没读到'}`)
+    ok(
+      zoomed.clicked && zoomed.clip.includes(zoomed.want),
+      `缩放 125% 下圆心仍在按钮中心（要 ${zoomed.want}，实际 ${zoomed.clip || '没读到'}；按钮 ${JSON.stringify(zoomed.rect)}）`
+    )
+    store.getState().closeSettings()
+    await window.yan.setUiScale(before)
+    await sleep(1200)
   }
 
   /* ---- 恢复深色，别把用户设置改了（隔离目录里其实无所谓，但保持一致）---- */

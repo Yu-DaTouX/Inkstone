@@ -98,3 +98,28 @@ export function sessionWorkSummary(action: SessionWorkAction): string {
       return '普通续跑'
   }
 }
+
+/**
+ * 常态资格拒绝的**记账去重**（实施-14 F8）。
+ *
+ * 每次回合收尾都会评估一次资格，而「还没压够次数」在几分钟内是同一个结论 ——
+ * 每轮一条会把这个 400 条的诊断环占满，真正的失败反而被挤出去。
+ *（2026-09-23 用户现场：一条会话里 10 条一模一样的 `below-threshold`。）
+ *
+ * 只在**结论变化时**才让调用方记一条（原因或次数变了）；评估本身照旧每轮都跑。
+ * 界面显示不受影响 —— 它根本不看常态拒绝（见 `handoff-notice.ts`）。
+ */
+export class EligibilityRejectLog {
+  private readonly seen = new Map<string, string>()
+
+  constructor(private readonly limit = 200) {}
+
+  /** `true` = 结论变了，该记一条；`false` = 同一结论，别再刷屏。 */
+  shouldRecord(runnerId: string, reason: string, count: number): boolean {
+    const stamp = `${reason}|${count}`
+    if (this.seen.get(runnerId) === stamp) return false
+    if (this.seen.size > this.limit) this.seen.clear()
+    this.seen.set(runnerId, stamp)
+    return true
+  }
+}
