@@ -2535,7 +2535,11 @@
 
 .rightpanel.right-window-panel .rp-windowbar .rp-window-tab {
   flex: 0 1 auto;
-  min-width: 128px;
+  /* 窄右栏（≤980px 时设计宽度只有 190px）里两个 128px 胶囊放不下：
+     窄窗口下右栏第一屏就是标签栏，标签必须自己收缩。靠“隐藏滚动条 + 横向滚”
+     用户根本看不出第二个标签存在（940x620 实测：「工具」被挤到可视区外，
+     看上去像被裁掉）。收缩留给文字截断，图标不参与。 */
+  min-width: 0;
   max-width: 220px;
   height: 30px;
   border: 0;
@@ -2546,6 +2550,11 @@
 .rightpanel.right-window-panel .rp-windowbar .rp-window-tab:not(.active):hover {
   color: var(--fg);
   background: var(--bg-3);
+}
+
+/* 收缩只留给文字截断：图标被压扁后连图标是什么都认不出 */
+.rightpanel.right-window-panel .rp-windowbar .rp-window-tab > .ico {
+  flex: none;
 }
 
 .rightpanel.right-window-panel .rp-window-tab > span:not(.spacer) {

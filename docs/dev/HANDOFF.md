@@ -1,5 +1,16 @@
 # 开发交接 · 砚
 
+## 2026-09-24 · 视觉验收可信度修复 + 实施-12/13 切片矩阵补采
+
+| 六栏 | 当前证据 |
+|---|---|
+| 实现 | **字体探针的竞态（真缺陷，不是环境）**：`scripts/visual-matrix.mjs` 用**每次全新的临时 userData**（字体缓存冷），而“等字体就绪”写的是 `document.fonts.ready` —— 它在“此刻没有 pending 字体请求”时立刻 resolve，于是测量跑在分片落地之前，汉字回退成 1em，报出假的「12.50px 字体未生效」并让矩阵永远退出码 1（未改动的旧组同样中招）。改成 `document.fonts.load('12.5px "Maple Mono CN"', '国')` 主动触发分片加载后再测；`scripts/shot.mjs` / `scripts/shots.mjs` 同口径也改（它们用默认 userData、靠热缓存“碰巧过”）。**矩阵补采**：新增 4 组（940×620 与 900×520 浅色、1440×900 的 125% / 150% 浅色）覆盖实施-12/13 交付的密集控件（工具磁贴菜单、右栏资源、上下文设置、推理块）。**顺手修掉两个真问题**：① `rightresources` 状态脚本少了 H-4 的资源身份键 —— 文件标签现在由 `filePreview.key` 激活，缺了它单开一组就退化成 `no-preview`（旧组靠前序状态的残留标签假通过）；② 窄右栏（≤980px 设计宽 190px）下窗口标签栏 `min-width: 128px` 把第二个标签挤到可视区外，滚动条又是隐藏的 —— 看上去就是被裁掉。改为可收缩（`min-width: 0` + 图标不参与收缩，文字已有截断）。另删掉右栏 `＋` 菜单里四个**从未接线**的快捷键提示（`Ctrl+Shift+G` / `Ctrl+` + 反引号 / `Ctrl+T` / `Ctrl+P`，其中 `Ctrl+P` 还被「下一模型」占着），DESIGN 同步成“只有真接了全局快捷键的项才画胶囊”。 |
+| 自动检查 | `typecheck` / `build` 通过；`check:css-docs` 三份重生成后一致；`test:unit` **5044/5044**。 |
+| 真实运行 | cost 0：`panels` / `rightresources` / `resourceheads` / `tools` 四个场景全绿（含工具库收放、分区顺序、资源入口），结尾孤儿进程检查通过。 |
+| 视觉验收 | 新图：`matrix-{righttoolmenu,rightresources}-940x620-100-light-2026-09-24-0927.png`、`matrix-{rightresources,ctxsettings}-900x520-100-light-2026-09-24-0927.png`、`matrix-{main,righttoolmenu}-1440x900-125-light-2026-09-24-0929.png`、`matrix-{reasoning,rightresources}-1440x900-150-light-2026-09-24-0922.png`。全部 1440×900 以下的组溢出 0px、汉字格宽 **15.00px（Maple 已生效）**、组退出码 0。逐张看图：940 窄栏两个标签（开…／工…）与 `＋` 都在可视区内、文件名截断正常；1440 与 125% 下标签仍是完整宽度（“开始 / 工具栏”），无回归。 |
+| 应用与包 | `npm run dist` 重出安装 / 便携 / zip（123M / 123M / 165M）；`test:packaged` 全绿（内置 pi 可用、原生 PTY 包内真跑、旧用户数据逐字节不变）。 |
+| 剩余限制 | 矩阵字体告警已消除，但**旧批次截图（2026-09-24 之前）仍是在假告警下产出的** —— 图本身正常（每张截图前都有充足等待），只是当时那句结论不可信，不重拍；窄栏下标签只能显示图标 + 1 个字（190px 物理上限，已写进 DESIGN）；右栏窗口的全局快捷键仍未接，菜单现在不给假提示；V-5 外壳包验收与实施-12 U-2 的分组/会话菜单复用仍未收口。 |
+
 ## 2026-09-24 · 实施-11 C-6 / H-11 + 实施-14 F7 剩余 + 截图矩阵 + 打包
 
 | 六栏 | 当前证据 |
@@ -9,7 +20,7 @@
 | 真实运行 | **cost 1（`deepseek/deepseek-v4.1-flash`）**：`contextsweep` 全绿（账本 6 次 / applied 4 / 整理 5 条 / 省约 8.7k，非零门槛下清扫仍发生）；`contextpressurelow` 全绿（22 回合 3 次真实压缩、physical 0、无 budget-abort）；`contextproduce` / `contextfoldpref` / `contextepisode` / `contextrefresh` / `contextgate` 全绿；`handoffchaindefault`（新场景，**生产默认阈值 2**）全绿 —— 源段与目的段各自攒够两次真实压缩，链 3 段、`conversationId` 不变、两次事务都 `resumed`、跨片段计时不重叠、停目标后不再排第三次；`handoffchain`（阈值 0）回归绿。**cost 0**：`terminalsurface`（新场景）15 条全绿（开始页入口 → xterm 挂载 → 真实命令输出进 xterm 行 → resize 落到宿主 → 切走切回缓冲回放 → 关标签真的 kill）；`resourceheads` / `panels` / `rightresources` / `symmetry` / `titlebar` / `terminal` / `tools` / `tooltiles` / `tilerestart` / `fs` / `fileref` / `linkpreview` / `filelink` 共 14 个场景全绿。 |
 | 视觉验收 | `visual:matrix` 组 11/12（新组）补采 4 张：`matrix-terminal-1440x900-100-{dark,light}-2026-09-24-0625/0626.png`、`matrix-ctxincompressible-1440x900-100-{dark,light}-2026-09-24-0625/0626.png`，1440×900、100%、横向溢出 0px；逐张看图（像素复核 xterm/标题行底色：深 21,21,21 / 浅 252,252,250）。矩阵尾声的「汉字格宽 = 12.50px（字体未生效）→ 退出码 1」在**未改动的组 9** 上同样出现，是环境性的，不是本片回归。 |
 | 应用与包 | `npm run dist` 产出 `release/砚-0.2.0-setup.exe`（123M）、`砚-0.2.0-portable.exe`（123M）、`砚-0.2.0-portable-fast.zip`（165M）；`test:packaged` 全绿，其中 H-11 段：解包态原生 PTY 加载成功、终端启动（cmd @ 项目目录）、输入/输出往返、resize、attach 快照带序号与缓冲、kill 后不可再 attach。打包配置：`npmRebuild: false`（node-pty 是 N-API 预编译，本机 VS BuildTools 缺 Spectre 库会让默认重编直接失败）+ `asarUnpack: node_modules/node-pty/**` + `files` 里单独放行 `node_modules/node-pty/**`。已提交并推送到 GitHub `main`（本次工作的收口提交，见 `git log` 顶部）。 |
-| 剩余限制 | C-6 的参数是**候选值标定**而非“已验证最优”：增长门槛的绝对值只在小工作集压力场景被反向覆盖过；sticky 状态刷新仍只在窗口近似上。H-11：终端只有 Windows 默认壳（未做壳选择/配置文件/多窗口组）、回滚缓冲 200K 字符后截断、`Ctrl+`` 只是菜单提示未接全局热键、ConPTY 在无控制台宿主下会走 winpty（矩阵桩显式关 ConPTY，产品进程走默认）。F7：崩溃启动确认仍是磁盘标记近似、生成失败只覆盖“模型吐坏 JSON”一类。截图矩阵的字体告警与 V-5 外壳包验收仍未收口。 |
+| 剩余限制 | C-6 的参数是**候选值标定**而非“已验证最优”：增长门槛的绝对值只在小工作集压力场景被反向覆盖过；sticky 状态刷新仍只在窗口近似上。H-11：终端只有 Windows 默认壳（未做壳选择/配置文件/多窗口组）、回滚缓冲 200K 字符后截断、`Ctrl+`` 只是菜单提示未接全局热键、ConPTY 在无控制台宿主下会走 winpty（矩阵桩显式关 ConPTY，产品进程走默认）。F7：崩溃启动确认仍是磁盘标记近似、生成失败只覆盖“模型吐坏 JSON”一类。V-5 外壳包验收仍未收口（截图矩阵的字体告警已在本轮修掉，见下一条）。 |
 
 ## 2026-09-24 · 实施-11 C-2b（三类整理分开统计）
 

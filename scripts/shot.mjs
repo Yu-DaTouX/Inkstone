@@ -64,9 +64,11 @@ async function main() {
   `)
   await win.webContents.reload()
 
-  // 等字体真正就绪（内嵌 18.5MB TTF，不等会截到回退字形）
+  // 等字体真正就绪（内嵌 woff2 分片，不等会截到回退字形）。
+  // 必须用 `fonts.load` 主动触发「国」的分片加载：`fonts.ready` 在没 pending 请求时
+  // 立刻 resolve，测在分片落地之前就会得到 1em 的假值（与 visual-matrix.mjs 同因）。
   const cnWidth = await win.webContents.executeJavaScript(`
-    document.fonts.ready.then(() => {
+    document.fonts.load('12.5px "Maple Mono CN"', '国').then(() => {
       const el = document.createElement('span');
       el.style.cssText = 'position:fixed;visibility:hidden;font:12.5px "Maple Mono CN"';
       el.textContent = '国';
