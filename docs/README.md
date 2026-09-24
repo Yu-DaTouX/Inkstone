@@ -7,6 +7,7 @@
 | 目的 | 唯一负责的文档 | 内容边界 |
 |---|---|---|
 | 了解和启动产品 | [项目 README](../README.md) | 简介、启动、常用入口 |
+| 安装与日常使用 | [使用指南](GETTING_STARTED.md) · [English guide](GETTING_STARTED_EN.md) | 面向使用者的安装、模型接入、常用操作与备份 |
 | 接手与排期 | [HANDOFF](dev/HANDOFF.md) | 当前状态、验证基线、最近证据 |
 | 决定「接下来做什么」 | [实施计划](plan/README.md) | **只列未完成项**：活动实施文档集中在 `plan/active/`，每份切成「一次会话一片」 |
 | 确定每项做到什么程度 | [工程清单](dev/ENGINEERING-CHECKLIST-2026-09-15.md) | N01–N20 / L01–L06 需求、验收条件、六栏模板 |
@@ -23,6 +24,7 @@
 | 构建发布与备份 | [RELEASING](dev/RELEASING.md) | 产物、用户数据、发布检查 |
 | 排查常见实现问题 | [MAINTENANCE](dev/MAINTENANCE.md) | 可复用经验，无进度流水账 |
 | 修改设计 | [DESIGN](design/DESIGN.md) | 设计令牌与视觉规范 |
+| 品牌与 GitHub 主页 | [BRAND](design/BRAND.md) | Inkstone 命名、slogan、字标素材与主页表达 |
 | 分派侧栏与整体 UI 优化 | [实施-12](plan/active/实施-12-侧栏交互与可移动工具磁贴.md) / [实施-13](plan/active/实施-13-全局UI精修与设计验收.md) | 2026-09-23 用户需求规划；U-0…U-6 与 V-0…V-4、V-6 已交付，残余为真实截图矩阵与包验收 |
 | 持续目标契约与核验 | [实施-16](plan/active/实施-16-持续目标契约与核验增强.md) | 2026-09-24 新登记待办；目标补充字段、宿主核验状态、展示与联调；G-0…G-5 未排期 |
 | 查设计方案 | [设计文档](design/) | 令牌规范、预览证据，以及待审阅的改版方案 |
