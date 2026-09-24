@@ -1085,6 +1085,72 @@ const CASES = {
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":700000}' }
   },
   /*
+   * C-3 大输入压力：**真的**把上下文推到工作集线上。
+   *
+   * `contextpressurebig` 已经证明：多轮小回合（每轮 ~1.8K token）在 700K 档
+   * 跑满 22 轮也只到 46K，压缩一次都没发生 —— 不是压缩把它压回去了，
+   * 而是输入量本身不够。这一档换驱动方式：每轮一段 200K 字符的用户消息
+   *（≈ 50K token），用户消息不会被 tool-sweep 拿走，增量确定。
+   * 档位由 `workingSetCap` 决定，同一个探针支持多档。
+   */
+  contextsoak300k: {
+    probe: 'scripts/probe/context-soak.js',
+    delay: 12000,
+    cost: 1,
+    budget: 1800000,
+    contextExtLog: true,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":300000,"kinds":["recall","compaction"]}' }
+  },
+  /* 同一条链路的**快档**（工作集 60K）：几轮就过线，用于快速回归“到线就压”。 */
+  contextsoak60k: {
+    probe: 'scripts/probe/context-soak.js',
+    delay: 12000,
+    cost: 1,
+    budget: 600000,
+    contextExtLog: true,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":60000,"kinds":["recall","compaction"]}' }
+  },
+  /*
+   * C-3 **大档真实压力**：工作集 500K，每轮 200K 字符（base64 伪随机，实测 ≈ 138K token/轮）。
+   *
+   * 为什么是 500K 而不是 700K：dp 端点**登记**窗口是 1,000,000，但实测上下文涨到
+   * 556K（渲染端口径）时 provider 就先报溢出 —— pi 走 `overflow` 压缩把它压回去，
+   * 500K 这条线是 dp 端点上真实可达的量级。700K / 真 1M 档需要真正支持 1M 的
+   * 端点（Claude 类），不在本场景的额度内。
+   */
+  contextsoak500k: {
+    probe: 'scripts/probe/context-soak.js',
+    delay: 12000,
+    cost: 1,
+    budget: 3000000,
+    contextExtLog: true,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":500000,"kinds":["recall","compaction"]}' },
+    afterExit: 'contextSoak'
+  },
+  /* 诊断用：700K 档会让 pi 的 overflow 恢复先于砚的线触发（原因见 HANDOFF）。 */
+  contextsoak700k: {
+    probe: 'scripts/probe/context-soak.js',
+    delay: 12000,
+    cost: 1,
+    budget: 3000000,
+    contextExtLog: true,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: {
+      YAN_CONTEXT_POLICY: '{"workingSetCap":700000,"kinds":["recall","compaction"]}',
+      /* 把 dp 的 393216 输出预留压回合理值，否则输入空间只有 655K（见 setup 里的注） */
+      YAN_TEST_MODEL_MAX_TOKENS: '32768'
+    },
+    afterExitOnFailure: true,
+    afterExit: 'contextSoak'
+  },
+  /*
    * C-3 的受控最小验证：用真实约 1M 窗口端点（Claude Sonnet 5，commandcode）
    * 确认 pi 报的窗口 / 砚的工作集数值一致、请求未越窗口。
    * 只跑 3 轮，**不**把压缩次数当判据 —— 发满 1M 输入的压力矩阵需要单独预算。
@@ -5890,7 +5956,63 @@ async function checkSkillDirAcquire(sandboxRoot, _tempBefore, probeText = '') {
   return { ok: allOk, lines }
 }
 
+/**
+ * C-3 大输入压力场景的退出后取证。
+ *
+ * 为什么必须看扩展日志：`reason=overflow` 只说 pi 走了恢复路径，不说**为何**。
+ * provider 的错误原文只在 `session_compact_failed` 里（由扩展记进 ctx-ext.log）。
+ * 没有这两行，「端点容量不足」与「请求形状被拒」在日志里长得一模一样。
+ */
+function checkContextSoak(sandboxRoot) {
+  const lines = []
+  const ok = true
+  if (!sandboxRoot) {
+    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok, lines }
+  }
+  const logPath = join(sandboxRoot, 'ctx-ext.log')
+  const logLines = (existsSync(logPath) ? readFileSync(logPath, 'utf8') : '')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l)
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+  const failed = logLines.filter((l) => l.hook === 'compact-failed')
+  const entered = logLines.filter((l) => l.hook === 'entered')
+  lines.push(`  诊断行 = ${logLines.length}｜压缩进入 = ${entered.length}｜压缩失败 = ${failed.length}`)
+  for (const l of entered.slice(0, 4)) {
+    lines.push(`    压缩进入：reason=${l.reason ?? '?'} session=${String(l.sessionId ?? '').slice(0, 8)}`)
+  }
+  for (const l of failed.slice(0, 6)) {
+    lines.push(
+      `    压缩失败：reason=${l.reason}｜aborted=${l.aborted}｜error=${String(l.errorMessage ?? '').slice(0, 400)}`
+    )
+  }
+  const errors = logLines.filter((l) => l.hook === 'error')
+  for (const l of errors.slice(0, 3)) lines.push(`    扩展错误：${JSON.stringify(l).slice(0, 300)}`)
+  /*
+   * pi 自己认为窗口有多大（`before_provider_request` 的诊断行里有 `window`）——
+   * overflow 判定用的就是它，与登记值不一致时就是“提前溢出”的真正原因。
+   */
+  const windows = [...new Set(logLines.map((l) => l.window).filter((w) => typeof w === 'number'))]
+  const est = logLines
+    .map((l) => Number(l.estimatedTokens))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  lines.push(
+    `  pi 记录的窗口 = ${windows.length ? windows.join(', ') : '（无）'}` +
+      `｜估算峰值 = ${est.length ? Math.max(...est) : '（无）'}`
+  )
+  return { ok, lines }
+}
+
 const AFTER_EXIT = {
+  contextSoak: checkContextSoak,
   exitSnapshot: checkExitSnapshot,
   remoteRoutes: checkRemoteRoutes,
   subagentFail: checkSubagentFail,
@@ -8819,8 +8941,7 @@ async function main() {
     }
     if (copied.length) {
       console.log(`  pi 文件：已复制 ${copied.join(' / ')} 到隔离目录（仅本次测试，不进包）`)
-    } else if (routeOnly) {
-      console.log('  pi 文件：远程路由场景使用独立本机 provider，不读取真实 auth.json / models.json')
+    } else if (routeOnly) {      console.log('  pi 文件：远程路由场景使用独立本机 provider，不读取真实 auth.json / models.json')
     } else {
       console.log('  pi 文件：没找到凭证/模型目录 —— 依赖 pi 就绪的场景会失败')
     }
@@ -8835,6 +8956,41 @@ async function main() {
      *
      * 只写这一个字段 —— 其余设置由应用自己填默认值（不要在这里模拟）。
      */
+    /*
+     * 测试前提修正（可选）：把测试模型的 `maxTokens` 压到实测可用的值。
+     *
+     * 为什么需要：dp 登记 `maxTokens: 393216`，pi 每次请求都会带上这个输出上限
+     *（能力字段），而 provider 的真实上限是 1,048,576 —— 留给输入的空间就只有
+     * ≈655K，**低于 pi 自己的自动压缩线**（窗口 − reserveTokens = 983,616）。
+     * 结果：pi 的阈值压缩永远来不及触发，只能靠 overflow 恢复兜底（已实测确认）。
+     * 要验「上下文真涨到大档位时压缩会不会工作」，就得把输入空间还给上下文。
+     * 只改隔离副本，不动真实 models.json；仅由 `YAN_TEST_MODEL_MAX_TOKENS` 显式开启。
+     */
+    const maxTokensCap = Number(
+      names.map((n) => CASES[n].env?.YAN_TEST_MODEL_MAX_TOKENS).find((v) => v) ?? 0
+    )
+    if (Number.isFinite(maxTokensCap) && maxTokensCap > 0) {
+      const modelsFile = join(piDir, 'models.json')
+      try {
+        const doc = JSON.parse(readFileSync(modelsFile, 'utf8'))
+        let touched = 0
+        for (const prov of Object.values(doc.providers ?? {})) {
+          for (const model of prov?.models ?? []) {
+            if (typeof model.maxTokens === 'number' && model.maxTokens > maxTokensCap) {
+              model.maxTokens = maxTokensCap
+              touched += 1
+            }
+          }
+        }
+        if (touched) {
+          writeFileSync(modelsFile, JSON.stringify(doc, null, 2), 'utf8')
+          console.log(`  测试前提修正：${touched} 个模型的 maxTokens 压到 ${maxTokensCap}（仅隔离副本）`)
+        }
+      } catch (err) {
+        console.error(`  ⚠️  maxTokens 修正失败（继续跑原始前提）：${err?.message ?? err}`)
+      }
+    }
+
     writeFileSync(
       join(data, 'desktop.json'),
       JSON.stringify({ cwd: root, lang: 'zh-CN' }, null, 2),
@@ -9384,7 +9540,17 @@ async function main() {
     const piSettingsFile = sandboxRoot ? join(sandboxRoot, 'pi-agent', 'settings.json') : null
     if (piSettingsFile) {
       rmSync(piSettingsFile, { force: true })
-      if (c.piSettings) writeFileSync(piSettingsFile, JSON.stringify(c.piSettings, null, 2), 'utf8')
+      /*
+       * 测试统一关掉思考强度（`defaultThinkingLevel: "off"`）。
+       *
+       * 为什么：dp 这类推理模型会把输出预算花在 reasoning 上 —— 一是让
+       * `finish_reason` 容易变成 `length`（pi 会把它当 length/overflow 恢复，
+       * 压缩就不再由砚的策略线驱动），二是把与命题无关的思考 token 掺进
+       * 每轮用量与断言。关掉之后测的才是「上下文涨到线 → 谁触发压缩」。
+       * 场景自己的 `piSettings` 仍可覆盖（展开在它后面）。
+       */
+      const settings = { defaultThinkingLevel: 'off', ...(c.piSettings ?? {}) }
+      writeFileSync(piSettingsFile, JSON.stringify(settings, null, 2), 'utf8')
     } else if (c.piSettings) {
       console.log('  ⤺ 跳过：非隔离模式（YAN_TEST_ISOLATED=0）不会写真实 pi 目录的 settings.json')
       continue
