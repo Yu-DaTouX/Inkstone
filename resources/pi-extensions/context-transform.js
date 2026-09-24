@@ -419,18 +419,23 @@ export function contextEntries(branch) {
  * 还没落盘的 steering 消息）时，数量检查会过而角色检查会挂 —— 那时返回
  * null，调用方放弃这次变换（宁可压不动，也不贴错身份）。
  *
+ * ══ Pi 0.87 的 system 差异 ══
+ * 0.87 起 `context` 钩子收到的 messages **不再包含 system 消息**
+ *（system prompt / 工具声明由 pi 在钩子之后恢复），但会话 branch 里仍然有
+ * 对应的 system message entry。只按原样对齐会永远差一条，整个变换退化成
+ * `entry-identity-unavailable`（清扫 / 折叠全部失效）。
+ * 所以先试原样，再试「去掉 system entry」那一版 —— 两代 pi 都能对上，
+ * 且角色错位仍然会返回 null（不会因为多一次尝试就放松校验）。
+ *
  * @returns {string[] | null}
  */
-export function alignEntryIds(branch, messages) {
-  if (!Array.isArray(messages)) return null
+function alignWith(producing, messages) {
   const ids = []
-  for (const entry of contextEntries(branch)) {
-    if (!entryProducesMessage(entry)) continue
+  for (const entry of producing) {
     if (typeof entry.id !== 'string' || !entry.id) return null
     ids.push(entry.id)
   }
   if (ids.length !== messages.length) return null
-  const producing = contextEntries(branch).filter(entryProducesMessage)
   for (let i = 0; i < producing.length; i++) {
     const expected = entryMessageRole(producing[i])
     const actual = messages[i]?.role
@@ -438,6 +443,16 @@ export function alignEntryIds(branch, messages) {
     if (expected !== actual) return null
   }
   return ids
+}
+
+export function alignEntryIds(branch, messages) {
+  if (!Array.isArray(messages)) return null
+  const producing = contextEntries(branch).filter(entryProducesMessage)
+  const asIs = alignWith(producing, messages)
+  if (asIs) return asIs
+  const withoutSystem = producing.filter((entry) => entryMessageRole(entry) !== 'system')
+  if (withoutSystem.length === producing.length) return null
+  return alignWith(withoutSystem, messages)
 }
 
 /** sessionManager 的 entry 列表 → 水位（与 `main/context-watermark.ts` 同一口径） */

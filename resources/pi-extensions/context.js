@@ -68,6 +68,7 @@ import {
   contextEntries,
   diagnostic,
   entryProducesMessage,
+  entryMessageRole,
   episodeWindow,
   DEFAULT_EPISODE_WINDOW,
   estimateTokens,
@@ -863,7 +864,41 @@ async function onContext(event, ctx) {
           recordAction(sessionId, { kind: 'tool-sweep', status: 'skipped', reason: planned.reason })
         }
       } else {
-        trace('context', { sessionId, hook: 'sweep-skipped', reason: 'entry-identity-unavailable' })
+        const sm = ctx?.sessionManager
+        const branchProbe = (() => {
+          try {
+            const b = sm?.getBranch?.()
+            return Array.isArray(b)
+              ? { len: b.length, firstKeys: b[0] ? Object.keys(b[0]).slice(0, 12) : null, types: b.slice(0, 6).map((e) => e?.type ?? null) }
+              : { len: null, value: typeof b }
+          } catch (e) {
+            return { threw: String(e?.message ?? e) }
+          }
+        })()
+        trace('context', {
+          sessionId,
+          hook: 'sweep-skipped',
+          reason: 'entry-identity-unavailable',
+          details: {
+            hasSessionManager: !!sm,
+            hasGetBranch: typeof sm?.getBranch === 'function',
+            messages: Array.isArray(next) ? next.length : null,
+            branch: branchProbe,
+            align: (() => {
+              try {
+                const b = sm?.getBranch?.() ?? []
+                const prod = contextEntries(b).filter(entryProducesMessage)
+                return {
+                  producing: prod.length,
+                  entryRoles: prod.map((e) => entryMessageRole(e)),
+                  msgRoles: Array.isArray(next) ? next.map((m) => m?.role ?? null) : null
+                }
+              } catch (e) {
+                return { threw: String(e?.message ?? e) }
+              }
+            })()
+          }
+        })
         recordAction(sessionId, { kind: 'tool-sweep', status: 'skipped', reason: 'entry-identity-unavailable' })
       }
     }
