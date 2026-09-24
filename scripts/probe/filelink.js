@@ -24,6 +24,8 @@
       if (store.getState().conn === 'ready' && store.getState().settings) break
       await sleep(500)
     }
+    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
+    const historicalCwd = `${cwd}\\docs`
     localStorage.setItem('yan.onboarded', '1')
     await sleep(400)
 
@@ -117,6 +119,35 @@
       `头部显示范围 1-5（实际 ${JSON.stringify(document.querySelector('[data-testid="file-preview-line"]')?.textContent ?? null)}）`
     )
 
+    /* 历史消息来源目录优先于当前 cwd：同名 README 应打开 docs 下的文件。 */
+    store.getState().applyPush({
+      ch: 'sync',
+      payload: [
+        { id: 'fl-history-user', role: 'user', text: '历史工作目录里的 README', timestamp: Date.now() },
+        {
+          id: 'fl-history-asst',
+          role: 'assistant',
+          text: '见 [历史工作目录 README](README.md)。',
+          sourceCwd: historicalCwd,
+          timestamp: Date.now()
+        }
+      ]
+    })
+    await sleep(700)
+    const historicalLink = [...document.querySelectorAll('a.md-link[data-link-kind="file"]')].find((a) =>
+      (a.textContent ?? '').includes('历史工作目录 README')
+    )
+    ok(!!historicalLink, '带来源目录的历史回复渲染出文件链接')
+    historicalLink?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(1400)
+    const historicalPreview = store.getState().filePreview
+    const normalizedAbs = String(historicalPreview?.data?.abs ?? '').replace(/[\\/]+/g, '/').toLowerCase()
+    const normalizedHistorical = `${historicalCwd}/README.md`.replace(/[\\/]+/g, '/').toLowerCase()
+    const normalizedActive = `${cwd}/README.md`.replace(/[\\/]+/g, '/').toLowerCase()
+    ok(historicalPreview?.cwd === historicalCwd, '预览请求带上历史消息来源 cwd')
+    ok(normalizedAbs === normalizedHistorical, `相对链接解析到历史 cwd 下的 README（${historicalPreview?.data?.abs ?? '-'}）`)
+    ok(normalizedAbs !== normalizedActive, '没有误用当前会话 cwd 下的同名 README')
+
     /*
      * 大文件窗口化（H-4）：指向第 4000 行的链接必须真的定位到那一段 ——
      * 不是只读文件开头、也不是估算滚动位置。
@@ -184,7 +215,6 @@
     )
 
     /* H-4 出口 3：文档内相对链接按**文档目录**解析（`../README.md` → 根 README） */
-    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
     await store.getState().previewFile(`${cwd}\\docs\\a.md`, undefined, cwd)
     await sleep(1500)
     const docLink = document.querySelector(

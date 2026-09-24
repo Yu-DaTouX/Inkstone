@@ -2173,6 +2173,74 @@
   white-space: nowrap;
 }
 
+.goal-review-setting,
+.goal-review-pending {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+.goal-review-setting label {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.goal-review-setting input {
+  flex: none;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.goal-review-setting small,
+.goal-review-pending > small {
+  color: var(--fg-mute);
+  font: inherit;
+}
+
+.goal-review-pending {
+  border: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--accent-soft) 35%, var(--bg-2));
+}
+
+.goal-review-fields {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.goal-review-fields > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goal-review-fields span {
+  color: var(--fg-mute);
+}
+
+.goal-review-fields strong {
+  color: var(--fg);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.goal-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
 /*
  * 用户写的目标 + 达成判据。
  * 两句都可能很长（用户会写一整句验收标准），所以允许换行且不省略 ——
@@ -2649,7 +2717,7 @@
 
 /* H-3b：右栏默认「开始」页。
    只做导航，不承载磁贴；高窗口垂直中段偏上，矮窗口顶部留白并允许滚动。
-   卡片组宽度 min(360px, 100% - 32px)，行高 44px、间距 6px。 */
+   卡片组使用已扣过父容器内边距的可用宽度，行高 44px、间距 6px。 */
 .rp-start {
   flex: 1;
   min-height: 0;
@@ -2662,7 +2730,7 @@
 }
 
 .rp-start-group {
-  width: min(360px, calc(100% - 32px));
+  width: min(360px, 100%);
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -2740,6 +2808,21 @@
   color: var(--fg-dim);
   flex: none;
   display: inline-flex;
+}
+
+@media (max-width: 900px) {
+  .rp-start {
+    padding-inline: 8px;
+  }
+
+  .rp-start-item {
+    gap: 8px;
+    padding-inline: 8px;
+  }
+
+  .rp-start-label {
+    white-space: nowrap;
+  }
 }
 
 @media (max-height: 560px) {

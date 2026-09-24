@@ -2092,6 +2092,16 @@ const { runLanguageExtensionTests } = await import('./test-language-extension.mj
 await runLanguageExtensionTests(ok, languageExtension)
 
 /*
+ * 系统提示开场白扩展（resources/pi-extensions/preamble.js）。
+ *
+ * 它与语言扩展同属「改系统提示文本」的薄层，但职责不同：语言是每轮追加，
+ * 开场白是定点替换（且与界面语言无关）。
+ */
+const preambleExtension = await import('../resources/pi-extensions/preamble.js')
+const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
+await runPreambleExtensionTests(ok, preambleExtension)
+
+/*
  * 切片安全规则（resources/pi-extensions/context-safety.js，N21-10）。
  *
  * 与语言扩展同理：它是**待分发的源码**，直接在包内 import。
@@ -2651,6 +2661,19 @@ await runGitRepoTests(ok)
   ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
   ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
   ok(/from: resources\/pi-extensions[\s\S]*to: yan-thin/.test(builder), '打包：砚薄层与 pi 用户扩展目录分离')
+}
+
+/* 实施-14 F7：实际 provider 失败 live 场景本身也属于交付证据。 */
+{
+  const { existsSync, readFileSync } = await import('node:fs')
+  const live = readFileSync('scripts/test-live.mjs', 'utf8')
+  ok(
+    /handoffrecoverproviderfail:\s*\{[\s\S]*?afterExit: 'handoffRecoverPersisted'/.test(live),
+    'F7：provider 硬失败场景仍接到恢复探针与退出后核验'
+  )
+  ok(/failureMode === 'provider-http-failure' && isHandoff/.test(live), 'F7：失败注入只针对交接包 provider 请求')
+  ok(/handoffFailureStatus === 503/.test(live), 'F7：退出后核验真实记录 provider HTTP 503')
+  ok(existsSync('scripts/probe/handoff-recover.js'), 'F7：provider 硬失败复用真实 Electron 恢复探针')
 }
 
 /*

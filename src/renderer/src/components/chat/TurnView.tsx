@@ -174,7 +174,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
               {segment.commentary.length ? (
                 <div className="turn-commentary" data-testid="turn-commentary">
                   {segment.commentary.map((p) => (
-                    <Paragraph key={p.id} text={p.text} />
+                    <Paragraph key={p.id} text={p.text} sourceCwd={p.sourceCwd} />
                   ))}
                 </div>
               ) : null}
@@ -185,7 +185,11 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
               />
               {segment.response ? (
                 <div className="turn-response" data-testid="turn-response">
-                  <Paragraph text={segment.response.text} primary />
+                  {segment.responseParts?.length
+                    ? segment.responseParts.map((part) => (
+                        <Paragraph key={part.id} text={part.text} sourceCwd={part.sourceCwd} primary />
+                      ))
+                    : <Paragraph text={segment.response.text} sourceCwd={segment.response.sourceCwd} primary />}
                 </div>
               ) : null}
             </Fragment>
@@ -196,7 +200,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
             {turn.commentary.length ? (
               <div className="turn-commentary" data-testid="turn-commentary">
                 {turn.commentary.map((p) => (
-                  <Paragraph key={p.id} text={p.text} />
+                  <Paragraph key={p.id} text={p.text} sourceCwd={p.sourceCwd} />
                 ))}
               </div>
             ) : null}
@@ -207,7 +211,11 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
             {/* 3. 回复 */}
             {turn.response ? (
               <div className="turn-response" data-testid="turn-response">
-                <Paragraph text={turn.response.text} primary />
+                {turn.responseParts?.length
+                  ? turn.responseParts.map((part) => (
+                      <Paragraph key={part.id} text={part.text} sourceCwd={part.sourceCwd} primary />
+                    ))
+                  : <Paragraph text={turn.response.text} sourceCwd={turn.response.sourceCwd} primary />}
               </div>
             ) : null}
           </>
@@ -461,10 +469,10 @@ function fmtArtifactBytes(n: number): string {
  * key 用的是段的 id，所以新的一段出现时 React 会挂新节点 →
  * CSS 的 fade-in 动画就会跑（`animation` 只在节点首次挂载时触发）。
  */
-function ParagraphImpl({ text, primary }: { text: string; primary?: boolean }) {
+function ParagraphImpl({ text, primary, sourceCwd }: { text: string; primary?: boolean; sourceCwd?: string }) {
   return (
     <div className={`turn-para ${primary ? 'primary' : ''}`}>
-      <Markdown text={text} />
+      <Markdown text={text} sourceCwd={sourceCwd} />
     </div>
   )
 }
@@ -483,7 +491,10 @@ function ParagraphImpl({ text, primary }: { text: string; primary?: boolean }) {
  * 所以改这里的 props 时要小心：任何非原始值（对象/数组/函数）都会让
  * 这个 memo 完全失效，退回成「每帧重解析整段会话」。
  */
-const Paragraph = memo(ParagraphImpl, (a, b) => a.text === b.text && a.primary === b.primary)
+const Paragraph = memo(
+  ParagraphImpl,
+  (a, b) => a.text === b.text && a.primary === b.primary && a.sourceCwd === b.sourceCwd
+)
 
 /**
  * 整轮活动摘要 —— 「推理了 N 次 · 执行了 M 次工具」。

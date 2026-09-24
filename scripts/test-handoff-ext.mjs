@@ -9,7 +9,8 @@
  * 接住了它，并且确实等过（日志里的 `attempts`）。
  *
  * 其余用例是边界：过期遗物不重做、同 operationId 不重复调模型、
- * 没有模型注册表时不写结果、压根没有请求时不凭空造包。
+ * 模型调用抛错时写出可区分的失败结果、没有模型注册表时不写结果、
+ * 压根没有请求时不凭空造包。
  */
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -174,7 +175,55 @@ export async function runHandoffExtTests(ok) {
     ok(noModelLog === true, '没有模型注册表时不硬撑（记一条 skipped 供排障）')
     ok((await readResult()) === null, '没有模型注册表时不写结果文件')
 
-    /* ── 5. 压根没有请求：等满窗口后什么都不做 ─────────────────────── */
+    /* ── 5. completion 抛错：写 error 结果区分「跑失败」和「没跑」 ─────── */
+    let failedCompleteCalls = 0
+    const failedCtx = {
+      modelRegistry: {
+        complete: async () => {
+          failedCompleteCalls += 1
+          throw new Error('fixture model failure')
+        }
+      },
+      model: { id: 'test-model' }
+    }
+    await writeRequest('op-provider-failed')
+    handlers.agent_settled({}, failedCtx)
+    const failedResult = await waitFor(async () => {
+      const result = await readResult()
+      return result?.operationId === 'op-provider-failed' ? result : null
+    })
+    ok(failedCompleteCalls === 1, '模型 completion 硬失败时只调用一次')
+    ok(
+      failedResult?.handoffId === 'h1' && failedResult?.error === 'fixture model failure' && failedResult?.text === '',
+      'completion 抛错仍写匹配请求的 error 结果，宿主可判断模型确实运行但失败'
+    )
+    const failedLog = await waitFor(async () => {
+      const rows = await readLog()
+      return rows.find((line) => line.hook === 'produced' && line.operationId === 'op-provider-failed') ?? null
+    })
+    ok(failedLog?.error === 'fixture model failure', 'completion 失败诊断只记录错误摘要')
+
+    /* Pi provider adapter 也可能以 stopReason=error 返回，而不是 reject Promise。 */
+    const returnedErrorText = 'fixture provider returned HTTP 503'
+    const returnedErrorCtx = {
+      modelRegistry: {
+        complete: async () => ({ stopReason: 'error', errorMessage: returnedErrorText, content: [] })
+      },
+      model: { id: 'test-model' }
+    }
+    await writeRequest('op-provider-error-result')
+    handlers.agent_settled({}, returnedErrorCtx)
+    const returnedErrorResult = await waitFor(async () => {
+      const result = await readResult()
+      return result?.operationId === 'op-provider-error-result' ? result : null
+    })
+    ok(
+      returnedErrorResult?.error === returnedErrorText && returnedErrorResult?.text === '',
+      'Pi completion 的 stopReason=error 与 errorMessage 被保留为 failed 结果'
+    )
+
+    /* ── 7. 压根没有请求：等满窗口后什么都不做 ─────────────────────── */
+    await rm(resultFile, { force: true })
     await rm(requestFile, { force: true })
     handlers.agent_settled({}, ctx)
     const emptyCheck = await waitFor(async () => {

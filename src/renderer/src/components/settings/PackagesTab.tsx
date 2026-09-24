@@ -20,6 +20,7 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   question: { name: 'pkg.builtin.question', desc: 'pkg.builtin.questionDesc' },
   'response-detail': { name: 'pkg.builtin.response-detail', desc: 'pkg.builtin.response-detailDesc' },
   language: { name: 'pkg.builtin.language', desc: 'pkg.builtin.languageDesc' },
+  preamble: { name: 'pkg.builtin.preamble', desc: 'pkg.builtin.preambleDesc' },
   'capability-guide': { name: 'pkg.builtin.capability-guide', desc: 'pkg.builtin.capability-guideDesc' },
   context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' }
 }

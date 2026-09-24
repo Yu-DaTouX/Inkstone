@@ -52,7 +52,13 @@
 
     click(row.querySelector('.srow-acts button'))
     await sleep(250)
-    const danger = row.querySelector('.srow-menu-btn.danger:not([disabled])')
+    /* 菜单 Portal 到 body（实施-12 U-2），行内查不到，从菜单容器取并核对归属 */
+    const sessionMenu = q('[data-testid="rail-session-menu"]')
+    ok(
+      sessionMenu?.getAttribute('data-session-path') === sessionPath,
+      '菜单属于这一行（data-session-path 一致）'
+    )
+    const danger = sessionMenu?.querySelector('.srow-menu-btn.danger:not([disabled])')
     if (!ok(!!danger, '菜单里的「删除」可用')) return out.join('\n')
     click(danger)
     await sleep(450)

@@ -86,6 +86,11 @@ export async function runGoalTests(ok) {
 
   const goal0 = shared.emptyGoal(1000)
   ok(goal0.phase === 'planning' && goal0.revision === 0, '空目标是 planning / rev0')
+  ok(goal0.readyApproval === 'automatic' && goal0.pendingReady === null, '新会话默认 ready 自动开始且没有待审计划')
+  ok(
+    shared.normalizeGoalState({ phase: 'planning', revision: 4 }).readyApproval === 'automatic',
+    '旧 goal 文档读回默认自动开始'
+  )
 
   const report = (patch = {}) => ({ reportId: 'rp-1', phase: 'executing', goalRevision: 0, ...patch })
   ok(shared.checkGoalReport(report(), goal0).ok === true, '普通推进报告通过')
@@ -107,6 +112,21 @@ export async function runGoalTests(ok) {
   ok(
     shared.checkGoalReport(report({ phase: 'stopped' }), goal0).code === 'stopped_is_user_action',
     'stopped 是用户动作，模型不能自报'
+  )
+  const reportLink = { kind: 'url', target: 'https://example.com/goal-report-link', label: '模型报告链接' }
+  const normalizedReport = shared.normalizeReportParams({
+    'report-id': 'rp-links',
+    phase: 'executing',
+    'goal-revision': 0,
+    links: [reportLink]
+  })
+  ok(
+    normalizedReport.links?.length === 1 && normalizedReport.links[0].target === reportLink.target,
+    'CLI report 参数归一保留结构化链接，交给宿主校验'
+  )
+  ok(
+    shared.normalizeReportParams({ links: 'not-an-array' }).links === undefined,
+    '非数组 links 不进入报告参数'
   )
   const completedGoal = shared.applyGoalReport(
     goal0,
@@ -229,6 +249,92 @@ export async function runGoalTests(ok) {
     const stale = await store.commitReady(keyA, ready({ transitionId: 'tr-2', modeRevision: 2 }), current, 'goal-A')
     ok(stale.ok === false && stale.code === 'stale_mode', '换了 id 但模式已过期 → 拒，且带上当前状态')
     ok(stale.goal.revision === 1, '被拒时返回当前目标（模型据此纠正）')
+
+    const reviewKey = 'C:/tmp/sessions/review.jsonl'
+    const reviewMode = await store.setReadyApprovalMode(reviewKey, 'review', 0)
+    ok(reviewMode.ok && reviewMode.goal.readyApproval === 'review' && reviewMode.goal.revision === 1, '会话可显式开启 ready 审阅')
+    const staged = await store.prepareReadyReview(
+      reviewKey,
+      ready({ transitionId: 'tr-review', goalRevision: 1 }),
+      { modeRevision: 3, goalRevision: 1 },
+      'goal-review'
+    )
+    ok(staged.ok && 'pending' in staged && staged.pending, 'ready 在审阅模式只创建待审计划')
+    ok(
+      staged.ok && staged.goal.phase === 'planning' && staged.goal.revision === 2 &&
+        staged.goal.pendingReady?.goalId === 'goal-review',
+      '待审状态保持 planning，并记录计划和 CAS revision'
+    )
+    const stagedReplay = await store.prepareReadyReview(
+      reviewKey,
+      ready({ transitionId: 'tr-review', goalRevision: 0 }),
+      { modeRevision: 99, goalRevision: 0 },
+      'ignored'
+    )
+    ok(stagedReplay.ok && 'pending' in stagedReplay && stagedReplay.replayed, '同一 ready 幂等重放待审计划')
+    const pendingReport = await store.report(reviewKey, {
+      reportId: 'rp-during-review', phase: 'executing', goalRevision: 2
+    })
+    ok(!pendingReport.ok && pendingReport.code === 'review_pending', '待审期间拒绝模型提交目标进度')
+    const staleReviewGoal = await store.approveReadyReview(reviewKey, {
+      transitionId: 'tr-review', goalRevision: 1, modeRevision: 3
+    })
+    ok(!staleReviewGoal.ok && staleReviewGoal.code === 'stale_goal', '批准必须匹配待审 goal revision')
+    const staleReviewMode = await store.approveReadyReview(reviewKey, {
+      transitionId: 'tr-review', goalRevision: 2, modeRevision: 4
+    })
+    ok(!staleReviewMode.ok && staleReviewMode.code === 'stale_mode', '批准必须匹配提交时 mode revision')
+    const approvedReview = await store.approveReadyReview(reviewKey, {
+      transitionId: 'tr-review', goalRevision: 2, modeRevision: 3
+    })
+    ok(
+      approvedReview.ok && !approvedReview.replayed && approvedReview.goal.phase === 'executing' &&
+        approvedReview.goal.revision === 3 && approvedReview.goal.pendingReady === null,
+      '批准后才进入 executing，且清掉待审快照'
+    )
+    const approvalReplay = await store.approveReadyReview(reviewKey, {
+      transitionId: 'tr-review', goalRevision: 2, modeRevision: 3
+    })
+    ok(approvalReplay.ok && approvalReplay.replayed && approvalReplay.goal.revision === 3, '同一批准 transitionId 不会重复启动或推进')
+
+    const stagedAgain = await store.prepareReadyReview(
+      reviewKey,
+      ready({ transitionId: 'tr-review-2', modeRevision: 4, goalRevision: 3 }),
+      { modeRevision: 4, goalRevision: 3 },
+      'goal-review'
+    )
+    ok(stagedAgain.ok && 'pending' in stagedAgain && stagedAgain.goal.revision === 4, '批准后仍可为本会话再审阅下一计划')
+    if (stagedAgain.ok && 'pending' in stagedAgain) {
+      const modified = await store.modifyReadyReview(reviewKey, {
+        transitionId: 'tr-review-2', goalRevision: stagedAgain.goal.revision
+      })
+      ok(modified.ok && modified.goal.phase === 'planning' && modified.goal.pendingReady === null, '修改计划清除待审快照并返回计划阶段')
+      const oldPlanApproval = await store.approveReadyReview(reviewKey, {
+        transitionId: 'tr-review-2', goalRevision: stagedAgain.goal.revision, modeRevision: 4
+      })
+      ok(!oldPlanApproval.ok, '修改后旧计划不能再批准')
+
+      const stagedForModeExit = await store.prepareReadyReview(
+        reviewKey,
+        ready({ transitionId: 'tr-review-mode-exit', modeRevision: 4, goalRevision: modified.goal.revision }),
+        { modeRevision: 4, goalRevision: modified.goal.revision },
+        'goal-review'
+      )
+      ok(
+        stagedForModeExit.ok && 'pending' in stagedForModeExit && stagedForModeExit.goal.pendingReady !== null,
+        '离开澄清档前有一条待审计划'
+      )
+      const cancelledOnModeExit = await store.cancelReadyReview(reviewKey)
+      ok(
+        cancelledOnModeExit?.phase === 'planning' && cancelledOnModeExit.pendingReady === null,
+        '切离澄清档会撤销待审计划，仍留在 planning'
+      )
+      const cancelledAgain = await store.cancelReadyReview(reviewKey)
+      ok(
+        cancelledAgain?.pendingReady === null && cancelledAgain.revision === cancelledOnModeExit?.revision,
+        '重复撤销幂等，不多推进 revision'
+      )
+    }
 
     /* 多会话隔离：A 的提交不能动 B */
     ok(store.state(keyB).revision === 0, 'B 会话不受 A 影响')

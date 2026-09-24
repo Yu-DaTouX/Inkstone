@@ -187,16 +187,16 @@
 
 /* 向下弹（会话行 / 列表项的操作菜单） */
 .row-menu,
-.srow-menu {
+.row-menu-surface {
   animation: mo-in-down var(--mo-fast) var(--mo-ease) both;
   transform-origin: top left;
 }
 .row-menu.closing,
-.srow-menu.closing {
+.row-menu-surface.closing {
   animation: mo-out-down var(--mo-fast) var(--mo-ease-out) both;
 }
 .row-menu .row-menu-btn,
-.srow-menu .srow-menu-btn {
+.row-menu-surface .srow-menu-btn {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * 14ms);
 }
@@ -257,7 +257,7 @@
   .settings,
   .mt-pop,
   .row-menu,
-  .srow-menu,
+  .row-menu-surface,
   .notice,
   .logdrawer,
   .connbar,
@@ -267,7 +267,7 @@
   .mt-pop .mt-group,
   .mt-pop .mt-stop,
   .row-menu .row-menu-btn,
-  .srow-menu .srow-menu-btn {
+  .row-menu-surface .srow-menu-btn {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }

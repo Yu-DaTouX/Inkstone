@@ -30,6 +30,8 @@
     evidence: ['证据一'],
     links: [],
     blocker: null,
+    readyApproval: 'automatic',
+    pendingReady: null,
     failure: null,
     updatedAt: Date.now(),
     ...over
@@ -74,6 +76,57 @@
     /* 受阻原因要显示在浮层里 */
     await openWith(goalOf('blocked', { blocker: '等待用户授权' }))
     ok(!!q('.goal-panel-blocker'), '受阻原因显示在浮层里')
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
+    /* G-4：审阅开关按会话展示，待审计划保留五栏并提供明确决策出口。 */
+    const persistedGoal = await window.yan.getGoal()
+    window.__yanStore.setState({
+      goal: persistedGoal.goal,
+      workMode: persistedGoal.mode,
+      goalLoading: false,
+      goalError: null
+    })
+    await st().setWorkMode('clarify')
+    await sleep(120)
+    const reviewSaved = await st().setGoalReadyApproval('review')
+    await sleep(120)
+    ok(
+      reviewSaved && st().workMode?.mode === 'clarify' && st().goal?.readyApproval === 'review',
+      `G-4：真实 Electron IPC 在当前隔离会话保存审阅偏好 (saved=${reviewSaved} mode=${st().workMode?.mode} revision=${st().goal?.revision} approval=${st().goal?.readyApproval} runner=${st().activeRunnerId ?? 'none'})`
+    )
+    window.__yanStore.setState({ workMode: { mode: 'clarify', revision: 6 } })
+    await openWith(goalOf('planning', { readyApproval: 'review' }))
+    const reviewToggle = q('[data-testid="goal-review-setting-toggle"]')
+    ok(reviewToggle?.checked === true && reviewToggle.disabled === false, 'G-4：澄清模式可设置该会话的计划审阅偏好')
+    st().setGoalPopoverOpen(false)
+    await sleep(150)
+
+    const pendingReady = {
+      transitionId: 'tr-fixture-review',
+      goalId: 'fixture-goal',
+      modeRevision: 6,
+      goalRevision: 3,
+      understanding: {
+        goal: '完成计划审阅',
+        deliverable: '审阅后开始',
+        scope: '当前会话',
+        constraints: '批准前只读',
+        acceptance: '批准后进入执行'
+      },
+      createdAt: Date.now()
+    }
+    await openWith(goalOf('planning', { revision: 3, readyApproval: 'review', pendingReady }))
+    const reviewCard = q('[data-testid="goal-pending-review"]')
+    ok(!!reviewCard, 'G-4：待审计划在目标面板中显示')
+    ok(
+      reviewCard?.textContent?.includes('完成计划审阅') &&
+        reviewCard.textContent.includes('批准前只读') &&
+        !!q('[data-testid="goal-approve-and-start"]') &&
+        !!q('[data-testid="goal-modify-plan"]'),
+      'G-4：五栏计划文本与批准 / 修改动作均可见'
+    )
+    ok(q('[data-testid="goal-review-setting-toggle"]')?.disabled === true, 'G-4：待审时锁定审阅偏好，避免计划状态漂移')
     st().setGoalPopoverOpen(false)
     await sleep(150)
 
@@ -179,7 +232,7 @@
 
     return out.join('\n')
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
     return out.join('\n')
   }
 })()

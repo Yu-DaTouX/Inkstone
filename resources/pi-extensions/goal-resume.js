@@ -161,6 +161,7 @@ export default function goalResume(pi) {
    */
   let activity = 0
   let scheduledFor = -1
+  let pendingHandoffStart = null
   /*
    * `start()` 后紧接着 `switchSession()` 时，扩展最初拿到的 pi/ctx 会被
    * pi 标成 stale；`session_start` 的第二个参数才是这次会话可用的新 ctx。
@@ -170,7 +171,7 @@ export default function goalResume(pi) {
   /*
    * 发送方的选择（兼顾两种真实情况）
    *
-   *   ① **pi 0.85.1 的钩子 ctx 里没有 `sendMessage`** —— `createContext()` 只给
+   *   ① **pi 0.87.1 的钩子 ctx 里没有 `sendMessage`** —— `ExtensionContextActions` 只给
    *      `ui / mode / cwd / sessionManager / modelRegistry / model / isIdle / compact …`。
    *      2026-09-22 的现场：日志里写着 `resume_sent`、`operationId` 也记成已消费，
    *      而消息**从未发出去** —— 因为旧代码是 `context.sendMessage?.()`，可选链把失败吞了。
@@ -265,6 +266,11 @@ export default function goalResume(pi) {
     } catch (err) {
       note('entry_failed', { error: String(err?.message ?? err) })
     }
+    const startReceipt =
+      resume.kind === 'handoff' && typeof resume.operationId === 'string' && resume.operationId.trim()
+        ? { operationId: resume.operationId.trim() }
+        : null
+    if (startReceipt) pendingHandoffStart = startReceipt
     try {
       await target.sendMessage(
         {
@@ -276,12 +282,58 @@ export default function goalResume(pi) {
       )
       note('resume_sent', { operationId: resume.operationId, kind: resume.kind, token })
     } catch (err) {
+      if (startReceipt && pendingHandoffStart === startReceipt) pendingHandoffStart = null
       note('resume_failed', { operationId: resume.operationId, kind: resume.kind, error: String(err?.message ?? err) })
     }
   }
 
+  pi.on('before_provider_request', (event, context) => {
+    /*
+     * custom + triggerTurn 走 Pi 的 agent.prompt() 直达路径，不经过 prompt()，
+     * 因此不会触发 before_agent_start。before_provider_request 覆盖这条真实请求链，
+     * 并且早于 provider 调用；只在同一个待发 handoff operationId 上写回执。
+     */
+    rememberSender(context)
+    const receipt = pendingHandoffStart
+    if (!receipt) return
+    let requestMessages = ''
+    try {
+      requestMessages = JSON.stringify(event?.payload?.messages ?? [])
+    } catch {
+      /* An unreadable payload cannot confirm a specific handoff request. */
+    }
+    const resumeMarker = `[yan-handoff-resume:${receipt.operationId}]`
+    const matches = requestMessages.includes(resumeMarker)
+    note('before_provider_request', {
+      pendingHandoffOperationId: receipt.operationId,
+      resumeMarkerPresent: matches
+    })
+    if (!matches) return
+    pendingHandoffStart = null
+    if (typeof entryWriter?.appendEntry !== 'function') {
+      note('handoff_start_receipt_failed', {
+        operationId: receipt.operationId,
+        hook: 'before_provider_request',
+        reason: 'no-appendEntry'
+      })
+      return
+    }
+    try {
+      entryWriter.appendEntry('yan-handoff-started', {
+        operationId: receipt.operationId,
+        hook: 'before_provider_request',
+        at: Date.now()
+      })
+      note('handoff_started', { operationId: receipt.operationId, hook: 'before_provider_request' })
+    } catch (err) {
+      note('handoff_start_receipt_failed', {
+        operationId: receipt.operationId,
+        hook: 'before_provider_request',
+        error: String(err?.message ?? err)
+      })
+    }
+  })
   pi.on('before_agent_start', () => {
-    /* 回合真的起来了才会有这行 —— 用它区分「续行没发出去」与「发出去了但没起回合」 */
     note('before_agent_start', { activity: activity + 1 })
     activity += 1
   })

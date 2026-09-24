@@ -16,12 +16,13 @@ export async function runHandoffHostRegressionTests(ok) {
   const setup = () => {
     const pending = { request: { operationId: 'op', handoffId: 'handoff', sessionKey: 'source' }, goalId: 'goal' }
     const map = new Map([['run', pending]])
-    const calls = { commits: 0, resumes: 0, lockHeld: false }
+    const calls = { commits: 0, resumes: 0, lockHeld: false, diagnostics: [], notifications: [] }
     const ctx = vm.createContext({
       handoffPending: map, clearInterval() {}, clearTimeout() {},
       ownsHandoffOperation: (a, b) => !b || a === b,
       handoffRequests: { readResult: async () => ({ operationId: 'op', handoffId: 'handoff', text: '{}' }), clearResult: async () => {}, clearRequest: async () => {} },
-      handoffDiag: { record() {} }, handoffNotify() {},
+      handoffDiag: { record: (event) => calls.diagnostics.push(event) },
+      handoffNotify: (...args) => calls.notifications.push(args),
       parseHandoffOutput: () => ({ ok: true, value: {} }), sanitizeHandoffPackage: () => ({}),
       handoffs: { setPackage: async () => {} }, handoffSummary: () => '', HANDOFF_COMMIT_ENABLED: true,
       commitHandoff: async () => { calls.commits++; calls.lockHeld = map.get('run') === pending },
@@ -60,6 +61,17 @@ export async function runHandoffHostRegressionTests(ok) {
     if (failure === 'persist') h.ctx.handoffs.setPackage = async () => { throw new Error('disk unavailable') }
     await h.ctx.collectHandoffResult('run', 'op')
     ok(h.calls.commits === 0 && h.calls.resumes === 1 && !h.map.size, `${failure} 失败释放交接占用并恢复正常续行调度`)
+    const expectedOutcome = {
+      provider: 'failed',
+      parse: 'unparsable',
+      incomplete: 'incomplete',
+      persist: 'persist-failed'
+    }[failure]
+    ok(
+      h.calls.diagnostics.some((event) => event.stage === 'generate' && event.outcome === expectedOutcome),
+      `${failure} 失败记录准确诊断类别 ${expectedOutcome}`
+    )
+    ok(h.calls.notifications.at(-1)?.[2] === 'error', `${failure} 失败向用户发出错误级提示`)
   }
   {
     const h = setup(), read = deferred()

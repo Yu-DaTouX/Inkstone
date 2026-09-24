@@ -44,12 +44,13 @@ const outDir = process.env.YAN_SHOT_DIR
  *
  * ⚠️ 默认值曾经是写死的 \`2026-09-18\` —— 结果是不带环境变量跑一次整组，
  * 就把那一天的 **28 张旧图全部覆盖了**（它们本来都是“另存新名”的批次），
- * 与上面那条规则直接冲突。现在默认带上**时分**：同一分钟内重复跑才会撞名，
- * 正常使用只会新增文件。要拍一个固定名批次，请显式给 \`YAN_MATRIX_STAMP\`。
+ * 与上面那条规则直接冲突。现在默认带上**时分秒和毫秒**，重复运行会生成新名。
+ * 要拍一个固定名批次，请显式给 \`YAN_MATRIX_STAMP\`。
  */
 function defaultStamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+  const ms = String(d.getMilliseconds()).padStart(3, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${ms}`
 }
 const STAMP = process.env.YAN_MATRIX_STAMP || defaultStamp()
 
@@ -445,6 +446,17 @@ function registerStubHandlers() {
       autoCommit: true
     }
   })
+  /* rightwindows is a composite screenshot; its browser must also close cleanly after capture. */
+  ipcMain.handle('yan:browser:close', () => ({
+    open: false,
+    url: '',
+    title: '',
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+    mode: 'embedded',
+    tabs: []
+  }))
   /*
    * 额度区：没有它界面上会写“查询失败（Error invoking remote method 'yan:pro…'）”，
    * 截进验收图会被当成真 bug。数据与 shots.mjs 一致。
@@ -530,6 +542,21 @@ function registerStubHandlers() {
       }
     })
   )
+  ipcMain.handle('yan:readPreview', (_e, path, line, cwd) => {
+    const input = String(path ?? '')
+    const root = String(cwd ?? 'C:/work/pi-desktop').replace(/[\\/]+$/, '')
+    const name = input.split(/[\\/]/).pop() ?? input
+    return {
+      ok: true,
+      path: input,
+      abs: root + '/' + input.replace(/^[\\/]+/, '').replace(/\\/g, '/'),
+      name,
+      size: 1240,
+      kind: 'text',
+      text: 'export async function runAgent() {\n  return "preview fixture"\n}\n',
+      ...(typeof line === 'number' ? { line } : {})
+    }
+  })
   ipcMain.handle('yan:deleteSession', () => ({ ok: true, undoToken: 'shot-token' }))
   ipcMain.handle('yan:restoreSession', () => ({ ok: true }))
   ipcMain.handle('yan:authProviders', () => [])
@@ -993,12 +1020,12 @@ const GROUPS = [
      *    与 `runners`（造一个 running 的回合）—— 放在中间会影响后面几张图的 fixture
      *    （实测：`railsessions` 那八条会话把 `trashtoast` 要删的那一行挤进了折叠段）。
      */
-    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
+    states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envnotgit', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewnotgit', 'reviewwrite', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentlaunch', 'subagent', 'subagentinline', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
   { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envnotgit', 'envlinks'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
   /*
@@ -1027,7 +1054,47 @@ const GROUPS = [
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['righttoolmenu', 'rightresources'] },
   { w: 900, h: 520, scale: 1, theme: 'light', states: ['rightresources', 'ctxsettings'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['main', 'righttoolmenu'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', 'rightresources'] }
+  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['reasoning', 'rightresources'] },
+  /*
+   * 实施-12 U-2 残余：会话行菜单 / 分组菜单改走 Portal 后的真实窗口证据（深浅各一张）。
+   * 单开一组：状态脚本会造 8 条合成会话，不影响任何旧图。
+   */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['sessionmenu'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['sessionmenu'] },
+  /* 实施-12 U-1：真窗口展示收起左栏后，更多会话恢复为五条预览（深浅各一张）。 */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['railreset'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['railreset'] },
+  /* 实施-12 U-2：项目菜单四角夹取（深/浅分开），以及 150% 缩放下的边角形态。 */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutl'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutr'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubl'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubr'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['projectmenubr'] },
+  /* 实施-16 G-4：待审计划的深色 / 浅色真窗口截图，使用合成目标状态。 */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['goalreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['goalreview'] },
+  /*
+   * 实施-11 H-4 剩余视觉矩阵：文件相关 5 个状态在小窗 / 矮窗 / 125% / 150% 下的形态。
+   * 为什么补齐：旧批次只在 1440x900 / 100% 看过这 5 个状态，而文件树 + 预览 +
+   * 变更卡正是窄 / 矮窗口和缩放档最容易崩裂的密集布局。纯新增组，不覆盖旧图。
+   */
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
+  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['fsnarrow', 'fileincontext', 'wschanges', 'wsunknown', 'filelink'] },
+  /* 浅色只在缩放 / 小窗各补关键两态，避免无谓地把每组都跑一遍。 */
+  { w: 940, h: 620, scale: 1, theme: 'light', states: ['fileincontext', 'filelink'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'light', states: ['fileincontext', 'filelink'] },
+  /*
+   * F7 主题切换圆心：切到深色（向外晕开）与切到浅色（向心收拢）各一张，
+   * 截在真实 760ms 过渡的中点（截图时把动画暂停，不改生产时长）。
+   * 两个方向各自一组，让组主题就是动画起点，避免额外的起点过渡干扰。
+   */
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['themetransitionspread'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['themetransitioncollapse'] },
+  /* H-10 子代理「过程」页长转录：深色 / 浅色各一张 */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['subagentprocess'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['subagentprocess'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -1043,7 +1110,45 @@ const ONBOARDING_GROUPS = [
  * 约定：每个脚本先把界面复位到「主界面」，再摆出自己那个状态 ——
  * 否则上一个状态留下的菜单/面板会串进下一张图（截出来的是两态叠加）。
  */
+const projectMenuCornerState = (corner) => `
+  (async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const st = window.__yanStore.getState();
+    st.closeSettings();
+    st.setRailPinned(true);
+    const now = Date.now();
+    const cwd = String(st.settings.cwd);
+    window.__yanStore.setState({ settings: {
+      ...st.settings,
+      projects: [{ id: 'menu-corner-project', cwd, name: 'pi-desktop', archived: false, createdAt: now, updatedAt: now }],
+      projectGroups: [],
+      recentCwds: [cwd]
+    } });
+    await sleep(500);
+    const row = [...document.querySelectorAll('[data-testid="rail-project-row"]')].find((el) => el.dataset.dragId);
+    if (!row) return 'no-project-row';
+    const points = {
+      tl: [8, 8],
+      tr: [window.innerWidth - 2, 8],
+      bl: [8, window.innerHeight - 2],
+      br: [window.innerWidth - 2, window.innerHeight - 2]
+    };
+    const [x, y] = points[${JSON.stringify(corner)}];
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    await sleep(450);
+    const menu = document.querySelector('[data-testid="rail-project-menu-panel"]');
+    if (!menu) return 'no-menu';
+    const r = menu.getBoundingClientRect();
+    const inside = r.left >= 7.5 && r.top >= 7.5 && r.right <= window.innerWidth - 7.5 && r.bottom <= window.innerHeight - 7.5;
+    return 'ok(corner=${corner} x=' + Math.round(r.left) + ' y=' + Math.round(r.top) + ' inside=' + inside + ')';
+  })()
+`
+
 const STATES = {
+  projectmenutl: projectMenuCornerState('tl'),
+  projectmenutr: projectMenuCornerState('tr'),
+  projectmenubl: projectMenuCornerState('bl'),
+  projectmenubr: projectMenuCornerState('br'),
   handoffnote: [
     '(async () => {',
     '  const st = window.__yanStore.getState();',
@@ -1151,21 +1256,25 @@ const STATES = {
       /* 视觉矩阵只注册布局相关 IPC，不注册 readPreview；直接摆真实 FilePreviewState
        * 的渲染输入，仍然走 FilePreviewPane，不为截图专门造 HTML。 */
       const cwd = window.__yanStore.getState().session?.cwd || window.__yanStore.getState().settings?.cwd || 'C:/yan-preview';
-      window.__yanStore.setState({
-        filePreview: {
+      const fileKey = '-|' + encodeURIComponent(cwd) + '|' + encodeURIComponent(cwd + '/src/main/agent.ts');
+      const filePreview = {
+        path: 'src/main/agent.ts',
+        cwd,
+        loading: false,
+        key: fileKey,
+        data: {
+          ok: true,
           path: 'src/main/agent.ts',
-          cwd,
-          loading: false,
-          data: {
-            ok: true,
-            path: 'src/main/agent.ts',
-            abs: cwd + '/src/main/agent.ts',
-            name: 'agent.ts',
-            size: 4920,
-            kind: 'text',
-            text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
-          }
+          abs: cwd + '/src/main/agent.ts',
+          name: 'agent.ts',
+          size: 4920,
+          kind: 'text',
+          text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
         }
+      };
+      window.__yanStore.setState({
+        filePreview,
+        filePreviews: { ...window.__yanStore.getState().filePreviews, [fileKey]: filePreview }
       });
       await sleep(650);
       /* 直接落 reviewOpen，避免视觉矩阵未注册的 browser.setVisible IPC 干扰标签截图。 */
@@ -1178,20 +1287,8 @@ const STATES = {
       /* 文件树在工具窗口首次挂载时会清理旧预览；审查窗口打开后再放回文件预览，
        * 才能在同一张图里稳定展示四个并列窗口入口，而不改变真实运行时语义。 */
       window.__yanStore.setState({
-        filePreview: {
-          path: 'src/main/agent.ts',
-          cwd,
-          loading: false,
-          data: {
-            ok: true,
-            path: 'src/main/agent.ts',
-            abs: cwd + '/src/main/agent.ts',
-            name: 'agent.ts',
-            size: 4920,
-            kind: 'text',
-            text: 'export async function runAgent() {\\n  return "window surface"\\n}\\n'
-          }
-        }
+        filePreview,
+        filePreviews: { ...window.__yanStore.getState().filePreviews, [fileKey]: filePreview }
       });
       await sleep(350);
         const tabs = [...document.querySelectorAll('[data-testid="right-window-tabs"] [role="tab"]')]
@@ -1692,6 +1789,45 @@ const STATES = {
     })()
   `,
   /*
+   * 实施-16 G-4：澄清模式里显示待用户审阅的计划。
+   * 只注入合成状态，不调用目标写 IPC；截图检查计划文本与两个决策按钮。
+   */
+  goalreview: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      window.__yanStore.setState({
+        workMode: { mode: 'clarify', revision: 6 },
+        goal: {
+          goalId: 'goal-review-screenshot',
+          phase: 'planning',
+          revision: 3,
+          steps: [], evidence: [], links: [], blocker: null, failure: null,
+          readyApproval: 'review',
+          pendingReady: {
+            transitionId: 'tr-goal-review-screenshot',
+            goalId: 'goal-review-screenshot',
+            modeRevision: 6,
+            goalRevision: 3,
+            understanding: {
+              goal: '为目标增加计划审阅',
+              deliverable: '批准后开始执行',
+              scope: '当前会话的目标面板',
+              constraints: '批准前只允许只读操作',
+              acceptance: '用户可批准开始或要求修改计划'
+            },
+            createdAt: Date.now()
+          },
+          updatedAt: Date.now()
+        }
+      });
+      st.setGoalPopoverOpen(true);
+      await new Promise((r) => setTimeout(r, 500));
+      return 'ok';
+    })()
+  `,
+  /*
    * 模式快捷键那行（2026-09-22）。
    *
    * 需要滚到它：外观页很长，不滚的话截出来是别的一行（脚本只截元素框）。
@@ -1765,7 +1901,8 @@ const STATES = {
    *（`RunnerStatus.waiting = agent.getPendingUiCount() > 0`，真实链路见场景 `askbackground`）。
    * 第四批（N12 失败态）又加了第三条：`failed: true` 的那一行画 `alert-circle`
    *（真源 `conn === 'error' || conn === 'exited'`，真实故障见场景 `runnerfailed`）。
-   * 放在整组最末，并用 AFTER_STATE 把假实例撤走。
+   * 放在组内会话类状态的末段，并用 AFTER_STATE 把假实例撤走；运行到这张图之前
+   * 等过 Rail 的 800ms 会话刷新，避免 chainjoin 的延迟刷新覆盖本状态会话夹具。
    */
   railwaiting: `
     (() => {
@@ -2936,6 +3073,121 @@ const STATES = {
       return 'ok(' + (badge.textContent || '') + ')';
     })()
   `,
+  /*
+   * 实施-12 U-2 残余：会话行菜单统一走 `ContextMenuSurface`（Portal）后的真实窗口形态。
+   * 特意先展开到全部 8 条再滚到列表底部：以前最后几行的菜单会被 `.rail-body`
+   * 的 overflow 裁掉，这张图就是那个位置的现场。
+   */
+  sessionmenu: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const names = ['重构入口', '补测试', '查崩溃', '改样式', '写文档', '调性能', '看日志', '读代码'];
+      const sessions = names.map((n, i) => ({
+        id: 'vsm-' + i,
+        path: cwd + '/vsm-' + i + '.jsonl',
+        cwd,
+        projectId: 'vsm-proj',
+        title: '会话 ' + (i + 1) + ' · ' + n,
+        named: true,
+        createdAt: stamp,
+        updatedAt: stamp - i * 1000,
+        lastActivityAt: stamp - i * 1000,
+        messageCount: 3
+      }));
+      window.__yanStore.setState({
+        sessions,
+        session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path },
+        activeRunnerId: 'vsm-r1',
+        runners: [{
+          id: 'vsm-r1', runId: 'vsm-r1', cwd, projectId: 'vsm-proj',
+          sessionFile: sessions[7].path, sessionId: 'vsm-7',
+          generation: 1, running: true, waiting: false, failed: false,
+          conn: 'ready', createdAt: stamp, lastActiveAt: stamp, isActive: false
+        }]
+      });
+      st.patchSettings({
+        projectGroups: [],
+        projects: [{ id: 'vsm-proj', cwd, name: 'pi-desktop', archived: false, createdAt: stamp, updatedAt: stamp }],
+        recentCwds: [cwd]
+      });
+      await sleep(500);
+      document.querySelector('[data-testid="rail-more-sessions"]')?.click();
+      await sleep(400);
+      const body = document.querySelector('.rail-body');
+      if (body) body.scrollTop = body.scrollHeight;
+      await sleep(300);
+      const rows = [...document.querySelectorAll('.srow-wrap')].filter((w) => w.querySelector('.srow'));
+      const row = rows[rows.length - 1];
+      if (!row) return 'no-rows';
+      row.querySelector('.srow-acts button')?.click();
+      await sleep(450);
+      const menu = document.querySelector('[data-testid="rail-session-menu"]');
+      if (!menu) return 'no-menu(rows=' + rows.length + ')';
+      const r = menu.getBoundingClientRect();
+      const inside = r.top >= -0.5 && r.bottom <= window.innerHeight + 0.5;
+      return 'ok(rows=' + rows.length + ' menu=' + Math.round(r.top) + '-' + Math.round(r.bottom) + ' vh=' + window.innerHeight + ' inside=' + inside + ')';
+    })()
+  `,
+  /*
+   * 实施-12 U-1：把收起复位结果留在最终画面，直观看见五条会话预览与三条折叠出口。
+   * 与 railmini（验证左栏完全消失）分开，避免截图把两种不同收起语义混在一起。
+   */
+  railreset: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      const sessions = Array.from({ length: 8 }, (_, i) => ({
+        id: 'vru-' + i,
+        path: cwd + '/vru-' + i + '.jsonl',
+        cwd,
+        projectId: 'vru-proj',
+        title: '会话 ' + (i + 1) + ' · 复位示例',
+        named: true,
+        createdAt: stamp,
+        updatedAt: stamp - i * 1000,
+        lastActivityAt: stamp - i * 1000,
+        messageCount: 3
+      }));
+      window.__yanStore.setState({
+        sessions,
+        session: { ...(st.session ?? {}), cwd, sessionFile: sessions[0].path },
+        runners: [],
+        activeRunnerId: null,
+        settings: {
+          ...st.settings,
+          projectGroups: [],
+          projects: [{ id: 'vru-proj', cwd, name: 'pi-desktop', archived: false, createdAt: stamp, updatedAt: stamp }],
+          recentCwds: [cwd]
+        }
+      });
+      await sleep(500);
+      const rows = () => document.querySelectorAll('[data-testid="rail-session"]');
+      const more = () => document.querySelector('[data-testid="rail-more-sessions"]');
+      if (rows().length !== 5 || !more()) return 'bad-preview(' + rows().length + ')';
+      more().click();
+      await sleep(400);
+      if (rows().length !== 8) return 'bad-expanded(' + rows().length + ')';
+      st.setRailPinned(false);
+      await sleep(600);
+      const toggle = document.querySelector('[data-testid="rail-toggle"]');
+      if (!toggle) return 'no-toggle';
+      toggle.click();
+      await sleep(700);
+      const count = more()?.dataset.count;
+      return rows().length === 5 && count === '3'
+        ? 'ok(rows=5 folded=3)'
+        : 'bad-reset(rows=' + rows().length + ' folded=' + count + ')';
+    })()
+  `,
   trashtoast: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3014,12 +3266,30 @@ const STATES = {
       const st = window.__yanStore.getState();
       st.closeSettings();
       st.setRailPinned(true);
+      document.querySelector('[data-testid="right-window-tab-tools"]')?.click();
+      await new Promise((r) => setTimeout(r, 220));
       window.__yanStore.getState().clearAttachments?.();
       const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      click(document.querySelector('[data-testid="fs-row-src"]'));
-      await new Promise((r) => setTimeout(r, 700));
-      click(document.querySelector('[data-testid="fs-row-src/main"]'));
-      await new Promise((r) => setTimeout(r, 700));
+      const ensureOpen = async (path) => {
+        const rowSelector = '[data-testid="fs-row-' + path + '"]';
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const row = document.querySelector(rowSelector);
+          if (!row) {
+            await new Promise((r) => setTimeout(r, 100));
+            continue;
+          }
+          if (row.getAttribute('aria-expanded') === 'true') return row;
+          click(row);
+          for (let frame = 0; frame < 20; frame++) {
+            await new Promise((r) => setTimeout(r, 50));
+            const current = document.querySelector(rowSelector);
+            if (current?.getAttribute('aria-expanded') === 'true') return current;
+          }
+        }
+        return null;
+      };
+      if (!(await ensureOpen('src'))) return 'no-src-row';
+      if (!(await ensureOpen('src/main'))) return 'no-src-main-row';
       const file = document.querySelector('[data-testid="fs-row-src/main/agent.ts"]');
       if (!file) return 'no-file-row';
       /* 单击 = 只读预览（与"加入上下文"是两件事，这里两样都要拍到） */
@@ -3188,11 +3458,18 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       await sleep(250);
       /* 仓库状态是组件级缓存，只认 cwd 变化与窗口获焦（2s 防抖）——
          这里的 focus 是同一个监听、同一条刷新路径，不是绕开它 */
+      await sleep(2100);
       window.dispatchEvent(new Event('focus'));
-      await sleep(900);
       btn()?.click();
-      await sleep(800);
-      return document.querySelector('[data-testid="env-notgit"]') ? 'ok' : 'no-notgit';
+      for (let i = 0; i < 50; i++) {
+        if (document.querySelector('[data-testid="env-notgit"]')) return 'ok';
+        await sleep(100);
+      }
+      const menu = document.querySelector('[data-testid="env-menu"]');
+      return 'no-notgit:' + JSON.stringify({
+        expanded: btn()?.getAttribute('aria-expanded'),
+        menu: menu?.textContent?.slice(0, 100) ?? null
+      });
     })()
   `,
   /* 非 Git 目录 · 审查面板：说清「没有改动可审查」，而不是给一个空的 diff */
@@ -3300,13 +3577,19 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       st.closeReview?.();
       window.__yanStore.setState({ rightPanelOpen: true });
       document.querySelectorAll('[data-testid="model-picker"][aria-expanded="true"]').forEach((b) => b.click());
-      await sleep(300);
-      /* 菜单是开关：前一个状态可能把它留着开着（与 envlinks 同一处理） */
-      if (!document.querySelector('[data-testid="env-menu"]')) {
-        document.querySelector('[data-testid="session-project"]')?.click();
-        await sleep(700);
+      const button = document.querySelector('[data-testid="session-project"]');
+      if (!button) return 'no-project-button';
+      /* Prior states can leave the menu mounted on another scroll position. */
+      if (button.getAttribute('aria-expanded') !== 'true') button.click();
+      const deadline = Date.now() + 3000;
+      while (!document.querySelector('[data-testid="src-websearch"]') && Date.now() < deadline) {
+        await sleep(100);
       }
-      return document.querySelector('[data-testid="src-websearch"]') ? 'ok' : 'no-entry';
+      const entry = document.querySelector('[data-testid="src-websearch"]');
+      if (entry) return 'ok';
+      return 'no-entry(menu=' + !!document.querySelector('[data-testid="env-menu"]') +
+        ', sourceMenu=' + !!document.querySelector('[data-testid="env-source-menu"]') +
+        ', open=' + button.getAttribute('aria-expanded') + ')';
     })()
   `,
   envlinks: `
@@ -3650,6 +3933,8 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
             model: { provider: 'commandcode', id: 'matrix/quotatone' }
           }
         });
+        await sleep(100);
+        document.querySelector('[data-testid="rp-quota"]')?.scrollIntoView({ block: 'start' });
         for (let i = 0; i < 40; i++) {
           if (document.querySelector('[data-testid="quota-win-monthly-reached"]')) {
             /*
@@ -3687,6 +3972,89 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       } catch (e) {
         return 'error:' + (e && (e.message || String(e)));
       }
+    })()
+  `,
+
+  /*
+   * F7 主题切换圆心：把点击后 760ms 的 View Transition 截在中间。
+   * 为什么单独一态：circle 的圆心来自触发按钮中心，只有「动画中」的整窗截图
+   * 才能用人眼确认它确实从设置按钮处晕开 / 收拢，而不是从屏幕中心。
+   * `capturePage` 抓的是渲染端合成结果，原生 WebContentsView 不在其中，
+   * 因此不会出现之前 OS 截图里被原生层遮住的问题。
+   */
+  themetransitionspread: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      await sleep(1200);
+      window.__yanStore.getState().openSettings('appearance');
+      await sleep(500);
+      const btn = document.querySelector('[data-testid="theme-dark"]');
+      if (!btn) return 'no-theme-button';
+      btn.click();
+      return 'ok(dir=' + (document.documentElement.dataset.themeDir || '∅') + ',theme=' + document.documentElement.dataset.theme + ')';
+    })()
+  `,
+  themetransitioncollapse: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      await sleep(1200);
+      window.__yanStore.getState().openSettings('appearance');
+      await sleep(500);
+      const btn = document.querySelector('[data-testid="theme-light"]');
+      if (!btn) return 'no-theme-button';
+      btn.click();
+      return 'ok(dir=' + (document.documentElement.dataset.themeDir || '∅') + ',theme=' + document.documentElement.dataset.theme + ')';
+    })()
+  `,
+
+  /*
+   * H-10 子代理「过程」页的长转录形态：36 条消息形成滚动区，
+   * 用于人眼核对自动跟随 / 滚动布局（行为断言在 cost 0 `subagentview`）。
+   * 数据是造的，不真起子进程；真实整链在 `subagentlocal`。
+   */
+  subagentprocess: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      st.closeReview?.();
+      const launch = document.querySelector('[data-testid="subagent-new"]');
+      if (launch && launch.getAttribute('aria-expanded') === 'true') launch.click();
+      const startedAt = Date.now() - 62_000;
+      window.__yanStore.setState({
+        rightPanelOpen: true,
+        subagentPreviewId: 'sub-process',
+        subagents: [{
+          id: 'sub-process',
+          task: '把登录流程的错误分支补上测试并跑一遍',
+          cwd: 'C:/yan-worktrees/sub-process',
+          parentSessionId: 'session-preview',
+          parentRunId: 'run-preview',
+          isolation: 'worktree',
+          model: 'deepseek/deepseek-v4.1-flash',
+          status: 'running',
+          startedAt,
+          latestActivity: '正在跑 npm run test',
+          review: 'none',
+          transcript: Array.from({ length: 36 }, (_, i) => ({
+            id: 'sub-proc-' + i,
+            role: i % 2 === 0 ? 'assistant' : 'user',
+            text: i % 2 === 0
+              ? '过程行 ' + (i + 1) + '：' + '检查登录失败分支、补测试并回填结果。'.repeat(2)
+              : '请继续处理第 ' + (i + 1) + ' 项。',
+            ...(i % 6 === 0 ? { toolCalls: [{ id: 'sub-proc-tc-' + i, name: 'read', status: 'done' }] } : {})
+          }))
+        }]
+      });
+      await sleep(400);
+      const tab = document.querySelector('[data-testid="subagent-tab-process"]');
+      if (tab) tab.click();
+      await sleep(400);
+      const body = document.querySelector('[data-testid="subagent-preview-body"]');
+      if (body) body.scrollTop = body.scrollHeight;
+      await sleep(250);
+      return body && body.scrollHeight > body.clientHeight ? 'ok' : 'no-scroll';
     })()
   `
 }
@@ -3859,6 +4227,12 @@ const MUST_HAVE = {
   wsunknown: ['[data-testid="workspace-changes"]', '[data-testid="ws-unknown"]'],
   ctxnarrow: ['[data-testid="rp-context-actions"]', '[data-testid="rp-compact-now"]', '[data-testid="ctx-stages"]'],
   trashtoast: ['[data-testid="trash-notice"]', '[data-testid="trash-undo"]', '.rail-trash-name', '.srow'],
+  sessionmenu: ['[data-testid="rail-session-menu"]', '[data-testid="rail-menu-time"]', '[data-testid="rail-session"]', '.srow-menu-path'],
+  railreset: ['[data-testid="rail-session"]', '[data-testid="rail-more-sessions"]', '[data-testid="rail-toggle"]'],
+  projectmenutl: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
+  projectmenutr: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
+  projectmenubl: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
+  projectmenubr: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
   fileincontext: ['[data-testid="fs-tree"]', '[data-testid="file-preview"]', '[data-testid="fs-inctx-src/main/agent.ts"]', '[data-testid="composer"]'],
   usageelapsed: [
     '[data-testid="usagebar"]',
@@ -3913,6 +4287,15 @@ const MUST_HAVE = {
     '[data-testid="goal-brief"]',
     '[data-testid="goal-pursue"]'
   ],
+  goalreview: [
+    '[data-testid="goal-entry"]',
+    '[data-testid="goal-popover"]',
+    '[data-testid="goal-panel"]',
+    '[data-testid="goal-review-setting"]',
+    '[data-testid="goal-pending-review"]',
+    '[data-testid="goal-approve-and-start"]',
+    '[data-testid="goal-modify-plan"]'
+  ],
   /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
   workmodekey: ['.set-row:has([data-testid="set-work-mode-key"])'],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
@@ -3926,11 +4309,11 @@ const MUST_HAVE = {
   ],
   /* 运行中的子代理详情：任务、转录、变更审阅摘要都要在图里 */
   subagent: [
-    '[data-testid="subagent-zone-right"]',
+    '[data-testid="right-window-tab-subagent-sub-preview"]',
     '[data-testid="subagent-preview"]',
-    '[data-testid="subagent-preview-body"]',
-    '[data-testid="subagent-review"]',
-    '.subagent-zone-right .sp'
+    '[data-testid="subagent-overview"]',
+    '[data-testid="subagent-review-state"]',
+    '[data-testid="subagent-goto-changes"]'
   ],
   subagentinline: [
     '[data-testid="subagent-inline-list"]',
@@ -3939,10 +4322,11 @@ const MUST_HAVE = {
   ],
   /* 失败态：状态写成失败、meta 行带原因、紧凑列表那一行也在 */
   subagentfailed: [
+    '[data-testid="right-window-tab-subagent-sub-failed"]',
     '[data-testid="subagent-preview"]',
-    '.sp-state.error',
+    '[data-testid="subagent-exec-state"].error',
     '.sp-err',
-    '[data-testid="subagent-sub-failed"]'
+    '[data-testid="subagent-overview"]'
   ],
   /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
   railreorder: [
@@ -3950,11 +4334,45 @@ const MUST_HAVE = {
     '[data-testid="rail-project-row"]',
     '.is-dragging',
     '.drop-before, .drop-after'
-  ]
+  ],
+  /* 主题过渡：只要主题按钮在（设置面板已打开），其余靠整窗图像判断 */
+  themetransitionspread: ['[data-testid="theme-dark"]'],
+  themetransitioncollapse: ['[data-testid="theme-light"]'],
+  /* H-10 过程页：详情壳与可滚动正文都要在 */
+  subagentprocess: ['[data-testid="subagent-preview"]', '[data-testid="subagent-preview-body"]']
 }
 
-/** 截完图要做的复位（目前只有：把为拍模型菜单而放空的“忙”状态改回去） */
+/** 截完图要做的复位，避免合成资源页污染同一组的后续截图。 */
 const AFTER_STATE = {
+  rightwindows: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const click = (selector) => document.querySelector(selector)?.click();
+      click('[data-testid="review-tab"] .review-tab-close');
+      await sleep(180);
+      click('[data-testid="right-window-tab-browser"] .review-tab-close');
+      await sleep(220);
+      click('[data-testid="right-window-tab-file"] .review-tab-close');
+      await sleep(220);
+      click('[data-testid="right-window-tab-tools"]');
+      await sleep(180);
+      return 'ok';
+    })()
+  `,
+  browserboundary: `
+    (() => {
+      const state = window.__yanStore.getState().browserState;
+      window.__yanStore.setState({ browserState: { ...state, open: false } });
+      return 'ok';
+    })()
+  `,
+  browserblocked: `
+    (() => {
+      const state = window.__yanStore.getState().browserState;
+      window.__yanStore.setState({ browserState: { ...state, open: false } });
+      return 'ok';
+    })()
+  `,
   /*
    * 把 `railwaiting` 注入的假实例撤走：同一组后面的状态（以及下一次跑整组）
    * 不该看到一个并不存在的会话在等输入。
@@ -4056,6 +4474,34 @@ const AFTER_STATE = {
       window.__yanStore.setState({ terminals: [], activeTerminalId: null });
       return 'ok';
     })()
+  `,
+  /* 临时替换的会话内容在截图后恢复，避免后续画面依赖它们的残留。 */
+  restoreMessages: `
+    (() => {
+      const base = window.__yanMatrixBaseline;
+      if (base) window.__yanStore.setState({ messages: base.messages });
+      return 'ok';
+    })()
+  `,
+  restoreSession: `
+    (() => {
+      const base = window.__yanMatrixBaseline;
+      if (!base) return 'no-baseline';
+      window.__yanStore.setState({
+        messages: base.messages,
+        session: base.session,
+        sessions: base.sessions,
+        settings: base.settings,
+        runners: [],
+        activeRunnerId: null,
+        workMode: null,
+        goal: null,
+        subagents: [],
+        subagentPreviewId: null
+      });
+      window.__yanStore.getState().setGoalPopoverOpen(false);
+      return 'ok';
+    })()
   `
 }
 
@@ -4085,6 +4531,19 @@ const probeGeometry = (selectors) => `
 
 /** 只跑某些状态（调脚本时用）：`YAN_MATRIX_ONLY=modelmenu` */
 const ONLY = (process.env.YAN_MATRIX_ONLY ?? '').split(',').filter(Boolean)
+
+/* 这些状态检查工具工作页；每张图开始前都回到同一个工具表面。 */
+const TOOL_PANEL_STATES = new Set([
+  'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'wschanges', 'wsunknown',
+  'envmenu', 'envnotgit', 'envbranches', 'envworktrees', 'envlinks', 'sourcesearch',
+  'extdiag', 'taskhost', 'subagentlaunch', 'subagent', 'subagentfailed', 'rightresources',
+  'compactionreclaim', 'ctxpreset', 'ctxincompressible', 'quotatone'
+])
+const RESET_MESSAGE_STATES = new Set([
+  'segmented', 'artifact', 'imageprogress', 'toolgroup', 'toolterm', 'taskcard', 'turnfooter',
+  'turntime', 'filelink', 'turnstatus', 'usageturn', 'usageagg', 'usagepartial'
+])
+const RESET_SESSION_STATES = new Set(['autonomousrunning', 'forkdraft', 'railmini', 'railsessions'])
 
 /*
  * 只跑某几组（下标，逗号分隔）：`YAN_MATRIX_GROUP=0,2`。
@@ -4137,6 +4596,9 @@ async function main() {
       backgroundThrottling: false
     }
   })
+  for (const event of ['show', 'hide', 'minimize', 'restore']) {
+    win.on(event, () => console.log(`  [window] ${event} (visible=${win.isVisible()} minimized=${win.isMinimized()})`))
+  }
 
   /* 渲染端报错要看得见：状态脚本抛错时 Electron 只肯说“Script failed to execute” */
   win.webContents.on('console-message', (event) => {
@@ -4181,13 +4643,38 @@ async function main() {
   const injected = await win.webContents.executeJavaScript(fixture)
   if (injected !== 'ok') throw new Error('fixture 注入失败: ' + injected)
   await wait(700)
+  await win.webContents.executeJavaScript(`
+    (() => {
+      const state = window.__yanStore.getState();
+      window.__yanMatrixBaseline = {
+        messages: state.messages,
+        session: state.session,
+        sessions: state.sessions,
+        settings: state.settings
+      };
+      return 'baseline-saved';
+    })()
+  `)
 
   const failures = []
   const shot = async (name, geometry) => {
+    if (win.isMinimized()) {
+      console.log(`  [window] ${name}: 截图前恢复已最小化的隔离窗口`)
+      win.restore()
+      await wait(220)
+    } else if (!win.isVisible()) {
+      console.log(`  [window] ${name}: 非激活显示恢复隐藏的截图窗口`)
+      win.showInactive()
+      await wait(220)
+    }
     /* 再等两帧 + 一点时间：确保这次变更已经画出来（否则截到上一态） */
-    await win.webContents.executeJavaScript(
-      'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))'
-    )
+    const framesReady = await Promise.race([
+      win.webContents.executeJavaScript(
+        'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))'
+      ),
+      new Promise((r) => setTimeout(() => r(false), 1200))
+    ])
+    if (!framesReady) failures.push(`${name}（绘制帧等待超时）`)
     /*
      * 再显式要一次重绘。为什么需要：trashtoast 那张图实测**DOM 里有通知条、
      * elementFromPoint 也命中它，但截图里没有** —— 窗口不在前台时合成器可能停在
@@ -4199,23 +4686,36 @@ async function main() {
     const outPath = join(outDir, name)
     await mkdir(dirname(outPath), { recursive: true })
     /* capturePage 也可能挂住（窗口被遮、合成器不给帧）—— 给个上限，别卡死整个矩阵 */
-    const img = await Promise.race([
-      win.webContents.capturePage(),
-      new Promise((r) => setTimeout(() => r(null), 8000))
-    ])
-    if (!img) {
-      failures.push(`${name}（截图超时）`)
-      console.log(`  ✗ ${name}  截图超时（窗口可能被遮住）`)
+    let png
+    try {
+      const img = await Promise.race([
+        win.webContents.capturePage(),
+        new Promise((r) => setTimeout(() => r(null), 8000))
+      ])
+      if (!img) {
+        failures.push(`${name}（截图超时）`)
+        console.log(`  ✗ ${name}  截图超时（窗口可能被遮住）`)
+        return geometry
+      }
+      png = img.toPNG()
+    } catch (error) {
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      failures.push(`${name}（截图失败：${detail}）`)
+      console.error(
+        `  ✗ ${name}  capturePage 失败：${detail}; visible=${win.isVisible()} minimized=${win.isMinimized()} ` +
+          `windowDestroyed=${win.isDestroyed()} webContentsDestroyed=${win.webContents.isDestroyed()}`
+      )
       return geometry
     }
-    await writeFile(outPath, img.toPNG())
+    await writeFile(outPath, png)
     const over = geometry.sw - geometry.cw
-    const missing = Object.entries(geometry.must)
+    const missing = Object.entries(geometry.must ?? {})
       .filter(([, okFlag]) => !okFlag)
       .map(([sel]) => sel)
     const isHandoffNote = name.startsWith('matrix-handoffnote-')
-    const note = geometry.boxes['[data-testid="handoff-note"][data-tone="failed"]']
-    const composer = geometry.boxes['.center > .composer-wrap']
+    const boxes = geometry.boxes ?? {}
+    const note = boxes['[data-testid="handoff-note"][data-tone="failed"]']
+    const composer = boxes['.center > .composer-wrap']
     const noteGap = note && composer ? composer.y - (note.y + note.h) : null
     const handoffPlacementGood = !isHandoffNote || (noteGap !== null && noteGap >= 0 && noteGap <= 48)
     const good = over <= 1 && missing.length === 0 && handoffPlacementGood
@@ -4257,7 +4757,12 @@ async function main() {
     await win.webContents.executeJavaScript(`
       (() => {
         const st = window.__yanStore.getState();
-        if (st.settings) window.__yanStore.setState({ settings: { ...st.settings, theme: '${g.theme}' } });
+        if (st.settings) {
+          const settings = { ...st.settings, theme: '${g.theme}', uiScale: ${g.scale} };
+          window.__yanStore.setState({ settings });
+          /* restoreSession must preserve the active matrix theme and scale. */
+          if (window.__yanMatrixBaseline) window.__yanMatrixBaseline.settings = settings;
+        }
         document.documentElement.dataset.theme = '${g.theme}';
         return 'ok';
       })()
@@ -4269,6 +4774,28 @@ async function main() {
       /* 非 Git 状态切换主进程的 Git 桩（见 NON_GIT_STUB_CWD 的注释） */
       stubNonGit = NON_GIT_STATES.has(state)
       console.log(`  · ${state}`)
+      if (TOOL_PANEL_STATES.has(state)) {
+        await win.webContents.executeJavaScript(`
+          (async () => {
+            const st = window.__yanStore.getState();
+            st.closeSettings();
+            st.closeReview?.();
+            const browser = st.browserState;
+            window.__yanStore.setState({
+              rightPanelOpen: true,
+              settings: st.settings ? { ...st.settings, rightPanelOpen: true } : st.settings,
+              browserState: browser?.open ? { ...browser, open: false } : browser,
+              filePreview: null
+            });
+            const menu = document.querySelector('[data-testid="session-project"]');
+            if (menu?.getAttribute('aria-expanded') === 'true') menu.click();
+            await new Promise((r) => setTimeout(r, 160));
+            document.querySelector('[data-testid="right-window-tab-tools"]')?.click();
+            return 'tools-ready';
+          })()
+        `)
+        await wait(220)
+      }
       /*
        * 模型菜单需要先把“忙”放开（picker 在忙时 disabled）。
        * 必须**分两次** executeJavaScript：setState 到 DOM 反映要等 React 重渲染，
@@ -4283,6 +4810,18 @@ async function main() {
           })()
         `)
         await wait(350)
+      }
+      if (state === 'railwaiting') {
+        /* `chainjoin` changes message count; let Rail's delayed refreshSessions settle before replacing sessions. */
+        await wait(1100)
+      }
+      /*
+       * 窗口被遮挡 / 隐藏时 Chromium 会跳过 View Transition，主题动画类状态
+       * 必须在可见窗口里跑，否则截到的是「瞬时换肤」的终态。
+       */
+      if (state.startsWith('themetransition') && !win.isVisible()) {
+        win.showInactive()
+        await wait(220)
       }
       const res = await win.webContents.executeJavaScript(STATES[state])
       if (!String(res).startsWith('ok')) failures.push(`${size}@${pct} ${state}: 状态脚本返回 ${res}`)
@@ -4302,6 +4841,8 @@ async function main() {
       const geometry = await win.webContents.executeJavaScript(probeGeometry(MUST_HAVE[state] ?? []))
       await shot(`matrix-${state}-${size}-${pct}-${g.theme}-${STAMP}.png`, geometry)
       if (AFTER_STATE[state]) await win.webContents.executeJavaScript(AFTER_STATE[state])
+      if (RESET_MESSAGE_STATES.has(state)) await win.webContents.executeJavaScript(AFTER_STATE.restoreMessages)
+      if (RESET_SESSION_STATES.has(state)) await win.webContents.executeJavaScript(AFTER_STATE.restoreSession)
     }
   }
 

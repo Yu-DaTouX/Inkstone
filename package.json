@@ -66,7 +66,8 @@
     "icon": "electron scripts/build-icon.mjs",
     "installer:sidebar": "electron scripts/build-installer-sidebar.mjs",
     "visual:matrix": "node scripts/visual-matrix-run.mjs",
-    "check:shell-icons": "node scripts/check-shell-icons.mjs"
+    "check:shell-icons": "node scripts/check-shell-icons.mjs",
+    "capture:native-overlay": "node scripts/capture-native-overlay.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

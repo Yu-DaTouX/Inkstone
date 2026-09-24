@@ -146,7 +146,7 @@ export function readWorkModeState(
  */
 export async function writeWorkModeSnapshot(
   runtimeKey: string,
-  state: WorkModeState,
+  state: WorkModeState & { planApprovalPending?: boolean },
   root: string = YAN_DIR
 ): Promise<void> {
   const target = workModeSnapshotPath(runtimeKey, root)
@@ -156,6 +156,7 @@ export async function writeWorkModeSnapshot(
     runtimeKey,
     mode: state.mode,
     revision: state.revision,
+    planApprovalPending: state.planApprovalPending === true,
     at: new Date().toISOString()
   }
   const temp = `${target}.${process.pid}.tmp`

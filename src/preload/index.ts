@@ -158,6 +158,22 @@ const api: YanBridge = {
       'yan:setGoal',
       brief
     ),
+  setGoalReadyApproval: (mode, expectedGoalRevision) =>
+    invoke<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>(
+      'yan:setGoalReadyApproval',
+      mode,
+      expectedGoalRevision
+    ),
+  approveGoalReady: (input) =>
+    invoke<
+      | { ok: true; replayed: boolean; started?: boolean; startError?: string; goal: GoalState }
+      | { ok: false; error: string; goal: GoalState }
+    >('yan:approveGoalReady', input),
+  modifyGoalReady: (input) =>
+    invoke<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>(
+      'yan:modifyGoalReady',
+      input
+    ),
   /* 放弃目标（实施-14 A2）：与按停止（暂停）分开的终态出口 */
   stopGoal: () => invoke<{ ok: boolean; goal?: GoalState | null; error?: string }>('yan:stopGoal'),
   /* 交接状态（实施-05 S5b-2）：只读快照，探针与（后续）界面共用 */

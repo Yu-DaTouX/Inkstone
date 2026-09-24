@@ -118,6 +118,14 @@ function resultTextOf(result) {
   return ''
 }
 
+/** Pi 的 provider failure 可能是 completion 结果而不是 throw；两种都要交给宿主记为 failed。 */
+function resultErrorOf(result) {
+  if (result?.stopReason !== 'error') return null
+  return typeof result.errorMessage === 'string' && result.errorMessage.trim()
+    ? result.errorMessage
+    : 'Provider returned an error stop reason'
+}
+
 export default function handoffs(pi) {
   /* 加载证据：没有这行就说明扩展根本没被加载（而不是「逻辑没触发」） */
   note('loaded', { request: requestFile(), result: resultFile() })
@@ -213,7 +221,8 @@ export default function handoffs(pi) {
           },
           { maxTokens: request.maxTokens, signal: AbortSignal.timeout(PRODUCE_TIMEOUT_MS) }
         )
-        text = resultTextOf(result)
+        error = resultErrorOf(result)
+        if (!error) text = resultTextOf(result)
       } catch (err) {
         error = String(err?.message ?? err)
       }

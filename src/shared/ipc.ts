@@ -39,12 +39,12 @@ import type { KnowledgeKind } from './project-memory'
 import type { WorkMode, WorkModeState } from './work-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
-import type { GoalState, PursuedBrief } from './goal'
+import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 import type { ToolLayout } from './tool-layout'
 export type { WorkMode, WorkModeState } from './work-mode'
-export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief } from './goal'
+export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
 export type { KnowledgeCounts, KnowledgeEntryView, KnowledgeReviewReason, KnowledgeReviewView } from './project-knowledge-view'
 
@@ -137,6 +137,8 @@ export interface TurnTimingMeta {
 export interface UIMessage {
   id: string
   role: 'user' | 'assistant' | 'bash'
+  /** 来源会话段的工作目录；历史里的相对文件链接按原目录解析。 */
+  sourceCwd?: string
   /** 正文文本（assistant 可能持续增长） */
   text: string
   /** 用户随消息附的图片（base64，不含 data: 前缀） */
@@ -2510,6 +2512,25 @@ export interface YanBridge {
   setGoal(brief: PursuedBrief): Promise<
     { ok: true; goal: GoalState } | { ok: false; error: 'no_session' | 'incomplete' }
   >
+  /** 当前会话在澄清档提交 ready 时是否暂停，等待用户审阅计划。 */
+  setGoalReadyApproval(mode: ReadyApprovalMode, expectedGoalRevision?: number): Promise<
+    { ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }
+  >
+  approveGoalReady(input: {
+    runnerId: string | null
+    transitionId: string
+    goalRevision: number
+    modeRevision: number
+  }): Promise<
+    | { ok: true; replayed: boolean; started?: boolean; startError?: string; goal: GoalState }
+    | { ok: false; error: string; goal: GoalState }
+  >
+  modifyGoalReady(input: {
+    runnerId: string | null
+    transitionId: string
+    goalRevision: number
+    modeRevision: number
+  }): Promise<{ ok: true; goal: GoalState } | { ok: false; error: string; goal: GoalState }>
   /**
    * 放弃当前目标（实施-14 A2）。
    *

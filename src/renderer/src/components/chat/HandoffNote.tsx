@@ -54,7 +54,7 @@ export function HandoffNote(): React.ReactElement | null {
   /*
    * 「已投递但尚未确认运行」（实施-15 A-3 / R6）：
    * `stage==='resumed'` 只说明标记写进了目的会话（那是本地拼的文本），
-   * 不等于模型真的开始跑了。等 30s 还没有助手输出就把这个不确定状态说出来，
+   * 不等于目的运行已经启动。等 30s 还没有 provider 请求前回执就把这个不确定状态说出来，
    * 而不是让用户以为“已经在继续了”。
    */
   const tx = handoff?.transaction

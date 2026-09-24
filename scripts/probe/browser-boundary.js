@@ -95,6 +95,35 @@
   ok(localDoc.startsWith(BOUNDARY), '本地页面真的加载了', localDoc)
   ok(/download/i.test(await docText()), '页面内容被读到（说明没被拦）')
 
+  /* ---- 2b. 网页自己开窗口：新标签真建出来，但**不夺走**当前阅读页（H-9 第二阶段） ---- */
+  out.push('')
+  out.push('=== 2b. 网页自己 window.open（后台标签） ===')
+  await store.getState().openBrowser(BOUNDARY)
+  await until(async () => (await docUrl()).startsWith(BOUNDARY), 15000)
+  const beforeTabs = (st().tabs ?? []).map((tab) => tab.id)
+  const beforeActive = st().activeTabId
+  await store.getState().openBrowser(`${BOUNDARY}/popup`)
+  await until(() => (st().tabs ?? []).length > beforeTabs.length, 12000)
+  const afterState = st()
+  const afterTabs = afterState.tabs ?? []
+  ok(afterTabs.length === beforeTabs.length + 1, 'window.open 真的新建了一个标签', `${beforeTabs.length} → ${afterTabs.length}`)
+  const created = afterTabs.find((tab) => !beforeTabs.includes(tab.id))
+  ok(!!created, '新标签有独立的 id', created?.id ?? '')
+  ok(afterState.activeTabId !== created?.id, '新标签**没有**夺走当前阅读页（activeTabId 未变）', `${beforeActive} → ${afterState.activeTabId}`)
+  /* observe() 读的是活动标签：内容仍是触发页，说明后台页没有顶掉当前视图 */
+  ok(/\/popup$/.test((await docUrl()).replace(/\/$/, '')), '当前视图仍是触发它的那一页')
+  ok(/opener/i.test(await docText()), '当前视图内容仍是触发页（没被后台页覆盖）')
+  if (created) {
+    ok(/\/private$/.test((created.url ?? '').replace(/\/$/, '')), '后台标签的 URL 是 window.open 的目标', created.url ?? '')
+    await window.yan.browser.switchTab(created.id)
+    await sleep(600)
+    ok(await until(async () => /private-ok/.test(await docText()), 12000), '后台标签真的加载了目标页（切过去能看到内容）')
+    await window.yan.browser.closeTab(created.id)
+    await sleep(400)
+    ok((st().tabs ?? []).every((tab) => tab.id !== created.id), '关掉它之后标签列表恢复')
+    ok((st().activeTabId ?? '') !== created.id, '关掉后台标签不影响当前阅读页')
+  }
+
   /* ---- 3. 权限：真实请求 → 默认拒绝 → 授权 → 放行 → 撤销 ---- */
   out.push('')
   out.push('=== 3. 逐站权限（真实权限请求） ===')

@@ -34,7 +34,7 @@ import type { HandoffPackage } from '../shared/handoff'
 import {
   buildResumeText,
   containsResumeEvidence,
-  hasRunStartedAfterMarker,
+  hasExplicitHandoffStartReceipt,
   resumeMarker,
   resumePreview
 } from '../shared/handoff-resume'
@@ -393,14 +393,14 @@ export class HandoffRunner {
   /**
    * 记录续接的两条回执（A-3）：**已投递**与**已运行**。
    *
-   * 为什么不把 `started` 当门槛：正文是本地拼的，标记写进文件不需要模型参与；
-   * 但把“模型真的开跑了”当成交接完成的条件，会让模型长时间不响应时
+   * 为什么不把 `started` 当门槛：正文是本地拼的，标记写进文件不需要运行参与；
+   * 但把“目的实例已进入 before_provider_request”当成交接完成的条件，会让启动异常时
    * 交接一直挂住。所以这里只**如实记下来**，让界面与恢复能说清楚到哪一步。
    */
   private async noteResumeReceipts(handoffId: string, dest: string, resumeId: string): Promise<void> {
     await this.deps.transactions.noteReceipt(handoffId, 'persisted')
     const text = await this.deps.readSessionText(dest).catch(() => null)
-    if (hasRunStartedAfterMarker(text, resumeId)) {
+    if (hasExplicitHandoffStartReceipt(text, resumeId)) {
       await this.deps.transactions.noteReceipt(handoffId, 'started')
     }
   }

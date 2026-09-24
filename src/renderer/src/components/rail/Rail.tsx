@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from '../shell/BrandMark'
-import { ContextMenu } from '../common/ContextMenu'
+import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
@@ -167,7 +167,8 @@ export function Rail() {
     return (list: SessionSummary[]): number => list.filter((s) => files.has(s.path)).length
   }, [runners])
 
-  const [menuFor, setMenuFor] = useState<string | null>(null)
+  /** 打开菜单的会话（path / 位置 / 触发元素分开存，位置只用来定位浮层） */
+  const [menuFor, setMenuFor] = useState<{ path: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
@@ -182,8 +183,8 @@ export function Rail() {
   const [groupDraft, setGroupDraft] = useState('')
   /** 正在重命名哪个分组（groupId）；null = 没有（N01） */
   const [groupRename, setGroupRename] = useState<string | null>(null)
-  /** 打开操作菜单的分组 id（N01） */
-  const [groupMenu, setGroupMenu] = useState<string | null>(null)
+  /** 打开操作菜单的分组（N01；id 与浮层位置分开存） */
+  const [groupMenu, setGroupMenu] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   /** 分组操作的错误提示：空白名 / 重名 / 保存失败（N01） */
   const [groupError, setGroupError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
@@ -264,6 +265,10 @@ export function Rail() {
 
   useEffect(() => {
     if (!menuFor && !projectMenu && !groupMenu) return
+    /*
+     * 点菜单以外的地方（含别的会话行、项目行）也要收菜单。
+     * 菜单里的点击走 React 合成事件，不会冒到这里。
+     */
     const close = (): void => { setMenuFor(null); setProjectMenu(null); setGroupMenu(null) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
@@ -774,6 +779,22 @@ export function Rail() {
     await switchSession(path)
     setUnread((prev) => prev.filter((p) => p !== path))
   }
+  /**
+   * 会话行菜单：位置与触发元素和会话身份分开存。
+   * 菜单由 `ContextMenuSurface` Portal 到 body —— 行内渲染会被 `.rail-body`
+   * 的 `overflow` 裁掉（列表最后几行最明显），也会顶大行的 scrollHeight。
+   */
+  const openSessionMenu = (path: string) => (trigger: HTMLElement | null, point?: { x: number; y: number }): void => {
+    if (menuFor?.path === path) { setMenuFor(null); return }
+    const rect = trigger?.getBoundingClientRect()
+    setMenuFor({ path, x: point?.x ?? rect?.left ?? 0, y: point?.y ?? rect?.bottom ?? 0, trigger })
+  }
+  const closeSessionMenu = (): void => {
+    const trigger = menuFor?.trigger
+    setMenuFor(null)
+    trigger?.focus?.()
+  }
+
   const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>()): React.ReactNode => {
     if (lineage.has(s.path)) return null
     const next = new Set(lineage).add(s.path)
@@ -783,7 +804,8 @@ export function Rail() {
       depth={depth} branchCount={children.length} branchIndex={branchIndex.get(s.path)}
       branchesOpen={isOpen} onToggleBranches={() => toggleBranch(s.path)}
       children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next)) : null}
-      menuOpen={menuFor === s.path} onToggleMenu={() => setMenuFor(menuFor === s.path ? null : s.path)}
+      menuOpen={menuFor?.path === s.path} menuAnchor={menuFor?.path === s.path ? menuFor : null}
+      onOpenMenu={openSessionMenu(s.path)} onCloseMenu={closeSessionMenu}
       onSelect={() => void select(s.path)} pinned={pinned.includes(s.path)} unread={unread.includes(s.path)}
       projectRecords={projectRecords}
       onPin={() => setPinned((prev) => prev.includes(s.path) ? prev.filter((p) => p !== s.path) : [...prev, s.path])}
@@ -980,30 +1002,42 @@ export function Rail() {
                             onClick={(event) => {
                               event.stopPropagation()
                               setGroupError('')
-                              setGroupMenu(groupMenu === group.id ? null : group.id)
+                              if (groupMenu?.id === group.id) { setGroupMenu(null); return }
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              setGroupMenu({ id: group.id, x: rect.left, y: rect.bottom, trigger: event.currentTarget })
                             }}
                           ><Icon name="menu" size={12} /></button>
                         </>
                       )}
                     </div>
                   ) : null}
-                  {group && groupId !== previousGroupId && groupMenu === group.id ? (
-                    <div className="project-menu group-menu" data-testid="rail-group-menu-panel" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        data-testid="rail-group-rename-action"
-                        onClick={() => {
-                          setGroupMenu(null)
-                          setGroupDraft(group.name)
-                          setGroupError('')
-                          setGroupRename(group.id)
-                        }}
-                      >{t('rail.renameGroup')}</button>
-                      <button data-testid="rail-group-dissolve" onClick={() => void dissolveGroup(group.id)}>
-                        {t('rail.dissolveGroup')}
-                      </button>
-                    </div>
+                  {group && groupId !== previousGroupId ? (
+                    <ContextMenu
+                      open={groupMenu?.id === group.id}
+                      anchor={groupMenu?.id === group.id ? groupMenu : null}
+                      testid="rail-group-menu-panel"
+                      onClose={() => { const trigger = groupMenu?.trigger; setGroupMenu(null); trigger?.focus?.() }}
+                      items={[
+                        {
+                          id: 'rail-group-rename-action',
+                          label: t('rail.renameGroup'),
+                          icon: 'tag',
+                          onSelect: () => {
+                            setGroupDraft(group.name)
+                            setGroupError('')
+                            setGroupRename(group.id)
+                          }
+                        },
+                        {
+                          id: 'rail-group-dissolve',
+                          label: t('rail.dissolveGroup'),
+                          danger: true,
+                          onSelect: () => void dissolveGroup(group.id)
+                        }
+                      ]}
+                    />
                   ) : null}
-                  {group && groupId !== previousGroupId && groupError && (groupRename === group.id || groupMenu === group.id) ? (
+                  {group && groupId !== previousGroupId && groupError && (groupRename === group.id || groupMenu?.id === group.id) ? (
                     <div className="rail-group-err" role="alert" data-testid="rail-group-error">{groupError}</div>
                   ) : null}
                   {projRename === p.cwd ? (
@@ -1299,11 +1333,14 @@ function TrashNoticeBar({ notice, onUndo, onClose }: {
 /* ---------------------------------------------------------------- 会话行 */
 
 function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onToggleBranches,
-  children, depth, menuOpen, onToggleMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete
+  children, depth, menuOpen, menuAnchor, onOpenMenu, onCloseMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete
 }: {
   s: SessionSummary; selected: boolean; branchCount: number; branchIndex?: number;
   branchesOpen: boolean; onToggleBranches: () => void; children: React.ReactNode; depth: number;
-  menuOpen: boolean; onToggleMenu: () => void; onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
+  menuOpen: boolean; menuAnchor: ContextMenuAnchor | null;
+  onOpenMenu: (trigger: HTMLElement | null, point?: { x: number; y: number }) => void;
+  onCloseMenu: () => void;
+  onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
   projectRecords: ProjectRecord[];
   onRequestDelete: () => void
 }) {
@@ -1342,7 +1379,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   return (
     <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
-      <div className={`srow-row ${selected ? 'selected' : ''}`} onContextMenu={(e) => { e.preventDefault(); onToggleMenu() }}>
+      <div className={`srow-row ${selected ? 'selected' : ''}`} onContextMenu={(e) => { e.preventDefault(); onOpenMenu(e.currentTarget, { x: e.clientX, y: e.clientY }) }}>
         {renaming ? (
           /* 行内重命名：Enter 提交 / Esc 取消 / 失焦提交 */
           <input
@@ -1420,24 +1457,31 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
       <span className="srow-acts">
         <button className="rail-icon sm" title={t('rail.more')} onClick={(e) => {
           e.stopPropagation()
-          onToggleMenu()
+          const rect = e.currentTarget.getBoundingClientRect()
+          onOpenMenu(e.currentTarget, { x: rect.left, y: rect.bottom })
         }}>
           <Icon name="menu" size={12} />
         </button>
       </span>
 
-      {menuOpen ? (
-        <div className="srow-menu" onClick={(e) => e.stopPropagation()}>
+      <ContextMenuSurface
+        open={menuOpen}
+        anchor={menuAnchor}
+        onClose={onCloseMenu}
+        testid="rail-session-menu"
+        data-session-path={s.path}
+        className="ctx-menu row-menu-surface"
+      >
           <div className="srow-menu-time" data-testid="rail-menu-time">
             {t('rail.lastActive')} {relTime(s.lastActivityAt ?? s.updatedAt)}
           </div>
           {/* 停止**这一个**运行实例（N12）：后台会话也能单独停，不影响别的会话 */}
           {runner && (runner.running || runner.waiting) ? (
             <button
-              className="srow-menu-btn"
+              className="srow-menu-btn" role="menuitem"
               data-testid="rail-stop-runner"
               onClick={() => {
-                onToggleMenu()
+                onCloseMenu()
                 void window.yan.stopRunner(runner.id).then(() => useStore.getState().syncRunners())
               }}
             >
@@ -1454,22 +1498,22 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               <div className="srow-title-candidate-name" title={titleCandidate}>{titleCandidate}</div>
               <div className="srow-title-candidate-actions">
                 <button
-                  className="srow-menu-btn"
+                  className="srow-menu-btn" role="menuitem"
                   data-testid="rail-accept-title-candidate"
                   onClick={() => {
                     void useStore.getState().acceptTitleCandidate(s.id)
-                    onToggleMenu()
+                    onCloseMenu()
                   }}
                 >
                   <Icon name="check" size={12} />
                   {t('rail.acceptTitleCandidate')}
                 </button>
                 <button
-                  className="srow-menu-btn"
+                  className="srow-menu-btn" role="menuitem"
                   data-testid="rail-dismiss-title-candidate"
                   onClick={() => {
                     useStore.getState().dismissTitleCandidate(s.id)
-                    onToggleMenu()
+                    onCloseMenu()
                   }}
                 >
                   <Icon name="plus" size={12} className="rail-trash-x" />
@@ -1478,15 +1522,15 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               </div>
             </div>
           ) : null}
-          <button className="srow-menu-btn" onClick={() => { onPin(); onToggleMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
+          <button className="srow-menu-btn" role="menuitem" onClick={() => { onPin(); onCloseMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
           <div className="srow-menu-section" data-testid="rail-move-session">
             <div className="srow-menu-section-title">{t('rail.moveSession')}</div>
             {s.scope !== 'global' ? (
               <button
-                className="srow-menu-btn"
+                className="srow-menu-btn" role="menuitem"
                 data-testid="rail-move-global"
                 onClick={() => {
-                  void useStore.getState().moveSession(s.id, null).then((done) => { if (done) onToggleMenu() })
+                  void useStore.getState().moveSession(s.id, null).then((done) => { if (done) onCloseMenu() })
                 }}
               >
                 <Icon name="globe" size={12} />
@@ -1496,10 +1540,10 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             {moveTargets.map((project) => (
               <button
                 key={project.id}
-                className="srow-menu-btn"
+                className="srow-menu-btn" role="menuitem"
                 data-testid={`rail-move-project-${project.id}`}
                 onClick={() => {
-                  void useStore.getState().moveSession(s.id, project.id).then((done) => { if (done) onToggleMenu() })
+                  void useStore.getState().moveSession(s.id, project.id).then((done) => { if (done) onCloseMenu() })
                 }}
               >
                 <Icon name="folder" size={12} />
@@ -1509,10 +1553,10 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </div>
           <button
             style={{ '--i': 1 } as React.CSSProperties}
-            className="srow-menu-btn"
+            className="srow-menu-btn" role="menuitem"
             data-testid="rail-regenerate-title"
             onClick={() => {
-              onToggleMenu()
+              onCloseMenu()
               void useStore.getState().regenerateTitle(s.id)
             }}
           >
@@ -1523,10 +1567,10 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             disabled={!selected || running}
             title={!selected ? t('rail.openBeforeFork') : ''}
             style={{ '--i': 1 } as React.CSSProperties}
-            className="srow-menu-btn"
+            className="srow-menu-btn" role="menuitem"
             onClick={() => {
               void forkLatest()
-              onToggleMenu()
+              onCloseMenu()
             }}
           >
             <Icon name="layers" size={12} />
@@ -1534,7 +1578,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
           <button
             style={{ '--i': 2 } as React.CSSProperties}
-            className="srow-menu-btn"
+            className="srow-menu-btn" role="menuitem"
             data-testid="rail-rename"
             onClick={() => {
               /*
@@ -1547,7 +1591,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
                */
               setDraft(s.title)
               setRenaming(true)
-              onToggleMenu()
+              onCloseMenu()
             }}
           >
             <Icon name="tag" size={12} />
@@ -1555,27 +1599,26 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
           <button
             style={{ '--i': 3 } as React.CSSProperties}
-            className="srow-menu-btn"
+            className="srow-menu-btn" role="menuitem"
             onClick={() => {
               void window.yan.revealPath(s.path)
-              onToggleMenu()
+              onCloseMenu()
             }}
           >
             <Icon name="folder" size={12} />
             {t('rail.reveal')}
           </button>
           <button
-            className="srow-menu-btn danger"
+            className="srow-menu-btn danger" role="menuitem"
             style={{ '--i': 4 } as React.CSSProperties}
             disabled={selected}
             title={selected ? t('rail.cantDeleteCurrent') : ''}
-            onClick={() => { onRequestDelete(); onToggleMenu() }}
+            onClick={() => { onRequestDelete(); onCloseMenu() }}
           >
             <Icon name="alert-circle" size={12} />
             {t('rail.delete')}
           </button>
-        </div>
-      ) : null}
+      </ContextMenuSurface>
     </div>
   )
 }
