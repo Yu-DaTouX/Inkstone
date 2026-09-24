@@ -15,13 +15,14 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 export async function runPackagesTests(ok) {
   const {
     packageNameOf,
     versionOf,
     packageDirOf,
+    projectPackageDirs,
     validatePackageSource,
     readPackageSources,
     listPackages,
@@ -336,6 +337,33 @@ export async function runPackagesTests(ok) {
     const listed = listPackages(root, agent)
     ok(listed.entries.length === 1, '同一 source 不重复列两次', String(listed.entries.length))
     ok(listed.entries[0].scope === 'project', '项目作用域的那条优先（它才是当前会话生效的）', listed.entries[0].scope)
+    rmSync(root, { recursive: true, force: true })
+  }
+
+  /* ── 7. 项目级 pi 包目录：runner 显式 `--extension` 的输入 ── */
+  {
+    const root = mkdtempSync(join(tmpdir(), 'yan-pkg-projectdirs-'))
+    const agent = join(root, 'agent')
+    mkdirSync(agent, { recursive: true })
+    mkdirSync(join(root, '.pi'), { recursive: true })
+    /* 一个真正的 pi 包（带 `pi` 资源字段）+ 一个普通依赖包（无 `pi` 字段）。 */
+    const piPkg = join(root, 'pkgs', 'rewind-like')
+    const plainPkg = join(root, 'pkgs', 'plain-dep')
+    mkdirSync(piPkg, { recursive: true })
+    mkdirSync(plainPkg, { recursive: true })
+    writeFileSync(join(piPkg, 'package.json'), JSON.stringify({ name: 'rewind-like', version: '1.0.0', pi: { extensions: ['./index.js'] } }))
+    writeFileSync(join(plainPkg, 'package.json'), JSON.stringify({ name: 'plain-dep', version: '1.0.0' }))
+    /* 用户级也登记了普通包：用户级不是砚的加载范围。 */
+    writePackageSourcesForTest(join(agent, 'settings.json'), [relative(agent, plainPkg)])
+    /* 项目级存相对项目 .pi 的路径（pi 的解析约定）。 */
+    const rel = (target) => relative(join(root, '.pi'), target)
+    writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [rel(piPkg), rel(plainPkg)])
+    const dirs = projectPackageDirs(root, agent)
+    ok(dirs.length === 1, '只列项目级且带 pi 字段的包目录（用户级 / 普通包都不算）', JSON.stringify(dirs))
+    ok(dirs[0] === resolve(piPkg), '返回解析后的绝对路径（相对源按项目 .pi 解析）', dirs[0])
+    /* 登记着但磁盘上没有 → 不加载（留给诊断页显示）。 */
+    writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [rel(join(root, 'missing-pkg'))])
+    ok(projectPackageDirs(root, agent).length === 0, '磁盘上不存在的登记项不加载', JSON.stringify(projectPackageDirs(root, agent)))
     rmSync(root, { recursive: true, force: true })
   }
 }
