@@ -26,6 +26,7 @@ import {
   readdirSync,
   statSync,
   copyFileSync,
+  cpSync,
   existsSync,
   appendFileSync,
   symlinkSync,
@@ -1063,6 +1064,25 @@ const CASES = {
      */
     env: { YAN_CONTEXT_POLICY: '{"kinds":["recall","episode-fold","compaction"]}' },
     piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
+  /*
+   * C-3 多档压力的**大窗口档**：把工作集档位抬到 700K（长材料试行档）跑真实压力。
+   *
+   * dp 模型的登记窗口远小于 1M，所以预算会被窗口公式夹住 —— 这一档要验的正是：
+   * 「切到较小窗口的模型不会继承裸的 600K/700K 上限」在**真实端到端**里成立，
+   * 且压力下压缩照常发生、请求不越窗口（探针按当档工作集判峰值）。
+   * 发满真实 1M 输入的多档矩阵仍需 claude 类端点额度，不在此档。
+   */
+  contextpressurebig: {
+    probe: 'scripts/probe/context-pressure.js',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    contextExtLog: true,
+    afterExit: 'contextPressure',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{"workingSetCap":700000}' }
   },
   /*
    * C-3 的受控最小验证：用真实约 1M 窗口端点（Claude Sonnet 5，commandcode）
@@ -9291,9 +9311,44 @@ async function main() {
 
   let failed = 0
 
+  /*
+   * 场景间状态隔离（快照 → 每场景恢复）。
+   *
+   * 为什么需要：所有场景共用一个 sandbox，而派生状态会**累积** —— 交接链
+   *（session-chains / handoffs）、已装技能与包、场景新增的会话、localStorage
+   * 都会带到下一个场景。实测后果：`handoffchain` 与 `handoffpack` 同批串跑时，
+   * 后者的「起点链段数」被前者污染（单跑必过、串跑才红），只能一个个跑。
+   *
+   * 做法：setup 完成后拍一份快照，每个场景开跑前恢复。排除 `fixture-project`
+   *（合成项目树，带 deny ACL，且各场景按需自建）与快照目录自身。
+   * 非隔离模式（`YAN_TEST_ISOLATED=0`）完全不启用。
+   */
+  const SCENARIO_SEED = '.seed'
+  const SCENARIO_SEED_SKIP = new Set([SCENARIO_SEED, 'fixture-project'])
+  const scenarioSeedRoot = sandboxRoot ? join(sandboxRoot, SCENARIO_SEED) : null
+  if (sandboxRoot) {
+    mkdirSync(scenarioSeedRoot, { recursive: true })
+    for (const entry of readdirSync(sandboxRoot)) {
+      if (SCENARIO_SEED_SKIP.has(entry)) continue
+      cpSync(join(sandboxRoot, entry), join(scenarioSeedRoot, entry), { recursive: true })
+    }
+  }
+  const restoreScenarioState = () => {
+    if (!scenarioSeedRoot) return
+    for (const entry of readdirSync(sandboxRoot)) {
+      if (SCENARIO_SEED_SKIP.has(entry)) continue
+      rmSync(join(sandboxRoot, entry), { recursive: true, force: true })
+    }
+    for (const entry of readdirSync(scenarioSeedRoot)) {
+      cpSync(join(scenarioSeedRoot, entry), join(sandboxRoot, entry), { recursive: true })
+    }
+  }
+
   for (const name of names) {
     const c = CASES[name]
     console.log(`\n${'='.repeat(64)}\n▶ ${name}  (${c.probe})\n${'='.repeat(64)}`)
+    /* 每个场景都从同一份干净快照开始（见上方「场景间状态隔离」）。 */
+    restoreScenarioState()
 
     /*
      * 每个场景开跑前把设置文件**重置回已知状态**（且每档窗口都重置）——

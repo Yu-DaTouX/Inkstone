@@ -181,7 +181,28 @@
   } else {
     ok(false, '拿不到工作集线（contextPolicy 视图缺失）')
   }
-  ok(compactions.size >= 2, `连续长回合里压缩真的发生了多次（${compactions.size} 次）`)
+  const bigLine = typeof workingSet === 'number' && workingSet >= 400_000
+  if (bigLine) {
+    /*
+     * 大档（工作集 ≥ 400K）用同一个 22 轮压力**压不到线**：要真发满几十万 token
+     * 才可能触发整轮压缩，那属于单独预算的真实 1M 输入矩阵（C-3 剩余项）。
+     * 所以这一档不把“压缩次数”当判据，改判它真能回答的命题：档位数值生效、
+     * 窗口约束没被突破、峰值受控（上面的 1.6× 断言）。
+     */
+    log(`  · 工作集 ${workingSet}：本场景不把“压缩次数”当判据（22 轮压力填不满这条线）`)
+    const budget = S().session?.contextPolicy?.budget
+    if (budget) {
+      ok(budget.workingSet === workingSet, `大档工作集就是策略给出的值（${budget.workingSet}）`)
+      ok(
+        budget.workingSet + budget.responseReserve + budget.safetyMargin <= budget.contextWindow,
+        `大档仍受「窗口 − 输出预留 − 安全余量」约束（${budget.workingSet} + ${budget.responseReserve} + ${budget.safetyMargin} ≤ ${budget.contextWindow}）`
+      )
+    } else {
+      ok(false, '拿不到预算视图（contextPolicy.budget 缺失）')
+    }
+  } else {
+    ok(compactions.size >= 2, `连续长回合里压缩真的发生了多次（${compactions.size} 次）`)
+  }
   /*
    * 只要大多数回合真的产生了工具输出，压力条件就成立。少数轮失败
    * （模型行为）不影响“转录贴线”这件事，如实报告、不判整场失败。
