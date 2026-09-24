@@ -42,7 +42,10 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       { win: 64_000, reserve: 16_000, margin: 8_000, workingSet: 40_000, emergency: 48_000 },
       { win: 128_000, reserve: 32_000, margin: 8_000, workingSet: 88_000, emergency: 96_000 },
       { win: 256_000, reserve: 32_000, margin: 8_000, workingSet: 179_200, emergency: 224_000 },
-      { win: 1_000_000, reserve: 32_000, margin: 20_000, workingSet: 240_000, emergency: 900_000 }
+      { win: 1_000_000, reserve: 32_000, margin: 20_000, workingSet: 240_000, emergency: 900_000 },
+      /* C-3 出口 1 点名要的另外两档：512K 与 1,048,576（非十进制 1M） */
+      { win: 512_000, reserve: 32_000, margin: 10_240, workingSet: 240_000, emergency: 460_800 },
+      { win: 1_048_576, reserve: 32_000, margin: 20_972, workingSet: 240_000, emergency: 943_718 }
     ]
     for (const c of cases) {
       const b = budgetOf(c.win)

@@ -818,6 +818,15 @@ export class AgentController extends EventEmitter {
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
         /*
+         * 测试通道：`YAN_PROBE_SKILL` 指定一个 SKILL.md 时，像受管技能那样
+         * 用显式 `--skill` 传进去。产品自 01-S5 起带 `--no-skills`，
+         * 不再自动发现 `piDir/skills` —— 旧夹具把技能摆在 piDir 下，
+         * 在生产行为下永远不会被报告（capcli 曾因此变红）。
+         */
+        ...(process.env.YAN_PROBE && process.env.YAN_PROBE_SKILL
+          ? ['--skill', process.env.YAN_PROBE_SKILL]
+          : []),
+        /*
          * 测试/CI 用固定模型（YAN_TEST_MODEL = "provider/modelId"）。
          * 由 scripts/test-live.mjs 统一注入为 commandcode 的免费模型，
          * 避免每次跑真实场景都需要选定/付费；个别场景（如发图）可在 CASES 里覆盖。

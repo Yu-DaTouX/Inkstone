@@ -46,9 +46,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  *
  * 默认用 **commandcode 的 LongCat 2.0（免费）**：
  *   供应商 provider = commandcode
- *   模型 id        = longcat-2.0:free
- * 它成本为 0，适合反复跑回归。若该模型不可用或触顶，改用
- * `YAN_TEST_MODEL="commandcode/laguna-s-2.1-free"` 重跑。个别场景（如 image 要发图）需要视觉模型，
+ *   模型 id        = deepseek/deepseek-v4.1-flash
+ * 免费档（`longcat-2.0:free` / `laguna-s-2.1-free`）额度触顶或不肯调工具时，
+ * 用这个付费默认档继续跑；仍可用 `YAN_TEST_MODEL="..."` 覆盖。个别场景（如 image 要发图）需要视觉模型，
  * 在 CASES 里用 `model:` 单独覆盖。
  *
  * 想用别的模型：`YAN_TEST_MODEL="provider/modelId" npm run test:live -- e2e`。
@@ -57,7 +57,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * 绝不写回原目录。个别场景需要「没有凭证」的前提，见下面 `piDirNoAuth`。
  * 写成 `provider/id` 形式，交给 pi 的 `--model` 解析。
  */
-const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/longcat-2.0:free'
+const TEST_MODEL = process.env.YAN_TEST_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
 /**
  * Electron 可执行文件（直接 spawn，不经 npx）。
@@ -1055,6 +1055,13 @@ const CASES = {
     budget: 1500000,
     contextExtLog: true,
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    /*
+     * 关掉 tool-sweep，只留 compaction：默认接管里清扫的线在工作集 ×70%，
+     * 清扫真的生效后会把工具输出换成存根，上下文涨不到 240K 压缩线。
+     * 本场景量的是**默认 240K 工作集线上的压缩**，所以把清扫摘出去；
+     * “默认 kinds 下长会话被压在软线之下”那条由 `contextpressure` 与账本证据覆盖。
+     */
+    env: { YAN_CONTEXT_POLICY: '{"kinds":["recall","episode-fold","compaction"]}' },
     piSettings: { compaction: { keepRecentTokens: 1 } }
   },
   /*
@@ -8462,6 +8469,13 @@ function runProbe(
        * 连跑十几个场景时，窗口不断出现本身就是在打断用户。
        */
       ...(process.env.YAN_SHOW_WINDOW || visible ? {} : { YAN_PROBE_HIDDEN: '1' }),
+      /* 视觉验收通道：命令行给出 YAN_PROBE_SHOT 时透传给应用主进程截图（见 src/main/index.ts）。 */
+      ...(process.env.YAN_PROBE_SHOT
+        ? {
+            YAN_PROBE_SHOT: process.env.YAN_PROBE_SHOT,
+            ...(process.env.YAN_PROBE_SHOT_DELAY ? { YAN_PROBE_SHOT_DELAY: process.env.YAN_PROBE_SHOT_DELAY } : {})
+          }
+        : {}),
       ...(keys ? { YAN_PROBE_KEYS: keys } : {}),
       /* 用例自己调第一枚按键的延时（探针要先关引导 / 拿到输入框焦点时用） */
       ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
@@ -9096,8 +9110,18 @@ async function main() {
       ].join('\n'),
       'utf8'
     )
-    CASES.capsearch.env = { YAN_PI_DIR: piDirCapability }
-    CASES.capcli.env = { YAN_PI_DIR: piDirCapability }
+    CASES.capsearch.env = {
+      YAN_PI_DIR: piDirCapability,
+      YAN_PROBE_SKILL: join(piDirCapability, 'skills', 'yan-capability-probe', 'SKILL.md')
+    }
+    /*
+     * capcli 要验「已加载技能能被检索 / 读正文」。宿主带 `--no-skills`，
+     * 所以必须像受管技能那样用显式 `--skill` 传入（与 activeSkillArgs 同一条路）。
+     */
+    CASES.capcli.env = {
+      YAN_PI_DIR: piDirCapability,
+      YAN_PROBE_SKILL: join(piDirCapability, 'skills', 'yan-capability-probe', 'SKILL.md')
+    }
 
     /*
      * 实施-04 S3：`mcpcli` 要连一个真 MCP 服务。配置指向官方 SDK 的 stdio fixture；

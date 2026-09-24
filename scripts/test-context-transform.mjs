@@ -161,6 +161,21 @@ export async function runContextTransformTests(ok, deps) {
     const wrongRole = messages.slice()
     wrongRole[2] = { role: 'assistant', content: [] }
     ok(T.alignEntryIds(branch, wrongRole) === null, '数量相等但角色错位 → 放弃')
+    /*
+     * Pi 0.87：`context` 钩子拿到的 messages 不含 system，但 branch 里仍有 system entry。
+     * 这一条钉住「仍能对齐」——回归前它会整支退化成 entry-identity-unavailable。
+     */
+    const sysBranch = [
+      { type: 'message', id: 's0', message: { role: 'system', content: [{ type: 'text', text: '系统提示' }] } },
+      ...branch
+    ]
+    const sysIds = T.alignEntryIds(sysBranch, messages)
+    ok(
+      !!sysIds && sysIds.join(',') === 'm1,m2,m3,m4,m5,m6,m7',
+      'branch 多一条 system entry 时按「无 system」对齐（Pi 0.87）',
+      JSON.stringify(sysIds)
+    )
+    ok(T.alignEntryIds(sysBranch, messages.slice(1)) === null, '去掉 system 后数量仍不等 → 仍放弃（不因多试一次而放水）')
 
     /* 压缩过：只从 firstKeptEntryId 起保留 */
     const compacted = [
