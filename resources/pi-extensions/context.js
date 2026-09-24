@@ -1137,6 +1137,24 @@ async function runDeepPass({ sessionId, ctx, messages, p }) {
  *      `requiredFields` 默认为空数组（形状合法性由 schema 校验负责）。
  * 接管时保留 pi 给的 `firstKeptEntryId` 与 `tokensBefore`（我们只换摘要文本）。
  */
+/**
+ * pi 的「整轮压缩失败 / 被取消」（`session_compact_failed`）—— C-3 取证用。
+ *
+ * 为什么单独记：`reason=overflow` 只说 pi 走了恢复路径，不说**为何**。
+ * provider 的错误原文（`errorMessage`）只在这个事件里；没有它，
+ * 「端点容量不足」与「请求形状被拒」在日志里长得一模一样。
+ */
+function onCompactFailed(event, ctx) {
+  trace('compact-failed', {
+    sessionId: sessionIdOf(ctx),
+    reason: event?.reason ?? null,
+    aborted: !!event?.aborted,
+    willRetry: !!event?.willRetry,
+    fromExtension: !!event?.fromExtension,
+    errorMessage: String(event?.errorMessage ?? '').slice(0, 700)
+  })
+}
+
 function onBeforeCompact(event, ctx) {
   const sessionId = sessionIdOf(ctx)
   /*
@@ -1779,6 +1797,12 @@ export default function contextExtension(pi) {
    */
   pi.on('before_provider_request', (event, ctx) => onBeforeProviderRequest(event, ctx, pi))
   pi.on('session_before_compact', (event, ctx) => onBeforeCompact(event, ctx))
+  /*
+   * 压缩失败 / 被取消（C-3 取证）：`reason=overflow` 只说明 pi 走了恢复路径，
+   * 说明不了**为什么** —— provider 的错误原文只出现在这个事件里。
+   * 少了它，「端点容量不足」与「请求形状被拒」在日志里长得一模一样。
+   */
+  pi.on('session_compact_failed', (event, ctx) => onCompactFailed(event, ctx))
   /*
    * N21-4 生成器：`agent_settled` 是「这一轮真的结束」的稳定边界。
    * 只在 `kinds` 含 `episode-fold` 时才真的会调模型（见 onAgentSettled）。
