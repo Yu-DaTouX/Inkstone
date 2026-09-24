@@ -4,7 +4,7 @@
 
 ## Install and launch
 
-Choose a Windows package from [GitHub Releases](https://github.com/Yu-DaTouX/yan--agent/releases). Read that version's release notes; features and screenshots on the development branch may be newer than the release.
+Choose a Windows package from [GitHub Releases](https://github.com/Yu-DaTouX/Inkstone/releases). Read that version's release notes; features and screenshots on the development branch may be newer than the release.
 
 | Package | Launch | Best suited for |
 | --- | --- | --- |
@@ -57,4 +57,4 @@ Backups can contain API credentials, private conversations, and browser state. K
 
 ## Get help
 
-Open an [issue](https://github.com/Yu-DaTouX/yan--agent/issues) with your app version, Windows version, reproduction steps, and relevant errors. Remove credentials and private content from screenshots and logs.
+Open an [issue](https://github.com/Yu-DaTouX/Inkstone/issues) with your app version, Windows version, reproduction steps, and relevant errors. Remove credentials and private content from screenshots and logs.

@@ -37,7 +37,7 @@ function visit(dir) {
    const stat=fs.statSync(abs), category=group(p);
    const row={path:p,category,bytes:stat.size,modified:stat.mtime.toISOString(),git:tracked.has(p)?'tracked':ignored.has(p)?'ignored':'untracked',review:'metadata'};
    counts[category]??={files:0,bytes:0};counts[category].files++;counts[category].bytes+=stat.size;
-   if(!metadataOnly.has(category)&& !p.startsWith('.audit-')) {
+   if(!metadataOnly.has(category)&& !p.startsWith('scripts/audit/')) {
     const data=fs.readFileSync(abs);row.sha256=crypto.createHash('sha256').update(data).digest('hex');
     if(!data.subarray(0,8192).includes(0)&& !/\.(png|gif|ico|ttf|woff2?|jpg|webp)$/i.test(p)) {
      const text=data.toString('utf8'); row.lines=text.split(/\r?\n/).length;row.review='全文机器扫描；人工结论另列证据';

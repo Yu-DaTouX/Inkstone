@@ -2,7 +2,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const esbuild=require('esbuild');
-const out='C:/Users/YuDaTou/AppData/Local/Temp/yan-project-audit-EZnwSy';
+const out=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'inkstone-audit-repros-'));
 async function main(){
  await esbuild.build({entryPoints:['src/main/runners.ts'],bundle:true,platform:'node',format:'esm',outfile:path.join(out,'runners.mjs')});
  const {RunnerRegistry}=await import(pathToFileURL(path.join(out,'runners.mjs')).href);

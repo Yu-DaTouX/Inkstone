@@ -4,7 +4,7 @@
 
 ## 安装与启动
 
-从 [GitHub Releases](https://github.com/Yu-DaTouX/yan--agent/releases) 选择 Windows 发行包。下载前阅读该版本的发布说明；开发分支中的界面或功能可能尚未包含在发行包中。
+从 [GitHub Releases](https://github.com/Yu-DaTouX/Inkstone/releases) 选择 Windows 发行包。下载前阅读该版本的发布说明；开发分支中的界面或功能可能尚未包含在发行包中。
 
 | 版本 | 启动方式 | 适合的使用方式 |
 | --- | --- | --- |
@@ -57,4 +57,4 @@
 
 ## 遇到问题
 
-通过 [Issues](https://github.com/Yu-DaTouX/yan--agent/issues) 提交应用版本、Windows 版本、复现步骤和相关错误信息。截图或日志请先隐去密钥与私人内容。
+通过 [Issues](https://github.com/Yu-DaTouX/Inkstone/issues) 提交应用版本、Windows 版本、复现步骤和相关错误信息。截图或日志请先隐去密钥与私人内容。

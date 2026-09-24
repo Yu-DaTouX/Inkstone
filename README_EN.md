@@ -6,10 +6,10 @@
 <p align="center">A desktop AI workspace for thinking, making, and moving work forward.</p>
 
 <p align="center">
-  <a href="https://github.com/Yu-DaTouX/yan--agent/releases">Download</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases">Download</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="docs/GETTING_STARTED_EN.md">User guide</a> ·
-  <a href="https://github.com/Yu-DaTouX/yan--agent/issues">Issues</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">Issues</a> ·
   <a href="README.md">中文</a>
 </p>
 <p align="center"><sub>Windows · Multiple model providers · Light &amp; dark themes · MIT licensed</sub></p>
@@ -55,7 +55,7 @@ The open frame in the brand symbol represents a workspace; `>_` represents input
 
 ### Download for Windows
 
-Visit [Releases](https://github.com/Yu-DaTouX/yan--agent/releases) and choose an installer, single-file portable application, or ZIP distribution. For the ZIP version, extract it and run `砚.exe`. Distributed packages include the pi runtime.
+Visit [Releases](https://github.com/Yu-DaTouX/Inkstone/releases) and choose an installer, single-file portable application, or ZIP distribution. For the ZIP version, extract it and run `砚.exe`. Distributed packages include the pi runtime.
 
 **Releases may lag behind the development branch.** This page describes the development build. Check the release notes for the features available in a particular download.
 
@@ -75,7 +75,7 @@ Requests to remote models are sent to your selected provider. Data locations dif
 
 ## Open source and feedback
 
-Report problems or suggest improvements through [Issues](https://github.com/Yu-DaTouX/yan--agent/issues). Include your app version, reproduction steps, and relevant screenshots with credentials and private content removed.
+Report problems or suggest improvements through [Issues](https://github.com/Yu-DaTouX/Inkstone/issues). Include your app version, reproduction steps, and relevant screenshots with credentials and private content removed.
 
 <details>
 <summary>Developers: run from source and contribute</summary>
@@ -85,8 +85,8 @@ Inkstone uses Electron, React, and TypeScript, with [pi](https://github.com/badl
 Install Git, Node.js (24 recommended), and npm, then run in PowerShell:
 
 ```powershell
-git clone https://github.com/Yu-DaTouX/yan--agent.git
-cd yan--agent
+git clone https://github.com/Yu-DaTouX/Inkstone.git
+cd Inkstone
 npm install -g @earendil-works/pi-coding-agent
 npm run launch
 ```
