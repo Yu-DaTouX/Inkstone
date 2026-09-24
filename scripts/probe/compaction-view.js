@@ -35,6 +35,21 @@
     localStorage.setItem('yan.onboarded', '1')
     await sleep(400)
 
+    /*
+     * 右栏是「开始 / 工具」两个视图（实施-12），上下文卡片只在工具视图里。
+     * 不先切过去，下面所有 `ctx-*` 查询都会拿到 null（看上去像“行不存在”）。
+     */
+    const beforeSwitch = store.getState()
+    if (!beforeSwitch.settings?.rightPanelOpen) {
+      await beforeSwitch.setRightPanelOpen?.(true)
+      await sleep(700)
+    }
+    const toolsTab = document.querySelector('[data-testid="right-window-tab-tools"]')
+    if (toolsTab) {
+      toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(700)
+    }
+
     /* 详情默认折叠：这些行都在「详情」里 */
     for (let i = 0; i < 20; i++) {
       const toggle = document.querySelector('[data-testid="ctx-details-toggle"]')

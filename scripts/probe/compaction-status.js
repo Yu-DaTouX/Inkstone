@@ -45,6 +45,20 @@
   }
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}），本场景要真的压缩一次`
 
+  /*
+   * 右栏是「开始 / 工具」两个视图（实施-12），上下文分区只在工具视图里 ——
+   * 不先切过去，`rp-context` 根本不在 DOM，断言会静默拿到空串。
+   */
+  if (!S().settings?.rightPanelOpen) {
+    await S().setRightPanelOpen(true)
+    await sleep(700)
+  }
+  const toolsTab = q('[data-testid="right-window-tab-tools"]')
+  if (toolsTab) {
+    toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(700)
+  }
+
   const sec = q('[data-testid="rp-context"]')
   if (!sec) return '✗ 找不到上下文分区'
   const openDetails = async () => {

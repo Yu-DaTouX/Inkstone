@@ -613,6 +613,65 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
       '先减输出预留与安全余量，档位不能突破它们'
     )
     ok(!!long && long.responseReserve === 32_000, '1M 下输出预留仍按公式封顶 32K（不是模型能力字段）')
+
+    /*
+     * C-3 多档窗口预算矩阵（零成本档）。
+     *
+     * 为什么需要一张表而不是几个散点：预算由三重 `min`（cap / 窗口×ratio /
+     * 窗口−预留−余量）夹出来，散点看不住**跳档性质** —— 换档后是否单调、
+     * 是否始终低于物理兜底、小窗口会不会继承大档裸上限。
+     * 真端点端到端另由 `contextwindow1m` 等 cost 1 场景覆盖。
+     */
+    console.log('\n  C-3 多档窗口预算矩阵（数值）：')
+    const windows = [32_768, 65_536, 128_000, 200_000, 272_000, 512_000, 600_000, 1_000_000, 2_000_000]
+    const presets = {
+      default: {},
+      balanced: LARGE_CONTEXT_POLICY_PRESETS.balanced,
+      long: LARGE_CONTEXT_POLICY_PRESETS.long
+    }
+    const budgetAt = (win, over) => contextBudget(win, { ...DEFAULT_CONTEXT_POLICY, ...over })
+
+    const matrix = []
+    for (const win of windows) {
+      for (const [name, over] of Object.entries(presets)) {
+        const b = budgetAt(win, over)
+        if (b) matrix.push({ win, name, ws: b.workingSet, emergency: b.emergency, compact: b.triggers.compact })
+      }
+    }
+    ok(matrix.length >= 20, `多档矩阵算出 ${matrix.length} 个可用档位（窗口小到装不下预留的不算）`)
+    ok(
+      matrix.every((r) => r.ws <= r.emergency),
+      '每一档工作集都低于物理兜底线'
+    )
+    ok(
+      matrix.every((r) => r.compact === r.ws),
+      '每一档整轮压缩线就等于当档工作集（不是全局 240K）'
+    )
+    ok(
+      windows.every((win, i) =>
+        i === 0 ? true : (budgetAt(win)?.workingSet ?? 0) >= (budgetAt(windows[i - 1])?.workingSet ?? 0)
+      ),
+      '同一档下窗口变大，工作集不下降'
+    )
+    ok(
+      windows.every((win) => {
+        const ws = (name) => budgetAt(win, presets[name])?.workingSet ?? 0
+        return ws('default') <= ws('balanced') && ws('balanced') <= ws('long')
+      }),
+      '同一窗口下 默认 ≤ 均衡 ≤ 长材料（档位越高工作集越大）'
+    )
+    ok(
+      budgetAt(128_000, presets.long)?.workingSet === budgetAt(128_000, presets.default)?.workingSet,
+      '小窗口切到 700K 档不会继承裸上限（仍被窗口公式夹住）'
+    )
+    console.log('    窗口 × 档位 → 工作集 / 物理兜底线')
+    for (const win of windows) {
+      const cells = Object.keys(presets).map((name) => {
+        const b = budgetAt(win, presets[name])
+        return `${name}=${b ? `${b.workingSet}/${b.emergency}` : '—'}`
+      })
+      console.log(`    ${String(win).padStart(9)}  ${cells.join('  ')}`)
+    }
 }
 
   /*

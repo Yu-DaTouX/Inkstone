@@ -159,7 +159,21 @@
   /* ---------------- 界面：不能说成「手动」 ---------------- */
   log('')
   log('=== 2. 界面文案 ===')
+  /*
+   * 右栏是「开始 / 工具」两个视图（实施-12），上下文卡片只在工具视图里。
+   * 不先切过去的话 `ctx-details-toggle` 根本不在 DOM，下面的断言会静默拿到空串。
+   */
+  if (!S().settings?.rightPanelOpen) {
+    await S().setRightPanelOpen(true)
+    await sleep(700)
+  }
+  const toolsTab = q('[data-testid="right-window-tab-tools"]')
+  if (toolsTab) {
+    toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(700)
+  }
   const toggle = q('[data-testid="ctx-details-toggle"]')
+  ok(!!toggle, '详情开关存在（右栏已切到工具视图）')
   if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
     toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(250)
