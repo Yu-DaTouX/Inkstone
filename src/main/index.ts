@@ -7,7 +7,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage } from 'electron'
 import { join, dirname, basename, extname, resolve } from 'node:path'
 import { constants as fsConstants, existsSync } from 'node:fs'
-import { access, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import {
   AgentController,
@@ -5947,6 +5947,51 @@ function createWindow(): void {
         if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
       })
     }, 1200)
+
+    /*
+     * 测试通道：`YAN_PROBE_SHOT` 给出一个 png 路径时，在窗口出现后延迟
+     * `YAN_PROBE_SHOT_DELAY`（默认 20000ms）截一次**真实窗口**。
+     * 只服务人工 / agent 视觉验收（例如 H-10 真实子代理过程页）；
+     * 没有 `YAN_PROBE` 的正常启动完全不进入这一段。
+     *
+     * 隐藏窗口只合成一帧，所以截图前先 `showInactive()`（显示但不抢焦点）。
+     */
+    const shotPath = process.env.YAN_PROBE_SHOT
+    if (process.env.YAN_PROBE && shotPath) {
+      const parsedShotDelay = Number(process.env.YAN_PROBE_SHOT_DELAY ?? 20_000)
+      const shotDelay = Number.isFinite(parsedShotDelay) && parsedShotDelay >= 0 ? parsedShotDelay : 20_000
+      const shotLog = (m: string): void => {
+        void appendFile(`${shotPath}.log`, `${new Date().toISOString()} ${m}\n`).catch(() => {})
+      }
+      shotLog(`armed delay=${shotDelay} path=${shotPath}`)
+      /*
+       * 连续抓：场景从探针开始到退出只有几秒，单次定时很容易落在窗口之外。
+       * `shotPath` 是基础名，实际输出 `-1/-2/...` 后缀，事后挑过程页那张。
+       */
+      let shotIndex = 0
+      const shoot = (): void => {
+        if (!win || win.isDestroyed()) return
+        if (!win.isVisible()) win.showInactive()
+        const target = shotPath.replace(/\.png$/i, `-${++shotIndex}.png`)
+        void win.webContents
+          .capturePage()
+          .then((img) => writeFile(target, img.toPNG()))
+          .then(() => shotLog(`saved ${target}`))
+          .catch((e) => shotLog(`failed: ${e?.message ?? String(e)}`))
+      }
+      setTimeout(() => {
+        shotLog('burst start')
+        shoot()
+        const timer = setInterval(() => {
+          if (!win || win.isDestroyed()) {
+            clearInterval(timer)
+            shotLog('burst stop')
+            return
+          }
+          shoot()
+        }, Number(process.env.YAN_PROBE_SHOT_INTERVAL ?? 2000))
+      }, shotDelay)
+    }
   })
 
   /*

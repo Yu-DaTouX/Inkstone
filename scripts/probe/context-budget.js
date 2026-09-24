@@ -16,6 +16,7 @@
  */
 ;(async () => {
   const out = []
+  try {
   const ok = (c, s) => {
     out.push((c ? '  ✓ ' : '  ✗ ') + s)
     return !!c
@@ -49,7 +50,10 @@
     { win: 64000, reserve: 16000, margin: 8000, workingSet: 40000, emergency: 48000 },
     { win: 128000, reserve: 32000, margin: 8000, workingSet: 88000, emergency: 96000 },
     { win: 256000, reserve: 32000, margin: 8000, workingSet: 179200, emergency: 224000 },
-    { win: 1000000, reserve: 32000, margin: 20000, workingSet: 240000, emergency: 900000 }
+    { win: 1000000, reserve: 32000, margin: 20000, workingSet: 240000, emergency: 900000 },
+    /* C-3 出口 1 点名要的另外两档：512K 与 1,048,576（非十进制 1M） */
+    { win: 512000, reserve: 32000, margin: 10240, workingSet: 240000, emergency: 460800 },
+    { win: 1048576, reserve: 32000, margin: 20972, workingSet: 240000, emergency: 943718 }
   ]
   for (const c of cases) {
     const r = await window.yan.contextBudget(c.win)
@@ -120,6 +124,17 @@
   /* ---------------- 3. 工作集视角的界面 ---------------- */
   log('')
   log('=== 3. 工作集视角 ===')
+  /* 右栏收起时整块 DOM 不在（窄栏 / 默认收起），先确保它打开再看刻度。 */
+  if (!S().settings?.rightPanelOpen) {
+    await S().setRightPanelOpen(true)
+    await sleep(700)
+  }
+  /* 右栏有「开始」/「工具」两个视图（实施-12），磁贴只在工具页里渲染。 */
+  const toolsTab = q('[data-testid="right-window-tab-tools"]')
+  if (toolsTab) {
+    toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(700)
+  }
   const main = q('[data-testid="ctx-main"]')
   ok(main?.getAttribute('data-mode') === 'working-set', `主值切到工作集视角（data-mode=${main?.getAttribute('data-mode')}）`)
   const tokensText = text('[data-testid="ctx-tokens"]')
@@ -626,4 +641,7 @@
   ok(S().session?.contextPolicy?.source === 'default', '清理后来源回到默认（探针不留副作用）')
 
   return out.join('\n')
+  } catch (e) {
+    return out.join('\n') + '\n  ✗ 探针异常：' + (e?.stack ?? e)
+  }
 })()
