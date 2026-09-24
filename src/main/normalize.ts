@@ -186,26 +186,38 @@ export function normalizeHistory(raw: unknown[]): UIMessage[] {
   const out: UIMessage[] = []
   const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
 
-  raw.forEach((r, i) => {
+  /*
+   * ⚠️ 序号只按**真正产出的消息**递增，不能用 raw 下标。
+   *
+   * Pi 0.87 起会把 system prompt 作为一条 `type:"message"` 写进会话 JSONL，
+   * 而实时事件流与 context 钩子都看不到它。继续用 raw 下标编号会让 system
+   * 之后的每条消息 id 整体 +1：实时写入的回合计时锚点（`anchorId`，形如 `m0`）
+   * 在重启读回时全部对不上 —— 表现为用时与「已中断」凭空消失。
+   * 跳过 system、按产出顺序编号，两代 pi 下两侧才是同一口径。
+   */
+  let seq = 0
+  for (const r of raw) {
     const m = r as PiMessage
-    const norm = normalizeMessage(m, i)
-    if (!norm) return
+    if (m?.role === 'system') continue
+    const norm = normalizeMessage(m, seq)
+    if (!norm) continue
 
     if (m.role === 'toolResult') {
       const hit = norm.toolCalls?.[0] ? callIndex.get(norm.toolCalls[0].id) : undefined
       if (hit) {
-        // 挂到原有调用上，不新增消息
+        // 挂到原有调用上，不新增消息（序号也不前进，与实时视图一致）
         hit.call.status = norm.toolCalls![0].status
         hit.call.output = norm.toolCalls![0].output
-        return
+        continue
       }
     }
 
+    seq += 1
     for (const c of norm.toolCalls ?? []) {
       callIndex.set(c.id, { msg: norm, call: c })
     }
     out.push(norm)
-  })
+  }
 
   return out
 }
