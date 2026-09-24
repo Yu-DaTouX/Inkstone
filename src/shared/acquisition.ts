@@ -277,6 +277,13 @@ export function retryAcquisition(tx: AcquisitionTransaction, at: string): Acquis
   delete next.stagingDir
   delete next.receipt
   delete next.failure
+  /*
+   * 激活目标描述的是**上一轮**的 runner / 会话 / 目标修订 / sourceHead；重试是新一轮尝试，
+   * 这些都已过期。不清掉的话 `bindPiPackageTarget` / `bindSkillFilesTarget` 会按
+   * 「同一事务不能改绑」直接拒绝，重试就永远走不到重新绑定。
+   */
+  delete next.piPackageTarget
+  delete next.skillFilesTarget
   return next
 }
 

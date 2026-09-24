@@ -102,18 +102,20 @@ export function readPackageSources(settingsPath: string): string[] {
  *
  * 三种形态（都是实测出来的）：
  *   · npm 源 → `<agentDir>/npm/node_modules/<name>`（pi 用 npm 装到这里）
- *   · 本地路径 → **不复制**，settings 里存的是**相对 agentDir 的路径**
- *     （实测：装 `<root>/my-ext` 得到 `"..\\my-ext"`），所以按 agentDir 解析
+ *   · 本地路径 → **不复制**，settings 里存的是**相对「所在 settings 文件」目录**的路径
+ *     （pi 文档：Relative local paths resolve from the settings file that contains them）。
+ *     用户级 settings 在 agentDir，项目级在 `<cwd>/.pi` —— 两者深度可以不同，
+ *     所以调用方必须把对应 settings 目录作为 `settingsDir` 传进来，不能一律按 agentDir 解析。
  *   · git 源 → 也落在 npm/node_modules 下（按包名再兜一次）
  *
  * 读不到就如实标 `installed: false` —— 「settings 里登记着但磁盘上没有」
  * 是一个要显示给用户的异常状态，不能悄悄当成正常。
  */
-export function packageDirOf(agentDir: string, source: string): string | null {
+export function packageDirOf(agentDir: string, source: string, settingsDir?: string): string | null {
   const raw = String(source ?? '').trim()
   if (!raw) return null
   if (/^\.{1,2}[\\/]/.test(raw) || /^[a-zA-Z]:[\\/]/.test(raw)) {
-    return resolve(agentDir, raw)
+    return resolve(settingsDir ?? agentDir, raw)
   }
   const name = packageNameOf(raw)
   if (!name) return null
@@ -121,9 +123,14 @@ export function packageDirOf(agentDir: string, source: string): string | null {
 }
 
 /** 从磁盘上的 package.json 补元信息 —— 这才是「这个包到底是什么」的真源 */
-export function describePackage(agentDir: string, source: string, scope: 'user' | 'project'): PackageEntry {
+export function describePackage(
+  agentDir: string,
+  source: string,
+  scope: 'user' | 'project',
+  settingsDir?: string
+): PackageEntry {
   const name = packageNameOf(source)
-  const dir = packageDirOf(agentDir, source) ?? join(agentDir, 'npm', 'node_modules', ...name.split('/'))
+  const dir = packageDirOf(agentDir, source, settingsDir) ?? join(agentDir, 'npm', 'node_modules', ...name.split('/'))
   const meta = readJson<{ name?: string; version?: string; description?: string; repository?: { url?: string } | string; license?: string }>(
     join(dir, 'package.json')
   )
@@ -150,14 +157,16 @@ export function listPackages(cwd: string, agentDirOverride?: string): PackageLis
   const agentDir = agentDirOverride ?? agentDirNow()
   const userSettings = join(agentDir, 'settings.json')
   const projectSettings = join(String(cwd ?? ''), '.pi', 'settings.json')
+  /* 项目级本地包的相对源由项目 .pi 目录解析（见 packageDirOf 注释）。 */
+  const projectSettingsDir = join(String(cwd ?? ''), '.pi')
   try {
     const entries: PackageEntry[] = []
-    for (const src of readPackageSources(userSettings)) entries.push(describePackage(agentDir, src, 'user'))
+    for (const src of readPackageSources(userSettings)) entries.push(describePackage(agentDir, src, 'user', agentDir))
     if (cwd && existsSync(projectSettings)) {
       for (const src of readPackageSources(projectSettings)) {
         /* 同名时项目级优先显示（它就是当前会话真正生效的那份） */
         const idx = entries.findIndex((e) => e.source === src)
-        const entry = describePackage(agentDir, src, 'project')
+        const entry = describePackage(agentDir, src, 'project', projectSettingsDir)
         if (idx >= 0) entries[idx] = entry
         else entries.push(entry)
       }
@@ -400,7 +409,7 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
     request.kind === 'install'
       ? source
       : /^\.{1,2}[\\/]/.test(source) || /^[a-zA-Z]:[\\/]/.test(source)
-        ? (packageDirOf(agentDirNow(), source) ?? source)
+        ? (packageDirOf(agentDirNow(), source, local ? join(cwd, '.pi') : agentDirNow()) ?? source)
         : source
   const args =
     request.kind === 'install'
