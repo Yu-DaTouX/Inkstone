@@ -231,11 +231,17 @@ if (flag('--diff')) {
   const fa = flat(A)
   const fb = flat(B)
   const keys = [...new Set([...Object.keys(fa), ...Object.keys(fb)])]
+  /*
+   * 稳定项：复核前后应当**完全一致**。
+   * 不含 `sessionLayout.entries` / `turnTiming.*` / `ops` / 会话行数 —— 那些按会话、
+   * 回合或操作增长，复核期间的对话本身就会写它们，只要求「不减少」。
+   */
   const stable = new Set([
     'layout.theme', 'layout.cwd', 'layout.rightPanelOpen', 'layout.alwaysOnTop', 'layout.uiScale',
-    'layout.railWidth', 'layout.panelWidth', 'layout.browserHeight',
+    'layout.railWidth', 'layout.panelWidth', 'layout.browserHeight', 'layout.hash',
     'goals.count', 'goals.hash', 'credentials.auth', 'credentials.models', 'credentials.settings',
-    'stableFingerprint', 'sessions.projectDirs', 'titles', 'manualTitles', 'sessionLayout.entries'
+    'stableFingerprint', 'sessions.count', 'sessions.projectDirs', 'titles', 'manualTitles',
+    'contextState.total'
   ])
   let changed = 0
   let shrank = 0
