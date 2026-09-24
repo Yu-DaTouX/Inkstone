@@ -15,7 +15,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 export async function runPackagesTests(ok) {
   const {
@@ -84,6 +84,37 @@ export async function runPackagesTests(ok) {
     ok(packageDirOf(agent, '..\\my-ext') === join('C:\\', 'my-ext'), '相对路径按 agentDir 解析', String(packageDirOf(agent, '..\\my-ext')))
     ok(packageDirOf(agent, 'C:\\work\\ext') === 'C:\\work\\ext', '绝对路径原样使用')
     ok(packageDirOf(agent, '') === null, '空 source 给 null', String(packageDirOf(agent, '')))
+  }
+
+  /* ── 3b. 项目级本地包：相对路径按「所在 settings 文件」解析，不是 agentDir ── */
+  {
+    const root = mkdtempSync(join(tmpdir(), 'yan-pkg-projrel-'))
+    /* agentDir 与项目 .pi 深度刻意不同：旧的「一律按 agentDir 解析」会在这里算错。 */
+    const agent = join(root, 'agent', 'nested')
+    const pkg = join(root, 'pkgs', 'target')
+    mkdirSync(agent, { recursive: true })
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(
+      join(pkg, 'package.json'),
+      JSON.stringify({ name: '@scope/proj-ext', version: '9.9.9', description: '项目级本地包' })
+    )
+    /* pi 会把本地源登记成「相对所在 settings 文件目录」的路径。 */
+    const fromSettings = relative(join(root, '.pi'), pkg)
+    mkdirSync(join(root, '.pi'), { recursive: true })
+    writePackageSourcesForTest(join(root, '.pi', 'settings.json'), [fromSettings])
+
+    ok(
+      packageDirOf(agent, fromSettings, join(root, '.pi')) === pkg,
+      'packageDirOf：显式给 settings 目录时按它解析项目级本地路径',
+      String(packageDirOf(agent, fromSettings, join(root, '.pi')))
+    )
+    const listed = listPackages(root, agent)
+    const projectEntry = listed.entries.find((e) => e.scope === 'project')
+    ok(projectEntry?.installed === true, '项目级本地包：从项目 .pi 解析后能在磁盘上找到', JSON.stringify(projectEntry))
+    ok(projectEntry?.name === '@scope/proj-ext', '项目级本地包：包名来自 package.json（不是目录名）', String(projectEntry?.name))
+    ok(projectEntry?.version === '9.9.9', '项目级本地包：版本来自 package.json', String(projectEntry?.version))
+    ok(projectEntry?.path === pkg, '项目级本地包：path 就是解析出来的包目录', String(projectEntry?.path))
+    rmSync(root, { recursive: true, force: true })
   }
 
   /* ── 4. 真实：装 / 列 / 卸（隔离的 agent 目录，本地路径源，不联网）── */
@@ -244,6 +275,40 @@ export async function runPackagesTests(ok) {
     /* 复位，避免影响别的测试 */
     configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false })
 
+    rmSync(root, { recursive: true, force: true })
+  }
+
+  /* ── 4b. 受管包：agentDir 与项目 .pi 深度不同时，装完仍能在清单里确认 ──
+     生产里 agentDir=`~/.pi/agent`、项目 `.pi` 在项目根，两者深度不同；旧实现
+     一律按 agentDir 解析本地源，于是「pi install 已 Installed 但清单查不到」。 */
+  {
+    const cli = join(process.cwd(), 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+    const root = mkdtempSync(join(tmpdir(), 'yan-pkg-deep-'))
+    const agent = join(root, 'nested', 'agent')
+    const stagedRoot = join(root, 'managed-staging')
+    const stagedPackage = join(stagedRoot, 'op-deep', 'payload')
+    mkdirSync(agent, { recursive: true })
+    mkdirSync(join(stagedPackage, 'extensions'), { recursive: true })
+    mkdirSync(join(root, '.pi'), { recursive: true })
+    writeFileSync(
+      join(stagedPackage, 'package.json'),
+      JSON.stringify({ name: 'yan-deep-ext', version: '7.7.7' })
+    )
+    writeFileSync(join(stagedPackage, 'extensions', 'index.js'), 'export default {}\n')
+    writeFileSync(join(agent, 'trust.json'), JSON.stringify({ [root]: true }, null, 2))
+    configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false, isProjectTrusted: () => true })
+    const deepInstalled = await installManagedPiPackage({
+      sourceDir: stagedPackage,
+      managedRoot: stagedRoot,
+      cwd: root,
+      name: 'yan-deep-ext',
+      version: '7.7.7',
+      allowLifecycleScripts: false
+    })
+    ok(deepInstalled.ok, '受管包：agentDir 与项目 .pi 深度不同也能装并确认', deepInstalled.detail ?? deepInstalled.error ?? '')
+    const deepEntry = deepInstalled.listing?.entries.find((e) => e.name === 'yan-deep-ext')
+    ok(deepEntry?.installed === true && deepEntry.version === '7.7.7', '受管包：固定版本在项目清单里被确认', JSON.stringify(deepEntry))
+    configurePackageContext({ agentDir: () => agent, bin: () => cli, hasRunningTask: () => false })
     rmSync(root, { recursive: true, force: true })
   }
 

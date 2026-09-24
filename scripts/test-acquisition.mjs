@@ -77,6 +77,30 @@ export async function runAcquisitionTests(ok, modules) {
     }
     ok(threw, '重试：用满次数后再重试必须报错，不静默放行')
 
+    /* 重试是新一轮尝试：上一轮绑定的激活目标（runner / 会话 / 目标修订 / sourceHead）已过期，必须清掉。 */
+    let boundTx = make()
+    boundTx.piPackageTarget = {
+      runnerId: 'runner-a',
+      runnerGeneration: 3,
+      cwd: 'C:\\project',
+      sessionFile: 'C:\\project\\session.jsonl',
+      projectId: 'proj-1',
+      goalId: 'goal-1',
+      goalRevision: 4,
+      sourceHead: 'a'.repeat(40),
+      continueId: 'op-bound',
+      packageName: '@fixture/safe-skill',
+      packageVersion: '1.2.3'
+    }
+    boundTx = shared.advanceAcquisition(boundTx, 'acquiring', { at })
+    boundTx = shared.advanceAcquisition(boundTx, 'failed', { at, failure: { code: 'verification', detail: 'boom' } })
+    const retriedBound = shared.retryAcquisition(boundTx, at)
+    ok(retriedBound.state === 'prepared', '重试：绑定的 pi 包事务回到 prepared')
+    ok(
+      retriedBound.piPackageTarget === undefined && retriedBound.skillFilesTarget === undefined,
+      '重试：清除上一轮的激活目标绑定（否则重新绑定会被 target-conflict 拒绝）'
+    )
+
     let illegal = false
     try {
       shared.advanceAcquisition(make(), 'resumed', { at })
