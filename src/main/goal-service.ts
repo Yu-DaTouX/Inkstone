@@ -29,7 +29,10 @@ import { YAN_DIR } from './paths'
 import {
   applyGoalReport,
   applyPursuedGoal,
+  applyPendingReadyPlan,
+  applyReadyApprovalMode,
   applyReadyTransition,
+  clearPendingReadyPlan,
   applyRepeatFailure,
   checkGoalBudget,
   sanitizeGoalBudget,
@@ -48,6 +51,7 @@ import {
   type GoalLinkCheck,
   type GoalReportInput,
   type GoalState,
+  type ReadyApprovalMode,
   type PursuedBrief,
   type ReadySubmission,
   type ReadyTransitionResult,
@@ -646,6 +650,206 @@ export class GoalStore {
     })
   }
 
+  /** 用户按会话选择是否需要审阅计划；待审期间不允许切换这个选项。 */
+  async setReadyApprovalMode(
+    sessionKey: string,
+    mode: ReadyApprovalMode,
+    expectedGoalRevision: number
+  ): Promise<{ ok: true; goal: GoalState } | GoalRejectResult> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) {
+        return { ok: false as const, code: 'bad_session', message: '会话身份不可用', goal: emptyGoal(this.now()) }
+      }
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      if (entry.goal.pendingReady) {
+        return { ok: false as const, code: 'review_pending', message: '请先批准或修改待审计划', goal: entry.goal }
+      }
+      if (entry.goal.revision !== expectedGoalRevision) {
+        return { ok: false as const, code: 'stale_goal', message: '目标状态已变化，请刷新后重试', goal: entry.goal }
+      }
+      const next = applyReadyApprovalMode(entry.goal, mode, this.now())
+      if (next !== entry.goal) {
+        entry.goal = next
+        entry.updatedAt = next.updatedAt
+        await this.persist()
+      }
+      return { ok: true as const, goal: entry.goal }
+    })
+  }
+
+  /** 澄清档启用审阅时，只落盘待审计划，不切模式或安排执行。 */
+  async prepareReadyReview(
+    sessionKey: string,
+    submission: Partial<ReadySubmission>,
+    current: { modeRevision: number; goalRevision: number },
+    goalId: string
+  ): Promise<
+    | { ok: true; pending: true; replayed: boolean; goal: GoalState }
+    | GoalCommitResult
+    | GoalRejectResult
+  > {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) {
+        return { ok: false as const, code: 'bad_session', message: '会话身份不可用', goal: emptyGoal(this.now()) }
+      }
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      const replayId = sanitizeWorkModeKey(submission.transitionId)
+      const pending = entry.goal.pendingReady
+      if (pending && replayId === pending.transitionId) {
+        return { ok: true as const, pending: true as const, replayed: true, goal: entry.goal }
+      }
+      if (replayId && entry.transitions[replayId]) {
+        return {
+          ok: true as const,
+          replayed: true,
+          goal: entry.goal,
+          result: entry.transitions[replayId].result as ReadyTransitionResult
+        }
+      }
+      if (pending) {
+        return {
+          ok: false as const,
+          code: 'review_pending',
+          message: '已有计划等待用户审阅；请先批准或选择修改计划',
+          goal: entry.goal
+        }
+      }
+      if (entry.goal.readyApproval !== 'review') {
+        return {
+          ok: false as const,
+          code: 'approval_mode_changed',
+          message: '计划审阅方式已变化，请按当前设置重新提交',
+          goal: entry.goal
+        }
+      }
+      const check = checkReadySubmission(submission, current)
+      if (!check.ok) {
+        return { ok: false as const, code: check.code, message: check.message, goal: entry.goal }
+      }
+      const at = this.now()
+      const stableGoalId = goalId || entry.goal.goalId || randomUUID()
+      entry.goal = applyPendingReadyPlan(
+        entry.goal,
+        {
+          transitionId: replayId ?? randomUUID(),
+          goalId: stableGoalId,
+          modeRevision: current.modeRevision,
+          understanding: check.understanding,
+          createdAt: at
+        },
+        at
+      )
+      /* 待审期间不能留下一条旧目标的自动续行。 */
+      entry.resume = null
+      entry.autoContinues = 0
+      entry.updatedAt = at
+      await this.persist()
+      return { ok: true as const, pending: true as const, replayed: false, goal: entry.goal }
+    })
+  }
+
+  /** 批准计划时二次比对目标 / 模式 revision；transitionId 也作为单次幂等键。 */
+  async approveReadyReview(
+    sessionKey: string,
+    input: { transitionId: string; goalRevision: number; modeRevision: number }
+  ): Promise<GoalCommitResult | GoalRejectResult> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) {
+        return { ok: false as const, code: 'bad_session', message: '会话身份不可用', goal: emptyGoal(this.now()) }
+      }
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      const transitionId = sanitizeWorkModeKey(input.transitionId)
+      if (!transitionId) {
+        return { ok: false as const, code: 'missing_transition_id', message: '批准必须带计划 transitionId', goal: entry.goal }
+      }
+      const committed = entry.transitions[transitionId]
+      if (committed) {
+        return {
+          ok: true as const,
+          replayed: true,
+          goal: entry.goal,
+          result: committed.result as ReadyTransitionResult
+        }
+      }
+      const pending = entry.goal.pendingReady
+      if (!pending || pending.transitionId !== transitionId) {
+        return { ok: false as const, code: 'stale_goal', message: '待审计划已变化或已被取消', goal: entry.goal }
+      }
+      if (entry.goal.revision !== input.goalRevision || pending.goalRevision !== input.goalRevision) {
+        return { ok: false as const, code: 'stale_goal', message: '目标状态已变化，请重新审阅当前计划', goal: entry.goal }
+      }
+      if (pending.modeRevision !== input.modeRevision || entry.goal.readyApproval !== 'review') {
+        return { ok: false as const, code: 'stale_mode', message: '计划审阅方式已变化，请重新确认', goal: entry.goal }
+      }
+      const at = this.now()
+      const result: ReadyTransitionResult = {
+        transitionId,
+        goalId: pending.goalId,
+        goalRevision: entry.goal.revision + 1,
+        mode: 'standard',
+        phase: 'executing',
+        understanding: pending.understanding
+      }
+      entry.goal = applyReadyTransition(entry.goal, result, at)
+      entry.transitions[transitionId] = { at, result }
+      /* 审批按钮本身安排下一轮；避免再写一条 goal-resume 造成重复开工。 */
+      entry.resume = null
+      entry.autoContinues = 0
+      entry.paused = false
+      if (!entry.startedAt) entry.startedAt = at
+      entry.updatedAt = at
+      this.trim(entry)
+      await this.persist()
+      return { ok: true as const, replayed: false, goal: entry.goal, result }
+    })
+  }
+
+  /** 用户选择修改计划时撤销待审快照；相同 transitionId 不会再批准旧内容。 */
+  async modifyReadyReview(
+    sessionKey: string,
+    input: { transitionId: string; goalRevision: number }
+  ): Promise<{ ok: true; goal: GoalState } | GoalRejectResult> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) {
+        return { ok: false as const, code: 'bad_session', message: '会话身份不可用', goal: emptyGoal(this.now()) }
+      }
+      const entry = (this.doc.entries[key] ??= emptyEntry())
+      if (
+        !entry.goal.pendingReady ||
+        entry.goal.pendingReady.transitionId !== sanitizeWorkModeKey(input.transitionId) ||
+        entry.goal.revision !== input.goalRevision
+      ) {
+        return { ok: false as const, code: 'stale_goal', message: '待审计划已变化，请刷新后重试', goal: entry.goal }
+      }
+      const at = this.now()
+      entry.goal = clearPendingReadyPlan(entry.goal, at)
+      entry.resume = null
+      entry.updatedAt = at
+      await this.persist()
+      return { ok: true as const, goal: entry.goal }
+    })
+  }
+
+  /** 工作模式离开澄清档或用户放弃目标时，撤销待审计划。 */
+  async cancelReadyReview(sessionKey: string): Promise<GoalState | null> {
+    return this.enqueue(async () => {
+      const key = normalizeSessionFileKey(sessionKey)
+      if (!key) return null
+      const entry = this.doc.entries[key]
+      if (!entry?.goal.pendingReady) return entry?.goal ?? null
+      const at = this.now()
+      entry.goal = clearPendingReadyPlan(entry.goal, at)
+      entry.resume = null
+      entry.updatedAt = at
+      await this.persist()
+      return entry.goal
+    })
+  }
+
   /** 提交一次目标报告。幂等与就绪转移同一套。 */
   async report(
     sessionKey: string,
@@ -660,6 +864,14 @@ export class GoalStore {
       const replayId = sanitizeWorkModeKey(input.reportId)
       if (replayId && entry.reports[replayId]) {
         return { ok: true as const, replayed: true, goal: entry.goal }
+      }
+      if (entry.goal.pendingReady) {
+        return {
+          ok: false as const,
+          code: 'review_pending',
+          message: '计划等待用户审阅期间不能提交目标进度；请等待批准或修改计划',
+          goal: entry.goal
+        }
       }
 
       const check = checkGoalReport(input, entry.goal)
@@ -1005,6 +1217,7 @@ export class GoalStore {
         ...(goal ?? entry.goal),
         phase: 'stopped',
         revision: entry.goal.revision + 1,
+        pendingReady: null,
         failure: null,
         blocker: null,
         updatedAt: at

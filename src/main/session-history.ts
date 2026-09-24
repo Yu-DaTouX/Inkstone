@@ -40,8 +40,13 @@ export async function readChainMessages(
    */
   const readOne = async (file: string): Promise<ReadResult | null> => {
     const result = await readSessionMessages(file).catch(() => null)
-    if (!result || !hydrate) return result
-    const messages = await hydrate(file, result.messages).catch(() => result.messages)
+    if (!result) return null
+    let messages = hydrate
+      ? await hydrate(file, result.messages).catch(() => result.messages)
+      : result.messages
+    if (result.sourceCwd) {
+      messages = messages.map((message) => ({ ...message, sourceCwd: result.sourceCwd }))
+    }
     return { ...result, messages }
   }
 
@@ -56,6 +61,7 @@ export async function readChainMessages(
   let truncated = 0
   let bytes = 0
   let sessionId: string | undefined
+  let sourceCwd: string | undefined
   let read = 0
   let missing = 0
 
@@ -69,6 +75,8 @@ export async function readChainMessages(
     total += result.total
     truncated += result.truncated
     bytes += result.bytes
+    if (read === 0) sourceCwd = result.sourceCwd
+    else if (sourceCwd !== result.sourceCwd) sourceCwd = undefined
     /* 会话 id 取**最后一段**的：那是当前活动段的身份（链上的旧段是历史） */
     if (result.sessionId) sessionId = result.sessionId
     read += 1
@@ -81,6 +89,7 @@ export async function readChainMessages(
     truncated,
     bytes,
     ...(sessionId ? { sessionId } : {}),
+    ...(sourceCwd ? { sourceCwd } : {}),
     segments: read,
     missing
   }

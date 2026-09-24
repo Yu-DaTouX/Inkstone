@@ -19,6 +19,7 @@ import type {
   GoalState,
   HandoffView,
   PursuedBrief,
+  ReadyApprovalMode,
   GitScopeRequest,
   MainPush,
   MessagePatch,
@@ -386,6 +387,9 @@ interface Store {
    * 不影响已经在推进的那个目标（否则用户写错一栏就会把任务抹掉）。
    */
   setGoal: (brief: PursuedBrief) => Promise<{ ok: boolean }>
+  setGoalReadyApproval: (mode: ReadyApprovalMode) => Promise<boolean>
+  approveGoalReady: () => Promise<boolean>
+  modifyGoalReady: () => Promise<boolean>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
   reloadModels: () => Promise<void>
@@ -1703,6 +1707,79 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch (error) {
       get().notify('error', error instanceof Error ? error.message : '设定目标失败')
       return { ok: false }
+    }
+  },
+
+  setGoalReadyApproval: async (mode) => {
+    const before = identityForAwait(get())
+    const current = get()
+    try {
+      const res = await window.yan.setGoalReadyApproval(mode, current.goal?.revision)
+      if (identityForAwait(get()) !== before) return res.ok
+      set({ goal: res.goal })
+      if (!res.ok) {
+        get().notify('error', res.error === 'clarify_required' ? '请先切换到计划模式，再设置审阅方式。' : '计划设置已变化，请刷新后重试。')
+      }
+      return res.ok
+    } catch (error) {
+      if (identityForAwait(get()) === before) {
+        get().notify('error', error instanceof Error ? error.message : '更新计划审阅方式失败')
+      }
+      return false
+    }
+  },
+
+  approveGoalReady: async () => {
+    const before = identityForAwait(get())
+    const current = get()
+    const pending = current.goal?.pendingReady
+    if (!pending || !current.activeRunnerId || !current.workMode) return false
+    try {
+      const res = await window.yan.approveGoalReady({
+        runnerId: current.activeRunnerId,
+        transitionId: pending.transitionId,
+        goalRevision: current.goal!.revision,
+        modeRevision: current.workMode.revision
+      })
+      if (identityForAwait(get()) !== before) return false
+      set({ goal: res.goal })
+      if (!res.ok) {
+        get().notify('error', '计划或会话状态已变化，请刷新后重新审阅。')
+        return false
+      }
+      if (!res.replayed && res.started === false) {
+        get().notify('error', `计划已批准，但启动消息未送达：${res.startError ?? '请手动发送消息开始执行。'}`)
+      }
+      return true
+    } catch (error) {
+      if (identityForAwait(get()) === before) {
+        get().notify('error', error instanceof Error ? error.message : '批准计划失败')
+      }
+      return false
+    }
+  },
+
+  modifyGoalReady: async () => {
+    const before = identityForAwait(get())
+    const current = get()
+    const pending = current.goal?.pendingReady
+    if (!pending || !current.activeRunnerId || !current.workMode) return false
+    try {
+      const res = await window.yan.modifyGoalReady({
+        runnerId: current.activeRunnerId,
+        transitionId: pending.transitionId,
+        goalRevision: current.goal!.revision,
+        modeRevision: current.workMode.revision
+      })
+      if (identityForAwait(get()) !== before) return false
+      set({ goal: res.goal })
+      if (!res.ok) get().notify('error', '待审计划已变化，请刷新后重试。')
+      return res.ok
+    } catch (error) {
+      if (identityForAwait(get()) === before) {
+        get().notify('error', error instanceof Error ? error.message : '修改计划失败')
+      }
+      return false
     }
   },
 

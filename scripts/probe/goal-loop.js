@@ -65,6 +65,22 @@
     out.push(
       `  session：isStreaming=${st.session?.isStreaming} isAgentRunning=${st.session?.isAgentRunning} conn=${st.conn}`
     )
+    out.push(`  notices=${JSON.stringify((st.notices ?? []).map((n) => n.text).slice(-6))}`)
+    out.push(
+      `  activeRunnerId=${st.activeRunnerId} runners=${JSON.stringify(
+        (st.runners ?? []).map((r) => ({ id: r.runId ?? r.id, gen: r.generation, active: r.isActive }))
+      )}`
+    )
+    out.push(
+      `  sessionRuntimes=${JSON.stringify(
+        Object.entries(st.sessionRuntimes ?? {}).map(([k, v]) => ({
+          k: String(k).slice(-24),
+          sid: v?.sessionId,
+          file: String(v?.sessionFile ?? '').split(/[\\/]/).pop(),
+          msgs: (v?.messages ?? []).length
+        }))
+      ).slice(0, 900)}`
+    )
     for (const c of bashCalls.slice(-3)) {
       out.push('  bash: ' + JSON.stringify(String(c.args?.command ?? c.args ?? '')).slice(0, 220))
     }
@@ -90,16 +106,25 @@
    * 全程**只发这一条**。后面所有回合都必须是宿主的 control 消息叫起来的 ——
    * 这正是「大任务自己往下推」与「用户一直在催」的分界。
    */
-  const command = 'yan goal report --report-id rp-loop-1 --phase executing --goal-revision 0'
+  const reportFile = '.yan-goal-report-links.json'
+  const command = `yan goal report --request-file ${reportFile}`
+  const expectedLink = 'https://example.com/yan-goal-report-link'
   const prompt = [
-    '这是一次功能自测，请严格只做两件事：',
-    '1) 用 bash 工具**原样、单行**运行下面这条命令，把 stdout 贴出来：',
+    '这是一次功能自测，请按顺序完成下面四步：',
+    '1) 用 bash 工具运行 `yan goal status`，读取当前 goalRevision。',
+    `2) 用 write 工具在当前项目目录创建 ${reportFile}，内容为一个 JSON 对象：`,
+    '   reportId="rp-loop-1"，phase="executing"，goalRevision 使用刚读到的值，',
+    '   steps=[{"title":"目标报告链接链路","status":"done"}]，',
+    `   links=[{"kind":"url","target":"${expectedLink}","label":"目标报告链接自测"}]。`,
+    '   links 不要包含 source 或 check 字段。',
+    '3) 用 bash 工具**原样、单行**运行下面这条命令，把 stdout 贴出来：',
     '',
     command,
     '',
-    '2) 然后**立刻结束本轮回复**（只写一句「等待自动续接」），不要执行其它命令、不要写文件、不要继续分析。'
+    '4) 然后**立刻结束本轮回复**（只写一句「等待自动续接」），不要运行其它命令或继续分析。'
   ].join('\n')
   const sent = await store.getState().send(prompt)
+  out.push(`  send 返回：${JSON.stringify(sent)}；notices=${JSON.stringify((store.getState().notices ?? []).map((n) => n.text).slice(-4))}`)
   ok(!sent || sent.ok !== false, '消息已发送（此后不再发第二条）')
 
   /*
@@ -176,6 +201,10 @@
   }
   const finalGoal = await window.yan.getGoal()
   ok(finalGoal.goal.revision >= 1, `目标至少推进过一次（实际 rev${finalGoal.goal.revision}）`)
+  ok(
+    finalGoal.goal.links?.some((link) => link.kind === 'url' && link.target === expectedLink),
+    '续接后模型报告链接仍保留'
+  )
   ok(finalGoal.mode.mode === 'autonomous', '全程模式都是自主档（续行不是切档导致的）')
 
   /* 磁盘结论交给 afterExit 检查（窗口关掉后再读，避免只看到内存态） */

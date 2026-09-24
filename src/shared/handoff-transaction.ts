@@ -72,7 +72,7 @@ export interface HandoffStep {
  * 界面与恢复都能说清楚「到哪一步了」：
  *   · `sentAt` —— 已经把续行交给目的实例；
  *   · `persistedAt` —— 已在目的会话文件里看到（= 现在 `resumed` 的依据）；
- *   · `startedAt` —— 标记之后真的出现了助手输出（**运行**证据）。
+ *   · `startedAt` —— 续接扩展在同一 operationId 的 `before_provider_request` 中写下启动回执。
  *
  * 现状（如实）：`resumed` 仍以 `persistedAt` 为准，`startedAt` 只做附加观察，
  * **未当门槛** —— 把它当门槛会让交接在模型未启动时长时间挂住。

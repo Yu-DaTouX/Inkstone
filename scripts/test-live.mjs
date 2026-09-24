@@ -154,6 +154,26 @@ const CASES = {
   // 子代理：真起一个独立 pi 子进程（方案第 8 节；本地模型也可能需要更长冷启动）
   subagent: { probe: 'scripts/probe/subagent.js', delay: 12000, cost: 0, budget: 240000 },
   /*
+   * 实施-11 H-10：合成子代理推送快照在 Electron 渲染端回放（cost 0）。
+   * 覆盖当前会话过滤、长转录自动跟随，以及用户上滚后继续输出不抢回位置；
+   * 这是 renderer/store 事件回放，不冒充主进程子代理 IPC 或真实模型任务。
+   */
+  subagentview: { probe: 'scripts/probe/subagent-view.js', delay: 10000, cost: 0 },
+  /*
+   * 实施-11 H-10：本机确定性 provider 下的子代理主进程推送整链。
+   * 与 `subagent` 同一条真实链路（SubagentController → onChange push → IPC
+   * → renderer store），但模型指向本机 OpenAI 兼容 fixture，不发往外部、
+   * 不花额度；fixture 立即回文本。探针复用 `scripts/probe/subagent.js`。
+   */
+  subagentlocal: {
+    probe: 'scripts/probe/subagent.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    budget: 240000,
+    cost: 0
+  },
+  /*
    * 两个并发写入子代理的真实矩阵（L03）：真起两个 pi 子进程，各自在
    * `HEAD` 的独立 worktree 里写文件，然后走合并 / 放弃 / 冲突 / 只读
    * 白名单 / 退出归档。会真调模型（且要求它真的写文件），所以 cost: 1。
@@ -379,6 +399,27 @@ const CASES = {
     goalResumeExtLog: true,
     afterExit: 'goalPersisted'
   },
+  /* G-4：真实 ready → 待审 → 用户批准 → 向同一 runner 发送启动消息。 */
+  goalreview: {
+    probe: 'scripts/probe/goal-review.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 1,
+    budget: 360000,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    afterExit: 'goalReviewPersisted'
+  },
+  /* G-4：cost 0，用真实落盘待审状态验「修改计划」IPC 不误批准 / 启动。 */
+  goalreviewmodify: {
+    probe: 'scripts/probe/goal-review-modify.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 10000,
+    cost: 0,
+    goalReviewSeed: true,
+    afterExit: 'goalReviewModifyPersisted'
+  },
   /*
    * 自主档「大任务自己往下推」端到端（实施-05 S3c，**花一次模型**）：
    * 切自主档 → 模型只用 `yan goal report` 报一次进展就收尾 →
@@ -390,6 +431,8 @@ const CASES = {
    */
   goalloop: {
     probe: 'scripts/probe/goal-loop.js',
+    fixture: true,
+    fixtureSub: 'repo',
     delay: 12000,
     cost: 1,
     budget: 360000,
@@ -400,7 +443,7 @@ const CASES = {
      * （2026-09-19 实测：目标停在 rev0、续行根本没机会发生，属于假红）。
      * 同免费档的 deepseek 一闪模型一次跑通，与 browserclimodel 同一个处置。
      */
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'goalLoopPersisted'
   },
   /*
@@ -439,7 +482,7 @@ const CASES = {
     delay: 22000,
     cost: 1,
     budget: 240000,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     goalResumeExtLog: true,
     handoffExtLog: true,
     env: { YAN_HANDOFF_THRESHOLD: '0' },
@@ -461,7 +504,20 @@ const CASES = {
     delay: 25000,
     cost: 1,
     budget: 400000,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    env: { YAN_HANDOFF_THRESHOLD: '0' },
+    afterExit: 'handoffCommitPersisted'
+  },
+  /* 同一提交链路使用隔离的本机 provider，验证交接启动回执，不花外部模型额度。 */
+  handoffcommitlocal: {
+    probe: 'scripts/probe/handoff-commit.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 0,
+    budget: 240000,
     goalResumeExtLog: true,
     handoffExtLog: true,
     env: { YAN_HANDOFF_THRESHOLD: '0' },
@@ -479,7 +535,7 @@ const CASES = {
     delay: 12000,
     cost: 1,
     budget: 900000,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     goalResumeExtLog: true,
     handoffExtLog: true,
     piSettings: { compaction: { keepRecentTokens: 1 } },
@@ -508,6 +564,34 @@ const CASES = {
     env: { YAN_CONTEXT_POLICY: '{\"workingSetCap\":6000}' },
     afterExit: 'handoffRecoverPersisted'
   },
+  /* 实施-14 F7 剩余生成错误边界：输出可解析但缺少必填包字段时仍须恢复源会话。 */
+  handoffrecoverincomplete: {
+    probe: 'scripts/probe/handoff-recover.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 0,
+    budget: 420000,
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{\"workingSetCap\":6000}' },
+    afterExit: 'handoffRecoverPersisted'
+  },
+  /* 实施-14 F7：真实 Pi provider adapter 收到 HTTP 503 后必须归类 failed 并恢复源会话。 */
+  handoffrecoverproviderfail: {
+    probe: 'scripts/probe/handoff-recover.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 12000,
+    cost: 0,
+    budget: 420000,
+    goalResumeExtLog: true,
+    handoffExtLog: true,
+    piSettings: { compaction: { keepRecentTokens: 1 } },
+    env: { YAN_CONTEXT_POLICY: '{\"workingSetCap\":6000}' },
+    afterExit: 'handoffRecoverPersisted'
+  },
   /*
    * 实施-14 F7：**连续两次交接**（cost 1，阈值 0 测试通道）。
    *
@@ -522,7 +606,7 @@ const CASES = {
     delay: 25000,
     cost: 1,
     budget: 500000,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     goalResumeExtLog: true,
     handoffExtLog: true,
     env: { YAN_HANDOFF_THRESHOLD: '0' },
@@ -543,7 +627,7 @@ const CASES = {
     delay: 20000,
     cost: 1,
     budget: 2400000,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     goalResumeExtLog: true,
     handoffExtLog: true,
     piSettings: { compaction: { keepRecentTokens: 1 } },
@@ -695,7 +779,7 @@ const CASES = {
     contextExtLog: true,
     afterExit: 'contextTakeoverState',
     /* 固定模型：默认免费档 LongCat 已退役（403），不固定会让场景假红 */
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     env: {
       YAN_CONTEXT_POLICY:
         '{"workingSetCap":20000,"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
@@ -727,7 +811,7 @@ const CASES = {
     budget: 420000,
     contextExtLog: true,
     afterExit: 'contextTakeoverGap',
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     env: {
       YAN_CONTEXT_POLICY:
         '{"workingSetCap":20000,"kinds":["tool-sweep","recall","compaction","episode-fold"],"state":{"gate":{"minTurns":1,"minTokens":1}}}'
@@ -885,7 +969,7 @@ const CASES = {
      * 极短问题上偶发空回复（手动 `--print` 同模型同提示正常）——那是模型侧，
      * 判「有没有被误拦」的根据是磁盘上的 physical / budget-abort 断言（都为 0）。
      */
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     env: { YAN_CONTEXT_POLICY: '{"workingSetCap":3000}' }
   },
   contextgate: {
@@ -939,7 +1023,7 @@ const CASES = {
     budget: 900000,
     contextExtLog: true,
     afterExit: 'contextPressure',
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     /*
      * `keepRecentTokens: 1` 与 `contexttakeover` 同一理由：pi 的压缩默认会保留
      * 最近一大段，那就看不出“砚的策略线到底压不压得住”——转录会停在 pi 的
@@ -959,6 +1043,47 @@ const CASES = {
     }
   },
   /*
+   * 默认工作集（**不覆盖** `YAN_CONTEXT_POLICY`）下的真实长会话（实施-06）：
+   * 每轮 40000 行工具输出（≈50k token），8 轮足以让上下文越过硬线并触发压缩。
+   * 量的是生产默认软线 / 预留 / 防抖在真实长会话里守不守得住，
+   * 而不是测试通道里压线的变体。
+   */
+  contextpressure240k: {
+    probe: 'scripts/probe/context-pressure-240k.js',
+    delay: 12000,
+    cost: 1,
+    budget: 1500000,
+    contextExtLog: true,
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
+  /*
+   * C-3 的受控最小验证：用真实约 1M 窗口端点（Claude Sonnet 5，commandcode）
+   * 确认 pi 报的窗口 / 砚的工作集数值一致、请求未越窗口。
+   * 只跑 3 轮，**不**把压缩次数当判据 —— 发满 1M 输入的压力矩阵需要单独预算。
+   */
+  contextpressure1m: {
+    probe: 'scripts/probe/context-pressure-1m.js',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    contextExtLog: true,
+    model: 'commandcode/claude-sonnet-5',
+    piSettings: { compaction: { keepRecentTokens: 1 } }
+  },
+  /*
+   * C-3 大窗口端点验证：一条大填充 prompt 走完整链路，
+   * 看 pi 报的窗口 / 上下文与预算诊断。
+   */
+  contextwindow1m: {
+    probe: 'scripts/probe/context-window-1m.js',
+    delay: 12000,
+    cost: 1,
+    budget: 900000,
+    contextExtLog: true,
+    model: 'commandcode/claude-sonnet-5'
+  },
+  /*
    * 压力测试的**低线变体**（cost 1）：工作集压到 6000，**低于** pi 的基线开销
    *（系统提示 + 工具定义，本机约 10k）。
    *
@@ -975,7 +1100,7 @@ const CASES = {
     budget: 900000,
     contextExtLog: true,
     afterExit: 'contextPressure',
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     piSettings: { compaction: { keepRecentTokens: 1 } },
     env: {
       YAN_CONTEXT_POLICY: '{"workingSetCap":6000}'
@@ -1114,7 +1239,7 @@ const CASES = {
     delay: 9000,
     budget: 200000,
     cost: 1,
-    model: 'deepseek/deepseek-v4.1-flash',
+    model: 'commandcode/deepseek/deepseek-v4.1-flash',
     afterExit: 'sourceLocateLinked'
   },
   /*
@@ -1496,7 +1621,7 @@ const CASES = {
      * 多步提示连续返回「模型返回错误」（模型侧错误，不是本片代码），
      * 会变成假红。换成同一个免费档的 deepseek 一闪模型即可稳定跑完（实测通过）。
      */
-    model: 'deepseek/deepseek-v4.1-flash'
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
   /*
@@ -1512,7 +1637,7 @@ const CASES = {
     delay: 10000,
     cost: 1,
     budget: 260000,
-    model: 'deepseek/deepseek-v4.1-flash'
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
   /*
@@ -1524,7 +1649,7 @@ const CASES = {
     delay: 10000,
     cost: 1,
     budget: 260000,
-    model: 'deepseek/deepseek-v4.1-flash'
+    model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
   /*
@@ -1710,6 +1835,19 @@ const CASES = {
     delay: 10000,
     cost: 0
   },
+  /*
+   * 实施-11 H-4：由 Electron 外部的 Node 测试进程改写文件，
+   * 验证预览只提示变化、不自动替换内容，用户点“重新加载”后才读新内容。
+   */
+  filestale: {
+    probe: 'scripts/probe/file-stale.js',
+    fixture: true,
+    fixtureSub: 'repo',
+    delay: 10000,
+    budget: 60000,
+    cost: 0,
+    driver: driveFilePreviewMutation
+  },
 
   /*
    * 实施-11 C-2：压缩可观测性的两个派生量（回收比例 / 此后新增量，cost 0）。
@@ -1762,6 +1900,29 @@ const CASES = {
     /* 真实的 before_provider_request 估算留痕（实施-11 C-4b 的取证入口） */
     contextExtLog: true,
     afterExit: 'turnTimingPersisted'
+  },
+  /* H-6b：并发 A/B 会话必须各自归属自己的逻辑回合计时（本机 fixture，cost 0）。 */
+  turntimingisolation: {
+    probe: 'scripts/probe/turn-timing-isolation.js',
+    delay: 12000,
+    budget: 180000,
+    cost: 0,
+    fixture: true,
+    abSessions: true,
+    afterExit: 'turnTimingIsolation'
+  },
+  /* H-6b：观察真实 final:false 落盘后强制终止隔离 Electron，再从新进程读回中断状态。 */
+  turntimingkill: {
+    probe: 'scripts/probe/turn-timing-hardkill.js',
+    delay: 12000,
+    budget: 90000,
+    cost: 0,
+    fixture: true,
+    fixtureSub: 'repo',
+    hardKillAfterIntermediateTiming: true,
+    restart: { probe: 'scripts/probe/turn-timing-hardkill-restart.js', delay: 12000, budget: 120000 },
+    afterExit: 'turnTimingHardKill',
+    afterExitOnFailure: true
   },
   /*
    * 实施-11 H-6b-2：中途被拿掉的回合读回后报「已中断」（cost 1）。
@@ -1998,6 +2159,8 @@ function buildFixtureProject(base) {
   /* 文档内相对链接（H-4 出口 3）：`../README.md` 相对的是本文档目录 */
   mk('repo', 'docs')
   put(join('repo', 'docs', 'a.md'), '# fixture 文档\n\n[返回上一级](../README.md)\n')
+  /* 历史消息来源 cwd（H-4）：与 repo 根各放一个同名文件，内容和真实路径都可区分。 */
+  put(join('repo', 'docs', 'README.md'), '# docs README\n\n历史来源目录 fixture。\n')
   const gitEnv = ['-c', 'user.name=yan-test', '-c', 'user.email=yan@test']
   try {
     execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'ignore' })
@@ -3778,6 +3941,64 @@ async function seedGoalDocument(dataDir, sessionsDir) {
     }
   }
   writeFileSync(join(dataDir, 'goals.json'), JSON.stringify({ version: 1, entries }, null, 2), 'utf8')
+  return files.length
+}
+
+/** G-4 cost 0 fixture：在真实隔离数据目录中预置一条可修改的待审 ready。 */
+async function seedPendingGoalReview(dataDir, sessionsDir) {
+  const now = Date.now()
+  const files = readdirSync(sessionsDir, { recursive: true })
+    .map((name) => String(name))
+    .filter((name) => name.endsWith('.jsonl'))
+  const goalId = 'goal-review-modify-fixture'
+  const transitionId = 'tr-review-modify-fixture'
+  const understanding = {
+    goal: '隔离测试待审计划',
+    deliverable: '修改后重新确认',
+    scope: '仅测试会话',
+    constraints: '修改时不开始执行',
+    acceptance: '待审快照已撤销'
+  }
+  const goals = {}
+  for (const rel of files) {
+    const key = join(sessionsDir, rel)
+    goals[key] = {
+      goal: {
+        goalId,
+        phase: 'planning',
+        revision: 3,
+        steps: [],
+        evidence: [],
+        links: [],
+        verification: null,
+        budget: null,
+        budgetStop: null,
+        budgetUsage: null,
+        blocker: null,
+        pursue: false,
+        brief: null,
+        readyApproval: 'review',
+        pendingReady: {
+          transitionId,
+          goalId,
+          modeRevision: 1,
+          goalRevision: 3,
+          understanding,
+          createdAt: now
+        },
+        failure: null,
+        updatedAt: now
+      },
+      transitions: {},
+      reports: {},
+      resume: null,
+      autoContinues: 0,
+      paused: false,
+      repeatCursor: null,
+      updatedAt: now
+    }
+  }
+  writeFileSync(join(dataDir, 'goals.json'), JSON.stringify({ version: 1, entries: goals }, null, 2), 'utf8')
   return files.length
 }
 
@@ -5677,8 +5898,12 @@ const AFTER_EXIT = {
   taskPlanMultiStep: checkTaskPlanMultiStep,
   workModePersisted: checkWorkModePersisted,
   goalPersisted: checkGoalPersisted,
+  goalReviewPersisted: checkGoalReviewPersisted,
+  goalReviewModifyPersisted: checkGoalReviewModifyPersisted,
   turnTimingPersisted: checkTurnTimingPersisted,
+  turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
+  turnTimingHardKill: checkTurnTimingHardKill,
   effectivePolicyFile: checkEffectivePolicyFile,
   goalLoopPersisted: checkGoalLoopPersisted,
   autoContinuePersisted: checkAutoContinuePersisted,
@@ -6038,6 +6263,91 @@ async function checkTurnTimingPersisted(sandboxRoot, _tempBefore, probeText = ''
   return { ok, lines }
 }
 
+/** 退出后检查：并发 A/B 会话的计时仍归属各自用户回合与会话文件（H-6b）。 */
+async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  let snapshot = null
+  try {
+    const raw = /^\s*turn-timing-isolation\.snapshot=(.+)$/m.exec(probeText)?.[1]
+    snapshot = raw ? JSON.parse(raw) : null
+  } catch {
+    snapshot = null
+  }
+  say(!!snapshot?.a && !!snapshot?.b, '探针保存 A / B 的实际 sessionFile、用户锚点和读回消息 id')
+
+  const dir = join(sandboxRoot, 'data', 'turn-timing')
+  const checkSession = (tag) => {
+    const entry = snapshot?.[tag]
+    const expectedUserId = entry?.userId
+    const fileName = entry?.sessionFile ? `${basename(entry.sessionFile).replace(/\.jsonl$/i, '')}.jsonl` : ''
+    const path = fileName ? join(dir, fileName) : ''
+    let records = []
+    if (path && existsSync(path)) {
+      records = readFileSync(path, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)]
+          } catch {
+            return []
+          }
+        })
+    }
+    say(!!path && existsSync(path), `${tag.toUpperCase()} 写入自己的计时文件（${fileName || '缺少 sessionFile'}）`)
+    say(/^m\d+$/.test(String(expectedUserId ?? '')), `${tag.toUpperCase()} 读回用户锚点（${expectedUserId ?? '缺失'}）`)
+    const matching = records.filter((record) => record?.logicalTurnId === expectedUserId)
+    say(matching.length >= 1, `${tag.toUpperCase()} 的分桶包含自己的逻辑回合（${matching.length} 条快照）`)
+    const final = matching.filter((record) => record.final === true).at(-1)
+    const latest = matching.at(-1)
+    lines.push(`  ${tag.toUpperCase()} 最近快照 = ${JSON.stringify(latest ? { final: latest.final, terminalReason: latest.terminalReason, elapsedMs: latest.elapsedMs, runId: latest.runId } : null)}`)
+    say(!!final, `${tag.toUpperCase()} 有终止快照`)
+    say(latest?.final === true, `${tag.toUpperCase()} 的最新快照就是终止快照（final=${String(latest?.final)}）`)
+    if (!final) return null
+    say(final.anchorId === expectedUserId, `${tag.toUpperCase()} 的落盘锚点仍指向本会话的用户消息`)
+    say(final.terminalReason === 'completed', `${tag.toUpperCase()} 回合正常完成（${final.terminalReason}）`)
+    say(
+      Array.isArray(final.sourceIds) && final.sourceIds.length >= 1,
+      `${tag.toUpperCase()} 收尾记录保留运行时 sourceIds（${JSON.stringify(final.sourceIds ?? [])}）`
+    )
+    say(
+      (entry?.timedAssistantIds ?? []).length >= 1,
+      `${tag.toUpperCase()} 的计时呈现在重读后的本回合助手回复上（${JSON.stringify(entry?.timedAssistantIds ?? [])}）`
+    )
+    return final
+  }
+
+  const a = checkSession('a')
+  const b = checkSession('b')
+  if (a && b) {
+    const sourceA = new Set(a.sourceIds ?? [])
+    say(
+      !(b.sourceIds ?? []).some((id) => sourceA.has(id)),
+      'A、B 两个 runner 的运行时 sourceIds 不交叉'
+    )
+    say(
+      Number(b.elapsedMs) > Number(a.elapsedMs) + 2500,
+      `不同 fixture 延迟仍按会话归属（A=${a.elapsedMs}ms，B=${b.elapsedMs}ms）`
+    )
+  }
+  say(
+    Number(handoffFailureState?.maxConcurrent ?? 0) >= 2,
+    `本机 provider 确认两条请求曾同时在途（最大并发 ${handoffFailureState?.maxConcurrent ?? 0}）`
+  )
+  say(Number(handoffFailureState?.turnRequests ?? 0) >= 2, `本机 provider 收到两条回合请求（${handoffFailureState?.turnRequests ?? 0}）`)
+  return { ok, lines }
+}
+
 /**
  * 退出后检查：中途被拿掉的回合真的被读成「中断」（实施-11 H-6b-2）。
  *
@@ -6071,7 +6381,14 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
     }
   }
   const last = records[records.length - 1]
-  say(records.length >= 2, `同一回合有收尾 + 中途两条记录（${records.length}）`)
+  const realHardKill = String(probeText).includes('turn-timing.hardkill.processExitedAfterForce=true')
+  lines.push(`  turn-timing.disk.records=${JSON.stringify(records)}`)
+  say(
+    realHardKill ? records.length === 1 : records.length >= 2,
+    realHardKill
+      ? `真强杀后磁盘只保留中途快照（${records.length} 条）`
+      : `同一回合有收尾 + 中途两条记录（${records.length}）`
+  )
   say(last?.final === false, `盘上最后一条是中途快照（final=${String(last?.final)}）`)
 
   /* 读侧归一：直接拿测试构建的同一份模块，不重写一遍规则 */
@@ -6086,6 +6403,27 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
   say(uiReason === 'interrupted', `重启后的探针从 peeking 的历史里读到「中断」（${uiReason}）`)
   const footer = /turn-timing\.interrupted\.footer=("[^\n]*")/.exec(probeText)?.[1]
   say(/中断/.test(footer ?? ''), `真实页脚里写出「已中断」（${footer}）`)
+  return { ok, lines }
+}
+
+/** 退出后检查：真强杀发生在完整的 final:false 已落盘、pi 正等待下一次 completion 之后。 */
+async function checkTurnTimingHardKill(sandboxRoot, tempBefore, probeText = '') {
+  const base = await checkTurnTimingInterrupted(sandboxRoot, tempBefore, probeText)
+  const lines = [...base.lines]
+  let ok = base.ok
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  const text = String(probeText)
+  say(text.includes('turn-timing.hardkill.processExitedAfterForce=true'), '隔离 Electron 在强制终止请求后退出')
+  say(text.includes('turn-timing.hardkill.snapshot='), '父进程输出了强杀前读到的完整快照')
+  say(text.includes('turn-timing.interrupted.userMarkerPresent=true'), '重启后从同一测试会话读到唯一用户标记')
+  say(text.includes('turn-timing.interrupted.toolCallPresent=true'), '重启后会话保留了触发中途快照的 bash tool call')
+  say(handoffFailureState?.failureMode === 'turn-timing-kill', '场景使用隔离的本机 fixture provider')
+  say(handoffFailureState?.bashToolOffered === true && handoffFailureState?.toolCallSent === true, 'fixture 确认收到工具 schema 并返回 bash tool call')
+  say(handoffFailureState?.followupHeld === true, 'pi 已执行工具并发出第二次模型请求，该请求仍在途时才强杀')
+  say(Number(handoffFailureState?.turnRequests ?? 0) === 2, `本机 provider 收到首轮工具调用与第二轮续接请求（${handoffFailureState?.turnRequests ?? 0}）`)
   return { ok, lines }
 }
 
@@ -6231,6 +6569,112 @@ async function checkGoalPersisted(sandboxRoot, _tempBefore, _probeText) {
   return { ok, lines }
 }
 
+/** G-4：批准后的待审计划、目标转移、模式切换与启动消息必须一起落盘。 */
+async function checkGoalReviewPersisted(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+
+  const dataDir = join(sandboxRoot, 'data')
+  const short = (key) => String(key).split(/[\\/]/).pop()
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    say(entries.length === 1, `只有当前测试会话的目标记录（实际 ${entries.length}）`)
+    const [sessionFile, entry] = entries[0] ?? []
+    const goal = entry?.goal
+    say(goal?.phase === 'executing', `批准后的目标已落盘为 executing（${goal?.phase ?? '无'}）`)
+    say(!goal?.pendingReady, '已批准目标不再保留待审计划')
+    say(goal?.readyApproval === 'review', '会话的审阅偏好仍为 review')
+    const transitions = Object.entries(entry?.transitions ?? {})
+    say(transitions.length === 1, `只提交一次 ready transition（实际 ${transitions.length}）`)
+    const [transitionId, record] = transitions[0] ?? []
+    say(transitionId === 'tr-review-probe-1', `转移使用探针给出的幂等键（${transitionId ?? '无'}）`)
+    say(
+      record?.result?.phase === 'executing' && record?.result?.mode === 'standard',
+      '转移记录同时提交 executing 与 standard'
+    )
+    say(String(record?.result?.understanding?.acceptance ?? '').includes('CSV'), '批准记录保留用户可审阅的验收字段')
+
+    if (sessionFile && existsSync(sessionFile)) {
+      const text = readFileSync(sessionFile, 'utf8')
+      say(text.includes('yan goal ready'), '真实会话中保存了模型经 bash 提交的 ready 命令')
+      say(text.includes('请按刚才批准的计划开始执行。'), '真实会话中保存了主进程发送的启动消息')
+    } else {
+      say(false, `找不到会话文件（${short(sessionFile ?? '') || '无'}）`)
+    }
+  } catch (error) {
+    say(false, `读 goals.json 失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    say(
+      entries.some(([, mode]) => mode?.mode === 'standard' && Number(mode.revision) >= 2),
+      `批准后的模式为 standard 且 revision 至少为 2（${entries.map(([key, mode]) => `${short(key)}=${mode.mode}(rev${mode.revision})`).join(', ') || '空'}）`
+    )
+  } catch (error) {
+    say(false, `读 work-modes.json 失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  say(String(probeText).includes('批准 IPC 向当前 runner 发送了计划启动消息'), 'live 探针确认批准后启动消息已到达当前 runner')
+  return { ok, lines }
+}
+
+/** G-4 cost 0 反向分支：修改只清除待审快照，不产生 ready transition 或启动消息。 */
+async function checkGoalReviewModifyPersisted(sandboxRoot, _tempBefore, probeText = '') {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) {
+    lines.push('（非隔离运行：没有可检查的沙箱，跳过）')
+    return { ok: true, lines }
+  }
+  const dataDir = join(sandboxRoot, 'data')
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'goals.json'), 'utf8'))
+    const entries = Object.entries(doc?.entries ?? {})
+    const modified = entries.filter(([, entry]) =>
+      entry?.goal?.goalId === 'goal-review-modify-fixture' && entry.goal.pendingReady == null
+    )
+    say(entries.length > 0, `读取到隔离目标条目（${entries.length}）`)
+    say(modified.length === 1, `只有当前会话清除了待审计划（${modified.length} 条）`)
+    const [sessionFile, entry] = modified[0] ?? []
+    say(entry?.goal?.phase === 'planning', `修改后仍处于 planning（${entry?.goal?.phase ?? '无'}）`)
+    say(entry?.goal?.revision === 4, `清除待审快照只推进一次 revision（${entry?.goal?.revision ?? '无'}）`)
+    say(entry?.goal?.readyApproval === 'review', '修改后保留 per-session review 偏好')
+    say(Object.keys(entry?.transitions ?? {}).length === 0, '修改没有提交 ready transition')
+    if (sessionFile && existsSync(sessionFile)) {
+      const text = readFileSync(sessionFile, 'utf8')
+      say(!text.includes('请按刚才批准的计划开始执行。'), '会话文件里没有误发批准后的启动消息')
+    } else {
+      say(false, '修改目标对应的会话文件存在')
+    }
+  } catch (error) {
+    say(false, `读 goals.json 失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  try {
+    const doc = JSON.parse(readFileSync(join(dataDir, 'work-modes.json'), 'utf8'))
+    const modes = Object.values(doc?.entries ?? {})
+    say(modes.some((mode) => mode?.mode === 'clarify' && mode.revision === 1), '修改后仍留在只读计划模式')
+  } catch (error) {
+    say(false, `读 work-modes.json 失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  say(String(probeText).includes('G-4 修改经真实 IPC 撤销待审快照'), 'live 探针确认修改按钮经过主进程并撤销待审状态')
+  return { ok, lines }
+}
+
 /**
  * 自主档连续续接的磁盘核对（实施-05 S3c，`goalloop` 场景）。
  *
@@ -6362,19 +6806,18 @@ async function checkGoalLoopPersisted(sandboxRoot, _tempBefore, _probeText) {
       `目标报告落了盘（${Object.keys(entry?.reports ?? {}).length} 条）`
     )
     /*
-     * G-2：模型真的经 `yan goal report` 报过一次，宿主就该在同一次落盘里
-     * 算出核验；它不声明任何产物，所以只能是 `not_checked` ——
-     * 正是要证明「没有机器判据 ≠ 通过」（而不是跟着“模型报了”写个绿的）。
+     * U-3b / G-2：模型经 `yan goal report` 提交了 URL 链接；宿主应保留链接并
+     * 只做 scheme 形态核验，所以汇总为 `manual_review`，不能冒充内容正确。
      */
     const verification = entry?.goal?.verification
     say(!!verification, 'G-2：报告落盘时带上了宿主核验结果')
     say(
-      verification?.status === 'not_checked',
-      `G-2：没有声明任何产物 → not_checked（实际 ${verification?.status ?? '(无)'}）`
+      verification?.status === 'manual_review',
+      `G-2：只有 URL 链接 → manual_review（实际 ${verification?.status ?? '(无)'}）`
     )
     say(
-      Array.isArray(verification?.checks) && verification.checks.length === 0,
-      'G-2：not_checked 不带检查项'
+      Array.isArray(verification?.checks) && verification.checks.length === 1,
+      'G-2：manual_review 核验快照包含一条 URL 链接'
     )
     say(
       typeof verification?.at === 'number' && verification.at > 0,
@@ -6392,6 +6835,13 @@ async function checkGoalLoopPersisted(sandboxRoot, _tempBefore, _probeText) {
     }
 
     const sessionFile = String(entries[0]?.[0] ?? '')
+    const reportedLink = entry?.goal?.links?.find((link) => link.kind === 'url' && link.target === 'https://example.com/yan-goal-report-link')
+    say(!!reportedLink, 'U-3b：模型通过 yan goal report 提交的 URL 已落盘')
+    say(
+      reportedLink?.source?.sessionId === sessionFile,
+      'U-3b：链接归属由宿主固定为当前会话'
+    )
+    say(reportedLink?.check?.ok === true, 'U-3b：宿主完成 URL 形态核验但不联网')
     if (sessionFile && existsSync(sessionFile)) {
       const text = readFileSync(sessionFile, 'utf8')
       say(text.includes('"customType":"yan-goal-resume"'), '会话里有续行的消费证据条目（yan-goal-resume）')
@@ -6710,6 +7160,13 @@ async function checkHandoffCommitPersisted(sandboxRoot, _tempBefore, _probeText)
       destination = String(tx.destinationSession ?? '')
       say(tx.stage === 'resumed', `事务走到 resumed（实际 ${tx.stage}）`)
       say((tx.resumeAttempts ?? 0) >= 1, `记了 resume 发送尝试（${tx.resumeAttempts ?? 0} 次）`)
+      const receipts = tx.receipts ?? {}
+      say(
+        typeof receipts.persistedAt === 'number' &&
+          typeof receipts.startedAt === 'number' &&
+          receipts.startedAt >= receipts.persistedAt,
+        `事务落盘了投递与 before_provider_request 回执（${JSON.stringify(receipts)}）`
+      )
       const steps = Array.isArray(tx.steps) ? tx.steps : []
       const order = steps.map((s) => s.to).join(',')
       say(order === 'snapshot,validated,destination-created,committed,resumed', `五个阶段一个不缺：${order}`)
@@ -6740,6 +7197,20 @@ async function checkHandoffCommitPersisted(sandboxRoot, _tempBefore, _probeText)
   if (destination && existsSync(destination)) {
     const text = readFileSync(destination, 'utf8')
     say(text.includes(`[yan-handoff-resume:${handoffId}]`), '目的会话文件里有 resume 的消费证据（标记行）')
+    const hasStartedReceipt = text.split(/\r?\n/).some((line) => {
+      try {
+        const entry = JSON.parse(line)
+        return (
+          entry?.type === 'custom' &&
+          entry?.customType === 'yan-handoff-started' &&
+          entry?.data?.operationId === handoffId &&
+          entry?.data?.hook === 'before_provider_request'
+        )
+      } catch {
+        return false
+      }
+    })
+    say(hasStartedReceipt, '目的会话文件有同 handoffId 的 before_provider_request custom 回执')
     say(text.includes('跨会话交接'), '目的会话里那条消息是交接正文（不是空壳）')
     /*
      * 实施-14 F4：交接 resume 走薄层的 `custom` 通道（与目标续行同一条），
@@ -6837,11 +7308,31 @@ async function checkHandoffRecoverPersisted(sandboxRoot, _tempBefore, probeText)
   const sourceKey = /^handoffrecover\.sourceKey=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
   const tally = Number(/^handoffrecover\.tally=(\d+)$/m.exec(text)?.[1] ?? 0)
   const failureOutcome = /^handoffrecover\.failureOutcome=(.+)$/m.exec(text)?.[1]?.trim() ?? ''
+  const failureReason = /^handoffrecover\.failureReason=(.*)$/m.exec(text)?.[1]?.trim() ?? ''
+  if (handoffFailureState?.failureMode === 'provider-http-failure') {
+    say(failureOutcome === 'failed', 'Pi provider HTTP 503 被宿主归类为 failed（' + (failureOutcome || '未知') + '）')
+    say(
+      (handoffFailureState?.handoffFailureResponses ?? 0) >= 1 && handoffFailureState?.handoffFailureStatus === 503,
+      '本机 provider 对交接生成请求确实返回 HTTP 503（' +
+        (handoffFailureState?.handoffFailureResponses ?? 0) + ' 次）'
+    )
+    say(
+      handoffFailureState?.handoffFailureBody === 'fixture_handoff_provider_unavailable',
+      'HTTP 503 携带了本用例唯一的故障标记'
+    )
+    say(
+      failureReason.includes(handoffFailureState.handoffFailureBody),
+      'Pi completion.errorMessage 与宿主诊断保留同一 provider 故障标记'
+    )
+  }
   say(tally >= 2, '探针侧记录两次真实策略压缩（' + tally + ' 次）')
   say(
-    failureOutcome === 'unparsable' || failureOutcome === 'failed',
+    failureOutcome === 'unparsable' || failureOutcome === 'failed' || failureOutcome === 'incomplete',
     '探针侧看到的失败阶段是生成失败（' + (failureOutcome || '未知') + '）'
   )
+  if (handoffFailureState?.failureMode === 'incomplete-package') {
+    say(failureOutcome === 'incomplete', '缺必填字段走宿主 incomplete 分支（' + (failureOutcome || '未知') + '）')
+  }
   say(/^handoffrecover\.resumed=true$/m.test(text), '探针确认源片段恢复续跑')
   say(
     (handoffFailureState?.handoffRequests ?? 0) >= 1,
@@ -6888,7 +7379,7 @@ async function checkHandoffRecoverPersisted(sandboxRoot, _tempBefore, probeText)
 
   try {
     const events = readFileSync(join(sandboxRoot, 'data', 'handoff', 'events.jsonl'), 'utf8')
-    say(/"(unparsable|failed)"/.test(events), '诊断事件文件里留下了可追溯的生成失败原因')
+    say(/"(unparsable|failed|incomplete)"/.test(events), '诊断事件文件里留下了可追溯的生成失败原因')
   } catch (error) {
     say(false, '读 handoff/events.jsonl 失败：' + (error instanceof Error ? error.message : String(error)))
   }
@@ -7325,22 +7816,41 @@ async function closeRemoteRouteProvider(provider) {
 }
 
 /**
- * 实施-14 F7 故障恢复用的本机 OpenAI 兼容 provider（**不发往外部**）。
+ * 实施-14 F7 / handoff 回执验证用的本机 OpenAI 兼容 provider（**不发往外部**）。
  *
- * 两种回复，靠请求里有没有「跨会话交接」区分：
- *   · 普通回合（含压缩摘要）→ 一段长文本，把上下文推长，让宿主策略压缩真实触发；
- *   · 交接包生成请求（system prompt 由 `shared/handoff.ts` 给出，含那句话）
- *     → 一句不是 JSON 的话，模拟「模型没能写出交接包」。
+ * 故障场景靠请求里有没有「跨会话交接」区分：普通回合回长文本，交接包生成回无效 JSON；
+ * 本机成功场景则用一个受控 bash tool-call 报目标进展、回合法交接包，再回一条续接消息。
  *
- * 它只是 fixture：本场景验的是宿主/薄层在失败后的恢复行为，不是模型能力。
+ * 所有分支都是 fixture：只验证 Electron、Pi provider adapter、宿主和薄层的链路，不验证模型能力。
  * usage 按请求 / 回复的真实字符量估算并回报（不凭空造 token 数）。
  */
-function startHandoffFailureProvider() {
+function startHandoffFailureProvider(failureMode = 'invalid-json') {
+  const successReceiptFixture = failureMode === 'handoff-start-receipt'
+  const reportCommand = 'yan goal report --report-id rp-commit-1 --phase executing --goal-revision 0'
+  const handoffPackage = JSON.stringify({
+    goal: '在隔离 Electron 中验证交接启动回执。',
+    deliverable: '目的片段收到一条 handoff custom 消息并开始 provider 请求。',
+    constraints: ['仅使用本机假 provider。'],
+    acceptance: ['同 operationId 有 before_provider_request 回执。'],
+    done: ['本机 provider 完成了首次目标报告。'],
+    remaining: [],
+    nextActions: ['确认回执后停止目标。'],
+    blockers: [],
+    files: [],
+    notes: []
+  })
   const state = {
+    failureMode,
     requests: 0,
     turnRequests: 0,
     handoffRequests: 0,
+    handoffFailureResponses: 0,
+    handoffFailureStatus: 0,
+    handoffFailureBody: '',
+    activeRequests: 0,
+    maxConcurrent: 0,
     promptTokensLast: 0,
+    reportToolSent: false,
     responses: new Set()
   }
   const server = createServer((req, res) => {
@@ -7351,24 +7861,67 @@ function startHandoffFailureProvider() {
     let raw = ''
     req.setEncoding('utf8')
     req.on('data', (part) => (raw += part))
-    req.on('end', () => {
+    req.on('end', async () => {
       state.requests++
-      const isHandoff = raw.includes('跨会话交接')
-      if (isHandoff) state.handoffRequests++
-      else state.turnRequests++
       let promptChars = 0
       let wantsStream = true
+      let payload = null
       try {
-        const payload = JSON.parse(raw)
+        payload = JSON.parse(raw)
         promptChars = JSON.stringify(payload.messages ?? []).length
         /* pi 对压缩摘要可能发非流式请求：那种情况下回 SSE 它解析不了 */
         wantsStream = payload?.stream !== false
       } catch {
         /* 坏 body 也照样按普通回合处理 */
       }
+      const hasHandoffPrompt = raw.includes('跨会话交接')
+      const isHandoff =
+        hasHandoffPrompt &&
+        (!successReceiptFixture || !Array.isArray(payload?.tools) || payload.tools.length === 0)
+      if (isHandoff) state.handoffRequests++
+      else {
+        state.turnRequests++
+        state.activeRequests++
+        state.maxConcurrent = Math.max(state.maxConcurrent, state.activeRequests)
+      }
       state.promptTokensLast = Math.ceil(promptChars / 2)
-      const text = isHandoff
-        ? '这一次只回了一句话，没有按交接包要求的 JSON 形状输出。'
+      if (failureMode === 'provider-http-failure' && isHandoff) {
+        state.handoffFailureResponses++
+        state.handoffFailureStatus = 503
+        state.handoffFailureBody = 'fixture_handoff_provider_unavailable'
+        res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({
+          error: {
+            message: state.handoffFailureBody,
+            type: 'server_error',
+            code: state.handoffFailureBody
+          }
+        }))
+        return
+      }
+      const timingTag = raw.includes('YAN_TIMING_ISOLATION_B') ? 'B' : 'A'
+      const timingFixture = failureMode === 'turn-timing' || failureMode === 'turn-timing-kill'
+      const responseModel = timingFixture
+        ? 'turn-timing-isolation-fixture'
+        : successReceiptFixture
+          ? 'handoff-start-receipt-fixture'
+          : 'handoff-fail-fixture'
+      const shouldSendReportTool =
+        successReceiptFixture && !isHandoff && !state.reportToolSent && raw.includes(reportCommand)
+      const text = failureMode === 'subagent-normal'
+        ? '本机子代理 fixture：任务已收到。'
+        : failureMode === 'turn-timing'
+        ? `TURN_TIMING_ISOLATION_REPLY_${timingTag}`
+        : failureMode === 'turn-timing-kill'
+          ? 'H6B_TIMING_KILL_FIXTURE_REPLY'
+        : successReceiptFixture
+          ? isHandoff
+            ? handoffPackage
+            : '本机 handoff 回执 fixture 已完成。'
+        : isHandoff
+        ? failureMode === 'incomplete-package'
+          ? '{}'
+          : '这一次只回了一句话，没有按交接包要求的 JSON 形状输出。'
         : 'F7R_FILL ' + '这段文本只是把上下文写长，让真实的策略压缩能够触发。'.repeat(160)
       const completionTokens = Math.max(1, Math.ceil(text.length / 2))
       const usage = {
@@ -7376,7 +7929,108 @@ function startHandoffFailureProvider() {
         completion_tokens: completionTokens,
         total_tokens: state.promptTokensLast + completionTokens
       }
-      const id = 'handoff-failure-fixture'
+      const id = timingFixture
+        ? 'turn-timing-isolation-fixture'
+        : successReceiptFixture
+          ? 'handoff-start-receipt-fixture'
+          : 'handoff-failure-fixture'
+      if (failureMode === 'turn-timing') {
+        /* A 先短等、B 后长等：让两条真请求重叠，并能从各自落盘用时识别归属。 */
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, timingTag === 'B' ? 10000 : 4000))
+      }
+      if (failureMode === 'turn-timing-kill' && state.turnRequests > 1) {
+        /* 第二次 provider 请求保持在途，给 Node 父进程时间观察快照并强制结束 Electron。 */
+        state.followupHeld = true
+        state.responses.add(res)
+        res.once('close', () => {
+          state.responses.delete(res)
+          state.activeRequests = Math.max(0, state.activeRequests - 1)
+        })
+        return
+      }
+      if (shouldSendReportTool) {
+        state.reportToolSent = true
+        state.bashToolOffered = true
+        state.toolCallSent = true
+        const toolCall = {
+          id: 'call_handoff_start_receipt_goal_report',
+          type: 'function',
+          function: { name: 'bash', arguments: JSON.stringify({ command: reportCommand }) }
+        }
+        if (!wantsStream) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({
+            id,
+            object: 'chat.completion',
+            created: 0,
+            model: responseModel,
+            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [toolCall] }, finish_reason: 'tool_calls' }],
+            usage
+          }))
+        } else {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive'
+          })
+          state.responses.add(res)
+          const writeChunk = (choice) => res.write(`data: ${JSON.stringify({
+            id,
+            object: 'chat.completion.chunk',
+            created: 0,
+            model: responseModel,
+            choices: [choice]
+          })}\n\n`)
+          writeChunk({ index: 0, delta: { role: 'assistant' }, finish_reason: null })
+          writeChunk({ index: 0, delta: { tool_calls: [{ index: 0, ...toolCall }] }, finish_reason: null })
+          writeChunk({ index: 0, delta: {}, finish_reason: 'tool_calls' })
+          res.end('data: [DONE]\n\n')
+          res.once('close', () => state.responses.delete(res))
+        }
+        state.activeRequests = Math.max(0, state.activeRequests - 1)
+        return
+      }
+      if (failureMode === 'turn-timing-kill' && payload?.tools?.some((tool) => tool?.function?.name === 'bash')) {
+        state.bashToolOffered = true
+        state.toolCallSent = true
+        const toolCall = {
+          id: 'call_h6b_turn_timing_kill',
+          type: 'function',
+          function: { name: 'bash', arguments: JSON.stringify({ command: 'echo H6B_TURN_TIMING_KILL_TOOL_RAN' }) }
+        }
+        if (!wantsStream) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({
+            id,
+            object: 'chat.completion',
+            created: 0,
+            model: 'turn-timing-isolation-fixture',
+            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [toolCall] }, finish_reason: 'tool_calls' }],
+            usage
+          }))
+        } else {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive'
+          })
+          state.responses.add(res)
+          const writeChunk = (choice) => res.write(`data: ${JSON.stringify({
+            id,
+            object: 'chat.completion.chunk',
+            created: 0,
+            model: 'turn-timing-isolation-fixture',
+            choices: [choice]
+          })}\n\n`)
+          writeChunk({ index: 0, delta: { role: 'assistant' }, finish_reason: null })
+          writeChunk({ index: 0, delta: { tool_calls: [{ index: 0, ...toolCall }] }, finish_reason: null })
+          writeChunk({ index: 0, delta: {}, finish_reason: 'tool_calls' })
+          res.end('data: [DONE]\n\n')
+          res.once('close', () => state.responses.delete(res))
+        }
+        state.activeRequests = Math.max(0, state.activeRequests - 1)
+        return
+      }
       if (!wantsStream) {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(
@@ -7384,11 +8038,12 @@ function startHandoffFailureProvider() {
             id,
             object: 'chat.completion',
             created: 0,
-            model: 'handoff-fail-fixture',
+            model: responseModel,
             choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
             usage
           })
         )
+        if (!isHandoff) state.activeRequests--
         return
       }
       res.writeHead(200, {
@@ -7402,7 +8057,7 @@ function startHandoffFailureProvider() {
           id,
           object: 'chat.completion.chunk',
           created: 0,
-          model: 'handoff-fail-fixture',
+          model: responseModel,
           choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }]
         })}\n\n`
       )
@@ -7411,12 +8066,13 @@ function startHandoffFailureProvider() {
           id,
           object: 'chat.completion.chunk',
           created: 0,
-          model: 'handoff-fail-fixture',
+          model: responseModel,
           choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
           usage
         })}\n\n`
       )
       res.end('data: [DONE]\n\n')
+      if (!isHandoff) state.activeRequests--
       res.on('close', () => state.responses.delete(res))
     })
   })
@@ -7471,6 +8127,23 @@ async function checkRemoteRoutes(_sandboxRoot, _tempBefore, probeText) {
   )
   say((state?.invalidBodies ?? 0) === 0, '本机 provider 收到有效的 OpenAI 兼容请求体')
   return { ok, lines }
+}
+
+async function driveFilePreviewMutation({ caseCwd, delay }) {
+  const file = join(caseCwd, 'README.md')
+  /* The app's probe starts after `delay`; mutate five seconds into its active run. */
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay) + 5000))
+
+  const original = readFileSync(file, 'utf8')
+  const updated = `${original.trimEnd()}\nEXTERNAL_PROCESS_CHANGE_H4\n`
+  writeFileSync(file, updated, 'utf8')
+  const changedAt = new Date(Date.now() + 3000)
+  utimesSync(file, changedAt, changedAt)
+
+  return {
+    ok: true,
+    text: `✓ 独立 Node 测试进程改写 fixture README.md 并推进 mtime（${file}）`
+  }
 }
 
 async function driveRemoteRoutes() {
@@ -7621,6 +8294,18 @@ function startBoundaryServer() {
       res.end('private-ok\n')
       return
     }
+    if (url.pathname === '/popup') {
+      /*
+       * 网页自己开窗口（H-9 第二阶段）：加载即调 `window.open` 开一个后台标签。
+       * 用真实页面触发，不靠界面或内部 API 造状态。
+       */
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(
+        '<!doctype html><meta charset="utf-8"><title>popup-opener</title><body>opener' +
+          '<script>window.open("/private","_blank")</script></body>'
+      )
+      return
+    }
     if (url.pathname === '/ask') {
       /*
        * 真实发起权限请求 —— 不靠界面上调 `setPermission` 写记录，
@@ -7707,6 +8392,28 @@ function killTree(child) {
   }
 }
 
+/** H-6b 的真强杀验收：在 final:false 已完整追加后强制终止隔离 Electron 进程树。 */
+function forceKillTree(child) {
+  if (!child || child.exitCode !== null) return
+  if (process.platform === 'win32' && child.pid) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch {
+      /* 后续 exit 事件会让场景失败或确认进程已结束 */
+    }
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+  } catch {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      /* 后续 exit 事件会让场景失败 */
+    }
+  }
+}
+
 /* Ctrl+C / 被 kill：先收子进程再退，别把它留成孤儿 */
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
@@ -7715,7 +8422,31 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   })
 }
 
-function runProbe({ probe, delay, keys, keysDelay, env: caseEnv, budget, visible, driver }, env) {
+function findIntermediateTurnTiming(dir) {
+  if (!dir || !existsSync(dir)) return null
+  let latest = null
+  for (const file of readdirSync(dir).filter((name) => name.endsWith('.jsonl'))) {
+    const lines = readFileSync(join(dir, file), 'utf8').split('\n')
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        const record = JSON.parse(line)
+        if (record?.final === false && Array.isArray(record.sourceIds) && record.sourceIds.length > 0) {
+          if (!latest || Number(record.endedAt) > Number(latest.record.endedAt)) latest = { file, record }
+        }
+      } catch {
+        /* 只接受完整 JSON 行，忽略正在追加的尾行 */
+      }
+    }
+  }
+  return latest
+}
+
+function runProbe(
+  { probe, delay, keys, keysDelay, env: caseEnv, budget, visible, driver, hardKillAfterIntermediateTiming },
+  env,
+  driverContext
+) {
   return new Promise((resolvePromise) => {
     const probeEnv = {
       ...env,
@@ -7759,12 +8490,13 @@ function runProbe({ probe, delay, keys, keysDelay, env: caseEnv, budget, visible
     const child = spawn(electronBin, ['.'], {
       cwd: root,
       env: probeEnv,
-      windowsHide: true
+      windowsHide: true,
+      ...(hardKillAfterIntermediateTiming && process.platform !== 'win32' ? { detached: true } : {})
     })
     activeChild = child
     const driverPromise = driver
       ? Promise.resolve()
-          .then(() => driver())
+          .then(() => driver(driverContext))
           .catch((error) => ({ ok: false, text: `✗ 外部验收驱动异常：${error?.message ?? error}` }))
       : null
 
@@ -7786,11 +8518,63 @@ function runProbe({ probe, delay, keys, keysDelay, env: caseEnv, budget, visible
      * 现在分开： 才决定探针能跑多久。
      */
     const kill = setTimeout(killChild, delay + keyCost + (budget ?? 90_000))
+    let intermediateSnapshot = null
+    const snapshotPoll = hardKillAfterIntermediateTiming
+      ? setInterval(() => {
+          if (intermediateSnapshot || child.exitCode !== null || child.signalCode !== null) return
+          const candidate = findIntermediateTurnTiming(join(env.YAN_DATA_DIR ?? '', 'turn-timing'))
+          /* 等第二次 provider 请求进入挂起态，确保 pi 已完成工具消息并确实仍在同一回合。 */
+          if (candidate && handoffFailureState?.failureMode === 'turn-timing-kill' && handoffFailureState.followupHeld) {
+            intermediateSnapshot = candidate
+            forceKillTree(child)
+          }
+        }, 50)
+      : null
 
     child.on('exit', async (code) => {
       clearTimeout(kill)
+      if (snapshotPoll) clearInterval(snapshotPoll)
       if (activeChild === child) activeChild = null
       const driven = driverPromise ? await driverPromise : null
+
+      if (hardKillAfterIntermediateTiming && intermediateSnapshot) {
+        const record = intermediateSnapshot.record
+        let afterExitRecords = []
+        try {
+          afterExitRecords = readFileSync(join(env.YAN_DATA_DIR, 'turn-timing', intermediateSnapshot.file), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .flatMap((line) => {
+              try {
+                return [JSON.parse(line)]
+              } catch {
+                return []
+              }
+            })
+        } catch {
+          /* 强杀后的记录数是诊断证据；文件不可读时留空并由 afterExit 标红。 */
+        }
+        resolvePromise({
+          ok: true,
+          hardKilled: true,
+          text: [
+            buf,
+            `  turn-timing.hardkill.processExitedAfterForce=true (code=${String(code)}, signal=${String(child.signalCode)})`,
+            `  turn-timing.hardkill.snapshot=${JSON.stringify({ file: intermediateSnapshot.file, record })}`,
+            `  turn-timing.hardkill.afterExitRecords=${JSON.stringify(afterExitRecords)}`,
+            driven?.text
+          ].filter(Boolean).join('\n') + '\n'
+        })
+        return
+      }
+      if (hardKillAfterIntermediateTiming) {
+        resolvePromise({
+          ok: false,
+          text: `${buf}\n  turn-timing.hardkill.processExitedAfterForce=false (未在真实 final:false 快照落盘后强杀)\n`,
+          hint: 'Electron 在确认强杀条件前退出或达到预算；本场景不接受 seed 代替真强杀。'
+        })
+        return
+      }
 
       const m = /---PROBE-START---\r?\n([\s\S]*?)\r?\n---PROBE-END---/.exec(buf)
       if (!m) {
@@ -7867,8 +8651,8 @@ async function main() {
      YAN_DATA_DIR       桌面端设置（desktop.json） */
   const ISOLATED = process.env.YAN_TEST_ISOLATED !== '0'   // 调试时「=0」可跑真实环境
   const sandboxRoot = ISOLATED ? mkdtempSync(join(tmpdir(), 'yan-test-')) : null
-  if (names.includes('remoteroutes') && !sandboxRoot) {
-    console.error('✗ remoteroutes 必须运行在隔离 sandbox 中；拒绝触碰真实用户数据。')
+  if ((names.includes('remoteroutes') || names.includes('turntimingkill')) && !sandboxRoot) {
+    console.error('✗ remoteroutes / turntimingkill 必须运行在隔离 sandbox 中；拒绝触碰真实用户数据。')
     process.exit(2)
   }
 
@@ -8081,9 +8865,54 @@ async function main() {
       }
     }
 
-    if (names.includes('handoffrecover')) {
+    const localProviderNames = names.filter(
+      (name) =>
+        name === 'handoffrecover' ||
+        name === 'handoffrecoverincomplete' ||
+        name === 'handoffrecoverproviderfail' ||
+        name === 'handoffcommitlocal' ||
+        name === 'subagentlocal' ||
+        name === 'turntimingisolation' ||
+        name === 'turntimingkill'
+    )
+    if (localProviderNames.length > 1) {
+      console.error('✗ 本机 provider fixture 场景请分开运行，避免共享请求统计混淆')
+      process.exit(2)
+    }
+    if (localProviderNames.length === 1) {
       try {
-        handoffFailureProvider = await startHandoffFailureProvider()
+        const fixtureName = localProviderNames[0]
+        const isTurnTiming = fixtureName === 'turntimingisolation' || fixtureName === 'turntimingkill'
+        const isHandoffCommitLocal = fixtureName === 'handoffcommitlocal'
+        const isSubagentLocal = fixtureName === 'subagentlocal'
+        const failureMode = isSubagentLocal
+          ? 'subagent-normal'
+          : isTurnTiming
+          ? fixtureName === 'turntimingkill'
+            ? 'turn-timing-kill'
+            : 'turn-timing'
+          : fixtureName === 'handoffrecoverincomplete'
+            ? 'incomplete-package'
+            : fixtureName === 'handoffrecoverproviderfail'
+              ? 'provider-http-failure'
+            : isHandoffCommitLocal
+              ? 'handoff-start-receipt'
+              : 'invalid-json'
+        const providerId = isTurnTiming
+          ? 'yantimingfixture'
+          : isHandoffCommitLocal
+            ? 'yanhandofffixture'
+            : isSubagentLocal
+              ? 'yansubagentfixture'
+              : 'yanhandofffail'
+        const modelId = isTurnTiming
+          ? 'turn-timing-isolation-fixture'
+          : isHandoffCommitLocal
+            ? 'handoff-start-receipt-fixture'
+            : isSubagentLocal
+              ? 'subagent-local-fixture'
+              : 'handoff-fail-fixture'
+        handoffFailureProvider = await startHandoffFailureProvider(failureMode)
         /*
          * ⚠️ provider 必须写进**默认的** pi 目录（`sandboxRoot/pi-agent`），
          * 不能另建一个 `YAN_PI_DIR`：`piSettings`（`keepRecentTokens: 1`）是写进
@@ -8101,14 +8930,26 @@ async function main() {
         }
         models.providers = {
           ...(models.providers ?? {}),
-          yanhandofffail: {
-            name: 'Yan Handoff Failure Fixture',
+          [providerId]: {
+            name: isTurnTiming
+              ? 'Yan Turn Timing Fixture'
+              : isHandoffCommitLocal
+                ? 'Yan Handoff Receipt Fixture'
+                : isSubagentLocal
+                  ? 'Yan Subagent Local Fixture'
+                  : 'Yan Handoff Failure Fixture',
             baseUrl: `http://127.0.0.1:${handoffFailureProvider.port}/v1`,
             api: 'openai-completions',
             models: [
               {
-                id: 'handoff-fail-fixture',
-                name: 'Handoff Fail Fixture',
+                id: modelId,
+                name: isTurnTiming
+                  ? 'Turn Timing Isolation Fixture'
+                  : isHandoffCommitLocal
+                    ? 'Handoff Start Receipt Fixture'
+                    : isSubagentLocal
+                      ? 'Subagent Local Fixture'
+                      : 'Handoff Fail Fixture',
                 contextWindow: 32768,
                 maxTokens: 4096
               }
@@ -8123,14 +8964,21 @@ async function main() {
         } catch {
           auth = {}
         }
-        auth.yanhandofffail = { type: 'api_key', key: 'local-handoff-failure-fixture' }
+        auth[providerId] = {
+          type: 'api_key',
+          key: isTurnTiming
+            ? 'local-turn-timing-fixture'
+            : isSubagentLocal
+              ? 'local-subagent-fixture'
+              : 'local-handoff-fixture-only'
+        }
         writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8')
-        CASES.handoffrecover.model = 'yanhandofffail/handoff-fail-fixture'
-        CASES.handoffrecover.env = {
-          ...(CASES.handoffrecover.env ?? {}),
+        CASES[fixtureName].model = `${providerId}/${modelId}`
+        CASES[fixtureName].env = {
+          ...(CASES[fixtureName].env ?? {}),
           PI_OFFLINE: '1'
         }
-        console.log(`  交接故障本机 provider：127.0.0.1:${handoffFailureProvider.port}（不发往外部）`)
+        console.log(`  本机 provider fixture：127.0.0.1:${handoffFailureProvider.port}（${failureMode}，不发往外部）`)
       } catch (error) {
         console.error(`✗ 无法启动交接故障本机 provider：${error?.message ?? error}`)
         process.exit(2)
@@ -8515,6 +9363,7 @@ async function main() {
     /* 隔离 fixture 的“只种一次”门（wins 多档时不能重复建工作树 / 重复写会话） */
     let isolationSeeded = false
     let goalSeeded = false
+    let goalReviewSeeded = false
     let contextGuardFixturePath = null
 
     for (const win of wins) {
@@ -8586,6 +9435,11 @@ async function main() {
           console.log(`  目标链接 fixture：${count} 个会话各一份`)
           goalSeeded = count > 0
         }
+        if (c.goalReviewSeed && !goalReviewSeeded) {
+          const count = await seedPendingGoalReview(join(sandboxRoot, 'data'), join(sandboxRoot, 'sessions'))
+          console.log(`  G-4 待审 fixture：${count} 个会话各一份（仅隔离数据）`)
+          goalReviewSeeded = count > 0
+        }
       }
       if (win) console.log(`\n─── 窗口 ${win} ───`)
       /* 坏 pi 入口：内容无所谓，只要立即退出（spawn 得到 code 不 0 的退出） */
@@ -8621,7 +9475,7 @@ async function main() {
         ...(c.handoffExtLog && sandboxRoot ? { YAN_HANDOFF_EXT_LOG: join(sandboxRoot, 'handoff-ext.log') } : {}),
         // 每个场景用自己的模型（默认免费 Ling；image 用视觉模型）
         YAN_TEST_MODEL: modelForCase(c.model)
-      })
+      }, { sandboxRoot, fixtureProject, caseCwd, delay: c.delay })
       if (contextGuardFixturePath) {
         rmSync(contextGuardFixturePath, { force: true })
         contextGuardFixturePath = null
@@ -8630,8 +9484,11 @@ async function main() {
         await closeRemoteRouteProvider(remoteRouteProvider)
         remoteRouteProvider = null
       }
-      if (name === 'handoffrecover' && handoffFailureProvider) {
-        /* 保留 state：afterExit 要用它断言「确实调过一次交接包生成」 */
+      if (
+        (name === 'handoffrecover' || name === 'handoffrecoverincomplete' || name === 'handoffrecoverproviderfail' || name === 'turntimingisolation' || name === 'turntimingkill') &&
+        handoffFailureProvider
+      ) {
+        /* 保留 state：afterExit 要核对 provider 请求计数与并行度。 */
         handoffFailureState = handoffFailureProvider.state
         await closeHandoffFailureProvider(handoffFailureProvider)
         handoffFailureProvider = null
@@ -8707,32 +9564,32 @@ async function main() {
       }
     }
 
+    /*
+     * 退出后检查（若场景声明了）：此刻 Electron 已经关闭，才能看到
+     * 退出归档、临时 worktree 清理、以及主工作树的最终状态。
+     */
+    if (c.afterExit && (allOk || c.afterExitOnFailure)) {
+      const check = AFTER_EXIT[c.afterExit]
+      if (!check) {
+        console.log(`  ✗ 未注册的 afterExit 检查：${c.afterExit}`)
+        allOk = false
+        hint = hint ?? `未注册的 afterExit 检查：${c.afterExit}`
+      } else {
+        const res = await check(sandboxRoot, tempBefore, lastProbeText)
+        console.log('\n退出后检查（Electron 已关闭）')
+        console.log(res.lines.join('\n'))
+        if (!res.ok) {
+          allOk = false
+          hint = hint ?? '退出后检查未通过'
+        }
+      }
+    }
+
     if (!allOk) {
       failed++
       console.log(`\n✗ ${name} 未通过`)
       if (hint) console.log(`  提示：${hint}`)
       continue
-    }
-
-    /*
-     * 退出后检查（若场景声明了）：此刻 Electron 已经关闭，才能看到
-     * 退出归档、临时 worktree 清理、以及主工作树的最终状态。
-     */
-    if (c.afterExit) {
-      const check = AFTER_EXIT[c.afterExit]
-      if (!check) {
-        console.log(`  ✗ 未注册的 afterExit 检查：${c.afterExit}`)
-        failed++
-        continue
-      }
-      const res = await check(sandboxRoot, tempBefore, lastProbeText)
-      console.log('\n退出后检查（Electron 已关闭）')
-      console.log(res.lines.join('\n'))
-      if (!res.ok) {
-        failed++
-        console.log(`\n✗ ${name} 未通过（退出后检查）`)
-        continue
-      }
     }
 
     console.log(`\n✓ ${name} 通过`)

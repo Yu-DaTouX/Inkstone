@@ -63,7 +63,9 @@ const MUST_HAVE = [
 ]
 
 /** 已知「可以缺失」的：可选依赖，pi 自己也没装，缺失时功能降级而非崩溃 */
-const OPTIONAL = ['@aws-sdk/signature-v4-crt', '@aws-sdk/signature-v4a']
+// The Pi 0.87.1 bundle can reach this through proxy-agent-negotiate, where
+// kerberos is an optional peer for Negotiate/SPNEGO proxy authentication.
+const OPTIONAL = ['@aws-sdk/signature-v4-crt', '@aws-sdk/signature-v4a', 'kerberos']
 
 const log = (s) => console.log(s)
 const ok = (s) => console.log(`  ✓ ${s}`)

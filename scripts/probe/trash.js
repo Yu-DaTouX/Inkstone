@@ -36,8 +36,18 @@
     if (!row) return out.join('\n')
 
     click(row.querySelector('.srow-acts button'))
-    await sleep(200)
-    const danger = row.querySelector('.srow-menu-btn.danger:not([disabled])')
+    await sleep(250)
+    /*
+     * 菜单是 Portal 到 body 的（实施-12 U-2），不在行内：
+     * 从菜单容器找，并核对它确实属于这一行。
+     */
+    const sessionMenu = q('[data-testid="rail-session-menu"]')
+    ok(
+      sessionMenu?.getAttribute('data-session-path') === row.getAttribute('data-session-path'),
+      '菜单属于这一行（data-session-path 一致）'
+    )
+    ok(sessionMenu?.parentElement === document.body, '会话菜单 Portal 到 body（不被栏内 overflow 裁）')
+    const danger = sessionMenu?.querySelector('.srow-menu-btn.danger:not([disabled])')
     ok(!!danger, '右键菜单里的「删除」可用（不是 disabled）')
     if (!danger) return out.join('\n')
 
@@ -97,7 +107,9 @@
       if (!target) return null
       click(target.querySelector('.srow-acts button'))
       await sleep(250)
-      const danger = target.querySelector('.srow-menu-btn.danger:not([disabled])')
+      const menu = q('[data-testid="rail-session-menu"]')
+      if (!menu || menu.getAttribute('data-session-path') !== target.getAttribute('data-session-path')) return null
+      const danger = menu.querySelector('.srow-menu-btn.danger:not([disabled])')
       if (!danger) return null
       click(danger)
       await sleep(450)

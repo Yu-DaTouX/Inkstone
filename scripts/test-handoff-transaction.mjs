@@ -173,7 +173,7 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
 
     /* ------------------------------------------------ A-3 续接回执（三边界） */
     {
-      /* ① 已投递但未运行：标记行在、后面没有助手输出 */
+      /* ① 已投递但未运行：标记行在，还没有扩展启动回执 */
       const resumeId = 'r-receipt'
       /*
        * 现场编译一份：本测试在 test-unit 里的调用点比 handoff-resume 的编译步骤早，
@@ -194,19 +194,38 @@ export async function runHandoffTransactionTests(ok, tx, service, handoffShared)
       const persistedOnly = `{"role":"custom","text":"${marker}"}\n`
       ok(hresume.containsResumeEvidence(persistedOnly, resumeId), '标记行在 → 已投递')
       ok(
-        !hresume.hasRunStartedAfterMarker(persistedOnly, resumeId),
-        '只有标记行时不算“已运行”（marker 不等于跑起来）'
+        !hresume.hasExplicitHandoffStartReceipt(persistedOnly, resumeId),
+        '只有标记行时不算“已启动”（投递不等于 provider 请求启动）'
       )
 
-      /* ② 已运行：标记之后有助手输出 */
+      /* 助手输出可能是之后的普通回合，不能替这次交接补启动回执。 */
       const withAssistant =
         persistedOnly + `{"role":"assistant","content":[{"type":"text","text":"继续"}]}\n`
-      ok(hresume.hasRunStartedAfterMarker(withAssistant, resumeId), '标记之后的助手输出 → 已运行')
       ok(
-        !hresume.hasRunStartedAfterMarker(`{"role":"assistant"}\n${persistedOnly}`, resumeId),
-        '助手输出在标记**之前**的不算（那是交前的历史）'
+        !hresume.hasExplicitHandoffStartReceipt(withAssistant, resumeId),
+        '标记之后即使有助手输出也不算启动回执（避免后续普通回合误归属）'
       )
-      ok(!hresume.hasRunStartedAfterMarker('', resumeId), '空文本不报“已运行”')
+      ok(
+        !hresume.hasExplicitHandoffStartReceipt(
+          `{"type":"custom","customType":"yan-handoff-started","data":{"operationId":"${resumeId}","hook":"before_provider_request"}}\n`,
+          resumeId
+        ),
+        '有启动条目但没有该续接标记，不算已启动'
+      )
+      const startedEntry =
+        `{"type":"custom","customType":"yan-handoff-started","data":{"operationId":"${resumeId}","hook":"before_provider_request"}}\n`
+      ok(
+        hresume.hasExplicitHandoffStartReceipt(persistedOnly + startedEntry, resumeId),
+        '同 operationId 的 before_provider_request 自定义条目 → 已启动'
+      )
+      ok(
+        !hresume.hasExplicitHandoffStartReceipt(
+          persistedOnly + startedEntry.replace(resumeId, 'another-operation'),
+          resumeId
+        ),
+        '其它 operationId 的启动条目不算这次交接已启动'
+      )
+      ok(!hresume.hasExplicitHandoffStartReceipt('', resumeId), '空文本不报“已启动”')
 
       /* ③ 回执落盘与幂等：同一 kind 只记第一次；脏值丢掉 */
       const receiptRoot = await mkdtemp(join(tmpdir(), 'yan-handoff-receipt-'))

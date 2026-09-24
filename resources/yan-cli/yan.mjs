@@ -169,7 +169,10 @@ const GROUP_USAGE = {
            --goal-revision <从 goal status 读> --evidence "npm run test:unit 2879/2879"
         请求文件示例：
         {"reportId":"rp-<唯一>","phase":"executing","goalRevision":<从 goal status 读>,
-         "steps":[{"title":"…","status":"done"}],"evidence":["npm run test:unit 全绿"]}
+         "steps":[{"title":"…","status":"done"}],"evidence":["npm run test:unit 全绿"],
+         "links":[{"kind":"artifact","target":"dist/app.exe","label":"安装包"}]}
+        links 是可选数组，kind 只能是 file / url / artifact；复杂字段请写请求 JSON 后用 --request-file。
+        链接归属由宿主覆盖，宿主会重验链接；URL 只检查 http/https 形态，不联网。
         · phase=completed 必须带 evidence（任务清单勾选不算证据）；
         · phase=blocked 必须写 blocker；
         · stopped 只能由用户产生，别自己报；

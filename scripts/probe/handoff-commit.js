@@ -152,6 +152,13 @@
   out.push(`  经历过的事务阶段：${stagesSeen.join(' → ')}`)
   if (committed) {
     ok(true, `交接事务走到 resumed（handoffId=${String(committed.transaction.handoffId).slice(0, 8)}…）`)
+    const receipts = committed.transaction.receipts ?? {}
+    ok(
+      typeof receipts.persistedAt === 'number' &&
+        typeof receipts.startedAt === 'number' &&
+        receipts.startedAt >= receipts.persistedAt,
+      `事务同时记录投递与 before_provider_request 回执（${JSON.stringify(receipts)}）`
+    )
     ok(committed.transaction.destinationSession !== null, '事务里记了目的会话文件')
     ok(committed.sessionKey === committed.transaction.destinationSession, '当前视图已经切到目的段（同一条会话的下一段）')
     ok(committed.sessionKey !== sourceKey, '目的会话与源会话是两份不同的文件（后台真的切开了）')

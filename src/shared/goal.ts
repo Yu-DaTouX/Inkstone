@@ -49,6 +49,21 @@ export interface ReadyUnderstanding {
   acceptance: string
 }
 
+/** 当前会话是否需要用户批准计划后才切入执行。 */
+export type ReadyApprovalMode = 'automatic' | 'review'
+
+/** 已就绪但还没有获准开工的计划快照。 */
+export interface PendingReadyPlan {
+  transitionId: string
+  goalId: string
+  /** 批准时必须仍处于澄清模式的 revision。 */
+  modeRevision: number
+  /** 写入待审计划后目标状态的 revision。 */
+  goalRevision: number
+  understanding: ReadyUnderstanding
+  createdAt: number
+}
+
 export interface GoalStep {
   title: string
   status: 'pending' | 'done' | 'blocked'
@@ -339,6 +354,10 @@ export interface GoalState {
   pursue: boolean
   /** 用户的原话（目标 + 可衡量成果）：续行时复述，避免模型自己把目标做小。 */
   brief: PursuedBrief | null
+  /** 当前会话计划就绪后的处理方式；默认自动开始，review 是用户显式选择。 */
+  readyApproval: ReadyApprovalMode
+  /** 待用户审阅的就绪计划；未批准前目标仍处于 planning。 */
+  pendingReady: PendingReadyPlan | null
   /** 同一失败签名的连续次数。 */
   failure: FailureTrack | null
   updatedAt: number
@@ -360,6 +379,8 @@ export function emptyGoal(now = 0): GoalState {
     blocker: null,
     pursue: false,
     brief: null,
+    readyApproval: 'automatic',
+    pendingReady: null,
     failure: null,
     updatedAt: now
   }
@@ -778,9 +799,50 @@ export function applyReadyTransition(current: GoalState, result: ReadyTransition
     /* 就绪转移不改「持续目标」身份：那是用户在 `+` 菜单里单独设的 */
     pursue: current.pursue,
     brief: current.brief,
+    readyApproval: current.readyApproval ?? 'automatic',
+    pendingReady: null,
     failure: null,
     updatedAt: now
   }
+}
+
+/** 写入待审计划：phase 仍为 planning，不能在用户批准前进入执行。 */
+export function applyPendingReadyPlan(
+  current: GoalState,
+  input: Omit<PendingReadyPlan, 'goalRevision'>,
+  now = Date.now()
+): GoalState {
+  const revision = current.revision + 1
+  return {
+    ...current,
+    goalId: input.goalId,
+    phase: 'planning',
+    revision,
+    pendingReady: { ...input, goalRevision: revision },
+    updatedAt: now
+  }
+}
+
+/** 用户明确要求修改 / 取消待审计划时回到只读计划阶段。 */
+export function clearPendingReadyPlan(current: GoalState, now = Date.now()): GoalState {
+  if (!current.pendingReady) return current
+  return {
+    ...current,
+    phase: 'planning',
+    pendingReady: null,
+    revision: current.revision + 1,
+    updatedAt: now
+  }
+}
+
+/** 计划审阅是每会话设置；切换它也使正在生成的旧 ready 请求失效。 */
+export function applyReadyApprovalMode(
+  current: GoalState,
+  mode: ReadyApprovalMode,
+  now = Date.now()
+): GoalState {
+  if (current.pendingReady || current.readyApproval === mode) return current
+  return { ...current, readyApproval: mode, revision: current.revision + 1, updatedAt: now }
 }
 
 /* ------------------------------------------------- 续行（S3b / S3c） */
@@ -803,7 +865,8 @@ export function applyPursuedGoal(
     phase: 'planning',
     revision: current.revision + 1,
     pursue: true,
-    brief
+    brief,
+    readyApproval: current.readyApproval ?? 'automatic'
   }
 }
 
@@ -1025,12 +1088,14 @@ export function normalizeReportParams(raw: Record<string, unknown>): Partial<Goa
   const failure = asText(pick(raw, 'failureSignature', 'failure-signature')).trim()
   const blocker = asText(pick(raw, 'blocker')).trim()
   const steps = pick(raw, 'steps')
+  const links = pick(raw, 'links')
   return {
     reportId: asText(pick(raw, 'reportId', 'report-id')).trim(),
     phase: phase as GoalPhase,
     goalRevision: asNumber(pick(raw, 'goalRevision', 'goal-revision')) ?? Number.NaN,
     ...(Array.isArray(steps) ? { steps: steps as GoalStep[] } : {}),
     evidence: asList(pick(raw, 'evidence')),
+    ...(Array.isArray(links) ? { links: links as GoalLink[] } : {}),
     ...(blocker ? { blocker } : {}),
     ...(failure ? { failureSignature: failure } : {})
   }
@@ -1043,6 +1108,11 @@ export function goalSummary(state: GoalState): string {
     parts.push(`${state.steps.filter((s) => s.status === 'done').length}/${state.steps.length} 步已完成`)
   }
   if (state.blocker) parts.push(`阻塞：${state.blocker}`)
+  if (state.pendingReady) {
+    parts.push(`计划等待用户审阅（transitionId=${state.pendingReady.transitionId}）；批准前保持只读`)
+  } else if (state.readyApproval === 'review') {
+    parts.push('计划就绪后需用户审阅，再开始执行')
+  }
   /* 核验与相位分开报：`completed` 不等于「宿主核验通过」（G-2） */
   if (state.verification) parts.push(`核验：${state.verification.status}`)
   return parts.join(' · ')
@@ -1086,6 +1156,31 @@ export function normalizeGoalState(raw: unknown): GoalState {
       ? { signature: failureRaw.signature, count: Math.max(1, Math.floor(failureRaw.count)) }
       : null
   const brief = normalizePursuedBrief(item.brief)
+  const pendingRaw = item.pendingReady as Partial<PendingReadyPlan> | null | undefined
+  const pendingUnderstanding = pendingRaw?.understanding
+  const pendingReady =
+    pendingRaw &&
+    typeof pendingRaw.transitionId === 'string' && pendingRaw.transitionId.trim() &&
+    typeof pendingRaw.goalId === 'string' && pendingRaw.goalId.trim() &&
+    typeof pendingRaw.modeRevision === 'number' && Number.isFinite(pendingRaw.modeRevision) &&
+    typeof pendingRaw.goalRevision === 'number' && Number.isFinite(pendingRaw.goalRevision) &&
+    typeof pendingRaw.createdAt === 'number' && Number.isFinite(pendingRaw.createdAt) &&
+    pendingUnderstanding && READY_FIELDS.every((field) => text(pendingUnderstanding[field]))
+      ? {
+          transitionId: pendingRaw.transitionId.trim(),
+          goalId: pendingRaw.goalId.trim(),
+          modeRevision: Math.max(0, Math.floor(pendingRaw.modeRevision)),
+          goalRevision: Math.max(0, Math.floor(pendingRaw.goalRevision)),
+          understanding: {
+            goal: text(pendingUnderstanding.goal),
+            deliverable: text(pendingUnderstanding.deliverable),
+            scope: text(pendingUnderstanding.scope),
+            constraints: text(pendingUnderstanding.constraints),
+            acceptance: text(pendingUnderstanding.acceptance)
+          },
+          createdAt: pendingRaw.createdAt
+        }
+      : null
   return {
     goalId: typeof item.goalId === 'string' ? item.goalId : '',
     phase,
@@ -1118,6 +1213,8 @@ export function normalizeGoalState(raw: unknown): GoalState {
     /* 只有真的办了设定才置位 —— 脏值不能凭空造一个「持续目标」。 */
     pursue: item.pursue === true,
     brief,
+    readyApproval: item.readyApproval === 'review' ? 'review' : 'automatic',
+    pendingReady,
     failure,
     updatedAt: typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : 0
   }

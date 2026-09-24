@@ -197,7 +197,9 @@
     const h = await handoff()
     return (
       (h.events ?? []).find(
-        (event) => event.stage === 'generate' && (event.outcome === 'unparsable' || event.outcome === 'failed')
+        (event) =>
+          event.stage === 'generate' &&
+          (event.outcome === 'unparsable' || event.outcome === 'failed' || event.outcome === 'incomplete')
       ) ?? null
     )
   }, 180000, 600)

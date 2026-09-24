@@ -184,10 +184,45 @@ export async function runWorkModeTests(ok) {
   await service.writeWorkModeSnapshot('r1', { mode: 'clarify', revision: 2 }, dir)
   const snap1 = JSON.parse(await readFile(snapshotPath, 'utf8'))
   ok(snap1.mode === 'clarify' && snap1.revision === 2, '快照文件内容含 mode / revision')
-  await service.writeWorkModeSnapshot('r1', { mode: 'standard', revision: 3 }, dir)
+  ok(snap1.planApprovalPending === false, '旧快照写入时待审标记默认关闭')
+  await service.writeWorkModeSnapshot('r1', { mode: 'standard', revision: 3, planApprovalPending: true }, dir)
   const snap2 = JSON.parse(await readFile(snapshotPath, 'utf8'))
-  ok(snap2.mode === 'standard' && snap2.revision === 3, '快照文件可被覆盖（切回标准立即生效）')
+  ok(snap2.mode === 'standard' && snap2.revision === 3 && snap2.planApprovalPending, '模式快照可带待审标记并被覆盖')
   ok(service.workModeSnapshotFileName('a/b') === 'a_b.json', '快照文件名清洗后仍在同一目录')
+
+  /* ---- 薄层在待审期间动态收紧 goal CLI ---- */
+  const oldDataDir = process.env.YAN_DATA_DIR
+  const oldSessionId = process.env.YAN_SESSION_ID
+  process.env.YAN_DATA_DIR = dir
+  process.env.YAN_SESSION_ID = 'r1'
+  const workModeExtension = (await import('../resources/pi-extensions/work-mode.js')).default
+  const hooks = new Map()
+  let activeTools = ['read', 'grep', 'find', 'ls', 'bash', 'write', 'edit']
+  const pi = {
+    on: (name, handler) => hooks.set(name, handler),
+    getActiveTools: () => activeTools,
+    setActiveTools: (names) => { activeTools = [...names] }
+  }
+  await service.writeWorkModeSnapshot('r1', { mode: 'clarify', revision: 4, planApprovalPending: false }, dir)
+  workModeExtension(pi)
+  hooks.get('before_agent_start')()
+  await service.writeWorkModeSnapshot('r1', { mode: 'clarify', revision: 5, planApprovalPending: true }, dir)
+  const blockedReport = hooks.get('tool_call')({
+    toolName: 'bash',
+    input: { command: 'yan goal report --request-file report.json' }
+  })
+  const allowedStatus = hooks.get('tool_call')({
+    toolName: 'bash',
+    input: { command: 'yan goal status' }
+  })
+  ok(blockedReport?.block === true, '待审标记在当前回合立即阻止 goal report')
+  ok(allowedStatus === undefined, '待审期间仍允许只读 goal status')
+  const blockedWrite = hooks.get('tool_call')({ toolName: 'write', input: { path: 'x', content: 'y' } })
+  ok(blockedWrite?.block === true, '待审期间写工具仍被兜底拦截')
+  if (oldDataDir === undefined) delete process.env.YAN_DATA_DIR
+  else process.env.YAN_DATA_DIR = oldDataDir
+  if (oldSessionId === undefined) delete process.env.YAN_SESSION_ID
+  else process.env.YAN_SESSION_ID = oldSessionId
 
   await rm(dir, { recursive: true, force: true })
 }

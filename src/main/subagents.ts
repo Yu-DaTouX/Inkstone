@@ -26,7 +26,7 @@ import { appendFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { YAN_DIR } from './paths'
+import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { accumulateUsage, ingestUsageSnapshot, type UsageSnapshots } from '../shared/subagent-usage'
@@ -358,7 +358,18 @@ export class SubagentController {
           : [])
     ]
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
-    return new PiRpc({ cwd, piBin: ctx.piBin, args })
+    /*
+     * 子代理必须和主 agent 用同一个 pi 私有目录。主 agent 显式传了
+     * `PI_CODING_AGENT_DIR`（见 agent.ts），子代理漏了这一步，pi 就会回退到
+     * `~/.pi/agent`：便携版 / `YAN_PI_DIR` 隔离时凭证、models.json、会话目录
+     * 全都错位（测试会读真实凭证而不是隔离副本）。这里补齐同一份目录。
+     */
+    return new PiRpc({
+      cwd,
+      piBin: ctx.piBin,
+      args,
+      env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
+    })
   }
 
   /** 停止一个运行（方案 8.3：停止是明确动作，不是关掉预览） */

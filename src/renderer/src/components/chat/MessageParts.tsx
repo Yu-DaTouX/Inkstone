@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import ReactMarkdown, { type Options } from 'react-markdown'
+import { createContext, useContext } from 'react'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { useT } from '../../i18n'
@@ -44,6 +45,7 @@ const MD_REHYPE_PLAIN: NonNullable<Options['rehypePlugins']> = []
 const MD_CACHE_LIMIT = 200
 const MD_CACHE_MAX_CHARS = 20_000
 const mdCache = new Map<string, React.ReactElement>()
+const MessageSourceCwd = createContext<string | undefined>(undefined)
 
 const MD_COMPONENTS = {
   a: LinkAnchor,
@@ -73,6 +75,7 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
   const t = useT()
   const openBrowser = useStore((s) => s.openBrowser)
   const previewFile = useStore((s) => s.previewFile)
+  const sourceCwd = useContext(MessageSourceCwd)
 
   const target = classifyLink(href)
 
@@ -84,7 +87,7 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
     e.preventDefault()
     e.stopPropagation()
     if (target.kind === 'url') void openBrowser(target.url)
-    else if (target.kind === 'file') void previewFile(target.path, target.line, undefined, target.lineEnd)
+    else if (target.kind === 'file') void previewFile(target.path, target.line, sourceCwd, target.lineEnd)
     /* invalid：什么也不做（title 已说明原因） */
   }
 
@@ -125,9 +128,9 @@ function hasUnclosedFence(text: string): boolean {
   return n % 2 === 1
 }
 
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text, sourceCwd }: { text: string; sourceCwd?: string }) {
   const cached = mdCache.get(text)
-  if (cached) return cached
+  if (cached) return <MessageSourceCwd.Provider value={sourceCwd}>{cached}</MessageSourceCwd.Provider>
 
   const unclosed = hasUnclosedFence(text)
   const el = (
@@ -151,7 +154,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     }
     mdCache.set(text, el)
   }
-  return el
+  return <MessageSourceCwd.Provider value={sourceCwd}>{el}</MessageSourceCwd.Provider>
 })
 
 /* ---------------------------------------------------------------- 工具详情 */

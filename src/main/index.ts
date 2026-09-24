@@ -462,6 +462,17 @@ function responseDetailExtensionPath(): string | undefined {
 }
 
 /**
+ * 内置「系统提示开场白」扩展的路径。
+ *
+ * 它把 pi 内置的英文 preamble（"You are an expert coding assistant operating
+ * inside pi, …"）换成砚的中文开场白，只动这一句。**不用** `--system-prompt`：
+ * 那是整段替换，会把 pi 自己维护的 tools / rules / docs 段落一起丢掉。
+ */
+function preambleExtensionPath(): string | undefined {
+  return yanThinResourcePath('preamble.js')
+}
+
+/**
  * 内置「界面语言」扩展的路径。
  *
  * 它在 `before_agent_start` 里读 `desktop.json` 的 `lang`，每轮注入一句
@@ -530,6 +541,7 @@ function yanThinExtensionPaths(): string[] {
     goalResumeExtensionPath(),
     handoffsExtensionPath(),
     responseDetailExtensionPath(),
+    preambleExtensionPath(),
     languageExtensionPath(),
     capabilityGuideExtensionPath(),
     contextExtensionPath(),
@@ -1777,7 +1789,9 @@ async function resolveWorkMode(id: string): Promise<WorkModeState> {
  */
 async function pushWorkMode(id: string): Promise<WorkModeState> {
   const state = await resolveWorkMode(id)
-  await writeWorkModeSnapshot(id, state).catch(() => {})
+  await goals.load()
+  const planApprovalPending = goals.state(workModeKeyFor(id)).pendingReady !== null
+  await writeWorkModeSnapshot(id, { ...state, planApprovalPending }).catch(() => {})
   pushFrom(id, { ch: 'work-mode', payload: state })
   return state
 }
@@ -1786,6 +1800,8 @@ async function pushWorkMode(id: string): Promise<WorkModeState> {
 async function pushGoal(id: string): Promise<void> {
   await goals.load()
   const state = goals.state(workModeKeyFor(id))
+  const mode = await resolveWorkMode(id)
+  await writeWorkModeSnapshot(id, { ...mode, planApprovalPending: state.pendingReady !== null }).catch(() => {})
   pushFrom(id, { ch: 'goal', payload: state })
 }
 
@@ -1886,7 +1902,7 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
     await goals.load()
     const key = workModeKeyFor(id)
     const goal = goals.state(key)
-    if (!goal.goalId || !isActiveGoalPhase(goal.phase) || goal.revision <= 0) return
+    if (!goal.goalId || !isActiveGoalPhase(goal.phase) || goal.revision <= 0 || goal.pendingReady) return
     /*
      * 谁有资格被自动叫醒（2026-09-22）：
      *   · 自主档 —— 档位本身就意味着「接着干」；
@@ -1970,12 +1986,52 @@ const goalCapabilityHost: GoalCommandHost = {
     const goal = goals.state(key)
 
     if (command === 'goal.ready') {
-      const res = await goals.commitReady(
-        key,
-        normalizeReadyParams(params),
-        { modeRevision: modeState.revision, goalRevision: goal.revision },
-        goal.goalId || `goal-${context.sessionId}`
-      )
+      const submission = normalizeReadyParams(params)
+      let res: Awaited<ReturnType<GoalStore['commitReady']>>
+      if (goal.readyApproval === 'review') {
+        const review = await goals.prepareReadyReview(
+          key,
+          submission,
+          { modeRevision: modeState.revision, goalRevision: goal.revision },
+          goal.goalId || `goal-${context.sessionId}`
+        )
+        if (!review.ok) {
+          throw new CapabilityCommandError(review.code, review.message, {
+            goal: review.goal,
+            mode: modeState.mode,
+            modeRevision: modeState.revision
+          })
+        }
+        if ('pending' in review && review.pending) {
+          await pushGoal(context.sessionId)
+          await pushWorkMode(context.sessionId)
+          return {
+            data: {
+              replayed: review.replayed,
+              pendingApproval: true,
+              goal: review.goal,
+              note: '计划已保存，等待用户审阅。当前仍是只读计划档；不要调用写工具或提交目标进度。'
+            },
+            summary: {
+              kind: 'goal',
+              action: 'ready-review',
+              replayed: review.replayed,
+              goalId: review.goal.pendingReady?.goalId ?? review.goal.goalId,
+              goalRevision: review.goal.revision,
+              phase: review.goal.phase,
+              mode: modeState.mode
+            }
+          }
+        }
+        res = review as Awaited<ReturnType<GoalStore['commitReady']>>
+      } else {
+        res = await goals.commitReady(
+          key,
+          submission,
+          { modeRevision: modeState.revision, goalRevision: goal.revision },
+          goal.goalId || `goal-${context.sessionId}`
+        )
+      }
       if (!res.ok) {
         throw new CapabilityCommandError(res.code, res.message, {
           goal: res.goal,
@@ -3106,6 +3162,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
+        preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextExtension: contextExtensionPath(),
@@ -3846,6 +3903,113 @@ function registerIpc(): void {
     return { goal: goals.state(workModeKeyFor(id)), mode: await resolveWorkMode(id) }
   })
 
+  /** 设定当前会话是否在计划就绪后暂停，等待用户审阅。 */
+  handle('yan:setGoalReadyApproval', async (mode: unknown, expectedGoalRevision: unknown) => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false as const, error: 'no_session' as const, goal: goals.state('') }
+    if (mode !== 'automatic' && mode !== 'review') {
+      return { ok: false as const, error: 'bad_mode' as const, goal: goals.state(workModeKeyFor(id)) }
+    }
+    const workMode = await resolveWorkMode(id)
+    if (workMode.mode !== 'clarify') {
+      return { ok: false as const, error: 'clarify_required' as const, goal: goals.state(workModeKeyFor(id)) }
+    }
+    await goals.load()
+    const res = await goals.setReadyApprovalMode(
+      workModeKeyFor(id),
+      mode,
+      typeof expectedGoalRevision === 'number' ? expectedGoalRevision : Number.NaN
+    )
+    if (!res.ok) return { ok: false as const, error: res.code, goal: res.goal }
+    await pushGoal(id)
+    return { ok: true as const, goal: res.goal }
+  })
+
+  /** 按钮操作绑定当前 runner，目标与模式版本都由宿主重新核对。 */
+  handle('yan:approveGoalReady', async (input: unknown) => {
+    const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false as const, error: 'no_session' as const, goal: goals.state('') }
+    if (request.runnerId !== id) {
+      return { ok: false as const, error: 'stale_runner' as const, goal: goals.state(workModeKeyFor(id)) }
+    }
+    await goals.load()
+    const key = workModeKeyFor(id)
+    const currentGoal = goals.state(key)
+    const transitionId = typeof request.transitionId === 'string' ? request.transitionId : ''
+    const expectedGoalRevision = typeof request.goalRevision === 'number' ? request.goalRevision : Number.NaN
+    const expectedModeRevision = typeof request.modeRevision === 'number' ? request.modeRevision : Number.NaN
+    if (!currentGoal.pendingReady) {
+      const replay = await goals.approveReadyReview(key, {
+        transitionId,
+        goalRevision: expectedGoalRevision,
+        modeRevision: expectedModeRevision
+      })
+      return replay.ok
+        ? { ok: true as const, replayed: true, goal: replay.goal }
+        : { ok: false as const, error: replay.code, goal: replay.goal }
+    }
+    const currentMode = await resolveWorkMode(id)
+    if (currentMode.mode !== 'clarify' || currentMode.revision !== expectedModeRevision) {
+      return { ok: false as const, error: 'stale_mode' as const, goal: currentGoal }
+    }
+    if (currentGoal.revision !== expectedGoalRevision) {
+      return { ok: false as const, error: 'stale_goal' as const, goal: currentGoal }
+    }
+
+    /* 先用模式 revision CAS，目标提交失败时再尝试恢复原模式。 */
+    const switched = await workModes.set(key, 'standard', currentMode.revision)
+    if (!switched.ok) {
+      await pushWorkMode(id)
+      return { ok: false as const, error: switched.error ?? 'stale_mode', goal: currentGoal }
+    }
+    const approved = await goals.approveReadyReview(key, {
+      transitionId,
+      goalRevision: expectedGoalRevision,
+      modeRevision: expectedModeRevision
+    })
+    if (!approved.ok) {
+      const restored = await workModes.set(key, 'clarify', switched.state.revision)
+      await pushWorkMode(id)
+      await pushGoal(id)
+      return { ok: false as const, error: restored.ok ? approved.code : 'approval_rollback_failed', goal: approved.goal }
+    }
+    await pushWorkMode(id)
+    await pushGoal(id)
+    if (approved.replayed) return { ok: true as const, replayed: true, goal: approved.goal }
+
+    /* 按钮就是用户的“批准并开始”指令；发给绑定 runner，避免切会话后串发。 */
+    const started = await runners?.agentOf(id)?.send('请按刚才批准的计划开始执行。', undefined, 'followUp')
+    return {
+      ok: true as const,
+      replayed: false,
+      started: started?.ok === true,
+      startError: started?.error,
+      goal: approved.goal
+    }
+  })
+
+  handle('yan:modifyGoalReady', async (input: unknown) => {
+    const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false as const, error: 'no_session' as const, goal: goals.state('') }
+    if (request.runnerId !== id) {
+      return { ok: false as const, error: 'stale_runner' as const, goal: goals.state(workModeKeyFor(id)) }
+    }
+    const currentMode = await resolveWorkMode(id)
+    if (currentMode.mode !== 'clarify' || currentMode.revision !== request.modeRevision) {
+      return { ok: false as const, error: 'stale_mode' as const, goal: goals.state(workModeKeyFor(id)) }
+    }
+    await goals.load()
+    const res = await goals.modifyReadyReview(workModeKeyFor(id), {
+      transitionId: typeof request.transitionId === 'string' ? request.transitionId : '',
+      goalRevision: typeof request.goalRevision === 'number' ? request.goalRevision : Number.NaN
+    })
+    if (!res.ok) return { ok: false as const, error: res.code, goal: res.goal }
+    await pushGoal(id)
+    return { ok: true as const, goal: res.goal }
+  })
+
   /**
    * 用户设定持续目标（`+` 菜单 → 目标）：目标 + 可衡量的成果。
    *
@@ -4010,7 +4174,12 @@ function registerIpc(): void {
     if (res.ok) {
       await goals.load()
       const key = workModeKeyFor(id)
-      const pursue = goals.state(key).pursue === true
+      let goal = goals.state(key)
+      if (mode !== 'clarify' && goal.pendingReady) {
+        await goals.cancelReadyReview(key)
+        goal = goals.state(key)
+      }
+      const pursue = goal.pursue === true
       /* 改档是明确动作：解除“用户按过停止”留下的暂停（A2） */
       await goals.setPaused(key, false).catch(() => {})
       const stillRuns = keepsGoalResumeOnModeChange(mode, pursue)
@@ -4027,8 +4196,11 @@ function registerIpc(): void {
       }
     }
     /* 失败也要写 + 推：界面要拿当前值恢复，扩展也不能继续读旧值 */
-    await writeWorkModeSnapshot(id, res.state).catch(() => {})
+    await goals.load()
+    const planApprovalPending = goals.state(workModeKeyFor(id)).pendingReady !== null
+    await writeWorkModeSnapshot(id, { ...res.state, planApprovalPending }).catch(() => {})
     pushFrom(id, { ch: 'work-mode', payload: res.state })
+    if (res.ok && mode !== 'clarify') await pushGoal(id)
     return res
   })
 

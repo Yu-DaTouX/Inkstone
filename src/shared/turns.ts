@@ -64,6 +64,8 @@ export interface TurnSegment {
   texts: TurnText[]
   /** 正式回复（无工具调用的文字） */
   response: TurnText | null
+  /** 回复各段分别保留来源，避免跨消息合并后丢失工作目录。 */
+  responseParts?: TurnText[]
   /** 解说（带工具调用的文字，即那批工具的前言） */
   commentary: TurnText[]
 }
@@ -71,6 +73,8 @@ export interface TurnSegment {
 export interface TurnText {
   id: string
   text: string
+  /** 原消息的工作目录；同一时间线可包含不同会话段 / 工作树。 */
+  sourceCwd?: string
   /**
    * 这段文字所在的原始消息**是否带工具调用**。
    *
@@ -119,6 +123,8 @@ export interface AssistantTurn {
   imageProgress: ImageGenerationProgress[]
   /** 最终回答；末尾停在工具上时会把最后一条解说提升上来 */
   response: TurnText | null
+  /** 回复各段分别保留来源，避免合并后丢失历史工作目录。 */
+  responseParts?: TurnText[]
   streaming: boolean
   /**
    * 整轮用量（实施-11 H-6b）：回合内各次请求的 usage **相加**。
@@ -173,6 +179,15 @@ export type Turn = AssistantTurn | UserTurn | BashTurn
 /** 文本是否有实质内容（只有空格的 delta 不算） */
 function hasText(s: string | undefined): boolean {
   return !!s && s.trim().length > 0
+}
+
+function sharedSourceCwd(parts: readonly TurnText[]): string | undefined {
+  const sourceCwd = parts[0]?.sourceCwd
+  return sourceCwd && parts.every((part) => part.sourceCwd === sourceCwd) ? sourceCwd : undefined
+}
+
+function haveSameSourceCwd(parts: readonly TurnText[]): boolean {
+  return parts.length < 2 || parts.every((part) => part.sourceCwd === parts[0].sourceCwd)
 }
 
 /**
@@ -325,11 +340,13 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
          */
         const afterWork = raw.texts.filter((x) => !x.hasTools)
         const beforeWork = raw.texts.filter((x) => x.hasTools)
+        const responseSourceCwd = sharedSourceCwd(afterWork)
         const response: TurnText | null = afterWork.length
           ? {
               id: afterWork[0].id,
               text: afterWork.map((x) => x.text).join('\n\n'),
-              hasTools: false
+              hasTools: false,
+              ...(responseSourceCwd ? { sourceCwd: responseSourceCwd } : {})
             }
           : null
         return {
@@ -342,10 +359,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
           tools: raw.tools,
           texts: raw.texts,
           response,
+          ...(afterWork.length > 1 && !haveSameSourceCwd(afterWork) ? { responseParts: afterWork } : {}),
           commentary: beforeWork
         }
       })
 
+    const responseSourceCwd = sharedSourceCwd(responseParts)
     turns.push({
       kind: 'assistant',
       id: cur.firstId,
@@ -365,9 +384,11 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
             text: responseParts.map((x) => x.text).join('\n\n'),
             // 拼出来的这一段是「回复」，按定义它来自无工具的消息；
             // 若走的是「提升最后一条解说」那条分支，则继承原值。
-            hasTools: responseParts.some((x) => x.hasTools)
+            hasTools: responseParts.some((x) => x.hasTools),
+            ...(responseSourceCwd ? { sourceCwd: responseSourceCwd } : {})
           }
         : null,
+      ...(responseParts.length > 1 && !haveSameSourceCwd(responseParts) ? { responseParts } : {}),
       streaming: cur.streaming,
       usage: cur.usage,
       ...(cur.usagePartial && cur.usage ? { usagePartial: true } : {}),
@@ -481,7 +502,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       const hasTools = (m.toolCalls?.length ?? 0) > 0
       const target = seg()
       for (const p of splitParagraphs(m.text)) {
-        const item = { id: `${m.id}#${cur.texts.length}`, text: p, hasTools }
+        const item = {
+          id: `${m.id}#${cur.texts.length}`,
+          text: p,
+          hasTools,
+          ...(m.sourceCwd ? { sourceCwd: m.sourceCwd } : {})
+        }
         cur.texts.push(item)
         target.texts.push(item)
       }

@@ -89,19 +89,35 @@ export function containsResumeEvidence(rawText: unknown, resumeId: string): bool
 }
 
 /**
- * 在会话文件文本里判「续行之后**真的跑起来了**」（实施-15 A-3 / 审核 R6）。
+ * 只认续接薄层在对应 operationId 的 `before_provider_request` 中写下的显式回执。
  *
- * 与 `containsResumeEvidence` 的差别就是「已投递」与「已运行」：
- * 标记行是宿主拼的本地文本（写文件不需要模型参与），而助手输出只能由模型产生 ——
- * 所以看标记**之后**有没有 `"role":"assistant"`。
+ * 助手消息可能属于之后的普通回合，不能证明这次交接已经启动。会话文件还必须
+ * 含续接标记；这样启动回执本身不会被误当成已投递的续接消息。
  */
-export function hasRunStartedAfterMarker(rawText: unknown, resumeId: string): boolean {
+export function hasExplicitHandoffStartReceipt(rawText: unknown, resumeId: string): boolean {
   const text = typeof rawText === 'string' ? rawText : ''
-  const marker = resumeMarker(resumeId)
-  if (!text || marker === `[${RESUME_ID_TAG}:]`) return false
-  const at = text.indexOf(marker)
-  if (at < 0) return false
-  return /"role"\s*:\s*"assistant"/.test(text.slice(at + marker.length))
+  const operationId = String(resumeId ?? '').trim()
+  if (!text || !operationId || !containsResumeEvidence(text, operationId)) return false
+  for (const match of text.matchAll(/^[^\r\n]*"customType"\s*:\s*"yan-handoff-started"[^\r\n]*$/gm)) {
+    try {
+      const entry = JSON.parse(match[0]) as {
+        type?: unknown
+        customType?: unknown
+        data?: { operationId?: unknown; hook?: unknown }
+      }
+      if (
+        entry.type === 'custom' &&
+        entry.customType === 'yan-handoff-started' &&
+        entry.data?.operationId === operationId &&
+        entry.data?.hook === 'before_provider_request'
+      ) {
+        return true
+      }
+    } catch {
+      /* Ignore unrelated or malformed JSONL lines; one bad row cannot invent a receipt. */
+    }
+  }
+  return false
 }
 
 /**

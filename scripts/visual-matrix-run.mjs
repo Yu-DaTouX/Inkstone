@@ -30,6 +30,10 @@ import { dirname, join, resolve } from 'node:path'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const electron = createRequire(import.meta.url)('electron')
 
+/*
+ * 默认只跑核心 9 组（0…8）：后加的专项组（quotatone / handoff / terminal /
+ * 宽窄缩放补采 / sessionmenu 等）要按组号单独指定，避免一次全跑几十分钟。
+ */
 const ALL = ['0', '1', '2', '3', '4', '5', '6', '7', '8', 'onboarding']
 const wanted = process.argv.slice(2).filter(Boolean)
 const groups = wanted.length ? wanted : ALL

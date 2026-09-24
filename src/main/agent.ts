@@ -292,6 +292,11 @@ export class AgentController extends EventEmitter {
   /** 交接包生成（实施-05 S5b-2）：它只做「调一次 completion」那件 RPC 做不到的事。 */
   private handoffsExtension?: string
   private responseDetailExtension?: string
+  /**
+   * 系统提示开场白扩展：把 pi 内置的英文 preamble 换成砚的中文开场白
+   * （只动这一句，见 resources/pi-extensions/preamble.js）。
+   */
+  private preambleExtension?: string
   /** 界面语言扩展（每轮注入一句语言要求，见 resources/pi-extensions/language.js） */
   private languageExtension?: string
   /** 能力入口说明扩展（每轮静态追加，不随设置变化）。 */
@@ -435,6 +440,8 @@ export class AgentController extends EventEmitter {
   private turnOutputTokens?: number
   /** 本轮是否已经写过至少一条元数据记录（中间写一次、终止时再更新一次）。 */
   private turnPersisted = false
+  /** 同一 runner 的中途快照与终止快照按事件顺序追加，避免慢写的中途记录盖过收尾。 */
+  private turnTimingWriteTail: Promise<void> = Promise.resolve()
   /**
    * 当前 **run** 的标识（实施-11 H-6b）。
    *
@@ -540,6 +547,13 @@ export class AgentController extends EventEmitter {
     handoffsExtension?: string
     /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
     responseDetailExtension?: string
+    /**
+     * 系统提示开场白扩展：把 pi 内置的英文 preamble 换成砚的中文开场白。
+     *
+     * 只做一处定点替换 —— 不用 `--system-prompt`（那是整段替换，
+     * 会丢掉 pi 自己维护的 tools / rules / docs 段落）。
+     */
+    preambleExtension?: string
     /**
      * 界面语言扩展：在 before_agent_start 里读 desktop.json，每轮注入
      * 一句「推理与回复用什么语言」。
@@ -780,6 +794,8 @@ export class AgentController extends EventEmitter {
         ...(this.handoffsExtension ? ['--extension', this.handoffsExtension] : []),
         // 回复详细程度（简洁 / 标准 / 详细）：standard 档不注入任何东西
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
+        // 系统提示开场白：把 pi 内置英文 preamble 换成砚的中文开场白
+        ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
         // 界面语言 → 推理/回复语言：每轮读设置注入一句（不再用启动参数）
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
         // 能力入口说明：告诉模型有 `yan` 这个入口、输出怎么读（静态文本，不破缓存）
@@ -3831,13 +3847,21 @@ export class AgentController extends EventEmitter {
         break
 
       case 'turn_end':
+        /*
+         * `turn_end` 结束的是一条 assistant 回复，不一定是整轮：工具调用的
+         * 回复结束后，Pi 还会执行工具并发起下一次模型请求。只能等
+         * `agent_settled` 写最终计时；否则会把中途工具消息误记成 final:true。
+         */
+        void this.refreshStats()
+        break
+
       case 'agent_end':
         /*
-         * 兜底写一次：失败 / 被中断的回合不一定走到 `agent_settled`，
-         * 那条路上整轮计时同样不能丢（H-6 出口 4）。
-         * 同一 `logicalTurnId` 重写不会多出回合（读回时后者胜）。
+         * 兜底写一次：失败 / 被中断的回合不一定走到 `agent_settled`。
+         * Pi 可能在自动重试前先发 `agent_end`，此时 `willRetry` 为 true，
+         * 不能把仍会继续的逻辑回合提前冻结成终态。
          */
-        void this.persistTurnTiming()
+        if (evt.willRetry !== true) void this.persistTurnTiming()
         void this.refreshStats()
         break
 
@@ -4205,7 +4229,12 @@ export class AgentController extends EventEmitter {
       ...(this.turnOutputTokens ? { outputTokens: this.turnOutputTokens } : {}),
       monotonicMs: elapsedMs
     }
-    if (await appendTurnTiming(YAN_DIR, bucket, record)) this.turnPersisted = true
+    const write = this.turnTimingWriteTail.then(() => appendTurnTiming(YAN_DIR, bucket, record))
+    this.turnTimingWriteTail = write.then(
+      () => undefined,
+      () => undefined
+    )
+    if (await write) this.turnPersisted = true
   }
 
   private speedOf(
@@ -5191,8 +5220,8 @@ export class AgentController extends EventEmitter {
   /**
    * 反向循环模型（桌面端 Ctrl+Shift+P，对齐 pi TUI 的“上一个模型”）。
    *
-   * 为什么自己算而不用 pi 的命令：pi 0.85.1 的 RPC 只有 `cycle_model`
-   * （固定向前），没有反向命令。这里复用 `get_available_models` +
+   * 为什么自己算而不用 pi 的命令：pi 0.87.1 的 RPC 有 `cycle_model`
+   * （固定向前）和 `set_model`，没有反向循环命令。这里复用 `get_available_models` +
    * `set_model` 手动走上一项，语义与界面显示的列表一致。
    */
   async cycleModelBack(): Promise<{ ok: boolean; error?: string; to?: string }> {

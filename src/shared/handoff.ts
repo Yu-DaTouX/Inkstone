@@ -551,7 +551,8 @@ export interface HandoffView {
      * 续接回执（实施-15 A-3）：已投递（`persistedAt`）与已运行（`startedAt`）分开。
      *
      * 为什么要分开给界面：`stage==='resumed'` 只说明**已投递**（标记是本地写的），
-     * 界面不能据此说「模型已经在跑」；有 `startedAt` 才是真的看到了助手输出。
+     * 界面不能据此说「目的运行已启动」；`startedAt` 只在续接扩展为同一 operationId
+     * 写下 `before_provider_request` 回执后才填写。
      */
     receipts: { sentAt?: number; persistedAt?: number; startedAt?: number }
     /**

@@ -49,6 +49,7 @@ const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'bash']
 
 /** 计划档允许的宿主 bash 形状：目标状态 / 提问 / 只读归档回读。 */
 const GOAL_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+(?:status|ready|report)(?:\s|$)/
+const GOAL_STATUS_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+goal\s+status(?:\s|$)/
 const QUESTION_COMMAND = /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+question\s+ask(?:\s|$)/
 const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,200}'
 const CONTEXT_RECALL_COMMAND = new RegExp(
@@ -78,17 +79,21 @@ const WORK_MODES = ['standard', 'clarify', 'autonomous']
 
 function currentWorkMode() {
   try {
-    const mode = JSON.parse(readFileSync(workModeFile(), 'utf8'))?.mode
-    if (WORK_MODES.includes(mode)) return mode
+    const snapshot = JSON.parse(readFileSync(workModeFile(), 'utf8'))
+    if (WORK_MODES.includes(snapshot?.mode)) {
+      return { mode: snapshot.mode, planApprovalPending: snapshot.planApprovalPending === true }
+    }
   } catch {
     /* 宿主还没写（刚启动）—— 走回退链 */
   }
   try {
     const settings = JSON.parse(readFileSync(join(dataDir(), 'desktop.json'), 'utf8'))
-    if (WORK_MODES.includes(settings?.defaultWorkMode)) return settings.defaultWorkMode
-    return settings?.autonomous === true ? 'autonomous' : 'standard'
+    if (WORK_MODES.includes(settings?.defaultWorkMode)) {
+      return { mode: settings.defaultWorkMode, planApprovalPending: false }
+    }
+    return { mode: settings?.autonomous === true ? 'autonomous' : 'standard', planApprovalPending: false }
   } catch {
-    return 'standard'
+    return { mode: 'standard', planApprovalPending: false }
   }
 }
 
@@ -119,13 +124,14 @@ function note(hook, payload) {
 }
 
 /** 这条 bash 命令是不是允许的宿主 CLI 形状？ */
-function isAllowedBashCommand(command) {
+function isAllowedBashCommand(command, planApprovalPending = false) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
-  return GOAL_COMMAND.test(command) || QUESTION_COMMAND.test(command) || CONTEXT_RECALL_COMMAND.test(command)
+  const goalCommand = planApprovalPending ? GOAL_STATUS_COMMAND : GOAL_COMMAND
+  return goalCommand.test(command) || QUESTION_COMMAND.test(command) || CONTEXT_RECALL_COMMAND.test(command)
 }
 
-/** 工具名归一：`getActiveTools()` 在 0.85.1 回字符串数组，这里顺手兼容对象形态。 */
+/** 工具名归一：pi 0.87.1 的 `getActiveTools()` 返回字符串数组，这里兼容对象形态。 */
 function toolName(entry) {
   if (typeof entry === 'string') return entry
   if (entry && typeof entry === 'object' && typeof entry.name === 'string') return entry.name
@@ -139,6 +145,7 @@ export default function workModePolicy(pi) {
   let restricted = false
   /** 最近一次读到的模式（`tool_call` 兜底要用）。 */
   let mode = 'standard'
+  let planApprovalPending = false
 
   const applyTools = (names) => {
     try {
@@ -150,7 +157,9 @@ export default function workModePolicy(pi) {
   }
 
   pi.on('before_agent_start', () => {
-    mode = currentWorkMode()
+    const policy = currentWorkMode()
+    mode = policy.mode
+    planApprovalPending = policy.planApprovalPending
     if (mode === 'clarify') {
       /* 记录基线要在收紧**之前**：收紧后就看不到宿主给的原始集了 */
       if (!baseTools) baseTools = (pi.getActiveTools?.() ?? []).map(toolName).filter(Boolean)
@@ -182,11 +191,15 @@ export default function workModePolicy(pi) {
    *    要让模型理解原因，只能靠提示词，或者干脆把工具从表里拿掉。
    */
   pi.on('tool_call', (event) => {
+    /* 待审计划可在本轮由宿主更新；每次调用重读快照，立即收紧 goal 命令。 */
+    const policy = currentWorkMode()
+    mode = policy.mode
+    planApprovalPending = policy.planApprovalPending
     const name = String(event?.toolName ?? '')
     if (mode !== 'clarify' || !name) return undefined
     if (name === 'bash') {
       const command = String((event?.input ?? {})?.command ?? '')
-       if (isAllowedBashCommand(command)) return undefined
+      if (isAllowedBashCommand(command, planApprovalPending)) return undefined
       note('tool_call_blocked', { mode, tool: name, command: command.slice(0, 140) })
       return { block: true }
     }

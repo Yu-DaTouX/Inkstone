@@ -29,9 +29,8 @@ const VERIFICATION_LABEL: Record<NonNullable<GoalState['verification']>['status'
 /**
  * 砚内置的目标 / 计划面板。
  *
- * 它不属于可拖拽的扩展工具分区：目标是宿主按会话维护的事实状态，
- * 自主模式会从用户指令自动建立它，模型只能通过 `yan goal report` 推进。
- * 这样用户能看到“砚正在按什么计划做”，又不会给 UI 增加第二条写入目标的链路。
+ * 它不属于可拖拽的扩展工具分区：目标是宿主按会话维护的事实状态。
+ * 进度报告仍由模型经 `yan goal report` 提交；用户动作仅限设定审阅偏好、批准或修改待审计划。
  */
 export function GoalContent() {
   const t = useT()
@@ -40,6 +39,9 @@ export function GoalContent() {
   const loadGoal = useStore((s) => s.loadGoal)
   const goalLoading = useStore((s) => s.goalLoading)
   const goalError = useStore((s) => s.goalError)
+  const setGoalReadyApproval = useStore((s) => s.setGoalReadyApproval)
+  const approveGoalReady = useStore((s) => s.approveGoalReady)
+  const modifyGoalReady = useStore((s) => s.modifyGoalReady)
   const [briefExpanded, setBriefExpanded] = useState(false)
 
   useEffect(() => {
@@ -47,6 +49,7 @@ export function GoalContent() {
   }, [loadGoal])
 
   const activeGoal = goal?.goalId ? goal : null
+  const pendingReady = goal?.pendingReady ?? null
   const hasGoal = activeGoal !== null
   const steps = activeGoal?.steps ?? []
   const done = steps.filter((step) => step.status === 'done').length
@@ -101,6 +104,56 @@ export function GoalContent() {
         ) : null}
         {activeGoal ? <span className="goal-panel-phase">{t(PHASE_LABEL[activeGoal.phase])}</span> : null}
       </div>
+
+      {mode === 'clarify' ? (
+        <div className="goal-review-setting" data-testid="goal-review-setting">
+          <label>
+            <input
+              type="checkbox"
+              checked={goal?.readyApproval === 'review'}
+              disabled={!goal || goalLoading || !!pendingReady}
+              onChange={(event) => void setGoalReadyApproval(event.target.checked ? 'review' : 'automatic')}
+              data-testid="goal-review-setting-toggle"
+            />
+            <span>{t('goal.reviewSetting')}</span>
+          </label>
+          <small>{t('goal.reviewSettingHint')}</small>
+        </div>
+      ) : null}
+
+      {pendingReady ? (
+        <div className="goal-review-pending" data-testid="goal-pending-review">
+          <div className="goal-panel-subtitle">{t('goal.pendingReview')}</div>
+          <div className="goal-review-fields">
+            <div><span>{t('goal.readyGoal')}</span><strong>{pendingReady.understanding.goal}</strong></div>
+            <div><span>{t('goal.readyDeliverable')}</span><strong>{pendingReady.understanding.deliverable}</strong></div>
+            <div><span>{t('goal.readyScope')}</span><strong>{pendingReady.understanding.scope}</strong></div>
+            <div><span>{t('goal.readyConstraints')}</span><strong>{pendingReady.understanding.constraints}</strong></div>
+            <div><span>{t('goal.readyAcceptance')}</span><strong>{pendingReady.understanding.acceptance}</strong></div>
+          </div>
+          <small>{t('goal.reviewReadOnly')}</small>
+          <div className="goal-review-actions">
+            <button
+              type="button"
+              className="sa-act-btn primary"
+              onClick={() => void approveGoalReady()}
+              disabled={goalLoading || mode !== 'clarify'}
+              data-testid="goal-approve-and-start"
+            >
+              {t('goal.approveAndStart')}
+            </button>
+            <button
+              type="button"
+              className="sa-act-btn"
+              onClick={() => void modifyGoalReady()}
+              disabled={goalLoading || mode !== 'clarify'}
+              data-testid="goal-modify-plan"
+            >
+              {t('goal.modifyPlan')}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!hasGoal ? (
         goalError ? (

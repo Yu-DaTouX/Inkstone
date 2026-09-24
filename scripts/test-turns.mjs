@@ -467,5 +467,32 @@ export async function runTurnTests(ok) {
         a.segments.map((s) => s.response?.text).join('|')
       )
     }
+
+    // 16.4 会话链里的回复来源不同，分段字段必须保留各自 cwd。
+    {
+      const cwdA = 'C:\\worktrees\\history-a'
+      const cwdB = 'C:\\worktrees\\history-b'
+      const t = groupIntoTurns([
+        usr('u1', '检查两个来源'),
+        asst('a1', '来源 A 的 [README](README.md)', { sourceCwd: cwdA }),
+        asst('a2', '来源 B 的 [README](README.md)', { sourceCwd: cwdB })
+      ])
+      const a = t[1]
+      ok(a.segments[0]?.response?.sourceCwd === cwdA, '第一段回复保留来源 A 的 cwd')
+      ok(a.segments[1]?.response?.sourceCwd === cwdB, '第二段回复保留来源 B 的 cwd')
+      ok(
+        a.responseParts?.length === 2 &&
+          a.responseParts[0]?.sourceCwd === cwdA &&
+          a.responseParts[1]?.sourceCwd === cwdB,
+        '整轮聚合遇到不同 cwd 时保留分段来源'
+      )
+
+      const same = groupIntoTurns([
+        usr('u2', '检查同一来源'),
+        asst('a3', '第一段\n\n第二段', { sourceCwd: cwdA })
+      ])[1]
+      ok(same.response?.sourceCwd === cwdA, '同一 cwd 的聚合回复保留目录')
+      ok(!same.responseParts, '同一 cwd 的回复维持原有单块渲染结构')
+    }
   }
 }

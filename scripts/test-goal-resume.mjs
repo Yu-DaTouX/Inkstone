@@ -33,7 +33,14 @@ export async function runGoalResumeExtTests(ok) {
     await mkdir(resumeDir, { recursive: true })
     await writeFile(
       resumeFile,
-      JSON.stringify({ operationId, summary: `接着干（${operationId}）`, kind }),
+      JSON.stringify({
+        operationId,
+        summary:
+          kind === 'handoff'
+            ? `[yan-handoff-resume:${operationId}] 接着干（${operationId}）`
+            : `接着干（${operationId}）`,
+        kind
+      }),
       'utf8'
     )
   }
@@ -73,6 +80,7 @@ export async function runGoalResumeExtTests(ok) {
 
     const handlers = {}
     const sent = []
+    const entries = []
     factory({
       on: (evt, handler) => {
         handlers[evt] = handler
@@ -88,11 +96,19 @@ export async function runGoalResumeExtTests(ok) {
     ok(typeof handlers.message_end === 'function', 'goal-resume.js 挂在 message_end 上')
     ok(typeof handlers.agent_settled === 'function', 'goal-resume.js 也挂在 agent_settled 上（更晚的检查点）')
     ok(typeof handlers.session_start === 'function', 'goal-resume.js 挂在 session_start 上（重载 / 切会话）')
+    ok(typeof handlers.before_provider_request === 'function', '交接启动回执挂在 provider 请求前钩子上')
 
     const ctx = {
-      appendEntry: () => {},
+      appendEntry: (customType, data) => entries.push({ customType, data }),
       sendMessage: async (message, options) => {
         sent.push({ message, options })
+        if (message.customType === 'yan-handoff-resume') {
+          const text = message.content.map((part) => part.text ?? '').join('')
+          handlers.before_provider_request({
+            type: 'before_provider_request',
+            payload: { messages: [{ role: 'user', content: [{ type: 'text', text }] }] }
+          }, ctx)
+        }
       }
     }
     /* 这条形状就是「回合可能结束」：assistant 且没有工具调用 */
@@ -219,11 +235,25 @@ export async function runGoalResumeExtTests(ok) {
     )
     ok(handoffEntry?.options?.triggerTurn === true, 'F4：交接 resume 也带 triggerTurn（真的要起一个回合）')
     ok(sent.length === sentBefore5c + 1, 'F4：交接 resume 只发一次')
+    ok(
+      entries.some(
+        (entry) =>
+          entry.customType === 'yan-handoff-started' &&
+          entry.data?.operationId === 'op-handoff' &&
+          entry.data?.hook === 'before_provider_request'
+      ),
+      '交接续接触发 provider 请求前钩子后写入同 operationId 的显式启动回执'
+    )
+    handlers.before_provider_request({ type: 'before_provider_request' })
+    ok(
+      entries.filter((entry) => entry.customType === 'yan-handoff-started').length === 1,
+      '没有待确认交接时的后续普通回合不复用旧 operationId'
+    )
 
     /*
      * ── 6. 发送一律走 `pi`（2026-09-22 的根因） ──
      *
-     * pi 0.85.1 的钩子 ctx 里**没有** `sendMessage`（`createContext()` 只给 cwd / model /
+     * pi 0.87.1 的钩子 ctx 里**没有** `sendMessage`（`ExtensionContextActions` 只给 cwd / model /
      * modelRegistry 等 getter）。旧代码写的是 `context.sendMessage?.()` —— 可选链把失败吞了：
      * 日志里写着 `resume_sent`、`operationId` 也记成已消费，而消息从未发出去。
      */
@@ -239,7 +269,7 @@ export async function runGoalResumeExtTests(ok) {
     })
     await rm(resumeFile, { force: true })
     await rm(consumedFile, { force: true })
-    const ctx2 = {} /* 没有 sendMessage（pi 0.85.1 的真实形态） */
+    const ctx2 = {} /* 没有 sendMessage（pi 0.87.1 的真实形态） */
     await writeResume('op-pi')
     handlers2.message_end(turnEnd, ctx2)
     const viaPi = await waitFor(async () => (piSent.length > 0 ? piSent : null))
@@ -274,6 +304,38 @@ export async function runGoalResumeExtTests(ok) {
     })
     ok(noSender === true, '没有发送方时明确记失败（不再静默吞掉）')
     ok((await readConsumed()) === null, '发不出去就不写消费证据（留给下一次重试）')
+
+    /* 8. 交接 send 失败时清除待确认 id，不把下一次普通回合误记成启动 */
+    const handlers4 = {}
+    const failedEntries = []
+    factory({
+      on: (evt, handler) => {
+        handlers4[evt] = handler
+      }
+    })
+    await rm(resumeFile, { force: true })
+    await rm(consumedFile, { force: true })
+    await writeResume('op-handoff-send-failed', 'handoff')
+    handlers4.agent_settled({}, {
+      appendEntry: (customType, data) => failedEntries.push({ customType, data }),
+      sendMessage: async () => {
+        throw new Error('fixture send failure')
+      }
+    })
+    const failedSend = await waitFor(async () => {
+      const log = await readLog()
+      return log.some(
+        (line) => line.hook === 'resume_failed' && line.operationId === 'op-handoff-send-failed'
+      )
+        ? true
+        : null
+    })
+    ok(failedSend === true, '交接续接发送失败有 operationId 诊断')
+    handlers4.before_provider_request({ type: 'before_provider_request' })
+    ok(
+      !failedEntries.some((entry) => entry.customType === 'yan-handoff-started'),
+      '发送失败后下一次 before_agent_start 不会误领旧交接 operationId'
+    )
   } finally {
     delete process.env.YAN_GOAL_RESUME_EXT_LOG
     delete process.env.YAN_GOAL_RESUME_DELAY_MS

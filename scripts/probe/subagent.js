@@ -1,8 +1,10 @@
 /**
  * 子代理：真实启动一个独立 pi 子进程，跑完一个小任务（方案第 8 节）。
  *
- * ⚠️ 这是**真跑**：会起 `pi --mode rpc` 子进程并调一次模型
- *    （回归里用 commandcode 的免费模型，见 test-live 的 TEST_MODEL）。
+ * ⚠️ 这是**真跑**：会起 `pi --mode rpc` 子进程。模型取决于场景：
+ *    `subagent` 用 `YAN_TEST_MODEL`（回归里是 commandcode 的免费模型，会真的调一次模型）；
+ *    `subagentlocal` 指向本机 OpenAI 兼容 fixture（不发往外部、不花额度）。
+ *    两者共用同一条主进程链路：SubagentController → onChange push → IPC → renderer store，
  *    它同时是「适配门槛」的实测：Windows 路径、Electron 起子进程、
  *    RPC 事件流、取消 —— 这四件事全都在这条链路里。
  *
@@ -96,10 +98,8 @@
       await sleep(300)
     }
     ok(listed, '运行进入 store（主进程 push 生效）')
-    ok(!!q('[data-testid="subagent-strip"]'), '主对话区渲染出子任务列表')
-    ok(!!q(`[data-testid="subagent-${id}"]`), '列表里有这一条')
 
-    /* 打开详情：start 后默认已打开 */
+    /* 打开详情：start 后默认已打开（右栏工作台里的 subagent 资源标签） */
     let previewed = false
     for (let i = 0; i < 20; i++) {
       if (q('[data-testid="subagent-preview"]')) {
@@ -111,10 +111,21 @@
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
     out.push(`  诊断：rightpanel=${!!q('[data-testid="rightpanel"]')} sp=${!!q('.sp')}`)
     out.push(`  诊断：store.subagents=${store.getState().subagents.length}`)
-    ok(previewed, '详情面板打开了（现在内联在主工作区，不是右栏）')
+    ok(previewed, '详情面板打开了')
+
+    /*
+     * 详情会自动把右栏切到 subagent 资源，工具页的列表 DOM 随之卸载。
+     * 切回工具页确认列表真的把这条渲染出来，再切回详情看输出。
+     */
+    q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(500)
+    ok(!!q('[data-testid="subagent-strip"]'), '工具页子代理列表渲染出子任务条')
+    ok(!!q(`[data-testid="subagent-${id}"]`), '列表里有这一条')
+    q(`[data-testid="right-window-tab-subagent-${id}"]`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await sleep(400)
 
     out.push('')
-    out.push('=== 3. 等它跑完（真实模型调用）===')
+    out.push('=== 3. 等它跑完（真实 pi 子进程；模型按场景）===')
     const final = await waitStatus(id, ['done', 'error', 'cancelled'], 120_000)
     out.push(`  终态 = ${final?.status}，转录 ${final?.transcript.length ?? 0} 条`)
     if (final?.error) out.push(`  错误 = ${final.error}`)

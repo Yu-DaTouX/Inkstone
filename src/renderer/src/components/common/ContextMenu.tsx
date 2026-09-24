@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../icons/Icon'
 import { useStore } from '../../state/store'
@@ -20,12 +20,147 @@ export interface ContextMenuAnchor {
   trigger?: HTMLElement | null
 }
 
+const MENUITEM_SELECTOR = '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])'
+
 /**
- * 通用上下文菜单（实施-12 U-2）。
+ * 菜单外壳：Portal 到 `document.body` + fixed 定位 + 四周夹取 + 键盘导航 + 外点关闭。
  *
- * 为什么必须走 Portal：菜单挂在行内会被 `overflow` 裁掉（长列表、窄栏、
- * 缩放 150% 都会露出来），也会把行的 `scrollHeight` 顶大。这里渲染到
- * `document.body`，用 fixed 定位，四周都夹回视口内。
+ * 为什么必须走 Portal：菜单挂在行内会被 `overflow` 裁掉（长列表的最后几行、
+ * 窄栏、缩放 150% 都会露出来），也会把行的 `scrollHeight` 顶大。
+ *
+ * 两种内容都走这一层：
+ *   · 纯动作列表 → `ContextMenu`（items）
+ *   · 带信息行 / 分区 / 自定义行（会话菜单）→ 直接给 children，
+ *     其中可选项自己标 `role="menuitem"`，键盘导航才能找到它们。
+ */
+export function ContextMenuSurface({
+  open,
+  anchor,
+  onClose,
+  testid,
+  className = 'ctx-menu',
+  children,
+  ...rest
+}: {
+  open: boolean
+  anchor: ContextMenuAnchor | null
+  onClose: () => void
+  testid?: string
+  className?: string
+  children: ReactNode
+  /** 透传 `data-*`（探针按会话 / 分组定位菜单，验证菜单归属） */
+  [dataAttr: `data-${string}`]: string | undefined
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
+
+  /* 四周夹回视口：量内容实际尺寸，再把 anchor 夹进可用区 */
+  const place = useCallback((): void => {
+    const el = ref.current
+    if (!el || !anchor) return
+    const rect = el.getBoundingClientRect()
+    const margin = 8
+    const maxX = Math.max(margin, window.innerWidth - rect.width - margin)
+    const maxY = Math.max(margin, window.innerHeight - rect.height - margin)
+    setPos({
+      x: Math.min(Math.max(margin, anchor.x), maxX),
+      y: Math.min(Math.max(margin, anchor.y), maxY)
+    })
+  }, [anchor])
+
+  useLayoutEffect(() => {
+    if (!open) return undefined
+    place()
+    /*
+     * 内容会异步变高（标题候选刚出现、可移动的项目行很多）：只量一次会算错
+     * 底部边界，菜单从下沿露出去。尺寸变化后再夹一次。
+     */
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(() => place())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [open, place])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onResize = (): void => place()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [open, place])
+
+  /* 打开即聚焦第一项；只有信息行时聚焦容器，键盘仍然进得来 */
+  useEffect(() => {
+    if (!open) return
+    const el = ref.current
+    if (!el) return
+    const first = el.querySelector<HTMLElement>(MENUITEM_SELECTOR)
+    ;(first ?? el).focus()
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    return acquireOverlayBlocker('context-menu')
+  }, [open, acquireOverlayBlocker])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (event: MouseEvent): void => {
+      if (!ref.current?.contains(event.target as Node)) onClose()
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [open, onClose])
+
+  if (!open || !anchor) return null
+
+  const move = (delta: number): void => {
+    const all = Array.from(ref.current?.querySelectorAll<HTMLElement>(MENUITEM_SELECTOR) ?? [])
+    if (!all.length) return
+    const current = all.indexOf(document.activeElement as HTMLElement)
+    const from = current < 0 ? (delta > 0 ? -1 : 0) : current
+    const next = ((from + delta) % all.length + all.length) % all.length
+    all[next]?.focus()
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      move(1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      move(-1)
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      const all = Array.from(ref.current?.querySelectorAll<HTMLElement>(MENUITEM_SELECTOR) ?? [])
+      all[event.key === 'Home' ? 0 : all.length - 1]?.focus()
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault()
+      onClose()
+    }
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      {...rest}
+      className={className}
+      role="menu"
+      data-testid={testid}
+      tabIndex={-1}
+      style={{ left: pos.x, top: pos.y }}
+      onKeyDown={onKeyDown}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {children}
+    </div>,
+    document.body
+  )
+}
+
+/**
+ * 通用上下文菜单（实施-12 U-2）：动作列表版本，基于 `ContextMenuSurface`。
  *
  * 键盘：打开即聚焦第一项；↑/↓/Home/End 在项间移动；Enter/Space 选中；
  * Esc / Tab 关闭并把焦点还给触发元素。打开期间领一个 overlay blocker
@@ -44,82 +179,8 @@ export function ContextMenu({
   onClose: () => void
   testid?: string
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
-  const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
-
-  useLayoutEffect(() => {
-    if (!open || !anchor) return
-    const el = ref.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const margin = 8
-    const maxX = Math.max(margin, window.innerWidth - rect.width - margin)
-    const maxY = Math.max(margin, window.innerHeight - rect.height - margin)
-    setPos({ x: Math.min(Math.max(margin, anchor.x), maxX), y: Math.min(Math.max(margin, anchor.y), maxY) })
-  }, [open, anchor, items.length])
-
-  /* 打开即聚焦第一项（键盘用户不用先 Tab 进去） */
-  useEffect(() => {
-    if (!open) return
-    const first = ref.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')
-    first?.focus()
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return undefined
-    return acquireOverlayBlocker('context-menu')
-  }, [open, acquireOverlayBlocker])
-
-  const focusAt = useCallback((index: number): void => {
-    const all = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? [])
-    if (!all.length) return
-    const next = ((index % all.length) + all.length) % all.length
-    all[next]?.focus()
-  }, [])
-
-  useEffect(() => {
-    if (!open) return undefined
-    const onDown = (event: MouseEvent): void => {
-      if (!ref.current?.contains(event.target as Node)) onClose()
-    }
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
-  }, [open, onClose])
-
-  if (!open || !anchor) return null
-
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const all = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? [])
-    const current = all.indexOf(document.activeElement as HTMLElement)
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      focusAt(current + 1)
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      focusAt(current - 1)
-    } else if (event.key === 'Home') {
-      event.preventDefault()
-      focusAt(0)
-    } else if (event.key === 'End') {
-      event.preventDefault()
-      focusAt(all.length - 1)
-    } else if (event.key === 'Escape' || event.key === 'Tab') {
-      event.preventDefault()
-      onClose()
-    }
-  }
-
-  return createPortal(
-    <div
-      ref={ref}
-      className="ctx-menu"
-      role="menu"
-      data-testid={testid}
-      style={{ left: pos.x, top: pos.y }}
-      onKeyDown={onKeyDown}
-      onContextMenu={(event) => event.preventDefault()}
-    >
+  return (
+    <ContextMenuSurface open={open} anchor={anchor} onClose={onClose} testid={testid}>
       {items.map((item) => (
         <button
           key={item.id}
@@ -139,7 +200,6 @@ export function ContextMenu({
           <span>{item.label}</span>
         </button>
       ))}
-    </div>,
-    document.body
+    </ContextMenuSurface>
   )
 }

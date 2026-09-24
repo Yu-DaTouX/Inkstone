@@ -61,12 +61,22 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
         runFiles.set(runId, DEST)
         return { ok: true, runId, sessionFile: DEST }
       },
-      send: async (runId, text) => {
+      send: async (runId, text, resumeId) => {
         events.push(`send:${runId}`)
-        if (opts.send) return opts.send(runId, text, { files, runFiles })
+        if (opts.send) return opts.send(runId, text, { files, runFiles, resumeId })
         /* 真实 pi 的行为：消息落进会话文件（这里就是“磁盘证据”） */
         const file = runFiles.get(runId)
-        if (file) files.set(file, `${files.get(file) ?? ''}\n${text}\n`)
+        if (file) {
+          const resume = `${files.get(file) ?? ''}\n${text}\n`
+          const started = opts.startedReceipt === false
+            ? ''
+            : `${JSON.stringify({
+                type: 'custom',
+                customType: 'yan-handoff-started',
+                data: { operationId: resumeId, hook: 'before_provider_request' }
+              })}\n`
+          files.set(file, resume + started)
+        }
         return { ok: true }
       },
       readSessionText: async (path) => files.get(path) ?? null,
@@ -138,6 +148,15 @@ export async function runHandoffRunnerTests(ok, runnerModule, transactionService
 
       const tx = h.transactions.get('h-1')
       ok(tx.stage === 'resumed' && tx.destinationSession === DEST, '事务日志也记到了 resumed + 目的会话')
+      const receipts = tx.receipts ?? {}
+      ok(
+        typeof receipts.persistedAt === 'number' &&
+          typeof receipts.startedAt === 'number' &&
+          receipts.persistedAt >= (receipts.sentAt ?? 0) &&
+          receipts.startedAt >= receipts.persistedAt,
+        '事务区分已投递回执与同 operationId 的显式启动回执',
+        JSON.stringify(receipts)
+      )
       ok(tx.steps.length === 5, `五个前进步骤都留了日志（实际 ${tx.steps.length}）`)
       ok(tx.steps.every((s, i, all) => i === 0 || all[i - 1].to === s.from), '步骤日志首尾相连，没有跳步')
       /*
