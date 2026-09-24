@@ -29,7 +29,7 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem } from './queue-items'
-import { clearStaleRunning, EMPTY_COMPACTION_STATE, reduceCompaction, type CompactionState } from './compaction'
+import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { activeContextPolicy, contextPolicySettings } from './context-policy'
 import {
   contextBudget,
@@ -41,6 +41,7 @@ import {
   type ResolvedContextPolicy
 } from '../shared/context-policy'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { projectPackageDirs } from './packages'
 import { turnTiming } from '../shared/turn-timing'
 import { toolWaitSpans } from '../shared/turns'
 import {
@@ -278,6 +279,27 @@ function imageFailureDetail(error: unknown): string {
 }
 
 /* AgentController */
+
+/**
+ * 项目 `.pi/settings.json` 里登记的 pi 包 → 显式 `--extension` 参数。
+ *
+ * 砚默认 runner 带 `--no-extensions`（01-S5），pi 会关闭「发现 + 配置」的扩展加载，
+ * 项目 settings 的 `packages` 也在其中；显式 `--extension` 是唯一仍会加载的通道。
+ * 显式传入绕过了 pi 自己的项目信任闸门，所以这里必须自己补上：只有项目已被
+ * 持久信任（`trust.json` 标记 true）才加载，范围与 pi 一致（整个项目 `.pi` 资源）。
+ */
+async function projectPiPackageArgs(cwd: string): Promise<string[]> {
+  let trusted = false
+  try {
+    const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, 'trust.json'), 'utf8')) as unknown
+    trusted = projectTrustedFrom(raw, cwd)
+  } catch {
+    /* 读不到 trust.json 一律当「未信任」：fail closed，不擅自加载项目资源。 */
+    trusted = false
+  }
+  if (!trusted) return []
+  return projectPackageDirs(cwd, PI_AGENT_DIR).flatMap((dir) => ['--extension', dir])
+}
 
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
@@ -770,6 +792,8 @@ export class AgentController extends EventEmitter {
     const managedSkillArgs = this.capabilityOpts?.projectId
       ? await activeSkillArgs(YAN_DIR, this.capabilityOpts.projectId)
       : []
+    /* 项目 settings 登记的 pi 包：`--no-extensions` 会关掉它们，这里显式补回。 */
+    const projectPackageArgs = await projectPiPackageArgs(this.cwd)
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -817,6 +841,8 @@ export class AgentController extends EventEmitter {
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
+        /* 项目已授权登记的 pi 包：显式路径不受 `--no-extensions` 影响（见函数注释）。 */
+        ...projectPackageArgs,
         /*
          * 测试通道：`YAN_PROBE_SKILL` 指定一个 SKILL.md 时，像受管技能那样
          * 用显式 `--skill` 传进去。产品自 01-S5 起带 `--no-skills`，
