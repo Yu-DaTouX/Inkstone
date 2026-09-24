@@ -93,7 +93,7 @@ npm run launch
 
 The launcher checks dependencies, prepares the bundled runtime when needed, and builds the app. Existing checkouts can also use `启动-砚.cmd`. For development, use `开发-砚.cmd` or `npm run launch:dev`.
 
-Read the [workspace guidelines](AGENTS.md) before contributing. See the [engineering documentation](docs/README.md) for implementation and validation details, currently primarily in Chinese.
+Read the [contribution guide](docs/CONTRIBUTING.md) and [AI collaboration rules](AGENTS.md). Architecture, build, and release guidance are in the [documentation index](docs/README.md).
 
 </details>
 

@@ -21,7 +21,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const TARGETS = [
   join(root, 'src/renderer/src/styles'),
-  join(root, 'docs/design/prototype.html')
+  join(root, 'scripts/design/prototype.html')
 ]
 
 /** 收集要检查的文件 */

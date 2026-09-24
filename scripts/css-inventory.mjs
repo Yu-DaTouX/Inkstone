@@ -152,7 +152,7 @@ const out = md.join('\n')
 const content = out.replace(/\n+$/, '') + '\n'
 if (process.argv.includes('--check')) {
   /* 门禁：归属表必须与当前样式一致（V-0 D1） */
-  const target = join(root, 'docs/design/CSS-归属表.md')
+  const target = join(root, 'scripts/design/CSS-归属表.md')
   const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
   if (existing !== content) {
     console.error(`✗ ${target} 与当前样式不一致 —— 跑 npm run measure:css 重新生成`)
@@ -161,7 +161,7 @@ if (process.argv.includes('--check')) {
     console.log(`✓ ${target} 与当前样式一致`)
   }
 } else if (process.argv.includes('--md')) {
-  const target = join(root, 'docs/design/CSS-归属表.md')
+  const target = join(root, 'scripts/design/CSS-归属表.md')
   writeFileSync(target, content, 'utf8')
   console.log(`已写入 ${target}`)
   console.log(`  文件 ${stats.filter((s) => !s.missing).length} 个 / 合计 ${totalLines} 行`)

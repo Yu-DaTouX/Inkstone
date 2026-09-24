@@ -15,7 +15,7 @@
  * 之前要确认语义真的是「错误色」，不是恰好同色的别的含义。
  *
  * 用法： node scripts/css-drift.mjs [--md]
- *   --md  写入 docs/design/CSS-散落值清单.md
+ *   --md  写入 scripts/design/CSS-散落值清单.md
  */
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -283,7 +283,7 @@ function renderMarkdown(report) {
 const report = analyse()
 if (process.argv.includes('--check')) {
   /* 门禁：散落值清单必须与当前样式一致（V-0 D1 的同类漂移） */
-  const file = join(root, 'docs/design/CSS-散落值清单.md')
+  const file = join(root, 'scripts/design/CSS-散落值清单.md')
   const content = renderMarkdown(report).replace(/\n+$/, '') + '\n'
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
   if (existing !== content) {
@@ -293,7 +293,7 @@ if (process.argv.includes('--check')) {
     console.log(`✓ ${file} 与当前样式一致`)
   }
 } else if (process.argv.includes('--md')) {
-  const file = join(root, 'docs/design/CSS-散落值清单.md')
+  const file = join(root, 'scripts/design/CSS-散落值清单.md')
   writeFileSync(file, renderMarkdown(report).replace(/\n+$/, '') + '\n')
   console.log(`已写入 ${file}`)
   const t = [...report.perFile.values()].reduce(

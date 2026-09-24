@@ -12,7 +12,7 @@
  * 并标出「同一选择器内重复定义」的那种真正的冗余。
  *
  * 用法： node scripts/css-tokens.mjs [--md]
- *   --md  写入 docs/design/CSS-令牌清单.md
+ *   --md  写入 scripts/design/CSS-令牌清单.md
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { readStyleOrder } from './lib/css-order.mjs'
@@ -182,7 +182,7 @@ const out = md.join('\n')
 const content = out.replace(/\n+$/, '') + '\n'
 if (process.argv.includes('--check')) {
   /* 门禁：清单必须与当前样式一致，防止加载顺序/令牌又被改而文档没跟上（V-0 D1） */
-  const target = join(root, 'docs/design/CSS-令牌清单.md')
+  const target = join(root, 'scripts/design/CSS-令牌清单.md')
   const existing = existsSync(target) ? readFileSync(target, 'utf8') : ''
   if (existing !== content) {
     console.error(`✗ ${target} 与当前样式不一致 —— 跑 npm run measure:css 重新生成`)
@@ -191,7 +191,7 @@ if (process.argv.includes('--check')) {
     console.log(`✓ ${target} 与当前样式一致`)
   }
 } else if (process.argv.includes('--md')) {
-  const target = join(root, 'docs/design/CSS-令牌清单.md')
+  const target = join(root, 'scripts/design/CSS-令牌清单.md')
   writeFileSync(target, content, 'utf8')
   console.log(`已写入 ${target}`)
   console.log(`  选择器分组 ${selOrder.length} 个 / 变量 ${totalVars} 个 / 其中重复定义 ${redundant} 个`)
