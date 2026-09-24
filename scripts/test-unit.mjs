@@ -1217,6 +1217,24 @@ const quotaTone = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/quota-tone.mjs'))
 )
 
+/*
+ * 历史消息编号（src/main/normalize.ts）。
+ *
+ * 盯住一个回归：Pi 0.87 起会把 system prompt 写进会话 JSONL，历史读回的
+ * `m<idx>` 必须与实时视图同口径，否则回合计时锚点（`anchorId`）在重启后
+ * 全部对不上（用时与「已中断」消失）。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/normalize.ts'],
+    outfile: 'out/test/normalize.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+
 let pass = 0
 let fail = 0
 const ok = (cond, label, extra = '') => {
@@ -2945,6 +2963,40 @@ await runGitRepoTests(ok)
     .map((action) => `goal.${action}`)
     .filter((command) => !capabilityServerText.includes(`'${command}'`))
   ok(unregistered.length === 0, 'yan CLI：目标状态命令已在宿主 KNOWN_COMMANDS 登记', unregistered.join(', '))
+}
+
+/*
+ * 历史消息编号：必须与实时视图同一口径。
+ *
+ * Pi 0.87 起会把 system prompt 作为一条 `type:"message"` 写进会话 JSONL，
+ * 而实时事件流看不到它。如果历史读回仍按 raw 下标编号，用户消息会从 `m0`
+ * 变成 `m1`，实时写入的回合计时锚点就全部对不上（重启后用时与「已中断」
+ * 消失）。这里把两代 JSONL 的形状都钉住。
+ */
+{
+  const { normalizeHistory, normalizeMessage } = await import('../out/test/normalize.mjs')
+  const userMsg = { role: 'user', content: '你好' }
+  const asstMsg = { role: 'assistant', content: [{ type: 'text', text: '在' }] }
+
+  const legacy = normalizeHistory([userMsg, asstMsg])
+  ok(
+    legacy[0]?.id === 'm0' && legacy[1]?.id === 'm1',
+    '历史编号：旧版 JSONL（无 system）从 m0 起',
+    legacy.map((m) => m.id).join(',')
+  )
+
+  const withSystem = normalizeHistory([{ role: 'system', content: 'prompt' }, userMsg, asstMsg])
+  ok(
+    withSystem.length === 2 && withSystem[0]?.id === 'm0' && withSystem[0]?.role === 'user',
+    '历史编号：跳过 Pi 0.87 写进 JSONL 的 system，用户消息仍是 m0',
+    withSystem.map((m) => `${m.id}:${m.role}`).join(',')
+  )
+
+  const liveFirst = normalizeMessage(userMsg, 0)
+  ok(
+    !!liveFirst && liveFirst.id === withSystem[0]?.id,
+    '历史与实时的用户消息 id 一致（回合计时锚点才对得上）'
+  )
 }
 
 console.log(`\n${pass}/${pass + fail} 通过`)

@@ -36,6 +36,15 @@
     out.push(`  turn-timing.interrupted.session=${target?.path ?? ''}`)
 
     const peek = await window.yan.peekSession(target.path)
+    /* 诊断：把历史消息 id / 角色 / 是否挂上计时打出来（匹配失败时看这个） */
+    out.push(
+      '  turn-timing.interrupted.messages=' +
+        JSON.stringify(
+          (peek?.messages ?? [])
+            .slice(-8)
+            .map((m) => ({ id: String(m.id ?? ''), role: m.role, t: m.turnTiming ? 1 : 0 }))
+        )
+    )
     const timed = (peek?.messages ?? []).filter((m) => m.turnTiming)
     const record = timed[timed.length - 1]?.turnTiming
     ok(!!record, `peek 回来的历史带计时记录（${timed.length} 条）`)
