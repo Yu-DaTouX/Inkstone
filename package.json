@@ -6,11 +6,11 @@
   "author": "Yu-DaTouX",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Yu-DaTouX/yan--agent.git"
+    "url": "https://github.com/Yu-DaTouX/Inkstone.git"
   },
-  "homepage": "https://github.com/Yu-DaTouX/yan--agent#readme",
+  "homepage": "https://github.com/Yu-DaTouX/Inkstone#readme",
   "bugs": {
-    "url": "https://github.com/Yu-DaTouX/yan--agent/issues"
+    "url": "https://github.com/Yu-DaTouX/Inkstone/issues"
   },
   "keywords": [
     "agent",
@@ -42,9 +42,9 @@
     "test:unit": "node scripts/test-unit.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-skill-files-scheduler.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
-    "audit:project": "node .audit-project.cjs",
-    "audit:refs": "node .audit-deep.cjs",
-    "audit:repros": "node .audit-repros.cjs",
+    "audit:project": "node scripts/audit/project.cjs",
+    "audit:refs": "node scripts/audit/deep.cjs",
+    "audit:repros": "node scripts/audit/repros.cjs",
     "lint:css": "node scripts/lint-css.mjs",
     "lint:layers": "node scripts/css-layer-check.mjs --selftest",
     "measure:design": "electron docs/design/measure-design.mjs",

@@ -7,10 +7,10 @@
 <p align="center">砚 · 一个专注于内容与行动的桌面 AI 工作空间。</p>
 
 <p align="center">
-  <a href="https://github.com/Yu-DaTouX/yan--agent/releases">下载</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/releases">下载</a> ·
   <a href="#开始使用">快速开始</a> ·
   <a href="docs/GETTING_STARTED.md">使用指南</a> ·
-  <a href="https://github.com/Yu-DaTouX/yan--agent/issues">反馈</a> ·
+  <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
   <a href="README_EN.md">English</a>
 </p>
 <p align="center"><sub>Windows · 多模型接入 · 深浅主题 · MIT 开源</sub></p>
@@ -58,7 +58,7 @@ Inkstone 的界面围绕“墨色工作空间”设计：
 
 ### 下载 Windows 版本
 
-前往 [Releases](https://github.com/Yu-DaTouX/yan--agent/releases)，按发布说明选择安装版、单文件便携版或 ZIP 版。ZIP 版解压后运行 `砚.exe`；发行包包含 pi 运行时，无需单独安装 pi。
+前往 [Releases](https://github.com/Yu-DaTouX/Inkstone/releases)，按发布说明选择安装版、单文件便携版或 ZIP 版。ZIP 版解压后运行 `砚.exe`；发行包包含 pi 运行时，无需单独安装 pi。
 
 **发行包与开发分支可能不同步。** 本页功能介绍和截图面向开发分支，具体发行版内容以对应发布说明为准。
 
@@ -78,7 +78,7 @@ Inkstone 的界面围绕“墨色工作空间”设计：
 
 ## 开源与反馈
 
-欢迎通过 [Issues](https://github.com/Yu-DaTouX/yan--agent/issues) 反馈问题或提出建议。请附上应用版本、复现步骤与必要截图，并隐去密钥和私人内容。
+欢迎通过 [Issues](https://github.com/Yu-DaTouX/Inkstone/issues) 反馈问题或提出建议。请附上应用版本、复现步骤与必要截图，并隐去密钥和私人内容。
 
 <details>
 <summary>开发者：从源码运行与参与贡献</summary>
@@ -88,8 +88,8 @@ Inkstone 使用 Electron、React 和 TypeScript，并由 [pi](https://github.com
 准备 Git、Node.js（建议 24）和 npm，在 PowerShell 中执行：
 
 ```powershell
-git clone https://github.com/Yu-DaTouX/yan--agent.git
-cd yan--agent
+git clone https://github.com/Yu-DaTouX/Inkstone.git
+cd Inkstone
 npm install -g @earendil-works/pi-coding-agent
 npm run launch
 ```
