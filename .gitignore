@@ -62,3 +62,14 @@ resources/pi-runtime/
 /goal-plan.json
 /tmp-image-capability-query.json
 /nul
+
+# Internal planning and evidence remain local
+/.local-docs/
+/docs/archive/
+/docs/plan/
+/docs/design/
+/docs/dev/*
+!/docs/dev/RELEASING.md
+/docs/WORKSPACE.md
+/docs/ARCHITECTURE.html
+/docs/ARCHITECTURE.mmd
