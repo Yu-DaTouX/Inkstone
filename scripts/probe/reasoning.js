@@ -6,12 +6,12 @@
  *
  * 验收重点：
  *   · 默认**折叠**成一行，显示原文里最新的一句（正在成形的末句也算）
- *   · 单击头部在**原位**展开全文，限高 min(70vh, 620px)，内部滚动，入口不掉
+ *   · 单击头部在**原位**展开半窗宽、窗口高四分之一的详情，内部滚动，入口不掉
  *   · 开合只由用户动作驱动：流式不自动弹开，回合结束**不自动收起**
  *   · 展开后贴底才跟随新增内容；用户上滚阅读时位置保持
  *   · 逐字按字素推进，emoji 不被拆坏；reduced-motion 直接给全文且运行中切换生效
  *   · 没有推理不渲染空壳
- *   · 两段推理的顺序与 DOM 节点身份（实施-14 F6）
+ *   · 多段推理汇总在正文下方，正文续写时过程节点不重挂
  *   · 切会话（换消息 id）不继承展开状态
  *
  * ⚠️ 这份探针在 2026-09-23 之前断言的是**相反**的契约
@@ -26,7 +26,7 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
 
-  /* 外层（.reason-body）才承载 hidden/aria/限高；内层 data-testid 只承载文字。 */
+  /* 外层（.reason-body）承载 aria/尺寸/滚动；内层 data-testid 只承载文字。 */
   const body = () => q('.reason-body')
   const inner = () => q('[data-testid="reasoning-body"]')
   const peek = () => q('[data-testid="reasoning-preview"]')?.textContent ?? null
@@ -157,6 +157,29 @@
     ok(peekEl?.firstElementChild?.getAttribute('dir') === 'ltr', '预览内层 dir=ltr（隔离 bidi，顺序不重排）')
   }
 
+  /*
+   * 详情栏不再有三行标题（用户：「直接写内容就行了 现在有三行标题太复杂」）。
+   * 只留正文 —— 模型的显式 Markdown 标题也不再被单独拎出来当标签。
+   */
+  push([
+    { id: 'reason-title-user', role: 'user', text: 'title case' },
+    { id: 'reason-title-assistant', role: 'assistant', text: '', thinking: '## 核对图片 URL\n\n先检查真实路径。' }
+  ])
+  setTurnStreaming(false)
+  await sleep(150)
+  click('[data-testid="reasoning-toggle"]')
+  await sleep(260)
+  ok(!q('.reason-window-head'), '详情栏没有单独的标题区（只剩内容）')
+  ok(
+    !q('[data-testid="reasoning-title"]'),
+    '不再把模型原文的 Markdown 标题拎出来当标签'
+  )
+  ok(
+    (q('[data-testid="reasoning-body"]')?.textContent ?? '').includes('核对图片 URL'),
+    '标题文字仍作为**正文**留在内容里（没有被丢掉）'
+  )
+  click('[data-testid="reasoning-toggle"]')
+
   /* ---- 3. 单击头部：在原位展开全文 ---- */
   injectThinking()
   setTurnStreaming(true)
@@ -169,22 +192,27 @@
   ok(!q('[data-testid="reasoning-preview"]'), '展开态不再显示单行预览')
 
   const expandedCS = getComputedStyle(body())
-  out.push(`  展开后 max-height=${expandedCS.maxHeight} overflow-y=${expandedCS.overflowY}`)
-  ok(expandedCS.maxHeight !== 'none', '全文展开后有高度上限')
+  out.push(`  展开后 height=${expandedCS.height} overflow-y=${expandedCS.overflowY}`)
+  ok(body().getBoundingClientRect().height <= window.innerHeight * 0.25 + 2, '全文展开后有高度上限')
   ok(/auto|scroll/.test(expandedCS.overflowY), '超出上限的部分自己滚动')
   ok(overflows(), '超长全文确实发生内部滚动')
-  const capExpected = Math.min(window.innerHeight * 0.7, 620)
+  /*
+   * 高度口径：窗口高的四分之一（用户 2026-09-25：「推理过程和命令的
+   * 展开大小也要限制为四分之一」，三处统一：产物图片含衬底 / 推理过程 /
+   * 命令列表）。早先是「半窗高」，那是「面积 1/4」的算法 ——
+   * 配上 50vw 的宽度实际会占掉中栏整宽 + 半个窗口高，看着像半屏。
+   */
+  const capExpected = window.innerHeight * 0.25
   const capActual = body().getBoundingClientRect().height
   ok(
-    capActual <= capExpected + 1,
-    `展开高度受 min(70vh,620px) 约束（${Math.round(capActual)}px ≤ ${Math.round(capExpected)}px）`
+    Math.abs(capActual - capExpected) <= 2,
+    `展开高度是窗口高的四分之一（${Math.round(capActual)}px ≈ ${Math.round(capExpected)}px）`
   )
+  ok(body().getBoundingClientRect().width <= window.innerWidth * 0.5 + 1, '展开宽度不超过半窗宽')
 
   /*
    * 展开后不能被输入框挡住（用户：「展开这个窗口的时候会被输入框挡住」）。
-   * 这个块长在消息流里，展开后变高；如果它贴着流底部，多出来的那一截
-   * 会落到输入框后面。展开时会把块滚进可视区（`block: 'nearest'`），
-   * 所以断言展开态整体的底边不越过输入框顶边。
+   * 断言展开态整体的底边不越过输入框顶边 —— 展开时会把块滚进可视区。
    */
   const inputTop = q('.composer')?.getBoundingClientRect().top ?? window.innerHeight
   const openBottom = q('.reason')?.getBoundingClientRect().bottom ?? 0
@@ -227,7 +255,7 @@
   /* ---- 5. 同一头部入口收起，回到最新句预览 ---- */
   click('[data-testid="reasoning-toggle"]')
   await sleep(300)
-  ok(body().hasAttribute('hidden'), '同一头部入口收起全文')
+  ok(body().getAttribute('aria-hidden') === 'true', '同一头部入口收起全文并对辅助技术隐藏')
   ok(!isOpen(), '收起后正文不可见')
   ok(!!peek(), '收起后回到一行最新句预览')
   ok(q('[data-testid="reasoning-toggle"]')?.getAttribute('aria-expanded') === 'false', '头部按钮 aria-expanded=false')
@@ -311,19 +339,21 @@
       for (const cb of [...listeners]) cb({ matches: v })
     }
 
-    injectThinking()
+    /* 超过 900 字素的突发块按现有防积压规则立即追齐；这里测逐字路径。 */
+    const typewriterText = THINK.slice(0, 600)
+    injectThinking(typewriterText)
     setTurnStreaming(true)
     await sleep(200)
     const partial = (inner()?.textContent ?? '').length
-    ok(partial < THINK.length, `挂载后仍逐字（200ms 时 ${partial}/${THINK.length}）`)
+    ok(partial < typewriterText.length, `挂载后仍逐字（200ms 时 ${partial}/${typewriterText.length}）`)
     setReduce(true)
     await sleep(120)
     const full = (inner()?.textContent ?? '').length
-    log(`  运行中切 reduce 后文本长度 = ${full} / 全文 ${THINK.length}`)
-    ok(full >= THINK.length, '已挂载时切到 prefers-reduced-motion 立即给完整推理文本')
+    log(`  运行中切 reduce 后文本长度 = ${full} / 全文 ${typewriterText.length}`)
+    ok(full >= typewriterText.length, '已挂载时切到 prefers-reduced-motion 立即给完整推理文本')
     setReduce(false)
     await sleep(120)
-    ok((inner()?.textContent ?? '').length >= THINK.length, '切回默认偏好不倒退已显示内容')
+    ok((inner()?.textContent ?? '').length >= typewriterText.length, '切回默认偏好不倒退已显示内容')
     window.matchMedia = realMM
   }
 
@@ -343,13 +373,14 @@
       { id: 'sessB-user', role: 'user', text: '会话 B' },
       { id: 'sessB-a', role: 'assistant', text: '', thinking: '乙会话的另一段思考。', thinkingLive: true }
     ])
-    await sleep(500)
+    for (let i = 0; i < 30 && !peek(); i++) await sleep(100)
+    log(`  切会话预览诊断：${JSON.stringify(peek())} / 正文=${JSON.stringify(inner()?.textContent?.slice(0, 80))}`)
     ok(document.querySelectorAll('[data-testid="reasoning"]').length === 1, '切会话后只剩一个推理块')
     ok(!isOpen(), '切会话后回到默认折叠（不继承上一个会话的展开状态）')
-    ok(!!peek(), '切会话后仍有最新句预览入口')
+    ok((peek() ?? '').startsWith('乙会话'), '切会话后预览从新会话内容开始（流式逐字继续推进）')
   }
 
-  /* ---- 10. 多段推理的顺序与节点身份（实施-14 F6） ---- */
+  /* ---- 10. 多段回复的过程汇总与节点身份 ---- */
   {
     const messages = [
       { id: 'segment-user', role: 'user', text: '连续完成任务' },
@@ -358,17 +389,22 @@
     ]
     push(messages)
     setTurnStreaming(true)
-    for (let i = 0; i < 30 && document.querySelectorAll('[data-testid="reasoning"]').length < 2; i++) await sleep(50)
+    /* sync 后先等新回合替换旧会话；只等 reasoning 存在会抓到上一场景的节点。 */
+    for (let i = 0; i < 40 && !q('[data-turn-id="segment-a"] [data-testid="reasoning"]'); i++) await sleep(50)
     const caps = [...document.querySelectorAll('[data-testid="reasoning"]')]
     const firstResponse = q('[data-testid="turn-response"]')
+    const beforeArticle = q('[data-testid="reasoning"]')?.closest('[data-turn-id]')
+    log(`  多段诊断：推理=${caps.length} 回复=${document.querySelectorAll('[data-testid="turn-response"]').length} 解说=${document.querySelectorAll('[data-testid="turn-commentary"]').length} 回合=${beforeArticle?.getAttribute('data-turn-id')} 顺序=${firstResponse && caps[0] ? firstResponse.compareDocumentPosition(caps[0]) : 'missing'}`)
     ok(
-      caps.length === 2 && !!firstResponse && !!(firstResponse.compareDocumentPosition(caps[1]) & Node.DOCUMENT_POSITION_FOLLOWING),
-      '第二段还没正文时，推理就跟在第一段正式回复后'
+      caps.length === 1 && !!firstResponse && !!(firstResponse.compareDocumentPosition(caps[0]) & Node.DOCUMENT_POSITION_FOLLOWING),
+      '第二段还没正文时，过程记录汇总在正式回复下方'
     )
     patch('segment-b', { text: '第二部分完成', thinkingLive: false })
     for (let i = 0; i < 30 && document.querySelectorAll('[data-testid="turn-response"]').length < 2; i++) await sleep(50)
     const updatedCaps = [...document.querySelectorAll('[data-testid="reasoning"]')]
-    ok(caps.length === 2 && updatedCaps[0] === caps[0] && updatedCaps[1] === caps[1], '第二段正文到达不重挂推理节点，保留展开状态')
+    const afterArticle = q('[data-testid="reasoning"]')?.closest('[data-turn-id]')
+    log(`  续写诊断：推理=${updatedCaps.length} 回复=${document.querySelectorAll('[data-testid="turn-response"]').length} 同节点=${updatedCaps[0] === caps[0]} 同回合节点=${afterArticle === beforeArticle} 回合=${afterArticle?.getAttribute('data-turn-id')}`)
+    ok(caps.length === 1 && updatedCaps.length === 1 && updatedCaps[0] === caps[0], '第二段正文到达不重挂过程节点，保留展开状态')
   }
 
   return out.join('\n')

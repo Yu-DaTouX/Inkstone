@@ -55,6 +55,7 @@ export function Section({
   titleKey,
   extra,
   defaultOpen = true,
+  compactWhenFloating = false,
   testId,
   handle,
   /** 受控展开态（不传则内部自管）。任务栏用它做「全部完成自动收起」 */
@@ -65,6 +66,8 @@ export function Section({
   titleKey: MessageKey
   extra?: React.ReactNode
   defaultOpen?: boolean
+  /** 浮动后仍保留可展开的摘要（上下文与额度）。 */
+  compactWhenFloating?: boolean
   testId?: string
   /** 显式传把手（不传则用 context 里的） */
   handle?: React.ReactNode
@@ -75,8 +78,8 @@ export function Section({
   const [openState, setOpenState] = useState(defaultOpen)
   const ctxHandle = useSectionHandle()
   const grip = handle ?? ctxHandle
-  /* 浮动磁贴自带标题栏；分区标题在浮动内容里隐藏，内容必须保持展开。 */
-  const open = openProp ?? (grip === null ? true : openState)
+  /* 普通磁贴浮动后直接展示内容；摘要磁贴保留原来的开合状态。 */
+  const open = openProp ?? (grip === null && !compactWhenFloating ? true : openState)
   const setOpen = (v: boolean): void => {
     setOpenState(v)
     onOpenChange?.(v)
@@ -139,7 +142,7 @@ export function Section({
   }, [open, mounted])
 
   return (
-    <section className={`rp-sec ${open ? 'open' : ''}`} data-sec={testId} data-testid={testId}>
+    <section className={`rp-sec ${open ? 'open' : ''} ${compactWhenFloating ? 'rp-summary-sec' : ''}`} data-sec={testId} data-testid={testId}>
       <div className="rp-sec-row">
         {grip}
         <button className="rp-sec-head" onClick={() => setOpen(!open)} aria-expanded={open}>

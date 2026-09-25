@@ -1371,7 +1371,7 @@ function QuotaSection() {
     !highest || item.window.used / item.window.total > highest.used / highest.total ? item.window : highest, null)
   const ringPct = ringWindow && ringWindow.total > 0 ? ringWindow.used / ringWindow.total * 100 : (mainPct ?? null)
   return (
-    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} extra={
+    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} compactWhenFloating extra={
       <span className="rp-header-usage">
         <UsageRing percent={ringPct} tone={ringPct === null ? '' : quotaTone(ringPct, anyExceeded)} />
         <span className="rp-header-values" title={provider || undefined}>
@@ -1393,7 +1393,7 @@ function QuotaSection() {
 
       {/* 主值：本月已用（有分窗口时）—— 不再取“最紧窗口”的 used */}
       {mainText ? (
-        <div className="rp-quota-main" data-testid="quota-main">
+        <div className={`rp-quota-main ${hasWindows ? '' : 'rp-mini-duplicate'}`} data-testid="quota-main">
           <span className="rp-quota-main-label">{mainLabel}</span>
           <span className={`rp-v big ${mainTone}`} data-testid="quota-main-value">
             {mainText}
@@ -1452,7 +1452,7 @@ function QuotaSection() {
                      * 三档都要落到类名上：以前 ok 档被写成空字符串，于是「低用量」
                      * 用的是 .rp-v 的默认色（--fg-dim 灰）—— 而用户要的是**绿色**。
                      */
-                    className={`rp-v ${tone}`}
+                    className={`rp-v ${tone} ${compactWindows.some(({ window }) => window.id === w.id) ? 'rp-mini-duplicate' : ''}`}
                     data-testid={`quota-win-${w.id}-pct`}
                   >
                     {t('quota.usedInline', { pct: realPct.toFixed(1) })}
@@ -1682,7 +1682,7 @@ function ContextSection() {
   const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
   return (
-    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} extra={
+    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} compactWhenFloating extra={
       /*
        * 压缩中就把摘要位让给状态（用户 2026-09-25：压缩时界面上好几处都在转，
        * 只留这一个）。
@@ -1711,11 +1711,7 @@ function ContextSection() {
         </span>
       )
     }>
-      {/*
-       * 主值：一行内给「42%」与「84k / 200k」，标题由外层分区提供，
-       * 下面只跟一条细进度条。阈值/保留量/预留 token 全部收进「详情」——
-       * 它们平时不改变用户要做的事，却占着右栏最贵的位置。
-       */}
+      {/* 保留主值节点供现有探针读取；视觉主值由上方 mini 摘要承载。 */}
       <div className="rp-ctx-main" data-testid="ctx-main" data-mode={workingSetMode ? 'working-set' : 'window'}>
         <span className={`rp-v big ${known ? tone : ''}`}>{known ? `${pctWindow.toFixed(0)}%` : '—'}</span>
         <span className="spacer" />
@@ -1723,7 +1719,6 @@ function ContextSection() {
           {known ? `${fmtK(used)} / ${fmtK(effectiveWin)}` : '—'}
         </span>
       </div>
-
       {/*
        * 工作集那一行（C-5）：主值是物理尺度，这里说清砚什么时候动手。
        * 没有策略（工作集不可得）时不显示 —— 不编一条不存在的线。

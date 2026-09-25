@@ -30,6 +30,7 @@
   }
 
   localStorage.setItem('yan.onboarded', '1')
+  localStorage.removeItem('yan.termSize')
 
   const now = Date.now()
   store.getState().applyPush({
@@ -88,9 +89,10 @@
   const hDefault = term.getBoundingClientRect().height
   out.push(`  默认高度 = ${Math.round(hDefault)}px`)
   ok(
-    hDefault >= 70 && hDefault <= 118,
-    `默认就是「1 行命令 + 2 行输出」的紧凑高度（${Math.round(hDefault)}px，方案 4.3 建议 80–110）`
+    Math.abs(hDefault - window.innerHeight * 0.5) <= 2,
+    `默认高度是半窗高（${Math.round(hDefault)}px）`
   )
+  ok(term.getBoundingClientRect().width <= window.innerWidth * 0.5 + 2, '终端默认宽度不超过半窗宽')
 
   out.push('')
   out.push('=== 2. 调整窗口大小 ===')
@@ -133,7 +135,8 @@
   maxBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(250)
   const hMax = term.getBoundingClientRect().height
-  ok(hMax > hBefore, `点「展开」后更高（${Math.round(hBefore)} → ${Math.round(hMax)}）`)
+  ok(Math.abs(hMax - Math.min(Math.max(200, window.innerHeight * 0.8), window.innerHeight * 0.72)) <= 2,
+    `点「展开」后到 72vh（${Math.round(hBefore)} → ${Math.round(hMax)}）`)
   ok(term.classList.contains('max'), '展开态带 .max 标记')
   maxBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(250)
@@ -146,7 +149,7 @@
   await sleep(250)
   const h4 = q('.term').getBoundingClientRect().height
   out.push(`  复位：${Math.round(h3)}px → ${Math.round(h4)}px`)
-  ok(Math.abs(h4 - hDefault) <= 3, '双击下把手复位回默认紧凑高度')
+  ok(Math.abs(h4 - hDefault) <= 3, '双击下把手复位回默认半窗高')
 
   out.push('')
   out.push('=== 5. 详情分型（方案 4.1）===')

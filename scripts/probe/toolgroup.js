@@ -343,5 +343,49 @@
   ok(gHeadTop1 === gHeadTop2, '列表内部滚动时组头不动（收起入口不会滚丢）')
   ok(!!q('.tgroup-head'), '组头（「调用了 N 次工具/命令」）仍在上方')
 
+  /*
+   * ---- 「查看失败」只看失败项 ----
+   *
+   * 用户：「命令调用的展示旁边的查看失败按钮 点击的时候应该是仅显示失败的项目
+   * 现在是显示了全部」。原来它只做两件事：展开整组 + 展开第一条失败的详情，
+   * 列表里成功行一条不少。
+   */
+  out.push('')
+  out.push('=== 「查看失败」只显示失败项 ===')
+  await inject(
+    [
+      tool('vf1', 'ok', 'echo 1'),
+      tool('vf2', 'error', 'boom-1'),
+      tool('vf3', 'ok', 'echo 2'),
+      tool('vf4', 'error', 'boom-2'),
+      tool('vf5', 'ok', 'echo 3')
+    ],
+    undefined,
+    '-vf'
+  )
+  const vfFail = q('[data-testid="tool-group-fail"]')
+  out.push('  失败角标: ' + JSON.stringify(vfFail?.textContent ?? ''))
+  const vfBtn = q('.tgroup-fail-action')
+  ok(!!vfBtn, '有「查看失败」按钮')
+  ok(vfBtn?.textContent.trim() === '查看失败', '按钮初始文案 =「查看失败」')
+  if (vfBtn) {
+    click(vfBtn)
+    await sleep(400)
+    const vfRows = qa('.tgroup-body .trow')
+    const vfErrs = vfRows.filter((r) => r.getAttribute('data-state') === 'error')
+    out.push(`  过滤后：${vfRows.length} 行 / 其中失败 ${vfErrs.length}`)
+    ok(vfRows.length === 2, `只剩 2 条失败行（实际 ${vfRows.length}）`)
+    ok(vfRows.length > 0 && vfErrs.length === vfRows.length, '剩下的全是失败行（没混入成功的）')
+    const vfBack = q('.tgroup-fail-action')
+    ok(vfBack?.textContent.trim() === '显示全部', '按钮切换为「显示全部」')
+    if (vfBack) {
+      click(vfBack)
+      await sleep(400)
+      const vfAll = qa('.tgroup-body .trow')
+      out.push(`  切回后：${vfAll.length} 行`)
+      ok(vfAll.length === 5, `切回后 5 行都在（实际 ${vfAll.length}）`)
+    }
+  }
+
   return out.join('\n')
 })()

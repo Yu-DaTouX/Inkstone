@@ -9,10 +9,10 @@
 | 顺序 | 文件 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | 292 | 24 | 25 | 1 | 2 |
-| 2 | `app.css` | 535 | 76 | 76 | 1 | 0 |
+| 2 | `app.css` | 561 | 78 | 78 | 1 | 0 |
 | 3 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
 | 4 | `redesign.css` | 1299 | 133 | 147 | 5 | 0 |
-| 5 | `motion.css` | 1456 | 189 | 194 | 5 | 11 |
+| 5 | `motion.css` | 1491 | 194 | 199 | 6 | 11 |
 | 6 | `settings.css` | 670 | 100 | 103 | 0 | 0 |
 | 7 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
 | 8 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
@@ -20,14 +20,14 @@
 | 10 | `shell.css` | 411 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
 | 12 | `rail.css` | 1547 | 219 | 225 | 0 | 0 |
-| 13 | `chat.css` | 1918 | 263 | 267 | 2 | 2 |
-| 14 | `composer.css` | 1779 | 251 | 254 | 2 | 0 |
-| 15 | `tools.css` | 3634 | 549 | 560 | 3 | 4 |
+| 13 | `chat.css` | 2069 | 268 | 272 | 5 | 2 |
+| 14 | `composer.css` | 1780 | 251 | 254 | 2 | 0 |
+| 15 | `tools.css` | 3928 | 586 | 629 | 3 | 5 |
 | 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | 1570 | 226 | 227 | 1 | 0 |
 | 19 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **16309** | **2185** | | | |
+| | **合计** | **16816** | **2234** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -36,10 +36,10 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 17 |
-| `app.css` | 54 |
+| `app.css` | 56 |
 | `stage1.css` | 11 |
 | `redesign.css` | 76 |
-| `motion.css` | 185 |
+| `motion.css` | 190 |
 | `settings.css` | 100 |
 | `electron.css` | 9 |
 | `highlight.css` | 81 |
@@ -47,9 +47,9 @@
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
 | `rail.css` | 219 |
-| `chat.css` | 261 |
+| `chat.css` | 266 |
 | `composer.css` | 250 |
-| `tools.css` | 549 |
+| `tools.css` | 586 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
 | `review.css` | 226 |

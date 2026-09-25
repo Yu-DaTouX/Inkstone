@@ -29,7 +29,7 @@
  *    不要全部弹出」）。一次 agent 跑几十条命令是常态，
  *    已结束的全展开会把回答顶出屏幕。
  */
-import { memo, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -42,7 +42,7 @@ import type { UIToolCall } from '../../../../shared/ipc'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: boolean }) {
+function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolCall; autoOpen?: boolean; openRequest?: number }) {
   const t = useT()
   /** 用户手动开关；null = 跟随默认值 */
   const [manual, setManual] = useState<boolean | null>(null)
@@ -80,6 +80,16 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
   const open = manual ?? (running && autoDetail && autoOpen)
   /** 滚动锚点：展开/收起时让这一行在屏幕上原地不动（方案 4.2） */
   const rowRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openRequest) return
+    setManual(true)
+    const frame = requestAnimationFrame(() => {
+      const row = rowRef.current
+      row?.scrollIntoView({ block: 'nearest' })
+      row?.querySelector<HTMLButtonElement>('.trow-head')?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [openRequest])
   /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
   const kind = detailKind(call.name)
   const wsChanges = readWorkspaceChanges(call.details)
@@ -157,8 +167,9 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
         )}
       </button>
 
-      {open ? (
-        <div className="trow-body">
+      <div className={`trow-expand ${open ? 'open' : ''}`} aria-hidden={!open} inert={!open}>
+        <div className="trow-expand-inner">
+          {open ? <div className="trow-body" data-kind={kind}>
           {/*
            * 工具跑出来的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套
            * 落盘 / 显示路径。放在详情之前 —— 截图就是这次调用的主要结果，
@@ -195,8 +206,9 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
           ) : (
             <ToolResultDetail call={call} />
           )}
+          </div> : null}
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }
@@ -250,7 +262,7 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   )
 }
 
-export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && sameCall(a.call, b.call))
+export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && a.openRequest === b.openRequest && sameCall(a.call, b.call))
 
 /**
  * 一组**已结束**的工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
@@ -264,6 +276,12 @@ export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && 
 function ToolGroupImpl({ tools }: { tools: UIToolCall[] }) {
   const t = useT()
   const [manual, setManual] = useState<boolean | null>(null)
+  const [failureRequest, setFailureRequest] = useState(0)
+  /*
+   * 「只看失败」（用户：「点击的时候应该是仅显示失败的项目 现在是显示了全部」）。
+   * 点「查看失败」后列表只剩失败行，按钮变成「显示全部」可切回。
+   */
+  const [onlyFailed, setOnlyFailed] = useState(false)
   /*
    * 组里有失败的 → 标题上标出来，但**默认仍然收起**（N03）。
    *
@@ -275,26 +293,48 @@ function ToolGroupImpl({ tools }: { tools: UIToolCall[] }) {
    * 但不替用户决定要不要展开。
    */
   const failedCount = tools.filter((c) => c.status === 'error').length
+  const firstFailureId = tools.find((c) => c.status === 'error')?.id
+  const typeCounts = new Map<string, number>()
+  for (const call of tools) {
+    const type = verbOf(call.name, t)
+    typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1)
+  }
+  const typeSummary = [...typeCounts].map(([name, count]) => `${name} ${count}`).join(' · ')
   const open = manual ?? false
+  /* 过滤后的列表：只看失败时只剩 error 行 */
+  const shown = onlyFailed ? tools.filter((c) => c.status === 'error') : tools
 
   if (tools.length === 0) return null
 
   return (
     <div className={`tgroup ${open ? 'open' : ''} ${failedCount > 0 ? 'has-fail' : ''}`} data-testid="tool-group">
-      <button className="tgroup-head" onClick={() => setManual(!open)} aria-expanded={open} data-testid="tool-group-toggle">
-        <Icon name="chevron-right" size={12} className="chev" />
-        <span>{t('tool2.ran', { n: tools.length })}</span>
-        {failedCount > 0 ? (
-          <span className="tgroup-fail" data-testid="tool-group-fail">
-            {t('tool2.failed', { n: failedCount })}
-          </span>
+      <div className="tgroup-top">
+        <button className="tgroup-head" onClick={() => setManual(!open)} aria-expanded={open} data-testid="tool-group-toggle">
+          <Icon name="chevron-right" size={12} className="chev" />
+          <span>{t('tool2.ran', { n: tools.length })}</span>
+          <span className="tgroup-summary">{typeSummary}</span>
+          {failedCount > 0 ? (
+            <span className="tgroup-fail" data-testid="tool-group-fail">
+              {t('tool2.failed', { n: failedCount })}
+            </span>
+          ) : null}
+        </button>
+        {firstFailureId ? (
+          <button className="tgroup-fail-action" onClick={() => {
+            setManual(true)
+            const next = !onlyFailed
+            setOnlyFailed(next)
+            /* 进「只看失败」时顺便把第一条失败的详情展开，省一次点击 */
+            if (next) setFailureRequest((count) => count + 1)
+          }}>
+            {onlyFailed ? t('tool2.viewAll') : t('tool2.viewFailure')}
+          </button>
         ) : null}
-        <span className="spacer" />
-      </button>
+      </div>
       {open ? (
         <div className="tgroup-body">
-          {tools.map((c) => (
-            <ToolRow key={c.id} call={c} />
+          {shown.map((c) => (
+            <ToolRow key={c.id} call={c} openRequest={c.id === firstFailureId ? failureRequest : 0} />
           ))}
         </div>
       ) : null}

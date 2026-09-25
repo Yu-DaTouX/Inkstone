@@ -165,6 +165,15 @@
     await sleep(400)
     ok(qa('[data-testid="float-snap-guide"]').length === 0, '松手后参考线消失（不留在界面上）')
 
+    /* 吸到整个工作区右缘时，指针可能同时落在右栏；松手按产品规则会停靠。
+       Esc 场景需要浮动磁贴，先用同一份已记录 rect 恢复测试前提。 */
+    if (placementOf('queue') !== 'floating') {
+      await putLayout((layoutNow()?.tiles ?? []).map((t) =>
+        t.id === 'queue' ? { ...t, placement: 'floating', rect: afterDrag } : t
+      ))
+    }
+    ok(await until(() => !!q('[data-testid="float-tile-queue"]'), 4000), 'Esc 场景开始前磁贴仍在浮动层')
+
     out.push('\n=== 5. Esc 取消：不写盘、位置还原 ===')
     const beforeEsc = floatRectOf('queue')
     const revBefore = revision()
@@ -248,7 +257,7 @@
 
     return out.join('\n')
   } catch (error) {
-    out.push('  探针出错: ' + (error?.message ?? String(error)))
+    out.push('  ✗ 探针出错: ' + (error?.message ?? String(error)))
     return out.join('\n')
   }
 })()
