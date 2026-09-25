@@ -3617,7 +3617,23 @@ export class AgentController extends EventEmitter {
             this.consumeQueued(norm.text)
           }
         } else if (m?.role === 'assistant') {
-          const id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+          /*
+           * id 必须与 `normalizeMessage` / `normalizeHistory` 用**同一口径**（`m<序号>`）。
+           *
+           * 以前是 `a<时间戳><随机>`，于是同一条消息在实时视图里叫 `a…`、
+           * 重启 / 压缩后从会话文件读回来却叫 `m<idx>` —— 任何按消息 id 挂上去的
+           * 东西全部失配。用户报的就是这个：`yan artifact attach` 的图（以及
+           * 工具产物）在**自动压缩之后集体消失** —— `artifacts.json` 里记的是
+           * `a…`，而 hydrate 重建出来的消息是 `m…`（实测用户本机 11 条记录全是
+           * `a…`）。
+           *
+           * 同一个坑以前在回合计时锚点 `anchorId` 上踩过一次，见 normalize.ts 里
+           * `normalizeHistory` 那段注释。
+           *
+           * 同一轮的多次 `message_start`（一条消息分多个 block）会拿到同一个
+           * id —— 这是对的，它们本来就是同一条消息。
+           */
+          const id = `m${this.messages.length}`
           this.streaming = {
             id,
             text: '',
