@@ -2426,13 +2426,15 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   box-sizing: border-box;
   min-width: 0;
   /*
-   * 高度从「固定 44」改成「最小 44 + 允许换行底」（用户 2026-09-25）：
-   * 右栏拖到最窄时，标题 + 环形 + 摘要摆不进一行 —— 原来是把摘要截掉，
-   * 现在改为摘要整个换到第二行，两边都完整。宽栏下放得下，依旧是一行 44px。
+   * 不允许换行（用户：「变成两行了」）。
+   * 今天早些时候这里刚改成 `flex-wrap: wrap`，意图是「窄栏下摘要整体换到
+   * 第二行而不是把数字截掉，两边都完整」—— 但实际效果是标题一行、
+   * 圆环孤零零在第二行，看起来像布局坏了。改成不换行，放宽不下时
+   * 由摘要自己收缩/截断（见 `.rp-header-usage`）。
    */
   min-height: 44px;
   height: auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 6px 6px 6px 0;
   gap: 8px;
   color: var(--fg);
@@ -2471,9 +2473,15 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  *    `.rp-sec-head` 的 flex-wrap 把整个摘要换到第二行。
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-usage {
-  flex: 0 1 auto;
-  width: min(150px, 100%);
+  /*
+   * 基准宽 150（两张卡的环形要落在同一条竖线上），但**允许收缩**：
+   * 标题栏已改成 nowrap，窄栏时得靠这里让位，否则整个头部顶破容器。
+   * 收缩到放不下时由 `.rp-header-values` 的 ellipsis 收尾。
+   */
+  flex: 0 1 150px;
+  width: auto;
   max-width: none;
+  min-width: 0;
   justify-content: flex-start;
 }
 

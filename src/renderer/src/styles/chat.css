@@ -1826,6 +1826,15 @@
   border: none;
   cursor: pointer;
   min-width: 0;
+  /*
+   * 显式声明不收缩。
+   *
+   * 轨道是 `flex column` + `max-height: 100%` + `overflow-y: auto`：因为
+   * overflow 不是 visible，Chromium 实测**不会**去压扁格子（去掉这行，
+   * 100 轮下命中区仍是 15/15px、轨道自己滚），所以这不是在修什么 bug ——
+   * 只是把「格子保持原高」这个前提写死，不依赖浏览器的默认行为。
+   */
+  flex: none;
 }
 
 .outline-bar {
