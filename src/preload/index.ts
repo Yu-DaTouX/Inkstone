@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
+  AttachmentPruneResult,
+  AttachmentUsage,
   BuiltinCapabilityView,
   CapabilitySettingsSnapshot,
   CapabilitySearchResultView,
@@ -374,6 +376,12 @@ const api: YanBridge = {
   /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
+
+  /* ---- 图片附件：占用与手动清理（不做自动 GC）---- */
+  attachments: {
+    usage: () => invoke<AttachmentUsage>('yan:attachments:usage'),
+    prune: () => invoke<AttachmentPruneResult>('yan:attachments:prune')
+  },
 
   /* ---- 内置浏览器 ---- */
   browser: {

@@ -9,7 +9,7 @@
  * 协议知识仍然集中：pi 的**字段名**只出现在这个文件与 agent.ts 里
  * （HANDOFF §9 原则 1）。
  */
-import type { Usage, UIMessage, UIToolCall } from '../shared/ipc'
+import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
 
 /* pi 的原始类型（只在这里出现） */
 
@@ -61,6 +61,34 @@ export function toUsage(u: PiMessage['usage']): Usage | undefined {
 }
 
 /** 把 pi 的 AgentMessage 归一化成 UIMessage（历史回放用） */
+/**
+ * 抽出一条消息里的图片。
+ *
+ * 用户贴的图与**工具结果里的图**（`yan browser` 截图、渲染出来的图表）在会话
+ * JSONL 里是同一个形状：`{type:'image', data, mimeType}`，只是挂在不同的 role 上。
+ * 历史重读时都走这里落盘，消息里只留文件地址。
+ */
+export function imagesOf(
+  content: unknown,
+  localizeImage?: (mimeType: string, data: string) => string
+): UIMessageImage[] | undefined {
+  if (!Array.isArray(content)) return undefined
+  const out: UIMessageImage[] = []
+  for (const c of content as PiContentBlock[]) {
+    if (c?.type !== 'image') continue
+    const mimeType = c.mimeType ?? 'image/png'
+    /*
+     * 历史重读会注入 `localizeImage`：图片落盘，消息里只留文件地址。
+     * 几十 MB 的 base64 不能进 IPC，而只要它不留下来，重启 / 切会话
+     * 之后就再也找不回图片（用户报的「图片看不到」）。
+     * 实时事件流不走这里，它带来的 base64 原样保留。
+     */
+    const url = localizeImage && c.data ? localizeImage(mimeType, c.data) : ''
+    out.push(url ? { mimeType, data: '', url } : { mimeType, data: c.data ?? '' })
+  }
+  return out.length ? out : undefined
+}
+
 export function normalizeMessage(
   m: PiMessage,
   idx: number,
@@ -70,24 +98,12 @@ export function normalizeMessage(
 
   if (m.role === 'user') {
     let text = ''
-    const images: { mimeType: string; data: string; url?: string }[] = []
 
     if (typeof m.content === 'string') {
       text = m.content
     } else if (Array.isArray(m.content)) {
       for (const c of m.content) {
         if (c.type === 'text') text += c.text ?? ''
-        else if (c.type === 'image') {
-          const mimeType = c.mimeType ?? 'image/png'
-          /*
-           * 历史重读会注入 `localizeImage`：图片落盘，消息里只留文件地址。
-           * 几十 MB 的 base64 不能进 IPC，而只要它不留下来，重启 / 切会话
-           * 之后就再也找不回用户贴过的图（用户报的「图片看不到」）。
-           * 实时事件流不走这里，它带来的 base64 原样保留。
-           */
-          const url = localizeImage && c.data ? localizeImage(mimeType, c.data) : ''
-          images.push(url ? { mimeType, data: '', url } : { mimeType, data: c.data ?? '' })
-        }
       }
     }
 
@@ -97,7 +113,7 @@ export function normalizeMessage(
       id,
       role: 'user',
       text,
-      images: images.length ? images : undefined,
+      images: imagesOf(m.content, localizeImage),
       timestamp: m.timestamp
     }
   }
@@ -139,6 +155,8 @@ export function normalizeMessage(
   }
 
   if (m.role === 'toolResult') {
+    /* 工具跑出来的图（浏览器截图、渲染图表）与用户贴的图同源，同样要能看到。 */
+    const images = imagesOf(m.content, localizeImage)
     // 归一化成一条工具结果（挂不上就独立显示）
     return {
       id,
@@ -159,7 +177,8 @@ export function normalizeMessage(
                 .join('')
             : typeof m.content === 'string'
               ? m.content
-              : ''
+              : '',
+          ...(images ? { images } : {})
         }
       ],
       timestamp: m.timestamp
@@ -223,6 +242,8 @@ export function normalizeHistory(
         // 挂到原有调用上，不新增消息（序号也不前进，与实时视图一致）
         hit.call.status = norm.toolCalls![0].status
         hit.call.output = norm.toolCalls![0].output
+        const images = norm.toolCalls![0].images
+        if (images?.length) hit.call.images = images
         continue
       }
     }

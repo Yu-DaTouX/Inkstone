@@ -21,14 +21,14 @@
 | `shell.css` | 3 | 1 | 20 | 11 | 5 | 1 |
 | `dialog.css` | 0 | 0 | 2 | 2 | 0 | 0 |
 | `rail.css` | 1 | 0 | 186 | 130 | 0 | 0 |
-| `chat.css` | 30 | 10 | 179 | 120 | 12 | 0 |
+| `chat.css` | 30 | 10 | 181 | 120 | 12 | 0 |
 | `composer.css` | 5 | 1 | 158 | 109 | 1 | 0 |
 | `tools.css` | 9 | 2 | 420 | 292 | 6 | 4 |
 | `browser.css` | 1 | 1 | 42 | 28 | 0 | 0 |
 | `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `review.css` | 4 | 0 | 249 | 172 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **78** | **27** | **1584** | **1079** | **49** | **5** |
+| **合计** | **78** | **27** | **1586** | **1079** | **49** | **5** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -46,9 +46,9 @@
 | `11.5px` | length | 13 | review.css, settings.css |
 | `34px` | length | 10 | app.css, chat.css, composer.css, rail.css, settings.css, tools.css |
 | `320px` | length | 10 | chat.css, redesign.css, review.css, settings.css, tools.css |
+| `420px` | length | 10 | chat.css, composer.css, redesign.css, review.css, tools.css |
 | `240px` | length | 10 | browser.css, chat.css, composer.css, motion.css, tools.css |
 | `30px` | length | 9 | rail.css, redesign.css, review.css, tools.css |
-| `420px` | length | 9 | chat.css, composer.css, redesign.css, review.css, tools.css |
 | `120px` | length | 8 | composer.css, motion.css, redesign.css, review.css, tools.css |
 | `220px` | length | 8 | chat.css, review.css, settings.css, tools.css |
 | `620px` | length | 7 | chat.css, motion.css, tools.css |
@@ -65,6 +65,7 @@
 | `17px` | length | 4 | redesign.css, review.css |
 | `ms:200` | time | 4 | composer.css, motion.css, redesign.css |
 | `360px` | length | 4 | chat.css, redesign.css, tools.css |
+| `280px` | length | 4 | chat.css, review.css, tools.css |
 | `ms:130` | time | 4 | chat.css |
 | `560px` | length | 3 | composer.css, redesign.css, stage1.css |
 | `46px` | length | 3 | redesign.css, shell.css |
@@ -73,7 +74,6 @@
 | `9.5px` | length | 3 | rail.css, tools.css |
 | `rgb(214, 214, 214)` | color | 3 | chat.css |
 | `rgb(126, 231, 135)` | color | 3 | chat.css |
-| `280px` | length | 3 | review.css, tools.css |
 | `rgb(229, 72, 77)` | color | 3 | review.css |
 | `ms:1100` | time | 2 | redesign.css, tokens.css |
 | `rgb(127, 127, 127)` | color | 2 | chat.css, redesign.css |
@@ -148,4 +148,4 @@
 ## 5. 概况
 
 - 令牌总数：84（被引用 84）
-- 令牌引用点：3259（含组件内联 style）
+- 令牌引用点：3263（含组件内联 style）

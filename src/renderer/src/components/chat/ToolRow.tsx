@@ -160,6 +160,22 @@ function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: b
       {open ? (
         <div className="trow-body">
           {/*
+           * 工具跑出来的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套
+           * 落盘 / 显示路径。放在详情之前 —— 截图就是这次调用的主要结果，
+           * 不应该排在一堆文本输出下面。
+           */}
+          {call.images?.length ? (
+            <div className="trow-images" data-testid="tool-images">
+              {call.images.map((im, i) =>
+                im.data ? (
+                  <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" />
+                ) : im.url ? (
+                  <img key={i} src={im.url} alt="" />
+                ) : null
+              )}
+            </div>
+          ) : null}
+          {/*
            * 按调用类型选详情组件（方案 4.1）：
            *   命令 → 紧凑终端；文件改动 → 改动卡片；其余 → 直接给结果。
            * 以前所有工具都套终端窗口，搜索/读文件看起来像跑过 shell。

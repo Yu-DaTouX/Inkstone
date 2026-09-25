@@ -200,6 +200,18 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
+/* 附件目录的占用 / 清理：跟文件系统打交道，用 node 平台编 */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/attachments.ts'],
+    outfile: 'out/test/attachments.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runAttachmentTests } = await import('./test-attachments.mjs')
 const { runKeepImagesTests } = await import('./test-keep-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
@@ -1574,6 +1586,7 @@ await runSubagentUsageTests(ok)
 // 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
 await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
+await runAttachmentTests(ok)
 
 
 // 短标题（U-3a/H-10a）：字素截断
