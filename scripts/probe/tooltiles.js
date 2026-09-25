@@ -66,8 +66,9 @@
       rows.every((r) => !!r.querySelector('.tl-pos')),
       '每行都有位置标签（工具页 / 浮动 / 库）'
     )
-    ok(!q('[data-testid="tl-float-todo"]'), 'todo 没有「移出浮动」按钮（不可浮动）')
-    ok(!q('[data-testid="tl-float-files"]'), 'files 没有「移出浮动」按钮（完整文件树留在文件页）')
+    /* NON_FLOATING_TILE_IDS 现为空：每个磁贴都能移出为浮窗 */
+    ok(!!q('[data-testid="tl-float-todo"]'), 'todo 可以移出为浮动')
+    ok(!!q('[data-testid="tl-float-files"]'), 'files 也可以移出为浮动')
 
     out.push('\n=== 2. 工具库按钮：移出为浮动（单实例） ===')
     click(q('[data-testid="tl-float-queue"]'))
@@ -190,7 +191,7 @@
     }
     await sleep(120)
     const line4 = lineAt()
-    if (line4) ok('拖回工具页时栏内出现插入位置（' + line4.dataset.toolId + ' ' + line4.dataset.over + '）')
+    if (line4) ok(true, '拖回工具页时栏内出现插入位置（' + line4.dataset.toolId + ' ' + line4.dataset.over + '）')
     else bad('拖回工具页时没有插入位置预览')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     h4.dispatchEvent(pe('pointercancel', cx, cy, 0))

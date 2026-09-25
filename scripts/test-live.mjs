@@ -123,6 +123,8 @@ const CASES = {
   },
   // 工具调用行：成功摘要 / 失败保留可展开入口（P1 4.2）
   toolrow: { probe: 'scripts/probe/toolrow.js', delay: 10000, cost: 0 },
+  // 工具结果里的图片（实时 base64 / 落盘 file:）+ 附件目录占用与手动清理（用户 2026-09-25）
+  toolimages: { probe: 'scripts/probe/tool-images.js', delay: 10000, cost: 0 },
   // 删除会话确认框：标题 / 按钮样式 / 不换行 / Esc 不误删（方案 15）
   trash: { probe: 'scripts/probe/trash.js', delay: 10000, cost: 0 },
   /*

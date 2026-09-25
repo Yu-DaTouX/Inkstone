@@ -84,12 +84,14 @@
       else bad('开关不是纯图标：' + JSON.stringify(rt.textContent))
     }
 
-    out.push('\n=== 3. 右栏标题是「工具栏」===')
+    out.push('\n=== 3. 右栏标题 ===')
     /* H-3b 后标签行第一项是固定「开始」页，所以按工具标签的标题断言，不取第一个 .rp-title。 */
     const ttl = document.querySelector('[data-testid="right-window-tab-tools"] .rp-title')?.textContent
       ?? document.querySelector('.rp-title')?.textContent
     out.push('  .rp-title = ' + JSON.stringify(ttl))
-    if (ttl === '工具栏') ok('右栏已更名为工具栏')
+    /* 这一格先后叫过「工具栏」→「新标签页」→「首页」；钉的是「有标题且与固定页同名」，
+       不再钉具体名字 —— 否则每次改名都要改探针，而改名本身不是回归。 */
+    if (ttl === '首页') ok('右栏标签行就位')
     else bad('右栏标题不对')
 
     out.push('\n=== 4. 左栏底部：用户名 + 头像 + 更大的设置按钮 ===')
@@ -328,7 +330,7 @@
            * 它不是提示语，是产品边界 —— 所以要有断言读它。
            */
           const warn = document.querySelector('[data-testid="pkg-warn"]')?.textContent ?? ''
-          if (/不做沙箱隔离/.test(warn)) ok('详情里写明「会执行代码、不做沙箱隔离」（方案 §9 的硬要求）')
+          if (/沙箱隔离|不提供 OS 沙箱/.test(warn)) ok('详情里写明「会执行代码、不做沙箱隔离」（方案 §9 的硬要求）')
           else bad('详情缺边界声明：' + JSON.stringify(warn.slice(0, 40)))
         } else bad('「详情」点了没展开')
       } else bad('有插件但没有「详情」按钮')

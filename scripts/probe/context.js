@@ -48,7 +48,12 @@
   const sec = q('[data-testid="rp-context"]')
   if (!sec) return '✗ 找不到上下文分区'
   // 确保展开
-  const head = sec.querySelector('button')
+  /*
+   * 头部第一个 button 是拖动把手（`.rp-grip`），折叠开关是 `.rp-sec-head` ——
+   * 以前这里取 `querySelector('button')`，磁贴可拖动之后就点到把手上了，
+   * 于是一整节断言全部失败（实际行为是对的，探针点错了元素）。
+   */
+  const head = sec.querySelector('.rp-sec-head')
   if (head && head.getAttribute('aria-expanded') === 'false') {
     head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(200)

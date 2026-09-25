@@ -222,6 +222,16 @@ function orbStateForTool(name: string): import('thinking-orbs').OrbState {
  * 但渲染端可能因 `{...base, ...call}` 重建过（见 store 的 `'tool'` 分支），
  * 引用不一定相等；逐字段比较才是真正关心的东西。
  */
+/**
+ * 图片的便宜指纹。
+ *
+ * 为什么不直接比 data：那是几 MB 的 base64 字符串。落盘后的条目只有 url，
+ * 实时条目用长度就够区分（同一个工具换一张图，长度几乎不会相等）。
+ */
+function imageKey(c: UIToolCall): string {
+  return c.images?.map((i) => i.url || String(i.data.length)).join('|') ?? ''
+}
+
 function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   return (
     a === b ||
@@ -234,7 +244,9 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
       a.args === b.args &&
       a.details === b.details &&
       a.startedAt === b.startedAt &&
-      a.endedAt === b.endedAt)
+      a.endedAt === b.endedAt &&
+      /* 图上得晚（工具先出一段文字、截完图再补 images）—— 漏比就永远不重渲染 */
+      imageKey(a) === imageKey(b))
   )
 }
 
