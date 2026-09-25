@@ -193,62 +193,39 @@
 
   const expandedCS = getComputedStyle(body())
   out.push(`  展开后 height=${expandedCS.height} overflow-y=${expandedCS.overflowY}`)
-  ok(
-    body().getBoundingClientRect().height <= Math.min(window.innerHeight * 0.7, 620) + 2,
-    '全文展开后有高度上限'
-  )
+  ok(body().getBoundingClientRect().height <= window.innerHeight * 0.25 + 2, '全文展开后有高度上限')
   ok(/auto|scroll/.test(expandedCS.overflowY), '超出上限的部分自己滚动')
   ok(overflows(), '超长全文确实发生内部滚动')
   /*
-   * 高度口径：`min(70vh, 620px)`（用户 2026-09-18：「推理过程同理」，
-   * 「展开时应该有一个固定的范围」）。
-   *
-   * ⚠️ 2026-09-25 我一度把它改成窗口高的四分之一（25vh），用户报
-   *    「推理窗口变回之前的了」—— 已恢复。它是**一段连续文本**，用视口比例 +
-   *    像素上限；工具组的最小单位是「条」，所以按 25 行算，两者本来就不该同口径。
+   * 高度口径：窗口高的四分之一（用户 2026-09-25：「推理过程和命令的
+   * 展开大小也要限制为四分之一」，三处统一：产物图片含衬底 / 推理过程 /
+   * 命令列表）。早先是「半窗高」，那是「面积 1/4」的算法 ——
+   * 配上 50vw 的宽度实际会占掉中栏整宽 + 半个窗口高，看着像半屏。
    */
-  const capExpected = Math.min(window.innerHeight * 0.7, 620)
+  const capExpected = window.innerHeight * 0.25
   const capActual = body().getBoundingClientRect().height
   ok(
     Math.abs(capActual - capExpected) <= 2,
-    `展开高度按 min(70vh, 620px)（${Math.round(capActual)}px ≈ ${Math.round(capExpected)}px）`
+    `展开高度是窗口高的四分之一（${Math.round(capActual)}px ≈ ${Math.round(capExpected)}px）`
   )
   ok(body().getBoundingClientRect().width <= window.innerWidth * 0.5 + 1, '展开宽度不超过半窗宽')
 
   /*
    * 展开后不能被输入框挡住（用户：「展开这个窗口的时候会被输入框挡住」）。
-   *
-   * ⚠️ 高度恢复成 `min(70vh, 620px)`（≈548px）后，这个块**本身比可视区还高**
-   *    （可见高度约 615px）—— 「整块底边都在输入框之上」物理上做不到。
-   *    能保证、也是实现给的保证是：`toggleOpen` 里的
-   *    `scrollIntoView({ block: 'nearest' })` 会把它滚到**头部可见**的位置，
-   *    所以收起入口（`.reason-head`，在 body 外面）不会被推到输入框后面。
+   * 断言展开态整体的底边不越过输入框顶边 —— 展开时会把块滚进可视区。
    */
   const inputTop = q('.composer')?.getBoundingClientRect().top ?? window.innerHeight
-  const headTop = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top ?? 1e9
   const openBottom = q('.reason')?.getBoundingClientRect().bottom ?? 0
-  out.push(
-    `  头部顶边 ${Math.round(headTop)}，块底边 ${Math.round(openBottom)} / 输入框顶边 ${Math.round(inputTop)}`
-  )
-  ok(headTop < inputTop, '展开后头部（收起入口）在输入框之上，不会被挡住')
+  out.push(`  展开块底边 ${Math.round(openBottom)} / 输入框顶边 ${Math.round(inputTop)}`)
+  ok(openBottom <= inputTop + 1, '展开后整块在输入框之上（不被挡住）')
 
-  /*
-   * 头部在 body 外面：body 内部滚动时头部一动不动（收起入口不会滚丢）；
-   * 滚到底后贴底（展示最新内容）。
-   *
-   * 这里只断言「内部真的滚了 + 贴底」—— 块比可视区高时，`scrollIntoView`
-   * 会把**整个消息流**也推一下，那时头部的绝对位置本来就会变，拿它当不变量
-   * 是错的。不变量是 DOM 结构：`.reason-head` 不在 `.reason-body` 里。
-   */
-  const headEl = q('[data-testid="reasoning-toggle"]')
-  const bodyEl = body()
-  ok(
-    !!headEl && !!bodyEl && !bodyEl.contains(headEl),
-    '头部在滚动区外面（所以内部滚动不会把收起入口滚丢）'
-  )
+  /* 头部在 body 外面：body 内部滚动时它一动不动（收起入口不会滚丢） */
+  const headTop1 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
   body().scrollTop = 99999
   await sleep(160)
-  ok(body().scrollTop > 0, '内部确实滚动了')
+  const headTop2 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
+  out.push(`  内部滚动后头部 top ${Math.round(headTop1)} → ${Math.round(headTop2)}`)
+  ok(headTop1 === headTop2, '推理块内部滚动时头部不动（收起入口不会滚丢）')
   ok(atBottom(), '滚到底后确实贴底')
 
   /* ---- 4. 用户上滚阅读时，新内容不把位置抢回底部 ---- */
