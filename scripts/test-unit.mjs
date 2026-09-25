@@ -213,6 +213,18 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runAttachmentTests } = await import('./test-attachments.mjs')
 const { runKeepImagesTests } = await import('./test-keep-images.mjs')
+/* 会话 JSONL 的读取：图片 base64 不能被体积截断（node 平台，要读真实文件） */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/session-reader.ts'],
+    outfile: 'out/test/session-reader.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+)
+const { runSessionImageTests } = await import('./test-session-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
@@ -1587,6 +1599,7 @@ await runSubagentUsageTests(ok)
 await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
 await runAttachmentTests(ok)
+await runSessionImageTests(ok)
 
 
 // 短标题（U-3a/H-10a）：字素截断
