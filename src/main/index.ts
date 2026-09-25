@@ -106,6 +106,7 @@ import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
 import { readContextActions } from './context-actions'
+import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from './attachments'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
@@ -4812,6 +4813,18 @@ function registerIpc(): void {
     }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
+
+  /*
+   * 图片附件目录：占用 + 手动清理。
+   *
+   * 清理要扫**全部**会话文件（引用判断按内容 sha1，见 main/attachments.ts），
+   * 所以放在主进程里跑，界面只等结果。不做自动 GC —— 由用户决定什么时候清。
+   */
+  handle('yan:attachments:usage', () => attachmentsUsage(join(YAN_DIR, 'attachments')))
+  handle('yan:attachments:prune', async () => {
+    const referenced = await referencedAttachmentNames(listSessionFiles(join(PI_AGENT_DIR, 'sessions')))
+    return pruneAttachments(join(YAN_DIR, 'attachments'), referenced)
+  })
 
   /*
    * 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold`

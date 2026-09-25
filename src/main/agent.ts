@@ -23,6 +23,7 @@ import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
   normalizeMessage,
+  imagesOf,
   toUsage,
   type PiContentBlock,
   type PiMessage
@@ -3838,6 +3839,8 @@ export class AgentController extends EventEmitter {
           .filter((c) => c.type === 'text')
           .map((c) => c.text ?? '')
           .join('')
+        /* 截图之类的图片结果：实时也要能看到，不只等重启读历史（与 normalize 同一套形状） */
+        call.images = imagesOf(result?.content)
         call.details = result?.details
         call.endedAt = Date.now()
         /* 写入类工具：执行后快照 → 真实的行级差异与增删行数 */

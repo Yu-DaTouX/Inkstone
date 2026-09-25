@@ -884,12 +884,30 @@
  * ⚠️ 选择器刻意排除 `.term`：命令类详情是终端窗口，它有自己的高度与缩放手柄
  *    （Terminal.tsx，用户拖出来的值存在 localStorage）。若这里也给它套一层，
  *    就会在终端外面再出现一条滚动条。
+ * ⚠️ 同样排除 `.trow-images`：图片要整张看到，套一层滚动条反而要用户在
+ *    小窗口里拖来拖去。
  */
-.trow-body > :not(.term) {
+.trow-body > :not(.term):not(.trow-images) {
   max-height: min(70vh, 620px);
   overflow: auto;
   /* 在详情里滚到底不要把消息区一起带着滚 */
   overscroll-behavior: contain;
+}
+
+/* 工具结果里的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套呈现 */
+.trow-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.trow-images img {
+  /* 截图通常比粘贴的图宽，上限放到 420 才能看清页面结构 */
+  max-width: min(100%, 420px);
+  max-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
 }
 
 /*

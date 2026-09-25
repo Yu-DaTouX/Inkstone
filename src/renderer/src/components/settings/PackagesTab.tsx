@@ -3,7 +3,12 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { BuiltinCapabilityView, PackageActionResultView, PackageListingView } from '../../../../shared/ipc'
+import type {
+  AttachmentUsage,
+  BuiltinCapabilityView,
+  PackageActionResultView,
+  PackageListingView
+} from '../../../../shared/ipc'
 
 /**
  * 内置能力的文案表（id → zh-CN 的 i18n 键）。
@@ -53,6 +58,42 @@ export function PackagesTab(): React.JSX.Element {
   const [result, setResult] = useState<PackageActionResultView | null>(null)
   const [source, setSource] = useState('')
   const [local, setLocal] = useState(false)
+
+  /*
+   * 图片附件目录：占用 + 手动清理。
+   *
+   * 有意**不做自动清理**（查了本机的 Codex / opencode / Cline，三家也都不做）：
+   * 按时间删会删掉用户还没翻到的旧图。这里删的是「没有任何会话引用」的那些。
+   * 扫描要过一遍全部会话文件，所以会先给一句「正在扫描」。
+   */
+  const [attach, setAttach] = useState<AttachmentUsage | null>(null)
+  const [attachBusy, setAttachBusy] = useState(false)
+  const [attachNote, setAttachNote] = useState('')
+
+  useEffect(() => {
+    void window.yan.attachments
+      .usage()
+      .then(setAttach)
+      .catch(() => {})
+  }, [])
+
+  const cleanAttachments = async (): Promise<void> => {
+    setAttachBusy(true)
+    setAttachNote(t('pkg.attachScanning'))
+    try {
+      const res = await window.yan.attachments.prune()
+      setAttach(await window.yan.attachments.usage())
+      setAttachNote(
+        res.removed
+          ? t('pkg.attachDone', { n: res.removed, size: fmtSize(res.bytes) })
+          : t('pkg.attachNone')
+      )
+    } catch {
+      setAttachNote(t('pkg.failed'))
+    } finally {
+      setAttachBusy(false)
+    }
+  }
   const [openDetail, setOpenDetail] = useState('')
   const [showRaw, setShowRaw] = useState(false)
 
@@ -301,6 +342,41 @@ export function PackagesTab(): React.JSX.Element {
           <div className="set-desc">{t('pkg.effect')}</div>
         </div>
       </div>
+
+      {/* ⑦ 图片附件：只统计占用，什么时候清由用户决定 */}
+      <div className="set-row set-row-col" data-testid="set-attachments">
+        <div className="set-label">
+          <div className="set-name">{t('pkg.attach')}</div>
+          <div className="set-desc">{t('pkg.attachDesc')}</div>
+        </div>
+        <div className="pkg-install-row">
+          <span className="set-desc" data-testid="set-attach-size">
+            {attach ? t('pkg.attachSize', { files: attach.files, size: fmtSize(attach.bytes) }) : '—'}
+          </span>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="set-btn"
+            data-testid="set-attach-clean"
+            disabled={attachBusy || !attach || attach.files === 0}
+            onClick={() => void cleanAttachments()}
+          >
+            {attachBusy ? t('pkg.working') : t('pkg.attachClean')}
+          </button>
+        </div>
+        {attachNote ? (
+          <div className="set-desc" data-testid="set-attach-note">
+            {attachNote}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
+}
+
+/** 附件目录大小：超过一位小数就换单位，免得出现「1234.5678 KB」 */
+function fmtSize(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }

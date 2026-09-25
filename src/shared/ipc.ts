@@ -94,6 +94,19 @@ export interface Usage {
 export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
 
 /** 工具调用（来自 assistant 的 toolCall 内容块，或 tool_execution_* 事件） */
+/**
+ * 一张图片。
+ *
+ * `data` 是本次运行期内存里的 base64（刚贴/刚截出来那一份）；`url` 是历史重读时
+ * 落盘后的 `file://` 地址。两者只会有一个 —— 几十 MB 的 base64 不能进 IPC，
+ * 而只要它不留下来，重启 / 切会话之后就再也找不回图片。
+ */
+export interface UIMessageImage {
+  mimeType: string
+  data: string
+  url?: string
+}
+
 export interface UIToolCall {
   id: string
   name: string
@@ -109,6 +122,8 @@ export interface UIToolCall {
   cancelled?: boolean
   /** 已累积的输出文本 */
   output?: string
+  /** 工具结果里的图片（截图等）：与用户贴的图同一套落盘 / 显示路径 */
+  images?: UIMessageImage[]
   /** 结构化详情（diff / 截断信息等） */
   details?: unknown
   startedAt?: number
@@ -142,11 +157,7 @@ export interface UIMessage {
   /** 正文文本（assistant 可能持续增长） */
   text: string
   /** 用户随消息附的图片（base64，不含 data: 前缀） */
-  /**
-   * 图片：`data` 是本次运行期内存里的 base64（刚发完那一份）；
-   * `url` 是历史重读时落盘后的 `file://` 地址。两者只会有一个。
-   */
-  images?: { mimeType: string; data: string; url?: string }[]
+  images?: UIMessageImage[]
   /** 思考文本 */
   thinking?: string
   thinkingMs?: number
@@ -2405,6 +2416,24 @@ export interface SourcesBridge {
   webSearch(): Promise<WebSearchAvailability>
 }
 
+/** 图片附件目录的占用（`~/.pi/agent/yan/attachments`） */
+export interface AttachmentUsage {
+  /** 目录里的文件数 */
+  files: number
+  /** 占用字节 */
+  bytes: number
+}
+
+/** 手动清理的结果 */
+export interface AttachmentPruneResult {
+  /** 删掉的文件数 */
+  removed: number
+  /** 删掉的字节 */
+  bytes: number
+  /** 仍被会话引用的文件数 */
+  kept: number
+}
+
 export interface YanBridge {
   /* 会话控制 */
   /**
@@ -2786,6 +2815,17 @@ export interface YanBridge {
    */
   contextActions(): Promise<ContextActionSummary>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
+
+  /**
+   * 图片附件目录：只给占用与手动清理。
+   *
+   * 有意不做自动 GC（Codex / opencode / Cline 也都不做）：按时间删会删掉
+   * 用户还没翻到的旧图，所以只删「没有任何会话引用」的那些。
+   */
+  attachments: {
+    usage(): Promise<AttachmentUsage>
+    prune(): Promise<AttachmentPruneResult>
+  }
 
   /* 子代理（方案第 8 节） */
   subagents: SubagentBridge
