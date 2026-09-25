@@ -374,7 +374,7 @@
   "outline.tick": "Turn {n}",
   "picker.busy": "Can’t switch while generating; abort first",
   "picker.detail": "Response detail",
-  "picker.detailDesc": "How much it explains the result — separate from thinking effort. No level drops required error reporting",
+  "picker.detailDesc": "How much it explains — separate from thinking effort; no level drops errors",
   "picker.image": "image",
   "picker.modelTip": "Switch model",
   "picker.needsAuth": "not set up",
