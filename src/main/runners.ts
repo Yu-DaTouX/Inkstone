@@ -109,6 +109,22 @@ export class RunnerRegistry {
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
       /** 实例集合或状态变化时通知主进程（推给渲染端） */
       onChanged?: () => void
+      /**
+       * 同一 cwd 冲突时的**自动隔离**（宿主注入）。
+       *
+       * 返回 `{ cwd }`：换一个不冲突的物理目录继续（宿主负责建库与告知用户）；
+       * 返回 `{ reason }`：隔离没成，把原因并进原来的冲突报错；
+       * 返回 `null`：宿主不处理，按原来的报错走。
+       */
+      resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
+      /**
+       * 隔离状态的同步查询（主进程维护的那张小表）：按 runner 的 cwd 问
+       * 「这棵隔离工作树现在什么状态」。
+       *
+       * 为什么必须同步：`statuses()` 是快照构造，整条推送链上没有 await 的位置；
+       * 查询本身也只是一次 Map 命中。
+       */
+      isolationOf?: (cwd: string) => { state: 'waiting' | 'blocked'; branch: string } | undefined
     }
   ) {}
 
@@ -129,6 +145,34 @@ export class RunnerRegistry {
     if (!this.activeId) return null
     const r = this.runners.get(this.activeId)
     return r ? { id: r.id, cwd: r.cwd } : null
+  }
+
+  /**
+   * 延长某个待回答问题的等待（宿主提问专用）。
+   *
+   * 在**所有**实例里找持有该 id 的那个 —— 提问与回答都带实例身份，但延长是
+   * 「用户对着屏幕上的面板点的」，渲染端只知道 request id。逐个问一遍的代价
+   * 最大也就是三个实例的 Map 命中。
+   */
+  extendHostUi(id: string, extraMs?: unknown): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
+    for (const runner of this.runners.values()) {
+      const result = runner.agent.extendHostUi(id, extraMs)
+      if (result.ok) return result
+    }
+    return { ok: false, error: 'question_not_pending' }
+  }
+
+  /**
+   * 「用户看到这一条了」→ 让持有它的实例开始计时。
+   *
+   * 与 `extendHostUi` 同一套查找：渲染端只知道 request id，不知道它属于哪个实例。
+   */
+  startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
+    for (const runner of this.runners.values()) {
+      const result = runner.agent.startHostUiTimer(id)
+      if (result.ok) return result
+    }
+    return { ok: false, error: 'question_not_pending' }
   }
 
   /** 取指定运行实例；主进程推送快照时不能重新读取“当前实例”。 */
@@ -236,12 +280,23 @@ export class RunnerRegistry {
       (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
-      const sessionId = conflict.agent.getState()?.sessionId ?? conflict.id
-      return {
-        ok: false,
-        error:
-          `同一工作目录已有运行中的会话（${sessionId}）。` +
-          '为避免文件写入冲突，请先等待它完成，或使用隔离工作目录。'
+      /*
+       * 先问宿主能不能自动隔离（换一个不冲突的物理目录继续）。
+       * 隔离结果必须**真的换了目录**才继续：返回同一个 cwd 等于没解决问题，
+       * 放行会直接违反下面这条并发边界的全部意义。
+       */
+      const escalated = await this.opts.resolveCwdConflict?.(target)
+      if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
+        target = { ...target, cwd: escalated.cwd }
+      } else {
+        const sessionId = conflict.agent.getState()?.sessionId ?? conflict.id
+        const why = escalated && 'reason' in escalated ? `自动隔离未生效：${escalated.reason}。` : ''
+        return {
+          ok: false,
+          error:
+            `同一工作目录已有运行中的会话（${sessionId}）。` +
+            `${why}为避免文件写入冲突，请先等待它完成，或使用隔离工作目录。`
+        }
       }
     }
 
@@ -588,6 +643,8 @@ export class RunnerRegistry {
     return [...this.runners.values()].filter((r) => !r.hidden).map((r) => {
       const st: SessionState | null = r.agent.getState()
       const conn = r.agent.getConn().state
+      /* 隔离状态按注册表的 cwd 查（spawn 时就定了），不看 state.cwd —— 后者在过渡期会漂 */
+      const isolation = this.opts.isolationOf?.(r.cwd)
       return {
         id: r.id,
         runId: r.id,
@@ -602,7 +659,8 @@ export class RunnerRegistry {
         conn,
         createdAt: r.createdAt,
         lastActiveAt: r.lastActiveAt,
-        isActive: r.id === this.activeId
+        isActive: r.id === this.activeId,
+        ...(isolation ? { isolation: isolation.state, isolationBranch: isolation.branch } : {})
       }
     })
   }

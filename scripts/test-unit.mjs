@@ -2476,6 +2476,30 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
+      entryPoints: ['src/main/session-isolation.ts'],
+      outfile: 'out/test/session-isolation.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
+      entryPoints: ['src/main/question-log.ts'],
+      outfile: 'out/test/question-log-store.mjs',
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
+      entryPoints: ['src/shared/question-log.ts'],
+      outfile: 'out/test/question-log.mjs',
+      bundle: true,
+      platform: 'neutral',
+      format: 'esm',
+      logLevel: 'warning'
+    }),
+    build({
       entryPoints: ['src/main/packages.ts'],
       outfile: 'out/test/packages.mjs',
       bundle: true,
@@ -2497,6 +2521,10 @@ const { runGitRepoTests } = await import('./test-git-repo.mjs')
 const { runPackagesTests } = await import('./test-packages.mjs')
 const { runSourcesTests } = await import('./test-sources.mjs')
 const { runWorktreeLinkTests } = await import('./test-worktree-links.mjs')
+const { runSessionIsolationTests } = await import('./test-session-isolation.mjs')
+const { runQuestionLogTests } = await import('./test-question-log.mjs')
+console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
+await runQuestionLogTests(ok)
 const { runHostingTests } = await import('./test-hosting.mjs')
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 await runPackagesTests(ok)
@@ -2504,6 +2532,8 @@ console.log('\n--- S1. 会话来源的持久化引用 ---')
 await runSourcesTests(ok)
 console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
 await runWorktreeLinkTests(ok)
+console.log('\n--- S2b. 同一工作目录冲突 → 自动隔离与自动合回 ---')
+await runSessionIsolationTests(ok)
 console.log('\n--- G3. PR 状态（纯解析 + 一次真实 API）---')
 await runHostingTests(ok)
 await runGitRepoTests(ok)
@@ -2802,6 +2832,43 @@ await runGitRepoTests(ok)
     }
   }
   ok(bad.length === 0, 'i18n 文案不含 markdown 加粗记号', bad.join(', '))
+
+  /*
+   * 新增的界面文案必须**两套都在**，且占位符一致：
+   * 漏了中文只会在界面里显示 key 名或丢掉变量，而两边跑起来都不报错。
+   */
+  const zhJson = JSON.parse(readFileSync('src/renderer/src/i18n/zh-CN.json', 'utf8'))
+  const enJson = JSON.parse(readFileSync('src/renderer/src/i18n/en-US.json', 'utf8'))
+  const missingIso = ['rail.isolationWaiting', 'rail.isolationBlocked'].filter((k) => !zhJson[k] || !enJson[k])
+  ok(missingIso.length === 0, '隔离标记的中英文案都在', missingIso.join(', '))
+  const holes = (v) => [...String(v ?? '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',')
+  ok(
+    holes(zhJson['rail.isolationWaiting']) === 'branch' && holes(enJson['rail.isolationWaiting']) === 'branch',
+    '隔离文案的占位符一致（branch）',
+    `${holes(zhJson['rail.isolationWaiting'])} / ${holes(enJson['rail.isolationWaiting'])}`
+  )
+}
+
+/*
+ * 宿主提问的等待时间口径（src/shared/ui-timeout.ts）。
+ *
+ * 默认 3 分钟、面板上点一下 +2 分钟、延长后剩余封顶 30 分钟。同一个数被四处读
+ *（主进程默认值 / 主进程延长 / 渲染端倒计时 / `yan question ask` 帮助），
+ * 漂移不会报错，只会变成「面板说 3 分钟但 2 分钟就超时」这类难查的错。
+ */
+{
+  await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+    build({
+      entryPoints: ['src/shared/ui-timeout.ts'],
+      outfile: 'out/test/ui-timeout.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      logLevel: 'silent'
+    })
+  )
+  const { runUiTimeoutTests } = await import('./test-ui-timeout.mjs')
+  await runUiTimeoutTests(ok)
 }
 
 /*

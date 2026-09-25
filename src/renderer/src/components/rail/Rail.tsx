@@ -72,12 +72,25 @@ const EMPTY_IDS: string[] = []
  */
 const DRAG_THRESHOLD = 4
 
-type DragKind = 'project' | 'group'
+type DragKind = 'project' | 'group' | 'session'
 /** 插入线落点：插在 `id` 这一行的**前**（after=false）或**后**（after=true） */
 interface DropHint {
   kind: DragKind
   id: string
   after: boolean
+}
+/**
+ * 「投放到某个容器」的落点（拖会话用）。
+ *
+ * 与 `DropHint`（插入线，换顺序）是两回事：会话是**归属**变更 ——
+ * 拖到某个项目行 = 移入该项目，拖到「全局」行 = 移回默认位置。
+ * 这里不存在「插在某一行的上/下半」的含义。
+ */
+interface DropInto {
+  /** 容器 key：`project:<id>` 或 `global:<cwd>` */
+  key: string
+  /** 目标项目 id；null = 默认位置（全局） */
+  projectId: string | null
 }
 /** 一次拖拽会话（存在 ref 里，pointermove 高频且回调要读最新值） */
 interface DragSession {
@@ -85,6 +98,8 @@ interface DragSession {
   id: string
   /** 项目所属分组；落点必须同组（跨组是归属变更，走右键菜单） */
   groupId: string
+  /** 会话拖拽：出发时所在的容器 key（拖回同一个容器 = 无操作） */
+  from: string
   startX: number
   startY: number
   /** 是否已越过阈值、真正进入拖拽态 */
@@ -476,9 +491,12 @@ export function Rail() {
   const [dragItem, setDragItem] = useState<{ kind: DragKind; id: string } | null>(null)
   /** 插入线落点 */
   const [dropHint, setDropHint] = useState<DropHint | null>(null)
+  /** 会话拖拽的投放目标（项目行 / 全局行） */
+  const [dropInto, setDropInto] = useState<DropInto | null>(null)
   /** 拖拽会话（事件回调是 pointerdown 那一刻的闭包，必须经 ref 读最新值） */
   const dragRef = useRef<DragSession | null>(null)
   const dropHintRef = useRef<DropHint | null>(null)
+  const dropIntoRef = useRef<DropInto | null>(null)
   /**
    * 屏幕上真实渲染出来的分组顺序。
    * **不等于** `projectGroups`：没有项目的分组根本不渲染标题（标题是跟着
@@ -510,6 +528,12 @@ export function Rail() {
     setDropHint(hint)
   }
 
+  /** 同上，用于会话拖拽的投放目标 */
+  const setInto = (into: DropInto | null): void => {
+    dropIntoRef.current = into
+    setDropInto(into)
+  }
+
   /** 拆掉监听与视觉态；`keepSession` = 把会话留给随后的 click 消费（见 consumeDragClick） */
   function cleanupDrag(keepSession: boolean): void {
     window.removeEventListener('pointermove', onDragMove)
@@ -519,7 +543,23 @@ export function Rail() {
     document.body.classList.remove('rail-dragging')
     setDragItem(null)
     setHint(null)
+    setInto(null)
     if (!keepSession) dragRef.current = null
+  }
+
+  /**
+   * 会话拖拽的落点：指针下的「容器」（项目行 / 全局行）。
+   *
+   * 为什么用 `closest('[data-drop-into]')` 而不是看插入线：会话是归属变更，
+   * 行内嵌套很多（会话行在项目行下方），指针落在会话行上时也要能命中它所属的项目行
+   * —— 与 `DropHint` 只认同类行不同。
+   */
+  function intoAt(x: number, y: number): DropInto | null {
+    const under = document.elementFromPoint(x, y) as HTMLElement | null
+    const row = under?.closest<HTMLElement>('[data-drop-into]')
+    const key = row?.dataset.dropInto
+    if (!row || !key) return null
+    return { key, projectId: key.startsWith('project:') ? key.slice('project:'.length) : null }
   }
 
   /** 指针落在哪一行上：上半 → 插到它之前；下半 → 插到它之后 */
@@ -550,14 +590,26 @@ export function Rail() {
       document.body.classList.add('rail-dragging')
     }
     e.preventDefault()
-    setHint(hintAt(e.clientX, e.clientY, session))
+    if (session.kind === 'session') setInto(intoAt(e.clientX, e.clientY))
+    else setHint(hintAt(e.clientX, e.clientY, session))
   }
 
   function onDragUp(): void {
     const session = dragRef.current
     const hint = dropHintRef.current
+    const into = dropIntoRef.current
     cleanupDrag(true)
-    if (!session?.active || !hint) return
+    if (!session?.active) return
+    /*
+     * 会话：拖到项目行 / 全局行 → 改归属。
+     * 拖回出发时所在的容器（或没拖到任何容器）= 无操作，不发 IPC。
+     */
+    if (session.kind === 'session') {
+      if (!into || into.key === session.from) return
+      void useStore.getState().moveSession(session.id, into.projectId)
+      return
+    }
+    if (!hint) return
     const { projects: list, groups } = orderRef.current
     if (session.kind === 'group') {
       const nextIds = orderAfterDrag(groups, session.id, beforeFromDrop(groups, hint.id, hint.after))
@@ -591,13 +643,21 @@ export function Rail() {
    * 不在这里 preventDefault：项目行整行也是「切到该项目」的按钮，
    * 按下就拦掉会让单击失效 —— 只有越过阈值、真正进入拖拽后才接管。
    */
-  function beginDrag(e: ReactPointerEvent, kind: DragKind, id: string, groupId = ''): void {
+  function beginDrag(e: ReactPointerEvent, kind: DragKind, id: string, groupId = '', from = ''): void {
     if (e.button !== 0) return
     if (query) return
     if (!projectsOpen) return
-    /* 行内的按钮 / 输入框有自己的语义，不要让拖拽把它们吃掉（项目名按钮除外，它就是把手） */
-    if ((e.target as HTMLElement).closest('button:not(.proj-pick), input, [role="button"]')) return
-    dragRef.current = { kind, id, groupId, startX: e.clientX, startY: e.clientY, active: false }
+    const target = e.target as HTMLElement
+    /*
+     * 行内的按钮 / 输入框有自己的语义，不要让拖拽把它们吃掉。
+     * 会话行的「主体」正好就是一个 button（`.srow`），所以**不能**对会话
+     * 用同一条排除规则 —— 否则整个会话行都拖不动。那里只排除行内的
+     * 操作按钮（⋯ / 分叉开关）与重命名输入框。
+     */
+    if (kind === 'session') {
+      if (target.closest('.srow-acts, .srow-btoggle, input')) return
+    } else if (target.closest('button:not(.proj-pick), input, [role="button"]')) return
+    dragRef.current = { kind, id, groupId, from, startX: e.clientX, startY: e.clientY, active: false }
     window.addEventListener('pointermove', onDragMove)
     window.addEventListener('pointerup', onDragUp)
     window.addEventListener('pointercancel', onDragCancel)
@@ -795,7 +855,7 @@ export function Rail() {
     trigger?.focus?.()
   }
 
-  const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>()): React.ReactNode => {
+  const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>(), containerKey = ''): React.ReactNode => {
     if (lineage.has(s.path)) return null
     const next = new Set(lineage).add(s.path)
     const children = list.filter((c) => c.parentSession === s.path && !next.has(c.path))
@@ -803,11 +863,13 @@ export function Rail() {
     return <SessionRow key={s.path} s={s} selected={session?.sessionFile === s.path}
       depth={depth} branchCount={children.length} branchIndex={branchIndex.get(s.path)}
       branchesOpen={isOpen} onToggleBranches={() => toggleBranch(s.path)}
-      children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next)) : null}
+      children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next, containerKey)) : null}
       menuOpen={menuFor?.path === s.path} menuAnchor={menuFor?.path === s.path ? menuFor : null}
       onOpenMenu={openSessionMenu(s.path)} onCloseMenu={closeSessionMenu}
       onSelect={() => void select(s.path)} pinned={pinned.includes(s.path)} unread={unread.includes(s.path)}
       projectRecords={projectRecords}
+      dragging={dragItem?.kind === 'session' && dragItem.id === s.id}
+      onDragStart={(e) => beginDrag(e, 'session', s.id, '', containerKey)}
       onPin={() => setPinned((prev) => prev.includes(s.path) ? prev.filter((p) => p !== s.path) : [...prev, s.path])}
       onRequestDelete={() => setDeleteTarget(s)} />
   }
@@ -1071,11 +1133,13 @@ export function Rail() {
                    * 以前整行都是折叠按钮，想切项目只能从菜单里点「新对话」。
                    */
                   <div
-                    className={`proj-head ${pOpen ? '' : 'collapsed'}${dragItem?.kind === 'project' && dragItem.id === p.projectId ? ' is-dragging' : ''}${dropHint?.kind === 'project' && dropHint.id === p.projectId ? (dropHint.after ? ' drop-after' : ' drop-before') : ''}`}
+                    className={`proj-head ${pOpen ? '' : 'collapsed'}${dragItem?.kind === 'project' && dragItem.id === p.projectId ? ' is-dragging' : ''}${dropHint?.kind === 'project' && dropHint.id === p.projectId ? (dropHint.after ? ' drop-after' : ' drop-before') : ''}${dropInto?.key === (p.projectId ? `project:${p.projectId}` : `global:${p.cwd}`) ? ' drop-into' : ''}`}
                     onContextMenu={(e) => { e.preventDefault(); if (p.projectId) setProjectMenu({ id: p.id, x: e.clientX, y: e.clientY, trigger: e.currentTarget }) }}
                     title={p.cwd}
                     data-testid="rail-project-row"
                     data-current={p.isCurrent ? '1' : '0'}
+                    /* 拖进来的落点（会话拖拽用）；同名属性在项目行与全局行上都有 */
+                    data-drop-into={p.projectId ? `project:${p.projectId}` : `global:${p.cwd}`}
                     /* 只有持久化的项目能排序：`global:` 行没有记录，排了也无处存 */
                     data-drag-kind={p.projectId ? 'project' : undefined}
                     data-drag-id={p.projectId}
@@ -1193,8 +1257,10 @@ export function Rail() {
                     const all = shownAllSessions.includes(p.id)
                     const limit = all ? roots.length : floor
                     const hidden = roots.length - limit
+                    /* 容器 key：拖会话进来时靠它认出「落到了哪个项目」 */
+                    const containerKey = p.projectId ? `project:${p.projectId}` : `global:${p.cwd}`
                     return <>
-                      {roots.slice(0, limit).map((s) => renderSession(s, p.list))}
+                      {roots.slice(0, limit).map((s) => renderSession(s, p.list, 0, new Set<string>(), containerKey))}
                       {hidden > 0 ? (
                         <button
                           className="rail-more-sessions"
@@ -1333,7 +1399,7 @@ function TrashNoticeBar({ notice, onUndo, onClose }: {
 /* ---------------------------------------------------------------- 会话行 */
 
 function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onToggleBranches,
-  children, depth, menuOpen, menuAnchor, onOpenMenu, onCloseMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete
+  children, depth, menuOpen, menuAnchor, onOpenMenu, onCloseMenu, onSelect, pinned, onPin, unread, projectRecords, onRequestDelete, dragging, onDragStart
 }: {
   s: SessionSummary; selected: boolean; branchCount: number; branchIndex?: number;
   branchesOpen: boolean; onToggleBranches: () => void; children: React.ReactNode; depth: number;
@@ -1342,7 +1408,11 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   onCloseMenu: () => void;
   onSelect: () => void; pinned: boolean; onPin: () => void; unread: boolean;
   projectRecords: ProjectRecord[];
-  onRequestDelete: () => void
+  onRequestDelete: () => void;
+  /** 正在被拖动（视觉态：整行变淡） */
+  dragging: boolean;
+  /** 按下即准备拖拽（越过阈值才算真拖，见 `beginDrag`） */
+  onDragStart: (e: React.PointerEvent) => void
 }) {
   const t = useT()
   /*
@@ -1357,6 +1427,19 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   const running = runner?.running === true
   const waiting = runner?.waiting === true
   const failure = runner?.failed ? t('rail.runnerFailed') : ''
+  /*
+   * 自动隔离标记（同一工作目录冲突时砚把这条会话换到了隔离工作树）。
+   *
+   * 只对**有运行实例**的会话可见：信息挂在主进程的运行实例快照上（与 running /
+   * waiting / failed 同一条路），而不是会话摘要 —— 实例已经停掉的行没有它。
+   */
+  const isolation = runner?.isolation
+  const isolationLabel =
+    isolation === 'blocked'
+      ? t('rail.isolationBlocked')
+      : isolation === 'waiting'
+        ? t('rail.isolationWaiting', { branch: runner?.isolationBranch ?? '' })
+        : ''
   /**
    * 行内重命名。
    *
@@ -1377,7 +1460,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
   }
 
   return (
-    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties}>
+    <div className={`srow-wrap has-acts ${menuOpen ? 'menu-open' : ''}${dragging ? ' is-dragging' : ''}`} data-session-path={s.path} data-depth={depth} style={{ '--branch-depth': Math.min(depth, 3) } as React.CSSProperties} onPointerDown={onDragStart}>
       {/* 行主体：会话按钮（占满，可省略号） + 分叉开关 + 相对时间 */}
       <div className={`srow-row ${selected ? 'selected' : ''}`} onContextMenu={(e) => { e.preventDefault(); onOpenMenu(e.currentTarget, { x: e.clientX, y: e.clientY }) }}>
         {renaming ? (
@@ -1439,7 +1522,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
         ) : null}
 
-        {waiting ? <span className="session-status waiting" data-testid="rail-waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" data-testid="rail-failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : unread ? <span className="session-status" data-testid="rail-unread" title={t('rail.unread')}>●</span> : null}
+        {waiting ? <span className="session-status waiting" data-testid="rail-waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" data-testid="rail-failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : isolation ? <span className={`session-status iso${isolation === 'blocked' ? ' blocked' : ''}`} data-testid={`rail-isolation-${isolation}`} title={isolationLabel}>{isolation === 'blocked' ? <Icon name="alert-circle" size={12} /> : <Icon name="refresh" size={12} />}</span> : unread ? <span className="session-status" data-testid="rail-unread" title={t('rail.unread')}>●</span> : null}
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
         <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>
@@ -1489,9 +1572,6 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               {t('rail.stopRunner')}
             </button>
           ) : null}
-          <div className="srow-menu-path" title={s.path}>
-            {s.path}
-          </div>
           {titleCandidate ? (
             <div className="srow-title-candidate" data-testid="rail-title-candidate">
               <div className="srow-title-candidate-label">{t('rail.titleCandidate')}</div>

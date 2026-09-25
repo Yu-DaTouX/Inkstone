@@ -350,6 +350,10 @@ const api: YanBridge = {
 
   /* ---- 扩展 UI 应答（单向） ---- */
   respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
+  /* 延长等待：超时计时器在主进程，必须往返一次才能真的延长 */
+  extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),
+  /* 「这一条已经显示给用户了」→ 主进程才开始计时（多条问题分页显示时每条各算各的） */
+  startUiTimer: (id) => invoke('yan:startUiTimer', id),
 
   /* ---- 系统通知（声音提示的通知开关用） ---- */
   notifyAttention: (n: AttentionNotify) =>

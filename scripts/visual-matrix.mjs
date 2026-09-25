@@ -4227,7 +4227,7 @@ const MUST_HAVE = {
   wsunknown: ['[data-testid="workspace-changes"]', '[data-testid="ws-unknown"]'],
   ctxnarrow: ['[data-testid="rp-context-actions"]', '[data-testid="rp-compact-now"]', '[data-testid="ctx-stages"]'],
   trashtoast: ['[data-testid="trash-notice"]', '[data-testid="trash-undo"]', '.rail-trash-name', '.srow'],
-  sessionmenu: ['[data-testid="rail-session-menu"]', '[data-testid="rail-menu-time"]', '[data-testid="rail-session"]', '.srow-menu-path'],
+  sessionmenu: ['[data-testid="rail-session-menu"]', '[data-testid="rail-menu-time"]', '[data-testid="rail-session"]'],
   railreset: ['[data-testid="rail-session"]', '[data-testid="rail-more-sessions"]', '[data-testid="rail-toggle"]'],
   projectmenutl: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],
   projectmenutr: ['[data-testid="rail-project-menu-panel"]', '[role="menuitem"]'],

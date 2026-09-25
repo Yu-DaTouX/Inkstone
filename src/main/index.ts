@@ -74,6 +74,7 @@ import { eventsForSession } from '../shared/handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
+import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
 import { HandoffRunner, type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
 import { normalizeChainKey, isRepresentative, chainForFile, planHistoryRead } from '../shared/session-chain'
 import {
@@ -648,6 +649,150 @@ function readHistoryWithArtifacts(sessionFile: string) {
  * 那是会话链的事，两者语义不同（见 `worktree-links.ts` 的头注释）。
  */
 const worktreeOrigins = new WorktreeLinkStore()
+
+/**
+ * 自动隔离登记表（同一工作目录的会话冲突 → 换目录继续 + 自动合回）。
+ *
+ * 只记**砚自己建的**那些工作树：用户手动建的工作树里可能有他正在编的东西，
+ * 自动合并过去等于替他做决定（见 `session-isolation.ts`）。
+ */
+const autoIsolations = new AutoIsolationStore()
+
+/**
+ * 合回尝试的全局节流。
+ *
+ * 触发点是「回合收尾的 `state` 推送」，而那个推送一轮里会出现好几次
+ * （`isAgentRunning=false` 不只出现在收尾）；不节流会对着同一份没变的提交
+ * 反复跑 git。
+ */
+let isolationSweepAt = 0
+const ISOLATION_SYNC_MIN_INTERVAL = 3000
+/** 每个隔离工作树最近一次 blocked 的原因：只在**原因变了**的时候打扰用户 */
+const isolationBlockedReason = new Map<string, string>()
+
+/**
+ * 隔离状态的**展示快照**（cwd 键 → 状态）。
+ *
+ * 为什么单独存一份、不直接在 `statuses()` 里 await 登记表：
+ *   · `statuses()` 是同步的快照构造，而登记表读盘、合并判定都要 await；
+ *   · 状态是「等主干空闲 / 被挡 / 已合回」这类**推进过后**的结论，
+ *     当场重算每次快照都要跑 git。
+ * 所以：写者只有两处（建隔离时、扫一轮合回时），读者是左栏快照与状态条。
+ */
+const isolationView = new Map<string, { state: 'waiting' | 'blocked'; branch: string }>()
+
+/** 同步查询：给 `RunnerRegistry.statuses()` 按 runner 的 cwd 取隔离状态 */
+function isolationOf(cwd: string): { state: 'waiting' | 'blocked'; branch: string } | undefined {
+  return isolationView.get(isolationCwdKey(cwd))
+}
+
+/**
+ * 写隔离状态并同步两处展示：
+ *   · 左栏会话行的状态标（走 `runners` 快照）；
+ *   · 右栏状态条（常驻一行，见 `statuses` 通道）——「排队等合回」是**等待中**的事实，
+ *     不发通知（每轮一条通知会刷屏），但也不能什么都不说。
+ */
+function setIsolationView(worktree: string, view: { state: 'waiting' | 'blocked'; branch: string } | null): void {
+  const key = isolationCwdKey(worktree)
+  const before = isolationView.get(key)
+  if (view === null) {
+    if (!before) return
+    isolationView.delete(key)
+  } else {
+    if (before && before.state === view.state && before.branch === view.branch) return
+    isolationView.set(key, view)
+  }
+  pushIsolationStatus()
+  pushRunners()
+}
+
+/** 状态条：多个隔离树会同时存在，所以只报一个汇总（不把每棵都铺上去） */
+function pushIsolationStatus(): void {
+  const items = [...isolationView.values()]
+  const waiting = items.filter((x) => x.state === 'waiting').length
+  const blocked = items.filter((x) => x.state === 'blocked').length
+  const text =
+    items.length === 0
+      ? undefined
+      : blocked > 0
+        ? `隔离工作树：${blocked} 个合回被挡，${waiting} 个等主干空闲`
+        : `隔离工作树：${waiting} 个等主干空闲后自动合回`
+  push({ ch: 'status', payload: { key: 'isolation', text } })
+}
+
+/**
+ * 启动时先把登记表里的隔离树标成「等待合回」。
+ * 真实状态（已合回 / 被挡）由第一轮扫描修正 —— 这里只是先把标记铺上，
+ * 不让重启之后那几行会话看起来像「从来没隔离过」。
+ */
+async function initializeIsolationView(): Promise<void> {
+  const records = await autoIsolations.all().catch(() => [])
+  for (const record of records) setIsolationView(record.worktree, { state: 'waiting', branch: record.branch })
+}
+
+/**
+ * 自动合回：把隔离工作树里的提交合回各自的主干（全自动档）。
+ *
+ * 为什么是「扫一遍」而不是「只看刚刚收尾的那个实例」：被推迟的合并（主目录还忙着）
+ * 的收尾信号属于**另一个实例** —— 只看当前实例的话，那份改动要等到隔离会话
+ * 自己再跑一轮才会被合回。
+ *
+ * 三条边界：
+ *   ① 主工作目录还有实例在忙就**不动**——合并会改文件，不能塞进别人正在跑的回合；
+ *   ② 失败只留下「改动仍在隔离工作树里」，绝不回滚成「两边都没有」；
+ *   ③ 同一原因不重复提示（每轮一次报错能刷满通知栏）。
+ */
+async function syncPendingIsolations(): Promise<void> {
+  if (!runners || !win || win.isDestroyed()) return
+  if (Date.now() - isolationSweepAt < ISOLATION_SYNC_MIN_INTERVAL) return
+  isolationSweepAt = Date.now()
+  const records = await autoIsolations.all().catch(() => [])
+  for (const record of records) {
+    if (runners.hasBusyCwd(record.mainCwd)) {
+      /* 主干还忙着：这就是「等待合回」，让左栏与状态条看得见 */
+      setIsolationView(record.worktree, { state: 'waiting', branch: record.branch })
+      continue
+    }
+    const result = await syncIsolationBack(record)
+    if (result.ok && result.action === 'merged') {
+      isolationBlockedReason.delete(record.worktree)
+      setIsolationView(record.worktree, null)
+      await autoIsolations.markSynced(record.worktree).catch(() => undefined)
+      push({
+        ch: 'notify',
+        payload: {
+          id: `iso-merged-${Date.now()}`,
+          method: 'notify',
+          notifyType: 'info',
+          message: `隔离工作树 ${record.branch} 的改动已自动合回主干。`
+        }
+      })
+      continue
+    }
+    if (!result.ok && result.action === 'blocked') {
+      setIsolationView(record.worktree, { state: 'blocked', branch: record.branch })
+      if (isolationBlockedReason.get(record.worktree) === result.detail) continue
+      isolationBlockedReason.set(record.worktree, result.detail)
+      push({
+        ch: 'notify',
+        payload: {
+          id: `iso-blocked-${Date.now()}`,
+          method: 'notify',
+          notifyType: 'warning',
+          message: `自动合回暂缓（${record.branch}）：${result.detail}。改动仍在隔离工作树里，没有丢；在隔离工作树里并入主干、把冲突解掉后，后续轮次会自动接着合回。`
+        }
+      })
+    }
+  }
+  /*
+   * 登记表里已经没有的（用户把工作树移除了）：标记也要跟着消失。
+   * 不做这一步的话，状态条会永远挂着一条「等主干空闲」。
+   */
+  const alive = new Set(records.map((record) => isolationCwdKey(record.worktree)))
+  for (const key of [...isolationView.keys()]) {
+    if (!alive.has(key)) setIsolationView(key, null)
+  }
+}
 
 /**
  * 自动交接的开关（**默认开**，用户 2026-09-19 拍板）。
@@ -1598,6 +1743,8 @@ function pushFrom(runnerId: string, msg: MainPush): void {
      * 已由 `report` 串行化了 —— 这里只需在真正空下来时补记一次，幂等）。
      */
     void scheduleSessionWork(runnerId, 'settled')
+    /* 隔离工作树的回合收尾 → 扫一轮自动合回（没有隔离登记时就是一次空扫） */
+    void syncPendingIsolations()
   }
   /*
    * 模型报错 → 自动继续（实施-05 S5c）。
@@ -2983,6 +3130,14 @@ async function rememberRunnerSession(
 ): Promise<void> {
   if (!result.ok || !result.sessionId) return
   const state = result.id ? runners?.agentOf(result.id)?.getState() : undefined
+  /*
+   * 这条会话是不是跑在**自动隔离**的工作树里：跑在的话把稳定 sessionId 补登记。
+   * 建树时新会话还没有 id（pi 异步落盘），只有这里能把两者绑上；
+   * 绑上之后同一条会话再撞冲突就能复用同一个工作树，不会越建越多。
+   */
+  if (result.sessionId) {
+    void autoIsolations.bindSession(state?.cwd ?? target.cwd, result.sessionId).catch(() => undefined)
+  }
   await rememberSession({
     sessionId: result.sessionId,
     sessionFile: state?.sessionFile ?? target.sessionFile,
@@ -3137,6 +3292,40 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   })
 
   runners = new RunnerRegistry({
+    /*
+     * 同一工作目录冲突 → 自动隔离（用户 2026-09-25 拍板的全自动档）。
+     * 建树失败**不**改变原来的冲突报错，只把原因并进去 —— 防线本身不降级。
+     */
+    isolationOf,
+    resolveCwdConflict: async (target) => {
+      /* 后台 / 隐藏实例（交接、远程定向）不是「用户要开第二份工作」，不擅自换目录 */
+      if (target.activate === false || target.hidden) return null
+      /*
+       * 实例已经到上限：**先别建工作树**。
+       * 隔离在底下那道上限判断之前发生，建完才发现开不了实例，磁盘上就白多一个目录。
+       */
+      if (runners && runners.size >= runners.limit) return null
+      /* 同一条会话再次撞上冲突：复用它已有的隔离工作树，别越建越多 */
+      const existing = target.sessionId ? await autoIsolations.bySession(target.sessionId).catch(() => null) : null
+      if (existing) return { cwd: existing.worktree }
+      const outcome = await isolateCwdForConflict(target.cwd, { sessionId: target.sessionId })
+      if (!outcome.ok) return { reason: outcome.reason }
+      await autoIsolations.add(outcome.record).catch(() => undefined)
+      /* 刚建出来的隔离树一定是「等主干空闲」（主干正忙着才走到这里） */
+      setIsolationView(outcome.record.worktree, { state: 'waiting', branch: outcome.record.branch })
+      push({
+        ch: 'notify',
+        payload: {
+          id: `iso-${Date.now()}`,
+          method: 'notify',
+          notifyType: 'info',
+          message:
+            `同一工作目录已有会话在运行：已在隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）中打开这条会话。` +
+            `两边都空闲时会把它的提交自动合回 ${outcome.record.baseBranch}。`
+        }
+      })
+      return { cwd: outcome.record.worktree }
+    },
     /* 每个实例自己一个 pi 子进程；事件带上实例 id（N12） */
     createAgent: (id, cwd, generation) =>
       new AgentController({
@@ -3325,6 +3514,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       requestPiPackageActivationTick()
     }
   })
+
+  /* 重启后先把登记表里的隔离标记铺上；真实状态（已合回 / 被挡）由第一轮扫描修正 */
+  void initializeIsolationView()
 
   const piProbe = resolvePi(settings.piBin ? { override: settings.piBin } : {})
   const piBin = piProbe.args.at(-1)
@@ -4435,6 +4627,22 @@ function registerIpc(): void {
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
   ipcMain.on('yan:respondUi', (_e, res) => ac()?.respondUi(res))
+
+  /*
+   * 延长待回答问题：倒计时在主进程抱，渲染端点「加时间」必须走到这里。
+   * 不取 `ac()`（当前视图实例）：面板可能属于后台实例，按 request id 全局找。
+   */
+  handle('yan:extendUi', async (id: string, extraMs?: number) =>
+    runners?.extendHostUi(String(id ?? ''), extraMs) ?? { ok: false, error: 'pi 未运行' }
+  )
+
+  /*
+   * 「这条问题已经显示给用户了」→ 开始计时（幂等）。
+   * 多条问题分页显示时，每条从**被翻到**那一刻起算，不再「还没看到就快超时」。
+   */
+  handle('yan:startUiTimer', async (id: string) =>
+    runners?.startHostUiTimer(String(id ?? '')) ?? { ok: false, error: 'pi 未运行' }
+  )
 
   /*
    * 模态层守卫：渲染端有弹窗时暂停全局快捷键（cycleModel / cycleThinking）。

@@ -15,6 +15,7 @@ import type {
   BrowserState,
   ChromeSyncReport,
   ExtensionUiRequest,
+  QuestionLogEntry,
   FilePreview,
   GoalState,
   HandoffView,
@@ -285,6 +286,16 @@ interface Store {
   /** 跳到第 N 轮用户对话（导航轨点击时用，由 App 实现具体滚动） */
   scrollToTurn: (i: number) => void
   uiRequests: ExtensionUiRequest[]
+  /**
+   * 当前会话的宿主提问记录（只用于回放）。
+   *
+   * ⚠️ 与 `messages` 分开存：它不是 pi 会话的一部分，绝不能混进去
+   * （否则「最后一条用户消息」之类的判断会把它当真消息）。
+   * 渲染时由 `App.tsx` 按时间合并成带「提问」标记的用户消息。
+   */
+  questionLog: QuestionLogEntry[]
+  /** `questionLog` 属于哪个会话（与当前会话不一致时按空处理，不串会话） */
+  questionLogSession: string | null
   /**
    * 问题面板是否收起（方案第 6 节）。
    * 收起**不是**取消，也不会替你选默认值 —— 草稿与队列都还在。
@@ -596,6 +607,16 @@ interface Store {
   pickFiles: () => Promise<void>
 
   answerUi: (res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }) => void
+  /**
+   * 延长一个待回答问题的等待（面板倒计时上点一下）。
+   * 返回 false = 这个请求已经不在等待（已被回答 / 已超时），调用方应收起面板。
+   */
+  extendUi: (id: string, extraMs?: number) => Promise<boolean>
+  /**
+   * 「这一条已经显示给用户了」→ 开始计时（幂等，可以重复调）。
+   * 失败（请求已不在等待）返回 false，调用方不需要处理。
+   */
+  startUiTimer: (id: string) => Promise<boolean>
   /** 收起 / 展开问题面板（不取消请求） */
   setUiCollapsed: (v: boolean) => void
   /** 保存某个问题的草稿 */
@@ -1103,6 +1124,8 @@ export const useStore = create<Store>((rawSet, get) => {
     /* App 挂载后会用 registerScrollToTurn 覆盖 */
   },
   uiRequests: [],
+  questionLog: [],
+  questionLogSession: null,
   uiCollapsed: false,
   uiDrafts: {},
   notices: [],
@@ -1505,11 +1528,29 @@ export const useStore = create<Store>((rawSet, get) => {
           subagentPreviewId: s.subagentPreviewId === m.payload ? null : s.subagentPreviewId
         })
         break
+      case 'question-log':
+        /*
+         * 整表覆盖：主机只在「记录变了 / 切了会话」时推，
+         * 所以这里不需要合并 —— 合并只会把上一个会话的记录留在画面上。
+         */
+        set({ questionLog: m.payload.entries, questionLogSession: m.payload.sessionId })
+        break
       case 'ui-request':
         /* 新问题到达 → 自动展开面板（用户收起了也不该把新问题藏起来） */
         set({ uiRequests: [...s.uiRequests, m.payload], uiCollapsed: false })
         // 需要用户介入（模型提问 / 扩展要选择）—— 提示音 + 通知
         alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
+        break
+      case 'ui-deadline':
+        /*
+         * 同一个请求的等待被延长：**只**改截止时间。
+         * 不追加、不提示音、不展开 —— 那都是「新问题」的行为，而这里只是时间变了。
+         */
+        set({
+          uiRequests: s.uiRequests.map((r) =>
+            r.id === m.payload.id ? { ...r, timeout: m.payload.timeout, deadline: m.payload.deadline } : r
+          )
+        })
         break
       case 'notify': {
         // 去重 + 限流：真实场景下扩展（例如用户自己的 left-info-panel）会在
@@ -2267,8 +2308,21 @@ export const useStore = create<Store>((rawSet, get) => {
     set({
       queue: EMPTY_QUEUE,
       pendingSends: [],
-      notices: pushNotice(get().notices, 'info', res.text ? `已从「${res.text.slice(0, 30)}」分叉` : '已分叉')
+      /*
+       * `res.text` 是 pi 给的「分叉点那条用户消息」的文本。
+       * 分叉的语义是**不含**这条消息（`position: before`），所以把它放回输入框
+       * 才能接着改两句就发 —— 这也是 pi TUI 的行为。
+       * 不回填时用户看到的就是「点了一下，什么都没发生」。
+       */
+      notices: pushNotice(
+        get().notices,
+        'info',
+        res.text
+          ? `已从「${res.text.slice(0, 30)}」之前分叉，这条消息已放回输入框`
+          : '已分叉'
+      )
     })
+    if (res.text) get().injectComposerText(res.text)
     await get().refreshSessions()
   },
 
@@ -2987,6 +3041,39 @@ export const useStore = create<Store>((rawSet, get) => {
   setUiCollapsed: (v) => set({ uiCollapsed: v }),
 
   setUiDraft: (id, value) => set({ uiDrafts: { ...get().uiDrafts, [id]: value } }),
+
+  extendUi: async (id, extraMs) => {
+    const res = await window.yan.extendUi(id, extraMs)
+    if (!res.ok) return false
+    /*
+     * 用主进程回的绝对截止时刻覆盖本地那份（不等 push）：
+     * 乐观改本地值会让倒计时与真正抱计时器的那一侧差一个往返；
+     * push（`ui-deadline`）随后到达只是幂等重写同一个数。
+     */
+    if (res.deadline) {
+      set({
+        uiRequests: get().uiRequests.map((r) =>
+          r.id === id ? { ...r, timeout: res.timeout ?? r.timeout, deadline: res.deadline } : r
+        )
+      })
+    }
+    return true
+  },
+
+  /*
+   * 「这一条已经显示给用户了」→ 让主进程开始计时。
+   * 幂等：面板重复挂载（切页再切回）不会把等待时间重新起算。
+   */
+  startUiTimer: async (id) => {
+    const res = await window.yan.startUiTimer(id).catch(() => null)
+    if (!res?.ok || !res.deadline) return false
+    set({
+      uiRequests: get().uiRequests.map((r) =>
+        r.id === id ? { ...r, timeout: res.timeout ?? r.timeout, deadline: res.deadline } : r
+      )
+    })
+    return true
+  },
 
   dismissRequest: (id) => {
     // 超时的对话框：不回应答（pi 侧会自己超时），只从列表移除

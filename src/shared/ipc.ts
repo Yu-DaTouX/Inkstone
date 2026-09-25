@@ -101,6 +101,18 @@ export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
  * 落盘后的 `file://` 地址。两者只会有一个 —— 几十 MB 的 base64 不能进 IPC，
  * 而只要它不留下来，重启 / 切会话之后就再也找不回图片。
  */
+/** 一次宿主提问的问答记录（只用于界面回放，不进模型上下文） */
+export interface QuestionLogEntry {
+  id: string
+  question: string
+  options: string[]
+  /** 用户的回答；取消 / 超时为 null */
+  answer: string | null
+  cancelled: boolean
+  /** 回答时刻（绝对毫秒）：渲染端据此把它插回当时的对话位置 */
+  at: number
+}
+
 export interface UIMessageImage {
   mimeType: string
   data: string
@@ -152,6 +164,12 @@ export interface TurnTimingMeta {
 export interface UIMessage {
   id: string
   role: 'user' | 'assistant' | 'bash'
+  /**
+   * 这条用户消息是**宿主提问的回答**，不是手打的。
+   *
+   * 只影响显示（行首标「提问」）；它由 `question-log` 合成，不在 pi 会话里。
+   */
+  question?: boolean
   /** 来源会话段的工作目录；历史里的相对文件链接按原目录解析。 */
   sourceCwd?: string
   /** 正文文本（assistant 可能持续增长） */
@@ -390,6 +408,16 @@ export interface RunnerStatus {
   lastActiveAt: number
   /** 当前视图正在看的就是它 */
   isActive: boolean
+  /**
+   * 自动隔离状态（同一工作目录冲突时被自动换到隔离工作树的会话）。
+   *
+   * `waiting` = 主干还有会话在跑，等它空下来就自动合回；
+   * `blocked` = 合回被挡（冲突 / 主干有未解决条目等等），改动仍在隔离工作树里。
+   * 没有隔离的会话就没有这个字段。
+   */
+  isolation?: 'waiting' | 'blocked'
+  /** 隔离分支名（左栏悬停提示用；与 `isolation` 同时出现） */
+  isolationBranch?: string
 }
 
 /** 可 fork 的用户消息（get_fork_messages） */export interface ForkPoint {
@@ -1655,6 +1683,13 @@ export interface ExtensionUiRequest {
   widgetPlacement?: 'aboveEditor' | 'belowEditor'
   text?: string
   timeout?: number
+  /**
+   * 截止时刻（绝对毫秒）。宿主发起的提问由宿主管理：
+   *   · `> 0` —— 倒计时到那一刻（`ui-deadline` 推送会更新它）；
+   *   · `0` —— 宿主还没开始计时（用户还没看到这一条），界面先不显示倒计时；
+   *   · 缺省 —— 扩展自己的请求，渲染端按 `timeout` 自己算。
+   */
+  deadline?: number
 }
 
 /* 主进程 → 渲染进程 的推送
@@ -1814,6 +1849,21 @@ export type MainPushBody =
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   /** 扩展要弹窗，需要应答 */
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
+  /**
+   * 某个待回答的问题被延长了等待（用户在面板倒计时上点了一下）。
+   *
+   * 为什么单开一条而不是重推 `ui-request`：重推会让渲染端当「新问题」处理（追加 / 提示音），
+   * 而这里只是同一个请求的截止时间变了。`deadline` 是绝对毫秒，渲染端每秒算剩余量。
+   */
+  | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
+  /**
+   * 当前会话的宿主提问记录（整表覆盖，切会话 / 重载后对齐）。
+   *
+   * 为什么要它：问答只在工具结果里，对话流看不到「用户到底回答了什么」。
+   * 用户要求把它显示成一条带「提问」提示的消息 —— **只回放**，
+   * 不再发一次给模型（模型本来就从工具结果里拿到了）。
+   */
+  | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
   /** 扩展的 fire-and-forget 通知 */
   | { ch: 'notify'; payload: ExtensionUiRequest }
   /**
@@ -2711,6 +2761,20 @@ export interface YanBridge {
 
   /* 扩展 UI 应答 */
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
+  /**
+   * 延长一个待回答问题的等待（用户在倒计时上点一下）。
+   *
+   * 为什么要往返主进程：超时是主进程的计时器在抱，只改界面上的数字等于骗用户。
+   * 返回新的剩余量与截止时刻；请求已经不在等待（已被回答 / 已超时）时回 `ok:false`。
+   */
+  extendUi(id: string, extraMs?: number): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
+  /**
+   * 「这一条请求已经显示给用户了」→ 开始计时（幂等）。
+   *
+   * 为什么要这一趟：多条问题同时挂着时面板一次只显示一条，计时必须从
+   * **用户看到这一条**开始，否则后面几条会在用户还没翻到时就把时间扣完。
+   */
+  startUiTimer(id: string): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
 
   /**
    * 发一条系统通知（仅当用户开了通知开关时由 store 调用）。

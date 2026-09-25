@@ -222,7 +222,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 动作：
   ask     在砚的当前会话里向用户提出一个问题；这是宿主 UI 请求，不是模型工具。
           yan question ask --request-file question.json
-          question.json: {"question":"…","options":["选项 A","选项 B"],"timeout":120000}
+          question.json: {"question":"…","options":["选项 A","选项 B"],"timeout":180000}
           options 为空或省略时显示文本输入；有选项时用户也可以选择「其他」自行输入。
           完整答案落在 resultFile，stdout 只回摘要；取消 / 超时会如实返回，不猜答案。
 

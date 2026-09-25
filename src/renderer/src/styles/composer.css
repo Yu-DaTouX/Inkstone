@@ -1188,10 +1188,146 @@
   flex: 1;
 }
 
-.qpanel-count {
+/*
+ * 多问题分页（‹ 1 / 3 ›）。
+ * 只翻显示：每条请求都还在等回答，各自的倒计时照常走。
+ */
+.qpanel-page {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
+}
+
+.qpanel-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-mute);
+}
+
+.qpanel-page-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.qpanel-page-btn:disabled {
+  opacity: .35;
+}
+
+/* 同一个图标转过来当成「上一条」，不额外加一个 sprite 图标 */
+.qpanel-page-btn.flip {
+  transform: rotate(180deg);
+}
+
+.qpanel-page-n {
+  padding: 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「或自行撰写回复」入口：虚线框，与实线选项区分开 */
+.qpanel-custom-open {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: left;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.qpanel-custom-open:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--accent-line);
+}
+
+/*
+ * 倒计时：点一下加 2 分钟。
+ * 数字是**像素点阵**（见 PixelDigits.tsx）：每个点是一个小方块，
+ * 颜色跟着 `currentColor` 走 —— 所以低余量转警色、深浅主题都自动生效。
+ * 点的大小用一个变量收着，要整体放大只改这里。
+ */
+.qpanel-timer-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.qpanel-timer {
+  --px-dot: 2px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  padding: 1px 4px;
+  color: var(--fg-mute);
+  cursor: pointer;
+}
+
+.px-digits {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--px-dot) + 1px);
+}
+
+.px-char {
+  display: grid;
+  grid-template-columns: repeat(3, var(--px-dot));
+  grid-auto-rows: var(--px-dot);
+  gap: 1px;
+}
+
+.px-dot {
+  background: transparent;
+}
+
+.px-dot.on {
+  background: currentColor;
+}
+
+.qpanel-timer:hover {
+  background: var(--bg-3);
+  border-color: var(--line);
+  color: var(--fg);
+}
+
+/* 剩 30 秒：数字转警色（颜色不是唯一提示 —— 浮出提示里也有文字） */
+.qpanel-timer.low {
+  color: var(--warn);
+}
+
+/* 点击后浮出的「已加 2 分钟」；靠 key 换掉重放动画，不需要 JS 清理 */
+.qpanel-bump {
+  position: absolute;
+  right: calc(100% + 6px);
+  top: 50%;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+  animation: qpanel-bump 1.4s var(--ease) forwards;
+}
+
+@keyframes qpanel-bump {
+  0% { opacity: 0; transform: translateY(4px) }
+  15% { opacity: 1; transform: translateY(-50%) }
+  70% { opacity: 1; transform: translateY(-50%) }
+  100% { opacity: 0; transform: translateY(-80%) }
 }
 
 .qpanel-toggle {
@@ -1260,6 +1396,9 @@
 }
 
 .qpanel-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   text-align: left;
   min-height: 34px;
   padding: 6px var(--sp-3);
@@ -1267,6 +1406,45 @@
   border: 1px solid var(--border-soft);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
+}
+
+/* 序号：圆牌里的 1/2/3 —— 键盘 Tab 到哪一项也能从数字对上 */
+.qpanel-option-n {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.qpanel-option-t {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右箭头：悬停才显形，避免静态时满屏是箭头 */
+.qpanel-option-go {
+  flex: none;
+  color: var(--fg-mute);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.qpanel-option:hover:not(:disabled) .qpanel-option-n {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.qpanel-option:hover:not(:disabled) .qpanel-option-go,
+.qpanel-option:focus-visible .qpanel-option-go {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .qpanel-option:hover:not(:disabled) {
