@@ -218,6 +218,49 @@
   ok(turnCount >= ul.length, '渲染块数 ≥ 用户轮数（每轮至少一块）')
   ok(after0(sc), '点击后确实滚动到了目标附近')
 
+  /*
+   * ---- 长会话：刻度不被压扁 ----
+   *
+   * 用户：「左边的导航柄在长文模式且会话很长的情况下会压缩」。
+   * 根因是 .outline-track 的 flex column 默认让子项 shrink ——
+   * 刻度一多就先压扁格子而不是溢出，于是轨道上那条 overflow-y: auto
+   * 永远不触发。上面量的是当前会话（轮数不多）的命中区，碰不到这个。
+   * 所以这里强制注入 40 轮，并同时断言「格子没被压扁」和「轨道可滚」——
+   * 两个都要，只满足前者（把轨道撑高）会让整列溢出对话区。
+   */
+  out.push('')
+  out.push('=== 长会话（40 轮）下刻度不被压扁 ===')
+  const many = []
+  for (let i = 0; i < 40; i++) {
+    many.push({ id: `ol-u${i}`, role: 'user', text: `第 ${i + 1} 轮提问`, timestamp: Date.now() })
+    many.push({ id: `ol-a${i}`, role: 'assistant', text: `第 ${i + 1} 轮回答`, timestamp: Date.now() })
+  }
+  store.setState({ messages: many })
+  await sleep(1500)
+
+  const longHits = qa('.outline-hit')
+  const hitHeights = longHits.map((el) => Math.round(el.getBoundingClientRect().height))
+  const barHeights = qa('.outline-bar').map((el) => Math.round(el.getBoundingClientRect().height))
+  const trk = q('.outline-track')
+  out.push(`  刻度格数: ${longHits.length} / 期望 40`)
+  out.push(`  命中区高度: min ${Math.min(...hitHeights)} / max ${Math.max(...hitHeights)}`)
+  out.push(`  刻度线高度: min ${Math.min(...barHeights)} / max ${Math.max(...barHeights)}`)
+  if (trk) {
+    out.push(
+      `  轨道: clientH=${trk.clientHeight} scrollH=${trk.scrollHeight} ` +
+        `overflowY=${getComputedStyle(trk).overflowY}`
+    )
+  }
+  ok(longHits.length >= 30, `40 轮刻度都渲染出来了（实际 ${longHits.length}）`)
+  ok(
+    Math.min(...hitHeights) >= 12,
+    `每格命中区仍 ≥12px（最小 ${Math.min(...hitHeights)}）—— 没被 flex 压扁`
+  )
+  ok(
+    !!trk && trk.scrollHeight > trk.clientHeight,
+    '刻度多于轨道高度时轨道自己可滚（而不是把格子压扁）'
+  )
+
   return out.join('\n')
 
   /** 目标回合的顶部应靠近滚动区顶部（或已在顶部） */
