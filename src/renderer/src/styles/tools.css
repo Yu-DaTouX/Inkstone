@@ -2474,14 +2474,20 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-usage {
   /*
-   * 基准宽 150（两张卡的环形要落在同一条竖线上），但**允许收缩**：
-   * 标题栏已改成 nowrap，窄栏时得靠这里让位，否则整个头部顶破容器。
-   * 收缩到放不下时由 `.rp-header-values` 的 ellipsis 收尾。
+   * 基准宽 150（两张卡的环形要落在同一条竖线上），可以收缩，
+   * 而且**优先收缩**。
+   *
+   * `flex-shrink: 20` 是关键：压缩量按 shrink × basis 分，标题（shrink 1、
+   * basis ≈ 标题宽）只分到 2% 左右，所以窄栏时先掉的是摘要里的数字 ——
+   * 而不是把标题压成「上…」「额.」（用户截图）。
+   *
+   * `min-width: 36px` = 环形 30 + gap 6：数字全部消失后就到底了，
+   * 再窄才轮到标题缩。
    */
-  flex: 0 1 150px;
+  flex: 0 20 150px;
   width: auto;
   max-width: none;
-  min-width: 0;
+  min-width: 36px;
   justify-content: flex-start;
 }
 
