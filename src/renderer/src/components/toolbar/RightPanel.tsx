@@ -2210,7 +2210,7 @@ function TodoSection() {
   }, [todos])
 
   if (todos.length === 0) {
-    return <><GoalTaskSummary /><GoalOutputs /><Section titleKey="rp.todo" testId="rp-todo">{!hasTaskTileContent({ todos, goal, hasMessageOutputs }) ? <div className="rp-todo-scroll"><div className="rp-dim">{t('rp.todoEmpty')}</div></div> : null}</Section></>
+    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo">{!hasTaskTileContent({ todos, goal, hasMessageOutputs }) ? <div className="rp-todo-scroll"><div className="rp-dim">{t('rp.todoEmpty')}</div></div> : null}<GoalOutputs /></Section></>
   }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
@@ -2239,7 +2239,6 @@ function TodoSection() {
   return (
     <>
     <GoalTaskSummary />
-    <GoalOutputs />
     <Section
       titleKey="rp.todo"
       testId="rp-todo"
@@ -2300,7 +2299,7 @@ function TodoSection() {
               <span className="rp-box" aria-hidden>
                 {todo.done ? '✓' : blocked ? '!' : ''}
               </span>
-              {/** 只做 200 字安全上限，真正的行数限制交给 CSS 两行截断 */}
+              {/** 12 字安全上限 + CSS 单行截断（见 TODO_MAX_CHARS 注释） */}
               <span className="rp-text">{clip(todo.text, TODO_MAX_CHARS)}</span>
               {isActive ? (
                 <span className="rp-state doing" data-testid="todo-active-label">
@@ -2390,6 +2389,11 @@ function TodoSection() {
         </div>
       ) : null}
       </div>
+      {/*
+        产物 / 参考跟着任务卡片（用户要求：三合一看成一件事，默认保留任务）。
+        放在清单与历史之后 —— 它们是任务的**附属信息**，先看完任务本身。
+      */}
+      <GoalOutputs />
     </Section>
     </>
   )
@@ -2428,6 +2432,49 @@ function GoalTaskSummary() {
   )
 }
 
+/**
+ * 产物 / 参考的折叠组。
+ *
+ * 用户报：「右栏的 产物 参考 任务 的工具目前虽然是三合一 但是 UI 上看像是
+ * 分离的」—— 三块并排是三张各自成卡的卡片，看不出是一回事。
+ *
+ * 现在它们同属**任务卡片**（`TodoSection` 的同一个 Section），产物与参考是
+ * 卡片内的次级折叠，**默认收起**：用户要求「默认保留任务」，所以默认只留任务
+ * 本体，产物/参考各占一行标题（行尾带条数），要看再展开。
+ *
+ * 收起时不渲染内容（不是藏起来）——与 Section 同一套语义：
+ * 屏幕阅读器与探针不会读到看不见的内容。
+ */
+function OutputGroup({
+  testId,
+  title,
+  count,
+  children
+}: {
+  testId: string
+  title: string
+  count: number
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section className={`rp-output-group ${open ? 'open' : ''}`} data-testid={testId}>
+      <button
+        type="button"
+        className="rp-output-heading"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid={`${testId}-toggle`}
+      >
+        <Icon name="chevron-right" size={12} className="chev" />
+        <span>{title}</span>
+        <span className="rp-count">{count}</span>
+      </button>
+      {open ? <div className="rp-output-list">{children}</div> : null}
+    </section>
+  )
+}
+
 /** 只展示当前会话实际登记的产物和参考；没有数据时不占磁贴空间。 */
 function GoalOutputs() {
   const goalLinks = useStore((s) => s.goal?.links)
@@ -2462,61 +2509,61 @@ function GoalOutputs() {
   return (
     <div className="rp-goal-outputs" data-testid="rp-goal-outputs">
       {outputs.length ? (
-        <section className="rp-output-group" data-testid="rp-output-products">
-          <div className="rp-output-heading">产物 <span>{outputs.length}</span></div>
-          <div className="rp-output-list">
-            {outputs.slice(-6).map((output) => (
-              <button
-                type="button"
-                className="rp-output-row"
-                key={output.path}
-                title={output.path}
-                disabled={output.unavailable}
-                onClick={() => void window.yan.openPath(output.path)}
-              >
-                <Icon name="folder-open" size={12} />
-                <span>{output.label}</span>
-                {output.unavailable ? <small>不可用</small> : null}
-              </button>
-            ))}
-          </div>
-        </section>
+        <OutputGroup testId="rp-output-products" title="产物" count={outputs.length}>
+          {outputs.slice(-6).map((output) => (
+            <button
+              type="button"
+              className="rp-output-row"
+              key={output.path}
+              title={output.path}
+              disabled={output.unavailable}
+              onClick={() => void window.yan.openPath(output.path)}
+            >
+              <Icon name="folder-open" size={12} />
+              <span>{output.label}</span>
+              {output.unavailable ? <small>不可用</small> : null}
+            </button>
+          ))}
+        </OutputGroup>
       ) : null}
       {urls.length || images.length ? (
-        <section className="rp-output-group" data-testid="rp-output-references">
-          <div className="rp-output-heading">参考 <span>{urls.length + images.length}</span></div>
-          <div className="rp-output-list">
-            {urls.slice(-4).map((link) => (
-              <button
-                type="button"
-                className="rp-output-row"
-                key={link.target}
-                title={link.target}
-                onClick={() => void window.yan.browser.openExternal(link.target)}
-              >
-                <Icon name="globe" size={12} />
-                <span>{link.label || link.target}</span>
-              </button>
-            ))}
-            {images.slice(-3).map((image, index) => (
-              <div className="rp-output-row" key={`${index}-${image.mimeType}`}>
-                <img src={`data:${image.mimeType};base64,${image.data}`} alt={`参考图片 ${index + 1}`} />
-                <span>参考图片 {index + 1}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        <OutputGroup testId="rp-output-references" title="参考" count={urls.length + images.length}>
+          {urls.slice(-4).map((link) => (
+            <button
+              type="button"
+              className="rp-output-row"
+              key={link.target}
+              title={link.target}
+              onClick={() => void window.yan.browser.openExternal(link.target)}
+            >
+              <Icon name="globe" size={12} />
+              <span>{link.label || link.target}</span>
+            </button>
+          ))}
+          {images.slice(-3).map((image, index) => (
+            <div className="rp-output-row" key={`${index}-${image.mimeType}`}>
+              <img src={`data:${image.mimeType};base64,${image.data}`} alt={`参考图片 ${index + 1}`} />
+              <span>参考图片 {index + 1}</span>
+            </div>
+          ))}
+        </OutputGroup>
       ) : null}
     </div>
   )
 }
 
 /**
- * 任务文字的安全上限（用户新要求：显示**最多两行**）。
- * 不再按字数硬截（那会让两行永远用不满）；只留一个很大的安全上限，
- * 防止模型把一整段文轩塞进一条任务，然后交给 CSS `-webkit-line-clamp: 2`。
+ * 任务文字的字数上限（用户 2026-09-25：「任务标题太长 我认为可以限制为最高 12 字
+ * 且你要确保 在最窄右边栏的情况下 不要出现分行的问题」）。
+ *
+ * 12 字 + 单行 + 省略号：右栏拉到最窄时也**绝不会换行**（同一句里点名的）。
+ * 完整文本仍在 `title` 与无障碍树上，不是丢掉了。
+ *
+ * ⚠️ 与上一版相反：那一版是按「要完整文字，不是省略号」改成窄栏换行的。
+ *    两条要求各自成立，当前以最新的为准 —— 换行会让最窄栏里一条任务
+ *    占三行，任务清单反而看不清。
  */
-const TODO_MAX_CHARS = 200
+const TODO_MAX_CHARS = 12
 
 /** 超过上限就截断并加省略号（完整文本由 title 提供） */
 function clip(s: string, max: number): string {
