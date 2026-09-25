@@ -647,11 +647,16 @@
 
 .reason-body.open {
   /*
-   * 窗口高的四分之一（用户：「推理过程和命令的展开大小也要限制为四分之一」）。
-   * 早先是 50vh —— 那是「面积 1/4」的算法，配上 50vw 的宽度实际占掉
-   * 中栏整宽 + 半个窗口高，看着像半屏。
+   * 展开全文的固定范围（用户 2026-09-18：「推理过程同理」；
+   * 2026-09-25 我一度改成 25vh，用户报「推理窗口变回之前的了」—— 已恢复）。
+   *
+   * ⚠️ `height: auto` 必须留着：基础规则里是 `height: 0`（收起态用
+   *    clip-path 做揭示动画，高度靠外层容器接管）。只写 max-height 盖不住
+   *    那个 0，展开后整块会塔成 1px（探针里的「展开高度=1.4px」）。
+   * ⚠️ 这是 2026-09-25 那次改动的回退点：不要把它换成 `height: 25vh`。
    */
-  height: 25vh;
+  height: auto;
+  max-height: min(70vh, 620px);
   margin-top: 6px;
   margin-bottom: var(--sp-2);
   border-width: 1px;
@@ -795,20 +800,29 @@
  * 卡住高度后 `.tgroup-head` 始终留在上方（它在 body 外面，列表自己滚），
  * 它本身就是那个「折叠回去的按钮」。
  *
- * 高度：用户 2026-09-25 把口径统一成「窗口高的四分之一」（三处一致：
- * 产物图片含衬底 / 推理过程 / 命令列表），所以不再用「25 行」这个算法，
- * 改成 25vh。矮窗口下也一样成立，不需要再留 80vh 那条退路。
+ * 高度：工具组按**条数**卡（用户 2026-09-18：「给展开的条目一个显示范围」；
+ * 2026-09-19 定成 25 行）—— 25 行 × 行步进，再留几像素余量让第 25 行完整可见。
+ * 矮窗口下退回 80vh：那时物理上放不下 25 行，宁可让列表自己滚。
  *
- * ⚠️ `toolgroup` 探针原来按「可见 ≥ 25 行」断言，改这个数会让它变红，
- *    已经跟着改成按 25vh 反推行数。
+ * 行步进实测 25.0px（`.trow-head` 一行 + `.tgroup-body` 的 1px gap）——
+ * 这个值随 `.trow-head` 的 padding / 字号 / 界面缩放变。原来写 623px 是按
+ * 旧行步进 24.8px 算的；`a50268f` 把 `.trow-head` 的 padding 从 `1px 0`
+ * 改成 `2px 0` 后行步进涨到 25.0px，623 就只够 24 行了。这里补上一个步进。
  *
- * 单条详情与推理全文见 `.reason-body.open`，同一口径。
+ * ⚠️ 改这个数后请跑 `npm run test:live -- toolgroup`：它按实测行步进算
+ *    可见条数并要求 ≥ 25。
+ *
+ * ⚠️ 2026-09-25 我一度改成 `25vh`（想跟产物图片统一口径），用户报「工具栏
+ *    变回之前的了」—— 已恢复成条数算法。工具组的最小单位是「条」，不是窗口
+ *    高度；推理全文与单条详情是一段连续文本，它们用 min(70vh, 620px)。
+ *
+ * 单条详情与推理全文见 `.reason-body.open`。
  */
 .tgroup-body {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 25vh;
+  max-height: min(625px, 80vh);
   overflow: auto;
   /* 在列表里滚到底不要把消息区一起带着滚 */
   overscroll-behavior: contain;
@@ -977,12 +991,14 @@
 .trow-expand.open {
   height: auto;
   /*
-   * 单条工具调用的详情同样卡在窗口高的四分之一。
-   * 原来这里是 `height: auto` + `overflow: visible` —— 没有任何上限，
-   * 展开一条长输出（如 npm run check）就能把整段对话顶走，和
-   * `.tgroup-body` 早年的毛病一样。
+   * 单条工具调用的详情同样卡一个固定范围（用户 2026-09-18：「展开时应该有一个
+   * 固定的范围」）。原来这里是 `height: auto` + `overflow: visible` —— 没有任何
+   * 上限，展开一条长输出（如 npm run check）就能把整段对话顶走。
+   *
+   * 2026-09-25 我一度把它改成 25vh，随 `.trow-body` 一起恢复为
+   * `min(70vh, 620px)`（与推理全文同一口径）。
    */
-  max-height: 25vh;
+  max-height: min(70vh, 620px);
   overflow: auto;
   overscroll-behavior: contain;
   opacity: 1;
@@ -996,12 +1012,8 @@
 .trow-body {
   box-sizing: border-box;
   width: min(50vw, calc(100% - 18px));
-  /* 与推理过程、命令列表同一口径：窗口高的四分之一 */
-  height: 25vh;
   margin-left: 18px;
   padding: 4px 0;
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
 /* 命令的终端自己滚动并保留拖拽尺寸；目录改动卡片另列在其下。 */
@@ -1011,8 +1023,15 @@
 }
 
 .trow-body > :not(.term) {
-  max-height: none;
-  overflow: visible;
+  /*
+   * 单条详情同样卡一个固定范围（用户 2026-09-18：「展开时应该有一个固定的
+   * 范围，或者在最上方显示折叠回去的按钮」）。
+   * 2026-09-25 我一度把它改成 `.trow-body { height: 25vh }`，
+   * 用户报「工具栏变回之前的了」—— 已恢复成 `min(70vh, 620px)`。
+   */
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 @media (max-width: 700px) {
