@@ -1,5 +1,6 @@
 {
   "auth.checking": "检测中…",
+  "artifact.zoomHint": "点击在右侧放大查看",
   "auth.cleared": "已移除凭证",
   "auth.cmdTip": "在终端运行 pi，然后输入 /login 选择服务商",
   "auth.entries": "{n} 条",

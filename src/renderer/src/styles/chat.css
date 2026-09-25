@@ -263,17 +263,31 @@
   display: grid;
   place-items: center;
   min-height: 0;
-  padding: 14px;
-  background: #101318;
+  padding: 10px;
+  /*
+   * 深色衬底。原来硬编码 #101318 —— 图片是主体、衬底是配角，
+   * 但浅色主题下也不该是一片固定黑，所以做成可被主题覆盖的变量。
+   */
+  background: var(--artifact-stage, #101318);
 }
 
 .artifact-image {
   display: block;
-  width: min(240px, 100%);
-  max-width: 240px;
-  max-height: 240px;
+  /*
+   * 用户：「当前的图片预览窗口没有凸显主题内容 文件名 简洁 和下面的四个按钮
+   * 是可以保留的 你来设计吧」。
+   *
+   * 之前是 `width: min(240px, 100%); max-width: 240px; max-height: 240px`
+   * —— 图片被**硬锁在 240px**，在卡片里缩成一小块，这就是「没凸显主题内容」。
+   * 现在占满卡片宽度、高度按比例（max-height 只用来拦住超长截图）。
+   */
+  width: 100%;
+  max-width: 100%;
+  max-height: 420px;
   object-fit: contain;
   border-radius: 8px;
+  /* 点击放大（与下面「右侧预览」同一个动作，只是图上直接点得到） */
+  cursor: zoom-in;
 }
 
 .artifact-image-wrap.failed {

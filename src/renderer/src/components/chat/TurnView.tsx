@@ -340,6 +340,7 @@ function TurnTime({ timestamp }: { timestamp: number }) {
 }
 
 function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][number] }) {
+  const t = useT()
   const previewFile = useStore((s) => s.previewFile)
   const [text, setText] = useState<string | null>(null)
   const fileUrl = toFileUrl(artifact.path)
@@ -367,7 +368,19 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
       {artifact.description ? <div className="artifact-description">{artifact.description}</div> : null}
       {artifact.previewable && (artifact.kind === 'image' || artifact.kind === 'svg') ? (
         <div className={`artifact-image-wrap ${unavailable ? 'failed' : ''}`}>
-          {!unavailable ? <img src={fileUrl} alt={artifact.filename} className="artifact-image" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.parentElement?.classList.add('failed') }} /> : null}
+          {!unavailable ? (
+            <img
+              src={fileUrl}
+              alt={artifact.filename}
+              className="artifact-image"
+              title={t('artifact.zoomHint')}
+              onClick={() => void previewFile(artifact.path)}
+              onError={(event) => {
+                event.currentTarget.hidden = true
+                event.currentTarget.parentElement?.classList.add('failed')
+              }}
+            />
+          ) : null}
           {unavailable ? <span className="artifact-preview-error">{artifact.error || '原始文件不可用，无法预览。'}</span> : null}
         </div>
       ) : null}

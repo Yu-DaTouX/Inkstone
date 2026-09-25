@@ -1,5 +1,6 @@
 {
   "auth.checking": "Checking…",
+  "artifact.zoomHint": "Click to open a larger view on the right",
   "auth.cleared": "Credentials removed",
   "auth.cmdTip": "Run pi in a terminal, then type /login",
   "auth.entries": "{n} entries",
