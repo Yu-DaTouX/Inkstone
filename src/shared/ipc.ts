@@ -142,7 +142,11 @@ export interface UIMessage {
   /** 正文文本（assistant 可能持续增长） */
   text: string
   /** 用户随消息附的图片（base64，不含 data: 前缀） */
-  images?: { mimeType: string; data: string }[]
+  /**
+   * 图片：`data` 是本次运行期内存里的 base64（刚发完那一份）；
+   * `url` 是历史重读时落盘后的 `file://` 地址。两者只会有一个。
+   */
+  images?: { mimeType: string; data: string; url?: string }[]
   /** 思考文本 */
   thinking?: string
   thinkingMs?: number

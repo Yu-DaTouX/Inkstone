@@ -188,6 +188,19 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runLatestOnlyTests } = await import('./test-latest-only.mjs')
 await runLatestOnlyTests()
+
+/* 图片预览的本地保留（纯逻辑）：同样现场编译，不依赖构建产物 */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/keep-images.ts'],
+    outfile: 'out/test/keep-images.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runKeepImagesTests } = await import('./test-keep-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await runArtifactTests()
 const { runTurnTests } = await import('./test-turns.mjs')
@@ -1560,6 +1573,7 @@ await runSubagentUsageTests(ok)
 
 // 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
 await runToolLayoutTests(ok)
+await runKeepImagesTests(ok)
 
 
 // 短标题（U-3a/H-10a）：字素截断

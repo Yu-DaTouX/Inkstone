@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT, type MessageKey } from '../../i18n'
 import type { GoalLink, GoalState } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
+import { goalDisplayTitle } from '../../state/goal-view'
 
 const PHASE_LABEL: Record<GoalState['phase'], MessageKey> = {
   planning: 'goal.planning',
@@ -177,6 +178,9 @@ export function GoalContent() {
         )
       ) : (
         <div className="goal-panel-content">
+          {!activeGoal.brief && goalDisplayTitle(activeGoal) ? (
+            <div className="goal-panel-display-title" data-testid="goal-display-title">{goalDisplayTitle(activeGoal)}</div>
+          ) : null}
           {activeGoal.brief ? (
             /*
              * 用户自己写的目标与达成判据要**原样**显示在最上面：
@@ -293,12 +297,12 @@ export function GoalContent() {
           ) : null}
 
           {(activeGoal.evidence ?? []).length ? (
-            <div className="goal-panel-evidence">
-              <div className="goal-panel-subtitle">{t('goal.evidence')}</div>
+            <details className="goal-panel-evidence">
+              <summary className="goal-panel-subtitle">{t('goal.evidence')} · {activeGoal.evidence.length}</summary>
               {(activeGoal.evidence ?? []).slice(-3).map((item, index) => (
                 <div className="goal-evidence-row" key={`${index}-${item}`}>{item}</div>
               ))}
-            </div>
+            </details>
           ) : null}
 
           {(activeGoal.links ?? []).length ? (

@@ -3,13 +3,14 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
+import { goalDisplayTitle } from '../../state/goal-view'
 import { GoalContent } from './GoalSection'
 
 /**
  * 目标浮层（实施-12 U-3a）。
  *
- * 目标从「工具页里常驻的一块」改成**标题栏入口 + 浮层**：
- *   · 入口只占一行，显示短标题与进度，不再抢工具页的位置；
+ * 标题栏目标入口 + 详情浮层；右栏任务磁贴同时显示目标摘要：
+ *   · 入口只占一行，显示短标题与进度；
  *   · 内容复用 `GoalContent`（只读，点击查看不会创建/停止目标）；
  *   · 打开期间领一个 overlay blocker，原生网页让位（H-9a 协调器）。
  *
@@ -48,7 +49,8 @@ export function GoalPopover() {
   const active = goal?.goalId ? goal : null
   const steps = active?.steps ?? []
   const done = steps.filter((step) => step.status === 'done').length
-  const label = shortTitle(active?.brief?.goal || active?.goalId, 22)
+  const displayTitle = goalDisplayTitle(active)
+  const label = shortTitle(displayTitle, 22)
 
   return (
     <div className="goal-entry-wrap" ref={rootRef}>
@@ -58,7 +60,7 @@ export function GoalPopover() {
         data-testid="goal-entry"
         data-goal-phase={active?.phase ?? 'empty'}
         aria-expanded={open}
-        title={active?.brief?.goal ?? t('goal.title')}
+        title={displayTitle || t('goal.title')}
         onClick={() => setOpen(!open)}
       >
         <Icon name="checklist" size={14} />

@@ -965,13 +965,9 @@ function TreeRow({
         {inContext ? <span className="rp-fs-inctx" data-testid={`fs-inctx-${path}`} aria-hidden /> : null}
         {dir && loading ? <span className="rp-fs-spin" aria-hidden /> : null}
       </button>
-      {/*
-        trailing 固定槽：体积与「加入上下文」**始终占位**，只用 opacity 切换。
-        之前体积用 display 切换，显隐本身会改变名称的可用宽度 —— hover 时文件名会跳。
-      */}
-      <span className="rp-fs-trailing">
-        {!dir && size !== undefined ? <span className="rp-fs-size">{fmtSize(size)}</span> : null}
-        {!dir && onAdd ? (
+      {/* 文件大小保留在行的 title 提示中，列表只给文件名和操作按钮留空间。 */}
+      {!dir && onAdd ? (
+        <span className="rp-fs-trailing">
           <button
             className="rp-fs-add"
             tabIndex={-1}
@@ -986,8 +982,8 @@ function TreeRow({
           >
             <Icon name="tag" size={12} />
           </button>
-        ) : null}
-      </span>
+        </span>
+      ) : null}
     </div>
   )
 }

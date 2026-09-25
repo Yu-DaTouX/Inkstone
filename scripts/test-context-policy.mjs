@@ -333,7 +333,7 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
 
     const b = budgetOf(128_000)
     const pending = view.nextContextStageText(t, { kind: 'compaction', at: b.triggers.compact, reached: false })
-    ok(/ctx\.nextStage/.test(pending), '未过线：走「下一步：…」')
+    ok(/ctx\.nextCompact/.test(pending), '未过线：直接说「约 88k 时压缩上下文」（没有「下一步：」前缀）')
     ok(pending.includes('88k'), `把 tokens 写成紧凑形式（实际 ${pending}）`)
     const reached = view.nextContextStageText(t, { kind: 'compaction', at: b.triggers.compact, reached: true })
     ok(/ctx\.nextReached/.test(reached), '已过线：改说“已达工作集上限”')

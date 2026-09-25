@@ -118,10 +118,10 @@ function PanelBody({
         <div className="qpanel-body" data-testid="question-panel-body">
           {req.message ? <div className="qpanel-msg">{req.message}</div> : null}
 
-          {req.method === 'select' && req.options ? (
+          {(req.method === 'select' || req.method === 'input') && req.options?.length ? (
             <div className="qpanel-options">
-              {req.options.map((o) => (
-                <button key={o} className="qpanel-option" disabled={busy} onClick={() => answer({ value: o })}>
+              {req.options.map((o, index) => (
+                <button key={`${index}:${o}`} className="qpanel-option" disabled={busy} onClick={() => answer({ value: o })}>
                   {o}
                 </button>
               ))}

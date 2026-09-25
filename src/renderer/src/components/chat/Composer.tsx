@@ -3,13 +3,13 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { identityForAwait, useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
+import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
 import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
 import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
-import { parseSubagentCommand } from '../../../../shared/subagent-command'
 
 /**
  * 输入区。四种输入模式共存：
@@ -106,7 +106,6 @@ export function Composer() {
   const addFileRefPaths = useStore((s) => s.addFileRefPaths)
   const removeAttachment = useStore((s) => s.removeAttachment)
   const clearAttachments = useStore((s) => s.clearAttachments)
-  const startSubagent = useStore((s) => s.startSubagent)
   const newSession = useStore((s) => s.newSession)
   const compact = useStore((s) => s.compact)
   const setModel = useStore((s) => s.setModel)
@@ -662,21 +661,6 @@ export function Composer() {
     }
 
     /*
-     * `/subagent <任务>`：把这件事交给一个**独立 pi 子进程**去跑（方案第 8 节）。
-     * 不进模型 —— 这是本地命令（与 `/login` 同一类）。
-     * 没有任务描述时不发：避免起一个什么都干不了的子代理。
-     */
-    const subagentCommand = parseSubagentCommand(raw)
-    if (subagentCommand) {
-      const { task, isolation } = subagentCommand
-      if (!task) return
-      setValue('')
-      clearAttachments()
-      await startSubagent(task, undefined, isolation)
-      return
-    }
-
-    /*
      * N18：Yan 本地命令与 pi 命令共用一个注册表，但本地命令必须在桌面端
      * 由明确的 UI 动作承接，不能把 `/new` / `/browser` 当自然语言发给模型。
      * 参数仍保留在输入框语义里：`/model provider/id` 可以直接选中已发现的模型，
@@ -986,6 +970,7 @@ export function Composer() {
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
+      <QuestionPanel />
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。

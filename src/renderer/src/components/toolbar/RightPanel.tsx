@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
-import { Section, SECTION_TITLE } from './ToolSection'
+import { Section, SECTION_ICON, SECTION_TITLE } from './ToolSection'
+import { DragDropRect, DragPreview } from './DragPreview'
 import { useStore } from '../../state/store'
+import { goalDisplayTitle } from '../../state/goal-view'
 import {
   compactionGrowthText,
   compactionReclaimText,
@@ -21,6 +23,7 @@ import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, t
 import {
   defaultFloatRect,
   defaultToolLayout,
+  pxRectToNormalized,
   isTileFloatable,
   moveTile,
   setTilePlacement,
@@ -36,11 +39,7 @@ import { BrowserSurface } from '../browser/BrowserSurface'
 import { TerminalSurface } from '../terminal/TerminalSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
-import { SubagentList } from '../chat/SubagentList'
-import { shortTitle } from '../../../../shared/short-title'
 import { fileResourceLabel } from '../../../../shared/file-resource'
-import { StartPage } from './StartPage'
-import { SubagentPreview } from './SubagentPreview'
 import {
   activateWorkbenchTab,
   activeWorkbenchTab,
@@ -78,6 +77,8 @@ export function RightPanel() {
   const open = useStore((s) => s.settings?.rightPanelOpen ?? true)
   const setToolLayout = useStore((s) => s.setToolLayout)
   const browserOpen = useStore((s) => s.browserState.open)
+  const browserUrl = useStore((s) => s.browserState.url)
+  const browserTitle = useStore((s) => s.browserState.title)
   /** 只读文件预览：与浏览器详情占同一块区域（方案 5.2） */
   const filePreview = useStore((s) => s.filePreview)
   /* 已打开文件的数据（key → 预览状态）：切标签时从它恢复，不重新读盘 */
@@ -103,9 +104,6 @@ export function RightPanel() {
   const setBrowserSurfaceActive = useStore((s) => s.setBrowserSurfaceActive)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const session = useStore((s) => s.session)
-  const subagentPreviewId = useStore((s) => s.subagentPreviewId)
-  const subagentRuns = useStore((s) => s.subagents)
-  const openSubagent = useStore((s) => s.openSubagent)
   const workbenchKey = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
   /*
    * 布局和它所属的会话 key 绑在一起存（`{key, state}`）：切会话时即使某个渲染
@@ -156,12 +154,6 @@ export function RightPanel() {
     saveWorkbenchState(bench.key, bench.state)
   }, [bench])
 
-  /* H-10a：列表 / 回合入口打开同一个 run → 激活同一个资源标签，不叠加副本 */
-  useEffect(() => {
-    if (!subagentPreviewId) return
-    updateWorkbench((state) => activateWorkbenchTab(state, 'subagent', subagentPreviewId))
-  }, [subagentPreviewId, updateWorkbench])
-
   /*
    * H-4：预览读到 realpath 后就有了资源身份 → 用它激活/新建文件标签。
    * 同一个文件重复打开只是激活（不叠加副本），不同工作树的同名文件互不覆盖。
@@ -171,12 +163,6 @@ export function RightPanel() {
     if (!key) return
     updateWorkbench((state) => activateWorkbenchTab(state, 'file', key))
   }, [filePreview?.key, updateWorkbench])
-
-  const closeSubagentTab = (id: string): void => {
-    setQuickMenuOpen(false)
-    updateWorkbench((state) => closeWorkbenchTab(state, id))
-    openSubagent(null)
-  }
 
   const activateWindow = (next: RightWindowView, resourceKey?: string): void => {
     updateWorkbench((current) => activateWorkbenchTab(current, next, resourceKey))
@@ -264,10 +250,10 @@ export function RightPanel() {
    * U-5 的拖放手势复用**同一个命令**，不另写一套放置逻辑。
    */
   const floatTile = useCallback(
-    (id: ToolSectionId) => {
+    (id: ToolSectionId, rect?: ToolRect) => {
       const tile = layout.tiles.find((t) => t.id === id)
       if (!tile || tile.placement === 'floating' || !isTileFloatable(id)) return
-      void setToolLayout(setTilePlacement(layout, id, 'floating', floatRectFor(layout)))
+      void setToolLayout(setTilePlacement(layout, id, 'floating', rect ?? floatRectFor(layout)))
     },
     [layout, setToolLayout]
   )
@@ -300,8 +286,13 @@ export function RightPanel() {
       setQuickMenuOpen(false)
     }
     document.addEventListener('mousedown', close)
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setQuickMenuOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
     return () => {
       document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', closeOnEscape)
       release()
     }
   }, [quickMenuOpen, acquireOverlayBlocker])
@@ -450,13 +441,11 @@ export function RightPanel() {
   }
 
   const activeView: RightWindowView = currentWindowView(workbench)
-  const startMode = activeView === 'start'
+  const homeMode = activeView === 'start' || activeView === 'tools'
   const reviewMode = activeView === 'review' && reviewOpen
   const browserMode = activeView === 'browser' && browserOpen
   const fileMode = activeView === 'file'
-  const toolsMode = activeView === 'tools' && open
-  /* H-10a：子代理详情是工作台资源标签 `subagent:<runId>` */
-  const subagentMode = activeView === 'subagent' && !!subagentPreviewId
+  const toolsMode = homeMode && open
   /* 交互终端（H-11）：纯 DOM 资源，与文件一样走工作窗口标签 */
   const terminalMode = activeView === 'terminal'
   /* 异步打开浏览器的瞬间仍保留面板；否则 activeView 切过去后组件会卸载。 */
@@ -465,8 +454,7 @@ export function RightPanel() {
    * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏标签、网页满列」）。
    * 收起时整个右栏渲染为 null，布局的 `:has(.rightpanel)` 会把 --w-right 置 0。
    */
-  const hasVisibleSurface = open && (startMode || reviewMode || browserMode || fileMode || toolsMode || subagentMode || terminalMode || pendingSurface)
-  const subagentTabs = workbench.tabs.filter((tab) => tab.kind === 'subagent')
+  const hasVisibleSurface = open && (reviewMode || browserMode || fileMode || toolsMode || terminalMode || pendingSurface)
   /* 文件资源标签（实施-11 H-4）：一个文件一个标签，身份是 projectId+root+canonicalPath */
   const fileTabs = workbench.tabs.filter((tab) => tab.kind === 'file')
   /* 终端资源标签（H-11）：一个 PTY 会话一个标签，身份是会话 id */
@@ -497,36 +485,25 @@ export function RightPanel() {
        * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
        * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 redesign.css §23b）。
       */}
-      <Resizer side="panel" />
+      <Resizer side="panel" review={reviewMode} />
 
       {showWindowBar ? (
         <div
-          className={`review-tabbar rp-windowbar ${activeView === 'tools' ? 'rp-top' : ''}`}
+          className={`review-tabbar rp-windowbar ${homeMode ? 'rp-top' : ''}`}
           role="tablist"
           aria-label="右栏窗口"
           data-testid="right-window-tabs"
         >
-      {/* 固定导航：开始 + 工具 */}
+          {/* 固定导航：开始 + 工具 */}
           <div
-            className={`review-tab rp-window-tab ${activeView === 'start' ? 'active' : ''}`}
+            className={`review-tab rp-window-tab ${homeMode ? 'active' : ''}`}
             role="tab"
-            aria-selected={activeView === 'start'}
+            aria-selected={homeMode}
             data-testid="right-window-tab-start"
             onClick={() => switchWindow('start')}
           >
-            <Icon name="sparkle" size={12} />
-            <span className="rp-title">开始</span>
-          </div>
-
-          <div
-            className={`review-tab rp-window-tab ${activeView === 'tools' ? 'active' : ''}`}
-            role="tab"
-            aria-selected={activeView === 'tools'}
-            data-testid="right-window-tab-tools"
-            onClick={() => switchWindow('tools')}
-          >
-            <Icon name="layers" size={12} />
-            <span className="rp-title">{t('rp.title')}</span>
+            <Icon name="globe" size={12} />
+            <span className="rp-title">{t('rp.home')}</span>
           </div>
 
           {reviewOpen ? (
@@ -558,7 +535,7 @@ export function RightPanel() {
               onClick={() => switchWindow('browser')}
             >
               <Icon name="globe" size={12} />
-              <span>浏览器</span>
+              <span>{browserUrl ? (browserTitle || '浏览器') : '浏览器'}</span>
               <button
                 type="button"
                 className="review-tab-close"
@@ -605,32 +582,6 @@ export function RightPanel() {
             )
           })}
 
-          {subagentTabs.map((tab) => {
-            const run = subagentRuns.find((r) => r.id === tab.resourceKey)
-            const label = shortTitle(run?.task ?? tab.resourceKey ?? '子代理', 18).short
-            const active = activeView === 'subagent' && workbench.activeTabId === tab.id
-            return (
-              <div
-                key={tab.id}
-                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
-                role="tab"
-                aria-selected={active}
-                data-testid={`right-window-tab-subagent-${tab.resourceKey}`}
-                onClick={() => switchWindow('subagent', tab.resourceKey)}
-              >
-                <Icon name="layers" size={12} />
-                <span title={run?.task}>{label}</span>
-                <button
-                  type="button"
-                  className="review-tab-close"
-                  onClick={(event) => { event.stopPropagation(); closeSubagentTab(tab.id) }}
-                  aria-label={t('sa.close')}
-                  title={t('sa.close')}
-                >×</button>
-              </div>
-            )
-          })}
-
           {terminalTabs.map((tab) => {
             const info = terminals.find((item) => item.id === tab.resourceKey)
             const active = activeView === 'terminal' && workbench.activeTabId === tab.id
@@ -663,8 +614,6 @@ export function RightPanel() {
             )
           })}
 
-          <span className="spacer" />
-
           <div className="rp-tool-launcher-wrap">
             <button
               className={`review-tab-plus rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
@@ -675,29 +624,11 @@ export function RightPanel() {
               data-testid="right-tool-menu"
               onClick={() => setQuickMenuOpen((value) => !value)}
             >＋</button>
-            {quickMenuOpen ? (
-              <div className="rp-tool-menu" role="menu" data-testid="right-tool-menu-popover">
-                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('review')}>
-                  <Icon name="check-circle" size={12} />
-                  <span>审查</span>
-                </button>
-                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('terminal')}>
-                  <Icon name="activity" size={12} />
-                  <span>终端</span>
-                </button>
-                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('browser')}>
-                  <Icon name="globe" size={12} />
-                  <span>浏览器</span>
-                </button>
-                <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('file')}>
-                  <Icon name="folder" size={12} />
-                  <span>文件</span>
-                </button>
-              </div>
-            ) : null}
           </div>
 
-          {activeView === 'tools' ? (
+          <span className="spacer" />
+
+          {homeMode ? (
             <button
               className={`rp-x ${libOpen ? 'on' : ''}`}
               onClick={() => setLibOpen((v) => !v)}
@@ -712,8 +643,31 @@ export function RightPanel() {
         </div>
       ) : null}
 
-      {subagentMode ? <SubagentPreview placement="right" /> : null}
-      {startMode ? <StartPage onOpen={(entry) => switchWindow(entry)} /> : null}
+      {quickMenuOpen ? (
+        <div className="rp-tool-menu" role="menu" data-testid="right-tool-menu-popover">
+          <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('review')}>
+            <Icon name="check-circle" size={12} />
+            <span>审查</span>
+          </button>
+          <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('terminal')}>
+            <Icon name="activity" size={12} />
+            <span>终端</span>
+          </button>
+          <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('browser')}>
+            <Icon name="globe" size={12} />
+            <span>浏览器</span>
+          </button>
+          <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('file')}>
+            <Icon name="folder" size={12} />
+            <span>文件</span>
+          </button>
+          <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('start')}>
+            <Icon name="layers" size={12} />
+            <span>工作信息</span>
+          </button>
+        </div>
+      ) : null}
+
       {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
       {reviewMode ? <ReviewPanel /> : null}
@@ -726,7 +680,6 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
-          {toolsMode ? <SubagentList placement="right" /> : null}
           {fileMode && filePreview ? <FilePreviewPane /> : null}
           {sequence.map((tile) => {
             if (tile.placement === 'floating') {
@@ -764,6 +717,70 @@ export function RightPanel() {
 
 /* 分区插槽 —— 把「注册表 + 排序」与各分区自己的渲染分开 */
 
+/** 指针是否落在中栏内容区（拖出成浮动磁贴的落点区） */
+function isOverCenter(clientX: number, clientY: number): boolean {
+  const center = document.querySelector('.workspace > .center')?.getBoundingClientRect()
+  return (
+    !!center &&
+    clientX >= center.left &&
+    clientX <= center.right &&
+    clientY >= center.top &&
+    clientY <= center.bottom
+  )
+}
+
+/**
+ * 指针位置 → 这块磁贴**将来变成的浮窗**像素矩形。
+ *
+ * 拖动时的落位预览帧（DragDropRect）与真正落位（finish）必须走同一个
+ * 函数 —— 两处各算一遍的话，只要有一处漏了夹取或偏移，松手瞬间卡片就会
+ * 「跳一下」，用户看到的预览就是假的。
+ */
+function floatPxRectAt(
+  clientX: number,
+  clientY: number
+): { left: number; top: number; width: number; height: number } | null {
+  const ws = document.querySelector('.workspace')?.getBoundingClientRect()
+  if (!ws) return null
+  const floatingCount =
+    useStore.getState().settings?.toolLayout?.tiles.filter((tile) => tile.placement === 'floating').length ?? 0
+  const base = defaultFloatRect(floatingCount, ws.width, ws.height)
+  const width = base.w * ws.width
+  const height = base.h * ws.height
+  return {
+    left: Math.max(ws.left, Math.min(clientX - width / 2, ws.right - width)),
+    top: Math.max(ws.top, Math.min(clientY - 16, ws.bottom - height)),
+    width,
+    height
+  }
+}
+
+/**
+ * 指针 Y 落在哪个分区的上半 / 下半（拖放插入位置）。
+ *
+ * ⚠️ 用 `.rp-slot` 上的 data-tool-id（**不带 rp- 前缀的原始 id**）来比，
+ *    不能读 `.rp-sec` 的 data-sec（那是 `rp-queue` 这种 testid 形态）——
+ *    顺序数组里存的是 `queue`，拿 testid 去 indexOf 会得到 -1，
+ *    于是整个拖放静默失效（实测就错在这里）。
+ *
+ * 导出给 FloatingTiles 用：浮窗拖回工具页时也要显示同一条插入线，
+ * 而它那里的指针事件根本不在这些 slot 上。
+ */
+export function resolveToolDrop(
+  clientY: number,
+  excludeId?: string
+): { id: ToolSectionId; after: boolean } | null {
+  const slots = [...document.querySelectorAll('.rp-body > .rp-slot')] as HTMLElement[]
+  for (const el of slots) {
+    const r = el.getBoundingClientRect()
+    if (clientY < r.top || clientY > r.bottom) continue
+    const id = el.dataset.toolId as ToolSectionId | undefined
+    if (!id || id === excludeId) return null
+    return { id, after: clientY >= r.top + r.height / 2 }
+  }
+  return null
+}
+
 /**
  * 按 id 渲染对应分区，并给它包上一层可拖拽的头。
  *
@@ -791,14 +808,19 @@ function SectionSlot({
   prevId?: ToolSectionId
   nextId?: ToolSectionId
   onMove: (id: ToolSectionId, targetId: ToolSectionId, after: boolean) => void
-  /** 该项能否移出为浮动磁贴（todo / files 不能，见设计 §5.1） */
+  /** 当前所有工具磁贴都可以移到工作区。 */
   floatable: boolean
-  onFloat: (id: ToolSectionId) => void
+  onFloat: (id: ToolSectionId, rect?: ToolRect) => void
   onDock: (id: ToolSectionId) => void
 }) {
   const t = useT()
   const [dragging, setDragging] = useState(false)
+  const [floatingDrop, setFloatingDrop] = useState(false)
+  /** 拖动中的指针位置 —— 拖动预览胶囊跟着它走 */
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const dragMoved = useRef(false)
   /*
    * 插入预览线统一走 store 的 toolDropTarget —— 因为拖拽可能**从工具库发起**，
    * 那时指针不在这块分区上，用本组件的局部 state 根本收不到事件。
@@ -815,9 +837,15 @@ function SectionSlot({
    * 算插入位置很麻烦。指针事件只需自己比 Y 坐标，行为完全可控 ——
    * 文件树与宽度把手用的也是同一套。
    */
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    if (e.button !== 0) return
-    e.preventDefault()
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const target = e.target as HTMLElement
+    if (e.button !== 0 || !target.closest('.rp-sec-row')) return
+    if (target.closest('button:not(.rp-sec-head):not(.rp-grip)')) return
+    dragStart.current = { x: e.clientX, y: e.clientY }
+    dragMoved.current = false
+  }
+
+  const startDragging = (e: React.PointerEvent<HTMLDivElement>): void => {
     /*
      * ⚠️ 先置状态、再尝试 capture，而且 **capture 必须包 try**。
      *    上一版是 `setPointerCapture()` 放在前面且不包 catch：
@@ -828,6 +856,7 @@ function SectionSlot({
      *    capture 只是个便利（指针移出元素后仍收 move），失败也不该影响可用性。
      */
     setDragging(true)
+    dragMoved.current = true
     document.body.classList.add('reordering')
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
@@ -836,35 +865,31 @@ function SectionSlot({
     }
   }
 
-  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    if (!dragging) return
-    /*
-     * 找「指针现在落在哪个分区上、在它的上半还是下半」。
-     *
-     * ⚠️ 用 `.rp-slot` 上的 data-tool-id（**不带 rp- 前缀的原始 id**）来比，
-     *    不能读 `.rp-sec` 的 data-sec（那是 `rp-queue` 这种 testid 形态）——
-     *    顺序数组里存的是 `queue`，拿 testid 去 indexOf 会得到 -1，
-     *    于是整个拖放静默失效（实测就错在这里）。
-     */
-    const others = [...document.querySelectorAll('.rp-body > .rp-slot')] as HTMLElement[]
-    for (const el of others) {
-      const r = el.getBoundingClientRect()
-      if (e.clientY >= r.top && e.clientY <= r.bottom) {
-        const id2 = el.dataset.toolId as ToolSectionId | undefined
-        if (!id2 || id2 === id) {
-          setToolDropTarget(null)
-          return
-        }
-        setToolDropTarget({ id: id2, after: e.clientY >= r.top + r.height / 2 })
-        return
-      }
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const start = dragStart.current
+    if (!start) return
+    if (!dragMoved.current) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return
+      startDragging(e)
     }
-    setToolDropTarget(null)
+    /*
+     * 拖动预览跟着指针走：栏内重排与拖出工作区共用同一个胶囊。
+     * 落进工作区时不再画插入线 —— 那时插槽命中会误报成「插到边缘那块」，
+     * 而用户要做的是把它移出去。
+     */
+    setPointer({ x: e.clientX, y: e.clientY })
+    const overCenter = floatable && isOverCenter(e.clientX, e.clientY)
+    setFloatingDrop(overCenter)
+    setToolDropTarget(overCenter ? null : resolveToolDrop(e.clientY, id))
   }
 
-  const finish = (e: React.PointerEvent<HTMLButtonElement>): void => {
-    if (!dragging) return
+  const finish = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!dragStart.current) return
+    dragStart.current = null
+    if (!dragMoved.current) return
     setDragging(false)
+    setFloatingDrop(false)
+    setPointer(null)
     document.body.classList.remove('reordering')
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
@@ -878,6 +903,24 @@ function SectionSlot({
      * store，因此这里以几何命中为首选、以共享落点为回退；否则拖拽会在
      * 视觉上移动了却静默不落盘。
      */
+    const workspace = document.querySelector('.workspace')
+    const workspaceRect = workspace?.getBoundingClientRect()
+    const droppedInWorkspace = floatable && !!workspaceRect && isOverCenter(e.clientX, e.clientY)
+    const pxRect = droppedInWorkspace ? floatPxRectAt(e.clientX, e.clientY) : null
+    if (pxRect && workspaceRect) {
+      setToolDropTarget(null)
+      onFloat(
+        id,
+        pxRectToNormalized(pxRect, {
+          left: workspaceRect.left,
+          top: workspaceRect.top,
+          width: workspaceRect.width,
+          height: workspaceRect.height
+        })
+      )
+      return
+    }
+
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
     const drop = useStore.getState().toolDropTarget
     const targetId = (target?.dataset.toolId ?? drop?.id) as ToolSectionId | undefined
@@ -888,6 +931,16 @@ function SectionSlot({
     const r = target?.getBoundingClientRect()
     const after = r ? e.clientY > r.top + r.height / 2 : !!drop?.after
     onMove(id, targetId, after)
+  }
+
+  const cancelDrag = (): void => {
+    dragStart.current = null
+    dragMoved.current = false
+    setDragging(false)
+    setFloatingDrop(false)
+    setPointer(null)
+    setToolDropTarget(null)
+    document.body.classList.remove('reordering')
   }
 
   /**
@@ -975,7 +1028,7 @@ function SectionSlot({
    * 那会把标题栏也一起拉高（用户拖的是内容区）。
    */
   const scrollEl = (): HTMLElement | null =>
-    ref.current?.querySelector('.rp-fs, .rp-log, .rp-todos') as HTMLElement | null
+    ref.current?.querySelector('.rp-todo-scroll, .rp-fs, .rp-log, .rp-todos') as HTMLElement | null
 
   /** 设置里存的高度（启动时应用一次） */
   const savedHeight = useStore((s2) => s2.settings?.toolHeights?.[id] ?? 0)
@@ -1005,13 +1058,43 @@ function SectionSlot({
   )
   if (isEmpty) return null
 
+  /* 落位预览框：与真正落位同算法，见 floatPxRectAt 的注释 */
+  const dropRect = floatingDrop && pointer ? floatPxRectAt(pointer.x, pointer.y) : null
+
   return (
     <div
-      className={`rp-slot ${dragging ? 'dragging' : ''}`}
+      className={`rp-slot ${dragging ? 'dragging' : ''} ${floatingDrop ? 'floating-drop' : ''}`}
       data-tool-id={id}
       data-over={dropTarget?.id === id ? (dropTarget.after ? 'after' : 'before') : ''}
       ref={ref}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finish}
+      onPointerCancel={cancelDrag}
+      onClickCapture={(e) => {
+        if (!dragMoved.current) return
+        dragMoved.current = false
+        e.preventDefault()
+        e.stopPropagation()
+      }}
     >
+      {/*
+       * 拖动预览：跟随指针的胶囊 + （拖出时）工作区里的落位框。
+       * 用 portal 渲染，放在这里只是为了跟着这块磁贴的生命周期挂载。
+       */}
+      {dragging && pointer ? (
+        <>
+          {dropRect ? <DragDropRect rect={dropRect} label={t('rp.dropFloat')} /> : null}
+          <DragPreview
+            x={pointer.x}
+            y={pointer.y}
+            icon={SECTION_ICON[id]}
+            label={t(SECTION_TITLE[id])}
+            hint={floatingDrop ? t('rp.dragFloat') : undefined}
+            tone={floatingDrop ? 'float' : 'move'}
+          />
+        </>
+      ) : null}
       <HandleProvider
         value={
           <button
@@ -1019,10 +1102,6 @@ function SectionSlot({
             title={t('rp.dragHint')}
             aria-label={t('rp.dragHint')}            tabIndex={0}
             data-testid={`grip-${id}`}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={finish}
-            onPointerCancel={finish}
             onKeyDown={onKeyDown}
           >
             <span aria-hidden>⠿</span>
@@ -1116,8 +1195,8 @@ export const SECTION_REGISTRY: Record<
   context: { Body: () => <ContextSection /> },
   quota: { Body: () => <QuotaSection /> },
   todo: {
-    isEmpty: (s) => s.todos.length === 0,
     Extra: () => <TodoCount />,
+    resizable: true,
     Body: () => <TodoSection />
   },
   queue: { Body: () => <QueueSection /> },
@@ -1138,10 +1217,15 @@ export const SECTION_REGISTRY: Record<
 /** 注册表的 isEmpty 只读这几个字段（从 store 里抳型，避免写 any） */
 type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'logs' | 'statuses' | 'widgets'>
 
+function hasTaskTileContent(s: Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal'> & { hasMessageOutputs: boolean }): boolean {
+  return s.todos.length > 0 || !!s.goal?.goalId || !!s.goal?.links?.length || s.hasMessageOutputs
+}
+
 /** 任务完成数 / 总数（放在分区头部，不进 body） */
 function TodoCount() {
   const todos = useStore((s) => s.todos)
   const done = todos.filter((x) => x.done).length
+  if (todos.length === 0) return null
   return (
     <span className="rp-count" data-testid="todo-count">
       {done}/{todos.length}
@@ -1162,6 +1246,19 @@ function LogCount() {
 /* 一个可折叠的小分区 —— 右栏所有块共用 */
 
 /* 上下文 —— 用多少 / 占多少 / 花了多少 */
+
+function UsageRing({ percent, tone }: { percent: number | null; tone?: string }) {
+  const value = percent === null || !Number.isFinite(percent) ? null : Math.max(0, Math.min(100, percent))
+  return (
+    <span
+      className={`rp-usage-ring ${tone ?? ''}`}
+      style={{ '--ring-pct': `${value ?? 0}%` } as React.CSSProperties}
+      title={value === null ? '用量未知' : `已用 ${percent!.toFixed(1)}%`}
+    >
+      <span>{value === null ? '—' : `${Math.round(percent!)}%`}</span>
+    </span>
+  )
+}
 
 function QuotaSection() {
   const t = useT()
@@ -1269,8 +1366,22 @@ function QuotaSection() {
           ? money(quota.used, quota.currency)
           : null
   const mainLabel = quota?.label ?? (hasWindows ? t('quota.usedMain') : t('quota.remaining'))
+  const compactWindows = quotaCompactWindows(quota?.windows ?? [])
+  const ringWindow = compactWindows.reduce<QuotaWindow | null>((highest, item) =>
+    !highest || item.window.used / item.window.total > highest.used / highest.total ? item.window : highest, null)
+  const ringPct = ringWindow && ringWindow.total > 0 ? ringWindow.used / ringWindow.total * 100 : (mainPct ?? null)
   return (
-    <Section titleKey="rp.quota" testId="rp-quota">
+    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} icon={SECTION_ICON.quota} extra={
+      <span className="rp-header-usage">
+        <UsageRing percent={ringPct} tone={ringPct === null ? '' : quotaTone(ringPct, anyExceeded)} />
+        <span className="rp-header-values" title={provider || undefined}>
+          {compactWindows.length ? compactWindows.map(({ window, label }) => {
+            const pct = window.total > 0 ? (window.used / window.total) * 100 : null
+            return <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>{label} {pct === null ? '—' : `${pct.toFixed(0)}%`}</span>
+          }) : <span>{mainText ?? (loading ? '…' : '—')}</span>}
+        </span>
+      </span>
+    }>
       {/* 标题区：供应商 + 刷新（方案 7.2：刷新放标题区） */}
       <div className="rp-kv">
         <span className="rp-k">{provider || '—'}</span>
@@ -1409,6 +1520,23 @@ function resetText(w: QuotaWindow): string {
     return `重置于 ${new Date(w.resetAt).toLocaleString('zh-CN', { hour12: false })}`
   }
   return `重置于 ${countdown(w.resetAt - now)}`
+}
+
+/** 紧凑栏只显示接口实际返回的短周期组合，不推算缺失窗口。 */
+function quotaCompactWindows(windows: QuotaWindow[]): Array<{ window: QuotaWindow; label: string }> {
+  const hour = windows.find((w) => /小时|\bhours?\b|\b\d+\s*h\b/i.test(w.label) || w.id === 'fiveHour' || w.id === 'primary')
+  const week = windows.find((w) => w.id === 'weekly' || w.id === 'secondary' || /每周|本周|weekly|\bweek\b/i.test(w.label))
+  const month = windows.find((w) => w.id === 'monthly' || /本月|月度|monthly|\bmonth\b/i.test(w.label))
+  if (hour) {
+    const match = hour.label.match(/(\d+)\s*(?:小时|hours?|h)/i)
+    const digits = match?.[1] ?? (hour.label.includes('五') || hour.id === 'fiveHour' || hour.id === 'primary' ? '5' : undefined)
+    const hourLabel = digits ? `${digits}h` : hour.label
+    return [{ window: hour, label: hourLabel }, ...(week ? [{ window: week, label: '周' }] : [])]
+  }
+  return [
+    ...(week ? [{ window: week, label: '周' }] : []),
+    ...(month ? [{ window: month, label: '月' }] : [])
+  ]
 }
 
 /** 剩余时长：3天4时12分后 / 2时18分后 / 12分钟后 */
@@ -1554,14 +1682,41 @@ function ContextSection() {
   const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
   return (
-    <Section titleKey="rp.context" testId="rp-context">
+    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} icon={SECTION_ICON.context} extra={
+      /*
+       * 压缩中就把摘要位让给状态（用户 2026-09-25：压缩时界面上好几处都在转，
+       * 只留这一个）。
+       *
+       * ⚠️ 必须放**头部**而不是展开体里：上下文卡默认是收起的，写进展开体
+       *    就等于压缩期间一个提示都看不到（实测收起的卡里那行根本不在 DOM）。
+       */
+      session?.isCompacting ? (
+        <span className="rp-header-usage rp-header-compacting">
+          <span className="rp-now-spin" aria-hidden>
+            <Spinner />
+          </span>
+          {/*
+           * 「压缩中 · 已达阈值」（N21-2）：只说“正在压缩”回答不了用户当下最想
+           * 知道的 —— 为什么突然在压缩？原因来自 pi 的 `compaction_start.reason`。
+           * 拿不到原因时退回短的 `status.compacting`，不编一个原因。
+           */}
+          <span className="rp-header-values" data-testid="ctx-compacting-reason">
+            {compactionRunningText(t, compaction)}
+          </span>
+        </span>
+      ) : (
+        <span className="rp-header-usage">
+          <UsageRing percent={known ? pctWindow : null} tone={known ? tone : ''} />
+          <span className="rp-header-values">{known ? `${fmtK(used)} / ${fmtK(effectiveWin)}` : '用量未知'}</span>
+        </span>
+      )
+    }>
       {/*
-       * 主值（方案 7.3）：一行内给「上下文 42%」与「84k / 200k」，
+       * 主值：一行内给「42%」与「84k / 200k」，标题由外层分区提供，
        * 下面只跟一条细进度条。阈值/保留量/预留 token 全部收进「详情」——
        * 它们平时不改变用户要做的事，却占着右栏最贵的位置。
        */}
       <div className="rp-ctx-main" data-testid="ctx-main" data-mode={workingSetMode ? 'working-set' : 'window'}>
-        <span className="rp-k">{t('rp.context')}</span>
         <span className={`rp-v big ${known ? tone : ''}`}>{known ? `${pctWindow.toFixed(0)}%` : '—'}</span>
         <span className="spacer" />
         <span className="rp-u" data-testid="ctx-tokens">
@@ -1715,33 +1870,12 @@ function ContextSection() {
       ) : null}
 
       {/*
-       * 压缩中 —— 从中栏底部的状态条搬过来的。
-       * 放在上下文分区是因为它本来就是上下文的事（快满了才压缩），
-       * 而且这样中栏底部那一条就能整个去掉（用户嫌它挤，见 rp 文件头注释）。
-       */}
-      {/*
         刚压缩完：pi 还报不出新的 contextUsage（tokens=null）。
         不是“没了”，只是要等下一轮才有新数据 —— 明说一句，别让用户以为坏了。
       */}
       {cu && cu.tokens === null ? (
         <div className="rp-dim" data-testid="ctx-unknown">
           {t('ctx.afterCompact')}
-        </div>
-      ) : null}
-
-      {session?.isCompacting ? (
-        <div className="rp-dim rp-warn" data-testid="rp-compacting">
-          <span className="rp-now-spin" aria-hidden>
-            <Spinner />
-          </span>
-          {/*
-           * 「压缩中 · 已达阈值」（N21-2）：只说“正在压缩”回答不了用户当下最想知道的
-           * —— 为什么突然在压缩？原因来自 pi 的 `compaction_start.reason`。
-           * 拿不到原因时退回短的 `status.compacting`，不编一个原因。
-           */}
-          <span data-testid="ctx-compacting-reason">
-            {compactionRunningText(t, compaction)}
-          </span>
         </div>
       ) : null}
 
@@ -1777,7 +1911,7 @@ function ContextSection() {
           title={t('status.compact')}
           onClick={() => void compactNow()}
         >
-          <Icon name={session?.isCompacting ? 'refresh' : 'layers'} size={12} className={session?.isCompacting ? 'spin' : undefined} />
+          <Icon name={session?.isCompacting ? 'refresh' : 'layers'} size={12} />
           <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
         </button>
       </div>
@@ -2013,6 +2147,10 @@ function ContextSection() {
 function TodoSection() {
   const t = useT()
   const todos = useStore((s) => s.todos)
+  const goal = useStore((s) => s.goal)
+  const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
+    !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
+  ))
   /**
    * 回合是否真的在跑 —— 「正在进行」的兜底判据（见下面 activeIdx）。
    *
@@ -2071,7 +2209,9 @@ function TodoSection() {
     return () => clearTimeout(id)
   }, [todos])
 
-  if (todos.length === 0) return null
+  if (todos.length === 0) {
+    return <><GoalTaskSummary /><GoalOutputs /><Section titleKey="rp.todo" testId="rp-todo">{!hasTaskTileContent({ todos, goal, hasMessageOutputs }) ? <div className="rp-todo-scroll"><div className="rp-dim">{t('rp.todoEmpty')}</div></div> : null}</Section></>
+  }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
   /*
@@ -2097,6 +2237,9 @@ function TodoSection() {
   const active = activeIdx >= 0 ? todos[activeIdx] : null
 
   return (
+    <>
+    <GoalTaskSummary />
+    <GoalOutputs />
     <Section
       titleKey="rp.todo"
       testId="rp-todo"
@@ -2108,6 +2251,7 @@ function TodoSection() {
         </span>
       }
     >
+      <div className="rp-todo-scroll">
       {/* 进度条：**总是**显示（用户要的就是“已完成两个、五个任务”的比例感） */}
       <div
         className={`rp-meter ${active ? 'busy' : ''}`}
@@ -2245,7 +2389,125 @@ function TodoSection() {
           ) : null}
         </div>
       ) : null}
+      </div>
     </Section>
+    </>
+  )
+}
+
+/** 当前目标随任务磁贴常驻，完整证据与核验仍可从目标详情查看。 */
+function GoalTaskSummary() {
+  const goal = useStore((s) => s.goal)
+  const setGoalPopoverOpen = useStore((s) => s.setGoalPopoverOpen)
+  const t = useT()
+  if (!goal?.goalId) return null
+  const done = goal.steps.filter((step) => step.status === 'done').length
+  return (
+    <div className="rp-goal-summary" data-testid="rp-goal-summary">
+      <button type="button" className="rp-goal-summary-head" onClick={() => setGoalPopoverOpen(true)} title="查看目标详情与证据">
+        <Icon name="checklist" size={14} />
+        <strong>{goalDisplayTitle(goal)}</strong>
+        <span className="rp-goal-phase">{t(`goal.${goal.phase}` as MessageKey)}</span>
+      </button>
+      {goal.steps.length ? (
+        <>
+          <div className="rp-goal-progress">目标进度 <span>{done}/{goal.steps.length}</span></div>
+          <ol className="rp-goal-step-list">
+            {goal.steps.slice(0, 5).map((step, index) => (
+              <li key={`${index}-${step.title}`} className={`rp-goal-step ${step.status}`} title={step.title}>
+                <span aria-hidden>{step.status === 'done' ? '✓' : step.status === 'blocked' ? '!' : '○'}</span>
+                <span>{step.title}</span>
+              </li>
+            ))}
+          </ol>
+          {goal.steps.length > 5 ? <button type="button" className="rp-goal-more" onClick={() => setGoalPopoverOpen(true)}>查看全部 {goal.steps.length} 步</button> : null}
+        </>
+      ) : null}
+      {goal.verification ? <div className="rp-goal-verification">核验：{goal.verification.detail}</div> : null}
+    </div>
+  )
+}
+
+/** 只展示当前会话实际登记的产物和参考；没有数据时不占磁贴空间。 */
+function GoalOutputs() {
+  const goalLinks = useStore((s) => s.goal?.links)
+  const messages = useStore((s) => s.messages)
+  const outputs = useMemo(() => {
+    const byPath = new Map<string, { label: string; path: string; unavailable: boolean }>()
+    for (const link of goalLinks ?? []) {
+      if (link.kind === 'url') continue
+      byPath.set(link.target, {
+        label: link.label || link.target.split(/[\\/]/).pop() || link.target,
+        path: link.target,
+        unavailable: link.check?.ok === false
+      })
+    }
+    for (const message of messages) {
+      for (const artifact of message.artifacts ?? []) {
+        byPath.set(artifact.path, {
+          label: artifact.filename,
+          path: artifact.path,
+          unavailable: artifact.unavailable === true
+        })
+      }
+    }
+    return [...byPath.values()]
+  }, [goalLinks, messages])
+  const urls = useMemo(() => (goalLinks ?? []).filter((link) => link.kind === 'url'), [goalLinks])
+  const images = useMemo(() => messages.flatMap((message) =>
+    message.role === 'user' ? (message.images ?? []) : []
+  ), [messages])
+
+  if (!outputs.length && !urls.length && !images.length) return null
+  return (
+    <div className="rp-goal-outputs" data-testid="rp-goal-outputs">
+      {outputs.length ? (
+        <section className="rp-output-group" data-testid="rp-output-products">
+          <div className="rp-output-heading">产物 <span>{outputs.length}</span></div>
+          <div className="rp-output-list">
+            {outputs.slice(-6).map((output) => (
+              <button
+                type="button"
+                className="rp-output-row"
+                key={output.path}
+                title={output.path}
+                disabled={output.unavailable}
+                onClick={() => void window.yan.openPath(output.path)}
+              >
+                <Icon name="folder-open" size={12} />
+                <span>{output.label}</span>
+                {output.unavailable ? <small>不可用</small> : null}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {urls.length || images.length ? (
+        <section className="rp-output-group" data-testid="rp-output-references">
+          <div className="rp-output-heading">参考 <span>{urls.length + images.length}</span></div>
+          <div className="rp-output-list">
+            {urls.slice(-4).map((link) => (
+              <button
+                type="button"
+                className="rp-output-row"
+                key={link.target}
+                title={link.target}
+                onClick={() => void window.yan.browser.openExternal(link.target)}
+              >
+                <Icon name="globe" size={12} />
+                <span>{link.label || link.target}</span>
+              </button>
+            ))}
+            {images.slice(-3).map((image, index) => (
+              <div className="rp-output-row" key={`${index}-${image.mimeType}`}>
+                <img src={`data:${image.mimeType};base64,${image.data}`} alt={`参考图片 ${index + 1}`} />
+                <span>参考图片 {index + 1}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
   )
 }
 

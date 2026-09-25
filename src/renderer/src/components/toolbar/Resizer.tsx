@@ -20,7 +20,9 @@ import { PANEL_MAX, PANEL_MIN, RAIL_MAX, RAIL_MIN } from '../../../../shared/ipc
  *
  * 数值约定：0 = 用设计默认宽度（见 AppSettings.railWidth 的注释）。
  */
-export function Resizer({ side }: { side: 'rail' | 'panel' }) {
+const REVIEW_WIDTH_KEY = 'yan.reviewWidth'
+
+export function Resizer({ side, review = false }: { side: 'rail' | 'panel'; review?: boolean }) {
   const t = useT()
   const settings = useStore((s) => s.settings)
   const setPanelWidth = useStore((s) => s.setPanelWidth)
@@ -38,7 +40,12 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
     else void toggleRightPanel()
   }, [side, setRailPinned, toggleRightPanel])
 
-  const stored = (side === 'rail' ? settings?.railWidth : settings?.panelWidth) ?? 0
+  const reviewMode = side === 'panel' && review
+  const [reviewWidth, setReviewWidth] = useState(() => {
+    const width = Number(window.localStorage.getItem(REVIEW_WIDTH_KEY))
+    return Number.isFinite(width) && width >= PANEL_MIN && width <= 900 ? width : 0
+  })
+  const stored = reviewMode ? reviewWidth : (side === 'rail' ? settings?.railWidth : settings?.panelWidth) ?? 0
   /** 拖动中的宽度（临时覆盖 stored，松手后清掉） */
   const [dragging, setDragging] = useState<number | null>(null)
   const startRef = useRef<{ x: number; base: number } | null>(null)
@@ -58,9 +65,18 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
   /** 拖动中是否已经越过「收起」临界（松手时才真的收起，避免拖回来时反复切） */
   const [willCollapse, setWillCollapse] = useState(false)
 
-  const cssVar = side === 'rail' ? '--w-rail-user' : '--w-panel-user'
+  const cssVar = side === 'rail' ? '--w-rail-user' : reviewMode ? '--w-review-user' : '--w-panel-user'
   /* 与主进程同一份区间（shared）。拖动时也得夹 —— 见 clamp 的注释 */
-  const [min, max] = side === 'rail' ? [RAIL_MIN, RAIL_MAX] : [PANEL_MIN, PANEL_MAX]
+  const [min, max] = side === 'rail' ? [RAIL_MIN, RAIL_MAX] : [PANEL_MIN, reviewMode ? 900 : PANEL_MAX]
+  const saveWidth = (width: number): void => {
+    if (reviewMode) {
+      if (width > 0) window.localStorage.setItem(REVIEW_WIDTH_KEY, String(width))
+      else window.localStorage.removeItem(REVIEW_WIDTH_KEY)
+      setReviewWidth(width)
+    } else {
+      void setPanelWidth(side === 'rail' ? { railWidth: width } : { panelWidth: width })
+    }
+  }
   /**
    * 夹到合法区间。
    *
@@ -161,13 +177,13 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
     }
     // 落盘（主进程会再夹一次范围）
     const final = readCurrent()
-    void setPanelWidth(side === 'rail' ? { railWidth: final } : { panelWidth: final })
+    saveWidth(final)
   }
 
   /** 双击复原：把变量删掉 → 回到 CSS 里的设计默认值 */
   const reset = (): void => {
     document.documentElement.style.removeProperty(cssVar)
-    void setPanelWidth(side === 'rail' ? { railWidth: 0 } : { panelWidth: 0 })
+    saveWidth(0)
   }
 
   /** 键盘：方向键调宽窄（可聚焦的 separator） */
@@ -185,7 +201,7 @@ export function Resizer({ side }: { side: 'rail' | 'panel' }) {
     const cur = readCurrent()
     const next = clamp(e.key === widen ? cur + step : cur - step)
     apply(next)
-    void setPanelWidth(side === 'rail' ? { railWidth: next } : { panelWidth: next })
+    saveWidth(next)
   }
 
   /*

@@ -54,6 +54,7 @@ import { pickProjectSession as pickProjectSessionTarget } from './project-sessio
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
+import { keepLocalImages } from './keep-images'
 import {
   rebindSessionRuntime,
   migrateSessionRuntime,
@@ -1263,7 +1264,17 @@ export const useStore = create<Store>((rawSet, get) => {
          */
         const incoming = m.runtime?.sessionId
         if (s.peekedSessionId && incoming && incoming !== s.peekedSessionId) break
-        set({ messages: m.payload, peekedPath: null, peekedSessionId: null, peekNote: null })
+        /*
+         * 整份替换前先保住本地的图片预览：hydrate（压缩结束 / 切会话 / 重启）
+         * 推来的是从会话文件重读的那份，里面用户贴的图已经被体积保护丢掉了
+         * （见 keep-images.ts 的说明）。
+         */
+        set({
+          messages: keepLocalImages(s.messages, m.payload),
+          peekedPath: null,
+          peekedSessionId: null,
+          peekNote: null
+        })
         break
       }
       case 'todos':

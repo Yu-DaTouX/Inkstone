@@ -1156,11 +1156,17 @@
    用户要能一边看历史一边回答。收起 = 保留队列与草稿，不等于取消。
    ══════════════════════════════════════════════════════════════ */
 .qpanel {
-  margin: 0 var(--sp-4) var(--sp-2);
+  margin: 0 0 3px;
   border: 1px solid var(--accent-line);
   border-radius: var(--r-md);
   background: var(--bg-1);
-  box-shadow: 0 8px 22px -16px rgba(0, 0, 0, 0.55);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.qpanel + .composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .qpanel-head {
@@ -1225,8 +1231,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  /* 默认最多约 200px，且不超过消息视口的 35%（方案第 6 节） */
-  max-height: min(35vh, 200px);
+  max-height: min(28vh, 160px);
   overflow-y: auto;
   padding: 0 var(--sp-3) var(--sp-2);
   border-top: 1px solid var(--border-soft);
@@ -1242,14 +1247,21 @@
 }
 
 .qpanel-options {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+@media (max-width: 520px) {
+  .qpanel-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .qpanel-option {
   text-align: left;
-  padding: 5px var(--sp-3);
+  min-height: 34px;
+  padding: 6px var(--sp-3);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   color: var(--fg-dim);

@@ -63,16 +63,19 @@ export function contextStageTip(
 }
 
 /**
- * 「下一步：压缩上下文（约 240k 时）」。
+ * 「约 240k 时压缩上下文」。
+ *
+ * 时间放**前面**（用户 2026-09-25）：原来写「下一步：压缩上下文（约 240k 时）」，
+ * 右栏拖到最窄时这一行会被折成两行，“下一步”和括号里那个时间各自占一行。
+ * 前置数字后一句话就是一件事，窄栏下也能一次读完。
  *
  * 已经过线时**不报数字**（“约 240k 时”在人已经站在线上的时候是废话），
  * 改说“已达工作集上限”。
  */
 export function nextContextStageText(t: TFunc, stage: ContextNextStage): string {
-  const name = contextStageLabel(t, stage.kind)
-  if (stage.reached) return t('ctx.nextReached', { name })
-  if (stage.kind === 'tool-sweep') return t('ctx.nextStage', { action: t('ctx.nextSweep', { n: formatTokens(stage.at) }) })
-  if (stage.kind === 'episode-fold') return t('ctx.nextStage', { action: t('ctx.nextFold', { n: formatTokens(stage.at) }) })
-  if (stage.kind === 'compaction') return t('ctx.nextStage', { action: t('ctx.nextCompact', { n: formatTokens(stage.at) }) })
-  return t('ctx.nextStage', { action: name })
+  if (stage.reached) return t('ctx.nextReached', { name: contextStageLabel(t, stage.kind) })
+  if (stage.kind === 'tool-sweep') return t('ctx.nextSweep', { n: formatTokens(stage.at) })
+  if (stage.kind === 'episode-fold') return t('ctx.nextFold', { n: formatTokens(stage.at) })
+  if (stage.kind === 'compaction') return t('ctx.nextCompact', { n: formatTokens(stage.at) })
+  return contextStageLabel(t, stage.kind)
 }

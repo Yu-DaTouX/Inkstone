@@ -1,4 +1,3 @@
-import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { cacheHitRate, currentTurnMessages, formatHitRate, hasUsageNumbers, turnUsageOf } from '../../../../shared/turns'
@@ -155,13 +154,6 @@ export function UsageBar() {
       </span>
 
       <span className="spacer" />
-
-      {session?.isCompacting ? (
-        <span className="ub-compacting">
-          <Icon name="refresh" size={12} className="spin" />
-          {t('status.compacting')}
-        </span>
-      ) : null}
     </div>
   )
 }

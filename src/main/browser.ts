@@ -312,6 +312,10 @@ export class BrowserController {
       tab.registry.clear()
       this.updateState()
     })
+    /* 窄右栏中的网页保留横向滚动能力，但不让系统滚动柄盖住页面底部。 */
+    view.webContents.on('did-finish-load', () => {
+      void view.webContents.insertCSS('@media (max-width: 300px) { ::-webkit-scrollbar:horizontal { height: 0 !important; } }').catch(() => {})
+    })
     view.webContents.on('did-navigate', (_event, url) => {
       tab.state.url = url
       tab.committedUrl = url

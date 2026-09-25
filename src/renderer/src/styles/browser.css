@@ -44,8 +44,12 @@
 /* 标签多了横向滚动，不要换行（换行会挤掉网页视口） */
 .browser-tabs {
   overflow-x: auto;
+  scrollbar-width: none;
   padding-left: 4px;
   padding-right: 4px;
+}
+.browser-tabs::-webkit-scrollbar {
+  display: none;
 }
 .browser-tab {
   flex: 0 1 160px;

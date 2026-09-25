@@ -11,26 +11,22 @@
 
 export type ToolPlacement = 'docked' | 'floating' | 'library'
 
-/** 浮动磁贴的尺寸约束（设计 §5.2：初始 300，最窄 240，最宽 420）。 */
+/** 浮动磁贴初始宽度与最小宽度；用户调整尺寸可扩到整个工作区。 */
 export const TILE_DEFAULT_W = 300
 export const TILE_MIN_W = 240
 export const TILE_MAX_W = 420
 /** 磁贴头高度：拖动把手与折叠开关都在这一条里，内容区从它下面开始。 */
 export const TILE_HEAD_H = 32
 
-/**
- * 不参与浮动的磁贴（设计 §5.1）：todo 保持工具页原布局；
- * files 的完整文件树留在文件页，工具页里只是一个入口。
- * 它们仍可停靠 / 排序 / 收进库，只是不能被放到应用内容区。
- */
-export const NON_FLOATING_TILE_IDS = ['todo', 'files'] as const
+/** 用户可将任意工具磁贴从右栏拖入工作区，再拖回停靠区。 */
+export const NON_FLOATING_TILE_IDS: readonly string[] = []
 
 export function isTileFloatable(id: string): boolean {
-  return !(NON_FLOATING_TILE_IDS as readonly string[]).includes(id)
+  return !NON_FLOATING_TILE_IDS.includes(id)
 }
 
 /**
- * 新建浮动磁贴的默认位置（设计 §5.2：初始宽 300，最窄 240，最宽 420）。
+ * 新建浮动磁贴的默认位置（初始宽 300）。
  *
  * 坐标是相对内容区的归一化值（U-0 契约：x/y/w/h 均 0–1），所以宽度用
  * 「目标像素 ÷ 可用宽度」换算。`floatingCount` 用来逐个错开，避免叠加。
@@ -149,7 +145,7 @@ export function normalizeToolLayout(value: unknown, ids: readonly string[]): Too
     if (typeof item.id !== 'string' || !known.has(item.id) || seen.has(item.id)) continue
     seen.add(item.id)
     const rawPlacement: ToolPlacement = isPlacement(item.placement) ? item.placement : 'docked'
-    /* 不可浮动项在这里被收回停靠位（脏数据或旧版本写进去的） */
+    /* 若以后引入禁止浮动的磁贴，读盘时把它恢复到停靠位。 */
     const placement: ToolPlacement = rawPlacement === 'floating' && !isTileFloatable(item.id) ? 'docked' : rawPlacement
     const rect = placement === 'floating' ? sanitizeRect(item.rect) : undefined
     tiles.push({
@@ -179,7 +175,7 @@ export function setTilePlacement(
   placement: ToolPlacement,
   rect?: ToolRect
 ): ToolLayout {
-  /* 不可浮动的磁贴即使被要求浮动也只留在停靠位（脏数据同样处理） */
+  /* 放置命令与读盘使用同一份可浮动规则。 */
   const want: ToolPlacement = placement === 'floating' && !isTileFloatable(id) ? 'docked' : placement
   const tiles = layout.tiles.map((tile) => {
     if (tile.id !== id) return tile
