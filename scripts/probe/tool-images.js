@@ -226,6 +226,22 @@
       ok(seen.length > 0, '真实会话铺开后 DOM 里有图片元素')
       ok(decoded > 0, '真实会话的图片真的解码出了像素（不是坏图）')
       ok(broken === 0, '没有加载失败的图片（truncateDeep 截断 base64 的回归）')
+      /*
+       * 消息 id 的口径。
+       *
+       * 它不是个显示细节：`artifacts.json` 按 `messageId` 记「哪张图挂在哪条消息上」，
+       * 而 hydrate 重建后**只认** `m<序号>`。实时流的 id 也必须是同一个口径 ——
+       * 以前是 `a<时间戳><随机>`，于是 attach 的图**每次压缩后集体消失**
+       * （实测用户本机 11 条记录全是 `a…`，一条都挂不回来）。
+       * 这两条断言就是钉住这个不变量。
+       */
+      const ids = msgs.map((m) => m.id)
+      out.push('  前几个 id: ' + JSON.stringify(ids.slice(0, 4)) + ' … 共 ' + ids.length + ' 条')
+      ok(ids.every((id) => /^m\d+$/.test(id)), '历史重读的消息 id 都是 m<序号>')
+      ok(
+        ids.map((i) => Number(i.slice(1))).every((n, i) => n === i),
+        'id 序号从 0 连续递增（实时流必须用同一口径，否则 artifact 挂不上）'
+      )
       /* 视觉验收窗口：铺完会话再停一下，好让连拍能拍到这一屏 */
       await sleep(3000)
     }
