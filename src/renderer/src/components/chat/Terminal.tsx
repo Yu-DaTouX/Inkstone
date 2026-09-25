@@ -29,13 +29,12 @@ import type { UIToolCall } from '../../../../shared/ipc'
  */
 
 const SIZE_KEY = 'yan.termSize'
-/**
- * 默认高度（方案 4.3：**默认 1 行命令 + 2 行输出**，约 80–110px）。
- * 标题栏 26 + prompt 行 18 + 两行输出 36 + 内边距 ≈ 84。
- */
-const DEFAULT_H = 84
 /** 再矮就只剩标题栏（但允许用户拉到只看命令） */
 const MIN_H = 56
+/** 半窗高是新默认值；已经手动调整过的尺寸继续从本地偏好读取。 */
+function defaultHeight(): number {
+  return Math.max(MIN_H, Math.round(window.innerHeight * 0.5))
+}
 
 /** 从 localStorage 读上次的尺寸（脏数据一律当默认，别让坏值把窗口撑爆） */
 function loadSize(): { h: number; w: number } {
@@ -52,7 +51,7 @@ function loadSize(): { h: number; w: number } {
   } catch {
     /* 读不到 / 解析失败都当没有 */
   }
-  return { h: DEFAULT_H, w: 0 }
+  return { h: defaultHeight(), w: 0 }
 }
 
 function saveSize(size: { h: number; w: number }): void {
@@ -63,9 +62,9 @@ function saveSize(size: { h: number; w: number }): void {
   }
 }
 
-/** 允许的最大高度：消息视口的 60%（方案 4.3） */
+/** 用户手动拉伸时允许超过默认半窗高。 */
 function maxHeight(): number {
-  return Math.max(200, Math.round(window.innerHeight * 0.6))
+  return Math.max(200, Math.round(window.innerHeight * 0.8))
 }
 
 export function TerminalWindow({
@@ -179,7 +178,7 @@ export function TerminalWindow({
       const base = w || rootRef.current?.offsetWidth || 480
       w = clampW(base + (e.key === 'ArrowRight' ? step : -step), maxW)
     } else if (e.key === 'Home') {
-      h = DEFAULT_H
+      h = defaultHeight()
       w = 0
     } else {
       handled = false
@@ -275,7 +274,7 @@ export function TerminalWindow({
         onKeyDown={onKeyDown('h')}
         onDoubleClick={() => {
           setMaxed(false)
-          const n = { h: DEFAULT_H, w: sizeRef.current.w }
+          const n = { h: defaultHeight(), w: sizeRef.current.w }
           setSizeBoth(n)
           saveSize(n)
         }}
@@ -306,7 +305,7 @@ export function TerminalWindow({
         onKeyDown={onKeyDown('both')}
         onDoubleClick={() => {
           setMaxed(false)
-          const n = { h: DEFAULT_H, w: 0 }
+          const n = { h: defaultHeight(), w: 0 }
           setSizeBoth(n)
           saveSize(n)
         }}

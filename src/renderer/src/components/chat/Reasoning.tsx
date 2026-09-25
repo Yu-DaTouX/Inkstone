@@ -2,7 +2,8 @@
  * 推理流（2026-09-23 用户决定的最终形态）。
  *
  * **默认折叠成一行**，只显示模型原文里的最新一句（正在成形的末句也算）。
- * 单击头部就在**当前聊天位置**展开完整原文，限高 `min(70vh, 620px)` 并内部滚动；
+ * 单击头部就在**当前聊天位置**展开完整原文；详情窗限于半窗宽、四分之一窗高，
+ * 内容在窗内滚动，模型原文中的 Markdown 标题保留在正文里。
  * 展开态在头部**同一个按钮**上收起。
  *
  * ── 边界 ──
@@ -118,10 +119,13 @@ function ReasoningCapsuleImpl({
     /*
      * 展开后把自己滚进可视区（用户：「展开这个窗口的时候会被输入框挡住」）。
      *
-     * 这个块长在消息流里，展开后会变高；如果它本身就贴着流底部，
-     * 多出来的那一截会落在输入框后面 —— 用户看到的就是「被挡住了」。
+     * 这个块长在消息流里，展开后高度到 25vh；如果它本身就贴着流底部，
+     * 多出来的那一截会落到输入框后面 —— 用户看到的就是「被挡住了」。
      * `block: 'nearest'` 只动必要的量：已经看得到就不滚，避免每次展开
      * 都把长会话猛地拉到底。
+     *
+     * 等一帧是因为高度是同步生效的（`height: 0` → `25vh`，没有 height 过渡，
+     * 只有 clip-path/opacity 过渡），所以要等布局完成后再算位置。
      */
     if (next) {
       requestAnimationFrame(() => {
@@ -150,7 +154,6 @@ function ReasoningCapsuleImpl({
           <Icon name="chevron-right" size={12} className="chev" />
         )}
         <span className="reason-label">{label}</span>
-        <span className="spacer" />
         {/* 默认预览原文最新一句（长句保留尾端，见 peekText）；单击头部在当前位置打开全文。
             dir 分工：外层 rtl 让溢出发生在左侧（省略号在左、尾端贴右），
             内层 ltr 隔离 bidi，中英混排的顺序不会被重排。 */}
@@ -166,13 +169,13 @@ function ReasoningCapsuleImpl({
         ref={bodyRef}
         className={`reason-body ${open ? 'open' : ''}`}
         aria-hidden={!open}
-        hidden={!open}
+        inert={!open}
         onScroll={(event) => {
           const el = event.currentTarget
           followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
         }}
       >
-        <div data-testid="reasoning-body">
+        <div className="reason-window-content" data-testid="reasoning-body">
           {head}
           {tail ? (
             <span className="reason-tail" key={shown.length}>

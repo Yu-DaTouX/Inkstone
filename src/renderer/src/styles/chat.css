@@ -586,10 +586,6 @@
   color: var(--accent);
 }
 
-.reason-head .spacer {
-  flex: 1;
-}
-
 .reason-head .chev {
   opacity: 0.6;
   transition: transform var(--dur) var(--ease);
@@ -618,34 +614,64 @@
    内层 dir="ltr" 隔离 bidi —— 溢出因此发生在左侧，尾端（最新内容）可见；
    peekText 再兜底只保留尾段，不往 DOM 里放大段文本。 */
 .reason-peek {
-  max-width: 62%;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-style: italic;
 }
 
 .reason-body {
-  padding: 1px 0 1px var(--sp-3);
+  box-sizing: border-box;
+  width: min(50vw, calc(100% - var(--sp-3)));
+  height: 0;
+  margin-left: var(--sp-3);
+  border: 0 solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease),
+    visibility 0s linear 220ms;
 }
 
-/* 展开后正文限高；头部始终保留折叠入口。 */
 .reason-body.open {
-  max-height: min(70vh, 620px);
+  /*
+   * 窗口高的四分之一（用户：「推理过程和命令的展开大小也要限制为四分之一」）。
+   * 早先是 50vh —— 那是「面积 1/4」的算法，配上 50vw 的宽度实际占掉
+   * 中栏整宽 + 半个窗口高，看着像半屏。
+   */
+  height: 25vh;
+  margin-top: 6px;
+  margin-bottom: var(--sp-2);
+  border-width: 1px;
   overflow: auto;
   overscroll-behavior: contain;
+  opacity: 1;
+  visibility: visible;
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease),
+    visibility 0s;
 }
 
-.reason-body[hidden] {
-  display: none;
+.reason-window-content {
+  padding: var(--sp-3);
+}
+
+@media (max-width: 700px) {
+  .reason-body {
+    width: calc(100% - var(--sp-3));
+  }
 }
 
 /* 新增尾部 140ms 淡入：只作用在最后一个 span，稳定文本不重复动画 */
@@ -664,6 +690,9 @@
 
 /* 系统要求减少动态效果：只取消尾部淡入 */
 @media (prefers-reduced-motion: reduce) {
+  .reason-body {
+    transition: none;
+  }
   .reason-tail {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
@@ -680,11 +709,19 @@
   margin: var(--sp-2) 0;
 }
 
+.tgroup-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
 .tgroup-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 2px 0;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
@@ -706,6 +743,24 @@
 
 .tgroup-head .spacer {
   flex: 1;
+}
+
+.tgroup-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.tgroup-fail-action {
+  flex: none;
+  padding: 2px 0;
+  color: var(--err);
+  font-size: var(--fs-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /*
@@ -746,6 +801,8 @@
  *
  * ⚠️ `toolgroup` 探针原来按「可见 ≥ 25 行」断言，改这个数会让它变红，
  *    已经跟着改成按 25vh 反推行数。
+ *
+ * 单条详情与推理全文见 `.reason-body.open`，同一口径。
  */
 .tgroup-body {
   display: flex;
@@ -909,30 +966,65 @@
   transform: rotate(90deg);
 }
 
-.trow-body {
-  padding: 4px 0 4px 18px;
+.trow-expand {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease);
 }
 
-/*
- * 详情区的上限（用户 2026-09-18：「展开时应该有一个固定的范围，或者在最上方
- * 显示折叠回去的按钮」）。
- *
- * 以前除了终端窗口之外没有任何上限：一次 `rg` 命中几千行、一个大文件 diff，
- * 展开就把整段对话顶走，用户滚到底才找得到收起的地方。卡住高度后，
- * **`.trow-head` 始终留在上方可见** —— 它本身就是那个「折叠回去的按钮」，
- * 不需要另加一个。
- *
- * ⚠️ 选择器刻意排除 `.term`：命令类详情是终端窗口，它有自己的高度与缩放手柄
- *    （Terminal.tsx，用户拖出来的值存在 localStorage）。若这里也给它套一层，
- *    就会在终端外面再出现一条滚动条。
- * ⚠️ 同样排除 `.trow-images`：图片要整张看到，套一层滚动条反而要用户在
- *    小窗口里拖来拖去。
- */
-.trow-body > :not(.term):not(.trow-images) {
-  max-height: min(70vh, 620px);
+.trow-expand.open {
+  height: auto;
+  /*
+   * 单条工具调用的详情同样卡在窗口高的四分之一。
+   * 原来这里是 `height: auto` + `overflow: visible` —— 没有任何上限，
+   * 展开一条长输出（如 npm run check）就能把整段对话顶走，和
+   * `.tgroup-body` 早年的毛病一样。
+   */
+  max-height: 25vh;
   overflow: auto;
-  /* 在详情里滚到底不要把消息区一起带着滚 */
   overscroll-behavior: contain;
+  opacity: 1;
+  clip-path: inset(0 0 0 0);
+}
+
+.trow-expand-inner {
+  min-width: 0;
+}
+
+.trow-body {
+  box-sizing: border-box;
+  width: min(50vw, calc(100% - 18px));
+  /* 与推理过程、命令列表同一口径：窗口高的四分之一 */
+  height: 25vh;
+  margin-left: 18px;
+  padding: 4px 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* 命令的终端自己滚动并保留拖拽尺寸；目录改动卡片另列在其下。 */
+.trow-body[data-kind='command'] {
+  height: auto;
+  overflow: visible;
+}
+
+.trow-body > :not(.term) {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 700px) {
+  .trow-body {
+    width: calc(100% - 18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trow-expand {
+    transition: none;
+  }
 }
 
 /* 工具结果里的图（`yan browser` 截图、渲染图表）：与用户贴的图同一套呈现 */
@@ -1831,10 +1923,11 @@
   /*
    * 显式声明不收缩。
    *
-   * 轨道是 `flex column` + `max-height: 100%` + `overflow-y: auto`：因为
-   * overflow 不是 visible，Chromium 实测**不会**去压扁格子（去掉这行，
-   * 100 轮下命中区仍是 15/15px、轨道自己滚），所以这不是在修什么 bug ——
-   * 只是把「格子保持原高」这个前提写死，不依赖浏览器的默认行为。
+   * 轨道是 `flex column` + `max-height: 100%` + `overflow-y: auto`：
+   * 因为 overflow 不是 visible，Chromium 实测**不会**去压扁格子
+   * （测过：去掉这行，100 轮下命中区仍是 15/15px，轨道自己滚），
+   * 所以这不是在修什么 bug，只是把「格子保持原高」这个前提写死，
+   * 不依赖浏览器的默认行为。
    */
   flex: none;
 }

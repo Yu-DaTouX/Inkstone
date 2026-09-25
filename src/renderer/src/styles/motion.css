@@ -393,6 +393,41 @@ html[data-theme='light'] .op-title::before {
   margin-left: 1px;
 }
 
+.turn-progress-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--sp-2);
+  padding: 3px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.turn-progress-toggle .chev {
+  transition: transform 180ms var(--ease);
+}
+
+.turn-progress-toggle[aria-expanded='true'] .chev {
+  transform: rotate(90deg);
+}
+
+.turn-progress-body {
+  margin-bottom: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border-soft);
+}
+
+.turn-progress-body[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-progress-toggle .chev {
+    transition: none;
+  }
+}
+
 /* ---- 最终回答：正文字色、正常字号 ---- */
 .turn-response {
   margin-bottom: var(--sp-2);

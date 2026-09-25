@@ -41,11 +41,11 @@ import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnT
  * 一个**工作段**（实施-14 F6 / R1）。
  *
  * 为什么不能只要「整轮推理字符串 + 整轮回复字符串」：自动继续会把一个逻辑回合
- * 拆成多次「推理 → 工具 → 正文」。整轮聚合会把第 2、3 次的推理全部塞回
- * **正文 A 之前** 的那一坨里 —— 用户看到的顺序就不对了（用户 2026-09-23 的要求：
- * 推理随聊天里的正式回复位置走）。
+ * 拆成多次「推理 → 工具 → 正文」。保留每段的原始归属，才能回看真实发生顺序，
+ * 并让多段正式回复保持各自来源。
  *
  * 一段的定义是「两次正文输出之间」：正文一输出，后面的推理与工具属于下一段。
+ * 聊天区可把非正式输出汇总显示；分段数据仍保留原始归属与顺序。
  */
 export interface TurnSegment {
   /** 稳定 id（DOM key；同一条消息拆出的段不会重排） */
@@ -99,10 +99,9 @@ export interface AssistantTurn {
   /** 中间解说，按时间顺序；每条是一段 */
   commentary: TurnText[]
   /**
-   * 有序工作段（实施-14 F6）：推理 / 工具 / 正文按**真实发生顺序**归段。
+   * 有序工作段：推理 / 工具 / 正文按**真实发生顺序**归段。
    *
-   * 单段时（绝大多数回合）聚合字段 `thinking` / `tools` / `response` 与它等价，
-   * 界面可以继续走旧渲染路径；多段时才需要按它逐段渲染。
+   * 聚合字段供整轮摘要使用；分段字段供正式回复和原始顺序回看使用。
    */
   segments: TurnSegment[]
   /** 整个回合的工具调用（合并后按时间排） */
@@ -445,9 +444,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.id === streamingId) cur.streaming = true
 
     /*
-     * 工作段（实施-14 F6）：段内按真实顺序放推理 / 工具 / 正文，
-     * 正文一进就把段封上 —— 后面的推理与工具归下一段。
-     * 这样界面就能把「第 2 段推理」放在正文 A **之后**、正文 B **之前**。
+     * 工作段：段内按真实顺序放推理 / 工具 / 正文，
+     * 正文一进就把段封上，后面的推理与工具归下一段。
+     * 展示顺序可以调整，但来源与发生顺序仍在这里保留。
      */
     const seg = (): SegmentAccumulator => {
       const last = cur!.segments[cur!.segments.length - 1]

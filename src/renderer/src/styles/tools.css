@@ -3751,6 +3751,30 @@ body.tile-dragging .rp-float-head {
   display: none;
 }
 
+/* 上下文与额度的摘要跟随磁贴浮动；标题由浮动标题栏承载。 */
+.rp-float-body .rp-summary-sec .rp-sec-row {
+  display: flex;
+}
+.rp-float-body .rp-summary-sec .rp-sec-title,
+.rp-float-body .rp-summary-sec .rp-sec-head > .spacer {
+  display: none;
+}
+.rp-float-body .rp-summary-sec .rp-sec-head {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+}
+.rp-float-body .rp-summary-sec .rp-header-usage {
+  max-width: none;
+  width: 100%;
+}
+.rp-float-tile:has(.rp-summary-sec:not(.open)) {
+  height: auto !important;
+}
+.rp-float-tile:has(.rp-summary-sec:not(.open)) .rp-float-resize {
+  display: none;
+}
+
 .rp-float-body .rp-sec {
   padding-top: 0;
 }
@@ -3759,6 +3783,33 @@ body.tile-dragging .rp-float-head {
   padding: 4px 2px;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
+}
+
+/* 摘要卡在最窄右栏把完整摘要移到第二行；展开时继续用这行作主值。 */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-head {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-head > .spacer {
+  display: none;
+}
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-title {
+  flex: none;
+  min-width: max-content;
+}
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-head > .rp-header-usage {
+  flex: 1 0 150px;
+  min-width: min(150px, 100%);
+  max-width: none;
+}
+.rp-summary-sec .rp-header-values {
+  overflow: visible;
+  text-overflow: clip;
+  flex-wrap: wrap;
+}
+.rp-summary-sec .rp-mini-duplicate,
+.rp-summary-sec .rp-ctx-main {
+  display: none;
 }
 
 .rp-float-notice {
