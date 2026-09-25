@@ -130,7 +130,7 @@
     await sleep(700)
   }
   /* 右栏有「开始」/「工具」两个视图（实施-12），磁贴只在工具页里渲染。 */
-  const toolsTab = q('[data-testid="right-window-tab-tools"]')
+  const toolsTab = q('[data-testid="right-window-tab-start"]')
   if (toolsTab) {
     toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(700)

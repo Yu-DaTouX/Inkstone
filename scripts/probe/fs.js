@@ -39,7 +39,7 @@
     /* H-3b：新会话默认停在「开始」页；文件分区在「工具」页。 */
     if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
     await sleep(400)
-    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
 
     /* ---- 0. 把 cwd 设成项目目录（否则树是空的，断言会假通过）---- */    const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
@@ -518,7 +518,7 @@
         const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
         await store.getState().previewFile(`${cwd}\\src\\main\\agent.ts`, undefined, cwd)
         await until(() => !!q('[data-testid="file-preview"]'), 6000)
-        click(q('[data-testid="right-window-tab-tools"]'))
+        click(q('[data-testid="right-window-tab-start"]'))
         await sleep(1200)
 
         const expanded = q('[data-testid="fs-row-src"]')?.getAttribute('aria-expanded')

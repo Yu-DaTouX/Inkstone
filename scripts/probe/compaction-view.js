@@ -44,7 +44,7 @@
       await beforeSwitch.setRightPanelOpen?.(true)
       await sleep(700)
     }
-    const toolsTab = document.querySelector('[data-testid="right-window-tab-tools"]')
+    const toolsTab = document.querySelector('[data-testid="right-window-tab-start"]')
     if (toolsTab) {
       toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await sleep(700)

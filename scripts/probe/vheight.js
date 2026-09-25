@@ -31,7 +31,7 @@
     }
     await sleep(900)
     /* H-3b：新会话默认停在「开始」页；分区在「工具」页。 */
-    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
 
     out.push('=== 1. 只有可滚动的分区有高度把手 ===')

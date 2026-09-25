@@ -86,7 +86,7 @@
 
     out.push('\n=== 3. 右栏标题 ===')
     /* H-3b 后标签行第一项是固定「开始」页，所以按工具标签的标题断言，不取第一个 .rp-title。 */
-    const ttl = document.querySelector('[data-testid="right-window-tab-tools"] .rp-title')?.textContent
+    const ttl = document.querySelector('[data-testid="right-window-tab-start"] .rp-title')?.textContent
       ?? document.querySelector('.rp-title')?.textContent
     out.push('  .rp-title = ' + JSON.stringify(ttl))
     /* 这一格先后叫过「工具栏」→「新标签页」→「首页」；钉的是「有标题且与固定页同名」，

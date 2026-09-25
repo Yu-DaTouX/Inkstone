@@ -55,7 +55,7 @@
     /* H-3b：子代理调用入口在「工具」固定页；新会话默认停在「开始」页。 */
     if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
     await sleep(300)
-    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
     ok(!!q('[data-testid="subagent-new"]'), '右侧工具页有显式的子代理调用按钮')
     q('[data-testid="subagent-new"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -117,7 +117,7 @@
      * 详情会自动把右栏切到 subagent 资源，工具页的列表 DOM 随之卸载。
      * 切回工具页确认列表真的把这条渲染出来，再切回详情看输出。
      */
-    q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
     ok(!!q('[data-testid="subagent-strip"]'), '工具页子代理列表渲染出子任务条')
     ok(!!q(`[data-testid="subagent-${id}"]`), '列表里有这一条')

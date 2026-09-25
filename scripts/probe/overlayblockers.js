@@ -49,7 +49,7 @@
     /* ---- 2. 切到工具：应隐藏，资源仍在 ---- */
     out.push('')
     out.push('=== 2. 活动页不是浏览器 ===')
-    click('[data-testid="right-window-tab-tools"]')
+    click('[data-testid="right-window-tab-start"]')
     await sleep(500)
     ok(st().browserState.open, '切到工具后浏览器资源保留')
     ok(read() === false, `活动页不是浏览器 → 期望隐藏（实际 ${read()}）`)

@@ -14,7 +14,7 @@
   /* H-3b：新会话默认停在「开始」页，工具分区在「工具」固定页里。 */
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(400)
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
 
   out.push('=== 1. 用量条已合并（只剩一条） ===')
@@ -66,6 +66,17 @@
      * 方案 7.3 改版后主行是「上下文 49% …… 128k / 262k」，
      * tokens 行带 data-testid=ctx-tokens；阈值与花费收进「详情」。
      */
+    /*
+     * 「上下文」分区默认是收起的（defaultOpen={false}）。
+     * 收起的卡片只渲染摘要行（`.rp-header-values`），body 里那套
+     * `ctx-tokens` / `.rp-meter` / `ctx-details-toggle` 根本不在 DOM 里 ——
+     * 所以要先展开再读，否则拿到的永远是一个空的 tokens 行。
+     */
+    const ctxHead = ctx.querySelector('.rp-sec-head')
+    if (!ctx.querySelector('[data-testid="ctx-tokens"]') && ctxHead) {
+      ctxHead.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await sleep(400)
+    }
     const tokensLine = ctx.querySelector('[data-testid="ctx-tokens"]')?.textContent?.trim() ?? ''
     out.push('  tokens 行: ' + JSON.stringify(tokensLine))
     ok(tokensLine.length > 0, '显示 token 总量（84k / 200k 这种写法）')

@@ -38,12 +38,16 @@
   await sleep(200)
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(300)
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
 
   const sec = q('[data-testid="rp-context"]')
   if (!sec) return '✗ 找不到上下文分区'
-  const head = sec.querySelector('button')
+  /*
+   * 分区行里第一个 `button` 现在是拖拽把手（.rp-grip，没有 aria-expanded），
+   * 折叠头是 `.rp-sec-head` —— 必须点名它，否则永远展不开上下文分区。
+   */
+  const head = sec.querySelector('.rp-sec-head')
   if (head && head.getAttribute('aria-expanded') === 'false') {
     head.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(200)

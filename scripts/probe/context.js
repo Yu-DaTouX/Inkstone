@@ -42,7 +42,7 @@
   /* H-3b：新会话默认停在「开始」页；上下文分区在「工具」页。 */
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(300)
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
 
   const sec = q('[data-testid="rp-context"]')

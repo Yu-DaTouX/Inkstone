@@ -62,7 +62,7 @@
     /* H-3b：新会话默认停在「开始」页，工具分区在「工具」固定页里。 */
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
     await sleep(300)
-    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
 
     /*

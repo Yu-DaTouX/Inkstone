@@ -41,22 +41,24 @@
 
     out.push('=== 1. 一条窗口标签行 = 唯一的标题/关闭来源 ===')
     ok(!!q('[data-testid="right-window-tabs"]'), '右栏窗口标签行存在')
-    click(q('[data-testid="right-window-tab-start"]'))
-    await sleep(300)
-    ok(!!q('[data-testid="right-start-page"]'), '开始页渲染')
-    const entries = qa('.rp-start-item')
     /*
-     * 5 个：审查 / 浏览器 / 文件 / 终端（H-11）/ 工具。
-     * 之前是 4 个（终端未接入）—— 这个数字改过一次，就是 H-11 真的接线了。
+     * 固定导航只有一个「首页」标签（图标 globe）：
+     * 审查 / 浏览器 / 文件 / 终端都走同一行里的动态标签，其余工具走＋菜单。
+     *
+     * ⚠️ 这里曾经还断言过第二个固定标签 `right-window-tab-tools` 和一个
+     *    5 入口的开始页（`.rp-start-item` × 5 + `start-terminal`）。两者都已下线：
+     *    首页 tab 直接显示工具分区，`StartPage.tsx` 已无任何引用（死代码）。
+     *    按旧结构断言会一直是红的，所以改成验当前约定的两条。
      */
-    ok(entries.length === 5, `开始页有 5 个入口（${entries.length}）`)
-    ok(!!q('[data-testid="start-terminal"]'), '终端入口在（H-11 可用后才会有）')
+    click(q('[data-testid="right-window-tab-start"]'))
+    await sleep(400)
+    ok(!!q('[data-testid="rp-body"]'), '首页 tab 直接显示工具分区（不再是入口卡片列表）')
     ok(
-      entries.every((e) => !!e.querySelector('.rp-start-label') && !!e.querySelector('.rp-start-desc')),
-      '每个入口都有标签 + 说明（不是只有图标）'
+      !!q('[data-testid="right-tool-menu"]'),
+      '其余工具入口在标签行的＋菜单里（一个标题来源，不叠两套导航）'
     )
 
-    click(q('[data-testid="right-window-tab-tools"]'))
+    click(q('[data-testid="right-window-tab-start"]'))
     await sleep(300)
     ok(!!q('[data-testid="rp-body"]'), '工具页渲染')
     const secHeads = qa('.rp-body .rp-sec-head')
@@ -140,7 +142,15 @@
     await sleep(300)
 
     out.push('\n=== 4. 回到固定导航页，不是空白 ===')
-    ok(!!q('[data-testid="right-window-tab-start"]') && !!q('[data-testid="right-window-tab-tools"]'), '固定导航标签始终可达')
+    /*
+     * 旧断言要求 `right-window-tab-tools` 也在 —— 那个标签已下线，
+     * 固定导航现在只有「首页」一个。可达性改成「点它之后标签行与内容都在」。
+     */
+    click(q('[data-testid="right-window-tab-start"]'))
+    await sleep(400)
+    ok(!!q('[data-testid="right-window-tabs"]'), '固定导航标签行始终可达')
+    ok(!!q('[data-testid="rp-body"]'), '回到固定导航页后内容不是空白')
+    ok(!q('[data-testid="right-window-tab-tools"]'), '已下线的旧工具标签不再出现')
 
     return out.join('\n')
   } catch (error) {
