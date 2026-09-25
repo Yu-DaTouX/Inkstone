@@ -137,8 +137,101 @@
      */
     await sleep(2500)
 
+    /*
+     * ── 真实会话：main 读文件那条路送来的图必须真的解码出像素 ──
+     *
+     * 上面用的是注入的假数据，只能证明「界面会画 <img>」。这条链真正的风险
+     * 在 main 侧：`session-reader.ts` 的 `truncateDeep` 曾经把图片的 base64
+     * 当超长文本截掉 64KB 之后的部分（实测本机 546 张图里 474 张超过这个
+     * 数），落盘写出坏图、`<img>` 加载失败 —— 用户报的就是「压缩后图片预览
+     * 没了」。所以这里真的切到一个含图的会话，用 `naturalWidth > 0` 确认
+     * 像素**解码出来了**，而不只是挂上了一个 src。
+     *
+     * 为什么要遍历会话找：探针拿不到「哪个会话有图」，只能 peek 出来看。
+     */
     out.push('')
-    out.push('=== 2. 附件目录：占用与手动清理 ===')
+    out.push('=== 2. 真实会话的图片（main 读文件 → 落盘 → 渲染）===')
+    const list = (await window.yan.listSessions()) ?? []
+    out.push('  会话列表 ' + list.length + ' 条，开始找含图的')
+    let target = null
+    let expect = 0
+    for (const s of list.slice(0, 15)) {
+      let peek = null
+      try {
+        peek = await window.yan.peekSession(s.path)
+      } catch {
+        continue
+      }
+      const n = (peek?.messages ?? []).reduce(
+        (a, m) =>
+          a +
+          (m.images?.length ?? 0) +
+          (m.toolCalls ?? []).reduce((b, c) => b + (c.images?.length ?? 0), 0),
+        0
+      )
+      if (n > 0) {
+        target = s
+        expect = n
+        break
+      }
+    }
+
+    if (!target) {
+      out.push('  ⚠ 本机没找到含图的会话，这一段跳过')
+    } else {
+      out.push('  选中 …' + String(target.path).slice(-26))
+      /*
+       * 只调 `peekSession`（读文件）再把消息铺上去，**不切会话**：
+       * `switchSession` 还要 pi 那边真的切过去，在这里既没必要也不可靠
+       * （实测切不过去，界面一直停在原会话）。
+       */
+      const peek = await window.yan.peekSession(target.path)
+      const msgs = peek?.messages ?? []
+      const userImgs = msgs.reduce((a, m) => a + (m.images?.length ?? 0), 0)
+      const toolImgs = msgs.reduce(
+        (a, m) => a + (m.toolCalls ?? []).reduce((b, c) => b + (c.images?.length ?? 0), 0),
+        0
+      )
+      out.push('  消息 ' + msgs.length + ' 条：用户图 ' + userImgs + ' 张，工具图 ' + toolImgs + ' 张')
+      /*
+       * 只铺**含图的那几条消息**。
+       *
+       * 直接铺 549 条是不行的：消息区有虚拟滚动，图所在的老消息根本不在
+       * DOM 里，`.msg-images img` 当然查不到（实测 DOM 里 0 张）。这一屏用
+       * 的仍是**真实的落盘图**与**真实的渲染组件**，只是把范围缩到看得见。
+       */
+      /* 用户贴的图排前面：它们是「图片预览」的主角，截图第一屏就能拍到 */
+      const userMsgs = msgs.filter((m) => (m.images?.length ?? 0) > 0)
+      const toolMsgs = msgs.filter((m) => (m.toolCalls ?? []).some((c) => c.images?.length))
+      const withImg = userMsgs.length ? userMsgs : toolMsgs
+      out.push(
+        '  含图的消息 ' + withImg.length + ' 条（用户 ' + userMsgs.length + ' / 工具 ' + toolMsgs.length + '），只铺这些'
+      )
+      store.setState({ messages: withImg })
+      await sleep(600)
+      /* 工具图在行内详情里 —— 展开前几行（这一段只关心「图能不能解码」） */
+      for (const head of qa('.trow:not(.open) > .trow-head').slice(0, 15)) {
+        click(head)
+        await sleep(80)
+      }
+      let seen = []
+      for (let i = 0; i < 30; i++) {
+        await sleep(250)
+        seen = qa('.msg-images img, .trow-images img')
+        if (seen.some((im) => im.naturalWidth > 0)) break
+      }
+      const decoded = seen.filter((im) => im.naturalWidth > 0).length
+      const broken = seen.filter((im) => im.complete && im.naturalWidth === 0).length
+      out.push('  DOM 里 ' + seen.length + ' 张，解码出 ' + decoded + ' 张，坏图 ' + broken + ' 张')
+      ok(seen.length > 0, '真实会话铺开后 DOM 里有图片元素')
+      ok(decoded > 0, '真实会话的图片真的解码出了像素（不是坏图）')
+      ok(broken === 0, '没有加载失败的图片（truncateDeep 截断 base64 的回归）')
+      /* 视觉验收窗口：铺完会话再停一下，好让连拍能拍到这一屏 */
+      await sleep(3000)
+    }
+
+    out.push('')
+    out.push('=== 3. 附件目录：占用与手动清理 ===')
     const usage = await window.yan.attachments.usage()
     out.push('  usage = ' + JSON.stringify(usage))
     ok(
