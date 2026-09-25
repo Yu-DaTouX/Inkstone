@@ -83,8 +83,28 @@ export function FilePreviewPane() {
     return () => window.clearInterval(timer)
   }, [data?.abs, data?.ok, data?.mtimeMs, pollMs, checkPreviewStale])
 
+  /**
+   * 图片的原始尺寸（从 `onLoad` 拿）。
+   *
+   * 主进程只给元信息，不给像素尺寸 —— 这里等图真的解码完再读 naturalWidth，
+   * 就不会为了显示一个数字去额外解析一遍文件。
+   */
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null)
+  /**
+   * 图片查看模式（用户要求：「当前的图片预览窗口没有凸显主题内容」）。
+   *   · `fit`   适应窗口（默认）：整张图都在，先看整体
+   *   · `actual` 1:1 原始像素：看细节，超出就滚动
+   * 点图切换，与文本文件的「阅读 / 源码」是同一套「同一资源两种看法」的语义。
+   */
+  const [imgMode, setImgMode] = useState<'fit' | 'actual'>('fit')
+  useEffect(() => {
+    setImgSize(null)
+    setImgMode('fit')
+  }, [data?.abs])
+
   if (!preview) return null
 
+  const isImage = data?.ok && data.kind === 'image'
   const fileUrl = data?.abs
     ? `file:///${encodeURI(data.abs.replace(/\\/g, '/').replace(/^\/+/, ''))}`
     : ''
@@ -144,7 +164,12 @@ export function FilePreviewPane() {
             {data.lineEnd ? `${data.line}\u2013${data.lineEnd}` : data.line}
           </span>
         ) : null}
-        {data?.size ? <span className="fp-size">{fmtSize(data.size)}</span> : null}
+        {/*
+          头部只留文件名 + 四个按钮（用户要求「文件名 简洁」）。
+          图片的尺寸/字节数都不进头部 —— 尺寸在图片区角落，字节数在 title 上。
+          右栏最窄时头部只有 300 多 px，多塞一个尺寸就把名字挤成「9…」。
+        */}
+        {!isImage && data?.size ? <span className="fp-size">{fmtSize(data.size)}</span> : null}
         {isMarkdown ? (
           <div className="fp-mode" role="group" aria-label="文件阅读模式">
             <button type="button" className={mode === 'read' ? 'on' : ''} onClick={() => setMode('read')} data-testid="file-preview-read">阅读</button>
@@ -191,7 +216,7 @@ export function FilePreviewPane() {
         </button>
       </div>
 
-      <div className="fp-path" title={preview.path}>
+      <div className="fp-path" title={preview.path} hidden={isImage}>
         {preview.path}
       </div>
 
@@ -278,9 +303,38 @@ export function FilePreviewPane() {
           </>
         ) : null}
 
-        {data?.ok && data.kind === 'image' && fileUrl ? (
-          <div className="fp-image">
-            <img src={fileUrl} alt={data.name} />
+        {isImage && fileUrl ? (
+          <div className={`fp-image ${imgMode}`} data-testid="file-preview-image" data-mode={imgMode}>
+            <button
+              type="button"
+              className="fp-image-hit"
+              onClick={() => setImgMode((m) => (m === 'fit' ? 'actual' : 'fit'))}
+              title={t('fp.imageToggle')}
+              aria-label={t('fp.imageToggle')}
+            >
+              <img
+                src={fileUrl}
+                alt={data.name}
+                draggable={false}
+                onLoad={(e) => {
+                  const el = e.currentTarget
+                  if (el.naturalWidth > 0) setImgSize({ w: el.naturalWidth, h: el.naturalHeight })
+                }}
+              />
+            </button>
+            {/*
+              尺寸与当前模式做成角落浮层，**不进头部**：
+              头部只留文件名 + 四个按钮（用户要求「文件名 简洁」）。
+              右栏最窄时头部只有 300 多 px，多塞一个尺寸就把名字挤成「9…」。
+            */}
+            <div className="fp-image-meta" data-testid="file-preview-image-meta">
+              <span>{imgMode === 'fit' ? t('fp.imageFit') : t('fp.imageActual')}</span>
+              {imgSize ? (
+                <span className="fp-image-dims">
+                  {imgSize.w}×{imgSize.h}
+                </span>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

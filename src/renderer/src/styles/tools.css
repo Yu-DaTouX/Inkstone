@@ -1782,6 +1782,10 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg);
+  /* 文件名是这一行的主信息：让它优先占位、被挤时最后才缩（原来没有这条，
+     窄右栏里它会被后面的字节数、模式切换挤成「92-real-user-images.p…」） */
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .fp-line-no {
@@ -1969,18 +1973,103 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   word-break: break-all;
 }
 
+/*
+ * 图片预览（用户 2026-09-25：「当前的图片预览窗口没有凸显主题内容 文件名 简洁
+ * 和下面的四个按钮是可以保留的 你来设计吧」）。
+ *
+ * 改造前实测三条毛病（探针读数：内容区 335×213，图只有 240×150）：
+ *   ① 图片被缩得很小、挤在左上角 —— 没有撑满，也没居中突出；
+ *   ② 第二行被一条冗长路径整行占掉（.fp-path，图片时已 hidden）；
+ *   ③ 图片和面板一个底色，看不出哪是主体。
+ *
+ * 现在：撑满内容区 + 深色衬底 + 居中（1:1 时从左上开始），
+ * 点图在「适应窗口 ↔ 1:1」之间切换，尺寸写在头部。
+ */
 .fp-image {
   display: flex;
+  align-items: center;
   justify-content: center;
+  /* 撑满内容区；min-height 而非 height —— 1:1 时要允许它超出并滚动 */
+  min-height: 100%;
+  min-width: 0;
   padding: var(--sp-3);
+  /* 衬底：图片是主体，背景退到后面 */
+  background: var(--bg-0);
 }
-
+/* 1:1：超过可用区就滚动。从**左上**开始而不居中 —— 滚动一个居中元素很别扭 */
+.fp-image.actual {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+/* 整张图可点（切换适应/1:1），但不要按钮外观 */
+.fp-image-hit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.fp-image.actual .fp-image-hit {
+  cursor: zoom-out;
+  min-width: 100%;
+  min-height: 100%;
+}
 .fp-image img {
-  max-width: min(240px, 100%);
-  max-height: 240px;
+  display: block;
+  /* 适应窗口：不超出可用区（原来没有任何约束） */
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   border-radius: var(--r-sm);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.28);
+  user-select: none;
 }
+/* 1:1：按原始像素显示，不缩放 */
+.fp-image.actual img {
+  max-width: none;
+  max-height: none;
+}
+/* 尺寸比字节数有用（看图片时） */
+.fp-dims {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * 图片区的角落浮层：当前模式 + 原始尺寸。
+ * 贴在右下角、半透明底 —— 它是状态提示，不是主体；图片要占全部注意力。
+ */
+.fp-image {
+  position: relative;
+}
+.fp-image-meta {
+  position: absolute;
+  right: calc(var(--sp-3) + 4px);
+  bottom: calc(var(--sp-3) + 4px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/*
+ * （这里原来有一条 `.fp-image img { max-width: min(240px, 100%);
+ *   max-height: 240px }`。它把图片**硬锁在 240px** —— 1802×1128 的截图
+ *   被缩成 240×150 挤在角落里，正是用户说的「没有凸显主题内容」。
+ *   尺寸约束已收归上面的 .fp-image img（适应窗口就是撑满可用区），
+ *   这条重复声明删掉。）
+ */
 
 /* ══════════════════════════════════════════════════════════════
    额度 / 上下文的主值布局（方案 7.2、7.3）
