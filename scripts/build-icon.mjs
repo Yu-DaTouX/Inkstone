@@ -46,7 +46,9 @@ function pixelIcon(size) {
       bitmap[offset] = value // BGRA
       bitmap[offset + 1] = value
       bitmap[offset + 2] = value
-      bitmap[offset + 3] = 255
+      /* 关的像素要透出去，不能填成不透明黑底：否则图标是黑方块，
+         圆角/异形轮廓在深色任务栏上也糊成一片（check:shell-icons 会拦）。 */
+      bitmap[offset + 3] = on ? 255 : 0
     }
   }
   return nativeImage.createFromBitmap(bitmap, { width: size, height: size })

@@ -66,11 +66,13 @@ export async function runToolLayoutTests(ok) {
 
   /* ── U-4 / U-5：浮动磁贴的放置、折叠、写入仲裁与像素几何 ── */
   console.log('--- U-4/U-5 磁贴放置与几何 ---')
-  ok(isTileFloatable('queue') && !isTileFloatable('todo') && !isTileFloatable('files'), 'todo / files 不可浮动')
+  /* NON_FLOATING_TILE_IDS 现为空：每个磁贴都能拖成浮窗。
+     保留 isTileFloatable 这层，是为了将来要收紧时只改一份名单。 */
+  ok(isTileFloatable('queue') && isTileFloatable('todo') && isTileFloatable('files'), '所有磁贴都可浮动')
   const forced = setTilePlacement(base, 'todo', 'floating', { x: 0.1, y: 0.1, w: 0.3, h: 0.3 })
-  ok(forced.tiles.find((t) => t.id === 'todo')?.placement === 'docked', '不可浮动项被要求浮动时留在停靠位')
+  ok(forced.tiles.find((t) => t.id === 'todo')?.placement === 'floating', '要求浮动时真的浮动')
   const forcedNorm = normalizeToolLayout({ version: 2, tiles: [{ id: 'files', placement: 'floating', rect: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 } }] }, IDS)
-  ok(forcedNorm.tiles.find((t) => t.id === 'files')?.placement === 'docked', '存量脏数据里的 files 浮动被收回停靠')
+  ok(forcedNorm.tiles.find((t) => t.id === 'files')?.placement === 'floating', '存量布局里的 floating 保持浮动')
 
   const folded = setTileCollapsed(floated, 'queue', true)
   ok(folded.tiles.find((t) => t.id === 'queue')?.collapsed === true, '折叠偏好进布局')

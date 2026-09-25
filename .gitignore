@@ -17,6 +17,9 @@ build/*
 release/
 *.tsbuildinfo
 
+# ---- 本机 pi 包引用（.pi/settings.json 写的是这台机器的绝对路径）----
+.pi/
+
 # 录屏中间帧；保留最终 GIF 与审阅截图
 docs/design/preview/live/frame-*.png
 

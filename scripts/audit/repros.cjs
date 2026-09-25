@@ -9,7 +9,8 @@ async function main(){
  const agents=[];
  const registry=new RunnerRegistry({createAgent:(id,cwd)=>{
   let state={sessionId:id,cwd};
-  const a={cwd,running:true,getState:()=>state,getPendingUiCount:()=>0,start:async()=>({ok:true}),stop:async()=>{},newSession:async()=>{state={...state,sessionId:state.sessionId+'n'};return {ok:true};},switchSession:async()=>({ok:true})};agents.push(a);return a;
+  /* mock 要盖住 runners.ts 实际用到的整套 agent 接口（busy / 代次 / 连接状态都在里面）。 */
+  const a={cwd,running:true,capabilityProjectId:undefined,getState:()=>state,getPendingUiCount:()=>0,hasRunningBash:()=>false,getConn:()=>({state:'ready',detail:''}),setRunnerGeneration:()=>{},refreshPolicyView:()=>{},start:async()=>({ok:true}),stop:async()=>{},newSession:async()=>{state={...state,sessionId:state.sessionId+'n'};return {ok:true};},switchSession:async()=>({ok:true})};agents.push(a);return a;
  }});
  await registry.select({cwd:'C:/audit/A'});
  const selected=await registry.select({cwd:'C:/audit/B'});
@@ -26,8 +27,13 @@ async function main(){
    'export async function cleanupWorkspace(){globalThis.__audit.cleanups++;}',
    'export async function applyPatch(){return {ok:true};}'
   ].join('\n'),
-  './paths':'export const YAN_DIR='+JSON.stringify(out)+';',
-  './normalize':'export function normalizeMessage(x){return x;}'
+  /* paths / normalize 只被当工具函数用（拼子进程环境、算 token 用量），
+     stub 形状跟着真实导出走，少一样 subagents.ts 就编不过。 */
+  './paths':'export const YAN_DIR='+JSON.stringify(out)+';export const PI_AGENT_DIR='+JSON.stringify(out)+';',
+  './normalize':[
+   'export function normalizeMessage(x){return x;}',
+   'export function toUsage(u){if(!u)return undefined;return {input:u.input??0,output:u.output??0,cacheRead:u.cacheRead??0,cacheWrite:u.cacheWrite??0,totalTokens:u.totalTokens??(u.input??0)+(u.output??0)+(u.cacheRead??0)+(u.cacheWrite??0),cost:u.cost?.total??0};}'
+  ].join('\n')
  };
  await esbuild.build({entryPoints:['src/main/subagents.ts'],bundle:true,platform:'node',format:'esm',outfile:path.join(out,'subagents.mjs'),plugins:[{name:'audit-stubs',setup(build){build.onResolve({filter:/^\.\/(protocol|subagent-isolation|paths|normalize)$/},args=>({path:args.path,namespace:'audit'}));build.onLoad({filter:/.*/,namespace:'audit'},args=>({contents:mocks[args.path],loader:'js'}));}}]});
  const {SubagentController}=await import(pathToFileURL(path.join(out,'subagents.mjs')).href);
