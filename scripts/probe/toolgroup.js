@@ -309,8 +309,10 @@
     '60 条确实超出了上限（真的会滚，不是摆一个空的 max-height）'
   )
   /*
-   * 高度按 **25 行**算（用户 2026-09-19：「改为 25 条」）。
-   * 行步进不硬编码 —— 字体/缩放一变它就变，所以按实测相邻两行的 top 差值换算。
+   * 高度口径：**窗口高的四分之一**。
+   * 用户 2026-09-25 把三处统一成这个数（产物图片含衬底 / 推理过程 /
+   * 命令列表），早先的「25 行」（2026-09-19）作废 —— 行步进随字体和
+   * 缩放在变，25vh 才是现在真正的不变量，所以断言也换成 vh。
    */
   const rowsForCount = qa('.tgroup-body .trow')
   const rowStep =
@@ -320,7 +322,12 @@
   const rowsInView =
     rowStep > 0 && gBody ? Math.floor((gBody.clientHeight + 1) / rowStep) : 0
   out.push(`  一屏可见约 ${rowsInView} 条（行步进 ${rowStep.toFixed(1)}px）`)
-  ok(rowsInView >= 25, `一屏能看到 25 条（实测 ${rowsInView}）`)
+  const wantH = window.innerHeight * 0.25
+  ok(
+    !!gBody && Math.abs(gBody.clientHeight - wantH) <= 2,
+    `列表高度 = 窗口高的 1/4（期望 ${Math.round(wantH)}px）`,
+    `实测 ${gBody?.clientHeight}px`
+  )
   ok(
     !!gBody && gBody.clientHeight <= window.innerHeight,
     '列表本身不超出视口',
