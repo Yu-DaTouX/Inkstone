@@ -104,6 +104,24 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
   }
 
   if (v && typeof v === 'object') {
+    /*
+     * 图片块**整体放过**，不递归、不截断。
+     *
+     * 它的 `data` 是 base64 **数据**，不是给人读的文本 —— 按 `MAX_TEXT`
+     * 截断会直接毁掉图片本身（实测本机：546 张图里 **474 张**超过 64KB，
+     * 合计 143MB）。`normalize.ts` 的 `imagesOf` 读的就是这个 `data`，
+     * 它把截断后的半截 base64 交给 `localizeImage` 落盘 → 写出一个坏 PNG
+     * → 前端 `<img>` 加载失败，用户看到的就是「压缩后图片预览没了」。
+     * 压缩 / 切会话 / 重启都走 hydrate，而它必经这里，所以只在
+     * 压缩后才暴露。
+     *
+     * 体积控制**不靠这里**：`imagesOf` 会把 base64 换成文件地址，消息里
+     * 最终不留 base64（那才是该管的地方）。
+     *
+     * 判据与 `normalize.ts` 的 `imagesOf` 保持一致，两处必须同口径。
+     */
+    if ((v as { type?: unknown }).type === 'image') return { value: v, cut: 0 }
+
     let cut = 0
     const out: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
