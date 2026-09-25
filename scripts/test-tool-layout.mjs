@@ -14,7 +14,9 @@ export async function runToolLayoutTests(ok) {
     normalizeToolLayout,
     pxRectToNormalized,
     setTileCollapsed,
-    setTilePlacement
+    setTilePlacement,
+    snapFloatRect,
+    SNAP_THRESHOLD
   } = await import('../out/test/tool-layout.mjs')
 
   console.log('\n--- U-0 工具磁贴布局契约 ---')
@@ -99,4 +101,51 @@ export async function runToolLayoutTests(ok) {
     Math.abs(roundtrip.x - 0.1) < 1e-6 && Math.abs(roundtrip.w - 0.4) < 1e-6,
     '像素 → 归一化往返一致（保存后可复原）'
   )
+
+  /*
+   * 吸附对齐（用户 2026-09-25：「工具拖入到消息窗口后 也应该有吸附对齐功能
+   * 这样好整理 并且对于后续开发可以预留标准」）。
+   * area 沿用上面那一个：left 100 / top 50 / 800×600 → 右缘 900、下缘 650。
+   */
+  const mk = (left, top, width = 300, height = 240) => ({ left, top, width, height })
+
+  /* ① 容器边：左/上都在阈值内就吸上去 */
+  const nearLeft = snapFloatRect(mk(106, 56), area)
+  ok(nearLeft.rect.left === 100 && nearLeft.rect.top === 50, '靠近容器左上角 → 吸到 (100,50)')
+  ok(nearLeft.guides.length === 2, '两个轴各自给一条参考线')
+  ok(nearLeft.guides.every((g) => g.kind === 'area'), '参考线标出吸的是容器边')
+
+  /* ② 阈值外不动 —— 吸附不能变成「到处乱吸」 */
+  const farLeft = snapFloatRect(mk(100 + SNAP_THRESHOLD + 2, 50 + SNAP_THRESHOLD + 2), area)
+  ok(farLeft.rect.left === 100 + SNAP_THRESHOLD + 2 && farLeft.guides.length === 0, '超出阈值不吸')
+
+  /* ③ 容器右/下边：用矩形的右/下边去贴（不是左边） */
+  const nearRight = snapFloatRect(mk(900 - 300 - 4, 650 - 240 - 4), area)
+  ok(nearRight.rect.left === 600 && nearRight.rect.top === 410, '靠近容器右下角 → 右/下边贴边')
+
+  /* ④ 中线：矩形中心对容器中心 */
+  const centered = snapFloatRect(mk(area.left + 400 - 150 + 3, area.top + 300 - 120 + 3), area)
+  ok(centered.rect.left === 350, '靠近水平中线 → 中心对齐（left 350）')
+  ok(centered.guides.some((g) => g.kind === 'center'), '参考线标出吸的是中线')
+
+  /* ⑤ 其他磁贴：四条边 × 自己两条边都算目标 */
+  const other = mk(500, 200)
+  const besideTile = snapFloatRect(mk(500 + 300 + 5, 900), area, [other])
+  ok(besideTile.rect.left === 800, '我的左缘贴到其他磁贴右缘（相接摆放）')
+  ok(besideTile.guides.some((g) => g.kind === 'tile'), '参考线标出吸的是另一个磁贴')
+  ok(snapFloatRect(mk(500 + 4, 900), area, [other]).rect.left === 500, '左对左（笔直对齐）')
+  ok(
+    snapFloatRect(mk(200 + 5, 900), area, [other]).rect.left === 200,
+    '我的右缘贴到其他磁贴左缘（反向相接）'
+  )
+  const sameTop = snapFloatRect(mk(60, 200 + 6), area, [other])
+  ok(sameTop.rect.top === 200, '上边对齐其他磁贴的上边')
+
+  /* ⑥ 只吸最近的一条，不做连锁 */
+  const twoCands = snapFloatRect(mk(100 + 6, 50 + 6), area, [mk(109 + 0, 0, 300, 240)])
+  ok(twoCands.rect.left === 109, '两个候选都近时选更近的那条（109 而不是 100）')
+
+  /* ⑦ 吸附是移动，不是缩放 */
+  const sizeKept = snapFloatRect(mk(103, 53, 123, 45), area)
+  ok(sizeKept.rect.width === 123 && sizeKept.rect.height === 45, '吸附只改 left/top，尺寸不变')
 }
