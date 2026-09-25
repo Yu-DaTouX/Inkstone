@@ -62,6 +62,28 @@
     const secHeads = qa('.rp-body .rp-sec-head')
     ok(secHeads.length > 0, `工具页分区都有标题（${secHeads.length} 个）`)
 
+    /*
+     * 标题文字不能被压成「上…」「额.」（用户截图）。
+     *
+     * 之前只断言了「没换成两行」（head 高 ≤ 44），于是漏掉了另一个失败模式：
+     * 标题栏 `flex-wrap: nowrap` 之后，flex 把**标题**压缩并加了省略号。
+     * 所以这里直接量 scrollWidth vs clientWidth。
+     * 优先级应该是：先掉摘要里的数字，摘要缩到环形（36px）后再才轮到标题。
+     */
+    const titles = qa('.rp-body .rp-sec-title')
+    const clippedTitles = titles.filter((el) => el.scrollWidth > el.clientWidth + 1)
+    out.push(
+      `  分区标题 ${titles.length} 个，被截断 ${clippedTitles.length} 个` +
+        (clippedTitles.length
+          ? '：' + clippedTitles.map((el) => el.textContent.trim()).join('、')
+          : '')
+    )
+    ok(clippedTitles.length === 0, '分区标题文字完整（没有被 flex 压成省略号）')
+    ok(
+      secHeads.every((h) => h.getBoundingClientRect().height <= 44.5),
+      '分区标题栏仍然是一行（没有换行）'
+    )
+
     out.push('\n=== 2. 文件：缺失保留标签与路径，并给重试 ===')
     const cwd = st().session?.cwd ?? '.'
     const missing = `${cwd}/__yan_missing_preview__.md`
