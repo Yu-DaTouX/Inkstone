@@ -260,6 +260,14 @@
     !!trk && trk.scrollHeight > trk.clientHeight,
     '刻度多于轨道高度时轨道自己可滚（而不是把格子压扁）'
   )
+  /*
+   * 可滚但不显示滚动条（用户：「是出现了滚动条 我不想要这个」）。
+   * 两条都要：只藏滚动条而不保证可滚，Tab 到末项就选不到了。
+   */
+  ok(
+    !!trk && getComputedStyle(trk).scrollbarWidth === 'none',
+    '轨道不显示滚动条（scrollbar-width: none）'
+  )
 
   return out.join('\n')
 

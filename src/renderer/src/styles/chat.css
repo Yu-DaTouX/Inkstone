@@ -1798,21 +1798,23 @@
   gap: 2px;
   max-height: 100%;
   /* 长会话（几十轮）的刻度会超过对话区高度：允许在轨道内滚动，
-     键盘 Tab 到末项时浏览器会把它自动滚进来（V-2b 的「末项可达」）。
-     细滚动条不挤掉命中区宽度。 */
+     键盘 Tab 到末项时浏览器会把它自动滚进来（V-2b 的「末项可达」）。 */
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  /*
+   * 但把滚动条本身藏起来（用户：「是出现了滚动条 我不想要这个」）。
+   * 轨道只有 44px 宽，一条 4px 的滑块就吃掉一成宽度 —— 在刻度旁边
+   * 就是一条显眼的竖线，而且它会随会话长短变长变短，很吵。
+   * 滚动能力保留：Tab 到末项时浏览器仍会自动滚进来。
+   */
+  scrollbar-width: none;
   pointer-events: auto;
 }
 
 .outline-track::-webkit-scrollbar {
-  width: 4px;
-}
-
-.outline-track::-webkit-scrollbar-thumb {
-  background: var(--border-str);
-  border-radius: 2px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* 命中区：透明；刻度锚在命中区左侧（向右长，最长 34 < 容器 44） */
