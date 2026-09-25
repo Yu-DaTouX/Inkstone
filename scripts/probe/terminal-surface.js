@@ -83,7 +83,7 @@
   ok(snapAfter?.cols === 100 && snapAfter?.rows === 30, `resize 真的落到宿主（${snapBefore?.cols}x${snapBefore?.rows} → ${snapAfter?.cols}x${snapAfter?.rows}）`)
 
   /* ⑤ 断线重连：切走再切回，同一会话拿回它的输出 */
-  click(q('[data-testid="right-window-tab-tools"]'))
+  click(q('[data-testid="right-window-tab-start"]'))
   await sleep(500)
   const tabBack = qa('[data-testid="right-window-tab-terminal"]').find((el) => el.dataset.terminalId === activeId)
   click(tabBack)

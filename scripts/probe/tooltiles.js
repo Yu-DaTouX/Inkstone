@@ -53,7 +53,7 @@
     }
     if (!store.getState().settings?.rightPanelOpen) await store.getState().toggleRightPanel()
     await resetLayout()
-    click(q('[data-testid="right-window-tab-tools"]'))
+    click(q('[data-testid="right-window-tab-start"]'))
     await until(() => qa('.rp-body > .rp-slot').length > 0, 4000)
     await sleep(400)
 

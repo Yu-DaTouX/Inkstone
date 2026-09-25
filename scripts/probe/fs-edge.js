@@ -55,7 +55,7 @@
     /* H-3b：新会话默认停在「开始」页；文件分区在「工具」页。 */
     if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
     await sleep(400)
-    document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
 
     const cwd = store.getState().session?.cwd ?? store.getState().settings?.cwd ?? ''
@@ -461,7 +461,7 @@
       ok(!body, '浏览器活动时工具栏正文已卸载，不与原生网页叠放')
 
       /* 点“工具栏”标签返回工具窗口，再从同一条标签栏的菜单打开文件窗口。 */
-      const toolsTab = q('[data-testid="right-window-tab-tools"]')
+      const toolsTab = q('[data-testid="right-window-tab-start"]')
       if (!toolsTab) {
         ok(false, '浏览器窗口没有工具栏标签')
       } else {
@@ -487,7 +487,7 @@
             ok(!q('[data-testid="browser-surface"]'), '文件窗口不与浏览器表面叠放')
           }
         }
-        const toolsAgain = q('[data-testid="right-window-tab-tools"]')
+        const toolsAgain = q('[data-testid="right-window-tab-start"]')
         if (toolsAgain) toolsAgain.click()
         const bodyAfter = await until(() => !!q('[data-testid="rp-body"]') && !q('.rightpanel.window-file'), 5000)
         ok(bodyAfter, '切回工具栏窗口后文件树分区恢复')

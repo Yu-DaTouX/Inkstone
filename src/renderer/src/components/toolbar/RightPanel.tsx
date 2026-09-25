@@ -4,6 +4,9 @@ import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section, SECTION_ICON, SECTION_TITLE } from './ToolSection'
 import { DragDropRect, DragPreview } from './DragPreview'
+import { SubagentList } from '../chat/SubagentList'
+import { SubagentPreview } from './SubagentPreview'
+import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { goalDisplayTitle } from '../../state/goal-view'
 import {
@@ -104,6 +107,10 @@ export function RightPanel() {
   const setBrowserSurfaceActive = useStore((s) => s.setBrowserSurfaceActive)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const session = useStore((s) => s.session)
+  /* H-10a：子代理详情是工作台资源标签 `subagent:<runId>` */
+  const subagentPreviewId = useStore((s) => s.subagentPreviewId)
+  const subagentRuns = useStore((s) => s.subagents)
+  const openSubagent = useStore((s) => s.openSubagent)
   const workbenchKey = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
   /*
    * 布局和它所属的会话 key 绑在一起存（`{key, state}`）：切会话时即使某个渲染
@@ -153,6 +160,12 @@ export function RightPanel() {
   useEffect(() => {
     saveWorkbenchState(bench.key, bench.state)
   }, [bench])
+
+  /* H-10a：列表 / 回合入口打开同一个 run → 激活同一个资源标签，不叠加副本 */
+  useEffect(() => {
+    if (!subagentPreviewId) return
+    updateWorkbench((state) => activateWorkbenchTab(state, 'subagent', subagentPreviewId))
+  }, [subagentPreviewId, updateWorkbench])
 
   /*
    * H-4：预览读到 realpath 后就有了资源身份 → 用它激活/新建文件标签。
@@ -341,6 +354,12 @@ export function RightPanel() {
     })
   }, [browserOpen, filePreview, reviewOpen, updateWorkbench])
 
+  const closeSubagentTab = (id: string): void => {
+    setQuickMenuOpen(false)
+    updateWorkbench((state) => closeWorkbenchTab(state, id))
+    openSubagent(null)
+  }
+
   const switchWindow = (next: RightWindowView, resourceKey?: string): void => {
     setQuickMenuOpen(false)
     /*
@@ -445,6 +464,8 @@ export function RightPanel() {
   const reviewMode = activeView === 'review' && reviewOpen
   const browserMode = activeView === 'browser' && browserOpen
   const fileMode = activeView === 'file'
+  /* H-10a：子代理详情是独立资源页，与审查/浏览器/文件同一组标签 */
+  const subagentMode = activeView === 'subagent' && !!subagentPreviewId
   const toolsMode = homeMode && open
   /* 交互终端（H-11）：纯 DOM 资源，与文件一样走工作窗口标签 */
   const terminalMode = activeView === 'terminal'
@@ -454,9 +475,11 @@ export function RightPanel() {
    * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏标签、网页满列」）。
    * 收起时整个右栏渲染为 null，布局的 `:has(.rightpanel)` 会把 --w-right 置 0。
    */
-  const hasVisibleSurface = open && (reviewMode || browserMode || fileMode || toolsMode || terminalMode || pendingSurface)
+  const hasVisibleSurface = open && (reviewMode || browserMode || fileMode || toolsMode || subagentMode || terminalMode || pendingSurface)
   /* 文件资源标签（实施-11 H-4）：一个文件一个标签，身份是 projectId+root+canonicalPath */
   const fileTabs = workbench.tabs.filter((tab) => tab.kind === 'file')
+  /* 子代理资源标签（H-10a）：一个 run 一个标签，身份是 runId */
+  const subagentTabs = workbench.tabs.filter((tab) => tab.kind === 'subagent')
   /* 终端资源标签（H-11）：一个 PTY 会话一个标签，身份是会话 id */
   const terminalTabs = workbench.tabs.filter((tab) => tab.kind === 'terminal')
 
@@ -614,6 +637,32 @@ export function RightPanel() {
             )
           })}
 
+          {subagentTabs.map((tab) => {
+            const run = subagentRuns.find((r) => r.id === tab.resourceKey)
+            const label = shortTitle(run?.task ?? tab.resourceKey ?? '子代理', 18).short
+            const active = activeView === 'subagent' && workbench.activeTabId === tab.id
+            return (
+              <div
+                key={tab.id}
+                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                role="tab"
+                aria-selected={active}
+                data-testid={`right-window-tab-subagent-${tab.resourceKey}`}
+                onClick={() => switchWindow('subagent', tab.resourceKey)}
+              >
+                <Icon name="layers" size={12} />
+                <span title={run?.task}>{label}</span>
+                <button
+                  type="button"
+                  className="review-tab-close"
+                  onClick={(event) => { event.stopPropagation(); closeSubagentTab(tab.id) }}
+                  aria-label={t('sa.close')}
+                  title={t('sa.close')}
+                >×</button>
+              </div>
+            )
+          })}
+
           <div className="rp-tool-launcher-wrap">
             <button
               className={`review-tab-plus rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
@@ -670,6 +719,7 @@ export function RightPanel() {
 
       {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
+      {subagentMode ? <SubagentPreview placement="right" /> : null}
       {reviewMode ? <ReviewPanel /> : null}
       {terminalMode ? <TerminalSurface /> : null}
       {browserMode ? <BrowserSurface /> : null}
@@ -680,6 +730,8 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
+          {/* 独立子代理是跨回合的后台资源，放在右侧工作区而不是输入框上方。 */}
+          {toolsMode ? <SubagentList placement="right" /> : null}
           {fileMode && filePreview ? <FilePreviewPane /> : null}
           {sequence.map((tile) => {
             if (tile.placement === 'floating') {

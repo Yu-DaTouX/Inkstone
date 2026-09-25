@@ -141,7 +141,7 @@
   await sleep(400)
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(300)
-  document.querySelector('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
   const secs = qa('[data-sec]').map((x) => x.getAttribute('data-sec'))
   log('  右栏分区: ' + JSON.stringify(secs))

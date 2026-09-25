@@ -27,7 +27,7 @@
   /* H-3b：新会话默认停在「开始」页，任务分区在「工具」固定页里。 */
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(400)
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
 
   /* ================= 1. 启动期通知不弹窗 ================= */
@@ -75,7 +75,7 @@
   await until(() => targetReady && store.getState().todos.length > 0, 15000)
 
   /* H-3b：切会话会恢复到该会话的默认页（开始）；任务在「工具」页，重新点一次。 */
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await until(() => !!q('.rp-body'), 5000)
   await sleep(300)
 
@@ -176,7 +176,7 @@
   log('\n--- 6. 进度条 / 当前任务 / 动画 ---')
 
   /* H-3b：第 4 节切到的会话默认停在「开始」页；本段只验注入后的渲染，先把工具页点回来。 */
-  q('[data-testid="right-window-tab-tools"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(300)
 
   const tstore = window.__yanStore

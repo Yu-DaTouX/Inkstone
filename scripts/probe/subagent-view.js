@@ -48,8 +48,8 @@
     if (!store || !sessionId) return '  ✗ 当前页面没有可用的渲染 store / sessionId'
 
     await store.getState().setRightPanelOpen(true)
-    await until(() => q('[data-testid="right-window-tab-tools"]'))
-    q('[data-testid="right-window-tab-tools"]')?.click()
+    await until(() => q('[data-testid="right-window-tab-start"]'))
+    q('[data-testid="right-window-tab-start"]')?.click()
     const list = await until(() => q('[data-testid="subagent-new"]'))
     if (!list) return '  ✗ 右侧工具页未挂载子代理列表'
 
