@@ -274,16 +274,21 @@
 .artifact-image {
   display: block;
   /*
-   * 用户：「当前的图片预览窗口没有凸显主题内容 文件名 简洁 和下面的四个按钮
-   * 是可以保留的 你来设计吧」。
+   * 用户：「你发送的图片太占用窗口 我认为可以调节为和推理过程一样的大小
+   * （当前窗口的四分之一大小」。
    *
-   * 之前是 `width: min(240px, 100%); max-width: 240px; max-height: 240px`
-   * —— 图片被**硬锁在 240px**，在卡片里缩成一小块，这就是「没凸显主题内容」。
-   * 现在占满卡片宽度、高度按比例（max-height 只用来拦住超长截图）。
+   * 推理过程的标尺是 `.reason-body { width: min(50vw, …) }` + `.open
+   * { height: 50vh }` —— 50vw × 50vh 就是窗口面积的四分之一，这里用同一对。
+   *
+   * 之前是 `width: 100%`（配 max-height 420px），那是上一版为了「凸显」加的。
+   * 它的毛病：宽度恒等于卡片宽，于是**越方的图越高** —— 1:1 的图能占到
+   * 窗口 40%。改成宽高都给上限、两边都不固定：比例交给 object-fit，
+   * 窗口小或图方的时候自然缩到 1/4 以内。
    */
-  width: 100%;
-  max-width: 100%;
-  max-height: 420px;
+  width: auto;
+  height: auto;
+  max-width: min(50vw, 100%);
+  max-height: 50vh;
   object-fit: contain;
   border-radius: 8px;
   /* 点击放大（与下面「右侧预览」同一个动作，只是图上直接点得到） */
@@ -1882,7 +1887,13 @@
 }
 
 .stream-row:last-child {
-  padding-bottom: var(--sp-6);
+  /*
+   * 32 → 0（用户报「输出的消息和消息输入框之间的间隙太大」）。
+   * 虚拟化的长会话走这条（不是 .stream-inner），而它下面还有 .stream 的
+   * padding-bottom 32 与 .composer-wrap 的 padding-top 12 —— 原来三处
+   * 叠加接近 76px。全部收掉后剩 24px，两边的呼吸都够。
+   */
+  padding-bottom: 0;
 }
 
 /*

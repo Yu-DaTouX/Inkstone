@@ -189,7 +189,12 @@
 .stream {
   overflow: hidden auto;
   scrollbar-gutter: stable;
-  padding: var(--sp-5) 0 var(--sp-6);
+  /*
+   * 底部 32 → 16：用户报「输出的消息和消息输入框之间的间隙太大」。
+   * 实际间隙是三处相加：.msg 的 margin-bottom 24 + 这里的 padding-bottom
+   * 32 + .composer-wrap 的 padding-top 12 = 68px。三者都要收。
+   */
+  padding: var(--sp-5) 0 var(--sp-4);
   min-width: 0;
 }
 .stream-inner {
@@ -203,6 +208,27 @@
   grid-template-columns: 20px minmax(0, 1fr);
   gap: var(--sp-3);
   margin-bottom: var(--sp-5);
+}
+/*
+ * 最后一条消息不留下边距：它直接顶着输入框，那 24px 会变成「间隙」的一半
+ * （用户报「输出的消息和消息输入框之间的间隙太大」）。
+ * 中间的消息之间保持原间距 —— 那是正文的呼吸，不是间隙。
+ *
+ * ⚠️ 这里必须用 `.stream-inner > .msg:last-child`（(0,3,0)），
+ *    不能只写 `.msg:last-child`（(0,2,0)）：motion.css 的
+ *    `.msg.assistant { margin-bottom: var(--sp-5) }` 也是 (0,2,0)，
+ *    而 motion.css 在 app.css 之后加载 —— 同特异性下它赢，
+ *    那 24px 就会原样漏过去（实测过：间隙停在 48px 下不去）。
+ *
+ * 两条选择器分别对应两种渲染路径：
+ *   · 普通（短）会话：.stream-inner 直接排 .msg
+ *   · 虚拟化长会话：VList → .stream-row 包一层。这里**不能**写
+ *     `.stream > .stream-row` —— VList 中间还有一层容器（实测：
+ *     最后 .stream-row 的 padding-bottom 已归零，但 .msg 的 24px 还在）。
+ */
+.stream-inner > .msg:last-child,
+.stream-row:last-child > .msg:last-child {
+  margin-bottom: 0;
 }
 .msg .gutter {
   padding-top: 1px;

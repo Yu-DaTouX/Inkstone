@@ -67,7 +67,8 @@
 
 /* 核心输入区：一层边界、稳定的圆角和克制的聚焦反馈。 */
 .composer-wrap {
-  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  /* 顶部 12 → 8：与 .stream 的 padding-bottom 16 合起来共 24px 间隙 */
+  padding: var(--sp-2) var(--sp-5) var(--sp-4);
 }
 
 .composer {
