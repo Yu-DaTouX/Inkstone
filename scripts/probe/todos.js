@@ -154,8 +154,9 @@
   if (noTask) {
     ok(store.getState().todos.length === 0, '切到无任务的会话后 todos 清空（' + noTask.title + '）')
     // 右栏现在**常驻**（包含上下文/环境等），所以判据不是「右栏消失」，
-    // 而是「没有任务时不渲染任务区块」。
-    ok(q('[data-sec="rp-todo"]') === null, '没有任务时不渲染任务区块')
+    // 也不是「分区消失」—— `SECTION_REGISTRY.todo` 没定义 isEmpty，
+    // 任务分区一直在 DOM 里。真正的判据是「分区里没有任务行」。
+    ok(qa('[data-sec="rp-todo"] .rp-todo').length === 0, '没有任务时不渲染任务行')
   } else {
     log('  （只有一个会话，跳过）')
   }

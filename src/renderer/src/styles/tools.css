@@ -390,12 +390,22 @@
 
 .rp-text {
   /*
-   * 窄右栏下**换行显示完整内容**（用户 2026-09-25：要的是完整文字，
-   * 不是省略号）。上一版改成 nowrap + ellipsis 是反方向：任务和队列里
-   * 的正文被截断后完全无从得知后半句。
+   * 单行 + 省略号（用户 2026-09-25：「任务标题太长 我认为可以限制为最高 12 字
+   * 且你要确保 在最窄右边栏的情况下 不要出现分行的问题」）。
+   *
+   * nowrap 是「最窄栏也不分行」的**硬保证** —— 字数截断是软件限制，
+   * 碰上全角字、窄栏、字体回退时仍可能溢出换行；nowrap 直接把第二条路
+   * 堵死。
+   *
+   * ⚠️ 与上一版相反：那一版注释写着「要的是完整文字，不是省略号」，
+   *    所以改成窄栏换行。两条要求各自成立，当前以最新的为准 ——
+   *    换行会让最窄栏里一条任务占三行，清单反而看不清。
+   *    完整文本仍在行元素的 title 上。
    */
-  overflow-wrap: anywhere;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* 43. 右栏（状态栏）—— 对齐 OpenCode 的右侧信息栏
@@ -1561,7 +1571,8 @@
   display: grid;
   min-width: 0;
   gap: 8px;
-  margin-top: 8px;
+  /* 以前是兄弟卡片（margin-top: 8px）；现在在任务卡片内部，
+     间距交给 .rp-output-group 的上边框与首个组的 margin。 */
 }
 
 .rp-output-group {
@@ -1569,12 +1580,41 @@
   padding-top: 7px;
   border-top: 1px solid var(--border-soft);
 }
+/*
+ * 卡片内次级折叠组：与任务清单之间拉开一点，但它不再是独立卡片
+ * （用户报「三合一但 UI 上看是分离的」）。
+ */
+.rp-goal-outputs .rp-output-group:first-child {
+  margin-top: 6px;
+}
 
 .rp-output-heading {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  /* 产物 / 参考现在是可点的折叠标题（不是纯文本） */
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.rp-output-heading:hover {
   color: var(--fg);
-  font-size: var(--fs-sm);
+}
+.rp-output-heading .rp-count {
+  margin-left: auto;
+}
+/* 折叠中 → 展开时箭头转向（与任务历史同一套语义） */
+.rp-output-heading .chev {
+  transition: transform var(--dur) var(--ease);
+}
+.rp-output-group.open .rp-output-heading .chev {
+  transform: rotate(90deg);
 }
 
 .rp-output-heading span {
@@ -2219,7 +2259,9 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   box-sizing: border-box;
   position: relative;
   min-height: 44px;
-  padding: 0 10px;
+  /* 6px：卡片边框贴到面板边上（用户报「让工具的 UI 边框更贴近边缘」）；
+     与 .rp-body 同一对内边距，改一个必须改另一个。 */
+  padding: 0 6px;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-title {
@@ -2234,9 +2276,12 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-height: 0;
   overflow: hidden auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  /* 卡片自己收边，所以面板要给它留出左右空隙（与 .rp-top 的 10px 对齐） */
-  padding: 0 10px 16px;
+  /* scrollbar-gutter 会常驻预留一条空边（14px），内容永远贴不到右缘 ——
+     用户报的「滑动条很占位置」就是它。右栏的滚动条改用 overlay 式：
+     不预留、不滚动时不画（见文件末尾第 52 节）。 */
+  scrollbar-gutter: auto;
+  /* 与 .rp-top 的 6px 对齐（卡片自己收边，面板给它留出左右空隙） */
+  padding: 0 6px 16px;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
@@ -3630,4 +3675,52 @@ body.tile-dragging .rp-float-head {
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+/*
+ * 52. 右栏滚动条：默认隐形，指针进来才显形。
+ *
+ * ── 两个用户诉求，方向相反，得同时满足 ──
+ *   · 上一轮：「滚轮太小了不好点」→ 全局滚动条加到了 14px（redesign.css）。
+ *   · 本轮：「滑动条太粗 并且很占位置」→ 右栏要细、要能自动隐藏。
+ * 不冲突的做法：**默认完全透明**（不滚动时右栏里不该有一条灰条挤着内容），
+ * 指针进入右栏才显形。命中区靠 border 透明部分撑到 13px —— 看起来细，
+ * 实际比看起来宽，两头都占。
+ *
+ * 另外把右栏这几个容器的 `scrollbar-gutter: stable` 改回 auto：
+ * 那条 gutter 是**常驻**空边，内容永远贴不到卡片右缘。
+ */
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log) {
+  scrollbar-gutter: auto;
+}
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar {
+  width: 13px;
+  height: 13px;
+}
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-thumb {
+  border: 5px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-full);
+  /*
+   * 默认**很淡**，不是完全透明。
+   *
+   * 试过完全透明（用户字面上的「自动隐藏」），实测截图发现副作用：
+   * 任务卡片 5 条只显示 3 条时，用户完全看不出下面还有内容可滚 ——
+   * 「隐藏了」变成了「丢东西了」。所以留一点淡淡的提示，
+   * 指针进右栏或本身被指向时再变清楚。
+   */
+  background-color: color-mix(in srgb, var(--bg-4) 45%, transparent);
+}
+/* 指针进右栏 或 容器里有焦点 → 显形 */
+.rightpanel:hover :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-thumb,
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log):focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--bg-4);
+}
+/* 拇指本身被指向 → 加深（确认「点得到」） */
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-str);
+}
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-track,
+.rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-corner {
+  background: transparent;
 }
