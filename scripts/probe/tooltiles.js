@@ -134,6 +134,37 @@
     const afterDrag = floatRectOf('queue')
     ok(JSON.stringify(afterDrag) !== JSON.stringify(beforeDrag), '放开后新位置落盘')
 
+    out.push('\n=== 4b. 拖动中的吸附对齐 + 参考线 ===')
+    const tSnap = q('[data-testid="float-tile-queue"]')
+    const hSnap = q('[data-testid="float-head-queue"]')
+    const bSnap = tSnap.getBoundingClientRect()
+    const sxSnap = hSnap.getBoundingClientRect().left + 40
+    const sySnap = hSnap.getBoundingClientRect().top + 16
+    /* 目标：磁贴**右缘**贴工作区右缘（差 4px，在 8px 阈值内 → 应该被吸过去） */
+    const wsBox = document.querySelector('.workspace').getBoundingClientRect()
+    const wantRight = wsBox.left + wsBox.width - bSnap.width + 4
+    hSnap.dispatchEvent(pe('pointerdown', sxSnap, sySnap, 1))
+    await sleep(50)
+    const steps = 12
+    for (let i = 1; i <= steps; i++) {
+      hSnap.dispatchEvent(pe('pointermove', sxSnap + ((wantRight - bSnap.left) * i) / steps, sySnap + 6 * i, 1))
+    }
+    await sleep(120)
+    const guides = qa('[data-testid="float-snap-guide"]')
+    ok(guides.length > 0, '拖动中画出吸附参考线')
+    ok(
+      guides.some((g) => g.getAttribute('data-axis') === 'x'),
+      '水平参考线标出「吸到了哪条竖线」'
+    )
+    const snappedRect = q('[data-testid="float-tile-queue"]').getBoundingClientRect()
+    ok(
+      Math.abs(snappedRect.left - (wantRight - 4)) <= 1,
+      '右缘真的贴到工作区右缘（吸附生效，误差 ' + Math.abs(snappedRect.left - (wantRight - 4)).toFixed(1) + 'px）'
+    )
+    hSnap.dispatchEvent(pe('pointerup', sxSnap + (wantRight - bSnap.left), sySnap + 72, 0))
+    await sleep(400)
+    ok(qa('[data-testid="float-snap-guide"]').length === 0, '松手后参考线消失（不留在界面上）')
+
     out.push('\n=== 5. Esc 取消：不写盘、位置还原 ===')
     const beforeEsc = floatRectOf('queue')
     const revBefore = revision()

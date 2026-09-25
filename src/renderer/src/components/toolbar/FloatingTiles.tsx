@@ -12,10 +12,12 @@ import {
   pxRectToNormalized,
   setTileCollapsed,
   setTilePlacement,
+  snapFloatRect,
   TILE_HEAD_H,
   TILE_MIN_W,
   type FloatArea,
   type FloatPxRect,
+  type SnapGuide,
   type ToolLayout,
   type ToolTile
 } from '../../../../shared/tool-layout'
@@ -129,12 +131,26 @@ export function FloatingTiles() {
     }
   }, [])
 
+  /** 拖动中的**吸附参考线**（只有拖动时有；结束/取消立刻清掉） */
+  const [guides, setGuides] = useState<SnapGuide[]>([])
+
+  /**
+   * 拖动中的吸附目标：**除自己以外**的浮动磁贴矩形。
+   * 把自己也算进去的话，它永远「吸在自己身上」，等于没有吸附。
+   */
+  const otherTileRects = useCallback(
+    (selfId: string): FloatPxRect[] =>
+      area ? tiles.filter((t) => t.id !== selfId).map((t) => tilePxRect(t, area)) : [],
+    [area, tiles]
+  )
+
   /** 还原拖动（不写盘）：Esc / pointercancel / 失焦 / 切会话都走它 */
   const cancelGesture = useCallback(() => {
     document.body.classList.remove('tile-dragging')
     setDrag(null)
     setResize(null)
     setGhost(null)
+    setGuides([])
     /* 拖回工具页时画出的插入线也要一起撤掉，否则它会留在栏里 */
     useStore.getState().setToolDropTarget(null)
   }, [])
@@ -173,9 +189,16 @@ export function FloatingTiles() {
   }, [drag, resize, acquireOverlayBlocker])
 
   const commitDrag = useCallback(
-    (state: Pick<DragState, 'id'>, rect: FloatPxRect) => {
+    (state: Pick<DragState, 'id'>, rect: FloatPxRect, snap = true) => {
       if (!area) return
-      const wanted = clampFloatPixels(rect, area)
+      /*
+       * 先吸附、再夹取、最后避障 —— 顺序不能反：
+       *   · 吸附算出「用户想要的对齐位置」，可能越过边界，所以要夹；
+       *   · 避障是最后一道（它可能把磁贴整个让开，那比对齐重要）。
+       * `snap: false` 给 resize 用 —— 拉尺寸时位置没动，不该被拽走。
+       */
+      const snapped = snap ? snapFloatRect(rect, area, otherTileRects(state.id)).rect : rect
+      const wanted = clampFloatPixels(snapped, area)
       const safe = avoidFloatObstacle(wanted, area, browserArea())
       if (!safe) {
         /* 没有能完整容纳磁贴的 DOM 区：退回工具页并说明原因，不永久压住网页 */
@@ -186,13 +209,28 @@ export function FloatingTiles() {
       }
       void setToolLayout(setTilePlacement(layout, state.id, 'floating', pxRectToNormalized(safe, area)))
     },
-    [area, layout, setToolLayout, t]
+    [area, layout, otherTileRects, setToolLayout, t]
   )
 
   if (tiles.length === 0 && !notice) return null
 
   return (
     <div className="rp-float-layer" data-testid="float-layer">
+      {/*
+        吸附参考线。
+        层本身是 `position: fixed; inset: 0`，所以坐标就是视口坐标，
+        guide.at 可以直接当 left/top 用，不用换算。
+      */}
+      {guides.map((guide) => (
+        <div
+          key={`${guide.axis}-${guide.at}-${guide.kind}`}
+          className="rp-snap-guide"
+          data-axis={guide.axis}
+          data-kind={guide.kind}
+          data-testid="float-snap-guide"
+          style={guide.axis === 'x' ? { left: guide.at } : { top: guide.at }}
+        />
+      ))}
       {notice ? (
         <div className="rp-float-notice" role="status" data-testid="float-notice">
           {notice}
@@ -235,12 +273,22 @@ export function FloatingTiles() {
                 setDrag({ ...drag, moved: true })
                 document.body.classList.add('tile-dragging')
               }
-              setGhost(
-                clampFloatPixels(
-                  { ...drag.origin, left: drag.origin.left + dx, top: drag.origin.top + dy },
-                  area
-                )
-              )
+              /*
+               * 拖动中的位置：先吸附，再夹进可用区。
+               *
+               * 吸附在**拖动中实时生效**（不是松手才对齐）—— 用户要的
+               * 「有吸附对齐功能 这样好整理」，手感来自「快贴上时自己被吸过去」
+               * 加上一条看得见的参考线，而不是松手后位置突然变一下。
+               */
+              const { rect: snapped, guides: nextGuides } = area
+                ? snapFloatRect(
+                    { ...drag.origin, left: drag.origin.left + dx, top: drag.origin.top + dy },
+                    area,
+                    otherTileRects(tile.id)
+                  )
+                : { rect: { ...drag.origin, left: drag.origin.left + dx, top: drag.origin.top + dy }, guides: [] }
+              setGuides(nextGuides)
+              setGhost(clampFloatPixels(snapped, area))
               /*
                * 拖到工具页上方时，在栏里画出插入位置（与栏内重排同一条指示线）。
                * 浮窗本体跟着指针走，但「松手会插到哪」只有这条线能回答 ——
@@ -308,7 +356,7 @@ export function FloatingTiles() {
               const resizedId = resize.id
               cancelGesture()
               delete restoreRects.current[resizedId]
-              commitDrag({ id: resizedId }, finalRect)
+              commitDrag({ id: resizedId }, finalRect, false)
             }
             return (
               <section

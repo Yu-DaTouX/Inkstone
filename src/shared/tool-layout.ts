@@ -342,3 +342,111 @@ export function pxRectToNormalized(rect: FloatPxRect, area: FloatArea): ToolRect
   const y = clamp01((rect.top - area.top) / ah) ?? 0
   return { x: Math.min(x, 1 - w), y: Math.min(y, 1 - h), w, h }
 }
+
+/* ------------------------------------------------------------------ 吸附 */
+
+/**
+ * 吸附阈值（px）。
+ *
+ * 8px 是「想对齐时够容易、不想对齐时不碍事」的常用取值。它是**像素**而非
+ * 归一化值 —— 要跟鼠标/手指的精度走，不该跟窗口大小走。
+ */
+export const SNAP_THRESHOLD = 8
+
+/** 一条吸附参考线，拖动时画出来 —— 「吸到哪」必须看得见，否则像在抢控制权 */
+export interface SnapGuide {
+  axis: 'x' | 'y'
+  /** 参考线的绝对坐标（画线用） */
+  at: number
+  /** 吸上的是哪类目标 */
+  kind: 'area' | 'center' | 'tile'
+}
+
+export interface SnapResult {
+  rect: FloatPxRect
+  guides: SnapGuide[]
+}
+
+/** x/y 各自的一条候选：目标线坐标 + 该用矩形哪条边去贴 */
+interface SnapCandidate {
+  at: number
+  offset: number
+  kind: SnapGuide['kind']
+}
+
+/** 在一组候选里挑**最近且不超出阈值**的那条；都没有就返回 null */
+function nearestCandidate(
+  candidates: readonly SnapCandidate[],
+  pos: number,
+  threshold: number
+): { want: number; at: number; kind: SnapGuide['kind'] } | null {
+  let best: { want: number; at: number; kind: SnapGuide['kind']; d: number } | null = null
+  for (const c of candidates) {
+    const want = c.at - c.offset
+    const d = Math.abs(want - pos)
+    if (d > threshold) continue
+    if (!best || d < best.d) best = { want, at: c.at, kind: c.kind, d }
+  }
+  return best ? { want: best.want, at: best.at, kind: best.kind } : null
+}
+
+/**
+ * 把浮动磁贴吸到「容器边 / 容器中线 / 其他磁贴的边」。
+ *
+ * 用户要求：「工具拖入到消息窗口后 也应该有吸附对齐功能 这样好整理
+ * 并且对于后续开发可以预留标准」。所以这里是**通用的一层**：三类目标
+ * 集中在这个函数里，以后加网格、加基线条线都只改这里，调用方不动。
+ *
+ * 两条设计决定：
+ *   · x 与 y **各自独立**选最近的一条（不在斜向上做联合判断）—— 吸附是
+ *     「这件事对齐了」而不是「整个位置被拽走」。
+ *   · **只吸一次**，不做吸完又触发另一条的连锁；否则拖到角落时会跳。
+ *
+ * ⚠️ 只改 `left/top`，不动尺寸 —— 吸附是移动，不是缩放。
+ * ⚠️ 调用方要在吸附**之后**再 `clampFloatPixels`：吸到右/下边时矩形可能
+ *    被推出可用区（`others` 也应排除磁贴自己，不要传全部）。
+ */
+export function snapFloatRect(
+  rect: FloatPxRect,
+  area: FloatArea,
+  others: readonly FloatPxRect[] = [],
+  threshold = SNAP_THRESHOLD
+): SnapResult {
+  const areaRight = area.left + area.width
+  const areaBottom = area.top + area.height
+  const xs: SnapCandidate[] = [
+    { at: area.left, offset: 0, kind: 'area' },
+    { at: areaRight, offset: rect.width, kind: 'area' },
+    { at: area.left + area.width / 2, offset: rect.width / 2, kind: 'center' }
+  ]
+  const ys: SnapCandidate[] = [
+    { at: area.top, offset: 0, kind: 'area' },
+    { at: areaBottom, offset: rect.height, kind: 'area' },
+    { at: area.top + area.height / 2, offset: rect.height / 2, kind: 'center' }
+  ]
+  for (const o of others) {
+    /*
+     * 其他磁贴的**四条边 × 自己两条边**都是目标，不是只对左对右：
+     * 「左对左」「右对右」是笔直对齐，「我的左贴它的右」「我的右贴它的左」
+     * 是相接摆放 —— 后者才是「把两块拼在一起」时最常用的那个。
+     */
+    xs.push({ at: o.left, offset: 0, kind: 'tile' })
+    xs.push({ at: o.left + o.width, offset: 0, kind: 'tile' })
+    xs.push({ at: o.left, offset: rect.width, kind: 'tile' })
+    xs.push({ at: o.left + o.width, offset: rect.width, kind: 'tile' })
+    ys.push({ at: o.top, offset: 0, kind: 'tile' })
+    ys.push({ at: o.top + o.height, offset: 0, kind: 'tile' })
+    ys.push({ at: o.top, offset: rect.height, kind: 'tile' })
+    ys.push({ at: o.top + o.height, offset: rect.height, kind: 'tile' })
+  }
+
+  const bx = nearestCandidate(xs, rect.left, threshold)
+  const by = nearestCandidate(ys, rect.top, threshold)
+  const guides: SnapGuide[] = []
+  if (bx) guides.push({ axis: 'x', at: bx.at, kind: bx.kind })
+  if (by) guides.push({ axis: 'y', at: by.at, kind: by.kind })
+  return {
+    rect: { ...rect, left: bx ? bx.want : rect.left, top: by ? by.want : rect.top },
+    guides
+  }
+}

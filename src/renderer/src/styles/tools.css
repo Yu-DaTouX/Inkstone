@@ -3463,6 +3463,32 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   pointer-events: none;
 }
 
+/*
+ * 吸附参考线（用户要求：「工具拖入到消息窗口后 也应该有吸附对齐功能 这样好整理
+ * 并且对于后续开发可以预留标准」）。
+ *
+ * 它是吸附**可被看见**的那一半：只吸不画线的话，用户会觉得位置被莫名拽走。
+ * 层是 fixed/inset:0，所以 left/top 直接就是视口坐标（见 FloatingTiles 的渲染）。
+ * 不区分 kind 上色 —— 参考线是「对齐目标」的提示，不是分类信息。
+ */
+.rp-snap-guide {
+  position: fixed;
+  z-index: 56;
+  pointer-events: none;
+  background: var(--accent);
+  box-shadow: 0 0 0 0.5px var(--bg-1);
+}
+.rp-snap-guide[data-axis='x'] {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.rp-snap-guide[data-axis='y'] {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
 .rp-float-tile {
   position: absolute;
   display: flex;
