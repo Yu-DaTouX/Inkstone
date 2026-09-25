@@ -23,8 +23,21 @@
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  /** 1×1 透明 PNG */
-  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  /*
+   * 现场画一张 24×24 的可见图当「截图」。
+   *
+   * 不用 1×1 透明 PNG：那样 DOM 里确实有 img、断言也过，但截图上什么都看不到，
+   * 视觉验收时会误以为没渲染。
+   */
+  const canvas = document.createElement('canvas')
+  canvas.width = 24
+  canvas.height = 24
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#2f6f4f'
+  ctx.fillRect(0, 0, 24, 24)
+  ctx.fillStyle = '#9ae6b4'
+  ctx.fillRect(5, 5, 14, 14)
+  const PNG = canvas.toDataURL('image/png').split(',')[1]
 
   try {
     /* 先等应用真的挂载好；太早注入会被紧随其后的 bootstrap / sync 冲掉 */
@@ -117,6 +130,12 @@
     const overflow = wraps[0] ? getComputedStyle(wraps[0]).overflowY : ''
     out.push('  图片容器 overflow-y = ' + JSON.stringify(overflow))
     ok(overflow !== 'auto' && overflow !== 'scroll', '图片容器自己不带滚动条')
+
+    /*
+     * 给视觉验收留个窗口：`YAN_PROBE_SHOT` 的连拍比断言慢，不停一下的话
+     * 只能拍到后面已经打开的设置页，看不见这段（实测踩到过）。
+     */
+    await sleep(2500)
 
     out.push('')
     out.push('=== 2. 附件目录：占用与手动清理 ===')
