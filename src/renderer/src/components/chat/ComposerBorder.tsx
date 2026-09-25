@@ -65,8 +65,11 @@ function useFrame(active: boolean, frames: string[] = FRAMES): string {
 /**
  * 当前该显示什么状态。
  *
- * 优先级与 pi 一致：压缩 > 重试 > 常规处理。
- * 因为压缩/重试时「正在处理」是误导的 —— 那一刻它在做别的事。
+ * 优先级与 pi 一致：重试 > 常规处理。
+ *
+ * ⚠️ 压缩**不再**在这里说「正在压缩上下文」（用户 2026-09-25：压缩时界面好几处
+ *    都在转，只留右栏上下文卡里那一行「⠧ 压缩中 · 手动」）。压缩期间退回通用
+ *    忙碌 —— 输入框顶部是全界面常驻的工作状态位，把它留空反而像卡住了。
  *
  * ⚠️ 这里曾经只看 `isStreaming`，而 `isStreaming` 在**工具执行期间是 false**
  *    （每条 assistant 消息结束就清）。结果是模型调工具的那几秒里，
@@ -79,11 +82,6 @@ function useStatusText(): { kind: string; text: string } | null {
   const t = useT()
   const session = useStore((s) => s.session)
 
-  if (session?.isCompacting) {
-    return { kind: 'compacting', text: t('work.compacting') }
-  }
-  // 重试中：pi 会显示倒计时。我们拿不到精确的 delay，
-  // 所以不编数字（与用量条的速度同一条原则：拿不到就不假装）。
   if (session?.isStreaming || session?.isAgentRunning) {
     return { kind: 'working', text: t('chat.working') }
   }

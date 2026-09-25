@@ -1559,6 +1559,22 @@
   background: var(--bg-0);
 }
 
+/*
+ * 图片数据在历史回放时被丢掉了（session-reader 对超大 base64 的体积保护）。
+ * 说清楚「这里本来有图」，而不是空着 —— 空着看起来就像消息里压根没贴过图。
+ */
+.msg-image-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
 /* 6. 消息：分叉按钮 / bash 角色 */
 .msg-act {
   display: inline-flex;

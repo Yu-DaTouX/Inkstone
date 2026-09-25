@@ -10,6 +10,10 @@
 .rp-sec {
   padding-top: 1px;
 }
+.rp-sec-row {
+  display: flex;
+  align-items: center;
+}
 .rp-sec-head {
   padding-top: 4px;
   padding-bottom: 4px;
@@ -22,9 +26,58 @@
    */
   letter-spacing: -0.01em;
 }
+/*
+ * 折叠 / 展开动画（2026-09-25）。
+ *
+ * 用 `grid-template-rows: 0fr ↔ 1fr` 过渡 —— 内容高度自适应，额度 / 日志
+ * 这类异步长出来的内容也不会把高度算错（量 scrollHeight 就会）。
+ *
+ * 动画容器自己**不能带 padding / border**：0fr 时它们裁不掉，收起后
+ * 会剩一条空边。这些装饰写在 .rp-sec-body-inner 上。
+ * 「动画结束后才卸载内容」由 Section 的 mounted 负责（收起后 DOM 里
+ * 不留隐藏文本，屏幕阅读器与探针的行为与改造前一致）。
+ */
 .rp-sec-body {
-  padding-bottom: 6px;
+  display: grid;
+  grid-template-rows: 0fr;
+  /*
+   * padding / gap 必须显式归零：redesign.css 里还有一条同特异性的
+   * `.rp-sec-body`（左内边距、gap 3px）—— 同特异性时本文件（最后加载）
+   * 胜，但只胜在**写过的属性**上，没写重置就会把它那圈 padding 带进来，
+   * 收起态因此多出十几像素空边（实测 14px）。
+   * 这些缩进现在归 .rp-sec-body-inner（卡片内边距已在 .rp-sec 上）。
+   */
+  padding: 0;
+  gap: 0;
+  /*
+   * 必须裁：0fr 只把行高压到 0，而 grid 项目（.rp-sec-body-inner）自己的
+   * padding + border 会溢出到行外继续占位。
+   */
+  overflow: hidden;
+  transition: grid-template-rows var(--dur) var(--ease);
+}
+.rp-sec-body.open {
+  grid-template-rows: 1fr;
+}
+/*
+ * 展开入场用 animation，不用 transition：
+ *   展开时内容刚刚挂载，只靠 transition 得「先渲染 0fr、下一帧再切 1fr」，
+ *   而后台 / 无合成帧的窗口里 rAF 会被节流 —— 实测那种环境下展开会卡在 0。
+ *   animation 在元素首次渲染时立即开跑，不依赖额外帧。
+ * 只在「收起过之后再展开」时加 .anim：首屏默认展开的卡不该集体抖一下。
+ */
+.rp-sec-body.anim {
+  animation: rp-sec-expand var(--dur) var(--ease);
+}
+@keyframes rp-sec-expand {
+  from { grid-template-rows: 0fr; }
+  to { grid-template-rows: 1fr; }
+}
+.rp-sec-body-inner {
+  display: grid;
   gap: 3px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /*
@@ -58,6 +111,7 @@
   padding-bottom: 7px;
   padding-left: min(var(--fs-indent, 14px), calc(100% - 24px));
   line-height: var(--lh-tight);
+  /* 同样换行显示完整（与 .rp-text 一致，见那里的说明） */
   overflow-wrap: anywhere;
 }
 .rp-fs-search {
@@ -164,15 +218,15 @@
    * 缩进由行内 `--fs-indent` 给（4 + depth*14），但**窄右栏**（PANEL_MIN=220）
    * 下深层目录会把 chevron + 图标顶出右边界（实测 6 级开始）：图标组
    *（chevron 12 + gap 5 + 图标 12 + gap 5 = 34）是 `flex: none`、缩不动，
-   * 右边的 trailing 槽又固定 66px。所以再叠一个上限，保证缩进 + 图标组
+   * 右边的 trailing 槽预留 26px。所以再叠一个上限，保证缩进 + 图标组
    * + 名字最小可见宽度（12px）都能装下：
    *
-   *   66（trailing）+ 34（图标组）+ 4（padding-right）+ 12（名字）= 116
+   *   26（trailing）+ 34（图标组）+ 4（padding-right）+ 12（名字）= 76
    *
    * `100%` 是这一行实际可用的宽度（包含块是 `.rp-fs-row-wrap`）——
    * 正常宽度下（右栏 ≥260px）这个上限不生效，缩进仍逐级递增。
    */
-  padding-left: min(var(--fs-indent, 4px), calc(100% - 116px));
+  padding-left: min(var(--fs-indent, 4px), calc(100% - 76px));
   padding-right: 4px;
   border-radius: var(--r-sm);
   color: var(--fg-dim);
@@ -250,31 +304,15 @@
   color: var(--accent);
 }
 
-/*
- * trailing 固定槽：体积 + 「加入上下文」按钮**始终占位**，只用 opacity 切换。
- * 之前 `.rp-fs-size` 用 display:none ↔ inline，显隐本身就会改变名称的可用宽度，
- * hover 时文件名会跳（用户报的问题）。
- */
+/* 只为「加入上下文」按钮预留空间，文件大小留在路径提示中。 */
 .rp-fs-trailing {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
-  width: 66px;
+  width: 26px;
   padding-right: 2px;
-}
-
-.rp-fs-size {
-  flex: none;
-  color: var(--fg-dim);
-  opacity: 0;
-  font-variant-numeric: tabular-nums;
-  transition: opacity 120ms var(--ease);
-}
-
-.rp-fs-row-wrap:hover .rp-fs-size {
-  opacity: 0.7;
 }
 
 .rp-fs-add {
@@ -351,6 +389,11 @@
 }
 
 .rp-text {
+  /*
+   * 窄右栏下**换行显示完整内容**（用户 2026-09-25：要的是完整文字，
+   * 不是省略号）。上一版改成 nowrap + ellipsis 是反方向：任务和队列里
+   * 的正文被截断后完全无从得知后半句。
+   */
   overflow-wrap: anywhere;
   min-width: 0;
 }
@@ -404,6 +447,52 @@
 }
 
 .rp-quota-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 上下文与额度默认用一行摘要；展开后仍保留原有详细信息。 */
+.rp-compact-panel { min-width: 0; }
+.rp-compact-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  text-align: left;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rp-compact-summary strong { color: var(--fg); font-size: var(--fs-sm); font-weight: 600; }
+.rp-compact-summary strong.ok, .rp-compact-subvalue.ok { color: var(--ok); }
+.rp-compact-summary strong.warn, .rp-compact-subvalue.warn { color: var(--warn); }
+.rp-compact-summary strong.err, .rp-compact-subvalue.err { color: var(--err); }
+.rp-compact-chevron { display: inline-flex; flex: 0 0 auto; opacity: .62; transition: transform var(--dur) var(--ease); }
+.rp-compact-summary[aria-expanded="true"] .rp-compact-chevron { transform: rotate(90deg); }
+.rp-compact-summary > span:not(.spacer) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rp-compact-subvalue { color: var(--fg-dim); }
+.rp-compact-summary > .rp-quota-compact-windows { display: flex; flex: 0 0 auto; min-width: max-content; gap: 8px; color: var(--fg-dim); }
+.rp-quota-compact-windows > span { flex: none; }
+.rp-quota-compact-windows > span.ok { color: var(--ok); }
+.rp-quota-compact-windows > span.warn { color: var(--warn); }
+.rp-quota-compact-windows > span.err { color: var(--err); }
+.rp-compact-reset { color: var(--fg-mute); }
+.rp-compact-summary .rp-compact-subvalue { flex: 1 1 100%; padding-left: 18px; }
+.rp-compact-summary .rp-compact-reset { flex: 1 1 100%; padding-left: 18px; }
+.rp-compact-summary > .spacer { display: none; }
+.rp-compact-expand-label { display: none; }
+.rp-compact-details { min-width: 0; }
+.rp-compact-panel[data-compact="true"] .rp-compact-details { display: none; }
+.rp-compact-meter { height: 3px; margin: 2px 0 3px 18px; overflow: hidden; border-radius: var(--r-full); background: var(--bg-2); }
+.rp-compact-meter i { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
+.rp-compact-meter i.warn { background: var(--warn); }
+.rp-compact-meter i.err { background: var(--err); }
+.rp-compact-meter i.unknown { background: var(--fg-mute); }
+.rp-compact-panel[data-compact="true"] .rp-compact-meter { display: block; }
+.rp-compact-panel[data-compact="false"] .rp-compact-meter { display: none; }
 
 /* 窗口额度（Command Code 的 5 小时 / 每周）——每条一行 + 一条细进度条 */
 .rp-quota-wins {
@@ -809,7 +898,24 @@
 .rp-sec-row .rp-sec-head {
   flex: 1;
   min-width: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
+
+.rp-slot.dragging .rp-sec-head { cursor: grabbing; }
+
+.rp-header-usage { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 65%; }
+.rp-header-values { display: inline-flex; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--fg-mute); font-weight: 400; }
+.rp-header-values > span { flex: none; }
+.rp-header-values .ok { color: var(--ok); }
+.rp-header-values .warn { color: var(--warn); }
+.rp-header-values .err { color: var(--err); }
+.rp-usage-ring { --ring-color: var(--fg-mute); width: 30px; height: 30px; flex: none; display: inline-grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--ring-color) var(--ring-pct), var(--border-soft) 0); font-size: 8px; font-variant-numeric: tabular-nums; color: var(--fg); }
+.rp-usage-ring.ok { --ring-color: var(--ok); }
+.rp-usage-ring.warn { --ring-color: var(--warn); }
+.rp-usage-ring.err { --ring-color: var(--err); }
+.rp-usage-ring > span { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--bg-1); }
 
 .rp-grip {
   flex: none;
@@ -839,6 +945,78 @@
 
 .rp-slot[data-over='after'] > .rp-sec {
   box-shadow: inset 0 -2px 0 -0.5px var(--accent);
+}
+
+/*
+ * 拖动预览：跟随指针的胶囊（.rp-drag-preview）与拖到工作区时的落位框
+ * （.rp-drop-rect）。两者都由 DragPreview.tsx 用 portal 挂到 body，
+ * 位置靠内联 transform / left-top 给；这里是纯外观。
+ *
+ * z-index 取 90/89：要盖过浮动磁贴层（.rp-float-layer 是 55），
+ * 但不能压过模态与设置遮罩（它们是 100）。
+ */
+.rp-drag-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-str);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 拖到中栏 = 会变成浮窗，用强调色把「重排」与「移出」分开 */
+.rp-drag-preview.float {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rp-drag-preview-grip {
+  color: var(--fg-mute);
+}
+
+.rp-drag-preview-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-drag-preview-hint {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.rp-drag-preview.float .rp-drag-preview-hint {
+  color: var(--accent);
+}
+
+/* 落位框：画出这块磁贴将来变成的浮窗占在哪、多大 */
+.rp-drop-rect {
+  position: fixed;
+  z-index: 89;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+}
+
+.rp-drop-rect-label {
+  color: var(--accent);
+  font-size: var(--fs-xs);
 }
 
 .rp-threshold {
@@ -1299,6 +1477,137 @@
   /* 密度变量（方案 A1）；standard 档 = 原来的 3px */
   gap: var(--d-row-gap);
 }
+
+.rp-todo-scroll {
+  min-width: 0;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.rp-goal-summary {
+  min-width: 0;
+  padding: 3px 0 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.rp-goal-summary-head {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  color: var(--fg);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rp-goal-summary-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+.rp-goal-phase {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rp-goal-progress {
+  display: flex;
+  justify-content: space-between;
+  margin: 4px 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rp-goal-step-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rp-goal-step {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 5px;
+  min-width: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.rp-goal-step > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-goal-step.done { color: var(--fg-mute); }
+.rp-goal-step.blocked { color: var(--warn); }
+.rp-goal-more { margin-top: 4px; color: var(--accent); font-size: var(--fs-xs); }
+.rp-goal-verification { margin-top: 5px; color: var(--fg-mute); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+
+.rp-goal-outputs {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rp-output-group {
+  min-width: 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.rp-output-heading {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.rp-output-heading span {
+  color: var(--fg-mute);
+}
+
+.rp-output-list {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  margin-top: 5px;
+}
+
+.rp-output-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  padding: 5px 3px;
+  border: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+button.rp-output-row { cursor: pointer; }
+button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--bg-3); }
+.rp-output-row:disabled { opacity: 0.55; }
+.rp-output-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-output-row > small { flex: none; }
+.rp-output-row > img { width: 22px; height: 22px; object-fit: cover; border-radius: var(--r-xs); }
 
 /*
  * 任务行布局：
@@ -1926,25 +2235,45 @@
   overflow: hidden auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 0 0 16px;
+  /* 卡片自己收边，所以面板要给它留出左右空隙（与 .rp-top 的 10px 对齐） */
+  padding: 0 10px 16px;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
   min-width: 0;
 }
 
+/*
+ * 分区 = 一张卡（2026-09-25 改版）。
+ *
+ * 上一版是扁平列表：分区之间只靠一条 border-bottom 分隔、标题 12px、
+ * 内容靠左内缩对齐箭头槽。现在是卡片 —— 自己收边，标题行给
+ * 「图标 + 15px 半粗标题 + 右侧摘要」，内容缩进归卡片内边距管。
+ */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec {
   min-width: 0;
-  padding: 0;
-  border-bottom: 1px solid var(--border-soft);
+  /*
+   * 上下内边距必须相等（用户 2026-09-25：收起态的标题看着不在卡片中间）。
+   * 之前是 1px 上 / 8px 下 —— 那 8px 本是给展开内容留的底边，
+   * 卡片一收起就变成「标题压在卡片上半部」。底边留白改归 .rp-sec-body-inner。
+   */
+  padding: 1px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+
+/* 卡片之间留出可分辨的缝（原来是靠 border-bottom 分隔、间距为 0） */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-slot + .rp-slot {
+  margin-top: 8px;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec + .rp-sec {
-  margin-top: 0;
+  margin-top: 8px;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-row {
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
 }
 
@@ -1962,13 +2291,67 @@
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head {
   box-sizing: border-box;
   min-width: 0;
-  height: 40px;
-  padding: 0 6px 0 0;
-  gap: 2px;
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  font-weight: 500;
+  /*
+   * 高度从「固定 44」改成「最小 44 + 允许换行底」（用户 2026-09-25）：
+   * 右栏拖到最窄时，标题 + 环形 + 摘要摆不进一行 —— 原来是把摘要截掉，
+   * 现在改为摘要整个换到第二行，两边都完整。宽栏下放得下，依旧是一行 44px。
+   */
+  min-height: 44px;
+  height: auto;
+  flex-wrap: wrap;
+  padding: 6px 6px 6px 0;
+  gap: 8px;
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: 600;
   letter-spacing: 0;
+}
+
+/* 卡片标题前的图标（没给 icon 的分区仍用折叠箭头，见 ToolSection） */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--fg-dim);
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 标题右侧的摘要（环形 + 数字）。
+ *
+ * ⚠️ 块宽固定（两卡同一个基准值）：上下文与额度两张卡的环形要**落在
+ *    同一条竖线上**。摘要区等基准、环形摆区首、数字右对齐吸收文本长短
+ *    差异，两个环形的 x 坐标就与标题长短无关了（只跟卡片内边距有关）。
+ *
+ * ⚠️ 但上限不能写成 50% —— 额度摘要是「5h 2% 周 52%」而上下文是
+ *    「36k / 400k」，用百分比限制时额度那条会被截掉后半段（用户报的
+ *    「只能看到 5h 的」）。写成内容放得下的定值，放不下时由
+ *    `.rp-sec-head` 的 flex-wrap 把整个摘要换到第二行。
+ */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-usage {
+  flex: 0 1 auto;
+  width: min(150px, 100%);
+  max-width: none;
+  justify-content: flex-start;
+}
+
+/* 压缩中：上下文卡的摘要位让给状态（见 RightPanel 里 Section 的 extra） */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-compacting {
+  color: var(--warn);
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-usage > .rp-header-values {
+  margin-left: auto;
+  text-align: right;
+  font-size: var(--fs-sm);
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head .chev {
@@ -1989,9 +2372,14 @@
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body {
   min-width: 0;
-  /* 内容从箭头槽附近起步；文件树自己的层级缩进仍由 .rp-fs-row 负责。 */
-  padding: 0 6px 10px 12px;
+}
+
+/* 卡内内容：标题下的分隔线在这里（放 .rp-sec-body 上会在收起态剩一条空线） */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body-inner {
   gap: 6px;
+  /* 上下都要：下面那 8px 是卡片的底边留白（.rp-sec 的 padding 已对称） */
+  padding: 8px 0;
+  border-top: 1px solid var(--border-soft);
 }
 
 /* Codex 风格的右栏工作区启动器：紧凑、靠右，不额外占一整行。 */
@@ -2021,14 +2409,14 @@
 .rp-tool-menu {
   position: absolute;
   z-index: 30;
-  top: calc(100% + 6px);
-  right: 0;
+  top: 48px;
+  right: 8px;
   display: grid;
-  width: min(250px, calc(100vw - 24px));
-  gap: 4px;
-  padding: 6px;
+  width: min(320px, calc(100vw - 24px));
+  gap: 2px;
+  padding: 8px;
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-1);
   box-shadow: 0 14px 34px rgb(0 0 0 / 28%);
 }
@@ -2038,8 +2426,8 @@
   grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 0 8px;
+  min-height: 38px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--r-sm);
   color: var(--fg-dim);
@@ -2397,6 +2785,24 @@
   font-size: var(--fs-xs);
 }
 
+.goal-panel-evidence:not([open]) {
+  display: block;
+}
+
+.goal-panel-evidence summary {
+  cursor: pointer;
+}
+
+.goal-panel-evidence[open] {
+  max-height: 170px;
+  overflow: auto;
+}
+
+.goal-panel-display-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .goal-panel-subtitle {
   color: var(--fg-mute);
   font-weight: 600;
@@ -2404,9 +2810,11 @@
 
 .goal-evidence-row {
   min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /*
@@ -2569,11 +2977,11 @@
  * 与 file-preview-mode 规则仍保留给历史兼容路径，但新的 right-window-panel
  * 只让一个表面进入第二行，避免原生浏览器和 DOM 面板互相抢高度。
  */
-.rightpanel.right-window-panel.window-tools:not(.tools-collapsed) {
+.rightpanel.right-window-panel:is(.window-start, .window-tools):not(.tools-collapsed) {
   grid-template-rows: 42px minmax(0, 1fr) !important;
 }
 
-.rightpanel.right-window-panel.window-tools:not(.tools-collapsed):has(> .tool-lib) {
+.rightpanel.right-window-panel:is(.window-start, .window-tools):not(.tools-collapsed):has(> .tool-lib) {
   grid-template-rows: 42px auto minmax(0, 1fr) !important;
 }
 
@@ -2715,9 +3123,7 @@
   min-height: 0;
 }
 
-/* H-3b：右栏默认「开始」页。
-   只做导航，不承载磁贴；高窗口垂直中段偏上，矮窗口顶部留白并允许滚动。
-   卡片组使用已扣过父容器内边距的可用宽度，行高 44px、间距 6px。 */
+/* 新标签页保持安静：其它工作区资源集中在上方＋菜单。 */
 .rp-start {
   flex: 1;
   min-height: 0;
@@ -2725,8 +3131,8 @@
   overflow: auto;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
-  padding: 18vh 16px 24px;
+  align-items: center;
+  padding: 24px 16px;
 }
 
 .rp-start-group {
@@ -2734,80 +3140,40 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.rp-start-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-mute);
-  letter-spacing: 0.04em;
-  margin: 0 2px 4px;
-}
-
-.rp-start-item {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  background: var(--bg-2);
+  gap: 12px;
+  text-align: center;
+  color: var(--fg-mute);
+}
+
+.rp-start-globe {
+  width: 32px;
+  height: 32px;
+}
+
+.rp-start-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--fg);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
   cursor: pointer;
-  text-align: left;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
-.rp-start-item:hover {
-  background: var(--bg-3);
-  border-color: var(--border);
+.rp-start-open:hover {
+  color: var(--accent);
 }
 
-.rp-start-item:focus-visible {
+.rp-start-open:focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
 
-.rp-start-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--bg-3);
+.rp-start-hint {
+  font-size: var(--fs-sm);
   color: var(--fg-mute);
-  flex: none;
-}
-
-.rp-start-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.rp-start-label {
-  font-size: 13px;
-  line-height: 1.3;
-}
-
-.rp-start-desc {
-  font-size: 11px;
-  color: var(--fg-mute);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rp-start-go {
-  color: var(--fg-dim);
-  flex: none;
-  display: inline-flex;
 }
 
 @media (max-width: 900px) {
@@ -3058,15 +3424,19 @@
   flex-direction: column;
   overflow: hidden;
   pointer-events: auto;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+  background: var(--bg-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+}
+
+.rp-float-tile.resizing {
+  border-color: var(--border);
 }
 
 .rp-float-tile.dragging {
-  opacity: 0.94;
-  box-shadow: 0 16px 36px rgb(0 0 0 / 0.36);
+  opacity: 0.96;
+  border-color: var(--accent-line);
 }
 
 /* 工具库「定位」的反馈：闪一下轮廓，不动布局、不抢焦点 */
@@ -3087,8 +3457,8 @@
   /* 头高与 shared/tool-layout 的 TILE_HEAD_H 保持一致（几何夹取按它算） */
   height: 32px;
   padding: 0 6px;
-  background: var(--bg-3);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-soft);
   cursor: grab;
   /* 拖动时不要顺带滚动/选中（触摸与笔输入） */
   touch-action: none;
@@ -3141,6 +3511,44 @@ body.tile-dragging .rp-float-head {
   min-height: 0;
   overflow: auto;
   padding: 5px 8px 7px;
+}
+
+.rp-float-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 var(--r-sm) 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.rp-float-resize::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--fg-mute);
+  border-bottom: 2px solid var(--fg-mute);
+  opacity: 0.7;
+}
+
+.rp-float-resize:hover::after,
+.rp-float-resize:focus-visible::after {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.rp-float-resize:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: -3px;
 }
 
 /* 磁贴头就是标题：内容里不再重复一遍分区标题 */

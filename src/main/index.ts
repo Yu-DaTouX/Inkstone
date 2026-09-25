@@ -2781,13 +2781,17 @@ function requestExit(): Promise<ExitResult> {
   return task
 }
 
-async function createTray(): Promise<void> {
-  if (tray) return
+function shellIconPath(): string | undefined {
   const iconCandidates = [
     join(app.getAppPath(), 'build', 'icon.png'),
     join(__dirname_, '..', '..', 'build', 'icon.png')
   ]
-  const iconPath = iconCandidates.find((candidate) => existsSync(candidate))
+  return iconCandidates.find((candidate) => existsSync(candidate))
+}
+
+async function createTray(): Promise<void> {
+  if (tray) return
+  const iconPath = shellIconPath()
   tray = new Tray(iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty())
   tray.setToolTip('砚 · Yan')
   const settings = await getSettings()
@@ -5835,6 +5839,7 @@ function createWindow(): void {
   const useH = Number.isFinite(winH) && winH > 0 ? winH : 900
 
   win = new BrowserWindow({
+    icon: shellIconPath(),
     width: useW,
     height: useH,
     minWidth: 940,
@@ -5857,6 +5862,15 @@ function createWindow(): void {
       spellcheck: false
     }
   })
+
+  if (process.platform === 'win32') {
+    // 任务栏按 AppUserModelID 取重启图标；只设置 BrowserWindow.icon 仍可能显示 Electron 默认图标。
+    win.setAppDetails({
+      appId: APP_ID,
+      appIconPath: app.isPackaged ? process.execPath : join(app.getAppPath(), 'build', 'icon.ico'),
+      appIconIndex: 0
+    })
+  }
 
   // 关闭按钮只收起窗口，托盘菜单才会触发真正的退出流程。
   win.on('close', (event) => {

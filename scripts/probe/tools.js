@@ -165,8 +165,25 @@
       const y1 = tr.bottom - 6
       for (let i = 1; i <= 8; i++) g2.dispatchEvent(mk('pointermove', y0 + ((y1 - y0) * i) / 8, 1))
       await sleep(80)
+      /*
+       * 拖动预览（用户要求）：跟随指针的胶囊要回答「正在搬的是哪一块」。
+       * 改造前拖动中只有原槽位变半透明，拖到栏外就完全看不出在拖什么。
+       */
+      const preview = document.querySelector('[data-testid="rp-drag-preview"]')
+      if (preview && (preview.textContent ?? '').length > 0) {
+        ok('拖动中出现预览胶囊：「' + preview.textContent + '」')
+      } else {
+        bad('拖动中没有预览胶囊：' + JSON.stringify(preview?.textContent ?? null))
+      }
+      const line = [...document.querySelectorAll('.rp-slot')].find(
+        (el) => el.dataset.over === 'before' || el.dataset.over === 'after'
+      )
+      if (line) ok('插入位置与预览同时可见（' + line.dataset.toolId + ' ' + line.dataset.over + '）')
+      else bad('拖动中没有插入位置（预览胶囊不该单独出现）')
       g2.dispatchEvent(mk('pointerup', y1, 0))
       await sleep(800)
+      if (!document.querySelector('[data-testid="rp-drag-preview"]')) ok('拖动结束后预览胶囊已撤掉')
+      else bad('拖动结束后预览胶囊还在（会一直粘着鼠标）')
       const after2 = ids()
       out.push('  拖后 ' + JSON.stringify(after2))
       const di = after2.indexOf(dragId)

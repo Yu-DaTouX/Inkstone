@@ -54,6 +54,7 @@ import {
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
+import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
 import { isSafeSessionId } from './context-state-store'
@@ -547,7 +548,16 @@ export class AgentController extends EventEmitter {
    * 不应该比「只看到当前上下文」更糟。
    */
   private async readHistoryOf(sessionFile: string): Promise<ReadResult | null> {
-    const read = this.readHistory ?? ((file: string) => readSessionMessages(file))
+    /*
+     * 图片在这里**落盘**，消息里只留文件地址（见 image-store.ts）：
+     * 历史重读是唯一会把 base64 带进消息的路径，而它每次打开会话都会跑。
+     */
+    const read =
+      this.readHistory ??
+      ((file: string) =>
+        readSessionMessages(file, {
+          localizeImage: (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
+        }))
     return read(sessionFile).catch(() => null)
   }
 
@@ -983,7 +993,13 @@ export class AgentController extends EventEmitter {
     } else {
       const msgs = await this.rpc!.command('get_messages').catch(() => null)
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
-      this.messages = Array.isArray(raw) ? normalizeHistory(raw) : []
+      /*
+       * 兜底路径同样把图片落盘：`get_messages` 是 pi 的**当前上下文**，
+       * 里面带的 base64 与会话文件里的是同一份 → sha1 相同，不会重复写。
+       */
+      this.messages = Array.isArray(raw)
+        ? normalizeHistory(raw, (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data))
+        : []
     }
     if (sessionFile) {
       this.messages = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
@@ -1201,7 +1217,13 @@ export class AgentController extends EventEmitter {
 
     const rawOptions = params.options
     const options = Array.isArray(rawOptions)
-      ? rawOptions.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+      ? rawOptions.map((item) => {
+          if (typeof item === 'string') return item.trim()
+          if (item && typeof item === 'object' && 'label' in item && typeof item.label === 'string') {
+            return item.label.trim()
+          }
+          return ''
+        }).filter(Boolean)
       : []
     if (options.length > 8) throw new CapabilityCommandError('question_options_too_many', '问题最多提供 8 个选项')
     if (options.some((option) => option.length > 500)) {

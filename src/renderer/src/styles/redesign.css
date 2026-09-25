@@ -349,13 +349,6 @@
   gap: var(--sp-3);
   min-width: 0;
 }
-.ub-compacting {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--warn);
-}
-
 /* 23. 左栏收起/展开用**推挤**而不是浮层
    —— 对齐 Agents-Anywhere：他们的侧栏是 layout 里的常驻列，
    收起时列宽变 0，内容重新排版；不是盖在内容上。

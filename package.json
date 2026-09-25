@@ -1,6 +1,6 @@
 {
   "name": "yan-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "砚 · 独立 agent 桌面端（pi 作内核）",
   "main": "./out/main/index.js",
   "author": "Yu-DaTouX",

@@ -166,14 +166,45 @@
     ok(tr.right <= ws.right + 1 && tr.bottom <= ws.bottom + 1, '越界坐标被夹回内容区（不丢到屏外）')
     ok(tr.left >= ws.left - 1 && tr.top >= ws.top - 1, '夹取后左上角仍可见')
 
-    out.push('\n=== 7. 右栏收起，浮动磁贴不跟着消失 ===')
+    out.push('\n=== 7. 拖回工具页：栏内出现插入位置 ===')
+    /*
+     * 浮窗本体拖动时是「跟着指针走的真磁贴」，但栏内的槽位不在这个组件的
+     * DOM 里 —— 松手会插到哪，以前完全没有提示。现在它与栏内重排共用
+     * store 里的落点，画同一条插入线。
+     */
+    await until(() => !!q('[data-testid="float-tile-queue"]'), 4000)
+    const h4 = q('[data-testid="float-head-queue"]')
+    const hr4 = h4.getBoundingClientRect()
+    const firstSlot = document.querySelector('.rp-body > .rp-slot')
+    const sr4 = firstSlot?.getBoundingClientRect()
+    const bx = hr4.left + 40
+    const by = hr4.top + 16
+    const cx = sr4 ? sr4.left + sr4.width / 2 : bx
+    const cy = sr4 ? sr4.top + sr4.height / 2 : by
+    const lineAt = () =>
+      [...document.querySelectorAll('.rp-slot')].find((el) => el.dataset.over === 'before' || el.dataset.over === 'after')
+    h4.dispatchEvent(pe('pointerdown', bx, by, 1))
+    await sleep(50)
+    for (let i = 1; i <= 10; i++) {
+      h4.dispatchEvent(pe('pointermove', bx + ((cx - bx) * i) / 10, by + ((cy - by) * i) / 10, 1))
+    }
+    await sleep(120)
+    const line4 = lineAt()
+    if (line4) ok('拖回工具页时栏内出现插入位置（' + line4.dataset.toolId + ' ' + line4.dataset.over + '）')
+    else bad('拖回工具页时没有插入位置预览')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    h4.dispatchEvent(pe('pointercancel', cx, cy, 0))
+    await sleep(400)
+    ok(!lineAt(), '取消后插入位置已撤掉')
+
+    out.push('\n=== 8. 右栏收起，浮动磁贴不跟着消失 ===')
     await store.getState().toggleRightPanel()
     await sleep(500)
     ok(!!q('[data-testid="float-tile-queue"]'), '收起右栏后浮动磁贴仍在')
     await store.getState().toggleRightPanel()
     await sleep(400)
 
-    out.push('\n=== 8. 恢复默认：布局回停靠，业务数据不动 ===')
+    out.push('\n=== 9. 恢复默认：布局回停靠，业务数据不动 ===')
     const todosBefore = store.getState().todos.length
     await resetLayout()
     await sleep(500)

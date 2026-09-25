@@ -14,7 +14,7 @@
  * 3. **不伪造状态**：拿不到的行数显示为空、二进制明说不能显示文本差异、
  *    非 Git 目录说「未使用 Git」而不是给一个空的 diff。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   GitActionExpected,
   GitActionResult,
@@ -29,9 +29,6 @@ import { ChangedFileTree, statusGlyph } from './ChangedFileTree'
 import { CommitBar } from './CommitBar'
 import { DiffViewer, ImageDiff } from './DiffViewer'
 import { patchKeyOf, useGitWrite, usePatchStore, useReviewSnapshot, useSideContent, useViewedStore } from './useGitReview'
-
-/** 打开时默认展开多少个文件的正文（小改动全展开，大改动先给前一批） */
-const AUTO_EXPAND = 12
 
 export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () => void } = {}) {
   const t = useT()
@@ -74,13 +71,13 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
-  const streamRef = useRef<HTMLDivElement>(null)
+  const activeFile = files.find((f) => f.path === selected) ?? files[0]
 
-  /* 新快照（换了范围或刷新）→ 重置展开态，默认展开前 AUTO_EXPAND 个 */
+  /* 每次只打开一个文件；大量图片与 patch 不应在首次进入时一齐加载。 */
   useEffect(() => {
-    const auto = files.slice(0, AUTO_EXPAND).map((f) => f.path)
-    setExpanded(new Set(auto))
-    setSelected((prev) => (prev && files.some((f) => f.path === prev) ? prev : null))
+    const first = files.find((f) => f.kind !== 'image') ?? files[0]
+    setSelected(first?.path ?? null)
+    setExpanded(new Set(first && first.kind !== 'image' ? [first.path] : []))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestId, scope.kind, scope.base, scope.target])
 
@@ -91,23 +88,12 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
   }, [expanded, files, requestId])
 
   const toggle = useCallback((path: string) => {
-    setExpanded((p) => {
-      const next = new Set(p)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
+    setExpanded((p) => (p.has(path) ? new Set() : new Set([path])))
   }, [])
 
   const jumpTo = useCallback((f: GitChangedFile) => {
     setSelected(f.path)
-    setExpanded((p) => new Set(p).add(f.path))
-    requestAnimationFrame(() => {
-      streamRef.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(f.path)}"]`)?.scrollIntoView({
-        behavior: 'auto',
-        block: 'start'
-      })
-    })
+    setExpanded(new Set([f.path]))
   }, [])
 
   const identity = view.identity
@@ -226,7 +212,17 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
       ) : null}
 
       <div className="review-body">
-        <div className="review-stream" ref={streamRef} data-testid="review-stream">
+        <div className="review-side">
+          <ChangedFileTree
+            files={files}
+            selected={activeFile?.path ?? null}
+            onSelect={jumpTo}
+            isViewed={(f) => viewed.isViewed(f, identity)}
+            viewedCount={viewedCount}
+          />
+        </div>
+
+        <div className="review-stream" data-testid="review-stream">
           {!view.snapshot && !view.error ? <div className="review-hint">{t('review.loading')}</div> : null}
 
           {view.snapshot && !view.snapshot.repo ? (
@@ -241,7 +237,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
             </div>
           ) : null}
 
-          {files.map((f) => (
+          {activeFile ? [activeFile].map((f) => (
             <FileCard
               key={f.path}
               file={f}
@@ -262,7 +258,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
                 )
               }}
             />
-          ))}
+          )) : null}
 
           {view.snapshot?.truncated ? (
             <div className="review-hint" data-testid="review-truncated">
@@ -271,15 +267,6 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
           ) : null}
         </div>
 
-        <div className="review-side">
-          <ChangedFileTree
-            files={files}
-            selected={selected}
-            onSelect={jumpTo}
-            isViewed={(f) => viewed.isViewed(f, identity)}
-            viewedCount={viewedCount}
-          />
-        </div>
       </div>
 
       <CommitBar snapshot={view.snapshot} cwd={cwd} onDone={onWritten} />

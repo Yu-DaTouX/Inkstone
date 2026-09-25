@@ -9,9 +9,9 @@
 | 顺序 | 文件 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | 292 | 24 | 25 | 1 | 2 |
-| 2 | `app.css` | 538 | 77 | 77 | 1 | 0 |
+| 2 | `app.css` | 535 | 76 | 76 | 1 | 0 |
 | 3 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
-| 4 | `redesign.css` | 1315 | 134 | 149 | 5 | 0 |
+| 4 | `redesign.css` | 1299 | 133 | 147 | 5 | 0 |
 | 5 | `motion.css` | 1456 | 189 | 194 | 5 | 11 |
 | 6 | `settings.css` | 670 | 100 | 103 | 0 | 0 |
 | 7 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
@@ -20,14 +20,14 @@
 | 10 | `shell.css` | 411 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
 | 12 | `rail.css` | 1547 | 219 | 225 | 0 | 0 |
-| 13 | `chat.css` | 1884 | 260 | 264 | 2 | 2 |
-| 14 | `composer.css` | 1767 | 250 | 253 | 1 | 0 |
-| 15 | `tools.css` | 3143 | 447 | 454 | 2 | 4 |
-| 16 | `browser.css` | 413 | 56 | 56 | 0 | 0 |
+| 13 | `chat.css` | 1900 | 261 | 265 | 2 | 2 |
+| 14 | `composer.css` | 1779 | 251 | 254 | 2 | 0 |
+| 15 | `tools.css` | 3634 | 549 | 560 | 3 | 4 |
+| 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
-| 18 | `review.css` | 1567 | 228 | 228 | 2 | 0 |
+| 18 | `review.css` | 1570 | 226 | 227 | 1 | 0 |
 | 19 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **15784** | **2082** | | | |
+| | **合计** | **16291** | **2183** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -36,9 +36,9 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 17 |
-| `app.css` | 55 |
+| `app.css` | 54 |
 | `stage1.css` | 11 |
-| `redesign.css` | 77 |
+| `redesign.css` | 76 |
 | `motion.css` | 185 |
 | `settings.css` | 100 |
 | `electron.css` | 9 |
@@ -47,12 +47,12 @@
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
 | `rail.css` | 219 |
-| `chat.css` | 258 |
-| `composer.css` | 249 |
-| `tools.css` | 447 |
-| `browser.css` | 56 |
+| `chat.css` | 259 |
+| `composer.css` | 250 |
+| `tools.css` | 549 |
+| `browser.css` | 57 |
 | `terminal.css` | 10 |
-| `review.css` | 228 |
+| `review.css` | 226 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
@@ -135,7 +135,7 @@
 | `.composer:focus-within` | redesign → composer |
 | `.composer-wrap.dropping .composer` | redesign → composer |
 | `.mt-pop` | redesign → motion |
-| `.srow-menu` | redesign → motion |
+| `.row-menu-surface` | redesign → motion |
 | `.row-menu` | redesign → motion |
 | `.prose` | redesign → electron |
 | `.rp-body` | redesign → tools |

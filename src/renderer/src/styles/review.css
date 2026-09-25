@@ -6,8 +6,7 @@
  *      不用图标也不用左右边框 —— 一屏上千行时那两种都会变成噪声。
  *   2. 长行**不折行**：折行会让同一份 diff 里行高不一致，行号对不上，
  *      代码结构也看不清。宁可横向滚动。
- *   3. 宽度不给用户拖：审查的列宽由内容决定（行号 2 列 + 代码），
- *      不像工具栏那样是个人偏好。所以审查模式下隐藏面板宽度把手。
+ *   3. 审查宽度可由用户调整；内部布局跟随面板宽度切换。
  */
 
 /* ── 环境菜单 ───────────────────────────────────────────── */
@@ -160,18 +159,11 @@ button.env-item:hover {
 /*
  * 审查模式把右栏换成宽档位。
  *
- * `clamp(420px, 46vw, 900px)`：窄窗口仍有 420px（能放下 diff 的行号 + 一截代码），
- * 宽屏到 900px 封顶（再宽会让聊天区被挤到不可用）。
- * **不去改 --w-panel-user** —— 那是用户自己拖出来的值，退出审查后原样回来。
+ * 初次打开沿用审查宽档位；用户拖动后读取审查自己的宽度变量。
+ * 只在审查标签活动时应用，切回其它标签不会改变常规工具栏宽度。
  */
-.app.review-on .workspace {
-  --w-right: clamp(420px, 46vw, 900px);
-}
-
-/* 拖了也不会有反应（宽度由审查档位决定），索性藏掉把手，免得像坏了 */
-.app.review-on .rightpanel > .resizer,
-.app.review-on .rightpanel .resizer {
-  display: none;
+.workspace:has(> .rightpanel.window-review) {
+  --w-right: var(--w-review-user, clamp(420px, 46vw, 900px));
 }
 
 .review {
@@ -358,14 +350,14 @@ button.env-item:hover {
   overflow-wrap: anywhere;
 }
 
-/*
- * 主体两列：diff 流 + 文件树。
- * 树固定 220px（它是导航，不需要更宽）；diff 拿剩下的空间。
- * grid 用 minmax(0, 1fr) —— 否则长路径会把列撑破（AGENTS 的硬约定）。
- */
+/* 文件导航与当前文件差异分开。按面板本身的宽度适配，而不是窗口宽度。 */
+.review {
+  container-type: inline-size;
+}
+
 .review-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: clamp(190px, 28%, 280px) minmax(0, 1fr);
   min-height: 0;
   flex: 1;
 }
@@ -379,7 +371,7 @@ button.env-item:hover {
 
 .review-side {
   min-width: 0;
-  border-left: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -391,13 +383,24 @@ button.env-item:hover {
   font-size: var(--fs-sm);
 }
 
-/* 窄窗口：文件树收到 diff 下面去（抽屉式会让它很难同时看到两边） */
-@media (max-width: 900px) {
+/* 窄右栏仍保留文件导航入口，当前文件的差异获得整行宽度。 */
+@container (max-width: 720px) {
   .review-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(120px, 28%) minmax(0, 1fr);
   }
   .review-side {
-    display: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .review-head {
+    flex-wrap: wrap;
+  }
+  .rcard-head {
+    flex-wrap: wrap;
+  }
+  .rcard-toggle {
+    flex-basis: 100%;
   }
 }
 

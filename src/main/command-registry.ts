@@ -56,10 +56,12 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: 'subagent',
-    description: '启动一个独立子代理任务',
-    source: 'yan',
-    executable: true,
-    usage: '/subagent <任务> [--read-only]'
+    description: '子代理由模型按任务需要自主调用',
+    source: 'compatibility',
+    executable: false,
+    hiddenInMenu: true,
+    usage: '/subagent <任务>',
+    availability: '请直接描述任务；模型会在需要时调用子代理。'
   },
   {
     name: 'panel',

@@ -86,6 +86,8 @@ function sanitizeTabs(value: unknown): WorkbenchTab[] {
     if (!tab || typeof tab !== 'object') return []
     const item = tab as Partial<WorkbenchTab>
     if (typeof item.id !== 'string' || !isView(item.kind)) return []
+    /* 子代理只在后台由模型调用；旧布局里的详情标签不再恢复到右栏。 */
+    if (item.kind === 'subagent') return []
     /*
      * 旧版的文件窗口只有一个无身份的 `file` 标签（H-4 之前）。
      * 它现在没有意义：文件标签必顶带 `projectId|root|realpath` 身份，

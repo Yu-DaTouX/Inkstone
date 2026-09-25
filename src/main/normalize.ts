@@ -61,20 +61,32 @@ export function toUsage(u: PiMessage['usage']): Usage | undefined {
 }
 
 /** 把 pi 的 AgentMessage 归一化成 UIMessage（历史回放用） */
-export function normalizeMessage(m: PiMessage, idx: number): UIMessage | null {
+export function normalizeMessage(
+  m: PiMessage,
+  idx: number,
+  localizeImage?: (mimeType: string, data: string) => string
+): UIMessage | null {
   const id = `m${idx}`
 
   if (m.role === 'user') {
     let text = ''
-    const images: { mimeType: string; data: string }[] = []
+    const images: { mimeType: string; data: string; url?: string }[] = []
 
     if (typeof m.content === 'string') {
       text = m.content
     } else if (Array.isArray(m.content)) {
       for (const c of m.content) {
         if (c.type === 'text') text += c.text ?? ''
-        else if (c.type === 'image' && c.data) {
-          images.push({ mimeType: c.mimeType ?? 'image/png', data: c.data })
+        else if (c.type === 'image') {
+          const mimeType = c.mimeType ?? 'image/png'
+          /*
+           * 历史重读会注入 `localizeImage`：图片落盘，消息里只留文件地址。
+           * 几十 MB 的 base64 不能进 IPC，而只要它不留下来，重启 / 切会话
+           * 之后就再也找不回用户贴过的图（用户报的「图片看不到」）。
+           * 实时事件流不走这里，它带来的 base64 原样保留。
+           */
+          const url = localizeImage && c.data ? localizeImage(mimeType, c.data) : ''
+          images.push(url ? { mimeType, data: '', url } : { mimeType, data: c.data ?? '' })
         }
       }
     }
@@ -182,7 +194,10 @@ export function normalizeMessage(m: PiMessage, idx: number): UIMessage | null {
 }
 
 /** 历史回放：把 toolResult 的结果回填到对应的 toolCall 上 */
-export function normalizeHistory(raw: unknown[]): UIMessage[] {
+export function normalizeHistory(
+  raw: unknown[],
+  localizeImage?: (mimeType: string, data: string) => string
+): UIMessage[] {
   const out: UIMessage[] = []
   const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
 
@@ -199,7 +214,7 @@ export function normalizeHistory(raw: unknown[]): UIMessage[] {
   for (const r of raw) {
     const m = r as PiMessage
     if (m?.role === 'system') continue
-    const norm = normalizeMessage(m, seq)
+    const norm = normalizeMessage(m, seq, localizeImage)
     if (!norm) continue
 
     if (m.role === 'toolResult') {

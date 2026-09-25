@@ -33,22 +33,27 @@
  * ══════════════════════════════════════════════════════════════════
  * 实测：26 行 >100KB，合计 12.9MB / 17.1MB。最长一行 4MB ——
  * 是个 `toolResult`，内容是 **text + base64 图片**。
- * 把 4MB 的 base64 交给渲染端会直接卡死界面，所以这里做**有损降级**：
- *   · 超长文本 → 截断 + 标记（界面上明说"已截断"，不假装完整）
- *   · 超大图片 → 丢弃 + 占位（保留尺寸信息，让用户知道这里有张图）
+ *
+ *   · 超长文本 → 截断 + 标记（界面上明说“已截断”，不假装完整）
+ *   · 图片 → 交给调用方给的 `localizeImage` **落盘**，消息里只留文件地址
+ *     （见 main/image-store.ts 的说明）。以前是“丢弃 + 占位”，结果是用户
+ *     贴过的图在重启 / 切会话 / 压缩之后再也就看不到了 —— 体积问题的正解
+ *     是别把 base64 放进消息，而不是把用户的内容丢掉。
  */
 import { open } from 'node:fs/promises'
 import { normalizeHistory } from './normalize'
 import type { UIMessage } from '../shared/ipc'
 
-/** 单行超过这个长度就不整体 parse（避免瞬时内存峰值） */
-const MAX_LINE_BYTES = 6 * 1024 * 1024
+/**
+ * 单行超过这个长度就整行跳过（不让一行拖垬内存）。
+ *
+ * 从 6MB 提到 48MB:用户的图一张就有 3.4MB base64，一条消息贴两张图
+ * 就会超 6MB —— 那时整条消息被跳过，连文字也不剩。
+ */
+const MAX_LINE_BYTES = 48 * 1024 * 1024
 
 /** tool result 的文本保留上限（超出截断并标记） —— 64KB ≈ 一个屏都看不完 */
 const MAX_TEXT = 64 * 1024
-
-/** 单张图片的 base64 上限（超出丢弃，只留占位说明） */
-const MAX_IMAGE = 256 * 1024
 
 export interface ReadResult {
   messages: UIMessage[]
@@ -71,22 +76,6 @@ export interface ReadResult {
   segments?: number
   /** 链上读不到的段数（文件被删 / 移走）。**不静默丢段**，如实计数 */
   missing?: number
-}
-
-/**
- * 把一行 JSON 里的超大内容换成占位符。
- *
- * 为什么要在 **parse 之前**动字符串：4MB 的 base64 直接 JSON.parse 后
- * 会常驻内存，而 V8 解析这么大的字符串还会额外分配。
- * 但完全跳过这一行又会让用户丢掉整个 tool result（里面有命令输出）。
- * 折中：只替换 `"data":"..."` 这个字段的值（用字符串替换，不 parse）。
- */
-function shrinkLine(line: string): string {
-  // 图片 data 字段：`"data":"<超长 base64>"`
-  return line.replace(/"data":"([A-Za-z0-9+/=]{20000,})"/g, (_m, b64: string) => {
-    const kb = Math.round(b64.length / 1024)
-    return `"data":"","__yanImageDropped":"${kb}KB 图片未载入（体积过大）"`
-  })
 }
 
 /** 递归截断超长字符串字段（parse 之后） */
@@ -118,13 +107,6 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
     let cut = 0
     const out: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      // image block：data 太大就直接丢
-      if (k === 'data' && typeof val === 'string' && val.length > MAX_IMAGE) {
-        out[k] = ''
-        out.__dropped = `${Math.round(val.length / 1024)}KB`
-        cut += 1
-        continue
-      }
       const r = truncateDeep(val, depth + 1)
       cut += r.cut
       out[k] = r.value
@@ -139,8 +121,14 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
  * 读一个会话文件，返回可直接渲染的消息。
  *
  * 失败一律返回 null（调用方回退到「等 pi 的 get_messages」）。
+ *
+ * `localizeImage` 由调用方注入（main 那边传 main/image-store.ts 的
+ * `localizeImage`）：图片 base64 转成落盘后的文件地址，消息里不携带 base64。
  */
-export async function readSessionMessages(path: string): Promise<ReadResult | null> {
+export async function readSessionMessages(
+  path: string,
+  opts?: { localizeImage?: (mimeType: string, data: string) => string }
+): Promise<ReadResult | null> {
   let fh
   try {
     fh = await open(path, 'r')
@@ -182,16 +170,14 @@ export async function readSessionMessages(path: string): Promise<ReadResult | nu
       // 快筛：只关心消息 entry（custom entry 由 refreshTodos 单独处理）
       if (!rawLine.includes('"type":"message"')) continue
 
-      // 超大行先做无损之外的收缩（只动 base64 字段）
-      const line = rawLine.length > MAX_LINE_BYTES ? shrinkLine(rawLine) : rawLine
-      if (line.length > MAX_LINE_BYTES) {
-        // 收缩后仍然过大（比如超长纯文本），整行跳过并计数
+      if (rawLine.length > MAX_LINE_BYTES) {
+        // 单行过大（通常是超长纯文本）→ 整行跳过并计数
         truncated++
         continue
       }
 
       try {
-        const entry = JSON.parse(line) as { message?: unknown }
+        const entry = JSON.parse(rawLine) as { message?: unknown }
         const msg = entry.message
         if (!msg || typeof msg !== 'object') continue
 
@@ -205,7 +191,7 @@ export async function readSessionMessages(path: string): Promise<ReadResult | nu
     }
 
     return {
-      messages: normalizeHistory(normalized),
+      messages: normalizeHistory(normalized, opts?.localizeImage),
       total,
       truncated,
       bytes: size,

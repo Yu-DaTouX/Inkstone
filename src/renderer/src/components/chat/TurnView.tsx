@@ -8,7 +8,7 @@ import { ReasoningCapsule } from './Reasoning'
 import { ToolGroup, ToolRow } from './ToolRow'
 import type { AssistantTurn, BashTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
-import type { SubagentRun } from '../../../../shared/ipc'
+import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -62,9 +62,24 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
 
         {msg.images?.length ? (
           <div className="msg-images">
-            {msg.images.map((im, i) => (
-              <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" />
-            ))}
+            {msg.images.map((im, i) =>
+              im.data ? (
+                <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" />
+              ) : im.url ? (
+                /* 历史里的图：已落盘，直接读文件（重启后也看得到） */
+                <img key={i} src={im.url} alt="" />
+              ) : (
+                /*
+                 * 历史回放时图片数据被体积保护丢掉了（见 state/keep-images.ts）。
+                 * 摆一个「图片未载入」而不是整个不渲染 —— 后者看起来就像这条
+                 * 消息压根没贴过图。
+                 */
+                <div key={i} className="msg-image-missing" title={t('chat.imageMissing')}>
+                  <Icon name="tag" size={12} />
+                  <span>{t('chat.imageMissing')}</span>
+                </div>
+              )
+            )}
           </div>
         ) : null}
 
@@ -112,10 +127,6 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
 /* ------------------------------------------------------------------ 助手 */
 
 function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
-  const allSubagents = useStore((s) => s.subagents)
-  const attachedSubagents = allSubagents.filter((run) =>
-    !!run.parentMessageId && (run.parentMessageId === turn.id || turn.sourceIds.includes(run.parentMessageId))
-  )
   /*
    * 成功进度只是过程状态：artifact 已经落盘后，用户需要看到的是最终文件，
    * 不是一张永远停在「已完成」的进度卡。失败则保留，方便解释原因并重试。
@@ -136,7 +147,6 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
     !!turn.thinking ||
     turn.artifacts.length > 0 ||
     visibleImageProgress.length > 0 ||
-    attachedSubagents.length > 0 ||
     !!turn.error
   if (!hasBody && !streaming) return null
 
@@ -220,12 +230,6 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
             ) : null}
           </>
         )}
-
-        {attachedSubagents.length ? (
-          <div className="subagent-inline-list" data-testid="subagent-inline-list">
-            {attachedSubagents.map((run) => <InlineSubagentCard key={run.id} run={run} />)}
-          </div>
-        ) : null}
 
         {turn.artifacts.length ? (
           <div className="turn-artifacts" data-testid="turn-artifacts">
@@ -335,35 +339,10 @@ function TurnTime({ timestamp }: { timestamp: number }) {
   )
 }
 
-function InlineSubagentCard({ run }: { run: SubagentRun }) {
-  const t = useT()
-  const openSubagent = useStore((s) => s.openSubagent)
-  const running = run.status === 'running' || run.status === 'starting'
-  const lastTranscript = run.transcript.at(-1)
-  const preview = lastTranscript?.text?.trim().replace(/\s+/g, ' ').slice(-180)
-  const stateText = running
-    ? run.latestActivity || t('sa.waiting')
-    : run.status === 'done'
-      ? t('sa.done')
-      : run.error || t('sa.stopped')
-  return (
-    <section className={`subagent-inline ${running ? 'running' : run.status}`} data-testid={`subagent-inline-${run.id}`}>
-      <div className="subagent-inline-head">
-        <span className="subagent-inline-icon" aria-hidden>{running ? <span className="subagent-inline-spinner" /> : run.status === 'done' ? '✓' : '!'}</span>
-        <strong>子代理</strong>
-        <span className="subagent-inline-state">{stateText}</span>
-        <button type="button" className="subagent-inline-open" onClick={() => openSubagent(run.id)}>{t('sa.view')}</button>
-      </div>
-      <div className="subagent-inline-task" title={run.task}>{run.task}</div>
-      {preview ? <div className="subagent-inline-preview">{preview}</div> : null}
-    </section>
-  )
-}
-
 function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][number] }) {
   const previewFile = useStore((s) => s.previewFile)
   const [text, setText] = useState<string | null>(null)
-  const fileUrl = `file:///${encodeURI(artifact.path.replace(/\\/g, '/').replace(/^\/+/, ''))}`
+  const fileUrl = toFileUrl(artifact.path)
   const isCode = artifact.kind === 'code'
   const unavailable = artifact.unavailable === true || artifact.bytes <= 0
 
