@@ -67,6 +67,7 @@ function ReasoningCapsuleImpl({
   /** 正文是否展开全文。默认 false = 一行最新句预览（不跟流式状态自动变化）。 */
   const [open, setOpen] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
   /** 没有回合级信号时（历史消息）退回到单段信号，仅用于逐字启停 */
   const streaming = turnLive ?? live
@@ -111,12 +112,27 @@ function ReasoningCapsuleImpl({
   const { head, tail } = splitTail(shown, !!live && shown.length <= 4000)
 
   const toggleOpen = (): void => {
-    setOpen(!open)
+    const next = !open
+    setOpen(next)
     followRef.current = true
+    /*
+     * 展开后把自己滚进可视区（用户：「展开这个窗口的时候会被输入框挡住」）。
+     *
+     * 这个块长在消息流里，展开后会变高；如果它本身就贴着流底部，
+     * 多出来的那一截会落在输入框后面 —— 用户看到的就是「被挡住了」。
+     * `block: 'nearest'` 只动必要的量：已经看得到就不滚，避免每次展开
+     * 都把长会话猛地拉到底。
+     */
+    if (next) {
+      requestAnimationFrame(() => {
+        rootRef.current?.scrollIntoView({ block: 'nearest' })
+      })
+    }
   }
 
   return (
     <div
+      ref={rootRef}
       className={`reason ${open ? 'open' : ''} ${live ? 'live' : ''}`}
       data-layout="reasoning"
       data-testid="reasoning"

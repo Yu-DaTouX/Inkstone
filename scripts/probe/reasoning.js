@@ -180,6 +180,17 @@
     `展开高度受 min(70vh,620px) 约束（${Math.round(capActual)}px ≤ ${Math.round(capExpected)}px）`
   )
 
+  /*
+   * 展开后不能被输入框挡住（用户：「展开这个窗口的时候会被输入框挡住」）。
+   * 这个块长在消息流里，展开后变高；如果它贴着流底部，多出来的那一截
+   * 会落到输入框后面。展开时会把块滚进可视区（`block: 'nearest'`），
+   * 所以断言展开态整体的底边不越过输入框顶边。
+   */
+  const inputTop = q('.composer')?.getBoundingClientRect().top ?? window.innerHeight
+  const openBottom = q('.reason')?.getBoundingClientRect().bottom ?? 0
+  out.push(`  展开块底边 ${Math.round(openBottom)} / 输入框顶边 ${Math.round(inputTop)}`)
+  ok(openBottom <= inputTop + 1, '展开后整块在输入框之上（不被挡住）')
+
   /* 头部在 body 外面：body 内部滚动时它一动不动（收起入口不会滚丢） */
   const headTop1 = q('[data-testid="reasoning-toggle"]')?.getBoundingClientRect().top
   body().scrollTop = 99999

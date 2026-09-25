@@ -374,7 +374,7 @@
   "outline.tick": "第 {n} 轮",
   "picker.busy": "生成中不能切换，先中止",
   "picker.detail": "回复详细程度",
-  "picker.detailDesc": "控制它把结果讲多细；与推理强度是两件事。三档都不会省略必要的错误提示",
+  "picker.detailDesc": "讲得多细，与推理强度无关；三档都不省略错误提示",
   "picker.image": "图像",
   "picker.modelTip": "切换模型",
   "picker.needsAuth": "未配置",
