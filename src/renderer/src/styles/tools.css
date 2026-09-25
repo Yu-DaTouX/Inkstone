@@ -2435,10 +2435,21 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-height: 44px;
   height: auto;
   flex-wrap: nowrap;
+  /*
+   * 标题写了 `min-width: min-content`（见 `.rp-sec-title`），窄到极限时
+   * 它会撑着不缩 —— 这里裁掉溢出的部分，不让它顶破卡片。
+   * 牺牲顺序：先摘要里的数字，再摘要本身，最后才是这一层。
+   */
+  overflow: hidden;
   padding: 6px 6px 6px 0;
-  gap: 8px;
+  gap: 6px;
   color: var(--fg);
-  font-size: var(--fs-lg);
+  /*
+   * 标题字号 --fs-lg(15) → --fs-base(13)（用户：「把标题都变小一些」）。
+   * 右栏拖窄时这三四个字很占地方，而标题旁边还有环形 + 数值。
+   * 摘要里的 `.rp-header-values` 自己有 `--fs-sm`，不受这里影响。
+   */
+  font-size: var(--fs-base);
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -2454,7 +2465,12 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-title {
-  min-width: 0;
+  /*
+   * `min-content` 而不是 0：标题**必须**完整。
+   * `white-space: nowrap` 下 min-content = 整行宽，所以 flex 不能再把
+   * 「上下文」压成「上下…」（用户截图）；窄到极限时改为牺牲右边的摘要。
+   */
+  min-width: min-content;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2512,7 +2528,12 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-title {
-  min-width: 0;
+  /*
+   * `min-content` 而不是 0：标题**必须**完整。
+   * `white-space: nowrap` 下 min-content = 整行宽，所以 flex 不能再把
+   * 「上下文」压成「上下…」（用户截图）；窄到极限时改为牺牲右边的摘要。
+   */
+  min-width: min-content;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

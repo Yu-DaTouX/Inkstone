@@ -1371,7 +1371,7 @@ function QuotaSection() {
     !highest || item.window.used / item.window.total > highest.used / highest.total ? item.window : highest, null)
   const ringPct = ringWindow && ringWindow.total > 0 ? ringWindow.used / ringWindow.total * 100 : (mainPct ?? null)
   return (
-    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} icon={SECTION_ICON.quota} extra={
+    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} extra={
       <span className="rp-header-usage">
         <UsageRing percent={ringPct} tone={ringPct === null ? '' : quotaTone(ringPct, anyExceeded)} />
         <span className="rp-header-values" title={provider || undefined}>
@@ -1682,7 +1682,7 @@ function ContextSection() {
   const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
   return (
-    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} icon={SECTION_ICON.context} extra={
+    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} extra={
       /*
        * 压缩中就把摘要位让给状态（用户 2026-09-25：压缩时界面上好几处都在转，
        * 只留这一个）。

@@ -84,6 +84,32 @@
       '分区标题栏仍然是一行（没有换行）'
     )
 
+    /*
+     * 拖到很窄时标题仍要完整。
+     *
+     * 上面那条只在默认宽度下量，而用户报的正是「拖窄之后」——
+     * 他截图里标题被压成「上下…」。所以这里主动把右栏压到几档宽度，
+     * 每档都查一遍。牺牲顺序应该先数字后标题（见 .rp-sec-title 的 min-content）。
+     */
+    const widthStyle = document.createElement('style')
+    document.head.appendChild(widthStyle)
+    for (const w of [220, 180, 150]) {
+      widthStyle.textContent =
+        '.rightpanel{width:' + w + 'px !important;min-width:' + w + 'px !important;' +
+        'max-width:' + w + 'px !important;flex:none !important}'
+      await sleep(520)
+      const stillClipped = qa('.rp-body .rp-sec-title').filter(
+        (el) => el.scrollWidth > el.clientWidth + 1
+      )
+      out.push(
+        `  右栏 ${w}px：标题被截断 ${stillClipped.length} 个` +
+          (stillClipped.length ? '：' + stillClipped.map((el) => el.textContent.trim()).join('、') : '')
+      )
+      ok(stillClipped.length === 0, `右栏拖到 ${w}px 时标题仍完整`)
+    }
+    widthStyle.remove()
+    await sleep(400)
+
     out.push('\n=== 2. 文件：缺失保留标签与路径，并给重试 ===')
     const cwd = st().session?.cwd ?? '.'
     const missing = `${cwd}/__yan_missing_preview__.md`

@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { Icon } from '../../icons/Icon'
 import type { IconName } from '../../icons/sprite'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
@@ -42,11 +41,10 @@ export const SECTION_TITLE: Record<ToolSectionId, MessageKey> = {
 }
 
 /**
- * 分区 id → 卡片标题图标。
+ * 分区 id → 图标，供**拖动预览**使用（卡片标题前已不再画图标）。
  *
- * 没列在这里的分区在标题前画折叠箭头（两者占同一格，见 Section 的 icon 说明）。
- * 放在这里是为了让**拖动预览**也能拿到同一枚图标 —— 各写一份迟早会出现
- * 「卡片上是清单、拖起来变成箭头」。
+ * 用户：「移除图标并把标题都变小一些」—— 标题前的图标格 + gap 共 24px，
+ * 右栏拖窄后会把标题挤成「上下…」。拖动预览不占排版宽度，图标留着有用。
  */
 export const SECTION_ICON: Partial<Record<ToolSectionId, IconName>> = {
   context: 'checklist',
@@ -59,7 +57,6 @@ export function Section({
   defaultOpen = true,
   testId,
   handle,
-  icon,
   /** 受控展开态（不传则内部自管）。任务栏用它做「全部完成自动收起」 */
   open: openProp,
   onOpenChange,
@@ -71,11 +68,6 @@ export function Section({
   testId?: string
   /** 显式传把手（不传则用 context 里的） */
   handle?: React.ReactNode
-  /**
-   * 卡片标题前的图标。给了图标就不再画折叠箭头 —— 两者都在标题左侧同一格，
-   * 挤在一起会让标题看不清；折叠语义由 aria-expanded、整行可点与展开动画承担。
-   */
-  icon?: IconName
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: React.ReactNode
@@ -151,11 +143,17 @@ export function Section({
       <div className="rp-sec-row">
         {grip}
         <button className="rp-sec-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {icon ? (
-            <Icon name={icon} size={16} className="rp-sec-icon" />
-          ) : (
-            <Icon name="chevron-right" size={12} className="chev" />
-          )}
+          {/*
+           * 标题前不再放图标，也不放折叠箭头（用户：「移除图标并把标题都变小一些」）。
+           *
+           * 原来是「有 icon 画 16px 图标，否则画 12px 折叠箭头」，两者都占
+           * 一格 + 一个 gap（共 24px）。右栏拖窄后这 24px 很贵 —— 标题会被
+           * flex 压成「上下…」。左边本来就有拖拽柄，再排一个图标格更挤。
+           *
+           * 开合状态由 `.rp-sec-head[aria-expanded]`、整行可点与 `.rp-sec.open`
+           * 展开动画给出 —— 不再为它占一行宽度。（不再画箭头是权衡：
+           * 右栏拖窄时宽度比多一个提示更重要。）
+           */}
           <span className="rp-sec-title">{t(titleKey)}</span>
           <span className="spacer" />
           {extra}
