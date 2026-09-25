@@ -73,7 +73,7 @@
     const st = store.getState()
     /** 按 isEmpty 规则推导「应该渲染哪些」——与实现保持同一判据 */
     const expectEmpty = []
-    if (st.todos.length === 0) expectEmpty.push('todo')
+    /* todo 不在这里：它没有 isEmpty 判据，没有任务时渲染空态（rp.todoEmpty） */
     if (Object.keys(st.statuses).length === 0 && Object.keys(st.widgets).length === 0) expectEmpty.push('ext')
     if (st.logs.length === 0) expectEmpty.push('log')
     const expected = ALL.filter((x) => !expectEmpty.includes(x))
@@ -108,7 +108,12 @@
     await sleep(700)
     const after = ids()
     out.push('  ' + JSON.stringify(before) + ' → ' + JSON.stringify(after))
-    if (after[0] === before[1] && after[1] === before[0]) ok('Alt+↓ 与下一项交换')
+    /*
+     * 交换对象是 `grip-context` 那一项**和它的下一项**，不是数组前两位 ——
+     * todo 现在没有 isEmpty 判据（没任务时渲染空态），会占住 ids()[0]。
+     */
+    const gi = before.indexOf('context')
+    if (gi >= 0 && after[gi] === before[gi + 1] && after[gi + 1] === before[gi]) ok('Alt+↓ 与下一项交换')
     else bad('交换失败')
     const saved = dockedOrder()
     out.push('  落盘停靠顺序=' + JSON.stringify(saved))
@@ -118,7 +123,7 @@
      * todo/ext 为空不渲染，但它们仍在数组里占位，
      * 所以 next[0] 可能仍是 todo（实测就这样）。
      */
-    if (Array.isArray(saved) && saved.indexOf(before[1]) < saved.indexOf(before[0])) {
+    if (Array.isArray(saved) && saved.indexOf(before[gi + 1]) < saved.indexOf(before[gi])) {
       ok('顺序已落盘（两个分区的相对次序已反转）')
     } else {
       bad('顺序没落盘：' + JSON.stringify(saved))
