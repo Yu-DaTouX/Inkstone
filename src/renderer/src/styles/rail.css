@@ -202,6 +202,18 @@
   color: var(--err);
 }
 
+/*
+ * 自动隔离（同一工作目录冲突时被换到隔离工作树）：
+ * 等待合回 = 同步中（accent），合回被挡 = 要看一眼（warn）。
+ * 不用 err：挡下来时改动仍在隔离树里，不是丢了。
+ */
+.session-status.iso {
+  color: var(--accent);
+}
+.session-status.iso.blocked {
+  color: var(--warn);
+}
+
 /* 项目行上的运行汇总（N12）：这个项目里有几个会话在跑 */
 .proj-running {
   flex: none;
@@ -729,6 +741,32 @@ body.rail-dragging .proj-pick,
 body.rail-dragging .proj-fold,
 body.rail-dragging .proj-group-heading {
   cursor: grabbing;
+}
+
+/* 拖会话时整行也是把手 */
+body.rail-dragging .srow {
+  cursor: grabbing;
+}
+
+/*
+ * 会话行被拖动：变淡 + 退出命中判定。
+ * `pointer-events: none` 是必须的 —— 否则拖到自己身上时 `elementFromPoint`
+ * 会命中它自己，落点算成「原地的项目」而不是指针真正指向的那一行。
+ */
+.srow-wrap.is-dragging {
+  opacity: .45;
+  pointer-events: none;
+}
+
+/*
+ * 投放目标（把会话拖到项目行 / 全局行上）：整行高亮。
+ * 与 `drop-before/after` 的插入线区别开 —— 那是换顺序，这是改归属。
+ */
+.proj-head.drop-into {
+  background: var(--bg-3);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+  border-radius: var(--r-sm);
 }
 
 .proj-head.is-dragging,

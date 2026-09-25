@@ -59,10 +59,12 @@ import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
 import { isSafeSessionId } from './context-state-store'
+import { questionLog } from './question-log'
 import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
+import { extendDeadline, requestedTimeout, UI_TIMEOUT_HARD } from '../shared/ui-timeout'
 import { searchCapabilities } from '../shared/capabilities'
 import { buildCatalog, type McpCatalogEntry } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
@@ -156,7 +158,25 @@ type HostUiResponse = { value?: string; confirmed?: boolean; cancelled?: boolean
 type PendingHostUi = {
   resolve: (response: HostUiResponse) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  /**
+   * 软计时器 —— 用户**看到这一条**之后才开始（见 `startHostUiTimer`）。
+   *
+   * 为什么不是发出请求就计时：多条问题同时挂着时，面板一次只能显示一条，
+   * 用户在读第一条的时候，后面几条已经在扣自己的时间 —— 实测出现
+   * 「翻到第三条时它已经超时」。用户 2026-09-26 要求从看到开始算。
+   */
+  timer: ReturnType<typeof setTimeout> | null
+  /**
+   * 兜底上限：用户一直不翻到这一条（甚至删掉面板）时不能让模型无限等待。
+   * 开始计时后会被重设到 `deadline + UI_TIMEOUT_MAX`（给加时留余量）。
+   */
+  hardTimer: ReturnType<typeof setTimeout>
+  /** 当前这一轮的等待时长（延长后会被改写） */
+  timeout: number
+  /** 截止时刻（绝对毫秒）；`0` = 还没开始计时（用户还没看到） */
+  deadline: number
+  /** 是否已开始计时；`startHostUiTimer` 靠它保持幂等 */
+  started: boolean
 }
 
 /* -------------------------------------------------- 浏览器（宿主能力服务） */
@@ -1034,6 +1054,8 @@ export class AgentController extends EventEmitter {
     }
 
     this.push({ ch: 'sync', payload: this.messages })
+    /* 问答回放：切会话 / 分叉 / 重载后按会话重新对齐（不依赖上一条推送） */
+    this.pushQuestionLog()
     const stats = await this.rpc!.command('get_session_stats').catch(() => null)
     if (stats?.success) this.push({ ch: 'stats', payload: this.statsForCurrentModel(stats.data as SessionStats) })
 
@@ -1202,6 +1224,13 @@ export class AgentController extends EventEmitter {
     return `artifact-${Date.now().toString(36)}`
   }
 
+  /** 把当前会话的问答记录推给渲染端（记录新增、切会话、分叉后都要对齐） */
+  private pushQuestionLog(): void {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) return
+    this.push({ ch: 'question-log', payload: { sessionId, entries: questionLog.list(sessionId) } })
+  }
+
   /**
    * `yan question ask` 的宿主实现。
    *
@@ -1239,10 +1268,8 @@ export class AgentController extends EventEmitter {
       }
     }
 
-    const rawTimeout = Number(params.timeout)
-    const timeout = Number.isFinite(rawTimeout) && rawTimeout > 0
-      ? Math.min(Math.max(Math.floor(rawTimeout), 5_000), 10 * 60_000)
-      : 120_000
+    /* 缺省 3 分钟；声明值夹在 5 秒 ~ 10 分钟（口径在 shared/ui-timeout.ts） */
+    const timeout = requestedTimeout(params.timeout)
     const customLabel = '其他（自行输入） / Other (type your own)'
     let response: HostUiResponse
     if (options.length === 0) {
@@ -1274,6 +1301,19 @@ export class AgentController extends EventEmitter {
       ? response.value.trim()
       : null
     const cancelled = response.cancelled === true || (answer === null && response.confirmed !== true)
+    /*
+     * 记一笔并推给界面：问答只存在工具结果里，对话流上看不到用户回答了什么。
+     * 这里**只回放**（不再发一次给模型，见 `question-log.ts`）。
+     * 落盘失败不回退 —— `append` 只是附加信息。
+     */
+    const entries = questionLog.append(this.state?.sessionId, {
+      question,
+      options,
+      answer,
+      cancelled,
+      at: Date.now()
+    })
+    if (entries) this.pushQuestionLog()
     return {
       data: { question, options, answer, cancelled, autonomous: false },
       summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', answered: answer !== null, cancelled }
@@ -1319,19 +1359,96 @@ export class AgentController extends EventEmitter {
   }): Promise<HostUiResponse> {
     const id = `yan-question-${randomUUID()}`
     return new Promise<HostUiResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingHostUi.delete(id)
-        this.pendingUi.delete(id)
-        reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
-      }, request.timeout)
-      this.pendingHostUi.set(id, { resolve, reject, timer })
+      const pending: PendingHostUi = {
+        resolve,
+        reject,
+        timeout: request.timeout,
+        /* 还没开始计时 —— 等渲染端确认「这一条已经显示给用户了」 */
+        deadline: 0,
+        started: false,
+        timer: null,
+        hardTimer: setTimeout(() => this.expireHostUi(id), UI_TIMEOUT_HARD)
+      }
+      this.pendingHostUi.set(id, pending)
       this.uiSeen.add(id)
       this.pendingUi.add(id)
       this.push({
         ch: 'ui-request',
-        payload: { id, method: request.method, title: request.title, message: request.message, timeout: request.timeout, ...(request.options ? { options: request.options } : {}) } as never
+        payload: {
+          id,
+          method: request.method,
+          title: request.title,
+          message: request.message,
+          timeout: request.timeout,
+          /*
+           * `deadline: 0` = 宿主管理、但**尚未开始**倒计时。
+           * 渲染端看到 0 就不显示倒计时（等 `ui-deadline` 推送）。
+           * 不带这个字段的（pi 扩展自己的请求）由渲染端自己算。
+           */
+          deadline: 0,
+          ...(request.options ? { options: request.options } : {})
+        } as never
       })
     })
+  }
+
+  /**
+   * 用户看到这一条了 → 开始计时（幂等）。
+   *
+   * 渲染端在该请求成为面板当前页时调一次。多条问题同时挂着时，每条都从
+   * 「它被翻到」那一刻起算完整的等待时间 —— 不再出现「还没看到就快没了」。
+   */
+  startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
+    const pending = this.pendingHostUi.get(id)
+    if (!pending) return { ok: false, error: 'question_not_pending' }
+    if (pending.started) return { ok: true, timeout: pending.timeout, deadline: pending.deadline }
+    const deadline = Date.now() + pending.timeout
+    pending.started = true
+    pending.deadline = deadline
+    pending.timer = setTimeout(() => this.expireHostUi(id), pending.timeout)
+    /* 看到之后至少还有 10 分钟（含用户点加时的余量）—— 兜底不能在这里先到 */
+    clearTimeout(pending.hardTimer)
+    pending.hardTimer = setTimeout(() => this.expireHostUi(id), pending.timeout + UI_TIMEOUT_HARD)
+    this.push({ ch: 'ui-deadline', payload: { id, timeout: pending.timeout, deadline } })
+    return { ok: true, timeout: pending.timeout, deadline }
+  }
+
+  /** 等待到点：摘登记并如实报超时（**不猜答案**） */
+  private expireHostUi(id: string): void {
+    const pending = this.pendingHostUi.get(id)
+    if (!pending) return
+    this.pendingHostUi.delete(id)
+    this.pendingUi.delete(id)
+    if (pending.timer) clearTimeout(pending.timer)
+    clearTimeout(pending.hardTimer)
+    pending.reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
+  }
+
+  /**
+   * 延长一次宿主提问的等待（用户在面板倒计时上点一下）。
+   *
+   * 为什么必须走主进程：超时是**主进程的计时器**在抱，只改渲染端的倒计时
+   * 等于骗用户 —— 到点仍然会报超时。上限与夹取全在 `shared/ui-timeout.ts`。
+   * 只对**宿主发起的**提问生效（`pendingHostUi`）；扩展自己的 `ui-request`
+   * 超时由 pi 侧解析，这里不能替它们做主。
+   */
+  extendHostUi(id: string, extraMs?: unknown): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
+    const pending = this.pendingHostUi.get(id)
+    if (!pending) return { ok: false, error: 'question_not_pending' }
+    /* 还没开始计时（用户没看到过）—— 先开始，再加时 */
+    if (!pending.started) this.startHostUiTimer(id)
+    const now = Date.now()
+    const deadline = extendDeadline(pending.deadline, now, extraMs)
+    const timeout = deadline - now
+    if (pending.timer) clearTimeout(pending.timer)
+    pending.timeout = timeout
+    pending.deadline = deadline
+    pending.timer = setTimeout(() => this.expireHostUi(id), timeout)
+    /* 加时也要把兜底往后推，否则点了「加 2 分钟」却仍被硬上限掐掉 */
+    clearTimeout(pending.hardTimer)
+    pending.hardTimer = setTimeout(() => this.expireHostUi(id), timeout + UI_TIMEOUT_HARD)
+    this.push({ ch: 'ui-deadline', payload: { id, timeout, deadline } })
+    return { ok: true, timeout, deadline }
   }
 
   private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId()): Promise<void> {
@@ -4464,7 +4581,8 @@ export class AgentController extends EventEmitter {
   respondUi(res: HostUiResponse & { id: string }): void {
     const hostPending = this.pendingHostUi.get(res.id)
     if (hostPending) {
-      clearTimeout(hostPending.timer)
+      if (hostPending.timer) clearTimeout(hostPending.timer)
+      clearTimeout(hostPending.hardTimer)
       this.pendingHostUi.delete(res.id)
       this.pendingUi.delete(res.id)
       hostPending.resolve(res)
@@ -4477,7 +4595,8 @@ export class AgentController extends EventEmitter {
   private rejectPendingHostUi(reason: string): void {
     const error = new Error(reason)
     for (const [id, pending] of this.pendingHostUi) {
-      clearTimeout(pending.timer)
+      if (pending.timer) clearTimeout(pending.timer)
+      clearTimeout(pending.hardTimer)
       this.pendingHostUi.delete(id)
       this.pendingUi.delete(id)
       pending.reject(error)

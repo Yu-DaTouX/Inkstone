@@ -147,7 +147,7 @@
     const stopBtn = q('[data-testid="rail-stop-runner"]')
     ok(!!stopBtn, '菜单里有「停止运行」（后台会话可以单独停）')
     out.push('  菜单项 = ' + JSON.stringify((stopBtn?.textContent || '').trim()))
-    const menuPath = q('.srow-menu-path')?.textContent ?? ''
+    const menuPath = q('[data-testid="rail-session-menu"]')?.dataset.sessionPath ?? ''
     ok(menuPath.includes(b.id), '打开的是那一行的菜单（不是当前会话的）')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await sleep(200)

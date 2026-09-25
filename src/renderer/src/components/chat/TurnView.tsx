@@ -50,6 +50,17 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
       <div className="msg-body">
         <div className="msg-label">
           <span>{t('chat.you')}</span>
+          {/*
+           * 「提问」标记：这条用户消息是问题面板的回答，不是手打的。
+           * 为什么要标：问答只存在于工具结果里，对话流上看到一段“用户说的话”
+           * 却不知道它从哪来 —— 回看时容易当成自己当时真的发了这些字。
+           */}
+          {msg.question ? (
+            <span className="msg-tag question" data-testid="msg-question-tag" title={t('chat.questionTag')}>
+              <Icon name="message-dots" size={12} />
+              {t('chat.questionTag')}
+            </span>
+          ) : null}
           <button
             className="msg-act"
             title={t('chat.forkHere')}

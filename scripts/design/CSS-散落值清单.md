@@ -21,14 +21,14 @@
 | `shell.css` | 3 | 1 | 20 | 11 | 5 | 1 |
 | `dialog.css` | 0 | 0 | 2 | 2 | 0 | 0 |
 | `rail.css` | 1 | 0 | 186 | 130 | 0 | 0 |
-| `chat.css` | 30 | 10 | 178 | 119 | 19 | 0 |
-| `composer.css` | 5 | 1 | 158 | 109 | 1 | 0 |
+| `chat.css` | 30 | 10 | 180 | 121 | 19 | 0 |
+| `composer.css` | 5 | 1 | 168 | 115 | 2 | 0 |
 | `tools.css` | 10 | 3 | 434 | 305 | 6 | 4 |
 | `browser.css` | 1 | 1 | 42 | 28 | 0 | 0 |
 | `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `review.css` | 4 | 0 | 249 | 172 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **79** | **28** | **1599** | **1093** | **57** | **5** |
+| **合计** | **79** | **28** | **1611** | **1101** | **58** | **5** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -38,7 +38,7 @@
 | `10px` | length | 51 | browser.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, stage1.css, tools.css |
 | `20px` | length | 32 | app.css, chat.css, composer.css, rail.css, review.css, shell.css, tools.css |
 | `26px` | length | 31 | app.css, browser.css, composer.css, rail.css, redesign.css, review.css, settings.css, shell.css, tools.css |
-| `18px` | length | 27 | browser.css, chat.css, rail.css, redesign.css, review.css, settings.css, tools.css |
+| `18px` | length | 31 | browser.css, chat.css, composer.css, rail.css, redesign.css, review.css, settings.css, tools.css |
 | `22px` | length | 23 | browser.css, chat.css, composer.css, rail.css, review.css, shell.css, tools.css |
 | `28px` | length | 19 | browser.css, chat.css, composer.css, rail.css, redesign.css, tools.css |
 | `36px` | length | 15 | composer.css, layout.css, rail.css, redesign.css, review.css, tools.css |
@@ -94,7 +94,7 @@
 | `52px` | length | 2 | composer.css |
 | `rgb(112, 196, 154)` | color | 2 | tools.css |
 | `rgb(224, 123, 123)` | color | 2 | tools.css |
-| … | | | 其余 61 条省略 |
+| … | | | 其余 62 条省略 |
 
 ## 3. 定义了但没被引用的令牌
 
@@ -147,5 +147,5 @@
 
 ## 5. 概况
 
-- 令牌总数：84（被引用 84）
-- 令牌引用点：3305（含组件内联 style）
+- 令牌总数：85（被引用 85）
+- 令牌引用点：3351（含组件内联 style）

@@ -1484,6 +1484,26 @@
   opacity: 0.4;
 }
 
+/*
+ * 「提问」标记：这条用户消息来自问题面板的回答。
+ *
+ * 与 `.msg-act`（分支按钮）同一行、同为淡显，但**不随悬停变化** ——
+ * 它是一条属性标记，不是动作；悬停才显形会让人以为它只是装饰。
+ */
+.msg.user .msg-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .msg.user:hover .msg-act,
 .msg.user .msg-act:focus-visible {
   opacity: 1;

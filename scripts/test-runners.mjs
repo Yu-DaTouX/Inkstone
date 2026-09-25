@@ -148,6 +148,77 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(b3.ok, 'shell 跑完后同 cwd 又能正常切换/复用', JSON.stringify(b3))
       }
 
+      /*
+       * ---- 4c. 冲突时宿主可以自动隔离（换一个不冲突的 cwd 继续） ----
+       *
+       * 这是「两个工作同时进行」的入口：宿主建好隔离工作树后返回新目录，
+       * 注册表必须真的换目录继续；返回**同一个目录**等于没解决问题，必须仍然拒绝。
+       */
+      {
+        const seen = []
+        const cwds = []
+        const regC = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id, cwd) => {
+            const a = mkAgent()
+            a.id = id
+            cwds.push(cwd)
+            return a
+          },
+          resolveCwdConflict: async (target) => {
+            seen.push({ cwd: target.cwd, activate: target.activate, hidden: target.hidden })
+            return { cwd: 'C:/iso/wt' }
+          }
+        })
+        const c1 = await regC.select({ cwd: 'C:/iso', sessionFile: 'C:/iso1.jsonl' })
+        ok(c1.ok, '隔离用例：先建一个实例')
+        const busyC = regC.agentOf(c1.id)
+        busyC.state = { ...busyC.state, isAgentRunning: true }
+        const c2 = await regC.select({ cwd: 'c:/iso/', sessionFile: 'C:/iso2.jsonl' })
+        ok(c2.ok === true, '冲突时采纳宿主给的隔离目录，选择成功', JSON.stringify(c2))
+        ok(seen.length === 1 && seen[0].cwd === 'c:/iso/', '宿主收到的是原 cwd 与完整目标', JSON.stringify(seen))
+        ok(cwds.includes('C:/iso/wt'), '新实例起在隔离目录里', cwds.join(','))
+        ok(regC.size === 2, '隔离后是另一个实例')
+        ok(busyC.calls.stop === 0, '隔离没有停掉原本那个会话')
+
+        /* 返回同一个目录 = 没解决问题：仍然按冲突拒绝（防线不降级） */
+        const regD = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            return a
+          },
+          resolveCwdConflict: async () => ({ cwd: 'C:/same/' })
+        })
+        const d1 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same1.jsonl' })
+        const agentD = regD.agentOf(d1.id)
+        agentD.state = { ...agentD.state, isAgentRunning: true }
+        const d2 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same2.jsonl' })
+        ok(!d2.ok && /同一工作目录/.test(d2.error ?? ''), '隔离结果与原 cwd 相同时仍按冲突拒绝', JSON.stringify(d2))
+        ok(regD.size === 1, '被拒绝时没有多建实例')
+
+        /* 隔离失败：原因进报错，原来的文案还在 */
+        const regE = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            return a
+          },
+          resolveCwdConflict: async () => ({ reason: '不是 Git 仓库' })
+        })
+        const e1 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr1.jsonl' })
+        const agentE = regE.agentOf(e1.id)
+        agentE.state = { ...agentE.state, isAgentRunning: true }
+        const e2 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr2.jsonl' })
+        ok(
+          !e2.ok && /同一工作目录/.test(e2.error ?? '') && /自动隔离未生效：不是 Git 仓库/.test(e2.error ?? ''),
+          '隔离失败时把原因并进原冲突报错',
+          JSON.stringify(e2)
+        )
+      }
+
       /* ---- 5. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
       const second = made[1]
       second.state = { ...second.state, isAgentRunning: true }
@@ -176,6 +247,51 @@ export function runRunnerTests(ok, RunnerRegistry) {
       ok(s1?.running === false, '快照里的 running 反映实例真实状态')
       ok(s1?.isActive === true, '当前视图那个实例标记 isActive')
       ok(second.id && statuses.find((x) => x.id === second.id)?.running === true, '后台忙碌实例在快照里是 running')
+
+      /*
+       * ---- 7b. 自动隔离状态进入快照 ----
+       *
+       * 左栏会话行的「等待合回 / 合回被挡」标记就读这两个字段。
+       * 隔离状态只能按 **runner 的 cwd** 查（不是按 id、也不是按会话）——
+       * 实例会被复用换会话，按 id 记的话标记会串到别的行上。
+       */
+      {
+        let isoState = 'waiting'
+        const regF = new RunnerRegistry({
+          limit: 2,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            return a
+          },
+          isolationOf: (cwd) =>
+            cwd.toLowerCase() === 'c:/iso/wt' ? { state: isoState, branch: 'yan/auto-20260925-1' } : undefined
+        })
+        const f1 = await regF.select({ cwd: 'C:/iso/wt', sessionFile: 'C:/isoA.jsonl' })
+        const isoRow = regF.statuses().find((x) => x.id === f1.id)
+        ok(
+          isoRow?.isolation === 'waiting' && isoRow?.isolationBranch === 'yan/auto-20260925-1',
+          '隔离会话在快照里带 waiting 状态与分支名',
+          JSON.stringify(isoRow)
+        )
+        isoState = 'blocked'
+        ok(
+          regF.statuses().find((x) => x.id === f1.id)?.isolation === 'blocked',
+          '隔离状态推进后快照跟着变（blocked）'
+        )
+        /* 没注入隔离查询时（旧调用 / 未隔离的会话）快照里不该有这两个字段 */
+        const regG = new RunnerRegistry({
+          limit: 2,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            return a
+          }
+        })
+        await regG.select({ cwd: 'C:/plain', sessionFile: 'C:/plainA.jsonl' })
+        const plainRow = regG.statuses()[0]
+        ok(plainRow && !('isolation' in plainRow), '非隔离会话不带隔离字段（左栏不会误画标记）', JSON.stringify(plainRow))
+      }
 
       /* ---- 8. waiting（有请求在等回答）也算忙 ---- */
       first.pending = 1

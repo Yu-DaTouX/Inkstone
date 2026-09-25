@@ -203,7 +203,7 @@
   ok(!sawModal, '自主模式下不弹出问题面板 / 对话框（用户不被中断）')
   if (sawModal) {
     // 万一模型还是问了，至少把它关掉，避免影响后续
-    const cancel = [...document.querySelectorAll('.qpanel .btn, .modal .btn')].find((b) => /取消|Cancel/i.test(b.textContent))
+    const cancel = [...document.querySelectorAll('.qpanel .btn, .modal .btn')].find((b) => /取消|跳过|Cancel|Skip/i.test(b.textContent))
     click(cancel ?? q('.modal .btn.icon'))
     await sleep(400)
   }

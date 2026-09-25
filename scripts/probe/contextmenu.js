@@ -125,7 +125,13 @@
       ok(sessionItems.some((i) => i.classList.contains('danger')), '有危险项「删除」（样式与项目菜单同源）')
       ok(sessionItems.every((i) => i.tagName === 'BUTTON'), '所有菜单项都是可聚焦的 button')
       ok(!!menu?.querySelector('[data-testid="rail-menu-time"]'), '信息行（最近活动）保留')
-      ok(!!menu?.querySelector('.srow-menu-path'), '信息行（会话路径）保留')
+      /*
+       * 用户 2026-09-26 要求：右键菜单不再显示会话文件的绝对路径。
+       * 路径对「找会话」没用（标题 + 最近活动已经够），却把菜单拉得很长；
+       * 需要定位文件时菜单里有「打开所在文件夹」。
+       */
+      ok(!menu?.querySelector('.srow-menu-path'), '信息行（会话路径）已移除')
+      ok(!!menu?.dataset.sessionPath, '行仍能定位到会话（data-session-path 保留）')
 
       ok(document.activeElement === sessionItems[0], '会话菜单打开即聚焦首项')
       key(menu, 'End')

@@ -11,6 +11,7 @@ import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
+import { mergeQuestionLog } from '../../shared/question-log'
 import {
   isWorkModeShortcutEnabled,
   matchesKeyBinding,
@@ -188,6 +189,14 @@ export default function App() {
 
   const conn = useStore((s) => s.conn)
   const messages = useStore((s) => s.messages)
+  /*
+   * 宿主提问的回放（只显示，不进模型上下文）。
+   *
+   * 会话对不上时按空处理：记录是异步推过来的，切会话的那一瞬间
+   * 手里可能还拿着上一个会话的列表（与 `uiRequests` 的「复活」缺陷同源）。
+   */
+  const questionLog = useStore((s) => s.questionLog)
+  const questionLogSession = useStore((s) => s.questionLogSession)
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
   const bootstrap = useStore((s) => s.bootstrap)
@@ -249,7 +258,14 @@ export default function App() {
    * 为什么要记 memoize：每次 msg-update 推送（流式时几十次/秒）都会重算，
    * 而分组要遍历整个消息数组。依赖只有 messages 与 streamingId。
    */
-  const turns = useMemo(() => groupIntoTurns(messages, streamingId), [messages, streamingId])
+  const turns = useMemo(
+    () =>
+      groupIntoTurns(
+        mergeQuestionLog(messages, questionLogSession && questionLogSession === session?.sessionId ? questionLog : []),
+        streamingId
+      ),
+    [messages, questionLog, questionLogSession, session?.sessionId, streamingId]
+  )
 
   const virtual = turns.length >= VIRTUALIZE_AT || messages.length >= VIRTUALIZE_MSGS_AT
 
