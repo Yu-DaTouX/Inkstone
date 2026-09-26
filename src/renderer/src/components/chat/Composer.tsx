@@ -1484,10 +1484,12 @@ function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonEl
 /**
  * 活动档案的选项（实施-25 P01）。
  *
+ * `auto` 是新的默认档：由模型按每次请求自行判断，不再要求用户先选角色。
  * `coding` 不锁定 activity（切回代码时保留上次的日常活动，
  * 用户再从代码切回日常时不用重新选一次）。
  */
 const AGENT_PROFILE_ITEMS = [
+  { key: 'auto', profile: 'auto', activity: null },
   { key: 'coding', profile: 'coding', activity: null },
   { key: 'answer', profile: 'daily', activity: 'answer' },
   { key: 'research', profile: 'daily', activity: 'research' },
@@ -1509,9 +1511,9 @@ function AgentProfilePicker() {
   const t = useT()
   const stored = useStore((s) => s.agentProfile)
   const setAgentProfile = useStore((s) => s.setAgentProfile)
-  const profile = stored?.profile ?? 'coding'
+  const profile = stored?.profile ?? 'auto'
   const activity = stored?.activity ?? 'answer'
-  const currentKey = profile === 'daily' ? activity : 'coding'
+  const currentKey = profile === 'daily' ? activity : profile
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
@@ -1549,14 +1551,14 @@ function AgentProfilePicker() {
     buttonRef.current?.focus()
     if (item.key === currentKey) return
     void setAgentProfile(
-      item.profile === 'coding' ? { profile: 'coding' } : { profile: 'daily', activity: item.activity }
+      item.profile === 'daily' ? { profile: 'daily', activity: item.activity } : { profile: item.profile }
     )
   }
 
   const label =
     profile === 'daily'
       ? `${t('agentProfile.daily')} · ${t(`agentProfile.${activity}`)}`
-      : t('agentProfile.coding')
+      : t(`agentProfile.${profile}`)
 
   return (
     <div className="mode-picker" ref={rootRef}>
@@ -1632,10 +1634,12 @@ function AgentProfilePicker() {
               onClick={() => commit(item)}
             >
               <span className="mode-item-label">
-                {item.profile === 'coding' ? t('agentProfile.coding') : t(`agentProfile.${item.activity}`)}
+                {item.profile === 'daily' ? t(`agentProfile.${item.activity}`) : t(`agentProfile.${item.profile}`)}
               </span>
               <span className="mode-item-desc">
-                {item.profile === 'coding' ? t('agentProfile.desc.coding') : t(`agentProfile.desc.${item.activity}`)}
+                {item.profile === 'daily'
+                  ? t(`agentProfile.desc.${item.activity}`)
+                  : t(`agentProfile.desc.${item.profile}`)}
               </span>
             </button>
           ))}

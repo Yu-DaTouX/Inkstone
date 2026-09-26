@@ -23,12 +23,12 @@ export function runAgentProfileTests(ok, mod) {
     ROLE_SECTION_NAME
   } = mod
 
-  ok(DEFAULT_AGENT_PROFILE === 'coding', '默认档案是 coding（已有会话行为不变）')
+  ok(DEFAULT_AGENT_PROFILE === 'auto', '默认档案是 auto（由 agent 按请求自行判断）')
   ok(DEFAULT_AGENT_ACTIVITY === 'answer', '默认活动是 answer')
 
   /* ---- 枚举归一 ---- */
   ok(normalizeAgentProfileKind('daily') === 'daily', '合法 profile 原样返回')
-  ok(normalizeAgentProfileKind('bad') === 'coding', '非法 profile 归一到 coding')
+  ok(normalizeAgentProfileKind('bad') === 'auto', '非法 profile 归一到 auto')
   ok(normalizeAgentActivity('learn') === 'learn', '合法 activity 原样返回')
   ok(normalizeAgentActivity('x') === 'answer', '非法 activity 归一到 answer')
 
@@ -50,9 +50,15 @@ export function runAgentProfileTests(ok, mod) {
     ok(validateAgentProfile(null).ok === false, '非对象档案被拒')
   }
 
-  /* ---- 角色分区：coding 不注入，daily 才注入 ---- */
+  /* ---- 角色分区：coding 不注入，auto / daily 注入 ---- */
   {
     ok(agentRoleSection('coding', 'research') === null, 'coding 档案不注入角色分区（保持 pi 原生）')
+    const auto = agentRoleSection('auto', 'answer')
+    ok(auto?.name === ROLE_SECTION_NAME, 'auto 档注入角色分区')
+    ok(
+      /判断/.test(String(auto?.content)) && /代码/.test(String(auto?.content)),
+      'auto 档给的是「先判断、再按对应方式做」的准则'
+    )
     const research = agentRoleSection('daily', 'research')
     ok(research?.name === ROLE_SECTION_NAME, `角色分区名是 ${ROLE_SECTION_NAME}`, String(research?.name))
     ok(
@@ -112,10 +118,10 @@ export function runAgentProfileTests(ok, mod) {
   try {
     const store = new AgentProfileStore({ root })
 
-    /* ---- 默认：coding/answer，revision 0（未落盘） ---- */
+    /* ---- 默认：auto/answer，revision 0（未落盘） ---- */
     {
       const s = store.state('sess-a')
-      ok(s.profile === 'coding' && s.activity === 'answer' && s.revision === 0, '没有条目时给默认档案')
+      ok(s.profile === 'auto' && s.activity === 'answer' && s.revision === 0, '没有条目时给默认档案')
     }
 
     /* ---- 提交 ---- */
@@ -181,6 +187,16 @@ export function runAgentProfileTests(ok, mod) {
       const codingSnap = JSON.parse(await readFile(agentProfileSnapshotPath('coding-sess', root), 'utf8'))
       ok(codingSnap.roleSection === null, 'coding 快照的 roleSection 为 null（扩展不注入）')
       ok(Array.isArray(codingSnap.deniedTools) && codingSnap.deniedTools.length === 0, 'coding 不禁用工具')
+
+      /*
+       * auto 档：注入自主判断的角色文本，但**不给工具限制** ——
+       * 活动是模型当场判断的，拿旧 activity 去禁 write/edit 会让代码会话写不了文件。
+       */
+      const auto = { profile: 'auto', activity: 'research', revision: 1 }
+      await writeAgentProfileSnapshot('auto-sess', auto, root)
+      const autoSnap = JSON.parse(await readFile(agentProfileSnapshotPath('auto-sess', root), 'utf8'))
+      ok(autoSnap.roleSection?.name === 'yan_role', 'auto 快照带角色分区（模型据此自行判断）')
+      ok(Array.isArray(autoSnap.deniedTools) && autoSnap.deniedTools.length === 0, 'auto 不禁用工具（即使上次活动是研究）')
     }
 
     /* ---- 坏文档：丢掉坏条目，不整体失败 ---- */

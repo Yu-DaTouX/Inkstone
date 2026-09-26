@@ -864,6 +864,13 @@ import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
 
 /* ------------------------------------------------------------- 关于 */
 
+/** 目录名的最后一段（快切按钮只显示它，全路径放 title） */
+function folderName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const parts = trimmed.split(/[\\/]/)
+  return parts[parts.length - 1] || path
+}
+
 function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
   const t = useT()
   const settings = useStore((s) => s.settings)
@@ -879,6 +886,9 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
     const p = await window.yan.pickCwd()
     if (p) await changeCwd(p)
   }
+
+  /* 最近用过的目录（主进程在 `applyPatch` 里维护，最多 8 个）；这里只给它一个入口 */
+  const recentCwds = settings?.recentCwds ?? []
 
   const redetect = async (): Promise<void> => {
     setDetecting(true)
@@ -941,6 +951,35 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
           </button>
         </div>
       </div>
+
+      {/*
+       * 最近目录：换工作目录不用每次从文件对话框翻。
+       *
+       * 数据本来就在设置里（`applyPatch` 维护最近 8 个），但之前只有与
+       * 会话/项目相关的列表会间接用到它 —— 用户界面上没有一个“最近文件夹”的入口。
+       */}
+      {recentCwds.length > 0 ? (
+        <div className="set-row col" data-testid="recent-cwds">
+          <div className="set-label">
+            <div className="set-name">{t('set.recentCwd')}</div>
+            <div className="set-desc">{t('set.recentCwdDesc')}</div>
+          </div>
+          <div className="set-chips">
+            {recentCwds.map((p, i) => (
+              <button
+                key={p}
+                className={`btn chip ${p === settings?.cwd ? 'on' : ''}`}
+                title={p}
+                disabled={p === settings?.cwd}
+                onClick={() => void changeCwd(p)}
+                data-testid={`recent-cwd-${i}`}
+              >
+                <span className="set-chip-text">{folderName(p)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="set-row">
         <div className="set-label">

@@ -164,7 +164,14 @@ export async function writeAgentProfileSnapshot(
      * 扩展只负责把它放进 `systemPromptOptions`。
      */
     roleSection: agentRoleSection(state.profile, state.activity),
-    deniedTools: [...activityDeniedTools(state.activity)],
+    /*
+     * 工具限制只对 `daily` 生效：那些 deny 表描述的是「某个日常活动该不该写文件」，
+     * 不是「这个会话能不能写文件」。
+     *
+     * `auto` 与 `coding` 都不限 —— 活动是模型当场判断的（或根本没选），
+     * 拿上一次的 activity 去禁 write/edit 会让一个代码会话突然写不了文件。
+     */
+    deniedTools: state.profile === 'daily' ? [...activityDeniedTools(state.activity)] : [],
     at: new Date().toISOString()
   }
   const temp = `${target}.${process.pid}.tmp`

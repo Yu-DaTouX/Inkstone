@@ -35,10 +35,21 @@ const TARGET: Record<AgentActivity, { view: SpaceView; icon: IconName } | null> 
 
 export function WorkObjectBar(): React.JSX.Element | null {
   const t = useT()
-  const activity = useStore((s) => s.agentProfile?.activity)
+  const stored = useStore((s) => s.agentProfile)
   const openSpaceView = useStore((s) => s.openSpaceView)
 
-  if (!activity) return null
+  /*
+   * 只有**手动锁定**到某个日常活动时才显示工作对象条。
+   *
+   * 为什么不能只看 activity：它是按会话记住的「上次选过的活动」。
+   *   · `auto`（默认）下活动由模型当场判断，这条工作对象与这轮对话无关；
+   *   · `coding` 下图旧会显示上次那个日常活动的入口。
+   *   · auto 档默认 activity=answer 时，还会错误地弹出「问答不建工作对象」——
+   *     用户重启后看到的就是这个。
+   */
+  const profile = stored?.profile
+  const activity = stored?.activity
+  if (!stored || profile !== 'daily' || !activity) return null
   const target = TARGET[activity]
 
   return (
