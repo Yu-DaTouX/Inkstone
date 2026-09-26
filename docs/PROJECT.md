@@ -9,7 +9,7 @@
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
-| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx` / `SessionMap.tsx` / `SessionPreview.tsx`） |
+| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx`（课程与路线）/ `LearningWorkspace.tsx`（导师页三栏）/ `SessionMap.tsx` / `SessionPreview.tsx`） |
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
 | `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 活动流程与建任务阈值、按活动的上下文装配（引用可回原文） |
