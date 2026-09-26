@@ -334,6 +334,14 @@
   /* ================= 5. 自动压缩 / 重试开关 ================= */
   // 自动压缩归上下文分区，自动重试归操作分区；各只保留一个入口。
   log('\n--- 5. 开关 ---')
+  /*
+   * 上下文分区默认是**折叠**的（`<Section defaultOpen={false}>`），
+   * 折叠时 Section 不渲染子节点 —— 所以必须先展开再找开关。
+   * （操作分区下面那段本来就有展开，这里补齐同一套动作。）
+   */
+  const ctxSection = q('[data-testid="rp-context"]')
+  if (ctxSection && !ctxSection.classList.contains('open')) click(ctxSection.querySelector('.rp-sec-head'))
+  await sleep(400)
   const autoCompact = q('[data-testid="rp-auto-compact"]')
   ok(!!autoCompact, '上下文分区提供自动压缩开关')
   if (autoCompact) {
