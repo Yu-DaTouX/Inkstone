@@ -69,6 +69,22 @@
     await S().refreshSessions()
     await sleep(700)
   }
+  /* 只在失败时打现场：成功时这些行是噪音，失败时它们就是答案（不再跑一轮） */
+  if (!q('[data-testid="view-space"]')) {
+    const cur = S().session ?? {}
+    const curFile = cur.conversationFile ?? cur.sessionFile ?? ''
+    const listed = (S().sessions ?? []).find((s) => s.id === sid)
+    const listedByPath = (S().sessions ?? []).find((s) => curFile && s.path === curFile)
+    out.push(
+      `  诊断：sessionId=${cur.sessionId ?? '（无）'}  conversationFile=${curFile || '（无）'}  mode=${S().workspaceMode}`
+    )
+    out.push(
+      `  诊断：列表 ${(S().sessions ?? []).length} 条；首条 id=${S().sessions?.[0]?.id ?? '（无）'} path=${S().sessions?.[0]?.path ?? '（无）'}`
+    )
+    out.push(
+      `  诊断：按 id 命中=${!!listed}  按 path 命中=${!!listedByPath}  写入用 id=${space.id}`
+    )
+  }
   ok(!!q('[data-testid="view-space"]'), '会话归属空间后，头部出现「空间」入口')
   click(q('[data-testid="view-space"]'))
   await sleep(500)
@@ -125,6 +141,26 @@
     await sleep(500)
     const name2 = q('[data-testid="space-workbench-name"]')?.textContent ?? ''
     ok(name2 === '未归档到空间', '移出空间后如实回到未归档', JSON.stringify(name2))
+
+    /*
+     * 反向断言（B3 的「按需入口」不能被悄悄退回成常驻）。
+     *
+     * 上面为了让新会话（未落盘、列表里查不到）也能进空间，
+     * 把入口条件放宽到了“查不到就按不知道处理”。这条断言钉住它的边界：
+     * 会话**在列表里**且确认没归属时，头部就不应该有这个入口。
+     * （这里当前会话就是那个列表里的会话，与 showSpace 的判定同一个现场。）
+     */
+    click(q('[data-testid="space-close"]'))
+    await sleep(400)
+    const stillThere = q('[data-testid="view-space"]')
+    const currentInList = S().sessions.some(
+      (x) => x.path === (S().session?.conversationFile ?? S().session?.sessionFile)
+    )
+    if (currentInList) {
+      ok(!stillThere, '会话在列表里且没有归属 → 头部不再显示「空间」入口（按需没退化成常驻）')
+    } else {
+      log('  · 当前会话不在列表里（按上面的定义属于“查不到”，预期仍给入口）——跳过这条反向断言')
+    }
     /* 换回来，免得把探针造的状态留在隔离目录里 */
     await S().setSessionSpace(target.id, space.id)
   } else {
