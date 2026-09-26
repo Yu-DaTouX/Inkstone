@@ -15,6 +15,7 @@ import {
   parseKeyBinding
 } from '../../../../shared/work-mode'
 import { AuthTab } from './AuthTab'
+import { WorkspaceTab } from './WorkspaceTab'
 import { ContextTab } from './ContextTab'
 import { KnowledgeTab } from './KnowledgeTab'
 import { PackagesTab } from './PackagesTab'
@@ -23,6 +24,7 @@ import { CapabilitiesTab } from './CapabilitiesTab'
 export type SettingsTab =
   | 'auth'
   | 'appearance'
+  | 'workspace'
   | 'context'
   | 'knowledge'
   | 'capabilities'
@@ -99,6 +101,7 @@ export function Settings({
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
+    { id: 'workspace', label: t('set.workspace'), icon: 'group' },
     { id: 'context', label: t('set.context'), icon: 'layers' },
     { id: 'knowledge', label: t('set.knowledge'), icon: 'checklist' },
     { id: 'capabilities', label: t('set.capabilities'), icon: 'sparkles' },
@@ -190,6 +193,8 @@ export function Settings({
             <AuthTab />
           ) : tab === 'appearance' ? (
             <AppearanceTab lang={lang} setLang={setLang} />
+          ) : tab === 'workspace' ? (
+            <WorkspaceTab />
           ) : tab === 'context' ? (
             <ContextTab />
           ) : tab === 'knowledge' ? (

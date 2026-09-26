@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from '../shell/BrandMark'
-import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor, type ContextMenuItem } from '../common/ContextMenu'
+import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
@@ -12,7 +12,6 @@ import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
 import { buildBranchIndex } from '../../../../shared/session-map'
-import { samePath } from '../../../../shared/session-path'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -38,12 +37,6 @@ import { samePath } from '../../../../shared/session-path'
  * 编码 / 日常与标准 / 计划 / 自主是两个正交维度；AgentMode 仍由输入框
  * 的模式控件和 Tab 快捷键负责。
  */
-const RAIL_MODES = [
-  { id: 'coding', labelKey: 'mode.coding', shortKey: 'mode.coding.short' },
-  { id: 'daily', labelKey: 'mode.daily', shortKey: 'mode.daily.short' }
-] as const
-
-type RailModeId = (typeof RAIL_MODES)[number]['id']
 /**
  * 左栏默认展开多少个项目（N17）。
  * 超出的收在「更多项目（N）」后面；这只是**显示层**的限制，
@@ -126,15 +119,13 @@ export function Rail() {
   const projectOrder = settings?.projectOrder ?? EMPTY_IDS
   const patchSettings = useStore((s) => s.patchSettings)
 
-  /* ---- 主题空间（实施-25 P02）---- */
-  const spaces = useStore((s) => s.spaces)
-  const spaceLinks = useStore((s) => s.spaceLinks)
+  /*
+   * 空间列表不依赖 pi（只读 Yan 自己的 spaces.json）。
+   *
+   * 左栏的空间分区已移除（实施-27 B3），但会话行的「归入空间」菜单
+   * 仍要看到空间名 —— 所以这里保留一次拉取，渲染交给订阅 store 的会话行。
+   */
   const refreshSpaces = useStore((s) => s.refreshSpaces)
-  const createSpace = useStore((s) => s.createSpace)
-  const updateSpace = useStore((s) => s.updateSpace)
-  const setSessionSpace = useStore((s) => s.setSessionSpace)
-  const linkSpaceProject = useStore((s) => s.linkSpaceProject)
-  const unlinkSpaceProject = useStore((s) => s.unlinkSpaceProject)
 
   const [query, setQuery] = useState('')
   /*
@@ -150,12 +141,6 @@ export function Rail() {
   const searchBtnRef = useRef<HTMLButtonElement>(null)
   const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
-  /* 空间区的展开态 / 新建草稿都只是左栏偏好，与项目一样存 localStorage */
-  const [spacesOpen, setSpacesOpen] = useSidebarValue('spaces-open', true)
-  const [openSpaces, setOpenSpaces] = useSidebarValue<string[]>('expanded-spaces', [])
-  /** 正在建空间时的名字草稿；null = 没在输入 */
-  const [newSpaceName, setNewSpaceName] = useState<string | null>(null)
-  const [spaceMenuFor, setSpaceMenuFor] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
   /** 哪些项目已点开「更多会话」（按项目 id 记；默认只显示前 SESSION_PREVIEW 条） */
   const [shownAllSessions, setShownAllSessions] = useSidebarValue<string[]>('expanded-sessions', [])
@@ -204,10 +189,6 @@ export function Rail() {
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
-  /** 左栏工作区入口；不读取也不改当前会话的 AgentMode。 */
-  const workspaceMode = useStore((s) => s.workspaceMode)
-  const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
-  const activeRailMode: RailModeId = workspaceMode
   const [projectMenu, setProjectMenu] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
@@ -867,57 +848,6 @@ export function Rail() {
     void refreshSpaces()
   }, [refreshSpaces])
 
-  /* 归属空间要的是 sessionId；与 sessionFile 的比较走共享归一化，不能用 === */
-  const currentSummary = sessions.find((s) => samePath(s.path, session?.sessionFile))
-  const spaceMenuTarget = spaceMenuFor ? spaces.find((s) => s.id === spaceMenuFor.id) : undefined
-  /**
-   * 空间菜单项。
-   *
-   * 「关联项目」也放在这里：空间 ↔ 项目是**显式多对多记录**，界面上必须能看到
-   * 「这个空间关联了哪些项目」；否则关联只存在于 JSON 里，用户看不出差别。
-   * 归档是唯一的移除入口 —— 数据层没有物理删除（资料引用会变孤儿）。
-   */
-  const spaceMenuItems: ContextMenuItem[] = !spaceMenuTarget ? [] : [
-    {
-      id: 'rail-space-adopt',
-      label: t('rail.spaceAdopt'),
-      icon: 'plus',
-      disabled: !currentSummary || currentSummary.spaceId === spaceMenuTarget.id,
-      onSelect: () => {
-        if (currentSummary) void setSessionSpace(currentSummary.id, spaceMenuTarget.id)
-      }
-    },
-    ...(currentSummary?.spaceId === spaceMenuTarget.id
-      ? [
-          {
-            id: 'rail-space-release',
-            label: t('rail.spaceRelease'),
-            onSelect: () => void setSessionSpace(currentSummary.id, null)
-          }
-        ]
-      : []),
-    ...projectRecords.map((project) => {
-      const name = projectNames[project.id] ?? shortProject(project.cwd)
-      const linked = spaceLinks.some((l) => l.spaceId === spaceMenuTarget.id && l.projectId === project.id)
-      return {
-        id: `rail-space-link-${project.id}`,
-        label: linked ? t('rail.spaceUnlink', { name }) : t('rail.spaceLink', { name }),
-        /* 解除关联没有 minus 图标（sprite 里没有）；不传比画个错的强 */
-        ...(linked ? {} : { icon: 'plus' as const }),
-        onSelect: () => {
-          if (linked) void unlinkSpaceProject(spaceMenuTarget.id, project.id)
-          else void linkSpaceProject(spaceMenuTarget.id, project.id)
-        }
-      }
-    }),
-    {
-      id: 'rail-space-archive',
-      label: t('rail.spaceArchive'),
-      danger: true,
-      onSelect: () => void updateSpace(spaceMenuTarget.id, { archived: true })
-    }
-  ]
-
   const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>(), containerKey = ''): React.ReactNode => {
     if (lineage.has(s.path)) return null
     const next = new Set(lineage).add(s.path)
@@ -945,51 +875,14 @@ export function Rail() {
       {/* ---- 顶部：品牌模式开关 + 动作 ---- */}
       <div className="rail-top">
         {/*
-         * 工作区拨杆（实施-20 U1）：左 Code / 右 日常，滑块表示当前端。
-         * 只消费 AppSettings.workspaceMode，不碰 AgentMode。
+         * 品牌标记。
+         *
+         * 原来的「编码 / 日常」拨杆已搬到设置 · 工作区（实施-27 B3）：
+         * 主界面只留对话与结果，工作区形态不是每轮都要拨的东西。
          */}
-        <div className="rail-mode-wrap">
+        <div className="rail-mode-wrap" data-testid="rail-brand">
           <span className="rail-mode-icon" aria-hidden="true"><BrandMark size={18} /></span>
           <span className="rail-mode-brand">砚</span>
-          <div
-            className="rail-mode-switch"
-            role="radiogroup"
-            aria-label={`${t('mode.title')}（工作区，不改变模型模式）`}
-            data-testid="mode-switch"
-          >
-            <span className={`rail-mode-thumb thumb-${activeRailMode}`} aria-hidden="true" />
-            {RAIL_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                role="radio"
-                aria-checked={activeRailMode === m.id}
-                className={`rail-mode-opt ${activeRailMode === m.id ? 'on' : ''}`}
-                data-mode={m.id}
-                data-testid={`mode-${m.id}`}
-                title={`${t(m.labelKey)}（工作区，不改变模型模式）`}
-                onClick={() => {
-                  if (activeRailMode !== m.id) void setWorkspaceMode(m.id)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                    e.preventDefault()
-                    void setWorkspaceMode('coding')
-                  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                    e.preventDefault()
-                    void setWorkspaceMode('daily')
-                  } else if (e.key === ' ' || e.key === 'Enter') {
-                    e.preventDefault()
-                    if (activeRailMode !== m.id) void setWorkspaceMode(m.id)
-                  }
-                }}
-              >
-                <span className="rail-mode-opt-full">{t(m.labelKey)}</span>
-                {/* 极窄栏时的两字简称：宽栏用全称，窄栏不至于截成「编码…」（见 rail.css 的 railhead 容器查询） */}
-                <span className="rail-mode-opt-short" aria-hidden="true">{t(m.shortKey)}</span>
-              </button>
-            ))}
-          </div>
         </div>
         <button
           ref={searchBtnRef}
@@ -1049,132 +942,6 @@ export function Rail() {
         <Icon name="plus" size={12} />
         <span>{t('rail.new')}</span>
       </button>
-
-      {/* ---- 主题空间（实施-25 P02）：日常的组织单位，与「项目」并列 ---- */}
-      <div className="rail-section" data-testid="rail-spaces">
-        <div className="rail-section-head">
-          <button
-            className={`rail-section-title ${spacesOpen ? '' : 'collapsed'}`}
-            onClick={() => setSpacesOpen((v) => !v)}
-            data-testid="rail-spaces-head"
-          >
-            <span>{t('rail.spaces')}</span>
-            <Icon name="chevron-right" size={12} className="chev" />
-          </button>
-          <button
-            className="rail-icon sm"
-            title={t('rail.addSpace')}
-            data-testid="rail-add-space"
-            onClick={() => {
-              setSpacesOpen(true)
-              setNewSpaceName('')
-            }}
-          >
-            <Icon name="plus" size={12} />
-          </button>
-        </div>
-
-        <div className="rail-body">
-          {newSpaceName !== null ? (
-            <input
-              className="rail-space-input"
-              autoFocus
-              value={newSpaceName}
-              placeholder={t('rail.spaceName')}
-              data-testid="rail-new-space-input"
-              onChange={(e) => setNewSpaceName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  setNewSpaceName(null)
-                  return
-                }
-                if (e.key !== 'Enter') return
-                e.preventDefault()
-                const name = newSpaceName.trim()
-                if (!name) {
-                  setNewSpaceName(null)
-                  return
-                }
-                /* 建失败就留着草稿（校验原因已在 notice 里）——不逼用户重打一遍 */
-                void createSpace(name).then((space) => setNewSpaceName(space ? null : name))
-              }}
-              onBlur={() => {
-                if (!newSpaceName.trim()) setNewSpaceName(null)
-              }}
-            />
-          ) : null}
-
-          {spaces.filter((space) => !space.archived).length === 0 && newSpaceName === null ? (
-            <div className="rail-empty" data-testid="rail-no-spaces">{t('rail.noSpaces')}</div>
-          ) : null}
-
-          {spaces.filter((space) => !space.archived).map((space) => {
-            const open = openSpaces.includes(space.id)
-            const list = sessions.filter((s) => s.spaceId === space.id)
-            return (
-              <div key={space.id} className="rail-space">
-                <div
-                  className="rail-space-row"
-                  data-testid="rail-space-row"
-                  data-space-id={space.id}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setSpaceMenuFor({ id: space.id, x: e.clientX, y: e.clientY, trigger: e.currentTarget })
-                  }}
-                >
-                  <button
-                    className="rail-space-fold"
-                    title={open ? t('rail.foldSessions') : t('rail.unfoldProject')}
-                    data-testid="rail-space-fold"
-                    onClick={() =>
-                      setOpenSpaces((prev) =>
-                        prev.includes(space.id) ? prev.filter((x) => x !== space.id) : [...prev, space.id]
-                      )
-                    }
-                  >
-                    <Icon name="chevron-right" size={12} className={`chev ${open ? 'on' : ''}`} />
-                  </button>
-                  <button
-                    className="rail-space-name"
-                    title={space.description ?? space.name}
-                    data-testid="rail-space-name"
-                    onClick={() =>
-                      setOpenSpaces((prev) =>
-                        prev.includes(space.id) ? prev.filter((x) => x !== space.id) : [...prev, space.id]
-                      )
-                    }
-                  >
-                    {space.name}
-                  </button>
-                  <span className="rail-space-count" data-testid="rail-space-count">{list.length}</span>
-                  <button
-                    className="rail-icon sm"
-                    title={t('rail.spaceMore')}
-                    data-testid="rail-space-menu-btn"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setSpaceMenuFor({ id: space.id, x: rect.left, y: rect.bottom, trigger: e.currentTarget })
-                    }}
-                  >
-                    <Icon name="menu" size={12} />
-                  </button>
-                </div>
-                {open ? (
-                  <div className="rail-space-tree" data-testid="rail-space-tree">
-                    {list.length === 0 ? (
-                      <div className="rail-empty sm" data-testid="rail-space-empty">{t('rail.spaceEmpty')}</div>
-                    ) : (
-                      list.map((s) => renderSession(s, list, 0, new Set<string>(), `space:${space.id}`))
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-      </div>
 
       {/* ---- 项目分组 ---- */}
       <div className="rail-section">
@@ -1519,6 +1286,7 @@ export function Rail() {
       </div>
 
       {/* ---- 底部：用户块（名字 / 自定义头像 / 登录预留）---- */}
+      <RailUser />
       {trashNotice ? (
         <TrashNoticeBar
           notice={trashNotice}
@@ -1527,21 +1295,6 @@ export function Rail() {
         />
       ) : null}
 
-      {/* ---- 空间菜单（Portal 到 body；锚点是右键点或行内 ⋯）---- */}
-      <ContextMenu
-        open={spaceMenuFor !== null}
-        anchor={spaceMenuFor}
-        testid="rail-space-menu"
-        data-space-id={spaceMenuFor?.id ?? ''}
-        onClose={() => {
-          const trigger = spaceMenuFor?.trigger
-          setSpaceMenuFor(null)
-          trigger?.focus?.()
-        }}
-        items={spaceMenuItems}
-      />
-
-      <RailUser />
       {deleteTarget ? (
         <SessionDeleteDialog
           session={deleteTarget}
@@ -1652,6 +1405,8 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
    */
   const runner = useStore((state) => state.runners.find((r) => !!r.sessionFile && r.sessionFile === s.path))
   const titleCandidate = useStore((state) => state.titleCandidates[s.id])
+  /** 可归入的空间（左栏空间分区已移除，会话归属改从本行菜单改） */
+  const spaces = useStore((state) => state.spaces)
   const running = runner?.running === true
   const waiting = runner?.waiting === true
   const failure = runner?.failed ? t('rail.runnerFailed') : ''
@@ -1859,6 +1614,43 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               </button>
             ))}
           </div>
+          {
+            /*
+             * 空间：从「左栏的一层目录」改为会话上的标签（实施-27 B3）。
+             * 左栏不再有常驻的空间分区，但「把这条会话归到哪个空间」必须仍然可达 ——
+             * 它本来就该跟着**具体这条会话**出现，而不是先选空间再找会话。
+             */
+            spaces.filter((x) => !x.archived).length > 0 || s.spaceId ? (
+            <div className="srow-menu-section" data-testid="rail-session-space">
+              <div className="srow-menu-section-title">{t('rail.spaces')}</div>
+              {s.spaceId ? (
+                <button
+                  className="srow-menu-btn" role="menuitem"
+                  data-testid="rail-space-release-session"
+                  onClick={() => {
+                    void useStore.getState().setSessionSpace(s.id, null).then((done) => { if (done) onCloseMenu() })
+                  }}
+                >
+                  <Icon name="plus" size={12} className="rail-trash-x" />
+                  {t('rail.spaceRelease')}
+                </button>
+              ) : null}
+              {spaces.filter((x) => !x.archived && x.id !== s.spaceId).map((sp) => (
+                <button
+                  key={sp.id}
+                  className="srow-menu-btn" role="menuitem"
+                  data-testid={`rail-space-put-${sp.id}`}
+                  onClick={() => {
+                    void useStore.getState().setSessionSpace(s.id, sp.id).then((done) => { if (done) onCloseMenu() })
+                  }}
+                >
+                  <Icon name="group" size={12} />
+                  {sp.name}
+                </button>
+              ))}
+            </div>
+            ) : null
+          }
           <button
             style={{ '--i': 1 } as React.CSSProperties}
             className="srow-menu-btn" role="menuitem"

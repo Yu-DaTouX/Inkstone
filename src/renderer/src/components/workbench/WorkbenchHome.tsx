@@ -8,13 +8,14 @@ import { goalDisplayTitle } from '../../state/goal-view'
 import { buildSessionMap } from '../../../../shared/session-map'
 
 /**
- * 工作台首页（实施-18 S3）—— 日常模式下、当前会话还没有消息时的中栏内容。
+ * 工作台首页（实施-18 S3；实施-27 B3 收敛为「一主行动 + ≤3 张有内容的卡」）。
  *
- * 四张只读卡片 + 一个地图入口，每张卡各自有 loading / empty / error：
- * 把失败画成空会让用户以为「本来就没有」，那是两个完全不同的结论。
- *
- * 数据只消费现有 store 与 `sources.list` / `verifyFiles`，不新增 IPC，
- * 也不落任何业务数据。
+ * 改动前的首页是 7 张卡平铺，其中 4 张在多数新会话里是空的 ——
+ * 「空卡片」不但占位置，还让人以为「这里本来就有这些功能，只是没数据」。
+ * 现在的规则：
+ *   · 顶部只回答一个问题 ——「接着上次继续」；没有可继续的会话才退化成一句提示；
+ *   · 下面最多三张卡，**每张都必须有内容**（空的不渲染，不是画成空态）；
+ *   · 数据仍然只消费现有 store 与 `sources.list` / `verifyFiles`，不新增 IPC。
  */
 
 interface Props {
@@ -48,14 +49,15 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
 
   const sources = useSessionSources(session?.sessionId)
 
-  /* 继续：按真实最近活动取前 6 条 */
+  /** 可继续的会话：按最近活动排序，**排除当前这条**（它就在屏幕上） */
   const recent = useMemo(
     () =>
       [...sessions]
-        .sort((a, b) => (b.lastActivityAt ?? b.createdAt) - (a.lastActivityAt ?? a.createdAt))
-        .slice(0, 6),
-    [sessions]
+        .filter((s) => s.path !== session?.sessionFile)
+        .sort((a, b) => (b.lastActivityAt ?? b.createdAt) - (a.lastActivityAt ?? a.createdAt)),
+    [sessions, session?.sessionFile]
   )
+  const heroTarget = recent[0]
 
   const mapSummary = useMemo(() => buildSessionMap({ sessions }).stats, [sessions])
 
@@ -95,91 +97,20 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
   const shortName = (cwd: string): string =>
     projectNames[cwd] || cwd.split(/[\\/]/).filter(Boolean).pop() || cwd
 
-  return (
-    <div className="wb-home" data-testid="workbench-home">
-      <header className="wb-home-head">
-        <Icon name="sparkles" size={14} />
-        <span>{t('wb.home')}</span>
-      </header>
+  /*
+   * 卡片候选 —— 只放**真有内容**的，最多三张。
+   * 顺序即优先级：正在做的事 > 今天可复习 > 空间 > 资料 > 会话地图。
+   */
+  const cards: { id: string; node: React.ReactNode }[] = []
 
-      <div className="wb-home-grid">
-        {/* ---- 当前空间（T04-2）---- */}
-        <section className="wb-card" data-testid="wb-card-space">
-          <h2 className="wb-card-title">
-            <Icon name="layers" size={12} />
-            {t('wb.spaceCard')}
-          </h2>
-          {space ? (
-            <>
-              <p className="wb-card-main">{space.name}</p>
-              <p className="wb-card-meta" data-testid="wb-card-space-count">
-                {t('wb.spaceCardCount', { sessions: spaceSessionCount, sources: spaceSourceCount })}
-              </p>
-            </>
-          ) : (
-            <p className="wb-card-empty">{t('wb.spaceCardNone')}</p>
-          )}
-          <button className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
-            {t('wb.spaceCardOpen')}
-            <Icon name="chevron-right" size={12} />
-          </button>
-        </section>
-
-        {/* ---- 今天可复习（T12-5）---- */}
-        <section className="wb-card" data-testid="wb-card-review">
-          <h2 className="wb-card-title">
-            <Icon name="history" size={12} />
-            {t('wb.reviewCard')}
-          </h2>
-          {reviewDue && reviewDue.items.length > 0 ? (
-            <>
-              <p className="wb-card-main" data-testid="wb-card-review-count">
-                {t('wb.reviewCount', { n: reviewDue.items.length })}
-              </p>
-              <p className="wb-card-meta" data-testid="wb-card-review-meta">
-                {t('wb.reviewMeta', { total: reviewDue.total })}
-              </p>
-            </>
-          ) : (
-            <p className="wb-card-empty" data-testid="wb-card-review-empty">
-              {t('wb.reviewNone')}
-            </p>
-          )}
-          <button className="wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
-            {t('wb.reviewOpen')}
-            <Icon name="chevron-right" size={12} />
-          </button>
-        </section>
-
-        {/* ---- 继续 ---- */}
-        <section className="wb-card" data-testid="wb-card-continue">
-          <h2 className="wb-card-title">
-            <Icon name="history" size={12} />
-            {t('wb.continue')}
-          </h2>
-          {recent.length === 0 ? (
-            <p className="wb-card-empty">{t('wb.recentNone')}</p>
-          ) : (
-            <ul className="wb-list">
-              {recent.map((s) => (
-                <li key={s.path}>
-                  <button className={`wb-list-item ${s.path === session?.sessionFile ? 'on' : ''}`} onClick={() => onOpenSession(s.path)}>
-                    <span className="wb-list-title">{s.title}</span>
-                    <span className="wb-list-meta">
-                      {shortName(s.cwd)} · {time(s.lastActivityAt ?? s.createdAt)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* ---- 目标 ---- */}
-        <section className="wb-card" data-testid="wb-card-goal">
+  if (goal?.goalId || todos.length > 0 || goalLoading) {
+    cards.push({
+      id: 'focus',
+      node: (
+        <section className="wb-card" data-testid="wb-card-focus" key="focus">
           <h2 className="wb-card-title">
             <Icon name="shield-check" size={12} />
-            {t('wb.goal')}
+            {t('wb.focusCard')}
           </h2>
           {goalLoading ? (
             <p className="wb-card-empty">{t('wb.goalLoading')}</p>
@@ -192,62 +123,102 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
                 <p className="wb-card-meta">{t('wb.goalSteps', { done: goalDone, total: goalSteps.length })}</p>
               ) : null}
             </>
-          ) : (
-            <p className="wb-card-empty">{t('wb.goalNone')}</p>
-          )}
-        </section>
-
-        {/* ---- 任务 ---- */}
-        <section className="wb-card" data-testid="wb-card-todos">
-          <h2 className="wb-card-title">
-            <Icon name="checklist" size={12} />
-            {t('wb.todos')}
-          </h2>
-          {todos.length === 0 ? (
-            <p className="wb-card-empty">{t('wb.todosNone')}</p>
-          ) : (
+          ) : null}
+          {todos.length > 0 ? (
             <>
               <p className="wb-card-meta">{t('wb.todosProgress', { done: doneCount, total: todos.length })}</p>
               {currentTodo ? <p className="wb-card-main">{currentTodo.text}</p> : null}
             </>
-          )}
+          ) : null}
         </section>
+      )
+    })
+  }
 
-        {/* ---- 来源 ---- */}
-        <section className="wb-card" data-testid="wb-card-sources">
+  if (reviewDue && reviewDue.items.length > 0) {
+    cards.push({
+      id: 'review',
+      node: (
+        <section className="wb-card" data-testid="wb-card-review" key="review">
           <h2 className="wb-card-title">
-            <Icon name="folder-open" size={12} />
+            <Icon name="history" size={12} />
+            {t('wb.reviewCard')}
+          </h2>
+          <p className="wb-card-main" data-testid="wb-card-review-count">
+            {t('wb.reviewCount', { n: reviewDue.items.length })}
+          </p>
+          <p className="wb-card-meta" data-testid="wb-card-review-meta">
+            {t('wb.reviewMeta', { total: reviewDue.total })}
+          </p>
+          <button className="wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
+            {t('wb.reviewOpen')}
+            <Icon name="chevron-right" size={12} />
+          </button>
+        </section>
+      )
+    })
+  }
+
+  if (space) {
+    cards.push({
+      id: 'space',
+      node: (
+        <section className="wb-card" data-testid="wb-card-space" key="space">
+          <h2 className="wb-card-title">
+            <Icon name="layers" size={12} />
+            {t('wb.spaceCard')}
+          </h2>
+          <p className="wb-card-main">{space.name}</p>
+          <p className="wb-card-meta" data-testid="wb-card-space-count">
+            {t('wb.spaceCardCount', { sessions: spaceSessionCount, sources: spaceSourceCount })}
+          </p>
+          <button className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
+            {t('wb.spaceCardOpen')}
+            <Icon name="chevron-right" size={12} />
+          </button>
+        </section>
+      )
+    })
+  }
+
+  if (!sources.loading && !sources.error && sources.all.length > 0) {
+    cards.push({
+      id: 'sources',
+      node: (
+        <section className="wb-card" data-testid="wb-card-sources" key="sources">
+          <h2 className="wb-card-title">
+            <Icon name="library" size={12} />
             {t('wb.sources')}
           </h2>
-          {sources.loading ? (
-            <p className="wb-card-empty">{t('wb.sourcesLoading')}</p>
-          ) : sources.error ? (
-            <p className="wb-card-empty error">{t('wb.sourcesError')}</p>
-          ) : sources.all.length === 0 ? (
-            <p className="wb-card-empty">{t('src.empty')}</p>
-          ) : (
-            <>
-              <p className="wb-card-meta">
-                {t('wb.sourcesCounts', {
-                  images: sources.images.length,
-                  files: sources.files.length,
-                  webs: sources.webs.length
-                })}
-              </p>
-              <ul className="wb-list">
-                {sources.all.slice(0, 3).map((s) => (
-                  <li key={s.sourceId} className="wb-source-item">
-                    <Icon name={s.kind === 'image' ? 'image' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
-                    <span className="wb-list-title">{s.title}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+          <p className="wb-card-meta">
+            {t('wb.sourcesCounts', {
+              images: sources.images.length,
+              files: sources.files.length,
+              webs: sources.webs.length
+            })}
+          </p>
+          <ul className="wb-list">
+            {sources.all.slice(0, 3).map((s) => (
+              <li key={s.sourceId} className="wb-source-item">
+                <Icon name={s.kind === 'image' ? 'image' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
+                <span className="wb-list-title">{s.title}</span>
+              </li>
+            ))}
+          </ul>
         </section>
+      )
+    })
+  }
 
-        {/* ---- 会话地图入口 ---- */}
-        <section className="wb-card wb-card-map" data-testid="wb-card-map">
+  /*
+   * 会话地图只在**有东西可看**时给入口（>1 条会话才值得摊开看）。
+   * 它原来是常驻卡片，但单会话时那张卡只有一个数字 —— 纯噪音。
+   */
+  if (mapSummary.total > 1) {
+    cards.push({
+      id: 'map',
+      node: (
+        <section className="wb-card wb-card-map" data-testid="wb-card-map" key="map">
           <h2 className="wb-card-title">
             <Icon name="map" size={12} />
             {t('map.title')}
@@ -258,7 +229,43 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
             <Icon name="chevron-right" size={12} />
           </button>
         </section>
-      </div>
+      )
+    })
+  }
+
+  return (
+    <div className="wb-home" data-testid="workbench-home">
+      <header className="wb-home-head">
+        <Icon name="sparkles" size={14} />
+        <span>{t('wb.home')}</span>
+      </header>
+
+      {/* 一主行动：接着上次继续；没有可继续的就只说一句，让输入框当主角 */}
+      {heroTarget ? (
+        <section className="wb-hero" data-testid="wb-hero">
+          <div className="wb-hero-text">
+            <p className="wb-hero-label">{t('wb.heroContinue')}</p>
+            <p className="wb-hero-title" data-testid="wb-hero-title">
+              {heroTarget.title}
+            </p>
+            <p className="wb-hero-meta">
+              {shortName(heroTarget.cwd)} · {time(heroTarget.lastActivityAt ?? heroTarget.createdAt)}
+            </p>
+          </div>
+          <button className="wb-hero-go" data-testid="wb-hero-go" onClick={() => onOpenSession(heroTarget.path)}>
+            {t('wb.open')}
+            <Icon name="chevron-right" size={12} />
+          </button>
+        </section>
+      ) : (
+        <section className="wb-hero wb-hero-plain" data-testid="wb-hero">
+          <p className="wb-hero-label">{t('wb.heroStart')}</p>
+        </section>
+      )}
+
+      {cards.length > 0 ? (
+        <div className="wb-home-grid">{cards.slice(0, 3).map((c) => c.node)}</div>
+      ) : null}
     </div>
   )
 }

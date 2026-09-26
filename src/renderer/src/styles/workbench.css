@@ -798,6 +798,70 @@
   color: var(--fg);
 }
 
+/* 主行动（实施-27 B3）：一整块只回答「接着上次继续」 */
+.wb-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin: 14px 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+}
+
+.wb-hero-plain {
+  justify-content: flex-start;
+}
+
+.wb-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wb-hero-label {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-hero-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-base);
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-hero-meta {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-hero-go {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.wb-hero-go:hover {
+  background: var(--accent-soft);
+}
+
 .wb-home-grid {
   flex: 1 1 auto;
   min-height: 0;
