@@ -54,10 +54,28 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const fromModel = session?.sessionId ? titles[session.conversationId ?? session.sessionId] : undefined
   const fromList = sessions.find((x) => x.path === (session?.conversationFile ?? session?.sessionFile))?.title
   const fromFirst = messages.find((m) => m.role === 'user')?.text
-  /** 当前会话归属的空间（决定要不要给「空间」入口） */
-  const spaceId = sessions.find(
-    (x) => x.path === (session?.conversationFile ?? session?.sessionFile)
-  )?.spaceId
+  /**
+   * 当前会话归属的空间（决定要不要给「空间」入口）。
+   *
+   * 先按会话 id 找 —— 刚建出来的空会话还没有会话文件，`path` 是空的，
+   * 只按 path 匹配会让「刚开会话就想去空间」变成无入口；
+   * 再退回 path，是因为列表里的 id 与当前会话的 id 在分叉/接管等情形下不一定同时就绪。
+   */
+  const currentFile = session?.conversationFile ?? session?.sessionFile
+  const spaceId =
+    (session?.sessionId ? sessions.find((x) => x.id === session.sessionId)?.spaceId : undefined) ??
+    (currentFile ? sessions.find((x) => x.path === currentFile)?.spaceId : undefined)
+  /**
+   * 「空间」入口的显示条件。
+   *
+   * 除了「这个会话归属某个空间」，**列表里查不到的会话也显示**：
+   * 刚开出来的会话还没落盘（只是预留了文件路径），列表里根本没它，
+   * 只按归属判断会让「刚开会话就想进空间」在头部连入口都没有。
+   * 查不到 ≠ 不属于任何空间，所以这时按“不知道”处理。
+   * 会话在列表里且确认没归属，才是真的「这个会话不属于任何空间」——那就不给入口。
+   */
+  const knownInList = Boolean(currentFile) && sessions.some((x) => x.path === currentFile)
+  const showSpace = Boolean(spaceId) || !knownInList
   const title =
     fromModel ||
     session?.sessionName ||
@@ -107,7 +125,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
                 <span>{t('view.map')}</span>
               </button>
             ) : null}
-            {spaceEnabled && !spaceOpen && spaceId ? (
+            {spaceEnabled && !spaceOpen && showSpace ? (
               <button
                 onClick={() => onToggleSpace?.(true)}
                 title={t('view.space')}
