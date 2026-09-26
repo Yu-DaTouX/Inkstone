@@ -1135,12 +1135,13 @@ const GROUPS = [
     states: ['main', 'segmented', 'righttoolmenu', 'rightwindows', 'artifact', 'imageprogress', 'autonomous', 'autonomousrunning', 'workmodemenu', 'modelmenu', 'reasoning', 'toolgroup', 'toolterm', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'ctxnarrow', 'fsnarrow', 'fileincontext', 'trashtoast', 'wschanges', 'wsunknown', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'railsessions', 'pendingcards', 'envmenu', 'envbranches', 'envworktrees', 'forkdraft', 'envlinks', 'sourcesearch', 'settingspkg', 'extdiag', 'taskhost', 'taskcard', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial']
   },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['main', 'segmented', 'righttoolmenu', 'autonomous', 'autonomousrunning', 'workmodemenu', 'reasoning', 'settings', 'customapi', 'capabilities', 'capabilitiesmcp', 'ctxsettings', 'knowledgetab', 'railmini', 'compaction', 'contextbudget', 'trashtoast', 'browserboundary', 'browserblocked', 'usageelapsed', 'usageturn', 'railreorder', 'envmenu', 'envbranches', 'envlinks', 'sourcesearch', 'envworktrees', 'forkdraft', 'extdiag', 'taskhost', 'taskcard', 'settingspkg', 'review', 'reviewside', 'reviewwrite', 'envnotgit', 'reviewnotgit', 'subagentnote', 'subagentfailed', 'chainjoin', 'railwaiting', 'turnfooter', 'rightresources', 'ctxmodelpresets', 'turntime', 'turnstatus', 'filelink', 'compactionreclaim', 'ctxpreset', 'plusmenu', 'plusgoal', 'goalpursued', 'workmodekey', 'usageagg', 'usagepartial'] },
-  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini'] },
+  { w: 940, h: 620, scale: 1, theme: 'dark', states: ['main', 'modelmenu', 'railmini', 'spaceoverview'] },
+  /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'envnotgit'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spacelearning'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spacelearning'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spacelearning', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
   /*
@@ -2960,6 +2961,443 @@ const STATES = {
       }
     })()
   `,
+  /* 实施-25 P01：活动档案菜单（composer 工具栏上的活动切换浮层） */
+  agentprofilemenu: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.__yanStore.getState().closeSettings?.();
+      await sleep(200);
+      /* 直接给 store 一个 daily+research 档案：本状态只截浮层本身，不依赖 IPC */
+      window.__yanStore.setState({
+        agentProfile: { profile: 'daily', activity: 'research', revision: 1 }
+      });
+      await sleep(200);
+      document.querySelector('[data-testid="agent-profile-button"]')?.click();
+      await sleep(350);
+      return document.querySelector('[data-testid="agent-profile-menu"]') ? 'ok' : 'no-menu';
+    })()
+  `,
+  /* 实施-25 P02：主题空间区（左栏）——建一个空间、会话归属、展开空间树 */
+  railspaces: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      S().closeSettings?.();
+      await sleep(250);
+      /*
+       * 直接注入 store：本状态只截左栏，不依赖主进程的 getSpaces stub。
+       * refreshSpaces 在组件挂载时已调过（矩阵没注册该 IPC，它报错后保持原状）。
+       */
+      const sessions = S().sessions.map((s, i) => (i < 2 ? { ...s, spaceId: 'sp_demo' } : s));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: Date.now() - 86400000,
+          updatedAt: Date.now()
+        }],
+        sessions
+      });
+      await sleep(350);
+      document.querySelector('[data-testid="rail-space-fold"]')?.click();
+      await sleep(400);
+      return document.querySelector('[data-testid="rail-space-tree"]') ? 'ok' : 'no-tree';
+    })()
+  `,
+  /*
+   * 空间工作台（实施-25 P04）：概览与资料两页。
+   *
+   * 直接注入 store：本状态只截中栏，不依赖主进程的 getSpaces / library.list stub
+   *（矩阵没注册那些 IPC，它们报错后 store 保持原状，正好不干扰注入的数据）。
+   */
+  spaceoverview: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      S().closeSettings?.();
+      await sleep(250);
+      const now = Date.now();
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        library: [
+          { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          { id: 'lib_d2', spaceId: 'sp_demo', kind: 'web', title: 'BBC Learning English', createdAt: now - 7200000, updatedAt: now - 7200000 }
+        ],
+        libraryVersions: [
+          { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d1-v1.txt', chars: 8123, pages: 6, note: '已提取正文：6 页；纯文本，不含排版与图片', at: now - 3600000 } },
+          { sourceId: 'lib_d2', version: 1, identity: 'web:https://www.bbc.co.uk/learningenglish', ref: 'https://www.bbc.co.uk/learningenglish', title: 'BBC Learning English', fingerprint: 'fp-d2', addedAt: now - 7200000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d2-v1.txt', chars: 3200, note: '已提取正文', at: now - 7200000 } }
+        ],
+        libraryRefs: [
+          { owner: { kind: 'session', id: 'probe-a' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1800000, outcome: 'ok' },
+          { owner: { kind: 'session', id: 'probe-b' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1500000, outcome: 'ok' },
+          { owner: { kind: 'course', id: 'course-1' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1200000, outcome: 'ok' }
+        ],
+        libraryLoaded: true,
+        goal: {
+          goalId: 'g-demo',
+          phase: 'work',
+          revision: 3,
+          brief: { goal: '三个月把英语从看懂到能说' },
+          steps: [
+            { title: '精读 20 篇文章', status: 'done' },
+            { title: '跟读 50 段音频', status: 'running' },
+            { title: '写 3 篇短评', status: 'pending' }
+          ],
+          evidence: [],
+          links: []
+        },
+        todos: [
+          { id: 'td1', text: '把 Unit 3 的两个长句抄下来', done: false },
+          { id: 'td2', text: '听写第 12 段', done: true }
+        ]
+      });
+      /*
+       * 矩阵的当前会话（s1）**不在**会话列表里（列表是 mx1/mx2/… 这些夹具），
+       * 所以「按当前会话的归属决定展示哪个空间」永远匹配不上。
+       * 这里把当前会话切到列表里那条已归档的会话上 —— 这正是 T04-8 要做的投影：
+       * 展示哪个空间完全由当前会话的 spaceId 决定，别再另存一份。
+       */
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+
+      S().openSpaceView('overview');
+      await sleep(600);
+      return document.querySelector('[data-testid="space-overview"]') ? 'ok' : 'no-overview';
+    })()
+  `,
+  spacelibrary: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        library: [
+          { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          { id: 'lib_d2', spaceId: 'sp_demo', kind: 'web', title: 'BBC Learning English', createdAt: now - 7200000, updatedAt: now - 7200000 }
+        ],
+        libraryVersions: [
+          { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d1-v1.txt', chars: 8123, pages: 6, note: '已提取正文：6 页', at: now - 3600000 } },
+          { sourceId: 'lib_d2', version: 1, identity: 'web:https://www.bbc.co.uk/learningenglish', ref: 'https://www.bbc.co.uk/learningenglish', title: 'BBC Learning English', fingerprint: 'fp-d2', addedAt: now - 7200000, available: true, parse: { status: 'ok', textPath: 'library/text/lib_d2-v1.txt', chars: 3200, note: '已提取正文', at: now - 7200000 } }
+        ],
+        libraryRefs: [
+          { owner: { kind: 'session', id: 'probe-a' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1800000, outcome: 'ok' },
+          { owner: { kind: 'session', id: 'probe-b' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1500000, outcome: 'ok' },
+          { owner: { kind: 'course', id: 'course-1' }, ref: { sourceId: 'lib_d1', version: 1 }, at: now - 1200000, outcome: 'ok' }
+        ],
+        libraryLoaded: true,
+        /*
+         * 预览要正文。**不能真导入**（矩阵跑在真实数据目录上，写 library.json 就是污染用户数据），
+         * 所以这里把取正文这一步换成注入的正文；界面结构照旧走真实渲染路径。
+         * 真实「按 id + version 取正文」由 test:live -- library 覆盖。
+         */
+        openLibraryRef: async () => ({
+          ok: true,
+          outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', size: 91234, fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, pages: 6, note: '已提取正文：6 页', at: now - 3600000 } },
+          /* 用 join 而不是转义换行：这里是被写进模板字符串的内层源码，
+             反斜杠会先被外层吃掉一次（踩过）。 */
+          text: [
+            'Unit 3 · Reading',
+            '',
+            'When I was a child, my grandmother kept a small garden behind the house.',
+            'She never called it a garden; she called it “the outside room”.',
+            '',
+            'Every spring she would plant the same three things: tomatoes, mint and a',
+            'row of marigolds she never explained. I asked once. She said the marigolds',
+            'kept the others honest.',
+            '',
+            'I did not understand it then. I understand it better now.'
+          ].join(String.fromCharCode(10)),
+          truncated: false
+        })
+      });
+      /*
+       * 矩阵的当前会话（s1）**不在**会话列表里（列表是 mx1/mx2/… 这些夹具），
+       * 所以「按当前会话的归属决定展示哪个空间」永远匹配不上。
+       * 这里把当前会话切到列表里那条已归档的会话上 —— 这正是 T04-8 要做的投影：
+       * 展示哪个空间完全由当前会话的 spaceId 决定，别再另存一份。
+       */
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+
+      S().openSpaceView('library');
+      await sleep(500);
+      document.querySelector('[data-testid="space-lib-item-lib_d1"]')?.click();
+      await sleep(700);
+      return document.querySelector('[data-testid="space-library"]') ? 'ok' : 'no-library';
+    })()
+  `,
+  /*
+   * 成果页（实施-25 P06a/P06b）：列表 + 编辑器 + 版本历史 + 清单 + 来源。
+   * 与 spacelibrary 同一个理由直接注入 store：矩阵不注册数据型 IPC，
+   * 界面那一次拉取会落在没 handler 上，注入的夹具因此保持原样。
+   */
+  spaceartifact: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const p = (a, b, c) => [a, b, c].join(L + L);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        /* 来源标题从资料库取（成果只存 {sourceId, version}） */
+        library: [{
+          id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf',
+          createdAt: now - 3600000, updatedAt: now - 3600000
+        }],
+        artifactDocs: [
+          {
+            id: 'ad_demo1', spaceId: 'sp_demo', title: '产品调研报告', kind: 'markdown',
+            currentVersion: 3,
+            versions: [
+              { version: 1, text: p('第一段：调研范围。', '第二段：初步结论。', '第三段：后续动作。'), editedBy: 'user', at: now - 7200000, basedOn: null, userEditedParagraphs: [] },
+              { version: 2, text: p('第一段：调研范围（agent 改）。', '第二段：初步结论。', '第三段：后续动作（agent 改）。'), editedBy: 'agent', at: now - 3600000, basedOn: 1, userEditedParagraphs: [] },
+              { version: 3, text: p('第一段：调研范围（agent 改）。', '第二段：我把结论改成这样写。', '第三段：后续动作（agent 改）。'), editedBy: 'user', at: now - 600000, basedOn: 2, userEditedParagraphs: [1] }
+            ],
+            sources: [{ sourceId: 'lib_d1', version: 1 }],
+            createdAt: now - 86400000,
+            updatedAt: now - 600000
+          },
+          {
+            id: 'ad_demo2', spaceId: 'sp_demo', title: '这周要做的事', kind: 'checklist',
+            currentVersion: 1,
+            versions: [{ version: 1, text: ['- [x] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 300000, basedOn: null, userEditedParagraphs: [0] }],
+            sources: [],
+            createdAt: now - 300000,
+            updatedAt: now - 300000
+          }
+        ],
+        artifactDocsLoaded: true,
+        /*
+         * 「回原文」要正文。不能真导入（矩阵跑在真实数据目录上，写 library.json 就是污染），
+         * 这里把取正文换成注入的正文；界面结构照旧走真实渲染路径。
+         * 真实的「按 id + version 取正文」由 test:live -- artifact 覆盖。
+         */
+        openLibraryRef: async () => ({
+          ok: true,
+          outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
+          text: [
+            'Unit 3 · Reading',
+            '',
+            'When I was a child, my grandmother kept a small garden behind the house.',
+            'She never called it a garden; she called it “the outside room”.',
+            '',
+            'Every spring she would plant the same three things: tomatoes, mint and a',
+            'row of marigolds she never explained.'
+          ].join(String.fromCharCode(10)),
+          truncated: false
+        })
+      });
+      /* 与 spacelibrary 同样的投影：当前会话切到列表里已归档的那一条 */
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+      S().openSpaceView('artifact');
+      await sleep(500);
+      document.querySelector('[data-testid="space-art-item-ad_demo1"]')?.click();
+      await sleep(500);
+      document.querySelector('[data-testid="space-art-source-0"]')?.click();
+      await sleep(600);
+      return document.querySelector('[data-testid="space-art-source-preview"]') ? 'ok' : 'no-artifact';
+    })()
+  `,
+  /*
+   * 清单成果（实施-25 P06b）：勾选列表本身就是正文的呈现方式；
+   * 勾选是一次用户编辑（开新版本、进保护集），语义在单测与 live 探针里，这里只截界面。
+   */
+  spacechecklist: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        artifactDocs: [{
+          id: 'ad_demo3', spaceId: 'sp_demo', title: '这周要做的事', kind: 'checklist',
+          currentVersion: 2,
+          versions: [
+            { version: 1, text: ['- [ ] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 7200000, basedOn: null, userEditedParagraphs: [] },
+            { version: 2, text: ['- [x] 读完 Unit 3 精读', '- [ ] 整理生词 20 个', '- [ ] 写一段复述'].join(L), editedBy: 'user', at: now - 600000, basedOn: 1, userEditedParagraphs: [0] }
+          ],
+          sources: [],
+          createdAt: now - 7200000,
+          updatedAt: now - 600000
+        }],
+        artifactDocsLoaded: true
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+      S().openSpaceView('artifact');
+      await sleep(600);
+      return document.querySelector('[data-testid="space-art-checklist"]') ? 'ok' : 'no-checklist';
+    })()
+  `,
+  /*
+   * 课程与路线（实施-25 P07）：课程列表 + 路线（材料 / 补充两类单元 + 指回资料）。
+   * 同样直接注入 store（矩阵不注册数据型 IPC）；真实生成与调整由 test:live -- course 覆盖。
+   */
+  /*
+   * 导师页面（实施-25 P09）：左路线 / 中导师对话 / 右教材。
+   * 同样直接注入 store（矩阵不注册数据型 IPC）；真实的「开始学习 → 提问 → 作答」
+   * 由 test:live -- study / course 覆盖。
+   */
+  spacelearning: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const body = Array.from(
+        { length: 10 },
+        (_, i) =>
+          'When I was a child, my grandmother kept a small garden behind the house. She never called it a garden; she called it “the outside room”. (' + (i + 1) + ')'
+      ).join(L + L);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        /* 中栏导师对话用的是**同一个会话**的消息（不另造一份） */
+        messages: [
+          { id: 'lm1', role: 'user', text: '这一段里的 “the outside room” 指的是什么？', timestamp: now - 120000 },
+          {
+            id: 'lm2',
+            role: 'assistant',
+            text: '先看原句：她从不把它叫花园，而叫“外面的房间”。她是在把院子当成一间屋在用，晚点我们再看后面一句里她怎么解释。',
+            timestamp: now - 110000
+          }
+        ],
+        library: [{
+          id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf',
+          createdAt: now - 3600000, updatedAt: now - 3600000
+        }],
+        courses: [{
+          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '读完并复述这一单元',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '精读材料 · Unit 3.pdf',
+          status: 'active',
+          units: [
+            { id: 'u_d1', title: 'When I was a child…', target: '说出这一段在讲什么', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1, locator: { start: 0, end: 320 } }], concepts: [] },
+            { id: 'u_d2', title: 'Every spring she would plant…', estimateMinutes: 6, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1, locator: { start: 330, end: 584 } }], concepts: [] },
+            { id: 'u_d3', title: '自己补一个例子', estimateMinutes: 10, origin: 'model', sources: [], note: '材料里没有我自己那个场景，补一个', concepts: [] }
+          ],
+          concepts: [],
+          basedOn: { sourceId: 'lib_d1', version: 1 },
+          createdAt: now - 3600000,
+          updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        /* 学习状态（P08）：停在「等你作答」——中栏会出作答区，闸门是真的 */
+        studyStatus: {
+          session: {
+            id: 'st_demo1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
+            phase: 'waiting_for_learner',
+            position: { unitIndex: 0, locator: { start: 0, end: 320 } },
+            pending: { question: '这一段里的 “the outside room” 指的是什么？', origin: 'material', askedAt: now - 60000 },
+            nextStep: '等他答完再给反馈',
+            paused: false, startedAt: now - 600000, updatedAt: now - 60000
+          },
+          resume: {
+            sessionId: 'st_demo1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
+            unitId: 'u_d1', unitTitle: 'When I was a child…', unitIndex: 1, totalUnits: 3,
+            phase: 'waiting_for_learner', phaseLabel: '等你作答', waiting: true, paused: false,
+            question: '这一段里的 “the outside room” 指的是什么？', nextStep: '等他答完再给反馈',
+            position: { unitIndex: 0 }, updatedAt: now - 60000
+          },
+          waiting: true,
+          gate: { waiting: true, where: '《英语精读 Unit 3》·第 1/3 节「When I was a child…」', at: now - 60000 }
+        },
+        studySessions: [],
+        studyLoaded: true,
+        openLibraryRef: async () => ({
+          ok: true,
+          outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
+          text: body,
+          truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, isStreaming: false, isAgentRunning: false }
+        });
+      }
+      S().openSpaceView('learning');
+      await sleep(700);
+      return document.querySelector('[data-testid="space-learning"]') ? 'ok' : 'no-learning';
+    })()
+  `,
   usagepartial: `
     (async () => {
       try {
@@ -4301,6 +4739,96 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
  * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
  */
 const MUST_HAVE = {
+  /* 主题空间区（实施-25 P02）：入口 + 空间行 + 展开的空间树 */
+  railspaces: [
+    '[data-testid="rail-spaces"]',
+    '[data-testid="rail-space-row"]',
+    '[data-testid="rail-space-tree"]',
+    '[data-testid="rail-space-count"]'
+  ],
+  /*
+   * 空间工作台（实施-25 P04）：四入口必须都在，概览的几张卡必须真有内容 ——
+   * 只断言容器存在会漏掉「卡片渲染成空」那类问题。
+   */
+  spaceoverview: [
+    '[data-testid="space-workbench"]',
+    '[data-testid="space-tab-overview"]',
+    '[data-testid="space-tab-library"]',
+    '[data-testid="space-tab-artifact"]',
+    '[data-testid="space-tab-learning"]',
+    '[data-testid="space-overview"]',
+    '[data-testid="space-ov-goal"]',
+    '[data-testid="space-ov-continue"]',
+    '[data-testid="space-ov-sources"]',
+    '[data-testid="space-ov-need"]'
+  ],
+  spacelibrary: [
+    '[data-testid="space-library"]',
+    '[data-testid="space-lib-list"]',
+    '[data-testid="space-lib-item-lib_d1"]',
+    '[data-testid="space-lib-preview"]',
+    '[data-testid="space-lib-join"]'
+  ],
+  /* 成果页（实施-25 P06a/P06b）：列表 + 编辑器 + 版本历史 + 「你改过几段」+ 导出 + 来源回原文 */
+  spaceartifact: [
+    '[data-testid="space-artifact"]',
+    '[data-testid="space-art-list"]',
+    '[data-testid="space-art-item-ad_demo1"]',
+    '[data-testid="space-art-item-ad_demo2"]',
+    '[data-testid="space-art-editor"]',
+    '[data-testid="space-art-title"]',
+    '[data-testid="space-art-body"]',
+    '[data-testid="space-art-versions"]',
+    '[data-testid="space-art-version-3"]',
+    '[data-testid="space-art-useredited"]',
+    '[data-testid="space-art-export"]',
+    '[data-testid="space-art-sources"]',
+    '[data-testid="space-art-source-0"]',
+    '[data-testid="space-art-source-preview"]',
+    '[data-testid="space-art-source-text"]'
+  ],
+  /* 清单成果（实施-25 P06b）：勾选列表 + 类型标识 */
+  spacechecklist: [
+    '[data-testid="space-artifact"]',
+    '[data-testid="space-art-checklist"]',
+    '[data-testid="space-art-check-0"]',
+    '[data-testid="space-art-check-1"]',
+    '[data-testid="space-art-check-2"]',
+    '[data-testid="space-art-kind"]'
+  ],
+  /* 导师页面（实施-25 P09）：三栏 + 五个固定动作 + 作答区 + 教材 + 练习占位 */
+  spacelearning: [
+    '[data-testid="space-learning"]',
+    '[data-testid="space-learn-ws-left"]',
+    '[data-testid="space-learn-list"]',
+    '[data-testid="space-learn-item-co_demo1"]',
+    '[data-testid="space-learn-route"]',
+    '[data-testid="space-learn-units"]',
+    '[data-testid="space-learn-unit-u_d1"]',
+    '[data-testid="space-learn-unit-origin-u_d1"]',
+    '[data-testid="space-learn-unit-origin-u_d3"]',
+    '[data-testid="space-learn-unit-source-u_d1-0"]',
+    '[data-testid="space-learn-unit-study-u_d1"]',
+    '[data-testid="space-learn-add"]',
+    '[data-testid="space-learn-chat"]',
+    '[data-testid="space-learn-chat-stream"]',
+    '[data-testid="space-learn-actions"]',
+    '[data-testid="space-learn-act-simpler"]',
+    '[data-testid="space-learn-act-hint"]',
+    '[data-testid="space-learn-answer"]',
+    '[data-testid="space-learn-answer-question"]',
+    '[data-testid="space-learn-answer-input"]',
+    '[data-testid="space-learn-material"]',
+    '[data-testid="space-learn-material-located"]',
+    '[data-testid="space-learn-material-text"]',
+    '[data-testid="space-learn-exercise"]'
+  ],
+  /* 活动档案菜单（实施-25 P01）：按钮 + 浮层 + 当前项 */
+  agentprofilemenu: [
+    '[data-testid="agent-profile-button"]',
+    '[data-testid="agent-profile-menu"]',
+    '[data-testid="agent-profile-option-research"]'
+  ],
   /* 主界面（注意：fixture 里会话是「流式中」，所以这里不会出现「用时」——
      用时的视觉证据在 usageelapsed 状态里） */
   main: ['.rail', '.stream', '.composer, [data-testid="composer"]'],
@@ -4583,6 +5111,115 @@ const MUST_HAVE = {
 
 }
 const AFTER_STATE = {
+  /* 主题空间：清掉注入的空间与归属，后面的图不带着它 */
+  railspaces: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      window.__yanStore.setState({
+        spaces: [],
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /*
+   * 空间工作台：关视图 + 清掉注入的空间 / 资料 / 目标 ——
+   * 否则同一组里排在后面的状态会带着这些 fixture（railspaces 那条注释踩过同一个坑）。
+   */
+  spaceoverview: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        libraryVersions: [],
+        libraryRefs: [],
+        libraryLoaded: false,
+        goal: null,
+        todos: [],
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  spacelibrary: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        libraryVersions: [],
+        libraryRefs: [],
+        libraryLoaded: false,
+        /* 恢复成透传（setup 为了让预览有正文临时换过一个） */
+        openLibraryRef: async (ref, maxChars) =>
+          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 成果页：关视图 + 清掉注入的成果夹具（含临时换过的取正文） */
+  spaceartifact: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        artifactDocs: [],
+        artifactDocsLoaded: false,
+        openLibraryRef: async (ref, maxChars) =>
+          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 清单页：同上 */
+  spacechecklist: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        artifactDocs: [],
+        artifactDocsLoaded: false,
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 导师页：关视图 + 清掉注入的课程 / 学习状态 / 教材夹具 */
+  spacelearning: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        courses: [],
+        coursesLoaded: false,
+        studyStatus: null,
+        studySessions: [],
+        studyLoaded: false,
+        openLibraryRef: async (ref, maxChars) =>
+          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 活动档案菜单：关浮层 + 清掉注入的档案，后面的图不带着它 */
+  agentprofilemenu: `
+    (() => {
+      window.__yanStore.setState({ agentProfile: null });
+      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      return 'ok';
+    })()
+  `,
   rightwindows: `
     (async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

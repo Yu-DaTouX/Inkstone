@@ -21,12 +21,20 @@ import { GoalPopover } from '../toolbar/GoalPopover'
  *   ② 左栏点会话时已经知道自己在哪个会话，重复提示没意义
  *   ③ 占掉一行高度，而主区顶部该尽量薄
  */
-export function SessionHeader({ mapEnabled, mapOpen, onToggleMap }: {
+export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, spaceOpen, onToggleSpace }: {
   /** 日常模式才提供「地图」这一档；编码模式不渲染切换器 */
   mapEnabled?: boolean
   /** 当前是否停在地图视图 */
   mapOpen?: boolean
   onToggleMap?: (open: boolean) => void
+  /**
+   * 空间概览（实施-25 P04 / T04-7）：**始终可达**。
+   * 与地图同一档位置，但它回答的是「这个空间里有什么」，不是「这个会话里有什么」——
+   * 所以不依赖当前会话有没有消息。
+   */
+  spaceEnabled?: boolean
+  spaceOpen?: boolean
+  onToggleSpace?: (open: boolean) => void
 } = {}) {
   const t = useT()
   const messages = useStore((s) => s.messages)
@@ -69,8 +77,8 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap }: {
           <div className="shead-view" role="tablist" aria-label={t('view.switch')} data-testid="view-switch">
             <button
               role="tab"
-              aria-selected={!mapOpen}
-              className={mapOpen ? '' : 'on'}
+              aria-selected={!mapOpen && !spaceOpen}
+              className={mapOpen || spaceOpen ? '' : 'on'}
               onClick={() => onToggleMap?.(false)}
               data-testid="view-chat"
             >
@@ -85,6 +93,17 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap }: {
             >
               {t('view.map')}
             </button>
+            {spaceEnabled ? (
+              <button
+                role="tab"
+                aria-selected={!!spaceOpen}
+                className={spaceOpen ? 'on' : ''}
+                onClick={() => onToggleSpace?.(true)}
+                data-testid="view-space"
+              >
+                {t('view.space')}
+              </button>
+            ) : null}
           </div>
         ) : null}
 

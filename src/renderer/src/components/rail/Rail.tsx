@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
 import { BrandMark } from '../shell/BrandMark'
-import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor } from '../common/ContextMenu'
+import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor, type ContextMenuItem } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
@@ -12,6 +12,7 @@ import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
 import { buildBranchIndex } from '../../../../shared/session-map'
+import { samePath } from '../../../../shared/session-path'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -125,6 +126,16 @@ export function Rail() {
   const projectOrder = settings?.projectOrder ?? EMPTY_IDS
   const patchSettings = useStore((s) => s.patchSettings)
 
+  /* ---- 主题空间（实施-25 P02）---- */
+  const spaces = useStore((s) => s.spaces)
+  const spaceLinks = useStore((s) => s.spaceLinks)
+  const refreshSpaces = useStore((s) => s.refreshSpaces)
+  const createSpace = useStore((s) => s.createSpace)
+  const updateSpace = useStore((s) => s.updateSpace)
+  const setSessionSpace = useStore((s) => s.setSessionSpace)
+  const linkSpaceProject = useStore((s) => s.linkSpaceProject)
+  const unlinkSpaceProject = useStore((s) => s.unlinkSpaceProject)
+
   const [query, setQuery] = useState('')
   /*
    * 搜索的两个焦点锚点。
@@ -139,6 +150,12 @@ export function Rail() {
   const searchBtnRef = useRef<HTMLButtonElement>(null)
   const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
+  /* 空间区的展开态 / 新建草稿都只是左栏偏好，与项目一样存 localStorage */
+  const [spacesOpen, setSpacesOpen] = useSidebarValue('spaces-open', true)
+  const [openSpaces, setOpenSpaces] = useSidebarValue<string[]>('expanded-spaces', [])
+  /** 正在建空间时的名字草稿；null = 没在输入 */
+  const [newSpaceName, setNewSpaceName] = useState<string | null>(null)
+  const [spaceMenuFor, setSpaceMenuFor] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
   /** 哪些项目已点开「更多会话」（按项目 id 记；默认只显示前 SESSION_PREVIEW 条） */
   const [shownAllSessions, setShownAllSessions] = useSidebarValue<string[]>('expanded-sessions', [])
@@ -842,6 +859,65 @@ export function Rail() {
     trigger?.focus?.()
   }
 
+  /*
+   * 空间列表不依赖 pi（只读 Yan 自己的 `spaces.json`），挂载就拉一次；
+   * pi 就绪后 `startConnWatch` 会再拉一次（那时新会话的归属才可能已存在）。
+   */
+  useEffect(() => {
+    void refreshSpaces()
+  }, [refreshSpaces])
+
+  /* 归属空间要的是 sessionId；与 sessionFile 的比较走共享归一化，不能用 === */
+  const currentSummary = sessions.find((s) => samePath(s.path, session?.sessionFile))
+  const spaceMenuTarget = spaceMenuFor ? spaces.find((s) => s.id === spaceMenuFor.id) : undefined
+  /**
+   * 空间菜单项。
+   *
+   * 「关联项目」也放在这里：空间 ↔ 项目是**显式多对多记录**，界面上必须能看到
+   * 「这个空间关联了哪些项目」；否则关联只存在于 JSON 里，用户看不出差别。
+   * 归档是唯一的移除入口 —— 数据层没有物理删除（资料引用会变孤儿）。
+   */
+  const spaceMenuItems: ContextMenuItem[] = !spaceMenuTarget ? [] : [
+    {
+      id: 'rail-space-adopt',
+      label: t('rail.spaceAdopt'),
+      icon: 'plus',
+      disabled: !currentSummary || currentSummary.spaceId === spaceMenuTarget.id,
+      onSelect: () => {
+        if (currentSummary) void setSessionSpace(currentSummary.id, spaceMenuTarget.id)
+      }
+    },
+    ...(currentSummary?.spaceId === spaceMenuTarget.id
+      ? [
+          {
+            id: 'rail-space-release',
+            label: t('rail.spaceRelease'),
+            onSelect: () => void setSessionSpace(currentSummary.id, null)
+          }
+        ]
+      : []),
+    ...projectRecords.map((project) => {
+      const name = projectNames[project.id] ?? shortProject(project.cwd)
+      const linked = spaceLinks.some((l) => l.spaceId === spaceMenuTarget.id && l.projectId === project.id)
+      return {
+        id: `rail-space-link-${project.id}`,
+        label: linked ? t('rail.spaceUnlink', { name }) : t('rail.spaceLink', { name }),
+        /* 解除关联没有 minus 图标（sprite 里没有）；不传比画个错的强 */
+        ...(linked ? {} : { icon: 'plus' as const }),
+        onSelect: () => {
+          if (linked) void unlinkSpaceProject(spaceMenuTarget.id, project.id)
+          else void linkSpaceProject(spaceMenuTarget.id, project.id)
+        }
+      }
+    }),
+    {
+      id: 'rail-space-archive',
+      label: t('rail.spaceArchive'),
+      danger: true,
+      onSelect: () => void updateSpace(spaceMenuTarget.id, { archived: true })
+    }
+  ]
+
   const renderSession = (s: SessionSummary, list: SessionSummary[], depth = 0, lineage = new Set<string>(), containerKey = ''): React.ReactNode => {
     if (lineage.has(s.path)) return null
     const next = new Set(lineage).add(s.path)
@@ -971,6 +1047,132 @@ export function Rail() {
         <Icon name="plus" size={12} />
         <span>{t('rail.new')}</span>
       </button>
+
+      {/* ---- 主题空间（实施-25 P02）：日常的组织单位，与「项目」并列 ---- */}
+      <div className="rail-section" data-testid="rail-spaces">
+        <div className="rail-section-head">
+          <button
+            className={`rail-section-title ${spacesOpen ? '' : 'collapsed'}`}
+            onClick={() => setSpacesOpen((v) => !v)}
+            data-testid="rail-spaces-head"
+          >
+            <span>{t('rail.spaces')}</span>
+            <Icon name="chevron-right" size={12} className="chev" />
+          </button>
+          <button
+            className="rail-icon sm"
+            title={t('rail.addSpace')}
+            data-testid="rail-add-space"
+            onClick={() => {
+              setSpacesOpen(true)
+              setNewSpaceName('')
+            }}
+          >
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
+
+        <div className="rail-body">
+          {newSpaceName !== null ? (
+            <input
+              className="rail-space-input"
+              autoFocus
+              value={newSpaceName}
+              placeholder={t('rail.spaceName')}
+              data-testid="rail-new-space-input"
+              onChange={(e) => setNewSpaceName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setNewSpaceName(null)
+                  return
+                }
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                const name = newSpaceName.trim()
+                if (!name) {
+                  setNewSpaceName(null)
+                  return
+                }
+                /* 建失败就留着草稿（校验原因已在 notice 里）——不逼用户重打一遍 */
+                void createSpace(name).then((space) => setNewSpaceName(space ? null : name))
+              }}
+              onBlur={() => {
+                if (!newSpaceName.trim()) setNewSpaceName(null)
+              }}
+            />
+          ) : null}
+
+          {spaces.filter((space) => !space.archived).length === 0 && newSpaceName === null ? (
+            <div className="rail-empty" data-testid="rail-no-spaces">{t('rail.noSpaces')}</div>
+          ) : null}
+
+          {spaces.filter((space) => !space.archived).map((space) => {
+            const open = openSpaces.includes(space.id)
+            const list = sessions.filter((s) => s.spaceId === space.id)
+            return (
+              <div key={space.id} className="rail-space">
+                <div
+                  className="rail-space-row"
+                  data-testid="rail-space-row"
+                  data-space-id={space.id}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setSpaceMenuFor({ id: space.id, x: e.clientX, y: e.clientY, trigger: e.currentTarget })
+                  }}
+                >
+                  <button
+                    className="rail-space-fold"
+                    title={open ? t('rail.foldSessions') : t('rail.unfoldProject')}
+                    data-testid="rail-space-fold"
+                    onClick={() =>
+                      setOpenSpaces((prev) =>
+                        prev.includes(space.id) ? prev.filter((x) => x !== space.id) : [...prev, space.id]
+                      )
+                    }
+                  >
+                    <Icon name="chevron-right" size={12} className={`chev ${open ? 'on' : ''}`} />
+                  </button>
+                  <button
+                    className="rail-space-name"
+                    title={space.description ?? space.name}
+                    data-testid="rail-space-name"
+                    onClick={() =>
+                      setOpenSpaces((prev) =>
+                        prev.includes(space.id) ? prev.filter((x) => x !== space.id) : [...prev, space.id]
+                      )
+                    }
+                  >
+                    {space.name}
+                  </button>
+                  <span className="rail-space-count" data-testid="rail-space-count">{list.length}</span>
+                  <button
+                    className="rail-icon sm"
+                    title={t('rail.spaceMore')}
+                    data-testid="rail-space-menu-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setSpaceMenuFor({ id: space.id, x: rect.left, y: rect.bottom, trigger: e.currentTarget })
+                    }}
+                  >
+                    <Icon name="menu" size={12} />
+                  </button>
+                </div>
+                {open ? (
+                  <div className="rail-space-tree" data-testid="rail-space-tree">
+                    {list.length === 0 ? (
+                      <div className="rail-empty sm" data-testid="rail-space-empty">{t('rail.spaceEmpty')}</div>
+                    ) : (
+                      list.map((s) => renderSession(s, list, 0, new Set<string>(), `space:${space.id}`))
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       {/* ---- 项目分组 ---- */}
       <div className="rail-section">
@@ -1322,6 +1524,21 @@ export function Rail() {
           onClose={() => setTrashNotice(null)}
         />
       ) : null}
+
+      {/* ---- 空间菜单（Portal 到 body；锚点是右键点或行内 ⋯）---- */}
+      <ContextMenu
+        open={spaceMenuFor !== null}
+        anchor={spaceMenuFor}
+        testid="rail-space-menu"
+        data-space-id={spaceMenuFor?.id ?? ''}
+        onClose={() => {
+          const trigger = spaceMenuFor?.trigger
+          setSpaceMenuFor(null)
+          trigger?.focus?.()
+        }}
+        items={spaceMenuItems}
+      />
+
       <RailUser />
       {deleteTarget ? (
         <SessionDeleteDialog

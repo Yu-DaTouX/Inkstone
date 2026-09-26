@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { samePath } from '../../../../shared/session-path'
 import { useSessionSources } from '../../state/daily-sources'
 import { goalDisplayTitle } from '../../state/goal-view'
 import { buildSessionMap } from '../../../../shared/session-map'
@@ -19,12 +20,14 @@ import { buildSessionMap } from '../../../../shared/session-map'
 interface Props {
   onOpenSession: (path: string) => void
   onOpenMap: () => void
+  /** 打开空间概览（实施-25 P04 / T04-2）。首页不重复概览的内容，只给入口。 */
+  onOpenSpace: () => void
 }
 
 /* 稳定的空对象：selector 每次返回新引用会让 zustand 无限重渲染 */
 const NO_PROJECT_NAMES: Record<string, string> = {}
 
-export function WorkbenchHome({ onOpenSession, onOpenMap }: Props): React.JSX.Element {
+export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props): React.JSX.Element {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
   const session = useStore((s) => s.session)
@@ -32,6 +35,8 @@ export function WorkbenchHome({ onOpenSession, onOpenMap }: Props): React.JSX.El
   const goalLoading = useStore((s) => s.goalLoading)
   const goalError = useStore((s) => s.goalError)
   const todos = useStore((s) => s.todos)
+  const spaces = useStore((s) => s.spaces)
+  const library = useStore((s) => s.library)
   const projectNames = useStore((s) => s.settings?.projectNames ?? NO_PROJECT_NAMES)
 
   const sources = useSessionSources(session?.sessionId)
@@ -46,6 +51,25 @@ export function WorkbenchHome({ onOpenSession, onOpenMap }: Props): React.JSX.El
   )
 
   const mapSummary = useMemo(() => buildSessionMap({ sessions }).stats, [sessions])
+
+  /*
+   * 当前空间：**从当前会话的归属派生**，不另存一份（T04-8）。
+   * 首页与概览用的是同一个来源，所以不会出现「首页说 A、概览说 B」。
+   */
+  const spaceId = useMemo(
+    () =>
+      sessions.find((s) => s.id === session?.sessionId || samePath(s.path, session?.sessionFile))?.spaceId,
+    [sessions, session?.sessionFile]
+  )
+  const space = useMemo(() => spaces.find((s) => s.id === spaceId), [spaces, spaceId])
+  const spaceSessionCount = useMemo(
+    () => (spaceId ? sessions.filter((s) => s.spaceId === spaceId).length : 0),
+    [sessions, spaceId]
+  )
+  const spaceSourceCount = useMemo(
+    () => (spaceId ? library.filter((s) => s.spaceId === spaceId).length : 0),
+    [library, spaceId]
+  )
 
   const doneCount = todos.filter((x) => x.done).length
   const currentTodo = todos.find((x) => !x.done)
@@ -72,6 +96,28 @@ export function WorkbenchHome({ onOpenSession, onOpenMap }: Props): React.JSX.El
       </header>
 
       <div className="wb-home-grid">
+        {/* ---- 当前空间（T04-2）---- */}
+        <section className="wb-card" data-testid="wb-card-space">
+          <h2 className="wb-card-title">
+            <Icon name="layers" size={12} />
+            {t('wb.spaceCard')}
+          </h2>
+          {space ? (
+            <>
+              <p className="wb-card-main">{space.name}</p>
+              <p className="wb-card-meta" data-testid="wb-card-space-count">
+                {t('wb.spaceCardCount', { sessions: spaceSessionCount, sources: spaceSourceCount })}
+              </p>
+            </>
+          ) : (
+            <p className="wb-card-empty">{t('wb.spaceCardNone')}</p>
+          )}
+          <button className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
+            {t('wb.spaceCardOpen')}
+            <Icon name="chevron-right" size={12} />
+          </button>
+        </section>
+
         {/* ---- 继续 ---- */}
         <section className="wb-card" data-testid="wb-card-continue">
           <h2 className="wb-card-title">

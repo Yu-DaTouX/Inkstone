@@ -46,14 +46,46 @@ function findBareFr(css) {
     if (!m) return
 
     const value = m[1]
-    // 先把 minmax(...) 整段挖掉，剩下的 fr 就是「裸」的
-    const stripped = value.replace(/minmax\s*\([^)]*\)/g, '')
+    /*
+     * 先把 minmax(...) 整段挖掉，剩下的 fr 就是「裸」的。
+     *
+     * 必须按**括号配对**扫描，不能用 `/minmax\([^)]*\)/`：
+     * 合法写法 `minmax(min(240px, 100%), 1fr)` 里的 `min(` 会先遇到一个 `)`，
+     * 非贪婪正则会提前收尾，把后面的 `, 1fr` 当成裸 fr 误报
+     *（P04 的 workbench.css 就这么被误判过）。
+     */
+    const stripped = stripCalls(value, 'minmax')
     if (/\d+(\.\d+)?fr/.test(stripped)) {
       hits.push({ line: i + 1, text: line.trim(), value: value.trim() })
     }
   })
 
   return hits
+}
+
+/** 把 `name( ... )` 整体（含嵌套括号）替换为空格，返回剩余文本。 */
+function stripCalls(value, name) {
+  const head = new RegExp(`^${name}\\s*\\(`, 'i')
+  let out = ''
+  let i = 0
+  while (i < value.length) {
+    const m = head.exec(value.slice(i))
+    if (!m) {
+      out += value[i]
+      i++
+      continue
+    }
+    let depth = 1
+    let j = i + m[0].length
+    while (j < value.length && depth > 0) {
+      if (value[j] === '(') depth++
+      else if (value[j] === ')') depth--
+      j++
+    }
+    out += ' '
+    i = j
+  }
+  return out
 }
 
 console.log('=== CSS 守卫：grid 的 1fr 必须用 minmax(0, 1fr) ===\n')

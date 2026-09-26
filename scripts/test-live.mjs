@@ -92,6 +92,22 @@ const CASES = {
   sessionmap: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
   // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
   runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
+  // 实施-25 P01：活动档案切换（UI → IPC → 落盘；cost 0）
+  agentprofile: { probe: 'scripts/probe/agent-profile.js', delay: 9000, cost: 0 },
+  // 实施-25 P02：主题空间（建空间 → 会话归属 → 归档；cost 0）
+  spaces: { probe: 'scripts/probe/spaces.js', delay: 9000, cost: 0 },
+  // 实施-25 P04：空间工作台（概览始终可达 / 四入口 / 按会话归属投影；cost 0）
+  spaceview: { probe: 'scripts/probe/spaceview.js', delay: 11000, cost: 0 },
+  // 实施-25 P03：资料库（导入 → 解析 → 多引用方 → 软移除后旧引用仍可打开；cost 0）
+  library: { probe: 'scripts/probe/library.js', delay: 9000, cost: 0 },
+  // 实施-25 P05：活动行为与上下文装配（加入对话 → 引用可回到原文；cost 0）
+  activity: { probe: 'scripts/probe/activity.js', delay: 11000, cost: 0 },
+  // 实施-25 P06a/P06b：可编辑成果（新建 → 编辑 → 版本 → 关闭重开 → agent 重写不吞用户段落 → 清单勾选 → 来源回原文；cost 0）
+  artifact: { probe: 'scripts/probe/artifact.js', delay: 15000, cost: 0 },
+  // 实施-25 P07：课程与路线（从资料生成 → 单元指回原文 → 调整顺序 → 材料 / 补充边界；cost 0）
+  course: { probe: 'scripts/probe/course.js', delay: 16000, cost: 0 },
+  // 实施-25 P08：学习状态与闸门（阶段推进 / 等作答 / 自问自答被拒 / 位置保留；cost 0）
+  study: { probe: 'scripts/probe/study.js', delay: 14000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。

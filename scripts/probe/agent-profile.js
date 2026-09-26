@@ -1,0 +1,96 @@
+/**
+ * 活动档案（实施-25 P01）—— 真实窗口里的切换链路。
+ *
+ * 为什么必须有这个场景：单元测试能证明「宿主写出的快照正确」「扩展读快照会
+ * 注入什么角色」，但证明不了「界面上点得到、点了真的落盘、再读回来还是它」。
+ * 这里走 UI → IPC → store → 快照文件的完整链路（cost 0，不发模型请求）。
+ *
+ * 真角色的差异由注入文本决定，那部分在单测里钉；本场景钉的是**入口与存储**。
+ */
+;(async () => {
+  const out = []
+  const ok = (c, s, extra) => {
+    out.push((c ? '  ✓ ' : '  ✗ ') + s + (extra ? `  ${extra}` : ''))
+    return !!c
+  }
+  const log = (s) => out.push(s)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const q = (s) => document.querySelector(s)
+  const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  const store = window.__yanStore
+  const S = () => store.getState()
+
+  localStorage.setItem('yan.onboarded', '1')
+  for (let i = 0; i < 25; i++) {
+    const c = q('.ob-card')
+    if (!c) break
+    const b = [...c.querySelectorAll('button')].find((x) => /开始使用|完成/.test(x.textContent))
+    if (b) {
+      click(b)
+      await sleep(250)
+    } else await sleep(120)
+  }
+  await sleep(500)
+  S().closeSettings?.()
+  await sleep(200)
+
+  for (let i = 0; i < 24; i++) {
+    if (S().conn === 'ready') break
+    await sleep(500)
+  }
+  if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}）`
+
+  log('=== 1. 入口存在且默认是代码 ===')
+  const btn = q('[data-testid="agent-profile-button"]')
+  if (!btn) return '✗ 找不到活动档案按钮（composer 工具栏）'
+  ok(btn.getAttribute('data-profile') === 'coding', '默认档案是 coding（已有会话行为不变）')
+  ok(!!btn.getAttribute('title'), '按钮带说明（title）')
+
+  log('=== 2. 菜单与选项 ===')
+  click(btn)
+  await sleep(250)
+  ok(!!q('[data-testid="agent-profile-menu"]'), '菜单能打开')
+  const options = ['coding', 'answer', 'research', 'compose', 'organize', 'learn']
+  ok(
+    options.every((k) => !!q(`[data-testid="agent-profile-option-${k}"]`)),
+    '六个选项都在（代码 + 五个日常活动）',
+    options.join(',')
+  )
+
+  log('=== 3. 切到「研究」：UI → IPC → 落盘 ===')
+  click(q('[data-testid="agent-profile-option-research"]'))
+  await sleep(450)
+  ok(S().agentProfile?.activity === 'research', 'store 变成 research', JSON.stringify(S().agentProfile))
+  const viaIpc = await window.yan.getAgentProfile()
+  ok(
+    viaIpc.activity === 'research' && viaIpc.revision > 0,
+    'IPC 回读一致（提交真的落了盘）',
+    JSON.stringify(viaIpc)
+  )
+  const label = q('[data-testid="agent-profile-label"]')?.textContent?.trim() ?? ''
+  ok(/研究/.test(label), '按钮文案跟着变', label)
+
+  log('=== 4. 键盘可达 ===')
+  btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  await sleep(220)
+  ok(!!q('[data-testid="agent-profile-menu"]'), 'ArrowDown 能打开菜单')
+  const menu = q('[data-testid="agent-profile-menu"]')
+  menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(220)
+  ok(!q('[data-testid="agent-profile-menu"]'), 'Esc 关闭菜单')
+
+  log('=== 5. 切回代码：日常活动被记住 ===')
+  click(q('[data-testid="agent-profile-button"]'))
+  await sleep(250)
+  click(q('[data-testid="agent-profile-option-coding"]'))
+  await sleep(450)
+  const back = await window.yan.getAgentProfile()
+  ok(back.profile === 'coding', '切回代码档案', JSON.stringify(back))
+  ok(back.activity === 'research', '切回代码后上次的日常活动被保留（不用重选）')
+  ok(
+    q('[data-testid="agent-profile-button"]')?.getAttribute('data-profile') === 'coding',
+    '按钮回到代码态'
+  )
+
+  return out
+})()

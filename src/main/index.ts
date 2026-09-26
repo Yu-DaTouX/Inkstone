@@ -15,6 +15,7 @@ import {
   type CapabilityAuthorizationPrompt,
   type ExternalApiConfirmationRequest,
   type GoalCommandHost,
+  type StudyCommandHost,
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
@@ -22,7 +23,7 @@ import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
-import { moveSessionLayout, rememberSession } from './session-layout'
+import { moveSessionLayout, rememberSession, setSessionSpace } from './session-layout'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
 import type { CustomProviderInput } from '../shared/custom-provider'
@@ -125,6 +126,30 @@ import {
   pendingWorkModeKey,
   writeWorkModeSnapshot
 } from './work-mode-service'
+import {
+  AgentProfileStore,
+  pendingAgentProfileKey,
+  writeAgentProfileSnapshot
+} from './agent-profile-store'
+import { DEFAULT_AGENT_PROFILE, type AgentProfilePatch, type AgentProfileState } from '../shared/agent-profile'
+import { SpaceStore } from './space-store'
+import { LibraryService } from './library-service'
+import { ContextAssembler, type AssembleContextRequest } from './context-assembler'
+import { ArtifactDocStore } from './artifact-doc-store'
+import { CourseService } from './course-service'
+import { LearningService } from './learning-service'
+import type { AgentEditInput, ArtifactMutation, ArtifactSourceRef, CreateArtifactInput } from '../shared/artifact-doc'
+import type { CourseInput, CourseMutation, CourseSourceRef } from '../shared/course'
+import { waitingNote, type StudyMutation, type StudyPhase } from '../shared/study'
+import { currentTaskPlan } from './task-plan-store'
+import {
+  activeSources,
+  refOutcome,
+  type LibraryKind,
+  type LibraryOwner,
+  type SourceReference
+} from '../shared/library'
+import { samePath } from '../shared/session-path'
 import { DEFAULT_WORK_MODE, normalizeWorkMode, type WorkMode, type WorkModeState } from '../shared/work-mode'
 import { commitKnowledge, deleteKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeRelativeRef, type KnowledgeCommitRequest } from '../shared/project-memory'
@@ -147,7 +172,8 @@ import type {
   SessionState,
   SessionSummary,
   TerminalStartRequest,
-  UIMessage
+  UIMessage,
+  CourseUnitInput
 } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -445,6 +471,16 @@ function workModeExtensionPath(): string | undefined {
 }
 
 /**
+ * 活动档案的角色与工具策略扩展的路径（实施-25 P01）。
+ *
+ * 它只做注入：角色文本与禁用工具由宿主渲染好写进快照，扩展不抄文案。
+ * 加载顺序在 `work-mode.js` 之后（两者各自收紧工具，互不恢复对方）。
+ */
+function agentProfileExtensionPath(): string | undefined {
+  return yanThinResourcePath('profile.js')
+}
+
+/**
  * 就绪转移之后的内部续行扩展（实施-05 S3b）。
  *
  * 只有扩展 API 能发 `custom` 角色消息并触发回合，所以这段必须留在薄层。
@@ -548,6 +584,7 @@ function yanThinExtensionPaths(): string[] {
   return [
     questionExtensionPath(),
     workModeExtensionPath(),
+    agentProfileExtensionPath(),
     goalResumeExtensionPath(),
     handoffsExtensionPath(),
     responseDetailExtensionPath(),
@@ -913,6 +950,24 @@ const AUTO_CONTINUE_LIMIT_EFFECTIVE = autoContinueOptions.limit ?? AUTO_CONTINUE
  */
 const autoContinueTimers = new Map<string, { timer: NodeJS.Timeout; token: string }>()
 
+/**
+ * 学习闸门（实施-25 P08 T08-3）：这个会话是不是正等着学习者作答。
+ *
+ * 查的是**落盘的会话本体**，所以重开应用后照样拦得住（T08-2）。
+ * 读失败时**不拦**：读不出来是 IO 故障，不该顺带把自主档整个停掉
+ * （真正的等待在盘上，下一次检查会读到）。
+ *
+ * 这是两道闸中的**第一道**（入队时）；第二道在薄层真正发消息前，
+ * 读的是 `study-gate/<runnerId>.json`（宿主在这里写、那边读）。
+ */
+async function studyGateBlocks(id: string): Promise<boolean> {
+  try {
+    return await learnings.waitingForLearner(id)
+  } catch {
+    return false
+  }
+}
+
 function cancelAutoContinue(id: string): void {
   const entry = autoContinueTimers.get(id)
   if (!entry) return
@@ -946,16 +1001,34 @@ function scheduleAutoContinue(id: string, plan: Extract<AutoContinuePlan, { acti
     const current = autoContinueTimers.get(id)
     if (!current || current.token !== token) return
     autoContinueTimers.delete(id)
-    void writeGoalResumeSnapshot(id, {
-      operationId: randomUUID(),
-      at: Date.now(),
-      kind: 'retry',
-      summary: retryResumeSummary({
-        error: plan.error,
-        attempt: plan.attempt,
-        limit: AUTO_CONTINUE_LIMIT_EFFECTIVE
+    void (async () => {
+      /*
+       * 第二道闸的第一半（T08-3）：延时期间学习者可能刚好被问了一句，
+       * 现在还不该把模型叫起来 —— 等他作答。快照不写，所以薄层也不会发。
+       */
+      if (await studyGateBlocks(id)) {
+        pushFrom(id, {
+          ch: 'notify',
+          payload: {
+            id: `auto-continue-learn-${Date.now()}`,
+            method: 'notify',
+            notifyType: 'info',
+            message: '学习正等着学习者作答：这次自动继续先不发，等他答完再接着走。'
+          }
+        })
+        return
+      }
+      await writeGoalResumeSnapshot(id, {
+        operationId: randomUUID(),
+        at: Date.now(),
+        kind: 'retry',
+        summary: retryResumeSummary({
+          error: plan.error,
+          attempt: plan.attempt,
+          limit: AUTO_CONTINUE_LIMIT_EFFECTIVE
+        })
       })
-    }).catch(() => {
+    })().catch(() => {
       /* 快照写不进去 → 这一次不继续；下一次错误还会再来（不会静默丢掉整条链） */
     })
   }, plan.delayMs)
@@ -976,7 +1049,7 @@ async function handleModelError(id: string, payload: { text: string; source: str
   let result: { plan: AutoContinuePlan | null; duplicate: boolean }
   try {
     await autoContinues.load()
-    result = await autoContinues.noteFailure(key, payload.text)
+    result = await autoContinues.noteFailure(key, payload.text, { learnWaiting: await studyGateBlocks(id) })
   } catch {
     return
   }
@@ -1867,6 +1940,98 @@ function pushRunners(): void {
 const workModes = new WorkModeStore()
 
 /**
+ * 活动档案（实施-25 P01）的存储。
+ *
+ * 与工作模式同一套键与交接口径：按会话保存，`pending:<runnerId>` 占位，
+ * 每轮把当前值写给薄层扩展（它只能从文件知道自己是哪个会话）。
+ */
+const agentProfiles = new AgentProfileStore()
+
+/**
+ * 主题空间（实施-25 P02）的存储。
+ *
+ * 与工作模式 / 活动档案的差别：空间**不属于某个会话**，它是全局的组织维度；
+ * 会话只是通过 `spaceId` 指向它（归属写在 session-layout 里）。
+ */
+const spaces = new SpaceStore()
+
+/**
+ * 资料库（实施-25 P03）的服务实例。
+ *
+ * 与 spaces / agentProfiles 不同，它同时握有存储与解析调度 ——
+ * 「导入 → 解析 → 登记引用」是一条链，拆两个单例只会让调用方漏掉中间一步。
+ */
+const library = new LibraryService()
+
+/**
+ * 上下文装配器（实施-25 P05 / T05-3）。
+ *
+ * 与资料库共用同一个 service 实例：装配要读的就是「这个会话引用了哪些资料」
+ * 以及它们的正文，另起一个 store 只会让两份文档不一致。
+ */
+const contextAssembler = new ContextAssembler({ library })
+
+/**
+ * 可编辑成果（实施-25 P06a）的存储。
+ *
+ * 与 `artifacts.ts`（消息里的文件产物，按会话隔离）不同：这里是用户与 agent
+ * 都要改的文档对象。版本推进规则全在 `shared/artifact-doc.ts` 的纯函数里，
+ * 这一层只做 I/O。
+ */
+const artifactDocs = new ArtifactDocStore()
+
+/**
+ * 课程与路线（实施-25 P07）。
+ *
+ * 依赖资料库：三个入口里「学这份资料」要读指定那一版的真实正文，
+ * 再把正文切成带出处的单元（规则是确定性的，不调模型）。
+ */
+const courses = new CourseService({ library })
+
+/**
+ * 学习状态（实施-25 P08）。
+ *
+ * 只在这里建一份：自动续跑的闸门（`studyGateBlocks`）与界面（`yan:study:*`）
+ * 查的是同一个对象，否则「界面看见在等、宿主却以为没在等」迟早会分家（T08-4）。
+ */
+const learnings = new LearningService({ courses })
+
+/** 纯逻辑层的 `StudyMutation` → IPC 形状。 */
+function studyResult(m: StudyMutation) {
+  return m.ok ? { ok: true as const, session: m.session } : { ok: false as const, error: m.reason }
+}
+
+/**
+ * 渲染端可以不传 runnerKey（缺省用当前正在看的会话）。
+ *
+ * 为什么不让界面自己拼：它手里只有「会话文件 / 会话 id」两种可能的值，
+ * 拼错了就会查到一个不存在的键 —— 闸门静默失效，而这正是最不该静默的地方。
+ */
+function studyKey(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw || ac()?.getState()?.sessionId || ''
+}
+
+/** 纯逻辑层的 `CourseMutation` → IPC 形状。 */
+function courseResult(m: CourseMutation) {
+  return m.ok
+    ? { ok: true as const, course: m.course, ...(m.unchanged ? { unchanged: true } : {}) }
+    : { ok: false as const, error: m.reason }
+}
+
+/** 纯逻辑层的 `ArtifactMutation` → IPC 形状。 */
+function artifactResult(m: ArtifactMutation) {
+  return m.ok
+    ? {
+        ok: true as const,
+        doc: m.doc,
+        ...(m.unchanged ? { unchanged: true } : {}),
+        ...(m.preserved ? { preserved: m.preserved } : {})
+      }
+    : { ok: false as const, error: m.reason }
+}
+
+/**
  * 新会话的默认工作模式（`desktop.json.defaultWorkMode`）。
  *
  * 缓存一份的理由与 `agentResponseDetail` 相同：读取路径里不能到处 await
@@ -1952,6 +2117,105 @@ async function pushWorkMode(id: string): Promise<WorkModeState> {
   return state
 }
 
+/** 新会话的默认活动档案：仍然是代码助手，已有行为不变。 */
+const agentDefaultProfile = DEFAULT_AGENT_PROFILE
+
+/** 该实例的档案键（与 `workModeKeyFor` 同一口径；键必须一致，否则切会话会串）。 */
+function agentProfileKeyFor(id: string): string {
+  const file = normalizeSessionFileKey(runners?.agentOf(id)?.getState()?.sessionFile)
+  return file ?? pendingAgentProfileKey(id)
+}
+
+/** 读该实例的档案，并把 pending 键迁到稳定键（与 `resolveWorkMode` 同一时机）。 */
+async function resolveAgentProfile(id: string): Promise<AgentProfileState> {
+  await agentProfiles.load()
+  const stable = normalizeSessionFileKey(runners?.agentOf(id)?.getState()?.sessionFile)
+  const pendingKey = pendingAgentProfileKey(id)
+  if (!stable) return agentProfiles.state(pendingKey, agentDefaultProfile)
+  if (agentProfiles.state(pendingKey, agentDefaultProfile).revision > 0) {
+    await agentProfiles.adopt(pendingKey, stable)
+  }
+  return agentProfiles.state(stable, agentDefaultProfile)
+}
+
+/**
+ * 把该实例的档案写给模型侧并推给界面。
+ *
+ * 与 `pushWorkMode` 同一个理由：薄层扩展只能从 `agent-profile/<runnerId>.json`
+ * 知道自己的角色，两份出口不能分家（否则会出现「界面显示导师、模型仍是代码助手」）。
+ */
+async function pushAgentProfile(id: string): Promise<AgentProfileState> {
+  const state = await resolveAgentProfile(id)
+  await writeAgentProfileSnapshot(id, state).catch(() => {})
+  pushFrom(id, { ch: 'agent-profile', payload: state })
+  await refreshSessionContext(id, state)
+  return state
+}
+
+/**
+ * 刷新这个会话本轮注入的上下文分区（实施-25 P05 / T05-3）。
+ *
+ * 挂在 `pushAgentProfile` 后：切会话 / 新建 / 启动 / 改档案都经这一处，
+ * 上下文与档案用同一个交接时机（否则会出现「界面改了活动、注入的还是上一个」）。
+ * 写盘失败由 assembler 内部吞掉 —— 上下文是增强，不该拦着一轮对话。
+ *
+ * **偏好分区刻意不填**：语言与详细程度已有各自的薄层扩展在每轮读设置注入，
+ * 在这里再带一份就是第二个真源（P01 已经为角色文本定过同一条边界）。
+ */
+async function refreshSessionContext(id: string, state: AgentProfileState): Promise<void> {
+  await contextAssembler.assembleAndWrite(id, await buildContextRequest(id, state))
+}
+
+/**
+ * 构造这个会话本轮的装配请求（T05-3）。
+ *
+ * `coding` 档案返回**空请求**（不注入任何内容）—— 与「coding 不注入角色」
+ * 同一条边界：非 daily 会话保持 pi 原生行为。同时这次空装配会覆盖上一轮快照，
+ * 避免从 daily 切回 coding 后残留日常的来源片段。
+ */
+async function buildContextRequest(id: string, state: AgentProfileState): Promise<AssembleContextRequest> {
+  if (state.profile !== 'daily') return { activity: state.activity }
+
+  const sessionId = runners?.agentOf(id)?.getState()?.sessionId
+
+  let task: string | undefined
+  try {
+    await goals.load()
+    const goal = goals.state(workModeKeyFor(id))
+    const parts: string[] = []
+    if (goal.brief?.goal) parts.push(`目标：${goal.brief.goal}`)
+    if (goal.brief?.outcome) parts.push(`达成判据：${goal.brief.outcome}`)
+    if (goal.brief?.deliverable) parts.push(`交付物：${goal.brief.deliverable}`)
+    if (goal.blocker) parts.push(`当前阻碍：${goal.blocker}`)
+    if (sessionId) {
+      const plan = await currentTaskPlan(sessionId).catch(() => null)
+      const open = (plan?.state.todos ?? []).filter((t) => !t.done)
+      if (open.length) parts.push(`待办：${open.slice(0, 5).map((t) => t.text).join('；')}`)
+    }
+    if (parts.length) task = parts.join('\n')
+  } catch {
+    /* 目标 / 任务读不到就不带这两段，不影响这一轮 */
+  }
+
+  let space: string | undefined
+  try {
+    if (state.spaceId) {
+      await spaces.load()
+      const found = spaces.find(state.spaceId)
+      if (found) space = found.description ? `${found.name}：${found.description}` : found.name
+    }
+  } catch {
+    /* 空间读不到同理 */
+  }
+
+  return {
+    activity: state.activity,
+    ...(sessionId ? { sessionId } : {}),
+    ...(task ? { task } : {}),
+    ...(space ? { space } : {})
+  }
+}
+
 /** 把该实例当前会话的目标 / 计划事实快照推给右栏。 */
 async function pushGoal(id: string): Promise<void> {
   await goals.load()
@@ -1959,6 +2223,8 @@ async function pushGoal(id: string): Promise<void> {
   const mode = await resolveWorkMode(id)
   await writeWorkModeSnapshot(id, { ...mode, planApprovalPending: state.pendingReady !== null }).catch(() => {})
   pushFrom(id, { ch: 'goal', payload: state })
+  /* 目标 / 待办变了，本轮注入的「任务与阶段」也得跟着变（T05-3） */
+  await refreshSessionContext(id, await resolveAgentProfile(id))
 }
 
 /**
@@ -2067,6 +2333,13 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
      */
     if (mode.mode !== 'autonomous' && !goal.pursue) return
 
+    /*
+     * 正在等学习者作答：自主档不该在这时候把模型叫起来（P08 T08-3）。
+     * 不记事件 —— 每次回合收尾都会走到这里，记了只会刷屏；
+     * 真正需要看的「为什么本轮起了来」在 `goal.report` 的 note 里。
+     */
+    if (await studyGateBlocks(id)) return
+
     const resume = goals.resumeOf(key)
     if (resume) {
       /* 还没消费的续行仍交给 goal-resume 扩展，不能覆盖它。 */
@@ -2134,6 +2407,104 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
  *    S1 实测）：本轮仍是计划档的只读集，所以回执里要明说
  *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
  */
+/**
+ * `yan study …` 的宿主实现（实施-25 P08）。
+ *
+ * 为什么必须有这一族命令：**进入「等你作答」只能由宿主判定**（T08-7）。
+ * 模型只能**请求**提问（`study.ask`），不能自己把阶段推成反馈 / 小结 ——
+ * 那道校验在 `learning-service` 的转移表里，不依赖模型自觉。
+ */
+/** 命令参数可能是 `--next-step` 或请求文件里的 `nextStep`，两种都认。 */
+function studyParam(params: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = params[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+const studyCapabilityHost: StudyCommandHost = {
+  async run(command, params, context) {
+    const key = context.sessionId
+    const courseId = studyParam(params, 'courseId', 'course', 'id')
+    const unitId = studyParam(params, 'unitId', 'unit')
+    const nextStep = studyParam(params, 'nextStep', 'next-step')
+    const call = async (): Promise<{ data?: unknown; summary: Record<string, unknown> }> => {
+      switch (command) {
+        case 'study.start': {
+          const res = await learnings.start({
+            courseId,
+            ...(unitId ? { unitId } : {}),
+            runtimeKey: key,
+            ...(nextStep ? { nextStep } : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          const status = await learnings.status(key)
+          return { data: { session: res.session, resume: status.resume }, summary: { ok: true, phase: res.session.phase, courseId: res.session.courseId } }
+        }
+        case 'study.ask': {
+          const res = await learnings.ask({
+            runtimeKey: key,
+            question: studyParam(params, 'question'),
+            ...(studyParam(params, 'expectation') ? { expectation: studyParam(params, 'expectation') } : {}),
+            origin: params.origin === 'model' ? 'model' : 'material',
+            ...(Array.isArray(params.sources) ? { sources: params.sources as CourseSourceRef[] } : {}),
+            ...(nextStep ? { nextStep } : {})
+          })
+          /*
+           * 被拒也要回 `summary.ok:false` 而不是抛错：`awaiting-learner` 这类拒绝
+           * 是**正常语义**（模型想跳过等待），该让它读到原因并改做法，不是崩掉。
+           */
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase, waiting: true } }
+        }
+        case 'study.answer': {
+          const res = await learnings.answer({ runtimeKey: key, text: studyParam(params, 'text', 'answer') })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase } }
+        }
+        case 'study.advance': {
+          const res = await learnings.advance({
+            runtimeKey: key,
+            to: studyParam(params, 'to', 'phase') as StudyPhase,
+            ...(nextStep ? { nextStep } : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase } }
+        }
+        case 'study.pause':
+        case 'study.resume':
+        case 'study.stop': {
+          const action = command.slice('study.'.length)
+          const res =
+            action === 'pause'
+              ? await learnings.pause(key)
+              : action === 'resume'
+                ? await learnings.resume(key)
+                : await learnings.stop(key)
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase, paused: res.session.paused } }
+        }
+        case 'study.status': {
+          const status = await learnings.status(key)
+          return {
+            data: status,
+            summary: {
+              ok: true,
+              phase: status.session?.phase ?? null,
+              waiting: status.waiting,
+              gate: status.gate?.waiting === true
+            }
+          }
+        }
+        default:
+          return { summary: { ok: false, error: `未知的 study 动作：${command}` } }
+      }
+    }
+    return call()
+  }
+}
+
 const goalCapabilityHost: GoalCommandHost = {
   async run(command, params, context) {
     await goals.load()
@@ -2274,7 +2645,20 @@ const goalCapabilityHost: GoalCommandHost = {
        */
       let continueNote: string | null = null
       let continueRound: number | null = null
-      if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
+      /*
+       * 学习闸门（P08 T08-3）：等学习者作答时，本轮收尾后**不安排**下一次续接。
+       * 只对「本来会被自动叫醒」的会话查一次，标准档下不必付这次读盘。
+       */
+      const learningWaiting =
+        (modeState.mode === 'autonomous' || res.goal.pursue) && isActiveGoalPhase(res.goal.phase)
+          ? await studyGateBlocks(context.sessionId)
+          : false
+      if (learningWaiting) {
+        const learning = await learnings.status(context.sessionId)
+        continueNote = learning.resume
+          ? waitingNote(learning.resume)
+          : '正在等学习者作答：本轮收尾后不会自动继续。'
+      } else if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
         const armed = await goals.armContinue(key, {
           consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId),
           usage: await goalBudgetUsage(context.sessionId, goals.startOf(key))
@@ -2401,6 +2785,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   void ag.refreshTodos().catch(() => {})
   /* 工作模式跟随实例推送：切会话 / 新建 / 启动都经这里，一处覆盖所有路径 */
   await pushWorkMode(id)
+  await pushAgentProfile(id)
   await pushGoal(id)
   pushRunners()
 }
@@ -3342,6 +3727,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         piBin: settings.piBin,
         questionExtension: questionExtensionPath(),
         workModeExtension: workModeExtensionPath(),
+        agentProfileExtension: agentProfileExtensionPath(),
         goalResumeExtension: goalResumeExtensionPath(),
         handoffsExtension: handoffsExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
@@ -3364,6 +3750,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
+        /* 学习状态（实施-25 P08）：阶段与等待同样归宿主（T08-7）。 */
+        studyHost: studyCapabilityHost,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
@@ -4407,6 +4795,121 @@ function registerIpc(): void {
     pushFrom(id, { ch: 'work-mode', payload: res.state })
     if (res.ok && mode !== 'clarify') await pushGoal(id)
     return res
+  })
+
+  /*
+   * ---- 活动档案（实施-25 P01）----
+   *
+   * 与工作模式同一条链：按**当前会话**读写，写盘后同时更新薄层快照与界面推送。
+   * 不提供全局入口 —— 改档案只影响这条会话（改别的会话是切过去再改）。
+   */
+  handle('yan:getAgentProfile', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return agentProfiles.state('', agentDefaultProfile)
+    return resolveAgentProfile(id)
+  })
+
+  handle('yan:setAgentProfile', async (patch: unknown, expectedRevision?: number) => {
+    const id = runners?.activeRunner()?.id
+    if (!id) {
+      return { ok: false, state: agentProfiles.state('', agentDefaultProfile), error: 'pi 未运行' }
+    }
+    const clean = patch && typeof patch === 'object' ? (patch as AgentProfilePatch) : {}
+    const res = await agentProfiles.set(agentProfileKeyFor(id), clean, expectedRevision)
+    /* 失败也要写 + 推：非法提交被挡下时，界面仍要看到真实生效的那一份 */
+    await pushAgentProfile(id)
+    return res
+  })
+
+  /*
+   * ---- 主题空间（实施-25 P02）----
+   *
+   * 空间是**全局组织维度**（不属于某个会话）；会话通过 session-layout 的
+   * `spaceId` 指向它。这里只做：列 / 建 / 改（含归档）/ 关联项目 / 把会话放进空间。
+   *
+   * ⚠️ 没有删除入口，**归档即移除**：资料库（P03）的引用按 identity + version
+   *    绑定，物理删空间会造孤儿引用；真正的移除语义留给 P03。
+   */
+  handle('yan:getSpaces', async () => {
+    await spaces.load()
+    return { spaces: spaces.list(), links: spaces.links() }
+  })
+
+  handle('yan:createSpace', async (input: unknown) => {
+    const res = await spaces.create(input)
+    if (!res.ok) return { ok: false, error: 'error' in res && res.detail ? res.detail : '无法创建空间' }
+    return { ok: true, space: res.space, spaces: spaces.list(), links: spaces.links() }
+  })
+
+  handle('yan:updateSpace', async (id: string, patch: unknown) => {
+    if (typeof id !== 'string' || !id.trim()) return { ok: false, error: '缺少空间 id' }
+    const clean = (patch && typeof patch === 'object' ? patch : {}) as {
+      name?: string
+      description?: string | null
+      archived?: boolean
+    }
+    const res = await spaces.update(id, clean)
+    if (!res.ok) {
+      if (res.error === 'not-found') return { ok: false, error: '空间不存在' }
+      return { ok: false, error: 'detail' in res && res.detail ? res.detail : '无法更新空间' }
+    }
+    return { ok: true, space: res.space, spaces: spaces.list(), links: spaces.links() }
+  })
+
+  handle('yan:linkSpaceProject', async (spaceId: string, projectId: string) => {
+    await spaces.load()
+    if (typeof spaceId !== 'string' || !spaceId.trim() || typeof projectId !== 'string' || !projectId.trim()) {
+      return { ok: false, error: '缺少空间或项目 id' }
+    }
+    const settings = await getSettings()
+    if (!settings.projects.some((project) => project.id === projectId)) {
+      return { ok: false, error: '目标项目不存在或已被移除' }
+    }
+    const res = await spaces.linkProject(spaceId, projectId)
+    return res.ok ? { ok: true, links: res.links } : { ok: false, error: '空间不存在' }
+  })
+
+  handle('yan:unlinkSpaceProject', async (spaceId: string, projectId: string) => {
+    await spaces.load()
+    const res = await spaces.unlinkProject(spaceId, projectId)
+    return res.ok ? { ok: true, links: res.links } : { ok: false, error: res.error ?? '解除关联失败' }
+  })
+
+  /**
+   * 把会话放进空间（或移出：`spaceId = null`）。
+   *
+   * 与 `yan:moveSession` 同一个边界：只写 session-layout，不移动 JSONL、不停 runner。
+   * 空间归属与项目归属是两个独立维度，这里**不动 projectId**。
+   */
+  handle('yan:setSessionSpace', async (sessionId: string, spaceId: string | null) => {
+    await spaces.load()
+    if (spaceId !== null && !spaces.find(spaceId)) return { ok: false, error: '目标空间不存在' }
+    const settings = await getSettings()
+    const summaries = await listSessions(500, settings.projects)
+    const summary = summaries.find((item) => item.id === sessionId)
+    if (!summary) return { ok: false, error: '找不到要归属的会话' }
+    try {
+      const entry = await setSessionSpace(
+        { sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd },
+        spaceId
+      )
+      /*
+       * 回填 AgentProfile.spaceId（实施-25 T02-4）。
+       *
+       * 只对**当前活跃实例**推：档案按会话存，后台会话等它被切过去时自己再读；
+       * 在这里顺手改别的实例，就成了「操作后台会话却改了当前会话的档案」。
+       */
+      const active = runners?.activeRunner()
+      const activeFile = runners?.agentOf(active?.id ?? '')?.getState()?.sessionFile
+      /* 比较用共享归一化：工作模式键大小写敏感，不能兼作「是不是同一条会话」 */
+      if (active && samePath(activeFile, summary.path)) {
+        await agentProfiles.set(agentProfileKeyFor(active.id), { spaceId })
+        await pushAgentProfile(active.id)
+      }
+      return { ok: true, entry }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   /* ---- 队列模式 / 轮换（pi 自带能力，TUI 里都有对应快捷键） ---- */
@@ -5629,6 +6132,268 @@ function registerIpc(): void {
    *（方案：网页搜索只在已发现兼容搜索能力时启用，且不自造私有搜索后端）。
    */
   handle('yan:sources:webSearch', async () => (await ac()?.webSearchAvailability()) ?? { available: false })
+
+  /*
+   * ---- 资料库（实施-25 P03）----
+   *
+   * 与 sources（会话级旧模型）**并存**：旧 handler 与旧参数一个都没动，
+   * 新增的是 librarySourceId 这一侧的引用（T03-7 的过渡）。
+   *
+   * 两条铁律体现在签名里：
+   *   · 打开只收 `{ sourceId, version }` —— 没有「按路径找文件」的入口；
+   *   · 判定只走 `refOutcome` —— 界面拿到的 outcome 就是唯一结论。
+   */
+  handle('yan:library:list', async (req?: { spaceId?: string | null }) => {
+    await library.store.load()
+    const doc = library.store.document()
+    return {
+      ok: true,
+      sources: activeSources(doc, req?.spaceId),
+      versions: doc.versions,
+      refs: doc.refs.map((r) => ({ ...r, outcome: refOutcome(doc, r.ref) }))
+    }
+  })
+
+  handle('yan:library:import', async (view: {
+    kind: LibraryKind
+    ref: string
+    title: string
+    spaceId?: string
+    content?: string
+    owner?: LibraryOwner
+  }) => {
+    if (!view || typeof view !== 'object') return { ok: false, error: '缺少导入参数' }
+    return library.import({
+      kind: view.kind,
+      ref: view.ref,
+      title: view.title,
+      ...(view.spaceId ? { spaceId: view.spaceId } : {}),
+      ...(view.content !== undefined ? { content: view.content } : {}),
+      ...(view.owner ? { owner: view.owner } : {})
+    })
+  })
+
+  handle('yan:library:open', async (ref: SourceReference, options?: { maxChars?: number }) => {
+    if (!ref || typeof ref.sourceId !== 'string' || !ref.sourceId) {
+      return { ok: false as const, outcome: 'missing' as const, error: '缺少引用' }
+    }
+    const version = Number(ref.version)
+    if (!Number.isFinite(version) || version < 1) {
+      return { ok: false as const, outcome: 'missing' as const, error: '引用的版本号非法' }
+    }
+    const res = await library.openRef({ sourceId: ref.sourceId, version }, options ?? {})
+    return { ok: true as const, ...res }
+  })
+
+  handle('yan:library:remove', async (sourceId: string) => {
+    const done = await library.store.removeSource(sourceId)
+    return done ? { ok: true } : { ok: false, error: '资料不存在' }
+  })
+
+  handle('yan:library:restore', async (sourceId: string) => {
+    const done = await library.store.restoreSource(sourceId)
+    return done ? { ok: true } : { ok: false, error: '资料不存在或未被移除' }
+  })
+
+  handle('yan:library:rename', async (sourceId: string, title: string) => library.store.renameSource(sourceId, title))
+
+  handle('yan:library:attach', async (sourceId: string, spaceId: string | null) => {
+    if (spaceId !== null) {
+      await spaces.load()
+      if (!spaces.find(spaceId)) return { ok: false, error: '目标空间不存在' }
+    }
+    const done = await library.store.attachToSpace(sourceId, spaceId)
+    return done ? { ok: true } : { ok: false, error: '资料不存在' }
+  })
+
+  handle('yan:library:verify', async (refs: SourceReference[]) => {
+    const list = Array.isArray(refs) ? refs : []
+    const res = await library.verifyAvailability(list)
+    return { ok: true, ...res }
+  })
+
+  handle('yan:library:addRef', async (owner: LibraryOwner, ref: SourceReference) => {
+    if (!owner || !ref) return { ok: false, error: '缺少引用方或引用' }
+    const added = await library.store.addRef(owner, ref)
+    /*
+     * 「加入对话」后立刻重装上下文（T05-3）：否则用户会看到刚加的资料
+     * 直到下一次切会话才进上下文 —— 那正是「界面显示加了、模型却看不到」。
+     */
+    if (owner.kind === 'session') {
+      const activeId = runners?.activeRunner()?.id
+      if (activeId && runners?.agentOf(activeId)?.getState()?.sessionId === owner.id) {
+        await refreshSessionContext(activeId, await resolveAgentProfile(activeId))
+      }
+    }
+    return { ok: true, added }
+  })
+
+  handle('yan:library:promoteLegacy', async (req: {
+    sessionId: string
+    legacyId: string
+    kind: LibraryKind
+    title: string
+    ref: string
+    spaceId?: string
+  }) => {
+    if (!req || typeof req !== 'object') return { ok: false, error: '缺少参数' }
+    return library.promoteLegacy(req)
+  })
+
+  /*
+   * 本轮上下文（实施-25 P05 / T05-3）：**只读**。
+   *
+   * 返回的是「真的会注入给模型的那份内容」（与扩展读的快照同源），
+   * 引用带 sourceId + version + 字符区间，界面与探针据此核对、跳回原文。
+   * 这里不写盘、不改任何状态。
+   */
+  handle('yan:context:current', async () => {
+    const id = runners?.activeRunner()?.id
+    if (!id) return { ok: false, error: 'no_session' }
+    const state = await resolveAgentProfile(id)
+    const assembly = await contextAssembler.assemble(await buildContextRequest(id, state))
+    return { ok: true, assembly }
+  })
+
+  /*
+   * ---- 可编辑成果（实施-25 P06a）----
+   *
+   * 版本推进、段落保护都是纯函数（shared/artifact-doc.ts），这里只做 I/O 与转发。
+   * `applyAgentEdit` 是 agent 改正文的**唯一**入口：它要么定向替换段落，要么
+   * 带基线版本整篇重写（宿主会保留用户改过的段落）。没有「直接写全文」的口子。
+   */
+  handle('yan:artifactDoc:list', async (spaceId?: string | null) => {
+    await artifactDocs.load()
+    return { ok: true, docs: artifactDocs.list(spaceId) }
+  })
+  handle('yan:artifactDoc:create', async (input: CreateArtifactInput) => artifactResult(await artifactDocs.create(input)))
+  handle('yan:artifactDoc:saveUserEdit', async (id: string, text: string) =>
+    artifactResult(await artifactDocs.saveUserEdit(id, text))
+  )
+  handle('yan:artifactDoc:applyAgentEdit', async (id: string, edit: AgentEditInput) =>
+    artifactResult(await artifactDocs.applyAgentEdit(id, edit))
+  )
+  handle('yan:artifactDoc:rename', async (id: string, title: string) => artifactResult(await artifactDocs.rename(id, title)))
+  handle('yan:artifactDoc:assign', async (id: string, patch: { spaceId?: string | null; taskId?: string | null }) =>
+    artifactResult(await artifactDocs.assign(id, patch))
+  )
+  handle('yan:artifactDoc:addSource', async (id: string, ref: ArtifactSourceRef) =>
+    artifactResult(await artifactDocs.addSource(id, ref))
+  )
+  handle('yan:artifactDoc:toggleChecklist', async (id: string, index: number) =>
+    artifactResult(await artifactDocs.toggleChecklist(id, index))
+  )
+  /*
+   * 导出为 Markdown（T06b-3）。
+   *
+   * 只写**用户在保存框里点的地方**（不自动改写仓库里的文档）。
+   * 来源标题现去资料库取：成果只存 `{sourceId, version}`，在这里复制一份标题会让
+   * 资料改名后的导出对不上。
+   */
+  handle('yan:artifactDoc:exportMarkdown', async (id: string) => {
+    try {
+      await artifactDocs.load()
+      const doc = artifactDocs.find(id)
+      if (!doc) return { ok: false, error: '找不到这份成果' }
+      await library.store.load()
+      const lib = library.store.document()
+      const sources = doc.sources.map((ref) => {
+        const hit = lib.sources.find((s) => s.id === ref.sourceId)
+        return { sourceId: ref.sourceId, version: ref.version, ...(hit?.title ? { title: hit.title } : {}) }
+      })
+      const rendered = artifactDocs.markdownOf(id, sources)
+      if (!rendered.ok) return { ok: false, error: rendered.reason }
+      const defaultPath = join(
+        app.getPath('documents'),
+        `${doc.title.replace(/[\\/:*?"<>|]/g, '_') || 'artifact'}.md`
+      )
+      const options: Electron.SaveDialogOptions = {
+        title: '导出成果',
+        defaultPath,
+        filters: [{ name: 'Markdown', extensions: ['md'] }]
+      }
+      const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      if (picked.canceled || !picked.filePath) return { ok: true, markdown: rendered.markdown, canceled: true }
+      await writeFile(picked.filePath, rendered.markdown, 'utf8')
+      return { ok: true, markdown: rendered.markdown, path: picked.filePath }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  handle('yan:artifactDoc:remove', async (id: string) => artifactDocs.remove(id))
+
+  /*
+   * 课程与路线（实施-25 P07）。
+   *
+   * 三个入口是三个方法，不是 `entry` 参数 —— 「学这份资料」要读真实正文并
+   * 切成带出处的单元，失败原因与另外两个完全不同，混成一个方法就只能报含糊的错。
+   */
+  handle('yan:course:list', async (spaceId?: string | null) => {
+    await courses.store.load()
+    return { ok: true, courses: courses.list(spaceId) }
+  })
+  handle('yan:course:create', async (input: CourseInput) => courseResult(await courses.create(input)))
+  handle('yan:course:createFromSource', async (params: { sourceId: string; version: number; input: CourseInput }) =>
+    courseResult(await courses.createFromSource(params))
+  )
+  handle('yan:course:createFromTopic', async (input: CourseInput) => courseResult(await courses.createFromTopic(input)))
+  handle('yan:course:createFromBlocker', async (input: CourseInput) =>
+    courseResult(await courses.createFromBlocker(input))
+  )
+  handle('yan:course:update', async (id: string, patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }) =>
+    courseResult(await courses.update(id, patch))
+  )
+  handle('yan:course:addUnit', async (id: string, unit: CourseUnitInput) => courseResult(await courses.addUnit(id, unit)))
+  handle(
+    'yan:course:updateUnit',
+    async (id: string, unitId: string, patch: { title?: string; target?: string | null; estimateMinutes?: number; note?: string }) =>
+      courseResult(await courses.updateUnit(id, unitId, patch))
+  )
+  handle('yan:course:moveUnit', async (id: string, unitId: string, delta: number) =>
+    courseResult(await courses.moveUnit(id, unitId, delta))
+  )
+  handle('yan:course:removeUnit', async (id: string, unitId: string) => courseResult(await courses.removeUnit(id, unitId)))
+  handle('yan:course:addConcept', async (id: string, name: string) => courseResult(await courses.addConcept(id, name)))
+  handle('yan:course:removeConcept', async (id: string, conceptId: string) =>
+    courseResult(await courses.removeConcept(id, conceptId))
+  )
+  handle('yan:course:archive', async (id: string, archived?: boolean) => courseResult(await courses.archive(id, archived ?? true)))
+  handle('yan:course:remove', async (id: string) => courses.remove(id))
+
+  /*
+   * 学习状态（实施-25 P08）。
+   *
+   * `ask` 是**唯一**能进入「等你作答」的命令（T08-7）；`advance` 一律不带问题
+   * 与作答凭据，所以它既进不了等待也出不了等待 —— 模型不能自问自答把课学完。
+   * 作答只有用户的真实输入走 `answer`。
+   */
+  handle('yan:study:start', async (input: { courseId: string; unitId?: string; runtimeKey?: string; nextStep?: string }) =>
+    studyResult(await learnings.start({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
+  )
+  handle('yan:study:status', async (runtimeKey?: string) => learnings.status(studyKey(runtimeKey)))
+  handle('yan:study:statusOfCourse', async (courseId: string) => learnings.statusOfCourse(courseId))
+  handle('yan:study:list', async () => learnings.list())
+  handle(
+    'yan:study:ask',
+    async (input: {
+      runtimeKey?: string
+      question: string
+      expectation?: string
+      origin?: 'material' | 'model'
+      sources?: CourseSourceRef[]
+      nextStep?: string
+    }) => studyResult(await learnings.ask({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
+  )
+  handle('yan:study:answer', async (input: { runtimeKey?: string; text: string }) =>
+    studyResult(await learnings.answer({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
+  )
+  handle('yan:study:advance', async (input: { runtimeKey?: string; to: StudyPhase; nextStep?: string }) =>
+    studyResult(await learnings.advance({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
+  )
+  handle('yan:study:pause', async (runtimeKey?: string) => studyResult(await learnings.pause(studyKey(runtimeKey))))
+  handle('yan:study:resume', async (runtimeKey?: string) => studyResult(await learnings.resume(studyKey(runtimeKey))))
+  handle('yan:study:stop', async (runtimeKey?: string) => studyResult(await learnings.stop(studyKey(runtimeKey))))
+  handle('yan:study:remove', async (courseId: string) => learnings.remove(courseId))
 
   handle('yan:packages:list', async (cwd: string) => {
     try {

@@ -92,9 +92,12 @@ export function imagesOf(
 export function normalizeMessage(
   m: PiMessage,
   idx: number,
-  localizeImage?: (mimeType: string, data: string) => string
+  localizeImage?: (mimeType: string, data: string) => string,
+  entryId?: string
 ): UIMessage | null {
   const id = `m${idx}`
+  /* 会话文件里的 entry id 是 fork 锚点；实时事件流没有，保持缺省。 */
+  const entry = entryId ? { entryId } : {}
 
   if (m.role === 'user') {
     let text = ''
@@ -111,6 +114,7 @@ export function normalizeMessage(
     text = text.replace(/^<[^>]{1,40}>/, '').replace(/<\/[^>]{1,40}>$/, '')
     return {
       id,
+      ...entry,
       role: 'user',
       text,
       images: imagesOf(m.content, localizeImage),
@@ -142,6 +146,7 @@ export function normalizeMessage(
 
     return {
       id,
+      ...entry,
       role: 'assistant',
       text,
       thinking: thinking || undefined,
@@ -160,6 +165,7 @@ export function normalizeMessage(
     // 归一化成一条工具结果（挂不上就独立显示）
     return {
       id,
+      ...entry,
       role: 'assistant',
       text: '',
       toolCalls: [
@@ -188,6 +194,7 @@ export function normalizeMessage(
   if (m.role === 'bashExecution') {
     return {
       id,
+      ...entry,
       role: 'bash',
       text: m.command ?? '',
       bash: {
@@ -215,7 +222,14 @@ export function normalizeMessage(
 /** 历史回放：把 toolResult 的结果回填到对应的 toolCall 上 */
 export function normalizeHistory(
   raw: unknown[],
-  localizeImage?: (mimeType: string, data: string) => string
+  localizeImage?: (mimeType: string, data: string) => string,
+  /**
+   * 与 `raw` 同长的 entry id（会话文件解析时给出）。
+   *
+   * 只有 `session-reader` 会传：它逐行读到 `entry.id`，而 fork 用的就是这个
+   * id（实施-26 R0①）。实时事件流与 pi 的 `get_messages` 没有这一步。
+   */
+  entryIds?: (string | undefined)[]
 ): UIMessage[] {
   const out: UIMessage[] = []
   const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
@@ -230,10 +244,10 @@ export function normalizeHistory(
    * 跳过 system、按产出顺序编号，两代 pi 下两侧才是同一口径。
    */
   let seq = 0
-  for (const r of raw) {
-    const m = r as PiMessage
+  for (let i = 0; i < raw.length; i++) {
+    const m = raw[i] as PiMessage
     if (m?.role === 'system') continue
-    const norm = normalizeMessage(m, seq, localizeImage)
+    const norm = normalizeMessage(m, seq, localizeImage, entryIds?.[i])
     if (!norm) continue
 
     if (m.role === 'toolResult') {

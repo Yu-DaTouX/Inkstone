@@ -11,6 +11,8 @@ import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { SessionMap } from './components/workbench/SessionMap'
 import { WorkbenchHome } from './components/workbench/WorkbenchHome'
+import { SpaceWorkbench } from './components/workbench/SpaceWorkbench'
+import { type SpaceView } from './state/space-view'
 import { readDailyView, writeDailyView, type DailyView } from './state/daily-view'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
@@ -222,15 +224,40 @@ export default function App() {
   const workspaceMode = useStore((s) => s.workspaceMode)
   const switchSession = useStore((s) => s.switchSession)
   const [dailyView, setDailyView] = useState<DailyView>(() => readDailyView())
+  /*
+   * 空间视图的状态在 store 里（右栏也要能打开它）；「停在哪个入口」的偏好
+   * 仍由 space-view.ts 管。刻意与 dailyView 分开：从概览退回地图时
+   * 不该覆盖用户的地图偏好（T04-1）。
+   */
+  const spaceOpen = useStore((s) => s.spaceOpen)
+  const spaceView = useStore((s) => s.spaceView)
+  const openSpaceView = useStore((s) => s.openSpaceView)
+  const closeSpaceView = useStore((s) => s.closeSpaceView)
   const dailyMode = workspaceMode === 'daily'
-  const mapOpen = dailyMode && dailyView === 'map'
+  /* 空间视图压在地图之上：两者都开着时显示概览，关掉概览自然回到刚才的地图 */
+  const mapOpen = dailyMode && dailyView === 'map' && !spaceOpen
   const showMap = (open: boolean): void => {
+    if (open) closeSpaceView()
     setDailyView(open ? 'map' : 'chat')
     writeDailyView(open ? 'map' : 'chat')
+  }
+  const showSpace = (open: boolean, view?: SpaceView): void => {
+    if (open) openSpaceView(view)
+    else closeSpaceView()
   }
   const openSessionFromMap = (path: string): void => {
     void switchSession(path)
     showMap(false)
+  }
+  /**
+   * 从空间视图里点开会话：关掉概览回到对话。
+   *
+   * 这里**不设置任何「当前空间」** —— 空间是**派生**的（T04-8：导航只是投影）。
+   * 切换会话之后，概览里显示的就是那个会话自己 `spaceId` 指向的空间。
+   */
+  const openSessionFromSpace = (path: string): void => {
+    void switchSession(path)
+    showSpace(false)
   }
 
   /* 地图打开时，Esc 退出（有模态层时不抢，交给模态处理） */
@@ -783,13 +810,28 @@ export default function App() {
         </div>
 
           <section className="center">
-            <Continuity mapEnabled={dailyMode} mapOpen={mapOpen} onToggleMap={showMap} />
+            <Continuity
+              mapEnabled={dailyMode}
+              mapOpen={mapOpen}
+              onToggleMap={showMap}
+              spaceEnabled={dailyMode}
+              spaceOpen={spaceOpen}
+              onToggleSpace={(open) => showSpace(open)}
+            />
 
             {conn !== 'ready' ? <ConnBar conn={conn} /> : null}
 
             <ConversationOutline />
 
-            {mapOpen ? (
+            {spaceOpen ? (
+              /* 空间工作台：概览 / 资料 / 成果 / 学习（实施-25 P04） */
+              <SpaceWorkbench
+                view={spaceView}
+                onView={(v) => showSpace(true, v)}
+                onClose={() => showSpace(false)}
+                onOpenSession={openSessionFromSpace}
+              />
+            ) : mapOpen ? (
               /* 会话地图：砚自己的 React 实现，投影在 shared/session-map.ts */
               <SessionMap onOpen={openSessionFromMap} onBackToChat={() => showMap(false)} />
             ) : virtual ? (
@@ -811,7 +853,7 @@ export default function App() {
                 <div className="stream-inner">
                   {turns.length === 0 ? (
                     dailyMode ? (
-                      <WorkbenchHome onOpenSession={openSessionFromMap} onOpenMap={() => showMap(true)} />
+                      <WorkbenchHome onOpenSession={openSessionFromMap} onOpenMap={() => showMap(true)} onOpenSpace={() => showSpace(true, 'overview')} />
                     ) : (
                       <EmptyStream />
                     )
