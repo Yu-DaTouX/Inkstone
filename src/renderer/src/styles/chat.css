@@ -50,6 +50,49 @@
   min-width: 0;
 }
 
+/*
+ * 会话标题旁的视图切换（日常模式：对话 / 地图）。
+ *
+ * 地图是同一会话的另一个视图，切换器就贴着标题；标题先收缩（flex-shrink），
+ * 切换器 flex:none 保证不被挤扁。
+ */
+.shead-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+}
+
+.shead-view button {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--fg-mute);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.shead-view button:hover {
+  color: var(--fg);
+}
+
+.shead-view button.on {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.shead-view button:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
 .shead-dot {
   width: 6px;
   height: 6px;
@@ -2085,4 +2128,68 @@
   background: var(--bg-0);
   border-radius: var(--r-sm);
   padding: var(--sp-2);
+}
+
+/*
+ * 实施-20 U4：子代理在会话流里的普通入口（替代撤下的专用管理页 / 资源标签）。
+ * 一条非阻塞状态行：状态点 + 任务 + 状态 + 最新活动 + 变更统计 + 人类操作按钮。
+ */
+.sa-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.sa-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.sa-note-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-mute);
+}
+
+.sa-note-dot.running,
+.sa-note-dot.starting {
+  background: var(--accent);
+}
+
+.sa-note-dot.error {
+  background: var(--err);
+}
+
+.sa-note-task {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.sa-note-state,
+.sa-note-diff,
+.sa-note-activity {
+  flex: 0 0 auto;
+  color: var(--fg-mute);
+}
+
+.sa-note-activity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
 }

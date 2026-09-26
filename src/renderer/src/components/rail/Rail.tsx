@@ -11,7 +11,7 @@ import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
-import { nextWorkspaceMode, type WorkspaceMode } from '../../../../shared/workspace-mode'
+import { buildBranchIndex } from '../../../../shared/session-map'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -191,7 +191,6 @@ export function Rail() {
   const workspaceMode = useStore((s) => s.workspaceMode)
   const setWorkspaceMode = useStore((s) => s.setWorkspaceMode)
   const activeRailMode: RailModeId = workspaceMode
-  const activeRailModeConfig = RAIL_MODES.find((m) => m.id === activeRailMode)!
   const [projectMenu, setProjectMenu] = useState<{ id: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   const [projectError, setProjectError] = useState('')
   const [groupingProject, setGroupingProject] = useState<string | null>(null)
@@ -708,23 +707,11 @@ export function Rail() {
    *   · branchIndex：这个会话是父会话的第几个分支（子会话行上显示 #N）
    * 编号按 createdAt 升序 —— 与分支创建的先后一致。
    */
-  const { branchIndex } = useMemo(() => {
-    const kids = new Map<string, SessionSummary[]>()
-    for (const s of sessions) {
-      if (!s.parentSession) continue
-      const arr = kids.get(s.parentSession) ?? []
-      arr.push(s)
-      kids.set(s.parentSession, arr)
-    }
-    const count = new Map<string, number>()
-    const index = new Map<string, number>()
-    for (const [parent, list] of kids) {
-      count.set(parent, list.length)
-      list.sort((a, b) => a.createdAt - b.createdAt)
-      list.forEach((s, i) => index.set(s.path, i + 1))
-    }
-    return { branchCount: count, branchIndex: index, branchesOf: kids }
-  }, [sessions])
+  /*
+   * 分支编号（实施-18 S1 下沉到 shared/session-map）：同一份纯逻辑
+   * 供左栏与工作区会话地图共用 —— 两边编号必须一致。
+   */
+  const { branchIndex } = useMemo(() => buildBranchIndex(sessions), [sessions])
 
   const toggleProject = (key: string): void =>
     setCollapsed((prev) => prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key])
@@ -881,28 +868,50 @@ export function Rail() {
     <aside className="rail">
       {/* ---- 顶部：品牌模式开关 + 动作 ---- */}
       <div className="rail-top">
-        {/* 品牌标记同时是二态工作模式开关；标题栏不再重复显示品牌图标。 */}
+        {/*
+         * 工作区拨杆（实施-20 U1）：左 Code / 右 日常，滑块表示当前端。
+         * 只消费 AppSettings.workspaceMode，不碰 AgentMode。
+         */}
         <div className="rail-mode-wrap">
-          <button
-            className={`rail-mode-btn ${activeRailMode === 'coding' ? 'on' : ''}`}
-            onClick={() => {
-              void setWorkspaceMode(nextWorkspaceMode(workspaceMode as WorkspaceMode))
-            }}
+          <span className="rail-mode-icon" aria-hidden="true"><BrandMark size={18} /></span>
+          <span className="rail-mode-brand">砚</span>
+          <div
+            className="rail-mode-switch"
+            role="radiogroup"
+            aria-label={`${t('mode.title')}（工作区，不改变模型模式）`}
             data-testid="mode-switch"
-            role="switch"
-            aria-checked={activeRailMode === 'coding'}
-            aria-label={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}（工作区）`}
-            title={`${t('mode.switch')}：${t(activeRailModeConfig.labelKey)}（工作区，不改变模型模式）`}
           >
-            <span className="rail-mode-icon" aria-hidden="true"><BrandMark size={18} /></span>
-            <span className="rail-mode-copy">
-              <span className="rail-mode-brand">砚</span>
-              <span className="rail-mode-value">{t(activeRailModeConfig.labelKey)}</span>
-            </span>
-            <span className="rail-switch-track" aria-hidden="true">
-              <span className="rail-switch-thumb" />
-            </span>
-          </button>
+            <span className={`rail-mode-thumb thumb-${activeRailMode}`} aria-hidden="true" />
+            {RAIL_MODES.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={activeRailMode === m.id}
+                className={`rail-mode-opt ${activeRailMode === m.id ? 'on' : ''}`}
+                data-mode={m.id}
+                data-testid={`mode-${m.id}`}
+                title={`${t(m.labelKey)}（工作区，不改变模型模式）`}
+                onClick={() => {
+                  if (activeRailMode !== m.id) void setWorkspaceMode(m.id)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    void setWorkspaceMode('coding')
+                  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    void setWorkspaceMode('daily')
+                  } else if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault()
+                    if (activeRailMode !== m.id) void setWorkspaceMode(m.id)
+                  }
+                }}
+              >
+                {t(m.labelKey)}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           ref={searchBtnRef}

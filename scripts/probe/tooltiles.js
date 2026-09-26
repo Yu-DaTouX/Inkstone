@@ -57,21 +57,16 @@
     await until(() => qa('.rp-body > .rp-slot').length > 0, 4000)
     await sleep(400)
 
-    out.push('=== 1. 工具库列出三处位置 ===')
-    click(q('[data-testid="tool-lib-btn"]'))
-    await until(() => q('[data-testid="tool-lib"]'), 3000)
-    const rows = qa('.tl-row')
-    ok(rows.length === ALL.length, `目录列出全部分区（${rows.length}/${ALL.length}）`)
-    ok(
-      rows.every((r) => !!r.querySelector('.tl-pos')),
-      '每行都有位置标签（工具页 / 浮动 / 库）'
-    )
-    /* NON_FLOATING_TILE_IDS 现为空：每个磁贴都能移出为浮窗 */
-    ok(!!q('[data-testid="tl-float-todo"]'), 'todo 可以移出为浮动')
-    ok(!!q('[data-testid="tl-float-files"]'), 'files 也可以移出为浮动')
+    out.push('=== 1. 工具库已撤下（实施-20 U5）===')
+    ok(!q('[data-testid="tool-lib-btn"]'), '工具库入口不存在')
+    ok(!q('[data-testid="tool-lib"]'), '工具库弹层不存在')
+    /* 移出为浮动的入口改由分区把手的键盘路径承担（下面 section 2 验证） */
+    ok(!!q('[data-testid="grip-todo"]') && !!q('[data-testid="grip-files"]'), '分区把手仍在')
 
-    out.push('\n=== 2. 工具库按钮：移出为浮动（单实例） ===')
-    click(q('[data-testid="tl-float-queue"]'))
+    out.push('\n=== 2. 键盘移出为浮动（单实例） ===')
+    const gq = q('[data-testid="grip-queue"]')
+    gq?.focus()
+    gq?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true }))
     await until(() => !!q('[data-testid="float-tile-queue"]'), 4000)
     await sleep(300)
     ok(!!q('[data-testid="float-tile-queue"]'), '浮动磁贴已渲染')

@@ -11,6 +11,16 @@
  * 两边都要用的纯逻辑（回合分组、链接判定、模型能力归一化）放在本层，
  * 因为它们必须能在没有 DOM / Electron 的环境下被单测。
  */
+export type {
+  CustomProviderInput,
+  CustomProviderTestResult,
+  CustomProviderView
+} from './custom-provider'
+import type {
+  CustomProviderInput,
+  CustomProviderTestResult,
+  CustomProviderView
+} from './custom-provider'
 import type {
   GitContentSide,
   GitFileContent,
@@ -37,6 +47,7 @@ import type { KnowledgeKind } from './project-memory'
 /* 工作模式（实施-05）：类型与纯逻辑在 `./work-mode`（主进程 / 单测 / CLI 共用），
    这里转发给渲染端，界面不必知道存储层。 */
 import type { WorkMode, WorkModeState } from './work-mode'
+import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
@@ -731,6 +742,13 @@ export interface CodexLoginResult {
 /** 接入方式：订阅制（OAuth）还是 API key */
 export type AuthKind = 'subscription' | 'api_key'
 
+/** 自定义服务的写入结果（错误是可读文案，不含密钥） */
+export interface CustomProviderResult {
+  ok: boolean
+  errors?: string[]
+  providers?: CustomProviderView[]
+}
+
 export interface AuthProviderInfo {
   id: string
   name: string
@@ -811,6 +829,14 @@ export interface AppSettings {
   providerBudgets: Record<string, number>
   /** 右栏是否展开（默认展开，可用标题栏按钮或右栏的关闭按钮收起） */
   rightPanelOpen: boolean
+  /**
+   * 左栏工作区模式（编码 / 日常）的真源（实施-18 S0）。
+   *
+   * 不是 AgentMode；和后者可以任意组合。`undefined` = 磁盘上还没有这个键
+   * （与 `contextDeep` 同一个约定）—— 渲染端据此做一次性 localStorage 迁移，
+   * 迁移完成后只读这里，不再读 localStorage。
+   */
+  workspaceMode?: WorkspaceMode
   /**
    * 窗口是否置顶。
    *
@@ -2726,6 +2752,16 @@ export interface YanBridge {
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
   /** auth.json 的路径与条目数（界面上告知凭证存在哪） */
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
+  /* 实施-23：自定义 API 服务（真源是 pi 的 models.json，只动 yan- 前缀条目） */
+  customProviders(): Promise<CustomProviderView[]>
+  saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
+  removeCustomProvider(id: string): Promise<CustomProviderResult>
+  /** 连接测试：endpoint = URL/凭证检查（免费）；billable = 真实模型请求（计费） */
+  testCustomProvider(
+    id: string,
+    mode: 'endpoint' | 'billable',
+    modelId?: string
+  ): Promise<CustomProviderTestResult>
 
   /**
    *  文件引用补全 —— 只读**一层**目录（不递归扫项目）。

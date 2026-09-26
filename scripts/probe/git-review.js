@@ -230,6 +230,60 @@
       const progress2 = textOf(testid('review-progress'))
       ok(/1\/|1 of/.test(progress2), '进度从 0 变成 1', progress2)
 
+      /* ── 实施-22 R1：内层文件目录可调宽 / 可收起 ── */
+      /* 先把外层审查栏调宽：窄窗口下内层会切单列，分隔条按设计不显示 */
+      document.documentElement.style.setProperty('--w-review-user', '860px')
+      await sleep(350)
+      const reviewBody = $('.review-body')
+      const reviewSide = $('.review-side')
+      const reviewSep = testid('review-side-sep')
+      ok(!!reviewBody && !!reviewSide && !!reviewSep, '目录与 diff 之间有分隔条')
+      if (reviewBody && reviewSide && reviewSep) {
+        const beforeW = reviewSide.getBoundingClientRect().width
+        reviewSep.focus()
+        reviewSep.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+        )
+        await sleep(200)
+        const afterKey = reviewSide.getBoundingClientRect().width
+        ok(afterKey > beforeW, '方向键把目录调宽', `${Math.round(beforeW)} → ${Math.round(afterKey)}`)
+
+        const sepRect = reviewSep.getBoundingClientRect()
+        const sepY = sepRect.top + sepRect.height / 2
+        const drag = (type, x) =>
+          reviewSep.dispatchEvent(
+            new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: sepY, pointerId: 7 })
+          )
+        drag('pointerdown', sepRect.left)
+        drag('pointermove', sepRect.left - 60)
+        drag('pointerup', sepRect.left - 60)
+        await sleep(250)
+        const afterDrag = reviewSide.getBoundingClientRect().width
+        ok(afterDrag < afterKey, '拖拽把目录调窄', `${Math.round(afterKey)} → ${Math.round(afterDrag)}`)
+        const savedSide = JSON.parse(localStorage.getItem('yan.reviewSide') ?? 'null')
+        ok(
+          savedSide && typeof savedSide.width === 'number',
+          '拖拽结束后宽度已持久化（不是每帧写）',
+          JSON.stringify(savedSide)
+        )
+
+        reviewSep.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+        await sleep(250)
+        ok(!!testid('review-side-sep'), '双击后分隔条仍在（是恢复默认，不是关掉）')
+
+        await click(testid('review-side-hide'))
+        await sleep(250)
+        ok(!testid('review-tree'), '点「收起」后文件目录消失')
+        ok(reviewBody.classList.contains('side-hidden'), 'diff 占满内层宽度')
+        await click(testid('review-side-toggle'))
+        await sleep(250)
+        ok(!!testid('review-tree'), '工具栏按钮能把目录显示回来')
+        ok((document.querySelector('.review-side')?.getBoundingClientRect().width ?? 0) > 0, '重开后目录宽度不是 0')
+        localStorage.removeItem('yan.reviewSide')
+      }
+      document.documentElement.style.removeProperty('--w-review-user')
+      await sleep(200)
+
       /* 关掉再打开：标记必须还在（localStorage 持久化） */
       await click(testid('review-close'))
       await sleep(200)

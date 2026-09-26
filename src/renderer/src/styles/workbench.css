@@ -1,0 +1,705 @@
+/*
+ * 工作台（实施-18）：日常模式的中栏视图 —— 会话地图（S2）与首页（S3）。
+ *
+ * 只管中栏；左栏 / 右栏的既有样式不动。颜色全部取 tokens，
+ * 深浅主题跟着现有变量走，不在这里写死色值。
+ */
+
+/* 地图占用「对话区」那一行（与 .stream 同一行，见 app.css 的行定义） */
+.center > .wb-map,
+.center > .wb-home {
+  grid-row: 3;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- 会话地图 */
+
+.wb-map {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+.wb-map-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.wb-map-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* 不被挤：窄窗口下标题一旦能收缩就会被压成一字一行 */
+  flex: none;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.wb-map-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* 头部里唯一可伸缩的东西：窄了就窄一点，不要别的元素被挤走 */
+  flex: 0 1 190px;
+  min-width: 88px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-1);
+  color: var(--fg-mute);
+}
+
+.wb-map-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.wb-map-stats {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+/*
+ * 画布工具条：浮在画布左下角（footer 之上），不占头部布局。
+ * 定位：.wb-map 是 relative；body 在它里面，所以这里的 absolute 不会被
+ * body 的 overflow 裁掉。
+ */
+.wb-map-tools {
+  position: absolute;
+  left: 12px;
+  bottom: 52px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-1);
+}
+
+.wb-map-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.wb-map-tools button:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.wb-map-tools button:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-map-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-map-zoom span {
+  min-width: 34px;
+  text-align: center;
+}
+
+/*
+ * 画布视口：没有滚动条 —— 内容靠相机（translate + scale）移动，
+ * 拖动空白处平移，Ctrl/⌘ + 滚轮缩放。
+ */
+.wb-map-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.wb-map-body.panning {
+  cursor: grabbing;
+}
+
+.wb-map-stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.wb-map-canvas {
+  position: relative;
+}
+
+.wb-map-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wb-edge {
+  fill: none;
+  stroke: var(--border-str);
+  stroke-width: 1.25;
+}
+
+.wb-lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.wb-lane-title {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 70%;
+  height: 22px;
+  padding-left: 18px;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+
+.wb-lane-name {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-lane-count {
+  color: var(--fg-mute);
+}
+
+.wb-cluster {
+  padding: 0 8px;
+  border: 1px dashed var(--border-str);
+  border-radius: var(--r-full);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.wb-cluster:hover {
+  color: var(--fg);
+  border-color: var(--accent-line);
+}
+
+.wb-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.wb-node.dragging {
+  z-index: 5;
+  cursor: grabbing;
+}
+
+/* 折叠按钮：贴在节点右端内侧。pointerdown 不透传，不然拖不动展开按钮 */
+.wb-node-fold {
+  flex: none;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-mute);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wb-node-fold:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.wb-node-fold:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-node:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.wb-node:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-node.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.wb-node-mark {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bg-4);
+}
+
+.wb-node.running .wb-node-mark {
+  background: var(--ok);
+}
+
+.wb-node.unread .wb-node-mark {
+  background: var(--warn);
+}
+
+.wb-node.pinned .wb-node-mark {
+  background: var(--accent);
+}
+
+.wb-node.orphan {
+  border-style: dashed;
+}
+
+.wb-node.dim {
+  opacity: 0.28;
+}
+
+.wb-node-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+.wb-node-kids {
+  flex: 0 0 auto;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.wb-map-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.wb-map-foot {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.wb-map-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+
+.wb-map-info strong {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wb-map-time {
+  margin-left: auto;
+  color: var(--fg-mute);
+}
+
+.wb-map-hint {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+/*
+ * 会话预览：地图内的右侧抽屉。画布仍在后面（不卸载），
+ * 所以它只覆盖右侧一条，宽度给窄窗口留出画布。
+ */
+.wb-preview {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 55%);
+  border-left: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.wb-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.wb-preview-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.wb-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.wb-preview-btn:hover {
+  color: var(--fg);
+  border-color: var(--accent-line);
+}
+
+.wb-preview-btn:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-preview-stat {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.wb-preview-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-preview-role {
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+
+.wb-preview-text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wb-preview-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-preview-fork {
+  flex: 0 0 auto;
+  max-height: 38%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.wb-preview-fork-head {
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+
+.wb-preview-fork-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-preview-fork-row:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.wb-preview-fork-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wb-preview-fork-row:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-preview-fork-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-preview-fork-action {
+  flex: none;
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------ 工作台首页 */
+
+.wb-home {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+.wb-home-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.wb-home-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  align-content: start;
+}
+
+.wb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+}
+
+.wb-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+
+.wb-card-main {
+  margin: 0;
+  font-size: var(--fs-base);
+  color: var(--fg);
+}
+
+.wb-card-meta {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-card-empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-mute);
+}
+
+.wb-card-empty.error {
+  color: var(--err);
+}
+
+.wb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wb-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-list-item:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.wb-list-item.on {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.wb-list-item:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+.wb-list-meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-source-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.wb-open-map {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.wb-open-map:hover {
+  border-color: var(--accent-line);
+}
+
+.wb-card-map {
+  border-color: var(--accent-line);
+}

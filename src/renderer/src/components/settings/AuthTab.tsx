@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { AuthProviderInfo } from '../../../../shared/ipc'
+import { CustomProviderForm } from './CustomProviderForm'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -288,6 +289,9 @@ export function AuthTab() {
           )}
         </div>
       ))}
+
+      {/* 实施-23：自定义 API 服务（真源是 pi 的 models.json） */}
+      <CustomProviderForm />
 
       <div className="auth-foot">
         <Icon name="alert-circle" size={12} />

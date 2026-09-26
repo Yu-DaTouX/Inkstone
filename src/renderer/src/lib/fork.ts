@@ -20,6 +20,16 @@ export async function forkLatest(): Promise<void> {
 }
 
 /**
+ * 从指定的分叉点创建分支。
+ *
+ * 地图预览里那条「从此分叉」用它 —— entryId 自己就是从
+ * `get_fork_messages` 拿的，不用再按文本找一次。
+ */
+export async function forkAt(entryId: string): Promise<void> {
+  await useStore.getState().fork(entryId)
+}
+
+/**
  * 从「文本等于这一条」的用户消息分叉（消息上的分支按钮用）。
  *
  * 为什么按文本匹配：pi 的 get_fork_messages 只回 `{entryId, text}`，

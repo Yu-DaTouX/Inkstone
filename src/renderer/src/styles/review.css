@@ -357,9 +357,49 @@ button.env-item:hover {
 
 .review-body {
   display: grid;
-  grid-template-columns: clamp(190px, 28%, 280px) minmax(0, 1fr);
+  /* 实施-22 R1：内层目录宽度由组件按夹取规则写进 --w-review-side */
+  grid-template-columns: var(--w-review-side, clamp(190px, 28%, 280px)) 6px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   flex: 1;
+}
+
+/* 目录收起后 diff 占满内层宽度（重开恢复之前的宽度） */
+.review-body.side-hidden {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.review-side-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.review-side-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+/* 目录与 diff 之间的真实分隔条（鼠标拖拽 / 方向键 / 双击恢复默认） */
+.review-sep {
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.review-sep:hover,
+.review-sep.dragging {
+  background: var(--accent-line);
+}
+
+.review-sep:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -1px;
 }
 
 .review-stream {
@@ -388,6 +428,10 @@ button.env-item:hover {
   .review-body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(120px, 28%) minmax(0, 1fr);
+  }
+  /* 单列模式没有左右分割，分隔条不占位 */
+  .review-sep {
+    display: none;
   }
   .review-side {
     border-right: 0;

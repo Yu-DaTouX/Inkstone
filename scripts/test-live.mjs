@@ -87,6 +87,16 @@ function modelForCase(fallback) {
 /** 每个场景：probe 脚本 + 等待多久（毫秒）+ 可选的预发按键 */
 const CASES = {
   // 纯 DOM 体检：溢出 / 令牌 / 图标 / 字体栅格 / 分区渲染
+  /* 实施-18：日常模式的工作台首页与会话地图（cost 0，合成会话） */
+  dailyhome: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
+  sessionmap: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
+  // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
+  runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
+  // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
+  customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
+  // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。
+  // 真实请求有费用（成本档 2）；本机没有 deepseek 凭证时探针会自己跳过。
+  customapie2e: { probe: 'scripts/probe/custom-api-e2e.js', delay: 12000, cost: 2 },
   live: { probe: 'scripts/probe/live.js', delay: 9000, cost: 0 },
   // 08-S0：隔离 Electron 远程 API → 指定后台 runner → 精确 runId 中止（本机 provider，cost 0）
   remoteroutes: {
@@ -9253,6 +9263,52 @@ async function main() {
       'utf8'
     )
     CASES.slashcmd.env = { YAN_PI_DIR: piDirSkill }
+
+    /*
+     * 实施-23 端到端：把 DeepSeek 官方通道注册成**砚的自定义 provider**（yan-dp），
+     * 用来验证「新增模型之后，整条模型循环还能不能跑」。
+     *
+     * 密钥从真实 auth.json 的 `deepseek.key` 读出来，只写进系统临时目录的副本；
+     * 本机没有这份凭证时留空，探针会自己跳过（不会把一个空 key 当成通过）。
+     */
+    const piDirCustomApi = join(sandboxRoot, 'pi-agent-custom-api')
+    mkdirSync(piDirCustomApi, { recursive: true })
+    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
+      const src = join(sourceAgentDir, f)
+      if (existsSync(src)) copyFileSync(src, join(piDirCustomApi, f))
+    }
+    let customApiKey = ''
+    try {
+      const auth = JSON.parse(readFileSync(join(sourceAgentDir, 'auth.json'), 'utf8'))
+      customApiKey = auth?.deepseek?.key ?? ''
+    } catch {
+      customApiKey = ''
+    }
+    if (customApiKey) {
+      const modelsPath = join(piDirCustomApi, 'models.json')
+      let models = { providers: {} }
+      try {
+        models = JSON.parse(readFileSync(modelsPath, 'utf8'))
+      } catch {
+        models = { providers: {} }
+      }
+      models.providers = models.providers ?? {}
+      models.providers['yan-dp'] = {
+        api: 'openai-completions',
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: customApiKey,
+        models: [
+          {
+            id: 'deepseek-chat',
+            name: 'DeepSeek Chat（自定义接入）',
+            contextWindow: 65536,
+            maxTokens: 8192
+          }
+        ]
+      }
+      writeFileSync(modelsPath, JSON.stringify(models, null, 2), 'utf8')
+    }
+    CASES.customapie2e.env = { YAN_PI_DIR: piDirCustomApi }
 
     /*
      * 实施-04 S2：`capsearch` 要验「模型自己发现技能 → 读正文 → 按目标执行」。

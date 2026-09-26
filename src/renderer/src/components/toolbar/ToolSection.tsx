@@ -46,9 +46,15 @@ export const SECTION_TITLE: Record<ToolSectionId, MessageKey> = {
  * 用户：「移除图标并把标题都变小一些」—— 标题前的图标格 + gap 共 24px，
  * 右栏拖窄后会把标题挤成「上下…」。拖动预览不占排版宽度，图标留着有用。
  */
+/**
+ * 工具分区的标题图标。
+ *
+ * 实施-24 I0：**额度不再借用 `layers`** —— 盘点时发现 `layers` 同时表示
+ * 「会话地图 / 分支 / 分组 / 环境 / 磁贴」，再拿它当额度图标只会加重歧义；
+ * 而 DESIGN.md 本来就规定「额度只用标题文字」。上下文保留 `checklist`（清单语义）。
+ */
 export const SECTION_ICON: Partial<Record<ToolSectionId, IconName>> = {
-  context: 'checklist',
-  quota: 'layers'
+  context: 'checklist'
 }
 
 export function Section({

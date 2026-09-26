@@ -9,6 +9,8 @@
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
+| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页与会话地图（`WorkbenchHome.tsx` / `SessionMap.tsx` / `SessionPreview.tsx`） |
+| `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
 | `src/renderer/src/styles/` | 样式、令牌与主题 |
 | `resources/pi-extensions/` | 随包 pi 适配 |

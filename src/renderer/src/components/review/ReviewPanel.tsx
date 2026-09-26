@@ -14,7 +14,7 @@
  * 3. **不伪造状态**：拿不到的行数显示为空、二进制明说不能显示文本差异、
  *    非 Git 目录说「未使用 Git」而不是给一个空的 diff。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   GitActionExpected,
   GitActionResult,
@@ -29,6 +29,35 @@ import { ChangedFileTree, statusGlyph } from './ChangedFileTree'
 import { CommitBar } from './CommitBar'
 import { DiffViewer, ImageDiff } from './DiffViewer'
 import { patchKeyOf, useGitWrite, usePatchStore, useReviewSnapshot, useSideContent, useViewedStore } from './useGitReview'
+import {
+  clampReviewSideWidth,
+  defaultReviewSideWidth,
+  normalizeReviewSidePrefs,
+  type ReviewSidePrefs
+} from '../../../../shared/review-layout'
+
+/**
+ * 内层文件目录的宽度 / 收起状态（实施-22 R1）。
+ * 与外层右栏宽度（`yan.reviewWidth`）分开存：两个宽度是两件事。
+ */
+const REVIEW_SIDE_KEY = 'yan.reviewSide'
+
+function loadReviewSidePrefs(): ReviewSidePrefs {
+  try {
+    return normalizeReviewSidePrefs(JSON.parse(localStorage.getItem(REVIEW_SIDE_KEY) ?? 'null'))
+  } catch {
+    return normalizeReviewSidePrefs(null)
+  }
+}
+
+/** 拖拽结束 / 键盘调整后落盘；拖拽过程中不写 */
+function saveReviewSidePrefs(prefs: ReviewSidePrefs): void {
+  try {
+    localStorage.setItem(REVIEW_SIDE_KEY, JSON.stringify(prefs))
+  } catch {
+    /* 存不进去不影响本次使用 */
+  }
+}
 
 export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () => void } = {}) {
   const t = useT()
@@ -40,6 +69,20 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
   const cwd = session?.cwd ?? settings?.cwd
 
   const [bump, setBump] = useState(0)
+  /* ── 内层目录：宽度可拖、可键盘调、可收起来（实施-22 R1） ── */
+  const [sidePrefs, setSidePrefs] = useState<ReviewSidePrefs>(loadReviewSidePrefs)
+  const sidePrefsRef = useRef(sidePrefs)
+  sidePrefsRef.current = sidePrefs
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [sideDragging, setSideDragging] = useState(false)
+  const panelWidth = (): number => bodyRef.current?.clientWidth ?? 0
+  const sideWidth = sidePrefs.width ?? defaultReviewSideWidth(panelWidth() || 720)
+  const applySidePrefs = (next: ReviewSidePrefs, persist: boolean): void => {
+    sidePrefsRef.current = next
+    setSidePrefs(next)
+    if (persist) saveReviewSidePrefs(next)
+  }
   const view = useReviewSnapshot(cwd, scope, true, bump)
   const files = view.snapshot?.files ?? []
   const requestId = view.snapshot?.requestId ?? ''
@@ -170,6 +213,19 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         </button>
         <button
           type="button"
+          className={`review-act ${sidePrefs.open ? 'on' : ''}`}
+          title={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
+          aria-label={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
+          aria-pressed={sidePrefs.open}
+          data-testid="review-side-toggle"
+          onClick={() =>
+            applySidePrefs({ ...sidePrefsRef.current, open: !sidePrefsRef.current.open }, true)
+          }
+        >
+          <Icon name="folder-open" size={12} />
+        </button>
+        <button
+          type="button"
           className="review-act"
           title={t('review.refresh')}
           aria-label={t('review.refresh')}
@@ -211,16 +267,105 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         </div>
       ) : null}
 
-      <div className="review-body">
-        <div className="review-side">
-          <ChangedFileTree
-            files={files}
-            selected={activeFile?.path ?? null}
-            onSelect={jumpTo}
-            isViewed={(f) => viewed.isViewed(f, identity)}
-            viewedCount={viewedCount}
-          />
-        </div>
+      <div
+        className={`review-body ${sidePrefs.open ? '' : 'side-hidden'}`}
+        ref={bodyRef}
+        style={sidePrefs.open ? ({ '--w-review-side': `${sideWidth}px` } as React.CSSProperties) : undefined}
+      >
+        {sidePrefs.open ? (
+          <>
+            <div className="review-side">
+              <div className="review-side-head">
+                <span className="review-side-title">{t('review.side')}</span>
+                <button
+                  type="button"
+                  className="review-act"
+                  title={t('review.hideSide')}
+                  aria-label={t('review.hideSide')}
+                  data-testid="review-side-hide"
+                  onClick={() => applySidePrefs({ ...sidePrefsRef.current, open: false }, true)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </div>
+              <ChangedFileTree
+                files={files}
+                selected={activeFile?.path ?? null}
+                onSelect={jumpTo}
+                isViewed={(f) => viewed.isViewed(f, identity)}
+                viewedCount={viewedCount}
+              />
+            </div>
+            {/*
+             * 目录与 diff 之间真实的分隔条（实施-22 R1）：
+             * 拖拽 / 方向键 / Shift 加速 / 双击或 Home 恢复默认，
+             * 宽度按面板内可用空间夹取（保证 diff 最小可读宽）。
+             */}
+            <div
+              className={`review-sep ${sideDragging ? 'dragging' : ''}`}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('review.sideWidth')}
+              tabIndex={0}
+              data-testid="review-side-sep"
+              onPointerDown={(event) => {
+                dragRef.current = { startX: event.clientX, startWidth: sideWidth }
+                /* 合成事件（探针）没有真实指针 id，捕获失败不影响后续 move */
+                try {
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                } catch {
+                  /* 忽略：拿不到捕获就只是拖出手柄后不再跟随 */
+                }
+                setSideDragging(true)
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current
+                if (!drag) return
+                const next = clampReviewSideWidth(
+                  panelWidth(),
+                  drag.startWidth + (event.clientX - drag.startX)
+                )
+                /* 拖拽中不写盘：每帧写设置会把 IPC 打满 */
+                applySidePrefs({ ...sidePrefsRef.current, width: next }, false)
+              }}
+              onPointerUp={(event) => {
+                if (!dragRef.current) return
+                dragRef.current = null
+                setSideDragging(false)
+                try {
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                } catch {
+                  /* 见 pointerdown 的说明 */
+                }
+                saveReviewSidePrefs(sidePrefsRef.current)
+              }}
+              onPointerCancel={() => {
+                dragRef.current = null
+                setSideDragging(false)
+              }}
+              onDoubleClick={() =>
+                applySidePrefs(
+                  { ...sidePrefsRef.current, width: defaultReviewSideWidth(panelWidth()) },
+                  true
+                )
+              }
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
+                event.preventDefault()
+                const base = sidePrefsRef.current.width ?? defaultReviewSideWidth(panelWidth())
+                const step = event.shiftKey ? 40 : 8
+                const next =
+                  event.key === 'Home'
+                    ? defaultReviewSideWidth(panelWidth())
+                    : clampReviewSideWidth(
+                        panelWidth(),
+                        base + (event.key === 'ArrowLeft' ? -step : step)
+                      )
+                applySidePrefs({ ...sidePrefsRef.current, width: next }, true)
+              }}
+            />
+          </>
+        ) : null}
 
         <div className="review-stream" data-testid="review-stream">
           {!view.snapshot && !view.error ? <div className="review-hint">{t('review.loading')}</div> : null}

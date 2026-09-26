@@ -667,3 +667,74 @@
   display: inline-block;
   margin-bottom: 2px;
 }
+
+/*
+ * 实施-23 M2：自定义 API 服务表单。
+ *
+ * `.set-row` 是「标签 + 控件」的两列 grid；这里的服务行是「说明 + 按钮组」，
+ * 直接套会被挤成竖排 —— 所以这几类行用 flex 覆写。
+ */
+.custom-api-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.custom-api-row .spacer {
+  flex: 1 1 auto;
+}
+
+.custom-api-add-row {
+  justify-items: start;
+}
+
+.custom-api-test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.custom-api-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.custom-api-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.custom-api-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.custom-api-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* 实施-23 M2：连接测试面板（两段分开，结果就地显示） */
+.custom-api-test {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--r-sm);
+}

@@ -51,18 +51,10 @@
     await sleep(800)
 
     out.push('=== 1. 真实启动一个子代理（模型名是坏的）===')
-    ok(!!q('[data-testid="subagent-new"]'), '输入区上方有子代理入口')
-    click(q('[data-testid="subagent-new"]'))
-    await sleep(250)
-    const taskInput = q('[data-testid="subagent-task"]')
-    ok(!!taskInput, '任务面板打开')
+    /* 实施-20 U4 撤下了专用入口：这里直接用 store action 代表 agent 自行委派 */
+    ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下（U4）')
     const taskText = 'YAN-SUBFAIL 只回答两个字：收到'
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-    if (taskInput && setter) {
-      setter.call(taskInput, taskText)
-      taskInput.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    click(q('[data-testid="subagent-start"]'))
+    await store.getState().startSubagent(taskText)
 
     let started = null
     for (let i = 0; i < 40; i++) {

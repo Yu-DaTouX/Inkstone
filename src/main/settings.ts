@@ -31,6 +31,7 @@ import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
+import { isWorkspaceMode } from '../shared/workspace-mode'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -369,6 +370,12 @@ export async function getSettings(): Promise<AppSettings> {
       .filter((id) => knownProjects.some((project) => project.id === id))
     if (!cached.providerBudgets || typeof cached.providerBudgets !== 'object' || Array.isArray(cached.providerBudgets)) cached.providerBudgets = {}
     if (typeof cached.rightPanelOpen !== 'boolean') cached.rightPanelOpen = true
+    /*
+     * 工作区模式（实施-18 S0）：只认两个合法值；脏值 / 缺失一律归到
+     * `undefined`（磁盘上没有这个键），让渲染端能区分「没设置过」并做
+     * localStorage 一次性迁移。不写回 DEFAULTS，避免迁移信号被默认值淹没。
+     */
+    cached.workspaceMode = isWorkspaceMode(cached.workspaceMode) ? cached.workspaceMode : undefined
     // 置顶：非布尔值一律当 false（不能因为读到个脏值就把窗口钉在最上层）
     cached.alwaysOnTop = cached.alwaysOnTop === true
     // 缩放：夹到合法区间，读不到就自动（不能因为脏值把界面撑成 3 倍）

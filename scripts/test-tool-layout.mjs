@@ -26,13 +26,13 @@ export async function runToolLayoutTests(ok) {
   ok(base.version === 2 && base.tiles.length === IDS.length, '默认布局含全部已知分区')
   ok(base.tiles.every((t) => t.placement === 'docked'), '默认全部停靠')
 
-  /* 旧字段迁移：顺序保留、隐藏进库、未知丢弃、重复归一 */
+  /* 旧字段迁移：顺序保留、隐藏项迁到停靠（工具库已撤下）、未知丢弃、重复归一 */
   const migrated = migrateToolLayout(['quota', 'context', 'quota', 'ghost'], ['log', 'nope'], IDS)
   ok(migrated.tiles.find((t) => t.id === 'quota')?.order === 0, '旧顺序原样保留')
   ok(migrated.tiles.filter((t) => t.id === 'quota').length === 1, '重复 id 只留一份')
   ok(!migrated.tiles.some((t) => t.id === 'ghost'), '未知 id 丢弃')
-  ok(migrated.tiles.find((t) => t.id === 'log')?.placement === 'library', '隐藏项进库')
-  ok(migrated.tiles.filter((t) => t.placement === 'docked').length === IDS.length - 1, '未隐藏的都已停靠')
+  ok(migrated.tiles.find((t) => t.id === 'log')?.placement === 'docked', '隐藏项迁到停靠（实施-20 U5）')
+  ok(migrated.tiles.every((t) => t.placement === 'docked'), '迁移后不再产生库位')
 
   /* 版本未知 → 默认；归一化去重/过滤 */
   const future = normalizeToolLayout({ version: 99, tiles: [{ id: 'todo', placement: 'floating' }] }, IDS)
@@ -43,7 +43,7 @@ export async function runToolLayoutTests(ok) {
   )
   ok(dup.tiles.filter((t) => t.id === 'todo').length === 1, '归一化去重')
   ok(!dup.tiles.some((t) => t.id === 'ghost'), '归一化丢未知')
-  ok(dup.tiles.find((t) => t.id === 'context')?.placement === 'library', '库位保留')
+  ok(dup.tiles.find((t) => t.id === 'context')?.placement === 'docked', '旧库位读盘时迁到停靠（实施-20 U5）')
 
   /* 浮动的无效坐标不进入布局，退成停靠（恢复可见，不丢到屏外） */
   const badFloat = normalizeToolLayout({ version: 2, tiles: [{ id: 'queue', placement: 'floating', rect: { x: 5, y: -2, w: 0, h: 0.3 } }] }, IDS)
