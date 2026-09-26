@@ -59,6 +59,17 @@
 
   log('=== 2. 概览始终可达（当前会话有内容） ===')
   log('  · 当前会话的消息数 = ' + S().messages.length + '（概览不依赖它，这里只是记录现场）')
+  /*
+   * B3 之后「空间」入口只在**当前会话真的归属某个空间**时才出现
+   * （会话头部按需给一档，不再常驻三档）。所以先归属，否则点不到 view-space。
+   */
+  const sid = S().session?.sessionId
+  if (sid) {
+    await S().setSessionSpace(sid, space.id)
+    await S().refreshSessions()
+    await sleep(700)
+  }
+  ok(!!q('[data-testid="view-space"]'), '会话归属空间后，头部出现「空间」入口')
   click(q('[data-testid="view-space"]'))
   await sleep(500)
   ok(!!q('[data-testid="space-workbench"]'), '概览打开了')
@@ -87,7 +98,7 @@
   ok(!q('[data-testid="space-workbench"]'), '× 关闭空间视图')
   click(q('[data-testid="view-space"]'))
   await sleep(400)
-  ok(!!q('[data-testid="space-workbench"]'), '入口常驻在会话头部，能再打开')
+  ok(!!q('[data-testid="space-workbench"]'), '入口仍在会话头部（会话还归属着这个空间），能再打开')
   ok(!!q('[data-testid="space-library"]'), '记住了上次停在资料页', localStorage.getItem('yan.space-view'))
 
   log('=== 6. 归属投影（T04-8） ===')
