@@ -31,11 +31,16 @@
 | `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
 | `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
 | `src/shared/turn-layer.ts` | 画布轮次层的几何与分支对齐：一层一轮一张卡、子会话首轮对上父会话那一轮（对不上不猜、会撞就退回） |
+| `src/shared/search.ts` + `src/main/search/` | 联网搜索：来源白名单（首批 wikipedia / arxiv / hackernews，HTTP 直连不需要浏览器扩展）、归一化与 URL 去重、逐来源状态（`ok` / `empty` / `timeout` / `unavailable` / `error` 分开）、`spawn` 参数数组不经 shell；`scripts/probe/search.mjs` 是不依赖宿主的探针 |
+| `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项） |
+| `src/renderer/src/icons/` + `scripts/design/icons/` | 图标体系：`catalog.json` 是语义 → 图标的唯一真源（55 个语义），`npm run icons` 生成 sprite；界面只用语义名，不写库里的原名 |
+| `src/renderer/src/styles/motion.css` | 动效唯一真源（39 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
 | `src/renderer/src/styles/` | 样式、令牌与主题 |
 | `resources/pi-extensions/` | 随包 pi 适配 |
 | `resources/yan-cli/` | 本机能力 CLI |
 | `scripts/` | 启动、构建、检查与截图工具 |
+| `scripts/check-icons.mjs` · `scripts/check-motion.mjs` | 图标与动效的强制检查：属性一致 / 引用零缺失 / 语义唯一 / 生成物不漂移；关键帧归口 / 裸时长 / 裸曲线 / 悬空引用 |
 | `scripts/design/` | 图标生成、原型检查及 CSS 生成清单 |
 | `scripts/audit/` | 仓库审计工具 |
 | `scripts/audit/workspace.mjs` | 公开文档链接检查与本地文件分类清单；不搬动或删除文件 |

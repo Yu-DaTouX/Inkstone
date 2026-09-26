@@ -70,7 +70,8 @@
     "capture:native-overlay": "node scripts/capture-native-overlay.mjs",
     "check:icons": "node scripts/check-icons.mjs",
     "check:motion": "node scripts/check-motion.mjs --selftest && node scripts/check-motion.mjs",
-    "probe:search": "node scripts/probe/search.mjs"
+    "probe:search": "node scripts/probe/search.mjs",
+    "report:i18n": "node scripts/report-unused-i18n.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
