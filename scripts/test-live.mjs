@@ -90,6 +90,8 @@ const CASES = {
   /* 实施-18：日常模式的工作台首页与会话地图（cost 0，合成会话） */
   dailyhome: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
   sessionmap: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
+  /* 实施-28 T2/T5：任务收件箱（左栏入口 / 真实聚合 / Esc / 首页卡） */
+  taskinbox: { probe: 'scripts/probe/taskinbox.js', delay: 9000, cost: 0 },
   // 实施-26 R3/R4：画布轮次层（一轮一张卡 / 分支对齐 / 失败态；cost 0）
   turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
   // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）

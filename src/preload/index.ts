@@ -128,6 +128,7 @@ import type {
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { SearchBackendStatus } from '../shared/search'
+import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
@@ -555,6 +556,15 @@ const api: YanBridge = {
   search: {
     /** 搜索后端诊断（实施-27 S3/D4）：未安装也返回可读结果 */
     doctor: () => invoke<SearchBackendStatus>('yan:search:doctor')
+  },
+  taskInbox: {
+    /*
+     * 任务收件箱（实施-28 T2）：只读投影 + 本地忽略名单。
+     * `dismiss` / `restore` 只改 `YAN_DIR/task-inbox.json`，不动会话数据。
+     */
+    page: (query) => invoke<TaskInboxPage>('yan:taskinbox:page', query),
+    dismiss: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:dismiss', sessionId),
+    restore: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:restore', sessionId)
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),

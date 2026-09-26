@@ -1758,3 +1758,36 @@ body.rail-dragging .srow {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+
+/* 收件箱入口（实施-28 T2/T5）：与用户块同区，位置稳定但排在上面 */
+.rail-inbox {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.rail-inbox:hover,
+.rail-inbox.on {
+  color: var(--fg);
+  background: var(--bg-2);
+}
+
+.rail-inbox-badge {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--bg-0);
+  background: var(--accent);
+  border-radius: var(--r-full);
+  padding: 0 var(--sp-1);
+  min-width: 16px;
+  text-align: center;
+}

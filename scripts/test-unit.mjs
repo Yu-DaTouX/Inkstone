@@ -3891,6 +3891,23 @@ const taskInboxServiceMod = await import('../node_modules/esbuild/lib/main.js').
 const { runTaskInboxTests } = await import('./test-task-inbox.mjs')
 await runTaskInboxTests(ok, taskInboxMod, taskInboxServiceMod)
 
+/*
+ * 收件箱事实源组装（实施-28 T2）：把注册表 / 会话目录 / 任务日志接进契约。
+ * 测试会覆盖掉重的那几个源，但真实默认实现也在同一次 bundle 里。
+ */
+const taskInboxSourcesMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/task-inbox-sources.ts'],
+    outfile: 'out/test/task-inbox-sources.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/task-inbox-sources.mjs'))
+)
+const { runTaskInboxSourceTests } = await import('./test-task-inbox-sources.mjs')
+await runTaskInboxSourceTests(ok, taskInboxSourcesMod, taskInboxServiceMod)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)

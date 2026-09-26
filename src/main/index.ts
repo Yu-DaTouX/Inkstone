@@ -22,6 +22,9 @@ import {
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { searchDoctor } from './search/opencli'
+import { createTaskInboxService } from './task-inbox-service'
+import { createTaskInboxSources, readInboxState, writeInboxState } from './task-inbox-sources'
+import type { InboxFilter } from '../shared/task-inbox'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
@@ -7410,6 +7413,53 @@ function registerIpc(): void {
    * 只读探针，不装不升级；未安装时也返回可读结果（available:false）。
    */
   handle('yan:search:doctor', async () => searchDoctor())
+
+  /*
+   * 任务收件箱（实施-28 T2）：会话 × 运行实例 × 任务计划的**只读**投影。
+   *
+   * ── 为什么要缓存忽略名单 ──
+   *   契约里 `dismissed()` 是同步的（投影是纯函数，不能 await），
+   *   而名单存在 `YAN_DIR/task-inbox.json`。所以在这里持一份内存副本，
+   *   写入时同步更新 —— 不把可变状态放进 sources 模块（两个实例会互踩）。
+   */
+  let inboxDismissed: string[] | null = null
+  const inboxService = createTaskInboxService(
+    createTaskInboxSources({
+      /* `runners` 是模块级单例（可能在 handler 注册后才赋值）：取快照时再问 */
+      registry: { statuses: () => runners?.statuses() ?? [] },
+      dismissed: () => inboxDismissed ?? []
+    })
+  )
+  const inboxState = async (): Promise<string[]> => {
+    if (!inboxDismissed) inboxDismissed = (await readInboxState()).dismissed
+    return inboxDismissed
+  }
+  handle('yan:taskinbox:page', async (query?: { limit?: number; offset?: number; status?: unknown; spaceId?: string }) => {
+    await inboxState()
+    const { limit, offset, ...filter } = query ?? {}
+    return inboxService.page(filter as InboxFilter, { limit, offset })
+  })
+  handle('yan:taskinbox:dismiss', async (sessionId: string) => {
+    const list = await inboxState()
+    const id = String(sessionId ?? '')
+    if (id && !list.includes(id)) {
+      inboxDismissed = [...list, id]
+      await writeInboxState({ dismissed: inboxDismissed })
+      /* 名单变了要让下一次查询重算（TTL 缓存里还带着它） */
+      inboxService.invalidate()
+    }
+    return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
+  })
+  handle('yan:taskinbox:restore', async (sessionId: string) => {
+    const list = await inboxState()
+    const id = String(sessionId ?? '')
+    if (id) {
+      inboxDismissed = list.filter((x) => x !== id)
+      await writeInboxState({ dismissed: inboxDismissed })
+      inboxService.invalidate()
+    }
+    return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
+  })
 
   /*
    * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。

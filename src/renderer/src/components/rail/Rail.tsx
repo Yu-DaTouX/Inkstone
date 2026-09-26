@@ -120,6 +120,34 @@ export function Rail() {
   const patchSettings = useStore((s) => s.patchSettings)
 
   /*
+   * 收件箱入口（实施-28 T2/T5）。
+   *
+   * 计数放在组件本地而不是 store：这是一个“顺手看一眼”的角标，
+   * 放 store 会让每个订阅者都跟着它重渲染。
+   * 只算**真需要人**的三档（待确认 / 等你回答 / 出错）——
+   * 把“进行中”也算进去，角标就会永远亮着，很快就没人看了。
+   */
+  const inboxOpen = useStore((s) => s.inboxOpen)
+  const setInboxOpen = useStore((s) => s.setInboxOpen)
+  const [inboxCount, setInboxCount] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const load = async (): Promise<void> => {
+      try {
+        const res = await window.yan.taskInbox.page({ limit: 1, offset: 0 })
+        if (!alive) return
+        setInboxCount((res.counts.needs_review ?? 0) + (res.counts.waiting_user ?? 0) + (res.counts.failed ?? 0))
+      } catch {
+        /* 读不到就不显示角标（不要用 0 冒充“没有事”） */
+      }
+    }
+    void load()
+    return () => {
+      alive = false
+    }
+  }, [inboxOpen])
+
+  /*
    * 空间列表不依赖 pi（只读 Yan 自己的 spaces.json）。
    *
    * 左栏的空间分区已移除（实施-27 B3），但会话行的「归入空间」菜单
@@ -1285,7 +1313,18 @@ export function Rail() {
         </div>
       </div>
 
-      {/* ---- 底部：用户块（名字 / 自定义头像 / 登录预留）---- */}
+      {/* ---- 底部：收件箱入口 + 用户块（名字 / 自定义头像 / 登录预留）---- */}
+      <button
+        className={`rail-inbox${inboxOpen ? ' on' : ''}`}
+        data-testid="rail-inbox"
+        data-count={inboxCount}
+        title={t('inbox.title')}
+        onClick={() => setInboxOpen(!inboxOpen)}
+      >
+        <Icon name="checklist" size={14} />
+        <span>{t('inbox.title')}</span>
+        {inboxCount > 0 ? <b className="rail-inbox-badge">{inboxCount}</b> : null}
+      </button>
       <RailUser />
       {trashNotice ? (
         <TrashNoticeBar

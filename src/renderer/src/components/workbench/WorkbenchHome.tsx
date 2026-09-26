@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -23,14 +23,38 @@ interface Props {
   onOpenMap: () => void
   /** 打开空间概览（实施-25 P04 / T04-2）。首页不重复概览的内容，只给入口。 */
   onOpenSpace: () => void
+  /** 打开任务收件箱（实施-28 T5）：跨会话的待处理入口 */
+  onOpenInbox: () => void
 }
 
 /* 稳定的空对象：selector 每次返回新引用会让 zustand 无限重渲染 */
 const NO_PROJECT_NAMES: Record<string, string> = {}
 
-export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props): React.JSX.Element {
+export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInbox }: Props): React.JSX.Element {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
+  /*
+   * 收件箱计数（实施-28 T5）。
+   *
+   * 只算真需要人的三档（待确认 / 等你回答 / 出错），与左栏角标同一口径 ——
+   * 两处显示不同的数字比不显示更让人困惑。
+   */
+  const [inboxWaiting, setInboxWaiting] = useState(0)
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const res = await window.yan.taskInbox.page({ limit: 1, offset: 0 })
+        if (!alive) return
+        setInboxWaiting((res.counts.needs_review ?? 0) + (res.counts.waiting_user ?? 0) + (res.counts.failed ?? 0))
+      } catch {
+        /* 读不到就不出卡（不用 0 冒充“没有事”） */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [sessions.length])
   const session = useStore((s) => s.session)
   const goal = useStore((s) => s.goal)
   const goalLoading = useStore((s) => s.goalLoading)
@@ -102,6 +126,29 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
    * 顺序即优先级：正在做的事 > 今天可复习 > 空间 > 资料 > 会话地图。
    */
   const cards: { id: string; node: React.ReactNode }[] = []
+
+  /*
+   * 待我处理（实施-28 T5）。放在**最前**：它是首页唯一一个「别人在等我」的信号，
+   * 比其他几项（我在做的事 / 可以复习）都更该先看一眼。
+   * 没有要处理的就不出卡 —— 与 B3 的「空卡不画」规则一致。
+   */
+  if (inboxWaiting > 0) {
+    cards.push({
+      id: 'inbox',
+      node: (
+        <section className="wb-card" data-testid="wb-card-inbox" key="inbox">
+          <h2 className="wb-card-title">
+            <Icon name="checklist" size={12} />
+            {t('wb.inboxCard')}
+          </h2>
+          <p className="wb-card-main">{t('wb.inboxCount', { n: inboxWaiting })}</p>
+          <button className="wb-card-action" onClick={onOpenInbox} data-testid="wb-inbox-open">
+            {t('inbox.open')}
+          </button>
+        </section>
+      )
+    })
+  }
 
   if (goal?.goalId || todos.length > 0 || goalLoading) {
     cards.push({

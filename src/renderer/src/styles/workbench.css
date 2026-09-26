@@ -5,9 +5,11 @@
  * 深浅主题跟着现有变量走，不在这里写死色值。
  */
 
-/* 地图占用「对话区」那一行（与 .stream 同一行，见 app.css 的行定义） */
+/* 地图 / 首页 / 收件箱占用「对话区」那一行（与 .stream 同一行，见 app.css 的行定义） */
 .center > .wb-map,
-.center > .wb-home {
+.center > .wb-home,
+.center > .wb-inbox,
+.center > .wb-space {
   grid-row: 3;
   min-height: 0;
 }
@@ -3133,4 +3135,254 @@ input.wb-learn-unit-title {
 
 .wb-memory-badge.calm {
   opacity: 0.7;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * 任务收件箱（实施-28 T2）
+ *
+ * 它是**跨会话**视图，所以视觉上刻意不给卡片加阴影 / 抬升：
+ * 那会让它看起来像一组可以拖动的便签。这里只要「一行一条、读得清」。
+ * ══════════════════════════════════════════════════════════════════ */
+.wb-inbox {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--sp-5) var(--sp-6) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.wb-inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.wb-inbox-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-lg);
+  color: var(--fg);
+}
+
+.wb-inbox-total {
+  font-size: var(--fs-sm);
+  color: var(--fg-mute);
+  font-weight: 500;
+}
+
+.wb-inbox-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  padding: 3px var(--sp-2);
+}
+
+.wb-inbox-refresh:hover:not(:disabled) {
+  border-color: var(--border-str);
+  color: var(--fg);
+}
+
+.wb-inbox-refresh:disabled {
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.wb-inbox-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-mute);
+}
+
+.wb-inbox-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.wb-inbox-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  padding: 2px var(--sp-2);
+}
+
+.wb-inbox-filters button b {
+  color: var(--fg-mute);
+  font-weight: 500;
+}
+
+.wb-inbox-filters button.on {
+  color: var(--fg);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.wb-inbox-error,
+.wb-inbox-degraded {
+  font-size: var(--fs-sm);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.wb-inbox-error {
+  color: var(--err);
+  background: var(--err-soft);
+}
+
+.wb-inbox-degraded {
+  color: var(--fg-dim);
+  background: var(--bg-2);
+}
+
+.wb-inbox-loading,
+.wb-inbox-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  padding: var(--sp-6) 0;
+  justify-content: center;
+}
+
+.wb-inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.wb-inbox-card {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  background: var(--bg-1);
+}
+
+.wb-inbox-card-main {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.wb-inbox-badge {
+  flex: none;
+  font-size: var(--fs-xs);
+  border-radius: var(--r-xs);
+  padding: 1px var(--sp-1);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-dim);
+}
+
+.wb-inbox-badge i {
+  font-style: normal;
+  margin-left: 2px;
+  color: var(--warn);
+}
+
+/* 要人处理的四档给一点点颜色区分；已完成 / 已忽略刻意保持灰的 */
+.wb-inbox-badge.s-needs_review {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.wb-inbox-badge.s-waiting_user {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.wb-inbox-badge.s-failed {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+.wb-inbox-badge.s-running {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.wb-inbox-card-title {
+  color: var(--fg);
+  font-size: var(--fs-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.wb-inbox-progress {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-inbox-reason {
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+
+.wb-inbox-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.wb-inbox-when {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.wb-inbox-actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.wb-inbox-actions button {
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  padding: 2px var(--sp-2);
+}
+
+.wb-inbox-actions button:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-str);
+}
+
+.wb-inbox-actions button:disabled {
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.wb-inbox-more {
+  align-self: center;
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  padding: var(--sp-1) var(--sp-3);
 }

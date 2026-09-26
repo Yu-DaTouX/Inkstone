@@ -9,7 +9,10 @@
  *   ③ **懒加载 + 分页**：真实数据 433 MB / 133 文件，一次 `listSessions()` 约 0.5s
  *      （T0 实测），所以结果带 TTL 缓存，并把分页放在这里（界面不用自己切）。
  */
-import type { TaskCard, TaskFacts, InboxFilter, TaskStatus } from '../shared/task-inbox'
+import type { TaskCard, TaskFacts, InboxFilter, TaskInboxPage } from '../shared/task-inbox'
+
+/* `TaskInboxPage` 的真源在 shared（要跨进程传），这里只是给调用方转出去 */
+export type { TaskInboxPage }
 import { filterTaskCards, inboxCounts, compareTaskCards, projectTaskCard } from '../shared/task-inbox'
 
 /** 一条会话的摘要（只取聚合需要的字段，避免依赖 SessionSummary 的全部形状） */
@@ -51,15 +54,6 @@ export interface TaskInboxSources {
    * 而不是编一个）。
    */
   readAwaitingReview?(sessionId: string): Promise<NonNullable<TaskFacts['awaitingReview']> | undefined>
-}
-
-export interface TaskInboxPage {
-  cards: TaskCard[]
-  /** 过滤后的总数（分页前） */
-  total: number
-  counts: Record<TaskStatus, number>
-  /** 本次投影时有多少条会话的某个来源读失败（只报数，不抛） */
-  degraded: number
 }
 
 export interface TaskInboxOptions {
