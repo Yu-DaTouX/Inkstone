@@ -3864,6 +3864,33 @@ const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 const { runSearchTests } = await import('./test-search.mjs')
 await runSearchTests(ok, searchMod)
 
+/*
+ * 任务收件箱（实施-28 T1）：七态投影 / 排序 / 缺源降级 / 分页与缓存。
+ * 契约为 neutral（无 Electron 依赖），服务为 node（只用标准库）。
+ */
+const taskInboxMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/task-inbox.ts'],
+    outfile: 'out/test/task-inbox.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/task-inbox.mjs'))
+)
+const taskInboxServiceMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/task-inbox-service.ts'],
+    outfile: 'out/test/task-inbox-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/task-inbox-service.mjs'))
+)
+const { runTaskInboxTests } = await import('./test-task-inbox.mjs')
+await runTaskInboxTests(ok, taskInboxMod, taskInboxServiceMod)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)
