@@ -56,7 +56,7 @@
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}）`
 
   log('=== 1. 建课与概念（复习要长在课程上） ===')
-  const modeSwitch = q('[data-testid="mode-switch"]')
+  const modeSwitch = null /* 左栏拨杆已移除（实施-27 B3）：模式入口在设置 · 工作区 */
   const dailyBtn = [...(modeSwitch?.querySelectorAll('button') ?? [])].find((b) => /日常/.test(b.textContent))
   if (dailyBtn) {
     click(dailyBtn)

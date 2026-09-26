@@ -44,9 +44,23 @@
     }
   ]
   const inject = () => store.setState({ sessions, messages: [] })
+  /**
+   * 带回合的注入（实施-27 B3 后：地图入口只在“有回合”时才出现）。
+   * 首页需要空消息，地图需要非空消息 —— 两者用两次注入分开，不混用。
+   */
+  const injectWithMessages = () =>
+    store.setState({
+      sessions,
+      messages: [
+        { id: 'pm1', role: 'user', text: '把这一段的背景理清。', timestamp: 1000 },
+        { id: 'pm2', role: 'assistant', text: '已经整理成三条要点。', timestamp: 2000 }
+      ]
+    })
   const openMap = async () => {
+    injectWithMessages()
+    await sleep(320)
     for (let i = 0; i < 25; i++) {
-      if (q('[data-testid="view-switch"]')) break
+      if (q('[data-testid="view-map"]')) break
       await sleep(200)
     }
     click(q('[data-testid="view-map"]'))

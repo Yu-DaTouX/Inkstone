@@ -131,37 +131,28 @@
     await until(() => store.getState().settings?.rightPanelOpen, 3000)
     await sleep(600)
 
-    out.push('\n=== 4. 左栏工作区拨杆（实施-20 U1）===')
-    const sw = document.querySelector('[data-testid="mode-switch"]')
-    if (!sw) bad('没有工作区拨杆入口')
-    else {
-      out.push('  拨杆文案: ' + JSON.stringify(sw.textContent.trim()))
-      if (/砚/.test(document.querySelector('.rail-mode-wrap')?.textContent ?? '')) ok('软件名仍在左栏顶部')
-      else bad('左栏顶部没有软件名')
-      if (sw.getAttribute('role') === 'radiogroup') ok('拨杆语义为 radiogroup')
-      else bad('拨杆没有 radiogroup 语义')
-      const codeBtn = sw.querySelector('[data-mode="coding"]')
-      const dailyBtn = sw.querySelector('[data-mode="daily"]')
-      if (codeBtn && dailyBtn) ok('拨杆两端都在（Code / 日常）')
-      else bad('拨杆缺少一端')
-      const before = store.getState().workspaceMode ?? 'daily'
-      const agentBefore = store.getState().workMode?.mode ?? 'standard'
-      click(dailyBtn)
-      if (await until(() => store.getState().workspaceMode === 'daily', 3000)) ok('点「日常」端切到 daily')
-      else bad('点「日常」端没有切到 daily')
-      if (dailyBtn.getAttribute('aria-checked') === 'true') ok('daily 端 aria-checked=true')
-      else bad('daily 端 aria-checked 不同步')
-      click(codeBtn)
-      if (await until(() => store.getState().workspaceMode === 'coding', 3000)) ok('点「Code」端切到 coding')
-      else bad('点「Code」端没有切到 coding')
-      if ((store.getState().workMode?.mode ?? 'standard') === agentBefore) ok('工作区切换没有改动 AgentMode')
-      else bad('工作区切换错误改动了 AgentMode')
-      /* 回到测试开始时的档，不把探针副作用留给后面的断言 */
-      if (store.getState().workspaceMode !== before) {
-        click(before === 'coding' ? codeBtn : dailyBtn)
-        await until(() => store.getState().workspaceMode === before, 3000)
-      }
-    }
+    out.push('\n=== 4. 左栏顶部（拨杆已移除，实施-27 B3）===')
+    /*
+     * 为什么断言“不存在”：工作区拨杆曾经是左栏唯一的模式入口（实施-20 U1），
+     * B3 把它搬到设置 · 工作区。这里改成正反两面：
+     *   ① 左栏顶部仍然有软件名；
+     *   ② 拨杆确实不在了（否则就是新旧两个入口并存）。
+     * 切模式本身在设置里验（`yan settings` 场景）。
+     */
+    if (/砚/.test(document.querySelector('.rail-mode-wrap')?.textContent ?? '')) ok('软件名仍在左栏顶部')
+    else bad('左栏顶部没有软件名')
+    const straySwitch = document.querySelector('[data-testid="mode-switch"]')
+    if (!straySwitch) ok('左栏不再常驻工作区拨杆（入口在设置里）')
+    else bad('工作区拨杆又回到了左栏，与设置里的入口重复')
+    const beforeMode = store.getState().workspaceMode ?? 'daily'
+    const agentBefore = store.getState().workMode?.mode ?? 'standard'
+    store.setState({ workspaceMode: 'coding' })
+    if (await until(() => store.getState().workspaceMode === 'coding', 3000)) ok('工作区模式仍可切换（store 直接改）')
+    else bad('工作区模式切不动')
+    if ((store.getState().workMode?.mode ?? 'standard') === agentBefore) ok('工作区切换没有改动 AgentMode')
+    else bad('工作区切换错误改动了 AgentMode')
+    /* 回到测试开始时的档，不把探针副作用留给后面的断言 */
+    if (store.getState().workspaceMode !== beforeMode) store.setState({ workspaceMode: beforeMode })
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')
   const failed = out.filter((l) => l.includes('✗')).length
