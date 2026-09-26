@@ -168,6 +168,8 @@ export async function readSessionMessages(
     const lines = raw.split('\n')
 
     const normalized: unknown[] = []
+    /** 与 normalized 同长的 entry id —— 轮次分叉要用它当锚点（实施-26 R0①）。 */
+    const entryIds: (string | undefined)[] = []
     let total = 0
     let truncated = 0
     let sessionId: string | undefined
@@ -195,7 +197,7 @@ export async function readSessionMessages(
       }
 
       try {
-        const entry = JSON.parse(rawLine) as { message?: unknown }
+        const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown }
         const msg = entry.message
         if (!msg || typeof msg !== 'object') continue
 
@@ -203,13 +205,14 @@ export async function readSessionMessages(
         truncated += r.cut
         total++
         normalized.push(r.value)
+        entryIds.push(typeof entry.id === 'string' && entry.id ? entry.id : undefined)
       } catch {
         /* 单行坏了就跳过 —— 不让一行毁掉整个会话 */
       }
     }
 
     return {
-      messages: normalizeHistory(normalized, opts?.localizeImage),
+      messages: normalizeHistory(normalized, opts?.localizeImage, entryIds),
       total,
       truncated,
       bytes: size,

@@ -16,6 +16,10 @@ import type {
   SessionSummary
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
+/* 路径身份归一化只有一份（渲染端左栏也用同一份，见文件头注释） */
+import { normalizeLayoutPath } from '../shared/session-path'
+
+export { normalizeLayoutPath }
 
 export const SESSION_LAYOUT_FILE = join(YAN_DIR, 'session-layout.json')
 const MAX_ENTRIES = 2000
@@ -27,6 +31,8 @@ export interface RememberSessionInput {
   cwd: string
   projectId?: string
   scope?: SessionScope
+  /** 主题空间归属（`null` = 移出空间；不传 = 保留原值）。 */
+  spaceId?: string | null
   opened?: boolean
 }
 
@@ -44,10 +50,6 @@ function now(): number {
 }
 
 /** Windows 路径比较只用于身份匹配，不改变展示和落盘的原始路径。 */
-export function normalizeLayoutPath(value: string): string {
-  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
-}
-
 function scopeFor(projectId: string | undefined, scope: SessionScope | undefined): SessionScope {
   if (scope === 'pending') return 'pending'
   if (scope === 'project' && projectId) return 'project'
@@ -78,6 +80,8 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     .map((x) => x.slice(0, 80))
     .slice(0, 20)
   const projectId = typeof o.projectId === 'string' && o.projectId.trim() ? o.projectId.slice(0, 80) : undefined
+  /* 空间归属与项目归属是两个独立维度：一个没有不代表另一个也要没。 */
+  const spaceId = typeof o.spaceId === 'string' && o.spaceId.trim() ? o.spaceId.slice(0, 80) : undefined
   const scope: SessionScope = o.scope === 'project' || o.scope === 'pending' ? o.scope : 'global'
   const createdAt = Number.isFinite(o.createdAt) ? Number(o.createdAt) : now()
   const updatedAt = Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : createdAt
@@ -91,6 +95,7 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     cwd: o.cwd,
     scope,
     ...(projectId ? { projectId } : {}),
+    ...(spaceId ? { spaceId } : {}),
     ...(candidates.length ? { projectCandidates: candidates } : {}),
     createdAt,
     updatedAt,
@@ -209,6 +214,7 @@ export async function decorateSessions(
       return {
         ...summary,
         ...(entry.projectId ? { projectId: entry.projectId } : {}),
+        ...(entry.spaceId ? { spaceId: entry.spaceId } : {}),
         scope: entry.scope,
         ...(entry.lastOpenedAt ? { lastOpenedAt: entry.lastOpenedAt } : {}),
         ...(entry.projectCandidates?.length ? { projectCandidates: entry.projectCandidates } : {})
@@ -244,6 +250,14 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       cwd: input.cwd || previous?.cwd || '',
       scope: nextScope,
       ...(input.projectId ? { projectId: input.projectId } : {}),
+      /* 空间归属独立于 scope：不传保留原值，传 null 才是移出 */
+      ...(input.spaceId === undefined
+        ? previous?.spaceId
+          ? { spaceId: previous.spaceId }
+          : {}
+        : input.spaceId
+          ? { spaceId: input.spaceId.slice(0, 80) }
+          : {}),
       ...(nextScope === 'pending' && previous?.projectCandidates?.length
         ? { projectCandidates: previous.projectCandidates }
         : {}),
@@ -268,6 +282,30 @@ export async function moveSessionLayout(input: MoveSessionInput, projectId: stri
     sessionFile: input.sessionFile,
     cwd: input.cwd,
     ...(projectId ? { projectId, scope: 'project' } : { scope: 'global' }),
+    opened: false
+  })
+}
+
+/**
+ * 设置会话的主题空间归属（实施-25 P02）。
+ *
+ * 与 `moveSessionLayout` 同一个边界：只改 Yan 的产品归属，不移动 pi 的 JSONL。
+ *
+ * ⚠️ 先把现有条目读出来带回 `projectId` / `scope` —— `rememberSession` 会用
+ * 传入值重算 scope，只传 spaceId 会把项目归属冲成 `global`（那是另一个维度）。
+ */
+export async function setSessionSpace(input: MoveSessionInput, spaceId: string | null): Promise<SessionLayoutEntry> {
+  const doc = await getSessionLayout()
+  const index = findEntryIndex(doc.entries, input.sessionId, input.sessionFile)
+  const previous = index >= 0 ? doc.entries[index] : undefined
+  return rememberSession({
+    sessionId: input.sessionId,
+    ...(input.sessionFile || previous?.sessionFile ? { sessionFile: input.sessionFile ?? previous?.sessionFile } : {}),
+    cwd: input.cwd || previous?.cwd || '',
+    ...(previous?.projectId
+      ? { projectId: previous.projectId, scope: previous.scope }
+      : { scope: previous?.scope ?? 'global' }),
+    spaceId,
     opened: false
   })
 }

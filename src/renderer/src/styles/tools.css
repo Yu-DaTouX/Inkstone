@@ -3948,3 +3948,50 @@ body.tile-dragging .rp-float-head {
 .rightpanel :is(.rp-body, .rp-todo-scroll, .rp-fs, .rp-fs-search-results, .rp-log)::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* --------------------------------- 工作对象条（实施-25 P04 / T04-6） */
+
+/*
+ * 右栏顶部一条窄带：当前活动 + 对应工作对象的入口。
+ * 不占整块面板（四种活动各自的专属面板要等 P06 / P09 的对象落地）。
+ */
+.rp-workobj {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.rp-workobj-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rp-workobj-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.rp-workobj-open:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.rp-workobj-hint {
+  opacity: 0.75;
+}

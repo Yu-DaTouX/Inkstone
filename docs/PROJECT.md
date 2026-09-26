@@ -9,7 +9,14 @@
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
-| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页与会话地图（`WorkbenchHome.tsx` / `SessionMap.tsx` / `SessionPreview.tsx`） |
+| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx` / `SessionMap.tsx` / `SessionPreview.tsx`） |
+| `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
+| `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
+| `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 活动流程与建任务阈值、按活动的上下文装配（引用可回原文） |
+| `src/shared/artifact-doc.ts` + `src/main/artifact-doc-store.ts` | 可编辑成果：版本推进、「用户改过的段落不被 agent 整篇覆盖」、结构化清单（Markdown 任务列表）、引用回原文与导出 Markdown |
+| `src/shared/course.ts` + `src/main/course-store.ts` / `course-service.ts` | 课程与路线：三条入口（资料 / 主题 / 卡点）、材料与补充的强制区分、单元顺序调整 |
+| `src/shared/study.ts` + `src/main/learning-store.ts` / `learning-service.ts` | 学习状态与继续：阶段推进（进等待要问题、出等待要作答）、`waiting_for_learner` 持久化与续跑闸门 |
+| `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
 | `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
 | `src/renderer/src/styles/` | 样式、令牌与主题 |

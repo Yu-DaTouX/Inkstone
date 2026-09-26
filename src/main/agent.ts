@@ -12,7 +12,7 @@
  */
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { PiRpc } from './protocol'
@@ -58,6 +58,9 @@ import { readSessionMessages, type ReadResult } from './session-reader'
 import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
+import { agentProfileSnapshotPath } from './agent-profile-store'
+import { decideTaskCreation, taskCreationRefusal } from '../shared/activity-flow'
+import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProfileKind } from '../shared/agent-profile'
 import { isSafeSessionId } from './context-state-store'
 import { questionLog } from './question-log'
 import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
@@ -255,6 +258,14 @@ export interface GoalCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
+/**
+ * `yan study …` 的宿主实现入口（实施-25 P08）。
+ *
+ * 与目标同一个形状、同一个理由：阶段的真相在 `learning-service`（index.ts 一侧），
+ * agent 只负责把命令转过去。
+ */
+export type StudyCommandHost = GoalCommandHost
+
 export interface ExternalApiConfirmationRequest {
   provider: 'openai' | 'compatible'
   endpoint: string
@@ -331,6 +342,8 @@ export class AgentController extends EventEmitter {
   private questionExtension?: string
   /** 工作模式的工具策略执行（实施-05 S3）：计划档收紧工具表 + 兜底阻断。 */
   private workModeExtension?: string
+  /** 活动档案（实施-25 P01）：按会话注角色与受限工具。 */
+  private agentProfileExtension?: string
   /** 就绪转移之后的内部门续行（实施-05 S3b）：custom 消息 + 触发一次回合。 */
   private goalResumeExtension?: string
   /** 交接包生成（实施-05 S5b-2）：它只做「调一次 completion」那件 RPC 做不到的事。 */
@@ -378,6 +391,7 @@ export class AgentController extends EventEmitter {
   private subagentHost?: SubagentCommandHost
   /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
   private goalHost?: GoalCommandHost
+  private studyHost?: StudyCommandHost
   /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
@@ -596,6 +610,7 @@ export class AgentController extends EventEmitter {
     piBin?: string
     questionExtension?: string
     workModeExtension?: string
+    agentProfileExtension?: string
     goalResumeExtension?: string
     handoffsExtension?: string
     /** 回复详细程度扩展（方案 3.1）：按档位注入系统提示 */
@@ -650,6 +665,7 @@ export class AgentController extends EventEmitter {
     subagentHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
+    studyHost?: StudyCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -680,6 +696,7 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.questionExtension = opts.questionExtension
     this.workModeExtension = opts.workModeExtension
+    this.agentProfileExtension = opts.agentProfileExtension
     this.goalResumeExtension = opts.goalResumeExtension
     this.handoffsExtension = opts.handoffsExtension
     this.responseDetailExtension = opts.responseDetailExtension
@@ -693,6 +710,7 @@ export class AgentController extends EventEmitter {
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.goalHost = opts.goalHost
+    this.studyHost = opts.studyHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.yanCliEnv = opts.yanCliEnv
@@ -843,6 +861,11 @@ export class AgentController extends EventEmitter {
          * 放最后加载：它要在其它扩展注册完工具之后再收紧工具表。
          */
         ...(this.workModeExtension ? ['--extension', this.workModeExtension] : []),
+        /*
+         * 活动档案（实施-25 P01）：紧跟在 work-mode 之后加载。
+         * 两边各自收紧工具、互不恢复对方，所以顺序不影响「更严的那个生效」。
+         */
+        ...(this.agentProfileExtension ? ['--extension', this.agentProfileExtension] : []),
         /* 续行（实施-05 S3b）：就绪转移后由它发一条 custom 控制消息并触发回合 */
         ...(this.goalResumeExtension ? ['--extension', this.goalResumeExtension] : []),
         /* 交接包生成（实施-05 S5b-2）：宿主写请求，它调一次 completion 写结果 */
@@ -1199,6 +1222,19 @@ export class AgentController extends EventEmitter {
         throw new CapabilityCommandError('goal_unavailable', '目标状态入口当前不可用（宿主未注入）')
       }
       return this.goalHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
+    }
+    /*
+     * 学习状态（实施-25 P08）：`study.ask` 是进入「等你作答」的唯一入口，
+     * 而阶段转移的校验在宿主 —— 模型不能靠换措辞把等待跳过去（T08-7）。
+     */
+    if (command.startsWith('study.')) {
+      if (!this.studyHost) {
+        throw new CapabilityCommandError('study_unavailable', '学习状态入口当前不可用（宿主未注入）')
+      }
+      return this.studyHost.run(command, params, {
         sessionId: this.capabilityOpts?.sessionId ?? 'primary',
         projectId: this.capabilityOpts?.projectId ?? ''
       })
@@ -3488,6 +3524,50 @@ export class AgentController extends EventEmitter {
       operationId: rawOperationId || randomUUID()
     }
 
+    /*
+     * 简单问答不建任务（实施-25 P05 / T05-2）。
+     *
+     * 只有 `add` / `set` 会**建**清单；`complete` / `remove` / `clear` 是维护
+     * 已有清单的操作，拦它们会让用户清不掉东西。判定用宿主写下的档案快照
+     * （与薄层扩展同一份）；读不到就按「不干预」放行 —— 宁可多建一份清单，
+     * 也不要因为一次读盘失败把用户的任务默默吞掉。
+     *
+     * 拦下时不写盘、不报错，而是回一句可读说明：模型知道“没建”，就不会
+     * 反复重试提交同一个清单。
+     */
+    if (request.action === 'add' || request.action === 'set') {
+      const snapshot = this.readAgentProfileSnapshot()
+      if (snapshot) {
+        const itemCount = Array.isArray(params.items) ? params.items.length : 0
+        const decision = decideTaskCreation({
+          profile: snapshot.profile,
+          activity: snapshot.activity,
+          itemCount
+        })
+        if (!decision.create) {
+          const current = await currentTaskPlan(sessionId).catch(() => null)
+          return {
+            data: {
+              ok: true,
+              skipped: true,
+              reason: decision.reason,
+              message: taskCreationRefusal(decision.reason),
+              operationId: current?.state.operationId ?? null,
+              revision: current?.state.revision ?? 0,
+              todos: current?.state.todos ?? []
+            },
+            summary: {
+              kind: 'task-plan',
+              action: request.action,
+              skipped: true,
+              reason: decision.reason,
+              items: current?.state.todos.length ?? 0
+            }
+          }
+        }
+      }
+    }
+
     const round = await this.currentUserRound()
     const outcome = await applyTaskPlanOperation({ sessionId, round, request }).catch(
       (err: unknown): never => {
@@ -3531,6 +3611,24 @@ export class AgentController extends EventEmitter {
         done: state.todos.filter((t) => t.done).length,
         changed: outcome.changed.length
       }
+    }
+  }
+
+  /**
+   * 读宿主写给这个实例的档案快照（薄层扩展读的是同一份文件）。
+   *
+   * 返回 `null` = 没有快照或形状不对：调用方按「不干预」处理。
+   * 注意这里**不**抛错 —— 简单问答的闸门不该成为一轮对话的失败点。
+   */
+  private readAgentProfileSnapshot(): { profile: AgentProfileKind; activity: AgentActivity } | null {
+    const key = this.capabilityOpts?.sessionId
+    if (!key) return null
+    try {
+      const raw = JSON.parse(readFileSync(agentProfileSnapshotPath(key), 'utf8')) as Record<string, unknown>
+      if (!isAgentProfileKind(raw.profile) || !isAgentActivity(raw.activity)) return null
+      return { profile: raw.profile, activity: raw.activity }
+    } catch {
+      return null
     }
   }
 

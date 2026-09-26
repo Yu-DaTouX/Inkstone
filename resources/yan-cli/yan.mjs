@@ -185,6 +185,28 @@ const GROUP_USAGE = {
   · 拒绝不是失败：回执里有 code 与当前状态，照着补齐再提交一次即可。
 `,
 
+  study: `yan study <动作> [选项]
+
+动作（与 goal 同一族：状态由宿主持有，模型只能请求，不能自判）：
+  start   --course <课程ID> [--unit <单元ID>] [--next-step "…"]
+          开始 / 接着学一门课（同一门课再调就是「接着学」，位置与阶段都留着）
+  ask     --question "…" [--expectation "…"] [--origin material|model] \
+            [--next-step "…"]
+          提出问题并进入「等你作答」——**这是唯一能进入等待的方式**。
+  answer  --text "…"
+          记录学习者的作答，进入反馈。**只有用户的真实输入才该走这里**。
+  advance --to <阶段>   preparing / explaining / feedback / applying / summary
+          推进阶段。**不能用来进入或离开「等你作答」**：那两条必须走 ask / answer
+          （自问自答不算进度，宿主会拒）。
+  status                看当前阶段、位置与是否在等学习者作答
+  pause / resume / stop pause=暂停（后台准备仍可继续）/ resume=恢复等待 / stop=先不学了（保留位置）
+
+说明：
+  · 等学习者作答时，自动续跑会被拦住 —— 别指望它自己接着讲；
+  · 后台可以做：整理教材、备下一节、生成适量练习、整理笔记；
+    不可以做：替他作答、把他没做到的事记成做到、把他的进度往前提。
+`,
+
   knowledge: `yan knowledge <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -327,6 +349,12 @@ const GROUP_SPECS = {
     actions: ['ready', 'report', 'status'],
     /* 都走 --request-file；缺文件里字段由宿主报可读错误（它才看得懂当前状态） */
     required: {}
+  },
+
+  study: {
+    actions: ['start', 'ask', 'answer', 'advance', 'status', 'pause', 'resume', 'stop'],
+    /* 只列「缺了完全无法解释意图」的：课程 ID 与问题正文 */
+    required: { start: ['course'], ask: ['question'] },
   },
 
   knowledge: {

@@ -11,6 +11,21 @@ import type {
   PackageListingView,
   SourceRefView,
   SourceLinkView,
+  LibraryImportViewResult,
+  LibraryOpenView,
+  LibraryRefRecordView,
+  LibraryVersion,
+  LibrarySource,
+  ContextAssembly,
+  ArtifactDoc,
+  ArtifactDocResult,
+  Course,
+  CourseResult,
+  CourseUnitInput,
+  StudyResult,
+  StudyStatusView,
+  StudyResume,
+  StudySession,
   ForkContextResultView,
   ForkRefsReportView,
   WorktreeLinkView,
@@ -64,6 +79,8 @@ import type {
   SessionState,
   SessionStats,
   SessionSummary,
+  Space,
+  SpaceProjectLink,
   SessionTodo,
   SubagentRun,
   SlashCommand,
@@ -72,6 +89,7 @@ import type {
   PursuedBrief,
   HandoffView,
   WorkModeState,
+  AgentProfileState,
   YanBridge,
   ZoomState,
   CustomProviderTestResult
@@ -128,6 +146,30 @@ const api: YanBridge = {
     ),
   moveSession: (sessionId, projectId) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:moveSession', sessionId, projectId),
+  /* 主题空间（实施-25 P02）：与 moveSession 同一个四处清单（ipc → main → preload → store） */
+  getSpaces: () => invoke<{ spaces: Space[]; links: SpaceProjectLink[] }>('yan:getSpaces'),
+  createSpace: (input) =>
+    invoke<{
+      ok: boolean
+      error?: string
+      space?: Space
+      spaces?: Space[]
+      links?: SpaceProjectLink[]
+    }>('yan:createSpace', input),
+  updateSpace: (id, patch) =>
+    invoke<{
+      ok: boolean
+      error?: string
+      space?: Space
+      spaces?: Space[]
+      links?: SpaceProjectLink[]
+    }>('yan:updateSpace', id, patch),
+  linkSpaceProject: (spaceId, projectId) =>
+    invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:linkSpaceProject', spaceId, projectId),
+  unlinkSpaceProject: (spaceId, projectId) =>
+    invoke<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>('yan:unlinkSpaceProject', spaceId, projectId),
+  setSessionSpace: (sessionId, spaceId) =>
+    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:setSessionSpace', sessionId, spaceId),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
   compact: () => invoke<Ok>('yan:compact'),
@@ -156,6 +198,13 @@ const api: YanBridge = {
 
   /* ---- 工作模式（实施-05，按当前会话） ---- */
   getWorkMode: () => invoke<WorkModeState>('yan:getWorkMode'),
+  getAgentProfile: () => invoke<AgentProfileState>('yan:getAgentProfile'),
+  setAgentProfile: (patch, expectedRevision) =>
+    invoke<{ ok: boolean; state: AgentProfileState; error?: string; detail?: string }>(
+      'yan:setAgentProfile',
+      patch,
+      expectedRevision
+    ),
   getGoal: () => invoke<{ goal: GoalState; mode: WorkModeState }>('yan:getGoal'),
   /* 设定持续目标（`+` 菜单 → 目标）：两栏都必填，拒收只回可读原因 */
   setGoal: (brief: PursuedBrief) =>
@@ -283,6 +332,85 @@ const api: YanBridge = {
     readImage: (req) => invoke('yan:sources:readImage', req),
     /* 来源搜索入口的可用性（实施-07 S4）：只读查询，没命中就隐藏入口 */
     webSearch: () => invoke<WebSearchAvailability>('yan:sources:webSearch')
+  },
+  /* 资料库（实施-25 P03）：与 sources 并存；打开只收 { sourceId, version } */
+  library: {
+    list: (req) =>
+      invoke<{
+        ok: boolean
+        error?: string
+        sources: LibrarySource[]
+        versions: LibraryVersion[]
+        refs: LibraryRefRecordView[]
+      }>('yan:library:list',
+        req
+      ),
+    import: (view) => invoke<LibraryImportViewResult>('yan:library:import', view),
+    open: (ref, options) => invoke<LibraryOpenView>('yan:library:open', ref, options),
+    remove: (sourceId) => invoke<{ ok: boolean; error?: string }>('yan:library:remove', sourceId),
+    restore: (sourceId) => invoke<{ ok: boolean; error?: string }>('yan:library:restore', sourceId),
+    rename: (sourceId, title) =>
+      invoke<{ ok: boolean; error?: string; source?: LibrarySource }>('yan:library:rename', sourceId, title),
+    attach: (sourceId, spaceId) => invoke<{ ok: boolean; error?: string }>('yan:library:attach', sourceId, spaceId),
+    verify: (refs) =>
+      invoke<{ ok: boolean; error?: string; checked: number; unavailable: number }>('yan:library:verify', refs),
+    addRef: (owner, ref) => invoke<{ ok: boolean; error?: string; added: boolean }>('yan:library:addRef', owner, ref),
+    promoteLegacy: (req) => invoke<LibraryImportViewResult & { mapped?: boolean }>('yan:library:promoteLegacy', req),
+    /* 本轮上下文装配结果（实施-25 P05）：只读，供界面 / 探针核对来源引用 */
+    current: () => invoke<{ ok: boolean; error?: string; assembly?: ContextAssembly }>('yan:context:current')
+  },
+  /* 可编辑成果（实施-25 P06a）：正文 + 版本。agent 改正文走按段落接口，不整篇覆盖用户改动 */
+  artifactDoc: {
+    list: (spaceId) =>
+      invoke<{ ok: boolean; error?: string; docs: ArtifactDoc[] }>('yan:artifactDoc:list', spaceId),
+    create: (input) => invoke<ArtifactDocResult>('yan:artifactDoc:create', input),
+    saveUserEdit: (id, text) => invoke<ArtifactDocResult>('yan:artifactDoc:saveUserEdit', id, text),
+    applyAgentEdit: (id, edit) => invoke<ArtifactDocResult>('yan:artifactDoc:applyAgentEdit', id, edit),
+    rename: (id, title) => invoke<ArtifactDocResult>('yan:artifactDoc:rename', id, title),
+    assign: (id, patch) => invoke<ArtifactDocResult>('yan:artifactDoc:assign', id, patch),
+    addSource: (id, ref) => invoke<ArtifactDocResult>('yan:artifactDoc:addSource', id, ref),
+    toggleChecklist: (id, index) => invoke<ArtifactDocResult>('yan:artifactDoc:toggleChecklist', id, index),
+    exportMarkdown: (id) =>
+      invoke<{ ok: boolean; error?: string; canceled?: boolean; path?: string; markdown?: string }>(
+        'yan:artifactDoc:exportMarkdown',
+        id
+      ),
+    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:artifactDoc:remove', id)
+  },
+  /* 课程与路线（实施-25 P07）：三个入口分开的方法，理由见 shared/ipc.ts */
+  course: {
+    list: (spaceId) =>
+      invoke<{ ok: boolean; error?: string; courses: Course[] }>('yan:course:list', spaceId),
+    create: (input) => invoke<CourseResult>('yan:course:create', input),
+    createFromSource: (params) => invoke<CourseResult>('yan:course:createFromSource', params),
+    createFromTopic: (input) => invoke<CourseResult>('yan:course:createFromTopic', input),
+    createFromBlocker: (input) => invoke<CourseResult>('yan:course:createFromBlocker', input),
+    update: (id, patch) => invoke<CourseResult>('yan:course:update', id, patch),
+    addUnit: (id, unit: CourseUnitInput) => invoke<CourseResult>('yan:course:addUnit', id, unit),
+    updateUnit: (id, unitId, patch) => invoke<CourseResult>('yan:course:updateUnit', id, unitId, patch),
+    moveUnit: (id, unitId, delta) => invoke<CourseResult>('yan:course:moveUnit', id, unitId, delta),
+    removeUnit: (id, unitId) => invoke<CourseResult>('yan:course:removeUnit', id, unitId),
+    addConcept: (id, name) => invoke<CourseResult>('yan:course:addConcept', id, name),
+    removeConcept: (id, conceptId) => invoke<CourseResult>('yan:course:removeConcept', id, conceptId),
+    archive: (id, archived) => invoke<CourseResult>('yan:course:archive', id, archived),
+    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:course:remove', id)
+  },
+  /*
+   * 学习状态（实施-25 P08）。
+   * `runtimeKey` 一般不传：宿主缺省用当前会话（界面不该自己拼这个键）。
+   */
+  study: {
+    status: (runtimeKey) => invoke<StudyStatusView>('yan:study:status', runtimeKey),
+    statusOfCourse: (courseId) => invoke<StudyStatusView>('yan:study:statusOfCourse', courseId),
+    list: () => invoke<{ session: StudySession; resume: StudyResume }[]>('yan:study:list'),
+    start: (input) => invoke<StudyResult>('yan:study:start', input),
+    ask: (input) => invoke<StudyResult>('yan:study:ask', input),
+    answer: (input) => invoke<StudyResult>('yan:study:answer', input),
+    advance: (input) => invoke<StudyResult>('yan:study:advance', input),
+    pause: (runtimeKey) => invoke<StudyResult>('yan:study:pause', runtimeKey),
+    resume: (runtimeKey) => invoke<StudyResult>('yan:study:resume', runtimeKey),
+    stop: (runtimeKey) => invoke<StudyResult>('yan:study:stop', runtimeKey),
+    remove: (courseId) => invoke<boolean>('yan:study:remove', courseId)
   },
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),

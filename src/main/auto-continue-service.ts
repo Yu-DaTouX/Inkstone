@@ -135,7 +135,7 @@ export class AutoContinueStore {
   async noteFailure(
     sessionKey: string,
     errorText: unknown,
-    opts: { userStopped?: boolean } = {}
+    opts: { userStopped?: boolean; learnWaiting?: boolean } = {}
   ): Promise<{ plan: AutoContinuePlan | null; state: AutoContinueState; duplicate: boolean }> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
@@ -164,6 +164,7 @@ export class AutoContinueStore {
         state,
         error,
         userStopped: opts.userStopped === true,
+        learnWaiting: opts.learnWaiting === true,
         ...(this.limit ? { limit: this.limit } : {}),
         ...(this.delays ? { delays: this.delays } : {})
       })
@@ -172,7 +173,8 @@ export class AutoContinueStore {
        * 计数语义：
        *   · 继续 → +1；
        *   · 到上限 → 保持（用户不发言就不会再试，一发言就 `reset`）；
-       *   · 不值得重试 / 用户停止 → 归零（额度恢复后不该被上次的失败挡着）。
+       *   · 不值得重试 / 用户停止 / **等学习者作答** → 归零
+       *     （后三者都不是「模型坏了」，做成累计失败数会把下一轮错误冤枉掉）。
        */
       if (plan.action === 'retry') entry.attempts = state.attempts + 1
       else if (plan.reason !== 'limit') entry.attempts = 0

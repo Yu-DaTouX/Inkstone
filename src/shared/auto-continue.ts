@@ -119,7 +119,7 @@ export function emptyAutoContinueState(now = 0): AutoContinueState {
   return { attempts: 0, lastError: null, lastAt: now }
 }
 
-export type AutoContinueStopReason = 'limit' | 'not-retryable' | 'user-stopped'
+export type AutoContinueStopReason = 'limit' | 'not-retryable' | 'user-stopped' | 'learn-waiting'
 
 export type AutoContinuePlan =
   | { action: 'retry'; attempt: number; delayMs: number; error: ModelErrorInfo; note: string }
@@ -135,9 +135,11 @@ function seconds(ms: number): string {
  *
  * 判定顺序（先到先拦）：
  *   ① 用户按了停止 → 不继续；
- *   ② 错误本身不值得重试（额度 / 认证 / 上下文 / 取消）→ 不继续，并说明原因；
- *   ③ 连续次数到上限 → 不继续（保留现场，等用户）；
- *   ④ 其余 → 继续，`attempt` 从 1 开始，退避按表取。
+ *   ② **正在等学习者作答**（`learnWaiting`，实施-25 P08）→ 不继续：
+ *      这时候再起一轮正好就是「自问自答把课学完」，是 R3 要拦的那个失败；
+ *   ③ 错误本身不值得重试（额度 / 认证 / 上下文 / 取消）→ 不继续，并说明原因；
+ *   ④ 连续次数到上限 → 不继续（保留现场，等用户）；
+ *   ⑤ 其余 → 继续，`attempt` 从 1 开始，退避按表取。
  *
  * `state.attempts` 由调用方维护（服务层持久化）；这里只根据它算下一步。
  */
@@ -145,6 +147,8 @@ export function planAutoContinue(input: {
   state: AutoContinueState
   error: ModelErrorInfo
   userStopped?: boolean
+  /** 学习会话正等学习者作答（实施-25 P08）。 */
+  learnWaiting?: boolean
   limit?: number
   delays?: readonly number[]
 }): AutoContinuePlan {
@@ -154,6 +158,14 @@ export function planAutoContinue(input: {
 
   if (input.userStopped) {
     return { action: 'stop', reason: 'user-stopped', error, note: '你按了停止，不再自动继续。' }
+  }
+  if (input.learnWaiting) {
+    return {
+      action: 'stop',
+      reason: 'learn-waiting',
+      error,
+      note: '学习正等着学习者作答，这一轮不自动继续 —— 等他答完再往下走。'
+    }
   }
   if (error.kind !== 'retryable') {
     return {

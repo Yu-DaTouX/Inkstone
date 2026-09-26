@@ -660,6 +660,90 @@
   transform: rotate(0deg);
 }
 
+/* ---- 主题空间（实施-25 P02）----
+/*
+ * 空间行复用「标题 + 可折叠列表」的骨架，但刻意比项目行轻一档：
+ * 项目行是导航重心（拖拽 / 分组 / 运行状态都在那儿），空间只是一层归类，
+ * 所以不再发明新的强调色，只用现有色阶。
+ */
+.rail-space-input {
+  display: block;
+  margin: 2px var(--sp-2) 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  width: calc(100% - var(--sp-2) * 2);
+}
+
+.rail-space-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 28px;
+  border-radius: 6px;
+  padding-right: 4px;
+}
+
+.rail-space-row:hover {
+  background: var(--bg-2);
+}
+
+.rail-space-fold {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--fg-mute);
+}
+
+/* 与项目标题同一套约定：展开时 chevron 转 90° */
+.rail-space-fold .chev {
+  transform: rotate(0deg);
+  transition: transform var(--dur) var(--ease);
+}
+
+.rail-space-fold .chev.on {
+  transform: rotate(90deg);
+}
+
+.rail-space-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.rail-space-row:hover .rail-space-name {
+  color: var(--fg);
+}
+
+/* 会话数：与项目行的计数同位，但更弱 —— 是提示，不是待办 */
+.rail-space-count {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-space-tree {
+  padding-left: 10px;
+}
+
+.rail-empty.sm {
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+}
+
 /* ---- 项目行 ---- */
 .proj-group-heading {
   display: flex;

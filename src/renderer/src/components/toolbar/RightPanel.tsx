@@ -40,6 +40,7 @@ import { BrowserSurface } from '../browser/BrowserSurface'
 import { TerminalSurface } from '../terminal/TerminalSurface'
 import { FilePreviewPane } from './FilePreview'
 import { ReviewPanel } from '../review/ReviewPanel'
+import { WorkObjectBar } from './WorkObjectBar'
 import { fileResourceLabel } from '../../../../shared/file-resource'
 import {
   activateWorkbenchTab,
@@ -667,6 +668,8 @@ export function RightPanel() {
         </div>
       ) : null}
 
+
+      <WorkObjectBar />
 
       {reviewMode ? <ReviewPanel /> : null}
       {terminalMode ? <TerminalSurface /> : null}

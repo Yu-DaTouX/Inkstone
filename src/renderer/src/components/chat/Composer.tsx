@@ -1128,6 +1128,9 @@ export function Composer() {
             {/* 工作模式（实施-05）：原位显示当前模式 + 菜单，Tab 可快切 */}
             <WorkModePicker buttonRef={modeButtonRef} />
 
+            {/* 活动档案（实施-25 P01）：代码 / 日常×活动；改这里只影响当前会话 */}
+            <AgentProfilePicker />
+
             {/*
              * 当前发送规则 —— **常显**（不只是长文模式）。
              *
@@ -1459,6 +1462,170 @@ function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonEl
             >
               <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
               <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * 活动档案的选项（实施-25 P01）。
+ *
+ * `coding` 不锁定 activity（切回代码时保留上次的日常活动，
+ * 用户再从代码切回日常时不用重新选一次）。
+ */
+const AGENT_PROFILE_ITEMS = [
+  { key: 'coding', profile: 'coding', activity: null },
+  { key: 'answer', profile: 'daily', activity: 'answer' },
+  { key: 'research', profile: 'daily', activity: 'research' },
+  { key: 'compose', profile: 'daily', activity: 'compose' },
+  { key: 'organize', profile: 'daily', activity: 'organize' },
+  { key: 'learn', profile: 'daily', activity: 'learn' }
+] as const
+
+/**
+ * 活动档案选择器（实施-25 P01）。
+ *
+ * 它决定**模型侧真的变成什么角色**（宿主把角色文本与受限工具写给薄层扩展），
+ * 不只是换一个标签 —— 所以选项文案也按「会被如何工作」来写，不写内部枚举名。
+ *
+ * 与工作模式同一个交互习惯：按钮原位显示当前值，菜单 fixed 向上弹
+ *（`.composer` 的 `overflow: hidden` 会把 absolute 菜单裁掉）。
+ */
+function AgentProfilePicker() {
+  const t = useT()
+  const stored = useStore((s) => s.agentProfile)
+  const setAgentProfile = useStore((s) => s.setAgentProfile)
+  const profile = stored?.profile ?? 'coding'
+  const activity = stored?.activity ?? 'answer'
+  const currentKey = profile === 'daily' ? activity : 'coding'
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const MENU_WIDTH = 288
+
+  useEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    setIndex(Math.max(0, AGENT_PROFILE_ITEMS.findIndex((i) => i.key === currentKey)))
+    const el = buttonRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
+      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
+    }
+    menuRef.current?.focus()
+  }, [open, currentKey])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const commit = (item: (typeof AGENT_PROFILE_ITEMS)[number]) => {
+    setOpen(false)
+    buttonRef.current?.focus()
+    if (item.key === currentKey) return
+    void setAgentProfile(
+      item.profile === 'coding' ? { profile: 'coding' } : { profile: 'daily', activity: item.activity }
+    )
+  }
+
+  const label =
+    profile === 'daily'
+      ? `${t('agentProfile.daily')} · ${t(`agentProfile.${activity}`)}`
+      : t('agentProfile.coding')
+
+  return (
+    <div className="mode-picker" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        className="ctool mode-button"
+        data-testid="agent-profile-button"
+        data-profile={profile}
+        data-activity={activity}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t('agentProfile.hint')}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            setOpen(true)
+          } else if (e.key === 'Escape' && open) {
+            e.preventDefault()
+            setOpen(false)
+          }
+        }}
+      >
+        <Icon name="activity" size={12} />
+        <span className="mode-label" data-testid="agent-profile-label">
+          {label}
+        </span>
+        <span className="mode-caret" aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          className="mode-menu"
+          role="menu"
+          data-testid="agent-profile-menu"
+          data-profile={profile}
+          ref={menuRef}
+          tabIndex={-1}
+          style={{
+            width: MENU_WIDTH,
+            ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {})
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setIndex((i) => (i + 1) % AGENT_PROFILE_ITEMS.length)
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setIndex((i) => (i - 1 + AGENT_PROFILE_ITEMS.length) % AGENT_PROFILE_ITEMS.length)
+            } else if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              const item = AGENT_PROFILE_ITEMS[index]
+              if (item) commit(item)
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setOpen(false)
+              buttonRef.current?.focus()
+            }
+          }}
+        >
+          {AGENT_PROFILE_ITEMS.map((item, i) => (
+            <button
+              key={item.key}
+              role="menuitemradio"
+              aria-checked={item.key === currentKey}
+              tabIndex={-1}
+              className={`mode-item ${i === index ? 'active' : ''} ${item.key === currentKey ? 'current' : ''}`}
+              data-testid={`agent-profile-option-${item.key}`}
+              data-key={item.key}
+              onMouseEnter={() => setIndex(i)}
+              onClick={() => commit(item)}
+            >
+              <span className="mode-item-label">
+                {item.profile === 'coding' ? t('agentProfile.coding') : t(`agentProfile.${item.activity}`)}
+              </span>
+              <span className="mode-item-desc">
+                {item.profile === 'coding' ? t('agentProfile.desc.coding') : t(`agentProfile.desc.${item.activity}`)}
+              </span>
             </button>
           ))}
         </div>

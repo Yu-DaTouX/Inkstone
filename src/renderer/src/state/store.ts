@@ -34,6 +34,26 @@ import type {
   SessionStats,
   SessionSummary,
   SessionTodo,
+  Space,
+  SpaceProjectLink,
+  LibraryImportView,
+  LibraryImportViewResult,
+  LibraryOpenView,
+  LibraryRefRecordView,
+  LibrarySource,
+  LibraryVersion,
+  SourceReference,
+  ContextAssembly,
+  ArtifactDoc,
+  ArtifactKind,
+  ArtifactSourceRef,
+  Course,
+  CourseInput,
+  CourseUnitInput,
+  StudyPhase,
+  StudyResume,
+  StudySession,
+  StudyStatusView,
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
@@ -44,6 +64,8 @@ import type {
   UserProfile,
   WorkMode,
   WorkModeState,
+  AgentProfileState,
+  AgentProfilePatch,
   ZoomState
 } from '../../../shared/ipc'
 import { TOOL_SECTIONS } from '../../../shared/ipc'
@@ -52,6 +74,7 @@ import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
+import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
@@ -169,6 +192,48 @@ interface Store {
   pendingSends: PendingSend[]
   messages: UIMessage[]
   sessions: SessionSummary[]
+  /**
+   * 主题空间（实施-25 P02）。
+   *
+   * `spaceLinks` 与 `spaces` 一起存：界面上「空间里有哪些项目」总是同时要看，
+   * 分开拉会得到一个瞬时不一致的中间态。
+   */
+  spaces: Space[]
+  spaceLinks: SpaceProjectLink[]
+  /**
+   * 资料库（实施-25 P03）。
+   *
+   * 与 spaces 同一个理由把 sources 与 refs 一起存：界面上「这份资料被谁引用」
+   * 总是同时要看；分开拉会得到一个瞬时不一致的中间态。
+   * `libraryLoaded` 用来区分「还没拉过」与「确实一份都没有」——空列表不该被当成加载中。
+   */
+  /**
+   * 空间视图（实施-25 P04）。
+   *
+   * 放 store 而不是 App 的局部 state：右栏（T04-6 的工作对象入口）也要能打开它。
+   * 「停在哪一页」的偏好仍由 space-view.ts 管（localStorage），这里只是运行态。
+   */
+  spaceOpen: boolean
+  spaceView: SpaceView
+  library: LibrarySource[]
+  libraryVersions: LibraryVersion[]
+  libraryRefs: LibraryRefRecordView[]
+  libraryLoaded: boolean
+  /** 可编辑成果（实施-25 P06a）：当前空间的文档对象 */
+  artifactDocs: ArtifactDoc[]
+  artifactDocsLoaded: boolean
+  /** 课程与路线（实施-25 P07）。与成果一样，**宿主是事实源**。 */
+  courses: Course[]
+  coursesLoaded: boolean
+  /**
+   * 学习状态（实施-25 P08）。
+   *
+   * `studyStatus` 是**当前会话**的（含闸门 waiting）—— P09 的左栏与「等作答」提示用它；
+   * `studySessions` 是全量（按课程看上次学到哪）。
+   */
+  studySessions: { session: StudySession; resume: StudyResume }[]
+  studyStatus: StudyStatusView | null
+  studyLoaded: boolean
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
   todos: SessionTodo[]
   /** 全部任务清单快照（含最新）——「历史任务」模块用 */
@@ -373,6 +438,13 @@ interface Store {
    * 后台会话各自的值在 `sessionRuntimes` 里，切回去时主进程会再推一份权威值。
    */
   workMode: WorkModeState | null
+  /**
+   * 当前会话的活动档案（实施-25 P01）。
+   *
+   * null = 还没从主进程拿到（启动早期），界面按 `coding/answer` 渲染 ——
+   * 与默认档案一致，不会出现「界面说日常、模型是代码助手」。
+   */
+  agentProfile: AgentProfileState | null
   /** 当前会话的内置目标 / 计划；null = 还没与主进程对齐。 */
   goal: GoalState | null
   /**
@@ -410,6 +482,83 @@ interface Store {
   modifyGoalReady: () => Promise<boolean>
   applyPush: (m: MainPush) => void
   refreshSessions: () => Promise<void>
+  refreshSpaces: () => Promise<void>
+  /** 建空间：失败返回 null（并推 notice），不用异常打断调用方。 */
+  createSpace: (name: string, description?: string) => Promise<Space | null>
+  updateSpace: (
+    id: string,
+    patch: { name?: string; description?: string | null; archived?: boolean }
+  ) => Promise<boolean>
+  linkSpaceProject: (spaceId: string, projectId: string) => Promise<boolean>
+  unlinkSpaceProject: (spaceId: string, projectId: string) => Promise<boolean>
+  setSessionSpace: (sessionId: string, spaceId: string | null) => Promise<boolean>
+  /** 拉资料列表；`spaceId: null` = 只看未归档到空间的 */
+  refreshLibrary: (spaceId?: string | null) => Promise<void>
+  importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
+  /** 拉成果列表（`spaceId` 省略 = 全部） */
+  refreshArtifactDocs: (spaceId?: string | null) => Promise<void>
+  createArtifactDoc: (input: { title: string; text?: string; kind?: ArtifactKind; spaceId?: string; taskId?: string }) => Promise<ArtifactDoc | null>
+  /** 用户在编辑器保存正文：内容没变则**不开新版本** */
+  saveArtifactText: (id: string, text: string) => Promise<{ ok: boolean; unchanged?: boolean }>
+  renameArtifactDoc: (id: string, title: string) => Promise<boolean>
+  assignArtifactDoc: (id: string, patch: { spaceId?: string | null }) => Promise<boolean>
+  addArtifactSource: (id: string, ref: ArtifactSourceRef) => Promise<boolean>
+  /** 勾选结构化清单的一项（T06b-1）；勾选是一次用户编辑，会开新版本。 */
+  toggleArtifactChecklistItem: (id: string, index: number) => Promise<boolean>
+  /** 导出成果为 Markdown（T06b-3）；返回落盘路径（用户取消时为 null）。 */
+  exportArtifactDoc: (id: string) => Promise<{ ok: boolean; path?: string; canceled?: boolean }>
+
+  refreshCourses: (spaceId?: string | null) => Promise<void>
+  createCourse: (input: CourseInput) => Promise<Course | null>
+  createCourseFromSource: (params: { sourceId: string; version: number; input: CourseInput }) => Promise<Course | null>
+  createCourseFromTopic: (input: CourseInput) => Promise<Course | null>
+  createCourseFromBlocker: (input: CourseInput) => Promise<Course | null>
+  updateCourse: (id: string, patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }) => Promise<boolean>
+  addCourseUnit: (id: string, unit: CourseUnitInput) => Promise<boolean>
+  updateCourseUnit: (
+    id: string,
+    unitId: string,
+    patch: { title?: string; target?: string | null; estimateMinutes?: number; note?: string }
+  ) => Promise<boolean>
+  moveCourseUnit: (id: string, unitId: string, delta: number) => Promise<boolean>
+  removeCourseUnit: (id: string, unitId: string) => Promise<boolean>
+  archiveCourse: (id: string, archived?: boolean) => Promise<boolean>
+  removeCourse: (id: string) => Promise<boolean>
+
+  /*
+   * 学习状态（实施-25 P08）。
+   * `runtimeKey` 一律不传：宿主缺省用当前会话（界面自己拼这个键只会拼错）。
+   * 这几个动作 P09 的导师页才会用上；本片先把状态与通道备齐。
+   */
+  refreshStudy: () => Promise<void>
+  refreshStudyStatus: () => Promise<void>
+  startStudy: (input: { courseId: string; unitId?: string; nextStep?: string }) => Promise<boolean>
+  askStudy: (input: {
+    question: string
+    expectation?: string
+    origin?: 'material' | 'model'
+    nextStep?: string
+  }) => Promise<boolean>
+  answerStudy: (text: string) => Promise<boolean>
+  advanceStudy: (to: StudyPhase, nextStep?: string) => Promise<boolean>
+  pauseStudy: () => Promise<boolean>
+  resumeStudy: () => Promise<boolean>
+  stopStudy: () => Promise<boolean>
+
+  removeArtifactDoc: (id: string) => Promise<boolean>
+  /** 打开一条引用：只按 sourceId + version，旧版本照样能读 */
+  openLibraryRef: (ref: SourceReference, maxChars?: number) => Promise<LibraryOpenView | null>
+  removeLibrarySource: (sourceId: string) => Promise<boolean>
+  restoreLibrarySource: (sourceId: string) => Promise<boolean>
+  renameLibrarySource: (sourceId: string, title: string) => Promise<boolean>
+  attachLibrarySource: (sourceId: string, spaceId: string | null) => Promise<boolean>
+  /** 把一条资料登记为**当前会话**的引用（T04-4「加入对话」）。 */
+  joinLibraryRef: (ref: SourceReference) => Promise<boolean>
+  /** 当前会话本轮装配出的上下文（实施-25 P05 / T05-3）：只读，引用可跳回原文 */
+  currentContext: () => Promise<ContextAssembly | null>
+  /** 打开空间视图；不传 view 就停在用户上次那一页 */
+  openSpaceView: (view?: SpaceView) => void
+  closeSpaceView: () => void
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
   /** 拉一次供应商凭证状态（D12）：模型菜单用来区分“未配凭证”与“不支持思考” */
@@ -565,6 +714,13 @@ interface Store {
    * 这里收到拒绝后把显示恢复成权威值，不让界面出现“已自主”的假象。
    */
   setWorkMode: (mode: WorkMode) => Promise<void>
+  /**
+   * 改当前会话的活动档案（实施-25 P01）。
+   *
+   * 与 `setWorkMode` 同一个口径：改的是**当前会话**；被拒（revision 过期 /
+   * 非法取值）时采纳主进程回传的权威值，不把界面停在用户刚点的那个。
+   */
+  setAgentProfile: (patch: AgentProfilePatch) => Promise<void>
   /** 拉一次交接状态（面板挂载 / 回合收尾 / 手动重试后）。 */
   refreshHandoff: () => Promise<void>
   /** 用户点「重试」：清残留现场再走一遍调度判定（不强行换段）。 */
@@ -749,6 +905,7 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   }
   if (snapshot.session) projection.session = snapshot.session
   if (snapshot.workMode) projection.workMode = snapshot.workMode
+  if (snapshot.agentProfile) projection.agentProfile = snapshot.agentProfile
   projection.goal = snapshot.goal
   return projection
 }
@@ -1057,6 +1214,43 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
+  /**
+   * 课程写操作的统一收口：失败弹提示，成功就刷新列表。
+   * P07 有十来个动作，每个都手写一遍「失败 → notice / 成功 → refresh」迟早漏一处。
+   */
+  const courseFlow = async (
+    run: () => Promise<{ ok: boolean; error?: string; course?: Course }>,
+    fallback: string
+  ): Promise<Course | null> => {
+    const res = await run()
+    if (!res.ok || !res.course) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? fallback) })
+      return null
+    }
+    await get().refreshCourses()
+    return res.course
+  }
+
+  /**
+   * 学习状态写操作的收口（P08）：与课程同一个理由 —— 失败弹提示、成功刷新两个视图。
+   *
+   * 失败提示必须显示 `error` 原文：这里常见的「还没开始学习」「学习者还没作答」
+   * 都是**正常语义**，弹一句笼统的「操作失败」会让人以为坏了。
+   */
+  const studyFlow = async (
+    run: () => Promise<{ ok: boolean; error?: string }>,
+    fallback: string
+  ): Promise<boolean> => {
+    const res = await run()
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? fallback) })
+      return false
+    }
+    await get().refreshStudyStatus()
+    await get().refreshStudy()
+    return true
+  }
+
   return {
   conn: 'starting',
   connDetail: '',
@@ -1069,12 +1263,28 @@ export const useStore = create<Store>((rawSet, get) => {
   pendingSends: [],
   messages: [],
   sessions: [],
+  spaces: [],
+  spaceLinks: [],
+  spaceOpen: false,
+  spaceView: readSpaceView(),
+  library: [],
+  libraryVersions: [],
+  libraryRefs: [],
+  libraryLoaded: false,
+  artifactDocs: [],
+  artifactDocsLoaded: false,
+  courses: [],
+  coursesLoaded: false,
+  studySessions: [],
+  studyStatus: null,
+  studyLoaded: false,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
   runners: [],
   sessionRuntimes: {},
   workMode: null,
+  agentProfile: null,
   goal: null,
   goalLoading: false,
   goalError: null,
@@ -1330,6 +1540,10 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'work-mode':
         /* 当前会话的模式：后台会话的已经写进 sessionRuntimes，上面已 return */
         set({ workMode: m.payload })
+        break
+      case 'agent-profile':
+        /* 当前会话的活动档案：后台会话的已归并到 sessionRuntimes，上面已 return */
+        set({ agentProfile: m.payload })
         break
       case 'goal':
         /* 当前会话的目标：后台会话已经归并到 sessionRuntimes，上面已 return。 */
@@ -1670,6 +1884,366 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
       /* 保持原状 */
     }
+  },
+
+  refreshSpaces: async () => {
+    /* 与 refreshSessions 同一个口径：拉取失败就保持原状，不抛给调用方 */
+    try {
+      const res = await window.yan.getSpaces()
+      set({ spaces: res.spaces, spaceLinks: res.links })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  createSpace: async (name, description) => {
+    try {
+      const res = await window.yan.createSpace({ name, ...(description ? { description } : {}) })
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '创建空间失败') })
+        return null
+      }
+      set({ spaces: res.spaces ?? get().spaces, spaceLinks: res.links ?? get().spaceLinks })
+      return res.space ?? null
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '创建空间失败') })
+      return null
+    }
+  },
+
+  updateSpace: async (id, patch) => {
+    try {
+      const res = await window.yan.updateSpace(id, patch)
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '更新空间失败') })
+        return false
+      }
+      set({ spaces: res.spaces ?? get().spaces, spaceLinks: res.links ?? get().spaceLinks })
+      return true
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '更新空间失败') })
+      return false
+    }
+  },
+
+  linkSpaceProject: async (spaceId, projectId) => {
+    try {
+      const res = await window.yan.linkSpaceProject(spaceId, projectId)
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '关联项目失败') })
+        return false
+      }
+      set({ spaceLinks: res.links ?? get().spaceLinks })
+      return true
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '关联项目失败') })
+      return false
+    }
+  },
+
+  unlinkSpaceProject: async (spaceId, projectId) => {
+    try {
+      const res = await window.yan.unlinkSpaceProject(spaceId, projectId)
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '解除关联失败') })
+        return false
+      }
+      set({ spaceLinks: res.links ?? get().spaceLinks })
+      return true
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '解除关联失败') })
+      return false
+    }
+  },
+
+  setSessionSpace: async (sessionId, spaceId) => {
+    try {
+      const res = await window.yan.setSessionSpace(sessionId, spaceId)
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '归属空间失败') })
+        return false
+      }
+      /* 归属写进 session-layout，列表要重新拉一次才能看到（与 moveSession 一致） */
+      await get().refreshSessions()
+      return true
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '归属空间失败') })
+      return false
+    }
+  },
+
+  refreshLibrary: async (spaceId) => {
+    /* 与 refreshSessions 同一个口径：拉不到就保持原状，不把异常抛给调用方 */
+    try {
+      const res = await window.yan.library.list(spaceId === undefined ? undefined : { spaceId })
+      set({
+        library: res.sources,
+        libraryVersions: res.versions ?? [],
+        libraryRefs: res.refs,
+        libraryLoaded: true
+      })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  refreshArtifactDocs: async (spaceId) => {
+    try {
+      const res = await window.yan.artifactDoc.list(spaceId === undefined ? undefined : spaceId)
+      if (res.ok) set({ artifactDocs: res.docs, artifactDocsLoaded: true })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  createArtifactDoc: async (input) => {
+    const res = await window.yan.artifactDoc.create(input)
+    if (!res.ok || !res.doc) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建成果失败') })
+      return null
+    }
+    await get().refreshArtifactDocs()
+    return res.doc
+  },
+
+  saveArtifactText: async (id, text) => {
+    const res = await window.yan.artifactDoc.saveUserEdit(id, text)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '保存失败') })
+      return { ok: false }
+    }
+    await get().refreshArtifactDocs()
+    return { ok: true, ...(res.unchanged ? { unchanged: true } : {}) }
+  },
+
+  renameArtifactDoc: async (id, title) => {
+    const res = await window.yan.artifactDoc.rename(id, title)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改名失败') })
+      return false
+    }
+    await get().refreshArtifactDocs()
+    return true
+  },
+
+  assignArtifactDoc: async (id, patch) => {
+    const res = await window.yan.artifactDoc.assign(id, patch)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归属失败') })
+      return false
+    }
+    await get().refreshArtifactDocs()
+    return true
+  },
+
+  addArtifactSource: async (id, ref) => {
+    const res = await window.yan.artifactDoc.addSource(id, ref)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '加来源失败') })
+      return false
+    }
+    await get().refreshArtifactDocs()
+    return true
+  },
+
+  removeArtifactDoc: async (id) => {
+    const res = await window.yan.artifactDoc.remove(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除失败') })
+      return false
+    }
+    await get().refreshArtifactDocs()
+    return true
+  },
+
+  toggleArtifactChecklistItem: async (id, index) => {
+    const res = await window.yan.artifactDoc.toggleChecklist(id, index)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '勾选失败') })
+      return false
+    }
+    await get().refreshArtifactDocs()
+    return true
+  },
+
+  exportArtifactDoc: async (id) => {
+    const res = await window.yan.artifactDoc.exportMarkdown(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '导出失败') })
+      return { ok: false }
+    }
+    return { ok: true, ...(res.path ? { path: res.path } : {}), ...(res.canceled ? { canceled: true } : {}) }
+  },
+
+  /*
+   * 课程与路线（实施-25 P07）。
+   * 列表拉全量，展示时按空间筛（`coursesForSpace`）—— 与成果一样，
+   * 切空间不需要重新访问宿主。
+   */
+  refreshCourses: async (spaceId) => {
+    try {
+      const res = await window.yan.course.list(spaceId === undefined ? undefined : spaceId)
+      if (res.ok) set({ courses: res.courses ?? [], coursesLoaded: true })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  createCourse: (input) => courseFlow(() => window.yan.course.create(input), '新建课程失败'),
+  createCourseFromSource: (params) =>
+    courseFlow(() => window.yan.course.createFromSource(params), '从这份资料生成路线失败'),
+  createCourseFromTopic: (input) => courseFlow(() => window.yan.course.createFromTopic(input), '生成主题路线失败'),
+  createCourseFromBlocker: (input) =>
+    courseFlow(() => window.yan.course.createFromBlocker(input), '生成卡点路线失败'),
+  updateCourse: async (id, patch) =>
+    (await courseFlow(() => window.yan.course.update(id, patch), '改课程失败')) !== null,
+  addCourseUnit: async (id, unit) =>
+    (await courseFlow(() => window.yan.course.addUnit(id, unit), '加单元失败')) !== null,
+  updateCourseUnit: async (id, unitId, patch) =>
+    (await courseFlow(() => window.yan.course.updateUnit(id, unitId, patch), '改单元失败')) !== null,
+  moveCourseUnit: async (id, unitId, delta) =>
+    (await courseFlow(() => window.yan.course.moveUnit(id, unitId, delta), '移动单元失败')) !== null,
+  removeCourseUnit: async (id, unitId) =>
+    (await courseFlow(() => window.yan.course.removeUnit(id, unitId), '删单元失败')) !== null,
+  archiveCourse: async (id, archived) =>
+    (await courseFlow(() => window.yan.course.archive(id, archived ?? true), '归档课程失败')) !== null,
+
+  removeCourse: async (id) => {
+    const res = await window.yan.course.remove(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除课程失败') })
+      return false
+    }
+    /* 课没了，它的学习状态也不该留着（否则闸门会挂在一门不存在的课上）。 */
+    await window.yan.study.remove(id).catch(() => undefined)
+    await get().refreshCourses()
+    await get().refreshStudy()
+    return true
+  },
+
+  /* 学习状态（实施-25 P08）：宿主是事实源，界面只做投影（与课程 / 成果一致）。 */
+  refreshStudy: async () => {
+    try {
+      const list = await window.yan.study.list()
+      set({ studySessions: list ?? [], studyLoaded: true })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  refreshStudyStatus: async () => {
+    try {
+      set({ studyStatus: await window.yan.study.status() })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  startStudy: (input) => studyFlow(() => window.yan.study.start(input), '开始学习失败'),
+  askStudy: (input) => studyFlow(() => window.yan.study.ask(input), '提问失败'),
+  answerStudy: (text) => studyFlow(() => window.yan.study.answer({ text }), '记录作答失败'),
+  advanceStudy: (to, nextStep) =>
+    studyFlow(() => window.yan.study.advance({ to, ...(nextStep ? { nextStep } : {}) }), '推进学习阶段失败'),
+  pauseStudy: () => studyFlow(() => window.yan.study.pause(), '暂停学习失败'),
+  resumeStudy: () => studyFlow(() => window.yan.study.resume(), '恢复学习失败'),
+  stopStudy: () => studyFlow(() => window.yan.study.stop(), '停止学习失败'),
+
+  importToLibrary: async (view) => {
+    try {
+      const res = await window.yan.library.import(view)
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '加入资料库失败') })
+        return res
+      }
+      await get().refreshLibrary()
+      return res
+    } catch (error) {
+      const res = { ok: false as const, error: error instanceof Error ? error.message : '加入资料库失败' }
+      set({ notices: pushNotice(get().notices, 'error', res.error) })
+      return res
+    }
+  },
+
+  openLibraryRef: async (ref, maxChars) => {
+    try {
+      const res = await window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined)
+      return res
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '打开资料失败') })
+      return null
+    }
+  },
+
+  removeLibrarySource: async (sourceId) => {
+    const res = await window.yan.library.remove(sourceId)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '移除失败') })
+      return false
+    }
+    await get().refreshLibrary()
+    return true
+  },
+
+  restoreLibrarySource: async (sourceId) => {
+    const res = await window.yan.library.restore(sourceId)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '恢复失败') })
+      return false
+    }
+    await get().refreshLibrary()
+    return true
+  },
+
+  renameLibrarySource: async (sourceId, title) => {
+    const res = await window.yan.library.rename(sourceId, title)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改名失败') })
+      return false
+    }
+    await get().refreshLibrary()
+    return true
+  },
+
+  openSpaceView: (view) => {
+    if (view && view !== get().spaceView) writeSpaceView(view)
+    set({ spaceOpen: true, ...(view ? { spaceView: view } : {}) })
+  },
+
+  closeSpaceView: () => set({ spaceOpen: false }),
+
+  joinLibraryRef: async (ref) => {
+    const sessionId = get().session?.sessionId
+    if (!sessionId) {
+      set({ notices: pushNotice(get().notices, 'error', '先打开一个会话，才能把资料加进去。') })
+      return false
+    }
+    const res = await window.yan.library.addRef({ kind: 'session', id: sessionId }, ref)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '加入对话失败') })
+      return false
+    }
+    await get().refreshLibrary()
+    return true
+  },
+
+  currentContext: async () => {
+    try {
+      const res = await window.yan.library.current()
+      return res.ok && res.assembly ? res.assembly : null
+    } catch {
+      /* 读不到就当没有（诊断用，不该把界面带崩） */
+      return null
+    }
+  },
+
+  attachLibrarySource: async (sourceId, spaceId) => {
+    const res = await window.yan.library.attach(sourceId, spaceId)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归档到空间失败') })
+      return false
+    }
+    await get().refreshLibrary()
+    return true
   },
 
   /**
@@ -2848,6 +3422,26 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  setAgentProfile: async (patch) => {
+    const current = get().agentProfile
+    try {
+      const res = await window.yan.setAgentProfile(patch, current?.revision)
+      /* 成功与被拒都采纳回传值：被拒时它是权威值（不能停在用户刚点的那个） */
+      set({ agentProfile: res.state })
+      if (!res.ok) {
+        const message =
+          res.error === 'version-mismatch'
+            ? '活动档案已被另一个入口改过，已恢复为当前值。'
+            : (res.detail ?? res.error ?? '切换活动失败')
+        set({ notices: pushNotice(get().notices, 'error', message) })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      set({ notices: pushNotice(get().notices, 'error', `切换活动失败：${message}`) })
+    }
+  },
+
+
   setWorkspaceMode: async (mode) => {
     /*
      * 乐观切换：先动界面，再落盘。失败回滚到切换前的值并报错，
@@ -3172,6 +3766,8 @@ export const useStore = create<Store>((rawSet, get) => {
             void get().reloadModels()
             void get().reloadCommands()
             void get().refreshSessions()
+            /* 空间不依赖模型，但接一次就能拿到真实数据（与 sessions 同一时机） */
+            void get().refreshSpaces()
           }
         }
       } catch {

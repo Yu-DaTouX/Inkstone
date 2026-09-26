@@ -21,6 +21,43 @@ import type {
   CustomProviderTestResult,
   CustomProviderView
 } from './custom-provider'
+/* 资料库（实施-25 P03）：契约与不变量在 shared/library.ts，接口只转发 */
+export type {
+  LibraryDocument,
+  LibraryKind,
+  LibraryOwner,
+  LibraryOwnerKind,
+  LibraryParse,
+  LibraryParseStatus,
+  LibrarySource,
+  LibraryVersion,
+  RefOutcome,
+  SourceReference
+} from './library'
+import type {
+  LibraryKind,
+  LibraryOwner,
+  LibraryParse,
+  LibrarySource,
+  LibraryVersion,
+  RefOutcome,
+  SourceReference
+} from './library'
+
+/* 主题空间（实施-25 P02）：契约在 shared/space.ts，接口只转发 */
+export type { Space, SpaceDocument, SpaceProjectLink } from './space'
+import type { Space, SpaceProjectLink } from './space'
+/* 上下文装配（实施-25 P05）：契约在 shared/context-assembly.ts */
+export type { ContextAssembly, ContextCitation, ContextFragment, ContextSectionId } from './context-assembly'
+import type { ContextAssembly } from './context-assembly'
+/* 可编辑成果（实施-25 P06a）：契约在 shared/artifact-doc.ts */
+export type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from './artifact-doc'
+export type { Concept, Course, CourseEntry, CourseInput, CourseLevel, CourseSourceRef, LearningUnit, UnitOrigin } from './course'
+export type { StudyPhase, StudyResume, StudySession, StudyPending, StudyPosition } from './study'
+
+import type { StudyPhase, StudyResume, StudySession } from './study'
+import type { AgentEditInput, ArtifactDoc, ArtifactKind, ArtifactSourceRef } from './artifact-doc'
+import type { Course, CourseInput, CourseSourceRef } from './course'
 import type {
   GitContentSide,
   GitFileContent,
@@ -54,6 +91,9 @@ import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 import type { ToolLayout } from './tool-layout'
+/* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
+import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
+export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
 export type { WorkMode, WorkModeState } from './work-mode'
 export type { GoalState, GoalPhase, GoalLink, GoalLinkKind, PursuedBrief, ReadyApprovalMode } from './goal'
 export type { HandoffView, HandoffPackage, HandoffTally } from './handoff'
@@ -174,6 +214,17 @@ export interface TurnTimingMeta {
 
 export interface UIMessage {
   id: string
+  /**
+   * pi 会话里这条消息的 **entry id**（`fork` 的锚点，实施-26 R0①）。
+   *
+   * `id` 是界面用的合成序号（`m<seq>`），**不能**拿它去 fork：
+   * pi 的 `get_fork_messages` 返回的是会话 JSONL 里 message entry 的 `entry.id`。
+   * 实测 R0：entry.id 与 fork 点**集合一致、顺序一致**，但合成 id 对不上。
+   *
+   * 只有从文件解析的历史（`readSessionMessages`）带它；实时事件流与
+   * pi 的 `get_messages`（hydrate）没有，缺省即为 undefined。
+   */
+  entryId?: string
   role: 'user' | 'assistant' | 'bash'
   /**
    * 这条用户消息是**宿主提问的回答**，不是手打的。
@@ -658,6 +709,13 @@ export interface SessionSummary {
   model?: string
   /** Yan 的产品语义归属；不代表 JSONL 物理存储位置。 */
   projectId?: string
+  /**
+   * 所属主题空间（实施-25 P02）。与 `projectId` **并列**的独立维度：
+   *
+   * 同一个会话可以有项目归属、也可以有空间归属，也可以两个都没有。
+   * 可空一等字段：已有 Code 会话保持 `null`，**不迁移**。
+   */
+  spaceId?: string
   /** 迁移中的旧会话可能暂时需要用户确认归属。 */
   scope?: SessionScope
   /** 最近一次在 Yan 中打开的时间。 */
@@ -684,6 +742,8 @@ export interface SessionLayoutEntry {
   cwd: string
   scope: SessionScope
   projectId?: string
+  /** 主题空间归属（可空一等字段，与 `projectId` 并列）。 */
+  spaceId?: string
   projectCandidates?: string[]
   createdAt: number
   updatedAt: number
@@ -1865,6 +1925,13 @@ export type MainPushBody =
    */
   | { ch: 'work-mode'; payload: WorkModeState }
   /**
+   * 当前会话的活动档案变了（实施-25 P01）。
+   *
+   * 带 `runtime` 封套，与 `work-mode` 同一个理由：A 会话切活动不得影响
+   * B 会话的角色与工具策略。
+   */
+  | { ch: 'agent-profile'; payload: AgentProfileState }
+  /**
    * 当前会话的内置目标 / 计划状态（实施-05 S3）。
    *
    * 目标和工作模式都按会话隔离，但它是模型推进的事实快照，不能并入
@@ -2468,6 +2535,229 @@ export interface SourceLinkView {
   at: number
 }
 
+/**
+ * 资料库（实施-25 P03）。
+ *
+ * 与 `SourcesBridge`（会话级旧模型）**并存**：旧的 `sessionId` 参数一个都没改，
+ * 新增的是 `librarySourceId` 这一侧的引用（T03-7 的过渡策略）。
+ * 等确认旧路径没有回归之后再收口。
+ */
+export interface LibraryRefRecordView {
+  owner: LibraryOwner
+  ref: SourceReference
+  at: number
+  /** 该引用当前的状态：界面文案直接用它，避免同一状态在多处显示成不同样子 */
+  outcome: RefOutcome
+}
+
+export interface LibraryImportView {
+  kind: LibraryKind
+  /** 打开引用：文件 = 绝对路径；网页 = URL；文本 = 内容 */
+  ref: string
+  title: string
+  spaceId?: string
+  /** 文本资料的内容 / 网页的 HTML 源 */
+  content?: string
+  /** 导入后登记引用（会话 / 课程 / 成果） */
+  owner?: LibraryOwner
+}
+
+export interface LibraryImportViewResult {
+  ok: boolean
+  error?: string
+  decision?: 'unchanged' | 'new-version' | 'new-source'
+  sourceId?: string
+  version?: number
+  source?: LibrarySource
+  parse?: LibraryParse
+}
+
+export interface LibraryOpenView {
+  ok: boolean
+  /** 这条引用现在对用户意味着什么（removed / unavailable / missing / …） */
+  outcome: RefOutcome
+  source?: LibrarySource
+  version?: LibraryVersion
+  /** 解析出来的正文（可能被 maxChars 截断） */
+  text?: string
+  truncated?: boolean
+  error?: string
+}
+
+export interface LibraryBridge {
+  /** 列资料（默认全部活动资料；`spaceId: null` = 未归档到空间的那些） */
+  list(req?: { spaceId?: string | null }): Promise<{
+    ok: boolean
+    error?: string
+    sources: LibrarySource[]
+    /** 版本元数据（内容事实 + 状态）。界面要显示「几版」「哪版」就得有它。 */
+    versions: LibraryVersion[]
+    refs: LibraryRefRecordView[]
+  }>
+  import(view: LibraryImportView): Promise<LibraryImportViewResult>
+  /** 打开一条引用。**只按 sourceId + version 查表**，不按标题/路径找文件。 */
+  open(ref: SourceReference, options?: { maxChars?: number }): Promise<LibraryOpenView>
+  /** 从空间移除（软移除：旧引用仍可打开） */
+  remove(sourceId: string): Promise<{ ok: boolean; error?: string }>
+  restore(sourceId: string): Promise<{ ok: boolean; error?: string }>
+  /** 改展示标题（不改版本里的历史标题，也不影响任何查找） */
+  rename(sourceId: string, title: string): Promise<{ ok: boolean; error?: string; source?: LibrarySource }>
+  attach(sourceId: string, spaceId: string | null): Promise<{ ok: boolean; error?: string }>
+  /** 复核原件可用性（只查 file: 的版本） */
+  verify(refs: SourceReference[]): Promise<{ ok: boolean; error?: string; checked: number; unavailable: number }>
+  addRef(owner: LibraryOwner, ref: SourceReference): Promise<{ ok: boolean; error?: string; added: boolean }>
+  /**
+   * 接管一条旧的会话级 `SourceRef`（T03-3）：用到才建映射，不做一次性搬迁。
+   */
+  promoteLegacy(req: {
+    sessionId: string
+    legacyId: string
+    kind: LibraryKind
+    title: string
+    ref: string
+    spaceId?: string
+  }): Promise<LibraryImportViewResult & { mapped?: boolean }>
+  /**
+   * 当前会话本轮装配出的上下文（只读诊断，实施-25 P05 / T05-3）。
+   *
+   * 返回的引用带 `sourceId + version + 字符区间`，界面 / 探针据此跳回原文；
+   * 它展示的是**真的会注入给模型的那份内容**（与扩展读的快照同源）。
+   */
+  current(): Promise<{ ok: boolean; error?: string; assembly?: ContextAssembly }>
+}
+
+/** 成果写操作的结果（与纯逻辑层的 `ArtifactMutation` 对应）。 */
+export interface ArtifactDocResult {
+  ok: boolean
+  error?: string
+  doc?: ArtifactDoc
+  /** 内容没变，**没有**开新版本。 */
+  unchanged?: boolean
+  /** agent 整篇重写时被保留的用户段落号。 */
+  preserved?: number[]
+}
+
+/**
+ * 可编辑成果（实施-25 P06a）。
+ *
+ * 与 `main/artifacts.ts`（消息里的文件产物）**不是一回事**：这里管的是
+ * 用户与 agent 都要改的文档对象（标题 / 正文 / 版本 / 来源引用）。
+ * 关键约束：agent 改正文走 `applyAgentEdit`（按段落或指定版本基线），
+ * 不能靠「重生成全文整篇写回」——那会吞括号用户的修改。
+ */
+export interface ArtifactDocBridge {
+  list(spaceId?: string | null): Promise<{ ok: boolean; error?: string; docs: ArtifactDoc[] }>
+  create(input: { title: string; text?: string; kind?: ArtifactKind; spaceId?: string; taskId?: string }): Promise<ArtifactDocResult>
+  saveUserEdit(id: string, text: string): Promise<ArtifactDocResult>
+  applyAgentEdit(id: string, edit: AgentEditInput): Promise<ArtifactDocResult>
+  rename(id: string, title: string): Promise<ArtifactDocResult>
+  assign(id: string, patch: { spaceId?: string | null; taskId?: string | null }): Promise<ArtifactDocResult>
+  addSource(id: string, ref: ArtifactSourceRef): Promise<ArtifactDocResult>
+  /** 勾选结构化清单的一项（T06b-1）；就是一次用户编辑，会开新版本。 */
+  toggleChecklist(id: string, index: number): Promise<ArtifactDocResult>
+  /** 导出为 Markdown（T06b-3）：弹保存框，取消时返回 `canceled`。 */
+  exportMarkdown(
+    id: string
+  ): Promise<{ ok: boolean; error?: string; canceled?: boolean; path?: string; markdown?: string }>
+  remove(id: string): Promise<{ ok: boolean; error?: string }>
+}
+
+/** 课程写操作的结果（与纯逻辑层的 `CourseMutation` 对应）。 */
+export interface CourseResult {
+  ok: boolean
+  error?: string
+  course?: Course
+  /** 内容没变（例如移动到边界 / 加入已存在的概念）。 */
+  unchanged?: boolean
+}
+
+/** 学习状态的变更回执（`ok: false` 时必须说明为什么被拒 —— 拒绝常是语义，不是崩溃）。 */
+export interface StudyResult {
+  ok: boolean
+  error?: string
+  session?: StudySession
+}
+
+/** 新增单元的输入（`origin` 决定要不要出处 / 说明，见 `shared/course.ts`）。 */
+export interface CourseUnitInput {
+  title: string
+  target?: string
+  estimateMinutes?: number
+  origin: 'material' | 'model'
+  sources?: CourseSourceRef[]
+  note?: string
+  concepts?: string[]
+}
+
+/**
+ * 课程与路线（实施-25 P07）。
+ *
+ * 三个入口（学这份资料 / 学会一个主题 / 我卡在这里）是**分开的方法**，
+ * 而不是一个 `entry` 参数 —— 因为「学这份资料」要读真实正文并切成带出处的单元，
+ * 另外两个只搭骨架；两者失败方式不同，混在一个方法里就只能报一个含糊的错。
+ */
+export interface CourseBridge {
+  list(spaceId?: string | null): Promise<{ ok: boolean; error?: string; courses: Course[] }>
+  create(input: CourseInput): Promise<CourseResult>
+  createFromSource(params: { sourceId: string; version: number; input: CourseInput }): Promise<CourseResult>
+  createFromTopic(input: CourseInput): Promise<CourseResult>
+  createFromBlocker(input: CourseInput): Promise<CourseResult>
+  update(
+    id: string,
+    patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }
+  ): Promise<CourseResult>
+  addUnit(id: string, unit: CourseUnitInput): Promise<CourseResult>
+  updateUnit(
+    id: string,
+    unitId: string,
+    patch: { title?: string; target?: string | null; estimateMinutes?: number; note?: string }
+  ): Promise<CourseResult>
+  moveUnit(id: string, unitId: string, delta: number): Promise<CourseResult>
+  removeUnit(id: string, unitId: string): Promise<CourseResult>
+  addConcept(id: string, name: string): Promise<CourseResult>
+  removeConcept(id: string, conceptId: string): Promise<CourseResult>
+  archive(id: string, archived?: boolean): Promise<CourseResult>
+  remove(id: string): Promise<{ ok: boolean; error?: string }>
+}
+
+/**
+ * 学习状态（实施-25 P08）。
+ *
+ * `runtimeKey` 可以不传 —— 宿主缺省用「当前正在看的会话」。
+ * 为什么不让界面自己拼这个键：界面手里有「会话文件 / 会话 id」两种可能的值，
+ * 拼错就是查到一个不存在的键，闸门静默失效（而这是最不该静默的地方）。
+ */
+export interface StudyBridge {
+  status(runtimeKey?: string): Promise<StudyStatusView>
+  statusOfCourse(courseId: string): Promise<StudyStatusView>
+  list(): Promise<{ session: StudySession; resume: StudyResume }[]>
+  start(input: { courseId: string; unitId?: string; runtimeKey?: string; nextStep?: string }): Promise<StudyResult>
+  ask(input: {
+    runtimeKey?: string
+    question: string
+    expectation?: string
+    origin?: 'material' | 'model'
+    sources?: CourseSourceRef[]
+    nextStep?: string
+  }): Promise<StudyResult>
+  answer(input: { runtimeKey?: string; text: string }): Promise<StudyResult>
+  advance(input: { runtimeKey?: string; to: StudyPhase; nextStep?: string }): Promise<StudyResult>
+  pause(runtimeKey?: string): Promise<StudyResult>
+  resume(runtimeKey?: string): Promise<StudyResult>
+  stop(runtimeKey?: string): Promise<StudyResult>
+  /** 删掉一门课的学习状态（课程被删时一并收拾）。 */
+  remove(courseId: string): Promise<boolean>
+}
+
+export interface StudyStatusView {
+  session: StudySession | null
+  resume: StudyResume | null
+  /** 这个 pi 会话此刻是不是在等学习者作答（闸门判据）。 */
+  waiting: boolean
+  /** 盘上的闸门快照（排障与验收用）。 */
+  gate: { waiting: boolean; where: string; at: number } | null
+}
+
 export interface SourcesBridge {
   /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类）与来源关联表 */
   list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
@@ -2557,6 +2847,46 @@ export interface YanBridge {
     error?: string
     entry?: SessionLayoutEntry
   }>
+
+  /**
+   * 主题空间（实施-25 P02）。
+   *
+   * 与 `moveSession` 同一个边界：只改 Yan 的产品归属，不动 pi 的 JSONL。
+   * `list` 把空间与「空间 ↔ 项目」关联记录一起返回 —— 界面上两者总是一起用。
+   */
+  getSpaces(): Promise<{ spaces: Space[]; links: SpaceProjectLink[] }>
+  createSpace(input: { name: string; description?: string }): Promise<{
+    ok: boolean
+    error?: string
+    space?: Space
+    spaces?: Space[]
+    links?: SpaceProjectLink[]
+  }>
+  /** 改名 / 改描述 / 归档。归档是唯一的「移除」入口（不物理删除）。 */
+  updateSpace(
+    id: string,
+    patch: { name?: string; description?: string | null; archived?: boolean }
+  ): Promise<{
+    ok: boolean
+    error?: string
+    space?: Space
+    spaces?: Space[]
+    links?: SpaceProjectLink[]
+  }>
+  /** 空间 ↔ 项目是显式多对多关联：同一文件夹可以同时属于多个空间。 */
+  linkSpaceProject(
+    spaceId: string,
+    projectId: string
+  ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
+  unlinkSpaceProject(
+    spaceId: string,
+    projectId: string
+  ): Promise<{ ok: boolean; error?: string; links?: SpaceProjectLink[] }>
+  /** 把会话放进空间（null = 移出）。不动 projectId。 */
+  setSessionSpace(
+    sessionId: string,
+    spaceId: string | null
+  ): Promise<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>
   compact(): Promise<{ ok: boolean; error?: string }>
   /**
    * 给会话起名（写进 JSONL，TUI 的 /resume 也看得到）。
@@ -2601,6 +2931,21 @@ export interface YanBridge {
     ok: boolean
     state: WorkModeState
     error?: string
+  }>
+
+  /*
+   * 活动档案（实施-25 P01）：同样按**当前会话**读写。
+   *
+   * `profile` 决定日常 / 代码两种角色；`activity` 决定日常里具体做什么
+   * （问答 / 研究 / 创作 / 整理 / 学习）。语言与详细程度不在这里 ——
+   * 它们已有全局设置，不存第二份。
+   */
+  getAgentProfile(): Promise<AgentProfileState>
+  setAgentProfile(patch: AgentProfilePatch, expectedRevision?: number): Promise<{
+    ok: boolean
+    state: AgentProfileState
+    error?: string
+    detail?: string
   }>
 
   /*
@@ -2934,6 +3279,13 @@ export interface YanBridge {
   /** pi 插件包管理（§9 的 P2）：只改 pi 自己的 settings，不动生成的 pi-runtime */
   /** 会话来源的持久化资源引用（§8 的 S1）：只持有我们自己存的那份副本 */
   sources: SourcesBridge
+  /** 资料库（实施-25 P03）：与 sources 并存，落在 library.json */
+  library: LibraryBridge
+  artifactDoc: ArtifactDocBridge
+  /** 课程与路线（实施-25 P07）：从资料 / 主题 / 卡点建课，并调整单元顺序 */
+  course: CourseBridge
+  /** 学习状态（实施-25 P08）：阶段与「等你作答」的闸门。 */
+  study: StudyBridge
   packages: PackagesBridge
   /** 项目知识页（实施-03 S5）：读当前项目、确认 / 编辑 / 替代 / 删除、导出 */
   knowledge: KnowledgeBridge

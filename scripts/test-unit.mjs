@@ -3206,7 +3206,359 @@ await runGitRepoTests(ok)
     !!liveFirst && liveFirst.id === withSystem[0]?.id,
     '历史与实时的用户消息 id 一致（回合计时锚点才对得上）'
   )
+
+  /*
+   * entryId（实施-26 R0①）：会话文件里的 `entry.id` 是 fork 锚点，
+   * 必须挂到读回的消息上；实时路径没有它，保持 undefined。
+   */
+  const withEntry = normalizeHistory([userMsg, asstMsg], undefined, ['90ac64b9', '23cb6928'])
+  ok(
+    withEntry[0]?.entryId === '90ac64b9' && withEntry[1]?.entryId === '23cb6928',
+    '历史读回：entry.id 挂到消息上（fork 锚点）',
+    withEntry.map((m) => m.entryId).join(',')
+  )
+  const noEntry = normalizeMessage(userMsg, 0)
+  ok(noEntry?.entryId === undefined, '实时消息（无文件上下文）不带 entryId')
 }
+
+/*
+ * 轮次投影（实施-26 R1）：一轮问答 = 一张卡。
+ * 纯逻辑，现场编译 —— 不依赖主进程构建图。
+ */
+const conversationTurns = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/conversation-turns.ts'],
+    outfile: 'out/test/conversation-turns.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/conversation-turns.mjs'))
+)
+const { runConversationTurnsTests } = await import('./test-conversation-turns.mjs')
+await runConversationTurnsTests(ok, conversationTurns)
+
+/*
+ * 轮次缓存（实施-26 R2）：渐进披露 / 版本失效 / LRU / 竞态闸门。
+ * 渲染端纯逻辑，现场编译。
+ */
+const turnCache = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/turn-cache.ts'],
+    outfile: 'out/test/turn-cache.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/turn-cache.mjs'))
+)
+const { runTurnCacheTests } = await import('./test-turn-cache.mjs')
+await runTurnCacheTests(ok, turnCache)
+
+/*
+ * 活动档案（实施-25 P01）：角色文本/工具策略纯逻辑 + 存储与快照。
+ * shared 那份保持平台中立；store 那份要真读写临时目录。
+ */
+const agentProfileShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/agent-profile.ts'],
+    outfile: 'out/test/agent-profile.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/agent-profile.mjs'))
+)
+const agentProfileStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/agent-profile-store.ts'],
+    outfile: 'out/test/agent-profile-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/agent-profile-store.mjs'))
+)
+const { runAgentProfileTests, runAgentProfileStoreTests, runAgentProfileExtensionTests } = await import('./test-agent-profile.mjs')
+await runAgentProfileTests(ok, agentProfileShared)
+const fsPromises = await import('node:fs/promises')
+await runAgentProfileStoreTests(ok, agentProfileStore, {
+  mkdtemp: fsPromises.mkdtemp,
+  readFile: fsPromises.readFile,
+  rm: fsPromises.rm
+})
+/* 薄层扩展的注入行为：直接加载 profile.js，不启动 pi */
+const agentProfileExtension = await import('../resources/pi-extensions/profile.js')
+await runAgentProfileExtensionTests(ok, agentProfileExtension, {
+  mkdtemp: fsPromises.mkdtemp,
+  writeFile: fsPromises.writeFile,
+  mkdir: fsPromises.mkdir,
+  rm: fsPromises.rm
+})
+
+/*
+ * 主题空间（实施-25 P02）：契约纯逻辑 + 存储与关联记录。
+ */
+const spaceShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/space.ts'],
+    outfile: 'out/test/space.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/space.mjs'))
+)
+const spaceStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/space-store.ts'],
+    outfile: 'out/test/space-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/space-store.mjs'))
+)
+const { runSpaceTests, runSpaceStoreTests } = await import('./test-space.mjs')
+await runSpaceTests(ok, spaceShared)
+await runSpaceStoreTests(ok, spaceStore, {
+  mkdtemp: fsPromises.mkdtemp,
+  readFile: fsPromises.readFile,
+  rm: fsPromises.rm
+})
+
+/*
+ * 资料库（实施-25 P03）：契约纯逻辑 + 存储（版本推进 / 软移除 / 旧引用映射）。
+ */
+const libraryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/library.ts'],
+    outfile: 'out/test/library.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/library.mjs'))
+)
+const libraryStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/library-store.ts'],
+    outfile: 'out/test/library-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/library-store.mjs'))
+)
+const { runLibraryTests, runLibraryStoreTests } = await import('./test-library.mjs')
+await runLibraryTests(ok, libraryShared)
+await runLibraryStoreTests(ok, libraryStore, {
+  mkdtemp: fsPromises.mkdtemp,
+  readFile: fsPromises.readFile,
+  rm: fsPromises.rm
+})
+
+/*
+ * 资料解析与服务层（实施-25 P03 / T03-4、W3）：PDF 两条路径、状态分档、
+ * 版本推进后旧引用仍开旧版本、软移除与原件删除的如实上报。
+ */
+const libraryParser = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/library-parser.ts'],
+    outfile: 'out/test/library-parser.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/library-parser.mjs'))
+)
+const libraryService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/library-service.ts'],
+    outfile: 'out/test/library-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/library-service.mjs'))
+)
+const { runLibraryParserTests, runLibraryServiceTests } = await import('./test-library-parse.mjs')
+await runLibraryParserTests(ok, libraryParser, {
+  mkdtemp: fsPromises.mkdtemp,
+  writeFile: fsPromises.writeFile,
+  rm: fsPromises.rm
+})
+await runLibraryServiceTests(ok, libraryService, {
+  mkdtemp: fsPromises.mkdtemp,
+  writeFile: fsPromises.writeFile,
+  stat: fsPromises.stat,
+  rm: fsPromises.rm
+})
+
+/*
+ * 活动流程与上下文装配（实施-25 P05 / T05-1、T05-2、T05-3、T05-5）：
+ * 流程定义与建任务阈值是纯逻辑；装配器读真实资料库并写扩展快照。
+ */
+const activityFlow = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/activity-flow.ts'],
+    outfile: 'out/test/activity-flow.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/activity-flow.mjs'))
+)
+const contextAssemblyShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/context-assembly.ts'],
+    outfile: 'out/test/context-assembly.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-assembly.mjs'))
+)
+const contextAssembler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-assembler.ts'],
+    outfile: 'out/test/context-assembler.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-assembler.mjs'))
+)
+const { runActivityFlowTests } = await import('./test-activity-flow.mjs')
+const { runContextAssemblyTests, runContextAssemblerTests } = await import('./test-context-assembly.mjs')
+await runActivityFlowTests(ok, activityFlow)
+await runContextAssemblyTests(ok, contextAssemblyShared)
+await runContextAssemblerTests(ok, contextAssembler, {
+  mkdtemp: fsPromises.mkdtemp,
+  rm: fsPromises.rm
+})
+
+/*
+ * 可编辑成果（实施-25 P06a）：版本推进纯逻辑 + 存储。
+ * 重点在不变量「用户改过的段落被 agent 整篇重写时不丢」。
+ */
+const artifactDocShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/artifact-doc.ts'],
+    outfile: 'out/test/artifact-doc.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/artifact-doc.mjs'))
+)
+const artifactDocStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/artifact-doc-store.ts'],
+    outfile: 'out/test/artifact-doc-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/artifact-doc-store.mjs'))
+)
+const { runArtifactDocTests, runArtifactDocStoreTests } = await import('./test-artifact-doc.mjs')
+await runArtifactDocTests(ok, artifactDocShared)
+await runArtifactDocStoreTests(ok, artifactDocStore, {
+  mkdtemp: fsPromises.mkdtemp,
+  readFile: fsPromises.readFile,
+  rm: fsPromises.rm
+})
+
+/*
+ * 课程与路线（实施-25 P07）：生成路线 / 材料与补充的边界 / 存储 / 三条入口。
+ * 重点在「材料单元必须有出处」「补充单元必须写清为什么」与「定位不编页码」。
+ */
+const courseShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/course.ts'],
+    outfile: 'out/test/course.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/course.mjs'))
+)
+const courseStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/course-store.ts'],
+    outfile: 'out/test/course-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/course-store.mjs'))
+)
+const courseService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/course-service.ts'],
+    outfile: 'out/test/course-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/course-service.mjs'))
+)
+const { runCourseTests, runCourseStoreTests, runCourseServiceTests } = await import('./test-course.mjs')
+await runCourseTests(ok, courseShared)
+await runCourseStoreTests(ok, courseStore, {
+  mkdtemp: fsPromises.mkdtemp,
+  readFile: fsPromises.readFile,
+  rm: fsPromises.rm
+})
+await runCourseServiceTests(
+  ok,
+  { CourseService: courseService.CourseService, CourseStore: courseStore.CourseStore },
+  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
+)
+
+/*
+ * 学习状态与继续（实施-25 P08，R3 落点）：阶段转移 / 恢复信息 / 持久化 / 闸门。
+ * 重点是「自问自答不算进度」与「等待是落盘的，换个实例仍拦得住」。
+ */
+const studyShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/study.ts'],
+    outfile: 'out/test/study.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/study.mjs'))
+)
+const studyStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/learning-store.ts'],
+    outfile: 'out/test/learning-store.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/learning-store.mjs'))
+)
+const studyService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/learning-service.ts'],
+    outfile: 'out/test/learning-service.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/learning-service.mjs'))
+)
+const { runStudyTests, runStudyStoreTests, runStudyServiceTests } = await import('./test-study.mjs')
+await runStudyTests(ok, studyShared)
+await runStudyStoreTests(ok, studyStore, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
+await runStudyServiceTests(
+  ok,
+  { LearningService: studyService.LearningService, StudyStore: studyStore.StudyStore },
+  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
+)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })

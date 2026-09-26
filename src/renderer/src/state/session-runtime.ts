@@ -19,6 +19,7 @@ import type {
   SlashCommand,
   GoalState,
   WorkModeState,
+  AgentProfileState,
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
@@ -38,6 +39,8 @@ export interface SessionRuntimeSnapshot {
   draft: string
   /** 当前会话的工作模式（实施-05）。null = 还没收到主进程推送，按默认渲染。 */
   workMode: WorkModeState | null
+  /** 当前会话的活动档案（实施-25 P01）。null = 还没收到推送。 */
+  agentProfile: AgentProfileState | null
   /** 当前会话的目标 / 计划事实快照。 */
   goal: GoalState
   /** 当前会话最近一次成功拉到的能力/命令快照。 */
@@ -63,6 +66,7 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     todos: [],
     todoHistory: [],
     workMode: null,
+    agentProfile: null,
     goal: {
       goalId: '',
       phase: 'planning',
@@ -135,6 +139,7 @@ export function migrateSessionRuntime(
         runtime: target.runtime.generation >= runtime.generation ? target.runtime : runtime,
         draft: target.draft || pending.draft,
         workMode: target.workMode ?? pending.workMode,
+        agentProfile: target.agentProfile ?? pending.agentProfile,
         goal: (target.goal.goalId || target.goal.revision > 0) ? target.goal : pending.goal,
         models: target.models.length ? target.models : pending.models,
         thinkingLevels: target.thinkingLevels.length ? target.thinkingLevels : pending.thinkingLevels,
@@ -250,6 +255,9 @@ export function reduceSessionRuntime(
     case 'work-mode':
       next = { ...next, workMode: message.payload }
       break
+    case 'agent-profile':
+      next = { ...next, agentProfile: message.payload }
+      break
     case 'goal':
       next = { ...next, goal: message.payload }
       break
@@ -302,6 +310,7 @@ export function rebindSessionRuntime(
   return { ...map, [sessionRuntimeKey(runtime)]: {
     ...base, runtime, session: state,
     goal: target?.goal.goalId ? target.goal : base.goal,
-    workMode: target?.workMode ?? base.workMode
+    workMode: target?.workMode ?? base.workMode,
+    agentProfile: target?.agentProfile ?? base.agentProfile
   } }
 }
