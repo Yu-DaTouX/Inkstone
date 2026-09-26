@@ -85,11 +85,15 @@
   const initial = await window.yan.getWorkMode()
   ok(initial.mode === 'autonomous', `新会话按默认模式启动（实际 ${initial.mode}）`)
   const btn = q('[data-testid="work-mode-button"]')
-  ok(!!btn, '输入区有工作模式按钮')
-  ok(!!btn?.closest('.composer-bar') && !!btn?.closest('.composer'), '按钮在输入框工具行里')
-  ok(btn?.getAttribute('data-mode') === 'autonomous', '按钮显示当前会话模式')
-  const label = (q('[data-testid="work-mode-label"]')?.textContent ?? '').trim()
-  ok(/自主|Autonomous/.test(label), `按钮写的是档位名（实际 ${JSON.stringify(label)}）`)
+  /*
+   * B3 之后模式入口不在输入区了（用户要求“输入区只留输入”）。
+   * 这里改成正反两面：输入区确实没有，而设置 · 工作区里有 ——
+   * 只删掉断言会让“入口整条消失”这种事没人拦得住。
+   */
+  ok(!btn, '输入区不再有工作模式控件（B3 的意图）')
+  ok(!q('[data-testid="work-mode-menu"]'), '输入区也没有模式菜单')
+  const initialMode = (await window.yan.getWorkMode()).mode
+  ok(initialMode === 'autonomous', `新会话按默认模式启动（实际 ${initialMode}）`)
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '1', '自主模式才有运行光带状态')
   /*
    * 自主态现在采用静态靛蓝边界：宽扁输入框不再生成两条动态光带，
@@ -102,43 +106,37 @@
   const legacyBands = composerEl?.getAnimations({ subtree: true }).filter((a) => a.animationName === 'yan-autonomous-border') ?? []
   ok(legacyBands.length === 0, `旧版自主光带动画已移除（实得 ${legacyBands.length}）`)
 
-  /* ---------------------------------------------------------- 2. 菜单 */
+  /* ---------------------------------------------------------- 2. 设置里的三档 */
   out.push('')
-  out.push('=== 2. 菜单：三档 + 一句说明 + 键盘 ===')
-  click(btn)
-  await sleep(140)
-  const menu = q('[data-testid="work-mode-menu"]')
-  ok(!!menu, '点击后菜单出现')
-  const items = menu ? [...menu.querySelectorAll('.mode-item')] : []
-  ok(items.length === 3, `菜单三档（实际 ${items.length}）`)
-  ok(
-    items.every((it) => ((it.querySelector('.mode-item-desc')?.textContent ?? '').trim().length > 0)),
-    '每档都带一句说明'
-  )
-  ok(items.some((it) => it.classList.contains('current')), '当前档有标记')
+  out.push('=== 2. 设置 · 工作区：三档 + 当前档标记 ===')
+  store.getState().openSettings('workspace')
+  await sleep(700)
+  const modeBox = q('[data-testid="set-work-mode"]')
+  ok(!!modeBox, '设置 · 工作区里有模式控件（新入口）')
+  const modeBtns = modeBox ? [...modeBox.querySelectorAll('button[data-mode]')] : []
+  ok(modeBtns.length === 3, `三档都在（实际 ${modeBtns.length}）`)
   const modeOf = (el) => el?.getAttribute('data-mode') ?? ''
-  const activeBefore = modeOf(q('[data-testid="work-mode-menu"] .mode-item.active'))
-  key(q('[data-testid="work-mode-menu"]'), 'ArrowDown')
-  await sleep(100)
-  const activeAfter = modeOf(q('[data-testid="work-mode-menu"] .mode-item.active'))
-  ok(activeBefore !== activeAfter, `方向键移动高亮（${activeBefore} → ${activeAfter}）`)
-  key(q('[data-testid="work-mode-menu"]'), 'Escape')
-  await sleep(100)
-  ok(!q('[data-testid="work-mode-menu"]'), 'Esc 关闭菜单')
-  ok(document.activeElement === btn, 'Esc 后焦点回到模式按钮')
+  const selectedNow = modeBtns.find((b) => b.classList.contains('sel'))
+  ok(
+    modeOf(selectedNow) === initialMode,
+    `当前档有标记（标记 ${modeOf(selectedNow)} / 实际 ${initialMode}）`
+  )
+  ok(
+    modeBtns.every((b) => (b.textContent ?? '').trim().length > 0),
+    '每档都有可读名称'
+  )
 
   /* ---------------------------------------------------------- 3. 提交 */
   out.push('')
-  out.push('=== 3. 从菜单切档（真提交）===')
-  click(btn)
-  await sleep(120)
-  click(q('[data-testid="work-mode-option-standard"]'))
-  await sleep(500)
+  out.push('=== 3. 在设置里切档（真提交）===')
+  const beforePick = await window.yan.getWorkMode()
+  click(modeBtns.find((b) => modeOf(b) === 'standard'))
+  await sleep(900)
   const afterPick = await window.yan.getWorkMode()
-  ok(afterPick.mode === 'standard' && afterPick.revision >= 1, `切到标准并提交（revision=${afterPick.revision}）`)
-  ok(q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'standard', '按钮跟着变')
+  ok(afterPick.mode === 'standard' && afterPick.revision > beforePick.revision, `切到标准并提交（revision=${afterPick.revision}）`)
+  const selNow = modeBtns.find((b) => b.classList.contains('sel'))
+  ok(modeOf(selNow) === 'standard', `设置里的选中态跟着变（${modeOf(selNow)}）`)
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '0', '离开自主后光带消失')
-  ok(!q('[data-testid="work-mode-menu"]'), '选完菜单关闭')
 
   /* ------------------------------------- 4. 模式快捷键（真按键，全局） */
   out.push('')
@@ -149,14 +147,21 @@
    * 「焦点不在输入框也生效」。
    */
   const modeBtn = q('[data-testid="work-mode-button"]')
-  modeBtn?.focus()
+  /*
+   * 焦点故意放在**非输入框**上：快捷键是全局的（用户口径 2026-09-22），
+   * 而模式按钮已经不在输入区（B3）—— 正好用设置里的那个按钮当“别处”。
+   * 设置面板开着也不影响：快捷键由主进程发真按键。
+   */
+  q('[data-testid="set-work-mode"] button')?.focus()
   ok(document.activeElement !== q('[data-testid="composer"]'), '按键前焦点不在输入框（验证全局生效）')
   /* 两次 Ctrl+Tab：standard → clarify → autonomous（间隔 1.6s，第一枚在 keysDelay 后） */
   await sleep(15000)
   const tabbed = await window.yan.getWorkMode()
   ok(tabbed.mode === 'autonomous', `两次 Ctrl+Tab 循环到自主（实际 ${tabbed.mode}）`)
-  ok(tabbed.revision >= 3, `两次按键各提交一次（revision=${tabbed.revision}，至少 3）`)
-  ok(q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'autonomous', '按钮跟上按键结果')
+  ok(tabbed.revision > afterPick.revision + 1, `两次按键各提交一次（revision=${tabbed.revision}，起始 ${afterPick.revision}）`)
+  /* 设置里那个控件也要跟上（它是 B3 之后的唯一可见入口） */
+  const selAfterKeys = q('[data-testid="set-work-mode"] button.sel')
+  ok(modeOf(selAfterKeys) === 'autonomous', `设置里的选中态跟上按键结果（${modeOf(selAfterKeys)}）`)
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '1', '自主光带随按键状态出现')
   /*
    * 裸 Tab 恢复“移动焦点”：不再被拦（这正是改快捷键要解决的问题）。
@@ -211,8 +216,8 @@
     `切回 A：仍是自主（mode=${aBack.mode} rev=${aBack.revision}）`
   )
   ok(
-    q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'autonomous',
-    'A 的按钮显示自主'
+    q('[data-testid="set-work-mode"] button.sel')?.getAttribute('data-mode') === 'autonomous',
+    'A 的选中态显示自主（切回 A 后设置里的控件也跟着切）'
   )
 
   await store.getState().switchSession(bFile)
@@ -225,8 +230,8 @@
     `再切到 B：仍是计划（mode=${bBack.mode} rev=${bBack.revision}）`
   )
   ok(
-    q('[data-testid="work-mode-button"]')?.getAttribute('data-mode') === 'clarify',
-    'B 的按钮显示计划'
+    q('[data-testid="set-work-mode"] button.sel')?.getAttribute('data-mode') === 'clarify',
+    'B 的选中态显示计划'
   )
 
   /* ------------------------------------ 6. 快捷键开关（设置） */
