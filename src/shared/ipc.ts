@@ -3702,6 +3702,8 @@ export interface YanBridge {
     page(query?: TaskInboxQuery): Promise<TaskInboxPage>
     dismiss(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
     restore(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
+    /** 记一笔「我看过了」（打开会话时调）——近似审阅判定的唯一依据 */
+    seen(sessionId: string): Promise<{ ok: boolean }>
   }
   /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
   capabilities: CapabilitiesBridge

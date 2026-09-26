@@ -35,25 +35,58 @@ const DISMISS_MAX = 500
 export interface InboxState {
   /** 用户主动从收件箱移除的会话 */
   dismissed: string[]
+  /**
+   * 「我上次真的看过这个会话」的时间（毫秒，按会话 id）。
+   *
+   * 为什么需要它：`needs_review`（跑完了但没被确认）唯一的判据就是
+   * 「最后活动时间 > 我上次看它的时间」。宿主没有别的事实能回答这个问题 ——
+   * 所以这个状态会一直标着 `approximate`。
+   */
+  readUntil: Record<string, number>
 }
+
+const EMPTY_STATE: InboxState = { dismissed: [], readUntil: {} }
 
 /** 读可见性文件；文件不在 / 坏了都当作「什么都没忽略」（不阻断收件箱） */
 export async function readInboxState(root: string = YAN_DIR): Promise<InboxState> {
   try {
     const raw = await readFile(join(root, INBOX_STATE_FILE), 'utf8')
     const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return { dismissed: [] }
+    if (!parsed || typeof parsed !== 'object') return { ...EMPTY_STATE, dismissed: [], readUntil: {} }
     const list = (parsed as { dismissed?: unknown }).dismissed
-    return { dismissed: Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [] }
+    const rawRead = (parsed as { readUntil?: unknown }).readUntil
+    const readUntil: Record<string, number> = {}
+    if (rawRead && typeof rawRead === 'object') {
+      for (const [k, v] of Object.entries(rawRead as Record<string, unknown>)) {
+        const n = Number(v)
+        if (Number.isFinite(n) && n > 0) readUntil[k] = Math.floor(n)
+      }
+    }
+    return {
+      dismissed: Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [],
+      readUntil
+    }
   } catch {
-    return { dismissed: [] }
+    return { dismissed: [], readUntil: {} }
   }
 }
 
 export async function writeInboxState(state: InboxState, root: string = YAN_DIR): Promise<void> {
   const path = join(root, INBOX_STATE_FILE)
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify({ dismissed: state.dismissed.slice(0, DISMISS_MAX) }, null, 2), 'utf8')
+  /* 已读时间只保留最近 200 条：它是“顺手记一笔”的可见性，不是要留档的数据 */
+  const recent = Object.entries(state.readUntil ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 200)
+  await writeFile(
+    path,
+    JSON.stringify(
+      { dismissed: (state.dismissed ?? []).slice(0, DISMISS_MAX), readUntil: Object.fromEntries(recent) },
+      null,
+      2
+    ),
+    'utf8'
+  )
 }
 
 /**
@@ -116,10 +149,35 @@ export interface TaskInboxSourceOptions {
   dismissed?: () => string[]
   /** 任务计划（默认走宿主任务日志） */
   readPlan?: TaskInboxSources['readPlan']
+  /**
+   * 问答记录（`yan question ask` 落盘的那份）。
+   * 取**最后一条**，且只有「没作答也没取消」才算在等 —— 作答过就不该再提醒。
+   */
+  questionLog?: { list(sessionId: string): { question: string; answer: string | null; cancelled?: boolean }[] }
+  /** 学习等待（`LearningService.waitingGate`）：只有真在等学习者才回非空 */
+  waitingGate?: (runtimeKey: string) => Promise<{ waiting: boolean; where?: string } | null>
+  /**
+   * 「跑完了但没被确认」的近似源（T4）。
+   *
+   * 判据：本地已读过这个会话之后它又有了新活动，且计划里没有未完成的步骤。
+   * 返回 `since`（最后活动时间），卡片会被标上 `approximate`。
+   */
+  awaitingReview?: (
+    sessionId: string,
+    session: InboxSession
+  ) => Promise<{ since: number; reason?: string } | undefined>
 }
 
 export function createTaskInboxSources(opts: TaskInboxSourceOptions): TaskInboxSources {
-  const listFn =
+  /*
+   * 会话投影的最近一份快照。
+   *
+   * 为什么需要：`readAwaitingReview(sessionId)` 只能拿到 id，而「最后活动时间」
+   * 在会话投影里。再扫一遗会话目录（478ms）只为拿一个时间戳不值得。
+   */
+  let sessionSnapshot = new Map<string, InboxSession>()
+
+  const rawList =
     opts.list ??
     (async () => {
       const list = await listSessions(200)
@@ -131,6 +189,12 @@ export function createTaskInboxSources(opts: TaskInboxSourceOptions): TaskInboxS
         updatedAt: s.lastActivityAt ?? s.createdAt ?? 0
       }))
     })
+
+  const listFn = async (): Promise<InboxSession[]> => {
+    const list = await rawList()
+    sessionSnapshot = new Map(list.map((s) => [s.id, s]))
+    return list
+  }
 
   const planFn =
     opts.readPlan ??
@@ -148,10 +212,49 @@ export function createTaskInboxSources(opts: TaskInboxSourceOptions): TaskInboxS
       }
     })
 
+  /*
+   * 挂起提问（T3）：读问答记录的最后一条。
+   *
+   * 「最后一条没作答也没取消」才是真在等 —— 只看有没有 question 字段会把
+   * 已经答过、已经取消的历史全报成待处理。
+   */
+  const questionFn = opts.questionLog
+    ? async (sessionId: string) => {
+        const entries = opts.questionLog!.list(sessionId)
+        const last = entries[entries.length - 1]
+        if (!last || last.cancelled || last.answer !== null) return undefined
+        return { pending: true, text: last.question }
+      }
+    : undefined
+
+  /*
+   * 等学习者（T3）：runtimeKey 就是会话 id（宿主 `studyKey()` 缺省取当前会话），
+   * 所以这里按 sessionId 直查。
+   */
+  const studyFn = opts.waitingGate
+    ? async (sessionId: string) => {
+        const gate = await opts.waitingGate!(sessionId)
+        if (!gate?.waiting) return undefined
+        return { waiting: true, ...(gate.where ? { reason: gate.where } : {}) }
+      }
+    : undefined
+
+  /* 「跑完了但没被确认」（T4）。会话快照里没有它就不报（不编）。 */
+  const reviewFn = opts.awaitingReview
+    ? async (sessionId: string) => {
+        const session = sessionSnapshot.get(sessionId)
+        if (!session) return undefined
+        return await opts.awaitingReview!(sessionId, session)
+      }
+    : undefined
+
   return {
     listSessions: listFn,
     runners: () => foldRunners(opts.registry.statuses().flatMap(toRunnerFacts)),
     dismissed: opts.dismissed ?? (() => []),
-    readPlan: planFn
+    readPlan: planFn,
+    ...(questionFn ? { readQuestion: questionFn } : {}),
+    ...(studyFn ? { readStudy: studyFn } : {}),
+    ...(reviewFn ? { readAwaitingReview: reviewFn } : {})
   }
 }

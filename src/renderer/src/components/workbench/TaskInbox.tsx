@@ -88,6 +88,21 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
     await load(limit, filter)
   }
 
+  /**
+   * 打开会话：先记一笔「我看过了」，再切过去。
+   *
+   * 顺序不能反：切完会话后界面可能已经被卸载，那条 IPC 就发不出去了，
+   * 而 `needs_review` 会一直把这个会话报成待确认。
+   */
+  const open = async (card: TaskCard, path: string): Promise<void> => {
+    try {
+      await window.yan.taskInbox.seen(card.sessionId)
+    } catch {
+      /* 记不上最多多重提醒一次，不阻塞打开 */
+    }
+    onOpenSession(path)
+  }
+
   const cards = page?.cards ?? []
   const counts = page?.counts
 
@@ -181,7 +196,7 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
                 <span className="wb-inbox-when">{new Date(c.updatedAt).toLocaleString()}</span>
                 <div className="wb-inbox-actions">
                   <button
-                    onClick={() => path && onOpenSession(path)}
+                    onClick={() => void open(c, path as string)}
                     disabled={!path}
                     data-testid="inbox-open"
                   >
