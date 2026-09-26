@@ -29,6 +29,8 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
+import { createOpencliRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
+import type { SearchSourceId } from '../shared/search'
 import { consumeQueuedItem } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { activeContextPolicy, contextPolicySettings } from './context-policy'
@@ -1254,6 +1256,13 @@ export class AgentController extends EventEmitter {
     }
     if (command.startsWith('knowledge.')) {
       return this.runKnowledgeCommand(command.slice('knowledge.'.length), params)
+    }
+    /*
+     * 联网搜索（实施-27 S3）：只查询与诊断。
+     * 「把搜索结果打开」走 `yan browser navigate` —— 搜索不碰浏览器状态。
+     */
+    if (command.startsWith('search.')) {
+      return this.runSearchCommand(command.slice('search.'.length), params)
     }
     /*
      * 目标状态（实施-05 S3）：`goal.ready` 是「计划档就绪 → 切标准」的唯一入口。
@@ -3124,6 +3133,109 @@ export class AgentController extends EventEmitter {
     if (typeof value === 'number' && Number.isFinite(value)) return value
     if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
     return undefined
+  }
+
+  /** CLI 的 kebab-case 与请求文件的 camelCase 都要认；空串当没传 */
+  private searchString(params: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = params[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+    }
+    return undefined
+  }
+
+  private searchNumber(params: Record<string, unknown>, keys: string[]): number | undefined {
+    for (const key of keys) {
+      const value = params[key]
+      if (typeof value === 'number' && Number.isFinite(value)) return value
+      if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+    }
+    return undefined
+  }
+
+  /**
+   * `yan search <动作>` 的实现点（实施-27 S3）。
+   *
+   * 两条口径：
+   *   ① **不静默降级**：所有来源都没取到时抛 `search_backend_unavailable` /
+   *      `search_timeout`，而不是回一个空结果让人以为「世上没有」；
+   *   ② **部分失败照常返回**：来源级状态里写清楚谁 ok、谁 empty、谁 error，
+   *      能不能用交给模型判断。
+   */
+  private async runSearchCommand(action: string, params: Record<string, unknown>) {
+    if (action === 'doctor') {
+      const status = await searchDoctor()
+      return {
+        data: status,
+        summary: {
+          kind: 'search',
+          action: 'doctor',
+          available: status.available,
+          version: status.version,
+          code: status.code ?? null,
+          sources: status.sources.map((s) => s.id)
+        }
+      }
+    }
+    if (action !== 'query') {
+      throw new CapabilityCommandError('search_unknown_action', `不认识的 search 动作：${action}`)
+    }
+    const text = this.searchString(params, ['query-text', 'queryText', 'query', 'text'])
+    if (!text) {
+      throw new CapabilityCommandError('search_query_required', 'search query 需要查询词（--query-text）')
+    }
+    const rawSources = params.sources
+    const sources: SearchSourceId[] = [
+      ...(Array.isArray(rawSources) ? rawSources : typeof rawSources === 'string' ? rawSources.split(',') : [])
+    ]
+      .map((s) => String(s).trim())
+      .filter((s): s is SearchSourceId => s.length > 0)
+
+    const outcome = await runSearch(
+      {
+        text,
+        ...(sources.length ? { sources } : {}),
+        limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
+        limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']),
+        timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
+      },
+      { runner: createOpencliRunner(), now: () => Date.now() }
+    )
+
+    const reached = outcome.sources.filter((s) => s.status === 'ok' || s.status === 'empty')
+    if (reached.length === 0) {
+      const unavailable = outcome.sources.find((s) => s.status === 'unavailable')
+      const timedOut = outcome.sources.find((s) => s.status === 'timeout')
+      if (unavailable) {
+        throw new CapabilityCommandError(
+          'search_backend_unavailable',
+          unavailable.message ?? '搜索后端不可用（需要安装 OpenCLI，可用 yan search doctor 看详情）'
+        )
+      }
+      if (timedOut) {
+        throw new CapabilityCommandError('search_timeout', timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）')
+      }
+      throw new CapabilityCommandError('search_failed', '所有搜索来源都出错了（逐来源状态见 data.sources）')
+    }
+
+    return {
+      data: outcome,
+      summary: {
+        kind: 'search',
+        action: 'query',
+        query: outcome.query,
+        count: outcome.items.length,
+        truncated: outcome.truncated,
+        durationMs: outcome.durationMs,
+        sources: outcome.sources.map((s) => ({
+          id: s.source,
+          status: s.status,
+          count: s.count,
+          ...(s.code ? { code: s.code } : {})
+        })),
+        summary: searchSummary(outcome)
+      }
+    }
   }
 
   /**

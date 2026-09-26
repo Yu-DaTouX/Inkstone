@@ -69,7 +69,8 @@
     "check:shell-icons": "node scripts/check-shell-icons.mjs",
     "capture:native-overlay": "node scripts/capture-native-overlay.mjs",
     "check:icons": "node scripts/check-icons.mjs",
-    "check:motion": "node scripts/check-motion.mjs --selftest && node scripts/check-motion.mjs"
+    "check:motion": "node scripts/check-motion.mjs --selftest && node scripts/check-motion.mjs",
+    "probe:search": "node scripts/probe/search.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

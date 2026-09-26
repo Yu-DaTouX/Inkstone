@@ -127,6 +127,7 @@ import type {
   CustomProviderTestResult
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
+import type { SearchBackendStatus } from '../shared/search'
 import type { ContextActionSummary } from '../shared/context-actions'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
@@ -550,6 +551,10 @@ const api: YanBridge = {
    */
   builtinCapabilities: {
     list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
+  },
+  search: {
+    /** 搜索后端诊断（实施-27 S3/D4）：未安装也返回可读结果 */
+    doctor: () => invoke<SearchBackendStatus>('yan:search:doctor')
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),

@@ -3847,6 +3847,23 @@ const audioShared = await import('../node_modules/esbuild/lib/main.js').then(({ 
 const { runAudioTests } = await import('./test-audio.mjs')
 runAudioTests(ok, audioShared)
 
+/*
+ * 联网搜索（实施-27 S1/S2）：来源白名单 / 归一化 / 去重与上限 / 来源级状态。
+ * 后端用替身，不依赖本机装没装 OpenCLI；真实 spawn 只测「找不到可执行文件」这个边界。
+ */
+const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/search/opencli.ts'],
+    outfile: 'out/test/search.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/search.mjs'))
+)
+const { runSearchTests } = await import('./test-search.mjs')
+await runSearchTests(ok, searchMod)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)

@@ -74,6 +74,8 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent get --id <子代理ID>
   yan subagent stop --id <子代理ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
+  yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
+  yan search doctor                       搜索后端诊断（未安装也能读）
 
 选项：
   --query-file <文件>      UTF-8 JSON，作为请求参数（推荐，避免 shell 转义）
@@ -431,6 +433,21 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   · 启动后 UI 会在输入区上方显示任务，并在右侧面板持续显示转录、工具活动、耗时与变更；
   · 子代理的 worktree 变更不会自动合并，合并 / 放弃由用户在 UI 里审阅确认。
 `,
+  search: `yan search <动作> [选项]
+
+动作：
+  query   联网搜索（默认三个来源：维基百科 / arXiv / Hacker News）
+            yan search query --query-text "flash attention"
+            yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
+  doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
+
+说明：
+  · 后端是 OpenCLI（用户自行安装）。没装时 query 回 code=backend_unavailable，
+    doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
+  · 逐来源状态是分开的：ok / empty / timeout / unavailable / error；
+  · 拿到结果后要用内置浏览器打开：yan browser navigate --url <结果里的 url>；
+  · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
+`,
   browser: `yan browser <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -593,6 +610,11 @@ const GROUP_SPECS = {
   context: {
     actions: ['recall'],
     required: { recall: ['ref'] }
+  },
+  search: {
+    actions: ['query', 'doctor'],
+    /* doctor 无必需参数；query 至少要一个查询词 */
+    required: { query: ['query-text'] }
   },
   browser: {
     actions: [
