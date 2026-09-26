@@ -219,6 +219,7 @@ export interface BrowserCommandHost {
   observe(): Promise<BrowserObservation>
   click(ref: string): Promise<BrowserObservationResult>
   type(ref: string, text: string): Promise<BrowserObservationResult>
+  select(ref: string, value: string): Promise<BrowserObservationResult>
   press(key: string): Promise<BrowserObservationResult>
   scroll(deltaX: number, deltaY: number): Promise<BrowserObservationResult>
   requestUserControl(): BrowserState
@@ -3454,6 +3455,25 @@ export class AgentController extends EventEmitter {
       case 'press':
       case 'scroll': {
         const res = await this.browserActionCommand(host, action, params)
+        if (!res.ok) this.browserFailure(action, res)
+        const observation = res.observation ?? (await this.browserObserve(action))
+        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+      }
+
+      /*
+       * 下拉框选值。`--value` 允许空串（“选空白项”是合法操作），
+       * 所以这里不看 browserText 的 trim 结果，而看**参数在不在**。
+       */
+      case 'select': {
+        const ref = this.browserText(params, 'ref')
+        if (!ref) {
+          throw new CapabilityCommandError('missing_ref', 'select 需要元素引用：先 yan browser observe 拿 ref，再 yan browser select --ref <ref> --value <值>')
+        }
+        const raw = params.value
+        if (raw === undefined || raw === null || typeof raw === 'object') {
+          throw new CapabilityCommandError('missing_value', 'select 需要选中值：yan browser select --ref <ref> --value <值>')
+        }
+        const res = await host.select(ref, String(raw))
         if (!res.ok) this.browserFailure(action, res)
         const observation = res.observation ?? (await this.browserObserve(action))
         return { data: observation, summary: this.browserObservationSummary(action, observation) }

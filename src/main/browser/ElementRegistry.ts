@@ -21,6 +21,34 @@ export class StaleElementError extends Error {
 }
 
 /**
+ * `select` 遇到的目标不是下拉框。
+ *
+ * 单独一个错误类（而不是一句笼统失败文案）：模型据此知道「这个 ref 得改用 type/click」，
+ * 而不用去猜自己是不是 ref 写错了。
+ */
+export class NotSelectElementError extends Error {
+  readonly code = 'NOT_SELECT'
+
+  constructor(ref: string, tag: string) {
+    super(`元素 ${ref} 不是下拉框（<${tag || '?'}>）。下拉框才能用 select；文本框用 type，按钮用 click。`)
+    this.name = 'NotSelectElementError'
+  }
+}
+
+/** 下拉框里没有这个值；把可选值一并给出，省一次 observe */
+export class SelectOptionNotFoundError extends Error {
+  readonly code = 'OPTION_NOT_FOUND'
+
+  constructor(ref: string, wanted: string, options: string[]) {
+    const list = options.slice(0, 20).join(' / ')
+    super(
+      `下拉框 ${ref} 里没有「${wanted}」。可选值：${list || '（空）'}${options.length > 20 ? ` …共 ${options.length} 个` : ''}`
+    )
+    this.name = 'SelectOptionNotFoundError'
+  }
+}
+
+/**
  * 一次 observe 产生的元素引用表。
  *
  * ref 形如 `<generation>:e<n>`，generation 每次 refresh/clear 递增：

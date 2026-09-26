@@ -1,5 +1,10 @@
 import type { CdpChannel } from './CdpChannel'
-import { StaleElementError, type RegisteredElement } from './ElementRegistry'
+import {
+  NotSelectElementError,
+  SelectOptionNotFoundError,
+  StaleElementError,
+  type RegisteredElement
+} from './ElementRegistry'
 import { centerOf, elementBox } from './geometry'
 
 /** CDP `Input.dispatchKeyEvent` 的修饰键位掩码 */
@@ -51,8 +56,82 @@ function staleFromCdp(error: unknown, ref: string): StaleElementError | null {
   return null
 }
 
+/**
+ * 在元素上执行的下拉框赋值函数（`Runtime.callFunctionOn`）。
+ *
+ * ── 为什么这里能跑页面函数，而工具里没有「执行任意 JS」 ──
+ *   这段函数是**宿主写死**的，只接受一个字符串参数，不接受页面传来的代码。
+ *   `Observer` 与 `storage-transfer` 已经用同一种方式读页面（固定表达式），
+ *   这里只是把「写一个 `<select>` 的值」也做成固定函数。
+ *
+ * ── 为什么要自己派发事件 ──
+ *   直接改 `el.value` 不会触发框架的 onChange —— 受控组件会把值改回旧值，
+ *   表现为「命令成功但页面没变」。input 与 change 两个都发，是因为不同框架监听的不一样。
+ */
+export const SELECT_VALUE_FN = `function (wanted) {
+  const el = this
+  const tag = (el.tagName || '').toLowerCase()
+  if (tag !== 'select') return { ok: false, reason: 'not_select', tag: tag }
+  const opts = Array.from(el.options || [])
+  const hit =
+    opts.find((o) => o.value === wanted) ||
+    opts.find((o) => String(o.label || o.text || '').trim() === wanted)
+  if (!hit) return { ok: false, reason: 'no_option', options: opts.map((o) => o.value) }
+  el.value = hit.value
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  return { ok: true, value: el.value, label: String(hit.label || hit.text || '').trim() }
+}`
+
+/** `select` 的结果（成功时给回页面最后真的采纳的值 —— 框架可能把它改回去） */
+export interface SelectOutcome {
+  value: string
+  label: string
+}
+
 export class InputController {
   constructor(private readonly cdp: CdpChannel) {}
+
+  /**
+   * 给 `<select>` 选一个值（先按 value 匹配，退而按可见文案匹配）。
+   *
+   * 不用键盘（方向键）选：原生 select 在不同平台上的键盘行为不一致
+   * （macOS 上会弹出原生菜单并抢焦点），失败形态又很难读。
+   */
+  async select(element: RegisteredElement, wanted: string): Promise<SelectOutcome> {
+    let objectId: string | undefined
+    try {
+      const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', {
+        backendNodeId: element.backendNodeId
+      })
+      objectId = resolved?.object?.objectId
+    } catch (error) {
+      throw staleFromCdp(error, element.ref) ?? error
+    }
+    if (!objectId) throw new StaleElementError(element.ref)
+
+    type Raw = { ok?: boolean; reason?: string; tag?: string; value?: string; label?: string; options?: string[] }
+    let outcome: Raw | undefined
+    try {
+      const call = await this.cdp.send<{ result?: { value?: Raw } }>('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: SELECT_VALUE_FN,
+        arguments: [{ value: wanted }],
+        returnByValue: true
+      })
+      outcome = call?.result?.value
+    } catch (error) {
+      throw staleFromCdp(error, element.ref) ?? error
+    }
+
+    if (!outcome?.ok) {
+      if (outcome?.reason === 'not_select') {
+        throw new NotSelectElementError(element.ref, String(outcome.tag ?? ''))
+      }
+      throw new SelectOptionNotFoundError(element.ref, wanted, outcome?.options ?? [])
+    }
+    return { value: String(outcome.value ?? ''), label: String(outcome.label ?? '') }
+  }
 
   async click(element: RegisteredElement): Promise<void> {
     const point = await this.bringIntoView(element)

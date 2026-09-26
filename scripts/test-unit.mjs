@@ -3924,6 +3924,26 @@ const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(
 const { runBrowserWaitTests } = await import('./test-browser-wait.mjs')
 await runBrowserWaitTests(ok, browserWaitMod)
 
+/*
+ * 浏览器 select 的页面侧赋值函数（实施-27 S5）：
+ * `SELECT_VALUE_FN` 是字符串（要发给 CDP），这里用 new Function 还原后喂假 <select>。
+ */
+const buildNeutral = (entry, outfile) =>
+  import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+    build({
+      entryPoints: [entry],
+      outfile,
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      logLevel: 'silent'
+    }).then(() => import(`../${outfile}`))
+  )
+const browserInputMod = await buildNeutral('src/main/browser/InputController.ts', 'out/test/browser-input.mjs')
+const browserRegistryMod = await buildNeutral('src/main/browser/ElementRegistry.ts', 'out/test/browser-registry.mjs')
+const { runBrowserSelectTests } = await import('./test-browser-select.mjs')
+await runBrowserSelectTests(ok, browserInputMod, browserRegistryMod)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)
