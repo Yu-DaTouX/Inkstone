@@ -1,4 +1,5 @@
 import { useT } from '../../i18n'
+import { Icon } from '../../icons/Icon'
 import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { EnvironmentMenu } from '../review/EnvironmentMenu'
@@ -53,6 +54,10 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const fromModel = session?.sessionId ? titles[session.conversationId ?? session.sessionId] : undefined
   const fromList = sessions.find((x) => x.path === (session?.conversationFile ?? session?.sessionFile))?.title
   const fromFirst = messages.find((m) => m.role === 'user')?.text
+  /** 当前会话归属的空间（决定要不要给「空间」入口） */
+  const spaceId = sessions.find(
+    (x) => x.path === (session?.conversationFile ?? session?.sessionFile)
+  )?.spaceId
   const title =
     fromModel ||
     session?.sessionName ||
@@ -67,41 +72,49 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
         </h1>
 
         {/*
-         * 对话 / 地图切换（仅日常模式）。
+         * 视图入口「按需出现」（实施-27 B3）。
          *
-         * 放这里而不是标题栏：地图是「同一个会话的另一个视图」，不是
-         * 另一个功能页 —— 切换器贴着会话标题，用户看标题时就看到了它。
-         * 标题栏那个纯图标入口已删除（图标太隐蔽，且与这里重复）。
+         * 以前这里是常驻的「对话 / 地图 / 概览」三档 tab，但绝大多数会话
+         * 根本不会用到地图与空间 —— 常驻之后它们就变成了「每天看到但从不点」的
+         * 噪音。现在的规则：
+         *   · 对话永远在（默认视图）；
+         *   · 有回合才给「地图」入口（没聊过就没有地图可看）；
+         *   · 这个会话归档到空间了才给「空间」入口。
+         * 已经打开时只显示一个「返回对话」，不再并列三个档位。
          */}
-        {mapEnabled ? (
-          <div className="shead-view" role="tablist" aria-label={t('view.switch')} data-testid="view-switch">
-            <button
-              role="tab"
-              aria-selected={!mapOpen && !spaceOpen}
-              className={mapOpen || spaceOpen ? '' : 'on'}
-              onClick={() => onToggleMap?.(false)}
-              data-testid="view-chat"
-            >
-              {t('view.chat')}
-            </button>
-            <button
-              role="tab"
-              aria-selected={!!mapOpen}
-              className={mapOpen ? 'on' : ''}
-              onClick={() => onToggleMap?.(true)}
-              data-testid="view-map"
-            >
-              {t('view.map')}
-            </button>
-            {spaceEnabled ? (
+        {mapEnabled || spaceEnabled ? (
+          <div className="shead-view" role="group" aria-label={t('view.switch')} data-testid="view-switch">
+            {mapOpen || spaceOpen ? (
               <button
-                role="tab"
-                aria-selected={!!spaceOpen}
-                className={spaceOpen ? 'on' : ''}
+                className="on"
+                onClick={() => {
+                  if (spaceOpen) onToggleSpace?.(false)
+                  else onToggleMap?.(false)
+                }}
+                data-testid="view-chat"
+              >
+                <Icon name="chat-round" size={12} />
+                <span>{t('view.chat')}</span>
+              </button>
+            ) : null}
+            {mapEnabled && !mapOpen && messages.length > 0 ? (
+              <button
+                onClick={() => onToggleMap?.(true)}
+                title={t('view.map')}
+                data-testid="view-map"
+              >
+                <Icon name="map" size={12} />
+                <span>{t('view.map')}</span>
+              </button>
+            ) : null}
+            {spaceEnabled && !spaceOpen && spaceId ? (
+              <button
                 onClick={() => onToggleSpace?.(true)}
+                title={t('view.space')}
                 data-testid="view-space"
               >
-                {t('view.space')}
+                <Icon name="layers" size={12} />
+                <span>{t('view.space')}</span>
               </button>
             ) : null}
           </div>

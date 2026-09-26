@@ -9,7 +9,7 @@ import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
-import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
+import type { WorkMode } from '../../../../shared/work-mode'
 
 /**
  * 输入区。四种输入模式共存：
@@ -121,7 +121,6 @@ export function Composer() {
   const activeWorkMode: WorkMode = workModeState?.mode ?? defaultWorkMode
   const autonomous = activeWorkMode === 'autonomous'
   /** 模式按钮：Esc 从输入框把焦点送到这里（避开键盘陷阱） */
-  const modeButtonRef = useRef<HTMLButtonElement>(null)
   const editorInject = useStore((s) => s.editorInject)
   /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
   const composerInsert = useStore((s) => s.composerInsert)
@@ -953,16 +952,9 @@ export function Composer() {
     }
 
     /*
-     * Esc → 焦点送到模式按钮（实施-05 §3）。
-     *
-     * 快捷键改成 `Ctrl+Tab` 之后这条依然有用：键盘用户得先能**走到**模式按钮上
-     * （按钮上方向键 / Enter 都能用），而不是只能记住一个组合键。
-     * 无补全、非长文、不在跑回合时把焦点交出去。
+     * Esc 原本把焦点交给模式按钮（那时它就在输入区里）。
+     * 模式控件搬到设置之后，这里不再抢焦点 —— Esc 在输入框里的默认语义保留。
      */
-    if (e.key === 'Escape' && !expanded && !busy && !disabled) {
-      e.preventDefault()
-      modeButtonRef.current?.focus()
-    }
   }
 
   return (
@@ -1136,11 +1128,17 @@ export function Composer() {
 
             <PlusMenu onInsert={insertAtCursor} />
 
-            {/* 工作模式（实施-05）：原位显示当前模式 + 菜单，Tab 可快切 */}
-            <WorkModePicker buttonRef={modeButtonRef} />
-
-            {/* 活动档案（实施-25 P01）：代码 / 日常×活动；改这里只影响当前会话 */}
-            <AgentProfilePicker />
+            {/*
+             * 工作模式与活动档案的控件已从输入区移除（实施-27 B3）。
+             *
+             * 理由：主界面只留对话与结果。这两项都是「一次选定、整段会话不变」的
+             * 设定，常驻在输入区等于每轮都在提醒用户「你还有个开关没拨过」。
+             * 现在的入口：
+             *   · 工作模式 —— 设置 · 外观（默认值）＋ 全局快捷键（Tab 快切，见 App）
+             *   · 活动档案 —— 设置 · 工作区（按会话保存）
+             * 当前值仍然处处可见（自主模式仍有边界光带；模式名在设置里），
+             * 不会变成「看不见也改不了」。
+             */}
 
             {/*
              * 当前发送规则 —— **常显**（不只是长文模式）。
@@ -1332,319 +1330,6 @@ function QueueStack() {
           </button>
         </div>
       ))}
-    </div>
-  )
-}
-
-/**
- * 工作模式菜单（实施-05 §3）。
- *
- * 原位显示「标准 / 计划 / 自主 ▾」，菜单单选项带一句说明。三种输入方式：
- *   · 鼠标：点按钮 → 点选项；
- *   · 键盘：按钮上 ↑↓ 打开，菜单里 ↑↓ 移动、Enter / Space 选定、Esc 关闭；
- *   · Tab 快切（可在设置里关）：输入框里裸 Tab 循环三档。
- *
- * ⚠️ 模式是**按会话**的：这里读 store 里当前会话的投影；提交失败（版本冲突）
- *    时把显示恢复成主进程回传的当前值 —— 不能出现「界面已自主而模型仍标准」。
- */
-function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonElement | null> }) {
-  const t = useT()
-  const stored = useStore((s) => s.workMode)
-  const fallback = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const setWorkMode = useStore((s) => s.setWorkMode)
-  const state: WorkMode = stored?.mode ?? fallback
-  const [open, setOpen] = useState(false)
-  const [index, setIndex] = useState(0)
-  /**
-   * 菜单坐标（fixed 定位）。
-   *
-   * 为何不 absolute 贴按钮：`.composer` 有 `overflow: hidden`（圆角与自主光带
-   * 需要它），absolute 菜单会被整块裁掉 —— 模型选择器踩过同一个坑
-   *（见 redesign.css 的 `.mt-pop`）。所以量按钮 rect，向上弹。
-   */
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const MENU_WIDTH = 288
-
-  /* 打开时高亮当前档、量坐标、并把焦点交给菜单 —— 否则方向键到不了这里 */
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null)
-      return
-    }
-    setIndex(Math.max(0, WORK_MODES.indexOf(state)))
-    const el = buttonRef.current
-    if (el) {
-      const r = el.getBoundingClientRect()
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
-      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
-    }
-    menuRef.current?.focus()
-  }, [open, state, buttonRef])
-
-  /* 点外部关闭（菜单是浮层，不能一直挡着输入区） */
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  const commit = (mode: WorkMode) => {
-    setOpen(false)
-    buttonRef.current?.focus()
-    if (mode !== state) void setWorkMode(mode)
-  }
-
-  return (
-    <div className="mode-picker" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="ctool mode-button"
-        data-testid="work-mode-button"
-        data-mode={state}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={t(`workMode.desc.${state}`)}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            setOpen(true)
-          } else if (e.key === 'Escape' && open) {
-            e.preventDefault()
-            setOpen(false)
-          }
-        }}
-      >
-        <Icon name="sparkles" size={12} />
-        <span className="mode-label" data-testid="work-mode-label">
-          {t(`workMode.label.${state}`)}
-        </span>
-        <span className="mode-caret" aria-hidden>
-          ▾
-        </span>
-      </button>
-
-      {open ? (
-        <div
-          className="mode-menu"
-          role="menu"
-          data-testid="work-mode-menu"
-          data-mode={state}
-          ref={menuRef}
-          tabIndex={-1}
-          style={{
-            width: MENU_WIDTH,
-            ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {})
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setIndex((i) => (i + 1) % WORK_MODES.length)
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setIndex((i) => (i - 1 + WORK_MODES.length) % WORK_MODES.length)
-            } else if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              commit(WORK_MODES[index])
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              setOpen(false)
-              buttonRef.current?.focus()
-            }
-            /* Tab：不拦 —— 焦点自然离开菜单（tabIndex=-1 的容器不在 Tab 序列里） */
-          }}
-        >
-          {WORK_MODES.map((mode, i) => (
-            <button
-              key={mode}
-              role="menuitemradio"
-              aria-checked={mode === state}
-              tabIndex={-1}
-              className={`mode-item ${i === index ? 'active' : ''} ${mode === state ? 'current' : ''}`}
-              data-testid={`work-mode-option-${mode}`}
-              data-mode={mode}
-              onMouseEnter={() => setIndex(i)}
-              onClick={() => commit(mode)}
-            >
-              <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
-              <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * 活动档案的选项（实施-25 P01）。
- *
- * `auto` 是新的默认档：由模型按每次请求自行判断，不再要求用户先选角色。
- * `coding` 不锁定 activity（切回代码时保留上次的日常活动，
- * 用户再从代码切回日常时不用重新选一次）。
- */
-const AGENT_PROFILE_ITEMS = [
-  { key: 'auto', profile: 'auto', activity: null },
-  { key: 'coding', profile: 'coding', activity: null },
-  { key: 'answer', profile: 'daily', activity: 'answer' },
-  { key: 'research', profile: 'daily', activity: 'research' },
-  { key: 'compose', profile: 'daily', activity: 'compose' },
-  { key: 'organize', profile: 'daily', activity: 'organize' },
-  { key: 'learn', profile: 'daily', activity: 'learn' }
-] as const
-
-/**
- * 活动档案选择器（实施-25 P01）。
- *
- * 它决定**模型侧真的变成什么角色**（宿主把角色文本与受限工具写给薄层扩展），
- * 不只是换一个标签 —— 所以选项文案也按「会被如何工作」来写，不写内部枚举名。
- *
- * 与工作模式同一个交互习惯：按钮原位显示当前值，菜单 fixed 向上弹
- *（`.composer` 的 `overflow: hidden` 会把 absolute 菜单裁掉）。
- */
-function AgentProfilePicker() {
-  const t = useT()
-  const stored = useStore((s) => s.agentProfile)
-  const setAgentProfile = useStore((s) => s.setAgentProfile)
-  const profile = stored?.profile ?? 'auto'
-  const activity = stored?.activity ?? 'answer'
-  const currentKey = profile === 'daily' ? activity : profile
-  const [open, setOpen] = useState(false)
-  const [index, setIndex] = useState(0)
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const MENU_WIDTH = 288
-
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null)
-      return
-    }
-    setIndex(Math.max(0, AGENT_PROFILE_ITEMS.findIndex((i) => i.key === currentKey)))
-    const el = buttonRef.current
-    if (el) {
-      const r = el.getBoundingClientRect()
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
-      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
-    }
-    menuRef.current?.focus()
-  }, [open, currentKey])
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  const commit = (item: (typeof AGENT_PROFILE_ITEMS)[number]) => {
-    setOpen(false)
-    buttonRef.current?.focus()
-    if (item.key === currentKey) return
-    void setAgentProfile(
-      item.profile === 'daily' ? { profile: 'daily', activity: item.activity } : { profile: item.profile }
-    )
-  }
-
-  const label =
-    profile === 'daily'
-      ? `${t('agentProfile.daily')} · ${t(`agentProfile.${activity}`)}`
-      : t(`agentProfile.${profile}`)
-
-  return (
-    <div className="mode-picker" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="ctool mode-button"
-        data-testid="agent-profile-button"
-        data-profile={profile}
-        data-activity={activity}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={t('agentProfile.hint')}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            setOpen(true)
-          } else if (e.key === 'Escape' && open) {
-            e.preventDefault()
-            setOpen(false)
-          }
-        }}
-      >
-        <Icon name="agent" size={12} />
-        <span className="mode-label" data-testid="agent-profile-label">
-          {label}
-        </span>
-        <span className="mode-caret" aria-hidden>
-          ▾
-        </span>
-      </button>
-
-      {open ? (
-        <div
-          className="mode-menu"
-          role="menu"
-          data-testid="agent-profile-menu"
-          data-profile={profile}
-          ref={menuRef}
-          tabIndex={-1}
-          style={{
-            width: MENU_WIDTH,
-            ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {})
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setIndex((i) => (i + 1) % AGENT_PROFILE_ITEMS.length)
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setIndex((i) => (i - 1 + AGENT_PROFILE_ITEMS.length) % AGENT_PROFILE_ITEMS.length)
-            } else if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              const item = AGENT_PROFILE_ITEMS[index]
-              if (item) commit(item)
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              setOpen(false)
-              buttonRef.current?.focus()
-            }
-          }}
-        >
-          {AGENT_PROFILE_ITEMS.map((item, i) => (
-            <button
-              key={item.key}
-              role="menuitemradio"
-              aria-checked={item.key === currentKey}
-              tabIndex={-1}
-              className={`mode-item ${i === index ? 'active' : ''} ${item.key === currentKey ? 'current' : ''}`}
-              data-testid={`agent-profile-option-${item.key}`}
-              data-key={item.key}
-              onMouseEnter={() => setIndex(i)}
-              onClick={() => commit(item)}
-            >
-              <span className="mode-item-label">
-                {item.profile === 'daily' ? t(`agentProfile.${item.activity}`) : t(`agentProfile.${item.profile}`)}
-              </span>
-              <span className="mode-item-desc">
-                {item.profile === 'daily'
-                  ? t(`agentProfile.desc.${item.activity}`)
-                  : t(`agentProfile.desc.${item.profile}`)}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   )
 }
