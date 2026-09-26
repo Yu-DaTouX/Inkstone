@@ -96,8 +96,8 @@
   height: 100%;
   color: var(--fg-dim);
   transition:
-    background 80ms linear,
-    color 80ms linear;
+    background var(--dur-80) linear,
+    color var(--dur-80) linear;
 }
 
 .wbtn:hover {
@@ -202,7 +202,7 @@
   left: 2px;
   width: 1px;
   background: transparent;
-  transition: background 120ms var(--ease);
+  transition: background var(--dur-120) var(--ease);
 }
 
 .resizer:hover::after,
@@ -371,35 +371,17 @@ html[data-theme-dir]::view-transition-group(root) {
 }
 
 html[data-theme-dir='out']::view-transition-new(root) {
-  animation: theme-spread 760ms cubic-bezier(0.25, 0.7, 0.25, 1) both;
+  animation: theme-spread var(--dur-760) var(--ease-smooth) both;
 }
 
 /* 收缩要让旧层压在新层上面，否则它的动画被新层盖住、看不见 */
 html[data-theme-dir='in']::view-transition-old(root) {
   z-index: 1;
-  animation: theme-collapse 760ms cubic-bezier(0.25, 0.7, 0.25, 1) both;
+  animation: theme-collapse var(--dur-760) var(--ease-smooth) both;
 }
 
 html[data-theme-dir='in']::view-transition-new(root) {
   z-index: 0;
-}
-
-@keyframes theme-spread {
-  from {
-    clip-path: circle(0 at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
-  }
-  to {
-    clip-path: circle(150vmax at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
-  }
-}
-
-@keyframes theme-collapse {
-  from {
-    clip-path: circle(150vmax at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
-  }
-  to {
-    clip-path: circle(0 at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -69,10 +69,6 @@
 .rp-sec-body.anim {
   animation: rp-sec-expand var(--dur) var(--ease);
 }
-@keyframes rp-sec-expand {
-  from { grid-template-rows: 0fr; }
-  to { grid-template-rows: 1fr; }
-}
 .rp-sec-body-inner {
   display: grid;
   gap: 3px;
@@ -322,7 +318,7 @@
   border-radius: var(--r-xs);
   color: var(--fg-mute);
   opacity: 0;
-  transition: opacity 120ms var(--ease), color 120ms var(--ease), background 120ms var(--ease);
+  transition: opacity var(--dur-120) var(--ease), color var(--dur-120) var(--ease), background var(--dur-120) var(--ease);
 }
 
 .rp-fs-row-wrap:hover .rp-fs-add,
@@ -848,7 +844,7 @@
   margin: 0 4px;
   border-radius: var(--r-full);
   background: var(--accent);
-  animation: rp-fs-pulse 900ms var(--ease) infinite;
+  animation: rp-fs-pulse var(--dur-900) var(--ease) infinite;
 }
 
 .rp-fs-err {
@@ -1116,7 +1112,7 @@
   height: 1px;
   margin: 3px 0;
   background: transparent;
-  transition: background 120ms var(--ease);
+  transition: background var(--dur-120) var(--ease);
 }
 
 .rp-vgrip:hover::after,
@@ -3369,7 +3365,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 @media (prefers-reduced-motion: reduce) {
   .rp-start-item {
-    transition-duration: 1ms;
+    transition-duration: var(--dur-1);
   }
 }
 
@@ -3636,12 +3632,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 /* 工具库「定位」的反馈：闪一下轮廓，不动布局、不抢焦点 */
 .rp-float-tile.locate-flash {
-  animation: rp-float-flash 900ms var(--ease);
-}
-
-@keyframes rp-float-flash {
-  0%, 100% { outline: 0 solid transparent; }
-  20% { outline: 2px solid var(--accent); outline-offset: 1px; }
+  animation: rp-float-flash var(--dur-900) var(--ease);
 }
 
 .rp-float-head {

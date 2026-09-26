@@ -352,12 +352,6 @@ kbd {
   cursor: default;
   filter: none;
 }
-@keyframes blink {
-  to {
-    visibility: hidden;
-  }
-}
-
 /* 6. 右栏 —— 工具与状态面板
    （上下文 / 额度 / 任务 / 队列 / 文件 / 扩展 / 日志 / 操作，顺序可调） */
 .status {

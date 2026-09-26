@@ -11,11 +11,11 @@
  * 图标颜色是瞬间跳变的，而同一行的文字是渐变的。
  *
  * 边界：
- *   · 按压反馈（位移 + 缩放）在 motion.css 的 `mo-press`（180ms），不在这里；
+ *   · 按压反馈（位移 + 缩放）在 motion.css 的 `mo-press`（var(--dur-180)），不在这里；
  *   · 图标不参与持续动画：进行态旋转只挂在真实 running 类上
  *     （chat.css 的 `.image-progress.running` / `.subagent-inline-spinner`），
  *     停止或完成后类名移走，动画随之停；
- *   · `prefers-reduced-motion` 下压到 1ms 而不是删掉 —— 与项目其它过渡一致，
+ *   · `prefers-reduced-motion` 下压到 var(--dur-1) 而不是删掉 —— 与项目其它过渡一致，
  *     保留状态语义（颜色照变，只是没有过程）。
  */
 .ico {
@@ -24,6 +24,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ico {
-    transition-duration: 1ms;
+    transition-duration: var(--dur-1);
   }
 }

@@ -89,8 +89,52 @@
   --focus-ring-offset: 1px;
   --focus-ring-w-strong: 2px;
 
+  /* 动效时长（B2 归口）——
+     语义别名 --dur 是默认过渡；其余按毫秒值命名，值等于收口前的实际值，未做视觉调整。
+     新增动效请复用已有档位，不要写裸 ms/s 或裸 cubic-bezier —— npm run check:motion 会拦。 */
   --dur: 120ms;
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  /* 主题切换用的平滑曲线（比默认更柔，落位更稳） */
+  --ease-smooth: cubic-bezier(0.25, 0.7, 0.25, 1);
+
+  /* 微反馈 / 几乎即时 */
+  --dur-0: 0ms;
+  --dur-1: 1ms;
+  --dur-8: 8ms;
+  --dur-14: 14ms;
+  --dur-22: 22ms;
+  --dur-24: 24ms;
+  --dur-26: 26ms;
+  --dur-45: 45ms;
+  --dur-80: 80ms;
+
+  /* 常规过渡 */
+  --dur-120: 120ms;
+  --dur-130: 130ms;
+  --dur-140: 140ms;
+  --dur-180: 180ms;
+  --dur-200: 200ms;
+  --dur-220: 220ms;
+  --dur-260: 260ms;
+
+  /* 面板 / 模态 */
+  --dur-400: 400ms;
+  --dur-420: 420ms;
+  --dur-600: 600ms;
+  --dur-760: 760ms;
+  --dur-800: 800ms;
+
+  /* 循环装饰 */
+  --dur-900: 900ms;
+  --dur-1000: 1000ms;
+  --dur-1100: 1100ms;
+  --dur-1150: 1150ms;
+  --dur-1250: 1250ms;
+  --dur-1400: 1400ms;
+  --dur-1500: 1500ms;
+  --dur-1600: 1600ms;
+  --dur-1800: 1800ms;
+  --dur-1900: 1900ms;
 }
 
 html[data-theme='dark'] {
@@ -265,14 +309,8 @@ textarea {
   transform: rotate(90deg);
 }
 .spin {
-  animation: rot 1.1s linear infinite;
+  animation: rot var(--dur-1100) linear infinite;
 }
-@keyframes rot {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /*
  * 密度档位（方案 A1）：只覆盖三个语义间距。
  *   紧凑 = 同屏放下更多行；舒适 = 行与行之间喘口气。

@@ -159,7 +159,7 @@
 /* 分组逐个落位 */
 .settings-body .set-group {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 22ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-22));
 }
 
 /* 52.4 应用：贴着触发器的浮层 */
@@ -174,7 +174,7 @@
 /* 模型列表项错开落位 */
 .mt-pop .mt-item {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 8ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-8));
 }
 .mt-pop .mt-group {
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
@@ -182,7 +182,7 @@
 /* 档位按钮：从左到右依次出现，像终端里打印出来 */
 .mt-pop .mt-stop {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 26ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-26));
 }
 
 /* 向下弹（会话行 / 列表项的操作菜单） */
@@ -198,7 +198,7 @@
 .row-menu .row-menu-btn,
 .row-menu-surface .srow-menu-btn {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 14ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-14));
 }
 
 /* 52.5 应用：通知条 —— 从右侧滑入 + 逐条错开 */
@@ -208,7 +208,7 @@
 }
 .notice {
   animation: mo-in-right var(--mo-base) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 45ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-45));
 }
 .notice.closing {
   animation: mo-out-right var(--mo-fast) var(--mo-ease-out) both;
@@ -242,14 +242,14 @@
 .rail-icon:active,
 .srow-menu-btn:active,
 .row-menu-btn:active {
-  animation: mo-press 180ms var(--mo-ease);
+  animation: mo-press var(--dur-180) var(--mo-ease);
 }
 
 /* 52.9 减少动效
    时长压到 1ms 而不是 `animation: none` ——
    因为 `usePresence` 的延迟卸载是按时长算的，把动画整个删掉
    会让「CSS 不动 / JS 还在等」出现一段空窗（浮层短暂消失又出现）。
-   1ms 保证 `both` 填充语义仍在（终态就是 from/to 里那个值）。 */
+   var(--dur-1) 保证 `both` 填充语义仍在（终态就是 from/to 里那个值）。 */
 @media (prefers-reduced-motion: reduce) {
   .modal-scrim,
   .settings-scrim,
@@ -268,8 +268,8 @@
   .mt-pop .mt-stop,
   .row-menu .row-menu-btn,
   .row-menu-surface .srow-menu-btn {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
   }
   .notice:hover {
     transform: none;
@@ -365,7 +365,7 @@ html[data-theme='light'] .op-title::before {
    · 新到的那一段自己淡入（key 是段的 id，React 会挂新节点）
    · 最终回答与中间解说的层级差能用字号/颜色表达 */
 .turn-para {
-  animation: text-in 200ms ease-out;
+  animation: text-in var(--dur-200) ease-out;
 }
 .turn-para + .turn-para {
   margin-top: var(--sp-3);
@@ -405,7 +405,7 @@ html[data-theme='light'] .op-title::before {
 }
 
 .turn-progress-toggle .chev {
-  transition: transform 180ms var(--ease);
+  transition: transform var(--dur-180) var(--ease);
 }
 
 .turn-progress-toggle[aria-expanded='true'] .chev {
@@ -641,7 +641,7 @@ html[data-theme='light'] .turn {
   line-height: 1;
   user-select: none;
   overflow: hidden;
-  transition: color 260ms var(--mo-ease);
+  transition: color var(--dur-260) var(--mo-ease);
 }
 /*
  * 空闲时字号回到正文 —— 那时行里没有文字，只有一条横线，
@@ -761,10 +761,10 @@ html[data-theme='light'] .turn {
   );
   background-size: 240px 100%;
   background-repeat: no-repeat;
-  animation: cborder-sweep 1.6s linear infinite;
+  animation: cborder-sweep var(--dur-1600) linear infinite;
 }
 .cborder.busy .cborder-dash.lead {
-  animation: cborder-pulse 1.6s var(--mo-ease) infinite;
+  animation: cborder-pulse var(--dur-1600) var(--mo-ease) infinite;
 }
 
 @keyframes cborder-sweep {
@@ -840,7 +840,7 @@ html[data-theme='light'] {
     opacity: 0.5;
   }
   .cborder-text {
-    animation-duration: 1ms !important;
+    animation-duration: var(--dur-1) !important;
   }
 }
 
@@ -868,8 +868,8 @@ html[data-theme='light'] {
   background: var(--ok);
   /* 宽度变化要有过程 —— 勾完一条时「长过去」比瞬跳好读 */
   transition:
-    width 420ms var(--mo-ease),
-    background-color 200ms var(--mo-ease);
+    width var(--dur-420) var(--mo-ease),
+    background-color var(--dur-200) var(--mo-ease);
 }
 /*
  * 还没全做完时：条上有一道扫光，表示「还在推进」。
@@ -884,7 +884,7 @@ html[data-theme='light'] {
   );
   background-size: 60px 100%;
   background-repeat: no-repeat;
-  animation: rp-sweep 1.5s linear infinite;
+  animation: rp-sweep var(--dur-1500) linear infinite;
 }
 @keyframes rp-sweep {
   from {
@@ -938,7 +938,7 @@ html[data-theme='light'] {
 /* ---- 列表：逐行落位 ---- */
 .rp-todos .rp-todo {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
-  animation-delay: calc(var(--i, 0) * 24ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-24));
 }
 
 /* 当前条目：运行标记 + 名字提亮 */
@@ -965,7 +965,7 @@ html[data-theme='light'] {
  * 这一下闪动是**确认反馈** —— 与 pi 勾完任务时整行重绘同一个作用。
  */
 .rp-todo.flash {
-  animation: rp-flash 900ms var(--mo-ease);
+  animation: rp-flash var(--dur-900) var(--mo-ease);
 }
 @keyframes rp-flash {
   0% {
@@ -979,7 +979,7 @@ html[data-theme='light'] {
   }
 }
 .rp-todo.flash .rp-box {
-  animation: rp-pop 400ms var(--mo-ease);
+  animation: rp-pop var(--dur-400) var(--mo-ease);
 }
 @keyframes rp-pop {
   0% {
@@ -1021,9 +1021,9 @@ html[data-theme='light'] .rp-todo-now {
   .rp-todo.flash,
   .rp-todo.flash .rp-box,
   .rp-all-done {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
-    transition-duration: 1ms !important;
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
+    transition-duration: var(--dur-1) !important;
   }
 }
 
@@ -1278,7 +1278,7 @@ html[data-theme='light'] .rp-todo-now {
 @media (prefers-reduced-motion: reduce) {
   .auth-msg,
   .auth-edit {
-    animation-duration: 1ms !important;
+    animation-duration: var(--dur-1) !important;
   }
 }
 
@@ -1484,7 +1484,162 @@ html[data-theme='light'] .ob-scrim {
   .ob-scrim,
   .ob-card,
   .ob-row {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
   }
+}
+/* ------------------------------------------------------------------
+   52.2 各模块搬来的关键帧（B2 归口）
+   规则：除本文件外，任何 CSS 都不许定义 @keyframes（npm run check:motion 拦）。
+   这些动画原本散在 app / chat / composer / redesign / shell / tools / tokens 里，
+   2026-09-27 原样搬过来，未改动几何与时长；使用点仍在各自模块。
+   ------------------------------------------------------------------ */
+
+@keyframes msg-located {
+  0%,
+  60% {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+@keyframes image-progress-slide {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(330%); }
+}
+@keyframes subagent-inline-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes reason-tail-in {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes trow-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes qpanel-bump {
+  0% { opacity: 0; transform: translateY(4px) }
+  15% { opacity: 1; transform: translateY(-50%) }
+  70% { opacity: 1; transform: translateY(-50%) }
+  100% { opacity: 0; transform: translateY(-80%) }
+}
+@keyframes ubpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes sheadflash {
+  0%,
+  100% {
+    background: var(--bg-1);
+  }
+  30% {
+    background: var(--accent-soft);
+  }
+}
+   每个浮层各写一套动画会让"一致性"在维护中慢慢丢掉。 */
+@keyframes pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes pop-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes center-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes cursor-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+@keyframes text-in {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* 文件树的 .rp-fs / .rp-fs-row / .rp-fs-size 已全部搬到 tools.css
+   （2026-09-15 样式归属收拢：同名选择器不再跨文件叠加）。 */
+@keyframes rp-fs-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes theme-spread {
+  from {
+    clip-path: circle(0 at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+  to {
+    clip-path: circle(150vmax at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+}
+@keyframes theme-collapse {
+  from {
+    clip-path: circle(150vmax at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+  to {
+    clip-path: circle(0 at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+}
+@keyframes rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rp-sec-expand {
+  from { grid-template-rows: 0fr; }
+  to { grid-template-rows: 1fr; }
+}
+@keyframes rp-float-flash {
+  0%, 100% { outline: 0 solid transparent; }
+  20% { outline: 2px solid var(--accent); outline-offset: 1px; }
 }

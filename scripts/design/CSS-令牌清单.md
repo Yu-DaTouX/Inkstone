@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　53 个变量（其中 1 个被重复定义）
+## `:root`　85 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -14,7 +14,39 @@
 | `--d-row-gap` | `3px` | **tokens**: 3px |
 | `--d-section-gap` | `3px` | **tokens**: 3px |
 | `--dur` | `120ms` | **tokens**: 120ms |
+| `--dur-0` | `0ms` | **tokens**: 0ms |
+| `--dur-1` | `1ms` | **tokens**: 1ms |
+| `--dur-1000` | `1000ms` | **tokens**: 1000ms |
+| `--dur-1100` | `1100ms` | **tokens**: 1100ms |
+| `--dur-1150` | `1150ms` | **tokens**: 1150ms |
+| `--dur-120` | `120ms` | **tokens**: 120ms |
+| `--dur-1250` | `1250ms` | **tokens**: 1250ms |
+| `--dur-130` | `130ms` | **tokens**: 130ms |
+| `--dur-14` | `14ms` | **tokens**: 14ms |
+| `--dur-140` | `140ms` | **tokens**: 140ms |
+| `--dur-1400` | `1400ms` | **tokens**: 1400ms |
+| `--dur-1500` | `1500ms` | **tokens**: 1500ms |
+| `--dur-1600` | `1600ms` | **tokens**: 1600ms |
+| `--dur-180` | `180ms` | **tokens**: 180ms |
+| `--dur-1800` | `1800ms` | **tokens**: 1800ms |
+| `--dur-1900` | `1900ms` | **tokens**: 1900ms |
+| `--dur-200` | `200ms` | **tokens**: 200ms |
+| `--dur-22` | `22ms` | **tokens**: 22ms |
+| `--dur-220` | `220ms` | **tokens**: 220ms |
+| `--dur-24` | `24ms` | **tokens**: 24ms |
+| `--dur-26` | `26ms` | **tokens**: 26ms |
+| `--dur-260` | `260ms` | **tokens**: 260ms |
+| `--dur-400` | `400ms` | **tokens**: 400ms |
+| `--dur-420` | `420ms` | **tokens**: 420ms |
+| `--dur-45` | `45ms` | **tokens**: 45ms |
+| `--dur-600` | `600ms` | **tokens**: 600ms |
+| `--dur-760` | `760ms` | **tokens**: 760ms |
+| `--dur-8` | `8ms` | **tokens**: 8ms |
+| `--dur-80` | `80ms` | **tokens**: 80ms |
+| `--dur-800` | `800ms` | **tokens**: 800ms |
+| `--dur-900` | `900ms` | **tokens**: 900ms |
 | `--ease` | `cubic-bezier(0.2, 0, 0.2, 1)` | **tokens**: cubic-bezier(0.2, 0, 0.2, 1) |
+| `--ease-smooth` | `cubic-bezier(0.25, 0.7, 0.25, 1)` | **tokens**: cubic-bezier(0.25, 0.7, 0.25, 1) |
 | `--focus-ring-color` | `var(--accent)` | **tokens**: var(--accent) |
 | `--focus-ring-offset` | `1px` | **tokens**: 1px |
 | `--focus-ring-w` | `1px` | **tokens**: 1px |
@@ -158,7 +190,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**121**
+- 变量总数（含各主题）：**153**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。
