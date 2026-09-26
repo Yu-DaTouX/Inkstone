@@ -162,8 +162,15 @@
   }
   const durationList = [...durations]
   out.push('  reduced-motion 里出现的 animation-duration = ' + JSON.stringify(durationList))
+  /*
+   * B2 把时长 token 化之后，这里读到的是 `var(--dur-1)` 而不是字面量 `1ms`
+   * （CSSOM 给的是声明值，不会替我们解析变量）。两种写法都算。
+   *
+   * ⚠ 别用正则写这个判断：`/var(--dur-1)/` 里的括号会被当成分组，
+   *   实际匹配的是 `var--dur-1` —— 永远为 false（这里踩过一次）。
+   */
   ok(
-    durationList.includes('1ms'),
+    durationList.includes('1ms') || durationList.includes('var(--dur-1)'),
     '减少动效时存在把时长压到 1ms 的规则（不是 animation:none —— 那会造成空窗）'
   )
 
