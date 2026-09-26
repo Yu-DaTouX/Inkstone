@@ -50,9 +50,15 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     const dir = await mkdtemp(join(tmpdir(), 'yan-inbox-'))
     try {
       ok((await readInboxState(dir)).dismissed.length === 0, '文件不存在时当作没忽略（不抛）')
+      /* 漏传 readUntil 不能崩：真实调用方构造状态时很容易只想到 dismissed */
       await writeInboxState({ dismissed: ['s1', 's2'] }, dir)
       const back = await readInboxState(dir)
       ok(back.dismissed.length === 2 && back.dismissed.includes('s2'), '写入后能读回来')
+      ok(back.readUntil && typeof back.readUntil === 'object', '文件里没有已读时间时也给出空对象（不是 undefined）')
+      await writeInboxState({ dismissed: [], readUntil: { s1: 1234, s2: Number.NaN, s3: 0 } }, dir)
+      const read = await readInboxState(dir)
+      ok(read.readUntil.s1 === 1234, '已读时间能往返')
+      ok(!('s2' in read.readUntil) && !('s3' in read.readUntil), '非有限值 / 非正数的已读时间被丢掉（不让脏值影响判定）')
       await writeFile(join(dir, 'task-inbox.json'), '{ 这不是 json', 'utf8')
       ok((await readInboxState(dir)).dismissed.length === 0, '文件坏了也不拖垮收件箱（返回空名单）')
       await writeFile(join(dir, 'task-inbox.json'), JSON.stringify({ dismissed: ['ok', 42, null] }), 'utf8')
@@ -75,6 +81,7 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(sessions.length === 1 && sessions[0].id === 's1', '会话投影带上 id / 标题 / 时间')
     ok((await sources.readPlan?.('s1')) === undefined, '没有计划时给 undefined（调用方不出“0/0 进度”的卡）')
     ok(sources.runners().length === 0 && sources.dismissed?.().length === 0, '空注册表与空名单都正常返回')
+    ok(sources.readQuestion === undefined && sources.readStudy === undefined, '没注入的源就不出现（不编状态）')
   }
 
   /* ---- ⑤ 组合：注册表 → 事实 → 卡片（端到端走一遍组装层） ---- */
@@ -96,5 +103,54 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(page.cards[0].status === 'failed', '实例挂了时状态优先报失败（不是“在跑”）')
     ok(page.cards[0].reason === '进程已退出', '卡片带上可读原因')
     ok(String(page.cards[0].progress ?? '').includes('4'), '进度来自计划（第几步 / 共几步）')
+  }
+
+  /* ---- ⑥ 等用户回答（T3）：提问与学习两条链 ---- */
+  {
+    const sources = createTaskInboxSources({
+      registry: { statuses: () => [] },
+      list: async () => [{ id: 's1', title: '会话一', updatedAt: 10 }],
+      dismissed: () => [],
+      readPlan: async () => undefined,
+      questionLog: {
+        list: (id) => {
+          if (id === 'answered') return [{ question: '选哪个？', answer: 'A' }]
+          if (id === 'cancelled') return [{ question: '选哪个？', answer: null, cancelled: true }]
+          if (id === 'pending') return [{ question: '前面的' , answer: 'A' }, { question: '这次选哪个？', answer: null }]
+          return []
+        }
+      },
+      waitingGate: async (id) => (id === 'studying' ? { waiting: true, where: '《课程》·第 3/12 节' } : null)
+    })
+    ok((await sources.readQuestion?.('nolog')) === undefined, '没有问答记录时不出「等你回答」')
+    ok((await sources.readQuestion?.('answered')) === undefined, '已作答的提问不再提醒')
+    ok((await sources.readQuestion?.('cancelled')) === undefined, '已取消的提问不再提醒')
+    const pending = await sources.readQuestion?.('pending')
+    ok(pending?.pending === true && String(pending.text).includes('这次'), '只取最后一条未作答的提问')
+    ok((await sources.readStudy?.('other')) === undefined, '没在等学习者时不出学习状态')
+    const study = await sources.readStudy?.('studying')
+    ok(study?.waiting === true && String(study.reason).includes('课程'), '等学习者时带上可读位置')
+  }
+
+  /* ---- ⑦ 近似审阅（T4）：两个条件缺一不可 ---- */
+  {
+    const calls = []
+    const sources = createTaskInboxSources({
+      registry: { statuses: () => [] },
+      list: async () => [{ id: 's1', title: '会话一', updatedAt: 5000 }],
+      dismissed: () => [],
+      readPlan: async () => undefined,
+      awaitingReview: async (id, session) => {
+        calls.push([id, session.updatedAt])
+        return session.updatedAt > 1000 ? { since: session.updatedAt, reason: '看过了但又有新活动' } : undefined
+      }
+    })
+    /* 契约的判据依赖会话快照：所以必须先 listSessions 一次（投影顺序就是这样） */
+    ok((await sources.readAwaitingReview?.('s1')) === undefined, '还没投影会话时不猜结果（不编 needs_review）')
+    await sources.listSessions()
+    const review = await sources.readAwaitingReview?.('s1')
+    ok(review?.since === 5000, '投影过会话后能拿到近似事实')
+    ok(calls.length === 1 && calls[0][1] === 5000, '近似源拿到的是会话自己的最后活动时间（不是全局时间）')
+    ok((await sources.readAwaitingReview?.('missing')) === undefined, '快照里没有的会话不出状态')
   }
 }

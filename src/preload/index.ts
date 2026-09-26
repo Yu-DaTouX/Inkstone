@@ -564,7 +564,8 @@ const api: YanBridge = {
      */
     page: (query) => invoke<TaskInboxPage>('yan:taskinbox:page', query),
     dismiss: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:dismiss', sessionId),
-    restore: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:restore', sessionId)
+    restore: (sessionId) => invoke<{ ok: boolean; dismissed: string[] }>('yan:taskinbox:restore', sessionId),
+    seen: (sessionId) => invoke<{ ok: boolean }>('yan:taskinbox:seen', sessionId)
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),

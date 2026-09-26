@@ -158,6 +158,20 @@ export class LearningService {
     return isWaitingForLearner(this.store.forRuntime(runtimeKey))
   }
 
+  /**
+   * 等待学习者的**可读原因**（收件箱用）。
+   *
+   * 为什么不直接用 `readGate`：gate 是实现细节，而 `where` 是给人看的
+   * （「《课程》·第 3/12 节「标题」」）。判据与 `waitingForLearner` 一致：
+   * 只有 gate 真的在等才回，否则一律 `null`（让收件箱如实缺这个状态）。
+   */
+  async waitingGate(runtimeKey: string): Promise<{ waiting: boolean; where?: string } | null> {
+    if (!runtimeKey) return null
+    const gate = await this.store.readGate(runtimeKey)
+    if (!gate?.waiting) return null
+    return { waiting: true, ...(gate.where ? { where: gate.where } : {}) }
+  }
+
   /* ------------------------------ 查询 ------------------------------ */
 
   async status(runtimeKey: string): Promise<StudyStatus> {
