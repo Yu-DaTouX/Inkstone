@@ -30,7 +30,7 @@
   }
   const store = window.__yanStore
   const byTestId = (id) => q(`[data-testid="${id}"]`)
-  const TAB_ORDER = ['auth', 'appearance', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'about']
+  const TAB_ORDER = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'about']
 
   try {
     localStorage.setItem('yan.onboarded', '1')
@@ -69,6 +69,8 @@
     const anchors = {
       auth: ['auth-msg', 'auth-recheck'],
       appearance: ['set-ui-scale', 'set-density', 'theme-dark'],
+      /* 工作区是 B3 新增的 tab（模式 / 活动 / 空间管理） */
+      workspace: ['set-workspace-mode', 'set-space-new-name'],
       context: ['ctx-source', 'ctx-cap', 'ctx-save'],
       knowledge: ['kn-toggle', 'kn-project'],
       capabilities: ['set-capabilities', 'cap-strategy'],
