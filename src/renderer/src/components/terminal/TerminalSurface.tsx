@@ -236,7 +236,7 @@ export function TerminalSurface() {
   if (!available) {
     return (
       <div className="term-unavailable" data-testid="terminal-unavailable">
-        <Icon name="activity" size={16} />
+        <Icon name="terminal" size={16} />
         <div className="term-unavailable-text">
           <div>{t('term.unavailable')}</div>
           {error ? <code data-testid="terminal-error">{error}</code> : null}

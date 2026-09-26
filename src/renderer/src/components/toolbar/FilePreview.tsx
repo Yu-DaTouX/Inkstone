@@ -155,7 +155,7 @@ export function FilePreviewPane() {
   return (
     <div className="fp" data-testid="file-preview">
       <div className="fp-head">
-        <Icon name="tag" size={12} />
+        <Icon name="file" size={12} />
         <span className="fp-name" title={data?.abs || preview.path}>
           {data?.name || preview.path}
         </span>
@@ -183,7 +183,7 @@ export function FilePreviewPane() {
           title={t('fp.copyPath')}
           aria-label={t('fp.copyPath')}
         >
-          <Icon name="layers" size={12} />
+          <Icon name="copy" size={12} />
         </button>
         {data?.abs ? (
           <button
@@ -202,7 +202,7 @@ export function FilePreviewPane() {
             title={t('fp.open')}
             aria-label={t('fp.open')}
           >
-            <Icon name="globe" size={12} />
+            <Icon name="external" size={12} />
           </button>
         ) : null}
         <button

@@ -93,19 +93,19 @@ ok(hasFontFace, "@font-face 内嵌了字体（不能只靠系统回退）");
 ok(!/^\s*["']?(monospace|ui-monospace)/.test(fontVal),
    "--font-mono 首项不是裸 monospace（Windows 会掉到 Courier New）");
 
-/* ---- 8. 图标必须走 reicon sprite，不能再用 Unicode 字形 ---- */
-const spritePath = join(HERE, "icons", "reicon.svg");
+/* ---- 8. 图标必须走 sprite，不能再用 Unicode 字形 ---- */
+const spritePath = join(HERE, "icons", "sprite.svg");
 const sprite = existsSync(spritePath) ? readFileSync(spritePath, "utf8") : "";
 const symbolIds = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map(m => m[1]));
 const iconUses = [...new Set([...src.matchAll(/<use\s+href="#(i-[\w-]+)"/g)].map(m => m[1]))];
 
-ok(symbolIds.size > 0, `reicon sprite 存在（${symbolIds.size} 个 symbol）`);
+ok(symbolIds.size > 0, `图标 sprite 存在（${symbolIds.size} 个 symbol）`);
 if (iconUses.length) {
   const dangling = iconUses.filter(u => !symbolIds.has(u));
   ok(dangling.length === 0, `${iconUses.length} 个 <use> 引用全部有对应 symbol` +
      (dangling.length ? " -> 悬空: " + dangling.join(", ") : ""));
 } else {
-  todo(false, "图标还是 Unicode 字符（`◐` `↺` `✓`），应换成 icons/reicon.svg 里的 sprite");
+  todo(false, "图标还是 Unicode 字符（`◐` `↺` `✓`），应换成 icons/sprite.svg 里的 sprite");
 }
 
 // 常见的“既当图标又当文字”的字符

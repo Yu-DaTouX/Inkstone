@@ -29,7 +29,7 @@ import { shortProject } from './rail-utils'
 
 /** 可选的预设头像图标（都来自内置 sprite，见 src/renderer/src/icons） */
 const AVATAR_ICONS = [
-  'sparkle',
+  'sparkles',
   'sparkles',
   'moon',
   'sun',
@@ -90,7 +90,7 @@ export function RailUser() {
         aria-expanded={open}
       >
         {usingIcon && profile?.avatarValue ? (
-          <Icon name={profile.avatarValue as 'sparkle'} size={14} />
+          <Icon name={profile.avatarValue as 'sparkles'} size={14} />
         ) : (
           <span className="rail-avatar-letter">{letter}</span>
         )}

@@ -475,7 +475,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             data-binding={workModeShortcut ?? DEFAULT_WORK_MODE_BINDING}
             title={shortcutNeedsModifier ? t('set.workModeKeyInvalid') : undefined}
           >
-            <Icon name="sparkle" size={12} />
+            <Icon name="sparkles" size={12} />
             <span>
               {shortcutRecording
                 ? t('set.workModeKeyRecording')
@@ -498,7 +498,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             data-testid="set-work-mode-key-enabled"
             data-on={workModeShortcutOn ? '1' : '0'}
           >
-            <Icon name="sparkle" size={12} />
+            <Icon name="sparkles" size={12} />
             <span>{workModeShortcutOn ? t('set.on') : t('set.off')}</span>
           </button>
         </div>
@@ -790,7 +790,7 @@ function SoundTab() {
               data-testid={`set-sound-event-${ev.id}`}
               data-on={sound.events[ev.id] ? '1' : '0'}
             >
-              <Icon name="sparkle" size={12} />
+              <Icon name="sparkles" size={12} />
               <span>{sound.events[ev.id] ? t('set.on') : t('set.off')}</span>
             </button>
             <button

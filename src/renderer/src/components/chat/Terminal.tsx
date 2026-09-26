@@ -221,7 +221,7 @@ export function TerminalWindow({
     >
       <div className="term-bar">
         <span className={`term-ico ${running ? 'live' : ''}`} aria-hidden>
-          <Icon name="activity" size={12} />
+          <Icon name="terminal" size={12} />
         </span>
         <span className="term-title" title={target || call.name}>
           {call.name}
@@ -238,7 +238,7 @@ export function TerminalWindow({
           title={t('term.copy')}
           data-testid="term-copy"
         >
-          <Icon name={copied ? 'check' : 'layers'} size={12} />
+          <Icon name={copied ? 'check' : 'copy'} size={12} />
         </button>
         <button
           className="term-act"

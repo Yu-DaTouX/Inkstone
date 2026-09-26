@@ -1256,7 +1256,7 @@ export function Rail() {
                         />
                       ) : (
                         <>
-                          <Icon name="layers" size={12} className="proj-group-ico" />
+                          <Icon name="group" size={12} className="proj-group-ico" />
                           <span className="proj-group-name" title={group.name}>{group.name}</span>
                           {(groupRunning.get(group.id) ?? 0) > 0 ? (
                             <span
@@ -1264,7 +1264,7 @@ export function Rail() {
                               data-testid="rail-group-running"
                               title={t('rail.runningCount', { n: groupRunning.get(group.id) ?? 0 })}
                             >
-                              <Icon name="activity" size={12} />
+                              <Icon name="running" size={12} />
                               {groupRunning.get(group.id)}
                             </span>
                           ) : null}
@@ -1296,7 +1296,7 @@ export function Rail() {
                         {
                           id: 'rail-group-rename-action',
                           label: t('rail.renameGroup'),
-                          icon: 'tag',
+                          icon: 'pencil',
                           onSelect: () => {
                             setGroupDraft(group.name)
                             setGroupError('')
@@ -1410,7 +1410,7 @@ export function Rail() {
                         data-testid="rail-project-running"
                         title={t('rail.runningCount', { n: runningIn(p.list) })}
                       >
-                        <Icon name="activity" size={12} />
+                        <Icon name="running" size={12} />
                         {runningIn(p.list)}
                       </span>
                     ) : null}
@@ -1433,7 +1433,7 @@ export function Rail() {
                           else { await newSession({ cwd: p.cwd, projectId: p.projectId, scope: 'project' }); await useStore.getState().refreshSessions() }
                         }
                       },
-                      { id: 'rail-project-rename', label: t('rail.renameProject'), icon: 'tag', onSelect: () => { setProjDraft(p.label); setProjRename(p.cwd) } },
+                      { id: 'rail-project-rename', label: t('rail.renameProject'), icon: 'pencil', onSelect: () => { setProjDraft(p.label); setProjRename(p.cwd) } },
                       { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd) } },
                       { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd) } },
                       {
@@ -1441,7 +1441,7 @@ export function Rail() {
                         label: showArchived ? t('rail.restoreProject') : t('rail.archiveProject'),
                         onSelect: () => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) }) }
                       },
-                      { id: 'rail-project-group', label: t('rail.moveGroup'), icon: 'layers', onSelect: () => { setGroupingProject(p.cwd); setGroupDraft('') } }
+                      { id: 'rail-project-group', label: t('rail.moveGroup'), icon: 'group', onSelect: () => { setGroupingProject(p.cwd); setGroupDraft('') } }
                     ]}
                   />
                   {groupingProject === p.cwd ? <div className="project-menu project-group-menu">
@@ -1744,7 +1744,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             title={t('rail.branchCount', { n: branchCount })}
             onClick={onToggleBranches}
           >
-            <Icon name="layers" size={12} className="srow-btoggle-ico" />
+            <Icon name="branch" size={12} className="srow-btoggle-ico" />
             <span className="srow-btoggle-n">{branchCount}</span>
             <Icon name="chevron-right" size={12} className="chev" />
           </button>
@@ -1881,7 +1881,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               onCloseMenu()
             }}
           >
-            <Icon name="layers" size={12} />
+            <Icon name="branch" size={12} />
             {t('rail.forkLast')}
           </button>
           <button
@@ -1902,7 +1902,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               onCloseMenu()
             }}
           >
-            <Icon name="tag" size={12} />
+            <Icon name="pencil" size={12} />
             {t('rail.rename')}
           </button>
           <button

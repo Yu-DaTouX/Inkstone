@@ -502,7 +502,7 @@ export function RightPanel() {
             data-testid="right-window-tab-start"
             onClick={() => switchWindow('start')}
           >
-            <Icon name="globe" size={12} />
+            <Icon name="home" size={12} />
             <span className="rp-title">{t('rp.home')}</span>
           </div>
 
@@ -598,7 +598,7 @@ export function RightPanel() {
                   switchWindow('terminal', tab.resourceKey)
                 }}
               >
-                <Icon name="activity" size={12} />
+                <Icon name="terminal" size={12} />
                 <span title={info?.cwd}>{info?.title ?? t('term.tab')}</span>
                 <button
                   type="button"
@@ -650,7 +650,7 @@ export function RightPanel() {
             <span>审查</span>
           </button>
           <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('terminal')}>
-            <Icon name="activity" size={12} />
+            <Icon name="terminal" size={12} />
             <span>终端</span>
           </button>
           <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('browser')}>
@@ -662,7 +662,7 @@ export function RightPanel() {
             <span>文件</span>
           </button>
           <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('start')}>
-            <Icon name="layers" size={12} />
+            <Icon name="dashboard" size={12} />
             <span>工作信息</span>
           </button>
         </div>
@@ -1148,7 +1148,7 @@ function FloatPlaceholder({
   const id = tile.id as ToolSectionId
   return (
     <div className="rp-float-ph" data-tool-id={tile.id} data-testid={`float-ph-${tile.id}`}>
-      <Icon name="layers" size={12} />
+      <Icon name="tile" size={12} />
       <span className="rp-float-ph-name">{t(SECTION_TITLE[id])}</span>
       <span className="rp-float-ph-tag">{t('tl.floating')}</span>
       <span className="spacer" />
@@ -1930,7 +1930,7 @@ function ContextSection() {
           title={t('status.compact')}
           onClick={() => void compactNow()}
         >
-          <Icon name={session?.isCompacting ? 'refresh' : 'layers'} size={12} />
+          <Icon name={session?.isCompacting ? 'refresh' : 'compact'} size={12} />
           <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
         </button>
       </div>
@@ -2555,7 +2555,7 @@ function GoalOutputs() {
               title={link.target}
               onClick={() => void window.yan.browser.openExternal(link.target)}
             >
-              <Icon name="globe" size={12} />
+              <Icon name="external" size={12} />
               <span>{link.label || link.target}</span>
             </button>
           ))}

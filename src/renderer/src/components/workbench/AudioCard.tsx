@@ -72,7 +72,7 @@ export function AudioCard({ courseId, sourceId, version }: { courseId?: string; 
   return (
     <div className="wb-memory-panel wb-audio" data-testid="space-learn-audio">
       <div className="wb-learn-ws-answer-head">
-        <Icon name="activity" size={12} />
+        <Icon name="audio" size={12} />
         <span>{t('space.audio.head')}</span>
       </div>
       <p className="wb-card-meta" data-testid="space-audio-boundary">

@@ -107,4 +107,4 @@ npm run launch
 
 ## 许可证
 
-[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方字体、图标、代码高亮和内置 pi 的许可随分发保留。
+[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方字体、图标、代码高亮和内置 pi 的许可随分发保留，清单见[第三方许可](docs/THIRD-PARTY.md)。

@@ -33,12 +33,12 @@
     "build": "electron-vite build",
     "start": "node scripts/launch.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs && npm run lint:layers",
-    "icons": "node scripts/design/extract-icons.mjs",
+    "icons": "node scripts/design/icons/build-icons.mjs",
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
     "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run check:shell-icons && npm run check:css-docs && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs fsedge atpathedge projectswitch knowledgeasync gitreview workspacechanges branch topbar controlstates iconsurface goallinks outlinepos iconstate narrow todonew sendkey railmini pending slashcmd tools vheight tooltiles tilerestart settingstabs resourceheads panels symmetry titlebar motion atPath auth authEnv reasoning terminal terminalsurface streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename railreorder usageagg",
+    "check": "npm run typecheck && npm run check:shell-icons && npm run check:css-docs && npm run check:icons && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog externalchrome browser zoom resize fs fsedge atpathedge projectswitch knowledgeasync gitreview workspacechanges branch topbar controlstates iconsurface goallinks outlinepos iconstate narrow todonew sendkey railmini pending slashcmd tools vheight tooltiles tilerestart settingstabs resourceheads panels symmetry titlebar motion atPath auth authEnv reasoning terminal terminalsurface streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename railreorder usageagg",
     "test:unit": "node scripts/test-unit.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-skill-files-scheduler.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
@@ -67,7 +67,8 @@
     "installer:sidebar": "electron scripts/build-installer-sidebar.mjs",
     "visual:matrix": "node scripts/visual-matrix-run.mjs",
     "check:shell-icons": "node scripts/check-shell-icons.mjs",
-    "capture:native-overlay": "node scripts/capture-native-overlay.mjs"
+    "capture:native-overlay": "node scripts/capture-native-overlay.mjs",
+    "check:icons": "node scripts/check-icons.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
@@ -77,6 +78,7 @@
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "lucide-static": "^1.48.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.0"
   },

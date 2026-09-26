@@ -663,7 +663,7 @@ function FileSearchResults({
                 onAdd(entry.path)
               }}
             >
-              <Icon name="tag" size={12} />
+              <Icon name="plus" size={12} />
             </button>
           ) : null}
         </div>
@@ -980,7 +980,7 @@ function TreeRow({
               onAdd(path)
             }}
           >
-            <Icon name="tag" size={12} />
+            <Icon name="plus" size={12} />
           </button>
         </span>
       ) : null}

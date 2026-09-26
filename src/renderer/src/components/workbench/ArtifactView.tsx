@@ -304,7 +304,7 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                   data-testid={`space-art-item-${doc.id}`}
                   onClick={() => void pick(doc)}
                 >
-                  <Icon name="tag" size={12} />
+                  <Icon name="file" size={12} />
                   <span className="wb-list-title">{doc.title}</span>
                   <span className="wb-list-meta">
                     {doc.kind === 'checklist' ? `${t('space.art.kindChecklist')} · ` : ''}
@@ -337,7 +337,7 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
               />
               <div className="wb-art-actions">
                 <button data-testid="space-art-tolearn" onClick={() => setLearnOpen((v) => !v)}>
-                  <Icon name="layers" size={12} />
+                  <Icon name="learn" size={12} />
                   {t('space.art.toLearn')}
                 </button>
                 <button data-testid="space-art-export" onClick={() => void exportFlow()}>
@@ -489,7 +489,7 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                     title={t('space.art.compareHint')}
                     onClick={() => void compareFlow()}
                   >
-                    <Icon name="layers" size={12} />
+                    <Icon name="compare" size={12} />
                     {t('space.art.compare')}
                   </button>
                 </div>
@@ -511,7 +511,7 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                           title={t('space.art.sourceOpen')}
                           onClick={() => void openSource(ref)}
                         >
-                          <Icon name="globe" size={12} />
+                          <Icon name="external" size={12} />
                           <span className="wb-art-source-title">{hit?.title ?? ref.sourceId}</span>
                           <span className="wb-list-meta">
                             v{ref.version}

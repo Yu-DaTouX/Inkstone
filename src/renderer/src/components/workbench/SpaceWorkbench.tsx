@@ -58,7 +58,7 @@ export function SpaceWorkbench({ view, onView, onClose, onOpenSession }: Props):
 
   const tabs: { id: SpaceView; icon: IconName; label: string }[] = SPACE_VIEWS.map((id) => ({
     id,
-    icon: id === 'overview' ? 'sparkles' : id === 'library' ? 'folder-open' : id === 'artifact' ? 'tag' : 'check-circle',
+    icon: id === 'overview' ? 'sparkles' : id === 'library' ? 'folder-open' : id === 'artifact' ? 'file' : 'check-circle',
     label: t(`space.tab.${id}`)
   }))
 

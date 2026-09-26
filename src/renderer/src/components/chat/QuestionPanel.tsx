@@ -325,7 +325,7 @@ function PanelBody({
               />
             ) : (
               <button className="qpanel-custom-open" data-testid="question-panel-custom-open" disabled={busy} onClick={() => setCustom(true)}>
-                <Icon name="tag" size={12} />
+                <Icon name="pencil" size={12} />
                 {t('q.customReply')}
               </button>
             )

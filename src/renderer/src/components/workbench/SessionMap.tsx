@@ -689,13 +689,13 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
       <div className="wb-map" data-testid="session-map">
         <header className="wb-map-head">
           <span className="wb-map-title">
-            <Icon name="layers" size={14} />
+            <Icon name="map" size={14} />
             {t('map.title')}
           </span>
           <span className="wb-map-stats" />
         </header>
         <div className="wb-map-empty" data-testid="session-map-empty">
-          <Icon name="layers" size={16} />
+          <Icon name="map" size={16} />
           {t('map.empty')}
         </div>
       </div>
@@ -706,7 +706,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     <div className="wb-map" data-testid="session-map">
       <header className="wb-map-head">
         <span className="wb-map-title">
-          <Icon name="layers" size={14} />
+          <Icon name="map" size={14} />
           {t('map.title')}
         </span>
         <label className="wb-map-search">

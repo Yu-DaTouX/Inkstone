@@ -66,7 +66,7 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
             title={t('chat.forkHere')}
             onClick={() => void forkFromText(msg.text)}
           >
-            <Icon name="layers" size={12} />
+            <Icon name="branch" size={12} />
             {t('chat.fork')}
           </button>
         </div>
@@ -86,7 +86,7 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
                  * 消息压根没贴过图。
                  */
                 <div key={i} className="msg-image-missing" title={t('chat.imageMissing')}>
-                  <Icon name="tag" size={12} />
+                  <Icon name="image" size={12} />
                   <span>{t('chat.imageMissing')}</span>
                 </div>
               )
@@ -172,7 +172,7 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
       data-tools={turn.tools.length}
     >
       <div className="gutter">
-        <Icon name="sparkle" size={12} />
+        <Icon name="sparkles" size={12} />
       </div>
       <div className="msg-body">
         {visibleImageProgress.length ? <ImageProgressList items={visibleImageProgress} /> : null}
@@ -335,7 +335,7 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
   return (
     <section className="artifact-card" data-artifact-id={artifact.id}>
       <div className="artifact-head">
-        <Icon name={artifact.kind === 'image' || artifact.kind === 'svg' ? 'sparkles' : 'tag'} size={12} />
+        <Icon name={artifact.kind === 'image' || artifact.kind === 'svg' ? 'sparkles' : 'file'} size={12} />
         <strong title={artifact.description}>{artifact.filename}</strong>
         <span className="artifact-meta">{fmtArtifactBytes(artifact.bytes)}</span>
         <span className="spacer" />

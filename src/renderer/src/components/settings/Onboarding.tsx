@@ -217,7 +217,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               <span>{t('ob.tip1')}</span>
             </div>
             <div className="ob-tip">
-              <Icon name="layers" size={12} />
+              <Icon name="terminal" size={12} />
               <span>{t('ob.tip2')}</span>
             </div>
             <div className="ob-tip">
