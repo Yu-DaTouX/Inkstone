@@ -39,8 +39,8 @@ import { samePath } from '../../../../shared/session-path'
  * 的模式控件和 Tab 快捷键负责。
  */
 const RAIL_MODES = [
-  { id: 'coding', labelKey: 'mode.coding' },
-  { id: 'daily', labelKey: 'mode.daily' }
+  { id: 'coding', labelKey: 'mode.coding', shortKey: 'mode.coding.short' },
+  { id: 'daily', labelKey: 'mode.daily', shortKey: 'mode.daily.short' }
 ] as const
 
 type RailModeId = (typeof RAIL_MODES)[number]['id']
@@ -984,7 +984,9 @@ export function Rail() {
                   }
                 }}
               >
-                {t(m.labelKey)}
+                <span className="rail-mode-opt-full">{t(m.labelKey)}</span>
+                {/* 极窄栏时的两字简称：宽栏用全称，窄栏不至于截成「编码…」（见 rail.css 的 railhead 容器查询） */}
+                <span className="rail-mode-opt-short" aria-hidden="true">{t(m.shortKey)}</span>
               </button>
             ))}
           </div>

@@ -13,6 +13,16 @@
   min-width: 0;
   overflow: hidden;
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  /*
+   * 顶部模式拨杆的容器查询上下文。
+   *
+   * 为什么加在 `.rail-top` 而不是 `.rail`：`container-type` 会给元素加上 layout
+   * containment，而 layout containment 会让 **fixed 定位的后代以它为包含块** ——
+   * 会话右键菜单就是 fixed（相对视口算的坐标），放到 `.rail` 上会整体错位。
+   * `.rail-top` 里没有 fixed 后代，宽度又跟着栏宽走，正好当查询容器。
+   */
+  container-type: inline-size;
+  container-name: railhead;
 }
 .rail-body {
   padding: 0 6px 8px;
@@ -1250,6 +1260,30 @@ body.rail-dragging .srow {
 
 .rail-mode-opt.on {
   color: var(--fg);
+}
+
+/* 两字简称：默认不显示，只在极窄栏时接管（见下方 railhead 容器查询） */
+.rail-mode-opt-short {
+  display: none;
+}
+
+/*
+ * 极窄栏：`编码模式 / 日常模式` 四个字放不下，会被截成「编码…」。
+ *
+ * 换成两字简称，而不是缩小字号或省略 —— 模式名是导航标签，截断后反而更难认。
+ * 全称仍由按钮的 `title` 与 `aria-label` 提供（见 Rail.tsx），语义不减。
+ *
+ * 阈值按 `.rail-top` 的**内容宽**算（已扣掉左右各 12px 的 padding）：
+ * 四字 + 内边距约需 126px，加上图标 / 品牌 / 间距 / 搜索按钮约 77px → 210px 起就不够。
+ */
+@container railhead (max-width: 210px) {
+  .rail-mode-opt-full {
+    display: none;
+  }
+
+  .rail-mode-opt-short {
+    display: inline;
+  }
 }
 
 .rail-mode-opt:focus-visible {
