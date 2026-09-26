@@ -126,7 +126,12 @@
       click(newBtn)
       const cleared = await until(() => qa('.msg').length === 0, 8000)
       ok(cleared, '新建后消息清空（现在 ' + qa('.msg').length + ' 条）')
-      ok(!!q('.empty-stream'), '空状态显示（.empty-stream）')
+      /*
+       * B3 之后「没有消息时看什么」有两档：日常模式是工作台首页（.wb-home），
+       * 编码模式（或地图开着时）是对话空态（.empty-stream）。
+       * 只断言其中一个会把另一档误判成失败。
+       */
+      ok(!!q('.empty-stream') || !!q('.wb-home'), '新建后显示开场（对话空态或工作台首页）')
     }
 
     out.push('')
