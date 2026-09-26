@@ -108,6 +108,8 @@ const CASES = {
   course: { probe: 'scripts/probe/course.js', delay: 16000, cost: 0 },
   // 实施-25 P08：学习状态与闸门（阶段推进 / 等作答 / 自问自答被拒 / 位置保留；cost 0）
   study: { probe: 'scripts/probe/study.js', delay: 14000, cost: 0 },
+  // 实施-25 P09：导师页面（三栏 / 档位 / 学这一节 → 教材定位 / 等作答联动 / 选段动作；cost 0）
+  tutor: { probe: 'scripts/probe/tutor.js', delay: 18000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。
