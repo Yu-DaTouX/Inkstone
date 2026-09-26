@@ -244,7 +244,11 @@ export interface InboxFilter {
 }
 
 export function filterTaskCards(cards: TaskCard[], filter: InboxFilter = {}): TaskCard[] {
-  let out = cards
+  /*
+   * **总是复制**：调用方拿到的可能是服务缓存里的数组，
+   * 不复制的话后面的 `.sort()` 会就地改缓存顺序（共享可变状态）。
+   */
+  let out = [...cards]
   if (filter.statuses && filter.statuses.length > 0) {
     const want = new Set(filter.statuses)
     out = out.filter((c) => want.has(c.status))

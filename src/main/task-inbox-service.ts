@@ -87,15 +87,34 @@ export function createTaskInboxService(sources: TaskInboxSources, options: TaskI
   async function projectAll(): Promise<{ cards: TaskCard[]; degraded: number }> {
     if (cache && now() - cache.at < ttlMs) return { cards: cache.cards, degraded: cache.degraded }
 
-    const [sessions, runners, dismissed] = await Promise.all([
-      sources.listSessions(),
-      Promise.resolve(sources.runners()),
-      Promise.resolve(sources.dismissed?.() ?? [])
-    ])
+    /*
+     * 顶层三个源也要降级：文件头写的硬边界是「某个来源读不到只让那一项为空」。
+     * `listSessions` 要读 433MB 的会话目录，正是最容易抛的那一个 ——
+     * 它抛了不应让整页 reject。
+     */
+    let sessions: InboxSession[] = []
+    let runners: RunnerFacts[] = []
+    let dismissed: string[] = []
+    let topFailed = 0
+    try {
+      sessions = await sources.listSessions()
+    } catch {
+      topFailed++
+    }
+    try {
+      runners = sources.runners()
+    } catch {
+      topFailed++
+    }
+    try {
+      dismissed = sources.dismissed?.() ?? []
+    } catch {
+      topFailed++
+    }
     const runnerBySession = new Map(runners.map((r) => [r.sessionId, r]))
     const dismissedSet = new Set(dismissed)
 
-    let degraded = 0
+    let degraded = topFailed
     const cards: TaskCard[] = []
     for (const s of sessions) {
       const [plan, goal, question, study, subagents, awaitingReview] = await Promise.all([

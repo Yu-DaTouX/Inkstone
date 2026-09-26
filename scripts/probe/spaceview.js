@@ -43,12 +43,14 @@
   await sleep(200)
 
   log('=== 1. 日常模式 + 建空间 ===')
-  const modeSwitch = q('[data-testid="mode-switch"]')
+  const modeSwitch = null /* 左栏拨杆已移除（实施-27 B3）：模式入口在设置 · 工作区 */
   const dailyBtn = [...(modeSwitch?.querySelectorAll('button') ?? [])].find((b) => /日常/.test(b.textContent))
   if (dailyBtn) {
     click(dailyBtn)
     await sleep(600)
   }
+  window.__yanStore.setState({ workspaceMode: 'daily' })
+  await sleep(300)
   ok(S().workspaceMode === 'daily', '已切到日常模式', String(S().workspaceMode))
 
   const space = await S().createSpace('探针空间（工作台）')

@@ -16,6 +16,7 @@ import { delimiter, dirname, join } from 'node:path'
 import {
   SEARCH_LIMIT_PER_SOURCE_MAX,
   SEARCH_OUTPUT_MAX_BYTES,
+  SEARCH_QUERY_MAX,
   SEARCH_SOURCES,
   SEARCH_TIMEOUT_MS_MAX,
   type SearchItem,
@@ -80,6 +81,8 @@ export interface BackendTarget {
   prefix: string[]
   /** 给人看的说明（写进错误信息与 doctor） */
   source: string
+  /** 有值时直接当「后端不可用」—— 例如 Windows 上只找到 .cmd shim 却推不出包入口 */
+  error?: string
 }
 
 /**
@@ -103,9 +106,27 @@ export function resolveBackendTarget(explicit?: string): BackendTarget {
     /* npm 全局布局：<prefix>/opencli.cmd 与 <prefix>/node_modules/@jackwener/opencli */
     const entry = join(dirname(shim), 'node_modules', '@jackwener', 'opencli', 'dist', 'src', 'main.js')
     if (fileExists(entry)) return { file: process.execPath, prefix: [entry], source: 'node ' + entry }
-    return { file: shim, prefix: [], source: shim }
+    /*
+     * 只找到 `.cmd` 而推不出包入口：**不能**直接 spawn 它（不经 shell 起不来，
+     * 经 shell 则要把查询词交给 shell —— 两样都不接受）。此处当成「不可用」上报。
+     */
+    return {
+      file: shim,
+      prefix: [],
+      source: shim,
+      error: `找到 ${shim} 但推不出 OpenCLI 的包入口（${entry}）；请用 YAN_OPENCLI_JS 指定 dist/src/main.js 的路径`
+    }
   }
   return { file: 'opencli', prefix: [], source: 'opencli（PATH 里没找到）' }
+}
+
+/**
+ * 用 Electron 自带的 Node 跑 JS 时必须显式声明 `ELECTRON_RUN_AS_NODE=1`，
+ * 否则 `spawn(process.execPath, [...])` 会再拉起一个**应用实例**（而不是跑那个脚本）。
+ * 仓库里 protocol.ts / credentials.ts / packages.ts / yan-cli.ts 都是这个口径。
+ */
+function spawnEnv(file: string): NodeJS.ProcessEnv | undefined {
+  return file === process.execPath ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : undefined
 }
 
 export function findSource(id: string): SearchSource | undefined {
@@ -119,7 +140,11 @@ export function parseBackendError(raw: string): { code?: string; message?: strin
   const out: { code?: string; message?: string } = {}
   if (code) out.code = code
   if (message) out.message = message.trim()
-  if (!out.code && !out.message) out.message = raw.trim().slice(0, 300)
+  if (!out.code && !out.message) {
+    const cleaned = raw.trim().slice(0, 300)
+    /* 纯空白输出时不能给空字符串（调用方的 `?? \`后端退出码 …\`` 不会触发） */
+    out.message = cleaned || '后端没有任何输出'
+  }
   return out
 }
 
@@ -128,10 +153,25 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
   return (source, query, opts) =>
     new Promise<SourceRun>((resolve) => {
       const started = Date.now()
+      if (target.error) {
+        resolve({
+          source: source.id,
+          rows: null,
+          unavailable: true,
+          error: { code: 'backend_unavailable', message: target.error },
+          elapsedMs: 0
+        })
+        return
+      }
       const args = [...target.prefix, source.app, source.subcommand, query, '-f', 'json', '--limit', String(opts.limit)]
+      const env = spawnEnv(target.file)
       let child: ReturnType<typeof spawn>
       try {
-        child = spawn(target.file, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        child = spawn(target.file, args, {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          ...(env ? { env } : {})
+        })
       } catch (e) {
         resolve({
           source: source.id,
@@ -238,6 +278,9 @@ export function normalizeQuery(
 ): { ok: true; text: string; sources: SearchSource[]; limitPerSource: number; limitTotal: number; timeoutMs: number } | { ok: false; code: string; message: string } {
   const text = (input.text ?? '').trim()
   if (!text) return { ok: false, code: 'empty_query', message: '查询词是空的' }
+  if (text.length > SEARCH_QUERY_MAX) {
+    return { ok: false, code: 'query_too_long', message: `查询词太长（上限 ${SEARCH_QUERY_MAX} 字）` }
+  }
   const wanted = input.sources && input.sources.length > 0 ? input.sources : SEARCH_SOURCES.map((s) => s.id)
   const sources: SearchSource[] = []
   for (const id of wanted) {
@@ -268,7 +311,8 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<S
       items: [],
       sources: [],
       truncated: false,
-      durationMs: deps.now() - started
+      durationMs: deps.now() - started,
+      error: { code: parsed.code, message: parsed.message }
     }
   }
 
@@ -339,10 +383,16 @@ export async function searchDoctor(deps: {
 /** doctor 用的最小探针（单独拿出来，便于单测替身） */
 async function defaultProbe(args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
   const target = resolveBackendTarget()
+  if (target.error) return { code: -1, stdout: '', stderr: target.error }
+  const env = spawnEnv(target.file)
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(target.file, [...target.prefix, ...args], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      child = spawn(target.file, [...target.prefix, ...args], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        ...(env ? { env } : {})
+      })
     } catch (e) {
       resolve({ code: -1, stdout: '', stderr: e instanceof Error ? e.message : String(e) })
       return

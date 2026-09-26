@@ -5450,7 +5450,10 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       window.__yanStore.setState({ workspaceMode: 'daily' });
       const now = Date.now();
       window.__yanStore.setState({
-        messages: [],
+        messages: [
+          { id: 'mx1', role: 'user', text: '先把这一段理清。', timestamp: now - 3600000 },
+          { id: 'mx2', role: 'assistant', text: '已整理成三条要点。', timestamp: now - 3500000 }
+        ],
         sessions: [
           { id: 'wb1', path: 'C:/yan-matrix/wb1.jsonl', cwd: 'C:/proj/inkstone', title: '整理额度卡与上下文 mini', named: true, projectId: 'p1', createdAt: now - 86400000, updatedAt: now - 3600000, messageCount: 12, lastActivityAt: now - 3600000 },
           { id: 'wb2', path: 'C:/yan-matrix/wb2.jsonl', cwd: 'C:/proj/inkstone', title: '为图标体系收口做动作清单', named: true, projectId: 'p1', parentSession: 'C:/yan-matrix/wb1.jsonl', createdAt: now - 172800000, updatedAt: now - 7200000, messageCount: 5, lastActivityAt: now - 7200000 },
@@ -5495,7 +5498,10 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const now = Date.now();
       const parent = 'C:/yan-matrix/turns-parent.jsonl';
       window.__yanStore.setState({
-        messages: [],
+        messages: [
+          { id: 'mx1', role: 'user', text: '先把这一段理清。', timestamp: now - 3600000 },
+          { id: 'mx2', role: 'assistant', text: '已整理成三条要点。', timestamp: now - 3500000 }
+        ],
         session: { ...(window.__yanStore.getState().session ?? {}), sessionId: 'mtp', sessionFile: parent, conversationFile: undefined },
         sessions: [
           { id: 'mtp', path: parent, cwd: 'C:/proj/inkstone', title: '精读材料讨论', named: true, projectId: 'p1', createdAt: now - 86400000, updatedAt: now - 3600000, messageCount: 6, lastActivityAt: now - 3600000 },

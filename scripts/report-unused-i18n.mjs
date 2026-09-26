@@ -14,19 +14,29 @@ import { join, relative } from 'node:path'
 
 const ROOT = process.cwd()
 const LOCALES = ['src/renderer/src/i18n/zh-CN.json', 'src/renderer/src/i18n/en-US.json']
+/**
+ * 只看**会被发布/构建的源码**：`src/`、`resources/`、`scripts/`。
+ *
+ * 为什么不遍历全仓：`.tmp/`（一次性脚本与快照）、`.local-docs/`（内部资料）、
+ * `docs/design/`（迁移前副本）、`docs/archive/`、`out/`、`release/`
+ * 里都可能有**旧代码**，它们会把已经死掉的键“复活”。
+ * （2026-09-27 实测：扫到 `.tmp/commit-split/final/` 的 B3 前快照，
+ * 导致 `mode.*` / `rail.space*` 等 11 个死键被漏删。）
+ */
+const SCAN_DIRS = ['src', 'resources', 'scripts']
 
 const files = []
-;(function walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'out' || entry === 'release' || entry === '.git') continue
-    const p = join(dir, entry)
-    const st = statSync(p)
-    if (st.isDirectory()) walk(p)
-    else if (/\.(ts|tsx|mjs|cjs|js|json|md)$/.test(entry) && !LOCALES.some((l) => p.endsWith(l.replace(/\//g, '\\')) || p.endsWith(l))) {
-      files.push(p)
+for (const dir of SCAN_DIRS) {
+  ;(function walk(d) {
+    for (const entry of readdirSync(d)) {
+      if (entry === 'node_modules') continue
+      const p = join(d, entry)
+      const st = statSync(p)
+      if (st.isDirectory()) walk(p)
+      else if (/\.(ts|tsx|mjs|cjs|js|json|md)$/.test(entry) && !LOCALES.includes(p.replace(/\\/g, '/'))) files.push(p)
     }
-  }
-})(ROOT)
+  })(dir)
+}
 
 const sources = files.map((f) => ({ path: f, text: readFileSync(f, 'utf8') }))
 

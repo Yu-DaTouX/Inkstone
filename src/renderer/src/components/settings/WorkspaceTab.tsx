@@ -158,7 +158,15 @@ export function WorkspaceTab() {
             <button
               className="set-btn"
               data-testid="set-open-learning"
-              onClick={() => openSpaceView('learning')}
+              onClick={() => {
+                /*
+                 * 先关设置再开学习视图：设置是 fixed 遮罩层，
+                 * 不关的话中栏的空间工作台会被它盖住 —— 按钮看起来「没反应」。
+                 * 与「重新查看引导」同一口径（App.tsx 里也是先 closeSettings）。
+                 */
+                useStore.getState().closeSettings()
+                openSpaceView('learning')
+              }}
             >
               {t('set.learnManageOpen')}
             </button>

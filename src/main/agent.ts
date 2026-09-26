@@ -3166,7 +3166,16 @@ export class AgentController extends EventEmitter {
     if (action === 'doctor') {
       const status = await searchDoctor()
       return {
-        data: status,
+        /*
+         * 只把**结构化字段**回给模型：`status.detail` 是 `opencli doctor` 的原始输出，
+         * 里面可能带本机路径 / 浏览器连接细节。详细原因走设置页的 IPC，不进工具结果。
+         */
+        data: {
+          available: status.available,
+          version: status.version,
+          code: status.code ?? null,
+          sources: status.sources
+        },
         summary: {
           kind: 'search',
           action: 'doctor',
@@ -3202,6 +3211,10 @@ export class AgentController extends EventEmitter {
       { runner: createOpencliRunner(), now: () => Date.now() }
     )
 
+    /* 查询根本没发出去（空词 / 太长 / 来源名全写错）—— 用原错误码，不归到「后端挂了」 */
+    if (outcome.error) {
+      throw new CapabilityCommandError(outcome.error.code, outcome.error.message)
+    }
     const reached = outcome.sources.filter((s) => s.status === 'ok' || s.status === 'empty')
     if (reached.length === 0) {
       const unavailable = outcome.sources.find((s) => s.status === 'unavailable')

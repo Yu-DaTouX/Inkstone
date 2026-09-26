@@ -98,6 +98,11 @@ export interface SearchOutcome {
   /** 是否因为条数 / 体积上限裁掉过内容 */
   truncated: boolean
   durationMs: number
+  /**
+   * 查询**根本没发出去**时的原因（空查询 / 词太长 / 没有可用来源）。
+   * 有它时 `sources` 为空数组 —— 这与「发了但全都没取到」是两回事。
+   */
+  error?: { code: string; message: string }
 }
 
 /** 后端可用性（`yan search doctor` 的返回体） */

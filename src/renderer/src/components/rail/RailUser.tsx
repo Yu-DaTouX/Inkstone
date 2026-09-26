@@ -30,7 +30,6 @@ import { shortProject } from './rail-utils'
 /** 可选的预设头像图标（都来自内置 sprite，见 src/renderer/src/icons） */
 const AVATAR_ICONS = [
   'sparkles',
-  'sparkles',
   'moon',
   'sun',
   'tag',

@@ -707,7 +707,7 @@ html[data-theme='light'] .turn {
   opacity: 0.38;
 }
 
-/*
+/* 状态区：盲文 spinner 与文案之间留 7px；spinner 定宽居中（宽度跟字号缩放） */
 .cborder-status {
   gap: 7px;
 }
@@ -1550,7 +1550,7 @@ html[data-theme='light'] .ob-scrim {
     background: var(--accent-soft);
   }
 }
-   每个浮层各写一套动画会让"一致性"在维护中慢慢丢掉。 */
+/* 每个浮层各写一套动画会让「一致性」在维护中慢慢丢掉。 */
 @keyframes pop-up {
   from {
     opacity: 0;
