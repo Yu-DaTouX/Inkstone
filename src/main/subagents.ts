@@ -30,6 +30,12 @@ import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { accumulateUsage, ingestUsageSnapshot, type UsageSnapshots } from '../shared/subagent-usage'
+import {
+  briefPrompt,
+  parseSubagentBrief,
+  summarizeSubagentRun,
+  type SubagentBrief
+} from '../shared/subagent-brief'
 import { PiRpc } from './protocol'
 import {
   applyPatch,
@@ -115,6 +121,13 @@ interface Run extends SubagentRun {
   stopReason?: string
   /** H-10b：按消息 id 保存最后一份 usage 快照，重放/流式增量不会重复相加 */
   usageSnapshots: UsageSnapshots
+  /**
+   * 派活时写清的输入（T15-1）。
+   *
+   * 存在 run 上而不是只拼进 prompt，是因为「结果对不对」要拿它来判断：
+   * 主 agent 汇总时得知道当初要的交付物是什么。
+   */
+  brief: SubagentBrief
 }
 
 export interface SubagentOptions {
@@ -182,7 +195,22 @@ export class SubagentController {
       diff: run.diff,
       review: run.review,
       error: run.error,
-      usage: run.usage
+      usage: run.usage,
+      brief: run.brief,
+      /*
+       * 汇总每次都重算：它与转录必须同时前进（转录是有界的，开销可忽）。
+       * `at` 用结束时刻而不是当前时间，免得每次推送的 result 都变。
+       */
+      result: summarizeSubagentRun(
+        {
+          transcript: run.transcript,
+          diffPaths: run.diff?.paths,
+          resultPath: run.resultPath,
+          error: run.error,
+          status: run.status
+        },
+        run.endedAt ?? run.startedAt
+      )
     }
   }
 
@@ -218,13 +246,20 @@ export class SubagentController {
   async start(
     task: string,
     model?: string,
-    isolation: 'worktree' | 'controlled-cwd' = 'worktree'
+    isolation: 'worktree' | 'controlled-cwd' = 'worktree',
+    briefInput?: unknown
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const text = task.trim()
     if (!text) return { ok: false, error: '任务描述为空' }
     if (this.runningCount >= MAX_CONCURRENT) {
       return { ok: false, error: `同时最多 ${MAX_CONCURRENT} 个子代理，先等一个结束或停掉它` }
     }
+    /*
+     * 输入先成形再占槽：一份读不通的 brief 不应该占掉一个并发位，
+     * 也不应该让子代理带着半截说明跑起来。
+     */
+    const parsed = parseSubagentBrief(briefInput, text)
+    if (!parsed.ok) return { ok: false, error: parsed.error }
 
     /*
      * 槽位必须在第一个 `await` 之前预占（D1）。准备 worktree 要跑几条
@@ -238,7 +273,7 @@ export class SubagentController {
     const ctx = this.opts
     this.preparing += 1
     try {
-      return await this.launch(ctx, text, model, isolation)
+      return await this.launch(ctx, text, model, isolation, parsed.brief)
     } finally {
       this.preparing -= 1
     }
@@ -248,7 +283,8 @@ export class SubagentController {
     ctx: SubagentOptions,
     text: string,
     model: string | undefined,
-    isolation: 'worktree' | 'controlled-cwd'
+    isolation: 'worktree' | 'controlled-cwd',
+    brief: SubagentBrief
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const id = `sub-${randomBytes(4).toString('hex')}`
     let workspace: PreparedWorkspace
@@ -277,6 +313,7 @@ export class SubagentController {
       transcript: [],
       review: 'none',
       usageSnapshots: {},
+      brief,
       rpc,
       workspace,
       settled: false,
@@ -319,7 +356,7 @@ export class SubagentController {
       run.latestActivity = '已启动'
       this.emit(run)
 
-      const res = await rpc.command('prompt', { message: text })
+      const res = await rpc.command('prompt', { message: briefPrompt(brief, text) })
       if (!res.success) {
         await this.fail(id, res.error ?? '启动任务失败')
         return { ok: false, error: res.error ?? '启动任务失败' }

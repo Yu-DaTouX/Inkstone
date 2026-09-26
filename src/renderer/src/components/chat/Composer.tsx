@@ -123,6 +123,9 @@ export function Composer() {
   /** 模式按钮：Esc 从输入框把焦点送到这里（避开键盘陷阱） */
   const modeButtonRef = useRef<HTMLButtonElement>(null)
   const editorInject = useStore((s) => s.editorInject)
+  /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
+  const composerInsert = useStore((s) => s.composerInsert)
+  const clearComposerInsert = useStore((s) => s.clearComposerInsert)
   const consumeEditorInject = useStore((s) => s.consumeEditorInject)
   const queueRestore = useStore((s) => s.queueRestore)
   const consumeQueueRestore = useStore((s) => s.consumeQueueRestore)
@@ -295,6 +298,14 @@ export function Composer() {
     consumeEditorInject()
     ref.current?.focus()
   }, [editorInject, consumeEditorInject])
+
+  /* ---- 办事模板的「填到输入框」（实施-25 P14 T14-3）---- */
+  useEffect(() => {
+    if (composerInsert === null) return
+    setValue((v) => (v ? `${v}\n${composerInsert}` : composerInsert))
+    clearComposerInsert()
+    ref.current?.focus()
+  }, [composerInsert, clearComposerInsert])
 
   /* ---- 中止时回收的排队文本回填 ---- */
   useEffect(() => {

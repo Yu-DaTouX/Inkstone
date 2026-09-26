@@ -54,8 +54,70 @@ import type { ContextAssembly } from './context-assembly'
 export type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from './artifact-doc'
 export type { Concept, Course, CourseEntry, CourseInput, CourseLevel, CourseSourceRef, LearningUnit, UnitOrigin } from './course'
 export type { StudyPhase, StudyResume, StudySession, StudyPending, StudyPosition } from './study'
+export type {
+  Attempt,
+  AttemptFeedback,
+  Exercise,
+  ExerciseAnswer,
+  ExerciseHint,
+  ExerciseKind,
+  ExerciseOption,
+  ExercisePair,
+  ExerciseResponse,
+  ExerciseView,
+  HintLevel
+} from './exercise'
+export type {
+  ConceptProgress,
+  LearningNote,
+  LearningNoteInput,
+  NoteKind,
+  ObservationLevel,
+  ProgressEvidence,
+  SelfAssessment,
+  SelfAssessmentKind
+} from './learning-memory'
+
+export type { ReviewItem, ReviewPlan, ReviewPriority, ReviewReason } from './review'
+import type { ReviewItem, ReviewPlan, ReviewPriority } from './review'
+export type { Comparison, SourceStatus, SourceRefStatus, SourceProvenance, ResearchExcerpt } from './research'
+import type { Comparison, SourceRefStatus, SourceStatus } from './research'
+export type {
+  FollowRun,
+  FollowOutcome,
+  FollowKind,
+  Watch,
+  WatchView,
+  FollowCadence
+} from './follow'
+import type { FollowRun, Watch, WatchView } from './follow'
+export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
+import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
+export type { AudioPlan, AudioTask } from './audio'
+import type { AudioPlan } from './audio'
+import type { AgentActivity } from './agent-profile'
+export type {
+  Playbook,
+  PlaybookIO,
+  PlaybookKind,
+  PlaybookSource,
+  PlaybookStep,
+  ScopeSummary,
+  StepEffect
+} from './playbook'
+import type { Playbook, PlaybookIO, PlaybookSource, PlaybookStep, ScopeSummary } from './playbook'
 
 import type { StudyPhase, StudyResume, StudySession } from './study'
+import type {
+  Attempt,
+  AttemptFeedback,
+  Exercise,
+  ExerciseHint,
+  ExerciseResponse,
+  ExerciseView,
+  HintLevel
+} from './exercise'
+import type { ConceptProgress, LearningNote, LearningNoteInput, SelfAssessmentKind } from './learning-memory'
 import type { AgentEditInput, ArtifactDoc, ArtifactKind, ArtifactSourceRef } from './artifact-doc'
 import type { Course, CourseInput, CourseSourceRef } from './course'
 import type {
@@ -1005,6 +1067,13 @@ export interface AppSettings {
   /** 默认在已授权来源与权限范围内自动接入。 */
   capabilityStrategy: CapabilityStrategy
   /**
+   * 按活动用不同模型（实施-25 P18）。
+   *
+   * `undefined` = 没配过（各活动都跟随会话当前模型）。
+   * 这个配置**只回答「该用哪个模型」** —— 不新建会话、不改任务与学习状态。
+   */
+  activityModels?: ActivityModelConfig
+  /**
    * 模式快捷键的开关（2026-09-22，替代旧的 `workModeTab`）。
    *
    * `undefined` = 没改过 = **开**；只有明确关掉才落 `false`
@@ -1840,6 +1909,9 @@ export interface SubagentUsageTotals {
   reportedMessages: number
 }
 
+export type { SubagentBrief, SubagentResult } from './subagent-brief'
+import type { SubagentBrief, SubagentResult } from './subagent-brief'
+
 export interface SubagentRun {
   id: string
   /** 派给它的任务描述 */
@@ -1869,6 +1941,19 @@ export interface SubagentRun {
   error?: string
   /** H-10b：按消息 id 去重后的 usage 累计；没收到过就是 undefined（界面显示未知） */
   usage?: SubagentUsageTotals
+  /**
+   * 派活时写清的任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
+   *
+   * 子代理看不到父会话上下文，它只有这一段话；把这三样显式列出来，
+   * 并行的子任务才不会各跑各的方向。
+   */
+  brief?: SubagentBrief
+  /**
+   * 结果汇总（实施-25 P15 T15-4）：摘要 / 来源 / 成果，交给主 agent 汇总后统一回答。
+   *
+   * 每次推送都重算（纯函数、转录有界）—— 它必须与转录同时前进。
+   */
+  result?: SubagentResult
 }
 
 /** 子代理控制器对外暴露的能力 */
@@ -2505,6 +2590,29 @@ export interface CapabilitiesBridge {
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
+  /**
+   * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。
+   *
+   * 只回答「缺什么、怎么接」—— **不装、不改配置**；安装仍走 discover → acquire。
+   * `available` 是当前页面已知的能力名，用来回答「你其实已经有了」。
+   */
+  need(input: { need: string; available?: string[] }): Promise<CapabilityNeedView>
+}
+
+/** 「缺什么、怎么接」的结果（实施-25 P17）。 */
+export interface CapabilityNeedView {
+  ok: boolean
+  error?: string
+  need: string
+  /** 命中已知场景时为真；没命中就是通用三步（不猜包名）。 */
+  matched: boolean
+  gapId?: string
+  missing?: string
+  via?: string
+  /** 当前能力目录里已经有相关能力（不必再装）。 */
+  alreadyAvailable?: boolean
+  /** 一段可直接给人 / 模型看的接入路径。 */
+  text: string
 }
 
 /* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */
@@ -2662,6 +2770,177 @@ export interface ArtifactDocBridge {
   remove(id: string): Promise<{ ok: boolean; error?: string }>
 }
 
+/**
+ * 跨资料研究（实施-25 P13）。
+ *
+ * 宿主只给**结构**：读当时那一版的片段、把不同立场并排、标出「引用原文 / 模型补充」。
+ * 不对「谁对」下结论、不合并成一段总结 —— 那是研究者的判断。
+ */
+export interface ResearchBridge {
+  /** 多来源对照；立场标签由调用方给（不给就归到「未标注立场」，不计入冲突）。 */
+  compare(input: {
+    question?: string
+    refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
+    maxChars?: number
+  }): Promise<{
+    ok: boolean
+    comparison?: Comparison
+    skipped?: { sourceId: string; version: number; status: SourceRefStatus }[]
+    text?: string
+    error?: string
+  }>
+  /** 成果引用的资料现在怎么样了（T13-4）：只提示变化，不改引用。 */
+  sourceStatus(artifactId: string): Promise<{ ok: boolean; error?: string; statuses: SourceStatus[] }>
+}
+
+/**
+ * 办事模板（实施-25 P14）。
+ *
+ * 注意这里**没有「跑模板」**：`plan` 返回的是「将要做什么、会动哪里」的说明，
+ * 确认之后由模型走普通工具路径去做。宿主不提供静默执行 —— 这是 P14
+ * 验收（复用前看到作用范围、不静默动文件）最直接的保证。
+ */
+export interface PlaybookBridge {
+  list(spaceId?: string | null): Promise<Playbook[]>
+  /** 保存模板；`origin: 'from-task'` 时必须带 `source`。 */
+  save(input: {
+    id?: string
+    kind?: string
+    title: string
+    goal: string
+    steps: PlaybookStep[]
+    io?: PlaybookIO
+    spaceId?: string | null
+    origin?: 'from-task' | 'user'
+    source?: PlaybookSource
+  }): Promise<PlaybookMutationResult>
+  update(
+    id: string,
+    patch: { title?: string; goal?: string; steps?: PlaybookStep[]; io?: PlaybookIO; kind?: string }
+  ): Promise<PlaybookMutationResult>
+  remove(id: string): Promise<{ ok: boolean; error?: string }>
+  /**
+   * 复用前的说明（T14-3）。`scopes` 按需要确认的步骤顺序给，组数必须一致。
+   * 用途上它**只解释**：不会写任何东西，也不会把模板发给模型。
+   */
+  plan(input: { id: string; scopes?: string[][] }): Promise<PlaybookPlanResult>
+  /** 记一次「开始用」（不含效果判断）。 */
+  run(id: string): Promise<PlaybookMutationResult>
+}
+
+export interface PlaybookMutationResult {
+  ok: boolean
+  error?: string
+  code?: string
+  playbook?: Playbook
+}
+
+export interface PlaybookPlanResult {
+  ok: boolean
+  error?: string
+  code?: string
+  playbook?: Playbook
+  needsConfirmation?: boolean
+  summary?: ScopeSummary
+  points?: PlaybookStep[]
+  unansweredScope?: number
+  confirmationText?: string
+  /** 一段可直接发出去 / 填进输入框的执行说明。 */
+  text?: string
+}
+
+/**
+ * 持续关注（实施-25 P16）。
+ *
+ * 界面只读 `views`（带状态文案）与 `due`；写入只有保存 / 启用 / 停用 / 删掉，
+ * 以及**模型看完后的回报**。注意这里**没有「立即执行」** —— 宿主不会自己去查。
+ */
+export interface FollowBridge {
+  list(spaceId?: string | null): Promise<Watch[]>
+  /** 列表（含状态文案 / 是否只是提议 / 上次结果的一句话）。 */
+  views(spaceId?: string | null): Promise<(WatchView & { lastRunText?: string })[]>
+  /** 到点了该看的（**只数用户启用过的**）。 */
+  due(): Promise<Watch[]>
+  runs(input: { watchId: string; limit?: number }): Promise<FollowRun[]>
+  save(input: {
+    id?: string
+    title: string
+    kind?: string
+    spaceId?: string | null
+    cadence?: string
+    intervalMinutes?: number
+    resultPlace: string
+    notifyOn?: string
+    enabled?: boolean
+  }): Promise<FollowMutationResult>
+  update(input: {
+    id: string
+    title?: string
+    kind?: string
+    cadence?: string
+    intervalMinutes?: number
+    resultPlace?: string
+    notifyOn?: string
+    enabled?: boolean
+  }): Promise<FollowMutationResult>
+  remove(id: string): Promise<{ ok: boolean; error?: string }>
+  report(input: {
+    watchId: string
+    outcome: string
+    summary?: string
+    changed?: string[]
+    decisions?: string[]
+  }): Promise<{ ok: boolean; error?: string; code?: string; run?: FollowRun; watch?: Watch }>
+}
+
+export interface FollowMutationResult {
+  ok: boolean
+  error?: string
+  code?: string
+  watch?: Watch
+}
+
+/**
+ * 按活动配置模型（实施-25 P18）。
+ *
+ * 只读写「哪个活动用哪个模型」与解析结果 —— 切模型本身仍走既有的
+ * 模型选择链路。`setModel` 传 `null` 表示「恢复成用默认」。
+ */
+export interface ActivityBridge {  /** 五个活动各自会用什么模型（含理由与是否发生回退）；`current` 由界面传。 */
+  rows(input?: { current?: string | null }): Promise<ActivityModelRow[]>
+  /** 单个活动的解析结果（命令 / 快捷查看用）；传 `available` 才会做可用性检查。 */
+  model(input: { activity: AgentActivity; current?: string | null; available?: string[] }): Promise<
+    ActivityModelResolution & { text: string }
+  >
+  setModel(input: {
+    activity?: AgentActivity
+    model?: string | null
+    defaultModel?: string | null
+  }): Promise<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>
+}
+
+/**
+ * 语音与内容形式（实施-25 P20）。
+ *
+ * `plan` 只说清「走哪条路、结果怎么归位」；`transcript` 把**外部工具转好的文本**
+ * 登记成同一门课的新来源。宿主不做识别与朗读，也没有「播放」能力。
+ */
+export interface AudioBridge {
+  plan(input: { task?: string; courseId?: string; sourceId?: string; version?: number }): Promise<{
+    ok: boolean
+    error?: string
+    plan?: AudioPlan
+  }>
+  transcript(input: { courseId: string; sourceId: string; version?: number; title?: string; text: string }): Promise<{
+    ok: boolean
+    error?: string
+    code?: string
+    sourceId?: string
+    version?: number
+    note?: string
+  }>
+}
+
 /** 课程写操作的结果（与纯逻辑层的 `CourseMutation` 对应）。 */
 export interface CourseResult {
   ok: boolean
@@ -2702,6 +2981,8 @@ export interface CourseBridge {
   createFromSource(params: { sourceId: string; version: number; input: CourseInput }): Promise<CourseResult>
   createFromTopic(input: CourseInput): Promise<CourseResult>
   createFromBlocker(input: CourseInput): Promise<CourseResult>
+  /** 入口四（T06b-4）：把一份成果当材料建课（宿主先把它登记成一份资料库来源）。 */
+  createFromArtifact(params: { artifactId: string; input: CourseInput }): Promise<CourseResult>
   update(
     id: string,
     patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }
@@ -2756,6 +3037,100 @@ export interface StudyStatusView {
   waiting: boolean
   /** 盘上的闸门快照（排障与验收用）。 */
   gate: { waiting: boolean; where: string; at: number } | null
+}
+
+/**
+ * 练习与作答（实施-25 P10）。
+ *
+ * 列表 / 单题返回的是 **`ExerciseView`（不含答案）**，这是 T10-2 的落点：
+ * 答案不能随题目一起下发，否则「先等用户作答」就只是界面自觉。
+ * 要拿答案必须走 `revealSolution`（并因此被记进作答）。
+ */
+export interface ExerciseBridge {
+  listForUnit(input: { courseId: string; unitId: string }): Promise<ExerciseView[]>
+  listForCourse(courseId: string): Promise<ExerciseView[]>
+  get(exerciseId: string): Promise<ExerciseView | null>
+  create(input: unknown): Promise<{ ok: boolean; error?: string; exercise?: Exercise }>
+  createFromUnit(input: { courseId: string; unitId: string; maxExercises?: number }): Promise<{
+    ok: boolean
+    error?: string
+    exercises?: Exercise[]
+    created?: number
+  }>
+  revealHint(input: { exerciseId: string; upto: HintLevel }): Promise<{ ok: boolean; error?: string; hints?: ExerciseHint[]; hasMoreHints?: boolean }>
+  revealSolution(exerciseId: string): Promise<{ ok: boolean; error?: string; solution: string | null }>
+  submit(input: { exerciseId: string; response: ExerciseResponse }): Promise<{
+    ok: boolean
+    error?: string
+    attempt?: Attempt
+    feedback?: AttemptFeedback
+  }>
+  attempts(exerciseId: string): Promise<Attempt[]>
+  correct(input: { attemptId: string; text: string; correct?: boolean | null }): Promise<{
+    ok: boolean
+    error?: string
+    attempt?: Attempt
+  }>
+  remove(exerciseId: string): Promise<boolean>
+  /** 删一门课的题目与作答（课程被删时一并收拾）。 */
+  removeCourse(courseId: string): Promise<number>
+}
+
+/**
+ * 笔记与概念进度（实施-25 P11）。
+ *
+ * 概念进度没有「直接写 level」的方法：它是从作答现算的摘要（T11-3），
+ * 只有用户自评（写进另一个字段）与「重新算」。这样两条轴不会被一次调用改错。
+ */
+export interface NoteBridge {
+  list(courseId: string): Promise<LearningNote[]>
+  save(input: LearningNoteInput): Promise<{ ok: boolean; error?: string; note?: LearningNote }>
+  update(id: string, patch: unknown): Promise<{ ok: boolean; error?: string; note?: LearningNote }>
+  remove(id: string): Promise<boolean>
+}
+
+export interface ConceptBridge {
+  list(courseId: string): Promise<ConceptProgress[]>
+  /** 用户自评：与系统观察分别保存、并存（T11-5）。 */
+  assess(input: { courseId: string; conceptId: string; kind: SelfAssessmentKind; text?: string }): Promise<{
+    ok: boolean
+    error?: string
+    progress?: ConceptProgress
+  }>
+  reset(input: { courseId: string; conceptId: string }): Promise<boolean>
+}
+
+/**
+ * 错题与复习（实施-25 P12）。
+ *
+ * `plan` 只**挑题**，不开始学习：复习永远不自动代学。
+ * 写操作里没有「标记已掌握」—— 复习项只能被连续独立成功收掉，
+ * 或用户自己挪期（`reschedule`）/ 去掉（`dismiss`）。
+ */
+export interface ReviewBridge {
+  list(courseId: string): Promise<ReviewItem[]>
+  /** 今天到期的复习（不分课程，首页入口用）。 */
+  due(): Promise<{ items: ReviewItem[]; total: number }>
+  plan(input: { courseId: string; mode?: 'due' | 'quick'; minutesBudget?: number }): Promise<ReviewPlan>
+  reading(input: {
+    courseId: string
+    sourceId: string
+    unitId?: string
+    version?: number
+    locator?: { start: number; end: number }
+    note?: string
+  }): Promise<{ ok: boolean; error?: string; review?: ReviewItem }>
+  question(input: { courseId: string; conceptId: string; text?: string }): Promise<{
+    ok: boolean
+    error?: string
+    review?: ReviewItem
+  }>
+  reschedule(input: { id: string; dueAt?: number; priority?: ReviewPriority }): Promise<{
+    ok: boolean
+    error?: string
+    review?: ReviewItem
+  }>
+  dismiss(id: string): Promise<boolean>
 }
 
 export interface SourcesBridge {
@@ -3286,6 +3661,24 @@ export interface YanBridge {
   course: CourseBridge
   /** 学习状态（实施-25 P08）：阶段与「等你作答」的闸门。 */
   study: StudyBridge
+  /** 练习与作答（实施-25 P10）：出题、分层提示、作答与反馈。 */
+  exercise: ExerciseBridge
+  /** 笔记（实施-25 P11）：用户自己的记录，可改可删。 */
+  note: NoteBridge
+  /** 跨资料研究（实施-25 P13）：多来源对照与引用状态。 */
+  research: ResearchBridge
+  /** 办事模板（实施-25 P14）：保存 / 复用前的范围与授权点。 */
+  playbook: PlaybookBridge
+  /** 持续关注（实施-25 P16）：到点提醒与结果记录（没有后台调度）。 */
+  follow: FollowBridge
+  /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
+  activity: ActivityBridge
+  /** 语音与内容形式（实施-25 P20）：只说路径与归位，不做识别 / 朗读。 */
+  audio: AudioBridge
+  /** 概念进度（实施-25 P11）：观察层级 + 独立的复习状态，由作答现算。 */
+  concept: ConceptBridge
+  /** 错题与复习（实施-25 P12）：只提醒与挑题，不自动代学。 */
+  review: ReviewBridge
   packages: PackagesBridge
   /** 项目知识页（实施-03 S5）：读当前项目、确认 / 编辑 / 替代 / 删除、导出 */
   knowledge: KnowledgeBridge

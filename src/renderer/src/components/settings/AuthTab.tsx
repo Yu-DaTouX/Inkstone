@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { AuthProviderInfo } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
+import { ActivityModelSection } from './ActivityModelSection'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -116,7 +117,10 @@ export function AuthTab() {
   const readyCount = (list ?? []).filter((x) => x.status === 'ready').length
 
   return (
-    <div className="set-group auth-tab">
+    <>
+      {/* 按活动用不同模型（实施-25 P18）：配置在接入页，切模型不在这里 */}
+      <ActivityModelSection />
+      <div className="set-group auth-tab">
       {/* ---- 顶部：状态摘要 ---- */}
       <div className="auth-head">
         <div className="set-label">
@@ -297,6 +301,7 @@ export function AuthTab() {
         <Icon name="alert-circle" size={12} />
         <span>{t('auth.safety')}</span>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

@@ -233,7 +233,118 @@
   ok(!!q('[data-testid="space-art-export"]'), '导出按钮在')
   ok(!!q('[data-testid="space-art-new-kind"]'), '新建时可以选类型（文档 / 清单）')
 
-  log('=== 12. 删除成果（清理） ===')
+  log('=== 12. 用于学习：成果 → 学习材料（T06b-4） ===')
+  const beforeCourses = S().courses.length
+  /* 先给成果一段确定正文（前面步骤里它被改过好几轮） */
+  await window.yan.artifactDoc.saveUserEdit(id, '光合作用把光能转成化学能。\n\n这是用来学习的成果正文。')
+  await S().refreshArtifactDocs()
+  await sleep(400)
+  click(q(`[data-testid="space-art-item-${id}"]`))
+  await sleep(500)
+  ok(!!q('[data-testid="space-art-tolearn"]'), '成果页有「用于学习」按钮')
+  click(q('[data-testid="space-art-tolearn"]'))
+  await sleep(300)
+  ok(!!q('[data-testid="space-art-tolearn-panel"]'), '展开目标输入')
+  ok(q('[data-testid="space-art-tolearn-go"]')?.disabled === true, '没填目标时不能生成（不建一门没方向的课）')
+  const goalEl = q('[data-testid="space-art-tolearn-goal"]')
+  if (goalEl) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(goalEl, '看懂光合作用')
+    goalEl.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await sleep(200)
+  click(q('[data-testid="space-art-tolearn-go"]'))
+  await sleep(2200)
+  const course = S().courses.find((c) => c.title === '探针报告')
+  ok(!!course, '生成了课程', course?.id)
+  ok(S().courses.length === beforeCourses + 1, '只多了一门课')
+  if (course) {
+    ok(course.units.length > 0, '有学习单元（材料单元指回正文）')
+    ok(course.units.every((u) => u.origin === 'material' && u.sources.length > 0), '单元都是带出处的材料单元')
+    const listed = await window.yan.library.list({ spaceId: space.id })
+    const fromArtifact = (listed?.sources ?? []).find((s) => String(s.title ?? '').startsWith('成果：'))
+    ok(!!fromArtifact, '资料库里多了一份「成果：…」来源', fromArtifact?.id)
+    ok(!!q('[data-testid="space-learn-panel"]'), '界面切到了学习页')
+    await S().removeCourse(course.id)
+  }
+
+  log('=== 13. 来源变化提示 + 多来源对照（P13） ===')
+  /* 步骤 12 的「用于学习」把界面切到了学习页 —— 先回成果页再继续。 */
+  S().openSpaceView('artifact')
+  await sleep(700)
+  const srcA = await window.yan.library.import({
+    kind: 'text',
+    ref: 'probe://research-a',
+    identity: 'text:probe-research-a',
+    title: '材料 A',
+    content: '这个说法成立。'
+  })
+  const srcB = await window.yan.library.import({
+    kind: 'text',
+    ref: 'probe://research-b',
+    identity: 'text:probe-research-b',
+    title: '材料 B',
+    content: '这个说法不成立。'
+  })
+  ok(srcA?.ok === true && srcB?.ok === true, '导入两份对照材料', `${srcA?.sourceId}/${srcB?.sourceId}`)
+  if (srcA?.ok && srcB?.ok) {
+    const addedA = await S().addArtifactSource(id, { sourceId: srcA.sourceId, version: srcA.version ?? 1 })
+    const addedB = await S().addArtifactSource(id, { sourceId: srcB.sourceId, version: srcB.version ?? 1 })
+    ok(addedA === true && addedB === true, '把两份材料加为成果来源')
+    await S().refreshArtifactDocs()
+    await sleep(400)
+    click(q(`[data-testid="space-art-item-${id}"]`))
+    await sleep(600)
+    ok(!!q('[data-testid="space-art-sources"]'), '成果页回显（sources 区在）')
+
+    /* 同一 identity 换了内容 → 新版本（旧引用仍指着 v1） */
+    const srcA2 = await window.yan.library.import({
+      kind: 'text',
+      ref: 'probe://research-a',
+      identity: 'text:probe-research-a',
+      title: '材料 A',
+      content: '这个说法成立（改过一版）。'
+    })
+    ok(srcA2?.version === 2, '材料 A 出了 v2', String(srcA2?.version))
+    await S().refreshArtifactSourceStatus(id)
+    await sleep(600)
+    const changed = q('[data-testid="space-art-source-changed"]')
+    ok(!!changed && /新版本/.test(String(changed.textContent ?? '')), '成果页提示「来源已更新」', String(changed?.textContent ?? ''))
+    const statusEls = [...document.querySelectorAll('[data-testid^="space-art-source-status-"]')]
+    ok(statusEls.length === 1, '只有那条有新版本的来源标状态（没变的不报噪声）', String(statusEls.length))
+    ok(/仍指着 v1/.test(String(statusEls[0]?.textContent ?? '')), '说清引用还指着旧版', String(statusEls[0]?.textContent ?? ''))
+
+    /* 带立场的对照（模型经 yan research compare 提交的就是这个形状） */
+    const cmp = await window.yan.research.compare({
+      question: '这个说法成立吗？',
+      refs: [
+        { sourceId: srcA.sourceId, version: 1, stance: '支持' },
+        { sourceId: srcB.sourceId, version: 1, stance: '反对' }
+      ]
+    })
+    ok(cmp?.ok === true && cmp.comparison?.groups?.length === 2, '两组立场各自成组')
+    ok(cmp?.comparison?.conflicts?.length === 1, '列出一条不一致（不合并结论）')
+    ok(/引用原文/.test(String(cmp?.text ?? '')), '导出文本标出「引用原文」')
+
+    /* 读不到的来源不进对照 */
+    const skipped = await window.yan.research.compare({
+      question: '读不到的那份',
+      refs: [{ sourceId: 'lib_not_there', version: 1, stance: '支持' }]
+    })
+    ok(skipped?.ok === true && skipped.skipped?.length === 1, '读不到的来源列进 skipped')
+    ok(skipped.comparison?.groups?.length === 0, '不把读不到的当有效证据排进对照')
+
+    /* 界面上点「多来源对照」：没有立场标签 → 未标注、无冲突 */
+    click(q('[data-testid="space-art-compare"]'))
+    await sleep(1000)
+    ok(!!q('[data-testid="space-art-compare-view"]'), '成果页显示对照视图')
+    ok(!!q('[data-testid="space-art-compare-group-0"]'), '有一组（未标注立场）')
+    ok(!q('[data-testid="space-art-compare-conflicts"]'), '未标注立场时不制造冲突')
+
+    await window.yan.library.remove(srcA.sourceId)
+    await window.yan.library.remove(srcB.sourceId)
+  }
+
+  log('=== 14. 删除成果（清理） ===')
   ok((await S().removeArtifactDoc(id)) === true, '删除成功')
   if (importedId) await window.yan.library.remove(importedId)
   await S().updateSpace(space.id, { archived: true })

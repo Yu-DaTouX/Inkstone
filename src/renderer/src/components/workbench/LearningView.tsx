@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { coursesForSpace, totalMinutes } from '../../../../shared/course'
 import type { Course, CourseEntry, CourseLevel, CourseSourceRef, LearningUnit, UnitOrigin } from '../../../../shared/course'
+import { ConceptPanel } from './ConceptPanel'
 
 /**
  * 课程与路线（实施-25 P07）。
@@ -57,6 +58,8 @@ export function LearningView({ spaceId, onStudyUnit }: Props): React.JSX.Element
   const removeUnit = useStore((s) => s.removeCourseUnit)
   const archiveCourse = useStore((s) => s.archiveCourse)
   const removeCourse = useStore((s) => s.removeCourse)
+  const addConcept = useStore((s) => s.addCourseConcept)
+  const removeConcept = useStore((s) => s.removeCourseConcept)
   const openRef = useStore((s) => s.openLibraryRef)
 
   const [selId, setSelId] = useState<string | null>(null)
@@ -623,6 +626,16 @@ export function LearningView({ spaceId, onStudyUnit }: Props): React.JSX.Element
                 ))}
               </ol>
             )}
+
+            {/* 概念进度与笔记（P11）：两条轴并排，自评与系统观察并存。 */}
+            {selected ? (
+              <ConceptPanel
+                courseId={selected.id}
+                concepts={selected.concepts}
+                onAddConcept={(name) => void addConcept(selected.id, name)}
+                onRemoveConcept={(conceptId) => void removeConcept(selected.id, conceptId)}
+              />
+            ) : null}
 
             {preview ? (
               <div className="wb-learn-preview" data-testid="space-learn-preview">

@@ -16,6 +16,8 @@ import {
   type ExternalApiConfirmationRequest,
   type GoalCommandHost,
   type StudyCommandHost,
+  type ExerciseCommandHost,
+  type PlaybookCommandHost,
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
@@ -25,6 +27,8 @@ import { getSettings, patchSettings } from './settings'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
 import { moveSessionLayout, rememberSession, setSessionSpace } from './session-layout'
 import { readChainMessages } from './session-history'
+import { handoffHistoryExcerpt, handoffContinuationProblem } from '../shared/handoff-context'
+import { handoffReasonText } from '../shared/handoff-notice'
 import { ArtifactStore } from './artifacts'
 import type { CustomProviderInput } from '../shared/custom-provider'
 import {
@@ -138,6 +142,48 @@ import { ContextAssembler, type AssembleContextRequest } from './context-assembl
 import { ArtifactDocStore } from './artifact-doc-store'
 import { CourseService } from './course-service'
 import { LearningService } from './learning-service'
+import { ExerciseService } from './exercise-service'
+import {
+  SUBAGENT_FIT_CASES,
+  SUBAGENT_UNFIT_CASES,
+  subagentFitText
+} from '../shared/subagent-brief'
+import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
+import { PlaybookStore } from './playbook-store'
+import { PlaybookService } from './playbook-service'
+import { FollowStore } from './follow-store'
+import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
+import { audioPlan, transcriptImportInput, transcriptRegisteredText } from '../shared/audio'
+import {
+  activityModelRows,
+  activityModelText,
+  emptyActivityModelConfig,
+  resolveActivityModel,
+  sanitizeActivityModelConfig,
+  setActivityModel
+} from '../shared/activity-model'
+import { normalizeAgentActivity } from '../shared/agent-profile'
+import type { AgentActivity } from '../shared/agent-profile'
+import { needsConfirmation } from '../shared/playbook'
+import type {
+  ExerciseMutation,
+  ExerciseResponse,
+  HintLevel
+} from '../shared/exercise'
+import type { ConceptProgress, NoteMutation } from '../shared/learning-memory'
+import type { ReviewMutation } from './learning-service'
+import { dueReviews } from '../shared/review'
+import {
+  artifactSourceStatuses,
+  buildComparison,
+  comparisonText,
+  excerptReadable,
+  excerptText,
+  provenanceLabel,
+  sourceStatus,
+  type ResearchExcerpt,
+  type SourceRefStatus
+} from '../shared/research'
 import type { AgentEditInput, ArtifactMutation, ArtifactSourceRef, CreateArtifactInput } from '../shared/artifact-doc'
 import type { CourseInput, CourseMutation, CourseSourceRef } from '../shared/course'
 import { waitingNote, type StudyMutation, type StudyPhase } from '../shared/study'
@@ -1226,6 +1272,13 @@ async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
       .filter((message) => message.role === 'user' && String(message.text ?? '').trim())
       .slice(-8)
       .map((message) => String(message.text).trim().slice(0, 600))
+    let history: string | undefined
+    if (state.sessionFile) {
+      try {
+        if ((await stat(state.sessionFile)).size <= 32 * 1024 * 1024)
+          history = handoffHistoryExcerpt(await readFile(state.sessionFile, 'utf8'))
+      } catch { /* Prompt explicitly marks unavailable source history. */ }
+    }
     const sourceHead = messages.at(-1)?.id ?? null
     const request = buildHandoffRequest({
       handoffId: randomUUID(),
@@ -1235,6 +1288,8 @@ async function tryArmHandoff(id: string, reason: string): Promise<boolean> {
         goal,
         cwd: state.cwd ?? '',
         recentUser,
+        history,
+        previousPackage: handoffs.state(key).package,
         extra: `本次交接由「${reason}」触发；本片段已完成 ${tally.count} 次自动压缩。`
       }),
       sourceHead,
@@ -1441,9 +1496,15 @@ async function collectHandoffResult(id: string, operationId?: string): Promise<b
         reason: parsed.reason,
         ...base,
         /* 只留长度，不留原文 —— 模型输出可能含用户内容 */
-        detail: { chars: result.text.length, ms: result.ms }
+        detail: { chars: result.text.length, ms: result.ms, stopReason: result.stopReason ?? null, attempts: result.attempts ?? 1 }
       })
-      handoffNotify(id, `交接包不能用（${parsed.reason}），已丢弃这份`, 'error')
+      handoffNotify(id, `上下文交接未完成：${handoffReasonText(parsed.reason)}，将尝试在原会话继续`, 'error')
+      return true
+    }
+    const problem = handoffContinuationProblem(parsed.value)
+    if (problem) {
+      handoffDiag.record({ stage: 'generate', outcome: 'incomplete', reason: problem, ...base })
+      handoffNotify(id, '交接内容缺少剩余工作或下一步，保留原会话继续', 'error')
       return true
     }
     const pkg = sanitizeHandoffPackage(parsed.value, {
@@ -1469,7 +1530,7 @@ async function collectHandoffResult(id: string, operationId?: string): Promise<b
       handoffNotify(id, '交接包落盘失败，已放弃（下一次压缩后再试）', 'error')
       return true
     }
-    handoffDiag.record({ stage: 'generate', outcome: 'package-ready', ...base })
+    handoffDiag.record({ stage: 'generate', outcome: 'package-ready', ...base, detail: { ms: result.ms, attempts: result.attempts ?? 1, stopReason: result.stopReason ?? null } })
     handoffNotify(id, `交接包已生成：${handoffSummary(pkg)}`, 'info')
     /* 开关打开时才真的往下走（§7：默认不自动交接，需用户拍板） */
     if (HANDOFF_COMMIT_ENABLED) {
@@ -1985,16 +2046,172 @@ const artifactDocs = new ArtifactDocStore()
  *
  * 依赖资料库：三个入口里「学这份资料」要读指定那一版的真实正文，
  * 再把正文切成带出处的单元（规则是确定性的，不调模型）。
+ * 第四个入口（P06b-4）要先读成果正文、再把它登记成一份资料库来源。
  */
-const courses = new CourseService({ library })
+const courses = new CourseService({
+  library,
+  artifacts: {
+    read: async (artifactId) => {
+      await artifactDocs.load()
+      const doc = artifactDocs.find(artifactId)
+      if (!doc) return null
+      const version = doc.versions.find((v) => v.version === doc.currentVersion)
+      return {
+        id: doc.id,
+        title: doc.title,
+        text: version?.text ?? '',
+        ...(doc.spaceId ? { spaceId: doc.spaceId } : {})
+      }
+    }
+  },
+  importer: {
+    importText: (params) =>
+      library.import({
+        kind: 'text',
+        ref: params.ref,
+        identity: params.identity,
+        title: params.title,
+        content: params.content,
+        ...(params.spaceId ? { spaceId: params.spaceId } : {}),
+        ...(params.owner ? { owner: params.owner } : {})
+      })
+  }
+})
 
 /**
- * 学习状态（实施-25 P08）。
+ * 学习状态与学习记忆（实施-25 P08 / P11）。
  *
  * 只在这里建一份：自动续跑的闸门（`studyGateBlocks`）与界面（`yan:study:*`）
  * 查的是同一个对象，否则「界面看见在等、宿主却以为没在等」迟早会分家（T08-4）。
+ * 进度重算要用练习服务的作答事实源，而练习服务又要本服务记进度 —— 两者运行时
+ * 没有循环，但构造有先后：所以用懒引用（`attempts` 函数）而不是构造参数。
  */
-const learnings = new LearningService({ courses })
+let exercises!: ExerciseService
+const learnings = new LearningService({ courses, attempts: () => exercises.snapshotForMemory() })
+
+/**
+ * 练习与作答（实施-25 P10）。
+ *
+ * 与 `learnings` 一样只建一份：界面（`yan:exercise:*`）与模型（`yan exercise`）
+ * 必须读写同一份揭示状态与作答记录，否则模型说「他没看提示」而界面知道他看了。
+ * `memory` 把它接到学习服务：提交一次作答就重算一次 `ConceptProgress`（T11-3）。
+ */
+exercises = new ExerciseService({ courses, library, memory: learnings })
+
+/** 纯逻辑层的 `ExerciseMutation` → IPC 形状。 */
+function exerciseResult(m: ExerciseMutation) {
+  return m.ok ? { ok: true as const, exercise: m.exercise } : { ok: false as const, error: m.reason }
+}
+
+/**
+ * 办事模板（实施-25 P14）。
+ *
+ * 这个服务里**没有执行**：它只列、存、改、删，以及 `plan`（把「将要做什么」摊开）。
+ * 真正干活的是模型，而模型动手前要经过用户确认（T14-3）。
+ */
+const playbookStore = new PlaybookStore()
+const playbooks = new PlaybookService({ store: playbookStore })
+
+/**
+ * 持续关注（实施-25 P16）。
+ *
+ * 这个 store 里**没有调度器**：宿主不主动调模型（会变成后台花钱），
+ * 它只回答「谁到点了」并把模型回报的结果记下来。
+ */
+const follows = new FollowStore()
+
+/** 笔记写操作的 IPC 形状（与课程 / 成果同一约定）。 */
+function noteResult(m: NoteMutation) {
+  return m.ok
+    ? { ok: true as const, note: m.note, ...(m.unchanged ? { unchanged: true } : {}) }
+    : { ok: false as const, error: m.reason }
+}
+
+/** 概念进度的 IPC 形状。 */
+function conceptResult(m: { ok: true; progress: ConceptProgress } | { ok: false; reason: string }) {
+  return m.ok ? { ok: true as const, progress: m.progress } : { ok: false as const, error: m.reason }
+}
+
+/**
+ * 成果引用的资料现在怎么样了（P13 T13-4）：只回报状态，**不改引用**。
+ */
+async function runSourceStatus(artifactId: string) {
+  await library.store.load()
+  await artifactDocs.load()
+  const doc = artifactDocs.find(artifactId)
+  if (!doc) return { ok: false as const, error: '找不到这份成果', statuses: [] }
+  return { ok: true as const, statuses: artifactSourceStatuses(library.store.document(), doc.sources) }
+}
+
+interface ResearchCompareInput {
+  question?: string
+  refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
+  maxChars?: number
+}
+
+/**
+ * 多来源对照（P13）：读**当时那一版**的片段，按立场并列，不合并结论。
+ *
+ * 读不到的来源如实放进 `skipped`，不当作有效证据排进对照 —— 否则
+ * 「三份资料都支持」可能实际只有两份读得到。
+ */
+async function runResearchCompare(input: ResearchCompareInput) {
+  await library.store.load()
+  const doc = library.store.document()
+  const maxChars = Math.max(200, Math.min(Math.trunc(input?.maxChars ?? 600), 4000))
+  const excerpts: ResearchExcerpt[] = []
+  const skipped: { sourceId: string; version: number; status: SourceRefStatus }[] = []
+  for (const ref of input?.refs ?? []) {
+    if (!ref?.sourceId || !Number.isFinite(ref.version)) continue
+    const version = Math.trunc(ref.version)
+    const status = sourceStatus(doc, { sourceId: ref.sourceId, version }, ref.locator)
+    if (!excerptReadable(status.status)) {
+      skipped.push({ sourceId: ref.sourceId, version, status: status.status })
+      continue
+    }
+    const opened = await library.openRef({ sourceId: ref.sourceId, version })
+    const cut = excerptText(opened.text ?? '', ref.locator, maxChars)
+    if (!cut.text.trim()) {
+      skipped.push({ sourceId: ref.sourceId, version, status: 'unreadable' })
+      continue
+    }
+    excerpts.push({
+      sourceId: ref.sourceId,
+      version,
+      title: status.title ?? opened.source?.title ?? `资料 ${ref.sourceId}`,
+      provenance: provenanceLabel(ref.provenance),
+      text: cut.text,
+      status: status.status,
+      ...(ref.stance ? { stance: String(ref.stance) } : {}),
+      ...(ref.locator ? { locator: ref.locator } : {})
+    })
+  }
+  const comparison = buildComparison({ question: String(input?.question ?? ''), excerpts })
+  return { ok: true as const, comparison, skipped, text: comparisonText(comparison) }
+}
+
+/** 复习项写操作的 IPC 形状（与笔记 / 概念同一口径）。 */
+function reviewResult(m: ReviewMutation) {
+  return m.ok ? { ok: true as const, review: m.review } : { ok: false as const, error: m.reason }
+}
+
+/** `--locator '{"start":0,"end":120}'`（CLI 传的是字符串）与对象两种写法都要认。 */
+function parseLocator(raw: unknown): { start: number; end: number } | undefined {
+  let value: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw)
+    } catch {
+      return undefined
+    }
+  }
+  if (!value || typeof value !== 'object') return undefined
+  const o = value as { start?: unknown; end?: unknown }
+  const start = Number(o.start)
+  const end = Number(o.end)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) return undefined
+  return { start: Math.trunc(start), end: Math.trunc(end) }
+}
 
 /** 纯逻辑层的 `StudyMutation` → IPC 形状。 */
 function studyResult(m: StudyMutation) {
@@ -2497,12 +2714,454 @@ const studyCapabilityHost: StudyCommandHost = {
             }
           }
         }
+        /*
+         * 笔记与概念进度（实施-25 P11）。
+         *
+         * 模型可以记笔记（它刚讲完一段，落一条笔记是自然的），也可以读进度
+         * 来调整下一步；但**自评只属于用户**，所以 `concept.assess` 也不设为
+         * 模型专用口 —— 界面上是按钮，模型很少需要它。
+         */
+        case 'note.list':
+          return { data: { notes: await learnings.listNotes(courseId) }, summary: { ok: true, courseId } }
+        case 'note.save': {
+          const res = await learnings.saveNote({ ...params, courseId })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { note: res.note }, summary: { ok: true, noteId: res.note.id } }
+        }
+        case 'note.update': {
+          const patch = params.patch && typeof params.patch === 'object' ? (params.patch as Record<string, unknown>) : params
+          const res = await learnings.updateNote(studyParam(params, 'noteId', 'id'), patch)
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { note: res.note }, summary: { ok: true, noteId: res.note.id } }
+        }
+        case 'note.remove': {
+          const removed = await learnings.removeNote(studyParam(params, 'noteId', 'id'))
+          return { summary: { ok: removed, error: removed ? undefined : '找不到这条笔记。' } }
+        }
+        case 'concept.list':
+          return { data: { progress: await learnings.listProgress(courseId) }, summary: { ok: true, courseId } }
+        case 'concept.assess': {
+          const res = await learnings.setSelfAssessment({
+            courseId,
+            conceptId: studyParam(params, 'conceptId', 'concept'),
+            kind: params.kind === 'suspect' ? 'suspect' : 'got-it',
+            ...(studyParam(params, 'text', 'note') ? { text: studyParam(params, 'text', 'note') } : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { progress: res.progress }, summary: { ok: true, kind: res.progress.selfAssessment?.kind ?? null } }
+        }
+        case 'concept.reset': {
+          const removed = await learnings.resetProgress(courseId, studyParam(params, 'conceptId', 'concept'))
+          return { summary: { ok: removed, error: removed ? undefined : '没有这条概念的观察记录。' } }
+        }
+        /*
+         * 错题与复习（实施-25 P12）。
+         *
+         * 模型可以**登记**一个卡点（这段没看懂 / 这个概念又问了一次），也可以
+         * 读计划看今天该练什么；但**没有「标记已掌握」** —— 复习项只能被连续
+         * 独立成功收掉，或者用户自己挪期 / 删掉。
+         */
+        case 'review.list':
+          return { data: { reviews: await learnings.listReviews(courseId) }, summary: { ok: true, courseId } }
+        case 'review.plan': {
+          const mode = params.mode === 'quick' ? 'quick' : 'due'
+          const budget = Number(params.minutesBudget ?? params.minutes)
+          const plan = await learnings.planToday(courseId, {
+            mode,
+            ...(Number.isFinite(budget) && budget > 0 ? { minutesBudget: budget } : {})
+          })
+          return {
+            data: plan,
+            summary: {
+              ok: true,
+              courseId,
+              due: plan.dueCount,
+              picked: plan.entries.length,
+              minutes: plan.minutes,
+              needsNewExercise: plan.needsNewExercise.length
+            }
+          }
+        }
+        case 'review.reading': {
+          const locator = parseLocator(params.locator)
+          const versionRaw = Number(params.version)
+          const res = await learnings.flagReading({
+            courseId,
+            sourceId: studyParam(params, 'sourceId', 'source'),
+            ...(studyParam(params, 'unitId', 'unit') ? { unitId: studyParam(params, 'unitId', 'unit') } : {}),
+            ...(Number.isFinite(versionRaw) && versionRaw > 0 ? { version: Math.trunc(versionRaw) } : {}),
+            ...(locator ? { locator } : {}),
+            ...(studyParam(params, 'note', 'text') ? { note: studyParam(params, 'note', 'text') } : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { review: res.review }, summary: { ok: true, reviewId: res.review.id, dueAt: res.review.dueAt } }
+        }
+        case 'review.question': {
+          const res = await learnings.flagQuestion({
+            courseId,
+            conceptId: studyParam(params, 'conceptId', 'concept'),
+            ...(studyParam(params, 'text', 'note') ? { text: studyParam(params, 'text', 'note') } : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return {
+            data: { review: res.review },
+            summary: { ok: true, reviewId: res.review.id, seenCount: res.review.seenCount, priority: res.review.priority }
+          }
+        }
+        case 'review.reschedule': {
+          const dueAtRaw = Number(params.dueAt ?? params.due ?? params['due-at'])
+          const res = await learnings.rescheduleReview(studyParam(params, 'reviewId', 'id'), {
+            ...(Number.isFinite(dueAtRaw) && dueAtRaw > 0 ? { dueAt: Math.trunc(dueAtRaw) } : {}),
+            ...(params.priority === 'high' || params.priority === 'normal' || params.priority === 'low'
+              ? { priority: params.priority }
+              : {})
+          })
+          if (!res.ok) return { summary: { ok: false, error: res.reason } }
+          return { data: { review: res.review }, summary: { ok: true, reviewId: res.review.id, dueAt: res.review.dueAt } }
+        }
+        case 'review.dismiss': {
+          const removed = await learnings.dismissReview(studyParam(params, 'reviewId', 'id'))
+          return { summary: { ok: removed, error: removed ? undefined : '找不到这条复习。' } }
+        }
         default:
           return { summary: { ok: false, error: `未知的 study 动作：${command}` } }
       }
     }
     return call()
   }
+}
+
+/**
+ * 跨资料研究（实施-25 P13）。
+ *
+ * 对照的**结构**（并排、不合并）由宿主给；立场标签由调用方给。
+ * 另带一个只读的引用状态，让模型能看出「这份来源已经更新过」。
+ */
+const researchCapabilityHost: StudyCommandHost = {
+  async run(command, params) {
+    switch (command) {
+      case 'research.compare': {
+        const res = await runResearchCompare({
+          question: typeof params.question === 'string' ? params.question : '',
+          refs: Array.isArray(params.refs) ? (params.refs as ResearchCompareInput['refs']) : [],
+          ...(Number.isFinite(Number(params.maxChars)) ? { maxChars: Number(params.maxChars) } : {})
+        })
+        return {
+          data: { comparison: res.comparison, skipped: res.skipped },
+          summary: {
+            ok: true,
+            groups: res.comparison.groups.length,
+            conflicts: res.comparison.conflicts.length,
+            skipped: res.skipped.length,
+            material: res.comparison.provenance.material,
+            model: res.comparison.provenance.model
+          }
+        }
+      }
+      case 'research.status': {
+        const res = await runSourceStatus(String(params.artifactId ?? params.id ?? ''))
+        return {
+          data: { statuses: res.statuses },
+          summary: {
+            ok: res.ok,
+            changed: res.statuses.filter((s) => s.status !== 'current').length,
+            total: res.statuses.length
+          }
+        }
+      }
+      default:
+        return { summary: { ok: false, error: `未知的研究动作：${command}` } }
+    }
+  }
+}
+
+/**
+ * 办事模板（实施-25 P14）。
+ *
+ * 模型能做的三件事：看有什么模板、问「这个模板要做什么」、提议存一份新模板。
+ * **没有「跑模板」** —— 执行在用户确认之后由模型自己走普通工具路径，
+ * 所以这里返回的是一段**说明**，不是动作。
+ * 另外**没有删除**：删模板是用户的事，避免模型自作主张把用户的模板清掉。
+ */
+const playbookCapabilityHost: PlaybookCommandHost = {
+  async run(command, params, context) {
+    switch (command) {
+      case 'playbook.list': {
+        const list = await playbooks.list(typeof params.spaceId === 'string' ? params.spaceId : null)
+        return {
+          data: {
+            playbooks: list.map((p) => ({
+              id: p.id,
+              kind: p.kind,
+              title: p.title,
+              goal: p.goal,
+              stepCount: p.steps.length,
+              io: p.io,
+              runs: p.runs,
+              needsConfirmation: needsConfirmation(p.steps),
+              origin: p.origin
+            }))
+          },
+          summary: {
+            ok: true,
+            count: list.length,
+            needConfirm: list.filter((p) => needsConfirmation(p.steps)).length
+          }
+        }
+      }
+      case 'playbook.plan': {
+        const scopes = Array.isArray(params.scopes) ? (params.scopes as string[][]) : undefined
+        const res = await playbooks.plan(String(params.id ?? params.playbookId ?? ''), scopes ? { scopes } : {})
+        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
+        return {
+          data: {
+            text: res.text,
+            steps: res.points.map((s) => ({ title: s.title, effect: s.effect, scope: s.scope ?? [] })),
+            confirmation: res.confirmationText
+          },
+          summary: {
+            ok: true,
+            needsConfirmation: res.needsConfirmation,
+            unansweredScope: res.unansweredScope,
+            reads: res.summary.read,
+            writes: res.summary.write,
+            externals: res.summary.external
+          }
+        }
+      }
+      case 'playbook.save': {
+        /* 模型只会从「刚做完的那件事」存模板，来源就是当前会话 —— 由宿主补，不让模型自报 */
+        const raw = (params.playbook && typeof params.playbook === 'object' ? params.playbook : params) as Record<string, unknown>
+        const given = raw.source && typeof raw.source === 'object' ? (raw.source as { id?: unknown }).id : undefined
+        const sourceId = typeof given === 'string' && given.trim() ? given.trim() : context.sessionId
+        const res = await playbooks.save({ ...raw, origin: 'from-task', source: { kind: 'session', id: sourceId } })
+        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
+        return {
+          data: { id: res.playbook.id, title: res.playbook.title },
+          summary: {
+            ok: true,
+            steps: res.playbook.steps.length,
+            needsConfirmation: needsConfirmation(res.playbook.steps)
+          }
+        }
+      }
+      default:
+        return { summary: { ok: false, error: `未知的模板动作：${command}` } }
+    }
+  }
+}
+
+/**
+ * 持续关注（实施-25 P16）。
+ *
+ * 模型能做的：看有哪些关注、看谁到点了、**提议**一个新关注、
+ * 看完之后**回报**结果。
+ *
+ * 三件它做不到（都是故意的）：
+ *   · 不能启用关注 —— 提议存下来就是未启用（T16-3），只有用户点过才会跑；
+ *   · 不能删关注 —— 那是用户的东西；
+ *   · 不能让宿主自己去查 —— 没有这种命令（不然就成了后台花钱）。
+ */
+const followCapabilityHost: StudyCommandHost = {
+  async run(command, params) {
+    switch (command) {
+      case 'follow.list': {
+        const spaceId = typeof params.spaceId === 'string' ? params.spaceId : null
+        const views = follows.views(spaceId).map((view) => ({
+          id: view.watch.id,
+          title: view.watch.title,
+          kind: view.watch.kind,
+          enabled: view.watch.enabled,
+          status: view.status,
+          proposed: view.proposed,
+          resultPlace: view.watch.resultPlace,
+          ...(view.lastRun ? { lastRun: runSummaryText(view.lastRun) } : {})
+        }))
+        return {
+          data: { watches: views },
+          summary: {
+            ok: true,
+            count: views.length,
+            enabled: views.filter((v) => v.enabled).length,
+            proposals: views.filter((v) => v.proposed).length
+          }
+        }
+      }
+      case 'follow.due': {
+        const due = follows.due()
+        return {
+          data: {
+            due: due.map((watch) => ({
+              id: watch.id,
+              title: watch.title,
+              lastCheckedAt: watch.lastCheckedAt ?? null,
+              brief: watchBriefText(watch, follows.runs(watch.id, 3))
+            }))
+          },
+          summary: {
+            ok: true,
+            count: due.length,
+            note: FOLLOW_APP_ONLY_NOTE
+          }
+        }
+      }
+      case 'follow.save': {
+        /*
+         * 模型只能**提议**：强制 `origin: 'agent'` 与 `enabled: false`，
+         * 无论它传了什么 —— 「用户未启用的关注不自行建立任务」不能靠模型自觉（T16-3）。
+         */
+        const raw = (params.watch && typeof params.watch === 'object' ? params.watch : params) as Record<string, unknown>
+        const res = await follows.save({ ...raw, origin: 'agent', enabled: false })
+        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
+        return {
+          data: { id: res.value.id, title: res.value.title, status: 'proposed' },
+          summary: {
+            ok: true,
+            /** 如实告知：这是提议，等用户点才生效 */
+            note: '已存成提议（未启用）：用户点「开始关注」之后才会出现在到点提醒里。',
+            cadence: res.value.cadence,
+            intervalMinutes: res.value.intervalMinutes ?? null
+          }
+        }
+      }
+      case 'follow.report': {
+        const res = await follows.report({
+          watchId: params.watchId ?? params.id,
+          outcome: params.outcome,
+          summary: params.summary,
+          changed: params.changed,
+          decisions: params.decisions
+        })
+        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
+        return {
+          data: { runId: res.value.run.id, text: runSummaryText(res.value.run) },
+          summary: {
+            ok: true,
+            outcome: res.value.run.outcome,
+            changed: res.value.run.changed.length,
+            decisions: res.value.run.decisions.length,
+            nextDueAt: res.value.watch.nextDueAt ?? null
+          }
+        }
+      }
+      default:
+        return { summary: { ok: false, error: `未知的关注动作：${command}` } }
+    }
+  }
+}
+
+/** 从宿主命令参数里取一段（嵌套的 `exercise` / `response` 也支持）。 */function nestedParam(params: Record<string, unknown>, ...keys: string[]): Record<string, unknown> {
+  for (const key of keys) {
+    const value = params[key]
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+  }
+  return params
+}
+
+/** 把提交的作答还原成契约形状；认不出来就返回 null（不让形状错的东西进判分）。 */
+function exerciseResponseFrom(params: Record<string, unknown>): ExerciseResponse | null {
+  const raw = nestedParam(params, 'response', 'answer', 'reply')
+  const kind = typeof raw.kind === 'string' ? raw.kind : ''
+  if (kind === 'choice' && typeof raw.optionId === 'string') return { kind: 'choice', optionId: raw.optionId }
+  if (kind === 'cloze' && Array.isArray(raw.blanks)) {
+    return { kind: 'cloze', blanks: raw.blanks.map((b) => (typeof b === 'string' ? b : '')) }
+  }
+  if (kind === 'match' && Array.isArray(raw.pairs)) {
+    const pairs = raw.pairs
+      .map((p) => {
+        if (!p || typeof p !== 'object') return null
+        const pp = p as Record<string, unknown>
+        return typeof pp.left === 'string' && typeof pp.right === 'string' ? { left: pp.left, right: pp.right } : null
+      })
+      .filter((p): p is { left: string; right: string } => p !== null)
+    return { kind: 'match', pairs }
+  }
+  /* 纯文本作答是最常见的形态：模型与界面都可能只给一段话。 */
+  const text = typeof raw.text === 'string' ? raw.text : typeof params.text === 'string' ? params.text : ''
+  if (!text.trim()) return null
+  const objective = kind === 'text'
+  return objective ? { kind: 'text', text } : { kind: 'open', text }
+}
+
+/**
+ * `yan exercise …` / `yan attempt …` 的宿主实现（实施-25 P10）。
+ *
+ * 关键边界：**判分与「看了多少帮助」都由服务自己算**。
+ * 模型能出题、能看提示、能读反馈，但不能自己填一份「学习者做对了」的记录 ——
+ * 那和自问自答把课学完是同一类漏洞（P08 已经拦了那一头）。
+ */
+const exerciseCapabilityHost: ExerciseCommandHost = {
+  async run(command, params, context) {
+    const key = context.sessionId
+    const status = await learnings.status(key)
+    const session = status.session
+    const courseId = studyParam(params, 'courseId', 'course') || session?.courseId || ''
+    const unitId = studyParam(params, 'unitId', 'unit') || session?.unitId || ''
+    const exerciseId = studyParam(params, 'exerciseId', 'exercise', 'id')
+
+    switch (command) {
+      case 'exercise.create': {
+        const payload = { courseId, unitId, ...nestedParam(params, 'exercise', 'problem') }
+        const res = await exercises.create(payload)
+        if (!res.ok) return { summary: { ok: false, error: res.reason } }
+        return { data: { exercise: exerciseViewJson(res.exercise) }, summary: { ok: true, exerciseId: res.exercise.id, kind: res.exercise.kind } }
+      }
+      case 'exercise.draft': {
+        const res = await exercises.createFromUnit({ courseId, unitId })
+        if (!res.ok) return { summary: { ok: false, error: res.reason } }
+        return { data: { exercises: res.exercises.map(exerciseViewJson) }, summary: { ok: true, created: res.created } }
+      }
+      case 'exercise.list': {
+        const list = await exercises.listForUnit(courseId, unitId)
+        return { data: { exercises: list }, summary: { ok: true, count: list.length, courseId, unitId } }
+      }
+      case 'exercise.get': {
+        const view = await exercises.find(exerciseId)
+        if (!view) return { summary: { ok: false, error: '找不到这道题。' } }
+        return { data: { exercise: view }, summary: { ok: true, kind: view.kind } }
+      }
+      case 'exercise.hint': {
+        const res = await exercises.revealHint({ exerciseId, upto: studyParam(params, 'level', 'upto') as HintLevel })
+        if (!res.ok) return { summary: { ok: false, error: res.reason } }
+        return { data: res, summary: { ok: true, hints: res.hints.length } }
+      }
+      case 'exercise.solution': {
+        const res = await exercises.revealSolution(exerciseId)
+        if (!res.ok) return { summary: { ok: false, error: res.reason } }
+        return { data: res, summary: { ok: true, hasSolution: res.solution !== null } }
+      }
+      case 'exercise.submit': {
+        const response = exerciseResponseFrom(params)
+        if (!response) return { summary: { ok: false, error: '没看懂这份作答的形状。' } }
+        const res = await exercises.submit({ exerciseId, response })
+        if (!res.ok) return { summary: { ok: false, error: res.reason } }
+        return {
+          data: { attempt: res.attempt, feedback: res.feedback },
+          summary: { ok: true, correct: res.attempt.correct, independent: res.attempt.correct === true && res.attempt.hintLevelSeen === 'none' && !res.attempt.lookedAtSolution }
+        }
+      }
+      case 'attempt.correct': {
+        const res = await exercises.correct({
+          attemptId: studyParam(params, 'attemptId', 'attempt'),
+          text: studyParam(params, 'text', 'note', 'why'),
+          ...(typeof params.correct === 'boolean' ? { correct: params.correct } : {})
+        })
+        if ('reason' in res) return { summary: { ok: false, error: res.reason } }
+        return { data: { attempt: res }, summary: { ok: true } }
+      }
+      case 'exercise.remove': {
+        const removed = await exercises.remove(exerciseId)
+        return { summary: { ok: removed, error: removed ? undefined : '找不到这道题。' } }
+      }
+      default:
+        return { summary: { ok: false, error: `未知的 exercise 动作：${command}` } }
+    }
+  }
+}
+
+/** 给宿主命令的题目 JSON：**不含答案**（模型也不该拿到未揭示的答案）。 */
+function exerciseViewJson(exercise: { id: string; kind: string; prompt: string; unitId: string; courseId: string }): Record<string, unknown> {
+  return { id: exercise.id, kind: exercise.kind, prompt: exercise.prompt, courseId: exercise.courseId, unitId: exercise.unitId }
 }
 
 const goalCapabilityHost: GoalCommandHost = {
@@ -3752,6 +4411,14 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         goalHost: goalCapabilityHost,
         /* 学习状态（实施-25 P08）：阶段与等待同样归宿主（T08-7）。 */
         studyHost: studyCapabilityHost,
+        /* 练习与作答（实施-25 P10）：判分与提示记录也在宿主，模型不能自报做对。 */
+        exerciseHost: exerciseCapabilityHost,
+        /* 跨资料研究（实施-25 P13）：多来源对照与引用状态。 */
+        researchHost: researchCapabilityHost,
+        /* 办事模板（实施-25 P14）：范围与授权点由宿主算。 */
+        playbookHost: playbookCapabilityHost,
+        /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
+        followHost: followCapabilityHost,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
@@ -5606,7 +6273,29 @@ function registerIpc(): void {
         }
         const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
         const readOnly = params.readOnly === true || params['read-only'] === true
-        const result = await ctrl.start(task, model, readOnly ? 'controlled-cwd' : 'worktree')
+        /*
+         * 模型没显式给时，按**父会话的活动**取「按活动配置模型」里的那一档
+         * （实施-25 P18 的真实生效点）。解析结果里带理由与是否发生回退，
+         * 但这里只需要最终值。
+         */
+        let effectiveModel = model
+        if (!effectiveModel) {
+          try {
+            const profile = await resolveAgentProfile(context.parentSessionId ?? context.parentRunId ?? '')
+            const settings = await getSettings()
+            effectiveModel = resolveActivityModel({
+              config: settings.activityModels,
+              activity: profile.activity
+            }).model ?? undefined
+          } catch {
+            /* 取不到配置就当没配：不因为一个设置读盘失败而挡住子代理 */
+          }
+        }
+        /*
+         * 任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
+         * 读不通就在**占用并发槽之前**失败（服务里同一个顺序）。
+         */
+        const result = await ctrl.start(task, effectiveModel, readOnly ? 'controlled-cwd' : 'worktree', params.brief)
         if (!result.ok || !result.run) {
           throw new CapabilityCommandError(
             'subagent_start_failed',
@@ -5623,7 +6312,25 @@ function registerIpc(): void {
             status: run.status,
             isolation: run.isolation,
             task: run.task,
-            latestActivity: run.latestActivity
+            latestActivity: run.latestActivity,
+            deliverables: run.brief?.deliverables.length ?? 0,
+            sources: run.brief?.sources.length ?? 0
+          }
+        }
+      }
+
+      /*
+       * 什么时候该拆出去跑（实施-25 P15 T15-2 / T15-3）。
+       * 清单由 `shared/subagent-brief.ts` 统一出口 —— 不让每个调用方
+       * （CLI 帮助、系统提示、模型自己）各写一份，那就会出现三套「适合并行」的定义。
+       */
+      if (command === 'subagent.guidance') {
+        return {
+          data: { fit: [...SUBAGENT_FIT_CASES], unfit: [...SUBAGENT_UNFIT_CASES] },
+          summary: {
+            kind: 'subagent',
+            action: 'guidance',
+            text: subagentFitText()
           }
         }
       }
@@ -6321,6 +7028,21 @@ function registerIpc(): void {
     }
   })
   handle('yan:artifactDoc:remove', async (id: string) => artifactDocs.remove(id))
+  /*
+   * 成果引用的资料现在怎么样了（T13-4）。
+   *
+   * 只**提示变化**，不改任何引用 —— 旧版本按 P03 的不变量保留。
+   */
+  handle('yan:artifactDoc:sourceStatus', async (id: string) => runSourceStatus(id))
+
+  /*
+   * 多来源对照（T13-2 / T13-3）。
+   *
+   * 宿主负责：读每一份的**当时那一版**正文、切片段、标出「引用原文 / 模型补充」、
+   * 把不同立场的两组并排列出。宿主**不判断谁对、不合并结论** —— 立场标签
+   * 由调用方（模型 / 用户）给，没给就归到「未标注立场」，不计入冲突。
+   */
+  handle('yan:research:compare', async (input: ResearchCompareInput) => runResearchCompare(input))
 
   /*
    * 课程与路线（实施-25 P07）。
@@ -6340,6 +7062,9 @@ function registerIpc(): void {
   handle('yan:course:createFromBlocker', async (input: CourseInput) =>
     courseResult(await courses.createFromBlocker(input))
   )
+  handle('yan:course:createFromArtifact', async (params: { artifactId: string; input: CourseInput }) =>
+    courseResult(await courses.createFromArtifact(params))
+  )
   handle('yan:course:update', async (id: string, patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }) =>
     courseResult(await courses.update(id, patch))
   )
@@ -6358,7 +7083,15 @@ function registerIpc(): void {
     courseResult(await courses.removeConcept(id, conceptId))
   )
   handle('yan:course:archive', async (id: string, archived?: boolean) => courseResult(await courses.archive(id, archived ?? true)))
-  handle('yan:course:remove', async (id: string) => courses.remove(id))
+  handle('yan:course:remove', async (id: string) => {
+    const res = await courses.remove(id)
+    /* 课程没了，它的练习与作答也不能留（否则 P11 会从孤儿记录里读进度）。 */
+    await exercises.removeCourse(id)
+    /* 笔记与概念进度同理：它们都按课程归属。 */
+    await learnings.removeMemory(id)
+    await learnings.remove(id)
+    return res
+  })
 
   /*
    * 学习状态（实施-25 P08）。
@@ -6395,6 +7128,267 @@ function registerIpc(): void {
   handle('yan:study:stop', async (runtimeKey?: string) => studyResult(await learnings.stop(studyKey(runtimeKey))))
   handle('yan:study:remove', async (courseId: string) => learnings.remove(courseId))
 
+  /*
+   * 练习与作答（实施-25 P10）。
+   *
+   * `get` / `list` 返回的题目视图**不含答案**（T10-2）；
+   * `revealHint` / `revealSolution` 是显式的揭示动作，
+   * 而「揭示到哪、看没看解释」由服务记录，提交作答时会写进这次 `Attempt`。
+   */
+  handle('yan:exercise:listForUnit', async (input: { courseId: string; unitId: string }) =>
+    exercises.listForUnit(input?.courseId ?? '', input?.unitId ?? '')
+  )
+  handle('yan:exercise:listForCourse', async (courseId: string) => exercises.listForCourse(courseId))
+  handle('yan:exercise:get', async (exerciseId: string) => exercises.find(exerciseId))
+  handle('yan:exercise:create', async (input: unknown) => exerciseResult(await exercises.create(input)))
+  handle('yan:exercise:createFromUnit', async (input: { courseId: string; unitId: string; maxExercises?: number }) => {
+    const res = await exercises.createFromUnit({
+      courseId: input?.courseId ?? '',
+      unitId: input?.unitId ?? '',
+      ...(Number.isFinite(Number(input?.maxExercises)) ? { maxExercises: Number(input.maxExercises) } : {})
+    })
+    return res.ok
+      ? { ok: true as const, exercises: res.exercises, created: res.created }
+      : { ok: false as const, error: res.reason }
+  })
+  handle('yan:exercise:revealHint', async (input: { exerciseId: string; upto: HintLevel }) =>
+    exercises.revealHint({ exerciseId: input?.exerciseId ?? '', upto: input?.upto })
+  )
+  handle('yan:exercise:revealSolution', async (exerciseId: string) => exercises.revealSolution(exerciseId))
+  handle('yan:exercise:submit', async (input: { exerciseId: string; response: ExerciseResponse }) =>
+    exercises.submit({ exerciseId: input?.exerciseId ?? '', response: input?.response })
+  )
+  handle('yan:exercise:attempts', async (exerciseId: string) => exercises.attempts(exerciseId))
+  handle('yan:exercise:correct', async (input: { attemptId: string; text: string; correct?: boolean | null }) => {
+    const res = await exercises.correct({
+      attemptId: input?.attemptId ?? '',
+      text: input?.text ?? '',
+      ...(input?.correct === undefined ? {} : { correct: input.correct })
+    })
+    /* 服务返回的是 `Attempt | { ok:false, reason }`——这里要包成界面约定的 IPC 形状。 */
+    return 'reason' in res ? { ok: false as const, error: res.reason } : { ok: true as const, attempt: res }
+  })
+  handle('yan:exercise:remove', async (exerciseId: string) => exercises.remove(exerciseId))
+  handle('yan:exercise:removeCourse', async (courseId: string) => exercises.removeCourse(courseId))
+
+  /*
+   * 笔记与概念进度（实施-25 P11）。
+   *
+   * 笔记是用户自己的记录（可改可删）；概念进度是**从作答现算的摘要**，
+   * 所以没有「直接改 level」的接口 —— 只有用户自评（`selfAssessment`）
+   * 与「重新算」（`reset`）。这样两条轴不会被一次调用悄悄改错（T11-2/T11-5）。
+   */
+  handle('yan:note:list', async (courseId: string) => learnings.listNotes(courseId))
+  handle('yan:note:save', async (input: unknown) => noteResult(await learnings.saveNote(input)))
+  handle('yan:note:update', async (input: { id: string; patch: unknown }) =>
+    noteResult(await learnings.updateNote(input?.id ?? '', input?.patch))
+  )
+  handle('yan:note:remove', async (id: string) => learnings.removeNote(id))
+  handle('yan:concept:list', async (courseId: string) => learnings.listProgress(courseId))
+  handle(
+    'yan:concept:assess',
+    async (input: { courseId: string; conceptId: string; kind: 'got-it' | 'suspect'; text?: string }) =>
+      conceptResult(await learnings.setSelfAssessment(input))
+  )
+  handle('yan:concept:reset', async (input: { courseId: string; conceptId: string }) =>
+    learnings.resetProgress(input?.courseId ?? '', input?.conceptId ?? '')
+  )
+  /*
+   * 错题与复习（实施-25 P12）。
+   *
+   * 只读的 `plan` / `due` 是「今天干什么」的入口（界面与模型都用）；
+   * 写操作里**没有「标记已掌握」** —— 复习项只能被连续独立成功收掉，
+   * 或用户手动挪期 / 删掉（T12-4）。
+   */
+  handle('yan:review:list', async (courseId: string) => learnings.listReviews(courseId))
+  handle('yan:review:due', async () => {
+    const items = await learnings.listReviews('')
+    return { items: dueReviews(items, Date.now()), total: items.length }
+  })
+  handle(
+    'yan:review:plan',
+    async (input: { courseId: string; mode?: 'due' | 'quick'; minutesBudget?: number }) =>
+      learnings.planToday(input?.courseId ?? '', {
+        ...(input?.mode ? { mode: input.mode } : {}),
+        ...(input?.minutesBudget !== undefined ? { minutesBudget: input.minutesBudget } : {})
+      })
+  )
+  handle('yan:review:reading', async (input: Parameters<typeof learnings.flagReading>[0]) =>
+    reviewResult(await learnings.flagReading(input))
+  )
+  handle('yan:review:question', async (input: Parameters<typeof learnings.flagQuestion>[0]) =>
+    reviewResult(await learnings.flagQuestion(input))
+  )
+  handle('yan:review:reschedule', async (input: { id: string; dueAt?: number; priority?: 'high' | 'normal' | 'low' }) =>
+    reviewResult(await learnings.rescheduleReview(input?.id ?? '', input ?? {}))
+  )
+  handle('yan:review:dismiss', async (id: string) => learnings.dismissReview(id))
+
+  /*
+   * 办事模板（实施-25 P14）。
+   *
+   * 这里**没有执行入口**：`plan` 只把「将要做什么、会动哪里」摊开给用户看，
+   * 真正动手的是模型，而且必须在用户确认之后（T14-3）。
+   * 宿主没提供「静默跑」的能力 —— 这是「不静默动文件」最直接的保证。
+   */
+  handle('yan:playbook:list', async (spaceId?: string | null) => playbooks.list(spaceId))
+  handle('yan:playbook:save', async (input: Parameters<typeof playbooks.save>[0]) => playbooks.save(input ?? {}))
+  handle(
+    'yan:playbook:update',
+    async (input: { id: string; title?: unknown; goal?: unknown; steps?: unknown; io?: unknown; kind?: unknown }) =>
+      playbooks.update(String(input?.id ?? ''), input ?? {})
+  )
+  handle('yan:playbook:remove', async (id: string) => playbooks.remove(id))
+  /* 复用前的作用范围与授权点：给的组数必须与需要确认的步骤数一致 */
+  handle('yan:playbook:plan', async (input: { id: string; scopes?: string[][] }) =>
+    playbooks.plan(String(input?.id ?? ''), input?.scopes ? { scopes: input.scopes } : {})
+  )
+  handle('yan:playbook:run', async (id: string) => playbooks.recordRun(id))
+
+  /*
+   * 持续关注（实施-25 P16）。
+   *
+   * 没有「立即执行」这种 IPC：宿主不会自己去查（那是后台花钱且用户看不见）。
+   * `due` 只说谁到点了，`report` 接模型看完之后回报的结果。
+   * 「应用没开就不跟进」这句话由 `FOLLOW_APP_ONLY_NOTE` 固定，
+   * 界面与模型看到的是同一句。
+   */
+  handle('yan:follow:list', async (spaceId?: string | null) => follows.list(spaceId))
+  handle('yan:follow:views', async (spaceId?: string | null) =>
+    follows.views(spaceId).map((view) => ({
+      ...view,
+      ...(view.lastRun ? { lastRunText: runSummaryText(view.lastRun) } : {})
+    }))
+  )
+  handle('yan:follow:due', async () => follows.due())
+  handle('yan:follow:runs', async (input: { watchId: string; limit?: number }) =>
+    follows.runs(String(input?.watchId ?? ''), input?.limit)
+  )
+  handle('yan:follow:save', async (input: Parameters<typeof follows.save>[0]) => {
+    const res = await follows.save(input ?? {})
+    return res.ok ? { ok: true as const, watch: res.value } : { ok: false as const, code: res.code, error: res.error }
+  })
+  handle(
+    'yan:follow:update',
+    async (input: {
+      id: string
+      title?: unknown
+      kind?: unknown
+      cadence?: unknown
+      intervalMinutes?: unknown
+      resultPlace?: unknown
+      notifyOn?: unknown
+      enabled?: unknown
+    }) => {
+      const res = await follows.update(String(input?.id ?? ''), {
+        title: input?.title,
+        kind: input?.kind,
+        cadence: input?.cadence,
+        intervalMinutes: input?.intervalMinutes,
+        resultPlace: input?.resultPlace,
+        notifyOn: input?.notifyOn,
+        enabled: input?.enabled
+      })
+      return res.ok ? { ok: true as const, watch: res.value } : { ok: false as const, code: res.code, error: res.error }
+    }
+  )
+  handle('yan:follow:remove', async (id: string) => follows.remove(id))
+  handle('yan:follow:report', async (input: Parameters<typeof follows.report>[0]) => {
+    const res = await follows.report(input ?? {})
+    return res.ok ? { ok: true as const, run: res.value.run, watch: res.value.watch } : { ok: false as const, code: res.code, error: res.error }
+  })
+
+  /*
+   * 语音与内容形式（实施-25 P20）。
+   *
+   * 两件事：给计划（说清该走哪条路、结果怎么归位），以及把**外部工具转好的文本**
+   * 登记成同一门课的新来源。宿主**不做识别与朗读** —— 那要外部能力。
+   */
+  handle('yan:audio:plan', async (input: { task?: string; courseId?: string; sourceId?: string; version?: number }) => {
+    const task = input?.task === 'read-aloud' ? 'read-aloud' : 'transcribe'
+    const plan = audioPlan(task, {
+      ...(input?.courseId ? { courseId: input.courseId } : {}),
+      ...(input?.sourceId ? { sourceId: input.sourceId } : {}),
+      ...(Number.isInteger(input?.version) ? { version: Number(input?.version) } : {})
+    })
+    return { ok: true as const, plan }
+  })
+  handle(
+    'yan:audio:transcript',
+    async (input: { courseId?: string; sourceId?: string; version?: number; title?: string; text?: string }) => {
+      const prepared = transcriptImportInput({
+        courseId: String(input?.courseId ?? ''),
+        sourceId: String(input?.sourceId ?? ''),
+        version: Number(input?.version ?? 1),
+        ...(input?.title ? { title: input.title } : {}),
+        text: String(input?.text ?? '')
+      })
+      if (!prepared.ok) return { ok: false as const, code: prepared.code, error: prepared.reason }
+      const imported = await library.import(prepared.value)
+      if (!imported.ok) return { ok: false as const, code: 'import-failed', error: imported.error ?? '登记失败' }
+      const sourceId = imported.sourceId ?? prepared.value.identity
+      const version = imported.version ?? 1
+      /* 只登记来源：**不碰 courses**（不新建课程、不动单元与学习进度） */
+      return {
+        ok: true as const,
+        sourceId,
+        version,
+        note: transcriptRegisteredText(sourceId, version)
+      }
+    }
+  )
+
+  /*
+   * 按活动配置模型（实施-25 P18）。
+   *
+   * 这里只读写「哪个活动用哪个模型」与解析结果 —— **切模型本身不在这里**：
+   * 仍然走既有的模型选择链路。`current` 由界面传（会话当前模型只有会话侧知道）。
+   */
+  handle('yan:activity:modelRows', async (input?: { current?: string | null }) => {
+    const settings = await getSettings()
+    return activityModelRows({
+      config: settings.activityModels,
+      current: typeof input?.current === 'string' ? input.current : null
+    })
+  })
+  handle(
+    'yan:activity:model',
+    async (input: { activity: AgentActivity; current?: string | null; available?: string[] }) => {
+      const settings = await getSettings()
+      const activity = normalizeAgentActivity(input?.activity)
+      const resolution = resolveActivityModel({
+        config: settings.activityModels,
+        activity,
+        current: typeof input?.current === 'string' ? input.current : null,
+        /* 给了可用清单才会做可用性检查（并可能发生回退） */
+        ...(Array.isArray(input?.available) ? { available: input.available.map((item) => String(item)) } : {})
+      })
+      return { ...resolution, text: activityModelText(resolution) }
+    }
+  )
+  handle(
+    'yan:activity:modelSet',
+    async (input: { activity?: string; model?: string | null; defaultModel?: string | null; clear?: boolean }) => {
+      const current = (await getSettings()).activityModels
+      const next = input?.clear
+        ? emptyActivityModelConfig()
+        : (() => {
+            let base = current
+            if (input && 'defaultModel' in input) {
+              base = { ...sanitizeActivityModelConfig(base), defaultModel: input.defaultModel ?? null }
+            }
+            if (input?.activity) {
+              base = setActivityModel(base, normalizeAgentActivity(input.activity), input.model ?? null)
+            }
+            return base
+          })()
+      await patchSettings({ activityModels: next })
+      const settings = await getSettings()
+      const rows = activityModelRows({ config: settings.activityModels })
+      return { ok: true as const, rows }
+    }
+  )
+
   handle('yan:packages:list', async (cwd: string) => {
     try {
       return listPackages(String(cwd ?? ''))
@@ -6409,6 +7403,33 @@ function registerIpc(): void {
    *（开发态 ↔ 打包态）后看到一份过期的清单。
    */
   handle('yan:capabilities:builtin', async () => builtinCapabilities(yanThinExtensionPaths()))
+
+  /*
+   * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。
+   * 只跑纯规则（与 `yan capabilities need` 同一份 shared 实现），
+   * **不装、不改配置**；`available` 由界面把已知能力名传进来。
+   */
+  handle('yan:capabilities:need', async (input: { need?: string; available?: string[] }) => {
+    const need = String(input?.need ?? '').trim()
+    if (!need) return { ok: false as const, need: '', matched: false, error: '先说清你要做什么', text: '' }
+    const available = Array.isArray(input?.available) ? input.available.map((x) => String(x)) : []
+    const match = matchGap(need)
+    if (!match) {
+      return { ok: true as const, need, matched: false, text: unmatchedGapText(need) }
+    }
+    const stillMissing = gapStillMissing(match.gap, available)
+    const body = gapText(match.gap, match.matched)
+    return {
+      ok: true as const,
+      need,
+      matched: true,
+      gapId: match.gap.id,
+      missing: match.gap.missing,
+      via: match.gap.via,
+      alreadyAvailable: !stillMissing,
+      text: stillMissing ? body : `你现在已经能用相关能力（不必再装）。\n${body}`
+    }
+  })
 
   /*
    * 能力页初次打开只取 pi 已加载的 Skill 与本 runner 可见的 MCP 配置；不握手、不启动 stdio。

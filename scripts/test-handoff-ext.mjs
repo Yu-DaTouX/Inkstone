@@ -222,6 +222,36 @@ export async function runHandoffExtTests(ok) {
       'Pi completion 的 stopReason=error 与 errorMessage 被保留为 failed 结果'
     )
 
+    const valid = JSON.stringify({ goal: '目标', deliverable: '交付', constraints: [], acceptance: [],
+      done: [], remaining: ['核对'], nextActions: ['打开文件核对'], blockers: [], files: [], notes: [] })
+    let repairCalls = 0
+    await writeRequest('op-repair', { maxAttempts: 2, retryPrompt: '修复格式' })
+    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_model, context, options) => {
+      repairCalls++
+      if (repairCalls === 2) ok(context.messages[0].content[0].text.includes('修复格式'), '修复调用保留原材料并追加宿主修复要求')
+      return repairCalls === 1 ? { content: [{ type: 'thinking', text: '{假的推理}' }, { type: 'text', text: '无法生成' }], stopReason: 'length' }
+        : { message: { content: [{ type: 'text', text: valid }] }, stopReason: 'stop' }
+    } } })
+    const repaired = await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-repair' ? r : null })
+    ok(repairCalls === 2 && repaired?.text === valid && repaired?.attempts === 2, '非 JSON 后有限重试成功，支持嵌套文本块')
+    ok(repaired?.stopReason === 'stop', '结果保留真实结束原因')
+
+    let badCalls = 0
+    await writeRequest('op-bad', { maxAttempts: 2 })
+    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async () => { badCalls++; return { text: '坏格式', stopReason: 'length' } } } })
+    const bad = await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-bad' ? r : null })
+    ok(badCalls === 2 && bad?.attempts === 2 && bad?.stopReason === 'length', '两次坏格式后结束，无无限重试，记录截断原因')
+
+    let cancelledCalls = 0
+    await writeRequest('op-cancel', { maxAttempts: 2 })
+    await rm(resultFile, { force: true })
+    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async () => {
+      cancelledCalls++; await rm(requestFile, { force: true }); return { text: '坏格式' }
+    } } })
+    await waitFor(async () => cancelledCalls ? true : null)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    ok(cancelledCalls === 1 && !(await readResult()), '撤销请求后不重试、不写过期结果')
+
     /* ── 7. 压根没有请求：等满窗口后什么都不做 ─────────────────────── */
     await rm(resultFile, { force: true })
     await rm(requestFile, { force: true })

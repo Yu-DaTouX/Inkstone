@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { selectSubagentRuns } from '../../state/subagent-view'
 import type { SubagentRun } from '../../../../shared/ipc'
+import { briefLine } from '../../../../shared/subagent-brief'
 
 /** 刚结束的子代理在会话流里保留多久（过后自动退场） */
 const RECENT_DONE_MS = 5 * 60_000
@@ -75,6 +76,40 @@ export function SubagentNote() {
             {run.latestActivity ? (
               <span className="sa-note-activity" title={run.latestActivity}>
                 {run.latestActivity}
+              </span>
+            ) : null}
+            {/*
+             * 任务输入（P15 T15-1）：派活时写清了要交回什么、依据什么。
+             * 只在有内容时显示 —— 一句话任务不需要多一行。
+             */}
+            {run.brief && run.brief.deliverables.length > 0 ? (
+              <span
+                className="sa-note-brief"
+                data-testid={`subagent-note-brief-${run.id}`}
+                title={briefLine(run.brief)}
+              >
+                {t('sa.briefDeliverables', { items: run.brief.deliverables.join('、') })}
+              </span>
+            ) : null}
+            {/*
+             * 结果汇总（P15 T15-4）：摘要是「它最后那段话」的摘录，不是子代理自报的结论 ——
+             * 主 agent 拿这份汇总去回用户，而不是把子代理的原话端上来。
+             */}
+            {run.result?.summary ? (
+              <span
+                className="sa-note-summary"
+                data-testid={`subagent-note-summary-${run.id}`}
+                title={run.result.summary}
+              >
+                {run.result.summary}
+              </span>
+            ) : null}
+            {run.result && (run.result.sources.length > 0 || run.result.artifacts.length > 0) ? (
+              <span className="sa-note-result-meta" data-testid={`subagent-note-result-${run.id}`}>
+                {t('sa.resultMeta', {
+                  sources: run.result.sources.length,
+                  artifacts: run.result.artifacts.length
+                })}
               </span>
             ) : null}
             {run.diff ? (

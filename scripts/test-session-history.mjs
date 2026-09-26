@@ -51,6 +51,10 @@ export async function runSessionHistoryTests(ok, history, chainService) {
     await chains.link(a, b, 'h-1')
     const joined = await history.readChainMessages(b, chains)
     ok(joined?.messages.length === 3, `两段拼起来 3 条（实际 ${joined?.messages.length}）`)
+    ok(new Set(joined.messages.map(m => m.id)).size === joined.messages.length, '链式历史消息 ID 不跨段冲突')
+    ok(joined.messages[0].id.startsWith('history:s-a:') && joined.messages.at(-1).id === 'm0', '旧段有来源前缀，活动段保留实时 m0 编号')
+    const livePatched = joined.messages.map(m => m.id === 'm0' ? { ...m, text: '新的实时输出' } : m)
+    ok(livePatched[0].text === '第一段的问题', '目的段实时更新不会覆盖源段用户消息')
     ok(joined.messages[0].text === '第一段的问题', '旧段在前（顺序不能倒）')
     ok(joined.messages.at(-1).text === '续接后的第一句', '新段在后')
     ok(

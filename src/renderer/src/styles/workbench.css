@@ -77,6 +77,17 @@
   color: var(--fg-mute);
 }
 
+/* 头部的一行提醒（当前只有「展开碰上限」）：不挤头部，窄屏下让位给统计 */
+.wb-map-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--warn);
+  font-size: var(--fs-xs);
+}
+
 /*
  * 画布工具条：浮在画布左下角（footer 之上），不占头部布局。
  * 定位：.wb-map 是 relative；body 在它里面，所以这里的 absolute 不会被
@@ -266,6 +277,225 @@
 .wb-node-fold:focus-visible {
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 1px;
+}
+
+/* 展开 / 收起轮次层（实施-26 R3）：与折叠按钮同size，展开时点亮 */
+.wb-node-turns {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-mute);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wb-node-turns:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.wb-node-turns.on {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.wb-node-turns:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/*
+ * 轮次卡（实施-26 R3 / R4）：挂在会话节点正下方的「一轮问答」。
+ *
+ * 宽度卡在半途：它**比节点窄**（属于那个会话，不是平级会话），
+ * 但比标题长（要容下问题与答案的一截）。高度固定，超过就往回收 ——
+ * 否则一轮长回答就能把整张地图撑到看不见全局。
+ */
+.wb-turn {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--border-str);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.wb-turn:hover {
+  background: var(--bg-3);
+}
+
+.wb-turn:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-turn.dim {
+  opacity: 0.4;
+}
+
+/* 没有正常收尾的轮（被停 / 被打断 / 出错）：左边强调条 + 底色提醒 */
+.wb-turn.incomplete {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+/* 与父会话那一轮对齐的卡：右侧一条线，让「分叉自这里」看得出来 */
+.wb-turn.aligned {
+  border-right: 2px solid var(--accent);
+}
+
+.wb-turn-no {
+  flex: none;
+  width: 14px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/*
+ * 「从这一轮分叉」：平时隐起来（卡面很小，每个字符都是抢来的），
+ * hover / 键盘聚焦时出现 —— 不用鼠标也拿得到。
+ */
+.wb-turn-fork {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wb-turn:hover .wb-turn-fork,
+.wb-turn:focus-within .wb-turn-fork,
+.wb-turn-fork:focus-visible {
+  opacity: 1;
+}
+
+.wb-turn-fork:hover {
+  color: var(--fg);
+}
+
+.wb-turn-fork:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.wb-turn-fork:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.wb-turn-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wb-turn-q,
+.wb-turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wb-turn-q {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.wb-turn-meta {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.wb-turn-tag {
+  flex: none;
+  padding: 0 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+}
+
+.wb-turn-tag.ok {
+  color: var(--fg-dim);
+}
+
+.wb-turn-bad {
+  color: var(--warn);
+}
+
+.wb-turn-tools,
+.wb-turn-trunc {
+  flex: none;
+  padding: 0 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+}
+
+/*
+ * 「对齐父轮」不参与行内竞争：卡很窄，放在 meta 行里会被截成一个字。
+ * 它本质上是「这卡与另一张卡的关系」，所以钉在卡的右上角。
+ */
+.wb-turn-aligned {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 3px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+}
+
+/* 轮次层的非卡状态：加载中 / 读不出来 / 这个会话还没有轮次 */
+.wb-turn-state {
+  position: absolute;
+  padding: 4px 7px;
+  border: 1px dashed var(--border-str);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.wb-turn-state.err {
+  border-color: var(--warn);
+  color: var(--warn);
 }
 
 .wb-node:hover {
@@ -911,7 +1141,7 @@
 
 .wb-lib-badge.warn {
   border-color: var(--warn, var(--border));
-  color: var(--warn, var(--fg-dim));
+  color: var(--warn);
 }
 
 .wb-lib-actions {
@@ -1070,15 +1300,498 @@
 
 .wb-art-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
+/* 动作变多后（P06b-4 的「用于学习」），标题要保住可读宽度：不够就换行。 */
 .wb-art-title {
-  flex: 1 1 auto;
+  flex: 1 1 180px;
   min-width: 0;
   font-size: var(--fs-sm);
+}
+
+/* 「用于学习」（T06b-4）：目标填完才生成，避免用空目标建出一门没方向的课。 */
+/* 跨资料研究（P13）：来源变化提示 + 多来源对照（并排、不合并）。 */
+.wb-art-sources-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-art-source-compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.wb-art-source-compare:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.wb-art-source-changed {
+  color: var(--warn);
+}
+
+.wb-art-source-status {
+  display: block;
+  margin: 2px 0 0 8px;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+
+.wb-art-source-status.outdated {
+  color: var(--warn);
+}
+
+.wb-art-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+
+.wb-art-compare-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-art-compare-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wb-art-compare-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.wb-art-prov {
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+
+/* 「模型补充」要一眼看出它不是原文。 */
+.wb-art-prov.model {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.wb-art-compare-title {
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.wb-art-compare-text {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  overflow-wrap: break-word;
+}
+
+.wb-art-compare-conflicts {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* 办事模板（P14）：列表 + 复用前的范围确认。范围填不完就不能用是布局上的硬约束。 */
+.wb-pb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wb-pb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wb-pb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-pb-row.on,
+.wb-pb-row:hover {
+  border-color: var(--accent);
+}
+
+.wb-pb-title {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.wb-pb-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+
+.wb-pb-confirm {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--fg);
+  overflow-wrap: break-word;
+}
+
+.wb-pb-points {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+
+/*
+ * 步骤列表用普通行内排版而不是 flex 列：
+ * 序号、影响标签、标题要能自然同行；改用 flex 会把「标签」「标题」拆成上下两行，
+ * 四步就变成八行，在右列这块窄地方白白占高度。
+ */
+.wb-pb-steps {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fs-xs);
+  color: var(--fg-dim);
+}
+
+.wb-pb-steps li {
+  margin-bottom: 4px;
+}
+
+.wb-pb-point-title,
+.wb-pb-step-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+/* 「会改东西」「会对外发出」要一眼看出来是授权点，而不是普通说明 */
+.wb-pb-effect {
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+
+.wb-pb-effect.write {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.wb-pb-effect.external {
+  color: var(--danger, #e5484d);
+  border-color: var(--danger, #e5484d);
+}
+
+.wb-pb-warn {
+  color: var(--warn);
+}
+
+.wb-pb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/*
+ * 按钮不参与收缩：右列卡片窄，三个按钮一行放不下时必须**整个换行**，
+ * 而不是被压扁把文字挤成两行（截图里曾出现「填到输入框」被压变形）。
+ */
+.wb-pb-actions .wb-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wb-pb-note {
+  margin: 0;
+  color: var(--fg-mute);
+}
+
+.wb-pb-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-pb-steps-input {
+  min-height: 54px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.wb-pb-add {
+  align-self: flex-start;
+}
+
+/* 持续关注（P16）：状态 / 上次结果 / 启用 / 只填不发，全部在一列里说完。 */
+.wb-follow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wb-follow-note {
+  margin: 0;
+  color: var(--fg-mute);
+  overflow-wrap: break-word;
+}
+
+.wb-follow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wb-follow-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-follow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-follow-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.wb-follow-status {
+  flex: 0 0 auto;
+  color: var(--fg-mute);
+}
+
+/* 到点 / 还没启用 / 提议都要能一眼看出来，不能和普通状态同色 */
+.wb-follow-due,
+.wb-follow-warn {
+  margin: 0;
+  color: var(--warn);
+  overflow-wrap: break-word;
+}
+
+.wb-follow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wb-follow-actions .wb-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wb-follow-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-follow-add {
+  align-self: flex-start;
+}
+
+.wb-audio {
+  /* 四段并存时语音卡是最下面那张：高度收一点，并允许内部滚动 */
+  max-height: 40%;
+}
+
+/* 语音（P20）：两张「怎么做」按钮 + 粘贴转写 + 登记到同一门课 */
+.wb-audio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-audio-actions .wb-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wb-audio-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-audio-text {
+  margin: 0;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.wb-audio-transcript {
+  min-height: 54px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.wb-audio-error {
+  margin: 0;
+  color: var(--warn);
+  overflow-wrap: break-word;
+}
+
+.wb-audio-note {
+  margin: 0;
+  color: var(--fg-mute);
+  overflow-wrap: break-word;
+}
+
+.wb-art-tolearn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+
+.wb-art-tolearn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-art-tolearn-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+
+.wb-art-tolearn-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wb-art-tolearn-row button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-1);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.wb-art-tolearn-row button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.wb-art-tolearn-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .wb-art-actions {
@@ -1691,6 +2404,13 @@ input.wb-learn-unit-title {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /*
+   * 实施-25 P20：右栏现在是「教材 + 练习 + 复习 + 语音」四段，
+   * 四段的 max-height 加起来必然超过一屏 —— 所以右栏自己必须能滚，
+   * 否则最后一张卡（语音）会被裁在容器外且**永远湖不到**（实测）。
+   */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .wb-learn-ws-chat,
@@ -1869,4 +2589,484 @@ input.wb-learn-unit-title {
   gap: 4px;
   padding: 8px 10px;
   border-top: 1px solid var(--border-soft);
+  /*
+   * 练习卡必须看得见：教材区是 flex:1，不限制的话它会把练习卡挤出容器
+   *（中档位右列只有半屏高，实测直接裁在底部）。这里给它一个高度上限并内部滚动，
+   * 保证「题目 / 提示 / 作答」始终可达。
+   */
+  flex: 0 0 auto;
+  max-height: 52%;
+  overflow: auto;
+}
+
+/*
+ * 练习卡（实施-25 P10）。
+ *
+ * 题目与答案分开：`.wb-ex-solution` 只在用户点过「看完整解释」后才出现。
+ * 反馈按判定着色（对 / 错 / 开放），但正确与错误都只是一条左侧色条 ——
+ * 不把整张卡刷成红绿，否则用户会只看颜色不看说明。
+ */
+.wb-ex-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-ex-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wb-ex-count {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--fg-mute);
+}
+
+.wb-ex-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wb-ex-tab {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.wb-ex-tab[data-active='true'] {
+  color: var(--bg-1);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.wb-ex-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-ex-kind {
+  font-size: 11px;
+  color: var(--fg-mute);
+}
+
+.wb-ex-open {
+  color: var(--warn);
+}
+
+.wb-ex-prompt {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 图片题（P19）：只列资料库引用 + 「模型能不能看图」的如实提醒 */
+.wb-ex-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.wb-ex-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-full);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  overflow-wrap: break-word;
+}
+
+/* 看不了图时用 warn 色：这是「你需要知道」而不是普通说明 */
+.wb-ex-vision {
+  flex: 0 0 100%;
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.wb-ex-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-ex-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.wb-ex-option[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.wb-ex-match {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-ex-match-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.wb-ex-match-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-ex-cloze {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-ex-cloze-label {
+  font-size: 11px;
+  color: var(--fg-mute);
+}
+
+.wb-ex-input,
+.wb-ex-textarea {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  resize: vertical;
+}
+
+.wb-ex-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-ex-hint {
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border-left: 2px solid var(--warn);
+  border-radius: var(--r-sm);
+}
+
+.wb-ex-hint-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+
+.wb-ex-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wb-ex-solution {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--r-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wb-ex-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-2);
+  border-left: 2px solid var(--border-soft);
+  border-radius: var(--r-sm);
+}
+
+.wb-ex-feedback[data-verdict='correct'] {
+  background: var(--ok-soft);
+  border-left-color: var(--ok);
+}
+
+.wb-ex-feedback[data-verdict='wrong'] {
+  background: var(--warn-soft);
+  border-left-color: var(--warn);
+}
+
+.wb-ex-verdict {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wb-ex-assisted {
+  font-weight: 400;
+  color: var(--fg-mute);
+}
+
+.wb-ex-fb-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.wb-ex-correct {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-ex-link {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 11px;
+  color: var(--fg-mute);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/*
+ * 概念进度与笔记（实施-25 P11）。
+ *
+ * 观察层级与复习状态是**两个并列的标签**（不能合并成一个）；
+ * 层级颜色的语义：未接触灰 / 提示下偏黄 / 独立绿 / 新情境强调色。
+ */
+.wb-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.wb-memory-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+
+.wb-memory-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-memory-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wb-memory-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 左栏很窄：输入独占一行，别和按钮挤在一起。 */
+.wb-memory-add .wb-ex-input {
+  flex: 1 1 100%;
+}
+
+.wb-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wb-memory-row,
+.wb-memory-note {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-memory-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-memory-name {
+  /* 左栏极窄：名字独占一行，英文按单词换行（不要在字符间断）。 */
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg);
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.wb-memory-level {
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+}
+
+.wb-memory-level[data-level='with-hint'] {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.wb-memory-level[data-level='independent'] {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.wb-memory-level[data-level='transfer'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.wb-memory-review {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+}
+
+.wb-memory-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wb-memory-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-memory-note-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wb-memory-kind {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--fg-mute);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+}
+
+/* 错题与复习（P12）：计划行 + 到期时间文案 */
+/*
+ * 导师页右栏是 flex 列：不锁住高度时它会被压扁（三段同时被 shink），
+ * 实际效果是复习面板只剩标题一行。与练习卡（P10）同一策略：
+ * 自己算高度、内部滚动，保证内容可达。
+ */
+.wb-memory-panel {
+  flex: 0 0 auto;
+  max-height: 46%;
+  overflow: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.wb-memory-count,
+.wb-memory-when {
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+
+.wb-memory-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+
+.wb-memory-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-memory-plan-text {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg);
+  overflow-wrap: break-word;
+}
+
+.wb-memory-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+
+/* 「优先」的那一条要看起来就不一样（但仍是提示，不是命令）。 */
+.wb-memory-badge.attn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.wb-memory-badge.calm {
+  opacity: 0.7;
 }

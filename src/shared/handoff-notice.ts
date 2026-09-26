@@ -127,6 +127,11 @@ export function handoffNoticeOf(
  * 用户报障时要能对上诊断日志）。
  */
 const REASON_TEXT: Record<string, string> = {
+  'no-json-object': '模型未返回完整交接格式，仍保留原会话',
+  'invalid-json': '交接内容格式错误，仍保留原会话',
+  empty: '模型未返回交接内容',
+  'missing-content-fields': '交接内容字段不完整',
+  'missing-continuation': '交接内容缺少剩余工作或下一步',
   'below-threshold': '这个片段还没有压够次数',
   'no-goal': '这条会话还没有在推进的目标',
   'goal-not-active': '目标已经不在推进阶段',

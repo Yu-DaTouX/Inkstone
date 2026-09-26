@@ -2193,3 +2193,32 @@
   white-space: nowrap;
   max-width: 220px;
 }
+
+/*
+ * 任务输入与结果汇总（实施-25 P15）。
+ * 这一行是**非阻塞**提示：摘要只在有内容时出现，宽度不够就省略，
+ * 不把整段子代理输出塞进会话流（详情仍在转录里）。
+ */
+.sa-note-brief {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+  color: var(--fg-mute);
+}
+
+.sa-note-summary {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+
+.sa-note-result-meta {
+  flex: 0 0 auto;
+  color: var(--fg-mute);
+}

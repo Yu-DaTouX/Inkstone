@@ -426,6 +426,40 @@ function registerTerminalStub() {
   })
 }
 
+/**
+ * 按需获取能力（P17）的规则：与主进程跑**同一份** `src/shared/capability-gap.ts`。
+ *
+ * 为什么不用手写夹具：夹具会与真实文案慢慢分家，截图就会骗人。
+ * 用 esbuild 同步编译一次再 require（矩阵脚本没有顶层 await，见文件头）。
+ */
+let sharedRuleCache = new Map()
+
+/**
+ * 同步编译一个 shared 纯逻辑模块并缓存require结果。
+ * 矩阵是**自己的主进程**，没有真实 handler —— 但规则不能手写夹具（会与真实实现分家）。
+ */
+function sharedRules(entry) {
+  const cached = sharedRuleCache.get(entry)
+  if (cached) return cached
+  const require = createRequire(import.meta.url)
+  const { buildSync } = require('esbuild')
+  /* 前缀 shared- ：不与 test:unit 的同名产物（ESM）撞车 */
+  const outfile = join(root, 'out', 'test', 'shared-' + entry.replace(/[/]/g, '-') + '.cjs')
+  buildSync({ entryPoints: [join(root, 'src', 'shared', entry + '.ts')], outfile, bundle: true, format: 'cjs', platform: 'node', logLevel: 'silent' })
+  const mod = require(outfile)
+  sharedRuleCache.set(entry, mod)
+  return mod
+}
+
+function capabilityGapRules() {
+  return sharedRules('capability-gap')
+}
+
+/** 按活动配置模型（P18）：同一份 shared 规则。 */
+function activityModelRules() {
+  return sharedRules('activity-model')
+}
+
 function registerStubHandlers() {
   registerTerminalStub()
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
@@ -472,32 +506,73 @@ function registerStubHandlers() {
       messageCount: 8
     }
   ]
-  const matrixPeek = (path) => ({
+  /*
+   * 轮次层（实施-26 R3）的夹具：按 path 区分父子。
+   *
+   * 子会话带着父会话那一轮（真实分叉文件就是这样），
+   * `branchOrigin` 才能对得上、对齐才有可能发生。
+   */
+  const matrixTurnsPeek = (path, child) => ({
     sessionId: path.replace(/^.*\//, '').replace(/\.jsonl$/, ''),
-    total: 4,
-    truncated: false,
-    bytes: 1024,
-    messages: [
-      { id: 'p1', role: 'user', text: '先把地图换成参考实现', timestamp: nowMs - 7_200_000 },
-      {
-        id: 'p2',
-        role: 'assistant',
-        text: '已按上游画布接线，卡片会显示在这里。',
-        timestamp: nowMs - 7_000_000,
-        toolCalls: [{ id: 't1', name: 'read', args: { path: 'src/App.tsx' }, status: 'ok', output: 'ok' }]
-      },
-      /* 第二轮：上一轮卡片因此不再是「最后一张」，会拿到分支/折叠按钮
-         （上游只给最后一张卡片 canContinue，官方图里卡片右侧的 ± 就是这两个）。 */
-      { id: 'p3', role: 'user', text: '再补一遍窄窗口下的检查', timestamp: nowMs - 5_400_000 },
-      {
-        id: 'p4',
-        role: 'assistant',
-        text: '窄窗口下卡片会重新排布，工具卡折叠。',
-        timestamp: nowMs - 5_200_000,
-        toolCalls: [{ id: 't2', name: 'bash', args: { command: 'npm run check' }, status: 'ok', output: 'ok' }]
-      }
-    ]
+    total: 6,
+    truncated: 2,
+    bytes: 4096,
+    messages: child
+      ? [
+          { id: 'c1', entryId: 'mt-c1', role: 'user', text: '第二段怎么理解', timestamp: nowMs - 3_000_000 },
+          { id: 'c2', entryId: 'mt-c2', role: 'assistant', text: '第二段讲缓存。', timestamp: nowMs - 2_900_000 },
+          { id: 'c3', entryId: 'mt-c3', role: 'user', text: '分叉后的问题', timestamp: nowMs - 2_800_000 },
+          { id: 'c4', entryId: 'mt-c4', role: 'assistant', text: '分叉后的回答。', timestamp: nowMs - 2_700_000 }
+        ]
+      : [
+          { id: 'p1', entryId: 'mt-p1', role: 'user', text: '第一段怎么理解', timestamp: nowMs - 5_000_000 },
+          { id: 'p2', entryId: 'mt-p2', role: 'assistant', text: '第一段讲分层。', timestamp: nowMs - 4_900_000 },
+          { id: 'p3', entryId: 'mt-p3', role: 'user', text: '第二段怎么理解', timestamp: nowMs - 4_800_000 },
+          {
+            id: 'p4',
+            role: 'assistant',
+            text: '第二段讲缓存。',
+            timestamp: nowMs - 4_700_000,
+            toolCalls: [{ id: 'tt1', name: 'read', args: {}, status: 'ok' }]
+          },
+          { id: 'p5', entryId: 'mt-p5', role: 'user', text: '再来一段', timestamp: nowMs - 4_600_000 },
+          {
+            id: 'p6',
+            role: 'assistant',
+            text: '',
+            timestamp: nowMs - 4_500_000,
+            turnTiming: { logicalTurnId: 'mt3', startedAt: nowMs - 4_600_000, endedAt: nowMs - 4_500_000, terminalReason: 'stopped' }
+          }
+        ]
   })
+  const matrixPeek = (path) => (path.includes('turns-')
+    ? matrixTurnsPeek(path, path.includes('turns-child'))
+    : {
+        sessionId: path.replace(/^.*\//, '').replace(/\.jsonl$/, ''),
+        total: 4,
+        truncated: false,
+        bytes: 1024,
+        messages: [
+          { id: 'p1', role: 'user', text: '先把地图换成参考实现', timestamp: nowMs - 7_200_000 },
+          {
+            id: 'p2',
+            role: 'assistant',
+            text: '已按上游画布接线，卡片会显示在这里。',
+            timestamp: nowMs - 7_000_000,
+            toolCalls: [{ id: 't1', name: 'read', args: { path: 'src/App.tsx' }, status: 'ok', output: 'ok' }]
+          },
+          /* 第二轮：上一轮卡片因此不再是「最后一张」，会拿到分支/折叠按钮
+             （上游只给最后一张卡片 canContinue，官方图里卡片右侧的 ± 就是这两个）。 */
+          { id: 'p3', role: 'user', text: '再补一遍窄窗口下的检查', timestamp: nowMs - 5_400_000 },
+          {
+            id: 'p4',
+            role: 'assistant',
+            text: '窄窗口下卡片会重新排布，工具卡折叠。',
+            timestamp: nowMs - 5_200_000,
+            toolCalls: [{ id: 't2', name: 'bash', args: { command: 'npm run check' }, status: 'ok', output: 'ok' }]
+          }
+        ]
+      })
   /* 矩阵别处已经注册过一份空列表（第 595 行），先摘掉再换成夹具 */
   ipcMain.removeHandler('yan:listSessions')
   ipcMain.removeHandler('yan:peekSession')
@@ -913,6 +988,69 @@ function registerStubHandlers() {
     { id: 'context', file: 'context.js' },
     { id: 'project-knowledge', file: 'project-knowledge.js' }
   ])
+  /*
+   * 按需求找能力（实施-25 P17）：矩阵里走与主进程**同一份** shared 纯逻辑。
+   * 不这样做的话，截图只能看到空结果 —— 而那正是我一开始踩的坑。
+   */
+  ipcMain.handle('yan:capabilities:need', (_event, input) => {
+    const rules = capabilityGapRules()
+    const need = String(input?.need ?? '').trim()
+    if (!need) return { ok: false, need: '', matched: false, error: '先说清你要做什么', text: '' }
+    const available = Array.isArray(input?.available) ? input.available.map((item) => String(item)) : []
+    const match = rules.matchGap(need)
+    if (!match) return { ok: true, need, matched: false, text: rules.unmatchedGapText(need) }
+    const stillMissing = rules.gapStillMissing(match.gap, available)
+    const body = rules.gapText(match.gap, match.matched)
+    return {
+      ok: true,
+      need,
+      matched: true,
+      gapId: match.gap.id,
+      missing: match.gap.missing,
+      via: match.gap.via,
+      alreadyAvailable: !stillMissing,
+      text: stillMissing ? body : `你现在已经能用相关能力（不必再装）。\n${body}`
+    }
+  })
+
+  /*
+   * 按活动配置模型（实施-25 P18）：与主进程**同一份** shared 规则。
+   * 注入一份有内容的配置，截图才能同时看到三种解释（活动指定 / 默认 / 跟随）。
+   */
+  /*
+   * 语音（实施-25 P20）：只说路径，不真跑识别 / 朗读。
+   * 与主进程**同一份** shared 规则。
+   */
+  ipcMain.handle('yan:audio:plan', (_event, input) => {
+    const rules = sharedRules('audio')
+    return {
+      ok: true,
+      plan: rules.audioPlan(input?.task === 'read-aloud' ? 'read-aloud' : 'transcribe', {
+        ...(input?.courseId ? { courseId: input.courseId } : {}),
+        ...(input?.sourceId ? { sourceId: input.sourceId } : {})
+      })
+    }
+  })
+  ipcMain.handle('yan:audio:transcript', () => ({ ok: false, error: '矩阵不写资料库' }))
+
+  ipcMain.handle('yan:activity:modelRows', (_event, input) => {
+    const rules = activityModelRules()
+    return rules.activityModelRows({
+      config: { defaultModel: 'deepseek/deepseek-v4.1-flash', byActivity: { learn: 'anthropic/claude-sonnet-4.5' } },
+      current: input?.current ?? 'deepseek/deepseek-v4.1-flash'
+    })
+  })
+  ipcMain.handle('yan:activity:model', (_event, input) => {
+    const rules = activityModelRules()
+    const resolution = rules.resolveActivityModel({
+      config: { defaultModel: 'deepseek/deepseek-v4.1-flash', byActivity: { learn: 'anthropic/claude-sonnet-4.5' } },
+      activity: input?.activity ?? 'answer',
+      current: input?.current ?? null
+    })
+    return { ...resolution, text: rules.activityModelText(resolution) }
+  })
+  ipcMain.handle('yan:activity:modelSet', () => ({ ok: true, rows: [] }))
+
   ipcMain.handle('yan:capabilities:settings', () => ({
     configWarning: false,
     skills: [
@@ -1139,9 +1277,9 @@ const GROUPS = [
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spacelearning'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spacelearning'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spacelearning', 'envnotgit'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
   /*
@@ -1215,10 +1353,17 @@ const GROUPS = [
    * 实施-18：日常模式工作台首页与会话地图（深浅各一）。
    * 单开一组：状态会切 workspaceMode 并注入合成会话，不干扰其它组的 fixture。
    */
-  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['workbenchhome', 'sessionmap', 'sessionpreview'] },
-  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['workbenchhome', 'sessionmap', 'sessionpreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['workbenchhome', 'sessionmap', 'mapturns', 'sessionpreview'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['workbenchhome', 'sessionmap', 'mapturns', 'sessionpreview'] },
   /* 窄窗口：中栏只剩约 630px，泳道 + 连线 + 预览抽屉要经得起这个宽度 */
-  { w: 1180, h: 780, scale: 1, theme: 'light', states: ['sessionmap', 'sessionpreview'] }
+  { w: 1180, h: 780, scale: 1, theme: 'light', states: ['sessionmap', 'mapturns', 'sessionpreview'] },
+/*
+ * 轮次层的缩放与宽度覆盖（实施-26 R3 的出口要求：1280 宽 + 125% / 150% 缩放）。
+ * 卡宽是固定的，缩放后最容易出问题的是「卡与卡之间的重叠」和泳道高度。
+ */
+{ w: 1280, h: 800, scale: 1, theme: 'dark', states: ['mapturns'] },
+{ w: 1440, h: 900, scale: 1.25, theme: 'light', states: ['mapturns'] },
+{ w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['mapturns'] }
 ]
 
 /** 引导态单独跑（要先把 onboarded 标记拿掉） */
@@ -3244,9 +3389,223 @@ const STATES = {
       await sleep(500);
       document.querySelector('[data-testid="space-art-item-ad_demo1"]')?.click();
       await sleep(500);
+      /* T06b-4：展开「用于学习」面板（目标输入 + 生成路线），截图上要看得见 */
+      document.querySelector('[data-testid="space-art-tolearn"]')?.click();
+      await sleep(400);
       document.querySelector('[data-testid="space-art-source-0"]')?.click();
       await sleep(600);
-      return document.querySelector('[data-testid="space-art-source-preview"]') ? 'ok' : 'no-artifact';
+      const panel = document.querySelector('[data-testid="space-art-tolearn-panel"]');
+      return document.querySelector('[data-testid="space-art-source-preview"]') && panel ? 'ok' : 'no-artifact';
+    })()
+  `,
+  /*
+   * 按活动配置模型（实施-25 P18）：接入页顶部的五行配置。
+   * 注入一份有内容的配置（模型由桩 handler 给），截图要看到三种解释同时存在。
+   */
+  amconfig: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      S().openSettings('auth');
+      await sleep(1000);
+      document.querySelector('[data-testid="set-activity-models"]')?.scrollIntoView({ block: 'start' });
+      await sleep(400);
+      const rows = document.querySelectorAll('[data-testid^="am-row-"]');
+      return rows.length === 5 ? 'ok' : 'no-rows:' + rows.length;
+    })()
+  `,
+  /*
+   * 按需求找能力（实施-25 P17）：设置 → 能力页里的「说需求 → 拿到接入路径」。
+   * 单开一个状态：它是设置页里的新区块，与现有设置行叠在一起容易看不到自己。
+   */
+  capneed: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const setInput = (el, value) => {
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      };
+      S().openSettings('capabilities');
+      await sleep(900);
+      setInput(document.querySelector('[data-testid="cap-need-input"]'), '我要把 PDF 里的表格做成汇总');
+      await sleep(250);
+      document.querySelector('[data-testid="cap-need-run"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await sleep(900);
+      const text = document.querySelector('[data-testid="cap-need-text"]');
+      const err = document.querySelector('[data-testid="cap-need-error"]');
+      text?.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      return text ? 'ok' : err ? 'err:' + String(err.textContent ?? '').slice(0, 80) : 'no-need';
+    })()
+  `,
+  /*
+   * 持续关注（实施-25 P16）：概览里的关注卡（到点 / 提议未启用 / 上次结果）。
+   * 单开一个状态：卡上那句「只在砚开着的时候看」与三种状态的对比是这一片的界面重点。
+   * 数据注入（矩阵不写 follows.json）。
+   */
+  spacefollow: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const watch = (over) => ({
+        title: '看看 README 有没有变',
+        kind: 'files',
+        spaceId: null,
+        cadence: 'interval',
+        intervalMinutes: 1440,
+        resultPlace: '写在空间概览里',
+        notifyOn: 'change',
+        enabled: true,
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 86400000,
+        origin: 'user',
+        ...over
+      });
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始',
+          archived: false, createdAt: now - 86400000, updatedAt: now
+        }],
+        sessions,
+        followViews: [
+          {
+            watch: watch({ id: 'fw_due', title: '上游依赖有没有发新版本', kind: 'sources', nextDueAt: now - 3600000, lastCheckedAt: now - 86400000, lastOutcome: 'changed' }),
+            status: '到点了',
+            proposed: false,
+            lastRunText: '有变化：上游发了 v2，改了三处接口（等你定：要不要跟到 v2）'
+          },
+          {
+            watch: watch({
+              id: 'fw_review', title: '这周该复习的内容', kind: 'review',
+              resultPlace: '只提醒，不自动开始学', nextDueAt: now + 3600000,
+              lastCheckedAt: now - 6 * 3600000, lastOutcome: 'no-change'
+            }),
+            status: '下次 27/09/2026, 11:18:49 pm',
+            proposed: false,
+            lastRunText: '没有变化：和上次一样'
+          },
+          {
+            watch: watch({
+              id: 'fw_proposed', title: '帮我盯着那份规范的更新', kind: 'custom',
+              resultPlace: '概览里记一笔', enabled: false, origin: 'agent', cadence: 'once'
+            }),
+            status: '还没启用（你点一下才会开始看）',
+            proposed: true
+          }
+        ],
+        followDue: [{ id: 'fw_due' }],
+        followsLoaded: true
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+      S().openSpaceView('overview');
+      await sleep(700);
+      document.querySelector('[data-testid="space-ov-follow-card"]')?.scrollIntoView({ block: 'center' });
+      await sleep(400);
+      const card = document.querySelector('[data-testid="space-ov-follow-card"]');
+      const due = document.querySelector('[data-testid="space-follow-due"]');
+      return card && due ? 'ok' : 'no-follow';
+    })()
+  `,
+  /*
+   * 办事模板（实施-25 P14）：空间概览里的模板列表 + 展开的「复用前确认区」。
+   * 单开一个状态：概览页的卡片很多，模板的确认区展开后会把整张卡拉长，
+   * 与其它卡片叠在一起看不出它自己的真实形态。
+   * 模板与确认区都是注入的（矩阵跑在真实数据目录上，不写 playbooks.json）。
+   */
+  spaceplaybook: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const seedFiles = {
+        id: 'pb_seed_files', kind: 'files', title: '整理一个目录里的文件',
+        goal: '把散落在目录里的文件按类型归好，改动前先给出清单',
+        steps: [
+          { title: '列出目录内容并分类', effect: 'read' },
+          { title: '给出重命名与移动方案', effect: 'read' },
+          { title: '确认后执行重命名与移动', effect: 'write', scope: ['<要整理的目录>'] },
+          { title: '记录一份变更摘要', effect: 'write', scope: ['<变更记录成果>'] }
+        ],
+        io: { inputs: ['要整理的目录'], outputs: ['变更清单与变更摘要成果'] },
+        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
+      };
+      const seedDigest = {
+        id: 'pb_seed_digest', kind: 'digest', title: '把几份材料汇总成一份',
+        goal: '把选定的资料汇总成一份带出处的说明',
+        steps: [
+          { title: '读选定的资料', effect: 'read', scope: ['<选定的资料来源>'] },
+          { title: '按主题摘录', effect: 'read' },
+          { title: '写一份汇总成果', effect: 'write', scope: ['<汇总成果>'] }
+        ],
+        io: { inputs: ['资料库里的若干来源'], outputs: ['一份带出处的汇总成果'] },
+        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
+      };
+      const seedRewrite = {
+        id: 'pb_seed_rewrite', kind: 'rewrite', title: '按目标改写一段内容',
+        goal: '把一段内容改写成指定语气 / 长度，保留原意',
+        steps: [
+          { title: '读原文', effect: 'read', scope: ['<要改写的成果>'] },
+          { title: '改写并开新版本', effect: 'write', scope: ['<要改写的成果>'] }
+        ],
+        io: { inputs: ['一份成果与改写目标'], outputs: ['同一份成果的新版本'] },
+        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
+      };
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始',
+          archived: false, createdAt: now - 86400000, updatedAt: now
+        }],
+        sessions,
+        playbooks: [seedFiles, seedDigest, seedRewrite],
+        playbooksLoaded: true
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+      S().openSpaceView('overview');
+      await sleep(500);
+      document.querySelector('[data-testid="space-pb-item-pb_seed_files"]')?.click();
+      await sleep(700);
+      /* 范围已换成真实值（矩阵没有 IPC，所以直接注入宿主算出来的那一份） */
+      const filesFilled = {
+        ...seedFiles,
+        steps: seedFiles.steps.map((s) => (s.scope ? { ...s, scope: s.scope.map((x) => (x === '<要整理的目录>' ? 'docs/notes' : '变更记录成果')) } : s))
+      };
+      window.__yanStore.setState({
+        playbookPlan: {
+          ok: true,
+          playbook: filesFilled,
+          needsConfirmation: true,
+          summary: { read: 2, write: 2, external: 0, targets: ['docs/notes', '变更记录成果'] },
+          points: filesFilled.steps.filter((s) => s.effect !== 'read'),
+          unansweredScope: 0,
+          confirmationText: '「整理一个目录里的文件」会改东西 2 步（其余 2 步只读）。作用范围：docs/notes、变更记录成果。确认之前不会动任何东西。',
+          text: ''
+        }
+      });
+      await sleep(600);
+      /* 把模板卡滚进视口：截图要看的是它，不是页面顶部 */
+      document.querySelector('[data-testid="space-ov-playbook-card"]')?.scrollIntoView({ block: 'center' });
+      await sleep(400);
+      const zone = document.querySelector('[data-testid="space-pb-zone-pb_seed_files"]');
+      const useBtn = document.querySelector('[data-testid="space-pb-use"]');
+      return zone && useBtn && !useBtn.disabled ? 'ok' : 'no-playbook';
     })()
   `,
   /*
@@ -3293,6 +3652,101 @@ const STATES = {
       S().openSpaceView('artifact');
       await sleep(600);
       return document.querySelector('[data-testid="space-art-checklist"]') ? 'ok' : 'no-checklist';
+    })()
+  `,
+  /*
+   * 跨资料研究（实施-25 P13）：成果页上的「来源已更新」提示 + 多来源对照。
+   * 为什么单开一个状态：对照视图是新增的多行区块，与 spaceartifact 的
+   * 「用于学习」面板叠在一起会互相挤压，看不出各自在常见尺寸下的真实形态。
+   * 引用状态与对照都是注入的（矩阵跑在真实数据目录上，不写 library.json）。
+   */
+  spaceresearch: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const p = (a, b) => [a, b].join(L + L);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{
+          id: 'sp_demo',
+          name: '英语学习',
+          description: '每天一小时，从精读开始',
+          archived: false,
+          createdAt: now - 86400000,
+          updatedAt: now
+        }],
+        sessions,
+        library: [
+          { id: 'lib_r1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          { id: 'lib_r2', spaceId: 'sp_demo', kind: 'web', title: '语法笔记：the outside room', createdAt: now - 3000000, updatedAt: now - 3000000 }
+        ],
+        artifactDocs: [{
+          id: 'ad_research', spaceId: 'sp_demo', title: 'outside room 到底指什么', kind: 'markdown',
+          currentVersion: 1,
+          versions: [{
+            version: 1,
+            text: p('奶奶把那片小花园叫「室外的房间」。', '两种读法不一样：一种说是亲密叫法，一种说指院子里真搭出来的那间屋。'),
+            editedBy: 'agent', at: now - 600000, basedOn: null, userEditedParagraphs: []
+          }],
+          sources: [{ sourceId: 'lib_r1', version: 1 }, { sourceId: 'lib_r2', version: 1 }],
+          createdAt: now - 600000,
+          updatedAt: now - 600000
+        }],
+        artifactDocsLoaded: true,
+        /* 正文由注入提供（真实取正文由 test:live -- artifact 覆盖） */
+        openLibraryRef: async () => ({
+          ok: true,
+          outcome: 'ok',
+          source: { id: 'lib_r1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_r1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-r1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
+          text: [
+            'Unit 3 · Reading',
+            '',
+            'When I was a child, my grandmother kept a small garden behind the house.',
+            'She never called it a garden; she called it “the outside room”.'
+          ].join(String.fromCharCode(10)),
+          truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
+        });
+      }
+      S().openSpaceView('artifact');
+      await sleep(500);
+      document.querySelector('[data-testid="space-art-item-ad_research"]')?.click();
+      await sleep(600);
+      const exA = { sourceId: 'lib_r1', version: 1, title: '精读材料 · Unit 3.pdf', provenance: 'material', stance: '比喻的叫法', status: 'outdated', text: 'She never called it a garden; she called it “the outside room”. 这里更像是一种随口叫法。' };
+      const exB = { sourceId: 'lib_r2', version: 1, title: '语法笔记：the outside room', provenance: 'material', stance: '实指的说法', status: 'current', text: '笔记整理：the outside room 常指院子里真搭出来的那间小屋。' };
+      const exC = { sourceId: 'model', version: 1, title: '模型补充', provenance: 'model', status: 'current', text: '还有一种可能：作者想强调「花园是屋内的延伸」，这两种解释并不必然冲突。' };
+      window.__yanStore.setState({
+        artifactSourceStatuses: [{
+          ref: { sourceId: 'lib_r1', version: 1 },
+          status: 'outdated',
+          latestVersion: 2,
+          title: '精读材料 · Unit 3.pdf',
+          note: '来源已更新到 v2，这条引用仍指着 v1'
+        }],
+        researchComparison: {
+          question: '「the outside room」到底指什么？',
+          groups: [
+            { label: '比喻的叫法', excerpts: [exA] },
+            { label: '实指的说法', excerpts: [exB] },
+            { label: '未标注立场', excerpts: [exC] }
+          ],
+          conflicts: [{ label: '「比喻的叫法」与「实指的说法」的说法不一致', left: exA, right: exB }],
+          provenance: { material: 2, model: 1 },
+          note: '说法不一致的地方保留为并列的两组，没有合并成一个结论。'
+        }
+      });
+      await sleep(600);
+      const changed = document.querySelector('[data-testid="space-art-source-changed"]');
+      return document.querySelector('[data-testid="space-art-compare-view"]') && changed ? 'ok' : 'no-compare';
     })()
   `,
   /*
@@ -3393,9 +3847,456 @@ const STATES = {
           session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, isStreaming: false, isAgentRunning: false }
         });
       }
+      const curSession = S().session
+      if (curSession) window.__yanStore.setState({ session: { ...curSession, capabilities: undefined } })
       S().openSpaceView('learning');
       await sleep(700);
       return document.querySelector('[data-testid="space-learning"]') ? 'ok' : 'no-learning';
+    })()
+  `,
+  /*
+   * 语音（实施-25 P20）：学习页右栏的语音卡 + 打开「转写该怎么接」的计划。
+   * 只截计划区：它说明的是路径，不是识别结果。
+   */
+  spaceaudio: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      const now = Date.now();
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
+        sessions,
+        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'text', title: '第三讲的录音（转写前）', createdAt: now - 3600000, updatedAt: now - 3600000 }],
+        libraryVersions: [{ sourceId: 'lib_d1', version: 1 }],
+        courses: [{
+          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '把这一讲讲完',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '第三讲的录音（转写前）', status: 'active',
+          units: [
+            { id: 'u_d1', title: '第三讲：开场与结论', target: '听完能说出三处收紧', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1 }], concepts: [] }
+          ],
+          concepts: [], basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        studyStatus: {
+          session: {
+            id: 'st_audio1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
+            phase: 'explaining', position: { unitIndex: 0 }, nextStep: '听完再出一题', paused: false,
+            startedAt: now - 600000, updatedAt: now - 60000
+          },
+          resume: {
+            sessionId: 'st_audio1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
+            unitId: 'u_d1', unitTitle: '第三讲：开场与结论', unitIndex: 1, totalUnits: 1,
+            phase: 'explaining', phaseLabel: '讲解', waiting: false, paused: false, updatedAt: now - 60000
+          },
+          waiting: false, gate: null
+        },
+        studySessions: [], studyLoaded: true,
+        exercises: [], exerciseLoadedFor: 'co_demo1:u_d1', exerciseHints: {}, exerciseSolutions: {}, exerciseAttempts: {}, exerciseFeedback: {},
+        reviews: [], reviewLoadedFor: null, reviewDueLoaded: false,
+        openLibraryRef: async () => ({
+          ok: true, outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'text', title: '第三讲的录音（转写前）', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'audio:probe', ref: 'probe://lecture-3', title: '第三讲的录音（转写前）', fingerprint: 'fp-a', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 120, note: '已提取正文', at: now - 3600000 } },
+          text: '先把这一讲的内容念一遍：三处收紧分别是……',
+          truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        window.__yanStore.setState({ session: { ...S().session, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path } });
+      }
+      S().openSpaceView('learning');
+      await sleep(800);
+      click(document.querySelector('[data-testid="space-audio-plan-transcribe"]'));
+      await sleep(900);
+      const plan = document.querySelector('[data-testid="space-audio-plan-text"]');
+      /*
+       * 语音卡在右栏最下面（教材 / 练习 / 复习 / 语音四段）：
+       * scrollIntoView 会把自己与所有可滚动祖先一起滚到位，比手写循环可靠。
+       */
+      document.querySelector('[data-testid="space-learn-audio"]')?.scrollIntoView({ block: 'end' });
+      await sleep(300);
+      document.querySelector('[data-testid="space-audio-plan"]')?.scrollIntoView({ block: 'end' });
+      await sleep(400);
+      const audioEl = document.querySelector('[data-testid="space-learn-audio"]');
+      const box = audioEl?.getBoundingClientRect();
+      return plan ? 'ok:h=' + Math.round(box?.height ?? -1) + ':top=' + Math.round(box?.top ?? -1) : 'no-audio';
+    })()
+  `,
+  /*
+   * 图片题（实施-25 P19）：题干只带资料库引用 + 「当前模型能不能看图」的如实提醒。
+   * 单开一个状态：spaceexercise 显示的是另一道题的提示与反馈（那份证据要留着），
+   * 而这里要把会话能力快照清掉，才能看到「你自己看」那个分支。
+   */
+  spaceexerciseimage: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      const base = { courseId: 'co_demo1', unitId: 'u_d1', conceptIds: [], origin: 'material', sources: [], createdAt: now };
+      window.__yanStore.setState({
+        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
+        sessions,
+        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'image', title: 'Unit 3 的插图.png', createdAt: now - 3600000, updatedAt: now - 3600000 }],
+        courses: [{
+          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '读完并复述这一单元',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: 'Unit 3 的插图.png', status: 'active',
+          units: [
+            { id: 'u_d1', title: 'When I was a child…', target: '看图说出它在讲什么', estimateMinutes: 8, origin: 'material', sources: [], concepts: [] }
+          ],
+          concepts: [], basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        studyStatus: {
+          session: {
+            id: 'st_img1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
+            phase: 'explaining', position: { unitIndex: 0 }, nextStep: '看完图再出一题', paused: false,
+            startedAt: now - 600000, updatedAt: now - 60000
+          },
+          resume: {
+            sessionId: 'st_img1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
+            unitId: 'u_d1', unitTitle: 'When I was a child…', unitIndex: 1, totalUnits: 1,
+            phase: 'explaining', phaseLabel: '讲解', waiting: false, paused: false, updatedAt: now - 60000
+          },
+          waiting: false, gate: null
+        },
+        studySessions: [], studyLoaded: true,
+        exercises: [
+          {
+            id: 'ex_img', kind: 'explain', kindLabel: '用自己的话解释',
+            prompt: '看这张插图，说说作者为什么要用“the outside room”这个叫法。',
+            images: [
+              { sourceId: 'lib_d1', version: 1, caption: 'Unit 3 的插图' },
+              { sourceId: 'lib_d1', version: 1, caption: '同一页的放大图' }
+            ],
+            hints: [], hasMoreHints: true, objective: false, hasSolution: false, ...base
+          }
+        ],
+        exerciseLoadedFor: 'co_demo1:u_d1',
+        exerciseHints: {},
+        exerciseSolutions: {},
+        exerciseAttempts: {},
+        exerciseFeedback: {},
+        openLibraryRef: async () => ({
+          ok: true, outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'image', title: 'Unit 3 的插图.png', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'image:c:/kits/unit3.png', ref: 'c:/kits/unit3.png', title: 'Unit 3 的插图.png', fingerprint: 'fp-img', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 0, note: '图片', at: now - 3600000 } },
+          text: '',
+          truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        window.__yanStore.setState({
+          session: { ...S().session, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, capabilities: undefined }
+        });
+      }
+      S().openSpaceView('learning');
+      await sleep(700);
+      /*
+       * 右栏很矮：练习卡自己是一个滚动容器（P10 的 max-height + overflow），
+       * 把**它**滚到底比 scrollIntoView 可靠（后者会被固定输入框遮住）。
+       */
+      const imgZone = document.querySelector('[data-testid="space-exercise-images"]');
+      const scroller = imgZone?.closest('.wb-learn-ws-exercise');
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      else imgZone?.scrollIntoView({ block: 'center' });
+      await sleep(400);
+      return document.querySelector('[data-testid="space-exercise-images"]') ? 'ok' : 'no-image';
+    })()
+  `,
+  /*
+   * 练习卡（实施-25 P10）：题目 / 分层提示 / 反馈 / 纠正。
+   *
+   * 与 spacelearning 同一个理由直接注入 store（矩阵不注册数据型 IPC）：
+   * `exerciseLoadedFor` 设成与当前课程 / 单元一致，练习卡就不会再拉一次覆盖夹具。
+   * 第一道题带**已揭示的方向提示 + 一次开放题反馈**：截图要能看出
+   * 「提示是一层一层给的」与「开放题不下对错结论」。
+   */
+  spaceexercise: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const body = [
+        'When I was a child, my grandmother kept a small garden behind the house.',
+        'She called it “the outside room”, and explained why in the next line.'
+      ].join(L + L);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      const base = { courseId: 'co_demo1', unitId: 'u_d1', conceptIds: [], origin: 'material', sources: [], createdAt: now };
+      const direction = { level: 'direction', text: '先说这一段在讲什么，再说它为什么重要。' };
+      const concept = { level: 'concept', text: '把它拆成“前提 → 结论”两句话。' };
+      window.__yanStore.setState({
+        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
+        sessions,
+        messages: [
+          { id: 'lm1', role: 'user', text: '这一段里的 “the outside room” 指的是什么？', timestamp: now - 120000 },
+          { id: 'lm2', role: 'assistant', text: '先看原句：她从不把它叫花园，而叫“外面的房间”。', timestamp: now - 110000 }
+        ],
+        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 }],
+        courses: [{
+          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '读完并复述这一单元',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '精读材料 · Unit 3.pdf', status: 'active',
+          units: [
+            { id: 'u_d1', title: 'When I was a child…', target: '说出这一段在讲什么', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1, locator: { start: 0, end: 200 } }], concepts: [] },
+            { id: 'u_d3', title: '自己补一个例子', estimateMinutes: 10, origin: 'model', sources: [], note: '材料里没有我自己那个场景，补一个', concepts: [] }
+          ],
+          concepts: [], basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        studyStatus: {
+          session: {
+            id: 'st_demo1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
+            phase: 'explaining', position: { unitIndex: 0, locator: { start: 0, end: 200 } },
+            nextStep: '讲完这一段再出一道题', paused: false, startedAt: now - 600000, updatedAt: now - 60000
+          },
+          resume: {
+            sessionId: 'st_demo1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
+            unitId: 'u_d1', unitTitle: 'When I was a child…', unitIndex: 1, totalUnits: 2,
+            phase: 'explaining', phaseLabel: '讲解', waiting: false, paused: false,
+            position: { unitIndex: 0 }, updatedAt: now - 60000
+          },
+          waiting: false, gate: null
+        },
+        studySessions: [], studyLoaded: true,
+        exercises: [
+          {
+            id: 'ex_d1', kind: 'explain', kindLabel: '用自己的话解释',
+            prompt: '用自己的话解释这一段：When I was a child, my grandmother kept a small garden behind the house.',
+            hints: [direction], hasMoreHints: true, objective: false, hasSolution: false, ...base
+          },
+          {
+            id: 'ex_d2', kind: 'choice', kindLabel: '选择',
+            prompt: '“the outside room” 指的是什么？',
+            options: [{ id: 'a', text: '院子' }, { id: 'b', text: '卧室' }],
+            hints: [], hasMoreHints: true, objective: true, hasSolution: true, ...base
+          },
+          {
+            id: 'ex_d3', kind: 'cloze', kindLabel: '填空',
+            prompt: '补上缺的词：She called it “the ____ room”.',
+            hints: [direction, concept], hasMoreHints: false, objective: true, hasSolution: true, ...base
+          }
+        ],
+        exerciseLoadedFor: 'co_demo1:u_d1',
+        exerciseHints: { ex_d1: [direction], ex_d3: [direction, concept] },
+        exerciseSolutions: { ex_d3: 'She called it “the outside room”.' },
+        exerciseAttempts: {
+          ex_d1: [{ id: 'at_d1', exerciseId: 'ex_d1', courseId: 'co_demo1', unitId: 'u_d1', raw: '她把它当成一间屋在用。', correct: null, hintLevelSeen: 'direction', lookedAtSolution: false, at: now - 1000 }]
+        },
+        exerciseFeedback: {
+          ex_d1: {
+            verdict: null, correctSteps: [], confusions: [], howToFix: [],
+            nextPractice: '试着用这道题里的概念，再举一个你自己的例子 —— 说出来才算真的会。',
+            needsModel: true, assisted: true
+          }
+        },
+        openLibraryRef: async () => ({
+          ok: true, outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
+          text: body, truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, isStreaming: false, isAgentRunning: false }
+        });
+      }
+      S().openSpaceView('learning');
+      await sleep(700);
+      return document.querySelector('[data-testid="space-learn-exercise"]') ? 'ok' : 'no-exercise';
+    })()
+  `,
+  /*
+   * 概念进度与笔记（实施-25 P11）：两轴并排 / 自评另存 / 笔记列表。
+   *
+   * 夹具里第一个概念故意是「独立完成 + 建议复习 + 我已会了」——
+   * 图上要能看出这是**三个并列事实**，而不是一个互相排斥的状态。
+   */
+  spacememory: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      const evidence = (id, at) => ({
+        at, exerciseId: id, attemptId: 'at_' + id, correct: true,
+        hintLevelSeen: 'none', lookedAtSolution: false, transfer: false, independent: true
+      });
+      window.__yanStore.setState({
+        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
+        sessions,
+        messages: [],
+        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 }],
+        courses: [{
+          id: 'co_memo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '读完并复述这一单元',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '精读材料 · Unit 3.pdf', status: 'active',
+          units: [
+            { id: 'u_d1', title: 'When I was a child…', target: '说出这一段在讲什么', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1, locator: { start: 0, end: 200 } }], concepts: [] },
+            { id: 'u_d3', title: '自己补一个例子', estimateMinutes: 10, origin: 'model', sources: [], note: '材料里没有我自己那个场景，补一个', concepts: [] }
+          ],
+          concepts: [
+            { id: 'c_demo1', name: 'the outside room' },
+            { id: 'c_demo2', name: '过去进行时' }
+          ],
+          basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        studyStatus: null,
+        studySessions: [],
+        studyLoaded: true,
+        conceptProgress: [
+          {
+            conceptId: 'c_demo1', courseId: 'co_memo1', level: 'independent', review: true,
+            evidence: [evidence('ex_d1', now - 300000), evidence('ex_d2', now - 200000), { ...evidence('ex_d3', now - 100000), correct: false, independent: false }],
+            selfAssessment: { kind: 'got-it', at: now - 50000 },
+            updatedAt: now - 50000
+          },
+          {
+            conceptId: 'c_demo2', courseId: 'co_memo1', level: 'with-hint', review: true,
+            evidence: [{ ...evidence('ex_d4', now - 100000), hintLevelSeen: 'direction', independent: false }],
+            updatedAt: now - 100000
+          }
+        ],
+        notes: [
+          {
+            id: 'nt_demo1', courseId: 'co_memo1', unitId: 'u_d1', conceptIds: ['c_demo1'], kind: 'note', title: '第二段',
+            body: '“the outside room” 是把院子当成一间屋在用 —— 她用自己的命名把日常地方重新划了边界。',
+            sources: [], createdAt: now - 400000, updatedAt: now - 400000
+          },
+          {
+            id: 'nt_demo2', courseId: 'co_memo1', conceptIds: [], kind: 'summary',
+            body: '这一单元主要在练过去进行时：was/were + doing，用来描写当时正在发生的事。',
+            sources: [], createdAt: now - 200000, updatedAt: now - 200000
+          }
+        ],
+        notesLoadedFor: 'co_memo1'
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, isStreaming: false, isAgentRunning: false }
+        });
+      }
+      S().openSpaceView('learning');
+      await sleep(700);
+      const anchor = document.querySelector('[data-testid="space-learn-progress"]');
+      if (anchor && anchor.scrollIntoView) anchor.scrollIntoView({ block: 'start' });
+      await sleep(300);
+      return document.querySelector('[data-testid="space-learn-progress"]') ? 'ok' : 'no-memory';
+    })()
+  `,
+  /*
+   * 错题与复习（实施-25 P12）：导师页右栏 —— 来因 / 到期时间 / 「今天十分钟」挑出的新例子。
+   *
+   * 第一项故意是**做错过**（优先 + 到期），第二项是「这段原文没看懂」（不带题）：
+   * 图上要能看出两类复习长得不一样，且计划里挑的是没做过的题。
+   */
+  spacereview: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const S = () => window.__yanStore.getState();
+      const now = Date.now();
+      const L = String.fromCharCode(10);
+      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
+      window.__yanStore.setState({
+        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
+        sessions,
+        messages: [],
+        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 }],
+        courses: [{
+          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '读完并复述这一单元',
+          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '精读材料 · Unit 3.pdf', status: 'active',
+          units: [
+            { id: 'u_d1', title: 'When I was a child…', target: '说出这一段在讲什么', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1, locator: { start: 0, end: 200 } }], concepts: [] },
+            { id: 'u_d3', title: '自己补一个例子', estimateMinutes: 10, origin: 'model', sources: [], note: '材料里没有我自己那个场景，补一个', concepts: [] }
+          ],
+          concepts: [{ id: 'c_demo1', name: '过去进行时' }, { id: 'c_demo2', name: 'the outside room' }],
+          basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
+        }],
+        coursesLoaded: true,
+        studyStatus: {
+          session: {
+            id: 'st_demo1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
+            phase: 'explaining', position: { unitIndex: 0, locator: { start: 0, end: 200 } },
+            nextStep: '讲完这一段再出一道题', paused: false, startedAt: now - 600000, updatedAt: now - 60000
+          },
+          resume: {
+            sessionId: 'st_demo1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
+            unitId: 'u_d1', unitTitle: 'When I was a child…', unitIndex: 1, totalUnits: 2,
+            phase: 'explaining', phaseLabel: '讲解', waiting: false, paused: false,
+            position: { unitIndex: 0 }, updatedAt: now - 60000
+          },
+          waiting: false, gate: null
+        },
+        studySessions: [], studyLoaded: true,
+        conceptProgress: [
+          { conceptId: 'c_demo1', courseId: 'co_demo1', level: 'with-hint', review: true, evidence: [], updatedAt: now - 100000 }
+        ],
+        reviews: [
+          {
+            id: 'rv_demo1', courseId: 'co_demo1', conceptId: 'c_demo1', unitId: 'u_d1', reason: 'wrong-answer',
+            prompt: 'was / were + doing 和时间状语怎么配', dueAt: now - 60000,
+            stage: 0, priority: 'high', streak: 0, seenCount: 2,
+            createdAt: now - 7200000, updatedAt: now - 60000
+          },
+          {
+            id: 'rv_demo2', courseId: 'co_demo1', unitId: 'u_d1', reason: 'misread',
+            prompt: '第二段没看懂：为什么叫“the outside room”', dueAt: now - 30000,
+            source: { sourceId: 'lib_d1', version: 1, locator: { start: 60, end: 160 } },
+            stage: 0, priority: 'normal', streak: 0, seenCount: 1,
+            createdAt: now - 3600000, updatedAt: now - 30000
+          }
+        ],
+        reviewPlan: {
+          entries: [
+            { item: { id: 'rv_demo1', courseId: 'co_demo1', conceptId: 'c_demo1', reason: 'wrong-answer', prompt: 'was / were + doing 和时间状语怎么配', dueAt: now - 60000, stage: 0, priority: 'high', streak: 0, seenCount: 2, createdAt: now - 7200000, updatedAt: now - 60000 }, exerciseId: 'ex_d1', minutes: 3 },
+            { item: { id: 'rv_demo2', courseId: 'co_demo1', unitId: 'u_d1', reason: 'misread', prompt: '第二段没看懂：为什么叫“the outside room”', dueAt: now - 30000, source: { sourceId: 'lib_d1', version: 1, locator: { start: 60, end: 160 } }, stage: 0, priority: 'normal', streak: 0, seenCount: 1, createdAt: now - 3600000, updatedAt: now - 30000 }, minutes: 3 }
+          ],
+          minutes: 6,
+          needsNewExercise: [],
+          dueCount: 2
+        },
+        exercises: [],
+        exerciseLoadedFor: 'co_demo1:u_d1',
+        exerciseAttempts: {}, exerciseFeedback: {}, exerciseHints: {}, exerciseSolutions: {},
+        openLibraryRef: async () => ({
+          ok: true, outcome: 'ok',
+          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'file', title: '精读材料 · Unit 3.pdf', createdAt: now - 3600000, updatedAt: now - 3600000 },
+          version: { sourceId: 'lib_d1', version: 1, identity: 'file:c:/kits/unit3.pdf', ref: 'c:/kits/unit3.pdf', title: '精读材料 · Unit 3.pdf', fingerprint: 'fp-d1', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 8123, note: '已提取正文', at: now - 3600000 } },
+          text: [
+            'Unit 3 · Reading',
+            '',
+            'When I was a child, my grandmother kept a small garden behind the house.',
+            'She never called it a garden; she called it “the outside room”.'
+          ].join(L),
+          truncated: false
+        })
+      });
+      const filed = sessions.find((x) => x.spaceId);
+      if (filed) {
+        const cur = S().session;
+        window.__yanStore.setState({
+          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path, isStreaming: false, isAgentRunning: false }
+        });
+      }
+      S().openSpaceView('learning');
+      await sleep(800);
+      /* 右栏在 mid 档位只占一半高：把右栏与复习面板都拉到能看内容的位置。 */
+      const side = document.querySelector('.wb-learn-ws-side');
+      if (side) side.scrollTop = side.scrollHeight;
+      await sleep(200);
+      const panel = document.querySelector('[data-testid="space-learn-review"]');
+      if (panel) panel.scrollTop = panel.scrollHeight;
+      await sleep(300);
+      return document.querySelector('[data-testid="space-learn-review"]') ? 'ok' : 'no-review';
     })()
   `,
   usagepartial: `
@@ -4418,6 +5319,34 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
             endedAt: startedAt - 5_000,
             review: 'pending',
             diff: { files: 3, additions: 42, deletions: 7, paths: ['src/a.ts'], patchPath: null, truncated: false }
+          }),
+          /*
+           * 带任务输入与结果汇总的已结束任务（实施-25 P15）：
+           * 卡片上要能看到「要交回什么」与「它回来时给主 agent 的摘要」。
+           */
+          base({
+            id: 'sub-note-summary',
+            task: '查一下两个模块的错误处理是否一致',
+            status: 'done',
+            startedAt: startedAt - 90_000,
+            endedAt: startedAt - 2_000,
+            review: 'none',
+            latestActivity: '读完了两个文件',
+            brief: {
+              goal: '摸清两个模块的错误处理是否一致',
+              deliverables: ['一段结论', '不一致的具体位置'],
+              sources: ['src/main/agent.ts', 'src/main/index.ts'],
+              boundary: '只读，不要改代码'
+            },
+            result: {
+              summary: '两处读法不一致：agent.ts 把错误吞掉只记一行日志，index.ts 直接往上抛 —— 调用方在两条路径上会看到不同的失败形态。',
+              summaryTruncated: false,
+              summaryFrom: 'last-message',
+              sources: ['src/main/agent.ts', 'src/main/index.ts'],
+              artifacts: ['src/main/error.ts'],
+              openQuestions: [],
+              at: startedAt - 2_000
+            }
           })
         ]
       });
@@ -4482,7 +5411,17 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
         ],
         goal: null,
         goalLoading: false,
-        goalError: null
+        goalError: null,
+        /* 今天可复习（P12）：首页卡片只显示到期数量与入口，不在这里开始学习。 */
+        reviewDue: {
+          items: [{
+            id: 'rv_demo1', courseId: 'co_demo1', conceptId: 'c_demo1', reason: 'wrong-answer',
+            prompt: '过去进行时：was / were + doing 的用法', dueAt: now - 60000,
+            stage: 0, priority: 'high', streak: 0, seenCount: 2,
+            createdAt: now - 7200000, updatedAt: now - 60000
+          }],
+          total: 3
+        }
       });
       for (let i = 0; i < 40; i++) {
         if (document.querySelector('[data-testid="workbench-home"]')) break;
@@ -4538,6 +5477,66 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       const lanes = document.querySelectorAll('.wb-lane').length;
       await sleep(400);
       return 'ok(' + nodes.length + ' nodes / ' + edges + ' edges / ' + lanes + ' lanes)';
+    })()
+  `,
+  /*
+   * 画布轮次层（实施-26 R3 / R4）：展开成轮次链 + 子会话首轮与父会话对齐。
+   *
+   * 父会话三轮（第二轮带工具、第三轮被停），子会话两轮（含继承的那一轮）——
+   * 对齐靠 `branchOrigin` 去父会话里找同一句问题。
+   */
+  mapturns: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      window.__yanStore.setState({ workspaceMode: 'daily' });
+      const now = Date.now();
+      const parent = 'C:/yan-matrix/turns-parent.jsonl';
+      window.__yanStore.setState({
+        messages: [],
+        session: { ...(window.__yanStore.getState().session ?? {}), sessionId: 'mtp', sessionFile: parent, conversationFile: undefined },
+        sessions: [
+          { id: 'mtp', path: parent, cwd: 'C:/proj/inkstone', title: '精读材料讨论', named: true, projectId: 'p1', createdAt: now - 86400000, updatedAt: now - 3600000, messageCount: 6, lastActivityAt: now - 3600000 },
+          { id: 'mtc', path: 'C:/yan-matrix/turns-child.jsonl', cwd: 'C:/proj/inkstone', title: '分叉：缓存那一段', named: true, projectId: 'p1', parentSession: parent, branchOrigin: '第二段怎么理解', createdAt: now - 172800000, updatedAt: now - 7200000, messageCount: 4, lastActivityAt: now - 7200000 }
+        ],
+        todos: [],
+        goal: null,
+        goalLoading: false,
+        goalError: null
+      });
+      await sleep(360);
+      const toggle = document.querySelector('[data-testid="view-map"]');
+      if (!toggle) return 'bad-no-toggle';
+      toggle.click();
+      for (let i = 0; i < 60; i++) {
+        if (document.querySelector('[data-testid="map-turns-toggle"]')) break;
+        await sleep(200);
+      }
+      const turnsToggle = (path) => [...document.querySelectorAll('[data-testid="map-turns-toggle"]')].find((b) => b.dataset.path === path);
+      if (!turnsToggle(parent)) return 'bad-no-turn-toggle';
+      turnsToggle(parent).click();
+      for (let i = 0; i < 60; i++) {
+        if (document.querySelectorAll('[data-testid="map-turn-card"]').length >= 3) break;
+        await sleep(200);
+      }
+      const childToggle = turnsToggle('C:/yan-matrix/turns-child.jsonl');
+      if (childToggle) childToggle.click();
+      for (let i = 0; i < 60; i++) {
+        if (document.querySelector('[data-testid="map-turn-aligned"]')) break;
+        await sleep(200);
+      }
+      /* 把分叉入口焦点亮起来：它平时是 hover 才现的，截图里得看得见 */
+      const focusFork = document.querySelectorAll('[data-testid="map-turn-fork"]')[3];
+      if (focusFork) focusFork.focus();
+      await sleep(400);
+      const cards = document.querySelectorAll('[data-testid="map-turn-card"]').length;
+      const aligned = document.querySelectorAll('[data-testid="map-turn-aligned"]').length;
+      const alignStates = [...document.querySelectorAll('[data-testid="map-turn-card"]')].map((c) => c.dataset.alignState || '-').join(',');
+      const stopped = document.querySelectorAll('[data-terminal="stopped"]').length;
+      const trunc = document.querySelectorAll('[data-testid="map-turn-truncated"]').length;
+      return 'ok(cards=' + cards + ':aligned=' + aligned + ':stopped=' + stopped + ':trunc=' + trunc + ':align=' + alignStates + ')';
     })()
   `,
   /*
@@ -4785,7 +5784,12 @@ const MUST_HAVE = {
     '[data-testid="space-art-sources"]',
     '[data-testid="space-art-source-0"]',
     '[data-testid="space-art-source-preview"]',
-    '[data-testid="space-art-source-text"]'
+    '[data-testid="space-art-source-text"]',
+    /* T06b-4：成果「用于学习」 */
+    '[data-testid="space-art-tolearn"]',
+    '[data-testid="space-art-tolearn-panel"]',
+    '[data-testid="space-art-tolearn-goal"]',
+    '[data-testid="space-art-tolearn-go"]'
   ],
   /* 清单成果（实施-25 P06b）：勾选列表 + 类型标识 */
   spacechecklist: [
@@ -4822,6 +5826,56 @@ const MUST_HAVE = {
     '[data-testid="space-learn-material-located"]',
     '[data-testid="space-learn-material-text"]',
     '[data-testid="space-learn-exercise"]'
+  ],
+  /* 练习卡（实施-25 P10）：题目 + 分层提示 + 反馈 + 纠正 */
+  spaceaudio: ['[data-testid="space-learn-audio"]', '[data-testid="space-audio-boundary"]', '[data-testid="space-audio-plan-text"]'],
+  spaceexerciseimage: ['[data-testid="space-exercise-images"]', '[data-testid="space-exercise-image-0"]', '[data-testid="space-exercise-vision"]'],
+  spaceexercise: [
+    '[data-testid="space-learn-exercise"]',
+    '[data-testid="space-exercise-count"]',
+    '[data-testid="space-exercise-tabs"]',
+    '[data-testid="space-exercise-tab-0"]',
+    '[data-testid="space-exercise-tab-2"]',
+    '[data-testid="space-exercise-kind"]',
+    '[data-testid="space-exercise-prompt"]',
+    '[data-testid="space-exercise-hint-direction"]',
+    '[data-testid="space-exercise-solution"]',
+    '[data-testid="space-exercise-submit"]',
+    '[data-testid="space-exercise-feedback"]',
+    '[data-testid="space-exercise-verdict"]',
+    '[data-testid="space-exercise-ask-model"]',
+    '[data-testid="space-exercise-correction-open"]'
+  ],
+  /* 概念进度与笔记（实施-25 P11）：两轴并排 + 自评 + 笔记列表 */
+  spacememory: [
+    '[data-testid="space-learn-progress"]',
+    '[data-testid="space-learn-concept-input"]',
+    '[data-testid="space-learn-concept-c_demo1"]',
+    '[data-testid="space-learn-concept-level-c_demo1"]',
+    '[data-testid="space-learn-concept-review-c_demo1"]',
+    '[data-testid="space-learn-concept-self-c_demo1"]',
+    '[data-testid="space-learn-concept-c_demo2"]',
+    '[data-testid="space-learn-concept-level-c_demo2"]',
+    '[data-testid="space-learn-notes"]',
+    '[data-testid="space-learn-note-list"]',
+    '[data-testid="space-learn-note-nt_demo1"]',
+    '[data-testid="space-learn-note-nt_demo2"]'
+  ],
+  /* 错题与复习（实施-25 P12）：来因 / 到期时间 / 今天的计划 / 挪期与去掉 */
+  spacereview: [
+    '[data-testid="space-learn-review"]',
+    '[data-testid="space-learn-review-due"]',
+    '[data-testid="space-learn-review-rule"]',
+    '[data-testid="space-learn-review-quick"]',
+    '[data-testid="space-learn-review-plan"]',
+    '[data-testid="space-learn-review-plan-item-0"]',
+    '[data-testid="space-learn-review-plan-open-0"]',
+    '[data-testid="space-learn-review-plan-reading-1"]',
+    '[data-testid="space-learn-review-item-rv_demo1"]',
+    '[data-testid="space-learn-review-reason-rv_demo1"]',
+    '[data-testid="space-learn-review-when-rv_demo1"]',
+    '[data-testid="space-learn-review-tomorrow-rv_demo1"]',
+    '[data-testid="space-learn-review-item-rv_demo2"]'
   ],
   /* 活动档案菜单（实施-25 P01）：按钮 + 浮层 + 当前项 */
   agentprofilemenu: [
@@ -5085,14 +6139,31 @@ const MUST_HAVE = {
   themetransitionspread: ['[data-testid="theme-dark"]'],
   themetransitioncollapse: ['[data-testid="theme-light"]'],
   /* H-10 过程页：详情壳与可滚动正文都要在 */
-  workbenchhome: ['[data-testid="wb-card-map"]', '[data-testid="wb-open-map"]', '[data-testid="wb-card-goal"]'],
-  subagentnote: ['[data-testid="subagent-notes"]', '.sa-note', '.sa-note-dot'],
+  workbenchhome: [
+    '[data-testid="wb-card-map"]',
+    '[data-testid="wb-open-map"]',
+    '[data-testid="wb-card-goal"]',
+    /* 今天可复习（P12） */
+    '[data-testid="wb-card-review"]',
+    '[data-testid="wb-card-review-count"]',
+    '[data-testid="wb-card-review-meta"]',
+    '[data-testid="wb-open-review"]'
+  ],
+  subagentnote: ['[data-testid="subagent-notes"]', '.sa-note', '.sa-note-dot', '[data-testid="subagent-note-summary-sub-note-summary"]'],
   sessionmap: [
     '[data-testid="map-node"]',
     '.wb-lane',
     '.wb-edge',
     '[data-testid="map-search"]',
     '[data-testid="map-info"]'
+  ],
+  mapturns: [
+    '[data-testid="map-node"]',
+    '[data-testid="map-turns-toggle"]',
+    '[data-testid="map-turn-card"]',
+    '[data-testid="map-turn-aligned"]',
+    '[data-testid="map-turn-fork"]',
+    '[data-testid="map-turn-truncated"]'
   ],
   sessionpreview: [
     '[data-testid="map-preview"]',
@@ -5207,6 +6278,56 @@ const AFTER_STATE = {
         studyLoaded: false,
         openLibraryRef: async (ref, maxChars) =>
           window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 练习卡：关视图 + 清掉注入的练习与学习状态 */
+  spaceexercise: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        courses: [],
+        coursesLoaded: false,
+        studyStatus: null,
+        studySessions: [],
+        studyLoaded: false,
+        exercises: [],
+        exerciseLoadedFor: null,
+        exerciseHints: {},
+        exerciseSolutions: {},
+        exerciseAttempts: {},
+        exerciseFeedback: {},
+        openLibraryRef: async (ref, maxChars) =>
+          window.yan.library.open(ref, maxChars !== undefined ? { maxChars } : undefined),
+        sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
+      });
+      return 'ok';
+    })()
+  `,
+  /* 概念进度与笔记：关视图 + 清掉注入的课程 / 进度 / 笔记 */
+  spacememory: `
+    (() => {
+      const S = () => window.__yanStore.getState();
+      S().closeSpaceView();
+      window.__yanStore.setState({
+        spaces: [],
+        library: [],
+        courses: [],
+        coursesLoaded: false,
+        studyStatus: null,
+        studySessions: [],
+        studyLoaded: false,
+        conceptProgress: [],
+        notes: [],
+        notesLoadedFor: null,
+        reviews: [],
+        reviewPlan: null,
+        reviewDue: null,
         sessions: S().sessions.map((s) => { const { spaceId, ...rest } = s; return rest; })
       });
       return 'ok';

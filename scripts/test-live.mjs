@@ -90,6 +90,8 @@ const CASES = {
   /* 实施-18：日常模式的工作台首页与会话地图（cost 0，合成会话） */
   dailyhome: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
   sessionmap: { probe: 'scripts/probe/daily-workbench.js', delay: 9000, cost: 0 },
+  // 实施-26 R3/R4：画布轮次层（一轮一张卡 / 分支对齐 / 失败态；cost 0）
+  turns: { probe: 'scripts/probe/turns.js', delay: 24000, cost: 0 },
   // 实施-21：运行阶段投影/显示（注入 store 快照，不跑模型）
   runprogress: { probe: 'scripts/probe/run-progress.js', delay: 9000, cost: 0 },
   // 实施-25 P01：活动档案切换（UI → IPC → 落盘；cost 0）
@@ -110,6 +112,25 @@ const CASES = {
   study: { probe: 'scripts/probe/study.js', delay: 14000, cost: 0 },
   // 实施-25 P09：导师页面（三栏 / 档位 / 学这一节 → 教材定位 / 等作答联动 / 选段动作；cost 0）
   tutor: { probe: 'scripts/probe/tutor.js', delay: 18000, cost: 0 },
+  // 实施-25 P10：练习与反馈（题目不含答案 / 分层提示 / 看解释 / 作答反馈 / 用户纠正；cost 0）
+  exercise: { probe: 'scripts/probe/exercise.js', delay: 17000, cost: 0 },
+  // 实施-25 P11：笔记与概念进度（两轴并存 / 一次失败不降级 / 自评与观察并存；cost 0）
+  memory: { probe: 'scripts/probe/memory.js', delay: 20000, cost: 0 },
+  // 实施-25 P12：错题与复习（挑同概念新例子 / 挪期与去掉 / 连续独立成功收掉；cost 0）
+  review: { probe: 'scripts/probe/review.js', delay: 22000, cost: 0 },
+  // 实施-25 P13：跨资料研究（旧引用按版本保留 / 不合并的对照；步骤在 artifact 探针里，cost 0）
+  // 实施-25 P14：办事模板（写步骤必须有范围 / 摊开范围 / 只填不发；cost 0）
+  playbook: { probe: 'scripts/probe/playbook.js', delay: 24000, cost: 0 },
+  // 实施-25 P15：内部 agent 分工（任务输入 / 结果汇总在卡片上看得见；cost 0，不真启动子代理）
+  subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
+  // 实施-25 P16：持续关注与提醒（应用没开不跟进 / 未启用不自行建立 / 只填不发；cost 0）
+  follow: { probe: 'scripts/probe/follow.js', delay: 24000, cost: 0 },
+  // 实施-25 P17：按需获取能力（说需求 → 可执行路径，不编包名；cost 0）
+  capabilityneed: { probe: 'scripts/probe/capability-need.js', delay: 14000, cost: 0 },
+  // 实施-25 P18：按活动配置模型（优先级 / 回退 / 边界文案；cost 0）
+  activitymodel: { probe: 'scripts/probe/activity-model.js', delay: 16000, cost: 0 },
+  // 实施-25 P20：语音（只说路径 + 转写登记到同一门课；cost 0）
+  audio: { probe: 'scripts/probe/audio.js', delay: 20000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。
@@ -543,6 +564,7 @@ const CASES = {
   },
   /* 同一提交链路使用隔离的本机 provider，验证交接启动回执，不花外部模型额度。 */
   handoffcommitlocal: {
+    afterExitOnFailure: true,
     probe: 'scripts/probe/handoff-commit.js',
     fixture: true,
     fixtureSub: 'repo',
@@ -2537,6 +2559,14 @@ function seedSessions(destRoot) {
 
   // 合成：20 条消息的普通会话
   writePlainSession(destDir, 'yan-plain-fixture', 20)
+  n++
+
+  /*
+   * 合成：规模用例（实施-26 R7）—— 400 条消息 = 200 轮。
+   * 轮次层会把「一个会话」撑成一条很长的卡链，这个 fixture 用来验
+   * 「展开几百轮不塌」（几何、渲染、泳道高度都要经得住）。
+   */
+  writePlainSession(destDir, 'yan-bulk-fixture', 400)
   n++
 
   return n
@@ -8012,7 +8042,7 @@ function startHandoffFailureProvider(failureMode = 'invalid-json') {
     constraints: ['仅使用本机假 provider。'],
     acceptance: ['同 operationId 有 before_provider_request 回执。'],
     done: ['本机 provider 完成了首次目标报告。'],
-    remaining: [],
+    remaining: ['确认目的片段的启动回执。'],
     nextActions: ['确认回执后停止目标。'],
     blockers: [],
     files: [],
