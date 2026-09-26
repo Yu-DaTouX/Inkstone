@@ -147,7 +147,7 @@
  * （见 animateHeight）—— 常开的话打字白动长高会慢半拍、拖拽柄也不跟手。
  */
 .composer.animating textarea {
-  transition: height 200ms var(--ease);
+  transition: height var(--dur-200) var(--ease);
 }
 
 /*
@@ -1320,14 +1320,7 @@
   color: var(--accent);
   font-size: var(--fs-xs);
   pointer-events: none;
-  animation: qpanel-bump 1.4s var(--ease) forwards;
-}
-
-@keyframes qpanel-bump {
-  0% { opacity: 0; transform: translateY(4px) }
-  15% { opacity: 1; transform: translateY(-50%) }
-  70% { opacity: 1; transform: translateY(-50%) }
-  100% { opacity: 0; transform: translateY(-80%) }
+  animation: qpanel-bump var(--dur-1400) var(--ease) forwards;
 }
 
 .qpanel-toggle {

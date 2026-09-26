@@ -332,16 +332,7 @@
   height: 4px;
   border-radius: var(--r-full);
   background: var(--ok);
-  animation: ubpulse 1.1s ease-in-out infinite;
-}
-@keyframes ubpulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
+  animation: ubpulse var(--dur-1100) ease-in-out infinite;
 }
 .ub-turn {
   display: inline-flex;
@@ -358,7 +349,7 @@
 .workspace {
   display: grid;
   grid-template-columns: var(--w-rail) minmax(0, 1fr) var(--w-right);
-  transition: grid-template-columns 200ms var(--ease);
+  transition: grid-template-columns var(--dur-200) var(--ease);
 }
 /* 收起时左栏内容隐藏（但头部那个开关**要留着**，否则展不开）。
    ⚠️ 曾经这里是 `opacity: 0` + `pointer-events: auto` —— 结果是
@@ -546,16 +537,6 @@
 .send:disabled {
   opacity: var(--ctl-disabled-opacity);
 }
-@keyframes sheadflash {
-  0%,
-  100% {
-    background: var(--bg-1);
-  }
-  30% {
-    background: var(--accent-soft);
-  }
-}
-
 /* 31. 对齐收尾
    —— 学了 Agents-Anywhere 代码里的两点：
    ① 展开状态用 CSS 的 [data-state] / [aria-expanded] 驱动图标，
@@ -728,68 +709,28 @@
 /* 43. 弹出层统一动画
    所有浮层用同一套：遮罩淡入 + 面板从贴着触发器的方向缩放入场。
    关键帧只写两套（上弹 / 居中弹），其余复用 ——
-   每个浮层各写一套动画会让"一致性"在维护中慢慢丢掉。 */
-@keyframes pop-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes pop-down {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes center-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 /* 向上弹的浮层（输入区附近的选择器） */
 .mt-pop {
-  animation: pop-up 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  animation: pop-up var(--dur-140) var(--ease);
   transform-origin: bottom;
 }/* 向下弹的（从列表项下方出现）。
    会话行菜单现在 Portal 到 body（`.ctx-menu` 负责 fixed 定位与尺寸夹取），
    这里只保留“从触发器下方弹出”的方向感和最小宽度。 */
 .row-menu-surface {
   min-width: 208px;
-  animation: pop-down 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  animation: pop-down var(--dur-140) var(--ease);
   transform-origin: top;
 }
 .row-menu {
-  animation: pop-down 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  animation: pop-down var(--dur-140) var(--ease);
   transform-origin: top;
 }
 /* 居中的模态框 */
 .modal {
-  animation: center-in 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  animation: center-in var(--dur-140) var(--ease);
 }
 .settings {
-  animation: center-in 140ms cubic-bezier(0.2, 0, 0.2, 1);
+  animation: center-in var(--dur-140) var(--ease);
 }
 
 /* 尊重系统设置 */
@@ -818,29 +759,11 @@
   vertical-align: text-bottom;
   background: var(--fg-dim);
   border-radius: 1px;
-  animation: cursor-soft 1.15s ease-in-out infinite;
-}
-@keyframes cursor-soft {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.15;
-  }
+  animation: cursor-soft var(--dur-1150) ease-in-out infinite;
 }
 .cursor-inline {
   height: 0.9em;
 }
-@keyframes text-in {
-  from {
-    opacity: 0.35;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 /* 45. 「⠋ 正在处理…」提示 */
 .working {
   display: flex;
@@ -987,18 +910,6 @@
    · 尺寸（1.4K）只在文件行右侧显示，颜色比名字淡一档：
    它是辅助信息，不能在扫读名字时抢注意力。
    · `.rp-fs` 限制最大高度并可滚 —— 一个 400 项的目录不能把右栏顶穿。 */
-/* 文件树的 .rp-fs / .rp-fs-row / .rp-fs-size 已全部搬到 tools.css
-   （2026-09-15 样式归属收拢：同名选择器不再跨文件叠加）。 */
-@keyframes rp-fs-pulse {
-  0%,
-  100% {
-    opacity: 0.25;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
 /* 47. 面板收起后的形态：**不占宽**（开关在标题栏）
    演进记录（每次都是用户提的，值得留着）：
    ① 收起后什么都不留 → 没有展开入口，面板锁死
@@ -1092,11 +1003,6 @@
 .rail-mode-btn:hover,
 .rail-mode-btn.open {
   background: var(--bg-3);
-}
-@keyframes term-blink {
-  50% {
-    opacity: 0;
-  }
 }
 /* 终端内一律深色底：把按主题写的工具详情颜色覆盖掉 */
 .term .tool-path,

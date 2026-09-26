@@ -106,7 +106,7 @@
 }
 
 .shead.flash {
-  animation: sheadflash 600ms var(--ease);
+  animation: sheadflash var(--dur-600) var(--ease);
 }
 
 /* 41. 主区头部：标题 + 项目胶囊（删掉了「上次聊到」那一行） */
@@ -165,7 +165,7 @@
 
 /* 流式期间新内容柔化入场 */
 .msg.assistant.streaming .md > *:last-child {
-  animation: text-in 180ms ease-out;
+  animation: text-in var(--dur-180) ease-out;
 }
 
 /*
@@ -175,20 +175,8 @@
  * 「跳到了哪」，不是「这条被选中了」—— 所以不用持久选中态，也不改滚动位置语义。
  */
 .msg.msg-located {
-  animation: msg-located 1.8s ease-out;
+  animation: msg-located var(--dur-1800) ease-out;
   border-radius: 8px;
-}
-
-@keyframes msg-located {
-  0%,
-  60% {
-    background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--accent-line);
-  }
-  100% {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
 }
 
 /* 42. 终端风格重做（用户要求「跟终端版本差不多」）
@@ -459,7 +447,7 @@
 }
 
 .image-progress.running .image-progress-track span {
-  animation: image-progress-slide 1.25s ease-in-out infinite;
+  animation: image-progress-slide var(--dur-1250) ease-in-out infinite;
 }
 
 .image-progress.failed {
@@ -479,11 +467,6 @@
 .image-progress-detail {
   margin-top: 6px;
   overflow-wrap: anywhere;
-}
-
-@keyframes image-progress-slide {
-  from { transform: translateX(-130%); }
-  to { transform: translateX(330%); }
 }
 
 .artifact-actions button,
@@ -586,11 +569,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: subagent-inline-spin .8s linear infinite;
-}
-
-@keyframes subagent-inline-spin {
-  to { transform: rotate(360deg); }
+  animation: subagent-inline-spin var(--dur-800) linear infinite;
 }
 
 .artifact-actions button:hover,
@@ -684,8 +663,8 @@
   opacity: 0;
   visibility: hidden;
   clip-path: inset(0 0 100% 0);
-  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease),
-    visibility 0s linear 220ms;
+  transition: clip-path var(--dur-220) var(--ease), opacity var(--dur-180) var(--ease),
+    visibility var(--dur-0) linear var(--dur-220);
 }
 
 .reason-body.open {
@@ -703,8 +682,8 @@
   opacity: 1;
   visibility: visible;
   clip-path: inset(0 0 0 0);
-  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease),
-    visibility 0s;
+  transition: clip-path var(--dur-220) var(--ease), opacity var(--dur-180) var(--ease),
+    visibility var(--dur-0);
 }
 
 .reason-window-content {
@@ -719,16 +698,7 @@
 
 /* 新增尾部 140ms 淡入：只作用在最后一个 span，稳定文本不重复动画 */
 .reason-tail {
-  animation: reason-tail-in 140ms var(--ease);
-}
-
-@keyframes reason-tail-in {
-  from {
-    opacity: 0.2;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: reason-tail-in var(--dur-140) var(--ease);
 }
 
 /* 系统要求减少动态效果：只取消尾部淡入 */
@@ -737,8 +707,8 @@
     transition: none;
   }
   .reason-tail {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
   }
 }
 
@@ -983,13 +953,7 @@
   pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
   transform: translateX(-100%);
-  animation: trow-sweep 1.9s linear infinite;
-}
-
-@keyframes trow-sweep {
-  to {
-    transform: translateX(100%);
-  }
+  animation: trow-sweep var(--dur-1900) linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1014,7 +978,7 @@
   overflow: hidden;
   opacity: 0;
   clip-path: inset(0 0 100% 0);
-  transition: clip-path 220ms var(--ease), opacity 180ms var(--ease);
+  transition: clip-path var(--dur-220) var(--ease), opacity var(--dur-180) var(--ease);
 }
 
 .trow-expand.open {
@@ -1408,7 +1372,7 @@
   margin-left: 2px;
   vertical-align: text-bottom;
   background: var(--accent);
-  animation: term-blink 1s step-end infinite;
+  animation: term-blink var(--dur-1000) step-end infinite;
 }
 
 /*
@@ -2003,10 +1967,10 @@
   background: var(--border-str);
   opacity: 0.55;
   transition:
-    width 130ms var(--ease),
-    height 130ms var(--ease),
-    background 130ms var(--ease),
-    opacity 130ms var(--ease);
+    width var(--dur-130) var(--ease),
+    height var(--dur-130) var(--ease),
+    background var(--dur-130) var(--ease),
+    opacity var(--dur-130) var(--ease);
 }
 
 /* 当前读到的那一轮 */
