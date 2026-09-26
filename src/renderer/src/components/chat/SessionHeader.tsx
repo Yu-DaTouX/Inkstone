@@ -21,7 +21,13 @@ import { GoalPopover } from '../toolbar/GoalPopover'
  *   ② 左栏点会话时已经知道自己在哪个会话，重复提示没意义
  *   ③ 占掉一行高度，而主区顶部该尽量薄
  */
-export function SessionHeader() {
+export function SessionHeader({ mapEnabled, mapOpen, onToggleMap }: {
+  /** 日常模式才提供「地图」这一档；编码模式不渲染切换器 */
+  mapEnabled?: boolean
+  /** 当前是否停在地图视图 */
+  mapOpen?: boolean
+  onToggleMap?: (open: boolean) => void
+} = {}) {
   const t = useT()
   const messages = useStore((s) => s.messages)
   const session = useStore((s) => s.session)
@@ -51,6 +57,36 @@ export function SessionHeader() {
         <h1 className="shead-title" title={title} data-testid="session-title">
           {title}
         </h1>
+
+        {/*
+         * 对话 / 地图切换（仅日常模式）。
+         *
+         * 放这里而不是标题栏：地图是「同一个会话的另一个视图」，不是
+         * 另一个功能页 —— 切换器贴着会话标题，用户看标题时就看到了它。
+         * 标题栏那个纯图标入口已删除（图标太隐蔽，且与这里重复）。
+         */}
+        {mapEnabled ? (
+          <div className="shead-view" role="tablist" aria-label={t('view.switch')} data-testid="view-switch">
+            <button
+              role="tab"
+              aria-selected={!mapOpen}
+              className={mapOpen ? '' : 'on'}
+              onClick={() => onToggleMap?.(false)}
+              data-testid="view-chat"
+            >
+              {t('view.chat')}
+            </button>
+            <button
+              role="tab"
+              aria-selected={!!mapOpen}
+              className={mapOpen ? 'on' : ''}
+              onClick={() => onToggleMap?.(true)}
+              data-testid="view-map"
+            >
+              {t('view.map')}
+            </button>
+          </div>
+        ) : null}
 
         {/* 环境菜单（项目胶囊即入口）：变更 / 本地 / 分支 / PR / 比较分支 */}
         <EnvironmentMenu />

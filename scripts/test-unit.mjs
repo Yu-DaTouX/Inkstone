@@ -2329,6 +2329,108 @@ const { runWebSearchTests } = await import('./test-web-search.mjs')
 await runWebSearchTests(ok, webSearch)
 
 /*
+ * 会话地图纯逻辑（src/shared/session-map.ts，实施-18 S1）：泳道 / 深度 / 边 /
+ * 折叠 / 孤儿与环防御。同样现场编译，不依赖主进程的摇树结果。
+ */
+const sessionMap = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/session-map.ts'],
+    outfile: 'out/test/session-map.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/session-map.mjs'))
+)
+const { runSessionMapTests } = await import('./test-session-map.mjs')
+await runSessionMapTests(ok, sessionMap)
+
+/*
+ * 额度摘要派生（src/shared/quota-mini.ts，实施-20 U2）：金额 / 窗口选择 / 百分比。
+ * 断言的是「摘要与明细同源」—— 同一次除法、只有小数位渲染不同。
+ */
+const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/quota-mini.ts'],
+    outfile: 'out/test/quota-mini.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/quota-mini.mjs'))
+)
+const { runQuotaMiniTests } = await import('./test-quota-mini.mjs')
+await runQuotaMiniTests(ok, quotaMini)
+
+/*
+ * 额度刷新调度（src/shared/quota-refresh.ts，实施-20 U3）：用假时钟覆
+ * 首次 / 周期 / 焦点 / 重置点 / 并发 / 不支持 / 切 provider 的决策。
+ */
+const quotaRefresh = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/quota-refresh.ts'],
+    outfile: 'out/test/quota-refresh.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/quota-refresh.mjs'))
+)
+const { runQuotaRefreshTests } = await import('./test-quota-refresh.mjs')
+await runQuotaRefreshTests(ok, quotaRefresh)
+
+/*
+ * 运行阶段投影（src/shared/run-progress.ts，实施-21 P1）：多轮工具循环、
+ * 终态优先、无可见 thinking 不报推理、长耗时阈值。
+ */
+const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/run-progress.ts'],
+    outfile: 'out/test/run-progress.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/run-progress.mjs'))
+)
+const { runRunProgressTests } = await import('./test-run-progress.mjs')
+await runRunProgressTests(ok, runProgress)
+
+/*
+ * 审查目录宽度（src/shared/review-layout.ts，实施-22 R1）：夹取、默认值、
+ * 坏持久化数据。
+ */
+const reviewLayout = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/review-layout.ts'],
+    outfile: 'out/test/review-layout.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/review-layout.mjs'))
+)
+const { runReviewLayoutTests } = await import('./test-review-layout.mjs')
+await runReviewLayoutTests(ok, reviewLayout)
+
+/*
+ * 自定义 API 服务（src/shared/custom-provider.ts，实施-23 M1）：校验、合并、
+ * 密钥不回明文、保留用户手工条目。
+ */
+const customProvider = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/custom-provider.ts'],
+    outfile: 'out/test/custom-provider.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/custom-provider.mjs'))
+)
+const { runCustomProviderTests } = await import('./test-custom-provider.mjs')
+await runCustomProviderTests(ok, customProvider)
+
+/*
  * 工作树 Fork 的路径重绑定（src/shared/fork-rebind.ts，实施-07 S2b-3）：把源会话的文件引用
  * 拿到**工作树的仓库根**下重新解析并验证存在性。纯函数（文件系统由调用方注入）——
  * 这里必须钉住的是「`outside` 与 `missing` 不能混」、「`..` 与仓库外绝对路径不迁」、

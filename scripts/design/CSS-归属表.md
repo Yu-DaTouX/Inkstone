@@ -9,25 +9,26 @@
 | 顺序 | 文件 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | `tokens.css` | 292 | 24 | 25 | 1 | 2 |
-| 2 | `app.css` | 561 | 78 | 78 | 1 | 0 |
+| 2 | `app.css` | 560 | 78 | 78 | 1 | 0 |
 | 3 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
 | 4 | `redesign.css` | 1299 | 133 | 147 | 5 | 0 |
 | 5 | `motion.css` | 1491 | 194 | 199 | 6 | 11 |
-| 6 | `settings.css` | 670 | 100 | 103 | 0 | 0 |
+| 6 | `settings.css` | 741 | 109 | 112 | 0 | 0 |
 | 7 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
 | 8 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
 | 9 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
 | 10 | `shell.css` | 411 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
-| 12 | `rail.css` | 1585 | 224 | 230 | 0 | 0 |
-| 13 | `chat.css` | 2089 | 269 | 273 | 5 | 2 |
+| 12 | `rail.css` | 1643 | 230 | 236 | 0 | 0 |
+| 13 | `chat.css` | 2196 | 284 | 289 | 5 | 2 |
 | 14 | `composer.css` | 1958 | 273 | 276 | 2 | 0 |
-| 15 | `tools.css` | 3928 | 586 | 629 | 3 | 5 |
+| 15 | `tools.css` | 3951 | 590 | 633 | 3 | 5 |
 | 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
-| 18 | `review.css` | 1570 | 226 | 227 | 1 | 0 |
-| 19 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **17052** | **2262** | | | |
+| 18 | `review.css` | 1614 | 233 | 234 | 1 | 0 |
+| 19 | `workbench.css` | 706 | 89 | 89 | 0 | 0 |
+| 20 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
+| | **合计** | **18060** | **2392** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -40,19 +41,20 @@
 | `stage1.css` | 11 |
 | `redesign.css` | 76 |
 | `motion.css` | 190 |
-| `settings.css` | 100 |
+| `settings.css` | 109 |
 | `electron.css` | 9 |
 | `highlight.css` | 81 |
 | `layout.css` | 14 |
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
-| `rail.css` | 224 |
-| `chat.css` | 267 |
+| `rail.css` | 230 |
+| `chat.css` | 282 |
 | `composer.css` | 272 |
-| `tools.css` | 586 |
+| `tools.css` | 590 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
-| `review.css` | 226 |
+| `review.css` | 233 |
+| `workbench.css` | 89 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）

@@ -159,17 +159,9 @@
      */
     out.push('')
     out.push('=== 4. 坏 pi 入口下的子代理 ===')
-    ok(!!q('[data-testid="subagent-new"]'), '子代理入口还在（界面没被拖垮）')
-    click(q('[data-testid="subagent-new"]'))
-    await sleep(250)
+    ok(!q('[data-testid="subagent-new"]'), '专用子代理入口已撤下（U4）')
     const subTask = 'YAN-SUBAGENT-BOOT 探针任务'
-    const subInput = q('[data-testid="subagent-task"]')
-    const subSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    if (subInput && subSetter) {
-      subSetter.call(subInput, subTask)
-      subInput.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    click(q('[data-testid="subagent-start"]'))
+    await store.getState().startSubagent(subTask)
     const subRun = await waitFor(() => {
       const r = (store.getState().subagents ?? []).find((x) => x.task === subTask)
       return r && ['error', 'cancelled', 'done'].includes(r.status) ? r : null

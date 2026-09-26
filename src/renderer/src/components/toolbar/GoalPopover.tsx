@@ -19,6 +19,7 @@ import { GoalContent } from './GoalSection'
 export function GoalPopover() {
   const t = useT()
   const goal = useStore((s) => s.goal)
+  const goalError = useStore((s) => s.goalError)
   const open = useStore((s) => s.goalPopoverOpen)
   const setOpen = useStore((s) => s.setGoalPopoverOpen)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
@@ -46,14 +47,36 @@ export function GoalPopover() {
     }
   }, [open, setOpen])
 
-  const active = goal?.goalId ? goal : null
+  /*
+   * 有可展示内容：已建立的目标，或待用户审阅的计划（此时 goalId 可能还没生成）。
+   * 只用 goalId 判断会把「待审计划」漏掉。
+   */
+  const hasContent = Boolean(goal?.goalId || goal?.pendingReady)
+  const active = hasContent ? goal : null
   const steps = active?.steps ?? []
   const done = steps.filter((step) => step.status === 'done').length
   const displayTitle = goalDisplayTitle(active)
   const label = shortTitle(displayTitle, 22)
 
+  /*
+   * 切会话时关掉上一个会话的目标浮层 —— 不要在看到会话 B 的同时还挂着
+   * 会话 A 的目标详情（实施-20 U1）。
+   */
+  const sessionKey = useStore((s) => s.session?.conversationFile ?? s.session?.sessionFile)
+  useEffect(() => {
+    setOpen(false)
+  }, [sessionKey, setOpen])
+
+  /*
+   * 入口只在当前会话确实有目标时出现：无目标时整块（含间距）不渲染。
+   * 加载**失败**例外 —— 那是「没读到」而不是「没有」，用户要能点开重试。
+   * 浮层已打开时仍保留包装节点，让内容能正常卸载/关闭。
+   */
+  if (!active && !goalError && !open) return null
+
   return (
     <div className="goal-entry-wrap" ref={rootRef}>
+      {active || goalError ? (
       <button
         type="button"
         className={`goal-entry ${active ? `goal-${active.phase}` : ''} ${open ? 'on' : ''}`}
@@ -71,6 +94,7 @@ export function GoalPopover() {
           </span>
         ) : null}
       </button>
+      ) : null}
 
       {open ? (
         <div className="goal-popover" role="dialog" aria-label={t('goal.title')} data-testid="goal-popover">

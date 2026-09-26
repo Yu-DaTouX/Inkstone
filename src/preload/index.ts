@@ -23,6 +23,8 @@ import type {
   TerminalSnapshot,
   ChromeSyncReport,
   AuthProviderInfo,
+  CustomProviderResult,
+  CustomProviderView,
   CodexLoginResult,
   CompactionInfo,
   TrustStatusView,
@@ -71,7 +73,8 @@ import type {
   HandoffView,
   WorkModeState,
   YanBridge,
-  ZoomState
+  ZoomState,
+  CustomProviderTestResult
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { ContextActionSummary } from '../shared/context-actions'
@@ -219,6 +222,11 @@ const api: YanBridge = {
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
+  customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
+  saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
+  removeCustomProvider: (id) => invoke<CustomProviderResult>('yan:removeCustomProvider', id),
+  testCustomProvider: (id, mode, modelId) =>
+    invoke<CustomProviderTestResult>('yan:testCustomProvider', id, mode, modelId),
   completePath: (prefix, cwd, context) => invoke<PathCompletionResult>('yan:completePath', prefix, cwd, context),
   cancelFileSearch: (requestId) => invoke<void>('yan:cancelFileSearch', requestId),
   searchFiles: (request: FileSearchRequest) => invoke<FileSearchResult>('yan:searchFiles', request),

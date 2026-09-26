@@ -25,6 +25,14 @@ import { listSessions, deleteSession, readTitleSamples, restoreSession } from '.
 import { moveSessionLayout, rememberSession } from './session-layout'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
+import type { CustomProviderInput } from '../shared/custom-provider'
+import {
+  listCustomProviders,
+  removeCustomProvider,
+  saveCustomProvider,
+  testCustomProviderBillable,
+  testCustomProviderEndpoint
+} from './custom-providers'
 import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
@@ -4545,6 +4553,20 @@ function registerIpc(): void {
   handle('yan:setApiKey', async (provider: string, key: string) => setApiKey(provider, key))
   handle('yan:clearAuth', async (provider: string) => clearAuth(provider))
   handle('yan:authFileInfo', async () => authFileInfo())
+  /* 实施-23：自定义 API 服务。真源是 pi 的 models.json，只写 yan- 前缀条目。 */
+  handle('yan:customProviders', async () => listCustomProviders())
+  handle('yan:saveCustomProvider', async (input: CustomProviderInput) => saveCustomProvider(input))
+  handle('yan:removeCustomProvider', async (id: string) => removeCustomProvider(id))
+  /*
+   * 连接测试（实施-23 M2）：endpoint 段是宿主自己的 HTTP 检查；billable 段交给
+   * pi 的 --print 模式真实跑一条提示词 —— 两者分开返回，界面才能分别标成本。
+   */
+  handle('yan:testCustomProvider', async (id: string, mode: 'endpoint' | 'billable', modelId?: string) => {
+    if (mode === 'endpoint') return await testCustomProviderEndpoint(id)
+    const current = await getSettings()
+    const probe = resolvePi(current.piBin ? { override: current.piBin } : {})
+    return await testCustomProviderBillable({ id, modelId: modelId ?? '', piBin: probe.args.at(-1) ?? '' })
+  })
 
   /*
    * 应用内登录 ChatGPT 订阅（Codex）。

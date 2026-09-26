@@ -51,12 +51,23 @@
       await sleep(500)
     }
 
+    /*
+     * 实施-20 U1：无目标时入口整块不渲染（不再常驻一个写着「目标」的空按钮）。
+     * 先验无目标不占位，再注入目标验入口出现。
+     */
+    ok(!q('[data-testid="goal-entry"]'), '无目标时没有目标入口（实施-20 U1）')
+    ok(!q('[data-testid="goal-panel"]'), '无目标时也没有浮层面板')
+
+    window.__yanStore.setState({ goal: goalOf('executing'), goalError: null })
+    await sleep(150)
     const entry = q('[data-testid="goal-entry"]')
-    ok(!!entry, '标题栏有目标入口')
-    ok(!q('[data-testid="goal-panel"]'), '默认不开浮层（入口只占一行）')
+    ok(!!entry, '有目标时标题栏出现目标入口')
 
     entry?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(300)
+    /* GoalContent 挂载会 loadGoal()，等它落定后再补注入，免得假目标被冲掉 */
+    await sleep(400)
+    window.__yanStore.setState({ goal: goalOf('executing'), goalError: null })
+    await sleep(120)
     ok(!!q('[data-testid="goal-popover"]'), '点击入口打开浮层')
     ok(!!q('[data-testid="goal-panel"]'), '浮层里渲染只读目标内容')
     st().setGoalPopoverOpen(false)

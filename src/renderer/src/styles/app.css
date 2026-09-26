@@ -185,7 +185,6 @@
 .center > .composer-wrap {
   grid-row: 5;
 }
-
 .stream {
   overflow: hidden auto;
   scrollbar-gutter: stable;

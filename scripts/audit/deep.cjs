@@ -134,7 +134,8 @@ const report = {}
   const helper = /^(lib|icons)\//
   const unusedExports = srcFiles.filter((f) => {
     const base = path.basename(f).replace(/\.(ts|tsx)$/, '')
-    if (!/\.(ts|tsx)$/.test(f)) return false
+    /* `.d.ts` 是类型声明，由 tsconfig 自动加载，永远不需要被 import —— 不进这项检查 */
+    if (!/\.(ts|tsx)$/.test(f) || f.endsWith('.d.ts')) return false
     const importName = base.replace(/\.(ts|tsx)$/, '')
     const patterns = [`from './${importName}'`, `from '../${importName}'`, `from './${importName}.ts'`, `/${importName}'`, `'./${importName}`, `/${importName}.`]
     return patterns.every((p) => !allText.includes(p))

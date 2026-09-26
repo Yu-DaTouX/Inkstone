@@ -64,8 +64,8 @@
     ok(started.parentRunId || started.parentSessionId, 'run 记录了父会话关系')
     ok(!!started.parentMessageId, 'run 记录了触发它的助手消息')
     await sleep(300)
-    ok(!!q(`[data-testid="subagent-inline-${started.id}"]`), '模型启动的 run 回到触发消息内显示')
-    ok(!q('[data-testid="subagent-preview"]'), '模型启动不会强制打开右侧详情（用户可按需查看）')
+    ok(!!q(`[data-testid="subagent-note-${started.id}"]`), '模型启动的 run 回到触发消息内显示')
+    ok(!q(`[data-testid="right-window-tab-subagent-${started.id}"]`), '模型启动不会强制打开专用详情页（U4）')
 
     let final = started
     const doneDeadline = Date.now() + 120_000
@@ -79,7 +79,7 @@
 
     const text = document.body.innerText || ''
     ok(!/不是内部或外部命令|command not found|is not recognized|宿主能力服务不可用|YAN_CLI_URL/i.test(text), '模型调用链没有出现 yan 不可用错误')
-    ok(qa(`[data-testid="subagent-inline-${started.id}"]`).length > 0, '页面仍保留用户可查看的消息内子代理卡')
+    ok(qa(`[data-testid="subagent-note-${started.id}"]`).length > 0, '页面仍保留用户可查看的消息内子代理卡')
 
     await window.yan.subagents.clearFinished()
     await sleep(300)

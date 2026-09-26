@@ -45,34 +45,14 @@
     out.push(`  起始 run 数 = ${before.length}`)
 
     out.push('')
-    out.push('=== 2. 真实启动一个子代理 ===')
+    out.push('=== 2. 启动一个子代理（agent 委派路径）===')
     /*
-     * 先走用户可见的调用 UI：它与 Codex 一样靠近输入区，
-     * 不要求用户记住 `/subagent`。提交后仍然落到同一个 store action，
-     * 会真的起一个独立 pi 子进程，并把详情面板自动打开。
+     * 实施-20 U4 撤下了右侧专用子代理页与「调用子代理」新建面板：
+     * 现在用同一个 store action 代表「agent 自行委派」，
+     * 并核对普通会话流里的 SubagentNote 是否给出状态与人类操作。
      */
     const noticesBefore = store.getState().notices.length
-    /* H-3b：子代理调用入口在「工具」固定页；新会话默认停在「开始」页。 */
-    if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
-    await sleep(300)
-    document.querySelector('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(500)
-    ok(!!q('[data-testid="subagent-new"]'), '右侧工具页有显式的子代理调用按钮')
-    q('[data-testid="subagent-new"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(200)
-    ok(!!q('[data-testid="subagent-launch-panel"]'), '点击后打开子代理任务面板')
-    const taskInput = q('[data-testid="subagent-task"]')
-    const taskSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-    if (taskInput && taskSetter) {
-      taskSetter.call(taskInput, '请只回答两个字：收到')
-      taskInput.dispatchEvent(new Event('input', { bubbles: true }))
-      taskInput.dispatchEvent(new Event('change', { bubbles: true }))
-    }
-    /* React 的受控 textarea 需要一帧把 onChange 的状态写回按钮 disabled。 */
-    await sleep(250)
-    const startButton = q('[data-testid="subagent-start"]')
-    ok(!!startButton && !startButton.disabled, '任务文本已写入，启动按钮可用')
-    startButton?.click()
+    await store.getState().startSubagent('请只回答两个字：收到')
     await sleep(800)
     let started = null
     for (let i = 0; i < 30; i++) {
@@ -99,30 +79,19 @@
     }
     ok(listed, '运行进入 store（主进程 push 生效）')
 
-    /* 打开详情：start 后默认已打开（右栏工作台里的 subagent 资源标签） */
-    let previewed = false
+    /* 普通会话流里的状态行应该出现（替代撤下的专用页与资源标签） */
+    let noted = false
     for (let i = 0; i < 20; i++) {
-      if (q('[data-testid="subagent-preview"]')) {
-        previewed = true
+      if (q('[data-testid="subagent-notes"]') && q(`[data-testid="subagent-note-${id}"]`)) {
+        noted = true
         break
       }
       await sleep(300)
     }
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
-    out.push(`  诊断：rightpanel=${!!q('[data-testid="rightpanel"]')} sp=${!!q('.sp')}`)
-    out.push(`  诊断：store.subagents=${store.getState().subagents.length}`)
-    ok(previewed, '详情面板打开了')
-
-    /*
-     * 详情会自动把右栏切到 subagent 资源，工具页的列表 DOM 随之卸载。
-     * 切回工具页确认列表真的把这条渲染出来，再切回详情看输出。
-     */
-    q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(500)
-    ok(!!q('[data-testid="subagent-strip"]'), '工具页子代理列表渲染出子任务条')
-    ok(!!q(`[data-testid="subagent-${id}"]`), '列表里有这一条')
-    q(`[data-testid="right-window-tab-subagent-${id}"]`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(400)
+    out.push(`  诊断：notes=${!!q('[data-testid="subagent-notes"]')}`)
+    ok(noted, '会话流里出现子代理状态行（不需要专用管理页）')
+    ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下')
 
     out.push('')
     out.push('=== 3. 等它跑完（真实 pi 子进程；模型按场景）===')
@@ -156,12 +125,11 @@
     }
     ok(hasReply, '转录里有模型的回复文本')
 
-    /* 详情面板里能真的看到输出（H-10a 后默认在「概览」，先切到「过程」） */
-    q('[data-testid="subagent-tab-process"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(300)
-    const body = q('[data-testid="subagent-preview-body"]')?.textContent ?? ''
-    out.push(`  详情正文长度 = ${body.length}`)
-    ok(body.length > 0, '详情面板里有内容')
+    /* 会话流状态行里能真的看到输出（实施-20 U4 后的普通入口） */
+    const note = q(`[data-testid="subagent-note-${id}"]`)
+    const noteText = note?.textContent ?? ''
+    out.push(`  状态行文本长度 = ${noteText.length}`)
+    ok(noteText.length > 0, '会话流状态行里有内容')
 
     out.push('')
     out.push('=== 4. 停止：真的能停 ===')

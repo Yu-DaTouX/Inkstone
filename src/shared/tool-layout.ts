@@ -104,7 +104,8 @@ export function migrateToolLayout(
   for (const id of ids) {
     if (!hiddenSet.has(id) || seen.has(id)) continue
     seen.add(id)
-    tiles.push({ id, placement: 'library', order: tiles.length })
+    /* 实施-20 U5：工具库 UI 已撤下，原先“收进库”的分区改为停在工具页（不丢内容） */
+    tiles.push({ id, placement: 'docked', order: tiles.length })
   }
   return { version: 2, revision: 0, tiles }
 }
@@ -145,8 +146,13 @@ export function normalizeToolLayout(value: unknown, ids: readonly string[]): Too
     if (typeof item.id !== 'string' || !known.has(item.id) || seen.has(item.id)) continue
     seen.add(item.id)
     const rawPlacement: ToolPlacement = isPlacement(item.placement) ? item.placement : 'docked'
+    /*
+     * 实施-20 U5：工具库弹层已撤下。旧数据里的 `library` 在位读到时就迁到停靠区 ——
+     * 保留字面量仅为兼容旧文件，界面上不再产生新库位，也不让任何分区就此消失。
+     */
+    const migrated: ToolPlacement = rawPlacement === 'library' ? 'docked' : rawPlacement
     /* 若以后引入禁止浮动的磁贴，读盘时把它恢复到停靠位。 */
-    const placement: ToolPlacement = rawPlacement === 'floating' && !isTileFloatable(item.id) ? 'docked' : rawPlacement
+    const placement: ToolPlacement = migrated === 'floating' && !isTileFloatable(item.id) ? 'docked' : migrated
     const rect = placement === 'floating' ? sanitizeRect(item.rect) : undefined
     tiles.push({
       id: item.id,

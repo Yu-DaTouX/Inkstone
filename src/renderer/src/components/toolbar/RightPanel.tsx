@@ -4,9 +4,6 @@ import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section, SECTION_ICON, SECTION_TITLE } from './ToolSection'
 import { DragDropRect, DragPreview } from './DragPreview'
-import { SubagentList } from '../chat/SubagentList'
-import { SubagentPreview } from './SubagentPreview'
-import { shortTitle } from '../../../../shared/short-title'
 import { useStore } from '../../state/store'
 import { goalDisplayTitle } from '../../state/goal-view'
 import {
@@ -22,6 +19,8 @@ import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf, incompressible
 import { contextActionRows } from '../../state/context-actions-view'
 import type { ContextActionSummary } from '../../../../shared/context-actions'
 import { quotaTone } from '../../../../shared/quota-tone'
+import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
+import { decideQuotaRefresh, hasDueQuotaWindow } from '../../../../shared/quota-refresh'
 import { TOOL_SECTIONS, type CompactionInfo, type QueueMode, type QuotaWindow, type ToolSectionId } from '../../../../shared/ipc'
 import {
   defaultFloatRect,
@@ -35,7 +34,6 @@ import {
   type ToolTile
 } from '../../../../shared/tool-layout'
 import { HandleProvider } from './ToolSection'
-import { ToolLibrary } from './ToolLibrary'
 import { FileTree } from './FileTree'
 import { Resizer } from './Resizer'
 import { BrowserSurface } from '../browser/BrowserSurface'
@@ -107,10 +105,10 @@ export function RightPanel() {
   const setBrowserSurfaceActive = useStore((s) => s.setBrowserSurfaceActive)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
   const session = useStore((s) => s.session)
-  /* H-10a：子代理详情是工作台资源标签 `subagent:<runId>` */
-  const subagentPreviewId = useStore((s) => s.subagentPreviewId)
-  const subagentRuns = useStore((s) => s.subagents)
-  const openSubagent = useStore((s) => s.openSubagent)
+  /*
+   * 实施-20 U4：专用子代理页 / 资源标签已撤下。运行状态与必须由人处理的
+   * 停止 / 合并 / 放弃改由会话流里的 SubagentNote 承载（见 chat/SubagentNote）。
+   */
   const workbenchKey = workbenchSessionKey(session?.conversationFile ?? session?.sessionFile, session?.conversationId ?? session?.sessionId)
   /*
    * 布局和它所属的会话 key 绑在一起存（`{key, state}`）：切会话时即使某个渲染
@@ -121,7 +119,6 @@ export function RightPanel() {
     key: workbenchKey,
     state: loadWorkbenchState(workbenchKey)
   }))
-  const [libOpen, setLibOpen] = useState(false)
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
 
   const updateWorkbench = useCallback((fn: (state: WorkbenchState) => WorkbenchState): void => {
@@ -152,7 +149,6 @@ export function RightPanel() {
   useEffect(() => {
     const next = reconcileWorkbench(loadWorkbenchState(workbenchKey), availableRef.current)
     setBench({ key: workbenchKey, state: next })
-    setLibOpen(false)
     setQuickMenuOpen(false)
   }, [workbenchKey])
 
@@ -160,12 +156,6 @@ export function RightPanel() {
   useEffect(() => {
     saveWorkbenchState(bench.key, bench.state)
   }, [bench])
-
-  /* H-10a：列表 / 回合入口打开同一个 run → 激活同一个资源标签，不叠加副本 */
-  useEffect(() => {
-    if (!subagentPreviewId) return
-    updateWorkbench((state) => activateWorkbenchTab(state, 'subagent', subagentPreviewId))
-  }, [subagentPreviewId, updateWorkbench])
 
   /*
    * H-4：预览读到 realpath 后就有了资源身份 → 用它激活/新建文件标签。
@@ -226,10 +216,6 @@ export function RightPanel() {
   /** 已浮动 / 已收进库的磁贴（工具页里给浮动项一个轻量占位，内容不重复挂载） */
   const floatingTiles = useMemo(
     () => layout.tiles.filter((tile) => tile.placement === 'floating').sort((a, b) => a.order - b.order),
-    [layout]
-  )
-  const libraryCount = useMemo(
-    () => layout.tiles.filter((tile) => tile.placement === 'library').length,
     [layout]
   )
 
@@ -354,12 +340,6 @@ export function RightPanel() {
     })
   }, [browserOpen, filePreview, reviewOpen, updateWorkbench])
 
-  const closeSubagentTab = (id: string): void => {
-    setQuickMenuOpen(false)
-    updateWorkbench((state) => closeWorkbenchTab(state, id))
-    openSubagent(null)
-  }
-
   const switchWindow = (next: RightWindowView, resourceKey?: string): void => {
     setQuickMenuOpen(false)
     /*
@@ -464,8 +444,6 @@ export function RightPanel() {
   const reviewMode = activeView === 'review' && reviewOpen
   const browserMode = activeView === 'browser' && browserOpen
   const fileMode = activeView === 'file'
-  /* H-10a：子代理详情是独立资源页，与审查/浏览器/文件同一组标签 */
-  const subagentMode = activeView === 'subagent' && !!subagentPreviewId
   const toolsMode = homeMode && open
   /* 交互终端（H-11）：纯 DOM 资源，与文件一样走工作窗口标签 */
   const terminalMode = activeView === 'terminal'
@@ -475,11 +453,9 @@ export function RightPanel() {
    * H-3b：收起整个工作栏 = 连原生网页一起不可见（不再沿用「只藏标签、网页满列」）。
    * 收起时整个右栏渲染为 null，布局的 `:has(.rightpanel)` 会把 --w-right 置 0。
    */
-  const hasVisibleSurface = open && (reviewMode || browserMode || fileMode || toolsMode || subagentMode || terminalMode || pendingSurface)
+  const hasVisibleSurface = open && (reviewMode || browserMode || fileMode || toolsMode || terminalMode || pendingSurface)
   /* 文件资源标签（实施-11 H-4）：一个文件一个标签，身份是 projectId+root+canonicalPath */
   const fileTabs = workbench.tabs.filter((tab) => tab.kind === 'file')
-  /* 子代理资源标签（H-10a）：一个 run 一个标签，身份是 runId */
-  const subagentTabs = workbench.tabs.filter((tab) => tab.kind === 'subagent')
   /* 终端资源标签（H-11）：一个 PTY 会话一个标签，身份是会话 id */
   const terminalTabs = workbench.tabs.filter((tab) => tab.kind === 'terminal')
 
@@ -637,32 +613,6 @@ export function RightPanel() {
             )
           })}
 
-          {subagentTabs.map((tab) => {
-            const run = subagentRuns.find((r) => r.id === tab.resourceKey)
-            const label = shortTitle(run?.task ?? tab.resourceKey ?? '子代理', 18).short
-            const active = activeView === 'subagent' && workbench.activeTabId === tab.id
-            return (
-              <div
-                key={tab.id}
-                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
-                role="tab"
-                aria-selected={active}
-                data-testid={`right-window-tab-subagent-${tab.resourceKey}`}
-                onClick={() => switchWindow('subagent', tab.resourceKey)}
-              >
-                <Icon name="layers" size={12} />
-                <span title={run?.task}>{label}</span>
-                <button
-                  type="button"
-                  className="review-tab-close"
-                  onClick={(event) => { event.stopPropagation(); closeSubagentTab(tab.id) }}
-                  aria-label={t('sa.close')}
-                  title={t('sa.close')}
-                >×</button>
-              </div>
-            )
-          })}
-
           <div className="rp-tool-launcher-wrap">
             <button
               className={`review-tab-plus rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
@@ -679,14 +629,14 @@ export function RightPanel() {
 
           {homeMode ? (
             <button
-              className={`rp-x ${libOpen ? 'on' : ''}`}
-              onClick={() => setLibOpen((v) => !v)}
-              title={t('tl.open')}
-              data-testid="tool-lib-btn"
-              data-lib-count={libraryCount}
-              aria-expanded={libOpen}
+              className="rp-x"
+              onClick={() =>
+                void setToolLayout({ ...defaultToolLayout(TOOL_SECTIONS), revision: layout.revision + 1 })
+              }
+              title={t('tl.reset')}
+              data-testid="tool-reset-layout"
             >
-              <Icon name="layers" size={12} />
+              <Icon name="refresh" size={12} />
             </button>
           ) : null}
         </div>
@@ -717,9 +667,7 @@ export function RightPanel() {
         </div>
       ) : null}
 
-      {toolsMode && libOpen ? <ToolLibrary onClose={() => setLibOpen(false)} /> : null}
 
-      {subagentMode ? <SubagentPreview placement="right" /> : null}
       {reviewMode ? <ReviewPanel /> : null}
       {terminalMode ? <TerminalSurface /> : null}
       {browserMode ? <BrowserSurface /> : null}
@@ -730,8 +678,6 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
-          {/* 独立子代理是跨回合的后台资源，放在右侧工作区而不是输入框上方。 */}
-          {toolsMode ? <SubagentList placement="right" /> : null}
           {fileMode && filePreview ? <FilePreviewPane /> : null}
           {sequence.map((tile) => {
             if (tile.placement === 'floating') {
@@ -1312,6 +1258,12 @@ function UsageRing({ percent, tone }: { percent: number | null; tone?: string })
   )
 }
 
+/**
+ * 额度自动刷新间隔（实施-20 U3）。
+ * 官方额度窗口最短是 5 小时，1 分钟粒度足够；再密只会烧服务端限流。
+ */
+const AUTO_QUOTA_REFRESH_MS = 60_000
+
 function QuotaSection() {
   const t = useT()
   const provider = useStore((s) => s.session?.model?.provider ?? '')
@@ -1326,9 +1278,17 @@ function QuotaSection() {
   const providerRef = useRef(provider)
   /** 倒计时刷新用（重置时间要以“现在”为基准） */
   const [, setTick] = useState(0)
+  /** 正在飞的那笔查询属于哪个 provider（同 provider 不重叠；切了就允许新请求） */
+  const inFlightRef = useRef<string | null>(null)
+  /** 上次成功快照的时间戳：窗口重新获得焦点时用它判断是否该补查 */
+  const checkedAtRef = useRef<number | null>(null)
+  /** 该 provider 是否支持额度接口；false 时不做任何自动查询（自定义 API） */
+  const supportedRef = useRef<boolean | null>(null)
 
   const refresh = useCallback(async () => {
     if (!provider) return
+    if (inFlightRef.current === provider) return
+    inFlightRef.current = provider
     providerRef.current = provider
     setLoading(true)
     try {
@@ -1342,10 +1302,13 @@ function QuotaSection() {
       } else {
         setQuota(next)
         setError(next.error ?? '')
+        checkedAtRef.current = Date.now()
       }
+      supportedRef.current = next.supported ?? true
     } catch (e) {
       if (providerRef.current === provider) setError(e instanceof Error ? e.message : String(e))
     } finally {
+      if (inFlightRef.current === provider) inFlightRef.current = null
       if (providerRef.current === provider) setLoading(false)
     }
   }, [provider, budget])
@@ -1363,31 +1326,57 @@ function QuotaSection() {
     const id = setInterval(() => setTick((v) => v + 1), 30_000)
     return () => clearInterval(id)
   }, [])
+  /*
+   * 周期刷新（实施-20 U3）：只在页面可见、该 provider 真的支持额度接口、
+   * 且没有请求在飞时执行。不支持的 provider 一次都不自动查，避免无意义报错。
+   */
+  useEffect(() => {
+    if (!provider) return
+    const id = window.setInterval(() => {
+      const decision = decideQuotaRefresh({
+        trigger: 'periodic',
+        now: Date.now(),
+        lastCheckedAt: checkedAtRef.current,
+        intervalMs: AUTO_QUOTA_REFRESH_MS,
+        visible: document.visibilityState === 'visible',
+        supported: supportedRef.current,
+        provider,
+        inFlightProvider: inFlightRef.current
+      })
+      if (decision.query) void refresh()
+    }, AUTO_QUOTA_REFRESH_MS)
+    return () => window.clearInterval(id)
+  }, [provider, refresh])
+  /*
+   * 窗口重新获得焦点：快照比周期还旧才补查（频繁切窗口不重复打扰接口）。
+   */
+  useEffect(() => {
+    const onFocus = () => {
+      const decision = decideQuotaRefresh({
+        trigger: 'focus',
+        now: Date.now(),
+        lastCheckedAt: checkedAtRef.current,
+        intervalMs: AUTO_QUOTA_REFRESH_MS,
+        visible: true,
+        supported: supportedRef.current,
+        provider,
+        inFlightProvider: inFlightRef.current
+      })
+      if (decision.query) void refresh()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [provider, refresh])
   useEffect(() => {
     const wins = quota?.windows ?? []
     if (!wins.length) return
-    const now = Date.now()
-    const due = wins.some((w) => w.resetAt !== undefined && w.resetAt <= now && !w.exceeded)
-    if (due) void refresh()
+    if (hasDueQuotaWindow(wins, Date.now())) void refresh()
   }, [quota, refresh])
   /**
    * 百分比口径（ChatGPT 订阅的用量接口只给 used_percent）。
    * 用 PERCENT 这个伪币种传递 —— 它不能走 money()，否则会显示成 “$28.00”。
    */
   const isPercent = (quota?.currency ?? '').toUpperCase() === 'PERCENT'
-  /* 一位小数：方案 7.2 的示例写的是「已用 25.0%」，整数会丢掉小额度区间的变化 */
-  const pctText = (v: number): string => `${v.toFixed(1)}%`
-  /*
-   * 余额行只写一个数字 + 一个单位，不要 `$` / 币种混排。
-   * 为什么单独一个函数：DeepSeek 的余额可能是 CNY（¥9.92），
-   * 之前只认 USD，非 USD 会显示成 “9.92 CNY”，与右侧其它数值对不齐。
-   */
-  const money = (v: number, cur?: string): string => {
-    const code = (cur ?? 'USD').toUpperCase()
-    if (code === 'PERCENT') return pctText(v)
-    const sym = CURRENCY_SYMBOL[code]
-    return sym ? `${sym}${v.toFixed(2)}` : `${v.toFixed(2)} ${code}`
-  }
   /**
    * 主值口径（方案 7.2）：
    *   · 有分窗口（commandcode / codex）→ **本月已用**（不是最紧窗口的已用）
@@ -1428,8 +1417,8 @@ function QuotaSection() {
         <UsageRing percent={ringPct} tone={ringPct === null ? '' : quotaTone(ringPct, anyExceeded)} />
         <span className="rp-header-values" title={provider || undefined}>
           {compactWindows.length ? compactWindows.map(({ window, label }) => {
-            const pct = window.total > 0 ? (window.used / window.total) * 100 : null
-            return <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>{label} {pct === null ? '—' : `${pct.toFixed(0)}%`}</span>
+            const pct = windowPct(window)
+            return <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>{label} {pct === null ? '—' : `${pct}%`}</span>
           }) : <span>{mainText ?? (loading ? '…' : '—')}</span>}
         </span>
       </span>
@@ -1473,8 +1462,8 @@ function QuotaSection() {
       {quota?.windows?.length ? (
         <div className="rp-quota-wins">
           {quota.windows.map((w) => {
-            /* 真实比例（可能 > 100%，方案要求如实显示） */
-            const realPct = w.total > 0 ? (w.used / w.total) * 100 : 0
+            /* 真实比例（可能 > 100%，方案要求如实显示）；与摘要同源 */
+            const realPct = windowPct(w, 1) ?? 0
             /* 进度条只夹取宽度，不改数字 */
             const barPct = Math.min(100, Math.max(0, realPct))
             const left = Math.max(0, w.total - w.used)
@@ -1574,23 +1563,6 @@ function resetText(w: QuotaWindow): string {
   return `重置于 ${countdown(w.resetAt - now)}`
 }
 
-/** 紧凑栏只显示接口实际返回的短周期组合，不推算缺失窗口。 */
-function quotaCompactWindows(windows: QuotaWindow[]): Array<{ window: QuotaWindow; label: string }> {
-  const hour = windows.find((w) => /小时|\bhours?\b|\b\d+\s*h\b/i.test(w.label) || w.id === 'fiveHour' || w.id === 'primary')
-  const week = windows.find((w) => w.id === 'weekly' || w.id === 'secondary' || /每周|本周|weekly|\bweek\b/i.test(w.label))
-  const month = windows.find((w) => w.id === 'monthly' || /本月|月度|monthly|\bmonth\b/i.test(w.label))
-  if (hour) {
-    const match = hour.label.match(/(\d+)\s*(?:小时|hours?|h)/i)
-    const digits = match?.[1] ?? (hour.label.includes('五') || hour.id === 'fiveHour' || hour.id === 'primary' ? '5' : undefined)
-    const hourLabel = digits ? `${digits}h` : hour.label
-    return [{ window: hour, label: hourLabel }, ...(week ? [{ window: week, label: '周' }] : [])]
-  }
-  return [
-    ...(week ? [{ window: week, label: '周' }] : []),
-    ...(month ? [{ window: month, label: '月' }] : [])
-  ]
-}
-
 /** 剩余时长：3天4时12分后 / 2时18分后 / 12分钟后 */
 function countdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -1601,9 +1573,6 @@ function countdown(ms: number): string {
   if (h > 0) return `${h}时${m}分后`
   return `${Math.max(1, m)}分钟后`
 }
-
-/** 常用币种符号；没有的币种就退回 “9.92 CNY” 这种写法（不猜符号） */
-const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', CNY: '¥', EUR: '€', GBP: '£', JPY: '¥' }
 
 function ContextSection() {
   const t = useT()

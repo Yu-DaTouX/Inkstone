@@ -25,7 +25,7 @@
     ok(!!layout && layout.version === 2 && Array.isArray(layout.tiles), 'settings 里有版本化 toolLayout')
     const ids = (layout?.tiles ?? []).map((t) => t.id)
     ok(ids.length >= 8 && new Set(ids).size === ids.length, `迁移后覆盖全部已知分区且无重复（${ids.length}）`)
-    ok(layout?.tiles.every((t) => t.placement === 'docked' || t.placement === 'library'), '默认只有停靠/入库，没有浮动')
+    ok(layout?.tiles.every((t) => t.placement === 'docked'), '默认只有停靠，没有浮动/库位（实施-20 U5 后不再产生 library）')
 
     /* 写一个浮动态，再触发一次不相关 patch 让主进程重新读盘 */
     const target = 'queue'

@@ -9,6 +9,9 @@ import { FloatingTiles } from './components/toolbar/FloatingTiles'
 import { Resizer } from './components/toolbar/Resizer'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
+import { SessionMap } from './components/workbench/SessionMap'
+import { WorkbenchHome } from './components/workbench/WorkbenchHome'
+import { readDailyView, writeDailyView, type DailyView } from './state/daily-view'
 import { TurnView } from './components/chat/TurnView'
 import { groupIntoTurns } from '../../shared/turns'
 import { mergeQuestionLog } from '../../shared/question-log'
@@ -20,6 +23,7 @@ import {
 import { isModalOpen } from './lib/modalLayer'
 import { Composer } from './components/chat/Composer'
 import { HandoffNote } from './components/chat/HandoffNote'
+import { SubagentNote } from './components/chat/SubagentNote'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
@@ -57,6 +61,7 @@ import './styles/browser.css'
 import './styles/terminal.css'
 /* 审查与环境菜单（方案 G1）：与其它模块化层同为最后加载 */
 import './styles/review.css'
+import './styles/workbench.css'
 /* 跨模块的语义图标反馈（H-8a/b）：要在各模块的状态色之后加载 */
 import './styles/icon-state.css'
 
@@ -209,6 +214,44 @@ export default function App() {
   /* 全局模式快捷键要用到当前模式与会话默认模式（见下面的快捷键 effect） */
   const setWorkMode = useStore((s) => s.setWorkMode)
   const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  /*
+   * 工作区模式与中栏视图（实施-18 S2/S4）。
+   * 真源是 AppSettings.workspaceMode；地图视图状态只在内存 + 一个
+   * localStorage 偏好键，不进设置。
+   */
+  const workspaceMode = useStore((s) => s.workspaceMode)
+  const switchSession = useStore((s) => s.switchSession)
+  const [dailyView, setDailyView] = useState<DailyView>(() => readDailyView())
+  const dailyMode = workspaceMode === 'daily'
+  const mapOpen = dailyMode && dailyView === 'map'
+  const showMap = (open: boolean): void => {
+    setDailyView(open ? 'map' : 'chat')
+    writeDailyView(open ? 'map' : 'chat')
+  }
+  const openSessionFromMap = (path: string): void => {
+    void switchSession(path)
+    showMap(false)
+  }
+
+  /* 地图打开时，Esc 退出（有模态层时不抢，交给模态处理） */
+  useEffect(() => {
+    if (!mapOpen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !isModalOpen()) {
+        /*
+         * 地图里的预览抽屉有自己的 Esc（先关抽屉）。
+         * 两个监听器都挂在 window 上而且这个先注册，所以让位这件事
+         * 只能由这里主动做 —— 看看地图里是不是开着抽屉。
+         */
+        if (document.querySelector('[data-testid="map-preview"]')) return
+        e.preventDefault()
+        setDailyView('chat')
+        writeDailyView('chat')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mapOpen])
 
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
@@ -740,13 +783,16 @@ export default function App() {
         </div>
 
           <section className="center">
-            <Continuity />
+            <Continuity mapEnabled={dailyMode} mapOpen={mapOpen} onToggleMap={showMap} />
 
             {conn !== 'ready' ? <ConnBar conn={conn} /> : null}
 
             <ConversationOutline />
 
-            {virtual ? (
+            {mapOpen ? (
+              /* 会话地图：砚自己的 React 实现，投影在 shared/session-map.ts */
+              <SessionMap onOpen={openSessionFromMap} onBackToChat={() => showMap(false)} />
+            ) : virtual ? (
               <VList
                 ref={vlistRef}
                 data={turns}
@@ -764,7 +810,11 @@ export default function App() {
               <div className="stream" ref={streamRef} onScroll={onScroll}>
                 <div className="stream-inner">
                   {turns.length === 0 ? (
-                    <EmptyStream />
+                    dailyMode ? (
+                      <WorkbenchHome onOpenSession={openSessionFromMap} onOpenMap={() => showMap(true)} />
+                    ) : (
+                      <EmptyStream />
+                    )
                   ) : (
                     turns.map((tt) => (
                       <TurnView
@@ -798,6 +848,8 @@ export default function App() {
 
             {/* 交接 / 上下文整理的一行非阻塞状态（实施-14 F5）：没事就不占地方 */}
             <HandoffNote />
+            {/* 实施-20 U4：子代理运行状态与必须由人处理的合并/停止，走普通会话流 */}
+            <SubagentNote />
             <Composer />
           </section>
 

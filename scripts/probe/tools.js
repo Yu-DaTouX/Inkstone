@@ -203,93 +203,23 @@
       }
     }
 
-    out.push('\n=== 5. 工具库：收进库 / 拿回来 ===')
-    if (!document.querySelector('[data-testid="tool-lib"]')) {
-      click(document.querySelector('[data-testid="tool-lib-btn"]'))
-      await until(() => document.querySelector('[data-testid="tool-lib"]'), 3000)
-    }
-    if (!document.querySelector('[data-testid="tool-lib"]')) {
-      bad('工具库打不开')
+    out.push('\n=== 5. 工具库已撤下（实施-20 U5）===')
+    ok(!document.querySelector('[data-testid="tool-lib-btn"]'), '工具库入口已撤下')
+    ok(!document.querySelector('[data-testid="tool-lib"]'), '工具库弹层已撤下')
+
+    out.push('\n=== 6. 恢复默认布局 ===')
+    const resetBtn = document.querySelector('[data-testid="tool-reset-layout"]')
+    if (!resetBtn) {
+      bad('工具页没有「恢复默认布局」按钮')
     } else {
-      ok('工具库可打开')
-      const rows = qa('.tl-row')
-      out.push('  库里列出 ' + rows.length + ' 个分区')
-      /*
-       * 工具库列的是**全部分区**（含已在工具栏的）—— 只列已隐藏的会让人
-       * 不知道某块到底在库里还是已经在栏里。所以这里应该是全部 8 个。
-       */
-      if (rows.length === ALL.length) ok('列全部分区（不只是已隐藏的）')
-      else bad('列表不全：' + rows.length + ' / ' + ALL.length)
-      out.push('  计数 = ' + (document.querySelector('[data-testid="tl-count"]')?.textContent ?? '?'))
-
-      // 把「队列」收进库
-      click(document.querySelector('[data-testid="tl-toggle-queue"]'))
+      click(resetBtn)
       await sleep(800)
-      const afterHide = ids()
-      out.push('  收起 queue 后工具栏：' + JSON.stringify(afterHide))
-      if (!afterHide.includes('queue')) ok('收进库的分区不在工具栏里显示（是移出，不是折叠）')
-      else bad('还在工具栏里')
-      if (placementOf('queue') === 'library') ok('queue 已收进库（toolLayout 已落盘）')
-      else bad('没收进库（未落盘）')
-
-      // 拿回来
-      click(document.querySelector('[data-testid="tl-toggle-queue"]'))
-      await sleep(800)
-      const back = ids()
-      out.push('  拿回后：' + JSON.stringify(back))
-      if (back.includes('queue')) ok('能从库拿回工具栏')
-      else bad('拿不回来')
-      if (placementOf('queue') === 'docked') ok('能从库拿回工具页')
-      else bad('拿不回来')
-
-      /* 库里的上移 / 下移（按钮，不依赖拖拽） */
-      out.push('\n=== 5b. 工具库的上移 / 下移 ===')
-      const orderNow = [...dockedOrder()]
-      const li = orderNow.indexOf('log')
-      const upBtn = document.querySelector('[data-testid="tl-up-log"]')
-      const downBtn = document.querySelector('[data-testid="tl-down-log"]')
-      if (!upBtn || !downBtn) {
-        bad('工具库里没有上移/下移按钮')
-      } else if (li <= 0) {
-        bad('log 已在该顺序首位，无法验证上移（index=' + li + '）')
-      } else {
-        click(upBtn)
-        await sleep(700)
-        const afterUp = [...dockedOrder()]
-        if (afterUp.indexOf('log') === li - 1) ok('上移一位（' + li + ' → ' + afterUp.indexOf('log') + '）')
-        else bad('上移无效：' + li + ' → ' + afterUp.indexOf('log'))
-        click(downBtn)
-        await sleep(700)
-        const afterDown = [...dockedOrder()]
-        if (afterDown.indexOf('log') === li) ok('下移回到原位')
-        else bad('下移无效：' + afterDown.indexOf('log') + ' 期望 ' + li)
-      }
-
-      out.push('\n=== 6. 恢复默认布局 ===')
-      // 先弄乱
-      await putLayout([...ALL].reverse().map((id, i) => ({ id, placement: id === 'log' ? 'library' : 'docked', order: i })))
-      if (!document.querySelector('[data-testid="tool-lib"]')) {
-        click(document.querySelector('[data-testid="tool-lib-btn"]'))
-        await until(() => document.querySelector('[data-testid="tool-lib"]'), 3000)
-      }
-      const resetBtn = document.querySelector('[data-testid="tl-reset"]')
-      if (!resetBtn) {
-        bad('工具库里没有「恢复默认」按钮')
-      } else {
-        click(resetBtn)
-        await sleep(800)
-        const reset = ids()
-        out.push('  复位后：' + JSON.stringify(reset))
-        if (JSON.stringify(reset) === JSON.stringify(expected)) ok('一键恢复默认布局（含空分区规则）')
-        else bad('没恢复：' + JSON.stringify(reset) + ' 期望 ' + JSON.stringify(expected))
-        if (placementOf('log') === 'docked' && (layoutNow()?.tiles ?? []).every((t) => t.placement !== 'library')) ok('库位已清空（全部回工具页）')
-        else bad('库位没清')
-      }
-      // 收尾：关掉库，别影响后面的场景
-      if (document.querySelector('[data-testid="tool-lib"]')) {
-        click(document.querySelector('[data-testid="tool-lib-btn"]'))
-        await sleep(300)
-      }
+      const reset = ids()
+      out.push('  复位后：' + JSON.stringify(reset))
+      if (JSON.stringify(reset) === JSON.stringify(expected)) ok('一键恢复默认布局（含空分区规则）')
+      else bad('没恢复：' + JSON.stringify(reset) + ' 期望 ' + JSON.stringify(expected))
+      if ((layoutNow()?.tiles ?? []).every((t) => t.placement === 'docked')) ok('恢复默认后全部停靠（没有浮动/库位）')
+      else bad('恢复默认后仍有非停靠项')
     }
   } catch (e) {
     /* 带上堆栈：只有 message 时定位不到是哪一行抛的（踩过） */

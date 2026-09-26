@@ -65,8 +65,12 @@ function language() {
  * （用户报过：回复是中文，但推理过程还是英文）。
  */
 export function languageSystemPrompt(lang) {
-  if (lang === 'zh-CN') return '推理（思考过程）与回复一律使用简体中文，即使用户用其他语言提问也不要切换。'
-  if (lang === 'en-US') return 'Think (reason) and reply in English, even if the user writes in another language.'
+  if (lang === 'zh-CN') {
+    return '推理（思考过程）与回复都必须使用简体中文：即使用户用其他语言提问、工具结果是英文，思考过程里也不要改用英文。'
+  }
+  if (lang === 'en-US') {
+    return 'Both your reasoning (the thinking process) and the final reply must be in English: do not switch language inside the thinking process, even if the user writes in another language or tool output is in Chinese.'
+  }
   return null
 }
 
@@ -92,8 +96,10 @@ export default function languageExtension(pi) {
     if (!payload || !Array.isArray(messages) || messages.length === 0) return
 
     const text = languageSystemPrompt(language())
-    trace('payload', { lang: language(), injected: !!text })
-    if (!text) return
+    if (!text) {
+      trace('payload', { lang: language(), injected: false, count: messages.length })
+      return
+    }
 
     let at = -1
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -108,6 +114,7 @@ export default function languageExtension(pi) {
      * （openai 系新模型只认 developer），照抄第一个系统角色的写法最安全。
      */
     if (ctx?.model?.provider === 'local') {
+      trace('payload', { lang: language(), injected: true, at, count: messages.length, role: 'inline-user' })
       const current = messages[at]
       const suffix = `\n\n${text}`
       const content = current?.content
@@ -122,6 +129,8 @@ export default function languageExtension(pi) {
     }
     const already = messages.find((m) => m?.role === 'system' || m?.role === 'developer')?.role
     const role = already === 'system' || already === 'developer' ? already : 'system'
+    /* 诊断只记位置 / 角色 / 条数，不写提示或推理原文 */
+    trace('payload', { lang: language(), injected: true, at, count: messages.length, role })
     const next = [...messages.slice(0, at), { role, content: text }, ...messages.slice(at)]
     return { ...payload, messages: next }
   })

@@ -83,10 +83,16 @@ function attentionTitle(event: SoundEvent): string {
   }
 }
 
-function initialWorkspaceMode(): WorkspaceMode {
-  if (typeof localStorage === 'undefined') return 'daily'
+/**
+ * 旧版工作区模式的**一次性迁移输入**（实施-18 S0）。
+ *
+ * S0 起真源是 `AppSettings.workspaceMode`；localStorage 只在这里读一次，
+ * 迁移完成后清掉旧键、不再参与运行时读取。没有旧值时返回 `null`。
+ */
+function legacyWorkspaceMode(): WorkspaceMode | null {
+  if (typeof localStorage === 'undefined') return null
   const value = localStorage.getItem('yan.workspace-mode')
-  return isWorkspaceMode(value) ? value : 'daily'
+  return isWorkspaceMode(value) ? value : null
 }
 
 /**
@@ -565,7 +571,7 @@ interface Store {
   retryHandoff: () => Promise<void>
   /** 人工确认续接已在目的会话跑起来（A-3）：不重发，只了结待核实状态。 */
   confirmHandoff: (handoffId: string) => Promise<void>
-  setWorkspaceMode: (mode: WorkspaceMode) => void
+  setWorkspaceMode: (mode: WorkspaceMode) => Promise<void>
   /** 改面板宽度（0 = 用设计默认值）；落盘用，拖动中不调 */
   setPanelWidth: (p: { railWidth?: number; panelWidth?: number }) => Promise<void>
   /**
@@ -577,12 +583,12 @@ interface Store {
    */
   setToolLayout: (next: ToolLayout) => Promise<void>
   /**
-   * 正在从工具库拖往工具栏的分区（null = 没在拖）。
+   * 正在从工具页拖往工具栏的分区（null = 没在拖）。
    *
    * 为什么放 store 而不是组件 state：拖拽要**跨两个组件**才知道该画什么
-   *   · 工具库（ToolLibrary）发起拖拽
+   *   · 浮动磁贴（FloatingTiles）发起拖拽
    *   · 工具栏（RightPanel 的各个 .rp-slot）显示「会插到这里」的预览
-   * 放组件 state 就得层层透传，而且工具库拖拽中会关掉自己的浮层。
+   * 放组件 state 就得层层透传。
    */
   /** 拖拽中当前落点（哪个分区、插在它前还是后）—— 就是这个在画预览线 */
   toolDropTarget: { id: string; after: boolean } | null
@@ -1074,7 +1080,7 @@ export const useStore = create<Store>((rawSet, get) => {
   goalError: null,
   goalPopoverOpen: false,
   handoff: null,
-  workspaceMode: initialWorkspaceMode(),
+  workspaceMode: 'daily',
 
   models: [],
   thinkingLevels: [],
@@ -1160,7 +1166,7 @@ export const useStore = create<Store>((rawSet, get) => {
      * 连接状态交给 startConnWatch 独占（它轮询到 ready 为止），
      * 接口少了这个字段、也就没有降级的可能。
      */
-    const [settings, sessions, session, messages, stats, todos, titles, manualTitles, pi, browserState] =
+    const [loadedSettings, sessions, session, messages, stats, todos, titles, manualTitles, pi, browserState] =
       await Promise.all([
         api.getSettings(),
         api.listSessions(),
@@ -1175,8 +1181,26 @@ export const useStore = create<Store>((rawSet, get) => {
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
 
+    /*
+     * 工作区模式迁移（实施-18 S0）：settings 里还没有这个键时，用旧
+     * localStorage 值（或 daily）补上并落盘，随后清掉旧键。localStorage
+     * 只在这里读一次，迁移后真源唯一（AppSettings.workspaceMode）。
+     */
+    let settings = loadedSettings
+    if (settings.workspaceMode === undefined) {
+      const migrated = legacyWorkspaceMode() ?? 'daily'
+      try {
+        settings = await api.patchSettings({ workspaceMode: migrated })
+      } catch {
+        /* 落盘失败就用内存值，下次启动再试；不能因此阻塞启动 */
+        settings = { ...settings, workspaceMode: migrated }
+      }
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('yan.workspace-mode')
+    }
+
     set({
       settings,
+      workspaceMode: settings.workspaceMode ?? 'daily',
       sessions,
       session: session ?? get().session,
       messages: messages.length ? messages : get().messages,
@@ -2824,9 +2848,23 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  setWorkspaceMode: (mode) => {
+  setWorkspaceMode: async (mode) => {
+    /*
+     * 乐观切换：先动界面，再落盘。失败回滚到切换前的值并报错，
+     * 不能把界面停在一个磁盘上没写成功的档（对齐 setWorkMode）。
+     */
+    const prev = get().workspaceMode
     set({ workspaceMode: mode })
-    if (typeof localStorage !== 'undefined') localStorage.setItem('yan.workspace-mode', mode)
+    try {
+      const next = await window.yan.patchSettings({ workspaceMode: mode })
+      set({ settings: next, workspaceMode: next.workspaceMode ?? mode })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      set({
+        workspaceMode: prev,
+        notices: pushNotice(get().notices, 'error', `切换工作区模式失败：${message}`)
+      })
+    }
   },
 
   /**

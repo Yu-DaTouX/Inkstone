@@ -131,30 +131,36 @@
     await until(() => store.getState().settings?.rightPanelOpen, 3000)
     await sleep(600)
 
-    out.push('\n=== 4. 左栏「砚 + 开关」模式切换 ===')
-    const mb = document.querySelector('[data-testid="mode-switch"]')
-    if (!mb) bad('没有模式开关入口')
+    out.push('\n=== 4. 左栏工作区拨杆（实施-20 U1）===')
+    const sw = document.querySelector('[data-testid="mode-switch"]')
+    if (!sw) bad('没有工作区拨杆入口')
     else {
-      out.push('  入口文案: ' + JSON.stringify(mb.textContent.trim()))
-      if (/砚/.test(mb.textContent)) ok('软件名仍在开关上')
-      else bad('入口上没有软件名')
-      if (mb.getAttribute('role') === 'switch') ok('语义角色为 switch')
-      else bad('没有 switch 语义角色')
+      out.push('  拨杆文案: ' + JSON.stringify(sw.textContent.trim()))
+      if (/砚/.test(document.querySelector('.rail-mode-wrap')?.textContent ?? '')) ok('软件名仍在左栏顶部')
+      else bad('左栏顶部没有软件名')
+      if (sw.getAttribute('role') === 'radiogroup') ok('拨杆语义为 radiogroup')
+      else bad('拨杆没有 radiogroup 语义')
+      const codeBtn = sw.querySelector('[data-mode="coding"]')
+      const dailyBtn = sw.querySelector('[data-mode="daily"]')
+      if (codeBtn && dailyBtn) ok('拨杆两端都在（Code / 日常）')
+      else bad('拨杆缺少一端')
       const before = store.getState().workspaceMode ?? 'daily'
       const agentBefore = store.getState().workMode?.mode ?? 'standard'
-      const target = before === 'coding' ? 'daily' : 'coding'
-      click(mb)
-      const switched = await until(() => store.getState().workspaceMode === target, 3000)
-      if (switched) ok(`开关切到独立工作区 ${target}`)
-      else bad(`开关没有切到工作区 ${target}`)
+      click(dailyBtn)
+      if (await until(() => store.getState().workspaceMode === 'daily', 3000)) ok('点「日常」端切到 daily')
+      else bad('点「日常」端没有切到 daily')
+      if (dailyBtn.getAttribute('aria-checked') === 'true') ok('daily 端 aria-checked=true')
+      else bad('daily 端 aria-checked 不同步')
+      click(codeBtn)
+      if (await until(() => store.getState().workspaceMode === 'coding', 3000)) ok('点「Code」端切到 coding')
+      else bad('点「Code」端没有切到 coding')
       if ((store.getState().workMode?.mode ?? 'standard') === agentBefore) ok('工作区切换没有改动 AgentMode')
       else bad('工作区切换错误改动了 AgentMode')
-      if (mb.getAttribute('aria-checked') === String(target === 'coding')) ok('aria-checked 与工作区同步')
-      else bad('aria-checked 没有与工作区同步')
-      click(mb)
-      const restored = await until(() => store.getState().workspaceMode === before, 3000)
-      if (restored) ok(`开关切回工作区 ${before}，AgentMode 不受影响`)
-      else bad(`开关没有切回工作区 ${before}`)
+      /* 回到测试开始时的档，不把探针副作用留给后面的断言 */
+      if (store.getState().workspaceMode !== before) {
+        click(before === 'coding' ? codeBtn : dailyBtn)
+        await until(() => store.getState().workspaceMode === before, 3000)
+      }
     }
   } catch (e) { bad('抛异常：' + (e && e.message ? e.message : String(e))) }
   out.push('')

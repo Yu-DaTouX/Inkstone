@@ -1,6 +1,8 @@
 /**
- * 实施-11 H-10：用合成 MainPush 快照在真实 Electron 渲染树回放列表和长转录。
- * 不启动子代理进程、不调用模型；主进程 IPC / 模型执行由既有 subagent 场景覆盖。
+ * 子代理在普通会话流里的归属过滤与人类操作（实施-20 U4 后的行为）。
+ *
+ * 用合成 MainPush 快照在真实 Electron 渲染树回放；不启动子代理进程、
+ * 不调用模型。原来靠右侧专用详情页验证的长转录 / 滚动断言随专用页撤下。
  */
 ;(async () => {
   const out = []
@@ -24,7 +26,7 @@
   const currentId = `${prefix}-current`
   const foreignId = `${prefix}-foreign`
   const sessionId = store?.getState().session?.sessionId
-  const makeRun = (id, parentSessionId, transcript = []) => ({
+  const makeRun = (id, parentSessionId) => ({
     id,
     task: `H-10 fixture ${id.endsWith('current') ? '当前会话' : '其它会话'}`,
     cwd: store?.getState().session?.cwd ?? '',
@@ -33,66 +35,46 @@
     status: 'running',
     startedAt: Date.now() - 5000,
     latestActivity: '事件回放',
-    transcript,
+    transcript: [],
     review: 'none'
-  })
-  const message = (n) => ({
-    id: `${prefix}-message-${n}`,
-    role: 'assistant',
-    text: `长任务过程行 ${n}: ` + '保留用户阅读位置并验证滚动跟随。'.repeat(18),
-    timestamp: Date.now() + n
   })
   const push = (run) => store.getState().applyPush({ ch: 'subagent', payload: run })
 
   try {
     if (!store || !sessionId) return '  ✗ 当前页面没有可用的渲染 store / sessionId'
 
-    await store.getState().setRightPanelOpen(true)
-    await until(() => q('[data-testid="right-window-tab-start"]'))
-    q('[data-testid="right-window-tab-start"]')?.click()
-    const list = await until(() => q('[data-testid="subagent-new"]'))
-    if (!list) return '  ✗ 右侧工具页未挂载子代理列表'
-
     out.push('=== 1. 当前会话归属过滤 ===')
     push(makeRun(currentId, sessionId))
     push(makeRun(foreignId, `${prefix}-another-session`))
-    const ownRow = await until(() => q(`[data-testid="subagent-${currentId}"]`))
+    const ownRow = await until(() => q(`[data-testid="subagent-note-${currentId}"]`))
     await sleep(150)
-    ok(!!ownRow, '当前会话推送出现在子代理列表')
-    ok(!q(`[data-testid="subagent-${foreignId}"]`), '其它会话推送不出现在当前列表')
+    ok(!!ownRow, '当前会话推送出现在会话流状态行')
+    ok(!q(`[data-testid="subagent-note-${foreignId}"]`), '其它会话推送不出现在当前会话')
+    ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下（U4）')
 
     out.push('')
-    out.push('=== 2. 长过程输出与滚动位置 ===')
-    const longRun = makeRun(currentId, sessionId, Array.from({ length: 36 }, (_, i) => message(i + 1)))
-    push(longRun)
-    q(`[data-testid="subagent-view-${currentId}"]`)?.click()
-    const processTab = await until(() => q('[data-testid="subagent-tab-process"]'))
-    if (!processTab) return out.concat('  ✗ 详情没有打开').join('\n')
-    processTab.click()
+    out.push('=== 2. 运行中给出「停止」 ===')
+    ok(!!q(`[data-testid="subagent-note-stop-${currentId}"]`), '运行中的 run 有停止按钮')
 
-    const body = await until(() => {
-      const el = q('[data-testid="subagent-preview-body"]')
-      return el && el.scrollHeight > el.clientHeight ? el : null
+    out.push('')
+    out.push('=== 3. 待审阅时给出「合并 / 放弃」 ===')
+    push({
+      ...makeRun(currentId, sessionId),
+      status: 'done',
+      endedAt: Date.now(),
+      review: 'pending',
+      diff: { files: 2, additions: 10, deletions: 3, paths: ['src/a.ts'], patchPath: null, truncated: false }
     })
-    if (!body) return out.concat('  ✗ 长转录正文没有形成可滚动区域').join('\n')
-    await sleep(120)
-    const initialMax = body.scrollHeight - body.clientHeight
-    ok(initialMax > 0 && initialMax - body.scrollTop < 24, '打开过程页后长转录自动定位到最新内容')
+    await sleep(250)
+    ok(!!q(`[data-testid="subagent-note-merge-${currentId}"]`), '待审阅时给出「合并到主目录」')
+    ok(!!q(`[data-testid="subagent-note-discard-${currentId}"]`), '待审阅时给出「放弃并归档」')
+    ok(!q(`[data-testid="subagent-note-stop-${currentId}"]`), '结束后不再显示停止')
 
-    body.scrollTop = 0
-    body.dispatchEvent(new Event('scroll', { bubbles: true }))
-    const beforeAppend = body.scrollHeight
-    push({ ...longRun, transcript: [...longRun.transcript, message(37)] })
-    await sleep(160)
-    ok(body.scrollHeight > beforeAppend, '新推送扩展了长转录正文')
-    ok(body.scrollTop < 24, '用户上滚后新输出没有把阅读位置抢回底部')
-
-    body.scrollTop = body.scrollHeight
-    body.dispatchEvent(new Event('scroll', { bubbles: true }))
-    const latest = { ...longRun, transcript: [...longRun.transcript, message(37), message(38)] }
-    push(latest)
-    await sleep(160)
-    ok(body.scrollHeight - body.clientHeight - body.scrollTop < 24, '用户回到底部后后续输出恢复自动跟随')
+    out.push('')
+    out.push('=== 4. 已合并的 run 安静退场 ===')
+    push({ ...makeRun(currentId, sessionId), status: 'done', endedAt: Date.now(), review: 'merged' })
+    await sleep(250)
+    ok(!q(`[data-testid="subagent-note-${currentId}"]`), '已合并的 run 不再占会话流')
   } catch (error) {
     out.push(`  探针出错: ${error?.message ?? String(error)}`)
   } finally {

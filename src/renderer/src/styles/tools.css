@@ -3812,6 +3812,29 @@ body.tile-dragging .rp-float-head {
   display: none;
 }
 
+/*
+ * 实施-20 U2：mini 摘要的分栏规则。
+ * 环是固定尺寸的锚点；值区独占剩下的宽度并在自己那一列换行。
+ * 值再长也只是把自己折行，不会把环推走形成“假第二列”；
+ * 整块在窄栏仍按上面的规则落到标题下一行（.rp-sec-head 已经 flex-wrap）。
+ */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-usage {
+  flex-wrap: nowrap;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-usage > .rp-usage-ring {
+  flex: 0 0 auto;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-values {
+  flex: 1 1 auto;
+}
+
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-values > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .rp-float-notice {
   position: fixed;
   left: 50%;
