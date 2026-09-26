@@ -10,6 +10,7 @@ import { Resizer } from './components/toolbar/Resizer'
 import { ConversationOutline } from './components/chat/ConversationOutline'
 import { Continuity, EmptyStream } from './components/chat/Continuity'
 import { SessionMap } from './components/workbench/SessionMap'
+import { TaskInbox } from './components/workbench/TaskInbox'
 import { WorkbenchHome } from './components/workbench/WorkbenchHome'
 import { SpaceWorkbench } from './components/workbench/SpaceWorkbench'
 import { type SpaceView } from './state/space-view'
@@ -231,6 +232,9 @@ export default function App() {
    */
   const spaceOpen = useStore((s) => s.spaceOpen)
   const spaceView = useStore((s) => s.spaceView)
+  /* 收件箱压在最上层：它跨会话，与“当前在看哪个会话”无关 */
+  const inboxOpen = useStore((s) => s.inboxOpen)
+  const setInboxOpen = useStore((s) => s.setInboxOpen)
   const openSpaceView = useStore((s) => s.openSpaceView)
   const closeSpaceView = useStore((s) => s.closeSpaceView)
   const dailyMode = workspaceMode === 'daily'
@@ -279,6 +283,19 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [mapOpen])
+
+  /* 收件箱也吃 Esc：与地图同一套「有模态层就不抢」的规则 */
+  useEffect(() => {
+    if (!inboxOpen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !isModalOpen()) {
+        e.preventDefault()
+        setInboxOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inboxOpen, setInboxOpen])
 
   const streamRef = useRef<HTMLDivElement>(null)
   const vlistRef = useRef<VListHandle>(null)
@@ -823,7 +840,15 @@ export default function App() {
 
             <ConversationOutline />
 
-            {spaceOpen ? (
+            {inboxOpen ? (
+              /* 任务收件箱（实施-28 T2）：跨会话待处理，与当前会话无关所以排在最前 */
+              <TaskInbox
+                onOpenSession={(path) => {
+                  void switchSession(path)
+                  setInboxOpen(false)
+                }}
+              />
+            ) : spaceOpen ? (
               /* 空间工作台：概览 / 资料 / 成果 / 学习（实施-25 P04） */
               <SpaceWorkbench
                 view={spaceView}
@@ -853,7 +878,12 @@ export default function App() {
                 <div className="stream-inner">
                   {turns.length === 0 ? (
                     dailyMode ? (
-                      <WorkbenchHome onOpenSession={openSessionFromMap} onOpenMap={() => showMap(true)} onOpenSpace={() => showSpace(true, 'overview')} />
+                      <WorkbenchHome
+                        onOpenSession={openSessionFromMap}
+                        onOpenMap={() => showMap(true)}
+                        onOpenSpace={() => showSpace(true, 'overview')}
+                        onOpenInbox={() => setInboxOpen(true)}
+                      />
                     ) : (
                       <EmptyStream />
                     )

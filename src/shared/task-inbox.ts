@@ -234,6 +234,26 @@ function subagentEvidence(facts: TaskFacts): string | undefined {
   return parts.length ? `子代理：${parts.join(' · ')}` : undefined
 }
 
+/**
+ * 收件箱的传输形状（跨进程用，所以放在 shared）。
+ *
+ * 由 main 侧的纯投影服务产出；界面只读不写（忽略名单是另一条 IPC）。
+ */
+export interface TaskInboxPage {
+  cards: TaskCard[]
+  /** 过滤后的总数（分页前） */
+  total: number
+  counts: Record<TaskStatus, number>
+  /** 本次投影时有多少条会话的某个来源读失败（只报数，不抛） */
+  degraded: number
+}
+
+/** 界面的查询：过滤 + 分页 */
+export interface TaskInboxQuery extends InboxFilter {
+  limit?: number
+  offset?: number
+}
+
 export interface InboxFilter {
   /** 只看这些状态；省略 = 全部（含 dismissed，由界面自己决定要不要请求） */
   statuses?: TaskStatus[]

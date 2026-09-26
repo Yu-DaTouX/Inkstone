@@ -19,16 +19,16 @@
 | 9 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
 | 10 | `shell.css` | 393 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
-| 12 | `rail.css` | 1761 | 242 | 248 | 0 | 0 |
+| 12 | `rail.css` | 1794 | 246 | 252 | 0 | 0 |
 | 13 | `chat.css` | 2189 | 287 | 292 | 5 | 2 |
 | 14 | `composer.css` | 1951 | 273 | 276 | 2 | 0 |
 | 15 | `tools.css` | 3989 | 595 | 638 | 3 | 5 |
 | 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | 1614 | 233 | 234 | 1 | 0 |
-| 19 | `workbench.css` | 3137 | 420 | 435 | 3 | 0 |
+| 19 | `workbench.css` | 3389 | 457 | 474 | 3 | 0 |
 | 20 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **20809** | **2757** | | | |
+| | **合计** | **21094** | **2798** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -47,14 +47,14 @@
 | `layout.css` | 14 |
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
-| `rail.css` | 242 |
+| `rail.css` | 246 |
 | `chat.css` | 285 |
 | `composer.css` | 272 |
 | `tools.css` | 595 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
 | `review.css` | 233 |
-| `workbench.css` | 420 |
+| `workbench.css` | 457 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）

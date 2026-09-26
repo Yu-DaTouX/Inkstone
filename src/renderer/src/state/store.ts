@@ -720,6 +720,14 @@ interface Store {
   /** 打开空间视图；不传 view 就停在用户上次那一页 */
   openSpaceView: (view?: SpaceView) => void
   closeSpaceView: () => void
+  /**
+   * 任务收件箱（实施-28 T2）：跨会话的待处理视图。
+   *
+   * 为什么不挂在 `DailyView` 上：收件箱回答的是「**跨会话**现在要我看什么」，
+   * 与「当前这个会话」无关，所以编码模式也要能打开它。
+   */
+  inboxOpen: boolean
+  setInboxOpen: (open: boolean) => void
   reloadModels: () => Promise<void>
   reloadCommands: () => Promise<void>
   /** 拉一次供应商凭证状态（D12）：模型菜单用来区分“未配凭证”与“不支持思考” */
@@ -1431,6 +1439,7 @@ export const useStore = create<Store>((rawSet, get) => {
   spaceLinks: [],
   spaceOpen: false,
   spaceView: readSpaceView(),
+  inboxOpen: false,
   library: [],
   libraryVersions: [],
   libraryRefs: [],
@@ -2810,6 +2819,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   closeSpaceView: () => set({ spaceOpen: false }),
+  setInboxOpen: (open) => set({ inboxOpen: open }),
 
   joinLibraryRef: async (ref) => {
     const sessionId = get().session?.sessionId

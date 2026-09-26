@@ -153,6 +153,7 @@ import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus } from './search'
+import type { TaskInboxPage, TaskInboxQuery } from './task-inbox'
 import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
@@ -3692,6 +3693,15 @@ export interface YanBridge {
    */
   search: {
     doctor(): Promise<SearchBackendStatus>
+  }
+  /**
+   * 任务收件箱（实施-28 T2）：会话 × 运行实例 × 任务计划的只读投影。
+   * 只读；`dismiss` / `restore` 只改本地忽略名单，不动会话数据。
+   */
+  taskInbox: {
+    page(query?: TaskInboxQuery): Promise<TaskInboxPage>
+    dismiss(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
+    restore(sessionId: string): Promise<{ ok: boolean; dismissed: string[] }>
   }
   /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
   capabilities: CapabilitiesBridge
