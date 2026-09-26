@@ -228,6 +228,24 @@
       'wait 没有条件时回 code=missing_condition（不是 unknown_command，命令确实接上了）'
     )
 
+    /*
+     * select 的命令链（实施-27 S5）。
+     *
+     * 这里同样只验「参数被接住了」——页面侧赋值函数（匹配规则 / 事件派发 /
+     * not_select / no_option）由 `scripts/test-browser-select.mjs` 用假 <select> 钉住。
+     * `--value ""` 是合法值（选空白项），所以只能拦「根本没说跟什么值」。
+     */
+    const selNoRef = await runCli('yan browser select --value cn')
+    const selNoRefBody = lastJson(selNoRef.output)
+    out.push(`  select 无 ref 退出码=${selNoRef.exitCode}  回执=${JSON.stringify(selNoRefBody).slice(0, 160)}`)
+    ok(selNoRefBody?.code === 'missing_ref', 'select 没给 ref 时回 code=missing_ref')
+
+    const selNoValue = await runCli('yan browser select --ref e1')
+    const selNoValueBody = lastJson(selNoValue.output)
+    out.push(`  select 无 value 退出码=${selNoValue.exitCode}  回执=${JSON.stringify(selNoValueBody).slice(0, 160)}`)
+    ok(selNoValue.exitCode === 1, 'select 没给 value 时：退出码 1')
+    ok(selNoValueBody?.code === 'missing_value', 'select 没给 value 时回 code=missing_value（不是 unknown_command）')
+
     /* ──────────────────────────── 4. 浏览器没打开时的观察 ─────────── */
     out.push('')
     out.push('=== 4. 浏览器未打开：code=browser_not_open ===')

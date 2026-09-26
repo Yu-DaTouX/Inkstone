@@ -35,7 +35,7 @@ import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation
 import { CDPBridge } from './browser/CDPBridge'
 import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
-import { InputController } from './browser/InputController'
+import { InputController, type SelectOutcome } from './browser/InputController'
 import { Observer } from './browser/Observer'
 import {
   RawCdp,
@@ -1169,6 +1169,31 @@ export class BrowserController {
       await p.input.press(key)
       await this.waitForPage()
       return { ok: true, observation: await this.observe() }
+    } catch (error) {
+      return this.actionError(error)
+    }
+  }
+
+  /**
+   * 下拉框选值（`yan browser select --ref <ref> --value <值>`）。
+   *
+   * 为什么单独一个动作而不是用 `click` 展开再点选项：
+   *   原生 `<select>` 展开的选项列表在很多站点上根本不是 DOM 元素
+   *  （系统/合成菜单），`observe` 看不到、`click` 也点不到。直接赋值是唯一稳的路。
+   *
+   * 选完照样等一会儿再 observe：`change` 可能触发异步提交（过滤器、分页、级联下拉）。
+   */
+  async select(ref: string, value: string): Promise<BrowserActionResult & { observation?: BrowserObservation; chosen?: SelectOutcome }> {
+    const p = this.parts()
+    if (!p) return { ok: false, error: '浏览器尚未打开' }
+    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
+    try {
+      const element = p.registry.resolve(ref)
+      const policy = this.policy.checkAction('select', `${element.role} ${element.name}`)
+      if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
+      const outcome = await p.input.select(element, value)
+      await this.waitForPage()
+      return { ok: true, chosen: outcome, observation: await this.observe() }
     } catch (error) {
       return this.actionError(error)
     }

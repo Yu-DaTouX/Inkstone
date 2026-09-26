@@ -461,6 +461,8 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
                                  最后看到的样子（url / 元素数 / 文本片段）
   click    --ref <ref>           点击一个元素（ref 来自 observe）
   type     --ref <ref> --text <文本>
+  select   --ref <ref> --value <值>
+                                 给下拉框选值（先按 value 匹配，再按可见文案）
   press    --key <键>            Enter / Tab / Escape / ArrowDown …
   scroll   --delta-y <像素> [--delta-x <像素>]
   back / forward / reload        历史与刷新
@@ -477,6 +479,8 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 说明：
   · 浏览器还没打开时，除 navigate / open 外的动作回 code=browser_not_open；
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
+  · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
+    目标不是下拉框回 code=NOT_SELECT，没有这个可选值回 code=OPTION_NOT_FOUND（并附上可选值）；
   · 元素 ref 会随页面变化失效（报 STALE_ELEMENT 之类）→ 重新 observe 一次再点；
   · 不提供「执行任意页面 JavaScript」的入口（那是被有意关掉的）。
 `
@@ -630,6 +634,7 @@ const GROUP_SPECS = {
       'wait',
       'click',
       'type',
+      'select',
       'press',
       'scroll',
       'back',
