@@ -102,8 +102,24 @@
       if (i % 5 === 4) inject()
     }
     ok(q('[data-testid="workbench-home"]') !== null, '日常模式空会话显示工作台首页')
-    for (const id of ['wb-card-continue', 'wb-card-goal', 'wb-card-todos', 'wb-card-sources', 'wb-card-map']) {
-      ok(q(`[data-testid="${id}"]`) !== null, `首页卡片存在：${id}`)
+    /*
+     * 首页卡片（B3 收敛：7 张常驻 → 1 个主行动 + 最多 3 张有内容的卡）。
+     *
+     * 不再逐张断 testid（“有内容才出现”意味着哪几张存在取决于现场数据），
+     * 只钉结构与底线：必须有主行动卡、数量有上限、每张都有稳定 testid；
+     * 再用反向断言防止 B3 删掉的旧卡片长回来。
+     */
+    ok(cardIds.length >= 1 && cardIds.length <= 6, `首页卡片数量在 1..6（实际 ${cardIds.length}：${cardIds.join(', ')}）`)
+    ok(cardIds.every((id) => id.length > 0), '每张卡都有稳定 testid（没有匿名卡）')
+    /*
+     * 主行动卡也是「有内容才画」（有目标 / 有待办才出现），所以只能条件断言：
+     * 存在则必须排最前（优先级靠顺序表达，不靠肉眼）。
+     */
+    const focusIdx = cardIds.indexOf('wb-card-focus')
+    ok(focusIdx === -1 || focusIdx === 0, `主行动卡若存在必须在最前（实际位置 ${focusIdx}）`)
+    ok(cardIds.includes('wb-card-map'), '会话地图卡始终在（它是首页的兜底入口）')
+    for (const gone of ['wb-card-continue', 'wb-card-goal', 'wb-card-todos']) {
+      ok(q(`[data-testid="${gone}"]`) === null, `反向断言：B3 删掉的卡片不再出现（${gone}）`)
     }
 
     /* ---- 会话地图：结构 ---- */
