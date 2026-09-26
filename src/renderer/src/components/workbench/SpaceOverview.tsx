@@ -168,7 +168,7 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
               <ul className="wb-list">
                 {sources.map((s) => (
                   <li key={s.id} className="wb-source-item">
-                    <Icon name={s.kind === 'image' ? 'layers' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
+                    <Icon name={s.kind === 'image' ? 'image' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
                     <span className="wb-list-title">{s.title}</span>
                   </li>
                 ))}
@@ -184,7 +184,7 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
         {/* ---- 最近成果（实现归 P06） ---- */}
         <section className="wb-card" data-testid="space-ov-artifacts">
           <h2 className="wb-card-title">
-            <Icon name="tag" size={12} />
+            <Icon name="file" size={12} />
             {t('space.ov.artifacts')}
           </h2>
           <p className="wb-card-empty">{t('space.pendingArtifact')}</p>
@@ -197,7 +197,7 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
          */}
         <section className="wb-card" data-testid="space-ov-playbook-card">
           <h2 className="wb-card-title">
-            <Icon name="layers" size={12} />
+            <Icon name="playbook" size={12} />
             {t('space.ov.playbooks')}
           </h2>
           <PlaybookPanel />

@@ -506,7 +506,7 @@ export function EnvironmentMenu() {
                 aria-expanded={showBranches}
                 onClick={() => setShowBranches((v) => !v)}
               >
-                <Icon name="layers" size={14} />
+                <Icon name="branch" size={14} />
                 <span className="env-label">{branchLabel}</span>
                 {repo.ahead > 0 || repo.behind > 0 ? (
                   <span className="env-sub env-ab">
@@ -1046,7 +1046,7 @@ export function EnvironmentMenu() {
                   }
                 }}
               >
-                <Icon name="globe" size={14} />
+                <Icon name="pull-request" size={14} />
                 <span className="env-label">{t('env.pr')}</span>
                 <span className="env-sub" data-testid="env-pr-state">
                   {prText()}

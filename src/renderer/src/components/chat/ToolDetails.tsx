@@ -92,7 +92,7 @@ export function FileChangeDetail({ call }: { call: UIToolCall }) {
   return (
     <div className="fd" data-testid="file-change-detail">
       <div className="fd-head">
-        <Icon name="tag" size={12} />
+        <Icon name="file" size={12} />
         <span className="fd-path" title={path || diff?.path}>
           {path || diff?.path || call.name}
         </span>
@@ -153,7 +153,7 @@ export function WorkspaceChangesDetail({ changes }: { changes: WorkspaceChanges 
   return (
     <div className="wsc" data-testid="workspace-changes" data-unknown={changes.unknown ?? ''}>
       <div className="wsc-head">
-        <Icon name="layers" size={12} />
+        <Icon name="change" size={12} />
         <span className="wsc-title" data-testid="ws-title">
           {t('tool.wsChanges', { n: changes.total })}
         </span>

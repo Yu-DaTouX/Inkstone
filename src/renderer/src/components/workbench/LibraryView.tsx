@@ -89,8 +89,8 @@ export function LibraryView({ space, spaceId }: Props): React.JSX.Element {
       )[o]
     )
 
-  const kindIcon = (kind: string): 'layers' | 'folder' | 'globe' =>
-    kind === 'image' ? 'layers' : kind === 'file' ? 'folder' : 'globe'
+  const kindIcon = (kind: string): 'image' | 'folder' | 'globe' =>
+    kind === 'image' ? 'image' : kind === 'file' ? 'folder' : 'globe'
 
   const join = async (id: string): Promise<void> => {
     const v = latestOf(id)

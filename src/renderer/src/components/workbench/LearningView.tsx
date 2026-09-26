@@ -380,7 +380,7 @@ export function LearningView({ spaceId, onStudyUnit }: Props): React.JSX.Element
                   data-testid={`space-learn-item-${course.id}`}
                   onClick={() => pick(course)}
                 >
-                  <Icon name="layers" size={12} />
+                  <Icon name="learn" size={12} />
                   <span className="wb-list-title">{course.title}</span>
                   <span className="wb-list-meta">
                     {t('space.learn.units', { n: course.units.length })} · {t('space.learn.entryTag', {
@@ -461,7 +461,7 @@ export function LearningView({ spaceId, onStudyUnit }: Props): React.JSX.Element
                     data-testid="space-learn-basis-open"
                     onClick={() => void openSource('basis', selected.basedOn as CourseSourceRef)}
                   >
-                    <Icon name="globe" size={12} />
+                    <Icon name="external" size={12} />
                     {t('space.learn.basedOn', { title: sourceTitle(selected.basedOn.sourceId) })}
                   </button>
                   {selected.truncated ? (
@@ -613,7 +613,7 @@ export function LearningView({ spaceId, onStudyUnit }: Props): React.JSX.Element
                             title={t('space.learn.openSource')}
                             onClick={() => void openSource(unit.id, ref)}
                           >
-                            <Icon name="globe" size={12} />
+                            <Icon name="external" size={12} />
                             {sourceTitle(ref.sourceId)} · v{ref.version}
                             {ref.locator
                               ? ` · ${t('space.learn.located', { start: ref.locator.start, end: ref.locator.end })}`

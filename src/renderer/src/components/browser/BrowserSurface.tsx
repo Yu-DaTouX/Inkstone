@@ -200,7 +200,7 @@ export function BrowserSurface() {
           aria-label={external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
           data-testid="browser-external-chrome"
         >
-          <Icon name="activity" size={14} />
+          <Icon name="plug" size={14} />
         </button>
 
         {/* 「⋯」菜单：低频操作收在这里，地址栏因此能拿到更多宽度 */}

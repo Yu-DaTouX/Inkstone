@@ -425,7 +425,7 @@ export function FloatingTiles() {
                     data-testid={`float-dock-${tile.id}`}
                     onClick={() => void setToolLayout(setTilePlacement(layout, tile.id, 'docked'))}
                   >
-                    <Icon name="layers" size={12} />
+                    <Icon name="dock" size={12} />
                   </button>
                 </header>
                 {tile.collapsed ? null : (

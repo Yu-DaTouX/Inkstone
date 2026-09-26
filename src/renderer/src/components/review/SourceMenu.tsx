@@ -237,7 +237,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
   return (
     <div className="env-links" data-testid="env-source-menu">
       <div className="env-links-head">
-        <Icon name="layers" size={14} />
+        <Icon name="library" size={14} />
         <span className="env-label">{t('src.title')}</span>
         <span className="env-sub">{counts.all > 0 ? String(counts.all) : ''}</span>
       </div>
@@ -274,7 +274,7 @@ export function SourceMenu({ sessionId, open, onClose }: { sessionId: string; op
                 ) : (
                   /* 还没读出来 / 读失败：留占位而不是留空白，用户知道这里有一张图 */
                   <span className="src-thumb src-thumb-empty" title={t('src.thumbPending')}>
-                    <Icon name="layers" size={14} />
+                    <Icon name="image" size={14} />
                   </span>
                 )
               ) : (

@@ -225,7 +225,7 @@ export function AuthTab() {
 
       {/* ---- API key ---- */}
       <div className="auth-sec-head">
-        <Icon name="tag" size={12} />
+        <Icon name="key" size={12} />
         <span>{t('auth.keys')}</span>
         <span className="spacer" />
         <span className="auth-sec-note">{t('auth.keysNote')}</span>

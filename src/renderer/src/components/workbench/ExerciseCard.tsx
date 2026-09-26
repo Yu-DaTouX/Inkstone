@@ -231,7 +231,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
                       data-testid={`space-exercise-image-${index}`}
                       title={`${image.sourceId} v${image.version}`}
                     >
-                      <Icon name="layers" size={12} />
+                      <Icon name="image" size={12} />
                       {image.caption ?? t('space.exercise.imageRef', { version: image.version })}
                     </span>
                   ))}

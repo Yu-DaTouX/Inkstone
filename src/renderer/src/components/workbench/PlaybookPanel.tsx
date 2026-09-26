@@ -140,7 +140,7 @@ export function PlaybookPanel(): React.JSX.Element {
               data-testid={`space-pb-item-${pb.id}`}
               onClick={() => setOpenId(openId === pb.id ? null : pb.id)}
             >
-              <Icon name="layers" size={12} />
+              <Icon name="playbook" size={12} />
               <span className="wb-pb-title">{pb.title}</span>
               <span className="wb-list-meta">
                 {PLAYBOOK_KIND_LABELS[pb.kind]}

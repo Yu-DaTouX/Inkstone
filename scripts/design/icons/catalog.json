@@ -1,0 +1,356 @@
+{
+  "$note": [
+    "图标编目 —— 这里只写「语义」，不写几何。",
+    "语义名（本文件的 key）就是 <Icon name=\"...\" /> 里用的名字，也是 sprite 里的 i-<名字>。",
+    "每个语义名必须唯一对应一个图标（同一图标被两个语义引用 = 编目出错，由 npm run check:icons 拦住）。",
+    "新增图标：先在这里登记语义与用途，再跑 npm run icons。不要手改 sprite.ts。"
+  ],
+  "grid": 24,
+  "strokeWidth": 1.5,
+  "linecap": "round",
+  "linejoin": "round",
+  "libraries": {
+    "lucide": {
+      "package": "lucide-static",
+      "version": "1.48.0",
+      "license": "ISC",
+      "home": "https://lucide.dev",
+      "note": "纯描边线性图标，24px 网格，round 端点。备用库 Tabler(MIT) 仅在覆盖缺口时启用。"
+    }
+  },
+  "icons": {
+    "activity": {
+      "lib": "lucide",
+      "name": "activity",
+      "group": "状态",
+      "use": "运行中 / 活动计数（终端状态、队列、会话运行数）"
+    },
+    "alert-circle": {
+      "lib": "lucide",
+      "name": "circle-alert",
+      "group": "状态",
+      "use": "警告 / 错误 / 失败"
+    },
+    "check": {
+      "lib": "lucide",
+      "name": "check",
+      "group": "状态",
+      "use": "勾选 / 已完成 / 已复制"
+    },
+    "check-circle": {
+      "lib": "lucide",
+      "name": "circle-check",
+      "group": "状态",
+      "use": "成功 / 完成 / 已通过核验"
+    },
+    "checklist": {
+      "lib": "lucide",
+      "name": "list-checks",
+      "group": "状态",
+      "use": "清单 / 上下文 / 待办分组"
+    },
+    "history": {
+      "lib": "lucide",
+      "name": "history",
+      "group": "状态",
+      "use": "历史 / 恢复 / 最近记录"
+    },
+    "refresh": {
+      "lib": "lucide",
+      "name": "refresh-cw",
+      "group": "状态",
+      "use": "刷新 / 重试 / 正在处理"
+    },
+    "running": {
+      "lib": "lucide",
+      "name": "loader-circle",
+      "group": "状态",
+      "use": "进行中计数（会话 / 分组正在运行）"
+    },
+    "queue": {
+      "lib": "lucide",
+      "name": "list-plus",
+      "group": "状态",
+      "use": "排队插入（引导消息进入队列）"
+    },
+    "shield-check": {
+      "lib": "lucide",
+      "name": "shield-check",
+      "group": "状态",
+      "use": "安全 / 权限 / 只读保护"
+    },
+    "compact": {
+      "lib": "lucide",
+      "name": "archive",
+      "group": "状态",
+      "use": "压缩会话上下文"
+    },
+    "search": {
+      "lib": "lucide",
+      "name": "search",
+      "group": "导航",
+      "use": "搜索 / 过滤输入"
+    },
+    "plus": {
+      "lib": "lucide",
+      "name": "plus",
+      "group": "导航",
+      "use": "新建 / 添加"
+    },
+    "chevron-right": {
+      "lib": "lucide",
+      "name": "chevron-right",
+      "group": "导航",
+      "use": "展开 / 折叠箭头（默认指向右）"
+    },
+    "menu": {
+      "lib": "lucide",
+      "name": "menu",
+      "group": "导航",
+      "use": "更多操作菜单"
+    },
+    "settings": {
+      "lib": "lucide",
+      "name": "settings",
+      "group": "导航",
+      "use": "设置入口"
+    },
+    "sidebar-left": {
+      "lib": "lucide",
+      "name": "panel-left",
+      "group": "导航",
+      "use": "左栏显示 / 隐藏"
+    },
+    "sidebar-right": {
+      "lib": "lucide",
+      "name": "panel-right",
+      "group": "导航",
+      "use": "右栏显示 / 隐藏"
+    },
+    "dock": {
+      "lib": "lucide",
+      "name": "panel-bottom",
+      "group": "导航",
+      "use": "浮动工具分区停靠回面板"
+    },
+    "home": {
+      "lib": "lucide",
+      "name": "house",
+      "group": "导航",
+      "use": "右栏首页标签"
+    },
+    "external": {
+      "lib": "lucide",
+      "name": "external-link",
+      "group": "导航",
+      "use": "在外部打开链接 / 来源"
+    },
+    "pin": {
+      "lib": "lucide",
+      "name": "pin",
+      "group": "导航",
+      "use": "置顶 / 固定"
+    },
+    "copy": {
+      "lib": "lucide",
+      "name": "copy",
+      "group": "导航",
+      "use": "复制文本 / 路径"
+    },
+    "pencil": {
+      "lib": "lucide",
+      "name": "pencil",
+      "group": "导航",
+      "use": "重命名 / 编辑"
+    },
+    "folder": {
+      "lib": "lucide",
+      "name": "folder",
+      "group": "文件",
+      "use": "目录 / 项目"
+    },
+    "folder-open": {
+      "lib": "lucide",
+      "name": "folder-open",
+      "group": "文件",
+      "use": "已展开的目录 / 资料"
+    },
+    "file": {
+      "lib": "lucide",
+      "name": "file",
+      "group": "文件",
+      "use": "单个文件（附件、预览、变更路径）"
+    },
+    "image": {
+      "lib": "lucide",
+      "name": "image",
+      "group": "文件",
+      "use": "图片 / 缩略图占位"
+    },
+    "library": {
+      "lib": "lucide",
+      "name": "library",
+      "group": "文件",
+      "use": "资料源 / 素材库"
+    },
+    "group": {
+      "lib": "lucide",
+      "name": "folder-tree",
+      "group": "文件",
+      "use": "项目分组 / 会话归类"
+    },
+    "tag": {
+      "lib": "lucide",
+      "name": "tag",
+      "group": "文件",
+      "use": "标签 / 命名"
+    },
+    "change": {
+      "lib": "lucide",
+      "name": "file-diff",
+      "group": "文件",
+      "use": "工作区变更 / 差异"
+    },
+    "key": {
+      "lib": "lucide",
+      "name": "key-round",
+      "group": "文件",
+      "use": "密钥 / API Key"
+    },
+    "chat-round": {
+      "lib": "lucide",
+      "name": "message-circle",
+      "group": "对话",
+      "use": "对话 / 会话条目"
+    },
+    "message-dots": {
+      "lib": "lucide",
+      "name": "message-circle-more",
+      "group": "对话",
+      "use": "消息 / 需要回应的提问"
+    },
+    "send": {
+      "lib": "lucide",
+      "name": "send",
+      "group": "对话",
+      "use": "发送 / 提交"
+    },
+    "sparkles": {
+      "lib": "lucide",
+      "name": "sparkles",
+      "group": "对话",
+      "use": "AI 生成 / 模型相关（含原 sparkle 全部用法）"
+    },
+    "agent": {
+      "lib": "lucide",
+      "name": "bot",
+      "group": "对话",
+      "use": "代理模式 / 模型角色"
+    },
+    "layers": {
+      "lib": "lucide",
+      "name": "layers",
+      "group": "空间",
+      "use": "空间本身（分层语义，不再借用为分支/地图/分组）"
+    },
+    "map": {
+      "lib": "lucide",
+      "name": "map",
+      "group": "空间",
+      "use": "会话地图 / 轮次级导航"
+    },
+    "branch": {
+      "lib": "lucide",
+      "name": "git-branch",
+      "group": "空间",
+      "use": "分支 / 从某条消息分叉"
+    },
+    "compare": {
+      "lib": "lucide",
+      "name": "git-compare",
+      "group": "空间",
+      "use": "成果比较"
+    },
+    "pull-request": {
+      "lib": "lucide",
+      "name": "git-pull-request",
+      "group": "空间",
+      "use": "PR 状态入口"
+    },
+    "learn": {
+      "lib": "lucide",
+      "name": "graduation-cap",
+      "group": "空间",
+      "use": "学习 / 课程 / 练习"
+    },
+    "playbook": {
+      "lib": "lucide",
+      "name": "book-open",
+      "group": "空间",
+      "use": "剧本 / 任务模板"
+    },
+    "dashboard": {
+      "lib": "lucide",
+      "name": "layout-dashboard",
+      "group": "空间",
+      "use": "工作信息 / 概览"
+    },
+    "tile": {
+      "lib": "lucide",
+      "name": "layout-grid",
+      "group": "空间",
+      "use": "工具磁贴 / 浮动分区占位"
+    },
+    "terminal": {
+      "lib": "lucide",
+      "name": "square-terminal",
+      "group": "空间",
+      "use": "终端标签与终端运行"
+    },
+    "audio": {
+      "lib": "lucide",
+      "name": "audio-lines",
+      "group": "空间",
+      "use": "音频内容"
+    },
+    "sun": {
+      "lib": "lucide",
+      "name": "sun",
+      "group": "系统",
+      "use": "浅色主题 / 显示隐藏文件"
+    },
+    "moon": {
+      "lib": "lucide",
+      "name": "moon",
+      "group": "系统",
+      "use": "深色主题"
+    },
+    "globe": {
+      "lib": "lucide",
+      "name": "globe",
+      "group": "系统",
+      "use": "网络 / 网页 / 内置浏览器"
+    },
+    "plug": {
+      "lib": "lucide",
+      "name": "plug",
+      "group": "系统",
+      "use": "连接外部浏览器 / 外部工具"
+    },
+    "package": {
+      "lib": "lucide",
+      "name": "package",
+      "group": "系统",
+      "use": "扩展包 / 能力包"
+    },
+    "bell": {
+      "lib": "lucide",
+      "name": "bell",
+      "group": "系统",
+      "use": "提示音 / 通知"
+    }
+  },
+  "retired": [
+    "sparkle"
+  ]
+}

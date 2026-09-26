@@ -28,7 +28,7 @@ const LABEL_KEY = {
 const TARGET: Record<AgentActivity, { view: SpaceView; icon: IconName } | null> = {
   answer: null,
   research: { view: 'library', icon: 'folder-open' },
-  compose: { view: 'artifact', icon: 'tag' },
+  compose: { view: 'artifact', icon: 'file' },
   organize: { view: 'overview', icon: 'checklist' },
   learn: { view: 'learning', icon: 'check-circle' }
 }

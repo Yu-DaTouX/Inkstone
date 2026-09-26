@@ -237,7 +237,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
               <ul className="wb-list">
                 {sources.all.slice(0, 3).map((s) => (
                   <li key={s.sourceId} className="wb-source-item">
-                    <Icon name={s.kind === 'image' ? 'layers' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
+                    <Icon name={s.kind === 'image' ? 'image' : s.kind === 'file' ? 'folder' : 'globe'} size={12} />
                     <span className="wb-list-title">{s.title}</span>
                   </li>
                 ))}
@@ -249,7 +249,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
         {/* ---- 会话地图入口 ---- */}
         <section className="wb-card wb-card-map" data-testid="wb-card-map">
           <h2 className="wb-card-title">
-            <Icon name="layers" size={12} />
+            <Icon name="map" size={12} />
             {t('map.title')}
           </h2>
           <p className="wb-card-meta">{t('map.stats', { lanes: mapSummary.laneCount, nodes: mapSummary.total })}</p>

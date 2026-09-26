@@ -998,7 +998,7 @@ export function Composer() {
               <div className="attach" key={a.id} title={`${a.name} · ${fmtSize(a.size)}`} data-kind={a.kind ?? 'image'}>
                 {a.kind === 'file' ? (
                   <span className="attach-file-ico" aria-hidden>
-                    <Icon name="tag" size={12} />
+                    <Icon name="file" size={12} />
                   </span>
                 ) : (
                   <img src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
@@ -1297,7 +1297,7 @@ function QueueStack() {
       ))}
       {steering.map((item) => (
         <div className="qrow steering" key={item.id} title={item.text} data-testid="queue-row">
-          <Icon name="activity" size={12} />
+          <Icon name="queue" size={12} />
           <span className="qrow-text">{item.text}</span>
           <span className="qrow-tag">{t('queue.inserting')}</span>
           <button
@@ -1582,7 +1582,7 @@ function AgentProfilePicker() {
           }
         }}
       >
-        <Icon name="activity" size={12} />
+        <Icon name="agent" size={12} />
         <span className="mode-label" data-testid="agent-profile-label">
           {label}
         </span>
