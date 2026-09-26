@@ -1,0 +1,113 @@
+/**
+ * 联网搜索的共享契约（实施-27 S1）。
+ *
+ * 边界（与本文件相关的那部分）：
+ *   · 这里只有**类型与常量**，没有 Electron、没有 DOM、没有子进程 ——
+ *     主进程与 CLI 都用它，渲染端将来要展示结果也用它；
+ *   · 「来源」是**固定的白名单**，不是任意字符串：后端命令名要拼进 spawn 的
+ *     参数数组，不能由调用方自由指定（否则等于开放任意命令执行）。
+ *
+ * 与 `web-search.ts` 的区别（别合并）：
+ *   · `web-search.ts` 回答的是「这台机器上有没有一个已接入的搜索能力」
+ *     （MCP / Skill），用来决定来源菜单那个入口要不要出现；
+ *   · 本文件是**真正的搜索后端契约**（OpenCLI 适配器 → SearchItem），
+ *     由 `yan search` 驱动。两者可以共存：前者是别人的搜索，后者是砚自己的。
+ */
+
+/** 首批来源：三个都是 HTTP 直连（不依赖浏览器扩展），见 S0 实测 */
+export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews'
+
+export interface SearchSource {
+  id: SearchSourceId
+  /** OpenCLI 的适配器名（`opencli <app> <subcommand> <query>`） */
+  app: string
+  subcommand: string
+  /** 给人看的名字 */
+  label: string
+  /** 是否需要浏览器扩展（首批都是 false；留着是为了 `doctor` 能说清依赖） */
+  needsBrowser: boolean
+  /** 结果的 URL 是完整链接，还是要按 id 拼出来 */
+  urlKind: 'direct' | 'hackernews'
+}
+
+export const SEARCH_SOURCES: readonly SearchSource[] = [
+  { id: 'wikipedia', app: 'wikipedia', subcommand: 'search', label: '维基百科', needsBrowser: false, urlKind: 'direct' },
+  { id: 'arxiv', app: 'arxiv', subcommand: 'search', label: 'arXiv', needsBrowser: false, urlKind: 'direct' },
+  { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' }
+]
+
+/** 默认只查这三个；要加来源先在这里登记，再在白名单校验里放行 */
+export const DEFAULT_SEARCH_SOURCES: readonly SearchSourceId[] = SEARCH_SOURCES.map((s) => s.id)
+
+export const SEARCH_LIMIT_PER_SOURCE_DEFAULT = 6
+export const SEARCH_LIMIT_PER_SOURCE_MAX = 20
+export const SEARCH_LIMIT_TOTAL_DEFAULT = 12
+export const SEARCH_LIMIT_TOTAL_MAX = 40
+export const SEARCH_TIMEOUT_MS_DEFAULT = 20_000
+export const SEARCH_TIMEOUT_MS_MAX = 60_000
+/** 单次调用 stdout 上限（超出按截断处理，不把几百 KB 灌进上下文） */
+export const SEARCH_OUTPUT_MAX_BYTES = 512 * 1024
+/** 正文摘要上限（各来源的 snippet 长短不一，统一截到这里） */
+export const SEARCH_SNIPPET_MAX = 280
+/** 查询词上限 */
+export const SEARCH_QUERY_MAX = 200
+
+export interface SearchQuery {
+  text: string
+  /** 省略 = 默认三个；空数组 = 调用方明确不要来源，直接拒 */
+  sources?: SearchSourceId[]
+  limitPerSource?: number
+  limitTotal?: number
+  timeoutMs?: number
+}
+
+export interface SearchItem {
+  title: string
+  url: string
+  snippet?: string
+  source: SearchSourceId
+  /** 各来源自己的时间字段（arXiv 的 published 等），没有就不带 */
+  published?: string
+  /** 其余有用的原始字段（score / authors），只放短字符串 */
+  meta?: Record<string, string | number>
+}
+
+/**
+ * 来源级状态（逐来源都要给一个，不能只汇报成功的）。
+ *
+ * `empty` 与 `error` / `timeout` / `unavailable` 必须能分开：
+ * 「这个来源没有结果」与「这个来源没取到」是两个不同结论，
+ * 合并了就会把失败显示成「没有」。
+ */
+export type SourceStatusKind = 'ok' | 'empty' | 'error' | 'timeout' | 'unavailable'
+
+export interface PerSourceStatus {
+  source: SearchSourceId
+  status: SourceStatusKind
+  count: number
+  /** 后端错误码（doctor / BROWSER_CONNECT / COMMAND_EXEC …），只在非 ok 时有 */
+  code?: string
+  message?: string
+  elapsedMs: number
+}
+
+export interface SearchOutcome {
+  query: string
+  items: SearchItem[]
+  sources: PerSourceStatus[]
+  /** 是否因为条数 / 体积上限裁掉过内容 */
+  truncated: boolean
+  durationMs: number
+}
+
+/** 后端可用性（`yan search doctor` 的返回体） */
+export interface SearchBackendStatus {
+  /** 后端命令是否找得到 */
+  available: boolean
+  /** 版本号；取不到就是 null（不猜） */
+  version: string | null
+  /** 探针给出的原始可读输出（截断后的） */
+  detail: string
+  code?: string
+  sources: { id: SearchSourceId; label: string; needsBrowser: boolean; ready: boolean }[]
+}

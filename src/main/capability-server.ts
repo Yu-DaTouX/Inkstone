@@ -236,7 +236,10 @@ const KNOWN_COMMANDS = new Set([
   'browser.download',
   'browser.request-user-control',
   'browser.connect-chrome',
-  'browser.disconnect-chrome'
+  'browser.disconnect-chrome',
+  /* 联网搜索（实施-27 S3）：只查询与诊断，不代用户打开页面。 */
+  'search.query',
+  'search.doctor'
 ])
 
 export class CapabilityServer {

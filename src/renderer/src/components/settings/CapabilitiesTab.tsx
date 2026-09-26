@@ -8,6 +8,7 @@ import type {
   CapabilitySettingsSnapshot,
   CapabilityVerificationStatus
 } from '../../../../shared/ipc'
+import type { SearchBackendStatus } from '../../../../shared/search'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
 
@@ -29,6 +30,24 @@ export function CapabilitiesTab(): React.JSX.Element {
   const [needText, setNeedText] = useState('')
   const [needResult, setNeedResult] = useState<CapabilityNeedView | null>(null)
   const [needError, setNeedError] = useState('')
+  /*
+   * 外部工具与浏览器（实施-27 D4）：搜索后端与浏览器扩展的状态。
+   * 只读探针（`yan:search:doctor`）—— 砚不装、不升级，只告诉你缺什么。
+   */
+  const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
+  const [backendBusy, setBackendBusy] = useState(false)
+
+  const checkBackend = useCallback(async (): Promise<void> => {
+    setBackendBusy(true)
+    try {
+      const next = await window.yan.search.doctor()
+      if (mounted.current) setBackend(next)
+    } catch {
+      if (mounted.current) setBackend(null)
+    } finally {
+      if (mounted.current) setBackendBusy(false)
+    }
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     const [next, builtins] = await Promise.all([
@@ -48,6 +67,10 @@ export function CapabilitiesTab(): React.JSX.Element {
       mounted.current = false
     }
   }, [refresh])
+
+  useEffect(() => {
+    void checkBackend()
+  }, [checkBackend])
 
   const insertIntoComposer = useStore((s) => s.insertIntoComposer)
 
@@ -123,6 +146,46 @@ export function CapabilitiesTab(): React.JSX.Element {
 
   return (
     <div className="set-group" data-testid="set-capabilities">
+      {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
+      <div className="set-row set-row-col" data-testid="cap-ext-tools">
+        <div className="set-label">
+          <div className="set-name">{t('set.extTools')}</div>
+          <div className="set-desc">{t('set.extToolsDesc')}</div>
+        </div>
+        <div className="set-desc" data-testid="cap-search-backend">
+          <strong>{t('set.searchBackend')}</strong>
+          {' — '}
+          {backend === null
+            ? t('set.searchBackendUnknown')
+            : backend.available
+              ? backend.code === 'extension_not_connected'
+                ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })
+                : t('set.searchBackendReady', { version: backend.version ?? '?' })
+              : t('set.searchBackendMissing')}
+          {backend && !backend.available ? <div className="set-desc">{t('set.searchBackendHint')}</div> : null}
+          {backend && backend.available && backend.code === 'extension_not_connected' ? (
+            <div className="set-desc">{t('set.searchBackendExtHint')}</div>
+          ) : null}
+        </div>
+        <div className="set-ctl">
+          <button className="set-btn" data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
+            {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
+          </button>
+        </div>
+      </div>
+
+      <div className="set-row set-row-col" data-testid="cap-browsers">
+        <div className="set-label">
+          <div className="set-name">{t('set.browsers')}</div>
+          <div className="set-desc">{t('set.browsersDesc')}</div>
+        </div>
+        <div className="set-desc">
+          <strong>{t('set.browserBuiltin')}</strong> — {t('set.browserBuiltinDesc')}
+        </div>
+        <div className="set-desc">
+          <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
+        </div>
+      </div>
       {/* 按需求找能力（实施-25 P17）：缺什么、怎么接 —— 只给路径，不代装 */}
       <div className="set-row set-row-col" data-testid="cap-need">
         <div className="set-label">

@@ -21,6 +21,7 @@ import {
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
+import { searchDoctor } from './search/opencli'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
@@ -7403,6 +7404,12 @@ function registerIpc(): void {
    *（开发态 ↔ 打包态）后看到一份过期的清单。
    */
   handle('yan:capabilities:builtin', async () => builtinCapabilities(yanThinExtensionPaths()))
+
+  /*
+   * 搜索后端诊断（实施-27 S3/D4）：设置页要看 OpenCLI 在不在、扩展连没连。
+   * 只读探针，不装不升级；未安装时也返回可读结果（available:false）。
+   */
+  handle('yan:search:doctor', async () => searchDoctor())
 
   /*
    * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。

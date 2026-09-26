@@ -152,6 +152,7 @@ import type { ContextActionSummary } from './context-actions'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
+import type { SearchBackendStatus } from './search'
 import type { ToolLayout } from './tool-layout'
 /* 活动档案（实施-25 P01）：类型与纯逻辑在 `./agent-profile`，这里转发给渲染端。 */
 import type { AgentProfilePatch, AgentProfileState } from './agent-profile'
@@ -3684,6 +3685,14 @@ export interface YanBridge {
   knowledge: KnowledgeBridge
   /** 受信内置能力的只读查询（实施-02 S4）；与 packages 刻意分开 */
   builtinCapabilities: BuiltinCapabilitiesBridge
+  /**
+   * 搜索后端诊断（实施-27 S3）。只读探针：不装、不升级。
+   * 未安装 OpenCLI 时也返回可读结果（`available:false`），
+   * 设置页据此给出安装指引。
+   */
+  search: {
+    doctor(): Promise<SearchBackendStatus>
+  }
   /** 能力页读取当前 runner 的 Skill/MCP，并显式验证 / 取消 MCP 连接。 */
   capabilities: CapabilitiesBridge
   git: GitBridge
