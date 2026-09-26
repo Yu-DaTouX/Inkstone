@@ -91,15 +91,20 @@ export function Settings({
 
   if (!presence.mounted) return null
 
+  /*
+   * 图标一项一个语义：同图标出现在两个 tab 上时，图标就不再是导航线索。
+   * 所以「声音与通知」用自己的铃铛、「插件」用自己的包体，
+   * 不再借用「能力」的 sparkles / 「上下文」的 layers（与 SECTION_ICON 同一条规则）。
+   */
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'auth', label: t('set.auth'), icon: 'tag' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'context', label: t('set.context'), icon: 'layers' },
     { id: 'knowledge', label: t('set.knowledge'), icon: 'checklist' },
     { id: 'capabilities', label: t('set.capabilities'), icon: 'sparkles' },
-    { id: 'sound', label: t('set.sound'), icon: 'sparkles' },
+    { id: 'sound', label: t('set.sound'), icon: 'bell' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
-    { id: 'packages', label: t('set.packages'), icon: 'layers' },
+    { id: 'packages', label: t('set.packages'), icon: 'package' },
     { id: 'about', label: t('set.about'), icon: 'shield-check' }
   ]
 
@@ -614,7 +619,15 @@ function useThemeSetter(): (t: 'dark' | 'light', origin?: { x: number; y: number
     } catch {
       /* 忽略 */
     }
-    void window.yan.patchSettings({ theme: next })
+    /*
+     * 走 store 的 patchSettings（不是 `window.yan.patchSettings`）：设置面板的
+     * 选中态读的是 `settings.theme`，只有 store 把返回的设置对象写回 state，
+     * 深浅色按钮才会跟着换。
+     *
+     * 之前直接调 IPC，主题样式（`<html data-theme>`）变了，但按钮停在旧值 ——
+     * 用户看到的就是“点了没反应 / 还显示原来的颜色”。
+     */
+    void useStore.getState().patchSettings({ theme: next })
     /*
      * 让 App 的 state 跟上（它监听 localStorage 不可靠，直接派事件）。
      * 捎上按钮中心：主题扩散 / 收拢的圆心就在用户点的那一下（DESIGN §5）。
