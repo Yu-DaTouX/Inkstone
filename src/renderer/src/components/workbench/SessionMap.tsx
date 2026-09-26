@@ -5,6 +5,21 @@ import { useStore } from '../../state/store'
 import { useSidebarJson, useSidebarValue } from '../rail/sidebar-state'
 import { shortProject } from '../rail/rail-utils'
 import { buildSessionMap, type SessionMapLane, type SessionMapNode } from '../../../../shared/session-map'
+import {
+  planTurnLayers,
+  type AlignReport,
+  type TurnLayer,
+  type TurnLayerCardInput
+} from '../../../../shared/turn-layer'
+import {
+  initialTurnCache,
+  loadTurnSnapshot,
+  turnCacheBegin,
+  turnCacheSelect,
+  turnCacheSettle,
+  type TurnCacheState,
+  type TurnSnapshot
+} from '../../state/turn-cache'
 import { SessionPreview } from './SessionPreview'
 import { forkAt } from '../../lib/fork'
 
@@ -43,6 +58,26 @@ const MIN_ZOOM = 0.4
 const MAX_ZOOM = 1.6
 const ZOOM_STEP = 1.15
 
+/*
+ * 轮次层几何（实施-26 R3）：轮次卡比会话节点窄一点、缩进一点 ——
+ * 它挂在节点下方，是那个会话的展开，不是平级的另一个会话。
+ */
+const TURN_CARD_W = NODE_W - 22
+const TURN_CARD_H = 44
+const TURN_CARD_GAP = 6
+const TURN_LAYER_GAP = 8
+const TURN_INDENT = 14
+
+/*
+ * 同时展开的会话上限（实施-26 R7 的重算）。
+ *
+ * 原来只有「会话数 ≤ 300」一个阈值（`SESSION_MAP_MAX_NODES`），而轮次层让
+ * 可见元素变成「会话 + 每个展开会话的轮数」——一个几十轮的会话就能顶掉十几张
+ * 会话卡，地图就不再能「一眼全局」。上限取 3 与 R2 的缓存上限一致（都基于
+ * R0 的实测：同时展开 4 个已看不出全局），不是拍脑袋的并发数。
+ */
+const TURN_LAYER_MAX = 3
+
 interface NodeBox {
   x: number
   y: number
@@ -71,6 +106,19 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('map-collapsed', [])
   /* 手动拖过的卡片位置（相对自动布局的偏移）；拖拽中不落盘，见 dragOffset */
   const [offsets, setOffsets] = useSidebarJson<Record<string, Offset>>('map-offsets', {})
+  /*
+   * 哪些会话展开了轮次层（实施-26 R3）。
+   *
+   * 默认**不**展开：轮次读盘要 100ms 级、一个会话几十轮，全展开等于把
+   * 「一眼全局」的地图变成不可读的墙（R2 的渐进披露就是为这个定的）。
+   */
+  const [expandedTurns, setExpandedTurns] = useSidebarValue<string[]>('map-turn-layers', [])
+  /* 展开碰上限时的提醒：只在刚被拒时显示，成功展开一次就清掉 */
+  const [turnLimitHint, setTurnLimitHint] = useState(false)
+  const [turnCache, setTurnCache] = useState<TurnCacheState>(initialTurnCache)
+  /* 异步读回填时要用最新缓存（setState 回调里发副作用会被 StrictMode 双跑） */
+  const turnCacheRef = useRef(turnCache)
+  turnCacheRef.current = turnCache
 
   const [query, setQuery] = useState('')
   /* 预览哪个会话（地图内只读抽屉）；null = 没打开 */
@@ -84,6 +132,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef(new Map<string, HTMLDivElement>())
+  const turnRefs = useRef(new Map<string, HTMLDivElement>())
   const panRef = useRef<{ px: number; py: number; cx: number; cy: number } | null>(null)
   const dragRef = useRef<{ path: string; px: number; py: number; o: Offset; moved: boolean } | null>(null)
   const suppressClick = useRef<string | null>(null)
@@ -103,6 +152,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
   const projectNames = settings?.projectNames ?? {}
   const projects = settings?.projects ?? []
   const cwdByPath = useMemo(() => new Map(sessions.map((s) => [s.path, s.cwd])), [sessions])
+  const sessionByPath = useMemo(() => new Map(sessions.map((s) => [s.path, s])), [sessions])
 
   const map = useMemo(
     () =>
@@ -173,9 +223,27 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     return size
   }, [map, childrenByPath])
 
+  /*
+   * 已展开会话的轮次快照（就绪的才参与布局）。
+   *
+   * 加载中 / 读不出来由渲染层单独表现：布局上没有层也不能把节点位置跳一下，
+   * 否则展开动作会帶动整个泳道抖动。
+   */
+  const turnsByPath = useMemo(() => {
+    const ready = new Map<string, TurnSnapshot>()
+    for (const path of expandedTurns) {
+      const entry = turnCacheSelect(turnCache, path)
+      if (entry?.status === 'ready') ready.set(path, entry.snapshot)
+    }
+    return ready
+  }, [expandedTurns, turnCache])
+
   const layout = useMemo(() => {
     const positions = new Map<string, NodeBox>()
     const laneByPath = new Map<string, SessionMapLane>()
+    const turnLayers = new Map<string, TurnLayer>()
+    /* 对齐报告（含失败原因）：只用于诊断与提示，不参与布局 */
+    const alignByPath = new Map<string, AlignReport>()
     const lanes: Array<{ lane: SessionMapLane; top: number; height: number; name: string; nodes: SessionMapNode[] }> = []
     let top = PAD_Y
     let right = 0
@@ -184,15 +252,58 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
       const nodes = lane.nodes
         .filter((n) => !hiddenByFold.has(n.path))
         .map((n, i) => ({ ...n, row: i }))
-      const height = TITLE_H + Math.max(nodes.length, 1) * ROW_H + 4
+
+      /*
+       * 基础位置 → 轮次层对齐 → 实际位置。
+       *
+       * 对齐是**泳道内**的事：一次只把一个泳道的节点交给 `planTurnLayers`，
+       * 所以跨泳道的父子（不同项目）不会互相拉扯 —— 泳道本来就是各排各的。
+       */
+      const base = nodes.map((n) => {
+        const live = dragOffset && dragOffset.path === n.path ? dragOffset : offsets[n.path]
+        const snapshot = turnsByPath.get(n.path)
+        const origin = sessionByPath.get(n.path)?.branchOrigin
+        const turns: TurnLayerCardInput[] | undefined = snapshot?.turns.map((turn) => ({
+          id: turn.id,
+          question: turn.question.text
+        }))
+        return {
+          path: n.path,
+          laneKey: lane.key,
+          depth: n.depth,
+          ...(n.parentPath ? { parentPath: n.parentPath } : {}),
+          y: top + TITLE_H + n.row * ROW_H + (ROW_H - NODE_H) / 2 + (live?.y ?? 0),
+          ...(turns?.length ? { turns } : {}),
+          ...(origin ? { branchOrigin: origin } : {})
+        }
+      })
+      const plan = planTurnLayers(base, {
+        nodeH: NODE_H,
+        cardH: TURN_CARD_H,
+        gap: TURN_CARD_GAP,
+        layerGap: TURN_LAYER_GAP
+      })
+      for (const report of plan.align) alignByPath.set(report.path, report)
+
+      let bottom = top + TITLE_H + ROW_H
       for (const n of nodes) {
         const live = dragOffset && dragOffset.path === n.path ? dragOffset : offsets[n.path]
         const x = PAD_X + n.depth * COL_W + (live?.x ?? 0)
-        const y = top + TITLE_H + n.row * ROW_H + (ROW_H - NODE_H) / 2 + (live?.y ?? 0)
+        const y = plan.nodeY[n.path] ?? top + TITLE_H + n.row * ROW_H + (ROW_H - NODE_H) / 2
         positions.set(n.path, { x, y })
         laneByPath.set(n.path, lane)
         right = Math.max(right, x + NODE_W)
+        bottom = Math.max(bottom, y + NODE_H)
+        const layer = plan.layers[n.path]
+        if (layer) {
+          turnLayers.set(n.path, layer)
+          const last = layer.cards[layer.cards.length - 1]
+          bottom = Math.max(bottom, (last?.y ?? y) + TURN_CARD_H)
+          right = Math.max(right, x + TURN_INDENT + TURN_CARD_W)
+        }
       }
+      /* 泳道高度必须把轮次层算进去：否则下一道泳道会压到轮次卡上 */
+      const height = Math.max(bottom - top + 6, TITLE_H + Math.max(nodes.length, 1) * ROW_H + 4)
       lanes.push({ lane, top, height, name: laneName(lane), nodes })
       top += height
     }
@@ -210,10 +321,12 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
       laneByPath,
       edges,
       childrenByPath: visibleChildren,
+      turnLayers,
+      alignByPath,
       width: right + PAD_X,
       height: top + PAD_Y
     }
-  }, [map, laneName, hiddenByFold, offsets, dragOffset])
+  }, [map, laneName, hiddenByFold, offsets, dragOffset, turnsByPath, sessionByPath])
 
   const edgePaths = useMemo(() => {
     const out: string[] = []
@@ -418,6 +531,57 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     setCollapsed((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]))
   }
 
+  /*
+   * 读一个会话的轮次（渐进披露：展开时才读）。
+   *
+   * 版本用会话的 `updatedAt`：文件变了就重新读，不拿旧轮次当当前内容。
+   * 同一版本已经在读时不重复发请求（R2 的 shouldLoad 既管缓存命中、也管并发）。
+   */
+  const loadTurnLayer = useCallback(
+    (path: string, version: number): void => {
+      const begin = turnCacheBegin(turnCacheRef.current, path, version)
+      setTurnCache(begin.state)
+      turnCacheRef.current = begin.state
+      if (!begin.shouldLoad) return
+      void loadTurnSnapshot(path, version, (target) => window.yan.peekSession(target)).then((outcome) => {
+        setTurnCache((prev) => {
+          const next = turnCacheSettle(prev, path, version, outcome)
+          turnCacheRef.current = next
+          return next
+        })
+      })
+    },
+    []
+  )
+
+  const toggleTurns = useCallback(
+    (path: string): void => {
+      if (expandedTurns.includes(path)) {
+        setExpandedTurns(expandedTurns.filter((p) => p !== path))
+        setTurnLimitHint(false)
+        return
+      }
+      if (expandedTurns.length >= TURN_LAYER_MAX) {
+        setTurnLimitHint(true)
+        return
+      }
+      setTurnLimitHint(false)
+      setExpandedTurns([...expandedTurns, path])
+      loadTurnLayer(path, sessionByPath.get(path)?.updatedAt ?? 0)
+    },
+    [expandedTurns, setExpandedTurns, sessionByPath, loadTurnLayer]
+  )
+
+  /* 已展开的会话在后台变了（又聊了几句）就自动重读 —— 不把旧轮次留在画布上 */
+  useEffect(() => {
+    for (const path of expandedTurns) {
+      const version = sessionByPath.get(path)?.updatedAt ?? 0
+      const entry = turnCacheSelect(turnCacheRef.current, path)
+      if (entry && entry.version === version) continue
+      loadTurnLayer(path, version)
+    }
+  }, [expandedTurns, sessionByPath, loadTurnLayer])
+
   /* 预览的会话被删掉 / 迁走时自动关掉：否则会一直显示一份不存在的会话 */
   useEffect(() => {
     if (preview && !sessions.some((s) => s.path === preview)) setPreview(null)
@@ -461,6 +625,41 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     return undefined
   }
 
+  /*
+   * 轮次层的键盘走法（R3 出栏要求「移动 → 展开 → 打开 → Esc」）：
+   * 节点上 `t`（或 Enter 折叠按钮）展开；卡上 ↑↓ 在链内走、← 回节点、
+   * Enter 直接打开这个会话（轮次级分叉留给 R5）。
+   */
+  const onTurnKey = (e: React.KeyboardEvent<HTMLDivElement>, path: string, index: number): void => {
+    const layer = layout.turnLayers.get(path)
+    const total = layer?.cards.length ?? 0
+    if (e.key === 'ArrowDown' && index + 1 < total) {
+      e.preventDefault()
+      const next = layer?.cards[index + 1]
+      if (next) turnRefs.current.get(`${path}\u0000${next.id}`)?.focus()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (index === 0) {
+        nodeRefs.current.get(path)?.focus()
+        return
+      }
+      const prev = layer?.cards[index - 1]
+      if (prev) turnRefs.current.get(`${path}\u0000${prev.id}`)?.focus()
+      return
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      nodeRefs.current.get(path)?.focus()
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onOpen(path)
+    }
+  }
+
   const onNodeKey = (e: React.KeyboardEvent<HTMLDivElement>, node: SessionMapNode): void => {
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -471,6 +670,12 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
     if (e.key === ' ') {
       e.preventDefault()
       setPreview(node.path)
+      return
+    }
+    /* t = 展开 / 收起轮次层（鼠标用户点节点上的按钮） */
+    if (e.key === 't' || e.key === 'T') {
+      e.preventDefault()
+      toggleTurns(node.path)
       return
     }
     const next = neighborOf(node, e.key)
@@ -517,7 +722,15 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
         <span className="wb-map-stats" data-testid="session-map-stats">
           {t('map.stats', { lanes: map.stats.laneCount, nodes: map.stats.shown })}
           {map.stats.folded > 0 ? ` · ${t('map.foldedStat', { n: map.stats.folded })}` : ''}
+          {expandedTurns.length > 0
+            ? ` · ${t('map.turns.expandedStat', { n: expandedTurns.length })}`
+            : ''}
         </span>
+        {turnLimitHint ? (
+          <span className="wb-map-note" data-testid="map-turns-limit">
+            {t('map.turns.limit')}
+          </span>
+        ) : null}
       </header>
 
       <div
@@ -585,7 +798,8 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                         else nodeRefs.current.delete(n.path)
                       }}
                       className={classes.join(' ')}
-                      style={{ left: box.x, top: box.y, width: NODE_W, height: NODE_H }}
+                      /* 节点在泳道内定位：要减掉泳道自身的 top，否则会被叠加一次 */
+                      style={{ left: box.x, top: box.y - top, width: NODE_W, height: NODE_H }}
                       onClick={() => {
                         if (suppressClick.current === n.path) {
                           suppressClick.current = null
@@ -599,7 +813,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                       onPointerMove={onNodePointerMove}
                       onPointerUp={(e) => onNodePointerUp(e, n)}
                       onPointerCancel={(e) => onNodePointerUp(e, n)}
-                      title={`${n.title || t('rail.untitled')}\n${notes.join(' · ')}`}
+                      title={`${n.title || t('rail.untitled')}\n${notes.join(' · ')}\n${t('map.turns.keyHint')}`}
                       data-testid="map-node"
                       data-path={n.path}
                       data-current={n.current ? '1' : undefined}
@@ -607,6 +821,26 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                     >
                       <span className="wb-node-mark" />
                       <span className="wb-node-title">{n.title || t('rail.untitled')}</span>
+                      {n.messageCount > 0 ? (
+                        <button
+                          className={`wb-node-turns ${expandedTurns.includes(n.path) ? 'on' : ''}`}
+                          data-testid="map-turns-toggle"
+                          data-path={n.path}
+                          aria-expanded={expandedTurns.includes(n.path)}
+                          title={
+                            expandedTurns.includes(n.path)
+                              ? t('map.turns.collapse')
+                              : t('map.turns.expand')
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleTurns(n.path)
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        >
+                          {expandedTurns.includes(n.path) ? '⌃' : '⌄'}
+                        </button>
+                      ) : null}
                       {n.childCount > 0 ? (
                         <>
                           {folded ? (
@@ -637,6 +871,189 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                       ) : null}
                     </div>
                   )
+                })}
+
+                {/*
+                 * 轮次卡（实施-26 R3 / R4）：一轮问答一张，挂在会话节点正下方。
+                 *
+                 * 加载 / 失败 / 空都**必须**有自己的样子 —— 什么都不显示会让人
+                 * 以为「这个会话没有轮次」，而实际上可能只是文件读不出来。
+                 */}
+                {nodes.map((n) => {
+                  if (!expandedTurns.includes(n.path)) return null
+                  const entry = turnCacheSelect(turnCache, n.path)
+                  const layer = layout.turnLayers.get(n.path)
+                  const left = PAD_X + n.depth * COL_W + TURN_INDENT
+                  const stateTop = (layer?.cards[0]?.y ?? top + TITLE_H + n.row * ROW_H + ROW_H) - top
+                  if (!entry || entry.status === 'loading') {
+                    return (
+                      <div
+                        key={`turn-state-${n.path}`}
+                        className="wb-turn-state"
+                        style={{ left, top: stateTop, width: TURN_CARD_W }}
+                        data-testid="map-turns-loading"
+                        data-path={n.path}
+                      >
+                        {t('map.turns.loading')}
+                      </div>
+                    )
+                  }
+                  if (entry.status === 'error') {
+                    return (
+                      <div
+                        key={`turn-state-${n.path}`}
+                        className="wb-turn-state err"
+                        style={{ left, top: stateTop, width: TURN_CARD_W }}
+                        data-testid="map-turns-error"
+                        data-path={n.path}
+                        title={entry.error}
+                      >
+                        {t('map.turns.error')}
+                      </div>
+                    )
+                  }
+                  const snapshot = entry.snapshot
+                  const turns = snapshot.turns
+                  if (turns.length === 0) {
+                    return (
+                      <div
+                        key={`turn-state-${n.path}`}
+                        className="wb-turn-state"
+                        style={{ left, top: stateTop, width: TURN_CARD_W }}
+                        data-testid="map-turns-empty"
+                        data-path={n.path}
+                      >
+                        {t('map.turns.empty')}
+                      </div>
+                    )
+                  }
+                  const lastIndex = turns.length - 1
+                  return turns.map((turn, index) => {
+                    const card = layer?.cards[index]
+                    if (!card) return null
+                    /*
+                     * 对齐的是「子会话首轮」：`alignedTurnId` 装的是**父会话**
+                     * 那一轮的 id（用于说清「对齐到父的哪一轮」），
+                     * 所以这里比的是位置（首轮），不是轮次 id。
+                     */
+                    const aligned = !!layer?.alignedTurnId && index === 0
+                    const terminal =
+                      turn.terminalReason === 'stopped' ||
+                      turn.terminalReason === 'interrupted' ||
+                      turn.terminalReason === 'failed'
+                    /* 截断只昜在最后一轮上：读取是按条数截的，省略的内容在末尾 */
+                    const truncatedHere = snapshot.truncated > 0 && index === lastIndex
+                    const classes = ['wb-turn']
+                    if (turn.incomplete) classes.push('incomplete')
+                    if (aligned) classes.push('aligned')
+                    if (needle.length > 0 && !turn.question.text.toLowerCase().includes(needle))
+                      classes.push('dim')
+                    return (
+                      <div
+                        key={`${n.path}\u0000${turn.id}`}
+                        role="button"
+                        tabIndex={0}
+                        ref={(el) => {
+                          const key = `${n.path}\u0000${turn.id}`
+                          if (el) turnRefs.current.set(key, el)
+                          else turnRefs.current.delete(key)
+                        }}
+                        className={classes.join(' ')}
+                        style={{ left, top: card.y - top, width: TURN_CARD_W, height: TURN_CARD_H }}
+                        onClick={() => setPreview(n.path)}
+                        onKeyDown={(e) => onTurnKey(e, n.path, index)}
+                        data-testid="map-turn-card"
+                        data-path={n.path}
+                        data-turn-id={turn.id}
+                        data-index={index}
+                        data-aligned={aligned ? '1' : undefined}
+                        data-align-state={
+                          index === 0
+                            ? (layout.alignByPath.get(n.path)?.reason ??
+                              (layer?.alignedTurnId ? 'ok' : undefined))
+                            : undefined
+                        }
+                        data-incomplete={turn.incomplete ? '1' : undefined}
+                        data-terminal={turn.terminalReason}
+                        title={
+                          turn.question.text +
+                          (turn.question.entryId ? '' : `\n${t('map.turns.noFork')}`)
+                        }
+                      >
+                        <span className="wb-turn-no" data-testid="map-turn-index">
+                          {index + 1}
+                        </span>
+                        {/*
+                         * 从这一轮分叉（实施-26 R5）。
+                         *
+                         * 村点用消息自带的 `entryId`（R0 实测它与 `forkPoints`
+                         * 是同一套 id）；读不到就不给按钮 —— **不伪造锦点**。
+                         */}
+                        {turn.question.entryId ? (
+                          <button
+                            className="wb-turn-fork"
+                            data-testid="map-turn-fork"
+                            data-entry={turn.question.entryId}
+                            disabled={forking}
+                            title={t('map.turns.fork')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleFork(turn.question.entryId as string)
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            ⑂
+                          </button>
+                        ) : null}
+                        <span className="wb-turn-body">
+                          <span className="wb-turn-q">
+                            <span className="wb-turn-tag">{t('map.turns.question')}</span>
+                            {turn.question.text.replace(/\s+/g, ' ').trim().slice(0, 60) ||
+                              t('rail.untitled')}
+                          </span>
+                          <span className="wb-turn-meta">
+                            {turn.answer ? (
+                              <>
+                                <span className="wb-turn-tag ok">{t('map.turns.answer')}</span>
+                                {turn.answer.text.replace(/\s+/g, ' ').trim().slice(0, 34)}
+                              </>
+                            ) : (
+                              <span className="wb-turn-bad" data-testid="map-turn-unfinished">
+                                {terminal
+                                  ? t(
+                                      turn.terminalReason === 'interrupted'
+                                        ? 'map.turns.interrupted'
+                                        : turn.terminalReason === 'failed'
+                                          ? 'map.turns.failed'
+                                          : 'map.turns.stopped'
+                                    )
+                                  : t('map.turns.unfinished')}
+                              </span>
+                            )}
+                            {turn.toolCalls > 0 ? (
+                              <span className="wb-turn-tools" data-testid="map-turn-tools">
+                                {t('map.turns.tools', { n: turn.toolCalls })}
+                              </span>
+                            ) : null}
+                            {truncatedHere ? (
+                              <span className="wb-turn-trunc" data-testid="map-turn-truncated">
+                                {t('map.turns.truncated', { n: snapshot.truncated })}
+                              </span>
+                            ) : null}
+                            {aligned ? (
+                              <span
+                                className="wb-turn-aligned"
+                                data-testid="map-turn-aligned"
+                                title={t('map.turns.alignedHint')}
+                              >
+                                {t('map.turns.aligned')}
+                              </span>
+                            ) : null}
+                          </span>
+                        </span>
+                      </div>
+                    )
+                  })
                 })}
               </div>
             ))}

@@ -27,6 +27,7 @@ import {
   type UserProfile
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
+import { sanitizeActivityModelConfig } from '../shared/activity-model'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
@@ -423,6 +424,11 @@ export async function getSettings(): Promise<AppSettings> {
       cached.capabilityStrategy === 'existing-only' || cached.capabilityStrategy === 'search-and-recommend'
         ? cached.capabilityStrategy
         : 'auto-connect'
+    /*
+     * 按活动配置模型（实施-25 P18）：认不出的模型名丢掉（不能让一个乱字符串
+     * 变成「这个活动用某个不存在的模型」）。没配过时得到空配置。
+     */
+    cached.activityModels = sanitizeActivityModelConfig((parsed as { activityModels?: unknown }).activityModels)
     /* 旧字段只在这里读一次（迁完不再写回）：`workModeTab === false` 等价于关掉模式快捷键 */
     const legacyWorkModeTab = (cached as AppSettings & { workModeTab?: unknown }).workModeTab
     cached.workModeShortcutEnabled =
@@ -510,6 +516,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('panelWidth' in patch) next.panelWidth = clampPanelWidth(next.panelWidth, PANEL_MIN, PANEL_MAX)
   if ('browserHeight' in patch) next.browserHeight = clampPanelWidth(next.browserHeight, HEIGHT_MIN, HEIGHT_MAX)
   if ('streamWidth' in patch) next.streamWidth = clampStreamWidth(next.streamWidth)
+  /* 按活动配置模型（实施-25 P18）：同样过 sanitize，脏值不落盘 */
+  if ('activityModels' in patch) next.activityModels = sanitizeActivityModelConfig(patch.activityModels)
   if ('sound' in patch) {
     // 合并写入的基准取**磁盘上的旧值** cur.sound（已过 sanitize），
     // 不能用 next.sound —— 它是 patch 的原始值，partial 时 events 会是 undefined

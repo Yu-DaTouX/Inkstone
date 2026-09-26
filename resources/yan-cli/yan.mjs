@@ -127,6 +127,13 @@ const GROUP_USAGE = {
             安装、隔离 smoke 与激活仍等待安全边界 / 后续 S6b 实施。失败事务可对同一计划使用 --retry（最多一次）。
 本地 MCP 包与 Skill 文件会先走受管 staging、来源 / hash 复核和安全边界；Skill 正文还会做静态恶意内容审查：高风险 fail-closed，中风险保留提醒（即使候选由用户指定也不跳过）。包和服务器仍不提供 OS 沙箱，未提供依赖时明确停在 pending-boundary。
 
+新增（实施-25 P17）：
+  need      用自然语言说「我要做什么」，得到「缺什么、怎么接」：
+              yan capabilities need --need "把 PDF 里的表格做成汇总"
+            它**只给路径、不代装**：先 search → prepare → acquire → 都不行再 discover；
+            认不出的需求不猜包名，只给通用的三步。
+            还会告诉你「你现在已经有相关能力了」——不必先记住自己有什么。
+
 `,
   skill: `yan skill <动作> [选项]
 
@@ -207,6 +214,144 @@ const GROUP_USAGE = {
     不可以做：替他作答、把他没做到的事记成做到、把他的进度往前提。
 `,
 
+  exercise: `yan exercise <动作> [选项]
+
+动作（出题 / 提示 / 作答都在宿主；判分与「看了多少帮助」不认模型自报）：
+  create   --request-file exercise.json
+           出一道题。字段：courseId / unitId / kind / prompt / answer / hints / solution。
+           kind = explain / cloze / choice / match / derive / apply / work / debug；
+           客观题必须给 answer（choice → optionId；cloze → blanks；match → pairs；
+           derive → accepted），开放题不判分。
+  draft    [--course <课程ID>] [--unit <单元ID>]
+           从这一节的原文按确定性规则抽几道题（题面与答案都来自原文，不调模型）。
+  list     [--course <课程ID>] [--unit <单元ID>]
+  get      --exerciseId <题目ID>
+  hint     --exerciseId <题目ID> --level direction|concept|next-step|example
+           逐层给提示，不能跳层。
+  solution --exerciseId <题目ID>
+           看完整解释 —— 这一步会被记进下一次作答（看过解释就不算独立完成）。
+  submit   --exerciseId <题目ID> --request-file answer.json
+           提交作答。answer.json 形状：{ kind: 'choice'|'cloze'|'match'|'text'|'open', ... }。
+  remove   --exerciseId <题目ID>
+
+说明：
+  · 题目与答案分开发：list / get 拿到的题目**不含答案**；
+  · 别替学习者作答：submit 记录的是他的真实提交，不是你的推测。
+`,
+
+  attempt: `yan attempt <动作> [选项]
+
+动作：
+  correct  --attemptId <作答ID> --text "为什么判得不对" [--correct true|false]
+           记录用户对判定的纠正。不传 --correct 时按「反过来」记；
+           原来的判定依据会保留，不会被他的一句纠正抹掉。
+`,
+
+  note: `yan note <动作> [选项]
+
+动作（笔记与概念进度都是课程内的记录）：
+  list    --course <课程ID>
+  save    --course <课程ID> --body "…" [--title "…"] [--unit <单元ID>] \
+            [--kind note|summary]
+  update  --id <笔记ID> --request-file patch.json   （可改 title / body / kind / unit）
+  remove  --id <笔记ID>
+`,
+
+  concept: `yan concept <动作> [选项]
+
+动作（观察层级由作答现算，不能手改）：
+  list    --course <课程ID>
+           读这门课每个概念的进度：观察层级（未接触/提示下完成/独立完成/新情境应用）
+           + 独立的「建议复习」。两条轴可以同时成立。
+  assess  --course <课程ID> --concept <概念ID> --kind got-it|suspect [--text "…"]
+           记用户自评。它存在另一个字段，**不会覆盖系统观察**。
+  reset   --course <课程ID> --concept <概念ID>
+           清掉这条概念的观察记录（下次作答重新累积）。
+`,
+
+  review: `yan review <动作> [选项]
+
+动作（错题与复习只到「提醒与挑题」，不会自动代学）：
+  list    --course <课程ID>
+           列这门课的复习项：来因（做错过 / 用了提示 / 没看懂原文 /
+           反复问 / 换个场景不会用）、下次建议时间、优先级。
+  plan    --course <课程ID> [--mode due|quick] [--minutes 10]
+           挑今天要复习的东西。再练**换同概念的新例子**，不复用做过的原题；
+           没有新例子时在 needsNewExercise 里如实列出，不拿原题充数。
+           quick 是「今天十分钟」：到期 + 优先项，卡在时间预算内。
+  reading --course <课程ID> --source <资料ID> [--version <n>] \
+            [--locator '{"start":0,"end":120}'] [--note "…"]
+           登记「这段原文没看懂」（不带题）。
+  question --course <课程ID> --concept <概念ID> [--text "…"]
+           登记「这个概念又问了一次」：第一次优先级 low，到
+           2 次提为 high。
+  reschedule --id <复习ID> [--due-at <毫秒时间戳>] [--priority high|normal|low]
+           挪期或改优先级（只动这两项，不改来因与档位）。
+  dismiss --id <复习ID>
+           把这条从复习列表里去掉。
+
+间隔按 1 / 3 / 7 / 14 天推进（独立完成往后延，用了提示或做错回到最近一档）——
+这是复习排期，**不代表已经掌握**：掌握程度看 yan concept list 的观察层级。
+`,
+
+  research: `yan research <动作> [选项]
+
+动作（跨资料研究：宿主只给结构，不替你对「谁对」下结论）：
+  compare --request-file refs.json
+           请求文件：{ "question": "…", "refs": [
+             { "sourceId": "lib_x", "version": 1, "stance": "支持",
+               "provenance": "material", "locator": {"start":0,"end":400} } ] }
+           读的是**每一份当时那一版**的片段，按 stance 并排列出；
+           两组标了不同 stance 就把「不一致」列出来，**不合并结论**。
+           没读到的来源单独放 skipped，不当作有效证据。
+           provenance：material = 引用原文，model = 模型补充。
+  status  --artifact <成果ID>
+           看这份成果引用的资料现在怎么样了：哪条已有新版本、哪条已移除。
+           只提示变化 —— 旧引用仍然指着旧版本（P03 不变量）。
+`,
+
+  playbook: `yan playbook <动作> [选项]
+
+动作（办事模板：宿主只保存与解释，**从不替你执行**）：
+  list [--space <空间ID>]
+           看有哪些模板（含三个起步模板）。
+  plan  --id <模板ID> [--request-file scopes.json]
+           复用前的说明：会读什么 / 会改什么 / 会对外发什么、范围在哪。
+           scopes.json：{ "scopes": [["docs/a"], ["邮箱"]] }
+           —— 按**需要确认的步骤**顺序给，组数必须一致，少给就报错。
+           返回的 text 是一段可直接发出去的说明；但**发不发由用户决定**，
+           宿主不发送、不执行、也不写任何文件。
+  save  --request-file playbook.json
+           把刚做完的一件事存成模板（来源由宿主补上当前会话）。
+           写 / 对外发的步骤**必须写 scope**，没写就拒掉 ——
+           「不知道会动哪里」不许变成模板。
+`,
+
+  follow: `yan follow <动作> [选项]
+
+动作（持续关注：**宿主不自己去查**，也没有后台定时任务）：
+  list [--space <空间ID>]
+           看有哪些关注（含状态：到点了 / 下次什么时候 / 还没启用）。
+  due     谁到点了（**只数用户启用过的**）+ 每个该看什么的说明。
+  save  --request-file watch.json
+           提议一个新关注。请求文件：
+           { "title": "看看 README 有没有变", "kind": "files",
+             "cadence": "interval", "intervalMinutes": 1440,
+             "resultPlace": "写进成果：项目变更" }
+           **它总是存成未启用的提议**：用户点「开始关注」之后才会跑。
+           间隔最短 30 分钟（再短就不叫关注了）。
+  report --id <关注ID> --outcome <no-change|changed|needs-decision|failed>
+           [--request-file run.json]
+           看完之后回报结果：{ "summary": "…", "changed": ["…"],
+             "decisions": ["…"] }。「没有变化」不会打扰用户，只进运行记录。
+
+说明：
+  · 关注**只在砚开着的时候看**：应用没开的那段时间不会被跟进，也不补看；
+  · 该看的时候由你（模型）去看，看完用 follow report 记回来 —— 宿主不代劳；
+  · 复习类关注只提醒，**不会自动开始学习**（不自动代学）；
+  · 启用 / 停用 / 删除是用户的事：这里没有 enable / remove 动作。
+`,
+
   knowledge: `yan knowledge <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -266,12 +411,23 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   start --task <任务> [--model <模型>] [--read-only]
        或 --request-file subagent.json
        请求文件示例：{"task":"检查当前项目的测试入口","readOnly":true}
+       带上任务输入（P15 推荐，免得并行的子任务跑偏）：
+       {"task":"查一下这两个模块的错误处理",
+        "brief":{"goal":"摸清两个模块的错误处理是否一致",
+                  "deliverables":["一段结论","不一致的具体位置"],
+                  "sources":["src/main/agent.ts","src/main/index.ts"],
+                  "boundary":"只读，不要改代码"}}
   list                         查看所有子代理的状态与活动摘要
   get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
   stop   --id <子代理ID>        停止一个仍在运行的子代理
+  guidance                     适合 / 不适合拆出去并行的情形
 
 说明：
   · start 默认使用独立 Git worktree；readOnly=true 使用当前目录但只开放 read/grep/find/ls；
+  · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
+  · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——
+    摘要取的是它**最后一段话**（会在数据里标名），不是子代理自报的结论；
+    「未决问题」不自动猜：那要主 agent 判断，宿主不替它下结论；
   · 启动后 UI 会在输入区上方显示任务，并在右侧面板持续显示转录、工具活动、耗时与变更；
   · 子代理的 worktree 变更不会自动合并，合并 / 放弃由用户在 UI 里审阅确认。
 `,
@@ -326,8 +482,8 @@ function fail(code, message, extra) {
  */
 const GROUP_SPECS = {
   capabilities: {
-    actions: ['search', 'discover', 'prepare', 'acquire'],
-    required: { prepare: ['candidate'] }
+    actions: ['search', 'discover', 'prepare', 'acquire', 'need'],
+    required: { prepare: ['candidate'], need: ['need'] }
   },
 
   skill: {
@@ -357,6 +513,57 @@ const GROUP_SPECS = {
     required: { start: ['course'], ask: ['question'] },
   },
 
+  exercise: {
+    actions: ['create', 'draft', 'list', 'get', 'hint', 'solution', 'submit', 'remove'],
+    /* 出题与作答的参数较自由，建议走 --request-file；这里只拦「完全没给对象」那种 */
+    required: { get: ['exerciseId'], hint: ['exerciseId', 'level'], solution: ['exerciseId'], submit: ['exerciseId'] }
+  },
+
+  attempt: {
+    actions: ['correct'],
+    required: { correct: ['attemptId', 'text'] }
+  },
+
+  note: {
+    actions: ['list', 'save', 'update', 'remove'],
+    required: { list: ['course'], save: ['course', 'body'], update: ['id'], remove: ['id'] }
+  },
+
+  concept: {
+    actions: ['list', 'assess', 'reset'],
+    required: { list: ['course'], assess: ['course', 'concept'], reset: ['course', 'concept'] }
+  },
+
+  review: {
+    actions: ['list', 'plan', 'reading', 'question', 'reschedule', 'dismiss'],
+    required: {
+      list: ['course'],
+      plan: ['course'],
+      reading: ['course', 'source'],
+      question: ['course', 'concept'],
+      reschedule: ['id'],
+      dismiss: ['id']
+    }
+  },
+
+  research: {
+    actions: ['compare', 'status'],
+    required: { status: ['artifact'] }
+  },
+
+  playbook: {
+    actions: ['list', 'plan', 'save'],
+    required: { plan: ['id'] }
+  },
+
+  follow: {
+    actions: ['list', 'due', 'save', 'report'],
+    required: {
+      save: ['title', 'resultPlace'],
+      report: ['id', 'outcome']
+    }
+  },
+
   knowledge: {
     actions: ['search', 'read', 'propose'],
     required: {
@@ -364,7 +571,7 @@ const GROUP_SPECS = {
     }
   },
   subagent: {
-    actions: ['start', 'list', 'get', 'stop'],
+    actions: ['start', 'list', 'get', 'stop', 'guidance'],
     required: {
       start: ['task'],
       get: ['id'],

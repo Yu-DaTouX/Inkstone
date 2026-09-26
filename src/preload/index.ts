@@ -5,6 +5,7 @@ import type {
   AttachmentUsage,
   BuiltinCapabilityView,
   CapabilitySettingsSnapshot,
+  CapabilityNeedView,
   CapabilitySearchResultView,
   CapabilityVerificationStatus,
   PackageActionResultView,
@@ -26,6 +27,37 @@ import type {
   StudyStatusView,
   StudyResume,
   StudySession,
+  Attempt,
+  AttemptFeedback,
+  Exercise,
+  ExerciseBridge,
+  ExerciseHint,
+  ExerciseView,
+  ConceptProgress,
+  LearningNote,
+  NoteBridge,
+  ConceptBridge,
+  ReviewBridge,
+  ResearchBridge,
+  ReviewItem,
+  ReviewPlan,
+  Comparison,
+  SourceStatus,
+  SourceRefStatus,
+  PlaybookBridge,
+  PlaybookMutationResult,
+  PlaybookPlanResult,
+  Playbook,
+  FollowBridge,
+  FollowMutationResult,
+  ActivityBridge,
+  ActivityModelResolution,
+  ActivityModelRow,
+  AudioBridge,
+  AudioPlan,
+  FollowRun,
+  Watch,
+  WatchView,
   ForkContextResultView,
   ForkRefsReportView,
   WorktreeLinkView,
@@ -385,6 +417,7 @@ const api: YanBridge = {
     createFromSource: (params) => invoke<CourseResult>('yan:course:createFromSource', params),
     createFromTopic: (input) => invoke<CourseResult>('yan:course:createFromTopic', input),
     createFromBlocker: (input) => invoke<CourseResult>('yan:course:createFromBlocker', input),
+    createFromArtifact: (params) => invoke<CourseResult>('yan:course:createFromArtifact', params),
     update: (id, patch) => invoke<CourseResult>('yan:course:update', id, patch),
     addUnit: (id, unit: CourseUnitInput) => invoke<CourseResult>('yan:course:addUnit', id, unit),
     updateUnit: (id, unitId, patch) => invoke<CourseResult>('yan:course:updateUnit', id, unitId, patch),
@@ -412,6 +445,90 @@ const api: YanBridge = {
     stop: (runtimeKey) => invoke<StudyResult>('yan:study:stop', runtimeKey),
     remove: (courseId) => invoke<boolean>('yan:study:remove', courseId)
   },
+  /*
+   * 练习与作答（实施-25 P10）。
+   *
+   * `listForUnit` / `get` 拿到的题目**不含答案**；看答案必须走 `revealSolution`。
+   * 提交作答时不用传「看了多少提示」—— 服务自己记（不信界面自报）。
+   */
+  exercise: {
+    listForUnit: (input) => invoke<ExerciseView[]>('yan:exercise:listForUnit', input),
+    listForCourse: (courseId) => invoke<ExerciseView[]>('yan:exercise:listForCourse', courseId),
+    get: (exerciseId) => invoke<ExerciseView | null>('yan:exercise:get', exerciseId),
+    create: (input) => invoke<{ ok: boolean; error?: string; exercise?: Exercise }>('yan:exercise:create', input),
+    createFromUnit: (input) =>
+      invoke<{ ok: boolean; error?: string; exercises?: Exercise[]; created?: number }>('yan:exercise:createFromUnit', input),
+    revealHint: (input) =>
+      invoke<{ ok: boolean; error?: string; hints?: ExerciseHint[]; hasMoreHints?: boolean }>('yan:exercise:revealHint', input),
+    revealSolution: (exerciseId) =>
+      invoke<{ ok: boolean; error?: string; solution: string | null }>('yan:exercise:revealSolution', exerciseId),
+    submit: (input) =>
+      invoke<{ ok: boolean; error?: string; attempt?: Attempt; feedback?: AttemptFeedback }>('yan:exercise:submit', input),
+    attempts: (exerciseId) => invoke<Attempt[]>('yan:exercise:attempts', exerciseId),
+    correct: (input) => invoke<{ ok: boolean; error?: string; attempt?: Attempt }>('yan:exercise:correct', input),
+    remove: (exerciseId) => invoke<boolean>('yan:exercise:remove', exerciseId),
+    removeCourse: (courseId) => invoke<number>('yan:exercise:removeCourse', courseId)
+  } as ExerciseBridge,
+  /*
+   * 笔记与概念进度（实施-25 P11）。
+   * 概念进度只能读与自评：系统观察由作答现算，界面不直接改 level。
+   */
+  note: {
+    list: (courseId) => invoke<LearningNote[]>('yan:note:list', courseId),
+    save: (input) => invoke<{ ok: boolean; error?: string; note?: LearningNote }>('yan:note:save', input),
+    update: (id, patch) => invoke<{ ok: boolean; error?: string; note?: LearningNote }>('yan:note:update', { id, patch }),
+    remove: (id) => invoke<boolean>('yan:note:remove', id)
+  } as NoteBridge,
+  concept: {
+    list: (courseId) => invoke<ConceptProgress[]>('yan:concept:list', courseId),
+    assess: (input) =>
+      invoke<{ ok: boolean; error?: string; progress?: ConceptProgress }>('yan:concept:assess', input),
+    reset: (input) => invoke<boolean>('yan:concept:reset', input)
+  } as ConceptBridge,
+  review: {
+    list: (courseId) => invoke<ReviewItem[]>('yan:review:list', courseId),
+    due: () => invoke<{ items: ReviewItem[]; total: number }>('yan:review:due'),
+    plan: (input) => invoke<ReviewPlan>('yan:review:plan', input),
+    reading: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:reading', input),
+    question: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:question', input),
+    reschedule: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:reschedule', input),
+    dismiss: (id) => invoke<boolean>('yan:review:dismiss', id)
+  } as ReviewBridge,
+  research: {
+    compare: (input) => invoke<{ ok: boolean; comparison?: Comparison; skipped?: { sourceId: string; version: number; status: SourceRefStatus }[]; text?: string; error?: string }>('yan:research:compare', input),
+    sourceStatus: (artifactId) => invoke<{ ok: boolean; error?: string; statuses: SourceStatus[] }>('yan:artifactDoc:sourceStatus', artifactId)
+  } as ResearchBridge,
+  playbook: {
+    list: (spaceId) => invoke<Playbook[]>('yan:playbook:list', spaceId),
+    save: (input) => invoke<PlaybookMutationResult>('yan:playbook:save', input),
+    update: (id, patch) => invoke<PlaybookMutationResult>('yan:playbook:update', { id, ...patch }),
+    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:playbook:remove', id),
+    plan: (input) => invoke<PlaybookPlanResult>('yan:playbook:plan', input),
+    run: (id) => invoke<PlaybookMutationResult>('yan:playbook:run', id)
+  } as PlaybookBridge,
+  follow: {
+    list: (spaceId) => invoke<Watch[]>('yan:follow:list', spaceId),
+    views: (spaceId) => invoke<(WatchView & { lastRunText?: string })[]>('yan:follow:views', spaceId),
+    due: () => invoke<Watch[]>('yan:follow:due'),
+    runs: (input) => invoke<FollowRun[]>('yan:follow:runs', input),
+    save: (input) => invoke<FollowMutationResult>('yan:follow:save', input),
+    update: (input) => invoke<FollowMutationResult>('yan:follow:update', input),
+    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:follow:remove', id),
+    report: (input) => invoke<{ ok: boolean; error?: string; code?: string; run?: FollowRun; watch?: Watch }>('yan:follow:report', input)
+  } as FollowBridge,
+  activity: {
+    rows: (input) => invoke<ActivityModelRow[]>('yan:activity:modelRows', input),
+    model: (input) => invoke<ActivityModelResolution>('yan:activity:model', input),
+    setModel: (input) => invoke<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>('yan:activity:modelSet', input)
+  } as ActivityBridge,
+  audio: {
+    plan: (input) => invoke<{ ok: boolean; error?: string; plan?: AudioPlan }>('yan:audio:plan', input),
+    transcript: (input) =>
+      invoke<{ ok: boolean; error?: string; code?: string; sourceId?: string; version?: number; note?: string }>(
+        'yan:audio:transcript',
+        input
+      )
+  } as AudioBridge,
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
@@ -436,6 +553,7 @@ const api: YanBridge = {
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
+    need: (input) => invoke<CapabilityNeedView>('yan:capabilities:need', input),
     discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
     verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
     verification: (operationId: string) =>

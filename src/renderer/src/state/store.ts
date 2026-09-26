@@ -54,6 +54,28 @@ import type {
   StudyResume,
   StudySession,
   StudyStatusView,
+  Attempt,
+  AttemptFeedback,
+  ExerciseHint,
+  ExerciseResponse,
+  ExerciseView,
+  HintLevel,
+  ConceptProgress,
+  LearningNote,
+  LearningNoteInput,
+  SelfAssessmentKind,
+  ReviewItem,
+  ReviewPlan,
+  ReviewPriority,
+  Comparison,
+  SourceStatus,
+  Playbook,
+  PlaybookPlanResult,
+  Watch,
+  WatchView,
+  PlaybookIO,
+  PlaybookSource,
+  PlaybookStep,
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
@@ -77,6 +99,7 @@ import { pickProjectSession as pickProjectSessionTarget } from './project-sessio
 import { readSpaceView, writeSpaceView, type SpaceView } from './space-view'
 import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
+import { buildFeedback } from '../../../shared/exercise'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { keepLocalImages } from './keep-images'
 import {
@@ -221,6 +244,19 @@ interface Store {
   libraryLoaded: boolean
   /** 可编辑成果（实施-25 P06a）：当前空间的文档对象 */
   artifactDocs: ArtifactDoc[]
+  /** 当前成果的引用状态（P13 T13-4）：哪条来源已有新版本 / 已找不到。 */
+  artifactSourceStatuses: SourceStatus[]
+  /** 当前显示的多来源对照（P13）：现场算，不落盘。 */
+  researchComparison: Comparison | null
+  /** 办事模板（P14）：落盘的 + 三个起步模板。 */
+  playbooks: Playbook[]
+  playbooksLoaded: boolean
+  /** 复用前的说明（T14-3）：只解释，不代表已执行。 */
+  playbookPlan: PlaybookPlanResult | null
+  /** 持续关注（P16）：带状态文案的列表 + 到点清单。 */
+  followViews: (WatchView & { lastRunText?: string })[]
+  followDue: Watch[]
+  followsLoaded: boolean
   artifactDocsLoaded: boolean
   /** 课程与路线（实施-25 P07）。与成果一样，**宿主是事实源**。 */
   courses: Course[]
@@ -234,6 +270,32 @@ interface Store {
   studySessions: { session: StudySession; resume: StudyResume }[]
   studyStatus: StudyStatusView | null
   studyLoaded: boolean
+  /**
+   * 练习与作答（实施-25 P10）。
+   *
+   * `exercises` 是**当前单元**的题目视图（不含答案）；
+   * `exerciseHints` / `exerciseSolutions` 只装用户**已经揭示过**的那部分 ——
+   * 宿主不把答案随题目下发，界面也就不存一份完整答案。
+   */
+  exercises: ExerciseView[]
+  exerciseLoadedFor: string | null
+  /** 要跳到哪一道题（P12 复习挑题用；被练习卡消费一次后清掉）。 */
+  exerciseFocus: string | null
+  exerciseHints: Record<string, ExerciseHint[]>
+  exerciseSolutions: Record<string, string>
+  exerciseAttempts: Record<string, Attempt[]>
+  exerciseFeedback: Record<string, AttemptFeedback>
+  /** 笔记（实施-25 P11）：按课程归属，用户自己的记录。 */
+  notes: LearningNote[]
+  notesLoadedFor: string | null
+  /** 概念进度（实施-25 P11）：两条轴（观察层级 + 复习状态），从作答现算。 */
+  conceptProgress: ConceptProgress[]
+  /** 当前课程的复习项（P12）。 */
+  reviews: ReviewItem[]
+  /** 今天的复习计划（`planToday` 的结果；没拉过就是 null）。 */
+  reviewPlan: ReviewPlan | null
+  /** 跨课程的到期复习（首页入口用）。 */
+  reviewDue: { items: ReviewItem[]; total: number } | null
   /** 扩展（如 left-info-panel 的 panel_todos）维护的任务清单 */
   todos: SessionTodo[]
   /** 全部任务清单快照（含最新）——「历史任务」模块用 */
@@ -374,6 +436,14 @@ interface Store {
   uiCollapsed: boolean
   /** 问题草稿：按 request id 保存（切面板/收起后仍在） */
   uiDrafts: Record<string, string>
+  /**
+   * 待插入编排输入框的文本（实施-25 P14）。
+   *
+   * 为什么走这个中转而不是直接写 Composer 的本地 state：模板的「填到输入框」
+   * 是别的页面发起的，而输入框在编排页 —— 中间隔着路由。
+   * **只填不发**：填完还得用户自己按发送，模板没有代发能力。
+   */
+  composerInsert: string | null
   notices: Notice[]
   statuses: Record<string, string>
   /** 扩展想让输入框变成的文本（消费一次就清） */
@@ -497,6 +567,61 @@ interface Store {
   importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
   /** 拉成果列表（`spaceId` 省略 = 全部） */
   refreshArtifactDocs: (spaceId?: string | null) => Promise<void>
+  /* 跨资料研究（P13）：只读；对照现场算、不自动落盘 */
+  refreshArtifactSourceStatus: (artifactId: string) => Promise<void>
+  runComparison: (input: {
+    question?: string
+    refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
+    maxChars?: number
+  }) => Promise<Comparison | null>
+  clearComparison: () => void
+  /* 办事模板（P14）：保存 / 改 / 删，以及复用前的作用范围确认 */
+  refreshPlaybooks: (spaceId?: string | null) => Promise<void>
+  savePlaybook: (input: {
+    id?: string
+    kind?: string
+    title: string
+    goal: string
+    steps: PlaybookStep[]
+    io?: PlaybookIO
+    spaceId?: string | null
+    origin?: 'from-task' | 'user'
+    source?: PlaybookSource
+  }) => Promise<boolean>
+  updatePlaybook: (
+    id: string,
+    patch: { title?: string; goal?: string; steps?: PlaybookStep[]; io?: PlaybookIO; kind?: string }
+  ) => Promise<boolean>
+  removePlaybook: (id: string) => Promise<boolean>
+  /**
+   * 复用前先问「会动哪里」（T14-3）。
+   * 返回值只用于展示；**不发送、不执行** —— 真正跑是确认之后的事。
+   */
+  planPlaybook: (input: { id: string; scopes?: string[][] }) => Promise<PlaybookPlanResult | null>
+  clearPlaybookPlan: () => void
+  recordPlaybookRun: (id: string) => Promise<void>
+  /* 持续关注（P16）：用户能建 / 启用 / 停用 / 删；宿主不会自己去查 */
+  refreshFollows: (spaceId?: string | null) => Promise<void>
+  saveWatch: (input: {
+    title: string
+    kind?: string
+    spaceId?: string | null
+    cadence?: string
+    intervalMinutes?: number
+    resultPlace: string
+    notifyOn?: string
+    enabled?: boolean
+  }) => Promise<boolean>
+  updateWatch: (input: {
+    id: string
+    title?: string
+    cadence?: string
+    intervalMinutes?: number
+    resultPlace?: string
+    notifyOn?: string
+    enabled?: boolean
+  }) => Promise<boolean>
+  removeWatch: (id: string) => Promise<boolean>
   createArtifactDoc: (input: { title: string; text?: string; kind?: ArtifactKind; spaceId?: string; taskId?: string }) => Promise<ArtifactDoc | null>
   /** 用户在编辑器保存正文：内容没变则**不开新版本** */
   saveArtifactText: (id: string, text: string) => Promise<{ ok: boolean; unchanged?: boolean }>
@@ -513,8 +638,12 @@ interface Store {
   createCourseFromSource: (params: { sourceId: string; version: number; input: CourseInput }) => Promise<Course | null>
   createCourseFromTopic: (input: CourseInput) => Promise<Course | null>
   createCourseFromBlocker: (input: CourseInput) => Promise<Course | null>
+  /** 入口四（T06b-4）：把一份成果当材料建课。 */
+  createCourseFromArtifact: (params: { artifactId: string; input: CourseInput }) => Promise<Course | null>
   updateCourse: (id: string, patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }) => Promise<boolean>
   addCourseUnit: (id: string, unit: CourseUnitInput) => Promise<boolean>
+  addCourseConcept: (id: string, name: string) => Promise<boolean>
+  removeCourseConcept: (id: string, conceptId: string) => Promise<boolean>
   updateCourseUnit: (
     id: string,
     unitId: string,
@@ -544,6 +673,38 @@ interface Store {
   pauseStudy: () => Promise<boolean>
   resumeStudy: () => Promise<boolean>
   stopStudy: () => Promise<boolean>
+
+  /* 练习与作答（实施-25 P10）：答案不在题目里，要显式揭示。 */
+  refreshExercises: (courseId: string, unitId: string) => Promise<void>
+  /** 把某道题放进练习卡（复习挑题 → 做题）；只换题目列表，不自动作答。 */
+  focusExercise: (exerciseId: string) => Promise<boolean>
+  clearExerciseFocus: () => void
+  draftExercises: (courseId: string, unitId: string) => Promise<number>
+  revealExerciseHint: (exerciseId: string, upto: HintLevel) => Promise<boolean>
+  revealExerciseSolution: (exerciseId: string) => Promise<string | null>
+  submitExercise: (exerciseId: string, response: ExerciseResponse) => Promise<AttemptFeedback | null>
+  correctExerciseAttempt: (attemptId: string, text: string, correct?: boolean | null) => Promise<boolean>
+  removeExercise: (exerciseId: string) => Promise<boolean>
+  /** 清空当前展示的练习（切课程 / 删课程时用）。 */
+  clearExercises: () => Promise<void>
+
+  /* 笔记与概念进度（实施-25 P11）。 */
+  refreshNotes: (courseId: string) => Promise<void>
+  saveNote: (input: LearningNoteInput) => Promise<LearningNote | null>
+  updateNote: (id: string, patch: Record<string, unknown>) => Promise<boolean>
+  removeNote: (id: string) => Promise<boolean>
+  refreshConceptProgress: (courseId: string) => Promise<void>
+  /* 错题与复习（P12）：只提醒与挑题，不自动代学 */
+  refreshReviews: (courseId: string) => Promise<void>
+  refreshReviewDue: () => Promise<void>
+  planReviews: (courseId: string, mode?: 'due' | 'quick', minutesBudget?: number) => Promise<ReviewPlan | null>
+  rescheduleReview: (id: string, patch: { dueAt?: number; priority?: ReviewPriority }) => Promise<boolean>
+  dismissReview: (id: string, courseId?: string) => Promise<boolean>
+  flagReviewQuestion: (input: { courseId: string; conceptId: string; text?: string }) => Promise<boolean>
+  /** 用户自评：只写 `selfAssessment`，不动系统观察（T11-5）。 */
+  assessConcept: (input: { courseId: string; conceptId: string; kind: SelfAssessmentKind; text?: string }) => Promise<boolean>
+  resetConceptProgress: (courseId: string, conceptId: string) => Promise<boolean>
+  clearLearningMemory: () => Promise<void>
 
   removeArtifactDoc: (id: string) => Promise<boolean>
   /** 打开一条引用：只按 sourceId + version，旧版本照样能读 */
@@ -783,6 +944,9 @@ interface Store {
   setUiCollapsed: (v: boolean) => void
   /** 保存某个问题的草稿 */
   setUiDraft: (id: string, value: string) => void
+  /** 把一段文本放进「待插入输入框」槽；Composer 消费后清空。 */
+  insertIntoComposer: (text: string) => void
+  clearComposerInsert: () => void
   dismissNotice: (id: string) => void
   /**
    * 推一条普通提示（不改变输入框内容）。
@@ -1272,12 +1436,33 @@ export const useStore = create<Store>((rawSet, get) => {
   libraryRefs: [],
   libraryLoaded: false,
   artifactDocs: [],
+  artifactSourceStatuses: [],
+  researchComparison: null,
+  playbooks: [],
+  playbooksLoaded: false,
+  playbookPlan: null,
+  followViews: [],
+  followDue: [],
+  followsLoaded: false,
   artifactDocsLoaded: false,
   courses: [],
   coursesLoaded: false,
   studySessions: [],
   studyStatus: null,
   studyLoaded: false,
+  exercises: [],
+  exerciseLoadedFor: null,
+  exerciseFocus: null,
+  exerciseHints: {},
+  exerciseSolutions: {},
+  exerciseAttempts: {},
+  exerciseFeedback: {},
+  notes: [],
+  notesLoadedFor: null,
+  conceptProgress: [],
+  reviews: [],
+  reviewPlan: null,
+  reviewDue: null,
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
@@ -1344,6 +1529,7 @@ export const useStore = create<Store>((rawSet, get) => {
   questionLogSession: null,
   uiCollapsed: false,
   uiDrafts: {},
+  composerInsert: null,
   notices: [],
   statuses: {},
   widgets: {},
@@ -1996,6 +2182,140 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  refreshArtifactSourceStatus: async (artifactId) => {
+    try {
+      const res = await window.yan.research.sourceStatus(artifactId)
+      set({ artifactSourceStatuses: res?.statuses ?? [] })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  runComparison: async (input) => {
+    try {
+      const res = await window.yan.research.compare(input)
+      if (!res.ok || !res.comparison) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '对照失败') })
+        return null
+      }
+      set({ researchComparison: res.comparison })
+      return res.comparison
+    } catch {
+      return null
+    }
+  },
+
+  clearComparison: () => set({ researchComparison: null, artifactSourceStatuses: [] }),
+
+  refreshPlaybooks: async (spaceId) => {
+    try {
+      const list = await window.yan.playbook.list(spaceId === undefined ? undefined : spaceId)
+      set({ playbooks: Array.isArray(list) ? list : [], playbooksLoaded: true })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  savePlaybook: async (input) => {
+    const res = await window.yan.playbook.save(input)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '保存模板失败') })
+      return false
+    }
+    await get().refreshPlaybooks()
+    set({ notices: pushNotice(get().notices, 'info', `已存下模板「${res.playbook?.title ?? ''}」`) })
+    return true
+  },
+
+  updatePlaybook: async (id, patch) => {
+    const res = await window.yan.playbook.update(id, patch)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '修改模板失败') })
+      return false
+    }
+    await get().refreshPlaybooks()
+    return true
+  },
+
+  removePlaybook: async (id) => {
+    const res = await window.yan.playbook.remove(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除模板失败') })
+      return false
+    }
+    const plan = get().playbookPlan
+    await get().refreshPlaybooks()
+    if (plan?.playbook?.id === id) set({ playbookPlan: null })
+    return true
+  },
+
+  planPlaybook: async (input) => {
+    const res = await window.yan.playbook.plan(input)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '这个模板暂时用不了') })
+      return null
+    }
+    set({ playbookPlan: res })
+    return res
+  },
+
+  clearPlaybookPlan: () => set({ playbookPlan: null }),
+
+  refreshFollows: async (spaceId) => {
+    try {
+      const [views, due] = await Promise.all([
+        window.yan.follow.views(spaceId === undefined ? undefined : spaceId),
+        window.yan.follow.due()
+      ])
+      set({
+        followViews: Array.isArray(views) ? views : [],
+        followDue: Array.isArray(due) ? due : [],
+        followsLoaded: true
+      })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  saveWatch: async (input) => {
+    const res = await window.yan.follow.save(input)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '建关注失败') })
+      return false
+    }
+    await get().refreshFollows()
+    return true
+  },
+
+  updateWatch: async (input) => {
+    const res = await window.yan.follow.update(input)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改关注失败') })
+      return false
+    }
+    await get().refreshFollows()
+    return true
+  },
+
+  removeWatch: async (id) => {
+    const res = await window.yan.follow.remove(id)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删关注失败') })
+      return false
+    }
+    await get().refreshFollows()
+    return true
+  },
+
+  recordPlaybookRun: async (id) => {
+    try {
+      await window.yan.playbook.run(id)
+      await get().refreshPlaybooks()
+    } catch {
+      /* 计数失败不该挡住用户 */
+    }
+  },
+
   createArtifactDoc: async (input) => {
     const res = await window.yan.artifactDoc.create(input)
     if (!res.ok || !res.doc) {
@@ -2095,10 +2415,16 @@ export const useStore = create<Store>((rawSet, get) => {
   createCourseFromTopic: (input) => courseFlow(() => window.yan.course.createFromTopic(input), '生成主题路线失败'),
   createCourseFromBlocker: (input) =>
     courseFlow(() => window.yan.course.createFromBlocker(input), '生成卡点路线失败'),
+  createCourseFromArtifact: (params: { artifactId: string; input: CourseInput }) =>
+    courseFlow(() => window.yan.course.createFromArtifact(params), '把这份成果用于学习失败'),
   updateCourse: async (id, patch) =>
     (await courseFlow(() => window.yan.course.update(id, patch), '改课程失败')) !== null,
   addCourseUnit: async (id, unit) =>
     (await courseFlow(() => window.yan.course.addUnit(id, unit), '加单元失败')) !== null,
+  addCourseConcept: async (id, name) =>
+    (await courseFlow(() => window.yan.course.addConcept(id, name), '加概念失败')) !== null,
+  removeCourseConcept: async (id, conceptId) =>
+    (await courseFlow(() => window.yan.course.removeConcept(id, conceptId), '删概念失败')) !== null,
   updateCourseUnit: async (id, unitId, patch) =>
     (await courseFlow(() => window.yan.course.updateUnit(id, unitId, patch), '改单元失败')) !== null,
   moveCourseUnit: async (id, unitId, delta) =>
@@ -2118,6 +2444,10 @@ export const useStore = create<Store>((rawSet, get) => {
     await window.yan.study.remove(id).catch(() => undefined)
     await get().refreshCourses()
     await get().refreshStudy()
+    /* 课程没了，它的练习也不该留在界面上。 */
+    await get().clearExercises()
+    /* 笔记与概念进度同理。 */
+    await get().clearLearningMemory()
     return true
   },
 
@@ -2147,6 +2477,276 @@ export const useStore = create<Store>((rawSet, get) => {
   pauseStudy: () => studyFlow(() => window.yan.study.pause(), '暂停学习失败'),
   resumeStudy: () => studyFlow(() => window.yan.study.resume(), '恢复学习失败'),
   stopStudy: () => studyFlow(() => window.yan.study.stop(), '停止学习失败'),
+
+  /*
+   * 练习（实施-25 P10）。
+   *
+   * 与课程 / 学习状态同一条约定：**宿主是事实源**。界面这里的
+   * `exerciseHints` / `exerciseSolutions` 只是「已经揭示过什么」的镜像，
+   * 提交作答时也不上报「看了多少帮助」—— 那由宿主自己记（T10-2）。
+   */
+  refreshExercises: async (courseId, unitId) => {
+    try {
+      const list = await window.yan.exercise.listForUnit({ courseId, unitId })
+      /*
+       * 作答记录一并拉回，并用**同一份纯函数**重算反馈 ——
+       * 宿主在提交时算过的反馈与这里重算的必须是同一个规则，
+       * 否则「关掉再打开」看到的评语会和刚交时不一样。
+       */
+      const entries = await Promise.all(
+        (list ?? []).map(async (exercise) => [exercise.id, await window.yan.exercise.attempts(exercise.id)] as const)
+      )
+      const attempts: Record<string, Attempt[]> = {}
+      const feedback: Record<string, AttemptFeedback> = {}
+      for (const [id, records] of entries) {
+        attempts[id] = records ?? []
+        const latest = (records ?? [])[(records ?? []).length - 1]
+        const view = (list ?? []).find((item) => item.id === id)
+        if (latest && view) feedback[id] = buildFeedback(view, latest)
+      }
+      set({ exercises: list ?? [], exerciseLoadedFor: `${courseId}:${unitId}`, exerciseAttempts: attempts, exerciseFeedback: feedback })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  /**
+   * 把一道题放进练习卡（P12 复习挑题用）。
+   *
+   * 只把「这道题」作为当前列表（并把 `loadedFor` 标记一致，避免练习卡又拉回整单元）——
+   * 不会自动提交、不会自动揭答案，用户还是自己决定做不做。
+   */
+  focusExercise: async (exerciseId) => {
+    try {
+      const exercise = await window.yan.exercise.get(exerciseId)
+      if (!exercise) {
+        set({ notices: pushNotice(get().notices, 'error', '这道题已经不在了。') })
+        return false
+      }
+      set({
+        exercises: [exercise],
+        exerciseLoadedFor: `${exercise.courseId}:${exercise.unitId}`,
+        exerciseFocus: exercise.id,
+        exerciseHints: {},
+        exerciseSolutions: {}
+      })
+      return true
+    } catch {
+      return false
+    }
+  },
+
+  clearExerciseFocus: () => set({ exerciseFocus: null }),
+
+  draftExercises: async (courseId, unitId) => {
+    try {
+      const res = await window.yan.exercise.createFromUnit({ courseId, unitId })
+      if (!res.ok) {
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? '出题失败') })
+        return 0
+      }
+      await get().refreshExercises(courseId, unitId)
+      return res.created ?? 0
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : '出题失败') })
+      return 0
+    }
+  },
+
+  revealExerciseHint: async (exerciseId, upto) => {
+    const res = await window.yan.exercise.revealHint({ exerciseId, upto })
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '给提示失败') })
+      return false
+    }
+    set({ exerciseHints: { ...get().exerciseHints, [exerciseId]: res.hints ?? [] } })
+    const current = get().exercises.find((item) => item.id === exerciseId)
+    if (current) await get().refreshExercises(current.courseId, current.unitId)
+    return true
+  },
+
+  revealExerciseSolution: async (exerciseId) => {
+    const res = await window.yan.exercise.revealSolution(exerciseId)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '打开解释失败') })
+      return null
+    }
+    if (res.solution) set({ exerciseSolutions: { ...get().exerciseSolutions, [exerciseId]: res.solution } })
+    return res.solution
+  },
+
+  submitExercise: async (exerciseId, response) => {
+    const res = await window.yan.exercise.submit({ exerciseId, response })
+    if (!res.ok || !res.attempt || !res.feedback) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '提交作答失败') })
+      return null
+    }
+    const previous = get().exerciseAttempts[exerciseId] ?? []
+    set({
+      exerciseAttempts: { ...get().exerciseAttempts, [exerciseId]: [...previous, res.attempt] },
+      exerciseFeedback: { ...get().exerciseFeedback, [exerciseId]: res.feedback }
+    })
+    return res.feedback
+  },
+
+  correctExerciseAttempt: async (attemptId, text, correct) => {
+    const res = await window.yan.exercise.correct({ attemptId, text, ...(correct === undefined ? {} : { correct }) })
+    if (!res.ok || !res.attempt) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '记录纠正失败') })
+      return false
+    }
+    const exerciseId = res.attempt.exerciseId
+    const list = get().exerciseAttempts[exerciseId] ?? []
+    set({
+      exerciseAttempts: { ...get().exerciseAttempts, [exerciseId]: list.map((item) => (item.id === attemptId ? res.attempt! : item)) }
+    })
+    return true
+  },
+
+  removeExercise: async (exerciseId) => {
+    const removed = await window.yan.exercise.remove(exerciseId)
+    if (removed) {
+      const next = { ...get().exerciseAttempts }
+      delete next[exerciseId]
+      set({ exercises: get().exercises.filter((item) => item.id !== exerciseId), exerciseAttempts: next })
+    }
+    return removed
+  },
+
+  clearExercises: async () => {
+    set({ exercises: [], exerciseLoadedFor: null, exerciseHints: {}, exerciseSolutions: {}, exerciseAttempts: {}, exerciseFeedback: {} })
+  },
+
+  /*
+   * 笔记与概念进度（实施-25 P11）。
+   *
+   * 概念进度**没有 setLevel**：界面只读列表 + 自评 + 重新算，
+   * 系统观察由宿主从作答现算（T11-3）。
+   */
+  refreshNotes: async (courseId) => {
+    try {
+      const list = await window.yan.note.list(courseId)
+      set({ notes: list ?? [], notesLoadedFor: courseId })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  saveNote: async (input) => {
+    const res = await window.yan.note.save(input)
+    if (!res.ok || !res.note) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '保存笔记失败') })
+      return null
+    }
+    await get().refreshNotes(input.courseId)
+    return res.note
+  },
+
+  updateNote: async (id, patch) => {
+    const res = await window.yan.note.update(id, patch)
+    if (!res.ok || !res.note) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改笔记失败') })
+      return false
+    }
+    await get().refreshNotes(res.note.courseId)
+    return true
+  },
+
+  removeNote: async (id) => {
+    const removed = await window.yan.note.remove(id)
+    if (removed) set({ notes: get().notes.filter((item) => item.id !== id) })
+    return removed
+  },
+
+  refreshConceptProgress: async (courseId) => {
+    try {
+      set({ conceptProgress: (await window.yan.concept.list(courseId)) ?? [] })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  assessConcept: async (input) => {
+    const res = await window.yan.concept.assess(input)
+    if (!res.ok || !res.progress) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '记下自评失败') })
+      return false
+    }
+    await get().refreshConceptProgress(input.courseId)
+    return true
+  },
+
+  resetConceptProgress: async (courseId, conceptId) => {
+    const removed = await window.yan.concept.reset({ courseId, conceptId })
+    if (removed) await get().refreshConceptProgress(courseId)
+    return removed
+  },
+
+  clearLearningMemory: async () => {
+    set({ notes: [], notesLoadedFor: null, conceptProgress: [], reviews: [], reviewPlan: null })
+  },
+
+  refreshReviews: async (courseId) => {
+    try {
+      set({ reviews: (await window.yan.review.list(courseId)) ?? [] })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  refreshReviewDue: async () => {
+    try {
+      const res = await window.yan.review.due()
+      set({ reviewDue: res ?? null })
+    } catch {
+      /* 保持原状 */
+    }
+  },
+
+  planReviews: async (courseId, mode, minutesBudget) => {
+    try {
+      const plan = await window.yan.review.plan({
+        courseId,
+        ...(mode ? { mode } : {}),
+        ...(minutesBudget !== undefined ? { minutesBudget } : {})
+      })
+      set({ reviewPlan: plan ?? null })
+      return plan ?? null
+    } catch {
+      return null
+    }
+  },
+
+  rescheduleReview: async (id, patch) => {
+    const res = await window.yan.review.reschedule({ id, ...patch })
+    if (!res.ok || !res.review) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '改复习排期失败') })
+      return false
+    }
+    await get().refreshReviews(res.review.courseId)
+    await get().refreshReviewDue()
+    return true
+  },
+
+  dismissReview: async (id, courseId) => {
+    const removed = await window.yan.review.dismiss(id)
+    if (!removed) return false
+    set({ reviews: get().reviews.filter((item) => item.id !== id) })
+    if (courseId) await get().refreshReviews(courseId)
+    await get().refreshReviewDue()
+    return true
+  },
+
+  flagReviewQuestion: async (input) => {
+    const res = await window.yan.review.question(input)
+    if (!res.ok || !res.review) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? '记下这个问题失败') })
+      return false
+    }
+    await get().refreshReviews(input.courseId)
+    await get().refreshReviewDue()
+    return true
+  },
 
   importToLibrary: async (view) => {
     try {
@@ -3673,6 +4273,8 @@ export const useStore = create<Store>((rawSet, get) => {
   setUiCollapsed: (v) => set({ uiCollapsed: v }),
 
   setUiDraft: (id, value) => set({ uiDrafts: { ...get().uiDrafts, [id]: value } }),
+  insertIntoComposer: (text) => set({ composerInsert: text }),
+  clearComposerInsert: () => set({ composerInsert: null }),
 
   extendUi: async (id, extraMs) => {
     const res = await window.yan.extendUi(id, extraMs)

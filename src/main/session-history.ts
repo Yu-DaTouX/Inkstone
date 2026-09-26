@@ -71,7 +71,13 @@ export async function readChainMessages(
       missing += 1
       continue
     }
-    messages.push(...result.messages)
+    // Live events use m0, m1... in the active runner. Old segments must not share
+    // those IDs, otherwise a new assistant delta overwrites an old user message.
+    const activeFile = files.at(-1)
+    messages.push(...result.messages.map(message => file === activeFile ? message : {
+      ...message,
+      id: `history:${result.sessionId ?? file}:${message.id}`
+    }))
     total += result.total
     truncated += result.truncated
     bytes += result.bytes

@@ -372,6 +372,64 @@ export async function runCourseServiceTests(ok, mod, helpers) {
   ok(goodAdd.ok === true && goodAdd.course.units.length === topic.course.units.length + 1, '带出处就能加')
   ok((await service.remove(topic.course.id)).ok === true, '删课程')
 
+  /*
+   * 入口四（T06b-4）：成果「用于学习」。
+   *
+   * 关键是**两步顺序**：先登记成一份资料库来源，再走入口一 —— 所以生成的
+   * 单元照样指着真实字符区间；而不是把成果正文另存一份「材料」。
+   */
+  const imported = []
+  const artifactService = new CourseService({
+    store: new CourseStore({ root, random: () => 0.5 }),
+    library: { openRef: async (ref) => books[ref.sourceId] ?? { outcome: 'missing' } },
+    artifacts: {
+      read: async (artifactId) =>
+        artifactId === 'art_ok'
+          ? { id: 'art_ok', title: '精读笔记', text, spaceId: 'sp_1' }
+          : artifactId === 'art_empty'
+            ? { id: 'art_empty', title: '空成果', text: '  ' }
+            : null
+    },
+    importer: {
+      importText: async (params) => {
+        imported.push(params)
+        /* 模拟资料库：登记成功后返回一个稳定 id —— 印证「成果 → 来源」这一步真的发生了 */
+        return { ok: true, sourceId: 'lib_from_artifact', version: 1 }
+      }
+    },
+    random: () => 0.5
+  })
+  books.lib_from_artifact = { outcome: 'ok', text, source: { title: '成果：精读笔记' } }
+
+  const fromArtifact = await artifactService.createFromArtifact({
+    artifactId: 'art_ok',
+    input: { title: '精读笔记', goal: '读完能复述', entry: 'source', spaceId: 'sp_1' }
+  })
+  ok(fromArtifact.ok === true, '入口四：从成果生成路线', JSON.stringify(fromArtifact))
+  ok(imported.length === 1, '先把它登记成一份资料库来源（不是另存一份材料）')
+  ok(imported[0].identity === 'text:artifact:art_ok' && imported[0].ref === 'artifact:art_ok', '身份用成果 id：成果改了就是新版本')
+  ok(imported[0].owner?.kind === 'artifact' && imported[0].owner?.id === 'art_ok', '来源登记时带上出处（成果 id）')
+  ok(imported[0].spaceId === 'sp_1', '来源落在成果所在的空间')
+  ok(imported[0].content === text, '材料正文就是成果那一份正文')
+  const artCourse = fromArtifact.course
+  const artRef = artCourse.units[0].sources[0]
+  ok(text.slice(artRef.locator.start, artRef.locator.end) === text, '生成出来的单元指得回真实字符区间')
+  ok(artCourse.entryInput === '精读笔记', '入口输入回填成果标题')
+  ok(artCourse.entry === 'source', '路线来自资料（entry 为 source）')
+
+  ok((await artifactService.createFromArtifact({ artifactId: 'nope', input: { title: 'x', goal: 'x', entry: 'source' } })).ok === false, '成果不存在就不建课')
+  const emptyArt = await artifactService.createFromArtifact({
+    artifactId: 'art_empty',
+    input: { title: '空成果', goal: 'x', entry: 'source' }
+  })
+  ok(emptyArt.ok === false && /正文/.test(emptyArt.reason), '成果没正文就不建课')
+  ok(imported.length === 1, '失败的两次都没去登记来源')
+
+  /* 宿主没接成果时要不建课，而不是静默建一门空课 */
+  const bare = new CourseService({ library: { openRef: async () => ({ outcome: 'ok', text }) } })
+  const bareRes = await bare.createFromArtifact({ artifactId: 'art_ok', input: { title: 'x', goal: 'x', entry: 'source' } })
+  ok(bareRes.ok === false, '宿主没接成果时如实拒绝')
+
   /* 临时目录直接删（断言失败时残留一个 tmp 目录无害，好过包一层 try 打乱缩进） */
   await rm(root, { recursive: true, force: true })
 

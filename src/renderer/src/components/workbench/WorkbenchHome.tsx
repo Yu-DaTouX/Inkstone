@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -38,6 +38,13 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
   const spaces = useStore((s) => s.spaces)
   const library = useStore((s) => s.library)
   const projectNames = useStore((s) => s.settings?.projectNames ?? NO_PROJECT_NAMES)
+  /* 今天可复习（P12）：只读到期数量，点进去才挑题 —— 首页不做「开始学习」。 */
+  const reviewDue = useStore((s) => s.reviewDue)
+  const refreshReviewDue = useStore((s) => s.refreshReviewDue)
+  const openSpaceView = useStore((s) => s.openSpaceView)
+  useEffect(() => {
+    void refreshReviewDue()
+  }, [refreshReviewDue])
 
   const sources = useSessionSources(session?.sessionId)
 
@@ -114,6 +121,32 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace }: Props):
           )}
           <button className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
             {t('wb.spaceCardOpen')}
+            <Icon name="chevron-right" size={12} />
+          </button>
+        </section>
+
+        {/* ---- 今天可复习（T12-5）---- */}
+        <section className="wb-card" data-testid="wb-card-review">
+          <h2 className="wb-card-title">
+            <Icon name="history" size={12} />
+            {t('wb.reviewCard')}
+          </h2>
+          {reviewDue && reviewDue.items.length > 0 ? (
+            <>
+              <p className="wb-card-main" data-testid="wb-card-review-count">
+                {t('wb.reviewCount', { n: reviewDue.items.length })}
+              </p>
+              <p className="wb-card-meta" data-testid="wb-card-review-meta">
+                {t('wb.reviewMeta', { total: reviewDue.total })}
+              </p>
+            </>
+          ) : (
+            <p className="wb-card-empty" data-testid="wb-card-review-empty">
+              {t('wb.reviewNone')}
+            </p>
+          )}
+          <button className="wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
+            {t('wb.reviewOpen')}
             <Icon name="chevron-right" size={12} />
           </button>
         </section>

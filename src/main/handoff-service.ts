@@ -289,6 +289,8 @@ export function buildHandoffRequest(input: {
     prompt: input.prompt,
     systemPrompt: HANDOFF_SYSTEM_PROMPT,
     maxTokens: HANDOFF_PACKAGE_MAX_TOKENS,
+    maxAttempts: 2,
+    retryPrompt: '上次交接输出不完整或格式不合格。重新依据原始材料输出完整 JSON；必须包含全部列表，remaining 与 nextActions 不为空，不猜测事实。',
     sourceHead: input.sourceHead ?? null,
     mode: input.mode,
     model: input.model ?? null,

@@ -147,6 +147,8 @@ const NOT_IMPLEMENTED: CapabilityHandlers = {
 const KNOWN_COMMANDS = new Set([
   'operations.status',
   'capabilities.search',
+  /* 按需获取能力（实施-25 P17）：只说「缺什么、怎么接」，不代装。 */
+  'capabilities.need',
   'capabilities.discover',
   'capabilities.prepare',
   'capabilities.acquire',
@@ -171,6 +173,44 @@ const KNOWN_COMMANDS = new Set([
   'study.pause',
   'study.resume',
   'study.stop',
+  /* 练习与作答（实施-25 P10）：出题、看提示/解释、提交作答与纠正判定。 */
+  'exercise.create',
+  'exercise.draft',
+  'exercise.list',
+  'exercise.get',
+  'exercise.hint',
+  'exercise.solution',
+  'exercise.submit',
+  'exercise.remove',
+  'attempt.correct',
+  /* 笔记与概念进度（实施-25 P11）：自评只动 selfAssessment，不覆盖系统观察。 */
+  'note.list',
+  'note.save',
+  'note.update',
+  'note.remove',
+  'concept.list',
+  'concept.assess',
+  'concept.reset',
+  'review.list',
+  'review.plan',
+  'review.reading',
+  'review.question',
+  'review.reschedule',
+  'review.dismiss',
+  /* 跨资料研究（实施-25 P13）：对照结构由宿主给，立场标签由调用方给。 */
+  'research.compare',
+  'research.status',
+  /* 办事模板（实施-25 P14）：只列 / 问范围 / 存模板，**没有执行**。 */
+  'playbook.list',
+  'playbook.plan',
+  'playbook.save',
+  /* 子代理分工（实施-25 P15）：并行适合度清单由宿主统一给出。 */
+  'subagent.guidance',
+  /* 持续关注（实施-25 P16）：只能提议与回报（启用 / 删除是用户的事）。 */
+  'follow.list',
+  'follow.due',
+  'follow.save',
+  'follow.report',
   'knowledge.search',
   'knowledge.read',
   'knowledge.propose',

@@ -69,6 +69,7 @@ import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { extendDeadline, requestedTimeout, UI_TIMEOUT_HARD } from '../shared/ui-timeout'
 import { searchCapabilities } from '../shared/capabilities'
+import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
 import { buildCatalog, type McpCatalogEntry } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { AcquisitionService, operationIdOf, stagingDirOf } from './capabilities/acquisition-service'
@@ -266,6 +267,22 @@ export interface GoalCommandHost {
  */
 export type StudyCommandHost = GoalCommandHost
 
+/**
+ * `yan exercise …` / `yan attempt …` 的宿主实现入口（实施-25 P10）。
+ *
+ * 与 study 同形：出题、揭示提示、判分与作答记录都在宿主的练习服务里，
+ * agent 只负责转发 —— 判分不能由模型自报（那等于让出题人自己批卷）。
+ */
+export type ExerciseCommandHost = GoalCommandHost
+
+/**
+ * `yan playbook …` 的宿主实现入口（实施-25 P14）。
+ *
+ * 模板的「作用范围与授权点」由宿主算（`confirmationText` / `scopeSummary`），
+ * 模型只能**问**要做什么，不能自己宣布已获授权。
+ */
+export type PlaybookCommandHost = GoalCommandHost
+
 export interface ExternalApiConfirmationRequest {
   provider: 'openai' | 'compatible'
   endpoint: string
@@ -392,6 +409,13 @@ export class AgentController extends EventEmitter {
   /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
   private goalHost?: GoalCommandHost
   private studyHost?: StudyCommandHost
+  /** 跨资料研究（P13）：多来源对照与引用状态。 */
+  private researchHost?: StudyCommandHost
+  /** 办事模板（P14）：范围与授权点由宿主算。 */
+  private playbookHost?: PlaybookCommandHost
+  /** 持续关注（P16）：到点提醒与结果记录，没有后台调度器。 */
+  private followHost?: PlaybookCommandHost
+  private exerciseHost?: ExerciseCommandHost
   /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
@@ -665,7 +689,14 @@ export class AgentController extends EventEmitter {
     subagentHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
-    studyHost?: StudyCommandHost
+    /** 跨资料研究（实施-25 P13）：对照规则在宿主，模型不给立场就不算冲突。 */
+  researchHost?: StudyCommandHost
+  /** 办事模板（实施-25 P14）：范围与授权点由宿主算，模型不能自报已授权。 */
+  playbookHost?: PlaybookCommandHost
+  /** 持续关注（实施-25 P16）：只能提议与回报，不能启用 / 删除 / 让宿主自己去查。 */
+  followHost?: PlaybookCommandHost
+  studyHost?: StudyCommandHost
+    exerciseHost?: ExerciseCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -711,6 +742,10 @@ export class AgentController extends EventEmitter {
     this.subagentHost = opts.subagentHost
     this.goalHost = opts.goalHost
     this.studyHost = opts.studyHost
+    this.researchHost = opts.researchHost
+    this.playbookHost = opts.playbookHost
+    this.followHost = opts.followHost
+    this.exerciseHost = opts.exerciseHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.yanCliEnv = opts.yanCliEnv
@@ -1194,6 +1229,14 @@ export class AgentController extends EventEmitter {
     if (command === 'capabilities.search') {
       return this.runCapabilitiesSearch(params)
     }
+    /*
+     * 按需获取能力（实施-25 P17）：用自然语言说「我要做什么」，
+     * 宿主回答「缺什么、怎么接」。它只给路径，不替你装
+     * （安装仍走下面的 prepare / acquire）。
+     */
+    if (command === 'capabilities.need') {
+      return this.runCapabilitiesNeed(params)
+    }
     if (command === 'capabilities.discover') {
       return this.runCapabilitiesDiscover(params)
     }
@@ -1227,11 +1270,16 @@ export class AgentController extends EventEmitter {
       })
     }
     /*
-     * 学习状态（实施-25 P08）：`study.ask` 是进入「等你作答」的唯一入口，
-     * 而阶段转移的校验在宿主 —— 模型不能靠换措辞把等待跳过去（T08-7）。
+     * 学习状态与学习记忆（实施-25 P08 / P11）：`study.ask` 是进入「等你作答」的
+     * 唯一入口，阶段转移的校验在宿主；笔记与概念进度也归同一个宿主入口 ——
+     * 它们与学习状态共用课程 / 会话身份，拆成两个 host 只会多一份「这是哪个会话」。
      */
-    if (command.startsWith('study.')) {
-      if (!this.studyHost) {
+    if (
+      command.startsWith('study.') ||
+      command.startsWith('note.') ||
+      command.startsWith('concept.') ||
+      command.startsWith('review.')
+    ) {      if (!this.studyHost) {
         throw new CapabilityCommandError('study_unavailable', '学习状态入口当前不可用（宿主未注入）')
       }
       return this.studyHost.run(command, params, {
@@ -1239,7 +1287,60 @@ export class AgentController extends EventEmitter {
         projectId: this.capabilityOpts?.projectId ?? ''
       })
     }
+    /*
+     * 练习与作答（实施-25 P10）：出题、看提示、看解释、提交作答都走宿主。
+     * 判分与「看了多少帮助」由服务记录，模型不能自报做对（T10-2）。
+     */
+    if (command.startsWith('exercise.') || command.startsWith('attempt.')) {
+      if (!this.exerciseHost) {
+        throw new CapabilityCommandError('exercise_unavailable', '练习入口当前不可用（宿主未注入）')
+      }
+      return this.exerciseHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
+    }
     if (command === 'image.generate') return this.runImageCommand(params)
+    /*
+     * 跨资料研究（实施-25 P13）：对照规则也在宿主 —— 「不合并结论」与
+     * 「引用原文 / 模型补充」的区分不能让调用方自己口述。
+     */
+    if (command.startsWith('research.')) {
+      if (!this.researchHost) {
+        throw new CapabilityCommandError('research_unavailable', '研究入口当前不可用（宿主未注入）')
+      }
+      return this.researchHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
+    }
+    /*
+     * 办事模板（实施-25 P14）：模型可以问「这个模板要做什么」、
+     * 也可以在任务成功之后提议存一份模板；但「会动哪里」由宿主算，
+     * 模型不能自己宣布已获授权（那就是静默动文件的入口）。
+     */
+    if (command.startsWith('playbook.')) {
+      if (!this.playbookHost) {
+        throw new CapabilityCommandError('playbook_unavailable', '办事模板入口当前不可用（宿主未注入）')
+      }
+      return this.playbookHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
+    }
+    /*
+     * 持续关注（实施-25 P16）：模型能提议与回报，不能启用（那要用户点）、
+     * 不能删、也没有「你去后台盯一下」这种命令。
+     */
+    if (command.startsWith('follow.')) {
+      if (!this.followHost) {
+        throw new CapabilityCommandError('follow_unavailable', '关注入口当前不可用（宿主未注入）')
+      }
+      return this.followHost.run(command, params, {
+        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
+        projectId: this.capabilityOpts?.projectId ?? ''
+      })
+    }
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params)
     if (command === 'context.recall') return this.runContextRecallCommand(params)
@@ -2677,6 +2778,63 @@ export class AgentController extends EventEmitter {
         state: tx.state,
         executed: check.ok,
         toolCount: outcome.tools.length
+      }
+    }
+  }
+
+  /**
+   * `yan capabilities need`：把「我要做什么」变成「缺什么、怎么接」。
+   *
+   * 与 `search` 的区别：`search` 列已装 / 已加载的候选（有就是有），
+   * 这个命令回答的是「没有的时候该怎么办」—— 所以它同时带上
+   * 「本地搜一遍 → prepare/acquire → 联网 discover」的可执行路径。
+   *
+   * 刻意不做的事：**不替你装**（仍然要经过 prepare / acquire 那条链）、
+   * **认不出不编**（没命中已知场景就给通用三步，不猜包名）。
+   */
+  private async runCapabilitiesNeed(params: Record<string, unknown>) {
+    const need = this.knowledgeString(params, ['need', 'queryText', 'query-text', 'query', 'text']) ?? ''
+    if (!need.trim()) {
+      throw new CapabilityCommandError('capability_need_required', 'capabilities need 需要 need（用自然语言说你要做什么）')
+    }
+    /* 把当前可用能力带进来，才能回答「你其实已经有这个能力了」 */
+    const commands = await this.rawCommands()
+    const mcp = await this.collectMcpCatalog()
+    const catalog = buildCatalog(commands, mcp.tools)
+    /*
+     * 把「当前有哪些能力」拼成一个可匹配的池子：id / 标题 / 描述 / 命令名都算 ——
+     * 只比 id 会把「你已经有浏览器了」（`builtin:browser.open`）这类漏掉。
+     */
+    const availableNames = catalog.capabilities.flatMap((entry) => [entry.id, entry.title, entry.description]).filter(Boolean)
+    const match = matchGap(need)
+    if (!match) {
+      return {
+        data: { need, matched: null },
+        summary: { kind: 'capabilities', action: 'need', matched: false, text: unmatchedGapText(need) }
+      }
+    }
+    const stillMissing = gapStillMissing(match.gap, availableNames)
+    return {
+      data: {
+        need,
+        gapId: match.gap.id,
+        matched: match.matched,
+        missing: match.gap.missing,
+        via: match.gap.via,
+        paths: match.gap.paths,
+        /* 已经有了就不必再装：这一点必须回到数据里，不只在文案里说 */
+        alreadyAvailable: !stillMissing
+      },
+      summary: {
+        kind: 'capabilities',
+        action: 'need',
+        matched: true,
+        gapId: match.gap.id,
+        via: match.gap.via,
+        alreadyAvailable: !stillMissing,
+        text: stillMissing
+          ? gapText(match.gap, match.matched)
+          : `你现在的能力目录里已经有相关能力（匹配到：${match.matched.join('、')}）；先 search 看候选，不用额外安装。\n${gapText(match.gap, match.matched)}`
       }
     }
   }

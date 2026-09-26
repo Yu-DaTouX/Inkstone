@@ -23,7 +23,7 @@
  *   每轮都是同一份，不会破前缀缓存。
  *
  * ── 边界（别扩写）──
- *   · 只说**怎么用**，不描述能力细节（细节用 `yan --help` 按需读，避免长期占上下文）；
+ *   · 只说能力的选择条件、最小调用方式与结果读取（细节用 `yan --help` 按需读）；
  *   · 不在这里写产品规则、语气要求、语言要求（那些各有归属）；
  *   · 命令清单要与 resources/yan-cli/yan.mjs 的用法保持一致。
  */
@@ -37,7 +37,15 @@
 export const CAPABILITY_GUIDE = [
   '砚提供了一组本机能力，通过 `yan` 命令使用（已在 PATH 中，无需安装）：',
   '',
-  '- 不确定有没有对应能力：`yan capabilities search --query-file query.json`',
+  '调用原则：',
+  '  · 用户要求执行操作时，在当前授权与工作模式允许的范围内，主动用适用能力完成任务；不要停在「可以帮你」、操作教程或让用户代做已有能力能完成的步骤。',
+  '  · 用户只讨论方案、解释功能或询问用法时，直接回答即可；不为展示工具而调用，也不把这类讨论当作执行授权。',
+  '  · 用户明确指定工具或方法时优先遵从；任务涉及砚的页面、产物或持久化状态时，优先使用对应宿主入口，不用自写脚本绕过它。',
+  '  · 模式限制、能力不可用、需要确认或用户接管时，如实说明原因并选择允许的下一步；不绕过限制，也不猜用户答案。',
+  '',
+  '按任务选择入口：',
+  '- 不确定有没有对应能力：`yan capabilities search --query-text "任务需要的能力"`；复杂查询用 `--query-file query.json`。已有明确入口时直接使用，不必每轮搜索或读取全部帮助。',
+  '- 操作网页、填写网页表单、检查当前页面或复现网页问题：使用 `yan browser`；查看参数用 `yan browser --help`。',
   '- 查看一次操作的结果：`yan operations status --id <操作ID>`',
   '- 读写任务清单：`yan tasks apply --request-file task-update.json`',
   '- 信息不足且需要用户决定时：先写 `question.json`，再调用 `yan question ask --request-file question.json`；完整回答在 `resultFile`，取消 / 超时会如实返回，不要猜答案。',
@@ -48,11 +56,22 @@ export const CAPABILITY_GUIDE = [
   '- 委派一个独立子代理：`yan subagent start --task "..."`（默认独立 Git worktree）',
   '- 查看子代理进度：`yan subagent list`；看单个转录：`yan subagent get --id <子代理ID>`',
   '- 停止子代理：`yan subagent stop --id <子代理ID>`',
+  '- 查看或推进砚的目标：`yan goal status`，按需用 `yan goal ready` / `report`（参数见 `yan goal --help`）。',
+  '- 检索项目知识：`yan knowledge search --query-text "关键词"`；正文用 `yan knowledge read --id <条目ID>`，新增提议走 `propose`，不能自报用户已确认。',
+  '- 操作砚的学习状态：`yan study status`，课程开始、提问、作答与阶段推进用 `yan study --help` 查参数；只记录用户真实作答，不替用户作答。',
   '- 看全部命令：`yan --help`（按需读，不要在每轮都读）',
+  '',
+  '浏览器调用约定：',
+  '  · 先用 `yan browser state` 查看标签与当前状态；需要打开页面时用 `yan browser navigate --url <地址>`。',
+  '  · 操作前用 `yan browser observe` 读取页面内容和元素 ref，再用 `click --ref <ref>`、`type --ref <ref> --text "文本"`、`press --key <键>` 等动作；ref 失效时重新 observe，不猜 ref。',
+  '  · 需要判断实际外观时调用 `yan browser screenshot`，并用图片读取能力查看返回的截图文件；调用截图命令本身不等于看过截图。',
+  '  · 关键操作后读取回执中的页面观察，必要时再次 observe 或截图，核对预期页面状态；未确认上次提交的结果时，不盲目重复提交。',
   '',
   '输出约定：stdout 只有一段**摘要**（类型 / 条数 / 操作 ID + 结果文件路径）；',
   '完整结果在 `resultFile` 指向的文件里，用文件读取工具**只取需要的片段**，',
   '不要把整个结果文件原样读进上下文。',
+  '需要完整答案、页面内容或错误详情时必须按需读取 `resultFile`；拿到路径不等于读到结果。',
+  '命令成功只说明本次调用成功，不等于用户任务已完成。交付前检查实际页面状态或产物；未调用不得声称已执行，未检查不得声称已验证，结果不确定就如实说明。',
   '',
   '文件产物约定：生成或挂载后，stdout 的摘要会带 artifact id、文件名、类型和受控路径；不要只把路径文字发给用户，直接让砚的当前助手消息展示产物。',
   '',

@@ -23,6 +23,8 @@ export async function runHandoffHostRegressionTests(ok) {
       handoffRequests: { readResult: async () => ({ operationId: 'op', handoffId: 'handoff', text: '{}' }), clearResult: async () => {}, clearRequest: async () => {} },
       handoffDiag: { record: (event) => calls.diagnostics.push(event) },
       handoffNotify: (...args) => calls.notifications.push(args),
+      handoffReasonText: reason => reason,
+      handoffContinuationProblem: () => null,
       parseHandoffOutput: () => ({ ok: true, value: {} }), sanitizeHandoffPackage: () => ({}),
       handoffs: { setPackage: async () => {} }, handoffSummary: () => '', HANDOFF_COMMIT_ENABLED: true,
       commitHandoff: async () => { calls.commits++; calls.lockHeld = map.get('run') === pending },
@@ -53,10 +55,11 @@ export async function runHandoffHostRegressionTests(ok) {
     commit.resolve(); await first
     ok(h.calls.commits === 1 && !h.map.size, '只提交一次并在结束后释放所有权')
   }
-  for (const failure of ['provider', 'parse', 'incomplete', 'persist']) {
+  for (const failure of ['provider', 'parse', 'content', 'incomplete', 'persist']) {
     const h = setup()
     if (failure === 'provider') h.ctx.handoffRequests.readResult = async () => ({ operationId: 'op', handoffId: 'handoff', error: 'failed' })
     if (failure === 'parse') h.ctx.parseHandoffOutput = () => ({ ok: false, reason: 'invalid' })
+    if (failure === 'content') h.ctx.handoffContinuationProblem = () => 'missing-continuation'
     if (failure === 'incomplete') h.ctx.sanitizeHandoffPackage = () => null
     if (failure === 'persist') h.ctx.handoffs.setPackage = async () => { throw new Error('disk unavailable') }
     await h.ctx.collectHandoffResult('run', 'op')
@@ -64,6 +67,7 @@ export async function runHandoffHostRegressionTests(ok) {
     const expectedOutcome = {
       provider: 'failed',
       parse: 'unparsable',
+      content: 'incomplete',
       incomplete: 'incomplete',
       persist: 'persist-failed'
     }[failure]

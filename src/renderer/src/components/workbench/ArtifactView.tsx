@@ -9,6 +9,7 @@ import {
   splitParagraphs
 } from '../../../../shared/artifact-doc'
 import type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from '../../../../shared/artifact-doc'
+import { sourceChangeSummary } from '../../../../shared/research'
 
 /**
  * 成果视图（实施-25 P06a / P06b）。
@@ -28,6 +29,9 @@ import type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } fr
  *   · **引用回原文**：点来源就按 `{sourceId, version}` 打开那一版正文，带 locator
  *     时标出引用区间 —— 打开的是**当时引用的那一版**，不是资料最新版；
  *   · **导出 Markdown**：宿主弹保存框，界面只显示落盘路径。
+ *
+ * T06b-4「用于学习」也在这里：宿主把当前正文登记成一份资料库来源、再按
+ * 「学这份资料」生成路线。界面**不自己做转化**，只传成果 id 与目标。
  */
 interface Props {
   spaceId?: string | null
@@ -55,6 +59,13 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   const remove = useStore((s) => s.removeArtifactDoc)
   const toggleItem = useStore((s) => s.toggleArtifactChecklistItem)
   const exportDoc = useStore((s) => s.exportArtifactDoc)
+  const turnIntoCourse = useStore((s) => s.createCourseFromArtifact)
+  const sourceStatuses = useStore((s) => s.artifactSourceStatuses)
+  const comparison = useStore((s) => s.researchComparison)
+  const refreshSourceStatus = useStore((s) => s.refreshArtifactSourceStatus)
+  const runComparison = useStore((s) => s.runComparison)
+  const clearComparison = useStore((s) => s.clearComparison)
+  const openSpaceView = useStore((s) => s.openSpaceView)
   const openRef = useStore((s) => s.openLibraryRef)
 
   const [selId, setSelId] = useState<string | null>(null)
@@ -65,6 +76,9 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   const [viewing, setViewing] = useState<number | null>(null)
   const [dirty, setDirty] = useState(false)
   const [exported, setExported] = useState('')
+  const [learnOpen, setLearnOpen] = useState(false)
+  const [learnGoal, setLearnGoal] = useState('')
+  const [learnBusy, setLearnBusy] = useState(false)
   const [preview, setPreview] = useState<SourcePreview | null>(null)
 
   const listed = useMemo(() => docs, [docs])
@@ -153,6 +167,13 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   }
 
   const current = selected ? currentVersionOf(selected) : undefined
+  const selectedId = selected?.id ?? null
+  /* 换成果就把上一份的引用状态与对照清掉 —— 它们都是「这份成果的」。 */
+  useEffect(() => {
+    clearComparison()
+    if (selectedId) void refreshSourceStatus(selectedId)
+  }, [selectedId, refreshSourceStatus, clearComparison])
+  const changeNote = sourceChangeSummary(sourceStatuses)
   const viewingVersion: ArtifactVersion | undefined =
     selected && viewing !== null ? selected.versions.find((v) => v.version === viewing) : undefined
   const userEdited = viewingVersion ?? current
@@ -183,6 +204,56 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   })()
 
   /** 导出：先把未保存的改动落盘（否则导出的是旧正文），再弹保存框。 */
+  /**
+   * 「用于学习」（T06b-4）：把这份成果交给宿主转成课程。
+   *
+   * 先保存草稿再转 —— 否则用户刚写的那段不会进材料（转完就跳走了）。
+   */
+  const toLearnFlow = async (): Promise<void> => {
+    if (!selected) return
+    const goal = learnGoal.trim()
+    if (!goal) return
+    setLearnBusy(true)
+    try {
+      if (dirty) await saveDraft(true)
+      const course = await turnIntoCourse({
+        artifactId: selected.id,
+        input: {
+          title: selected.title,
+          goal,
+          entry: 'source',
+          ...(spaceId ? { spaceId } : {})
+        }
+      })
+      if (!course) return
+      setLearnOpen(false)
+      setLearnGoal('')
+      openSpaceView('learning')
+    } finally {
+      setLearnBusy(false)
+    }
+  }
+
+  /**
+   * 多来源对照（T13-2）：把当前成果引用的资料并排。
+   *
+   * 立场标签不由界面猜 —— 这里只把来源列出来（未标注立场），
+   * 真正带立场的对照由模型经 `yan research compare` 提交。
+   * **不合并结论**这条规则在宿主的纯函数里，界面不做第二套。
+   */
+  const compareFlow = async (): Promise<void> => {
+    if (!selected) return
+    await runComparison({
+      question: selected.title,
+      refs: selected.sources.map((ref) => ({
+        sourceId: ref.sourceId,
+        version: ref.version,
+        ...(ref.locator ? { locator: ref.locator } : {})
+      })),
+      maxChars: 400
+    })
+  }
+
   const exportFlow = async (): Promise<void> => {
     if (!selected) return
     if (dirty) await saveDraft()
@@ -265,6 +336,10 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                 }}
               />
               <div className="wb-art-actions">
+                <button data-testid="space-art-tolearn" onClick={() => setLearnOpen((v) => !v)}>
+                  <Icon name="layers" size={12} />
+                  {t('space.art.toLearn')}
+                </button>
                 <button data-testid="space-art-export" onClick={() => void exportFlow()}>
                   <Icon name="folder" size={12} />
                   {t('space.art.export')}
@@ -290,6 +365,30 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                 </button>
               </div>
             </header>
+
+            {learnOpen ? (
+              <div className="wb-art-tolearn" data-testid="space-art-tolearn-panel">
+                <p className="wb-card-meta" data-testid="space-art-tolearn-hint">
+                  {t('space.art.toLearnHint')}
+                </p>
+                <div className="wb-art-tolearn-row">
+                  <input
+                    className="wb-art-tolearn-input"
+                    data-testid="space-art-tolearn-goal"
+                    value={learnGoal}
+                    placeholder={t('space.art.toLearnGoal')}
+                    onChange={(e) => setLearnGoal(e.target.value)}
+                  />
+                  <button
+                    data-testid="space-art-tolearn-go"
+                    disabled={!learnGoal.trim() || learnBusy}
+                    onClick={() => void toLearnFlow()}
+                  >
+                    {learnBusy ? t('space.art.toLearnBusy') : t('space.art.toLearnGo')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="wb-art-meta">
               <span data-testid="space-art-kind">
@@ -382,10 +481,28 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
 
             {selected.sources.length > 0 ? (
               <div className="wb-art-sources" data-testid="space-art-sources">
-                <span className="wb-art-sources-head">{t('space.art.sourcesTitle')}</span>
+                <div className="wb-art-sources-top">
+                  <span className="wb-art-sources-head">{t('space.art.sourcesTitle')}</span>
+                  <button
+                    className="wb-art-source-compare"
+                    data-testid="space-art-compare"
+                    title={t('space.art.compareHint')}
+                    onClick={() => void compareFlow()}
+                  >
+                    <Icon name="layers" size={12} />
+                    {t('space.art.compare')}
+                  </button>
+                </div>
+                {/* T13-4：来源变化只提示，不改引用 —— 旧版本仍是旧版本。 */}
+                {changeNote ? (
+                  <p className="wb-card-meta wb-art-source-changed" data-testid="space-art-source-changed">
+                    {changeNote}
+                  </p>
+                ) : null}
                 <ul className="wb-art-source-list">
                   {selected.sources.map((ref, index) => {
                     const hit = library.find((s) => s.id === ref.sourceId)
+                    const status = sourceStatuses[index]
                     return (
                       <li key={`${ref.sourceId}@${ref.version}`}>
                         <button
@@ -401,10 +518,58 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                             {ref.locator ? ` · ${t('space.art.sourceLocated', { start: ref.locator.start, end: ref.locator.end })}` : ''}
                           </span>
                         </button>
+                        {status && status.status !== 'current' ? (
+                          <span
+                            className={`wb-art-source-status ${status.status}`}
+                            data-testid={`space-art-source-status-${index}`}
+                          >
+                            {status.note}
+                          </span>
+                        ) : null}
                       </li>
                     )
                   })}
                 </ul>
+              </div>
+            ) : null}
+
+            {/* 多来源对照（T13-2）：并排保留不一致，不合并成一个结论。 */}
+            {comparison ? (
+              <div className="wb-art-compare" data-testid="space-art-compare-view">
+                <p className="wb-card-meta" data-testid="space-art-compare-note">
+                  {t('space.art.compareNote', {
+                    material: comparison.provenance.material,
+                    model: comparison.provenance.model
+                  })}
+                </p>
+                {comparison.groups.map((group, gi) => (
+                  <div key={group.label} className="wb-art-compare-group" data-testid={`space-art-compare-group-${gi}`}>
+                    <span className="wb-art-compare-label" data-testid={`space-art-compare-label-${gi}`}>
+                      {group.label}
+                    </span>
+                    {group.excerpts.map((excerpt) => (
+                      <div key={`${excerpt.sourceId}@${excerpt.version}`} className="wb-art-compare-row">
+                        <span className={`wb-art-prov ${excerpt.provenance}`}>
+                          {excerpt.provenance === 'model' ? t('space.art.provModel') : t('space.art.provMaterial')}
+                        </span>
+                        <span className="wb-art-compare-title">
+                          {excerpt.title} v{excerpt.version}
+                        </span>
+                        <p className="wb-art-compare-text">{excerpt.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {comparison.conflicts.length > 0 ? (
+                  <ul className="wb-art-compare-conflicts" data-testid="space-art-compare-conflicts">
+                    {comparison.conflicts.map((conflict, ci) => (
+                      <li key={conflict.label} data-testid={`space-art-compare-conflict-${ci}`}>
+                        {conflict.label}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="wb-card-meta">{comparison.note}</p>
               </div>
             ) : null}
 

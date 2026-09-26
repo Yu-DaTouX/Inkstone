@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { PlaybookPanel } from './PlaybookPanel'
+import { FollowPanel } from './FollowPanel'
 import { goalDisplayTitle } from '../../state/goal-view'
 import type { Space } from '../../../../shared/space'
 import type { SpaceView } from '../../state/space-view'
@@ -32,6 +34,12 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
   const todos = useStore((s) => s.todos)
   const library = useStore((s) => s.library)
   const projectNames = useStore((s) => s.settings?.projectNames)
+  const refreshPlaybooks = useStore((s) => s.refreshPlaybooks)
+
+  /* 模板按空间过滤（不挑空间的模板任何空间都看得到） */
+  useEffect(() => {
+    void refreshPlaybooks(spaceId ?? null)
+  }, [spaceId, refreshPlaybooks])
 
   /* 空间内的会话：这一块是「继续」的真正入口（地图与首页都不是按空间分的） */
   const inSpace = useMemo(
@@ -180,6 +188,32 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
             {t('space.ov.artifacts')}
           </h2>
           <p className="wb-card-empty">{t('space.pendingArtifact')}</p>
+        </section>
+
+        {/*
+         * 办事模板（实施-25 P14）。
+         * 放在概览里而不是单开一个页：模板是「回到这个空间可以再干一次的事」，
+         * 与「继续 / 资料」同一层。点开模板不会立刻做任何事 —— 先把范围摊开（T14-3）。
+         */}
+        <section className="wb-card" data-testid="space-ov-playbook-card">
+          <h2 className="wb-card-title">
+            <Icon name="layers" size={12} />
+            {t('space.ov.playbooks')}
+          </h2>
+          <PlaybookPanel />
+        </section>
+
+        {/*
+         * 持续关注（实施-25 P16）。
+         * 顶上那句「只在砚开着的时候看」是这张卡的固定组成部分，不是可选提示 ——
+         * 不把它写出来，用户会默认「关注 = 后台一直盯着」。
+         */}
+        <section className="wb-card" data-testid="space-ov-follow-card">
+          <h2 className="wb-card-title">
+            <Icon name="history" size={12} />
+            {t('space.ov.follow')}
+          </h2>
+          <FollowPanel spaceId={spaceId} />
         </section>
       </div>
     </div>

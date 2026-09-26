@@ -112,8 +112,9 @@ function resultTextOf(result) {
   if (typeof result === 'string') return result
   if (typeof result?.text === 'string') return result.text
   if (Array.isArray(result?.content)) {
-    return result.content.map((block) => (typeof block === 'string' ? block : (block?.text ?? ''))).join('\n')
+    return result.content.filter(block => typeof block === 'string' || block?.type === 'text').map(block => typeof block === 'string' ? block : block.text ?? '').join('\n')
   }
+  if (Array.isArray(result?.message?.content)) return resultTextOf({ content: result.message.content })
   if (typeof result?.message?.content === 'string') return result.message.content
   return ''
 }
@@ -124,6 +125,29 @@ function resultErrorOf(result) {
   return typeof result.errorMessage === 'string' && result.errorMessage.trim()
     ? result.errorMessage
     : 'Provider returned an error stop reason'
+}
+
+// This transport gate decides whether to spend the one allowed repair attempt.
+// Host validation remains authoritative; no textual or provider errors are silently repaired.
+export function usableHandoffText(text) {
+  for (let start = text.indexOf('{'); start >= 0; start = text.indexOf('{', start + 1)) {
+    let depth = 0, quoted = false, escaped = false
+    for (let i = start; i < text.length; i++) {
+      const c = text[i]
+      if (quoted) { if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === '"') quoted = false; continue }
+      if (c === '"') quoted = true
+      else if (c === '{') depth++
+      else if (c === '}' && --depth === 0) {
+        try {
+          const v = JSON.parse(text.slice(start, i + 1))
+          return typeof v.goal === 'string' && !!v.goal.trim() && typeof v.deliverable === 'string' && !!v.deliverable.trim()
+            && ['constraints','acceptance','done','remaining','nextActions','blockers','files','notes'].every(k => Array.isArray(v[k]) && v[k].every(x => typeof x === 'string'))
+            && v.remaining.some(x => x.trim()) && v.nextActions.some(x => x.trim())
+        } catch { return false }
+      }
+    }
+  }
+  return false
 }
 
 export default function handoffs(pi) {
@@ -145,6 +169,8 @@ export default function handoffs(pi) {
       prompt,
       systemPrompt: typeof raw?.systemPrompt === 'string' && raw.systemPrompt ? raw.systemPrompt : undefined,
       maxTokens: Number.isFinite(raw?.maxTokens) ? raw.maxTokens : undefined,
+      maxAttempts: raw?.maxAttempts === 2 ? 2 : 1,
+      retryPrompt: typeof raw?.retryPrompt === 'string' ? raw.retryPrompt : '',
       createdAt: Number.isFinite(raw?.createdAt) ? raw.createdAt : 0
     }
   }
@@ -212,20 +238,26 @@ export default function handoffs(pi) {
       const startedAt = Date.now()
       let text = ''
       let error = null
-      try {
-        const result = await registry.complete(
-          model,
-          {
+      let stopReason = null
+      let generationAttempts = 0
+      const signal = AbortSignal.timeout(PRODUCE_TIMEOUT_MS)
+      for (let attempt = 0; attempt < request.maxAttempts; attempt++) {
+        // A user stop or new operation revokes both initial and repair calls.
+        if (readRequest()?.operationId !== request.operationId || signal.aborted) return
+        generationAttempts++
+        try {
+          const result = await registry.complete(model, {
             ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
-            messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt }] }]
-          },
-          { maxTokens: request.maxTokens, signal: AbortSignal.timeout(PRODUCE_TIMEOUT_MS) }
-        )
-        error = resultErrorOf(result)
-        if (!error) text = resultTextOf(result)
-      } catch (err) {
-        error = String(err?.message ?? err)
+            messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt + (attempt ? '\n' + request.retryPrompt : '') }] }]
+          }, { maxTokens: request.maxTokens, signal })
+          stopReason = typeof result?.stopReason === 'string' ? result.stopReason : null
+          error = resultErrorOf(result)
+          if (!error) text = resultTextOf(result)
+          if (error || usableHandoffText(text)) break
+          note('repair-needed', { operationId: request.operationId, attempt: generationAttempts, chars: text.length, stopReason })
+        } catch (err) { error = String(err?.message ?? err); break }
       }
+      if (readRequest()?.operationId !== request.operationId) return
 
       const ms = Date.now() - startedAt
       /*
@@ -238,10 +270,12 @@ export default function handoffs(pi) {
           operationId: request.operationId,
           text,
           error,
+          stopReason,
+          attempts: generationAttempts,
           ms,
           at: Date.now()
         })
-        note('produced', { operationId: request.operationId, ms, chars: text.length, error })
+        note('produced', { operationId: request.operationId, ms, chars: text.length, error, stopReason, attempts: generationAttempts })
       } catch (err) {
         note('write-failed', { operationId: request.operationId, error: String(err?.message ?? err) })
       }

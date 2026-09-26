@@ -215,6 +215,9 @@
       return h.events.some((e) => e.outcome === 'resume-confirmed') ? h : null
     }, 60000, 800)
     ok(!!resumeConfirmed, '交接 resume 已确认（custom 控制消息，不冒充用户消息）')
+    const sourcePeek = await window.yan.peekSession(sourceKey)
+    const destPeek = await window.yan.peekSession(committed.sessionKey)
+    out.push(`  磁盘历史：源 ${sourcePeek?.messages?.length ?? '?'} 条，目的链 ${destPeek?.messages?.length ?? '?'} 条；源用户消息存在=${sourcePeek?.messages?.some(m => String(m.text).includes('这是一次功能自测'))}`)
     const timeline = store.getState().messages.map((m) => String(m.text ?? m.content ?? ''))
     if (!timeline.some((t) => t.includes('这是一次功能自测'))) {
       out.push(

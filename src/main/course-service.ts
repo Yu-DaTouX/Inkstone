@@ -30,9 +30,34 @@ export interface LibraryReader {
   ): Promise<{ outcome: string; text?: string; source?: { title?: string } }>
 }
 
+/**
+ * 把一段正文登记成资料库来源。
+ *
+ * 成果不是资料库来源（两套 id 空间），所以「成果 → 学习材料」要先把它
+ * 登记成一份 `text` 来源，之后的路线、出处、版本全部走既有那条路。
+ * `ref` / `identity` 用 `artifact:<id>` —— 身份稳定，成果改了就是**新版本**。
+ */
+export interface LibraryImporter {
+  importText(params: {
+    ref: string
+    identity: string
+    title: string
+    content: string
+    spaceId?: string
+    owner?: { kind: 'artifact'; id: string }
+  }): Promise<{ ok: boolean; error?: string; sourceId?: string; version?: number }>
+}
+
+/** 读一份成果的当前版本正文（只读，不碰版本链）。 */
+export interface ArtifactReader {
+  read(artifactId: string): Promise<{ id: string; title: string; text: string; spaceId?: string } | null>
+}
+
 export interface CourseServiceOptions {
   store?: CourseStore
   library: LibraryReader
+  artifacts?: ArtifactReader
+  importer?: LibraryImporter
   random?: () => number
 }
 
@@ -42,11 +67,15 @@ export const ROUTE_SOURCE_MAX_CHARS = 200_000
 export class CourseService {
   readonly store: CourseStore
   private readonly library: LibraryReader
+  private readonly artifacts?: ArtifactReader
+  private readonly importer?: LibraryImporter
   private readonly random: () => number
 
   constructor(options: CourseServiceOptions) {
     this.store = options.store ?? new CourseStore()
     this.library = options.library
+    this.artifacts = options.artifacts
+    this.importer = options.importer
     this.random = options.random ?? Math.random
   }
 
@@ -108,6 +137,50 @@ export class CourseService {
     return this.store.create(input, draft.units, {
       basedOn: ref,
       ...(draft.truncated ? { truncated: true } : {})
+    })
+  }
+
+  /**
+   * 入口四（T06b-4）：成果「用于学习」。
+   *
+   * 先把成果正文登记成一份资料库来源，再走「学这份资料」那条完全相同的路 ——
+   * 所以学习单元照样指得回**字符区间**，成果改了就开材料的新版本。
+   *
+   * 不在这里复制一套材料正文：材料就是成果那一段正文的快照。
+   */
+  async createFromArtifact(params: {
+    artifactId: string
+    input: CourseInput
+    maxChars?: number
+  }): Promise<CourseMutation> {
+    if (!this.artifacts || !this.importer) {
+      return { ok: false, reason: '宿主没有接入成果，暂时不能从成果生成路线' }
+    }
+    const doc = await this.artifacts.read(params.artifactId)
+    if (!doc) return { ok: false, reason: '找不到这份成果' }
+    if (!doc.text.trim()) return { ok: false, reason: '这份成果还没有正文，先写点内容再来学' }
+
+    const imported = await this.importer.importText({
+      ref: `artifact:${params.artifactId}`,
+      identity: `text:artifact:${params.artifactId}`,
+      title: `成果：${doc.title}`,
+      content: doc.text,
+      ...(params.input.spaceId ? { spaceId: params.input.spaceId } : {}),
+      owner: { kind: 'artifact', id: params.artifactId }
+    })
+    if (!imported.ok || !imported.sourceId || !imported.version) {
+      return { ok: false, reason: imported.error ?? '把成果转成学习材料失败' }
+    }
+
+    const input: CourseInput = {
+      ...params.input,
+      ...(params.input.entryInput ? {} : { entryInput: doc.title })
+    }
+    return this.createFromSource({
+      sourceId: imported.sourceId,
+      version: imported.version,
+      input,
+      ...(params.maxChars !== undefined ? { maxChars: params.maxChars } : {})
     })
   }
 

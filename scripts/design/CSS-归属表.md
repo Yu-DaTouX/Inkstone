@@ -13,22 +13,22 @@
 | 3 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
 | 4 | `redesign.css` | 1299 | 133 | 147 | 5 | 0 |
 | 5 | `motion.css` | 1491 | 194 | 199 | 6 | 11 |
-| 6 | `settings.css` | 741 | 109 | 112 | 0 | 0 |
+| 6 | `settings.css` | 811 | 117 | 120 | 0 | 0 |
 | 7 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
 | 8 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
 | 9 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
 | 10 | `shell.css` | 411 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
 | 12 | `rail.css` | 1727 | 241 | 247 | 0 | 0 |
-| 13 | `chat.css` | 2196 | 284 | 289 | 5 | 2 |
+| 13 | `chat.css` | 2225 | 287 | 292 | 5 | 2 |
 | 14 | `composer.css` | 1958 | 273 | 276 | 2 | 0 |
 | 15 | `tools.css` | 3998 | 595 | 638 | 3 | 5 |
 | 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | 1614 | 233 | 234 | 1 | 0 |
-| 19 | `workbench.css` | 1873 | 252 | 264 | 3 | 0 |
+| 19 | `workbench.css` | 3073 | 412 | 427 | 3 | 0 |
 | 20 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **19358** | **2571** | | | |
+| | **合计** | **20657** | **2742** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -41,20 +41,20 @@
 | `stage1.css` | 11 |
 | `redesign.css` | 76 |
 | `motion.css` | 190 |
-| `settings.css` | 109 |
+| `settings.css` | 117 |
 | `electron.css` | 9 |
 | `highlight.css` | 81 |
 | `layout.css` | 14 |
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
 | `rail.css` | 241 |
-| `chat.css` | 282 |
+| `chat.css` | 285 |
 | `composer.css` | 272 |
 | `tools.css` | 595 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
 | `review.css` | 233 |
-| `workbench.css` | 252 |
+| `workbench.css` | 412 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
