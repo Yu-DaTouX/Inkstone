@@ -40,20 +40,20 @@
   }
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}）`
 
-  log('=== 1. 入口存在且默认是代码 ===')
+  log('=== 1. 入口存在且默认是自动 ===')
   const btn = q('[data-testid="agent-profile-button"]')
   if (!btn) return '✗ 找不到活动档案按钮（composer 工具栏）'
-  ok(btn.getAttribute('data-profile') === 'coding', '默认档案是 coding（已有会话行为不变）')
+  ok(btn.getAttribute('data-profile') === 'auto', '默认档案是 auto（由 agent 自行判断）')
   ok(!!btn.getAttribute('title'), '按钮带说明（title）')
 
   log('=== 2. 菜单与选项 ===')
   click(btn)
   await sleep(250)
   ok(!!q('[data-testid="agent-profile-menu"]'), '菜单能打开')
-  const options = ['coding', 'answer', 'research', 'compose', 'organize', 'learn']
+  const options = ['auto', 'coding', 'answer', 'research', 'compose', 'organize', 'learn']
   ok(
     options.every((k) => !!q(`[data-testid="agent-profile-option-${k}"]`)),
-    '六个选项都在（代码 + 五个日常活动）',
+    '七个选项都在（自动 + 代码 + 五个日常活动）',
     options.join(',')
   )
 

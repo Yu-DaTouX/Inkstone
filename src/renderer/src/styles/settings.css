@@ -119,6 +119,37 @@
   align-items: stretch;
   gap: var(--sp-2);
 }
+
+/*
+ * 最近目录快切（设置 → 关于）：目录名长短不一，允许换行；
+ * 只显示目录名，全路径在 `title` 里。
+ */
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.set-chips .btn {
+  max-width: 180px;
+  min-width: 0;
+}
+
+/* 目录名很长时只把**文字**截断，按钮本身不撑破右边界 */
+.set-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 当前目录：列出来但不可点（再点一次没有意义） */
+.set-chips .btn:disabled {
+  border-color: var(--border);
+  color: var(--fg-mute);
+  cursor: default;
+}
 .set-label {
   min-width: 0;
 }

@@ -50,6 +50,16 @@ export function runActivityFlowTests(ok, mod) {
     const coding = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, text: 'x' })
     ok(coding.create === true && coding.reason === 'coding', 'coding 一律放行（不干预既有行为）')
 
+    /* auto 档：活动由模型当场判断，宿主不看旧 activity 的流程 */
+    const autoShort = decideTaskCreation({ profile: 'auto', activity: 'research', itemCount: 1, text: '今天天气怎么样' })
+    ok(
+      autoShort.create === false && autoShort.reason === 'simple-answer',
+      'auto + 一句话 → 不建任务（不受上次研究的流程影响）'
+    )
+
+    const autoMulti = decideTaskCreation({ profile: 'auto', activity: 'answer', itemCount: SIMPLE_TASK_MAX_ITEMS + 1 })
+    ok(autoMulti.create === true && autoMulti.reason === 'multi-step', 'auto + 多条待办 → 建')
+
     const explicit = decideTaskCreation({ profile: 'daily', activity: 'answer', itemCount: 1, text: 'x', explicit: true })
     ok(explicit.create === true && explicit.reason === 'explicit', '用户明确要计划 → 建')
 

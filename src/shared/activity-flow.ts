@@ -149,16 +149,21 @@ export interface TaskCreationDecision {
  * 该不该为这次提交建任务清单。
  *
  * 判定顺序有意为之：
- *   1. **coding 一律放行** —— 这是不干预既有行为的前提；
+ *   1. **coding 一律放行** —— 显式选了代码助手，就不拦；
  *   2. 用户明确要计划 → 建（他想看清单，不要替他省）；
  *   3. 活动本身是多步流程（研究 / 创作 / 办事 / 学习）→ 建；
  *   4. 多条待办或长输入 → 建（确实是多步）；
- *   5. 其余（answer + 一句话 + 至多一条待办）→ **不建**：简单问答不建任务。
+ *   5. 其余（自动或直接回答 + 一句话 + 至多一条待办）→ **不建**：简单问答不建任务。
+ *
+ * `auto` 档不走第 3 步：活动本来就是模型当场判断的，宿主没资格拿旧 activity
+ * 替它认定「这是个多步流程」——否则一个默认自动的会话会因为上次的活动而突然建清单。
  */
 export function decideTaskCreation(input: TaskCreationInput): TaskCreationDecision {
-  if (input.profile !== 'daily') return { create: true, reason: 'coding' }
+  if (input.profile === 'coding') return { create: true, reason: 'coding' }
   if (input.explicit) return { create: true, reason: 'explicit' }
-  if (activityFlow(input.activity).multiStep) return { create: true, reason: 'activity-flow' }
+  if (input.profile === 'daily' && activityFlow(input.activity).multiStep) {
+    return { create: true, reason: 'activity-flow' }
+  }
   if (input.itemCount > SIMPLE_TASK_MAX_ITEMS) return { create: true, reason: 'multi-step' }
   const text = (input.text ?? '').trim()
   if (text.length > SIMPLE_REQUEST_MAX_CHARS) return { create: true, reason: 'multi-step' }

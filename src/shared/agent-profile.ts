@@ -15,11 +15,19 @@
  * 需要按会话覆盖时另开片子，不在这里悄悄复制。
  */
 
-export const AGENT_PROFILES = ['coding', 'daily'] as const
+export const AGENT_PROFILES = ['auto', 'coding', 'daily'] as const
 export type AgentProfileKind = (typeof AGENT_PROFILES)[number]
 
-/** 默认档案：与现状一致 —— 已有会话不迁移、行为不变。 */
-export const DEFAULT_AGENT_PROFILE: AgentProfileKind = 'coding'
+/**
+ * 默认档案：**自动**。
+ *
+ * 新会话不再要求用户先选一个角色：由 agent 按每次请求自行判断
+ * （代码 / 问答 / 研究 / 创作 / 整理 / 学习），想锁定时再手动选。
+ *
+ * 旧会话没有档案记录时也走这个默认 —— 与「已有会话不迁移」不矛盾：
+ * 记录本身不会被改写，只是缺省值从 `coding` 改成 `auto`（行为变化已向用户说明）。
+ */
+export const DEFAULT_AGENT_PROFILE: AgentProfileKind = 'auto'
 
 export const AGENT_ACTIVITIES = ['answer', 'research', 'compose', 'organize', 'learn'] as const
 export type AgentActivity = (typeof AGENT_ACTIVITIES)[number]
@@ -142,13 +150,34 @@ export interface RoleSection {
  *
  * 返回 `null` 表示**不注入**：`coding` 档案保持 pi 原生行为 ——
  * 「三种角色行为」里的第一种就是「不做任何改变」。
+ *
+ * `auto` 与 `daily` 都注入：区别是 `auto` 给的是**判断准则**（让模型自己选活动），
+ * `daily` 给的是**已经选定的那一个活动**的行为要点。
  */
 export function agentRoleSection(profile: AgentProfileKind, activity: AgentActivity): RoleSection | null {
-  if (profile !== 'daily') return null
-  const body = DAILY_ROLE_BODY[activity]
+  if (profile === 'coding') return null
+  const body = profile === 'auto' ? AUTO_ROLE_BODY : DAILY_ROLE_BODY[activity]
   if (!body) return null
   return { name: ROLE_SECTION_NAME, content: body }
 }
+
+/**
+ * 「自动」档的角色文本：不预设活动，而是给出**怎么判断**的准则。
+ *
+ * 为什么不让宿主做分类器：判活动靠的是用户那句话的意图，模型本来就要读；
+ * 宿主再跑一次分类只是把同一件事做两遍，还会多一层不可解释的中间状态。
+ * 这里只把「先判断、再按对应方式做」写成准则，判定权留给模型。
+ */
+const AUTO_ROLE_BODY = [
+  '你先判断这次请求是哪一类，再按那一类的方式做 —— 不要先问用户该用哪种模式。',
+  '- 写代码、改文件、排错、看仓库 → 按代码助手工作：先读现有实现，改动最小，说清影响。',
+  '- 只是问一件事 → 直接回答；不要把它展开成工程计划，也不要先去读无关文件。',
+  '- 要读资料、作比较、给结论 → 按研究做：每条结论能指出出处；来源有分歧就保留分歧。',
+  '- 要写一份文档 → 按创作做：先确认用途，先给提纲再写初稿，用户改过的段落不要覆盖。',
+  '- 要归类、命名、整理资料 → 按整理做：先说明分类与命名，再动手，不丢资料。',
+  '- 要学一样东西 → 按导师做：一次推进一小步，讲完停下来等回应，答错先给提示。',
+  '判断不了时，按「直接回答」处理，并在回答里说一句你按哪一类在做。'
+].join('\n')
 
 const DAILY_ROLE_BODY: Record<AgentActivity, string> = {
   answer: [
