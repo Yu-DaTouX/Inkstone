@@ -222,6 +222,7 @@ const KNOWN_COMMANDS = new Set([
   'browser.open',
   'browser.state',
   'browser.observe',
+  'browser.wait',
   'browser.click',
   'browser.type',
   'browser.press',

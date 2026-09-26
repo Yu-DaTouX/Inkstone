@@ -455,6 +455,10 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   open     --url <地址>          navigate 的别名
   state                          当前状态：是否打开 / 标签列表 / 活动标签
   observe                        观察当前页面：URL / 标题 / 可交互元素 ref / 可见文本
+  wait     [--ref <ref>] [--text <文本>] [--url <子串>] [--timeout <毫秒>]
+                                 等条件成立（可叠加，是“且”）；--gone 配 --ref 等元素**消失**。
+                                 默认 10000ms，上限 60000；超时回 code=wait_timeout +
+                                 最后看到的样子（url / 元素数 / 文本片段）
   click    --ref <ref>           点击一个元素（ref 来自 observe）
   type     --ref <ref> --text <文本>
   press    --key <键>            Enter / Tab / Escape / ArrowDown …
@@ -472,6 +476,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 
 说明：
   · 浏览器还没打开时，除 navigate / open 外的动作回 code=browser_not_open；
+  · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 元素 ref 会随页面变化失效（报 STALE_ELEMENT 之类）→ 重新 observe 一次再点；
   · 不提供「执行任意页面 JavaScript」的入口（那是被有意关掉的）。
 `
@@ -622,6 +627,7 @@ const GROUP_SPECS = {
       'open',
       'state',
       'observe',
+      'wait',
       'click',
       'type',
       'press',

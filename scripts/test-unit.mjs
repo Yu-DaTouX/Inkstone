@@ -3908,6 +3908,22 @@ const taskInboxSourcesMod = await import('../node_modules/esbuild/lib/main.js').
 const { runTaskInboxSourceTests } = await import('./test-task-inbox-sources.mjs')
 await runTaskInboxSourceTests(ok, taskInboxSourcesMod, taskInboxServiceMod)
 
+/*
+ * 浏览器 wait 的条件判定（实施-27 S5）：纯函数，契约为 neutral。
+ */
+const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/browser-wait.ts'],
+    outfile: 'out/test/browser-wait.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/browser-wait.mjs'))
+)
+const { runBrowserWaitTests } = await import('./test-browser-wait.mjs')
+await runBrowserWaitTests(ok, browserWaitMod)
+
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })
 process.exit(fail ? 1 : 0)

@@ -30,6 +30,7 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { createOpencliRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
+import { WAIT_POLL_MS, describeWait, parseWaitCondition, waitSatisfied } from '../shared/browser-wait'
 import type { SearchSourceId } from '../shared/search'
 import { consumeQueuedItem } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
@@ -3434,6 +3435,19 @@ export class AgentController extends EventEmitter {
         return { data: observation, summary: this.browserObservationSummary(action, observation) }
       }
 
+      /*
+       * 等待条件成立（实施-27 S5）。
+       *
+       * 为什么用轮询 `observe()` 而不是 CDP 的等待原语：observe 已经是宿主
+       * 与页面之间**唯一**的稳定读口（它自己处理了 frame、可交互性过滤与 ref 生成），
+       * 另开一条等待通道会出现「等到的元素 observe 里却没有 ref」这种错配。
+       * 代价是轮询开销 —— 所以间隔取 250ms，且给明确的上限。
+       */
+      case 'wait': {
+        const observation = await this.browserWaitCommand(params)
+        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+      }
+
       /* 会带回新观察的四个动作 */
       case 'click':
       case 'type':
@@ -3600,6 +3614,40 @@ export class AgentController extends EventEmitter {
   }
 
   /** click / type / press / scroll 的参数读取与调用（四个动作的参数面各不相同）。 */
+  /**
+   * `wait`：等到条件成立（或超时）。
+   *
+   * 支持的条件（至少给一个，可以叠加 —— 叠加是**且**）：
+   *   · `--ref <ref>`  这个元素出现（配合 `--gone` 变成“消失”）；
+   *   · `--text <文本>`  可见文本里出现这段字；
+   *   · `--url <子串>`  当前地址里出现这段字。
+   *
+   * 为什么要明确报 `wait_timeout`：模型最常犯的错是“等一个永远不会出现的东西”，
+   * 而含糊的失败会让它反复重试。超时信息里带上**最后看到的样子**
+   * （url / 元素数 / 文本片段），模型就能自己判断是选择器写错了还是页面变了。
+   */
+  private async browserWaitCommand(params: Record<string, unknown>): Promise<BrowserObservation> {
+    const parsed = parseWaitCondition(params)
+    if (!parsed.ok) throw new CapabilityCommandError(parsed.code, parsed.message)
+    const { condition, timeoutMs } = parsed
+    const deadline = Date.now() + timeoutMs
+    let last: BrowserObservation | null = null
+
+    while (Date.now() <= deadline) {
+      last = await this.browserObserve('wait')
+      if (waitSatisfied(condition, last)) return last
+      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS))
+    }
+
+    const seen = last
+      ? `最后看到：url=${last.url} 元素 ${last.elements.length} 个，文本 ${last.text.slice(0, 120)}`
+      : '一次也没读到页面'
+    throw new CapabilityCommandError(
+      'wait_timeout',
+      `等了 ${timeoutMs}ms 还不满足（${describeWait(condition)}）。${seen}`
+    )
+  }
+
   private async browserActionCommand(
     host: BrowserCommandHost,
     action: 'click' | 'type' | 'press' | 'scroll',
