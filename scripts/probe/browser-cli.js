@@ -212,6 +212,22 @@
     )
     ok(!looksLikeStack(hostSide.output), '宿主侧：没有堆栈')
 
+    /*
+     * wait 的命令链（实施-27 S5）。
+     *
+     * 这里只验「参数被接住了」——真正的等待行为（条件判定、超时夹取、叠加是“且”）
+     * 由 `scripts/test-browser-wait.mjs` 用假 observation 钉住（不需要页面）。
+     * 一个“什么都不等”的 wait 必须被拒：它会白等满超时，而模型会以为等过了就好了。
+     */
+    const waitNone = await runCli('yan browser wait')
+    const waitNoneBody = lastJson(waitNone.output)
+    out.push(`  wait 无条件退出码=${waitNone.exitCode}  回执=${JSON.stringify(waitNoneBody).slice(0, 160)}`)
+    ok(waitNone.exitCode === 1, 'wait 没有条件时：退出码 1')
+    ok(
+      waitNoneBody?.ok === false && waitNoneBody?.code === 'missing_condition',
+      'wait 没有条件时回 code=missing_condition（不是 unknown_command，命令确实接上了）'
+    )
+
     /* ──────────────────────────── 4. 浏览器没打开时的观察 ─────────── */
     out.push('')
     out.push('=== 4. 浏览器未打开：code=browser_not_open ===')

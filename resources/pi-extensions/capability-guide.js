@@ -65,6 +65,7 @@ export const CAPABILITY_GUIDE = [
   '浏览器调用约定：',
   '  · 先用 `yan browser state` 查看标签与当前状态；需要打开页面时用 `yan browser navigate --url <地址>`。',
   '  · 操作前用 `yan browser observe` 读取页面内容和元素 ref，再用 `click --ref <ref>`、`type --ref <ref> --text "文本"`、`press --key <键>` 等动作；ref 失效时重新 observe，不猜 ref。',
+  '  · 页面是异步渲染时不要“点完立刻 observe”（很容易读到中间态）：用 `yan browser wait` 等条件成立 —— `--ref <ref>`（元素出现，加 `--gone` 等它消失）/ `--text <文本>` / `--url <子串>`，可叠加（是“且”），`--timeout <毫秒>` 默认 10000、上限 60000。超时会回 `wait_timeout` 并附上最后看到的样子，据此判断是条件写错还是页面变了。',
   '  · 需要判断实际外观时调用 `yan browser screenshot`，并用图片读取能力查看返回的截图文件；调用截图命令本身不等于看过截图。',
   '  · 关键操作后读取回执中的页面观察，必要时再次 observe 或截图，核对预期页面状态；未确认上次提交的结果时，不盲目重复提交。',
   '',
