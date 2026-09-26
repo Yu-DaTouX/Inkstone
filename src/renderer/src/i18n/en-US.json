@@ -169,7 +169,7 @@
   "plus.goalSeedScope": "Scope: {value}",
   "plus.goalSeedConstraints": "Constraints: {value}",
   "composer.bashMode": "! runs directly, bypasses the model",
-  "composer.busy": "Generating — Enter to cut in",
+  "composer.busy": "Generating — Enter to queue",
   "composer.cmdMode": "command",
   "composer.compatCommand": "{cmd} only works in pi's terminal UI; Yan's desktop has no such action (your input is kept)",
   "composer.dir": "dir",

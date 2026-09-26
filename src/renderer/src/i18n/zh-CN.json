@@ -169,7 +169,7 @@
   "plus.goalSeedScope": "范围：{value}",
   "plus.goalSeedConstraints": "约束：{value}",
   "composer.bashMode": "! 直接执行，不进模型",
-  "composer.busy": "生成中，Enter 插话",
+  "composer.busy": "生成中，Enter 排队",
   "composer.cmdMode": "命令",
   "composer.compatCommand": "{cmd} 只在 pi 的终端界面有效，砚的桌面端没有这个操作（输入内容已保留）",
   "composer.dir": "目录",
