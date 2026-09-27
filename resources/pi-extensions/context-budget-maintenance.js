@@ -146,14 +146,59 @@ function capabilityRevision(model) {
   return [endpointKey, model.contextWindow, model.maxTokens].map((part) => String(part ?? '')).join('/')
 }
 
-function contentOfAssistantEntry(entry) {
-  const message = entry?.message
-  if (!message || message.role !== 'assistant') return null
-  const content = message.content
+/**
+ * 一条 assistant entry 能进摘要候选吗。
+ *
+ * 判据是「摘掉它会不会把分支结构弄坏」：
+ *   · `text` / `thinking` / `reasoning` —— 只是文字与思考过程，摘掉安全
+ *     （原文会归档成 `ctx://tool/<id>`，需要时仍可回读）
+ *   · `toolCall` —— **不能摘**：它与后面的 toolResult 成对，单独摘掉会留下
+ *     孤立的工具结果，provider 直接报错
+ *   · 其它块型（图片 / 二进制 / 不认识的）—— 保守跳过
+ *
+ * 之前的实现要求「每一个块都是 text」，于是带 thinking 的正常回复全被拒，
+ * 整个会话一条候选都挑不出来（实测报 `no_safe_summary_candidates`）。
+ */
+const SUMMARY_SAFE_BLOCK_TYPES = new Set(['text', 'thinking', 'reasoning'])
+
+/** assistant 消息里的工具调用块数（配对判断用） */
+function countToolCallsOf(entry) {
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return 0
+  return content.filter((block) => block && (block.type === 'toolCall' || block.type === 'tool_call')).length
+}
+
+/** 一条消息里可读的文字（assistant 的 text/thinking，toolResult 的输出） */
+function readableTextOf(entry) {
+  const content = entry?.message?.content
   if (typeof content === 'string') return content.trim() || null
-  if (!Array.isArray(content) || content.some((block) => !block || block.type !== 'text' || typeof block.text !== 'string')) return null
-  const text = content.map((block) => block.text).join('\n').trim()
+  if (!Array.isArray(content)) return null
+  const parts = []
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    if (typeof block.text === 'string') parts.push(block.text)
+    else if (typeof block.thinking === 'string') parts.push(block.thinking)
+    else if (typeof block.reasoning === 'string') parts.push(block.reasoning)
+    else if (typeof block.content === 'string') parts.push(block.content)
+    else if (typeof block.output === 'string') parts.push(block.output)
+  }
+  const text = parts.join('\n').trim()
   return text || null
+}
+
+export function contentOfAssistantEntry(entry) {
+  if (entryMessageRole(entry) !== 'assistant') return null
+  if (countToolCallsOf(entry) > 0) return null
+  const content = entry?.message?.content
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (!block || typeof block !== 'object') return null
+      if (!SUMMARY_SAFE_BLOCK_TYPES.has(String(block.type ?? ''))) return null
+    }
+  } else if (typeof content !== 'string') {
+    return null
+  }
+  return readableTextOf(entry)
 }
 
 function contextBudgetFiles(sessionId) {
@@ -265,24 +310,102 @@ function entryContentForSummary(entry) {
   return id ? { id, role: 'assistant', text } : null
 }
 
+/**
+ * 能**一起**安全摘掉的最小单元。
+ *
+ * 摘要只覆盖 assistant 文字与工具输出，但“哪些能一起拿掉”要按分支结构决定：
+ *   · 无工具调用的 assistant（可含 thinking）→ 它自己就是一个单元
+ *   · 带工具调用的 assistant → 必须连同它**紧随其后的全部 toolResult** 一起摘，
+ *     否则投影后会剩下孤立的工具结果，provider 直接报错
+ *   · 用户消息、摘要类、无主的 toolResult → 永不被摘
+ *
+ * 摘掉的内容都会归档成 `ctx://tool/<id>`，需要时仍可回读。
+ */
+function summaryUnitAt(entries, index) {
+  const entry = entries[index]
+  if (entryMessageRole(entry) !== 'assistant' || typeof entry?.id !== 'string') return null
+  const text = readableTextOf(entry)
+  if (countToolCallsOf(entry) === 0) {
+    return text ? [{ id: entry.id, role: 'assistant', text }] : null
+  }
+  const results = []
+  for (let i = index + 1; i < entries.length && entryMessageRole(entries[i]) === 'toolResult'; i++) results.push(entries[i])
+  /* 有工具调用却找不到工具结果：结构异常，保守放弃 */
+  if (results.length === 0 || results.some((item) => typeof item?.id !== 'string')) return null
+  const unit = [{ id: entry.id, role: 'assistant', text: text ?? '(tool call)' }]
+  for (const result of results) unit.push({ id: result.id, role: 'toolResult', text: readableTextOf(result) ?? '' })
+  return unit
+}
+
 function summaryCandidates(branch) {
   const messages = contextEntries(branch).filter(entryProducesMessage)
   const old = messages.slice(0, Math.max(0, messages.length - MAINTENANCE_TAIL))
   const candidates = []
   let chars = 0
-  for (const entry of old) {
-    const candidate = entryContentForSummary(entry)
-    if (!candidate) continue
-    if (candidates.length >= MAX_SUMMARIZED_ENTRIES || chars + candidate.text.length > MAX_SUMMARY_INPUT_CHARS) break
-    candidates.push(candidate)
-    chars += candidate.text.length
+  let index = 0
+  while (index < old.length) {
+    const unit = summaryUnitAt(old, index)
+    index += unit ? unit.length : 1
+    if (!unit || unit.length === 0) continue
+    const unitChars = unit.reduce((sum, item) => sum + item.text.length, 0)
+    if (candidates.length + unit.length > MAX_SUMMARIZED_ENTRIES || chars + unitChars > MAX_SUMMARY_INPUT_CHARS) break
+    candidates.push(...unit)
+    chars += unitChars
   }
   return candidates
 }
 
+/* 给验证脚本用：按真实分支结构算一次候选（不写盘、不改状态） */
+export { summaryCandidates, entryContentForSummary }
+
+/**
+ * 从模型回复里取出 JSON 对象。
+ *
+ * 摘要模型常把 JSON 包在 markdown 围栏里（```json … ```）或前后带一句话 ——
+ * 直接对整段 `JSON.parse` 必然失败，整理就卡在 `summary_json_invalid`（实测踩到）。
+ * 这里按「剥围栏 → 找第一个平衡的大括号块」的顺序宽容提取，
+ * 拿到对象后仍按原口径严格校验字段。
+ */
+export function extractJsonObject(text) {
+  const raw = typeof text === 'string' ? text : ''
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const body = (fenced ? fenced[1] : raw).trim()
+  try {
+    return { ok: true, value: JSON.parse(body) }
+  } catch { /* 继续找括号块 */ }
+  const start = body.indexOf('{')
+  if (start < 0) return { ok: false }
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        try {
+          return { ok: true, value: JSON.parse(body.slice(start, i + 1)) }
+        } catch {
+          return { ok: false }
+        }
+      }
+    }
+  }
+  return { ok: false }
+}
+
 function parseSummaryResponse(text, expectedRefs) {
-  let value
-  try { value = JSON.parse(text) } catch { return { ok: false, reason: 'summary_json_invalid' } }
+  const extracted = extractJsonObject(text)
+  if (!extracted.ok) return { ok: false, reason: 'summary_json_invalid' }
+  const value = extracted.value
   if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.summary !== 'string') {
     return { ok: false, reason: 'summary_shape_invalid' }
   }
@@ -553,6 +676,29 @@ function persistResumeIntent(operation, resumeId) {
   })
 }
 
+/**
+ * 续跑消息到底落地没有（发送抛错后用来定性，不靠猜）。
+ *
+ * 返回 `landed` 已落地 / `absent` 确认没发出去 / `unknown` 拿不到分支。
+ */
+function probeResumeMessage(ctx, resumeId) {
+  try {
+    const branch = ctx?.sessionManager?.getBranch?.()
+    if (!Array.isArray(branch)) return 'unknown'
+    const marker = `[Context continuation ${resumeId}]`
+    for (const entry of branch) {
+      const content = entry?.message?.content ?? entry?.content
+      if (typeof content === 'string' && content.includes(marker)) return 'landed'
+      if (Array.isArray(content) && content.some((part) => typeof part?.text === 'string' && part.text.includes(marker))) {
+        return 'landed'
+      }
+    }
+    return 'absent'
+  } catch {
+    return 'unknown'
+  }
+}
+
 function updateResumeReceipt(sessionId, operationId, resumeId, receipt, failureCode = null) {
   withDiskLock(sessionId, () => {
     const path = operationPath(sessionId, operationId)
@@ -579,8 +725,10 @@ function scheduleAutomaticResume(pi, ctx) {
       if (waitingForLearner()) return
       const sessionId = sessionIdOf(ctx)
       const latest = sessionId ? latestPendingAutoOperation(sessionId, ctx) : null
+      /* `failed:` 的续跑可以重来（确认没发出去）；`intent:`/`sent:`/`uncertain:` 不重试 */
+      const retryableResume = !latest?.resumeReceipt || String(latest.resumeReceipt).startsWith('failed:')
       if (!latest || latest.identity?.sessionId !== sessionId || latest.requestKind !== 'automatic' ||
-          !['committed', 'applied'].includes(latest.state) || latest.resumeReceipt !== null) return
+          !['committed', 'applied'].includes(latest.state) || !retryableResume) return
       const livePolicy = readContextBudgetPolicyV1(sessionId)
       if (livePolicy.inactive || livePolicy.unavailable || livePolicy.policyRevision !== latest.base?.policyRevision ||
           capabilityRevision(ctx?.model) !== latest.base?.capabilityRevision) return
@@ -606,7 +754,17 @@ function scheduleAutomaticResume(pi, ctx) {
         }, { triggerTurn: true })
         updateResumeReceipt(sessionId, latest.identity.operationId, resumeId, `sent:${resumeId}`)
       } catch {
-        updateResumeReceipt(sessionId, latest.identity.operationId, resumeId, `uncertain:${resumeId}`, 'resume_send_uncertain')
+        /*
+         * 发送抛错：发出去没有？去分支里找这条续跑消息，不要一律当「不确定」——
+         * 那样启动时会被当成「可能已发送」锁成 needs_action，整理链就断在那里（实测踩到）。
+         *   landed  → 已落地，标 sent，不重发
+         *   absent  → 确认没发出去，标 failed（下次可安全重试，不进 needs_action）
+         *   unknown → 拿不到分支，保持原来的保守标法
+         */
+        const probe = probeResumeMessage(ctx, resumeId)
+        if (probe === 'landed') updateResumeReceipt(sessionId, latest.identity.operationId, resumeId, `sent:${resumeId}`)
+        else if (probe === 'absent') updateResumeReceipt(sessionId, latest.identity.operationId, resumeId, `failed:${resumeId}`)
+        else updateResumeReceipt(sessionId, latest.identity.operationId, resumeId, `uncertain:${resumeId}`, 'resume_send_uncertain')
       }
     })()
   }, AUTO_RESUME_DELAY_MS)
