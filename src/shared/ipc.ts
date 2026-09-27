@@ -3203,13 +3203,23 @@ export interface YanBridge {
    * 切到某个会话（N12）：命中已有实例就只改视图，**不发停止命令**；
    * 空闲实例会被复用；到并发上限时明确报错，而不是停掉正在跑的旧会话。
    */
-  selectSession(target: { sessionFile?: string; sessionId?: string; projectId?: string; scope?: SessionScope; cwd: string }): Promise<{
+  selectSession(target: {
+    sessionFile?: string
+    sessionId?: string
+    projectId?: string
+    scope?: SessionScope
+    cwd: string
+    /** 只是「看一眼」这条会话：不建运行实例、更不为它建隔离工作树 */
+    preview?: boolean
+  }): Promise<{
     ok: boolean
     id?: string
     runId?: string
     sessionId?: string
     generation?: number
     via?: 'hit' | 'reuse' | 'new'
+    /** 只查看了、实例没动（调用方必须据此保持「未激活」状态） */
+    deferred?: boolean
     error?: string
   }>
   /** 所有运行实例的状态（左栏状态槽用；也可用来补上错过的推送） */

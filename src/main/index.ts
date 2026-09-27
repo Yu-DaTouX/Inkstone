@@ -5105,7 +5105,15 @@ function registerIpc(): void {
    */
   handle(
     'yan:selectSession',
-    async (target: { sessionFile?: string; sessionId?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }) => {
+    async (target: {
+      sessionFile?: string
+      sessionId?: string
+      projectId?: string
+      scope?: 'global' | 'project' | 'pending'
+      cwd: string
+      /** 只是看一眼：主进程不会为它建实例，也不会建隔离工作树 */
+      preview?: boolean
+    }) => {
       const cwdResult = await validateCwd(target.cwd)
       if (!cwdResult.ok) return cwdResult
       if (!runners) {
@@ -5122,12 +5130,18 @@ function registerIpc(): void {
         cwd: cwdResult.cwd,
         projectId
       })
-      await rememberRunnerSession(res, {
-        ...target,
-        cwd: cwdResult.cwd,
-        projectId,
-        scope: target.scope ?? (projectId ? 'project' : 'global')
-      })
+      /*
+       * `deferred`：只是查看，实例没动 —— 不能把它记成「这条会话跑在哪个实例上」，
+       * 否则后续按实例找会话会指向一个根本没载入这条会话的进程。
+       */
+      if (!res.deferred) {
+        await rememberRunnerSession(res, {
+          ...target,
+          cwd: cwdResult.cwd,
+          projectId,
+          scope: target.scope ?? (projectId ? 'project' : 'global')
+        })
+      }
       if (res.ok && res.id) void pushRunnerSnapshot(res.id)
       pushRunners()
       return res

@@ -485,6 +485,20 @@ interface Store {
   peekedSessionId: string | null
   /** 直读时被截断/丢弃的内容统计（null = 没有截断） */
   peekNote: { truncated: number; total: number } | null
+  /**
+   * 「正在看、但还没在 pi 侧激活」的会话。
+   *
+   * 查看一条历史会话只 peek（读文件）不切实例 —— 切实例会撞「同 cwd 已有忙实例」
+   * 而被自动隔离出一棵工作树，而用户只是翻一眼。真正发消息前（`ensureActivated`）才切。
+   * null = 视图与实例一致。
+   */
+  pendingActivation: {
+    sessionFile?: string
+    sessionId?: string
+    projectId?: string
+    scope?: 'global' | 'project' | 'pending'
+    cwd: string
+  } | null
 
   /**
    * 当前视图对应的运行实例 id（N12）。
@@ -800,6 +814,11 @@ interface Store {
    * 返回 `undefined` 表示该项目还没有任何会话（调用方应新建一个）。
    */
   pickProjectSession: (cwd: string, projectId?: string) => string | undefined
+  /**
+   * 「正在看的那条会话」是否已经在 pi 侧激活；没激活就先切（必要时才建隔离树）。
+   * 返回 false = 切不动，调用方不要发消息。
+   */
+  ensureActivated: () => Promise<boolean>
   /** 只改 Yan 的产品归属，不移动 pi 的 JSONL，也不停止运行实例。 */
   moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
@@ -1551,6 +1570,7 @@ export const useStore = create<Store>((rawSet, get) => {
   peekedPath: null,
   peekedSessionId: null,
   peekNote: null,
+  pendingActivation: null,
 
   /* ------------------------------------------------------------- 初始化 */
 
@@ -1792,7 +1812,8 @@ export const useStore = create<Store>((rawSet, get) => {
             ...(snapshot ? projectSnapshotKeepingPeek(get(), snapshot) : {}),
             queue: snapshot?.queue ?? EMPTY_QUEUE,
             activeRunnerId: runId ?? null,
-            goal: snapshot?.goal ?? null
+            goal: snapshot?.goal ?? null,
+            pendingActivation: null
           })
           void get().syncRunners()
           void get().reloadModels()
@@ -2891,6 +2912,8 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   retryHandoff: async () => {
+    /* 交接整理会在会话上跑模型 —— 先保证看的那条会话真的激活了 */
+    if (!(await get().ensureActivated())) return
     try {
       const res = await window.yan.retryHandoff()
       if (!res.ok) {
@@ -3156,6 +3179,8 @@ export const useStore = create<Store>((rawSet, get) => {
   /* --------------------------------------------------------------- 对话 */
 
   send: async (text, images, mode) => {
+    /* 先把「正在看的那条会话」真正切到 pi 上（必要时才会建隔离树）；切不动就不发 */
+    if (!(await get().ensureActivated())) return false
     /*
      * 來源定位消息（S1）：把这次要发出去的附件换成来源 id，先排队。
      * 拿不到 id 的（算不出指纹/文件已不在）就静静跳过 —— 一条来源定位不上
@@ -3221,6 +3246,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   steerQueued: async (queueId) => {
+    if (!(await get().ensureActivated())) return
     const res = await piCall(() => window.yan.steerQueued(queueId))
     if (!res.ok) {
       set({
@@ -3287,10 +3313,11 @@ export const useStore = create<Store>((rawSet, get) => {
         messages: [],
         goal: null,
         /* 交接状态也是会话级事实：新会话不能接着显示上一条的「整理未完成」 */
-        handoff: null
+        handoff: null,
+        pendingActivation: null
       })
     }
-    else set({ queue: EMPTY_QUEUE, pendingSends: [] })
+    else set({ queue: EMPTY_QUEUE, pendingSends: [], pendingActivation: null })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
@@ -3367,8 +3394,13 @@ export const useStore = create<Store>((rawSet, get) => {
       ? undefined
       : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
     const scope = sum?.scope ?? (projectId ? 'project' : 'global')
+    /*
+     * `preview`：只是查看 —— pi 侧**不激活、不建实例、也不建隔离工作树**。
+     * 内容已经由上面的 peek 铺好了；真正发消息前再由 ensureActivated 切过去。
+     * 为什么：切实例会撞「同 cwd 已有忙实例」而被自动隔离出一棵树，而用户只是翻一眼历史。
+     */
     const res = await piCall(() =>
-      window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd })
+      window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
     )
     if (!res.ok) {
       set({
@@ -3376,6 +3408,16 @@ export const useStore = create<Store>((rawSet, get) => {
         peekedPath: null,
         peekedSessionId: null
       })
+      return
+    }
+    /* 实例没动：保持 peek 显示，把「待激活」记下来 —— 发消息时才会真的切 */
+    if (res.deferred) {
+      set({
+        pendingActivation: { sessionFile: path, sessionId: sum?.id, projectId, scope, cwd },
+        peekedPath: path,
+        peekedSessionId: sum?.id ?? null
+      })
+      void get().syncRunners()
       return
     }
     const runId = res.runId ?? res.id
@@ -3393,12 +3435,40 @@ export const useStore = create<Store>((rawSet, get) => {
     set({
       ...(usable ? projectSnapshotKeepingPeek(get(), usable) : {}),
       queue: usable?.queue ?? EMPTY_QUEUE,
-      ...(runId ? { activeRunnerId: runId } : {})
+      ...(runId ? { activeRunnerId: runId } : {}),
+      pendingActivation: null
     })
     void get().syncRunners()
     void get().reloadModels()
     void get().reloadCommands()
     void get().loadGoal()
+  },
+
+  /**
+   * 保证「正在看的那条会话」已经在 pi 侧激活；没激活就先切过去（必要时才建隔离树）。
+   *
+   * 返回 false 时调用方**不要**继续发消息 —— 消息会落到上一个会话的实例上（串会话）。
+   * 这就是「查看不切实例」换来的代价，所以每个“真开始对话”的入口都要先过这一关。
+   */
+  ensureActivated: async (): Promise<boolean> => {
+    const pending = get().pendingActivation
+    if (!pending) return true
+    const res = await piCall(() => window.yan.selectSession(pending))
+    if (!res.ok || res.deferred) {
+      set({
+        notices: pushNotice(get().notices, 'error', res.error ?? '切换会话失败，消息没有发出')
+      })
+      return false
+    }
+    set({
+      pendingActivation: null,
+      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {})
+    })
+    void get().syncRunners()
+    void get().reloadModels()
+    void get().reloadCommands()
+    void get().loadGoal()
+    return true
   },
 
   moveSession: async (sessionId, projectId) => {
@@ -3556,6 +3626,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   compact: async () => {
+    if (!(await get().ensureActivated())) return
     const res = await piCall(() => window.yan.compact())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '压缩失败') })
