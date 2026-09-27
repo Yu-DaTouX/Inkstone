@@ -281,16 +281,6 @@ export class RunnerRegistry {
     }
 
     /*
-     * 只是「看一下」这条会话（`preview`）：不建实例、更不建隔离工作树。
-     *
-     * 命中已有实例已经在上面返回了；走到这里意味着要新建/复用实例 —— 那就等到
-     * 用户真的发消息时再说（届时再发一次不带 preview 的 select）。
-     * 为什么值得这样绕：建隔离树是「要在两处同时干活」的代价，而「翻一眼历史」
-     * 不该付这个代价（原先只要主会话在跑，点开一条历史会话就会多一棵树）。
-     */
-    if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
-
-    /*
      * 两个忙碌实例不能共用一个物理 cwd：即使它们是不同会话文件，
      * 工具调用仍可能同时修改同一工作树。命中已有实例必须在上面优先
      * 返回；这里只有“要创建/载入另一个运行实例”时才拒绝。
@@ -299,6 +289,16 @@ export class RunnerRegistry {
       (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
+      /*
+       * 只是「看一下」这条会话（`preview`）：冲突时不建隔离工作树、也不动实例 ——
+       * 等用户真的发消息时再说（届时再发一次不带 preview 的 select）。
+       * 建树是「要在两处同时干活」的代价，「翻一眼历史」不该付这个代价。
+       *
+       * ⚠️ 只在这个分支里生效：**没有冲突时照常建/复用实例**。否则重启后
+       * （一个实例都没有）点开会话会一直停在「未激活」，右栏那些依赖活跃实例的
+       * 显示（上下文策略、模型入口等）就全空着 —— 用户报的「重启后不显示上下文」。
+       */
+      if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
       /*
        * 先问宿主能不能自动隔离（换一个不冲突的物理目录继续）。
        * 隔离结果必须**真的换了目录**才继续：返回同一个 cwd 等于没解决问题，
