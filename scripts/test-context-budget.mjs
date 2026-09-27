@@ -145,6 +145,35 @@ export function runContextBudgetTests(ok, mod, policyMod) {
     '真的没有 system 时才是 0'
   )
 
+  /*
+   * 思考块必须计进去（用户报的「369k 还不压缩」）。
+   *
+   * 现场：pi 回灌的 thinking 块长这样 ——
+   *   { type: 'thinking', thinking: '…', thinkingSignature: '…' }
+   * 内容在 `thinking` 字段里；只认 `text` / `content` 会把它整个算成 0，
+   * 而同一个会话里 thinking 比正文还多（实测 143k / 221k）——估算差出成倍，
+   * 「整理线」永远不触发，直到真实值撞上阻断线被直接拦下。
+   */
+  const thinkingBlockTokens = estimateMessagesTokens([
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'abcd'.repeat(25), thinkingSignature: 'sig' }] }
+  ])
+  const plainTextBlockTokens = estimateMessagesTokens([
+    { role: 'assistant', content: [{ type: 'text', text: 'abcd'.repeat(25) }] }
+  ])
+  ok(
+    thinkingBlockTokens === plainTextBlockTokens,
+    `thinking 块按内容计入（thinking=${thinkingBlockTokens} / text=${plainTextBlockTokens}）`
+  )
+  const reasoningBlockTokens = estimateMessagesTokens([
+    { role: 'assistant', content: [{ type: 'reasoning', reasoning: 'abcd'.repeat(25) }] }
+  ])
+  ok(reasoningBlockTokens === plainTextBlockTokens, `reasoning 字段也计入（${reasoningBlockTokens}）`)
+  ok(
+    estimateMessagesTokens([{ role: 'assistant', content: [{ type: 'thinking', thinkingSignature: 'sig' }] }]) ===
+      estimateMessagesTokens([{ role: 'assistant', content: [] }]),
+    '只有 thinkingSignature、没有内容时不编一个数'
+  )
+
   /* --------------------------------------------------- 三档判定边界 */
 
   const budget = budgetOf(64_000)
