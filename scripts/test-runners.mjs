@@ -223,6 +223,47 @@ export function runRunnerTests(ok, RunnerRegistry) {
         )
       }
 
+      /*
+       * ---- 4d. 只是查看（preview）：不隔离、不建实例 ----
+       *
+       * 「翻一眼历史会话」不该付「建隔离工作树」的代价：命中已有实例仍然切视图，
+       * 需要新建实例时直接 deferred —— 等用户真的发消息时再切（那时才可能建树）。
+       */
+      {
+        const seenP = []
+        const madeP = []
+        const regP = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            madeP.push(a)
+            return a
+          },
+          resolveCwdConflict: async (target) => {
+            seenP.push(target.cwd)
+            return { cwd: 'C:/iso/never' }
+          }
+        })
+        const p1 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p1.jsonl' })
+        ok(p1.ok && p1.via === 'new', 'preview 用例：先建一个实例')
+        regP.agentOf(p1.id).state = { ...regP.agentOf(p1.id).state, isAgentRunning: true }
+
+        const p2 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p2.jsonl', preview: true })
+        ok(p2.ok === true && p2.deferred === true, 'preview：只是查看 → deferred（不报错、也不切换）', JSON.stringify(p2))
+        ok(seenP.length === 0, 'preview 不触发冲突隔离（不建隔离工作树）')
+        ok(regP.size === 1 && madeP.length === 1, 'preview 不新建实例')
+        ok(madeP[0].calls.switchSession.length === 1, 'preview 没有把忙碌实例切走')
+
+        /* 命中已有实例时照常切视图（那本来就不建树） */
+        const p3 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p1.jsonl', preview: true })
+        ok(p3.ok && p3.via === 'hit' && !p3.deferred, 'preview 命中已有实例时正常切视图', JSON.stringify(p3))
+
+        /* 不带 preview 的同一目标：仍然走自动隔离（用户真要两处干活） */
+        const p4 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p2.jsonl' })
+        ok(p4.ok && seenP.length === 1, '不带 preview 时冲突仍走自动隔离', JSON.stringify(p4))
+      }
+
       /* ---- 5. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
       const second = made[1]
       second.state = { ...second.state, isAgentRunning: true }

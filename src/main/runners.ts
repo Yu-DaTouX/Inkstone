@@ -75,6 +75,13 @@ export interface SelectTarget {
   scope?: SessionScope
   /** false 时只准备后台运行实例，不改变桌面当前选中的 runner。 */
   activate?: boolean
+  /**
+   * 只是「看一眼」这条会话：不建实例、更不建隔离工作树。
+   *
+   * 命中已有实例仍然会正常切视图；需要新建/复用实例时直接返回 `deferred`，
+   * 等用户真的发消息（不带 preview 的 select）时再说。
+   */
+  preview?: boolean
   /** 未提交的交接片段不复用其它会话，也不暴露到侧栏。 */
   hidden?: boolean
   cwd: string
@@ -90,6 +97,8 @@ export interface SelectResult {
   generation?: number
   /** 复用了哪个实例（'hit' 命中已有、'reuse' 复用空闲、'new' 新建） */
   via?: 'hit' | 'reuse' | 'new'
+  /** `preview` 时没动实例：调用方必须保持「未激活」状态，别当成切换成功 */
+  deferred?: boolean
   error?: string
 }
 
@@ -270,6 +279,16 @@ export class RunnerRegistry {
         return this.result(hit, 'hit')
       }
     }
+
+    /*
+     * 只是「看一下」这条会话（`preview`）：不建实例、更不建隔离工作树。
+     *
+     * 命中已有实例已经在上面返回了；走到这里意味着要新建/复用实例 —— 那就等到
+     * 用户真的发消息时再说（届时再发一次不带 preview 的 select）。
+     * 为什么值得这样绕：建隔离树是「要在两处同时干活」的代价，而「翻一眼历史」
+     * 不该付这个代价（原先只要主会话在跑，点开一条历史会话就会多一棵树）。
+     */
+    if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
 
     /*
      * 两个忙碌实例不能共用一个物理 cwd：即使它们是不同会话文件，
