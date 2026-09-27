@@ -247,6 +247,13 @@ export function estimateContentTokens(content) {
     if (typeof block.text === 'string') total += estimateTokens(block.text)
     if (typeof block.content === 'string') total += estimateTokens(block.content)
     else if (Array.isArray(block.content)) total += estimateContentTokens(block.content)
+    /*
+     * 思考块：pi 回灌时的字段名是 `thinking`（连着 thinkingSignature 原样送回），
+     * 另一些家叫 `reasoning`。**不能只指望 `text`** —— 实测同一个会话里
+     * text 143k / thinking 221k，漏掉它估算会差出成倍（用户报的「369k 还不压缩」）。
+     */
+    if (typeof block.thinking === 'string') total += estimateTokens(block.thinking)
+    if (typeof block.reasoning === 'string') total += estimateTokens(block.reasoning)
 
     const type = String(block.type ?? '')
     if (type === 'toolCall' || type === 'tool_call') {
@@ -258,7 +265,7 @@ export function estimateContentTokens(content) {
       }
       continue
     }
-    /* thinking / reasoning 通常是回灌文本，不另计（上面已取 text） */
+    /* 认得出的纯文本块（text / thinking / toolResult 等）到此已算完，不再另计 */
     if (KNOWN_TEXT_BLOCK_TYPES.has(type)) continue
     if (isImageBlock(block)) {
       total += imageTokensOf(block)
