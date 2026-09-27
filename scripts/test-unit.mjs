@@ -1802,7 +1802,9 @@ await runHandoffRequestTests(
   ok,
   await import('../out/test/handoff.mjs'),
   await import('../out/test/handoff-service.mjs'),
-  await import('../resources/pi-extensions/goal-resume.js')
+  await import('../resources/pi-extensions/goal-resume.js'),
+  /* 薄层的“下一跳怎么试”决策（纯函数）：截断要抬预算，格式问题只换提示 */
+  await import('../resources/pi-extensions/handoffs.js')
 )
 /* 交接事务（实施-05 S5b-3a）：阶段顺序 / 幂等 / 崩溃恢复 / 事务日志 */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>

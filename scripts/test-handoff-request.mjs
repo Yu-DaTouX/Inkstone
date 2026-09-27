@@ -15,7 +15,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
-export async function runHandoffRequestTests(ok, shared, service, goalResume) {
+export async function runHandoffRequestTests(ok, shared, service, goalResume, handoffs) {
   console.log('\n--- 实施-05 S5b-2 交接包生成（请求 / 结果 / 解析） ---')
 
   /* --------------------------------------------------- 文件名清洗（两侧交叉校验） */
@@ -128,6 +128,29 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume) {
   ok(request.handoffId === 'h-1' && request.operationId === 'op-1', '请求带两个身份（交接 / 本次生成）')
   ok(request.systemPrompt === shared.HANDOFF_SYSTEM_PROMPT, '请求带稳定 system prompt（缓存友好）')
   ok(request.maxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS, '请求带输出上限')
+  /*
+   * 截断重试的契约（2026-09-27 现场修复）。
+   *
+   * 现场：交接包写到 7544 字符时被 4000 token 上限切断，而修复重试仍用同一个上限
+   * + 一句“必须包含全部列表” → 条件未变，失败必然复现。下面这几条钉住新约定。
+   */
+  ok(
+    request.escalatedMaxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED,
+    `请求带第二跳预算（${shared.HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED}）`
+  )
+  ok(
+    request.escalatedMaxTokens > request.maxTokens,
+    '第二跳预算真的比第一跳大（否则“抬起”是假的）'
+  )
+  ok(
+    typeof request.retryPromptTruncated === 'string' && request.retryPromptTruncated.length > 10,
+    '请求带截断专用提示'
+  )
+  ok(/长度限制|切断/.test(request.retryPromptTruncated), '截断提示说清是“被长度切断”而不是“格式不合格”')
+  ok(
+    !/必须包含全部列表/.test(request.retryPromptTruncated),
+    '截断提示不再要求“写更多”（那是与预算直接冲突的那句）'
+  )
   ok(request.sourceHead === 'msg-9' && request.mode === 'autonomous', '来源字段由宿主填进请求')
 
   const clean = shared.sanitizeHandoffRequest(request)
@@ -137,8 +160,28 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume) {
   ok(shared.sanitizeHandoffRequest({ ...request, operationId: '' }) === null, '缺生成 id → 作废')
   ok(shared.sanitizeHandoffRequest(null) === null, '非对象 → 作废')
   ok(shared.sanitizeHandoffRequest({ ...request, maxTokens: 99 }).maxTokens === 99, '输出上限可覆盖')
-  ok(shared.sanitizeHandoffRequest({ ...request, maxTokens: 99999 }).maxTokens === 8000, '输出上限封顶（防手滑）')
+  ok(
+    shared.sanitizeHandoffRequest({ ...request, maxTokens: 99999 }).maxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS_CEILING,
+    '输出上限封顶（防手滑）；上限抬到能容下第二跳预算'
+  )
   ok(shared.sanitizeHandoffRequest({ ...request, maxTokens: NaN }).maxTokens === shared.HANDOFF_PACKAGE_MAX_TOKENS, '非法上限 → 默认值')
+  ok(
+    shared.sanitizeHandoffRequest({ ...request, escalatedMaxTokens: 12000 }).escalatedMaxTokens === 12000,
+    '第二跳预算可读回'
+  )
+  ok(
+    shared.sanitizeHandoffRequest({ ...request, escalatedMaxTokens: 99999 }).escalatedMaxTokens ===
+      shared.HANDOFF_PACKAGE_MAX_TOKENS_CEILING,
+    '第二跳预算同样封顶'
+  )
+  ok(
+    shared.sanitizeHandoffRequest({ ...request, escalatedMaxTokens: 100 }).escalatedMaxTokens === undefined,
+    '第二跳预算不比第一跳大 → 当作没填（不搞假抬起）'
+  )
+  ok(
+    shared.sanitizeHandoffRequest({ ...request, retryPromptTruncated: '  被切断  ' }).retryPromptTruncated === '被切断',
+    '截断提示可读回（并做空白清洗）'
+  )
   ok(shared.sanitizeHandoffRequest({ ...request, systemPrompt: '' }).systemPrompt === shared.HANDOFF_SYSTEM_PROMPT, '空 system → 默认文本')
   ok(shared.sanitizeHandoffRequest({ ...request, mode: '' }).mode === 'unknown', '空模式 → unknown（不编造）')
 
@@ -147,9 +190,51 @@ export async function runHandoffRequestTests(ok, shared, service, goalResume) {
   const result = service.buildHandoffResult({ handoffId: 'h-1', operationId: 'op-1', text: '{}', ms: 1200, now: 2000 })
   ok(result.ms === 1200 && result.at === 2000, '结果带耗时与时间戳')
   ok(shared.sanitizeHandoffResult(result)?.text === '{}', '结果可被清洗读回')
+  /* 截断标记：显式写优先，旧扩展没写时用 stopReason 推断（两个版本的扩展都能被正确解读） */
+  ok(shared.sanitizeHandoffResult({ ...result, truncated: true })?.truncated === true, '结果可标记截断')
+  ok(
+    shared.sanitizeHandoffResult({ ...result, stopReason: 'length' })?.truncated === true,
+    'stopReason=length 也能推断出截断（旧扩展不写 truncated 时）'
+  )
+  ok(shared.sanitizeHandoffResult({ ...result, stopReason: 'stop' })?.truncated === false, '正常停止不算截断')
   ok(shared.sanitizeHandoffResult({ ...result, handoffId: '' }) === null, '缺交接 id 的结果 → 作废')
   const empty = shared.sanitizeHandoffResult(service.buildHandoffResult({ handoffId: 'h-1', operationId: 'op-1' }))
   ok(!!empty && empty.text === '' && empty.error === null, '「跑了但什么都没回」也是合法结果（宿主据此区分「没跑」）')
+
+  /* --------------------------------------------------- 下一跳怎么试（截断重试） */
+  /*
+   * 现场：交接包写到 7544 字符时被 4000 token 上限切断（`stopReason=length`），
+   * 而修复重试仍用同一个上限 → 必然复现。这里钉住“按失败原因选下一跳”的规则。
+   */
+  ok(typeof handoffs?.planRepairAttempt === 'function', '薄层的 `planRepairAttempt()` 可导入（否则这几条是假的）')
+  if (typeof handoffs?.planRepairAttempt === 'function') {
+    const plan = handoffs.planRepairAttempt
+    const base = { maxTokens: 4000, escalatedMaxTokens: 12000, retryPrompt: '格式不合格', retryPromptTruncated: '被长度切断' }
+
+    const cut = plan({ ...base, stopReason: 'length' })
+    ok(cut.truncated === true, 'stopReason=length → 标记截断')
+    ok(cut.maxTokens === 12000, '截断时抬预算到第二跳值（这是修好的关键）')
+    ok(cut.suffix.includes('切断'), '截断时用截断专用提示，而不是“格式不合格”那句')
+
+    const fmt = plan({ ...base, stopReason: 'stop' })
+    ok(fmt.truncated === false, '正常停止不算截断')
+    ok(fmt.maxTokens === 4000, '格式问题时**不动**预算（抬了也没用）')
+    ok(fmt.suffix.includes('格式不合格'), '格式问题时用原来的修复提示')
+
+    /* 没给第二跳预算（旧宿主写的请求）→ 不能凭空“抬起” */
+    const noEsc = plan({ maxTokens: 4000, retryPrompt: '格式不合格', stopReason: 'length' })
+    ok(noEsc.truncated === true && noEsc.maxTokens === 4000, '没给第二跳预算时保持原预算（不编数字）')
+    ok(noEsc.suffix.includes('格式不合格'), '没有截断提示时退回通用修复提示（不丢提示）')
+
+    /* 第二跳不比第一跳大 → 抬起来是假的 */
+    const fake = plan({ maxTokens: 4000, escalatedMaxTokens: 4000, retryPrompt: 'a', retryPromptTruncated: 'b', stopReason: 'length' })
+    ok(fake.maxTokens === 4000, '第二跳不比第一跳大 → 不抬（避免假抬起）')
+
+    /* 截断时若宿主**没**给专用提示，也不能把提示弄丢 */
+    const cutNoPrompt = plan({ maxTokens: 4000, escalatedMaxTokens: 12000, retryPrompt: '通用提示', stopReason: 'length' })
+    ok(cutNoPrompt.suffix.includes('通用提示'), '截断但没专用提示 → 退回通用提示（而不是什么都不说）')
+    ok(cutNoPrompt.suffix.startsWith('\n'), '附加提示以换行开头（不能贴着原提示词）')
+  }
 
   /* --------------------------------------------------- 模型输出解析 */
 

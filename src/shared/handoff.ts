@@ -45,6 +45,29 @@ export const HANDOFF_AUTO_COMPACT_THRESHOLD = 2
  */
 export const HANDOFF_PACKAGE_MAX_TOKENS = 4_000
 
+/**
+ * 被输出长度截断后的**第二跳预算**（2026-09-27 现场修复）。
+ *
+ * 现场证据（`~/.pi/agent/yan/handoff/events.jsonl`）：
+ *   `generate/unparsable:no-json-object  {chars:7544, ms:31149, stopReason:"length", attempts:2}`
+ *
+ * 读法：交接包写到 7544 字符时碰到 4000 token 上限被**切断**，JSON 只写了一半；
+ * 而那次“允许的修复重试”仍然用同一个 4000 上限、只加了一句“必须包含全部列表”
+ * —— 条件没变，失败必然复现，用户看到的就是“重试了也没用”。
+ *
+ * 所以：**只有截断**才抬预算（格式/内容问题抬预算没有意义），抬到这个值再试。
+ */
+export const HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED = 12_000
+
+/**
+ * 请求文件里 `maxTokens` 的硬上限。
+ *
+ * 这不是模型能力（那是 provider 的事，它自己会处理超限），而是**请求文件的卫生**：
+ * 这个文件由宿主写到硬盘、由薄层读回去，不该接受任意大的值。
+ * 从 8000 抬到 16000 只是为了容下 `HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED`。
+ */
+export const HANDOFF_PACKAGE_MAX_TOKENS_CEILING = 16_000
+
 /** 去重键最多留多少个（防无界；超了丢最旧的）。 */
 export const HANDOFF_TALLY_KEY_LIMIT = 50
 
@@ -371,6 +394,13 @@ export interface HandoffRequest {
   maxTokens: number
   maxAttempts?: number
   retryPrompt?: string
+  /**
+   * 上一跳被输出长度截断时的第二跳预算（不填则不抬）。
+   * 与 `retryPromptTruncated` 配套：见 `HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED`。
+   */
+  escalatedMaxTokens?: number
+  /** 截断专用的修复提示（而不是笼统的“格式不合格”） */
+  retryPromptTruncated?: string
   /** 截取时的会话水位（写进交接包的 `sourceHead`） */
   sourceHead: string | null
   /** 写请求时的模式 / 模型（写进交接包 —— 模型不能自报来源） */
@@ -393,8 +423,16 @@ export function sanitizeHandoffRequest(raw: unknown): HandoffRequest | null {
   if (!handoffId || !operationId || !prompt) return null
   const maxTokens =
     typeof item.maxTokens === 'number' && Number.isFinite(item.maxTokens) && item.maxTokens > 0
-      ? Math.min(8_000, Math.floor(item.maxTokens))
+      ? Math.min(HANDOFF_PACKAGE_MAX_TOKENS_CEILING, Math.floor(item.maxTokens))
       : HANDOFF_PACKAGE_MAX_TOKENS
+  /*
+   * 第二跳预算单独清洗：它的合法上限比第一跳高一个档（见 CEILING 的注释）。
+   * 比第一跳还小就当成没填 —— 那种“抬预算”是假的，不如不抬。
+   */
+  const escalatedRaw =
+    typeof item.escalatedMaxTokens === 'number' && Number.isFinite(item.escalatedMaxTokens)
+      ? Math.min(HANDOFF_PACKAGE_MAX_TOKENS_CEILING, Math.floor(item.escalatedMaxTokens))
+      : 0
   return {
     handoffId,
     operationId,
@@ -404,6 +442,8 @@ export function sanitizeHandoffRequest(raw: unknown): HandoffRequest | null {
     maxTokens,
     maxAttempts: item.maxAttempts === 2 ? 2 : 1,
     retryPrompt: longText(item.retryPrompt),
+    ...(escalatedRaw > maxTokens ? { escalatedMaxTokens: escalatedRaw } : {}),
+    retryPromptTruncated: longText(item.retryPromptTruncated),
     sourceHead: typeof item.sourceHead === 'string' && item.sourceHead ? item.sourceHead : null,
     mode: longText(item.mode) || 'unknown',
     model: typeof item.model === 'string' && item.model ? item.model : null,
@@ -421,6 +461,12 @@ export interface HandoffResult {
   error: string | null
   stopReason?: string | null
   attempts?: number
+  /**
+   * 最终那次尝试是不是**被输出长度截断**的（成功/无关时为 false）。
+   * 它让宿主能把“模型不按格式答”与“包太长写不完”区分开 ——
+   * 前者重试有用，后者重试没用（得抬预算）。
+   */
+  truncated?: boolean
   /** 这一次 completion 花了多久（诊断用） */
   ms: number
   at: number
@@ -446,6 +492,7 @@ export function sanitizeHandoffResult(raw: unknown): HandoffResult | null {
     error: error || null,
     stopReason: typeof item.stopReason === 'string' ? item.stopReason : null,
     attempts: typeof item.attempts === 'number' ? Math.max(1, Math.min(2, Math.floor(item.attempts))) : 1,
+    truncated: item.truncated === true || item.stopReason === 'length',
     ms: typeof item.ms === 'number' && Number.isFinite(item.ms) ? Math.max(0, Math.floor(item.ms)) : 0,
     at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : 0
   }

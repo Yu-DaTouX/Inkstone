@@ -242,6 +242,57 @@ export async function runHandoffExtTests(ok) {
     const bad = await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-bad' ? r : null })
     ok(badCalls === 2 && bad?.attempts === 2 && bad?.stopReason === 'length', '两次坏格式后结束，无无限重试，记录截断原因')
 
+    /*
+     * 被长度切断 vs 格式不对：两种病两副药（2026-09-27 现场修复）。
+     *
+     * 现场：交接包写到 7544 字符时被 4000 token 上限切断，而修复重试仍用同一个
+     * 上限 + 一句“必须包含全部列表” → 第二次跑到同一个地方再次被切断。
+     * 这条同时钉住两件事：预算真的抬了，且结果里标了 truncated（宿主据此报准确原因）。
+     */
+    const budgets = []
+    const suffixes = []
+    await writeRequest('op-truncate', {
+      maxAttempts: 2,
+      maxTokens: 4000,
+      escalatedMaxTokens: 12000,
+      retryPrompt: '修复格式',
+      retryPromptTruncated: '被长度切断'
+    })
+    await rm(resultFile, { force: true })
+    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_m, context, options) => {
+      budgets.push(options?.maxTokens)
+      suffixes.push(context.messages[0].content[0].text)
+      return { text: '坏格式', stopReason: 'length' }
+    } } })
+    const cut = await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-truncate' ? r : null })
+    ok(budgets.length === 2, `截断后仍然只试两次（实际 ${budgets.length}）`)
+    ok(budgets[0] === 4000 && budgets[1] === 12000, `截断后第二跳抬预算（${budgets.join(' → ')}）`)
+    ok(suffixes[1]?.includes('被长度切断'), '第二跳用截断专用提示（而不是“格式不合格”那句）')
+    ok(!suffixes[1]?.includes('全部列表'), '第二跳不再要求“写更多”（那是与预算冲突的那句）')
+    ok(cut?.truncated === true, '结果里标了 truncated（宿主据此把失败报成“包太长”而不是“模型不听话”）')
+
+    /* 对照：格式问题（非 length）不得抬预算 —— 抬了也没用 */
+    const formatBudgets = []
+    await writeRequest('op-format', {
+      maxAttempts: 2,
+      maxTokens: 4000,
+      escalatedMaxTokens: 12000,
+      retryPrompt: '修复格式'
+    })
+    await rm(resultFile, { force: true })
+    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_m, _c, options) => {
+      formatBudgets.push(options?.maxTokens)
+      return { text: '坏格式', stopReason: 'stop' }
+    } } })
+    await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-format' ? r : null })
+    ok(formatBudgets.length === 2 && formatBudgets[1] === 4000, `格式问题不抬预算（${formatBudgets.join(' → ')}）`)
+    /*
+     * 等 `produce()` 真的释放 `running`（上面的 waitFor 只看结果文件，
+     * 而写文件到 finally 之间还有几毫秒）—— 不等的话下一节那个“无请求”的
+     * `agent_settled` 会因 busy 被跳过，它等的那条 check 行根本不会出现。
+     */
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
     let cancelledCalls = 0
     await writeRequest('op-cancel', { maxAttempts: 2 })
     await rm(resultFile, { force: true })
@@ -260,7 +311,12 @@ export async function runHandoffExtTests(ok) {
       const check = await lastCheck()
       return check && check.hasRequest === false ? check : null
     })
-    ok((emptyCheck?.attempts ?? 0) >= 3, '没有请求时要等满窗口才放弃（attempts 记下等了几次）')
+    ok((emptyCheck?.attempts ?? 0) >= 3, `没有请求时要等满窗口才放弃（实际 ${JSON.stringify(emptyCheck)}）`)
+    if (!emptyCheck) {
+      /* 失败时把日志尾巴打出来：是被 busy 跳过，还是压根没跑，一眼就能分 */
+      const log = await readLog()
+      console.log('    [诊断] 日志最后 6 行：', JSON.stringify(log.slice(-6)))
+    }
     ok((await readResult()) === null, '没有请求时不凭空造包')
   } finally {
     delete process.env.YAN_HANDOFF_EXT_LOG

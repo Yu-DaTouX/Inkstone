@@ -32,6 +32,7 @@ import {
   sanitizeHandoffRequest,
   sanitizeHandoffResult,
   HANDOFF_PACKAGE_MAX_TOKENS,
+  HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED,
   HANDOFF_SYSTEM_PROMPT,
   type HandoffPackage,
   type HandoffRequest,
@@ -291,6 +292,16 @@ export function buildHandoffRequest(input: {
     maxTokens: HANDOFF_PACKAGE_MAX_TOKENS,
     maxAttempts: 2,
     retryPrompt: '上次交接输出不完整或格式不合格。重新依据原始材料输出完整 JSON；必须包含全部列表，remaining 与 nextActions 不为空，不猜测事实。',
+    /*
+     * 截断时的第二跳：抬预算 + 换提示。
+     *
+     * 上一版只有上面那一句提示，而它写的是“必须包含全部列表”——
+     * 模型被推着写**更多**，预算却没动 → 同一个上限上再次截断。
+     * 下面这两句反过来说：预算管够，但要求别灌水，并给了先保什么的优先级。
+     */
+    escalatedMaxTokens: HANDOFF_PACKAGE_MAX_TOKENS_ESCALATED,
+    retryPromptTruncated:
+      '上次输出在写到一半时被长度限制切断了（不是格式问题）。这次预算已经扩大，但仍然要在完整的前提下避免冗余：不要重复粘贴原文、不要逐条抄长代码。若仍然很长，按这个优先级保底：goal 与 deliverable 先写完整，然后是 remaining、nextActions、constraints、acceptance。',
     sourceHead: input.sourceHead ?? null,
     mode: input.mode,
     model: input.model ?? null,
