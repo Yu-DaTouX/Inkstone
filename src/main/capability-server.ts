@@ -462,8 +462,21 @@ export class CapabilityServer {
     } catch {
       text = JSON.stringify({ error: 'result_not_serializable' })
     }
-    const truncated = Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES
-    if (truncated) text = text.slice(0, CAPABILITY_RESULT_MAX_BYTES)
+    /*
+     * 超限时**改写成合法 JSON**，不能 `slice` —— 半截 JSON 会让模型 `JSON.parse`
+     * 直接失败，而且看不出是被截的。原大小与预览片段一起给出，读的人至少知道
+     * 「这里被截过、原有多大」。字符串转义会让长度膨胀，所以循环收窄到真放得下。
+     */
+    if (Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES) {
+      const bytes = Buffer.byteLength(text)
+      let preview = text.slice(0, Math.max(0, CAPABILITY_RESULT_MAX_BYTES - 1024))
+      let capped = JSON.stringify({ truncated: true, bytes, preview })
+      while (Buffer.byteLength(capped) > CAPABILITY_RESULT_MAX_BYTES && preview.length > 0) {
+        preview = preview.slice(0, Math.floor(preview.length / 2))
+        capped = JSON.stringify({ truncated: true, bytes, preview })
+      }
+      text = capped
+    }
     const path = join(this.opsDir, `${opId}.json`)
     try {
       writeFileSync(path, text, 'utf8')

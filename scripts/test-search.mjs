@@ -51,7 +51,13 @@ export async function runSearchTests(ok, mod) {
     ok(only.ok && only.sources.length === 1 && only.sources[0].id === 'arxiv', '只查指定来源')
     const bogus = normalizeQuery({ text: 'x', sources: ['arxiv', 'nope', 'arxiv'] })
     ok(bogus.ok && bogus.sources.length === 1, '未知来源丢掉、重复来源去掉')
+    ok(bogus.ok && bogus.ignoredSources.join(',') === 'nope', '被丢掉的来源名原样带回（不能静默）')
     ok(normalizeQuery({ text: 'x', sources: ['nope'] }).code === 'no_source', '全是未知来源 → no_source')
+    const allUnknown = normalizeQuery({ text: 'x', sources: ['nope'] })
+    ok(allUnknown.ignoredSources.join(',') === 'nope', '失败路径也点名被忽略的来源')
+    const dupUnknown = normalizeQuery({ text: 'x', sources: ['nope', 'nope'] })
+    ok(dupUnknown.ignoredSources.length === 1, '重复的未知来源只报一次')
+    ok(normalizeQuery({ text: 'x' }).ignoredSources.length === 0, '没写来源时没有「被忽略」的东西')
     const clamped = normalizeQuery({ text: 'x', limitPerSource: 999, limitTotal: 0, timeoutMs: 10 })
     ok(clamped.ok && clamped.limitPerSource === SEARCH_LIMIT_PER_SOURCE_MAX, '每来源条数被夹到上限')
     ok(clamped.ok && clamped.limitTotal === 1, '总条数至少 1')
@@ -203,6 +209,15 @@ export async function runSearchTests(ok, mod) {
 
     const empty = await runSearch({ text: '  ' }, deps)
     ok(empty.items.length === 0 && empty.sources.length === 0, '空查询不发调用、不编状态')
+
+    const withIgnored = await runSearch({ text: 'x', sources: ['arxiv', 'nope'] }, deps)
+    ok(withIgnored.ignoredSources?.join(',') === 'nope', 'runSearch 把被忽略的来源带进结果')
+    ok(/已忽略未知来源：nope/.test(searchSummary(withIgnored)), '摘要里点名被忽略的来源')
+    const errIgnored = await runSearch({ text: 'x', sources: ['nope'] }, deps)
+    ok(
+      errIgnored.error?.code === 'no_source' && errIgnored.ignoredSources?.join(',') === 'nope',
+      '查询根本没发出去时也带上被忽略的来源'
+    )
   }
 
   /* ---- 真实 spawn 的两个边界（不依赖 opencli 存在） ---- */
