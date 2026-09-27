@@ -168,6 +168,21 @@ export function runContextBudgetTests(ok, mod, policyMod) {
     { role: 'assistant', content: [{ type: 'reasoning', reasoning: 'abcd'.repeat(25) }] }
   ])
   ok(reasoningBlockTokens === plainTextBlockTokens, `reasoning 字段也计入（${reasoningBlockTokens}）`)
+  /* content 本身是单个对象（MCP / 结构化工具结果）也不能算 0 */
+  const objectContent = estimateMessagesTokens([
+    { role: 'assistant', content: { type: 'text', text: 'abcd'.repeat(25) } }
+  ])
+  ok(
+    objectContent === plainTextBlockTokens,
+    `content 是对象时也按内容计入（${objectContent} / text=${plainTextBlockTokens}）`
+  )
+  const objectBlockContent = estimateMessagesTokens([
+    { role: 'assistant', content: [{ type: 'toolResult', content: { type: 'text', text: 'abcd'.repeat(25) } }] }
+  ])
+  ok(
+    objectBlockContent === plainTextBlockTokens,
+    `block.content 是对象时同样计入（${objectBlockContent}）`
+  )
   ok(
     estimateMessagesTokens([{ role: 'assistant', content: [{ type: 'thinking', thinkingSignature: 'sig' }] }]) ===
       estimateMessagesTokens([{ role: 'assistant', content: [] }]),

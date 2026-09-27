@@ -26,6 +26,62 @@ function safeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null
 }
 
+/**
+ * payload 的**字符构成**（诊断用）。
+ *
+ * 为什么要它：`estimateRequestTokens` 与 provider 实际报的 prompt 差过 4 倍
+ *（实测：留痕 109k，而 usage 里 input+cacheRead 是 440k）—— 光看总数不知道
+ * 漏在哪一类内容。这里把 payload 按顶层键、以及 messages 里按 `type.字段`
+ * 各占多少字符数写进留痕：下次对不上时，一眼能看出是「某一类内容没被算」
+ * 还是「payload 本身就小」。
+ */
+export function payloadCensus(payload) {
+  const byTopKey = {}
+  const byBlockField = {}
+  let chars = 0
+  let blockChars = 0
+  const walkValues = (value, topKey, depth) => {
+    if (value === null || value === undefined || depth > 8) return
+    if (typeof value === 'string') {
+      chars += value.length
+      byTopKey[topKey] = (byTopKey[topKey] ?? 0) + value.length
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walkValues(item, topKey, depth + 1)
+      return
+    }
+    if (typeof value !== 'object') return
+    for (const item of Object.values(value)) walkValues(item, topKey, depth + 1)
+  }
+  for (const [key, value] of Object.entries(payload ?? {})) walkValues(value, key, 0)
+
+  /* messages 里按「块类型.字段」细分：漏算往往就藏在某个字段名上 */
+  const walkBlocks = (value, depth) => {
+    if (value === null || value === undefined || depth > 8) return
+    if (Array.isArray(value)) {
+      for (const item of value) walkBlocks(item, depth + 1)
+      return
+    }
+    if (typeof value !== 'object') return
+    const type = typeof value.type === 'string' ? value.type : ''
+    for (const [key, item] of Object.entries(value)) {
+      if (typeof item === 'string') {
+        const name = type ? `${type}.${key}` : `(无类型).${key}`
+        byBlockField[name] = (byBlockField[name] ?? 0) + item.length
+        blockChars += item.length
+        continue
+      }
+      walkBlocks(item, depth + 1)
+    }
+  }
+  walkBlocks(payload?.messages, 0)
+
+  const top = (bucket) =>
+    Object.fromEntries(Object.entries(bucket).sort((a, b) => b[1] - a[1]).slice(0, 12))
+  return { chars, blockChars, byTopKey: top(byTopKey), byBlockField: top(byBlockField) }
+}
+
 function actualOutputReserve(api, payload, model) {
   return resolveContextBudgetOutputReserveV1({
     api,
@@ -77,7 +133,9 @@ function writePreparedSnapshot(sessionId, payload, ctx, check) {
       outputReserve,
       outputAdapter: output.adapterId
     },
-    check
+    check,
+    /* 估算与实际差得离谱时，这里能直接看出差在哪（见 payloadCensus 的说明） */
+    payloadCensus: payloadCensus(payload)
   }
   const dir = join(dataDir(), 'context-budget-v1', sessionId)
   mkdirSync(dir, { recursive: true })
