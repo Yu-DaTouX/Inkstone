@@ -1230,6 +1230,7 @@
   "set.searchBackendExtOff": "后端已就绪 · v{version}，但浏览器扩展未连接",
   "set.searchBackendHint": "安装：npm i -g @jackwener/opencli",
   "set.searchBackendMissing": "未检测到（yan search 会如实回「后端不可用」，不会假装没有结果）",
+  "set.searchBackendNodeHint": "需要 Node.js：把 node（>=20.18.1）放进 PATH，或用 YAN_NODE_BIN 指定它的位置。",
   "set.searchBackendUnusable": "后端已安装（v{version}），但命令跑不起来（搜索会失败）",
   "set.searchBackendUnusableHint": "下面是探针的原始输出。常见原因：命令行参数解析与运行环境不匹配，或 OpenCLI 行为变化。",
   "set.searchBackendReady": "已就绪 · v{version}",

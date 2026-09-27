@@ -12,7 +12,7 @@
  */
 import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
-import { delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import {
   SEARCH_LIMIT_PER_SOURCE_MAX,
   SEARCH_OUTPUT_MAX_BYTES,
@@ -50,55 +50,67 @@ function fileExists(p: string): boolean {
   }
 }
 
-function fileSize(p: string): number {
-  try {
-    return statSync(p).size
-  } catch {
-    return -1
-  }
-}
-
 /**
  * 在 PATH 里找一个可执行文件。
  *
- * Windows 上默认只认带 PATHEXT 扩展名的（`.cmd` / `.exe` / …）—— npm 全局还会放一个
+ * Windows 上只认带 PATHEXT 扩展名的（`.cmd` / `.exe` / …）—— npm 全局还会放一个
  * **无扩展名的 bash 脚本**给 Git Bash 用，那个东西 CreateProcess 是起不来的，
  * 找到它反而会把「后端不可用」写成「后端报错」。
- *
- * `names` 用于完全接管候选名（不按 PATHEXT 拼），`minBytes` 用于挡掉体积为 0 的文件。
  */
-function findExecutableOnPath(name: string, opts: { names?: string[]; minBytes?: number } = {}): string | null {
+function findExecutableOnPath(name: string): string | null {
   const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
   const names =
-    opts.names ??
-    (process.platform === 'win32'
+    process.platform === 'win32'
       ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
           .split(';')
           .filter(Boolean)
           .map((ext) => name + ext.toLowerCase())
-      : [name])
+      : [name]
   for (const dir of dirs) {
     for (const candidate of names) {
       const p = join(dir, candidate)
-      if (!fileExists(p)) continue
-      if (opts.minBytes !== undefined && fileSize(p) < opts.minBytes) continue
-      return p
+      if (fileExists(p)) return p
     }
   }
   return null
 }
 
+function statForNode(p: string): { isFile: boolean; size: number } {
+  try {
+    const s = statSync(p)
+    return { isFile: s.isFile(), size: s.size }
+  } catch {
+    return { isFile: false, size: -1 }
+  }
+}
+
 /**
  * 找 `node` —— 只要**真正的可执行文件**。
  *
- * 与找 opencli 的差别（两样都会把「不可用」写成更难懂的「后端报错」）：
- *   · Windows 上不接受 `.cmd` / `.bat` shim —— 我们的 spawn 刻意不过 shell，shim 起不来；
- *   · 体积为 0 的文件也不接受 —— Microsoft Store 的 `node.exe` 别名就是这个形态，
- *     执行它只会弹应用商店。
+ * 两条过滤，各自对应一种把「不可用」伪装成「后端报错」的现实情况：
+ *   · Windows 上不认 `.cmd` / `.bat` shim（npm 会生成；我们的 spawn 刻意不过 shell，起不来）；
+ *   · 不认体积为 0 的文件（0 字节的东西必然执行不了，选中它只会让报错变形）。
+ *
+ * 这是**防御性**过滤，不是「保证挑到能跑的 node」：PATH 上放个坏掉的 node.exe
+ * 照样会被选中 —— 那种情况靠 `YAN_NODE_BIN` 显式指定绕开。
+ *
+ * dirs / probe / platform 都可注入，便于单测（默认读真实 PATH 与真实 stat）。
  */
-function findNodeOnPath(): string | null {
-  if (process.platform === 'win32') return findExecutableOnPath('node', { names: ['node.exe'], minBytes: 1 })
-  return findExecutableOnPath('node', { minBytes: 1 })
+export function findNodeOnPath(
+  dirs: string[] = (process.env.PATH ?? '').split(delimiter).filter(Boolean),
+  probe: (p: string) => { isFile: boolean; size: number } = statForNode,
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  const names = platform === 'win32' ? ['node.exe'] : ['node']
+  for (const dir of dirs) {
+    for (const name of names) {
+      const p = join(dir, name)
+      const st = probe(p)
+      if (!st.isFile || st.size <= 0) continue
+      return p
+    }
+  }
+  return null
 }
 
 /** 后端的启动方式：固定 file + 前置参数（`node <entry>` 这种形态需要它） */
@@ -131,8 +143,17 @@ export interface JsRuntime {
  * 最后一条很重要：不拿 Electron 硬跑，否则失败会伪装成「后端报错」。
  * 非 Electron 运行时（自带 node / 系统 node）不用换，直接用自身。
  */
+/** `YAN_NODE_BIN` 填成 Electron 时提前拦下 —— 那正是我们要绕开的东西 */
+function looksLikeElectronRuntime(p: string): boolean {
+  if (p.toLowerCase() === process.execPath.toLowerCase()) {
+    return Boolean((process.versions as { electron?: string }).electron)
+  }
+  const base = basename(p).toLowerCase()
+  return base === 'electron' || base === 'electron.exe'
+}
+
 export function resolveJsRuntime(
-  findOnPath: (name: string) => string | null = findNodeOnPath,
+  findNode: () => string | null = findNodeOnPath,
   execPath: string = process.execPath,
   electron: boolean = Boolean((process.versions as { electron?: string }).electron),
   nodeBin: string | undefined = process.env.YAN_NODE_BIN
@@ -144,14 +165,22 @@ export function resolveJsRuntime(
    */
   const explicit = nodeBin?.trim()
   if (explicit) {
-    return fileExists(explicit)
-      ? { file: explicit }
-      : {
-          file: execPath,
-          error: `YAN_NODE_BIN 指向的 ${explicit} 不存在；请改成真实的 node 可执行文件，或删掉这个变量并安装 Node.js（>=20.18.1）后加入 PATH`
-        }
+    if (!fileExists(explicit)) {
+      return {
+        file: execPath,
+        error: `YAN_NODE_BIN 指向的 ${explicit} 不存在；请改成真实的 node 可执行文件，或删掉这个变量并安装 Node.js（>=20.18.1）后加入 PATH`
+      }
+    }
+    /* 填成 Electron 会正好踩回我们要绕开的那个坑（commander 的 electron 分支） */
+    if (looksLikeElectronRuntime(explicit)) {
+      return {
+        file: execPath,
+        error: `YAN_NODE_BIN 指向的是 Electron（${explicit}），不是 node —— Electron 自带的 Node 会让 OpenCLI 的命令行参数错位；请指定真正的 node 可执行文件`
+      }
+    }
+    return { file: explicit }
   }
-  const node = findOnPath('node')
+  const node = findNode()
   if (node) return { file: node }
   return {
     file: execPath,
@@ -218,6 +247,18 @@ export function resolveBackendTarget(explicit?: string, runtime: JsRuntime = res
  */
 function spawnEnv(file: string): NodeJS.ProcessEnv | undefined {
   return file === process.execPath ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : undefined
+}
+
+/**
+ * ENOENT 时给人和模型读的一句话。
+ *
+ * `prefix` 非空说明我们是在跑 `node <entry>` —— 那缺的是 **node**，不是 opencli；
+ * 两者必须分开说，否则用户会去重装已经装好的东西。
+ */
+function missingBinaryMessage(target: BackendTarget): string {
+  return target.prefix.length > 0
+    ? `找不到运行 OpenCLI 的 node（${target.file}）；请安装 Node.js（>=20.18.1）并加入 PATH，或用 YAN_NODE_BIN 指定`
+    : `找不到 ${target.file}（未安装，或不在 PATH；可用 YAN_OPENCLI_JS 指定 OpenCLI 入口）`
 }
 
 export function findSource(id: string): SearchSource | undefined {
@@ -304,7 +345,7 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           unavailable: enoent,
           error: {
             code: enoent ? 'backend_unavailable' : 'backend_error',
-            message: enoent ? `找不到 ${target.source}（未安装或不在 PATH；可用 YAN_OPENCLI_JS 指定入口）` : e.message
+            message: enoent ? missingBinaryMessage(target) : e.message
           },
           elapsedMs: Date.now() - started
         })
@@ -521,9 +562,18 @@ async function defaultProbe(
     let err = ''
     /* 超时要说出来：只凭「有输出」判不了「跑完了没」 */
     let timedOut = false
-    const timer = setTimeout(() => {
+    let killFallback: ReturnType<typeof setTimeout> | undefined
+    let timer: ReturnType<typeof setTimeout>
+    const done = (result: { code: number; stdout: string; stderr: string; timedOut?: boolean }): void => {
+      clearTimeout(timer)
+      if (killFallback) clearTimeout(killFallback)
+      resolve(result)
+    }
+    timer = setTimeout(() => {
       timedOut = true
       child.kill('SIGKILL')
+      /* 僵死进程不响应 kill 时不能把 Promise 悬在那里：再等 1s 强制收尾 */
+      killFallback = setTimeout(() => done({ code: -1, stdout: out, stderr: err, timedOut: true }), 1000)
     }, timeoutMs)
     child.stdout?.on('data', (c: Buffer) => {
       if (out.length < 64_000) out += c.toString('utf8')
@@ -532,12 +582,11 @@ async function defaultProbe(
       if (err.length < 64_000) err += c.toString('utf8')
     })
     child.on('error', (e: Error) => {
-      clearTimeout(timer)
-      resolve({ code: -1, stdout: out, stderr: e.message })
+      const enoent = (e as NodeJS.ErrnoException).code === 'ENOENT'
+      done({ code: -1, stdout: out, stderr: enoent ? missingBinaryMessage(target) : e.message })
     })
     child.on('close', (code) => {
-      clearTimeout(timer)
-      resolve({ code: code ?? -1, stdout: out, stderr: err, ...(timedOut ? { timedOut: true } : {}) })
+      done({ code: code ?? -1, stdout: out, stderr: err, ...(timedOut ? { timedOut: true } : {}) })
     })
   })
 }

@@ -1,3 +1,7 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 /**
  * 联网搜索的单元测试（实施-27 S1/S2）—— 纯逻辑 + 替身后端，不装 OpenCLI。
  *
@@ -24,7 +28,8 @@ export async function runSearchTests(ok, mod) {
     searchSummary,
     resolveJsRuntime,
     resolveBackendTarget,
-    searchDoctor
+    searchDoctor,
+    findNodeOnPath
   } = mod
 
   const T0 = 1_000_000
@@ -186,6 +191,8 @@ export async function runSearchTests(ok, mod) {
     ok(missing.unavailable === true, '可执行文件不存在 → unavailable')
     ok(missing.error.code === 'backend_unavailable', '错误码是 backend_unavailable')
     ok(/找不到/.test(missing.error.message ?? ''), '错误信息能读懂（说的是找不到后端）')
+    ok(!/ENOENT/i.test(missing.error.message ?? ''), 'ENOENT 不再原样丢出来（归一到可读文案）')
+    ok(/yan-opencli-does-not-exist/.test(missing.error.message ?? ''), '文案里带上是哪个命令找不到')
 
     /* 用系统的 node 当「后端」：它拿不到合法 JSON，会走 bad_output 分支（同样是可区分状态） */
     const bad = await createOpencliRunner('node')(SEARCH_SOURCES[0], 'q', { limit: 1, timeoutMs: 8000 })
@@ -276,5 +283,40 @@ export async function runSearchTests(ok, mod) {
     })
     ok(versionTimeout.available === false, '--version 探针超时 → 不报可用')
     ok(/超时/.test(versionTimeout.detail), '--version 超时也说清是超时（不是「未安装」）')
+
+    /* YAN_NODE_BIN 填成 Electron → 提前拦下（否则正好踩回 commander 的 electron 分支） */
+    const binDir = mkdtempSync(join(tmpdir(), 'yan-nodebin-'))
+    const fakeElectron = join(binDir, 'electron.exe')
+    writeFileSync(fakeElectron, 'not-really-electron')
+    const electronAsNode = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, fakeElectron)
+    ok(!!electronAsNode.error && /Electron/.test(electronAsNode.error), 'YAN_NODE_BIN 指向 Electron → 如实拦下')
+
+    /* 未安装时的 detail 必须是可读中文：设置页现在会直接把它展示出来 */
+    const savedPath = process.env.PATH
+    try {
+      process.env.PATH = ''
+      const noBackend = await searchDoctor()
+      ok(noBackend.available === false, 'PATH 里没有 opencli → 不可用')
+      ok(/找不到/.test(noBackend.detail) && !/ENOENT/i.test(noBackend.detail), '未安装时的 detail 是可读中文，不是 ENOENT')
+    } finally {
+      process.env.PATH = savedPath
+    }
+  }
+
+  /* ---- 找 node 的过滤规则（注入 dirs / probe，离线可测） ---- */
+  {
+    const shim = join('/fake/shim')
+    const real = join('/fake/real')
+    const files = {
+      [join(shim, 'node.cmd')]: { isFile: true, size: 40 },
+      [join(shim, 'node.exe')]: { isFile: true, size: 0 },
+      [join(real, 'node.exe')]: { isFile: true, size: 80_000_000 }
+    }
+    const probe = (p) => files[p] ?? { isFile: false, size: -1 }
+    ok(findNodeOnPath([shim], probe, 'win32') === null, 'Windows 上 .cmd shim 与 0 字节 node.exe 都不选')
+    ok(findNodeOnPath([shim, real], probe, 'win32') === join(real, 'node.exe'), '跳过坏候选，选到后面的正常 node.exe')
+    ok(findNodeOnPath([shim, real], probe, 'linux') === null, '非 Windows 不把 node.exe 当候选')
+    const dirProbe = () => ({ isFile: false, size: 0 })
+    ok(findNodeOnPath([shim], dirProbe, 'win32') === null, '目录不算可执行文件')
   }
 }
