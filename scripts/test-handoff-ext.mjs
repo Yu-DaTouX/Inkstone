@@ -99,6 +99,10 @@ export async function runHandoffExtTests(ok) {
       }
     })
     ok(typeof handlers.agent_settled === 'function', 'handoffs.js 挂在 agent_settled 上')
+    const fireSettled = (ctx = {}) => handlers.agent_settled({}, {
+      ...ctx,
+      sessionManager: { getSessionId: () => 'handoff-ext-session' }
+    })
 
     /*
      * 默认窗口不能被惄惄改小：自主档的 arm 会晚到链尾（那时 `agent_settled` 早已过去），
@@ -129,7 +133,7 @@ export async function runHandoffExtTests(ok) {
       await new Promise((resolve) => setTimeout(resolve, 500))
       await writeRequest('op-late')
     })()
-    handlers.agent_settled({}, ctx)
+    fireSettled(ctx)
     await lateWrite
     const late = await waitFor(readResult)
     ok(late?.operationId === 'op-late', '请求文件晚到（单测窗口 800ms 里的 500ms）也能生成')
@@ -142,7 +146,7 @@ export async function runHandoffExtTests(ok) {
     /* ── 2. 过期遗物：不重做，且把请求清掉 ─────────────────────────── */
     await rm(resultFile, { force: true })
     await writeRequest('op-stale', { createdAt: Date.now() - 31 * 60 * 1_000 })
-    handlers.agent_settled({}, ctx)
+    fireSettled(ctx)
     const staleLog = await waitFor(async () => {
       const log = await readLog()
       return log.some((line) => line.hook === 'skipped' && line.reason === 'stale') ? true : null
@@ -155,7 +159,7 @@ export async function runHandoffExtTests(ok) {
     await writeRequest('op-dup')
     await mkdir(join(root, 'handoff-result'), { recursive: true })
     await writeFile(resultFile, JSON.stringify({ handoffId: 'h1', operationId: 'op-dup', text: '旧结果' }), 'utf8')
-    handlers.agent_settled({}, ctx)
+    fireSettled(ctx)
     const dupLog = await waitFor(async () => {
       const log = await readLog()
       return log.some((line) => line.hook === 'skipped' && line.reason === 'already-produced') ? true : null
@@ -167,7 +171,7 @@ export async function runHandoffExtTests(ok) {
     /* ── 4. 拿不到模型注册表：不写结果（宿主才能区分「没跑」与「跑失败」） */
     await rm(resultFile, { force: true })
     await writeRequest('op-nomodel')
-    handlers.agent_settled({}, {})
+    fireSettled({})
     const noModelLog = await waitFor(async () => {
       const log = await readLog()
       return log.some((line) => line.hook === 'skipped' && line.reason === 'no-model-registry') ? true : null
@@ -187,7 +191,7 @@ export async function runHandoffExtTests(ok) {
       model: { id: 'test-model' }
     }
     await writeRequest('op-provider-failed')
-    handlers.agent_settled({}, failedCtx)
+    fireSettled(failedCtx)
     const failedResult = await waitFor(async () => {
       const result = await readResult()
       return result?.operationId === 'op-provider-failed' ? result : null
@@ -212,7 +216,7 @@ export async function runHandoffExtTests(ok) {
       model: { id: 'test-model' }
     }
     await writeRequest('op-provider-error-result')
-    handlers.agent_settled({}, returnedErrorCtx)
+    fireSettled(returnedErrorCtx)
     const returnedErrorResult = await waitFor(async () => {
       const result = await readResult()
       return result?.operationId === 'op-provider-error-result' ? result : null
@@ -226,7 +230,7 @@ export async function runHandoffExtTests(ok) {
       done: [], remaining: ['核对'], nextActions: ['打开文件核对'], blockers: [], files: [], notes: [] })
     let repairCalls = 0
     await writeRequest('op-repair', { maxAttempts: 2, retryPrompt: '修复格式' })
-    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_model, context, options) => {
+    fireSettled({ model: ctx.model, modelRegistry: { complete: async (_model, context, options) => {
       repairCalls++
       if (repairCalls === 2) ok(context.messages[0].content[0].text.includes('修复格式'), '修复调用保留原材料并追加宿主修复要求')
       return repairCalls === 1 ? { content: [{ type: 'thinking', text: '{假的推理}' }, { type: 'text', text: '无法生成' }], stopReason: 'length' }
@@ -238,7 +242,7 @@ export async function runHandoffExtTests(ok) {
 
     let badCalls = 0
     await writeRequest('op-bad', { maxAttempts: 2 })
-    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async () => { badCalls++; return { text: '坏格式', stopReason: 'length' } } } })
+    fireSettled({ model: ctx.model, modelRegistry: { complete: async () => { badCalls++; return { text: '坏格式', stopReason: 'length' } } } })
     const bad = await waitFor(async () => { const r = await readResult(); return r?.operationId === 'op-bad' ? r : null })
     ok(badCalls === 2 && bad?.attempts === 2 && bad?.stopReason === 'length', '两次坏格式后结束，无无限重试，记录截断原因')
 
@@ -259,7 +263,7 @@ export async function runHandoffExtTests(ok) {
       retryPromptTruncated: '被长度切断'
     })
     await rm(resultFile, { force: true })
-    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_m, context, options) => {
+    fireSettled({ model: ctx.model, modelRegistry: { complete: async (_m, context, options) => {
       budgets.push(options?.maxTokens)
       suffixes.push(context.messages[0].content[0].text)
       return { text: '坏格式', stopReason: 'length' }
@@ -280,7 +284,7 @@ export async function runHandoffExtTests(ok) {
       retryPrompt: '修复格式'
     })
     await rm(resultFile, { force: true })
-    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async (_m, _c, options) => {
+    fireSettled({ model: ctx.model, modelRegistry: { complete: async (_m, _c, options) => {
       formatBudgets.push(options?.maxTokens)
       return { text: '坏格式', stopReason: 'stop' }
     } } })
@@ -296,7 +300,7 @@ export async function runHandoffExtTests(ok) {
     let cancelledCalls = 0
     await writeRequest('op-cancel', { maxAttempts: 2 })
     await rm(resultFile, { force: true })
-    handlers.agent_settled({}, { model: ctx.model, modelRegistry: { complete: async () => {
+    fireSettled({ model: ctx.model, modelRegistry: { complete: async () => {
       cancelledCalls++; await rm(requestFile, { force: true }); return { text: '坏格式' }
     } } })
     await waitFor(async () => cancelledCalls ? true : null)
@@ -306,7 +310,7 @@ export async function runHandoffExtTests(ok) {
     /* ── 7. 压根没有请求：等满窗口后什么都不做 ─────────────────────── */
     await rm(resultFile, { force: true })
     await rm(requestFile, { force: true })
-    handlers.agent_settled({}, ctx)
+    fireSettled(ctx)
     const emptyCheck = await waitFor(async () => {
       const check = await lastCheck()
       return check && check.hasRequest === false ? check : null

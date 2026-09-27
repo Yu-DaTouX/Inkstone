@@ -11,10 +11,10 @@
  *   所以要在这里组装出完整的 UIMessage[]，再以补丁形式推给渲染端。
  */
 import { EventEmitter } from 'node:events'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { delimiter, join } from 'node:path'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PiRpc } from './protocol'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -64,7 +64,19 @@ import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStore
 import { agentProfileSnapshotPath } from './agent-profile-store'
 import { decideTaskCreation, taskCreationRefusal } from '../shared/activity-flow'
 import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProfileKind } from '../shared/agent-profile'
-import { isSafeSessionId } from './context-state-store'
+import { contextStatePath, isSafeSessionId } from './context-state-store'
+import { inspectContextStateFile } from '../shared/context-state'
+import { readSessionEntryIndex } from './context-watermark'
+import { contextBudgetStoreV1, ContextBudgetStoreError } from './context-budget-store'
+import type { ContextMaintenanceOperationV1 } from '../shared/context-maintenance'
+import {
+  calculateContextBudgetV1,
+  estimateTextTokensV1,
+  selectAutoContextBudgetV1,
+  type ContextBudgetMaterialRecordV1,
+  type ContextBudgetSessionPolicyV1,
+  type EndpointBudgetCapabilityV1
+} from '../shared/context-budget-v1'
 import { questionLog } from './question-log'
 import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
@@ -143,6 +155,53 @@ const FLUSH_MS = 16
  * 几十万字的累积文本吃穿，所以让它自然降频到 10~20fps 比卡顿好。
  */
 const MAX_FLUSH_MS = 120
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function distinctTextTokens(values: string[]): number {
+  const seen = new Set<string>()
+  let total = 0
+  for (const value of values) {
+    const text = value.trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    total += estimateTextTokensV1(text)
+  }
+  return total
+}
+
+function activeTaskStateTexts(raw: unknown): string[] {
+  if (!isPlainRecord(raw) || !isPlainRecord(raw.task)) return []
+  const texts: string[] = []
+  const objective = raw.task.objective
+  const phase = raw.task.currentPhase
+  if (typeof objective === 'string') texts.push(objective)
+  if (typeof phase === 'string') texts.push(phase)
+  for (const key of [
+    'currentState', 'decisions', 'constraints', 'completed', 'failedAttempts',
+    'unresolved', 'nextActions', 'assumptions', 'hypothesis'
+  ]) {
+    const entries = raw.task[key]
+    if (!Array.isArray(entries)) continue
+    for (const entry of entries) {
+      if (isPlainRecord(entry) && entry.status === 'active' && typeof entry.text === 'string') texts.push(entry.text)
+    }
+  }
+  for (const key of ['files', 'commandsRun', 'testsRun', 'symbolsTouched']) {
+    const entries = raw.task[key]
+    if (!Array.isArray(entries)) continue
+    for (const entry of entries) {
+      if (!isPlainRecord(entry)) continue
+      for (const field of ['path', 'state', 'command', 'summary', 'name', 'symbol']) {
+        const value = entry[field]
+        if (typeof value === 'string') texts.push(value)
+      }
+    }
+  }
+  return texts
+}
 
 /**
  * `compact` 命令的超时（默认 30s 不够用）。
@@ -396,6 +455,10 @@ export class AgentController extends EventEmitter {
    * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
    */
   private repeatGuardExtension?: string
+  /** 最终 provider payload 观察器，排在受管与项目扩展之后。 */
+  private contextBudgetObserverExtension?: string
+  /** Budget V1 的受控摘要事务与活跃投影应用。 */
+  private contextBudgetMaintenanceExtension?: string
   /** 读界面历史（实施-05 S5b-4）；缺省用 `readSessionMessages` 读单文件。 */
   private readHistory?: (sessionFile: string) => Promise<ReadResult | null>
   /** 当前设置的回复档位；在 agent_start 时快照，不随回合中途改设置漂移。 */
@@ -501,6 +564,7 @@ export class AgentController extends EventEmitter {
   } | null = null
   /** 回合级「正在干活」（含工具执行），见 setAgentRunning */
   private agentRunning = false
+  private contextMaintenanceInProgress = false
   /** 当前 agent 回合的宿主起点；与单条 assistant 消息的首 token 时间分开。 */
   private turnStartedAt?: number
   /**
@@ -672,6 +736,10 @@ export class AgentController extends EventEmitter {
     projectKnowledgeExtension?: string
     /** 单轮重复动作兜底（2026-09-22）：连续相同调用 → 提醒 / 拦下 */
     repeatGuardExtension?: string
+    /** 上下文预算 V1：最终 payload 观察器，需排在受管与项目扩展之后。 */
+    contextBudgetObserverExtension?: string
+    /** 上下文预算 V1：受控摘要命令与已提交投影应用。 */
+    contextBudgetMaintenanceExtension?: string
     /**
      * 读界面历史（实施-05 S5b-4）。
      *
@@ -740,6 +808,8 @@ export class AgentController extends EventEmitter {
     this.contextExtension = opts.contextExtension
     this.projectKnowledgeExtension = opts.projectKnowledgeExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
+    this.contextBudgetObserverExtension = opts.contextBudgetObserverExtension
+    this.contextBudgetMaintenanceExtension = opts.contextBudgetMaintenanceExtension
     this.readHistory = opts.readHistory
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
@@ -936,6 +1006,14 @@ export class AgentController extends EventEmitter {
         ...managedSkillArgs,
         /* 项目已授权登记的 pi 包：显式路径不受 `--no-extensions` 影响（见函数注释）。 */
         ...projectPackageArgs,
+        /* 投影在 `context` 阶段生效；最终 budget observer 保持所有请求改写器之后。 */
+        ...(this.contextBudgetMaintenanceExtension
+          ? ['--extension', this.contextBudgetMaintenanceExtension]
+          : []),
+        /* 必须排在所有会改请求内容的内置、受管、项目扩展之后。 */
+        ...(this.contextBudgetObserverExtension
+          ? ['--extension', this.contextBudgetObserverExtension]
+          : []),
         /*
          * 测试通道：`YAN_PROBE_SKILL` 指定一个 SKILL.md 时，像受管技能那样
          * 用显式 `--skill` 传进去。产品自 01-S5 起带 `--no-skills`，
@@ -979,6 +1057,10 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityOpts?.sessionId
           ? { YAN_SESSION_ID: this.capabilityOpts.sessionId }
           : {}),
+        ...(this.capabilityOpts?.sessionId
+          ? { YAN_RUNNER_ID: this.capabilityOpts.sessionId }
+          : { YAN_RUNNER_ID: 'primary' }),
+        YAN_RUNNER_EPOCH: String(this.capabilityOpts?.runnerGeneration ?? 1),
         ...(this.capabilityOpts?.projectId
           ? { YAN_PROJECT_ID: this.capabilityOpts.projectId }
           : {}),
@@ -1355,6 +1437,7 @@ export class AgentController extends EventEmitter {
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params)
     if (command === 'context.recall') return this.runContextRecallCommand(params)
+    if (command.startsWith('context.budget.')) return this.runContextBudgetCommand(command, params)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
@@ -1494,6 +1577,649 @@ export class AgentController extends EventEmitter {
         throw new CapabilityCommandError(error.code, error.message)
       }
       throw new CapabilityCommandError('context_recall_unavailable', '归档回读暂时不可用；未返回正文')
+    }
+  }
+
+  /**
+   * `yan context budget status|adjust` is the agent's structured, host-validated
+   * path for preparing the next request budget. The model supplies source refs
+   * and purpose; it never supplies a trusted token count or writes policy files.
+   */
+  private async runContextBudgetCommand(
+    command: string,
+    params: Record<string, unknown>
+  ): Promise<CapabilityCommandResult> {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) {
+      throw new CapabilityCommandError('context_session_unavailable', '当前还没有可安全调整预算的会话')
+    }
+    if (command === 'context.budget.status') {
+      try {
+        const policy = await contextBudgetStoreV1.read(sessionId)
+        const phase = policy.phases[policy.activePhaseId]
+        const active = await contextBudgetStoreV1.isConfigured(sessionId)
+        return {
+          data: { policy, activePhase: phase, active, strategy: active ? 'budget-v1' : 'legacy' },
+          summary: {
+            kind: 'context-budget',
+            action: 'status',
+            mode: active ? (phase?.mode ?? 'auto') : 'legacy',
+            selectedBudget: phase?.selectedBudget ?? 200_000,
+            autoMaxBudget: phase?.autoMaxBudget ?? 700_000,
+            phaseId: policy.activePhaseId,
+            registeredMaterials: phase?.materials.filter((material) => material.status === 'available').length ?? 0
+          }
+        }
+      } catch (error) {
+        if (error instanceof ContextBudgetStoreError) {
+          throw new CapabilityCommandError(`context_budget_${error.code}`, error.message)
+        }
+        throw new CapabilityCommandError('context_budget_unavailable', '上下文预算状态暂时不可用；现有文件已保留')
+      }
+    }
+    if (command !== 'context.budget.adjust') {
+      throw new CapabilityCommandError('context_budget_action_unknown', '只支持 context budget status 或 adjust')
+    }
+
+    const expectedRevision = typeof params.expectedPolicyRevision === 'string'
+      ? params.expectedPolicyRevision
+      : ''
+    const purpose = typeof params.purpose === 'string' ? params.purpose.trim() : ''
+    const reason = typeof params.reason === 'string' ? params.reason.trim() : ''
+    if (!expectedRevision || !purpose || !reason) {
+      throw new CapabilityCommandError(
+        'context_budget_adjust_missing_fields',
+        'adjust 需要 expectedPolicyRevision、purpose 和 reason'
+      )
+    }
+    if (purpose.length > 1000 || reason.length > 2000) {
+      throw new CapabilityCommandError('context_budget_adjust_text_too_long', 'purpose 或 reason 超过允许长度')
+    }
+    const requestedRefs = params.requiredMaterialRefs === undefined ? [] : params.requiredMaterialRefs
+    const releaseIds = params.releaseMaterialIds === undefined ? [] : params.releaseMaterialIds
+    if (params.startNewPhase !== undefined && typeof params.startNewPhase !== 'boolean') {
+      throw new CapabilityCommandError('context_budget_phase_invalid', 'startNewPhase 只能是布尔值')
+    }
+    if (!Array.isArray(requestedRefs) || requestedRefs.length > 50 || !Array.isArray(releaseIds) || releaseIds.length > 100) {
+      throw new CapabilityCommandError('context_budget_material_list_invalid', '材料列表形状无效或数量超过上限')
+    }
+
+    let policy
+    try {
+      policy = await contextBudgetStoreV1.read(sessionId)
+    } catch (error) {
+      const message = error instanceof ContextBudgetStoreError ? error.message : '上下文预算状态暂时不可用'
+      throw new CapabilityCommandError('context_budget_store_unavailable', message)
+    }
+    if (!(await contextBudgetStoreV1.isConfigured(sessionId))) {
+      throw new CapabilityCommandError(
+        'context_budget_legacy_session',
+        '当前旧会话仍使用原上下文策略；先在上下文设置中启用 V1 自动模式，再由 agent 自主调档'
+      )
+    }
+    if (policy.revision !== expectedRevision) {
+      throw new CapabilityCommandError('context_budget_stale_revision', '策略版本已变化；先运行 yan context budget status')
+    }
+    const startNewPhase = params.startNewPhase === true
+    const previousPhaseId = policy.activePhaseId
+    const previousPhase = policy.phases[previousPhaseId]
+    if (!previousPhase) throw new CapabilityCommandError('context_budget_phase_missing', '当前任务阶段状态缺失')
+    if (startNewPhase && Object.keys(policy.phases).length >= 100) {
+      throw new CapabilityCommandError('context_budget_phase_limit', '本会话任务阶段达到 100 段上限；先结束或整理旧任务阶段')
+    }
+    const phaseId = startNewPhase
+      ? `phase-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`
+      : previousPhaseId
+    const carriedPinnedMaterials = startNewPhase
+      ? [...new Map(
+          Object.values(policy.phases)
+            .flatMap((item) => item.materials)
+            .filter((material) => material.pinnedByUser)
+            .map((material) => [
+              `${material.sourceRef}\0${material.range?.start ?? '*'}:${material.range?.end ?? '*'}:${material.contentHash}`,
+              { ...material, phaseId }
+            ])
+        ).values()]
+      : previousPhase.materials
+    if (carriedPinnedMaterials.length > 500) {
+      throw new CapabilityCommandError('context_budget_pinned_materials_limit', '用户固定材料超过新阶段可继承上限；请先整理固定材料')
+    }
+    const phase = startNewPhase
+      ? {
+          ...previousPhase,
+          phaseId,
+          materials: carriedPinnedMaterials,
+          materialRevision: randomUUID(),
+          consecutiveLowBoundaries: 0,
+          lastBoundaryRevision: undefined
+        }
+      : previousPhase
+
+    const releaseSet = new Set<string>()
+    for (const raw of releaseIds) {
+      if (typeof raw !== 'string' || !/^[A-Za-z0-9._-]{1,120}$/.test(raw)) {
+        throw new CapabilityCommandError('context_budget_release_invalid', 'releaseMaterialIds 含无效材料 ID')
+      }
+      const existing = previousPhase.materials.find((material) => material.id === raw)
+      if (!existing) throw new CapabilityCommandError('context_budget_release_unknown', `材料不存在：${raw}`)
+      if (existing.pinnedByUser) {
+        throw new CapabilityCommandError('context_budget_release_pinned', `材料由用户固定，不能由 agent 释放：${raw}`)
+      }
+      releaseSet.add(raw)
+    }
+
+    const scanned: Array<{ material: ContextBudgetMaterialRecordV1; content: string }> = []
+    let scannedBytes = 0
+    if (startNewPhase) {
+      for (const pinned of carriedPinnedMaterials) {
+        if (pinned.status !== 'available') {
+          throw new CapabilityCommandError('context_budget_pinned_material_stale', `固定材料不可用，不能隐式继承：${pinned.sourceRef}`)
+        }
+        const remainingBytes = 8 * 1024 * 1024 - scannedBytes
+        const checked = await this.scanContextBudgetMaterial(sessionId, phaseId, {
+          path: pinned.sourceRef,
+          purpose: pinned.purpose,
+          ...(pinned.range ? { range: { start: pinned.range.start, end: pinned.range.end } } : {})
+        }, remainingBytes)
+        if (checked.material.contentHash !== pinned.contentHash) {
+          throw new CapabilityCommandError('context_budget_pinned_material_changed', `固定材料内容已变化；先解除固定，再登记并固定新版本：${pinned.sourceRef}`)
+        }
+        scannedBytes += checked.readBytes
+        scanned.push({
+          ...checked,
+          material: {
+            ...checked.material,
+            pinnedByUser: true,
+            requiredTogether: pinned.requiredTogether
+          }
+        })
+      }
+    }
+    for (const item of requestedRefs) {
+      if (!isPlainRecord(item) || typeof item.path !== 'string' || typeof item.purpose !== 'string') {
+        throw new CapabilityCommandError('context_budget_material_invalid', '每项材料都需要 path 和 purpose')
+      }
+      const remainingBytes = 8 * 1024 * 1024 - scannedBytes
+      const material = await this.scanContextBudgetMaterial(sessionId, phaseId, item, remainingBytes)
+      scannedBytes += material.readBytes
+      scanned.push(material)
+    }
+
+    const nextMaterials = phase.materials.filter((material) => !releaseSet.has(material.id))
+    for (const entry of scanned) {
+      const existingIndex = nextMaterials.findIndex((material) =>
+        material.sourceRef === entry.material.sourceRef &&
+        material.range?.start === entry.material.range?.start &&
+        material.range?.end === entry.material.range?.end
+      )
+      if (existingIndex < 0) {
+        nextMaterials.push(entry.material)
+      } else {
+        const existing = nextMaterials[existingIndex]
+        nextMaterials[existingIndex] = {
+          ...entry.material,
+          pinnedByUser: existing.pinnedByUser || entry.material.pinnedByUser
+        }
+      }
+    }
+    if (nextMaterials.length > 500) {
+      throw new CapabilityCommandError('context_budget_material_limit', '当前阶段材料达到 500 项上限；先释放不再需要的材料')
+    }
+    const materialsChanged = JSON.stringify(nextMaterials) !== JSON.stringify(phase.materials)
+
+    const snapshot = await this.readPreparedBudgetSnapshot(sessionId)
+    const model = this.state?.model
+    if (
+      !snapshot ||
+      !model?.provider || !model.id || !model.endpointKey ||
+      snapshot.endpoint.provider !== model.provider ||
+      snapshot.endpoint.modelId !== model.id ||
+      snapshot.endpoint.endpointKey !== model.endpointKey
+    ) {
+      throw new CapabilityCommandError(
+        'context_budget_baseline_unavailable',
+        '没有与当前模型匹配的近期请求基线；暂不根据猜测调档'
+      )
+    }
+    const contextWindow = typeof model.contextWindow === 'number' && Number.isSafeInteger(model.contextWindow)
+      ? model.contextWindow
+      : snapshot.endpoint.contextWindow
+    const maxOutputTokens = typeof model.maxTokens === 'number' && Number.isSafeInteger(model.maxTokens)
+      ? model.maxTokens
+      : snapshot.endpoint.maxOutputTokens
+    const outputReserve = Number.isSafeInteger(snapshot.endpoint.outputReserve) && (snapshot.endpoint.outputReserve as number) > 0
+      ? snapshot.endpoint.outputReserve as number
+      : null
+    if (outputReserve === null) {
+      throw new CapabilityCommandError('context_budget_output_reserve_unavailable', '最终请求没有可核实的输出额度 R')
+    }
+    const capability: EndpointBudgetCapabilityV1 | null =
+      contextWindow && maxOutputTokens && outputReserve !== null && outputReserve > 0 && snapshot.endpoint.endpointKey
+        ? {
+            endpointKey: snapshot.endpoint.endpointKey,
+            modelId: model.id,
+            mode: 'shared',
+            contextWindow,
+            maxOutputTokens,
+            countingAdapter: 'pi-pre-provider-estimate-v1',
+            outputAccounting: 'shared-window-request-output-limit',
+            revision: `${snapshot.endpoint.endpointKey}:${contextWindow}:${maxOutputTokens}`,
+            source: 'runtime'
+          }
+        : null
+    if (!capability) {
+      throw new CapabilityCommandError('context_budget_capacity_unavailable', '当前模型没有可核实的窗口和输出能力')
+    }
+
+    let taskStateTexts: string[]
+    try {
+      taskStateTexts = await this.currentBudgetTaskStateTexts(sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '当前任务状态不可核实'
+      throw new CapabilityCommandError('context_budget_task_state_unavailable', message)
+    }
+    const userTokens = this.messages.reduce((sum, message) => {
+      if (message.role !== 'user') return sum
+      const images = message.images?.length ?? 0
+      return sum + 4 + estimateTextTokensV1(message.text) + images * 1600
+    }, 0)
+    const fixedRequestTokens = snapshot.systemTokens + snapshot.toolsTokens
+    const knownText = [purpose, reason, ...taskStateTexts]
+    const alreadyPresent = (text: string): boolean =>
+      this.messages.some((message) => message.text.includes(text))
+    const countedMaterialHashes = new Set<string>()
+    const registeredMaterialTokens = nextMaterials.reduce((sum, material) => {
+      if (material.status !== 'available' || countedMaterialHashes.has(material.contentHash)) return sum
+      countedMaterialHashes.add(material.contentHash)
+      const contentIsAlreadyPresent = scanned.some((entry) =>
+        entry.material.contentHash === material.contentHash && alreadyPresent(entry.content)
+      )
+      return contentIsAlreadyPresent ? sum : sum + material.tokenEstimate
+    }, 0)
+    const requiredInputTokens =
+      fixedRequestTokens + userTokens + distinctTextTokens(knownText) + registeredMaterialTokens
+    const registeredGrowth = 0
+    let candidate = phase.mode === 'auto'
+      ? selectAutoContextBudgetV1({
+          requiredInputTokens,
+          capability,
+          outputReserve,
+          registeredNextGrowth: registeredGrowth,
+          autoMaxBudget: phase.autoMaxBudget,
+          currentBudget: phase.selectedBudget,
+          phaseChanged: startNewPhase,
+          consecutiveLowBoundaries: startNewPhase ? 0 : phase.consecutiveLowBoundaries,
+          losslessProjectionFitsCandidate: false
+        })
+      : null
+    if (candidate?.ok && candidate.deferredDownshift && candidate.candidateBudget !== null) {
+      const projectedCalculation = calculateContextBudgetV1({
+        capability,
+        outputReserve,
+        selectedBudget: candidate.candidateBudget,
+        registeredNextGrowth: registeredGrowth
+      })
+      const losslessProjectionFitsCandidate =
+        snapshot.inputTokens !== null && projectedCalculation.reviewLine !== null &&
+        snapshot.inputTokens < projectedCalculation.reviewLine
+      if (losslessProjectionFitsCandidate) {
+        candidate = selectAutoContextBudgetV1({
+          requiredInputTokens,
+          capability,
+          outputReserve,
+          registeredNextGrowth: registeredGrowth,
+          autoMaxBudget: phase.autoMaxBudget,
+          currentBudget: phase.selectedBudget,
+          phaseChanged: startNewPhase,
+          consecutiveLowBoundaries: startNewPhase ? 0 : phase.consecutiveLowBoundaries,
+          losslessProjectionFitsCandidate: true
+        })
+      }
+    }
+    const calculation = calculateContextBudgetV1({
+      capability,
+      outputReserve,
+      selectedBudget: candidate?.ok ? candidate.selectedBudget : phase.selectedBudget,
+      registeredNextGrowth: registeredGrowth
+    })
+    const candidateBudget = candidate?.candidateBudget ?? null
+    const candidateSoftLine = candidateBudget === null
+      ? null
+      : calculateContextBudgetV1({
+          capability,
+          outputReserve,
+          selectedBudget: candidateBudget,
+          registeredNextGrowth: registeredGrowth
+        }).reviewLine
+    const boundaryId = this.currentBudgetBoundaryId()
+    const requestNeedsAction =
+      !calculation.ok ||
+      calculation.reviewLine === null ||
+      requiredInputTokens >= calculation.reviewLine ||
+      (phase.mode === 'auto' && !candidate?.ok)
+    const chosen = phase.mode === 'auto' && candidate?.ok ? candidate.selectedBudget : phase.selectedBudget
+    const nextSelectionReason = phase.mode === 'auto' && candidate?.ok
+      ? `${reason}; ${candidate.reason}`
+      : reason
+    const boundaryFactsChanged =
+      phase.lastRequiredInputTokens !== requiredInputTokens ||
+      phase.lastCandidateBudget !== candidateBudget ||
+      phase.lastCandidateSoftLine !== candidateSoftLine ||
+      phase.lastAdjustBoundaryId !== boundaryId
+    const updateNeeded = startNewPhase || materialsChanged || chosen !== phase.selectedBudget ||
+      phase.selectionReason !== nextSelectionReason || boundaryFactsChanged
+    if (!updateNeeded) {
+      const status = requestNeedsAction
+        ? 'needs_action'
+        : phase.mode === 'fixed'
+          ? 'fixed_by_user'
+          : candidate?.reason ?? 'unchanged'
+      return {
+        data: {
+          status,
+          phaseId,
+          selectedBudget: phase.selectedBudget,
+          requiredInputTokens,
+          reviewLine: calculation.reviewLine,
+          hardInputLimit: calculation.hardInputLimit,
+          actionReason: requestNeedsAction ? (candidate?.reason ?? calculation.reason) : undefined,
+          countMode: 'estimated',
+          calculation,
+          materials: phase.materials
+        },
+        summary: {
+          kind: 'context-budget', action: 'adjust', status,
+          selectedBudget: phase.selectedBudget, phaseId
+        }
+      }
+    }
+
+    try {
+      const updated = await contextBudgetStoreV1.update(sessionId, expectedRevision, (current) => {
+        const currentPhase = current.phases[previousPhaseId]
+        if (!currentPhase || current.activePhaseId !== previousPhaseId) {
+          throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在或已发生变化')
+        }
+        const nextPhase: ContextBudgetSessionPolicyV1['phases'][string] = {
+          ...currentPhase,
+          phaseId,
+          selectedBudget: phase.mode === 'auto' && candidate?.ok ? candidate.selectedBudget : currentPhase.selectedBudget,
+          selectionSource: phase.mode === 'auto' && candidate?.ok ? 'agent' : currentPhase.selectionSource,
+          selectionReason: nextSelectionReason,
+          materialRevision: startNewPhase || materialsChanged ? randomUUID() : currentPhase.materialRevision,
+          materials: nextMaterials,
+          consecutiveLowBoundaries: startNewPhase ? 0 : currentPhase.consecutiveLowBoundaries,
+          ...(startNewPhase ? { lastBoundaryRevision: undefined } : {}),
+          lastAdjustBoundaryId: boundaryId ?? undefined,
+          lastRequiredInputTokens: requiredInputTokens,
+          lastCandidateBudget: candidateBudget,
+          lastCandidateSoftLine: candidateSoftLine
+        }
+        return {
+          ...current,
+          activePhaseId: phaseId,
+          phases: {
+            ...current.phases,
+            [phaseId]: nextPhase
+          }
+        }
+      })
+      const selected = updated.phases[phaseId]
+      const selectedCalc = calculateContextBudgetV1({
+        capability,
+        outputReserve,
+        selectedBudget: selected.selectedBudget,
+        registeredNextGrowth: registeredGrowth
+      })
+      const status = requestNeedsAction
+        ? 'needs_action'
+        : phase.mode === 'fixed'
+          ? 'fixed_by_user'
+          : candidate?.ok
+            ? candidate.changed ? 'applied' : candidate.reason
+            : 'needs_action'
+      return {
+        data: {
+          status,
+          phaseId,
+          selectedBudget: selected.selectedBudget,
+          requiredInputTokens,
+          reviewLine: selectedCalc.reviewLine,
+          hardInputLimit: selectedCalc.hardInputLimit,
+          actionReason: requestNeedsAction ? (candidate?.reason ?? selectedCalc.reason) : undefined,
+          countMode: 'estimated',
+          selectionReason: selected.selectionReason,
+          calculation: selectedCalc,
+          materialRevision: selected.materialRevision,
+          materials: selected.materials
+        },
+        summary: {
+          kind: 'context-budget', action: 'adjust', status,
+          selectedBudget: selected.selectedBudget,
+          phaseId,
+          registeredMaterials: selected.materials.filter((material) => material.status === 'available').length
+        }
+      }
+    } catch (error) {
+      if (error instanceof ContextBudgetStoreError) {
+        throw new CapabilityCommandError(`context_budget_${error.code}`, error.message)
+      }
+      throw new CapabilityCommandError('context_budget_update_failed', '上下文预算调整没有提交；原策略与材料清单保留')
+    }
+  }
+
+  private async readPreparedBudgetSnapshot(sessionId: string): Promise<{
+    endpoint: {
+      provider: string
+      api: string
+      modelId: string
+      endpointKey: string | null
+      contextWindow: number | null
+      maxOutputTokens: number | null
+      outputReserve: number | null
+    }
+    inputTokens: number | null
+    systemTokens: number
+    toolsTokens: number
+    observedAt: number
+  } | null> {
+    try {
+      const raw = JSON.parse(await readFile(join(YAN_DIR, 'context-budget-v1', sessionId, 'latest-request.json'), 'utf8')) as Record<string, unknown>
+      const endpoint = raw.endpoint as Record<string, unknown> | undefined
+      if (
+        raw.version !== 1 || raw.stage !== 'final' || raw.sessionId !== sessionId ||
+        typeof raw.observedAt !== 'number' || !Number.isSafeInteger(raw.observedAt) || raw.observedAt < 0 ||
+        raw.observedAt > Date.now() + 60_000 || Date.now() - raw.observedAt > 10 * 60_000 ||
+        !endpoint || typeof endpoint.provider !== 'string' || typeof endpoint.api !== 'string' ||
+        typeof endpoint.modelId !== 'string' ||
+        !Number.isSafeInteger(raw.systemTokens) || !Number.isSafeInteger(raw.toolsTokens)
+      ) return null
+      return {
+        endpoint: {
+          provider: endpoint.provider,
+          api: endpoint.api,
+          modelId: endpoint.modelId,
+          endpointKey: typeof endpoint.endpointKey === 'string' ? endpoint.endpointKey : null,
+          contextWindow: Number.isSafeInteger(endpoint.contextWindow) ? endpoint.contextWindow as number : null,
+          maxOutputTokens: Number.isSafeInteger(endpoint.maxOutputTokens) ? endpoint.maxOutputTokens as number : null,
+          outputReserve: Number.isSafeInteger(endpoint.outputReserve) ? endpoint.outputReserve as number : null
+        },
+        systemTokens: raw.systemTokens as number,
+        toolsTokens: raw.toolsTokens as number,
+        inputTokens: Number.isSafeInteger(raw.inputTokens) ? raw.inputTokens as number : null,
+        observedAt: raw.observedAt as number
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private currentBudgetBoundaryId(): string | null {
+    for (let index = this.messages.length - 1; index >= 0; index--) {
+      const message = this.messages[index]
+      if (message.role !== 'user') continue
+      return typeof message.id === 'string' && message.id ? message.id : null
+    }
+    return null
+  }
+
+  /** Count at most one low-use boundary per completed user turn for downshift hysteresis. */
+  private async recordContextBudgetBoundary(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    const boundaryId = this.currentBudgetBoundaryId()
+    if (!isSafeSessionId(sessionId) || !boundaryId) return
+    try {
+      if (!(await contextBudgetStoreV1.isConfigured(sessionId))) return
+      const policy = await contextBudgetStoreV1.read(sessionId)
+      const phaseId = policy.activePhaseId
+      const phase = policy.phases[phaseId]
+      if (
+        !phase || phase.mode !== 'auto' || phase.lastBoundaryRevision === boundaryId ||
+        phase.lastAdjustBoundaryId !== boundaryId || phase.lastCandidateBudget === null ||
+        phase.lastCandidateBudget === undefined || phase.lastRequiredInputTokens === undefined ||
+        phase.lastCandidateSoftLine === null || phase.lastCandidateSoftLine === undefined
+      ) return
+      const model = this.state?.model
+      const snapshot = await this.readPreparedBudgetSnapshot(sessionId)
+      if (!model?.endpointKey || snapshot?.endpoint.endpointKey !== model.endpointKey) return
+      const lowBoundary =
+        phase.lastCandidateBudget < phase.selectedBudget &&
+        phase.lastRequiredInputTokens <= Math.floor(phase.lastCandidateSoftLine * 0.8)
+      const consecutiveLowBoundaries = lowBoundary
+        ? Math.min(2, phase.consecutiveLowBoundaries + 1)
+        : 0
+      await contextBudgetStoreV1.update(sessionId, policy.revision, (current) => {
+        if (current.activePhaseId !== phaseId) {
+          throw new ContextBudgetStoreError('invalid_phase', '任务阶段已变化，未记录降档边界')
+        }
+        const currentPhase = current.phases[phaseId]
+        if (!currentPhase || currentPhase.lastAdjustBoundaryId !== boundaryId) {
+          throw new ContextBudgetStoreError('stale_revision', '任务预算在记录边界前已更新')
+        }
+        return {
+          ...current,
+          phases: {
+            ...current.phases,
+            [phaseId]: {
+              ...currentPhase,
+              consecutiveLowBoundaries,
+              lastBoundaryRevision: boundaryId
+            }
+          }
+        }
+      })
+    } catch {
+      /* A missed low-use count only delays a downshift; it never weakens a request guard. */
+    }
+  }
+
+  private async currentBudgetTaskStateTexts(sessionId: string): Promise<string[]> {
+    const sessionFile = this.state?.sessionFile
+    if (!sessionFile) throw new Error('当前会话原始记录不可用，不能安全估算任务状态')
+    const index = await readSessionEntryIndex(sessionFile)
+    if (
+      !index || index.sessionId !== sessionId || index.incompleteTail || index.unreadableEntries > 0
+    ) {
+      throw new Error('当前会话原始记录索引不完整，暂不按缺少任务状态计算')
+    }
+    let text: string
+    try {
+      text = await readFile(contextStatePath(sessionId), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return []
+      throw new Error('任务状态无法安全读取，暂不按空状态计算')
+    }
+    let raw: unknown
+    try {
+      raw = JSON.parse(text) as unknown
+    } catch {
+      throw new Error('任务状态 JSON 无效，暂不按空状态计算')
+    }
+    const inspected = inspectContextStateFile(raw, { knownEntryIds: index.entryIds })
+    if (inspected.status !== 'ok' || inspected.state.sessionId !== sessionId) {
+      throw new Error('任务状态格式或会话归属不可核实，暂不按空状态计算')
+    }
+    const watermark = inspected.state.sourceWatermark
+    if (
+      watermark.entryCount !== index.watermark.entryCount ||
+      watermark.lastEntryId !== index.watermark.lastEntryId
+    ) throw new Error('任务状态已落后于原始会话记录；请先刷新状态后再调档')
+    return activeTaskStateTexts(inspected.state)
+  }
+
+  private async scanContextBudgetMaterial(
+    sessionId: string,
+    phaseId: string,
+    input: Record<string, unknown>,
+    maxBytes: number
+  ): Promise<{ material: ContextBudgetMaterialRecordV1; content: string; readBytes: number }> {
+    const sourceRef = typeof input.path === 'string' ? input.path.trim() : ''
+    const purpose = typeof input.purpose === 'string' ? input.purpose.trim() : ''
+    if (!sourceRef || !purpose || purpose.length > 1000 || isAbsolute(sourceRef) || sourceRef.includes('\0')) {
+      throw new CapabilityCommandError('context_budget_material_invalid', '材料 path 必须是项目内相对路径，并附简短 purpose')
+    }
+    const normalized = sourceRef.replace(/[\\/]+/g, sep)
+    const parts = normalized.split(sep)
+    if (parts.some((part) => part === '..' || part === '.')) {
+      throw new CapabilityCommandError('context_budget_material_path_invalid', '材料路径不能包含 . 或 .. 路径段')
+    }
+    let root: string
+    let file: string
+    try {
+      root = await realpath(this.cwd)
+      file = await realpath(resolve(root, normalized))
+    } catch {
+      throw new CapabilityCommandError('context_budget_material_missing', `材料文件不存在或不可读：${sourceRef}`)
+    }
+    const rel = relative(root, file)
+    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new CapabilityCommandError('context_budget_material_path_invalid', '材料必须位于当前项目工作目录内')
+    }
+    const details = await stat(file)
+    if (!details.isFile() || details.size > 8 * 1024 * 1024 || details.size > maxBytes) {
+      throw new CapabilityCommandError('context_budget_material_size_invalid', '单个材料与本次扫描合计不得超过 8 MiB；大文件请分次提供更小范围')
+    }
+    const bytes = await readFile(file)
+    if (bytes.includes(0)) throw new CapabilityCommandError('context_budget_material_binary', '二进制材料当前不能作为文本预算材料登记')
+    let text: string
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch {
+      throw new CapabilityCommandError('context_budget_material_encoding', '材料不是有效 UTF-8 文本，未登记')
+    }
+    let range: ContextBudgetMaterialRecordV1['range']
+    if (input.range !== undefined) {
+      if (!isPlainRecord(input.range) || !Number.isSafeInteger(input.range.start) || !Number.isSafeInteger(input.range.end)) {
+        throw new CapabilityCommandError('context_budget_material_range_invalid', 'range 需要 start/end 字符索引')
+      }
+      const start = input.range.start as number
+      const end = input.range.end as number
+      if (start < 0 || end <= start || end > text.length) {
+        throw new CapabilityCommandError('context_budget_material_range_invalid', `range 必须满足 0 <= start < end <= ${text.length}`)
+      }
+      range = { start, end, unit: 'chars' }
+      text = text.slice(start, end)
+    }
+    const contentHash = createHash('sha256').update(text).digest('hex')
+    const canonicalRef = relative(root, file).split(sep).join('/')
+    const identity = `${sessionId}\0${phaseId}\0${canonicalRef}\0${range ? `${range.start}:${range.end}` : '*'}\0${contentHash}`
+    const id = `mat-${createHash('sha256').update(identity).digest('hex').slice(0, 24)}`
+    return {
+      material: {
+        id,
+        phaseId,
+        sourceRef: canonicalRef,
+        sourceVersion: `${details.size}:${Math.trunc(details.mtimeMs)}`,
+        contentHash,
+        ...(range ? { range } : {}),
+        requiredTogether: input.requiredTogether === true,
+        pinnedByUser: false,
+        tokenEstimate: estimateTextTokensV1(text),
+        status: 'available',
+        purpose
+      },
+      content: text,
+      readBytes: bytes.byteLength
     }
   }
 
@@ -4477,6 +5203,7 @@ export class AgentController extends EventEmitter {
         this.setAgentRunning(false)
         this.turnStartedAt = undefined
         this.turnStartedMono = undefined
+        void this.recordContextBudgetBoundary()
         /* 回合结束才写元数据日志：中途写会得到一堆半截记录（H-6）。 */
         void this.persistTurnTiming()
         void this.refreshState()
@@ -5188,6 +5915,263 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  /** Start one host-authorized, session-bound V1 maintenance transaction while idle. */
+  async requestContextMaintenanceV1(retryOperationId?: string): Promise<{
+    ok: boolean
+    operationId?: string
+    state?: 'committed' | 'applied' | 'needs_action'
+    error?: string
+  }> {
+    const sessionId = this.state?.sessionId
+    const sessionFile = this.state?.sessionFile
+    if (!isSafeSessionId(sessionId) || !sessionFile || !this.rpc?.running) {
+      return { ok: false, error: '当前没有可整理的活动会话' }
+    }
+    if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
+      return { ok: false, error: '当前会话仍在运行；等本轮结束后再整理' }
+    }
+    if (await this.hasPendingAutomaticMaintenance()) {
+      return { ok: false, error: '当前有自动整理或续接操作；请等它完成，或在会话中明确停止后再操作' }
+    }
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '已有上下文整理操作正在运行' }
+    this.contextMaintenanceInProgress = true
+    try {
+      if (!(await contextBudgetStoreV1.isConfigured(sessionId))) {
+        return { ok: false, error: '当前会话仍使用 legacy 策略；先在上下文设置中启用 V1' }
+      }
+      const policy = await contextBudgetStoreV1.read(sessionId)
+      const index = await readSessionEntryIndex(sessionFile)
+      if (!index || index.sessionId !== sessionId || index.incompleteTail || index.unreadableEntries > 0) {
+        return { ok: false, error: '会话原始记录不完整；未启动整理，原始记录已保留' }
+      }
+      const model = this.state?.model
+      if (!model?.provider || !model.id || !model.endpointKey) {
+        return { ok: false, error: '当前模型端点信息不完整；未启动整理' }
+      }
+      const registered = await this.rawCommands()
+      if (!registered.some((command) => String(command.name ?? '').replace(/^\/+/, '') === 'yan-context-maintain')) {
+        return { ok: false, error: '当前 pi runner 未确认加载整理命令；未发送控制消息' }
+      }
+      const watermark = index.watermark
+      const sourceRevision = `messages:${index.contextMessageWatermark.entryCount}:${index.contextMessageWatermark.lastEntryId ?? 'empty'}`
+      const runnerId = this.capabilityOpts?.sessionId ?? 'primary'
+      const runnerEpoch = String(this.capabilityOpts?.runnerGeneration ?? 1)
+      const capabilityRevision = [model.endpointKey, model.contextWindow, model.maxTokens]
+        .map((part) => String(part ?? '')).join('/')
+      let operationId = retryOperationId
+      if (retryOperationId !== undefined) {
+        if (!/^[A-Za-z0-9._-]{1,120}$/.test(retryOperationId)) {
+          return { ok: false, error: '整理操作身份无效' }
+        }
+        const prior = await contextBudgetStoreV1.readOperation(sessionId, retryOperationId)
+        if (!prior || (prior.state !== 'needs_action' && prior.state !== 'failed')) {
+          return { ok: false, error: '该整理操作当前不可重试；请刷新状态' }
+        }
+        if (prior.failureCode === 'resume_send_uncertain') {
+          return { ok: false, error: '续接消息发送状态不明；为避免重复执行，请先检查会话记录后再继续' }
+        }
+        if (
+          prior.identity.runnerId !== runnerId ||
+          prior.base.sourceRevision !== sourceRevision || prior.base.policyRevision !== policy.revision ||
+          prior.base.capabilityRevision !== capabilityRevision
+        ) return { ok: false, error: '会话、策略、原始记录或模型已变化；旧候选不能重试，请刷新并按当前状态重新整理' }
+        if (prior.resumeReceipt === null) {
+          try {
+            await contextBudgetStoreV1.recoverAndCommitCandidate(
+              sessionId,
+              retryOperationId,
+              prior.revision,
+              {
+                rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId },
+                sourceRevision,
+                policyRevision: policy.revision,
+                capabilityRevision
+              },
+              runnerId,
+              runnerEpoch,
+              index.entryIds
+            )
+            const recovered = await contextBudgetStoreV1.readOperation(sessionId, retryOperationId)
+            if (recovered?.state === 'committed' || recovered?.state === 'applied') {
+              if (recovered.requestKind === 'automatic') {
+                const commands = await this.rawCommands()
+                if (commands.some((command) => String(command.name ?? '').replace(/^\/+/, '') === 'yan-context-resume')) {
+                  const resume = await this.rpc.command('prompt', { message: `/yan-context-resume ${retryOperationId}` })
+                  if (!resume.success) {
+                    return { ok: false, operationId: retryOperationId, state: recovered.state, error: resume.error ?? '续接命令未能排队' }
+                  }
+                }
+              }
+              return { ok: true, operationId: retryOperationId, state: recovered.state }
+            }
+          } catch {
+            /* A stale candidate can still be explicitly regenerated below after the same base checks. */
+          }
+        }
+        await contextBudgetStoreV1.transitionOperation(sessionId, retryOperationId, prior.revision, 'preparing', {
+          requestKind: prior.requestKind === 'automatic' ? 'automatic' : 'user_retry',
+          identity: { ...prior.identity, runnerEpoch },
+          base: {
+            ...prior.base,
+            rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId }
+          },
+          reason: '用户明确重试上下文整理',
+          retryNonce: randomUUID(),
+          candidateRef: null,
+          failureCode: null,
+          resumeId: null,
+          resumeReceipt: null,
+          projectionReceipt: null
+        })
+      } else {
+        const previous = await contextBudgetStoreV1.latestOperation(sessionId)
+        const waitingForProjection = previous?.state === 'committed' &&
+          (previous.requestKind !== 'automatic' || previous.resumeReceipt === null || previous.resumeReceipt.startsWith('intent:'))
+        const waitingForAutoResume = previous?.state === 'applied' && previous.requestKind === 'automatic' &&
+          (previous.resumeReceipt === null || previous.resumeReceipt.startsWith('intent:'))
+        if (previous && (
+          ['requested', 'preparing', 'summarizing', 'validating'].includes(previous.state) ||
+          waitingForProjection || waitingForAutoResume
+        )) {
+          return { ok: false, error: '已有整理操作正在等待完成或应用；请先刷新状态' }
+        }
+        if (previous && (previous.state === 'needs_action' || previous.state === 'failed') && previous.base.sourceRevision === sourceRevision) {
+          return { ok: false, error: '当前整理操作需要处理；请使用该操作的重试入口' }
+        }
+        operationId = `context-${randomUUID()}`
+        const now = Date.now()
+        const operation: ContextMaintenanceOperationV1 = {
+          version: 1,
+          revision: randomUUID(),
+          identity: { sessionId, runnerId, runnerEpoch, operationId },
+          base: {
+            rawWatermark: { entryCount: watermark.entryCount, lastEntryId: watermark.lastEntryId },
+            sourceRevision,
+            policyRevision: policy.revision,
+            capabilityRevision
+          },
+          requestKind: 'manual',
+          reason: '用户从上下文设置请求整理',
+          protectedRefs: [],
+          candidateRef: null,
+          beforeSnapshot: null,
+          afterSnapshot: null,
+          resumeId: null,
+          resumeReceipt: null,
+          projectionReceipt: null,
+          lastSummarizedSourceRevision: null,
+          retryNonce: null,
+          state: 'requested',
+          failureCode: null,
+          createdAt: now,
+          updatedAt: now
+        }
+        await contextBudgetStoreV1.createOperation(operation)
+      }
+      if (!operationId) return { ok: false, error: '整理操作没有生成身份' }
+      const result = await this.rpc.command('prompt', { message: `/yan-context-maintain ${operationId}` })
+      let latest = await contextBudgetStoreV1.readOperation(sessionId, operationId)
+      if (latest?.state === 'validating' && latest.candidateRef) {
+        const match = /^projections\/([A-Za-z0-9._-]{1,120})\.json$/.exec(latest.candidateRef)
+        try {
+          if (!match) throw new Error('整理候选路径无效；原始记录已保留')
+          const candidate = await contextBudgetStoreV1.readProjectionCandidate(sessionId, match[1])
+          if (!candidate) throw new Error('整理候选文件不存在；原始记录已保留')
+          const currentPolicy = await contextBudgetStoreV1.read(sessionId)
+          const currentIndex = await readSessionEntryIndex(sessionFile)
+          const currentModel = this.state?.model
+          const currentCapabilityRevision = currentModel?.endpointKey
+            ? [currentModel.endpointKey, currentModel.contextWindow, currentModel.maxTokens].map((part) => String(part ?? '')).join('/')
+            : ''
+          if (
+            this.state?.sessionId !== sessionId || currentPolicy.revision !== latest.base.policyRevision ||
+            !currentIndex || currentIndex.sessionId !== sessionId || currentIndex.incompleteTail || currentIndex.unreadableEntries > 0 ||
+            currentIndex.watermark.entryCount !== latest.base.rawWatermark.entryCount ||
+            currentIndex.watermark.lastEntryId !== latest.base.rawWatermark.lastEntryId ||
+            `messages:${currentIndex.contextMessageWatermark.entryCount}:${currentIndex.contextMessageWatermark.lastEntryId ?? 'empty'}` !== latest.base.sourceRevision ||
+            currentCapabilityRevision !== latest.base.capabilityRevision
+          ) throw new Error('整理期间会话、策略、原始记录或模型端点发生变化；候选未提交')
+          await contextBudgetStoreV1.commitProjection(sessionId, operationId, latest.revision, candidate)
+          latest = await contextBudgetStoreV1.readOperation(sessionId, operationId)
+        } catch (error) {
+          const current = await contextBudgetStoreV1.readOperation(sessionId, operationId)
+          if (current?.state === 'validating') {
+            await contextBudgetStoreV1.transitionOperation(
+              sessionId, operationId, current.revision, 'needs_action', { failureCode: 'projection_commit_failed' }
+            ).catch(() => undefined)
+          }
+          return {
+            ok: false,
+            operationId,
+            state: 'needs_action',
+            error: error instanceof Error ? error.message : '整理候选未能提交；原始记录已保留'
+          }
+        }
+      }
+      if (latest?.state === 'committed' || latest?.state === 'applied') {
+        return { ok: true, operationId, state: latest.state }
+      }
+      if (!result.success) {
+        if (latest?.state === 'requested' || latest?.state === 'preparing') {
+          await contextBudgetStoreV1.transitionOperation(
+            sessionId, operationId, latest.revision, 'needs_action', { failureCode: 'maintenance_command_failed' }
+          ).catch(() => undefined)
+        }
+        return { ok: false, operationId, state: 'needs_action', error: result.error ?? '整理命令未完成' }
+      }
+      if (latest?.state === 'requested' || latest?.state === 'preparing') {
+        await contextBudgetStoreV1.transitionOperation(
+          sessionId, operationId, latest.revision, 'needs_action', { failureCode: 'maintenance_command_not_run' }
+        ).catch(() => undefined)
+      }
+      return {
+        ok: false,
+        operationId,
+        state: 'needs_action',
+        error: latest?.failureCode ?? '整理操作尚未提交；原始记录未改动'
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : '上下文整理失败；原始记录已保留' }
+    } finally {
+      this.contextMaintenanceInProgress = false
+    }
+  }
+
+  /** Cancel outstanding context work before an explicit stop or endpoint change. */
+  async cancelContextMaintenanceV1(reason: string): Promise<void> {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) return
+    try {
+      const operation = await contextBudgetStoreV1.latestOperation(sessionId)
+      if (!operation) return
+      const working = ['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state)
+      const pendingAutoResume = operation.requestKind === 'automatic' &&
+        ['committed', 'applied'].includes(operation.state) &&
+        (operation.resumeReceipt === null || operation.resumeReceipt.startsWith('intent:'))
+      if (!working && !pendingAutoResume) return
+      await contextBudgetStoreV1.transitionOperation(
+        sessionId, operation.identity.operationId, operation.revision, 'cancelled',
+        { failureCode: String(reason).slice(0, 160) }
+      )
+    } catch {
+      /* Stale operation revisions fail closed in the extension before commit. */
+    }
+  }
+
+  private async hasPendingAutomaticMaintenance(): Promise<boolean> {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) return false
+    try {
+      const operation = await contextBudgetStoreV1.latestOperation(sessionId)
+      return !!operation && operation.requestKind === 'automatic' && (
+        ['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state) ||
+        (['committed', 'applied'].includes(operation.state) && operation.resumeReceipt?.startsWith('intent:') === true)
+      )
+    } catch {
+      return true
+    }
+  }
+
   async send(
     text: string,
     images?: { data: string; mimeType: string }[],
@@ -5201,6 +6185,8 @@ export class AgentController extends EventEmitter {
      */
     mode?: 'steer' | 'followUp'
   ): Promise<{ ok: boolean; error?: string }> {
+    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收新消息，草稿仍保留' }
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收新消息；草稿仍保留' }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
@@ -5234,12 +6220,16 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string): Promise<{ ok: boolean; error?: string }> {
+    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收插话，草稿仍保留' }
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收插话；草稿仍保留' }
     await this.prepareKnowledge(text)
     const res = await this.rpc!.command('steer', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
+    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收排队消息，草稿仍保留' }
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收排队消息；草稿仍保留' }
     await this.prepareKnowledge(text)
     const res = await this.rpc!.command('follow_up', { message: text })
     return res.success ? { ok: true } : { ok: false, error: res.error }
@@ -5387,6 +6377,7 @@ export class AgentController extends EventEmitter {
   }
 
   async abort(): Promise<{ steering: string[]; followUp: string[] }> {
+    await this.cancelContextMaintenanceV1('user_stopped')
     /* 用户主动停止：用时冻结在当下，并标明这不是正常完成（H-6）。 */
     this.turnTerminal = 'stopped'
     // 按 pi 的约定：先 clear_queue 再 abort，把排队的文本拿回来。
@@ -5607,6 +6598,8 @@ export class AgentController extends EventEmitter {
   /* ---------------------------------------------------------- 会话管理 */
 
   async newSession(): Promise<{ ok: boolean; error?: string }> {
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能创建新会话' }
+    await this.cancelContextMaintenanceV1('session_changed')
     this.suppressPush = true
     try {
       const res = await this.rpc!.command('new_session')
@@ -5628,13 +6621,32 @@ export class AgentController extends EventEmitter {
       this.policyOrigin = null
       this.suppressPush = false
       await this.hydrate()
-      return { ok: true }
+      return this.initializeContextBudgetV1Default()
     } finally {
       this.suppressPush = false
     }
   }
 
+  /** Persist V1 defaults only for sessions the host has just created. */
+  async initializeContextBudgetV1Default(): Promise<{ ok: boolean; error?: string }> {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) {
+      return { ok: false, error: '新会话身份不可核实，未启用上下文预算 V1' }
+    }
+    try {
+      await contextBudgetStoreV1.ensureDefault(sessionId)
+      return { ok: true }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `新会话上下文策略未能保存：${error instanceof Error ? error.message : String(error)}`
+      }
+    }
+  }
+
   async switchSession(path: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换会话' }
+    await this.cancelContextMaintenanceV1('session_changed')
     this.suppressPush = true
     try {
       const res = await this.rpc!.command('switch_session', { sessionPath: path })
@@ -5779,10 +6791,14 @@ export class AgentController extends EventEmitter {
   }
 
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换模型' }
+    await this.cancelContextMaintenanceV1('model_changed')
     return this.enqueueCapabilityChange(() => this.applyModel(provider, modelId))
   }
 
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前不能切换思考档位' }
+    await this.cancelContextMaintenanceV1('thinking_level_changed')
     return this.enqueueCapabilityChange(async () => {
       const res = await this.rpc!.command('set_thinking_level', { level })
       if (res.success) await this.refreshState()
@@ -6119,6 +7135,7 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    await this.cancelContextMaintenanceV1('runner_stopped')
     /* 端点随实例一起停：token 作废，旧 CLI 环境变量从此无效。 */
     this.capabilityServer?.stop()
     this.capabilityServer = undefined

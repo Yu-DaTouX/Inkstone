@@ -34,6 +34,9 @@ export interface SessionEntryIndex {
   sessionId?: string
   /** 按文件顺序的原始 entry id（不含文件头） */
   entryIds: RawEntryId[]
+  /** Business message entries only; extension receipts/control records are excluded for context summary deduplication. */
+  contextMessageEntryIds: RawEntryId[]
+  contextMessageWatermark: SourceWatermark
   /** 由 entryIds 算出的水位 */
   watermark: SourceWatermark
   /** 最后一行看起来是被截断的半条 entry（进程被杀）—— 它没有被计入 */
@@ -68,6 +71,7 @@ function lineIdentity(line: string): LineIdentity | null {
  */
 export async function readSessionEntryIndex(path: string): Promise<SessionEntryIndex | null> {
   const entryIds: RawEntryId[] = []
+  const contextMessageEntryIds: RawEntryId[] = []
   let sessionId: string | undefined
   let unreadableEntries = 0
   let incompleteTail = false
@@ -116,6 +120,7 @@ export async function readSessionEntryIndex(path: string): Promise<SessionEntryI
         continue
       }
       entryIds.push(identity.id)
+      if (identity.type === 'message') contextMessageEntryIds.push(identity.id)
     }
   } catch {
     return null
@@ -129,7 +134,9 @@ export async function readSessionEntryIndex(path: string): Promise<SessionEntryI
   return {
     ...(sessionId ? { sessionId } : {}),
     entryIds,
+    contextMessageEntryIds,
     watermark: watermarkFromEntryIds(entryIds),
+    contextMessageWatermark: watermarkFromEntryIds(contextMessageEntryIds),
     incompleteTail,
     unreadableEntries
   }

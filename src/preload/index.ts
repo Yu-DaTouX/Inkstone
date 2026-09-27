@@ -76,6 +76,10 @@ import type {
   CompactionInfo,
   TrustStatusView,
   ContextPolicyResolution,
+  ContextBudgetSelectionUpdateResultV1,
+  ContextBudgetRuntimeSnapshotV1,
+  ContextBudgetSessionPolicyV1,
+  ContextMaintenanceOperationV1,
   CustomEntry,
   DirListing,
   FileRequestContext,
@@ -647,6 +651,18 @@ const api: YanBridge = {
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd)
   },
   contextBudget: (win) => invoke<ContextPolicyResolution>('yan:contextBudget', win),
+  contextBudgetV1: () => invoke<ContextBudgetSessionPolicyV1 | null>('yan:contextBudgetV1'),
+  contextBudgetV1Enabled: () => invoke<boolean>('yan:contextBudgetV1Enabled'),
+  contextBudgetSnapshotV1: () => invoke<ContextBudgetRuntimeSnapshotV1 | null>('yan:contextBudgetSnapshotV1'),
+  contextBudgetMaintainV1: (operationId?: string) => invoke<{
+    ok: boolean
+    operationId?: string
+    state?: 'committed' | 'applied' | 'needs_action'
+    error?: string
+  }>('yan:contextBudgetMaintainV1', operationId),
+  contextBudgetMaintenanceStatusV1: () => invoke<ContextMaintenanceOperationV1 | null>('yan:contextBudgetMaintenanceStatusV1'),
+  setContextBudgetV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetV1', update),
+  setContextBudgetMaterialPinV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetMaterialPinV1', update),
   /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),

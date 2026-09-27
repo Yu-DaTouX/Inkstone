@@ -2142,6 +2142,39 @@ const { runContextBudgetTests } = await import('./test-context-budget.mjs')
 runContextBudgetTests(ok, contextBudgetExtension, contextPolicy)
 
 /*
+ * 上下文预算 V1：同源算法边界 + 最终 provider hook 的 fail-closed 入口。
+ * 隔离数据目录由本文件顶部的 YAN_DATA_DIR 指向临时目录；不接真实 provider。
+ */
+const contextBudgetV1 = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/context-budget-v1.ts'],
+    outfile: 'out/test/context-budget-v1.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-budget-v1.mjs'))
+)
+const contextBudgetObserverV1 = await import('../resources/pi-extensions/context-budget-observer.js')
+const { runContextBudgetV1Tests } = await import('./test-context-budget-v1.mjs')
+await runContextBudgetV1Tests(ok, contextBudgetV1, contextBudgetObserverV1)
+const contextBudgetStoreV1 = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/context-budget-store.ts'],
+    outfile: 'out/test/context-budget-store-v1.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/context-budget-store-v1.mjs'))
+)
+const { runContextBudgetStoreV1Tests } = await import('./test-context-budget-store-v1.mjs')
+await runContextBudgetStoreV1Tests(ok, contextBudgetStoreV1)
+const contextBudgetCompletionV1 = await import('../resources/pi-extensions/context-budget-completion.js')
+const { runContextBudgetCompletionV1Tests } = await import('./test-context-budget-completion-v1.mjs')
+await runContextBudgetCompletionV1Tests(ok, contextBudgetCompletionV1, contextBudgetObserverV1)
+
+/*
  * 界面语言扩展（resources/pi-extensions/language.js）。
  *
  * 它是**待分发的源码**（随包进 resources/pi-extensions），不是要构建的 src ——

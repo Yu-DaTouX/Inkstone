@@ -29,6 +29,7 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { completeWithContextBudgetV1, ContextBudgetV1BlockedError } from './context-budget-completion.js'
 
 /** 一次写包的时限：给它足够时间（这是唯一一次额外调用），但不许无限挂着。 */
 const PRODUCE_TIMEOUT_MS = 60_000
@@ -298,10 +299,19 @@ export default function handoffs(pi) {
         if (readRequest()?.operationId !== request.operationId || signal.aborted) return
         generationAttempts++
         try {
-          const result = await registry.complete(model, {
-            ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
-            messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt + suffix }] }]
-          }, { maxTokens: tokensForAttempt, signal })
+          const result = await completeWithContextBudgetV1({
+            pi,
+            ctx,
+            requestKind: 'handoff',
+            operationId: request.operationId,
+            registry,
+            model,
+            payload: {
+              ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
+              messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt + suffix }] }]
+            },
+            options: { maxTokens: tokensForAttempt, signal }
+          })
           stopReason = typeof result?.stopReason === 'string' ? result.stopReason : null
           error = resultErrorOf(result)
           if (!error) text = resultTextOf(result)
@@ -330,7 +340,13 @@ export default function handoffs(pi) {
             stopReason,
             nextMaxTokens: tokensForAttempt
           })
-        } catch (err) { error = String(err?.message ?? err); break }
+        } catch (err) {
+          error = String(err?.message ?? err)
+          if (err instanceof ContextBudgetV1BlockedError) {
+            note('budget-blocked', { operationId: request.operationId, code: err.code, error })
+          }
+          break
+        }
       }
       if (readRequest()?.operationId !== request.operationId) return
 

@@ -50,6 +50,24 @@ import type { Space, SpaceProjectLink } from './space'
 /* 上下文装配（实施-25 P05）：契约在 shared/context-assembly.ts */
 export type { ContextAssembly, ContextCitation, ContextFragment, ContextSectionId } from './context-assembly'
 import type { ContextAssembly } from './context-assembly'
+export type {
+  ContextBudgetMaterialPinUpdateV1,
+  ContextBudgetPhasePolicyV1,
+  ContextBudgetRuntimeSnapshotV1,
+  ContextBudgetSelectionUpdateResultV1,
+  ContextBudgetSelectionUpdateV1,
+  ContextBudgetSessionPolicyV1,
+  ContextBudgetTierV1
+} from './context-budget-v1'
+import type {
+  ContextBudgetMaterialPinUpdateV1,
+  ContextBudgetSelectionUpdateResultV1,
+  ContextBudgetSelectionUpdateV1,
+  ContextBudgetRuntimeSnapshotV1,
+  ContextBudgetSessionPolicyV1
+} from './context-budget-v1'
+export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from './context-maintenance'
+import type { ContextMaintenanceOperationV1 } from './context-maintenance'
 /* 可编辑成果（实施-25 P06a）：契约在 shared/artifact-doc.ts */
 export type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from './artifact-doc'
 export type { Concept, Course, CourseEntry, CourseInput, CourseLevel, CourseSourceRef, LearningUnit, UnitOrigin } from './course'
@@ -604,6 +622,8 @@ export interface ModelInfo {
   id: string
   name: string
   provider: string
+  /** Non-secret runtime endpoint fingerprint; excludes URL credentials and query parameters. */
+  endpointKey?: string
   reasoning: boolean
   /** `reasoning: false` 与“上游没告诉我们”必须区分。 */
   reasoningStatus?: CapabilityStatus
@@ -3631,6 +3651,21 @@ export interface YanBridge {
    * 界面用主进程推送的那份，这个接口主要给测试与诊断对参考值。
    */
   contextBudget(contextWindow: number): Promise<ContextPolicyResolution>
+  /** 会话级 V1 档位；身份由宿主从当前 runner 决定。 */
+  contextBudgetV1(): Promise<ContextBudgetSessionPolicyV1 | null>
+  /** True when this session has explicitly entered budget V1; legacy sessions remain unchanged. */
+  contextBudgetV1Enabled(): Promise<boolean>
+  /** 最近一次 pi 最终请求检查；不含提示词正文，过期数据返回 null。 */
+  contextBudgetSnapshotV1(): Promise<ContextBudgetRuntimeSnapshotV1 | null>
+  contextBudgetMaintainV1(operationId?: string): Promise<{
+    ok: boolean
+    operationId?: string
+    state?: 'committed' | 'applied' | 'needs_action'
+    error?: string
+  }>
+  contextBudgetMaintenanceStatusV1(): Promise<ContextMaintenanceOperationV1 | null>
+  setContextBudgetV1(update: ContextBudgetSelectionUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
+  setContextBudgetMaterialPinV1(update: ContextBudgetMaterialPinUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
   /**
    * 三类整理动作账本（实施-11 C-2b）。读取的是**当前活动会话**：
    * 会话身份由主进程决定，界面不自报（与 `contextBudget` 同一约定）。

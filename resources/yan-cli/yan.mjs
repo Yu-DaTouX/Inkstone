@@ -65,6 +65,8 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan image generate --request-file image.json
   yan question ask --request-file question.json
   yan context recall --ref <ctx://...>
+  yan context budget status
+  yan context budget adjust --request-file context-budget.json
   yan goal ready --request-file ready.json
   yan goal report --request-file report.json
   yan goal status
@@ -406,6 +408,18 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
           [Recalled context] 开头，会在下一次用户输入时由上下文生命周期清理为存根。
           归档权限、过期时间、单次/累计预算和受管文件大小都由宿主检查；拒绝时不会给半份内容。
 
+  budget status
+          查看当前会话/阶段的预算选择、版本和已登记材料。
+  budget adjust --request-file context-budget.json
+          按必要材料和原因申请宿主校验并自动选择档位；请求示例：
+          {"expectedPolicyRevision":"从 status 读取","purpose":"当前分析目的",
+           "reason":"哪些材料必须共同分析，以及为何片段不足",
+           "requiredMaterialRefs":[{"path":"src/example.ts","purpose":"比较调用路径"}],
+           "releaseMaterialIds":[],"startNewPhase":false}
+          token 数由宿主根据当前请求、有效任务状态和可读材料估算；不接受模型自报 token 数。
+          任务目标确实切换时设 startNewPhase=true；宿主生成阶段 ID，并保留固定档位/固定材料。
+          用户固定档位时 agent 不会覆盖。调整无需逐次用户确认。
+
 `,
   subagent: `yan subagent <动作> [选项]
 
@@ -617,7 +631,7 @@ const GROUP_SPECS = {
     required: {}
   },
   context: {
-    actions: ['recall'],
+    actions: ['recall', 'budget'],
     required: { recall: ['ref'] }
   },
   search: {
@@ -726,7 +740,16 @@ if (groupSpec && !groupSpec.actions.includes(positional[1])) {
   })
 }
 
-const command = `${positional[0]}.${positional[1]}`
+let command
+if (positional[0] === 'context' && positional[1] === 'budget') {
+  const action = positional[2]
+  if (!['status', 'adjust'].includes(action)) {
+    fail(EXIT.usage, '用法：yan context budget status，或 yan context budget adjust --request-file context-budget.json')
+  }
+  command = `context.budget.${action}`
+} else {
+  command = `${positional[0]}.${positional[1]}`
+}
 
 /* 参数：优先用参数文件，其余 flag 原样带上（如 --scope available）。 */
 let params = {}

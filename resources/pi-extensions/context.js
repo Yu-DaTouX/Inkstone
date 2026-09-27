@@ -108,6 +108,8 @@ import {
   transcriptStats,
   userDirectives
 } from './context-producer.js'
+import { completeWithContextBudgetV1 } from './context-budget-completion.js'
+import { readContextBudgetPolicyV1 } from './context-budget-policy.js'
 import {
   STAGE_COOLDOWN_MS,
   STAGE_REARM_MS,
@@ -212,11 +214,12 @@ function requestBudgetFor(ctx) {
  * 压缩要跨回合（属于宿主 settled 后的活）。这里只观察与止损。
  */
 function onBeforeProviderRequest(event, ctx, pi) {
+  const sessionId = sessionIdOf(ctx)
+  if (contextBudgetV1Active(sessionId)) return
   const payload = event?.payload
   const budget = requestBudgetFor(ctx)
   const usage = estimateRequestTokens(payload)
   const verdict = requestBudgetLevel({ estimatedTokens: usage.total, budget })
-  const sessionId = sessionIdOf(ctx)
 
   trace(`request-budget-${verdict.level}`, {
     sessionId,
@@ -742,6 +745,10 @@ function sessionIdOf(ctx) {
   }
 }
 
+function contextBudgetV1Active(sessionId) {
+  return !!sessionId && !readContextBudgetPolicyV1(sessionId).inactive
+}
+
 /**
  * `context` 钩子：唯一的消息改写点。
  *
@@ -751,7 +758,7 @@ function sessionIdOf(ctx) {
  *   ③ Task State 前置注入（kinds 含 `episode-fold` 且状态水位一致）；
  *   ④ 校验：`sweepViolations` 非空则整轮放弃（回退到原始消息）。
  */
-async function onContext(event, ctx) {
+async function onContext(event, ctx, pi) {
   const messages = event?.messages
   if (!Array.isArray(messages) || messages.length === 0) return
   const sessionId = sessionIdOf(ctx)
@@ -985,7 +992,7 @@ async function onContext(event, ctx) {
      * 所以四道闸门（开关 / 新用户消息 / 没跑过 / 转录够长）缺一不可。
      */
     if (p.deep.enabled) {
-      const deep = await runDeepPass({ sessionId, ctx, messages: next, p })
+      const deep = await runDeepPass({ sessionId, ctx, messages: next, p, pi })
       if (deep.injected) {
         next = deep.messages
         injectedWorkingTrace = true
@@ -1059,7 +1066,7 @@ function resultTextOf(result) {
  * `ctx.modelRegistry.complete()` 是扩展侧唯一能自己发起模型调用的通道（§16.1）。
  * 它**不经过会话循环**，所以不会递归触发 `context` 钩子。
  */
-async function runDeepPass({ sessionId, ctx, messages, p }) {
+async function runDeepPass({ sessionId, ctx, messages, p, pi }) {
   const key = turnKeyOf(messages)
   const ranForTurn = !!key && deepRan.get(sessionId) === key
   const tokens = transcriptTokensOf(ctx)
@@ -1094,14 +1101,18 @@ async function runDeepPass({ sessionId, ctx, messages, p }) {
   const startedAt = Date.now()
   let text = ''
   try {
-    const result = await registry.complete(
+    const result = await completeWithContextBudgetV1({
+      pi,
+      ctx,
+      requestKind: 'deep',
+      registry,
       model,
-      {
+      payload: {
         systemPrompt: DEEP_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: [{ type: 'text', text: buildDeepPrompt(materials.text) }] }]
       },
-      { maxTokens: DEEP_MAX_OUTPUT_TOKENS, signal: AbortSignal.timeout(DEEP_TIMEOUT_MS) }
-    )
+      options: { maxTokens: DEEP_MAX_OUTPUT_TOKENS, signal: AbortSignal.timeout(DEEP_TIMEOUT_MS) }
+    })
     text = resultTextOf(result)
   } catch (error) {
     trace('deep', { sessionId, stage: 'deep', hook: 'error', ms: Date.now() - startedAt, message: errorText(error) })
@@ -1171,6 +1182,10 @@ function onBeforeCompact(event, ctx) {
     reason: event?.reason ?? null
   })
   if (!sessionId) return
+  if (contextBudgetV1Active(sessionId)) {
+    trace('compact', { sessionId, stage: 'compact', hook: 'cancelled', reason: 'budget-v1-maintenance-owns-context' })
+    return { cancel: true }
+  }
   const p = policy()
   /*
    * 与注入同一条分路（第四轮外部评审 P0-5）：`inject=false` 的含义是
@@ -1390,7 +1405,7 @@ function producerUsage(prompt, text, response) {
  * ② 生成要读整回合的 evidence，中途生成只会拿到半截会话；
  * ③ 绝不能阻塞下一次输入 —— 整个流程异步，失败就保留旧状态。
  */
-function onAgentSettled(_event, ctx) {
+function onAgentSettled(_event, ctx, pi) {
   const p = policy()
   /*
    * 总闸是 `episode-fold`（2026-09-18 起**在默认接管集里** —— 但「在集合里」只
@@ -1474,7 +1489,7 @@ function onAgentSettled(_event, ctx) {
     return
   }
   producerFlight = { sessionId, startedAt: Date.now() }
-  void produceAndCommit(sessionId, ctx).finally(() => {
+  void produceAndCommit(sessionId, ctx, pi).finally(() => {
     producerFlight = null
   })
 }
@@ -1494,7 +1509,7 @@ function lastEpisodeTo(state) {
 /**
  * 生成 → 合并 → CAS 落盘。任一环节失败都**不动**旧状态文件。
  */
-async function produceAndCommit(sessionId, ctx) {
+async function produceAndCommit(sessionId, ctx, pi) {
   try {
     /* 这一次生成要用的开关（`inject` 分路用到；`policy()` 一个回合内会调多次，有缓存） */
     const p = policy()
@@ -1629,14 +1644,18 @@ async function produceAndCommit(sessionId, ctx) {
     const timer = setTimeout(() => controller.abort(), producerTimeoutMs)
     let response
     try {
-      response = await registry.complete(
+      response = await completeWithContextBudgetV1({
+        pi,
+        ctx,
+        requestKind: 'state',
+        registry,
         model,
-        {
+        payload: {
           systemPrompt: PRODUCER_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() }]
         },
-        { maxTokens: PRODUCER_MAX_TOKENS, signal: controller.signal }
-      )
+        options: { maxTokens: PRODUCER_MAX_TOKENS, signal: controller.signal }
+      })
     } catch (error) {
       trace('producer', { sessionId, stage: 'producer', hook: 'error', message: errorText(error) })
       recordAction(sessionId, { kind: 'episode-fold', status: 'failed', reason: 'model-error' })
@@ -1790,7 +1809,7 @@ export default function contextExtension(pi) {
     policy: (process.env.YAN_CONTEXT_POLICY ?? '').slice(0, 200),
     log: !!process.env.YAN_CONTEXT_EXT_LOG
   })
-  pi.on('context', (event, ctx) => onContext(event, ctx))
+  pi.on('context', (event, ctx) => onContext(event, ctx, pi))
   /*
    * 请求前的最后一眼（实施-05 S4）：估算超物理线就不发，并留诊断。
    * 位置有意放在 `context` 之后：清扫已经跑过，这里量到的是**真正要发**的体积。
@@ -1807,7 +1826,7 @@ export default function contextExtension(pi) {
    * N21-4 生成器：`agent_settled` 是「这一轮真的结束」的稳定边界。
    * 只在 `kinds` 含 `episode-fold` 时才真的会调模型（见 onAgentSettled）。
    */
-  pi.on('agent_settled', (event, ctx) => onAgentSettled(event, ctx))
+  pi.on('agent_settled', (event, ctx) => onAgentSettled(event, ctx, pi))
 }
 
 /**
