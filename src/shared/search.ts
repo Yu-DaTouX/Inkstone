@@ -84,7 +84,16 @@ export type SourceStatusKind = 'ok' | 'empty' | 'error' | 'timeout' | 'unavailab
 export interface PerSourceStatus {
   source: SearchSourceId
   status: SourceStatusKind
+  /** 最终被收录进 items 的条数（受 limitPerSource / limitTotal 影响） */
   count: number
+  /**
+   * 因为**总数上限**（`limitTotal`）而没被处理的候选行数。
+   *
+   * 有它才能把「被上限挤掉」与「这个来源本来就没结果」（`empty`）分开 ——
+   * 否则 `count: 0` 会被读成「世上没有」。值是中断点之后的候选行数
+   * （可能含重复 / 结构不认识的行，是个上界）。
+   */
+  droppedByLimit?: number
   /** 后端错误码（doctor / BROWSER_CONNECT / COMMAND_EXEC …），只在非 ok 时有 */
   code?: string
   message?: string
@@ -107,12 +116,16 @@ export interface SearchOutcome {
 
 /** 后端可用性（`yan search doctor` 的返回体） */
 export interface SearchBackendStatus {
-  /** 后端命令是否找得到 */
+  /** 后端能不能用：命令找得到，且探针（doctor）能跑完 —— 参数错位 / 探针超时都算不可用 */
   available: boolean
   /** 版本号；取不到就是 null（不猜） */
   version: string | null
   /** 探针给出的原始可读输出（截断后的） */
   detail: string
   code?: string
+  /**
+   * 逐来源状态：`ready` 跟随 `available`（后端命令跑不起来时，单个来源也不该报就绪）；
+   * `needsBrowser` 表示该来源是否依赖浏览器扩展。
+   */
   sources: { id: SearchSourceId; label: string; needsBrowser: boolean; ready: boolean }[]
 }

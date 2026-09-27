@@ -61,6 +61,7 @@ export async function runSearchTests(ok, mod) {
   /* ---- 文本清洗 ---- */
   {
     ok(decodeEntities('&quot;砚&quot; &amp; &#65;') === '"砚" & A', 'HTML 实体解码（含数字实体）')
+    ok(decodeEntities('&#39;quoted&#39;') === "'quoted'", '数字实体 &#39; 仍能解码（实体表里删掉它不影响）')
     ok(cleanText('  a\n\n b  ') === 'a b', '压平空白')
     ok(cleanText('x'.repeat(400)).length === 280, '超长摘要截断到上限')
     ok(cleanText('x'.repeat(400)).endsWith('…'), '截断有明确标记')
@@ -129,15 +130,37 @@ export async function runSearchTests(ok, mod) {
     ok(perSource.items.length === 3, '每来源条数上限生效')
     ok(perSource.truncated === true, '被每来源上限裁过 → truncated')
 
+    /* 两个来源用不同 URL：否则跨来源去重会把第二个来源的行全吃掉（那测的是去重，不是上限） */
+    const manyA = Array.from({ length: 10 }, (_, i) => ({ title: `a${i}`, url: `https://a/${i}` }))
+    const manyB = Array.from({ length: 10 }, (_, i) => ({ title: `b${i}`, url: `https://b/${i}` }))
     const totalCap = aggregate(
       [
-        { source: 'wikipedia', rows: many, elapsedMs: 1 },
-        { source: 'arxiv', rows: many, elapsedMs: 1 }
+        { source: 'wikipedia', rows: manyA, elapsedMs: 1 },
+        { source: 'arxiv', rows: manyB, elapsedMs: 1 }
       ],
       { limitPerSource: 10, limitTotal: 5 }
     )
     ok(totalCap.items.length === 5, '总数上限生效')
     ok(totalCap.truncated === true, '被总数上限裁过 → truncated')
+    /* 被总数上限挤掉的来源不能被写成「没有结果」（否则 count 0 会被读成 empty） */
+    ok(totalCap.sources[0].droppedByLimit === 5, '吃满份额后被上限截断：标出剩余未处理条数')
+    ok(
+      totalCap.sources[1].droppedByLimit === 10 && totalCap.sources[1].count === 0,
+      '后面被挡在门外的来源：count 0 但带回 droppedByLimit'
+    )
+    ok(
+      totalCap.sources[1].status === 'ok',
+      '它仍是 ok（有结果，只是没收进来）—— 不是 empty'
+    )
+    ok(/被总数上限截断/.test(summarizeSources(totalCap.sources)), '摘要里说清是被上限截断，而不是干脏的「0 条」')
+    /* 不会被总数上限碰到的来源不应带这个字段 */
+    ok(perSource.sources[0].droppedByLimit === undefined, '没被总数上限碰到的来源不标 droppedByLimit')
+
+    const noElapsed = aggregate([{ source: 'arxiv', rows: [{ title: 'x', url: 'https://x/1' }] }], {
+      limitPerSource: 6,
+      limitTotal: 12
+    })
+    ok(Number.isFinite(noElapsed.sources[0].elapsedMs), 'runner 没给 elapsedMs 时不写 NaN（JSON 里会变 null）')
 
     const dirty = aggregate(
       [{ source: 'wikipedia', rows: [{ title: 'ok', url: 'https://x/1' }, { nope: true }], elapsedMs: 1 }],

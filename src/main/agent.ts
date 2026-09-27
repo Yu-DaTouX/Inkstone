@@ -3939,9 +3939,15 @@ export class AgentController extends EventEmitter {
       { runner: createOpencliRunner(), now: () => Date.now() }
     )
 
+    /*
+     * 失败也要把**逐来源状态**带上（`data` 会被落进结果文件）：模型得知道
+     * 是谁超时、谁报错、谁没装后端，才能自我纠正 —— 只回一句话的话，
+     * `search_failed` 里「见 data.sources」这句就成了空指引。
+     */
+    const sourcesData = { query: outcome.query, sources: outcome.sources }
     /* 查询根本没发出去（空词 / 太长 / 来源名全写错）—— 用原错误码，不归到「后端挂了」 */
     if (outcome.error) {
-      throw new CapabilityCommandError(outcome.error.code, outcome.error.message)
+      throw new CapabilityCommandError(outcome.error.code, outcome.error.message, sourcesData)
     }
     const reached = outcome.sources.filter((s) => s.status === 'ok' || s.status === 'empty')
     if (reached.length === 0) {
@@ -3950,13 +3956,18 @@ export class AgentController extends EventEmitter {
       if (unavailable) {
         throw new CapabilityCommandError(
           'search_backend_unavailable',
-          unavailable.message ?? '搜索后端不可用（需要安装 OpenCLI，可用 yan search doctor 看详情）'
+          unavailable.message ?? '搜索后端不可用（需要安装 OpenCLI，可用 yan search doctor 看详情）',
+          sourcesData
         )
       }
       if (timedOut) {
-        throw new CapabilityCommandError('search_timeout', timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）')
+        throw new CapabilityCommandError(
+          'search_timeout',
+          timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）',
+          sourcesData
+        )
       }
-      throw new CapabilityCommandError('search_failed', '所有搜索来源都出错了（逐来源状态见 data.sources）')
+      throw new CapabilityCommandError('search_failed', '所有搜索来源都出错了（逐来源状态见 data.sources）', sourcesData)
     }
 
     return {

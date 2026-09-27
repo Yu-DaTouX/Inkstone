@@ -14,10 +14,14 @@ import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import {
+  SEARCH_LIMIT_PER_SOURCE_DEFAULT,
   SEARCH_LIMIT_PER_SOURCE_MAX,
+  SEARCH_LIMIT_TOTAL_DEFAULT,
+  SEARCH_LIMIT_TOTAL_MAX,
   SEARCH_OUTPUT_MAX_BYTES,
   SEARCH_QUERY_MAX,
   SEARCH_SOURCES,
+  SEARCH_TIMEOUT_MS_DEFAULT,
   SEARCH_TIMEOUT_MS_MAX,
   type SearchItem,
   type SearchOutcome,
@@ -424,9 +428,9 @@ export function normalizeQuery(
     ok: true,
     text,
     sources,
-    limitPerSource: clamp(input.limitPerSource, 1, SEARCH_LIMIT_PER_SOURCE_MAX, 6),
-    limitTotal: clamp(input.limitTotal, 1, 40, 12),
-    timeoutMs: clamp(input.timeoutMs, 1000, SEARCH_TIMEOUT_MS_MAX, 20_000)
+    limitPerSource: clamp(input.limitPerSource, 1, SEARCH_LIMIT_PER_SOURCE_MAX, SEARCH_LIMIT_PER_SOURCE_DEFAULT),
+    limitTotal: clamp(input.limitTotal, 1, SEARCH_LIMIT_TOTAL_MAX, SEARCH_LIMIT_TOTAL_DEFAULT),
+    timeoutMs: clamp(input.timeoutMs, 1000, SEARCH_TIMEOUT_MS_MAX, SEARCH_TIMEOUT_MS_DEFAULT)
   }
 }
 
