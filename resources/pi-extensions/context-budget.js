@@ -157,8 +157,8 @@ export function estimateMessagesTokens(messages) {
     if (typeof message.toolCallId === 'string') total += estimateTokens(message.toolCallId)
     if (typeof message.name === 'string') total += estimateTokens(message.name)
     if (typeof message.summary === 'string') total += estimateTokens(message.summary)
-    /* 白名单之外的字段一律兜底计入（见下） */
-    total += estimateExtraStrings(message, 0)
+    /* 白名单之外的字段一律兜底计入（见下）—— 跳过白名单只在消息顶层生效 */
+    total += estimateExtraStrings(message, 0, true)
   }
   return total
 }
@@ -186,20 +186,24 @@ const MESSAGE_FIELDS_ALREADY_COUNTED = new Set([
  * `reasoning*` 这些全落在外面，估算因此只有真实 prompt 的四分之一，整理线永远不触发。
  * 枚举字段名的做法每换一家 provider 就会再漏一次，所以这里改成「排除已知字段、
  * 其余字符串一律计入」—— 宁可算大（更早清扫），不能算小（把请求发爆）。
+ *
+ * ⚠️ 跳过白名单只在**消息顶层**生效：深层同名字段（例如
+ * `message.reasoning = { text: '…' }`）与顶层那个 `content`/`text` 毫无关系，
+ * 每层都跳过会把 `reasoning.text.text` 这种大块重新漏掉（实测 61 万字符）。
  */
-function estimateExtraStrings(value, depth) {
+function estimateExtraStrings(value, depth, isMessageRoot = false) {
   if (value === null || value === undefined || depth > 6) return 0
   if (typeof value === 'string') return estimateTokens(value)
   if (typeof value !== 'object') return 0
   if (Array.isArray(value)) {
     let total = 0
-    for (const item of value) total += estimateExtraStrings(item, depth + 1)
+    for (const item of value) total += estimateExtraStrings(item, depth + 1, false)
     return total
   }
   let total = 0
   for (const [key, item] of Object.entries(value)) {
-    if (MESSAGE_FIELDS_ALREADY_COUNTED.has(key)) continue
-    total += estimateExtraStrings(item, depth + 1)
+    if (isMessageRoot && MESSAGE_FIELDS_ALREADY_COUNTED.has(key)) continue
+    total += estimateExtraStrings(item, depth + 1, false)
   }
   return total
 }
