@@ -50,29 +50,55 @@ function fileExists(p: string): boolean {
   }
 }
 
+function fileSize(p: string): number {
+  try {
+    return statSync(p).size
+  } catch {
+    return -1
+  }
+}
+
 /**
  * 在 PATH 里找一个可执行文件。
  *
- * Windows 上只认带 PATHEXT 扩展名的（`.cmd` / `.exe` / …）—— npm 全局还会放一个
+ * Windows 上默认只认带 PATHEXT 扩展名的（`.cmd` / `.exe` / …）—— npm 全局还会放一个
  * **无扩展名的 bash 脚本**给 Git Bash 用，那个东西 CreateProcess 是起不来的，
  * 找到它反而会把「后端不可用」写成「后端报错」。
+ *
+ * `names` 用于完全接管候选名（不按 PATHEXT 拼），`minBytes` 用于挡掉体积为 0 的文件。
  */
-function findExecutableOnPath(name: string): string | null {
+function findExecutableOnPath(name: string, opts: { names?: string[]; minBytes?: number } = {}): string | null {
   const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
   const names =
-    process.platform === 'win32'
+    opts.names ??
+    (process.platform === 'win32'
       ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
           .split(';')
           .filter(Boolean)
           .map((ext) => name + ext.toLowerCase())
-      : [name]
+      : [name])
   for (const dir of dirs) {
     for (const candidate of names) {
       const p = join(dir, candidate)
-      if (fileExists(p)) return p
+      if (!fileExists(p)) continue
+      if (opts.minBytes !== undefined && fileSize(p) < opts.minBytes) continue
+      return p
     }
   }
   return null
+}
+
+/**
+ * 找 `node` —— 只要**真正的可执行文件**。
+ *
+ * 与找 opencli 的差别（两样都会把「不可用」写成更难懂的「后端报错」）：
+ *   · Windows 上不接受 `.cmd` / `.bat` shim —— 我们的 spawn 刻意不过 shell，shim 起不来；
+ *   · 体积为 0 的文件也不接受 —— Microsoft Store 的 `node.exe` 别名就是这个形态，
+ *     执行它只会弹应用商店。
+ */
+function findNodeOnPath(): string | null {
+  if (process.platform === 'win32') return findExecutableOnPath('node', { names: ['node.exe'], minBytes: 1 })
+  return findExecutableOnPath('node', { minBytes: 1 })
 }
 
 /** 后端的启动方式：固定 file + 前置参数（`node <entry>` 这种形态需要它） */
@@ -85,27 +111,87 @@ export interface BackendTarget {
   error?: string
 }
 
+/** 跑 JS 入口时用哪个 Node（Electron 下要换成真正 node，见下） */
+export interface JsRuntime {
+  file: string
+  error?: string
+}
+
+/**
+ * 跑 JS 入口必须用**真正的 node**，不能用 Electron。
+ *
+ * 原因：OpenCLI 的入口用 commander 解析参数，而 commander 一看到
+ * `process.versions.electron` 就改按 Electron 语义切参数（`argv.slice(1)`）。
+ * 在 `ELECTRON_RUN_AS_NODE` 下 `argv[1]` 是脚本路径，于是 commander 把入口脚本
+ * 当成了子命令（`error: unknown command '…/main.js'`）—— `<app> <sub> <query>`
+ * 这类调用全部失败。更坏的是 `--version` 走的是 OpenCLI 自己的快路径
+ * （自行 `slice(2)`），照样成功，所以 doctor 会一直报「已就绪」（假绿）。
+ *
+ * 顺序：`YAN_NODE_BIN`（显式指定）→ PATH 里的 node → 都不行就如实报不可用。
+ * 最后一条很重要：不拿 Electron 硬跑，否则失败会伪装成「后端报错」。
+ * 非 Electron 运行时（自带 node / 系统 node）不用换，直接用自身。
+ */
+export function resolveJsRuntime(
+  findOnPath: (name: string) => string | null = findNodeOnPath,
+  execPath: string = process.execPath,
+  electron: boolean = Boolean((process.versions as { electron?: string }).electron),
+  nodeBin: string | undefined = process.env.YAN_NODE_BIN
+): JsRuntime {
+  if (!electron) return { file: execPath }
+  /*
+   * 显式指定优先：GUI 启动的应用 PATH 常常很干净（尤其 macOS / Linux 桌面图标），
+   * 这时 PATH 里找不到 node 是常态，必须给一条不依赖 PATH 的出路。
+   */
+  const explicit = nodeBin?.trim()
+  if (explicit) {
+    return fileExists(explicit)
+      ? { file: explicit }
+      : {
+          file: execPath,
+          error: `YAN_NODE_BIN 指向的 ${explicit} 不存在；请改成真实的 node 可执行文件，或删掉这个变量并安装 Node.js（>=20.18.1）后加入 PATH`
+        }
+  }
+  const node = findOnPath('node')
+  if (node) return { file: node }
+  return {
+    file: execPath,
+    error:
+      '找不到可用的 node：OpenCLI 用的 commander 在 Electron 下会按 app 语义切参数，子命令会全部错位，所以不能拿 Electron 自带的 Node 去跑；请安装 Node.js（>=20.18.1）并加入 PATH，或用 YAN_NODE_BIN 指定 node 可执行文件'
+  }
+}
+
 /**
  * 找到 OpenCLI 的启动方式（实施-27 S2）。
  *
  * 为什么不直接 `spawn('opencli')`：Windows 上 npm 的全局命令是 `.cmd` shim，
  * 不经 shell 是执行不了的；而为了**不把查询词交给 shell**（注入），
- * 这里改成「找包的 JS 入口 + 用当前 node 跑」—— 参数仍然是数组，不过 shell。
+ * 这里改成「找包的 JS 入口 + 用 node 跑」—— 参数仍然是数组，不过 shell。
  * 顺序：显式指定 → PATH 里的 `.cmd` 推导包入口 → PATH 里的可执行文件。
+ *
+ * JS 入口用哪个 node 由 `resolveJsRuntime` 决定（Electron 下必须换真实 node）。
  */
-export function resolveBackendTarget(explicit?: string): BackendTarget {
+export function resolveBackendTarget(explicit?: string, runtime: JsRuntime = resolveJsRuntime()): BackendTarget {
   const js = explicit ?? process.env.YAN_OPENCLI_JS
   /* 显式给了路径：`.js` 走 node，其它当可执行文件 */
   if (js) {
-    return js.endsWith('.js') || js.endsWith('.mjs') || js.endsWith('.cjs')
-      ? { file: process.execPath, prefix: [js], source: process.execPath + ' ' + js }
-      : { file: js, prefix: [], source: js }
+    if (js.endsWith('.js') || js.endsWith('.mjs') || js.endsWith('.cjs')) {
+      const source = runtime.file + ' ' + js
+      return runtime.error
+        ? { file: runtime.file, prefix: [js], source, error: runtime.error }
+        : { file: runtime.file, prefix: [js], source }
+    }
+    return { file: js, prefix: [], source: js }
   }
   const shim = findExecutableOnPath('opencli')
   if (shim) {
     /* npm 全局布局：<prefix>/opencli.cmd 与 <prefix>/node_modules/@jackwener/opencli */
     const entry = join(dirname(shim), 'node_modules', '@jackwener', 'opencli', 'dist', 'src', 'main.js')
-    if (fileExists(entry)) return { file: process.execPath, prefix: [entry], source: 'node ' + entry }
+    if (fileExists(entry)) {
+      const source = runtime.file + ' ' + entry
+      return runtime.error
+        ? { file: runtime.file, prefix: [entry], source, error: runtime.error }
+        : { file: runtime.file, prefix: [entry], source }
+    }
     /*
      * 只找到 `.cmd` 而推不出包入口：**不能**直接 spawn 它（不经 shell 起不来，
      * 经 shell 则要把查询词交给 shell —— 两样都不接受）。此处当成「不可用」上报。
@@ -121,9 +207,14 @@ export function resolveBackendTarget(explicit?: string): BackendTarget {
 }
 
 /**
- * 用 Electron 自带的 Node 跑 JS 时必须显式声明 `ELECTRON_RUN_AS_NODE=1`，
- * 否则 `spawn(process.execPath, [...])` 会再拉起一个**应用实例**（而不是跑那个脚本）。
- * 仓库里 protocol.ts / credentials.ts / packages.ts / yan-cli.ts 都是这个口径。
+ * `file` 恰好是当前进程自己的 Node 时才需要声明 `ELECTRON_RUN_AS_NODE=1`，
+ * 否则 Electron 会再拉起一个**应用实例**（而不是跑那个脚本）。
+ *
+ * 现状：JS 入口已改走 `resolveJsRuntime()` 找到的**真实 node**，所以「Electron
+ * 当 Node」那条路不再使用（真到了那一步 `resolveBackendTarget` 会带 `error`，
+ * 调用方提前返回、根本不 spawn）。这里保留只是为了让 `file === process.execPath`
+ * 的情形（非 Electron 进程）行为不变 —— 对 node 多一个环境变量无副作用。
+ * 仓库里 protocol.ts / credentials.ts / packages.ts / yan-cli.ts 是那个口径。
  */
 function spawnEnv(file: string): NodeJS.ProcessEnv | undefined {
   return file === process.execPath ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : undefined
@@ -348,40 +439,69 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<S
 
 /** `yan search doctor`：后端在不在、能不能用、各来源需不需要浏览器 */
 export async function searchDoctor(deps: {
-  runner?: (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string }>
+  runner?: (args: string[], timeoutMs: number) => Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }>
 } = {}): Promise<SearchBackendStatus> {
-  const sources = SEARCH_SOURCES.map((s) => ({
-    id: s.id,
-    label: s.label,
-    needsBrowser: s.needsBrowser,
-    ready: true
-  }))
+  /*
+   * `ready` 与 `available` 同源：后端命令都跑不起来的时候，逐个来源不该报 ready ——
+   * 否则 `yan search doctor` 会一边说「不可用」一边说「三个来源都就绪」。
+   */
+  const sourcesFor = (available: boolean) =>
+    SEARCH_SOURCES.map((s) => ({ id: s.id, label: s.label, needsBrowser: s.needsBrowser, ready: available }))
   const probe = deps.runner ?? defaultProbe
   const version = await probe(['--version'], 8000)
   if (version.code !== 0 && !version.stdout.trim()) {
-    const detail = (version.stderr || version.stdout).trim().slice(0, 400)
+    /* 超时与「没这个命令」要分开：前者可能是 PATH 上的命令卡住，不是没装 */
+    const detail = version.timedOut
+      ? 'opencli --version 超时（8s 没有返回）；可能是 PATH 上的命令卡住，或环境异常'
+      : (version.stderr || version.stdout).trim().slice(0, 400)
     return {
       available: false,
       version: null,
       code: 'backend_unavailable',
       detail: detail || '找不到 opencli（未安装或不在 PATH）',
-      sources
+      sources: sourcesFor(false)
     }
   }
   const doctor = await probe(['doctor'], 20_000)
   const raw = (doctor.stdout + '\n' + doctor.stderr).trim()
+  /*
+   * `--version` 只证明命令能启动；doctor 的输出才证明**这条调用链**是通的
+   * （参数没错位、子命令真跑完了）。三种必须报不可用的情况：
+   *   · 探针完全没输出 —— 命令起不来；
+   *   · 输出是 commander 的未知命令 / 用法帮助 —— 参数错位（假绿的根因）；
+   *   · 探针**超时**（哪怕已经打出了头部）—— `--version` 比 doctor 浅得多，
+   *     不能因为头部已经出来就写「已就绪」。
+   * 反过来，这里刻意不要求「输出里必须出现某个完成标志」：那等于把可用性
+   * 押在 OpenCLI 的输出格式上，上游改一次文案就会误报。
+   */
+  const timedOut = doctor.timedOut === true
+  const usageError = /unknown command|unknown option|^Usage:\s*opencli/m.test(raw)
+  if (!raw || usageError || timedOut) {
+    return {
+      available: false,
+      version: version.stdout.trim().split('\n')[0].slice(0, 80) || null,
+      code: 'backend_unusable',
+      detail:
+        (timedOut ? `doctor 探针超时（超过 20s 没有返回）；已收到的输出：${raw || '（无）'}` : raw).slice(0, 1200) ||
+        '后端命令没能正常执行（没有任何输出）',
+      sources: sourcesFor(false)
+    }
+  }
   const extensionMissing = /Extension:\s*not connected/i.test(raw) || /BROWSER_CONNECT/.test(raw)
   return {
     available: true,
     version: version.stdout.trim().split('\n')[0].slice(0, 80) || null,
     detail: raw.slice(0, 1200),
     ...(extensionMissing ? { code: 'extension_not_connected' } : {}),
-    sources
+    sources: sourcesFor(true)
   }
 }
 
 /** doctor 用的最小探针（单独拿出来，便于单测替身） */
-async function defaultProbe(args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+async function defaultProbe(
+  args: string[],
+  timeoutMs: number
+): Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }> {
   const target = resolveBackendTarget()
   if (target.error) return { code: -1, stdout: '', stderr: target.error }
   const env = spawnEnv(target.file)
@@ -399,7 +519,12 @@ async function defaultProbe(args: string[], timeoutMs: number): Promise<{ code: 
     }
     let out = ''
     let err = ''
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+    /* 超时要说出来：只凭「有输出」判不了「跑完了没」 */
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGKILL')
+    }, timeoutMs)
     child.stdout?.on('data', (c: Buffer) => {
       if (out.length < 64_000) out += c.toString('utf8')
     })
@@ -412,7 +537,7 @@ async function defaultProbe(args: string[], timeoutMs: number): Promise<{ code: 
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      resolve({ code: code ?? -1, stdout: out, stderr: err })
+      resolve({ code: code ?? -1, stdout: out, stderr: err, ...(timedOut ? { timedOut: true } : {}) })
     })
   })
 }
