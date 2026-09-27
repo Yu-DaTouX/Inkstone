@@ -62,6 +62,21 @@ if (!doctorOnly) {
   console.log('原始结果:', file)
   const reached = outcome.sources.some((s) => s.status === 'ok' && s.count > 0)
   if (!reached) worst = 1
+
+  /*
+   * 被丢掉的来源名必须被点名：静默丢掉等于把「没查」写成「查了没结果」。
+   * 只跑一个来源，省时间。
+   */
+  const ignoredProbe = await mod.runSearch(
+    { text: query, sources: ['wikipedia', 'definitely-not-a-source'] },
+    { runner: mod.createOpencliRunner(), now: () => Date.now() }
+  )
+  if ((ignoredProbe.ignoredSources ?? []).includes('definitely-not-a-source')) {
+    console.log('未知来源被点名:', mod.searchSummary(ignoredProbe))
+  } else {
+    console.log('✗ 未知来源没有被点名（ignoredSources 丢了）')
+    worst = 1
+  }
 }
 
 process.exit(worst)

@@ -154,8 +154,3 @@ export function classifyMcpResult(result: unknown): { toolError: boolean; text: 
   const isError = Boolean(result && typeof result === 'object' && (result as { isError?: unknown }).isError)
   return { toolError: isError, text: toolResultText(result) }
 }
-
-/** 可用性投影：配置禁用 → disabled；其余由连接状态决定。 */
-export function availabilityOfStatus(status: McpServerStatus): 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error' {
-  return status
-}
