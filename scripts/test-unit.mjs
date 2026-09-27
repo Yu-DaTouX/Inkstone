@@ -2141,6 +2141,11 @@ const contextBudgetExtension = await import('../resources/pi-extensions/context-
 const { runContextBudgetTests } = await import('./test-context-budget.mjs')
 runContextBudgetTests(ok, contextBudgetExtension, contextPolicy)
 
+/* 预算观察者的诊断字段（payload 字符构成）—— 用来定位「估算与实际差 4 倍」 */
+const contextBudgetObserver = await import('../resources/pi-extensions/context-budget-observer.js')
+const { runContextBudgetObserverTests } = await import('./test-context-budget-observer.mjs')
+runContextBudgetObserverTests(ok, contextBudgetObserver)
+
 /*
  * 上下文预算 V1：同源算法边界 + 最终 provider hook 的 fail-closed 入口。
  * 隔离数据目录由本文件顶部的 YAN_DATA_DIR 指向临时目录；不接真实 provider。

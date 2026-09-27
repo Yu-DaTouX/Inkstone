@@ -234,6 +234,11 @@ function imageTokensOf(block) {
  */
 export function estimateContentTokens(content) {
   if (typeof content === 'string') return estimateTokens(content)
+  /*
+   * content 也可能是**单个对象**（MCP / 结构化工具结果、部分 provider 的单块写法）——
+   * 只认 string / array 会把这类整条消息算 0。与下面 block 层同一口径。
+   */
+  if (content && typeof content === 'object' && !Array.isArray(content)) return estimateContentTokens([content])
   if (!Array.isArray(content)) return 0
   let total = 0
   for (const block of content) {
@@ -247,6 +252,8 @@ export function estimateContentTokens(content) {
     if (typeof block.text === 'string') total += estimateTokens(block.text)
     if (typeof block.content === 'string') total += estimateTokens(block.content)
     else if (Array.isArray(block.content)) total += estimateContentTokens(block.content)
+    /* content 也可能是**单个对象**（MCP / 结构化工具结果常见）—— 只认 string/array 会把这类整块算 0 */
+    else if (block.content && typeof block.content === 'object') total += estimateContentTokens([block.content])
     /*
      * 思考块：pi 回灌时的字段名是 `thinking`（连着 thinkingSignature 原样送回），
      * 另一些家叫 `reasoning`。**不能只指望 `text`** —— 实测同一个会话里
