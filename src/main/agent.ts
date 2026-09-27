@@ -3944,7 +3944,11 @@ export class AgentController extends EventEmitter {
      * 是谁超时、谁报错、谁没装后端，才能自我纠正 —— 只回一句话的话，
      * `search_failed` 里「见 data.sources」这句就成了空指引。
      */
-    const sourcesData = { query: outcome.query, sources: outcome.sources }
+    const sourcesData = {
+      query: outcome.query,
+      sources: outcome.sources,
+      ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {})
+    }
     /* 查询根本没发出去（空词 / 太长 / 来源名全写错）—— 用原错误码，不归到「后端挂了」 */
     if (outcome.error) {
       throw new CapabilityCommandError(outcome.error.code, outcome.error.message, sourcesData)
@@ -3983,8 +3987,11 @@ export class AgentController extends EventEmitter {
           id: s.source,
           status: s.status,
           count: s.count,
+          /* 被总数上限挤掉时也要说 —— 否则 stdout 里「count 0」会被读成「没结果」 */
+          ...(s.droppedByLimit ? { droppedByLimit: s.droppedByLimit } : {}),
           ...(s.code ? { code: s.code } : {})
         })),
+        ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {}),
         summary: searchSummary(outcome)
       }
     }

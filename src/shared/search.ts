@@ -112,6 +112,13 @@ export interface SearchOutcome {
    * 有它时 `sources` 为空数组 —— 这与「发了但全都没取到」是两回事。
    */
   error?: { code: string; message: string }
+  /**
+   * 请求里写了、但不在白名单里被丢掉的来源名。
+   *
+   * 有它才能把「没查」与「查了没结果」分开：`--sources wikipedia,nosuch` 只查
+   * wikipedia，回执必须说清 nosuch 被忽略 —— 否则会被读成「nosuch 没有结果」。
+   */
+  ignoredSources?: string[]
 }
 
 /** 后端可用性（`yan search doctor` 的返回体） */
@@ -124,8 +131,11 @@ export interface SearchBackendStatus {
   detail: string
   code?: string
   /**
-   * 逐来源状态：`ready` 跟随 `available`（后端命令跑不起来时，单个来源也不该报就绪）；
-   * `needsBrowser` 表示该来源是否依赖浏览器扩展。
+   * 逐来源状态。
+   *
+   * ⚠️ 当前实现里 `ready` **等同于 `available`**（后端命令跑不起来时，单个来源也不报就绪），
+   * 尚未按 `needsBrowser` 细分 —— 将来加了需要浏览器扩展的来源，要在这里补上
+   * 「扩展没连 → 该来源未就绪」的判据，否则那个字段会名不副实。
    */
   sources: { id: SearchSourceId; label: string; needsBrowser: boolean; ready: boolean }[]
 }

@@ -36,14 +36,22 @@ export function CapabilitiesTab(): React.JSX.Element {
    */
   const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
   const [backendBusy, setBackendBusy] = useState(false)
+  /* 探针自己失败了（IPC 抛错）与「后端不可用」是两回事，不能都显示成「检测中…」 */
+  const [backendFailed, setBackendFailed] = useState(false)
 
   const checkBackend = useCallback(async (): Promise<void> => {
     setBackendBusy(true)
     try {
       const next = await window.yan.search.doctor()
-      if (mounted.current) setBackend(next)
+      if (mounted.current) {
+        setBackend(next)
+        setBackendFailed(false)
+      }
     } catch {
-      if (mounted.current) setBackend(null)
+      if (mounted.current) {
+        setBackend(null)
+        setBackendFailed(true)
+      }
     } finally {
       if (mounted.current) setBackendBusy(false)
     }
@@ -156,7 +164,9 @@ export function CapabilitiesTab(): React.JSX.Element {
           <strong>{t('set.searchBackend')}</strong>
           {' — '}
           {backend === null
-            ? t('set.searchBackendUnknown')
+            ? backendFailed
+              ? t('set.searchBackendProbeFailed')
+              : t('set.searchBackendUnknown')
             : backend.available
               ? backend.code === 'extension_not_connected'
                 ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })

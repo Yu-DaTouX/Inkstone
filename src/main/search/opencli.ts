@@ -408,26 +408,46 @@ function clamp(value: number | undefined, min: number, max: number, fallback: nu
   return Math.min(max, Math.max(min, Math.round(value)))
 }
 
-/** 解析查询：来源去重、未知来源丢掉（不报错，避免把手上的一批全废掉） */
-export function normalizeQuery(
-  input: SearchQuery
-): { ok: true; text: string; sources: SearchSource[]; limitPerSource: number; limitTotal: number; timeoutMs: number } | { ok: false; code: string; message: string } {
+/**
+ * 解析查询：来源去重、未知来源丢掉（不报错，避免把手上的一批全废掉）。
+ *
+ * 丢掉的名字要**原样回传**（`ignoredSources`）—— 静默丢掉等于把「没查」
+ * 写成「查了没结果」。
+ */
+export function normalizeQuery(input: SearchQuery):
+  | {
+      ok: true
+      text: string
+      sources: SearchSource[]
+      ignoredSources: string[]
+      limitPerSource: number
+      limitTotal: number
+      timeoutMs: number
+    }
+  | { ok: false; code: string; message: string; ignoredSources: string[] } {
   const text = (input.text ?? '').trim()
-  if (!text) return { ok: false, code: 'empty_query', message: '查询词是空的' }
-  if (text.length > SEARCH_QUERY_MAX) {
-    return { ok: false, code: 'query_too_long', message: `查询词太长（上限 ${SEARCH_QUERY_MAX} 字）` }
-  }
   const wanted = input.sources && input.sources.length > 0 ? input.sources : SEARCH_SOURCES.map((s) => s.id)
   const sources: SearchSource[] = []
+  const ignoredSources: string[] = []
   for (const id of wanted) {
     const s = byId.get(id as SearchSourceId)
-    if (s && !sources.includes(s)) sources.push(s)
+    if (!s) {
+      const name = String(id)
+      if (!ignoredSources.includes(name)) ignoredSources.push(name)
+      continue
+    }
+    if (!sources.includes(s)) sources.push(s)
   }
-  if (sources.length === 0) return { ok: false, code: 'no_source', message: '没有可用的搜索来源' }
+  if (!text) return { ok: false, code: 'empty_query', message: '查询词是空的', ignoredSources }
+  if (text.length > SEARCH_QUERY_MAX) {
+    return { ok: false, code: 'query_too_long', message: `查询词太长（上限 ${SEARCH_QUERY_MAX} 字）`, ignoredSources }
+  }
+  if (sources.length === 0) return { ok: false, code: 'no_source', message: '没有可用的搜索来源', ignoredSources }
   return {
     ok: true,
     text,
     sources,
+    ignoredSources,
     limitPerSource: clamp(input.limitPerSource, 1, SEARCH_LIMIT_PER_SOURCE_MAX, SEARCH_LIMIT_PER_SOURCE_DEFAULT),
     limitTotal: clamp(input.limitTotal, 1, SEARCH_LIMIT_TOTAL_MAX, SEARCH_LIMIT_TOTAL_DEFAULT),
     timeoutMs: clamp(input.timeoutMs, 1000, SEARCH_TIMEOUT_MS_MAX, SEARCH_TIMEOUT_MS_DEFAULT)
@@ -448,7 +468,8 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<S
       sources: [],
       truncated: false,
       durationMs: deps.now() - started,
-      error: { code: parsed.code, message: parsed.message }
+      error: { code: parsed.code, message: parsed.message },
+      ...(parsed.ignoredSources.length ? { ignoredSources: parsed.ignoredSources } : {})
     }
   }
 
@@ -478,7 +499,8 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<S
     items: merged.items,
     sources: merged.sources,
     truncated: merged.truncated,
-    durationMs: deps.now() - started
+    durationMs: deps.now() - started,
+    ...(parsed.ignoredSources.length ? { ignoredSources: parsed.ignoredSources } : {})
   }
 }
 
@@ -599,6 +621,8 @@ async function defaultProbe(
 export function searchSummary(outcome: SearchOutcome): string {
   const parts = [`${outcome.items.length} 条结果`, summarizeSources(outcome.sources)]
   if (outcome.truncated) parts.push('已截断')
+  /* 被丢掉的来源名要说出来，不然「没查」看起来就像「查了没结果」 */
+  if (outcome.ignoredSources?.length) parts.push(`已忽略未知来源：${outcome.ignoredSources.join('、')}`)
   return parts.join(' · ')
 }
 
