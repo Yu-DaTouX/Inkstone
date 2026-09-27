@@ -21,7 +21,10 @@ export async function runSearchTests(ok, mod) {
     runSearch,
     parseBackendError,
     createOpencliRunner,
-    searchSummary
+    searchSummary,
+    resolveJsRuntime,
+    resolveBackendTarget,
+    searchDoctor
   } = mod
 
   const T0 = 1_000_000
@@ -188,5 +191,90 @@ export async function runSearchTests(ok, mod) {
     const bad = await createOpencliRunner('node')(SEARCH_SOURCES[0], 'q', { limit: 1, timeoutMs: 8000 })
     ok(bad.rows === null && !!bad.error, '输出不是 JSON 数组 → 不当作空结果')
     ok(bad.error.code !== 'timeout', '不是超时就不要写成超时')
+  }
+
+  /* ---- 运行环境：Electron 下必须换成真实 node（回归） ---- */
+  {
+    /*
+     * 背景：OpenCLI 用 commander 解析参数，而 commander 一看到
+     * `process.versions.electron` 就改按 Electron 语义切参数；在
+     * ELECTRON_RUN_AS_NODE 下 `argv[1]` 是入口脚本路径，于是子命令全部错位
+     * （`error: unknown command '…/main.js'`）—— 而 `--version` 走 OpenCLI
+     * 自己的快路径照样成功，doctor 会假绿。这两块都钉在这里。
+     */
+    const inElectronFound = resolveJsRuntime(() => 'C:\\nodejs\\node.exe', 'C:\\electron\\electron.exe', true)
+    ok(inElectronFound.file === 'C:\\nodejs\\node.exe', 'Electron 下跑 JS 入口改用 PATH 里的真实 node')
+    ok(!inElectronFound.error, '找到真实 node 时不报错')
+
+    const inElectronMissing = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true)
+    ok(!!inElectronMissing.error, 'Electron 下找不到真实 node → 如实报错（不拿 Electron 硬跑）')
+    ok(/commander|参数/.test(inElectronMissing.error ?? ''), '错误说明能指出 commander / 参数解析这个真实原因')
+    ok(!/YAN_OPENCLI_JS/.test(inElectronMissing.error ?? ''), '不再把 YAN_OPENCLI_JS 说成能指定 node（它指的是 OpenCLI 入口）')
+
+    /* 显式指定 node：GUI 启动的 PATH 常常没有 node 时的唯一出路 */
+    const viaNodeBin = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, process.execPath)
+    ok(viaNodeBin.file === process.execPath && !viaNodeBin.error, 'YAN_NODE_BIN 指定存在文件时优先用它')
+    const badNodeBin = resolveJsRuntime(
+      () => 'C:\\nodejs\\node.exe',
+      'C:\\electron\\electron.exe',
+      true,
+      'C:\\definitely-missing\\node.exe'
+    )
+    ok(!!badNodeBin.error && /YAN_NODE_BIN/.test(badNodeBin.error), 'YAN_NODE_BIN 指向不存在的文件 → 如实报错')
+    const nodeBinOnlyWhenElectron = resolveJsRuntime(() => null, '/usr/bin/node', false, 'C:\\definitely-missing\\node.exe')
+    ok(nodeBinOnlyWhenElectron.file === '/usr/bin/node', '非 Electron 运行时不受 YAN_NODE_BIN 影响')
+
+    const plain = resolveJsRuntime(() => null, '/usr/bin/node', false)
+    ok(plain.file === '/usr/bin/node' && !plain.error, '非 Electron 运行时直接用自身 Node')
+
+    const targetFound = resolveBackendTarget('C:\\some\\main.js', inElectronFound)
+    ok(targetFound.file === 'C:\\nodejs\\node.exe', '显式 YAN_OPENCLI_JS 指向 .js 时也用真实 node 跑')
+    ok(targetFound.prefix[0] === 'C:\\some\\main.js' && !targetFound.error, '入口路径仍在参数数组里（不过 shell）')
+    const targetBlocked = resolveBackendTarget('C:\\some\\main.js', inElectronMissing)
+    ok(!!targetBlocked.error, '没有真实 node 时把不可用原因写进 target.error')
+
+    const healthy = await searchDoctor({
+      runner: async (args) =>
+        args[0] === '--version'
+          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
+          : { code: 0, stdout: 'opencli v1.8.8 doctor (node v24)\n[OK] Daemon: running\n', stderr: '' }
+    })
+    ok(healthy.available === true && healthy.version === '1.8.8', '--version 与 doctor 都正常 → available')
+    ok(healthy.sources.every((s) => s.ready === true), '后端可用 → 来源 ready')
+
+    const fakeGreen = await searchDoctor({
+      runner: async (args) =>
+        args[0] === '--version'
+          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
+          : { code: 2, stdout: "error: unknown command 'C:\\…\\main.js'\nUsage: opencli [options] [command]\n", stderr: '' }
+    })
+    ok(fakeGreen.available === false, '--version 成功但 doctor 跑不起来 → 不再报「已就绪」（假绿回归）')
+    ok(fakeGreen.code === 'backend_unusable', '假绿时的错误码是 backend_unusable')
+    ok(/unknown command/.test(fakeGreen.detail), '原始输出原样留在 detail 里（便于排查）')
+    ok(fakeGreen.sources.every((s) => s.ready === false), '后端不可用 → 来源不再报 ready（口径一致）')
+
+    /*
+     * 超时也是假绿：doctor 已经打出头部但没跑完（daemon / 浏览器卡住）。
+     * 只凭「有输出」判不了「跑完了没」，所以探针必须把 timedOut 带回来。
+     */
+    const timedOut = await searchDoctor({
+      runner: async (args) =>
+        args[0] === '--version'
+          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
+          : { code: -1, stdout: 'opencli v1.8.8 doctor (node v24.19.0)\n', stderr: '', timedOut: true }
+    })
+    ok(timedOut.available === false, 'doctor 探针超时（哪怕已打出头部）→ 不报「已就绪」')
+    ok(timedOut.code === 'backend_unusable', '超时也归入 backend_unusable')
+    ok(/超时/.test(timedOut.detail), 'detail 里写明是超时，而不是含糊的「跑不起来」')
+
+    /* --version 自己超时也要与「没装」分开：否则会误报「未检测到」 */
+    const versionTimeout = await searchDoctor({
+      runner: async (args) =>
+        args[0] === '--version'
+          ? { code: -1, stdout: '', stderr: '', timedOut: true }
+          : { code: 0, stdout: 'opencli v1.8.8 doctor\n[OK] Daemon: running\n', stderr: '' }
+    })
+    ok(versionTimeout.available === false, '--version 探针超时 → 不报可用')
+    ok(/超时/.test(versionTimeout.detail), '--version 超时也说清是超时（不是「未安装」）')
   }
 }

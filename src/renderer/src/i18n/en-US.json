@@ -1230,6 +1230,8 @@
   "set.searchBackendExtOff": "Ready · v{version}, but the browser extension is not connected",
   "set.searchBackendHint": "Install: npm i -g @jackwener/opencli",
   "set.searchBackendMissing": "Not detected (yan search will honestly report “backend unavailable”, never “no results”)",
+  "set.searchBackendUnusable": "Backend installed (v{version}), but its commands fail (search will fail)",
+  "set.searchBackendUnusableHint": "Raw probe output below. Usual causes: command-line parsing mismatch with the runtime, or changed OpenCLI behavior.",
   "set.searchBackendReady": "Ready · v{version}",
   "set.searchBackendUnknown": "Checking…",
   "set.sendKey": "Send key",

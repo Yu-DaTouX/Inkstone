@@ -161,8 +161,23 @@ export function CapabilitiesTab(): React.JSX.Element {
               ? backend.code === 'extension_not_connected'
                 ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })
                 : t('set.searchBackendReady', { version: backend.version ?? '?' })
-              : t('set.searchBackendMissing')}
-          {backend && !backend.available ? <div className="set-desc">{t('set.searchBackendHint')}</div> : null}
+              : backend.code === 'backend_unusable'
+                ? t('set.searchBackendUnusable', { version: backend.version ?? '?' })
+                : t('set.searchBackendMissing')}
+          {backend && !backend.available ? (
+            <div className="set-desc">
+              {backend.code === 'backend_unusable' ? t('set.searchBackendUnusableHint') : t('set.searchBackendHint')}
+            </div>
+          ) : null}
+          {/*
+            原始输出只在「后端在、但命令跑不起来」时展示：未安装时它多半是
+            `spawn opencli ENOENT` 这类英文，与上面的安装指引重复且难读。
+          */}
+          {backend && backend.code === 'backend_unusable' && backend.detail ? (
+            <div className="set-desc" data-testid="cap-search-backend-detail">
+              {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
+            </div>
+          ) : null}
           {backend && backend.available && backend.code === 'extension_not_connected' ? (
             <div className="set-desc">{t('set.searchBackendExtHint')}</div>
           ) : null}
