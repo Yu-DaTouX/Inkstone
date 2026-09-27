@@ -51,18 +51,18 @@ const ENTITIES: Record<string, string> = {
   '&amp;': '&',
   '&lt;': '<',
   '&gt;': '>',
-  '&#39;': "'",
   '&apos;': "'",
   '&nbsp;': ' '
 }
 
 export function decodeEntities(input: string): string {
   return input
+    /* 数字实体（`&#39;` 这类）先解掉，所以下面那张表里不必再列它们 */
     .replace(/&#(\d+);/g, (_m, n: string) => {
       const code = Number(n)
       return code > 0 && code < 0x10ffff ? String.fromCodePoint(code) : ''
     })
-    .replace(/&(?:quot|amp|lt|gt|#39|apos|nbsp);/g, (m) => ENTITIES[m] ?? m)
+    .replace(/&(?:quot|amp|lt|gt|apos|nbsp);/g, (m) => ENTITIES[m] ?? m)
 }
 
 /** 压平空白并截断到上限（超长只标一个 …，不悄悄留半句） */
@@ -157,12 +157,15 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
     const { status, code, message } = statusOf(run)
     let kept = 0
     let badRows = 0
+    /* 被总数上限挤掉的候选行数：这才是「有结果但没收进来」，不能写成 empty */
+    let droppedByLimit = 0
 
     if (status === 'ok') {
       const rows = run.rows ?? []
       if (rows.length > opts.limitPerSource) truncated = true
-      for (const row of rows.slice(0, opts.limitPerSource)) {
-        const item = normalizeRow(run.source, row)
+      const candidates = rows.slice(0, opts.limitPerSource)
+      for (let i = 0; i < candidates.length; i++) {
+        const item = normalizeRow(run.source, candidates[i])
         if (!item) {
           badRows++
           continue
@@ -170,6 +173,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
         const key = normalizeUrlForDedupe(item.url)
         if (seen.has(key)) continue
         if (items.length >= opts.limitTotal) {
+          droppedByLimit = candidates.length - i
           truncated = true
           break
         }
@@ -183,10 +187,12 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
       source: run.source,
       status,
       count: kept,
-      elapsedMs: Math.max(0, Math.round(run.elapsedMs))
+      /* 替身 runner 可能不给 elapsedMs（undefined → NaN 会被 JSON 写成 null） */
+      elapsedMs: Number.isFinite(run.elapsedMs) ? Math.max(0, Math.round(run.elapsedMs)) : 0
     }
     if (code) entry.code = code
     if (message) entry.message = message
+    if (droppedByLimit > 0) entry.droppedByLimit = droppedByLimit
     if (badRows > 0) entry.message = (entry.message ? entry.message + '；' : '') + `${badRows} 条结果结构不认识，已跳过`
     sources.push(entry)
   }
@@ -197,7 +203,11 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
 /** 组合给模型/CLI 看的一句话：先说要紧的，不漏来源 */
 export function summarizeSources(sources: PerSourceStatus[]): string {
   const label = (s: PerSourceStatus): string => {
-    if (s.status === 'ok') return `${s.source} ${s.count} 条`
+    if (s.status === 'ok') {
+      return s.droppedByLimit
+        ? `${s.source} ${s.count} 条（另有 ${s.droppedByLimit} 条被总数上限截断）`
+        : `${s.source} ${s.count} 条`
+    }
     if (s.status === 'empty') return `${s.source} 无结果`
     if (s.status === 'timeout') return `${s.source} 超时`
     if (s.status === 'unavailable') return `${s.source} 不可用`
