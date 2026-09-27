@@ -67,6 +67,11 @@ import { allowTrust, trustStatus } from './project-trust'
 import { forkContext, forkFileRefs } from './fork-rebind-service'
 import { activeContextPolicy, contextPolicySettings, setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { contextBudget } from '../shared/context-policy'
+import {
+  isContextBudgetTierV1,
+  sanitizeContextBudgetRuntimeSnapshotV1
+} from '../shared/context-budget-v1'
+import { ContextBudgetStoreError, contextBudgetStoreV1 } from './context-budget-store'
 import { modelKeyOf } from '../shared/model-capabilities'
 import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
@@ -623,6 +628,16 @@ function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
 
+/** Context budget V1 observes the final post-extension payload for host reconciliation. */
+function contextBudgetObserverExtensionPath(): string | undefined {
+  return yanThinResourcePath('context-budget-observer.js')
+}
+
+/** Budget V1's host-authorized maintenance command and committed context projection. */
+function contextBudgetMaintenanceExtensionPath(): string | undefined {
+  return yanThinResourcePath('context-budget-maintenance.js')
+}
+
 /**
  * 砚随包薄层扩展的**实际加载路径**（传给 pi 的 `--extension`）。
  *
@@ -644,7 +659,9 @@ function yanThinExtensionPaths(): string[] {
     capabilityGuideExtensionPath(),
     contextExtensionPath(),
     projectKnowledgeExtensionPath(),
-    repeatGuardExtensionPath()
+    repeatGuardExtensionPath(),
+    contextBudgetMaintenanceExtensionPath(),
+    contextBudgetObserverExtensionPath()
   ].filter((p): p is string => !!p)
 }
 
@@ -4453,6 +4470,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         projectKnowledgeExtension: projectKnowledgeExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
+        contextBudgetObserverExtension: contextBudgetObserverExtensionPath(),
+        contextBudgetMaintenanceExtension: contextBudgetMaintenanceExtensionPath(),
         /*
          * 界面历史（实施-05 S5b-4）：交接过的会话在链上，按段从旧到新拼成
          * **一条时间线**。agent 不认识「链」—— 那是宿主的关系。
@@ -6236,6 +6255,152 @@ function registerIpc(): void {
       ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
       overridden: resolved.overridden,
       ...(modelOverrides ? { modelOverrides } : {})
+    }
+  })
+  rawHandle('yan:contextBudgetV1', async () => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId) return null
+    try {
+      return await contextBudgetStoreV1.read(sessionId)
+    } catch {
+      return null
+    }
+  })
+  rawHandle('yan:contextBudgetV1Enabled', async () => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId) return false
+    try {
+      return await contextBudgetStoreV1.isConfigured(sessionId)
+    } catch {
+      return false
+    }
+  })
+  rawHandle('yan:contextBudgetSnapshotV1', async () => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId === '.' || sessionId === '..') return null
+    try {
+      const raw = JSON.parse(await readFile(join(YAN_DIR, 'context-budget-v1', sessionId, 'latest-request.json'), 'utf8')) as unknown
+      return sanitizeContextBudgetRuntimeSnapshotV1(raw, sessionId)
+    } catch {
+      return null
+    }
+  })
+  rawHandle('yan:contextBudgetMaintainV1', async (_e, operationId: unknown) => {
+    try {
+      return await ac()?.requestContextMaintenanceV1(typeof operationId === 'string' ? operationId : undefined) ?? { ok: false, error: '当前没有活动会话' }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : '上下文整理未完成' }
+    }
+  })
+  rawHandle('yan:contextBudgetMaintenanceStatusV1', async () => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId) return null
+    try {
+      return await contextBudgetStoreV1.latestOperation(sessionId)
+    } catch {
+      return null
+    }
+  })
+  rawHandle('yan:setContextBudgetV1', async (_e, rawUpdate: unknown) => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId || !rawUpdate || typeof rawUpdate !== 'object') {
+      return { ok: false, error: '当前没有可设置的活动会话' }
+    }
+    const update = rawUpdate as Record<string, unknown>
+    if (
+      typeof update.expectedRevision !== 'string' ||
+      (update.mode !== 'auto' && update.mode !== 'fixed') ||
+      (update.autoMaxBudget !== undefined && !isContextBudgetTierV1(update.autoMaxBudget)) ||
+      (update.selectedBudget !== undefined && !isContextBudgetTierV1(update.selectedBudget))
+    ) return { ok: false, error: '上下文预算设置格式无效' }
+    if (update.mode === 'fixed' && !isContextBudgetTierV1(update.selectedBudget)) {
+      return { ok: false, error: '固定模式必须选择一个有效档位' }
+    }
+    try {
+      const current = await contextBudgetStoreV1.read(sessionId)
+      const phaseId = current.activePhaseId
+      const currentPhase = current.phases[phaseId]
+      const autoMaxBudget = isContextBudgetTierV1(update.autoMaxBudget)
+        ? update.autoMaxBudget
+        : currentPhase.autoMaxBudget
+      const selectedBudget = update.mode === 'fixed'
+        ? update.selectedBudget as number
+        : currentPhase.selectedBudget > autoMaxBudget
+          ? autoMaxBudget
+          : currentPhase.selectedBudget
+      const policy = await contextBudgetStoreV1.update(sessionId, update.expectedRevision, (latest) => {
+        const latestPhase = latest.phases[phaseId]
+        if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
+        return {
+          ...latest,
+          phases: {
+            ...latest.phases,
+            [phaseId]: {
+              ...latestPhase,
+              mode: update.mode as 'auto' | 'fixed',
+              selectedBudget: selectedBudget as typeof latestPhase.selectedBudget,
+              autoMaxBudget,
+              selectionSource: 'user',
+              selectionReason: update.mode === 'fixed' ? 'user_fixed_budget' : 'user_enabled_auto_budget'
+            }
+          }
+        }
+      })
+      return { ok: true, policy }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : '上下文预算设置未保存'
+      }
+    }
+  })
+  rawHandle('yan:setContextBudgetMaterialPinV1', async (_e, rawUpdate: unknown) => {
+    const sessionId = ac()?.getState()?.sessionId
+    if (!sessionId || !rawUpdate || typeof rawUpdate !== 'object') {
+      return { ok: false, error: '当前没有可设置的活动会话' }
+    }
+    const update = rawUpdate as Record<string, unknown>
+    if (
+      typeof update.expectedRevision !== 'string' ||
+      typeof update.materialId !== 'string' || !/^[A-Za-z0-9._-]{1,120}$/.test(update.materialId) ||
+      typeof update.pinned !== 'boolean'
+    ) return { ok: false, error: '固定材料设置格式无效' }
+    try {
+      const current = await contextBudgetStoreV1.read(sessionId)
+      const phaseId = current.activePhaseId
+      const phase = current.phases[phaseId]
+      const material = phase?.materials.find((item) => item.id === update.materialId)
+      if (!phase || !material) {
+        return { ok: false, error: '这份材料已不在当前阶段，请刷新列表' }
+      }
+      if (update.pinned && !material.pinnedByUser && phase.materials.filter((item) => item.pinnedByUser).length >= 100) {
+        return { ok: false, error: '每个阶段最多固定 100 份材料' }
+      }
+      const policy = await contextBudgetStoreV1.update(sessionId, update.expectedRevision, (latest) => {
+        if (latest.activePhaseId !== phaseId) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已发生变化')
+        const latestPhase = latest.phases[phaseId]
+        if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
+        const materials = latestPhase.materials.map((material) =>
+          material.id === update.materialId ? { ...material, pinnedByUser: update.pinned as boolean } : material
+        )
+        return {
+          ...latest,
+          phases: {
+            ...latest.phases,
+            [phaseId]: {
+              ...latestPhase,
+              materialRevision: randomUUID(),
+              materials
+            }
+          }
+        }
+      })
+      return { ok: true, policy }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : '材料固定状态未保存'
+      }
     }
   })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))

@@ -401,6 +401,9 @@ export class RunnerRegistry {
       } else if (target.sessionFile) {
         const sw = await agent.switchSession(target.sessionFile)
         if (!sw.ok) failure = sw.error ?? '切换会话失败'
+      } else {
+        const initialized = await agent.initializeContextBudgetV1Default()
+        if (!initialized.ok) failure = initialized.error ?? '新会话上下文策略初始化失败'
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)

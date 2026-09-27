@@ -3,6 +3,13 @@ import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { CONTEXT_POLICY_PRESETS, LARGE_CONTEXT_POLICY_PRESETS, largePresetOf } from '../../../../shared/context-policy'
 import type { ContextPolicyOverrides } from '../../../../shared/ipc'
+import {
+  CONTEXT_BUDGET_V1_TIERS,
+  type ContextBudgetRuntimeSnapshotV1,
+  type ContextBudgetSessionPolicyV1,
+  type ContextBudgetTierV1
+} from '../../../../shared/context-budget-v1'
+import type { ContextMaintenanceOperationV1 } from '../../../../shared/context-maintenance'
 
 /**
  * 「上下文」设置页（N21-7）。
@@ -31,6 +38,7 @@ export function ContextTab() {
   const patchSettings = useStore((s) => s.patchSettings)
   const policy = useStore((s) => s.session?.contextPolicy)
   const model = useStore((s) => s.session?.model)
+  const sessionId = useStore((s) => s.session?.sessionId)
 
   const user = settings?.contextPolicy ?? {}
   const byModel = settings?.contextPolicyByModel ?? {}
@@ -42,6 +50,60 @@ export function ContextTab() {
 
   const [draft, setDraft] = useState(() => fields(user))
   const [modelDraft, setModelDraft] = useState(() => fields(modelOver))
+  const [budgetV1, setBudgetV1] = useState<ContextBudgetSessionPolicyV1 | null>(null)
+  const [budgetV1Enabled, setBudgetV1Enabled] = useState(false)
+  const [budgetSnapshot, setBudgetSnapshot] = useState<ContextBudgetRuntimeSnapshotV1 | null>(null)
+  const [budgetV1Error, setBudgetV1Error] = useState('')
+  const [budgetV1Busy, setBudgetV1Busy] = useState(false)
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false)
+  const [maintenanceMessage, setMaintenanceMessage] = useState('')
+  const [maintenanceOperation, setMaintenanceOperation] = useState<ContextMaintenanceOperationV1 | null>(null)
+  useEffect(() => {
+    let current = true
+    setBudgetV1(null)
+    setBudgetV1Enabled(false)
+    setBudgetSnapshot(null)
+    setBudgetV1Error('')
+    setMaintenanceMessage('')
+    setMaintenanceOperation(null)
+    if (!sessionId) return () => { current = false }
+    void Promise.allSettled([
+      window.yan.contextBudgetV1(),
+      window.yan.contextBudgetV1Enabled(),
+      window.yan.contextBudgetSnapshotV1(),
+      window.yan.contextBudgetMaintenanceStatusV1()
+    ]).then(([policyResult, enabledResult, snapshotResult, operationResult]) => {
+      if (!current) return
+      if (policyResult.status === 'fulfilled' && policyResult.value) setBudgetV1(policyResult.value)
+      else setBudgetV1Error(tk('set.ctxBudgetV1Unavailable'))
+      if (enabledResult.status === 'fulfilled') setBudgetV1Enabled(enabledResult.value)
+      if (snapshotResult.status === 'fulfilled') setBudgetSnapshot(snapshotResult.value)
+      if (operationResult.status === 'fulfilled') setMaintenanceOperation(operationResult.value)
+    })
+    return () => { current = false }
+  }, [sessionId])
+  useEffect(() => {
+    if (!sessionId) return
+    let current = true
+    let timer: ReturnType<typeof setInterval> | null = null
+    const refresh = async (): Promise<void> => {
+      try {
+        const operation = await window.yan.contextBudgetMaintenanceStatusV1()
+        if (!current) return
+        setMaintenanceOperation(operation)
+        if (operation && !['requested', 'preparing', 'summarizing', 'validating', 'committed'].includes(operation.state) && timer) {
+          clearInterval(timer)
+          timer = null
+        }
+      } catch { /* status is opportunistic; the persisted record remains authoritative */ }
+    }
+    void refresh()
+    timer = setInterval(() => { void refresh() }, 1_500)
+    return () => {
+      current = false
+      if (timer) clearInterval(timer)
+    }
+  }, [sessionId])
   /* 设置从别处变了（预设按钮 / 另一个窗口）要跟上，否则输入框显示旧值 */
   useEffect(() => setDraft(fields(settings?.contextPolicy)), [settings?.contextPolicy])
   useEffect(() => setModelDraft(fields(modelOver)), [modelKey, JSON.stringify(modelOver ?? null)])
@@ -69,6 +131,92 @@ export function ContextTab() {
     void patchSettings({ contextPolicyByModel: next })
   }
 
+  const activeBudgetPhase = budgetV1?.phases[budgetV1.activePhaseId]
+  const budgetDecisionKey = budgetSnapshot
+    ? `set.ctxBudgetV1Decision.${budgetSnapshot.check.decision}`
+    : ''
+  const budgetReasonKeys: Record<string, string> = {
+    within_review_line: 'set.ctxBudgetV1ReasonWithin',
+    soft_review_line_reached: 'set.ctxBudgetV1ReasonReview',
+    hard_input_limit_exceeded: 'set.ctxBudgetV1ReasonHardLimit',
+    request_input_count_unavailable: 'set.ctxBudgetV1ReasonCountUnknown',
+    request_output_limit_unknown: 'set.ctxBudgetV1ReasonOutputUnknown',
+    output_capacity_unknown: 'set.ctxBudgetV1ReasonOutputUnknown',
+    context_window_unknown: 'set.ctxBudgetV1ReasonCapacityUnknown',
+    endpoint_capability_unavailable: 'set.ctxBudgetV1ReasonCapacityUnknown',
+    endpoint_capability_incomplete: 'set.ctxBudgetV1ReasonCapacityUnknown',
+    context_policy_unreadable: 'set.ctxBudgetV1ReasonPolicyUnknown',
+    context_policy_invalid: 'set.ctxBudgetV1ReasonPolicyUnknown'
+  }
+  const updateBudgetV1 = async (update: {
+    mode: 'auto' | 'fixed'
+    selectedBudget?: ContextBudgetTierV1
+    autoMaxBudget?: ContextBudgetTierV1
+  }): Promise<void> => {
+    if (!budgetV1 || !activeBudgetPhase || budgetV1Busy) return
+    setBudgetV1Busy(true)
+    setBudgetV1Error('')
+    try {
+      const result = await window.yan.setContextBudgetV1({
+        ...update,
+        expectedRevision: budgetV1.revision
+      })
+      if (result.ok && result.policy) {
+        setBudgetV1(result.policy)
+        setBudgetV1Enabled(true)
+      }
+      else setBudgetV1Error(result.error ?? tk('set.ctxBudgetV1SaveFailed'))
+    } catch {
+      setBudgetV1Error(tk('set.ctxBudgetV1SaveFailed'))
+    } finally {
+      setBudgetV1Busy(false)
+    }
+  }
+  const setMaterialPinned = async (materialId: string, pinned: boolean): Promise<void> => {
+    if (!budgetV1 || budgetV1Busy) return
+    setBudgetV1Busy(true)
+    setBudgetV1Error('')
+    try {
+      const result = await window.yan.setContextBudgetMaterialPinV1({
+        expectedRevision: budgetV1.revision,
+        materialId,
+        pinned
+      })
+      if (result.ok && result.policy) setBudgetV1(result.policy)
+      else setBudgetV1Error(result.error ?? tk('set.ctxBudgetV1SaveFailed'))
+    } catch {
+      setBudgetV1Error(tk('set.ctxBudgetV1SaveFailed'))
+    } finally {
+      setBudgetV1Busy(false)
+    }
+  }
+
+  const maintainContextV1 = async (operationId?: string): Promise<void> => {
+    if (maintenanceBusy || !budgetV1Enabled) return
+    setMaintenanceBusy(true)
+    setMaintenanceMessage('')
+    try {
+      const result = await window.yan.contextBudgetMaintainV1(operationId)
+      if (result.ok) {
+        setMaintenanceMessage(tk(result.state === 'applied'
+          ? 'set.ctxBudgetV1MaintenanceApplied'
+          : 'set.ctxBudgetV1MaintenanceCommitted'))
+      } else {
+        setMaintenanceMessage(t('set.ctxBudgetV1MaintenanceFailed', { error: result.error ?? 'unknown' }))
+      }
+      setMaintenanceOperation(await window.yan.contextBudgetMaintenanceStatusV1())
+    } catch (error) {
+      setMaintenanceMessage(t('set.ctxBudgetV1MaintenanceFailed', {
+        error: error instanceof Error ? error.message : 'unknown'
+      }))
+    } finally {
+      setMaintenanceBusy(false)
+      void window.yan.contextBudgetV1().then((value) => { if (value) setBudgetV1(value) }).catch(() => undefined)
+      void window.yan.contextBudgetSnapshotV1().then(setBudgetSnapshot).catch(() => undefined)
+      void window.yan.contextBudgetMaintenanceStatusV1().then(setMaintenanceOperation).catch(() => undefined)
+    }
+  }
+
   const otherKeys = Object.keys(byModel).filter((k) => k !== modelKey)
   const currentPreset = presetOf(user)
   /* Deep Context 不是「阈值」而是「多做一次模型调用」，所以不用草稿 + 保存那套 ——
@@ -83,6 +231,150 @@ export function ContextTab() {
 
   return (
     <div className="set-group">
+      <div className="set-row col" data-testid="ctx-budget-v1">
+        <div className="set-label">
+          <div className="set-name">{tk('set.ctxBudgetV1Title')}</div>
+          <div className="set-desc">{tk('set.ctxBudgetV1Desc')}</div>
+        </div>
+        {activeBudgetPhase ? (
+          <>
+            {!budgetV1Enabled ? (
+              <div className="set-desc" data-testid="ctx-budget-v1-legacy" role="status">
+                {tk('set.ctxBudgetV1Legacy')}
+              </div>
+            ) : null}
+            {budgetV1Enabled ? (
+              <div className="set-desc set-num" data-testid="ctx-budget-v1-current">
+                {t('set.ctxBudgetV1Current', {
+                  mode: tk(activeBudgetPhase.mode === 'auto' ? 'set.ctxBudgetV1Auto' : 'set.ctxBudgetV1Fixed'),
+                  selected: `${activeBudgetPhase.selectedBudget / 1000}K`,
+                  phase: activeBudgetPhase.phaseId
+                })}
+              </div>
+            ) : null}
+            <div className="set-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1Mode')}>
+              <button
+                className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? 'sel' : ''}`}
+                data-testid="ctx-budget-v1-auto"
+                disabled={budgetV1Busy}
+                onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: activeBudgetPhase.autoMaxBudget })}
+              >
+                {tk('set.ctxBudgetV1Auto')}
+              </button>
+              {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
+                <button
+                  key={tier}
+                  className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'fixed' && activeBudgetPhase.selectedBudget === tier ? 'sel' : ''}`}
+                  data-testid={`ctx-budget-v1-fixed-${tier}`}
+                  disabled={budgetV1Busy}
+                  onClick={() => void updateBudgetV1({ mode: 'fixed', selectedBudget: tier })}
+                >
+                  {tk('set.ctxBudgetV1Fix')} {tier / 1000}K
+                </button>
+              ))}
+            </div>
+            {budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? (
+              <div className="set-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1AutoMax')}>
+                {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
+                  <button
+                    key={tier}
+                    className={`seg-btn ${activeBudgetPhase.autoMaxBudget === tier ? 'sel' : ''}`}
+                    data-testid={`ctx-budget-v1-max-${tier}`}
+                    disabled={budgetV1Busy}
+                    onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: tier })}
+                  >
+                    {tk('set.ctxBudgetV1Max')} {tier / 1000}K
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {budgetSnapshot ? (
+              <div className="set-desc set-num" data-testid="ctx-budget-v1-last-check" role="status">
+                {t('set.ctxBudgetV1LastCheck', {
+                  time: new Date(budgetSnapshot.observedAt).toLocaleTimeString(),
+                  decision: tk(budgetDecisionKey),
+                  input: budgetSnapshot.inputTokens?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
+                  selected: `${budgetSnapshot.check.selectedBudget / 1000}K`,
+                  review: budgetSnapshot.check.calculation.reviewLine?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
+                  hard: budgetSnapshot.check.calculation.hardInputLimit?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown')
+                })}
+                <br />
+                {tk(budgetReasonKeys[budgetSnapshot.check.reason] ?? 'set.ctxBudgetV1ReasonGeneric')}
+                <br />
+                <button
+                  className="seg-btn"
+                  data-testid="ctx-budget-v1-refresh-snapshot"
+                  disabled={budgetV1Busy}
+                  onClick={() => {
+                    void window.yan.contextBudgetSnapshotV1().then(setBudgetSnapshot).catch(() => {
+                      setBudgetV1Error(tk('set.ctxBudgetV1Unavailable'))
+                    })
+                  }}
+                >
+                  {tk('set.ctxBudgetV1Refresh')}
+                </button>
+              </div>
+            ) : null}
+            <div className="set-desc" data-testid="ctx-budget-v1-maintenance">
+              <div>{tk('set.ctxBudgetV1MaintenanceHelp')}</div>
+              {maintenanceOperation ? (
+                <div data-testid="ctx-budget-v1-maintenance-status" role="status">
+                  {tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.state}`)}
+                  {maintenanceOperation.failureCode === 'resume_send_uncertain'
+                    ? ` · ${tk('set.ctxBudgetV1MaintenanceResumeUncertain')}`
+                    : maintenanceOperation.failureCode ? ` · ${maintenanceOperation.failureCode}` : ''}
+                </div>
+              ) : null}
+              <button
+                className="seg-btn"
+                data-testid="ctx-budget-v1-maintain"
+                disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                onClick={() => void maintainContextV1()}
+              >
+                {tk(maintenanceBusy ? 'set.ctxBudgetV1Maintaining' : 'set.ctxBudgetV1Maintain')}
+              </button>
+              {maintenanceOperation && (maintenanceOperation.state === 'needs_action' || maintenanceOperation.state === 'failed') &&
+                maintenanceOperation.failureCode !== 'resume_send_uncertain' ? (
+                <button
+                  className="seg-btn"
+                  data-testid="ctx-budget-v1-maintenance-retry"
+                  disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                  onClick={() => void maintainContextV1(maintenanceOperation.identity.operationId)}
+                >
+                  {tk('set.ctxBudgetV1MaintenanceRetry')}
+                </button>
+              ) : null}
+              {maintenanceMessage ? <div role="status">{maintenanceMessage}</div> : null}
+            </div>
+            {activeBudgetPhase.materials.length > 0 ? (
+              <div className="set-desc" data-testid="ctx-budget-v1-materials">
+                <div>{t('set.ctxBudgetV1Materials', { count: activeBudgetPhase.materials.length })}</div>
+                {[...activeBudgetPhase.materials.filter((material) => material.pinnedByUser),
+                  ...activeBudgetPhase.materials.filter((material) => !material.pinnedByUser).slice(-20)]
+                  .map((material) => (
+                    <div key={material.id} className="set-ctrow" data-testid={`ctx-budget-v1-material-${material.id}`}>
+                      <span title={material.purpose}>
+                        {material.sourceRef} · ~{material.tokenEstimate.toLocaleString('en-US')} tokens
+                        {material.status !== 'available' ? ` · ${material.status}` : ''}
+                      </span>
+                      <button
+                        className="seg-btn"
+                        data-testid={`ctx-budget-v1-pin-${material.id}`}
+                        disabled={budgetV1Busy}
+                        onClick={() => void setMaterialPinned(material.id, !material.pinnedByUser)}
+                      >
+                        {tk(material.pinnedByUser ? 'set.ctxBudgetV1Unpin' : 'set.ctxBudgetV1Pin')}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="set-desc" role="status">{budgetV1Error || tk('set.ctxBudgetV1Unavailable')}</div>
+        )}
+        {budgetV1Error && activeBudgetPhase ? <div className="set-desc" role="alert">{budgetV1Error}</div> : null}
+      </div>
       {/*
        * 任务状态记忆（`episode-fold`，P2-7）。与 Deep Context 相邻是因为它们是同一类东西 ——
        * 都会**多花一次模型调用**；差别是它默认开，而且只在会话够长、并且这一回合

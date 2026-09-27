@@ -3,6 +3,7 @@ import type {
   ModelCapabilitySnapshot,
   ModelInfo
 } from './ipc'
+import { contextEndpointKeyV1 } from './context-budget-v1'
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
@@ -36,6 +37,12 @@ export function normalizeModelInfo(raw: unknown): ModelInfo | undefined {
   const id = text(value.id)
   if (!id) return undefined
   const provider = text(value.provider) ?? 'unknown'
+  const endpointKey = contextEndpointKeyV1({
+    provider,
+    api: text(value.api),
+    modelId: id,
+    baseUrl: value.baseUrl
+  })
   const name = text(value.name) ?? id
   const input = Array.isArray(value.input)
     ? value.input.filter((item): item is string => typeof item === 'string' && !!item.trim())
@@ -46,6 +53,7 @@ export function normalizeModelInfo(raw: unknown): ModelInfo | undefined {
     id,
     name,
     provider,
+    ...(endpointKey ? { endpointKey } : {}),
     reasoning: value.reasoning === true,
     reasoningStatus: capabilityStatusForBoolean(value.reasoning),
     ...(input ? { input } : {}),
