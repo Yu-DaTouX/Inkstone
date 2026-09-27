@@ -262,6 +262,36 @@ export function runRunnerTests(ok, RunnerRegistry) {
         /* 不带 preview 的同一目标：仍然走自动隔离（用户真要两处干活） */
         const p4 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p2.jsonl' })
         ok(p4.ok && seenP.length === 1, '不带 preview 时冲突仍走自动隔离', JSON.stringify(p4))
+
+        /*
+         * 关键：**没有冲突时 preview 照常激活**。
+         * 否则重启后（一个实例都没有）点开会话会一直停在「未激活」，
+         * 依赖活跃实例的右栏显示全空 —— 用户报的「重启后不显示上下文」。
+         */
+        const seenQ = []
+        const madeQ = []
+        const regQ = new RunnerRegistry({
+          limit: 3,
+          createAgent: (id) => {
+            const a = mkAgent()
+            a.id = id
+            madeQ.push(a)
+            return a
+          },
+          resolveCwdConflict: async () => {
+            seenQ.push(1)
+            return { cwd: 'C:/iso/never' }
+          }
+        })
+        const q1 = await regQ.select({ cwd: 'C:/q', sessionFile: 'C:/q1.jsonl', preview: true })
+        ok(
+          q1.ok && q1.via === 'new' && !q1.deferred,
+          '一个实例都没有时 preview 照常新建并激活（不 defer）',
+          JSON.stringify(q1)
+        )
+        ok(seenQ.length === 0, '无冲突 → 不碰隔离')
+        const q2 = await regQ.select({ cwd: 'C:/q', sessionFile: 'C:/q2.jsonl', preview: true })
+        ok(q2.ok && q2.via === 'reuse' && !q2.deferred, '同 cwd 但没有忙碌实例 → preview 复用，不 defer', JSON.stringify(q2))
       }
 
       /* ---- 5. 达到上限且都忙：明确报错，不牺牲后台会话 ---- */
