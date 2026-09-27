@@ -128,6 +128,12 @@ export function handoffNoticeOf(
  */
 const REASON_TEXT: Record<string, string> = {
   'no-json-object': '模型未返回完整交接格式，仍保留原会话',
+  /*
+   * 与上面那条分开：它说的是“包太长，写到一半被输出长度限制切断”。
+   * 两者在界面上都不好听，但修法完全不同 —— 这一条加预算就行，
+   * 而且它不怪模型不听话。
+   */
+  truncated: '交接包太长，输出被长度限制切断（已保留原会话）',
   'invalid-json': '交接内容格式错误，仍保留原会话',
   empty: '模型未返回交接内容',
   'missing-content-fields': '交接内容字段不完整',

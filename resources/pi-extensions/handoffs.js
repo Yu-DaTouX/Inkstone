@@ -55,8 +55,17 @@ function envInt(name, fallback) {
   return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : fallback
 }
 
-const REQUEST_SETTLE_TRIES = envInt('YAN_HANDOFF_SETTLE_TRIES', 20)
-const REQUEST_SETTLE_MS = envInt('YAN_HANDOFF_SETTLE_MS', 1_000)
+/*
+ * 这两个窗口参数**每次 produce 时读**，而不是模块加载时定死。
+ *
+ * 原因：ESM 模块只加载一次，而环境变量是“谁来用谁设”的。只要有另一个入口
+ * 先 import 了这个模块（比如单测里另一组用例要先拿 `planRepairAttempt`），
+ * 后设的窗口就再也不会生效 —— 表现为“测试里明明设了 0.8 秒，实际等了默认 20 秒”，
+ * 然后卡在超时上，报错却指向一个看上去无关的用例。
+ * 让值跟着调用走，这类顺序依赖就不存在了（也就不会因测试排列而易碎）。
+ */
+const settleTries = () => envInt('YAN_HANDOFF_SETTLE_TRIES', 20)
+const settleMs = () => envInt('YAN_HANDOFF_SETTLE_MS', 1_000)
 
 /** 请求文件的寿命，与宿主 `HANDOFF_REQUEST_TTL_MS` 对齐（30 分钟）。 */
 const REQUEST_TTL_MS = 30 * 60 * 1_000
@@ -119,6 +128,30 @@ function resultTextOf(result) {
   return ''
 }
 
+/**
+ * 决定**下一跳**用什么预算与提示。
+ *
+ * 为什么单独一个纯函数：这段判断是本次修复的核心 ——
+ * “输出被长度切断”与“格式不对”是两种病，上一版给它们吃同一副药
+ *（同一个 maxTokens + 同一句“必须包含全部列表”），于是截断类失败必然复现：
+ * 第二次跑到同一个地方再次被切断。
+ *
+ * 藏在 `produce()` 里就没法单测（那需要 pi 的 modelRegistry / model），
+ * 抽出来之后两个分支都能用假输入钉死。
+ */
+export function planRepairAttempt({ stopReason, maxTokens, escalatedMaxTokens, retryPrompt, retryPromptTruncated }) {
+  const truncated = stopReason === 'length'
+  const base = Number(maxTokens || 0)
+  /* 只有“被切断”且确实给了更大的预算才抬 —— 否则“抬预算”是个假动作 */
+  const escalate = truncated && typeof escalatedMaxTokens === 'number' && escalatedMaxTokens > base
+  return {
+    truncated,
+    maxTokens: escalate ? escalatedMaxTokens : maxTokens,
+    /* 截断且没给专用提示时退回通用提示 —— 宁可说一句普通的，也不能什么都不说 */
+    suffix: '\n' + ((escalate ? retryPromptTruncated : '') || retryPrompt || '')
+  }
+}
+
 /** Pi 的 provider failure 可能是 completion 结果而不是 throw；两种都要交给宿主记为 failed。 */
 function resultErrorOf(result) {
   if (result?.stopReason !== 'error') return null
@@ -171,6 +204,12 @@ export default function handoffs(pi) {
       maxTokens: Number.isFinite(raw?.maxTokens) ? raw.maxTokens : undefined,
       maxAttempts: raw?.maxAttempts === 2 ? 2 : 1,
       retryPrompt: typeof raw?.retryPrompt === 'string' ? raw.retryPrompt : '',
+      /*
+       * 截断重试用的两个字段（2026-09-27）。
+       * 这里也是**白名单拷贝**：漏一个字段，宿主写了也没人读（本次就踩了）。
+       */
+      escalatedMaxTokens: Number.isFinite(raw?.escalatedMaxTokens) ? raw.escalatedMaxTokens : undefined,
+      retryPromptTruncated: typeof raw?.retryPromptTruncated === 'string' ? raw.retryPromptTruncated : '',
       createdAt: Number.isFinite(raw?.createdAt) ? raw.createdAt : 0
     }
   }
@@ -189,14 +228,17 @@ export default function handoffs(pi) {
       /* 宿主写请求可能比 `agent_settled` 晚 —— 给它一个窗口，而不是一眼读完就走 */
       let request = readRequest()
       let attempts = 0
-      while (!request && attempts < REQUEST_SETTLE_TRIES) {
+      /* 每次调用现取：环境变量改了就该立即生效（见 settleTries 的注释） */
+      const tries = settleTries()
+      const waitMs = settleMs()
+      while (!request && attempts < tries) {
         attempts += 1
-        await new Promise((resolve) => setTimeout(resolve, REQUEST_SETTLE_MS))
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
         request = readRequest()
       }
       if (!request) {
         /* 大多数回合确实没有交接请求：只记一行（设了诊断日志才写），不啰嗦 */
-        note('check', { hasRequest: false, attempts, settleMs: attempts * REQUEST_SETTLE_MS })
+        note('check', { hasRequest: false, attempts, settleMs: attempts * waitMs })
         return
       }
       /*
@@ -240,6 +282,16 @@ export default function handoffs(pi) {
       let error = null
       let stopReason = null
       let generationAttempts = 0
+      let truncated = false
+      /*
+       * 每一跳带着**自己的**预算与附加提示。
+       *
+       * 上一版每次都用同一个 `request.maxTokens` + 同一个提示，于是当失败原因是
+       * “输出被长度切断”时，重试只是把同一个上限再撞一次 —— 现场就是这样：
+       * 两次尝试都停在 `stopReason=length`，那一次允许的修复重试被白花掉。
+       */
+      let tokensForAttempt = request.maxTokens
+      let suffix = ''
       const signal = AbortSignal.timeout(PRODUCE_TIMEOUT_MS)
       for (let attempt = 0; attempt < request.maxAttempts; attempt++) {
         // A user stop or new operation revokes both initial and repair calls.
@@ -248,13 +300,36 @@ export default function handoffs(pi) {
         try {
           const result = await registry.complete(model, {
             ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
-            messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt + (attempt ? '\n' + request.retryPrompt : '') }] }]
-          }, { maxTokens: request.maxTokens, signal })
+            messages: [{ role: 'user', content: [{ type: 'text', text: request.prompt + suffix }] }]
+          }, { maxTokens: tokensForAttempt, signal })
           stopReason = typeof result?.stopReason === 'string' ? result.stopReason : null
           error = resultErrorOf(result)
           if (!error) text = resultTextOf(result)
-          if (error || usableHandoffText(text)) break
-          note('repair-needed', { operationId: request.operationId, attempt: generationAttempts, chars: text.length, stopReason })
+          if (error || usableHandoffText(text)) {
+            /* 有结论了：这里不是截断导致的失败 */
+            truncated = false
+            break
+          }
+          /*
+           * 决定**下一跳**用什么。被长度切断与格式不对是两种病：
+           * 前者要抬预算（再试才有意义），后者只换提示。
+           * 只有后者那种“原样再问一遍”的无效重试，才是上一版的毛病。
+           */
+          const cut = stopReason === 'length'
+          truncated = cut
+          if (cut && request.escalatedMaxTokens > tokensForAttempt) {
+            tokensForAttempt = request.escalatedMaxTokens
+            suffix = '\n' + (request.retryPromptTruncated || request.retryPrompt || '')
+          } else {
+            suffix = '\n' + (request.retryPrompt || '')
+          }
+          note('repair-needed', {
+            operationId: request.operationId,
+            attempt: generationAttempts,
+            chars: text.length,
+            stopReason,
+            nextMaxTokens: tokensForAttempt
+          })
         } catch (err) { error = String(err?.message ?? err); break }
       }
       if (readRequest()?.operationId !== request.operationId) return
@@ -272,10 +347,11 @@ export default function handoffs(pi) {
           error,
           stopReason,
           attempts: generationAttempts,
+          truncated,
           ms,
           at: Date.now()
         })
-        note('produced', { operationId: request.operationId, ms, chars: text.length, error, stopReason, attempts: generationAttempts })
+        note('produced', { operationId: request.operationId, ms, chars: text.length, error, stopReason, attempts: generationAttempts, truncated })
       } catch (err) {
         note('write-failed', { operationId: request.operationId, error: String(err?.message ?? err) })
       }

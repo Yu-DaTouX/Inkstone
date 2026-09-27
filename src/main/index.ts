@@ -1495,15 +1495,36 @@ async function collectHandoffResult(id: string, operationId?: string): Promise<b
     }
     const parsed = parseHandoffOutput(result.text)
     if (!parsed.ok) {
+      /*
+       * 「模型不按格式答」与「包太长写不完」要分开报。
+       *
+       * 两者在这里长得一模一样（都是解析不出 JSON），但修法完全不同：
+       * 前者是提示词/模型行为问题，后者**加预算就好**（扩预算的重试已经在扩展侧做过了，
+       * 还走到这里说明连扩大后的预算都不够）。报成一个笼统原因，
+       * 用户与后来的人都看不出是预算问题。
+       */
+      const cutByLength = result.truncated === true
       handoffDiag.record({
         stage: 'generate',
         outcome: 'unparsable',
-        reason: parsed.reason,
+        reason: cutByLength ? 'truncated' : parsed.reason,
         ...base,
         /* 只留长度，不留原文 —— 模型输出可能含用户内容 */
-        detail: { chars: result.text.length, ms: result.ms, stopReason: result.stopReason ?? null, attempts: result.attempts ?? 1 }
+        detail: {
+          chars: result.text.length,
+          ms: result.ms,
+          stopReason: result.stopReason ?? null,
+          attempts: result.attempts ?? 1,
+          truncated: cutByLength
+        }
       })
-      handoffNotify(id, `上下文交接未完成：${handoffReasonText(parsed.reason)}，将尝试在原会话继续`, 'error')
+      handoffNotify(
+        id,
+        cutByLength
+          ? `上下文交接未完成：${handoffReasonText('truncated')}，将尝试在原会话继续`
+          : `上下文交接未完成：${handoffReasonText(parsed.reason)}，将尝试在原会话继续`,
+        'error'
+      )
       return true
     }
     const problem = handoffContinuationProblem(parsed.value)
