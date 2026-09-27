@@ -157,6 +157,49 @@ export function estimateMessagesTokens(messages) {
     if (typeof message.toolCallId === 'string') total += estimateTokens(message.toolCallId)
     if (typeof message.name === 'string') total += estimateTokens(message.name)
     if (typeof message.summary === 'string') total += estimateTokens(message.summary)
+    /* 白名单之外的字段一律兜底计入（见下） */
+    total += estimateExtraStrings(message, 0)
+  }
+  return total
+}
+
+/**
+ * 上面已经按名字算过的字段 —— 兜底遍历时要跳过，避免同一段算两遍。
+ */
+const MESSAGE_FIELDS_ALREADY_COUNTED = new Set([
+  'role',
+  'type',
+  'content',
+  'text',
+  'summary',
+  'toolCallId',
+  'tool_call_id',
+  'name'
+])
+
+/**
+ * 兜底：消息里**没被上面白名单覆盖**的字符串也要算。
+ *
+ * 为什么要兜底：`estimateMessagesTokens` 原本是照 pi 自己的块结构写的，而 payload
+ * 是 **provider 格式**（OpenAI 兼容）—— 同一个请求实测：payload 共 1,358,330 字符，
+ * 白名单只看得到 115k 字符对应的量，`tool_calls[].function.arguments`、`url`、
+ * `reasoning*` 这些全落在外面，估算因此只有真实 prompt 的四分之一，整理线永远不触发。
+ * 枚举字段名的做法每换一家 provider 就会再漏一次，所以这里改成「排除已知字段、
+ * 其余字符串一律计入」—— 宁可算大（更早清扫），不能算小（把请求发爆）。
+ */
+function estimateExtraStrings(value, depth) {
+  if (value === null || value === undefined || depth > 6) return 0
+  if (typeof value === 'string') return estimateTokens(value)
+  if (typeof value !== 'object') return 0
+  if (Array.isArray(value)) {
+    let total = 0
+    for (const item of value) total += estimateExtraStrings(item, depth + 1)
+    return total
+  }
+  let total = 0
+  for (const [key, item] of Object.entries(value)) {
+    if (MESSAGE_FIELDS_ALREADY_COUNTED.has(key)) continue
+    total += estimateExtraStrings(item, depth + 1)
   }
   return total
 }

@@ -183,6 +183,35 @@ export function runContextBudgetTests(ok, mod, policyMod) {
     objectBlockContent === plainTextBlockTokens,
     `block.content 是对象时同样计入（${objectBlockContent}）`
   )
+
+  /*
+   * 白名单之外的字段不能漏（OpenAI 的 tool_calls、provider 自己的 reasoning*）。
+   * 实测现场：payload 共 1,358,330 字符，白名单只看得到约 115k 对应的量 ——
+   * 整理线因此永远不触发。兜底改成「排除已知字段、其余字符串一律计入」。
+   */
+  const openAiToolCall = estimateMessagesTokens([
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'bash', arguments: JSON.stringify({ command: 'x'.repeat(400) }) }
+        }
+      ]
+    }
+  ])
+  ok(openAiToolCall > 100, `OpenAI 形状的 tool_calls.function.arguments 也计入（${openAiToolCall}）`)
+  const reasoningField = estimateMessagesTokens([
+    { role: 'assistant', content: '', reasoning_content: 'y'.repeat(400) }
+  ])
+  ok(reasoningField > 100, `provider 自己的 reasoning_content 也计入（${reasoningField}）`)
+  /* 不重复：content / text 这些已算过的字段不能走兜底再算一遍 */
+  ok(
+    estimateMessagesTokens([{ role: 'assistant', content: 'abcd'.repeat(25) }]) === plainTextBlockTokens,
+    '已知字段不会被算两遍'
+  )
   ok(
     estimateMessagesTokens([{ role: 'assistant', content: [{ type: 'thinking', thinkingSignature: 'sig' }] }]) ===
       estimateMessagesTokens([{ role: 'assistant', content: [] }]),
