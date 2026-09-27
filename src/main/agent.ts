@@ -3910,7 +3910,8 @@ export class AgentController extends EventEmitter {
           available: status.available,
           version: status.version,
           code: status.code ?? null,
-          sources: status.sources.map((s) => s.id)
+          /* 与 `search.query` 的 summary 保持同一形状（对象数组），别同一个 key 两种写法 */
+          sources: status.sources.map((s) => ({ id: s.id, ready: s.ready }))
         }
       }
     }

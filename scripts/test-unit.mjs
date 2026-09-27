@@ -3900,6 +3900,23 @@ const { runSearchTests } = await import('./test-search.mjs')
 await runSearchTests(ok, searchMod)
 
 /*
+ * 受管结果落盘（capability-server）：所有 `yan` 命令共用的通用链路。
+ * 超过大小上限时必须是**合法 JSON**（带 truncated/bytes/shape），不能是半截文本。
+ */
+const capabilityServerMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/capability-server.ts'],
+    outfile: 'out/test/capability-server.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/capability-server.mjs'))
+)
+const { runCapabilityResultTests } = await import('./test-capability-result.mjs')
+await runCapabilityResultTests(ok, capabilityServerMod)
+
+/*
  * 任务收件箱（实施-28 T1）：七态投影 / 排序 / 缺源降级 / 分页与缓存。
  * 契约为 neutral（无 Electron 依赖），服务为 node（只用标准库）。
  */

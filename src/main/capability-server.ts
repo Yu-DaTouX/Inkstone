@@ -246,6 +246,30 @@ const KNOWN_COMMANDS = new Set([
   'search.doctor'
 ])
 
+/**
+ * 大结果被截断时给的「形状轮廓」：只描述结构，不复制内容。
+ *
+ * 键数与深度都夹住，所以输出有界 —— 保证改写后的 JSON 一定放得下上限。
+ */
+function shapeOf(value: unknown, depth = 0): unknown {
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      ...(depth < 1 && value.length ? { first: shapeOf(value[0], depth + 1) } : {})
+    }
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    if (depth >= 1) return { type: 'object', keyCount: entries.length }
+    const keys: Record<string, unknown> = {}
+    for (const [key, item] of entries.slice(0, 24)) keys[key] = shapeOf(item, depth + 1)
+    return { type: 'object', keyCount: entries.length, keys }
+  }
+  if (typeof value === 'string') return { type: 'string', length: value.length }
+  return { type: typeof value }
+}
+
 export class CapabilityServer {
   private server: Server | null = null
   private token = ''
@@ -464,18 +488,15 @@ export class CapabilityServer {
     }
     /*
      * 超限时**改写成合法 JSON**，不能 `slice` —— 半截 JSON 会让模型 `JSON.parse`
-     * 直接失败，而且看不出是被截的。原大小与预览片段一起给出，读的人至少知道
-     * 「这里被截过、原有多大」。字符串转义会让长度膨胀，所以循环收窄到真放得下。
+     * 直接失败，而且看不出是被截的。
+     *
+     * 给什么：原大小 + **数据的形状轮廓** + 一小段开头。前 4MB 的原始文本基本是
+     * 同一条数据的重复（缩进 + 长字符串），对读的人没什么用；轮廓才回答「这份结果
+     * 长什么样」。轮廓有界，所以写完一定放得下。
      */
     if (Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES) {
       const bytes = Buffer.byteLength(text)
-      let preview = text.slice(0, Math.max(0, CAPABILITY_RESULT_MAX_BYTES - 1024))
-      let capped = JSON.stringify({ truncated: true, bytes, preview })
-      while (Buffer.byteLength(capped) > CAPABILITY_RESULT_MAX_BYTES && preview.length > 0) {
-        preview = preview.slice(0, Math.floor(preview.length / 2))
-        capped = JSON.stringify({ truncated: true, bytes, preview })
-      }
-      text = capped
+      text = JSON.stringify({ truncated: true, bytes, shape: shapeOf(out.data), head: text.slice(0, 2000) })
     }
     const path = join(this.opsDir, `${opId}.json`)
     try {

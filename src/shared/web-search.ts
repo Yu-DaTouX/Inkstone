@@ -67,6 +67,11 @@ export function isWebSearchCapability(capability: Capability): boolean {
  *
  * 排序：`ready` 优先，其次 MCP 工具（它的调用形状最明确，能直接交代给模型）。
  * 没有命中时返回 `undefined` —— 调用方据此**隐藏**入口，而不是显示一个点不动的按钮。
+ *
+ * ⚠️ `availability` 在这里**只参与打分、不构成准入**：目录里 MCP 工具的 availability
+ * 目前恒为 `ready`（`mcpToolCapability` 的默认值，`collectMcpCatalog` 不传该字段），
+ * 所以实际判据是「名字/描述像搜索 + 工具能列出来」。拿不准的能力靠调用时的
+ * 身份与边界校验兜底 —— 入口只负责「有没有」，不负责「能不能成」。
  */
 export function pickWebSearchCapability(capabilities: readonly Capability[]): Capability | undefined {
   const hits = capabilities.filter(isWebSearchCapability)
