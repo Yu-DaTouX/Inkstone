@@ -31,7 +31,7 @@
 | `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
 | `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
 | `src/shared/turn-layer.ts` | 画布轮次层的几何与分支对齐：一层一轮一张卡、子会话首轮对上父会话那一轮（对不上不猜、会撞就退回） |
-| `src/shared/search.ts` + `src/main/search/` | 联网搜索：来源白名单（首批 wikipedia / arxiv / hackernews，HTTP 直连不需要浏览器扩展）、归一化与 URL 去重、逐来源状态（`ok` / `empty` / `timeout` / `unavailable` / `error` 分开）、`spawn` 参数数组不经 shell；JS 入口**用真实 node 跑**（Electron 自带的 Node 会让 commander 的参数切分错位，子命令全部失效、而 `--version` 仍成功 → 假绿）；`scripts/probe/search.mjs` 是不依赖宿主的探针，`scripts/probe/search-electron.mjs` 专测 **Electron 运行时**（钉住上面那条假绿回归）|
+| `src/shared/search.ts` + `src/main/search/` | 联网搜索：来源白名单（首批 wikipedia / arxiv / hackernews，HTTP 直连不需要浏览器扩展）、归一化与 URL 去重、逐来源状态（`ok` / `empty` / `timeout` / `unavailable` / `error` 分开）、`spawn` 参数数组不经 shell；JS 入口**用真实 node 跑**（Electron 自带的 Node 会让 commander 的参数切分错位，子命令全部失效、而 `--version` 仍成功 → 假绿），PATH 里没有 node 时可用 `YAN_NODE_BIN` 显式指定；`scripts/probe/search.mjs` 是不依赖宿主的探针，`scripts/probe/search-electron.mjs` 专测 **Electron 运行时**（钉住上面那条假绿回归） |
 | `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项） |
 | `src/renderer/src/icons/` + `scripts/design/icons/` | 图标体系：`catalog.json` 是语义 → 图标的唯一真源（55 个语义），`npm run icons` 生成 sprite；界面只用语义名，不写库里的原名 |
 | `src/renderer/src/styles/motion.css` | 动效唯一真源（39 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |

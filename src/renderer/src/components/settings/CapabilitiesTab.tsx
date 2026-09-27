@@ -166,14 +166,19 @@ export function CapabilitiesTab(): React.JSX.Element {
                 : t('set.searchBackendMissing')}
           {backend && !backend.available ? (
             <div className="set-desc">
-              {backend.code === 'backend_unusable' ? t('set.searchBackendUnusableHint') : t('set.searchBackendHint')}
+              {backend.code === 'backend_unusable'
+                ? t('set.searchBackendUnusableHint')
+                : /node/i.test(backend.detail ?? '')
+                  ? t('set.searchBackendNodeHint')
+                  : t('set.searchBackendHint')}
             </div>
           ) : null}
           {/*
-            原始输出只在「后端在、但命令跑不起来」时展示：未安装时它多半是
-            `spawn opencli ENOENT` 这类英文，与上面的安装指引重复且难读。
+            不可用时一律把 detail 摆出来 —— 它才是真正的原因：可能是「没装 opencli」，
+            也可能是「装了 opencli 但 PATH 里没 node」（只看上面那句「安装：npm i -g …」
+            会把后一种人带去重装已经装好的东西）。
           */}
-          {backend && backend.code === 'backend_unusable' && backend.detail ? (
+          {backend && !backend.available && backend.detail ? (
             <div className="set-desc" data-testid="cap-search-backend-detail">
               {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
             </div>

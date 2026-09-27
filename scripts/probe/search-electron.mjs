@@ -56,7 +56,13 @@ writeFileSync(
 )
 
 const requireEsm = createRequire(import.meta.url)
-const electronPath = requireEsm('electron')
+let electronPath
+try {
+  electronPath = requireEsm('electron')
+} catch (e) {
+  console.error('找不到 electron 包（这个探针要在装了 devDependencies 的仓库里跑）：', e instanceof Error ? e.message : e)
+  process.exit(1)
+}
 const run = spawnSync(electronPath, [driver], {
   encoding: 'utf8',
   env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
