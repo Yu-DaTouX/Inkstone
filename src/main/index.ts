@@ -6,7 +6,7 @@
  */
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage } from 'electron'
 import { join, dirname, basename, extname, resolve } from 'node:path'
-import { constants as fsConstants, existsSync } from 'node:fs'
+import { constants as fsConstants, existsSync, readdirSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
@@ -522,6 +522,28 @@ const SUBAGENT_SYSTEM_PROMPT = [
  * 这些文件仍通过 `--extension` 显式传入；改目录名只收紧随包边界，
  * 不把薄层变成可被 pi 自动发现的第三方扩展集合。
  */
+/**
+ * 随包技能：`resources/skills/<名称>/SKILL.md`（打包后在 resources/yan-skills）。
+ * pi 以 --no-skills 启动，不自动发现；这里列出的技能按 --skill 显式传入。
+ */
+function bundledSkillPaths(): string[] {
+  const roots = [
+    process.resourcesPath ? join(process.resourcesPath, 'yan-skills') : '',
+    join(__dirname_, '..', '..', 'resources', 'skills'),
+    join(process.cwd(), 'resources', 'skills')
+  ].filter(Boolean)
+  const root = roots.find((dir) => existsSync(dir))
+  if (!root) return []
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(root, entry.name, 'SKILL.md'))
+      .filter((file) => existsSync(file))
+  } catch {
+    return []
+  }
+}
+
 function yanThinResourcePath(file: string): string | undefined {
   const candidates = [
     process.resourcesPath ? join(process.resourcesPath, 'yan-thin', file) : '',
@@ -4584,6 +4606,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         projectKnowledgeExtension: projectKnowledgeExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
+        bundledSkills: bundledSkillPaths(),
         contextBudgetObserverExtension: contextBudgetObserverExtensionPath(),
         contextBudgetMaintenanceExtension: contextBudgetMaintenanceExtensionPath(),
         /*

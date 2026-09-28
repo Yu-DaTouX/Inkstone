@@ -477,6 +477,8 @@ export class AgentController extends EventEmitter {
    * 被拦下的计数由宿主在回合收尾时计入目标失败签名（`shared/repeat-guard.ts`）。
    */
   private repeatGuardExtension?: string
+  /** 随包技能（resources/skills/<名称>/SKILL.md）：显式 --skill 传入，不开启自动发现 */
+  private bundledSkills: string[] = []
   /** 最终 provider payload 观察器，排在受管与项目扩展之后。 */
   private contextBudgetObserverExtension?: string
   /** Budget V1 的受控摘要事务与活跃投影应用。 */
@@ -764,6 +766,7 @@ export class AgentController extends EventEmitter {
     projectKnowledgeExtension?: string
     /** 单轮重复动作兜底（2026-09-22）：连续相同调用 → 提醒 / 拦下 */
     repeatGuardExtension?: string
+    bundledSkills?: string[]
     /** 上下文预算 V1：最终 payload 观察器，需排在受管与项目扩展之后。 */
     contextBudgetObserverExtension?: string
     /** 上下文预算 V1：受控摘要命令与已提交投影应用。 */
@@ -837,6 +840,7 @@ export class AgentController extends EventEmitter {
     this.contextExtension = opts.contextExtension
     this.projectKnowledgeExtension = opts.projectKnowledgeExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
+    this.bundledSkills = opts.bundledSkills ?? []
     this.contextBudgetObserverExtension = opts.contextBudgetObserverExtension
     this.contextBudgetMaintenanceExtension = opts.contextBudgetMaintenanceExtension
     this.readHistory = opts.readHistory
@@ -1034,6 +1038,8 @@ export class AgentController extends EventEmitter {
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
+        /* 随包技能：领域做法（例如办公文件）放在技能里按需加载，不写进宿主 */
+        ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         /* 项目已授权登记的 pi 包：显式路径不受 `--no-extensions` 影响（见函数注释）。 */
         ...projectPackageArgs,
         /* 投影在 `context` 阶段生效；最终 budget observer 保持所有请求改写器之后。 */
