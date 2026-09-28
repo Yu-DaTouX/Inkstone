@@ -68,6 +68,10 @@ extraResources:
   - from: resources/pi-extensions
     to: yan-thin
     filter: ['**/*']
+  # 随包技能：领域做法（例如办公文件）以 SKILL.md 按需加载；主进程用 --skill 显式传入。
+  - from: resources/skills
+    to: yan-skills
+    filter: ['**/*']
   # 随包的 `yan` CLI（宿主能力入口，模型在 bash 里调它）。
   # 启动器由主进程写进 YAN_DIR/bin 并前置到 pi 子进程的 PATH，
   # 这里只需要把脚本本体放进 resources/。
