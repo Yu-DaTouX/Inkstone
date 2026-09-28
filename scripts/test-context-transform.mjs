@@ -311,7 +311,8 @@ export async function runContextTransformTests(ok, deps) {
     ok(/又旧又没证据.*\[stale.*inferred/.test(bothText), 'stale 与 inferred 同时出现时两个都标（不互相掩盖）')
 
     const { messages, injected } = T.injectTaskState(messagesOf(branchFixture()), text)
-    ok(injected && messages[0].customType === 'yan-task-state', 'Task State 插在最前（历史之前）')
+    const lastUser = messages.findLastIndex((m) => m.role === 'user')
+    ok(injected && messages[lastUser - 1]?.customType === 'yan-task-state', 'Task State 插在最新用户消息之前（不动历史前缀）')
     ok(messages.length === 8, '只加一条（不复制历史）')
     const second = T.injectTaskState(messages, text)
     ok(second.messages.length === 8 && T.hasTaskState(second.messages), '重复注入不叠加')
@@ -573,10 +574,11 @@ export async function runContextTransformTests(ok, deps) {
       episodes: []
     }
     await writeFile(stateFile, JSON.stringify(seeded), 'utf8')
-    const injected = await EXT.__internals.onContext({ messages }, ctx)
-    ok(!!injected && injected.messages[0]?.customType === 'yan-task-state', '水位一致 → 注入 <TASK_STATE>')
+    const injected = (EXT.__internals.resetFrozenTaskState(), await EXT.__internals.onContext({ messages }, ctx))
+    const stateAt = (list) => list.findIndex((m) => m?.customType === 'yan-task-state')
+    ok(!!injected && stateAt(injected.messages) === injected.messages.findLastIndex((m) => m.role === 'user') - 1, '水位一致 → 注入 <TASK_STATE>（最新用户消息之前）')
     ok(
-      T.messageText(injected.messages[0]).includes('<TASK_STATE derived="true" authoritative="false"'),
+      T.messageText(injected.messages[stateAt(injected.messages)]).includes('<TASK_STATE derived="true" authoritative="false"'),
       '注入内容确实是状态块（带 authority 契约头）'
     )
 
@@ -586,24 +588,24 @@ export async function runContextTransformTests(ok, deps) {
      */
     const older = { ...seeded, sourceWatermark: { entryCount: 7, lastEntryId: 'm7' } }
     await writeFile(stateFile, JSON.stringify(older), 'utf8')
-    const olderInjected = await EXT.__internals.onContext({ messages }, ctx)
+    const olderInjected = (EXT.__internals.resetFrozenTaskState(), await EXT.__internals.onContext({ messages }, ctx))
     ok(!!olderInjected, '水位较旧但可定位（gap 1）→ 仍注入')
-    ok(T.messageText(olderInjected.messages[0]).includes('[stale'), '陈旧快照的推测字段显式标 stale')
+    ok(T.messageText(olderInjected.messages[stateAt(olderInjected.messages)]).includes('[stale'), '陈旧快照的推测字段显式标 stale')
 
     /* 水位对不上（历史被裁剪/回退）→ 不注入 */
     const diverged = { ...seeded, sourceWatermark: { entryCount: 3, lastEntryId: 'zzz' } }
     await writeFile(stateFile, JSON.stringify(diverged), 'utf8')
-    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '水位 diverged → 不注入过期状态')
+    ok(((EXT.__internals.resetFrozenTaskState(), await EXT.__internals.onContext({ messages }, ctx))) === undefined, '水位 diverged → 不注入过期状态')
 
     /* 太旧（gap > 6）→ 同样不注入 */
     const tooOld = { ...seeded, sourceWatermark: { entryCount: 1, lastEntryId: 'mc0' } }
     await writeFile(stateFile, JSON.stringify(tooOld), 'utf8')
-    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '落后超过 6 条 → 不注入（宁少不错）')
+    ok(((EXT.__internals.resetFrozenTaskState(), await EXT.__internals.onContext({ messages }, ctx))) === undefined, '落后超过 6 条 → 不注入（宁少不错）')
 
     /* 会话 id 不一致 → 不注入（不拿别的会话的状态） */
     const other = { ...seeded, sessionId: 'other999' }
     await writeFile(stateFile, JSON.stringify(other), 'utf8')
-    ok((await EXT.__internals.onContext({ messages }, ctx)) === undefined, '状态文件会话对不上 → 不注入')
+    ok(((EXT.__internals.resetFrozenTaskState(), await EXT.__internals.onContext({ messages }, ctx))) === undefined, '状态文件会话对不上 → 不注入')
   }
 
   /* ============ I. session_before_compact 接管闸门 ============ */

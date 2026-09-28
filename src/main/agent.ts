@@ -800,6 +800,8 @@ export class AgentController extends EventEmitter {
    * 而不是「一个会话只生成一次」。
    */
   private titleTried = new Set<string>()
+  /** 每个会话上一次生成标题用的样本（第一句 + 最近一句用户消息） */
+  private titledSamples = new Map<string, string>()
 
   /** 上一次真的写进 pi 的标题（去重，避免每轮都改会话文件） */
   private lastTitle: string | undefined
@@ -2547,8 +2549,9 @@ export class AgentController extends EventEmitter {
         void this.refreshStats({ allowPolicyTrigger: true })
         // 兑底：扩展也可能通过 /panel task 命令改任务（不经过工具调用）
         void this.refreshTodos()
-        // 每轮结束都重算标题（用户要求每次都是新生成的）
-        void this.maybeGenerateTitle({ force: true })
+        // 用户每说一句都重算标题（用户要求每次都是新生成的）；
+        // 自动续跑、重试这类没有新用户消息的回合不重算 —— 标题样本没变，只会白花一次调用
+        void this.maybeGenerateTitle({ force: true, onlyIfSamplesChanged: true })
         break
 
       case 'turn_end':
@@ -3364,6 +3367,14 @@ export class AgentController extends EventEmitter {
         ['committed', 'applied'].includes(operation.state) &&
         (operation.resumeReceipt === null || operation.resumeReceipt.startsWith('intent:'))
       if (!working && !pendingAutoResume) return
+      if (pendingAutoResume) {
+        /* 已提交的整理照常生效，只是不再自动续跑；把它标成 cancelled 会让投影失效、下一轮又撞线 */
+        await contextBudgetStoreV1.transitionOperation(
+          sessionId, operation.identity.operationId, operation.revision, operation.state,
+          { resumeReceipt: `skipped:${String(reason).slice(0, 120)}` }
+        )
+        return
+      }
       await contextBudgetStoreV1.transitionOperation(
         sessionId, operation.identity.operationId, operation.revision, 'cancelled',
         { failureCode: String(reason).slice(0, 160) }
@@ -4253,7 +4264,7 @@ export class AgentController extends EventEmitter {
    * 还会让 prompt cache 全部失效（那个代价比一次请求贵得多）。
    */
   private async maybeGenerateTitle(
-    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean } = {}
+    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; onlyIfSamplesChanged?: boolean } = {}
   ): Promise<string | null> {
     const st = this.state
     if (!st) return null
@@ -4274,6 +4285,8 @@ export class AgentController extends EventEmitter {
     const samples = titleSamples(users)
     /* 首条消息的图片一并交给归纳进程 —— 模型能看着图起标题（最多一张：短请求别塞太多图） */
     const titleImages = titleSampleImages(users)
+    const samplesKey = samples.join('\n')
+    if (opts.onlyIfSamplesChanged && this.titledSamples.get(st.sessionId) === samplesKey) return null
 
     if (!opts.lockHeld) this.titleTried.add(st.sessionId)
     const sessionId = st.sessionId
@@ -4292,6 +4305,8 @@ export class AgentController extends EventEmitter {
       if (!res?.title) return null
 
       if (opts.candidate) return res.title
+      this.titledSamples.set(sessionId, samplesKey)
+      if (this.titledSamples.size > 200) this.titledSamples.clear()
 
       // 写回 pi（TUI 的 /resume 也能看到）。
       // ⚠️ 只有在标题真的变了才写 —— set_session_name 会改会话文件，

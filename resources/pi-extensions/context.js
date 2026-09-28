@@ -915,7 +915,22 @@ async function onContext(event, ctx, pi) {
      * `p.state.inject` 是**独立分路**（第四轮外部评审 P0-5）：关掉它 = shadow 模式，
      * 状态照生成、只是不进上下文 —— 出问题时不必把整个扩展拔掉。
      */
-    if (kindEnabled(p, 'episode-fold') && p.state.inject) {
+    /*
+     * 同一用户回合内冻结注入文本：回合里每次工具调用都会让水位落后更多，
+     * 若每次请求重新分档（fresh → stale-soft → stale-hard → 不注入），
+     * 注入块就会在回合中途变几次，前缀缓存随之失效、按全价重发。
+     */
+    const frozenTurn = `${currentTurn}:${turnKeyOf(next)}`
+    const frozen = frozenTaskState.get(sessionId)
+    if (kindEnabled(p, 'episode-fold') && p.state.inject && frozen?.turn === frozenTurn) {
+      if (frozen.text) {
+        const injected = injectTaskState(next, frozen.text)
+        next = injected.messages
+        injectedTaskState = injected.injected
+      }
+    } else if (kindEnabled(p, 'episode-fold') && p.state.inject) {
+      frozenTaskState.set(sessionId, { turn: frozenTurn, text: '' })
+      if (frozenTaskState.size > 200) frozenTaskState.clear()
       const loaded = loadState(sessionId)
       if (loaded.status === 'ok') {
         const entries = ctx.sessionManager?.getEntries?.() ?? []
@@ -931,6 +946,7 @@ async function onContext(event, ctx, pi) {
             const injected = injectTaskState(next, text)
             next = injected.messages
             injectedTaskState = injected.injected
+            if (injected.injected) frozenTaskState.set(sessionId, { turn: frozenTurn, text })
             /*
              * 记下**真的注入了什么档位**：注入块本身不进任何落盘文件（它是临时消息），
              * 所以这条诊断行就是“契约头到底写了什么”在真实链路里的唯一取证点。
@@ -1345,6 +1361,8 @@ function noteFoldRun(sessionId, ok) {
  * 只活在进程内：重启后多跑一次是可接受的（宁可多花一次，也不要在磁盘上留一份要维护的账）。
  */
 const deepRan = new Map()
+/** 每个会话当前用户回合冻结的 `<TASK_STATE>` 文本（空串 = 本回合不注入） */
+const frozenTaskState = new Map()
 
 /** freshness 分档 → 注入契约里的 `freshness`（机器可读，取值只有三个） */
 function freshnessLabel(tier) {
@@ -1836,6 +1854,8 @@ export default function contextExtension(pi) {
 export const __internals = {
   policy,
   onContext,
+  /** 测试在同一回合里切换状态文件时用：清掉回合内冻结的注入文本 */
+  resetFrozenTaskState: () => frozenTaskState.clear(),
   onBeforeProviderRequest,
   requestBudgetFor,
   onBeforeCompact,

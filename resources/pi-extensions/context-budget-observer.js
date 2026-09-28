@@ -221,6 +221,20 @@ function unavailableDetails(reason, code = 'context_budget_unavailable') {
   }
 }
 
+/*
+ * 撞线后一次要摘掉多少：压到 targetAfterReview（软线的 75%）以下，
+ * 再给新笔记留出余量（笔记会替换掉旧笔记，最长约 MAX_SUMMARY_CHARS 字符）。
+ * 算不出时返回 undefined，整理按默认上限走。
+ */
+const NOTES_MARGIN_TOKENS = 12_000
+
+function reductionTarget(inputTokens, calculation) {
+  const target = safeInteger(calculation?.targetAfterReview)
+  if (!Number.isFinite(inputTokens) || !target) return undefined
+  const need = inputTokens - target + NOTES_MARGIN_TOKENS
+  return need > 0 ? need : undefined
+}
+
 async function checkAndAbort(pi, ctx, sessionId, payload, policy) {
   if (policy.unavailable) {
     writeBlockedEntry(pi, sessionId, null, null, 'context_budget_unavailable', policy.unavailable)
@@ -283,10 +297,13 @@ async function checkAndAbort(pi, ctx, sessionId, payload, policy) {
   writeBlockedEntry(pi, sessionId, details.inputTokens, result.calculation, code, result.reason)
   if ((result.decision === 'review' || result.decision === 'blocked') && capability) {
     try {
-      const maintenance = await maintainContextAutomatically(pi, ctx, code)
+      const maintenance = await maintainContextAutomatically(pi, ctx, code, {
+        targetTokens: reductionTarget(details.inputTokens, result.calculation)
+      })
       pi?.appendEntry?.('yan-context-maintenance', {
         at: Date.now(),
         sessionId,
+        inputTokens: details.inputTokens,
         operationId: maintenance.operation?.identity?.operationId ?? null,
         state: maintenance.operation?.state ?? 'needs_action',
         code: maintenance.ok ? 'automatic_projection_committed' : 'automatic_projection_needs_action',
