@@ -159,10 +159,20 @@ export function createSessionWorkScheduler(deps: SessionWorkDeps): SessionWorkSc
     scheduleAutoContinue(id, plan)
   }
 
+  /* 每个 runner 上一次看到的「是否在跑」：只有从在跑变成空闲才算回合结束 */
+  const running = new Map<string, boolean>()
+
   function observePush(id: string, msg: MainPush): void {
-    /* 回合刚结束：交接、普通续跑、重复拦下都在同一条串行链里决定 */
-    if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
-      void schedule(id, 'settled')
+    /*
+     * 回合刚结束：交接、普通续跑、重复拦下都在同一条串行链里决定。
+     * 打开 / 切换会话时也会推一条空闲 state —— 那不是回合结束，
+     * 在那里排工作会让目标在用户什么都没做时自己续跑起来。
+     */
+    if (msg.ch === 'state') {
+      const now = (msg.payload as SessionState)?.isAgentRunning === true
+      const was = running.get(id) === true
+      running.set(id, now)
+      if (was && !now) void schedule(id, 'settled')
     }
     /* 模型报错 → 自动继续（单开通道；拿提示文案做判据太脆） */
     if (msg.ch === 'agent-error') void handleModelError(id, msg.payload)

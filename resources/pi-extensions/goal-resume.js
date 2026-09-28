@@ -55,6 +55,13 @@ const RESUME_DELAY_MS = envInt('YAN_GOAL_RESUME_DELAY_MS', 1800)
  */
 const RESUME_POLL_TRIES = envInt('YAN_GOAL_RESUME_POLL_TRIES', 8)
 const RESUME_POLL_MS = envInt('YAN_GOAL_RESUME_POLL_MS', 1_200)
+/*
+ * 自动产生的续行（`continue` / `retry`）多久之后不再发。
+ * 宿主在回合结束时写下它、几秒内就该被消费；隔了这么久还在，说明应用在那之后
+ * 关过或会话换过 —— 这时发出去等于替用户开口，按整段上下文付一次费。
+ * 用户批准过的就绪续行与交接续行不受影响。
+ */
+const STALE_AUTO_RESUME_MS = envInt('YAN_GOAL_RESUME_STALE_MS', 10 * 60_000)
 
 function envInt(name, fallback) {
   const raw = Number(process.env[name])
@@ -240,6 +247,11 @@ export default function goalResume(pi) {
     }
     note('check', { hasResume: !!resume, operationId: resume?.operationId ?? null, attempts })
     if (!resume) return
+    if ((resume.kind === 'continue' || resume.kind === 'retry') &&
+        Number.isFinite(resume.at) && Date.now() - resume.at > STALE_AUTO_RESUME_MS) {
+      note('resume_skipped', { reason: 'stale', operationId: resume.operationId, kind: resume.kind, ageMs: Date.now() - resume.at })
+      return
+    }
 
     const target = rememberSender(context)
     if (!target) {

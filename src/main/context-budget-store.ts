@@ -475,7 +475,8 @@ export class ContextBudgetStoreV1 {
       const current = await this.readOperation(sessionId, operationId)
       if (!current) throw new ContextBudgetStoreError('corrupt', '整理操作记录不存在')
       if (current.revision !== expectedRevision) throw new ContextBudgetStoreError('stale_revision', '整理操作状态已变化，请刷新后再试')
-      if (!canTransitionContextMaintenanceV1(current.state, state)) {
+      /* 同状态 = 只更新字段（例如续跑回执），不算状态迁移 */
+      if (current.state !== state && !canTransitionContextMaintenanceV1(current.state, state)) {
         throw new ContextBudgetStoreError('invalid_phase', `不允许整理状态从 ${current.state} 转为 ${state}`)
       }
       const next: ContextMaintenanceOperationV1 = {

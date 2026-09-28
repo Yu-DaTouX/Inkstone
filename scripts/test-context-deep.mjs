@@ -116,14 +116,14 @@ export async function runContextDeepTests(ok, { deep, extension }) {
   ok(renderWorkingTrace('') === '', 'deep·空文本渲染出空串')
   ok(!renderWorkingTrace('- x').includes('sourceHead'), 'deep·拿不到水位就不写这一项（不编造）')
 
-  /* ---------------- 注入：幂等 + 插到最前 ---------------- */
+  /* ---------------- 注入：幂等 + 插到最新用户消息之前 ---------------- */
   const before = [
     { role: 'user', content: [{ type: 'text', text: '历史' }] },
     { role: 'custom', customType: 'yan-task-state', content: [{ type: 'text', text: '<TASK_STATE/>' }] }
   ]
   const injected = injectWorkingTrace(before, block)
   ok(injected.injected === true, 'deep·注入标记为真')
-  ok(injected.messages[0].customType === WORKING_TRACE_CUSTOM_TYPE, 'deep·插到最前（与 <TASK_STATE> 位置一致）')
+  ok(injected.messages[0].customType === WORKING_TRACE_CUSTOM_TYPE, 'deep·插到最新用户消息之前')
   ok(injected.messages.length === before.length + 1, 'deep·只多一条消息')
   ok(hasWorkingTrace(injected.messages), 'deep·hasWorkingTrace 认得出来')
   ok(

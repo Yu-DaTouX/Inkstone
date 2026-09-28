@@ -775,10 +775,23 @@ export function renderTaskState(task, opts = {}) {
 }
 
 /**
- * 注入 / 替换 `<TASK_STATE>` 消息。
+ * 派生注入块的插入位置：最新一条用户消息之前；没有用户消息时放最前。
  *
- * 位置固定在**历史之前**（§13.1 第 1 条：`SYSTEM → TASK_STATE → HISTORY`）。
- * systemPrompt 不在 messages 数组里（pi 单独传），所以「第一条」就是历史之前。
+ * 不放在历史最前：注入块每个回合都会变，放在最前会让服务商的前缀缓存
+ * 从第一条消息起整段失效，长会话每回合都要按全价重发几十万 tokens。
+ * 放在最新用户消息之前，变化只影响当前回合这一小段；同一回合内调用方
+ * 还应冻结块内文本（见 context.js），否则回合中途换档同样会让这段失效。
+ */
+export function derivedBlockIndex(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') return i
+  }
+  return 0
+}
+
+/**
+ * 注入 / 替换 `<TASK_STATE>` 消息，位置见 {@link derivedBlockIndex}。
+ *
  * 用 `role: 'custom'`（pi 的 convertToLlm 会把它映射成 user）并打上
  * `customType`，这样：
  *   · 它可被识别（幂等，不重复注入）；
@@ -788,7 +801,8 @@ export function injectTaskState(messages, text) {
   const withoutOld = messages.filter((m) => !(m?.role === 'custom' && m.customType === TASK_STATE_CUSTOM_TYPE))
   if (!text) return { messages: withoutOld, injected: false }
   const message = { role: 'custom', customType: TASK_STATE_CUSTOM_TYPE, content: [{ type: 'text', text }] }
-  return { messages: [message, ...withoutOld], injected: true }
+  const at = derivedBlockIndex(withoutOld)
+  return { messages: [...withoutOld.slice(0, at), message, ...withoutOld.slice(at)], injected: true }
 }
 
 /** `<TASK_STATE>` 是否已经在消息里（诊断 / 断言用） */

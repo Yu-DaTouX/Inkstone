@@ -22,7 +22,7 @@
  * 当成用户的要求。
  */
 
-import { estimateTokens } from './context-transform.js'
+import { derivedBlockIndex, estimateTokens } from './context-transform.js'
 
 /** 触发 Deep Context 的转录门槛（token）。参考方案 §14 的「>200k」按可用上下文折算 */
 export const DEEP_MIN_TOKENS = 150_000
@@ -193,8 +193,8 @@ export function renderWorkingTrace(text, { sourceHead = null, turns = null } = {
 }
 
 /**
- * 注入（幂等）：先摘掉旧的同类块，再插到**最前**。
- * 位置与 `<TASK_STATE>` 一致 —— 放在历史之前。
+ * 注入（幂等）：先摘掉旧的同类块，再插到最新一条用户消息之前。
+ * 位置与 `<TASK_STATE>` 一致（见 context-transform 的 derivedBlockIndex）。
  */
 export function injectWorkingTrace(messages, text) {
   const list = Array.isArray(messages) ? messages : []
@@ -205,7 +205,8 @@ export function injectWorkingTrace(messages, text) {
     customType: WORKING_TRACE_CUSTOM_TYPE,
     content: [{ type: 'text', text }]
   }
-  return { messages: [message, ...withoutOld], injected: true }
+  const at = derivedBlockIndex(withoutOld)
+  return { messages: [...withoutOld.slice(0, at), message, ...withoutOld.slice(at)], injected: true }
 }
 
 /** 注入块是否已在消息里（诊断 / 断言用） */
