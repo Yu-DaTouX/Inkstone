@@ -135,6 +135,16 @@
     toolsTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(700)
   }
+  /*
+   * 「上下文」分区默认收起成一行摘要（环形 + 数字），详情（主值 / 刻度）只在展开后渲染。
+   * 与 context-sweep 探针同一写法：点分区标题（不是第一颗按钮 —— 那是拖动把手）。
+   */
+  const ctxHead = q('[data-testid="rp-context"]')?.querySelector('.rp-sec-head')
+  if (ctxHead && ctxHead.getAttribute('aria-expanded') === 'false') {
+    ctxHead.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    for (let i = 0; i < 20 && ctxHead.getAttribute('aria-expanded') !== 'true'; i++) await sleep(80)
+    await sleep(300)
+  }
   const main = q('[data-testid="ctx-main"]')
   ok(main?.getAttribute('data-mode') === 'working-set', `主值切到工作集视角（data-mode=${main?.getAttribute('data-mode')}）`)
   const tokensText = text('[data-testid="ctx-tokens"]')
@@ -205,7 +215,8 @@
    */
   ok(next?.getAttribute('data-kind') === 'tool-sweep', `下一步预报的是清理（实际 ${next?.getAttribute('data-kind')}）`)
   log(`  下一步文案：${JSON.stringify(text('[data-testid="ctx-next-stage"]'))}`)
-  ok(/下一步/.test(text('[data-testid="ctx-next-stage"]')), '文案以「下一步」开头')
+  /* 文案在 d8da192 收成「约 N 时<动作>」（窄栏可读性），不再带「下一步」前缀 */
+  ok(/^约 \S+ 时/.test(text('[data-testid="ctx-next-stage"]')), '文案写明在多少 token 时做下一步')
 
   /* 图例：三格，2026-09-18 起三格都在默认接管集里 */
   const chips = qa('[data-testid="ctx-stage-chip"]')
