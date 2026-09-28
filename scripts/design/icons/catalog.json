@@ -1,387 +1,385 @@
 {
   "$note": [
-    "图标编目 —— 这里只写「语义」，不写几何。",
+    "图标编目 —— 这里只写「语义」，几何在 inkline.json。",
     "语义名（本文件的 key）就是 <Icon name=\"...\" /> 里用的名字，也是 sprite 里的 i-<名字>。",
-    "每个语义名必须唯一对应一个图标（同一图标被两个语义引用 = 编目出错，由 npm run check:icons 拦住）。",
-    "新增图标：先在这里登记语义与用途，再跑 npm run icons。不要手改 sprite.ts。"
+    "每个语义名必须唯一对应一个图标（同一几何被两个语义引用 = 编目出错，由 npm run check:icons 拦住）。",
+    "新增图标：先在这里登记语义与用途，再在 inkline.json 画几何，然后跑 npm run icons。不要手改 sprite.ts。"
   ],
-  "grid": 24,
-  "strokeWidth": 1.5,
-  "linecap": "round",
-  "linejoin": "round",
+  "grid": 16,
+  "strokeWidth": 1.25,
+  "linecap": "square",
+  "linejoin": "miter",
   "libraries": {
-    "lucide": {
-      "package": "lucide-static",
-      "version": "1.48.0",
-      "license": "ISC",
-      "home": "https://lucide.dev",
-      "note": "纯描边线性图标，24px 网格，round 端点。备用库 Tabler(MIT) 仅在覆盖缺口时启用。"
+    "inkline": {
+      "source": "inkline.json",
+      "license": "随本仓库",
+      "note": "自绘「砚线」：16 网格、描边 1.25px（non-scaling-stroke，12/14/16 三档一样粗）、方头斜接。"
     }
   },
   "icons": {
     "close": {
-      "lib": "lucide",
-      "name": "x",
+      "lib": "inkline",
+      "name": "close",
       "group": "操作",
       "use": "关闭浮层或取消语音输入"
     },
     "back": {
-      "lib": "lucide",
-      "name": "arrow-left",
+      "lib": "inkline",
+      "name": "back",
       "group": "导航",
       "use": "返回上一层项目或会话"
     },
     "stop": {
-      "lib": "lucide",
-      "name": "square",
+      "lib": "inkline",
+      "name": "stop",
       "group": "操作",
       "use": "停止正在执行的任务"
     },
     "activity": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "activity",
       "group": "状态",
       "use": "运行中 / 活动计数（终端状态、队列、会话运行数）"
     },
     "alert-circle": {
-      "lib": "lucide",
-      "name": "circle-alert",
+      "lib": "inkline",
+      "name": "alert-circle",
       "group": "状态",
       "use": "警告 / 错误 / 失败"
     },
     "check": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "check",
       "group": "状态",
       "use": "勾选 / 已完成 / 已复制"
     },
     "check-circle": {
-      "lib": "lucide",
-      "name": "circle-check",
+      "lib": "inkline",
+      "name": "check-circle",
       "group": "状态",
       "use": "成功 / 完成 / 已通过核验"
     },
     "checklist": {
-      "lib": "lucide",
-      "name": "list-checks",
+      "lib": "inkline",
+      "name": "checklist",
       "group": "状态",
       "use": "清单 / 上下文 / 待办分组"
     },
     "history": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "history",
       "group": "状态",
       "use": "历史 / 恢复 / 最近记录"
     },
     "refresh": {
-      "lib": "lucide",
-      "name": "refresh-cw",
+      "lib": "inkline",
+      "name": "refresh",
       "group": "状态",
       "use": "刷新 / 重试 / 正在处理"
     },
     "running": {
-      "lib": "lucide",
-      "name": "loader-circle",
+      "lib": "inkline",
+      "name": "running",
       "group": "状态",
       "use": "进行中计数（会话 / 分组正在运行）"
     },
     "queue": {
-      "lib": "lucide",
-      "name": "list-plus",
+      "lib": "inkline",
+      "name": "queue",
       "group": "状态",
       "use": "排队插入（引导消息进入队列）"
     },
     "shield-check": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "shield-check",
       "group": "状态",
       "use": "安全 / 权限 / 只读保护"
     },
     "compact": {
-      "lib": "lucide",
-      "name": "archive",
+      "lib": "inkline",
+      "name": "compact",
       "group": "状态",
       "use": "压缩会话上下文"
     },
     "search": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "search",
       "group": "导航",
       "use": "搜索 / 过滤输入"
     },
     "plus": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "plus",
       "group": "导航",
       "use": "新建 / 添加"
     },
     "chevron-right": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "chevron-right",
       "group": "导航",
       "use": "展开 / 折叠箭头（默认指向右）"
     },
     "menu": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "menu",
       "group": "导航",
       "use": "更多操作菜单"
     },
     "settings": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "settings",
       "group": "导航",
       "use": "设置入口"
     },
     "sidebar-left": {
-      "lib": "lucide",
-      "name": "panel-left",
+      "lib": "inkline",
+      "name": "sidebar-left",
       "group": "导航",
       "use": "左栏显示 / 隐藏"
     },
     "sidebar-right": {
-      "lib": "lucide",
-      "name": "panel-right",
+      "lib": "inkline",
+      "name": "sidebar-right",
       "group": "导航",
       "use": "右栏显示 / 隐藏"
     },
     "dock": {
-      "lib": "lucide",
-      "name": "panel-bottom",
+      "lib": "inkline",
+      "name": "dock",
       "group": "导航",
       "use": "浮动工具分区停靠回面板"
     },
     "home": {
-      "lib": "lucide",
-      "name": "house",
+      "lib": "inkline",
+      "name": "home",
       "group": "导航",
       "use": "右栏首页标签"
     },
     "external": {
-      "lib": "lucide",
-      "name": "external-link",
+      "lib": "inkline",
+      "name": "external",
       "group": "导航",
       "use": "在外部打开链接 / 来源"
     },
     "pin": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "pin",
       "group": "导航",
       "use": "置顶 / 固定"
     },
     "copy": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "copy",
       "group": "导航",
       "use": "复制文本 / 路径"
     },
     "pencil": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "pencil",
       "group": "导航",
       "use": "重命名 / 编辑"
     },
     "folder": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "folder",
       "group": "文件",
       "use": "目录 / 项目"
     },
     "folder-open": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "folder-open",
       "group": "文件",
       "use": "已展开的目录 / 资料"
     },
     "file": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "file",
       "group": "文件",
       "use": "单个文件（附件、预览、变更路径）"
     },
     "image": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "image",
       "group": "文件",
       "use": "图片 / 缩略图占位"
     },
     "library": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "library",
       "group": "文件",
       "use": "资料源 / 素材库"
     },
     "group": {
-      "lib": "lucide",
-      "name": "folder-tree",
+      "lib": "inkline",
+      "name": "group",
       "group": "文件",
       "use": "项目分组 / 会话归类"
     },
     "tag": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "tag",
       "group": "文件",
       "use": "标签 / 命名"
     },
     "change": {
-      "lib": "lucide",
-      "name": "file-diff",
+      "lib": "inkline",
+      "name": "change",
       "group": "文件",
       "use": "工作区变更 / 差异"
     },
     "key": {
-      "lib": "lucide",
-      "name": "key-round",
+      "lib": "inkline",
+      "name": "key",
       "group": "文件",
       "use": "密钥 / API Key"
     },
     "chat-round": {
-      "lib": "lucide",
-      "name": "message-circle",
+      "lib": "inkline",
+      "name": "chat-round",
       "group": "对话",
       "use": "对话 / 会话条目"
     },
     "message-dots": {
-      "lib": "lucide",
-      "name": "message-circle-more",
+      "lib": "inkline",
+      "name": "message-dots",
       "group": "对话",
       "use": "消息 / 需要回应的提问"
     },
     "send": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "send",
       "group": "对话",
       "use": "发送 / 提交"
     },
     "sparkles": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "sparkles",
       "group": "对话",
       "use": "AI 生成 / 模型相关（含原 sparkle 全部用法）"
     },
     "agent": {
-      "lib": "lucide",
-      "name": "bot",
+      "lib": "inkline",
+      "name": "agent",
       "group": "对话",
       "use": "代理模式 / 模型角色"
     },
     "layers": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "layers",
       "group": "空间",
       "use": "空间本身（分层语义，不再借用为分支/地图/分组）"
     },
     "map": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "map",
       "group": "空间",
       "use": "会话地图 / 轮次级导航"
     },
     "branch": {
-      "lib": "lucide",
-      "name": "git-branch",
+      "lib": "inkline",
+      "name": "branch",
       "group": "空间",
       "use": "分支 / 从某条消息分叉"
     },
     "compare": {
-      "lib": "lucide",
-      "name": "git-compare",
+      "lib": "inkline",
+      "name": "compare",
       "group": "空间",
       "use": "成果比较"
     },
     "pull-request": {
-      "lib": "lucide",
-      "name": "git-pull-request",
+      "lib": "inkline",
+      "name": "pull-request",
       "group": "空间",
       "use": "PR 状态入口"
     },
     "learn": {
-      "lib": "lucide",
-      "name": "graduation-cap",
+      "lib": "inkline",
+      "name": "learn",
       "group": "空间",
       "use": "学习 / 课程 / 练习"
     },
     "playbook": {
-      "lib": "lucide",
-      "name": "book-open",
+      "lib": "inkline",
+      "name": "playbook",
       "group": "空间",
       "use": "剧本 / 任务模板"
     },
     "dashboard": {
-      "lib": "lucide",
-      "name": "layout-dashboard",
+      "lib": "inkline",
+      "name": "dashboard",
       "group": "空间",
       "use": "工作信息 / 概览"
     },
     "tile": {
-      "lib": "lucide",
-      "name": "layout-grid",
+      "lib": "inkline",
+      "name": "tile",
       "group": "空间",
       "use": "工具磁贴 / 浮动分区占位"
     },
     "terminal": {
-      "lib": "lucide",
-      "name": "square-terminal",
+      "lib": "inkline",
+      "name": "terminal",
       "group": "空间",
       "use": "终端标签与终端运行"
     },
     "audio": {
-      "lib": "lucide",
-      "name": "audio-lines",
+      "lib": "inkline",
+      "name": "audio",
       "group": "空间",
       "use": "音频内容"
     },
     "peer": {
-      "lib": "lucide",
-      "name": "laptop",
+      "lib": "inkline",
+      "name": "peer",
       "group": "导航",
       "use": "砚互联：连接另一台运行砚的电脑"
     },
     "mic": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "mic",
       "group": "操作",
       "use": "语音输入：录音后转写到输入框"
     },
     "sun": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "sun",
       "group": "系统",
       "use": "浅色主题 / 显示隐藏文件"
     },
     "moon": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "moon",
       "group": "系统",
       "use": "深色主题"
     },
     "globe": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "globe",
       "group": "系统",
       "use": "网络 / 网页 / 内置浏览器"
     },
     "plug": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "plug",
       "group": "系统",
       "use": "连接外部浏览器 / 外部工具"
     },
     "package": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "package",
       "group": "系统",
       "use": "扩展包 / 能力包"
     },
     "bell": {
-      "lib": "lucide",
+      "lib": "inkline",
       "name": "bell",
       "group": "系统",
       "use": "提示音 / 通知"
     },
     "phone": {
-      "lib": "lucide",
-      "name": "smartphone",
+      "lib": "inkline",
+      "name": "phone",
       "group": "系统",
       "use": "手机接入 / 已配对的手机设备"
     }

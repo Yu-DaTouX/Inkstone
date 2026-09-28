@@ -5,7 +5,8 @@ export type { IconName }
 export { ICON_NAMES } from './sprite'
 
 /**
- * 图标：Lucide（ISC）纯描边线性图标，由 `npm run icons` 从编目生成。
+ * 图标：自绘「砚线」描边图标（16 网格、恒定 1.25px 描边、方头斜接），
+ * 由 `npm run icons` 从编目与 scripts/design/icons/inkline.json 生成。
  *
  * 语义 → 图标的对应关系写在 scripts/design/icons/catalog.json，
  * 这里渲染的是「引用」（<use href="#i-x">），

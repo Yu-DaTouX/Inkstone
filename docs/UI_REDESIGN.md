@@ -2,9 +2,9 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0、P1 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
+状态：**P0、P1、P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
 
-原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.draft.json`](../scripts/design/icons/inkline.draft.json)。
+原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 
 ## 1. 目标与边界
 
@@ -74,7 +74,7 @@
 | 统一控件使用 | `components/ui` 被 3 个 tsx 引用 | 另有 158 处直接写 `className="btn…"` |
 | 模块私有控件 | 约 25 种 `*-btn / *-chip / *-tab` | 如 `.set-chip`、`.rp-stage-chip` |
 | 超大组件 | `RightPanel` 2839 行、`Rail` 1983 行、`Composer` 1882 行 | |
-| 图标 | `catalog.json` 61 个语义，全部 Lucide | 12px 是最常用尺寸；手机端解析同一份 sprite |
+| 图标 | `catalog.json` 61 个语义，全部 Lucide（P4 已换成砚线） | 12px 是最常用尺寸；手机端解析同一份 sprite |
 | 手机令牌 | `mobile/src/theme.ts` 手抄桌面色值 | 目前靠人工同步，没有检查 |
 
 数据来源：`npm run measure:css` 生成的 `scripts/design/CSS-*.md`，以及对源码的静态统计。
@@ -98,7 +98,7 @@
 | P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
 | P2 控件 | 扩充 `components/ui`，先迁设置页，再迁工作台、审查与右栏 | 同上 + 设置相关 `test:live` | |
 | P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块、交叉淡变入 `motion.css` 与组件；位移上限 4px；手机 `motion.tsx` 同步 | `check:motion` + 实机录屏 | |
-| P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | |
+| P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换；去掉 `lucide-static` 依赖 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | 完成 |
 | P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | |
 | P6 手机视觉 | 按第 3.2 节逐页：配对 → 首页 → 会话 → 成果 → 设置 → 通知；宽屏与折叠屏双栏 | `mobile` 下 `npm run typecheck`；深浅主题 × 手机竖屏 / 折叠屏展开实机截图 | |
 
@@ -108,7 +108,6 @@
 
 1. **检查器分区编号**（`01…05`）与**上下文方格条**（25 格，系统 / 对话 / 工具三色）：在 P5 右栏改版时用截图比较后决定。
 2. **手机端字体**：在 APK 内嵌 Maple Mono CN 子集（统一观感，增加安装包体积），还是继续用系统等宽字体。在 P6 前决定。
-3. **未画图标**：`learn`、`dashboard`、`dock`、`home`、`tile`、`compare`、`pull-request`、`library`、`group`、`audio`、`message-dots` 的砚线几何，在 P4 补齐并按可读性规则验收。
 
 ## 8. 原型的已知限制
 

@@ -122,9 +122,9 @@ v0.4 的 `--font-ui` 指向 Segoe UI；P5 改指向等宽之前，界面仍以�
 - **选中项**（列表、导航、菜单）：`--bg-3` 底；菜单与命令菜单的选中行首加强调色 `›`，左栏会话行用状态圆点。**不用 inset 边线**：圆角会把它弯成一道蓝弧〔v0.5 · P5〕。
 - **进行中**：方点阵（`.spin`，见第 6 节），不用 `loader-circle` 图标或盲文字符〔v0.5 · P3〕。
 
-### 3.4 图标「砚线」〔v0.5 · P4〕
+### 3.4 图标「砚线」
 
-图标语义写在 `scripts/design/icons/catalog.json`，一个图标只承担一个语义；桌面与手机共用同一份生成物。v0.5 用自绘的「砚线」替换 Lucide，母题是品牌标志「提示砚」：开口石框 + 方头斜接的 `>_`。几何真源 `scripts/design/icons/inkline.draft.json`。
+图标语义写在 `scripts/design/icons/catalog.json`，一个图标只承担一个语义；桌面与手机共用同一份生成物。图标是自绘的「砚线」，母题是品牌标志「提示砚」：开口石框 + 方头斜接的 `>_`。几何真源 `scripts/design/icons/inkline.json`，与编目一一对应。
 
 几何规则：
 
@@ -142,9 +142,9 @@ v0.4 的 `--font-ui` 指向 Segoe UI；P5 改指向等宽之前，界面仍以�
 - **可辨认**：同一区域并列的图标轮廓必须能区分（例如文件与复制、目录与项目），靠外形而不是细节区分。
 - **验收**：新增或修改几何时，截取深浅主题 × Windows 100% / 125% / 150% 缩放下 12px 与 14px 的对照图。
 
-尺寸只用 12 / 14 / 16（手机 16 / 20 / 24dp）。界面里不用 `✓ ○ ◐ ✕` 这类文字符号当图标。改图标：改编目或几何 → `npm run icons` → `npm run check:icons`。
+尺寸只用 12 / 14 / 16（手机 16 / 20 / 24dp）。界面里不用 `✓ ○ ◐ ✕` 这类文字符号当图标。改图标：改编目与 `inkline.json` → `npm run icons` → `npm run check:icons`。
 
-语义调整：`sparkles` → 星号 `*`；`agent` → `>>`；`settings` → 推子；`alert-circle` / `check-circle` → 方框内 `!` / 勾；`running`、`activity` 由方点阵取代；`terminal` 即标志图形。未重画的语义在补齐前保留 Lucide 几何，按 16 网格与同一描边渲染。
+语义调整：`sparkles` → 星号 `*`；`agent` → `>>`；`settings` → 两道推子（三道在 12px 下会糊，按笔画间距规则简化）；`alert-circle` / `check-circle` → 方框内 `!` / 勾；`terminal` 即标志图形。`running`、`activity` 仍有几何，但进行中的状态改用方点阵（§6），这两个语义只留给静态计数。
 
 ### 3.5 提示符语言〔v0.5 · P5〕
 
