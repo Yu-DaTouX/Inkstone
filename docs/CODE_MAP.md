@@ -48,7 +48,7 @@ flowchart LR
 | 主题空间、资料、成果、课程与学习 | `src/main/space-store.ts`、`library-*`、`artifact-doc-store.ts`、`course-*`、`learning-*`、`exercise-*` | 对应 `src/shared/space.ts`、`library.ts`、`artifact-doc.ts`、`course.ts`、`study.ts`、`exercise.ts` 与 `components/workbench/` |
 | 项目知识与长期记录 | `src/main/project-memory-store.ts`、`project-knowledge.ts`、`learning-memory-store.ts` | `src/shared/project-memory.ts`、`learning-memory.ts`；按来源、归属与版本处理，避免与会话原文混同 |
 | 联网搜索与能力获取 | `src/main/search/`、`src/shared/search.ts`、`src/main/capabilities/` | `scripts/probe/search.mjs` 与 `search-electron.mjs` 区分普通 Node 与 Electron 环境 |
-| 样式、图标、动效与多语言 | `src/renderer/src/styles/`、`icons/`、`i18n/` | `scripts/design/icons/` 和生成清单；改界面时同时检查深浅主题、键盘与窄窗口 |
+| 样式、图标、动效与多语言 | `src/renderer/src/styles/`（控件外观在 `ui.css`）、`components/ui/`、`icons/`、`i18n/` | [设计规范](DESIGN_SYSTEM.md)、`scripts/design/icons/` 和生成清单；改界面时同时检查深浅主题、键盘与窄窗口 |
 
 ## 数据与构建边界
 
