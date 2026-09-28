@@ -30,7 +30,7 @@
   }
   const store = window.__yanStore
   const byTestId = (id) => q(`[data-testid="${id}"]`)
-  const TAB_ORDER = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'voice', 'remote', 'about']
+  const TAB_ORDER = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'voice', 'remote', 'peer', 'about']
 
   try {
     localStorage.setItem('yan.onboarded', '1')
@@ -79,6 +79,7 @@
       packages: ['set-packages', 'pkg-install-btn'],
       voice: ['settings-voice', 'voice-state', 'voice-models'],
       remote: ['settings-remote', 'remote-status', 'remote-pair-start'],
+      peer: ['settings-peer', 'peer-host', 'peer-client'],
       about: ['pi-redetect', 'about-build', 'about-repo']
     }
     for (const id of TAB_ORDER) {

@@ -1103,3 +1103,75 @@ html[data-theme='light'] .ob-scrim {
   align-items: center;
   gap: var(--sp-2);
 }
+
+/* 设置 · 砚互联：每台对方砚 / 每个授权一张卡片 */
+.peer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.peer-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.peer-code {
+  width: 120px;
+}
+
+.peer-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.peer-browse,
+.peer-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-soft);
+}
+
+.peer-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.peer-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.peer-session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peer-message {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.peer-role {
+  color: var(--fg-mute);
+}
+
+.peer-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

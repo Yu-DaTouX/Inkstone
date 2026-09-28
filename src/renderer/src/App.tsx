@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { IconSprite } from './icons/Icon'
+import { PeerApprovalDialog } from './components/shell/PeerApprovalDialog'
 import { useI18n, useT } from './i18n'
 import { TitleBar, type Theme } from './components/shell/TitleBar'
 import { Rail } from './components/rail/Rail'
@@ -785,6 +786,8 @@ export default function App() {
   return (
     <>
       <IconSprite />
+      {/* 另一台砚申请本次连接时的所有者审批（全局，不依赖设置页是否打开） */}
+      <PeerApprovalDialog />
       <div className={appCls}>
         <TitleBar
           onToggleRail={() => setRailPinned(!railPinned)}

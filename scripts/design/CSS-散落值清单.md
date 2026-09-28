@@ -15,7 +15,7 @@
 | `stage1.css` | 1 | 0 | 11 | 5 | 0 | 0 |
 | `redesign.css` | 10 | 4 | 111 | 70 | 0 | 0 |
 | `motion.css` | 2 | 0 | 73 | 54 | 0 | 0 |
-| `settings.css` | 6 | 2 | 105 | 69 | 0 | 0 |
+| `settings.css` | 6 | 2 | 108 | 70 | 0 | 0 |
 | `electron.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `highlight.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `layout.css` | 4 | 4 | 2 | 1 | 0 | 0 |
@@ -30,7 +30,7 @@
 | `review.css` | 4 | 0 | 241 | 174 | 0 | 0 |
 | `workbench.css` | 2 | 0 | 411 | 321 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **80** | **26** | **2042** | **1464** | **1** | **0** |
+| **合计** | **80** | **26** | **2045** | **1465** | **1** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -50,9 +50,9 @@
 | `220px` | length | 11 | chat.css, review.css, settings.css, tools.css |
 | `34px` | length | 10 | app.css, chat.css, composer.css, rail.css, tools.css, workbench.css |
 | `180px` | length | 10 | composer.css, redesign.css, settings.css, shell.css, stage1.css, tools.css, workbench.css |
+| `120px` | length | 10 | composer.css, motion.css, redesign.css, review.css, settings.css, tools.css, workbench.css |
 | `420px` | length | 10 | chat.css, composer.css, redesign.css, review.css, tools.css |
 | `30px` | length | 9 | rail.css, redesign.css, review.css, tools.css |
-| `120px` | length | 9 | composer.css, motion.css, redesign.css, review.css, tools.css, workbench.css |
 | `200px` | length | 8 | app.css, settings.css, tools.css, workbench.css |
 | `160px` | length | 7 | browser.css, chat.css, review.css, settings.css, tools.css, workbench.css |
 | `280px` | length | 7 | chat.css, review.css, tools.css, workbench.css |
@@ -82,6 +82,7 @@
 | `rgb(255, 255, 255, 1.000)` | color | 2 | motion.css |
 | `60px` | length | 2 | motion.css |
 | `rgb(20, 20, 18, 0.000)` | color | 2 | settings.css |
+| `72px` | length | 2 | settings.css |
 | `430px` | length | 2 | composer.css, rail.css |
 | `680px` | length | 2 | chat.css |
 | `rgb(16, 19, 24)` | color | 2 | chat.css |
@@ -95,7 +96,6 @@
 | `720px` | length | 1 | app.css |
 | `21px` | length | 1 | redesign.css |
 | `520px` | length | 1 | redesign.css |
-| `208px` | length | 1 | redesign.css |
 | … | | | 其余 36 条省略 |
 
 ## 3. 定义了但没被引用的令牌
@@ -152,4 +152,4 @@
 ## 5. 概况
 
 - 令牌总数：125（被引用 124）
-- 令牌引用点：4170（含组件内联 style）
+- 令牌引用点：4190（含组件内联 style）

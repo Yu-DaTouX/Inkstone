@@ -264,6 +264,7 @@ export function RemoteTab() {
               <li key={device.id} className="remote-device" data-testid="remote-device">
                 <div className="remote-device-main">
                   <span className="remote-device-name">{device.name}</span>
+                  {device.kind === 'peer' ? <Badge tone="accent">{t('remote.kindPeer')}</Badge> : null}
                   <span className="set-desc">
                     {t('remote.pairedAt', { time: formatTime(device.createdAt, '—') })} ·{' '}
                     {t('remote.lastSeen', { time: formatTime(device.lastSeenAt, t('remote.never')) })}

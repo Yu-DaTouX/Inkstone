@@ -1190,6 +1190,16 @@ const remoteServer = await import('../node_modules/esbuild/lib/main.js').then(({
   }).then(() => import('../out/test/remote-server.mjs'))
 )
 const { runRemoteServerTests } = await import('./test-remote.mjs')
+/* 砚对砚：本次连接授权与项目范围门禁（设备表在临时目录，假数据） */
+const peerDeps = await import('../node_modules/esbuild/lib/main.js').then(async ({ build }) => {
+  const out = {}
+  for (const [entry, name] of [['src/main/remote-devices.ts', 'remote-devices'], ['src/main/peer-grants.ts', 'peer-grants']]) {
+    await build({ entryPoints: [entry], outfile: `out/test/${name}.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+    Object.assign(out, await import(`../out/test/${name}.mjs`))
+  }
+  return out
+})
+const { runPeerTests } = await import('./test-peer.mjs')
 
 /*
  * N21-3 上下文策略：预算公式 + 触发决策在 shared（主进程与界面共用），
@@ -2128,6 +2138,7 @@ runStdioGuardTests(ok, stdioGuard)
 
 // 安卓远程管理层：HTTP/SSE 路由与认证边界
 await runRemoteServerTests(ok, remoteServer)
+await runPeerTests(ok, { ...remoteServer, ...peerDeps })
 
 // N21-3：工作集预算 / 触发决策 / 阶段文案
 const { runContextPolicyTests } = await import('./test-context-policy.mjs')

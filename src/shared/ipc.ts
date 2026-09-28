@@ -2159,6 +2159,9 @@ export type MainPushBody =
   | { ch: 'runners'; payload: RunnerStatus[] }
   /** 托盘菜单要求渲染端新建一个全局会话。 */
   | { ch: 'tray-new-session'; payload: null }
+  /** 另一台砚申请本次连接：所有者界面弹出审批（决定走 yan:peer-host:decide） */
+  | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
+  | { ch: 'peer-request-closed'; payload: { requestId: string } }
   /** 托盘菜单要求切到指定运行实例；没有 sessionFile 时用稳定 sessionId。 */
   | {
       ch: 'tray-select-session'
@@ -2541,6 +2544,28 @@ export interface KnowledgeActionResult {
   entry?: KnowledgeEntryView
   /** 被这次操作替代掉的条目。 */
   superseded?: KnowledgeEntryView[]
+}
+
+/** 砚对砚请求的统一结果 */
+export type PeerResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
+
+/** 对方会话列表的一行（对方已降敏：没有绝对路径） */
+export interface PeerSessionRow {
+  id: string
+  title: string
+  projectId?: string
+  cwdName?: string
+  updatedAt: number
+  messageCount: number
+}
+
+/** 对方历史里的一条消息（界面只用到这些字段） */
+export interface PeerHistoryMessage {
+  id: string
+  role: string
+  text?: string
+  createdAt?: number
+  artifacts?: Array<{ id: string; filename: string }>
 }
 
 export interface KnowledgeExportResult {
@@ -3830,6 +3855,28 @@ export interface YanBridge {
    * 电脑本地语音输入：状态与推荐、先核实再下载（plan → 用户确认 → download）、转写。
    * `pick` 让用户选已有的程序或模型文件；选中后写进设置。
    */
+  /**
+   * 砚对砚。host：这台电脑被连接时，所有者审批与撤销本次连接；
+   * 其余：这台电脑去连接别的砚（配对、申请连接、浏览、复制副本、导入项目记忆）。
+   */
+  peer: {
+    hostPending(): Promise<import('./peer-protocol').PeerApprovalRequest[]>
+    hostDecide(decision: import('./peer-protocol').PeerApprovalDecision): Promise<boolean>
+    hostRevoke(connectionId: string): Promise<boolean>
+    status(): Promise<import('./peer-protocol').PeerStatusView>
+    pair(address: string, code: string): Promise<PeerResult<import('./peer-protocol').PeerRecordView>>
+    remove(peerId: string): Promise<boolean>
+    connect(peerId: string, operations: import('./peer-protocol').PeerOperation[], note: string): Promise<PeerResult<import('./peer-protocol').PeerGrantView>>
+    disconnect(peerId: string): Promise<void>
+    sessions(peerId: string): Promise<PeerResult<{ projects: import('./peer-protocol').PeerProjectRef[]; sessions: PeerSessionRow[] }>>
+    history(peerId: string, sessionId: string, before?: string): Promise<PeerResult<{ messages: PeerHistoryMessage[]; hasMore?: boolean; nextBefore?: string }>>
+    send(peerId: string, sessionId: string, text: string): Promise<PeerResult<unknown>>
+    abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
+    importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
+    importKnowledge(peerId: string, remoteProjectId: string, localProjectId: string): Promise<PeerResult<{ accepted: number; rejected: number }>>
+    readImport(importId: string): Promise<PeerResult<{ dir: string; messages: PeerHistoryMessage[] }>>
+    revealImport(importId: string): Promise<boolean>
+  }
   /** 普通工具的自动调用依据：查看每类操作的答复统计，设为始终询问 / 恢复 / 清空 */
   consent: {
     list(): Promise<import('./tool-consent').ConsentEntryView[]>

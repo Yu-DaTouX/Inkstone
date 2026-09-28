@@ -331,6 +331,12 @@
       "group": "空间",
       "use": "音频内容"
     },
+    "peer": {
+      "lib": "lucide",
+      "name": "laptop",
+      "group": "导航",
+      "use": "砚互联：连接另一台运行砚的电脑"
+    },
     "mic": {
       "lib": "lucide",
       "name": "mic",
