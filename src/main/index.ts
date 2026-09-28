@@ -84,6 +84,7 @@ import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
+import { registerOfficeIpc } from './ipc/office-ipc'
 import { RemoteAccess } from './remote-access'
 import {
   REMOTE_ARTIFACT_MAX_BYTES,
@@ -8037,6 +8038,9 @@ function registerIpc(): void {
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
+
+  /* ---- 办公文件：预览与修改对比 ---- */
+  registerOfficeIpc(ipc, async () => (await getSettings()).cwd)
 
   /* ---- 手机接入 ---- */
   registerRemoteIpc(ipc, {

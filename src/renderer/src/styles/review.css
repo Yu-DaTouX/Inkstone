@@ -1523,3 +1523,23 @@ button.env-item:hover {
   overflow-y: auto;
   margin: 2px 0;
 }
+
+/* 办公文件的内容对比：没有行号两列，正文按段落换行 */
+.office-diff .rdiff-line {
+  grid-template-columns: 14px minmax(0, 1fr);
+  padding-left: 10px;
+}
+
+.office-diff .rdiff-line > .rdiff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.office-diff-stat {
+  margin-left: 8px;
+}
+
+.office-diff-section {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}

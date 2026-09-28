@@ -1827,5 +1827,19 @@
   "remote.never": "从未",
   "remote.revoke": "撤销",
   "remote.revokedAt": "已撤销 · {time}",
-  "remote.forget": "移除记录"
+  "remote.forget": "移除记录",
+  "review.kind.docs": "文档",
+  "learn.quick.label": "学习快捷回应",
+  "learn.quick.continue": "继续讲解",
+  "learn.quick.continueText": "继续讲解",
+  "learn.quick.example": "给个例子",
+  "learn.quick.exampleText": "给个例子",
+  "learn.quick.try": "让我试试",
+  "learn.quick.tryText": "让我试试：出一道小练习，我自己来答",
+  "office.loading": "正在读取文件内容…",
+  "office.failed": "读取失败：{msg}",
+  "office.textOnly": "只显示文字内容，不含版式与图片",
+  "office.empty": "没有提取到文字内容",
+  "office.truncated": "内容太长，只显示了开头部分",
+  "office.noTextChange": "文字内容没有变化（可能只改了版式、图片或格式）"
 }

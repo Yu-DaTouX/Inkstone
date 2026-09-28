@@ -133,6 +133,7 @@ import type {
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
+import type { OfficeCompareResult, OfficeDocumentView } from '../shared/office'
 import type { SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
@@ -700,6 +701,12 @@ const api: YanBridge = {
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
+  },
+
+  /* ---- 办公文件 ---- */
+  office: {
+    preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd),
+    compare: (path, cwd) => invoke<OfficeCompareResult>('yan:office:compare', path, cwd)
   },
 
   /* ---- 手机接入 ---- */

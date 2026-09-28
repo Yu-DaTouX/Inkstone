@@ -50,9 +50,15 @@ export function runAgentProfileTests(ok, mod) {
     ok(validateAgentProfile(null).ok === false, '非对象档案被拒')
   }
 
-  /* ---- 角色分区：coding 不注入，auto / daily 注入 ---- */
+  /* ---- 角色分区：coding 只带文档同步约定，auto / daily 注入各自的行为 ---- */
   {
-    ok(agentRoleSection('coding', 'research') === null, 'coding 档案不注入角色分区（保持 pi 原生）')
+    const coding = agentRoleSection('coding', 'research')
+    ok(
+      coding?.name === ROLE_SECTION_NAME && /同步相关文档/.test(coding.content) && /不要借回填文档批准新的产品需求/.test(coding.content),
+      'coding 档案只追加「代码改完同步文档」约定（需求稿 3.2）'
+    )
+    ok(/同步相关文档/.test(agentRoleSection('auto', 'answer')?.content ?? ''), 'auto 档「写代码」一类也带文档同步')
+    ok(/解析式/.test(agentRoleSection('daily', 'learn')?.content ?? ''), '学习可按自然语言切到解析式')
     const auto = agentRoleSection('auto', 'answer')
     ok(auto?.name === ROLE_SECTION_NAME, 'auto 档注入角色分区')
     ok(

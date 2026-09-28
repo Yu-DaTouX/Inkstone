@@ -44,6 +44,7 @@ flowchart LR
 | 项目、工作树、Git 审查 | `src/main/session-layout.ts`、`project-id.ts`、`git-service.ts`、`git-worktree.ts`、`git-actions.ts` | `src/renderer/src/components/rail/`、`components/review/`、`src/shared/git.ts` |
 | 内置浏览器与 Chrome | `src/main/browser.ts`、`src/main/browser/`、`src/main/chrome.ts` | `components/browser/BrowserSurface.tsx`；网页是原生 `WebContentsView`，位置、缩放与焦点由主进程协调 |
 | 终端、文件与附件 | `src/main/terminal.ts`、`files.ts`、`attachments.ts`、`file-refs.ts` | `components/chat/Terminal.tsx`、`components/terminal/TerminalSurface.tsx`、`components/toolbar/FilePreview.tsx`；终端依赖 `node-pty` |
+| 办公文件预览与对比（docx / xlsx / pptx / pdf） | `src/main/office/`（`zip.ts`、`extract.ts`、`office-service.ts`）、`src/main/ipc/office-ipc.ts` | `src/shared/office.ts`（类型与逐行对比）、`components/review/OfficeContent.tsx`（文件预览与审查面板共用）、`yan office read`（`src/main/agent.ts` 的 `office.read`）；只提取文字，不还原版式；对比基准是 Git 的 HEAD |
 | 模型登录、凭证、设置 | `src/main/oauth.ts`、`credentials.ts`、`custom-providers.ts`、`settings.ts` | `components/settings/`、`src/shared/model-capabilities.ts`；本地档案不代表模型账号已登录 |
 | 主题空间、资料、成果、课程与学习 | `src/main/space-store.ts`、`library-*`、`artifact-doc-store.ts`、`course-*`、`learning-*`、`exercise-*` | 对应 `src/shared/space.ts`、`library.ts`、`artifact-doc.ts`、`course.ts`、`study.ts`、`exercise.ts` 与 `components/workbench/` |
 | 项目知识与长期记录 | `src/main/project-memory-store.ts`、`project-knowledge.ts`、`learning-memory-store.ts` | `src/shared/project-memory.ts`、`learning-memory.ts`；按来源、归属与版本处理，避免与会话原文混同 |

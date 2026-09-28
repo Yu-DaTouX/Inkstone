@@ -78,7 +78,19 @@ export function statusGlyph(status: GitChangeStatus): string {
   }
 }
 
-type Filter = 'all' | 'text' | 'image' | 'other'
+type Filter = 'all' | 'docs' | 'text' | 'image' | 'other'
+
+/**
+ * 文档类改动：代码改完同步文档（需求稿 3.2）时，审阅者要能单独看「文档改了什么」。
+ * 判据是扩展名 + 常见文档目录 / 文件名，不读内容。
+ */
+const DOC_EXT = /\.(md|mdx|markdown|rst|adoc|txt)$/i
+const DOC_NAME = /(^|\/)(readme|changelog|contributing|agents|claude|license)(\.[a-z]+)?$/i
+const DOC_DIR = /(^|\/)docs?\//
+function isDocPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  return DOC_EXT.test(lower) || DOC_NAME.test(lower) || DOC_DIR.test(lower)
+}
 
 export interface ChangedFileTreeProps {
   files: GitChangedFile[]
@@ -98,6 +110,7 @@ export function ChangedFileTree({ files, selected, onSelect, isViewed, viewedCou
     const q = query.trim().toLowerCase()
     return files.filter((f) => {
       if (q && !f.path.toLowerCase().includes(q)) return false
+      if (filter === 'docs') return isDocPath(f.path)
       if (filter === 'text') return f.kind === 'text' || f.kind === 'symlink'
       if (filter === 'image') return f.kind === 'image'
       if (filter === 'other') return f.kind !== 'text' && f.kind !== 'image'
@@ -127,7 +140,7 @@ export function ChangedFileTree({ files, selected, onSelect, isViewed, viewedCou
           aria-label={t('review.filter')}
         />
         <div className="seg sm rtree-filters" role="group" aria-label={t('review.filterKind')}>
-          {(['all', 'text', 'image', 'other'] as const).map((f) => (
+          {(['all', 'docs', 'text', 'image', 'other'] as const).map((f) => (
             <button
               key={f}
               type="button"

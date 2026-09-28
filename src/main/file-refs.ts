@@ -227,7 +227,7 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
  * 抽出来是为了让「读内容」与「只查变化」（`statPreview`）共用同一条校验链 ——
  * 两条路径各写一份，迟早会出现一边能读到工作区外的文件。
  */
-async function resolvePreviewTarget(
+export async function resolvePreviewTarget(
   rawPath: string,
   cwd: string
 ): Promise<

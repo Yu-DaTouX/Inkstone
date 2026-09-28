@@ -1827,5 +1827,19 @@
   "remote.never": "never",
   "remote.revoke": "Revoke",
   "remote.revokedAt": "Revoked · {time}",
-  "remote.forget": "Remove"
+  "remote.forget": "Remove",
+  "review.kind.docs": "Docs",
+  "learn.quick.label": "Quick learning replies",
+  "learn.quick.continue": "Continue",
+  "learn.quick.continueText": "Please continue explaining",
+  "learn.quick.example": "Example",
+  "learn.quick.exampleText": "Give me an example",
+  "learn.quick.try": "Let me try",
+  "learn.quick.tryText": "Let me try: give me a small exercise and I will answer it myself",
+  "office.loading": "Reading file content…",
+  "office.failed": "Could not read: {msg}",
+  "office.textOnly": "Text only — layout and images are not shown",
+  "office.empty": "No text content found",
+  "office.truncated": "Content is long; only the beginning is shown",
+  "office.noTextChange": "No text changes (layout, images or formatting may have changed)"
 }

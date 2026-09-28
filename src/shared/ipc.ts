@@ -3814,6 +3814,12 @@ export interface YanBridge {
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
     setVisible(visible: boolean): Promise<void>
   }
+  /** 办公文件（docx / xlsx / pptx / pdf）：按结构提取的正文预览，以及与最近一次提交的对比 */
+  office: {
+    preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
+    compare(path: string, cwd?: string): Promise<import('./office').OfficeCompareResult>
+  }
+
   /**
    * 手机接入（远程访问）：开关与监听地址、配对码、已配对设备。
    * 令牌只在手机配对那一刻返回给手机，渲染端永远拿不到。

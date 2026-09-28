@@ -6,6 +6,8 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink } from '../../../../shared/links'
 import { resolveRelativePath } from '../../../../shared/file-resource'
+import { officeFormatOf } from '../../../../shared/office'
+import { OfficePreview } from '../review/OfficeContent'
 
 /**
  * 右侧的只读文件预览（方案 5.2 / 5.3 的「可查看」阶段）。
@@ -108,7 +110,9 @@ export function FilePreviewPane() {
   const fileUrl = data?.abs
     ? `file:///${encodeURI(data.abs.replace(/\\/g, '/').replace(/^\/+/, ''))}`
     : ''
-  const canOpenExternally = data?.ok && (data.kind === 'text' || data.kind === 'image')
+  /* docx / xlsx / pptx / pdf：宿主提取文字正文显示，也允许交给系统程序打开看版式 */
+  const isOffice = !!data?.ok && (data.kind === 'binary' || data.kind === 'pdf') && !!officeFormatOf(data.name ?? '')
+  const canOpenExternally = data?.ok && (data.kind === 'text' || data.kind === 'image' || isOffice)
   const isText = data?.ok && data.kind === 'text'
 
   /**
@@ -338,7 +342,9 @@ export function FilePreviewPane() {
           </div>
         ) : null}
 
-        {data?.ok && (data.kind === 'binary' || data.kind === 'pdf') ? (
+        {isOffice && data?.abs ? <OfficePreview path={data.abs} cwd={preview.cwd} version={data.mtimeMs} /> : null}
+
+        {data?.ok && !isOffice && (data.kind === 'binary' || data.kind === 'pdf') ? (
           <div className="fp-note">
             {data.kind === 'pdf' ? t('fp.pdf') : t('fp.binary')}
             <div className="fp-path-line">{t('fp.binaryHint')}</div>
