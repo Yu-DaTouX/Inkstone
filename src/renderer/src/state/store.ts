@@ -67,7 +67,6 @@ import type {
   ReviewItem,
   ReviewPlan,
   ReviewPriority,
-  Comparison,
   SourceStatus,
   Playbook,
   PlaybookPlanResult,
@@ -247,7 +246,6 @@ interface Store {
   /** 当前成果的引用状态（P13 T13-4）：哪条来源已有新版本 / 已找不到。 */
   artifactSourceStatuses: SourceStatus[]
   /** 当前显示的多来源对照（P13）：现场算，不落盘。 */
-  researchComparison: Comparison | null
   /** 办事模板（P14）：落盘的 + 三个起步模板。 */
   playbooks: Playbook[]
   playbooksLoaded: boolean
@@ -581,14 +579,9 @@ interface Store {
   importToLibrary: (view: LibraryImportView) => Promise<LibraryImportViewResult>
   /** 拉成果列表（`spaceId` 省略 = 全部） */
   refreshArtifactDocs: (spaceId?: string | null) => Promise<void>
-  /* 跨资料研究（P13）：只读；对照现场算、不自动落盘 */
+  /* 成果引用的资料现在怎么样了：只读，不改引用 */
   refreshArtifactSourceStatus: (artifactId: string) => Promise<void>
-  runComparison: (input: {
-    question?: string
-    refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
-    maxChars?: number
-  }) => Promise<Comparison | null>
-  clearComparison: () => void
+  clearArtifactSourceStatuses: () => void
   /* 办事模板（P14）：保存 / 改 / 删，以及复用前的作用范围确认 */
   refreshPlaybooks: (spaceId?: string | null) => Promise<void>
   savePlaybook: (input: {
@@ -1465,7 +1458,6 @@ export const useStore = create<Store>((rawSet, get) => {
   libraryLoaded: false,
   artifactDocs: [],
   artifactSourceStatuses: [],
-  researchComparison: null,
   playbooks: [],
   playbooksLoaded: false,
   playbookPlan: null,
@@ -2225,21 +2217,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  runComparison: async (input) => {
-    try {
-      const res = await window.yan.research.compare(input)
-      if (!res.ok || !res.comparison) {
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? '对照失败') })
-        return null
-      }
-      set({ researchComparison: res.comparison })
-      return res.comparison
-    } catch {
-      return null
-    }
-  },
-
-  clearComparison: () => set({ researchComparison: null, artifactSourceStatuses: [] }),
+  clearArtifactSourceStatuses: () => set({ artifactSourceStatuses: [] }),
 
   refreshPlaybooks: async (spaceId) => {
     try {

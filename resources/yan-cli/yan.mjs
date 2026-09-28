@@ -303,18 +303,15 @@ const GROUP_USAGE = {
 
   research: `yan research <动作> [选项]
 
-动作（跨资料研究：宿主只给结构，不替你对「谁对」下结论）：
-  compare --request-file refs.json
-           请求文件：{ "question": "…", "refs": [
-             { "sourceId": "lib_x", "version": 1, "stance": "支持",
-               "provenance": "material", "locator": {"start":0,"end":400} } ] }
-           读的是**每一份当时那一版**的片段，按 stance 并排列出；
-           两组标了不同 stance 就把「不一致」列出来，**不合并结论**。
-           没读到的来源单独放 skipped，不当作有效证据。
-           provenance：material = 引用原文，model = 模型补充。
+动作（资料引用；怎么对照、怎么下结论见 research 技能：yan skill read --id skill:research）：
+  read    --request-file refs.json
+           请求文件：{ "refs": [ { "sourceId": "lib_x", "version": 1,
+             "locator": {"start":0,"end":400} } ], "maxChars": 600 }
+           读的是**每一份当时那一版**的片段（不跟着资料更新走），并标出引用是否已旧；
+           读不到的来源单独放 skipped，不当作有效证据。
   status  --artifact <成果ID>
            看这份成果引用的资料现在怎么样了：哪条已有新版本、哪条已移除。
-           只提示变化 —— 旧引用仍然指着旧版本（P03 不变量）。
+           只提示变化 —— 旧引用仍然指着旧版本。
 `,
 
   playbook: `yan playbook <动作> [选项]
@@ -469,7 +466,6 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   list                         查看所有子代理的状态与活动摘要
   get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
   stop   --id <子代理ID>        停止一个仍在运行的子代理
-  guidance                     适合 / 不适合拆出去并行的情形
 
 说明：
   · start 默认使用独立 Git worktree；readOnly=true 使用当前目录但只开放 read/grep/find/ls；
@@ -621,7 +617,7 @@ const GROUP_SPECS = {
   },
 
   research: {
-    actions: ['compare', 'status'],
+    actions: ['read', 'status'],
     required: { status: ['artifact'] }
   },
 
@@ -645,7 +641,7 @@ const GROUP_SPECS = {
     }
   },
   subagent: {
-    actions: ['start', 'list', 'get', 'stop', 'guidance'],
+    actions: ['start', 'list', 'get', 'stop'],
     required: {
       start: ['task'],
       get: ['id'],

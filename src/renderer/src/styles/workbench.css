@@ -1364,34 +1364,6 @@
   font-size: var(--fs-sm);
 }
 
-/* 「用于学习」（T06b-4）：目标填完才生成，避免用空目标建出一门没方向的课。 */
-/* 跨资料研究（P13）：来源变化提示 + 多来源对照（并排、不合并）。 */
-.wb-art-sources-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.wb-art-source-compare {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.wb-art-source-compare:hover {
-  border-color: var(--accent);
-  color: var(--fg);
-}
-
 .wb-art-source-changed {
   color: var(--warn);
 }
@@ -1404,74 +1376,6 @@
 }
 
 .wb-art-source-status.outdated {
-  color: var(--warn);
-}
-
-.wb-art-compare {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-}
-
-.wb-art-compare-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-}
-
-.wb-art-compare-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.wb-art-compare-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.wb-art-prov {
-  padding: 1px 6px;
-  font-size: 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
-}
-
-/* 「模型补充」要一眼看出它不是原文。 */
-.wb-art-prov.model {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.wb-art-compare-title {
-  font-size: 11px;
-  color: var(--fg-dim);
-}
-
-.wb-art-compare-text {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--fg-dim);
-  overflow-wrap: break-word;
-}
-
-.wb-art-compare-conflicts {
-  margin: 0;
-  padding-left: 16px;
-  font-size: 11px;
   color: var(--warn);
 }
 

@@ -98,8 +98,8 @@ export type {
 
 export type { ReviewItem, ReviewPlan, ReviewPriority, ReviewReason } from './review'
 import type { ReviewItem, ReviewPlan, ReviewPriority } from './review'
-export type { Comparison, SourceStatus, SourceRefStatus, SourceProvenance, ResearchExcerpt } from './research'
-import type { Comparison, SourceRefStatus, SourceStatus } from './research'
+export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
+import type { SourceStatus } from './research'
 export type {
   FollowRun,
   FollowOutcome,
@@ -2856,18 +2856,6 @@ export interface ArtifactDocBridge {
  * 不对「谁对」下结论、不合并成一段总结 —— 那是研究者的判断。
  */
 export interface ResearchBridge {
-  /** 多来源对照；立场标签由调用方给（不给就归到「未标注立场」，不计入冲突）。 */
-  compare(input: {
-    question?: string
-    refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
-    maxChars?: number
-  }): Promise<{
-    ok: boolean
-    comparison?: Comparison
-    skipped?: { sourceId: string; version: number; status: SourceRefStatus }[]
-    text?: string
-    error?: string
-  }>
   /** 成果引用的资料现在怎么样了（T13-4）：只提示变化，不改引用。 */
   sourceStatus(artifactId: string): Promise<{ ok: boolean; error?: string; statuses: SourceStatus[] }>
 }

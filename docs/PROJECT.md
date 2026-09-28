@@ -23,9 +23,9 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/exercise.ts` + `src/main/exercise-store.ts` / `exercise-service.ts` | 练习与反馈：客观题判分与开放题不判定、题目视图不含答案（**图片题也一样**）、分层提示、「看过解释不算独立完成」、`Attempt` 作为事实源 |
 | `src/shared/learning-memory.ts` + `src/main/learning-memory-store.ts` | 学习记忆：笔记与概念进度的**两条轴**（观察层级 + 建议复习）、一次失败不降级、自评与系统观察并存 |
 | `src/shared/review.ts` | 错题与复习：调度规则（1/3/7/14 天是**排期不是掌握证明**）、再练**换同概念新例子**、逾期不乘倍 |
-| `src/shared/research.ts` | 跨资料研究：引用状态（旧版本按版本保留、**只提示不改引用**）、多来源对照（按立场并列、**不合并结论**）、「引用原文 / 模型补充」分开标注 |
+| `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research` |
 | `src/shared/playbook.ts` + `src/main/playbook-store.ts` / `playbook-service.ts` | 办事模板：会改 / 会对外发的步骤**必须写清范围**、复用前先摊开范围与授权点、**宿主不执行**（只给说明） |
-| `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、并行适合度清单单一出口、结果汇总如实标来源（**未决问题不自动抽取**） |
+| `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
 | `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
 | `src/shared/capability-gap.ts` | 按需获取能力：用自然语言说需求 → 「缺什么、怎么接」的**可执行路径**（只给路径不代装、认不出不编包名、已有能力就不算缺口） |
 | `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态** |
