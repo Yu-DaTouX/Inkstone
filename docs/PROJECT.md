@@ -8,8 +8,13 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/main/index.ts` | Electron 主进程入口与宿主集成 |
-| `src/main/agent.ts` | 模型运行与 pi 交互 |
+| `src/main/index.ts` | Electron 主进程入口：装配、生命周期、运行控制与窗口 |
+| `src/main/ipc/` | 按领域的 IPC 注册器（`registrar.ts` 统一校验调用者是主窗口） |
+| `src/main/goal-coordinator.ts` / `handoff-coordinator.ts` / `session-work-scheduler.ts` | 会话后台调度：工作模式与目标续跑、自动交接、回合收尾的下一步 |
+| `src/main/session-host.ts` / `remote-host.ts` | 桌面会话的宿主能力（桌面 IPC 与远程共用）；手机与砚对砚所有者一侧的处理 |
+| `src/main/agent.ts` | 模型运行与 pi 交互：进程、事件转换、发送与队列 |
+| `src/main/capabilities/acquisition-commands.ts` / `browser-commands.ts` / `lookup-commands.ts` / `context-budget-commands.ts` | `yan` 宿主工具：能力接入、浏览器、搜索与长期记忆、上下文预算 |
+| `src/main/ui-requests.ts` / `turn-timing-tracker.ts` | 界面请求（扩展对话框与宿主提问）；回合计时与落盘 |
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
