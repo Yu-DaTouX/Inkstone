@@ -46,6 +46,11 @@ export interface RemotePairRequest {
   code: string
   /** 手机自报的名称，只用于在电脑上辨认，最多 60 字 */
   deviceName: string
+  /**
+   * 设备类型：缺省 phone（自己的手机，配对即可访问）；
+   * peer 是另一台砚，配对只建立身份，每次连接另需所有者批准（见 peer-protocol.ts）。
+   */
+  kind?: 'phone' | 'peer'
 }
 
 export interface RemotePairResponse {
@@ -73,6 +78,8 @@ export interface RemoteModel {
 export interface RemoteDeviceSummary {
   id: string
   name: string
+  /** 缺省（旧记录）按 phone 处理 */
+  kind?: 'phone' | 'peer'
   createdAt: number
   lastSeenAt: number | null
 }
@@ -92,6 +99,8 @@ export interface RemoteAccessStatus {
   addresses: Array<{ kind: 'tailscale' | 'lan' | 'loopback'; address: string }>
   pairing: { code: string; expiresAt: number } | null
   devices: RemoteDeviceRecord[]
+  /** 当前有效的砚对砚连接授权（本次连接，断开即失效） */
+  grants: import('./peer-protocol').PeerGrantView[]
   error: string | null
 }
 

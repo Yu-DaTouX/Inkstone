@@ -711,6 +711,26 @@ const api: YanBridge = {
     compare: (path, cwd) => invoke<OfficeCompareResult>('yan:office:compare', path, cwd)
   },
 
+  /* ---- 砚对砚 ---- */
+  peer: {
+    hostPending: () => invoke('yan:peer-host:pending'),
+    hostDecide: (decision) => invoke('yan:peer-host:decide', decision),
+    hostRevoke: (connectionId) => invoke('yan:peer-host:revoke', connectionId),
+    status: () => invoke('yan:peer:status'),
+    pair: (address, code) => invoke('yan:peer:pair', address, code),
+    remove: (peerId) => invoke('yan:peer:remove', peerId),
+    connect: (peerId, operations, note) => invoke('yan:peer:connect', peerId, operations, note),
+    disconnect: (peerId) => invoke('yan:peer:disconnect', peerId),
+    sessions: (peerId) => invoke('yan:peer:sessions', peerId),
+    history: (peerId, sessionId, before) => invoke('yan:peer:history', peerId, sessionId, before),
+    send: (peerId, sessionId, text) => invoke('yan:peer:send', peerId, sessionId, text),
+    abort: (peerId, runId) => invoke('yan:peer:abort', peerId, runId),
+    importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId),
+    importKnowledge: (peerId, remoteProjectId, localProjectId) => invoke('yan:peer:importKnowledge', peerId, remoteProjectId, localProjectId),
+    readImport: (importId) => invoke('yan:peer:readImport', importId),
+    revealImport: (importId) => invoke('yan:peer:revealImport', importId)
+  } as YanBridge['peer'],
+
   /* ---- 普通工具的自动调用依据 ---- */
   consent: {
     list: () => invoke<ConsentEntryView[]>('yan:consent:list'),

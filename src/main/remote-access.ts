@@ -18,7 +18,8 @@ import {
   type RemoteAccessStatus
 } from '../shared/remote-protocol'
 import { RemoteDeviceStore } from './remote-devices'
-import { RemoteServer, type RemoteServerHandlers } from './remote-server'
+import { RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
+import type { PeerGrantRegistry } from './peer-grants'
 
 type AddressKind = RemoteAccessStatus['addresses'][number]['kind']
 
@@ -77,7 +78,9 @@ export class RemoteAccess {
   constructor(
     dataDir: string,
     private readonly handlers: RemoteServerHandlers,
-    private readonly log: (text: string, level?: 'info' | 'error') => void = () => undefined
+    private readonly log: (text: string, level?: 'info' | 'error') => void = () => undefined,
+    /** 砚对砚：本次连接授权与开放数据 */
+    private readonly peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   ) {
     this.devices = new RemoteDeviceStore(dataDir)
   }
@@ -121,6 +124,7 @@ export class RemoteAccess {
       token: env?.token,
       devices: this.devices,
       handlers: this.handlers,
+      ...(this.peers ? { peers: this.peers } : {}),
       onLog: this.log
     })
     await server.start()
@@ -131,7 +135,19 @@ export class RemoteAccess {
   private async stopServer(): Promise<void> {
     const server = this.server
     this.server = null
+    /* 服务停下，所有本次连接授权一并作废 */
+    this.peers?.grants.revokeAll()
     if (server) await server.stop().catch(() => undefined)
+  }
+
+  /** 所有者撤销一次砚对砚连接 */
+  revokeConnection(connectionId: string): boolean {
+    return this.peers?.grants.revoke(connectionId) ?? false
+  }
+
+  /** 登记表通知某次连接作废：断开它的事件流 */
+  disconnectConnection(connectionId: string): void {
+    this.server?.disconnectConnection(connectionId)
   }
 
   stop(): Promise<void> {
@@ -170,6 +186,7 @@ export class RemoteAccess {
       addresses: candidateAddresses(),
       pairing: this.devices.currentPairing(),
       devices: await this.devices.list(),
+      grants: this.peers?.grants.list() ?? [],
       error: this.lastError
     }
   }

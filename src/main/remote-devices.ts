@@ -114,7 +114,7 @@ export class RemoteDeviceStore {
     return { code: this.pairing.code, expiresAt: this.pairing.expiresAt }
   }
 
-  async pair(code: unknown, deviceName: unknown): Promise<PairResult> {
+  async pair(code: unknown, deviceName: unknown, kind: unknown = 'phone'): Promise<PairResult> {
     const pairing = this.pairing
     if (!pairing) return { ok: false, error: 'no_pairing' }
     if (pairing.expiresAt <= this.now()) {
@@ -142,6 +142,7 @@ export class RemoteDeviceStore {
     const device: StoredDevice = {
       id: `device-${randomUUID()}`,
       name: cleanName(deviceName),
+      kind: kind === 'peer' ? 'peer' : 'phone',
       createdAt: this.now(),
       lastSeenAt: null,
       revokedAt: null,
@@ -201,5 +202,5 @@ export class RemoteDeviceStore {
 }
 
 function summaryOf(device: StoredDevice): RemoteDeviceSummary {
-  return { id: device.id, name: device.name, createdAt: device.createdAt, lastSeenAt: device.lastSeenAt }
+  return { id: device.id, name: device.name, kind: device.kind === 'peer' ? 'peer' : 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt }
 }

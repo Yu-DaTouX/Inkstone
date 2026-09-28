@@ -77,3 +77,26 @@
 .modal-foot .spacer {
   flex: 1;
 }
+
+/* 砚互联：所有者审批本次连接 */
+.peer-approval-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-3);
+  border: 0;
+}
+
+.peer-approval-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.peer-approval-timer {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+}

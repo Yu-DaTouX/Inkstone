@@ -16,6 +16,8 @@ import {
 } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
+import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
+import type { PeerGrantRegistry } from './peer-grants'
 
 /**
  * 砚远程管理服务（电脑 ↔ 手机）。协议定义见 `src/shared/remote-protocol.ts`。
@@ -65,6 +67,23 @@ export interface RemoteServerHandlers {
   artifact?(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult>
 }
 
+/**
+ * 砚对砚：所有者一侧按项目开放的数据（实现方负责降敏；项目归属由实现方从本机记录判断）。
+ * 路由层先用 PeerGrantRegistry 核对本次连接的操作与项目范围，再调这里。
+ */
+export interface PeerHostHandlers {
+  /** 可以开放给对方的项目（所有者审批时从中勾选） */
+  projects(): Promise<PeerProjectRef[]>
+  /** 给定项目里的会话摘要 */
+  sessions(projectIds: string[]): Promise<unknown[]>
+  /** 会话属于哪个项目；找不到为 null */
+  projectOfSession(sessionId: string): Promise<string | null>
+  /** 运行实例属于哪个项目 */
+  projectOfRun(runId: string): Promise<string | null>
+  exportSession(sessionId: string): Promise<RemoteOperationResult>
+  knowledge(projectId: string): Promise<RemoteOperationResult>
+}
+
 export interface RemoteServerOptions {
   host: string
   port: number
@@ -76,6 +95,8 @@ export interface RemoteServerOptions {
   /** 手机配对与设备令牌；不提供时退回 v1 的单令牌模式 */
   devices?: RemoteDeviceStore
   handlers: RemoteServerHandlers
+  /** 砚对砚：本次连接授权与开放数据；不提供时 peer 设备什么也访问不了 */
+  peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   onLog?: (text: string, level?: 'info' | 'error') => void
 }
 
@@ -210,6 +231,8 @@ export class RemoteServer {
   private server: Server | null = null
   private heartbeat: NodeJS.Timeout | null = null
   private readonly clients = new Set<ServerResponse>()
+  /** 砚对砚的事件流：只发心跳与授权状态，不转发桌面事件（避免越过项目范围） */
+  private readonly peerClients = new Map<string, ServerResponse>()
   private readonly token: string | null
   private boundPort: number
   /** 事件缓冲：断线重连时按 seq 补发 */
@@ -271,7 +294,7 @@ export class RemoteServer {
     const address = server.address()
     if (address && typeof address === 'object') this.boundPort = address.port
     this.heartbeat = setInterval(() => {
-      for (const client of this.clients) {
+      for (const client of [...this.clients, ...this.peerClients.values()]) {
         try {
           client.write(': heartbeat\n\n')
         } catch {
@@ -296,14 +319,27 @@ export class RemoteServer {
       }
     }
     this.clients.clear()
+    for (const client of this.peerClients.values()) {
+      try { client.end() } catch { /* 已断开 */ }
+    }
+    this.peerClients.clear()
     const server = this.server
     this.server = null
     if (!server) return
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
+  /** 所有者撤销某次连接：断开它的事件流（授权本身已在登记表里作废） */
+  disconnectConnection(connectionId: string): void {
+    const client = this.peerClients.get(connectionId)
+    if (!client) return
+    this.peerClients.delete(connectionId)
+    try { client.end() } catch { /* 已断开 */ }
+  }
+
   /** 撤销设备后立即断开它的事件流（其它设备不受影响） */
   disconnectDevice(deviceId: string): void {
+    this.options.peers?.grants.revokeDevice(deviceId)
     for (const client of this.clients) {
       if ((client as ServerResponse & { yanDeviceId?: string }).yanDeviceId === deviceId) {
         try { client.end() } catch { /* 已断开 */ }
@@ -437,6 +473,21 @@ export class RemoteServer {
     const caller = await this.authorize(req)
     if (!caller) {
       writeError(res, 401, '需要有效的远程访问令牌', 'unauthorized')
+      return
+    }
+
+    /*
+     * 砚对砚：peer 令牌只能走 /remote/v1/peer/*（外加 health / info），
+     * 手机路由对它一律拒绝；反过来手机令牌也不能冒充 peer。
+     */
+    const isPeer = caller.device?.kind === 'peer'
+    if (url.pathname.startsWith('/remote/v1/peer/')) {
+      if (!isPeer || !caller.device) return writeError(res, 403, '只有配对为「另一台砚」的设备可以使用这个接口', 'peer_only')
+      await this.handlePeer(req, res, url, caller.device)
+      return
+    }
+    if (isPeer && url.pathname !== '/remote/v1/info') {
+      writeError(res, 403, '另一台砚需要先申请本次连接，并只能访问开放的项目', 'peer_scope')
       return
     }
 
@@ -611,6 +662,131 @@ export class RemoteServer {
     writeError(res, 404, '远程 API 路径不存在')
   }
 
+  /* ---------------------------------------------------------------- 砚对砚 */
+
+  private async handlePeer(req: IncomingMessage, res: ServerResponse, url: URL, device: RemoteDeviceSummary): Promise<void> {
+    const peers = this.options.peers
+    if (!peers) return writeError(res, 404, '这台电脑没有开启砚对砚互通', 'peer_disabled')
+    const { grants, handlers } = peers
+    const parts = url.pathname.split('/').filter(Boolean).slice(3)
+    const header = req.headers[PEER_CONNECTION_HEADER]
+    const connectionId = typeof header === 'string' ? header.trim() : (url.searchParams.get('connection') ?? undefined)
+    const gate = (operation: PeerOperation, projectId?: string) => {
+      const result = grants.check(connectionId, device.id, operation, projectId)
+      if (!result.ok) writeError(res, result.status, result.error, result.code)
+      return result.ok ? result.grant : null
+    }
+
+    /* 申请本次连接：等所有者批准（最长两分钟） */
+    if (req.method === 'POST' && parts.length === 1 && parts[0] === 'connect') {
+      const body = await this.readJson(req)
+      const operations = Array.isArray(body.operations)
+        ? PEER_OPERATIONS.filter((op) => (body.operations as unknown[]).includes(op))
+        : []
+      if (!operations.length) return writeError(res, 400, '需要至少申请一种操作：read / transfer / send')
+      const note = typeof body.note === 'string' ? body.note : ''
+      const grant = await grants.request(device, operations, note, await handlers.projects())
+      if (!grant) return writeError(res, 403, '所有者拒绝了这次连接，或没有及时处理', 'peer_denied')
+      this.log(`已批准另一台砚的连接：${device.name}`)
+      writeJson(res, 200, { ok: true, data: { grant } })
+      return
+    }
+
+    /* 事件流：打开即激活授权；断开即作废，重连必须重新申请 */
+    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'events') {
+      const grant = connectionId ? grants.activate(connectionId, device.id) : null
+      if (!grant || !connectionId) return writeError(res, 401, '本次连接未获批准、已使用过或已失效，请重新申请', 'peer_connection_required')
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-store',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no'
+      })
+      res.write(`event: grant\ndata: ${JSON.stringify(grant)}\n\n`)
+      this.peerClients.set(connectionId, res)
+      res.on('close', () => {
+        this.peerClients.delete(connectionId)
+        grants.revoke(connectionId)
+      })
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'grant') {
+      const grant = grants.list().find((item) => item.connectionId === connectionId && item.deviceId === device.id)
+      if (!grant) return writeError(res, 401, '本次连接已失效', 'peer_connection_required')
+      writeJson(res, 200, { ok: true, data: { grant } })
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'sessions') {
+      const grant = gate('read')
+      if (!grant) return
+      writeJson(res, 200, { ok: true, data: { projects: grant.projects, sessions: await handlers.sessions(grant.projects.map((p) => p.id)) } })
+      return
+    }
+
+    if (parts[0] === 'sessions' && parts.length >= 2) {
+      const sessionId = decodeURIComponent(parts[1])
+      if (!validSessionId(sessionId)) return writeError(res, 400, '会话 id 无效')
+      const projectId = await handlers.projectOfSession(sessionId)
+      if (!projectId) return writeError(res, 404, '找不到这个会话，或它不属于任何开放的项目')
+
+      if (req.method === 'GET' && parts.length === 2) {
+        if (!gate('read', projectId)) return
+        const before = url.searchParams.get('before') ?? undefined
+        if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) return writeError(res, 400, '历史游标无效')
+        this.writeOperation(res, await this.options.handlers.history(sessionId, clampHistoryLimit(url.searchParams.get('limit')), before))
+        return
+      }
+      if (req.method === 'GET' && parts.length === 3 && parts[2] === 'export') {
+        if (!gate('transfer', projectId)) return
+        this.writeOperation(res, await handlers.exportSession(sessionId))
+        return
+      }
+      if (req.method === 'GET' && parts.length === 4 && parts[2] === 'artifacts') {
+        /* 查看或复制任一授权即可读取成果文件 */
+        const viewing = grants.check(connectionId, device.id, 'read', projectId)
+        const allowed = viewing.ok ? viewing : grants.check(connectionId, device.id, 'transfer', projectId)
+        if (!allowed.ok) return writeError(res, allowed.status, allowed.error, allowed.code)
+        await this.artifact(res, sessionId, decodeURIComponent(parts[3]))
+        return
+      }
+      if (req.method === 'POST' && parts.length === 3 && parts[2] === 'messages') {
+        if (!gate('send', projectId)) return
+        let body: Record<string, unknown>
+        try {
+          body = await this.readJson(req)
+        } catch {
+          return writeError(res, 413, '消息超过大小限制或格式无效')
+        }
+        if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, '消息不能为空且不得超过 20,000 个字符')
+        const text = body.text
+        await this.idempotent(req, res, { device }, true, () => this.options.handlers.command({ action: 'send', sessionId, text }))
+        return
+      }
+    }
+
+    if (req.method === 'POST' && parts.length === 2 && parts[0] === 'runs' && parts[1] === 'abort') {
+      const body = await this.readJson(req)
+      if (!validRunId(body.runId)) return writeError(res, 400, '中止操作必须提供有效的目标 runId')
+      const runId = body.runId
+      const projectId = await handlers.projectOfRun(runId)
+      if (!projectId) return writeError(res, 404, '找不到这个运行实例，或它不属于开放的项目')
+      if (!gate('send', projectId)) return
+      await this.idempotent(req, res, { device }, false, () => this.options.handlers.command({ action: 'abort', runId }))
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 3 && parts[0] === 'projects' && parts[2] === 'knowledge') {
+      const projectId = decodeURIComponent(parts[1])
+      if (!gate('transfer', projectId)) return
+      this.writeOperation(res, await handlers.knowledge(projectId))
+      return
+    }
+
+    writeError(res, 404, '远程 API 路径不存在')
+  }
+
   private async pair(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.options.devices) {
       writeError(res, 404, '这台电脑没有开启手机配对', 'pairing_disabled')
@@ -624,7 +800,7 @@ export class RemoteServer {
     }
     this.pairAttempts.push(now)
     const body = await this.readJson(req)
-    const result = await this.options.devices.pair(body.code, body.deviceName)
+    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind)
     if (!result.ok) {
       const message = {
         no_pairing: '电脑上没有正在进行的配对，请先在砚的设置里生成配对码',

@@ -9,6 +9,7 @@ import { join, dirname, basename, extname, resolve } from 'node:path'
 import { constants as fsConstants, existsSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { hostname } from 'node:os'
 import { remoteHistoryPage } from '../shared/remote-history-page'
 import { localizeImage } from './image-store'
 import {
@@ -89,6 +90,17 @@ import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { changeConsentEntry, listConsentViews } from './consent-store'
+import { PeerGrantRegistry } from './peer-grants'
+import { PeerClient } from './peer-client'
+import { registerPeerIpc } from './ipc/peer-ipc'
+import type { PeerHostHandlers } from './remote-server'
+import {
+  PEER_ARTIFACT_MAX_BYTES,
+  PEER_OPERATIONS,
+  type PeerExportedArtifact,
+  type PeerKnowledgeExport,
+  type PeerSessionExport
+} from '../shared/peer-protocol'
 import type { ConsentDecision } from '../shared/tool-consent'
 import { PERSONAL_MEMORY_ID, ingestMemoryInbox, isMemoryScope, memoryStoreOf, writeMemoryExport } from './personal-memory'
 import { RemoteAccess } from './remote-access'
@@ -3859,6 +3871,113 @@ async function remoteMessageImage(sessionId: string, messageId: string, index: n
   } catch { return { ok: false, status: 410, error: '图片已不可用' } }
 }
 
+/* -------------------------------------------------------------------------- */
+/* 砚对砚：所有者一侧（本次连接授权 + 按项目开放的数据）                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 审批请求推给界面；决定经 `yan:peer-host:decide` 回来。
+ * 某次连接作废（断开 / 撤销 / 超时）时断开它的事件流。
+ */
+/** 这台电脑去连接别的砚（连接者一侧） */
+const peerClient = new PeerClient()
+
+const peerGrants = new PeerGrantRegistry({
+  ask: (request) => {
+    push({ ch: 'peer-request', payload: request })
+    if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
+  },
+  closed: (requestId) => push({ ch: 'peer-request-closed', payload: { requestId } }),
+  changed: (_grants, revoked) => {
+    if (revoked) remoteAccess?.disconnectConnection(revoked)
+  }
+})
+
+async function peerSummaryOf(sessionId: string): Promise<SessionSummary | undefined> {
+  const settings = await getSettings()
+  return (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+}
+
+const peerHostHandlers: PeerHostHandlers = {
+  async projects() {
+    return (await getSettings()).projects.filter((project) => !project.archived).map((project) => ({ id: project.id, name: project.name }))
+  },
+  async sessions(projectIds) {
+    const settings = await getSettings()
+    return (await listSessions(500, settings.projects))
+      .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
+      .map(remoteSessionSummary)
+  },
+  async projectOfSession(sessionId) {
+    return (await peerSummaryOf(sessionId))?.projectId ?? null
+  },
+  async projectOfRun(runId) {
+    return runners?.statuses().find((status) => status.runId === runId)?.projectId ?? null
+  },
+  /* 复制一份会话：消息降敏（不带绝对路径与内嵌图片），成果逐个标明源文件是否还在 */
+  async exportSession(sessionId) {
+    const summary = await peerSummaryOf(sessionId)
+    if (!summary?.projectId) return { ok: false, status: 404, error: '找不到目标会话' }
+    const history = await readHistoryWithArtifacts(summary.path)
+    if (!history) return { ok: false, status: 502, error: '无法读取该会话历史' }
+    const project = (await getSettings()).projects.find((item) => item.id === summary.projectId)
+    const artifacts: PeerExportedArtifact[] = []
+    for (const artifact of history.messages.flatMap((message) => message.artifacts ?? [])) {
+      let available = !artifact.unavailable
+      if (available) {
+        available = await stat(artifact.path).then((info) => info.isFile() && info.size <= PEER_ARTIFACT_MAX_BYTES).catch(() => false)
+      }
+      artifacts.push({ id: artifact.id, filename: artifact.filename, mediaType: artifact.mediaType, bytes: artifact.bytes, available })
+    }
+    const exported: PeerSessionExport = {
+      version: 1,
+      source: {
+        computer: hostname(),
+        sessionId: summary.id,
+        projectId: summary.projectId,
+        projectName: project?.name ?? basename(summary.cwd),
+        title: summary.title,
+        exportedAt: Date.now(),
+        updatedAt: summary.updatedAt,
+        messageCount: summary.messageCount
+      },
+      messages: history.messages.map((message) => ({
+        ...message,
+        ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
+        ...(message.toolCalls ? { toolCalls: message.toolCalls.map((tool) => ({ ...tool, images: undefined })) } : {}),
+        ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
+      })),
+      artifacts,
+      truncated: history.truncated > 0
+    }
+    return { ok: true, data: exported }
+  },
+  /* 共享项目记忆：只给已确认条目，保留来源电脑、条目 id 与版本 */
+  async knowledge(projectId) {
+    const project = (await getSettings()).projects.find((item) => item.id === projectId)
+    if (!project) return { ok: false, status: 404, error: '找不到这个项目' }
+    try {
+      const entries = (await listKnowledge({ projectId, cwd: project.cwd })).filter((entry) => entry.status === 'active')
+      const exported: PeerKnowledgeExport = {
+        version: 1,
+        source: { computer: hostname(), projectId, projectName: project.name, exportedAt: Date.now() },
+        entries: entries.map((entry) => ({
+          id: entry.id,
+          revision: entry.revision,
+          kind: entry.kind,
+          text: entry.text,
+          tags: entry.tags,
+          confidenceClass: entry.confidenceClass,
+          updatedAt: entry.updatedAt
+        }))
+      }
+      return { ok: true, data: exported }
+    } catch (error) {
+      return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+}
+
 /**
  * 按设置（或旧的 YAN_REMOTE_* 环境变量）启动手机接入。
  * 默认关闭；设置变化时由 IPC 处理器再次调用 applyRemoteAccess。
@@ -3880,7 +3999,8 @@ async function startRemoteServer(): Promise<void> {
       (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
         else console.log(`[remote] ${text}`)
-      }
+      },
+      { grants: peerGrants, handlers: peerHostHandlers }
     )
   }
   try {
@@ -8110,6 +8230,23 @@ function registerIpc(): void {
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
+
+  /* ---- 砚对砚：这台电脑去连接别的砚 ---- */
+  registerPeerIpc(ipc, peerClient, async () => (await getSettings()).projects)
+
+  /* ---- 砚对砚：所有者审批与撤销本次连接 ---- */
+  handle('yan:peer-host:pending', () => peerGrants.pendingRequests())
+  handle('yan:peer-host:decide', (decision: unknown) => {
+    const raw = (decision ?? {}) as { requestId?: unknown; approve?: unknown; projectIds?: unknown; operations?: unknown }
+    if (typeof raw.requestId !== 'string') return false
+    return peerGrants.decide({
+      requestId: raw.requestId,
+      approve: raw.approve === true,
+      projectIds: Array.isArray(raw.projectIds) ? raw.projectIds.filter((id): id is string => typeof id === 'string') : [],
+      operations: Array.isArray(raw.operations) ? PEER_OPERATIONS.filter((op) => (raw.operations as unknown[]).includes(op)) : []
+    })
+  })
+  handle('yan:peer-host:revoke', (connectionId: unknown) => (typeof connectionId === 'string' ? peerGrants.revoke(connectionId) : false))
 
   /* ---- 普通工具的自动调用依据：查看与调整 ---- */
   handle('yan:consent:list', () => listConsentViews())
