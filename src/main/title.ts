@@ -18,6 +18,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { toUsage } from './normalize'
+import { appendContextBackgroundUsage } from './context-background-usage'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 
@@ -239,18 +241,32 @@ export async function generateTitle(opts: {
 
   let text = ''
   let settled = false
+  /* 供应商口径的用量（来自 `message_end` 的最终消息）；标题进程没报就是 null */
+  let usage: ReturnType<typeof toUsage> = undefined
+  let startedAt = 0
 
   return new Promise<TitleResult | null>((resolve) => {
-    const done = (r: TitleResult | null): void => {
+    const done = (r: TitleResult | null, errorCode?: string): void => {
       if (settled) return
       settled = true
+      /*
+       * 标题是一次真实的后台调用（而且跑在独立进程里，界面原本完全看不见）。
+       * 走到 done 就说明真的起了进程，所以失败也要记账 —— 只是没有 usage。
+       */
+      appendContextBackgroundUsage(sessionId, {
+        kind: 'title',
+        ok: !!r?.title,
+        usage: r?.title ? usage ?? null : null,
+        ...(startedAt > 0 ? { durationMs: Date.now() - startedAt } : {}),
+        ...(r?.title ? {} : { error: errorCode ?? 'title_unavailable' })
+      })
       void rpc.close()
       resolve(r)
     }
 
     const timer = setTimeout(() => {
       console.error('[title] 超时')
-      done(null)
+      done(null, 'title_timeout')
     }, timeout)
 
     rpc.on('event', (evt) => {
@@ -258,13 +274,18 @@ export async function generateTitle(opts: {
       if (type === 'message_update') {
         const ev = evt.assistantMessageEvent as Record<string, unknown> | undefined
         if (ev?.type === 'text_delta') text += String(ev.delta ?? '')
+      } else if (type === 'message_end') {
+        /* `message_end` 的 message 是最终权威消息，usage 在里面（与主会话同一字段口径） */
+        const message = (evt as Record<string, unknown>).message as Record<string, unknown> | undefined
+        const parsed = toUsage(message?.usage as Parameters<typeof toUsage>[0])
+        if (parsed) usage = parsed
       } else if (type === 'agent_settled' || type === 'agent_end') {
         // agent_settled 更权威（agent_end 之后可能还有重试）
         if (type !== 'agent_settled') return
         clearTimeout(timer)
         const title = cleanTitle(text)
         if (!title) {
-          done(null)
+          done(null, 'title_empty')
           return
         }
         if (opts.persist !== false) void saveTitle(sessionId, title)
@@ -275,7 +296,7 @@ export async function generateTitle(opts: {
     rpc.on('exit', (code) => {
       clearTimeout(timer)
       // 进程提前退出也算失败
-      if (!settled && code !== 0) done(null)
+      if (!settled && code !== 0) done(null, 'title_process_exit')
     })
 
     rpc.on('stderr', (line) => {
@@ -299,6 +320,7 @@ export async function generateTitle(opts: {
       try {
         // 归纳不需要推理 —— 关掉省钱也快
         await rpc.command('set_thinking_level', { level: 'off' })
+        startedAt = Date.now()
         await rpc.command('prompt', {
           message: buildPrompt(samples),
           // pi 的 prompt 支持 images（见 rpc-types.d.ts 的 prompt 命令）
@@ -309,7 +331,7 @@ export async function generateTitle(opts: {
       } catch (e) {
         clearTimeout(timer)
         console.error('[title] 发送失败:', e)
-        done(null)
+        done(null, 'title_prompt_failed')
       }
     })()
   })

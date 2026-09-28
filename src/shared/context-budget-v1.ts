@@ -308,6 +308,31 @@ export function normalizeContextBudgetTierV1(value: unknown): ContextBudgetTierV
 }
 
 /**
+ * 相邻档位 —— 「临时抬软线」与「降档」两个出口共用这一个纯函数。
+ *
+ * 逐档而不是一步到底：点一次只动一格，用户能看清代价（K 数真的变了）；
+ * `ceiling`（自动最高档）是抬线的上限，越过它就不是「临时」而是改配置了。
+ * 已经顶到边界时返回原值 —— 调用方据此判断「这一下没有可动的档」。
+ */
+export function adjacentContextBudgetTierV1(
+  current: unknown,
+  direction: 'up' | 'down',
+  ceiling: unknown = CONTEXT_BUDGET_V1_TIERS[CONTEXT_BUDGET_V1_TIERS.length - 1]
+): ContextBudgetTierV1 {
+  const tiers = CONTEXT_BUDGET_V1_TIERS
+  const normalized = normalizeContextBudgetTierV1(current) ?? tiers[0]
+  const cap = normalizeContextBudgetTierV1(ceiling) ?? tiers[tiers.length - 1]
+  const index = tiers.indexOf(normalized)
+  if (direction === 'up') {
+    for (let next = index + 1; next < tiers.length; next++) {
+      if (tiers[next] <= cap) return tiers[next]
+    }
+    return normalized
+  }
+  return index > 0 ? tiers[index - 1] : normalized
+}
+
+/**
  * Stable, non-secret endpoint identity for one runtime model configuration.
  * Custom endpoint query strings and credentials are intentionally excluded.
  */

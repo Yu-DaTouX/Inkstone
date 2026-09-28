@@ -291,6 +291,58 @@ function commitCandidateProjectionUnlocked(sessionId, operationId, ctx) {
 }
 
 /**
+ * 自动整理的**一次**重试。
+ *
+ * 为什么在同一个调用里立刻重试：整理是被撞线触发的，用户此刻正在等；
+ * 推到下一轮再试意味着这一轮照样白烧一次 abort。瞬态失败（provider 抖动、超时、
+ * 提交前版本变化）立刻重试成功率最高；确定性失败不重试（见 `isRetryableFailure`）。
+ *
+ * 只重试一次：写 `retryNonce` 作标记，第二次失败就停在 needs_action 交给用户，
+ * 不允许「失败 → 重试 → 失败 → 重试」把额度烧在同一个版本上。
+ */
+async function retryAutomaticMaintenanceOnce(pi, ctx, sessionId, operationId, targetTokens, firstCode) {
+  const path = operationPath(sessionId, operationId)
+  let resumed = null
+  try {
+    resumed = withDiskLock(sessionId, () => {
+      const live = path && safeJson(path)
+      if (!live || live.state !== 'needs_action' || live.retryable !== true || live.retryNonce) return null
+      const next = {
+        ...live,
+        revision: randomUUID(),
+        state: 'preparing',
+        /*
+         * 必须清 candidateRef：首轮可能已经写过一份候选（提交前失败），
+         * 重试再写一份就是「同一整理操作存在多个候选」—— 恢复时会直接报 corrupt。
+         */
+        candidateRef: null,
+        retryNonce: `auto-once:${firstCode}`,
+        failureCode: null,
+        failedStage: null,
+        retryable: null,
+        updatedAt: Date.now()
+      }
+      writeJsonAtomic(path, next)
+      return next
+    })
+  } catch {
+    return null
+  }
+  if (!resumed) return null
+  try {
+    await runMaintenance(pi, operationId, ctx, { targetTokens })
+    const operation = commitCandidateProjection(sessionId, operationId, ctx)
+    return { ok: true, operation }
+  } catch (error) {
+    const after = safeJson(path)
+    if (after && IN_FLIGHT_STATES.includes(after.state)) {
+      operationFailure(after, error instanceof ContextBudgetV1BlockedError ? error.code : 'automatic_maintenance_retry_failed')
+    }
+    return null
+  }
+}
+
+/**
  * 每个「源材料 / 策略 / 端点」版本只尝试一次自动整理（操作 id 由版本推导，天然幂等）。
  * `targetTokens`：这次至少要摘掉的估算 token（由撞线检查算出），一次压到目标线以下。
  */
@@ -357,11 +409,16 @@ export async function maintainContextAutomatically(pi, ctx, reason = 'context_re
     operation = commitCandidateProjection(sessionId, operationId, ctx)
     return { ok: true, operation }
   } catch (error) {
+    const code = error instanceof ContextBudgetV1BlockedError ? error.code : 'automatic_maintenance_failed'
     const latest = safeJson(file)
-    if (latest && IN_FLIGHT_STATES.includes(latest.state)) {
-      operationFailure(latest, error instanceof ContextBudgetV1BlockedError ? error.code : 'automatic_maintenance_failed')
-    }
-    return { ok: false, operation: safeJson(file), error: error instanceof Error ? error.message : 'automatic_maintenance_failed' }
+    if (latest && IN_FLIGHT_STATES.includes(latest.state)) operationFailure(latest, code)
+    /*
+     * 失败后**自动重试一次**：只对瞬态失败（`retryable`）且尚未自动重试过的记录。
+     * 确定性失败（没有候选、归档满、源条目丢失）重试只会得到同样结果，直接交给用户处置。
+     */
+    const retried = await retryAutomaticMaintenanceOnce(pi, ctx, sessionId, operationId, targetTokens, code)
+    if (retried) return retried
+    return { ok: false, operation: safeJson(file), error: error instanceof Error ? error.message : code }
   }
 }
 

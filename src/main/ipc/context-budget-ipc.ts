@@ -8,11 +8,12 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { activeContextPolicy, contextPolicySettings } from '../context-policy'
 import { contextBudget } from '../../shared/context-policy'
-import { isContextBudgetTierV1, sanitizeContextBudgetRuntimeSnapshotV1 } from '../../shared/context-budget-v1'
+import { adjacentContextBudgetTierV1, isContextBudgetTierV1, sanitizeContextBudgetRuntimeSnapshotV1 } from '../../shared/context-budget-v1'
 import { ContextBudgetStoreError, contextBudgetStoreV1 } from '../context-budget-store'
 import { modelKeyOf } from '../../shared/model-capabilities'
 import { randomUUID } from 'node:crypto'
 import { readContextActions } from '../context-actions'
+import { readContextBackgroundUsage } from '../context-background-usage'
 import { YAN_DIR } from '../paths'
 import type { AgentController } from '../agent'
 
@@ -195,9 +196,80 @@ export function registerContextBudgetIpc(ipc: IpcRegistrar, deps: ContextBudgetI
   })
 
   /*
+   * 「整理失败停下」的两个一键出口（用户拍板：明确阻塞 + 一键出口）。
+   *
+   * 为什么必须有它：失败后新消息会被拦下，如果只改档位而不处理那笔停住的记录，
+   * 阻塞判定会一直把它算作待处理 —— 用户点完还是发不出消息。
+   * 所以这里一次性做两件事：改档位，并把停住的自动整理标成 `superseded`。
+   */
+  rawHandle('yan:contextBudgetMaintenanceExitV1', async (_e, rawRequest: unknown) => {
+    const sessionId = currentAgent()?.getState()?.sessionId
+    if (!sessionId || !rawRequest || typeof rawRequest !== 'object') {
+      return { ok: false, error: '当前没有可处理的活动会话' }
+    }
+    const request = rawRequest as Record<string, unknown>
+    const action = request.action
+    if ((action !== 'raise-line' && action !== 'lower-tier') || typeof request.expectedRevision !== 'string') {
+      return { ok: false, error: '出口参数无效' }
+    }
+    try {
+      const current = await contextBudgetStoreV1.read(sessionId)
+      const phaseId = current.activePhaseId
+      const phase = current.phases[phaseId]
+      if (!phase) return { ok: false, error: '当前任务阶段已不存在' }
+      const target = adjacentContextBudgetTierV1(
+        phase.selectedBudget,
+        action === 'raise-line' ? 'up' : 'down',
+        phase.autoMaxBudget
+      )
+      const policy = await contextBudgetStoreV1.update(sessionId, request.expectedRevision, (latest) => {
+        const latestPhase = latest.phases[phaseId]
+        if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
+        return {
+          ...latest,
+          phases: {
+            ...latest.phases,
+            [phaseId]: {
+              ...latestPhase,
+              selectedBudget: target,
+              selectionSource: 'user',
+              selectionReason: action === 'raise-line' ? 'user_raised_soft_line' : 'user_lowered_tier'
+            }
+          }
+        }
+      })
+      const operation = await contextBudgetStoreV1.latestOperation(sessionId)
+      if (operation && operation.requestKind === 'automatic' && operation.state === 'needs_action') {
+        try {
+          await contextBudgetStoreV1.transitionOperation(
+            sessionId,
+            operation.identity.operationId,
+            operation.revision,
+            'superseded',
+            { reason: action === 'raise-line' ? 'user_raised_soft_line' : 'user_lowered_tier' }
+          )
+        } catch {
+          /* 记录已被别的事务推进：档位已经改了，这里不再覆盖它 */
+        }
+      }
+      return { ok: true, policy, selectedBudget: target }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : '出口未生效' }
+    }
+  })
+
+  /*
    * 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold`
    * 不产生 pi 的 `compaction_*` 事件，界面只能从这里读到它们真实发生过。
    * 读不到就返回空统计 —— 诊断读数不该让界面报错。
    */
   rawHandle('yan:contextActions', () => readContextActions(currentAgent()?.getState()?.sessionId ?? null))
+
+  /*
+   * 后台调用用量账（供应商口径）：与 `contextActions` 同一约定 ——
+   * 读当前活动会话，界面不自报会话身份；读不到就是空统计。
+   */
+  rawHandle('yan:contextBackgroundUsage', () =>
+    readContextBackgroundUsage(currentAgent()?.getState()?.sessionId ?? null)
+  )
 }

@@ -10,6 +10,7 @@ import {
   type ContextBudgetTierV1
 } from '../../../../shared/context-budget-v1'
 import type { ContextMaintenanceOperationV1 } from '../../../../shared/context-maintenance'
+import type { ContextBackgroundUsageSummary } from '../../../../shared/context-background-usage'
 
 /**
  * 「上下文」设置页（N21-7）。
@@ -58,6 +59,12 @@ export function ContextTab() {
   const [maintenanceBusy, setMaintenanceBusy] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
   const [maintenanceOperation, setMaintenanceOperation] = useState<ContextMaintenanceOperationV1 | null>(null)
+  const [backgroundUsage, setBackgroundUsage] = useState<ContextBackgroundUsageSummary | null>(null)
+  const refreshBackgroundUsage = async (): Promise<void> => {
+    try {
+      setBackgroundUsage(await window.yan.contextBackgroundUsage())
+    } catch { /* 读数是诊断：拿不到就保留上一次读数，不报错 */ }
+  }
   useEffect(() => {
     let current = true
     setBudgetV1(null)
@@ -66,6 +73,7 @@ export function ContextTab() {
     setBudgetV1Error('')
     setMaintenanceMessage('')
     setMaintenanceOperation(null)
+    setBackgroundUsage(null)
     if (!sessionId) return () => { current = false }
     void Promise.allSettled([
       window.yan.contextBudgetV1(),
@@ -80,6 +88,7 @@ export function ContextTab() {
       if (snapshotResult.status === 'fulfilled') setBudgetSnapshot(snapshotResult.value)
       if (operationResult.status === 'fulfilled') setMaintenanceOperation(operationResult.value)
     })
+    void refreshBackgroundUsage()
     return () => { current = false }
   }, [sessionId])
   useEffect(() => {
@@ -172,6 +181,38 @@ export function ContextTab() {
       setBudgetV1Busy(false)
     }
   }
+  /**
+   * 整理失败后的一键出口：临时抬软线 / 降档。
+   *
+   * 为什么要同时“作废那笔整理”：失败后新消息会被拦下（不再每轮空跑 abort），
+   * 而拦下它靠的就是那笔停在 `needs_action` 的记录。只改档位不处理它，
+   * 用户点完还是发不出消息 —— 所以两个动作在主进程里一起做。
+   */
+  const exitMaintenanceBlock = async (action: 'raise-line' | 'lower-tier'): Promise<void> => {
+    if (!budgetV1 || budgetV1Busy) return
+    setBudgetV1Busy(true)
+    setBudgetV1Error('')
+    setMaintenanceMessage('')
+    try {
+      const result = await window.yan.contextBudgetMaintenanceExitV1({
+        action,
+        expectedRevision: budgetV1.revision
+      })
+      if (result.ok && result.policy) {
+        setBudgetV1(result.policy)
+        setMaintenanceMessage(t('set.ctxBudgetV1ExitApplied', {
+          selected: `${(result.selectedBudget ?? 0) / 1000}K`
+        }))
+      } else setBudgetV1Error(result.error ?? tk('set.ctxBudgetV1SaveFailed'))
+      setMaintenanceOperation(await window.yan.contextBudgetMaintenanceStatusV1())
+    } catch {
+      setBudgetV1Error(tk('set.ctxBudgetV1SaveFailed'))
+    } finally {
+      setBudgetV1Busy(false)
+      void window.yan.contextBudgetSnapshotV1().then(setBudgetSnapshot).catch(() => undefined)
+    }
+  }
+
   const setMaterialPinned = async (materialId: string, pinned: boolean): Promise<void> => {
     if (!budgetV1 || budgetV1Busy) return
     setBudgetV1Busy(true)
@@ -358,6 +399,36 @@ export function ContextTab() {
                 >
                   {tk('set.ctxBudgetV1MaintenanceRetry')}
                 </button>
+              ) : null}
+              {/*
+                失败停下后，”重试“并不总是最优解：没有候选、归档满这类确定性失败，
+                重试只会得到同样结果。另两个出口直接改变处境：抬线让它不再撞线，
+                降档让这一轮本来就发得出去。
+              */}
+              {maintenanceOperation && (maintenanceOperation.state === 'needs_action' || maintenanceOperation.state === 'failed') ? (
+                <>
+                  <button
+                    className="seg-btn"
+                    data-testid="ctx-budget-v1-exit-raise"
+                    disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                    onClick={() => void exitMaintenanceBlock('raise-line')}
+                  >
+                    {tk('set.ctxBudgetV1ExitRaise')}
+                  </button>
+                  <button
+                    className="seg-btn"
+                    data-testid="ctx-budget-v1-exit-lower"
+                    disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                    onClick={() => void exitMaintenanceBlock('lower-tier')}
+                  >
+                    {tk('set.ctxBudgetV1ExitLower')}
+                  </button>
+                </>
+              ) : null}
+              {maintenanceOperation?.state === 'needs_action' ? (
+                <div className="set-desc" data-testid="ctx-budget-v1-blocked" role="status">
+                  {tk('set.ctxBudgetV1BlockedHint')}
+                </div>
               ) : null}
               {maintenanceMessage ? <div role="status">{maintenanceMessage}</div> : null}
             </div>
@@ -620,11 +691,74 @@ export function ContextTab() {
           </div>
         </div>
       ) : null}
+
+      {/*
+        后台调用用量（供应商口径）。
+        为什么单独一栏：这些请求绕开会话循环（或跑在独立进程里），
+        主对话的用量条永远看不到它们 —— 用户只能看到一个“总量”，
+        没法回答“是主对话花得多，还是后台在烧”。
+      */}
+      {backgroundUsage ? (
+        <div className="set-row col" data-testid="ctx-background-usage">
+          <div className="set-label">
+            <div className="set-name">{t('set.ctxBackgroundUsage')}</div>
+            <div className="set-desc">{t('set.ctxBackgroundUsageDesc')}</div>
+          </div>
+          {backgroundUsage.calls === 0 ? (
+            <div className="set-desc" role="status">{t('set.ctxBackgroundUsageEmpty')}</div>
+          ) : (
+            <>
+              <div className="set-desc set-num" data-testid="ctx-background-usage-total" role="status">
+                {t('set.ctxBackgroundUsageTotal', {
+                  calls: String(backgroundUsage.calls),
+                  input: fmtTok(backgroundUsage.input),
+                  hit: backgroundUsage.cacheHitRate === null ? '—' : `${backgroundUsage.cacheHitRate.toFixed(1)}%`,
+                  output: fmtTok(backgroundUsage.output)
+                })}
+              </div>
+              {backgroundUsage.kinds.filter((kind) => kind.calls > 0).map((kind) => (
+                <div
+                  className="set-desc set-num"
+                  key={kind.kind}
+                  data-testid={`ctx-background-usage-${kind.kind}`}
+                >
+                  {t('set.ctxBackgroundUsageKind', {
+                    kind: tk(`set.ctxBackgroundKind.${kind.kind}`),
+                    calls: String(kind.calls),
+                    input: fmtTok(kind.input),
+                    hit: kind.input + kind.cacheRead > 0
+                      ? `${((kind.cacheRead / (kind.input + kind.cacheRead)) * 100).toFixed(1)}%`
+                      : '—'
+                  })}
+                </div>
+              ))}
+              {backgroundUsage.missingUsage > 0 ? (
+                <div className="set-desc" role="status">
+                  {t('set.ctxBackgroundUsageMissing', { count: String(backgroundUsage.missingUsage) })}
+                </div>
+              ) : null}
+            </>
+          )}
+          <div className="set-ctl">
+            <button className="seg-btn" data-testid="ctx-background-usage-refresh" onClick={() => void refreshBackgroundUsage()}>
+              {t('set.ctxBackgroundUsageRefresh')}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 /* ------------------------------------------------------------------ 小组件 */
+
+/** token 数缩写（与对话用量条同一口径，界面上的数字要能互相核对） */
+function fmtTok(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`
+  if (n >= 1000) return `${(n / 1000).toFixed(2)}k`
+  return n.toLocaleString('en-US')
+}
 
 /** 数值输入行（留空 = 用默认值） */
 /** 有人话说明的整理失败码（与 i18n 的 set.ctxBudgetV1Failure.* 一一对应）；其余显示原码 */

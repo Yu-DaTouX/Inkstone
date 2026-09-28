@@ -584,6 +584,12 @@ export class ContextBudgetCommands {
       const phase = policy.phases[phaseId]
       if (!phase || phase.mode !== 'auto') return
       if (phase.lastAdjustBoundaryId === boundaryId || phase.lastBoundaryRevision === boundaryId) return
+      /*
+       * 用户刚用「临时抬软线」出口改过档：不要在下一个回合就被自动回收掉 ——
+       * 那次出口的意义就是「这一轮先按高一点的线放行」，刚抬完又降回去等于没抬。
+       * 直到用户再改档位（或换成固定模式）为止，都尊重这个选择。
+       */
+      if (phase.selectionReason === 'user_raised_soft_line') return
       const snapshot = await this.readPreparedBudgetSnapshot(sessionId)
       if (!snapshot || snapshot.endpoint.endpointKey !== model.endpointKey || snapshot.endpoint.modelId !== model.id) return
       const { outputReserve, capability } = this.budgetCapabilityOf(snapshot, model)
