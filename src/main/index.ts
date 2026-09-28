@@ -171,7 +171,6 @@ import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler, type AssembleContextRequest } from './context-assembler'
 import { ArtifactDocStore } from './artifact-doc-store'
-import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
 import {
@@ -6978,33 +6977,6 @@ function registerIpc(): void {
     await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: inboxReadUntil })
     inboxService.invalidate()
     return { ok: true }
-  })
-
-  /*
-   * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。
-   * 只跑纯规则（与 `yan capabilities need` 同一份 shared 实现），
-   * **不装、不改配置**；`available` 由界面把已知能力名传进来。
-   */
-  handle('yan:capabilities:need', async (input: { need?: string; available?: string[] }) => {
-    const need = String(input?.need ?? '').trim()
-    if (!need) return { ok: false as const, need: '', matched: false, error: '先说清你要做什么', text: '' }
-    const available = Array.isArray(input?.available) ? input.available.map((x) => String(x)) : []
-    const match = matchGap(need)
-    if (!match) {
-      return { ok: true as const, need, matched: false, text: unmatchedGapText(need) }
-    }
-    const stillMissing = gapStillMissing(match.gap, available)
-    const body = gapText(match.gap, match.matched)
-    return {
-      ok: true as const,
-      need,
-      matched: true,
-      gapId: match.gap.id,
-      missing: match.gap.missing,
-      via: match.gap.via,
-      alreadyAvailable: !stillMissing,
-      text: stillMissing ? body : `你现在已经能用相关能力（不必再装）。\n${body}`
-    }
   })
 
   /*

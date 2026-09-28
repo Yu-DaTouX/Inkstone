@@ -360,23 +360,6 @@ html[data-theme='light'] .settings-scrim {
   text-align: left;
 }
 
-/* 按需求找能力（实施-25 P17）：返回的是要看的接入路径，不是短文案 */
-.cap-need-text {
-  margin: 0;
-  padding: 6px 8px;
-  max-height: 220px;
-  overflow: auto;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-family: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
 /* 按活动用不同模型（实施-25 P18）：五行配置 + 每行的「为什么是这个模型」 */
 .am-scope {
   margin: 0;

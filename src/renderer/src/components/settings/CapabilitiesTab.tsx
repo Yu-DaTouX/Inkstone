@@ -4,7 +4,6 @@ import { useStore } from '../../state/store'
 import { ConsentSection } from './ConsentSection'
 import type {
   BuiltinCapabilityView,
-  CapabilityNeedView,
   CapabilitySearchResultView,
   CapabilitySettingsSnapshot,
   CapabilityVerificationStatus
@@ -28,9 +27,6 @@ export function CapabilitiesTab(): React.JSX.Element {
   const [operations, setOperations] = useState<Record<string, CapabilityVerificationStatus>>({})
   const mounted = useRef(true)
   /* 按需求找能力（实施-25 P17）：只说「缺什么、怎么接」，不装不改配置 */
-  const [needText, setNeedText] = useState('')
-  const [needResult, setNeedResult] = useState<CapabilityNeedView | null>(null)
-  const [needError, setNeedError] = useState('')
   /*
    * 外部工具与浏览器（实施-27 D4）：搜索后端与浏览器扩展的状态。
    * 只读探针（`yan:search:doctor`）—— 砚不装、不升级，只告诉你缺什么。
@@ -80,28 +76,6 @@ export function CapabilitiesTab(): React.JSX.Element {
   useEffect(() => {
     void checkBackend()
   }, [checkBackend])
-
-  const insertIntoComposer = useStore((s) => s.insertIntoComposer)
-
-  const runNeed = async (): Promise<void> => {
-    const text = needText.trim()
-    if (text.length < 2) return
-    /* 把已知能力名一起传过去：宿主才能回答「你其实已经有了」 */
-    const available = [
-      ...builtin.map((item) => item.id),
-      ...(snapshot?.skills ?? []).flatMap((skill) => [skill.id, skill.title, skill.description]),
-      ... (snapshot?.servers ?? []).flatMap((server) => [server.id, server.title])
-    ]
-    try {
-      setNeedError('')
-      const view = await window.yan.capabilities.need({ need: text, available })
-      setNeedResult(view)
-      if (!view.ok) setNeedError(view.error ?? tk('cap.searchFailed'))
-    } catch (error) {
-      setNeedError(error instanceof Error ? error.message : tk('cap.searchFailed'))
-      setNeedResult(null)
-    }
-  }
 
   const runSearch = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -217,71 +191,6 @@ export function CapabilitiesTab(): React.JSX.Element {
           <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
         </div>
       </div>
-      {/* 按需求找能力（实施-25 P17）：缺什么、怎么接 —— 只给路径，不代装 */}
-      <div className="set-row set-row-col" data-testid="cap-need">
-        <div className="set-label">
-          <div className="set-name">{t('cap.needTitle')}</div>
-          <div className="set-desc">{t('cap.needDesc')}</div>
-        </div>
-        <form
-          className="pkg-install-row"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void runNeed()
-          }}
-        >
-          <input
-            className="set-input"
-            data-testid="cap-need-input"
-            value={needText}
-            maxLength={500}
-            placeholder={t('cap.needPlaceholder')}
-            aria-label={t('cap.needPlaceholder')}
-            onChange={(event) => setNeedText(event.target.value)}
-          />
-          <button
-            type="submit"
-            className="env-mini"
-            data-testid="cap-need-run"
-            disabled={needText.trim().length < 2}
-          >
-            {t('cap.needRun')}
-          </button>
-        </form>
-        {needError ? (
-          <div className="set-desc" data-testid="cap-need-error">
-            {needError}
-          </div>
-        ) : null}
-        {needResult ? (
-          <div className="pkg-item" data-testid="cap-need-result">
-            {needResult.matched ? (
-              <div className="pkg-item-main">
-                <span className="pkg-name">{needResult.gapId}</span>
-                {needResult.alreadyAvailable ? (
-                  <span className="pkg-scope user" data-testid="cap-need-have">
-                    {t('cap.needHave')}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-            <pre className="cap-need-text" data-testid="cap-need-text">
-              {needResult.text}
-            </pre>
-            <button
-              className="env-mini"
-              data-testid="cap-need-send"
-              onClick={() => {
-                insertIntoComposer(needResult.text)
-                setNotice(t('cap.needSent'))
-              }}
-            >
-              {t('cap.needSend')}
-            </button>
-          </div>
-        ) : null}
-      </div>
-
       <div className="set-row set-row-col" data-testid="cap-strategy">
         <div className="set-label">
           <div className="set-name">{t('cap.strategyTitle')}</div>

@@ -113,8 +113,6 @@ const CASES = {
   subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
   // 实施-25 P16：持续关注与提醒（应用没开不跟进 / 未启用不自行建立 / 只填不发；cost 0）
   follow: { probe: 'scripts/probe/follow.js', delay: 24000, cost: 0 },
-  // 实施-25 P17：按需获取能力（说需求 → 可执行路径，不编包名；cost 0）
-  capabilityneed: { probe: 'scripts/probe/capability-need.js', delay: 14000, cost: 0 },
   // 实施-25 P18：按活动配置模型（优先级 / 回退 / 边界文案；cost 0）
   activitymodel: { probe: 'scripts/probe/activity-model.js', delay: 16000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）

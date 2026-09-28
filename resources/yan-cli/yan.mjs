@@ -134,13 +134,6 @@ const GROUP_USAGE = {
             安装、隔离 smoke 与激活仍等待安全边界 / 后续 S6b 实施。失败事务可对同一计划使用 --retry（最多一次）。
 本地 MCP 包与 Skill 文件会先走受管 staging、来源 / hash 复核和安全边界；Skill 正文还会做静态恶意内容审查：高风险 fail-closed，中风险保留提醒（即使候选由用户指定也不跳过）。包和服务器仍不提供 OS 沙箱，未提供依赖时明确停在 pending-boundary。
 
-新增（实施-25 P17）：
-  need      用自然语言说「我要做什么」，得到「缺什么、怎么接」：
-              yan capabilities need --need "把 PDF 里的表格做成汇总"
-            它**只给路径、不代装**：先 search → prepare → acquire → 都不行再 discover；
-            认不出的需求不猜包名，只给通用的三步。
-            还会告诉你「你现在已经有相关能力了」——不必先记住自己有什么。
-
 `,
   skill: `yan skill <动作> [选项]
 
@@ -440,8 +433,8 @@ function fail(code, message, extra) {
  */
 const GROUP_SPECS = {
   capabilities: {
-    actions: ['search', 'discover', 'prepare', 'acquire', 'need'],
-    required: { prepare: ['candidate'], need: ['need'] }
+    actions: ['search', 'discover', 'prepare', 'acquire'],
+    required: { prepare: ['candidate'] }
   },
 
   skill: {

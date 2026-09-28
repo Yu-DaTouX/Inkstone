@@ -3690,23 +3690,6 @@ runFollowTests(ok, followShared)
 await runFollowStoreTests(ok, { FollowStore: followStore.FollowStore }, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
 /*
- * 按需获取能力（实施-25 P17）：场景匹配 / 场景化路径 / 「认不出不编」。
- * 重点是「只给路径不代装」与「已有能力就不算缺口」。
- */
-const capabilityGap = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/capability-gap.ts'],
-    outfile: 'out/test/capability-gap.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/capability-gap.mjs'))
-)
-const { runCapabilityGapTests } = await import('./test-capability-gap.mjs')
-runCapabilityGapTests(ok, capabilityGap)
-
-/*
  * 按活动配置模型（实施-25 P18）：优先级 / 回退 / 边界文案 / 五行视图。
  * 重点是「回退要如实说」与「不指定也不乱挑」。
  */

@@ -148,7 +148,6 @@ const KNOWN_COMMANDS = new Set([
   'operations.status',
   'capabilities.search',
   /* 按需获取能力（实施-25 P17）：只说「缺什么、怎么接」，不代装。 */
-  'capabilities.need',
   'capabilities.discover',
   'capabilities.prepare',
   'capabilities.acquire',
