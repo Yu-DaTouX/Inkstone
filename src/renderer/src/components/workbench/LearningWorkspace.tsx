@@ -7,7 +7,6 @@ import { groupIntoTurns } from '../../../../shared/turns'
 import { LearningView } from './LearningView'
 import { ExerciseCard } from './ExerciseCard'
 import { ReviewPanel } from './ReviewPanel'
-import { AudioCard } from './AudioCard'
 
 /**
  * 导师页面（实施-25 P09）—— 左路线 / 中导师对话 / 右教材与练习。
@@ -463,17 +462,6 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
          */}
         {course ? <ReviewPanel courseId={course.id} /> : null}
 
-        {/*
-         * 语音（P20）：不做识别与朗读，只说路径 + 把外部转写登记到同一门课。
-         * 放在复习卡下面：它也是一件「回头再看 / 再听一遍」的事。
-         */}
-        {course ? (
-          <AudioCard
-            courseId={course.id}
-            {...(unit?.sources?.[0]?.sourceId ? { sourceId: unit.sources[0].sourceId } : {})}
-            {...(unit?.sources?.[0]?.version ? { version: unit.sources[0].version } : {})}
-          />
-        ) : null}
       </aside>
     </div>
   )

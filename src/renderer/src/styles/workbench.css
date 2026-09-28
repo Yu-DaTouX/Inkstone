@@ -1732,64 +1732,6 @@
   align-self: flex-start;
 }
 
-.wb-audio {
-  /* 四段并存时语音卡是最下面那张：高度收一点，并允许内部滚动 */
-  max-height: 40%;
-}
-
-/* 语音（P20）：两张「怎么做」按钮 + 粘贴转写 + 登记到同一门课 */
-.wb-audio-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.wb-audio-actions .wb-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.wb-audio-plan {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.wb-audio-text {
-  margin: 0;
-  padding: 6px 8px;
-  max-height: 180px;
-  overflow: auto;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-family: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-.wb-audio-transcript {
-  min-height: 54px;
-  font-family: inherit;
-  resize: vertical;
-}
-
-.wb-audio-error {
-  margin: 0;
-  color: var(--warn);
-  overflow-wrap: break-word;
-}
-
-.wb-audio-note {
-  margin: 0;
-  color: var(--fg-mute);
-  overflow-wrap: break-word;
-}
-
 .wb-art-tolearn {
   display: flex;
   flex-direction: column;

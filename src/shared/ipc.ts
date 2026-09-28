@@ -111,8 +111,6 @@ export type {
 import type { FollowRun, Watch, WatchView } from './follow'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
-export type { AudioPlan, AudioTask } from './audio'
-import type { AudioPlan } from './audio'
 import type { AgentActivity } from './agent-profile'
 export type {
   Playbook,
@@ -3006,22 +3004,6 @@ export interface ActivityBridge {  /** 五个活动各自会用什么模型（�
  * `plan` 只说清「走哪条路、结果怎么归位」；`transcript` 把**外部工具转好的文本**
  * 登记成同一门课的新来源。宿主不做识别与朗读，也没有「播放」能力。
  */
-export interface AudioBridge {
-  plan(input: { task?: string; courseId?: string; sourceId?: string; version?: number }): Promise<{
-    ok: boolean
-    error?: string
-    plan?: AudioPlan
-  }>
-  transcript(input: { courseId: string; sourceId: string; version?: number; title?: string; text: string }): Promise<{
-    ok: boolean
-    error?: string
-    code?: string
-    sourceId?: string
-    version?: number
-    note?: string
-  }>
-}
-
 /** 课程写操作的结果（与纯逻辑层的 `CourseMutation` 对应）。 */
 export interface CourseResult {
   ok: boolean
@@ -3780,7 +3762,6 @@ export interface YanBridge {
   /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
   activity: ActivityBridge
   /** 语音与内容形式（实施-25 P20）：只说路径与归位，不做识别 / 朗读。 */
-  audio: AudioBridge
   /** 概念进度（实施-25 P11）：观察层级 + 独立的复习状态，由作答现算。 */
   concept: ConceptBridge
   /** 错题与复习（实施-25 P12）：只提醒与挑题，不自动代学。 */

@@ -1031,22 +1031,6 @@ function registerStubHandlers() {
    * 按活动配置模型（实施-25 P18）：与主进程**同一份** shared 规则。
    * 注入一份有内容的配置，截图才能同时看到三种解释（活动指定 / 默认 / 跟随）。
    */
-  /*
-   * 语音（实施-25 P20）：只说路径，不真跑识别 / 朗读。
-   * 与主进程**同一份** shared 规则。
-   */
-  ipcMain.handle('yan:audio:plan', (_event, input) => {
-    const rules = sharedRules('audio')
-    return {
-      ok: true,
-      plan: rules.audioPlan(input?.task === 'read-aloud' ? 'read-aloud' : 'transcribe', {
-        ...(input?.courseId ? { courseId: input.courseId } : {}),
-        ...(input?.sourceId ? { sourceId: input.sourceId } : {})
-      })
-    }
-  })
-  ipcMain.handle('yan:audio:transcript', () => ({ ok: false, error: '矩阵不写资料库' }))
-
   ipcMain.handle('yan:activity:modelRows', (_event, input) => {
     const rules = activityModelRules()
     return rules.activityModelRows({
@@ -1291,9 +1275,9 @@ const GROUPS = [
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
   { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig', 'envnotgit'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings', 'workbenchhome', 'taskinbox'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning', 'workbenchhome', 'taskinbox'] },
   /*
@@ -3951,77 +3935,6 @@ const STATES = {
     })()
   `,
   /*
-   * 语音（实施-25 P20）：学习页右栏的语音卡 + 打开「转写该怎么接」的计划。
-   * 只截计划区：它说明的是路径，不是识别结果。
-   */
-  spaceaudio: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const click = (el) => el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      const now = Date.now();
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{ id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始', archived: false, createdAt: now - 86400000, updatedAt: now }],
-        sessions,
-        library: [{ id: 'lib_d1', spaceId: 'sp_demo', kind: 'text', title: '第三讲的录音（转写前）', createdAt: now - 3600000, updatedAt: now - 3600000 }],
-        libraryVersions: [{ sourceId: 'lib_d1', version: 1 }],
-        courses: [{
-          id: 'co_demo1', spaceId: 'sp_demo', title: '英语精读 Unit 3', goal: '把这一讲讲完',
-          level: 'some', minutesPerDay: 30, entry: 'source', entryInput: '第三讲的录音（转写前）', status: 'active',
-          units: [
-            { id: 'u_d1', title: '第三讲：开场与结论', target: '听完能说出三处收紧', estimateMinutes: 8, origin: 'material', sources: [{ sourceId: 'lib_d1', version: 1 }], concepts: [] }
-          ],
-          concepts: [], basedOn: { sourceId: 'lib_d1', version: 1 }, createdAt: now - 3600000, updatedAt: now - 600000
-        }],
-        coursesLoaded: true,
-        studyStatus: {
-          session: {
-            id: 'st_audio1', courseId: 'co_demo1', unitId: 'u_d1', runtimeKey: 'r-demo',
-            phase: 'explaining', position: { unitIndex: 0 }, nextStep: '听完再出一题', paused: false,
-            startedAt: now - 600000, updatedAt: now - 60000
-          },
-          resume: {
-            sessionId: 'st_audio1', courseId: 'co_demo1', courseTitle: '英语精读 Unit 3',
-            unitId: 'u_d1', unitTitle: '第三讲：开场与结论', unitIndex: 1, totalUnits: 1,
-            phase: 'explaining', phaseLabel: '讲解', waiting: false, paused: false, updatedAt: now - 60000
-          },
-          waiting: false, gate: null
-        },
-        studySessions: [], studyLoaded: true,
-        exercises: [], exerciseLoadedFor: 'co_demo1:u_d1', exerciseHints: {}, exerciseSolutions: {}, exerciseAttempts: {}, exerciseFeedback: {},
-        reviews: [], reviewLoadedFor: null, reviewDueLoaded: false,
-        openLibraryRef: async () => ({
-          ok: true, outcome: 'ok',
-          source: { id: 'lib_d1', spaceId: 'sp_demo', kind: 'text', title: '第三讲的录音（转写前）', createdAt: now - 3600000, updatedAt: now - 3600000 },
-          version: { sourceId: 'lib_d1', version: 1, identity: 'audio:probe', ref: 'probe://lecture-3', title: '第三讲的录音（转写前）', fingerprint: 'fp-a', addedAt: now - 3600000, available: true, parse: { status: 'ok', chars: 120, note: '已提取正文', at: now - 3600000 } },
-          text: '先把这一讲的内容念一遍：三处收紧分别是……',
-          truncated: false
-        })
-      });
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        window.__yanStore.setState({ session: { ...S().session, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path } });
-      }
-      S().openSpaceView('learning');
-      await sleep(800);
-      click(document.querySelector('[data-testid="space-audio-plan-transcribe"]'));
-      await sleep(900);
-      const plan = document.querySelector('[data-testid="space-audio-plan-text"]');
-      /*
-       * 语音卡在右栏最下面（教材 / 练习 / 复习 / 语音四段）：
-       * scrollIntoView 会把自己与所有可滚动祖先一起滚到位，比手写循环可靠。
-       */
-      document.querySelector('[data-testid="space-learn-audio"]')?.scrollIntoView({ block: 'end' });
-      await sleep(300);
-      document.querySelector('[data-testid="space-audio-plan"]')?.scrollIntoView({ block: 'end' });
-      await sleep(400);
-      const audioEl = document.querySelector('[data-testid="space-learn-audio"]');
-      const box = audioEl?.getBoundingClientRect();
-      return plan ? 'ok:h=' + Math.round(box?.height ?? -1) + ':top=' + Math.round(box?.top ?? -1) : 'no-audio';
-    })()
-  `,
-  /*
    * 图片题（实施-25 P19）：题干只带资料库引用 + 「当前模型能不能看图」的如实提醒。
    * 单开一个状态：spaceexercise 显示的是另一道题的提示与反馈（那份证据要留着），
    * 而这里要把会话能力快照清掉，才能看到「你自己看」那个分支。
@@ -5962,7 +5875,6 @@ const MUST_HAVE = {
     '[data-testid="space-learn-exercise"]'
   ],
   /* 练习卡（实施-25 P10）：题目 + 分层提示 + 反馈 + 纠正 */
-  spaceaudio: ['[data-testid="space-learn-audio"]', '[data-testid="space-audio-boundary"]', '[data-testid="space-audio-plan-text"]'],
   spaceexerciseimage: ['[data-testid="space-exercise-images"]', '[data-testid="space-exercise-image-0"]', '[data-testid="space-exercise-vision"]'],
   spaceexercise: [
     '[data-testid="space-learn-exercise"]',
