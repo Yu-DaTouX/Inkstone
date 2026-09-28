@@ -393,6 +393,16 @@ export function runContextPolicyTests(ok, mod, mainMod, view) {
     const env = resolveContextPolicy({ user: { workingSetCap: 1000 }, envRaw: '{"workingSetCap":5000}' })
     ok(env.source === 'env' && env.policy.workingSetCap === 5000, 'env（测试通道）优先于用户设置')
 
+    /* 上下文预算 V1 迁移规则：显式旧数值 / 开关覆盖保留 legacy，只改 kinds 不算 */
+    const { hasExplicitLegacyOverride } = mod
+    ok(hasExplicitLegacyOverride(plain) === false, '没有覆盖：新会话可默认启用 V1')
+    ok(hasExplicitLegacyOverride(user) && hasExplicitLegacyOverride(spec) && hasExplicitLegacyOverride(env), '用户 / 模型 / env 数值覆盖：保留 legacy')
+    ok(
+      hasExplicitLegacyOverride(resolveContextPolicy({ foldEnabled: false })) === false &&
+        hasExplicitLegacyOverride(resolveContextPolicy({ envRaw: '{"kinds":["recall","compaction"]}' })) === false,
+      '只改接管集（kinds）：不算旧数值覆盖'
+    )
+
     /*
      * P2-7：`episode-fold` 的用户开关。
      * 它不是一个数值（`applyOverrides` 认不了布尔），所以单独一层，

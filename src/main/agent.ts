@@ -38,6 +38,7 @@ import { activeContextPolicy, contextPolicySettings } from './context-policy'
 import {
   contextBudget,
   contextPolicyStep,
+  hasExplicitLegacyOverride,
   INITIAL_POLICY_STATE,
   rearmAfterCompaction,
   type ContextPolicyState,
@@ -6695,6 +6696,12 @@ export class AgentController extends EventEmitter {
     if (!isSafeSessionId(sessionId)) {
       return { ok: false, error: '新会话身份不可核实，未启用上下文预算 V1' }
     }
+    /*
+     * 显式旧覆盖（env / 用户 / 供应商 / 模型级的数值或开关）保留 legacy：
+     * V1 会取消未经整理事务的原生压缩，默认迁过去会让旧阈值、
+     * 按压缩次数的自动交接这些用户明确配置过的行为静默失效。
+     */
+    if (hasExplicitLegacyOverride(this.effectivePolicy().resolved)) return { ok: true }
     try {
       await contextBudgetStoreV1.ensureDefault(sessionId)
       return { ok: true }
