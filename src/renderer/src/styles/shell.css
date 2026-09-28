@@ -396,6 +396,9 @@
   white-space: nowrap;
   container-type: inline-size;
   user-select: none;
+  /* 工作区内容万一溢出本行，也不能盖住状态栏 */
+  position: relative;
+  z-index: 1;
 }
 
 /* 模式色块：宽度固定，颜色 240ms 过渡，文字叠放交叉淡变 */
@@ -484,9 +487,11 @@
   border-left: 1px solid var(--border-soft);
 }
 
-/* 用量条在状态栏里：只保留一行，靠右，与其它段同一字号 */
+/* 用量条在状态栏里：只保留一行，靠右，与其它段同一字号；空间不够时从右端截断，不压到左段 */
 .statusbar .usagebar {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   flex-wrap: nowrap;
   width: auto;
   max-width: none;
@@ -500,14 +505,22 @@
   display: none;
 }
 
-@container (max-width: 1000px) {
+.statusbar .usagebar .spacer {
+  display: none;
+}
+
+@container (max-width: 1100px) {
   .sb-cost {
     display: none;
   }
 }
-@container (max-width: 820px) {
+@container (max-width: 980px) {
   .sb-phone,
   .sb-pi {
+    display: none;
+  }
+  /* tok 单位在每项重复出现；窄窗只留数值，标签（输入 / 输出 / 缓存）足以说明 */
+  .statusbar .ub-unit {
     display: none;
   }
 }

@@ -40,7 +40,7 @@
       'send',
       /* v0.4：这几类按钮的外观（含禁用态）来自统一控件 .btn，按真实类名组合来造 */
       'btn sm rp-btn',
-      'rp-act',
+      'btn sm rp-act',
       'btn icon sm review-act',
       'btn icon sm browser-nav',
       'btn primary commit-submit',
