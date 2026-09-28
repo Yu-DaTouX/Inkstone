@@ -77,7 +77,7 @@
       sound: ['set-sound'],
       status: ['set-status-diagnostics'],
       packages: ['set-packages', 'pkg-install-btn'],
-      about: ['pi-redetect', 'about-build']
+      about: ['pi-redetect', 'about-build', 'about-repo']
     }
     for (const id of TAB_ORDER) {
       click(q(`#settings-tab-${id}`))

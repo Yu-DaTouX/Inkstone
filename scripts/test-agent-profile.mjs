@@ -233,7 +233,7 @@ export function runAgentProfileTests(ok, mod) {
  * 直接加载 `resources/pi-extensions/profile.js` 并调用它的 `before_agent_start`，
  * 不启动 pi：扩展只读快照文件 + 改 `systemPromptOptions`，这两件事都能在这里钉住。
  */
-export async function runAgentProfileExtensionTests(ok, extension, helpers) {
+export async function runAgentProfileExtensionTests(ok, extension, helpers, shared) {
   const { mkdtemp, writeFile, mkdir, rm } = helpers
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
@@ -266,6 +266,24 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers) {
     }
   }
 
+  /*
+   * 枚举一致性：薄层为了「接口不符预期就显式报错」自己写了一份白名单，
+   * 而真源在 `src/shared/agent-profile.ts`。两份曾经漂移（薄层漏了 `auto`），
+   * 症状不是「角色没注入」，而是每轮都弹
+   * 「扩展出错：档案 profile 取值非法：auto」。所以这里直接断言两份相等，
+   * 顺带覆盖顺序 —— 顺序不影响本扩展的行为，但影响「一致」这个词的含义。
+   */
+  ok(
+    extension.PROFILES.join(',') === shared.AGENT_PROFILES.join(','),
+    '薄层 PROFILES 与 shared AGENT_PROFILES 一致（防枚举漂移）',
+    `${extension.PROFILES} vs ${shared.AGENT_PROFILES}`
+  )
+  ok(
+    extension.ACTIVITIES.join(',') === shared.AGENT_ACTIVITIES.join(','),
+    '薄层 ACTIVITIES 与 shared AGENT_ACTIVITIES 一致（防枚举漂移）',
+    `${extension.ACTIVITIES} vs ${shared.AGENT_ACTIVITIES}`
+  )
+
   try {
     /* ---- 没有快照：不注入（旧会话保持 pi 原生） ---- */
     {
@@ -287,6 +305,28 @@ export async function runAgentProfileExtensionTests(ok, extension, helpers) {
       await Promise.all(pi.fire({ systemPromptOptions: options }))
       ok(Object.keys(options.sections).length === 0, 'coding 档案不注入角色分区')
       ok(options.selectedTools === undefined, 'coding 档案不禁用任何工具')
+    }
+
+    /* ---- auto（默认档）：注入判断准则，且**不能**被薄层判成非法 ---- */
+    {
+      await writeSnapshot({
+        version: 1,
+        profile: 'auto',
+        activity: 'answer',
+        roleSection: { name: 'yan_role', content: '你先判断这次请求是哪一类，再按那一类的方式做。' },
+        deniedTools: []
+      })
+      const pi = fakePi(['read', 'write', 'edit', 'bash'])
+      extension.default(pi)
+      const options = { sections: {} }
+      const results = await Promise.allSettled(pi.fire({ systemPromptOptions: options }))
+      ok(
+        results.every((r) => r.status === 'fulfilled'),
+        'auto 档案不再被薄层判为非法（回归：界面上的「扩展出错」提示）',
+        results.map((r) => (r.status === 'rejected' ? String(r.reason?.message ?? r.reason) : 'ok')).join(' | ')
+      )
+      ok(options.sections.yan_role?.includes('判断') === true, 'auto 档案注入判断准则分区')
+      ok(options.selectedTools === undefined, 'auto 档案不禁用任何工具')
     }
 
     /* ---- daily + research：注入角色 + 收窄工具（保留 bash） ---- */

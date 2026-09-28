@@ -3,7 +3,7 @@
  *
  * 打包态那一段（`scripts/probe/packaged.js`）证的是「原生依赖在 asarUnpack 后
  * 真的能起 PTY」；这一支证的是**工作窗口接线**：
- *   · 开始页有终端入口，且真的能开出一个会话（不是灰按钮）；
+ *   · 工作窗口工具菜单有终端入口，点击后能开出一个会话；
  *   · 终端页渲染出 xterm 的 DOM（`.xterm`），有标题栏与活动标签；
  *   · 从宿主写入的命令真的显示在 xterm 的行里（DOM 渲染器，可读）；
  *   · 标签关闭 = 真的 kill PTY（宿主列表里也没了），不是只把页面藏起来；
@@ -52,12 +52,22 @@
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
   await sleep(300)
 
-  /* ① 开始页入口：切到开始页，点终端 */
+  /* ① 工作窗口入口：从工具菜单打开终端（与用户路径一致） */
   click(q('[data-testid="right-window-tab-start"]'))
   await sleep(400)
-  const startEntry = q('[data-testid="start-terminal"]')
-  ok(!!startEntry, '开始页有终端入口（不是灰按钮）')
-  click(startEntry)
+  const toolMenu = q('[data-testid="right-tool-menu"]')
+  ok(!!toolMenu, '工作窗口显示工具菜单入口')
+  click(toolMenu)
+  const menuOpened = await until(() =>
+    toolMenu?.getAttribute('aria-expanded') === 'true' && !!q('[data-testid="right-tool-menu-popover"]')
+  )
+  ok(menuOpened, '打开工作区工具菜单')
+  if (!menuOpened) return out.join('\n')
+  const terminalOption = qa('[data-testid="right-tool-menu-popover"] .rp-tool-menu-item')
+    .find((el) => /终端|terminal/i.test(el.textContent ?? ''))
+  ok(!!terminalOption, '工具菜单列出终端入口')
+  if (!terminalOption) return out.join('\n')
+  click(terminalOption)
   ok(await until(() => !!q('[data-testid="terminal-surface"]')), '点击后渲染出终端表面')
   ok(await until(() => !!q('[data-testid="terminal-host"] .xterm')), 'xterm 真的挂载了（.xterm 在 DOM 里）')
 

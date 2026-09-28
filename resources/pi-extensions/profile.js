@@ -33,8 +33,17 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const PROFILES = ['coding', 'daily']
-const ACTIVITIES = ['answer', 'research', 'compose', 'organize', 'learn']
+/*
+ * 与 `src/shared/agent-profile.ts` 的 `AGENT_PROFILES` / `AGENT_ACTIVITIES`
+ * **逐项一致**（含顺序）。
+ *
+ * 这两份枚举漂移过一次：宿主把默认档从 `coding` 改成 `auto`（并由宿主渲染角色
+ * 文本），薄层这份没跟上，于是每一轮都抛「档案 profile 取值非法：auto」——
+ * 「显式失败」在这里反而打断了正常会话。单测现在直接比对两份枚举，
+ * 再漂移会在测试里当场失败（见 `scripts/test-agent-profile.mjs`）。
+ */
+export const PROFILES = ['auto', 'coding', 'daily']
+export const ACTIVITIES = ['answer', 'research', 'compose', 'organize', 'learn']
 
 function dataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')

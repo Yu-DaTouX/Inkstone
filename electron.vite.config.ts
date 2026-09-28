@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { normalizeRepositoryUrl } from './src/shared/build-info'
 
 /*
  * 构建信息（注入到代码里的常量）。
@@ -13,7 +14,11 @@ import react from '@vitejs/plugin-react'
  *
  * 注意：这里是**构建时**读一次，所以产物里的时间就是那次构建的时刻。
  */
-const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { version?: string }
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+  version?: string
+  homepage?: string
+  repository?: string | { url?: string }
+}
 let buildHash = ''
 try {
   buildHash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
@@ -23,7 +28,11 @@ try {
 const buildInfo = {
   version: pkg.version ?? '',
   buildTime: new Date().toISOString(),
-  buildHash
+  buildHash,
+  /* 仓库地址同样只从 package.json 取一份，归一化逻辑在 shared/build-info.ts（可单测） */
+  repositoryUrl: normalizeRepositoryUrl(
+    typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository?.url ?? pkg.homepage)
+  )
 }
 const define = { __YAN_BUILD__: JSON.stringify(buildInfo) }
 

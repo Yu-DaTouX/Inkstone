@@ -21,7 +21,10 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const unpacked = join(root, 'release', 'win-unpacked')
+/* Allow validating an unpacked install without replacing the existing release output. */
+const unpacked = process.env.YAN_PACKAGED_DIR
+  ? resolve(process.env.YAN_PACKAGED_DIR)
+  : join(root, 'release', 'win-unpacked')
 
 const C = {
   ok: (s) => `\x1b[32m${s}\x1b[0m`,
@@ -93,7 +96,7 @@ const argExe = process.argv.find((a) => a.startsWith('--exe='))?.slice('--exe='.
 const exeFromArg = argExe ? resolve(argExe) : null
 
 if (!exeFromArg && !existsSync(unpacked)) {
-  fail('找不到 release/win-unpacked', '先跑：npm run dist:dir（或 npm run dist:check）')
+  fail('找不到打包目录', '设置 YAN_PACKAGED_DIR，或先跑：npm run dist:dir（或 npm run dist:check）')
 }
 
 let exePath
@@ -102,7 +105,7 @@ if (exeFromArg) {
   exePath = exeFromArg
 } else {
   const exes = readdirSync(unpacked).filter((f) => f.toLowerCase().endsWith('.exe'))
-  if (!exes.length) fail(`release/win-unpacked 里没有 .exe`)
+  if (!exes.length) fail(`打包目录里没有 .exe`, unpacked)
   exePath = join(unpacked, exes[0])
 }
 

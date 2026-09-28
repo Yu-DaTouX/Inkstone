@@ -73,7 +73,12 @@
     const st = store.getState()
     /** 按 isEmpty 规则推导「应该渲染哪些」——与实现保持同一判据 */
     const expectEmpty = []
-    /* todo 不在这里：它没有 isEmpty 判据，没有任务时渲染空态（rp.todoEmpty） */
+    const hasTaskContent =
+      st.todos.length > 0 ||
+      !!st.goal?.goalId ||
+      !!st.goal?.links?.length ||
+      st.messages.some((message) => !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length))
+    if (!hasTaskContent) expectEmpty.push('todo')
     if (Object.keys(st.statuses).length === 0 && Object.keys(st.widgets).length === 0) expectEmpty.push('ext')
     if (st.logs.length === 0) expectEmpty.push('log')
     const expected = ALL.filter((x) => !expectEmpty.includes(x))
@@ -136,7 +141,8 @@
      *    写死的那个可能正好等于 dragId —— 探针自己报「用例无效」。
      *    改成从当前实际渲染的分区里挑一个不同于 dragId 的。
      */
-    const dragId = before[1]
+    const orderBeforeDrag = ids()
+    const dragId = orderBeforeDrag[0]
     const slots = qa('.rp-slot')
     /* 去掉 undefined（万一某个 slot 没有 data-tool-id）—— 否则 find 可能返回 undefined
        并把 undefined 当成目标，后面 .dispatchEvent 直接抛异常（实测抛过一次） */

@@ -385,19 +385,7 @@
 }
 
 .rp-text {
-  /*
-   * 单行 + 省略号（用户 2026-09-25：「任务标题太长 我认为可以限制为最高 12 字
-   * 且你要确保 在最窄右边栏的情况下 不要出现分行的问题」）。
-   *
-   * nowrap 是「最窄栏也不分行」的**硬保证** —— 字数截断是软件限制，
-   * 碰上全角字、窄栏、字体回退时仍可能溢出换行；nowrap 直接把第二条路
-   * 堵死。
-   *
-   * ⚠️ 与上一版相反：那一版注释写着「要的是完整文字，不是省略号」，
-   *    所以改成窄栏换行。两条要求各自成立，当前以最新的为准 ——
-   *    换行会让最窄栏里一条任务占三行，清单反而看不清。
-   *    完整文本仍在行元素的 title 上。
-   */
+  /* 默认单行省略；任务正文在下方单独限制为两行。 */
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1698,10 +1686,19 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   flex: none;
 }
 
-.rp-todo .rp-text {
-  grid-column: 3;
+.rp-todo .rp-text,
+.rp-hist-todo .rp-text {
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 3.1em;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: ellipsis;
 }
+.rp-todo .rp-text { grid-column: 3; }
+.rp-hist-todo .rp-text { grid-column: 2; }
 
 .rp-todo .rp-state {
   grid-column: 4;

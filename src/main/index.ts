@@ -24,7 +24,7 @@ import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-stor
 import { searchDoctor } from './search/opencli'
 import { createTaskInboxService } from './task-inbox-service'
 import { createTaskInboxSources, readInboxState, writeInboxState } from './task-inbox-sources'
-import type { InboxFilter } from '../shared/task-inbox'
+import type { TaskInboxQuery } from '../shared/task-inbox'
 import { questionLog } from './question-log'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
@@ -7666,10 +7666,10 @@ function registerIpc(): void {
     }
     return inboxDismissed
   }
-  handle('yan:taskinbox:page', async (query?: { limit?: number; offset?: number; status?: unknown; spaceId?: string }) => {
+  handle('yan:taskinbox:page', async (query?: TaskInboxQuery) => {
     await inboxState()
     const { limit, offset, ...filter } = query ?? {}
-    return inboxService.page(filter as InboxFilter, { limit, offset })
+    return inboxService.page(filter, { limit, offset })
   })
   handle('yan:taskinbox:dismiss', async (sessionId: string) => {
     const list = await inboxState()

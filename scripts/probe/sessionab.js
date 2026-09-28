@@ -96,7 +96,8 @@
       }
       return false
     }
-    const errorNotices = () => (store.getState().notices ?? []).filter((n) => n.type === 'error')
+    const conflictNotices = () =>
+      (store.getState().notices ?? []).filter((n) => /只读打开|同一工作目录/.test(String(n.text)))
 
     /* ---- 1. 打开 A 并发一个长任务 ---- */
     out.push('')
@@ -175,12 +176,11 @@
     /* ---- 2. 切到 B（不同 cwd）---- */
     out.push('')
     out.push('=== 2. 切到 B：允许，且 A 不能被停掉 ===')
-    const beforeNotices = errorNotices().length
     await store.getState().switchSession(B.path)
     const openedB = await until(() => store.getState().session?.sessionFile === B.path, 20000)
     ok(openedB, 'B 被打开（不同 cwd 允许并行）')
     ok(await runningOf(A.path), '**切走之后 A 仍在运行**（后台会话没被停掉）')
-    ok(errorNotices().length === beforeNotices, '切到 B 没有产生错误提示')
+    ok(!conflictNotices().length, '切到不同 cwd 的 B 没有冲突提示')
     const streamText = q('.stream')?.textContent ?? ''
     ok(streamText.includes('YAN-AB-B-REPLY'), 'B 的视图里是 B 自己的消息')
     ok(!streamText.includes('YAN-AB-LONG'), 'B 的视图里没有 A 的输入文本')
@@ -191,14 +191,14 @@
     out.push('=== 3. 同 cwd 的另一个会话：明确拒绝 ===')
     const stillB = store.getState().session?.sessionFile
     await store.getState().switchSession(C.path)
-    const refused = await until(
-      () => errorNotices().some((n) => /同一工作目录/.test(String(n.text))),
+    const deferred = await until(
+      () => conflictNotices().some((n) => /只读打开/.test(String(n.text))),
       15000
     )
-    ok(refused, '给出「同一工作目录已有运行中的会话」错误提示')
-    out.push('  错误提示 = ' + JSON.stringify(errorNotices().map((n) => n.text)))
-    ok(store.getState().session?.sessionFile === stillB, '视图没有被切到 C（拒绝是彻底的）')
-    ok(!!q('.notices .notice.error'), '提示渲染到了界面上（不只是进了 store）')
+    ok(deferred, '给出「同目录会话先只读打开，发送前安全切换」提示')
+    out.push('  冲突提示 = ' + JSON.stringify(conflictNotices().map((n) => n.text)))
+    ok(store.getState().session?.sessionFile === stillB, 'C 没有接管 B 的运行实例（运行订阅仍留在 B）')
+    ok(!!q('.notices .notice.info'), '提示渲染到了界面上（不只是进了 store）')
     ok(await runningOf(A.path), '被拒之后 A 还在跑')
 
     /*

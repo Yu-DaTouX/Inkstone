@@ -16,7 +16,8 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     compareTaskCards,
     filterTaskCards,
     inboxCounts,
-    actionableCards
+    actionableCards,
+    taskInboxPageQuery
   } = mod
   const { createTaskInboxService } = serviceMod
 
@@ -98,6 +99,9 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     ok([...sameTier].sort(compareTaskCards)[0].sessionId === 'y', '同档按最近活动排序')
 
     ok(filterTaskCards(cards, { statuses: ['failed'] }).length === 1, '按状态筛选')
+    const failedQuery = taskInboxPageQuery(30, 'failed')
+    ok(failedQuery.statuses?.join(',') === 'failed' && !('status' in failedQuery), '界面分页查询使用 IPC 契约字段 statuses')
+    ok(!('statuses' in taskInboxPageQuery(30, 'all')), '全部筛选不发送状态约束')
     ok(filterTaskCards(cards, { query: '会话' }).length === 5, '关键词匹配标题')
     ok(filterTaskCards(cards, { query: '不存在的词' }).length === 0, '匹配不到就是空（不是全部）')
     const counts = inboxCounts(cards)

@@ -401,6 +401,11 @@ const CASES = {
   // 分组管理（N01）：重命名 + 空白/重名校验 + 解散但保留项目
   grouprename: { probe: 'scripts/probe/grouprename.js', delay: 9000, cost: 0 },
   /*
+   * 项目「移除项目」= 归档：菜单入口 → 确认框 → 磁盘上 archived=true
+   * → 归档视图里「恢复项目」把项目接回来。
+   */
+  projectremove: { probe: 'scripts/probe/projectremove.js', delay: 9000, cost: 0 },
+  /*
    * N01 拖拽排序：项目 / 分组顺序用**合成 PointerEvent** 走真实渲染路径
    * （实现里没有用 HTML5 draggable，所以合成事件与用户手拖是同一条），
    * 并回读 `yan.getSettings()` 证明顺序真的过了 IPC 落盘。
@@ -9352,11 +9357,9 @@ async function main() {
     CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
 
     /*
-     * N18：`slashcmd` 要验「运行时技能的真实发现」——不能拿“本环境正好没有技能”
-     * 当结论。pi 从 `<agentDir>/skills/<name>/SKILL.md` 发现用户技能，而主 piDir
-     * 只复制了凭证/模型文件，通常没有 skills。所以单独给这一个场景一份 piDir：
-     * 与主 piDir 同样能起 pi，另外多一个探测技能。其它场景照旧看不到它，
-     * 命令列表长度、系统提示都不受影响。
+     * `slashcmd` 验证受管技能如何进入命令列表。生产启动带 `--no-skills`，
+     * 因此技能通过与项目授权技能相同的显式 `--skill` 参数传入；其它场景
+     * 看不到这份夹具，不会改变它们的命令列表与系统提示。
      */
     const piDirSkill = join(sandboxRoot, 'pi-agent-skill')
     for (const d of [piDirSkill, join(piDirSkill, 'skills', 'probe-skill')]) mkdirSync(d, { recursive: true })
@@ -9376,7 +9379,10 @@ async function main() {
       ].join('\n'),
       'utf8'
     )
-    CASES.slashcmd.env = { YAN_PI_DIR: piDirSkill }
+    CASES.slashcmd.env = {
+      YAN_PI_DIR: piDirSkill,
+      YAN_PROBE_SKILL: join(piDirSkill, 'skills', 'probe-skill', 'SKILL.md')
+    }
 
     /*
      * 实施-23 端到端：把 DeepSeek 官方通道注册成**砚的自定义 provider**（yan-dp），

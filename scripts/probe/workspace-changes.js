@@ -169,10 +169,9 @@
     /*
      * -------------------------- 8. 同 cwd 第二个实例（并发共用目录的防线）
      *
-     * L05 反复强调“不重复认领同一差异”。砚的做法是**不让两个忙碌实例共用
-     * 一个工作目录**（L03 既定策略）—— 所以这里验的就是那道防线：
-     * 一个实例正在跑 shell 时，切到**同 cwd** 的另一个会话必须被明确拒绝，
-     * 而不是默默开第二个实例、两边各自把同一批改动算到自己头上。
+     * L05 反复强调“不重复认领同一差异”。同 cwd 的会话在已有实例正忙时
+     * 会自动切到隔离工作树；这里确认它确实切走了，并且活跃 runner 的 cwd
+     * 与原工作目录不同，而不是默默让两个实例共用目录。
      *
      * 副作用（已修）：直执行 shell 原本不算“忙”，于是切换会复用到同一个
      * 实例，新会话里直接报“已有一条命令在跑”—— 用户看着像卡死。
@@ -190,19 +189,42 @@
     if (!sameCwdPeers.length) {
       out.push('  ⤺ 跳过：没有同 cwd 的第二个会话（需要 projectSessions fixture）')
     } else {
-      const slow = window.yan.runBash(`${NODE} "setTimeout(()=>{},6000)"`).catch(() => ({ ok: false }))
-      await sleep(900)
-      const denied = await window.yan.switchSession(sameCwdPeers[0].path)
-      out.push('  切到同 cwd 会话的返回 = ' + JSON.stringify(denied))
-      ok(denied && denied.ok === false, '同 cwd 已有实例在跑 shell 时，切换被拒绝', JSON.stringify(denied))
-      ok(
-        !denied || /同一工作目录|工作目录已有/.test(String(denied.error || '')),
-        '拒绝理由写清是“同一工作目录已有运行中的会话”',
-        String(denied && denied.error)
-      )
-      /* 被拒绝不能把第一条命令弄坏：它仍应正常跑完 */
+      const slow = window.yan.runBash(`${NODE} "setTimeout(()=>{},15000)"`).catch(() => ({ ok: false }))
+      const commandRunning = await (async () => {
+        const deadline = Date.now() + 5000
+        while (Date.now() < deadline) {
+          const active = store.getState().messages
+            .filter((message) => message.role === 'bash')
+            .flatMap((message) => message.toolCalls ?? [])
+            .some((call) => call.status === 'running')
+          if (active) return true
+          await sleep(100)
+        }
+        return false
+      })()
+      ok(commandRunning, '切换前 shell 工具确实仍在运行')
+      const switched = await window.yan.switchSession(sameCwdPeers[0].path)
+      out.push('  切到同 cwd 会话的返回 = ' + JSON.stringify(switched))
+      const targetPath = norm(sameCwdPeers[0].path)
+      const isolated = await (async () => {
+        const deadline = Date.now() + 6000
+        while (Date.now() < deadline) {
+          const runner = store.getState().runners.find((item) =>
+            item.isActive && norm(item.sessionFile) === targetPath
+          )
+          if (runner) return runner
+          await sleep(100)
+        }
+        return null
+      })()
+      const busyPeers = store.getState().runners.filter((item) => item.running)
+      out.push('  切换后仍运行的 agent = ' + busyPeers.length)
+      out.push('  隔离后的活跃 runner = ' + JSON.stringify(isolated && { cwd: isolated.cwd, sessionFile: isolated.sessionFile, running: isolated.running }))
+      ok(switched && switched.ok === true, '同 cwd 会话切换成功', JSON.stringify(switched))
+      ok(!!isolated && norm(isolated.cwd) !== norm(cwdNow), '冲突会话实际运行在不同 cwd 的隔离工作树', String(isolated && isolated.cwd))
+      /* 自动隔离不能打断原来的 shell：它仍应正常跑完 */
       const slowRes = await slow
-      ok(slowRes && slowRes.ok === true, '被拒后原会话的命令不受影响（继续跑完）', JSON.stringify(slowRes))
+      ok(slowRes && slowRes.ok === true, '隔离切换后原会话的命令仍正常跑完', JSON.stringify(slowRes))
 
       if (elsewhere) {
         const moved = await window.yan.switchSession(elsewhere.path)
