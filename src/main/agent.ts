@@ -21,7 +21,6 @@ import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './c
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
 import { previewOffice } from './office/office-service'
-import { memoryStoreOf } from './personal-memory'
 import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
 import {
   consentKeyOf,
@@ -41,8 +40,6 @@ import {
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
-import { createOpencliRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
-import type { SearchSourceId } from '../shared/search'
 import { consumeQueuedItem } from './queue-items'
 import { clearStaleRunning, EMPTY_COMPACTION_STATE, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { activeContextPolicy, contextPolicySettings } from './context-policy'
@@ -74,9 +71,6 @@ import { contextBudgetStoreV1 } from './context-budget-store'
 import type { ContextMaintenanceOperationV1 } from '../shared/context-maintenance'
 import { questionLog } from './question-log'
 import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from './project-knowledge'
-import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
-import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
-import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { requestedTimeout } from '../shared/ui-timeout'
 import { buildCatalog } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
@@ -84,9 +78,10 @@ import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capab
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 import { ContextBudgetCommands } from './context-budget-commands'
 import { BrowserCommands } from './browser-commands'
+import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, type HostUiResponse } from './ui-requests'
-import { paramNumber, paramString } from './command-params'
+import { paramString } from './command-params'
 import { activeSkillArgs } from './capabilities/skill-files'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
@@ -432,6 +427,11 @@ export class AgentController extends EventEmitter {
   /** 配置本身的毛病（坏条目 / 重复 id）；调用时如实带回，不静默。 */
   private mcpConfigError?: string
   /** `yan capabilities search / discover / prepare / acquire` 的实现（见 capabilities/acquisition-commands.ts） */
+  /** `yan search …` 与 `yan knowledge …` 的实现（见 lookup-commands.ts） */
+  private readonly lookup = new LookupCommands({
+    capabilityOpts: () => this.capabilityOpts,
+    cwd: () => this.cwd
+  })
   /** `yan browser …` 的实现（见 browser-commands.ts） */
   private readonly browserCommands = new BrowserCommands({
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
@@ -1233,14 +1233,14 @@ export class AgentController extends EventEmitter {
       return this.runMcpCommand(command.slice('mcp.'.length), params)
     }
     if (command.startsWith('knowledge.')) {
-      return this.runKnowledgeCommand(command.slice('knowledge.'.length), params)
+      return this.lookup.runKnowledgeCommand(command.slice('knowledge.'.length), params)
     }
     /*
      * 联网搜索（实施-27 S3）：只查询与诊断。
      * 「把搜索结果打开」走 `yan browser navigate` —— 搜索不碰浏览器状态。
      */
     if (command.startsWith('search.')) {
-      return this.runSearchCommand(command.slice('search.'.length), params)
+      return this.lookup.runSearchCommand(command.slice('search.'.length), params)
     }
     /*
      * 目标状态（实施-05 S3）：`goal.ready` 是「计划档就绪 → 切标准」的唯一入口。
@@ -1878,303 +1878,8 @@ export class AgentController extends EventEmitter {
   }
 
 
-  private knowledgeNumber(params: Record<string, unknown>, key: string): number | undefined {
-    return paramNumber(params, key)
-  }
 
 
-  /** CLI 的 kebab-case 与请求文件的 camelCase 都要认；空串当没传 */
-  private searchString(params: Record<string, unknown>, keys: string[]): string | undefined {
-    for (const key of keys) {
-      const value = params[key]
-      if (typeof value === 'string' && value.trim()) return value.trim()
-    }
-    return undefined
-  }
-
-  private searchNumber(params: Record<string, unknown>, keys: string[]): number | undefined {
-    for (const key of keys) {
-      const value = params[key]
-      if (typeof value === 'number' && Number.isFinite(value)) return value
-      if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
-    }
-    return undefined
-  }
-
-  /**
-   * `yan search <动作>` 的实现点（实施-27 S3）。
-   *
-   * 两条口径：
-   *   ① **不静默降级**：所有来源都没取到时抛 `search_backend_unavailable` /
-   *      `search_timeout`，而不是回一个空结果让人以为「世上没有」；
-   *   ② **部分失败照常返回**：来源级状态里写清楚谁 ok、谁 empty、谁 error，
-   *      能不能用交给模型判断。
-   */
-  private async runSearchCommand(action: string, params: Record<string, unknown>) {
-    if (action === 'doctor') {
-      const status = await searchDoctor()
-      return {
-        /*
-         * 只把**结构化字段**回给模型：`status.detail` 是 `opencli doctor` 的原始输出，
-         * 里面可能带本机路径 / 浏览器连接细节。详细原因走设置页的 IPC，不进工具结果。
-         */
-        data: {
-          available: status.available,
-          version: status.version,
-          code: status.code ?? null,
-          sources: status.sources
-        },
-        summary: {
-          kind: 'search',
-          action: 'doctor',
-          available: status.available,
-          version: status.version,
-          code: status.code ?? null,
-          /* 与 `search.query` 的 summary 保持同一形状（对象数组），别同一个 key 两种写法 */
-          sources: status.sources.map((s) => ({ id: s.id, ready: s.ready }))
-        }
-      }
-    }
-    if (action !== 'query') {
-      throw new CapabilityCommandError('search_unknown_action', `不认识的 search 动作：${action}`)
-    }
-    const text = this.searchString(params, ['query-text', 'queryText', 'query', 'text'])
-    if (!text) {
-      throw new CapabilityCommandError('search_query_required', 'search query 需要查询词（--query-text）')
-    }
-    const rawSources = params.sources
-    const sources: SearchSourceId[] = [
-      ...(Array.isArray(rawSources) ? rawSources : typeof rawSources === 'string' ? rawSources.split(',') : [])
-    ]
-      .map((s) => String(s).trim())
-      .filter((s): s is SearchSourceId => s.length > 0)
-
-    const outcome = await runSearch(
-      {
-        text,
-        ...(sources.length ? { sources } : {}),
-        limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
-        limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']),
-        timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
-      },
-      { runner: createOpencliRunner(), now: () => Date.now() }
-    )
-
-    /*
-     * 失败也要把**逐来源状态**带上（`data` 会被落进结果文件）：模型得知道
-     * 是谁超时、谁报错、谁没装后端，才能自我纠正 —— 只回一句话的话，
-     * `search_failed` 里「见 data.sources」这句就成了空指引。
-     */
-    const sourcesData = {
-      query: outcome.query,
-      sources: outcome.sources,
-      ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {})
-    }
-    /* 查询根本没发出去（空词 / 太长 / 来源名全写错）—— 用原错误码，不归到「后端挂了」 */
-    if (outcome.error) {
-      throw new CapabilityCommandError(outcome.error.code, outcome.error.message, sourcesData)
-    }
-    const reached = outcome.sources.filter((s) => s.status === 'ok' || s.status === 'empty')
-    if (reached.length === 0) {
-      const unavailable = outcome.sources.find((s) => s.status === 'unavailable')
-      const timedOut = outcome.sources.find((s) => s.status === 'timeout')
-      if (unavailable) {
-        throw new CapabilityCommandError(
-          'search_backend_unavailable',
-          unavailable.message ?? '搜索后端不可用（需要安装 OpenCLI，可用 yan search doctor 看详情）',
-          sourcesData
-        )
-      }
-      if (timedOut) {
-        throw new CapabilityCommandError(
-          'search_timeout',
-          timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）',
-          sourcesData
-        )
-      }
-      throw new CapabilityCommandError('search_failed', '所有搜索来源都出错了（逐来源状态见 data.sources）', sourcesData)
-    }
-
-    return {
-      data: outcome,
-      summary: {
-        kind: 'search',
-        action: 'query',
-        query: outcome.query,
-        count: outcome.items.length,
-        truncated: outcome.truncated,
-        durationMs: outcome.durationMs,
-        sources: outcome.sources.map((s) => ({
-          id: s.source,
-          status: s.status,
-          count: s.count,
-          /* 被总数上限挤掉时也要说 —— 否则 stdout 里「count 0」会被读成「没结果」 */
-          ...(s.droppedByLimit ? { droppedByLimit: s.droppedByLimit } : {}),
-          ...(s.code ? { code: s.code } : {})
-        })),
-        ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {}),
-        summary: searchSummary(outcome)
-      }
-    }
-  }
-
-  /**
-   * `yan knowledge <动作>` 的实现点（实施-03 §6）。
-   *
-   * 三条硬规则（实施-03 §3/§6）：
-   *   ① **身份不由请求给**：一律用宿主绑定的 `capabilityOpts.projectId`；
-   *      请求里带 `projectId` 时只有两种结果 —— 与宿主一致（忽略）或不一致（拒），
-   *      后者把「越权尝试」变成可观测的错误，而不是静默当成没传；
-   *   ② `propose` **不传 hostCheck** —— 模型自报 `user-confirmed` / `verified` 会被
-   *      存储层拒掉（新条目只会落 `candidate`，等用户确认才进注入）；
-   *   ③ 证据里的文件引用只接受**项目内相对路径**（绝对路径与 `..` 被拒）——
-   *      「文本引用不授予读取权限」是 §4 写死的边界。
-   */
-  private async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
-    /*
-     * 范围：project = 当前项目知识（身份由宿主绑定）；personal = 全局个人记忆（固定身份、独立目录）。
-     * search 缺省两边都查；read 缺省先项目后个人；propose 缺省写项目。
-     */
-    const rawScope = this.knowledgeString(params, ['scope'])
-    if (rawScope && rawScope !== 'project' && rawScope !== 'personal' && !(action === 'search' && rawScope === 'all')) {
-      throw new CapabilityCommandError('knowledge_bad_scope', 'scope 只能是 project、personal（search 另可用 all）')
-    }
-    const projectId = this.capabilityOpts?.projectId
-    const wantsProject = rawScope === 'project' || (!rawScope && action === 'propose')
-    if (!projectId && wantsProject) {
-      throw new CapabilityCommandError('knowledge_no_project', '当前会话没有绑定项目身份，项目知识不可用（个人记忆可用 --scope personal）')
-    }
-    const claimed = typeof params.projectId === 'string' ? params.projectId.trim() : ''
-    if (claimed && projectId && claimed !== projectId) {
-      throw new CapabilityCommandError(
-        'knowledge_project_mismatch',
-        '项目知识只认宿主绑定的身份，不接受请求里的 projectId'
-      )
-    }
-    const projectStore = projectId ? memoryStoreOf('project', { projectId, cwd: this.cwd }) : null
-    const personalStore = memoryStoreOf('personal', null)!
-    const storesFor = (scope: string): Array<{ scope: 'project' | 'personal'; store: NonNullable<typeof projectStore> }> => [
-      ...(projectStore && scope !== 'personal' ? [{ scope: 'project' as const, store: projectStore }] : []),
-      ...(scope !== 'project' ? [{ scope: 'personal' as const, store: personalStore }] : [])
-    ]
-
-    if (action === 'search') {
-      const queryText = this.knowledgeString(params, ['queryText', 'query-text', 'query', 'text'])
-      if (!queryText) {
-        throw new CapabilityCommandError('knowledge_query_required', 'knowledge search 需要 queryText（或 --query-file）')
-      }
-      const scoped = storesFor(rawScope || 'all')
-      const lists = await Promise.all(scoped.map(({ store }) => listKnowledge(store.identity, store.opts)))
-      const scopeOf = new Map<string, string>()
-      lists.forEach((list, i) => list.forEach((entry) => scopeOf.set(entry.id, scoped[i].scope)))
-      const result = searchProjectKnowledge(lists.flat(), {
-        queryText,
-        limit: this.knowledgeNumber(params, 'limit'),
-        tokenBudget: this.knowledgeNumber(params, 'tokenBudget')
-      })
-      return {
-        data: {
-          hits: result.hits.map((hit) => ({ ...hit, scope: scopeOf.get(hit.id) })),
-          considered: result.considered,
-          dropped: result.dropped,
-          tokens: result.tokens,
-          reason: result.reason ?? null
-        },
-        summary: {
-          kind: 'knowledge',
-          action: 'search',
-          projectId: projectId ?? null,
-          scopes: scoped.map((item) => item.scope),
-          count: result.hits.length,
-          tokens: result.tokens,
-          ids: result.hits.map((hit) => hit.id)
-        }
-      }
-    }
-
-    if (action === 'read') {
-      const id = this.knowledgeString(params, ['id'])
-      if (!id || !isSafeKnowledgeId(id)) {
-        throw new CapabilityCommandError('knowledge_id_required', 'knowledge read 需要合法的 id')
-      }
-      let entry: Awaited<ReturnType<typeof readKnowledge>>
-      let foundIn: 'project' | 'personal' | undefined
-      for (const { scope, store } of storesFor(rawScope || 'all')) {
-        entry = await readKnowledge(store.identity, id, store.opts)
-        if (entry) {
-          foundIn = scope
-          break
-        }
-      }
-      if (!entry) {
-        throw new CapabilityCommandError('knowledge_not_found', `找不到这条项目知识：${id}`)
-      }
-      return {
-        data: { ...entry, scope: foundIn },
-        summary: {
-          kind: 'knowledge',
-          action: 'read',
-          scope: foundIn,
-          id: entry.id,
-          status: entry.status,
-          revision: entry.revision
-        }
-      }
-    }
-
-    if (action === 'propose') {
-      const raw = params.draft && typeof params.draft === 'object' ? (params.draft as Record<string, unknown>) : params
-      const kind = this.knowledgeString(raw, ['kind'])
-      const text = this.knowledgeString(raw, ['text'])
-      if (!kind || !text) {
-        throw new CapabilityCommandError('knowledge_draft_invalid', 'knowledge propose 需要 kind 与 text')
-      }
-      const evidence = Array.isArray(raw.evidence) ? raw.evidence : []
-      for (const item of evidence) {
-        const file = (item as { file?: unknown })?.file
-        if (file !== undefined && !isSafeRelativeRef(file)) {
-          throw new CapabilityCommandError(
-            'knowledge_evidence_out_of_scope',
-            '证据里的 file 只能是项目内相对路径（不接受绝对路径 / .. / 空值）'
-          )
-        }
-      }
-      const sessionId = typeof raw.sessionId === 'string' && isSafeSessionId(raw.sessionId) ? raw.sessionId : this.capabilityOpts?.sessionId
-      const target = rawScope === 'personal' ? personalStore : projectStore!
-      const outcome = await commitKnowledge({
-        identity: target.identity,
-        opts: target.opts,
-        request: {
-          id: raw.id,
-          kind,
-          text,
-          tags: raw.tags,
-          evidence: evidence.length > 0 ? evidence : sessionId ? [{ sessionId }] : [],
-          confidenceClass: raw.confidenceClass,
-          validFor: raw.validFor,
-          supersedes: raw.supersedes,
-          expectedRevision: raw.expectedRevision ?? 0
-        }
-        /* 刻意不传 hostCheck：模型不能自证「用户确认」与「证据已核实」 */
-      })
-      if (!outcome.ok) {
-        throw new CapabilityCommandError(`knowledge_${outcome.code}`, outcome.message)
-      }
-      return {
-        data: outcome.entry,
-        summary: {
-          kind: 'knowledge',
-          action: 'propose',
-          scope: rawScope === 'personal' ? 'personal' : 'project',
-          id: outcome.entry.id,
-          status: outcome.entry.status,
-          revision: outcome.entry.revision
-        }
-      }
-    }
-
-    throw new CapabilityCommandError('unknown_command', `未知的 knowledge 动作：${action}`)
-  }
 
 
   /**
