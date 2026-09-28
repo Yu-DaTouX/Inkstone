@@ -81,7 +81,7 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
     ok(sessions.length === 1 && sessions[0].id === 's1', '会话投影带上 id / 标题 / 时间')
     ok((await sources.readPlan?.('s1')) === undefined, '没有计划时给 undefined（调用方不出“0/0 进度”的卡）')
     ok(sources.runners().length === 0 && sources.dismissed?.().length === 0, '空注册表与空名单都正常返回')
-    ok(sources.readQuestion === undefined && sources.readStudy === undefined, '没注入的源就不出现（不编状态）')
+    ok(sources.readQuestion === undefined, '没注入的源就不出现（不编状态）')
   }
 
   /* ---- ⑤ 组合：注册表 → 事实 → 卡片（端到端走一遍组装层） ---- */
@@ -119,17 +119,13 @@ export async function runTaskInboxSourceTests(ok, mod, serviceMod) {
           if (id === 'pending') return [{ question: '前面的' , answer: 'A' }, { question: '这次选哪个？', answer: null }]
           return []
         }
-      },
-      waitingGate: async (id) => (id === 'studying' ? { waiting: true, where: '《课程》·第 3/12 节' } : null)
+      }
     })
     ok((await sources.readQuestion?.('nolog')) === undefined, '没有问答记录时不出「等你回答」')
     ok((await sources.readQuestion?.('answered')) === undefined, '已作答的提问不再提醒')
     ok((await sources.readQuestion?.('cancelled')) === undefined, '已取消的提问不再提醒')
     const pending = await sources.readQuestion?.('pending')
     ok(pending?.pending === true && String(pending.text).includes('这次'), '只取最后一条未作答的提问')
-    ok((await sources.readStudy?.('other')) === undefined, '没在等学习者时不出学习状态')
-    const study = await sources.readStudy?.('studying')
-    ok(study?.waiting === true && String(study.reason).includes('课程'), '等学习者时带上可读位置')
   }
 
   /* ---- ⑦ 近似审阅（T4）：两个条件缺一不可 ---- */

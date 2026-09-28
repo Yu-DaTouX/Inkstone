@@ -44,8 +44,6 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
 
     const q = projectTaskCard({ ...base, question: { pending: true, text: '选哪个方案' } })
     ok(q.status === 'waiting_user' && q.reason.includes('选哪个方案'), '提问挂起 = waiting_user 且原因可读')
-    const study = projectTaskCard({ ...base, study: { waiting: true } })
-    ok(study.status === 'waiting_user', '学习等待 = waiting_user')
     const goalBlocked = projectTaskCard({ ...base, goal: { phase: 'blocked', title: '迁移', blockedReason: '缺凭据' } })
     ok(goalBlocked.status === 'waiting_user' && goalBlocked.reason.includes('缺凭据'), '目标 blocked = waiting_user（带阻塞原因）')
     ok(
@@ -130,8 +128,8 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
       readQuestion: async () => {
         throw new Error('来源坏了')
       },
-      /* s1 的 study 源是好的：证明“一个源坏了不影响其余源” */
-      readStudy: async (id) => (id === 's1' ? { waiting: true, reason: '这一节在等你的作答' } : undefined)
+      /* s1 的 goal 源是好的：证明“一个源坏了不影响其余源” */
+      readGoal: async (id) => (id === 's1' ? { phase: 'blocked', title: '迁移', blockedReason: '缺凭据' } : undefined)
     })
 
     const page = await service.page()
@@ -139,7 +137,7 @@ export async function runTaskInboxTests(ok, mod, serviceMod) {
     ok(page.degraded === 3, '每个会话都有读失败的来源 → degraded 如实计数（不抛错）')
     ok(page.cards.every((c) => sessions.some((s) => s.id === c.sessionId)), '每张卡的 sessionId 都是自己的（跨会话不串）')
     const s1Card = page.cards.find((c) => c.sessionId === 's1')
-    ok(s1Card.status === 'waiting_user', 'plan 与 question 读失败，但 study 说得清 → 出 waiting_user（不编也不丢）')
+    ok(s1Card.status === 'waiting_user', 'plan 与 question 读失败，但 goal 说得清 → 出 waiting_user（不编也不丢）')
     const s2 = page.cards.find((c) => c.sessionId === 's2')
     ok(s2.status === 'running', '运行中优先于未完成计划')
     const s3 = page.cards.find((c) => c.sessionId === 's3')
