@@ -113,24 +113,36 @@ export async function runExtensionInventoryTests(ok) {
 
   /*
    * 5. 架构检查（静态版）：砚薄层**只**承载宿主没有 CLI / RPC 等价物的
-   * 生命周期钩子 —— 不得注册模型工具，也不得注册 pi 命令（01 §1）。
+   * 生命周期钩子 —— 不得注册模型工具；pi 命令原则上也不注册。
+   *
+   * 例外（上下文预算 V1）：`yan-context-maintain` / `yan-context-resume`
+   * 是**宿主↔薄层的控制命令**，不是模型工具：宿主先核实命令已注册，
+   * 再用 `rpc.command('prompt', ...)` 触发（见 `agent.ts` 的
+   * `requestContextMaintenanceV1`）。它们不进模型工具面，也不能被模型调用。
+   * 除这两个具名命令外，任何新注册都仍算违规。
    *
    * 运行时那一条写在 `test-context-transform.mjs`（把假 pi 对象塞进扩展，看它
    * 调不调 registerTool）；这里扫源码，因为「某个还没被单测加载的扩展偷偷注册了
    * 一个工具」运行时断言看不见。两者互补，不互相替代。
    */
   {
+    const ALLOWED_COMMANDS = new Set(['yan-context-maintain', 'yan-context-resume'])
     const dir = join('resources', 'pi-extensions')
     const files = (await readdir(dir)).filter((f) => f.endsWith('.js')).sort()
     const offenders = []
     for (const file of files) {
       const source = await readFile(join(dir, file), 'utf8')
       if (/\.registerTool\s*\(/.test(source)) offenders.push(`${file}:registerTool`)
-      if (/\.registerCommand\s*\(/.test(source)) offenders.push(`${file}:registerCommand`)
+      if (/\.registerCommand\s*\(/.test(source)) {
+        const names = [...source.matchAll(/\.registerCommand\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+        const unexpected = names.filter((name) => !ALLOWED_COMMANDS.has(name))
+        /* 名字不是字面量的也算违规：无法白名单化的注册就是没审查过的注册 */
+        if (unexpected.length > 0 || names.length === 0) offenders.push(`${file}:registerCommand(${unexpected.join('|') || '非字面量'})`)
+      }
     }
     ok(
       offenders.length === 0,
-      `薄层不注册模型工具 / pi 命令（扫了 ${files.length} 个文件）`,
+      `薄层零注册模型工具，pi 命令只限宿主控制的维护入口（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
   }

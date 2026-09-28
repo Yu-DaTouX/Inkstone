@@ -158,18 +158,25 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
     appendEntry: (type, data) => entries.push({ type, data })
   })
   const hook = handlers.get('before_provider_request')
+  /*
+   * hook 是 async：快照写在 `await` 之后。请把它收集起来，
+   * 断言完再统一收干 —— 否则读到的 `latest-request.json` 可能还没落盘。
+   */
+  const pending = []
   const invoke = (sessionId, payload) => {
     let aborted = false
-    hook(
-      { payload },
-      {
-        model: {
-          provider: 'test', api: 'openai-completions', id: 'model',
-          contextWindow: 1_000_000, maxTokens: 32_000
-        },
-        sessionManager: { getSessionId: () => sessionId },
-        abort: () => { aborted = true }
-      }
+    pending.push(
+      hook(
+        { payload },
+        {
+          model: {
+            provider: 'test', api: 'openai-completions', id: 'model',
+            contextWindow: 1_000_000, maxTokens: 32_000
+          },
+          sessionManager: { getSessionId: () => sessionId },
+          abort: () => { aborted = true }
+        }
+      )
     )
     return aborted
   }
@@ -180,15 +187,41 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
     system: 'system', messages: [{ role: 'user', content: 'hello' }], tools: [], max_tokens: 8_192
   }), '存在损坏 V1 策略的会话失败关闭，不回退到可发送')
   ok(!invoke('context-budget-send', {
-    system: 'system', messages: [{ role: 'user', content: 'hello' }], tools: [], max_tokens: 8_192
+    /*
+     * openai-completions 的输出上限字段由 compat 决定：
+     * pi 的 bundled builder 在没声明 `maxTokensField` 时写
+     * `max_completion_tokens`（声称 `max_tokens` 只在 DeepSeek 一类的
+     * 非标兼容里才用）—— 这里不传 compat，就必须给前者。
+     */
+    system: 'system', messages: [{ role: 'user', content: 'hello' }], tools: [], max_completion_tokens: 8_192
   }), '有明确 R 且低于软线的最终请求不被中断')
   ok(invoke('context-budget-no-output', {
     system: 'system', messages: [{ role: 'user', content: 'hello' }], tools: []
   }), '最终 payload 未给出本次 R 时真实调用 abort')
-  ok(invoke('context-budget-review', {
-    system: 'system', messages: [{ role: 'user', content: 'x'.repeat(800_000) }], tools: [], max_tokens: 8_192
-  }), '最终估算到达软线时调用 abort 并要求先整理')
+  /*
+   * review 档的 abort 在 `await maintainContextAutomatically(...)` **之后**，
+   * 所以不能像上两条那样拿 invoke 的同步返回值断言 —— 单用一个状态对象，
+   * 等 promise 收干后再看（与前面 send / no-output 两条的同步路径不同）。
+   */
+  const reviewState = { aborted: false }
+  pending.push(
+    hook(
+      { payload: { system: 'system', messages: [{ role: 'user', content: 'x'.repeat(800_000) }], tools: [], max_completion_tokens: 8_192 } },
+      {
+        model: {
+          provider: 'test', api: 'openai-completions', id: 'model',
+          contextWindow: 1_000_000, maxTokens: 32_000
+        },
+        sessionManager: { getSessionId: () => 'context-budget-review' },
+        abort: () => { reviewState.aborted = true }
+      }
+    )
+  )
   ok(entries.some((entry) => entry.type === 'yan-context-budget-v1' && entry.data.code === 'context_review_required'), '被中断的 review 请求留下不含正文的会话原因条目')
+
+  /* 快照与 abort 都写在 `await` 之后：先收干所有 hook promise，再断言与读盘 */
+  await Promise.allSettled(pending)
+  ok(reviewState.aborted, '最终估算到达软线时调用 abort 并要求先整理')
 
   const latestPath = join(process.env.YAN_DATA_DIR, 'context-budget-v1', 'context-budget-review', 'latest-request.json')
   const latestRaw = JSON.parse(await readFile(latestPath, 'utf8'))
@@ -202,5 +235,20 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
     budget.sanitizeContextBudgetRuntimeSnapshotV1(latestRaw, 'another-session') === null &&
       budget.sanitizeContextBudgetRuntimeSnapshotV1({ ...latestRaw, observedAt: latestRaw.observedAt - 11 * 60_000 }, 'context-budget-review') === null,
     '快照绑定当前会话，并拒绝超过 10 分钟的陈旧数据'
+  )
+
+  /*
+   * 策略坏掉（读不到 / 坏 JSON）时写出的兜底快照也必须是合法形状。
+   * 回归点：`unavailableDetails` 曾经调一个不存在的 `defaultPolicy()`，
+   * 于是「策略坏掉」这条兜底路径自己抛 ReferenceError（界面上是「扩展出错」）。
+   */
+  const corruptRaw = JSON.parse(await readFile(
+    join(process.env.YAN_DATA_DIR, 'context-budget-v1', 'context-budget-corrupt', 'latest-request.json'),
+    'utf8'
+  ))
+  const corruptView = budget.sanitizeContextBudgetRuntimeSnapshotV1(corruptRaw, 'context-budget-corrupt')
+  ok(
+    corruptView?.check.decision === 'unavailable' && corruptView.check.phaseId === 'main',
+    '策略不可用时写出的兜底快照形状合法（回归：defaultPolicy 未定义）'
   )
 }
