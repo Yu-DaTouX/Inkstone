@@ -58,7 +58,7 @@ import {
   type WorkbenchState,
   type WorkbenchView
 } from '../../state/workbench'
-import { Spinner } from '../ui'
+import { Button, IconButton, Spinner } from '../ui'
 
 type RightWindowView = WorkbenchView
 
@@ -501,7 +501,7 @@ export function RightPanel() {
         >
           {/* 固定导航：开始 + 工具 */}
           <div
-            className={`review-tab rp-window-tab ${homeMode ? 'active' : ''}`}
+            className={`ui-tab doc review-tab rp-window-tab ${homeMode ? 'active' : ''}`}
             role="tab"
             aria-selected={homeMode}
             data-testid="right-window-tab-start"
@@ -513,7 +513,7 @@ export function RightPanel() {
 
           {reviewOpen ? (
             <div
-              className={`review-tab rp-window-tab ${activeView === 'review' ? 'active' : ''}`}
+              className={`ui-tab doc review-tab rp-window-tab ${activeView === 'review' ? 'active' : ''}`}
               role="tab"
               aria-selected={activeView === 'review'}
               data-testid="review-tab"
@@ -523,17 +523,17 @@ export function RightPanel() {
               <span>审查</span>
               <button
                 type="button"
-                className="review-tab-close"
+                className="ui-tab-close review-tab-close"
                 onClick={(event) => { event.stopPropagation(); closeWindow('review') }}
                 aria-label={t('review.close')}
                 title={t('review.close')}
-              >×</button>
+              ><Icon name="close" size={12} /></button>
             </div>
           ) : null}
 
           {browserOpen ? (
             <div
-              className={`review-tab rp-window-tab ${activeView === 'browser' ? 'active' : ''}`}
+              className={`ui-tab doc review-tab rp-window-tab ${activeView === 'browser' ? 'active' : ''}`}
               role="tab"
               aria-selected={activeView === 'browser'}
               data-testid="right-window-tab-browser"
@@ -543,11 +543,11 @@ export function RightPanel() {
               <span>{browserUrl ? (browserTitle || '浏览器') : '浏览器'}</span>
               <button
                 type="button"
-                className="review-tab-close"
+                className="ui-tab-close review-tab-close"
                 onClick={(event) => { event.stopPropagation(); closeWindow('browser') }}
                 aria-label="关闭浏览器"
                 title="关闭浏览器"
-              >×</button>
+              ><Icon name="close" size={12} /></button>
             </div>
           ) : null}
 
@@ -559,7 +559,7 @@ export function RightPanel() {
             return (
               <div
                 key={tab.id}
-                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                className={`ui-tab doc review-tab rp-window-tab ${active ? 'active' : ''}`}
                 role="tab"
                 aria-selected={active}
                 data-testid="right-window-tab-file"
@@ -573,7 +573,7 @@ export function RightPanel() {
                 <span title={state?.data?.abs || state?.path}>{label}</span>
                 <button
                   type="button"
-                  className="review-tab-close"
+                  className="ui-tab-close review-tab-close"
                   onClick={(event) => {
                     event.stopPropagation()
                     closeFileTab(key)
@@ -582,7 +582,7 @@ export function RightPanel() {
                   }}
                   aria-label="关闭文件"
                   title="关闭文件"
-                >×</button>
+                ><Icon name="close" size={12} /></button>
               </div>
             )
           })}
@@ -593,7 +593,7 @@ export function RightPanel() {
             return (
               <div
                 key={tab.id}
-                className={`review-tab rp-window-tab ${active ? 'active' : ''}`}
+                className={`ui-tab doc review-tab rp-window-tab ${active ? 'active' : ''}`}
                 role="tab"
                 aria-selected={active}
                 data-testid="right-window-tab-terminal"
@@ -607,28 +607,29 @@ export function RightPanel() {
                 <span title={info?.cwd}>{info?.title ?? t('term.tab')}</span>
                 <button
                   type="button"
-                  className="review-tab-close"
+                  className="ui-tab-close review-tab-close"
                   onClick={(event) => {
                     event.stopPropagation()
                     closeWindow('terminal')
                   }}
                   aria-label={t('term.close')}
                   title={t('term.close')}
-                >×</button>
+                ><Icon name="close" size={12} /></button>
               </div>
             )
           })}
 
           <div className="rp-tool-launcher-wrap">
-            <button
-              className={`review-tab-plus rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
-              type="button"
-              title="打开工作区工具"
-              aria-label="打开工作区工具"
+            <IconButton
+              icon="plus"
+              size="sm"
+              iconSize={14}
+              className={`rp-window-plus rp-tool-launcher ${quickMenuOpen ? 'on' : ''}`}
+              label="打开工作区工具"
               aria-expanded={quickMenuOpen}
               data-testid="right-tool-menu"
               onClick={() => setQuickMenuOpen((value) => !value)}
-            >＋</button>
+            />
           </div>
 
           <span className="spacer" />
@@ -1160,12 +1161,12 @@ function FloatPlaceholder({
       <span className="rp-float-ph-name">{t(SECTION_TITLE[id])}</span>
       <span className="rp-float-ph-tag">{t('tl.floating')}</span>
       <span className="spacer" />
-      <button className="btn sm rp-btn" onClick={() => onLocate(tile.id)} data-testid={`float-locate-${tile.id}`}>
+      <Button size="sm" className="rp-btn" onClick={() => onLocate(tile.id)} data-testid={`float-locate-${tile.id}`}>
         {t('tl.locate')}
-      </button>
-      <button className="btn sm rp-btn" onClick={() => onDock(id)} data-testid={`float-dock-${tile.id}`}>
+      </Button>
+      <Button size="sm" className="rp-btn" onClick={() => onDock(id)} data-testid={`float-dock-${tile.id}`}>
         {t('tl.dockBack')}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -1455,9 +1456,9 @@ function QuotaSection() {
       <div className="rp-kv">
         <span className="rp-k">{provider || '—'}</span>
         <span className="spacer" />
-        <button className="btn sm rp-btn" onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh">
+        <Button size="sm" className="rp-btn" onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh">
           {loading ? '…' : t('quota.refresh')}
-        </button>
+        </Button>
       </div>
 
       {/* 主值：本月已用（有分窗口时）—— 不再取“最紧窗口”的 used */}
@@ -1555,9 +1556,7 @@ function QuotaSection() {
       <div className="rp-quota-actions">
         {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
         {provider === 'openai' ? (
-          <button
-            className="btn sm rp-btn"
-            onClick={() => {
+          <Button size="sm" className="rp-btn" onClick={() => {
               const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
               if (value === null) return
               const n = Number(value)
@@ -1565,10 +1564,9 @@ function QuotaSection() {
               void patchSettings({
                 providerBudgets: { ...(settings?.providerBudgets ?? {}), [provider]: n }
               })
-            }}
-          >
+            }}>
             {t('quota.setBudget')}
-          </button>
+          </Button>
         ) : null}
       </div>
     </Section>
@@ -1886,7 +1884,7 @@ function ContextSection() {
             return (
               <span
                 key={kind}
-                className={`rp-stage-chip ${active ? 'on' : 'planned'}`}
+                className={`ui-badge rp-stage ${active ? 'accent' : 'planned'}`}
                 data-testid="ctx-stage-chip"
                 data-kind={kind}
                 data-active={active ? '1' : '0'}
@@ -1954,16 +1952,8 @@ function ContextSection() {
         >
           <span className="switch-knob" />
         </button>
-        <button
-          className="btn sm"
-          data-testid="rp-compact-now"
-          disabled={!!session?.isStreaming || !!session?.isCompacting}
-          title={t('status.compact')}
-          onClick={() => void compactNow()}
-        >
-          <Icon name={session?.isCompacting ? 'refresh' : 'compact'} size={12} />
-          <span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
-        </button>
+        <Button size="sm" icon={session?.isCompacting ? 'refresh' : 'compact'} data-testid="rp-compact-now" disabled={!!session?.isStreaming || !!session?.isCompacting} title={t('status.compact')} onClick={() => void compactNow()}><span>{session?.isCompacting ? t('status.compacting') : t('status.compact')}</span>
+        </Button>
       </div>
 
       {/*
@@ -2348,7 +2338,7 @@ function TodoSection() {
             >
               <span className="rp-running-mark" aria-hidden />
               <span className="rp-box" aria-hidden>
-                {todo.done ? '✓' : blocked ? '!' : ''}
+                {todo.done ? <Icon name="check" size={12} /> : blocked ? <Icon name="alert-circle" size={12} /> : null}
               </span>
               <span className="rp-text">{todo.text}</span>
               {isActive ? (
@@ -2424,7 +2414,7 @@ function TodoSection() {
                       {snap.todos.map((x, j) => (
                         <div key={j} className={`rp-hist-todo ${x.done ? 'done' : ''}`} title={x.text}>
                           <span className="rp-box" aria-hidden>
-                            {x.done ? '✓' : ''}
+                            {x.done ? <Icon name="check" size={12} /> : null}
                           </span>
                           <span className="rp-text">{x.text}</span>
                         </div>
@@ -2467,7 +2457,9 @@ function GoalTaskSummary() {
           <ol className="rp-goal-step-list">
             {goal.steps.slice(0, 5).map((step, index) => (
               <li key={`${index}-${step.title}`} className={`rp-goal-step ${step.status}`} title={step.title}>
-                <span aria-hidden>{step.status === 'done' ? '✓' : step.status === 'blocked' ? '!' : '○'}</span>
+                <span className="rp-goal-step-mark" aria-hidden>
+                  {step.status === 'done' ? <Icon name="check" size={12} /> : step.status === 'blocked' ? <Icon name="alert-circle" size={12} /> : null}
+                </span>
                 <span>{step.title}</span>
               </li>
             ))}

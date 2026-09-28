@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { TOOL_SECTIONS, type ToolSectionId } from '../../../../shared/ipc'
@@ -21,6 +20,7 @@ import {
   type ToolLayout,
   type ToolTile
 } from '../../../../shared/tool-layout'
+import { IconButton } from '../ui'
 
 /** 进入拖动的最小位移（设计 §5.2：≥6 CSS px；正文选字/点击不触发拖动） */
 const DRAG_THRESHOLD = 6
@@ -390,13 +390,7 @@ export function FloatingTiles() {
                     {name}
                   </span>
                   <span className="spacer" />
-                  <button
-                    type="button"
-                    className="rp-float-btn"
-                    title="放大或还原磁贴"
-                    aria-label="放大或还原磁贴"
-                    data-testid={`float-maximize-${tile.id}`}
-                    onClick={() => {
+                  <IconButton icon="maximize" label="放大或还原磁贴" size="sm" type="button" data-testid={`float-maximize-${tile.id}`} onClick={() => {
                       if (!area) return
                       const previous = restoreRects.current[tile.id]
                       if (previous) {
@@ -408,29 +402,17 @@ export function FloatingTiles() {
                         const width = obstacle ? Math.max(TILE_MIN_W, obstacle.left - area.left) : area.width
                         commitDrag({ id: tile.id }, { left: area.left, top: area.top, width, height: area.height })
                       }
-                    }}
-                  >
-                    <span aria-hidden="true">⛶</span>
-                  </button>
-                  <button
-                    className="rp-float-btn"
-                    title={tile.collapsed ? t('tl.expand') : t('tl.collapse')}
-                    aria-label={tile.collapsed ? t('tl.expand') : t('tl.collapse')}
+                    }} />
+                  <IconButton
+                    icon="chevron-right"
+                    size="sm"
+                    iconClassName={`chev ${tile.collapsed ? '' : 'on'}`}
+                    label={tile.collapsed ? t('tl.expand') : t('tl.collapse')}
                     aria-expanded={!tile.collapsed}
                     data-testid={`float-fold-${tile.id}`}
                     onClick={() => void setToolLayout(setTileCollapsed(layout, tile.id, !tile.collapsed))}
-                  >
-                    <Icon name="chevron-right" size={12} className={`chev ${tile.collapsed ? '' : 'on'}`} />
-                  </button>
-                  <button
-                    className="rp-float-btn"
-                    title={t('tl.dockBack')}
-                    aria-label={t('tl.dockBack')}
-                    data-testid={`float-dock-${tile.id}`}
-                    onClick={() => void setToolLayout(setTilePlacement(layout, tile.id, 'docked'))}
-                  >
-                    <Icon name="dock" size={12} />
-                  </button>
+                  />
+                  <IconButton icon="dock" label={t('tl.dockBack')} size="sm" data-testid={`float-dock-${tile.id}`} onClick={() => void setToolLayout(setTilePlacement(layout, tile.id, 'docked'))} />
                 </header>
                 {tile.collapsed ? null : (
                   <>

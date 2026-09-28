@@ -409,7 +409,7 @@ export function EnvironmentMenu() {
     <div className={`env-wrap ${open ? 'open' : ''}`} ref={wrapRef} data-testid="env-wrap">
       <button
         type="button"
-        className={`shead-proj env-btn ${project ? '' : 'none'}`}
+        className={`shead-proj env-trigger ${project ? '' : 'none'}`}
         title={project ?? t('header.noProject')}
         data-testid="session-project"
         aria-haspopup="menu"

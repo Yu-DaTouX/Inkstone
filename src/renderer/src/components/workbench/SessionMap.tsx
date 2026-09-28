@@ -865,7 +865,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
-                            {folded ? '+' : '−'}
+                            <Icon name={folded ? 'plus' : 'minus'} size={12} />
                           </button>
                         </>
                       ) : null}

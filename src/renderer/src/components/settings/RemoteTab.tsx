@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useT } from '../../i18n'
-import { Badge, Button, EmptyState, Segmented, Switch } from '../ui'
+import { Badge, Button, EmptyState, Segmented, SettingRow, Switch } from '../ui'
 import {
   DEFAULT_REMOTE_ACCESS_SETTINGS,
   type RemoteAccessSettings,
@@ -96,23 +96,18 @@ export function RemoteTab() {
   const revokedDevices = status?.devices.filter((device) => device.revokedAt !== null) ?? []
 
   return (
-    <div className="set-group" data-testid="settings-remote">
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('remote.setupTitle')}</div>
-          <div className="set-desc">{t('remote.setupDesc')}</div>
+    <div className="ui-rows" data-testid="settings-remote">
+      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('remote.setupTitle')}</div>
+          <div className="ui-row-desc">{t('remote.setupDesc')}</div>
         </div>
         <div className="btn-row">
           <Button size="sm" onClick={() => openGuide(WINDOWS_TAILSCALE_URL)}>{t('remote.downloadWindows')}</Button>
           <Button size="sm" onClick={() => openGuide(ANDROID_TAILSCALE_URL)}>{t('remote.downloadAndroid')}</Button>
         </div>
       </div>
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('remote.enable')}</div>
-          <div className="set-desc">{t('remote.enableDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('remote.enable')} desc={t('remote.enableDesc')}>
           <Switch
             checked={draft.enabled}
             label={t('remote.enable')}
@@ -120,15 +115,9 @@ export function RemoteTab() {
             testId="remote-enable"
             onChange={(enabled) => void configure({ ...draft, enabled })}
           />
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('remote.bind')}</div>
-          <div className="set-desc">{t('remote.bindDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
           <Segmented<BindChoice>
             value={choice}
             label={t('remote.bind')}
@@ -148,49 +137,36 @@ export function RemoteTab() {
               void configure({ ...draft, bind: value })
             }}
           />
-        </div>
-      </div>
+        </SettingRow>
 
       {choice === 'custom' ? (
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('remote.customAddress')}</div>
-            <div className="set-desc">{t('remote.customAddressDesc')}</div>
-          </div>
-          <div className="set-ctl">
+        <SettingRow name={t('remote.customAddress')} desc={t('remote.customAddressDesc')}>
             <input
-              className="set-input remote-address-input"
+              className="ui-input remote-address-input"
               value={draft.bind}
               placeholder="192.168.1.20"
               data-testid="remote-custom-address"
               onChange={(e) => setDraft({ ...draft, bind: e.target.value.trim() })}
               onBlur={() => void configure(draft)}
             />
-          </div>
-        </div>
+          </SettingRow>
       ) : null}
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('remote.port')}</div>
-          <div className="set-desc">{t('remote.portDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('remote.port')} desc={t('remote.portDesc')}>
           <input
-            className="set-input"
+            className="ui-input num"
             inputMode="numeric"
             value={String(draft.port)}
             data-testid="remote-port"
             onChange={(e) => setDraft({ ...draft, port: Number(e.target.value.replace(/\D/g, '')) || 0 })}
             onBlur={() => void configure(draft)}
           />
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('remote.status')}</div>
-          <div className="set-desc" data-testid="remote-status">
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('remote.status')}</div>
+          <div className="ui-row-desc" data-testid="remote-status">
             {status?.running ? (
               <>
                 <Badge tone="ok">{t('remote.running')}</Badge> <span className="set-path">{endpoint}</span>
@@ -203,10 +179,10 @@ export function RemoteTab() {
         </div>
       </div>
 
-      <div className="set-row col" data-testid="remote-pairing">
-        <div className="set-label">
-          <div className="set-name">{t('remote.pairTitle')}</div>
-          <div className="set-desc">{t('remote.pairDesc')}</div>
+      <div className="ui-row col" data-testid="remote-pairing">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('remote.pairTitle')}</div>
+          <div className="ui-row-desc">{t('remote.pairDesc')}</div>
         </div>
         <div className="btn-row">
           <Button size="sm" data-testid="remote-guide" onClick={() => openGuide(MOBILE_GUIDE_URL)}>{t('remote.guide')}</Button>
@@ -221,12 +197,12 @@ export function RemoteTab() {
               ) : null}
               <div className="remote-pairing-detail">
                 <div className="remote-pairing-code" data-testid="remote-pairing-code">{status.pairing.code}</div>
-                <div className="set-desc">
+                <div className="ui-row-desc">
                   {t('remote.pairAddress', { address: endpoint ?? '—' })}
                   <br />
                   {t('remote.pairExpires', { seconds: secondsLeft })}
                 </div>
-                <div className="set-desc">{t('remote.scanHint')}</div>
+                <div className="ui-row-desc">{t('remote.scanHint')}</div>
               </div>
             </div>
             <div className="btn-row">
@@ -246,15 +222,15 @@ export function RemoteTab() {
             >
               {t('remote.pairStart')}
             </Button>
-            {!status?.running ? <span className="set-desc">{t('remote.pairNeedsRunning')}</span> : null}
+            {!status?.running ? <span className="ui-row-desc">{t('remote.pairNeedsRunning')}</span> : null}
           </div>
         )}
       </div>
 
-      <div className="set-row col" data-testid="remote-devices">
-        <div className="set-label">
-          <div className="set-name">{t('remote.devices')}</div>
-          <div className="set-desc">{t('remote.devicesDesc')}</div>
+      <div className="ui-row col" data-testid="remote-devices">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('remote.devices')}</div>
+          <div className="ui-row-desc">{t('remote.devicesDesc')}</div>
         </div>
         {activeDevices.length === 0 && revokedDevices.length === 0 ? (
           <EmptyState>{t('remote.noDevices')}</EmptyState>
@@ -265,7 +241,7 @@ export function RemoteTab() {
                 <div className="remote-device-main">
                   <span className="remote-device-name">{device.name}</span>
                   {device.kind === 'peer' ? <Badge tone="accent">{t('remote.kindPeer')}</Badge> : null}
-                  <span className="set-desc">
+                  <span className="ui-row-desc">
                     {t('remote.pairedAt', { time: formatTime(device.createdAt, '—') })} ·{' '}
                     {t('remote.lastSeen', { time: formatTime(device.lastSeenAt, t('remote.never')) })}
                   </span>
@@ -279,7 +255,7 @@ export function RemoteTab() {
               <li key={device.id} className="remote-device revoked">
                 <div className="remote-device-main">
                   <span className="remote-device-name">{device.name}</span>
-                  <span className="set-desc">{t('remote.revokedAt', { time: formatTime(device.revokedAt, '—') })}</span>
+                  <span className="ui-row-desc">{t('remote.revokedAt', { time: formatTime(device.revokedAt, '—') })}</span>
                 </div>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => window.yan.remote.forget(device.id))}>
                   {t('remote.forget')}

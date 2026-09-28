@@ -9,6 +9,7 @@ import type {
   CapabilityVerificationStatus
 } from '../../../../shared/ipc'
 import type { SearchBackendStatus } from '../../../../shared/search'
+import { Button } from '../ui'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
 
@@ -128,14 +129,14 @@ export function CapabilitiesTab(): React.JSX.Element {
   }
 
   return (
-    <div className="set-group" data-testid="set-capabilities">
+    <div className="ui-rows" data-testid="set-capabilities">
       {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
-      <div className="set-row set-row-col" data-testid="cap-ext-tools">
-        <div className="set-label">
-          <div className="set-name">{t('set.extTools')}</div>
-          <div className="set-desc">{t('set.extToolsDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-ext-tools">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.extTools')}</div>
+          <div className="ui-row-desc">{t('set.extToolsDesc')}</div>
         </div>
-        <div className="set-desc" data-testid="cap-search-backend">
+        <div className="ui-row-desc" data-testid="cap-search-backend">
           <strong>{t('set.searchBackend')}</strong>
           {' — '}
           {backend === null
@@ -150,7 +151,7 @@ export function CapabilitiesTab(): React.JSX.Element {
                 ? t('set.searchBackendUnusable', { version: backend.version ?? '?' })
                 : t('set.searchBackendMissing')}
           {backend && !backend.available ? (
-            <div className="set-desc">
+            <div className="ui-row-desc">
               {backend.code === 'backend_unusable'
                 ? t('set.searchBackendUnusableHint')
                 : /node/i.test(backend.detail ?? '')
@@ -164,37 +165,37 @@ export function CapabilitiesTab(): React.JSX.Element {
             会把后一种人带去重装已经装好的东西）。
           */}
           {backend && !backend.available && backend.detail ? (
-            <div className="set-desc" data-testid="cap-search-backend-detail">
+            <div className="ui-row-desc" data-testid="cap-search-backend-detail">
               {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
             </div>
           ) : null}
           {backend && backend.available && backend.code === 'extension_not_connected' ? (
-            <div className="set-desc">{t('set.searchBackendExtHint')}</div>
+            <div className="ui-row-desc">{t('set.searchBackendExtHint')}</div>
           ) : null}
         </div>
-        <div className="set-ctl">
-          <button className="btn" data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
+        <div className="ui-row-ctl">
+          <Button data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
             {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div className="set-row set-row-col" data-testid="cap-browsers">
-        <div className="set-label">
-          <div className="set-name">{t('set.browsers')}</div>
-          <div className="set-desc">{t('set.browsersDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-browsers">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.browsers')}</div>
+          <div className="ui-row-desc">{t('set.browsersDesc')}</div>
         </div>
-        <div className="set-desc">
+        <div className="ui-row-desc">
           <strong>{t('set.browserBuiltin')}</strong> — {t('set.browserBuiltinDesc')}
         </div>
-        <div className="set-desc">
+        <div className="ui-row-desc">
           <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
         </div>
       </div>
-      <div className="set-row set-row-col" data-testid="cap-strategy">
-        <div className="set-label">
-          <div className="set-name">{t('cap.strategyTitle')}</div>
-          <div className="set-desc">{t('cap.strategyDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-strategy">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.strategyTitle')}</div>
+          <div className="ui-row-desc">{t('cap.strategyDesc')}</div>
         </div>
         <div className="seg" role="group" aria-label={t('cap.strategyTitle')}>
           {STRATEGIES.map((value) => (
@@ -210,17 +211,17 @@ export function CapabilitiesTab(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <div className="set-desc">{t(`cap.strategyDesc.${strategy}` as MessageKey)}</div>
+        <div className="ui-row-desc">{t(`cap.strategyDesc.${strategy}` as MessageKey)}</div>
       </div>
 
-      <div className="set-row set-row-col" data-testid="cap-search">
-        <div className="set-label">
-          <div className="set-name">{t('cap.searchTitle')}</div>
-          <div className="set-desc">{t('cap.searchDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-search">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.searchTitle')}</div>
+          <div className="ui-row-desc">{t('cap.searchDesc')}</div>
         </div>
         <form className="pkg-install-row" onSubmit={(event) => void runSearch(event)}>
           <input
-            className="set-input"
+            className="ui-input"
             value={searchText}
             maxLength={500}
             placeholder={t('cap.searchPlaceholder')}
@@ -245,7 +246,7 @@ export function CapabilitiesTab(): React.JSX.Element {
               ))}
             </div>
             {search.reason ? <div className="pkg-detail-warn">{t(`cap.searchReason.${search.reason}` as MessageKey)}</div> : null}
-            {search.candidates.length === 0 ? <div className="set-desc">{t('cap.noCandidates')}</div> : null}
+            {search.candidates.length === 0 ? <div className="ui-row-desc">{t('cap.noCandidates')}</div> : null}
             <div className="pkg-list" data-testid="cap-search-results">
               {search.candidates.map((candidate) => (
                 <article className="pkg-item" key={candidate.candidateId} data-testid="cap-candidate">
@@ -270,13 +271,13 @@ export function CapabilitiesTab(): React.JSX.Element {
         ) : null}
       </div>
 
-      <div className="set-row set-row-col" data-testid="cap-builtins">
-        <div className="set-label">
-          <div className="set-name">{t('cap.builtinTitle')}</div>
-          <div className="set-desc">{t('cap.builtinDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-builtins">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.builtinTitle')}</div>
+          <div className="ui-row-desc">{t('cap.builtinDesc')}</div>
         </div>
         <div className="pkg-list">
-          {builtin.length === 0 ? <div className="set-desc">{t('cap.emptyBuiltin')}</div> : null}
+          {builtin.length === 0 ? <div className="ui-row-desc">{t('cap.emptyBuiltin')}</div> : null}
           {builtin.map((item) => (
             <div className="pkg-item" key={item.id} data-testid="cap-builtin">
               <div className="pkg-item-main">
@@ -289,13 +290,13 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="set-row set-row-col" data-testid="cap-skills">
-        <div className="set-label">
-          <div className="set-name">{t('cap.skillsTitle')}</div>
-          <div className="set-desc">{t('cap.skillsDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-skills">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.skillsTitle')}</div>
+          <div className="ui-row-desc">{t('cap.skillsDesc')}</div>
         </div>
         <div className="pkg-list">
-          {!snapshot || snapshot.skills.length === 0 ? <div className="set-desc">{t('cap.emptySkills')}</div> : null}
+          {!snapshot || snapshot.skills.length === 0 ? <div className="ui-row-desc">{t('cap.emptySkills')}</div> : null}
           {snapshot?.skills.map((skill) => (
             <div className="pkg-item" key={skill.id} data-testid="cap-skill">
               <div className="pkg-item-main">
@@ -309,14 +310,14 @@ export function CapabilitiesTab(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="set-row set-row-col" data-testid="cap-mcp">
-        <div className="set-label">
-          <div className="set-name">{t('cap.mcpTitle')}</div>
-          <div className="set-desc">{t('cap.mcpDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="cap-mcp">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.mcpTitle')}</div>
+          <div className="ui-row-desc">{t('cap.mcpDesc')}</div>
         </div>
         {snapshot?.configWarning ? <div className="pkg-detail-warn">{t('cap.configWarning')}</div> : null}
         <div className="pkg-list">
-          {!snapshot || snapshot.servers.length === 0 ? <div className="set-desc">{t('cap.emptyMcp')}</div> : null}
+          {!snapshot || snapshot.servers.length === 0 ? <div className="ui-row-desc">{t('cap.emptyMcp')}</div> : null}
           {snapshot?.servers.map((server) => {
             const operation = operations[server.id]
             return (

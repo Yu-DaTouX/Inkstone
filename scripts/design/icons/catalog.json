@@ -382,6 +382,24 @@
       "name": "phone",
       "group": "系统",
       "use": "手机接入 / 已配对的手机设备"
+    },
+    "forward": {
+      "lib": "inkline",
+      "name": "forward",
+      "group": "导航",
+      "use": "浏览器前进到下一页"
+    },
+    "maximize": {
+      "lib": "inkline",
+      "name": "maximize",
+      "group": "操作",
+      "use": "放大或还原浮动磁贴"
+    },
+    "minus": {
+      "lib": "inkline",
+      "name": "minus",
+      "group": "操作",
+      "use": "取消暂存全部改动"
     }
   },
   "retired": [

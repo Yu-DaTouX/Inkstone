@@ -161,14 +161,14 @@ export function Settings({
            * 这条无障碍规则失效（dialog 探针会把它当焦点坑）。方向键照样能用。
            * 切换后焦点跟到新 tab，否则 Enter 激活后焦点留在旧项。
            */}
-          <div className="settings-tabs" role="tablist" aria-label={t('set.title')}>
+          <div className="ui-tabs vertical settings-tabs" role="tablist" aria-orientation="vertical" aria-label={t('set.title')}>
             {tabs.map((x, i) => (
               <button
                 key={x.id}
                 ref={(el) => {
                   tabRefs.current[i] = el
                 }}
-                className={`settings-tab ${tab === x.id ? 'sel' : ''}`}
+                className={`ui-tab settings-tab ${tab === x.id ? 'sel' : ''}`}
                 style={{ '--i': i } as React.CSSProperties}
                 role="tab"
                 id={`settings-tab-${x.id}`}
@@ -201,7 +201,7 @@ export function Settings({
             ))}
           </div>
           <span className="spacer" />
-          <button className="settings-tab" onClick={onClose}>
+          <button className="ui-tab settings-tab settings-close" onClick={onClose}>
             <Icon name="chevron-right" size={12} className="chev-flip" />
             <span>{t('set.close')}</span>
           </button>
@@ -364,13 +364,8 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   )
   return (
-    <div className="set-group">
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.theme')}</div>
-          <div className="set-desc">{t('set.themeDesc')}</div>
-        </div>
-        <div className="set-ctl seg">
+    <div className="ui-rows">
+      <SettingRow name={t('set.theme')} desc={t('set.themeDesc')} ctlClassName="seg">
           {(['dark', 'light'] as const).map((x) => (
             <button
               key={x}
@@ -382,15 +377,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               <span>{x === 'dark' ? t('set.dark') : t('set.light')}</span>
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.lang')}</div>
-          <div className="set-desc">{t('set.langDesc')}</div>
-        </div>
-        <div className="set-ctl seg">
+      <SettingRow name={t('set.lang')} desc={t('set.langDesc')} ctlClassName="seg">
           {(['zh-CN', 'en-US'] as const).map((x) => (
             <button
               key={x}
@@ -400,15 +389,14 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {x === 'zh-CN' ? '中文' : 'English'}
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.uiScale')}</div>
-          <div className="set-desc">{t('set.uiScaleDesc')}</div>
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.uiScale')}</div>
+          <div className="ui-row-desc">{t('set.uiScaleDesc')}</div>
           {zoom ? (
-            <div className="set-desc set-num">
+            <div className="ui-row-desc set-num">
               {t('set.uiScaleNow', {
                 sf: Math.round(zoom.scaleFactor * 100),
                 auto: zoom.autoScale.toFixed(2),
@@ -417,7 +405,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             </div>
           ) : null}
         </div>
-        <div className="set-ctl seg seg-scale" data-testid="set-ui-scale">
+        <div className="ui-row-ctl seg seg-scale" data-testid="set-ui-scale">
           {SCALE_OPTS.map((o) => (
             <button
               key={o.v}
@@ -433,12 +421,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         </div>
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.density')}</div>
-          <div className="set-desc">{t('set.densityDesc')}</div>
-        </div>
-        <div className="set-ctl seg" data-testid="set-density">
+      <SettingRow name={t('set.density')} desc={t('set.densityDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-density" }}>
           {DENSITY_OPTS.map((o) => (
             <button
               key={o.v}
@@ -450,15 +433,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {t(o.key)}
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.sendKey')}</div>
-          <div className="set-desc">{t('set.sendKeyDesc')}</div>
-        </div>
-        <div className="set-ctl seg" data-testid="set-send-key">
+      <SettingRow name={t('set.sendKey')} desc={t('set.sendKeyDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-send-key" }}>
           {SEND_KEY_OPTS.map((o) => (
             <button
               key={o.v}
@@ -469,15 +446,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {t(o.key)}
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.defaultWorkMode')}</div>
-          <div className="set-desc">{t('set.defaultWorkModeDesc')}</div>
-        </div>
-        <div className="set-ctl seg" data-testid="set-default-work-mode">
+      <SettingRow name={t('set.defaultWorkMode')} desc={t('set.defaultWorkModeDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-default-work-mode" }}>
           {(['standard', 'clarify', 'autonomous'] as const).map((mode) => (
             <button
               key={mode}
@@ -490,15 +461,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
               {t(`workMode.label.${mode}`)}
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.workModeKey')}</div>
-          <div className="set-desc">{t('set.workModeKeyDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('set.workModeKey')} desc={t('set.workModeKeyDesc')}>
           {/*
            * 三个按钮：键位（点击进入录音）/ 恢复默认（只有改过才显示）/ 开·关。
            * 键位按钮把当前组合键**写在自己身上**（`data-binding`）—— 探针与
@@ -540,18 +505,17 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             <Icon name="sparkles" size={12} />
             <span>{workModeShortcutOn ? t('set.on') : t('set.off')}</span>
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.streamWidth')}</div>
-          <div className="set-desc">{t('set.streamWidthDesc')}</div>
-          <div className="set-desc set-num" data-testid="set-stream-width-now">
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.streamWidth')}</div>
+          <div className="ui-row-desc">{t('set.streamWidthDesc')}</div>
+          <div className="ui-row-desc set-num" data-testid="set-stream-width-now">
             {streamWidth > 0 ? t('set.streamWidthNow', { n: shownWidth }) : t('set.streamWidthDefault')}
           </div>
         </div>
-        <div className="set-ctl stream-width-ctl" data-testid="set-stream-width">
+        <div className="ui-row-ctl stream-width-ctl" data-testid="set-stream-width">
           {/*
            * 滑块而不是预设档位：宽度是个连续量，用户心里往往有个具体值
            * （“我想让代码块一行放下 100 个字符”）。拖动时实时改 CSS 变量
@@ -591,12 +555,7 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
         </div>
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.toolDetail')}</div>
-          <div className="set-desc">{t('set.toolDetailDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('set.toolDetail')} desc={t('set.toolDetailDesc')}>
           {/*
            * 用户要求：「提供一个开关来让用户自己选择是否可以看到
            * 用类似终端窗口的工具调用详情」。
@@ -614,15 +573,9 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             <Icon name="menu" size={12} />
             <span>{toolDetail ? t('set.on') : t('set.off')}</span>
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.alwaysOnTop')}</div>
-          <div className="set-desc">{t('set.alwaysOnTopDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('set.alwaysOnTop')} desc={t('set.alwaysOnTopDesc')}>
           {/* 与标题栏那个置顶按钮是同一个状态（store.alwaysOnTop），
               两处都能切，显示以主进程推的真实值为准 */}
           <button
@@ -634,18 +587,11 @@ function AppearanceTab({ lang, setLang }: { lang: string; setLang: (l: 'zh-CN' |
             <Icon name="pin" size={12} />
             <span>{onTop ? t('set.on') : t('set.off')}</span>
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.reduceMotion')}</div>
-          <div className="set-desc">{t('set.reduceMotionDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('set.reduceMotion')} desc={t('set.reduceMotionDesc')}>
           <span className="set-static">{reduced ? t('set.on') : t('set.off')}</span>
-        </div>
-      </div>
+        </SettingRow>
     </div>
   )
 }
@@ -722,13 +668,8 @@ function SoundTab() {
   ]
 
   return (
-    <div className="set-group" data-testid="set-sound">
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.soundEnabled')}</div>
-          <div className="set-desc">{t('set.soundEnabledDesc')}</div>
-        </div>
-        <div className="set-ctl">
+    <div className="ui-rows" data-testid="set-sound">
+      <SettingRow name={t('set.soundEnabled')} desc={t('set.soundEnabledDesc')}>
           <button
             className={`seg-btn ${sound.enabled ? 'sel' : ''}`}
             onClick={() => write({ enabled: !sound.enabled })}
@@ -738,15 +679,9 @@ function SoundTab() {
             <Icon name="sparkles" size={12} />
             <span>{sound.enabled ? t('set.on') : t('set.off')}</span>
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.soundNotify')}</div>
-          <div className="set-desc">{t('set.soundNotifyDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('set.soundNotify')} desc={t('set.soundNotifyDesc')}>
           <button
             className={`seg-btn ${sound.notifications ? 'sel' : ''}`}
             onClick={() => write({ notifications: !sound.notifications })}
@@ -772,18 +707,17 @@ function SoundTab() {
             <Icon name="send" size={12} />
             <span>{t('set.soundNotifyTest')}</span>
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.soundVolume')}</div>
-          <div className="set-desc">{t('set.soundVolumeDesc')}</div>
-          <div className="set-desc set-num" data-testid="set-sound-volume-now">
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.soundVolume')}</div>
+          <div className="ui-row-desc">{t('set.soundVolumeDesc')}</div>
+          <div className="ui-row-desc set-num" data-testid="set-sound-volume-now">
             {t('set.soundVolumeNow', { n: Math.round(shownVol * 100) })}
           </div>
         </div>
-        <div className="set-ctl stream-width-ctl">
+        <div className="ui-row-ctl stream-width-ctl">
           <input
             className="range"
             type="range"
@@ -809,20 +743,10 @@ function SoundTab() {
         </div>
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.soundEvents')}</div>
-          <div className="set-desc">{t('set.soundDesc')}</div>
-        </div>
-      </div>
+      <SettingRow name={t('set.soundEvents')} desc={t('set.soundDesc')} />
 
       {events.map((ev) => (
-        <div className="set-row" key={ev.id}>
-          <div className="set-label">
-            <div className="set-name">{ev.name}</div>
-            <div className="set-desc">{ev.desc}</div>
-          </div>
-          <div className="set-ctl">
+        <SettingRow key={ev.id} name={ev.name} desc={ev.desc}>
             <button
               className={`seg-btn ${sound.events[ev.id] ? 'sel' : ''}`}
               onClick={() => toggleEvent(ev.id)}
@@ -841,8 +765,7 @@ function SoundTab() {
               <Icon name="send" size={12} />
               <span>{t('set.soundPreview')}</span>
             </button>
-          </div>
-        </div>
+          </SettingRow>
       ))}
     </div>
   )
@@ -865,33 +788,27 @@ function StatusTab() {
   const nf = new Intl.NumberFormat('en-US')
 
   return (
-    <div className="set-group" data-testid="set-status-diagnostics">
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.session')}</div>
-          <div className="set-desc set-num">{session?.sessionId ?? '—'}</div>
+    <div className="ui-rows" data-testid="set-status-diagnostics">
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('status.session')}</div>
+          <div className="ui-row-desc set-num">{session?.sessionId ?? '—'}</div>
         </div>
-        <div className="set-ctl set-static set-num">
+        <div className="ui-row-ctl set-static set-num">
           {session?.model?.name ?? '—'} · {session?.thinkingLevel ?? 'off'}
         </div>
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.context')}</div>
-          <div className="set-desc">
+      <SettingRow name={t('status.context')} desc={<>
             {known ? `${nf.format(used)} / ` : '— / '}{win ? nf.format(win) : '—'} · {known && win ? pct.toFixed(1) : '—'}%
-          </div>
-        </div>
-        <div className="set-ctl set-static">
+          </>} ctlClassName="set-static">
           {session?.isCompacting ? t('status.compacting') : session?.isStreaming ? t('status.streaming') : t('status.context')}
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('status.tools')} / {t('status.rounds')}</div>
-          <div className="set-desc">{stats?.toolCalls ?? 0} / {stats?.userMessages ?? 0}</div>
+      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('status.tools')} / {t('status.rounds')}</div>
+          <div className="ui-row-desc">{stats?.toolCalls ?? 0} / {stats?.userMessages ?? 0}</div>
         </div>
         <div className="meter">
           <i style={{ width: `${Math.min(100, pct)}%` }} />
@@ -913,6 +830,7 @@ function StatusTab() {
 }
 
 import { BUILD_INFO, formatBuildTime } from '../../../../shared/build-info'
+import { Button, SettingRow } from '../ui'
 
 /* ------------------------------------------------------------- 关于 */
 
@@ -970,22 +888,17 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
   const binPath = piInfo?.bin ?? '—'
 
   return (
-    <div className="set-group">
+    <div className="ui-rows">
       {/*
        * 版本信息放最上面：它回答的是“我现在跑的到底是哪一份代码”。
        * 「正式版本」来自 package.json；「构建版本」来自构建时注入的时间 +  git 短 hash。
        */}
-      <div className="set-row" data-testid="about-release">
-        <div className="set-label">
-          <div className="set-name">{t('set.releaseVersion')}</div>
-          <div className="set-desc">{BUILD_INFO.version || '—'}</div>
-        </div>
-      </div>
+      <SettingRow data-testid="about-release" name={t('set.releaseVersion')} desc={BUILD_INFO.version || '—'} />
 
-      <div className="set-row" data-testid="about-build">
-        <div className="set-label">
-          <div className="set-name">{t('set.buildVersion')}</div>
-          <div className="set-desc" title={BUILD_INFO.buildTime}>
+      <div className="ui-row" data-testid="about-build">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.buildVersion')}</div>
+          <div className="ui-row-desc" title={BUILD_INFO.buildTime}>
             {formatBuildTime(BUILD_INFO.buildTime) || '—'}
             {BUILD_INFO.buildHash ? ` · ${BUILD_INFO.buildHash}` : ''}
           </div>
@@ -998,40 +911,36 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
        * 点开走链接统一入口（方案 5.2，内部浏览器），所以先关掉设置这层遮罩，
        * 否则网页在遮罩下面打开了，用户看不到。
        */}
-      <div className="set-row" data-testid="about-repo">
-        <div className="set-label">
-          <div className="set-name">{t('set.projectHome')}</div>
-          <div className="set-desc set-path" title={BUILD_INFO.repositoryUrl}>
+      <div className="ui-row" data-testid="about-repo">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.projectHome')}</div>
+          <div className="ui-row-desc set-path" title={BUILD_INFO.repositoryUrl}>
             {BUILD_INFO.repositoryUrl || '—'}
           </div>
         </div>
         {BUILD_INFO.repositoryUrl ? (
-          <div className="set-ctl">
-            <button
-              className="btn"
-              data-testid="about-repo-open"
-              onClick={() => {
+          <div className="ui-row-ctl">
+            <Button data-testid="about-repo-open" onClick={() => {
                 closeSettings()
                 void openBrowser(BUILD_INFO.repositoryUrl)
-              }}
-            >
+              }}>
               {t('set.projectHomeOpen')}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('tb.cwd')}</div>
-          <div className="set-desc set-path" title={settings?.cwd}>
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('tb.cwd')}</div>
+          <div className="ui-row-desc set-path" title={settings?.cwd}>
             {settings?.cwd ?? '—'}
           </div>
         </div>
-        <div className="set-ctl">
-          <button className="btn" onClick={() => void pickCwd()}>
+        <div className="ui-row-ctl">
+          <Button onClick={() => void pickCwd()}>
             {t('set.change')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1042,85 +951,73 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
        * 会话/项目相关的列表会间接用到它 —— 用户界面上没有一个“最近文件夹”的入口。
        */}
       {recentCwds.length > 0 ? (
-        <div className="set-row col" data-testid="recent-cwds">
-          <div className="set-label">
-            <div className="set-name">{t('set.recentCwd')}</div>
-            <div className="set-desc">{t('set.recentCwdDesc')}</div>
+        <div className="ui-row col" data-testid="recent-cwds">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('set.recentCwd')}</div>
+            <div className="ui-row-desc">{t('set.recentCwdDesc')}</div>
           </div>
           <div className="set-chips">
             {recentCwds.map((p, i) => (
-              <button
+              <Button
                 key={p}
-                className={`btn chip ${p === settings?.cwd ? 'on' : ''}`}
+                size="sm"
+                active={p === settings?.cwd}
                 title={p}
                 disabled={p === settings?.cwd}
                 onClick={() => void changeCwd(p)}
                 data-testid={`recent-cwd-${i}`}
               >
-                <span className="set-chip-text">{folderName(p)}</span>
-              </button>
+                {folderName(p)}
+              </Button>
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.conn')}</div>
-          <div className="set-desc">
-            {conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')}
-          </div>
-        </div>
-      </div>
+      <SettingRow name={t('set.conn')} desc={conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')} />
 
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('set.piBin')}</div>
-          <div className="set-desc">
+      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.piBin')}</div>
+          <div className="ui-row-desc">
             {t('set.piSource')}: {sourceLabel(t, piInfo?.source)} · {t('set.piVersion')}:{' '}
             {piInfo?.version ?? '—'}
           </div>
           {piInfo?.home ? (
-            <div className="set-desc set-path" title={piInfo.home}>
+            <div className="ui-row-desc set-path" title={piInfo.home}>
               {t('set.piHome')}: {piInfo.home}
             </div>
           ) : null}
-          <div className="set-desc set-path" title={binPath}>
+          <div className="ui-row-desc set-path" title={binPath}>
             {binPath}
           </div>
         </div>
-        <div className="set-ctl">
-          <button className="btn" onClick={() => void redetect()} disabled={detecting} data-testid="pi-redetect">
+        <div className="ui-row-ctl">
+          <Button onClick={() => void redetect()} disabled={detecting} data-testid="pi-redetect">
             {detecting ? t('set.piRedetecting') : t('set.piRedetect')}
-          </button>
+          </Button>
         </div>
         {hint ? <div className="set-warn">{hint}</div> : null}
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.replayOnboard')}</div>
-          <div className="set-desc">{t('set.replayOnboardDesc')}</div>
-        </div>
-        <div className="set-ctl">
-          <button className="btn" onClick={onShowOnboarding} data-testid="ob-reopen">
+      <SettingRow name={t('set.replayOnboard')} desc={t('set.replayOnboardDesc')}>
+          <Button onClick={onShowOnboarding} data-testid="ob-reopen">
             {t('set.replayOnboardAction')}
-          </button>
-        </div>
-      </div>
+          </Button>
+        </SettingRow>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('status.session')}</div>
-          <div className="set-desc set-path">{session?.sessionId ?? '—'}</div>
+      <div className="ui-row">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('status.session')}</div>
+          <div className="ui-row-desc set-path">{session?.sessionId ?? '—'}</div>
         </div>
       </div>
 
       {logs.length > 0 ? (
-        <div className="set-row col">
-          <div className="set-label">
-            <div className="set-name">{t('log.title')}</div>
-            <div className="set-desc">{t('set.logsDesc', { n: logs.length })}</div>
+        <div className="ui-row col">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('log.title')}</div>
+            <div className="ui-row-desc">{t('set.logsDesc', { n: logs.length })}</div>
           </div>
           <pre className="set-logs">{logs.slice(-20).join('\n')}</pre>
         </div>

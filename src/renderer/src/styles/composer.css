@@ -1428,29 +1428,8 @@
   font-size: var(--fs-xs);
 }
 
-.qpanel-page-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg-mute);
-}
-
-.qpanel-page-btn:hover:not(:disabled) {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.qpanel-page-btn:disabled {
-  opacity: .35;
-}
-
 /* 同一个图标转过来当成「上一条」，不额外加一个 sprite 图标 */
-.qpanel-page-btn.flip {
+.qpanel-prev .ico {
   transform: rotate(180deg);
 }
 
@@ -1746,27 +1725,6 @@
 .sa-launch-caption {
   color: var(--fg-dim);
   opacity: 0.75;
-}
-
-.sa-launch-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 2px var(--sp-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.sa-launch-btn:hover,
-.sa-launch-btn[aria-expanded='true'] {
-  border-color: var(--accent-line);
-  color: var(--fg);
-  background: var(--accent-soft);
 }
 
 .sa-launch-count {

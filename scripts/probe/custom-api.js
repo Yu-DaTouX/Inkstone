@@ -90,7 +90,7 @@
     ok(/计费/.test(panelText), '面板里写明了哪一段会计费', panelText.slice(0, 80))
     ok(!!q('[data-testid="custom-api-test-billable-yan-probe"]'), '存在「发真实请求」按钮（需用户主动点）')
 
-    const beforeTest = qa('.custom-api-test .set-desc').length
+    const beforeTest = qa('.custom-api-test .ui-row-desc').length
     click(q('[data-testid="custom-api-test-endpoint-yan-probe"]'))
     const gotResult = await until(() => q('[data-testid="custom-api-test-result-yan-probe"]'), 20_000)
     ok(gotResult, '免费检查返回了结果（不是只转圈）')
@@ -98,7 +98,7 @@
     /* example.invalid 永远解析不到：这里要的正是「失败也给可读原因」 */
     ok(/✗/.test(resultText) && /(连不上|HTTP|超时)/.test(resultText), '不可达地址给出可读失败原因', resultText.replace(/✗/g, '失败').trim())
     ok(/ms/.test(resultText), '结果带耗时')
-    ok(qa('.custom-api-test .set-desc').length >= beforeTest, '结果就地显示在按钮下方')
+    ok(qa('.custom-api-test .ui-row-desc').length >= beforeTest, '结果就地显示在按钮下方')
 
     /* 删除 */
     click(q('[data-testid="custom-api-remove-yan-probe"]'))

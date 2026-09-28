@@ -4,7 +4,11 @@ import {
   useRef,
   type ButtonHTMLAttributes,
   type CSSProperties,
-  type ReactNode
+  type HTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes
 } from 'react'
 import { Icon, type IconName } from '../../icons/Icon'
 
@@ -29,10 +33,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** 图标放在文字之后（例如「打开 ›」） */
   trailingIcon?: IconName
   block?: boolean
+  /** 切换按钮的「已开启」：.on + aria-pressed */
+  active?: boolean
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', icon, trailingIcon, block, className, children, type, ...rest },
+  { variant = 'secondary', size = 'md', icon, trailingIcon, block, active, className, children, type, ...rest },
   ref
 ) {
   return (
@@ -44,8 +50,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         variant !== 'secondary' && variant,
         size !== 'md' && size,
         block && 'block',
+        active && 'on',
         className
       )}
+      {...(active !== undefined ? { 'aria-pressed': active } : {})}
       {...rest}
     >
       {icon ? <Icon name={icon} size={size === 'lg' ? 16 : 12} /> : null}
@@ -60,11 +68,15 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   /** 必填：图标按钮没有可见文字，名称同时用作 title 与无障碍名称 */
   label: string
   size?: ButtonSize
+  /** 图标尺寸默认随按钮：sm 12 · md 14 · lg 16 */
+  iconSize?: 12 | 14 | 16
+  /** 图标自身的类（如会旋转的 chevron） */
+  iconClassName?: string
   active?: boolean
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, size = 'md', active, className, type, ...rest },
+  { icon, label, size = 'md', iconSize, iconClassName, active, className, type, ...rest },
   ref
 ) {
   return (
@@ -77,7 +89,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       {...(active !== undefined ? { 'aria-pressed': active } : {})}
       {...rest}
     >
-      <Icon name={icon} size={size === 'lg' ? 16 : 14} />
+      <Icon name={icon} size={iconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 14)} className={iconClassName} />
     </button>
   )
 })
@@ -288,3 +300,305 @@ export function Grow({
     </div>
   )
 }
+
+/* ------------------------------------------------------------------ 表单 */
+
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /** 数值：96px、等宽数字、右对齐 */
+  numeric?: boolean
+}
+
+/** 单行输入。外观来自 ui.css 的 .ui-input；宽度由所在版面决定时模块再写 width / flex */
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({ numeric, className, ...rest }, ref) {
+  return <input ref={ref} className={cx('ui-input', numeric && 'num', className)} {...rest} />
+})
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  function Textarea({ className, ...rest }, ref) {
+    return <textarea ref={ref} className={cx('ui-input', className)} {...rest} />
+  }
+)
+
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
+  { className, children, ...rest },
+  ref
+) {
+  return (
+    <select ref={ref} className={cx('ui-input', className)} {...rest}>
+      {children}
+    </select>
+  )
+})
+
+/** 表单一项：标签 + 控件 + 说明。用 <label> 包住，点标签即聚焦控件 */
+export function Field({
+  label,
+  hint,
+  className,
+  children
+}: {
+  label: ReactNode
+  hint?: ReactNode
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <label className={cx('ui-field', className)}>
+      <span className="ui-field-label">{label}</span>
+      {children}
+      {hint ? <span className="ui-field-hint">{hint}</span> : null}
+    </label>
+  )
+}
+
+/**
+ * 设置行：「名称 + 说明｜控件」。行本身不可点，也不响应悬停。
+ * `col` 用于进度条、列表这类要占满宽的内容（上下排布）。
+ */
+export function SettingRow({
+  name,
+  desc,
+  col,
+  ctlClassName,
+  ctlProps,
+  className,
+  children,
+  ...rest
+}: {
+  name?: ReactNode
+  desc?: ReactNode
+  col?: boolean
+  ctlClassName?: string
+  /** 控件格上的属性（data-testid、aria-label 等） */
+  ctlProps?: HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string | undefined>
+  children?: ReactNode
+} & HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cx('ui-row', col && 'col', className)} {...rest}>
+      {name !== undefined || desc !== undefined ? (
+        <div className="ui-row-label">
+          {name !== undefined ? <div className="ui-row-name">{name}</div> : null}
+          {desc !== undefined ? <div className="ui-row-desc">{desc}</div> : null}
+        </div>
+      ) : null}
+      {children !== undefined ? (
+        <div className={cx('ui-row-ctl', ctlClassName)} {...ctlProps}>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ 页签 */
+
+export interface TabItem<T extends string> {
+  value: T
+  label: ReactNode
+  icon?: IconName
+  testId?: string
+  title?: string
+  /** 有它就是可关闭的文档页签 */
+  onClose?: () => void
+  closeLabel?: string
+}
+
+/**
+ * 页签：role=tablist，方向键在页签间移动焦点（竖排用上下，横排用左右）。
+ * 选中项 --bg-3 底 + 强调色图标，与分段控件同一语言。
+ */
+export function Tabs<T extends string>({
+  items,
+  value,
+  onChange,
+  vertical,
+  label,
+  className,
+  testId
+}: {
+  items: Array<TabItem<T>>
+  value: T
+  onChange: (value: T) => void
+  vertical?: boolean
+  label?: string
+  className?: string
+  testId?: string
+}) {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const next = vertical ? ['ArrowDown', 'ArrowUp'] : ['ArrowRight', 'ArrowLeft']
+    const dir = event.key === next[0] ? 1 : event.key === next[1] ? -1 : 0
+    if (!dir) return
+    const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const at = tabs.indexOf(document.activeElement as HTMLButtonElement)
+    if (at < 0) return
+    event.preventDefault()
+    tabs[(at + dir + tabs.length) % tabs.length]?.focus()
+  }
+  return (
+    <div
+      className={cx('ui-tabs', vertical && 'vertical', className)}
+      role="tablist"
+      aria-label={label}
+      aria-orientation={vertical ? 'vertical' : 'horizontal'}
+      data-testid={testId}
+      onKeyDown={onKeyDown}
+    >
+      {items.map((item) => (
+        <Tab
+          key={item.value}
+          selected={item.value === value}
+          icon={item.icon}
+          testId={item.testId}
+          title={item.title}
+          onClick={() => onChange(item.value)}
+          onClose={item.onClose}
+          closeLabel={item.closeLabel}
+        >
+          {item.label}
+        </Tab>
+      ))}
+    </div>
+  )
+}
+
+/** 单个页签；列表需要自定义内容（拖动、计数）时直接用它，外面自己包 role=tablist */
+export function Tab({
+  selected,
+  icon,
+  onClick,
+  onClose,
+  closeLabel,
+  className,
+  testId,
+  title,
+  children
+}: {
+  selected: boolean
+  icon?: IconName
+  onClick: () => void
+  onClose?: () => void
+  closeLabel?: string
+  className?: string
+  testId?: string
+  title?: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      className={cx('ui-tab', onClose && 'doc', selected && 'sel', className)}
+      data-testid={testId}
+      title={title}
+      onClick={onClick}
+    >
+      {icon ? <Icon name={icon} size={12} /> : null}
+      <span className="ui-tab-label">{children}</span>
+      {onClose ? (
+        <span
+          role="button"
+          tabIndex={-1}
+          className="ui-tab-close"
+          aria-label={closeLabel}
+          title={closeLabel}
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+          }}
+        >
+          <Icon name="close" size={12} />
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+/* ------------------------------------------------------------------ 菜单 */
+
+/** 菜单容器（定位由调用方负责：右键菜单 fixed、下拉贴触发器） */
+export const Menu = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { label?: string }>(function Menu(
+  { label, className, children, ...rest },
+  ref
+) {
+  return (
+    <div ref={ref} role="menu" aria-label={label} className={cx('ui-menu', className)} {...rest}>
+      {children}
+    </div>
+  )
+})
+
+export interface MenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  icon?: IconName
+  danger?: boolean
+}
+
+export const MenuItem = forwardRef<HTMLButtonElement, MenuItemProps>(function MenuItem(
+  { icon, danger, className, children, type, ...rest },
+  ref
+) {
+  return (
+    <button
+      ref={ref}
+      type={type ?? 'button'}
+      role="menuitem"
+      className={cx('ui-menu-item', danger && 'danger', className)}
+      {...rest}
+    >
+      {icon ? <Icon name={icon} size={12} /> : null}
+      {children}
+    </button>
+  )
+})
+
+export function MenuSeparator() {
+  return <div className="ui-menu-sep" role="separator" />
+}
+
+/* ------------------------------------------------------------------ 检查器与列表 */
+
+/** 检查器分区：标题 + 右侧摘要 + 内容。分区之间只有一条细线 */
+export function InspectorSection({
+  title,
+  icon,
+  summary,
+  className,
+  children,
+  ...rest
+}: {
+  title: ReactNode
+  icon?: IconName
+  summary?: ReactNode
+  children?: ReactNode
+} & Omit<HTMLAttributes<HTMLElement>, 'title'>) {
+  return (
+    <section className={cx('ui-inspector-section', className)} {...rest}>
+      <div className="ui-inspector-head">
+        {icon ? <Icon name={icon} size={12} /> : null}
+        <span>{title}</span>
+        {summary !== undefined ? <span className="ui-inspector-summary">{summary}</span> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** 可点的一行：左侧图标或状态点、主文字截断、右侧元数据 */
+export const ListRow = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { icon?: IconName; lead?: ReactNode; meta?: ReactNode; current?: boolean }
+>(function ListRow({ icon, lead, meta, current, className, children, type, ...rest }, ref) {
+  return (
+    <button
+      ref={ref}
+      type={type ?? 'button'}
+      className={cx('ui-list-row', className)}
+      aria-current={current || undefined}
+      {...rest}
+    >
+      {lead ?? (icon ? <Icon name={icon} size={12} /> : null)}
+      <span className="ui-list-row-main">{children}</span>
+      {meta !== undefined ? <span className="ui-list-row-meta">{meta}</span> : null}
+    </button>
+  )
+})

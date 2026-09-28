@@ -5,6 +5,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PixelDigits } from './PixelDigits'
+import { Button, IconButton } from '../ui'
 
 /**
  * 问题面板（方案第 6 节）。
@@ -246,29 +247,11 @@ function PanelBody({
         {/* 多问题分页：只翻显示，不改变「哪条在等回答」 */}
         {page.total > 1 ? (
           <span className="qpanel-page" data-testid="question-panel-page">
-            <button
-              type="button"
-              className="qpanel-page-btn flip"
-              disabled={page.index === 0}
-              title={t('q.prev')}
-              data-testid="question-panel-prev"
-              onClick={onPrev}
-            >
-              <Icon name="chevron-right" size={12} />
-            </button>
+            <IconButton icon="chevron-right" label={t('q.prev')} size="sm" className="qpanel-prev" type="button" disabled={page.index === 0} data-testid="question-panel-prev" onClick={onPrev} />
             <span className="qpanel-page-n" data-index={page.index + 1} data-total={page.total}>
               {t('q.page', { i: page.index + 1, n: page.total })}
             </span>
-            <button
-              type="button"
-              className="qpanel-page-btn"
-              disabled={page.index >= page.total - 1}
-              title={t('q.nextPage')}
-              data-testid="question-panel-next"
-              onClick={onNext}
-            >
-              <Icon name="chevron-right" size={12} />
-            </button>
+            <IconButton icon="chevron-right" label={t('q.nextPage')} size="sm" type="button" disabled={page.index >= page.total - 1} data-testid="question-panel-next" onClick={onNext} />
           </span>
         ) : null}
         <button
@@ -361,27 +344,27 @@ function PanelBody({
           ) : null}
 
           <div className="qpanel-foot">
-            <button className="btn" disabled={busy} onClick={() => answer({ cancelled: true })} data-testid="question-panel-skip">
+            <Button disabled={busy} onClick={() => answer({ cancelled: true })} data-testid="question-panel-skip">
               {t('q.skip')}
-            </button>
+            </Button>
             <span className="spacer" />
 
             {req.method === 'confirm' ? (
               <>
-                <button className="btn" disabled={busy} onClick={() => answer({ confirmed: false })}>
+                <Button disabled={busy} onClick={() => answer({ confirmed: false })}>
                   {t('ui.no')}
-                </button>
-                <button className="btn primary" disabled={busy} onClick={() => answer({ confirmed: true })} data-testid="question-panel-submit">
+                </Button>
+                <Button variant="primary" disabled={busy} onClick={() => answer({ confirmed: true })} data-testid="question-panel-submit">
                   {t('ui.yes')}
-                </button>
+                </Button>
               </>
             ) : null}
 
             {req.method === 'input' || req.method === 'editor' || req.method === 'select' ? (
-              <button className="btn primary" disabled={busy || !canSubmit} onClick={() => answer({ value: trimmed })} data-testid="question-panel-submit">
+              <Button variant="primary" disabled={busy || !canSubmit} onClick={() => answer({ value: trimmed })} data-testid="question-panel-submit">
                 {/* 多条问题时是「下一步」，只有一条时就是普通的「提交回答」 */}
                 {page.total > 1 ? t('q.next') : t('q.submit')}
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>

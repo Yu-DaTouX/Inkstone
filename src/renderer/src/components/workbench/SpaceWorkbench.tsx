@@ -7,6 +7,7 @@ import { SPACE_VIEWS, type SpaceView } from '../../state/space-view'
 import { SpaceOverview } from './SpaceOverview'
 import { LibraryView } from './LibraryView'
 import { ArtifactView } from './ArtifactView'
+import { IconButton, Segmented } from '../ui'
 
 /**
  * 空间工作台（实施-25 P04）—— 日常模式的四个稳定入口。
@@ -71,22 +72,16 @@ export function SpaceWorkbench({ view, onView, onClose, onOpenSession }: Props):
           </span>
           {space?.archived ? <span className="wb-space-badge">{t('space.archived')}</span> : null}
         </div>
-        <nav className="wb-space-tabs" data-testid="space-workbench-tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`wb-space-tab ${view === tab.id ? 'on' : ''}`}
-              data-testid={`space-tab-${tab.id}`}
-              onClick={() => onView(tab.id)}
-            >
-              <Icon name={tab.icon} size={12} />
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-        <button className="wb-space-close" data-testid="space-close" onClick={onClose} title={t('space.close')}>
-          ×
-        </button>
+        {/* 空间的几个视图是互斥的一组：用分段控件（设计规范 §3.2），不是页签 */}
+        <Segmented
+          size="sm"
+          className="wb-space-tabs"
+          testId="space-workbench-tabs"
+          value={view}
+          onChange={onView}
+          options={tabs.map((tab) => ({ value: tab.id, label: tab.label, icon: tab.icon, testId: `space-tab-${tab.id}` }))}
+        />
+        <IconButton icon="close" size="sm" iconSize={14} label={t('space.close')} className="wb-space-close" data-testid="space-close" onClick={onClose} />
       </header>
 
       <div className="wb-space-body">

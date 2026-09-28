@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
-import { Badge, Button, Segmented } from '../ui'
+import { Badge, Button, Segmented, SettingRow } from '../ui'
 import { useStore } from '../../state/store'
 import {
   VOICE_LANGUAGES,
@@ -91,23 +91,20 @@ export function VoiceTab() {
   const tierLabel = (tier: VoiceModelTier): string => t(`voice.tier.${tier}` as 'voice.tier.light')
 
   return (
-    <div className="set-group" data-testid="settings-voice">
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('voice.title')}</div>
-          <div className="set-desc">{t('voice.desc')}</div>
+    <div className="ui-rows" data-testid="settings-voice">
+      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('voice.title')}</div>
+          <div className="ui-row-desc">{t('voice.desc')}</div>
         </div>
-        <div className="set-desc" data-testid="voice-state">
+        <div className="ui-row-desc" data-testid="voice-state">
           {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
           {status?.model ? <span className="set-path"> {status.model.label}</span> : null}
         </div>
       </div>
 
       {hw ? (
-        <div className="set-row col">
-          <div className="set-label">
-            <div className="set-name">{t('voice.hardware')}</div>
-            <div className="set-desc">
+        <SettingRow col name={t('voice.hardware')} desc={<>
               {t('voice.hardwareLine', {
                 cpu: hw.cpuModel || '—',
                 threads: hw.threads,
@@ -116,15 +113,13 @@ export function VoiceTab() {
                 load: hw.cpuLoad === null ? '—' : `${Math.round(hw.cpuLoad * 100)}%`
               })}
               {hw.gpu ? <div>{t('voice.gpuNote', { gpu: hw.gpu })}</div> : null}
-            </div>
-          </div>
-        </div>
+            </>} />
       ) : null}
 
-      <div className="set-row col" data-testid="voice-models">
-        <div className="set-label">
-          <div className="set-name">{t('voice.models')}</div>
-          <div className="set-desc">{t('voice.modelsDesc')}</div>
+      <div className="ui-row col" data-testid="voice-models">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('voice.models')}</div>
+          <div className="ui-row-desc">{t('voice.modelsDesc')}</div>
         </div>
         <div className="voice-models">
           {status?.candidates.map((c) => {
@@ -132,11 +127,11 @@ export function VoiceTab() {
             return (
               <div className={`voice-model ${selected ? 'on' : ''}`} key={c.spec.id} data-testid={`voice-model-${c.spec.id}`}>
                 <div className="voice-model-head">
-                  <span className="set-name">{tierLabel(c.spec.tier)}</span>
+                  <span className="ui-row-name">{tierLabel(c.spec.tier)}</span>
                   {c.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
                   {selected ? <Badge tone="ok">{t('voice.inUse')}</Badge> : null}
                 </div>
-                <div className="set-desc">
+                <div className="ui-row-desc">
                   {t('voice.modelLine', { file: c.spec.file, size: fmtBytes(c.spec.approxBytes), mem: c.spec.approxMemoryMB })}
                 </div>
                 {c.strain ? <div className="set-warn">{c.strain}</div> : null}
@@ -161,12 +156,12 @@ export function VoiceTab() {
         </div>
       </div>
 
-      <div className="set-row col" data-testid="voice-binary">
-        <div className="set-label">
-          <div className="set-name">{t('voice.engine')}</div>
-          <div className="set-desc">{t('voice.engineDesc')}</div>
+      <div className="ui-row col" data-testid="voice-binary">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('voice.engine')}</div>
+          <div className="ui-row-desc">{t('voice.engineDesc')}</div>
         </div>
-        <div className="set-desc">
+        <div className="ui-row-desc">
           {status?.binary ? (
             <>
               <Badge tone="ok">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>{' '}
@@ -190,10 +185,10 @@ export function VoiceTab() {
       </div>
 
       {plan ? (
-        <div className="set-row col voice-confirm" role="dialog" aria-label={t('voice.confirmTitle')} data-testid="voice-confirm">
-          <div className="set-label">
-            <div className="set-name">{t('voice.confirmTitle')}</div>
-            <div className="set-desc">
+        <div className="ui-row col voice-confirm" role="dialog" aria-label={t('voice.confirmTitle')} data-testid="voice-confirm">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('voice.confirmTitle')}</div>
+            <div className="ui-row-desc">
               {t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` })}
               <br />
               {t('voice.confirmWhere', { path: plan.destination })}
@@ -211,10 +206,10 @@ export function VoiceTab() {
       ) : null}
 
       {download ? (
-        <div className="set-row col" data-testid="voice-download">
-          <div className="set-label">
-            <div className="set-name">{download.label}</div>
-            <div className="set-desc">
+        <div className="ui-row col" data-testid="voice-download">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{download.label}</div>
+            <div className="ui-row-desc">
               {download.state === 'running'
                 ? t('voice.progress', { got: fmtBytes(download.received), total: fmtBytes(download.total) })
                 : download.state === 'done'
@@ -235,12 +230,7 @@ export function VoiceTab() {
         </div>
       ) : null}
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('voice.language')}</div>
-          <div className="set-desc">{t('voice.languageDesc')}</div>
-        </div>
-        <div className="set-ctl">
+      <SettingRow name={t('voice.language')} desc={t('voice.languageDesc')}>
           <Segmented<VoiceLanguage>
             value={status?.language ?? 'auto'}
             label={t('voice.language')}
@@ -248,11 +238,10 @@ export function VoiceTab() {
             options={VOICE_LANGUAGES.map((lang) => ({ value: lang, label: t(`voice.lang.${lang}` as 'voice.lang.auto') }))}
             onChange={(language) => void save({ ...(saved ?? {}), language })}
           />
-        </div>
-      </div>
+        </SettingRow>
 
-      <div className="set-row col">
-        <div className="set-desc">{t('voice.privacy', { dir: status?.storageDir ?? '' })}</div>
+      <div className="ui-row col">
+        <div className="ui-row-desc">{t('voice.privacy', { dir: status?.storageDir ?? '' })}</div>
         {error ? <div className="set-warn" role="alert">{error}</div> : null}
       </div>
     </div>

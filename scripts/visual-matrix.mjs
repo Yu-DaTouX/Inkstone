@@ -2265,7 +2265,7 @@ const STATES = {
       st.openSettings('appearance');
       await new Promise((r) => setTimeout(r, 600));
       const key = document.querySelector('[data-testid="set-work-mode-key"]');
-      key?.closest('.set-row')?.scrollIntoView?.({ block: 'center' });
+      key?.closest('.ui-row')?.scrollIntoView?.({ block: 'center' });
       await new Promise((r) => setTimeout(r, 500));
       return 'ok';
     })()
@@ -5488,7 +5488,7 @@ const MUST_HAVE = {
     '[data-testid="goal-modify-plan"]'
   ],
   /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
-  workmodekey: ['.set-row:has([data-testid="set-work-mode-key"])'],
+  workmodekey: ['.ui-row:has([data-testid="set-work-mode-key"])'],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
   subagentfailed: [
     '[data-testid="right-window-tab-subagent-sub-failed"]',

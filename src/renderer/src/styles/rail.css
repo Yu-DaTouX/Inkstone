@@ -1238,38 +1238,6 @@ body.rail-dragging .srow {
   padding-right: var(--sp-5);
 }
 
-.srow-menu-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-}
-
-.srow-menu-btn:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.srow-menu-btn.danger:hover {
-  background: var(--err-soft);
-  color: var(--err);
-}
-
-.srow-menu-btn:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
-}
-
-.srow-menu-btn:disabled:hover {
-  background: none;
-  color: var(--fg-dim);
-}
-
 /* 连接状态做成头像右下角的小点 */
 .rail-avatar::after {
   content: '';
@@ -1569,26 +1537,6 @@ body.rail-dragging .srow {
 }
 
 /* 首字 / 图标 二选一 */
-.rup-seg {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-0);
-}
-
-.rup-seg-btn {
-  padding: 2px 9px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-.rup-seg-btn.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
 /* 图标网格 */
 .rup-icons {
   display: grid;
@@ -1642,20 +1590,8 @@ body.rail-dragging .srow {
   border-color: var(--accent);
 }
 
-.rup-btn {
-  width: 100%;
+.rup-action {
   margin-top: var(--sp-3);
-  padding: 5px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-3);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-}
-
-.rup-btn:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
 }
 
 .rup-login {

@@ -639,32 +639,6 @@
   color: var(--fg);
 }
 
-.wb-preview-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  flex: none;
-  padding: 2px var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.6;
-  cursor: pointer;
-}
-
-.wb-preview-btn:hover {
-  color: var(--fg);
-  border-color: var(--accent-line);
-}
-
-.wb-preview-btn:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 1px;
-}
-
 .wb-preview-stat {
   flex: 0 0 auto;
   padding: var(--sp-1) 10px;
@@ -1030,58 +1004,13 @@
   font-weight: var(--fw-regular);
 }
 
+/* 视图切换是 ui.css 的分段控件（.seg.sm）；这里只把它推到标题行右侧 */
 .wb-space-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
   margin-left: auto;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-}
-
-.wb-space-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: 2px 10px;
-  border: 0;
-  border-radius: var(--r-xs);
-  background: transparent;
-  color: var(--fg-mute);
-  font: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.wb-space-tab:hover {
-  color: var(--fg);
-}
-
-.wb-space-tab.on {
-  background: var(--bg-0);
-  color: var(--fg);
 }
 
 .wb-space-close {
   flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--fg-mute);
-  font-size: var(--fs-lg);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.wb-space-close:hover {
-  background: var(--bg-2);
-  color: var(--fg);
 }
 
 .wb-space-body {
@@ -1449,7 +1378,7 @@
   gap: 6px;
 }
 
-.wb-follow-actions .wb-btn {
+.wb-follow-actions .btn {
   flex: 0 0 auto;
   white-space: nowrap;
 }

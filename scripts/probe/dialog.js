@@ -260,7 +260,7 @@
      * 用它测“能用键盘操作”会得到一个假结论）。
      */
     const controls = [
-      ...panel2.querySelectorAll('[role="tab"], .seg-btn, .set-ctl button, .set-ctl input, .set-ctl select')
+      ...panel2.querySelectorAll('[role="tab"], .seg-btn, .ui-row-ctl button, .ui-row-ctl input, .ui-row-ctl select')
     ]
     const notFocusable = controls.filter((el) => el.tabIndex < 0)
     const notNative = controls.filter(

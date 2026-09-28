@@ -1181,20 +1181,8 @@
   gap: var(--sp-1);
   margin: -2px 0 5px;
 }
-.rp-stage-chip {
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
-}
-.rp-stage-chip.on {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.rp-stage-chip.planned {
+/* 阶段图例用 ui.css 的徽标；尚未接管的阶段用虚线表示「阶段 4 前不会触发」 */
+.rp-stage.planned {
   border-style: dashed;
 }
 
@@ -1660,6 +1648,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rp-goal-step-mark {
+  display: inline-grid;
+  place-items: center;
+}
+/* 未开始的步骤：CSS 画的空心点（设计规范 §3.4：状态点不用文字符号） */
+.rp-goal-step:not(.done):not(.blocked) .rp-goal-step-mark::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: var(--r-full);
 }
 
 .rp-goal-step.done { color: var(--fg-mute); }
@@ -3282,31 +3283,17 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: none;
 }
 
-.rightpanel.right-window-panel .rp-windowbar .rp-window-tab {
+.rightpanel.right-window-panel .rp-windowbar .ui-tab {
   flex: 0 1 auto;
   /* 窄右栏（≤980px 时设计宽度只有 190px）里两个 128px 胶囊放不下：
      窄窗口下右栏第一屏就是标签栏，标签必须自己收缩。靠“隐藏滚动条 + 横向滚”
      用户根本看不出第二个标签存在（940x620 实测：「工具」被挤到可视区外，
-     看上去像被裁掉）。收缩留给文字截断，图标不参与。 */
+     看上去像被裁掉）。收缩留给文字截断，图标不参与。外观来自 .ui-tab.doc。 */
   min-width: 0;
   max-width: 220px;
-  height: 30px;
-  border: 0;
-  text-align: left;
-  cursor: pointer;
 }
 
-.rightpanel.right-window-panel .rp-windowbar .rp-window-tab:not(.active):hover {
-  color: var(--fg);
-  background: var(--bg-3);
-}
-
-/* 收缩只留给文字截断：图标被压扁后连图标是什么都认不出 */
-.rightpanel.right-window-panel .rp-windowbar .rp-window-tab > .ico {
-  flex: none;
-}
-
-.rightpanel.right-window-panel .rp-window-tab > span:not(.spacer) {
+.rightpanel.right-window-panel .rp-windowbar .ui-tab > span:not(.spacer):not(.ui-tab-close) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3314,27 +3301,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .rightpanel.right-window-panel .rp-windowbar .rp-window-plus {
-  display: inline-grid;
   flex: none;
-  place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-md);
-  color: var(--fg-mute);
-  background: transparent;
-  font: inherit;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.rightpanel.right-window-panel .rp-windowbar .rp-window-plus:hover,
-.rightpanel.right-window-panel .rp-windowbar .rp-window-plus.on {
-  color: var(--fg);
-  background: var(--bg-3);
 }
 
 .rightpanel.right-window-panel .rp-windowbar .rp-tool-launcher-wrap {
@@ -3475,43 +3442,6 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   .rp-start-item {
     transition-duration: var(--dur-1);
   }
-}
-
-/* H-10a：子代理详情三页签（概览 / 过程 / 变更）。
-   执行状态在头部，审阅状态在概览与变更页，两者不共用一个颜色。 */
-.sp-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 6px 10px 0;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.sp-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.sp-tab:hover {
-  color: var(--fg);
-}
-
-.sp-tab.on {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.sp-tab:focus-visible {
-  outline: var(--focus-ring-w) solid var(--focus-ring-color);
-  outline-offset: calc(-1 * var(--focus-ring-w));
 }
 
 .sp-overview {
@@ -3781,23 +3711,6 @@ body.tile-dragging .rp-float-head {
 
 .rp-float-head .spacer {
   flex: 1;
-}
-
-.rp-float-btn {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* 28px 命中区（实施-13 §3.2 的紧凑图标下限），但视觉不占满整头 */
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-
-.rp-float-btn:hover {
-  background: var(--bg-2);
-  color: var(--accent);
 }
 
 .rp-float-body {

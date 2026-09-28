@@ -9,6 +9,7 @@ import type {
   PackageActionResultView,
   PackageListingView
 } from '../../../../shared/ipc'
+import { Button, SettingRow } from '../ui'
 
 /**
  * 内置能力的文案表（id → zh-CN 的 i18n 键）。
@@ -146,33 +147,28 @@ export function PackagesTab(): React.JSX.Element {
   }
 
   return (
-    <div className="set-group" data-testid="set-packages">
+    <div className="ui-rows" data-testid="set-packages">
       {/* ① 目录入口：方案 §9 的 P1 */}
-      <div className="set-row" data-testid="set-pi-catalog">
-        <div className="set-label">
-          <div className="set-name">{t('pkg.catalog')}</div>
-          <div className="set-desc">{t('pkg.catalogDesc')}</div>
-          <div className="set-desc">{t('pkg.catalogNote')}</div>
+      <div className="ui-row" data-testid="set-pi-catalog">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('pkg.catalog')}</div>
+          <div className="ui-row-desc">{t('pkg.catalogDesc')}</div>
+          <div className="ui-row-desc">{t('pkg.catalogNote')}</div>
         </div>
-        <button
-          type="button"
-          className="btn"
-          data-testid="set-pi-catalog-open"
-          onClick={() => void window.yan.browser.open('https://pi.dev/packages')}
-        >
+        <Button type="button" data-testid="set-pi-catalog-open" onClick={() => void window.yan.browser.open('https://pi.dev/packages')}>
           {t('pkg.open')}
-        </button>
+        </Button>
       </div>
 
       {/* ② 安装 */}
-      <div className="set-row set-row-col" data-testid="pkg-install">
-        <div className="set-label">
-          <div className="set-name">{t('pkg.install')}</div>
-          <div className="set-desc">{t('pkg.installDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="pkg-install">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('pkg.install')}</div>
+          <div className="ui-row-desc">{t('pkg.installDesc')}</div>
         </div>
         <div className="pkg-install-row">
           <input
-            className="set-input"
+            className="ui-input"
             data-testid="pkg-source"
             placeholder="npm:pi-zh-cn  /  npm:@scope/pkg@1.2.3"
             value={source}
@@ -188,15 +184,9 @@ export function PackagesTab(): React.JSX.Element {
             />
             <span>{t('pkg.local')}</span>
           </label>
-          <button
-            type="button"
-            className="btn"
-            data-testid="pkg-install-btn"
-            disabled={!!busy || !source.trim()}
-            onClick={() => void run('install', source.trim())}
-          >
+          <Button type="button" data-testid="pkg-install-btn" disabled={!!busy || !source.trim()} onClick={() => void run('install', source.trim())}>
             {busy.startsWith('install') ? t('pkg.working') : t('pkg.installBtn')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -225,15 +215,15 @@ export function PackagesTab(): React.JSX.Element {
       ) : null}
 
       {/* ④ 已装列表（用户装的包：有版本、有来源、可卸载） */}
-      <div className="set-row set-row-col" data-testid="pkg-list">
-        <div className="set-label">
-          <div className="set-name">{t('pkg.installed')}</div>
-          <div className="set-desc" title={listing?.userSettings}>
+      <div className="ui-row set-row-col" data-testid="pkg-list">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('pkg.installed')}</div>
+          <div className="ui-row-desc" title={listing?.userSettings}>
             {t('pkg.location', { dir: listing?.agentDir ?? '—' })}
           </div>
         </div>
         {!listing || listing.entries.length === 0 ? (
-          <div className="set-desc" data-testid="pkg-empty">
+          <div className="ui-row-desc" data-testid="pkg-empty">
             {listing?.ok === false ? (listing.error ?? t('pkg.listFailed')) : t('pkg.empty')}
           </div>
         ) : (
@@ -303,10 +293,10 @@ export function PackagesTab(): React.JSX.Element {
 
       {/* ⑤ 砚内置能力：与「用户装的包」彻底分开（实施-02 S4） */}
       {builtin.length > 0 ? (
-        <div className="set-row set-row-col" data-testid="set-builtin-caps">
-          <div className="set-label">
-            <div className="set-name">{t('pkg.builtin')}</div>
-            <div className="set-desc">{t('pkg.builtinDesc')}</div>
+        <div className="ui-row set-row-col" data-testid="set-builtin-caps">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('pkg.builtin')}</div>
+            <div className="ui-row-desc">{t('pkg.builtinDesc')}</div>
           </div>
           <div className="pkg-list">
             {builtin.map((cap) => {
@@ -337,35 +327,25 @@ export function PackagesTab(): React.JSX.Element {
       ) : null}
 
       {/* ⑥ 生效时机（方案 §9：任务运行中要安排安全的生效时机） */}
-      <div className="set-row" data-testid="pkg-effect">
-        <div className="set-label">
-          <div className="set-desc">{t('pkg.effect')}</div>
-        </div>
-      </div>
+      <SettingRow data-testid="pkg-effect" desc={t('pkg.effect')} />
 
       {/* ⑦ 图片附件：只统计占用，什么时候清由用户决定 */}
-      <div className="set-row set-row-col" data-testid="set-attachments">
-        <div className="set-label">
-          <div className="set-name">{t('pkg.attach')}</div>
-          <div className="set-desc">{t('pkg.attachDesc')}</div>
+      <div className="ui-row set-row-col" data-testid="set-attachments">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('pkg.attach')}</div>
+          <div className="ui-row-desc">{t('pkg.attachDesc')}</div>
         </div>
         <div className="pkg-install-row">
-          <span className="set-desc" data-testid="set-attach-size">
+          <span className="ui-row-desc" data-testid="set-attach-size">
             {attach ? t('pkg.attachSize', { files: attach.files, size: fmtSize(attach.bytes) }) : '—'}
           </span>
           <span className="spacer" />
-          <button
-            type="button"
-            className="btn"
-            data-testid="set-attach-clean"
-            disabled={attachBusy || !attach || attach.files === 0}
-            onClick={() => void cleanAttachments()}
-          >
+          <Button type="button" data-testid="set-attach-clean" disabled={attachBusy || !attach || attach.files === 0} onClick={() => void cleanAttachments()}>
             {attachBusy ? t('pkg.working') : t('pkg.attachClean')}
-          </button>
+          </Button>
         </div>
         {attachNote ? (
-          <div className="set-desc" data-testid="set-attach-note">
+          <div className="ui-row-desc" data-testid="set-attach-note">
             {attachNote}
           </div>
         ) : null}

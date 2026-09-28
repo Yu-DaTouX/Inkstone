@@ -42,10 +42,10 @@
       'btn sm rp-btn',
       'rp-act',
       'btn icon sm review-act',
-      'browser-nav',
-      'btn commit-btn',
+      'btn icon sm browser-nav',
+      'btn primary commit-submit',
       'tl-move',
-      'srow-menu-btn',
+      'ui-menu-item',
       'slash-item',
       'rdiff-gap'
     ]
