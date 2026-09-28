@@ -9,7 +9,7 @@ import { UsageBar } from './UsageBar'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
-import type { WorkMode } from '../../../../shared/work-mode'
+import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
 
 /**
  * 输入区。四种输入模式共存：
@@ -120,7 +120,8 @@ export function Composer() {
   const defaultWorkMode = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
   const activeWorkMode: WorkMode = workModeState?.mode ?? defaultWorkMode
   const autonomous = activeWorkMode === 'autonomous'
-  /** 模式按钮：Esc 从输入框把焦点送到这里（避开键盘陷阱） */
+  /** 输入区里的会话模式切换器，也作为 Esc 后的键盘焦点落点。 */
+  const modeButtonRef = useRef<HTMLButtonElement>(null)
   const editorInject = useStore((s) => s.editorInject)
   /* 办事模板（P14）的「填到输入框」：跨页中转，消费后清空 —— 只填不发。 */
   const composerInsert = useStore((s) => s.composerInsert)
@@ -898,13 +899,7 @@ export function Composer() {
       }
     }
 
-    /*
-     * 工作模式快切（实施-05 §3）在 2026-09-22 改成**全局快捷键**（默认 `Ctrl+Tab`）。
-     *
-     * 这里不再拦裸 Tab：那是输入框里唯一的「移到下一个控件」键，被抢掉后
-     * 键盘用户只能靠 Esc 逃出输入框，Tab 补全弹窗也要绕开它。
-     * 快捷键的实现在 `App.tsx`（焦点在哪都生效），与输入框无关。
-     */
+    /* 工作模式仍可用全局 Ctrl+Tab 快切；裸 Tab 保持输入框的原生焦点移动。 */
 
     /*
      * 发送键。
@@ -951,10 +946,11 @@ export function Composer() {
       void abort()
     }
 
-    /*
-     * Esc 原本把焦点交给模式按钮（那时它就在输入区里）。
-     * 模式控件搬到设置之后，这里不再抢焦点 —— Esc 在输入框里的默认语义保留。
-     */
+    /* Esc 可从输入区直接到模式切换器，键盘用户不必绕设置找入口。 */
+    if (e.key === 'Escape' && !expanded && !busy && !disabled) {
+      e.preventDefault()
+      modeButtonRef.current?.focus()
+    }
   }
 
   return (
@@ -973,6 +969,12 @@ export function Composer() {
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
+      {/*
+       * .composer-stack 只做一件事：给问题面板当定位父元素。
+       * 面板是浮层（`bottom: calc(100% + …)` 向上生长），得与输入框同层才贴得上；
+       * 又不能塞进 .composer —— 那张卡片有 overflow: hidden，浮层会被裁掉。
+       */}
+      <div className="composer-stack">
       <QuestionPanel />
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
@@ -1128,17 +1130,8 @@ export function Composer() {
 
             <PlusMenu onInsert={insertAtCursor} />
 
-            {/*
-             * 工作模式与活动档案的控件已从输入区移除（实施-27 B3）。
-             *
-             * 理由：主界面只留对话与结果。这两项都是「一次选定、整段会话不变」的
-             * 设定，常驻在输入区等于每轮都在提醒用户「你还有个开关没拨过」。
-             * 现在的入口：
-             *   · 工作模式 —— 设置 · 外观（默认值）＋ 全局快捷键（Tab 快切，见 App）
-             *   · 活动档案 —— 设置 · 工作区（按会话保存）
-             * 当前值仍然处处可见（自主模式仍有边界光带；模式名在设置里），
-             * 不会变成「看不见也改不了」。
-             */}
+            {/* 工作模式是高频会话控制，留在输入区便于直接切换；活动档案仍在设置中管理。 */}
+            <WorkModePicker buttonRef={modeButtonRef} />
 
             {/*
              * 当前发送规则 —— **常显**（不只是长文模式）。
@@ -1194,6 +1187,7 @@ export function Composer() {
             <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>
           </button>
         </div>
+      </div>
 
       </div>
 
@@ -1330,6 +1324,129 @@ function QueueStack() {
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * 会话工作模式选择器。把当前值和三种模式放在输入区旁，点一次即可切换。
+ */
+function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonElement | null> }) {
+  const t = useT()
+  const stored = useStore((s) => s.workMode)
+  const fallback = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
+  const setWorkMode = useStore((s) => s.setWorkMode)
+  const state: WorkMode = stored?.mode ?? fallback
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuWidth = 288
+
+  useEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    setIndex(Math.max(0, WORK_MODES.indexOf(state)))
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      setAnchor({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8)),
+        bottom: Math.max(8, window.innerHeight - rect.top + 6)
+      })
+    }
+    menuRef.current?.focus()
+  }, [open, state, buttonRef])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const commit = (mode: WorkMode) => {
+    setOpen(false)
+    buttonRef.current?.focus()
+    if (mode !== state) void setWorkMode(mode)
+  }
+
+  return (
+    <div className="mode-picker" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        className="ctool mode-button"
+        data-testid="work-mode-button"
+        data-mode={state}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t(`workMode.desc.${state}`)}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            setOpen(true)
+          } else if (event.key === 'Escape' && open) {
+            event.preventDefault()
+            setOpen(false)
+          }
+        }}
+      >
+        <Icon name="sparkles" size={12} />
+        <span className="mode-label" data-testid="work-mode-label">
+          {t(`workMode.label.${state}`)}
+        </span>
+        <span className="mode-caret" aria-hidden>▾</span>
+      </button>
+
+      {open ? (
+        <div
+          className="mode-menu"
+          role="menu"
+          data-testid="work-mode-menu"
+          data-mode={state}
+          ref={menuRef}
+          tabIndex={-1}
+          style={{ width: menuWidth, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              setIndex((value) => (value + 1) % WORK_MODES.length)
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              setIndex((value) => (value - 1 + WORK_MODES.length) % WORK_MODES.length)
+            } else if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              commit(WORK_MODES[index])
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              setOpen(false)
+              buttonRef.current?.focus()
+            }
+          }}
+        >
+          {WORK_MODES.map((mode, itemIndex) => (
+            <button
+              key={mode}
+              role="menuitemradio"
+              aria-checked={mode === state}
+              tabIndex={-1}
+              className={`mode-item ${itemIndex === index ? 'active' : ''} ${mode === state ? 'current' : ''}`}
+              data-testid={`work-mode-option-${mode}`}
+              data-mode={mode}
+              onMouseEnter={() => setIndex(itemIndex)}
+              onClick={() => commit(mode)}
+            >
+              <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
+              <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
