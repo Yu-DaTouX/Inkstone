@@ -1062,6 +1062,8 @@
   "set.ctxBudgetV1ExitRaise": "临时抬软线",
   "set.ctxBudgetV1ExitLower": "降档",
   "set.ctxBudgetV1ExitApplied": "已改到 {selected}；那笔停住的整理已作废，可以继续对话。",
+  "set.ctxBudgetV1RaiseApplied": "已临时抬到 {selected}，到 {until} 自动回落到原档。",
+  "set.ctxBudgetV1TemporaryRaise": "临时抬线中：{selected}（到 {until} 自动回落，原档 {falls}）",
   "set.ctxBudgetV1BlockedHint": "整理没有完成，新消息会被拦下（不再每轮空跑）。选一个出口：重试整理 / 临时抬软线 / 降档。",
   "set.ctxBudgetV1MaintenanceResumeUncertain": "续接发送状态不明。为避免重复执行，请先检查会话记录，再手动决定如何继续。",
   "set.ctxBudgetV1MaintenanceStoppedAt": "卡在：{stage}",

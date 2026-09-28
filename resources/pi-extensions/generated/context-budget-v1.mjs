@@ -1,5 +1,5 @@
 /* Generated from src/shared/context-budget-v1.ts. Do not edit.
- * source-sha256: 3d7dd8276470177be5caf16cceb0a67645bfa98ce2c8061593067dd7065f9a5f
+ * source-sha256: 943a88bd7bf7501938b686292dfb805319e838adc33179dae2ac98d68f46e928
  */
 /**
  * Context budget V1. This module is deliberately pure so the host, UI and the
@@ -120,6 +120,34 @@ export function adjacentContextBudgetTierV1(current, direction, ceiling = CONTEX
         return normalized;
     }
     return index > 0 ? tiers[index - 1] : normalized;
+}
+/**
+ * 「临时抬软线」的有效期。
+ *
+ * 30 分钟够把手里这轮对话处理完，又不至于让一次手滑变成长期花费 ——
+ * 抬线本来就是为了让**这一次**不再撞线，不是要一个新档位。
+ */
+export const CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS = 30 * 60 * 1000;
+/**
+ * 真正生效的软线 —— 宿主（预算门、界面）与扩展必须用同一个数。
+ *
+ * 分两处算就会出现「界面显示 300K、扩展按 200K 拦」这种无法解释的现象。
+ * 过期的覆盖视为不存在（惰性失效，不需要定时任务去清理）。
+ */
+export function effectiveContextBudgetTierV1(input) {
+    const base = normalizeContextBudgetTierV1(input.selectedBudget) ?? CONTEXT_BUDGET_V1_TIERS[0];
+    const override = input.temporaryBudgetOverride;
+    if (!override || typeof override !== 'object' || Array.isArray(override))
+        return base;
+    const item = override;
+    const tier = normalizeContextBudgetTierV1(item.selectedBudget);
+    const expiresAt = item.expiresAt;
+    if (!tier || typeof expiresAt !== 'number' || !Number.isFinite(expiresAt))
+        return base;
+    const now = typeof input.now === 'number' ? input.now : Date.now();
+    if (tier < base)
+        return base;
+    return expiresAt > now ? tier : base;
 }
 /**
  * Stable, non-secret endpoint identity for one runtime model configuration.

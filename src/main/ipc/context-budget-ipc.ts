@@ -8,7 +8,13 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { activeContextPolicy, contextPolicySettings } from '../context-policy'
 import { contextBudget } from '../../shared/context-policy'
-import { adjacentContextBudgetTierV1, isContextBudgetTierV1, sanitizeContextBudgetRuntimeSnapshotV1 } from '../../shared/context-budget-v1'
+import {
+  CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS,
+  adjacentContextBudgetTierV1,
+  effectiveContextBudgetTierV1,
+  isContextBudgetTierV1,
+  sanitizeContextBudgetRuntimeSnapshotV1
+} from '../../shared/context-budget-v1'
 import { ContextBudgetStoreError, contextBudgetStoreV1 } from '../context-budget-store'
 import { modelKeyOf } from '../../shared/model-capabilities'
 import { randomUUID } from 'node:crypto'
@@ -217,26 +223,34 @@ export function registerContextBudgetIpc(ipc: IpcRegistrar, deps: ContextBudgetI
       const phaseId = current.activePhaseId
       const phase = current.phases[phaseId]
       if (!phase) return { ok: false, error: '当前任务阶段已不存在' }
-      const target = adjacentContextBudgetTierV1(
-        phase.selectedBudget,
-        action === 'raise-line' ? 'up' : 'down',
-        phase.autoMaxBudget
-      )
+      const raising = action === 'raise-line'
+      const effective = effectiveContextBudgetTierV1({
+        selectedBudget: phase.selectedBudget,
+        temporaryBudgetOverride: phase.temporaryBudgetOverride
+      })
+      const target = adjacentContextBudgetTierV1(effective, raising ? 'up' : 'down', phase.autoMaxBudget)
+      if (raising && target === effective) {
+        return { ok: false, error: `已经到可抬到的最高档（${Math.round(effective / 1000)}K）` }
+      }
+      const expiresAt = Date.now() + CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS
       const policy = await contextBudgetStoreV1.update(sessionId, request.expectedRevision, (latest) => {
         const latestPhase = latest.phases[phaseId]
         if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
-        return {
-          ...latest,
-          phases: {
-            ...latest.phases,
-            [phaseId]: {
-              ...latestPhase,
-              selectedBudget: target,
-              selectionSource: 'user',
-              selectionReason: action === 'raise-line' ? 'user_raised_soft_line' : 'user_lowered_tier'
-            }
-          }
+        const nextPhase = { ...latestPhase }
+        if (raising) {
+          /*
+           * 抬线只写**临时**覆盖：基础档不动，到期自动回落 ——
+           * 用户要的是「这次先过去」，不是想要一个新档位。
+           */
+          nextPhase.temporaryBudgetOverride = { selectedBudget: target, expiresAt }
+        } else {
+          /* 降档是持久的：把有效档真正降下来，并取消临时抬线 */
+          nextPhase.selectedBudget = target
+          nextPhase.selectionSource = 'user'
+          nextPhase.selectionReason = 'user_lowered_tier'
+          delete nextPhase.temporaryBudgetOverride
         }
+        return { ...latest, phases: { ...latest.phases, [phaseId]: nextPhase } }
       })
       const operation = await contextBudgetStoreV1.latestOperation(sessionId)
       if (operation && operation.requestKind === 'automatic' && operation.state === 'needs_action') {
@@ -252,7 +266,7 @@ export function registerContextBudgetIpc(ipc: IpcRegistrar, deps: ContextBudgetI
           /* 记录已被别的事务推进：档位已经改了，这里不再覆盖它 */
         }
       }
-      return { ok: true, policy, selectedBudget: target }
+      return { ok: true, policy, selectedBudget: target, temporary: raising, expiresAt: raising ? expiresAt : null }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : '出口未生效' }
     }

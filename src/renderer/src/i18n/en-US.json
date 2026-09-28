@@ -1062,6 +1062,8 @@
   "set.ctxBudgetV1ExitRaise": "Raise soft line",
   "set.ctxBudgetV1ExitLower": "Lower tier",
   "set.ctxBudgetV1ExitApplied": "Now at {selected}; the stalled summary was superseded and you can continue.",
+  "set.ctxBudgetV1RaiseApplied": "Temporarily raised to {selected}; it falls back automatically at {until}.",
+  "set.ctxBudgetV1TemporaryRaise": "Temporary raise active: {selected} (falls back to {falls} at {until})",
   "set.ctxBudgetV1BlockedHint": "Summarization did not finish, so new messages are held (instead of burning a turn each time). Pick one exit: retry summary / raise soft line / lower tier.",
   "set.ctxBudgetV1MaintenanceResumeUncertain": "The continuation send is uncertain. Check the session record before deciding how to continue; it will not be resent automatically.",
   "set.ctxBudgetV1MaintenanceStoppedAt": "Stopped at: {stage}",
