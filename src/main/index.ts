@@ -12,10 +12,8 @@ import { fileURLToPath } from 'node:url'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt, type GoalCommandHost } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
-import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
-import { listSessions, deleteSession, readTitleSamples, restoreSession } from './sessions'
-import { moveSessionLayout, rememberSession } from './session-layout'
+import { rememberSession } from './session-layout'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
 import { readRepoState } from './git-service'
@@ -50,6 +48,8 @@ import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { registerSessionIpc } from './ipc/session-ipc'
+import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
@@ -60,7 +60,7 @@ import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, goalBudgetUsage, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, buildContextRequest, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
-import { configureRemoteHost, remoteSnapshot, filterChainRepresentatives, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
+import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, tryArmHandoff, abandonHandoff } from './handoff-coordinator'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
@@ -75,7 +75,7 @@ import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
 import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
 import { type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
-import { normalizeChainKey, planHistoryRead } from '../shared/session-chain'
+import { normalizeChainKey } from '../shared/session-chain'
 import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
 import { createSessionWorkScheduler } from './session-work-scheduler'
 import { AUTO_CONTINUE_LIMIT } from '../shared/auto-continue'
@@ -2685,189 +2685,7 @@ function registerIpc(): void {
     await ac()?.abortBash()
   })
 
-  /* ---- 会话管理 ---- */
-  handle('yan:fork', async (entryId: string) => ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:clone', async () => ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:forkPoints', async () => ac()?.forkPoints() ?? [])
-  handle('yan:exportHtml', async () => {
-    const res = (await ac()?.exportHtml()) ?? { ok: false, error: 'pi 未运行' }
-    if (res.ok && res.path) await shell.openPath(res.path)
-    return res
-  })
-  handle('yan:deleteSession', async (path: string) => {
-    try {
-      await sessionChains.load()
-      const chain = sessionChains.chainOf(path)
-      /*
-       * 删除按**链**整体处理（实施-05 S5b-4）：交接过的会话在磁盘上是两份 JSONL，
-       * 只删其中一份会让历史拼接断成两截（看上去像内容丢了）。
-       * 顺序仍是「先停实例、再删文件」，与单段删除同一条路。
-       */
-      const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
-      const current = ac()?.getState()?.sessionFile
-      /* 当前正在用的会话在链上任何一段都算“在用”（防止把正在看的会话删掉） */
-      for (const target of targets) await runners?.stopBySessionFile(target)
-      const tokens: string[] = []
-      for (const target of targets) {
-        tokens.push(await deleteSession(target, current))
-      }
-      /* 段都进回收站了，链记录再留着就会指向不存在的文件（侧栏会把另一段也藏起来） */
-      await sessionChains.forget(path).catch(() => false)
-      pushRunners()
-      /* 多个 token 用 `|` 拼成一个（IPC 形状不变）：撤销时要整链一起恢复 */
-      return { ok: true, undoToken: tokens.join('|') }
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
-    }
-  })
-  handle('yan:restoreSession', async (undoToken: string) => {
-    try {
-      /* 链删除返回的是多个 token（`|` 分隔）：整链一起恢复，否则历史又会断 */
-      const tokens = String(undoToken ?? '')
-        .split('|')
-        .map((item) => item.trim())
-        .filter(Boolean)
-      if (!tokens.length) return { ok: false, error: '没有可撤销的删除' }
-      for (const token of tokens) await restoreSession(token)
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
-    }
-  })
-
-  /**
-   * 移动项目语义归属：只写 session-layout.json，不移动 JSONL，也不停止 runner。
-   * null 表示 Yan 默认全局位置；目标项目必须是设置里的稳定 projectId。
-   */
-  handle('yan:moveSession', async (sessionId: string, projectId: string | null) => {
-    const settings = await getSettings()
-    if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
-      return { ok: false, error: '目标项目不存在或已被移除' }
-    }
-    const summaries = await listSessions(500, settings.projects)
-    const summary = summaries.find((item) => item.id === sessionId)
-    if (!summary) return { ok: false, error: '找不到要移动的会话' }
-    try {
-      const entry = await moveSessionLayout(
-        { sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd },
-        projectId
-      )
-      return { ok: true, entry }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:newSession', async (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => {
-    const settings = await getSettings()
-    const cwdResult = await validateCwd(target?.cwd ?? settings.cwd)
-    if (!cwdResult.ok) return cwdResult
-    if (!runners) {
-      const r = await startAgent()
-      if (!r.ok) return r
-    }
-    if (target?.projectId && !settings.projects.some((project) => project.id === target.projectId)) {
-      return { ok: false, error: '目标项目不存在或已被移除' }
-    }
-    const cwd = cwdResult.cwd
-    const projectId = target?.scope === 'global'
-      ? undefined
-      : (target?.projectId ?? (target?.scope === 'pending' ? undefined : projectIdForCwd(settings, cwd)))
-    const scope = target?.scope ?? (projectId ? 'project' : 'global')
-    const res = await runners!.select({ cwd, projectId, scope })
-    await rememberRunnerSession(res, { cwd, projectId, scope })
-    if (res.ok && res.id) void pushRunnerSnapshot(res.id)
-    pushRunners()
-    return res.ok
-      ? {
-          ok: true,
-          id: res.id,
-          runId: res.runId,
-          sessionId: res.sessionId,
-          generation: res.generation
-        }
-      : { ok: false, error: res.error }
-  })
-
-  /**
-   * 切到某个会话（N12）。
-   *
-   * 命中已有实例 → 只改视图（后台会话继续跑）；
-   * 空闲实例 → 复用；到并发上限 → 明确报错。
-   */
-  handle(
-    'yan:selectSession',
-    async (target: {
-      sessionFile?: string
-      sessionId?: string
-      projectId?: string
-      scope?: 'global' | 'project' | 'pending'
-      cwd: string
-      /** 只是看一眼：主进程不会为它建实例，也不会建隔离工作树 */
-      preview?: boolean
-    }) => {
-      const cwdResult = await validateCwd(target.cwd)
-      if (!cwdResult.ok) return cwdResult
-      if (!runners) {
-        const r = await startAgent()
-        if (!r.ok) return r
-      }
-      const settings = await getSettings()
-      /* global 是显式产品归属，不能因为物理 cwd 恰好落在项目里就被重新吸回。 */
-      const projectId = target.scope === 'global'
-        ? undefined
-        : (target.projectId ?? (target.scope === 'pending' ? undefined : projectIdForCwd(settings, cwdResult.cwd)))
-      const res = await runners!.select({
-        ...target,
-        cwd: cwdResult.cwd,
-        projectId
-      })
-      /*
-       * `deferred`：只是查看，实例没动 —— 不能把它记成「这条会话跑在哪个实例上」，
-       * 否则后续按实例找会话会指向一个根本没载入这条会话的进程。
-       */
-      if (!res.deferred) {
-        await rememberRunnerSession(res, {
-          ...target,
-          cwd: cwdResult.cwd,
-          projectId,
-          scope: target.scope ?? (projectId ? 'project' : 'global')
-        })
-      }
-      if (res.ok && res.id) void pushRunnerSnapshot(res.id)
-      pushRunners()
-      return res
-    }
-  )
-
-  /** 所有运行实例的状态（左栏状态槽；也用于补上错过的 runners 推送） */
-  handle('yan:runnerStatuses', async () => runners?.statuses() ?? [])
-
-  /** 停掉某一个运行实例 —— 作用域只到它（单独停 B 不影响 A） */
-  handle('yan:stopRunner', async (id: string) => {
-    const done = (await runners?.stopOne(id)) ?? false
-    pushRunners()
-    return done
-  })
-
-  /* 兼容旧调用：与 selectSession 同一套逻辑（cwd 取当前项目） */
-  handle('yan:switchSession', async (path: string) => {
-    if (!runners) return { ok: false, error: 'pi 未运行' }
-    const settings = await getSettings()
-    const cwdResult = await validateCwd(settings.cwd)
-    if (!cwdResult.ok) return cwdResult
-    const res = await runners.select({ sessionFile: path, cwd: cwdResult.cwd })
-    await rememberRunnerSession(res, {
-      sessionFile: path,
-      cwd: cwdResult.cwd,
-      projectId: projectIdForCwd(settings, cwdResult.cwd),
-      scope: 'project'
-    })
-    if (res.ok && res.id) void pushRunnerSnapshot(res.id)
-    pushRunners()
-    return res.ok ? { ok: true } : { ok: false, error: res.error }
-  })
-  handle('yan:compact', async () => ac()?.compact() ?? { ok: false, error: 'pi 未运行' })
+  registerSessionIpc(ipc, sessionHost)
 
   /* ---- 模型 / 思考 ---- */
   handle('yan:listModels', async () => ac()?.listModels() ?? [])
@@ -2960,82 +2778,6 @@ function registerIpc(): void {
   )
   handle('yan:getMessages', async () => ac()?.getMessages() ?? [])
   handle('yan:getStats', async () => ac()?.refreshStats() ?? null)
-  handle('yan:cachedTitles', async () => cachedTitles())
-  /*
-   * 手动重命名。比“自动标题”更松一点：写一个独立的粘性名。
-   * 两条通路：
-   *   · 当前会话也调一次 pi 的 set_session_name（TUI / 其它客户端能看到）
-   *   · 无论哪个会话都写 manual-titles.json（桌面端左栏立刻生效、且不被重生标题盖掉）
-   */
-  handle('yan:renameSession', async (name: string) => ac()?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:manualTitles', async () => manualTitles())
-  handle('yan:setManualTitle', async (sessionId: string, name: string) =>
-    setManualTitle(String(sessionId ?? ''), String(name ?? ''))
-  )
-  handle('yan:regenerateTitle', async (sessionId: string) => {
-    const sid = String(sessionId ?? '').trim()
-    if (!sid) return { ok: false, error: '缺少目标会话' }
-
-    /*
-     * 运行中的目标交给它自己的 AgentController：不能切当前视图，也不能把
-     * 标题请求塞进主对话。非运行会话则只读 JSONL 的首尾用户消息，起一个
-     * --no-session 的独立归纳进程；两条路径都按稳定 sessionId 归属结果。
-     */
-    const live = runners?.agentForSession(sid)
-    if (live) return live.regenerateTitle()
-
-    const settings = await getSettings()
-    const session = (await listSessions(500, settings.projects)).find((item) => item.id === sid)
-    if (!session) return { ok: false, error: '找不到目标会话，可能已被删除' }
-
-    const samples = await readTitleSamples(session.path)
-    if (!samples.length) return { ok: false, error: '该会话没有可用的用户文字，已保留原标题' }
-
-    const manual = (await manualTitles())[sid]
-    const result = await generateTitle({
-      sessionId: sid,
-      samples,
-      cwd: session.cwd || process.cwd(),
-      piBin: settings.piBin,
-      force: true,
-      allowManual: !!manual,
-      persist: !manual
-    })
-    if (!result?.title) return { ok: false, error: '标题生成失败，已保留原标题' }
-    if (!manual) push({ ch: 'session-title', payload: { sessionId: sid, title: result.title } })
-    return { ok: true, title: result.title }
-  })
-  handle('yan:getCustomEntries', async () => ac()?.getCustomEntries() ?? [])
-  handle('yan:refreshTodos', async () => ac()?.refreshTodos() ?? [])
-  handle('yan:listSessions', async () => {
-    const settings = await getSettings()
-    /*
-     * 生产端保持 200 条的桌面快照边界。隔离 live 回归会在一个批次里
-     * 生成大量临时会话；它们只是测试夹具，不应把批次开始时种下的
-     * 目标会话挤出列表，所以允许测试进程显式提高这一次 IPC 快照上限。
-     */
-    const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
-    const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
-    return filterChainRepresentatives(await listSessions(limit, settings.projects))
-  })
-
-  /**
-   * 快速预览一个会话的消息 —— **直接读文件，不问 pi**。
-   *
-   * 为什么需要（实测）：打开一个 17MB 的会话，
-   *   pi 的 switch_session + get_messages = **2780ms**
-   *   直接解析 JSONL               = **59ms**
-   * 而且 pi 的 get_messages 不含压缩前历史（docs/rpc.md 写了），
-   * 所以大会话在界面上只剩当前窗口 —— 用户感觉是「又卡又少内容」。
-   *
-   * 调用方应该：先拿这个把内容锦上（瞬间），再让 pi 在后台切过去。
-   * 返回 null 表示读不出来（格式不认 / 文件不在）—— 调用方回退到等 pi。
-   */
-  handle('yan:peekSession', async (path: string) => {
-    if (typeof path !== 'string' || !path) return null
-    /* 链感知：切到交接过的会话时，锦上的历史也必须是完整的一条时间线 */
-    return readHistoryWithArtifacts(path)
-  })
 
   registerAuthIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
 
@@ -3936,11 +3678,12 @@ configureGoalCoordinator({
   pushFrom
 })
 
-/* 远程宿主接上桌面的运行注册表与会话规则（见 remote-host.ts） */
-configureRemoteHost({
+/*
+ * 桌面会话的宿主能力（见 session-host.ts）：桌面会话 IPC 与远程入口共用这一组，
+ * 不各自复制会话规则。
+ */
+const sessionHost: SessionHost = {
   runners: () => runners,
-  win: () => win,
-  remoteAccess: () => remoteAccess,
   ac,
   sessionChains,
   push,
@@ -3951,6 +3694,13 @@ configureRemoteHost({
   rememberRunnerSession,
   readHistoryWithArtifacts,
   projectIdForCwd
+}
+
+/* 远程宿主接上桌面的运行注册表与会话规则（见 remote-host.ts） */
+configureRemoteHost({
+  ...sessionHost,
+  win: () => win,
+  remoteAccess: () => remoteAccess
 })
 
 /* 自动交接协调器接上宿主能力（见 handoff-coordinator.ts）；所有依赖在这之前都已建好 */

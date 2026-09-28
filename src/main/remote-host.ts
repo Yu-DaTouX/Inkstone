@@ -28,30 +28,13 @@ import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/ses
 import { YAN_DIR } from './paths'
 import { listKnowledge } from './project-memory-store'
 import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary } from '../shared/ipc'
-import type { AgentController } from './agent'
-import type { RunnerRegistry } from './runners'
-import type { SessionChainStore } from './session-chain-service'
 import type { RemoteAccess } from './remote-access'
-import type { readChainMessages } from './session-history'
-import type { MainPush } from '../shared/ipc'
+import type { SessionHost } from './session-host'
+import type { AgentController } from './agent'
 
-export interface RemoteHost {
-  runners(): RunnerRegistry | null
+export interface RemoteHost extends SessionHost {
   win(): BrowserWindow | null
   remoteAccess(): RemoteAccess | null
-  ac(): AgentController | null
-  sessionChains: SessionChainStore
-  push(msg: MainPush): void
-  pushRunners(): void
-  pushRunnerSnapshot(id: string, opts?: { chainHistory?: boolean }): Promise<void>
-  validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { ok: false; error: string }>
-  startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }>
-  rememberRunnerSession(
-    result: { ok: boolean; id?: string; sessionId?: string },
-    target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
-  ): Promise<void>
-  readHistoryWithArtifacts(sessionFile: string): ReturnType<typeof readChainMessages>
-  projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined
 }
 
 let host: RemoteHost
