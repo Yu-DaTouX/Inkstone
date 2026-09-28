@@ -1894,5 +1894,15 @@
   "voice.privacy": "The program and models are stored in {dir}. Audio exists only as a temporary file during transcription and is deleted right after.",
   "set.knScopeProject": "This project",
   "set.knScopePersonal": "Personal memory",
-  "set.knPersonalDesc": "Cross-project preferences, habits and personal rules you confirmed, stored apart from project knowledge. Candidates submitted by other AI tools are reviewed here too."
+  "set.knPersonalDesc": "Cross-project preferences, habits and personal rules you confirmed, stored apart from project knowledge. Candidates submitted by other AI tools are reviewed here too.",
+  "consent.title": "Auto-use basis",
+  "consent.desc": "The agent asks before using an ordinary local tool for the first time. The same kind of operation (same tool, action and resource) runs automatically only after repeated approvals with no recent denial. Only your real answers in the confirmation dialog are recorded; deleting, sending out, paying, permissions or credentials, and installing always ask.",
+  "consent.empty": "No records yet. Entries appear after the agent asks to use an ordinary tool and you answer.",
+  "consent.auto": "Auto",
+  "consent.ask": "Asks",
+  "consent.alwaysAsk": "Always ask",
+  "consent.stats": "Allowed {allows} · denied {denies} · last answer {last} · last auto {auto}",
+  "consent.setAlwaysAsk": "Always ask",
+  "consent.restore": "Use records again",
+  "consent.forget": "Clear records"
 }

@@ -1086,3 +1086,20 @@ html[data-theme='light'] .ob-scrim {
 .voice-progress {
   width: 100%;
 }
+
+/* 设置 · 能力 · 自动调用依据：每类操作一块 */
+.consent-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.consent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}

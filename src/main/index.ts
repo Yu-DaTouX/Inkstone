@@ -16,6 +16,7 @@ import {
   type CapabilityAuthorizationChoice,
   type CapabilityAuthorizationPrompt,
   type ExternalApiConfirmationRequest,
+  type ToolConsentPrompt,
   type GoalCommandHost,
   type StudyCommandHost,
   type ExerciseCommandHost,
@@ -87,6 +88,8 @@ import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
+import { changeConsentEntry, listConsentViews } from './consent-store'
+import type { ConsentDecision } from '../shared/tool-consent'
 import { PERSONAL_MEMORY_ID, ingestMemoryInbox, isMemoryScope, memoryStoreOf, writeMemoryExport } from './personal-memory'
 import { RemoteAccess } from './remote-access'
 import {
@@ -4606,6 +4609,34 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             noLink: true
           })
           return response.response === 1
+        },
+        /*
+         * 普通工具使用前的询问（需求稿 4.3）。关掉对话框不算答复（返回 null，不记录）；
+         * 只有点「允许」或「拒绝」才写进同意记录。
+         */
+        confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
+          if (!win || win.isDestroyed()) return null
+          const { parts, verdict } = request
+          const response = await dialog.showMessageBox(win, {
+            type: verdict.danger ? 'warning' : 'question',
+            title: '允许使用这个工具吗？',
+            message: `Agent 想使用「${parts.capability}」执行「${parts.action}」`,
+            detail: [
+              `资源：${parts.resource}`,
+              ...(request.purpose ? [`用途：${request.purpose}`] : []),
+              `项目：${request.cwd}`,
+              '',
+              verdict.reason,
+              verdict.danger
+                ? '危险类别不会因为同意次数多而自动放行。'
+                : '同类操作多次同意后会自动放行；可在「设置 → 能力」里改为始终询问或清空记录。'
+            ].join('\n'),
+            buttons: ['拒绝', '允许'],
+            defaultId: 0,
+            cancelId: 2,
+            noLink: true
+          })
+          return response.response === 1 ? 'allow' : response.response === 0 ? 'deny' : null
         }
       }),
     onChanged: () => {
@@ -8079,6 +8110,14 @@ function registerIpc(): void {
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
+
+  /* ---- 普通工具的自动调用依据：查看与调整 ---- */
+  handle('yan:consent:list', () => listConsentViews())
+  handle('yan:consent:change', async (key: unknown, action: unknown) => {
+    if (typeof key !== 'string' || (action !== 'always-ask' && action !== 'allow-auto' && action !== 'forget')) return listConsentViews()
+    await changeConsentEntry(key, action)
+    return listConsentViews()
+  })
 
   /* ---- 办公文件：预览与修改对比 ---- */
   registerOfficeIpc(ipc, async () => (await getSettings()).cwd)

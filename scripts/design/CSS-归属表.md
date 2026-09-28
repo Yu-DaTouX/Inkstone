@@ -14,7 +14,7 @@
 | 4 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
 | 5 | `redesign.css` | 1186 | 129 | 142 | 5 | 0 |
 | 6 | `motion.css` | 1380 | 160 | 165 | 5 | 9 |
-| 7 | `settings.css` | 1089 | 156 | 159 | 2 | 2 |
+| 7 | `settings.css` | 1106 | 158 | 161 | 2 | 2 |
 | 8 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
 | 9 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
 | 10 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
@@ -29,7 +29,7 @@
 | 19 | `review.css` | 1546 | 224 | 225 | 1 | 0 |
 | 20 | `workbench.css` | 3282 | 440 | 457 | 3 | 0 |
 | 21 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **21012** | **2800** | | | |
+| | **合计** | **21029** | **2802** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -43,7 +43,7 @@
 | `stage1.css` | 11 |
 | `redesign.css` | 74 |
 | `motion.css` | 156 |
-| `settings.css` | 156 |
+| `settings.css` | 158 |
 | `electron.css` | 9 |
 | `highlight.css` | 81 |
 | `layout.css` | 14 |

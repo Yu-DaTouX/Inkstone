@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
+import { ConsentSection } from './ConsentSection'
 import type {
   BuiltinCapabilityView,
   CapabilityNeedView,
@@ -452,6 +453,7 @@ export function CapabilitiesTab(): React.JSX.Element {
           })}
         </div>
       </div>
+      <ConsentSection />
       {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
     </div>
   )

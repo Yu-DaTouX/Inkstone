@@ -1894,5 +1894,15 @@
   "voice.privacy": "程序和模型保存在 {dir}。录音只在转写时作为临时文件存在，转写结束立即删除。",
   "set.knScopeProject": "当前项目",
   "set.knScopePersonal": "个人记忆",
-  "set.knPersonalDesc": "跨项目的偏好、习惯和你确认过的个人规则，与项目知识分开存放；其他 AI 工具提交的候选也在这里确认。"
+  "set.knPersonalDesc": "跨项目的偏好、习惯和你确认过的个人规则，与项目知识分开存放；其他 AI 工具提交的候选也在这里确认。",
+  "consent.title": "自动调用依据",
+  "consent.desc": "Agent 第一次使用本机的普通工具时会先问你。同一类操作（同一工具、操作和资源）多次同意、且最近没有拒绝后，才会自动放行。只记录你在确认框里的真实答复；删除、对外发送、付费、权限与凭证、安装一类永远询问。",
+  "consent.empty": "还没有记录。Agent 请求使用普通工具并得到你的答复后会出现在这里。",
+  "consent.auto": "自动放行",
+  "consent.ask": "询问",
+  "consent.alwaysAsk": "始终询问",
+  "consent.stats": "同意 {allows} 次 · 拒绝 {denies} 次 · 最近答复 {last} · 最近自动放行 {auto}",
+  "consent.setAlwaysAsk": "改为始终询问",
+  "consent.restore": "恢复按记录判断",
+  "consent.forget": "清空记录"
 }

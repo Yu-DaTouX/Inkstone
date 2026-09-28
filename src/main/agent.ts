@@ -21,6 +21,15 @@ import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
 import { previewOffice } from './office/office-service'
 import { memoryStoreOf } from './personal-memory'
+import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
+import {
+  consentKeyOf,
+  consentVerdict,
+  normalizeConsentParts,
+  type ConsentDecision,
+  type ConsentKeyParts,
+  type ConsentVerdict
+} from '../shared/tool-consent'
 import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
@@ -360,6 +369,13 @@ export interface ExternalApiConfirmationRequest {
 }
 
 export type CapabilityAuthorizationChoice = 'deny' | 'allow' | 'allow-with-lifecycle-scripts'
+/** 普通工具使用前的询问（需求稿 4.3）：宿主显示确认框，返回用户的真实答复；没有答复为 null */
+export interface ToolConsentPrompt {
+  parts: ConsentKeyParts
+  purpose: string
+  verdict: ConsentVerdict
+  cwd: string
+}
 export type CapabilityAuthorizationPrompt = {
   kind: 'remote-mcp' | 'local-package'
   title: string
@@ -493,6 +509,7 @@ export class AgentController extends EventEmitter {
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
+  private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -783,6 +800,7 @@ export class AgentController extends EventEmitter {
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
+    confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -832,6 +850,7 @@ export class AgentController extends EventEmitter {
     this.exerciseHost = opts.exerciseHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
+    this.confirmToolConsent = opts.confirmToolConsent
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
@@ -1449,6 +1468,7 @@ export class AgentController extends EventEmitter {
     if (command === 'context.recall') return this.runContextRecallCommand(params)
     if (command === 'context.find') return this.runContextFindCommand(params)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
+    if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command.startsWith('context.budget.')) return this.runContextBudgetCommand(command, params)
     switch (command) {
       case 'tasks.apply':
@@ -1608,6 +1628,38 @@ export class AgentController extends EventEmitter {
       if (error instanceof ContextRecallError) throw new CapabilityCommandError(error.code, error.message)
       throw new CapabilityCommandError('context_find_unavailable', '归档查询暂时不可用')
     }
+  }
+
+  /**
+   * `yan consent request`：使用一个普通工具前先问宿主。
+   * 宿主按真实答复记录决定自动放行或弹确认框；只有确认框的结果会被记下。
+   * 这只是「能不能用」的判断，不替代工作模式、危险操作与远程授权的其他检查。
+   */
+  private async runConsentRequestCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const normalized = normalizeConsentParts(params, localDeviceId(), 'local')
+    if (!normalized.ok) throw new CapabilityCommandError('consent_bad_request', normalized.error)
+    const parts = normalized.parts
+    const purpose = typeof params.purpose === 'string' ? params.purpose.trim().slice(0, 500) : ''
+    const declaredDanger = params.dangerous === true || params.dangerous === 'true'
+    const ledger = await readConsentLedger()
+    const verdict = consentVerdict(ledger.entries.find((entry) => entry.key === consentKeyOf(parts)), parts, Date.now(), declaredDanger)
+    const summary = (decision: 'auto' | ConsentDecision | 'no-answer') => ({
+      kind: 'consent',
+      capability: parts.capability,
+      action: parts.action,
+      resource: parts.resource,
+      decision,
+      allowed: decision === 'auto' || decision === 'allow',
+      reason: verdict.reason
+    })
+    if (verdict.mode === 'auto') {
+      await markConsentAuto(parts).catch(() => undefined)
+      return { data: { verdict }, summary: summary('auto') }
+    }
+    const answer = this.confirmToolConsent ? await this.confirmToolConsent({ parts, purpose, verdict, cwd: this.cwd }) : null
+    if (!answer) return { data: { verdict }, summary: summary('no-answer') }
+    await recordConsentAnswer(parts, answer)
+    return { data: { verdict }, summary: summary(answer) }
   }
 
   /**
