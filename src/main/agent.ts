@@ -14,7 +14,8 @@ import { EventEmitter } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { saveUserSkill } from './user-skills'
 import { PiRpc } from './protocol'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -353,14 +354,6 @@ export type StudyCommandHost = GoalCommandHost
  */
 export type ExerciseCommandHost = GoalCommandHost
 
-/**
- * `yan playbook …` 的宿主实现入口（实施-25 P14）。
- *
- * 模板的「作用范围与授权点」由宿主算（`confirmationText` / `scopeSummary`），
- * 模型只能**问**要做什么，不能自己宣布已获授权。
- */
-export type PlaybookCommandHost = GoalCommandHost
-
 export interface ExternalApiConfirmationRequest {
   provider: 'openai' | 'compatible'
   endpoint: string
@@ -479,6 +472,8 @@ export class AgentController extends EventEmitter {
   private repeatGuardExtension?: string
   /** 随包技能（resources/skills/<名称>/SKILL.md）：显式 --skill 传入，不开启自动发现 */
   private bundledSkills: string[] = []
+  /** 用户技能（YAN_DIR/skills）：每次启动时重新列出，新保存的技能在下一次启动生效。 */
+  private userSkills?: () => Promise<string[]>
   /** 最终 provider payload 观察器，排在受管与项目扩展之后。 */
   private contextBudgetObserverExtension?: string
   /** Budget V1 的受控摘要事务与活跃投影应用。 */
@@ -503,9 +498,8 @@ export class AgentController extends EventEmitter {
   /** 跨资料研究（P13）：多来源对照与引用状态。 */
   private researchHost?: StudyCommandHost
   /** 办事模板（P14）：范围与授权点由宿主算。 */
-  private playbookHost?: PlaybookCommandHost
   /** 持续关注（P16）：到点提醒与结果记录，没有后台调度器。 */
-  private followHost?: PlaybookCommandHost
+  private followHost?: GoalCommandHost
   private exerciseHost?: ExerciseCommandHost
   /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
   private confirmCapabilityAuthorization?: (
@@ -767,6 +761,7 @@ export class AgentController extends EventEmitter {
     /** 单轮重复动作兜底（2026-09-22）：连续相同调用 → 提醒 / 拦下 */
     repeatGuardExtension?: string
     bundledSkills?: string[]
+    userSkills?: () => Promise<string[]>
     /** 上下文预算 V1：最终 payload 观察器，需排在受管与项目扩展之后。 */
     contextBudgetObserverExtension?: string
     /** 上下文预算 V1：受控摘要命令与已提交投影应用。 */
@@ -795,9 +790,8 @@ export class AgentController extends EventEmitter {
     /** 跨资料研究（实施-25 P13）：对照规则在宿主，模型不给立场就不算冲突。 */
   researchHost?: StudyCommandHost
   /** 办事模板（实施-25 P14）：范围与授权点由宿主算，模型不能自报已授权。 */
-  playbookHost?: PlaybookCommandHost
   /** 持续关注（实施-25 P16）：只能提议与回报，不能启用 / 删除 / 让宿主自己去查。 */
-  followHost?: PlaybookCommandHost
+  followHost?: GoalCommandHost
   studyHost?: StudyCommandHost
     exerciseHost?: ExerciseCommandHost
     confirmCapabilityAuthorization?: (
@@ -841,6 +835,7 @@ export class AgentController extends EventEmitter {
     this.projectKnowledgeExtension = opts.projectKnowledgeExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
+    this.userSkills = opts.userSkills
     this.contextBudgetObserverExtension = opts.contextBudgetObserverExtension
     this.contextBudgetMaintenanceExtension = opts.contextBudgetMaintenanceExtension
     this.readHistory = opts.readHistory
@@ -850,7 +845,6 @@ export class AgentController extends EventEmitter {
     this.goalHost = opts.goalHost
     this.studyHost = opts.studyHost
     this.researchHost = opts.researchHost
-    this.playbookHost = opts.playbookHost
     this.followHost = opts.followHost
     this.exerciseHost = opts.exerciseHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
@@ -984,6 +978,7 @@ export class AgentController extends EventEmitter {
     const managedSkillArgs = this.capabilityOpts?.projectId
       ? await activeSkillArgs(YAN_DIR, this.capabilityOpts.projectId)
       : []
+    const userSkillArgs = this.userSkills ? await this.userSkills().catch(() => [] as string[]) : []
     /* 项目 settings 登记的 pi 包：`--no-extensions` 会关掉它们，这里显式补回。 */
     const projectPackageArgs = await projectPiPackageArgs(this.cwd)
     const rpc = new PiRpc({
@@ -1040,6 +1035,8 @@ export class AgentController extends EventEmitter {
         ...managedSkillArgs,
         /* 随包技能：领域做法（例如办公文件）放在技能里按需加载，不写进宿主 */
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
+        /* 用户技能：用户自己保存的做法（含旧办事模板的导出） */
+        ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
         /* 项目已授权登记的 pi 包：显式路径不受 `--no-extensions` 影响（见函数注释）。 */
         ...projectPackageArgs,
         /* 投影在 `context` 阶段生效；最终 budget observer 保持所有请求改写器之后。 */
@@ -1371,6 +1368,9 @@ export class AgentController extends EventEmitter {
     if (command === 'skill.read') {
       return this.runSkillRead(params)
     }
+    if (command === 'skill.save') {
+      return this.runSkillSave(params)
+    }
     if (command.startsWith('mcp.')) {
       return this.runMcpCommand(command.slice('mcp.'.length), params)
     }
@@ -1439,20 +1439,6 @@ export class AgentController extends EventEmitter {
         throw new CapabilityCommandError('research_unavailable', '研究入口当前不可用（宿主未注入）')
       }
       return this.researchHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
-    }
-    /*
-     * 办事模板（实施-25 P14）：模型可以问「这个模板要做什么」、
-     * 也可以在任务成功之后提议存一份模板；但「会动哪里」由宿主算，
-     * 模型不能自己宣布已获授权（那就是静默动文件的入口）。
-     */
-    if (command.startsWith('playbook.')) {
-      if (!this.playbookHost) {
-        throw new CapabilityCommandError('playbook_unavailable', '办事模板入口当前不可用（宿主未注入）')
-      }
-      return this.playbookHost.run(command, params, {
         sessionId: this.capabilityOpts?.sessionId ?? 'primary',
         projectId: this.capabilityOpts?.projectId ?? ''
       })
@@ -3828,6 +3814,34 @@ export class AgentController extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new CapabilityCommandError('skill_unavailable', message)
+    }
+  }
+
+  /**
+   * 保存用户技能（例如把一次做成的任务整理成可复用的做法）。
+   * 写到 YAN_DIR/skills/<名称>/SKILL.md；不能与随包技能重名，已存在时需 replace。
+   */
+  private async runSkillSave(params: Record<string, unknown>) {
+    const reservedNames = this.bundledSkills.map((file) => basename(dirname(file)))
+    const res = await saveUserSkill(
+      {
+        name: typeof params.name === 'string' ? params.name : '',
+        description: typeof params.description === 'string' ? params.description : '',
+        body: typeof params.body === 'string' ? params.body : '',
+        replace: params.replace === true || params.replace === 'true'
+      },
+      { reservedNames }
+    )
+    if (!res.ok) throw new CapabilityCommandError(`skill_${res.code.replace(/-/g, '_')}`, res.error)
+    return {
+      data: { name: res.name, path: res.path, replaced: res.replaced },
+      summary: {
+        kind: 'skill',
+        action: 'save',
+        name: res.name,
+        replaced: res.replaced,
+        note: '已保存；新会话启动时加载，之后可用 yan skill read --id skill:' + res.name + ' 读取'
+      }
     }
   }
 

@@ -122,7 +122,6 @@ const CASES = {
   review: { probe: 'scripts/probe/review.js', delay: 22000, cost: 0 },
   // 实施-25 P13：跨资料研究（旧引用按版本保留 / 不合并的对照；步骤在 artifact 探针里，cost 0）
   // 实施-25 P14：办事模板（写步骤必须有范围 / 摊开范围 / 只填不发；cost 0）
-  playbook: { probe: 'scripts/probe/playbook.js', delay: 24000, cost: 0 },
   // 实施-25 P15：内部 agent 分工（任务输入 / 结果汇总在卡片上看得见；cost 0，不真启动子代理）
   subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
   // 实施-25 P16：持续关注与提醒（应用没开不跟进 / 未启用不自行建立 / 只填不发；cost 0）

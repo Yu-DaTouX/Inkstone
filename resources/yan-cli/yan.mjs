@@ -148,6 +148,13 @@ const GROUP_USAGE = {
   read    读取一个已加载技能的正文（按需加载；返回 contentHash，正文变了要重读）。
             yan skill read --id skill:probe-skill
           技能来自 pi 的发现结果，id 形如 skill:<名称>（先用 capabilities search 找）。
+  save    保存一个用户技能（用户自己的做法，例如办事模板）：
+            yan skill save --request-file skill.json
+          skill.json：{ "name": "weekly-report", "description": "什么时候用",
+                        "body": "# 标题\\n步骤…", "replace": false }
+          name 只能用小写字母、数字和连字符；不能与随包技能重名；已存在时需 replace: true。
+          写到砚数据目录的 skills/<name>/SKILL.md，下一次启动会话时加载。
+          保存前先把内容给用户看并得到同意（做法见 playbook 技能）。
 
 `,
   mcp: `yan mcp <动作> [选项]
@@ -312,23 +319,6 @@ const GROUP_USAGE = {
   status  --artifact <成果ID>
            看这份成果引用的资料现在怎么样了：哪条已有新版本、哪条已移除。
            只提示变化 —— 旧引用仍然指着旧版本。
-`,
-
-  playbook: `yan playbook <动作> [选项]
-
-动作（办事模板：宿主只保存与解释，**从不替你执行**）：
-  list [--space <空间ID>]
-           看有哪些模板（含三个起步模板）。
-  plan  --id <模板ID> [--request-file scopes.json]
-           复用前的说明：会读什么 / 会改什么 / 会对外发什么、范围在哪。
-           scopes.json：{ "scopes": [["docs/a"], ["邮箱"]] }
-           —— 按**需要确认的步骤**顺序给，组数必须一致，少给就报错。
-           返回的 text 是一段可直接发出去的说明；但**发不发由用户决定**，
-           宿主不发送、不执行、也不写任何文件。
-  save  --request-file playbook.json
-           把刚做完的一件事存成模板（来源由宿主补上当前会话）。
-           写 / 对外发的步骤**必须写 scope**，没写就拒掉 ——
-           「不知道会动哪里」不许变成模板。
 `,
 
   follow: `yan follow <动作> [选项]
@@ -557,7 +547,7 @@ const GROUP_SPECS = {
   },
 
   skill: {
-    actions: ['read'],
+    actions: ['read', 'save'],
     required: {
       read: ['id']
     }
@@ -619,11 +609,6 @@ const GROUP_SPECS = {
   research: {
     actions: ['read', 'status'],
     required: { status: ['artifact'] }
-  },
-
-  playbook: {
-    actions: ['list', 'plan', 'save'],
-    required: { plan: ['id'] }
   },
 
   follow: {

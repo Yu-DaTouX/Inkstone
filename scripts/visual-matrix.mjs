@@ -1275,9 +1275,9 @@ const GROUPS = [
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig', 'envnotgit'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'spacelearning', 'spaceexercise', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'capneed', 'amconfig', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings', 'workbenchhome', 'taskinbox'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning', 'workbenchhome', 'taskinbox'] },
   /*
@@ -3595,97 +3595,6 @@ const STATES = {
       const card = document.querySelector('[data-testid="space-ov-follow-card"]');
       const due = document.querySelector('[data-testid="space-follow-due"]');
       return card && due ? 'ok' : 'no-follow';
-    })()
-  `,
-  /*
-   * 办事模板（实施-25 P14）：空间概览里的模板列表 + 展开的「复用前确认区」。
-   * 单开一个状态：概览页的卡片很多，模板的确认区展开后会把整张卡拉长，
-   * 与其它卡片叠在一起看不出它自己的真实形态。
-   * 模板与确认区都是注入的（矩阵跑在真实数据目录上，不写 playbooks.json）。
-   */
-  spaceplaybook: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const now = Date.now();
-      const seedFiles = {
-        id: 'pb_seed_files', kind: 'files', title: '整理一个目录里的文件',
-        goal: '把散落在目录里的文件按类型归好，改动前先给出清单',
-        steps: [
-          { title: '列出目录内容并分类', effect: 'read' },
-          { title: '给出重命名与移动方案', effect: 'read' },
-          { title: '确认后执行重命名与移动', effect: 'write', scope: ['<要整理的目录>'] },
-          { title: '记录一份变更摘要', effect: 'write', scope: ['<变更记录成果>'] }
-        ],
-        io: { inputs: ['要整理的目录'], outputs: ['变更清单与变更摘要成果'] },
-        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
-      };
-      const seedDigest = {
-        id: 'pb_seed_digest', kind: 'digest', title: '把几份材料汇总成一份',
-        goal: '把选定的资料汇总成一份带出处的说明',
-        steps: [
-          { title: '读选定的资料', effect: 'read', scope: ['<选定的资料来源>'] },
-          { title: '按主题摘录', effect: 'read' },
-          { title: '写一份汇总成果', effect: 'write', scope: ['<汇总成果>'] }
-        ],
-        io: { inputs: ['资料库里的若干来源'], outputs: ['一份带出处的汇总成果'] },
-        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
-      };
-      const seedRewrite = {
-        id: 'pb_seed_rewrite', kind: 'rewrite', title: '按目标改写一段内容',
-        goal: '把一段内容改写成指定语气 / 长度，保留原意',
-        steps: [
-          { title: '读原文', effect: 'read', scope: ['<要改写的成果>'] },
-          { title: '改写并开新版本', effect: 'write', scope: ['<要改写的成果>'] }
-        ],
-        io: { inputs: ['一份成果与改写目标'], outputs: ['同一份成果的新版本'] },
-        spaceId: null, origin: 'user', createdAt: now, updatedAt: now, runs: 0, seeded: true
-      };
-      const sessions = S().sessions.map((x, i) => (i < 2 || x.id === S().session?.sessionId ? { ...x, spaceId: 'sp_demo' } : x));
-      window.__yanStore.setState({
-        spaces: [{
-          id: 'sp_demo', name: '英语学习', description: '每天一小时，从精读开始',
-          archived: false, createdAt: now - 86400000, updatedAt: now
-        }],
-        sessions,
-        playbooks: [seedFiles, seedDigest, seedRewrite],
-        playbooksLoaded: true
-      });
-      const filed = sessions.find((x) => x.spaceId);
-      if (filed) {
-        const cur = S().session;
-        window.__yanStore.setState({
-          session: { ...cur, sessionId: filed.id, sessionFile: filed.path, conversationFile: filed.path }
-        });
-      }
-      S().openSpaceView('overview');
-      await sleep(500);
-      document.querySelector('[data-testid="space-pb-item-pb_seed_files"]')?.click();
-      await sleep(700);
-      /* 范围已换成真实值（矩阵没有 IPC，所以直接注入宿主算出来的那一份） */
-      const filesFilled = {
-        ...seedFiles,
-        steps: seedFiles.steps.map((s) => (s.scope ? { ...s, scope: s.scope.map((x) => (x === '<要整理的目录>' ? 'docs/notes' : '变更记录成果')) } : s))
-      };
-      window.__yanStore.setState({
-        playbookPlan: {
-          ok: true,
-          playbook: filesFilled,
-          needsConfirmation: true,
-          summary: { read: 2, write: 2, external: 0, targets: ['docs/notes', '变更记录成果'] },
-          points: filesFilled.steps.filter((s) => s.effect !== 'read'),
-          unansweredScope: 0,
-          confirmationText: '「整理一个目录里的文件」会改东西 2 步（其余 2 步只读）。作用范围：docs/notes、变更记录成果。确认之前不会动任何东西。',
-          text: ''
-        }
-      });
-      await sleep(600);
-      /* 把模板卡滚进视口：截图要看的是它，不是页面顶部 */
-      document.querySelector('[data-testid="space-ov-playbook-card"]')?.scrollIntoView({ block: 'center' });
-      await sleep(400);
-      const zone = document.querySelector('[data-testid="space-pb-zone-pb_seed_files"]');
-      const useBtn = document.querySelector('[data-testid="space-pb-use"]');
-      return zone && useBtn && !useBtn.disabled ? 'ok' : 'no-playbook';
     })()
   `,
   /*

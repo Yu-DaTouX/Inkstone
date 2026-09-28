@@ -112,17 +112,6 @@ import type { FollowRun, Watch, WatchView } from './follow'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
-export type {
-  Playbook,
-  PlaybookIO,
-  PlaybookKind,
-  PlaybookSource,
-  PlaybookStep,
-  ScopeSummary,
-  StepEffect
-} from './playbook'
-import type { Playbook, PlaybookIO, PlaybookSource, PlaybookStep, ScopeSummary } from './playbook'
-
 import type { StudyPhase, StudyResume, StudySession } from './study'
 import type {
   Attempt,
@@ -2861,62 +2850,6 @@ export interface ResearchBridge {
 }
 
 /**
- * 办事模板（实施-25 P14）。
- *
- * 注意这里**没有「跑模板」**：`plan` 返回的是「将要做什么、会动哪里」的说明，
- * 确认之后由模型走普通工具路径去做。宿主不提供静默执行 —— 这是 P14
- * 验收（复用前看到作用范围、不静默动文件）最直接的保证。
- */
-export interface PlaybookBridge {
-  list(spaceId?: string | null): Promise<Playbook[]>
-  /** 保存模板；`origin: 'from-task'` 时必须带 `source`。 */
-  save(input: {
-    id?: string
-    kind?: string
-    title: string
-    goal: string
-    steps: PlaybookStep[]
-    io?: PlaybookIO
-    spaceId?: string | null
-    origin?: 'from-task' | 'user'
-    source?: PlaybookSource
-  }): Promise<PlaybookMutationResult>
-  update(
-    id: string,
-    patch: { title?: string; goal?: string; steps?: PlaybookStep[]; io?: PlaybookIO; kind?: string }
-  ): Promise<PlaybookMutationResult>
-  remove(id: string): Promise<{ ok: boolean; error?: string }>
-  /**
-   * 复用前的说明（T14-3）。`scopes` 按需要确认的步骤顺序给，组数必须一致。
-   * 用途上它**只解释**：不会写任何东西，也不会把模板发给模型。
-   */
-  plan(input: { id: string; scopes?: string[][] }): Promise<PlaybookPlanResult>
-  /** 记一次「开始用」（不含效果判断）。 */
-  run(id: string): Promise<PlaybookMutationResult>
-}
-
-export interface PlaybookMutationResult {
-  ok: boolean
-  error?: string
-  code?: string
-  playbook?: Playbook
-}
-
-export interface PlaybookPlanResult {
-  ok: boolean
-  error?: string
-  code?: string
-  playbook?: Playbook
-  needsConfirmation?: boolean
-  summary?: ScopeSummary
-  points?: PlaybookStep[]
-  unansweredScope?: number
-  confirmationText?: string
-  /** 一段可直接发出去 / 填进输入框的执行说明。 */
-  text?: string
-}
-
-/**
  * 持续关注（实施-25 P16）。
  *
  * 界面只读 `views`（带状态文案）与 `due`；写入只有保存 / 启用 / 停用 / 删掉，
@@ -3741,10 +3674,8 @@ export interface YanBridge {
   exercise: ExerciseBridge
   /** 笔记（实施-25 P11）：用户自己的记录，可改可删。 */
   note: NoteBridge
-  /** 跨资料研究（实施-25 P13）：多来源对照与引用状态。 */
+  /** 成果引用的资料状态（按版本读片段与对照做法在 research 技能）。 */
   research: ResearchBridge
-  /** 办事模板（实施-25 P14）：保存 / 复用前的范围与授权点。 */
-  playbook: PlaybookBridge
   /** 持续关注（实施-25 P16）：到点提醒与结果记录（没有后台调度）。 */
   follow: FollowBridge
   /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */

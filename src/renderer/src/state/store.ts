@@ -68,13 +68,8 @@ import type {
   ReviewPlan,
   ReviewPriority,
   SourceStatus,
-  Playbook,
-  PlaybookPlanResult,
   Watch,
   WatchView,
-  PlaybookIO,
-  PlaybookSource,
-  PlaybookStep,
   SessionTodoSnapshot,
   SlashCommand,
   SoundEvent,
@@ -245,12 +240,6 @@ interface Store {
   artifactDocs: ArtifactDoc[]
   /** 当前成果的引用状态（P13 T13-4）：哪条来源已有新版本 / 已找不到。 */
   artifactSourceStatuses: SourceStatus[]
-  /** 当前显示的多来源对照（P13）：现场算，不落盘。 */
-  /** 办事模板（P14）：落盘的 + 三个起步模板。 */
-  playbooks: Playbook[]
-  playbooksLoaded: boolean
-  /** 复用前的说明（T14-3）：只解释，不代表已执行。 */
-  playbookPlan: PlaybookPlanResult | null
   /** 持续关注（P16）：带状态文案的列表 + 到点清单。 */
   followViews: (WatchView & { lastRunText?: string })[]
   followDue: Watch[]
@@ -582,31 +571,6 @@ interface Store {
   /* 成果引用的资料现在怎么样了：只读，不改引用 */
   refreshArtifactSourceStatus: (artifactId: string) => Promise<void>
   clearArtifactSourceStatuses: () => void
-  /* 办事模板（P14）：保存 / 改 / 删，以及复用前的作用范围确认 */
-  refreshPlaybooks: (spaceId?: string | null) => Promise<void>
-  savePlaybook: (input: {
-    id?: string
-    kind?: string
-    title: string
-    goal: string
-    steps: PlaybookStep[]
-    io?: PlaybookIO
-    spaceId?: string | null
-    origin?: 'from-task' | 'user'
-    source?: PlaybookSource
-  }) => Promise<boolean>
-  updatePlaybook: (
-    id: string,
-    patch: { title?: string; goal?: string; steps?: PlaybookStep[]; io?: PlaybookIO; kind?: string }
-  ) => Promise<boolean>
-  removePlaybook: (id: string) => Promise<boolean>
-  /**
-   * 复用前先问「会动哪里」（T14-3）。
-   * 返回值只用于展示；**不发送、不执行** —— 真正跑是确认之后的事。
-   */
-  planPlaybook: (input: { id: string; scopes?: string[][] }) => Promise<PlaybookPlanResult | null>
-  clearPlaybookPlan: () => void
-  recordPlaybookRun: (id: string) => Promise<void>
   /* 持续关注（P16）：用户能建 / 启用 / 停用 / 删；宿主不会自己去查 */
   refreshFollows: (spaceId?: string | null) => Promise<void>
   saveWatch: (input: {
@@ -1458,9 +1422,6 @@ export const useStore = create<Store>((rawSet, get) => {
   libraryLoaded: false,
   artifactDocs: [],
   artifactSourceStatuses: [],
-  playbooks: [],
-  playbooksLoaded: false,
-  playbookPlan: null,
   followViews: [],
   followDue: [],
   followsLoaded: false,
@@ -2219,60 +2180,6 @@ export const useStore = create<Store>((rawSet, get) => {
 
   clearArtifactSourceStatuses: () => set({ artifactSourceStatuses: [] }),
 
-  refreshPlaybooks: async (spaceId) => {
-    try {
-      const list = await window.yan.playbook.list(spaceId === undefined ? undefined : spaceId)
-      set({ playbooks: Array.isArray(list) ? list : [], playbooksLoaded: true })
-    } catch {
-      /* 保持原状 */
-    }
-  },
-
-  savePlaybook: async (input) => {
-    const res = await window.yan.playbook.save(input)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '保存模板失败') })
-      return false
-    }
-    await get().refreshPlaybooks()
-    set({ notices: pushNotice(get().notices, 'info', `已存下模板「${res.playbook?.title ?? ''}」`) })
-    return true
-  },
-
-  updatePlaybook: async (id, patch) => {
-    const res = await window.yan.playbook.update(id, patch)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '修改模板失败') })
-      return false
-    }
-    await get().refreshPlaybooks()
-    return true
-  },
-
-  removePlaybook: async (id) => {
-    const res = await window.yan.playbook.remove(id)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除模板失败') })
-      return false
-    }
-    const plan = get().playbookPlan
-    await get().refreshPlaybooks()
-    if (plan?.playbook?.id === id) set({ playbookPlan: null })
-    return true
-  },
-
-  planPlaybook: async (input) => {
-    const res = await window.yan.playbook.plan(input)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '这个模板暂时用不了') })
-      return null
-    }
-    set({ playbookPlan: res })
-    return res
-  },
-
-  clearPlaybookPlan: () => set({ playbookPlan: null }),
-
   refreshFollows: async (spaceId) => {
     try {
       const [views, due] = await Promise.all([
@@ -2317,15 +2224,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     await get().refreshFollows()
     return true
-  },
-
-  recordPlaybookRun: async (id) => {
-    try {
-      await window.yan.playbook.run(id)
-      await get().refreshPlaybooks()
-    } catch {
-      /* 计数失败不该挡住用户 */
-    }
   },
 
   createArtifactDoc: async (input) => {

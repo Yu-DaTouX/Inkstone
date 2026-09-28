@@ -153,6 +153,7 @@ const KNOWN_COMMANDS = new Set([
   'capabilities.prepare',
   'capabilities.acquire',
   'skill.read',
+  'skill.save',
   'mcp.describe',
   'mcp.call',
   'tasks.apply',
@@ -207,10 +208,6 @@ const KNOWN_COMMANDS = new Set([
   /* 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
   'research.read',
   'research.status',
-  /* 办事模板（实施-25 P14）：只列 / 问范围 / 存模板，**没有执行**。 */
-  'playbook.list',
-  'playbook.plan',
-  'playbook.save',
   /* 持续关注（实施-25 P16）：只能提议与回报（启用 / 删除是用户的事）。 */
   'follow.list',
   'follow.due',

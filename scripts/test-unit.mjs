@@ -2892,15 +2892,12 @@ await runGitRepoTests(ok)
     reviewHelp.status === 0 && /plan/.test(reviewHelp.stdout ?? '') && /不复用做过的原题/.test(reviewHelp.stdout ?? ''),
     'yan CLI：复习分组帮助可按需读取（含「不复用原题」与「不代表已掌握」的边界）'
   )
-  const playbookHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'playbook', '--help'], { encoding: 'utf8' })
-  ok(
-    playbookHelp.status === 0 && /plan/.test(playbookHelp.stdout ?? '') && /从不替你执行/.test(playbookHelp.stdout ?? '') && /必须写 scope/.test(playbookHelp.stdout ?? ''),
-    'yan CLI：办事模板帮助写清「宿主不执行」与「写步骤必须给范围」'
-  )
+  const skillHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'skill', '--help'], { encoding: 'utf8' })
+  ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
   const researchHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'research', '--help'], { encoding: 'utf8' })
   ok(
-    researchHelp.status === 0 && /compare/.test(researchHelp.stdout ?? '') && /不合并结论/.test(researchHelp.stdout ?? ''),
-    'yan CLI：跨资料研究帮助写清「不合并结论」'
+    researchHelp.status === 0 && /read/.test(researchHelp.stdout ?? '') && /skill:research/.test(researchHelp.stdout ?? ''),
+    'yan CLI：资料引用帮助给出按版本读取，并指向 research 技能'
   )
 
   await rm(binDir, { recursive: true, force: true })
@@ -3796,42 +3793,34 @@ const { runResearchTests } = await import('./test-research.mjs')
 runResearchTests(ok, researchShared)
 
 /*
- * 办事模板（实施-25 P14）：授权点 / 范围确认 / 存储 / 服务。
- * 重点是「写步骤必须写清范围」与「宿主不执行、只给说明」。
+ * 用户技能：名称校验、SKILL.md 生成、旧办事模板转换与一次性导出。
  */
-const playbookShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/shared/playbook.ts'],
-    outfile: 'out/test/playbook.mjs',
+    entryPoints: ['src/shared/user-skill.ts'],
+    outfile: 'out/test/user-skill.mjs',
     bundle: true,
     format: 'esm',
     platform: 'neutral',
     logLevel: 'silent'
-  }).then(() => import('../out/test/playbook.mjs'))
+  }).then(() => import('../out/test/user-skill.mjs'))
 )
-const playbookMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const userSkillMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/main/playbook-store.ts', 'src/main/playbook-service.ts'],
-    outdir: 'out/test',
-    outExtension: { '.js': '.mjs' },
+    entryPoints: ['src/main/user-skills.ts'],
+    outfile: 'out/test/user-skills.mjs',
     bundle: true,
     format: 'esm',
     platform: 'node',
+    external: ['electron'],
     logLevel: 'silent'
-  })
-    .then(() => import('../out/test/playbook-store.mjs'))
-    .then((store) => import('../out/test/playbook-service.mjs').then((service) => ({ ...store, ...service })))
+  }).then(() => import('../out/test/user-skills.mjs'))
 )
-const { runPlaybookTests, runPlaybookServiceTests } = await import('./test-playbook.mjs')
-runPlaybookTests(ok, playbookShared)
-await runPlaybookServiceTests(
-  ok,
-  { PlaybookStore: playbookMain.PlaybookStore, PlaybookService: playbookMain.PlaybookService },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
+const { runUserSkillTests } = await import('./test-user-skill.mjs')
+await runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
 /*
- * 内部 agent 分工（实施-25 P15）：任务输入 / 并行适合度 / 结果汇总。
+ * 内部 agent 分工（实施-25 P15）：任务输入 / 结果汇总。
  * 重点是「输入不猜」「摘要如实标来源」「未决问题不自动猜」。
  */
 const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
