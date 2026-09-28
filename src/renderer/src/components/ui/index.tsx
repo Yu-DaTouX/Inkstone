@@ -124,6 +124,37 @@ export function Segmented<T extends string>({
   )
 }
 
+/** 布尔开关：外观为 ui.css 的 .switch-pill，语义是 role="switch" */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+  testId
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  /** 无障碍名称（开关旁边通常已有可见标题，这里给读屏用） */
+  label: string
+  disabled?: boolean
+  testId?: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={cx('switch-pill', checked && 'on')}
+      disabled={disabled}
+      data-testid={testId}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="switch-knob" />
+    </button>
+  )
+}
+
 export type BadgeTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'err'
 
 export function Badge({

@@ -474,6 +474,23 @@ export async function getSettings(): Promise<AppSettings> {
   return cached
 }
 
+/**
+ * 手机接入设置：端口必须是非特权端口；监听地址只接受 tailscale / loopback 或一个 IPv4 字面量
+ * （不接受 0.0.0.0 —— 需求稿要求网络可达不等于获得访问权，默认不对所有网卡开放）。
+ */
+function sanitizeRemoteAccess(value: unknown): AppSettings['remoteAccess'] {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  const port = Number(raw.port)
+  const bind = typeof raw.bind === 'string' ? raw.bind.trim() : 'tailscale'
+  const ipv4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
+  return {
+    enabled: raw.enabled === true,
+    bind: bind === 'tailscale' || bind === 'loopback' || (ipv4.test(bind) && bind !== '0.0.0.0') ? bind : 'tailscale',
+    port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37892
+  }
+}
+
 export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   /* 排队：上一个写完才轮到本个（失败也不能断链，否则后面的永远等不到） */
   const task = writeQueue.then(() => applyPatch(patch), () => applyPatch(patch))
@@ -557,6 +574,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
     next.workModeShortcutEnabled = next.workModeShortcutEnabled === false ? false : undefined
   }
   if ('workModeShortcut' in patch) next.workModeShortcut = normalizeWorkModeShortcut(next.workModeShortcut)
+  if ('remoteAccess' in patch) next.remoteAccess = sanitizeRemoteAccess(next.remoteAccess)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

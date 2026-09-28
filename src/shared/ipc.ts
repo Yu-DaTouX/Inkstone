@@ -1104,6 +1104,11 @@ export interface AppSettings {
    */
   workModeShortcutEnabled?: boolean
   /**
+   * 手机接入（远程访问，需求稿第 3 步）。`undefined` = 从没开过 = 关闭，不监听任何端口。
+   * 形状与默认值见 `shared/remote-protocol.ts` 的 RemoteAccessSettings。
+   */
+  remoteAccess?: import('./remote-protocol').RemoteAccessSettings
+  /**
    * 模式快捷键的组合键文本（例如 `Ctrl+Tab` / `Ctrl+Shift+M`）。
    *
    * - `undefined` = 没设过 = 用默认的 `Ctrl+Tab`；
@@ -2074,6 +2079,8 @@ export type MainPushBody =
    * 而这里只是同一个请求的截止时间变了。`deadline` 是绝对毫秒，渲染端每秒算剩余量。
    */
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
+  /** 问题已答复（电脑或手机）：另一端据此把它从问题列表里移除 */
+  | { ch: 'ui-resolved'; payload: { id: string; by: 'desktop' | 'remote' } }
   /**
    * 当前会话的宿主提问记录（整表覆盖，切会话 / 重载后对齐）。
    *
@@ -3805,6 +3812,19 @@ export interface YanBridge {
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时必须调） */
     setVisible(visible: boolean): Promise<void>
   }
+  /**
+   * 手机接入（远程访问）：开关与监听地址、配对码、已配对设备。
+   * 令牌只在手机配对那一刻返回给手机，渲染端永远拿不到。
+   */
+  remote: {
+    status(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    configure(settings: import('./remote-protocol').RemoteAccessSettings): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    pair(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    cancelPairing(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    revoke(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    forget(deviceId: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+  }
+
   /**
    * 交互终端（实施-11 H-11）：宿主 PTY 服务的薄接口。
    * 写入 / 缩放 / 关闭都按会话身份 `id`；不暴露任何进程句柄。

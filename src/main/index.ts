@@ -81,6 +81,14 @@ import { disposeTerminals, setTerminalSink } from './terminal'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
+import { registerRemoteIpc } from './ipc/remote-ipc'
+import { RemoteAccess } from './remote-access'
+import {
+  REMOTE_ARTIFACT_MAX_BYTES,
+  type RemoteAnswer,
+  type RemoteArtifact,
+  type RemotePendingQuestion
+} from '../shared/remote-protocol'
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
@@ -121,7 +129,7 @@ import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
-import { RemoteServer, type RemoteCommand, type RemoteOperationResult } from './remote-server'
+import type { RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
 import { readContextActions } from './context-actions'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from './attachments'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -216,6 +224,7 @@ import type {
   FileRequestContext,
   FileSearchRequest,
   GitScopeRequest,
+  AssistantArtifact,
   MainPush,
   RunnerStatus,
   SessionState,
@@ -439,7 +448,8 @@ let subagentCapabilityHost: SubagentCommandHost | null = null
 /** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
 const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
-let remoteServer: RemoteServer | null = null
+/** 手机接入（远程访问）：按设置启停，见 remote-access.ts */
+let remoteAccess: RemoteAccess | null = null
 
 type CapabilityVerification = {
   operationId: string
@@ -658,7 +668,7 @@ function yanThinExtensionPaths(): string[] {
 }
 
 function push(msg: MainPush): void {
-  remoteServer?.publish(msg)
+  remoteAccess?.publish(msg)
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
@@ -3349,11 +3359,11 @@ async function shutdown(): Promise<void> {
   tray?.destroy()
   tray = null
   try {
-    await remoteServer?.stop()
+    await remoteAccess?.stop()
   } catch {
     /* 远程客户端已断开；退出流程不能被监听器关闭失败阻塞 */
   }
-  remoteServer = null
+  remoteAccess = null
   /*
    * 退出时必须收掉**所有**运行实例（N12）：现在可能同时有好几个
    * pi 子进程在跑，只停当前视图那个会留下孤儿进程。
@@ -3570,7 +3580,9 @@ async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOp
   /* 链感知：远程端看到的也是「一条会话」（与桌面端口径一致） */
   const result = await readHistoryWithArtifacts(summary.path)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
-  const messages = result.messages.slice(-limit)
+  const messages = result.messages.slice(-limit).map((message) =>
+    message.artifacts?.length ? { ...message, artifacts: message.artifacts.map(remoteArtifactOf) } : message
+  )
   return {
     ok: true,
     data: {
@@ -3709,36 +3721,105 @@ async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOpera
   return { ok: true, data: { sessionId: command.sessionId, name: command.name } }
 }
 
-function remoteServerEnabled(): boolean {
-  const configuredPort = process.env.YAN_REMOTE_PORT?.trim()
-  return process.env.YAN_REMOTE_ENABLE === '1' || !!configuredPort
+/** 远程端能看到的成果字段：去掉电脑上的绝对路径（内容经 artifact 接口按 id 读取） */
+function remoteArtifactOf(artifact: AssistantArtifact): RemoteArtifact {
+  return {
+    id: artifact.id,
+    filename: artifact.filename,
+    mediaType: artifact.mediaType,
+    kind: artifact.kind,
+    bytes: artifact.bytes,
+    createdAt: artifact.createdAt,
+    previewable: artifact.previewable,
+    ...(artifact.unavailable ? { unavailable: true } : {})
+  }
 }
 
-async function startRemoteServer(): Promise<void> {
-  if (!remoteServerEnabled() || remoteServer) return
-  const host = process.env.YAN_REMOTE_HOST?.trim() || '127.0.0.1'
-  const rawPort = process.env.YAN_REMOTE_PORT?.trim()
-  const port = rawPort ? Number(rawPort) : 37892
+/** 当前所有运行实例里等待回答的问题（手机端列出用） */
+async function remoteQuestions(): Promise<RemotePendingQuestion[]> {
+  const questions: RemotePendingQuestion[] = []
+  for (const status of runners?.statuses() ?? []) {
+    const agent = runners?.agentOf(status.runId)
+    if (!agent) continue
+    for (const request of agent.pendingUiRequests()) {
+      if (!['select', 'input', 'confirm', 'editor'].includes(request.method)) continue
+      questions.push({
+        id: request.id,
+        sessionId: status.sessionId ?? null,
+        runId: status.runId,
+        method: request.method as RemotePendingQuestion['method'],
+        title: request.title ?? '',
+        message: request.message ?? '',
+        ...(request.options ? { options: request.options } : {}),
+        ...(request.placeholder ? { placeholder: request.placeholder } : {}),
+        sensitive: request.sensitive === true,
+        deadline: typeof (request as { deadline?: unknown }).deadline === 'number' ? (request as { deadline: number }).deadline : 0
+      })
+    }
+  }
+  return questions
+}
+
+/** 手机回答问题：找到持有这个问题的实例；敏感确认由 AgentController 拒绝 */
+async function remoteAnswer(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult> {
+  for (const status of runners?.statuses() ?? []) {
+    const agent = runners?.agentOf(status.runId)
+    if (!agent?.pendingUiRequests().some((request) => request.id === questionId)) continue
+    const result = agent.answerUiRemotely(questionId, answer)
+    if (result.ok) return { ok: true, data: { questionId, runId: status.runId } }
+    return result.code === 'sensitive_confirmation_requires_desktop'
+      ? { ok: false, status: 403, code: result.code, error: '这是敏感确认（删除、授权或付费等），需要在电脑上处理' }
+      : { ok: false, status: 409, code: result.code, error: '这个问题已经答复或已过期' }
+  }
+  return { ok: false, status: 404, code: 'question_not_pending', error: '这个问题已经答复或已过期' }
+}
+
+/** 按会话 + 成果 id 找受管文件；只认该会话历史里登记过的成果，网络请求不能传路径 */
+async function remoteArtifact(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult> {
+  const settings = await getSettings()
+  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  const result = await readHistoryWithArtifacts(summary.path)
+  const artifact = result?.messages.flatMap((message) => message.artifacts ?? []).find((item) => item.id === artifactId)
+  if (!artifact) return { ok: false, status: 404, error: '这个会话里没有这份成果' }
+  if (artifact.unavailable) return { ok: false, status: 410, error: '这份成果的文件已被移动或删除' }
   try {
-    remoteServer = new RemoteServer({
-      host,
-      port,
-      token: process.env.YAN_REMOTE_TOKEN,
-      handlers: {
+    const info = await stat(artifact.path)
+    if (!info.isFile()) return { ok: false, status: 410, error: '这份成果的文件已不可用' }
+    if (info.size > REMOTE_ARTIFACT_MAX_BYTES) {
+      return { ok: false, status: 413, error: '成果文件超过 10MB，请在电脑上查看' }
+    }
+    return { path: artifact.path, mediaType: artifact.mediaType, bytes: info.size, filename: artifact.filename }
+  } catch {
+    return { ok: false, status: 410, error: '这份成果的文件已不可用' }
+  }
+}
+
+/**
+ * 按设置（或旧的 YAN_REMOTE_* 环境变量）启动手机接入。
+ * 默认关闭；设置变化时由 IPC 处理器再次调用 applyRemoteAccess。
+ */
+async function startRemoteServer(): Promise<void> {
+  if (!remoteAccess) {
+    remoteAccess = new RemoteAccess(
+      YAN_DIR,
+      {
         snapshot: remoteSnapshot,
         history: remoteHistory,
-        command: executeRemoteCommand
+        command: executeRemoteCommand,
+        questions: remoteQuestions,
+        answer: remoteAnswer,
+        artifact: remoteArtifact
       },
-      onLog: (text, level) => {
+      (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
         else console.log(`[remote] ${text}`)
       }
-    })
-    const info = await remoteServer.start()
-    console.log(`[remote] Android 端使用 Bearer token 连接；token=${info.token}`)
-    console.log(`[remote] health: http://${info.host}:${info.port}/remote/v1/health`)
+    )
+  }
+  try {
+    await remoteAccess.apply((await getSettings()).remoteAccess)
   } catch (error) {
-    remoteServer = null
     reportMainError('remote-server', error)
   }
 }
@@ -7897,6 +7978,13 @@ function registerIpc(): void {
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
+
+  /* ---- 手机接入 ---- */
+  registerRemoteIpc(ipc, {
+    access: () => remoteAccess,
+    ensureStarted: startRemoteServer,
+    saveSettings: (remote) => patchSettings({ remoteAccess: remote })
+  })
 
   /* ---- 交互终端（实施-11 H-11） ---- */
   registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
