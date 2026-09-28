@@ -173,7 +173,7 @@ html[data-theme='light'] .settings-scrim {
   appearance: none;
   width: 14px;
   height: 14px;
-  margin-top: -5px;
+  margin-top: -4px;
   border-radius: var(--r-full);
   background: var(--accent);
   border: 2px solid var(--bg-1);
@@ -375,7 +375,7 @@ html[data-theme='light'] .settings-scrim {
 
 .pkg-scope {
   font-size: 10.5px;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: 3px;
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
@@ -734,17 +734,11 @@ html[data-theme='light'] .ob-scrim {
   font-size: var(--fs-sm);
 }
 .ob-x {
-  display: inline-grid;
-  place-items: center;
   align-self: flex-start;
-  width: var(--ctl-h);
-  height: var(--ctl-h);
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
 }
-.ob-x:hover {
-  background: var(--bg-3);
-  color: var(--fg);
+/* 每项说明是一句话：用无衬线（设计规范 §2.2） */
+.ob-row-desc {
+  font-family: var(--font-body);
 }
 
 .ob-body {
@@ -1048,4 +1042,10 @@ html[data-theme='light'] .ob-scrim {
 .peer-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* 页标题与引导标题用无衬线（设计规范 §2.2） */
+.settings-page-title,
+.ob-title {
+  font-family: var(--font-body);
 }

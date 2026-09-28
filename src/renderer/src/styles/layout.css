@@ -23,7 +23,7 @@
 
 .center > .stream {
   /* scrollbar-gutter 占的是右内边距，这里补一个等量左内边距 */
-  padding-left: 10px;
+  padding-left: var(--sp-2);
 }
 
 @media (max-width: 1180px) {

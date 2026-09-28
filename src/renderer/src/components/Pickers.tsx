@@ -259,7 +259,7 @@ export function ModelThinkingPicker() {
             {thinkLabel(level)}
           </span>
         ) : null}
-        <span className="mt-chev">{open ? '▴' : '▾'}</span>
+        <Icon name="chevron-right" size={12} className={`mt-chev chev ${open ? 'flip-up' : 'on'}`} />
       </button>
 
       {open ? (

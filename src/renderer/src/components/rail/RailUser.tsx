@@ -150,8 +150,8 @@ function ProfilePop({ onClose }: { onClose: () => void }) {
       <div className="rup-head">
         <span>{t('rail.profile')}</span>
         <span className="spacer" />
-        <button className="rup-x" onClick={onClose} title={t('set.close')}>
-          ✕
+        <button className="rup-x" onClick={onClose} title={t('set.close')} aria-label={t('set.close')}>
+          <Icon name="close" size={12} />
         </button>
       </div>
 

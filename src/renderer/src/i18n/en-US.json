@@ -1785,5 +1785,15 @@
   "peer.artifactLine": "Output files copied {copied}/{total}",
   "peer.artifactMissing": "Not copied: {names}",
   "peer.openFolder": "Open folder",
-  "remote.kindPeer": "Another Inkstone"
+  "remote.kindPeer": "Another Inkstone",
+  "sb.label": "Status bar",
+  "sb.runTip": "Running: the model or a tool is working on this turn",
+  "sb.waitTip": "Waiting for you: a question needs your answer",
+  "sb.idleTip": "Idle: ready for the next message",
+  "sb.branchTip": "Branch {branch} · {n} changed files",
+  "sb.piTip": "Connection to the pi runtime",
+  "sb.phone": "Phone · {n}",
+  "sb.phoneTip": "Paired phones that can connect (Settings → Phone access)",
+  "sb.cost": "Session ${cost}",
+  "sb.costTip": "Estimated cost of this session so far"
 }

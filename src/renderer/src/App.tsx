@@ -31,6 +31,7 @@ import { SubagentNote } from './components/chat/SubagentNote'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
+import { StatusBar } from './components/shell/StatusBar'
 import { useStore } from './state/store'
 /* 全部样式经级联层入口加载：覆盖关系由层决定，见 styles/index.css */
 import './styles/index.css'
@@ -898,6 +899,7 @@ export default function App() {
           {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
         </div>
+        <StatusBar />
       </div>
 
       {onboarding ? (
