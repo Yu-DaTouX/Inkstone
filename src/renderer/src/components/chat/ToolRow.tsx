@@ -138,10 +138,12 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
         }}
         aria-expanded={open}
         title={target}
+        aria-label={`${verb} ${target}`}
         data-testid="tool-row"
       >
+        {/* 命令块（设计规范 §3.5）：状态 · 工具名 · 目标 · 右侧耗时 */}
         <span className="trow-ico" aria-hidden>
-          {running ? <Spinner /> : toolGlyph(call.name, failed)}
+          {running ? <Spinner /> : <span className={`trow-dot ${failed ? 'err' : cancelled ? 'warn' : 'ok'}`} />}
         </span>
         {taskPlan || goalCmd ? (
           <span
@@ -152,11 +154,13 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
             {taskPlan ? t('tool2.yanTaskPlan') : t('tool2.yanGoal')}
           </span>
         ) : null}
-        <span className="trow-verb">{verb}</span>
+        <span className="trow-verb">{call.name}</span>
         <span className="trow-target" data-testid="tool-target">
+          {kind === 'command' ? <span className="trow-dollar">$ </span> : null}
           {target || t('tool2.noTarget')}
         </span>
         <span className="spacer" />
+        {!running && secs !== null ? <span className="trow-time">{secs}s</span> : null}
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
         ) : cancelled ? (
@@ -360,12 +364,6 @@ function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit
   return t('tool2.vCall')
 }
 
-/** 状态图标：成功是勾，失败是方框里的「!」（设计规范 §3.4） */
-function toolGlyph(name: string, failed: boolean) {
-  if (failed) return <Icon name="alert-circle" size={12} />
-  void name
-  return <Icon name="check" size={12} className="trow-check" />
-}
 
 /**
  * 耗时（秒）。取自 call 上的 startedAt/endedAt（agent 归一化时写的）；

@@ -52,7 +52,7 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         {/*
          * 「提问」标记：这条用户消息是问题面板的回答，不是手打的。
          * 问答只存在于工具结果里，不标出来回看时容易当成自己当时真的发了这些字。
-         * 身份不再用「你」标签表达：右对齐的气泡本身就是身份。
+         * 身份不用「你」标签表达：块首的 `›` 提示符就是身份（设计规范 §3.5）。
          */}
         {msg.question ? (
           <div className="msg-label">
@@ -86,8 +86,15 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
           </div>
         ) : null}
 
-        {msg.text ? <div className="bubble">{msg.text}</div> : null}
-        {/* 气泡下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
+        {msg.text ? (
+          <div className="bubble">
+            <span className="bubble-prompt" aria-hidden>
+              ›
+            </span>
+            <span className="bubble-text">{msg.text}</span>
+          </div>
+        ) : null}
+        {/* 消息块下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
         <div className="turn-footer msg-meta">
           {msg.timestamp ? <TurnTime timestamp={msg.timestamp} /> : null}
           <button

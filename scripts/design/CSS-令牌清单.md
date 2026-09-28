@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　96 个变量（其中 1 个被重复定义）
+## `:root`　98 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -58,10 +58,11 @@
 | `--focus-ring-offset` | `1px` | **tokens**: 1px |
 | `--focus-ring-w` | `1px` | **tokens**: 1px |
 | `--focus-ring-w-strong` | `2px` | **tokens**: 2px |
-| `--font-body` | `var(--font-ui)` | **tokens**: var(--font-ui) |
+| `--font-body` | `var(--font-sans)` | **tokens**: var(--font-sans) |
 | `--font-code` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--font-mono` | `'Maple Mono CN', ui-monospace, Consolas, monospace` | **tokens**: 'Maple Mono CN', ui-monospace, Consolas, monospace |
-| `--font-ui` | `'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif` | **tokens**: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif |
+| `--font-sans` | `'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif` | **tokens**: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif |
+| `--font-ui` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--fs-base` | `13px` | **tokens**: 13px |
 | `--fs-body` | `14px` | **tokens**: 14px |
 | `--fs-code` | `12.5px` | **tokens**: 12.5px |
@@ -94,6 +95,7 @@
 | `--sp-4` | `16px` | **tokens**: 16px |
 | `--sp-5` | `24px` | **tokens**: 24px |
 | `--sp-6` | `32px` | **tokens**: 32px |
+| `--statusbar-h` | `24px` | **tokens**: 24px |
 | `--think-high` | `#b294bb` | **motion**: #b294bb |
 | `--think-low` | `#5f87af` | **motion**: #5f87af |
 | `--think-max` | `#ff5fff` | **motion**: #ff5fff |
@@ -205,7 +207,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**168**
+- 变量总数（含各主题）：**170**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

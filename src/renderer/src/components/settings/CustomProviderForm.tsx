@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView } from '../../../../shared/ipc'
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
+import { Icon } from '../../icons/Icon'
 import { Button } from '../ui'
 
 /**
@@ -264,8 +265,8 @@ export function CustomProviderForm() {
                     className={testResult.ok ? 'ui-row-desc' : 'ui-row-desc err'}
                     data-testid={`custom-api-test-result-${item.id}`}
                   >
-                    {(testResult.ok ? '✓ ' : '✗ ') +
-                      testResult.message +
+                    <Icon name={testResult.ok ? 'check' : 'alert-circle'} size={12} />{' '}
+                    {testResult.message +
                       ` · ${testResult.ms}ms` +
                       (testResult.text ? ` · ${testResult.text.slice(0, 60)}` : '')}
                   </div>

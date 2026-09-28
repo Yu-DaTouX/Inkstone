@@ -62,7 +62,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin: 0 5px;
+  margin: 0 var(--sp-1);
   padding: var(--sp-2) var(--sp-2);
   border-radius: var(--r-md);
   color: var(--fg-dim);
@@ -89,7 +89,7 @@
   overflow: hidden auto;
   scrollbar-gutter: stable;
   /* 左栏边缘留白收窄（用户要求靠近边缘） */
-  padding: 0 5px var(--sp-3);
+  padding: 0 var(--sp-1) var(--sp-3);
   min-width: 0;
 }
 
@@ -388,16 +388,19 @@
 .srow-row:hover {
   background: var(--bg-2);
 }
+/* 选中：--bg-3 底 + 行首状态圆点（设计规范 §3.3：不用 inset 边线，圆角会把它弯成弧） */
 .srow-row.selected {
-  background: var(--accent-soft);
+  background: var(--bg-3);
 }
 .srow-row.selected::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
+  left: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: var(--r-full);
   background: var(--accent);
 }
 .srow-row .srow {
@@ -541,7 +544,7 @@
   font: inherit;
 }
 .proj-group {
-  margin-left: 5px;
+  margin-left: var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   overflow: hidden;
@@ -574,7 +577,7 @@
   align-items: flex-start;
   gap: var(--sp-2);
   margin: 0 6px 6px;
-  padding: 5px 6px 5px var(--sp-3);
+  padding: var(--sp-1) 6px var(--sp-1) var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -972,7 +975,7 @@
 }
 
 .rail-space-tree {
-  padding-left: 10px;
+  padding-left: var(--sp-2);
 }
 
 .rail-empty.sm {
@@ -1627,7 +1630,7 @@ body.rail-dragging .srow {
 }
 
 .rmm-head {
-  padding: 3px var(--sp-2) 5px;
+  padding: 3px var(--sp-2) var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   letter-spacing: 0.04em;
@@ -1638,7 +1641,7 @@ body.rail-dragging .srow {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
@@ -1680,7 +1683,7 @@ body.rail-dragging .srow {
 
 .rmm-tag {
   flex: none;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid var(--border);
   border-radius: var(--r-xs);
   color: var(--fg-mute);
@@ -1695,7 +1698,7 @@ body.rail-dragging .srow {
 
 .rmm-foot {
   margin-top: var(--sp-1);
-  padding: 5px var(--sp-2) 3px;
+  padding: var(--sp-1) var(--sp-2) 3px;
   border-top: 1px solid var(--border-soft);
   color: var(--fg-mute);
   font-size: var(--fs-xs);

@@ -5,7 +5,6 @@ import { identityForAwait, useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
-import { UsageBar } from './UsageBar'
 import { LearningActions } from './LearningActions'
 import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
@@ -1006,8 +1005,13 @@ export function Composer() {
                 )}
                 <span className="attach-name">{a.name}</span>
                 {a.kind === 'file' ? <span className="attach-size">{fmtSize(a.size)}</span> : null}
-                <button className="attach-del" onClick={() => removeAttachment(a.id)} title={t('composer.removeImage')}>
-                  ✕
+                <button
+                  className="attach-del"
+                  onClick={() => removeAttachment(a.id)}
+                  title={t('composer.removeImage')}
+                  aria-label={t('composer.removeImage')}
+                >
+                  <Icon name="close" size={12} />
                 </button>
               </div>
             ))}
@@ -1015,7 +1019,11 @@ export function Composer() {
         ) : null}
 
         {menu.open && slashMatches.length > 0 ? (
-          <div className="slash-menu" role="listbox">
+          <div className="slash-menu" role="listbox" data-testid="slash-menu">
+            {/* 顶部回显当前查询（设计规范 §3.6：命令菜单的 `›` 输入行） */}
+            <div className="slash-query" aria-hidden>
+              <span className="slash-query-prompt">›</span>/{slashQuery}
+            </div>
             {slashMatches.map((c, i) => (
               <Fragment key={`${c.source}:${c.name}:${c.module ?? ''}`}>
                 {i === 0 || slashMatches[i - 1].source !== c.source ? (
@@ -1043,10 +1051,16 @@ export function Composer() {
              * 不提示的话用户只会用鼠标点（或者以为只能点）。
              */}
             <div className="slash-hint" data-testid="slash-hint">
-              <span>↑↓ 选</span>
-              <span>Enter / Tab 填入</span>
-              <span>Esc 关闭</span>
-              <span>{slashMatches.length} 项 · 可滚动</span>
+              <span>
+                <kbd className="ui-kbd">↑↓</kbd> 选
+              </span>
+              <span>
+                <kbd className="ui-kbd">Enter</kbd> / <kbd className="ui-kbd">Tab</kbd> 填入
+              </span>
+              <span>
+                <kbd className="ui-kbd">Esc</kbd> 关闭
+              </span>
+              <span className="slash-count">{slashMatches.length} 项</span>
             </div>
           </div>
         ) : null}
@@ -1074,7 +1088,10 @@ export function Composer() {
                 aria-selected={i === menu.index}
                 title={toAbsoluteFilePath(activeCwd, p)}
               >
-                <span className="slash-name">{p.endsWith('/') ? '▸ ' : '· '}{p}</span>
+                <span className="slash-name">
+                  <Icon name={p.endsWith('/') ? 'folder' : 'file'} size={12} />
+                  {p}
+                </span>
                 <span className="slash-src">{p.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>
               </button>
             )) : null}
@@ -1095,37 +1112,43 @@ export function Composer() {
           aria-orientation="horizontal"
         />
 
-        <textarea
-          ref={ref}
-          rows={2}
-          data-testid="composer"
-          value={value}
-          disabled={disabled}
-          /*
-           * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
-           * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
-           * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
-           */
-          placeholder={
-            disabled
-              ? t('conn.starting')
-              : busy
-                ? t('composer.busy')
-                : expanded
-                  ? t('composer.phTall')
-                  : t('composer.ph')
-          }
-          onChange={(e) => {
-            setValue(e.target.value)
-            setCursor(e.target.selectionStart)
-            setAtMenuDismissed(false)
-          }}
-          onSelect={rememberCursor}
-          onClick={rememberCursor}
-          onKeyUp={rememberCursor}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        />
+        {/* 提示符：普通输入是 `›`，`!` 开头的直执行命令是 `$`（设计规范 §3.5） */}
+        <div className="composer-line">
+          <span className="composer-prompt" aria-hidden>
+            {bashMode ? '$' : '›'}
+          </span>
+          <textarea
+            ref={ref}
+            rows={2}
+            data-testid="composer"
+            value={value}
+            disabled={disabled}
+            /*
+             * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
+             * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
+             * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
+             */
+            placeholder={
+              disabled
+                ? t('conn.starting')
+                : busy
+                  ? t('composer.busy')
+                  : expanded
+                    ? t('composer.phTall')
+                    : t('composer.ph')
+            }
+            onChange={(e) => {
+              setValue(e.target.value)
+              setCursor(e.target.selectionStart)
+              setAtMenuDismissed(false)
+            }}
+            onSelect={rememberCursor}
+            onClick={rememberCursor}
+            onKeyUp={rememberCursor}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+          />
+        </div>
 
         <div className="composer-bar">
           <div className="composer-tools">
@@ -1201,8 +1224,6 @@ export function Composer() {
 
       </div>
 
-      {/* 用量条：合并版，放在输入框下方 */}
-      <UsageBar />
     </div>
   )
 }
@@ -1410,7 +1431,7 @@ function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonEl
         <span className="mode-label" data-testid="work-mode-label">
           {t(`workMode.label.${state}`)}
         </span>
-        <span className="mode-caret" aria-hidden>▾</span>
+        <Icon name="chevron-right" size={12} className="mode-caret chev on" />
       </button>
 
       {open ? (

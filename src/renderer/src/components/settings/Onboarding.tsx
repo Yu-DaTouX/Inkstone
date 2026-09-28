@@ -4,7 +4,7 @@ import { useT } from '../../i18n'
 import { BrandMark } from '../shell/BrandMark'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
-import { Button } from '../ui'
+import { Button, IconButton } from '../ui'
 
 /**
  * 首次使用引导。
@@ -126,9 +126,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             <div className="ob-sub">{t('ob.sub')}</div>
           </div>
           <span className="spacer" />
-          <button className="ob-x" onClick={onClose} title={t('ob.skip')} data-testid="ob-close">
-            ✕
-          </button>
+          <IconButton icon="close" iconSize={14} className="ob-x" label={t('ob.skip')} data-testid="ob-close" onClick={onClose} />
         </div>
 
         <div className="ob-body">

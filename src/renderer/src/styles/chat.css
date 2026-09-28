@@ -72,7 +72,7 @@
   background: var(--code-inline-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 1px 5px;
+  padding: 1px var(--sp-1);
   font-size: var(--fs-code);
   color: var(--code-inline-fg);
 }
@@ -198,7 +198,7 @@
    用对称 padding 抵消 gutter，让内容真正居中。 */
 .stream {
   /* scrollbar-gutter 占的是右内边距，这里补一个等量左内边距 */
-  padding-left: 10px;
+  padding-left: var(--sp-2);
 }
 
 .stream-inner,
@@ -352,7 +352,7 @@
   align-items: baseline;
   gap: var(--sp-2);
   margin-bottom: 6px;
-  padding-bottom: 5px;
+  padding-bottom: var(--sp-1);
   border-bottom: 1px dashed var(--border);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -376,7 +376,7 @@
   color: var(--fg);
   font-size: var(--fs-base);
   line-height: 1.4;
-  margin-bottom: 5px;
+  margin-bottom: var(--sp-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -453,7 +453,7 @@
 .shead-view button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: calc(var(--ctl-h-sm) - 4px);
   padding: 0 var(--sp-2);
   border: 0;
@@ -524,7 +524,7 @@
 .shead-proj {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   flex: none;
   max-width: 220px;
   height: var(--ctl-h-sm);
@@ -636,7 +636,7 @@
 /* AI 文件产物：内联预览，同时保留右侧只读预览和下载出口。 */
 .turn-artifacts {
   display: grid;
-  gap: 10px;
+  gap: var(--sp-2);
   margin: var(--sp-3) 0 var(--sp-1);
   max-width: min(620px, 100%);
 }
@@ -653,7 +653,7 @@
   align-items: center;
   gap: var(--sp-2);
   min-height: 34px;
-  padding: 0 10px;
+  padding: 0 var(--sp-2);
   color: var(--fg);
 }
 
@@ -672,7 +672,7 @@
 }
 
 .artifact-description {
-  padding: 0 10px var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-2);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   line-height: 1.5;
@@ -682,7 +682,7 @@
   display: grid;
   place-items: center;
   min-height: 0;
-  padding: 10px;
+  padding: var(--sp-2);
   /*
    * 衬底只包住图片，不撑满卡片宽度。
    * 之前少了这两行：grid 容器默认拉伸到父级宽（.artifact-card 是块级），
@@ -752,7 +752,7 @@
   max-height: 220px;
   margin: 0;
   overflow: auto;
-  padding: 10px;
+  padding: var(--sp-2);
   color: var(--fg);
   background: #101318;
   font-size: var(--fs-xs);
@@ -779,11 +779,11 @@
   display: grid;
   gap: var(--sp-2);
   max-width: min(620px, 100%);
-  margin: 10px 0 var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-2);
 }
 
 .image-progress {
-  padding: 9px 11px 10px;
+  padding: 9px 11px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-2) 94%, white 6%);
@@ -874,12 +874,12 @@
   display: grid;
   gap: 6px;
   max-width: min(620px, 100%);
-  margin: 10px 0 var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-2);
 }
 
 .subagent-inline {
   min-width: 0;
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-2) 94%, white 6%);
@@ -939,7 +939,7 @@
 .subagent-inline-task,
 .subagent-inline-preview {
   overflow: hidden;
-  margin-top: 5px;
+  margin-top: var(--sp-1);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
   line-height: 1.45;
@@ -1170,7 +1170,7 @@
  */
 .tgroup-fail {
   flex: none;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--err-soft);
   color: var(--err);
@@ -1652,7 +1652,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   background: #181818;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   color: #9a9a9a;
@@ -2128,7 +2128,7 @@
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  padding: 6px 10px;
+  padding: 6px var(--sp-2);
   border: 1px dashed var(--border);
   border-radius: var(--r-sm);
   color: var(--fg-mute);
@@ -2141,7 +2141,7 @@
   align-items: center;
   gap: var(--sp-1);
   margin-left: auto;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   height: 16px;
   border-radius: var(--r-sm);
   border: 1px solid transparent;
@@ -2559,4 +2559,80 @@
 .sa-note-result-meta {
   flex: 0 0 auto;
   color: var(--fg-mute);
+}
+
+/* 连续阅读的段落用无衬线（设计规范 §2.2）：用户消息、推理全文、会话标题 */
+.msg.user .bubble,
+.reason-body,
+.shead-title {
+  font-family: var(--font-body);
+}
+
+/*
+ * 用户消息（设计规范 §3.5）：`›` 提示符 + 正文的块，--bg-2 底，与助手正文同列靠左。
+ * 提示符是身份标记，不再靠右对齐的气泡区分角色。
+ */
+.msg.user .msg-body {
+  align-items: stretch;
+}
+.msg.user .bubble {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: var(--sp-2);
+  width: auto;
+  max-width: none;
+  margin-left: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+.bubble-prompt {
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-weight: var(--fw-strong);
+}
+.bubble-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg.user .msg-label,
+.msg.user .msg-meta {
+  justify-content: flex-start;
+}
+.msg.user .msg-images {
+  justify-content: flex-start;
+  margin-left: 0;
+}
+
+/* 工具调用 = 命令块（设计规范 §3.5）：状态点 · 工具名 · 目标 · 耗时；命令前加强调色 `$` */
+.trow-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--fg-mute);
+}
+.trow-dot.ok {
+  background: var(--ok);
+}
+.trow-dot.err {
+  background: var(--err);
+}
+.trow-dot.warn {
+  background: var(--warn);
+}
+.trow-verb {
+  font-family: var(--font-ui);
+}
+.trow-dollar {
+  color: var(--accent);
+  font-weight: var(--fw-strong);
+}
+.trow-time {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }

@@ -984,7 +984,7 @@ export function Rail() {
               title={t('rail.clear')}
               data-testid="rail-search-clear"
             >
-              ✕
+              <Icon name="close" size={12} />
             </button>
           ) : null}
         </div>

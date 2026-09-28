@@ -178,7 +178,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: calc(var(--ctl-h) - 6px);
   padding: 0 var(--sp-3);
   border-radius: var(--r-xs);
@@ -340,7 +340,7 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: var(--r-xs);
@@ -449,6 +449,7 @@ select.ui-input {
 }
 .ui-row-desc {
   color: var(--fg-mute);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
   line-height: var(--lh-tight);
   overflow-wrap: anywhere;

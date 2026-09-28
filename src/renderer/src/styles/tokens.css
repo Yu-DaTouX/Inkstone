@@ -20,11 +20,17 @@
 
 /* 1. 令牌 */
 :root {
-  /* 墨色工作空间：UI / 正文使用无衬线，代码 / diff / 终端保留等宽栅格。 */
+  /*
+   * 字体分工（设计规范 §2.2）：逐项扫读的界面骨架用等宽，连续阅读的段落用无衬线。
+   *   --font-ui   导航、列表行、元数据、路径、工具行、按钮、状态栏、快捷键
+   *   --font-code 代码、diff、终端
+   *   --font-body 对话正文、用户消息、推理、设置说明、页标题
+   */
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
+  --font-sans: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
   --font-code: var(--font-mono);
-  --font-ui: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
-  --font-body: var(--font-ui);
+  --font-ui: var(--font-mono);
+  --font-body: var(--font-sans);
 
   --fs-xs: 11px;
   --fs-sm: 12px;
@@ -64,6 +70,8 @@
   --r-full: 999px;
 
   --h-titlebar: 40px;
+  /* 窗口底部状态栏（设计规范 §4） */
+  --statusbar-h: 24px;
   /*
    * 左栏宽度不在 tokens 里定 —— 它是**布局变量**，由 layout.css 统一管
    * （依赖 --w-rail-user 用户值，并且要按窗口宽度分档夹取）。
@@ -336,6 +344,13 @@ textarea {
 }
 .chev {
   transition: transform var(--dur) var(--ease);
+}
+.chev.on {
+  /* 一个 chevron 转向表达「展开 / 下拉」：朝右是收起，朝下（.on）是展开或下拉，朝上是已弹出 */
+  transform: rotate(90deg);
+}
+.chev.flip-up {
+  transform: rotate(-90deg);
 }
 .open > .chev {
   transform: rotate(90deg);

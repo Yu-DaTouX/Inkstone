@@ -306,7 +306,7 @@
 
 /* ---- 标题：用户那一问的短摘要 ---- */
 .op-title {
-  padding: var(--sp-2) var(--sp-3) 5px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
   color: var(--fg);
   font-size: var(--fs-base);
   font-weight: var(--fw-strong);
@@ -510,7 +510,7 @@ html[data-theme='light'] .op-title::before {
 /* ---- 回合头部的「N 步」标记 ---- */
 .msg-turn-count {
   margin-left: var(--sp-2);
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   border: 1px solid var(--border-soft);
   background: var(--bg-2);
@@ -521,7 +521,7 @@ html[data-theme='light'] .op-title::before {
 
 .msg-turn-detail {
   margin-left: var(--sp-2);
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-xs);
   color: var(--fg-mute);
@@ -583,19 +583,11 @@ html[data-theme='light'] .turn {
   border-color: var(--border);
 }
 
-/* 56. 输入框：pi 风格的边框 + 顶边框上的工作状态
-   对齐 pi 的 TUI（`custom-editor.js` 的 `renderTopBorder`）：
-   ── ⠋ 正在处理… ────────────────────────────────────────
-   关于聊天栏 按照 pi 的样式来设计▌
-   ① 圆角收小：pi 的输入框是**方角**的，右边框与左边框都是竖线。
-   之前用 --r-xl（14px）是"浮起卡片"的思路，与终端形态冲突。
-   ② 顶边框不再是 CSS border，而是一行**真元素** ——
-   因为状态文字要嵌在里面（CSS border 塞不了内容）。
-   代价：`.composer` 的 border-top 要去掉，改由 .cborder 画。
-   ③ 边框颜色 = 当前思考强度的颜色（pi 的 getThinkingBorderColor）。
-   七档七色，这样档位有个常驻的视觉载体，不用去面板里看。 */
+/* 56. 输入区运行条（设计规范 §3.5 / §4）
+   输入区顶边的一行，只在运行时用 grow 长出来：方点阵 · 阶段文字 · 计时。
+   思考档位色只落在方点阵与运行条底线上（七档七色，取自 pi 的 dark.json），
+   文字用中性色 —— 整句染成高档位的洋红读起来像告警。 */
 
-/* ---- 七档思考强度的边框色（取自 pi 的 dark.json） ---- */
 :root {
   --think-off: #4a4a4a;
   --think-minimal: #6e6e6e;
@@ -606,42 +598,33 @@ html[data-theme='light'] .turn {
   --think-max: #ff5fff;
 }
 
-/* 输入框本体的圆角与去掉顶边框（顶边改由 .cborder 画）在 composer.css 的基础段末尾 */
-
-/* 顶边框：`── ⠋ 文案 ────────` */
 .cborder {
+  display: grid;
+  grid-template-rows: 0fr;
+  /* 全出血：底线从输入框最左一直到最右，与左右边框接上 */
+  margin: 0 calc(var(--sp-3) * -1) var(--sp-3);
+  color: var(--think-off);
+  user-select: none;
+  transition:
+    grid-template-rows var(--mo-slow) var(--mo-ease),
+    margin-bottom var(--mo-slow) var(--mo-ease),
+    color var(--dur-260) var(--mo-ease);
+}
+.cborder.busy {
+  grid-template-rows: 1fr;
+  margin-bottom: var(--sp-2);
+}
+.cborder-row {
   display: flex;
   align-items: center;
-  gap: 0;
-  /*
-   * 行高 + 字号：工作状态要**看得见**（用户要求放大）。
-   *
-   * 它是唯一告诉用户「它在干活」的信号，而原来用正文字号（12.5px），
-   * 附在一条 1px 边框线上很不起眼。放大到 14px（--fs-lg）并配 24px 行高。
-   * 空闲时这一行里只有一条横线，高度不能太大，否则输入框上方会显得空。
-   */
-  height: 24px;
-  /*
-   * 全出血（负的左右内边距）：
-   * 边框线必须**从卡片最左一直到最右**，才能与左右竖边框接上。
-   * 之前它跟 .composer 的 12px 内边距内缩，两端悬空 ——
-   * 左上/右上角像缺了个口，看着很突兀。
-   */
-  margin: 0 calc(var(--sp-3) * -1);
-  padding: 0;
-  color: var(--think-off);
-  font-size: var(--fs-lg);
-  line-height: 1;
-  user-select: none;
+  gap: var(--sp-2);
+  min-height: 0;
   overflow: hidden;
-  transition: color var(--dur-260) var(--mo-ease);
+  padding: 0 var(--sp-3);
 }
-/*
- * 空闲时字号回到正文 —— 那时行里没有文字，只有一条横线，
- * 字号大小不影响它；但继承下去会影响子元素（如按钮）的默认字号。
- */
-.cborder:not(.busy) {
-  font-size: var(--fs-base);
+.cborder.busy .cborder-row {
+  height: 30px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 45%, transparent);
 }
 /* 档位 → 颜色。用属性选择器，加档位时只加一行 */
 .cborder[data-level='minimal'] {
@@ -663,150 +646,33 @@ html[data-theme='light'] .turn {
   color: var(--think-max);
 }
 
-/* `── ` 前缀：pi 里固定就是这两个横 + 一个空格 */
-.cborder-dash {
-  display: block;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.5;
-  flex: none;
-}
-.cborder-dash.lead {
-  width: 14px;
-  margin-right: 6px;
-}
-/* 剩余宽度：可伸缩（代替 TUI 里手算的 repeat） */
-.cborder-dash.tail {
-  flex: 1;
-  min-width: 8px;
-  margin-left: 6px;
-}
-
-/*
- * 空闲时：**一条完整连续的线**。
- *
- * 这是 pi 的行为（`renderTopBorder` 在没有 working indicator 时
- * 直接返回一条完整的边框线）。之前把 `── ` 与尾线都留着、
- * 中间留出空位，空闲时就变成“两段线中间空一截” —— 看着像坏了。
- */
-.cborder:not(.busy) .cborder-dash.lead {
-  display: none;
-}
-.cborder:not(.busy) .cborder-dash.tail {
-  margin-left: 0;
-}
-/* 空闲时不需要那么亮（它不是重点，只是输入框的边） */
-.cborder:not(.busy) .cborder-dash.tail {
-  opacity: 0.38;
-}
-
-/* 状态区：方点阵与文案之间留 8px */
 .cborder-status {
-  display: inline-flex;
+  display: flex;
+  flex: 1;
   align-items: center;
   gap: var(--sp-2);
+  min-width: 0;
 }
-/* 方点阵跟着边框取思考档位色：亮点是档位色，尾迹半透明 */
+/* 方点阵跟着运行条取思考档位色：亮点是档位色，尾迹半透明 */
 .cborder-spinner {
   --h: currentColor;
   --t: color-mix(in srgb, currentColor 55%, transparent);
 }
 .cborder-text {
-  /*
-   * 状态文字用正文前景色：思考档位色只留在边框线与 spinner 上。
-   * 整句文字染成高档位的洋红 / 紫色时，它比正文还抢眼，读起来像告警。
-   */
+  min-width: 0;
+  overflow: hidden;
   color: var(--fg-dim);
-  font-size: var(--fs-base);
-  letter-spacing: 0.01em;
-}
-/* 文案变化时淡入 —— 状态切换是「有新消息」，不该是硬切 */
-.cborder-text {
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 文案变化时淡入：状态切换是「有新消息」，不该是硬切 */
   animation: mo-fade-in var(--mo-fast) var(--mo-ease) both;
 }
-
-/* ---- 忙碌时：整条边框呼吸 + 尾线扫光 ---- */
-.cborder.busy .cborder-dash {
-  opacity: 0.75;
-}
-/*
- * 尾线扫光。
- *
- * ⚠️ 这里踩过一个坑：一开始只写了一层 `background-image`（限定 240px 宽的渐变）
- *   并配 `background-repeat: no-repeat` —— 于是那 240px 之外**什么都不画**，
- *   一条 898px 的线只显示前 240px，看起来就是「线断在半路」。
- *
- * 正确做法是**两层**：
- *   ① background-color：底色，铺满整条线（保证线完整）
- *   ② background-image：只有高光带，用 no-repeat 让它扫
- * 底色压到 45% 透明，高光带用实色 —— 这样扫过的地方是“亮了一下”。
- */
-.cborder.busy .cborder-dash.tail {
-  /* ① 铺满 */
-  background-color: color-mix(in srgb, currentColor 45%, transparent);
-  /* ② 高光带（只有这一层是局部的） */
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    currentColor 50%,
-    transparent 100%
-  );
-  background-size: 240px 100%;
-  background-repeat: no-repeat;
-  animation: cborder-sweep var(--dur-1600) linear infinite;
-}
-.cborder.busy .cborder-dash.lead {
-  animation: cborder-pulse var(--dur-1600) var(--mo-loop) infinite;
-}
-
-@keyframes cborder-sweep {
-  from {
-    background-position: -240px 0;
-  }
-  to {
-    /* calc 让它扫过右边缘才停，否则末尾会留一截暗的 */
-    background-position: calc(100% + 240px) 0;
-  }
-}
-@keyframes cborder-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* 聚焦时把边框提到实色（原 .composer:focus-within 的 border-color 已失效，
-   因为顶边框不在 .composer 上了）*/
-.composer:focus-within .cborder {
-  color: var(--accent);
-}
-/* 但忙碌时优先显示思考强度色（那时「正在干什么」比「聚焦在哪」重要） */
-.composer:focus-within .cborder.busy {
-  color: inherit;
-}
-.composer:focus-within .cborder.busy[data-level='off'] {
-  color: var(--think-off);
-}
-.composer:focus-within .cborder.busy[data-level='minimal'] {
-  color: var(--think-minimal);
-}
-.composer:focus-within .cborder.busy[data-level='low'] {
-  color: var(--think-low);
-}
-.composer:focus-within .cborder.busy[data-level='medium'] {
-  color: var(--think-medium);
-}
-.composer:focus-within .cborder.busy[data-level='high'] {
-  color: var(--think-high);
-}
-.composer:focus-within .cborder.busy[data-level='xhigh'] {
-  color: var(--think-xhigh);
-}
-.composer:focus-within .cborder.busy[data-level='max'] {
-  color: var(--think-max);
+.cborder-time {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 浅色主题：pi 的 thinking 色是为深色底调的，浅色下要压暗才能读 */
@@ -818,19 +684,6 @@ html[data-theme='light'] {
   --think-high: #7a5f8c;
   --think-xhigh: #8b4bb0;
   --think-max: #a300a3;
-}
-
-/* ---- 减少动效 ---- */
-@media (prefers-reduced-motion: reduce) {
-  .cborder.busy .cborder-dash {
-    animation: none !important;
-  }
-  .cborder.busy .cborder-dash.tail {
-    /* 去掉扫光层，但**保留**底色 —— 线必须完整 */
-    background-image: none;
-    background-color: currentColor;
-    opacity: 0.5;
-  }
 }
 
 /* 57. 任务栏：进度条 + 当前任务 + 动画
@@ -888,10 +741,10 @@ html[data-theme='light'] {
 .rp-todo-now {
   display: grid;
   grid-template-columns: 14px auto minmax(0, 1fr);
-  gap: 5px;
+  gap: var(--sp-1);
   align-items: baseline;
   margin: 0 0 6px;
-  padding: 3px 5px 3px var(--sp-1);
+  padding: 3px var(--sp-1) 3px var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--accent-soft);
   border-left: 2px solid var(--accent);
@@ -911,7 +764,7 @@ html[data-theme='light'] {
 .rp-all-done {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   padding: 2px 7px;
   border-radius: var(--r-full);
   background: var(--ok-soft);
@@ -1048,7 +901,7 @@ html[data-theme='light'] .rp-todo-now {
 }
 
 .auth-msg {
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-xs);
   font-size: var(--fs-sm);
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
@@ -1086,7 +939,7 @@ html[data-theme='light'] .rp-todo-now {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 5px var(--sp-1);
+  padding: var(--sp-1) var(--sp-1);
   border-radius: var(--r-xs);
   min-width: 0;
 }
@@ -1141,7 +994,7 @@ html[data-theme='light'] .rp-todo-now {
 }
 
 .auth-badge {
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-full);
   background: var(--ok-soft);
   color: var(--ok);
@@ -1152,7 +1005,7 @@ html[data-theme='light'] .rp-todo-now {
 .auth-cmd {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   flex: none;
   padding: 3px 7px;
   border: 1px dashed var(--border);
@@ -1171,7 +1024,7 @@ html[data-theme='light'] .rp-todo-now {
 .auth-waiting {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   flex: none;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -1183,7 +1036,7 @@ html[data-theme='light'] .rp-todo-now {
 .auth-edit {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   flex: none;
 }
 .auth-edit {

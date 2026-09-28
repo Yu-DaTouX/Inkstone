@@ -416,7 +416,7 @@ export function EnvironmentMenu() {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="shead-proj-ico" aria-hidden="true">{project ? '▸' : '·'}</span>
+        <Icon name={project ? 'folder' : 'folder-open'} size={12} className="shead-proj-ico" />
         <span className="shead-proj-name">{project ? shortProject(project) : t('header.noProject')}</span>
         <Icon name="chevron-right" size={12} className="chev env-caret" />
       </button>

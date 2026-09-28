@@ -5,7 +5,7 @@
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: var(--h-titlebar) minmax(0, 1fr);
+  grid-template-rows: var(--h-titlebar) minmax(0, 1fr) var(--statusbar-h);
 }
 /* ⚠️ 这里曾经是 `display: none` —— 它会让滑出动画完全失效
    （display 不可过渡，元素直接消失）。
@@ -99,7 +99,7 @@
   grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-2);
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--fg-dim);
@@ -256,7 +256,7 @@
   background: var(--code-inline-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 1px 5px;
+  padding: 1px var(--sp-1);
   font-size: var(--fs-code);
   color: var(--code-inline-fg);
 }
@@ -524,4 +524,9 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+
+/* 崩溃页的说明是一段话：用无衬线（设计规范 §2.2） */
+.crash-body {
+  font-family: var(--font-body);
 }
