@@ -35,6 +35,7 @@ export function Composer() {
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
   const busy = useStore((s) => !!s.session?.isStreaming)
+  const running = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming)
   /**
    * 「模型在干活」的**回合级**判据（agent_start → agent_settled）。
    *
@@ -980,6 +981,8 @@ export function Composer() {
        */}
       <div className="composer-stack">
       <QuestionPanel />
+      {/* 环绕流光：一次运行超过 3 秒才淡入（motion.css 的 .ui-orbit）；自主模式有自己的光带，不叠加 */}
+      <div className={`composer-orbit ui-orbit ${running && !autonomous ? 'on' : ''}`} data-testid="composer-orbit">
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
@@ -1189,10 +1192,11 @@ export function Composer() {
                   : undefined
             }
           >
-            <Icon name={busy ? 'alert-circle' : bashMode ? 'activity' : 'send'} size={12} />
+            <Icon name={busy ? 'stop' : bashMode ? 'terminal' : 'send'} size={12} />
             <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>
           </button>
         </div>
+      </div>
       </div>
 
       </div>

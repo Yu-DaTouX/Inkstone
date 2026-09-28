@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　92 个变量（其中 1 个被重复定义）
+## `:root`　96 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -20,6 +20,7 @@
 | `--dur-0` | `0ms` | **tokens**: 0ms |
 | `--dur-1` | `1ms` | **tokens**: 1ms |
 | `--dur-1000` | `1000ms` | **tokens**: 1000ms |
+| `--dur-1060` | `1060ms` | **tokens**: 1060ms |
 | `--dur-1100` | `1100ms` | **tokens**: 1100ms |
 | `--dur-1150` | `1150ms` | **tokens**: 1150ms |
 | `--dur-120` | `120ms` | **tokens**: 120ms |
@@ -38,8 +39,10 @@
 | `--dur-22` | `22ms` | **tokens**: 22ms |
 | `--dur-220` | `220ms` | **tokens**: 220ms |
 | `--dur-24` | `24ms` | **tokens**: 24ms |
+| `--dur-2400` | `2400ms` | **tokens**: 2400ms |
 | `--dur-26` | `26ms` | **tokens**: 26ms |
 | `--dur-260` | `260ms` | **tokens**: 260ms |
+| `--dur-3000` | `3000ms` | **tokens**: 3000ms |
 | `--dur-400` | `400ms` | **tokens**: 400ms |
 | `--dur-420` | `420ms` | **tokens**: 420ms |
 | `--dur-45` | `45ms` | **tokens**: 45ms |
@@ -76,7 +79,8 @@
 | `--mo-ease` | `cubic-bezier(0.22, 1, 0.36, 1)` | **motion**: cubic-bezier(0.22, 1, 0.36, 1) |
 | `--mo-ease-out` | `cubic-bezier(0.4, 0, 1, 1)` | **motion**: cubic-bezier(0.4, 0, 1, 1) |
 | `--mo-fast` | `110ms` | **motion**: 110ms |
-| `--mo-shift` | `6px` | **motion**: 6px |
+| `--mo-loop` | `cubic-bezier(0.45, 0, 0.55, 1)` | **motion**: cubic-bezier(0.45, 0, 0.55, 1) |
+| `--mo-shift` | `4px` | **motion**: 4px |
 | `--mo-slow` | `240ms` | **motion**: 240ms |
 | `--r-full` | `999px` | **tokens**: 999px |
 | `--r-lg` | `12px` | **tokens**: 12px |
@@ -201,7 +205,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**164**
+- 变量总数（含各主题）：**168**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

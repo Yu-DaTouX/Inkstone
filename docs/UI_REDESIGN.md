@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0、P1、P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
+状态：**P0、P1、P3、P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
 
 原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 
@@ -97,7 +97,7 @@
 | P0 规范 | 待决项定案，写入 `DESIGN_SYSTEM.md` v0.5；界面清单 | 文档评审 | 完成 |
 | P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
 | P2 控件 | 扩充 `components/ui`，先迁设置页，再迁工作台、审查与右栏 | 同上 + 设置相关 `test:live` | |
-| P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块、交叉淡变入 `motion.css` 与组件；位移上限 4px；手机 `motion.tsx` 同步 | `check:motion` + 实机录屏 | |
+| P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块入 `motion.css` 与组件；盲文帧、旋转图标与 thinking-orbs 小球统一换成方点阵；工具行展开改为 grow；减少动画改为 1ms 保留终态；位移上限 4px（手机 `motion.tsx` 已是 4dp）；交叉淡变随状态栏在 P5 | `check:motion` + 截图 | 完成 |
 | P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换；去掉 `lucide-static` 依赖 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | 完成 |
 | P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | |
 | P6 手机视觉 | 按第 3.2 节逐页：配对 → 首页 → 会话 → 成果 → 设置 → 通知；宽屏与折叠屏双栏 | `mobile` 下 `npm run typecheck`；深浅主题 × 手机竖屏 / 折叠屏展开实机截图 | |

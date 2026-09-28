@@ -9,6 +9,7 @@ import { ToolGroup, ToolRow } from './ToolRow'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
+import { Caret } from '../ui'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -202,9 +203,9 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
           </div>
         ) : null}
 
-        {/* 刚开始、什么都还没有时给个光标 */}
+        {/* 刚开始、什么都还没有时给个光标：还没有输出，所以是「停下」态的闪烁 */}
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? (
-          <span className="cursor" />
+          <Caret idle className="cursor" />
         ) : null}
         <TurnFooter turn={turn} />
       </div>

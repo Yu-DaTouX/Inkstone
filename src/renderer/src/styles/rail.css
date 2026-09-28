@@ -475,7 +475,7 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
   color: var(--accent);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
@@ -486,7 +486,7 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
   margin-left: 6px;
   color: var(--accent);
   font-variant-numeric: tabular-nums;

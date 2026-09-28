@@ -144,6 +144,10 @@
   --dur-1500: 1500ms;
   --dur-1600: 1600ms;
   --dur-1800: 1800ms;
+  /* v0.5 基础件：光标闪烁、环绕流光一圈、流光出现前的等待 */
+  --dur-1060: 1060ms;
+  --dur-2400: 2400ms;
+  --dur-3000: 3000ms;
   --dur-1900: 1900ms;
 }
 
@@ -292,10 +296,21 @@ textarea {
   outline-offset: var(--focus-ring-offset);
   border-radius: var(--r-sm);
 }
+/*
+ * 减少动画：时长压到 1ms、只播一次，保留终态（设计规范 §6）。
+ * 不用 animation: none —— 那会删掉入场关键帧的终态，延迟卸载的浮层会出现空窗，
+ * 方点阵也会连「这里在运行」的静态点都不画。错峰的 delay 一并归零。
+ * 这条在最早的 tokens 层且带 !important，压过所有模块，模块里不必再各写一遍。
+ */
 @media (prefers-reduced-motion: reduce) {
-  * {
-    transition: none !important;
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    transition-duration: var(--dur-1) !important;
+    transition-delay: var(--dur-0) !important;
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
+    animation-iteration-count: 1 !important;
   }
 }
 

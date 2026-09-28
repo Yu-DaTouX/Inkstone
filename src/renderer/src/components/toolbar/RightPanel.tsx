@@ -58,6 +58,7 @@ import {
   type WorkbenchState,
   type WorkbenchView
 } from '../../state/workbench'
+import { Spinner } from '../ui'
 
 type RightWindowView = WorkbenchView
 
@@ -1748,9 +1749,7 @@ function ContextSection() {
        */
       session?.isCompacting ? (
         <span className="rp-header-usage rp-header-compacting">
-          <span className="rp-now-spin" aria-hidden>
-            <Spinner />
-          </span>
+          <Spinner className="rp-now-spin" />
           {/*
            * 「压缩中 · 已达阈值」（N21-2）：只说“正在压缩”回答不了用户当下最想
            * 知道的 —— 为什么突然在压缩？原因来自 pi 的 `compaction_start.reason`。
@@ -2354,9 +2353,7 @@ function TodoSection() {
               <span className="rp-text">{todo.text}</span>
               {isActive ? (
                 <span className="rp-state doing" data-testid="todo-active-label">
-                  <span className="rp-now-spin" aria-hidden>
-                    <Spinner />
-                  </span>
+                  <Spinner className="rp-now-spin" />
                   {t('rp.doing')}
                 </span>
               ) : blocked ? (
@@ -2601,21 +2598,6 @@ function GoalOutputs() {
       ) : null}
     </div>
   )
-}
-
-/** 盲文 spinner —— 与输入框边框上那个同一套帧（pi 的 loader.js） */
-const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-function Spinner() {
-  const [i, setI] = useState(0)
-  useEffect(() => {
-    const reduce =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce) return
-    const id = setInterval(() => setI((v) => (v + 1) % SPIN.length), 80)
-    return () => clearInterval(id)
-  }, [])
-  return <>{SPIN[i]}</>
 }
 
 /* 队列 —— pi 的投递模式 + 待投递内容 */
