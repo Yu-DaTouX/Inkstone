@@ -134,6 +134,7 @@ import type {
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeCompareResult, OfficeDocumentView } from '../shared/office'
+import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
@@ -708,6 +709,12 @@ const api: YanBridge = {
   office: {
     preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd),
     compare: (path, cwd) => invoke<OfficeCompareResult>('yan:office:compare', path, cwd)
+  },
+
+  /* ---- 普通工具的自动调用依据 ---- */
+  consent: {
+    list: () => invoke<ConsentEntryView[]>('yan:consent:list'),
+    change: (key, action) => invoke<ConsentEntryView[]>('yan:consent:change', key, action)
   },
 
   /* ---- 语音输入（本地转写） ---- */

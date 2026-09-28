@@ -3830,6 +3830,11 @@ export interface YanBridge {
    * 电脑本地语音输入：状态与推荐、先核实再下载（plan → 用户确认 → download）、转写。
    * `pick` 让用户选已有的程序或模型文件；选中后写进设置。
    */
+  /** 普通工具的自动调用依据：查看每类操作的答复统计，设为始终询问 / 恢复 / 清空 */
+  consent: {
+    list(): Promise<import('./tool-consent').ConsentEntryView[]>
+    change(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<import('./tool-consent').ConsentEntryView[]>
+  }
   voice: {
     status(): Promise<import('./voice-input').VoiceInputStatus>
     plan(
