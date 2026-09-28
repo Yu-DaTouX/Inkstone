@@ -71,6 +71,7 @@
   "browser.loading": "加载中…",
   "browser.more": "更多操作",
   "browser.navigateError": "无法打开这个地址",
+  "browser.closeTab": "关闭标签页",
   "browser.newTab": "新建标签页",
   "browser.open": "打开内置浏览器",
   "browser.openExternal": "在外部浏览器打开",

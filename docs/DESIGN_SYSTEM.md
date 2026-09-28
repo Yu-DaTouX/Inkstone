@@ -11,7 +11,7 @@ v0.5（终端风格、底部状态栏、动效体系与「砚线」图标）已�
 | `src/renderer/src/styles/index.css` | 样式入口：`@layer tokens, base, ui, layout, modules, overrides`，决定覆盖关系 |
 | `src/renderer/src/styles/tokens.css` | 颜色、字号、间距、圆角、控件尺寸、字重、投影、时长 |
 | `src/renderer/src/styles/ui.css` | 统一控件的唯一外观：按钮、分段、开关、徽标、空状态、分区标题、键位 |
-| `src/renderer/src/components/ui/` | 同一套控件的 React 组件（`Button` / `IconButton` / `Segmented` / `Badge` / `EmptyState` / `SectionTitle`） |
+| `src/renderer/src/components/ui/` | 同一套控件的 React 组件（`Button` / `IconButton` / `Segmented` / `Switch` / `Badge` / `EmptyState` / `SectionTitle` / `Input` / `Textarea` / `Select` / `Field` / `SettingRow` / `Tabs` / `Tab` / `Menu` / `MenuItem` / `InspectorSection` / `ListRow` / `Spinner` / `Caret` / `Grow`） |
 | `src/renderer/src/styles/motion.css` | 全部关键帧与动效令牌 |
 | `scripts/design/icons/catalog.json` | 图标语义真源（`npm run icons` 生成），桌面与手机共用 |
 | `mobile/src/theme.ts` · `mobile/src/ui.tsx` · `mobile/src/motion.tsx` | 手机端的令牌、控件与动效，与桌面同源（见第 7 节） |
@@ -119,6 +119,14 @@ v0.4 的 `--font-ui` 指向 Segoe UI；P5 改指向等宽之前，界面仍以�
 - **空状态** `.ui-empty` / `<EmptyState>`：一句事实 + 可选的下一步操作。不画插图，不写「暂无数据」式空话；「没有改动」与「不在 Git 仓库里」这类不同事实用不同文案。
 - **分区标题** `.ui-section-title` / `<SectionTitle>`：12px / 600 / `--fg-dim`，图标 `--fg-mute`。
 - **键位** `.ui-kbd`：只给真正接了快捷键的动作画键位。
+- **输入框** `.ui-input` / `<Input>` `<Textarea>` `<Select>`：`--bg-2` 底、`--border` 描边，悬停 `--border-str`，聚焦 `--accent-line`。默认 240px 宽、左对齐；数值用 `.num`（96px、等宽数字、右对齐）。要撑满时模块只写 `width` / `flex`。
+- **字段** `.ui-field` / `<Field>`：表单里的一项，标签（12px 中等字重）+ 控件 + 说明，整项包在 `<label>` 里。
+- **设置行** `.ui-row` / `<SettingRow>`：「名称 + 说明｜控件」两列，行间一条细线，行本身不响应悬停；`col` 为上下排布。分组容器 `.ui-rows`。
+- **页签** `.ui-tabs` > `.ui-tab` / `<Tabs>` `<Tab>`：`role="tab"` + `aria-selected`，方向键移动焦点。选中项与分段同一语言（`--bg-3` 底 + 强调色图标），不画下划线。`.vertical` 用于设置导航；`.doc` 是可关闭的文档页签（右栏窗口栏、浏览器），关闭钮 `.ui-tab-close` 用 `close` 图标。互斥的视图切换用分段，不用页签。
+- **菜单** `.ui-menu` > `.ui-menu-item` / `<Menu>` `<MenuItem>`：右键菜单、行菜单与下拉共用。`--bg-2` 底、`--r-md`、`--shadow-pop`；项 28px 高，悬停 / 键盘聚焦 / 选中为 `--bg-3`，`.danger` 只染文字，分隔 `.ui-menu-sep`，小标题 `.ui-menu-title`。定位由调用方负责（`ContextMenuSurface` 负责 fixed 与夹取）。
+- **检查器分区** `.ui-inspector-section` / `<InspectorSection>`：标题 12px 半粗 + 右侧摘要，分区之间一条细线。
+- **列表行** `.ui-list-row` / `<ListRow>`：可点的一行，图标或状态点 · 主文字截断 · 右侧元数据；选中 `--bg-3` 底。
+- 模块不自建 `*-btn` / `*-chip` / `*-tab` 类：`npm run check:css-budget` 统计模块 CSS 里的这类选择器，只许为 0。
 - **选中项**（列表、导航、菜单）：`--bg-3` 底；菜单与命令菜单的选中行首加强调色 `›`，左栏会话行用状态圆点。**不用 inset 边线**：圆角会把它弯成一道蓝弧〔v0.5 · P5〕。
 - **进行中**：方点阵 `<Spinner>`（`.ui-spin`，见第 6 节），不用旋转图标、盲文字符或其它动画小球。
 
@@ -289,6 +297,7 @@ v0.4 的 `--font-ui` 指向 Segoe UI；P5 改指向等宽之前，界面仍以�
 - 动效新增 `--mo-loop` 与展开、方点阵、光标、环绕流光、滑块、交叉淡变六个基础件；位移上限 6px → 4px；环绕流光只在运行超过 3 秒后出现。
 - 提示符语言：用户消息改为 `›` 提示符块、工具调用改为命令块；选中项不用 inset 边线。
 - 新增手机端一节，规定与桌面同源的令牌、图标、控件与状态用语。
+- 统一控件层补齐输入框、字段、设置行、页签、菜单、检查器分区、列表行；模块私有的按钮、页签与标签类全部并入。
 
 ### v0.4 变更摘要（2026-09-28）
 

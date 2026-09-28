@@ -38,7 +38,7 @@ export function ContextMenuSurface({
   anchor,
   onClose,
   testid,
-  className = 'ctx-menu',
+  className = 'ctx-menu ui-menu',
   children,
   ...rest
 }: {
@@ -186,7 +186,7 @@ export function ContextMenu({
           key={item.id}
           type="button"
           role="menuitem"
-          className={`ctx-menu-item ${item.danger ? 'danger' : ''}`}
+          className={`ui-menu-item ${item.danger ? 'danger' : ''}`}
           data-testid={item.id}
           aria-disabled={item.disabled ? 'true' : undefined}
           disabled={item.disabled}

@@ -336,7 +336,7 @@
       } else bad('有插件但没有「详情」按钮')
     }
     store.getState().closeSettings()
-    await until(() => qa('.set-group').length === 0, 3000)
+    await until(() => qa('.ui-rows').length === 0, 3000)
   }
 
   const failed = out.filter((l) => l.includes('✗')).length

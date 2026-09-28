@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { BrandMark } from '../shell/BrandMark'
 import { useStore } from '../../state/store'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
+import { Button } from '../ui'
 
 /**
  * 首次使用引导。
@@ -179,12 +180,12 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             action={
               <>
                 {/* 重测：用户去填完 key 回来、或改了环境变量，不用重启应用 */}
-                <button className="btn ob-btn" onClick={() => void detect()} data-testid="ob-recheck-auth">
+                <Button className="ob-btn" onClick={() => void detect()} data-testid="ob-recheck-auth">
                   {t('ob.recheck')}
-                </button>
-                <button className="btn ob-btn primary" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
+                </Button>
+                <Button variant="primary" className="ob-btn" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
                   {t('ob.goAuth')}
-                </button>
+                </Button>
               </>
             }
           />
@@ -204,9 +205,9 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             title={t('ob.modelTitle')}
             desc={modelOk ? t('ob.modelOk', { n: models.length, name: session?.model?.name ?? '' }) : t('ob.modelMissing')}
             action={
-              <button className="btn ob-btn" onClick={() => openSettings('status')}>
+              <Button className="ob-btn" onClick={() => openSettings('status')}>
                 {t('ob.goStatus')}
-              </button>
+              </Button>
             }
           />
 
@@ -230,9 +231,9 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
         <div className="ob-foot">
           <span className="ob-foot-note">{t('ob.footNote')}</span>
           <span className="spacer" />
-          <button className="btn ob-btn primary" onClick={onClose} data-testid="ob-done">
+          <Button variant="primary" className="ob-btn" onClick={onClose} data-testid="ob-done">
             {t('ob.start')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

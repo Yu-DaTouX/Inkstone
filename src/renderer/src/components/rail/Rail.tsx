@@ -11,7 +11,7 @@ import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
 import { buildBranchIndex } from '../../../../shared/session-map'
-import { Spinner } from '../ui'
+import { Button, IconButton, Spinner } from '../ui'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -1452,18 +1452,11 @@ function TrashNoticeBar({ notice, onUndo, onClose }: {
       </span>
       <span className="spacer" />
       {!notice.restored && notice.token ? (
-        <button className="btn" disabled={notice.busy} onClick={onUndo} data-testid="trash-undo">
+        <Button disabled={notice.busy} onClick={onUndo} data-testid="trash-undo">
           {notice.busy ? t('rail.restoring') : t('rail.undoDelete')}
-        </button>
+        </Button>
       ) : null}
-      <button
-        className="btn icon"
-        onClick={onClose}
-        title={t('rail.noticeDismiss')}
-        aria-label={t('rail.noticeDismiss')}
-      >
-        <Icon name="plus" size={12} className="rail-trash-x" />
-      </button>
+      <IconButton icon="close" iconSize={12} label={t('rail.noticeDismiss')} onClick={onClose} />
     </div>
   )
 }
@@ -1627,7 +1620,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
         onClose={onCloseMenu}
         testid="rail-session-menu"
         data-session-path={s.path}
-        className="ctx-menu row-menu-surface"
+        className="ctx-menu ui-menu row-menu-surface"
       >
           <div className="srow-menu-time" data-testid="rail-menu-time">
             {t('rail.lastActive')} {relTime(s.lastActivityAt ?? s.updatedAt)}
@@ -1635,7 +1628,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           {/* 停止**这一个**运行实例（N12）：后台会话也能单独停，不影响别的会话 */}
           {runner && (runner.running || runner.waiting) ? (
             <button
-              className="srow-menu-btn" role="menuitem"
+              className="ui-menu-item srow-menu-btn" role="menuitem"
               data-testid="rail-stop-runner"
               onClick={() => {
                 onCloseMenu()
@@ -1652,7 +1645,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               <div className="srow-title-candidate-name" title={titleCandidate}>{titleCandidate}</div>
               <div className="srow-title-candidate-actions">
                 <button
-                  className="srow-menu-btn" role="menuitem"
+                  className="ui-menu-item srow-menu-btn" role="menuitem"
                   data-testid="rail-accept-title-candidate"
                   onClick={() => {
                     void useStore.getState().acceptTitleCandidate(s.id)
@@ -1663,7 +1656,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
                   {t('rail.acceptTitleCandidate')}
                 </button>
                 <button
-                  className="srow-menu-btn" role="menuitem"
+                  className="ui-menu-item srow-menu-btn" role="menuitem"
                   data-testid="rail-dismiss-title-candidate"
                   onClick={() => {
                     useStore.getState().dismissTitleCandidate(s.id)
@@ -1676,12 +1669,12 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               </div>
             </div>
           ) : null}
-          <button className="srow-menu-btn" role="menuitem" onClick={() => { onPin(); onCloseMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
+          <button className="ui-menu-item srow-menu-btn" role="menuitem" onClick={() => { onPin(); onCloseMenu() }}><Icon name="pin" size={12} />{pinned ? t('rail.unpin') : t('rail.pin')}</button>
           <div className="srow-menu-section" data-testid="rail-move-session">
             <div className="srow-menu-section-title">{t('rail.moveSession')}</div>
             {s.scope !== 'global' ? (
               <button
-                className="srow-menu-btn" role="menuitem"
+                className="ui-menu-item srow-menu-btn" role="menuitem"
                 data-testid="rail-move-global"
                 onClick={() => {
                   void useStore.getState().moveSession(s.id, null).then((done) => { if (done) onCloseMenu() })
@@ -1694,7 +1687,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             {moveTargets.map((project) => (
               <button
                 key={project.id}
-                className="srow-menu-btn" role="menuitem"
+                className="ui-menu-item srow-menu-btn" role="menuitem"
                 data-testid={`rail-move-project-${project.id}`}
                 onClick={() => {
                   void useStore.getState().moveSession(s.id, project.id).then((done) => { if (done) onCloseMenu() })
@@ -1716,7 +1709,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               <div className="srow-menu-section-title">{t('rail.spaces')}</div>
               {s.spaceId ? (
                 <button
-                  className="srow-menu-btn" role="menuitem"
+                  className="ui-menu-item srow-menu-btn" role="menuitem"
                   data-testid="rail-space-release-session"
                   onClick={() => {
                     void useStore.getState().setSessionSpace(s.id, null).then((done) => { if (done) onCloseMenu() })
@@ -1729,7 +1722,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
               {spaces.filter((x) => !x.archived && x.id !== s.spaceId).map((sp) => (
                 <button
                   key={sp.id}
-                  className="srow-menu-btn" role="menuitem"
+                  className="ui-menu-item srow-menu-btn" role="menuitem"
                   data-testid={`rail-space-put-${sp.id}`}
                   onClick={() => {
                     void useStore.getState().setSessionSpace(s.id, sp.id).then((done) => { if (done) onCloseMenu() })
@@ -1744,7 +1737,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           }
           <button
             style={{ '--i': 1 } as React.CSSProperties}
-            className="srow-menu-btn" role="menuitem"
+            className="ui-menu-item srow-menu-btn" role="menuitem"
             data-testid="rail-regenerate-title"
             onClick={() => {
               onCloseMenu()
@@ -1758,7 +1751,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             disabled={!selected || running}
             title={!selected ? t('rail.openBeforeFork') : ''}
             style={{ '--i': 1 } as React.CSSProperties}
-            className="srow-menu-btn" role="menuitem"
+            className="ui-menu-item srow-menu-btn" role="menuitem"
             onClick={() => {
               void forkLatest()
               onCloseMenu()
@@ -1769,7 +1762,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
           <button
             style={{ '--i': 2 } as React.CSSProperties}
-            className="srow-menu-btn" role="menuitem"
+            className="ui-menu-item srow-menu-btn" role="menuitem"
             data-testid="rail-rename"
             onClick={() => {
               /*
@@ -1790,7 +1783,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
           </button>
           <button
             style={{ '--i': 3 } as React.CSSProperties}
-            className="srow-menu-btn" role="menuitem"
+            className="ui-menu-item srow-menu-btn" role="menuitem"
             onClick={() => {
               void window.yan.revealPath(s.path)
               onCloseMenu()
@@ -1800,7 +1793,7 @@ function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen, onTog
             {t('rail.reveal')}
           </button>
           <button
-            className="srow-menu-btn danger" role="menuitem"
+            className="ui-menu-item srow-menu-btn danger" role="menuitem"
             style={{ '--i': 4 } as React.CSSProperties}
             disabled={selected}
             title={selected ? t('rail.cantDeleteCurrent') : ''}
@@ -1897,11 +1890,11 @@ function SessionDeleteDialog({ session, onClose, onDeleted }: {
       />
       {error ? <div className="rail-delete-error" role="alert">{error}</div> : null}
       <div className="modal-foot">
-        <button className="btn" onClick={onClose} disabled={busy}>{t('ui.cancel')}</button>
+        <Button onClick={onClose} disabled={busy}>{t('ui.cancel')}</Button>
         <span className="spacer" />
-        <button className="btn danger" disabled={!confirmed || busy} onClick={() => void remove()}>
+        <Button variant="danger" disabled={!confirmed || busy} onClick={() => void remove()}>
           {busy ? t('rail.deleting') : t('rail.deleteAction')}
-        </button>
+        </Button>
       </div>
     </div>
   </div>
@@ -1956,11 +1949,11 @@ function ProjectRemoveDialog({ project, onClose, onRemoved }: {
       <div className="modal-message">{t('rail.removeProjectExplain', { name: project.name })}</div>
       {error ? <div className="rail-delete-error" role="alert">{error}</div> : null}
       <div className="modal-foot">
-        <button className="btn" onClick={onClose} disabled={busy}>{t('ui.cancel')}</button>
+        <Button onClick={onClose} disabled={busy}>{t('ui.cancel')}</Button>
         <span className="spacer" />
-        <button className="btn danger" disabled={busy} onClick={() => void remove()} data-testid="rail-remove-project-confirm">
+        <Button variant="danger" disabled={busy} onClick={() => void remove()} data-testid="rail-remove-project-confirm">
           {busy ? t('rail.removingProject') : t('rail.removeProjectAction')}
-        </button>
+        </Button>
       </div>
     </div>
   </div>

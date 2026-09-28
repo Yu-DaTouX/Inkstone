@@ -4,6 +4,7 @@ import { useStore } from '../../state/store'
 import { selectSubagentRuns } from '../../state/subagent-view'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { briefLine } from '../../../../shared/subagent-brief'
+import { Button } from '../ui'
 
 /** 刚结束的子代理在会话流里保留多久（过后自动退场） */
 const RECENT_DONE_MS = 5 * 60_000
@@ -123,39 +124,23 @@ export function SubagentNote() {
             ) : null}
             <span className="spacer" />
             {run.diff?.patchPath ? (
-              <button
-                className="btn sm sa-act-btn"
-                onClick={() => void window.yan.openPath(run.diff!.patchPath!)}
-                data-testid={`subagent-note-diff-${run.id}`}
-              >
+              <Button size="sm" className="sa-act-btn" onClick={() => void window.yan.openPath(run.diff!.patchPath!)} data-testid={`subagent-note-diff-${run.id}`}>
                 {t('sa.openDiff')}
-              </button>
+              </Button>
             ) : null}
             {running ? (
-              <button
-                className="btn sm sa-act-btn danger"
-                onClick={() => void stopSubagent(run.id)}
-                data-testid={`subagent-note-stop-${run.id}`}
-              >
+              <Button variant="danger" size="sm" className="sa-act-btn" onClick={() => void stopSubagent(run.id)} data-testid={`subagent-note-stop-${run.id}`}>
                 {t('sa.stop')}
-              </button>
+              </Button>
             ) : null}
             {!running && (run.review === 'pending' || run.review === 'conflict') ? (
               <>
-                <button
-                  className="btn sm sa-act-btn"
-                  onClick={() => void mergeSubagent(run.id)}
-                  data-testid={`subagent-note-merge-${run.id}`}
-                >
+                <Button size="sm" className="sa-act-btn" onClick={() => void mergeSubagent(run.id)} data-testid={`subagent-note-merge-${run.id}`}>
                   {t('sa.merge')}
-                </button>
-                <button
-                  className="btn sm sa-act-btn danger"
-                  onClick={() => void discardSubagent(run.id)}
-                  data-testid={`subagent-note-discard-${run.id}`}
-                >
+                </Button>
+                <Button variant="danger" size="sm" className="sa-act-btn" onClick={() => void discardSubagent(run.id)} data-testid={`subagent-note-discard-${run.id}`}>
                   {t('sa.discard')}
-                </button>
+                </Button>
               </>
             ) : null}
           </div>

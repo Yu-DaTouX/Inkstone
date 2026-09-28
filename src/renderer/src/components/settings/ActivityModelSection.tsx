@@ -62,18 +62,18 @@ export function ActivityModelSection(): React.JSX.Element {
   }
 
   return (
-    <div className="set-group" data-testid="set-activity-models">
-      <div className="set-row set-row-col">
-        <div className="set-label">
-          <div className="set-name">{t('am.title')}</div>
-          <div className="set-desc">{t('am.desc')}</div>
+    <div className="ui-rows" data-testid="set-activity-models">
+      <div className="ui-row set-row-col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('am.title')}</div>
+          <div className="ui-row-desc">{t('am.desc')}</div>
         </div>
-        <div className="set-desc am-scope" data-testid="am-scope">
+        <div className="ui-row-desc am-scope" data-testid="am-scope">
           {ACTIVITY_MODEL_SCOPE_NOTE}
         </div>
         <div className="pkg-install-row">
           <input
-            className="set-input"
+            className="ui-input"
             data-testid="am-default"
             value={defaultModel}
             placeholder={t('am.defaultPlaceholder')}
@@ -84,7 +84,7 @@ export function ActivityModelSection(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="set-row set-row-col">
+      <div className="ui-row set-row-col">
         <div className="am-list" data-testid="am-list">
           {rows.map((row) => (
             <div className="am-item" key={row.activity} data-testid={`am-row-${row.activity}`}>
@@ -92,7 +92,7 @@ export function ActivityModelSection(): React.JSX.Element {
                 {t(`agentProfile.${row.activity}`)}
               </span>
               <input
-                className="set-input"
+                className="ui-input"
                 data-testid={`am-input-${row.activity}`}
                 defaultValue={row.configured ?? ''}
                 placeholder={t('am.followDefault')}
@@ -111,7 +111,7 @@ export function ActivityModelSection(): React.JSX.Element {
       </div>
 
       {notice ? (
-        <div className="set-desc" data-testid="am-notice">
+        <div className="ui-row-desc" data-testid="am-notice">
           {notice}
         </div>
       ) : null}

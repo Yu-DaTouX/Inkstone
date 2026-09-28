@@ -21,6 +21,7 @@ import type { GitActionExpected, GitActionResult, GitReviewSnapshot } from '../.
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useGitWrite } from './useGitReview'
+import { Button, IconButton } from '../ui'
 
 /** 失败提示：分类 + 原文。原文可以折叠，但它才是排查的第一现场 */
 export function WriteFailure({ msg, hint, detail }: { msg: string; hint?: string; detail?: string }) {
@@ -125,25 +126,18 @@ export function CommitBar({
             }
           }}
         />
-        <button
-          type="button"
-          className="btn commit-btn primary"
-          data-testid="commit-submit"
-          disabled={disabled}
-          onClick={() => void submit(withPush)}
-        >
+        <Button variant="primary" className="commit-submit" type="button" data-testid="commit-submit" disabled={disabled} onClick={() => void submit(withPush)}>
           {busy && write.busy === 'commit' ? t('commit.running') : withPush ? t('commit.submitAndPush') : t('commit.submit')}
-        </button>
-        <button
-          type="button"
-          className={`btn icon commit-push ${withPush ? 'on' : ''}`}
+        </Button>
+        <IconButton
+          icon={withPush ? 'check-circle' : 'send'}
+          iconSize={12}
+          active={withPush}
+          className="commit-push"
+          label={t('commit.pushHint')}
           data-testid="commit-push-toggle"
-          title={t('commit.pushHint')}
-          aria-pressed={withPush}
           onClick={() => setWithPush((v) => !v)}
-        >
-          <Icon name={withPush ? 'check-circle' : 'send'} size={12} />
-        </button>
+        />
       </div>
 
       <div className="commit-meta">

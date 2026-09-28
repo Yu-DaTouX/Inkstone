@@ -175,7 +175,7 @@
   animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
 }
 /* 分组逐个落位 */
-.settings-body .set-group {
+.settings-body .ui-rows {
   animation: mo-item-in var(--mo-base) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-22));
 }
@@ -213,8 +213,8 @@
 .row-menu-surface.closing {
   animation: mo-out-down var(--mo-fast) var(--mo-ease-out) both;
 }
-.row-menu .row-menu-btn,
-.row-menu-surface .srow-menu-btn {
+.row-menu .ui-menu-item,
+.row-menu-surface .ui-menu-item {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
   animation-delay: calc(var(--i, 0) * var(--dur-14));
 }
@@ -260,8 +260,7 @@
 .seg-btn:active:not(:disabled),
 .rp-switch:active,
 .rail-icon:active,
-.srow-menu-btn:active,
-.row-menu-btn:active {
+.ui-menu-item:active:not(:disabled) {
   animation: mo-press var(--dur-180) var(--mo-ease);
 }
 
@@ -1011,7 +1010,7 @@ html[data-theme='light'] .rp-todo-now {
    两条路要一眼分得开：订阅制（OAuth，需要终端里跑一次 pi）
    与 API key（在这里填）。所以用两个小标题分隔，
    并且订阅制那边**不给输入框**（给了会让人以为能在这里登录）。 */
-.auth-tab {
+.auth-page {
   gap: var(--sp-2);
 }
 

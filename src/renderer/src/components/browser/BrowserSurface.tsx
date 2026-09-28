@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
+import { IconButton } from '../ui'
 
 /**
  * 浏览器主体。网页本身不是 iframe，而是主进程的 WebContentsView；
@@ -136,40 +137,36 @@ export function BrowserSurface() {
 
   return (
     <div className="browser-surface" data-testid="browser-surface">
-      <div className="browser-tabs" role="tablist">
+      <div className="ui-tabs browser-tabs" role="tablist">
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`browser-tab ${tab.id === state.activeTabId ? 'active' : ''} ${tab.id.startsWith('chrome:') ? 'external' : ''}`}
+            className={`ui-tab doc browser-tab ${tab.id.startsWith('chrome:') ? 'external' : ''}`}
             role="tab"
             aria-selected={tab.id === state.activeTabId}
             onClick={() => void window.yan.browser.switchTab(tab.id)}
             title={tab.url}
           >
-            <span>{tab.id.startsWith('chrome:') ? 'Chrome · ' : ''}{tab.title || tab.url || t('browser.newTab')}</span>
-            <i onClick={(event) => { event.stopPropagation(); void window.yan.browser.closeTab(tab.id) }}>×</i>
+            <span className="ui-tab-label">{tab.id.startsWith('chrome:') ? 'Chrome · ' : ''}{tab.title || tab.url || t('browser.newTab')}</span>
+            <span
+              role="button"
+              tabIndex={-1}
+              className="ui-tab-close"
+              aria-label={t('browser.closeTab')}
+              title={t('browser.closeTab')}
+              onClick={(event) => { event.stopPropagation(); void window.yan.browser.closeTab(tab.id) }}
+            >
+              <Icon name="close" size={12} />
+            </span>
           </button>
         ))}
-        <button
-          className="browser-new-tab"
-          onClick={() => void window.yan.browser.newTab()}
-          title={t('browser.newTab')}
-          aria-label={t('browser.newTab')}
-        >
-          <Icon name="plus" size={12} />
-        </button>
+        <IconButton icon="plus" label={t('browser.newTab')} size="sm" className="browser-new-tab" onClick={() => void window.yan.browser.newTab()} />
       </div>
 
       <div className="browser-toolbar">
-        <button className="browser-nav" onClick={() => void window.yan.browser.back()} disabled={!state.canGoBack} title={t('browser.back')} aria-label={t('browser.back')}>
-          ‹
-        </button>
-        <button className="browser-nav" onClick={() => void window.yan.browser.forward()} disabled={!state.canGoForward} title={t('browser.forward')} aria-label={t('browser.forward')}>
-          ›
-        </button>
-        <button className="browser-nav" onClick={() => void window.yan.browser.reload()} title={t('browser.reload')} aria-label={t('browser.reload')}>
-          ↻
-        </button>
+        <IconButton icon="back" label={t('browser.back')} size="sm" iconSize={14} className="browser-nav" onClick={() => void window.yan.browser.back()} disabled={!state.canGoBack} />
+        <IconButton icon="forward" label={t('browser.forward')} size="sm" iconSize={14} className="browser-nav" onClick={() => void window.yan.browser.forward()} disabled={!state.canGoForward} />
+        <IconButton icon="refresh" label={t('browser.reload')} size="sm" iconSize={14} className="browser-nav" onClick={() => void window.yan.browser.reload()} />
         <form
           className="browser-address"
           onSubmit={(event) => {
@@ -193,33 +190,32 @@ export function BrowserSurface() {
          * 这是浏览器的一项重要能力，所以留在主栏（不塞进菜单），
          * 但收成图标大小，省宽度。
          */}
-        <button
-          className={`browser-nav browser-chrome ${external ? 'on' : ''}`}
-          onClick={() => void (external ? closeExternalChrome() : openExternalChrome())}
-          title={external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
-          aria-label={external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
+        <IconButton
+          icon="plug"
+          size="sm"
+          iconSize={14}
+          active={!!external}
+          className="browser-nav browser-chrome"
+          label={external ? t('browser.disconnectChrome') : t('browser.connectChrome')}
           data-testid="browser-external-chrome"
-        >
-          <Icon name="plug" size={14} />
-        </button>
+          onClick={() => void (external ? closeExternalChrome() : openExternalChrome())}
+        />
 
         {/* 「⋯」菜单：低频操作收在这里，地址栏因此能拿到更多宽度 */}
         <div className="browser-menu-wrap" ref={menuRef}>
-          <button
+          <IconButton
+            icon="menu"
+            size="sm"
+            iconSize={14}
             className={`browser-nav browser-more ${menuOpen ? 'on' : ''}`}
-            onClick={() => setMenuOpen((v) => !v)}
-            title={t('browser.more')}
-            aria-label={t('browser.more')}
+            label={t('browser.more')}
             aria-expanded={menuOpen}
             data-testid="browser-more"
-          >
-            <Icon name="menu" size={14} />
-          </button>
+            onClick={() => setMenuOpen((v) => !v)}
+          />
         </div>
 
-        <button className="browser-close" onClick={() => void close()} title={t('browser.close')} aria-label={t('browser.close')}>
-          ×
-        </button>
+        <IconButton icon="close" label={t('browser.close')} size="sm" iconSize={14} className="browser-close" onClick={() => void close()} />
       </div>
 
       {/*

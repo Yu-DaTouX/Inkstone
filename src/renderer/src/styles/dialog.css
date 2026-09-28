@@ -50,51 +50,9 @@
 /* 通用上下文菜单（实施-12 U-2）：Portal 到 body，fixed 定位。
    行内渲染会被 overflow 裁掉、顶大 scrollHeight，所以必须脱离行。 */
 .ctx-menu {
+  /* 外观来自 ui.css 的 .ui-menu；这里只管浮在最上层的定位 */
   position: fixed;
   z-index: 60;
-  min-width: 168px;
-  max-width: min(320px, 80vw);
-  max-height: min(70vh, 420px);
-  overflow-y: auto;
-  padding: var(--sp-1);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
-}
-
-.ctx-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-height: 28px;
-  padding: var(--sp-1) var(--sp-2);
-  color: var(--fg-dim);
-  text-align: left;
-  font: inherit;
-  background: transparent;
-  border: none;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-}
-
-.ctx-menu-item:hover,
-.ctx-menu-item:focus-visible {
-  color: var(--fg);
-  background: var(--bg-3);
-  outline: none;
-}
-
-.ctx-menu-item.danger {
-  color: var(--err);
-}
-
-.ctx-menu-item[aria-disabled='true'] {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* ── 基础段结束 ── */

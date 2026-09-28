@@ -71,6 +71,7 @@
   "browser.loading": "Loading…",
   "browser.more": "More actions",
   "browser.navigateError": "Could not open this address",
+  "browser.closeTab": "Close tab",
   "browser.newTab": "New tab",
   "browser.open": "Open built-in browser",
   "browser.openExternal": "Open in external browser",

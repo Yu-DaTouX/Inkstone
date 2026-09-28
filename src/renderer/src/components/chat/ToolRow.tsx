@@ -360,11 +360,11 @@ function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit
   return t('tool2.vCall')
 }
 
-/** 状态图标：成功 ✓ / 失败 ✕（Codex 用的是 ✓ 勾） */
+/** 状态图标：成功是勾，失败是方框里的「!」（设计规范 §3.4） */
 function toolGlyph(name: string, failed: boolean) {
   if (failed) return <Icon name="alert-circle" size={12} />
   void name
-  return <span className="trow-check">✓</span>
+  return <Icon name="check" size={12} className="trow-check" />
 }
 
 /**

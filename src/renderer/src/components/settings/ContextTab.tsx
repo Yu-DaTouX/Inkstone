@@ -11,6 +11,7 @@ import {
 } from '../../../../shared/context-budget-v1'
 import type { ContextMaintenanceOperationV1 } from '../../../../shared/context-maintenance'
 import type { ContextBackgroundUsageSummary } from '../../../../shared/context-background-usage'
+import { SettingRow } from '../ui'
 
 /**
  * 「上下文」设置页（N21-7）。
@@ -283,21 +284,21 @@ export function ContextTab() {
   const foldOff = settings?.contextFold?.enabled === false
 
   return (
-    <div className="set-group">
-      <div className="set-row col" data-testid="ctx-budget-v1">
-        <div className="set-label">
-          <div className="set-name">{tk('set.ctxBudgetV1Title')}</div>
-          <div className="set-desc">{tk('set.ctxBudgetV1Desc')}</div>
+    <div className="ui-rows">
+      <div className="ui-row col" data-testid="ctx-budget-v1">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{tk('set.ctxBudgetV1Title')}</div>
+          <div className="ui-row-desc">{tk('set.ctxBudgetV1Desc')}</div>
         </div>
         {activeBudgetPhase ? (
           <>
             {!budgetV1Enabled ? (
-              <div className="set-desc" data-testid="ctx-budget-v1-legacy" role="status">
+              <div className="ui-row-desc" data-testid="ctx-budget-v1-legacy" role="status">
                 {tk('set.ctxBudgetV1Legacy')}
               </div>
             ) : null}
             {budgetV1Enabled ? (
-              <div className="set-desc set-num" data-testid="ctx-budget-v1-current">
+              <div className="ui-row-desc set-num" data-testid="ctx-budget-v1-current">
                 {t('set.ctxBudgetV1Current', {
                   mode: tk(activeBudgetPhase.mode === 'auto' ? 'set.ctxBudgetV1Auto' : 'set.ctxBudgetV1Fixed'),
                   selected: `${activeBudgetPhase.selectedBudget / 1000}K`,
@@ -305,7 +306,7 @@ export function ContextTab() {
                 })}
               </div>
             ) : null}
-            <div className="set-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1Mode')}>
+            <div className="ui-row-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1Mode')}>
               <button
                 className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? 'sel' : ''}`}
                 data-testid="ctx-budget-v1-auto"
@@ -327,7 +328,7 @@ export function ContextTab() {
               ))}
             </div>
             {budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? (
-              <div className="set-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1AutoMax')}>
+              <div className="ui-row-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1AutoMax')}>
                 {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
                   <button
                     key={tier}
@@ -342,7 +343,7 @@ export function ContextTab() {
               </div>
             ) : null}
             {budgetSnapshot ? (
-              <div className="set-desc set-num" data-testid="ctx-budget-v1-last-check" role="status">
+              <div className="ui-row-desc set-num" data-testid="ctx-budget-v1-last-check" role="status">
                 {t('set.ctxBudgetV1LastCheck', {
                   time: new Date(budgetSnapshot.observedAt).toLocaleTimeString(),
                   decision: tk(budgetDecisionKey),
@@ -368,7 +369,7 @@ export function ContextTab() {
                 </button>
               </div>
             ) : null}
-            <div className="set-desc" data-testid="ctx-budget-v1-maintenance">
+            <div className="ui-row-desc" data-testid="ctx-budget-v1-maintenance">
               <div>{tk('set.ctxBudgetV1MaintenanceHelp')}</div>
               {maintenanceOperation ? (
                 <div data-testid="ctx-budget-v1-maintenance-status" role="status">
@@ -438,7 +439,7 @@ export function ContextTab() {
                 </>
               ) : null}
               {activeTemporaryOverride ? (
-                <div className="set-desc" data-testid="ctx-budget-v1-temporary-raise" role="status">
+                <div className="ui-row-desc" data-testid="ctx-budget-v1-temporary-raise" role="status">
                   {t('set.ctxBudgetV1TemporaryRaise', {
                     selected: `${activeTemporaryOverride.selectedBudget / 1000}K`,
                     falls: `${activeBudgetPhase.selectedBudget / 1000}K`,
@@ -447,14 +448,14 @@ export function ContextTab() {
                 </div>
               ) : null}
               {maintenanceOperation?.state === 'needs_action' ? (
-                <div className="set-desc" data-testid="ctx-budget-v1-blocked" role="status">
+                <div className="ui-row-desc" data-testid="ctx-budget-v1-blocked" role="status">
                   {tk('set.ctxBudgetV1BlockedHint')}
                 </div>
               ) : null}
               {maintenanceMessage ? <div role="status">{maintenanceMessage}</div> : null}
             </div>
             {activeBudgetPhase.materials.length > 0 ? (
-              <div className="set-desc" data-testid="ctx-budget-v1-materials">
+              <div className="ui-row-desc" data-testid="ctx-budget-v1-materials">
                 <div>{t('set.ctxBudgetV1Materials', { count: activeBudgetPhase.materials.length })}</div>
                 {[...activeBudgetPhase.materials.filter((material) => material.pinnedByUser),
                   ...activeBudgetPhase.materials.filter((material) => !material.pinnedByUser).slice(-20)]
@@ -478,9 +479,9 @@ export function ContextTab() {
             ) : null}
           </>
         ) : (
-          <div className="set-desc" role="status">{budgetV1Error || tk('set.ctxBudgetV1Unavailable')}</div>
+          <div className="ui-row-desc" role="status">{budgetV1Error || tk('set.ctxBudgetV1Unavailable')}</div>
         )}
-        {budgetV1Error && activeBudgetPhase ? <div className="set-desc" role="alert">{budgetV1Error}</div> : null}
+        {budgetV1Error && activeBudgetPhase ? <div className="ui-row-desc" role="alert">{budgetV1Error}</div> : null}
       </div>
       {/*
        * 任务状态记忆（`episode-fold`，P2-7）。与 Deep Context 相邻是因为它们是同一类东西 ——
@@ -488,13 +489,13 @@ export function ContextTab() {
        * 真的改过东西（脏判定）时才动手，短会话与纯只读回合不花钱。
        * 它进默认接管集后一直没有界面入口（想关只能手改 `kinds`），这一行补的就是这个缺口。
        */}
-      <div className="set-row col">
+      <div className="ui-row col">
         <div className="set-ctrow">
-          <div className="set-label">
+          <div className="ui-row-label">
             <span>{tk('set.foldTitle')}</span>
             <span className="set-tag">{tk('set.foldTag')}</span>
           </div>
-          <div className="set-ctl seg" data-testid="ctx-fold">
+          <div className="ui-row-ctl seg" data-testid="ctx-fold">
             <button
               className="seg-btn"
               data-testid="ctx-fold-toggle"
@@ -504,7 +505,7 @@ export function ContextTab() {
             </button>
           </div>
         </div>
-        <div className="set-desc" data-testid="ctx-fold-desc">
+        <div className="ui-row-desc" data-testid="ctx-fold-desc">
           {tk(foldOff ? 'set.foldDescOff' : 'set.foldDescOn')}
         </div>
       </div>
@@ -513,13 +514,13 @@ export function ContextTab() {
        * 而它改的是「回答前要不要先归纳一遍工作集」—— 代价是**同步阻塞**一次模型调用
        * （每轮最多多等 30s），所以默认关、说清楚再让人自己选。
        */}
-      <div className="set-row col">
+      <div className="ui-row col">
         <div className="set-ctrow">
-          <div className="set-label">
+          <div className="ui-row-label">
             <span>{tk('set.deepTitle')}</span>
             <span className="set-tag">{tk('set.deepTag')}</span>
           </div>
-          <div className="set-ctl seg" data-testid="ctx-deep">
+          <div className="ui-row-ctl seg" data-testid="ctx-deep">
             <button
               className="seg-btn"
               data-testid="ctx-deep-toggle"
@@ -529,22 +530,22 @@ export function ContextTab() {
             </button>
           </div>
         </div>
-        <div className="set-desc" data-testid="ctx-deep-desc">
+        <div className="ui-row-desc" data-testid="ctx-deep-desc">
           {tk(deepOn ? 'set.deepDescOn' : 'set.deepDescOff')}
         </div>
       </div>
       {/* 生效来源：这一块的全部意义就是“让人相信界面上的数就是真正在用的数” */}
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('set.ctxSource')}</div>
-          <div className="set-desc" data-testid="ctx-source">
+      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('set.ctxSource')}</div>
+          <div className="ui-row-desc" data-testid="ctx-source">
             {policy
               ? `${tk(`set.ctxSource.${policy.source}`)}${
                   policy.sourceKey ? ` · ${policy.sourceKey}` : ''
                 } · ${t('set.ctxWorkingSet', { n: policy.budget.workingSet.toLocaleString('en-US') })}`
               : t('set.ctxSource.off')}
           </div>
-          <div className="set-desc set-num">
+          <div className="ui-row-desc set-num">
             {policy?.overridden?.length
               ? t('set.ctxOverridden', { fields: policy.overridden.map((f) => tk(`set.ctxField.${f}`)).join(' / ') })
               : t('set.ctxAllDefault')}
@@ -552,12 +553,7 @@ export function ContextTab() {
         </div>
       </div>
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-name">{t('set.ctxPreset')}</div>
-          <div className="set-desc">{t('set.ctxPresetDesc')}</div>
-        </div>
-        <div className="set-ctl seg" data-testid="ctx-preset">
+      <SettingRow name={t('set.ctxPreset')} desc={t('set.ctxPresetDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "ctx-preset" }}>
           {(['default', 'reference'] as const).map((p) => (
             <button
               key={p}
@@ -568,8 +564,7 @@ export function ContextTab() {
               {tk(`set.ctxPreset.${p}`)}
             </button>
           ))}
-        </div>
-      </div>
+        </SettingRow>
 
       <NumRow
         label={t('set.ctxCap')}
@@ -593,11 +588,7 @@ export function ContextTab() {
         onChange={(v) => setDraft({ ...draft, reserve: v })}
       />
 
-      <div className="set-row">
-        <div className="set-label">
-          <div className="set-desc">{t('set.ctxHint')}</div>
-        </div>
-        <div className="set-ctl seg">
+      <SettingRow desc={t('set.ctxHint')} ctlClassName="seg">
           <button className="seg-btn" data-testid="ctx-save" onClick={saveUser}>
             {t('set.ctxSave')}
           </button>
@@ -611,29 +602,14 @@ export function ContextTab() {
           >
             {t('set.ctxReset')}
           </button>
-        </div>
-      </div>
+        </SettingRow>
 
       {/* ---- 模型级覆盖 ---- */}
-      <div className="set-row col">
-        <div className="set-label">
-          <div className="set-name">{t('set.ctxModel')}</div>
-          <div className="set-desc">
-            {modelKey ? t('set.ctxModelDesc', { model: modelKey }) : t('set.ctxModelNoModel')}
-          </div>
-        </div>
-      </div>
+      <SettingRow col name={t('set.ctxModel')} desc={modelKey ? t('set.ctxModelDesc', { model: modelKey }) : t('set.ctxModelNoModel')} />
 
       {modelKey ? (
         <>
-          <div className="set-row col" data-testid="ctx-model-presets">
-            <div className="set-label">
-              <div className="set-name">{tk('set.ctxModelPreset')}</div>
-              <div className="set-desc">
-                {tk(largeWindowCandidate ? 'set.ctxModelPresetDesc' : 'set.ctxModelPresetUnavailable')}
-              </div>
-            </div>
-            <div className="set-ctl seg">
+          <SettingRow col data-testid="ctx-model-presets" name={tk('set.ctxModelPreset')} desc={tk(largeWindowCandidate ? 'set.ctxModelPresetDesc' : 'set.ctxModelPresetUnavailable')} ctlClassName="seg">
               <button
                 className={`seg-btn ${modelLargePreset === 'balanced' ? 'sel' : ''}`}
                 data-testid="ctx-model-large-balanced"
@@ -650,8 +626,7 @@ export function ContextTab() {
               >
                 {tk('set.ctxModelPresetLong')}
               </button>
-            </div>
-          </div>
+            </SettingRow>
           <NumRow
             label={t('set.ctxCap')}
             desc={t('set.ctxCapDesc')}
@@ -666,11 +641,7 @@ export function ContextTab() {
             value={modelDraft.ratio}
             onChange={(v) => setModelDraft({ ...modelDraft, ratio: v })}
           />
-          <div className="set-row">
-            <div className="set-label">
-              <div className="set-desc">{t('set.ctxModelHint')}</div>
-            </div>
-            <div className="set-ctl seg">
+          <SettingRow desc={t('set.ctxModelHint')} ctlClassName="seg">
               <button className="seg-btn" data-testid="ctx-model-save" onClick={saveModel}>
                 {modelOver ? t('set.ctxModelUpdate') : t('set.ctxModelAdd')}
               </button>
@@ -686,18 +657,17 @@ export function ContextTab() {
                   {t('set.ctxModelRemove')}
                 </button>
               ) : null}
-            </div>
-          </div>
+            </SettingRow>
         </>
       ) : null}
 
       {otherKeys.length ? (
-        <div className="set-row col">
-          <div className="set-label">
-            <div className="set-name">{t('set.ctxModelOthers')}</div>
+        <div className="ui-row col">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('set.ctxModelOthers')}</div>
             {otherKeys.map((k) => (
               <div
-                className="set-desc set-num"
+                className="ui-row-desc set-num"
                 key={k}
                 data-testid="ctx-model-other"
                 /* 长 `provider/model` 在窄栏会被截断：完整值用 title 给出口 */
@@ -720,16 +690,16 @@ export function ContextTab() {
         没法回答“是主对话花得多，还是后台在烧”。
       */}
       {backgroundUsage ? (
-        <div className="set-row col" data-testid="ctx-background-usage">
-          <div className="set-label">
-            <div className="set-name">{t('set.ctxBackgroundUsage')}</div>
-            <div className="set-desc">{t('set.ctxBackgroundUsageDesc')}</div>
+        <div className="ui-row col" data-testid="ctx-background-usage">
+          <div className="ui-row-label">
+            <div className="ui-row-name">{t('set.ctxBackgroundUsage')}</div>
+            <div className="ui-row-desc">{t('set.ctxBackgroundUsageDesc')}</div>
           </div>
           {backgroundUsage.calls === 0 ? (
-            <div className="set-desc" role="status">{t('set.ctxBackgroundUsageEmpty')}</div>
+            <div className="ui-row-desc" role="status">{t('set.ctxBackgroundUsageEmpty')}</div>
           ) : (
             <>
-              <div className="set-desc set-num" data-testid="ctx-background-usage-total" role="status">
+              <div className="ui-row-desc set-num" data-testid="ctx-background-usage-total" role="status">
                 {t('set.ctxBackgroundUsageTotal', {
                   calls: String(backgroundUsage.calls),
                   input: fmtTok(backgroundUsage.input),
@@ -739,7 +709,7 @@ export function ContextTab() {
               </div>
               {backgroundUsage.kinds.filter((kind) => kind.calls > 0).map((kind) => (
                 <div
-                  className="set-desc set-num"
+                  className="ui-row-desc set-num"
                   key={kind.kind}
                   data-testid={`ctx-background-usage-${kind.kind}`}
                 >
@@ -754,13 +724,13 @@ export function ContextTab() {
                 </div>
               ))}
               {backgroundUsage.missingUsage > 0 ? (
-                <div className="set-desc" role="status">
+                <div className="ui-row-desc" role="status">
                   {t('set.ctxBackgroundUsageMissing', { count: String(backgroundUsage.missingUsage) })}
                 </div>
               ) : null}
             </>
           )}
-          <div className="set-ctl">
+          <div className="ui-row-ctl">
             <button className="seg-btn" data-testid="ctx-background-usage-refresh" onClick={() => void refreshBackgroundUsage()}>
               {t('set.ctxBackgroundUsageRefresh')}
             </button>
@@ -820,14 +790,9 @@ function NumRow({
   testid: string
 }) {
   return (
-    <div className="set-row">
-      <div className="set-label">
-        <div className="set-name">{label}</div>
-        <div className="set-desc">{desc}</div>
-      </div>
-      <div className="set-ctl">
+    <SettingRow name={label} desc={desc}>
         <input
-          className="set-input"
+          className="ui-input num"
           type="number"
           inputMode="numeric"
           data-testid={testid}
@@ -835,8 +800,7 @@ function NumRow({
           placeholder="—"
           onChange={(e) => onChange(e.target.value)}
         />
-      </div>
-    </div>
+      </SettingRow>
   )
 }
 

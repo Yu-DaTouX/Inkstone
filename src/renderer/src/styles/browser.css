@@ -17,29 +17,6 @@
   background: var(--bg-2);
 }
 
-.browser-tab,
-.browser-new-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  max-width: 180px;
-  padding: 0 9px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--fg-mute);
-  background: transparent;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.browser-new-tab {
-  width: 28px;
-  justify-content: center;
-  padding: 0;
-  font-size: 17px;
-}
-
 .browser-toolbar {
   grid-row: 2;
   display: flex;
@@ -50,24 +27,6 @@
   padding: 0 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-1);
-}
-
-.browser-nav,
-.browser-close {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: 18px;
-  line-height: 1;
-}
-
-/* 接入本机 Chrome 的开关：收成图标，省宽度 */
-.browser-nav.browser-chrome {
-  width: 26px;
-  padding: 0;
 }
 
 .browser-address {
@@ -85,10 +44,6 @@
   background: var(--bg-2);
   font-size: var(--fs-sm);
   outline: none;
-}
-
-.browser-close {
-  font-size: 21px;
 }
 
 /* ── 基础段结束 ── */
@@ -115,10 +70,8 @@
 }
 /* 导航按钮固定宽度：地址栏是唯一该伸缩的东西 */
 .browser-nav,
-.browser-close,
-.browser-nav.browser-chrome {
-  width: 22px;
-  flex: 0 0 22px;
+.browser-close {
+  flex: none;
 }
 .browser-address {
   min-width: 0;
@@ -127,7 +80,7 @@
   width: 100%;
   min-width: 0;
 }
-.browser-new-tab {
+.browser-tabs > .btn {
   flex: 0 0 24px;
 }
 /* 标签多了横向滚动，不要换行（换行会挤掉网页视口） */
@@ -140,10 +93,12 @@
 .browser-tabs::-webkit-scrollbar {
   display: none;
 }
-.browser-tab {
+.browser-tabs .ui-tab {
   flex: 0 1 160px;
   min-width: 48px;
+  max-width: 180px;
 }
+/* 接入本机 Chrome 时的开关沿用 .btn.on；外部标签页的标题带「Chrome ·」前缀 */
 .browser-sync-result {
   flex: none;
   max-width: 240px;
@@ -207,43 +162,6 @@
   min-width: 0;
   min-height: 0;
   background: var(--bg-1);
-}
-
-.browser-tab span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.browser-tab i {
-  flex: none;
-  font-style: normal;
-  font-size: var(--fs-lg);
-  opacity: .65;
-}
-
-.browser-tab:hover,
-.browser-tab.active {
-  color: var(--fg);
-  background: var(--bg-1);
-  border-bottom-color: var(--accent);
-}
-
-.browser-nav:hover,
-.browser-close:hover {
-  color: var(--fg);
-  background: var(--bg-3);
-}
-
-.browser-nav:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
-}
-
-.browser-nav.browser-chrome.on {
-  color: var(--accent);
-  border: 1px solid var(--accent-line);
-  background: var(--accent-soft);
 }
 
 /* 「⋯」菜单 */

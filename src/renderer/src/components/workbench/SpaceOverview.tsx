@@ -6,6 +6,7 @@ import { FollowPanel } from './FollowPanel'
 import { goalDisplayTitle } from '../../state/goal-view'
 import type { Space } from '../../../../shared/space'
 import type { SpaceView } from '../../state/space-view'
+import { Button } from '../ui'
 
 /**
  * 空间概览（实施-25 P04 / T04-3）。
@@ -166,10 +167,10 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
                   </li>
                 ))}
               </ul>
-              <button className="btn sm wb-open-map" data-testid="space-ov-sources-all" onClick={() => onView('library')}>
+              <Button size="sm" className="wb-open-map" data-testid="space-ov-sources-all" onClick={() => onView('library')}>
                 {t('space.ov.sourcesAll')}
                 <Icon name="chevron-right" size={12} />
-              </button>
+              </Button>
             </>
           )}
         </section>

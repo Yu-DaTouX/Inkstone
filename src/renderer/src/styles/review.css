@@ -16,12 +16,12 @@
   flex: none;
 }
 
-.env-btn {
+.env-trigger {
   cursor: pointer;
 }
 
-.env-btn:hover,
-.env-wrap.open .env-btn {
+.env-trigger:hover,
+.env-wrap.open .env-trigger {
   color: var(--fg);
   border-color: var(--border);
   background: var(--bg-2);
@@ -195,58 +195,7 @@ button.env-item:hover {
   background: var(--bg-1);
 }
 
-.review-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 150px;
-  height: 30px;
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-md);
-  color: var(--fg-dim);
-  background: var(--bg-2);
-  font-size: var(--fs-sm);
-}
-
-.review-tab.active {
-  color: var(--fg);
-  background: var(--bg-3);
-}
-
-.review-tab > .ico {
-  color: var(--accent);
-}
-
-.review-tab-close {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-  border: 0;
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
-  background: transparent;
-  font: inherit;
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.review-tab-close:hover {
-  color: var(--fg);
-  background: var(--bg-2);
-}
-
-.review-tab-plus {
-  color: var(--fg-mute);
-  font-size: 18px;
-}
-
-.review-close-glyph {
-  font-size: 16px;
-  line-height: 1;
-}
+/* 标签外观来自 ui.css 的 .ui-tab.doc（右栏窗口栏，见 RightPanel.tsx） */
 
 .review-scope,
 .review-ref {
@@ -989,7 +938,7 @@ button.env-item:hover {
   border-color: var(--accent);
 }
 
-.commit-btn {
+.commit-submit {
   flex: none;
 }
 

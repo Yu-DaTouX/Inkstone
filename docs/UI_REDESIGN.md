@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0、P1、P3、P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
+状态：**P0–P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
 
 原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 
@@ -87,7 +87,7 @@
 | 令牌补缺 | 间距、圆角、字号、字重的同值裸值按属性语义换成令牌（P1）；`5px`→4/6、`10px`→8/12 的归并会改变像素，随 P5 视觉改版做；`--ctl-h-xs: 20px`、浮层与菜单宽度令牌随 P2 控件落地 | `check:css-budget` 散落值只降不升 |
 | 手机令牌同源 | 检查脚本比对 `tokens.css` 与 `mobile/src/theme.ts` 的同名色值 | 不一致即失败，接入 `npm run check` |
 | 控件层 | `components/ui` 补 `Menu`/`Popover`、`Tabs`、`Field`/`Input`/`Select`、`SettingRow`、`InspectorSection`、`ListRow`；每个先写进规范 §3 | 模块私有 `*-btn/*-chip/*-tab` 清零；`className="btn…"` 改用组件 |
-| 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条 | 单文件体量明显下降，行为不变 |
+| 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条；随 P5 改到哪一区拆到哪一区 | 单文件体量明显下降，行为不变 |
 | 防回退 | 散落值数、模块私有控件类数、`!important` 数记基线（`scripts/design/css-budget.json`），`npm run check:css-budget` 接入 `npm run check` | 只允许下降 |
 
 ## 6. 分阶段路线
@@ -96,7 +96,7 @@
 | --- | --- | --- | --- |
 | P0 规范 | 待决项定案，写入 `DESIGN_SYSTEM.md` v0.5；界面清单 | 文档评审 | 完成 |
 | P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
-| P2 控件 | 扩充 `components/ui`，先迁设置页，再迁工作台、审查与右栏 | 同上 + 设置相关 `test:live` | |
+| P2 控件 | 扩充 `components/ui`（输入框、字段、设置行、页签、菜单、检查器分区、列表行）；设置页改用 `SettingRow`；模块私有控件类 21 → 0；`className="btn…"` 全部改为 `Button` / `IconButton`；界面里的 `× ✓ ‹ › ↻ ⛶ ＋ −` 文字符号换成图标 | 同上；`test:live` 需要 pi 运行时，本容器未运行 | 完成（大组件拆分随 P5 各区改版进行） |
 | P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块入 `motion.css` 与组件；盲文帧、旋转图标与 thinking-orbs 小球统一换成方点阵；工具行展开改为 grow；减少动画改为 1ms 保留终态；位移上限 4px（手机 `motion.tsx` 已是 4dp）；交叉淡变随状态栏在 P5 | `check:motion` + 截图 | 完成 |
 | P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换；去掉 `lucide-static` 依赖 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | 完成 |
 | P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | |
