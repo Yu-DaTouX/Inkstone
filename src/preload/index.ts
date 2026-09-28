@@ -20,27 +20,7 @@ import type {
   ContextAssembly,
   ArtifactDoc,
   ArtifactDocResult,
-  Course,
-  CourseResult,
-  CourseUnitInput,
-  StudyResult,
-  StudyStatusView,
-  StudyResume,
-  StudySession,
-  Attempt,
-  AttemptFeedback,
-  Exercise,
-  ExerciseBridge,
-  ExerciseHint,
-  ExerciseView,
-  ConceptProgress,
-  LearningNote,
-  NoteBridge,
-  ConceptBridge,
-  ReviewBridge,
   ResearchBridge,
-  ReviewItem,
-  ReviewPlan,
   SourceStatus,
   FollowBridge,
   FollowMutationResult,
@@ -412,91 +392,6 @@ const api: YanBridge = {
       ),
     remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:artifactDoc:remove', id)
   },
-  /* 课程与路线（实施-25 P07）：三个入口分开的方法，理由见 shared/ipc.ts */
-  course: {
-    list: (spaceId) =>
-      invoke<{ ok: boolean; error?: string; courses: Course[] }>('yan:course:list', spaceId),
-    create: (input) => invoke<CourseResult>('yan:course:create', input),
-    createFromSource: (params) => invoke<CourseResult>('yan:course:createFromSource', params),
-    createFromTopic: (input) => invoke<CourseResult>('yan:course:createFromTopic', input),
-    createFromBlocker: (input) => invoke<CourseResult>('yan:course:createFromBlocker', input),
-    createFromArtifact: (params) => invoke<CourseResult>('yan:course:createFromArtifact', params),
-    update: (id, patch) => invoke<CourseResult>('yan:course:update', id, patch),
-    addUnit: (id, unit: CourseUnitInput) => invoke<CourseResult>('yan:course:addUnit', id, unit),
-    updateUnit: (id, unitId, patch) => invoke<CourseResult>('yan:course:updateUnit', id, unitId, patch),
-    moveUnit: (id, unitId, delta) => invoke<CourseResult>('yan:course:moveUnit', id, unitId, delta),
-    removeUnit: (id, unitId) => invoke<CourseResult>('yan:course:removeUnit', id, unitId),
-    addConcept: (id, name) => invoke<CourseResult>('yan:course:addConcept', id, name),
-    removeConcept: (id, conceptId) => invoke<CourseResult>('yan:course:removeConcept', id, conceptId),
-    archive: (id, archived) => invoke<CourseResult>('yan:course:archive', id, archived),
-    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:course:remove', id)
-  },
-  /*
-   * 学习状态（实施-25 P08）。
-   * `runtimeKey` 一般不传：宿主缺省用当前会话（界面不该自己拼这个键）。
-   */
-  study: {
-    status: (runtimeKey) => invoke<StudyStatusView>('yan:study:status', runtimeKey),
-    statusOfCourse: (courseId) => invoke<StudyStatusView>('yan:study:statusOfCourse', courseId),
-    list: () => invoke<{ session: StudySession; resume: StudyResume }[]>('yan:study:list'),
-    start: (input) => invoke<StudyResult>('yan:study:start', input),
-    ask: (input) => invoke<StudyResult>('yan:study:ask', input),
-    answer: (input) => invoke<StudyResult>('yan:study:answer', input),
-    advance: (input) => invoke<StudyResult>('yan:study:advance', input),
-    pause: (runtimeKey) => invoke<StudyResult>('yan:study:pause', runtimeKey),
-    resume: (runtimeKey) => invoke<StudyResult>('yan:study:resume', runtimeKey),
-    stop: (runtimeKey) => invoke<StudyResult>('yan:study:stop', runtimeKey),
-    remove: (courseId) => invoke<boolean>('yan:study:remove', courseId)
-  },
-  /*
-   * 练习与作答（实施-25 P10）。
-   *
-   * `listForUnit` / `get` 拿到的题目**不含答案**；看答案必须走 `revealSolution`。
-   * 提交作答时不用传「看了多少提示」—— 服务自己记（不信界面自报）。
-   */
-  exercise: {
-    listForUnit: (input) => invoke<ExerciseView[]>('yan:exercise:listForUnit', input),
-    listForCourse: (courseId) => invoke<ExerciseView[]>('yan:exercise:listForCourse', courseId),
-    get: (exerciseId) => invoke<ExerciseView | null>('yan:exercise:get', exerciseId),
-    create: (input) => invoke<{ ok: boolean; error?: string; exercise?: Exercise }>('yan:exercise:create', input),
-    createFromUnit: (input) =>
-      invoke<{ ok: boolean; error?: string; exercises?: Exercise[]; created?: number }>('yan:exercise:createFromUnit', input),
-    revealHint: (input) =>
-      invoke<{ ok: boolean; error?: string; hints?: ExerciseHint[]; hasMoreHints?: boolean }>('yan:exercise:revealHint', input),
-    revealSolution: (exerciseId) =>
-      invoke<{ ok: boolean; error?: string; solution: string | null }>('yan:exercise:revealSolution', exerciseId),
-    submit: (input) =>
-      invoke<{ ok: boolean; error?: string; attempt?: Attempt; feedback?: AttemptFeedback }>('yan:exercise:submit', input),
-    attempts: (exerciseId) => invoke<Attempt[]>('yan:exercise:attempts', exerciseId),
-    correct: (input) => invoke<{ ok: boolean; error?: string; attempt?: Attempt }>('yan:exercise:correct', input),
-    remove: (exerciseId) => invoke<boolean>('yan:exercise:remove', exerciseId),
-    removeCourse: (courseId) => invoke<number>('yan:exercise:removeCourse', courseId)
-  } as ExerciseBridge,
-  /*
-   * 笔记与概念进度（实施-25 P11）。
-   * 概念进度只能读与自评：系统观察由作答现算，界面不直接改 level。
-   */
-  note: {
-    list: (courseId) => invoke<LearningNote[]>('yan:note:list', courseId),
-    save: (input) => invoke<{ ok: boolean; error?: string; note?: LearningNote }>('yan:note:save', input),
-    update: (id, patch) => invoke<{ ok: boolean; error?: string; note?: LearningNote }>('yan:note:update', { id, patch }),
-    remove: (id) => invoke<boolean>('yan:note:remove', id)
-  } as NoteBridge,
-  concept: {
-    list: (courseId) => invoke<ConceptProgress[]>('yan:concept:list', courseId),
-    assess: (input) =>
-      invoke<{ ok: boolean; error?: string; progress?: ConceptProgress }>('yan:concept:assess', input),
-    reset: (input) => invoke<boolean>('yan:concept:reset', input)
-  } as ConceptBridge,
-  review: {
-    list: (courseId) => invoke<ReviewItem[]>('yan:review:list', courseId),
-    due: () => invoke<{ items: ReviewItem[]; total: number }>('yan:review:due'),
-    plan: (input) => invoke<ReviewPlan>('yan:review:plan', input),
-    reading: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:reading', input),
-    question: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:question', input),
-    reschedule: (input) => invoke<{ ok: boolean; error?: string; review?: ReviewItem }>('yan:review:reschedule', input),
-    dismiss: (id) => invoke<boolean>('yan:review:dismiss', id)
-  } as ReviewBridge,
   research: {
     sourceStatus: (artifactId) => invoke<{ ok: boolean; error?: string; statuses: SourceStatus[] }>('yan:artifactDoc:sourceStatus', artifactId)
   } as ResearchBridge,

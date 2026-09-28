@@ -24,7 +24,6 @@ function fakeDeps(overrides = {}) {
     maybeArmGoalContinue: async (id) => { log.push(`goal:${id}`) },
     workModeKeyFor: (id) => `key-${id}`,
     autoContinueLimit: 3,
-    studyGateBlocks: async () => false,
     writeRetrySnapshot: async (id, snapshot) => { log.push(`snapshot:${id}:${snapshot.kind}`) },
     notify: (id, message, type) => { log.push(`notify:${id}:${type}`) },
     autoContinues: {
@@ -145,18 +144,6 @@ export async function runSessionWorkSchedulerTests(ok, { createSessionWorkSchedu
     sw.observePush('s', { ch: 'agent-error', payload: { text: 'boom', source: 'stop' } })
     await sleep(5)
     ok(!sw.hasPendingAutoContinue('s') && deps.log.includes('notify:s:error'), '达到上限时只以错误提示告知，不再安排')
-  }
-
-  /* ---- 8. 学习练习等作答：到点也不写快照 ---- */
-  {
-    let waiting = false
-    const deps = fakeDeps({ studyGateBlocks: async () => waiting })
-    const sw = createSessionWorkScheduler(deps)
-    sw.observePush('l', { ch: 'agent-error', payload: { text: 'boom', source: 'stop' } })
-    await sleep(5)
-    waiting = true
-    await sleep(60)
-    ok(!deps.log.includes('snapshot:l:retry') && deps.log.includes('notify:l:info'), '学习正等作答时不叫醒模型，只提示')
   }
 
   /* ---- 9. 回合结束的 state 推送触发调度 ---- */

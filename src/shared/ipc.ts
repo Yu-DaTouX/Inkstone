@@ -70,34 +70,6 @@ export type { ContextMaintenanceOperationV1, ContextMaintenanceStateV1 } from '.
 import type { ContextMaintenanceOperationV1 } from './context-maintenance'
 /* 可编辑成果（实施-25 P06a）：契约在 shared/artifact-doc.ts */
 export type { ArtifactDoc, ArtifactKind, ArtifactSourceRef, ArtifactVersion } from './artifact-doc'
-export type { Concept, Course, CourseEntry, CourseInput, CourseLevel, CourseSourceRef, LearningUnit, UnitOrigin } from './course'
-export type { StudyPhase, StudyResume, StudySession, StudyPending, StudyPosition } from './study'
-export type {
-  Attempt,
-  AttemptFeedback,
-  Exercise,
-  ExerciseAnswer,
-  ExerciseHint,
-  ExerciseKind,
-  ExerciseOption,
-  ExercisePair,
-  ExerciseResponse,
-  ExerciseView,
-  HintLevel
-} from './exercise'
-export type {
-  ConceptProgress,
-  LearningNote,
-  LearningNoteInput,
-  NoteKind,
-  ObservationLevel,
-  ProgressEvidence,
-  SelfAssessment,
-  SelfAssessmentKind
-} from './learning-memory'
-
-export type { ReviewItem, ReviewPlan, ReviewPriority, ReviewReason } from './review'
-import type { ReviewItem, ReviewPlan, ReviewPriority } from './review'
 export type { SourceStatus, SourceRefStatus, ResearchExcerpt } from './research'
 import type { SourceStatus } from './research'
 export type {
@@ -112,19 +84,7 @@ import type { FollowRun, Watch, WatchView } from './follow'
 export type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { ActivityModelConfig, ActivityModelResolution, ActivityModelRow } from './activity-model'
 import type { AgentActivity } from './agent-profile'
-import type { StudyPhase, StudyResume, StudySession } from './study'
-import type {
-  Attempt,
-  AttemptFeedback,
-  Exercise,
-  ExerciseHint,
-  ExerciseResponse,
-  ExerciseView,
-  HintLevel
-} from './exercise'
-import type { ConceptProgress, LearningNote, LearningNoteInput, SelfAssessmentKind } from './learning-memory'
 import type { AgentEditInput, ArtifactDoc, ArtifactKind, ArtifactSourceRef } from './artifact-doc'
-import type { Course, CourseInput, CourseSourceRef } from './course'
 import type {
   GitContentSide,
   GitFileContent,
@@ -2919,204 +2879,6 @@ export interface ActivityBridge {  /** 五个活动各自会用什么模型（�
   }): Promise<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>
 }
 
-/**
- * 语音与内容形式（实施-25 P20）。
- *
- * `plan` 只说清「走哪条路、结果怎么归位」；`transcript` 把**外部工具转好的文本**
- * 登记成同一门课的新来源。宿主不做识别与朗读，也没有「播放」能力。
- */
-/** 课程写操作的结果（与纯逻辑层的 `CourseMutation` 对应）。 */
-export interface CourseResult {
-  ok: boolean
-  error?: string
-  course?: Course
-  /** 内容没变（例如移动到边界 / 加入已存在的概念）。 */
-  unchanged?: boolean
-}
-
-/** 学习状态的变更回执（`ok: false` 时必须说明为什么被拒 —— 拒绝常是语义，不是崩溃）。 */
-export interface StudyResult {
-  ok: boolean
-  error?: string
-  session?: StudySession
-}
-
-/** 新增单元的输入（`origin` 决定要不要出处 / 说明，见 `shared/course.ts`）。 */
-export interface CourseUnitInput {
-  title: string
-  target?: string
-  estimateMinutes?: number
-  origin: 'material' | 'model'
-  sources?: CourseSourceRef[]
-  note?: string
-  concepts?: string[]
-}
-
-/**
- * 课程与路线（实施-25 P07）。
- *
- * 三个入口（学这份资料 / 学会一个主题 / 我卡在这里）是**分开的方法**，
- * 而不是一个 `entry` 参数 —— 因为「学这份资料」要读真实正文并切成带出处的单元，
- * 另外两个只搭骨架；两者失败方式不同，混在一个方法里就只能报一个含糊的错。
- */
-export interface CourseBridge {
-  list(spaceId?: string | null): Promise<{ ok: boolean; error?: string; courses: Course[] }>
-  create(input: CourseInput): Promise<CourseResult>
-  createFromSource(params: { sourceId: string; version: number; input: CourseInput }): Promise<CourseResult>
-  createFromTopic(input: CourseInput): Promise<CourseResult>
-  createFromBlocker(input: CourseInput): Promise<CourseResult>
-  /** 入口四（T06b-4）：把一份成果当材料建课（宿主先把它登记成一份资料库来源）。 */
-  createFromArtifact(params: { artifactId: string; input: CourseInput }): Promise<CourseResult>
-  update(
-    id: string,
-    patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }
-  ): Promise<CourseResult>
-  addUnit(id: string, unit: CourseUnitInput): Promise<CourseResult>
-  updateUnit(
-    id: string,
-    unitId: string,
-    patch: { title?: string; target?: string | null; estimateMinutes?: number; note?: string }
-  ): Promise<CourseResult>
-  moveUnit(id: string, unitId: string, delta: number): Promise<CourseResult>
-  removeUnit(id: string, unitId: string): Promise<CourseResult>
-  addConcept(id: string, name: string): Promise<CourseResult>
-  removeConcept(id: string, conceptId: string): Promise<CourseResult>
-  archive(id: string, archived?: boolean): Promise<CourseResult>
-  remove(id: string): Promise<{ ok: boolean; error?: string }>
-}
-
-/**
- * 学习状态（实施-25 P08）。
- *
- * `runtimeKey` 可以不传 —— 宿主缺省用「当前正在看的会话」。
- * 为什么不让界面自己拼这个键：界面手里有「会话文件 / 会话 id」两种可能的值，
- * 拼错就是查到一个不存在的键，闸门静默失效（而这是最不该静默的地方）。
- */
-export interface StudyBridge {
-  status(runtimeKey?: string): Promise<StudyStatusView>
-  statusOfCourse(courseId: string): Promise<StudyStatusView>
-  list(): Promise<{ session: StudySession; resume: StudyResume }[]>
-  start(input: { courseId: string; unitId?: string; runtimeKey?: string; nextStep?: string }): Promise<StudyResult>
-  ask(input: {
-    runtimeKey?: string
-    question: string
-    expectation?: string
-    origin?: 'material' | 'model'
-    sources?: CourseSourceRef[]
-    nextStep?: string
-  }): Promise<StudyResult>
-  answer(input: { runtimeKey?: string; text: string }): Promise<StudyResult>
-  advance(input: { runtimeKey?: string; to: StudyPhase; nextStep?: string }): Promise<StudyResult>
-  pause(runtimeKey?: string): Promise<StudyResult>
-  resume(runtimeKey?: string): Promise<StudyResult>
-  stop(runtimeKey?: string): Promise<StudyResult>
-  /** 删掉一门课的学习状态（课程被删时一并收拾）。 */
-  remove(courseId: string): Promise<boolean>
-}
-
-export interface StudyStatusView {
-  session: StudySession | null
-  resume: StudyResume | null
-  /** 这个 pi 会话此刻是不是在等学习者作答（闸门判据）。 */
-  waiting: boolean
-  /** 盘上的闸门快照（排障与验收用）。 */
-  gate: { waiting: boolean; where: string; at: number } | null
-}
-
-/**
- * 练习与作答（实施-25 P10）。
- *
- * 列表 / 单题返回的是 **`ExerciseView`（不含答案）**，这是 T10-2 的落点：
- * 答案不能随题目一起下发，否则「先等用户作答」就只是界面自觉。
- * 要拿答案必须走 `revealSolution`（并因此被记进作答）。
- */
-export interface ExerciseBridge {
-  listForUnit(input: { courseId: string; unitId: string }): Promise<ExerciseView[]>
-  listForCourse(courseId: string): Promise<ExerciseView[]>
-  get(exerciseId: string): Promise<ExerciseView | null>
-  create(input: unknown): Promise<{ ok: boolean; error?: string; exercise?: Exercise }>
-  createFromUnit(input: { courseId: string; unitId: string; maxExercises?: number }): Promise<{
-    ok: boolean
-    error?: string
-    exercises?: Exercise[]
-    created?: number
-  }>
-  revealHint(input: { exerciseId: string; upto: HintLevel }): Promise<{ ok: boolean; error?: string; hints?: ExerciseHint[]; hasMoreHints?: boolean }>
-  revealSolution(exerciseId: string): Promise<{ ok: boolean; error?: string; solution: string | null }>
-  submit(input: { exerciseId: string; response: ExerciseResponse }): Promise<{
-    ok: boolean
-    error?: string
-    attempt?: Attempt
-    feedback?: AttemptFeedback
-  }>
-  attempts(exerciseId: string): Promise<Attempt[]>
-  correct(input: { attemptId: string; text: string; correct?: boolean | null }): Promise<{
-    ok: boolean
-    error?: string
-    attempt?: Attempt
-  }>
-  remove(exerciseId: string): Promise<boolean>
-  /** 删一门课的题目与作答（课程被删时一并收拾）。 */
-  removeCourse(courseId: string): Promise<number>
-}
-
-/**
- * 笔记与概念进度（实施-25 P11）。
- *
- * 概念进度没有「直接写 level」的方法：它是从作答现算的摘要（T11-3），
- * 只有用户自评（写进另一个字段）与「重新算」。这样两条轴不会被一次调用改错。
- */
-export interface NoteBridge {
-  list(courseId: string): Promise<LearningNote[]>
-  save(input: LearningNoteInput): Promise<{ ok: boolean; error?: string; note?: LearningNote }>
-  update(id: string, patch: unknown): Promise<{ ok: boolean; error?: string; note?: LearningNote }>
-  remove(id: string): Promise<boolean>
-}
-
-export interface ConceptBridge {
-  list(courseId: string): Promise<ConceptProgress[]>
-  /** 用户自评：与系统观察分别保存、并存（T11-5）。 */
-  assess(input: { courseId: string; conceptId: string; kind: SelfAssessmentKind; text?: string }): Promise<{
-    ok: boolean
-    error?: string
-    progress?: ConceptProgress
-  }>
-  reset(input: { courseId: string; conceptId: string }): Promise<boolean>
-}
-
-/**
- * 错题与复习（实施-25 P12）。
- *
- * `plan` 只**挑题**，不开始学习：复习永远不自动代学。
- * 写操作里没有「标记已掌握」—— 复习项只能被连续独立成功收掉，
- * 或用户自己挪期（`reschedule`）/ 去掉（`dismiss`）。
- */
-export interface ReviewBridge {
-  list(courseId: string): Promise<ReviewItem[]>
-  /** 今天到期的复习（不分课程，首页入口用）。 */
-  due(): Promise<{ items: ReviewItem[]; total: number }>
-  plan(input: { courseId: string; mode?: 'due' | 'quick'; minutesBudget?: number }): Promise<ReviewPlan>
-  reading(input: {
-    courseId: string
-    sourceId: string
-    unitId?: string
-    version?: number
-    locator?: { start: number; end: number }
-    note?: string
-  }): Promise<{ ok: boolean; error?: string; review?: ReviewItem }>
-  question(input: { courseId: string; conceptId: string; text?: string }): Promise<{
-    ok: boolean
-    error?: string
-    review?: ReviewItem
-  }>
-  reschedule(input: { id: string; dueAt?: number; priority?: ReviewPriority }): Promise<{
-    ok: boolean
-    error?: string
-    review?: ReviewItem
-  }>
-  dismiss(id: string): Promise<boolean>
-}
-
 export interface SourcesBridge {
   /** 列出会话的**图片**副本（这是唯一由我们持有字节的一类）与来源关联表 */
   list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
@@ -3666,25 +3428,12 @@ export interface YanBridge {
   /** 资料库（实施-25 P03）：与 sources 并存，落在 library.json */
   library: LibraryBridge
   artifactDoc: ArtifactDocBridge
-  /** 课程与路线（实施-25 P07）：从资料 / 主题 / 卡点建课，并调整单元顺序 */
-  course: CourseBridge
-  /** 学习状态（实施-25 P08）：阶段与「等你作答」的闸门。 */
-  study: StudyBridge
-  /** 练习与作答（实施-25 P10）：出题、分层提示、作答与反馈。 */
-  exercise: ExerciseBridge
-  /** 笔记（实施-25 P11）：用户自己的记录，可改可删。 */
-  note: NoteBridge
   /** 成果引用的资料状态（按版本读片段与对照做法在 research 技能）。 */
   research: ResearchBridge
   /** 持续关注（实施-25 P16）：到点提醒与结果记录（没有后台调度）。 */
   follow: FollowBridge
   /** 按活动配置模型（实施-25 P18）：只回答「该用哪个模型」，不动会话与学习状态。 */
   activity: ActivityBridge
-  /** 语音与内容形式（实施-25 P20）：只说路径与归位，不做识别 / 朗读。 */
-  /** 概念进度（实施-25 P11）：观察层级 + 独立的复习状态，由作答现算。 */
-  concept: ConceptBridge
-  /** 错题与复习（实施-25 P12）：只提醒与挑题，不自动代学。 */
-  review: ReviewBridge
   packages: PackagesBridge
   /** 项目知识页（实施-03 S5）：读当前项目、确认 / 编辑 / 替代 / 删除、导出 */
   knowledge: KnowledgeBridge

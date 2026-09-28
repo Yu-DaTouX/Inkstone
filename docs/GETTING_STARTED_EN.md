@@ -34,10 +34,10 @@ Reference files with `@`, explore commands with `/`, or enter a Shell command wi
 
 The switch at the left of the title bar toggles between **coding mode** and **daily mode**. Daily mode organizes the app around a few long-running topics:
 
-- **Workbench home**: start a conversation, return to recent ones, and see what is due for review today.
-- **Topic spaces**: group conversations by topic instead of by project folder. Each space has overview, library, artifacts, and learning views.
-- **Library and artifacts**: imported material (text or files) becomes a source you can cite. Artifacts are editable documents with versions and checklists; they export to Markdown and can be turned into a course.
-- **Learning**: a course turns material into a route you work through unit by unit. Exercises give layered hints and feedback, missed items enter review, and concept progress plus notes record where you stopped.
+- **Workbench home**: start a conversation and return to recent ones.
+- **Topic spaces**: group conversations by topic instead of by project folder. Each space has overview, library, and artifacts views.
+- **Library and artifacts**: imported material (text or files) becomes a source you can cite. Artifacts are editable documents with versions and checklists; they export to Markdown and can be handed to the tutor to learn from.
+- **Learning**: say what you want to learn in the conversation. The tutor checks what you already know, explains step by step, asks questions and waits for your answer, and gives hints before answers. Courses, exercises, and notes from earlier versions are kept as a readable copy in `learning-export/` in the data folder.
 - **Session map**: conversations and their branches are laid out per workspace lane. Expanding a session shows one card per exchange, and you can branch from a specific exchange.
 
 All of it stays on this machine and can be exported or removed at any time. When something needs network access, an installed capability, or sending data outward, Inkstone explains the path first instead of doing it for you.

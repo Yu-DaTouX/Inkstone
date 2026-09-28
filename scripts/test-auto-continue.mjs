@@ -102,23 +102,6 @@ export async function runAutoContinueTests(ok) {
   const stopped = plan({ userStopped: true })
   ok(stopped.action === 'stop' && stopped.reason === 'user-stopped', '用户停止优先于一切（即使还没试过）')
 
-  /*
-   * 学习闸门（实施-25 P08 T08-3）。
-   *
-   * 这一条不是「模型坏了该不该重试」，而是「现在不该把模型叫起来」：
-   * 学习正等学习者作答时起一轮，正好就是自问自答把课学完。
-   * 所以它优先于「不值得重试」与上限（那两条说的是错误本身）。
-   */
-  const learnWaiting = plan({ learnWaiting: true })
-  ok(
-    learnWaiting.action === 'stop' && learnWaiting.reason === 'learn-waiting',
-    '学习在等作答 → 自动继续停下来（这是 P08 的闸）'
-  )
-  ok(/等学习者作答|作答/.test(learnWaiting.note), `提示要说清是在等作答（${learnWaiting.note}）`)
-  ok(plan({ learnWaiting: true, state: state(9) }).reason === 'learn-waiting', '等作答优先于次数上限（不是失败）')
-  ok(plan({ learnWaiting: true, userStopped: true }).reason === 'user-stopped', '用户停止仍优先于学习闸门')
-  ok(plan({ learnWaiting: false }).action === 'retry', '没在等作答时照旧重试（别误伤）')
-
   const custom = shared.planAutoContinue({
     state: state(0),
     error: errRetryable,

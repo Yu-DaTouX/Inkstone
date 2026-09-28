@@ -13,19 +13,14 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
-| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx`（课程与路线）/ `LearningWorkspace.tsx`（导师页三栏）/ `ExerciseCard.tsx`（练习卡）/ `ConceptPanel.tsx`（概念进度与笔记）/ `ReviewPanel.tsx`（错题与复习）/ `FollowPanel.tsx`（持续关注）/ `SessionMap.tsx`（会话地图：会话层 + 可展开的轮次层）/ `SessionPreview.tsx`） |
+| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx`/ `FollowPanel.tsx`（持续关注）/ `SessionMap.tsx`（会话地图：会话层 + 可展开的轮次层）/ `SessionPreview.tsx`） |
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
 | `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 活动流程与建任务阈值、按活动的上下文装配（引用可回原文） |
 | `src/shared/artifact-doc.ts` + `src/main/artifact-doc-store.ts` | 可编辑成果：版本推进、「用户改过的段落不被 agent 整篇覆盖」、结构化清单（Markdown 任务列表）、引用回原文与导出 Markdown |
-| `src/shared/course.ts` + `src/main/course-store.ts` / `course-service.ts` | 课程与路线：四个入口（资料 / 主题 / 卡点 / 成果「用于学习」）、材料与补充的强制区分、单元顺序调整 |
-| `src/shared/study.ts` + `src/main/learning-store.ts` / `learning-service.ts` | 学习状态与继续：阶段推进（进等待要问题、出等待要作答）、`waiting_for_learner` 持久化与续跑闸门 |
-| `src/shared/exercise.ts` + `src/main/exercise-store.ts` / `exercise-service.ts` | 练习与反馈：客观题判分与开放题不判定、题目视图不含答案（**图片题也一样**）、分层提示、「看过解释不算独立完成」、`Attempt` 作为事实源 |
-| `src/shared/learning-memory.ts` + `src/main/learning-memory-store.ts` | 学习记忆：笔记与概念进度的**两条轴**（观察层级 + 建议复习）、一次失败不降级、自评与系统观察并存 |
-| `src/shared/review.ts` | 错题与复习：调度规则（1/3/7/14 天是**排期不是掌握证明**）、再练**换同概念新例子**、逾期不乘倍 |
 | `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research` |
 | `src/shared/user-skill.ts` + `src/main/user-skills.ts` | 用户技能：`YAN_DIR/skills/<名称>/SKILL.md` 的校验、保存（`yan skill save`）与按 `--skill` 加载；旧办事模板（`playbooks.json`）启动时一次性导出成技能，原文件保留。写法与执行约定见 `resources/skills/playbook` |
-| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 学习记录导出：启动时把 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。讲解与出题做法见 `resources/skills/tutor` |
+| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 学习记录导出：学习功能已改由 `tutor` 技能在对话中进行；启动时把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。讲解与出题做法见 `resources/skills/tutor` |
 | `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
 | `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
 | `src/shared/capability-gap.ts` | 按需获取能力：用自然语言说需求 → 「缺什么、怎么接」的**可执行路径**（只给路径不代装、认不出不编包名、已有能力就不算缺口） |

@@ -2299,7 +2299,7 @@ await runContextBudgetRollingTests(ok, {
   recall: contextRecall
 })
 
-/* 会话后台工作调度服务：串行链、优先级、自动继续退避与撤销、学习等待闸（假依赖驱动） */
+/* 会话后台工作调度服务：串行链、优先级、自动继续退避与撤销（假依赖驱动） */
 const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-work-scheduler.ts'],
@@ -2882,16 +2882,6 @@ await runGitRepoTests(ok)
   ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
   const capabilityHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'capabilities', '--help'], { encoding: 'utf8' })
   ok(capabilityHelp.status === 0 && /--retry/.test(capabilityHelp.stdout ?? '') && /受管 staging/.test(capabilityHelp.stdout ?? ''), 'yan CLI：能力接入帮助说明固定 SRI staging 与显式重试')
-  const exerciseHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'exercise', '--help'], { encoding: 'utf8' })
-  ok(
-    exerciseHelp.status === 0 && /--level/.test(exerciseHelp.stdout ?? '') && /不含答案/.test(exerciseHelp.stdout ?? ''),
-    'yan CLI：练习分组帮助可按需读取（含「题目不含答案」的边界）'
-  )
-  const reviewHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'review', '--help'], { encoding: 'utf8' })
-  ok(
-    reviewHelp.status === 0 && /plan/.test(reviewHelp.stdout ?? '') && /不复用做过的原题/.test(reviewHelp.stdout ?? ''),
-    'yan CLI：复习分组帮助可按需读取（含「不复用原题」与「不代表已掌握」的边界）'
-  )
   const skillHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'skill', '--help'], { encoding: 'utf8' })
   ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
   const researchHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'research', '--help'], { encoding: 'utf8' })
@@ -3585,199 +3575,7 @@ await runArtifactDocStoreTests(ok, artifactDocStore, {
 })
 
 /*
- * 课程与路线（实施-25 P07）：生成路线 / 材料与补充的边界 / 存储 / 三条入口。
- * 重点在「材料单元必须有出处」「补充单元必须写清为什么」与「定位不编页码」。
- */
-const courseShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/course.ts'],
-    outfile: 'out/test/course.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/course.mjs'))
-)
-const courseStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/course-store.ts'],
-    outfile: 'out/test/course-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/course-store.mjs'))
-)
-const courseService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/course-service.ts'],
-    outfile: 'out/test/course-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/course-service.mjs'))
-)
-const { runCourseTests, runCourseStoreTests, runCourseServiceTests } = await import('./test-course.mjs')
-await runCourseTests(ok, courseShared)
-await runCourseStoreTests(ok, courseStore, {
-  mkdtemp: fsPromises.mkdtemp,
-  readFile: fsPromises.readFile,
-  rm: fsPromises.rm
-})
-await runCourseServiceTests(
-  ok,
-  { CourseService: courseService.CourseService, CourseStore: courseStore.CourseStore },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
-
-/*
- * 学习状态与继续（实施-25 P08，R3 落点）：阶段转移 / 恢复信息 / 持久化 / 闸门。
- * 重点是「自问自答不算进度」与「等待是落盘的，换个实例仍拦得住」。
- */
-const studyShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/study.ts'],
-    outfile: 'out/test/study.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/study.mjs'))
-)
-const studyStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/learning-store.ts'],
-    outfile: 'out/test/learning-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-store.mjs'))
-)
-const studyService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/learning-service.ts'],
-    outfile: 'out/test/learning-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-service.mjs'))
-)
-const { runStudyTests, runStudyStoreTests, runStudyServiceTests } = await import('./test-study.mjs')
-await runStudyTests(ok, studyShared)
-await runStudyStoreTests(ok, studyStore, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-await runStudyServiceTests(
-  ok,
-  { LearningService: studyService.LearningService, StudyStore: studyStore.StudyStore },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
-
-/*
- * 练习与反馈（实施-25 P10）：判分 / 题目视图不含答案 / 提示层级 / 「看过解释不算独立完成」。
- * 重点是「答案不随题目走」与「帮助层级由服务记」，这两条是 T10-2 的落点。
- */
-const exerciseShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/exercise.ts'],
-    outfile: 'out/test/exercise.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/exercise.mjs'))
-)
-const exerciseStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/exercise-store.ts'],
-    outfile: 'out/test/exercise-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/exercise-store.mjs'))
-)
-const exerciseService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/exercise-service.ts'],
-    outfile: 'out/test/exercise-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/exercise-service.mjs'))
-)
-const { runExerciseTests, runExerciseStoreTests, runExerciseServiceTests } = await import('./test-exercise.mjs')
-await runExerciseTests(ok, exerciseShared)
-await runExerciseStoreTests(ok, exerciseStore, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-await runExerciseServiceTests(
-  ok,
-  { ExerciseService: exerciseService.ExerciseService, ExerciseStore: exerciseStore.ExerciseStore },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
-
-/*
- * 笔记与概念进度（实施-25 P11，R7 落点）：两条轴 / 升级要证据 / 自评与观察并存。
- * 重点是「一次失败不降级只加复习建议」与「两次不同练习的独立成功才进独立完成」。
- */
-const learningMemoryShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/learning-memory.ts'],
-    outfile: 'out/test/learning-memory.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-memory.mjs'))
-)
-const learningMemoryStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/learning-memory-store.ts'],
-    outfile: 'out/test/learning-memory-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/learning-memory-store.mjs'))
-)
-const { runLearningMemoryTests, runLearningMemoryStoreTests, runLearningMemoryServiceTests } = await import(
-  './test-learning-memory.mjs'
-)
-await runLearningMemoryTests(ok, learningMemoryShared)
-await runLearningMemoryStoreTests(ok, learningMemoryStore, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-await runLearningMemoryServiceTests(
-  ok,
-  { LearningService: studyService.LearningService, LearningMemoryStore: learningMemoryStore.LearningMemoryStore },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
-
-/*
- * 错题与复习（实施-25 P12）：调度规则 / 挑题换新例子 / 逾期不乘倍 / 存储 / 服务。
- * 重点是「做过的原题不再端回来」与「间隔是排期而不是掌握证明」。
- */
-const reviewShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/review.ts'],
-    outfile: 'out/test/review.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/review.mjs'))
-)
-const { runReviewTests, runReviewStoreTests, runReviewServiceTests } = await import('./test-review.mjs')
-await runReviewTests(ok, reviewShared)
-await runReviewStoreTests(ok, learningMemoryStore, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
-await runReviewServiceTests(
-  ok,
-  { LearningService: studyService.LearningService, LearningMemoryStore: learningMemoryStore.LearningMemoryStore },
-  { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-)
-
-/*
- * 跨资料研究（实施-25 P13）：引用状态 / 不合并的对照规则 / 片段切片。
- * 重点是「旧引用按版本保留」与「未标注立场不制造冲突」。
+ * 资料引用：引用状态与片段切片。重点是「旧引用按版本保留」。
  */
 const researchShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

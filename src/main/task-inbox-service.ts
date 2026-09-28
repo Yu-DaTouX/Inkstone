@@ -46,7 +46,6 @@ export interface TaskInboxSources {
   readPlan?(sessionId: string): Promise<NonNullable<TaskFacts['plan']> | undefined>
   readGoal?(sessionId: string): Promise<NonNullable<TaskFacts['goal']> | undefined>
   readQuestion?(sessionId: string): Promise<NonNullable<TaskFacts['question']> | undefined>
-  readStudy?(sessionId: string): Promise<NonNullable<TaskFacts['study']> | undefined>
   readSubagents?(sessionId: string): Promise<NonNullable<TaskFacts['subagents']> | undefined>
   /**
    * 「跑完了但没被确认」的近似判定（七态里唯一的缺口）。
@@ -111,15 +110,14 @@ export function createTaskInboxService(sources: TaskInboxSources, options: TaskI
     let degraded = topFailed
     const cards: TaskCard[] = []
     for (const s of sessions) {
-      const [plan, goal, question, study, subagents, awaitingReview] = await Promise.all([
+      const [plan, goal, question, subagents, awaitingReview] = await Promise.all([
         safe(sources.readPlan, s.id),
         safe(sources.readGoal, s.id),
         safe(sources.readQuestion, s.id),
-        safe(sources.readStudy, s.id),
         safe(sources.readSubagents, s.id),
         safe(sources.readAwaitingReview, s.id)
       ])
-      if ([plan, goal, question, study, subagents, awaitingReview].some((r) => r.failed)) degraded++
+      if ([plan, goal, question, subagents, awaitingReview].some((r) => r.failed)) degraded++
 
       const run = runnerBySession.get(s.id)
       const facts: TaskFacts = {
@@ -131,7 +129,6 @@ export function createTaskInboxService(sources: TaskInboxSources, options: TaskI
         ...(plan.value ? { plan: plan.value } : {}),
         ...(goal.value ? { goal: goal.value } : {}),
         ...(question.value ? { question: question.value } : {}),
-        ...(study.value ? { study: study.value } : {}),
         ...(subagents.value ? { subagents: subagents.value } : {}),
         ...(awaitingReview.value ? { awaitingReview: awaitingReview.value } : {}),
         ...(dismissedSet.has(s.id) ? { dismissed: true } : {})

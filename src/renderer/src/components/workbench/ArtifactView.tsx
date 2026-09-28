@@ -59,11 +59,10 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   const remove = useStore((s) => s.removeArtifactDoc)
   const toggleItem = useStore((s) => s.toggleArtifactChecklistItem)
   const exportDoc = useStore((s) => s.exportArtifactDoc)
-  const turnIntoCourse = useStore((s) => s.createCourseFromArtifact)
+  const insertIntoComposer = useStore((s) => s.insertIntoComposer)
   const sourceStatuses = useStore((s) => s.artifactSourceStatuses)
   const refreshSourceStatus = useStore((s) => s.refreshArtifactSourceStatus)
   const clearSourceStatuses = useStore((s) => s.clearArtifactSourceStatuses)
-  const openSpaceView = useStore((s) => s.openSpaceView)
   const openRef = useStore((s) => s.openLibraryRef)
 
   const [selId, setSelId] = useState<string | null>(null)
@@ -74,9 +73,6 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
   const [viewing, setViewing] = useState<number | null>(null)
   const [dirty, setDirty] = useState(false)
   const [exported, setExported] = useState('')
-  const [learnOpen, setLearnOpen] = useState(false)
-  const [learnGoal, setLearnGoal] = useState('')
-  const [learnBusy, setLearnBusy] = useState(false)
   const [preview, setPreview] = useState<SourcePreview | null>(null)
 
   const listed = useMemo(() => docs, [docs])
@@ -203,33 +199,13 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
 
   /** 导出：先把未保存的改动落盘（否则导出的是旧正文），再弹保存框。 */
   /**
-   * 「用于学习」（T06b-4）：把这份成果交给宿主转成课程。
-   *
-   * 先保存草稿再转 —— 否则用户刚写的那段不会进材料（转完就跳走了）。
+   * 「用于学习」：把一句带成果 id 的请求填进输入框，由模型按 tutor 技能带着学。
+   * 先保存草稿 —— 否则用户刚写的那段不在成果里。不自动发送，用户可以补上学习目标。
    */
   const toLearnFlow = async (): Promise<void> => {
     if (!selected) return
-    const goal = learnGoal.trim()
-    if (!goal) return
-    setLearnBusy(true)
-    try {
-      if (dirty) await saveDraft(true)
-      const course = await turnIntoCourse({
-        artifactId: selected.id,
-        input: {
-          title: selected.title,
-          goal,
-          entry: 'source',
-          ...(spaceId ? { spaceId } : {})
-        }
-      })
-      if (!course) return
-      setLearnOpen(false)
-      setLearnGoal('')
-      openSpaceView('learning')
-    } finally {
-      setLearnBusy(false)
-    }
+    if (dirty) await saveDraft(true)
+    insertIntoComposer(t('space.art.toLearnPrompt', { title: selected.title, id: selected.id }))
   }
 
   const exportFlow = async (): Promise<void> => {
@@ -314,7 +290,7 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                 }}
               />
               <div className="wb-art-actions">
-                <button data-testid="space-art-tolearn" onClick={() => setLearnOpen((v) => !v)}>
+                <button data-testid="space-art-tolearn" title={t('space.art.toLearnHint')} onClick={() => void toLearnFlow()}>
                   <Icon name="learn" size={12} />
                   {t('space.art.toLearn')}
                 </button>
@@ -343,30 +319,6 @@ export function ArtifactView({ spaceId }: Props): React.JSX.Element {
                 </button>
               </div>
             </header>
-
-            {learnOpen ? (
-              <div className="wb-art-tolearn" data-testid="space-art-tolearn-panel">
-                <p className="wb-card-meta" data-testid="space-art-tolearn-hint">
-                  {t('space.art.toLearnHint')}
-                </p>
-                <div className="wb-art-tolearn-row">
-                  <input
-                    className="wb-art-tolearn-input"
-                    data-testid="space-art-tolearn-goal"
-                    value={learnGoal}
-                    placeholder={t('space.art.toLearnGoal')}
-                    onChange={(e) => setLearnGoal(e.target.value)}
-                  />
-                  <button
-                    data-testid="space-art-tolearn-go"
-                    disabled={!learnGoal.trim() || learnBusy}
-                    onClick={() => void toLearnFlow()}
-                  >
-                    {learnBusy ? t('space.art.toLearnBusy') : t('space.art.toLearnGo')}
-                  </button>
-                </div>
-              </div>
-            ) : null}
 
             <div className="wb-art-meta">
               <span data-testid="space-art-kind">

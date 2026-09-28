@@ -10,12 +10,11 @@
  *     · 宿主任务日志（`currentTaskPlan`，按会话读）
  *
  * ── 没接进来的源，以及为什么 ──
- *   `readGoal` / `readQuestion` / `readStudy` / `readSubagents` / `readAwaitingReview`
+ *   `readGoal` / `readQuestion` / `readSubagents` / `readAwaitingReview`
  *   都是**可选**的（契约允许缺）。缺了就不会出现对应状态，而不是编一个：
  *     · goal：目标文档是「本机唯一一个活跃目标」，不按会话切分，投影到卡片上
  *       会把同一个目标挂到每一张卡上；
  *     · question：挂起提问是能力服务的运行期状态，重启后不可考；
- *     · study：只有进了学习会话才有，且它自己就有独立界面；
  *     · subagents：子代理事实在 pi 侧，需要另开一条读取链。
  *   `needs_review` 同理：没有精确事实源，宁缺勿编（T1 已把这一点写在契约注释里）。
  */
@@ -154,8 +153,6 @@ export interface TaskInboxSourceOptions {
    * 取**最后一条**，且只有「没作答也没取消」才算在等 —— 作答过就不该再提醒。
    */
   questionLog?: { list(sessionId: string): { question: string; answer: string | null; cancelled?: boolean }[] }
-  /** 学习等待（`LearningService.waitingGate`）：只有真在等学习者才回非空 */
-  waitingGate?: (runtimeKey: string) => Promise<{ waiting: boolean; where?: string } | null>
   /**
    * 「跑完了但没被确认」的近似源（T4）。
    *
@@ -227,18 +224,6 @@ export function createTaskInboxSources(opts: TaskInboxSourceOptions): TaskInboxS
       }
     : undefined
 
-  /*
-   * 等学习者（T3）：runtimeKey 就是会话 id（宿主 `studyKey()` 缺省取当前会话），
-   * 所以这里按 sessionId 直查。
-   */
-  const studyFn = opts.waitingGate
-    ? async (sessionId: string) => {
-        const gate = await opts.waitingGate!(sessionId)
-        if (!gate?.waiting) return undefined
-        return { waiting: true, ...(gate.where ? { reason: gate.where } : {}) }
-      }
-    : undefined
-
   /* 「跑完了但没被确认」（T4）。会话快照里没有它就不报（不编）。 */
   const reviewFn = opts.awaitingReview
     ? async (sessionId: string) => {
@@ -254,7 +239,6 @@ export function createTaskInboxSources(opts: TaskInboxSourceOptions): TaskInboxS
     dismissed: opts.dismissed ?? (() => []),
     readPlan: planFn,
     ...(questionFn ? { readQuestion: questionFn } : {}),
-    ...(studyFn ? { readStudy: studyFn } : {}),
     ...(reviewFn ? { readAwaitingReview: reviewFn } : {})
   }
 }

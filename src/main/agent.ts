@@ -338,22 +338,6 @@ export interface GoalCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
-/**
- * `yan study …` 的宿主实现入口（实施-25 P08）。
- *
- * 与目标同一个形状、同一个理由：阶段的真相在 `learning-service`（index.ts 一侧），
- * agent 只负责把命令转过去。
- */
-export type StudyCommandHost = GoalCommandHost
-
-/**
- * `yan exercise …` / `yan attempt …` 的宿主实现入口（实施-25 P10）。
- *
- * 与 study 同形：出题、揭示提示、判分与作答记录都在宿主的练习服务里，
- * agent 只负责转发 —— 判分不能由模型自报（那等于让出题人自己批卷）。
- */
-export type ExerciseCommandHost = GoalCommandHost
-
 export interface ExternalApiConfirmationRequest {
   provider: 'openai' | 'compatible'
   endpoint: string
@@ -494,13 +478,10 @@ export class AgentController extends EventEmitter {
   private subagentHost?: SubagentCommandHost
   /** `yan goal …` 的宿主实现（实施-05 S3）；同样不是 pi 工具。 */
   private goalHost?: GoalCommandHost
-  private studyHost?: StudyCommandHost
-  /** 跨资料研究（P13）：多来源对照与引用状态。 */
-  private researchHost?: StudyCommandHost
-  /** 办事模板（P14）：范围与授权点由宿主算。 */
+  /** 资料引用：按版本读片段与引用状态。 */
+  private researchHost?: GoalCommandHost
   /** 持续关注（P16）：到点提醒与结果记录，没有后台调度器。 */
   private followHost?: GoalCommandHost
-  private exerciseHost?: ExerciseCommandHost
   /** CLI 只能请求授权；最终选择由主进程的可见确认 UI 返回。 */
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
@@ -787,13 +768,10 @@ export class AgentController extends EventEmitter {
     subagentHost?: SubagentCommandHost
     /** 目标状态入口（`yan goal …`），由 index.ts 注入（模式与目标在同一侧）。 */
     goalHost?: GoalCommandHost
-    /** 跨资料研究（实施-25 P13）：对照规则在宿主，模型不给立场就不算冲突。 */
-  researchHost?: StudyCommandHost
-  /** 办事模板（实施-25 P14）：范围与授权点由宿主算，模型不能自报已授权。 */
+    /** 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
+  researchHost?: GoalCommandHost
   /** 持续关注（实施-25 P16）：只能提议与回报，不能启用 / 删除 / 让宿主自己去查。 */
   followHost?: GoalCommandHost
-  studyHost?: StudyCommandHost
-    exerciseHost?: ExerciseCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -843,10 +821,8 @@ export class AgentController extends EventEmitter {
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.goalHost = opts.goalHost
-    this.studyHost = opts.studyHost
     this.researchHost = opts.researchHost
     this.followHost = opts.followHost
-    this.exerciseHost = opts.exerciseHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
@@ -1398,42 +1374,8 @@ export class AgentController extends EventEmitter {
         projectId: this.capabilityOpts?.projectId ?? ''
       })
     }
-    /*
-     * 学习状态与学习记忆（实施-25 P08 / P11）：`study.ask` 是进入「等你作答」的
-     * 唯一入口，阶段转移的校验在宿主；笔记与概念进度也归同一个宿主入口 ——
-     * 它们与学习状态共用课程 / 会话身份，拆成两个 host 只会多一份「这是哪个会话」。
-     */
-    if (
-      command.startsWith('study.') ||
-      command.startsWith('note.') ||
-      command.startsWith('concept.') ||
-      command.startsWith('review.')
-    ) {      if (!this.studyHost) {
-        throw new CapabilityCommandError('study_unavailable', '学习状态入口当前不可用（宿主未注入）')
-      }
-      return this.studyHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
-    }
-    /*
-     * 练习与作答（实施-25 P10）：出题、看提示、看解释、提交作答都走宿主。
-     * 判分与「看了多少帮助」由服务记录，模型不能自报做对（T10-2）。
-     */
-    if (command.startsWith('exercise.') || command.startsWith('attempt.')) {
-      if (!this.exerciseHost) {
-        throw new CapabilityCommandError('exercise_unavailable', '练习入口当前不可用（宿主未注入）')
-      }
-      return this.exerciseHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
-    }
     if (command === 'image.generate') return this.runImageCommand(params)
-    /*
-     * 跨资料研究（实施-25 P13）：对照规则也在宿主 —— 「不合并结论」与
-     * 「引用原文 / 模型补充」的区分不能让调用方自己口述。
-     */
+    /* 资料引用：按版本读片段与引用状态（对照做法在 research 技能）。 */
     if (command.startsWith('research.')) {
       if (!this.researchHost) {
         throw new CapabilityCommandError('research_unavailable', '研究入口当前不可用（宿主未注入）')

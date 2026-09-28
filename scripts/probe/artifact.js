@@ -235,9 +235,7 @@
   ok(!!q('[data-testid="space-art-export"]'), '导出按钮在')
   ok(!!q('[data-testid="space-art-new-kind"]'), '新建时可以选类型（文档 / 清单）')
 
-  log('=== 12. 用于学习：成果 → 学习材料（T06b-4） ===')
-  const beforeCourses = S().courses.length
-  /* 先给成果一段确定正文（前面步骤里它被改过好几轮） */
+  log('=== 12. 用于学习：把学习请求填进输入框 ===')
   await window.yan.artifactDoc.saveUserEdit(id, '光合作用把光能转成化学能。\n\n这是用来学习的成果正文。')
   await S().refreshArtifactDocs()
   await sleep(400)
@@ -245,34 +243,16 @@
   await sleep(500)
   ok(!!q('[data-testid="space-art-tolearn"]'), '成果页有「用于学习」按钮')
   click(q('[data-testid="space-art-tolearn"]'))
-  await sleep(300)
-  ok(!!q('[data-testid="space-art-tolearn-panel"]'), '展开目标输入')
-  ok(q('[data-testid="space-art-tolearn-go"]')?.disabled === true, '没填目标时不能生成（不建一门没方向的课）')
-  const goalEl = q('[data-testid="space-art-tolearn-goal"]')
-  if (goalEl) {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(goalEl, '看懂光合作用')
-    goalEl.dispatchEvent(new Event('input', { bubbles: true }))
-  }
-  await sleep(200)
-  click(q('[data-testid="space-art-tolearn-go"]'))
-  await sleep(2200)
-  const course = S().courses.find((c) => c.title === '探针报告')
-  ok(!!course, '生成了课程', course?.id)
-  ok(S().courses.length === beforeCourses + 1, '只多了一门课')
-  if (course) {
-    ok(course.units.length > 0, '有学习单元（材料单元指回正文）')
-    ok(course.units.every((u) => u.origin === 'material' && u.sources.length > 0), '单元都是带出处的材料单元')
-    const listed = await window.yan.library.list({ spaceId: space.id })
-    const fromArtifact = (listed?.sources ?? []).find((s) => String(s.title ?? '').startsWith('成果：'))
-    ok(!!fromArtifact, '资料库里多了一份「成果：…」来源', fromArtifact?.id)
-    ok(!!q('[data-testid="space-learn-panel"]'), '界面切到了学习页')
-    await S().removeCourse(course.id)
+  await sleep(400)
+  const composerEl = q('[data-testid="composer"]')
+  const inserted = String(composerEl?.value ?? '')
+  ok(inserted.includes(id) && inserted.includes('探针报告'), '输入框收到带成果标题与 id 的学习请求（不自动发送）', inserted)
+  if (composerEl) {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(composerEl, '')
+    composerEl.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  log('=== 13. 来源变化提示 + 多来源对照（P13） ===')
-  /* 步骤 12 的「用于学习」把界面切到了学习页 —— 先回成果页再继续。 */
-  S().openSpaceView('artifact')
-  await sleep(700)
+  log('=== 13. 来源变化提示（P13） ===')
   const srcA = await window.yan.library.import({
     kind: 'text',
     ref: 'probe://research-a',

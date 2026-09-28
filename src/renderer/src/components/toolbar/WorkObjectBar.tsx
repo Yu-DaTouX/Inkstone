@@ -30,7 +30,8 @@ const TARGET: Record<AgentActivity, { view: SpaceView; icon: IconName } | null> 
   research: { view: 'library', icon: 'folder-open' },
   compose: { view: 'artifact', icon: 'file' },
   organize: { view: 'overview', icon: 'checklist' },
-  learn: { view: 'learning', icon: 'check-circle' }
+  /* 学习在对话里进行（tutor 技能），没有单独的工作对象页 */
+  learn: null
 }
 
 export function WorkObjectBar(): React.JSX.Element | null {

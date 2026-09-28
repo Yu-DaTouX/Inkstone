@@ -40,8 +40,8 @@ An inkstone holds the ink before it becomes writing. Inkstone carries that idea 
 | **Follow progress** | Goals, plans, task lists, subagent status, and context and runtime information. |
 | **Choose your model** | Connect model services and change models or thinking levels within the same interface. |
 | **Make the workspace yours** | Light and dark themes, Chinese and English UI, adjustable panels and zoom, and an organized tool area. |
-| **Build up a topic** | Topic spaces group conversations by theme rather than by project folder. Imported material becomes citable sources, and artifacts are editable documents with versions, checklists, Markdown export, and a path into a course. |
-| **Keep what you learned** | A course moves unit by unit; exercises give layered hints and feedback, missed items enter review, and concept progress plus notes record where you stopped. |
+| **Build up a topic** | Topic spaces group conversations by theme rather than by project folder. Imported material becomes citable sources, and artifacts are editable documents with versions, checklists, Markdown export, and a one-click hand-off to the tutor. |
+| **Learn with a tutor** | Say what you want to learn; the tutor explains step by step, asks questions and waits for your answer, and gives hints before answers. How it teaches lives in a bundled skill. |
 | **See how conversations branch** | The session map lays conversations out per workspace lane. Expanding a session shows one card per exchange, and you can branch from a specific exchange. |
 
 The title bar switches between **coding mode** and **daily mode**: the first is centered on projects and files, the second organizes conversations, material, and learning by topic.

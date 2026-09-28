@@ -7,7 +7,6 @@ import { SPACE_VIEWS, type SpaceView } from '../../state/space-view'
 import { SpaceOverview } from './SpaceOverview'
 import { LibraryView } from './LibraryView'
 import { ArtifactView } from './ArtifactView'
-import { LearningWorkspace } from './LearningWorkspace'
 
 /**
  * 空间工作台（实施-25 P04）—— 日常模式的四个稳定入口。
@@ -58,7 +57,7 @@ export function SpaceWorkbench({ view, onView, onClose, onOpenSession }: Props):
 
   const tabs: { id: SpaceView; icon: IconName; label: string }[] = SPACE_VIEWS.map((id) => ({
     id,
-    icon: id === 'overview' ? 'sparkles' : id === 'library' ? 'folder-open' : id === 'artifact' ? 'file' : 'check-circle',
+    icon: id === 'overview' ? 'sparkles' : id === 'library' ? 'folder-open' : 'file',
     label: t(`space.tab.${id}`)
   }))
 
@@ -95,13 +94,9 @@ export function SpaceWorkbench({ view, onView, onClose, onOpenSession }: Props):
           <SpaceOverview space={space} spaceId={currentSpaceId} onView={onView} onOpenSession={onOpenSession} />
         ) : view === 'library' ? (
           <LibraryView space={space} spaceId={currentSpaceId} />
-        ) : view === 'artifact' ? (
-          /* 成果（P06a）：列表 + 编辑器；数据在 ArtifactDocStore，版本推进是纯函数 */
-          <ArtifactView spaceId={currentSpaceId} />
         ) : (
-          /* 学习（P09）：左路线 / 中导师对话 / 右教材与练习。
-             左栏里的课程与路线就是 P07 的 `LearningView`（没另写一套）。 */
-          <LearningWorkspace spaceId={currentSpaceId} />
+          /* 成果：列表 + 编辑器；数据在 ArtifactDocStore，版本推进是纯函数 */
+          <ArtifactView spaceId={currentSpaceId} />
         )}
       </div>
     </div>

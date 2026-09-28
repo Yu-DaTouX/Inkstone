@@ -251,43 +251,6 @@ export async function runGoalResumeExtTests(ok) {
     )
 
     /*
-     * ── 5b. 学习闸门（实施-25 P08 T08-3）──
-     *
-     * 闸门文件由宿主写（`study-gate/<runnerId>.json`），薄层在**真正发消息之前**读。
-     * 难点不在「拦一下」，而在两条同时成立：
-     *   · 等学习者作答时**不发** —— 否则就是自问自答把课学完（R3 要拦的失败）；
-     *   · 而且**不写消费证据** —— 作答后闸门一清，这条续行还能用；
-     *     写了就等于「已经有人干过了」，而实际上模型从未被叫起来。
-     */
-    const gateDir = join(root, 'study-gate')
-    const gateFile = join(gateDir, 'r1.json')
-    await mkdir(gateDir, { recursive: true })
-    await rm(resumeFile, { force: true })
-    await rm(consumedFile, { force: true })
-    await writeFile(
-      gateFile,
-      JSON.stringify({ version: 1, waiting: true, where: '《英语精读》·第 1/2 节「第一段」' }),
-      'utf8'
-    )
-    await writeResume('op-learn-wait')
-    const sentBeforeLearn = sent.length
-    handlers.agent_settled({}, ctx)
-    await sleep(600)
-    ok(sent.length === sentBeforeLearn, '学习在等作答 → 薄层不发续行（这才是 P08 的闸）')
-    ok((await readConsumed()) === null, '被闸门拦下时不写消费证据（作答后还能用）')
-    ok(
-      (await readLog()).some((line) => line.hook === 'resume_skipped' && line.reason === 'study-waiting'),
-      '拦下这件事留下 study-waiting 诊断行（区别于「没读到」）'
-    )
-
-    /* 学习者答完 → 宿主清掉闸门 → 同一条续行仍被消费（不是被吃掉） */
-    await rm(gateFile, { force: true })
-    handlers.agent_settled({}, ctx)
-    const learnSent = await waitFor(async () => (sent.length > sentBeforeLearn ? sent : null))
-    ok(!!learnSent, '闸门清掉后同一条续行照发（拦住不等于作废）')
-    ok((await readConsumed())?.operationId === 'op-learn-wait', '这一次才写消费证据')
-
-    /*
      * ── 6. 发送一律走 `pi`（2026-09-22 的根因） ──
      *
      * pi 0.87.1 的钩子 ctx 里**没有** `sendMessage`（`ExtensionContextActions` 只给 cwd / model /
