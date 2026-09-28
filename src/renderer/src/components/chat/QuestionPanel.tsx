@@ -25,6 +25,14 @@ import { PixelDigits } from './PixelDigits'
  * 以前只能看到第一条，后面的只体现在「共 N 个问题」这几个字里。
  * 底部是「跳过 / 下一步」：跳过 = 放弃这一条，下一步 = 提交并继续。
  *
+ * ── 形态（用户 2026-09-27 要求，参考 Codex 的 Question 浮层）──
+ *   · **浮层**：绝对定位在输入框**上方**，不再推挤消息区（以前是文档流里的一块，
+ *     消息流被顶掉一截）；
+ *   · **选项竖排，最多 3 个**（上限由宿主 `yan question ask` 硬校验，薄层提示词
+ *     也写「at most 3」）—— 序号 + 右箭头，整行是一个「选它」的动作；
+ *   · 选项下面是**常显**的一行「或自行撰写回复」，不再先点一个按钮才展开：
+ *     宿主也不再额外追加一项「其他（自行输入）」，自定义回答只有这一条路径。
+ *
  * 仍然用同一套 request id 与 `extension_ui_response` 协议，
  * 所以 pi 侧完全不需要知道界面换了形态。
  *
@@ -125,8 +133,6 @@ function PanelBody({
   const [expired, setExpired] = useState(false)
   /** 点一次加时就让这个数 +1：靠它给浮出提示换 key，连续点也能重新播放动画 */
   const [bump, setBump] = useState(0)
-  /** `select` 的自定义回复是否展开了输入框（默认收起，保持选项区干净） */
-  const [custom, setCustom] = useState(false)
 
   /*
    * `deadline` 的三种含义（见 `shared/ipc.ts`）：
@@ -284,7 +290,7 @@ function PanelBody({
 
           {(req.method === 'select' || req.method === 'input') && req.options?.length ? (
             <div className="qpanel-options">
-              {req.options.map((o, index) => (
+              {req.options?.map((o, index) => (
                 <button
                   key={`${index}:${o}`}
                   className="qpanel-option"
@@ -302,33 +308,26 @@ function PanelBody({
           ) : null}
 
           {/*
-           * 「或自行撰写回复」（用户要求）：
-           *   · `select` —— 选项之外还想自己写一句（选中项是立刻提交的，所以另开一行）；
+           * 「或自行撰写回复」（用户要求）—— **常显**，不再先点按钮展开：
+           *   · `select` —— 选项之外还想自己写一句（点选项是立刻提交的，所以另开一行）；
            *   · `input` / `editor` —— 输入框本身就是回答，见下面的分支。
            * 不 autoFocus：问题到达时用户可能正在别处打字。
            */}
           {req.method === 'select' ? (
-            custom ? (
-              <input
-                className="qpanel-input"
-                data-testid="question-panel-custom"
-                placeholder={req.placeholder ?? t('q.customReply')}
-                value={text}
-                onChange={(e) => setUiDraft(reqId, e.target.value)}
-                onCompositionStart={() => (composing.current = true)}
-                onCompositionEnd={() => (composing.current = false)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return
-                  if (composing.current || e.nativeEvent.isComposing) return
-                  if (canSubmit) answer({ value: trimmed })
-                }}
-              />
-            ) : (
-              <button className="qpanel-custom-open" data-testid="question-panel-custom-open" disabled={busy} onClick={() => setCustom(true)}>
-                <Icon name="pencil" size={12} />
-                {t('q.customReply')}
-              </button>
-            )
+            <input
+              className="qpanel-input"
+              data-testid="question-panel-custom"
+              placeholder={req.placeholder ?? t('q.customReply')}
+              value={text}
+              onChange={(e) => setUiDraft(reqId, e.target.value)}
+              onCompositionStart={() => (composing.current = true)}
+              onCompositionEnd={() => (composing.current = false)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                if (composing.current || e.nativeEvent.isComposing) return
+                if (canSubmit) answer({ value: trimmed })
+              }}
+            />
           ) : null}
 
           {req.method === 'input' ? (

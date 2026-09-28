@@ -50,6 +50,14 @@ export async function runQuestionTests(ok) {
         /yan question ask/.test(std.systemPrompt),
       '标准模式：系统提示指引模型调用 yan question ask'
     )
+    /*
+     * 选项数量：提示词与宿主硬校验（`agent.ts` 的 `options.length > 3`）
+     * 必须是同一个口径，否则模型给 4 个时会被宿主拒掉、白跑一轮。
+     */
+    ok(
+      /at most 3 concrete options/.test(std?.systemPrompt ?? ''),
+      '标准模式：提示词把选项上限写成 3（与宿主硬校验同口径）'
+    )
 
     await setModeFile('clarify')
     const clarify = handlers.before_agent_start({ systemPrompt: 'BASE' })
@@ -57,6 +65,10 @@ export async function runQuestionTests(ok) {
       /Plan mode is ON/.test(clarify?.systemPrompt ?? '') &&
         /yan question ask/.test(clarify?.systemPrompt ?? ''),
       '计划模式：系统提示允许通过宿主 CLI 提问'
+    )
+    ok(
+      /at most 3 concrete options/.test(clarify?.systemPrompt ?? ''),
+      '计划模式：提示词同样写着最多 3 个选项'
     )
 
     await setModeFile('autonomous')

@@ -96,7 +96,7 @@ const STANDARD_GUIDANCE = [
   'Interactive questions:',
   '- If a request is genuinely ambiguous, or you are about to guess at a choice that materially changes the result, call `yan question ask` and ask BEFORE doing the work.',
   '- Ask only when the answer changes what you build; do not ask about trivia or things you can verify yourself.',
-  '- Give 2-4 concrete options. The user can also pick the custom/typed answer.',
+  '- Give at most 3 concrete options; the panel always offers one row for a typed reply, so the user can write their own answer.',
   '- Keep it to one question at a time unless several are truly independent.'
 ].join('\n')
 
@@ -119,7 +119,7 @@ const CLARIFY_GUIDANCE = [
   '- This mode is READ-ONLY: writing tools (write / edit / task updates) are disabled, and bash only accepts `yan goal status|ready|report …` or `yan question ask …` — nothing else, no shell operators.',
   '- Start by reading what already exists (read / grep / find / ls) instead of asking what you could find out yourself.',
   '- Ask the ONE question whose answer most changes the plan; several truly independent questions may be grouped. Never re-ask what the user already told you.',
-  '- Give 2-4 concrete options. The user can also pick the custom/typed answer.',
+  '- Give at most 3 concrete options; the panel always offers one row for a typed reply, so the user can write their own answer.',
   '- For low-impact unknowns, state a one-line assumption instead of asking.',
   /*
    * 计划要**落盘**才是计划：用户看的是右栏的步骤列表，不是一条长回复。

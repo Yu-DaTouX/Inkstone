@@ -1488,7 +1488,13 @@ export class AgentController extends EventEmitter {
           return ''
         }).filter(Boolean)
       : []
-    if (options.length > 8) throw new CapabilityCommandError('question_options_too_many', '问题最多提供 8 个选项')
+    /*
+     * 选项上限 3（用户 2026-09-27 口径）：面板固定为「最多 3 个选项 +
+     * 一行自行撰写」，不是界面只显示 3 个 —— 超过就当场拒绝，模型改完再提。
+     * 上限与 `resources/pi-extensions/question.js` 里的提示词同一口径，
+     * 那边说的是「at most 3」，这里是硬约束。
+     */
+    if (options.length > 3) throw new CapabilityCommandError('question_options_too_many', '问题最多提供 3 个选项')
     if (options.some((option) => option.length > 500)) {
       throw new CapabilityCommandError('question_option_too_long', '问题选项不能超过 500 个字符')
     }
@@ -1503,7 +1509,6 @@ export class AgentController extends EventEmitter {
 
     /* 缺省 3 分钟；声明值夹在 5 秒 ~ 10 分钟（口径在 shared/ui-timeout.ts） */
     const timeout = requestedTimeout(params.timeout)
-    const customLabel = '其他（自行输入） / Other (type your own)'
     let response: HostUiResponse
     if (options.length === 0) {
       response = await this.requestHostUi({
@@ -1513,21 +1518,20 @@ export class AgentController extends EventEmitter {
         timeout
       })
     } else {
+      /*
+       * 选项**原样**交给面板：面板底部固定有一行「或自行撰写回复」，
+       * 用户在那里写的内容直接作为 `response.value` 回来。
+       *
+       * 以前这里会再追加一项「其他（自行输入）」，与面板自带的那行重复，
+       * 而且选中它还要再弹一次输入框（两次交互换一个自定义回答）。
+       */
       response = await this.requestHostUi({
         method: 'select',
         title: '需要你的选择',
         message: question,
-        options: [...options, customLabel],
+        options,
         timeout
       })
-      if (!response.cancelled && response.value === customLabel) {
-        response = await this.requestHostUi({
-          method: 'input',
-          title: '请输入自定义回答',
-          message: question,
-          timeout
-        })
-      }
     }
 
     const answer = typeof response.value === 'string' && response.value.trim()

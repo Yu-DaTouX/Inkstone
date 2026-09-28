@@ -1153,21 +1153,31 @@
 /* ══════════════════════════════════════════════════════════════
    问题面板（方案第 6 节）
 
-   非模态：贴在输入区上方，不遮罩、不圈定焦点 ——
-   用户要能一边看历史一边回答。收起 = 保留队列与草稿，不等于取消。
+   非模态：仍然不遮罩、不圈定焦点 —— 用户要能一边看历史一边回答。
+   但它是**浮层**（用户 2026-09-27 要求，参考 Codex）：绝对定位在输入框
+   上方，不占文档流。以前它是流内的一块，问题一来消息流就被顶掉一截，
+   输入框也跟着往下跑。
+   收起 = 保留队列与草稿，不等于取消。
    ══════════════════════════════════════════════════════════════ */
+/* 浮层的定位父元素：把问题面板与输入框包成一层，面板就能“相对输入框”定位 */
+.composer-stack {
+  position: relative;
+}
+
 .qpanel {
-  margin: 0 0 3px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* 贴着输入框上沿向上生长：宽度与输入框对齐，高度随内容（超出内滚） */
+  bottom: calc(100% + var(--sp-2));
+  z-index: 2;
   border: 1px solid var(--accent-line);
   border-radius: var(--r-md);
   background: var(--bg-1);
-  box-shadow: none;
+  box-shadow:
+    0 2px 4px -2px rgba(0, 0, 0, 0.4),
+    0 16px 40px -12px rgba(0, 0, 0, 0.6);
   overflow: hidden;
-}
-
-.qpanel + .composer {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
 }
 
 .qpanel-head {
@@ -1230,25 +1240,6 @@
 .qpanel-page-n {
   padding: 0 2px;
   font-variant-numeric: tabular-nums;
-}
-
-/* 「或自行撰写回复」入口：虚线框，与实线选项区分开 */
-.qpanel-custom-open {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  text-align: left;
-  padding: 6px var(--sp-3);
-  border-radius: var(--r-sm);
-  border: 1px dashed var(--border);
-  background: transparent;
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-}
-
-.qpanel-custom-open:hover:not(:disabled) {
-  color: var(--fg);
-  border-color: var(--accent-line);
 }
 
 /*
@@ -1361,7 +1352,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  max-height: min(28vh, 160px);
+  /* 浮层可以高一点：它不再挤消息区，超出的部分内部滚动 */
+  max-height: min(50vh, 320px);
   overflow-y: auto;
   padding: 0 var(--sp-3) var(--sp-2);
   border-top: 1px solid var(--border-soft);
@@ -1376,16 +1368,14 @@
   user-select: text;
 }
 
+/*
+ * 选项：一条一行（参考图：序号 + 文本 + 右箭头）。
+ * 最多 3 条由宿主 `yan question ask` 硬校验，面板这层不再截断。
+ */
 .qpanel-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 5px;
-}
-
-@media (max-width: 520px) {
-  .qpanel-options {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .qpanel-option {
