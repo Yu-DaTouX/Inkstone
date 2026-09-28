@@ -129,7 +129,7 @@ export function AuthTab() {
             {t('auth.summary', { ready: readyCount, total: (list ?? []).length })}
           </div>
         </div>
-        <button className="seg-btn" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
+        <button className="btn sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
           <Icon name="refresh" size={12} className={checking ? 'spin' : ''} />
           <span>{checking ? t('auth.checking') : t('auth.recheck')}</span>
         </button>
@@ -171,7 +171,7 @@ export function AuthTab() {
           </div>
 
           {p.status === 'ready' ? (
-            <button className="seg-btn" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
+            <button className="btn sm" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
               {t('auth.signOut')}
             </button>
           ) : p.inAppLogin ? (
@@ -188,7 +188,7 @@ export function AuthTab() {
                     <span>{t('auth.loginWaiting')}</span>
                   </span>
                   <button
-                    className="seg-btn"
+                    className="btn sm"
                     data-testid="auth-login-cancel"
                     onClick={() => void window.yan.codexLoginCancel()}
                   >
@@ -198,7 +198,7 @@ export function AuthTab() {
               ) : (
                 <>
                   <button
-                    className="seg-btn sel"
+                    className="btn sm primary"
                     data-testid={`auth-login-${p.id}`}
                     disabled={busy}
                     onClick={() => void loginCodex()}
@@ -264,17 +264,17 @@ export function AuthTab() {
                 }}
                 data-testid={`auth-input-${p.id}`}
               />
-              <button className="seg-btn sel" onClick={() => void save()} disabled={busy || !draft.trim()}>
+              <button className="btn sm primary" onClick={() => void save()} disabled={busy || !draft.trim()}>
                 {t('auth.save')}
               </button>
-              <button className="seg-btn" onClick={() => setEditing(null)}>
+              <button className="btn sm" onClick={() => setEditing(null)}>
                 {t('ui.cancel')}
               </button>
             </div>
           ) : (
             <div className="auth-actions">
               <button
-                className="seg-btn"
+                className="btn sm"
                 onClick={() => {
                   setEditing(p.id)
                   setDraft('')
@@ -285,7 +285,7 @@ export function AuthTab() {
                 {p.status === 'ready' ? t('auth.replace') : t('auth.setKey')}
               </button>
               {p.status === 'ready' ? (
-                <button className="seg-btn" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
+                <button className="btn sm" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
                   {t('auth.signOut')}
                 </button>
               ) : null}

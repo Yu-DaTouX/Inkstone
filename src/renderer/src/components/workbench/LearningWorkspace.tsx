@@ -266,7 +266,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
 
         <div className="wb-learn-ws-acts" data-testid="space-learn-actions">
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-act-simpler"
             disabled={!unit}
             onClick={() => void ask('这一段再讲简单一点，用更直白的话。')}
@@ -274,7 +274,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
             {t('space.tutor.actSimpler')}
           </button>
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-act-example"
             disabled={!unit}
             onClick={() => void ask('换一个例子讲这一段。')}
@@ -282,7 +282,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
             {t('space.tutor.actExample')}
           </button>
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-act-hint"
             disabled={!waiting}
             title={waiting ? '' : t('space.tutor.needStudy')}
@@ -291,7 +291,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
             {t('space.tutor.actHint')}
           </button>
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-act-reveal"
             disabled={!unit}
             onClick={() => void ask('直接给我完整解释。')}
@@ -299,7 +299,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
             {t('space.tutor.actReveal')}
           </button>
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-act-skip"
             disabled={!nextUnit}
             title={nextUnit ? '' : t('space.tutor.chatSame')}
@@ -332,7 +332,7 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
             <div className="wb-learn-ws-answer-foot">
               <span className="wb-card-meta">{t('space.tutor.answerNote')}</span>
               <button
-                className="wb-learn-ws-submit"
+                className="btn sm primary wb-learn-ws-submit"
                 data-testid="space-learn-answer-send"
                 disabled={!answer.trim() || sending}
                 onClick={() => void submitAnswer()}
@@ -357,13 +357,13 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
           {session && unit ? (
             <div className="wb-learn-ws-material-actions">
               <button
-                className="wb-learn-ws-act"
+                className="btn sm wb-learn-ws-act"
                 data-testid="space-learn-pause"
                 onClick={() => void (session.paused ? resumeStudy() : pauseStudy())}
               >
                 {session.paused ? t('space.tutor.resume') : t('space.tutor.pause')}
               </button>
-              <button className="wb-learn-ws-act" data-testid="space-learn-stop" onClick={() => void stopStudy()}>
+              <button className="btn sm wb-learn-ws-act" data-testid="space-learn-stop" onClick={() => void stopStudy()}>
                 {t('space.tutor.stop')}
               </button>
             </div>
@@ -408,28 +408,28 @@ export function LearningWorkspace({ spaceId }: Props): React.JSX.Element {
                 </span>
                 <div className="wb-learn-ws-sel-acts">
                   <button
-                    className="wb-learn-ws-act"
+                    className="btn sm wb-learn-ws-act"
                     data-testid="space-learn-sel-explain"
                     onClick={() => void askWithSelection('解释这一段。')}
                   >
                     {t('space.tutor.selExplain')}
                   </button>
                   <button
-                    className="wb-learn-ws-act"
+                    className="btn sm wb-learn-ws-act"
                     data-testid="space-learn-sel-example"
                     onClick={() => void askWithSelection('就这一段举个例子。')}
                   >
                     {t('space.tutor.selExample')}
                   </button>
                   <button
-                    className="wb-learn-ws-act"
+                    className="btn sm wb-learn-ws-act"
                     data-testid="space-learn-sel-ask"
                     onClick={() => void askWithSelection('关于这一段，我有个问题：')}
                   >
                     {t('space.tutor.selAsk')}
                   </button>
                   <button
-                    className="wb-learn-ws-act"
+                    className="btn sm wb-learn-ws-act"
                     data-testid="space-learn-sel-exercise"
                     onClick={() => void askWithSelection('就这一段出一道题给我练。')}
                   >

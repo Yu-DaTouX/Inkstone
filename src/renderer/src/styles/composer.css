@@ -425,17 +425,23 @@
 }
 
 /* 44. 思考强度档位（替换掉出问题的原生滑块） */
+/* 档位条：外观与统一分段控件（ui.css 的 .seg）一致，但铺满菜单宽度 */
 .mt-stops {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
 }
 
 .mt-stop {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 3px 4px;
-  border: 1px solid var(--border);
+  height: calc(var(--ctl-h-sm) - 4px);
+  padding: 0 4px;
+  border: 0;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -450,15 +456,15 @@
 }
 
 .mt-stop:hover:not(:disabled) {
-  border-color: var(--border-str);
-  color: var(--fg-dim);
+  background: var(--bg-2);
+  color: var(--fg);
 }
 
-/* 当前档：实心强调色 —— 一眼看出在哪一档 */
+/* 当前档：抬高一级的底 + 正文色（与所有分段控件同一种选中表达） */
 .mt-stop.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--bg-3);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
 }
 
 .mt-stop:disabled {
@@ -1036,11 +1042,6 @@
   border-top: 1px solid var(--border-soft);
 }
 
-.review .btn {
-  border-radius: var(--r-full);
-  border-color: rgba(224, 175, 104, 0.3);
-}
-
 .tok {
   display: inline-flex;
   align-items: baseline;
@@ -1290,7 +1291,7 @@
 
 .qpanel-timer:hover {
   background: var(--bg-3);
-  border-color: var(--line);
+  border-color: var(--border);
   color: var(--fg);
 }
 
@@ -1469,18 +1470,6 @@
 
 .qpanel-foot .spacer {
   flex: 1;
-}
-
-/* 主操作按钮：与 .btn 同尺寸，只换底色 */
-.btn.primary {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--fg);
-}
-
-.btn.primary:hover {
-  background: var(--accent);
-  color: var(--bg-0);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1718,38 +1707,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sa-act-btn {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-
-.sa-act-btn:hover {
-  border-color: var(--accent-line);
-  color: var(--fg);
-}
-
-.sa-act-btn.primary {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--fg);
-}
-
-.sa-act-btn:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
-}
-
-.sa-act-btn.danger:hover {
-  border-color: var(--err);
-  color: var(--err);
-}
-
 /* 子代理详情属于主工作区，不再占用右侧工具栏的文件/工具预览槽。 */
 .sp-main {
   flex: 0 1 auto;
@@ -1781,7 +1738,7 @@
   margin: 0 auto 6px;
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--r-sm);
   background: var(--bg-1);
   font-size: 12px;
   color: var(--fg-dim);
@@ -1885,7 +1842,7 @@
   min-height: 24px;
   padding: 0 8px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg-mute);
   font-size: 11px;

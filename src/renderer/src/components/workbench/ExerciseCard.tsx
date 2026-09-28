@@ -169,7 +169,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
           {t('space.exercise.count', { n: exercises.length })}
         </span>
         <button
-          className="wb-learn-ws-act"
+          className="btn sm wb-learn-ws-act"
           data-testid="space-exercise-draft"
           disabled={busy}
           onClick={() => {
@@ -322,7 +322,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
 
               <div className="wb-ex-acts">
                 <button
-                  className="wb-learn-ws-act"
+                  className="btn sm wb-learn-ws-act"
                   data-testid="space-exercise-hint"
                   disabled={!nextHint()}
                   onClick={() => {
@@ -333,7 +333,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
                   {t('space.exercise.hintBtn')}
                 </button>
                 <button
-                  className="wb-learn-ws-act"
+                  className="btn sm wb-learn-ws-act"
                   data-testid="space-exercise-solution"
                   disabled={!exercise.hasSolution || !!solution}
                   onClick={() => {
@@ -343,7 +343,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
                   {t('space.exercise.solutionBtn')}
                 </button>
                 <button
-                  className="wb-learn-ws-submit"
+                  className="btn sm primary wb-learn-ws-submit"
                   data-testid="space-exercise-submit"
                   disabled={!canSubmit || busy}
                   onClick={() => void doSubmit()}
@@ -389,7 +389,7 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
                   <p className="wb-ex-fb-line">{result.nextPractice}</p>
                   {result.needsModel ? (
                     <button
-                      className="wb-learn-ws-act"
+                      className="btn sm wb-learn-ws-act"
                       data-testid="space-exercise-ask-model"
                       onClick={() => onAsk(t('space.exercise.askModel', { prompt: exercise.prompt.slice(0, 80) }))}
                     >
@@ -411,14 +411,14 @@ export function ExerciseCard({ courseId, unitId, onAsk }: Props): React.JSX.Elem
                         />
                         <div className="wb-ex-acts">
                           <button
-                            className="wb-learn-ws-submit"
+                            className="btn sm primary wb-learn-ws-submit"
                             data-testid="space-exercise-correction-send"
                             disabled={!correction.trim()}
                             onClick={() => void doCorrect()}
                           >
                             {t('space.exercise.correctionSend')}
                           </button>
-                          <button className="wb-learn-ws-act" onClick={() => setCorrecting(false)}>
+                          <button className="btn sm wb-learn-ws-act" onClick={() => setCorrecting(false)}>
                             {t('space.exercise.cancel')}
                           </button>
                         </div>

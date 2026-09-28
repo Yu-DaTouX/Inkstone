@@ -79,10 +79,10 @@ export function AudioCard({ courseId, sourceId, version }: { courseId?: string; 
         {audioBoundaryText()}
       </p>
       <div className="wb-audio-actions">
-        <button className="wb-btn" data-testid="space-audio-plan-transcribe" onClick={() => void loadPlan('transcribe')}>
+        <button className="btn wb-btn" data-testid="space-audio-plan-transcribe" onClick={() => void loadPlan('transcribe')}>
           {t('space.audio.howTranscribe')}
         </button>
-        <button className="wb-btn" data-testid="space-audio-plan-read" onClick={() => void loadPlan('read-aloud')}>
+        <button className="btn wb-btn" data-testid="space-audio-plan-read" onClick={() => void loadPlan('read-aloud')}>
           {t('space.audio.howRead')}
         </button>
       </div>
@@ -92,7 +92,7 @@ export function AudioCard({ courseId, sourceId, version }: { courseId?: string; 
             {plan.text}
           </pre>
           <button
-            className="wb-btn"
+            className="btn wb-btn"
             data-testid="space-audio-send"
             onClick={() => {
               insertIntoComposer(plan.text)
@@ -115,7 +115,7 @@ export function AudioCard({ courseId, sourceId, version }: { courseId?: string; 
         onChange={(event) => setText(event.target.value)}
       />
       <div className="wb-audio-actions">
-        <button className="wb-btn" data-testid="space-audio-register" onClick={() => void register()}>
+        <button className="btn wb-btn" data-testid="space-audio-register" onClick={() => void register()}>
           {t('space.audio.register')}
         </button>
         {sourceId ? (

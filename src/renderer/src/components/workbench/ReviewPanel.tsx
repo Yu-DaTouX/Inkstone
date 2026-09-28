@@ -66,7 +66,7 @@ export function ReviewPanel({ courseId }: Props): React.JSX.Element {
         <>
           <div className="wb-memory-acts">
             <button
-              className="wb-memory-act"
+              className="btn sm wb-memory-act"
               data-testid="space-learn-review-quick"
               onClick={() => void planReviews(courseId, 'quick')}
             >
@@ -85,7 +85,7 @@ export function ReviewPanel({ courseId }: Props): React.JSX.Element {
                   <span className="wb-memory-plan-text">{entry.item.prompt}</span>
                   {entry.exerciseId ? (
                     <button
-                      className="wb-memory-act"
+                      className="btn sm wb-memory-act"
                       data-testid={`space-learn-review-plan-open-${index}`}
                       onClick={() => void openExercise(entry.exerciseId as string)}
                     >
@@ -124,21 +124,21 @@ export function ReviewPanel({ courseId }: Props): React.JSX.Element {
                 </div>
                 <div className="wb-memory-acts">
                   <button
-                    className="wb-memory-act"
+                    className="btn sm wb-memory-act"
                     data-testid={`space-learn-review-tomorrow-${item.id}`}
                     onClick={() => void reschedule(item.id, { dueAt: now + DAY_MS })}
                   >
                     {t('space.review.tomorrow')}
                   </button>
                   <button
-                    className="wb-memory-act"
+                    className="btn sm wb-memory-act"
                     data-testid={`space-learn-review-now-${item.id}`}
                     onClick={() => void reschedule(item.id, { dueAt: now, priority: 'high' })}
                   >
                     {t('space.review.now')}
                   </button>
                   <button
-                    className="wb-memory-act"
+                    className="btn sm wb-memory-act"
                     data-testid={`space-learn-review-dismiss-${item.id}`}
                     onClick={() => void dismiss(item.id, courseId)}
                   >

@@ -241,7 +241,7 @@ export function TerminalSurface() {
           <div>{t('term.unavailable')}</div>
           {error ? <code data-testid="terminal-error">{error}</code> : null}
         </div>
-        <button type="button" className="rp-btn" onClick={() => void refresh()} data-testid="terminal-retry">
+        <button type="button" className="btn sm rp-btn" onClick={() => void refresh()} data-testid="terminal-retry">
           {t('term.retry')}
         </button>
       </div>
@@ -260,12 +260,12 @@ export function TerminalSurface() {
           </span>
         ) : null}
         <span className="spacer" />
-        <button type="button" className="rp-btn" onClick={() => void newTerminal()} data-testid="terminal-new">
+        <button type="button" className="btn sm rp-btn" onClick={() => void newTerminal()} data-testid="terminal-new">
           <Icon name="plus" size={12} />
           {t('term.new')}
         </button>
         {active ? (
-          <button type="button" className="rp-btn" onClick={() => void closeActive()} data-testid="terminal-close">
+          <button type="button" className="btn sm rp-btn" onClick={() => void closeActive()} data-testid="terminal-close">
             {t('term.close')}
           </button>
         ) : null}

@@ -33,6 +33,9 @@ export type SettingsTab =
   | 'status'
   | 'about'
 
+/** 导航顺序（与下方 tabs 的顺序一致），供打开时定位当前页的导航项 */
+const tabIds: SettingsTab[] = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'about']
+
 /**
  * 设置面板。
  *
@@ -90,6 +93,20 @@ export function Settings({
    *    整个陷阱（含初始焦点）静默失效。
    */
   useFocusTrap(panel, presence.mounted, isTop)
+  /*
+   * 打开设置时焦点落在当前页的导航项上，而不是列表第一项。
+   * 必须排在 useFocusTrap 之后：陷阱先记下「打开它的元素」（关闭时还焦点），
+   * 这里再移动焦点；用 autoFocus 会抢在记录之前，关闭后焦点落到 body。
+   */
+  useEffect(() => {
+    if (!presence.mounted || !open) return
+    const id = window.setTimeout(() => {
+      const index = tabIds.indexOf(tab)
+      tabRefs.current[index]?.focus()
+    }, 0)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presence.mounted, open])
 
   if (!presence.mounted) return null
 
@@ -99,7 +116,7 @@ export function Settings({
    * 不再借用「能力」的 sparkles / 「上下文」的 layers（与 SECTION_ICON 同一条规则）。
    */
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
-    { id: 'auth', label: t('set.auth'), icon: 'tag' },
+    { id: 'auth', label: t('set.auth'), icon: 'key' },
     { id: 'appearance', label: t('set.appearance'), icon: 'moon' },
     { id: 'workspace', label: t('set.workspace'), icon: 'group' },
     { id: 'context', label: t('set.context'), icon: 'layers' },
@@ -189,6 +206,8 @@ export function Settings({
           role="tabpanel"
           aria-labelledby={`settings-tab-${tab}`}
         >
+          {/* 页标题：导航里的选中项之外，内容区也要说清「这是哪一页」 */}
+          <h2 className="settings-page-title">{tabs.find((x) => x.id === tab)?.label}</h2>
           {tab === 'auth' ? (
             <AuthTab />
           ) : tab === 'appearance' ? (

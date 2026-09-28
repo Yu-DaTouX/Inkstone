@@ -1,4 +1,5 @@
 import { Icon } from '../../icons/Icon'
+import { BrandMark } from './BrandMark'
 import { useI18n } from '../../i18n'
 
 export type Theme = 'dark' | 'light'
@@ -74,7 +75,9 @@ export function TitleBar({
         >
           <Icon name="sidebar-left" size={14} />
         </button>
-        <span className="tb-brand">
+        {/* 品牌只在这里出现一次：左栏收起时它仍然可见 */}
+        <span className="tb-brand" data-testid="app-brand">
+          <BrandMark size={16} />
           <span className="tb-name">砚</span>
         </span>
         {/*

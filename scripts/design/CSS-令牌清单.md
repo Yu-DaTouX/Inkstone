@@ -5,11 +5,14 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　85 个变量（其中 1 个被重复定义）
+## `:root`　91 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
 | `--ctl-disabled-opacity` | `0.5` | **tokens**: 0.5 |
+| `--ctl-h` | `28px` | **tokens**: 28px |
+| `--ctl-h-lg` | `32px` | **tokens**: 32px |
+| `--ctl-h-sm` | `24px` | **tokens**: 24px |
 | `--d-message-gap` | `32px` | **tokens**: 32px |
 | `--d-row-gap` | `3px` | **tokens**: 3px |
 | `--d-section-gap` | `3px` | **tokens**: 3px |
@@ -61,6 +64,9 @@
 | `--fs-lg` | `15px` | **tokens**: 15px |
 | `--fs-sm` | `12px` | **tokens**: 12px |
 | `--fs-xs` | `11px` | **tokens**: 11px |
+| `--fw-medium` | `500` | **tokens**: 500 |
+| `--fw-regular` | `400` | **tokens**: 400 |
+| `--fw-strong` | `600` | **tokens**: 600 |
 | `--h-titlebar` | `40px` | **tokens**: 40px |
 | `--lh-base` | `1.55` | **tokens**: 1.55 |
 | `--lh-body` | `1.7` | **tokens**: 1.7 |
@@ -95,7 +101,7 @@
 | `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | redesign: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
 | `--w-stream` | `800px` | **tokens**: 800px |
 
-## `html[data-theme='dark']`　27 个变量
+## `html[data-theme='dark']`　29 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -124,10 +130,12 @@
 | `--magenta` | `#c084fc` | **tokens**: #c084fc |
 | `--ok` | `#34d399` | **tokens**: #34d399 |
 | `--ok-soft` | `rgba(52, 211, 153, 0.16)` | **tokens**: rgba(52, 211, 153, 0.16) |
+| `--on-accent` | `#10131f` | **tokens**: #10131f |
+| `--shadow-pop` | `0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2)` | **tokens**: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) |
 | `--warn` | `#fbbf24` | **tokens**: #fbbf24 |
 | `--warn-soft` | `rgba(251, 191, 36, 0.16)` | **tokens**: rgba(251, 191, 36, 0.16) |
 
-## `html[data-theme='light']`　34 个变量
+## `html[data-theme='light']`　36 个变量
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -156,6 +164,8 @@
 | `--magenta` | `#9333ea` | **tokens**: #9333ea |
 | `--ok` | `#059669` | **tokens**: #059669 |
 | `--ok-soft` | `rgba(5, 150, 105, 0.1)` | **tokens**: rgba(5, 150, 105, 0.1) |
+| `--on-accent` | `#ffffff` | **tokens**: #ffffff |
+| `--shadow-pop` | `0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04)` | **tokens**: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) |
 | `--think-high` | `#7a5f8c` | **motion**: #7a5f8c |
 | `--think-low` | `#3f6c92` | **motion**: #3f6c92 |
 | `--think-max` | `#a300a3` | **motion**: #a300a3 |
@@ -190,7 +200,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**153**
+- 变量总数（含各主题）：**163**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。

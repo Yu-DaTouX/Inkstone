@@ -122,9 +122,10 @@
     ok(!/^砚|标准档|标准/.test(head.trim()), `正文开头直接是内容：「${head.replace(/\s+/g, ' ').trim()}」`)
   }
   {
-    /* 对照：用户回合的「你」仍然保留（不是把标签一律删掉） */
-    const label = turn('tf-u1')?.querySelector('.msg-label')?.textContent ?? ''
-    ok(label.trim().length > 0 && !label.includes('步'), `用户回合仍保留身份标签：「${label.trim()}」`)
+    /* 用户回合：身份由右对齐气泡表达，不再有「你」标签；时间与分支合并在气泡下方一行 */
+    ok(!turn('tf-u1')?.querySelector('.msg-label'), '用户回合顶部没有身份标签行')
+    const meta = turn('tf-u1')?.querySelector('.msg-meta')
+    ok(!!meta?.querySelector('.msg-act') && !!meta?.querySelector('.turn-time'), '用户回合的时间与分支在同一行')
   }
 
   /* ---- 2. 底部：整轮用时只出现一次，且在正文之后 ---- */

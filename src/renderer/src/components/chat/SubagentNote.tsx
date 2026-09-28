@@ -124,7 +124,7 @@ export function SubagentNote() {
             <span className="spacer" />
             {run.diff?.patchPath ? (
               <button
-                className="sa-act-btn"
+                className="btn sm sa-act-btn"
                 onClick={() => void window.yan.openPath(run.diff!.patchPath!)}
                 data-testid={`subagent-note-diff-${run.id}`}
               >
@@ -133,7 +133,7 @@ export function SubagentNote() {
             ) : null}
             {running ? (
               <button
-                className="sa-act-btn danger"
+                className="btn sm sa-act-btn danger"
                 onClick={() => void stopSubagent(run.id)}
                 data-testid={`subagent-note-stop-${run.id}`}
               >
@@ -143,14 +143,14 @@ export function SubagentNote() {
             {!running && (run.review === 'pending' || run.review === 'conflict') ? (
               <>
                 <button
-                  className="sa-act-btn"
+                  className="btn sm sa-act-btn"
                   onClick={() => void mergeSubagent(run.id)}
                   data-testid={`subagent-note-merge-${run.id}`}
                 >
                   {t('sa.merge')}
                 </button>
                 <button
-                  className="sa-act-btn danger"
+                  className="btn sm sa-act-btn danger"
                   onClick={() => void discardSubagent(run.id)}
                   data-testid={`subagent-note-discard-${run.id}`}
                 >

@@ -32,6 +32,8 @@ import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/setti
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
 import { useStore } from './state/store'
 import './styles/tokens.css'
+/* 统一控件层：按钮 / 分段 / 开关 / 徽标 / 空状态的唯一外观来源（模块层只管版面） */
+import './styles/ui.css'
 import './styles/app.css'
 import './styles/stage1.css'
 import './styles/redesign.css'

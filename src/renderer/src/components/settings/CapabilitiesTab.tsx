@@ -198,7 +198,7 @@ export function CapabilitiesTab(): React.JSX.Element {
           ) : null}
         </div>
         <div className="set-ctl">
-          <button className="set-btn" data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
+          <button className="btn" data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
             {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
           </button>
         </div>

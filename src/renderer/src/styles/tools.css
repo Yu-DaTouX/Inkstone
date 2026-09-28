@@ -513,30 +513,6 @@
   margin: 2px 0 1px;
 }
 
-/* 文字按钮（刷新额度 / 设置月预算）—— 与 .rp-mini 区分开：
-   .rp-mini 是 18×18 的图标按钮，文字塞进去会竖排换行并把相邻行顶开。 */
-.rp-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  width: auto;
-  height: auto;
-}
-
-.rp-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.rp-btn:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
-}
-
 .rp-context-summary {
   display: flex;
   align-items: baseline;
@@ -702,23 +678,34 @@
   margin-top: 2px;
 }
 
+/* 一个按钮、两段显示：外观与统一分段控件（ui.css 的 .seg.sm）一致 */
 .rp-switch {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  overflow: hidden;
   flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
 }
 
 .rp-switch > span:not(.rp-switch-tip) {
-  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--ctl-h-sm) - 6px);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-xs);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .rp-switch > span.on {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
 }
 
 .rp-switch-tip {
@@ -1351,7 +1338,6 @@
 }
 
 /* 工具库里每行的抓取把手 */
-
 
 .tl-row {
   display: flex;
@@ -2371,36 +2357,31 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 /*
- * 分区 = 一张卡（2026-09-25 改版）。
+ * 分区 = 检查器里的一组（v0.4）。
  *
- * 上一版是扁平列表：分区之间只靠一条 border-bottom 分隔、标题 12px、
- * 内容靠左内缩对齐箭头槽。现在是卡片 —— 自己收边，标题行给
- * 「图标 + 15px 半粗标题 + 右侧摘要」，内容缩进归卡片内边距管。
+ * 右栏是对话的旁注，不是仪表盘：分区之间只用一条细分隔线，不再每块一张
+ * 圆角卡片；标题 12px 半粗、次级前景色，右侧摘要（环形 + 数字）保留。
+ * 上下内边距相等，收起态的标题仍在行内居中。
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec {
   min-width: 0;
-  /*
-   * 上下内边距必须相等（用户 2026-09-25：收起态的标题看着不在卡片中间）。
-   * 之前是 1px 上 / 8px 下 —— 那 8px 本是给展开内容留的底边，
-   * 卡片一收起就变成「标题压在卡片上半部」。底边留白改归 .rp-sec-body-inner。
-   */
-  padding: 1px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--bg-1);
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-/* 卡片之间留出可分辨的缝（原来是靠 border-bottom 分隔、间距为 0） */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-slot + .rp-slot {
-  margin-top: 8px;
+  margin-top: 0;
+  border-top: 1px solid var(--border-soft);
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec + .rp-sec {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-row {
-  min-height: 44px;
+  min-height: 40px;
   align-items: center;
 }
 
@@ -2425,7 +2406,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
    * 圆环孤零零在第二行，看起来像布局坏了。改成不换行，放宽不下时
    * 由摘要自己收缩/截断（见 `.rp-header-usage`）。
    */
-  min-height: 44px;
+  min-height: 40px;
   height: auto;
   flex-wrap: nowrap;
   /*
@@ -2442,9 +2423,10 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
    * 右栏拖窄时这三四个字很占地方，而标题旁边还有环形 + 数值。
    * 摘要里的 `.rp-header-values` 自己有 `--fs-sm`，不受这里影响。
    */
-  font-size: var(--fs-base);
-  font-weight: 600;
-  letter-spacing: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: 0.01em;
 }
 
 /* 卡片标题前的图标（没给 icon 的分区仍用折叠箭头，见 ToolSection） */
@@ -2536,12 +2518,11 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-width: 0;
 }
 
-/* 卡内内容：标题下的分隔线在这里（放 .rp-sec-body 上会在收起态剩一条空线） */
+/* 分区内容：紧跟标题，不再画标题下的分隔线（分区之间已有一条） */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body-inner {
   gap: 6px;
-  /* 上下都要：下面那 8px 是卡片的底边留白（.rp-sec 的 padding 已对称） */
-  padding: 8px 0;
-  border-top: 1px solid var(--border-soft);
+  padding: 0 0 12px;
+  border-top: 0;
 }
 
 /* Codex 风格的右栏工作区启动器：紧凑、靠右，不额外占一整行。 */
@@ -2716,7 +2697,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-pursue {
   flex: none;
   padding: 2px 6px;
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   color: var(--accent);
   background: var(--accent-soft);
   font-size: var(--fs-xs);
@@ -3465,7 +3446,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-height: 26px;
   padding: 0 9px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg-mute);
   font-size: 12px;
@@ -3967,7 +3948,7 @@ body.tile-dragging .rp-float-head {
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
   color: var(--fg-dim);
   font: inherit;

@@ -187,7 +187,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         {bulkKind && expected ? (
           <button
             type="button"
-            className="review-act"
+            className="btn icon sm review-act"
             title={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
             aria-label={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
             data-testid={bulkKind === 'stage-all' ? 'review-stage-all' : 'review-unstage-all'}
@@ -202,7 +202,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
 
         <button
           type="button"
-          className="review-act"
+          className="btn icon sm review-act"
           title={t('review.markAllViewed')}
           aria-label={t('review.markAllViewed')}
           data-testid="review-mark-all"
@@ -213,7 +213,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         </button>
         <button
           type="button"
-          className={`review-act ${sidePrefs.open ? 'on' : ''}`}
+          className={`btn icon sm review-act ${sidePrefs.open ? 'on' : ''}`}
           title={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
           aria-label={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
           aria-pressed={sidePrefs.open}
@@ -226,7 +226,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         </button>
         <button
           type="button"
-          className="review-act"
+          className="btn icon sm review-act"
           title={t('review.refresh')}
           aria-label={t('review.refresh')}
           data-testid="review-refresh"
@@ -239,7 +239,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         </button>
         <button
           type="button"
-          className="review-act"
+          className="btn icon sm review-act"
           title={t('review.close')}
           aria-label={t('review.close')}
           data-testid="review-close"
@@ -279,7 +279,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
                 <span className="review-side-title">{t('review.side')}</span>
                 <button
                   type="button"
-                  className="review-act"
+                  className="btn icon sm review-act"
                   title={t('review.hideSide')}
                   aria-label={t('review.hideSide')}
                   data-testid="review-side-hide"
@@ -580,7 +580,7 @@ function FileCard({
         {canStage && hasUnstaged ? (
           <button
             type="button"
-            className="rcard-stage"
+            className="btn sm rcard-stage"
             data-testid="review-stage"
             disabled={busy}
             title={t('git.stageFile')}
@@ -593,7 +593,7 @@ function FileCard({
         {canStage && hasStaged ? (
           <button
             type="button"
-            className="rcard-stage off"
+            className="btn sm ghost rcard-stage off"
             data-testid="review-unstage"
             disabled={busy}
             title={t('git.unstageFile')}
@@ -606,7 +606,7 @@ function FileCard({
 
         <button
           type="button"
-          className={`rcard-viewed ${viewed ? 'on' : ''}`}
+          className={`btn sm rcard-viewed ${viewed ? 'on' : ''}`}
           data-testid="review-viewed"
           title={viewed ? t('review.viewedOn') : t('review.viewed')}
           onClick={() => onViewed(!viewed)}

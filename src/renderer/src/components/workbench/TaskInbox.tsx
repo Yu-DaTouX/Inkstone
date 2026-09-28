@@ -47,6 +47,14 @@ const STATUS_LABEL: Record<TaskStatus, MessageKey> = {
   dismissed: 'inbox.status.dismissed'
 }
 
+/* 要人处理的四档用统一徽标的语义色区分；已完成 / 已忽略保持中性 */
+const STATUS_TONE: Partial<Record<TaskStatus, string>> = {
+  needs_review: 'accent',
+  waiting_user: 'warn',
+  failed: 'err',
+  running: 'ok'
+}
+
 export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
@@ -111,7 +119,7 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
           {page ? <b className="wb-inbox-total">{page.total}</b> : null}
         </div>
         <button
-          className="wb-inbox-refresh"
+          className="btn sm wb-inbox-refresh"
           onClick={() => void load(limit, filter)}
           disabled={loading}
           data-testid="inbox-refresh"
@@ -125,9 +133,10 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
       <p className="wb-inbox-note">{t('inbox.subtitle')}</p>
 
       {/* 状态筛选：只显示**真的有**的档（计数为 0 的档画出来只是噪音） */}
-      <div className="wb-inbox-filters" role="group" aria-label={t('inbox.filter.all')}>
+      <div className="seg sm wb-inbox-filters" role="group" aria-label={t('inbox.filter.all')}>
         <button
-          className={filter === 'all' ? 'on' : ''}
+          className={`seg-btn ${filter === 'all' ? 'sel' : ''}`}
+          aria-pressed={filter === 'all'}
           onClick={() => {
             setFilter('all')
             setLimit(PAGE_SIZE)
@@ -140,7 +149,8 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
         {STATUS_ORDER.filter((s) => (counts?.[s] ?? 0) > 0).map((s) => (
           <button
             key={s}
-            className={filter === s ? 'on' : ''}
+            className={`seg-btn ${filter === s ? 'sel' : ''}`}
+            aria-pressed={filter === s}
             onClick={() => {
               setFilter(s)
               setLimit(PAGE_SIZE)
@@ -180,7 +190,7 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
           return (
             <li key={c.id} className="wb-inbox-card" data-testid="inbox-card" data-status={c.status}>
               <div className="wb-inbox-card-main">
-                <span className={`wb-inbox-badge s-${c.status}`}>
+                <span className={`ui-badge ${STATUS_TONE[c.status] ?? ''} wb-inbox-badge s-${c.status}`}>
                   {t(STATUS_LABEL[c.status])}
                   {c.approximate ? <i title={t('inbox.approximate')}>~</i> : null}
                 </span>
@@ -192,13 +202,14 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
                 <span className="wb-inbox-when">{new Date(c.updatedAt).toLocaleString()}</span>
                 <div className="wb-inbox-actions">
                   <button
+                    className="btn sm"
                     onClick={() => void open(c, path as string)}
                     disabled={!path}
                     data-testid="inbox-open"
                   >
                     {t('inbox.open')}
                   </button>
-                  <button onClick={() => void dismiss(c)} data-testid="inbox-dismiss">
+                  <button className="btn sm ghost" onClick={() => void dismiss(c)} data-testid="inbox-dismiss">
                     {t('inbox.dismiss')}
                   </button>
                 </div>
@@ -210,7 +221,7 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
 
       {page && page.total > cards.length ? (
         <button
-          className="wb-inbox-more"
+          className="btn sm wb-inbox-more"
           onClick={() => setLimit((n) => n + PAGE_SIZE)}
           disabled={loading}
           data-testid="inbox-more"

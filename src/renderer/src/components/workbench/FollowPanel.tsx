@@ -110,7 +110,7 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
               <div className="wb-follow-actions">
                 {view.watch.enabled ? (
                   <button
-                    className="wb-btn"
+                    className="btn wb-btn"
                     data-testid={`space-follow-pause-${view.watch.id}`}
                     onClick={() => void updateWatch({ id: view.watch.id, enabled: false })}
                   >
@@ -118,7 +118,7 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
                   </button>
                 ) : (
                   <button
-                    className="wb-btn primary"
+                    className="btn wb-btn primary"
                     data-testid={`space-follow-enable-${view.watch.id}`}
                     onClick={() => void updateWatch({ id: view.watch.id, enabled: true })}
                   >
@@ -126,7 +126,7 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
                   </button>
                 )}
                 <button
-                  className="wb-btn"
+                  className="btn wb-btn"
                   data-testid={`space-follow-remove-${view.watch.id}`}
                   onClick={() => void removeWatch(view.watch.id)}
                 >
@@ -185,16 +185,16 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
             onChange={(e) => setPlace(e.target.value)}
           />
           <div className="wb-follow-actions">
-            <button className="wb-btn primary" data-testid="space-follow-new-save" onClick={() => void submit()}>
+            <button className="btn wb-btn primary" data-testid="space-follow-new-save" onClick={() => void submit()}>
               {t('space.follow.save')}
             </button>
-            <button className="wb-btn" data-testid="space-follow-new-cancel" onClick={() => setDraftOpen(false)}>
+            <button className="btn wb-btn" data-testid="space-follow-new-cancel" onClick={() => setDraftOpen(false)}>
               {t('space.follow.cancel')}
             </button>
           </div>
         </div>
       ) : (
-        <button className="wb-btn wb-follow-add" data-testid="space-follow-new" onClick={() => setDraftOpen(true)}>
+        <button className="btn wb-btn wb-follow-add" data-testid="space-follow-new" onClick={() => setDraftOpen(true)}>
           <Icon name="plus" size={12} />
           {t('space.follow.new')}
         </button>

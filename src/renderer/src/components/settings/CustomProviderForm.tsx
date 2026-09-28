@@ -114,7 +114,7 @@ export function CustomProviderForm() {
           <span className="spacer" />
           <button
             type="button"
-            className="set-btn"
+            className="btn"
             data-testid={`custom-api-edit-${item.id}`}
             onClick={() =>
               setDraft({
@@ -129,7 +129,7 @@ export function CustomProviderForm() {
           </button>
           <button
             type="button"
-            className="set-btn"
+            className="btn"
             data-testid={`custom-api-test-${item.id}`}
             aria-expanded={testId === item.id}
             onClick={() => {
@@ -141,7 +141,7 @@ export function CustomProviderForm() {
           </button>
           <button
             type="button"
-            className="set-btn danger"
+            className="btn danger"
             data-testid={`custom-api-remove-${item.id}`}
             disabled={busy}
             onClick={() => void remove(item.id)}
@@ -241,19 +241,19 @@ export function CustomProviderForm() {
           <div className="set-row">
             <button
               type="button"
-              className="set-btn"
+              className="btn"
               data-testid="custom-api-add-model"
               onClick={() => setDraft({ ...draft, models: [...draft.models, { id: '' }] })}
             >
               <Icon name="plus" size={12} /> {t('customApi.addModel')}
             </button>
             <span className="spacer" />
-            <button type="button" className="set-btn" onClick={() => setDraft(null)}>
+            <button type="button" className="btn" onClick={() => setDraft(null)}>
               {t('customApi.cancel')}
             </button>
             <button
               type="button"
-              className="set-btn primary"
+              className="btn primary"
               disabled={busy}
               data-testid="custom-api-save"
               onClick={() => void save()}
@@ -266,7 +266,7 @@ export function CustomProviderForm() {
         <div className="set-row custom-api-add-row">
           <button
             type="button"
-            className="set-btn"
+            className="btn"
             data-testid="custom-api-add"
             onClick={() => setDraft(blank())}
           >
@@ -286,7 +286,7 @@ export function CustomProviderForm() {
                 <div className="set-row custom-api-test-actions">
                   <button
                     type="button"
-                    className="set-btn"
+                    className="btn"
                     disabled={!!testing}
                     data-testid={`custom-api-test-endpoint-${item.id}`}
                     onClick={() => void runTest(item.id, 'endpoint', modelId)}
@@ -295,7 +295,7 @@ export function CustomProviderForm() {
                   </button>
                   <button
                     type="button"
-                    className="set-btn"
+                    className="btn"
                     disabled={!!testing}
                     data-testid={`custom-api-test-billable-${item.id}`}
                     onClick={() => void runTest(item.id, 'billable', modelId)}

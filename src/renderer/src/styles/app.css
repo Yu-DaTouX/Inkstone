@@ -45,32 +45,6 @@
   gap: var(--sp-1);
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.btn:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-.btn.icon {
-  padding: 0 5px;
-}
-.btn.danger:hover {
-  background: var(--err-soft);
-  color: var(--err);
-}
-
 /* 布局列数在 redesign.css 里统一管（三列：左栏 / 中栏 / 右栏）。
    这里只保留最低限度的骨架，避免两处规则打架。 */
 .workspace {

@@ -101,7 +101,7 @@ export function ConceptPanel({ courseId, concepts, onAddConcept, onRemoveConcept
             }}
           />
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-concept-add"
             disabled={!conceptName.trim()}
             onClick={submitConcept}
@@ -189,7 +189,7 @@ export function ConceptPanel({ courseId, concepts, onAddConcept, onRemoveConcept
         <div className="wb-memory-head">
           <span className="wb-memory-title">{t('space.memory.notesHead')}</span>
           <button
-            className="wb-learn-ws-act"
+            className="btn sm wb-learn-ws-act"
             data-testid="space-learn-note-new"
             onClick={() => setDraft({ ...EMPTY_DRAFT })}
           >
@@ -225,14 +225,14 @@ export function ConceptPanel({ courseId, concepts, onAddConcept, onRemoveConcept
             />
             <div className="wb-memory-acts">
               <button
-                className="wb-learn-ws-submit"
+                className="btn sm primary wb-learn-ws-submit"
                 data-testid="space-learn-note-save"
                 disabled={!draft.body.trim()}
                 onClick={() => void submitNote()}
               >
                 {t('space.memory.noteSave')}
               </button>
-              <button className="wb-learn-ws-act" data-testid="space-learn-note-cancel" onClick={() => setDraft(null)}>
+              <button className="btn sm wb-learn-ws-act" data-testid="space-learn-note-cancel" onClick={() => setDraft(null)}>
                 {t('space.memory.cancel')}
               </button>
             </div>

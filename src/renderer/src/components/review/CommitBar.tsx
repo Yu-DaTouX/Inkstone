@@ -127,7 +127,7 @@ export function CommitBar({
         />
         <button
           type="button"
-          className="commit-btn primary"
+          className="btn commit-btn primary"
           data-testid="commit-submit"
           disabled={disabled}
           onClick={() => void submit(withPush)}
@@ -136,7 +136,7 @@ export function CommitBar({
         </button>
         <button
           type="button"
-          className={`commit-push ${withPush ? 'on' : ''}`}
+          className={`btn icon commit-push ${withPush ? 'on' : ''}`}
           data-testid="commit-push-toggle"
           title={t('commit.pushHint')}
           aria-pressed={withPush}

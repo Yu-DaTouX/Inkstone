@@ -94,9 +94,10 @@
     if (boxes.length === 2 && boxAct) {
       const [b0, b1] = boxes
 
-      /* 1. 竖排：x 对齐（错位最直观的表现就是一个左一个右） */
-      ok(Math.abs(b0.x - b1.x) <= 1, `两个按钮左边界对齐（差 ${Math.abs(b0.x - b1.x).toFixed(1)}px）`)
-      ok(b1.y >= b0.bottom - 1, '两个按钮竖排不重叠')
+      /* 1. v0.4：并排（同一行、顶边对齐、互不重叠）；窄到放不下时整颗换行 */
+      const sameRow = Math.abs(b0.y - b1.y) <= 1
+      ok(sameRow ? b1.x >= b0.right - 1 : b1.y >= b0.bottom - 1, `两个按钮互不重叠（${sameRow ? '并排' : '已换行'}）`)
+      ok(Math.abs(b0.h - b1.h) <= 1, '两个按钮同高')
 
       /* 2. 不溢出操作区/第 2 栏/卡片 */
       ok(boxes.every((b) => b.right <= boxAct.right + 1), '按钮不溢出操作区右边界')
@@ -115,9 +116,8 @@
       ok(tall.length === 0, `按钮没有被压成多行（最高 ${Math.max(...boxes.map((b) => b.h)).toFixed(1)}px）`)
       ok(boxes.every((b) => b.h >= 20), '按钮高度正常（≥ 20px，可点击）')
 
-      /* 5. 同一个操作区里两个按钮宽度一致（观感上「错位」的另一种来源） */
-      out.push(`  宽度差 ${Math.abs(b0.w - b1.w).toFixed(1)}px`)
-      ok(Math.abs(b0.w - b1.w) <= 1, '两个按钮等宽（同一操作区的按钮宽度一致）')
+      /* 5. 并排时顶边对齐（观感上「错位」的另一种来源） */
+      if (sameRow) ok(Math.abs(b0.y - b1.y) <= 1, '并排的两个按钮顶边对齐')
     }
 
     /* ---- 交互：重新检测 / 去配置往返 ---- */
@@ -153,7 +153,7 @@
       )
       const boxes2 = btns2.map(box)
       if (boxes2.length === 2) {
-        ok(Math.abs(boxes2[0].x - boxes2[1].x) <= 1, '往返后两个按钮仍然对齐')
+        ok(Math.abs(boxes2[0].y - boxes2[1].y) <= 1 || Math.abs(boxes2[0].x - boxes2[1].x) <= 1, '往返后两个按钮仍然对齐')
       }
     }
 

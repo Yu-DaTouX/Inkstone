@@ -126,12 +126,13 @@ export function ChangedFileTree({ files, selected, onSelect, isViewed, viewedCou
           onChange={(e) => setQuery(e.target.value)}
           aria-label={t('review.filter')}
         />
-        <div className="rtree-filters" role="group" aria-label={t('review.filterKind')}>
+        <div className="seg sm rtree-filters" role="group" aria-label={t('review.filterKind')}>
           {(['all', 'text', 'image', 'other'] as const).map((f) => (
             <button
               key={f}
               type="button"
-              className={`rtree-chip ${filter === f ? 'on' : ''}`}
+              className={`seg-btn rtree-chip ${filter === f ? 'sel' : ''}`}
+              aria-pressed={filter === f}
               onClick={() => setFilter(f)}
               data-testid={`review-filter-${f}`}
             >

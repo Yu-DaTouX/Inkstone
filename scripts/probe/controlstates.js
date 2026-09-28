@@ -38,11 +38,12 @@
     host.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px'
     const PROBE_CLASSES = [
       'send',
-      'rp-btn',
+      /* v0.4：这几类按钮的外观（含禁用态）来自统一控件 .btn，按真实类名组合来造 */
+      'btn sm rp-btn',
       'rp-act',
-      'review-act',
+      'btn icon sm review-act',
       'browser-nav',
-      'commit-btn',
+      'btn commit-btn',
       'tl-move',
       'srow-menu-btn',
       'slash-item',

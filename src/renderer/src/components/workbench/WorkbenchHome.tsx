@@ -142,7 +142,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
             {t('wb.inboxCard')}
           </h2>
           <p className="wb-card-main">{t('wb.inboxCount', { n: inboxWaiting })}</p>
-          <button className="wb-card-action" onClick={onOpenInbox} data-testid="wb-inbox-open">
+          <button className="btn sm wb-card-action" onClick={onOpenInbox} data-testid="wb-inbox-open">
             {t('inbox.open')}
           </button>
         </section>
@@ -197,7 +197,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
           <p className="wb-card-meta" data-testid="wb-card-review-meta">
             {t('wb.reviewMeta', { total: reviewDue.total })}
           </p>
-          <button className="wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
+          <button className="btn sm wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
             {t('wb.reviewOpen')}
             <Icon name="chevron-right" size={12} />
           </button>
@@ -219,7 +219,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
           <p className="wb-card-meta" data-testid="wb-card-space-count">
             {t('wb.spaceCardCount', { sessions: spaceSessionCount, sources: spaceSourceCount })}
           </p>
-          <button className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
+          <button className="btn sm wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
             {t('wb.spaceCardOpen')}
             <Icon name="chevron-right" size={12} />
           </button>
@@ -271,7 +271,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
             {t('map.title')}
           </h2>
           <p className="wb-card-meta">{t('map.stats', { lanes: mapSummary.laneCount, nodes: mapSummary.total })}</p>
-          <button className="wb-open-map" onClick={onOpenMap} data-testid="wb-open-map">
+          <button className="btn sm wb-open-map" onClick={onOpenMap} data-testid="wb-open-map">
             {t('wb.open')}
             <Icon name="chevron-right" size={12} />
           </button>
@@ -299,7 +299,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
               {shortName(heroTarget.cwd)} · {time(heroTarget.lastActivityAt ?? heroTarget.createdAt)}
             </p>
           </div>
-          <button className="wb-hero-go" data-testid="wb-hero-go" onClick={() => onOpenSession(heroTarget.path)}>
+          <button className="btn primary wb-hero-go" data-testid="wb-hero-go" onClick={() => onOpenSession(heroTarget.path)}>
             {t('wb.open')}
             <Icon name="chevron-right" size={12} />
           </button>

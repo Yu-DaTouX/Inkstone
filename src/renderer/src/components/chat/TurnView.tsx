@@ -48,28 +48,19 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         <span className="gutter-prompt">❯</span>
       </div>
       <div className="msg-body">
-        <div className="msg-label">
-          <span>{t('chat.you')}</span>
-          {/*
-           * 「提问」标记：这条用户消息是问题面板的回答，不是手打的。
-           * 为什么要标：问答只存在于工具结果里，对话流上看到一段“用户说的话”
-           * 却不知道它从哪来 —— 回看时容易当成自己当时真的发了这些字。
-           */}
-          {msg.question ? (
+        {/*
+         * 「提问」标记：这条用户消息是问题面板的回答，不是手打的。
+         * 问答只存在于工具结果里，不标出来回看时容易当成自己当时真的发了这些字。
+         * 身份不再用「你」标签表达：右对齐的气泡本身就是身份。
+         */}
+        {msg.question ? (
+          <div className="msg-label">
             <span className="msg-tag question" data-testid="msg-question-tag" title={t('chat.questionTag')}>
               <Icon name="message-dots" size={12} />
               {t('chat.questionTag')}
             </span>
-          ) : null}
-          <button
-            className="msg-act"
-            title={t('chat.forkHere')}
-            onClick={() => void forkFromText(msg.text)}
-          >
-            <Icon name="branch" size={12} />
-            {t('chat.fork')}
-          </button>
-        </div>
+          </div>
+        ) : null}
 
         {msg.images?.length ? (
           <div className="msg-images">
@@ -95,11 +86,18 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         ) : null}
 
         {msg.text ? <div className="bubble">{msg.text}</div> : null}
-        {msg.timestamp ? (
-          <div className="turn-footer">
-            <TurnTime timestamp={msg.timestamp} />
-          </div>
-        ) : null}
+        {/* 气泡下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
+        <div className="turn-footer msg-meta">
+          {msg.timestamp ? <TurnTime timestamp={msg.timestamp} /> : null}
+          <button
+            className="msg-act"
+            title={t('chat.forkHere')}
+            onClick={() => void forkFromText(msg.text)}
+          >
+            <Icon name="branch" size={12} />
+            {t('chat.fork')}
+          </button>
+        </div>
       </div>
     </article>
   )

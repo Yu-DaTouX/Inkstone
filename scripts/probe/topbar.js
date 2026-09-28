@@ -131,7 +131,7 @@
     await until(() => store.getState().settings?.rightPanelOpen, 3000)
     await sleep(600)
 
-    out.push('\n=== 4. 左栏顶部（拨杆已移除，实施-27 B3）===')
+    out.push('\n=== 4. 左栏顶部（拨杆已移除；品牌在标题栏）===')
     /*
      * 为什么断言“不存在”：工作区拨杆曾经是左栏唯一的模式入口（实施-20 U1），
      * B3 把它搬到设置 · 工作区。这里改成正反两面：
@@ -139,8 +139,11 @@
      *   ② 拨杆确实不在了（否则就是新旧两个入口并存）。
      * 切模式本身在设置里验（`yan settings` 场景）。
      */
-    if (/砚/.test(document.querySelector('.rail-mode-wrap')?.textContent ?? '')) ok('软件名仍在左栏顶部')
-    else bad('左栏顶部没有软件名')
+    /* 品牌只在标题栏出现一次（v0.4）；左栏顶部是「新对话 + 搜索」 */
+    if (/砚/.test(document.querySelector('[data-testid="app-brand"]')?.textContent ?? '')) ok('软件名在标题栏')
+    else bad('标题栏没有软件名')
+    if (document.querySelector('.rail-top [data-testid="rail-new"]')) ok('左栏顶部是「新对话」')
+    else bad('左栏顶部没有「新对话」')
     const straySwitch = document.querySelector('[data-testid="mode-switch"]')
     if (!straySwitch) ok('左栏不再常驻工作区拨杆（入口在设置里）')
     else bad('工作区拨杆又回到了左栏，与设置里的入口重复')

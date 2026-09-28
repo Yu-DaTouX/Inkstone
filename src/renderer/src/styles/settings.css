@@ -9,6 +9,10 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+html[data-theme='light'] .settings-scrim {
+  background: rgba(20, 20, 18, 0.28);
 }
 
 .settings {
@@ -16,9 +20,11 @@
   grid-template-columns: 168px minmax(0, 1fr);
   width: min(920px, calc(100vw - 64px));
   height: min(660px, calc(100vh - 64px));
-  background: var(--bg-1);
-  border: 1px solid var(--border-str);
+  /* 内容区用窗口底色，导航用抬高一级的面板色：深浅两套主题里层级方向一致 */
+  background: var(--bg-0);
+  border: 1px solid var(--border);
   border-radius: var(--r-xl);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
 }
 
@@ -28,15 +34,14 @@
   flex-direction: column;
   gap: 2px;
   padding: var(--sp-3) var(--sp-2);
-  background: var(--bg-0);
-  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+  border-right: 1px solid var(--border-soft);
 }
 .settings-nav-title {
-  padding: 0 var(--sp-2) var(--sp-3);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  padding: var(--sp-1) var(--sp-2) var(--sp-3);
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-strong);
 }
 /* tab 按钮组：role=tablist 的容器，继续沿用导航列的竖排间距 */
 .settings-tabs {
@@ -51,7 +56,8 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: 7px var(--sp-2);
+  min-height: var(--ctl-h-lg);
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid transparent;
   color: var(--fg-dim);
@@ -70,9 +76,9 @@
   color: var(--fg);
 }
 .settings-tab.sel {
-  background: var(--bg-2);
-  border-color: var(--border);
+  background: var(--bg-3);
   color: var(--fg);
+  font-weight: var(--fw-medium);
 }
 .settings-tab.sel .ico {
   color: var(--accent);
@@ -88,8 +94,15 @@
 .settings-body {
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
   min-width: 0;
+}
+.settings-page-title {
+  margin: 0 0 var(--sp-3);
+  color: var(--fg);
+  font-size: 18px;
+  font-weight: var(--fw-strong);
+  line-height: 1.3;
 }
 
 /* 设置项：左标签 + 右控件 */
@@ -103,15 +116,11 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-4);
-  padding: var(--sp-3) var(--sp-3);
-  border-radius: var(--r-md);
+  padding: 14px 0;
   border-bottom: 1px solid var(--border-soft);
 }
 .set-row:last-child {
   border-bottom: none;
-}
-.set-row:hover {
-  background: var(--bg-2);
 }
 /* 上下排布的行（进度条、日志这类要占满宽） */
 .set-row.col {
@@ -156,7 +165,8 @@
 .set-name {
   color: var(--fg);
   font-size: var(--fs-base);
-  margin-bottom: 2px;
+  font-weight: var(--fw-medium);
+  margin-bottom: 3px;
 }
 .set-desc {
   color: var(--fg-mute);
@@ -200,7 +210,7 @@
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   padding: 2px var(--sp-2);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
 }
 /*
@@ -210,7 +220,8 @@
  */
 .set-input {
   width: 96px;
-  padding: 3px var(--sp-2);
+  height: var(--ctl-h);
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: var(--bg-2);
@@ -304,69 +315,6 @@
   user-select: text;
 }
 
-/* 分段控件（主题 / 语言） */
-.seg {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--r-sm);
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-}
-.seg-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px var(--sp-3);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.seg-btn:hover {
-  color: var(--fg-dim);
-}
-.seg-btn.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-.seg-btn.sel .ico {
-  color: var(--accent);
-}
-
-/* 开关：做成滑块而不是复选框（设置里更常见） */
-.switch-pill {
-  position: relative;
-  width: 34px;
-  height: 19px;
-  border-radius: var(--r-full);
-  background: var(--bg-4);
-  border: 1px solid var(--border);
-  flex: none;
-  transition: background var(--dur) var(--ease);
-}
-.switch-pill.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: var(--r-full);
-  background: var(--fg-mute);
-  transition:
-    transform var(--dur) var(--ease),
-    background var(--dur) var(--ease);
-}
-.switch-pill.on .switch-knob {
-  transform: translateX(15px);
-  background: var(--bg-0);
-}
-
 /* 设置里的下拉更宽一点 */
 .settings .pick {
   height: 26px;
@@ -374,7 +322,6 @@
   max-width: 320px;
   font-size: var(--fs-sm);
 }
-
 
 /* ── pi 插件（方案 §9 的 P2）────────────────────────────── */
 
@@ -485,7 +432,7 @@
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-mute);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -531,7 +478,7 @@
 .pkg-name {
   font-family: var(--font-code);
   font-size: 12px;
-  color: var(--fg-1);
+  color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -540,15 +487,15 @@
 .pkg-ver {
   font-family: var(--font-code);
   font-size: 11px;
-  color: var(--fg-4);
+  color: var(--fg-mute);
 }
 
 .pkg-scope {
   font-size: 10.5px;
   padding: 0 5px;
   border-radius: 3px;
-  border: 1px solid var(--line-1);
-  color: var(--fg-3);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-mute);
 }
 
 .pkg-scope.project {
@@ -569,7 +516,7 @@
 
 .pkg-detail {
   padding: 4px 0 2px 6px;
-  border-left: 2px solid var(--line-1);
+  border-left: 2px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -578,12 +525,12 @@
 .pkg-detail-line {
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--fg-2);
+  color: var(--fg-dim);
   word-break: break-all;
 }
 
 .pkg-detail-line.pkg-dim {
-  color: var(--fg-4);
+  color: var(--fg-mute);
 }
 
 /* 边界声明：插件能执行代码，我们不做沙箱也不做审查 */
@@ -591,7 +538,7 @@
   margin-top: 3px;
   font-size: 11.5px;
   line-height: 1.6;
-  color: var(--fg-3);
+  color: var(--fg-mute);
 }
 
 .pkg-ok,
@@ -607,12 +554,12 @@
 
 .pkg-ok {
   border: 1px solid var(--ok);
-  color: var(--fg-2);
+  color: var(--fg-dim);
 }
 
 .pkg-fail {
   border: 1px solid var(--err);
-  color: var(--fg-2);
+  color: var(--fg-dim);
 }
 
 .pkg-result-line {
@@ -838,4 +785,196 @@
   padding: 8px;
   border: 1px dashed var(--border-soft);
   border-radius: var(--r-sm);
+}
+
+/* ── 首次使用引导（Onboarding）──────────────────────────────────
+   四条可当场验证的检查项：pi 在不在、凭证有没有、连没连上、有没有模型。
+   形态是清单而不是向导 —— 分步要多点几次「下一步」，却不多给信息。
+   入场动画引用 motion.css 的关键帧；这里只管版面与外观。 */
+.ob-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
+}
+html[data-theme='light'] .ob-scrim {
+  background: rgba(20, 20, 18, 0.28);
+}
+
+.ob-card {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100%);
+  max-height: 88vh;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: mo-in-center var(--mo-slow) var(--mo-ease) both;
+}
+
+.ob-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+}
+.ob-head .spacer {
+  flex: 1;
+}
+.ob-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ob-title {
+  color: var(--fg);
+  font-size: 18px;
+  font-weight: var(--fw-strong);
+  line-height: 1.3;
+}
+.ob-sub {
+  margin-top: 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+.ob-x {
+  display: inline-grid;
+  place-items: center;
+  align-self: flex-start;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+}
+.ob-x:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.ob-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--sp-5) var(--sp-4);
+  overflow: auto;
+}
+
+/* 检查项：状态标记 / 标题 + 说明 / 操作 */
+.ob-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
+}
+.ob-row + .ob-row {
+  border-top: 1px solid var(--border-soft);
+}
+.ob-check {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: var(--r-full);
+}
+.ob-row.ob-ok .ob-check {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+/* 待办：空心圆环（CSS 画，不用文字符号） */
+.ob-row.ob-todo .ob-check::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--warn);
+  border-radius: var(--r-full);
+}
+.ob-row-title {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+}
+.ob-row-desc {
+  margin-top: 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.ob-row-desc code {
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  font-family: var(--font-code);
+  font-size: var(--fs-xs);
+}
+.ob-row-act {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  max-width: 220px;
+}
+
+/* 三条「知道就好」 */
+.ob-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+.ob-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.ob-tip .ico {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg-mute);
+}
+
+.ob-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border-soft);
+}
+.ob-foot .spacer {
+  flex: 1;
+}
+.ob-foot-note {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-scrim,
+  .ob-card,
+  .ob-row {
+    animation-duration: var(--dur-1) !important;
+    animation-delay: var(--dur-0) !important;
+  }
 }

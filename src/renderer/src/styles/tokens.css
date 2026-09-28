@@ -1,5 +1,5 @@
-/* 设计令牌 —— 唯一真源见 docs/design/DESIGN.md §2
-   改令牌先改 DESIGN.md，再改这里。 */
+/* 设计令牌 —— 规则与用途见 docs/DESIGN_SYSTEM.md 第 2 节
+   改令牌先改规范，再改这里。 */
 
 /* 0. 内嵌字体
    Maple Mono CN：拉丁列宽 0.600em / 汉字 1.200em，严格 1:2
@@ -88,6 +88,15 @@
   --focus-ring-w: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-w-strong: 2px;
+
+  /* ── 控件尺寸与字重（v0.4 统一控件层，见 styles/ui.css）──
+     按钮、分段、输入框只用这三档高度；字重只用常规 / 中等 / 强调三档。 */
+  --ctl-h-sm: 24px;
+  --ctl-h: 28px;
+  --ctl-h-lg: 32px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-strong: 600;
 
   /* 动效时长（B2 归口）——
      语义别名 --dur 是默认过渡；其余按毫秒值命名，值等于收口前的实际值，未做视觉调整。
@@ -179,6 +188,10 @@ html[data-theme='dark'] {
      高饱和青蓝在密麻代码里会变成一串跳动的灯，正文反而读不进去。 */
   --code-inline-bg: rgba(255, 255, 255, 0.07);
   --code-inline-fg: #cdd6dc;
+
+  /* 强调色实底上的文字；弹出层（菜单 / 对话框）唯一允许的投影 */
+  --on-accent: #10131f;
+  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 html[data-theme='light'] {
@@ -214,6 +227,9 @@ html[data-theme='light'] {
   /* 同深色主题：中性灰（浅色底上蓝色小标签最显眼） */
   --code-inline-bg: rgba(0, 0, 0, 0.055);
   --code-inline-fg: #45525a;
+
+  --on-accent: #ffffff;
+  --shadow-pop: 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 
 /* 2. 基础 */
