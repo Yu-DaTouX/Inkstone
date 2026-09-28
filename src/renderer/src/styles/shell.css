@@ -4,9 +4,90 @@
  * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
  */
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+/* 连接状态、对话回合、工具调用及右侧工具面板样式。
+   尺寸与颜色优先使用 tokens.css 中的设计令牌。 */
+/* 1. 连接状态条 */
+.connbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-5);
+  background: var(--err-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+
+/* 11. 通知 */
+.notices {
+  position: fixed;
+  right: var(--sp-5);
+  /* 往上抬：底部会挡住输入区和右栏的记忆列表 */
+  bottom: calc(var(--h-titlebar) + var(--sp-5));
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 380px;
+  /* 不要把点击穿透到下面的界面 */
+  pointer-events: none;
+}
+
+.notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-left-width: 2px;
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  /* 长消息（扩展常刷一段路径很长的话）截断到三行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notice:hover {
+  color: var(--fg);
+}
+
+.logdrawer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+/* 16. 底部状态条 / 审阅条：更明确的按钮 */
+.statusbar .btn {
+  height: 18px;
+}
+
+/* 42. 标题栏改 Win11 风格
+   与 mac 风格的差别：
+   · 窗口按钮在**最右**，46×32 的方形区域（不是左侧三个圆点）
+   · 悬停：关闭变红、其余变中性灰
+   · 最大化时图标切成「还原」（两个错开方框）
+   尺寸严格按 Win11：宽 46px、高 32px（= 标题栏高度） */
+.titlebar {
+  padding-right: 0; /* 让窗口按钮紧贴右边缘 */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.tb-right {
+  gap: 2px;
+  /* 窗口控制要贴边，这里不留间距 */
+  padding-right: 0;
+}
+
+/* ── 基础段结束 ── */
 
 /* 13. 标题栏控件统一成胶囊，别一个是文字一个是图标 */
 .tb-right .btn:not(.icon),
@@ -51,7 +132,7 @@
 
 .tb-name {
   letter-spacing: 0;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 /* 通用图标按钮（非窗口控制） */
@@ -221,10 +302,6 @@
   width: 2px;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .connbar.starting {
   background: var(--warn-soft);
   color: var(--warn);
@@ -295,10 +372,6 @@
 .notice.error {
   border-left-color: var(--err);
 }
-
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
 
 .dot.err {
   background: var(--err);

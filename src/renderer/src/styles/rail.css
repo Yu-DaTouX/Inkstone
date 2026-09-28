@@ -1,16 +1,262 @@
 /*
  * 左栏：项目分组 / 会话树 / 紧凑快捷轨。
  *
- * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）——
- * 见 layout.css 顶部的说明。这里只放**最新评审的最终形态**，
- * 迁移期间旧规则仍留在 redesign.css，逐步搬过来。
+ * 属于 modules 层（见 styles/index.css）。开头的基础段是早期的通用写法，
+ * 后面的规则在它之上细化。
  */
+
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+/* 3. 左右栏：面板底色与内容分层 */
+.rail {
+  background: var(--bg-1);
+}
+
+/* 左栏会话项：选中态更明确（左侧色条 + 更亮的底） */
+.item {
+  position: relative;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+}
+
+.item.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.item.sel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+
+.item.sel .ico {
+  color: var(--accent);
+}
+
+/* 15. 左栏搜索框：跟「新对话」同一套 */
+.search {
+  height: 28px;
+  background: var(--bg-2);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+/* ---- 顶部 ---- */
+.rail-top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* 用户报「左栏边缘留白有点多」：12 → 8 */
+  padding: var(--sp-2) var(--sp-2) var(--sp-2);
+}
+
+/* ---- 操作行 ---- */
+.rail-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 5px;
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+/* ---- 分组（项目） ---- */
+.rail-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  /* 这一节吃掉左栏的剩余高度（列表要能滚动、底栏要贴底） */
+  min-height: 0;
+  flex: 1;
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--sp-2);
+}
+
+.rail-body {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  /* 左栏边缘留白收窄（用户要求靠近边缘） */
+  padding: 0 5px var(--sp-3);
+  min-width: 0;
+}
+
+.proj-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.proj-name,
+.proj-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-path {
+  color: var(--fg-mute); font-size: var(--fs-xs); direction: rtl; text-align: left;
+}
+
+/* 行主体：会话按钮 + 分叉开关 + 时间（开关必须是兄弟节点，不能嵌在按钮里） */
+.srow-row {
+  display: flex;
+  align-items: center;
+}
+
+/* 会话行的文字块：第一行是「编号 + 名字 + 分支数」，第二行是「分叉自哪句话」 */
+.srow-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.srow-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+/* 分支数（已改成行尾的开关按钮 .srow-btoggle，这里保留名字不用） */
+/* 分叉自父会话的哪句话 */
+.srow-origin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
+.srow-menu-path {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  user-select: text;
+}
+
+/* 空状态 */
+.rail-empty {
+  padding: var(--sp-4) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+/* ③ 会话行：悬停时显示时间（他们的做法：默认不占位，悬停才出） */
+.srow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.srow-wrap .srow-time {
+  flex: none;
+  padding-right: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 1;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.rail {
+  /**
+   * 用 flex 列而不是 grid 行 ——
+   * 左栏的子元素是「有时有、有时没有」（搜索框按需出现），
+   * 用 grid-template-rows 数固定行数会漏掉隐式行：
+   * 曾经写死 4 行、实际渲染 5 个元素，整栏高度只有 805px（容器 866px），
+   * 底部空一截且不随窗口变化。
+   * flex 下只要给「分组」加 flex: 1，它自然吃掉剩余高度。
+   */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  /* 固定宽度：不随 grid 列宽收缩 */
+  /*
+   * ⚠️ 这里原来是 `width: 300px`（「内容宽度固定，不跟着列宽收缩」）。
+   *    那个写法让**拖拽调宽失效**：grid 列宽变了，但 .rail 自己还是 300px，
+   *    视觉上完全不动（实测 raiWidth 已落盘 390，界面仍是 300）。
+   *    现在跟随列宽（列宽由 --w-rail 控制，含用户拖出来的值）。
+   *
+   *    原来担心的「收起过程中文字被压扁」已经不存在了 ——
+   *    收起时内容是 `visibility: hidden`（见上文 .app.rail-off 规则），
+   *    不会被看到压扁的过程。
+   */
+  width: 100%;
+}
+
+/* 向下弹的（从列表项下方出现）。
+   会话行菜单现在 Portal 到 body（`.ctx-menu` 负责 fixed 定位与尺寸夹取），
+   这里只保留“从触发器下方弹出”的方向感和最小宽度。 */
+.row-menu-surface {
+  min-width: 208px;
+}
+
+/* 48. 左栏头部的品牌按钮（点了收起左栏）
+   与右栏 .rp-x 同一个语义：开关贴着它控制的东西。
+   悬停时才显示那个「收起」小图标 —— 平时它就是一个品牌标识。 */
+/* 49. 左栏底部：用户档案（头像 / 名字 / 设置）
+   用户报的两个问题：
+   · 原来显示「砚 / 工作目录 / N 个会话」→ 改成用户名 + 可自定义头像
+   · 设置按钮太小（原来是 .rail-icon.sm = 22px 盒 + 12px 图标，
+   跟旁边 26px 的头像不成比例）→ 改用标准 .rail-icon（26px + 14px） */
+.rail-foot {
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  position: relative; /* .rail-user-pop 的定位基准 */
+}
+
+/* ── 基础段结束 ── */
 
 /* 顶部一行：「新对话」占满剩余宽度，搜索是它右边的图标按钮 */
 .rail-top {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
   overflow: hidden;
   padding: var(--sp-3) var(--sp-2) var(--sp-2);
@@ -21,7 +267,7 @@
   margin: 0;
 }
 .rail-body {
-  padding: 0 6px 8px;
+  padding: 0 6px var(--sp-2);
   scrollbar-gutter: auto;
   /*
    * 作为**容器查询**的上下文（N13）。
@@ -33,7 +279,7 @@
 }
 .rail-section {
   margin-top: 6px;
-  padding-top: 4px;
+  padding-top: var(--sp-1);
 }
 .rail-action {
   margin: 0 6px;
@@ -47,8 +293,8 @@
 }
 .proj-head {
   height: 34px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
 }
 
 /* 路径与来源在窄栏里只会挤掉标题，所以不显示（完整值在悬停提示里） */
@@ -71,8 +317,8 @@
 }
 
 .srow-title-candidate {
-  margin: 4px 6px 6px;
-  padding: 6px 8px;
+  margin: var(--sp-1) 6px 6px;
+  padding: 6px var(--sp-2);
   border: 1px solid var(--accent-line);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -84,11 +330,11 @@
 }
 
 .srow-title-candidate-name {
-  margin: 2px 0 4px;
+  margin: 2px 0 var(--sp-1);
   overflow: hidden;
   color: var(--fg);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -96,13 +342,13 @@
 .srow-title-candidate-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 /* 会话菜单里的「最后活动」（N13）：窄栏把行内时间收起来之后，
    这个信息仍然可发现 —— 不是删掉，只是换了个位置。 */
 .srow-menu-time {
-  padding: 4px var(--sp-2) 2px;
+  padding: var(--sp-1) var(--sp-2) 2px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -135,7 +381,7 @@
   height: 32px;
   min-width: 0;
   width: 100%;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   position: relative;
   padding-right: 6px;
 }
@@ -156,7 +402,7 @@
 }
 .srow-row .srow {
   height: 32px;
-  padding: 0 6px 0 calc(20px + var(--branch-depth, 0) * 12px);
+  padding: 0 6px 0 calc(20px + var(--branch-depth, 0) * var(--sp-3));
   border-radius: 0;
   background: transparent;
   font-size: var(--fs-base);
@@ -256,7 +502,7 @@
   display: block;
   font-size: var(--fs-xs);
   color: var(--fg-mute);
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   text-align: left;
 }
 
@@ -267,15 +513,15 @@
   flex-direction: column;
   position: relative;
   z-index: 4;
-  margin: 2px 0 4px;
-  padding: 4px;
+  margin: 2px 0 var(--sp-1);
+  padding: var(--sp-1);
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 .project-menu button {
   min-height: 28px;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   color: var(--fg-dim);
   text-align: left;
   font: inherit;
@@ -287,11 +533,11 @@
 .project-menu input {
   min-height: 28px;
   margin: 2px;
-  padding: 4px 7px;
+  padding: var(--sp-1) 7px;
   color: var(--fg);
   background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   font: inherit;
 }
 .proj-group {
@@ -422,10 +668,10 @@
 .rail-more-projects {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   width: calc(100% - 12px);
-  margin: 4px 6px 2px;
-  padding: 4px 4px;
+  margin: var(--sp-1) 6px 2px;
+  padding: var(--sp-1) var(--sp-1);
   border-radius: var(--r-xs);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -453,10 +699,10 @@
 .rail-more-sessions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   width: calc(100% - 24px);
   margin: 2px 6px 2px 18px;
-  padding: 3px 4px;
+  padding: 3px var(--sp-1);
   border-radius: var(--r-xs);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -531,10 +777,6 @@
 .app.rail-off .resizer-rail {
   display: none;
 }
-
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
 
 /* 收起 = 0 宽（开关在标题栏），所以不需要给收起态留任何东西 */
 
@@ -631,10 +873,10 @@
 .rail-section-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   flex: 1;
   min-width: 0;
-  padding: 4px 0;
+  padding: var(--sp-1) 0;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
   text-align: left;
@@ -662,7 +904,7 @@
  */
 .rail-space-input {
   display: block;
-  margin: 2px var(--sp-2) 4px;
+  margin: 2px var(--sp-2) var(--sp-1);
   padding: 3px 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -678,8 +920,8 @@
   gap: 2px;
   min-width: 0;
   height: 28px;
-  border-radius: 6px;
-  padding-right: 4px;
+  border-radius: var(--r-sm);
+  padding-right: var(--sp-1);
 }
 
 .rail-space-row:hover {
@@ -734,7 +976,7 @@
 }
 
 .rail-empty.sm {
-  padding: 2px 8px;
+  padding: 2px var(--sp-2);
   font-size: var(--fs-xs);
 }
 
@@ -742,11 +984,11 @@
 .proj-group-heading {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 12px 6px 4px;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 6px var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: .04em;
   text-transform: uppercase;
   /* 省略号要落在名字 span 上 —— flex 容器上的 text-overflow 不生效 */
@@ -793,11 +1035,11 @@
   /* 分组标题是全大写样式，输入框要保持原名输入的可读性 */
   text-transform: none;
   letter-spacing: 0;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .rail-group-err {
-  margin: -2px 6px 4px;
+  margin: -2px 6px var(--sp-1);
   color: var(--err);
   font-size: var(--fs-xs);
 }
@@ -947,7 +1189,7 @@ body.rail-dragging .srow {
      会话行要比它再深一级。原来是 38px，用户说边缘留白多 → 收到 32px。
      ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
      验证缩进必须量 **.srow-name 的左缘**，量 .srow 永远看不到差异。 */
-  padding: 6px var(--sp-2) 6px 32px;
+  padding: 6px var(--sp-2) 6px var(--sp-6);
   border-radius: var(--r-md);
   color: var(--fg-mute);
   font-size: var(--fs-base);
@@ -981,7 +1223,7 @@ body.rail-dragging .srow {
   min-width: 0;
   height: 28px;
   /* 缩进与 .srow 一致，重命名时文字位置不跳 */
-  padding: 0 var(--sp-2) 0 32px;
+  padding: 0 var(--sp-2) 0 var(--sp-6);
   border: 1px solid var(--accent-line);
   border-radius: var(--r-md);
   background: var(--bg-2);
@@ -993,7 +1235,7 @@ body.rail-dragging .srow {
 
 .srow-wrap:hover .srow-text {
   /* 给右侧图标让位，避免文字压到按钮下面 */
-  padding-right: 24px;
+  padding-right: var(--sp-5);
 }
 
 .srow-menu-btn {
@@ -1192,7 +1434,7 @@ body.rail-dragging .srow {
   align-items: center;
   gap: 2px;
   height: 22px;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-sm);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -1232,10 +1474,6 @@ body.rail-dragging .srow {
   border-left: 1px solid var(--border-soft);
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage2.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .rail-rename {
   height: 22px;
   padding: 0 var(--sp-2);
@@ -1245,10 +1483,6 @@ body.rail-dragging .srow {
   font-size: var(--fs-xs);
   color: var(--fg);
 }
-
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
 
 .proj + .proj {
   margin-top: 3px;
@@ -1388,7 +1622,7 @@ body.rail-dragging .srow {
 .rup-hues {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .rup-hue {
@@ -1448,7 +1682,7 @@ body.rail-dragging .srow {
 
 .rup-note-list {
   margin: 0;
-  padding-left: 16px;
+  padding-left: var(--sp-4);
 }
 
 .rup-note-list li {
@@ -1524,7 +1758,7 @@ body.rail-dragging .srow {
 }
 
 .rmm-foot {
-  margin-top: 4px;
+  margin-top: var(--sp-1);
   padding: 5px var(--sp-2) 3px;
   border-top: 1px solid var(--border-soft);
   color: var(--fg-mute);
@@ -1557,7 +1791,7 @@ body.rail-dragging .srow {
 .rail-inbox-badge {
   margin-left: auto;
   font-size: var(--fs-xs);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--bg-0);
   background: var(--accent);
   border-radius: var(--r-full);

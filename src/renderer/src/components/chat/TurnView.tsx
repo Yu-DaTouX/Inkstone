@@ -27,7 +27,7 @@ import { fileUrl as toFileUrl } from '../../../../shared/file-url'
  * 「每次发送的信息要根据段落来显示」——
  * AI 一次吐好几段（解释 + 清单 + 结论）时，合成一个死长的 <p> 是一坨。
  * 现在每段是一个 <p>，段间有间距、新到的段各自淡入
- * （见 redesign.css 的 `.turn-para`）。
+ * （见 chat.css 的 `.turn-para`）。
  */
 
 export const TurnView = memo(function TurnView({ turn, streaming }: { turn: Turn; streaming?: boolean }) {

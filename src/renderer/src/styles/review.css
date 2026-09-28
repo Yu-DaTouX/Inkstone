@@ -47,7 +47,7 @@
    */
   min-width: 320px;
   max-width: 420px;
-  padding: 4px;
+  padding: var(--sp-1);
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -56,7 +56,7 @@
 }
 
 .env-head {
-  padding: 6px 8px 4px;
+  padding: 6px var(--sp-2) var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -64,9 +64,9 @@
 .env-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
-  padding: 5px 8px;
+  padding: 5px var(--sp-2);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
@@ -148,7 +148,7 @@ button.env-item:hover {
 }
 
 .env-error {
-  padding: 4px 8px 6px;
+  padding: var(--sp-1) var(--sp-2) 6px;
   color: var(--err);
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
@@ -179,7 +179,7 @@ button.env-item:hover {
   align-items: center;
   gap: 6px;
   flex: none;
-  padding: 6px 8px;
+  padding: 6px var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -187,7 +187,7 @@ button.env-item:hover {
 .review-tabbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex: none;
   min-height: 42px;
   padding: 0 10px;
@@ -198,10 +198,10 @@ button.env-item:hover {
 .review-tab {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 150px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border-radius: var(--r-md);
   color: var(--fg-dim);
   background: var(--bg-2);
@@ -296,7 +296,7 @@ button.env-item:hover {
   align-items: center;
   gap: 6px;
   flex: none;
-  padding: 4px 8px 6px;
+  padding: var(--sp-1) var(--sp-2) 6px;
   border-bottom: 1px solid var(--border-soft);
   font-size: var(--fs-xs);
 }
@@ -314,7 +314,7 @@ button.env-item:hover {
 
 .review-notes {
   flex: none;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -326,8 +326,8 @@ button.env-item:hover {
 
 .review-error {
   flex: none;
-  margin: 6px 8px;
-  padding: 6px 8px;
+  margin: 6px var(--sp-2);
+  padding: 6px var(--sp-2);
   border: 1px solid var(--err);
   border-radius: var(--r-sm);
   background: var(--err-soft);
@@ -359,8 +359,8 @@ button.env-item:hover {
 .review-side-head {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: var(--sp-1);
+  padding: var(--sp-1) 6px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -391,7 +391,7 @@ button.env-item:hover {
 .review-stream {
   min-width: 0;
   overflow: auto;
-  padding: 6px 0 24px;
+  padding: 6px 0 var(--sp-5);
   scrollbar-gutter: stable;
 }
 
@@ -404,7 +404,7 @@ button.env-item:hover {
 }
 
 .review-hint {
-  padding: 16px 12px;
+  padding: var(--sp-4) var(--sp-3);
   color: var(--fg-mute);
   font-size: var(--fs-sm);
 }
@@ -444,7 +444,7 @@ button.env-item:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px 3px 4px;
+  padding: 3px var(--sp-2) 3px var(--sp-1);
   background: var(--bg-1);
   position: sticky;
   top: 0;
@@ -517,7 +517,7 @@ button.env-item:hover {
 }
 
 .rdiff-note {
-  padding: 6px 12px;
+  padding: 6px var(--sp-3);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -533,7 +533,7 @@ button.env-item:hover {
 .rdiff-gap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
   padding: 2px 10px;
   color: var(--fg-mute);
@@ -567,7 +567,7 @@ button.env-item:hover {
 
 .rdiff-hunk-head {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
   padding: 2px 10px;
   background: var(--bg-1);
   color: var(--fg-mute);
@@ -648,17 +648,17 @@ button.env-item:hover {
 /* ── 图片对照 ───────────────────────────────────────────── */
 
 .rimg {
-  padding: 6px 8px 10px;
+  padding: 6px var(--sp-2) 10px;
 }
 
 .rimg-tools {
   display: flex;
-  gap: 4px;
+  gap: var(--sp-1);
   padding-bottom: 6px;
 }
 
 .rimg-fit {
-  padding: 1px 8px;
+  padding: 1px var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   color: var(--fg-mute);
@@ -674,7 +674,7 @@ button.env-item:hover {
 .rimg-panes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 @media (max-width: 760px) {
@@ -767,7 +767,7 @@ button.env-item:hover {
 /* 外观来自统一分段控件（.seg.sm）；这里只管它在变更树顶部的位置 */
 .rtree-filters {
   align-self: flex-start;
-  margin: 5px 0 4px;
+  margin: 5px 0 var(--sp-1);
 }
 
 
@@ -807,11 +807,11 @@ button.env-item:hover {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-bottom: 12px;
+  padding-bottom: var(--sp-3);
 }
 
 .rtree-empty {
-  padding: 10px 8px;
+  padding: 10px var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -891,7 +891,7 @@ button.env-item:hover {
 .rtree-stat {
   margin-left: auto;
   display: inline-flex;
-  gap: 4px;
+  gap: var(--sp-1);
   flex: none;
   font-variant-numeric: tabular-nums;
 }
@@ -931,7 +931,7 @@ button.env-item:hover {
   width: 8px;
   text-align: center;
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1;
 }
 
@@ -951,8 +951,8 @@ button.env-item:hover {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: var(--sp-1);
+  padding: 6px var(--sp-2);
   border-top: 1px solid var(--border-soft);
   background: var(--bg-1);
 }
@@ -960,7 +960,7 @@ button.env-item:hover {
 .commit-row {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 /*
@@ -974,7 +974,7 @@ button.env-item:hover {
   max-height: 88px;
   padding: 5px 7px;
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: var(--fs-code);
   line-height: 1.5;
   color: var(--fg);
   background: var(--bg-2);
@@ -1006,7 +1006,7 @@ button.env-item:hover {
 .commit-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: 11.5px;
   color: var(--fg-mute);
 }
@@ -1026,7 +1026,7 @@ button.env-item:hover {
 .commit-up {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   cursor: pointer;
 }
 
@@ -1059,7 +1059,7 @@ button.env-item:hover {
 }
 
 .gwrite-fail-msg {
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .gwrite-fail-hint {
@@ -1071,7 +1071,7 @@ button.env-item:hover {
   align-self: flex-start;
   padding: 0;
   margin-left: 17px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--fg-mute);
   background: transparent;
   border: none;
@@ -1094,7 +1094,7 @@ button.env-item:hover {
   line-height: 1.45;
   color: var(--fg);
   background: var(--bg-0);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   white-space: pre;
 }
 
@@ -1118,7 +1118,7 @@ button.env-item:hover {
   gap: 1px;
   max-height: 220px;
   overflow: auto;
-  padding: 2px 0 4px 22px;
+  padding: 2px 0 var(--sp-1) 22px;
   border-bottom: 1px solid var(--border-soft);
   margin-bottom: 2px;
 }
@@ -1129,12 +1129,12 @@ button.env-item:hover {
   gap: 6px;
   width: 100%;
   padding: 3px 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: left;
   color: var(--fg);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   cursor: pointer;
 }
 
@@ -1148,7 +1148,7 @@ button.env-item:hover {
 
 .env-branch.current {
   color: var(--fg);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .env-branch-name {
@@ -1163,7 +1163,7 @@ button.env-item:hover {
 
 .env-branch-tag {
   flex: none;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   font-size: 10.5px;
   color: var(--fg-mute);
   border: 1px solid var(--border-soft);
@@ -1177,8 +1177,8 @@ button.env-item:hover {
 .env-newbranch {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px 0;
+  gap: var(--sp-1);
+  padding: var(--sp-1) 6px 0;
 }
 
 .env-branch-input {
@@ -1191,7 +1191,7 @@ button.env-item:hover {
   color: var(--fg);
   background: var(--bg-2);
   border: 1px solid var(--border-soft);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 .env-branch-input:focus {
@@ -1201,7 +1201,7 @@ button.env-item:hover {
 
 .env-menu .gwrite-fail,
 .env-menu .gwrite-ok {
-  margin-top: 4px;
+  margin-top: var(--sp-1);
 }
 
 /* ── 工作树区（W1，方案 §6.2）────────────────────────────── */
@@ -1221,7 +1221,7 @@ button.env-item:hover {
   align-items: center;
   gap: 6px;
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 .env-worktree:hover {
@@ -1240,7 +1240,7 @@ button.env-item:hover {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 6px 0;
+  padding: var(--sp-1) 6px 0;
   font-size: 11.5px;
   color: var(--fg-mute);
   cursor: pointer;
@@ -1253,7 +1253,7 @@ button.env-item:hover {
 /* 目标目录输入框占满一行（它比分支名长得多） */
 .env-wt-path {
   width: calc(100% - 12px);
-  margin: 4px 6px 0;
+  margin: var(--sp-1) 6px 0;
 }
 
 /* 携带未提交改动（W2a）：三项分开勾 + 未跟踪文件清单 */
@@ -1288,7 +1288,7 @@ button.env-item:hover {
 
 .env-carry-hint {
   padding: 2px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--fg-mute);
 }
@@ -1323,7 +1323,7 @@ button.env-item:hover {
  */
 .env-fork-refs {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--fg-mute);
   cursor: help;
@@ -1379,7 +1379,7 @@ button.env-item:hover {
 .env-link-add {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-top: 3px;
 }
 
@@ -1408,8 +1408,8 @@ button.env-item:hover {
 .src-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
   min-width: 0;
 }
 
@@ -1417,7 +1417,7 @@ button.env-item:hover {
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--border-soft);
   object-fit: cover;
   background: var(--bg-2);
@@ -1438,7 +1438,7 @@ button.env-item:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
 }
@@ -1452,7 +1452,7 @@ button.env-item:hover {
 }
 
 .src-title {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1487,8 +1487,8 @@ button.env-item:hover {
 .src-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0 2px;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0 2px;
 }
 
 .src-filter {
@@ -1536,10 +1536,10 @@ button.env-item:hover {
 }
 
 .office-diff-stat {
-  margin-left: 8px;
+  margin-left: var(--sp-2);
 }
 
 .office-diff-section {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: var(--sp-1);
+  padding-bottom: var(--sp-1);
 }

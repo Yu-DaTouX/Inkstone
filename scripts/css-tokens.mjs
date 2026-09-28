@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/* 顺序不再手写：直接读 App.tsx（见 scripts/lib/css-order.mjs 的头注释） */
+/* 顺序不再手写：读样式入口 styles/index.css（见 scripts/lib/css-order.mjs 的头注释） */
 const ORDER = readStyleOrder(root)
 
 /**

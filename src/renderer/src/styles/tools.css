@@ -4,6 +4,155 @@
  * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
  */
 
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+.card {
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+.status {
+  background: var(--bg-1);
+}
+
+/* 6. 右栏：卡片间距与分区标题的层次 */
+.sect {
+  margin-bottom: var(--sp-3);
+}
+
+.card {
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+}
+
+/*
+ * 任务标题最多**两行**（用户要求，包括处理中的那条）。
+ * 用 line-clamp 而不是按字数截：右栏可拖宽，按行数限制在小/宽两种宽度下都成立。
+ * 完整文本仍在 title 上（悬停可见）。
+ */
+.rp-todos .rp-text,
+.rp-hist-todo .rp-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  /*
+   * 兼容兜底：.rp-text 是 grid 子项，会被 blockify，`display:-webkit-box`
+   * 在实测里算成 flow-root，line-clamp 可能不生效。用 max-height 按行高
+   * 硬扣两行（行高 1.55）。两道保险一起上，哪个生效都能保证“最多两行”。
+   */
+  max-height: calc(1.55em * 2 + 1px);
+}
+
+/* 窄屏下右栏内部的左右内边距收一档；左边距跟标题一致（见 .rp-sec-head） */
+@media (max-width: 980px) {
+  .rp-sec-head,
+  .rp-top {
+    padding-left: var(--sp-1);
+    padding-right: var(--sp-2);
+  }
+}
+
+@media (max-width: 980px) {
+  .rp-sec-body {
+    padding-left: var(--sp-1);
+    padding-right: var(--sp-2);
+  }
+}
+
+.rp-body {
+  overflow: hidden auto;
+  scrollbar-gutter: stable;
+  min-height: 0;
+  padding-bottom: var(--sp-4);
+}
+
+.rp-sec {
+  /* 工具之间不再使用“分割标题/分割线”，内容靠留白成组。 */
+  border-bottom: 0;
+  /* 密度变量（方案 A1）；standard 档 = 原来的 3px */
+  padding-top: var(--d-section-gap);
+}
+
+.rp-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  /*
+   * 左边距收窄（用户反馈：标题离左边框太远）。
+   * 左侧实际占地 = grip 的 margin-left + grip 宽度 + 这里的 padding-left；
+   * 三处一起收才能真的贴过去，只改这里会看不出效果。
+   */
+  padding: 6px var(--sp-3) 6px var(--sp-1);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.rp-sec-body {
+  /* 左内边距跟着标题走（标题收窄后正文也要跟着，否则正文比标题缩进还小，看着歪） */
+  padding: 2px var(--sp-3) var(--sp-3) calc(var(--sp-1) + 2px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Codex 套餐名独占一行，和其下的两个限额窗口形成清晰层级。 */
+.rp-quota-plan {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  margin: 2px 0 var(--sp-1);
+}
+
+.rp-sec:hover .rp-grip,
+.rp-grip:focus-visible {
+  opacity: 0.7;
+}
+
+.rp-grip:hover,
+.rp-grip:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* 54. 从工具库拖到工具栏（用户要求：可拖拽 + 拖动时实时位置预览）
+   「实时位置预览」由两部分组成：
+   · **插入线**：各 .rp-slot 的 data-over 画在分区上/下边缘（沿用排序那套）
+   —— 它随指针实时更新，用户能看到「会插到哪」
+   · **浮动标签**：跟着鼠标的一个小胶囊，显示正在搬的分区名字
+   —— 拖离工具栏时（比如拖到中栏想放弃）插入线会消失，
+   这个标签还在，用户知道「拖拽还在进行，Esc 可取消」 */
+/* 57. 任务模块（用户提的四条）
+
+   ① 「正在进行的任务 在任务本体上显示 而不是单独开一栏」
+      → 删掉了 .rp-todo-now 那一行；当前任务在**它自己那一行**上
+        显示「正在进行」+ spinner（.rp-state.doing）
+   ② 「单个任务的字数太多 限制为最多 18 字」
+      → 组件里 clip() 截断（完整文本放 title）
+   ③ 「有历史任务就显示一个历史任务的折叠模块 没有就不显示」
+   ④ 「在任务模块的旁边加入一个当前会话历史任务查看以及跳转」
+      → ③④ 共用同一个入口：折叠模块的头部（就在任务列表下面）
+   =================================================================== */
+/* 当前任务行：底色与圆角；运行标记由行内槽位单独渲染 */
+.rp-todo.active {
+  background: var(--bg-2);
+  border-radius: var(--r-xs);
+}
+
+.rp-now-spin {
+  display: inline-flex;
+  line-height: 1;
+}
+
+.rp-hist-todo .rp-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 基础段结束 ── */
+
 .rp-body {
   padding-bottom: 6px;
 }
@@ -15,8 +164,8 @@
   align-items: center;
 }
 .rp-sec-head {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: var(--sp-1);
+  padding-bottom: var(--sp-1);
   /*
    * ⚠️ 原补丁里这个选择器出现过两次（`letter-spacing: normal` 后又一条
    *    `.rail, .rp-sec-head { letter-spacing: -0.01em }`）。后者胜，所以
@@ -41,8 +190,8 @@
   display: grid;
   grid-template-rows: 0fr;
   /*
-   * padding / gap 必须显式归零：redesign.css 里还有一条同特异性的
-   * `.rp-sec-body`（左内边距、gap 3px）—— 同特异性时本文件（最后加载）
+   * padding / gap 必须显式归零：本文件基础段还有一条同特异性的
+   * `.rp-sec-body`（左内边距、gap 3px）—— 同特异性时这里（后出现）
    * 胜，但只胜在**写过的属性**上，没写重置就会把它那圈 padding 带进来，
    * 收起态因此多出十几像素空边（实测 14px）。
    * 这些缩进现在归 .rp-sec-body-inner（卡片内边距已在 .rp-sec 上）。
@@ -105,7 +254,7 @@
 .rp-fs-state {
   padding-top: 7px;
   padding-bottom: 7px;
-  padding-left: min(var(--fs-indent, 14px), calc(100% - 24px));
+  padding-left: min(var(--fs-indent, 14px), calc(100% - var(--sp-5)));
   line-height: var(--lh-tight);
   /* 同样换行显示完整（与 .rp-text 一致，见那里的说明） */
   overflow-wrap: anywhere;
@@ -113,7 +262,7 @@
 .rp-fs-search {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-bottom: 6px;
 }
 .rp-fs-search-input {
@@ -152,7 +301,7 @@
   align-items: center;
   gap: 5px;
   min-height: 26px;
-  padding: 3px 4px;
+  padding: 3px var(--sp-1);
   border-radius: var(--r-xs);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
@@ -185,9 +334,8 @@
 }
 /*
  * ── 文件树：单一 owner ──
- * 2026-09-15 把 redesign.css 里的 `.rp-fs` / `.rp-fs-row` / `.rp-fs-size` 搬到这里
- * （只搬家，值未改）。原因：同一个选择器被拆在两个文件里（redesign 管布局，
- * tools 管尺寸与显隐），改 hover / focus 时无法判断谁最终生效。
+ * `.rp-fs` / `.rp-fs-row` / `.rp-fs-size` 只在这里定义：同一个选择器拆在两个
+ * 文件里（一处管布局、一处管尺寸与显隐）时，改 hover / focus 无法判断谁最终生效。
  * 此后文件树的所有视觉规则只出现在本文件。
  */
 .rp-fs {
@@ -222,8 +370,8 @@
    * `100%` 是这一行实际可用的宽度（包含块是 `.rp-fs-row-wrap`）——
    * 正常宽度下（右栏 ≥260px）这个上限不生效，缩进仍逐级递增。
    */
-  padding-left: min(var(--fs-indent, 4px), calc(100% - 76px));
-  padding-right: 4px;
+  padding-left: min(var(--fs-indent, var(--sp-1)), calc(100% - 76px));
+  padding-right: var(--sp-1);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
@@ -351,7 +499,7 @@
 .rp-fs-more {
   display: block;
   width: 100%;
-  padding: 4px 8px 4px 20px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 20px;
   border: none;
   background: transparent;
   color: var(--fg-mute);
@@ -369,10 +517,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
 
 .rp-title {
   color: var(--fg-dim);
@@ -460,7 +604,7 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.rp-compact-summary strong { color: var(--fg); font-size: var(--fs-sm); font-weight: 600; }
+.rp-compact-summary strong { color: var(--fg); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
 .rp-compact-summary strong.ok, .rp-compact-subvalue.ok { color: var(--ok); }
 .rp-compact-summary strong.warn, .rp-compact-subvalue.warn { color: var(--warn); }
 .rp-compact-summary strong.err, .rp-compact-subvalue.err { color: var(--err); }
@@ -468,7 +612,7 @@
 .rp-compact-summary[aria-expanded="true"] .rp-compact-chevron { transform: rotate(90deg); }
 .rp-compact-summary > span:not(.spacer) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rp-compact-subvalue { color: var(--fg-dim); }
-.rp-compact-summary > .rp-quota-compact-windows { display: flex; flex: 0 0 auto; min-width: max-content; gap: 8px; color: var(--fg-dim); }
+.rp-compact-summary > .rp-quota-compact-windows { display: flex; flex: 0 0 auto; min-width: max-content; gap: var(--sp-2); color: var(--fg-dim); }
 .rp-quota-compact-windows > span { flex: none; }
 .rp-quota-compact-windows > span.ok { color: var(--ok); }
 .rp-quota-compact-windows > span.warn { color: var(--warn); }
@@ -517,12 +661,12 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
 }
 
-.rp-context-summary strong { color: var(--fg); font-size: var(--fs-lg); font-weight: 600; }
+.rp-context-summary strong { color: var(--fg); font-size: var(--fs-lg); font-weight: var(--fw-strong); }
 
 .rp-context-summary .warn, .rp-context-summary .warn strong { color: var(--warn); }
 
@@ -653,7 +797,7 @@
 .rp-queued-row {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr);
-  gap: 4px;
+  gap: var(--sp-1);
   font-size: var(--fs-xs);
   color: var(--fg-dim);
   min-width: 0;
@@ -736,7 +880,7 @@
 .rp-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .rp-act {
@@ -816,7 +960,7 @@
   flex: none;
   width: 4px;
   height: 4px;
-  margin: 0 4px;
+  margin: 0 var(--sp-1);
   border-radius: var(--r-full);
   background: var(--accent);
   animation: rp-fs-pulse var(--dur-900) var(--ease) infinite;
@@ -887,7 +1031,7 @@
 .rp-slot.dragging .rp-sec-head { cursor: grabbing; }
 
 .rp-header-usage { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 65%; }
-.rp-header-values { display: inline-flex; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--fg-mute); font-weight: 400; }
+.rp-header-values { display: inline-flex; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--fg-mute); font-weight: var(--fw-regular); }
 .rp-header-values > span { flex: none; }
 .rp-header-values .ok { color: var(--ok); }
 .rp-header-values .warn { color: var(--warn); }
@@ -947,7 +1091,7 @@
   max-width: 240px;
   padding: 5px 10px;
   border: 1px solid var(--border-str);
-  border-radius: 999px;
+  border-radius: var(--r-full);
   background: var(--bg-2);
   color: var(--fg);
   font-size: var(--fs-sm);
@@ -990,7 +1134,7 @@
   display: grid;
   place-items: center;
   border: 1px dashed var(--accent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   pointer-events: none;
 }
@@ -1040,7 +1184,7 @@
 .rp-stages {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--sp-1);
   margin: -2px 0 5px;
 }
 .rp-stage-chip {
@@ -1104,7 +1248,7 @@
 .rp-state.doing {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   color: var(--accent);
 }
 
@@ -1219,10 +1363,6 @@
   opacity: 0.75;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .tl-head {
   display: flex;
   align-items: center;
@@ -1325,7 +1465,7 @@
 .tl-reset {
   width: 100%;
   margin-top: var(--sp-2);
-  padding: 4px 0;
+  padding: var(--sp-1) 0;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--fg-mute);
@@ -1342,7 +1482,7 @@
 .tl-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   padding: 2px 0;
   /* 整行可拖（用户在库里随便按哪都能拖） */
   cursor: grab;
@@ -1351,10 +1491,6 @@
 .tl-row:active {
   cursor: grabbing;
 }
-
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
 
 /*
  * 浏览器与工具栏同时显示时的右栏布局：
@@ -1466,8 +1602,8 @@
 
 .rp-goal-summary {
   min-width: 0;
-  padding: 3px 0 8px;
-  margin-bottom: 8px;
+  padding: 3px 0 var(--sp-2);
+  margin-bottom: var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -1503,7 +1639,7 @@
 .rp-goal-progress {
   display: flex;
   justify-content: space-between;
-  margin: 4px 0;
+  margin: var(--sp-1) 0;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -1534,13 +1670,13 @@
 
 .rp-goal-step.done { color: var(--fg-mute); }
 .rp-goal-step.blocked { color: var(--warn); }
-.rp-goal-more { margin-top: 4px; color: var(--accent); font-size: var(--fs-xs); }
+.rp-goal-more { margin-top: var(--sp-1); color: var(--accent); font-size: var(--fs-xs); }
 .rp-goal-verification { margin-top: 5px; color: var(--fg-mute); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 
 .rp-goal-outputs {
   display: grid;
   min-width: 0;
-  gap: 8px;
+  gap: var(--sp-2);
   /* 以前是兄弟卡片（margin-top: 8px）；现在在任务卡片内部，
      间距交给 .rp-output-group 的上边框与首个组的 margin。 */
 }
@@ -1561,7 +1697,7 @@
 .rp-output-heading {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   width: 100%;
   min-width: 0;
   /* 产物 / 参考现在是可点的折叠标题（不是纯文本） */
@@ -1628,7 +1764,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rp-todo {
   display: grid;
   grid-template-columns: 2px 16px minmax(0, 1fr) auto;
-  column-gap: 8px;
+  column-gap: var(--sp-2);
   align-items: start;
   padding: 2px 0;
   border-radius: var(--r-sm);
@@ -1826,7 +1962,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .fp-path {
-  padding: 2px var(--sp-2) 4px;
+  padding: 2px var(--sp-2) var(--sp-1);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
   overflow: hidden;
@@ -1842,7 +1978,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   color: var(--warn, var(--fg));
   font-size: var(--fs-xs);
   background: color-mix(in srgb, currentColor 8%, transparent);
@@ -1924,7 +2060,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   margin-top: var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 2px 8px;
+  padding: 2px var(--sp-2);
   background: var(--bg-2);
   color: var(--fg);
 }
@@ -1946,7 +2082,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .fp-path-line {
-  margin-top: 4px;
+  margin-top: var(--sp-1);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
   word-break: break-all;
@@ -2059,7 +2195,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  margin: 3px 0 4px;
+  margin: 3px 0 var(--sp-1);
 }
 
 .rp-quota-main-label {
@@ -2071,7 +2207,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 /* 推算值徽标：明确标出来源，不伪装成官方额度 */
 .rp-quota-est {
   flex: none;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-full);
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
@@ -2084,14 +2220,14 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  margin-bottom: 4px;
+  margin-bottom: var(--sp-1);
 }
 
 /* 详情折叠（阈值 / 保留量 / 预留 token / 累计花费） */
 .rp-details-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-top: 5px;
   padding: 0;
   border: none;
@@ -2149,7 +2285,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 4px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-sm);
   color: var(--fg-dim);
@@ -2191,8 +2327,8 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .sp-meta {
   display: flex;
-  gap: 4px;
-  padding: 2px var(--sp-2) 4px;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   overflow: hidden;
@@ -2223,7 +2359,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .sp-diff-paths {
-  margin: 4px 0;
+  margin: var(--sp-1) 0;
   overflow: hidden;
   color: var(--fg-mute);
   font-family: var(--font-mono);
@@ -2233,8 +2369,8 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .sp-review-actions {
   display: inline-flex;
-  gap: 4px;
-  margin-left: 4px;
+  gap: var(--sp-1);
+  margin-left: var(--sp-1);
 }
 
 .sp-review-state {
@@ -2284,8 +2420,8 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .sp-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
 }
 
 .sp-tool {
@@ -2335,7 +2471,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-title {
   color: var(--fg);
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: 0;
 }
 
@@ -2349,7 +2485,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
      不预留、不滚动时不画（见文件末尾第 52 节）。 */
   scrollbar-gutter: auto;
   /* 与 .rp-top 的 6px 对齐（卡片自己收边，面板给它留出左右空隙） */
-  padding: 0 6px 16px;
+  padding: 0 6px var(--sp-4);
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
@@ -2365,7 +2501,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec {
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2521,7 +2657,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 /* 分区内容：紧跟标题，不再画标题下的分隔线（分区之间已有一条） */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body-inner {
   gap: 6px;
-  padding: 0 0 12px;
+  padding: 0 0 var(--sp-3);
   border-top: 0;
 }
 
@@ -2557,9 +2693,9 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: grid;
   width: min(320px, calc(100vw - 24px));
   gap: 2px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg, var(--r-lg));
   background: var(--bg-1);
   box-shadow: 0 14px 34px rgb(0 0 0 / 28%);
 }
@@ -2568,7 +2704,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-height: 38px;
   padding: 0 10px;
   border: 0;
@@ -2616,7 +2752,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 /* 独立子代理是跨回合后台资源，放在右侧工作区而不是输入框上方。 */
 .subagent-zone-right {
   min-width: 0;
-  margin: 0 6px 8px;
+  margin: 0 6px var(--sp-2);
 }
 
 .subagent-zone-right .sa-launcher {
@@ -2654,7 +2790,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 /* 目标 / 计划是砚宿主的固定能力，不参与可拖拽工具分区排序。 */
 .goal-panel {
   min-width: 0;
-  margin: 0 6px 8px;
+  margin: 0 6px var(--sp-2);
   padding: 9px 10px 10px;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
@@ -2675,7 +2811,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   align-items: center;
   gap: 6px;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .goal-panel-title .ico {
@@ -2708,8 +2844,8 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-review-pending {
   display: grid;
   gap: 6px;
-  margin-top: 8px;
-  padding: 7px 8px;
+  margin-top: var(--sp-2);
+  padding: 7px var(--sp-2);
   border-radius: var(--r-xs);
   background: var(--bg-2);
   color: var(--fg-dim);
@@ -2761,7 +2897,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .goal-review-fields strong {
   color: var(--fg);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   overflow-wrap: anywhere;
 }
 
@@ -2809,7 +2945,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-pending {
   display: grid;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
@@ -2822,14 +2958,14 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .goal-panel-content {
   min-width: 0;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
 }
 
 .goal-panel-meta {
   display: flex;
   min-width: 0;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
@@ -2850,7 +2986,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: grid;
   grid-template-columns: 14px 16px minmax(0, 1fr);
   align-items: start;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
   padding: 3px 0;
   color: var(--fg-dim);
@@ -2923,7 +3059,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-evidence {
   display: grid;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
 }
@@ -2942,13 +3078,13 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .goal-panel-display-title {
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   overflow-wrap: anywhere;
 }
 
 .goal-panel-subtitle {
   color: var(--fg-mute);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .goal-evidence-row {
@@ -2967,7 +3103,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-links {
   display: grid;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
 }
 
 .goal-link-row {
@@ -2975,7 +3111,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
-  padding: 2px 4px;
+  padding: 2px var(--sp-1);
   border: none;
   border-radius: var(--r-sm);
   background: none;
@@ -3005,7 +3141,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-budget {
   display: grid;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
 }
@@ -3034,11 +3170,11 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-panel-verification {
   display: grid;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
 }
 
 .goal-verification-status {
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .goal-verification-passed {
@@ -3093,7 +3229,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .goal-link-kind {
   flex: none;
   margin-left: auto;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--bg-3);
   color: var(--fg-mute);
@@ -3142,7 +3278,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   box-sizing: border-box;
   min-width: 0;
   min-height: 42px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   overflow-x: auto;
   overflow-y: visible;
   scrollbar-width: none;
@@ -3275,7 +3411,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 24px 16px;
+  padding: var(--sp-5) var(--sp-4);
 }
 
 .rp-start-group {
@@ -3284,7 +3420,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   text-align: center;
   color: var(--fg-mute);
 }
@@ -3301,7 +3437,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   color: var(--fg);
   font: inherit;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   cursor: pointer;
 }
 
@@ -3321,12 +3457,12 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 @media (max-width: 900px) {
   .rp-start {
-    padding-inline: 8px;
+    padding-inline: var(--sp-2);
   }
 
   .rp-start-item {
-    gap: 8px;
-    padding-inline: 8px;
+    gap: var(--sp-2);
+    padding-inline: var(--sp-2);
   }
 
   .rp-start-label {
@@ -3337,7 +3473,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 @media (max-height: 560px) {
   .rp-start {
     align-items: flex-start;
-    padding-top: 24px;
+    padding-top: var(--sp-5);
   }
 }
 
@@ -3366,7 +3502,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--fg-mute);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
@@ -3389,16 +3525,16 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 10px 12px;
+  padding: 10px var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .sp-ov-row {
   display: flex;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
   min-width: 0;
 }
 
@@ -3419,15 +3555,15 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .sp-ov-result {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
   border-top: 1px solid var(--border-soft);
-  padding-top: 8px;
+  padding-top: var(--sp-2);
 }
 
 .sp-ov-text {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg);
 }
 
@@ -3449,7 +3585,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg-mute);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
@@ -3488,7 +3624,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   flex: none;
   font-size: 10px;
   padding: 2px 5px;
-  border-radius: 999px;
+  border-radius: var(--r-full);
   background: var(--bg-3);
   color: var(--fg-dim);
 }
@@ -3502,7 +3638,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   max-height: min(70vh, 620px);
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg, var(--r-lg));
   background: var(--bg-2);
   box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.32));
 }
@@ -3531,11 +3667,11 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .goal-brief-toggle {
   align-self: flex-start;
-  margin-top: 4px;
+  margin-top: var(--sp-1);
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -3674,7 +3810,7 @@ body.tile-dragging .rp-float-head {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 5px 8px 7px;
+  padding: 5px var(--sp-2) 7px;
 }
 
 .rp-float-resize {
@@ -3749,7 +3885,7 @@ body.tile-dragging .rp-float-head {
 }
 
 .rp-float-empty {
-  padding: 4px 2px;
+  padding: var(--sp-1) 2px;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
 }
@@ -3874,7 +4010,7 @@ body.tile-dragging .rp-float-head {
  * 52. 右栏滚动条：默认隐形，指针进来才显形。
  *
  * ── 两个用户诉求，方向相反，得同时满足 ──
- *   · 上一轮：「滚轮太小了不好点」→ 全局滚动条加到了 14px（redesign.css）。
+ *   · 上一轮：「滚轮太小了不好点」→ 全局滚动条加到了 14px（tokens.css）。
  *   · 本轮：「滑动条太粗 并且很占位置」→ 右栏要细、要能自动隐藏。
  * 不冲突的做法：**默认完全透明**（不滚动时右栏里不该有一条灰条挤着内容），
  * 指针进入右栏才显形。命中区靠 border 透明部分撑到 13px —— 看起来细，
@@ -3927,9 +4063,9 @@ body.tile-dragging .rp-float-head {
 .rp-workobj {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
-  padding: 4px 10px;
+  padding: var(--sp-1) 10px;
   border-bottom: 1px solid var(--border-soft);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -3938,15 +4074,15 @@ body.tile-dragging .rp-float-head {
 .rp-workobj-activity {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
 .rp-workobj-open {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -3985,7 +4121,7 @@ body.tile-dragging .rp-float-head {
   margin: 0 0 var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .office-line {

@@ -67,7 +67,7 @@
   /*
    * 左栏宽度不在 tokens 里定 —— 它是**布局变量**，由 layout.css 统一管
    * （依赖 --w-rail-user 用户值，并且要按窗口宽度分档夹取）。
-   * 这里曾经写死 300px，先后被 redesign 和 layout 覆盖两次，
+   * 这里曾经写死 300px，先后被两层布局规则覆盖，
    * 改它完全看不到效果。
    */
   /* 中栏内容最大宽度。
@@ -138,6 +138,7 @@
   --dur-1000: 1000ms;
   --dur-1100: 1100ms;
   --dur-1150: 1150ms;
+  --dur-1200: 1200ms;
   --dur-1250: 1250ms;
   --dur-1400: 1400ms;
   --dur-1500: 1500ms;
@@ -342,4 +343,64 @@ html[data-density='comfortable'] {
   --d-row-gap: 7px;
   --d-section-gap: 9px;
   --d-message-gap: 48px;
+}
+
+/* （工具卡的圆角/内边距两条已删：整条工具卡路径换成了 chat/ToolRow 的 .trow/§61） */
+/* 8. 滚动条更细更淡，别抢视线 */
+::-webkit-scrollbar {
+  /* 11 → 14：用户报「滚轮太小了不好点」。下面 thumb 的 border 是透明的，
+     真正可见的宽度 = width - 2×border（trasparent 部分也算命中区）。 */
+  width: 14px;
+  height: 14px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-str);
+  background-clip: content-box;
+}
+
+/* 31. 对齐收尾
+   —— 学了 Agents-Anywhere 代码里的两点：
+   ① 展开状态用 CSS 的 [data-state] / [aria-expanded] 驱动图标，
+   不在 React 里为「箭头转不转」多留一份 state
+   ② 层级靠背景色 + 缩进，不靠边框 */
+/* ① 所有折叠箭头统一由 aria-expanded 驱动 —— 少一份 state，也不会不同步 */
+[aria-expanded='true'] > .chev {
+  transform: rotate(90deg);
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --w-stream: 980px;
+  }
+}
+
+/* 37. 终端风格强化
+   目标：更像终端，不像「一堆卡片」。
+   手段（按重要性排）：
+   ① 圆角收小 —— 卡片感主要来自圆角
+   ② 助手消息加左侧 1px 竖线 —— 终端里输出是缩进的，不装箱
+   ③ 工具卡用左侧状态色条 + 方角，不用整圈边框
+   ④ 层级只用背景色差，不用边框（边框是"卡片"的信号）
+   ⑤ 分隔线更细更淡 */
+/* ① 圆角收小 */
+/*
+ * 这里原本还有 --w-rail / --w-rail-collapsed / --r-xs..xl 五个圆角令牌。
+ * 它们都是「同一个变量在本文件里把前面的值盖掉」的典型：
+ *   · 圆角令牌已归并到 tokens.css（只留最终值）；
+ *   · --w-rail / --w-rail-collapsed 归并到 layout.css（布局变量统一归口，
+ *     那里还要按窗口宽度分档夹取）。
+ * 改那些值请去上面两个文件 —— 在这里写是看不到效果的。
+ * 清单与覆盖链：docs/design/CSS-令牌清单.md
+ */
+:root {
+  /* 工具栏。同样：用户拖过就用他的值 */
+  --w-right: var(--w-panel-user, 264px);
 }

@@ -66,7 +66,7 @@
 .btn.sm {
   height: var(--ctl-h-sm);
   padding: 0 var(--sp-2);
-  gap: 4px;
+  gap: var(--sp-1);
   font-size: var(--fs-xs);
 }
 .btn.lg {
@@ -259,7 +259,7 @@
 .ui-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   flex: none;
   height: 18px;
   padding: 0 6px;

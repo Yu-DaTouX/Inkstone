@@ -5,7 +5,7 @@
 > **只有每个变量的“最终值”生效** —— 它可能不在 `tokens.css` 里。
 > 定义链从左到右，最右者胜（同特异性、后加载）。
 
-## `:root`　91 个变量（其中 1 个被重复定义）
+## `:root`　92 个变量（其中 1 个被重复定义）
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
@@ -23,6 +23,7 @@
 | `--dur-1100` | `1100ms` | **tokens**: 1100ms |
 | `--dur-1150` | `1150ms` | **tokens**: 1150ms |
 | `--dur-120` | `120ms` | **tokens**: 120ms |
+| `--dur-1200` | `1200ms` | **tokens**: 1200ms |
 | `--dur-1250` | `1250ms` | **tokens**: 1250ms |
 | `--dur-130` | `130ms` | **tokens**: 130ms |
 | `--dur-14` | `14ms` | **tokens**: 14ms |
@@ -98,7 +99,7 @@
 | `--think-xhigh` | `#d183e8` | **motion**: #d183e8 |
 | `--w-rail` | `var(--w-rail-user, 248px)` | **layout**: var(--w-rail-user, 248px) |
 | `--w-rail-collapsed` | `0px` | **layout**: 0px |
-| `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | redesign: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
+| `--w-right` ⚠️ | `var(--w-panel-user, 336px)` | tokens: var(--w-panel-user, 264px) → **layout**: var(--w-panel-user, 336px) |
 | `--w-stream` | `800px` | **tokens**: 800px |
 
 ## `html[data-theme='dark']`　29 个变量
@@ -180,7 +181,7 @@
 
 | 变量 | 最终值 | 定义链 |
 | --- | --- | --- |
-| `--w-stream` | `980px` | **redesign**: 980px |
+| `--w-stream` | `980px` | **tokens**: 980px |
 
 ## `html[data-density='comfortable']`　3 个变量
 
@@ -200,7 +201,7 @@
 
 ## 小结
 
-- 变量总数（含各主题）：**163**
+- 变量总数（含各主题）：**164**
 - 同一选择器内被重复定义（真冗余）：**1**
 - ⚠️ 标记的那些：改值要改**最后一个**，否则看不到效果；
   它们是「令牌归并」的候选（把最终值收敛到 tokens.css 并删掉中间覆盖）。
