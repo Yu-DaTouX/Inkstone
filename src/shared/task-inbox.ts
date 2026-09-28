@@ -254,6 +254,15 @@ export interface TaskInboxQuery extends InboxFilter {
   offset?: number
 }
 
+/** Keep the renderer's selected status aligned with the shared IPC filter contract. */
+export function taskInboxPageQuery(limit: number, status: TaskStatus | 'all'): TaskInboxQuery {
+  return {
+    limit,
+    offset: 0,
+    ...(status === 'all' ? {} : { statuses: [status] })
+  }
+}
+
 export interface InboxFilter {
   /** 只看这些状态；省略 = 全部（含 dismissed，由界面自己决定要不要请求） */
   statuses?: TaskStatus[]

@@ -245,7 +245,9 @@
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-.rail-pins {
+/* 置顶区与「最近」区共用一套外观：都是项目区之上的跨项目捷径。 */
+.rail-pins,
+.rail-recent {
   margin-bottom: 6px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-soft);

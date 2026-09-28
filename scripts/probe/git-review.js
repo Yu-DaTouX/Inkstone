@@ -64,6 +64,9 @@
 
   try {
     await closeOnboarding()
+    store.getState().setReviewScope?.({ kind: 'working' })
+    localStorage.setItem('yan.git.viewed', '[]')
+    localStorage.removeItem('yan.reviewSide')
 
     /* ── 1. 环境菜单 ─────────────────────────────────────── */
 
@@ -126,8 +129,21 @@
 
     /* ── 3. 文本 diff 真的渲染出来了 ─────────────────────── */
 
-    const diff = await waitFor(() => testid('review-diff'), 8000)
-    ok(!!diff, '有文件被自动展开并渲染出 diff')
+    const treePaths = () => $$('[data-testid="review-tree-file"]').map((el) => el.dataset.path || '')
+    const chooseFile = async (match) => {
+      const node = $$('[data-testid="review-tree-file"]').find((el) => match(el.dataset.path || ''))
+      if (!node) return null
+      await click(node)
+      return waitFor(() => {
+        const card = $$('[data-testid="review-file"]').find((el) => el.dataset.file === node.dataset.path)
+        return card || null
+      }, 4000)
+    }
+
+    /* 面板只保留当前选中的一张卡片；文本断言先选有新增内容的文件。 */
+    const textCard = await chooseFile((path) => path.includes('modify.txt'))
+    const diff = await waitFor(() => textCard?.querySelector('[data-testid="review-diff"]'), 8000)
+    ok(!!diff, '选择文本文件后渲染出 diff')
 
     const adds = await waitFor(() => $$('.rdiff-line.add').length, 8000)
     ok(adds > 0, 'diff 里有新增行（带 + 号与行号）', String(adds))
@@ -135,7 +151,7 @@
     const dels = await waitFor(() => $$('.rdiff-line.del').length, 8000)
     ok(dels > 0, 'diff 里有删除行', String(dels))
 
-    const firstAdd = $('.rdiff-line.add')
+    const firstAdd = textCard?.querySelector('.rdiff-line.add')
     const noCells = firstAdd ? firstAdd.querySelectorAll('.rdiff-no').length : 0
     ok(noCells === 2, '每行有**两列**行号（旧/新），而不是只有一列', String(noCells))
     const addNo = firstAdd ? textOf(firstAdd.querySelectorAll('.rdiff-no')[1]) : ''
@@ -146,16 +162,17 @@
      * 一个点了没反应的控件比没有这个控件更糟，所以这条断言盯的
      * 不是「折叠条存在」，而是「点了之后出现了真实内容行」。
      */
-    const gap = await waitFor(() => testid('review-gap'), 8000)
+    const multiCard = await chooseFile((path) => path.includes('multi.txt'))
+    const gap = await waitFor(() => multiCard?.querySelector('[data-testid="review-gap"]'), 8000)
     ok(!!gap, '改动之间有「N 行未修改」的折叠条（长文件不会把无关行全铺出来）', textOf(gap))
     if (gap) {
-      const ctxBefore = $$('.rdiff-line.ctx').length
+      const ctxBefore = multiCard.querySelectorAll('.rdiff-line.ctx').length
       const gapLabel = textOf(gap)
       await click(gap)
       /* 展开要去要该文件的原文（一次 IPC），所以等的是出现真实内容行 */
-      const opened = await waitFor(() => testid('review-gap-open'), 8000)
+      const opened = await waitFor(() => multiCard.querySelector('[data-testid="review-gap-open"]'), 8000)
       ok(!!opened, '点折叠条真的展开了内容（而不是点了没反应）', gapLabel)
-      const ctxAfter = $$('.rdiff-line.ctx').length
+      const ctxAfter = multiCard.querySelectorAll('.rdiff-line.ctx').length
       ok(ctxAfter > ctxBefore, '展开后上下文行数增加', `${ctxBefore} → ${ctxAfter}`)
       /* 展开出来的行必须带**两侧**行号，且是数字 */
       const firstLine = opened ? opened.querySelector('.rdiff-line.ctx') : null
@@ -207,12 +224,12 @@
       ok(false, '树里应当有目录节点（fixture 里有 docs/ 与 src/）')
     }
 
-    /* 点树里的文件 → 滚动并展开它 */
+    /* 点树里的文件 → 当前卡片切换并展开它 */
     const untrackedNode = $$('[data-testid="review-tree-file"]').find((el) => (el.dataset.path || '').includes('untracked'))
     if (untrackedNode) {
       await click(untrackedNode)
       await sleep(200)
-      const card = $(`[data-file="${untrackedNode.dataset.path}"]`)
+      const card = $$('[data-testid="review-file"]').find((el) => el.dataset.file === untrackedNode.dataset.path)
       const toggle = card && card.querySelector('[data-testid="review-file-toggle"]')
       ok(toggle && toggle.getAttribute('aria-expanded') === 'true', '点树里的文件会展开它对应的卡片')
     } else {
@@ -221,7 +238,9 @@
 
     /* ── 5. 已查看标记（持久化 + 内容指纹参与身份） ──────── */
 
-    const viewedBtn = await waitFor(() => testid('review-viewed'), 3000)
+    /* 关闭重开后会回到列表首个文本文件，因此用它钉持久化身份。 */
+    const viewedCard = await chooseFile((path) => path.includes('a-deleted.txt'))
+    const viewedBtn = await waitFor(() => viewedCard?.querySelector('[data-testid="review-viewed"]'), 3000)
     ok(!!viewedBtn, '文件头部有「标记为已查看」按钮')
     if (viewedBtn) {
       await click(viewedBtn)
@@ -301,20 +320,21 @@
       ok(/1\/|1 of/.test(progress3), '重新打开后进度仍是 1', progress3)
 
       /* 取消标记 */
-      await click(again)
-      await sleep(150)
-      ok(!again.classList.contains('on'), '再点一次能取消已查看')
-      ok(/0\/|0 of/.test(textOf(testid('review-progress'))), '取消后进度回到 0', textOf(testid('review-progress')))
-      await click(again)
-      await sleep(150)
+      if (again) {
+        await click(again)
+        await sleep(150)
+        const afterCancel = testid('review-viewed')
+        ok(afterCancel && !afterCancel.classList.contains('on'), '再点一次能取消已查看')
+        ok(/0\/|0 of/.test(textOf(testid('review-progress'))), '取消后进度回到 0', textOf(testid('review-progress')))
+        await click(afterCancel)
+        await sleep(150)
+      }
     }
 
     /* ── 6. 图片前后对照 ─────────────────────────────────── */
 
-    const picCard = await waitFor(
-      () => $$('[data-testid="review-file"]').find((c) => (c.dataset.file || '').includes('pic.png')),
-      6000
-    )
+    await chooseFile((path) => path.includes('pic.png'))
+    const picCard = await waitFor(() => $$('[data-testid="review-file"]').find((c) => (c.dataset.file || '').includes('pic.png')), 6000)
     ok(!!picCard, '被改动的 PNG 出现在清单里')
     if (picCard) {
       const toggle = picCard.querySelector('[data-testid="review-file-toggle"]')
@@ -340,10 +360,8 @@
 
     /* ── 7. 二进制文件不能伪造行数 ───────────────────────── */
 
-    const binCard = await waitFor(
-      () => $$('[data-testid="review-file"]').find((c) => (c.dataset.file || '').includes('blob.bin')),
-      6000
-    )
+    await chooseFile((path) => path.includes('blob.bin'))
+    const binCard = await waitFor(() => $$('[data-testid="review-file"]').find((c) => (c.dataset.file || '').includes('blob.bin')), 6000)
     ok(!!binCard, '二进制文件出现在清单里')
     if (binCard) {
       const toggle = binCard.querySelector('[data-testid="review-file-toggle"]')
@@ -362,25 +380,20 @@
 
     const scopeSel = await waitFor(() => testid('review-scope'), 6000)
     ok(!!scopeSel, '头部有范围选择器')
-    const pathsIn = () => $$('[data-testid="review-file"]').map((c) => c.dataset.file || '')
-    const workingPaths = pathsIn()
+    const workingPaths = treePaths()
     ok(workingPaths.some((p) => p.includes('untracked')), '工作区范围里有未跟踪文件')
 
-    scopeSel.value = 'staged'
-    scopeSel.dispatchEvent(new Event('change', { bubbles: true }))
-    await sleep(600)
+    store.getState().setReviewScope?.({ kind: 'staged' })
     const stagedPaths = await waitFor(() => {
-      const p = pathsIn()
+      const p = treePaths()
       return p.length && !p.some((x) => x.includes('untracked')) ? p : null
     }, 6000)
-    ok(!!stagedPaths, '切到「已暂存」后未跟踪文件不再出现（范围真的传下去了）', (stagedPaths || pathsIn()).join(', '))
+    ok(!!stagedPaths, '切到「已暂存」后未跟踪文件不再出现（范围真的传下去了）', (stagedPaths || treePaths()).join(', '))
     ok((stagedPaths || []).some((p) => p.includes('staged-new')), '「已暂存」里有那个 git add 过的新文件')
 
-    scopeSel.value = 'working'
-    scopeSel.dispatchEvent(new Event('change', { bubbles: true }))
-    await sleep(600)
-    await waitFor(() => pathsIn().some((p) => p.includes('untracked')), 6000)
-    ok(pathsIn().some((p) => p.includes('untracked')), '切回工作区范围后未跟踪文件回来了')
+    store.getState().setReviewScope?.({ kind: 'working' })
+    await waitFor(() => treePaths().some((p) => p.includes('untracked')), 6000)
+    ok(treePaths().some((p) => p.includes('untracked')), '切回工作区范围后未跟踪文件回来了')
 
     /* ── 9. 刷新与关闭 ───────────────────────────────────── */
 

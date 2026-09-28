@@ -61,7 +61,7 @@
     ok(!q('[data-testid="tool-lib-btn"]'), '工具库入口不存在')
     ok(!q('[data-testid="tool-lib"]'), '工具库弹层不存在')
     /* 移出为浮动的入口改由分区把手的键盘路径承担（下面 section 2 验证） */
-    ok(!!q('[data-testid="grip-todo"]') && !!q('[data-testid="grip-files"]'), '分区把手仍在')
+    ok(!q('.rp-slot[data-tool-id="todo"]') && !!q('[data-testid="grip-files"]'), '空任务不留空分区，实际分区仍有把手')
 
     out.push('\n=== 2. 键盘移出为浮动（单实例） ===')
     const gq = q('[data-testid="grip-queue"]')

@@ -102,6 +102,10 @@ export function FloatingTiles() {
   )
   /* 空判据需要的几个字段（与 RightPanel 的 SECTION_REGISTRY.isEmpty 同一个口径） */
   const todos = useStore((s) => s.todos)
+  const goal = useStore((s) => s.goal)
+  const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
+    !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
+  ))
   const logs = useStore((s) => s.logs)
   const statuses = useStore((s) => s.statuses)
   const widgets = useStore((s) => s.widgets)
@@ -435,7 +439,7 @@ export function FloatingTiles() {
                       style={{ maxHeight: Math.max(0, rect.height - TILE_HEAD_H) }}
                     >
                       {(SECTION_REGISTRY[id].isEmpty
-                        ? SECTION_REGISTRY[id].isEmpty!({ todos, logs, statuses, widgets })
+                        ? SECTION_REGISTRY[id].isEmpty!({ todos, goal, hasMessageOutputs, logs, statuses, widgets })
                         : false) ? (
                         <div className="rp-float-empty">{t('tl.empty')}</div>
                       ) : (

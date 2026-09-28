@@ -898,6 +898,8 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
   const piInfo = useStore((s) => s.piInfo)
   const changeCwd = useStore((s) => s.changeCwd)
   const redetectPi = useStore((s) => s.redetectPi)
+  const openBrowser = useStore((s) => s.openBrowser)
+  const closeSettings = useStore((s) => s.closeSettings)
   const [detecting, setDetecting] = useState(false)
 
   const pickCwd = async (): Promise<void> => {
@@ -954,6 +956,35 @@ function AboutTab({ onShowOnboarding }: { onShowOnboarding: () => void }) {
             {BUILD_INFO.buildHash ? ` · ${BUILD_INFO.buildHash}` : ''}
           </div>
         </div>
+      </div>
+
+      {/*
+       * 项目主页（GitHub 仓库）：地址来自 package.json，构建时注入到 BUILD_INFO，
+       * 界面里不另抄一份 —— 抄的那份会在仓库改名后变成打不开的死链。
+       * 点开走链接统一入口（方案 5.2，内部浏览器），所以先关掉设置这层遮罩，
+       * 否则网页在遮罩下面打开了，用户看不到。
+       */}
+      <div className="set-row" data-testid="about-repo">
+        <div className="set-label">
+          <div className="set-name">{t('set.projectHome')}</div>
+          <div className="set-desc set-path" title={BUILD_INFO.repositoryUrl}>
+            {BUILD_INFO.repositoryUrl || '—'}
+          </div>
+        </div>
+        {BUILD_INFO.repositoryUrl ? (
+          <div className="set-ctl">
+            <button
+              className="btn"
+              data-testid="about-repo-open"
+              onClick={() => {
+                closeSettings()
+                void openBrowser(BUILD_INFO.repositoryUrl)
+              }}
+            >
+              {t('set.projectHomeOpen')}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="set-row">

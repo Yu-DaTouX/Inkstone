@@ -463,6 +463,20 @@ function activityModelRules() {
 function registerStubHandlers() {
   registerTerminalStub()
   ipcMain.handle('yan:agentStatus', () => ({ state: 'ready', detail: '' }))
+  const matrixInboxCards = [
+    { id: 'inbox-review', sessionId: 'inbox-review', title: '浏览器深度控制 · 搜索结果待审阅', status: 'needs_review', approximate: true, reason: '任务已结束，结果需要你确认后再继续。', progress: '检查完成 · 2 项证据', updatedAt: Date.now() - 120_000 },
+    { id: 'inbox-waiting', sessionId: 'inbox-waiting', title: '学习工作台 · 等待你回答练习题', status: 'waiting_user', reason: '正在等你的回答：请解释为什么选择这个方案。', updatedAt: Date.now() - 240_000 },
+    { id: 'inbox-failed', sessionId: 'inbox-failed', title: '刷新项目依赖并检查构建结果', status: 'failed', reason: '构建失败：需要查看日志并决定是否重试。', updatedAt: Date.now() - 360_000 },
+    { id: 'inbox-running', sessionId: 'inbox-running', title: '整理工作区代码结构', status: 'running', progress: '正在检查 4 个文件', updatedAt: Date.now() - 480_000 }
+  ]
+  ipcMain.handle('yan:taskinbox:page', (_event, query = {}) => {
+    const selected = Array.isArray(query.statuses) ? new Set(query.statuses) : null
+    const filtered = selected ? matrixInboxCards.filter((card) => selected.has(card.status)) : matrixInboxCards
+    const offset = Math.max(0, Number(query.offset) || 0)
+    const limit = Math.max(1, Number(query.limit) || 50)
+    const counts = { pending: 0, running: 1, waiting_user: 1, failed: 1, needs_review: 1, done: 0, dismissed: 0 }
+    return { cards: filtered.slice(offset, offset + limit), total: filtered.length, counts, degraded: 0 }
+  })
   /*
    * 会话地图（实施-18）不再走 peekSession 这类 IPC：地图只读 store 的会话
    * 元数据，所以矩阵里的假会话写在 store 上就够。listSessions 仍留一份夹具，
@@ -1279,9 +1293,9 @@ const GROUPS = [
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
   { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig'] },
   { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spacememory', 'spacereview', 'capneed', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig', 'envnotgit'] },
-  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings'] },
-  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spaceplaybook', 'spacefollow', 'spacelearning', 'spaceexercise', 'spaceexerciseimage', 'spacememory', 'spacereview', 'spaceaudio', 'capneed', 'amconfig', 'envnotgit'] },
+  { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings', 'workbenchhome', 'taskinbox'] },
+  { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning', 'workbenchhome', 'taskinbox'] },
   /*
    * 单开一组：额度三档配色（绿 / 黄 / 红 + 「已用完」）。
    * 为什么单独一组而不塞进组 0：那个状态会把会话的 provider 换成受控桩名，
@@ -1318,7 +1332,12 @@ const GROUPS = [
   /* 实施-12 U-1：真窗口展示收起左栏后，更多会话恢复为五条预览（深浅各一张）。 */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['railreset'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['railreset'] },
-  /* 实施-12 U-2：项目菜单四角夹取（深/浅分开），以及 150% 缩放下的边角形态。 */
+  /* 2026-09-27 新增：左栏「最近」区与项目「移除项目」确认框（深浅各一）。 */
+  { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['railrecent', 'projectremove'] },
+  { w: 1440, h: 900, scale: 1, theme: 'light', states: ['railrecent', 'projectremove'] },
+  /*
+   * 实施-12 U-2：项目菜单四角夹取（深/浅分开），以及 150% 缩放下的边角形态。
+   */
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutl'] },
   { w: 1440, h: 900, scale: 1, theme: 'dark', states: ['projectmenutr'] },
   { w: 1440, h: 900, scale: 1, theme: 'light', states: ['projectmenubl'] },
@@ -1873,6 +1892,83 @@ const STATES = {
       st.openSettings('appearance');
       return 'ok';
     })()
+  `,
+  /*
+   * 2026-09-27 新增：左栏「最近」区。
+   *
+   * 会话跨两个合成项目，`lastOpenedAt` 从新到旧 —— 图里应该看到跨项目的
+   * 打开时间倒序，而不是按项目分组。
+   */
+  railrecent: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const base = String(st.settings.cwd || '').replace(/[\\/][^\\/]*$/, '');
+      const projects = [
+        { id: 'vis-rp1', cwd: base + '/vis-alpha', name: '甲项目', archived: false, createdAt: stamp, updatedAt: stamp + 1 },
+        { id: 'vis-rp2', cwd: base + '/vis-beta', name: '乙项目', archived: false, createdAt: stamp, updatedAt: stamp }
+      ];
+      const titles = ['核对话栏最近区', '补项目移除确认框', '过一遍样式清单', '核对双语文案'];
+      const sessions = titles.map((title, i) => ({
+        id: 'vis-rec-' + i,
+        path: projects[i % 2].cwd + '/vis-rec-' + i + '.jsonl',
+        cwd: projects[i % 2].cwd,
+        projectId: projects[i % 2].id,
+        title,
+        named: i > 1,
+        createdAt: stamp - 86400000,
+        updatedAt: stamp - i * 600000,
+        lastActivityAt: stamp - i * 600000,
+        lastOpenedAt: stamp - i * 1000,
+        messageCount: 4 + i
+      }));
+      window.__yanStore.setState({
+        settings: { ...st.settings, projects, projectGroups: [], recentCwds: projects.map((p) => p.cwd) },
+        sessions,
+        session: { ...(st.session ?? {}), cwd: sessions[0].cwd, sessionFile: sessions[0].path }
+      });
+      await sleep(520);
+      const zone = document.querySelector('[data-testid="rail-recent"]');
+      if (!zone) return 'no-recent:rows=' + document.querySelectorAll('.srow-wrap').length;
+      return 'ok(rows=' + zone.querySelectorAll('.srow-wrap').length + ')';
+    })().catch((e) => 'err:' + String(e && e.message))
+  `,
+  /*
+   * 2026-09-27 新增：项目右键菜单里的「移除项目」与确认框。
+   *
+   * 先断言菜单里有这一项（以前只有「归档项目」），再点开确认框并把它留在画面里。
+   * 确认框的文案要能说清“会话进归档、磁盘目录不动”。
+   */
+  projectremove: `
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const stamp = Date.now();
+      const cwd = String(st.settings.cwd);
+      window.__yanStore.setState({
+        settings: { ...st.settings, projects: [{ id: 'vis-rm', cwd, name: '待移除项目', archived: false, createdAt: stamp, updatedAt: stamp }], projectGroups: [], recentCwds: [cwd] }
+      });
+      await sleep(520);
+      /* 选带菜单按钮的项目行：全局行没有 .proj-rename */
+      const row = [...document.querySelectorAll('[data-testid="rail-project-row"]')].find((el) => el.querySelector('.proj-rename'));
+      if (!row) return 'no-row-with-menu';
+      const trigger = row.querySelector('.proj-rename');
+      if (!trigger) return 'no-trigger';
+      trigger.click();
+      await sleep(400);
+      const item = document.querySelector('[data-testid="rail-project-remove"]');
+      if (!item) return 'no-remove-item';
+      item.click();
+      await sleep(420);
+      const dialog = document.querySelector('[data-testid="rail-remove-project-confirm"]');
+      if (!dialog) return 'no-confirm';
+      return 'ok';
+    })().catch((e) => 'err:' + String(e && e.message))
   `,
   /*
    * 实施-23 M2：自定义 API 服务表单（协议下拉 + Base URL + 模型行 + 密钥输入）。
@@ -5430,6 +5526,35 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       return document.querySelector('[data-testid="workbench-home"]') ? 'ok' : 'bad-workbenchhome';
     })()
   `,
+  taskinbox: `
+    (async () => {
+      const st = window.__yanStore.getState();
+      st.closeSettings();
+      st.setRailPinned(true);
+      const now = Date.now();
+      window.__yanStore.setState({
+        workspaceMode: 'coding',
+        inboxOpen: true,
+        messages: [],
+        sessions: ['review', 'waiting', 'failed', 'running'].map((id, index) => ({
+          id: 'inbox-' + id,
+          path: 'C:/yan-matrix/inbox-' + id + '.jsonl',
+          cwd: 'C:/proj/inkstone',
+          title: ['浏览器深度控制 · 搜索结果待审阅', '学习工作台 · 等待你回答练习题', '刷新项目依赖并检查构建结果', '整理工作区代码结构'][index],
+          named: true,
+          createdAt: now - (index + 1) * 86400000,
+          updatedAt: now - (index + 1) * 120000,
+          lastActivityAt: now - (index + 1) * 120000,
+          messageCount: 4
+        }))
+      });
+      for (let i = 0; i < 50; i++) {
+        if (document.querySelector('[data-testid="task-inbox"]')) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return document.querySelector('[data-testid="task-inbox"]') ? 'ok' : 'bad-taskinbox';
+    })()
+  `,
   /*
    * 实施-18：会话地图（三层：项目泳道 / 分支列 / 父子边）。
    * 与首页同一批合成会话，保证两张图讲的是同一件事。
@@ -5744,6 +5869,9 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
  * 同时统计关键元素是否真的在视口里（截图一片空白时能立刻看出来）。
  */
 const MUST_HAVE = {
+  /* 2026-09-27 新增：左栏「最近」区 / 项目「移除」确认框。 */
+  railrecent: ['[data-testid="rail-recent"]'],
+  projectremove: ['[data-testid="rail-remove-project-confirm"]'],
   /* 主题空间区（实施-25 P02）：入口 + 空间行 + 展开的空间树 */
   railspaces: [
     '[data-testid="rail-spaces"]',
@@ -6146,15 +6274,23 @@ const MUST_HAVE = {
   themetransitioncollapse: ['[data-testid="theme-light"]'],
   /* H-10 过程页：详情壳与可滚动正文都要在 */
   workbenchhome: [
-    '[data-testid="wb-card-map"]',
-    '[data-testid="wb-open-map"]',
-    '[data-testid="wb-card-goal"]',
+    '[data-testid="workbench-home"]',
+    '[data-testid="wb-card-focus"]',
     /* 今天可复习（P12） */
     '[data-testid="wb-card-review"]',
     '[data-testid="wb-card-review-count"]',
     '[data-testid="wb-card-review-meta"]',
     '[data-testid="wb-open-review"]'
   ],
+  taskinbox: [
+    '[data-testid="task-inbox"]',
+    '[data-testid="inbox-refresh"]',
+    '[data-testid="inbox-filter-all"]',
+    '[data-testid="inbox-card"][data-status="needs_review"]',
+    '[data-testid="inbox-card"][data-status="waiting_user"]',
+    '[data-testid="inbox-card"][data-status="failed"]'
+  ],
+  taskinbox: ['[data-testid="task-inbox"]', '[data-testid="inbox-refresh"]', '[data-testid="inbox-filter-all"]'],
   subagentnote: ['[data-testid="subagent-notes"]', '.sa-note', '.sa-note-dot', '[data-testid="subagent-note-summary-sub-note-summary"]'],
   sessionmap: [
     '[data-testid="map-node"]',

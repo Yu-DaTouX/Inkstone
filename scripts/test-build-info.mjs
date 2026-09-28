@@ -5,6 +5,30 @@ export function runBuildInfoTests(ok, api) {
     api.BUILD_INFO.version === '' && api.BUILD_INFO.buildTime === '',
     '未注入时不编造版本与时间（测试进程就是这种情况）'
   )
+  ok(api.BUILD_INFO.repositoryUrl === '', '未注入时仓库地址为空串（不编造链接）')
+
+  /*
+   * 仓库地址归一化：package.json 里写的是 `git+https://…/Inkstone.git`，
+   * 而界面上要的是能点的网页地址 —— 差一个字符就是一个打不开的链接。
+   */
+  ok(
+    api.normalizeRepositoryUrl('git+https://github.com/Yu-DaTouX/Inkstone.git') ===
+      'https://github.com/Yu-DaTouX/Inkstone',
+    '归一化 repository.url（去 git+ 前缀与 .git 尾巴）'
+  )
+  ok(
+    api.normalizeRepositoryUrl('https://github.com/Yu-DaTouX/Inkstone#readme') ===
+      'https://github.com/Yu-DaTouX/Inkstone',
+    '归一化 homepage（去 #readme 片段）'
+  )
+  ok(
+    api.normalizeRepositoryUrl('  https://github.com/o/r/  ') === 'https://github.com/o/r',
+    '去掉首尾空白与结尾斜杠'
+  )
+  ok(
+    api.normalizeRepositoryUrl(undefined) === '' && api.normalizeRepositoryUrl('') === '',
+    '缺失时返回空串（界面自己决定显示 —）'
+  )
 
   const iso = '2026-09-16T01:06:23.000Z'
   const d = new Date(iso)

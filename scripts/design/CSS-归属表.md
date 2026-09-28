@@ -19,16 +19,16 @@
 | 9 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
 | 10 | `shell.css` | 393 | 54 | 56 | 1 | 7 |
 | 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
-| 12 | `rail.css` | 1794 | 246 | 252 | 0 | 0 |
+| 12 | `rail.css` | 1796 | 247 | 253 | 0 | 0 |
 | 13 | `chat.css` | 2189 | 287 | 292 | 5 | 2 |
-| 14 | `composer.css` | 1951 | 273 | 276 | 2 | 0 |
-| 15 | `tools.css` | 3989 | 595 | 638 | 3 | 5 |
+| 14 | `composer.css` | 1941 | 271 | 274 | 1 | 0 |
+| 15 | `tools.css` | 3986 | 596 | 641 | 3 | 5 |
 | 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
 | 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
 | 18 | `review.css` | 1614 | 233 | 234 | 1 | 0 |
 | 19 | `workbench.css` | 3389 | 457 | 474 | 3 | 0 |
 | 20 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **21094** | **2798** | | | |
+| | **合计** | **21083** | **2797** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -39,7 +39,7 @@
 | `tokens.css` | 17 |
 | `app.css` | 56 |
 | `stage1.css` | 11 |
-| `redesign.css` | 76 |
+| `redesign.css` | 75 |
 | `motion.css` | 192 |
 | `settings.css` | 121 |
 | `electron.css` | 9 |
@@ -47,10 +47,10 @@
 | `layout.css` | 14 |
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
-| `rail.css` | 246 |
+| `rail.css` | 247 |
 | `chat.css` | 285 |
-| `composer.css` | 272 |
-| `tools.css` | 595 |
+| `composer.css` | 270 |
+| `tools.css` | 596 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
 | `review.css` | 233 |
@@ -59,7 +59,7 @@
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **91** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **92** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
@@ -117,6 +117,7 @@
 | `.browser-nav.browser-chrome` | redesign → browser |
 | `.browser-address` | redesign → browser |
 | `.browser-address input` | redesign → browser |
+| `.rp-hist-todo .rp-text` | redesign → tools |
 | `.app.rail-off .rail` | redesign → rail |
 | `.rail-mode-btn:hover` | redesign → rail |
 | `.rail-top` | redesign → rail |

@@ -179,6 +179,10 @@ export function RightPanel() {
    * 界面完全没反应（实测踩过：todo/ext 为空时不渲染，但 order 里还算着它们）。
    */
   const todos = useStore((s) => s.todos)
+  const goal = useStore((s) => s.goal)
+  const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
+    !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
+  ))
   const logs = useStore((s) => s.logs)
   const statuses = useStore((s) => s.statuses)
   const widgets = useStore((s) => s.widgets)
@@ -200,9 +204,9 @@ export function RightPanel() {
   const isEmptySection = useCallback(
     (id: ToolSectionId): boolean => {
       const probe = SECTION_REGISTRY[id].isEmpty
-      return probe ? probe({ todos, logs, statuses, widgets }) : false
+      return probe ? probe({ todos, goal, hasMessageOutputs, logs, statuses, widgets }) : false
     },
-    [todos, logs, statuses, widgets]
+    [todos, goal, hasMessageOutputs, logs, statuses, widgets]
   )
 
   /** 工具页里实际渲染的停靠磁贴：布局顺序 → 去掉内容为空的 */
@@ -922,15 +926,17 @@ function SectionSlot({
       return
     }
 
-    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
     const drop = useStore.getState().toolDropTarget
-    const targetId = (target?.dataset.toolId ?? drop?.id) as ToolSectionId | undefined
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.rp-slot') as HTMLElement | null
+    /* 落点预览就是用户看到的承诺；提交同一落点，避免合成事件或覆盖层让
+       elementFromPoint 命中另一个槽位，出现“预览在 A、松手却放到 B”。 */
+    const targetId = (drop?.id ?? target?.dataset.toolId) as ToolSectionId | undefined
     setToolDropTarget(null)
     if (!targetId || targetId === id) return
 
-    // 放在目标之前还是之后：优先使用落点所在盒子的几何位置，回退到 pointermove 记录。
+    // 与预览统一使用 pointermove 记录的 before/after；没有记录时才按几何位置兜底。
     const r = target?.getBoundingClientRect()
-    const after = r ? e.clientY > r.top + r.height / 2 : !!drop?.after
+    const after = drop?.id === targetId ? drop.after : r ? e.clientY > r.top + r.height / 2 : false
     onMove(id, targetId, after)
   }
 
@@ -1054,9 +1060,10 @@ function SectionSlot({
    * 选择器返回**布尔**（不是对象）—— zustand v5 用 Object.is 比较，
    * 每帧返回新对象会无限重渲染。
    */
-  const isEmpty = useStore((s) =>
-    SECTION_REGISTRY[id].isEmpty ? SECTION_REGISTRY[id].isEmpty!(s) : false
-  )
+  const isEmpty = useStore((s) => {
+    const probe = SECTION_REGISTRY[id].isEmpty
+    return probe ? probe(toolPanelProbe(s)) : false
+  })
   if (isEmpty) return null
 
   /* 落位预览框：与真正落位同算法，见 floatPxRectAt 的注释 */
@@ -1185,7 +1192,7 @@ export const SECTION_REGISTRY: Record<
     /** 头部右侧的附加信息（如任务的 2/4、日志行数） */
     Extra?: () => React.ReactElement | null
     /** 返回 true 则整个分区不渲染（而不是渲染一个空的） */
-    isEmpty?: (s: ToolPanelState) => boolean
+    isEmpty?: (s: ToolPanelProbe) => boolean
     /**
      * 内容会滚动、高度值得调（文件树 / 日志）。
      * 其余分区就几行，给它们加把手只是噪声。
@@ -1198,6 +1205,7 @@ export const SECTION_REGISTRY: Record<
   todo: {
     Extra: () => <TodoCount />,
     resizable: true,
+    isEmpty: (s) => !hasTaskTileContent(s),
     Body: () => <TodoSection />
   },
   queue: { Body: () => <QueueSection /> },
@@ -1215,8 +1223,24 @@ export const SECTION_REGISTRY: Record<
   actions: { Body: () => <ActionsSection /> }
 }
 
-/** 注册表的 isEmpty 只读这几个字段（从 store 里抳型，避免写 any） */
-type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'logs' | 'statuses' | 'widgets'>
+/** 空判据只投影所需字段，消息正文不进入分区注册表。 */
+type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal' | 'messages' | 'logs' | 'statuses' | 'widgets'>
+type ToolPanelProbe = Pick<ToolPanelState, 'todos' | 'goal' | 'logs' | 'statuses' | 'widgets'> & {
+  hasMessageOutputs: boolean
+}
+
+function toolPanelProbe(s: ToolPanelState): ToolPanelProbe {
+  return {
+    todos: s.todos,
+    goal: s.goal,
+    logs: s.logs,
+    statuses: s.statuses,
+    widgets: s.widgets,
+    hasMessageOutputs: s.messages.some((message) =>
+      !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
+    )
+  }
+}
 
 function hasTaskTileContent(s: Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal'> & { hasMessageOutputs: boolean }): boolean {
   return s.todos.length > 0 || !!s.goal?.goalId || !!s.goal?.links?.length || s.hasMessageOutputs
@@ -1581,6 +1605,7 @@ function ContextSection() {
   const t = useT()
   const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
+  const contextActionRefresh = messages.length
   const session = useStore((s) => s.session)
   const compactNow = useStore((s) => s.compact)
   const setAutoCompaction = useStore((s) => s.setAutoCompaction)
@@ -1647,16 +1672,23 @@ function ContextSection() {
   const [actions, setActions] = useState<ContextActionSummary | null>(null)
   useEffect(() => {
     let live = true
-    void window.yan
-      .contextActions()
-      .then((value) => {
-        if (live) setActions(value)
-      })
-      .catch(() => undefined)
+    const refresh = (): void => {
+      void window.yan
+        .contextActions()
+        .then((value) => {
+          if (live) setActions(value)
+        })
+        .catch(() => undefined)
+    }
+    refresh()
+    /* The extension ledger is written outside the renderer state stream. Refresh while
+       this section is mounted so a completed sweep appears without changing sessions. */
+    const timer = window.setInterval(refresh, 1_500)
     return () => {
       live = false
+      window.clearInterval(timer)
     }
-  }, [session?.sessionId, lastCompaction?.endedAt, lastCompaction?.status])
+  }, [session?.sessionId, lastCompaction?.endedAt, lastCompaction?.status, contextActionRefresh])
   const actionRows = useMemo(() => contextActionRows(t, actions, lastCompaction), [t, actions, lastCompaction])
 
   /* 工作集刻度的下一步（N21-3）：只预报**真的会执行**的阶段 */
@@ -2229,7 +2261,8 @@ function TodoSection() {
   }, [todos])
 
   if (todos.length === 0) {
-    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo">{!hasTaskTileContent({ todos, goal, hasMessageOutputs }) ? <div className="rp-todo-scroll"><div className="rp-dim">{t('rp.todoEmpty')}</div></div> : null}<GoalOutputs /></Section></>
+    if (!hasTaskTileContent({ todos, goal, hasMessageOutputs })) return null
+    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo"><GoalOutputs /></Section></>
   }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
@@ -2318,8 +2351,7 @@ function TodoSection() {
               <span className="rp-box" aria-hidden>
                 {todo.done ? '✓' : blocked ? '!' : ''}
               </span>
-              {/** 12 字安全上限 + CSS 单行截断（见 TODO_MAX_CHARS 注释） */}
-              <span className="rp-text">{clip(todo.text, TODO_MAX_CHARS)}</span>
+              <span className="rp-text">{todo.text}</span>
               {isActive ? (
                 <span className="rp-state doing" data-testid="todo-active-label">
                   <span className="rp-now-spin" aria-hidden>
@@ -2393,11 +2425,11 @@ function TodoSection() {
                     </div>
                     <div className="rp-hist-todos">
                       {snap.todos.map((x, j) => (
-                        <div key={j} className={`rp-hist-todo ${x.done ? 'done' : ''}`}>
+                        <div key={j} className={`rp-hist-todo ${x.done ? 'done' : ''}`} title={x.text}>
                           <span className="rp-box" aria-hidden>
                             {x.done ? '✓' : ''}
                           </span>
-                          <span className="rp-text">{clip(x.text, TODO_MAX_CHARS)}</span>
+                          <span className="rp-text">{x.text}</span>
                         </div>
                       ))}
                     </div>
@@ -2569,24 +2601,6 @@ function GoalOutputs() {
       ) : null}
     </div>
   )
-}
-
-/**
- * 任务文字的字数上限（用户 2026-09-25：「任务标题太长 我认为可以限制为最高 12 字
- * 且你要确保 在最窄右边栏的情况下 不要出现分行的问题」）。
- *
- * 12 字 + 单行 + 省略号：右栏拉到最窄时也**绝不会换行**（同一句里点名的）。
- * 完整文本仍在 `title` 与无障碍树上，不是丢掉了。
- *
- * ⚠️ 与上一版相反：那一版是按「要完整文字，不是省略号」改成窄栏换行的。
- *    两条要求各自成立，当前以最新的为准 —— 换行会让最窄栏里一条任务
- *    占三行，任务清单反而看不清。
- */
-const TODO_MAX_CHARS = 12
-
-/** 超过上限就截断并加省略号（完整文本由 title 提供） */
-function clip(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + '…' : s
 }
 
 /** 盲文 spinner —— 与输入框边框上那个同一套帧（pi 的 loader.js） */

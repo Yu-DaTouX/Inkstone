@@ -3378,7 +3378,7 @@ await runAgentProfileExtensionTests(ok, agentProfileExtension, {
   writeFile: fsPromises.writeFile,
   mkdir: fsPromises.mkdir,
   rm: fsPromises.rm
-})
+}, agentProfileShared)
 
 /*
  * 主题空间（实施-25 P02）：契约纯逻辑 + 存储与关联记录。

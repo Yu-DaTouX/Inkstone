@@ -53,6 +53,14 @@ const PROJECT_PREVIEW = 5
  * 正待着的会话。
  */
 const SESSION_PREVIEW = 5
+/**
+ * 左栏顶部「最近」区展示多少条最近打开过的会话。
+ *
+ * 与置顶区同一个定位：它是「快速回到刚才在看的会话」的导航捷径，
+ * 不是第二个完整会话列表 —— 取太多会把下面的项目区整个挤出视野。
+ * 已被置顶的会话不在这里重复出现（置顶区就在它上面）。
+ */
+const RECENT_PREVIEW = 5
 /** Zustand selector 的稳定空值，禁止在 selector 内创建 `{}`。 */
 const EMPTY_PROJECT_NAMES: Record<string, string> = {}
 /** 同上：项目顺序的稳定空值 */
@@ -212,6 +220,20 @@ export function Rail() {
     return (list: SessionSummary[]): number => list.filter((s) => files.has(s.path)).length
   }, [runners])
 
+  /**
+   * 「最近」区：用户真的在砚里打开过的会话，跨项目按打开时间倒序。
+   *
+   * 判据用 `lastOpenedAt`（宿主在打开时记的）而不是 `lastActivityAt`：
+   * 后台续行、子代理写回都会刷新后者，那会把「从没被打开过」的会话顶上来。
+   */
+  const recentSessions = useMemo(
+    () => sessions
+      .filter((s) => (s.lastOpenedAt ?? 0) > 0 && !pinned.includes(s.path) && !archived.includes(s.cwd))
+      .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
+      .slice(0, RECENT_PREVIEW),
+    [sessions, pinned, archived]
+  )
+
   /** 打开菜单的会话（path / 位置 / 触发元素分开存，位置只用来定位浮层） */
   const [menuFor, setMenuFor] = useState<{ path: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   /** 正在重命名哪个项目（cwd）；null = 没有 */
@@ -228,6 +250,11 @@ export function Rail() {
   /** 分组操作的错误提示：空白名 / 重名 / 保存失败（N01） */
   const [groupError, setGroupError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
+  /**
+   * 待确认「移除项目」的记录（null = 没有）。
+   * 只存 id 与显示名：真正的归属数据在设置里，弹窗不该拿着一份会过期的副本。
+   */
+  const [projectToRemove, setProjectToRemove] = useState<{ id: string; name: string } | null>(null)
   /*
    * 删除成功后的**轻量通知**（方案 15.2）。
    * 为什么不再用模态框报成功：已经执行完的可逆操作不该继续遮挡界面、
@@ -997,6 +1024,15 @@ export function Rail() {
             <div className="rail-section-title">{t('rail.pinned')}</div>
             {sessions.filter((s) => pinned.includes(s.path) && !archived.includes(s.cwd)).map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
+          {/*
+            * 最近打开过的会话（跨项目）。
+            * 只在未搜索、未看归档时显示：搜索是另一套筛选语境，
+            * 归档视图里项目区本身就在展示被移除的项目。
+            */}
+          {!query && !showArchived && recentSessions.length > 0 ? <div className="rail-recent" data-testid="rail-recent">
+            <div className="rail-section-title">{t('rail.recent')}</div>
+            {recentSessions.map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
+          </div> : null}
           <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
           {total === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.empty')}</div>
@@ -1232,9 +1268,22 @@ export function Rail() {
                       { id: 'rail-project-reveal', label: t('rail.reveal'), icon: 'folder-open', onSelect: () => { void window.yan.revealPath(p.cwd) } },
                       { id: 'rail-project-copy', label: t('rail.copyPath'), onSelect: () => { void navigator.clipboard.writeText(p.cwd) } },
                       {
-                        id: 'rail-project-archive',
-                        label: showArchived ? t('rail.restoreProject') : t('rail.archiveProject'),
-                        onSelect: () => { void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: !showArchived, updatedAt: Date.now() } : project) }) }
+                        id: 'rail-project-remove',
+                        label: showArchived ? t('rail.restoreProject') : t('rail.removeProject'),
+                        icon: showArchived ? 'refresh' : 'alert-circle',
+                        danger: !showArchived,
+                        onSelect: () => {
+                          /*
+                           * 归档视图里这个位置是「恢复」（直接生效，不弹框）；
+                           * 正常视图里是「移除」—— 先弹确认框再说，因为
+                           * 项目会从列表里消失，用户需要先知道会话去哪了。
+                           */
+                          if (showArchived) {
+                            void patchSettings({ projects: projectRecords.map((project) => project.id === p.projectId ? { ...project, archived: false, updatedAt: Date.now() } : project) })
+                            return
+                          }
+                          setProjectToRemove({ id: p.projectId!, name: p.label })
+                        }
                       },
                       { id: 'rail-project-group', label: t('rail.moveGroup'), icon: 'group', onSelect: () => { setGroupingProject(p.cwd); setGroupDraft('') } }
                     ]}
@@ -1331,6 +1380,14 @@ export function Rail() {
           notice={trashNotice}
           onUndo={() => void undoTrash()}
           onClose={() => setTrashNotice(null)}
+        />
+      ) : null}
+
+      {projectToRemove ? (
+        <ProjectRemoveDialog
+          project={projectToRemove}
+          onClose={() => setProjectToRemove(null)}
+          onRemoved={() => setProjectToRemove(null)}
         />
       ) : null}
 
@@ -1855,10 +1912,69 @@ function SessionDeleteDialog({ session, onClose, onDeleted }: {
   </div>
 }
 
-/* ---------------------------------------------------------------- 工具 */
+/**
+ * 「移除项目」确认框。
+ *
+ * 这不是删磁盘目录：项目只从砚的项目列表里移除，它的会话跟着进「已归档项目」，
+ * 随时点「恢复项目」能回来。既然可逆，为什么还要确认 —— 项目行会立刻从列表消失，
+ * 先花一屏文字说清「东西去哪了」，比让用户事后自己找归档区便宜。
+ */
+function ProjectRemoveDialog({ project, onClose, onRemoved }: {
+  project: { id: string; name: string }
+  onClose: () => void
+  onRemoved: () => void
+}) {
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const panel = useRef<HTMLDivElement>(null)
+  const { isTop } = useModalLayer(true, onClose)
+  useFocusTrap(panel, true, isTop)
+
+  const remove = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      /*
+       * 从 store 现读一次列表，不用弹窗打开时那份快照：展开菜单期间列表
+       * 可能已经被别处改过（新建/归档），拿旧副本整体写回会把那次改动吞掉。
+       */
+      const projects = (useStore.getState().settings?.projects ?? []).map((item) =>
+        item.id === project.id ? { ...item, archived: true, updatedAt: Date.now() } : item
+      )
+      await useStore.getState().patchSettings({ projects })
+      onRemoved()
+    } catch {
+      /* 写设置失败：留在框里说清原因，别让项目行悄悄变成“已移除” */
+      setError(t('rail.removeProjectFailed'))
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="remove-project-title">
+    <div className="modal rail-delete-dialog" ref={panel}>
+      <div className="modal-head">
+        <Icon name="alert-circle" size={14} />
+        <span className="modal-title" id="remove-project-title">{t('rail.removeProjectTitle')}</span>
+      </div>
+      <div className="modal-message">{t('rail.removeProjectExplain', { name: project.name })}</div>
+      {error ? <div className="rail-delete-error" role="alert">{error}</div> : null}
+      <div className="modal-foot">
+        <button className="btn" onClick={onClose} disabled={busy}>{t('ui.cancel')}</button>
+        <span className="spacer" />
+        <button className="btn danger" disabled={busy} onClick={() => void remove()} data-testid="rail-remove-project-confirm">
+          {busy ? t('rail.removingProject') : t('rail.removeProjectAction')}
+        </button>
+      </div>
+    </div>
+  </div>
+}
 
 /* 分叉的两个入口在 lib/fork.ts —— 对话区（消息上的分支按钮）也要用，
    放在这里会让对话区反过来 import 左栏。 */
+/* ---------------------------------------------------------------- 工具 */
+
 /** 相对时间：12m / 5h / 3d */
 function relTime(ts: number): string {
   const d = Math.max(0, Date.now() - ts)

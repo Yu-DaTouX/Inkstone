@@ -83,6 +83,18 @@
     ok(/来源|Source/.test(aboutBody), '关于页显示 pi 来源（内置/系统安装）')
     ok(/版本|Version/.test(aboutBody), '关于页显示 pi 版本')
     ok(!!q('[data-testid="pi-redetect"]'), '关于页有「重新检测」按钮')
+    /*
+     * 项目主页：地址来自 package.json（构建时注入 BUILD_INFO）。
+     * 断言到 github 域名这一层 —— 只验“这一行在且带了地址”，
+     * 不把仓库全路径写死在探针里（否则改仓库就要同时改探针）。
+     */
+    const repoRow = q('[data-testid="about-repo"]')
+    ok(!!repoRow, '关于页有项目主页行')
+    ok(
+      /github\.com\//.test(repoRow?.textContent ?? ''),
+      '项目主页行显示仓库地址',
+      JSON.stringify((repoRow?.textContent ?? '').slice(0, 80))
+    )
     const pi = store.getState().piInfo
     ok(!!pi && !!pi.source, 'store.piInfo 带 source', 'source=' + (pi && pi.source))
     ok(!!pi && !!pi.bin, 'store.piInfo 带入口路径')

@@ -3415,7 +3415,12 @@ export const useStore = create<Store>((rawSet, get) => {
       set({
         pendingActivation: { sessionFile: path, sessionId: sum?.id, projectId, scope, cwd },
         peekedPath: path,
-        peekedSessionId: sum?.id ?? null
+        peekedSessionId: sum?.id ?? null,
+        notices: pushNotice(
+          get().notices,
+          'info',
+          '这条会话已只读打开。为避免同一工作目录里的任务互相覆盖，发送消息前会先安全切换运行目录。'
+        )
       })
       void get().syncRunners()
       return

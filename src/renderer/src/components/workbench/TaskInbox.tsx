@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { TASK_STATUS_ORDER, type TaskCard, type TaskInboxPage, type TaskStatus } from '../../../../shared/task-inbox'
+import { TASK_STATUS_ORDER, taskInboxPageQuery, type TaskCard, type TaskInboxPage, type TaskStatus } from '../../../../shared/task-inbox'
 
 /**
  * 任务收件箱（实施-28 T2）。
@@ -61,11 +61,7 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
       setLoading(true)
       setError(null)
       try {
-        const res = await window.yan.taskInbox.page({
-          limit: nextLimit,
-          offset: 0,
-          ...(status === 'all' ? {} : { status: [status] })
-        })
+        const res = await window.yan.taskInbox.page(taskInboxPageQuery(nextLimit, status))
         setPage(res)
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))

@@ -149,7 +149,7 @@
     else bad('没有历史却显示了模块')
 
     out.push('\n=== 6. 没有任务时不渲染任务分区 ===')
-    store.setState({ todos: [], todoHistory: [] })
+    store.setState({ todos: [], todoHistory: [], goal: null, messages: [] })
     await sleep(600)
     if (!document.querySelector('[data-testid="rp-todo"]')) ok('空任务不占位')
     else bad('空任务还渲染了分区')
