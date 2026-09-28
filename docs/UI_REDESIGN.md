@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0 已定案**（2026-09-28），下一步 P1。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
+状态：**P0、P1 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
 
 原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.draft.json`](../scripts/design/icons/inkline.draft.json)。
 
@@ -69,7 +69,7 @@
 | 指标 | 数值 | 说明 |
 | --- | --- | --- |
 | 样式文件 | 21 个，约 2 万行 | `tools.css` ≈ 4000 行，`chat.css` ≈ 2200 行 |
-| 按历史命名的层 | `stage1.css`、`redesign.css` | 早加载、被后续文件覆盖；归属靠 import 顺序 |
+| 按历史命名的层 | `stage1.css`、`redesign.css` | 早加载、被后续文件覆盖；归属靠 import 顺序（P1 已拆除） |
 | 散落像素值 | 2042 个，1464 个有同值令牌 | 无令牌的高频值：`5px` ×113、`10px` ×100、`18/20/22/26px` |
 | 统一控件使用 | `components/ui` 被 3 个 tsx 引用 | 另有 158 处直接写 `className="btn…"` |
 | 模块私有控件 | 约 25 种 `*-btn / *-chip / *-tab` | 如 `.set-chip`、`.rp-stage-chip` |
@@ -83,19 +83,19 @@
 
 | 步骤 | 做法 | 完成标准 |
 | --- | --- | --- |
-| 级联层 | `@layer tokens, base, ui, layout, modules, overrides;`，覆盖关系由层决定 | 不再依赖 import 顺序；`stage1.css`、`redesign.css` 按内容拆回归属文件后删除；`npm run lint:layers` 证明最终生效声明不变 |
-| 令牌补缺 | `5px`→4/6、`10px`→8/12 按规则归并；新增 `--ctl-h-xs: 20px`、浮层与菜单宽度令牌；已有同值令牌的裸值批量替换 | `measure:css` 散落值只降不升 |
+| 级联层 | `styles/index.css` 声明 `@layer tokens, base, ui, layout, modules, overrides;`，各文件按层导入 | 不再依赖 import 顺序；`stage1.css`、`redesign.css` 按内容拆回归属文件后删除；`css-layer-check`（含简写展开与令牌解析）与逐元素计算样式对比（`css-computed-diff`）证明结果不变 |
+| 令牌补缺 | 间距、圆角、字号、字重的同值裸值按属性语义换成令牌（P1）；`5px`→4/6、`10px`→8/12 的归并会改变像素，随 P5 视觉改版做；`--ctl-h-xs: 20px`、浮层与菜单宽度令牌随 P2 控件落地 | `check:css-budget` 散落值只降不升 |
 | 手机令牌同源 | 检查脚本比对 `tokens.css` 与 `mobile/src/theme.ts` 的同名色值 | 不一致即失败，接入 `npm run check` |
 | 控件层 | `components/ui` 补 `Menu`/`Popover`、`Tabs`、`Field`/`Input`/`Select`、`SettingRow`、`InspectorSection`、`ListRow`；每个先写进规范 §3 | 模块私有 `*-btn/*-chip/*-tab` 清零；`className="btn…"` 改用组件 |
 | 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条 | 单文件体量明显下降，行为不变 |
-| 防回退 | 散落值数、模块私有控件类数、`!important` 数记基线，接入 `npm run check` | 只允许下降 |
+| 防回退 | 散落值数、模块私有控件类数、`!important` 数记基线（`scripts/design/css-budget.json`），`npm run check:css-budget` 接入 `npm run check` | 只允许下降 |
 
 ## 6. 分阶段路线
 
 | 阶段 | 内容 | 检查 | 进度 |
 | --- | --- | --- | --- |
 | P0 规范 | 待决项定案，写入 `DESIGN_SYSTEM.md` v0.5；界面清单 | 文档评审 | 完成 |
-| P1 结构 | 级联层、拆历史层、令牌补缺、手机令牌同源检查 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵截图无差异 | 下一步 |
+| P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
 | P2 控件 | 扩充 `components/ui`，先迁设置页，再迁工作台、审查与右栏 | 同上 + 设置相关 `test:live` | |
 | P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块、交叉淡变入 `motion.css` 与组件；位移上限 4px；手机 `motion.tsx` 同步 | `check:motion` + 实机录屏 | |
 | P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | |

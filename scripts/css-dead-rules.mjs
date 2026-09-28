@@ -26,29 +26,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readStyleOrder } from './lib/css-order.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/** 与 App.tsx 的 import 顺序一致 —— 覆盖关系全看它 */
-const ORDER = [
-  'tokens.css',
-  'app.css',
-  'stage1.css',
-  'redesign.css',
-  'motion.css',
-  'settings.css',
-  'electron.css',
-  'highlight.css',
-  'layout.css',
-  'shell.css',
-  'rail.css',
-  'chat.css',
-  'composer.css',
-  'tools.css',
-  'browser.css',
-  'dialog.css'
-]
+/* 加载顺序读样式入口 styles/index.css（见 scripts/lib/css-order.mjs） */
+const ORDER = readStyleOrder(root)
 
 /** 扫描顶层规则，记录精确区间（用于原地删除） */
 function scan(cssRaw) {

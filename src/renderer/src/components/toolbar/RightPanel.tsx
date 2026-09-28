@@ -487,7 +487,7 @@ export function RightPanel() {
       {/*
        * 宽度把手放在 aside **内部**并绝对定位。
        * 不能作为 .workspace 的 grid 子元素 —— 那会多出一列，
-       * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 redesign.css §23b）。
+       * grid-template-columns 只有三列的定义（本项目的列宽踩过坑，见 layout.css 的 .workspace）。
       */}
       <Resizer side="panel" review={reviewMode} />
 

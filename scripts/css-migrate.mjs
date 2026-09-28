@@ -24,29 +24,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readStyleOrder } from './lib/css-order.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dir = join(root, 'src/renderer/src/styles')
 
-/** 与 App.tsx 的 import 顺序一致（算「独占」要看全部文件） */
-const ORDER = [
-  'tokens.css',
-  'app.css',
-  'stage1.css',
-  'redesign.css',
-  'motion.css',
-  'settings.css',
-  'electron.css',
-  'highlight.css',
-  'layout.css',
-  'shell.css',
-  'rail.css',
-  'chat.css',
-  'composer.css',
-  'tools.css',
-  'browser.css',
-  'dialog.css'
-]
+/* 加载顺序读样式入口 styles/index.css（见 scripts/lib/css-order.mjs） */
+const ORDER = readStyleOrder(root)
 
 /**
  * 抽出顶层规则块（跳过 @media 等 at-rule 内部）。

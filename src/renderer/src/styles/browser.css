@@ -4,6 +4,95 @@
  * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
  */
 
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+.browser-tabs {
+  grid-row: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px var(--sp-2) 0;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+
+.browser-tab,
+.browser-new-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-mute);
+  background: transparent;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.browser-new-tab {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+}
+
+.browser-toolbar {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.browser-nav,
+.browser-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* 接入本机 Chrome 的开关：收成图标，省宽度 */
+.browser-nav.browser-chrome {
+  width: 26px;
+  padding: 0;
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-address input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--fg);
+  background: var(--bg-2);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.browser-close {
+  font-size: 21px;
+}
+
+/* ── 基础段结束 ── */
+
 /*
  * 浏览器 + 工具同时打开时，右栏要**共享**高度而不是各自撑满。
  *
@@ -21,7 +110,7 @@
 }
 
 .browser-toolbar {
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   gap: 2px;
 }
 /* 导航按钮固定宽度：地址栏是唯一该伸缩的东西 */
@@ -45,8 +134,8 @@
 .browser-tabs {
   overflow-x: auto;
   scrollbar-width: none;
-  padding-left: 4px;
-  padding-right: 4px;
+  padding-left: var(--sp-1);
+  padding-right: var(--sp-1);
 }
 .browser-tabs::-webkit-scrollbar {
   display: none;
@@ -75,7 +164,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -103,10 +192,6 @@
   overflow-wrap: anywhere;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .browser-surface {
   position: relative;
   height: 100%;
@@ -133,7 +218,7 @@
 .browser-tab i {
   flex: none;
   font-style: normal;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   opacity: .65;
 }
 
@@ -182,9 +267,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
-  padding: 3px 8px;
+  padding: 3px var(--sp-2);
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   max-height: 40vh;
@@ -193,7 +278,7 @@
 
 .browser-action {
   flex: none;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
@@ -217,7 +302,7 @@
   grid-row: 3;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
   padding: 3px 10px;
   border-bottom: 1px solid var(--border);
@@ -289,7 +374,7 @@
 .browser-control {
   flex: none;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border: 1px solid var(--accent-line);
   border-radius: var(--r-sm);
   color: var(--fg);
@@ -309,7 +394,7 @@
 .browser-ext-title {
   color: var(--fg);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .browser-ext-desc {
@@ -335,10 +420,10 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
   align-items: center;
   justify-content: center;
-  padding: 24px 18px;
+  padding: var(--sp-5) 18px;
   text-align: center;
   background: var(--bg-1);
   color: var(--fg-dim);
@@ -350,7 +435,7 @@
   max-width: 30rem;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .browser-ext-sync-line {
@@ -373,7 +458,7 @@
 }
 
 .browser-ext-resync {
-  padding: 4px 10px;
+  padding: var(--sp-1) 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-xs);
   background: var(--bg-1);

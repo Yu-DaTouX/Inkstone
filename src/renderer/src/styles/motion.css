@@ -14,6 +14,22 @@
    参考：craft-agents-oss（Apache-2.0）的动效令牌与
    `data-[state=open]:animate-in …` 的用法。 */
 
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-pop,
+  .srow-menu,
+  .row-menu,
+  .modal,
+  .modal-scrim,
+  .settings,
+  .settings-scrim {
+    animation: none;
+  }
+}
+
+/* ── 基础段结束 ── */
+
 :root {
   /* 时长：三档够用。菜单最快（要跟手），模态稍慢（体量大） */
   --mo-fast: 110ms;
@@ -312,7 +328,7 @@
   padding: var(--sp-2) var(--sp-3) 5px;
   color: var(--fg);
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   line-height: 1.4;
   /* 标题就一行 —— 它是「认出这一轮」的凭据，不是正文 */
   overflow: hidden;
@@ -444,7 +460,7 @@ html[data-theme='light'] .op-title::before {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px var(--sp-3);
+  gap: var(--sp-1) var(--sp-3);
   margin-top: var(--sp-3);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -609,13 +625,7 @@ html[data-theme='light'] .turn {
   --think-max: #ff5fff;
 }
 
-.composer {
-  /* 圆角收小 + 去掉顶边框（改由 .cborder 画） */
-  border-radius: var(--r-md);
-  border-top: none;
-  padding-top: 0;
-  overflow: hidden;
-}
+/* 输入框本体的圆角与去掉顶边框（顶边改由 .cborder 画）在 composer.css 的基础段末尾 */
 
 /* 顶边框：`── ⠋ 文案 ────────` */
 .cborder {
@@ -909,7 +919,7 @@ html[data-theme='light'] {
   gap: 5px;
   align-items: baseline;
   margin: 0 0 6px;
-  padding: 3px 5px 3px 4px;
+  padding: 3px 5px 3px var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--accent-soft);
   border-left: 2px solid var(--accent);
@@ -1055,7 +1065,7 @@ html[data-theme='light'] .rp-todo-now {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 7px;
+  padding: var(--sp-1) 7px;
   border-radius: var(--r-xs);
   background: var(--bg-2);
   color: var(--fg-mute);
@@ -1076,7 +1086,7 @@ html[data-theme='light'] .rp-todo-now {
 }
 
 .auth-msg {
-  padding: 5px 8px;
+  padding: 5px var(--sp-2);
   border-radius: var(--r-xs);
   font-size: var(--fs-sm);
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
@@ -1222,7 +1232,7 @@ html[data-theme='light'] .rp-todo-now {
 .auth-input {
   flex: 1;
   min-width: 120px;
-  padding: 4px 7px;
+  padding: var(--sp-1) 7px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-0);
@@ -1256,7 +1266,7 @@ html[data-theme='light'] .rp-todo-now {
 /* ------------------------------------------------------------------
    52.2 各模块搬来的关键帧（B2 归口）
    规则：除本文件外，任何 CSS 都不许定义 @keyframes（npm run check:motion 拦）。
-   这些动画原本散在 app / chat / composer / redesign / shell / tools / tokens 里，
+   这些动画原本散在各模块文件里，
    2026-09-27 原样搬过来，未改动几何与时长；使用点仍在各自模块。
    ------------------------------------------------------------------ */
 
@@ -1297,6 +1307,13 @@ html[data-theme='light'] .rp-todo-now {
   70% { opacity: 1; transform: translateY(-50%) }
   100% { opacity: 0; transform: translateY(-80%) }
 }
+/* 语音输入录音中的红点（composer.css 的 .voice-dot） */
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @keyframes ubpulse {
   0%,
   100% {

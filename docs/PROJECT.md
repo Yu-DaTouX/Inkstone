@@ -36,9 +36,9 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/task-inbox.ts` + `src/main/task-inbox-service.ts` | 任务收件箱：七态投影（`needs_review` 无精确来源，只能近似并标 `approximate`）、排序与筛选、注入式只读聚合（TTL 缓存 + 分页；某个来源坏了只丢那一项） |
 | `src/renderer/src/icons/` + `scripts/design/icons/` | 图标体系：`catalog.json` 是语义 → 图标的唯一真源（55 个语义），`npm run icons` 生成 sprite；界面只用语义名，不写库里的原名 |
 | `src/renderer/src/styles/ui.css`、`src/renderer/src/components/ui/` | 统一控件（按钮、分段、开关、徽标、空状态）的唯一外观来源，规则见[设计规范](DESIGN_SYSTEM.md)，重构路线见[界面重构计划](UI_REDESIGN.md) |
-| `src/renderer/src/styles/motion.css` | 动效唯一真源（36 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |
+| `src/renderer/src/styles/motion.css` | 动效唯一真源（37 个关键帧）；时长 / 曲线令牌在 `tokens.css`，模块 CSS 只引用不定义 |
 | `src/renderer/src/state/` | 会话状态与事件投影 |
-| `src/renderer/src/styles/` | 样式、令牌与主题 |
+| `src/renderer/src/styles/` | 样式、令牌与主题；入口 `index.css` 用级联层决定覆盖关系 |
 | `resources/pi-extensions/` | 随包 pi 适配 |
 | `resources/yan-cli/` | 本机能力 CLI |
 | `scripts/` | 启动、构建、检查与截图工具 |

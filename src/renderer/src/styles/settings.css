@@ -349,7 +349,7 @@ html[data-theme='light'] .settings-scrim {
 .pkg-install-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .pkg-install-row .set-input {
@@ -378,7 +378,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -413,8 +413,8 @@ html[data-theme='light'] .settings-scrim {
 .pkg-local {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
   color: var(--fg-mute);
   cursor: pointer;
   white-space: nowrap;
@@ -443,8 +443,8 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 4px 6px;
-  border-radius: 4px;
+  padding: var(--sp-1) 6px;
+  border-radius: var(--r-xs);
 }
 
 .pkg-item:hover {
@@ -460,7 +460,7 @@ html[data-theme='light'] .settings-scrim {
 
 .pkg-name {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -469,7 +469,7 @@ html[data-theme='light'] .settings-scrim {
 
 .pkg-ver {
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
 
@@ -498,7 +498,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 .pkg-detail {
-  padding: 4px 0 2px 6px;
+  padding: var(--sp-1) 0 2px 6px;
   border-left: 2px solid var(--border-soft);
   display: flex;
   flex-direction: column;
@@ -527,12 +527,12 @@ html[data-theme='light'] .settings-scrim {
 .pkg-ok,
 .pkg-fail {
   margin: 0 0 6px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-xs);
   font-size: 11.5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .pkg-ok {
@@ -637,17 +637,17 @@ html[data-theme='light'] .settings-scrim {
 .kn-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px var(--sp-3);
+  gap: var(--sp-1) var(--sp-3);
   margin-top: var(--sp-1);
 }
 .kn-evidence {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-right: var(--sp-2);
 }
 .kn-evidence code {
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--code-inline-bg);
   color: var(--code-inline-fg);
@@ -738,7 +738,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -754,7 +754,7 @@ html[data-theme='light'] .settings-scrim {
 .custom-api-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   white-space: nowrap;
@@ -765,7 +765,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px dashed var(--border-soft);
   border-radius: var(--r-sm);
 }
@@ -898,7 +898,7 @@ html[data-theme='light'] .ob-scrim {
   line-height: var(--lh-base);
 }
 .ob-row-desc code {
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--code-inline-bg);
   color: var(--code-inline-fg);

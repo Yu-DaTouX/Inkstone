@@ -8,6 +8,7 @@ v0.5（终端风格、底部状态栏、动效体系与「砚线」图标）已�
 
 | 实现位置 | 内容 |
 | --- | --- |
+| `src/renderer/src/styles/index.css` | 样式入口：`@layer tokens, base, ui, layout, modules, overrides`，决定覆盖关系 |
 | `src/renderer/src/styles/tokens.css` | 颜色、字号、间距、圆角、控件尺寸、字重、投影、时长 |
 | `src/renderer/src/styles/ui.css` | 统一控件的唯一外观：按钮、分段、开关、徽标、空状态、分区标题、键位 |
 | `src/renderer/src/components/ui/` | 同一套控件的 React 组件（`Button` / `IconButton` / `Segmented` / `Badge` / `EmptyState` / `SectionTitle`） |
@@ -274,7 +275,8 @@ v0.4 的 `--font-ui` 指向 Segoe UI；P5 改指向等宽之前，界面仍以�
 1. **先改规范再改代码。** 新令牌或控件变体先在本文写清用途与边界，再改 `tokens.css` / `ui.css`（手机端同步 `theme.ts` / `ui.tsx`）。
 2. **新增控件先问能否复用。** 能用 `.btn` / `.seg` / `.ui-badge` / `.ui-empty` 表达的，不新建类；需要新变体时加在 `ui.css`，并补到第 3 节。
 3. **模块 CSS 只管版面。** 发现模块里重写控件外观时，改成 `className="btn …"` 或组件，再删掉旧规则。
-4. **检查。** `npm run typecheck`（含 CSS 布局检查）→ `npm run check:motion` → `npm run check:icons` → `npm run measure:css` 更新 CSS 清单 → 视觉矩阵截图（深浅主题 × 1440×900 / 940×620 / 900×520）核对；手机端 `mobile/` 下 `npm run typecheck` 与实机截图。视觉结论以截图为准。
+   新样式文件在 `styles/index.css` 登记并放进所属的层：后面的层整体压过前面的层，与特异性无关；`!important` 反过来，前层优先。间距、圆角、字号、字重有同值令牌时写令牌，不写裸值（`npm run check:css-budget` 只许散落值下降）。
+4. **检查。** `npm run typecheck`（含 CSS 布局检查）→ `npm run check:motion` → `npm run check:icons` → `npm run check:css-budget` → `npm run check:mobile-tokens` → `npm run measure:css` 更新 CSS 清单 → 结构性改动再用 `YAN_STYLE_DUMP=1` 跑视觉矩阵，`node scripts/css-computed-diff.mjs` 比较前后逐元素计算样式 → 视觉矩阵截图（深浅主题 × 1440×900 / 940×620 / 900×520）核对；手机端 `mobile/` 下 `npm run typecheck` 与实机截图。视觉结论以截图为准。
 5. **记录取舍。** 推翻本文某条规则时，在对应章节写明新规则与理由；不保留两套并行的说法。
 
 ### v0.5 变更摘要（2026-09-28 定案）
