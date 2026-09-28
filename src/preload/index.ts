@@ -5,7 +5,6 @@ import type {
   AttachmentUsage,
   BuiltinCapabilityView,
   CapabilitySettingsSnapshot,
-  CapabilityNeedView,
   CapabilitySearchResultView,
   CapabilityVerificationStatus,
   PackageActionResultView,
@@ -448,7 +447,6 @@ const api: YanBridge = {
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
-    need: (input) => invoke<CapabilityNeedView>('yan:capabilities:need', input),
     discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
     verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
     verification: (operationId: string) =>

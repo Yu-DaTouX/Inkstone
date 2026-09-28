@@ -426,12 +426,7 @@ function registerTerminalStub() {
   })
 }
 
-/**
- * 按需获取能力（P17）的规则：与主进程跑**同一份** `src/shared/capability-gap.ts`。
- *
- * 为什么不用手写夹具：夹具会与真实文案慢慢分家，截图就会骗人。
- * 用 esbuild 同步编译一次再 require（矩阵脚本没有顶层 await，见文件头）。
- */
+/** 矩阵用到的 shared 纯逻辑模块缓存（同步编译一次再 require，矩阵脚本没有顶层 await）。 */
 let sharedRuleCache = new Map()
 
 /**
@@ -449,10 +444,6 @@ function sharedRules(entry) {
   const mod = require(outfile)
   sharedRuleCache.set(entry, mod)
   return mod
-}
-
-function capabilityGapRules() {
-  return sharedRules('capability-gap')
 }
 
 /** 按活动配置模型（P18）：同一份 shared 规则。 */
@@ -1003,31 +994,6 @@ function registerStubHandlers() {
     { id: 'project-knowledge', file: 'project-knowledge.js' }
   ])
   /*
-   * 按需求找能力（实施-25 P17）：矩阵里走与主进程**同一份** shared 纯逻辑。
-   * 不这样做的话，截图只能看到空结果 —— 而那正是我一开始踩的坑。
-   */
-  ipcMain.handle('yan:capabilities:need', (_event, input) => {
-    const rules = capabilityGapRules()
-    const need = String(input?.need ?? '').trim()
-    if (!need) return { ok: false, need: '', matched: false, error: '先说清你要做什么', text: '' }
-    const available = Array.isArray(input?.available) ? input.available.map((item) => String(item)) : []
-    const match = rules.matchGap(need)
-    if (!match) return { ok: true, need, matched: false, text: rules.unmatchedGapText(need) }
-    const stillMissing = rules.gapStillMissing(match.gap, available)
-    const body = rules.gapText(match.gap, match.matched)
-    return {
-      ok: true,
-      need,
-      matched: true,
-      gapId: match.gap.id,
-      missing: match.gap.missing,
-      via: match.gap.via,
-      alreadyAvailable: !stillMissing,
-      text: stillMissing ? body : `你现在已经能用相关能力（不必再装）。\n${body}`
-    }
-  })
-
-  /*
    * 按活动配置模型（实施-25 P18）：与主进程**同一份** shared 规则。
    * 注入一份有内容的配置，截图才能同时看到三种解释（活动指定 / 默认 / 跟随）。
    */
@@ -1275,9 +1241,9 @@ const GROUPS = [
   /* 1280×800 加 spaceartifact：成果编辑器（实施-25 P06a）深浅各一张 */
   { w: 940, h: 620, scale: 1, theme: 'light', states: ['main', 'settings', 'knowledgetab'] },
   /* 实施-24 I2：1280x800（125%/150% 缩放已有单独组），看图标与右栏在常见笔记本尺寸下的密度。 */
-  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'capneed', 'amconfig'] },
-  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'capneed', 'amconfig'] },
-  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'capneed', 'amconfig', 'envnotgit'] },
+  { w: 1280, h: 800, scale: 1, theme: 'dark', states: ['main', 'settings', 'railmini', 'review', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig'] },
+  { w: 1280, h: 800, scale: 1, theme: 'light', states: ['main', 'settings', 'railmini', 'agentprofilemenu', 'railspaces', 'spaceoverview', 'spacelibrary', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig'] },
+  { w: 900, h: 520, scale: 1, theme: 'dark', states: ['main', 'settings', 'knowledgetab', 'toolgroup', 'taskcard', 'workbenchhome', 'taskinbox', 'workmodemenu', 'envlinks', 'spaceoverview', 'spaceartifact', 'spacechecklist', 'spaceresearch', 'spacefollow', 'amconfig', 'envnotgit'] },
   { w: 1440, h: 900, scale: 1.25, theme: 'dark', states: ['main', 'settings', 'workbenchhome', 'taskinbox'] },
   { w: 1440, h: 900, scale: 1.5, theme: 'dark', states: ['main', 'reasoning', 'workbenchhome', 'taskinbox'] },
   /*
@@ -3492,33 +3458,6 @@ const STATES = {
       await sleep(400);
       const rows = document.querySelectorAll('[data-testid^="am-row-"]');
       return rows.length === 5 ? 'ok' : 'no-rows:' + rows.length;
-    })()
-  `,
-  /*
-   * 按需求找能力（实施-25 P17）：设置 → 能力页里的「说需求 → 拿到接入路径」。
-   * 单开一个状态：它是设置页里的新区块，与现有设置行叠在一起容易看不到自己。
-   */
-  capneed: `
-    (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const S = () => window.__yanStore.getState();
-      const setInput = (el, value) => {
-        if (!el) return false;
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, value);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      };
-      S().openSettings('capabilities');
-      await sleep(900);
-      setInput(document.querySelector('[data-testid="cap-need-input"]'), '我要把 PDF 里的表格做成汇总');
-      await sleep(250);
-      document.querySelector('[data-testid="cap-need-run"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      await sleep(900);
-      const text = document.querySelector('[data-testid="cap-need-text"]');
-      const err = document.querySelector('[data-testid="cap-need-error"]');
-      text?.scrollIntoView({ block: 'center' });
-      await sleep(300);
-      return text ? 'ok' : err ? 'err:' + String(err.textContent ?? '').slice(0, 80) : 'no-need';
     })()
   `,
   /*

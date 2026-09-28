@@ -2618,29 +2618,6 @@ export interface CapabilitiesBridge {
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
-  /**
-   * 按需求找能力（实施-25 P17）：用自然语言说「我要做什么」。
-   *
-   * 只回答「缺什么、怎么接」—— **不装、不改配置**；安装仍走 discover → acquire。
-   * `available` 是当前页面已知的能力名，用来回答「你其实已经有了」。
-   */
-  need(input: { need: string; available?: string[] }): Promise<CapabilityNeedView>
-}
-
-/** 「缺什么、怎么接」的结果（实施-25 P17）。 */
-export interface CapabilityNeedView {
-  ok: boolean
-  error?: string
-  need: string
-  /** 命中已知场景时为真；没命中就是通用三步（不猜包名）。 */
-  matched: boolean
-  gapId?: string
-  missing?: string
-  via?: string
-  /** 当前能力目录里已经有相关能力（不必再装）。 */
-  alreadyAvailable?: boolean
-  /** 一段可直接给人 / 模型看的接入路径。 */
-  text: string
 }
 
 /* ── 会话来源的持久化资源引用（方案 §8 的 S1）────────── */

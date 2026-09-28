@@ -44,7 +44,7 @@ export const CAPABILITY_GUIDE = [
   '  · 模式限制、能力不可用、需要确认或用户接管时，如实说明原因并选择允许的下一步；不绕过限制，也不猜用户答案。',
   '',
   '按任务选择入口：',
-  '- 不确定有没有对应能力：`yan capabilities search --query-text "任务需要的能力"`；复杂查询用 `--query-file query.json`。已有明确入口时直接使用，不必每轮搜索或读取全部帮助。',
+  '- 不确定有没有对应能力：`yan capabilities search --query-text "任务需要的能力"`；复杂查询用 `--query-file query.json`。已有明确入口时直接使用，不必每轮搜索或读取全部帮助。确实缺能力、需要接入新工具时先读 `capabilities` 技能（`yan skill read --id skill:capabilities`）。',
   '- 操作网页、填写网页表单、检查当前页面或复现网页问题：使用 `yan browser`；查看参数用 `yan browser --help`。',
   '- 需要找网页资料（而不是已装能力）：`yan search query --query-text "关键词"`；来源可用 `--sources wikipedia,arxiv,hackernews` 限定。拿到结果后用 `yan browser navigate --url <结果里的 url>` 打开。后端状态用 `yan search doctor`（未安装 OpenCLI 时它也能读）。逐来源状态里 `empty` 与 `unavailable` / `timeout` / `error` 是分开的 —— 不要把「取不到」当成「没有」。',
   '- 查看一次操作的结果：`yan operations status --id <操作ID>`',

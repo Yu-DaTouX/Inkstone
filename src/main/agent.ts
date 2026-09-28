@@ -97,7 +97,6 @@ import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { extendDeadline, requestedTimeout, UI_TIMEOUT_HARD } from '../shared/ui-timeout'
 import { searchCapabilities } from '../shared/capabilities'
-import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
 import { buildCatalog, type McpCatalogEntry } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { AcquisitionService, operationIdOf, stagingDirOf } from './capabilities/acquisition-service'
@@ -1329,9 +1328,6 @@ export class AgentController extends EventEmitter {
      * 宿主回答「缺什么、怎么接」。它只给路径，不替你装
      * （安装仍走下面的 prepare / acquire）。
      */
-    if (command === 'capabilities.need') {
-      return this.runCapabilitiesNeed(params)
-    }
     if (command === 'capabilities.discover') {
       return this.runCapabilitiesDiscover(params)
     }
@@ -3621,63 +3617,6 @@ export class AgentController extends EventEmitter {
         state: tx.state,
         executed: check.ok,
         toolCount: outcome.tools.length
-      }
-    }
-  }
-
-  /**
-   * `yan capabilities need`：把「我要做什么」变成「缺什么、怎么接」。
-   *
-   * 与 `search` 的区别：`search` 列已装 / 已加载的候选（有就是有），
-   * 这个命令回答的是「没有的时候该怎么办」—— 所以它同时带上
-   * 「本地搜一遍 → prepare/acquire → 联网 discover」的可执行路径。
-   *
-   * 刻意不做的事：**不替你装**（仍然要经过 prepare / acquire 那条链）、
-   * **认不出不编**（没命中已知场景就给通用三步，不猜包名）。
-   */
-  private async runCapabilitiesNeed(params: Record<string, unknown>) {
-    const need = this.knowledgeString(params, ['need', 'queryText', 'query-text', 'query', 'text']) ?? ''
-    if (!need.trim()) {
-      throw new CapabilityCommandError('capability_need_required', 'capabilities need 需要 need（用自然语言说你要做什么）')
-    }
-    /* 把当前可用能力带进来，才能回答「你其实已经有这个能力了」 */
-    const commands = await this.rawCommands()
-    const mcp = await this.collectMcpCatalog()
-    const catalog = buildCatalog(commands, mcp.tools)
-    /*
-     * 把「当前有哪些能力」拼成一个可匹配的池子：id / 标题 / 描述 / 命令名都算 ——
-     * 只比 id 会把「你已经有浏览器了」（`builtin:browser.open`）这类漏掉。
-     */
-    const availableNames = catalog.capabilities.flatMap((entry) => [entry.id, entry.title, entry.description]).filter(Boolean)
-    const match = matchGap(need)
-    if (!match) {
-      return {
-        data: { need, matched: null },
-        summary: { kind: 'capabilities', action: 'need', matched: false, text: unmatchedGapText(need) }
-      }
-    }
-    const stillMissing = gapStillMissing(match.gap, availableNames)
-    return {
-      data: {
-        need,
-        gapId: match.gap.id,
-        matched: match.matched,
-        missing: match.gap.missing,
-        via: match.gap.via,
-        paths: match.gap.paths,
-        /* 已经有了就不必再装：这一点必须回到数据里，不只在文案里说 */
-        alreadyAvailable: !stillMissing
-      },
-      summary: {
-        kind: 'capabilities',
-        action: 'need',
-        matched: true,
-        gapId: match.gap.id,
-        via: match.gap.via,
-        alreadyAvailable: !stillMissing,
-        text: stillMissing
-          ? gapText(match.gap, match.matched)
-          : `你现在的能力目录里已经有相关能力（匹配到：${match.matched.join('、')}）；先 search 看候选，不用额外安装。\n${gapText(match.gap, match.matched)}`
       }
     }
   }

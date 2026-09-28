@@ -23,7 +23,6 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 学习记录导出：学习功能已改由 `tutor` 技能在对话中进行；启动时把旧版留下的 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。讲解与出题做法见 `resources/skills/tutor` |
 | `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
 | `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
-| `src/shared/capability-gap.ts` | 按需获取能力：用自然语言说需求 → 「缺什么、怎么接」的**可执行路径**（只给路径不代装、认不出不编包名、已有能力就不算缺口） |
 | `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态** |
 | `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
 | `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
