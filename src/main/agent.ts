@@ -19,6 +19,7 @@ import { PiRpc } from './protocol'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
+import { previewOffice } from './office/office-service'
 import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
@@ -1446,6 +1447,7 @@ export class AgentController extends EventEmitter {
     if (command === 'question.ask') return this.runQuestionCommand(params)
     if (command === 'context.recall') return this.runContextRecallCommand(params)
     if (command === 'context.find') return this.runContextFindCommand(params)
+    if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command.startsWith('context.budget.')) return this.runContextBudgetCommand(command, params)
     switch (command) {
       case 'tasks.apply':
@@ -1604,6 +1606,27 @@ export class AgentController extends EventEmitter {
     } catch (error) {
       if (error instanceof ContextRecallError) throw new CapabilityCommandError(error.code, error.message)
       throw new CapabilityCommandError('context_find_unavailable', '归档查询暂时不可用')
+    }
+  }
+
+  /**
+   * `yan office read`：读 docx / xlsx / pptx / pdf 的文字正文（与界面预览同一条提取链）。
+   * 只读；路径按会话目录解析，校验规则与文件预览相同。
+   */
+  private async runOfficeReadCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const path = typeof params.path === 'string' ? params.path.trim() : ''
+    if (!path) throw new CapabilityCommandError('office_path_required', '缺少 --path')
+    const view = await previewOffice(path, this.cwd)
+    if (!view.ok) throw new CapabilityCommandError('office_read_failed', view.error)
+    return {
+      data: { path, format: view.format, note: view.note, truncated: view.truncated, sections: view.sections },
+      summary: {
+        kind: 'office-read',
+        format: view.format,
+        sections: view.sections.length,
+        lines: view.sections.reduce((n, section) => n + section.lines.length, 0),
+        truncated: view.truncated
+      }
     }
   }
 

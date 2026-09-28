@@ -111,6 +111,11 @@ async function parsePdf(filePath: string): Promise<ParseOutcome> {
   } catch (error) {
     return { status: 'failed', note: `读不到文件：${error instanceof Error ? error.message : String(error)}` }
   }
+  return parsePdfBuffer(buf)
+}
+
+/** 同上，但直接处理内存里的内容（办公文件对比要读 git 里的旧版本，没有磁盘文件） */
+export function parsePdfBuffer(buf: Buffer): ParseOutcome {
   if (buf.byteLength > MAX_PDF_BYTES) {
     return { status: 'unsupported', note: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB，仅作为附件保留` }
   }

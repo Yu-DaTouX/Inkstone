@@ -6,6 +6,7 @@ import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
 import { UsageBar } from './UsageBar'
+import { LearningActions } from './LearningActions'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
@@ -969,6 +970,8 @@ export function Composer() {
     >
       {/* 排队的消息：显示在输入框**上方**（用户要求） */}
       <QueueStack />
+      {/* 学习会话的快捷回应（只在「日常 · 学习」里出现） */}
+      <LearningActions />
       {/*
        * .composer-stack 只做一件事：给问题面板当定位父元素。
        * 面板是浮层（`bottom: calc(100% + …)` 向上生长），得与输入框同层才贴得上；

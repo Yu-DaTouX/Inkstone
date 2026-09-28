@@ -161,6 +161,8 @@ const KNOWN_COMMANDS = new Set([
   'question.ask',
   'context.recall',
   'context.find',
+  /* 办公文件：只读提取 docx / xlsx / pptx / pdf 的文字正文。 */
+  'office.read',
   'context.budget.status',
   'context.budget.adjust',
   /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */

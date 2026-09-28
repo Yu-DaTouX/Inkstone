@@ -28,6 +28,8 @@ import { useStore } from '../../state/store'
 import { ChangedFileTree, statusGlyph } from './ChangedFileTree'
 import { CommitBar } from './CommitBar'
 import { DiffViewer, ImageDiff } from './DiffViewer'
+import { OfficeCompare } from './OfficeContent'
+import { officeFormatOf } from '../../../../shared/office'
 import { patchKeyOf, useGitWrite, usePatchStore, useReviewSnapshot, useSideContent, useViewedStore } from './useGitReview'
 import {
   clampReviewSideWidth,
@@ -393,6 +395,7 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
               onViewed={(next) => (next ? viewed.mark(f, identity) : viewed.unmark(f, identity))}
               sides={sides}
               scopeKind={scope.kind}
+              repoRoot={view.snapshot?.repo?.root}
               expected={expected}
               busy={!!write.busy}
               onStage={(next) => {
@@ -510,7 +513,8 @@ function FileCard({
   scopeKind,
   expected,
   busy,
-  onStage
+  onStage,
+  repoRoot
 }: {
   file: GitChangedFile
   open: boolean
@@ -524,9 +528,16 @@ function FileCard({
   expected: GitActionExpected | undefined
   busy: boolean
   onStage: (next: boolean) => void
+  /** 仓库根目录：办公文件的内容对比按它解析仓库相对路径 */
+  repoRoot?: string
 }) {
   const t = useT()
   const isImage = file.kind === 'image'
+  /*
+   * 办公文件在 git 里是二进制，没有文本 diff：改为提取文字后对比
+   * 「最近一次提交 vs 当前文件」。两端比较（range）与已删除的文件没有「当前文件」，仍走原来的提示。
+   */
+  const officeCompare = !!repoRoot && scopeKind !== 'range' && file.status !== 'deleted' && !!officeFormatOf(file.path)
   /*
    * 两半分开判：一个文件可以同时有「已暂存」与「未暂存」两部分
    * （`git add` 之后又改了），方案 §5.2 要求它们分别展示、分别操作。
@@ -629,6 +640,8 @@ function FileCard({
                 content: newContent ?? 'loading'
               }}
             />
+          ) : officeCompare && repoRoot ? (
+            <OfficeCompare key={file.newFingerprint} path={file.path} cwd={repoRoot} />
           ) : !patch ? (
             <div className="rdiff-note">{t('review.loading')}</div>
           ) : patch.status === 'loading' ? (

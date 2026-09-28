@@ -1895,3 +1895,8 @@
   border-color: var(--warn);
   background: var(--warn-soft);
 }
+
+/* 学习会话的快捷回应：贴在输入区上方，与输入框同宽对齐 */
+.learn-actions {
+  margin: 0 0 var(--sp-2);
+}
