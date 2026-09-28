@@ -12,15 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
 import { remoteHistoryPage } from '../shared/remote-history-page'
 import { localizeImage } from './image-store'
-import {
-  AgentController,
-  type CapabilityAuthorizationChoice,
-  type CapabilityAuthorizationPrompt,
-  type ExternalApiConfirmationRequest,
-  type ToolConsentPrompt,
-  type GoalCommandHost,
-  type SubagentCommandHost
-} from './agent'
+import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt, type GoalCommandHost } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
@@ -43,7 +35,6 @@ import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } f
 import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview, statPreview } from './file-refs'
-import { SubagentController } from './subagents'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
@@ -85,6 +76,8 @@ import { registerTaskInboxIpc } from './ipc/task-inbox-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
+import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { SubagentService } from './subagent-service'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { changeConsentEntry, listConsentViews } from './consent-store'
@@ -173,7 +166,6 @@ import { ContextAssembler, type AssembleContextRequest } from './context-assembl
 import { ArtifactDocStore } from './artifact-doc-store'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
-import { resolveActivityModel } from '../shared/activity-model'
 import {
   artifactSourceStatuses,
   excerptReadable,
@@ -392,14 +384,15 @@ function schedulePiPackageActivationRetry(): void {
   piPackageActivationRetryTimer.unref?.()
 }
 let browser: BrowserController | null = null
-let subagents: SubagentController | null = null
 /**
- * `yan subagent …` 的能力服务回调。
- *
- * 它必须是动态引用：RunnerRegistry 会在切会话 / 重启 pi 时重建
- * AgentController，但子代理控制器是主进程级的生命周期服务。
+ * 子代理：主进程级的生命周期服务。界面与模型（`yan subagent …`）共用同一个控制器，
+ * RunnerRegistry 切会话 / 重启 pi 时重建 AgentController，但这个服务不跟着重建。
  */
-let subagentCapabilityHost: SubagentCommandHost | null = null
+const subagentService = new SubagentService({
+  onChange: (run) => push({ ch: 'subagent', payload: run }),
+  onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
+  resolveAgentProfile: (id) => resolveAgentProfile(id)
+})
 /** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
 const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
@@ -413,18 +406,6 @@ let remoteAccess: RemoteAccess | null = null
 function ac(): AgentController | null {
   return runners?.active() ?? null
 }
-
-/**
- * 子代理的系统提示（方案 8.3）。
- * 子代理不该反过来问用户问题 —— 它拿不到桌面端的提问通道，
- * 而且它的职责就是把一件事做完并汇报。
- */
-const SUBAGENT_SYSTEM_PROMPT = [
-  'You are a subagent working on one focused task inside a larger project.',
-  '- Work autonomously: do not ask the user questions; make reasonable assumptions and state them.',
-  '- Keep the scope to the task you were given.',
-  '- Finish with a concise report: what you changed or found, and how you verified it.'
-].join('\n')
 
 /**
  * 砚薄层的资源查找顺序：
@@ -2748,7 +2729,7 @@ async function shutdown(): Promise<void> {
   }
   /* 退出前把子代理一起收掉（方案 8.3：主任务停了，它的子任务不该变孤儿） */
   try {
-    await subagents?.stopAll()
+    await subagentService.current()?.stopAll()
   } catch {
     /* 忽略 */
   }
@@ -3856,7 +3837,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   if (runners?.active()?.running) return { ok: true }
   /* 重新建立主 runner 集合时，所有新进程都读取当前设置。 */
   await runners?.stopAll()
-  await subagents?.stopAll()
+  await subagentService.current()?.stopAll()
 
   const settings = await getSettings()
   agentResponseDetail = settings.responseDetail
@@ -3932,14 +3913,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
          */
         browserHost: () => browser,
         /* 模型通过 `yan subagent …` 进入同一套全局控制器。 */
-        subagentHost: {
-          run: (command, params, context) => {
-            if (!subagentCapabilityHost) {
-              return Promise.reject(new Error('子代理能力服务尚未注册'))
-            }
-            return subagentCapabilityHost.run(command, params, context)
-          }
-        },
+        subagentHost: subagentService.capabilityHost,
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
         /* 资料引用：按版本读片段与引用状态。 */
@@ -5907,190 +5881,23 @@ function registerIpc(): void {
   rawHandle('yan:contextActions', () => readContextActions(ac()?.getState()?.sessionId ?? null))
 
   /* ---- 子代理（方案第 8 节）---- */
-  const subagentCtrl = async (): Promise<SubagentController> => {
-    if (subagents) return subagents
-    const s = await getSettings()
-    subagents = new SubagentController({
-      cwd: s.cwd,
-      piBin: s.piBin,
-      appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
-      onChange: (run) => push({ ch: 'subagent', payload: run }),
-      onRemove: (id) => push({ ch: 'subagent-remove', payload: id })
-    })
-    return subagents
-  }
-
-  /*
-   * 模型调用与 UI 调用必须共用同一个控制器：这样模型启动的任务也会
-   * 通过 `onChange` 推到输入区上方的列表和右侧详情，而不是变成“后台黑盒”。
-   * 这里不暴露 merge/discard —— worktree 结果仍由用户在详情面板审阅。
-   */
-  subagentCapabilityHost = {
-    async run(command, params, context) {
-      const ctrl = await subagentCtrl()
-      ctrl.setContext(context)
-
-      if (command === 'subagent.start') {
-        const task = typeof params.task === 'string' ? params.task.trim() : ''
-        if (!task) {
-          throw new CapabilityCommandError(
-            'subagent_task_required',
-            'subagent start 需要 task'
-          )
-        }
-        if (task.length > 12_000) {
-          throw new CapabilityCommandError(
-            'subagent_task_too_long',
-            '子代理任务不能超过 12000 个字符'
-          )
-        }
-        const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
-        const readOnly = params.readOnly === true || params['read-only'] === true
-        /*
-         * 模型没显式给时，按**父会话的活动**取「按活动配置模型」里的那一档
-         * （实施-25 P18 的真实生效点）。解析结果里带理由与是否发生回退，
-         * 但这里只需要最终值。
-         */
-        let effectiveModel = model
-        if (!effectiveModel) {
-          try {
-            const profile = await resolveAgentProfile(context.parentSessionId ?? context.parentRunId ?? '')
-            const settings = await getSettings()
-            effectiveModel = resolveActivityModel({
-              config: settings.activityModels,
-              activity: profile.activity
-            }).model ?? undefined
-          } catch {
-            /* 取不到配置就当没配：不因为一个设置读盘失败而挡住子代理 */
-          }
-        }
-        /*
-         * 任务输入（实施-25 P15 T15-1）：目标 / 交付物 / 来源 / 边界。
-         * 读不通就在**占用并发槽之前**失败（服务里同一个顺序）。
-         */
-        const result = await ctrl.start(task, effectiveModel, readOnly ? 'controlled-cwd' : 'worktree', params.brief)
-        if (!result.ok || !result.run) {
-          throw new CapabilityCommandError(
-            'subagent_start_failed',
-            result.error ?? '子代理启动失败'
-          )
-        }
-        const run = result.run
-        return {
-          data: run,
-          summary: {
-            kind: 'subagent',
-            action: 'start',
-            id: run.id,
-            status: run.status,
-            isolation: run.isolation,
-            task: run.task,
-            latestActivity: run.latestActivity,
-            deliverables: run.brief?.deliverables.length ?? 0,
-            sources: run.brief?.sources.length ?? 0
-          }
-        }
+  registerSubagentsIpc(ipc, {
+    service: subagentService,
+    parentContext: async () => {
+      const settings = await getSettings()
+      const state = ac()?.getState()
+      const active = runners?.activeRunner()
+      const runtime = active?.id ? runners?.runtimeOf(active.id) : null
+      return {
+        cwd: state?.cwd ?? active?.cwd ?? settings.cwd,
+        /* 空白新会话在 pi 首次写入前可能还没有 sessionId；runtime 的
+         * pending:<runId> 是可追踪的明确占位，不把父子关系丢掉。 */
+        parentSessionId: state?.sessionId || runtime?.sessionId,
+        parentRunId: active?.id,
+        projectId: state?.cwd ? projectIdForCwd(settings, state.cwd) : undefined
       }
-
-      if (command === 'subagent.list') {
-        const runs = ctrl.list()
-        const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
-        return {
-          data: runs,
-          summary: {
-            kind: 'subagent',
-            action: 'list',
-            count: runs.length,
-            active: active.length,
-            ids: runs.map((run) => run.id)
-          }
-        }
-      }
-
-      const id = typeof params.id === 'string' ? params.id.trim() : ''
-      if (!/^sub-[0-9a-f]+$/.test(id)) {
-        throw new CapabilityCommandError(
-          'subagent_id_required',
-          '该子代理动作需要合法的 id（例如 sub-a1b2c3d4）'
-        )
-      }
-
-      if (command === 'subagent.get') {
-        const run = ctrl.get(id)
-        if (!run) {
-          throw new CapabilityCommandError(
-            'subagent_not_found',
-            `找不到子代理：${id}`
-          )
-        }
-        return {
-          data: run,
-          summary: {
-            kind: 'subagent',
-            action: 'get',
-            id: run.id,
-            status: run.status,
-            latestActivity: run.latestActivity,
-            transcript: run.transcript.length,
-            review: run.review
-          }
-        }
-      }
-
-      if (command === 'subagent.stop') {
-        const result = await ctrl.stop(id)
-        if (!result.ok) {
-          throw new CapabilityCommandError(
-            'subagent_stop_failed',
-            result.error ?? `停止子代理失败：${id}`
-          )
-        }
-        const run = ctrl.get(id)
-        return {
-          data: run,
-          summary: {
-            kind: 'subagent',
-            action: 'stop',
-            id,
-            status: run?.status ?? 'stopped'
-          }
-        }
-      }
-
-      throw new CapabilityCommandError(
-        'not_implemented',
-        `命令已登记但尚未实现：${command}`
-      )
     }
-  }
-  handle('yan:subagents:list', async () => (await subagentCtrl()).list())
-  handle('yan:subagents:start', async (task: string, model?: string, isolation?: string) => {
-    const ctrl = await subagentCtrl()
-    const settings = await getSettings()
-    const state = ac()?.getState()
-    const active = runners?.activeRunner()
-    const runtime = active?.id ? runners?.runtimeOf(active.id) : null
-    const projectId = state?.cwd ? projectIdForCwd(settings, state.cwd) : undefined
-    ctrl.setContext({
-      cwd: state?.cwd ?? active?.cwd ?? settings.cwd,
-      /* 空白新会话在 pi 首次写入前可能还没有 sessionId；runtime 的
-       * pending:<runId> 是可追踪的明确占位，不把父子关系丢掉。 */
-      parentSessionId: state?.sessionId || runtime?.sessionId,
-      parentRunId: active?.id,
-      projectId
-    })
-    const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : 'worktree'
-    return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
   })
-  handle('yan:subagents:stop', async (id: string) => (await subagentCtrl()).stop(String(id ?? '')))
-  handle('yan:subagents:stopAll', async () => {
-    await (await subagentCtrl()).stopAll()
-  })
-  handle('yan:subagents:clear', async () => {
-    ;(await subagentCtrl()).clearFinished()
-  })
-  handle('yan:subagents:merge', async (id: string) => (await subagentCtrl()).merge(String(id ?? '')))
-  handle('yan:subagents:discard', async (id: string) => (await subagentCtrl()).discard(String(id ?? '')))
 
   registerGitIpc(ipc, { isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)), worktreeOrigins })
 
