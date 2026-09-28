@@ -37,7 +37,7 @@ class QuestionAlertProbe : Instrumentation() {
       await("foreground connection") { manager.activeNotifications.any { it.id == 37921 } }
       await("idle state") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "已连接" }
       phase(3)
-      await("running task") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "正在运行" }
+      await("running task") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "运行中" }
       check(ongoing()!!.extras.getCharSequence(Notification.EXTRA_TITLE).toString() == "PRIVATE_TASK")
       check(ongoing()!!.flags and Notification.FLAG_ONGOING_EVENT != 0)
       check(ongoing()!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0)
@@ -46,7 +46,7 @@ class QuestionAlertProbe : Instrumentation() {
       await("task completed") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "已连接" }
       phase(1)
       await("new question alert") { question()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.startsWith("1 ") == true }
-      await("waiting state") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "等待你回答" }
+      await("waiting state") { ongoing()?.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() == "等你回答" }
       check(question()!!.visibility == Notification.VISIBILITY_PRIVATE)
       check(question()!!.flags and Notification.FLAG_ONLY_ALERT_ONCE == 0)
       check(!question()!!.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("PRIVATE_FIXTURE"))

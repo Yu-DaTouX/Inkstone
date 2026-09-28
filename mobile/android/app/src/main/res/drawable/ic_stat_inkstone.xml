@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知栏小图标：砚标志的单色简化字形（圆角框内的提示符 › 与光标 _），为 24dp 重画，系统按主题着色 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="320"
+    android:viewportHeight="320">
+    <path
+        android:pathData="M68,64H252C267,64 280,77 280,92V228C280,243 267,256 252,256H68C53,256 40,243 40,228V92C40,77 53,64 68,64Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="26"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M96,122L136,160L96,198M166,198H222"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="26"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

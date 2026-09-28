@@ -2583,7 +2583,8 @@
   max-width: none;
   margin-left: 0;
   padding: var(--sp-2) var(--sp-3);
-  border: 0;
+  /* 浅色主题下 --bg-2（白）与页面底几乎相同，靠细边分出块 */
+  border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
   background: var(--bg-2);
 }

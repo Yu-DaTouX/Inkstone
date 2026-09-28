@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, Text, useColorScheme, useWindowDimensions, View } from 'react-native'
+import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, useColorScheme, useWindowDimensions, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import type { Connection } from './api/client'
 import type { PhotoDraft } from './device'
@@ -11,6 +11,7 @@ import { PairScreen } from './screens/PairScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { RemoteProvider } from './state'
+import { EmptyState } from './ui'
 import { clearConnection, loadConnection, saveConnection } from './storage'
 import { usePalette } from './theme'
 import { ContentEnter } from './motion'
@@ -212,7 +213,7 @@ export default function App() {
                     />
                   ) : (
                     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: p.fgMute }}>选择会话</Text>
+                      <EmptyState>选择会话</EmptyState>
                     </View>
                   )}
                 </ContentEnter>

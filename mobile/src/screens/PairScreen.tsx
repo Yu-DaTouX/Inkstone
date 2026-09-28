@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { normalizeBaseUrl, pair, RemoteHttpError, type Connection } from '../api/client'
 import type { PairingPrefill } from '../pairLink'
-import { font, radius, space, touch, usePalette } from '../theme'
-import { Button } from '../ui'
+import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
+import { Button, Input } from '../ui'
 import { Icon, BrandMark } from '../icons'
 import { deviceInfo } from '../device'
 
@@ -51,14 +51,13 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
     }
   }
 
-  const input = [styles.input, { backgroundColor: p.bg2, borderColor: p.border, color: p.fg }]
   return (
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: p.bg0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.topline}>
           <BrandMark size={40} />
           <Text style={[styles.kicker, { color: p.fgMute }]}>INKSTONE / PHONE</Text>
-          {onCancel ? <Pressable accessibilityRole="button" onPress={onCancel}><Text style={{ color: p.accent, fontSize: font.sm }}>返回</Text></Pressable> : null}
+          {onCancel ? <Button label="返回" variant="ghost" compact onPress={onCancel} /> : null}
         </View>
         <Text style={[styles.headline, { color: p.fg }]}>连接电脑</Text>
 
@@ -66,7 +65,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
           <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>01</Text><Text style={[styles.stepTitle, { color: p.fg }]}>连接同一个网络</Text></View>
           <Text style={[styles.stepBody, { color: p.fgDim }]}>手机与电脑登录同一个 Tailscale 网络。</Text>
           <Pressable accessibilityRole="link" onPress={() => void open(TAILSCALE_URL)} style={[styles.linkRow, { borderTopColor: p.borderSoft }]}>
-            <Text style={[styles.linkText, { color: p.accent }]}>下载 Tailscale</Text><Icon name="external" size={18} color={p.accent} />
+            <Text style={[styles.linkText, { color: p.accent }]}>下载 Tailscale</Text><Icon name="external" size={icon.sm} color={p.accent} />
           </Pressable>
         </View>
 
@@ -75,17 +74,17 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
           <Text style={[styles.stepBody, { color: p.fgDim }]}>电脑「设置 → 手机接入」，扫码或填写配对码。</Text>
           {prefill ? <Text style={[styles.scanned, { color: p.ok }]}>已填入配对信息</Text> : null}
           <Text style={[styles.label, { color: p.fgDim }]}>电脑地址</Text>
-          <TextInput disableFullscreenUI style={input} value={address} onChangeText={setAddress} placeholder="100.101.102.103:37892" placeholderTextColor={p.fgMute} autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="电脑地址" />
+          <Input code value={address} onChangeText={setAddress} placeholder="100.101.102.103:37892" autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="电脑地址" />
           <Text style={[styles.label, { color: p.fgDim }]}>6 位配对码</Text>
-          <TextInput disableFullscreenUI style={[input, styles.code]} value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" placeholderTextColor={p.fgMute} keyboardType="number-pad" maxLength={6} accessibilityLabel="配对码" />
+          <Input code style={styles.code} value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" maxLength={6} accessibilityLabel="配对码" />
           <Text style={[styles.label, { color: p.fgDim }]}>此手机名称</Text>
-          <TextInput disableFullscreenUI style={input} value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机名称" />
+          <Input value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机名称" />
           {error ? <Text style={[styles.error, { color: p.err }]} accessibilityLiveRegion="polite">{error}</Text> : null}
           <Button label="连接电脑" variant="primary" busy={busy} onPress={() => void submit()} style={styles.submit} />
         </View>
 
         <Pressable accessibilityRole="link" onPress={() => void open(GUIDE_URL)} style={styles.guide}>
-          <Text style={{ color: p.accent, fontSize: font.sm }}>使用说明</Text><Icon name="external" size={16} color={p.accent} />
+          <Text style={{ color: p.accent, fontSize: font.sm, fontFamily: mono }}>使用说明</Text><Icon name="external" size={icon.sm} color={p.accent} />
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -96,21 +95,18 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: space[5], paddingTop: space[6], paddingBottom: space[6], gap: space[4] },
   topline: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  mark: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md },
-  kicker: { flex: 1, fontSize: font.xs, fontWeight: '700', letterSpacing: 1.4 },
-  headline: { marginTop: space[3], fontSize: 29, lineHeight: 38, fontWeight: '700' },
-  intro: { fontSize: font.base, lineHeight: 23, marginBottom: space[2] },
+  kicker: { flex: 1, fontSize: font.xs, fontWeight: weight.strong, fontFamily: mono, letterSpacing: 1.4 },
+  headline: { marginTop: space[3], fontSize: font.title, lineHeight: 30, fontWeight: weight.strong },
   step: { borderWidth: 1, borderRadius: radius.lg, padding: space[4], gap: space[2] },
   stepHeading: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  number: { fontSize: font.sm, fontWeight: '700', letterSpacing: 1 },
-  stepTitle: { fontSize: font.lg, fontWeight: '600' },
+  number: { fontSize: font.sm, fontWeight: weight.strong, fontFamily: mono, fontVariant: ['tabular-nums'] },
+  stepTitle: { fontSize: font.lg, fontWeight: weight.strong },
   stepBody: { fontSize: font.sm, lineHeight: 20 },
   linkRow: { marginTop: space[1], paddingTop: space[3], borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  linkText: { fontSize: font.sm, fontWeight: '600' },
-  scanned: { fontSize: font.sm, marginTop: space[1] },
-  label: { fontSize: font.sm, fontWeight: '600', marginTop: space[2] },
-  input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], fontSize: font.base },
-  code: { fontSize: 22, letterSpacing: 7, fontVariant: ['tabular-nums'] },
+  linkText: { fontSize: font.sm, fontWeight: weight.medium, fontFamily: mono },
+  scanned: { fontSize: font.sm, marginTop: space[1], fontFamily: mono },
+  label: { fontSize: font.sm, fontWeight: weight.medium, fontFamily: mono, marginTop: space[2] },
+  code: { fontSize: font.title, letterSpacing: 7, fontVariant: ['tabular-nums'] },
   error: { fontSize: font.sm, lineHeight: 20 },
   submit: { marginTop: space[2] },
   guide: { flexDirection: 'row', gap: space[2], justifyContent: 'center', alignItems: 'center', minHeight: touch.min, paddingVertical: space[3] }
