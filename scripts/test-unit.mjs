@@ -949,6 +949,18 @@ const { rebindSessionRuntime, migrateSessionRuntime, reduceSessionRuntime, sessi
   }).then(() => import('../out/test/session-runtime.mjs'))
 )
 
+/* 渲染端推送的身份与归属判定（src/renderer/src/state/push-routing.ts），纯函数。 */
+const pushRouting = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/push-routing.ts'],
+    outfile: 'out/test/push-routing.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/push-routing.mjs'))
+)
+
 /* 项目/会话产品归属索引（src/main/session-layout.ts）。 */
 const sessionLayout = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2034,6 +2046,11 @@ runWorkspaceChangesTests(ok, workspaceChanges)
 {
   const { runSessionRuntimeTests } = await import('./test-session-runtime.mjs')
   runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime, rebindSessionRuntime)
+}
+
+{
+  const { runPushRoutingTests } = await import('./test-push-routing.mjs')
+  runPushRoutingTests(ok, pushRouting)
 }
 
 {
