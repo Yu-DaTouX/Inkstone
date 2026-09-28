@@ -18,16 +18,6 @@ import { listSessions, deleteSession, readTitleSamples, restoreSession } from '.
 import { moveSessionLayout, rememberSession } from './session-layout'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
-import type { CustomProviderInput } from '../shared/custom-provider'
-import {
-  listCustomProviders,
-  removeCustomProvider,
-  saveCustomProvider,
-  testCustomProviderBillable,
-  testCustomProviderEndpoint
-} from './custom-providers'
-import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from './credentials'
-import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
@@ -38,11 +28,8 @@ import { PiPackageActivationScheduler } from './capabilities/pi-package-schedule
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { createSkillFilesActivationHostPorts } from './capabilities/skill-files-activation-host'
 import { SkillFilesActivationScheduler } from './capabilities/skill-files-scheduler'
-import { compactionInfo } from './compaction'
 import { allowTrust, trustStatus } from './project-trust'
-import { forkContext, forkFileRefs } from './fork-rebind-service'
 import { setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
-import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
@@ -63,6 +50,8 @@ import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { registerAuthIpc } from './ipc/auth-ipc'
+import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerGoalIpc } from './ipc/goal-ipc'
 import { registerSpaceIpc } from './ipc/space-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
@@ -87,7 +76,6 @@ import { WorktreeLinkStore } from './worktree-links'
 import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
 import { type HandoffSessionHandle, type HandoffSessionTarget } from './handoff-runner'
 import { normalizeChainKey, planHistoryRead } from '../shared/session-chain'
-import { type HandoffPackage } from '../shared/handoff'
 import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
 import { createSessionWorkScheduler } from './session-work-scheduler'
 import { AUTO_CONTINUE_LIMIT } from '../shared/auto-continue'
@@ -3049,48 +3037,7 @@ function registerIpc(): void {
     return readHistoryWithArtifacts(path)
   })
 
-  /* ---- 模型接入（凭证） ---- */
-  handle('yan:authProviders', async (deep?: boolean) => {
-    const s = await getSettings()
-    const probe = resolvePi({ override: s.piBin })
-    return listAuthProviders({ cmd: probe.cmd, args: probe.args }, !!deep)
-  })
-  handle('yan:setApiKey', async (provider: string, key: string) => setApiKey(provider, key))
-  handle('yan:clearAuth', async (provider: string) => clearAuth(provider))
-  handle('yan:authFileInfo', async () => authFileInfo())
-  /* 实施-23：自定义 API 服务。真源是 pi 的 models.json，只写 yan- 前缀条目。 */
-  handle('yan:customProviders', async () => listCustomProviders())
-  handle('yan:saveCustomProvider', async (input: CustomProviderInput) => saveCustomProvider(input))
-  handle('yan:removeCustomProvider', async (id: string) => removeCustomProvider(id))
-  /*
-   * 连接测试（实施-23 M2）：endpoint 段是宿主自己的 HTTP 检查；billable 段交给
-   * pi 的 --print 模式真实跑一条提示词 —— 两者分开返回，界面才能分别标成本。
-   */
-  handle('yan:testCustomProvider', async (id: string, mode: 'endpoint' | 'billable', modelId?: string) => {
-    if (mode === 'endpoint') return await testCustomProviderEndpoint(id)
-    const current = await getSettings()
-    const probe = resolvePi(current.piBin ? { override: current.piBin } : {})
-    return await testCustomProviderBillable({ id, modelId: modelId ?? '', piBin: probe.args.at(-1) ?? '' })
-  })
-
-  /*
-   * 应用内登录 ChatGPT 订阅（Codex）。
-   *
-   * 为什么登录后要重启 agent：pi 在**启动时**读 auth.json，正在跑的那个子进程
-   * 不会因为文件变了就重新读。不重启的话用户会看到「登录成功但模型还是旧的 /
-   * 依然报没凭证」—— 这与语言切换需要重启是同一个原因，所以复用那条路。
-   *
-   * 重启是**非阻塞**的（fire and forget）：登录结果要立刻回给界面，而重启要等
-   * 当前这一轮跑完（见 restartAgent 里的空闲等待），不能让设置页转圈等它。
-   */
-  handle('yan:codexLogin', async () => {
-    const r = await startCodexLogin()
-    if (r.ok) void restartAgent('ChatGPT 登录')
-    return r
-  })
-  handle('yan:codexLoginCancel', async () => {
-    cancelCodexLogin()
-  })
+  registerAuthIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
 
   registerFilesIpc(ipc, { resolveFileContext })
 
@@ -3372,72 +3319,8 @@ function registerIpc(): void {
   rawHandle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
 
 
-  /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
-  rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
-    const s = await getSettings()
-    return compactionInfo(s.cwd, typeof win === 'number' ? win : 0)
-  })
-
-  /*
-   * 项目信任（实施-07 S2b-2）。
-   *
-   * 为何只给「读」与「用户显式信任一个目录」两件事：
-   * 工作树目录通常在仓库旁边（不在主仓库路径之下），所以「源目录被信任」不等于
-   * 「工作树目录被信任」—— 而 RPC 模式没有信任弹窗，用户不改 trust.json 就永远
-   * 看不到项目级设置生效。**不做自动继承**（形态决策里的反模式之一）。
-   *
-   * ⚠️ 这两个句柄**故意不读 settings**（调用方必须把目录传进来）：
-   *   `getSettings()` 与 `patchSettings()` 的读-改-写不是原子的（见 settings.ts 的
-   *   `writeQueue` 注释），多一个“顺手读一下设置”的调用方就多一次交错机会 ——
-   *   2026-09-19 真实踩到：这两个句柄原本会 fallback 到 `settings.cwd`，
-   *   于是工作树创建后「登记为项目」的写入被并发读盘缓存盖掉（项目从列表里消失）。
-   */
-  rawHandle('yan:trust:status', async (_e, cwd: unknown) => {
-    const dir = typeof cwd === 'string' ? cwd.trim() : ''
-    if (!dir) return { cwd: '', trusted: false, entry: null }
-    return trustStatus(dir)
-  })
-  rawHandle('yan:trust:allow', async (_e, cwd: unknown) => {
-    const dir = typeof cwd === 'string' ? cwd.trim() : ''
-    if (!dir) return { ok: false, entry: '', error: '缺少目录' }
-    return allowTrust(dir)
-  })
-
-  /*
-   * 工作树 Fork 的文件引用重绑定（实施-07 S2b-3）。
-   *
-   * 渲然端给「目标工作树 + 当前会话文件与 cwd」，主进程把源会话里 `@` 过的
-   * 仓库内文件拿到目标仓库根下重新解析 —— 一律用**仓库相对路径**，
-   * 仓库外的路径报 `outside`（不迁移）。这里的 `explicitRefs` 只给测试与将来的
-   * 显式交接用（写死一份引用比伪造会话文件诚实）。
-   */
-  rawHandle('yan:fork:fileRefs', async (_e, arg: unknown) =>
-    forkFileRefs((arg ?? {}) as Parameters<typeof forkFileRefs>[0])
-  )
-
-  /*
-   * Fork 的语义注入正文（实施-07 S2b-4）。
-   *
-   * 渲染端在「派生新会话」成功后调它，拿到的文本作为**输入框草稿**注入（不自动发送）：
-   * 用户能看一眼、补一句、也可以直接删掉。正文里只有「接手必须知道的」：
-   * 在**目标工作树重算过的**分支 / HEAD / 变更数、源会话的文件引用对照、以及
-   * 源会话**交接包里可迁移的知识**（没有就明说没有）。
-   */
-  rawHandle('yan:fork:context', async (_e, arg: unknown) => {
-    const req = (arg ?? {}) as Parameters<typeof forkContext>[0]
-    await handoffs.load()
-    const packageOf = (sessionFile: string): HandoffPackage | null => {
-      try {
-        const key = normalizeSessionFileKey(sessionFile)
-        return key ? handoffs.state(key).package : null
-      } catch {
-        return null
-      }
-    }
-    return forkContext(req, packageOf)
-  })
+  registerWorkspaceIpc(ipc, { handoffs })
   registerContextBudgetIpc(ipc, { currentAgent: () => ac() ?? undefined })
-  rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
 
 
 
