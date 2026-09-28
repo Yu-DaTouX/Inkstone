@@ -2,6 +2,8 @@
 
 [架构简介](ARCHITECTURE.md) · [贡献指南](CONTRIBUTING.md)
 
+Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)。
+
 | 路径 | 职责 |
 | --- | --- |
 | `src/main/index.ts` | Electron 主进程入口与宿主集成 |

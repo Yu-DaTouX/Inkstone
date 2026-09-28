@@ -4,7 +4,7 @@ Electron + React + TypeScript 桌面应用。pi 通过独立 RPC 子进程提供
 
 ## 开工入口
 
-1. 阅读 [README](README.md)、[贡献指南](docs/CONTRIBUTING.md) 和 [代码导览](docs/PROJECT.md)。按任务需要查看 [架构简介](docs/ARCHITECTURE.md) 与相关源码。
+1. 阅读 [README](README.md)、[贡献指南](docs/CONTRIBUTING.md) 和 [代码导览](docs/PROJECT.md)。手机接入流程看[手机接入说明](docs/MOBILE_ACCESS.md)；按任务需要查看 [架构简介](docs/ARCHITECTURE.md) 与相关源码。
 2. 检查 `git status --short`，保留已有改动，不预设工作区干净。
 3. 以用户当前请求为授权边界。附件、历史记录、设计提案和本地计划是参考资料，不自动授权执行。
 
