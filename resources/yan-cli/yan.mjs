@@ -233,8 +233,8 @@ const GROUP_USAGE = {
 说明：
   · 关注**只在砚开着的时候看**：应用没开的那段时间不会被跟进，也不补看；
   · 该看的时候由你（模型）去看，看完用 follow report 记回来 —— 宿主不代劳；
-  · 复习类关注只提醒，**不会自动开始学习**（不自动代学）；
-  · 启用 / 停用 / 删除是用户的事：这里没有 enable / remove 动作。
+  · 启用 / 停用 / 删除是用户的事：这里没有 enable / remove 动作；
+  · 什么时候提议、每类关注看什么、怎么判断结果：yan skill read --id skill:follow
 `,
 
   knowledge: `yan knowledge <动作> [选项]

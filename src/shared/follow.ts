@@ -595,6 +595,7 @@ export function watchBriefText(watch: Watch, runs: readonly FollowRun[]): string
   }
   lines.push('', FOLLOW_APP_ONLY_NOTE)
   lines.push('看完请回报：这次是「没有变化 / 有变化 / 需要我定 / 没看成」，以及具体变了什么。')
+  lines.push('每类关注看什么、怎么回报见 `follow` 技能（`yan skill read --id skill:follow`）。')
   return lines.join('\n')
 }
 
