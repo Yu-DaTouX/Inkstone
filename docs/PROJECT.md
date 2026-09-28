@@ -25,6 +25,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/review.ts` | 错题与复习：调度规则（1/3/7/14 天是**排期不是掌握证明**）、再练**换同概念新例子**、逾期不乘倍 |
 | `src/shared/research.ts` | 资料引用：引用状态（旧版本按版本保留、**只提示不改引用**）与按版本读片段；对照做法在 `resources/skills/research` |
 | `src/shared/user-skill.ts` + `src/main/user-skills.ts` | 用户技能：`YAN_DIR/skills/<名称>/SKILL.md` 的校验、保存（`yan skill save`）与按 `--skill` 加载；旧办事模板（`playbooks.json`）启动时一次性导出成技能，原文件保留。写法与执行约定见 `resources/skills/playbook` |
+| `src/shared/learning-export.ts` + `src/main/learning-export.ts` | 学习记录导出：启动时把 courses / study-sessions / exercises / learning-memory 四个原始 JSON 整理成 `YAN_DIR/learning-export/` 下按课程分的 Markdown 与完整副本；只读原文件，不依赖各 store。讲解与出题做法见 `resources/skills/tutor` |
 | `src/shared/subagent-brief.ts` | 内部 agent 分工：任务输入（目标 / 交付物 / 来源 / 边界）不猜、结果汇总如实标来源（**未决问题不自动抽取**）；何时拆分见 `resources/skills/subagent` |
 | `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
 | `src/shared/capability-gap.ts` | 按需获取能力：用自然语言说需求 → 「缺什么、怎么接」的**可执行路径**（只给路径不代装、认不出不编包名、已有能力就不算缺口） |

@@ -3820,6 +3820,33 @@ const { runUserSkillTests } = await import('./test-user-skill.mjs')
 await runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
 
 /*
+ * 学习数据导出：四个原始 JSON → 可读 Markdown 与完整副本。
+ */
+const learningExportShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/shared/learning-export.ts'],
+    outfile: 'out/test/learning-export.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/learning-export.mjs'))
+)
+const learningExportMain = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/learning-export.ts'],
+    outfile: 'out/test/learning-export-main.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    external: ['electron'],
+    logLevel: 'silent'
+  }).then(() => import('../out/test/learning-export-main.mjs'))
+)
+const { runLearningExportTests } = await import('./test-learning-export.mjs')
+await runLearningExportTests(ok, learningExportShared, learningExportMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
+
+/*
  * 内部 agent 分工（实施-25 P15）：任务输入 / 结果汇总。
  * 重点是「输入不猜」「摘要如实标来源」「未决问题不自动猜」。
  */
