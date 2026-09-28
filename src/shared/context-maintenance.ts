@@ -44,6 +44,10 @@ export interface ContextMaintenanceOperationV1 {
   retryNonce: string | null
   state: ContextMaintenanceStateV1
   failureCode: string | null
+  /** 失败时停在哪一步（进行中状态名，或续跑阶段 'resuming'）；旧记录没有这个字段 */
+  failedStage?: string | null
+  /** 失败后能否直接重试；旧记录没有这个字段（界面按「未知」处理） */
+  retryable?: boolean | null
   createdAt: number
   updatedAt: number
 }
@@ -57,6 +61,8 @@ export interface ContextMaintenanceProjectionV1 {
   runnerEpoch: string
   base: ContextMaintenanceBaseV1
   elidedEntryIds: string[]
+  /** 滚动工作笔记（summaryText 由它加页眉与归档指引组成）；旧投影没有这个字段 */
+  summaryNotes?: string
   summaryText: string
   summaryHash: string
   sourceRevision: string

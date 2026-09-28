@@ -2280,6 +2280,14 @@ const contextRecall = await import('../node_modules/esbuild/lib/main.js').then((
 const { runContextRecallTests } = await import('./test-context-recall.mjs')
 await runContextRecallTests(ok, { recall: contextRecall, store: contextStateStore })
 
+/* 上下文整理：滚动笔记封顶、归档检索（yan context find）、失败阶段与可重试标记 */
+const { runContextBudgetRollingTests } = await import('./test-context-budget-rolling.mjs')
+await runContextBudgetRollingTests(ok, {
+  maintenance: await import('../resources/pi-extensions/context-budget-maintenance.js'),
+  store: await import('../resources/pi-extensions/context-budget-store.js'),
+  recall: contextRecall
+})
+
 /*
  * N21-4 / S2–S6：上下文变换（Tool Sweep / Task State / Recall / 结构化压缩闸门）。
  *

@@ -38,7 +38,7 @@ import { join } from 'node:path'
  *   而敲 CLI 要用 bash 工具 —— 把 bash 拿掉，计划档就永远提交不了、也就永远好不了。
  *   所以 bash 留着，但**命令形状**由下面的白名单卡死（见 `isAllowedBashCommand`）：
  *   只接受 `yan goal status|ready|report`、`yan question ask` 或严格形状的
- *   `yan context recall --ref ctx://…`，且整条命令里**不得出现
+ *   `yan context recall --ref ctx://…` / `yan context find [--query …]`，且整条命令里**不得出现
  *   任何 shell 元字符**（`;` `&&` `|` `>` 反引号 `$` 换行……）。
  *   这不是「对任意 shell 命令做脆弱的只读判断」（§4 禁止的那种），
  *   而是「只允许这一条经审查的命令」—— 白名单，不是启发式。
@@ -55,6 +55,9 @@ const CONTEXT_REF = 'ctx:\\/\\/(?:tool|file|diff|episode)\\/[A-Za-z0-9._~%:-]{1,
 const CONTEXT_RECALL_COMMAND = new RegExp(
   `^\\s*(?:"[^"]*[\\\\/])?yan(?:\\.(?:cmd|exe|mjs))?\\s+context\\s+recall\\s+--ref\\s+(?:${CONTEXT_REF}|"${CONTEXT_REF}")\\s*$`
 )
+/* 只读的归档引用查询：可选一个关键词参数（引号内或单个词）与两位数以内的条数 */
+const CONTEXT_FIND_COMMAND =
+  /^\s*(?:"[^"]*[\\/])?yan(?:\.(?:cmd|exe|mjs))?\s+context\s+find(?:\s+--query\s+(?:"[^"]{1,200}"|[^\s"]{1,200}))?(?:\s+--limit\s+\d{1,2})?\s*$/
 
 /**
  * 元字符一律拒。
@@ -128,7 +131,8 @@ function isAllowedBashCommand(command, planApprovalPending = false) {
   if (!command) return false
   if (SHELL_METACHARS.test(command)) return false
   const goalCommand = planApprovalPending ? GOAL_STATUS_COMMAND : GOAL_COMMAND
-  return goalCommand.test(command) || QUESTION_COMMAND.test(command) || CONTEXT_RECALL_COMMAND.test(command)
+  return goalCommand.test(command) || QUESTION_COMMAND.test(command) ||
+    CONTEXT_RECALL_COMMAND.test(command) || CONTEXT_FIND_COMMAND.test(command)
 }
 
 /** 工具名归一：pi 0.87.1 的 `getActiveTools()` 返回字符串数组，这里兼容对象形态。 */

@@ -408,6 +408,11 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
           [Recalled context] 开头，会在下一次用户输入时由上下文生命周期清理为存根。
           归档权限、过期时间、单次/累计预算和受管文件大小都由宿主检查；拒绝时不会给半份内容。
 
+  find    按内容摘录查找已归档的引用（上下文整理后摘要里不再逐条列出引用）。
+          yan context find --query "关键词 另一个词" [--limit 20]
+          关键词全部命中才算匹配；省略 --query 时列出最近归档的条目。stdout 直接给出
+          「ctx://tool/<id> · token 数 · 摘录」，再用 recall --ref 读原文。只读元数据，不占召回预算。
+
   budget status
           查看当前会话/阶段的预算选择、版本和已登记材料。
   budget adjust --request-file context-budget.json
@@ -632,7 +637,7 @@ const GROUP_SPECS = {
     required: {}
   },
   context: {
-    actions: ['recall', 'budget'],
+    actions: ['recall', 'find', 'budget'],
     required: { recall: ['ref'] }
   },
   search: {
