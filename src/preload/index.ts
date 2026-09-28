@@ -110,6 +110,7 @@ import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from 
 import type { SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
+import type { ContextBackgroundUsageSummary } from '../shared/context-background-usage'
 /**
  * 白名单桥 —— renderer 全程 nodeIntegration:false + contextIsolation:true。
  * 这里的方法就是渲染端能碰到的**全部**能力（HANDOFF §9 原则 3）。
@@ -536,8 +537,13 @@ const api: YanBridge = {
   contextBudgetMaintenanceStatusV1: () => invoke<ContextMaintenanceOperationV1 | null>('yan:contextBudgetMaintenanceStatusV1'),
   setContextBudgetV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetV1', update),
   setContextBudgetMaterialPinV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetMaterialPinV1', update),
+  /** 整理失败后的一键出口：临时抬软线 / 降档（同时作废那笔停住的整理） */
+  contextBudgetMaintenanceExitV1: (request: { action: 'raise-line' | 'lower-tier'; expectedRevision: string }) =>
+    invoke<{ ok: boolean; policy?: ContextBudgetSessionPolicyV1; selectedBudget?: number; error?: string }>('yan:contextBudgetMaintenanceExitV1', request),
   /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
+  /** 后台调用用量账（供应商口径）：未缓存输入 / 缓存命中率 / 各类调用次数 */
+  contextBackgroundUsage: () => invoke<ContextBackgroundUsageSummary>('yan:contextBackgroundUsage'),
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   /* ---- 图片附件：占用与手动清理（不做自动 GC）---- */

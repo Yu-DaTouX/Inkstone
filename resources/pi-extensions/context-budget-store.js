@@ -212,6 +212,8 @@ const NOT_RETRYABLE = new Set([
   'context_recall_source_missing',
   'context_maintenance_capability_unavailable',
   'no_safe_summary_candidates',
+  /* 归档满了是确定性的（待摘条目只会更多），重试只会再花一次模型调用 */
+  'context_recall_archive_full',
   'resume_send_uncertain'
 ])
 

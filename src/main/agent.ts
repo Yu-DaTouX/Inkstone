@@ -3148,7 +3148,11 @@ export class AgentController extends EventEmitter {
     if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
       return { ok: false, error: '当前会话仍在运行；等本轮结束后再整理' }
     }
-    if (await this.hasPendingAutomaticMaintenance()) {
+    const hold = await this.automaticMaintenanceHold()
+    if (hold === 'blocked') {
+      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
+    }
+    if (hold === 'running') {
       return { ok: false, error: '当前有自动整理或续接操作；请等它完成，或在会话中明确停止后再操作' }
     }
     if (this.contextMaintenanceInProgress) return { ok: false, error: '已有上下文整理操作正在运行' }
@@ -3384,17 +3388,29 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async hasPendingAutomaticMaintenance(): Promise<boolean> {
+  /**
+   * 自动整理当前是否挡着新消息。
+   *
+   * 两种挡法要分开（用户能做的下一步不同）：
+   *   · `running` —— 整理正在进行，等它完成即可；
+   *   · `blocked` —— 整理失败停在待处理；用户必须从设置里的三个出口选一个
+   *     （重试整理 / 临时抬软线 / 降档），出口会把这笔操作标成已取代。
+   *
+   * 读不到状态时**不挡**：真正防止超预算的是请求前的预算门禁，它不受这里影响；
+   * 本地 IO 读不出来就让用户停手，代价比多发一次被挡下的请求大。
+   */
+  private async automaticMaintenanceHold(): Promise<'running' | 'blocked' | null> {
     const sessionId = this.state?.sessionId
-    if (!isSafeSessionId(sessionId)) return false
+    if (!isSafeSessionId(sessionId)) return null
     try {
       const operation = await contextBudgetStoreV1.latestOperation(sessionId)
-      return !!operation && operation.requestKind === 'automatic' && (
-        ['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state) ||
-        (['committed', 'applied'].includes(operation.state) && operation.resumeReceipt?.startsWith('intent:') === true)
-      )
+      if (!operation || operation.requestKind !== 'automatic') return null
+      if (['requested', 'preparing', 'summarizing', 'validating'].includes(operation.state)) return 'running'
+      if (operation.state === 'needs_action') return 'blocked'
+      if (['committed', 'applied'].includes(operation.state) && operation.resumeReceipt?.startsWith('intent:') === true) return 'running'
+      return null
     } catch {
-      return true
+      return null
     }
   }
 
@@ -3411,7 +3427,11 @@ export class AgentController extends EventEmitter {
      */
     mode?: 'steer' | 'followUp'
   ): Promise<{ ok: boolean; error?: string }> {
-    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收新消息，草稿仍保留' }
+    const hold = await this.automaticMaintenanceHold()
+    if (hold === 'blocked') {
+      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
+    }
+    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收新消息，草稿仍保留' }
     if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收新消息；草稿仍保留' }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
@@ -3446,7 +3466,11 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string): Promise<{ ok: boolean; error?: string }> {
-    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收插话，草稿仍保留' }
+    const hold = await this.automaticMaintenanceHold()
+    if (hold === 'blocked') {
+      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
+    }
+    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收插话，草稿仍保留' }
     if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收插话；草稿仍保留' }
     await this.prepareKnowledge(text)
     const res = await this.rpc!.command('steer', { message: text })
@@ -3454,7 +3478,11 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string): Promise<{ ok: boolean; error?: string }> {
-    if (await this.hasPendingAutomaticMaintenance()) return { ok: false, error: '上下文正在自动整理；完成或取消前暂不接收排队消息，草稿仍保留' }
+    const hold = await this.automaticMaintenanceHold()
+    if (hold === 'blocked') {
+      return { ok: false, error: '上下文整理没有完成。请在设置 → 上下文中选择「重试整理 / 临时抬软线 / 降档」，然后再继续；草稿仍保留' }
+    }
+    if (hold === 'running') return { ok: false, error: '上下文正在自动整理；完成前暂不接收排队消息，草稿仍保留' }
     if (this.contextMaintenanceInProgress) return { ok: false, error: '上下文整理完成前暂不接收排队消息；草稿仍保留' }
     await this.prepareKnowledge(text)
     const res = await this.rpc!.command('follow_up', { message: text })

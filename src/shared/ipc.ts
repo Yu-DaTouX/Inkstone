@@ -114,6 +114,7 @@ import type { WorkMode, WorkModeState } from './work-mode'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { ContextActionSummary } from './context-actions'
+import type { ContextBackgroundUsageSummary } from './context-background-usage'
 import type { GoalState, PursuedBrief, ReadyApprovalMode } from './goal'
 import type { HandoffView } from './handoff'
 import type { WebSearchAvailability } from './web-search'
@@ -3378,10 +3379,23 @@ export interface YanBridge {
   setContextBudgetV1(update: ContextBudgetSelectionUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
   setContextBudgetMaterialPinV1(update: ContextBudgetMaterialPinUpdateV1): Promise<ContextBudgetSelectionUpdateResultV1>
   /**
+   * 「整理失败停下」的两个一键出口：临时抬软线 / 降档。
+   * 两个动作都会把停住的自动整理标成作废，阻塞随之解除（否则点完仍然发不出消息）。
+   */
+  contextBudgetMaintenanceExitV1(request: {
+    action: 'raise-line' | 'lower-tier'
+    expectedRevision: string
+  }): Promise<{ ok: boolean; policy?: ContextBudgetSessionPolicyV1; selectedBudget?: number; error?: string }>
+  /**
    * 三类整理动作账本（实施-11 C-2b）。读取的是**当前活动会话**：
    * 会话身份由主进程决定，界面不自报（与 `contextBudget` 同一约定）。
    */
   contextActions(): Promise<ContextActionSummary>
+  /**
+   * 后台模型调用的真实用量账（整理摘要 / 深度归纳 / 任务状态 / 交接 / 标题）。
+   * 与 `contextActions` 同一约定：读的是**当前活动会话**，界面不自报会话身份。
+   */
+  contextBackgroundUsage(): Promise<ContextBackgroundUsageSummary>
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   /**

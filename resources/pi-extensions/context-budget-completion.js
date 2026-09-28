@@ -5,6 +5,7 @@ import {
 } from './generated/context-budget-v1.mjs'
 import { estimateRequestTokens } from './context-budget.js'
 import { readContextBudgetPolicyV1 } from './context-budget-policy.js'
+import { recordBackgroundUsage, usageOfCompletion } from './context-background-usage.js'
 
 const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,200}$/
 
@@ -68,7 +69,51 @@ function reject(pi, sessionId, requestKind, operationId, policyRevision, code, r
     policyRevision
   }
   appendDecision(pi, sessionId, details)
+  /* 被挡下的后台调用也算一次尝试（只是没有花费）—— 与"没发生"分开记 */
+  recordBackgroundUsage(sessionId, { kind: requestKind, ok: false, error: code })
   throw new ContextBudgetV1BlockedError(code, details.reason)
+}
+
+/**
+ * 发一次后台 completion，并把**供应商口径**的用量记进账本。
+ *
+ * 为什么收敛到一个函数：整理摘要 / 深度归纳 / 任务状态生成 / 交接归纳
+ * 都从这里出去，记账口径只有一处，不会出现"有的记有的漏"。
+ *
+ * 注意 provider 有两种失败表达：抛异常，或以 `stopReason: 'error'` 返回。
+ * 后者仍然可能有 usage（部分花费），所以 `ok` 与用量分开记。
+ */
+async function runBackgroundCompletion({ sessionId, requestKind, registry, model, payload, options }) {
+  const estimatedInput = estimateRequestTokens(payload)?.total
+  const modelKey = [model?.provider, model?.id].filter((part) => typeof part === 'string' && part).join('/')
+  const startedAt = Date.now()
+  let result
+  try {
+    result = await registry.complete(model, payload, options)
+  } catch (error) {
+    recordBackgroundUsage(sessionId, {
+      kind: requestKind,
+      ok: false,
+      estimatedInput,
+      durationMs: Date.now() - startedAt,
+      ...(modelKey ? { model: modelKey } : {}),
+      error: error instanceof ContextBudgetV1BlockedError
+        ? error.code
+        : String(error?.message ?? error).slice(0, 300)
+    })
+    throw error
+  }
+  const stopReason = typeof result?.stopReason === 'string' ? result.stopReason : null
+  recordBackgroundUsage(sessionId, {
+    kind: requestKind,
+    ok: stopReason !== 'error',
+    usage: usageOfCompletion(result),
+    estimatedInput,
+    durationMs: Date.now() - startedAt,
+    ...(modelKey ? { model: modelKey } : {}),
+    ...(stopReason === 'error' ? { error: 'provider_error_stop' } : {})
+  })
+  return result
 }
 
 /**
@@ -95,7 +140,9 @@ export async function completeWithContextBudgetV1({
   }
 
   const policy = readContextBudgetPolicyV1(sessionId)
-  if (policy.inactive) return await registry.complete(model, payload, options)
+  if (policy.inactive) {
+    return await runBackgroundCompletion({ sessionId, requestKind, registry, model, payload, options })
+  }
   if (policy.unavailable) {
     reject(pi, sessionId, requestKind, operationId, null, 'context_budget_unavailable', policy.unavailable, null, null)
   }
@@ -161,5 +208,5 @@ export async function completeWithContextBudgetV1({
       policyRevision: policy.policyRevision
     })
   }
-  return await registry.complete(model, payload, options)
+  return await runBackgroundCompletion({ sessionId, requestKind, registry, model, payload, options })
 }

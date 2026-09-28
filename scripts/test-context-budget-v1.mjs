@@ -54,6 +54,16 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
   ok(select(420_000).selectedBudget === 500_000, '必要材料 420K 一次升到最小够用的 500K')
   ok(!select(950_000).ok, '必要材料到达端点容量边界时不靠继续升档掩盖')
 
+  /* 一键出口的档位计算（临时抬软线 / 降档）：逐档、受上限约束、顶底不动 */
+  const { adjacentContextBudgetTierV1 } = budget
+  ok(adjacentContextBudgetTierV1(200_000, 'up', 700_000) === 300_000, '抬线逐档上升')
+  ok(adjacentContextBudgetTierV1(700_000, 'up', 700_000) === 700_000, '抬到上限就不再动')
+  ok(adjacentContextBudgetTierV1(500_000, 'up', 500_000) === 500_000, '自动最高档就是抬线的天花板')
+  ok(adjacentContextBudgetTierV1(500_000, 'down') === 300_000, '降档逐档下降')
+  ok(adjacentContextBudgetTierV1(200_000, 'down') === 200_000, '到最低档就不再动')
+  ok(adjacentContextBudgetTierV1(undefined, 'up', 700_000) === 300_000, '非法当前档按最低档起算（不跳档）')
+  ok(adjacentContextBudgetTierV1(300_000, 'down', 700_000) === 200_000, '降档不受上限参数影响')
+
   const deferred = selectAutoContextBudgetV1({
     requiredInputTokens: 100_000,
     capability: { ...api, contextWindow: 1_000_000 },

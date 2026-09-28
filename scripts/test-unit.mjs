@@ -243,6 +243,7 @@ const { runShortTitleTests } = await import('./test-short-title.mjs')
 const { runBrowserVisibilityTests } = await import('./test-browser-visibility.mjs')
 const { runBrowserNavigationTests } = await import('./test-browser-navigation.mjs')
 const { runContextActionTests } = await import('./test-context-actions.mjs')
+const { runContextBackgroundUsageTests } = await import('./test-context-background-usage.mjs')
 const { runResponseDetailTests } = await import('./test-response-detail.mjs')
 const { runSnapshotTests } = await import('./test-snapshots.mjs')
 
@@ -315,6 +316,31 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       bundle: true,
       format: 'esm',
       platform: 'neutral',
+      logLevel: 'silent'
+    })
+  ])
+)
+
+/*
+ * 后台调用用量账：解析容错 + 命中率口径 + **跨端格式**（扩展写、宿主读）。
+ * 两边的 kind 白名单与字段名是手抄的两份，漂移只有这个用例能发现。
+ */
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  Promise.all([
+    build({
+      entryPoints: ['src/shared/context-background-usage.ts'],
+      outfile: 'out/test/context-background-usage.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      logLevel: 'silent'
+    }),
+    build({
+      entryPoints: ['src/main/context-background-usage.ts'],
+      outfile: 'out/test/context-background-usage-host.mjs',
+      bundle: true,
+      format: 'esm',
+      platform: 'node',
       logLevel: 'silent'
     })
   ])
@@ -1607,6 +1633,7 @@ await runBrowserNavigationTests(ok)
 
 // 三类整理动作账本（C-2b）：解析容错 / 两类分开累计 / 宿主读取判据
 await runContextActionTests(ok)
+await runContextBackgroundUsageTests(ok)
 
 
 // 子代理运行归属（H-10a）：attached/detached/foreign/unattributed
