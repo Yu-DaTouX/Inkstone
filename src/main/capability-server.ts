@@ -160,6 +160,7 @@ const KNOWN_COMMANDS = new Set([
   'image.generate',
   'question.ask',
   'context.recall',
+  'context.find',
   'context.budget.status',
   'context.budget.adjust',
   /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */

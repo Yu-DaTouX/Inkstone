@@ -322,7 +322,22 @@ export function ContextTab() {
                   {tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.state}`)}
                   {maintenanceOperation.failureCode === 'resume_send_uncertain'
                     ? ` · ${tk('set.ctxBudgetV1MaintenanceResumeUncertain')}`
-                    : maintenanceOperation.failureCode ? ` · ${maintenanceOperation.failureCode}` : ''}
+                    : maintenanceOperation.failureCode
+                      ? ` · ${maintenanceFailureText(maintenanceOperation.failureCode, tk)}`
+                      : ''}
+                  {/* 卡在哪一步 + 能否直接重试：失败时用户要知道「等一下再试」还是「先去处理原因」 */}
+                  {maintenanceOperation.failureCode && maintenanceOperation.failedStage ? (
+                    <div data-testid="ctx-budget-v1-maintenance-stage">
+                      {t('set.ctxBudgetV1MaintenanceStoppedAt', {
+                        stage: maintenanceOperation.failedStage === 'resuming'
+                          ? tk('set.ctxBudgetV1MaintenanceStageResuming')
+                          : tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.failedStage}`)
+                      })}
+                      {typeof maintenanceOperation.retryable === 'boolean'
+                        ? ` · ${tk(maintenanceOperation.retryable ? 'set.ctxBudgetV1MaintenanceRetryable' : 'set.ctxBudgetV1MaintenanceNotRetryable')}`
+                        : ''}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <button
@@ -612,6 +627,30 @@ export function ContextTab() {
 /* ------------------------------------------------------------------ 小组件 */
 
 /** 数值输入行（留空 = 用默认值） */
+/** 有人话说明的整理失败码（与 i18n 的 set.ctxBudgetV1Failure.* 一一对应）；其余显示原码 */
+const EXPLAINED_MAINTENANCE_FAILURES = new Set([
+  'context_source_revision_changed',
+  'context_policy_revision_changed',
+  'context_capability_revision_changed',
+  'context_versions_changed_before_commit',
+  'context_branch_unavailable',
+  'summary_generation_failed',
+  'summary_did_not_reduce_context',
+  'no_safe_summary_candidates',
+  'active_projection_unavailable',
+  'active_projection_source_missing',
+  'context_recall_archive_full',
+  'context_recall_source_missing',
+  'context_recall_ref_conflict',
+  'context_recall_archive_invalid',
+  'runner_restarted_before_commit',
+  'automatic_maintenance_failed'
+])
+
+function maintenanceFailureText(code: string, tk: (key: string) => string): string {
+  return EXPLAINED_MAINTENANCE_FAILURES.has(code) ? `${tk(`set.ctxBudgetV1Failure.${code}`)}（${code}）` : code
+}
+
 function NumRow({
   label,
   desc,

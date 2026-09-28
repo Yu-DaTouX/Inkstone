@@ -18,7 +18,7 @@ import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PiRpc } from './protocol'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import { ContextRecallError, recallArchivedContext } from './context-recall'
+import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
 import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
@@ -1439,6 +1439,7 @@ export class AgentController extends EventEmitter {
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params)
     if (command === 'context.recall') return this.runContextRecallCommand(params)
+    if (command === 'context.find') return this.runContextFindCommand(params)
     if (command.startsWith('context.budget.')) return this.runContextBudgetCommand(command, params)
     switch (command) {
       case 'tasks.apply':
@@ -1583,6 +1584,20 @@ export class AgentController extends EventEmitter {
         throw new CapabilityCommandError(error.code, error.message)
       }
       throw new CapabilityCommandError('context_recall_unavailable', '归档回读暂时不可用；未返回正文')
+    }
+  }
+
+  /** `yan context find`：按摘录查归档引用（只读元数据，不读原始会话、不占召回预算） */
+  private async runContextFindCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) {
+      throw new CapabilityCommandError('context_session_unavailable', '当前还没有可查询归档的会话')
+    }
+    try {
+      return await findArchivedContext({ sessionId, query: params.query, limit: params.limit })
+    } catch (error) {
+      if (error instanceof ContextRecallError) throw new CapabilityCommandError(error.code, error.message)
+      throw new CapabilityCommandError('context_find_unavailable', '归档查询暂时不可用')
     }
   }
 

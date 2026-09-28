@@ -387,3 +387,78 @@ export async function recallArchivedContext(request: ContextRecallRequest): Prom
     }
   })
 }
+
+export interface ContextFindRequest {
+  sessionId: string
+  /** 关键词（空格分隔，全部命中才算匹配）；省略时按时间倒序列出最近归档的条目 */
+  query?: unknown
+  limit?: unknown
+  stateDir?: string
+}
+
+export interface ContextFindMatch {
+  ref: string
+  label: string
+  tokens: number
+  createdAt: number
+}
+
+const FIND_DEFAULT_LIMIT = 20
+const FIND_MAX_LIMIT = 50
+
+/**
+ * `yan context find`：在当前会话的归档索引里按摘录查引用。
+ *
+ * 上下文整理后，摘要正文不再逐条列出 `ctx://tool/<id>`（那会随整理次数线性增长），
+ * 模型改用这里按关键词找到引用，再用 `recall` 读原文。只返回元数据与摘录，
+ * 不读原始会话、不占召回预算；已过期或不允许模型回读的条目不出现在结果里。
+ */
+export async function findArchivedContext(request: ContextFindRequest): Promise<{
+  data: { matches: ContextFindMatch[]; total: number; archived: number }
+  summary: Record<string, unknown>
+}> {
+  if (!isSafeSessionId(request.sessionId)) {
+    throw new ContextRecallError('context_session_unavailable', '当前还没有可查询归档的会话')
+  }
+  const query = typeof request.query === 'string' ? request.query.trim().slice(0, 200) : ''
+  const requested = typeof request.limit === 'string' || typeof request.limit === 'number' ? Number(request.limit) : NaN
+  const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, FIND_MAX_LIMIT) : FIND_DEFAULT_LIMIT
+  const loaded = await loadArchive(request.sessionId, { dir: request.stateDir ?? contextStateDir() })
+  if (loaded.status === 'missing') {
+    return { data: { matches: [], total: 0, archived: 0 }, summary: { kind: 'context', action: 'find', query, count: 0, archived: 0 } }
+  }
+  if (loaded.status !== 'ok') {
+    throw new ContextRecallError('context_archive_unavailable', '归档元数据不可用或已被安全丢弃')
+  }
+  const now = Date.now()
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const usable = loaded.archive.entries.filter((entry) =>
+    entry.recallable === 'agent' && !(Number.isFinite(entry.expiresAt) && (entry.expiresAt as number) <= now)
+  )
+  const hits = usable
+    .filter((entry) => {
+      if (words.length === 0) return true
+      const hay = `${entry.label} ${entry.ref}`.toLowerCase()
+      return words.every((word) => hay.includes(word))
+    })
+    .sort((left, right) => right.createdAt - left.createdAt)
+  const matches = hits.slice(0, limit).map((entry) => ({
+    ref: entry.ref,
+    label: entry.label.slice(0, 160),
+    tokens: entry.tokens,
+    createdAt: entry.createdAt
+  }))
+  return {
+    data: { matches, total: hits.length, archived: usable.length },
+    summary: {
+      kind: 'context',
+      action: 'find',
+      query,
+      count: matches.length,
+      total: hits.length,
+      archived: usable.length,
+      /* 摘要里直接带上结果：多数情况下不必再读结果文件 */
+      matches: matches.map((match) => `${match.ref} · ~${match.tokens} tok · ${match.label}`)
+    }
+  }
+}
