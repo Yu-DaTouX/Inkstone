@@ -136,7 +136,7 @@ export function GoalContent() {
           <div className="goal-review-actions">
             <button
               type="button"
-              className="sa-act-btn primary"
+              className="btn sm sa-act-btn primary"
               onClick={() => void approveGoalReady()}
               disabled={goalLoading || mode !== 'clarify'}
               data-testid="goal-approve-and-start"
@@ -145,7 +145,7 @@ export function GoalContent() {
             </button>
             <button
               type="button"
-              className="sa-act-btn"
+              className="btn sm sa-act-btn"
               onClick={() => void modifyGoalReady()}
               disabled={goalLoading || mode !== 'clarify'}
               data-testid="goal-modify-plan"
@@ -162,7 +162,7 @@ export function GoalContent() {
           <div className="goal-panel-empty goal-panel-error" data-testid="goal-error">
             <span>{t('goal.loadFailed')}</span>
             <small title={goalError}>{goalError}</small>
-            <button type="button" className="sa-act-btn" onClick={() => void loadGoal()} data-testid="goal-retry">
+            <button type="button" className="btn sm sa-act-btn" onClick={() => void loadGoal()} data-testid="goal-retry">
               {t('goal.retry')}
             </button>
           </div>

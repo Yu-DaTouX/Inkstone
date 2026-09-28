@@ -1159,10 +1159,10 @@ function FloatPlaceholder({
       <span className="rp-float-ph-name">{t(SECTION_TITLE[id])}</span>
       <span className="rp-float-ph-tag">{t('tl.floating')}</span>
       <span className="spacer" />
-      <button className="rp-btn" onClick={() => onLocate(tile.id)} data-testid={`float-locate-${tile.id}`}>
+      <button className="btn sm rp-btn" onClick={() => onLocate(tile.id)} data-testid={`float-locate-${tile.id}`}>
         {t('tl.locate')}
       </button>
-      <button className="rp-btn" onClick={() => onDock(id)} data-testid={`float-dock-${tile.id}`}>
+      <button className="btn sm rp-btn" onClick={() => onDock(id)} data-testid={`float-dock-${tile.id}`}>
         {t('tl.dockBack')}
       </button>
     </div>
@@ -1454,7 +1454,7 @@ function QuotaSection() {
       <div className="rp-kv">
         <span className="rp-k">{provider || '—'}</span>
         <span className="spacer" />
-        <button className="rp-btn" onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh">
+        <button className="btn sm rp-btn" onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh">
           {loading ? '…' : t('quota.refresh')}
         </button>
       </div>
@@ -1555,7 +1555,7 @@ function QuotaSection() {
         {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
         {provider === 'openai' ? (
           <button
-            className="rp-btn"
+            className="btn sm rp-btn"
             onClick={() => {
               const value = window.prompt(t('quota.budgetPrompt'), budget ? String(budget) : '')
               if (value === null) return

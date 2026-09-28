@@ -8,27 +8,28 @@
 
 | 顺序 | 文件 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | `tokens.css` | 330 | 24 | 25 | 1 | 2 |
-| 2 | `app.css` | 554 | 78 | 78 | 1 | 0 |
-| 3 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
-| 4 | `redesign.css` | 1205 | 133 | 147 | 5 | 0 |
-| 5 | `motion.css` | 1646 | 196 | 201 | 6 | 11 |
-| 6 | `settings.css` | 842 | 121 | 124 | 0 | 0 |
-| 7 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
-| 8 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
-| 9 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
-| 10 | `shell.css` | 393 | 54 | 56 | 1 | 7 |
-| 11 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
-| 12 | `rail.css` | 1796 | 247 | 253 | 0 | 0 |
-| 13 | `chat.css` | 2189 | 287 | 292 | 5 | 2 |
-| 14 | `composer.css` | 1941 | 271 | 274 | 1 | 0 |
-| 15 | `tools.css` | 3986 | 596 | 641 | 3 | 5 |
-| 16 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
-| 17 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
-| 18 | `review.css` | 1614 | 233 | 234 | 1 | 0 |
-| 19 | `workbench.css` | 3389 | 457 | 474 | 3 | 0 |
-| 20 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | **21083** | **2797** | | | |
+| 1 | `tokens.css` | 346 | 24 | 25 | 1 | 2 |
+| 2 | `ui.css` | 352 | 58 | 59 | 0 | 0 |
+| 3 | `app.css` | 528 | 74 | 74 | 1 | 0 |
+| 4 | `stage1.css` | 205 | 25 | 33 | 1 | 0 |
+| 5 | `redesign.css` | 1186 | 129 | 142 | 5 | 0 |
+| 6 | `motion.css` | 1380 | 160 | 165 | 5 | 9 |
+| 7 | `settings.css` | 981 | 139 | 142 | 1 | 2 |
+| 8 | `electron.css` | 35 | 11 | 12 | 0 | 0 |
+| 9 | `highlight.css` | 173 | 81 | 81 | 0 | 0 |
+| 10 | `layout.css` | 176 | 14 | 14 | 3 | 2 |
+| 11 | `shell.css` | 393 | 54 | 56 | 1 | 7 |
+| 12 | `dialog.css` | 80 | 11 | 11 | 0 | 0 |
+| 13 | `rail.css` | 1568 | 224 | 230 | 0 | 0 |
+| 14 | `chat.css` | 2201 | 289 | 294 | 5 | 2 |
+| 15 | `composer.css` | 1898 | 263 | 266 | 1 | 0 |
+| 16 | `tools.css` | 3967 | 593 | 638 | 3 | 5 |
+| 17 | `browser.css` | 417 | 57 | 57 | 0 | 0 |
+| 18 | `terminal.css` | 82 | 10 | 10 | 0 | 0 |
+| 19 | `review.css` | 1526 | 220 | 221 | 1 | 0 |
+| 20 | `workbench.css` | 3282 | 440 | 457 | 3 | 0 |
+| 21 | `icon-state.css` | 30 | 1 | 1 | 1 | 0 |
+| | **合计** | **20806** | **2769** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -37,24 +38,25 @@
 | 文件 | 最终胜出 |
 | --- | ---: |
 | `tokens.css` | 17 |
-| `app.css` | 56 |
+| `ui.css` | 57 |
+| `app.css` | 52 |
 | `stage1.css` | 11 |
-| `redesign.css` | 75 |
-| `motion.css` | 192 |
-| `settings.css` | 121 |
+| `redesign.css` | 74 |
+| `motion.css` | 156 |
+| `settings.css` | 139 |
 | `electron.css` | 9 |
 | `highlight.css` | 81 |
 | `layout.css` | 14 |
 | `shell.css` | 54 |
 | `dialog.css` | 11 |
-| `rail.css` | 247 |
-| `chat.css` | 285 |
-| `composer.css` | 270 |
-| `tools.css` | 596 |
+| `rail.css` | 224 |
+| `chat.css` | 287 |
+| `composer.css` | 262 |
+| `tools.css` | 593 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
-| `review.css` | 233 |
-| `workbench.css` | 457 |
+| `review.css` | 220 |
+| `workbench.css` | 440 |
 | `icon-state.css` | 1 |
 
 ## 3. 被多个文件定义的选择器（覆盖链）
@@ -75,15 +77,14 @@
 | `.status` | app → redesign → electron |
 | `.md code` | stage1 → redesign → chat |
 | `.md pre` | stage1 → redesign → chat |
-| `.modal` | stage1 → redesign → motion |
 | `.composer` | redesign → motion → composer |
-| `.settings` | redesign → motion → settings |
 | `html[data-theme='light']` | tokens → motion |
 | `body` | tokens → electron |
 | `::-webkit-scrollbar` | tokens → redesign |
 | `::-webkit-scrollbar-thumb` | tokens → redesign |
 | `::-webkit-scrollbar-thumb:hover` | tokens → redesign |
 | `.ico` | tokens → icon-state |
+| `.btn:active:not(:disabled)` | ui → motion |
 | `.tb-name` | app → shell |
 | `.tb-right` | app → redesign |
 | `.search` | app → redesign |
@@ -102,6 +103,7 @@
 | `.cursor-inline` | stage1 → redesign |
 | `.md pre code` | stage1 → highlight |
 | `.modal-scrim` | stage1 → motion |
+| `.modal` | stage1 → motion |
 | `.notices` | stage1 → motion |
 | `.notice` | stage1 → motion |
 | `.notice:hover` | stage1 → motion |
@@ -119,7 +121,6 @@
 | `.browser-address input` | redesign → browser |
 | `.rp-hist-todo .rp-text` | redesign → tools |
 | `.app.rail-off .rail` | redesign → rail |
-| `.rail-mode-btn:hover` | redesign → rail |
 | `.rail-top` | redesign → rail |
 | `.rail-action` | redesign → rail |
 | `.rail-section` | redesign → rail |
@@ -152,6 +153,7 @@
 | `.op-title` | redesign → motion |
 | `.op-empty` | redesign → motion |
 | `.settings-scrim` | motion → settings |
+| `.settings` | motion → settings |
 | `.term-bar` | chat → terminal |
 | `.term-bar .spacer` | chat → terminal |
 | `.review` | composer → review |

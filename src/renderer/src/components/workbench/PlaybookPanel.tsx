@@ -187,12 +187,12 @@ export function PlaybookPanel(): React.JSX.Element {
                   </p>
                 ) : null}
                 <div className="wb-pb-actions">
-                  <button className="wb-btn" data-testid="space-pb-recheck" onClick={recheck}>
+                  <button className="btn wb-btn" data-testid="space-pb-recheck" onClick={recheck}>
                     <Icon name="refresh" size={12} />
                     {t('space.pb.recheck')}
                   </button>
                   <button
-                    className="wb-btn primary"
+                    className="btn wb-btn primary"
                     data-testid="space-pb-use"
                     disabled={unanswered > 0}
                     title={t('space.pb.useHint')}
@@ -202,7 +202,7 @@ export function PlaybookPanel(): React.JSX.Element {
                     {t('space.pb.use')}
                   </button>
                   <button
-                    className="wb-btn"
+                    className="btn wb-btn"
                     data-testid="space-pb-close"
                     onClick={() => {
                       setOpenId(null)
@@ -213,7 +213,7 @@ export function PlaybookPanel(): React.JSX.Element {
                   </button>
                   {!pb.seeded ? (
                     <button
-                      className="wb-btn"
+                      className="btn wb-btn"
                       data-testid="space-pb-remove"
                       onClick={() => void removePlaybook(pb.id)}
                     >
@@ -273,16 +273,16 @@ export function PlaybookPanel(): React.JSX.Element {
             </p>
           ) : null}
           <div className="wb-pb-actions">
-            <button className="wb-btn primary" data-testid="space-pb-new-save" onClick={() => void submitDraft()}>
+            <button className="btn wb-btn primary" data-testid="space-pb-new-save" onClick={() => void submitDraft()}>
               {t('space.pb.save')}
             </button>
-            <button className="wb-btn" data-testid="space-pb-new-cancel" onClick={() => setDraftOpen(false)}>
+            <button className="btn wb-btn" data-testid="space-pb-new-cancel" onClick={() => setDraftOpen(false)}>
               {t('space.pb.close')}
             </button>
           </div>
         </div>
       ) : (
-        <button className="wb-btn wb-pb-add" data-testid="space-pb-new" onClick={() => setDraftOpen(true)}>
+        <button className="btn wb-btn wb-pb-add" data-testid="space-pb-new" onClick={() => setDraftOpen(true)}>
           <Icon name="plus" size={12} />
           {t('space.pb.new')}
         </button>

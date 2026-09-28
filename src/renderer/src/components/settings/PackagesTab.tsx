@@ -156,7 +156,7 @@ export function PackagesTab(): React.JSX.Element {
         </div>
         <button
           type="button"
-          className="set-btn"
+          className="btn"
           data-testid="set-pi-catalog-open"
           onClick={() => void window.yan.browser.open('https://pi.dev/packages')}
         >
@@ -190,7 +190,7 @@ export function PackagesTab(): React.JSX.Element {
           </label>
           <button
             type="button"
-            className="set-btn"
+            className="btn"
             data-testid="pkg-install-btn"
             disabled={!!busy || !source.trim()}
             onClick={() => void run('install', source.trim())}
@@ -356,7 +356,7 @@ export function PackagesTab(): React.JSX.Element {
           <span className="spacer" />
           <button
             type="button"
-            className="set-btn"
+            className="btn"
             data-testid="set-attach-clean"
             disabled={attachBusy || !attach || attach.files === 0}
             onClick={() => void cleanAttachments()}

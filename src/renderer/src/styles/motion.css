@@ -238,6 +238,8 @@
 .rp-act:active,
 .mt-stop:active,
 .mt-trigger:active,
+.btn:active:not(:disabled),
+.seg-btn:active:not(:disabled),
 .rp-switch:active,
 .rail-icon:active,
 .srow-menu-btn:active,
@@ -725,7 +727,12 @@ html[data-theme='light'] .turn {
   line-height: 1;
 }
 .cborder-text {
-  /* 与 spinner 之间留一点呼吸，字大了之后 5px 显得挤 */
+  /*
+   * 状态文字用正文前景色：思考档位色只留在边框线与 spinner 上。
+   * 整句文字染成高档位的洋红 / 紫色时，它比正文还抢眼，读起来像告警。
+   */
+  color: var(--fg-dim);
+  font-size: var(--fs-base);
   letter-spacing: 0.01em;
 }
 /* 文案变化时淡入 —— 状态切换是「有新消息」，不该是硬切 */
@@ -1042,22 +1049,6 @@ html[data-theme='light'] .rp-todo-now {
   padding-bottom: var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
-.auth-head .seg-btn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-.auth-head .seg-btn:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
 
 /* 凭证文件位置：一行灰色的说明，不抢视线 */
 .auth-path {
@@ -1242,26 +1233,6 @@ html[data-theme='light'] .rp-todo-now {
   border-color: var(--accent-line);
   outline: none;
 }
-.auth-actions .seg-btn,
-.auth-edit .seg-btn {
-  padding: 4px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-.auth-actions .seg-btn:hover:not(:disabled),
-.auth-edit .seg-btn:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.auth-edit .seg-btn.sel {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 
 .auth-foot {
   display: flex;
@@ -1282,212 +1253,6 @@ html[data-theme='light'] .rp-todo-now {
   }
 }
 
-/* 59. 首次使用引导
-   四条**可当场验证**的检查项（不是「请确保…」那种空话）：
-   pi 装没装显示版本号、凭证有没有显示已就绪数量。
-   看起来像清单而不是向导：只有两件事要检查，分步反而要点四次下一步。 */
-.ob-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: var(--sp-5);
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(2px);
-  animation: mo-fade-in var(--mo-base) var(--mo-ease) both;
-}
-
-.ob-card {
-  width: min(620px, 100%);
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-lg);
-  box-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.8);
-  overflow: hidden;
-  animation: mo-in-center var(--mo-slow) var(--mo-ease) both;
-}
-
-.ob-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-4) var(--sp-3);
-  border-bottom: 1px solid var(--border-soft);
-}
-.ob-head .spacer {
-  flex: 1;
-}
-.ob-logo {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 16px;
-  flex: none;
-}
-.ob-title {
-  color: var(--fg);
-  font-size: var(--fs-lg);
-}
-.ob-sub {
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-}
-.ob-x {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-.ob-x:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-.ob-body {
-  padding: var(--sp-3) var(--sp-4);
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* ---- 检查项 ---- */
-.ob-row {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  gap: var(--sp-2);
-  align-items: start;
-  padding: 7px var(--sp-2);
-  border-radius: var(--r-sm);
-  /* 逐项落位 */
-  animation: mo-item-in var(--mo-base) var(--mo-ease) both;
-}
-.ob-row + .ob-row {
-  box-shadow: inset 0 1px 0 var(--border-soft);
-}
-.ob-check {
-  color: var(--fg-mute);
-  font-size: var(--fs-base);
-  line-height: 1.5;
-  text-align: center;
-}
-.ob-row.ob-ok .ob-check {
-  color: var(--ok);
-}
-.ob-row.ob-todo .ob-check {
-  color: var(--warn);
-}
-.ob-row-title {
-  color: var(--fg);
-  font-size: var(--fs-base);
-}
-.ob-row.ob-todo .ob-row-title {
-  color: var(--warn);
-}
-.ob-row-desc {
-  margin-top: 1px;
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-.ob-row-desc code {
-  color: var(--fg-dim);
-  background: var(--bg-3);
-  padding: 0 4px;
-  border-radius: 3px;
-  font-size: var(--fs-xs);
-}
-.ob-row-act {
-  flex: none;
-  /* 第 2 步有两个按钮（重新检测 / 去配置）—— 竖排，窄窗口下不会挤扁 */
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ob-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-}
-.ob-btn:hover {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-.ob-btn.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-.ob-btn.primary:hover {
-  background: var(--accent);
-  color: #fff;
-  filter: brightness(1.1);
-}
-
-/* ---- 三条「知道就好」---- */
-.ob-tips {
-  margin-top: var(--sp-3);
-  padding: var(--sp-2) var(--sp-2);
-  border-top: 1px dashed var(--border-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.ob-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-}
-.ob-tip .ico {
-  margin-top: 1px;
-  flex: none;
-  opacity: 0.7;
-}
-
-.ob-foot {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border-top: 1px solid var(--border-soft);
-  background: var(--bg-2);
-}
-.ob-foot .spacer {
-  flex: 1;
-}
-.ob-foot-note {
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-html[data-theme='light'] .ob-scrim {
-  background: rgba(0, 0, 0, 0.28);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ob-scrim,
-  .ob-card,
-  .ob-row {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
-  }
-}
 /* ------------------------------------------------------------------
    52.2 各模块搬来的关键帧（B2 归口）
    规则：除本文件外，任何 CSS 都不许定义 @keyframes（npm run check:motion 拦）。
@@ -1548,37 +1313,6 @@ html[data-theme='light'] .ob-scrim {
   }
   30% {
     background: var(--accent-soft);
-  }
-}
-/* 每个浮层各写一套动画会让「一致性」在维护中慢慢丢掉。 */
-@keyframes pop-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes pop-down {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes center-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 @keyframes cursor-soft {

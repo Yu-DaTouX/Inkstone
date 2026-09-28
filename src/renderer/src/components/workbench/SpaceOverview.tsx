@@ -173,7 +173,7 @@ export function SpaceOverview({ space, spaceId, onView, onOpenSession }: Props):
                   </li>
                 ))}
               </ul>
-              <button className="wb-open-map" data-testid="space-ov-sources-all" onClick={() => onView('library')}>
+              <button className="btn sm wb-open-map" data-testid="space-ov-sources-all" onClick={() => onView('library')}>
                 {t('space.ov.sourcesAll')}
                 <Icon name="chevron-right" size={12} />
               </button>

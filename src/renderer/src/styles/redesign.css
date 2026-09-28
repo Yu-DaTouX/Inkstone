@@ -311,7 +311,8 @@
   white-space: nowrap;
 }
 .ub-value {
-  color: var(--fg-dim);
+  /* 用量是诊断信息：常驻但退到三级色，不和输入区争注意力（需求稿 3.1） */
+  color: var(--fg-mute);
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
@@ -320,12 +321,9 @@
   color: var(--fg-mute);
   font-size: 0.92em;
 }
-/* 缓存命中率：用 ok 色，它是「省了多少钱」的关键指标 */
+/* 缓存命中率：只比数值亮一档。绿色只表达成功 / 新增（DESIGN §2.6），这里不借用 */
 .ub-extra {
-  color: var(--ok);
-  padding: 0 4px;
-  border-radius: var(--r-full);
-  background: var(--ok-soft);
+  color: var(--fg-dim);
 }
 .ub-live {
   width: 4px;
@@ -367,9 +365,6 @@
   visibility: hidden;
   background: transparent;
   border-right: none;
-}
-.rail-mode-btn:hover {
-  color: var(--fg-dim);
 }
 
 /* ---- 顶部 ---- */
@@ -706,31 +701,20 @@
   padding-right: 0;
 }
 
-/* 43. 弹出层统一动画
-   所有浮层用同一套：遮罩淡入 + 面板从贴着触发器的方向缩放入场。
-   关键帧只写两套（上弹 / 居中弹），其余复用 ——
-/* 向上弹的浮层（输入区附近的选择器） */
+/* 43. 浮层的缩放原点（入场 / 退场动画本身在 motion.css 第 52 节）
+   向上弹的浮层（输入区附近的选择器）从下沿展开 */
 .mt-pop {
-  animation: pop-up var(--dur-140) var(--ease);
   transform-origin: bottom;
-}/* 向下弹的（从列表项下方出现）。
+}
+/* 向下弹的（从列表项下方出现）。
    会话行菜单现在 Portal 到 body（`.ctx-menu` 负责 fixed 定位与尺寸夹取），
    这里只保留“从触发器下方弹出”的方向感和最小宽度。 */
 .row-menu-surface {
   min-width: 208px;
-  animation: pop-down var(--dur-140) var(--ease);
   transform-origin: top;
 }
 .row-menu {
-  animation: pop-down var(--dur-140) var(--ease);
   transform-origin: top;
-}
-/* 居中的模态框 */
-.modal {
-  animation: center-in var(--dur-140) var(--ease);
-}
-.settings {
-  animation: center-in var(--dur-140) var(--ease);
 }
 
 /* 尊重系统设置 */
@@ -1000,10 +984,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rail-mode-btn:hover,
-.rail-mode-btn.open {
-  background: var(--bg-3);
-}
+
 /* 终端内一律深色底：把按主题写的工具详情颜色覆盖掉 */
 .term .tool-path,
 .term .diff-label,

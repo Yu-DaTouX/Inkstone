@@ -103,7 +103,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   }) => (
     <div className={`ob-row ${ok ? 'ob-ok' : 'ob-todo'}`} data-testid={testId} data-ok={ok ? '1' : '0'}>
       <span className="ob-check" aria-hidden>
-        {ok ? '✓' : '○'}
+        {ok ? <Icon name="check" size={12} /> : null}
       </span>
       <div className="ob-row-main">
         <div className="ob-row-title">{title}</div>
@@ -179,10 +179,10 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             action={
               <>
                 {/* 重测：用户去填完 key 回来、或改了环境变量，不用重启应用 */}
-                <button className="ob-btn" onClick={() => void detect()} data-testid="ob-recheck-auth">
+                <button className="btn ob-btn" onClick={() => void detect()} data-testid="ob-recheck-auth">
                   {t('ob.recheck')}
                 </button>
-                <button className="ob-btn primary" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
+                <button className="btn ob-btn primary" onClick={() => openSettings('auth')} data-testid="ob-open-auth">
                   {t('ob.goAuth')}
                 </button>
               </>
@@ -204,7 +204,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             title={t('ob.modelTitle')}
             desc={modelOk ? t('ob.modelOk', { n: models.length, name: session?.model?.name ?? '' }) : t('ob.modelMissing')}
             action={
-              <button className="ob-btn" onClick={() => openSettings('status')}>
+              <button className="btn ob-btn" onClick={() => openSettings('status')}>
                 {t('ob.goStatus')}
               </button>
             }
@@ -230,7 +230,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
         <div className="ob-foot">
           <span className="ob-foot-note">{t('ob.footNote')}</span>
           <span className="spacer" />
-          <button className="ob-btn primary" onClick={onClose} data-testid="ob-done">
+          <button className="btn ob-btn primary" onClick={onClose} data-testid="ob-done">
             {t('ob.start')}
           </button>
         </div>

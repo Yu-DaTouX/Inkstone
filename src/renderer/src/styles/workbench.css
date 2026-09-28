@@ -54,7 +54,7 @@
   min-width: 88px;
   padding: 2px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-1);
   color: var(--fg-mute);
 }
@@ -105,7 +105,7 @@
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-1);
 }
 
@@ -115,7 +115,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 0;
-  border-radius: var(--r-full);
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--fg-dim);
   font: inherit;
@@ -794,10 +794,14 @@
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  padding: 8px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-soft);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
   color: var(--fg);
+}
+.wb-home-head .ico {
+  color: var(--accent);
 }
 
 /* 主行动（实施-27 B3）：一整块只回答「接着上次继续」 */
@@ -806,8 +810,8 @@
   align-items: center;
   gap: 12px;
   flex: 0 0 auto;
-  margin: 14px 14px 0;
-  padding: 12px 14px;
+  margin: 16px 16px 0;
+  padding: 16px;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
   background: var(--bg-1);
@@ -833,7 +837,8 @@
 .wb-hero-title {
   margin: 0;
   overflow: hidden;
-  font-size: var(--fs-base);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -846,23 +851,11 @@
 }
 
 .wb-hero-go {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   flex: 0 0 auto;
   margin-left: auto;
-  padding: 6px 12px;
-  border: 1px solid var(--accent);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
-.wb-hero-go:hover {
-  background: var(--accent-soft);
-}
+
 
 .wb-home-grid {
   flex: 1 1 auto;
@@ -871,7 +864,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
-  padding: 14px;
+  padding: 12px 16px 16px;
   align-content: start;
 }
 
@@ -880,7 +873,7 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
   background: var(--bg-1);
@@ -892,13 +885,22 @@
   gap: 6px;
   margin: 0;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--fg-dim);
+}
+.wb-card-title .ico {
+  color: var(--fg-mute);
+}
+/* 卡片的操作按钮统一落在卡片底部：同一行卡片的按钮对齐在同一条线上 */
+.wb-card > .btn:last-child {
+  align-self: flex-start;
+  margin-top: auto;
 }
 
 .wb-card-main {
   margin: 0;
   font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
   color: var(--fg);
 }
 
@@ -978,27 +980,10 @@
 }
 
 .wb-open-map {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   align-self: flex-start;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
-.wb-open-map:hover {
-  border-color: var(--accent-line);
-}
 
-.wb-card-map {
-  border-color: var(--accent-line);
-}
 
 /* ------------------------------------------------ 空间工作台（实施-25 P04） */
 
@@ -1056,7 +1041,7 @@
   margin-left: auto;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
 }
 
@@ -1066,7 +1051,7 @@
   gap: 4px;
   padding: 2px 10px;
   border: 0;
-  border-radius: var(--r-full);
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--fg-mute);
   font: inherit;
@@ -1222,7 +1207,7 @@
   gap: 4px;
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
   color: var(--fg-dim);
   font: inherit;
@@ -1341,7 +1326,7 @@
   flex: none;
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
   color: var(--fg-dim);
   font: inherit;
@@ -1394,7 +1379,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-1);
   color: var(--fg-dim);
   font: inherit;
@@ -1842,7 +1827,7 @@
   flex: none;
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-1);
   color: var(--fg-dim);
   font: inherit;
@@ -1873,7 +1858,7 @@
   gap: 4px;
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
   color: var(--fg-dim);
   font: inherit;
@@ -2507,7 +2492,7 @@ input.wb-learn-unit-title {
 
 .wb-learn-ws-sub {
   font-size: 11px;
-  color: var(--fg-3);
+  color: var(--fg-mute);
 }
 
 .wb-learn-ws-material-actions {
@@ -2526,7 +2511,7 @@ input.wb-learn-unit-title {
 .wb-learn-ws-note {
   margin: 0 0 6px;
   font-size: 11px;
-  color: var(--fg-3);
+  color: var(--fg-mute);
 }
 
 .wb-learn-ws-acts {
@@ -2537,25 +2522,11 @@ input.wb-learn-unit-title {
   border-top: 1px solid var(--border-soft);
 }
 
-.wb-learn-ws-act {
-  padding: 3px 8px;
-  font-size: 11px;
-  color: var(--fg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  cursor: pointer;
-}
 
-.wb-learn-ws-act:hover:not(:disabled) {
-  color: var(--fg-1);
-  border-color: var(--border-strong);
-}
 
-.wb-learn-ws-act:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
+
+
+
 
 .wb-learn-ws-answer {
   display: flex;
@@ -2572,14 +2543,14 @@ input.wb-learn-unit-title {
   gap: 5px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--fg-2);
+  color: var(--fg-dim);
 }
 
 .wb-learn-ws-question {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--fg-1);
+  color: var(--fg);
 }
 
 .wb-learn-ws-answer-input {
@@ -2589,7 +2560,7 @@ input.wb-learn-unit-title {
   padding: 6px 8px;
   font: inherit;
   font-size: 12px;
-  color: var(--fg-1);
+  color: var(--fg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-1);
@@ -2607,20 +2578,9 @@ input.wb-learn-unit-title {
   justify-content: space-between;
 }
 
-.wb-learn-ws-submit {
-  padding: 4px 10px;
-  font-size: 11px;
-  color: var(--bg-1);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-md);
-  background: var(--accent);
-  cursor: pointer;
-}
 
-.wb-learn-ws-submit:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
+
+
 
 .wb-learn-ws-text {
   flex: 1;
@@ -2631,7 +2591,7 @@ input.wb-learn-unit-title {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--fg-2);
+  color: var(--fg-dim);
 }
 
 .wb-learn-ws-sel {
@@ -3175,26 +3135,11 @@ input.wb-learn-unit-title {
   font-weight: 500;
 }
 
-.wb-inbox-refresh {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-xs);
-  color: var(--fg-dim);
-  background: var(--bg-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  padding: 3px var(--sp-2);
-}
 
-.wb-inbox-refresh:hover:not(:disabled) {
-  border-color: var(--border-str);
-  color: var(--fg);
-}
 
-.wb-inbox-refresh:disabled {
-  opacity: var(--ctl-disabled-opacity);
-}
+
+
+
 
 .wb-inbox-note {
   margin: 0;
@@ -3203,33 +3148,17 @@ input.wb-learn-unit-title {
 }
 
 .wb-inbox-filters {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-1);
 }
 
-.wb-inbox-filters button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-xs);
-  color: var(--fg-dim);
-  background: transparent;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-full);
-  padding: 2px var(--sp-2);
-}
+
 
 .wb-inbox-filters button b {
   color: var(--fg-mute);
   font-weight: 500;
 }
 
-.wb-inbox-filters button.on {
-  color: var(--fg);
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-}
+
 
 .wb-inbox-error,
 .wb-inbox-degraded {
@@ -3287,11 +3216,6 @@ input.wb-learn-unit-title {
 
 .wb-inbox-badge {
   flex: none;
-  font-size: var(--fs-xs);
-  border-radius: var(--r-xs);
-  padding: 1px var(--sp-1);
-  border: 1px solid var(--border-soft);
-  color: var(--fg-dim);
 }
 
 .wb-inbox-badge i {
@@ -3300,26 +3224,13 @@ input.wb-learn-unit-title {
   color: var(--warn);
 }
 
-/* 要人处理的四档给一点点颜色区分；已完成 / 已忽略刻意保持灰的 */
-.wb-inbox-badge.s-needs_review {
-  color: var(--accent);
-  border-color: var(--accent-line);
-}
 
-.wb-inbox-badge.s-waiting_user {
-  color: var(--warn);
-  border-color: var(--warn);
-}
 
-.wb-inbox-badge.s-failed {
-  color: var(--err);
-  border-color: var(--err);
-}
 
-.wb-inbox-badge.s-running {
-  color: var(--ok);
-  border-color: var(--ok);
-}
+
+
+
+
 
 .wb-inbox-card-title {
   color: var(--fg);
@@ -3359,30 +3270,12 @@ input.wb-learn-unit-title {
   gap: var(--sp-1);
 }
 
-.wb-inbox-actions button {
-  font-size: var(--fs-xs);
-  color: var(--fg-dim);
-  background: var(--bg-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  padding: 2px var(--sp-2);
-}
 
-.wb-inbox-actions button:hover:not(:disabled) {
-  color: var(--fg);
-  border-color: var(--border-str);
-}
 
-.wb-inbox-actions button:disabled {
-  opacity: var(--ctl-disabled-opacity);
-}
+
+
+
 
 .wb-inbox-more {
   align-self: center;
-  font-size: var(--fs-sm);
-  color: var(--fg-dim);
-  background: transparent;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  padding: var(--sp-1) var(--sp-3);
 }

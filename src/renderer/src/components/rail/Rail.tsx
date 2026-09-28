@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../icons/Icon'
-import { BrandMark } from '../shell/BrandMark'
 import { ContextMenu, ContextMenuSurface, type ContextMenuAnchor } from '../common/ContextMenu'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -930,15 +929,13 @@ export function Rail() {
       {/* ---- 顶部：品牌模式开关 + 动作 ---- */}
       <div className="rail-top">
         {/*
-         * 品牌标记。
-         *
-         * 原来的「编码 / 日常」拨杆已搬到设置 · 工作区（实施-27 B3）：
-         * 主界面只留对话与结果，工作区形态不是每轮都要拨的东西。
+         * 顶部一行：新对话 + 搜索。品牌只在标题栏出现一次（这里不再重复）；
+         * 「编码 / 日常」工作区形态在设置 · 工作区里切换。
          */}
-        <div className="rail-mode-wrap" data-testid="rail-brand">
-          <span className="rail-mode-icon" aria-hidden="true"><BrandMark size={18} /></span>
-          <span className="rail-mode-brand">砚</span>
-        </div>
+        <button className="rail-action" onClick={() => void newSession({ scope: 'global' })} data-testid="rail-new">
+          <Icon name="plus" size={14} />
+          <span>{t('rail.new')}</span>
+        </button>
         <button
           ref={searchBtnRef}
           className={`rail-icon ${searching ? 'on' : ''}`}
@@ -992,12 +989,6 @@ export function Rail() {
         </div>
       ) : null}
 
-      {/* ---- 操作行 ---- */}
-      <button className="rail-action" onClick={() => void newSession({ scope: 'global' })} data-testid="rail-new">
-        <Icon name="plus" size={12} />
-        <span>{t('rail.new')}</span>
-      </button>
-
       {/* ---- 项目分组 ---- */}
       <div className="rail-section">
         <div className="rail-section-head">
@@ -1033,7 +1024,10 @@ export function Rail() {
             <div className="rail-section-title">{t('rail.recent')}</div>
             {recentSessions.map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
-          <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
+          {/* 没有归档项目时不摆「已归档项目 · 0」：一个永远指向空列表的入口只是噪音 */}
+          {showArchived || archived.length > 0 ? (
+            <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
+          ) : null}
           {total === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.empty')}</div>
           ) : shown === 0 && projects.length === 0 ? (

@@ -14,7 +14,7 @@
   height: 22px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--border-soft);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--bg-2);
   color: var(--fg-dim);
 }

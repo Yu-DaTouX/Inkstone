@@ -56,26 +56,31 @@
  * 地图是同一会话的另一个视图，切换器就贴着标题；标题先收缩（flex-shrink），
  * 切换器 flex:none 保证不被挤扁。
  */
+/* 外观与统一分段控件（ui.css 的 .seg）一致：方角容器 + 抬高一级的选中项 */
 .shead-view {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   flex: none;
   padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
 }
 
 .shead-view button {
-  padding: 2px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: calc(var(--ctl-h-sm) - 4px);
+  padding: 0 var(--sp-2);
   border: 0;
-  border-radius: var(--r-full);
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--fg-mute);
   font: inherit;
   font-size: var(--fs-xs);
-  line-height: 1.5;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -86,6 +91,9 @@
 .shead-view button.on {
   background: var(--bg-3);
   color: var(--fg);
+}
+.shead-view button.on .ico {
+  color: var(--accent);
 }
 
 .shead-view button:focus-visible {
@@ -113,8 +121,6 @@
 .shead {
   background: var(--bg-1);
   border-bottom: 1px solid var(--border-soft);
-  padding: 7px var(--sp-5) 6px;
-  padding: 10px var(--sp-5) 8px;
   padding: 8px var(--sp-5) 7px;
 }
 
@@ -128,9 +134,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-weight: var(--fw-medium);
   line-height: 1.3;
-  font-size: 15px;
 }
 
 /* 项目胶囊：终端风格，用小三角而不是圆点 */
@@ -140,7 +145,8 @@
   gap: 5px;
   flex: none;
   max-width: 220px;
-  padding: 1px 8px;
+  height: var(--ctl-h-sm);
+  padding: 0 8px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
@@ -1487,8 +1493,19 @@
    原来是 `opacity: 0`（只有悬停才出现）—— 用户看截图时以为没有这个功能。
    现在常驻淡显（0.4），悬停到 1：既看得见，又不抢消息本身的注意力。
    图标用 layers（内置 sprite 里最接近「分支」的一个）。 */
-.msg.user .msg-act {
-  opacity: 0.4;
+.msg.user .msg-meta {
+  gap: var(--sp-2);
+  opacity: 0.55;
+  transition: opacity var(--dur) var(--ease);
+}
+.msg.user:hover .msg-meta,
+.msg.user .msg-meta:focus-within {
+  opacity: 1;
+}
+/* 整行已经负责淡显；行内的分支按钮不再单独隐身，也不再被推到最右 */
+.msg.user .msg-meta .msg-act {
+  margin-left: 0;
+  opacity: 1;
 }
 
 /*
@@ -1509,11 +1526,6 @@
   font-size: var(--fs-xs);
   letter-spacing: 0;
   text-transform: none;
-}
-
-.msg.user:hover .msg-act,
-.msg.user .msg-act:focus-visible {
-  opacity: 1;
 }
 
 .msg.user .msg-act:hover {
@@ -1897,7 +1909,7 @@
 
 .empty-cmd {
   padding: 2px var(--sp-2);
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: var(--bg-1);
   color: var(--fg-dim);

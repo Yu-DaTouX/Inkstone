@@ -156,7 +156,7 @@ export function WorkspaceTab() {
           </div>
           <div className="set-ctl">
             <button
-              className="set-btn"
+              className="btn"
               data-testid="set-open-learning"
               onClick={() => {
                 /*
@@ -198,7 +198,7 @@ export function WorkspaceTab() {
               }}
             />
             <button
-              className="set-btn"
+              className="btn"
               data-testid="set-space-create"
               disabled={!newName.trim()}
               onClick={() => {
@@ -261,7 +261,7 @@ export function WorkspaceTab() {
               {editing?.id === space.id ? (
                 <>
                   <button
-                    className="set-btn"
+                    className="btn"
                     data-testid="set-space-rename-save"
                     onClick={() => {
                       const name = editing.name.trim()
@@ -276,21 +276,21 @@ export function WorkspaceTab() {
                   >
                     {t('set.spaceSave')}
                   </button>
-                  <button className="set-btn" onClick={() => setEditing(null)}>
+                  <button className="btn" onClick={() => setEditing(null)}>
                     {t('set.spaceCancel')}
                   </button>
                 </>
               ) : (
                 <>
                   <button
-                    className="set-btn"
+                    className="btn"
                     data-testid="set-space-rename"
                     onClick={() => setEditing({ id: space.id, name: space.name })}
                   >
                     {t('set.spaceRename')}
                   </button>
                   <button
-                    className="set-btn"
+                    className="btn"
                     data-testid="set-space-archive"
                     title={t('rail.spaceArchive')}
                     onClick={() => void updateSpace(space.id, { archived: true })}
@@ -307,7 +307,7 @@ export function WorkspaceTab() {
           <>
             <div className="set-row">
               <button
-                className="set-btn"
+                className="btn"
                 data-testid="set-space-archived-toggle"
                 onClick={() => setShowArchived((v) => !v)}
               >
@@ -324,7 +324,7 @@ export function WorkspaceTab() {
                     </div>
                     <div className="set-ctl">
                       <button
-                        className="set-btn"
+                        className="btn"
                         data-testid="set-space-restore"
                         onClick={() => void updateSpace(space.id, { archived: false })}
                       >

@@ -10,68 +10,68 @@
 | 文件 | 颜色 | 其中可映射 | px | 其中可映射 | 时长 | 其中可映射 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `tokens.css` | 0 | 0 | 10 | 9 | 0 | 0 |
-| `app.css` | 1 | 0 | 22 | 11 | 0 | 0 |
+| `ui.css` | 0 | 0 | 21 | 16 | 0 | 0 |
+| `app.css` | 1 | 0 | 19 | 9 | 0 | 0 |
 | `stage1.css` | 1 | 0 | 11 | 5 | 0 | 0 |
-| `redesign.css` | 10 | 4 | 112 | 66 | 0 | 0 |
-| `motion.css` | 7 | 3 | 98 | 74 | 0 | 0 |
-| `settings.css` | 2 | 1 | 93 | 66 | 0 | 0 |
+| `redesign.css` | 10 | 4 | 111 | 70 | 0 | 0 |
+| `motion.css` | 2 | 0 | 73 | 54 | 0 | 0 |
+| `settings.css` | 5 | 1 | 101 | 67 | 0 | 0 |
 | `electron.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `highlight.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `layout.css` | 4 | 4 | 2 | 1 | 0 | 0 |
 | `shell.css` | 3 | 1 | 20 | 11 | 0 | 0 |
 | `dialog.css` | 0 | 0 | 2 | 2 | 0 | 0 |
-| `rail.css` | 1 | 0 | 209 | 149 | 0 | 0 |
-| `chat.css` | 30 | 10 | 195 | 132 | 0 | 0 |
-| `composer.css` | 7 | 2 | 169 | 116 | 0 | 0 |
-| `tools.css` | 10 | 3 | 440 | 310 | 0 | 0 |
-| `browser.css` | 1 | 1 | 42 | 28 | 0 | 0 |
+| `rail.css` | 1 | 0 | 179 | 135 | 0 | 0 |
+| `chat.css` | 30 | 10 | 189 | 128 | 0 | 0 |
+| `composer.css` | 5 | 1 | 167 | 115 | 0 | 0 |
+| `tools.css` | 10 | 3 | 436 | 314 | 0 | 0 |
+| `browser.css` | 1 | 1 | 42 | 29 | 0 | 0 |
 | `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| `review.css` | 4 | 0 | 254 | 177 | 0 | 0 |
-| `workbench.css` | 2 | 0 | 425 | 334 | 0 | 0 |
+| `review.css` | 4 | 0 | 236 | 170 | 0 | 0 |
+| `workbench.css` | 2 | 0 | 411 | 321 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **83** | **29** | **2104** | **1491** | **0** | **0** |
+| **合计** | **79** | **25** | **2030** | **1456** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
 | 值 | 类别 | 出现次数 | 文件 |
 | --- | --- | ---: | --- |
-| `5px` | length | 117 | app.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, settings.css, shell.css, stage1.css, tools.css, workbench.css |
-| `10px` | length | 104 | browser.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, stage1.css, tools.css, workbench.css |
-| `18px` | length | 38 | browser.css, chat.css, composer.css, rail.css, redesign.css, review.css, settings.css, tools.css, workbench.css |
-| `26px` | length | 33 | app.css, browser.css, composer.css, rail.css, redesign.css, review.css, settings.css, shell.css, tools.css, workbench.css |
-| `20px` | length | 32 | app.css, chat.css, composer.css, rail.css, review.css, shell.css, tools.css |
-| `22px` | length | 26 | browser.css, chat.css, composer.css, rail.css, review.css, shell.css, tools.css, workbench.css |
-| `28px` | length | 20 | browser.css, chat.css, composer.css, rail.css, redesign.css, tools.css |
-| `rgb(0, 0, 0, 1.000)` | color | 15 | chat.css, composer.css, motion.css, rail.css, redesign.css, settings.css, stage1.css, tools.css |
-| `36px` | length | 15 | composer.css, layout.css, rail.css, redesign.css, review.css, tools.css |
-| `11.5px` | length | 13 | review.css, settings.css |
+| `5px` | length | 113 | app.css, chat.css, composer.css, motion.css, rail.css, redesign.css, review.css, settings.css, shell.css, stage1.css, tools.css, ui.css, workbench.css |
+| `10px` | length | 99 | browser.css, chat.css, composer.css, rail.css, redesign.css, review.css, settings.css, stage1.css, tools.css, workbench.css |
+| `18px` | length | 43 | browser.css, chat.css, composer.css, rail.css, redesign.css, review.css, settings.css, tools.css, ui.css, workbench.css |
+| `26px` | length | 30 | app.css, browser.css, composer.css, rail.css, redesign.css, review.css, settings.css, shell.css, tools.css, workbench.css |
+| `20px` | length | 27 | app.css, chat.css, composer.css, rail.css, review.css, settings.css, shell.css, tools.css |
+| `22px` | length | 24 | browser.css, chat.css, composer.css, rail.css, review.css, shell.css, tools.css, workbench.css |
+| `rgb(0, 0, 0, 1.000)` | color | 14 | chat.css, composer.css, rail.css, redesign.css, settings.css, stage1.css, tools.css |
+| `36px` | length | 12 | composer.css, layout.css, rail.css, redesign.css, review.css, tools.css |
 | `320px` | length | 12 | chat.css, composer.css, redesign.css, review.css, settings.css, tools.css, workbench.css |
-| `34px` | length | 11 | app.css, chat.css, composer.css, rail.css, settings.css, tools.css, workbench.css |
+| `11.5px` | length | 12 | review.css, settings.css |
 | `240px` | length | 11 | browser.css, chat.css, composer.css, motion.css, tools.css, workbench.css |
+| `220px` | length | 11 | chat.css, review.css, settings.css, tools.css |
+| `34px` | length | 10 | app.css, chat.css, composer.css, rail.css, tools.css, workbench.css |
 | `180px` | length | 10 | composer.css, redesign.css, settings.css, shell.css, stage1.css, tools.css, workbench.css |
 | `420px` | length | 10 | chat.css, composer.css, redesign.css, review.css, tools.css |
-| `220px` | length | 10 | chat.css, review.css, settings.css, tools.css |
 | `30px` | length | 9 | rail.css, redesign.css, review.css, tools.css |
 | `120px` | length | 9 | composer.css, motion.css, redesign.css, review.css, tools.css, workbench.css |
 | `200px` | length | 7 | app.css, settings.css, tools.css, workbench.css |
 | `280px` | length | 7 | chat.css, review.css, tools.css, workbench.css |
 | `96px` | length | 6 | composer.css, review.css, settings.css, stage1.css, tools.css |
-| `64px` | length | 6 | composer.css, motion.css, settings.css, tools.css, workbench.css |
 | `260px` | length | 6 | composer.css, review.css, settings.css, tools.css, workbench.css |
 | `160px` | length | 6 | browser.css, chat.css, review.css, tools.css, workbench.css |
 | `42px` | length | 6 | browser.css, review.css, tools.css |
-| `620px` | length | 5 | chat.css, motion.css, tools.css |
+| `64px` | length | 5 | composer.css, settings.css, tools.css, workbench.css |
 | `10.5px` | length | 5 | review.css, settings.css |
 | `rgb(229, 72, 77)` | color | 5 | review.css, workbench.css |
 | `99px` | length | 4 | app.css, shell.css, tokens.css |
 | `17px` | length | 4 | redesign.css, review.css |
 | `360px` | length | 4 | chat.css, redesign.css, tools.css |
+| `1.5px` | length | 4 | chat.css, rail.css, settings.css |
+| `620px` | length | 4 | chat.css, tools.css |
 | `150px` | length | 4 | review.css, tools.css |
 | `560px` | length | 3 | composer.css, redesign.css, stage1.css |
 | `380px` | length | 3 | stage1.css, workbench.css |
 | `46px` | length | 3 | redesign.css, shell.css |
 | `300px` | length | 3 | motion.css, workbench.css |
-| `1.5px` | length | 3 | chat.css, rail.css |
 | `9.5px` | length | 3 | rail.css, tools.css |
 | `rgb(214, 214, 214)` | color | 3 | chat.css |
 | `rgb(126, 231, 135)` | color | 3 | chat.css |
@@ -81,6 +81,7 @@
 | `168px` | length | 2 | redesign.css, settings.css |
 | `rgb(255, 255, 255, 1.000)` | color | 2 | motion.css |
 | `60px` | length | 2 | motion.css |
+| `rgb(20, 20, 18, 0.000)` | color | 2 | settings.css |
 | `430px` | length | 2 | composer.css, rail.css |
 | `680px` | length | 2 | chat.css |
 | `rgb(16, 19, 24)` | color | 2 | chat.css |
@@ -95,11 +96,11 @@
 | `21px` | length | 1 | redesign.css |
 | `520px` | length | 1 | redesign.css |
 | `208px` | length | 1 | redesign.css |
-| … | | | 其余 36 条省略 |
+| … | | | 其余 35 条省略 |
 
 ## 3. 定义了但没被引用的令牌
 
-（无）
+- `--fw-regular`
 
 ## 4. 同一令牌有多个值（主题差异或重复定义）
 
@@ -135,6 +136,8 @@
 | `--code-fg` | #c9d1d9 / #24292f | tokens.css |
 | `--code-inline-bg` | rgba(255, 255, 255, 0.07) / rgba(0, 0, 0, 0.055) | tokens.css |
 | `--code-inline-fg` | #cdd6dc / #45525a | tokens.css |
+| `--on-accent` | #10131f / #ffffff | tokens.css |
+| `--shadow-pop` | 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2) / 0 12px 32px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) | tokens.css |
 | `--w-right` | var(--w-panel-user, 220px) / var(--w-panel-user, 264px) / 0px / var(--w-panel-user, 336px) / min(var(--w-panel-user, 264px), 190px) / min(var(--w-panel-user, 264px), 170px) / var(--w-review-user, clamp(420px, 46vw, 900px)) | redesign.css, layout.css, review.css |
 | `--w-rail` | var(--w-rail-collapsed) / var(--w-rail-user, 248px) / min(var(--w-rail-user, 260px), 210px) / min(var(--w-rail-user, 260px), 180px) | redesign.css, layout.css |
 | `--think-off` | #4a4a4a / #9a9a9a | motion.css |
@@ -148,5 +151,5 @@
 
 ## 5. 概况
 
-- 令牌总数：117（被引用 117）
-- 令牌引用点：4226（含组件内联 style）
+- 令牌总数：125（被引用 124）
+- 令牌引用点：4128（含组件内联 style）

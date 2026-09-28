@@ -6,23 +6,19 @@
  * 迁移期间旧规则仍留在 redesign.css，逐步搬过来。
  */
 
+/* 顶部一行：「新对话」占满剩余宽度，搜索是它右边的图标按钮 */
 .rail-top {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   overflow: hidden;
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
-  /*
-   * 顶部模式拨杆的容器查询上下文。
-   *
-   * 为什么加在 `.rail-top` 而不是 `.rail`：`container-type` 会给元素加上 layout
-   * containment，而 layout containment 会让 **fixed 定位的后代以它为包含块** ——
-   * 会话右键菜单就是 fixed（相对视口算的坐标），放到 `.rail` 上会整体错位。
-   * `.rail-top` 里没有 fixed 后代，宽度又跟着栏宽走，正好当查询容器。
-   */
-  container-type: inline-size;
-  container-name: railhead;
+  padding: var(--sp-3) var(--sp-2) var(--sp-2);
+}
+.rail-top .rail-action {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 .rail-body {
   padding: 0 6px 8px;
@@ -41,9 +37,13 @@
 }
 .rail-action {
   margin: 0 6px;
-  min-height: 32px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  min-height: var(--ctl-h-lg);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
 }
 .proj-head {
   height: 34px;
@@ -537,25 +537,6 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* 收起 = 0 宽（开关在标题栏），所以不需要给收起态留任何东西 */
-/* 24. 左栏顶部的模式开关（固定 / 自动） */
-.rail-mode {
-  display: inline-flex;
-  align-self: stretch;
-  padding: 2px;
-  margin-bottom: var(--sp-2);
-  border-radius: var(--r-sm);
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-}
-
-.rail-mode-btn.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.rail-mode-btn.sel .ico {
-  color: var(--accent);
-}
 
 .rail-spacer {
   flex: 1;
@@ -636,7 +617,8 @@
 }
 
 .rail-action:hover {
-  background: var(--bg-2);
+  border-color: var(--border);
+  background: var(--bg-3);
   color: var(--fg);
 }
 
@@ -682,7 +664,7 @@
   display: block;
   margin: 2px var(--sp-2) 4px;
   padding: 3px 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-1);
   color: var(--fg);
@@ -1198,216 +1180,6 @@ body.rail-dragging .srow {
   background: var(--bg-2);
   box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
   animation: mo-in-up var(--mo-base) var(--mo-ease) both;
-}
-
-/* 58. 左栏头部的「砚 + 当前模式」二态开关。
- *
- * 这里用固定三列 grid，不再让品牌块、模式文字和轨道互相争夺 flex 空间。
- * 这正是截图里“文字被挤到轨道下面 / 轨道漂移”的根因：旧结构外面还有
- * 一个同样会增长的 `.rail-spacer`，模式按钮实际只拿到半栏宽度。
- */
-.rail-mode-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 工作区拨杆（实施-20 U1）：两端等宽，滑块位表示当前端 */
-.rail-mode-switch {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-full);
-  background: var(--bg-1);
-}
-
-.rail-mode-thumb {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  width: calc(50% - 2px);
-  border-radius: var(--r-full);
-  background: var(--bg-3);
-  transition: transform var(--dur) var(--ease);
-}
-
-.rail-mode-thumb.thumb-daily {
-  transform: translateX(100%);
-}
-
-.rail-mode-opt {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: var(--r-full);
-  background: transparent;
-  color: var(--fg-mute);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rail-mode-opt.on {
-  color: var(--fg);
-}
-
-/* 两字简称：默认不显示，只在极窄栏时接管（见下方 railhead 容器查询） */
-.rail-mode-opt-short {
-  display: none;
-}
-
-/*
- * 极窄栏：`编码模式 / 日常模式` 四个字放不下，会被截成「编码…」。
- *
- * 换成两字简称，而不是缩小字号或省略 —— 模式名是导航标签，截断后反而更难认。
- * 全称仍由按钮的 `title` 与 `aria-label` 提供（见 Rail.tsx），语义不减。
- *
- * 阈值按 `.rail-top` 的**内容宽**算（已扣掉左右各 12px 的 padding）：
- * 四字 + 内边距约需 126px，加上图标 / 品牌 / 间距 / 搜索按钮约 77px → 210px 起就不够。
- */
-@container railhead (max-width: 210px) {
-  .rail-mode-opt-full {
-    display: none;
-  }
-
-  .rail-mode-opt-short {
-    display: inline;
-  }
-}
-
-.rail-mode-opt:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 1px;
-}
-
-.rail-mode-btn {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 36px;
-  align-items: center;
-  column-gap: 8px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  color: var(--fg-mute);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  overflow: hidden;
-  transition:
-    background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.rail-mode-btn:hover,
-.rail-mode-btn.on {
-  border-color: var(--accent-line);
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.rail-mode-btn:focus-visible {
-  /* 窄栏里的小按钮：用强调档宽度（V-1 焦点环唯一来源） */
-  outline: var(--focus-ring-w-strong) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.rail-mode-icon {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  color: var(--accent);
-}
-
-.rail-mode-icon .brand-mark {
-  color: var(--accent);
-  flex: none;
-}
-
-.rail-mode-copy {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 20px;
-  line-height: 20px;
-}
-
-.rail-mode-brand {
-  flex: none;
-  color: var(--fg);
-  font-size: var(--fs-base);
-  font-weight: 500;
-  letter-spacing: 0;
-}
-
-.rail-mode-value {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  line-height: 1;
-}
-
-.rail-switch-track {
-  position: relative;
-  flex: none;
-  width: 36px;
-  height: 20px;
-  box-sizing: border-box;
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-full);
-  background: var(--bg-3);
-  transition:
-    background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
-}
-
-.rail-switch-thumb {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  color: var(--fg-mute);
-  background: var(--fg-mute);
-  transition:
-    transform var(--dur) var(--ease),
-    background var(--dur) var(--ease);
-}
-
-.rail-mode-btn.on .rail-switch-track {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-}
-
-.rail-mode-btn.on .rail-switch-thumb {
-  transform: translateX(16px);
-  background: var(--accent);
 }
 
 /* 64. 会话分叉树（用户要求：默认折叠，开关放在会话标题旁）
