@@ -49,9 +49,8 @@ import { cancelCodexLogin, startCodexLogin } from './oauth'
 import { listDir, searchFiles } from './files'
 import { grantFiles, readGrantedText, readPreview, statPreview } from './file-refs'
 import { SubagentController } from './subagents'
-import { fileContent, filePatch, reviewSnapshot } from './git-diff'
-import { readExpected, readRepoState, listRefs, resolveRepo } from './git-service'
-import { configureWriteContext, listRemotes, remoteWeb, runGitAction } from './git-actions'
+import { readRepoState } from './git-service'
+import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages, runPackageAction } from './packages'
 import { AcquisitionService } from './capabilities/acquisition-service'
 import { PackageAuthorizationService } from './capabilities/package-authorization-service'
@@ -60,9 +59,6 @@ import { PiPackageActivationScheduler } from './capabilities/pi-package-schedule
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { createSkillFilesActivationHostPorts } from './capabilities/skill-files-activation-host'
 import { SkillFilesActivationScheduler } from './capabilities/skill-files-scheduler'
-import { prStatus } from './hosting'
-import { linkSources, listImagesForSession, readImage, removeImage, saveImage, verifyFiles } from './sources'
-import { createWorktree, listWorktrees, removeWorktree } from './git-worktree'
 import { compactionInfo } from './compaction'
 import { allowTrust, trustStatus } from './project-trust'
 import { forkContext, forkFileRefs } from './fork-rebind-service'
@@ -84,6 +80,11 @@ import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
+import { registerGitIpc } from './ipc/git-ipc'
+import { registerFollowIpc } from './ipc/follow-ipc'
+import { registerArtifactDocIpc } from './ipc/artifact-doc-ipc'
+import { registerLibraryIpc } from './ipc/library-ipc'
+import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { changeConsentEntry, listConsentViews } from './consent-store'
@@ -191,15 +192,7 @@ import {
   type ResearchExcerpt,
   type SourceRefStatus
 } from '../shared/research'
-import type { AgentEditInput, ArtifactMutation, ArtifactSourceRef, CreateArtifactInput } from '../shared/artifact-doc'
 import { currentTaskPlan } from './task-plan-store'
-import {
-  activeSources,
-  refOutcome,
-  type LibraryKind,
-  type LibraryOwner,
-  type SourceReference
-} from '../shared/library'
 import { samePath } from '../shared/session-path'
 import { DEFAULT_WORK_MODE, normalizeWorkMode, type WorkMode, type WorkModeState } from '../shared/work-mode'
 import { commitKnowledge, deleteKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
@@ -211,20 +204,7 @@ import {
   toKnowledgeViews,
   type KnowledgeViewContext
 } from '../shared/project-knowledge-view'
-import type {
-  Attachment,
-  AttentionNotify,
-  CompactionRun,
-  FileRequestContext,
-  FileSearchRequest,
-  GitScopeRequest,
-  AssistantArtifact,
-  MainPush,
-  RunnerStatus,
-  SessionState,
-  SessionSummary,
-  UIMessage
-} from '../shared/ipc'
+import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, FileSearchRequest, AssistantArtifact, MainPush, RunnerStatus, SessionState, SessionSummary, UIMessage } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -1999,18 +1979,6 @@ async function runResearchRead(input: ResearchReadInput) {
     })
   }
   return { ok: true as const, excerpts, skipped }
-}
-
-/** 纯逻辑层的 `ArtifactMutation` → IPC 形状。 */
-function artifactResult(m: ArtifactMutation) {
-  return m.ok
-    ? {
-        ok: true as const,
-        doc: m.doc,
-        ...(m.unchanged ? { unchanged: true } : {}),
-        ...(m.preserved ? { preserved: m.preserved } : {})
-      }
-    : { ok: false as const, error: m.reason }
 }
 
 /**
@@ -4356,32 +4324,6 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
 /* IPC */
 
 /**
- * 审查范围来自渲染端，一律当**不可信输入**校验。
- *
- * 参数数组已经挡住了 shell 注入，但 `--` 之前的**选项注入**还挡不住：
- * 一个形如 `--upload-pack=…` 的「ref」会被 git 当成选项。所以这里
- * 只放行 git ref 的合法字符集，并且**不以 `-` 开头**。
- * 任何不合法 / 缺失的范围都退回「工作区全部改动」—— 它是纯只读的，
- * 退到它不会造成任何破坏，而报错会让整个审查面板打不开。
- */
-function normalizeScope(raw: unknown): GitScopeRequest {
-  const rec = (raw ?? {}) as Record<string, unknown>
-  const clean = (v: unknown): string | undefined => {
-    const s = typeof v === 'string' ? v.trim() : ''
-    if (!s || s.startsWith('-') || s.length > 250) return undefined
-    if (!/^[\w./@^~{}+-]+$/.test(s)) return undefined
-    return s
-  }
-  if (rec.kind === 'working' || rec.kind === 'unstaged' || rec.kind === 'staged') return { kind: rec.kind }
-  if (rec.kind === 'range') {
-    const base = clean(rec.base)
-    const target = clean(rec.target)
-    if (base && target) return { kind: 'range', base, target }
-  }
-  return { kind: 'working' }
-}
-
-/**
  * 路径比较用的归一化（Windows 大小写不敏感，且分隔符混用）。
  * 只为「是不是同一个目录」服务，不做解析。
  */
@@ -6188,315 +6130,7 @@ function registerIpc(): void {
   handle('yan:subagents:merge', async (id: string) => (await subagentCtrl()).merge(String(id ?? '')))
   handle('yan:subagents:discard', async (id: string) => (await subagentCtrl()).discard(String(id ?? '')))
 
-  /*
-   * ---- Git 审查（只读，方案 G1）----
-   *
-   * 渲染端只能传 cwd / 范围 / 路径，**不能传 git 命令**（方案 §11）：
-   * 命令形状全部在主进程里固定，路径与 ref 在 git-service 里单独校验。
-   * 每个响应带回 requestId，用户切项目后渲染端靠它丢弃迟到结果。
-   */
-  handle('yan:git:state', async (cwd: string) => {
-    try {
-      const dir = String(cwd ?? '')
-      const repo = await resolveRepo(dir)
-      if (!repo) return { repo: null }
-      /*
-       * 一起把「预期版本」带回去：环境菜单里的写操作（切分支 / 拉取 / 推送）
-       * 同样要带上用户看到的那个版本，而菜单没有审查快照可用。
-       * 两次读取与菜单显示的内容是**同一个时刻**的（差几毫秒），
-       * 而且先读版本更安全（见 git-diff.ts 里 reviewSnapshot 的同一段说明）。
-       */
-      const expected = await readExpected(repo.root)
-      return { repo: await readRepoState(repo.root), expected }
-    } catch (error) {
-      return { repo: null, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  handle('yan:git:refs', async (cwd: string) => {
-    try {
-      const repo = await readRepoState(String(cwd ?? ''), { withRefs: false })
-      if (!repo) return { ok: false, refs: [], busyBranches: [], error: '这个目录不在 Git 仓库里' }
-      const listing = await listRefs(repo.root)
-      return { ok: true, refs: listing.refs, busyBranches: listing.busyBranches }
-    } catch (error) {
-      return {
-        ok: false,
-        refs: [],
-        busyBranches: [],
-        error: error instanceof Error ? error.message : String(error)
-      }
-    }
-  })
-  handle('yan:git:snapshot', async (req: { cwd?: string; scope?: unknown; requestId?: string }) =>
-    reviewSnapshot({
-      cwd: String(req?.cwd ?? ''),
-      scope: normalizeScope(req?.scope),
-      requestId: String(req?.requestId ?? '')
-    })
-  )
-  handle(
-    'yan:git:patch',
-    async (req: {
-      cwd?: string
-      scope?: unknown
-      requestId?: string
-      path?: string
-      oldPath?: string
-      untracked?: boolean
-    }) =>
-      filePatch({
-        cwd: String(req?.cwd ?? ''),
-        scope: normalizeScope(req?.scope),
-        requestId: String(req?.requestId ?? ''),
-        path: String(req?.path ?? ''),
-        oldPath: req?.oldPath ? String(req.oldPath) : undefined,
-        untracked: !!req?.untracked
-      })
-  )
-  handle(
-    'yan:git:content',
-    async (req: {
-      cwd?: string
-      scope?: unknown
-      requestId?: string
-      path?: string
-      side?: string
-    }) =>
-      fileContent({
-        cwd: String(req?.cwd ?? ''),
-        scope: normalizeScope(req?.scope),
-        requestId: String(req?.requestId ?? ''),
-        path: String(req?.path ?? ''),
-        /* side 只认 old / new，别的一律当 old（宁可少给一侧也不给错一侧） */
-        side: req?.side === 'new' ? 'new' : 'old'
-      })
-  )
-
-  /*
-   * ---- Git 写操作（方案 §5，G2）----
-   *
-   * 这是整个应用里**唯一**会改用户 Git 状态的入口。防护在 git-actions.ts 里
-   * （按仓库串行、执行前复核预期版本、不 stash/reset/force），这里只做三件事：
-   *   · 剥掉渲染端不该决定的东西（命令形状一律由主进程构造）
-   *   · 把「这个目录有没有在跑的任务」注入进去 —— 切分支前必须问（方案 §5.1）
-   *   · 兜异常，保证渲染端**永远**能拿到一个结果（否则界面会一直转圈）
-   */
-  handle('yan:git:action', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    const cwd = String(raw.cwd ?? '')
-    const expected = (raw.expected ?? {}) as Record<string, unknown>
-    const base = {
-      requestId: String(raw.requestId ?? ''),
-      cwd,
-      expected: {
-        head: typeof expected.head === 'string' ? expected.head : null,
-        indexDigest: String(expected.indexDigest ?? ''),
-        statusDigest: String(expected.statusDigest ?? '')
-      }
-    }
-    const kind = String(raw.kind ?? '')
-    const paths = Array.isArray(raw.paths) ? raw.paths.map((v) => String(v ?? '')) : []
-    const message = typeof raw.message === 'string' ? raw.message : ''
-    const branch = typeof raw.branch === 'string' ? raw.branch : ''
-    const startPoint = typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null
-    const remote = typeof raw.remote === 'string' && raw.remote ? raw.remote : null
-
-    let action: Parameters<typeof runGitAction>[0]
-    switch (kind) {
-      case 'stage':
-      case 'unstage':
-        action = { ...base, kind, paths }
-        break
-      case 'stage-all':
-      case 'unstage-all':
-        action = { ...base, kind }
-        break
-      case 'commit':
-        action = { ...base, kind, message }
-        break
-      case 'switch-branch':
-        action = { ...base, kind, branch }
-        break
-      case 'create-branch':
-        action = { ...base, kind, branch, startPoint, checkout: !!raw.checkout }
-        break
-      case 'fetch':
-        action = { requestId: base.requestId, cwd, kind, remote }
-        break
-      case 'push':
-        action = {
-          ...base,
-          kind,
-          remote,
-          setUpstream: !!raw.setUpstream,
-          branch: branch || null
-        }
-        break
-      default:
-        return {
-          ok: false,
-          failure: { code: 'unknown', message: `不支持的操作：${kind}`, retrySafe: false }
-        }
-    }
-    try {
-      return await runGitAction(action)
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-          retrySafe: false
-        }
-      }
-    }
-  })
-  /*
-   * ---- 用户工作树（方案 §6.2，W1）----
-   *
-   * 注意与子代理隔离工作树的区别：那条路径是「一次性容器 + --force 清理」，
-   * 这里建的会被用户长期使用，所以删除前逐项检查，且**没有** force 入口。
-   * 「有任务在跑」的判据与切分支同一个（注入的 runner 状态）。
-   */
-  handle('yan:git:worktrees', async (cwd: string) => {
-    try {
-      return await listWorktrees(String(cwd ?? ''))
-    } catch (error) {
-      return {
-        ok: false,
-        repoRoot: '',
-        worktrees: [],
-        error: error instanceof Error ? error.message : String(error)
-      }
-    }
-  })
-  handle('yan:git:worktreeCreate', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await createWorktree(
-        {
-          cwd: String(raw.cwd ?? ''),
-          branch: String(raw.branch ?? ''),
-          startPoint: typeof raw.startPoint === 'string' && raw.startPoint ? raw.startPoint : null,
-          targetPath: typeof raw.targetPath === 'string' && raw.targetPath ? raw.targetPath : null,
-          /*
-           * 携带未提交改动（W2a）。这里**逐字段取值**而不是把 raw 直接传下去：
-           * 渲染端来的东西是不可信输入，多传一个字段就可能多一条能改用户仓库的路径。
-           * untracked 只收字符串，且由主进程再跟 `git ls-files --others` 对一遍。
-           */
-          carry: (() => {
-            const c = raw.carry as Record<string, unknown> | null | undefined
-            if (!c || typeof c !== 'object') return null
-            return {
-              staged: c.staged === true,
-              unstaged: c.unstaged === true,
-              untracked: Array.isArray(c.untracked) ? c.untracked.filter((x): x is string => typeof x === 'string') : []
-            }
-          })()
-        },
-        (dir) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir))
-      )
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-          retrySafe: false
-        }
-      }
-    }
-  })
-  handle('yan:git:worktreeRemove', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await removeWorktree(
-        {
-          cwd: String(raw.cwd ?? ''),
-          path: String(raw.path ?? ''),
-          deleteBranch: !!raw.deleteBranch
-        },
-        (dir) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir))
-      )
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-          retrySafe: false
-        }
-      }
-    }
-  })
-
-  /*
-   * 「会话 ↔ 工作树」的来源关系（实施-07 S2）。
-   *
-   * 登记发生在渲染端：「开新会话」是在**新目录**里开一条新会话，
-   * 而主进程这边 `newSession` / `select` 并不知道用户是从哪个工作树按钮点过来的。
-   * 读回是全量的 —— 界面要回答「这个会话从哪来」，而列表本身很小。
-   */
-  handle('yan:git:worktreeLink', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return await worktreeOrigins.link({
-        sessionId: String(raw.sessionId ?? ''),
-        sessionFile: typeof raw.sessionFile === 'string' ? raw.sessionFile : undefined,
-        worktree: String(raw.worktree ?? ''),
-        branch: typeof raw.branch === 'string' ? raw.branch : undefined,
-        fromSessionId: typeof raw.fromSessionId === 'string' ? raw.fromSessionId : undefined,
-        fromSessionFile: typeof raw.fromSessionFile === 'string' ? raw.fromSessionFile : undefined,
-        fromCwd: typeof raw.fromCwd === 'string' ? raw.fromCwd : undefined
-      })
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  handle('yan:git:worktreeLinks', async () => {
-    try {
-      await worktreeOrigins.load()
-      return worktreeOrigins.links()
-    } catch {
-      return []
-    }
-  })
-
-  /*
-   * remote 的托管网页地址（方案 §7 的托管网页比较，只读）。
-   * 渲染端拿到的只是一个 https 链接 —— 它**不能**让主进程跑任意 git 命令，
-   * 这条通道也一样（remote 名字由主进程自己挑）。
-   */
-  /*
-   * 关联 PR 的状态（§7）。**只读** —— 不创建、不合并、不评论。
-   *
-   * token 只从环境变量读（GITHUB_TOKEN / GH_TOKEN）：不落盘、不进设置，
-   * 也不去翻用户的 ~/.config/gh（那是 gh 自己的东西）。没有 token 时
-   * GitHub 允许匿名读公开仓库，私有仓库会返回 404/403，那时界面如实显示
-   * 「需要认证」—— 不编状态。
-   */
-  handle('yan:git:prStatus', async (cwd: string) => {
-    try {
-      const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim() || null
-      return await prStatus(String(cwd ?? ''), token)
-    } catch (error) {
-      return {
-        ok: false,
-        state: 'none' as const,
-        checks: 'none' as const,
-        error: 'unknown' as const,
-        message: error instanceof Error ? error.message : String(error)
-      }
-    }
-  })
-
-  handle('yan:git:remoteWeb', async (cwd: string) => {
-    try {
-      return await remoteWeb(String(cwd ?? ''))
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
+  registerGitIpc(ipc, { isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)), worktreeOrigins })
 
   /*
    * pi 插件包管理（§9 的 P2）。
@@ -6507,197 +6141,17 @@ function registerIpc(): void {
    *   · **hasRunningTask** —— 扩展是 pi 启动时加载的，正在跑的回合与磁盘上的
    *     包集合必须一致，所以有任务时直接拒绝。
    */
-  /*
-   * 会话来源（§8 的 S1）。
-   *
-   * 只有 addImage / removeImage 会写磁盘，而且只写数据目录下属于这个会话的副本 ——
-   * 文件引用（用户的原文件）**永远不写也不删**，removeImage 那边还有一道
-   * 「拼出来的路径必须还在 sources 目录里」的兜底。
-   */
-  handle('yan:sources:list', async (sessionId: string) => {
-    try {
-      return listImagesForSession(String(sessionId ?? ''))
-    } catch (error) {
-      return { ok: false, images: [], dir: '', error: error instanceof Error ? error.message : String(error) }
-    }
-  })
+  registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
 
-  handle('yan:sources:addImage', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return saveImage({
-        sessionId: String(raw.sessionId ?? ''),
-        name: String(raw.name ?? ''),
-        mimeType: String(raw.mimeType ?? ''),
-        base64: String(raw.base64 ?? '')
-      })
-    } catch {
-      return null
-    }
-  })
-
-  handle('yan:sources:verifyFiles', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      const entries = Array.isArray(raw.entries)
-        ? raw.entries
-            .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
-            .map((x) => ({
-              path: String(x.path ?? ''),
-              name: typeof x.name === 'string' ? x.name : undefined,
-              addedAt: typeof x.addedAt === 'number' ? x.addedAt : undefined
-            }))
-            .filter((x) => x.path)
-        : []
-      return verifyFiles(String(raw.sessionId ?? ''), entries)
-    } catch {
-      return []
-    }
-  })
-
-  handle('yan:sources:link', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return linkSources({
-        sessionId: String(raw.sessionId ?? ''),
-        sourceIds: Array.isArray(raw.sourceIds) ? raw.sourceIds.map((x) => String(x)) : [],
-        messageId: String(raw.messageId ?? '')
-      })
-    } catch (error) {
-      return { ok: false, added: 0, skipped: 0, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:sources:removeImage', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return removeImage(String(raw.sessionId ?? ''), String(raw.sourceId ?? ''))
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:sources:readImage', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      return readImage(String(raw.sessionId ?? ''), String(raw.sourceId ?? ''))
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  /*
-   * 来源搜索入口的可用性（实施-07 S4）。只读查询：不装、不连、不搜。
-   * 没发现兼容搜索能力时如实回 `available:false`，界面据此**隐藏**入口
-   *（方案：网页搜索只在已发现兼容搜索能力时启用，且不自造私有搜索后端）。
-   */
-  handle('yan:sources:webSearch', async () => (await ac()?.webSearchAvailability()) ?? { available: false })
-
-  /*
-   * ---- 资料库（实施-25 P03）----
-   *
-   * 与 sources（会话级旧模型）**并存**：旧 handler 与旧参数一个都没动，
-   * 新增的是 librarySourceId 这一侧的引用（T03-7 的过渡）。
-   *
-   * 两条铁律体现在签名里：
-   *   · 打开只收 `{ sourceId, version }` —— 没有「按路径找文件」的入口；
-   *   · 判定只走 `refOutcome` —— 界面拿到的 outcome 就是唯一结论。
-   */
-  handle('yan:library:list', async (req?: { spaceId?: string | null }) => {
-    await library.store.load()
-    const doc = library.store.document()
-    return {
-      ok: true,
-      sources: activeSources(doc, req?.spaceId),
-      versions: doc.versions,
-      refs: doc.refs.map((r) => ({ ...r, outcome: refOutcome(doc, r.ref) }))
-    }
-  })
-
-  handle('yan:library:import', async (view: {
-    kind: LibraryKind
-    ref: string
-    title: string
-    spaceId?: string
-    content?: string
-    owner?: LibraryOwner
-  }) => {
-    if (!view || typeof view !== 'object') return { ok: false, error: '缺少导入参数' }
-    return library.import({
-      kind: view.kind,
-      ref: view.ref,
-      title: view.title,
-      ...(view.spaceId ? { spaceId: view.spaceId } : {}),
-      ...(view.content !== undefined ? { content: view.content } : {}),
-      ...(view.owner ? { owner: view.owner } : {})
-    })
-  })
-
-  handle('yan:library:open', async (ref: SourceReference, options?: { maxChars?: number }) => {
-    if (!ref || typeof ref.sourceId !== 'string' || !ref.sourceId) {
-      return { ok: false as const, outcome: 'missing' as const, error: '缺少引用' }
-    }
-    const version = Number(ref.version)
-    if (!Number.isFinite(version) || version < 1) {
-      return { ok: false as const, outcome: 'missing' as const, error: '引用的版本号非法' }
-    }
-    const res = await library.openRef({ sourceId: ref.sourceId, version }, options ?? {})
-    return { ok: true as const, ...res }
-  })
-
-  handle('yan:library:remove', async (sourceId: string) => {
-    const done = await library.store.removeSource(sourceId)
-    return done ? { ok: true } : { ok: false, error: '资料不存在' }
-  })
-
-  handle('yan:library:restore', async (sourceId: string) => {
-    const done = await library.store.restoreSource(sourceId)
-    return done ? { ok: true } : { ok: false, error: '资料不存在或未被移除' }
-  })
-
-  handle('yan:library:rename', async (sourceId: string, title: string) => library.store.renameSource(sourceId, title))
-
-  handle('yan:library:attach', async (sourceId: string, spaceId: string | null) => {
-    if (spaceId !== null) {
-      await spaces.load()
-      if (!spaces.find(spaceId)) return { ok: false, error: '目标空间不存在' }
-    }
-    const done = await library.store.attachToSpace(sourceId, spaceId)
-    return done ? { ok: true } : { ok: false, error: '资料不存在' }
-  })
-
-  handle('yan:library:verify', async (refs: SourceReference[]) => {
-    const list = Array.isArray(refs) ? refs : []
-    const res = await library.verifyAvailability(list)
-    return { ok: true, ...res }
-  })
-
-  handle('yan:library:addRef', async (owner: LibraryOwner, ref: SourceReference) => {
-    if (!owner || !ref) return { ok: false, error: '缺少引用方或引用' }
-    const added = await library.store.addRef(owner, ref)
-    /*
-     * 「加入对话」后立刻重装上下文（T05-3）：否则用户会看到刚加的资料
-     * 直到下一次切会话才进上下文 —— 那正是「界面显示加了、模型却看不到」。
-     */
-    if (owner.kind === 'session') {
+  registerLibraryIpc(ipc, {
+    library,
+    spaces,
+    refreshActiveSessionContext: async (sessionId) => {
       const activeId = runners?.activeRunner()?.id
-      if (activeId && runners?.agentOf(activeId)?.getState()?.sessionId === owner.id) {
+      if (activeId && runners?.agentOf(activeId)?.getState()?.sessionId === sessionId) {
         await refreshSessionContext(activeId, await resolveAgentProfile(activeId))
       }
     }
-    return { ok: true, added }
-  })
-
-  handle('yan:library:promoteLegacy', async (req: {
-    sessionId: string
-    legacyId: string
-    kind: LibraryKind
-    title: string
-    ref: string
-    spaceId?: string
-  }) => {
-    if (!req || typeof req !== 'object') return { ok: false, error: '缺少参数' }
-    return library.promoteLegacy(req)
   })
 
   /*
@@ -6715,131 +6169,9 @@ function registerIpc(): void {
     return { ok: true, assembly }
   })
 
-  /*
-   * ---- 可编辑成果（实施-25 P06a）----
-   *
-   * 版本推进、段落保护都是纯函数（shared/artifact-doc.ts），这里只做 I/O 与转发。
-   * `applyAgentEdit` 是 agent 改正文的**唯一**入口：它要么定向替换段落，要么
-   * 带基线版本整篇重写（宿主会保留用户改过的段落）。没有「直接写全文」的口子。
-   */
-  handle('yan:artifactDoc:list', async (spaceId?: string | null) => {
-    await artifactDocs.load()
-    return { ok: true, docs: artifactDocs.list(spaceId) }
-  })
-  handle('yan:artifactDoc:create', async (input: CreateArtifactInput) => artifactResult(await artifactDocs.create(input)))
-  handle('yan:artifactDoc:saveUserEdit', async (id: string, text: string) =>
-    artifactResult(await artifactDocs.saveUserEdit(id, text))
-  )
-  handle('yan:artifactDoc:applyAgentEdit', async (id: string, edit: AgentEditInput) =>
-    artifactResult(await artifactDocs.applyAgentEdit(id, edit))
-  )
-  handle('yan:artifactDoc:rename', async (id: string, title: string) => artifactResult(await artifactDocs.rename(id, title)))
-  handle('yan:artifactDoc:assign', async (id: string, patch: { spaceId?: string | null; taskId?: string | null }) =>
-    artifactResult(await artifactDocs.assign(id, patch))
-  )
-  handle('yan:artifactDoc:addSource', async (id: string, ref: ArtifactSourceRef) =>
-    artifactResult(await artifactDocs.addSource(id, ref))
-  )
-  handle('yan:artifactDoc:toggleChecklist', async (id: string, index: number) =>
-    artifactResult(await artifactDocs.toggleChecklist(id, index))
-  )
-  /*
-   * 导出为 Markdown（T06b-3）。
-   *
-   * 只写**用户在保存框里点的地方**（不自动改写仓库里的文档）。
-   * 来源标题现去资料库取：成果只存 `{sourceId, version}`，在这里复制一份标题会让
-   * 资料改名后的导出对不上。
-   */
-  handle('yan:artifactDoc:exportMarkdown', async (id: string) => {
-    try {
-      await artifactDocs.load()
-      const doc = artifactDocs.find(id)
-      if (!doc) return { ok: false, error: '找不到这份成果' }
-      await library.store.load()
-      const lib = library.store.document()
-      const sources = doc.sources.map((ref) => {
-        const hit = lib.sources.find((s) => s.id === ref.sourceId)
-        return { sourceId: ref.sourceId, version: ref.version, ...(hit?.title ? { title: hit.title } : {}) }
-      })
-      const rendered = artifactDocs.markdownOf(id, sources)
-      if (!rendered.ok) return { ok: false, error: rendered.reason }
-      const defaultPath = join(
-        app.getPath('documents'),
-        `${doc.title.replace(/[\\/:*?"<>|]/g, '_') || 'artifact'}.md`
-      )
-      const options: Electron.SaveDialogOptions = {
-        title: '导出成果',
-        defaultPath,
-        filters: [{ name: 'Markdown', extensions: ['md'] }]
-      }
-      const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
-      if (picked.canceled || !picked.filePath) return { ok: true, markdown: rendered.markdown, canceled: true }
-      await writeFile(picked.filePath, rendered.markdown, 'utf8')
-      return { ok: true, markdown: rendered.markdown, path: picked.filePath }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  handle('yan:artifactDoc:remove', async (id: string) => artifactDocs.remove(id))
-  /*
-   * 成果引用的资料现在怎么样了（T13-4）。
-   *
-   * 只**提示变化**，不改任何引用 —— 旧版本按 P03 的不变量保留。
-   */
-  handle('yan:artifactDoc:sourceStatus', async (id: string) => runSourceStatus(id))
+  registerArtifactDocIpc(ipc, { artifactDocs, library, sourceStatus: runSourceStatus, window: () => win })
 
-  /*
-   * 持续关注（实施-25 P16）。
-   *
-   * 没有「立即执行」这种 IPC：宿主不会自己去查（那是后台花钱且用户看不见）。
-   * `due` 只说谁到点了，`report` 接模型看完之后回报的结果。
-   * 「应用没开就不跟进」这句话由 `FOLLOW_APP_ONLY_NOTE` 固定，
-   * 界面与模型看到的是同一句。
-   */
-  handle('yan:follow:list', async (spaceId?: string | null) => follows.list(spaceId))
-  handle('yan:follow:views', async (spaceId?: string | null) =>
-    follows.views(spaceId).map((view) => ({
-      ...view,
-      ...(view.lastRun ? { lastRunText: runSummaryText(view.lastRun) } : {})
-    }))
-  )
-  handle('yan:follow:due', async () => follows.due())
-  handle('yan:follow:runs', async (input: { watchId: string; limit?: number }) =>
-    follows.runs(String(input?.watchId ?? ''), input?.limit)
-  )
-  handle('yan:follow:save', async (input: Parameters<typeof follows.save>[0]) => {
-    const res = await follows.save(input ?? {})
-    return res.ok ? { ok: true as const, watch: res.value } : { ok: false as const, code: res.code, error: res.error }
-  })
-  handle(
-    'yan:follow:update',
-    async (input: {
-      id: string
-      title?: unknown
-      kind?: unknown
-      cadence?: unknown
-      intervalMinutes?: unknown
-      resultPlace?: unknown
-      notifyOn?: unknown
-      enabled?: unknown
-    }) => {
-      const res = await follows.update(String(input?.id ?? ''), {
-        title: input?.title,
-        kind: input?.kind,
-        cadence: input?.cadence,
-        intervalMinutes: input?.intervalMinutes,
-        resultPlace: input?.resultPlace,
-        notifyOn: input?.notifyOn,
-        enabled: input?.enabled
-      })
-      return res.ok ? { ok: true as const, watch: res.value } : { ok: false as const, code: res.code, error: res.error }
-    }
-  )
-  handle('yan:follow:remove', async (id: string) => follows.remove(id))
-  handle('yan:follow:report', async (input: Parameters<typeof follows.report>[0]) => {
-    const res = await follows.report(input ?? {})
-    return res.ok ? { ok: true as const, run: res.value.run, watch: res.value.watch } : { ok: false as const, code: res.code, error: res.error }
-  })
+  registerFollowIpc(ipc, { follows })
 
   /*
    * 按活动配置模型（实施-25 P18）。
@@ -7368,14 +6700,6 @@ function registerIpc(): void {
     }
   })
 
-  handle('yan:git:remotes', async (cwd: string) => {
-    try {
-      const repo = await resolveRepo(String(cwd ?? ''))
-      return repo ? await listRemotes(repo.root) : []
-    } catch {
-      return []
-    }
-  })
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
