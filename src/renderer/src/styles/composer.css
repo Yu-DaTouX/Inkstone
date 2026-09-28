@@ -1900,3 +1900,45 @@
 .learn-actions {
   margin: 0 0 var(--sp-2);
 }
+
+/* 语音输入：录音中显示红点、时长与停止 / 取消；失败提示跟在按钮后面 */
+.voice-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--err);
+}
+
+.voice-time {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.voice-error {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--err);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .voice-input.recording .voice-dot {
+    animation: voice-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

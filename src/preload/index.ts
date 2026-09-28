@@ -134,6 +134,7 @@ import type {
 import type { WebSearchAvailability } from '../shared/web-search'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeCompareResult, OfficeDocumentView } from '../shared/office'
+import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
@@ -707,6 +708,16 @@ const api: YanBridge = {
   office: {
     preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd),
     compare: (path, cwd) => invoke<OfficeCompareResult>('yan:office:compare', path, cwd)
+  },
+
+  /* ---- 语音输入（本地转写） ---- */
+  voice: {
+    status: () => invoke<VoiceInputStatus>('yan:voice:status'),
+    plan: (target) => invoke<{ ok: true; plan: VoiceDownloadPlan } | { ok: false; error: string }>('yan:voice:plan', target),
+    download: (planId) => invoke<Ok>('yan:voice:download', planId),
+    cancel: () => invoke<void>('yan:voice:cancel'),
+    pick: (kind) => invoke<VoiceInputStatus | null>('yan:voice:pick', kind),
+    transcribe: (wav, language) => invoke<VoiceTranscribeResult>('yan:voice:transcribe', wav, language)
   },
 
   /* ---- 手机接入 ---- */

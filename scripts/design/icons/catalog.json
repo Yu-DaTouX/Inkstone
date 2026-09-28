@@ -331,6 +331,12 @@
       "group": "空间",
       "use": "音频内容"
     },
+    "mic": {
+      "lib": "lucide",
+      "name": "mic",
+      "group": "操作",
+      "use": "语音输入：录音后转写到输入框"
+    },
     "sun": {
       "lib": "lucide",
       "name": "sun",

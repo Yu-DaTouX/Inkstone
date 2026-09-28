@@ -1110,6 +1110,8 @@ export interface AppSettings {
    * 形状与默认值见 `shared/remote-protocol.ts` 的 RemoteAccessSettings。
    */
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
+  /** 电脑本地语音输入（需求稿 3.5）：选用的模型、已有程序路径、识别语言。见 `shared/voice-input.ts` */
+  voiceInput?: import('./voice-input').VoiceInputSettings
   /**
    * 模式快捷键的组合键文本（例如 `Ctrl+Tab` / `Ctrl+Shift+M`）。
    *
@@ -3818,6 +3820,20 @@ export interface YanBridge {
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
     compare(path: string, cwd?: string): Promise<import('./office').OfficeCompareResult>
+  }
+  /**
+   * 电脑本地语音输入：状态与推荐、先核实再下载（plan → 用户确认 → download）、转写。
+   * `pick` 让用户选已有的程序或模型文件；选中后写进设置。
+   */
+  voice: {
+    status(): Promise<import('./voice-input').VoiceInputStatus>
+    plan(
+      target: import('./voice-input').VoiceDownloadPlan['target']
+    ): Promise<{ ok: true; plan: import('./voice-input').VoiceDownloadPlan } | { ok: false; error: string }>
+    download(planId: string): Promise<{ ok: boolean; error?: string }>
+    cancel(): Promise<void>
+    pick(kind: 'binary' | 'model'): Promise<import('./voice-input').VoiceInputStatus | null>
+    transcribe(wav: Uint8Array, language?: import('./voice-input').VoiceLanguage): Promise<import('./voice-input').VoiceTranscribeResult>
   }
 
   /**

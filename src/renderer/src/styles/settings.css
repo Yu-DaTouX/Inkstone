@@ -1055,3 +1055,34 @@ html[data-theme='light'] .ob-scrim {
   color: var(--fg-mute);
   text-decoration: line-through;
 }
+
+/* 设置 · 语音输入：三档模型并排，窄窗口自动换行 */
+.voice-models {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: var(--sp-2);
+}
+
+.voice-model {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  min-width: 0;
+}
+
+.voice-model.on {
+  border-color: var(--accent);
+}
+
+.voice-model-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.voice-progress {
+  width: 100%;
+}

@@ -33,6 +33,7 @@ import { projectIdForCwd } from './project-id'
 import { DEFAULT_WORK_MODE, migrateLegacyAutonomous, normalizeWorkMode, normalizeWorkModeShortcut } from '../shared/work-mode'
 import { migrateToolLayout, normalizeToolLayout } from '../shared/tool-layout'
 import { isWorkspaceMode } from '../shared/workspace-mode'
+import { voiceModelSpec } from '../shared/voice-input'
 import {
   sanitizeContextPolicyByModel,
   sanitizeContextPolicyOverrides
@@ -491,6 +492,20 @@ function sanitizeRemoteAccess(value: unknown): AppSettings['remoteAccess'] {
   }
 }
 
+/** 语音输入设置：模型只认目录里的 id 或绝对路径的 .bin；程序只认绝对路径的 .exe；语言三选一 */
+function sanitizeVoiceInput(value: unknown): AppSettings['voiceInput'] {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  const model = raw.model as { kind?: unknown; id?: unknown; path?: unknown } | undefined
+  const isAbs = (p: unknown): p is string => typeof p === 'string' && /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(p)
+  const out: NonNullable<AppSettings['voiceInput']> = {}
+  if (model?.kind === 'catalog' && typeof model.id === 'string' && voiceModelSpec(model.id)) out.model = { kind: 'catalog', id: model.id }
+  else if (model?.kind === 'file' && isAbs(model.path) && /\.bin$/i.test(model.path)) out.model = { kind: 'file', path: model.path }
+  if (isAbs(raw.binaryPath) && /\.exe$/i.test(raw.binaryPath)) out.binaryPath = raw.binaryPath
+  if (raw.language === 'auto' || raw.language === 'zh' || raw.language === 'en') out.language = raw.language
+  return Object.keys(out).length ? out : undefined
+}
+
 export async function patchSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   /* 排队：上一个写完才轮到本个（失败也不能断链，否则后面的永远等不到） */
   const task = writeQueue.then(() => applyPatch(patch), () => applyPatch(patch))
@@ -575,6 +590,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   }
   if ('workModeShortcut' in patch) next.workModeShortcut = normalizeWorkModeShortcut(next.workModeShortcut)
   if ('remoteAccess' in patch) next.remoteAccess = sanitizeRemoteAccess(next.remoteAccess)
+  if ('voiceInput' in patch) next.voiceInput = sanitizeVoiceInput(next.voiceInput)
   // 旧的路径 → 名称映射同步到实体，之后 UI 可以只依赖 projects。
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

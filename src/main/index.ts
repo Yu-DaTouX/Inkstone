@@ -85,6 +85,8 @@ import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
+import { registerVoiceIpc } from './ipc/voice-ipc'
+import { VoiceService } from './voice/voice-service'
 import { RemoteAccess } from './remote-access'
 import {
   REMOTE_ARTIFACT_MAX_BYTES,
@@ -8041,6 +8043,16 @@ function registerIpc(): void {
 
   /* ---- 办公文件：预览与修改对比 ---- */
   registerOfficeIpc(ipc, async () => (await getSettings()).cwd)
+
+  /* ---- 语音输入：本地转写（下载须经界面确认） ---- */
+  registerVoiceIpc(ipc, {
+    service: new VoiceService(async () => (await getSettings()).voiceInput),
+    window: () => win,
+    settings: async () => (await getSettings()).voiceInput,
+    saveSettings: async (voiceInput) => {
+      await patchSettings({ voiceInput })
+    }
+  })
 
   /* ---- 手机接入 ---- */
   registerRemoteIpc(ipc, {
