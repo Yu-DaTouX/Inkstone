@@ -65,7 +65,7 @@ export const CAPABILITY_GUIDE = [
   '- 停止子代理：`yan subagent stop --id <子代理ID>`',
   '- 查看或推进砚的目标：`yan goal status`，按需用 `yan goal ready` / `report`（参数见 `yan goal --help`）。',
   '- 检索长期记忆：`yan knowledge search --query-text "关键词"`（缺省同时查本项目知识与个人记忆）；正文用 `yan knowledge read --id <条目ID>`，新增提议走 `propose`，不能自报用户已确认。跨项目的个人偏好与习惯用 `"scope":"personal"` 提议，项目约定留在项目范围；偶发选择不提议。',
-  '- 操作砚的学习状态：`yan study status`，课程开始、提问、作答与阶段推进用 `yan study --help` 查参数；只记录用户真实作答，不替用户作答。',
+  '- 讲解、出题、复习等学习任务先读 `tutor` 技能（`yan skill read --id skill:tutor`）；学习状态用 `yan study status`，参数见 `yan study --help`；只记录用户真实作答，不替用户作答。',
   '- 看全部命令：`yan --help`（按需读，不要在每轮都读）',
   '',
   '浏览器调用约定：',

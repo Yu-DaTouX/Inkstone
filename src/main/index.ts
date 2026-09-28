@@ -154,6 +154,7 @@ import { readContextActions } from './context-actions'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from './attachments'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
+import { exportLearningData } from './learning-export'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import {
@@ -8637,6 +8638,8 @@ app.whenReady().then(async () => {
    * 导出的技能在第一次会话就能加载。失败只跳过，不挡启动；原文件保留。
    */
   await migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error))
+  /* 学习记录的可读副本（YAN_DIR/learning-export）：派生文件，每次启动重写，原数据不动 */
+  void exportLearningData().catch((error) => console.error('[yan] 学习记录导出失败：', error))
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」
   const started = await startAgent()
