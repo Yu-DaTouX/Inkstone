@@ -28,10 +28,6 @@
  *   ③ **用户消息优先**：assistant 消息结束 ≠ 回合立刻空闲（可能还有工具/队列），
  *      所以延迟一次**二次确认**；期间用户又发话或又调了工具，就放弃这次续行，
  *      resume 留着，等下一次真正空闲。
- *   ④ **学习闸门**（实施-25 P08 T08-3）：`study-gate/<runnerId>.json` 说
- *      「正在等学习者作答」就不发 —— 这一道是**真正启动下一轮模型之前**的最后一次检查，
- *      与宿主的入队闸成对，挡住两者之间才变成等待的那个窗口（TOCTOU）。
- *      跳过时**不写消费证据**：作答后还能用，而不是被假证据吃掉。
  */
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -92,21 +88,6 @@ function resumeFile() {
 /** 这个扩展自己的消费证据（薄层可写；宿主不参与）。 */
 function consumedFile() {
   return join(dataDir(), 'goal-resume', `${safeKey()}.consumed.json`)
-}
-
-/**
- * 学习闸门（实施-25 P08）：宿主在「等学习者作答」时写这份每实例文件。
- *
- * 文件名必须与宿主的 `learning-store.studyGatePath` 一致 ——
- * 两边不一致的后果是「闸门写了但没人看见」，而这里看不出来（只是续行照发）。
- */
-function studyGateFile() {
-  return join(dataDir(), 'study-gate', `${safeKey()}.json`)
-}
-
-function waitingForLearner() {
-  const raw = readJson(studyGateFile())
-  return raw?.waiting === true
 }
 
 function note(hook, payload) {
@@ -259,12 +240,6 @@ export default function goalResume(pi) {
     }
     note('check', { hasResume: !!resume, operationId: resume?.operationId ?? null, attempts })
     if (!resume) return
-
-    /* ④ 学习闸门（P08）：正在等学习者作答就**不发**，也不写消费证据（见文件头）。 */
-    if (waitingForLearner()) {
-      note('resume_skipped', { reason: 'study-waiting', operationId: resume.operationId, kind: resume.kind })
-      return
-    }
 
     const target = rememberSender(context)
     if (!target) {

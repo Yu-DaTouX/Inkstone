@@ -19,8 +19,6 @@ import {
   type ExternalApiConfirmationRequest,
   type ToolConsentPrompt,
   type GoalCommandHost,
-  type StudyCommandHost,
-  type ExerciseCommandHost,
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
@@ -173,9 +171,6 @@ import { SpaceStore } from './space-store'
 import { LibraryService } from './library-service'
 import { ContextAssembler, type AssembleContextRequest } from './context-assembler'
 import { ArtifactDocStore } from './artifact-doc-store'
-import { CourseService } from './course-service'
-import { LearningService } from './learning-service'
-import { ExerciseService } from './exercise-service'
 import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
@@ -189,14 +184,6 @@ import {
 } from '../shared/activity-model'
 import { normalizeAgentActivity } from '../shared/agent-profile'
 import type { AgentActivity } from '../shared/agent-profile'
-import type {
-  ExerciseMutation,
-  ExerciseResponse,
-  HintLevel
-} from '../shared/exercise'
-import type { ConceptProgress, NoteMutation } from '../shared/learning-memory'
-import type { ReviewMutation } from './learning-service'
-import { dueReviews } from '../shared/review'
 import {
   artifactSourceStatuses,
   excerptReadable,
@@ -206,8 +193,6 @@ import {
   type SourceRefStatus
 } from '../shared/research'
 import type { AgentEditInput, ArtifactMutation, ArtifactSourceRef, CreateArtifactInput } from '../shared/artifact-doc'
-import type { CourseInput, CourseMutation, CourseSourceRef } from '../shared/course'
-import { waitingNote, type StudyMutation, type StudyPhase } from '../shared/study'
 import { currentTaskPlan } from './task-plan-store'
 import {
   activeSources,
@@ -239,8 +224,7 @@ import type {
   RunnerStatus,
   SessionState,
   SessionSummary,
-  UIMessage,
-  CourseUnitInput
+  UIMessage
 } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -1046,24 +1030,6 @@ const AUTO_CONTINUE_LIMIT_EFFECTIVE = autoContinueOptions.limit ?? AUTO_CONTINUE
 
 
 /**
- * 学习闸门（实施-25 P08 T08-3）：这个会话是不是正等着学习者作答。
- *
- * 查的是**落盘的会话本体**，所以重开应用后照样拦得住（T08-2）。
- * 读失败时**不拦**：读不出来是 IO 故障，不该顺带把自主档整个停掉
- * （真正的等待在盘上，下一次检查会读到）。
- *
- * 这是两道闸中的**第一道**（入队时）；第二道在薄层真正发消息前，
- * 读的是 `study-gate/<runnerId>.json`（宿主在这里写、那边读）。
- */
-async function studyGateBlocks(id: string): Promise<boolean> {
-  try {
-    return await learnings.waitingForLearner(id)
-  } catch {
-    return false
-  }
-}
-
-/**
  * 会话后台工作的调度服务（src/main/session-work-scheduler.ts）：
  * 回合收尾后的交接 / 目标续跑 / 重复拦下补记，以及模型报错后的自动继续，都只在这里决定。
  * 入口（桌面 IPC、远程控制）只调用它，不各自复制调度规则。
@@ -1078,7 +1044,6 @@ const sessionWork = createSessionWorkScheduler({
   workModeKeyFor: (id) => workModeKeyFor(id),
   autoContinues,
   autoContinueLimit: AUTO_CONTINUE_LIMIT_EFFECTIVE,
-  studyGateBlocks: (id) => studyGateBlocks(id),
   writeRetrySnapshot: (id, snapshot) => writeGoalResumeSnapshot(id, snapshot),
   notify: (id, message, notifyType, idPrefix) => {
     pushFrom(id, {
@@ -1974,86 +1939,12 @@ const contextAssembler = new ContextAssembler({ library })
 const artifactDocs = new ArtifactDocStore()
 
 /**
- * 课程与路线（实施-25 P07）。
- *
- * 依赖资料库：三个入口里「学这份资料」要读指定那一版的真实正文，
- * 再把正文切成带出处的单元（规则是确定性的，不调模型）。
- * 第四个入口（P06b-4）要先读成果正文、再把它登记成一份资料库来源。
- */
-const courses = new CourseService({
-  library,
-  artifacts: {
-    read: async (artifactId) => {
-      await artifactDocs.load()
-      const doc = artifactDocs.find(artifactId)
-      if (!doc) return null
-      const version = doc.versions.find((v) => v.version === doc.currentVersion)
-      return {
-        id: doc.id,
-        title: doc.title,
-        text: version?.text ?? '',
-        ...(doc.spaceId ? { spaceId: doc.spaceId } : {})
-      }
-    }
-  },
-  importer: {
-    importText: (params) =>
-      library.import({
-        kind: 'text',
-        ref: params.ref,
-        identity: params.identity,
-        title: params.title,
-        content: params.content,
-        ...(params.spaceId ? { spaceId: params.spaceId } : {}),
-        ...(params.owner ? { owner: params.owner } : {})
-      })
-  }
-})
-
-/**
- * 学习状态与学习记忆（实施-25 P08 / P11）。
- *
- * 只在这里建一份：自动续跑的闸门（`studyGateBlocks`）与界面（`yan:study:*`）
- * 查的是同一个对象，否则「界面看见在等、宿主却以为没在等」迟早会分家（T08-4）。
- * 进度重算要用练习服务的作答事实源，而练习服务又要本服务记进度 —— 两者运行时
- * 没有循环，但构造有先后：所以用懒引用（`attempts` 函数）而不是构造参数。
- */
-let exercises!: ExerciseService
-const learnings = new LearningService({ courses, attempts: () => exercises.snapshotForMemory() })
-
-/**
- * 练习与作答（实施-25 P10）。
- *
- * 与 `learnings` 一样只建一份：界面（`yan:exercise:*`）与模型（`yan exercise`）
- * 必须读写同一份揭示状态与作答记录，否则模型说「他没看提示」而界面知道他看了。
- * `memory` 把它接到学习服务：提交一次作答就重算一次 `ConceptProgress`（T11-3）。
- */
-exercises = new ExerciseService({ courses, library, memory: learnings })
-
-/** 纯逻辑层的 `ExerciseMutation` → IPC 形状。 */
-function exerciseResult(m: ExerciseMutation) {
-  return m.ok ? { ok: true as const, exercise: m.exercise } : { ok: false as const, error: m.reason }
-}
-
-/**
  * 持续关注（实施-25 P16）。
  *
  * 这个 store 里**没有调度器**：宿主不主动调模型（会变成后台花钱），
  * 它只回答「谁到点了」并把模型回报的结果记下来。
  */
 const follows = new FollowStore()
-
-/** 笔记写操作的 IPC 形状（与课程 / 成果同一约定）。 */
-function noteResult(m: NoteMutation) {
-  return m.ok
-    ? { ok: true as const, note: m.note, ...(m.unchanged ? { unchanged: true } : {}) }
-    : { ok: false as const, error: m.reason }
-}
-
-/** 概念进度的 IPC 形状。 */
-function conceptResult(m: { ok: true; progress: ConceptProgress } | { ok: false; reason: string }) {
-  return m.ok ? { ok: true as const, progress: m.progress } : { ok: false as const, error: m.reason }
-}
 
 /**
  * 成果引用的资料现在怎么样了（P13 T13-4）：只回报状态，**不改引用**。
@@ -2109,52 +2000,6 @@ async function runResearchRead(input: ResearchReadInput) {
     })
   }
   return { ok: true as const, excerpts, skipped }
-}
-
-/** 复习项写操作的 IPC 形状（与笔记 / 概念同一口径）。 */
-function reviewResult(m: ReviewMutation) {
-  return m.ok ? { ok: true as const, review: m.review } : { ok: false as const, error: m.reason }
-}
-
-/** `--locator '{"start":0,"end":120}'`（CLI 传的是字符串）与对象两种写法都要认。 */
-function parseLocator(raw: unknown): { start: number; end: number } | undefined {
-  let value: unknown = raw
-  if (typeof raw === 'string') {
-    try {
-      value = JSON.parse(raw)
-    } catch {
-      return undefined
-    }
-  }
-  if (!value || typeof value !== 'object') return undefined
-  const o = value as { start?: unknown; end?: unknown }
-  const start = Number(o.start)
-  const end = Number(o.end)
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) return undefined
-  return { start: Math.trunc(start), end: Math.trunc(end) }
-}
-
-/** 纯逻辑层的 `StudyMutation` → IPC 形状。 */
-function studyResult(m: StudyMutation) {
-  return m.ok ? { ok: true as const, session: m.session } : { ok: false as const, error: m.reason }
-}
-
-/**
- * 渲染端可以不传 runnerKey（缺省用当前正在看的会话）。
- *
- * 为什么不让界面自己拼：它手里只有「会话文件 / 会话 id」两种可能的值，
- * 拼错了就会查到一个不存在的键 —— 闸门静默失效，而这正是最不该静默的地方。
- */
-function studyKey(value: unknown): string {
-  const raw = typeof value === 'string' ? value.trim() : ''
-  return raw || ac()?.getState()?.sessionId || ''
-}
-
-/** 纯逻辑层的 `CourseMutation` → IPC 形状。 */
-function courseResult(m: CourseMutation) {
-  return m.ok
-    ? { ok: true as const, course: m.course, ...(m.unchanged ? { unchanged: true } : {}) }
-    : { ok: false as const, error: m.reason }
 }
 
 /** 纯逻辑层的 `ArtifactMutation` → IPC 形状。 */
@@ -2471,13 +2316,6 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
      */
     if (mode.mode !== 'autonomous' && !goal.pursue) return
 
-    /*
-     * 正在等学习者作答：自主档不该在这时候把模型叫起来（P08 T08-3）。
-     * 不记事件 —— 每次回合收尾都会走到这里，记了只会刷屏；
-     * 真正需要看的「为什么本轮起了来」在 `goal.report` 的 note 里。
-     */
-    if (await studyGateBlocks(id)) return
-
     const resume = goals.resumeOf(key)
     if (resume) {
       /* 还没消费的续行仍交给 goal-resume 扩展，不能覆盖它。 */
@@ -2546,217 +2384,10 @@ async function maybeArmGoalContinue(id: string): Promise<void> {
  *    「本轮收尾，下一轮开始执行」——不然模型会以为现在就能写文件。
  */
 /**
- * `yan study …` 的宿主实现（实施-25 P08）。
- *
- * 为什么必须有这一族命令：**进入「等你作答」只能由宿主判定**（T08-7）。
- * 模型只能**请求**提问（`study.ask`），不能自己把阶段推成反馈 / 小结 ——
- * 那道校验在 `learning-service` 的转移表里，不依赖模型自觉。
- */
-/** 命令参数可能是 `--next-step` 或请求文件里的 `nextStep`，两种都认。 */
-function studyParam(params: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = params[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return ''
-}
-
-const studyCapabilityHost: StudyCommandHost = {
-  async run(command, params, context) {
-    const key = context.sessionId
-    const courseId = studyParam(params, 'courseId', 'course', 'id')
-    const unitId = studyParam(params, 'unitId', 'unit')
-    const nextStep = studyParam(params, 'nextStep', 'next-step')
-    const call = async (): Promise<{ data?: unknown; summary: Record<string, unknown> }> => {
-      switch (command) {
-        case 'study.start': {
-          const res = await learnings.start({
-            courseId,
-            ...(unitId ? { unitId } : {}),
-            runtimeKey: key,
-            ...(nextStep ? { nextStep } : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          const status = await learnings.status(key)
-          return { data: { session: res.session, resume: status.resume }, summary: { ok: true, phase: res.session.phase, courseId: res.session.courseId } }
-        }
-        case 'study.ask': {
-          const res = await learnings.ask({
-            runtimeKey: key,
-            question: studyParam(params, 'question'),
-            ...(studyParam(params, 'expectation') ? { expectation: studyParam(params, 'expectation') } : {}),
-            origin: params.origin === 'model' ? 'model' : 'material',
-            ...(Array.isArray(params.sources) ? { sources: params.sources as CourseSourceRef[] } : {}),
-            ...(nextStep ? { nextStep } : {})
-          })
-          /*
-           * 被拒也要回 `summary.ok:false` 而不是抛错：`awaiting-learner` 这类拒绝
-           * 是**正常语义**（模型想跳过等待），该让它读到原因并改做法，不是崩掉。
-           */
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase, waiting: true } }
-        }
-        case 'study.answer': {
-          const res = await learnings.answer({ runtimeKey: key, text: studyParam(params, 'text', 'answer') })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase } }
-        }
-        case 'study.advance': {
-          const res = await learnings.advance({
-            runtimeKey: key,
-            to: studyParam(params, 'to', 'phase') as StudyPhase,
-            ...(nextStep ? { nextStep } : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase } }
-        }
-        case 'study.pause':
-        case 'study.resume':
-        case 'study.stop': {
-          const action = command.slice('study.'.length)
-          const res =
-            action === 'pause'
-              ? await learnings.pause(key)
-              : action === 'resume'
-                ? await learnings.resume(key)
-                : await learnings.stop(key)
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { session: res.session }, summary: { ok: true, phase: res.session.phase, paused: res.session.paused } }
-        }
-        case 'study.status': {
-          const status = await learnings.status(key)
-          return {
-            data: status,
-            summary: {
-              ok: true,
-              phase: status.session?.phase ?? null,
-              waiting: status.waiting,
-              gate: status.gate?.waiting === true
-            }
-          }
-        }
-        /*
-         * 笔记与概念进度（实施-25 P11）。
-         *
-         * 模型可以记笔记（它刚讲完一段，落一条笔记是自然的），也可以读进度
-         * 来调整下一步；但**自评只属于用户**，所以 `concept.assess` 也不设为
-         * 模型专用口 —— 界面上是按钮，模型很少需要它。
-         */
-        case 'note.list':
-          return { data: { notes: await learnings.listNotes(courseId) }, summary: { ok: true, courseId } }
-        case 'note.save': {
-          const res = await learnings.saveNote({ ...params, courseId })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { note: res.note }, summary: { ok: true, noteId: res.note.id } }
-        }
-        case 'note.update': {
-          const patch = params.patch && typeof params.patch === 'object' ? (params.patch as Record<string, unknown>) : params
-          const res = await learnings.updateNote(studyParam(params, 'noteId', 'id'), patch)
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { note: res.note }, summary: { ok: true, noteId: res.note.id } }
-        }
-        case 'note.remove': {
-          const removed = await learnings.removeNote(studyParam(params, 'noteId', 'id'))
-          return { summary: { ok: removed, error: removed ? undefined : '找不到这条笔记。' } }
-        }
-        case 'concept.list':
-          return { data: { progress: await learnings.listProgress(courseId) }, summary: { ok: true, courseId } }
-        case 'concept.assess': {
-          const res = await learnings.setSelfAssessment({
-            courseId,
-            conceptId: studyParam(params, 'conceptId', 'concept'),
-            kind: params.kind === 'suspect' ? 'suspect' : 'got-it',
-            ...(studyParam(params, 'text', 'note') ? { text: studyParam(params, 'text', 'note') } : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { progress: res.progress }, summary: { ok: true, kind: res.progress.selfAssessment?.kind ?? null } }
-        }
-        case 'concept.reset': {
-          const removed = await learnings.resetProgress(courseId, studyParam(params, 'conceptId', 'concept'))
-          return { summary: { ok: removed, error: removed ? undefined : '没有这条概念的观察记录。' } }
-        }
-        /*
-         * 错题与复习（实施-25 P12）。
-         *
-         * 模型可以**登记**一个卡点（这段没看懂 / 这个概念又问了一次），也可以
-         * 读计划看今天该练什么；但**没有「标记已掌握」** —— 复习项只能被连续
-         * 独立成功收掉，或者用户自己挪期 / 删掉。
-         */
-        case 'review.list':
-          return { data: { reviews: await learnings.listReviews(courseId) }, summary: { ok: true, courseId } }
-        case 'review.plan': {
-          const mode = params.mode === 'quick' ? 'quick' : 'due'
-          const budget = Number(params.minutesBudget ?? params.minutes)
-          const plan = await learnings.planToday(courseId, {
-            mode,
-            ...(Number.isFinite(budget) && budget > 0 ? { minutesBudget: budget } : {})
-          })
-          return {
-            data: plan,
-            summary: {
-              ok: true,
-              courseId,
-              due: plan.dueCount,
-              picked: plan.entries.length,
-              minutes: plan.minutes,
-              needsNewExercise: plan.needsNewExercise.length
-            }
-          }
-        }
-        case 'review.reading': {
-          const locator = parseLocator(params.locator)
-          const versionRaw = Number(params.version)
-          const res = await learnings.flagReading({
-            courseId,
-            sourceId: studyParam(params, 'sourceId', 'source'),
-            ...(studyParam(params, 'unitId', 'unit') ? { unitId: studyParam(params, 'unitId', 'unit') } : {}),
-            ...(Number.isFinite(versionRaw) && versionRaw > 0 ? { version: Math.trunc(versionRaw) } : {}),
-            ...(locator ? { locator } : {}),
-            ...(studyParam(params, 'note', 'text') ? { note: studyParam(params, 'note', 'text') } : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { review: res.review }, summary: { ok: true, reviewId: res.review.id, dueAt: res.review.dueAt } }
-        }
-        case 'review.question': {
-          const res = await learnings.flagQuestion({
-            courseId,
-            conceptId: studyParam(params, 'conceptId', 'concept'),
-            ...(studyParam(params, 'text', 'note') ? { text: studyParam(params, 'text', 'note') } : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return {
-            data: { review: res.review },
-            summary: { ok: true, reviewId: res.review.id, seenCount: res.review.seenCount, priority: res.review.priority }
-          }
-        }
-        case 'review.reschedule': {
-          const dueAtRaw = Number(params.dueAt ?? params.due ?? params['due-at'])
-          const res = await learnings.rescheduleReview(studyParam(params, 'reviewId', 'id'), {
-            ...(Number.isFinite(dueAtRaw) && dueAtRaw > 0 ? { dueAt: Math.trunc(dueAtRaw) } : {}),
-            ...(params.priority === 'high' || params.priority === 'normal' || params.priority === 'low'
-              ? { priority: params.priority }
-              : {})
-          })
-          if (!res.ok) return { summary: { ok: false, error: res.reason } }
-          return { data: { review: res.review }, summary: { ok: true, reviewId: res.review.id, dueAt: res.review.dueAt } }
-        }
-        case 'review.dismiss': {
-          const removed = await learnings.dismissReview(studyParam(params, 'reviewId', 'id'))
-          return { summary: { ok: removed, error: removed ? undefined : '找不到这条复习。' } }
-        }
-        default:
-          return { summary: { ok: false, error: `未知的 study 动作：${command}` } }
-      }
-    }
-    return call()
-  }
-}
-
-/**
  * 资料引用：按版本读片段，以及成果引用的资料现在怎么样了。
  * 对照与下结论的做法在 research 技能里。
  */
-const researchCapabilityHost: StudyCommandHost = {
+const researchCapabilityHost: GoalCommandHost = {
   async run(command, params) {
     switch (command) {
       case 'research.read': {
@@ -2802,7 +2433,7 @@ const researchCapabilityHost: StudyCommandHost = {
  *   · 不能删关注 —— 那是用户的东西；
  *   · 不能让宿主自己去查 —— 没有这种命令（不然就成了后台花钱）。
  */
-const followCapabilityHost: StudyCommandHost = {
+const followCapabilityHost: GoalCommandHost = {
   async run(command, params) {
     switch (command) {
       case 'follow.list': {
@@ -2888,120 +2519,6 @@ const followCapabilityHost: StudyCommandHost = {
         return { summary: { ok: false, error: `未知的关注动作：${command}` } }
     }
   }
-}
-
-/** 从宿主命令参数里取一段（嵌套的 `exercise` / `response` 也支持）。 */function nestedParam(params: Record<string, unknown>, ...keys: string[]): Record<string, unknown> {
-  for (const key of keys) {
-    const value = params[key]
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
-  }
-  return params
-}
-
-/** 把提交的作答还原成契约形状；认不出来就返回 null（不让形状错的东西进判分）。 */
-function exerciseResponseFrom(params: Record<string, unknown>): ExerciseResponse | null {
-  const raw = nestedParam(params, 'response', 'answer', 'reply')
-  const kind = typeof raw.kind === 'string' ? raw.kind : ''
-  if (kind === 'choice' && typeof raw.optionId === 'string') return { kind: 'choice', optionId: raw.optionId }
-  if (kind === 'cloze' && Array.isArray(raw.blanks)) {
-    return { kind: 'cloze', blanks: raw.blanks.map((b) => (typeof b === 'string' ? b : '')) }
-  }
-  if (kind === 'match' && Array.isArray(raw.pairs)) {
-    const pairs = raw.pairs
-      .map((p) => {
-        if (!p || typeof p !== 'object') return null
-        const pp = p as Record<string, unknown>
-        return typeof pp.left === 'string' && typeof pp.right === 'string' ? { left: pp.left, right: pp.right } : null
-      })
-      .filter((p): p is { left: string; right: string } => p !== null)
-    return { kind: 'match', pairs }
-  }
-  /* 纯文本作答是最常见的形态：模型与界面都可能只给一段话。 */
-  const text = typeof raw.text === 'string' ? raw.text : typeof params.text === 'string' ? params.text : ''
-  if (!text.trim()) return null
-  const objective = kind === 'text'
-  return objective ? { kind: 'text', text } : { kind: 'open', text }
-}
-
-/**
- * `yan exercise …` / `yan attempt …` 的宿主实现（实施-25 P10）。
- *
- * 关键边界：**判分与「看了多少帮助」都由服务自己算**。
- * 模型能出题、能看提示、能读反馈，但不能自己填一份「学习者做对了」的记录 ——
- * 那和自问自答把课学完是同一类漏洞（P08 已经拦了那一头）。
- */
-const exerciseCapabilityHost: ExerciseCommandHost = {
-  async run(command, params, context) {
-    const key = context.sessionId
-    const status = await learnings.status(key)
-    const session = status.session
-    const courseId = studyParam(params, 'courseId', 'course') || session?.courseId || ''
-    const unitId = studyParam(params, 'unitId', 'unit') || session?.unitId || ''
-    const exerciseId = studyParam(params, 'exerciseId', 'exercise', 'id')
-
-    switch (command) {
-      case 'exercise.create': {
-        const payload = { courseId, unitId, ...nestedParam(params, 'exercise', 'problem') }
-        const res = await exercises.create(payload)
-        if (!res.ok) return { summary: { ok: false, error: res.reason } }
-        return { data: { exercise: exerciseViewJson(res.exercise) }, summary: { ok: true, exerciseId: res.exercise.id, kind: res.exercise.kind } }
-      }
-      case 'exercise.draft': {
-        const res = await exercises.createFromUnit({ courseId, unitId })
-        if (!res.ok) return { summary: { ok: false, error: res.reason } }
-        return { data: { exercises: res.exercises.map(exerciseViewJson) }, summary: { ok: true, created: res.created } }
-      }
-      case 'exercise.list': {
-        const list = await exercises.listForUnit(courseId, unitId)
-        return { data: { exercises: list }, summary: { ok: true, count: list.length, courseId, unitId } }
-      }
-      case 'exercise.get': {
-        const view = await exercises.find(exerciseId)
-        if (!view) return { summary: { ok: false, error: '找不到这道题。' } }
-        return { data: { exercise: view }, summary: { ok: true, kind: view.kind } }
-      }
-      case 'exercise.hint': {
-        const res = await exercises.revealHint({ exerciseId, upto: studyParam(params, 'level', 'upto') as HintLevel })
-        if (!res.ok) return { summary: { ok: false, error: res.reason } }
-        return { data: res, summary: { ok: true, hints: res.hints.length } }
-      }
-      case 'exercise.solution': {
-        const res = await exercises.revealSolution(exerciseId)
-        if (!res.ok) return { summary: { ok: false, error: res.reason } }
-        return { data: res, summary: { ok: true, hasSolution: res.solution !== null } }
-      }
-      case 'exercise.submit': {
-        const response = exerciseResponseFrom(params)
-        if (!response) return { summary: { ok: false, error: '没看懂这份作答的形状。' } }
-        const res = await exercises.submit({ exerciseId, response })
-        if (!res.ok) return { summary: { ok: false, error: res.reason } }
-        return {
-          data: { attempt: res.attempt, feedback: res.feedback },
-          summary: { ok: true, correct: res.attempt.correct, independent: res.attempt.correct === true && res.attempt.hintLevelSeen === 'none' && !res.attempt.lookedAtSolution }
-        }
-      }
-      case 'attempt.correct': {
-        const res = await exercises.correct({
-          attemptId: studyParam(params, 'attemptId', 'attempt'),
-          text: studyParam(params, 'text', 'note', 'why'),
-          ...(typeof params.correct === 'boolean' ? { correct: params.correct } : {})
-        })
-        if ('reason' in res) return { summary: { ok: false, error: res.reason } }
-        return { data: { attempt: res }, summary: { ok: true } }
-      }
-      case 'exercise.remove': {
-        const removed = await exercises.remove(exerciseId)
-        return { summary: { ok: removed, error: removed ? undefined : '找不到这道题。' } }
-      }
-      default:
-        return { summary: { ok: false, error: `未知的 exercise 动作：${command}` } }
-    }
-  }
-}
-
-/** 给宿主命令的题目 JSON：**不含答案**（模型也不该拿到未揭示的答案）。 */
-function exerciseViewJson(exercise: { id: string; kind: string; prompt: string; unitId: string; courseId: string }): Record<string, unknown> {
-  return { id: exercise.id, kind: exercise.kind, prompt: exercise.prompt, courseId: exercise.courseId, unitId: exercise.unitId }
 }
 
 const goalCapabilityHost: GoalCommandHost = {
@@ -3144,20 +2661,7 @@ const goalCapabilityHost: GoalCommandHost = {
        */
       let continueNote: string | null = null
       let continueRound: number | null = null
-      /*
-       * 学习闸门（P08 T08-3）：等学习者作答时，本轮收尾后**不安排**下一次续接。
-       * 只对「本来会被自动叫醒」的会话查一次，标准档下不必付这次读盘。
-       */
-      const learningWaiting =
-        (modeState.mode === 'autonomous' || res.goal.pursue) && isActiveGoalPhase(res.goal.phase)
-          ? await studyGateBlocks(context.sessionId)
-          : false
-      if (learningWaiting) {
-        const learning = await learnings.status(context.sessionId)
-        continueNote = learning.resume
-          ? waitingNote(learning.resume)
-          : '正在等学习者作答：本轮收尾后不会自动继续。'
-      } else if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
+      if (!res.replayed && !hasHandoffOperation(context.sessionId) && (modeState.mode === 'autonomous' || res.goal.pursue)) {
         const armed = await goals.armContinue(key, {
           consumed: (operationId) => goalResumeContinuationWasConsumed(context.sessionId, operationId),
           usage: await goalBudgetUsage(context.sessionId, goals.startOf(key))
@@ -4485,11 +3989,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         /* 目标状态（实施-05 S3）：会话键与模式 store 都在本文件一侧。 */
         goalHost: goalCapabilityHost,
-        /* 学习状态（实施-25 P08）：阶段与等待同样归宿主（T08-7）。 */
-        studyHost: studyCapabilityHost,
-        /* 练习与作答（实施-25 P10）：判分与提示记录也在宿主，模型不能自报做对。 */
-        exerciseHost: exerciseCapabilityHost,
-        /* 跨资料研究（实施-25 P13）：多来源对照与引用状态。 */
+        /* 资料引用：按版本读片段与引用状态。 */
         researchHost: researchCapabilityHost,
         /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
         followHost: followCapabilityHost,
@@ -7266,186 +6766,6 @@ function registerIpc(): void {
   handle('yan:artifactDoc:sourceStatus', async (id: string) => runSourceStatus(id))
 
   /*
-   * 课程与路线（实施-25 P07）。
-   *
-   * 三个入口是三个方法，不是 `entry` 参数 —— 「学这份资料」要读真实正文并
-   * 切成带出处的单元，失败原因与另外两个完全不同，混成一个方法就只能报含糊的错。
-   */
-  handle('yan:course:list', async (spaceId?: string | null) => {
-    await courses.store.load()
-    return { ok: true, courses: courses.list(spaceId) }
-  })
-  handle('yan:course:create', async (input: CourseInput) => courseResult(await courses.create(input)))
-  handle('yan:course:createFromSource', async (params: { sourceId: string; version: number; input: CourseInput }) =>
-    courseResult(await courses.createFromSource(params))
-  )
-  handle('yan:course:createFromTopic', async (input: CourseInput) => courseResult(await courses.createFromTopic(input)))
-  handle('yan:course:createFromBlocker', async (input: CourseInput) =>
-    courseResult(await courses.createFromBlocker(input))
-  )
-  handle('yan:course:createFromArtifact', async (params: { artifactId: string; input: CourseInput }) =>
-    courseResult(await courses.createFromArtifact(params))
-  )
-  handle('yan:course:update', async (id: string, patch: { title?: string; goal?: string; level?: string; minutesPerDay?: number }) =>
-    courseResult(await courses.update(id, patch))
-  )
-  handle('yan:course:addUnit', async (id: string, unit: CourseUnitInput) => courseResult(await courses.addUnit(id, unit)))
-  handle(
-    'yan:course:updateUnit',
-    async (id: string, unitId: string, patch: { title?: string; target?: string | null; estimateMinutes?: number; note?: string }) =>
-      courseResult(await courses.updateUnit(id, unitId, patch))
-  )
-  handle('yan:course:moveUnit', async (id: string, unitId: string, delta: number) =>
-    courseResult(await courses.moveUnit(id, unitId, delta))
-  )
-  handle('yan:course:removeUnit', async (id: string, unitId: string) => courseResult(await courses.removeUnit(id, unitId)))
-  handle('yan:course:addConcept', async (id: string, name: string) => courseResult(await courses.addConcept(id, name)))
-  handle('yan:course:removeConcept', async (id: string, conceptId: string) =>
-    courseResult(await courses.removeConcept(id, conceptId))
-  )
-  handle('yan:course:archive', async (id: string, archived?: boolean) => courseResult(await courses.archive(id, archived ?? true)))
-  handle('yan:course:remove', async (id: string) => {
-    const res = await courses.remove(id)
-    /* 课程没了，它的练习与作答也不能留（否则 P11 会从孤儿记录里读进度）。 */
-    await exercises.removeCourse(id)
-    /* 笔记与概念进度同理：它们都按课程归属。 */
-    await learnings.removeMemory(id)
-    await learnings.remove(id)
-    return res
-  })
-
-  /*
-   * 学习状态（实施-25 P08）。
-   *
-   * `ask` 是**唯一**能进入「等你作答」的命令（T08-7）；`advance` 一律不带问题
-   * 与作答凭据，所以它既进不了等待也出不了等待 —— 模型不能自问自答把课学完。
-   * 作答只有用户的真实输入走 `answer`。
-   */
-  handle('yan:study:start', async (input: { courseId: string; unitId?: string; runtimeKey?: string; nextStep?: string }) =>
-    studyResult(await learnings.start({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
-  )
-  handle('yan:study:status', async (runtimeKey?: string) => learnings.status(studyKey(runtimeKey)))
-  handle('yan:study:statusOfCourse', async (courseId: string) => learnings.statusOfCourse(courseId))
-  handle('yan:study:list', async () => learnings.list())
-  handle(
-    'yan:study:ask',
-    async (input: {
-      runtimeKey?: string
-      question: string
-      expectation?: string
-      origin?: 'material' | 'model'
-      sources?: CourseSourceRef[]
-      nextStep?: string
-    }) => studyResult(await learnings.ask({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
-  )
-  handle('yan:study:answer', async (input: { runtimeKey?: string; text: string }) =>
-    studyResult(await learnings.answer({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
-  )
-  handle('yan:study:advance', async (input: { runtimeKey?: string; to: StudyPhase; nextStep?: string }) =>
-    studyResult(await learnings.advance({ ...input, runtimeKey: studyKey(input?.runtimeKey) }))
-  )
-  handle('yan:study:pause', async (runtimeKey?: string) => studyResult(await learnings.pause(studyKey(runtimeKey))))
-  handle('yan:study:resume', async (runtimeKey?: string) => studyResult(await learnings.resume(studyKey(runtimeKey))))
-  handle('yan:study:stop', async (runtimeKey?: string) => studyResult(await learnings.stop(studyKey(runtimeKey))))
-  handle('yan:study:remove', async (courseId: string) => learnings.remove(courseId))
-
-  /*
-   * 练习与作答（实施-25 P10）。
-   *
-   * `get` / `list` 返回的题目视图**不含答案**（T10-2）；
-   * `revealHint` / `revealSolution` 是显式的揭示动作，
-   * 而「揭示到哪、看没看解释」由服务记录，提交作答时会写进这次 `Attempt`。
-   */
-  handle('yan:exercise:listForUnit', async (input: { courseId: string; unitId: string }) =>
-    exercises.listForUnit(input?.courseId ?? '', input?.unitId ?? '')
-  )
-  handle('yan:exercise:listForCourse', async (courseId: string) => exercises.listForCourse(courseId))
-  handle('yan:exercise:get', async (exerciseId: string) => exercises.find(exerciseId))
-  handle('yan:exercise:create', async (input: unknown) => exerciseResult(await exercises.create(input)))
-  handle('yan:exercise:createFromUnit', async (input: { courseId: string; unitId: string; maxExercises?: number }) => {
-    const res = await exercises.createFromUnit({
-      courseId: input?.courseId ?? '',
-      unitId: input?.unitId ?? '',
-      ...(Number.isFinite(Number(input?.maxExercises)) ? { maxExercises: Number(input.maxExercises) } : {})
-    })
-    return res.ok
-      ? { ok: true as const, exercises: res.exercises, created: res.created }
-      : { ok: false as const, error: res.reason }
-  })
-  handle('yan:exercise:revealHint', async (input: { exerciseId: string; upto: HintLevel }) =>
-    exercises.revealHint({ exerciseId: input?.exerciseId ?? '', upto: input?.upto })
-  )
-  handle('yan:exercise:revealSolution', async (exerciseId: string) => exercises.revealSolution(exerciseId))
-  handle('yan:exercise:submit', async (input: { exerciseId: string; response: ExerciseResponse }) =>
-    exercises.submit({ exerciseId: input?.exerciseId ?? '', response: input?.response })
-  )
-  handle('yan:exercise:attempts', async (exerciseId: string) => exercises.attempts(exerciseId))
-  handle('yan:exercise:correct', async (input: { attemptId: string; text: string; correct?: boolean | null }) => {
-    const res = await exercises.correct({
-      attemptId: input?.attemptId ?? '',
-      text: input?.text ?? '',
-      ...(input?.correct === undefined ? {} : { correct: input.correct })
-    })
-    /* 服务返回的是 `Attempt | { ok:false, reason }`——这里要包成界面约定的 IPC 形状。 */
-    return 'reason' in res ? { ok: false as const, error: res.reason } : { ok: true as const, attempt: res }
-  })
-  handle('yan:exercise:remove', async (exerciseId: string) => exercises.remove(exerciseId))
-  handle('yan:exercise:removeCourse', async (courseId: string) => exercises.removeCourse(courseId))
-
-  /*
-   * 笔记与概念进度（实施-25 P11）。
-   *
-   * 笔记是用户自己的记录（可改可删）；概念进度是**从作答现算的摘要**，
-   * 所以没有「直接改 level」的接口 —— 只有用户自评（`selfAssessment`）
-   * 与「重新算」（`reset`）。这样两条轴不会被一次调用悄悄改错（T11-2/T11-5）。
-   */
-  handle('yan:note:list', async (courseId: string) => learnings.listNotes(courseId))
-  handle('yan:note:save', async (input: unknown) => noteResult(await learnings.saveNote(input)))
-  handle('yan:note:update', async (input: { id: string; patch: unknown }) =>
-    noteResult(await learnings.updateNote(input?.id ?? '', input?.patch))
-  )
-  handle('yan:note:remove', async (id: string) => learnings.removeNote(id))
-  handle('yan:concept:list', async (courseId: string) => learnings.listProgress(courseId))
-  handle(
-    'yan:concept:assess',
-    async (input: { courseId: string; conceptId: string; kind: 'got-it' | 'suspect'; text?: string }) =>
-      conceptResult(await learnings.setSelfAssessment(input))
-  )
-  handle('yan:concept:reset', async (input: { courseId: string; conceptId: string }) =>
-    learnings.resetProgress(input?.courseId ?? '', input?.conceptId ?? '')
-  )
-  /*
-   * 错题与复习（实施-25 P12）。
-   *
-   * 只读的 `plan` / `due` 是「今天干什么」的入口（界面与模型都用）；
-   * 写操作里**没有「标记已掌握」** —— 复习项只能被连续独立成功收掉，
-   * 或用户手动挪期 / 删掉（T12-4）。
-   */
-  handle('yan:review:list', async (courseId: string) => learnings.listReviews(courseId))
-  handle('yan:review:due', async () => {
-    const items = await learnings.listReviews('')
-    return { items: dueReviews(items, Date.now()), total: items.length }
-  })
-  handle(
-    'yan:review:plan',
-    async (input: { courseId: string; mode?: 'due' | 'quick'; minutesBudget?: number }) =>
-      learnings.planToday(input?.courseId ?? '', {
-        ...(input?.mode ? { mode: input.mode } : {}),
-        ...(input?.minutesBudget !== undefined ? { minutesBudget: input.minutesBudget } : {})
-      })
-  )
-  handle('yan:review:reading', async (input: Parameters<typeof learnings.flagReading>[0]) =>
-    reviewResult(await learnings.flagReading(input))
-  )
-  handle('yan:review:question', async (input: Parameters<typeof learnings.flagQuestion>[0]) =>
-    reviewResult(await learnings.flagQuestion(input))
-  )
-  handle('yan:review:reschedule', async (input: { id: string; dueAt?: number; priority?: 'high' | 'normal' | 'low' }) =>
-    reviewResult(await learnings.rescheduleReview(input?.id ?? '', input ?? {}))
-  )
-  handle('yan:review:dismiss', async (id: string) => learnings.dismissReview(id))
-
-  /*
    * 持续关注（实施-25 P16）。
    *
    * 没有「立即执行」这种 IPC：宿主不会自己去查（那是后台花钱且用户看不见）。
@@ -7592,7 +6912,6 @@ function registerIpc(): void {
        *   · 学习：只有真在等学习者才出状态（其余一律不出）。
        */
       questionLog,
-      waitingGate: (runtimeKey) => learnings.waitingGate(runtimeKey),
       /*
        * T4：「跑完了但没被确认」——这是七态里唯一的近似，所以卡片会带上 approximate。
        * 两个条件都要满足（缺一个都会误报）：

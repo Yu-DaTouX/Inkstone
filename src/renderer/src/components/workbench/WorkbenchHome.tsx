@@ -63,13 +63,6 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
   const spaces = useStore((s) => s.spaces)
   const library = useStore((s) => s.library)
   const projectNames = useStore((s) => s.settings?.projectNames ?? NO_PROJECT_NAMES)
-  /* 今天可复习（P12）：只读到期数量，点进去才挑题 —— 首页不做「开始学习」。 */
-  const reviewDue = useStore((s) => s.reviewDue)
-  const refreshReviewDue = useStore((s) => s.refreshReviewDue)
-  const openSpaceView = useStore((s) => s.openSpaceView)
-  useEffect(() => {
-    void refreshReviewDue()
-  }, [refreshReviewDue])
 
   const sources = useSessionSources(session?.sessionId)
 
@@ -177,30 +170,6 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
               {currentTodo ? <p className="wb-card-main">{currentTodo.text}</p> : null}
             </>
           ) : null}
-        </section>
-      )
-    })
-  }
-
-  if (reviewDue && reviewDue.items.length > 0) {
-    cards.push({
-      id: 'review',
-      node: (
-        <section className="wb-card" data-testid="wb-card-review" key="review">
-          <h2 className="wb-card-title">
-            <Icon name="history" size={12} />
-            {t('wb.reviewCard')}
-          </h2>
-          <p className="wb-card-main" data-testid="wb-card-review-count">
-            {t('wb.reviewCount', { n: reviewDue.items.length })}
-          </p>
-          <p className="wb-card-meta" data-testid="wb-card-review-meta">
-            {t('wb.reviewMeta', { total: reviewDue.total })}
-          </p>
-          <button className="btn sm wb-open-map" data-testid="wb-open-review" onClick={() => openSpaceView('learning')}>
-            {t('wb.reviewOpen')}
-            <Icon name="chevron-right" size={12} />
-          </button>
         </section>
       )
     })

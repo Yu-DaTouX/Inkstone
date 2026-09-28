@@ -2,7 +2,7 @@
  * 任务收件箱契约（实施-28 T1）。
  *
  * 这是**投影**，不是第二事实源：`TaskCard` 的每个字段都必须能指回某个既有事实
- * （运行实例 / 任务计划 / 目标 / 提问挂起 / 学习等待 / 子代理 / 用户忽略）。
+ * （运行实例 / 任务计划 / 目标 / 提问挂起 / 子代理 / 用户忽略）。
  * 所以这里的核心是 `projectTaskCard(facts)` —— 纯函数，输入是各事实源的投影，
  * 输出是一张卡或 `null`（这条会话没有什么可说的时候，就不占位置）。
  *
@@ -28,7 +28,7 @@ export type TaskStatus =
 export const TASK_STATUS_SOURCE: Record<TaskStatus, string> = {
   pending: '任务计划里有还没开始的步骤',
   running: '运行实例注册表里这条会话正在跑',
-  waiting_user: '提问挂起 / 学习等待 / 目标 blocked',
+  waiting_user: '提问挂起 / 目标 blocked',
   failed: '运行实例报失败',
   needs_review: '**没有精确来源**：调用方传入的近似（跑完了但用户没确认）',
   done: '任务计划全部完成，或目标 completed',
@@ -65,8 +65,6 @@ export interface TaskFacts {
   }
   /** 提问挂起（`yan question ask` 正在等用户回答） */
   question?: { pending: boolean; text?: string }
-  /** 学习：这一节在等学习者（`waiting_for_learner`） */
-  study?: { waiting: boolean; reason?: string }
   subagents?: { running?: number; waiting?: number; failed?: number }
   /**
    * 「跑完了但没被确认」的近似标记（见文件头：这是七态里唯一的缺口）。
@@ -199,12 +197,11 @@ export function projectTaskCard(facts: TaskFacts): TaskCard | null {
   return null
 }
 
-/** 三类「等用户」的合一判定 —— 原因要能读出来是谁在等、等什么 */
+/** 两类「等用户」的合一判定 —— 原因要能读出来是谁在等、等什么 */
 function waitingReason(facts: TaskFacts): string | undefined {
   if (facts.question?.pending) {
     return facts.question.text ? `等你的回答：${facts.question.text}` : '有一个提问在等你回答'
   }
-  if (facts.study?.waiting) return facts.study.reason ?? '学习这一节在等你的作答'
   if (facts.goal?.phase === 'blocked') {
     return facts.goal.blockedReason ? `目标被阻塞：${facts.goal.blockedReason}` : '目标被阻塞，需要你决定方向'
   }

@@ -91,11 +91,10 @@
   ok(!!q('[data-testid="space-workbench"]'), '概览打开了')
   ok(!!q('[data-testid="space-overview"]'), '概览页渲染')
 
-  log('=== 3. 四个入口来回切 ===')
+  log('=== 3. 三个入口来回切 ===')
   for (const [tab, selector] of [
     ['library', '[data-testid="space-library"]'],
     ['artifact', '[data-testid="space-artifact"]'],
-    ['learning', '[data-testid="space-learning"]'],
     ['overview', '[data-testid="space-overview"]']
   ]) {
     click(q(`[data-testid="space-tab-${tab}"]`))

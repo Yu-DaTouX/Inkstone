@@ -135,7 +135,7 @@ export class AutoContinueStore {
   async noteFailure(
     sessionKey: string,
     errorText: unknown,
-    opts: { userStopped?: boolean; learnWaiting?: boolean } = {}
+    opts: { userStopped?: boolean } = {}
   ): Promise<{ plan: AutoContinuePlan | null; state: AutoContinueState; duplicate: boolean }> {
     return this.enqueue(async () => {
       const key = normalizeSessionFileKey(sessionKey)
@@ -164,7 +164,6 @@ export class AutoContinueStore {
         state,
         error,
         userStopped: opts.userStopped === true,
-        learnWaiting: opts.learnWaiting === true,
         ...(this.limit ? { limit: this.limit } : {}),
         ...(this.delays ? { delays: this.delays } : {})
       })

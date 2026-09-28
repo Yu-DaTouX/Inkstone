@@ -11,11 +11,11 @@
  *（T04-8：导航只是投影），这里存不下也不需要存。
  */
 
-export type SpaceView = 'overview' | 'library' | 'artifact' | 'learning'
+export type SpaceView = 'overview' | 'library' | 'artifact'
 
 export const SPACE_VIEW_KEY = 'yan.space-view'
 
-export const SPACE_VIEWS: readonly SpaceView[] = ['overview', 'library', 'artifact', 'learning']
+export const SPACE_VIEWS: readonly SpaceView[] = ['overview', 'library', 'artifact']
 
 function isSpaceView(value: unknown): value is SpaceView {
   return typeof value === 'string' && (SPACE_VIEWS as readonly string[]).includes(value)

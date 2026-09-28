@@ -108,20 +108,7 @@ const CASES = {
   activity: { probe: 'scripts/probe/activity.js', delay: 11000, cost: 0 },
   // 实施-25 P06a/P06b：可编辑成果（新建 → 编辑 → 版本 → 关闭重开 → agent 重写不吞用户段落 → 清单勾选 → 来源回原文；cost 0）
   artifact: { probe: 'scripts/probe/artifact.js', delay: 15000, cost: 0 },
-  // 实施-25 P07：课程与路线（从资料生成 → 单元指回原文 → 调整顺序 → 材料 / 补充边界；cost 0）
-  course: { probe: 'scripts/probe/course.js', delay: 16000, cost: 0 },
-  // 实施-25 P08：学习状态与闸门（阶段推进 / 等作答 / 自问自答被拒 / 位置保留；cost 0）
-  study: { probe: 'scripts/probe/study.js', delay: 14000, cost: 0 },
-  // 实施-25 P09：导师页面（三栏 / 档位 / 学这一节 → 教材定位 / 等作答联动 / 选段动作；cost 0）
-  tutor: { probe: 'scripts/probe/tutor.js', delay: 18000, cost: 0 },
-  // 实施-25 P10：练习与反馈（题目不含答案 / 分层提示 / 看解释 / 作答反馈 / 用户纠正；cost 0）
-  exercise: { probe: 'scripts/probe/exercise.js', delay: 17000, cost: 0 },
-  // 实施-25 P11：笔记与概念进度（两轴并存 / 一次失败不降级 / 自评与观察并存；cost 0）
-  memory: { probe: 'scripts/probe/memory.js', delay: 20000, cost: 0 },
-  // 实施-25 P12：错题与复习（挑同概念新例子 / 挪期与去掉 / 连续独立成功收掉；cost 0）
-  review: { probe: 'scripts/probe/review.js', delay: 22000, cost: 0 },
-  // 实施-25 P13：跨资料研究（旧引用按版本保留 / 不合并的对照；步骤在 artifact 探针里，cost 0）
-  // 实施-25 P14：办事模板（写步骤必须有范围 / 摊开范围 / 只填不发；cost 0）
+  // 资料引用状态（旧引用按版本保留）的步骤在 artifact 探针里
   // 实施-25 P15：内部 agent 分工（任务输入 / 结果汇总在卡片上看得见；cost 0，不真启动子代理）
   subagentbrief: { probe: 'scripts/probe/subagent-brief.js', delay: 12000, cost: 0 },
   // 实施-25 P16：持续关注与提醒（应用没开不跟进 / 未启用不自行建立 / 只填不发；cost 0）
@@ -130,7 +117,6 @@ const CASES = {
   capabilityneed: { probe: 'scripts/probe/capability-need.js', delay: 14000, cost: 0 },
   // 实施-25 P18：按活动配置模型（优先级 / 回退 / 边界文案；cost 0）
   activitymodel: { probe: 'scripts/probe/activity-model.js', delay: 16000, cost: 0 },
-  // 实施-25 P20：语音（只说路径 + 转写登记到同一门课；cost 0）
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。

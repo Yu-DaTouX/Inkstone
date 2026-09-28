@@ -56,13 +56,6 @@ function retryableReceipt(receipt) {
   return receipt === null || receipt === undefined || String(receipt).startsWith('failed:')
 }
 
-/** 学习练习正在等用户作答时不自动续跑（续跑会替用户把练习做掉） */
-function waitingForLearner() {
-  const runnerId = (process.env.YAN_SESSION_ID?.trim() || 'session').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120)
-  const gate = safeJson(join(dataDir(), 'study-gate', `${runnerId || 'session'}.json`), 1024 * 1024)
-  return gate?.waiting === true
-}
-
 function persistResumeIntent(operation, resumeId) {
   return withDiskLock(operation.identity.sessionId, () => {
     const path = operationPath(operation.identity.sessionId, operation.identity.operationId)
@@ -127,7 +120,6 @@ export function scheduleAutomaticResume(pi, ctx) {
   const timer = setTimeout(() => {
     void (async () => {
       if (token !== resumeScheduleToken || activity !== resumeActivity) return
-      if (waitingForLearner()) return
       const sessionId = sessionIdOf(ctx)
       const latest = sessionId ? latestPendingAutoOperation(sessionId, ctx) : null
       if (!latest || latest.identity?.sessionId !== sessionId || latest.requestKind !== 'automatic' ||

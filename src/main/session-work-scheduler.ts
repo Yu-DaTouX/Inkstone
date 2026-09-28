@@ -33,8 +33,6 @@ export interface SessionWorkDeps {
   autoContinues: AutoContinueStore
   /** 自动继续的有效上限（测试通道可覆盖） */
   autoContinueLimit: number
-  /** 学习练习是否正等着用户作答（等待时不把模型叫起来） */
-  studyGateBlocks(id: string): Promise<boolean>
   /** 写「待发续行」快照；薄层在回合空闲时据此发一条 custom 消息 */
   writeRetrySnapshot(id: string, snapshot: { operationId: string; at: number; kind: 'retry'; summary: string }): Promise<void>
   notify(id: string, message: string, notifyType: 'info' | 'warning' | 'error', idPrefix: string): void
@@ -125,11 +123,6 @@ export function createSessionWorkScheduler(deps: SessionWorkDeps): SessionWorkSc
       if (!current || current.token !== token) return
       timers.delete(id)
       void (async () => {
-        /* 延时期间学习练习可能刚好在等作答：这次不把模型叫起来，快照也不写 */
-        if (await deps.studyGateBlocks(id)) {
-          deps.notify(id, '学习正等着学习者作答：这次自动继续先不发，等他答完再接着走。', 'info', 'auto-continue-learn')
-          return
-        }
         await deps.writeRetrySnapshot(id, {
           operationId: randomUUID(),
           at: Date.now(),
@@ -152,7 +145,7 @@ export function createSessionWorkScheduler(deps: SessionWorkDeps): SessionWorkSc
     let result: { plan: AutoContinuePlan | null; duplicate: boolean }
     try {
       await deps.autoContinues.load()
-      result = await deps.autoContinues.noteFailure(key, payload.text, { learnWaiting: await deps.studyGateBlocks(id) })
+      result = await deps.autoContinues.noteFailure(key, payload.text)
     } catch {
       return
     }

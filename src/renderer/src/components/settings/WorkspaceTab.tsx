@@ -47,7 +47,6 @@ export function WorkspaceTab() {
   const storedProfile = useStore((s) => s.agentProfile)
   const setAgentProfile = useStore((s) => s.setAgentProfile)
   /* 学习管理：课程建在空间里，所以这里只给一个「去学习页」的入口（实施-27 B3） */
-  const openSpaceView = useStore((s) => s.openSpaceView)
   const workMode: WorkMode = storedWorkMode?.mode ?? defaultWorkMode
   const profile = storedProfile?.profile ?? 'auto'
   const activity = storedProfile?.activity ?? 'answer'
@@ -144,32 +143,6 @@ export function WorkspaceTab() {
                 <span>{o.label}</span>
               </button>
             ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="set-group">
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('set.learnManage')}</div>
-            <div className="set-desc">{t('set.learnManageDesc')}</div>
-          </div>
-          <div className="set-ctl">
-            <button
-              className="btn"
-              data-testid="set-open-learning"
-              onClick={() => {
-                /*
-                 * 先关设置再开学习视图：设置是 fixed 遮罩层，
-                 * 不关的话中栏的空间工作台会被它盖住 —— 按钮看起来「没反应」。
-                 * 与「重新查看引导」同一口径（App.tsx 里也是先 closeSettings）。
-                 */
-                useStore.getState().closeSettings()
-                openSpaceView('learning')
-              }}
-            >
-              {t('set.learnManageOpen')}
-            </button>
           </div>
         </div>
       </div>
