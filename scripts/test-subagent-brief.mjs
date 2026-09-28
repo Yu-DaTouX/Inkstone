@@ -13,9 +13,6 @@ export function runSubagentBriefTests(ok, mod) {
     parseSubagentBrief,
     briefPrompt,
     briefLine,
-    subagentFitText,
-    SUBAGENT_FIT_CASES,
-    SUBAGENT_UNFIT_CASES,
     SUBAGENT_BRIEF_LIMITS,
     summarizeSubagentRun,
     resultHasContent,
@@ -63,16 +60,6 @@ export function runSubagentBriefTests(ok, mod) {
     const sameGoal = briefPrompt(minimal.brief, '查一下这两个模块')
     ok(!/任务原话/.test(sameGoal), '目标与任务描述相同时不重复写一遍')
     ok(briefLine(full.brief).includes('要交回') && briefLine(full.brief).includes('边界'), '一行摘要含交付物与边界')
-  }
-
-  /* ---- 并行适合度 ---- */
-  {
-    const text = subagentFitText()
-    ok(SUBAGENT_FIT_CASES.length >= 4, '适合并行的清单有内容')
-    ok(/独立来源搜集/.test(text) && /长材料分段/.test(text), '适合：来源搜集与长材料分段')
-    ok(SUBAGENT_UNFIT_CASES.some((item) => /导师与用户的连续交流/.test(item)), '不适合里明确写着「导师与用户的连续交流」（P15 验收那条）')
-    ok(/短问答/.test(text) && /连续编辑同一段/.test(text), '不适合：短问答与连续编辑同一段')
-    ok(text.indexOf('适合拆出去并行') < text.indexOf('不适合拆'), '先列适合、再列不适合（读起来先给能用的）')
   }
 
   /* ---- 结果汇总 ---- */

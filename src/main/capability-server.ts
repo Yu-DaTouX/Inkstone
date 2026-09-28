@@ -204,15 +204,13 @@ const KNOWN_COMMANDS = new Set([
   'review.question',
   'review.reschedule',
   'review.dismiss',
-  /* 跨资料研究（实施-25 P13）：对照结构由宿主给，立场标签由调用方给。 */
-  'research.compare',
+  /* 资料引用：按版本读片段与引用状态；对照做法在 research 技能。 */
+  'research.read',
   'research.status',
   /* 办事模板（实施-25 P14）：只列 / 问范围 / 存模板，**没有执行**。 */
   'playbook.list',
   'playbook.plan',
   'playbook.save',
-  /* 子代理分工（实施-25 P15）：并行适合度清单由宿主统一给出。 */
-  'subagent.guidance',
   /* 持续关注（实施-25 P16）：只能提议与回报（启用 / 删除是用户的事）。 */
   'follow.list',
   'follow.due',

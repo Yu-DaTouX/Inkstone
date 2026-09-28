@@ -1,16 +1,13 @@
 /**
- * 跨资料研究（实施-25 P13）—— 契约与对照规则。
+ * 资料引用的读取与状态。
  *
- * ── 这一片要守住的两条 ──
- * 1. **不强行合一**：几份资料说法不一致时，界面上是**并排的两组**，
- *    不是一句「综合来看」。合并是研究者的判断，不是宿主的默认动作 ——
- *    模型可以给结论，但它必须标清那是自己补的还是资料原文。
- * 2. **旧引用按版本保留**：资料更新后，成果里那条引用仍然指着**当时那一版**；
- *    我们能做的是**提示变化**（「来源已更新到 v3，这条引用还是 v1」），
- *    不是把它悄悄改成新版（那是 P03 的不变量）。
+ * 宿主只负责两件与数据有关的事：
+ * 1. **旧引用按版本保留**：资料更新后，成果里那条引用仍然指着当时那一版；
+ *    这里只**提示变化**（「来源已更新到 v3，这条引用还是 v1」），不改写引用。
+ * 2. **按版本读片段**：读每一份引用当时那一版的正文片段，读不到的如实标出。
  *
- * `provenance`（引用原文 / 模型补充）是给读者看的，不让模型自己口述 ——
- * 口述的「据资料显示」和真正带版本的引用在界面上必须长得不一样。
+ * 怎么对照多份资料、怎么标立场与区分原文和补充，是写给模型的做法，
+ * 放在随包的 `research` 技能里，不在宿主里另立一套规则。
  */
 
 import {
@@ -21,27 +18,6 @@ import {
   type LibraryDocument,
   type SourceReference
 } from './library'
-
-/* ------------------------------------------------------------------ *
- * 来源的两种身份
- * ------------------------------------------------------------------ */
-
-export const PROVENANCES = ['material', 'model'] as const
-export type SourceProvenance = (typeof PROVENANCES)[number]
-
-export const PROVENANCE_LABELS: Record<SourceProvenance, string> = {
-  material: '引用原文',
-  model: '模型补充'
-}
-
-export const PROVENANCE_NOTES: Record<SourceProvenance, string> = {
-  material: '来自资料，带版本与位置；资料改版不会改写这条',
-  model: '模型补的，不是资料原文'
-}
-
-export function provenanceLabel(value: unknown): SourceProvenance {
-  return value === 'model' ? 'model' : 'material'
-}
 
 /* ------------------------------------------------------------------ *
  * 引用现在怎么样了（T13-4）
@@ -129,112 +105,23 @@ export function sourceChangeSummary(statuses: readonly SourceStatus[]): string |
 }
 
 /* ------------------------------------------------------------------ *
- * 多来源对照（T13-2 / T13-3）
+ * 按版本读片段
  * ------------------------------------------------------------------ */
 
 export interface ResearchExcerpt {
   sourceId: string
   version: number
-  /** 展示标题（取自资料库，不复制进题面）。 */
+  /** 展示标题（取自资料库）。 */
   title: string
-  provenance: SourceProvenance
-  /** 这份资料对当前问题说了什么。 */
+  /** 这一版在 locator 区间（或开头）的正文。 */
   text: string
-  /**
-   * 立场标签（「支持」「反对」「补充」这类）。
-   *
-   * **由调用方给，宿主不猜** —— 判断两份材料是不是在讲同一件事，
-   * 属于研究者的判断；宿主只负责「不把它们合并」。
-   */
-  stance?: string
+  /** 片段比原区间短时为 true。 */
+  truncated: boolean
   locator?: { start: number; end: number }
   /** 引用状态（旧版本 / 已更新）。 */
-  status?: SourceRefStatus
-}
-
-export interface ComparisonGroup {
-  label: string
-  excerpts: ResearchExcerpt[]
-}
-
-export interface ComparisonConflict {
-  /** 冲突的说明（只说「这两组不一致」，不下结论）。 */
-  label: string
-  left: ResearchExcerpt
-  right: ResearchExcerpt
-}
-
-export interface Comparison {
-  question: string
-  groups: ComparisonGroup[]
-  conflicts: ComparisonConflict[]
-  /** 来源构成：多少条来自原文、多少条是模型补充。 */
-  provenance: { material: number; model: number }
-  /** 规则说明（写出来给读者看，不藏在实现里）。 */
-  note: string
-}
-
-export const COMPARISON_NOTE = '说法不一致的地方保留为并列的两组，没有合并成一个结论。'
-export const UNLABELED_STANCE = '未标注立场'
-
-/**
- * 把多份摘录按立场分组，并列出不一致之处。
- *
- * 刻意**不做**的事：不给「哪个对」的判断、不合并成一段总结、不排序谁更可信。
- * 冲突只发生在**两个显式且不同的立场标签**之间 —— 未标注的不算冲突
- * （我们不知道它们是不是在说同一件事）。
- */
-export function buildComparison(input: { question: string; excerpts: readonly ResearchExcerpt[] }): Comparison {
-  const groups: ComparisonGroup[] = []
-  const index = new Map<string, ResearchExcerpt[]>()
-  for (const excerpt of input.excerpts) {
-    const label = excerpt.stance?.trim() || UNLABELED_STANCE
-    const bucket = index.get(label)
-    if (bucket) bucket.push(excerpt)
-    else index.set(label, [excerpt])
-  }
-  for (const [label, excerpts] of index) groups.push({ label, excerpts })
-
-  const labeled = groups.filter((g) => g.label !== UNLABELED_STANCE)
-  const conflicts: ComparisonConflict[] = []
-  for (let i = 0; i < labeled.length; i += 1) {
-    for (let j = i + 1; j < labeled.length; j += 1) {
-      const left = labeled[i]
-      const right = labeled[j]
-      conflicts.push({
-        label: `「${left.label}」与「${right.label}」的说法不一致`,
-        left: left.excerpts[0],
-        right: right.excerpts[0]
-      })
-    }
-  }
-
-  const provenance = {
-    material: input.excerpts.filter((e) => e.provenance === 'material').length,
-    model: input.excerpts.filter((e) => e.provenance === 'model').length
-  }
-  return { question: input.question, groups, conflicts, provenance, note: COMPARISON_NOTE }
-}
-
-/** 供模型 / 导出读的纯文本（不合并结论，只把并列关系讲清）。 */
-export function comparisonText(comparison: Comparison): string {
-  const lines: string[] = [`问题：${comparison.question}`, '']
-  for (const group of comparison.groups) {
-    lines.push(`【${group.label}】`)
-    for (const excerpt of group.excerpts) {
-      const provenance = PROVENANCE_LABELS[excerpt.provenance]
-      const where = excerpt.locator ? `，第 ${excerpt.locator.start}–${excerpt.locator.end} 字` : ''
-      lines.push(`- ${excerpt.title} v${excerpt.version}（${provenance}${where}）：${excerpt.text}`)
-    }
-    lines.push('')
-  }
-  if (comparison.conflicts.length > 0) {
-    lines.push('不一致之处：')
-    for (const conflict of comparison.conflicts) lines.push(`- ${conflict.label}`)
-    lines.push('')
-  }
-  lines.push(comparison.note)
-  return lines.join('\n')
+  status: SourceRefStatus
+  /** 该来源现在的最新版本（引用已旧时给出）。 */
+  latestVersion?: number
 }
 
 /**
@@ -261,7 +148,7 @@ export function excerptText(
   return { text: slice.slice(0, maxChars), truncated: true }
 }
 
-/** 这条摘录是否还能当正文读（对照里不能把读不到的排进去当有效来源）。 */
+/** 这条引用还能不能当正文读（读不到的不能当作有效证据）。 */
 export function excerptReadable(status: SourceRefStatus | undefined): boolean {
   return status === undefined || status === 'current' || status === 'outdated'
 }

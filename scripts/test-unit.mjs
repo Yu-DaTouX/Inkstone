@@ -2989,7 +2989,7 @@ await runGitRepoTests(ok)
     /yan subagent start/.test(guide) && /yan subagent list/.test(guide) && /yan subagent stop/.test(guide),
     '能力说明：明确告诉模型可以启动、查看、停止子代理'
   )
-  ok(/实时显示在输入区上方和右侧详情面板/.test(guide), '能力说明：告知模型用户能看到子代理工作进度')
+  ok(/skill:subagent/.test(guide) && /skill:research/.test(guide), '能力说明：分工与研究做法指向随包技能')
   ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
 
   const handlers = {}

@@ -41,9 +41,7 @@ import type {
   ResearchBridge,
   ReviewItem,
   ReviewPlan,
-  Comparison,
   SourceStatus,
-  SourceRefStatus,
   PlaybookBridge,
   PlaybookMutationResult,
   PlaybookPlanResult,
@@ -504,7 +502,6 @@ const api: YanBridge = {
     dismiss: (id) => invoke<boolean>('yan:review:dismiss', id)
   } as ReviewBridge,
   research: {
-    compare: (input) => invoke<{ ok: boolean; comparison?: Comparison; skipped?: { sourceId: string; version: number; status: SourceRefStatus }[]; text?: string; error?: string }>('yan:research:compare', input),
     sourceStatus: (artifactId) => invoke<{ ok: boolean; error?: string; statuses: SourceStatus[] }>('yan:artifactDoc:sourceStatus', artifactId)
   } as ResearchBridge,
   playbook: {

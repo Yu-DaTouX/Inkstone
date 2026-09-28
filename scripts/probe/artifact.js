@@ -315,33 +315,6 @@
     ok(statusEls.length === 1, '只有那条有新版本的来源标状态（没变的不报噪声）', String(statusEls.length))
     ok(/仍指着 v1/.test(String(statusEls[0]?.textContent ?? '')), '说清引用还指着旧版', String(statusEls[0]?.textContent ?? ''))
 
-    /* 带立场的对照（模型经 yan research compare 提交的就是这个形状） */
-    const cmp = await window.yan.research.compare({
-      question: '这个说法成立吗？',
-      refs: [
-        { sourceId: srcA.sourceId, version: 1, stance: '支持' },
-        { sourceId: srcB.sourceId, version: 1, stance: '反对' }
-      ]
-    })
-    ok(cmp?.ok === true && cmp.comparison?.groups?.length === 2, '两组立场各自成组')
-    ok(cmp?.comparison?.conflicts?.length === 1, '列出一条不一致（不合并结论）')
-    ok(/引用原文/.test(String(cmp?.text ?? '')), '导出文本标出「引用原文」')
-
-    /* 读不到的来源不进对照 */
-    const skipped = await window.yan.research.compare({
-      question: '读不到的那份',
-      refs: [{ sourceId: 'lib_not_there', version: 1, stance: '支持' }]
-    })
-    ok(skipped?.ok === true && skipped.skipped?.length === 1, '读不到的来源列进 skipped')
-    ok(skipped.comparison?.groups?.length === 0, '不把读不到的当有效证据排进对照')
-
-    /* 界面上点「多来源对照」：没有立场标签 → 未标注、无冲突 */
-    click(q('[data-testid="space-art-compare"]'))
-    await sleep(1000)
-    ok(!!q('[data-testid="space-art-compare-view"]'), '成果页显示对照视图')
-    ok(!!q('[data-testid="space-art-compare-group-0"]'), '有一组（未标注立场）')
-    ok(!q('[data-testid="space-art-compare-conflicts"]'), '未标注立场时不制造冲突')
-
     await window.yan.library.remove(srcA.sourceId)
     await window.yan.library.remove(srcB.sourceId)
   }

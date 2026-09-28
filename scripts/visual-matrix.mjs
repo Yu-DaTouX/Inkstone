@@ -3801,9 +3801,6 @@ const STATES = {
       await sleep(500);
       document.querySelector('[data-testid="space-art-item-ad_research"]')?.click();
       await sleep(600);
-      const exA = { sourceId: 'lib_r1', version: 1, title: '精读材料 · Unit 3.pdf', provenance: 'material', stance: '比喻的叫法', status: 'outdated', text: 'She never called it a garden; she called it “the outside room”. 这里更像是一种随口叫法。' };
-      const exB = { sourceId: 'lib_r2', version: 1, title: '语法笔记：the outside room', provenance: 'material', stance: '实指的说法', status: 'current', text: '笔记整理：the outside room 常指院子里真搭出来的那间小屋。' };
-      const exC = { sourceId: 'model', version: 1, title: '模型补充', provenance: 'model', status: 'current', text: '还有一种可能：作者想强调「花园是屋内的延伸」，这两种解释并不必然冲突。' };
       window.__yanStore.setState({
         artifactSourceStatuses: [{
           ref: { sourceId: 'lib_r1', version: 1 },
@@ -3811,22 +3808,11 @@ const STATES = {
           latestVersion: 2,
           title: '精读材料 · Unit 3.pdf',
           note: '来源已更新到 v2，这条引用仍指着 v1'
-        }],
-        researchComparison: {
-          question: '「the outside room」到底指什么？',
-          groups: [
-            { label: '比喻的叫法', excerpts: [exA] },
-            { label: '实指的说法', excerpts: [exB] },
-            { label: '未标注立场', excerpts: [exC] }
-          ],
-          conflicts: [{ label: '「比喻的叫法」与「实指的说法」的说法不一致', left: exA, right: exB }],
-          provenance: { material: 2, model: 1 },
-          note: '说法不一致的地方保留为并列的两组，没有合并成一个结论。'
-        }
+        }]
       });
       await sleep(600);
       const changed = document.querySelector('[data-testid="space-art-source-changed"]');
-      return document.querySelector('[data-testid="space-art-compare-view"]') && changed ? 'ok' : 'no-compare';
+      return changed ? 'ok' : 'no-changed';
     })()
   `,
   /*

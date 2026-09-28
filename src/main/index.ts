@@ -175,11 +175,6 @@ import { ArtifactDocStore } from './artifact-doc-store'
 import { CourseService } from './course-service'
 import { LearningService } from './learning-service'
 import { ExerciseService } from './exercise-service'
-import {
-  SUBAGENT_FIT_CASES,
-  SUBAGENT_UNFIT_CASES,
-  subagentFitText
-} from '../shared/subagent-brief'
 import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
 import { PlaybookStore } from './playbook-store'
 import { PlaybookService } from './playbook-service'
@@ -206,11 +201,8 @@ import type { ReviewMutation } from './learning-service'
 import { dueReviews } from '../shared/review'
 import {
   artifactSourceStatuses,
-  buildComparison,
-  comparisonText,
   excerptReadable,
   excerptText,
-  provenanceLabel,
   sourceStatus,
   type ResearchExcerpt,
   type SourceRefStatus
@@ -2085,19 +2077,18 @@ async function runSourceStatus(artifactId: string) {
   return { ok: true as const, statuses: artifactSourceStatuses(library.store.document(), doc.sources) }
 }
 
-interface ResearchCompareInput {
-  question?: string
-  refs?: { sourceId: string; version: number; locator?: { start: number; end: number }; stance?: string; provenance?: string }[]
+interface ResearchReadInput {
+  refs?: { sourceId: string; version: number; locator?: { start: number; end: number } }[]
   maxChars?: number
 }
 
 /**
- * 多来源对照（P13）：读**当时那一版**的片段，按立场并列，不合并结论。
+ * 按版本读资料片段：读**当时那一版**的正文，不跟着资料更新走。
  *
- * 读不到的来源如实放进 `skipped`，不当作有效证据排进对照 —— 否则
- * 「三份资料都支持」可能实际只有两份读得到。
+ * 读不到的来源如实放进 `skipped`，不混进片段 —— 否则「三份资料都支持」
+ * 可能实际只有两份读得到。怎么对照、怎么下结论由 research 技能说明。
  */
-async function runResearchCompare(input: ResearchCompareInput) {
+async function runResearchRead(input: ResearchReadInput) {
   await library.store.load()
   const doc = library.store.document()
   const maxChars = Math.max(200, Math.min(Math.trunc(input?.maxChars ?? 600), 4000))
@@ -2121,15 +2112,14 @@ async function runResearchCompare(input: ResearchCompareInput) {
       sourceId: ref.sourceId,
       version,
       title: status.title ?? opened.source?.title ?? `资料 ${ref.sourceId}`,
-      provenance: provenanceLabel(ref.provenance),
       text: cut.text,
+      truncated: cut.truncated,
       status: status.status,
-      ...(ref.stance ? { stance: String(ref.stance) } : {}),
+      ...(status.latestVersion ? { latestVersion: status.latestVersion } : {}),
       ...(ref.locator ? { locator: ref.locator } : {})
     })
   }
-  const comparison = buildComparison({ question: String(input?.question ?? ''), excerpts })
-  return { ok: true as const, comparison, skipped, text: comparisonText(comparison) }
+  return { ok: true as const, excerpts, skipped }
 }
 
 /** 复习项写操作的 IPC 形状（与笔记 / 概念同一口径）。 */
@@ -2774,29 +2764,24 @@ const studyCapabilityHost: StudyCommandHost = {
 }
 
 /**
- * 跨资料研究（实施-25 P13）。
- *
- * 对照的**结构**（并排、不合并）由宿主给；立场标签由调用方给。
- * 另带一个只读的引用状态，让模型能看出「这份来源已经更新过」。
+ * 资料引用：按版本读片段，以及成果引用的资料现在怎么样了。
+ * 对照与下结论的做法在 research 技能里。
  */
 const researchCapabilityHost: StudyCommandHost = {
   async run(command, params) {
     switch (command) {
-      case 'research.compare': {
-        const res = await runResearchCompare({
-          question: typeof params.question === 'string' ? params.question : '',
-          refs: Array.isArray(params.refs) ? (params.refs as ResearchCompareInput['refs']) : [],
+      case 'research.read': {
+        const res = await runResearchRead({
+          refs: Array.isArray(params.refs) ? (params.refs as ResearchReadInput['refs']) : [],
           ...(Number.isFinite(Number(params.maxChars)) ? { maxChars: Number(params.maxChars) } : {})
         })
         return {
-          data: { comparison: res.comparison, skipped: res.skipped },
+          data: { excerpts: res.excerpts, skipped: res.skipped },
           summary: {
             ok: true,
-            groups: res.comparison.groups.length,
-            conflicts: res.comparison.conflicts.length,
-            skipped: res.skipped.length,
-            material: res.comparison.provenance.material,
-            model: res.comparison.provenance.model
+            excerpts: res.excerpts.length,
+            outdated: res.excerpts.filter((e) => e.status === 'outdated').length,
+            skipped: res.skipped.length
           }
         }
       }
@@ -6667,22 +6652,6 @@ function registerIpc(): void {
         }
       }
 
-      /*
-       * 什么时候该拆出去跑（实施-25 P15 T15-2 / T15-3）。
-       * 清单由 `shared/subagent-brief.ts` 统一出口 —— 不让每个调用方
-       * （CLI 帮助、系统提示、模型自己）各写一份，那就会出现三套「适合并行」的定义。
-       */
-      if (command === 'subagent.guidance') {
-        return {
-          data: { fit: [...SUBAGENT_FIT_CASES], unfit: [...SUBAGENT_UNFIT_CASES] },
-          summary: {
-            kind: 'subagent',
-            action: 'guidance',
-            text: subagentFitText()
-          }
-        }
-      }
-
       if (command === 'subagent.list') {
         const runs = ctrl.list()
         const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
@@ -7382,15 +7351,6 @@ function registerIpc(): void {
    * 只**提示变化**，不改任何引用 —— 旧版本按 P03 的不变量保留。
    */
   handle('yan:artifactDoc:sourceStatus', async (id: string) => runSourceStatus(id))
-
-  /*
-   * 多来源对照（T13-2 / T13-3）。
-   *
-   * 宿主负责：读每一份的**当时那一版**正文、切片段、标出「引用原文 / 模型补充」、
-   * 把不同立场的两组并排列出。宿主**不判断谁对、不合并结论** —— 立场标签
-   * 由调用方（模型 / 用户）给，没给就归到「未标注立场」，不计入冲突。
-   */
-  handle('yan:research:compare', async (input: ResearchCompareInput) => runResearchCompare(input))
 
   /*
    * 课程与路线（实施-25 P07）。

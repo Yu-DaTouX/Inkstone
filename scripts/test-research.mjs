@@ -44,13 +44,8 @@ export function runResearchTests(ok, mod) {
     sourceStatus,
     artifactSourceStatuses,
     sourceChangeSummary,
-    buildComparison,
-    comparisonText,
     excerptText,
-    excerptReadable,
-    provenanceLabel,
-    COMPARISON_NOTE,
-    UNLABELED_STANCE
+    excerptReadable
   } = mod
 
   /* ---- 引用状态（T13-4） ---- */
@@ -100,38 +95,10 @@ export function runResearchTests(ok, mod) {
     ok(excerptText('', undefined, 10).text === '', '空正文返回空')
   }
 
-  /* ---- 对照：分组、不合并、provenance ---- */
+  /* ---- 读得到才算证据 ---- */
   {
-    const a = { sourceId: 'lib_a', version: 1, title: '材料 A', provenance: 'material', text: '这个说法成立。', stance: '支持' }
-    const b = { sourceId: 'lib_b', version: 2, title: '材料 B', provenance: 'material', text: '这个说法不成立。', stance: '反对' }
-    const c = { sourceId: 'lib_c', version: 1, title: '模型补的一段', provenance: 'model', text: '还有一种可能：条件不同。' }
-
-    const comparison = buildComparison({ question: '这个说法成立吗？', excerpts: [a, b, c] })
-    ok(comparison.groups.length === 3, '三种立场各自成组（含未标注）', JSON.stringify(comparison.groups.map((g) => g.label)))
-    ok(comparison.groups.some((g) => g.label === UNLABELED_STANCE), '没给 stance 的归到「未标注立场」')
-    ok(comparison.conflicts.length === 1, '两个显式且不同的立场 → 一条冲突')
-    ok(/「支持」与「反对」/.test(comparison.conflicts[0].label), '冲突只说「不一致」，不下结论', comparison.conflicts[0].label)
-    ok(comparison.provenance.material === 2 && comparison.provenance.model === 1, '来源构成分开统计')
-    ok(comparison.note === COMPARISON_NOTE, 'note 写成「没有合并成一个结论」')
-
-    const text = comparisonText(comparison)
-    ok(/【支持】/.test(text) && /【反对】/.test(text), '导出文本里两组都在')
-    ok(/引用原文/.test(text) && /模型补充/.test(text), '导出文本标出「引用原文 / 模型补充」的区别')
-    ok(text.includes(COMPARISON_NOTE), '导出文本也带上「不合并」的说明')
-
-    /* 未标注之间的两份不构成冲突（我们不知道它们是不是在讲同一件事） */
-    const sameOnly = buildComparison({
-      question: 'q',
-      excerpts: [c, { ...c, sourceId: 'lib_d' }]
-    })
-    ok(sameOnly.conflicts.length === 0 && sameOnly.groups.length === 1, '都没有立场标签时不制造冲突')
-
-    const empty = buildComparison({ question: 'q', excerpts: [] })
-    ok(empty.groups.length === 0 && empty.provenance.material === 0, '没有摘录时如实给空结果')
-
-    ok(provenanceLabel('model') === 'model' && provenanceLabel(undefined) === 'material', '未知 provenance 一律按「引用原文」（宁可保守）')
     ok(excerptReadable('current') && excerptReadable('outdated'), '当前版与旧版本都能作为证据读')
-    ok(!excerptReadable('removed') && !excerptReadable('missing') && !excerptReadable('unreadable'), '移除 / 找不到 / 读不到的都不进对照')
+    ok(!excerptReadable('removed') && !excerptReadable('missing') && !excerptReadable('unreadable'), '移除 / 找不到 / 读不到的都不算有效证据')
     ok(excerptReadable(undefined), '没查状态时不拦（调用方自己负责）')
   }
 }
