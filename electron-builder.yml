@@ -123,6 +123,8 @@ nsis:
   # 安装器把品牌图拉伸得发糊。
   installerSidebar: build/installerSidebar.bmp
   uninstallerSidebar: build/installerSidebar.bmp
+  # 内页页眉（150×57）：与侧栏同一套品牌配色，由 npm run installer:sidebar 生成
+  installerHeader: build/installerHeader.bmp
   artifactName: ${productName}-${version}-setup.${ext}
 
 # 免安装单文件版（可选，用户想直接跑不装时用）
