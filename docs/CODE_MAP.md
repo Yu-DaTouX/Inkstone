@@ -53,6 +53,8 @@ flowchart LR
 | 主题空间、资料与成果 | `src/main/space-store.ts`、`library-*`、`artifact-doc-store.ts`；旧学习记录导出在 `learning-export.ts` | 对应 `src/shared/space.ts`、`library.ts`、`artifact-doc.ts` 与 `components/workbench/`；学习做法在 `resources/skills/tutor` |
 | 项目知识、个人记忆与长期记录 | `src/main/project-memory-store.ts`、`project-knowledge.ts`、`personal-memory.ts`（个人范围、外部工具收件箱与导出）、`ipc/knowledge-ipc.ts` | `src/shared/project-memory.ts`；按来源、归属与版本处理，避免与会话原文混同 |
 | 联网搜索与能力获取 | `src/main/search/`、`src/shared/search.ts`、`src/main/capabilities/` | `scripts/probe/search.mjs` 与 `search-electron.mjs` 区分普通 Node 与 Electron 环境 |
+| 底部状态栏与右栏检查器 | `components/shell/StatusBar.tsx`（模式、分支、pi、手机、本轮用量与花费）；`components/toolbar/RightPanel.tsx`（分区注册、布局与浮出磁贴）及各分区文件 `ContextSection.tsx`、`QuotaSection.tsx`、`TodoSection.tsx`、`PanelSections.tsx` | 状态都从 store 快照推导，不自己计时；用量口径在 `components/chat/UsageBar.tsx`，窄窗隐藏顺序见[设计规范](DESIGN_SYSTEM.md) §4 |
+| 手机端界面（Android） | `mobile/src/App.tsx`（路由与折叠屏双栏）、`mobile/src/screens/`、统一控件 `mobile/src/ui.tsx`、令牌 `theme.ts`、动效 `motion.tsx` | 色值与 `tokens.css` 同源（`npm run check:mobile-tokens`）；接口是 `src/shared/remote-protocol.ts`，桌面侧在 `src/main/remote-host.ts`；规则见[设计规范](DESIGN_SYSTEM.md) §7 |
 | 样式、图标、动效与多语言 | `src/renderer/src/styles/`（控件外观在 `ui.css`）、`components/ui/`、`icons/`、`i18n/` | [设计规范](DESIGN_SYSTEM.md)、`scripts/design/icons/` 和生成清单；改界面时同时检查深浅主题、键盘与窄窗口 |
 
 ## 数据与构建边界
