@@ -1,0 +1,34 @@
+{
+  "name": "inkstone-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "砚（Inkstone）手机端：查看电脑上的任务、回复问题、发送文字；任务仍在电脑上执行",
+  "scripts": {
+    "android": "react-native run-android",
+    "start": "react-native start",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:apk": "node scripts/sync-brand.mjs && cd android && gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "react": "19.1.0",
+    "react-native": "0.81.0",
+    "react-native-keychain": "^10.0.0",
+    "react-native-safe-area-context": "^5.6.0",
+    "react-native-svg": "^15.12.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.0.0",
+    "@react-native-community/cli-platform-android": "20.0.0",
+    "@react-native/babel-preset": "0.81.0",
+    "@react-native/metro-config": "0.81.0",
+    "@react-native/typescript-config": "0.81.0",
+    "@types/react": "^19.1.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

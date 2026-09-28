@@ -787,6 +787,8 @@ export interface SessionSummary {
    * 只认 message 的时间戳，列表才能“新→旧”且打开不重排。
    */
   lastActivityAt?: number
+  /** Latest visible assistant reply found in the bounded tail index. */
+  lastReply?: { id: string; at: number; text: string }
   createdAt: number
   updatedAt: number
   messageCount: number

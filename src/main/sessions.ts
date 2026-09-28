@@ -289,30 +289,39 @@ async function readBranchOrigin(path: string, forkTs: number): Promise<string | 
  * 为什么读尾部而不是全文件：会话可能十几 MB；最近活动总在最后一段。
  * 尾部窗口的第一行可能被截断 → JSON.parse 失败就往前继续找。
  */
-async function readLastActivity(path: string, size: number): Promise<number | undefined> {
+async function readLastActivity(path: string, size: number): Promise<{ at?: number; reply?: SessionSummary['lastReply'] }> {
   const TAIL = 64 * 1024
   const start = Math.max(0, size - TAIL)
   const fh = await open(path, 'r')
   try {
     const len = size - start
-    if (len <= 0) return undefined
+    if (len <= 0) return {}
     const buf = Buffer.alloc(len)
     await fh.read(buf, 0, len, start)
     const lines = buf.toString('utf8').split('\n')
+    let at: number | undefined
+    let reply: SessionSummary['lastReply']
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i]
       if (!line.includes('"type":"message"')) continue
       try {
-        const o = JSON.parse(line) as { timestamp?: string }
+        const o = JSON.parse(line) as { id?: string; timestamp?: string; message?: { role?: string; timestamp?: number; content?: Array<{ type?: string; text?: string }> | string } }
         const ts = Date.parse(String(o.timestamp ?? ''))
-        if (!Number.isNaN(ts)) return ts
+        if (at === undefined && !Number.isNaN(ts)) at = ts
+        if (!reply && o.message?.role === 'assistant') {
+          const content = o.message.content
+          const text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join(' ') : ''
+          const stamp = typeof o.message.timestamp === 'number' && Number.isFinite(o.message.timestamp) ? o.message.timestamp : !Number.isNaN(ts) ? ts : undefined
+          if (text?.trim() && stamp && o.id) reply = { id: o.id, at: stamp, text: text.replace(/\s+/g, ' ').trim().slice(0, 180) }
+        }
+        if (at !== undefined && reply) break
       } catch {
         /* 尾部第一行可能被截断，继续往前找 */
       }
     }
-    return undefined
+    return { at, reply }
   } catch {
-    return undefined
+    return {}
   } finally {
     await fh.close()
   }
@@ -365,6 +374,7 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
       const head = await readHead(f.path)
       const dirName = f.path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
       const named = !!head.name
+      const activity = await readLastActivity(f.path, f.size)
       const summary: SessionSummary = {
         id: head.id ?? f.path,
         path: f.path,
@@ -374,7 +384,8 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
         named,
         parentSession: head.parentSession,
         lastActivityAt:
-          (await readLastActivity(f.path, f.size)) ?? (head.createdAt || Math.round(f.mtimeMs)),
+          activity.at ?? (head.createdAt || Math.round(f.mtimeMs)),
+        lastReply: activity.reply,
         createdAt: head.createdAt || Math.round(f.mtimeMs),
         updatedAt: Math.round(f.mtimeMs),
         messageCount: await countMessages(f.path),

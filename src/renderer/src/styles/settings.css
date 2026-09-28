@@ -990,6 +990,27 @@ html[data-theme='light'] .ob-scrim {
   align-items: flex-start;
   gap: var(--sp-2);
 }
+.remote-pairing-layout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+}
+.remote-pairing-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.remote-pairing-qr {
+  padding: var(--sp-2);
+  background: #fff;
+  border-radius: var(--r-md);
+  line-height: 0;
+}
+@media (max-width: 560px) {
+  .remote-pairing-layout { grid-template-columns: minmax(0, 1fr); }
+}
 /* 配对码要能隔着屏幕念给手机：等宽、大字、字间距拉开 */
 .remote-pairing-code {
   color: var(--fg);

@@ -181,6 +181,14 @@ export class RemoteDeviceStore {
     return true
   }
 
+  async renameDevice(id: string, name: string): Promise<RemoteDeviceSummary | null> {
+    const device = (await this.load()).find((item) => item.id === id && item.revokedAt === null)
+    if (!device) return null
+    device.name = cleanName(name)
+    await this.save()
+    return summaryOf(device)
+  }
+
   /** 已撤销的设备记录可以从列表里删掉（令牌早已失效） */
   async forget(id: string): Promise<boolean> {
     const devices = await this.load()

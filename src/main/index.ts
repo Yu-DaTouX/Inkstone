@@ -9,6 +9,8 @@ import { join, dirname, basename, extname, resolve } from 'node:path'
 import { constants as fsConstants, existsSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { remoteHistoryPage } from '../shared/remote-history-page'
+import { localizeImage } from './image-store'
 import {
   AgentController,
   type CapabilityAuthorizationChoice,
@@ -3461,6 +3463,7 @@ function remoteSessionSummary(summary: SessionSummary): Record<string, unknown> 
     ...(summary.parentSession ? { parentSession: summary.parentSession } : {}),
     ...(summary.branchOrigin ? { branchOrigin: summary.branchOrigin } : {}),
     ...(summary.lastActivityAt !== undefined ? { lastActivityAt: summary.lastActivityAt } : {}),
+    ...(summary.lastReply ? { lastReply: summary.lastReply } : {}),
     createdAt: summary.createdAt,
     updatedAt: summary.updatedAt,
     messageCount: summary.messageCount,
@@ -3500,6 +3503,7 @@ function remoteSessionState(state: SessionState | null): Record<string, unknown>
 }
 
 function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
+  const model = runners?.agentOf(status.runId)?.getState()?.model
   return {
     id: status.id,
     runId: status.runId,
@@ -3509,6 +3513,7 @@ function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
     cwdName: basename(status.cwd) || status.cwd,
     running: status.running,
     waiting: status.waiting,
+    ...(model ? { model: { id: model.id, provider: model.provider, name: model.name, input: model.input } } : {}),
     failed: status.failed,
     conn: status.conn,
     createdAt: status.createdAt,
@@ -3572,7 +3577,7 @@ async function filterChainRepresentatives(list: SessionSummary[]): Promise<Sessi
   return out
 }
 
-async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOperationResult> {
+async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
@@ -3580,9 +3585,14 @@ async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOp
   /* 链感知：远程端看到的也是「一条会话」（与桌面端口径一致） */
   const result = await readHistoryWithArtifacts(summary.path)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
-  const messages = result.messages.slice(-limit).map((message) =>
-    message.artifacts?.length ? { ...message, artifacts: message.artifacts.map(remoteArtifactOf) } : message
-  )
+  const page = remoteHistoryPage(result.messages, limit, before)
+  if (!page) return { ok: false, status: 409, error: '会话历史已变化，请重新打开', code: 'history_cursor_expired' }
+  const messages = page.messages.map((message) => ({
+    ...message,
+    ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
+    ...(message.toolCalls ? { toolCalls: message.toolCalls.map((tool) => ({ ...tool, images: undefined })) } : {}),
+    ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
+  }))
   return {
     ok: true,
     data: {
@@ -3590,6 +3600,8 @@ async function remoteHistory(sessionId: string, limit: number): Promise<RemoteOp
       messages,
       total: result.total,
       returned: messages.length,
+      hasMore: page.hasMore,
+      nextBefore: page.nextBefore,
       truncated: result.truncated,
       bytes: result.bytes
     }
@@ -3647,7 +3659,7 @@ async function remoteNewSession(): Promise<RemoteOperationResult> {
 }
 
 /** 直接向目标会话发送，不改变桌面当前视图；必要时创建后台 runner。 */
-async function remoteSendToSession(sessionId: string, text: string): Promise<RemoteOperationResult> {
+async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
@@ -3684,10 +3696,18 @@ async function remoteSendToSession(sessionId: string, text: string): Promise<Rem
   const agent = runners!.agentOf(selected.id)
   if (!agent) return { ok: false, status: 503, error: '目标运行实例已退出' }
   pushRunners()
-  const result = await agent.send(text)
-  return result.ok
-    ? { ok: true, data: { ...result, runId: selected.runId, sessionId } }
-    : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
+  return operation(agent, selected.runId!)
+}
+
+async function remoteModels(sessionId: string): Promise<RemoteOperationResult> {
+  const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
+  const status = runners?.statuses().find((item) => item.sessionId === sessionId)
+  const agent = status ? runners?.agentOf(status.runId) : ac()
+  if (!agent) return { ok: false, status: 503, error: '请先在电脑启动模型连接' }
+  const models = await agent.listModels()
+  const current = status ? agent.getState()?.model : models.find((model) => summary.model === model.id || summary.model === `${model.provider}/${model.id}` || summary.model === `${model.provider}:${model.id}`)
+  return { ok: true, data: { models: models.map(({ id, provider, name, input }) => ({ id, provider, name, input })), current: current ? { id: current.id, provider: current.provider, name: current.name, input: current.input } : null } }
 }
 
 async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
@@ -3695,7 +3715,26 @@ async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOpera
   if (command.action === 'new') return remoteNewSession()
 
   if (command.action === 'send') {
-    return remoteSendToSession(command.sessionId, command.text)
+    if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: '图片无法解码，请重新选择' }
+    return withRemoteSession(command.sessionId, async (agent, runId) => {
+      const model = agent.getState()?.model
+      if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
+      const result = await agent.send(command.text, command.images)
+      return result.ok ? { ok: true, data: { ...result, runId, sessionId: command.sessionId } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
+    })
+  }
+  if (command.action === 'model') {
+    return withRemoteSession(command.sessionId, async (agent) => {
+      const state = agent.getState()
+      if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
+      const model = (await agent.listModels()).find((item) => item.provider === command.provider && item.id === command.modelId)
+      if (!model) return { ok: false, status: 400, error: '模型不在电脑可用列表中' }
+      const latest = agent.getState()
+      if (latest?.isAgentRunning || latest?.isStreaming || latest?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
+      const result = await agent.setModel(model.provider, model.id)
+      pushRunners()
+      return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input } } } : { ok: false, status: 409, error: result.error }
+    })
   }
 
   if (command.action === 'abort') {
@@ -3795,6 +3834,24 @@ async function remoteArtifact(sessionId: string, artifactId: string): Promise<Re
   }
 }
 
+/** Only images registered in this session and localized in the managed attachment directory. */
+async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
+  const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
+  if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
+  const history = await readHistoryWithArtifacts(summary.path)
+  const image = history?.messages.find((message) => message.id === messageId)?.images?.[index]
+  const url = image?.url || (image?.data ? localizeImage(join(YAN_DIR, 'attachments'), image.mimeType, image.data) : '')
+  if (!url.startsWith('file:')) return { ok: false, status: 404, error: '图片已不可用' }
+  try {
+    const path = resolve(fileURLToPath(url))
+    const directory = resolve(join(YAN_DIR, 'attachments')).toLowerCase()
+    if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}\.(jpg|png|webp|gif)$/.test(basename(path))) return { ok: false, status: 403, error: '图片不在受管目录中' }
+    const info = await stat(path)
+    if (!info.isFile() || info.size > REMOTE_ARTIFACT_MAX_BYTES) return { ok: false, status: 413, error: '图片过大，请在电脑查看' }
+    return { path, mediaType: image!.mimeType, bytes: info.size, filename: basename(path) }
+  } catch { return { ok: false, status: 410, error: '图片已不可用' } }
+}
+
 /**
  * 按设置（或旧的 YAN_REMOTE_* 环境变量）启动手机接入。
  * 默认关闭；设置变化时由 IPC 处理器再次调用 applyRemoteAccess。
@@ -3806,6 +3863,8 @@ async function startRemoteServer(): Promise<void> {
       {
         snapshot: remoteSnapshot,
         history: remoteHistory,
+        models: remoteModels,
+        image: remoteMessageImage,
         command: executeRemoteCommand,
         questions: remoteQuestions,
         answer: remoteAnswer,
