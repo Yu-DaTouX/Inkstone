@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>砚 · 动效规范</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+.ink{--bg-0:#151515;--bg-1:#1b1b1a;--bg-2:#222221;--bg-3:#2b2b29;--bg-4:#393936;--border-soft:rgba(255,255,255,.06);--border:rgba(255,255,255,.1);--border-str:rgba(255,255,255,.16);--fg:#ecece8;--fg-dim:#b4b4ac;--fg-mute:#92928a;--ok:#34d399;--ok-soft:rgba(52,211,153,.14);--warn:#fbbf24;--err:#ff6467;--code-bg:#0f0f0e;--on-accent:#10131f;--mono:'Maple Mono CN','JetBrains Mono','Noto Sans SC',ui-monospace,Consolas,monospace;--sans:'Segoe UI','Noto Sans SC','Microsoft YaHei UI',system-ui,sans-serif;--shadow-pop:0 12px 32px -8px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.2);--mo-fast:110ms;--mo-base:170ms;--mo-slow:240ms;--mo-ease:cubic-bezier(.22,1,.36,1);--mo-ease-out:cubic-bezier(.4,0,1,1);--mo-loop:cubic-bezier(.45,0,.55,1);--beat:3.6s}
+.ink[data-theme="light"]{--bg-0:#fcfcfa;--bg-1:#f3f3f0;--bg-2:#ffffff;--bg-3:#eaeae6;--bg-4:#deded9;--border-soft:rgba(0,0,0,.07);--border:rgba(0,0,0,.13);--border-str:rgba(0,0,0,.2);--fg:#252522;--fg-dim:#66665f;--fg-mute:#73736b;--ok:#059669;--ok-soft:rgba(5,150,105,.1);--warn:#b45309;--err:#dc2626;--code-bg:#f3f3f0;--on-accent:#ffffff;--shadow-pop:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.04)}
+@keyframes ink-dots{0%{box-shadow:4px 4px var(--h),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--t),8px 8px var(--o)}12.5%{box-shadow:4px 4px var(--t),8px 4px var(--h),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}25%{box-shadow:4px 4px var(--o),8px 4px var(--t),12px 4px var(--h),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}37.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--t),12px 8px var(--h),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}50%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--t),12px 12px var(--h),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}62.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--t),8px 12px var(--h),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}75%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--t),4px 12px var(--h),4px 8px var(--o),8px 8px var(--o)}87.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--t),4px 8px var(--h),8px 8px var(--o)}}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes ink-orbit{to{--ang:360deg}}
+@keyframes ink-blink{0%{opacity:1}50%{opacity:0}}
+@keyframes ink-sweep{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@keyframes demo-track{0%,12%{transform:translateX(0)}50%,62%{transform:translateX(200px)}100%{transform:translateX(0)}}
+@keyframes demo-grow{0%{grid-template-rows:0fr;opacity:0}9%{grid-template-rows:1fr;opacity:1}80%{grid-template-rows:1fr;opacity:1}86%{grid-template-rows:1fr;opacity:0}92%,100%{grid-template-rows:0fr;opacity:0}}
+@keyframes demo-type{0%,8%{width:0}52%,100%{width:17ch}}
+@keyframes demo-type-hide{0%,88%{opacity:1}94%,100%{opacity:0}}
+@keyframes demo-run{0%,46%{background:var(--accent);color:var(--on-accent)}54%,100%{background:var(--bg-3);color:var(--fg-dim)}}
+@keyframes demo-run-a{0%,44%{opacity:1}52%,100%{opacity:0}}
+@keyframes demo-run-b{0%,48%{opacity:0}56%,100%{opacity:1}}
+@keyframes demo-pop{0%,6%{opacity:0;transform:translateY(-4px) scale(.965)}14%,72%{opacity:1;transform:none}76%,100%{opacity:0;transform:translateY(-2px) scale(.985)}}
+@keyframes demo-seg{0%,22%{transform:translateX(0)}30%,55%{transform:translateX(60px)}63%,88%{transform:translateX(120px)}96%,100%{transform:translateX(0)}}
+@keyframes demo-cell{0%,4%{background:var(--bg-3)}8%,82%{background:var(--accent)}90%,100%{background:var(--bg-3)}}
+.spin{position:relative;display:inline-block;flex:none;width:10px;height:10px;vertical-align:-1px;--h:var(--accent);--t:var(--accent-line);--o:var(--border-str)}
+.spin::before{content:"";position:absolute;left:-4px;top:-4px;width:2px;height:2px;animation:ink-dots .8s steps(1,end) infinite}
+.spin.lg{transform:scale(1.6)}
+.caret{display:inline-block;width:2px;height:1.2em;margin-left:2px;vertical-align:-.25em;border-radius:1px;background:var(--accent);animation:ink-blink 1.06s step-end infinite}
+.orbit::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:conic-gradient(from var(--ang),transparent 0deg 240deg,var(--accent-line) 300deg,var(--accent) 348deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;animation:ink-orbit 2.4s linear infinite}
+.d-grow{display:grid;animation:demo-grow var(--beat) var(--mo-ease) infinite both}
+.d-grow>*{min-height:0;overflow:hidden}
+.d-type{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;animation:demo-type var(--beat) steps(17,end) infinite}
+.d-cell{animation:demo-cell var(--beat) var(--mo-ease) infinite both}
+@media (prefers-reduced-motion:reduce){.ink *,.ink *::before{animation-duration:1ms!important;animation-iteration-count:1!important}}
+</style>
+</helmet>
+<div class="ink" data-theme="{{theme}}" style="width: 1440px; height: 860px; box-sizing: border-box; padding: 48px 56px; display: flex; flex-direction: column; gap: 28px; background: var(--bg-0); color: var(--fg); font-family: var(--mono); font-size: 13px; line-height: 1.55; overflow: hidden; {{accentStyle}}">
+
+<div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border-soft);">
+<h1 style="margin: 0; font-family: var(--sans); font-size: 24px; font-weight: 600;">砚 · 动效规范</h1>
+<span style="font-size: 12px; color: var(--fg-mute);">motion.css · 一条曲线，三档时长，一个节拍</span>
+<span style="flex-grow: 1;"></span>
+<span style="font-size: 12px; color: var(--accent);">v0.5 草案</span>
+</div>
+
+<!-- 令牌条 -->
+<div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 11px;">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-fast</span><span style="font-size: 15px; color: var(--fg);">110ms</span><span style="color: var(--fg-mute);">退场 · 按压 · 悬停</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-base</span><span style="font-size: 15px; color: var(--fg);">170ms</span><span style="color: var(--fg-mute);">淡入 · 图标切换</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-slow</span><span style="font-size: 15px; color: var(--fg);">240ms</span><span style="color: var(--fg-mute);">展开 · 滑块 · 色阶</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-ease</span><span style="font-size: 15px; color: var(--accent);">.22 1 .36 1</span><span style="color: var(--fg-mute);">所有入场与位移</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">--mo-loop</span><span style="font-size: 15px; color: var(--fg);">.45 0 .55 1</span><span style="color: var(--fg-mute);">只给运行中的循环</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">位移 / 缩放</span><span style="font-size: 15px; color: var(--fg);">≤4px · ≥.965</span><span style="color: var(--fg-mute);">不弹跳、不回弹</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--border-soft);"><span style="color: var(--fg-mute);">错峰</span><span style="font-size: 15px; color: var(--fg);">60–70ms</span><span style="color: var(--fg-mute);">列表、diff 行</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;"><span style="color: var(--fg-mute);">字符节奏</span><span style="font-size: 15px; color: var(--fg);">30 / 20ms</span><span style="color: var(--fg-mute);">输入 / 流式正文</span></div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 16px; flex-grow: 1; min-height: 0;">
+
+<!-- 1 曲线 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">01 </span>同一条曲线</h2>
+<svg width="100%" height="88" viewBox="0 0 240 88" fill="none" aria-label="缓动曲线">
+<path d="M0 84 H240 M0 4 H240" stroke="var(--border-soft)"></path>
+<path d="M4 84 C 56 4, 90 4, 236 4" stroke="var(--accent)" stroke-width="2"></path>
+<circle cx="4" cy="84" r="3" fill="var(--fg-mute)"></circle>
+<circle cx="236" cy="4" r="3" fill="var(--accent)"></circle>
+</svg>
+<div style="display: flex; flex-direction: column; gap: 10px; font-size: 11px; color: var(--fg-mute);">
+<div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 8px;"><span>110</span><span style="position: relative; height: 8px; border-radius: 999px; background: var(--bg-3);"><span style="position: absolute; left: 0; top: 0; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); animation: demo-track var(--beat) var(--mo-ease) infinite;"></span></span></div>
+<div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 8px;"><span>170</span><span style="position: relative; height: 8px; border-radius: 999px; background: var(--bg-3);"><span style="position: absolute; left: 0; top: 0; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); animation: demo-track var(--beat) var(--mo-ease) infinite; animation-delay: 60ms;"></span></span></div>
+<div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 8px;"><span>240</span><span style="position: relative; height: 8px; border-radius: 999px; background: var(--bg-3);"><span style="position: absolute; left: 0; top: 0; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); animation: demo-track var(--beat) var(--mo-ease) infinite; animation-delay: 130ms;"></span></span></div>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">快进慢停；三档只差时长</span>
+</section>
+
+<!-- 2 展开 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">02 </span>新块从高度 0 展开</h2>
+<div style="border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 12px; background: var(--bg-0);">
+<div style="margin-top: -1px;">
+<div class="d-grow"><div><div style="display: grid; grid-template-columns: 10px 40px minmax(0, 1fr); align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-top: 1px solid var(--border-soft);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--ok);"></span><span style="color: var(--fg-mute);">read</span><span style="color: var(--fg-dim);">remote-server.ts</span></div></div></div>
+<div class="d-grow" style="animation-delay: 360ms;"><div><div style="display: grid; grid-template-columns: 10px 40px minmax(0, 1fr); align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-top: 1px solid var(--border-soft);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--ok);"></span><span style="color: var(--fg-mute);">grep</span><span style="color: var(--fg-dim);">"grant" src/</span></div></div></div>
+<div class="d-grow" style="animation-delay: 720ms;"><div><div style="display: grid; grid-template-columns: 10px 40px minmax(0, 1fr); align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-top: 1px solid var(--border-soft);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--ok);"></span><span style="color: var(--fg-mute);">write</span><span style="color: var(--fg-dim);">peer-grants.ts</span></div></div></div>
+<div class="d-grow" style="animation-delay: 1080ms;"><div><div style="display: grid; grid-template-columns: 10px 40px minmax(0, 1fr); align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-top: 1px solid var(--border-soft);"><span class="spin"></span><span style="color: var(--fg-mute);">bash</span><span style="color: var(--fg);">npm run typecheck</span></div></div></div>
+</div>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">高度 + 透明度同步，旧内容被连续推开，不跳</span>
+</section>
+
+<!-- 3 打字 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">03 </span>逐字输出 · 光标</h2>
+<div style="padding: 12px; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border-soft); font-size: 13px; display: flex; flex-direction: column; gap: 6px;">
+<div><span style="color: var(--accent);">$ </span><span class="d-type">npm run typecheck</span><span class="caret"></span></div>
+<div style="color: var(--fg-mute); font-size: 11px;">输入时光标常亮，停下后 1.06s 闪烁</div>
+</div>
+<div style="display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border-soft);">
+<span style="color: var(--accent); font-weight: 600;">›</span>
+<span style="font-family: var(--sans); font-size: 14px; color: var(--fg-mute);">说点什么…</span>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">按字符步进，不做渐隐；块光标 = 终端身份</span>
+</section>
+
+<!-- 4 运行态 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">04 </span>运行中才循环</h2>
+<div class="orbit" style="position: relative; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border: 1px solid var(--accent-soft); border-radius: 8px; background: var(--bg-0); font-size: 12px; color: var(--fg-dim);"><span class="spin"></span><span style="flex-grow: 1;">执行 npm run typecheck</span><span style="font-size: 11px; color: var(--fg-mute);">00:07</span></div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 11px; color: var(--fg-mute);">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; border: 1px solid var(--border-soft); border-radius: 6px;"><span style="height: 16px; display: grid; place-items: center;"><span class="spin lg"></span></span><span>方点阵</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; border: 1px solid var(--border-soft); border-radius: 6px;"><span class="caret" style="height: 16px;"></span><span>块光标</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; border: 1px solid var(--border-soft); border-radius: 6px;"><span class="orbit" style="position: relative; width: 44px; height: 16px; border: 1px solid var(--accent-soft); border-radius: 4px;"></span><span>环绕流光</span></div>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">结束即停；循环从不作为唯一的状态信息</span>
+</section>
+
+<!-- 5 状态切换 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">05 </span>状态交叉淡变</h2>
+<div style="display: flex; align-items: stretch; height: 24px; background: var(--bg-0); border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden; font-size: 11px; color: var(--fg-mute);">
+<span style="position: relative; width: 56px; display: grid; place-items: center; font-weight: 600; letter-spacing: 0.06em; animation: demo-run var(--beat) var(--mo-ease) infinite;"><span style="grid-area: 1 / 1; animation: demo-run-a var(--beat) var(--mo-ease) infinite;">RUN</span><span style="grid-area: 1 / 1; animation: demo-run-b var(--beat) var(--mo-ease) infinite;">IDLE</span></span>
+<span style="display: flex; align-items: center; padding: 0 10px; border-right: 1px solid var(--border-soft);">main ~2 +1</span>
+<span style="flex-grow: 1;"></span>
+<span style="display: flex; align-items: center; padding: 0 10px; border-left: 1px solid var(--border-soft);">ctx 38%</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; height: 10px;">
+<span style="background: var(--fg-mute);"></span><span style="background: var(--fg-mute);"></span>
+<span class="d-cell"></span><span class="d-cell" style="animation-delay: 120ms;"></span><span class="d-cell" style="animation-delay: 240ms;"></span><span class="d-cell" style="animation-delay: 360ms;"></span><span class="d-cell" style="animation-delay: 480ms;"></span><span class="d-cell" style="animation-delay: 600ms;"></span>
+<span style="background: var(--bg-3);"></span><span style="background: var(--bg-3);"></span><span style="background: var(--bg-3);"></span><span style="background: var(--bg-3);"></span>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">颜色 240ms 过渡；文字叠放交叉淡变，宽度固定不抖</span>
+</section>
+
+<!-- 6 滑块 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1);">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">06 </span>分段滑块</h2>
+<div role="group" aria-label="视图演示" style="position: relative; display: flex; align-self: flex-start; padding: 2px; border-radius: 6px; background: var(--bg-0); border: 1px solid var(--border-soft); font-size: 12px;">
+<span style="position: absolute; top: 2px; left: 2px; width: 60px; height: 22px; border-radius: 4px; background: var(--bg-3); animation: demo-seg var(--beat) var(--mo-ease) infinite;"></span>
+<span style="position: relative; width: 60px; height: 22px; display: grid; place-items: center; color: var(--fg);">对话</span>
+<span style="position: relative; width: 60px; height: 22px; display: grid; place-items: center; color: var(--fg);">改动</span>
+<span style="position: relative; width: 60px; height: 22px; display: grid; place-items: center; color: var(--fg);">终端</span>
+</div>
+<span style="margin-top: auto; font-size: 11px; color: var(--fg-mute);">选中底块滑过去，而不是闪到新位置</span>
+</section>
+
+<!-- 7 面板 -->
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-1); grid-column: span 2;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">07 </span>浮层开合 · 入场慢、退场快</h2>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+<div style="border-radius: 12px; border: 1px solid var(--border); background: var(--bg-2); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top center; animation: demo-pop var(--beat) var(--mo-ease) infinite both;">
+<div style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border-bottom: 1px solid var(--border-soft);"><span style="color: var(--accent); font-weight: 600;">›</span><span style="flex-grow: 1;">模型<span class="caret"></span></span><span style="font-size: 11px; color: var(--fg-mute);">Esc</span></div>
+<div style="padding: 6px; font-size: 12px;">
+<div style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; height: 28px; align-items: center; padding: 0 8px 0 6px; border-radius: 6px; background: var(--bg-3);"><span style="color: var(--accent);">›</span><span>切换模型…</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl M</span></div>
+<div style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; height: 28px; align-items: center; padding: 0 8px 0 6px; color: var(--fg-dim);"><span></span><span>思考档位：高</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl T</span></div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--fg-mute);">
+<div style="display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px;"><span style="color: var(--fg-dim);">入场</span><span>240ms · --mo-ease · 上移 4px · 0.965 → 1</span></div>
+<div style="display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px;"><span style="color: var(--fg-dim);">退场</span><span>110ms · --mo-ease-out · 上移 2px · 1 → 0.985</span></div>
+<div style="display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px;"><span style="color: var(--fg-dim);">遮罩</span><span>透明度与面板同步，不单独动</span></div>
+<div style="display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px;"><span style="color: var(--fg-dim);">节拍</span><span>本页所有循环共用 3.6s，彼此同相</span></div>
+<div style="display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px;"><span style="color: var(--fg-dim);">降级</span><span>prefers-reduced-motion 下 1ms 直达终态</span></div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"主题"},"accent":{"editor":"enum","options":["indigo","teal","violet"],"default":"indigo","section":"主题"},"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'dark';
+    const accents = {
+      indigo: { dark: [147, 164, 244], light: [82, 100, 200] },
+      teal: { dark: [94, 214, 196], light: [15, 118, 110] },
+      violet: { dark: [192, 165, 250], light: [109, 58, 214] }
+    };
+    const pick = accents[this.props.accent ?? 'indigo'] || accents.indigo;
+    const rgb = (theme === 'light' ? pick.light : pick.dark).join(', ');
+    const accentStyle = '--accent: rgb(' + rgb + '); --accent-soft: rgba(' + rgb + ', ' + (theme === 'light' ? 0.1 : 0.16) + '); --accent-line: rgba(' + rgb + ', ' + (theme === 'light' ? 0.42 : 0.52) + ');';
+    return { theme, accentStyle };
+  }
+}
+</script>
+</body>
+</html>

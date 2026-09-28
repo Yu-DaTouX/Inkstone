@@ -13,7 +13,7 @@
 | 定位源码 | [代码导览](PROJECT.md) · [按功能查找的代码地图](CODE_MAP.md) |
 | 评估语言与桌面/手机技术路线 | [技术路线与迁移可行性](TECH_STACK_OPTIONS.md) |
 | Windows 打包与数据备份 | [发布说明](dev/RELEASING.md) |
-| 界面设计、控件与动效规范 | [设计规范](DESIGN_SYSTEM.md) |
+| 界面设计、控件与动效规范 | [设计规范](DESIGN_SYSTEM.md) · [界面重构计划（草案）](UI_REDESIGN.md) |
 | 使用品牌与图片 | [品牌规范](BRAND.md) |
 | 第三方组件与许可 | [第三方许可](THIRD-PARTY.md) |
 | AI 协作约定 | [AGENTS.md](../AGENTS.md) |

@@ -31,5 +31,7 @@
 | `measure-design.mjs` | 量设计稿的布局溢出：`npm run measure:design` |
 | `CSS-令牌清单.md` · `CSS-归属表.md` · `CSS-散落值清单.md` | 生成物：`npm run measure:css`；用 `npm run check:css-docs` 校验是否最新 |
 | `01-prompt-stone.svg` | 品牌图形素材 |
+| `terminal-preview/` | 终端风格重构原型（设计画板源码，只作参考），见 `docs/UI_REDESIGN.md` |
+| `icons/inkline.draft.json` | 「砚线」图标几何草案，尚未接入 `npm run icons` |
 
 设计规范正文（令牌、组件、禁止项、动效、自检）见 `docs/design/DESIGN.md`（本地维护，不随公开文档分发）。

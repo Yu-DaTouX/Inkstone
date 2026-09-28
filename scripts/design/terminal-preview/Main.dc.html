@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>砚 · 终端风格工作台</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+.ink{--bg-0:#151515;--bg-1:#1b1b1a;--bg-2:#222221;--bg-3:#2b2b29;--bg-4:#393936;--border-soft:rgba(255,255,255,.06);--border:rgba(255,255,255,.1);--border-str:rgba(255,255,255,.16);--fg:#ecece8;--fg-dim:#b4b4ac;--fg-mute:#92928a;--ok:#34d399;--ok-soft:rgba(52,211,153,.14);--warn:#fbbf24;--warn-soft:rgba(251,191,36,.14);--err:#ff6467;--err-soft:rgba(255,100,103,.14);--code-bg:#0f0f0e;--on-accent:#10131f;--mono:'Maple Mono CN','JetBrains Mono','Noto Sans SC',ui-monospace,Consolas,monospace;--sans:'Segoe UI','Noto Sans SC','Microsoft YaHei UI',system-ui,sans-serif;--mo-fast:110ms;--mo-base:170ms;--mo-slow:240ms;--mo-ease:cubic-bezier(.22,1,.36,1);--mo-ease-out:cubic-bezier(.4,0,1,1);--mo-loop:cubic-bezier(.45,0,.55,1)}
+.ink[data-theme="light"]{--bg-0:#fcfcfa;--bg-1:#f3f3f0;--bg-2:#ffffff;--bg-3:#eaeae6;--bg-4:#deded9;--border-soft:rgba(0,0,0,.07);--border:rgba(0,0,0,.13);--border-str:rgba(0,0,0,.2);--fg:#252522;--fg-dim:#66665f;--fg-mute:#73736b;--ok:#059669;--ok-soft:rgba(5,150,105,.1);--warn:#b45309;--warn-soft:rgba(180,83,9,.1);--err:#dc2626;--err-soft:rgba(220,38,38,.1);--code-bg:#f3f3f0;--on-accent:#ffffff}
+.ink button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+.ink input{font:inherit;color:inherit}
+.ink button:focus-visible,.ink input:focus-visible,.ink a:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+@keyframes ink-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes ink-fade{from{opacity:0}to{opacity:1}}
+@keyframes ink-grow{from{grid-template-rows:0fr;opacity:0}to{grid-template-rows:1fr;opacity:1}}
+@keyframes ink-blink{0%{opacity:1}50%{opacity:0}}
+@keyframes ink-dots{0%{box-shadow:4px 4px var(--h),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--t),8px 8px var(--o)}12.5%{box-shadow:4px 4px var(--t),8px 4px var(--h),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}25%{box-shadow:4px 4px var(--o),8px 4px var(--t),12px 4px var(--h),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}37.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--t),12px 8px var(--h),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}50%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--t),12px 12px var(--h),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}62.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--t),8px 12px var(--h),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}75%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--t),4px 12px var(--h),4px 8px var(--o),8px 8px var(--o)}87.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--t),4px 8px var(--h),8px 8px var(--o)}}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes ink-orbit{to{--ang:360deg}}
+.grow{display:grid;animation:ink-grow var(--mo-slow) var(--mo-ease) both}
+.grow>*{min-height:0;overflow:hidden}
+.in{animation:ink-in var(--mo-base) var(--mo-ease) both}
+.fade{animation:ink-fade var(--mo-base) var(--mo-ease) both}
+.caret{display:inline-block;width:2px;height:1.2em;margin-left:2px;vertical-align:-.25em;border-radius:1px;background:var(--accent)}
+.caret.blink{animation:ink-blink 1.06s step-end infinite}
+.spin{position:relative;display:inline-block;flex:none;width:10px;height:10px;vertical-align:-1px;--h:var(--accent);--t:var(--accent-line);--o:var(--border-str)}
+.spin::before{content:"";position:absolute;left:-4px;top:-4px;width:2px;height:2px;animation:ink-dots .8s steps(1,end) infinite}
+.orbit::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:conic-gradient(from var(--ang),transparent 0deg 240deg,var(--accent-line) 300deg,var(--accent) 348deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;pointer-events:none;transition:opacity var(--mo-slow) var(--mo-ease);animation:ink-orbit 2.4s linear infinite}
+.orbit.on::before{opacity:1}
+.tr{transition:background-color var(--mo-slow) var(--mo-ease),color var(--mo-slow) var(--mo-ease),opacity var(--mo-slow) var(--mo-ease),border-color var(--mo-slow) var(--mo-ease)}
+.cell{transition:background-color var(--mo-slow) var(--mo-ease)}
+.fold{display:grid;transition:grid-template-rows var(--mo-slow) var(--mo-ease),opacity var(--mo-base) var(--mo-ease)}
+.fold>*{min-height:0;overflow:hidden}
+.slide{transition:transform var(--mo-slow) var(--mo-ease)}
+.hov{transition:background-color var(--mo-fast) var(--mo-ease),color var(--mo-fast) var(--mo-ease),transform var(--mo-fast) var(--mo-ease)}
+.hov:hover{background-color:var(--bg-2);color:var(--fg)}
+.hov:active{transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){.ink *,.ink *::before{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}}
+</style>
+</helmet>
+<div class="ink" data-theme="{{theme}}" style="width: 1440px; height: 900px; display: grid; grid-template-rows: 40px minmax(0, 1fr) 24px; background: var(--bg-0); color: var(--fg); font-family: var(--mono); font-size: 13px; line-height: 1.55; overflow: hidden; {{accentStyle}}">
+
+<!-- 标题栏 -->
+<header style="display: grid; grid-template-columns: 256px minmax(0, 1fr) auto; align-items: center; background: var(--bg-1); border-bottom: 1px solid var(--border-soft);">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px;">
+<button class="hov" aria-label="收起左栏" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg></button>
+<div style="display: flex; align-items: baseline; gap: 8px;">
+<span style="font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--fg);">砚</span>
+<span style="font-size: 11px; letter-spacing: 0.14em; color: var(--fg-mute);">INKSTONE</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 16px; font-size: 12px; color: var(--fg-mute);">
+<span style="color: var(--accent);">~/pi-desktop</span>
+<span>/</span>
+<sc-if value="{{titled}}" hint-placeholder-val="{{true}}"><span class="fade" style="color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">peer 授权校验</span></sc-if>
+<sc-if value="{{untitled}}" hint-placeholder-val="{{false}}"><span class="fade" style="color: var(--fg-dim);">新对话</span></sc-if>
+</div>
+<div style="display: flex; align-items: center; gap: 4px;">
+<button class="hov" style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 8px; margin-right: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--fg-mute);"><span>命令面板</span><span style="padding: 0 4px; border-radius: 4px; background: var(--bg-3); color: var(--fg-dim);">Ctrl K</span></button>
+<button class="hov" aria-label="浏览器" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"></path></svg></button>
+<button class="hov" aria-label="收起右栏" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--accent); background: var(--bg-3);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M15 3v18"></path></svg></button>
+<div style="display: flex; margin-left: 8px; height: 40px;">
+<button class="hov" aria-label="最小化" style="width: 46px; height: 40px; display: grid; place-items: center; color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14"></path></svg></button>
+<button class="hov" aria-label="最大化" style="width: 46px; height: 40px; display: grid; place-items: center; color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="14" height="14"></rect></svg></button>
+<button class="hov" aria-label="关闭" style="width: 46px; height: 40px; display: grid; place-items: center; color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+</div>
+</header>
+
+<!-- 主体三栏 -->
+<div style="display: grid; grid-template-columns: 256px minmax(0, 1fr) 312px; min-height: 0;">
+
+<!-- 左栏 -->
+<nav aria-label="会话" style="display: flex; flex-direction: column; min-height: 0; background: var(--bg-1); border-right: 1px solid var(--border-soft);">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 12px;">
+<button class="hov" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: var(--bg-3); color: var(--fg); font-weight: 500;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span style="flex-grow: 1; text-align: left;">新对话</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl N</span></button>
+<label style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border-soft); border-radius: 6px; color: var(--fg-mute); font-size: 12px;"><span style="color: var(--accent);">/</span><input placeholder="搜索会话" aria-label="搜索会话" style="flex-grow: 1; min-width: 0; background: transparent; border: 0; outline: none; font-size: 12px;" /></label>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; flex-grow: 1; min-height: 0; overflow: hidden;">
+<div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px 4px; font-size: 11px; color: var(--fg-mute);"><span>置顶</span><span style="flex-grow: 1; height: 1px; background: var(--border-soft);"></span></div>
+<a class="hov" href="#" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--fg-dim); text-decoration: none; font-size: 12px;"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--fg-mute); justify-self: center;"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">发布流程清单</span><span style="font-size: 11px; color: var(--fg-mute);">3d</span></a>
+
+<div style="display: flex; align-items: center; gap: 8px; padding: 12px 8px 4px; font-size: 11px; color: var(--fg-mute);"><span>项目</span><span style="flex-grow: 1; height: 1px; background: var(--border-soft);"></span><span>3</span></div>
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--fg);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color: var(--fg-mute);"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8l-2-3H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1z"></path></svg><span style="flex-grow: 1; font-weight: 500;">pi-desktop</span><span style="font-size: 11px; color: var(--fg-mute);">main</span></div>
+<a href="#" aria-current="page" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 20px; border-radius: 6px; background: var(--bg-3); color: var(--fg); text-decoration: none; font-size: 12px;">
+<span class="tr" style="width: 6px; height: 6px; border-radius: 999px; background: {{railDot}}; justify-self: center;"></span>
+<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><sc-if value="{{titled}}" hint-placeholder-val="{{true}}"><span class="fade">peer 授权校验</span></sc-if><sc-if value="{{untitled}}" hint-placeholder-val="{{false}}"><span class="fade">新对话</span></sc-if></span>
+<span style="font-size: 11px; color: var(--fg-mute);"><sc-if value="{{running}}" hint-placeholder-val="{{true}}"><span class="spin fade"></span></sc-if><sc-if value="{{done}}" hint-placeholder-val="{{false}}"><span class="fade">now</span></sc-if></span>
+</a>
+<a class="hov" href="#" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 20px; border-radius: 6px; color: var(--fg-dim); text-decoration: none; font-size: 12px;"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--warn); justify-self: center;"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">自动调用同意率阈值</span><span style="font-size: 11px; color: var(--fg-mute);">2h</span></a>
+<a class="hov" href="#" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 20px; border-radius: 6px; color: var(--fg-dim); text-decoration: none; font-size: 12px;"><span style="width: 6px; height: 6px; border-radius: 999px; border: 1px solid var(--fg-mute); box-sizing: border-box; justify-self: center;"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">长期记忆 · 候选收件箱</span><span style="font-size: 11px; color: var(--fg-mute);">1d</span></a>
+<a class="hov" href="#" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 20px; border-radius: 6px; color: var(--fg-dim); text-decoration: none; font-size: 12px;"><span style="width: 6px; height: 6px; border-radius: 999px; border: 1px solid var(--fg-mute); box-sizing: border-box; justify-self: center;"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">手机端调试签名</span><span style="font-size: 11px; color: var(--fg-mute);">2d</span></a>
+<button class="hov" style="height: 24px; padding: 0 8px 0 42px; border-radius: 6px; text-align: left; font-size: 11px; color: var(--fg-mute);">更多会话（6）</button>
+
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; margin-top: 4px; font-size: 12px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color: var(--fg-mute);"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8l-2-3H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1z"></path></svg><span style="flex-grow: 1;">yan-mobile</span><span style="font-size: 11px; color: var(--fg-mute);">4</span></div>
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color: var(--fg-mute);"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8l-2-3H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1z"></path></svg><span style="flex-grow: 1;">notes</span><span style="font-size: 11px; color: var(--fg-mute);">12</span></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border-top: 1px solid var(--border-soft);">
+<button class="hov" style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--fg-dim);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--warn);"></span><span style="flex-grow: 1; text-align: left;">待我处理</span><span style="min-width: 18px; padding: 0 5px; border-radius: 4px; background: var(--warn-soft); color: var(--warn); font-size: 11px;">2</span></button>
+<div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-size: 12px;"><span style="width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-family: var(--sans); font-size: 11px;">我</span><span style="flex-grow: 1; color: var(--fg-dim);">本地模式</span><span style="font-size: 11px; color: var(--fg-mute);">v0.5</span></div>
+</div>
+</nav>
+
+<!-- 中栏 -->
+<main style="display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; min-width: 0; min-height: 0;">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--border-soft);">
+<h1 style="margin: 0; flex-grow: 1; min-width: 0; font-family: var(--sans); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><sc-if value="{{titled}}" hint-placeholder-val="{{true}}"><span class="in" style="display: inline-block;">给远程端加上 peer 授权校验</span></sc-if><sc-if value="{{untitled}}" hint-placeholder-val="{{false}}"><span class="fade" style="color: var(--fg-mute);">新对话</span></sc-if></h1>
+<button class="hov" aria-label="重播演示" onClick="{{replay}}" style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; font-size: 11px; color: var(--fg-mute);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg>重播</button>
+<div role="group" aria-label="视图" style="position: relative; display: flex; padding: 2px; border-radius: 6px; background: var(--bg-0); border: 1px solid var(--border-soft); font-size: 12px;">
+<span class="slide" style="position: absolute; top: 2px; left: 2px; width: 60px; height: 22px; border-radius: 4px; background: var(--bg-3); transform: translateX({{segX}}px);"></span>
+<button class="tr" aria-pressed="{{v0on}}" onClick="{{pickV0}}" style="position: relative; width: 60px; height: 22px; color: {{v0c}};">对话</button>
+<button class="tr" aria-pressed="{{v1on}}" onClick="{{pickV1}}" style="position: relative; width: 60px; height: 22px; color: {{v1c}};">改动 <span style="color: var(--warn);">{{changeCount}}</span></button>
+<button class="tr" aria-pressed="{{v2on}}" onClick="{{pickV2}}" style="position: relative; width: 60px; height: 22px; color: {{v2c}};">终端</button>
+</div>
+<span style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border-soft); border-radius: 6px; font-size: 11px; color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 10.5c0 4-6 3-11 6"></path></svg>pi-desktop:main</span>
+</div>
+
+<!-- 对话流：每个新块从高度 0 展开，旧内容被连续推上去 -->
+<div style="min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 24px; opacity: {{sceneOp}}; transition: opacity var(--mo-slow) var(--mo-ease);">
+<div style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 16px;">
+
+<sc-if value="{{sent}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 14px;">
+<div style="display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border-soft);">
+<span style="color: var(--accent); font-weight: 600;">›</span>
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<p style="margin: 0; font-family: {{bodyFont}}; font-size: 14px; line-height: 1.7; color: var(--fg);">{{prompt}}</p>
+<span style="font-size: 11px; color: var(--fg-mute); opacity: 0.7;">14:02 · 分支</span>
+</div>
+</div>
+</div></div></div>
+</sc-if>
+
+<sc-if value="{{thinkShow}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 14px;">
+<div style="display: flex; align-items: center; gap: 8px; height: 22px; font-size: 12px; color: var(--fg-mute);">
+<sc-if value="{{thinking}}" hint-placeholder-val="{{false}}"><span class="fade" style="display: flex; align-items: center; gap: 8px;"><span class="spin"></span><span style="color: var(--fg-dim);">思考中</span><span>{{thinkSec}}</span></span></sc-if>
+<sc-if value="{{thought}}" hint-placeholder-val="{{true}}"><button class="fade hov" style="display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 4px; margin-left: -4px; border-radius: 4px; color: var(--fg-mute);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>思考 · 0.9s</button></sc-if>
+</div>
+</div></div></div>
+</sc-if>
+
+<sc-if value="{{toolsShow}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 14px;">
+<div style="border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 12px;">
+<div style="margin-top: -1px;">
+<sc-for list="{{toolsA}}" as="tl" hint-placeholder-count="3">
+<sc-if value="{{tl.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div class="tr" style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-top: 1px solid var(--border-soft); background: {{tl.bg}};">
+<span style="display: grid; place-items: center; width: 12px;"><sc-if value="{{tl.running}}" hint-placeholder-val="{{false}}"><span class="spin fade"></span></sc-if><sc-if value="{{tl.done}}" hint-placeholder-val="{{true}}"><span class="fade" style="display: block; width: 6px; height: 6px; border-radius: 999px; background: var(--ok);"></span></sc-if></span>
+<span style="color: var(--fg-mute);">{{tl.name}}</span>
+<span class="tr" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{tl.color}};"><span style="color: var(--accent);">{{tl.prefix}}</span>{{tl.target}}</span>
+<span style="font-size: 11px;"><sc-if value="{{tl.running}}" hint-placeholder-val="{{false}}"><span class="fade" style="color: var(--accent);">{{tl.elapsed}}</span></sc-if><sc-if value="{{tl.done}}" hint-placeholder-val="{{true}}"><span class="fade"><span style="color: var(--ok);">{{tl.plus}}</span> <span style="color: var(--err);">{{tl.minus}}</span> <span style="color: var(--fg-mute);">{{tl.meta}}</span></span></sc-if></span>
+</div>
+</div></div>
+</sc-if>
+</sc-for>
+
+<sc-if value="{{diffShow}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div style="background: var(--code-bg); padding: 6px 0; border-top: 1px solid var(--border-soft); font-size: 12px; line-height: 20px;">
+<sc-for list="{{diff}}" as="dl" hint-placeholder-count="5">
+<sc-if value="{{dl.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); background: {{dl.bg}};"><span style="text-align: right; padding-right: 10px; color: var(--fg-mute);">{{dl.num}}</span><span style="color: var(--ok);">{{dl.sign}}</span><span style="white-space: pre; color: {{dl.color}};">{{dl.key}}<span style="color: var(--fg-mute);">{{dl.sep}}</span><span style="color: var(--accent);">{{dl.ty}}</span>{{dl.tail}}</span></div>
+</div></div>
+</sc-if>
+</sc-for>
+</div>
+</div></div>
+</sc-if>
+
+<sc-for list="{{toolsB}}" as="tl" hint-placeholder-count="2">
+<sc-if value="{{tl.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div class="tr" style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-top: 1px solid var(--border-soft); background: {{tl.bg}};">
+<span style="display: grid; place-items: center; width: 12px;"><sc-if value="{{tl.running}}" hint-placeholder-val="{{false}}"><span class="spin fade"></span></sc-if><sc-if value="{{tl.done}}" hint-placeholder-val="{{true}}"><span class="fade" style="display: block; width: 6px; height: 6px; border-radius: 999px; background: var(--ok);"></span></sc-if></span>
+<span style="color: var(--fg-mute);">{{tl.name}}</span>
+<span class="tr" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{tl.color}};"><span style="color: var(--accent);">{{tl.prefix}}</span>{{tl.target}}</span>
+<span style="font-size: 11px;"><sc-if value="{{tl.running}}" hint-placeholder-val="{{false}}"><span class="fade" style="color: var(--accent);">{{tl.elapsed}}</span></sc-if><sc-if value="{{tl.done}}" hint-placeholder-val="{{true}}"><span class="fade"><span style="color: var(--ok);">{{tl.plus}}</span> <span style="color: var(--err);">{{tl.minus}}</span> <span style="color: var(--fg-mute);">{{tl.meta}}</span></span></sc-if></span>
+</div>
+</div></div>
+</sc-if>
+</sc-for>
+</div>
+</div>
+</div></div></div>
+</sc-if>
+
+<sc-if value="{{proseShow}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 14px; font-family: {{bodyFont}}; font-size: 14px; line-height: 1.7; color: var(--fg);">
+<sc-for list="{{prose}}" as="pb" hint-placeholder-count="3">
+<sc-if value="{{pb.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div style="display: grid; grid-template-columns: {{pb.cols}}; padding-top: {{pb.pad}};">
+<sc-if value="{{pb.li}}" hint-placeholder-val="{{false}}"><span style="color: var(--fg-mute); font-family: var(--mono);">–</span></sc-if>
+<p style="margin: 0;"><sc-for list="{{pb.pieces}}" as="pc" hint-placeholder-count="2"><sc-if value="{{pc.code}}" hint-placeholder-val="{{false}}"><code style="font-family: var(--mono); font-size: 12.5px; padding: 1px 5px; border-radius: 4px; background: var(--bg-3); color: var(--fg-dim);">{{pc.text}}</code></sc-if><sc-if value="{{pc.plain}}" hint-placeholder-val="{{true}}"><span>{{pc.text}}</span></sc-if></sc-for><sc-if value="{{pb.caret}}" hint-placeholder-val="{{false}}"><span class="caret"></span></sc-if></p>
+</div>
+</div></div>
+</sc-if>
+</sc-for>
+</div></div></div>
+</sc-if>
+
+<sc-if value="{{done}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 12px; font-size: 11px; color: var(--fg-mute);">6 步 · {{turnSec}} · 14:03</div></div></div>
+</sc-if>
+</div>
+</div>
+
+<!-- 输入区 -->
+<div style="padding: 0 24px 12px;">
+<div style="max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px;">
+<div class="tr orbit {{orbitOn}}" style="position: relative; border: 1px solid {{cmpBorder}}; border-radius: 12px; background: var(--bg-1);">
+<div class="fold" style="grid-template-rows: {{edgeRows}}; opacity: {{edgeOp}};">
+<div>
+<div style="position: relative; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--border-soft); font-size: 12px; color: var(--fg-dim);">
+<span class="spin"></span>
+<span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{phaseText}}</span>
+<span style="color: var(--fg-mute); font-size: 11px;">{{clock}}</span>
+<button class="hov" style="height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 11px; color: var(--fg-dim);"><span style="width: 8px; height: 8px; border-radius: 2px; background: var(--err);"></span>中止</button>
+</div>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; padding: 12px 12px 6px; min-height: 52px;">
+<span style="color: var(--accent); font-weight: 600;">›</span>
+<p style="margin: 0; font-family: {{bodyFont}}; font-size: 14px; color: var(--fg);"><span>{{cmpText}}</span><span class="{{caretClass}}"></span><sc-if value="{{cmpEmpty}}" hint-placeholder-val="{{true}}"><span class="fade" style="margin-left: 6px; color: var(--fg-mute);">{{cmpPh}}</span></sc-if></p>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px;">
+<button class="hov" aria-label="添加文件或能力" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+<div role="group" aria-label="输入模式" style="display: flex; padding: 2px; gap: 2px; border-radius: 6px; background: var(--bg-0); border: 1px solid var(--border-soft); font-size: 11px;">
+<button aria-pressed="true" style="height: 20px; padding: 0 8px; border-radius: 4px; background: var(--bg-3); color: var(--fg);">对话</button>
+<button class="hov" aria-pressed="false" style="height: 20px; padding: 0 8px; border-radius: 4px; color: var(--fg-mute);">! 命令</button>
+</div>
+<button class="hov" style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; font-size: 11px; color: var(--fg-dim);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--accent);"></span>opus-5.5 · 高</button>
+<button class="hov" style="height: 24px; padding: 0 8px; border-radius: 6px; font-size: 11px; color: var(--fg-mute);">@ 文件</button>
+<span style="flex-grow: 1;"></span>
+<span style="font-size: 11px; color: var(--fg-mute);">{{keyHint}}</span>
+<button class="hov" aria-label="发送" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; background: var(--accent); color: var(--on-accent);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+</div>
+</div>
+<div style="display: flex; gap: 16px; padding: 0 4px; font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums;"><span>in {{tokIn}}</span><span>out {{tokOut}}</span><span>cache 92%</span><span style="flex-grow: 1;"></span><span>本轮 {{cost}}</span></div>
+</div>
+</div>
+</main>
+
+<!-- 右栏：检查器 -->
+<aside aria-label="检查器" style="display: flex; flex-direction: column; min-height: 0; background: var(--bg-1); border-left: 1px solid var(--border-soft); font-size: 12px; overflow: hidden;">
+
+<section style="padding: 12px 16px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 6px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); font-weight: 600;"><span style="color: var(--fg-mute);">01</span><span style="flex-grow: 1;">任务</span><span style="color: var(--fg-mute); font-weight: 400; font-variant-numeric: tabular-nums;">{{taskCount}}/5</span></div>
+<sc-for list="{{tasks}}" as="tk" hint-placeholder-count="5">
+<div class="tr" style="display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: center; color: {{tk.color}};">
+<span class="tr" style="width: 12px; height: 12px; border-radius: 3px; box-sizing: border-box; display: grid; place-items: center; border: 1px solid {{tk.box}}; background: {{tk.fill}}; color: var(--accent);">
+<sc-if value="{{tk.done}}" hint-placeholder-val="{{false}}"><svg class="fade" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg></sc-if>
+<sc-if value="{{tk.cur}}" hint-placeholder-val="{{false}}"><span class="fade" style="width: 4px; height: 4px; border-radius: 1px; background: var(--accent);"></span></sc-if>
+</span>
+<span style="text-decoration: {{tk.deco}};">{{tk.label}}</span>
+</div>
+</sc-for>
+</section>
+
+<section style="padding: 12px 16px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); font-weight: 600;"><span style="color: var(--fg-mute);">02</span><span style="flex-grow: 1;">上下文</span><span style="color: var(--fg-mute); font-weight: 400; font-variant-numeric: tabular-nums;">{{ctxText}}</span></div>
+<div aria-label="上下文占用" style="display: grid; grid-template-columns: repeat(25, minmax(0, 1fr)); gap: 2px; height: 10px;">
+<sc-for list="{{cells}}" as="c" hint-placeholder-count="25"><span class="cell" style="background: {{c.bg}};"></span></sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 11px; color: var(--fg-mute);">
+<span style="display: flex; align-items: center; gap: 6px;"><span style="width: 6px; height: 6px; background: var(--fg-mute);"></span>系统</span>
+<span style="display: flex; align-items: center; gap: 6px;"><span style="width: 6px; height: 6px; background: var(--accent);"></span>对话</span>
+<span style="display: flex; align-items: center; gap: 6px;"><span style="width: 6px; height: 6px; background: var(--accent-line);"></span>工具</span>
+</div>
+</section>
+
+<section style="padding: 12px 16px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 72px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); font-weight: 600; margin-bottom: 4px;"><span style="color: var(--fg-mute);">03</span><span style="flex-grow: 1;">改动</span><span style="font-weight: 400; font-variant-numeric: tabular-nums;"><span style="color: var(--ok);">+{{addSum}}</span> <span style="color: var(--err);">−{{delSum}}</span></span></div>
+<sc-for list="{{changes}}" as="ch" hint-placeholder-count="3">
+<sc-if value="{{ch.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div>
+<div style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: center; height: 24px;"><span style="color: {{ch.color}}; font-weight: 600;">{{ch.letter}}</span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-dim);">{{ch.path}}</span><span style="font-size: 11px;"><span style="color: var(--ok);">{{ch.plus}}</span> <span style="color: var(--err);">{{ch.minus}}</span></span></div>
+</div></div>
+</sc-if>
+</sc-for>
+</section>
+
+<section style="padding: 12px 16px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-height: 0;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); font-weight: 600;"><span style="color: var(--fg-mute);">04</span><span style="flex-grow: 1;">终端</span><span class="tr" style="display: flex; align-items: center; gap: 6px; font-weight: 400; color: {{termStateColor}};"><span class="tr" style="width: 6px; height: 6px; border-radius: 999px; background: {{termStateColor}};"></span>{{termState}}</span></div>
+<div style="flex-grow: 1; min-height: 0; overflow: hidden; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border-soft); padding: 8px 10px; font-size: 11px; line-height: 18px; color: var(--fg-dim); display: flex; flex-direction: column; justify-content: flex-end;">
+<sc-for list="{{term}}" as="ln" hint-placeholder-count="4">
+<sc-if value="{{ln.show}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="white-space: pre; color: {{ln.color}};"><span style="color: {{ln.pc}};">{{ln.prefix}}</span>{{ln.text}}<sc-if value="{{ln.caret}}" hint-placeholder-val="{{false}}"><span class="{{ln.caretClass}}"></span></sc-if></div></div></div>
+</sc-if>
+</sc-for>
+</div>
+</section>
+
+<section style="padding: 12px 16px; display: flex; flex-direction: column; min-height: 44px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); font-weight: 600;"><span style="color: var(--fg-mute);">05</span><span style="flex-grow: 1;">队列</span><span style="color: var(--fg-mute); font-weight: 400;">{{queueCount}}</span></div>
+<sc-if value="{{queued}}" hint-placeholder-val="{{true}}">
+<div class="grow"><div><div style="padding-top: 8px;">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 6px; border: 1px dashed var(--border-str);">
+<span style="font-family: {{bodyFont}}; color: var(--fg-dim); font-size: 12px;">{{queueText}}</span>
+<div style="display: flex; gap: 6px; font-size: 11px; align-items: center;"><span class="tr" style="flex-grow: 1; color: {{queueStateColor}};">{{queueState}}</span><button class="hov" style="height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--fg-dim);">插话</button><button class="hov" style="height: 22px; padding: 0 8px; border-radius: 4px; color: var(--fg-mute);">撤回</button></div>
+</div>
+</div></div></div>
+</sc-if>
+</section>
+</aside>
+</div>
+
+<!-- 状态栏 -->
+<footer style="display: flex; align-items: stretch; background: var(--bg-1); border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums;">
+<span class="tr" style="display: flex; align-items: center; justify-content: center; width: 56px; background: {{modeBg}}; color: {{modeFg}}; font-weight: 600; letter-spacing: 0.06em;">{{modeText}}</span>
+<span style="display: flex; align-items: center; gap: 6px; padding: 0 12px; border-right: 1px solid var(--border-soft); color: var(--fg-dim);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 10.5c0 4-6 3-11 6"></path></svg>main <span style="color: var(--warn);">{{gitMod}}</span> <span style="color: var(--ok);">{{gitAdd}}</span></span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-right: 1px solid var(--border-soft);">pi rpc · 已连接</span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-right: 1px solid var(--border-soft);">手机 · 1 台已配对</span>
+<span style="flex-grow: 1;"></span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-left: 1px solid var(--border-soft);">opus-5.5 · 高</span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-left: 1px solid var(--border-soft);">ctx {{ctxPct}}</span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-left: 1px solid var(--border-soft);">今日 {{costDay}}</span>
+<span style="display: flex; align-items: center; padding: 0 12px; border-left: 1px solid var(--border-soft);">本地模式</span>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"主题"},"accent":{"editor":"enum","options":["indigo","teal","violet"],"default":"indigo","section":"主题"},"monoBody":{"editor":"boolean","default":false,"section":"字体"},"loop":{"editor":"boolean","default":true,"section":"演示"},"speed":{"editor":"enum","options":["1x","0.5x"],"default":"1x","section":"演示"},"$preview":{"width":1440,"height":900}}'>
+var PROMPT = '给 remote-server 加上 peer 授权：配对后才能调用 /peer/*，撤销后立即失效。';
+var QUEUE = '测试跑完后把 MOBILE_ACCESS 的配对章节也改掉';
+var PROSE = [
+  { li: false, pieces: [['授权校验已接到 ', 0], ['remote-server', 1], [' 的 /peer/* 路由：', 0]] },
+  { li: true, pieces: [['授权记录写在 ', 0], ['peer-grants.json', 1], ['，启动时载入；', 0]] },
+  { li: true, pieces: [['撤销只写 ', 0], ['revokedAt', 1], ['，下一次请求即返回 403。', 0]] }
+];
+var CH = 30;
+var PROSE_CH = 20;
+
+function proseLength() {
+  var n = 0;
+  PROSE.forEach(function (b) { b.pieces.forEach(function (p) { n += p[0].length; }); });
+  return n;
+}
+
+function timeline() {
+  var type0 = 500;
+  var s = type0 + PROMPT.length * CH + 450;
+  var T = {
+    type0: type0,
+    s: s,
+    title: s + 600,
+    think: [s + 200, s + 1100],
+    read: [s + 1200, s + 1700],
+    grep: [s + 1800, s + 2250],
+    write: [s + 2350, s + 2850],
+    diff0: s + 2850,
+    edit: [s + 3350, s + 3750],
+    bash: [s + 3850, s + 5950],
+    qType: [s + 4000, s + 4000 + QUEUE.length * CH],
+    prose: s + 6150
+  };
+  T.qSend = T.qType[1] + 350;
+  T.cmdEnd = T.bash[0] + 17 * 25;
+  T.done = T.prose + proseLength() * PROSE_CH + 300;
+  T.hold = T.done + 4200;
+  return T;
+}
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function lerp(ms, a, b, from, to) { return from + (to - from) * clamp((ms - a) / (b - a), 0, 1); }
+
+class Component extends DCLogic {
+  componentDidMount() {
+    this.t0 = performance.now();
+    this.setState({ ms: 0, view: 0, fading: false });
+    this.timer = setInterval(() => this.tick(), 33);
+  }
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    clearTimeout(this.fadeT);
+  }
+  rate() { return this.props.speed === '0.5x' ? 0.5 : 1; }
+  tick() {
+    const T = timeline();
+    const ms = (performance.now() - this.t0) * this.rate();
+    if (ms >= T.hold) {
+      if (this.props.loop === false) {
+        if ((this.state || {}).ms !== T.hold) this.setState({ ms: T.hold });
+        return;
+      }
+      this.restart();
+      return;
+    }
+    this.setState({ ms: ms });
+  }
+  restart() {
+    if (this.fadeT) return;
+    this.setState({ fading: true });
+    this.fadeT = setTimeout(() => {
+      this.fadeT = null;
+      this.t0 = performance.now();
+      this.setState({ ms: 0, fading: false });
+    }, 280);
+  }
+  tool(ms, win) {
+    return { show: ms >= win[0], running: ms >= win[0] && ms < win[1], done: ms >= win[1] };
+  }
+  renderVals() {
+    const S = this.state || {};
+    const ms = S.ms || 0;
+    const T = timeline();
+    const theme = this.props.theme ?? 'dark';
+
+    const accents = {
+      indigo: { dark: [147, 164, 244], light: [82, 100, 200] },
+      teal: { dark: [94, 214, 196], light: [15, 118, 110] },
+      violet: { dark: [192, 165, 250], light: [109, 58, 214] }
+    };
+    const pick = accents[this.props.accent ?? 'indigo'] || accents.indigo;
+    const rgb = (theme === 'light' ? pick.light : pick.dark).join(', ');
+    const accentStyle = '--accent: rgb(' + rgb + '); --accent-soft: rgba(' + rgb + ', ' + (theme === 'light' ? 0.1 : 0.16) + '); --accent-line: rgba(' + rgb + ', ' + (theme === 'light' ? 0.42 : 0.52) + ');';
+    const bodyFont = this.props.monoBody ? 'var(--mono)' : 'var(--sans)';
+
+    const sent = ms >= T.s;
+    const running = sent && ms < T.done;
+    const done = ms >= T.done;
+    const titled = ms >= T.title;
+
+    // 输入区：先打出提示词，发送后清空；运行中再打一条排队消息
+    let cmpText = '';
+    let typing = false;
+    if (!sent && ms >= T.type0) {
+      const n = clamp(Math.floor((ms - T.type0) / CH), 0, PROMPT.length);
+      cmpText = PROMPT.slice(0, n);
+      typing = n < PROMPT.length;
+    } else if (ms >= T.qType[0] && ms < T.qSend) {
+      const n = clamp(Math.floor((ms - T.qType[0]) / CH), 0, QUEUE.length);
+      cmpText = QUEUE.slice(0, n);
+      typing = n < QUEUE.length;
+    }
+    const cmpEmpty = cmpText.length === 0;
+    const cmpPh = running ? '生成中，Enter 排队' : '说点什么…';
+
+    // 当前阶段文字（输入区顶边）
+    const phases = [
+      [T.s, '思考中'],
+      [T.read[0], '读取 src/main/remote-server.ts'],
+      [T.grep[0], '搜索 "pairing|grant"'],
+      [T.write[0], '写入 src/main/peer-grants.ts'],
+      [T.edit[0], '编辑 src/main/remote-server.ts'],
+      [T.bash[0], '执行 npm run typecheck'],
+      [T.prose, '回复中']
+    ];
+    let phaseText = '';
+    phases.forEach(function (p) { if (ms >= p[0]) phaseText = p[1]; });
+    const sec = Math.max(0, Math.floor((ms - T.s) / 1000));
+    const clock = '00:' + String(Math.min(sec, 59)).padStart(2, '0');
+
+    const mk = (win, name, prefix, target, meta, plus, minus) => {
+      const st = this.tool(ms, win);
+      return Object.assign(st, {
+        name: name, prefix: prefix, target: target, meta: meta, plus: plus, minus: minus,
+        bg: st.running ? 'var(--bg-1)' : 'transparent',
+        color: st.running ? 'var(--fg)' : 'var(--fg-dim)',
+        elapsed: ((Math.max(0, ms - win[0])) / 1000).toFixed(1) + 's'
+      });
+    };
+    const toolsA = [
+      mk(T.read, 'read', '', 'src/main/remote-server.ts', '412 行 · 0.5s', '', ''),
+      mk(T.grep, 'grep', '', '"pairing|grant" src/', '7 处 · 0.4s', '', ''),
+      mk(T.write, 'write', '', 'src/main/peer-grants.ts', '新文件', '+42', '')
+    ];
+    const toolsB = [
+      mk(T.edit, 'edit', '', 'src/main/remote-server.ts', '', '+18', '−4'),
+      mk(T.bash, 'bash', '$ ', 'npm run typecheck', 'exit 0 · 2.1s', '', '')
+    ];
+    const diffSrc = [
+      ['12', ' ', '', '', '', 'export interface PeerGrant {'],
+      ['13', '+', '  deviceId', ': ', 'string', ''],
+      ['14', '+', '  scopes', ': ', 'PeerScope', '[]'],
+      ['15', '+', '  revokedAt', '?: ', 'number', ''],
+      ['16', ' ', '', '', '', '}']
+    ];
+    const diff = diffSrc.map(function (d, i) {
+      const add = d[1] === '+';
+      return { show: ms >= T.diff0 + i * 70, num: d[0], sign: d[1], key: d[2], sep: d[3], ty: d[4], tail: d[5], bg: add ? 'var(--ok-soft)' : 'transparent', color: add ? 'var(--fg)' : 'var(--fg-mute)' };
+    });
+
+    // 正文逐字流出
+    let budget = ms >= T.prose ? Math.floor((ms - T.prose) / PROSE_CH) : 0;
+    let caretPlaced = false;
+    const prose = PROSE.map(function (b, bi) {
+      const started = ms >= T.prose && budget > 0;
+      const pieces = [];
+      b.pieces.forEach(function (p) {
+        const take = clamp(budget, 0, p[0].length);
+        budget -= take;
+        if (take > 0) pieces.push({ text: p[0].slice(0, take), code: !!p[1], plain: !p[1] });
+      });
+      const total = b.pieces.reduce(function (a, p) { return a + p[0].length; }, 0);
+      const typed = pieces.reduce(function (a, p) { return a + p.text.length; }, 0);
+      const caret = started && !caretPlaced && typed <= total && (budget <= 0) && !done;
+      if (caret) caretPlaced = true;
+      return { show: started || typed > 0, li: b.li, cols: b.li ? '16px minmax(0, 1fr)' : 'minmax(0, 1fr)', pad: bi === 0 ? '0px' : '4px', pieces: pieces, caret: caret };
+    });
+
+    // 检查器
+    const taskDefs = [
+      ['读现有配对流程', T.grep[1]],
+      ['新建 peer-grants 存储', T.write[1]],
+      ['路由挂校验中间件', T.edit[1]],
+      ['类型检查', T.bash[1]],
+      ['更新 MOBILE_ACCESS 文档', Infinity]
+    ];
+    let curSet = false;
+    let taskCount = 0;
+    const tasks = taskDefs.map(function (t) {
+      const isDone = ms >= t[1];
+      if (isDone) taskCount++;
+      const isCur = !isDone && sent && !curSet && !done;
+      if (isCur) curSet = true;
+      return {
+        label: t[0], done: isDone, cur: isCur,
+        color: isDone ? 'var(--fg-mute)' : (isCur ? 'var(--fg)' : 'var(--fg-dim)'),
+        deco: isDone ? 'line-through' : 'none',
+        box: isDone ? 'transparent' : (isCur ? 'var(--accent)' : 'var(--border-str)'),
+        fill: isDone ? 'var(--accent-soft)' : 'transparent'
+      };
+    });
+
+    const doneTools = [T.read, T.grep, T.write, T.edit, T.bash].filter(function (w) { return ms >= w[1]; }).length;
+    const fill = 3 + (sent ? 1 : 0) + doneTools + (ms >= T.prose ? 1 : 0) + (done ? 1 : 0);
+    const cells = [];
+    for (let i = 0; i < 25; i++) {
+      cells.push({ bg: i < 2 ? 'var(--fg-mute)' : (i < fill ? (i >= fill - 2 && running ? 'var(--accent-line)' : 'var(--accent)') : 'var(--bg-3)') });
+    }
+    const ctxK = Math.round(lerp(ms, T.s, T.done, 22, 76));
+    const ctxPct = Math.round(ctxK / 2) + '%';
+
+    const changeDefs = [
+      ['A', 'var(--ok)', 'main/peer-grants.ts', 42, 0, T.write[1]],
+      ['M', 'var(--warn)', 'main/remote-server.ts', 18, 4, T.edit[1]],
+      ['M', 'var(--warn)', 'shared/remote-protocol.ts', 9, 1, T.edit[1] + 120]
+    ];
+    let addSum = 0;
+    let delSum = 0;
+    let nMod = 0;
+    let nAdd = 0;
+    const changes = changeDefs.map(function (c) {
+      const show = ms >= c[5];
+      if (show) { addSum += c[3]; delSum += c[4]; if (c[0] === 'A') nAdd++; else nMod++; }
+      return { show: show, letter: c[0], color: c[1], path: c[2], plus: '+' + c[3], minus: c[4] ? '−' + c[4] : '' };
+    });
+
+    // 终端：同一个时钟驱动命令与输出
+    const bashOn = ms >= T.bash[0] && ms < T.bash[1];
+    const cmd = 'npm run typecheck';
+    const cmdTyped = ms >= T.bash[0] ? cmd.slice(0, clamp(Math.floor((ms - T.bash[0]) / 25), 0, cmd.length)) : '';
+    const cmdTyping = ms >= T.bash[0] && cmdTyped.length < cmd.length;
+    const promptLive = ms < T.bash[1];
+    const line = function (show, prefix, pc, text, color, caret, caretClass) {
+      return { show: show, prefix: prefix, pc: pc, text: text, color: color, caret: caret, caretClass: caretClass };
+    };
+    const term = [
+      line(true, '$ ', 'var(--accent)', 'git status --short', 'var(--fg-dim)', false, ''),
+      line(true, '', '', ' M src/main/remote-server.ts', 'var(--fg-mute)', false, ''),
+      line(true, '$ ', 'var(--accent)', cmdTyped, 'var(--fg)', promptLive && !(ms >= T.cmdEnd), cmdTyping ? 'caret' : 'caret blink'),
+      line(ms >= T.bash[0] + 600, '', '', '> tsc -b --noEmit', 'var(--fg-mute)', false, ''),
+      line(ms >= T.bash[0] + 1000, 'ok ', 'var(--ok)', 'main      0 errors', 'var(--fg-dim)', false, ''),
+      line(ms >= T.bash[0] + 1400, 'ok ', 'var(--ok)', 'renderer  0 errors', 'var(--fg-dim)', false, ''),
+      line(ms >= T.bash[0] + 1800, 'ok ', 'var(--ok)', 'shared    0 errors', 'var(--fg-dim)', false, ''),
+      line(ms >= T.bash[1], '', '', 'Done in 2.1s', 'var(--fg-mute)', false, ''),
+      line(ms >= T.bash[1], '$ ', 'var(--accent)', '', 'var(--fg)', true, 'caret blink')
+    ];
+
+    const queued = ms >= T.qSend;
+    const S0 = this;
+    return {
+      theme: theme, accentStyle: accentStyle, bodyFont: bodyFont,
+      sceneOp: S.fading ? 0 : 1,
+      prompt: PROMPT,
+      sent: sent, running: running, done: done,
+      titled: titled, untitled: !titled,
+      railDot: running ? 'var(--accent)' : (done ? 'var(--ok)' : 'var(--fg-mute)'),
+      thinkShow: ms >= T.think[0], thinking: ms >= T.think[0] && ms < T.think[1], thought: ms >= T.think[1],
+      thinkSec: ((Math.max(0, ms - T.think[0])) / 1000).toFixed(1) + 's',
+      toolsShow: ms >= T.read[0], toolsA: toolsA, toolsB: toolsB,
+      diffShow: ms >= T.diff0, diff: diff,
+      proseShow: ms >= T.prose, prose: prose,
+      turnSec: ((T.done - T.s) / 1000).toFixed(0) + 's',
+      cmpText: cmpText, cmpEmpty: cmpEmpty, cmpPh: cmpPh,
+      caretClass: typing ? 'caret' : 'caret blink',
+      cmpBorder: running ? 'var(--accent-soft)' : 'var(--border)',
+      orbitOn: running ? 'on' : '',
+      edgeRows: running ? '1fr' : '0fr', edgeOp: running ? 1 : 0,
+      phaseText: phaseText, clock: clock,
+      keyHint: running ? 'Enter 排队 · Shift+Enter 换行' : 'Enter 发送 · Shift+Enter 换行',
+      tokIn: lerp(ms, T.s, T.done, 0, 41.2).toFixed(1) + 'k',
+      tokOut: lerp(ms, T.prose, T.done, 0, 3.1).toFixed(1) + 'k',
+      cost: '$' + lerp(ms, T.s, T.done, 0, 0.21).toFixed(2),
+      costDay: '$' + lerp(ms, T.s, T.done, 1.63, 1.84).toFixed(2),
+      taskCount: taskCount, tasks: tasks,
+      cells: cells, ctxText: ctxK + 'k / 200k', ctxPct: ctxPct,
+      changes: changes, addSum: addSum, delSum: delSum, changeCount: nAdd + nMod,
+      gitMod: nMod ? '~' + nMod : '', gitAdd: nAdd ? '+' + nAdd : '',
+      term: term,
+      termState: bashOn ? '运行中' : '空闲',
+      termStateColor: bashOn ? 'var(--accent)' : 'var(--fg-mute)',
+      queued: queued, queueText: QUEUE, queueCount: queued ? 1 : 0,
+      queueState: done ? '下一轮投递' : '待投递',
+      queueStateColor: done ? 'var(--accent)' : 'var(--warn)',
+      modeText: running ? 'RUN' : 'IDLE',
+      modeBg: running ? 'var(--accent)' : 'var(--bg-3)',
+      modeFg: running ? 'var(--on-accent)' : 'var(--fg-dim)',
+      segX: (S.view || 0) * 60,
+      v0on: String((S.view || 0) === 0), v1on: String(S.view === 1), v2on: String(S.view === 2),
+      v0c: (S.view || 0) === 0 ? 'var(--fg)' : 'var(--fg-mute)',
+      v1c: S.view === 1 ? 'var(--fg)' : 'var(--fg-mute)',
+      v2c: S.view === 2 ? 'var(--fg)' : 'var(--fg-mute)',
+      pickV0: function () { S0.setState({ view: 0 }); },
+      pickV1: function () { S0.setState({ view: 1 }); },
+      pickV2: function () { S0.setState({ view: 2 }); },
+      replay: function () { S0.restart(); }
+    };
+  }
+}
+</script>
+</body>
+</html>

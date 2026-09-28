@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>砚 · 终端风格组件</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+.ink{--bg-0:#151515;--bg-1:#1b1b1a;--bg-2:#222221;--bg-3:#2b2b29;--bg-4:#393936;--border-soft:rgba(255,255,255,.06);--border:rgba(255,255,255,.1);--border-str:rgba(255,255,255,.16);--fg:#ecece8;--fg-dim:#b4b4ac;--fg-mute:#92928a;--ok:#34d399;--ok-soft:rgba(52,211,153,.14);--warn:#fbbf24;--warn-soft:rgba(251,191,36,.14);--err:#ff6467;--err-soft:rgba(255,100,103,.14);--code-bg:#0f0f0e;--on-accent:#10131f;--mono:'Maple Mono CN','JetBrains Mono','Noto Sans SC',ui-monospace,Consolas,monospace;--sans:'Segoe UI','Noto Sans SC','Microsoft YaHei UI',system-ui,sans-serif;--shadow-pop:0 12px 32px -8px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.2)}
+.ink[data-theme="light"]{--bg-0:#fcfcfa;--bg-1:#f3f3f0;--bg-2:#ffffff;--bg-3:#eaeae6;--bg-4:#deded9;--border-soft:rgba(0,0,0,.07);--border:rgba(0,0,0,.13);--border-str:rgba(0,0,0,.2);--fg:#252522;--fg-dim:#66665f;--fg-mute:#73736b;--ok:#059669;--ok-soft:rgba(5,150,105,.1);--warn:#b45309;--warn-soft:rgba(180,83,9,.1);--err:#dc2626;--err-soft:rgba(220,38,38,.1);--code-bg:#f3f3f0;--on-accent:#ffffff;--shadow-pop:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.04)}
+.ink button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+.ink input{font:inherit;color:inherit}
+.ink button:focus-visible,.ink input:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.ink{--mo-fast:110ms;--mo-base:170ms;--mo-slow:240ms;--mo-ease:cubic-bezier(.22,1,.36,1)}
+@keyframes ink-dots{0%{box-shadow:4px 4px var(--h),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--t),8px 8px var(--o)}12.5%{box-shadow:4px 4px var(--t),8px 4px var(--h),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}25%{box-shadow:4px 4px var(--o),8px 4px var(--t),12px 4px var(--h),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}37.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--t),12px 8px var(--h),12px 12px var(--o),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}50%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--t),12px 12px var(--h),8px 12px var(--o),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}62.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--t),8px 12px var(--h),4px 12px var(--o),4px 8px var(--o),8px 8px var(--o)}75%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--t),4px 12px var(--h),4px 8px var(--o),8px 8px var(--o)}87.5%{box-shadow:4px 4px var(--o),8px 4px var(--o),12px 4px var(--o),12px 8px var(--o),12px 12px var(--o),8px 12px var(--o),4px 12px var(--t),4px 8px var(--h),8px 8px var(--o)}}
+@keyframes ink-blink{0%{opacity:1}50%{opacity:0}}
+.spin{position:relative;display:inline-block;flex:none;width:10px;height:10px;vertical-align:-1px;--h:var(--accent);--t:var(--accent-line);--o:var(--border-str)}
+.spin::before{content:"";position:absolute;left:-4px;top:-4px;width:2px;height:2px;animation:ink-dots .8s steps(1,end) infinite}
+.caret{display:inline-block;width:2px;height:1.2em;margin-left:2px;vertical-align:-.25em;border-radius:1px;background:var(--accent);animation:ink-blink 1.06s step-end infinite}
+.ink button{transition:background-color var(--mo-fast) var(--mo-ease),color var(--mo-fast) var(--mo-ease),transform var(--mo-fast) var(--mo-ease),filter var(--mo-fast) var(--mo-ease)}
+.ink button:hover{filter:brightness(1.08)}
+.ink button:active{transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){.ink *,.ink *::before{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}}
+</style>
+</helmet>
+<div class="ink" data-theme="{{theme}}" style="width: 1440px; height: 980px; box-sizing: border-box; padding: 48px 56px; display: flex; flex-direction: column; gap: 32px; background: var(--bg-0); color: var(--fg); font-family: var(--mono); font-size: 13px; line-height: 1.55; overflow: hidden; {{accentStyle}}">
+
+<div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border-soft);">
+<h1 style="margin: 0; font-family: var(--sans); font-size: 24px; font-weight: 600;">砚 · 终端风格组件</h1>
+<span style="font-size: 12px; color: var(--fg-mute);">tokens.css · ui.css · components/ui</span>
+<span style="flex-grow: 1;"></span>
+<span style="font-size: 12px; color: var(--accent);">v0.5 草案</span>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; flex-grow: 1; min-height: 0;">
+
+<!-- 第一列 -->
+<div style="display: flex; flex-direction: column; gap: 28px;">
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">01 </span>色阶</h2>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;">
+<div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 44px; border-radius: 6px; background: var(--bg-0); border: 1px solid var(--border);"></span><span style="font-size: 11px; color: var(--fg-mute);">bg-0</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 44px; border-radius: 6px; background: var(--bg-1); border: 1px solid var(--border);"></span><span style="font-size: 11px; color: var(--fg-mute);">bg-1</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 44px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border);"></span><span style="font-size: 11px; color: var(--fg-mute);">bg-2</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 44px; border-radius: 6px; background: var(--bg-3); border: 1px solid var(--border);"></span><span style="font-size: 11px; color: var(--fg-mute);">bg-3</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 44px; border-radius: 6px; background: var(--bg-4); border: 1px solid var(--border);"></span><span style="font-size: 11px; color: var(--fg-mute);">bg-4</span></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim);"><span style="width: 14px; height: 14px; border-radius: 3px; background: var(--accent);"></span>accent</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim);"><span style="width: 14px; height: 14px; border-radius: 3px; background: var(--ok);"></span>ok</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim);"><span style="width: 14px; height: 14px; border-radius: 3px; background: var(--warn);"></span>warn</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim);"><span style="width: 14px; height: 14px; border-radius: 3px; background: var(--err);"></span>err</div>
+</div>
+<div style="display: flex; gap: 16px; font-size: 13px;"><span style="color: var(--fg);">fg 正文</span><span style="color: var(--fg-dim);">fg-dim 次要</span><span style="color: var(--fg-mute);">fg-mute 元数据</span></div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">02 </span>字体</h2>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 8px;">
+<span style="font-size: 11px; color: var(--fg-mute);">--mono · 界面骨架、元数据、代码、终端</span>
+<span style="font-size: 18px; color: var(--fg);">Maple Mono CN 汉字等宽 0123</span>
+<span style="font-size: 12px; color: var(--fg-dim);">read  src/main/remote-server.ts  0.1s</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 8px;">
+<span style="font-size: 11px; color: var(--fg-mute);">--sans · 对话正文、页标题</span>
+<span style="font-family: var(--sans); font-size: 18px; color: var(--fg);">墨色工作空间，内容优先</span>
+<span style="font-family: var(--sans); font-size: 14px; line-height: 1.7; color: var(--fg-dim);">长段中文用无衬线阅读更舒服；等宽只给结构和机器输出。</span>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">03 </span>空状态</h2>
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 18px 16px; border: 1px dashed var(--border-str); border-radius: 8px;">
+<span style="color: var(--fg-dim);"><span style="color: var(--accent);">$</span> git diff --stat</span>
+<span style="font-family: var(--sans); font-size: 14px; color: var(--fg);">没有改动。工作区与 main 一致。</span>
+<button style="align-self: flex-start; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; color: var(--fg-dim);">查看提交历史</button>
+</div>
+</section>
+</div>
+
+<!-- 第二列 -->
+<div style="display: flex; flex-direction: column; gap: 28px;">
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">04 </span>按钮</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+<button style="height: 28px; padding: 0 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-weight: 500; font-size: 12px;">提交</button>
+<button style="height: 28px; padding: 0 12px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border); font-size: 12px;">取消</button>
+<button style="height: 28px; padding: 0 12px; border-radius: 6px; font-size: 12px; color: var(--fg-dim);">不管了</button>
+<button style="height: 28px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--err-soft); background: var(--err-soft); color: var(--err); font-size: 12px;">移入回收站</button>
+<button aria-label="复制" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; border: 1px solid var(--border); color: var(--fg-dim);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a1 1 0 0 1 1-1h10"></path></svg></button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+<button style="height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 6px; background: var(--bg-3); font-size: 12px; font-weight: 500;">新对话<span style="padding: 0 5px; border-radius: 4px; background: var(--bg-0); color: var(--fg-mute); font-size: 11px; font-weight: 400;">Ctrl N</span></button>
+<button style="height: 24px; padding: 0 8px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border); font-size: 11px;">sm 24</button>
+<button disabled="disabled" style="height: 28px; padding: 0 12px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border); font-size: 12px; opacity: 0.5; cursor: default;">禁用</button>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">05 </span>分段 · 开关 · 徽标</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+<div role="group" aria-label="主题" style="display: flex; padding: 2px; gap: 2px; border-radius: 6px; background: var(--bg-1); border: 1px solid var(--border-soft); font-size: 12px;">
+<button aria-pressed="true" style="height: 22px; padding: 0 10px; border-radius: 4px; background: var(--bg-3); color: var(--fg); font-weight: 500;">深色</button>
+<button aria-pressed="false" style="height: 22px; padding: 0 10px; border-radius: 4px; color: var(--fg-mute);">浅色</button>
+<button aria-pressed="false" style="height: 22px; padding: 0 10px; border-radius: 4px; color: var(--fg-mute);">跟随系统</button>
+</div>
+<button role="switch" aria-checked="true" aria-label="自动调用" style="width: 30px; height: 18px; border-radius: 999px; background: var(--accent); position: relative;"><span style="position: absolute; top: 2px; left: 14px; width: 14px; height: 14px; border-radius: 999px; background: var(--on-accent);"></span></button>
+<button role="switch" aria-checked="false" aria-label="声音" style="width: 30px; height: 18px; border-radius: 999px; background: var(--bg-4); position: relative;"><span style="position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: var(--fg-dim);"></span></button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px;">
+<span style="height: 20px; display: flex; align-items: center; padding: 0 6px; border-radius: 4px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent);">opus-5.5</span>
+<span style="height: 20px; display: flex; align-items: center; padding: 0 6px; border-radius: 4px; border: 1px solid var(--ok-soft); background: var(--ok-soft); color: var(--ok);">exit 0</span>
+<span style="height: 20px; display: flex; align-items: center; padding: 0 6px; border-radius: 4px; border: 1px solid var(--warn-soft); background: var(--warn-soft); color: var(--warn);">待确认 2</span>
+<span style="height: 20px; display: flex; align-items: center; padding: 0 6px; border-radius: 4px; border: 1px solid var(--err-soft); background: var(--err-soft); color: var(--err);">exit 1</span>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">06 </span>工具行状态</h2>
+<div style="border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; font-size: 12px;">
+<div style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--border-soft);"><span class="spin"></span><span style="color: var(--fg-mute);">bash</span><span style="color: var(--fg);"><span style="color: var(--accent);">$</span> npm run test:unit</span><span style="color: var(--accent); font-size: 11px;">00:21</span></div>
+<div style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--border-soft);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--ok); justify-self: center;"></span><span style="color: var(--fg-mute);">edit</span><span style="color: var(--fg-dim);">remote-server.ts</span><span style="font-size: 11px;"><span style="color: var(--ok);">+18</span> <span style="color: var(--err);">−4</span></span></div>
+<div style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--border-soft); background: var(--err-soft);"><span style="width: 6px; height: 6px; border-radius: 999px; background: var(--err); justify-self: center;"></span><span style="color: var(--fg-mute);">bash</span><span style="color: var(--fg);"><span style="color: var(--accent);">$</span> npm run lint:css</span><span style="color: var(--err); font-size: 11px;">exit 1</span></div>
+<div style="display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 12px; background: var(--warn-soft);"><span style="width: 8px; height: 8px; border-radius: 999px; border: 1.5px solid var(--warn); box-sizing: border-box; justify-self: center;"></span><span style="color: var(--fg-mute);">write</span><span style="color: var(--fg);">release/砚数据/…</span><span style="color: var(--warn); font-size: 11px;">等你批准</span></div>
+</div>
+</section>
+</div>
+
+<!-- 第三列 -->
+<div style="display: flex; flex-direction: column; gap: 28px;">
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">07 </span>命令面板 · Ctrl K</h2>
+<div style="border-radius: 12px; border: 1px solid var(--border); background: var(--bg-1); box-shadow: var(--shadow-pop); overflow: hidden;">
+<label style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--border-soft);"><span style="color: var(--accent); font-weight: 600;">›</span><span style="flex-grow: 1; min-width: 0; font-size: 14px;">模型<span class="caret"></span></span><span style="font-size: 11px; color: var(--fg-mute);">Esc</span></label>
+<div style="display: flex; flex-direction: column; padding: 6px; font-size: 12px;">
+<div style="padding: 6px 8px 4px; font-size: 11px; color: var(--fg-mute);">命令</div>
+<button style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; height: 30px; padding: 0 8px 0 6px; border-radius: 6px; background: var(--bg-3); text-align: left;"><span style="color: var(--accent);">›</span><span>切换<span style="color: var(--accent);">模型</span>…</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl M</span></button>
+<button style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; height: 30px; padding: 0 8px 0 6px; border-radius: 6px; text-align: left; color: var(--fg-dim);"><span></span><span>思考档位：高</span><span style="font-size: 11px; color: var(--fg-mute);">Ctrl T</span></button>
+<button style="display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; height: 30px; padding: 0 8px 0 6px; border-radius: 6px; text-align: left; color: var(--fg-dim);"><span></span><span><span style="color: var(--accent);">模型</span>凭证设置</span><span style="font-size: 11px; color: var(--fg-mute);">设置</span></button>
+<div style="padding: 8px 8px 4px; font-size: 11px; color: var(--fg-mute);">会话</div>
+<button style="display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; height: 30px; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--fg-dim);"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">切换<span style="color: var(--accent);">模型</span>后上下文丢失</span><span style="font-size: 11px; color: var(--fg-mute);">5d</span></button>
+</div>
+<div style="display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--fg-mute);"><span>↑↓ 选择</span><span>Enter 执行</span><span>Tab 补全</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px;">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-dim);"><span style="color: var(--fg-mute);">08 </span>状态栏分段</h2>
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: stretch; height: 24px; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden; font-size: 11px; color: var(--fg-mute);"><span style="display: flex; align-items: center; padding: 0 10px; background: var(--accent); color: var(--on-accent); font-weight: 600; letter-spacing: 0.06em;">RUN</span><span style="display: flex; align-items: center; padding: 0 10px; border-right: 1px solid var(--border-soft);">main ~2</span><span style="flex-grow: 1;"></span><span style="display: flex; align-items: center; padding: 0 10px; border-left: 1px solid var(--border-soft);">ctx 38%</span></div>
+<div style="display: flex; align-items: stretch; height: 24px; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden; font-size: 11px; color: var(--fg-mute);"><span style="display: flex; align-items: center; padding: 0 10px; background: var(--bg-3); color: var(--fg-dim); font-weight: 600; letter-spacing: 0.06em;">IDLE</span><span style="display: flex; align-items: center; padding: 0 10px; border-right: 1px solid var(--border-soft);">main</span><span style="flex-grow: 1;"></span><span style="display: flex; align-items: center; padding: 0 10px; border-left: 1px solid var(--border-soft);">ctx 12%</span></div>
+<div style="display: flex; align-items: stretch; height: 24px; background: var(--bg-1); border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden; font-size: 11px; color: var(--fg-mute);"><span style="display: flex; align-items: center; padding: 0 10px; background: var(--warn); color: var(--on-accent); font-weight: 600; letter-spacing: 0.06em;">WAIT</span><span style="display: flex; align-items: center; padding: 0 10px; border-right: 1px solid var(--border-soft); color: var(--warn);">1 项待批准</span><span style="flex-grow: 1;"></span><span style="display: flex; align-items: center; padding: 0 10px; border-left: 1px solid var(--border-soft);">ctx 38%</span></div>
+</div>
+</section>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"主题"},"accent":{"editor":"enum","options":["indigo","teal","violet"],"default":"indigo","section":"主题"},"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'dark';
+    const accents = {
+      indigo: { dark: [147, 164, 244], light: [82, 100, 200] },
+      teal: { dark: [94, 214, 196], light: [15, 118, 110] },
+      violet: { dark: [192, 165, 250], light: [109, 58, 214] }
+    };
+    const pick = accents[this.props.accent ?? 'indigo'] || accents.indigo;
+    const c = theme === 'light' ? pick.light : pick.dark;
+    const rgb = c.join(', ');
+    const soft = theme === 'light' ? 0.1 : 0.16;
+    const line = theme === 'light' ? 0.42 : 0.52;
+    const accentStyle = '--accent: rgb(' + rgb + '); --accent-soft: rgba(' + rgb + ', ' + soft + '); --accent-line: rgba(' + rgb + ', ' + line + ');';
+    return { theme, accentStyle };
+  }
+}
+</script>
+</body>
+</html>
