@@ -2288,6 +2288,20 @@ await runContextBudgetRollingTests(ok, {
   recall: contextRecall
 })
 
+/* 会话后台工作调度服务：串行链、优先级、自动继续退避与撤销、学习等待闸（假依赖驱动） */
+const sessionWorkScheduler = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/session-work-scheduler.ts'],
+    outfile: 'out/test/session-work-scheduler.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/session-work-scheduler.mjs'))
+)
+const { runSessionWorkSchedulerTests } = await import('./test-session-work-scheduler.mjs')
+await runSessionWorkSchedulerTests(ok, sessionWorkScheduler)
+
 /*
  * N21-4 / S2–S6：上下文变换（Tool Sweep / Task State / Recall / 结构化压缩闸门）。
  *

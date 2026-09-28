@@ -92,7 +92,7 @@ import {
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
-import { decideSessionWork, ownsHandoffOperation, EligibilityRejectLog } from '../shared/handoff-schedule'
+import { ownsHandoffOperation, EligibilityRejectLog } from '../shared/handoff-schedule'
 import { eventsForSession } from '../shared/handoff-diagnostics'
 import { HandoffTransactionStore } from './handoff-transaction-service'
 import { SessionChainStore } from './session-chain-service'
@@ -111,7 +111,8 @@ import {
   type HandoffPackage
 } from '../shared/handoff'
 import { AutoContinueStore, autoContinueOptionsFromEnv } from './auto-continue-service'
-import { AUTO_CONTINUE_LIMIT, retryResumeSummary, type AutoContinuePlan } from '../shared/auto-continue'
+import { createSessionWorkScheduler } from './session-work-scheduler'
+import { AUTO_CONTINUE_LIMIT } from '../shared/auto-continue'
 import { randomUUID } from 'node:crypto'
 import {
   AUTONOMOUS_CONTINUE_LIMIT,
@@ -1010,13 +1011,6 @@ const autoContinueOptions = autoContinueOptionsFromEnv(process.env.YAN_AUTO_CONT
 const autoContinues = new AutoContinueStore(autoContinueOptions)
 const AUTO_CONTINUE_LIMIT_EFFECTIVE = autoContinueOptions.limit ?? AUTO_CONTINUE_LIMIT
 
-/**
- * 待发的自动继续（每个 runner 至多一个）。
- *
- * 用 `token` 而不是只存 timer：延时期间用户可能發话 / 按停止，
- * 那会把 map 里的条目换掉或删掉 —— 回调醒来时先验明正身，避免「取消之后还是发了」。
- */
-const autoContinueTimers = new Map<string, { timer: NodeJS.Timeout; token: string }>()
 
 /**
  * 学习闸门（实施-25 P08 T08-3）：这个会话是不是正等着学习者作答。
@@ -1036,107 +1030,34 @@ async function studyGateBlocks(id: string): Promise<boolean> {
   }
 }
 
-function cancelAutoContinue(id: string): void {
-  const entry = autoContinueTimers.get(id)
-  if (!entry) return
-  clearTimeout(entry.timer)
-  autoContinueTimers.delete(id)
-}
-
-/** 用户發言 / 用户停止 / 一轮真的成功 → 计数归零（下一轮错误从第 1 次算）。 */
-async function resetAutoContinue(id: string): Promise<void> {
-  cancelAutoContinue(id)
-  const key = workModeKeyFor(id)
-  if (!key) return
-  try {
-    await autoContinues.load()
-    await autoContinues.reset(key)
-  } catch {
-    /* 归零失败不影响会话：下一次错误会再试 */
-  }
-}
-
 /**
- * 延时到点后写「待发续行」快照，薄层会在回合空闲时发一条 `custom` 消息（不是用户消息）。
- *
- * 为什么退避在**宿主**而在薄层：薄层的 1.8s 只是「确认回合真的空闲」，
- * 与「上游刚挂了、给它几秒再试」是两件事，混在一起就调不动了。
+ * 会话后台工作的调度服务（src/main/session-work-scheduler.ts）：
+ * 回合收尾后的交接 / 目标续跑 / 重复拦下补记，以及模型报错后的自动继续，都只在这里决定。
+ * 入口（桌面 IPC、远程控制）只调用它，不各自复制调度规则。
  */
-function scheduleAutoContinue(id: string, plan: Extract<AutoContinuePlan, { action: 'retry' }>): void {
-  cancelAutoContinue(id)
-  const token = randomUUID()
-  const timer = setTimeout(() => {
-    const current = autoContinueTimers.get(id)
-    if (!current || current.token !== token) return
-    autoContinueTimers.delete(id)
-    void (async () => {
-      /*
-       * 第二道闸的第一半（T08-3）：延时期间学习者可能刚好被问了一句，
-       * 现在还不该把模型叫起来 —— 等他作答。快照不写，所以薄层也不会发。
-       */
-      if (await studyGateBlocks(id)) {
-        pushFrom(id, {
-          ch: 'notify',
-          payload: {
-            id: `auto-continue-learn-${Date.now()}`,
-            method: 'notify',
-            notifyType: 'info',
-            message: '学习正等着学习者作答：这次自动继续先不发，等他答完再接着走。'
-          }
-        })
-        return
-      }
-      await writeGoalResumeSnapshot(id, {
-        operationId: randomUUID(),
-        at: Date.now(),
-        kind: 'retry',
-        summary: retryResumeSummary({
-          error: plan.error,
-          attempt: plan.attempt,
-          limit: AUTO_CONTINUE_LIMIT_EFFECTIVE
-        })
-      })
-    })().catch(() => {
-      /* 快照写不进去 → 这一次不继续；下一次错误还会再来（不会静默丢掉整条链） */
-    })
-  }, plan.delayMs)
-  /* 不阻止应用退出：用户关窗口时不该等这个定时器 */
-  timer.unref?.()
-  autoContinueTimers.set(id, { timer, token })
-}
-
-/**
- * 模型报错之后的处置（实施-05 S5c）。
- *
- * 幂等与去重都在 store 里：`auto_retry_end` 与 `stopReason === 'error'` 会同时报同一件事，
- * 第二次到达会拿到 `duplicate: true`（不计数、不通知、不安排）。
- */
-async function handleModelError(id: string, payload: { text: string; source: string }): Promise<void> {
-  const key = workModeKeyFor(id)
-  if (!key) return
-  let result: { plan: AutoContinuePlan | null; duplicate: boolean }
-  try {
-    await autoContinues.load()
-    result = await autoContinues.noteFailure(key, payload.text, { learnWaiting: await studyGateBlocks(id) })
-  } catch {
-    return
-  }
-  const { plan, duplicate } = result
-  if (!plan || duplicate) return
-
-  const notify = (message: string, notifyType: 'info' | 'warning' | 'error'): void => {
+const sessionWork = createSessionWorkScheduler({
+  stateOf: (id) => runners?.agentOf(id)?.getState() ?? null,
+  hasHandoffOperation: (id) => hasHandoffOperation(id),
+  handoffPending: (id) => handoffPending.has(id),
+  consumeRepeatBlocks: (id) => consumeRepeatBlocks(id),
+  tryArmHandoff: (id, reason) => tryArmHandoff(id, reason),
+  maybeArmGoalContinue: (id) => maybeArmGoalContinue(id),
+  workModeKeyFor: (id) => workModeKeyFor(id),
+  autoContinues,
+  autoContinueLimit: AUTO_CONTINUE_LIMIT_EFFECTIVE,
+  studyGateBlocks: (id) => studyGateBlocks(id),
+  writeRetrySnapshot: (id, snapshot) => writeGoalResumeSnapshot(id, snapshot),
+  notify: (id, message, notifyType, idPrefix) => {
     pushFrom(id, {
       ch: 'notify',
-      payload: { id: `auto-continue-${Date.now()}`, method: 'notify', notifyType, message }
+      payload: { id: `${idPrefix}-${Date.now()}`, method: 'notify', notifyType, message }
     })
   }
+})
 
-  if (plan.action === 'stop') {
-    notify(plan.note, plan.reason === 'limit' ? 'error' : 'info')
-    return
-  }
-  notify(plan.note, 'warning')
-  scheduleAutoContinue(id, plan)
+/** 用户发言 / 用户停止 / 一轮真的成功 → 计数归零（下一轮错误从第 1 次算）。 */
+function resetAutoContinue(id: string): Promise<void> {
+  return sessionWork.resetAutoContinue(id)
 }
 
 /* ────────────────────────────────────────────── 交接包生成（实施-05 S5b-2） */
@@ -1840,54 +1761,11 @@ async function inheritForHandoff(info: {
 /* ────────────────────────────── 同一会话的单一调度（实施-14 F2 / H1） */
 
 /**
- * 每个会话的「下一步动作」串行决定。
- *
- * 旧实现是两个 `void` 并发：同一份 `state` 推送里 `maybeArmHandoff` 与
- * `maybeArmGoalContinue` 各自起跑 —— 交接在准备包的同时，续跑也可能被 arm 出去。
- * 现在只有**一个**决定器，按固定优先级挑一件事做：
- *
- *   0. 已安排模型错误重试 → 什么都不做（它有自己的退避与上限）；
- *   1. 交接正在准备包 → 冻结源续跑，等它提交或放弃；
- *   2. 实例不空闲 → 不做决策（安全边界还没到，交给下一次收尾）；
- *   3. 重复拦下先计入（可能把目标打成 blocked，那就不该再 arm）；
- *   4. 交接资格够 → 只做交接；
- *   5. 否则 → 普通续跑。
- *
+ * 每个会话的「下一步动作」串行决定；优先级与判定见 session-work-scheduler.ts。
  * 串行链按 runnerId 分开：不同会话之间没有共享状态，没必要互相阻塞。
  */
-const sessionWorkTails = new Map<string, Promise<void>>()
-
 function scheduleSessionWork(id: string, reason: string): Promise<void> {
-  const previous = sessionWorkTails.get(id) ?? Promise.resolve()
-  const next = previous.then(
-    () => runScheduledWork(id, reason),
-    () => runScheduledWork(id, reason)
-  )
-  sessionWorkTails.set(id, next)
-  void next.finally(() => {
-    if (sessionWorkTails.get(id) === next) sessionWorkTails.delete(id)
-  })
-  return next.catch(() => undefined)
-}
-
-async function runScheduledWork(id: string, reason: string): Promise<void> {
-  const agent = runners?.agentOf(id)
-  const state = agent?.getState()
-  if (!agent || !state) return
-  const decision = decideSessionWork({
-    busy: state.isAgentRunning === true || state.isStreaming === true,
-    handoffPending: hasHandoffOperation(id),
-    errorRetryPending: autoContinueTimers.has(id),
-    handoffAllowed: true
-  })
-  /* 三个 `wait-*` 都是「现在不做决定」（安全边界未到 / 已有更高优先级的事） */
-  if (decision === 'wait-busy' || decision === 'wait-error-retry' || decision === 'wait-handoff') return
-  /* 重复拦下先计入：它可能把目标打成 blocked（终态），那就不能 arm 任何东西 */
-  await consumeRepeatBlocks(id).catch(() => undefined)
-  /* consumeRepeatBlocks 可能改掉交接现场（目标终态会清续行），再核一次 */
-  if (handoffPending.has(id)) return
-  if (await tryArmHandoff(id, reason)) return
-  await maybeArmGoalContinue(id).catch(() => undefined)
+  return sessionWork.schedule(id, reason)
 }
 
 function pushFrom(runnerId: string, msg: MainPush): void {
@@ -1920,35 +1798,13 @@ function pushFrom(runnerId: string, msg: MainPush): void {
    * 恰恰是这一轮收尾之后。`maybeArmHandoff` 自己是幂等 + 节流的，
    * 所以这里可以无条件看一眼（忙的时候它内部直接早退，不碰 IO）。
    */
-  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) {
-    /*
-     * 单一调度（实施-14 F2 / H1）：交接、普通续跑、重复拦下这三件事
-     * 都在同一条串行链里决定，不再各自 `void` 起跑。
-     * 单轮重复动作兜底也在这里（拦下发生于回合中途，而目标状态的落盘
-     * 已由 `report` 串行化了 —— 这里只需在真正空下来时补记一次，幂等）。
-     */
-    void scheduleSessionWork(runnerId, 'settled')
-    /* 隔离工作树的回合收尾 → 扫一轮自动合回（没有隔离登记时就是一次空扫） */
-    void syncPendingIsolations()
-  }
   /*
-   * 模型报错 → 自动继续（实施-05 S5c）。
-   * 单开一条通道而不是复用 `notify`：拿提示文案做判据太脆（改一句话就静默失效）。
+   * 调度时机（回合结束 → 排后台工作；模型报错 → 自动继续；一轮真的产出 → 失败计数归零）
+   * 统一交给调度服务判定，见 session-work-scheduler.ts。
    */
-  if (msg.ch === 'agent-error') void handleModelError(runnerId, msg.payload)
-  /*
-   * 一轮真的产出了（assistant 有文本或工具调用、且没标错）→ 连续失败计数归零。
-   * 流式期间会反复推 `msg-update`，但归零只在真的变过时落盘（store 里判），
-   * 所以这里不必自己节流。
-   */
-  if (
-    msg.ch === 'msg-update' &&
-    msg.payload?.patch?.role === 'assistant' &&
-    !msg.payload.patch.error &&
-    (msg.payload.patch.text || msg.payload.patch.toolCalls?.length)
-  ) {
-    void resetAutoContinue(runnerId)
-  }
+  sessionWork.observePush(runnerId, msg)
+  /* 隔离工作树的回合收尾 → 扫一轮自动合回（没有隔离登记时就是一次空扫） */
+  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) void syncPendingIsolations()
   /*
    * 每次 `state` 推送都顺带刷一次 `runners` 快照。
    *
