@@ -53,7 +53,7 @@
     "lint:css": "node scripts/lint-css.mjs",
     "lint:layers": "node scripts/css-layer-check.mjs --selftest",
     "measure:design": "electron scripts/design/measure-design.mjs",
-    "measure:css": "node scripts/css-drift.mjs --md",
+    "measure:css": "node scripts/css-tokens.mjs --md && node scripts/css-inventory.mjs --md && node scripts/css-drift.mjs --md",
     "check:css-docs": "node scripts/css-tokens.mjs --check && node scripts/css-inventory.mjs --check && node scripts/css-drift.mjs --check",
     "vendor:pi": "node scripts/vendor-pi.mjs",
     "vendor:pi:check": "node scripts/vendor-pi.mjs --check",

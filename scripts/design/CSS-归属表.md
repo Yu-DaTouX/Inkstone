@@ -11,23 +11,23 @@
 | 1 | `tokens.css` | tokens | 437 | 27 | 32 | 2 | 6 |
 | 2 | `ui.css` | ui | 676 | 114 | 115 | 0 | 0 |
 | 3 | `app.css` | modules | 533 | 74 | 75 | 1 | 0 |
-| 4 | `motion.css` | modules | 1402 | 160 | 163 | 5 | 1 |
+| 4 | `motion.css` | modules | 1401 | 159 | 162 | 5 | 1 |
 | 5 | `settings.css` | modules | 1052 | 153 | 159 | 1 | 0 |
 | 6 | `electron.css` | modules | 35 | 11 | 12 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 248 | 21 | 22 | 4 | 2 |
-| 9 | `shell.css` | modules | 580 | 83 | 86 | 1 | 7 |
+| 9 | `shell.css` | modules | 593 | 84 | 87 | 1 | 7 |
 | 10 | `dialog.css` | modules | 151 | 19 | 20 | 0 | 0 |
 | 11 | `rail.css` | modules | 1741 | 224 | 246 | 0 | 0 |
-| 12 | `chat.css` | modules | 2639 | 334 | 367 | 6 | 0 |
-| 13 | `composer.css` | modules | 2177 | 285 | 297 | 2 | 0 |
-| 14 | `tools.css` | modules | 4042 | 595 | 650 | 5 | 5 |
+| 12 | `chat.css` | modules | 2640 | 334 | 367 | 6 | 0 |
+| 13 | `composer.css` | modules | 2193 | 289 | 301 | 2 | 0 |
+| 14 | `tools.css` | modules | 3986 | 589 | 644 | 5 | 5 |
 | 15 | `browser.css` | modules | 420 | 48 | 52 | 0 | 0 |
 | 16 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 17 | `review.css` | modules | 1495 | 217 | 218 | 1 | 0 |
 | 18 | `workbench.css` | modules | 1812 | 237 | 248 | 2 | 0 |
 | 19 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19725** | **2638** | | | |
+| | **合计** | | **19698** | **2636** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -38,17 +38,17 @@
 | `tokens.css` | 23 |
 | `ui.css` | 113 |
 | `app.css` | 52 |
-| `motion.css` | 143 |
+| `motion.css` | 142 |
 | `settings.css` | 153 |
 | `electron.css` | 4 |
 | `highlight.css` | 80 |
 | `layout.css` | 20 |
-| `shell.css` | 83 |
+| `shell.css` | 84 |
 | `dialog.css` | 19 |
 | `rail.css` | 224 |
 | `chat.css` | 332 |
-| `composer.css` | 284 |
-| `tools.css` | 595 |
+| `composer.css` | 288 |
+| `tools.css` | 589 |
 | `browser.css` | 48 |
 | `terminal.css` | 10 |
 | `review.css` | 217 |

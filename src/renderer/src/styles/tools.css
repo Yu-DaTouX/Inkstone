@@ -883,27 +883,9 @@
   gap: var(--sp-1);
 }
 
+/* 外观来自统一控件 .btn.sm；这里只管在一行里平分宽度 */
 .rp-act {
   flex: 1 1 auto;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg-1);
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  text-align: center;
-}
-
-.rp-act:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.rp-act:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
 }
 
 .rp-todo.todo-open .rp-box {
@@ -1912,49 +1894,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .fp-mode {
-  display: inline-flex;
   flex: none;
-  gap: 1px;
-  padding: 1px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-}
-
-.fp-mode button {
-  border: 0;
-  border-radius: 2px;
-  padding: 1px var(--sp-1);
-  background: transparent;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-.fp-mode button.on {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.fp-act {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg-mute);
-}
-
-.fp-act:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-/* 用 plus 旋转成关闭叉（与删除通知同一套做法） */
-.fp-x {
-  transform: rotate(45deg);
 }
 
 .fp-path {
@@ -2071,6 +2011,10 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .fp-markdown {
   padding: var(--sp-3);
   color: var(--fg-dim);
+}
+/* 与对话正文同一套 Markdown 排版（.md：无衬线正文、收敛的标题字号），右栏窄，正文降一档 */
+.fp-markdown.md {
+  font-size: var(--fs-base);
 }
 
 .fp-markdown > :first-child {
@@ -3003,7 +2947,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .goal-step-blocked .goal-step-icon,
 .goal-panel-blocker {
-  color: var(--danger, #e07b7b);
+  color: var(--err);
 }
 
 .goal-step-index {
@@ -3237,7 +3181,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .goal-blocked {
-  border-color: color-mix(in srgb, var(--danger, #e07b7b) 32%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--err) 32%, var(--border-soft));
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-fs,

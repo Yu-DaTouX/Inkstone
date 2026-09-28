@@ -340,6 +340,14 @@ export function Composer() {
     setSessionDraft(value)
   }, [activeRuntimeKey, conversationKey, setSessionDraft, value])
 
+  /* 窗口高度：矮窗口（900×520）时限制展开高度，见下方「自动长高」 */
+  const [viewH, setViewH] = useState(() => window.innerHeight)
+  useEffect(() => {
+    const onResize = (): void => setViewH(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   /* ---- 自动长高 ---- */
   useEffect(() => {
     const el = ref.current
@@ -357,9 +365,14 @@ export function Composer() {
      * 内容更多可以长高，但不会缩回去。
      */
     const need = Math.min(Math.max(el.scrollHeight, 34), 240)
-    const h = tall > 0 ? Math.max(tall, need) : need
+    /*
+     * 矮窗口里输入框不能把运行条、工具条和底部状态栏挤出窗口：
+     * 实际高度不超过窗口高度的 35%（存下的 tall 不改，窗口变高后恢复）。
+     */
+    const cap = Math.max(96, Math.round(viewH * 0.35))
+    const h = Math.min(tall > 0 ? Math.max(tall, need) : need, cap)
     el.style.height = `${h}px`
-    el.style.maxHeight = tall > 0 ? `${Math.max(tall, 240)}px` : ''
+    el.style.maxHeight = tall > 0 ? `${Math.min(Math.max(tall, 240), cap)}px` : ''
 
     /*
      * 超过三行就**自动进入长文模式**（用户要求）。
@@ -379,7 +392,7 @@ export function Composer() {
       setExpanded(true)
       setTall(TALL_H)
     }
-  }, [value, tall, expanded])
+  }, [value, tall, expanded, viewH])
 
   const disabled = conn !== 'ready'
   /* N18：本地 Yan 命令不需要先连上 pi（例如 /login、/model、/browser）。 */

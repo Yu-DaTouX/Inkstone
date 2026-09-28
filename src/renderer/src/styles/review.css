@@ -928,7 +928,7 @@ button.env-item:hover {
   color: var(--fg);
   background: var(--bg-2);
   border: 1px solid var(--border-soft);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   resize: none;
   field-sizing: content;
 }
@@ -995,10 +995,10 @@ button.env-item:hover {
   gap: 2px;
   padding: var(--sp-1) 7px;
   font-size: 11.5px;
-  color: var(--danger, #e5484d);
-  background: color-mix(in srgb, var(--danger, #e5484d) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent);
-  border-radius: 5px;
+  color: var(--err);
+  background: var(--err-soft);
+  border: 1px solid color-mix(in srgb, var(--err) 30%, transparent);
+  border-radius: var(--r-sm);
 }
 
 .gwrite-fail-line {

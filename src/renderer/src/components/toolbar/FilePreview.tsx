@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Icon } from '../../icons/Icon'
+import { IconButton, Segmented } from '../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink } from '../../../../shared/links'
@@ -175,49 +176,48 @@ export function FilePreviewPane() {
         */}
         {!isImage && data?.size ? <span className="fp-size">{fmtSize(data.size)}</span> : null}
         {isMarkdown ? (
-          <div className="fp-mode" role="group" aria-label="文件阅读模式">
-            <button type="button" className={mode === 'read' ? 'on' : ''} onClick={() => setMode('read')} data-testid="file-preview-read">阅读</button>
-            <button type="button" className={mode === 'source' ? 'on' : ''} onClick={() => setMode('source')} data-testid="file-preview-source">源码</button>
-          </div>
+          <Segmented
+            size="sm"
+            className="fp-mode"
+            label="文件阅读模式"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'read', label: '阅读', testId: 'file-preview-read' },
+              { value: 'source', label: '源码', testId: 'file-preview-source' }
+            ]}
+          />
         ) : null}
         <span className="spacer" />
-        <button
-          className="fp-act"
+        <IconButton
+          size="sm"
+          icon="copy"
+          label={t('fp.copyPath')}
           onClick={() => void navigator.clipboard.writeText(data?.abs || preview.path)}
-          title={t('fp.copyPath')}
-          aria-label={t('fp.copyPath')}
-        >
-          <Icon name="copy" size={12} />
-        </button>
+        />
         {data?.abs ? (
-          <button
-            className="fp-act"
+          <IconButton
+            size="sm"
+            icon="folder-open"
+            label={t('fp.reveal')}
             onClick={() => void window.yan.revealPath(data.abs)}
-            title={t('fp.reveal')}
-            aria-label={t('fp.reveal')}
-          >
-            <Icon name="folder-open" size={12} />
-          </button>
+          />
         ) : null}
         {canOpenExternally && data?.abs ? (
-          <button
-            className="fp-act"
+          <IconButton
+            size="sm"
+            icon="external"
+            label={t('fp.open')}
             onClick={() => void window.yan.openPath(data.abs)}
-            title={t('fp.open')}
-            aria-label={t('fp.open')}
-          >
-            <Icon name="external" size={12} />
-          </button>
+          />
         ) : null}
-        <button
-          className="fp-act"
+        <IconButton
+          size="sm"
+          icon="close"
+          label={t('fp.close')}
           onClick={closePreview}
-          title={t('fp.close')}
-          aria-label={t('fp.close')}
           data-testid="file-preview-close"
-        >
-          <Icon name="plus" size={12} className="fp-x" />
-        </button>
+        />
       </div>
 
       <div className="fp-path" title={preview.path} hidden={isImage}>
@@ -263,7 +263,7 @@ export function FilePreviewPane() {
         ) : null}
 
         {isText && isMarkdown && mode === 'read' ? (
-          <div className="fp-markdown prose" data-testid="file-preview-markdown">
+          <div className="fp-markdown prose md" data-testid="file-preview-markdown">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
               {data.text ?? ''}
             </ReactMarkdown>

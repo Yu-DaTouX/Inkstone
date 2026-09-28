@@ -1,6 +1,7 @@
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
+import { Button } from '../ui'
 import { useStore } from '../../state/store'
 import { type QueueMode } from '../../../../shared/ipc'
 
@@ -222,7 +223,8 @@ function Act({
 }) {
   const t = useT()
   return (
-    <button
+    <Button
+      size="sm"
       className="rp-act"
       onClick={onClick}
       disabled={disabled}
@@ -230,6 +232,6 @@ function Act({
       title={disabled ? t('picker.busy') : t(labelKey)}
     >
       {t(labelKey)}
-    </button>
+    </Button>
   )
 }

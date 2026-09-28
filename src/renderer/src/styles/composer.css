@@ -239,6 +239,22 @@
   flex: 1;
   min-width: 0;
 }
+/* 窄窗（900×520）时工具条不换行：按钮文字保持一行，发送规则提示先省略 */
+.composer-tools > *,
+.composer-bar > * {
+  flex: none;
+  white-space: nowrap;
+}
+.composer-tools > .ctool-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-mute);
+}
+.composer-bar > .composer-tools {
+  flex: 1 1 auto;
+}
 
 /*
  * N10：自主模式是低干扰的“模式已开”提示，不改变输入区尺寸或点击区域。

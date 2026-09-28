@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**P0–P4 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文只记录范围、界面清单、分阶段路线、进度与仍待决定的事项。
+状态：**P0–P6 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文记录范围、界面清单、分阶段路线、进度、已作的决定与验证的边界（第 8、9 节）。
 
 原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 
@@ -84,7 +84,7 @@
 | 步骤 | 做法 | 完成标准 |
 | --- | --- | --- |
 | 级联层 | `styles/index.css` 声明 `@layer tokens, base, ui, layout, modules, overrides;`，各文件按层导入 | 不再依赖 import 顺序；`stage1.css`、`redesign.css` 按内容拆回归属文件后删除；`css-layer-check`（含简写展开与令牌解析）与逐元素计算样式对比（`css-computed-diff`）证明结果不变 |
-| 令牌补缺 | 间距、圆角、字号、字重的同值裸值按属性语义换成令牌（P1）；`5px`→4/6、`10px`→8/12 的归并会改变像素，随 P5 视觉改版做；`--ctl-h-xs: 20px`、浮层与菜单宽度令牌随 P2 控件落地 | `check:css-budget` 散落值只降不升 |
+| 令牌补缺 | 间距、圆角、字号、字重的同值裸值按属性语义换成令牌（P1）；`5px`→4/6、`10px`→8/12 的间距归并随 P5 完成（余下的 5px / 10px 是尺寸、微型字号与阴影，不是间距）；`--ctl-h-xs: 20px`、浮层与菜单宽度令牌随 P2 控件落地 | `check:css-budget` 散落值只降不升 |
 | 手机令牌同源 | 检查脚本比对 `tokens.css` 与 `mobile/src/theme.ts` 的同名色值 | 不一致即失败，接入 `npm run check` |
 | 控件层 | `components/ui` 补 `Menu`/`Popover`、`Tabs`、`Field`/`Input`/`Select`、`SettingRow`、`InspectorSection`、`ListRow`；每个先写进规范 §3 | 模块私有 `*-btn/*-chip/*-tab` 清零；`className="btn…"` 改用组件 |
 | 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条；随 P5 改到哪一区拆到哪一区 | 单文件体量明显下降，行为不变 |
@@ -96,15 +96,15 @@
 | --- | --- | --- | --- |
 | P0 规范 | 待决项定案，写入 `DESIGN_SYSTEM.md` v0.5；界面清单 | 文档评审 | 完成 |
 | P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
-| P2 控件 | 扩充 `components/ui`（输入框、字段、设置行、页签、菜单、检查器分区、列表行）；设置页改用 `SettingRow`；模块私有控件类 21 → 0；`className="btn…"` 全部改为 `Button` / `IconButton`；界面里的 `× ✓ ‹ › ↻ ⛶ ＋ −` 文字符号换成图标 | 同上；`test:live` 需要 pi 运行时，本容器未运行 | 完成（大组件拆分随 P5 各区改版进行） |
+| P2 控件 | 扩充 `components/ui`（输入框、字段、设置行、页签、菜单、检查器分区、列表行）；设置页改用 `SettingRow`；模块私有控件类 21 → 0；`className="btn…"` 全部改为 `Button` / `IconButton`；界面里的 `× ✓ ‹ › ↻ ⛶ ＋ −` 文字符号换成图标 | 同上；`test:live` 需要 pi 运行时，本容器未运行 | 完成 |
 | P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块入 `motion.css` 与组件；盲文帧、旋转图标与 thinking-orbs 小球统一换成方点阵；工具行展开改为 grow；减少动画改为 1ms 保留终态；位移上限 4px（手机 `motion.tsx` 已是 4dp）；交叉淡变随状态栏在 P5 | `check:motion` + 截图 | 完成 |
 | P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换；去掉 `lucide-static` 依赖 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | 完成 |
-| P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | |
-| P6 手机视觉 | 按第 3.2 节逐页：配对 → 首页 → 会话 → 成果 → 设置 → 通知；宽屏与折叠屏双栏 | `mobile` 下 `npm run typecheck`；深浅主题 × 手机竖屏 / 折叠屏展开实机截图 | |
+| P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | 完成（见第 9 节） |
+| P6 手机视觉 | 按第 3.2 节逐页：配对 → 首页 → 会话 → 成果 → 设置 → 通知；宽屏与折叠屏双栏 | `mobile` 下 `npm run typecheck`；深浅主题 × 手机竖屏 / 折叠屏展开实机截图 | 完成代码与类型检查；实机截图待维护者复核（见第 9 节） |
 
 每阶段单独提交；视觉结论以实际截图为准，构建、静态检查、运行与截图证据分别说明。云端容器没有 Windows 字体与 Android 设备，那里产出的截图只作同环境前后对比，Windows 与实机截图由维护者复核。
 
-## 7. 仍待决定
+## 7. 已作的决定
 
 已决定（P5）：检查器分区**不编号**——分区可拖动排序，编号会随用户调整而变，传达不了真实信息；上下文**保留环形 + 数字**，暂不改方格条——「系统 / 对话 / 工具」三类占用只在上下文预算的运行快照里有（`messagesTokens` / `toolsTokens` / `systemTokens`，可能为空），右栏检查器目前拿不到；要画三色格得先接一条数据通路，并在分项缺失时退回单色，不能凭估算编出比例。
 
@@ -113,5 +113,13 @@
 ## 8. 原型的已知限制
 
 - 画布无法加载随包的 Maple Mono CN，等宽回退为 JetBrains Mono + Noto Sans SC，汉字未严格落在 1:2 栅格上。
-- `@property` 角度动画与 `grid-template-rows` 过渡在 Electron 的 Chromium 中可用，但尚未在应用内实测。
+- `@property` 角度动画与 `grid-template-rows` 过渡已在应用内（Electron 的 Chromium）确认：视觉矩阵逐元素样式里，运行中输入框的环绕流光 `conic-gradient` 起始角随时间变化；运行条的展开由 `npm run check:motion` 的探针断言。
 - 原型数据（会话、文件、数字）为演示用途，不代表真实运行结果。原型状态栏中的模型档位与上下文百分比已按定案去掉。
+
+## 9. 验证与边界
+
+- **构建与静态检查**：`npm run build`、`npm run typecheck`（含 CSS 布局、层序与 `lint:layers`）、`check:motion`、`check:icons`、`check:css-budget`（散落像素值 1191 → 1184，`!important` 19，模块私有控件 0）、`check:mobile-tokens`（38 项）与 `mobile` 下 `tsc` 均通过。
+- **行为不变的证明**：P1 结构重构与 P5 组件拆分都用 `YAN_STYLE_DUMP=1` 的逐元素计算样式对比；拆分前后视觉矩阵第 0 组 68 个状态、61026 个元素结构与样式一致，只有动画帧不同。`test:unit` 通过数与改版前相同（5129）；未通过的几项依赖 Windows 路径、随包 pi 运行时或非 root 写权限，改版前后一致。
+- **视觉矩阵**：改版前后各跑全量 255 张（深浅主题，1440×900 / 1280×800 / 1180×780 / 940×620 / 900×520，100% / 125% / 150%）。截图脚本在云端容器里有 41 个状态脚本拿不到数据（工作台、会话地图、空间页等依赖真实 IPC），改版前后是同一组，与改版无关。
+- **手机端**：没有 Android 设备与 SDK，Kotlin 与矢量图标未编译；界面用 react-native-web 在浏览器里按假数据渲染核对版面与深浅主题，只作近似，实机截图由维护者复核。
+- **未覆盖**：`test:live` 需要 pi 运行时与模型额度，未运行；云端容器没有 Windows 字体，截图只作同环境前后对比。
