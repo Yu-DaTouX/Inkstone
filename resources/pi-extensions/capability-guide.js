@@ -66,6 +66,7 @@ export const CAPABILITY_GUIDE = [
   '- 查看或推进砚的目标：`yan goal status`，按需用 `yan goal ready` / `report`（参数见 `yan goal --help`）。',
   '- 检索长期记忆：`yan knowledge search --query-text "关键词"`（缺省同时查本项目知识与个人记忆）；正文用 `yan knowledge read --id <条目ID>`，新增提议走 `propose`，不能自报用户已确认。跨项目的个人偏好与习惯用 `"scope":"personal"` 提议，项目约定留在项目范围；偶发选择不提议。',
   '- 讲解、出题、复习等学习任务先读 `tutor` 技能（`yan skill read --id skill:tutor`）；等学习者作答时不要替他回答。',
+  '- 用户想让砚隔一段时间看一眼某件事，或按到点的关注去看时，先读 `follow` 技能（`yan skill read --id skill:follow`）；提议用 `yan follow save`，看完用 `yan follow report` 回报。',
   '- 看全部命令：`yan --help`（按需读，不要在每轮都读）',
   '',
   '浏览器调用约定：',
