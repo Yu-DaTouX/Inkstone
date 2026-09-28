@@ -101,7 +101,7 @@ npm run launch
 
 启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。
 
-参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。架构、构建与发布入口见[文档索引](docs/README.md)。
+参与贡献前请阅读 [贡献指南](docs/CONTRIBUTING.md) 和 [AI 协作约定](AGENTS.md)。按功能定位代码见[代码地图](docs/CODE_MAP.md)，语言与应用壳选择见[技术路线评估](docs/TECH_STACK_OPTIONS.md)；架构、构建与发布入口见[文档索引](docs/README.md)。
 
 </details>
 

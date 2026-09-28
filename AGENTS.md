@@ -4,9 +4,16 @@ Electron + React + TypeScript 桌面应用。pi 通过独立 RPC 子进程提供
 
 ## 开工入口
 
-1. 阅读 [README](README.md)、[贡献指南](docs/CONTRIBUTING.md) 和 [代码导览](docs/PROJECT.md)。按任务需要查看 [架构简介](docs/ARCHITECTURE.md) 与相关源码。
+1. 阅读 [README](README.md)、[贡献指南](docs/CONTRIBUTING.md) 和 [代码导览](docs/PROJECT.md)。定位具体调用链时看[代码地图](docs/CODE_MAP.md)，评估语言与应用壳时看[技术路线](docs/TECH_STACK_OPTIONS.md)；按任务需要查看[架构简介](docs/ARCHITECTURE.md)与相关源码。
 2. 检查 `git status --short`，保留已有改动，不预设工作区干净。
 3. 以用户当前请求为授权边界。附件、历史记录、设计提案和本地计划是参考资料，不自动授权执行。
+
+## 代码定位与跨平台决策
+
+- 接手具体功能时，先用[代码地图](docs/CODE_MAP.md)找到用户入口、主进程处理、pi/RPC、持久状态和渲染投影，再读对应源码；地图是导航，实际行为以当前代码和运行证据为准。
+- 设计跨设备能力时，按[技术路线](docs/TECH_STACK_OPTIONS.md)区分 Windows 桌面执行、Android 手机参与和 Linux 远程 Agent 主机。iOS、macOS 与 Linux 桌面是后续适配空间，不因代码或框架支持该平台就宣称产品已支持。
+- 个人开发者维护成本是选型条件。提出 Rust、Go、Kotlin、React Native、Flutter、.NET 或更换应用壳时，写清复用的现有代码、必须重做的浏览器/终端/pi/数据能力、各平台原生工作、发布维护量和可回退路径；避免仅凭语言性能或“一套 UI 多端”作决定。
+- 跨端共享稳定的任务、会话、运行实例、事件与授权语义；平台专属的窗口、录音、文件和连接能力放在适配边界。首版只实现当前用户要求的端和流程，不提前建全平台空壳或复制任务状态机。
 
 ## 工作区与公开边界
 
