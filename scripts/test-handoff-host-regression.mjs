@@ -3,13 +3,16 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 // Execute the production host functions with controlled IO; importing index.ts would launch Electron.
+// 交接协调在 handoff-coordinator.ts；宿主能力经 `host` 注入，这里用假 host 驱动。
 export async function runHandoffHostRegressionTests(ok) {
   const source = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
   const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)
+  const coordinatorSource = await readFile(new URL('../src/main/handoff-coordinator.ts', import.meta.url), 'utf8')
+  const coordinatorAst = ts.createSourceFile('handoff-coordinator.ts', coordinatorSource, ts.ScriptTarget.Latest, true)
   const functions = ['collectHandoffResult', 'revalidateHandoff']
-  const extracted = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && functions.includes(node.name?.text))
+  const extracted = coordinatorAst.statements.filter((node) => ts.isFunctionDeclaration(node) && functions.includes(node.name?.text))
   if (extracted.length !== functions.length) throw new Error('Missing host functions for behavioral regressions')
-  const code = ts.transpileModule(extracted.map((node) => node.getText(ast)).join('\n'), {
+  const code = ts.transpileModule(extracted.map((node) => node.getText(coordinatorAst).replace(/^export /, '')).join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
   }).outputText
   const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r }); return { promise, resolve } }
@@ -21,18 +24,22 @@ export async function runHandoffHostRegressionTests(ok) {
       handoffPending: map, clearInterval() {}, clearTimeout() {},
       ownsHandoffOperation: (a, b) => !b || a === b,
       handoffRequests: { readResult: async () => ({ operationId: 'op', handoffId: 'handoff', text: '{}' }), clearResult: async () => {}, clearRequest: async () => {} },
-      handoffDiag: { record: (event) => calls.diagnostics.push(event) },
       handoffNotify: (...args) => calls.notifications.push(args),
       handoffReasonText: reason => reason,
       handoffContinuationProblem: () => null,
       parseHandoffOutput: () => ({ ok: true, value: {} }), sanitizeHandoffPackage: () => ({}),
-      handoffs: { setPackage: async () => {} }, handoffSummary: () => '', HANDOFF_COMMIT_ENABLED: true,
+      handoffSummary: () => '', HANDOFF_COMMIT_ENABLED: true,
       commitHandoff: async () => { calls.commits++; calls.lockHeld = map.get('run') === pending },
-      maybeArmGoalContinue: async () => { calls.resumes++ },
-      goals: { load: async () => {}, isPaused: () => true, state: () => ({ phase: 'executing', goalId: 'goal' }) },
-      runners: { agentOf: () => ({ getState: () => ({}), getMessages: async () => [] }) },
-      workModeKeyFor: () => 'source', isActiveGoalPhase: () => true,
-      resolveWorkMode: async () => ({ mode: 'autonomous' }), keepsGoalResumeOnModeChange: () => true
+      isActiveGoalPhase: () => true, keepsGoalResumeOnModeChange: () => true,
+      host: {
+        handoffDiag: { record: (event) => calls.diagnostics.push(event) },
+        handoffs: { setPackage: async () => {} },
+        maybeArmGoalContinue: async () => { calls.resumes++ },
+        goals: { load: async () => {}, isPaused: () => true, state: () => ({ phase: 'executing', goalId: 'goal' }) },
+        runners: () => ({ agentOf: () => ({ getState: () => ({}), getMessages: async () => [] }) }),
+        workModeKeyFor: () => 'source',
+        resolveWorkMode: async () => ({ mode: 'autonomous' })
+      }
     })
     vm.runInContext(code, ctx)
     return { ctx, map, pending, calls }
@@ -61,7 +68,7 @@ export async function runHandoffHostRegressionTests(ok) {
     if (failure === 'parse') h.ctx.parseHandoffOutput = () => ({ ok: false, reason: 'invalid' })
     if (failure === 'content') h.ctx.handoffContinuationProblem = () => 'missing-continuation'
     if (failure === 'incomplete') h.ctx.sanitizeHandoffPackage = () => null
-    if (failure === 'persist') h.ctx.handoffs.setPackage = async () => { throw new Error('disk unavailable') }
+    if (failure === 'persist') h.ctx.host.handoffs.setPackage = async () => { throw new Error('disk unavailable') }
     await h.ctx.collectHandoffResult('run', 'op')
     ok(h.calls.commits === 0 && h.calls.resumes === 1 && !h.map.size, `${failure} 失败释放交接占用并恢复正常续行调度`)
     const expectedOutcome = {
