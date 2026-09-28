@@ -85,6 +85,27 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
   })
   ok(phaseProjected.ok && phaseProjected.selectedBudget === 200_000, '新阶段无损投影容纳时直接回落到最小够用档')
 
+  /* 宿主按实际请求规模回收档位：连续两个低用量回合才降，只降到实际输入的 60% 以下仍放得下的最小档 */
+  const { reconcileObservedContextBudgetV1 } = budget
+  const reconcile = (observedInputTokens, currentBudget, previousLowTurns) => reconcileObservedContextBudgetV1({
+    observedInputTokens,
+    capability: { ...api, contextWindow: 1_000_000 },
+    outputReserve: 16_000,
+    currentBudget,
+    previousLowTurns
+  })
+  const firstLow = reconcile(90_000, 500_000, 0)
+  ok(firstLow.lowTurn && !firstLow.apply && firstLow.lowTurns === 1 && firstLow.candidateBudget === 200_000, '整理后实际输入 90K：第一个低用量回合只计数，不降档')
+  const secondLow = reconcile(90_000, 500_000, 1)
+  ok(secondLow.apply && secondLow.candidateBudget === 200_000, '连续第二个低用量回合降到最小够用的 200K')
+  const midLow = reconcile(150_000, 500_000, 1)
+  ok(midLow.apply && midLow.candidateBudget === 300_000, '实际输入 150K 超过 200K 档软线的 60%，只降到 300K')
+  const notLow = reconcile(260_000, 500_000, 1)
+  ok(!notLow.lowTurn && notLow.lowTurns === 0 && !notLow.apply, '实际输入仍接近当前档：不降档并清零计数')
+  ok(!reconcile(50_000, 200_000, 1).lowTurn, '已在最低档不再降')
+  ok(!reconcile(null, 500_000, 1).lowTurn, '实际输入未知时不降档')
+  ok(!reconcileObservedContextBudgetV1({ observedInputTokens: 90_000, capability: api, outputReserve: null, currentBudget: 500_000, previousLowTurns: 1 }).apply, '输出额度未知时不降档')
+
   const requestCalculation = calculateContextBudgetV1({
     capability: { ...api, contextWindow: 1_000_000 },
     outputReserve: 16_000,

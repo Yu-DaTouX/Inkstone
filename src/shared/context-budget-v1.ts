@@ -658,6 +658,65 @@ export function selectAutoContextBudgetV1(input: AutoBudgetSelectionInputV1): Au
   }
 }
 
+/**
+ * 宿主按**实际发出的请求规模**回收档位（需求稿 8.3）。
+ *
+ * 上面的 selectAutoContextBudgetV1 只在 agent 主动 `yan context budget adjust` 时评估；
+ * 整理完成后实际输入已经变小，但 agent 不调整时高档位会一直留着。这里在每个回合结束时，
+ * 用这一回合最后一次真实请求的输入量判断：
+ *   · 找比当前低、且实际输入不超过其软线 60% 的最小档位（留出下一回合的增长空间）；
+ *   · 连续两个回合都满足才降，每次只降到这个候选档；达不到就把计数清零；
+ *   · 只降不升 —— 升档仍由材料登记（adjust）与请求门禁负责。
+ */
+export const CONTEXT_BUDGET_HOST_DOWNSHIFT_RATIO = 0.6
+export const CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS = 2
+
+export interface ObservedBudgetReconcileV1 {
+  /** 这个回合是否「用量低」（存在更低的合适档位） */
+  lowTurn: boolean
+  /** 本回合后的连续低用量回合数 */
+  lowTurns: number
+  candidateBudget: ContextBudgetTierV1 | null
+  /** 需要把档位降到 candidateBudget */
+  apply: boolean
+  reason: string
+}
+
+export function reconcileObservedContextBudgetV1(input: {
+  observedInputTokens: number | null | undefined
+  capability: EndpointBudgetCapabilityV1 | null | undefined
+  outputReserve: number | null | undefined
+  currentBudget: number
+  previousLowTurns: number
+}): ObservedBudgetReconcileV1 {
+  const current = normalizeContextBudgetTierV1(input.currentBudget)
+  const none = (reason: string): ObservedBudgetReconcileV1 => ({ lowTurn: false, lowTurns: 0, candidateBudget: null, apply: false, reason })
+  if (!current) return none('current_budget_invalid')
+  if (!validTokenCount(input.observedInputTokens)) return none('observed_input_unavailable')
+  const observed = input.observedInputTokens as number
+  let candidate: ContextBudgetTierV1 | null = null
+  for (const tier of CONTEXT_BUDGET_V1_TIERS) {
+    if (tier >= current) break
+    const calculation = calculateContextBudgetV1({ capability: input.capability, outputReserve: input.outputReserve, selectedBudget: tier })
+    if (!calculation.ok || calculation.reviewLine === null) continue
+    if (observed <= Math.floor(calculation.reviewLine * CONTEXT_BUDGET_HOST_DOWNSHIFT_RATIO)) {
+      candidate = tier
+      break
+    }
+  }
+  if (!candidate) return none(current === CONTEXT_BUDGET_V1_TIERS[0] ? 'already_minimum_tier' : 'observed_input_not_low_enough')
+  const previous = Number.isSafeInteger(input.previousLowTurns) ? Math.max(0, input.previousLowTurns) : 0
+  const lowTurns = Math.min(CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS, previous + 1)
+  const apply = lowTurns >= CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS
+  return {
+    lowTurn: true,
+    lowTurns,
+    candidateBudget: candidate,
+    apply,
+    reason: apply ? 'host_downshift_after_low_turns' : 'awaiting_next_low_turn'
+  }
+}
+
 /** Classify a prepared/final payload. Unknown counts or output settings fail closed. */
 export function checkContextBudgetRequestV1(input: ContextBudgetRequestCheckInputV1): ContextBudgetRequestCheckV1 {
   const calculation = calculateContextBudgetV1({
