@@ -11,6 +11,7 @@ import type {
   FileRequestContext,
   FileSearchResult
 } from '../../../../shared/ipc'
+import { Spinner } from '../ui'
 
 /** 绝对路径归一化：比较“已加入上下文”时忽略大小写与分隔符差异 */
 function normPath(p: string): string {
@@ -963,7 +964,7 @@ function TreeRow({
         <span className="rp-fs-name">{name}</span>
         {/* 已加入上下文：独立于 current 的小点（两者可以同时成立） */}
         {inContext ? <span className="rp-fs-inctx" data-testid={`fs-inctx-${path}`} aria-hidden /> : null}
-        {dir && loading ? <span className="rp-fs-spin" aria-hidden /> : null}
+        {dir && loading ? <Spinner mute className="rp-fs-spin" /> : null}
       </button>
       {/* 文件大小保留在行的 title 提示中，列表只给文件名和操作按钮留空间。 */}
       {!dir && onAdd ? (

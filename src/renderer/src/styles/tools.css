@@ -957,13 +957,7 @@
 
 /* 展开时的加载指示：一个小方块呼吸，不占位不打乱行高 */
 .rp-fs-spin {
-  flex: none;
-  width: 4px;
-  height: 4px;
   margin: 0 var(--sp-1);
-  border-radius: var(--r-full);
-  background: var(--accent);
-  animation: rp-fs-pulse var(--dur-900) var(--ease) infinite;
 }
 
 .rp-fs-err {

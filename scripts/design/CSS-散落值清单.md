@@ -12,30 +12,30 @@
 | `tokens.css` | 0 | 0 | 13 | 12 | 0 | 0 |
 | `ui.css` | 0 | 0 | 19 | 14 | 0 | 0 |
 | `app.css` | 1 | 0 | 18 | 8 | 0 | 0 |
-| `motion.css` | 2 | 0 | 68 | 49 | 0 | 0 |
+| `motion.css` | 4 | 0 | 219 | 198 | 0 | 0 |
 | `settings.css` | 6 | 2 | 86 | 49 | 0 | 0 |
 | `electron.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `highlight.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `layout.css` | 4 | 4 | 3 | 1 | 0 | 0 |
 | `shell.css` | 3 | 1 | 25 | 14 | 0 | 0 |
 | `dialog.css` | 2 | 1 | 12 | 6 | 0 | 0 |
-| `rail.css` | 1 | 0 | 145 | 98 | 0 | 0 |
-| `chat.css` | 34 | 11 | 153 | 80 | 0 | 0 |
+| `rail.css` | 1 | 0 | 143 | 96 | 0 | 0 |
+| `chat.css` | 34 | 11 | 151 | 78 | 0 | 0 |
 | `composer.css` | 9 | 3 | 160 | 97 | 0 | 0 |
-| `tools.css` | 10 | 3 | 351 | 228 | 0 | 0 |
+| `tools.css` | 10 | 3 | 349 | 226 | 0 | 0 |
 | `browser.css` | 1 | 1 | 45 | 22 | 0 | 0 |
 | `terminal.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `review.css` | 4 | 0 | 173 | 106 | 0 | 0 |
 | `workbench.css` | 0 | 0 | 138 | 91 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **77** | **26** | **1409** | **875** | **0** | **0** |
+| **合计** | **79** | **26** | **1554** | **1018** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
 | 值 | 类别 | 出现次数 | 文件 |
 | --- | --- | ---: | --- |
 | `5px` | length | 112 | app.css, browser.css, chat.css, composer.css, motion.css, rail.css, review.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
-| `10px` | length | 75 | browser.css, chat.css, composer.css, layout.css, rail.css, review.css, settings.css, tools.css, workbench.css |
+| `10px` | length | 77 | browser.css, chat.css, composer.css, layout.css, motion.css, rail.css, review.css, settings.css, tools.css, workbench.css |
 | `18px` | length | 42 | browser.css, chat.css, composer.css, rail.css, review.css, settings.css, shell.css, tools.css, ui.css, workbench.css |
 | `26px` | length | 29 | app.css, browser.css, composer.css, rail.css, review.css, settings.css, shell.css, tools.css, workbench.css |
 | `20px` | length | 27 | app.css, chat.css, composer.css, rail.css, review.css, settings.css, shell.css, tools.css |
@@ -75,6 +75,7 @@
 | `rgb(229, 72, 77)` | color | 3 | review.css |
 | `rgb(255, 255, 255, 1.000)` | color | 2 | motion.css |
 | `60px` | length | 2 | motion.css |
+| `rgb(0, 0, 0)` | color | 2 | motion.css |
 | `rgb(20, 20, 18, 0.000)` | color | 2 | settings.css |
 | `168px` | length | 2 | dialog.css, settings.css |
 | `72px` | length | 2 | settings.css |
@@ -93,12 +94,11 @@
 | `400px` | length | 1 | motion.css |
 | `300px` | length | 1 | motion.css |
 | `920px` | length | 1 | settings.css |
-| `660px` | length | 1 | settings.css |
-| … | | | 其余 32 条省略 |
+| … | | | 其余 33 条省略 |
 
 ## 3. 定义了但没被引用的令牌
 
-（无）
+- `--dur-1150`
 
 ## 4. 同一令牌有多个值（主题差异或重复定义）
 
@@ -144,10 +144,12 @@
 | `--think-high` | #b294bb / #7a5f8c | motion.css |
 | `--think-xhigh` | #d183e8 / #8b4bb0 | motion.css |
 | `--think-max` | #ff5fff / #a300a3 | motion.css |
+| `--h` | currentcolor / var(--accent) / var(--fg-dim) | motion.css |
+| `--t` | color-mix(in srgb, currentcolor 55%, transparent) / var(--accent-line) / var(--fg-mute) | motion.css |
 | `--w-rail` | var(--w-rail-collapsed) / var(--w-rail-user, 248px) / min(var(--w-rail-user, 260px), 210px) / min(var(--w-rail-user, 260px), 180px) | layout.css |
 | `--ring-color` | var(--fg-mute) / var(--ok) / var(--warn) / var(--err) | tools.css |
 
 ## 5. 概况
 
-- 令牌总数：126（被引用 126）
-- 令牌引用点：4389（含组件内联 style）
+- 令牌总数：134（被引用 133）
+- 令牌引用点：4488（含组件内联 style）

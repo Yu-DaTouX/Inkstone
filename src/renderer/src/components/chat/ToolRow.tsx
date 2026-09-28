@@ -36,7 +36,7 @@ import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
 import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
-import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
+import { Spinner } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
 
@@ -141,7 +141,7 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
         data-testid="tool-row"
       >
         <span className="trow-ico" aria-hidden>
-          {running ? <ThinkingOrbIndicator state={orbStateForTool(call.name)} /> : toolGlyph(call.name, failed)}
+          {running ? <Spinner /> : toolGlyph(call.name, failed)}
         </span>
         {taskPlan || goalCmd ? (
           <span
@@ -211,15 +211,6 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
       </div>
     </div>
   )
-}
-
-/** 把工具的可观察意图映射为 Orb 的动作语义；未知工具保持中性的 working。 */
-function orbStateForTool(name: string): import('thinking-orbs').OrbState {
-  const value = name.toLowerCase()
-  if (/search|grep|rg|find|web|browser|fetch|curl|wget|url/.test(value)) return 'searching'
-  if (/connect|remote|ssh|login|auth|socket/.test(value)) return 'connecting'
-  if (/write|edit|patch|create|compose|save|move|rename/.test(value)) return 'composing'
-  return 'working'
 }
 
 /**

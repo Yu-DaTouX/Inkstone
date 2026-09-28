@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, runPhaseIsActive, type RunProgress } from '../../../../shared/run-progress'
 import { formatDuration } from '../../../../shared/duration'
+import { Spinner } from '../ui'
 
 /**
  * 输入框顶边框上的工作状态 —— **pi TUI 的原样实现**。
@@ -22,7 +23,7 @@ import { formatDuration } from '../../../../shared/duration'
  *
  * 渲染出来就是：
  *
- *   ── ⠋ 正在处理… ─────────────────────────────────────────────
+ *   ── ⠿ 正在处理… ─────────────────────────────────────────────
  *   关于聊天栏 按照 pi 的样式来设计▌
  *
  * 三个细节都照抄了：
@@ -37,32 +38,6 @@ import { formatDuration } from '../../../../shared/duration'
  *   Working / Compacting context… / Auto-compacting… / Retrying (1/3) in 5s…
  * ══════════════════════════════════════════════════════════════════
  */
-
-/** pi 用的 10 帧盲文点阵（loader.js 的 DEFAULT_FRAMES，80ms 一帧） */
-export const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-const FRAME_MS = 80
-
-/** 转动的长度（字符数）—— 与 pi 一致 */ 
-function useFrame(active: boolean, frames: string[] = FRAMES): string {
-  const [i, setI] = useState(0)
-
-  useEffect(() => {
-    if (!active) {
-      setI(0)
-      return
-    }
-    // 尊重系统设置：不转，固定一帧（与 CSS 的 reduced-motion 同一原则）
-    const reduce =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce || frames.length <= 1) return
-
-    const id = setInterval(() => setI((v) => (v + 1) % frames.length), FRAME_MS)
-    return () => clearInterval(id)
-  }, [active, frames])
-
-  return frames[i] ?? frames[0] ?? ''
-}
 
 /**
  * 本回合的运行阶段（实施-21 P1/P2）。
@@ -137,7 +112,6 @@ export function ComposerBorder() {
   const progress = useRunProgress()
   const level = useStore((s) => s.session?.thinkingLevel ?? 'off')
   const busy = !!progress && runPhaseIsActive(progress.phase)
-  const frame = useFrame(busy)
 
   /*
    * 阶段文案（实施-21 P2）：只说真的发生了的事。
@@ -188,9 +162,8 @@ export function ComposerBorder() {
           aria-live="polite"
           title={title}
         >
-          <span className="cborder-spinner" aria-hidden>
-            {frame}
-          </span>
+          {/* 方点阵取代 pi 的盲文帧：盲文是 2×4 竖长条，和等宽字格对不齐 */}
+          <Spinner className="cborder-spinner" />
           {/* key 让文案变化时重演一次淡入 —— 状态切换是「有新消息」，
               不该是硬切（pi 每次刷新整行，浏览器这边用淡入表达同一件事） */}
           <span className="cborder-text" key={text}>

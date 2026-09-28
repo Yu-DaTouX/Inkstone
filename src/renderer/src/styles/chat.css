@@ -226,22 +226,8 @@
   margin-right: auto;
 }
 
-/* 44. 流式输出更柔和
-   「流式一些、柔和一些」的落点：
-   · 光标从实心方块 → 渐隐的细竖线（终端里那种若隐若现）
-   · 新到的文字淡入，而不是"啪"地出现
-   · 助手正文的每一段有轻微入场，避免整块闪现 */
-.cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 3px;
-  vertical-align: text-bottom;
-  background: var(--fg-dim);
-  border-radius: 1px;
-  animation: cursor-soft var(--dur-1150) ease-in-out infinite;
-}
-
+/* 流式输出：光标是 components/ui 的 Caret（motion.css 的 .ui-caret）；
+   推理块里的行内光标矮一点，贴着小字号 */
 .cursor-inline {
   height: 0.9em;
 }
@@ -849,7 +835,7 @@
 }
 
 .image-progress.running .image-progress-track span {
-  animation: image-progress-slide var(--dur-1250) ease-in-out infinite;
+  animation: image-progress-slide var(--dur-1250) var(--mo-loop) infinite;
 }
 
 .image-progress.failed {
@@ -1029,11 +1015,6 @@
   line-height: 1;
 }
 
-.thinking-orb {
-  display: block;
-  flex: none;
-}
-
 /* 折叠时的单行预览：一行最新句。元素本身带 dir="rtl"（见 Reasoning.tsx），
    内层 dir="ltr" 隔离 bidi —— 溢出因此发生在左侧，尾端（最新内容）可见；
    peekText 再兜底只保留尾段，不往 DOM 里放大段文本。 */
@@ -1107,10 +1088,6 @@
 @media (prefers-reduced-motion: reduce) {
   .reason-body {
     transition: none;
-  }
-  .reason-tail {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
   }
 }
 
@@ -1376,30 +1353,35 @@
 }
 
 .trow-expand {
-  height: 0;
-  overflow: hidden;
+  /* 展开 = 设计规范 §6 的 grow：0fr ↔ 1fr，旧内容被连续推开，不跳 */
+  display: grid;
+  grid-template-rows: 0fr;
   opacity: 0;
-  clip-path: inset(0 0 100% 0);
-  transition: clip-path var(--dur-220) var(--ease), opacity var(--dur-180) var(--ease);
+  transition:
+    grid-template-rows var(--mo-slow) var(--mo-ease),
+    opacity var(--mo-base) var(--mo-ease);
 }
 
 .trow-expand.open {
-  height: auto;
-  /*
-   * 单条工具调用的详情同样卡在窗口高的四分之一。
-   * 原来这里是 `height: auto` + `overflow: visible` —— 没有任何上限，
-   * 展开一条长输出（如 npm run check）就能把整段对话顶走，和
-   * `.tgroup-body` 早年的毛病一样。
-   */
-  max-height: 25vh;
-  overflow: auto;
-  overscroll-behavior: contain;
+  grid-template-rows: 1fr;
   opacity: 1;
-  clip-path: inset(0 0 0 0);
 }
 
 .trow-expand-inner {
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.trow-expand.open > .trow-expand-inner {
+  /*
+   * 单条工具调用的详情同样卡在窗口高的四分之一。
+   * 没有上限时，展开一条长输出（如 npm run check）就能把整段对话顶走，
+   * 和 `.tgroup-body` 早年的毛病一样。
+   */
+  max-height: 25vh;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .trow-body {

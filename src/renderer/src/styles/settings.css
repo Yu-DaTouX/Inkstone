@@ -953,15 +953,6 @@ html[data-theme='light'] .ob-scrim {
   font-size: var(--fs-xs);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ob-scrim,
-  .ob-card,
-  .ob-row {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
-  }
-}
-
 /* ── 手机接入 ─────────────────────────────────────────────── */
 .remote-address-input {
   width: 160px;

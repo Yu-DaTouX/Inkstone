@@ -20,7 +20,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
+import { Caret, Spinner } from '../ui'
 
 /** 系统是否要求减少动态效果 */
 function prefersReducedMotion(): boolean {
@@ -143,12 +143,12 @@ function ReasoningCapsuleImpl({
     >
       <button className="reason-head" onClick={toggleOpen} aria-expanded={open} data-testid="reasoning-toggle">
         {/*
-         * 推理中用 Orb（它在动 = 模型在动），结束后换成 chevron
+         * 推理中用方点阵（它在动 = 模型在动），结束后换成 chevron
          * （一个静止的 spinner 会让人以为还在跑）。
          */}
         {live ? (
           <span className="reason-spin" aria-hidden>
-            <ThinkingOrbIndicator state="solving" />
+            <Spinner />
           </span>
         ) : (
           <Icon name="chevron-right" size={12} className="chev" />
@@ -162,7 +162,7 @@ function ReasoningCapsuleImpl({
             <span dir="ltr">{peekText(latestSentence(shown))}</span>
           </span>
         ) : null}
-        {live ? <span className="cursor cursor-inline" /> : null}
+        {live ? <Caret className="cursor cursor-inline" /> : null}
       </button>
 
       <div
@@ -182,7 +182,7 @@ function ReasoningCapsuleImpl({
               {tail}
             </span>
           ) : null}
-          {live ? <span className="cursor cursor-inline" /> : null}
+          {live ? <Caret className="cursor cursor-inline" /> : null}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 /**
  * 样式防回退：几项「只许下降」的计数（界面重构计划 §5）。
  *
- *   straysPx      模块 CSS 里写死的 px（不含 0 / 1px 发丝线 / 百分比，统计口径同 css-drift）
+ *   straysPx      模块 CSS 里写死的 px（不含 0 / 1px 发丝线；@keyframes 里的几何不计）
  *   important     `!important` 声明数
  *   privateCtl    模块自建的控件类（`.xxx-btn` / `.xxx-chip` / `.xxx-tab`，ui.css 之外定义）
  *
@@ -42,7 +42,9 @@ function measure() {
       for (const m of selectors.matchAll(CTL)) if (!shared.has(m[1])) ctl.add(m[1])
     }
     if (EXEMPT.has(name)) continue
-    for (const m of css.matchAll(DECL)) {
+    /* 关键帧里的位移是画出来的几何（方点阵的点位、扫光的起止），与图标坐标同类，不算散落值 */
+    const outsideKeyframes = css.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
+    for (const m of outsideKeyframes.matchAll(DECL)) {
       if (m[1].startsWith('--')) continue
       for (const v of m[2].match(PX) ?? []) if (!IGNORED.has(v)) straysPx++
     }

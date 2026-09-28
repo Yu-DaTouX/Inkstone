@@ -36,12 +36,14 @@
   --mo-base: 170ms;
   --mo-slow: 240ms;
   /* 位移距离：浮层不用滑很远，6px 就够表达「从哪来」 */
-  --mo-shift: 6px;
+  --mo-shift: 4px;
 
   /* 快进慢停 —— 浮层落位的主力曲线 */
   --mo-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* 退场用标准曲线（退场不需要「安定感」，只需要干脆） */
   --mo-ease-out: cubic-bezier(0.4, 0, 1, 1);
+  /* 只给运行中的循环（呼吸、脉冲）：两端对称，不抢入场曲线的「快进慢停」 */
+  --mo-loop: cubic-bezier(0.45, 0, 0.55, 1);
 }
 
 /* 52.1 关键帧 */
@@ -269,26 +271,6 @@
    会让「CSS 不动 / JS 还在等」出现一段空窗（浮层短暂消失又出现）。
    var(--dur-1) 保证 `both` 填充语义仍在（终态就是 from/to 里那个值）。 */
 @media (prefers-reduced-motion: reduce) {
-  .modal-scrim,
-  .settings-scrim,
-  .modal,
-  .settings,
-  .mt-pop,
-  .row-menu,
-  .row-menu-surface,
-  .notice,
-  .logdrawer,
-  .connbar,
-  .settings-body > *,
-  .settings-body .set-group,
-  .mt-pop .mt-item,
-  .mt-pop .mt-group,
-  .mt-pop .mt-stop,
-  .row-menu .row-menu-btn,
-  .row-menu-surface .srow-menu-btn {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
-  }
   .notice:hover {
     transform: none;
   }
@@ -719,22 +701,16 @@ html[data-theme='light'] .turn {
   opacity: 0.38;
 }
 
-/* 状态区：盲文 spinner 与文案之间留 7px；spinner 定宽居中（宽度跟字号缩放） */
+/* 状态区：方点阵与文案之间留 8px */
 .cborder-status {
-  gap: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
+/* 方点阵跟着边框取思考档位色：亮点是档位色，尾迹半透明 */
 .cborder-spinner {
-  /*
-   * 盲文字符宽度固定，但要保证不因字体回退而抖。
-   * 字号变大后宽高用 em 跟着缩放（不改这里的值就能同步放大）。
-   */
-  display: inline-block;
-  width: 1.1em;
-  text-align: center;
-  color: currentColor;
-  font-variant-ligatures: none;
-  /* 行高收紧：盲文字符本身在字身框里偏上，1 会让它看起来浮动 */
-  line-height: 1;
+  --h: currentColor;
+  --t: color-mix(in srgb, currentColor 55%, transparent);
 }
 .cborder-text {
   /*
@@ -781,7 +757,7 @@ html[data-theme='light'] .turn {
   animation: cborder-sweep var(--dur-1600) linear infinite;
 }
 .cborder.busy .cborder-dash.lead {
-  animation: cborder-pulse var(--dur-1600) var(--mo-ease) infinite;
+  animation: cborder-pulse var(--dur-1600) var(--mo-loop) infinite;
 }
 
 @keyframes cborder-sweep {
@@ -855,9 +831,6 @@ html[data-theme='light'] {
     background-image: none;
     background-color: currentColor;
     opacity: 0.5;
-  }
-  .cborder-text {
-    animation-duration: var(--dur-1) !important;
   }
 }
 
@@ -1031,16 +1004,6 @@ html[data-theme='light'] .rp-todo-now {
   .rp-meter.busy i {
     animation: none !important;
     background-image: none;
-  }
-  .rp-meter i,
-  .rp-todos .rp-todo,
-  .rp-todo-now,
-  .rp-todo.flash,
-  .rp-todo.flash .rp-box,
-  .rp-all-done {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
-    transition-duration: var(--dur-1) !important;
   }
 }
 
@@ -1256,13 +1219,6 @@ html[data-theme='light'] .rp-todo-now {
   line-height: 1.45;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .auth-msg,
-  .auth-edit {
-    animation-duration: var(--dur-1) !important;
-  }
-}
-
 /* ------------------------------------------------------------------
    52.2 各模块搬来的关键帧（B2 归口）
    规则：除本文件外，任何 CSS 都不许定义 @keyframes（npm run check:motion 拦）。
@@ -1332,15 +1288,6 @@ html[data-theme='light'] .rp-todo-now {
     background: var(--accent-soft);
   }
 }
-@keyframes cursor-soft {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.15;
-  }
-}
 @keyframes text-in {
   from {
     opacity: 0.35;
@@ -1351,15 +1298,6 @@ html[data-theme='light'] .rp-todo-now {
 }
 /* 文件树的 .rp-fs / .rp-fs-row / .rp-fs-size 已全部搬到 tools.css
    （2026-09-15 样式归属收拢：同名选择器不再跨文件叠加）。 */
-@keyframes rp-fs-pulse {
-  0%,
-  100% {
-    opacity: 0.25;
-  }
-  50% {
-    opacity: 1;
-  }
-}
 @keyframes term-blink {
   50% {
     opacity: 0;
@@ -1393,4 +1331,219 @@ html[data-theme='light'] .rp-todo-now {
 @keyframes rp-float-flash {
   0%, 100% { outline: 0 solid transparent; }
   20% { outline: 2px solid var(--accent); outline-offset: 1px; }
+}
+
+/* ------------------------------------------------------------------
+   v0.5 基础件（设计规范 §6）：展开 · 方点阵 · 光标 · 环绕流光 · 分段滑块
+   类名以 ui- 开头，组件在 components/ui（Spinner / Grow / Caret）。
+   ------------------------------------------------------------------ */
+
+/*
+ * 展开：新块从 0fr 长到 1fr，同步淡入；旧内容被连续推开，不跳。
+ * 用法：外层 .ui-grow（可加 .open 控制收合），唯一的子元素负责裁切。
+ */
+.ui-grow {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--mo-slow) var(--mo-ease),
+    opacity var(--mo-base) var(--mo-ease);
+}
+.ui-grow > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.ui-grow.closed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+/* 首次出现就长出来（新插入的块） */
+.ui-grow.enter {
+  animation: mo-grow var(--mo-slow) var(--mo-ease) both;
+}
+
+/*
+ * 方点阵：10×10，3×3 方点，亮点沿外圈转、带一格尾迹，0.8s 一圈。
+ * 取代旋转图标与盲文字符（后者是 2×4 竖长条，和等宽字格对不齐）。
+ * 颜色：--h 亮点 / --t 尾迹 / --o 其余点，默认强调色，.mute 用中性色。
+ */
+.ui-spin {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  vertical-align: -1px;
+  --h: var(--accent);
+  --t: var(--accent-line);
+  --o: var(--border-str);
+}
+.ui-spin.mute {
+  --h: var(--fg-dim);
+  --t: var(--fg-mute);
+}
+.ui-spin::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 2px;
+  height: 2px;
+  animation: mo-dots var(--dur-800) steps(1, end) infinite;
+}
+
+/*
+ * 光标：2px 宽、1.2em 高。流式输出时常亮；停下后 1.06s step-end 闪烁。
+ */
+.ui-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  margin-left: 2px;
+  vertical-align: -0.25em;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.ui-caret.idle {
+  animation: mo-blink var(--dur-1060) step-end infinite;
+}
+
+/*
+ * 环绕流光：conic-gradient 边框经 mask 只露 1px 边，2.4s 一圈。
+ * 只在一次运行持续 3 秒后出现（animation-delay），短回合不闪。
+ * 宿主需要 position: relative 与圆角；.on 由运行状态控制。
+ */
+@property --mo-ang {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.ui-orbit::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--mo-ang),
+    transparent 0deg 240deg,
+    var(--accent-line) 300deg,
+    var(--accent) 348deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--mo-slow) var(--mo-ease);
+}
+.ui-orbit.on::after {
+  animation:
+    mo-orbit var(--dur-2400) linear infinite,
+    mo-orbit-in var(--mo-slow) var(--mo-ease) var(--dur-3000) both;
+}
+
+/* 分段滑块：选中底块沿横向滑到新位置（Segmented 组件写 --seg-x / --seg-w） */
+.seg.sliding {
+  position: relative;
+}
+.seg.sliding::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: var(--seg-w, 0);
+  transform: translateX(var(--seg-x, 0));
+  border-radius: var(--r-xs);
+  background: var(--bg-3);
+  transition:
+    transform var(--mo-slow) var(--mo-ease),
+    width var(--mo-slow) var(--mo-ease);
+  pointer-events: none;
+}
+.seg.sliding .seg-btn {
+  position: relative;
+}
+.seg.sliding .seg-btn.sel,
+.seg.sliding .seg-btn[aria-pressed='true'] {
+  background: transparent;
+}
+
+@keyframes mo-grow {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+@keyframes mo-blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes mo-orbit {
+  to {
+    --mo-ang: 360deg;
+  }
+}
+@keyframes mo-orbit-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* 外圈 8 个点依次点亮：左上 → 右上 → 右下 → 左下，亮点后跟一格尾迹 */
+@keyframes mo-dots {
+  0% {
+    box-shadow: 4px 4px var(--h), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--t), 8px 8px var(--o);
+  }
+  12.5% {
+    box-shadow: 4px 4px var(--t), 8px 4px var(--h), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  25% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--t), 12px 4px var(--h), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  37.5% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--o), 12px 4px var(--t), 12px 8px var(--h), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  50% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--t), 12px 12px var(--h), 8px 12px var(--o), 4px 12px var(--o), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  62.5% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--t), 8px 12px var(--h), 4px 12px var(--o), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  75% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--t), 4px 12px var(--h), 4px 8px var(--o), 8px 8px var(--o);
+  }
+  87.5% {
+    box-shadow: 4px 4px var(--o), 8px 4px var(--o), 12px 4px var(--o), 12px 8px var(--o), 12px 12px var(--o), 8px 12px var(--o), 4px 12px var(--t), 4px 8px var(--h), 8px 8px var(--o);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 保留终态：方点阵停在第一帧，流光直接显示，展开直达 */
+  .ui-spin::before,
+  .ui-caret.idle,
+  .ui-orbit.on::after,
+  .ui-grow.enter {
+    animation-duration: var(--dur-1);
+    animation-iteration-count: 1;
+  }
+  .ui-grow,
+  .seg.sliding::before {
+    transition-duration: var(--dur-1);
+  }
 }

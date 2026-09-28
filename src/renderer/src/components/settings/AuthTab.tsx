@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import type { AuthProviderInfo } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { ActivityModelSection } from './ActivityModelSection'
+import { Spinner } from '../ui'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -130,7 +131,7 @@ export function AuthTab() {
           </div>
         </div>
         <button className="btn sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
-          <Icon name="refresh" size={12} className={checking ? 'spin' : ''} />
+          {checking ? <Spinner mute /> : <Icon name="refresh" size={12} />}
           <span>{checking ? t('auth.checking') : t('auth.recheck')}</span>
         </button>
       </div>
@@ -184,7 +185,7 @@ export function AuthTab() {
               {loggingIn ? (
                 <>
                   <span className="auth-waiting" data-testid="auth-login-waiting">
-                    <Icon name="refresh" size={12} className="spin" />
+                    <Spinner mute />
                     <span>{t('auth.loginWaiting')}</span>
                   </span>
                   <button

@@ -8,26 +8,26 @@
 
 | 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | `tokens.css` | tokens | 407 | 25 | 30 | 2 | 2 |
+| 1 | `tokens.css` | tokens | 422 | 25 | 30 | 2 | 6 |
 | 2 | `ui.css` | ui | 352 | 58 | 59 | 0 | 0 |
 | 3 | `app.css` | modules | 528 | 74 | 74 | 1 | 0 |
-| 4 | `motion.css` | modules | 1403 | 160 | 165 | 6 | 9 |
-| 5 | `settings.css` | modules | 1161 | 169 | 172 | 2 | 2 |
+| 4 | `motion.css` | modules | 1550 | 175 | 180 | 6 | 2 |
+| 5 | `settings.css` | modules | 1152 | 169 | 172 | 1 | 0 |
 | 6 | `electron.css` | modules | 35 | 11 | 12 | 0 | 0 |
 | 7 | `highlight.css` | modules | 173 | 81 | 81 | 0 | 0 |
 | 8 | `layout.css` | modules | 248 | 21 | 22 | 4 | 2 |
 | 9 | `shell.css` | modules | 466 | 62 | 64 | 1 | 7 |
 | 10 | `dialog.css` | modules | 193 | 24 | 25 | 0 | 0 |
 | 11 | `rail.css` | modules | 1802 | 233 | 255 | 0 | 0 |
-| 12 | `chat.css` | modules | 2586 | 328 | 352 | 6 | 2 |
-| 13 | `composer.css` | modules | 2147 | 282 | 293 | 2 | 0 |
-| 14 | `tools.css` | modules | 4134 | 607 | 661 | 5 | 5 |
+| 12 | `chat.css` | modules | 2563 | 326 | 350 | 6 | 0 |
+| 13 | `composer.css` | modules | 2163 | 283 | 295 | 2 | 0 |
+| 14 | `tools.css` | modules | 4128 | 607 | 661 | 5 | 5 |
 | 15 | `browser.css` | modules | 502 | 57 | 68 | 0 | 0 |
 | 16 | `terminal.css` | modules | 82 | 10 | 10 | 0 | 0 |
 | 17 | `review.css` | modules | 1546 | 224 | 225 | 1 | 0 |
 | 18 | `workbench.css` | modules | 1883 | 244 | 255 | 2 | 0 |
 | 19 | `icon-state.css` | modules | 30 | 1 | 1 | 1 | 0 |
-| | **合计** | | **19678** | **2613** | | | |
+| | **合计** | | **19818** | **2629** | | | |
 
 ## 2. 覆盖热力：每个文件「最终胜出」的选择器数
 
@@ -38,7 +38,7 @@
 | `tokens.css` | 21 |
 | `ui.css` | 57 |
 | `app.css` | 52 |
-| `motion.css` | 141 |
+| `motion.css` | 158 |
 | `settings.css` | 169 |
 | `electron.css` | 4 |
 | `highlight.css` | 80 |
@@ -46,8 +46,8 @@
 | `shell.css` | 62 |
 | `dialog.css` | 24 |
 | `rail.css` | 233 |
-| `chat.css` | 326 |
-| `composer.css` | 281 |
+| `chat.css` | 324 |
+| `composer.css` | 282 |
 | `tools.css` | 607 |
 | `browser.css` | 57 |
 | `terminal.css` | 10 |
@@ -57,7 +57,7 @@
 
 ## 3. 被多个文件定义的选择器（覆盖链）
 
-共 **51** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
+共 **49** 个选择器在 ≥2 个文件里出现。渲染顺序 = 从左到右，**最右那个胜出**。
 
 | 选择器 | 定义它的文件（按加载顺序） |
 | --- | --- |
@@ -102,8 +102,6 @@
 | `.outline-preview` | motion → chat |
 | `.op-title` | motion → chat |
 | `.op-empty` | motion → chat |
-| `.turn` | motion → chat |
-| `.composer` | motion → composer |
 | `.rp-now-spin` | motion → tools |
 | `.rp-todo.active` | motion → tools |
 | `.prose` | electron → chat |

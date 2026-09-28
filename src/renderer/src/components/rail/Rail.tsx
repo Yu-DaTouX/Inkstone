@@ -11,6 +11,7 @@ import { forkLatest } from '../../lib/fork'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
 import { buildBranchIndex } from '../../../../shared/session-map'
+import { Spinner } from '../ui'
 
 /**
  * 左栏 —— 对齐 Agents-Anywhere 的结构。
@@ -1089,7 +1090,7 @@ export function Rail() {
                               data-testid="rail-group-running"
                               title={t('rail.runningCount', { n: groupRunning.get(group.id) ?? 0 })}
                             >
-                              <Icon name="running" size={12} />
+                              <Spinner />
                               {groupRunning.get(group.id)}
                             </span>
                           ) : null}
@@ -1235,7 +1236,7 @@ export function Rail() {
                         data-testid="rail-project-running"
                         title={t('rail.runningCount', { n: runningIn(p.list) })}
                       >
-                        <Icon name="running" size={12} />
+                        <Spinner />
                         {runningIn(p.list)}
                       </span>
                     ) : null}

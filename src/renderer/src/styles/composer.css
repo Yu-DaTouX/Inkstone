@@ -47,7 +47,7 @@
   height: 4px;
   border-radius: var(--r-full);
   background: var(--ok);
-  animation: ubpulse var(--dur-1100) ease-in-out infinite;
+  animation: ubpulse var(--dur-1100) var(--mo-loop) infinite;
 }
 
 .ub-turn {
@@ -2149,6 +2149,14 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .voice-input.recording .voice-dot {
-    animation: voice-pulse var(--dur-1200) ease-in-out infinite;
+    animation: voice-pulse var(--dur-1200) var(--mo-loop) infinite;
   }
+}
+
+/* 环绕流光的宿主：与输入框同宽同圆角，流光画在它的 ::after 上（输入框自己 overflow: hidden，画不出边外） */
+.composer-orbit {
+  position: relative;
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  border-radius: var(--r-lg);
 }

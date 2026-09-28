@@ -1,4 +1,11 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useLayoutEffect,
+  useRef,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type ReactNode
+} from 'react'
 import { Icon, type IconName } from '../../icons/Icon'
 
 /**
@@ -84,7 +91,10 @@ export interface SegmentedOption<T extends string> {
   title?: string
 }
 
-/** 互斥选项：主题、语言、视图切换。选中项用抬高一级的底色表达。 */
+/**
+ * 互斥选项：主题、语言、视图切换。选中项用抬高一级的底色表达，
+ * 切换时底块沿横向滑到新位置（motion.css 的 .seg.sliding，设计规范 §3.2）。
+ */
 export function Segmented<T extends string>({
   options,
   value,
@@ -103,8 +113,23 @@ export function Segmented<T extends string>({
   className?: string
   testId?: string
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+  /* 量选中项的位置写进 CSS 变量；底块本身由 ::before 画，不占 DOM */
+  useLayoutEffect(() => {
+    const root = ref.current
+    const sel = root?.querySelector<HTMLElement>('.seg-btn.sel')
+    if (!root || !sel) return
+    root.style.setProperty('--seg-x', `${sel.offsetLeft}px`)
+    root.style.setProperty('--seg-w', `${sel.offsetWidth}px`)
+  })
   return (
-    <div className={cx('seg', size === 'sm' && 'sm', className)} role="group" aria-label={label} data-testid={testId}>
+    <div
+      ref={ref}
+      className={cx('seg sliding', size === 'sm' && 'sm', className)}
+      role="group"
+      aria-label={label}
+      data-testid={testId}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -218,6 +243,48 @@ export function SectionTitle({
     <div className={cx('ui-section-title', className)}>
       {icon ? <Icon name={icon} size={12} /> : null}
       {children}
+    </div>
+  )
+}
+
+/**
+ * 进行中：方点阵（motion.css 的 .ui-spin）。只挂在真实运行的状态上，
+ * 旁边要有文字或无障碍名称说明在做什么 —— 动画不能是唯一的状态信息。
+ */
+export function Spinner({ mute, className, label }: { mute?: boolean; className?: string; label?: string }) {
+  return (
+    <span
+      className={cx('ui-spin', mute && 'mute', className)}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+    />
+  )
+}
+
+/** 流式输出的光标：输出中常亮，停下后闪烁 */
+export function Caret({ idle, className }: { idle?: boolean; className?: string }) {
+  return <span className={cx('ui-caret', idle && 'idle', className)} aria-hidden />
+}
+
+/**
+ * 展开 / 收起：0fr ↔ 1fr 的网格行过渡，内容被连续推开。
+ * `enter` 用于新插入的块（首帧就长出来）；收合用 `open`。
+ */
+export function Grow({
+  open = true,
+  enter,
+  className,
+  style,
+  children
+}: {
+  open?: boolean
+  enter?: boolean
+  className?: string
+  style?: CSSProperties
+  children: ReactNode
+}) {
+  return (
+    <div className={cx('ui-grow', !open && 'closed', enter && 'enter', className)} style={style} aria-hidden={!open}>
+      <div>{children}</div>
     </div>
   )
 }
