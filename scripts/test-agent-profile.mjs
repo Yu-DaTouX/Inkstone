@@ -59,6 +59,8 @@ export function runAgentProfileTests(ok, mod) {
     )
     ok(/同步相关文档/.test(agentRoleSection('auto', 'answer')?.content ?? ''), 'auto 档「写代码」一类也带文档同步')
     ok(/解析式/.test(agentRoleSection('daily', 'learn')?.content ?? ''), '学习可按自然语言切到解析式')
+    ok(/skill:tutor/.test(agentRoleSection('daily', 'learn')?.content ?? ''), '学习指向 tutor 技能')
+    ok(/skill:doc-sync/.test(agentRoleSection('coding', 'answer')?.content ?? ''), 'coding 指向 doc-sync 技能')
     const auto = agentRoleSection('auto', 'answer')
     ok(auto?.name === ROLE_SECTION_NAME, 'auto 档注入角色分区')
     ok(
@@ -84,7 +86,7 @@ export function runAgentProfileTests(ok, mod) {
       all.every((c) => c.includes('日常') || c.includes('学习者')),
       '每条角色文本都点明了所处场景'
     )
-    ok(learn?.content.includes('不要直接给答案'), '导师角色明确「先提示、不直接给答案」')
+    ok(learn?.content.includes('不要替他作答'), '导师角色明确「不替学习者作答」')
     ok(learn?.content.includes('独立完成'), '导师角色明确「独立完成之前不算掌握」')
   }
 
@@ -100,7 +102,7 @@ export function runAgentProfileTests(ok, mod) {
     ok(research.includes('bash'), '研究活动保留 bash（yan 能力入口不能断）')
 
     const learn = filterToolsForActivity('learn', all)
-    ok(!learn.includes('write') && !learn.includes('edit'), '学习活动禁写文件')
+    ok(learn.includes('write') && learn.includes('edit'), '学习活动可写笔记文件（tutor 技能）')
     ok(learn.includes('read') && learn.includes('bash'), '学习活动保留读与 bash')
 
     const answer = filterToolsForActivity('answer', all)
