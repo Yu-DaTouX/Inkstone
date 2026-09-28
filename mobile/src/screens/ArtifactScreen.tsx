@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useRemote } from '../state'
-import { font, space, usePalette } from '../theme'
+import { font, mono, space, usePalette } from '../theme'
 import { EmptyState, Header, IconButton } from '../ui'
 
 /**
@@ -39,12 +39,9 @@ export function ArtifactScreen({
     <View style={[styles.root, { backgroundColor: p.bg0 }]}>
       <Header
         title={artifact.filename}
+        subtitle={artifact.mediaType}
         right={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : undefined}
-        left={
-          <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={onBack} hitSlop={12}>
-            <Text style={{ color: p.accent, fontSize: font.base }}>返回</Text>
-          </Pressable>
-        }
+        left={<IconButton name="back" label="返回会话" onPress={onBack} />}
       />
       {error ? <Text style={[styles.error, { color: p.err }]}>{error}</Text> : null}
       {isImage ? (
@@ -65,5 +62,5 @@ const styles = StyleSheet.create({
   error: { padding: space[4], fontSize: font.sm },
   image: { flex: 1, margin: space[3] },
   textBox: { padding: space[4] },
-  text: { fontFamily: 'monospace', fontSize: font.sm, lineHeight: 20 }
+  text: { fontFamily: mono, fontSize: font.sm, lineHeight: 20 }
 })
