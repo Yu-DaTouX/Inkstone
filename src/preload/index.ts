@@ -592,6 +592,7 @@ const api: YanBridge = {
     sessions: (peerId) => invoke('yan:peer:sessions', peerId),
     history: (peerId, sessionId, before) => invoke('yan:peer:history', peerId, sessionId, before),
     send: (peerId, sessionId, text) => invoke('yan:peer:send', peerId, sessionId, text),
+    startSession: (peerId, projectId, text) => invoke('yan:peer:startSession', peerId, projectId, text),
     abort: (peerId, runId) => invoke('yan:peer:abort', peerId, runId),
     importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId),
     importKnowledge: (peerId, remoteProjectId, localProjectId) => invoke('yan:peer:importKnowledge', peerId, remoteProjectId, localProjectId),

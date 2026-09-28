@@ -29,6 +29,7 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     }
   })
   const commands = []
+  const started = []
   server = new RemoteServer({
     host: '127.0.0.1',
     port: 0,
@@ -71,6 +72,10 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
         },
         async knowledge(projectId) {
           return { ok: true, data: { version: 1, source: { projectId }, entries: [] } }
+        },
+        async startSession(projectId, text) {
+          started.push({ projectId, text })
+          return { ok: true, data: { sessionId: 's-new', runId: 'r9', projectId } }
         }
       }
     }
@@ -150,6 +155,14 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
       headers: { 'idempotency-key': 'peer-test-key-0001' }
     })
     ok(send.status === 403 && commands.length === 0, '砚对砚：没有发消息授权时不会执行')
+    const startDenied = await call('/remote/v1/peer/projects/p-a/sessions', {
+      token: peer,
+      connection: grant.connectionId,
+      method: 'POST',
+      body: { text: '新任务' },
+      headers: { 'idempotency-key': 'peer-test-key-0101' }
+    })
+    ok(startDenied.status === 403 && started.length === 0, '砚对砚：没有发消息授权时不能新开任务')
     ok((await call('/remote/v1/peer/projects/p-a/knowledge', { token: peer, connection: grant.connectionId })).status === 403, '砚对砚：没有复制授权时读不到项目记忆')
 
     /* 断开即失效：同一个连接 id 不能再用，也不能重新激活 */
@@ -181,6 +194,40 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
       headers: { 'idempotency-key': 'peer-test-key-0003' }
     })
     ok(abortOther.status === 403 && commands.length === 1, '砚对砚：不能中止未开放项目里的任务')
+    const startOther = await call('/remote/v1/peer/projects/p-b/sessions', {
+      token: peer,
+      connection: second.connectionId,
+      method: 'POST',
+      body: { text: '新任务' },
+      headers: { 'idempotency-key': 'peer-test-key-0102' }
+    })
+    ok(startOther.status === 403 && started.length === 0, '砚对砚：不能在未开放的项目里新开任务')
+    const startNoKey = await call('/remote/v1/peer/projects/p-a/sessions', {
+      token: peer,
+      connection: second.connectionId,
+      method: 'POST',
+      body: { text: '新任务' }
+    })
+    ok(startNoKey.status === 400 && started.length === 0, '砚对砚：新开任务必须带幂等键')
+    const startOk = await call('/remote/v1/peer/projects/p-a/sessions', {
+      token: peer,
+      connection: second.connectionId,
+      method: 'POST',
+      body: { text: '新任务' },
+      headers: { 'idempotency-key': 'peer-test-key-0103' }
+    })
+    ok(
+      startOk.status === 200 && started.length === 1 && started[0].projectId === 'p-a' && startOk.body.data.sessionId === 's-new',
+      '砚对砚：授权范围内可以在开放项目里新开任务'
+    )
+    const startAgain = await call('/remote/v1/peer/projects/p-a/sessions', {
+      token: peer,
+      connection: second.connectionId,
+      method: 'POST',
+      body: { text: '新任务' },
+      headers: { 'idempotency-key': 'peer-test-key-0103' }
+    })
+    ok(startAgain.status === 200 && started.length === 1, '砚对砚：同一幂等键重试不会重复开任务')
 
     grants.revoke(second.connectionId)
     await wait(30)

@@ -23,6 +23,7 @@ export function registerPeerIpc(ipc: IpcRegistrar, client: PeerClient, projects:
     client.history(str(peerId), str(sessionId), str(before) || undefined)
   )
   handle('yan:peer:send', (peerId: unknown, sessionId: unknown, text: unknown) => client.send(str(peerId), str(sessionId), str(text)))
+  handle('yan:peer:startSession', (peerId: unknown, projectId: unknown, text: unknown) => client.startSession(str(peerId), str(projectId), str(text)))
   handle('yan:peer:abort', (peerId: unknown, runId: unknown) => client.abort(str(peerId), str(runId)))
   handle('yan:peer:importSession', (peerId: unknown, sessionId: unknown) => client.importSession(str(peerId), str(sessionId)))
   handle('yan:peer:importKnowledge', async (peerId: unknown, remoteProjectId: unknown, localProjectId: unknown) => {

@@ -290,6 +290,11 @@ export class PeerClient {
     return this.request(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/messages`, { method: 'POST', body: { text }, idempotent: true })
   }
 
+  /** 在对方开放的项目里新开任务（需要 send 授权；由对方电脑执行） */
+  startSession(peerId: string, projectId: string, text: string): Promise<Result<{ sessionId: string | null; runId: string; projectId: string }>> {
+    return this.request(peerId, `/remote/v1/peer/projects/${encodeURIComponent(projectId)}/sessions`, { method: 'POST', body: { text }, idempotent: true })
+  }
+
   abort(peerId: string, runId: string): Promise<Result<unknown>> {
     return this.request(peerId, '/remote/v1/peer/runs/abort', { method: 'POST', body: { runId }, idempotent: true })
   }
