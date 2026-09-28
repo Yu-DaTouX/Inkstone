@@ -31,10 +31,8 @@ import {
   testCustomProviderBillable,
   testCustomProviderEndpoint
 } from './custom-providers'
-import { authFileInfo, clearAuth, completePath, listAuthProviders, setApiKey } from './credentials'
+import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from './credentials'
 import { cancelCodexLogin, startCodexLogin } from './oauth'
-import { listDir, searchFiles } from './files'
-import { grantFiles, readGrantedText, readPreview, statPreview } from './file-refs'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
@@ -48,14 +46,7 @@ import { SkillFilesActivationScheduler } from './capabilities/skill-files-schedu
 import { compactionInfo } from './compaction'
 import { allowTrust, trustStatus } from './project-trust'
 import { forkContext, forkFileRefs } from './fork-rebind-service'
-import { activeContextPolicy, contextPolicySettings, setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
-import { contextBudget } from '../shared/context-policy'
-import {
-  isContextBudgetTierV1,
-  sanitizeContextBudgetRuntimeSnapshotV1
-} from '../shared/context-budget-v1'
-import { ContextBudgetStoreError, contextBudgetStoreV1 } from './context-budget-store'
-import { modelKeyOf } from '../shared/model-capabilities'
+import { setContextPolicySettings, syncEffectivePolicyFile } from './context-policy'
 import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
@@ -77,21 +68,18 @@ import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerSubagentsIpc } from './ipc/subagents-ipc'
+import { registerFilesIpc } from './ipc/files-ipc'
+import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
+import { registerPeerHostIpc } from './ipc/peer-host-ipc'
+import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
-import { changeConsentEntry, listConsentViews } from './consent-store'
 import { PeerGrantRegistry } from './peer-grants'
 import { PeerClient } from './peer-client'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import type { PeerHostHandlers } from './remote-server'
-import {
-  PEER_ARTIFACT_MAX_BYTES,
-  PEER_OPERATIONS,
-  type PeerExportedArtifact,
-  type PeerKnowledgeExport,
-  type PeerSessionExport
-} from '../shared/peer-protocol'
+import { PEER_ARTIFACT_MAX_BYTES, type PeerExportedArtifact, type PeerKnowledgeExport, type PeerSessionExport } from '../shared/peer-protocol'
 import type { ConsentDecision } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import {
@@ -141,8 +129,6 @@ import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import type { RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
-import { readContextActions } from './context-actions'
-import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from './attachments'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { exportLearningData } from './learning-export'
@@ -178,7 +164,7 @@ import { currentTaskPlan } from './task-plan-store'
 import { samePath } from '../shared/session-path'
 import { DEFAULT_WORK_MODE, normalizeWorkMode, type WorkMode, type WorkModeState } from '../shared/work-mode'
 import { listKnowledge } from './project-memory-store'
-import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, FileSearchRequest, AssistantArtifact, MainPush, RunnerStatus, SessionState, SessionSummary, UIMessage } from '../shared/ipc'
+import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, AssistantArtifact, MainPush, RunnerStatus, SessionState, SessionSummary, UIMessage } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -393,8 +379,6 @@ const subagentService = new SubagentService({
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
   resolveAgentProfile: (id) => resolveAgentProfile(id)
 })
-/** 当前主窗口的全项目文件名搜索；新请求可取消旧请求，退出时自然随进程释放。 */
-const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
 /** 手机接入（远程访问）：按设置启停，见 remote-access.ts */
 let remoteAccess: RemoteAccess | null = null
@@ -5258,18 +5242,7 @@ function registerIpc(): void {
     cancelCodexLogin()
   })
 
-  /**
-   *  文件引用补全 —— 只读一层目录（不递归扫项目）。
-   * 以 cwd 为根；拒绝跳出 cwd 的路径。
-   */
-  handle('yan:completePath', async (prefix: string, requestedCwd?: string, rawContext?: unknown) => {
-    const st = await getSettings()
-    const resolved = await resolveFileContext(st, typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : st.cwd, rawContext)
-    if (!resolved.ok) {
-      return { paths: [], truncated: false, status: 'invalid' as const, request: resolved.context }
-    }
-    return completePath(resolved.context.cwd, String(prefix ?? ''), resolved.context)
-  })
+  registerFilesIpc(ipc, { resolveFileContext })
 
   /* ---- 设置 ---- */  handle('yan:getSettings', async () => {
     const s = await getSettings()
@@ -5548,83 +5521,6 @@ function registerIpc(): void {
   /** 设界面缩放（0 = 自动）。落盘 + 应用 + 回推 */
   rawHandle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
 
-  /*
-   * 拖入的普通文件：主进程校验 + 登记授权（方案 5.1）。
-   * ⚠️ 这是安全边界：渲染端只能传路径，能不能读、是不是普通文件、
-   *    有没有超出大小上限，全部在这里定，而且只认已登记的路径。
-   */
-  handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
-  handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
-  /* 只读预览（消息里的文件链接）：相对路径按**当前会话 cwd** 解析 */
-  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
-    const s = await getSettings()
-    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
-    return readPreview(
-      String(p ?? ''),
-      cwd,
-      typeof line === 'number' ? line : undefined,
-      typeof lineEnd === 'number' ? lineEnd : undefined
-    )
-  })
-  /* 变化提示：只 stat（不读内容），与 readPreview 同一条越界校验链 */
-  handle('yan:statPreview', async (p: string, requestedCwd?: string) => {
-    const s = await getSettings()
-    const cwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
-    return statPreview(String(p ?? ''), cwd)
-  })
-
-  /* ---- 文件树 ---- */
-  rawHandle('yan:listDir', async (_e, rel: unknown, showHidden: unknown, rawContext: unknown) => {
-    const s = await getSettings()
-    const context = isObject(rawContext) ? rawContext : undefined
-    const requestedCwd = context && typeof context.cwd === 'string' ? context.cwd : s.cwd
-    const resolved = await resolveFileContext(s, requestedCwd, context)
-    if (!resolved.ok) {
-      return {
-        path: typeof rel === 'string' ? rel : '',
-        abs: '',
-        entries: [],
-        skipped: [],
-        truncated: false,
-        status: 'invalid' as const,
-        error: resolved.error,
-        request: resolved.context
-      }
-    }
-    return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
-  })
-  rawHandle('yan:searchFiles', async (_e, rawRequest: unknown) => {
-    const s = await getSettings()
-    const input = isObject(rawRequest) ? rawRequest : {}
-    const requestId = typeof input.requestId === 'string' ? input.requestId.trim().slice(0, 160) : ''
-    const query = typeof input.query === 'string' ? input.query.slice(0, 240) : ''
-    const requestedCwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd : s.cwd
-    const resolved = await resolveFileContext(s, requestedCwd, input)
-    const request: FileSearchRequest = {
-      ...resolved.context,
-      requestId,
-      query,
-      ...(typeof input.limit === 'number' && Number.isFinite(input.limit) ? { limit: input.limit } : {})
-    }
-    if (!resolved.ok) {
-      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
-    }
-    if (!requestId) {
-      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
-    }
-    activeFileSearches.get(requestId)?.abort()
-    const controller = new AbortController()
-    activeFileSearches.set(requestId, controller)
-    try {
-      return await searchFiles(request, controller.signal)
-    } finally {
-      if (activeFileSearches.get(requestId) === controller) activeFileSearches.delete(requestId)
-    }
-  })
-  rawHandle('yan:cancelFileSearch', async (_e, rawRequestId: unknown) => {
-    if (typeof rawRequestId !== 'string') return
-    activeFileSearches.get(rawRequestId)?.abort()
-  })
 
   /* ---- 自动压缩设置（只读 pi 的 settings.json）---- */
   rawHandle('yan:compactionInfo', async (_e, win: unknown) => {
@@ -5690,195 +5586,10 @@ function registerIpc(): void {
     }
     return forkContext(req, packageOf)
   })
-  /*
-   * 工作集预算（N21-3）：**只算不决策**。
-   * 界面上显示的工作集与砚真正用来判断过线的是同一份预算（同一个策略对象），
-   * 测试也用它对照参考值（64k → 40k、128k → 88k、256k → 179k、1M → 240k）。
-   */
-  rawHandle('yan:contextBudget', (_e, win: unknown) => {
-    /*
-     * 用**当前会话模型**查表（N21-7）：模型级覆盖生效时，界面看到的预算
-     * 必须与 agent 真正用的那份一致 —— 探针的“界面数 = 主进程数”靠这条。
-     */
-    const modelKey = modelKeyOf(ac()?.getState()?.model)
-    const resolved = activeContextPolicy(process.env, modelKey)
-    /* 与 `AgentController.contextPolicyView()` 同口径：档位名要靠精确模型层原文判断 */
-    const modelOverrides = modelKey ? contextPolicySettings().byModel?.[modelKey] : undefined
-    return {
-      policy: resolved.policy,
-      budget: contextBudget(typeof win === 'number' ? win : 0, resolved.policy),
-      source: resolved.source,
-      ...(resolved.sourceKey ? { sourceKey: resolved.sourceKey } : {}),
-      overridden: resolved.overridden,
-      ...(modelOverrides ? { modelOverrides } : {})
-    }
-  })
-  rawHandle('yan:contextBudgetV1', async () => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId) return null
-    try {
-      return await contextBudgetStoreV1.read(sessionId)
-    } catch {
-      return null
-    }
-  })
-  rawHandle('yan:contextBudgetV1Enabled', async () => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId) return false
-    try {
-      return await contextBudgetStoreV1.isConfigured(sessionId)
-    } catch {
-      return false
-    }
-  })
-  rawHandle('yan:contextBudgetSnapshotV1', async () => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId === '.' || sessionId === '..') return null
-    try {
-      const raw = JSON.parse(await readFile(join(YAN_DIR, 'context-budget-v1', sessionId, 'latest-request.json'), 'utf8')) as unknown
-      return sanitizeContextBudgetRuntimeSnapshotV1(raw, sessionId)
-    } catch {
-      return null
-    }
-  })
-  rawHandle('yan:contextBudgetMaintainV1', async (_e, operationId: unknown) => {
-    try {
-      return await ac()?.requestContextMaintenanceV1(typeof operationId === 'string' ? operationId : undefined) ?? { ok: false, error: '当前没有活动会话' }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : '上下文整理未完成' }
-    }
-  })
-  rawHandle('yan:contextBudgetMaintenanceStatusV1', async () => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId) return null
-    try {
-      return await contextBudgetStoreV1.latestOperation(sessionId)
-    } catch {
-      return null
-    }
-  })
-  rawHandle('yan:setContextBudgetV1', async (_e, rawUpdate: unknown) => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId || !rawUpdate || typeof rawUpdate !== 'object') {
-      return { ok: false, error: '当前没有可设置的活动会话' }
-    }
-    const update = rawUpdate as Record<string, unknown>
-    if (
-      typeof update.expectedRevision !== 'string' ||
-      (update.mode !== 'auto' && update.mode !== 'fixed') ||
-      (update.autoMaxBudget !== undefined && !isContextBudgetTierV1(update.autoMaxBudget)) ||
-      (update.selectedBudget !== undefined && !isContextBudgetTierV1(update.selectedBudget))
-    ) return { ok: false, error: '上下文预算设置格式无效' }
-    if (update.mode === 'fixed' && !isContextBudgetTierV1(update.selectedBudget)) {
-      return { ok: false, error: '固定模式必须选择一个有效档位' }
-    }
-    try {
-      const current = await contextBudgetStoreV1.read(sessionId)
-      const phaseId = current.activePhaseId
-      const currentPhase = current.phases[phaseId]
-      const autoMaxBudget = isContextBudgetTierV1(update.autoMaxBudget)
-        ? update.autoMaxBudget
-        : currentPhase.autoMaxBudget
-      const selectedBudget = update.mode === 'fixed'
-        ? update.selectedBudget as number
-        : currentPhase.selectedBudget > autoMaxBudget
-          ? autoMaxBudget
-          : currentPhase.selectedBudget
-      const policy = await contextBudgetStoreV1.update(sessionId, update.expectedRevision, (latest) => {
-        const latestPhase = latest.phases[phaseId]
-        if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
-        return {
-          ...latest,
-          phases: {
-            ...latest.phases,
-            [phaseId]: {
-              ...latestPhase,
-              mode: update.mode as 'auto' | 'fixed',
-              selectedBudget: selectedBudget as typeof latestPhase.selectedBudget,
-              autoMaxBudget,
-              selectionSource: 'user',
-              selectionReason: update.mode === 'fixed' ? 'user_fixed_budget' : 'user_enabled_auto_budget'
-            }
-          }
-        }
-      })
-      return { ok: true, policy }
-    } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : '上下文预算设置未保存'
-      }
-    }
-  })
-  rawHandle('yan:setContextBudgetMaterialPinV1', async (_e, rawUpdate: unknown) => {
-    const sessionId = ac()?.getState()?.sessionId
-    if (!sessionId || !rawUpdate || typeof rawUpdate !== 'object') {
-      return { ok: false, error: '当前没有可设置的活动会话' }
-    }
-    const update = rawUpdate as Record<string, unknown>
-    if (
-      typeof update.expectedRevision !== 'string' ||
-      typeof update.materialId !== 'string' || !/^[A-Za-z0-9._-]{1,120}$/.test(update.materialId) ||
-      typeof update.pinned !== 'boolean'
-    ) return { ok: false, error: '固定材料设置格式无效' }
-    try {
-      const current = await contextBudgetStoreV1.read(sessionId)
-      const phaseId = current.activePhaseId
-      const phase = current.phases[phaseId]
-      const material = phase?.materials.find((item) => item.id === update.materialId)
-      if (!phase || !material) {
-        return { ok: false, error: '这份材料已不在当前阶段，请刷新列表' }
-      }
-      if (update.pinned && !material.pinnedByUser && phase.materials.filter((item) => item.pinnedByUser).length >= 100) {
-        return { ok: false, error: '每个阶段最多固定 100 份材料' }
-      }
-      const policy = await contextBudgetStoreV1.update(sessionId, update.expectedRevision, (latest) => {
-        if (latest.activePhaseId !== phaseId) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已发生变化')
-        const latestPhase = latest.phases[phaseId]
-        if (!latestPhase) throw new ContextBudgetStoreError('invalid_phase', '当前任务阶段已不存在')
-        const materials = latestPhase.materials.map((material) =>
-          material.id === update.materialId ? { ...material, pinnedByUser: update.pinned as boolean } : material
-        )
-        return {
-          ...latest,
-          phases: {
-            ...latest.phases,
-            [phaseId]: {
-              ...latestPhase,
-              materialRevision: randomUUID(),
-              materials
-            }
-          }
-        }
-      })
-      return { ok: true, policy }
-    } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : '材料固定状态未保存'
-      }
-    }
-  })
+  registerContextBudgetIpc(ipc, { currentAgent: () => ac() ?? undefined })
   rawHandle('yan:providerQuota', (_e, provider: unknown, budget: unknown) => providerQuota(String(provider ?? ''), Number(budget) || undefined))
 
-  /*
-   * 图片附件目录：占用 + 手动清理。
-   *
-   * 清理要扫**全部**会话文件（引用判断按内容 sha1，见 main/attachments.ts），
-   * 所以放在主进程里跑，界面只等结果。不做自动 GC —— 由用户决定什么时候清。
-   */
-  handle('yan:attachments:usage', () => attachmentsUsage(join(YAN_DIR, 'attachments')))
-  handle('yan:attachments:prune', async () => {
-    const referenced = await referencedAttachmentNames(listSessionFiles(join(PI_AGENT_DIR, 'sessions')))
-    return pruneAttachments(join(YAN_DIR, 'attachments'), referenced)
-  })
 
-  /*
-   * 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold`
-   * 不产生 pi 的 `compaction_*` 事件，界面只能从这里读到它们真实发生过。
-   * 读不到就返回空统计 —— 诊断读数不该让界面报错。
-   */
-  rawHandle('yan:contextActions', () => readContextActions(ac()?.getState()?.sessionId ?? null))
 
   /* ---- 子代理（方案第 8 节）---- */
   registerSubagentsIpc(ipc, {
@@ -5950,27 +5661,9 @@ function registerIpc(): void {
   /* ---- 砚对砚：这台电脑去连接别的砚 ---- */
   registerPeerIpc(ipc, peerClient, async () => (await getSettings()).projects)
 
-  /* ---- 砚对砚：所有者审批与撤销本次连接 ---- */
-  handle('yan:peer-host:pending', () => peerGrants.pendingRequests())
-  handle('yan:peer-host:decide', (decision: unknown) => {
-    const raw = (decision ?? {}) as { requestId?: unknown; approve?: unknown; projectIds?: unknown; operations?: unknown }
-    if (typeof raw.requestId !== 'string') return false
-    return peerGrants.decide({
-      requestId: raw.requestId,
-      approve: raw.approve === true,
-      projectIds: Array.isArray(raw.projectIds) ? raw.projectIds.filter((id): id is string => typeof id === 'string') : [],
-      operations: Array.isArray(raw.operations) ? PEER_OPERATIONS.filter((op) => (raw.operations as unknown[]).includes(op)) : []
-    })
-  })
-  handle('yan:peer-host:revoke', (connectionId: unknown) => (typeof connectionId === 'string' ? peerGrants.revoke(connectionId) : false))
+  registerPeerHostIpc(ipc, { grants: peerGrants })
 
-  /* ---- 普通工具的自动调用依据：查看与调整 ---- */
-  handle('yan:consent:list', () => listConsentViews())
-  handle('yan:consent:change', async (key: unknown, action: unknown) => {
-    if (typeof key !== 'string' || (action !== 'always-ask' && action !== 'allow-auto' && action !== 'forget')) return listConsentViews()
-    await changeConsentEntry(key, action)
-    return listConsentViews()
-  })
+  registerConsentIpc(ipc)
 
   /* ---- 办公文件：预览与修改对比 ---- */
   registerOfficeIpc(ipc, async () => (await getSettings()).cwd)
