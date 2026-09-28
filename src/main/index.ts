@@ -87,6 +87,7 @@ import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
+import { PERSONAL_MEMORY_ID, ingestMemoryInbox, isMemoryScope, memoryStoreOf, writeMemoryExport } from './personal-memory'
 import { RemoteAccess } from './remote-access'
 import {
   REMOTE_ARTIFACT_MAX_BYTES,
@@ -7851,6 +7852,24 @@ function registerIpc(): void {
     return projectId ? { projectId, cwd } : null
   }
 
+  /**
+   * 设置页按范围取存储：`personal` 是全局个人记忆（固定身份、独立目录），
+   * 其余按当前会话的项目身份。渲染端只能选范围，不能指定项目。
+   */
+  const knowledgeStore = async (scope: unknown) =>
+    memoryStoreOf(isMemoryScope(scope) ? scope : 'project', await knowledgeIdentity())
+
+  /** 生效条目有变化后刷新给其他 AI 工具读的导出文件；失败不影响本次操作 */
+  const refreshMemoryExport = async (store: NonNullable<Awaited<ReturnType<typeof knowledgeStore>>>): Promise<void> => {
+    const personal = store.identity.projectId === PERSONAL_MEMORY_ID
+    await writeMemoryExport(
+      personal ? 'personal' : `project-${store.identity.projectId}`,
+      personal ? '个人记忆' : `项目记忆 · ${basename(store.identity.cwd) || store.identity.projectId}`,
+      store.identity,
+      store.opts
+    ).catch(() => undefined)
+  }
+
   const knowledgeQueryOf = async (cwd: string): Promise<KnowledgeViewContext> => {
     const repo = await readRepoState(cwd).catch(() => null)
     const sessions = await listSessions(500).catch(() => [])
@@ -7863,16 +7882,27 @@ function registerIpc(): void {
     }
   }
 
-  const knowledgeSnapshot = async () => {
+  /* 个人记忆没有工作目录：不查分支、不判路径，只核对来源会话 */
+  const knowledgeQueryFor = async (identity: { projectId: string; cwd: string }): Promise<KnowledgeViewContext> => {
+    if (identity.projectId !== PERSONAL_MEMORY_ID) return knowledgeQueryOf(identity.cwd)
+    const ids = new Set((await listSessions(500).catch(() => [])).map((session) => session.id))
+    return { branch: null, pathExists: () => true, sessionReadable: (id: string) => ids.has(id) }
+  }
+
+  const knowledgeSnapshot = async (scope: unknown) => {
     const settings = await getSettings()
     const enabled = settings.projectKnowledge?.enabled === true
-    const identity = await knowledgeIdentity()
+    /* 打开列表时顺带收一次外部工具写回的候选 */
+    await ingestMemoryInbox(settings.projects).catch(() => null)
+    const store = await knowledgeStore(scope)
     const empty = { all: 0, active: 0, candidate: 0, review: 0 }
-    if (!identity) return { ok: true, enabled, entries: [], counts: empty }
+    if (!store) return { ok: true, enabled, entries: [], counts: empty }
+    const identity = store.identity
     try {
-      const views = await knowledgeQueryOf(identity.cwd).then((query) =>
-        listKnowledge(identity).then((entries) => toKnowledgeViews(entries, query))
+      const views = await knowledgeQueryFor(identity).then((query) =>
+        listKnowledge(identity, store.opts).then((entries) => toKnowledgeViews(entries, query))
       )
+      void refreshMemoryExport(store)
       return { ok: true, projectId: identity.projectId, enabled, entries: views, counts: countKnowledge(views) }
     } catch (error) {
       return {
@@ -7886,12 +7916,13 @@ function registerIpc(): void {
     }
   }
 
-  handle('yan:knowledge:list', () => knowledgeSnapshot())
+  handle('yan:knowledge:list', (scope?: unknown) => knowledgeSnapshot(scope))
 
   handle('yan:knowledge:action', async (req: unknown) => {
-    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; expectedProjectId?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown }
-    const identity = await knowledgeIdentity()
-    if (!identity) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; expectedProjectId?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown; scope?: unknown }
+    const store = await knowledgeStore(raw.scope)
+    if (!store) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    const identity = store.identity
     /*
      * 项目身份 CAS（R10）：界面上的列表属于某个项目，而这里按「此刻的当前会话」
      * 选项目 —— 用户在设置页开着的时候切了会话，点确认就会打到别的项目上。
@@ -7905,13 +7936,14 @@ function registerIpc(): void {
     if (!id || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
       return { ok: false, error: '缺少条目 id 或版本号（先刷新列表）' }
     }
-    const query = await knowledgeQueryOf(identity.cwd)
+    const query = await knowledgeQueryFor(identity)
     try {
       if (raw.action === 'delete') {
         /* 永久删除是**另一个动作**（墓碑之外的正文也清），需要明确用户凭据 —— 不靠一个布尔切换 */
         const permanent = raw.permanent === true
         const out = await deleteKnowledge({
           identity,
+          opts: store.opts,
           request: {
             id,
             expectedRevision,
@@ -7920,9 +7952,10 @@ function registerIpc(): void {
           }
         })
         if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
+        void refreshMemoryExport(store)
         return { ok: true, entry: toKnowledgeView(out.entry, query) }
       }
-      const current = await readKnowledge(identity, id)
+      const current = await readKnowledge(identity, id, store.opts)
       if (!current) return { ok: false, error: '条目不存在（可能已被删除）' }
       /*
        * 三种写操作都是「以**磁盘上的当前版**为底稿改字段」，
@@ -7962,11 +7995,13 @@ function registerIpc(): void {
       }
       const out = await commitKnowledge({
         identity,
+        opts: store.opts,
         request: draft,
         /* 这是「用户动作」的凭据：模型构造不出来（它那条路不传 hostCheck） */
         hostCheck: { userConfirmed: { quote: '用户在项目知识页确认' } }
       })
       if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
+      void refreshMemoryExport(store)
       return {
         ok: true,
         entry: toKnowledgeView(out.entry, query),
@@ -7977,12 +8012,16 @@ function registerIpc(): void {
     }
   })
 
-  handle('yan:knowledge:export', async (mode: 'copy' | 'save') => {
-    const identity = await knowledgeIdentity()
-    if (!identity) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+  handle('yan:knowledge:export', async (mode: 'copy' | 'save', scope?: unknown) => {
+    const store = await knowledgeStore(scope)
+    if (!store) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
+    const identity = store.identity
+    const personal = identity.projectId === PERSONAL_MEMORY_ID
+    const exportDir = personal ? app.getPath('documents') : identity.cwd
+    const exportName = personal ? 'personal-memory.md' : 'project-knowledge.md'
     try {
       const settings = await getSettings()
-      const views = toKnowledgeViews(await listKnowledge(identity), await knowledgeQueryOf(identity.cwd))
+      const views = toKnowledgeViews(await listKnowledge(identity, store.opts), await knowledgeQueryFor(identity))
       const markdown = knowledgeMarkdown(views, {
         projectId: identity.projectId,
         exportedAt: new Date().toISOString(),
@@ -7996,12 +8035,12 @@ function registerIpc(): void {
       const picked = win
         ? await dialog.showSaveDialog(win, {
             title: '导出项目知识',
-            defaultPath: join(identity.cwd, 'project-knowledge.md'),
+            defaultPath: join(exportDir, exportName),
             filters: [{ name: 'Markdown', extensions: ['md'] }]
           })
         : await dialog.showSaveDialog({
             title: '导出项目知识',
-            defaultPath: join(identity.cwd, 'project-knowledge.md'),
+            defaultPath: join(exportDir, exportName),
             filters: [{ name: 'Markdown', extensions: ['md'] }]
           })
       if (picked.canceled || !picked.filePath) return { ok: true, markdown, canceled: true }

@@ -1167,7 +1167,7 @@
   "set.knDeleteLogical": "Delete (restorable)",
   "set.knDeletePermanent": "Delete permanently",
   "set.knDescOff": "Off: no search, no injection, no candidates. Saved entries stay put; you can turn it back on anytime.",
-  "set.knDescOn": "Before answering, the app searches this project’s confirmed knowledge for the current question (up to 8 entries / 2k tokens) and passes it along as sourced material. Nothing is injected when nothing matches.",
+  "set.knDescOn": "Before answering, the app searches confirmed entries in this project’s knowledge and your personal memory for the current question (up to 8 entries / 2k tokens) and passes them along as sourced material. Nothing is injected when nothing matches.",
   "set.knEdit": "Edit",
   "set.knEmpty": "No entries yet. What the model proposes with `yan knowledge propose` shows up under “Pending”.",
   "set.knEmptyFilter": "Nothing under this filter.",
@@ -1203,7 +1203,7 @@
   "set.knReview.source": "source session is not readable",
   "set.knSave": "Save",
   "set.knSaved": "Saved",
-  "set.knScope": "Applies to",
+  "set.knScope": "Scope",
   "set.knSource": "Source",
   "set.knSourceGone": "not readable",
   "set.knSourceSession": "Session",
@@ -1891,5 +1891,8 @@
   "voice.lang.auto": "Auto",
   "voice.lang.zh": "中文",
   "voice.lang.en": "English",
-  "voice.privacy": "The program and models are stored in {dir}. Audio exists only as a temporary file during transcription and is deleted right after."
+  "voice.privacy": "The program and models are stored in {dir}. Audio exists only as a temporary file during transcription and is deleted right after.",
+  "set.knScopeProject": "This project",
+  "set.knScopePersonal": "Personal memory",
+  "set.knPersonalDesc": "Cross-project preferences, habits and personal rules you confirmed, stored apart from project knowledge. Candidates submitted by other AI tools are reviewed here too."
 }

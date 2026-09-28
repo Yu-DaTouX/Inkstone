@@ -361,11 +361,16 @@ const GROUP_USAGE = {
   knowledge: `yan knowledge <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  search  --query-text <文字>   或 --query-file query.json
-        检索本项目已确认的知识（只返回 active 条目；无相关项返回空）
-  read    --id <条目ID>         读一条的正文与来源
-  propose --request-file proposal.json
+  search  --query-text <文字>   或 --query-file query.json   [--scope project|personal|all]
+        检索已确认的条目（只返回 active；缺省同时查本项目知识与个人记忆，结果带 scope）
+  read    --id <条目ID> [--scope project|personal]   读一条的正文与来源
+  propose --request-file proposal.json   （请求里可带 "scope":"personal"）
         提议一条知识（落 candidate 状态，等用户确认；不能自报 user-confirmed）
+
+范围：
+  · project  = 当前项目的约定、架构决定、方法与任务背景（缺省）；
+  · personal = 跨项目的个人偏好、长期习惯、用户明确的个人规则。
+    一次性的选择、文档作者的观点不写成个人偏好；多次观察或用户明确说过再提议。
 
 说明：
   · 项目身份由宿主按当前会话绑定，**不接受**请求里的 projectId；

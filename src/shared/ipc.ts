@@ -2520,7 +2520,12 @@ export interface KnowledgeListView {
 export interface KnowledgeActionBase {
   expectedRevision: number
   expectedProjectId?: string
+  /** 记忆范围：当前项目（默认）或全局个人记忆 */
+  scope?: KnowledgeScope
 }
+
+/** 长期记忆的归属：项目知识按当前会话的项目；个人记忆跨项目、独立存放 */
+export type KnowledgeScope = 'project' | 'personal'
 
 export type KnowledgeActionRequest =
   | ({ action: 'confirm'; id: string } & KnowledgeActionBase)
@@ -2549,10 +2554,10 @@ export interface KnowledgeExportResult {
 }
 
 export interface KnowledgeBridge {
-  list(): Promise<KnowledgeListView>
+  list(scope?: KnowledgeScope): Promise<KnowledgeListView>
   action(req: KnowledgeActionRequest): Promise<KnowledgeActionResult>
   /** `copy` 只生成文本；`save` 会弹保存对话框写盘（不入仓库）。 */
-  export(mode: 'copy' | 'save'): Promise<KnowledgeExportResult>
+  export(mode: 'copy' | 'save', scope?: KnowledgeScope): Promise<KnowledgeExportResult>
   /** 来源跳转用：这个会话文件还在不在 / 在哪（不可回读时返回 null）。 */
   sourceSession(sessionId: string): Promise<{ ok: boolean; path?: string; title?: string; error?: string }>
 }

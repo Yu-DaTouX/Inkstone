@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLatestOnly, type LatestOnly } from '../../lib/latest-only'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView } from '../../../../shared/ipc'
+import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView, KnowledgeScope } from '../../../../shared/ipc'
 
 /**
  * 「项目知识」设置页（实施-03 S5）。
@@ -39,6 +39,8 @@ export function KnowledgeTab() {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [filter, setFilter] = useState<'active' | 'candidate' | 'review'>('active')
+  /** 记忆范围：当前项目的知识，或跨项目的个人记忆（两边分开存放、分开确认） */
+  const [scope, setScope] = useState<KnowledgeScope>('project')
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [replacing, setReplacing] = useState<{ id: string; text: string } | null>(null)
   const [asking, setAsking] = useState<{ id: string; permanent: boolean } | null>(null)
@@ -57,7 +59,7 @@ export function KnowledgeTab() {
     const token = guard.begin()
     setLoading(true)
     try {
-      const next = await window.yan.knowledge.list()
+      const next = await window.yan.knowledge.list(scope)
       if (!guard.isCurrent(token)) return
       setView(next)
       /*
@@ -82,7 +84,7 @@ export function KnowledgeTab() {
     } finally {
       if (guard.isCurrent(token)) setLoading(false)
     }
-  }, [enabled])
+  }, [enabled, scope])
 
   useEffect(() => {
     void refresh()
@@ -113,7 +115,7 @@ export function KnowledgeTab() {
     setNotice(null)
     try {
       /* 带上界面当时显示的项目：宿主据此拒绝身份漂移（R10） */
-      const res = await window.yan.knowledge.action({ ...req, expectedProjectId: view?.projectId })
+      const res = await window.yan.knowledge.action({ ...req, expectedProjectId: view?.projectId, scope })
       if (!res.ok) {
         /*
          * CAS 冲突要说清是「有人先改了」而不是「你没权限」——
@@ -168,7 +170,7 @@ export function KnowledgeTab() {
     setBusy('__export__')
     setNotice(null)
     try {
-      const res = await window.yan.knowledge.export(mode)
+      const res = await window.yan.knowledge.export(mode, scope)
       if (!res.ok) {
         setNotice({ kind: 'err', text: res.error ?? tk('set.knFailed') })
         return
@@ -223,13 +225,32 @@ export function KnowledgeTab() {
         </div>
       </div>
 
-      {/* ② 状态 + 筛选 */}
+      {/* ② 范围 + 状态 + 筛选 */}
       <div className="set-row col">
         <div className="set-ctrow">
           <div className="set-label">
-            <span className="set-name">{tk('set.knProject')}</span>
+            <span className="set-name">{tk('set.knScope')}</span>
+          </div>
+          <div className="set-ctl seg" data-testid="kn-scope">
+            {(['project', 'personal'] as const).map((id) => (
+              <button
+                key={id}
+                className={`seg-btn ${scope === id ? 'sel' : ''}`}
+                data-testid={`kn-scope-${id}`}
+                onClick={() => setScope(id)}
+              >
+                {tk(id === 'project' ? 'set.knScopeProject' : 'set.knScopePersonal')}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="set-ctrow">
+          <div className="set-label">
+            <span className="set-name">{tk(scope === 'personal' ? 'set.knScopePersonal' : 'set.knProject')}</span>
             <div className="set-desc set-path" data-testid="kn-project">
-              {view?.projectId ?? (loading ? '…' : tk('set.knNoProject'))}
+              {scope === 'personal'
+                ? tk('set.knPersonalDesc')
+                : view?.projectId ?? (loading ? '…' : tk('set.knNoProject'))}
             </div>
           </div>
           <div className="set-ctl seg kn-filter" data-testid="kn-filter">

@@ -1167,7 +1167,7 @@
   "set.knDeleteLogical": "删除（可恢复）",
   "set.knDeletePermanent": "永久删除",
   "set.knDescOff": "关闭状态：不检索、不注入，也不生成候选。已经保存的条目仍保留，随时可以重新开启。",
-  "set.knDescOn": "回答前会按当前问题检索本项目已确认的知识（最多 8 条 / 2k tokens），作为带来源的参考材料；没有相关条目不注入。",
+  "set.knDescOn": "回答前会按当前问题检索本项目与个人记忆里已确认的条目（最多 8 条 / 2k tokens），作为带来源的参考材料；没有相关条目不注入。",
   "set.knEdit": "编辑",
   "set.knEmpty": "这个项目还没有条目。模型在会话里提议（yan knowledge propose）之后会出现在「待确认」。",
   "set.knEmptyFilter": "这个筛选下暂时没有条目。",
@@ -1203,7 +1203,7 @@
   "set.knReview.source": "来源会话不可回读",
   "set.knSave": "保存",
   "set.knSaved": "已保存",
-  "set.knScope": "有效范围",
+  "set.knScope": "范围",
   "set.knSource": "来源",
   "set.knSourceGone": "不可回读",
   "set.knSourceSession": "会话",
@@ -1891,5 +1891,8 @@
   "voice.lang.auto": "自动",
   "voice.lang.zh": "中文",
   "voice.lang.en": "English",
-  "voice.privacy": "程序和模型保存在 {dir}。录音只在转写时作为临时文件存在，转写结束立即删除。"
+  "voice.privacy": "程序和模型保存在 {dir}。录音只在转写时作为临时文件存在，转写结束立即删除。",
+  "set.knScopeProject": "当前项目",
+  "set.knScopePersonal": "个人记忆",
+  "set.knPersonalDesc": "跨项目的偏好、习惯和你确认过的个人规则，与项目知识分开存放；其他 AI 工具提交的候选也在这里确认。"
 }
