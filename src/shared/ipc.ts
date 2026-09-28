@@ -3497,6 +3497,8 @@ export interface YanBridge {
     sessions(peerId: string): Promise<PeerResult<{ projects: import('./peer-protocol').PeerProjectRef[]; sessions: PeerSessionRow[] }>>
     history(peerId: string, sessionId: string, before?: string): Promise<PeerResult<{ messages: PeerHistoryMessage[]; hasMore?: boolean; nextBefore?: string }>>
     send(peerId: string, sessionId: string, text: string): Promise<PeerResult<unknown>>
+    /** 在对方开放的项目里新开任务（需要 send 授权） */
+    startSession(peerId: string, projectId: string, text: string): Promise<PeerResult<{ sessionId: string | null; runId: string; projectId: string }>>
     abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
     importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
     importKnowledge(peerId: string, remoteProjectId: string, localProjectId: string): Promise<PeerResult<{ accepted: number; rejected: number }>>

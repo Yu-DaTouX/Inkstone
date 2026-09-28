@@ -41,6 +41,7 @@ export function PeerTab() {
   const [note, setNote] = useState('')
   const [browse, setBrowse] = useState<Browse | null>(null)
   const [message, setMessage] = useState('')
+  const [taskText, setTaskText] = useState<Record<string, string>>({})
   const [knowledgeTarget, setKnowledgeTarget] = useState('')
   const [viewing, setViewing] = useState<{ id: string; messages: PeerHistoryMessage[] } | null>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -258,6 +259,34 @@ export function PeerTab() {
                           </>
                         ) : null}
                       </div>
+                      {grant.operations.includes('send') ? (
+                        <div className="btn-row" data-testid="peer-start-task">
+                          <input
+                            className="set-input"
+                            value={taskText[project.id] ?? ''}
+                            maxLength={20000}
+                            placeholder={t('peer.startPlaceholder')}
+                            aria-label={t('peer.startPlaceholder')}
+                            onChange={(e) => setTaskText((all) => ({ ...all, [project.id]: e.target.value }))}
+                          />
+                          <Button
+                            size="sm"
+                            disabled={!(taskText[project.id] ?? '').trim() || busy}
+                            onClick={() =>
+                              void run(async () => {
+                                const result = await window.yan.peer.startSession(peer.id, project.id, taskText[project.id] ?? '')
+                                if (result.ok) {
+                                  setTaskText((all) => ({ ...all, [project.id]: '' }))
+                                  await loadSessions(peer.id)
+                                }
+                                return result
+                              }, t('peer.started'))
+                            }
+                          >
+                            {t('peer.startTask')}
+                          </Button>
+                        </div>
+                      ) : null}
                       {browse.sessions
                         .filter((session) => session.projectId === project.id)
                         .map((session) => (

@@ -3374,6 +3374,30 @@ const peerHostHandlers: PeerHostHandlers = {
     }
     return { ok: true, data: exported }
   },
+  /*
+   * 在开放项目里新开任务：后台准备运行实例（不切换桌面当前视图），
+   * 新建会话后发出第一条消息。项目目录只从本机设置取，网络请求不能传路径。
+   */
+  async startSession(projectId, text) {
+    const project = (await getSettings()).projects.find((item) => item.id === projectId && !item.archived)
+    if (!project) return { ok: false, status: 404, error: '找不到这个项目' }
+    if (!runners) {
+      const started = await startAgent()
+      if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+    }
+    const cwdResult = await validateCwd(project.cwd)
+    if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
+    const selected = await runners!.select({ cwd: cwdResult.cwd, projectId: project.id, scope: 'project', activate: false })
+    if (!selected.ok || !selected.id) return { ok: false, status: 409, error: selected.error ?? '无法为新任务准备运行实例' }
+    const agent = runners!.agentOf(selected.id)
+    if (!agent) return { ok: false, status: 503, error: '运行实例已退出' }
+    const sent = await agent.send(text)
+    const sessionId = agent.getState()?.sessionId ?? selected.sessionId
+    await rememberRunnerSession({ ...selected, sessionId }, { cwd: cwdResult.cwd, projectId: project.id, scope: 'project' })
+    pushRunners()
+    if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
+    return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
+  },
   /* 共享项目记忆：只给已确认条目，保留来源电脑、条目 id 与版本 */
   async knowledge(projectId) {
     const project = (await getSettings()).projects.find((item) => item.id === projectId)

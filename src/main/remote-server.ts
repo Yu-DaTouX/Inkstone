@@ -82,6 +82,11 @@ export interface PeerHostHandlers {
   projectOfRun(runId: string): Promise<string | null>
   exportSession(sessionId: string): Promise<RemoteOperationResult>
   knowledge(projectId: string): Promise<RemoteOperationResult>
+  /**
+   * 在开放的项目里新开一个会话并发出第一条消息（由这台电脑执行，不切换桌面当前视图）。
+   * 返回新会话的 sessionId 与运行实例 runId。
+   */
+  startSession(projectId: string, text: string): Promise<RemoteOperationResult>
 }
 
 export interface RemoteServerOptions {
@@ -774,6 +779,23 @@ export class RemoteServer {
       if (!projectId) return writeError(res, 404, '找不到这个运行实例，或它不属于开放的项目')
       if (!gate('send', projectId)) return
       await this.idempotent(req, res, { device }, false, () => this.options.handlers.command({ action: 'abort', runId }))
+      return
+    }
+
+    /* 在开放项目里新开任务：与发消息同属 send 授权 */
+    if (req.method === 'POST' && parts.length === 3 && parts[0] === 'projects' && parts[2] === 'sessions') {
+      const projectId = decodeURIComponent(parts[1])
+      if (!gate('send', projectId)) return
+      let body: Record<string, unknown>
+      try {
+        body = await this.readJson(req)
+      } catch {
+        return writeError(res, 413, '消息超过大小限制或格式无效')
+      }
+      if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, '消息不能为空且不得超过 20,000 个字符')
+      const text = body.text
+      this.log(`另一台砚申请在开放项目里新开任务：${device.name}`)
+      await this.idempotent(req, res, { device }, true, () => handlers.startSession(projectId, text))
       return
     }
 
