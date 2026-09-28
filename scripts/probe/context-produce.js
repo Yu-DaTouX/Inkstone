@@ -126,5 +126,26 @@
 
   out.push(`  ctxproduce.sessionId=${sessionId}`)
   out.push(`  ctxproduce.toolCalls=${outputs.length}`)
+
+  /*
+   * ---------------- 4. 后台调用用量账 ----------------
+   *
+   * 状态生成走 `completeWithContextBudgetV1`（requestKind=state），绕开了会话循环 ——
+   * 主对话的用量条看不见它。这一段验两件事：它真的进了账本；数字是**供应商口径**
+   * （`input`/`cacheRead`），而不是扩展侧的请求体积估算。
+   */
+  log('')
+  log('=== 4. 后台调用用量账（状态生成这一类）===')
+  let bgUsage = null
+  for (let i = 0; i < 20; i++) {
+    bgUsage = await window.yan.contextBackgroundUsage().catch(() => null)
+    if (bgUsage?.kinds?.some((k) => k.kind === 'state' && k.calls > 0)) break
+    await sleep(500)
+  }
+  const stateKind = bgUsage?.kinds?.find((k) => k.kind === 'state')
+  ok(!!stateKind && stateKind.calls >= 1, '状态生成在用量账里单独成一类', stateKind ? `calls=${stateKind.calls}` : '账本里没有 state 记录')
+  ok(!!stateKind && (stateKind.input > 0 || stateKind.cacheRead > 0), '记到的是供应商口径的输入', stateKind ? `in=${stateKind.input} cacheRead=${stateKind.cacheRead}` : '')
+  ok(!!stateKind && stateKind.missingUsage === 0, '这次调用拿到了供应商 usage（不是缺报）', stateKind ? `missing=${stateKind.missingUsage}` : '')
+  ok(bgUsage === null || bgUsage.cacheHitRate === null || (bgUsage.cacheHitRate >= 0 && bgUsage.cacheHitRate <= 100), '命中率是 0–100 的数字或 null', bgUsage ? `hit=${bgUsage.cacheHitRate}` : '读不到')
   return out.join('\n')
 })()
