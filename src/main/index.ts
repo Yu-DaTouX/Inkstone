@@ -77,18 +77,10 @@ import { providerQuota } from './quota'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController } from './browser'
-import {
-  attachTerminal,
-  disposeTerminals,
-  killTerminal,
-  listTerminals,
-  resizeTerminal,
-  setTerminalSink,
-  startTerminal,
-  terminalAvailable,
-  terminalLoadError,
-  writeTerminal
-} from './terminal'
+import { disposeTerminals, setTerminalSink } from './terminal'
+import { createIpcRegistrar } from './ipc/registrar'
+import { registerBrowserIpc } from './ipc/browser-ipc'
+import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { GoalStore, goalResumeContinuationWasConsumed, writeGoalResumeSnapshot, writeGoalResumeSnapshotIfVacant } from './goal-service'
 import { HandoffStore, HandoffRequestStore, buildHandoffRequest } from './handoff-service'
 import { HandoffDiagnostics } from './handoff-diagnostics'
@@ -228,7 +220,6 @@ import type {
   RunnerStatus,
   SessionState,
   SessionSummary,
-  TerminalStartRequest,
   UIMessage,
   CourseUnitInput
 } from '../shared/ipc'
@@ -4683,30 +4674,9 @@ function registerIpc(): void {
    * 显式比较 `sender === win.webContents` 比信任 `senderFrame.url`
    * 更直接 —— 后者只是字符串，而这里比的是真实的进程对象。
    */
-  const trusted = (event: Electron.IpcMainInvokeEvent): boolean =>
-    !!win && !win.isDestroyed() && event.sender === win.webContents
-
-  const guard = (event: Electron.IpcMainInvokeEvent): void => {
-    if (!trusted(event)) throw new Error('拒绝来自非主窗口的 IPC 调用')
-  }
-
-  const handle = <T>(ch: string, fn: (...a: never[]) => Promise<T> | T): void => {
-    ipcMain.handle(ch, async (event, ...args) => {
-      guard(event)
-      return fn(...(args as never[]))
-    })
-  }
-
-  /** 与 handle 同一套校验，只是给「没有外层 helper」的那些通道用 */
-  const rawHandle = (
-    ch: string,
-    fn: (event: Electron.IpcMainInvokeEvent, ...a: never[]) => unknown
-  ): void => {
-    ipcMain.handle(ch, async (event, ...args) => {
-      guard(event)
-      return fn(event, ...(args as never[]))
-    })
-  }
+  /* 所有处理器共用来源校验：只接受主窗口的调用（见 ipc/registrar.ts） */
+  const ipc = createIpcRegistrar((event) => !!win && !win.isDestroyed() && event.sender === win.webContents)
+  const { handle, rawHandle } = ipc
 
   /* ---- 会话 ---- */
   handle('yan:start', async () => {
@@ -7926,66 +7896,10 @@ function registerIpc(): void {
   })
 
   /* ---- 内置浏览器 ---- */
-  rawHandle('yan:browser:getState', () => browser?.getState() ?? {
-    open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
-  })
-  rawHandle('yan:browser:open', async (_e, url?: string) => browser?.open(url) ?? {
-    open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false
-  })
-  rawHandle('yan:browser:observe', async () => browser?.observe() ?? {
-    generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0, domSnapshotCaptured: false
-  })
-  rawHandle('yan:browser:network', async () => browser?.network() ?? { capturedAt: Date.now(), entries: [], limit: 80 })
-  rawHandle('yan:browser:newTab', async (_e, url?: string) => browser?.newTab(url))
-  rawHandle('yan:browser:switchTab', async (_e, id: string) => browser?.switchTab(id))
-  rawHandle('yan:browser:closeTab', async (_e, id?: string) => browser?.closeTab(id))
-  rawHandle('yan:browser:close', async () => browser?.close())
-  rawHandle('yan:browser:navigate', async (_e, url: string) => browser?.navigate(url) ?? { ok: false, error: '浏览器未初始化' })
-  rawHandle('yan:browser:back', () => browser?.back() ?? { ok: false, error: '浏览器未初始化' })
-  rawHandle('yan:browser:forward', () => browser?.forward() ?? { ok: false, error: '浏览器未初始化' })
-  rawHandle('yan:browser:reload', () => browser?.reload() ?? { ok: false, error: '浏览器未初始化' })
-  rawHandle('yan:browser:openExternal', (_e, url?: string) => browser?.openExternal(url) ?? { ok: false, error: '浏览器未初始化' })
-  rawHandle('yan:browser:openExternalChrome', (_e, url?: string) =>
-    browser?.openExternalChrome(url) ?? { ok: false, error: '浏览器未初始化' }
-  )
-  rawHandle('yan:browser:closeExternalChrome', () => browser?.closeExternalChrome())
-  rawHandle('yan:browser:syncLocalProfile', () =>
-    browser?.syncLocalProfile() ?? { found: false, copied: [], failed: [], chromeRunning: false, cookiesSynced: false }
-  )
-  rawHandle('yan:browser:syncPageStorage', () => browser?.syncPageStorage() ?? Promise.reject(new Error('浏览器未初始化')))
-  rawHandle('yan:browser:setPermission', (_e, permission: string, origin: string, allowed: boolean) =>
-    browser?.setPermission(String(permission ?? ''), String(origin ?? ''), Boolean(allowed)) ?? {
-      ok: false,
-      error: '浏览器未初始化'
-    }
-  )
-  rawHandle('yan:browser:setUserControl', (_e, value: boolean) => browser?.setUserControl(Boolean(value)))
-  rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
-    browser?.setBounds(bounds)
-  })
-  /* 文件预览占用同一区域时，把原生视图临时藏起来（方案 5.2） */
-  rawHandle('yan:browser:setVisible', (_e, visible: unknown) => {
-    browser?.setViewVisible(visible !== false)
-  })
+  registerBrowserIpc(ipc, () => browser)
 
   /* ---- 交互终端（实施-11 H-11） ---- */
-  rawHandle('yan:terminal:available', () => ({ available: terminalAvailable(), error: terminalLoadError() ?? undefined }))
-  rawHandle('yan:terminal:list', () => listTerminals())
-  rawHandle('yan:terminal:start', (_e, request?: TerminalStartRequest) =>
-    startTerminal({
-      cwd: request?.cwd,
-      /* 兜底用当前活动会话的工作目录：终端默认就开在项目里 */
-      fallbackCwd: ac()?.getState()?.cwd,
-      cols: request?.cols,
-      rows: request?.rows
-    })
-  )
-  rawHandle('yan:terminal:write', (_e, id: string, data: string) => writeTerminal(String(id ?? ''), String(data ?? '')))
-  rawHandle('yan:terminal:resize', (_e, id: string, cols: number, rows: number) =>
-    resizeTerminal(String(id ?? ''), Number(cols), Number(rows))
-  )
-  rawHandle('yan:terminal:kill', (_e, id: string) => killTerminal(String(id ?? '')))
-  rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
+  registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
 }
 
 /** 推一次窗口状态（最大化 + 置顶） */
