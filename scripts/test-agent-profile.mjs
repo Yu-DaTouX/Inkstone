@@ -187,11 +187,14 @@ export function runAgentProfileTests(ok, mod) {
       ok(snap.roleSection?.name === 'yan_role' && /研究/.test(snap.roleSection.content), '快照带上渲染好的角色分区')
       ok(Array.isArray(snap.deniedTools) && snap.deniedTools.includes('write'), '快照带上本活动禁用的工具')
 
-      // coding 档案：没有角色分区（扩展据此不注入）
+      // coding 档案：带「代码改完同步文档」的角色分区（扩展据此注入）
       const coding = { profile: 'coding', activity: 'answer', revision: 1 }
       await writeAgentProfileSnapshot('coding-sess', coding, root)
       const codingSnap = JSON.parse(await readFile(agentProfileSnapshotPath('coding-sess', root), 'utf8'))
-      ok(codingSnap.roleSection === null, 'coding 快照的 roleSection 为 null（扩展不注入）')
+      ok(
+        codingSnap.roleSection?.name === 'yan_role' && /同步相关文档/.test(codingSnap.roleSection.content),
+        'coding 快照带文档同步角色分区'
+      )
       ok(Array.isArray(codingSnap.deniedTools) && codingSnap.deniedTools.length === 0, 'coding 不禁用工具')
 
       /*
