@@ -174,6 +174,24 @@ const CASES = {
     contextStateSeed: true,
     afterExit: 'contextStateCleanup'
   },
+  /*
+   * 「整理失败停下 + 一键出口」（第 2 项）：Node 侧种一笔 needs_action 的
+   * automatic 整理记录，探针验用户能感知的那一半 ——
+   *   ① 新消息在**发出去之前**被拦下（不是「发出去了没回复」）；
+   *   ② 界面明说会被拦下，并给出三个出口（重试整理 / 临时抬软线 / 降档）；
+   *   ③ 点「降档」逐档下降，且那笔整理被标成 superseded（阻塞随之解除）。
+   * cost 0：消息被拦下了，不会真的发出去；不调模型。
+   *
+   * 为什么用种子而不是让整理真失败：造出「瞬时/确定性失败」需要埋超大上下文
+   * 或改模型行为，成本高且不稳定。失败码的**判定域**（哪些可重试）由单测与
+   * 假 registry 覆盖；这里只验用户界面的那一半。
+   */
+  contextblocked: {
+    probe: 'scripts/probe/context-blocked.js',
+    delay: 10000,
+    cost: 0,
+    blockedMaintenanceSeed: true
+  },
   // 文件引用：主进程校验通道 / 标签渲染 / 只有附件也能发（方案 5.1）
   fileref: { probe: 'scripts/probe/fileref.js', delay: 10000, cost: 0 },
   // 链接路由 + 只读文件预览（方案 5.2）
@@ -3057,6 +3075,100 @@ async function seedContextStates(sessionsRoot, dataDir) {
     ids.push(index.sessionId)
   }
   return { dir, ids }
+}
+
+/**
+ * 「整理失败停下」现场的种子（第 2 项）。
+ *
+ * 只种两样东西：一份能被宿主 store 读出的 V1 策略，和一笔
+ * `state='needs_action'` 的 automatic 整理记录 —— 后者就是「停下」的现场。
+ * 失败码刻意选 `no_safe_summary_candidates`（确定性失败、`retryable=false`）：
+ * 这样界面显示的是「不可直接重试」的正确形态，而**可重试**那一支的自动重试
+ * 由单测 + 假 registry 覆盖（真造失败要埋超大上下文，不值得）。
+ */
+async function seedBlockedMaintenance(sandboxRoot) {
+  const watermark = await import('../out/main/context-watermark.js')
+  const sessionsRoot = join(sandboxRoot, 'sessions')
+  const dataDir = join(sandboxRoot, 'data')
+  let target = null
+  const walk = (parent) => {
+    for (const e of readdirSync(parent, { withFileTypes: true })) {
+      const p = join(parent, e.name)
+      if (e.isDirectory()) walk(p)
+      /* 会话文件名前面有时间戳前缀（`2026-01-02T…Z_yan-plain-fixture-*.jsonl`），不能按前缀匹配 */
+      else if (/yan-plain-fixture.*\.jsonl$/.test(e.name) && !target) target = p
+    }
+  }
+  walk(sessionsRoot)
+  if (!target) return null
+  const index = await watermark.readSessionEntryIndex(target)
+  if (!index?.sessionId) return null
+
+  const sessionId = index.sessionId
+  const sessionDir = join(dataDir, 'context-budget-v1', sessionId)
+  mkdirSync(join(sessionDir, 'operations'), { recursive: true })
+  const now = Date.now()
+
+  writeFileSync(
+    join(sessionDir, 'policy.json'),
+    JSON.stringify({
+      version: 1,
+      sessionId,
+      activePhaseId: 'main',
+      revision: 'seed-policy-revision-0001',
+      phases: {
+        main: {
+          phaseId: 'main',
+          mode: 'fixed',
+          selectedBudget: 300_000,
+          autoMaxBudget: 700_000,
+          selectionSource: 'user',
+          selectionReason: 'seed_blocked_fixture',
+          materialRevision: 'seed-material-revision-0001',
+          materials: [],
+          consecutiveLowBoundaries: 0
+        }
+      },
+      updatedAt: now
+    }),
+    'utf8'
+  )
+
+  const operationId = `auto-${'a'.repeat(40)}`
+  writeFileSync(
+    join(sessionDir, 'operations', `${operationId}.json`),
+    JSON.stringify({
+      version: 1,
+      revision: 'seed-op-revision-0001',
+      identity: { sessionId, runnerId: 'seed-runner', runnerEpoch: 'seed-epoch', operationId },
+      base: {
+        sourceRevision: 'seed-source-revision',
+        rawWatermark: { entryCount: 2, lastEntryId: null },
+        policyRevision: 'seed-policy-revision-0001',
+        capabilityRevision: 'seed-capability-revision'
+      },
+      requestKind: 'automatic',
+      reason: 'seed: 整理失败停下现场',
+      protectedRefs: [],
+      candidateRef: null,
+      beforeSnapshot: null,
+      afterSnapshot: null,
+      resumeId: null,
+      resumeReceipt: null,
+      projectionReceipt: null,
+      lastSummarizedSourceRevision: null,
+      retryNonce: null,
+      state: 'needs_action',
+      failureCode: 'no_safe_summary_candidates',
+      failedStage: 'preparing',
+      retryable: false,
+      createdAt: now,
+      updatedAt: now
+    }),
+    'utf8'
+  )
+
+  return { sessionId, sessionDir }
 }
 
 /**
@@ -9734,6 +9846,11 @@ async function main() {
     if (c.contextStateSeed && sandboxRoot) {
       contextStateSeed = await seedContextStates(join(sandboxRoot, 'sessions'), join(sandboxRoot, 'data'))
       console.log(`  S1 派生状态：种下 ${contextStateSeed.ids.length} 份 → ${contextStateSeed.dir}`)
+    }
+
+    if (c.blockedMaintenanceSeed && sandboxRoot) {
+      const seeded = await seedBlockedMaintenance(sandboxRoot)
+      console.log(`  S2 整理失败现场：${seeded ? `种下 ${seeded.sessionId}` : '（没找到种子会话，跳过）'}`)
     }
 
     /*
