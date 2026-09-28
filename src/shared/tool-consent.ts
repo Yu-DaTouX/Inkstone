@@ -58,8 +58,12 @@ export const CONSENT_POLICY = {
   minEffective: 4,
   /** 半衰期（天）：旧答复逐渐失去分量 */
   halfLifeDays: 30,
-  /** 同意率的 Wilson 下界（单侧 95%）至少这么高 */
-  minLowerBound: 0.75,
+  /**
+   * 同意率的 Wilson 下界（单侧 95%）至少这么高。
+   * 取 0.6：近期连续 5 次同意（下界约 0.65）即可自动；5 次里有 1 次拒绝（下界约 0.40）、
+   * 或答复分散在较长时间里（衰减后样本不足）都仍会询问。
+   */
+  minLowerBound: 0.6,
   /** 最近这么多次里出现过拒绝就回到询问 */
   recentWindow: 3,
   keep: 50
