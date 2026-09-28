@@ -8079,6 +8079,7 @@ function registerIpc(): void {
   rawHandle('yan:browser:observe', async () => browser?.observe() ?? {
     generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0, domSnapshotCaptured: false
   })
+  rawHandle('yan:browser:network', async () => browser?.network() ?? { capturedAt: Date.now(), entries: [], limit: 80 })
   rawHandle('yan:browser:newTab', async (_e, url?: string) => browser?.newTab(url))
   rawHandle('yan:browser:switchTab', async (_e, id: string) => browser?.switchTab(id))
   rawHandle('yan:browser:closeTab', async (_e, id?: string) => browser?.closeTab(id))

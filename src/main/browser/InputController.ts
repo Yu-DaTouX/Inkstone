@@ -103,7 +103,7 @@ export class InputController {
     try {
       const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', {
         backendNodeId: element.backendNodeId
-      })
+      }, element.sessionId)
       objectId = resolved?.object?.objectId
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
@@ -118,7 +118,7 @@ export class InputController {
         functionDeclaration: SELECT_VALUE_FN,
         arguments: [{ value: wanted }],
         returnByValue: true
-      })
+      }, element.sessionId)
       outcome = call?.result?.value
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
@@ -135,23 +135,23 @@ export class InputController {
 
   async click(element: RegisteredElement): Promise<void> {
     const point = await this.bringIntoView(element)
-    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
-    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
-    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, element.sessionId)
+    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, element.sessionId)
+    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, element.sessionId)
   }
 
   async type(element: RegisteredElement, text: string): Promise<void> {
     try {
-      await this.cdp.send('DOM.focus', { backendNodeId: element.backendNodeId })
+      await this.cdp.send('DOM.focus', { backendNodeId: element.backendNodeId }, element.sessionId)
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
     }
     // 全选后 insertText 才能**替换**原值；macOS 的全选是 Cmd 而不是 Ctrl，
     // 用 Ctrl 在 mac 上只会把光标移到行首，文字被追加而不是覆盖。
     const modifiers = process.platform === 'darwin' ? MOD_META : MOD_CTRL
-    await this.key('keyDown', 'a', 'KeyA', modifiers, 65)
-    await this.key('keyUp', 'a', 'KeyA', modifiers, 65)
-    await this.cdp.send('Input.insertText', { text })
+    await this.key('keyDown', 'a', 'KeyA', modifiers, 65, element.sessionId)
+    await this.key('keyUp', 'a', 'KeyA', modifiers, 65, element.sessionId)
+    await this.cdp.send('Input.insertText', { text }, element.sessionId)
   }
 
   async press(key: string): Promise<void> {
@@ -193,15 +193,19 @@ export class InputController {
    */
   private async bringIntoView(element: RegisteredElement): Promise<{ x: number; y: number }> {
     try {
-      await this.cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: element.backendNodeId })
+      await this.cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: element.backendNodeId }, element.sessionId)
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
     }
-    const box = await elementBox(this.cdp, element.backendNodeId)
-    return centerOf(box ?? element.box)
+    const box = await elementBox(this.cdp, element.backendNodeId, element.sessionId)
+    const [offsetX, offsetY] = element.frameOffset ?? [0, 0]
+    const fallback = element.sessionId
+      ? [element.box[0] - offsetX, element.box[1] - offsetY, element.box[2], element.box[3]] as [number, number, number, number]
+      : element.box
+    return centerOf(box ?? fallback)
   }
 
-  private async key(type: 'keyDown' | 'keyUp', key: string, code: string, modifiers: number, keyCode?: number): Promise<void> {
+  private async key(type: 'keyDown' | 'keyUp', key: string, code: string, modifiers: number, keyCode?: number, sessionId?: string): Promise<void> {
     await this.cdp.send('Input.dispatchKeyEvent', {
       type,
       key,
@@ -209,6 +213,6 @@ export class InputController {
       modifiers,
       windowsVirtualKeyCode: keyCode,
       nativeVirtualKeyCode: keyCode
-    })
+    }, sessionId)
   }
 }

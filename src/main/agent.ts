@@ -120,6 +120,7 @@ import {
 import type {
   BashRun,
   BrowserObservation,
+  BrowserNetworkSnapshot,
   BrowserState,
   ContextBudget,
   ContextPolicy,
@@ -276,6 +277,7 @@ export interface BrowserCommandHost {
   openExternalChrome(url?: string): Promise<BrowserCommandResult>
   closeExternalChrome(): Promise<BrowserState>
   observe(): Promise<BrowserObservation>
+  network(): Promise<BrowserNetworkSnapshot>
   click(ref: string): Promise<BrowserObservationResult>
   type(ref: string, text: string): Promise<BrowserObservationResult>
   select(ref: string, value: string): Promise<BrowserObservationResult>
@@ -4179,6 +4181,28 @@ export class AgentController extends EventEmitter {
       case 'observe': {
         const observation = await this.browserObserve(action)
         return { data: observation, summary: this.browserObservationSummary(action, observation) }
+      }
+
+      /* 只读网络账本（实施-27 S5）：有界且去掉 query / fragment / 凭证。 */
+      case 'network': {
+        let snapshot: BrowserNetworkSnapshot
+        try {
+          snapshot = await host.network()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (message.includes('浏览器尚未打开')) throw new CapabilityCommandError('browser_not_open', message)
+          throw error
+        }
+        return {
+          data: snapshot,
+          summary: {
+            kind: 'browser', action, ok: true,
+            capturedAt: snapshot.capturedAt,
+            count: snapshot.entries.length,
+            limit: snapshot.limit,
+            latest: snapshot.entries.slice(-8)
+          }
+        }
       }
 
       /*

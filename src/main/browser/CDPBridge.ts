@@ -9,8 +9,20 @@ import { CDP_DOMAINS, type CdpChannel } from './CdpChannel'
  */
 export class CDPBridge implements CdpChannel {
   private attached = false
+  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>, sessionId?: string) => void>>()
 
-  constructor(private readonly contents: WebContents) {}
+  constructor(private readonly contents: WebContents) {
+    contents.debugger.on('message', (_event, method, params, sessionId) => {
+      for (const cb of this.listeners.get(method) ?? []) cb(params ?? {}, sessionId)
+    })
+  }
+
+  on(method: string, cb: (params: Record<string, unknown>, sessionId?: string) => void): () => void {
+    let set = this.listeners.get(method)
+    if (!set) this.listeners.set(method, (set = new Set()))
+    set.add(cb)
+    return () => set?.delete(cb)
+  }
 
   async attach(): Promise<void> {
     if (this.attached) return
@@ -23,9 +35,9 @@ export class CDPBridge implements CdpChannel {
     await Promise.all(CDP_DOMAINS.map((method) => this.send(method)))
   }
 
-  async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> {
     await this.attachIfNeeded()
-    return this.contents.debugger.sendCommand(method, params) as Promise<T>
+    return this.contents.debugger.sendCommand(method, params, sessionId) as Promise<T>
   }
 
   async screenshot(): Promise<Buffer> {

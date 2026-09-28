@@ -469,6 +469,7 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
   open     --url <地址>          navigate 的别名
   state                          当前状态：是否打开 / 标签列表 / 活动标签
   observe                        观察当前页面：URL / 标题 / 可交互元素 ref / 可见文本
+  network                        最近 80 条请求的 URL / 方法 / 状态 / 资源类型（无请求头、正文或 Cookie）
   wait     [--ref <ref>] [--text <文本>] [--url <子串>] [--timeout <毫秒>]
                                  等条件成立（可叠加，是“且”）；--gone 配 --ref 等元素**消失**。
                                  默认 10000ms，上限 60000；超时回 code=wait_timeout +
@@ -645,6 +646,7 @@ const GROUP_SPECS = {
       'open',
       'state',
       'observe',
+      'network',
       'wait',
       'click',
       'type',

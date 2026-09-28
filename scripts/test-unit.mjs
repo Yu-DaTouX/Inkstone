@@ -3113,6 +3113,12 @@ await runGitRepoTests(ok)
     '能力服务：browser.navigate 已登记并落到 handler',
     JSON.stringify(navigate.body).slice(0, 120)
   )
+  const network = await call('browser.network')
+  ok(
+    network.status === 200 && network.body.ok === true && seen[1] === 'browser.network',
+    '能力服务：browser.network 已登记并落到 handler',
+    JSON.stringify(network.body).slice(0, 120)
+  )
   const evaluate = await call('browser.evaluate', { script: '1+1' })
   ok(
     evaluate.status === 400 && evaluate.body.error === 'unknown_command',
@@ -3142,7 +3148,7 @@ await runGitRepoTests(ok)
   const help = runYan(['browser', '--help'])
   ok(help.status === 0 && /yan browser <动作>/.test(help.stdout ?? ''), 'yan CLI：browser --help 能跑（退出码 0）')
   ok(
-    /navigate/.test(help.stdout ?? '') && /screenshot/.test(help.stdout ?? ''),
+    /navigate/.test(help.stdout ?? '') && /network/.test(help.stdout ?? '') && /screenshot/.test(help.stdout ?? ''),
     'yan CLI：browser 用法里列了动作（模型能发现）'
   )
   const mainHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', '--help'], {
@@ -3182,8 +3188,8 @@ await runGitRepoTests(ok)
   const usageText = (group) => new RegExp(`${group}: \`([\\s\\S]*?)\``).exec(cliText)?.[1] ?? ''
   const browserActions = specActions('browser')
   ok(
-    browserActions.includes('navigate') && browserActions.includes('request-user-control'),
-    'yan CLI：动作表里有 navigate / request-user-control'
+    browserActions.includes('navigate') && browserActions.includes('network') && browserActions.includes('request-user-control'),
+    'yan CLI：动作表里有 navigate / network / request-user-control'
   )
   const undocumented = browserActions.filter((action) => !usageText('browser').includes(action))
   ok(undocumented.length === 0, 'yan CLI：每个动作都在用法里（不漏文案）', undocumented.join(', '))
@@ -4000,6 +4006,10 @@ const browserInputMod = await buildNeutral('src/main/browser/InputController.ts'
 const browserRegistryMod = await buildNeutral('src/main/browser/ElementRegistry.ts', 'out/test/browser-registry.mjs')
 const { runBrowserSelectTests } = await import('./test-browser-select.mjs')
 await runBrowserSelectTests(ok, browserInputMod, browserRegistryMod)
+
+const browserNetworkMod = await buildNeutral('src/main/browser/NetworkTracker.ts', 'out/test/browser-network.mjs')
+const { runBrowserNetworkTests } = await import('./test-browser-network.mjs')
+await runBrowserNetworkTests(ok, browserNetworkMod)
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 await rm(dataDir, { recursive: true, force: true })

@@ -162,8 +162,8 @@
     ok(help.exitCode === 0, '退出码 0')
     ok(/yan browser <动作>/.test(help.output), '打出了 browser 分组的用法')
     ok(
-      /navigate/.test(help.output) && /observe/.test(help.output) && /screenshot/.test(help.output),
-      '用法里列出了 navigate / observe / screenshot'
+      /navigate/.test(help.output) && /observe/.test(help.output) && /network/.test(help.output) && /screenshot/.test(help.output),
+      '用法里列出了 navigate / observe / network / screenshot'
     )
     ok(!looksLikeStack(help.output), '没有抛出堆栈')
 
@@ -257,6 +257,8 @@
     ok(notOpenBody?.ok === false && notOpenBody?.code === 'browser_not_open', '回可读的 code=browser_not_open')
     ok(!looksLikeStack(notOpen.output), '没有堆栈')
     ok(notOpenBody?.resultFile === undefined, '业务错误不带数据时不落空结果文件')
+    const networkNotOpen = await runCli('yan browser network')
+    ok(lastJson(networkNotOpen.output)?.code === 'browser_not_open', 'network 在浏览器未打开时回可读 browser_not_open')
 
     /* ─────────────────────────────────── 5. navigate ───────────── */
     out.push('')
@@ -271,6 +273,13 @@
     ok(navBody?.summary?.open === true && navBody?.summary?.url === 'about:blank', '摘要里 open=true、url=about:blank')
     ok(!/"permissions"/.test(nav.output), 'stdout 里没有完整状态（permissions 这类只在结果文件里）')
     ok(store.getState().browserState.open === true, '渲染端状态同步为已打开（主进程真的开了原生视图）')
+
+    const network = await runCli('yan browser network')
+    const networkBody = lastJson(network.output)
+    const networkData = networkBody?.resultFile ? await readJsonFile(networkBody.resultFile) : null
+    ok(networkBody?.ok === true && networkBody?.summary?.action === 'network', 'network 经 CLI → 宿主返回成功摘要')
+    ok(Array.isArray(networkData?.entries) && networkData.entries.length <= 80, 'network 结果文件是有界 entries 数组')
+    ok(!/headers|requestbody|responsebody|cookie/i.test(JSON.stringify(networkData)), 'network 结果不含请求头、正文或 Cookie 字段')
     ok(store.getState().browserState.url === 'about:blank', '渲染端 url=about:blank')
 
     if (typeof navBody?.resultFile === 'string') {
