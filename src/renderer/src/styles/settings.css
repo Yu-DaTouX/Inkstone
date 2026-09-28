@@ -978,3 +978,59 @@ html[data-theme='light'] .ob-scrim {
     animation-delay: var(--dur-0) !important;
   }
 }
+
+/* ── 手机接入 ─────────────────────────────────────────────── */
+.remote-address-input {
+  width: 160px;
+  text-align: left;
+}
+.remote-pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+/* 配对码要能隔着屏幕念给手机：等宽、大字、字间距拉开 */
+.remote-pairing-code {
+  color: var(--fg);
+  font-family: var(--font-code);
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  line-height: 1.2;
+  user-select: all;
+}
+.remote-device-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.remote-device {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border-soft);
+}
+.remote-device:first-child {
+  border-top: 0;
+}
+.remote-device-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.remote-device-name {
+  overflow: hidden;
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-device.revoked .remote-device-name {
+  color: var(--fg-mute);
+  text-decoration: line-through;
+}

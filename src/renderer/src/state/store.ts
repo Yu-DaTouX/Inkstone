@@ -1995,6 +1995,10 @@ export const useStore = create<Store>((rawSet, get) => {
         // 需要用户介入（模型提问 / 扩展要选择）—— 提示音 + 通知
         alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
         break
+      case 'ui-resolved':
+        /* 在手机上答复了：电脑上的问题面板同步移除这一条（草稿一并丢弃） */
+        set({ uiRequests: s.uiRequests.filter((r) => r.id !== m.payload.id) })
+        break
       case 'ui-deadline':
         /*
          * 同一个请求的等待被延长：**只**改截止时间。

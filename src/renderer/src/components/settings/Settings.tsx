@@ -18,6 +18,7 @@ import { AuthTab } from './AuthTab'
 import { WorkspaceTab } from './WorkspaceTab'
 import { ContextTab } from './ContextTab'
 import { KnowledgeTab } from './KnowledgeTab'
+import { RemoteTab } from './RemoteTab'
 import { PackagesTab } from './PackagesTab'
 import { CapabilitiesTab } from './CapabilitiesTab'
 
@@ -30,11 +31,12 @@ export type SettingsTab =
   | 'capabilities'
   | 'sound'
   | 'packages'
+  | 'remote'
   | 'status'
   | 'about'
 
 /** 导航顺序（与下方 tabs 的顺序一致），供打开时定位当前页的导航项 */
-const tabIds: SettingsTab[] = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'about']
+const tabIds: SettingsTab[] = ['auth', 'appearance', 'workspace', 'context', 'knowledge', 'capabilities', 'sound', 'status', 'packages', 'remote', 'about']
 
 /**
  * 设置面板。
@@ -125,6 +127,7 @@ export function Settings({
     { id: 'sound', label: t('set.sound'), icon: 'bell' },
     { id: 'status', label: t('set.status'), icon: 'activity' },
     { id: 'packages', label: t('set.packages'), icon: 'package' },
+    { id: 'remote', label: t('set.remote'), icon: 'phone' },
     { id: 'about', label: t('set.about'), icon: 'shield-check' }
   ]
 
@@ -224,6 +227,8 @@ export function Settings({
             <SoundTab />
           ) : tab === 'packages' ? (
             <PackagesTab />
+          ) : tab === 'remote' ? (
+            <RemoteTab />
           ) : tab === 'status' ? (
             <StatusTab />
           ) : (

@@ -132,6 +132,7 @@ import type {
   CustomProviderTestResult
 } from '../shared/ipc'
 import type { WebSearchAvailability } from '../shared/web-search'
+import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { SearchBackendStatus } from '../shared/search'
 import type { TaskInboxPage } from '../shared/task-inbox'
 import type { ContextActionSummary } from '../shared/context-actions'
@@ -699,6 +700,16 @@ const api: YanBridge = {
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     /** 临时隐藏/恢复原生网页视图（文件预览占用同一区域时） */
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
+  },
+
+  /* ---- 手机接入 ---- */
+  remote: {
+    status: () => invoke<RemoteAccessStatus | null>('yan:remote:status'),
+    configure: (settings) => invoke<RemoteAccessStatus | null>('yan:remote:configure', settings),
+    pair: () => invoke<RemoteAccessStatus | null>('yan:remote:pair'),
+    cancelPairing: () => invoke<RemoteAccessStatus | null>('yan:remote:cancelPairing'),
+    revoke: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:revoke', deviceId),
+    forget: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:forget', deviceId)
   },
 
   /* ---- 交互终端（实施-11 H-11） ---- */

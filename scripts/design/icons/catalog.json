@@ -348,6 +348,12 @@
       "name": "bell",
       "group": "系统",
       "use": "提示音 / 通知"
+    },
+    "phone": {
+      "lib": "lucide",
+      "name": "smartphone",
+      "group": "系统",
+      "use": "手机接入 / 已配对的手机设备"
     }
   },
   "retired": [

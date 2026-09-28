@@ -15,7 +15,7 @@
 | `stage1.css` | 1 | 0 | 11 | 5 | 0 | 0 |
 | `redesign.css` | 10 | 4 | 111 | 70 | 0 | 0 |
 | `motion.css` | 2 | 0 | 73 | 54 | 0 | 0 |
-| `settings.css` | 5 | 1 | 101 | 67 | 0 | 0 |
+| `settings.css` | 5 | 1 | 104 | 69 | 0 | 0 |
 | `electron.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `highlight.css` | 0 | 0 | 0 | 0 | 0 | 0 |
 | `layout.css` | 4 | 4 | 2 | 1 | 0 | 0 |
@@ -30,7 +30,7 @@
 | `review.css` | 4 | 0 | 236 | 170 | 0 | 0 |
 | `workbench.css` | 2 | 0 | 411 | 321 | 0 | 0 |
 | `icon-state.css` | 0 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **79** | **25** | **2030** | **1456** | **0** | **0** |
+| **合计** | **79** | **25** | **2033** | **1458** | **0** | **0** |
 
 ## 2. 无对应令牌的值（语义缺口）
 
@@ -54,10 +54,10 @@
 | `30px` | length | 9 | rail.css, redesign.css, review.css, tools.css |
 | `120px` | length | 9 | composer.css, motion.css, redesign.css, review.css, tools.css, workbench.css |
 | `200px` | length | 7 | app.css, settings.css, tools.css, workbench.css |
+| `160px` | length | 7 | browser.css, chat.css, review.css, settings.css, tools.css, workbench.css |
 | `280px` | length | 7 | chat.css, review.css, tools.css, workbench.css |
 | `96px` | length | 6 | composer.css, review.css, settings.css, stage1.css, tools.css |
 | `260px` | length | 6 | composer.css, review.css, settings.css, tools.css, workbench.css |
-| `160px` | length | 6 | browser.css, chat.css, review.css, tools.css, workbench.css |
 | `42px` | length | 6 | browser.css, review.css, tools.css |
 | `64px` | length | 5 | composer.css, settings.css, tools.css, workbench.css |
 | `10.5px` | length | 5 | review.css, settings.css |
@@ -152,4 +152,4 @@
 ## 5. 概况
 
 - 令牌总数：125（被引用 124）
-- 令牌引用点：4128（含组件内联 style）
+- 令牌引用点：4137（含组件内联 style）

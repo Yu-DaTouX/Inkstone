@@ -126,6 +126,7 @@ import type {
   ContextPolicy,
   ContextPolicyView,
   CustomEntry,
+  ExtensionUiRequest,
   ForkPoint,
   MainPush,
   AssistantArtifact,
@@ -667,6 +668,11 @@ export class AgentController extends EventEmitter {
    * 用来给「后台会话正在等输入」这个状态提供依据。
    */
   private pendingUi = new Set<string>()
+  /**
+   * 待答请求的内容（按 id）：远程端（手机）要能列出「正在等什么问题」。
+   * 只在读取时按 pendingUi 过滤 —— 答复路径很多，统一以 pendingUi 为准，不在每处单独清理。
+   */
+  private uiRequestPayloads = new Map<string, ExtensionUiRequest>()
   /** `yan question ask` 走同一套 UI 请求通道，但不经过 pi 的 extension_ui_request。 */
   private pendingHostUi = new Map<string, PendingHostUi>()
 
@@ -2267,23 +2273,22 @@ export class AgentController extends EventEmitter {
       this.pendingHostUi.set(id, pending)
       this.uiSeen.add(id)
       this.pendingUi.add(id)
-      this.push({
-        ch: 'ui-request',
-        payload: {
-          id,
-          method: request.method,
-          title: request.title,
-          message: request.message,
-          timeout: request.timeout,
-          /*
-           * `deadline: 0` = 宿主管理、但**尚未开始**倒计时。
-           * 渲染端看到 0 就不显示倒计时（等 `ui-deadline` 推送）。
-           * 不带这个字段的（pi 扩展自己的请求）由渲染端自己算。
-           */
-          deadline: 0,
-          ...(request.options ? { options: request.options } : {})
-        } as never
-      })
+      const payload = {
+        id,
+        method: request.method,
+        title: request.title,
+        message: request.message,
+        timeout: request.timeout,
+        /*
+         * `deadline: 0` = 宿主管理、但**尚未开始**倒计时。
+         * 渲染端看到 0 就不显示倒计时（等 `ui-deadline` 推送）。
+         * 不带这个字段的（pi 扩展自己的请求）由渲染端自己算。
+         */
+        deadline: 0,
+        ...(request.options ? { options: request.options } : {})
+      } as unknown as ExtensionUiRequest
+      this.uiRequestPayloads.set(id, payload)
+      this.push({ ch: 'ui-request', payload })
     })
   }
 
@@ -5809,14 +5814,44 @@ export class AgentController extends EventEmitter {
      * 只有它为 true 时才走模态确认（焦点圈定），其余都走非模态问题面板。
      * 不从问题措辞里推断 —— 那既不可靠也容易被绕过。
      */
-    this.push({
-      ch: 'ui-request',
-      payload: { id, method, sensitive: req.sensitive === true, ...req } as never
-    })
+    const payload = { id, method, sensitive: req.sensitive === true, ...req } as unknown as ExtensionUiRequest
+    if (id) this.uiRequestPayloads.set(id, payload)
+    this.push({ ch: 'ui-request', payload })
   }
 
-  /** 渲染端回答案（由 IPC 调） */
-  respondUi(res: HostUiResponse & { id: string }): void {
+  /** 当前还没答复的问题（远程端列出用；不含通知类请求） */
+  pendingUiRequests(): ExtensionUiRequest[] {
+    for (const id of this.uiRequestPayloads.keys()) {
+      if (!this.pendingUi.has(id)) this.uiRequestPayloads.delete(id)
+    }
+    return [...this.uiRequestPayloads.values()]
+  }
+
+  /**
+   * 从手机回答一个问题。
+   *
+   * 敏感确认（删除、授权、付费……，由请求方声明）不接受远程答复：需求稿第 6 节要求
+   * 本机危险操作由用户在这台电脑上确认。答复后推一条 `ui-resolved`，电脑上的面板随之移除。
+   */
+  answerUiRemotely(
+    id: string,
+    answer: { value: string } | { confirmed: boolean } | { cancelled: true }
+  ): { ok: true } | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' } {
+    const request = this.pendingUiRequests().find((item) => item.id === id)
+    if (!request) return { ok: false, code: 'question_not_pending' }
+    if (request.sensitive === true && !('cancelled' in answer)) {
+      return { ok: false, code: 'sensitive_confirmation_requires_desktop' }
+    }
+    this.respondUi({ id, ...answer } as HostUiResponse & { id: string }, 'remote')
+    return { ok: true }
+  }
+
+  /**
+   * 回答一个问题（渲染端经 IPC 调用；手机端经 answerUiRemotely）。
+   * 答复后推 `ui-resolved`：另一端（电脑面板 / 手机）据此移除这条问题。
+   */
+  respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): void {
+    const wasPending = !!res.id && this.pendingUi.has(res.id)
     const hostPending = this.pendingHostUi.get(res.id)
     if (hostPending) {
       if (hostPending.timer) clearTimeout(hostPending.timer)
@@ -5824,10 +5859,12 @@ export class AgentController extends EventEmitter {
       this.pendingHostUi.delete(res.id)
       this.pendingUi.delete(res.id)
       hostPending.resolve(res)
-      return
+    } else {
+      if (res.id) this.pendingUi.delete(res.id)
+      this.rpc?.respondUi(res as Record<string, unknown>)
     }
-    if (res.id) this.pendingUi.delete(res.id)
-    this.rpc?.respondUi(res as Record<string, unknown>)
+    if (res.id) this.uiRequestPayloads.delete(res.id)
+    if (wasPending) this.push({ ch: 'ui-resolved', payload: { id: res.id, by } })
   }
 
   private rejectPendingHostUi(reason: string): void {
