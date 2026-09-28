@@ -1956,7 +1956,7 @@ function ContextSection() {
           <span className="switch-knob" />
         </button>
         <button
-          className="btn"
+          className="btn sm"
           data-testid="rp-compact-now"
           disabled={!!session?.isStreaming || !!session?.isCompacting}
           title={t('status.compact')}

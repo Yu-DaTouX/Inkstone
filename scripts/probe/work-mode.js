@@ -86,12 +86,13 @@
   ok(initial.mode === 'autonomous', `新会话按默认模式启动（实际 ${initial.mode}）`)
   const btn = q('[data-testid="work-mode-button"]')
   /*
-   * B3 之后模式入口不在输入区了（用户要求“输入区只留输入”）。
-   * 这里改成正反两面：输入区确实没有，而设置 · 工作区里有 ——
-   * 只删掉断言会让“入口整条消失”这种事没人拦得住。
+   * 2026-09-27 起模式切换器回到输入区（高频会话控制，便于直接切换；Esc 可把焦点送到它），
+   * 设置 · 工作区里仍保留同一入口。这里断言切换器在、且显示的就是当前会话的模式；
+   * 菜单默认不展开。
    */
-  ok(!btn, '输入区不再有工作模式控件（B3 的意图）')
-  ok(!q('[data-testid="work-mode-menu"]'), '输入区也没有模式菜单')
+  ok(!!btn && !!btn.closest('.composer-wrap'), '输入区有工作模式切换器')
+  ok(btn?.getAttribute('data-mode') === 'autonomous', `切换器显示当前模式（实际 ${btn?.getAttribute('data-mode')}）`)
+  ok(!q('[data-testid="work-mode-menu"]'), '模式菜单默认不展开')
   const initialMode = (await window.yan.getWorkMode()).mode
   ok(initialMode === 'autonomous', `新会话按默认模式启动（实际 ${initialMode}）`)
   ok(q('.composer-wrap')?.getAttribute('data-autonomous') === '1', '自主模式才有运行光带状态')
