@@ -77,7 +77,7 @@ import { prepareProjectKnowledgeInjection, readProjectKnowledgeEnabled } from '.
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
-import { extendDeadline, requestedTimeout, UI_TIMEOUT_HARD } from '../shared/ui-timeout'
+import { requestedTimeout } from '../shared/ui-timeout'
 import { buildCatalog } from './capabilities/catalog'
 import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
@@ -85,6 +85,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 import { ContextBudgetCommands } from './context-budget-commands'
 import { BrowserCommands } from './browser-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
+import { UiRequests, type HostUiResponse } from './ui-requests'
 import { paramNumber, paramString } from './command-params'
 import { activeSkillArgs } from './capabilities/skill-files'
 import { McpConnectionManager } from './mcp/connection-manager'
@@ -158,32 +159,6 @@ const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 
 /** 推送补丁到渲染端（主进程注入） */
 type Push = (msg: MainPush) => void
-
-type HostUiResponse = { value?: string; confirmed?: boolean; cancelled?: boolean }
-
-type PendingHostUi = {
-  resolve: (response: HostUiResponse) => void
-  reject: (error: Error) => void
-  /**
-   * 软计时器 —— 用户**看到这一条**之后才开始（见 `startHostUiTimer`）。
-   *
-   * 为什么不是发出请求就计时：多条问题同时挂着时，面板一次只能显示一条，
-   * 用户在读第一条的时候，后面几条已经在扣自己的时间 —— 实测出现
-   * 「翻到第三条时它已经超时」。用户 2026-09-26 要求从看到开始算。
-   */
-  timer: ReturnType<typeof setTimeout> | null
-  /**
-   * 兜底上限：用户一直不翻到这一条（甚至删掉面板）时不能让模型无限等待。
-   * 开始计时后会被重设到 `deadline + UI_TIMEOUT_MAX`（给加时留余量）。
-   */
-  hardTimer: ReturnType<typeof setTimeout>
-  /** 当前这一轮的等待时长（延长后会被改写） */
-  timeout: number
-  /** 截止时刻（绝对毫秒）；`0` = 还没开始计时（用户还没看到） */
-  deadline: number
-  /** 是否已开始计时；`startHostUiTimer` 靠它保持幂等 */
-  started: boolean
-}
 
 /* -------------------------------------------------- 浏览器（宿主能力服务） */
 
@@ -577,22 +552,11 @@ export class AgentController extends EventEmitter {
   private policyOrigin: { stage: ContextTrigger; baseline: number | null } | null = null
   /** 正在走策略触发流程（防止两次 stats 刷新同时判定过线） */
   private policyTriggering = false
-  private uiSeen = new Set<string>()
-  /**
-   * 正在等用户回答的扩展请求（N12）。
-   *
-   * 与上面的 uiSeen 不同：uiSeen 是「这个请求见过了」的去重集合，
-   * 应答后仍然留在里面；这个集合只装**还没答复**的，
-   * 用来给「后台会话正在等输入」这个状态提供依据。
-   */
-  private pendingUi = new Set<string>()
-  /**
-   * 待答请求的内容（按 id）：远程端（手机）要能列出「正在等什么问题」。
-   * 只在读取时按 pendingUi 过滤 —— 答复路径很多，统一以 pendingUi 为准，不在每处单独清理。
-   */
-  private uiRequestPayloads = new Map<string, ExtensionUiRequest>()
-  /** `yan question ask` 走同一套 UI 请求通道，但不经过 pi 的 extension_ui_request。 */
-  private pendingHostUi = new Map<string, PendingHostUi>()
+  /** 扩展与宿主发起的界面请求（见 ui-requests.ts） */
+  private readonly ui = new UiRequests({
+    push: (msg) => this.push(msg),
+    respondToPi: (res) => this.rpc?.respondUi(res)
+  })
 
   /**
    * 读界面历史：有注入就用注入的（交接过的会话要按段拼接），否则读单文件。
@@ -1021,7 +985,7 @@ export class AgentController extends EventEmitter {
       this.setConn('exited', `pi 已退出（code=${code ?? 'null'}）`)
     })
 
-    rpc.on('ui', (req) => this.handleUi(req))
+    rpc.on('ui', (req) => this.ui.handleUi(req))
     rpc.on('event', (evt) => this.handleEvent(evt))
 
     rpc.spawn()
@@ -1394,7 +1358,7 @@ export class AgentController extends EventEmitter {
     const timeout = requestedTimeout(params.timeout)
     let response: HostUiResponse
     if (options.length === 0) {
-      response = await this.requestHostUi({
+      response = await this.ui.requestHostUi({
         method: 'input',
         title: '需要你的回答',
         message: question,
@@ -1408,7 +1372,7 @@ export class AgentController extends EventEmitter {
        * 以前这里会再追加一项「其他（自行输入）」，与面板自带的那行重复，
        * 而且选中它还要再弹一次输入框（两次交互换一个自定义回答）。
        */
-      response = await this.requestHostUi({
+      response = await this.ui.requestHostUi({
         method: 'select',
         title: '需要你的选择',
         message: question,
@@ -1537,105 +1501,12 @@ export class AgentController extends EventEmitter {
   }
 
 
-  /** 通过现有 `ui-request` / `yan:respondUi` 桥等待一次宿主问题。 */
-  private requestHostUi(request: {
-    method: 'select' | 'input'
-    title: string
-    message: string
-    options?: string[]
-    timeout: number
-  }): Promise<HostUiResponse> {
-    const id = `yan-question-${randomUUID()}`
-    return new Promise<HostUiResponse>((resolve, reject) => {
-      const pending: PendingHostUi = {
-        resolve,
-        reject,
-        timeout: request.timeout,
-        /* 还没开始计时 —— 等渲染端确认「这一条已经显示给用户了」 */
-        deadline: 0,
-        started: false,
-        timer: null,
-        hardTimer: setTimeout(() => this.expireHostUi(id), UI_TIMEOUT_HARD)
-      }
-      this.pendingHostUi.set(id, pending)
-      this.uiSeen.add(id)
-      this.pendingUi.add(id)
-      const payload = {
-        id,
-        method: request.method,
-        title: request.title,
-        message: request.message,
-        timeout: request.timeout,
-        /*
-         * `deadline: 0` = 宿主管理、但**尚未开始**倒计时。
-         * 渲染端看到 0 就不显示倒计时（等 `ui-deadline` 推送）。
-         * 不带这个字段的（pi 扩展自己的请求）由渲染端自己算。
-         */
-        deadline: 0,
-        ...(request.options ? { options: request.options } : {})
-      } as unknown as ExtensionUiRequest
-      this.uiRequestPayloads.set(id, payload)
-      this.push({ ch: 'ui-request', payload })
-    })
-  }
-
-  /**
-   * 用户看到这一条了 → 开始计时（幂等）。
-   *
-   * 渲染端在该请求成为面板当前页时调一次。多条问题同时挂着时，每条都从
-   * 「它被翻到」那一刻起算完整的等待时间 —— 不再出现「还没看到就快没了」。
-   */
   startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
-    const pending = this.pendingHostUi.get(id)
-    if (!pending) return { ok: false, error: 'question_not_pending' }
-    if (pending.started) return { ok: true, timeout: pending.timeout, deadline: pending.deadline }
-    const deadline = Date.now() + pending.timeout
-    pending.started = true
-    pending.deadline = deadline
-    pending.timer = setTimeout(() => this.expireHostUi(id), pending.timeout)
-    /* 看到之后至少还有 10 分钟（含用户点加时的余量）—— 兜底不能在这里先到 */
-    clearTimeout(pending.hardTimer)
-    pending.hardTimer = setTimeout(() => this.expireHostUi(id), pending.timeout + UI_TIMEOUT_HARD)
-    this.push({ ch: 'ui-deadline', payload: { id, timeout: pending.timeout, deadline } })
-    return { ok: true, timeout: pending.timeout, deadline }
+    return this.ui.startHostUiTimer(id)
   }
 
-  /** 等待到点：摘登记并如实报超时（**不猜答案**） */
-  private expireHostUi(id: string): void {
-    const pending = this.pendingHostUi.get(id)
-    if (!pending) return
-    this.pendingHostUi.delete(id)
-    this.pendingUi.delete(id)
-    if (pending.timer) clearTimeout(pending.timer)
-    clearTimeout(pending.hardTimer)
-    pending.reject(new CapabilityCommandError('question_timeout', '问题等待超时，未猜测用户答案'))
-  }
-
-  /**
-   * 延长一次宿主提问的等待（用户在面板倒计时上点一下）。
-   *
-   * 为什么必须走主进程：超时是**主进程的计时器**在抱，只改渲染端的倒计时
-   * 等于骗用户 —— 到点仍然会报超时。上限与夹取全在 `shared/ui-timeout.ts`。
-   * 只对**宿主发起的**提问生效（`pendingHostUi`）；扩展自己的 `ui-request`
-   * 超时由 pi 侧解析，这里不能替它们做主。
-   */
   extendHostUi(id: string, extraMs?: unknown): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
-    const pending = this.pendingHostUi.get(id)
-    if (!pending) return { ok: false, error: 'question_not_pending' }
-    /* 还没开始计时（用户没看到过）—— 先开始，再加时 */
-    if (!pending.started) this.startHostUiTimer(id)
-    const now = Date.now()
-    const deadline = extendDeadline(pending.deadline, now, extraMs)
-    const timeout = deadline - now
-    if (pending.timer) clearTimeout(pending.timer)
-    pending.timeout = timeout
-    pending.deadline = deadline
-    pending.timer = setTimeout(() => this.expireHostUi(id), timeout)
-    /* 加时也要把兜底往后推，否则点了「加 2 分钟」却仍被硬上限掐掉 */
-    clearTimeout(pending.hardTimer)
-    pending.hardTimer = setTimeout(() => this.expireHostUi(id), timeout + UI_TIMEOUT_HARD)
-    this.push({ ch: 'ui-deadline', payload: { id, timeout, deadline } })
-    return { ok: true, timeout, deadline }
+    return this.ui.extendHostUi(id, extraMs)
   }
 
   private async attachArtifact(artifact: AssistantArtifact, messageId = this.latestAssistantMessageId()): Promise<void> {
@@ -3400,112 +3271,22 @@ export class AgentController extends EventEmitter {
 
   /* -------------------------------------------------------------- 扩展 UI */
 
-  private handleUi(req: Record<string, unknown>): void {
-    const id = String(req.id ?? '')
-    const method = String(req.method ?? '')
-
-    // fire-and-forget 的几种
-    if (method === 'notify') {
-      this.push({ ch: 'notify', payload: { id, method: 'notify', ...req } as never })
-      return
-    }
-    if (method === 'setStatus') {
-      this.push({
-        ch: 'status',
-        payload: {
-          key: String(req.statusKey ?? 'ext'),
-          text: req.statusText === undefined ? undefined : String(req.statusText)
-        }
-      })
-      return
-    }
-    if (method === 'setTitle') {
-      this.push({ ch: 'title', payload: String(req.title ?? '砚') })
-      return
-    }
-    if (method === 'set_editor_text') {
-      this.push({ ch: 'editor-text', payload: String(req.text ?? '') })
-      return
-    }
-    if (method === 'setWidget') {
-      // TUI 里它显示在输入框上方。桌面端把它收进右栏「扩展」分区 ——
-      // 扩展写的东西（MCP/LSP 状态之类）对用户有意义，直接丢等于骗扩展。
-      const lines = Array.isArray(req.widgetLines) ? req.widgetLines.map((x) => String(x)) : undefined
-      this.push({ ch: 'widget', payload: { key: String(req.widgetKey ?? 'ext'), lines } })
-      return
-    }
-
-    // 需要应答的对话框
-    if (id && this.uiSeen.has(id)) return
-    if (id) this.uiSeen.add(id)
-    if (id) this.pendingUi.add(id)
-    /*
-     * `sensitive` 是**请求方声明**的安全分类（方案第 6 节）：
-     * 只有它为 true 时才走模态确认（焦点圈定），其余都走非模态问题面板。
-     * 不从问题措辞里推断 —— 那既不可靠也容易被绕过。
-     */
-    const payload = { id, method, sensitive: req.sensitive === true, ...req } as unknown as ExtensionUiRequest
-    if (id) this.uiRequestPayloads.set(id, payload)
-    this.push({ ch: 'ui-request', payload })
-  }
-
   /** 当前还没答复的问题（远程端列出用；不含通知类请求） */
   pendingUiRequests(): ExtensionUiRequest[] {
-    for (const id of this.uiRequestPayloads.keys()) {
-      if (!this.pendingUi.has(id)) this.uiRequestPayloads.delete(id)
-    }
-    return [...this.uiRequestPayloads.values()]
+    return this.ui.pendingUiRequests()
   }
 
-  /**
-   * 从手机回答一个问题。
-   *
-   * 敏感确认（删除、授权、付费……，由请求方声明）不接受远程答复：需求稿第 6 节要求
-   * 本机危险操作由用户在这台电脑上确认。答复后推一条 `ui-resolved`，电脑上的面板随之移除。
-   */
+  /** 从手机回答一个问题（敏感确认只能在电脑上答） */
   answerUiRemotely(
     id: string,
     answer: { value: string } | { confirmed: boolean } | { cancelled: true }
   ): { ok: true } | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' } {
-    const request = this.pendingUiRequests().find((item) => item.id === id)
-    if (!request) return { ok: false, code: 'question_not_pending' }
-    if (request.sensitive === true && !('cancelled' in answer)) {
-      return { ok: false, code: 'sensitive_confirmation_requires_desktop' }
-    }
-    this.respondUi({ id, ...answer } as HostUiResponse & { id: string }, 'remote')
-    return { ok: true }
+    return this.ui.answerUiRemotely(id, answer)
   }
 
-  /**
-   * 回答一个问题（渲染端经 IPC 调用；手机端经 answerUiRemotely）。
-   * 答复后推 `ui-resolved`：另一端（电脑面板 / 手机）据此移除这条问题。
-   */
+  /** 回答一个问题（渲染端经 IPC 调用；手机端经 answerUiRemotely）。 */
   respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): void {
-    const wasPending = !!res.id && this.pendingUi.has(res.id)
-    const hostPending = this.pendingHostUi.get(res.id)
-    if (hostPending) {
-      if (hostPending.timer) clearTimeout(hostPending.timer)
-      clearTimeout(hostPending.hardTimer)
-      this.pendingHostUi.delete(res.id)
-      this.pendingUi.delete(res.id)
-      hostPending.resolve(res)
-    } else {
-      if (res.id) this.pendingUi.delete(res.id)
-      this.rpc?.respondUi(res as Record<string, unknown>)
-    }
-    if (res.id) this.uiRequestPayloads.delete(res.id)
-    if (wasPending) this.push({ ch: 'ui-resolved', payload: { id: res.id, by } })
-  }
-
-  private rejectPendingHostUi(reason: string): void {
-    const error = new Error(reason)
-    for (const [id, pending] of this.pendingHostUi) {
-      if (pending.timer) clearTimeout(pending.timer)
-      clearTimeout(pending.hardTimer)
-      this.pendingHostUi.delete(id)
-      this.pendingUi.delete(id)
-      pending.reject(error)
-    }
+    this.ui.respondUi(res, by)
   }
 
   /* ------------------------------------------------------------- 队列身份 */
@@ -4336,8 +4117,8 @@ export class AgentController extends EventEmitter {
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
-      this.uiSeen.clear()
-      this.pendingUi.clear()
+      this.ui.seen.clear()
+      this.ui.pending.clear()
       this.setAgentRunning(false)
       this.resetQueue()
       /*
@@ -4383,8 +4164,8 @@ export class AgentController extends EventEmitter {
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
-      this.uiSeen.clear()
-      this.pendingUi.clear()
+      this.ui.seen.clear()
+      this.ui.pending.clear()
       this.setAgentRunning(false)
       this.resetQueue()
       /* 同上：压缩记录不跨会话 */
@@ -4442,8 +4223,8 @@ export class AgentController extends EventEmitter {
     const res = await this.rpc!.command<{ text?: string; cancelled?: boolean }>('fork', { entryId })
     if (!res.success) return { ok: false, error: res.error }
     if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
-    this.uiSeen.clear()
-    this.pendingUi.clear()
+    this.ui.seen.clear()
+    this.ui.pending.clear()
     await this.hydrate()
     return { ok: true, text: res.data?.text }
   }
@@ -4452,8 +4233,8 @@ export class AgentController extends EventEmitter {
     const res = await this.rpc!.command<{ cancelled?: boolean }>('clone')
     if (!res.success) return { ok: false, error: res.error }
     if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
-    this.uiSeen.clear()
-    this.pendingUi.clear()
+    this.ui.seen.clear()
+    this.ui.pending.clear()
     await this.hydrate()
     return { ok: true }
   }
@@ -4860,7 +4641,7 @@ export class AgentController extends EventEmitter {
   }
 
   /** 还在等用户回答的请求数（N12：后台会话的状态槽用它） */  getPendingUiCount(): number {
-    return this.pendingUi.size
+    return this.ui.pending.size
   }
 
   async stop(): Promise<void> {
@@ -4881,8 +4662,8 @@ export class AgentController extends EventEmitter {
     this.callIndex.clear()
     this.callOwner.clear()
     this.pushedOut.clear()
-    this.rejectPendingHostUi('会话已关闭，问题请求已取消')
-    this.pendingUi.clear()
+    this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
+    this.ui.pending.clear()
     await this.rpc?.close()
     this.rpc = null
     this.messages = []
