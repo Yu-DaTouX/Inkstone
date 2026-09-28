@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { useT } from '../../i18n'
 import { Badge, Button, EmptyState, Segmented, Switch } from '../ui'
 import {
@@ -9,6 +10,13 @@ import {
 import { useStore } from '../../state/store'
 
 type BindChoice = 'tailscale' | 'loopback' | 'custom'
+const WINDOWS_TAILSCALE_URL = 'https://tailscale.com/download/windows'
+const ANDROID_TAILSCALE_URL = 'https://tailscale.com/download/android'
+const MOBILE_GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
+
+function openGuide(url: string): void {
+  void window.yan.browser.openExternal(url)
+}
 
 function bindChoiceOf(bind: string): BindChoice {
   return bind === 'tailscale' || bind === 'loopback' ? bind : 'custom'
@@ -44,6 +52,8 @@ export function RemoteTab() {
 
   useEffect(() => {
     void refresh()
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 5000)
+    return () => window.clearInterval(interval)
   }, [refresh])
 
   /* 配对码倒计时；到期后刷新一次状态（码已作废） */
@@ -78,12 +88,25 @@ export function RemoteTab() {
 
   const choice = bindChoiceOf(draft.bind)
   const endpoint = status?.running ? `${status.host}:${status.port}` : null
+  const pairingLink = status?.pairing && endpoint
+    ? `inkstone://pair?address=${encodeURIComponent(`http://${endpoint}`)}&code=${status.pairing.code}`
+    : null
   const secondsLeft = status?.pairing ? Math.max(0, Math.ceil((status.pairing.expiresAt - now) / 1000)) : 0
   const activeDevices = status?.devices.filter((device) => device.revokedAt === null) ?? []
   const revokedDevices = status?.devices.filter((device) => device.revokedAt !== null) ?? []
 
   return (
     <div className="set-group" data-testid="settings-remote">
+      <div className="set-row col">
+        <div className="set-label">
+          <div className="set-name">{t('remote.setupTitle')}</div>
+          <div className="set-desc">{t('remote.setupDesc')}</div>
+        </div>
+        <div className="btn-row">
+          <Button size="sm" onClick={() => openGuide(WINDOWS_TAILSCALE_URL)}>{t('remote.downloadWindows')}</Button>
+          <Button size="sm" onClick={() => openGuide(ANDROID_TAILSCALE_URL)}>{t('remote.downloadAndroid')}</Button>
+        </div>
+      </div>
       <div className="set-row">
         <div className="set-label">
           <div className="set-name">{t('remote.enable')}</div>
@@ -185,13 +208,26 @@ export function RemoteTab() {
           <div className="set-name">{t('remote.pairTitle')}</div>
           <div className="set-desc">{t('remote.pairDesc')}</div>
         </div>
+        <div className="btn-row">
+          <Button size="sm" data-testid="remote-guide" onClick={() => openGuide(MOBILE_GUIDE_URL)}>{t('remote.guide')}</Button>
+        </div>
         {status?.pairing && secondsLeft > 0 ? (
           <div className="remote-pairing">
-            <div className="remote-pairing-code" data-testid="remote-pairing-code">{status.pairing.code}</div>
-            <div className="set-desc">
-              {t('remote.pairAddress', { address: endpoint ?? '—' })}
-              <br />
-              {t('remote.pairExpires', { seconds: secondsLeft })}
+            <div className="remote-pairing-layout">
+              {pairingLink ? (
+                <div className="remote-pairing-qr" aria-label="手机配对二维码">
+                  <QRCodeSVG value={pairingLink} size={180} level="M" marginSize={2} />
+                </div>
+              ) : null}
+              <div className="remote-pairing-detail">
+                <div className="remote-pairing-code" data-testid="remote-pairing-code">{status.pairing.code}</div>
+                <div className="set-desc">
+                  {t('remote.pairAddress', { address: endpoint ?? '—' })}
+                  <br />
+                  {t('remote.pairExpires', { seconds: secondsLeft })}
+                </div>
+                <div className="set-desc">{t('remote.scanHint')}</div>
+              </div>
             </div>
             <div className="btn-row">
               <Button size="sm" onClick={() => void run(() => window.yan.remote.cancelPairing())}>

@@ -1,0 +1,9 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "types": ["react"]
+  },
+  "include": ["src", "index.js", "../src/shared/remote-protocol.ts"]
+}

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { hostname } from 'node:os'
 import type { MainPush } from '../shared/ipc'
 import {
   REMOTE_EVENT_BUFFER,
@@ -13,6 +14,7 @@ import {
   type RemoteEventEnvelope,
   type RemotePendingQuestion
 } from '../shared/remote-protocol'
+import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
 
 /**
@@ -26,7 +28,8 @@ export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
   | { action: 'new' }
-  | { action: 'send'; sessionId: string; text: string }
+  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[] }
+  | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'abort'; runId: string }
   | { action: 'rename'; sessionId: string; name: string }
 
@@ -49,7 +52,9 @@ export interface RemoteServerHandlers {
   /** 返回不含绝对会话路径、凭证和其它桌面私密字段的快照。 */
   snapshot(): Promise<unknown>
   /** 按稳定 sessionId 读取历史；路径解析留在主进程，不能由网络请求传入。 */
-  history(sessionId: string, limit: number): Promise<RemoteOperationResult>
+  history(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult>
+  models?(sessionId: string): Promise<RemoteOperationResult>
+  image?(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult>
   /** 执行有限的远程会话操作。 */
   command(command: RemoteCommand): Promise<RemoteOperationResult>
   /** 当前等待回答的问题（没有实现时远程端看不到问题） */
@@ -137,6 +142,24 @@ function validRunId(value: unknown): value is string {
 
 function validText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
+}
+
+/** Decode only the bounded image formats accepted by the phone composer. */
+export function validateRemoteImages(value: unknown): RemoteImageInput[] | null {
+  if (!Array.isArray(value) || value.length > 4) return null
+  const images: RemoteImageInput[] = []
+  for (const item of value) {
+    if (!isRecord(item) || !['image/jpeg', 'image/png', 'image/webp'].includes(String(item.mimeType)) || typeof item.data !== 'string') return null
+    if (!item.data || item.data.length > 2_796_204 || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.data) || item.data.length % 4 !== 0) return null
+    const bytes = Buffer.from(item.data, 'base64')
+    if (bytes.length > 2 * 1024 * 1024) return null
+    const valid = item.mimeType === 'image/jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : item.mimeType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+    if (!valid) return null
+    images.push({ mimeType: item.mimeType as RemoteImageInput['mimeType'], data: item.data })
+  }
+  return images
 }
 
 function validQuestionId(value: string): boolean {
@@ -327,13 +350,13 @@ export class RemoteServer {
     return null
   }
 
-  private async readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  private async readJson(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of req) {
       const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       size += part.length
-      if (size > MAX_BODY_BYTES) throw new Error('请求体超过 64KB 限制')
+      if (size > maxBytes) throw new Error('请求体超过大小限制')
       chunks.push(part)
     }
     const raw = Buffer.concat(chunks).toString('utf8')
@@ -428,9 +451,12 @@ export class RemoteServer {
           'events-resume', 'idempotency',
           ...(this.options.handlers.questions ? ['questions'] : []),
           ...(this.options.handlers.answer ? ['answer'] : []),
-          ...(this.options.handlers.artifact ? ['artifacts'] : [])
+          ...(this.options.handlers.artifact ? ['artifacts'] : []),
+          ...(this.options.devices ? ['device-name'] : []),
+          ...(this.options.handlers.models ? ['models', 'send-images'] : [])
         ],
-        device: caller.device
+        device: caller.device,
+        computer: { name: hostname() }
       })
       return
     }
@@ -464,6 +490,37 @@ export class RemoteServer {
       return
     }
 
+    if (req.method === 'POST' && url.pathname === '/remote/v1/device') {
+      const body = await this.readJson(req)
+      if (!caller.device || !this.options.devices) return writeError(res, 403, '需要配对设备令牌')
+      if (!validText(body.name, 60)) return writeError(res, 400, '设备名称需要 1–60 个字符')
+      const device = await this.options.devices.renameDevice(caller.device.id, body.name)
+      writeJson(res, device ? 200 : 404, device ? { ok: true, data: device } : { ok: false, error: '设备已撤销' })
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'models') {
+      const sessionId = decodeURIComponent(parts[3])
+      if (!validSessionId(sessionId)) return writeError(res, 400, '会话 id 无效')
+      if (!this.options.handlers.models) return writeError(res, 404, '请更新电脑端')
+      this.writeOperation(res, await this.options.handlers.models(sessionId))
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'images') {
+      const [sessionId, messageId] = [decodeURIComponent(parts[3]), decodeURIComponent(parts[5])]
+      const index = Number(parts[6])
+      if (!validSessionId(sessionId) || !messageId || messageId.length > 2000 || !Number.isInteger(index) || index < 0 || index > 127) return writeError(res, 400, '图片引用无效')
+      if (!this.options.handlers.image) return writeError(res, 404, '请更新电脑端')
+      const found = await this.options.handlers.image(sessionId, messageId, index)
+      if ('ok' in found) { this.writeOperation(res, found); return }
+      res.writeHead(200, { 'content-type': found.mediaType, 'content-length': found.bytes, 'cache-control': 'no-store', ...CORS_HEADERS })
+      const stream = createReadStream(found.path)
+      stream.on('error', () => res.destroy())
+      stream.pipe(res)
+      return
+    }
+
     if (req.method === 'POST' && parts.length === 5 && parts[2] === 'questions' && parts[4] === 'answer') {
       await this.answer(req, res, caller, decodeURIComponent(parts[3]))
       return
@@ -475,7 +532,12 @@ export class RemoteServer {
         writeError(res, 400, '会话 id 无效')
         return
       }
-      const result = await this.options.handlers.history(sessionId, clampHistoryLimit(url.searchParams.get('limit')))
+      const before = url.searchParams.get('before') ?? undefined
+      if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) {
+        writeError(res, 400, '历史游标无效')
+        return
+      }
+      const result = await this.options.handlers.history(sessionId, clampHistoryLimit(url.searchParams.get('limit')), before)
       this.writeOperation(res, result)
       return
     }
@@ -497,18 +559,32 @@ export class RemoteServer {
         writeError(res, 400, '会话 id 无效')
         return
       }
-      const body = await this.readJson(req)
+      let body: Record<string, unknown>
+      try { body = await this.readJson(req, operation === 'messages' ? 12 * 1024 * 1024 : MAX_BODY_BYTES) }
+      catch { writeError(res, 413, '消息超过大小限制或格式无效'); return }
       if (operation === 'select') {
         this.writeOperation(res, await this.options.handlers.command({ action: 'select', sessionId }))
         return
       }
       if (operation === 'messages') {
-        if (!validText(body.text, MAX_MESSAGE_CHARS)) {
+        let images: RemoteImageInput[] | undefined
+        if (body.images !== undefined) {
+          images = validateRemoteImages(body.images) ?? undefined
+          if (!images) { writeError(res, 400, '最多 4 张图片，每张不超过 2MB，仅支持 JPEG、PNG、WebP'); return }
+        }
+        if (typeof body.text !== 'string' || body.text.length > MAX_MESSAGE_CHARS || (!body.text.trim() && !images?.length)) {
           writeError(res, 400, '消息不能为空且不得超过 20,000 个字符')
           return
         }
         const text = body.text
-        await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'send', sessionId, text }))
+        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images }))
+        return
+      }
+      if (operation === 'model') {
+        if (!this.options.handlers.models) return writeError(res, 404, '请更新电脑端')
+        if (!validText(body.provider, 200) || !validText(body.modelId, 300)) return writeError(res, 400, '模型标识无效')
+        const { provider, modelId } = body
+        await this.idempotent(req, res, caller, true, () => this.options.handlers.command({ action: 'model', sessionId, provider, modelId }))
         return
       }
       if (operation === 'rename') {
@@ -561,7 +637,7 @@ export class RemoteServer {
       return
     }
     this.log(`新设备已配对：${result.device.name}`)
-    writeJson(res, 200, { ok: true, deviceId: result.device.id, token: result.token, apiVersion: REMOTE_API_VERSION })
+    writeJson(res, 200, { ok: true, deviceId: result.device.id, token: result.token, apiVersion: REMOTE_API_VERSION, device: result.device, computer: { name: hostname() } })
   }
 
   private async answer(req: IncomingMessage, res: ServerResponse, caller: Caller, questionId: string): Promise<void> {

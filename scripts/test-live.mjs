@@ -1958,6 +1958,7 @@ const CASES = {
    * 键盘切 tab、真实锚点/空态、禁用防重复提交、长 id 全文出口。
    */
   settingstabs: { probe: 'scripts/probe/settingstabs.js', delay: 10000, cost: 0 },
+  remoteaccess: { probe: 'scripts/probe/remote-access.js', delay: 10000, cost: 0 },
 
   /*
    * 实施-13 V-4：右侧资源表面结构统一（cost 0）。

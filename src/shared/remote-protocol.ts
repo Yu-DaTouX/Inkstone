@@ -36,6 +36,7 @@ export interface RemoteInfo {
   capabilities: string[]
   /** 当前令牌对应的设备（使用旧的一次性环境变量令牌时为 null） */
   device: RemoteDeviceSummary | null
+  computer?: { name: string }
 }
 
 /* ---------------------------------------------------------------- 配对与设备 */
@@ -53,6 +54,20 @@ export interface RemotePairResponse {
   /** 只在配对这一刻返回一次；电脑端只存它的哈希 */
   token: string
   apiVersion: number
+  computer?: { name: string }
+  device?: RemoteDeviceSummary
+}
+
+export interface RemoteImageInput {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
+  data: string
+}
+
+export interface RemoteModel {
+  id: string
+  provider: string
+  name: string
+  input?: string[]
 }
 
 export interface RemoteDeviceSummary {

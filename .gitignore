@@ -78,3 +78,17 @@ resources/pi-runtime/
 /docs/WORKSPACE.md
 /docs/ARCHITECTURE.html
 /docs/ARCHITECTURE.mmd
+
+# 手机端（mobile/）：依赖与原生构建产物不入库
+/mobile/node_modules/
+/mobile/android/app/build/
+/mobile/android/build/
+/mobile/android/.gradle/
+/mobile/android/.kotlin/
+/mobile/android/app/.cxx/
+/mobile/android/.idea/
+/mobile/android/local.properties
+/mobile/*.keystore
+
+# Codex 远程会话的临时附件
+/.codex-remote-attachments/

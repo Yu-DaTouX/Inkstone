@@ -10,6 +10,7 @@
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases">下载</a> ·
   <a href="#开始使用">快速开始</a> ·
   <a href="docs/GETTING_STARTED.md">使用指南</a> ·
+  <a href="docs/MOBILE_ACCESS.md">手机接入说明</a> ·
   <a href="https://github.com/Yu-DaTouX/Inkstone/issues">反馈</a> ·
   <a href="README_EN.md">English</a>
 </p>
@@ -74,6 +75,8 @@ Inkstone 的界面围绕“墨色工作空间”设计：
 3. 在工作面板中查看文件、审查改动，或打开浏览器与终端继续操作。
 
 常用操作、数据备份与安装说明见[使用指南](docs/GETTING_STARTED.md)。
+
+Android 手机接入的 Tailscale 安装、二维码配对与语音输入说明见[手机接入说明](docs/MOBILE_ACCESS.md)。此功能需要包含「设置 → 手机接入」入口的桌面版本；旧发行包可能尚未包含。
 
 ## 数据与平台
 

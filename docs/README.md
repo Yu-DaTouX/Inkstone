@@ -5,6 +5,7 @@
 | 目的 | 文档 |
 | --- | --- |
 | 安装、登录和日常使用 | [使用指南](GETTING_STARTED.md) · [English](GETTING_STARTED_EN.md) |
+| Android 手机接入与配对 | [手机接入说明](MOBILE_ACCESS.md) |
 | 从源码运行与贡献 | [贡献指南](CONTRIBUTING.md) |
 | 理解进程与数据边界 | [架构简介](ARCHITECTURE.md) |
 | 定位源码 | [代码导览](PROJECT.md) · [按功能查找的代码地图](CODE_MAP.md) |

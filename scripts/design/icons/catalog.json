@@ -19,6 +19,24 @@
     }
   },
   "icons": {
+    "close": {
+      "lib": "lucide",
+      "name": "x",
+      "group": "操作",
+      "use": "关闭浮层或取消语音输入"
+    },
+    "back": {
+      "lib": "lucide",
+      "name": "arrow-left",
+      "group": "导航",
+      "use": "返回上一层项目或会话"
+    },
+    "stop": {
+      "lib": "lucide",
+      "name": "square",
+      "group": "操作",
+      "use": "停止正在执行的任务"
+    },
     "activity": {
       "lib": "lucide",
       "name": "activity",
