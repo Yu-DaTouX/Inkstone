@@ -2,7 +2,7 @@
 
 [架构简介](ARCHITECTURE.md) · [按功能查找的代码地图](CODE_MAP.md) · [技术路线](TECH_STACK_OPTIONS.md) · [贡献指南](CONTRIBUTING.md)
 
-Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)。
+Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；长期记忆的范围与外部工具读写约定见[记忆互通说明](MEMORY_INTEROP.md)。
 
 完整目录归属、图片与零散文件的处理见 [文件归属与长期维护规范](REPOSITORY_GUIDE.md)。本文维护目录导航；遇到具体任务，先看[代码地图](CODE_MAP.md)中的调用链、状态和相邻文件，不记录阶段完成状态。
 

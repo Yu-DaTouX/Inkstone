@@ -48,7 +48,7 @@ flowchart LR
 | 电脑本地语音输入（whisper.cpp） | `src/main/voice/voice-service.ts`、`src/main/ipc/voice-ipc.ts` | `src/shared/voice-input.ts`（模型目录、按配置推荐、WAV 编码、输出解析）、`components/chat/VoiceInputButton.tsx`（录音 → 转写 → 插入输入框）、`components/settings/VoiceTab.tsx`；下载先 `plan` 核实大小与位置，用户确认后才 `download`；录音只存临时文件 |
 | 模型登录、凭证、设置 | `src/main/oauth.ts`、`credentials.ts`、`custom-providers.ts`、`settings.ts` | `components/settings/`、`src/shared/model-capabilities.ts`；本地档案不代表模型账号已登录 |
 | 主题空间、资料、成果、课程与学习 | `src/main/space-store.ts`、`library-*`、`artifact-doc-store.ts`、`course-*`、`learning-*`、`exercise-*` | 对应 `src/shared/space.ts`、`library.ts`、`artifact-doc.ts`、`course.ts`、`study.ts`、`exercise.ts` 与 `components/workbench/` |
-| 项目知识与长期记录 | `src/main/project-memory-store.ts`、`project-knowledge.ts`、`learning-memory-store.ts` | `src/shared/project-memory.ts`、`learning-memory.ts`；按来源、归属与版本处理，避免与会话原文混同 |
+| 项目知识、个人记忆与长期记录 | `src/main/project-memory-store.ts`、`project-knowledge.ts`、`personal-memory.ts`（个人范围、外部工具收件箱与导出）、`learning-memory-store.ts` | `src/shared/project-memory.ts`、`learning-memory.ts`；按来源、归属与版本处理，避免与会话原文混同 |
 | 联网搜索与能力获取 | `src/main/search/`、`src/shared/search.ts`、`src/main/capabilities/` | `scripts/probe/search.mjs` 与 `search-electron.mjs` 区分普通 Node 与 Electron 环境 |
 | 样式、图标、动效与多语言 | `src/renderer/src/styles/`（控件外观在 `ui.css`）、`components/ui/`、`icons/`、`i18n/` | [设计规范](DESIGN_SYSTEM.md)、`scripts/design/icons/` 和生成清单；改界面时同时检查深浅主题、键盘与窄窗口 |
 

@@ -548,9 +548,9 @@ const api: YanBridge = {
    * 渲染端**不能**指定 projectId（身份由宿主按会话推导，与 `yan knowledge` 同一条边界）。
    */
   knowledge: {
-    list: () => invoke<KnowledgeListView>('yan:knowledge:list'),
+    list: (scope) => invoke<KnowledgeListView>('yan:knowledge:list', scope),
     action: (req: KnowledgeActionRequest) => invoke<KnowledgeActionResult>('yan:knowledge:action', req),
-    export: (mode: 'copy' | 'save') => invoke<KnowledgeExportResult>('yan:knowledge:export', mode),
+    export: (mode: 'copy' | 'save', scope) => invoke<KnowledgeExportResult>('yan:knowledge:export', mode, scope),
     sourceSession: (sessionId: string) =>
       invoke<{ ok: boolean; path?: string; title?: string; error?: string }>('yan:knowledge:sourceSession', sessionId)
   },

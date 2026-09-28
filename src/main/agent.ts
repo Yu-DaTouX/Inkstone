@@ -20,6 +20,7 @@ import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './c
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { ContextRecallError, findArchivedContext, recallArchivedContext } from './context-recall'
 import { previewOffice } from './office/office-service'
+import { memoryStoreOf } from './personal-memory'
 import { ensureYanLauncher } from './yan-cli'
 import {
   normalizeHistory,
@@ -4060,36 +4061,60 @@ export class AgentController extends EventEmitter {
    *      「文本引用不授予读取权限」是 §4 写死的边界。
    */
   private async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
+    /*
+     * 范围：project = 当前项目知识（身份由宿主绑定）；personal = 全局个人记忆（固定身份、独立目录）。
+     * search 缺省两边都查；read 缺省先项目后个人；propose 缺省写项目。
+     */
+    const rawScope = this.knowledgeString(params, ['scope'])
+    if (rawScope && rawScope !== 'project' && rawScope !== 'personal' && !(action === 'search' && rawScope === 'all')) {
+      throw new CapabilityCommandError('knowledge_bad_scope', 'scope 只能是 project、personal（search 另可用 all）')
+    }
     const projectId = this.capabilityOpts?.projectId
-    if (!projectId) {
-      throw new CapabilityCommandError('knowledge_no_project', '当前会话没有绑定项目身份，项目知识不可用')
+    const wantsProject = rawScope === 'project' || (!rawScope && action === 'propose')
+    if (!projectId && wantsProject) {
+      throw new CapabilityCommandError('knowledge_no_project', '当前会话没有绑定项目身份，项目知识不可用（个人记忆可用 --scope personal）')
     }
     const claimed = typeof params.projectId === 'string' ? params.projectId.trim() : ''
-    if (claimed && claimed !== projectId) {
+    if (claimed && projectId && claimed !== projectId) {
       throw new CapabilityCommandError(
         'knowledge_project_mismatch',
         '项目知识只认宿主绑定的身份，不接受请求里的 projectId'
       )
     }
-    const identity = { projectId, cwd: this.cwd }
+    const projectStore = projectId ? memoryStoreOf('project', { projectId, cwd: this.cwd }) : null
+    const personalStore = memoryStoreOf('personal', null)!
+    const storesFor = (scope: string): Array<{ scope: 'project' | 'personal'; store: NonNullable<typeof projectStore> }> => [
+      ...(projectStore && scope !== 'personal' ? [{ scope: 'project' as const, store: projectStore }] : []),
+      ...(scope !== 'project' ? [{ scope: 'personal' as const, store: personalStore }] : [])
+    ]
 
     if (action === 'search') {
       const queryText = this.knowledgeString(params, ['queryText', 'query-text', 'query', 'text'])
       if (!queryText) {
         throw new CapabilityCommandError('knowledge_query_required', 'knowledge search 需要 queryText（或 --query-file）')
       }
-      const entries = await listKnowledge(identity)
-      const result = searchProjectKnowledge(entries, {
+      const scoped = storesFor(rawScope || 'all')
+      const lists = await Promise.all(scoped.map(({ store }) => listKnowledge(store.identity, store.opts)))
+      const scopeOf = new Map<string, string>()
+      lists.forEach((list, i) => list.forEach((entry) => scopeOf.set(entry.id, scoped[i].scope)))
+      const result = searchProjectKnowledge(lists.flat(), {
         queryText,
         limit: this.knowledgeNumber(params, 'limit'),
         tokenBudget: this.knowledgeNumber(params, 'tokenBudget')
       })
       return {
-        data: { hits: result.hits, considered: result.considered, dropped: result.dropped, tokens: result.tokens, reason: result.reason ?? null },
+        data: {
+          hits: result.hits.map((hit) => ({ ...hit, scope: scopeOf.get(hit.id) })),
+          considered: result.considered,
+          dropped: result.dropped,
+          tokens: result.tokens,
+          reason: result.reason ?? null
+        },
         summary: {
           kind: 'knowledge',
           action: 'search',
-          projectId,
+          projectId: projectId ?? null,
+          scopes: scoped.map((item) => item.scope),
           count: result.hits.length,
           tokens: result.tokens,
           ids: result.hits.map((hit) => hit.id)
@@ -4102,16 +4127,24 @@ export class AgentController extends EventEmitter {
       if (!id || !isSafeKnowledgeId(id)) {
         throw new CapabilityCommandError('knowledge_id_required', 'knowledge read 需要合法的 id')
       }
-      const entry = await readKnowledge(identity, id)
+      let entry: Awaited<ReturnType<typeof readKnowledge>>
+      let foundIn: 'project' | 'personal' | undefined
+      for (const { scope, store } of storesFor(rawScope || 'all')) {
+        entry = await readKnowledge(store.identity, id, store.opts)
+        if (entry) {
+          foundIn = scope
+          break
+        }
+      }
       if (!entry) {
         throw new CapabilityCommandError('knowledge_not_found', `找不到这条项目知识：${id}`)
       }
       return {
-        data: entry,
+        data: { ...entry, scope: foundIn },
         summary: {
           kind: 'knowledge',
           action: 'read',
-          projectId,
+          scope: foundIn,
           id: entry.id,
           status: entry.status,
           revision: entry.revision
@@ -4137,8 +4170,10 @@ export class AgentController extends EventEmitter {
         }
       }
       const sessionId = typeof raw.sessionId === 'string' && isSafeSessionId(raw.sessionId) ? raw.sessionId : this.capabilityOpts?.sessionId
+      const target = rawScope === 'personal' ? personalStore : projectStore!
       const outcome = await commitKnowledge({
-        identity,
+        identity: target.identity,
+        opts: target.opts,
         request: {
           id: raw.id,
           kind,
@@ -4160,7 +4195,7 @@ export class AgentController extends EventEmitter {
         summary: {
           kind: 'knowledge',
           action: 'propose',
-          projectId,
+          scope: rawScope === 'personal' ? 'personal' : 'project',
           id: outcome.entry.id,
           status: outcome.entry.status,
           revision: outcome.entry.revision
