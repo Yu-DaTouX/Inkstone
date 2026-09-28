@@ -35,6 +35,14 @@
   const q = (s) => document.querySelector(s)
   const store = window.__yanStore
   const S = () => store.getState()
+  const until = async (fn, ms = 5000) => {
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      if (fn()) return true
+      await sleep(80)
+    }
+    return false
+  }
 
   localStorage.setItem('yan.onboarded', '1')
   for (let i = 0; i < 25; i++) {
@@ -160,15 +168,16 @@
   q('[data-testid="right-window-tab-start"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await sleep(500)
   const ctxSec = q('[data-testid="rp-context"]')
-  const ctxHead = ctxSec?.querySelector('button')
+  /* The first button is the drag grip; target the actual section heading. */
+  const ctxHead = ctxSec?.querySelector('.rp-sec-head')
   if (ctxHead && ctxHead.getAttribute('aria-expanded') === 'false') {
     ctxHead.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(200)
+    await until(() => ctxHead.getAttribute('aria-expanded') === 'true', 1500)
   }
   const detailsToggle = q('[data-testid="ctx-details-toggle"]')
   if (detailsToggle && detailsToggle.getAttribute('aria-expanded') !== 'true') {
     detailsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await sleep(400)
+    await until(() => detailsToggle.getAttribute('aria-expanded') === 'true', 1500)
   }
   /* 账本由主进程读；界面显示的是它的投影（界面数 = 主进程数） */
   const actionLedger = await window.yan.contextActions()
@@ -178,6 +187,7 @@
   )
   ok((sweepSummary?.count ?? 0) >= 1, '宿主读到了扩展写的清扫记录（C-2b 的真实链路）')
   ok((sweepSummary?.reclaimed ?? 0) >= 1, '账本里有真实的整理条数（不是零收益也算过）')
+  await until(() => !!q('[data-testid="ctx-action-tool-sweep"]') && /[1-9]/.test(q('[data-testid="ctx-action-tool-sweep"]')?.textContent ?? ''), 5000)
   const sweepRow = q('[data-testid="ctx-action-tool-sweep"]')
   ok(!!sweepRow, '上下文详情里清扫与状态刷新、压缩是分开的三行')
   ok(

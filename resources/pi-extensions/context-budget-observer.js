@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
+  CONTEXT_BUDGET_V1_TIERS,
   checkContextBudgetRequestV1,
   contextEndpointKeyV1,
   resolveContextBudgetOutputReserveV1
@@ -168,6 +169,34 @@ function writeBlockedEntry(pi, sessionId, inputTokens, calculation, code, reason
   }
 }
 
+/**
+ * 策略读不到 / 坏掉时的兜底策略。
+ *
+ * 它只服务于「把不可用这件事写全」：宿主不拿它做判定
+ *（`readPreparedBudgetSnapshot` 只读 endpoint 与 token 字段），
+ * 但**形状必须合法** —— 界面那份 `sanitizeContextBudgetRuntimeSnapshotV1`
+ * 会校验 `phaseId` 是非空字符串、`selectionMode` 是 auto/fixed、
+ * 两个档位是合法档；缺一项整份快照会被丢掉（而不是显示成不可用）。
+ *
+ * 取值跟宿主新建会话的默认策略同口径
+ *（`src/main/context-budget-store.ts` 的 `defaultPhase('main')`：
+ * 最小档 200k + 最大自动档 700k）。
+ *
+ * ⚠️ 这个函数曾经**根本不存在**（`unavailableDetails` 直接调它）：
+ * 于是「策略坏掉」这条兜底路径自己抛 `ReferenceError`，用户看到的是
+ * 「扩展出错：defaultPolicy is not defined」——兜底比它要兜的错还脆。
+ */
+function defaultPolicy() {
+  return {
+    phaseId: 'main',
+    mode: 'auto',
+    selectedBudget: CONTEXT_BUDGET_V1_TIERS[0],
+    autoMaxBudget: CONTEXT_BUDGET_V1_TIERS[3],
+    policyRevision: null,
+    selectionReason: ''
+  }
+}
+
 function unavailableDetails(reason, code = 'context_budget_unavailable') {
   const fallback = defaultPolicy()
   const result = checkContextBudgetRequestV1({
@@ -184,7 +213,7 @@ function unavailableDetails(reason, code = 'context_budget_unavailable') {
     policyRevision: null,
     phaseId: fallback.phaseId,
     selectionMode: fallback.mode,
-    selectionReason: '',
+    selectionReason: fallback.selectionReason,
     selectedBudget: fallback.selectedBudget,
     autoMaxBudget: fallback.autoMaxBudget,
     inputTokens: null,

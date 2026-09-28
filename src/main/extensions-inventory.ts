@@ -74,7 +74,7 @@ export function extensionDiagnostics(opts: ExtensionExpectation): string[] {
 
   lines.push(
     `[来源] 砚内置薄层 ${thin.length} 项：${thin.join('、') || '（无）'}` +
-      `（显式传入；只承载宿主没有 CLI / RPC 等价物的生命周期钩子，不注册模型工具；交互提问走宿主 yan question ask，归档回读走 yan context recall）`
+      `（显式传入；只承载宿主没有 CLI / RPC 等价物的生命周期钩子，不注册模型工具；上下文维护的两个命令只由宿主触发；交互提问走宿主 yan question ask，归档回读走 yan context recall）`
   )
 
   if (user.length) {
