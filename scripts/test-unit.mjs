@@ -3910,23 +3910,6 @@ const { runActivityModelTests } = await import('./test-activity-model.mjs')
 runActivityModelTests(ok, activityModel)
 
 /*
- * 语音与内容形式（实施-25 P20）：计划 / 转写登记（同一课程）/ 边界文案。
- * 重点是「不自建识别与朗读」与「音频属于同一课程」。
- */
-const audioShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/audio.ts'],
-    outfile: 'out/test/audio.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/audio.mjs'))
-)
-const { runAudioTests } = await import('./test-audio.mjs')
-runAudioTests(ok, audioShared)
-
-/*
  * 联网搜索（实施-27 S1/S2）：来源白名单 / 归一化 / 去重与上限 / 来源级状态。
  * 后端用替身，不依赖本机装没装 OpenCLI；真实 spawn 只测「找不到可执行文件」这个边界。
  */

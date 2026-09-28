@@ -185,7 +185,6 @@ import { PlaybookStore } from './playbook-store'
 import { PlaybookService } from './playbook-service'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
-import { audioPlan, transcriptImportInput, transcriptRegisteredText } from '../shared/audio'
 import {
   activityModelRows,
   activityModelText,
@@ -7646,46 +7645,6 @@ function registerIpc(): void {
     const res = await follows.report(input ?? {})
     return res.ok ? { ok: true as const, run: res.value.run, watch: res.value.watch } : { ok: false as const, code: res.code, error: res.error }
   })
-
-  /*
-   * 语音与内容形式（实施-25 P20）。
-   *
-   * 两件事：给计划（说清该走哪条路、结果怎么归位），以及把**外部工具转好的文本**
-   * 登记成同一门课的新来源。宿主**不做识别与朗读** —— 那要外部能力。
-   */
-  handle('yan:audio:plan', async (input: { task?: string; courseId?: string; sourceId?: string; version?: number }) => {
-    const task = input?.task === 'read-aloud' ? 'read-aloud' : 'transcribe'
-    const plan = audioPlan(task, {
-      ...(input?.courseId ? { courseId: input.courseId } : {}),
-      ...(input?.sourceId ? { sourceId: input.sourceId } : {}),
-      ...(Number.isInteger(input?.version) ? { version: Number(input?.version) } : {})
-    })
-    return { ok: true as const, plan }
-  })
-  handle(
-    'yan:audio:transcript',
-    async (input: { courseId?: string; sourceId?: string; version?: number; title?: string; text?: string }) => {
-      const prepared = transcriptImportInput({
-        courseId: String(input?.courseId ?? ''),
-        sourceId: String(input?.sourceId ?? ''),
-        version: Number(input?.version ?? 1),
-        ...(input?.title ? { title: input.title } : {}),
-        text: String(input?.text ?? '')
-      })
-      if (!prepared.ok) return { ok: false as const, code: prepared.code, error: prepared.reason }
-      const imported = await library.import(prepared.value)
-      if (!imported.ok) return { ok: false as const, code: 'import-failed', error: imported.error ?? '登记失败' }
-      const sourceId = imported.sourceId ?? prepared.value.identity
-      const version = imported.version ?? 1
-      /* 只登记来源：**不碰 courses**（不新建课程、不动单元与学习进度） */
-      return {
-        ok: true as const,
-        sourceId,
-        version,
-        note: transcriptRegisteredText(sourceId, version)
-      }
-    }
-  )
 
   /*
    * 按活动配置模型（实施-25 P18）。

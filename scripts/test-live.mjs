@@ -132,7 +132,6 @@ const CASES = {
   // 实施-25 P18：按活动配置模型（优先级 / 回退 / 边界文案；cost 0）
   activitymodel: { probe: 'scripts/probe/activity-model.js', delay: 16000, cost: 0 },
   // 实施-25 P20：语音（只说路径 + 转写登记到同一门课；cost 0）
-  audio: { probe: 'scripts/probe/audio.js', delay: 20000, cost: 0 },
   // 实施-23：自定义 API 服务表单（隔离 YAN_PI_DIR 下写入 models.json）
   customapi: { probe: 'scripts/probe/custom-api.js', delay: 9000, cost: 0 },
   // 实施-23 端到端：自定义 provider 走通「枚举 → 切换 → 真实对话 → 工具 → 取消 → 重开」。

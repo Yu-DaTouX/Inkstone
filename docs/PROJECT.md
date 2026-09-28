@@ -13,7 +13,7 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/preload/index.ts` | 渲染端可用的宿主接口 |
 | `src/shared/ipc.ts` | IPC 契约与类型 |
 | `src/renderer/src/components/` | React 界面组件 |
-| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx`（课程与路线）/ `LearningWorkspace.tsx`（导师页三栏）/ `ExerciseCard.tsx`（练习卡）/ `ConceptPanel.tsx`（概念进度与笔记）/ `ReviewPanel.tsx`（错题与复习）/ `PlaybookPanel.tsx`（办事模板）/ `FollowPanel.tsx`（持续关注）/ `AudioCard.tsx`（语音）/ `SessionMap.tsx`（会话地图：会话层 + 可展开的轮次层）/ `SessionPreview.tsx`） |
+| `src/renderer/src/components/workbench/` | 日常模式的中栏视图：工作台首页、空间工作台（概览 / 资料 / 成果 / 学习）与会话地图（`WorkbenchHome.tsx` / `SpaceWorkbench.tsx` / `SpaceOverview.tsx` / `LibraryView.tsx` / `ArtifactView.tsx` / `LearningView.tsx`（课程与路线）/ `LearningWorkspace.tsx`（导师页三栏）/ `ExerciseCard.tsx`（练习卡）/ `ConceptPanel.tsx`（概念进度与笔记）/ `ReviewPanel.tsx`（错题与复习）/ `PlaybookPanel.tsx`（办事模板）/ `FollowPanel.tsx`（持续关注）/ `SessionMap.tsx`（会话地图：会话层 + 可展开的轮次层）/ `SessionPreview.tsx`） |
 | `src/shared/space.ts` + `src/main/space-store.ts` | 主题空间：非 Git 的会话归属与项目关联 |
 | `src/shared/library.ts` + `src/main/library-store.ts` / `library-parser.ts` / `library-service.ts` | 资料库：唯一事实源、版本绑定与解析 |
 | `src/shared/activity-flow.ts` + `src/shared/context-assembly.ts` / `src/main/context-assembler.ts` | 活动流程与建任务阈值、按活动的上下文装配（引用可回原文） |
@@ -29,7 +29,6 @@ Android 手机接入的用户流程见[手机接入说明](MOBILE_ACCESS.md)；�
 | `src/shared/follow.ts` + `src/main/follow-store.ts` | 持续关注与提醒：**应用没开就不跟进**（状态里没有「后台在跑」）、未启用的关注不自行建立、没变化不打扰、一次性关注看完就结束 |
 | `src/shared/capability-gap.ts` | 按需获取能力：用自然语言说需求 → 「缺什么、怎么接」的**可执行路径**（只给路径不代装、认不出不编包名、已有能力就不算缺口） |
 | `src/shared/activity-model.ts` | 按活动配置模型：优先级（活动 → 默认 → 跟随会话）可解释、回退如实标注、**不改任务身份与学习状态** |
-| `src/shared/audio.ts` | 语音与内容形式：**不自建识别与朗读**（给外部能力路径）、转写登记为**同一课程**的新来源（不新建课程、不多一份学习记录） |
 | `src/shared/conversation-turns.ts` | 轮次投影（一轮问答 = 一个块），会话地图的轮次级基础 |
 | `src/shared/session-map.ts` | 会话地图纯投影（泳道 / 深度 / 边 / 折叠） |
 | `src/shared/turn-layer.ts` | 画布轮次层的几何与分支对齐：一层一轮一张卡、子会话首轮对上父会话那一轮（对不上不猜、会撞就退回） |

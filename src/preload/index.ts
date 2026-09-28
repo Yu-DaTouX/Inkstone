@@ -53,8 +53,6 @@ import type {
   ActivityBridge,
   ActivityModelResolution,
   ActivityModelRow,
-  AudioBridge,
-  AudioPlan,
   FollowRun,
   Watch,
   WatchView,
@@ -532,14 +530,6 @@ const api: YanBridge = {
     model: (input) => invoke<ActivityModelResolution>('yan:activity:model', input),
     setModel: (input) => invoke<{ ok: boolean; error?: string; rows?: ActivityModelRow[] }>('yan:activity:modelSet', input)
   } as ActivityBridge,
-  audio: {
-    plan: (input) => invoke<{ ok: boolean; error?: string; plan?: AudioPlan }>('yan:audio:plan', input),
-    transcript: (input) =>
-      invoke<{ ok: boolean; error?: string; code?: string; sourceId?: string; version?: number; note?: string }>(
-        'yan:audio:transcript',
-        input
-      )
-  } as AudioBridge,
   packages: {
     list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
     action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
