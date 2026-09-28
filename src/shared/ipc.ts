@@ -3381,11 +3381,19 @@ export interface YanBridge {
   /**
    * 「整理失败停下」的两个一键出口：临时抬软线 / 降档。
    * 两个动作都会把停住的自动整理标成作废，阻塞随之解除（否则点完仍然发不出消息）。
+   * 抬线写的是**临时**覆盖：基础档不动，到期自动回落（`temporary` / `expiresAt`）。
    */
   contextBudgetMaintenanceExitV1(request: {
     action: 'raise-line' | 'lower-tier'
     expectedRevision: string
-  }): Promise<{ ok: boolean; policy?: ContextBudgetSessionPolicyV1; selectedBudget?: number; error?: string }>
+  }): Promise<{
+    ok: boolean
+    policy?: ContextBudgetSessionPolicyV1
+    selectedBudget?: number
+    temporary?: boolean
+    expiresAt?: number | null
+    error?: string
+  }>
   /**
    * 三类整理动作账本（实施-11 C-2b）。读取的是**当前活动会话**：
    * 会话身份由主进程决定，界面不自报（与 `contextBudget` 同一约定）。

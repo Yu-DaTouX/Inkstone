@@ -64,6 +64,60 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
   ok(adjacentContextBudgetTierV1(undefined, 'up', 700_000) === 300_000, '非法当前档按最低档起算（不跳档）')
   ok(adjacentContextBudgetTierV1(300_000, 'down', 700_000) === 200_000, '降档不受上限参数影响')
 
+  /* 临时抬线：到期自动回落（宿主、扩展、界面共用同一个判断）*/
+  const { effectiveContextBudgetTierV1, CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS } = budget
+  const now = 1_800_000_000_000
+  ok(CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS === 30 * 60 * 1000, '临时抬线有效期是 30 分钟')
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 200_000,
+      temporaryBudgetOverride: { selectedBudget: 300_000, expiresAt: now + 1_000 },
+      now
+    }) === 300_000,
+    '未过期的临时抬线生效'
+  )
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 200_000,
+      temporaryBudgetOverride: { selectedBudget: 300_000, expiresAt: now },
+      now
+    }) === 200_000,
+    '到点即失效（边界：等于当前时间算过期）'
+  )
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 200_000,
+      temporaryBudgetOverride: { selectedBudget: 300_000, expiresAt: now - 1 },
+      now
+    }) === 200_000,
+    '过期的抬线自动回落到基础档（不需要定时清理）'
+  )
+  ok(effectiveContextBudgetTierV1({ selectedBudget: 200_000, now }) === 200_000, '没有抬线时就是基础档')
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 200_000,
+      temporaryBudgetOverride: { selectedBudget: 250_000, expiresAt: now + 1_000 },
+      now
+    }) === 200_000,
+    '非法档位的抬线被忽略（不编一个新档）'
+  )
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 500_000,
+      temporaryBudgetOverride: { selectedBudget: 300_000, expiresAt: now + 1_000 },
+      now
+    }) === 500_000,
+    '低于基础档的「抬线」不算抬线（那是降档该做的事）'
+  )
+  ok(
+    effectiveContextBudgetTierV1({
+      selectedBudget: 700_000,
+      temporaryBudgetOverride: { selectedBudget: 700_000, expiresAt: now + 1_000 },
+      now: now + 60_000
+    }) === 700_000,
+    '抬到顶时仍然是合法值（不因为没有更高档而报错）'
+  )
+
   const deferred = selectAutoContextBudgetV1({
     requiredInputTokens: 100_000,
     capability: { ...api, contextWindow: 1_000_000 },

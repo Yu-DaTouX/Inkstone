@@ -141,6 +141,11 @@ export function ContextTab() {
   }
 
   const activeBudgetPhase = budgetV1?.phases[budgetV1.activePhaseId]
+  /* 过期就是不存在（与 store / 扩展同一判断）：不靠定时刷新来让提示消失 */
+  const activeTemporaryOverride =
+    activeBudgetPhase?.temporaryBudgetOverride && activeBudgetPhase.temporaryBudgetOverride.expiresAt > Date.now()
+      ? activeBudgetPhase.temporaryBudgetOverride
+      : null
   const budgetDecisionKey = budgetSnapshot
     ? `set.ctxBudgetV1Decision.${budgetSnapshot.check.decision}`
     : ''
@@ -181,6 +186,12 @@ export function ContextTab() {
       setBudgetV1Busy(false)
     }
   }
+  /** 「到期自动回落」的显示时间（本地时区） */
+  const fmtUntil = (at: number | null | undefined): string =>
+    typeof at === 'number' && Number.isFinite(at)
+      ? new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+      : ''
+
   /**
    * 整理失败后的一键出口：临时抬软线 / 降档。
    *
@@ -200,9 +211,10 @@ export function ContextTab() {
       })
       if (result.ok && result.policy) {
         setBudgetV1(result.policy)
-        setMaintenanceMessage(t('set.ctxBudgetV1ExitApplied', {
-          selected: `${(result.selectedBudget ?? 0) / 1000}K`
-        }))
+        const selected = `${(result.selectedBudget ?? 0) / 1000}K`
+        setMaintenanceMessage(result.temporary
+          ? t('set.ctxBudgetV1RaiseApplied', { selected, until: fmtUntil(result.expiresAt) })
+          : t('set.ctxBudgetV1ExitApplied', { selected }))
       } else setBudgetV1Error(result.error ?? tk('set.ctxBudgetV1SaveFailed'))
       setMaintenanceOperation(await window.yan.contextBudgetMaintenanceStatusV1())
     } catch {
@@ -424,6 +436,15 @@ export function ContextTab() {
                     {tk('set.ctxBudgetV1ExitLower')}
                   </button>
                 </>
+              ) : null}
+              {activeTemporaryOverride ? (
+                <div className="set-desc" data-testid="ctx-budget-v1-temporary-raise" role="status">
+                  {t('set.ctxBudgetV1TemporaryRaise', {
+                    selected: `${activeTemporaryOverride.selectedBudget / 1000}K`,
+                    falls: `${activeBudgetPhase.selectedBudget / 1000}K`,
+                    until: fmtUntil(activeTemporaryOverride.expiresAt)
+                  })}
+                </div>
               ) : null}
               {maintenanceOperation?.state === 'needs_action' ? (
                 <div className="set-desc" data-testid="ctx-budget-v1-blocked" role="status">

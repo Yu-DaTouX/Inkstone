@@ -539,7 +539,14 @@ const api: YanBridge = {
   setContextBudgetMaterialPinV1: (update) => invoke<ContextBudgetSelectionUpdateResultV1>('yan:setContextBudgetMaterialPinV1', update),
   /** 整理失败后的一键出口：临时抬软线 / 降档（同时作废那笔停住的整理） */
   contextBudgetMaintenanceExitV1: (request: { action: 'raise-line' | 'lower-tier'; expectedRevision: string }) =>
-    invoke<{ ok: boolean; policy?: ContextBudgetSessionPolicyV1; selectedBudget?: number; error?: string }>('yan:contextBudgetMaintenanceExitV1', request),
+    invoke<{
+      ok: boolean
+      policy?: ContextBudgetSessionPolicyV1
+      selectedBudget?: number
+      temporary?: boolean
+      expiresAt?: number | null
+      error?: string
+    }>('yan:contextBudgetMaintenanceExitV1', request),
   /** 三类整理动作账本（实施-11 C-2b）：`tool-sweep` / `episode-fold` 的真实发生次数 */
   contextActions: () => invoke<ContextActionSummary>('yan:contextActions'),
   /** 后台调用用量账（供应商口径）：未缓存输入 / 缓存命中率 / 各类调用次数 */

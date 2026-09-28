@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { effectiveContextBudgetTierV1 } from './generated/context-budget-v1.mjs'
 
 function dataDir() {
   const dir = process.env.YAN_DATA_DIR?.trim()
@@ -32,12 +33,22 @@ export function readContextBudgetPolicyV1(sessionId) {
     !tiers.has(phase.selectedBudget) || !tiers.has(phase.autoMaxBudget) ||
     !Array.isArray(phase.materials) || phase.materials.length > 500
   ) return { unavailable: 'context_policy_invalid' }
+  /*
+   * 临时抬线也必须在这里生效：宿主与扩展要得出**同一个**有效软线，
+   * 分两处算就会出现「界面显示 300K、扩展仍按 200K 拦」这种无法解释的现象。
+   * 过期的覆盖由 `effectiveContextBudgetTierV1` 当成不存在（惰性失效，不靠定时清理）。
+   */
+  const effective = effectiveContextBudgetTierV1({
+    selectedBudget: phase.selectedBudget,
+    temporaryBudgetOverride: phase.temporaryBudgetOverride
+  })
   return {
     mode: phase.mode,
-    selectedBudget: phase.selectedBudget,
+    selectedBudget: effective,
     autoMaxBudget: phase.autoMaxBudget,
     phaseId: raw.activePhaseId,
     policyRevision: raw.revision,
-    selectionReason: typeof phase.selectionReason === 'string' ? phase.selectionReason : ''
+    selectionReason: typeof phase.selectionReason === 'string' ? phase.selectionReason : '',
+    temporaryRaisedFrom: effective === phase.selectedBudget ? null : phase.selectedBudget
   }
 }

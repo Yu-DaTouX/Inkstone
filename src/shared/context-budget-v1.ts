@@ -164,6 +164,13 @@ export interface ContextBudgetPhasePolicyV1 {
   mode: 'auto' | 'fixed'
   selectedBudget: ContextBudgetTierV1
   autoMaxBudget: ContextBudgetTierV1
+  /**
+   * 临时的抬线（未过期时优先于 `selectedBudget`）。
+   *
+   * 为什么不直接改 `selectedBudget`：抬线是「让这次撞线先过去」，不是用户想要
+   * 一个新档位。写成独立一层，到期自然回落，用户不必记得手动改回来。
+   */
+  temporaryBudgetOverride?: ContextBudgetTemporaryOverrideV1 | null
   selectionSource: 'agent' | 'host-reconcile' | 'user' | 'default'
   selectionReason: string
   materialRevision: string
@@ -330,6 +337,42 @@ export function adjacentContextBudgetTierV1(
     return normalized
   }
   return index > 0 ? tiers[index - 1] : normalized
+}
+
+/**
+ * 「临时抬软线」的有效期。
+ *
+ * 30 分钟够把手里这轮对话处理完，又不至于让一次手滑变成长期花费 ——
+ * 抬线本来就是为了让**这一次**不再撞线，不是要一个新档位。
+ */
+export const CONTEXT_BUDGET_TEMPORARY_OVERRIDE_MS = 30 * 60 * 1000
+
+export interface ContextBudgetTemporaryOverrideV1 {
+  selectedBudget: ContextBudgetTierV1
+  expiresAt: number
+}
+
+/**
+ * 真正生效的软线 —— 宿主（预算门、界面）与扩展必须用同一个数。
+ *
+ * 分两处算就会出现「界面显示 300K、扩展按 200K 拦」这种无法解释的现象。
+ * 过期的覆盖视为不存在（惰性失效，不需要定时任务去清理）。
+ */
+export function effectiveContextBudgetTierV1(input: {
+  selectedBudget: unknown
+  temporaryBudgetOverride?: unknown
+  now?: number
+}): ContextBudgetTierV1 {
+  const base = normalizeContextBudgetTierV1(input.selectedBudget) ?? CONTEXT_BUDGET_V1_TIERS[0]
+  const override = input.temporaryBudgetOverride
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return base
+  const item = override as Record<string, unknown>
+  const tier = normalizeContextBudgetTierV1(item.selectedBudget)
+  const expiresAt = item.expiresAt
+  if (!tier || typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return base
+  const now = typeof input.now === 'number' ? input.now : Date.now()
+  if (tier < base) return base
+  return expiresAt > now ? tier : base
 }
 
 /**

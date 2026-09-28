@@ -88,17 +88,28 @@
   ok(!!q('[data-testid="ctx-budget-v1-exit-lower"]'), '有「降档」出口')
   ok(!!q('[data-testid="ctx-background-usage"]'), '后台调用用量栏位也在这一页（第 1 项的界面入口）')
 
-  /* ---- 4. 点「降档」：逐档下降 + 那笔整理作废 ---- */
+  /* ---- 4. 点「临时抬软线」：写的是临时覆盖 + 那笔整理作废 ---- */
   out.push('')
-  out.push('=== 4. 点「降档」：档位下降 + 销账 ===')
+  out.push('=== 4. 点「临时抬软线」：临时覆盖 + 销账 ===')
   const before = await window.yan.contextBudgetV1()
-  const beforeBudget = before?.phases?.[before.activePhaseId]?.selectedBudget ?? null
-  q('[data-testid="ctx-budget-v1-exit-lower"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  await sleep(2500 /* 主进程要改档位 + 迁移那笔记录，再回读刷新 */)
+  const beforePhase = before?.phases?.[before.activePhaseId]
+  q('[data-testid="ctx-budget-v1-exit-raise"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await sleep(2500 /* 主进程要写覆盖 + 迁移那笔记录，界面再回读刷新 */)
 
   const after = await window.yan.contextBudgetV1()
-  const afterBudget = after?.phases?.[after.activePhaseId]?.selectedBudget ?? null
-  ok(afterBudget === beforeBudget - 100_000, '降档逐档下降（300K → 200K）', `${beforeBudget} → ${afterBudget}`)
+  const afterPhase = after?.phases?.[after.activePhaseId]
+  ok(
+    afterPhase?.temporaryBudgetOverride?.selectedBudget === 500_000,
+    '抬线写进临时覆盖（300K → 500K，逐档）',
+    `override=${afterPhase?.temporaryBudgetOverride?.selectedBudget ?? 'null'}`
+  )
+  ok(
+    afterPhase?.selectedBudget === beforePhase?.selectedBudget,
+    '基础档**没被动过**（到期才知道要回落）',
+    `${beforePhase?.selectedBudget} → ${afterPhase?.selectedBudget}`
+  )
+  ok((afterPhase?.temporaryBudgetOverride?.expiresAt ?? 0) > Date.now(), '带一个未来的到期时间（会自动回落）')
+  ok(!!q('[data-testid="ctx-budget-v1-temporary-raise"]'), '界面显示「临时抬线中 + 到期时间」')
 
   const afterOp = await window.yan.contextBudgetMaintenanceStatusV1().catch(() => null)
   ok(afterOp?.state === 'superseded', '停住的那笔整理被标成 superseded（销账）', afterOp ? `state=${afterOp.state}` : 'null')
@@ -107,6 +118,24 @@
     '阻塞判定的依据已消失（不再有 needs_action 的记录挡着新消息）'
   )
   ok(!q('[data-testid="ctx-budget-v1-blocked"]'), '界面上的阻塞提示随之消失')
+
+  /* ---- 5. 降档是持久的，并把临时抬线一起取消 ---- */
+  out.push('')
+  out.push('=== 5. 降档：有效档降一档，取消临时抬线 ===')
+  const lowered = await window.yan.contextBudgetMaintenanceExitV1({
+    action: 'lower-tier',
+    expectedRevision: after.revision
+  })
+  ok(lowered?.ok === true, '降档调用成功', String(lowered?.error ?? ''))
+  await sleep(800)
+  const settled = await window.yan.contextBudgetV1()
+  const settledPhase = settled?.phases?.[settled.activePhaseId]
+  ok(
+    settledPhase?.selectedBudget === 300_000,
+    '基础档落在 500K 的下一档（300K）',
+    `base=${settledPhase?.selectedBudget}`
+  )
+  ok(!settledPhase?.temporaryBudgetOverride, '临时抬线被取消（不留一条超过基础档的覆盖）')
 
   return out.join('\n')
 })()

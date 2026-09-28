@@ -6,7 +6,9 @@ import {
   isContextBudgetTierV1,
   type ContextBudgetMaterialRecordV1,
   type ContextBudgetPhasePolicyV1,
-  type ContextBudgetSessionPolicyV1
+  type ContextBudgetSessionPolicyV1,
+  type ContextBudgetTemporaryOverrideV1,
+  type ContextBudgetTierV1
 } from '../shared/context-budget-v1'
 import { isSafeSessionId } from './context-state-store'
 import { YAN_DIR } from './paths'
@@ -107,6 +109,19 @@ function sanitizeMaterial(value: unknown, phaseId: string): ContextBudgetMateria
   }
 }
 
+/**
+ * 只保留**未过期**的临时抬线：过期项等于不存在，留在盘上只会让人以为还在生效。
+ * 也不接受比基础档更低的覆盖 —— 那是「降档」该做的事，不是抬线。
+ */
+function sanitizeTemporaryOverride(value: unknown, base: ContextBudgetTierV1): ContextBudgetTemporaryOverrideV1 | null {
+  if (!isRecord(value)) return null
+  const tier = value.selectedBudget
+  const expiresAt = value.expiresAt
+  if (!isContextBudgetTierV1(tier) || tier < base) return null
+  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()) return null
+  return { selectedBudget: tier, expiresAt }
+}
+
 function sanitizePhase(value: unknown, phaseId: string): ContextBudgetPhasePolicyV1 | null {
   if (!isRecord(value) || !PHASE_ID_RE.test(phaseId)) return null
   if (!isContextBudgetTierV1(value.selectedBudget) || !isContextBudgetTierV1(value.autoMaxBudget)) return null
@@ -117,11 +132,13 @@ function sanitizePhase(value: unknown, phaseId: string): ContextBudgetPhasePolic
   if (materials.some((material) => material === null)) return null
   const source = value.selectionSource
   const selectionSource = source === 'agent' || source === 'host-reconcile' || source === 'user' ? source : 'default'
+  const temporaryBudgetOverride = sanitizeTemporaryOverride(value.temporaryBudgetOverride, value.selectedBudget)
   return {
     phaseId,
     mode: value.mode,
     selectedBudget: value.selectedBudget,
     autoMaxBudget: value.autoMaxBudget,
+    ...(temporaryBudgetOverride ? { temporaryBudgetOverride } : {}),
     selectionSource,
     selectionReason: typeof value.selectionReason === 'string' ? value.selectionReason.slice(0, 2000) : 'loaded_policy',
     materialRevision: validRevision(value.materialRevision) ? value.materialRevision : randomUUID(),
