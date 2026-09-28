@@ -12,9 +12,9 @@ export type Box = [number, number, number, number]
  * `browser_observe` 拿到的盒子会随着 `scrollIntoViewIfNeeded` 立刻过期，
  * 所以点击/输入要在这里重新量一次，不能复用观察时的坐标。
  */
-export async function elementBox(cdp: CdpChannel, backendNodeId: number): Promise<Box | null> {
+export async function elementBox(cdp: CdpChannel, backendNodeId: number, sessionId?: string): Promise<Box | null> {
   const result = await cdp
-    .send<{ model?: { content?: number[] } }>('DOM.getBoxModel', { backendNodeId })
+    .send<{ model?: { content?: number[] } }>('DOM.getBoxModel', { backendNodeId }, sessionId)
     .catch(() => null)
   const points = result?.model?.content ?? []
   if (points.length < 8) return null

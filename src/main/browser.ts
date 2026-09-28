@@ -24,6 +24,7 @@ import { randomBytes } from 'node:crypto'
 import type {
   BrowserBlockedRequest,
   BrowserBounds,
+  BrowserNetworkSnapshot,
   BrowserObservation,
   BrowserPermissionRecord,
   BrowserState,
@@ -37,6 +38,7 @@ import type { CdpChannel } from './browser/CdpChannel'
 import { ElementRegistry } from './browser/ElementRegistry'
 import { InputController, type SelectOutcome } from './browser/InputController'
 import { Observer } from './browser/Observer'
+import { NetworkTracker } from './browser/NetworkTracker'
 import {
   RawCdp,
   createTab as createCdpTab,
@@ -104,6 +106,7 @@ interface BrowserTab {
   registry: ElementRegistry
   observer: Observer
   input: InputController
+  network: NetworkTracker
   /** 界面用的状态（`url` 会在导航发起时乐观写入，见 `open()`） */
   state: BrowserTabState
   /**
@@ -129,6 +132,7 @@ interface ExternalTarget {
   registry: ElementRegistry
   observer: Observer
   input: InputController
+  network: NetworkTracker
   chrome: ChildProcess | null
   port: number
   profileDir: string
@@ -152,6 +156,7 @@ interface TargetParts {
   registry: ElementRegistry
   observer: Observer
   input: InputController
+  network: NetworkTracker
 }
 
 /** 浏览器运行时（**宿主独占**）。模型侧入口是 `yan browser …`，不再提供 HTTP bridge。 */
@@ -271,7 +276,7 @@ export class BrowserController {
   private parts(): TargetParts | null {
     if (this.external && this.activeMode === 'external') return this.external
     const tab = this.activeTab()
-    return tab ? { cdp: tab.cdp, registry: tab.registry, observer: tab.observer, input: tab.input } : null
+    return tab ? { cdp: tab.cdp, registry: tab.registry, observer: tab.observer, input: tab.input, network: tab.network } : null
   }
 
   private createTab(): BrowserTab {
@@ -296,9 +301,11 @@ export class BrowserController {
       registry,
       observer: new Observer(cdp, registry),
       input: new InputController(cdp),
+      network: new NetworkTracker(cdp),
       state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
       committedUrl: ''
     }
+    void tab.network.start()
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
       /* 新一次导航开始：上一次的失败提示到此为止 */
@@ -805,6 +812,7 @@ export class BrowserController {
         registry,
         observer: new Observer(cdp, registry),
         input: new InputController(cdp),
+        network: new NetworkTracker(cdp),
         chrome,
         port,
         profileDir,
@@ -817,6 +825,7 @@ export class BrowserController {
         chromeTabs: [],
         syncReport
       }
+      void this.external.network.start()
       this.activeMode = 'external'
       for (const tab of this.tabs.values()) tab.view.setVisible(false)
       // 用户自己关掉 Chrome 时同步清状态
@@ -963,6 +972,8 @@ export class BrowserController {
     this.external.registry = registry
     this.external.observer = new Observer(cdp, registry)
     this.external.input = new InputController(cdp)
+    this.external.network = new NetworkTracker(cdp)
+    void this.external.network.start()
     this.external.targetId = target.id
     this.external.url = target.url
     this.external.title = target.title
@@ -1115,6 +1126,14 @@ export class BrowserController {
     }
     const tab = this.activeTab()!
     return tab.observer.capture(tab.state.url, tab.state.title)
+  }
+
+  /** 最近一段只读网络活动；不会返回请求头、请求体或 Cookie。 */
+  async network(): Promise<BrowserNetworkSnapshot> {
+    const p = this.parts()
+    if (!p) throw new Error('浏览器尚未打开')
+    await p.network.start()
+    return p.network.snapshot()
   }
 
   /*

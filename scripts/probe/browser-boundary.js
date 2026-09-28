@@ -95,6 +95,39 @@
   ok(localDoc.startsWith(BOUNDARY), '本地页面真的加载了', localDoc)
   ok(/download/i.test(await docText()), '页面内容被读到（说明没被拦）')
 
+  /* ---- 2a. 同源 / 跨源 iframe：observe、select、click 与只读请求账本 ---- */
+  out.push('')
+  out.push('=== 2a. 同源与跨源 frame 表单 + network ===')
+  await store.getState().openBrowser(`${BOUNDARY}/browser-fixture`)
+  await until(async () => (await docUrl()).startsWith(`${BOUNDARY}/browser-fixture`), 15000)
+  await sleep(500)
+  const frameObservation = await window.yan.browser.observe()
+  out.push(`  观察到 ${frameObservation.elements.length} 个元素、${frameObservation.frameCount ?? '?'} 个 frame：${JSON.stringify(frameObservation.elements.map((e) => ({ name: e.name, role: e.role, frameId: e.frameId, frameUrl: e.frameUrl })))}`)
+  const sameChoice = frameObservation.elements.find((e) => /same[- ]choice/i.test(e.name))
+  const crossChoice = frameObservation.elements.find((e) => /cross[- ]choice/i.test(e.name))
+  const crossSubmit = frameObservation.elements.find((e) => /Submit frame/i.test(e.name))
+  ok(!!sameChoice, 'observe 找到同源 iframe 下拉框', JSON.stringify(sameChoice ?? null))
+  ok(!!crossChoice && !!crossChoice.frameId, 'observe 找到跨源 iframe 下拉框并附 frameId', JSON.stringify(crossChoice ?? null))
+  ok(/localhost:39873\/browser-fixture-cross/.test(crossChoice?.frameUrl ?? ''), '跨源元素标出所属 frame URL，且剥掉 query 参数', crossChoice?.frameUrl ?? '')
+  ok(!!crossSubmit && !!crossSubmit.frameId, 'observe 找到跨源 iframe 按钮并附 frameId', JSON.stringify(crossSubmit ?? null))
+  const chosen = sameChoice ? await window.yan.browser.select(sameChoice.ref, 'b') : { ok: false }
+  ok(chosen.ok, '同源 iframe select 能执行并返回新观察')
+  const afterSelect = chosen.observation ?? (await window.yan.browser.observe())
+  const crossChoiceNext = afterSelect.elements.find((e) => /cross-choice/.test(e.name))
+  const crossChosen = crossChoiceNext ? await window.yan.browser.select(crossChoiceNext.ref, 'b') : { ok: false }
+  ok(crossChosen.ok, '跨源 iframe select 能执行并返回新观察')
+  const afterCrossSelect = crossChosen.observation ?? (await window.yan.browser.observe())
+  const submitNext = afterCrossSelect.elements.find((e) => /Submit frame/.test(e.name))
+  const clicked = submitNext ? await window.yan.browser.click(submitNext.ref) : { ok: false }
+  ok(clicked.ok, '跨源 iframe 点击能投递到正确屏幕坐标')
+  const updated = await until(async () => /frame submitted/.test(await docText()), 8000)
+  ok(updated, '跨源 iframe 表单点击通过 postMessage 更新了父页面')
+  const network = await window.yan.browser.network()
+  out.push(`  network entries=${network.entries.length}: ${JSON.stringify(network.entries)}`)
+  const frameRequest = network.entries.find((entry) => entry.url.includes('/browser-fixture-network'))
+  ok(!!frameRequest && frameRequest.method === 'GET' && frameRequest.status === 200, 'network 收到页面请求及响应状态', JSON.stringify(frameRequest ?? null))
+  ok(!network.entries.some((entry) => /private=fixture-secret/.test(entry.url)), 'network URL 剥掉 query 中的私有哨兵')
+
   /* ---- 2b. 网页自己开窗口：新标签真建出来，但**不夺走**当前阅读页（H-9 第二阶段） ---- */
   out.push('')
   out.push('=== 2b. 网页自己 window.open（后台标签） ===')

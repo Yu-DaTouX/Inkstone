@@ -42,7 +42,7 @@ export class RawCdp implements CdpChannel {
   private attaching: Promise<void> | null = null
   private attached = false
   /** CDP 事件订阅（`method` → 回调集合）。下载等浏览器事件走这条路。 */
-  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>()
+  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>, sessionId?: string) => void>>()
 
   constructor(private readonly webSocketDebuggerUrl: string) {}
 
@@ -50,7 +50,7 @@ export class RawCdp implements CdpChannel {
    * 订阅一个 CDP 事件（无需 id 的那些，如 `Browser.downloadProgress`）。
    * 返回取消订阅函数；连接重建后需要重新订阅。
    */
-  on(method: string, cb: (params: Record<string, unknown>) => void): () => void {
+  on(method: string, cb: (params: Record<string, unknown>, sessionId?: string) => void): () => void {
     let set = this.listeners.get(method)
     if (!set) {
       set = new Set()
@@ -100,7 +100,7 @@ export class RawCdp implements CdpChannel {
     return this.attaching
   }
 
-  async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> {
     if (!this.attached) await this.attach()
     const ws = this.ws
     if (!ws) throw new Error('Chrome DevTools 未连接')
@@ -116,7 +116,7 @@ export class RawCdp implements CdpChannel {
         timer
       })
       try {
-        ws.send(JSON.stringify(params === undefined ? { id, method } : { id, method, params }))
+        ws.send(JSON.stringify({ id, method, ...(params === undefined ? {} : { params }), ...(sessionId ? { sessionId } : {}) }))
       } catch (error) {
         clearTimeout(timer)
         this.pending.delete(id)
@@ -152,6 +152,7 @@ export class RawCdp implements CdpChannel {
       params?: Record<string, unknown>
       result?: unknown
       error?: { message?: string }
+      sessionId?: string
     }
     try {
       msg = JSON.parse(typeof data === 'string' ? data : String(data)) as typeof msg
@@ -162,7 +163,7 @@ export class RawCdp implements CdpChannel {
     if (msg.id === undefined) {
       if (msg.method) {
         const set = this.listeners.get(msg.method)
-        if (set) for (const cb of set) cb(msg.params ?? {})
+        if (set) for (const cb of set) cb(msg.params ?? {}, msg.sessionId)
       }
       return
     }

@@ -13,7 +13,9 @@ export interface CdpChannel {
   /** 建立连接并打开常用域（幂等） */
   attach(): Promise<void>
   /** 发一条 CDP 命令，按 id 关联响应 */
-  send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>
+  send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T>
+  /** 订阅 CDP 事件；外部 Chrome 与 Electron WebContents 共用同一事件面。 */
+  on(method: string, cb: (params: Record<string, unknown>, sessionId?: string) => void): () => void
   /** 截当前页面（PNG） */
   screenshot(): Promise<Buffer>
   /** 断开（幂等） */
@@ -26,5 +28,6 @@ export const CDP_DOMAINS = [
   'DOM.enable',
   'DOMSnapshot.enable',
   'Accessibility.enable',
-  'Runtime.enable'
+  'Runtime.enable',
+  'Network.enable'
 ] as const

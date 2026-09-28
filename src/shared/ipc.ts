@@ -1820,9 +1820,27 @@ export interface BrowserObservation {
     box: [number, number, number, number]
     disabled?: boolean
     value?: string
+    frameId?: string
+    frameUrl?: string
   }>
   accessibilityNodeCount: number
   domSnapshotCaptured: boolean
+  frameCount?: number
+  observedFrameCount?: number
+}
+
+export interface BrowserNetworkEntry {
+  url: string
+  method: string
+  status?: number
+  resourceType?: string
+  state: 'pending' | 'finished' | 'failed'
+}
+
+export interface BrowserNetworkSnapshot {
+  capturedAt: number
+  entries: BrowserNetworkEntry[]
+  limit: number
 }
 
 export interface BrowserBounds {
@@ -3759,6 +3777,7 @@ export interface YanBridge {
     getState(): Promise<BrowserState>
     open(url?: string): Promise<BrowserState>
     observe(): Promise<BrowserObservation>
+    network(): Promise<BrowserNetworkSnapshot>
     newTab(url?: string): Promise<BrowserState>
     switchTab(id: string): Promise<BrowserState>
     closeTab(id?: string): Promise<BrowserState>

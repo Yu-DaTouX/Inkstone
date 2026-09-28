@@ -1448,9 +1448,21 @@ const CASES = {
     cost: 0,
     budget: 180000,
     usesBoundaryServer: true,
+    boundaryCookieCheck: true,
     afterExit: 'browserBoundaryDownloads',
     env: { YAN_CHROME_HEADLESS: '1', YAN_CHROME_SYNC: '0' }
   },
+  browserframes: {
+    probe: 'scripts/probe/browser-frames.js',
+    delay: 9000,
+    cost: 0,
+    usesBoundaryServer: true,
+    budget: 90000
+  },
+  // S4: a real OpenCLI search result opens in Inkstone's browser and is confirmed by observe.
+  searchopen: { probe: 'scripts/probe/search-open.js', delay: 12000, cost: 0, budget: 180000 },
+  // S0: exercise public, read-only browser demo pages for select, iframe, wait, type, press and screenshot.
+  browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000 },
   // 浅色主题：对比度 / 代码高亮 / 工具行
   light: { probe: 'scripts/probe/light.js', delay: 9000, cost: 0 },
   // 首次引导：第 2 栏「模型接入」按钮布局（N20；从设置→关于重新打开，不重置首次启动标记）
@@ -8475,8 +8487,7 @@ async function driveRemoteRoutes() {
 }
 
 function startBoundaryServer() {
-  const secretHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
-  const server = createServer((req, res) => {
+  const handleRequest = (req, res) => {
     const url = new URL(req.url ?? '/', BOUNDARY_ORIGIN)
     if (url.pathname === '/download') {
       res.writeHead(200, {
@@ -8517,6 +8528,38 @@ function startBoundaryServer() {
       )
       return
     }
+    if (url.pathname === '/browser-fixture') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(
+        '<!doctype html><meta charset="utf-8"><title>browser-frame-fixture</title>' +
+          '<body><h1>frame fixture</h1><output id="result">waiting</output>' +
+          `<iframe title="same-origin frame" src="${BOUNDARY_ORIGIN}/browser-fixture-inner"></iframe>` +
+          `<iframe title="cross-origin frame" src="http://localhost:${BOUNDARY_PORT}/browser-fixture-cross?private=fixture-secret"></iframe>` +
+          '<script>addEventListener("message",e=>{if(e.data==="YAN_FRAME_SUBMITTED"){document.querySelector("#result").textContent="frame submitted";fetch("/browser-fixture-network?private=fixture-secret")}else if(String(e.data).startsWith("YAN_TYPED:")){document.querySelector("#result").textContent=String(e.data)}})</script></body>'
+      )
+      return
+    }
+    if (url.pathname === '/browser-fixture-inner') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end('<!doctype html><meta charset="utf-8"><label>same choice<select aria-label="same-choice" name="same-choice"><option value="a">A</option><option value="b">B</option></select></label>')
+      return
+    }
+    if (url.pathname === '/browser-fixture-cross') {
+      process.stdout.write('[browser fixture] cross-origin iframe request received\n')
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(
+        '<!doctype html><meta charset="utf-8"><title>cross-frame-form</title>' +
+          '<label>cross input<input aria-label="cross-input" oninput="parent.postMessage(\'YAN_TYPED:\'+this.value, \'*\')"></label>' +
+          '<label>cross choice<select aria-label="cross-choice" name="cross-choice"><option value="a">A</option><option value="b">B</option></select></label>' +
+          '<button id="continue" onclick="parent.postMessage(\'YAN_FRAME_SUBMITTED\', \'*\')">Continue frame</button>'
+      )
+      return
+    }
+    if (url.pathname === '/browser-fixture-network') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('frame-network-ok')
+      return
+    }
     if (url.pathname === '/ask') {
       /*
        * 真实发起权限请求 —— 不靠界面上调 `setPermission` 写记录，
@@ -8544,10 +8587,31 @@ function startBoundaryServer() {
       '<!doctype html><meta charset="utf-8"><title>yan boundary fixture</title>' +
         '<a id="dl" href="/download">download</a>'
     )
-  })
+  }
+  /*
+   * localhost prefers ::1 on Windows. Bind both loopback addresses so the
+   * cross-origin iframe fixture is reachable without exposing the fixture to
+   * the LAN (binding 0.0.0.0 would widen the local test server's audience).
+   */
+  const servers = [createServer(handleRequest), createServer(handleRequest)]
   return new Promise((resolvePromise, rejectPromise) => {
-    server.once('error', rejectPromise)
-    server.listen(BOUNDARY_PORT, '127.0.0.1', () => resolvePromise(server))
+    let ready = 0
+    let settled = false
+    const onListening = () => {
+      ready++
+      if (ready === servers.length && !settled) {
+        settled = true
+        resolvePromise({ close: () => servers.forEach((server) => server.close()) })
+      }
+    }
+    for (const server of servers) server.once('error', (error) => {
+      if (settled) return
+      settled = true
+      for (const active of servers) if (active.listening) active.close()
+      rejectPromise(error)
+    })
+    servers[0].listen(BOUNDARY_PORT, '127.0.0.1', onListening)
+    servers[1].listen(BOUNDARY_PORT, '::1', onListening)
   })
 }
 
@@ -9868,12 +9932,14 @@ async function main() {
          * 光有「页面上有 Cookie」还不能说明复制对了 —— 哨兵值的哈希对得上
          * 才能证明过去的是**同一个值**（而不是别的 Cookie，也不是空值）。
          */
-        const expectedHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
-        if (out.text.includes(`cookieHash=${expectedHash}`)) {
-          console.log(`  ✓ 目标浏览器拿到的 Cookie 值与源值一致（sha256 前 8 位 ${expectedHash}）`)
-        } else {
-          allOk = false
-          console.log(`  ✗ 目标浏览器里的 Cookie 值对不上（期待 cookieHash=${expectedHash}）`)
+        if (c.boundaryCookieCheck) {
+          const expectedHash = createHash('sha256').update(BOUNDARY_SECRET).digest('hex').slice(0, 8)
+          if (out.text.includes(`cookieHash=${expectedHash}`)) {
+            console.log(`  ✓ 目标浏览器拿到的 Cookie 值与源值一致（sha256 前 8 位 ${expectedHash}）`)
+          } else {
+            allOk = false
+            console.log(`  ✗ 目标浏览器里的 Cookie 值对不上（期待 cookieHash=${expectedHash}）`)
+          }
         }
       }
     }

@@ -5,10 +5,14 @@ export interface BrowserElement {
   box: [number, number, number, number]
   disabled?: boolean
   value?: string
+  frameId?: string
+  frameUrl?: string
 }
 
 export interface RegisteredElement extends BrowserElement {
   backendNodeId: number
+  sessionId?: string
+  frameOffset?: [number, number]
 }
 
 export class StaleElementError extends Error {
