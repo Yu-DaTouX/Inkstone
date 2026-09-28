@@ -1,5 +1,5 @@
 /* Generated from src/shared/context-budget-v1.ts. Do not edit.
- * source-sha256: efb1684c24a7ded2081b13116e169448abd28597c247dae0ba88db64bf7b00de
+ * source-sha256: e69b396f4bd6416c6da4ebc33b9d45d6207ee1c958ed6e63d0bc5a47ddc531f8
  */
 /**
  * Context budget V1. This module is deliberately pure so the host, UI and the
@@ -431,6 +431,51 @@ export function selectAutoContextBudgetV1(input) {
             selectedBudget: candidate,
             registeredNextGrowth: input.registeredNextGrowth
         })
+    };
+}
+/**
+ * 宿主按**实际发出的请求规模**回收档位（需求稿 8.3）。
+ *
+ * 上面的 selectAutoContextBudgetV1 只在 agent 主动 `yan context budget adjust` 时评估；
+ * 整理完成后实际输入已经变小，但 agent 不调整时高档位会一直留着。这里在每个回合结束时，
+ * 用这一回合最后一次真实请求的输入量判断：
+ *   · 找比当前低、且实际输入不超过其软线 60% 的最小档位（留出下一回合的增长空间）；
+ *   · 连续两个回合都满足才降，每次只降到这个候选档；达不到就把计数清零；
+ *   · 只降不升 —— 升档仍由材料登记（adjust）与请求门禁负责。
+ */
+export const CONTEXT_BUDGET_HOST_DOWNSHIFT_RATIO = 0.6;
+export const CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS = 2;
+export function reconcileObservedContextBudgetV1(input) {
+    const current = normalizeContextBudgetTierV1(input.currentBudget);
+    const none = (reason) => ({ lowTurn: false, lowTurns: 0, candidateBudget: null, apply: false, reason });
+    if (!current)
+        return none('current_budget_invalid');
+    if (!validTokenCount(input.observedInputTokens))
+        return none('observed_input_unavailable');
+    const observed = input.observedInputTokens;
+    let candidate = null;
+    for (const tier of CONTEXT_BUDGET_V1_TIERS) {
+        if (tier >= current)
+            break;
+        const calculation = calculateContextBudgetV1({ capability: input.capability, outputReserve: input.outputReserve, selectedBudget: tier });
+        if (!calculation.ok || calculation.reviewLine === null)
+            continue;
+        if (observed <= Math.floor(calculation.reviewLine * CONTEXT_BUDGET_HOST_DOWNSHIFT_RATIO)) {
+            candidate = tier;
+            break;
+        }
+    }
+    if (!candidate)
+        return none(current === CONTEXT_BUDGET_V1_TIERS[0] ? 'already_minimum_tier' : 'observed_input_not_low_enough');
+    const previous = Number.isSafeInteger(input.previousLowTurns) ? Math.max(0, input.previousLowTurns) : 0;
+    const lowTurns = Math.min(CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS, previous + 1);
+    const apply = lowTurns >= CONTEXT_BUDGET_HOST_DOWNSHIFT_TURNS;
+    return {
+        lowTurn: true,
+        lowTurns,
+        candidateBudget: candidate,
+        apply,
+        reason: apply ? 'host_downshift_after_low_turns' : 'awaiting_next_low_turn'
     };
 }
 /** Classify a prepared/final payload. Unknown counts or output settings fail closed. */

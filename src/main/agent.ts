@@ -84,6 +84,7 @@ import {
   calculateContextBudgetV1,
   estimateTextTokensV1,
   selectAutoContextBudgetV1,
+  reconcileObservedContextBudgetV1,
   type ContextBudgetMaterialRecordV1,
   type ContextBudgetSessionPolicyV1,
   type EndpointBudgetCapabilityV1
@@ -1884,32 +1885,11 @@ export class AgentController extends EventEmitter {
         '没有与当前模型匹配的近期请求基线；暂不根据猜测调档'
       )
     }
-    const contextWindow = typeof model.contextWindow === 'number' && Number.isSafeInteger(model.contextWindow)
-      ? model.contextWindow
-      : snapshot.endpoint.contextWindow
-    const maxOutputTokens = typeof model.maxTokens === 'number' && Number.isSafeInteger(model.maxTokens)
-      ? model.maxTokens
-      : snapshot.endpoint.maxOutputTokens
-    const outputReserve = Number.isSafeInteger(snapshot.endpoint.outputReserve) && (snapshot.endpoint.outputReserve as number) > 0
-      ? snapshot.endpoint.outputReserve as number
-      : null
-    if (outputReserve === null) {
+    const endpointBudget = this.budgetCapabilityOf(snapshot, model)
+    if (endpointBudget.outputReserve === null) {
       throw new CapabilityCommandError('context_budget_output_reserve_unavailable', '最终请求没有可核实的输出额度 R')
     }
-    const capability: EndpointBudgetCapabilityV1 | null =
-      contextWindow && maxOutputTokens && outputReserve !== null && outputReserve > 0 && snapshot.endpoint.endpointKey
-        ? {
-            endpointKey: snapshot.endpoint.endpointKey,
-            modelId: model.id,
-            mode: 'shared',
-            contextWindow,
-            maxOutputTokens,
-            countingAdapter: 'pi-pre-provider-estimate-v1',
-            outputAccounting: 'shared-window-request-output-limit',
-            revision: `${snapshot.endpoint.endpointKey}:${contextWindow}:${maxOutputTokens}`,
-            source: 'runtime'
-          }
-        : null
+    const { outputReserve, capability } = endpointBudget
     if (!capability) {
       throw new CapabilityCommandError('context_budget_capacity_unavailable', '当前模型没有可核实的窗口和输出能力')
     }
@@ -2154,6 +2134,96 @@ export class AgentController extends EventEmitter {
       }
     } catch {
       return null
+    }
+  }
+
+  /** 由最近一次真实请求与当前模型推出端点容量（adjust 与回合末回收共用，口径一致） */
+  private budgetCapabilityOf(
+    snapshot: NonNullable<Awaited<ReturnType<AgentController['readPreparedBudgetSnapshot']>>>,
+    model: NonNullable<SessionState['model']>
+  ): { outputReserve: number | null; capability: EndpointBudgetCapabilityV1 | null } {
+    const contextWindow = typeof model.contextWindow === 'number' && Number.isSafeInteger(model.contextWindow)
+      ? model.contextWindow
+      : snapshot.endpoint.contextWindow
+    const maxOutputTokens = typeof model.maxTokens === 'number' && Number.isSafeInteger(model.maxTokens)
+      ? model.maxTokens
+      : snapshot.endpoint.maxOutputTokens
+    const outputReserve = Number.isSafeInteger(snapshot.endpoint.outputReserve) && (snapshot.endpoint.outputReserve as number) > 0
+      ? snapshot.endpoint.outputReserve as number
+      : null
+    const capability: EndpointBudgetCapabilityV1 | null =
+      contextWindow && maxOutputTokens && outputReserve !== null && outputReserve > 0 && snapshot.endpoint.endpointKey
+        ? {
+            endpointKey: snapshot.endpoint.endpointKey,
+            modelId: model.id,
+            mode: 'shared',
+            contextWindow,
+            maxOutputTokens,
+            countingAdapter: 'pi-pre-provider-estimate-v1',
+            outputAccounting: 'shared-window-request-output-limit',
+            revision: `${snapshot.endpoint.endpointKey}:${contextWindow}:${maxOutputTokens}`,
+            source: 'runtime'
+          }
+        : null
+    return { outputReserve, capability }
+  }
+
+  /** 回合结束：先记 adjust 路径的低用量边界，再按实际请求规模回收档位（串行，避免版本冲突） */
+  private async settleContextBudgetTurn(): Promise<void> {
+    await this.recordContextBudgetBoundary()
+    await this.reconcileContextBudgetFromObservedInput()
+  }
+
+  /**
+   * 按这一回合最后一次真实请求的输入量回收档位（需求稿 8.3）。
+   *
+   * 只在自动模式下降档；用户固定档位不动。本回合 agent 已经 adjust 过时交给 adjust 路径，
+   * 这里不重复计数。每回合最多计一次（lastBoundaryRevision 去重）。失败只会推迟降档，
+   * 不会放宽任何请求门禁。
+   */
+  private async reconcileContextBudgetFromObservedInput(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    const boundaryId = this.currentBudgetBoundaryId()
+    const model = this.state?.model
+    if (!isSafeSessionId(sessionId) || !boundaryId || !model?.endpointKey) return
+    try {
+      if (!(await contextBudgetStoreV1.isConfigured(sessionId))) return
+      const policy = await contextBudgetStoreV1.read(sessionId)
+      const phaseId = policy.activePhaseId
+      const phase = policy.phases[phaseId]
+      if (!phase || phase.mode !== 'auto') return
+      if (phase.lastAdjustBoundaryId === boundaryId || phase.lastBoundaryRevision === boundaryId) return
+      const snapshot = await this.readPreparedBudgetSnapshot(sessionId)
+      if (!snapshot || snapshot.endpoint.endpointKey !== model.endpointKey || snapshot.endpoint.modelId !== model.id) return
+      const { outputReserve, capability } = this.budgetCapabilityOf(snapshot, model)
+      const verdict = reconcileObservedContextBudgetV1({
+        observedInputTokens: snapshot.inputTokens,
+        capability,
+        outputReserve,
+        currentBudget: phase.selectedBudget,
+        previousLowTurns: phase.consecutiveLowBoundaries
+      })
+      /* 没有变化就不写盘 */
+      if (!verdict.lowTurn && phase.consecutiveLowBoundaries === 0) return
+      await contextBudgetStoreV1.update(sessionId, policy.revision, (current) => {
+        const currentPhase = current.phases[phaseId]
+        if (current.activePhaseId !== phaseId || !currentPhase || currentPhase.mode !== 'auto') {
+          throw new ContextBudgetStoreError('invalid_phase', '任务阶段已变化，未回收档位')
+        }
+        const nextPhase = verdict.apply && verdict.candidateBudget !== null
+          ? {
+              ...currentPhase,
+              selectedBudget: verdict.candidateBudget,
+              selectionSource: 'host-reconcile' as const,
+              selectionReason: `${verdict.reason}: 实际输入 ${snapshot.inputTokens} tokens，连续 ${verdict.lowTurns} 个回合低于 ${verdict.candidateBudget} 档软线的 60%`,
+              consecutiveLowBoundaries: 0,
+              lastBoundaryRevision: boundaryId
+            }
+          : { ...currentPhase, consecutiveLowBoundaries: verdict.lowTurns, lastBoundaryRevision: boundaryId }
+        return { ...current, phases: { ...current.phases, [phaseId]: nextPhase } }
+      })
+    } catch {
+      /* 版本冲突或读写失败：下一个回合再评估 */
     }
   }
 
@@ -5380,7 +5450,7 @@ export class AgentController extends EventEmitter {
         this.setAgentRunning(false)
         this.turnStartedAt = undefined
         this.turnStartedMono = undefined
-        void this.recordContextBudgetBoundary()
+        void this.settleContextBudgetTurn()
         /* 回合结束才写元数据日志：中途写会得到一堆半截记录（H-6）。 */
         void this.persistTurnTiming()
         void this.refreshState()
