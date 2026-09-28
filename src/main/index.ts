@@ -22,11 +22,6 @@ import {
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
-import { searchDoctor } from './search/opencli'
-import { createTaskInboxService } from './task-inbox-service'
-import { createTaskInboxSources, readInboxState, writeInboxState } from './task-inbox-sources'
-import type { TaskInboxQuery } from '../shared/task-inbox'
-import { questionLog } from './question-log'
 import { RunnerRegistry } from './runners'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from './title'
 import { getSettings, patchSettings } from './settings'
@@ -51,7 +46,7 @@ import { grantFiles, readGrantedText, readPreview, statPreview } from './file-re
 import { SubagentController } from './subagents'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
-import { configurePackageContext, installManagedPiPackage, listPackages, runPackageAction } from './packages'
+import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
 import { AcquisitionService } from './capabilities/acquisition-service'
 import { PackageAuthorizationService } from './capabilities/package-authorization-service'
 import { createPiPackageActivationHostPorts } from './capabilities/pi-package-activation-host'
@@ -85,6 +80,11 @@ import { registerFollowIpc } from './ipc/follow-ipc'
 import { registerArtifactDocIpc } from './ipc/artifact-doc-ipc'
 import { registerLibraryIpc } from './ipc/library-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
+import { registerKnowledgeIpc } from './ipc/knowledge-ipc'
+import { registerTaskInboxIpc } from './ipc/task-inbox-ipc'
+import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
+import { registerPackagesIpc } from './ipc/packages-ipc'
+import { registerActivityModelIpc } from './ipc/activity-model-ipc'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { changeConsentEntry, listConsentViews } from './consent-store'
@@ -100,7 +100,6 @@ import {
   type PeerSessionExport
 } from '../shared/peer-protocol'
 import type { ConsentDecision } from '../shared/tool-consent'
-import { PERSONAL_MEMORY_ID, ingestMemoryInbox, isMemoryScope, memoryStoreOf, writeMemoryExport } from './personal-memory'
 import { RemoteAccess } from './remote-access'
 import {
   REMOTE_ARTIFACT_MAX_BYTES,
@@ -154,7 +153,7 @@ import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachm
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { exportLearningData } from './learning-export'
-import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
+import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import {
   WorkModeStore,
@@ -174,16 +173,7 @@ import { ContextAssembler, type AssembleContextRequest } from './context-assembl
 import { ArtifactDocStore } from './artifact-doc-store'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
-import {
-  activityModelRows,
-  activityModelText,
-  emptyActivityModelConfig,
-  resolveActivityModel,
-  sanitizeActivityModelConfig,
-  setActivityModel
-} from '../shared/activity-model'
-import { normalizeAgentActivity } from '../shared/agent-profile'
-import type { AgentActivity } from '../shared/agent-profile'
+import { resolveActivityModel } from '../shared/activity-model'
 import {
   artifactSourceStatuses,
   excerptReadable,
@@ -195,15 +185,7 @@ import {
 import { currentTaskPlan } from './task-plan-store'
 import { samePath } from '../shared/session-path'
 import { DEFAULT_WORK_MODE, normalizeWorkMode, type WorkMode, type WorkModeState } from '../shared/work-mode'
-import { commitKnowledge, deleteKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
-import { isSafeRelativeRef, type KnowledgeCommitRequest } from '../shared/project-memory'
-import {
-  countKnowledge,
-  knowledgeMarkdown,
-  toKnowledgeView,
-  toKnowledgeViews,
-  type KnowledgeViewContext
-} from '../shared/project-knowledge-view'
+import { listKnowledge } from './project-memory-store'
 import type { Attachment, AttentionNotify, CompactionRun, FileRequestContext, FileSearchRequest, AssistantArtifact, MainPush, RunnerStatus, SessionState, SessionSummary, UIMessage } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -423,26 +405,6 @@ const activeFileSearches = new Map<string, AbortController>()
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
 /** 手机接入（远程访问）：按设置启停，见 remote-access.ts */
 let remoteAccess: RemoteAccess | null = null
-
-type CapabilityVerification = {
-  operationId: string
-  runnerId: string
-  generation: number
-  agent: AgentController
-  serverId: string
-  state: 'connecting' | 'ready' | 'error' | 'cancelled' | 'stale'
-  toolCount?: number
-  updatedAt: number
-}
-/** UI 只持有不可预测的 operationId；runner 身份 / generation 始终由主进程绑定。 */
-const capabilityVerifications = new Map<string, CapabilityVerification>()
-
-function pruneCapabilityVerifications(): void {
-  const cutoff = Date.now() - 5 * 60_000
-  for (const [id, operation] of capabilityVerifications) {
-    if (operation.updatedAt < cutoff && operation.state !== 'connecting') capabilityVerifications.delete(id)
-  }
-}
 
 /**
  * 当前**正在查看**的会话实例。
@@ -6132,15 +6094,7 @@ function registerIpc(): void {
 
   registerGitIpc(ipc, { isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)), worktreeOrigins })
 
-  /*
-   * pi 插件包管理（§9 的 P2）。
-   *
-   * 注入两样东西（都只有这里才拿得到）：
-   *   · **bin** —— 必须走 resolvePi()，用户可能用设置项 piBin 覆盖或用系统安装。
-   *     自己拼内置路径会出现「装到 A、跑的是 B」这种最难查的问题。
-   *   · **hasRunningTask** —— 扩展是 pi 启动时加载的，正在跑的回合与磁盘上的
-   *     包集合必须一致，所以有任务时直接拒绝。
-   */
+  registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
 
   registerLibraryIpc(ipc, {
@@ -6173,533 +6127,15 @@ function registerIpc(): void {
 
   registerFollowIpc(ipc, { follows })
 
-  /*
-   * 按活动配置模型（实施-25 P18）。
-   *
-   * 这里只读写「哪个活动用哪个模型」与解析结果 —— **切模型本身不在这里**：
-   * 仍然走既有的模型选择链路。`current` 由界面传（会话当前模型只有会话侧知道）。
-   */
-  handle('yan:activity:modelRows', async (input?: { current?: string | null }) => {
-    const settings = await getSettings()
-    return activityModelRows({
-      config: settings.activityModels,
-      current: typeof input?.current === 'string' ? input.current : null
-    })
-  })
-  handle(
-    'yan:activity:model',
-    async (input: { activity: AgentActivity; current?: string | null; available?: string[] }) => {
-      const settings = await getSettings()
-      const activity = normalizeAgentActivity(input?.activity)
-      const resolution = resolveActivityModel({
-        config: settings.activityModels,
-        activity,
-        current: typeof input?.current === 'string' ? input.current : null,
-        /* 给了可用清单才会做可用性检查（并可能发生回退） */
-        ...(Array.isArray(input?.available) ? { available: input.available.map((item) => String(item)) } : {})
-      })
-      return { ...resolution, text: activityModelText(resolution) }
-    }
-  )
-  handle(
-    'yan:activity:modelSet',
-    async (input: { activity?: string; model?: string | null; defaultModel?: string | null; clear?: boolean }) => {
-      const current = (await getSettings()).activityModels
-      const next = input?.clear
-        ? emptyActivityModelConfig()
-        : (() => {
-            let base = current
-            if (input && 'defaultModel' in input) {
-              base = { ...sanitizeActivityModelConfig(base), defaultModel: input.defaultModel ?? null }
-            }
-            if (input?.activity) {
-              base = setActivityModel(base, normalizeAgentActivity(input.activity), input.model ?? null)
-            }
-            return base
-          })()
-      await patchSettings({ activityModels: next })
-      const settings = await getSettings()
-      const rows = activityModelRows({ config: settings.activityModels })
-      return { ok: true as const, rows }
-    }
-  )
+  registerActivityModelIpc(ipc)
 
-  handle('yan:packages:list', async (cwd: string) => {
-    try {
-      return listPackages(String(cwd ?? ''))
-    } catch (error) {
-      return { ok: false, agentDir: '', userSettings: '', projectSettings: '', entries: [], error: error instanceof Error ? error.message : String(error) }
-    }
-  })
 
-  /*
-   * 受信内置能力清单（实施-02 S4）：设置页要用它与「用户装的插件」分开。
-   * 只读，且与 pi 实际加载的路径同源 —— 不缓存，免得用户换了安装形态
-   *（开发态 ↔ 打包态）后看到一份过期的清单。
-   */
-  handle('yan:capabilities:builtin', async () => builtinCapabilities(yanThinExtensionPaths()))
+  registerTaskInboxIpc(ipc, { runnerStatuses: () => runners?.statuses() ?? [] })
 
-  /*
-   * 搜索后端诊断（实施-27 S3/D4）：设置页要看 OpenCLI 在不在、扩展连没连。
-   * 只读探针，不装不升级；未安装时也返回可读结果（available:false）。
-   */
-  handle('yan:search:doctor', async () => searchDoctor())
+  registerCapabilitiesIpc(ipc, { currentAgent: () => ac() ?? undefined, registry: () => runners, thinExtensionPaths: yanThinExtensionPaths })
 
-  /*
-   * 任务收件箱（实施-28 T2）：会话 × 运行实例 × 任务计划的**只读**投影。
-   *
-   * ── 为什么要缓存忽略名单 ──
-   *   契约里 `dismissed()` 是同步的（投影是纯函数，不能 await），
-   *   而名单存在 `YAN_DIR/task-inbox.json`。所以在这里持一份内存副本，
-   *   写入时同步更新 —— 不把可变状态放进 sources 模块（两个实例会互踩）。
-   */
-  let inboxDismissed: string[] | null = null
-  /* 「我上次看过它」的时间（收件箱近似判「跑完了没被确认」的唯一依据） */
-  let inboxReadUntil: Record<string, number> = {}
-  const inboxService = createTaskInboxService(
-    createTaskInboxSources({
-      /* `runners` 是模块级单例（可能在 handler 注册后才赋值）：取快照时再问 */
-      registry: { statuses: () => runners?.statuses() ?? [] },
-      dismissed: () => inboxDismissed ?? [],
-      /*
-       * T3：等用户回答的两条链。
-       *   · 提问：问答记录的最后一条没作答也没取消；
-       *   · 学习：只有真在等学习者才出状态（其余一律不出）。
-       */
-      questionLog,
-      /*
-       * T4：「跑完了但没被确认」——这是七态里唯一的近似，所以卡片会带上 approximate。
-       * 两个条件都要满足（缺一个都会误报）：
-       *   ① 我看过它之后又有活动（否则就是我看过、已经知道结果了）；
-       *   ② 计划里的步骤全完（否则还在做，不该催我确认）。
-       */
-      awaitingReview: async (sessionId, session) => {
-        const seen = inboxReadUntil[sessionId] ?? 0
-        if (session.updatedAt <= seen) return undefined
-        try {
-          const { state } = await currentTaskPlan(sessionId)
-          if (!state.todos.length) return undefined
-          if (state.todos.some((todo) => !todo.done && todo.status !== 'done')) return undefined
-        } catch {
-          return undefined
-        }
-        return { since: session.updatedAt, reason: '计划里的步骤都跑完了，你还没看结果' }
-      }
-    })
-  )
-  const inboxState = async (): Promise<string[]> => {
-    if (!inboxDismissed) {
-      const state = await readInboxState()
-      inboxDismissed = state.dismissed
-      inboxReadUntil = state.readUntil
-    }
-    return inboxDismissed
-  }
-  handle('yan:taskinbox:page', async (query?: TaskInboxQuery) => {
-    await inboxState()
-    const { limit, offset, ...filter } = query ?? {}
-    return inboxService.page(filter, { limit, offset })
-  })
-  handle('yan:taskinbox:dismiss', async (sessionId: string) => {
-    const list = await inboxState()
-    const id = String(sessionId ?? '')
-    if (id && !list.includes(id)) {
-      inboxDismissed = [...list, id]
-      await writeInboxState({ dismissed: inboxDismissed, readUntil: inboxReadUntil })
-      /* 名单变了要让下一次查询重算（TTL 缓存里还带着它） */
-      inboxService.invalidate()
-    }
-    return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
-  })
-  handle('yan:taskinbox:restore', async (sessionId: string) => {
-    const list = await inboxState()
-    const id = String(sessionId ?? '')
-    if (id) {
-      inboxDismissed = list.filter((x) => x !== id)
-      await writeInboxState({ dismissed: inboxDismissed, readUntil: inboxReadUntil })
-      inboxService.invalidate()
-    }
-    return { ok: Boolean(id), dismissed: inboxDismissed ?? [] }
-  })
-  /*
-   * 「我看过了」（T4）：打开会话时调一次，收件箱就不再把「跑完了」报成待确认。
-   * 它只记时间戳，不动会话数据 —— 不写这条最多是多重提醒一次，不会丢信息。
-   */
-  handle('yan:taskinbox:seen', async (sessionId: string) => {
-    await inboxState()
-    const id = String(sessionId ?? '')
-    if (!id) return { ok: false }
-    inboxReadUntil = { ...inboxReadUntil, [id]: Date.now() }
-    await writeInboxState({ dismissed: inboxDismissed ?? [], readUntil: inboxReadUntil })
-    inboxService.invalidate()
-    return { ok: true }
-  })
 
-  /*
-   * 能力页初次打开只取 pi 已加载的 Skill 与本 runner 可见的 MCP 配置；不握手、不启动 stdio。
-   * 验证操作由主进程分配 operationId 并固定到 runnerId + generation，渲染端不能指定项目。
-   */
-  handle('yan:capabilities:settings', async () => {
-    const agent = ac()
-    return agent ? agent.capabilitySettingsSnapshot() : { skills: [], servers: [], configWarning: false }
-  })
-  handle('yan:capabilities:discover', async (value: unknown) => {
-    const queryText = typeof value === 'string' ? value.slice(0, 500) : ''
-    const agent = ac()
-    if (!agent) return { query: '', reason: '当前没有可用的运行实例', sources: [], candidates: [] }
-    try {
-      return await agent.discoverCapabilitiesForSettings(queryText)
-    } catch {
-      return {
-        query: '',
-        reason: 'unavailable',
-        sources: [],
-        candidates: []
-      }
-    }
-  })
-  handle('yan:capabilities:verify', async (value: unknown) => {
-    const serverId = typeof value === 'string' ? value.trim() : ''
-    if (!serverId) return { ok: false, error: '缺少 MCP 服务 ID' }
-    const agent = ac()
-    const runner = runners?.activeRunner()
-    const runtime = runner ? runners?.runtimeOf(runner.id) : null
-    if (!agent || !runner || !runtime) return { ok: false, error: '当前没有可验证的运行实例' }
-    pruneCapabilityVerifications()
-    if ([...capabilityVerifications.values()].filter((op) => op.state === 'connecting').length >= 8) {
-      return { ok: false, error: '同时验证的 MCP 服务过多，请稍后再试' }
-    }
-    const operationId = randomUUID()
-    const operation: CapabilityVerification = {
-      operationId,
-      runnerId: runner.id,
-      generation: runtime.generation,
-      agent,
-      serverId,
-      state: 'connecting',
-      updatedAt: Date.now()
-    }
-    capabilityVerifications.set(operationId, operation)
-    void agent.verifyCapabilityMcp(serverId).then(
-      (result) => {
-        if (operation.state === 'cancelled') return
-        const current = runners?.runtimeOf(operation.runnerId)
-        if (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== agent) {
-          operation.state = 'stale'
-        } else {
-          operation.state = result.status === 'ready' ? 'ready' : 'error'
-          operation.toolCount = result.toolCount
-        }
-        operation.updatedAt = Date.now()
-      },
-      () => {
-        if (operation.state !== 'cancelled') operation.state = 'error'
-        operation.updatedAt = Date.now()
-      }
-    )
-    return { ok: true, operationId }
-  })
-  handle('yan:capabilities:verification', async (value: unknown) => {
-    const operationId = typeof value === 'string' ? value : ''
-    pruneCapabilityVerifications()
-    const operation = capabilityVerifications.get(operationId)
-    if (!operation) return null
-    const current = runners?.runtimeOf(operation.runnerId)
-    if (operation.state === 'connecting' && (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== operation.agent)) {
-      operation.state = 'stale'
-      operation.updatedAt = Date.now()
-    }
-    return {
-      operationId,
-      state: operation.state,
-      ...(operation.toolCount !== undefined ? { toolCount: operation.toolCount } : {})
-    }
-  })
-  handle('yan:capabilities:cancelVerification', async (value: unknown) => {
-    const operation = capabilityVerifications.get(typeof value === 'string' ? value : '')
-    if (!operation || operation.state !== 'connecting') return { ok: false, error: '验证已结束或不存在' }
-    const current = runners?.runtimeOf(operation.runnerId)
-    if (!current || current.generation !== operation.generation || runners?.agentOf(operation.runnerId) !== operation.agent) {
-      operation.state = 'stale'
-      operation.updatedAt = Date.now()
-      return { ok: false, error: '运行实例已切换，未对新实例执行断开操作' }
-    }
-    const disconnected = await operation.agent.disconnectCapabilityMcp(operation.serverId)
-    operation.state = disconnected ? 'cancelled' : 'stale'
-    operation.updatedAt = Date.now()
-    return { ok: disconnected, ...(disconnected ? {} : { error: 'MCP 服务已不存在' }) }
-  })
-
-  handle('yan:packages:action', async (req: unknown) => {
-    const raw = (req ?? {}) as Record<string, unknown>
-    try {
-      const kind = raw.kind === 'install' || raw.kind === 'remove' || raw.kind === 'update' ? raw.kind : null
-      if (!kind) return { ok: false, error: '未知的操作' }
-      /*
-       * 这里注入 bin：它是**异步**才知道的（settings 的 piBin 覆盖项），
-       * 而 resolvePi() 必须与真正启动 pi 时是同一个解析 —— 否则会出现
-       * 「装到 A、跑的是 B」这种最难查的问题。
-       */
-      const st = await getSettings()
-      configurePackageContext({
-        bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null,
-        agentDir: () => PI_AGENT_DIR,
-        hasRunningTask: (projectCwd) => runners?.hasBusyCwd(projectCwd) === true,
-        isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
-      })
-      return await runPackageAction({
-        kind,
-        source: String(raw.source ?? ''),
-        local: raw.local === true,
-        cwd: String(raw.cwd ?? '')
-      })
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  /* ---- 项目知识（实施-03 S5）---- */
-  /*
-   * 设置页「项目知识」页的一组通道。四条边界：
-   *   ① **身份不由渲染端给**：一律按当前会话推导（同一处 `projectIdForCwd`，与 `yan knowledge` 同源），
-   *      所以界面永远只能看到「当前项目」的知识；
-   *   ② 「需复核」是**派生**状态（分支漂移 / 路径没了 / 来源会话被删）：
-   *      文件系统与 git 由宿主查，判定交给纯函数（`shared/project-knowledge-view.ts`）；
-   *   ③ 写操作全部带 `expectedRevision`（CAS）—— 界面上看到的版本变了就报错，**不静默覆盖**；
-   *   ④ 「确认」是**用户动作**：只有这条路径能把条目升为 active（hostCheck.userConfirmed），
-   *      模型那条（`yan knowledge propose`）不传 hostCheck，走不通。
-   */
-  const knowledgeIdentity = async (): Promise<{ projectId: string; cwd: string } | null> => {
-    const settings = await getSettings()
-    const state = ac()?.getState()
-    const cwd = state?.cwd
-    if (!cwd) return null
-    /*
-     * 与能力服务（`capability.projectId`，见 startAgent 那里）**同一个表达式**：
-     * 不一致会出现最难查的一类 bug —— 模型 `yan knowledge propose` 写的条目
-     * 用户在设置页看不到（反之亦然）。未登记目录用 cwd 派生的稳定 id，
-     * 它仍只属于这棵树，不是跨项目共享。
-     */
-    const projectId = knowledgeProjectId(settings, cwd)
-    return projectId ? { projectId, cwd } : null
-  }
-
-  /**
-   * 设置页按范围取存储：`personal` 是全局个人记忆（固定身份、独立目录），
-   * 其余按当前会话的项目身份。渲染端只能选范围，不能指定项目。
-   */
-  const knowledgeStore = async (scope: unknown) =>
-    memoryStoreOf(isMemoryScope(scope) ? scope : 'project', await knowledgeIdentity())
-
-  /** 生效条目有变化后刷新给其他 AI 工具读的导出文件；失败不影响本次操作 */
-  const refreshMemoryExport = async (store: NonNullable<Awaited<ReturnType<typeof knowledgeStore>>>): Promise<void> => {
-    const personal = store.identity.projectId === PERSONAL_MEMORY_ID
-    await writeMemoryExport(
-      personal ? 'personal' : `project-${store.identity.projectId}`,
-      personal ? '个人记忆' : `项目记忆 · ${basename(store.identity.cwd) || store.identity.projectId}`,
-      store.identity,
-      store.opts
-    ).catch(() => undefined)
-  }
-
-  const knowledgeQueryOf = async (cwd: string): Promise<KnowledgeViewContext> => {
-    const repo = await readRepoState(cwd).catch(() => null)
-    const sessions = await listSessions(500).catch(() => [])
-    const ids = new Set(sessions.map((session) => session.id))
-    return {
-      branch: repo?.branch ?? null,
-      /* 只判「在不在」，不读内容；路径先过 `isSafeRelativeRef` 挡越界（文本引用不授读取权） */
-      pathExists: (rel: string) => isSafeRelativeRef(rel) && existsSync(resolve(cwd, rel)),
-      sessionReadable: (id: string) => ids.has(id)
-    }
-  }
-
-  /* 个人记忆没有工作目录：不查分支、不判路径，只核对来源会话 */
-  const knowledgeQueryFor = async (identity: { projectId: string; cwd: string }): Promise<KnowledgeViewContext> => {
-    if (identity.projectId !== PERSONAL_MEMORY_ID) return knowledgeQueryOf(identity.cwd)
-    const ids = new Set((await listSessions(500).catch(() => [])).map((session) => session.id))
-    return { branch: null, pathExists: () => true, sessionReadable: (id: string) => ids.has(id) }
-  }
-
-  const knowledgeSnapshot = async (scope: unknown) => {
-    const settings = await getSettings()
-    const enabled = settings.projectKnowledge?.enabled === true
-    /* 打开列表时顺带收一次外部工具写回的候选 */
-    await ingestMemoryInbox(settings.projects).catch(() => null)
-    const store = await knowledgeStore(scope)
-    const empty = { all: 0, active: 0, candidate: 0, review: 0 }
-    if (!store) return { ok: true, enabled, entries: [], counts: empty }
-    const identity = store.identity
-    try {
-      const views = await knowledgeQueryFor(identity).then((query) =>
-        listKnowledge(identity, store.opts).then((entries) => toKnowledgeViews(entries, query))
-      )
-      void refreshMemoryExport(store)
-      return { ok: true, projectId: identity.projectId, enabled, entries: views, counts: countKnowledge(views) }
-    } catch (error) {
-      return {
-        ok: false,
-        projectId: identity.projectId,
-        enabled,
-        entries: [],
-        counts: empty,
-        error: error instanceof Error ? error.message : String(error)
-      }
-    }
-  }
-
-  handle('yan:knowledge:list', (scope?: unknown) => knowledgeSnapshot(scope))
-
-  handle('yan:knowledge:action', async (req: unknown) => {
-    const raw = (req ?? {}) as { action?: unknown; id?: unknown; expectedRevision?: unknown; expectedProjectId?: unknown; text?: unknown; tags?: unknown; kind?: unknown; permanent?: unknown; scope?: unknown }
-    const store = await knowledgeStore(raw.scope)
-    if (!store) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
-    const identity = store.identity
-    /*
-     * 项目身份 CAS（R10）：界面上的列表属于某个项目，而这里按「此刻的当前会话」
-     * 选项目 —— 用户在设置页开着的时候切了会话，点确认就会打到别的项目上。
-     * 带了期望身份就严格校验；缺省接受（旧调用/CLI 不受影响）。
-     */
-    if (typeof raw.expectedProjectId === 'string' && raw.expectedProjectId && raw.expectedProjectId !== identity.projectId) {
-      return { ok: false, error: '项目已切换，刷新后再改' }
-    }
-    const id = typeof raw.id === 'string' ? raw.id : ''
-    const expectedRevision = Number(raw.expectedRevision)
-    if (!id || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
-      return { ok: false, error: '缺少条目 id 或版本号（先刷新列表）' }
-    }
-    const query = await knowledgeQueryFor(identity)
-    try {
-      if (raw.action === 'delete') {
-        /* 永久删除是**另一个动作**（墓碑之外的正文也清），需要明确用户凭据 —— 不靠一个布尔切换 */
-        const permanent = raw.permanent === true
-        const out = await deleteKnowledge({
-          identity,
-          opts: store.opts,
-          request: {
-            id,
-            expectedRevision,
-            mode: permanent ? 'permanent' : 'logical',
-            ...(permanent ? { userAction: { by: 'user' as const } } : {})
-          }
-        })
-        if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
-        void refreshMemoryExport(store)
-        return { ok: true, entry: toKnowledgeView(out.entry, query) }
-      }
-      const current = await readKnowledge(identity, id, store.opts)
-      if (!current) return { ok: false, error: '条目不存在（可能已被删除）' }
-      /*
-       * 三种写操作都是「以**磁盘上的当前版**为底稿改字段」，
-       * 底稿一律重新读，不信渲染端回传的内容 —— 否则界面上的旧副本
-       * 会覆盖掉别处（例如模型在会话里）刚写进去的字段。
-       */
-      const draft: KnowledgeCommitRequest = {
-        id,
-        kind: current.kind,
-        text: current.text,
-        tags: current.tags,
-        evidence: current.evidence,
-        confidenceClass: current.confidenceClass,
-        ...(current.validFor ? { validFor: current.validFor } : {}),
-        ...(current.supersedes?.length ? { supersedes: current.supersedes } : {}),
-        expectedRevision
-      }
-      if (raw.action === 'update') {
-        if (typeof raw.text === 'string') draft.text = raw.text
-        if (Array.isArray(raw.tags)) draft.tags = raw.tags
-        if (raw.kind) draft.kind = raw.kind
-        if (!String(draft.text ?? '').trim()) return { ok: false, error: '正文不能为空' }
-      } else if (raw.action === 'confirm') {
-        /* 用户点了确认 → 就是「用户确认」这一类，而不是仍标成模型推断 */
-        draft.confidenceClass = 'user-confirmed'
-      } else if (raw.action === 'supersede') {
-        if (typeof raw.text !== 'string' || !raw.text.trim()) return { ok: false, error: '替代需要新正文' }
-        delete draft.id
-        draft.expectedRevision = 0
-        draft.text = raw.text
-        if (Array.isArray(raw.tags)) draft.tags = raw.tags
-        if (raw.kind) draft.kind = raw.kind
-        draft.confidenceClass = 'user-confirmed'
-        draft.supersedes = [id]
-      } else {
-        return { ok: false, error: '未知的操作' }
-      }
-      const out = await commitKnowledge({
-        identity,
-        opts: store.opts,
-        request: draft,
-        /* 这是「用户动作」的凭据：模型构造不出来（它那条路不传 hostCheck） */
-        hostCheck: { userConfirmed: { quote: '用户在项目知识页确认' } }
-      })
-      if (!out.ok) return { ok: false, error: out.message, latestRevision: out.latest?.revision }
-      void refreshMemoryExport(store)
-      return {
-        ok: true,
-        entry: toKnowledgeView(out.entry, query),
-        ...(out.superseded.length ? { superseded: out.superseded.map((entry) => toKnowledgeView(entry, query)) } : {})
-      }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:knowledge:export', async (mode: 'copy' | 'save', scope?: unknown) => {
-    const store = await knowledgeStore(scope)
-    if (!store) return { ok: false, error: '当前会话没有绑定项目（先选一个项目工作目录）' }
-    const identity = store.identity
-    const personal = identity.projectId === PERSONAL_MEMORY_ID
-    const exportDir = personal ? app.getPath('documents') : identity.cwd
-    const exportName = personal ? 'personal-memory.md' : 'project-knowledge.md'
-    try {
-      const settings = await getSettings()
-      const views = toKnowledgeViews(await listKnowledge(identity, store.opts), await knowledgeQueryFor(identity))
-      const markdown = knowledgeMarkdown(views, {
-        projectId: identity.projectId,
-        exportedAt: new Date().toISOString(),
-        enabled: settings.projectKnowledge?.enabled === true
-      })
-      if (mode !== 'save') return { ok: true, markdown }
-      /*
-       * 「保存到文件」只写用户在选择框里点的地方，**不自动改写仓库文档**
-       *（§6：「导出到项目文档」必须展示目标文件与 diff，属于单独动作）。
-       */
-      const picked = win
-        ? await dialog.showSaveDialog(win, {
-            title: '导出项目知识',
-            defaultPath: join(exportDir, exportName),
-            filters: [{ name: 'Markdown', extensions: ['md'] }]
-          })
-        : await dialog.showSaveDialog({
-            title: '导出项目知识',
-            defaultPath: join(exportDir, exportName),
-            filters: [{ name: 'Markdown', extensions: ['md'] }]
-          })
-      if (picked.canceled || !picked.filePath) return { ok: true, markdown, canceled: true }
-      await writeFile(picked.filePath, markdown, 'utf8')
-      return { ok: true, markdown, path: picked.filePath }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  /*
-   * 来源跳转（§6「来源跳转」）：渲染端只知道 sessionId，文件路径只有主进程知道。
-   * 返回 `ok:false` 时界面显示「不可回读」——**不伪造证据**（§4）。
-   */
-  handle('yan:knowledge:sourceSession', async (sessionId: string) => {
-    const id = String(sessionId ?? '')
-    if (!id) return { ok: false, error: '缺少会话 id' }
-    try {
-      const sessions = await listSessions(500)
-      const hit = sessions.find((session) => session.id === id)
-      if (!hit) return { ok: false, error: '来源会话已被删除，无法回读' }
-      return { ok: true, path: hit.path, ...(hit.title ? { title: hit.title } : {}) }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
+  registerKnowledgeIpc(ipc, { currentCwd: () => ac()?.getState()?.cwd, knowledgeProjectId, window: () => win })
 
   /* ---- 内置浏览器 ---- */
   registerBrowserIpc(ipc, () => browser)
