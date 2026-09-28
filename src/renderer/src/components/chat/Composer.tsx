@@ -7,6 +7,7 @@ import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
 import { UsageBar } from './UsageBar'
 import { LearningActions } from './LearningActions'
+import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
@@ -1171,6 +1172,8 @@ export function Composer() {
            *   · 与发送键同行 —— 这两个是同一个动作的前后两步
            * 强度文字的颜色由 `.mt-level[data-level]` 按档位染（见 composer.css）。
            */}
+          {/* 语音输入：本地转写后插入光标处，由用户编辑再发送 */}
+          <VoiceInputButton onText={insertAtCursor} disabled={disabled} />
           <ModelThinkingPicker />
           <button
             className={`send ${busy ? 'abort' : ''}`}
