@@ -21,7 +21,6 @@ import {
   type GoalCommandHost,
   type StudyCommandHost,
   type ExerciseCommandHost,
-  type PlaybookCommandHost,
   type SubagentCommandHost
 } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
@@ -154,6 +153,7 @@ import type { RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from '.
 import { readContextActions } from './context-actions'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from './attachments'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { builtinCapabilities, extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import {
@@ -176,8 +176,6 @@ import { CourseService } from './course-service'
 import { LearningService } from './learning-service'
 import { ExerciseService } from './exercise-service'
 import { gapStillMissing, gapText, matchGap, unmatchedGapText } from '../shared/capability-gap'
-import { PlaybookStore } from './playbook-store'
-import { PlaybookService } from './playbook-service'
 import { FollowStore } from './follow-store'
 import { FOLLOW_APP_ONLY_NOTE, runSummaryText, watchBriefText } from '../shared/follow'
 import {
@@ -190,7 +188,6 @@ import {
 } from '../shared/activity-model'
 import { normalizeAgentActivity } from '../shared/agent-profile'
 import type { AgentActivity } from '../shared/agent-profile'
-import { needsConfirmation } from '../shared/playbook'
 import type {
   ExerciseMutation,
   ExerciseResponse,
@@ -2038,15 +2035,6 @@ function exerciseResult(m: ExerciseMutation) {
 }
 
 /**
- * 办事模板（实施-25 P14）。
- *
- * 这个服务里**没有执行**：它只列、存、改、删，以及 `plan`（把「将要做什么」摊开）。
- * 真正干活的是模型，而模型动手前要经过用户确认（T14-3）。
- */
-const playbookStore = new PlaybookStore()
-const playbooks = new PlaybookService({ store: playbookStore })
-
-/**
  * 持续关注（实施-25 P16）。
  *
  * 这个 store 里**没有调度器**：宿主不主动调模型（会变成后台花钱），
@@ -2798,82 +2786,6 @@ const researchCapabilityHost: StudyCommandHost = {
       }
       default:
         return { summary: { ok: false, error: `未知的研究动作：${command}` } }
-    }
-  }
-}
-
-/**
- * 办事模板（实施-25 P14）。
- *
- * 模型能做的三件事：看有什么模板、问「这个模板要做什么」、提议存一份新模板。
- * **没有「跑模板」** —— 执行在用户确认之后由模型自己走普通工具路径，
- * 所以这里返回的是一段**说明**，不是动作。
- * 另外**没有删除**：删模板是用户的事，避免模型自作主张把用户的模板清掉。
- */
-const playbookCapabilityHost: PlaybookCommandHost = {
-  async run(command, params, context) {
-    switch (command) {
-      case 'playbook.list': {
-        const list = await playbooks.list(typeof params.spaceId === 'string' ? params.spaceId : null)
-        return {
-          data: {
-            playbooks: list.map((p) => ({
-              id: p.id,
-              kind: p.kind,
-              title: p.title,
-              goal: p.goal,
-              stepCount: p.steps.length,
-              io: p.io,
-              runs: p.runs,
-              needsConfirmation: needsConfirmation(p.steps),
-              origin: p.origin
-            }))
-          },
-          summary: {
-            ok: true,
-            count: list.length,
-            needConfirm: list.filter((p) => needsConfirmation(p.steps)).length
-          }
-        }
-      }
-      case 'playbook.plan': {
-        const scopes = Array.isArray(params.scopes) ? (params.scopes as string[][]) : undefined
-        const res = await playbooks.plan(String(params.id ?? params.playbookId ?? ''), scopes ? { scopes } : {})
-        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
-        return {
-          data: {
-            text: res.text,
-            steps: res.points.map((s) => ({ title: s.title, effect: s.effect, scope: s.scope ?? [] })),
-            confirmation: res.confirmationText
-          },
-          summary: {
-            ok: true,
-            needsConfirmation: res.needsConfirmation,
-            unansweredScope: res.unansweredScope,
-            reads: res.summary.read,
-            writes: res.summary.write,
-            externals: res.summary.external
-          }
-        }
-      }
-      case 'playbook.save': {
-        /* 模型只会从「刚做完的那件事」存模板，来源就是当前会话 —— 由宿主补，不让模型自报 */
-        const raw = (params.playbook && typeof params.playbook === 'object' ? params.playbook : params) as Record<string, unknown>
-        const given = raw.source && typeof raw.source === 'object' ? (raw.source as { id?: unknown }).id : undefined
-        const sourceId = typeof given === 'string' && given.trim() ? given.trim() : context.sessionId
-        const res = await playbooks.save({ ...raw, origin: 'from-task', source: { kind: 'session', id: sourceId } })
-        if (!res.ok) return { summary: { ok: false, error: res.error, code: res.code } }
-        return {
-          data: { id: res.playbook.id, title: res.playbook.title },
-          summary: {
-            ok: true,
-            steps: res.playbook.steps.length,
-            needsConfirmation: needsConfirmation(res.playbook.steps)
-          }
-        }
-      }
-      default:
-        return { summary: { ok: false, error: `未知的模板动作：${command}` } }
     }
   }
 }
@@ -4578,8 +4490,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         exerciseHost: exerciseCapabilityHost,
         /* 跨资料研究（实施-25 P13）：多来源对照与引用状态。 */
         researchHost: researchCapabilityHost,
-        /* 办事模板（实施-25 P14）：范围与授权点由宿主算。 */
-        playbookHost: playbookCapabilityHost,
         /* 持续关注（实施-25 P16）：到点提醒与结果记录，没有后台调度器。 */
         followHost: followCapabilityHost,
         preambleExtension: preambleExtensionPath(),
@@ -4591,6 +4501,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
         bundledSkills: bundledSkillPaths(),
+        /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
+        userSkills: () => userSkillPaths(),
         contextBudgetObserverExtension: contextBudgetObserverExtensionPath(),
         contextBudgetMaintenanceExtension: contextBudgetMaintenanceExtensionPath(),
         /*
@@ -7533,27 +7445,6 @@ function registerIpc(): void {
   handle('yan:review:dismiss', async (id: string) => learnings.dismissReview(id))
 
   /*
-   * 办事模板（实施-25 P14）。
-   *
-   * 这里**没有执行入口**：`plan` 只把「将要做什么、会动哪里」摊开给用户看，
-   * 真正动手的是模型，而且必须在用户确认之后（T14-3）。
-   * 宿主没提供「静默跑」的能力 —— 这是「不静默动文件」最直接的保证。
-   */
-  handle('yan:playbook:list', async (spaceId?: string | null) => playbooks.list(spaceId))
-  handle('yan:playbook:save', async (input: Parameters<typeof playbooks.save>[0]) => playbooks.save(input ?? {}))
-  handle(
-    'yan:playbook:update',
-    async (input: { id: string; title?: unknown; goal?: unknown; steps?: unknown; io?: unknown; kind?: unknown }) =>
-      playbooks.update(String(input?.id ?? ''), input ?? {})
-  )
-  handle('yan:playbook:remove', async (id: string) => playbooks.remove(id))
-  /* 复用前的作用范围与授权点：给的组数必须与需要确认的步骤数一致 */
-  handle('yan:playbook:plan', async (input: { id: string; scopes?: string[][] }) =>
-    playbooks.plan(String(input?.id ?? ''), input?.scopes ? { scopes: input.scopes } : {})
-  )
-  handle('yan:playbook:run', async (id: string) => playbooks.recordRun(id))
-
-  /*
    * 持续关注（实施-25 P16）。
    *
    * 没有「立即执行」这种 IPC：宿主不会自己去查（那是后台花钱且用户看不见）。
@@ -8740,6 +8631,12 @@ app.whenReady().then(async () => {
   registerIpc()
   await createTray()
   createWindow()
+
+  /*
+   * 旧「办事模板」一次性导出成用户技能：放在首个 pi 实例启动之前，
+   * 导出的技能在第一次会话就能加载。失败只跳过，不挡启动；原文件保留。
+   */
+  await migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error))
 
   // 窗口就绪后自动连 pi，用户不用先点「连接」
   const started = await startAgent()

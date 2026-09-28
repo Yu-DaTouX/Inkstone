@@ -42,10 +42,6 @@ import type {
   ReviewItem,
   ReviewPlan,
   SourceStatus,
-  PlaybookBridge,
-  PlaybookMutationResult,
-  PlaybookPlanResult,
-  Playbook,
   FollowBridge,
   FollowMutationResult,
   ActivityBridge,
@@ -504,14 +500,6 @@ const api: YanBridge = {
   research: {
     sourceStatus: (artifactId) => invoke<{ ok: boolean; error?: string; statuses: SourceStatus[] }>('yan:artifactDoc:sourceStatus', artifactId)
   } as ResearchBridge,
-  playbook: {
-    list: (spaceId) => invoke<Playbook[]>('yan:playbook:list', spaceId),
-    save: (input) => invoke<PlaybookMutationResult>('yan:playbook:save', input),
-    update: (id, patch) => invoke<PlaybookMutationResult>('yan:playbook:update', { id, ...patch }),
-    remove: (id) => invoke<{ ok: boolean; error?: string }>('yan:playbook:remove', id),
-    plan: (input) => invoke<PlaybookPlanResult>('yan:playbook:plan', input),
-    run: (id) => invoke<PlaybookMutationResult>('yan:playbook:run', id)
-  } as PlaybookBridge,
   follow: {
     list: (spaceId) => invoke<Watch[]>('yan:follow:list', spaceId),
     views: (spaceId) => invoke<(WatchView & { lastRunText?: string })[]>('yan:follow:views', spaceId),
