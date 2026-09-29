@@ -26,6 +26,10 @@
 
 NSIS 自动更新需要将同一次构建的 `latest.yml`、安装程序及对应 `.blockmap` 一起上传到 GitHub Release。仅上传 EXE 或 ZIP 不足以启用自动安装。`electron-builder.yml` 配置了 GitHub 更新源；打包脚本显式 `--publish never`，不会自动创建或上传 Release。发布仍须单独授权。
 
+上传时附件改用 ASCII 文件名（`Inkstone-<版本>-win-1-setup.exe`、`-win-2-portable.exe`、`-win-3-portable-fast.zip`，沿用历次 Release），`latest.yml` 的 `url` 与 `path` 必须同步改成上传后的安装包名：electron-builder 生成的 `latest.yml` 写的是按包名生成的 `yan-desktop-setup-<版本>.exe`，不改的话应用内下载会 404。只改文件名，`sha512` 与 `size` 保持本次构建的值；`.blockmap` 与安装包同名再加 `.blockmap`。应用先查 GitHub 的 `releases/latest`，所以 Release 必须正式发布（不是草稿或预发布），附件里还要有 `latest.yml`，否则安装版只会给出发布页入口。
+
+上传可以用 `gh release create v<版本> --verify-tag --latest --title "Inkstone <版本>" --notes-file RELEASE-NOTES.md <附件…>`：带附件时 gh 先建草稿，全部附件传完才发布，应用内更新不会读到附件不全的版本。发布后核对 `releases/latest`、线上 `latest.yml` 与本地是否逐字一致，以及安装包与 `.blockmap` 的下载地址和大小。
+
 ## 数据位置与备份
 
 以下是未设置 YAN_* 覆盖变量时的默认行为，依据 [paths.ts](../../src/main/paths.ts)。
