@@ -71,6 +71,7 @@
   "browser.loading": "加载中…",
   "browser.more": "更多操作",
   "browser.navigateError": "无法打开这个地址",
+  "browser.closeTab": "关闭标签页",
   "browser.newTab": "新建标签页",
   "browser.open": "打开内置浏览器",
   "browser.openExternal": "在外部浏览器打开",
@@ -1784,5 +1785,15 @@
   "peer.artifactLine": "成果文件 {copied}/{total} 已复制",
   "peer.artifactMissing": "未能复制：{names}",
   "peer.openFolder": "打开所在文件夹",
-  "remote.kindPeer": "另一台砚"
+  "remote.kindPeer": "另一台砚",
+  "sb.label": "状态栏",
+  "sb.runTip": "正在运行：模型或工具在处理本轮请求",
+  "sb.waitTip": "等你回答：有问题需要你回复才能继续",
+  "sb.idleTip": "空闲：可以发送下一条消息",
+  "sb.branchTip": "当前分支 {branch} · {n} 个文件有改动",
+  "sb.piTip": "pi 运行时的连接状态",
+  "sb.phone": "手机 · {n} 台",
+  "sb.phoneTip": "已配对、可以接入的手机数量（设置 → 手机接入）",
+  "sb.cost": "本会话 ${cost}",
+  "sb.costTip": "本会话累计花费（按模型报价估算）"
 }

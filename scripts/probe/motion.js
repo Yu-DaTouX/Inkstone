@@ -319,33 +319,23 @@
     }
   }
 
-  /* ================= 9. 输入框边框状态栏（pi 样式） ================= */
+  /* ================= 9. 输入区运行条 ================= */
   out.push('')
-  out.push('=== 9. 输入框顶边框：状态画在边框上 ===')
+  out.push('=== 9. 输入区运行条：只在运行时出现 ===')
   /*
-   * 参考 pi 的 `custom-editor.js` 里的 `renderTopBorder()`：
-   *   状态画在输入框的**顶边框**上，前缀固定 `── `，
-   *   后面用 `─` 把剩余宽度填满，且边框颜色 = 当前思考强度的颜色
-   *   （`theme.getThinkingBorderColor(level)`，七档七色）。
+   * 输入区顶边的运行条（设计规范 §3.5）：运行时用 grow 长出一行
+   * 「方点阵 · 阶段文字 · 计时」，空闲时高度为 0；思考档位色落在方点阵与底线上。
    *
-   * 这里验证三件事：结构（前缀 + 填充）、宽度填充比例、档位色彩。
-   * spinner 的逐帧变化不断言 —— 那会引入时间敏感性。
+   * 这里验证三件事：结构（行容器）、空闲时不占高度、档位色彩。
+   * 方点阵的逐帧变化不断言 —— 那会引入时间敏感性。
    */
   {
     const cb = q('[data-testid="composer-border"]')
-    ok(!!cb, '输入框有边框状态栏')
+    ok(!!cb, '输入框有运行条')
     if (cb) {
-      const lead = cb.querySelector('.cborder-dash.lead')
-      const tail = cb.querySelector('.cborder-dash.tail')
-      ok(!!lead, '有前缀横线（── ）')
-      ok(!!tail, '有填充横线（吃剩余宽度）')
-
-      if (tail) {
-        const box = cb.getBoundingClientRect()
-        const t = tail.getBoundingClientRect()
-        const ratio = box.width > 0 ? t.width / box.width : 0
-        out.push('  tail 占边框宽度比例 = ' + ratio.toFixed(3))
-        ok(ratio > 0.4, '填充横线吃掉剩余宽度（' + ratio.toFixed(2) + '，不是一小段）')
+      ok(!!cb.querySelector('.cborder-row'), '运行条有行容器')
+      if (cb.dataset.state === 'idle') {
+        ok(cb.getBoundingClientRect().height < 2, '空闲时运行条不占高度（' + cb.getBoundingClientRect().height.toFixed(1) + 'px）')
       }
 
       // 档位 → 颜色（pi 的 getThinkingBorderColor）

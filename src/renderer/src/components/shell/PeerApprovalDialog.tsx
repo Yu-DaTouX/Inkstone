@@ -68,8 +68,8 @@ export function PeerApprovalDialog() {
           {`\n${t('peer.approveRule')}`}
         </div>
         <fieldset className="peer-approval-group">
-          <legend className="set-name">{t('peer.approveProjects')}</legend>
-          {current.projects.length === 0 ? <div className="set-desc">{t('peer.approveNoProjects')}</div> : null}
+          <legend className="ui-row-name">{t('peer.approveProjects')}</legend>
+          {current.projects.length === 0 ? <div className="ui-row-desc">{t('peer.approveNoProjects')}</div> : null}
           {current.projects.map((project) => (
             <label className="peer-approval-option" key={project.id}>
               <input type="checkbox" checked={projects.includes(project.id)} onChange={() => setProjects((list) => toggle(list, project.id))} />
@@ -78,7 +78,7 @@ export function PeerApprovalDialog() {
           ))}
         </fieldset>
         <fieldset className="peer-approval-group">
-          <legend className="set-name">{t('peer.approveOperations')}</legend>
+          <legend className="ui-row-name">{t('peer.approveOperations')}</legend>
           {current.operations.map((op) => (
             <label className="peer-approval-option" key={op}>
               <input type="checkbox" checked={operations.includes(op)} onChange={() => setOperations((list) => toggle(list, op))} />
@@ -87,7 +87,7 @@ export function PeerApprovalDialog() {
           ))}
         </fieldset>
         <div className="modal-foot">
-          <span className="set-desc">{t('peer.approveNotShared')}</span>
+          <span className="ui-row-desc">{t('peer.approveNotShared')}</span>
           <span className="spacer" />
           <Button onClick={() => decide(false)} data-testid="peer-deny">
             {t('peer.deny')}

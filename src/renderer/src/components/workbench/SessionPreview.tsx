@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { ForkPoint, PeekResult, UIMessage } from '../../../../shared/ipc'
+import { Button, IconButton } from '../ui'
 
 /**
  * 会话预览（地图内的右侧抽屉）。
@@ -105,23 +106,10 @@ export function SessionPreview({ path, isCurrent, onOpen, onClose, onFork, forki
         <span className="wb-preview-title" data-testid="map-preview-title">
           {t('map.preview')}
         </span>
-        <button
-          className="wb-preview-btn"
-          onClick={() => onOpen(path)}
-          data-testid="map-preview-open"
-          title={t('map.previewOpen')}
-        >
+        <Button size="sm" onClick={() => onOpen(path)} data-testid="map-preview-open" title={t('map.previewOpen')}>
           {t('map.previewOpen')}
-        </button>
-        <button
-          className="wb-preview-btn"
-          onClick={onClose}
-          aria-label={t('map.previewClose')}
-          title={t('map.previewClose')}
-          data-testid="map-preview-close"
-        >
-          <Icon name="sidebar-right" size={12} />
-        </button>
+        </Button>
+        <IconButton icon="sidebar-right" label={t('map.previewClose')} size="sm" onClick={onClose} data-testid="map-preview-close" />
       </header>
 
       <div className="wb-preview-stat" data-testid="map-preview-stat">

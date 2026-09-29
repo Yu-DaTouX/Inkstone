@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
-import { StyleSheet, Text, TextInput, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
 import type { RemoteAnswer, RemotePendingQuestion } from '../../../src/shared/remote-protocol'
 import { idempotencyKey, RemoteHttpError } from '../api/client'
 import { SpeechInputButton } from './SpeechInputButton'
-import { font, radius, space, touch, usePalette } from '../theme'
-import { Badge, Button } from '../ui'
+import { font, mono, radius, space, usePalette, weight } from '../theme'
+import { Badge, Button, Input, STATUS_TEXT } from '../ui'
 
 /**
  * 一个等待回答的问题。
@@ -50,9 +50,9 @@ export function QuestionCard({
   }
 
   return (
-    <View style={[styles.card, { backgroundColor: p.bg1, borderColor: question.sensitive ? p.warn : p.accent }]}>
+    <View style={[styles.card, { backgroundColor: p.bg1, borderColor: question.sensitive ? p.warn : p.accentLine }]}>
       <View style={styles.head}>
-        <Badge tone={question.sensitive ? 'warn' : 'accent'}>{question.sensitive ? '需要在电脑上确认' : '等你回答'}</Badge>
+        <Badge tone={question.sensitive ? 'warn' : 'accent'}>{question.sensitive ? '需要在电脑上确认' : STATUS_TEXT.wait}</Badge>
         {sessionTitle ? <Text numberOfLines={1} style={[styles.session, { color: p.fgMute }]}>{sessionTitle}</Text> : null}
       </View>
       {question.title ? <Text style={[styles.title, { color: p.fg }]}>{question.title}</Text> : null}
@@ -75,14 +75,12 @@ export function QuestionCard({
                 <Button key={option} label={option} busy={busy} onPress={() => void send({ value: option })} />
               ))
             : null}
-          <TextInput
-            disableFullscreenUI
-            style={[styles.input, { backgroundColor: p.bg2, borderColor: p.border, color: p.fg }]}
+          <Input
+            style={styles.input}
             value={text}
             onChangeText={setText}
             multiline={question.method === 'editor' || question.method === 'input'}
             placeholder={question.method === 'select' ? '或自行撰写回复' : question.placeholder || '写下你的回答'}
-            placeholderTextColor={p.fgMute}
             accessibilityLabel="回答内容"
           />
           <SpeechInputButton onText={(spoken) => setText((current) => current.trim() ? `${current.trimEnd()} ${spoken}` : spoken)} onStateChange={(state) => setVoiceBusy(state !== 'idle')} disabled={busy} />
@@ -107,13 +105,13 @@ export function QuestionCard({
 const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: radius.lg, padding: space[4], gap: space[2], marginBottom: space[3] },
   head: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  session: { flex: 1, fontSize: font.xs },
-  title: { fontSize: font.body, fontWeight: '600' },
+  session: { flex: 1, fontSize: font.xs, fontFamily: mono },
+  title: { fontSize: font.body, fontWeight: weight.strong },
   message: { fontSize: font.base, lineHeight: 22 },
   actions: { gap: space[2], marginTop: space[1] },
   row: { flexDirection: 'row', gap: space[2], marginTop: space[1] },
   flex: { flex: 1 },
   note: { fontSize: font.sm },
-  input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, padding: space[3], fontSize: font.body },
+  input: { paddingVertical: space[3], fontSize: font.body },
   error: { fontSize: font.sm }
 })

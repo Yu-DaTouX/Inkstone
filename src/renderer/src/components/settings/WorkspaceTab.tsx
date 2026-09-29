@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
+import { Button, SettingRow } from '../ui'
 
 /** 活动档案的选项：与输入区原来的选择器同源（实施-25 P01 的七档） */
 const AGENT_PROFILES = [
@@ -67,20 +68,10 @@ export function WorkspaceTab() {
 
   return (
     <>
-      <div className="set-group">
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('set.sessionHead')}</div>
-            <div className="set-desc">{t('set.sessionHeadDesc')}</div>
-          </div>
-        </div>
+      <div className="ui-rows">
+        <SettingRow name={t('set.sessionHead')} desc={t('set.sessionHeadDesc')} />
 
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('set.workModeNow')}</div>
-            <div className="set-desc">{t('set.workModeNowDesc')}</div>
-          </div>
-          <div className="set-ctl seg" data-testid="set-work-mode">
+        <SettingRow name={t('set.workModeNow')} desc={t('set.workModeNowDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-work-mode" }}>
             {WORK_MODES.map((mode) => (
               <button
                 key={mode}
@@ -93,15 +84,9 @@ export function WorkspaceTab() {
                 {t(`workMode.label.${mode}`)}
               </button>
             ))}
-          </div>
-        </div>
+          </SettingRow>
 
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name"><Icon name="agent" size={12} /> {t('set.agentProfileNow')}</div>
-            <div className="set-desc">{t('set.agentProfileNowDesc')}</div>
-          </div>
-          <div className="set-ctl seg" data-testid="set-agent-profile">
+        <SettingRow name={<><Icon name="agent" size={12} /> {t('set.agentProfileNow')}</>} desc={t('set.agentProfileNowDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-agent-profile" }}>
             {AGENT_PROFILES.map((item) => (
               <button
                 key={item.key}
@@ -119,17 +104,11 @@ export function WorkspaceTab() {
                 <span>{t(`agentProfile.${item.key}`)}</span>
               </button>
             ))}
-          </div>
-        </div>
+          </SettingRow>
       </div>
 
-      <div className="set-group">
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('set.workspaceMode')}</div>
-            <div className="set-desc">{t('set.workspaceModeDesc')}</div>
-          </div>
-          <div className="set-ctl seg" data-testid="set-workspace-mode">
+      <div className="ui-rows">
+        <SettingRow name={t('set.workspaceMode')} desc={t('set.workspaceModeDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-workspace-mode" }}>
             {modeOpts.map((o) => (
               <button
                 key={o.id}
@@ -143,19 +122,13 @@ export function WorkspaceTab() {
                 <span>{o.label}</span>
               </button>
             ))}
-          </div>
-        </div>
+          </SettingRow>
       </div>
 
-      <div className="set-group">
-        <div className="set-row">
-          <div className="set-label">
-            <div className="set-name">{t('set.spaceManage')}</div>
-            <div className="set-desc">{t('set.spaceManageDesc')}</div>
-          </div>
-          <div className="set-ctl">
+      <div className="ui-rows">
+        <SettingRow name={t('set.spaceManage')} desc={t('set.spaceManageDesc')}>
             <input
-              className="set-input"
+              className="ui-input"
               value={newName}
               placeholder={t('rail.spaceName')}
               data-testid="set-space-new-name"
@@ -170,37 +143,31 @@ export function WorkspaceTab() {
                 })
               }}
             />
-            <button
-              className="btn"
-              data-testid="set-space-create"
-              disabled={!newName.trim()}
-              onClick={() => {
+            <Button data-testid="set-space-create" disabled={!newName.trim()} onClick={() => {
                 const name = newName.trim()
                 if (!name) return
                 void createSpace(name).then((space) => {
                   if (space) setNewName('')
                 })
-              }}
-            >
+              }}>
               {t('set.spaceCreate')}
-            </button>
-          </div>
-        </div>
+            </Button>
+          </SettingRow>
 
         {active.length === 0 ? (
-          <div className="set-row">
-            <div className="set-desc" data-testid="set-space-empty">
+          <div className="ui-row">
+            <div className="ui-row-desc" data-testid="set-space-empty">
               {t('rail.noSpaces')}
             </div>
           </div>
         ) : null}
 
         {active.map((space) => (
-          <div className="set-row" key={space.id} data-testid="set-space-row" data-space-id={space.id}>
-            <div className="set-label">
+          <div className="ui-row" key={space.id} data-testid="set-space-row" data-space-id={space.id}>
+            <div className="ui-row-label">
               {editing?.id === space.id ? (
                 <input
-                  className="set-input"
+                  className="ui-input"
                   autoFocus
                   value={editing.name}
                   data-testid="set-space-rename-input"
@@ -224,19 +191,16 @@ export function WorkspaceTab() {
                   }}
                 />
               ) : (
-                <div className="set-name" data-testid="set-space-name">
+                <div className="ui-row-name" data-testid="set-space-name">
                   {space.name}
                 </div>
               )}
-              <div className="set-desc">{space.description ?? t('set.spaceSessions', { n: countOf(space.id) })}</div>
+              <div className="ui-row-desc">{space.description ?? t('set.spaceSessions', { n: countOf(space.id) })}</div>
             </div>
-            <div className="set-ctl">
+            <div className="ui-row-ctl">
               {editing?.id === space.id ? (
                 <>
-                  <button
-                    className="btn"
-                    data-testid="set-space-rename-save"
-                    onClick={() => {
+                  <Button data-testid="set-space-rename-save" onClick={() => {
                       const name = editing.name.trim()
                       if (!name) {
                         setEditing(null)
@@ -245,31 +209,21 @@ export function WorkspaceTab() {
                       void updateSpace(space.id, { name }).then((ok) => {
                         if (ok) setEditing(null)
                       })
-                    }}
-                  >
+                    }}>
                     {t('set.spaceSave')}
-                  </button>
-                  <button className="btn" onClick={() => setEditing(null)}>
+                  </Button>
+                  <Button onClick={() => setEditing(null)}>
                     {t('set.spaceCancel')}
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <>
-                  <button
-                    className="btn"
-                    data-testid="set-space-rename"
-                    onClick={() => setEditing({ id: space.id, name: space.name })}
-                  >
+                  <Button data-testid="set-space-rename" onClick={() => setEditing({ id: space.id, name: space.name })}>
                     {t('set.spaceRename')}
-                  </button>
-                  <button
-                    className="btn"
-                    data-testid="set-space-archive"
-                    title={t('rail.spaceArchive')}
-                    onClick={() => void updateSpace(space.id, { archived: true })}
-                  >
+                  </Button>
+                  <Button data-testid="set-space-archive" title={t('rail.spaceArchive')} onClick={() => void updateSpace(space.id, { archived: true })}>
                     {t('set.spaceArchive')}
-                  </button>
+                  </Button>
                 </>
               )}
             </div>
@@ -278,33 +232,19 @@ export function WorkspaceTab() {
 
         {archived.length > 0 ? (
           <>
-            <div className="set-row">
-              <button
-                className="btn"
-                data-testid="set-space-archived-toggle"
-                onClick={() => setShowArchived((v) => !v)}
-              >
+            <div className="ui-row">
+              <Button data-testid="set-space-archived-toggle" onClick={() => setShowArchived((v) => !v)}>
                 <Icon name="chevron-right" size={12} className={`chev ${showArchived ? 'on' : ''}`} />
                 <span>{t('set.spaceArchivedHead', { n: archived.length })}</span>
-              </button>
+              </Button>
             </div>
             {showArchived
               ? archived.map((space) => (
-                  <div className="set-row" key={space.id} data-testid="set-space-archived-row" data-space-id={space.id}>
-                    <div className="set-label">
-                      <div className="set-name">{space.name}</div>
-                      <div className="set-desc">{t('set.spaceSessions', { n: countOf(space.id) })}</div>
-                    </div>
-                    <div className="set-ctl">
-                      <button
-                        className="btn"
-                        data-testid="set-space-restore"
-                        onClick={() => void updateSpace(space.id, { archived: false })}
-                      >
+                  <SettingRow key={space.id} data-testid="set-space-archived-row" data-space-id={space.id} name={space.name} desc={t('set.spaceSessions', { n: countOf(space.id) })}>
+                      <Button data-testid="set-space-restore" onClick={() => void updateSpace(space.id, { archived: false })}>
                         {t('set.spaceRestore')}
-                      </button>
-                    </div>
-                  </div>
+                      </Button>
+                    </SettingRow>
                 ))
               : null}
           </>

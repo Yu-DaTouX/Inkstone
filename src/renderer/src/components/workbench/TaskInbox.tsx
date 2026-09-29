@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { TASK_STATUS_ORDER, taskInboxPageQuery, type TaskCard, type TaskInboxPage, type TaskStatus } from '../../../../shared/task-inbox'
+import { Button } from '../ui'
 
 /**
  * 任务收件箱（实施-28 T2）。
@@ -118,16 +119,8 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
           <span>{t('inbox.title')}</span>
           {page ? <b className="wb-inbox-total">{page.total}</b> : null}
         </div>
-        <button
-          className="btn sm wb-inbox-refresh"
-          onClick={() => void load(limit, filter)}
-          disabled={loading}
-          data-testid="inbox-refresh"
-          title={t('inbox.refresh')}
-        >
-          <Icon name="refresh" size={12} />
-          <span>{t('inbox.refresh')}</span>
-        </button>
+        <Button size="sm" icon="refresh" className="wb-inbox-refresh" onClick={() => void load(limit, filter)} disabled={loading} data-testid="inbox-refresh" title={t('inbox.refresh')}><span>{t('inbox.refresh')}</span>
+        </Button>
       </header>
 
       <p className="wb-inbox-note">{t('inbox.subtitle')}</p>
@@ -201,17 +194,12 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
               <div className="wb-inbox-card-foot">
                 <span className="wb-inbox-when">{new Date(c.updatedAt).toLocaleString()}</span>
                 <div className="wb-inbox-actions">
-                  <button
-                    className="btn sm"
-                    onClick={() => void open(c, path as string)}
-                    disabled={!path}
-                    data-testid="inbox-open"
-                  >
+                  <Button size="sm" onClick={() => void open(c, path as string)} disabled={!path} data-testid="inbox-open">
                     {t('inbox.open')}
-                  </button>
-                  <button className="btn sm ghost" onClick={() => void dismiss(c)} data-testid="inbox-dismiss">
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => void dismiss(c)} data-testid="inbox-dismiss">
                     {t('inbox.dismiss')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </li>
@@ -220,14 +208,9 @@ export function TaskInbox({ onOpenSession }: Props): React.JSX.Element {
       </ul>
 
       {page && page.total > cards.length ? (
-        <button
-          className="btn sm wb-inbox-more"
-          onClick={() => setLimit((n) => n + PAGE_SIZE)}
-          disabled={loading}
-          data-testid="inbox-more"
-        >
+        <Button size="sm" className="wb-inbox-more" onClick={() => setLimit((n) => n + PAGE_SIZE)} disabled={loading} data-testid="inbox-more">
           {t('inbox.loadMore')}
-        </button>
+        </Button>
       ) : null}
     </div>
   )

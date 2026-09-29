@@ -28,9 +28,9 @@
 .wb-map-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
-  padding: 8px 12px;
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -52,7 +52,7 @@
   /* 头部里唯一可伸缩的东西：窄了就窄一点，不要别的元素被挤走 */
   flex: 0 1 190px;
   min-width: 88px;
-  padding: 2px 10px;
+  padding: 2px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -112,8 +112,8 @@
 .wb-map-tools button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
@@ -218,7 +218,7 @@
 }
 
 .wb-cluster {
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border: 1px dashed var(--border-str);
   border-radius: var(--r-full);
   background: var(--bg-1);
@@ -238,7 +238,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-1);
@@ -323,7 +323,7 @@
   position: absolute;
   display: flex;
   gap: 6px;
-  padding: 5px 7px;
+  padding: var(--sp-1) 7px;
   border: 1px solid var(--border);
   border-left: 2px solid var(--border-str);
   border-radius: var(--r-sm);
@@ -422,7 +422,7 @@
 .wb-turn-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -487,7 +487,7 @@
 /* 轮次层的非卡状态：加载中 / 读不出来 / 这个会话还没有轮次 */
 .wb-turn-state {
   position: absolute;
-  padding: 4px 7px;
+  padding: var(--sp-1) 7px;
   border: 1px dashed var(--border-str);
   border-radius: var(--r-sm);
   background: transparent;
@@ -565,21 +565,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-sm);
 }
 
 .wb-map-foot {
   flex: 0 0 auto;
-  padding: 6px 12px;
+  padding: 6px var(--sp-3);
   border-top: 1px solid var(--border-soft);
 }
 
 .wb-map-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   font-size: var(--fs-xs);
   color: var(--fg-dim);
 }
@@ -589,7 +589,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--fg);
 }
 
@@ -623,9 +623,9 @@
 .wb-preview-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -639,35 +639,9 @@
   color: var(--fg);
 }
 
-.wb-preview-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  font: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.6;
-  cursor: pointer;
-}
-
-.wb-preview-btn:hover {
-  color: var(--fg);
-  border-color: var(--accent-line);
-}
-
-.wb-preview-btn:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 1px;
-}
-
 .wb-preview-stat {
   flex: 0 0 auto;
-  padding: 4px 10px;
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
@@ -679,14 +653,14 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
 }
 
 .wb-preview-msg {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .wb-preview-meta {
@@ -725,8 +699,8 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2);
   border-top: 1px solid var(--border-soft);
 }
 
@@ -740,7 +714,7 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 6px;
+  padding: var(--sp-1) 6px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -794,7 +768,7 @@
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  padding: 10px 16px;
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--border-soft);
   font-size: var(--fs-base);
   font-weight: var(--fw-medium);
@@ -808,10 +782,10 @@
 .wb-hero {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   flex: 0 0 auto;
-  margin: 16px 16px 0;
-  padding: 16px;
+  margin: var(--sp-4) var(--sp-4) 0;
+  padding: var(--sp-4);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
   background: var(--bg-1);
@@ -861,15 +835,15 @@
   overflow: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-  padding: 12px 16px 16px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
   align-content: start;
 }
 
 .wb-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border-soft);
@@ -932,7 +906,7 @@
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 6px var(--sp-2);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -972,7 +946,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   font-size: var(--fs-sm);
   color: var(--fg-dim);
 }
@@ -998,9 +972,9 @@
 .wb-space-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
-  padding: 8px 14px;
+  padding: var(--sp-2) 14px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -1010,7 +984,7 @@
   gap: 6px;
   min-width: 0;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--fg);
 }
 
@@ -1027,61 +1001,16 @@
   border-radius: var(--r-full);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-weight: 400;
+  font-weight: var(--fw-regular);
 }
 
+/* 视图切换是 ui.css 的分段控件（.seg.sm）；这里只把它推到标题行右侧 */
 .wb-space-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
   margin-left: auto;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-}
-
-.wb-space-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border: 0;
-  border-radius: var(--r-xs);
-  background: transparent;
-  color: var(--fg-mute);
-  font: inherit;
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.wb-space-tab:hover {
-  color: var(--fg);
-}
-
-.wb-space-tab.on {
-  background: var(--bg-0);
-  color: var(--fg);
 }
 
 .wb-space-close {
   flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--fg-mute);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.wb-space-close:hover {
-  background: var(--bg-2);
-  color: var(--fg);
 }
 
 .wb-space-body {
@@ -1095,8 +1024,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 48px 16px;
+  gap: var(--sp-2);
+  padding: 48px var(--sp-4);
   color: var(--fg-mute);
   font-size: var(--fs-sm);
   text-align: center;
@@ -1107,7 +1036,7 @@
 .wb-ov {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sp-3);
   min-height: 0;
 }
 
@@ -1121,7 +1050,7 @@
   display: grid;
   /* min(240px, 100%) + 1fr：列宽自适应且卡片里的长标题不撑破列宽 */
   grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
-  gap: 12px;
+  gap: var(--sp-3);
   align-content: start;
 }
 
@@ -1130,7 +1059,7 @@
 .wb-lib {
   display: grid;
   grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--sp-3);
   height: 100%;
   min-height: 0;
 }
@@ -1153,7 +1082,7 @@
 .wb-lib-list-head {
   position: sticky;
   top: 0;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
   background: var(--bg-1);
   color: var(--fg-mute);
@@ -1161,14 +1090,14 @@
 }
 
 .wb-lib-preview {
-  gap: 8px;
-  padding: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
 }
 
 .wb-lib-preview-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -1200,8 +1129,8 @@
 .wb-lib-actions button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: var(--sp-1);
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -1241,7 +1170,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
   padding-top: 6px;
   border-top: 1px solid var(--border-soft);
 }
@@ -1259,7 +1188,7 @@
 .wb-art {
   display: grid;
   grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--sp-3);
   height: 100%;
   min-height: 0;
 }
@@ -1282,7 +1211,7 @@
 .wb-art-list-head {
   position: sticky;
   top: 0;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
   background: var(--bg-1);
   color: var(--fg-mute);
@@ -1292,7 +1221,7 @@
 .wb-art-new {
   display: flex;
   gap: 6px;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -1303,7 +1232,7 @@
 
 .wb-art-new input,
 .wb-art-title {
-  padding: 3px 8px;
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-2);
@@ -1320,7 +1249,7 @@
 
 .wb-art-new button {
   flex: none;
-  padding: 3px 10px;
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -1341,15 +1270,15 @@
 }
 
 .wb-art-editor {
-  gap: 8px;
-  padding: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
 }
 
 .wb-art-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -1366,7 +1295,7 @@
 
 .wb-art-source-status {
   display: block;
-  margin: 2px 0 0 8px;
+  margin: 2px 0 0 var(--sp-2);
   font-size: 10px;
   color: var(--fg-mute);
 }
@@ -1379,7 +1308,7 @@
 .wb-follow {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .wb-follow-note {
@@ -1400,8 +1329,8 @@
 .wb-follow-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: var(--sp-1);
+  padding: 6px var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -1426,7 +1355,7 @@
 .wb-follow-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   overflow-wrap: break-word;
 }
 
@@ -1449,7 +1378,7 @@
   gap: 6px;
 }
 
-.wb-follow-actions .wb-btn {
+.wb-follow-actions .btn {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -1458,7 +1387,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px dashed var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -1478,8 +1407,8 @@
 .wb-art-versions button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: var(--sp-1);
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -1503,7 +1432,7 @@
 .wb-art-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -1526,7 +1455,7 @@
 .wb-art-body {
   flex: 1 1 auto;
   min-height: 120px;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-2);
@@ -1551,7 +1480,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
   padding-top: 6px;
   border-top: 1px solid var(--border-soft);
 }
@@ -1582,7 +1511,7 @@
   gap: 2px;
   max-height: 160px;
   overflow: auto;
-  padding: 6px 8px;
+  padding: 6px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-1);
@@ -1612,7 +1541,7 @@
 .wb-art-sources {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .wb-art-sources-head {
@@ -1632,9 +1561,9 @@
 .wb-art-source {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   max-width: 100%;
-  padding: 3px 8px;
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -1661,10 +1590,10 @@
 .wb-art-source-preview {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   max-height: 180px;
   overflow: auto;
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-2);
   border: 1px dashed var(--border);
   border-radius: var(--r-md);
   background: var(--bg-1);
@@ -1674,7 +1603,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .wb-art-source-preview-head button {
@@ -1713,8 +1642,8 @@
 /* 空间里的表单输入（持续关注等） */
 .wb-ex-input {
   width: 100%;
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: var(--sp-1) 6px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   background: var(--bg-2);
   border: 1px solid var(--border-soft);
@@ -1757,7 +1686,7 @@
 .wb-inbox-total {
   font-size: var(--fs-sm);
   color: var(--fg-mute);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .wb-inbox-note {
@@ -1772,7 +1701,7 @@
 
 .wb-inbox-filters button b {
   color: var(--fg-mute);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .wb-inbox-error,

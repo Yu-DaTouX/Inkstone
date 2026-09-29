@@ -5,16 +5,255 @@
  * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
  */
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+.composer {
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+.composer textarea::placeholder {
+  color: var(--fg-mute);
+}
+
+.ub-item.dim {
+  opacity: 0.55;
+}
+
+.ub-label {
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+
+.ub-value {
+  /* 用量是诊断信息：常驻但退到三级色，不和输入区争注意力（需求稿 3.1） */
+  color: var(--fg-mute);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.ub-unit {
+  color: var(--fg-mute);
+  font-size: 0.92em;
+}
+
+/* 缓存命中率：只比数值亮一档。绿色只表达成功 / 新增（DESIGN §2.6），这里不借用 */
+.ub-extra {
+  color: var(--fg-dim);
+}
+
+.ub-live {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+  animation: ubpulse var(--dur-1100) var(--mo-loop) infinite;
+}
+
+.ub-turn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+/* 29. 输入区工具条（对齐 Agents-Anywhere）
+   左：附件 / 模型胶囊；右：圆形发送键 */
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.ctool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border-radius: var(--r-md);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.ctool:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+/* 发送键：圆形（对齐他们的圆形箭头按钮） */
+.send {
+  height: 28px;
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-4);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--r-full);
+  background: var(--fg);
+  color: var(--bg-0);
+  flex: none;
+  justify-content: center;
+  gap: 0;
+  /* 文字只在忙碌时（中止）显示，正常状态只有一个箭头 */
+}
+
+.send:disabled {
+  opacity: var(--ctl-disabled-opacity);
+}
+
+/* 34. 输入区悬浮
+   之前是贴底的实心条（铺满整个宽度、带背景色 + 上边框），
+   视觉上像「页面的一块」，和消息流割裂。
+   改成一张浮起的卡片：圆角更大、有边框与淡淡的落影、
+   左右留出边距，看起来是"浮在内容之上"。
+   同时用量条跟着悬浮（它附在输入区下方）。 */
+.composer-wrap {
+  padding-bottom: var(--sp-3);
+  /* 不再铺满：左右留边距，让卡片浮起来 */
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  background: transparent;
+  border-top: none;
+  /* 让上面的消息流滚到卡片下面时能被遮住，强化"浮层"感 */
+  position: relative;
+  z-index: 3;
+}
+
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow:
+    0 2px 4px -2px rgba(0, 0, 0, 0.4),
+    0 12px 36px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 3px var(--accent-soft);
+}
+
+/* 拖入文件时整张卡片亮起来（比改边框更明显） */
+.composer-wrap.dropping .composer {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+
+.composer textarea {
+  min-height: 40px;
+  padding: 2px 2px 0;
+}
+
+/*
+ * 输入框拖拽调高。
+ *
+ * 用户要求：「向上拖动可以放大输入框」。
+ *
+ * 实现方式是把 textarea 的 max-height 当成可调尺寸（不是给卡片加高度）——
+ * 这样文字多的时候卡片自然变高，而写码区的滚动仍然由 textarea 自己管。
+ * 拖拽柄放在顶边框上（那一行本来就有），不额外占高度。
+ */
+.composer {
+  border-radius: var(--r-lg);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  max-width: var(--w-stream);
+  margin-left: auto;
+  margin-right: auto;
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  background: var(--bg-1);
+  /* 浮层：圆角 + 明显的边框 + 极淡落影（DESIGN §4 的例外，见下方说明） */
+  border: 1px solid var(--border-str);
+  border-radius: var(--r-xl);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  box-shadow:
+    0 2px 4px -2px rgba(0, 0, 0, 0.4),
+    0 12px 32px -12px rgba(0, 0, 0, 0.55);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+  position: relative;
+}
+
+.ub-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  min-width: 0;
+  gap: var(--sp-1);
+}
+
+/* 45. 用量条：`.ub-sep` 撤掉，换成中点分隔符 */
+.ub-dot {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--border-str);
+  align-self: center;
+}
+
+.mt-pop {
+  /*
+   * ⚠️ `position: fixed`，而不是 absolute 贴住 `.picker-wrap`。
+   *
+   * 模型选择器现在在**输入框内部**，而 `.composer` 有 `overflow: hidden`
+   * （圆角与自主模式光带需要它）—— absolute 的菜单会被整块裁掉，
+   * 只剩贴着输入框上沿的一小截（实测截图里就只能看到两行）。
+   * 坐标由 `Pickers.tsx` 按触发器的 rect 写进 inline style（right/bottom）。
+   */
+  position: fixed;
+  z-index: 40;
+  /*
+   * 宽度跟着窗口收：窄窗口下不越界，普通窗口给到 360px
+   *（长模型名更能完整显示，而不是早早省略）。
+   */
+  width: min(360px, calc(100vw - 24px));
+  /*
+   * 高度（N08）：打开时由 JS 按「触发器上方真实可用空间」写成 inline
+   * max-height；这里的值是回退，也是普通窗口的上限。
+   * 旧值 400px —— 900px 高的窗口里只放得下 5 行多（用户报的「五个半」）。
+   */
+  max-height: min(560px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border-str);
+  overflow: hidden;
+  border-radius: var(--r-sm);
+}
+
+/* 顶边留给运行条（motion.css 的 .cborder）：它自己带下边距，所以输入框不再要上内边距 */
+.composer {
+  border-radius: var(--r-md);
+  padding-top: 0;
+  overflow: hidden;
+}
+
+/* ── 基础段结束 ── */
 
 .composer-tools {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   flex: 1;
   min-width: 0;
+}
+/* 窄窗（900×520）时工具条不换行：按钮文字保持一行，发送规则提示先省略 */
+.composer-tools > *,
+.composer-bar > * {
+  flex: none;
+  white-space: nowrap;
+}
+.composer-tools > .ctool-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-mute);
+}
+.composer-bar > .composer-tools {
+  flex: 1 1 auto;
 }
 
 /*
@@ -283,7 +522,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 5px;
+  margin-top: var(--sp-1);
   padding: 0 1px;
 }
 
@@ -318,14 +557,14 @@
 .mt-list {
   overflow: hidden auto;
   scrollbar-gutter: stable;
-  padding: 4px;
+  padding: var(--sp-1);
   min-height: 0;
   /* 占满 head/search 之后的剩余高度，让 max-height 真正变成「更多模型行」 */
   flex: 1 1 auto;
 }
 
 .mt-group + .mt-group {
-  margin-top: 4px;
+  margin-top: var(--sp-1);
 }
 
 .mt-group-head {
@@ -340,7 +579,7 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
@@ -381,7 +620,7 @@
 
 .mt-tag {
   flex: none;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   border: 1px solid var(--border);
   color: var(--fg-mute);
@@ -440,7 +679,7 @@
   flex: 1 1 auto;
   min-width: 0;
   height: calc(var(--ctl-h-sm) - 4px);
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border: 0;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
@@ -473,14 +712,14 @@
 }
 
 .mt-hint {
-  margin-top: 5px;
+  margin-top: var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   line-height: 1.45;
 }
 
 .mt-capability-note {
-  margin-top: 4px;
+  margin-top: var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   line-height: 1.4;
@@ -514,12 +753,10 @@
   flex: 1;
 }
 
-/* 收起态的箭头用字符而不是图标：终端里 `▾` 比一个旋转的 SVG 更像样 */
+/* 下拉箭头是转向的 chevron 图标（界面里不用 ▾ 这类文字符号，设计规范 §3.4） */
 .mt-chev {
   flex: none;
   color: var(--fg-mute);
-  font-size: 10px;
-  line-height: 1;
 }
 
 .usagebar {
@@ -544,7 +781,7 @@
   max-width: calc(var(--w-stream) - 120px);
   margin: var(--sp-2) auto 0;
   padding: 0 2px;
-  gap: 4px var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
   /* ② 缩小 */
   font-size: var(--fs-xs);
   min-height: 22px;
@@ -552,7 +789,7 @@
   /* ③ 右侧那组靠右：用 auto margin 把左组推开 */
   justify-content: flex-start;
   max-width: var(--w-stream);
-  gap: 5px var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
 }
 
 .usagebar .spacer {
@@ -566,7 +803,7 @@
   align-items: baseline;
   gap: 6px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid transparent;
   font-size: var(--fs-sm);
@@ -593,18 +830,29 @@
    这些快捷键一直支持，但界面上没写 —— 用户只会用鼠标点。
    一行小字比在文档里写十行有用。 */
 .slash-hint {
+  position: sticky;
+  bottom: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-3);
-  padding: 4px var(--sp-2) 3px;
+  gap: var(--sp-1) var(--sp-3);
   margin-top: 2px;
+  padding: var(--sp-1) var(--sp-2) 3px;
   border-top: 1px solid var(--border-soft);
+  background: var(--bg-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
 
 .slash-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
   white-space: nowrap;
+}
+
+.slash-count {
+  margin-left: auto;
 }
 
 /* 65. 工作模式菜单（实施-05：原位显示「标准 / 澄清 / 自主 ▾」）
@@ -632,8 +880,6 @@
 
 .mode-button .mode-caret {
   color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1;
 }
 
 .mode-button[data-mode='autonomous'] .mode-caret {
@@ -657,7 +903,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-xs);
   text-align: left;
 }
@@ -728,7 +974,7 @@
 .plus-input {
   width: 100%;
   resize: vertical;
-  padding: 4px 6px;
+  padding: var(--sp-1) 6px;
   color: var(--fg);
   font-family: inherit;
   font-size: var(--fs-sm);
@@ -800,10 +1046,6 @@
   margin: 0 auto var(--sp-2);
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage2.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .attach-strip {
   display: flex;
   flex-wrap: wrap;
@@ -851,7 +1093,7 @@
   gap: var(--sp-2);
   width: auto;
   max-width: 240px;
-  padding: 5px 20px 5px 6px;
+  padding: var(--sp-1) 20px var(--sp-1) 6px;
 }
 
 .attach-file-ico {
@@ -893,64 +1135,101 @@
   color: var(--err);
 }
 
-/* 2. 斜杠命令菜单 */
+/* 2. `/` 命令菜单与 `@` 文件菜单（设计规范 §3.6）
+   顶部 `›` 回显查询；结果按来源分组；选中行 --bg-3 底 + 行首强调色 `›`；
+   右侧淡显来源；底部一行键位。它嵌在输入框里（不是浮层），入场只做淡入上移。 */
 .slash-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 260px;
   margin-bottom: var(--sp-2);
-  padding-bottom: var(--sp-2);
-  border-bottom: 1px dashed var(--border);
-  max-height: 224px;
+  padding-bottom: var(--sp-1);
   overflow-y: auto;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--font-ui);
+  animation: mo-in-up var(--mo-slow) var(--mo-ease) both;
+}
+
+.slash-query {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.slash-query-prompt {
+  color: var(--accent);
+  font-weight: var(--fw-strong);
 }
 
 .slash-group {
-  padding: 4px var(--sp-2) 2px;
+  padding: var(--sp-2) var(--sp-2) 2px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: none;
+  font-weight: var(--fw-strong);
 }
 
 .slash-item {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(0, auto) minmax(0, 1fr) auto;
   align-items: baseline;
   gap: var(--sp-2);
   width: 100%;
-  padding: 4px var(--sp-2);
+  min-height: var(--ctl-h);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
-  text-align: left;
+  color: var(--fg-dim);
   font-size: var(--fs-sm);
+  text-align: left;
 }
-
+/* 行首的选中标记列：平时留白，选中时是强调色 `›` */
+.slash-item::before {
+  content: '';
+}
 .slash-item.sel {
-  background: var(--accent-soft);
+  background: var(--bg-3);
+  color: var(--fg);
 }
-
+.slash-item.sel::before {
+  content: '›';
+  color: var(--accent);
+  font-weight: var(--fw-strong);
+}
 .slash-item:disabled {
   cursor: not-allowed;
   opacity: var(--ctl-disabled-opacity);
 }
-
 .slash-item.compat .slash-name {
   color: var(--fg-mute);
 }
 
 .slash-empty {
-  padding: 8px var(--sp-2);
+  padding: var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
 
 .slash-name {
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
   white-space: nowrap;
+}
+.slash-name .ico {
+  color: var(--fg-mute);
 }
 
 .slash-desc {
+  overflow: hidden;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -958,15 +1237,12 @@
 .slash-src {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 0 4px;
 }
 
 /* 3. 输入区模式角标 / 附件按钮 */
 .mode-badge {
   border-radius: var(--r-sm);
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid currentColor;
   font-size: var(--fs-xs);
 }
@@ -983,7 +1259,7 @@
   flex: 1;
   min-width: 0;
   height: 22px;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1034,10 +1310,6 @@
   flex: none;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .review {
   border-top: 1px solid var(--border-soft);
 }
@@ -1045,7 +1317,7 @@
 .tok {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -1064,7 +1336,7 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  padding: 2px 4px 2px 8px;
+  padding: 2px var(--sp-1) 2px var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
   background: var(--bg-2);
@@ -1134,7 +1406,7 @@
 .qrow-jump {
   flex: none;
   height: 20px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: var(--bg-1);
@@ -1185,7 +1457,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 4px var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-sm);
   color: var(--fg);
 }
@@ -1212,29 +1484,8 @@
   font-size: var(--fs-xs);
 }
 
-.qpanel-page-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg-mute);
-}
-
-.qpanel-page-btn:hover:not(:disabled) {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.qpanel-page-btn:disabled {
-  opacity: .35;
-}
-
 /* 同一个图标转过来当成「上一条」，不额外加一个 sprite 图标 */
-.qpanel-page-btn.flip {
+.qpanel-prev .ico {
   transform: rotate(180deg);
 }
 
@@ -1263,7 +1514,7 @@
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
-  padding: 1px 4px;
+  padding: 1px var(--sp-1);
   color: var(--fg-mute);
   cursor: pointer;
 }
@@ -1344,7 +1595,7 @@
 }
 
 .qpanel-mini {
-  padding: 0 var(--sp-3) 5px;
+  padding: 0 var(--sp-3) var(--sp-1);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
@@ -1376,7 +1627,7 @@
 .qpanel-options {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sp-1);
 }
 
 .qpanel-option {
@@ -1440,7 +1691,7 @@
 .qpanel-input,
 .qpanel-editor {
   width: 100%;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--bg-0);
@@ -1532,31 +1783,10 @@
   opacity: 0.75;
 }
 
-.sa-launch-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 2px 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.sa-launch-btn:hover,
-.sa-launch-btn[aria-expanded='true'] {
-  border-color: var(--accent-line);
-  color: var(--fg);
-  background: var(--accent-soft);
-}
-
 .sa-launch-count {
   min-width: 15px;
-  padding: 0 4px;
-  border-radius: 999px;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-full);
   background: var(--accent);
   color: var(--bg-0);
   font-size: 10px;
@@ -1581,14 +1811,14 @@
   margin-bottom: var(--sp-2);
   color: var(--fg);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .sa-launch-panel textarea {
   display: block;
   width: 100%;
   min-height: 66px;
-  padding: 7px 8px;
+  padding: 7px var(--sp-2);
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1637,7 +1867,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 4px var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
   border-bottom: 1px solid var(--border-soft);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
@@ -1677,7 +1907,7 @@
   flex: none;
   width: 14px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1;
 }
 
@@ -1732,15 +1962,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: fit-content;
   max-width: min(560px, 100%);
   margin: 0 auto 6px;
-  padding: 3px 10px;
+  padding: 3px var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-1);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-dim);
 }
 
@@ -1792,7 +2022,7 @@
 .handoff-note-tally {
   white-space: nowrap;
   color: var(--fg-mute);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1830,22 +2060,22 @@
    运行中在前、其余按结束时间倒序；筛选只改视图，不改变 run 身份。 */
 .sa-filters {
   display: flex;
-  gap: 4px;
-  padding: 2px 8px 6px;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) 6px;
   flex-wrap: wrap;
 }
 
 .sa-filter {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg-mute);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 
@@ -1868,15 +2098,15 @@
 .sa-filter-n {
   font-size: 10px;
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 999px;
+  padding: 2px var(--sp-1);
+  border-radius: var(--r-full);
   background: var(--bg-3);
   color: var(--fg-dim);
 }
 
 .sa-empty {
-  padding: 8px 12px;
-  font-size: 12px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
   color: var(--fg-mute);
 }
 
@@ -1885,7 +2115,7 @@
   font-size: 10px;
   line-height: 1;
   padding: 3px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-full);
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
 }
@@ -1933,12 +2163,30 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .voice-input.recording .voice-dot {
-    animation: voice-pulse 1.2s ease-in-out infinite;
+    animation: voice-pulse var(--dur-1200) var(--mo-loop) infinite;
   }
 }
 
-@keyframes voice-pulse {
-  50% {
-    opacity: 0.35;
-  }
+/* 环绕流光的宿主：与输入框同宽同圆角，流光画在它的 ::after 上（输入框自己 overflow: hidden，画不出边外） */
+.composer-orbit {
+  position: relative;
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  border-radius: var(--r-lg);
+}
+
+/* 输入行：左侧提示符 + 输入框（设计规范 §3.5）。提示符用强调色、等宽，与正文首行对齐 */
+.composer-line {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+}
+.composer-prompt {
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  line-height: var(--lh-body);
+  user-select: none;
 }

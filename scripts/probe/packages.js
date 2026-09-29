@@ -134,7 +134,7 @@
 
     /* ⑧ 收尾：关掉设置面板 */
     store.getState().closeSettings()
-    await until(() => qa('.set-group').length === 0, 3000)
+    await until(() => qa('.ui-rows').length === 0, 3000)
   } catch (error) {
     out.push('  ✗ 探针异常：' + (error && error.message ? error.message : String(error)))
   }

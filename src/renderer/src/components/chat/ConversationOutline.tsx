@@ -181,7 +181,7 @@ export function ConversationOutline() {
     const host = el?.offsetParent as HTMLElement | null
     if (!el || !host) return
 
-    /* 槽参数只有一份真源：CSS 变量（见 redesign.css 的 .outline） */
+    /* 槽参数只有一份真源：CSS 变量（见 chat.css 的 .outline） */
     const cs = getComputedStyle(el)
     const inset = parseFloat(cs.getPropertyValue('--outline-slot-inset')) || 0
     const slotW = parseFloat(cs.getPropertyValue('--outline-slot-w')) || 0

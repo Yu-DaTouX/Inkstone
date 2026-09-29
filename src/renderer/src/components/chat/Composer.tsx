@@ -1,17 +1,19 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import { identityForAwait, useStore } from '../../state/store'
+import { useStore } from '../../state/store'
 import { ComposerBorder } from './ComposerBorder'
 import { QuestionPanel } from './QuestionPanel'
 import { ModelThinkingPicker } from '../Pickers'
-import { UsageBar } from './UsageBar'
 import { LearningActions } from './LearningActions'
 import { VoiceInputButton } from './VoiceInputButton'
 import { findAtQuery, replaceAtQuery } from './at-query'
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
-import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
-import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
+import type { FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
+import { type WorkMode } from '../../../../shared/work-mode'
+import { PlusMenu } from './PlusMenu'
+import { readFiles, fmtSize } from './attachment-files'
+import { QueueStack, WorkModePicker } from './ComposerPickers'
 
 /**
  * 输入区。四种输入模式共存：
@@ -35,6 +37,7 @@ export function Composer() {
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
   const busy = useStore((s) => !!s.session?.isStreaming)
+  const running = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming)
   /**
    * 「模型在干活」的**回合级**判据（agent_start → agent_settled）。
    *
@@ -337,6 +340,14 @@ export function Composer() {
     setSessionDraft(value)
   }, [activeRuntimeKey, conversationKey, setSessionDraft, value])
 
+  /* 窗口高度：矮窗口（900×520）时限制展开高度，见下方「自动长高」 */
+  const [viewH, setViewH] = useState(() => window.innerHeight)
+  useEffect(() => {
+    const onResize = (): void => setViewH(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   /* ---- 自动长高 ---- */
   useEffect(() => {
     const el = ref.current
@@ -354,9 +365,14 @@ export function Composer() {
      * 内容更多可以长高，但不会缩回去。
      */
     const need = Math.min(Math.max(el.scrollHeight, 34), 240)
-    const h = tall > 0 ? Math.max(tall, need) : need
+    /*
+     * 矮窗口里输入框不能把运行条、工具条和底部状态栏挤出窗口：
+     * 实际高度不超过窗口高度的 35%（存下的 tall 不改，窗口变高后恢复）。
+     */
+    const cap = Math.max(96, Math.round(viewH * 0.35))
+    const h = Math.min(tall > 0 ? Math.max(tall, need) : need, cap)
     el.style.height = `${h}px`
-    el.style.maxHeight = tall > 0 ? `${Math.max(tall, 240)}px` : ''
+    el.style.maxHeight = tall > 0 ? `${Math.min(Math.max(tall, 240), cap)}px` : ''
 
     /*
      * 超过三行就**自动进入长文模式**（用户要求）。
@@ -376,7 +392,7 @@ export function Composer() {
       setExpanded(true)
       setTall(TALL_H)
     }
-  }, [value, tall, expanded])
+  }, [value, tall, expanded, viewH])
 
   const disabled = conn !== 'ready'
   /* N18：本地 Yan 命令不需要先连上 pi（例如 /login、/model、/browser）。 */
@@ -980,6 +996,8 @@ export function Composer() {
        */}
       <div className="composer-stack">
       <QuestionPanel />
+      {/* 环绕流光：一次运行超过 3 秒才淡入（motion.css 的 .ui-orbit）；自主模式有自己的光带，不叠加 */}
+      <div className={`composer-orbit ui-orbit ${running && !autonomous ? 'on' : ''}`} data-testid="composer-orbit">
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
         {/*
          * 顶边框 **内含工作状态**（pi 的 renderTopBorder 做法）。
@@ -1003,8 +1021,13 @@ export function Composer() {
                 )}
                 <span className="attach-name">{a.name}</span>
                 {a.kind === 'file' ? <span className="attach-size">{fmtSize(a.size)}</span> : null}
-                <button className="attach-del" onClick={() => removeAttachment(a.id)} title={t('composer.removeImage')}>
-                  ✕
+                <button
+                  className="attach-del"
+                  onClick={() => removeAttachment(a.id)}
+                  title={t('composer.removeImage')}
+                  aria-label={t('composer.removeImage')}
+                >
+                  <Icon name="close" size={12} />
                 </button>
               </div>
             ))}
@@ -1012,7 +1035,11 @@ export function Composer() {
         ) : null}
 
         {menu.open && slashMatches.length > 0 ? (
-          <div className="slash-menu" role="listbox">
+          <div className="slash-menu" role="listbox" data-testid="slash-menu">
+            {/* 顶部回显当前查询（设计规范 §3.6：命令菜单的 `›` 输入行） */}
+            <div className="slash-query" aria-hidden>
+              <span className="slash-query-prompt">›</span>/{slashQuery}
+            </div>
             {slashMatches.map((c, i) => (
               <Fragment key={`${c.source}:${c.name}:${c.module ?? ''}`}>
                 {i === 0 || slashMatches[i - 1].source !== c.source ? (
@@ -1040,10 +1067,16 @@ export function Composer() {
              * 不提示的话用户只会用鼠标点（或者以为只能点）。
              */}
             <div className="slash-hint" data-testid="slash-hint">
-              <span>↑↓ 选</span>
-              <span>Enter / Tab 填入</span>
-              <span>Esc 关闭</span>
-              <span>{slashMatches.length} 项 · 可滚动</span>
+              <span>
+                <kbd className="ui-kbd">↑↓</kbd> 选
+              </span>
+              <span>
+                <kbd className="ui-kbd">Enter</kbd> / <kbd className="ui-kbd">Tab</kbd> 填入
+              </span>
+              <span>
+                <kbd className="ui-kbd">Esc</kbd> 关闭
+              </span>
+              <span className="slash-count">{slashMatches.length} 项</span>
             </div>
           </div>
         ) : null}
@@ -1071,7 +1104,10 @@ export function Composer() {
                 aria-selected={i === menu.index}
                 title={toAbsoluteFilePath(activeCwd, p)}
               >
-                <span className="slash-name">{p.endsWith('/') ? '▸ ' : '· '}{p}</span>
+                <span className="slash-name">
+                  <Icon name={p.endsWith('/') ? 'folder' : 'file'} size={12} />
+                  {p}
+                </span>
                 <span className="slash-src">{p.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>
               </button>
             )) : null}
@@ -1092,37 +1128,43 @@ export function Composer() {
           aria-orientation="horizontal"
         />
 
-        <textarea
-          ref={ref}
-          rows={2}
-          data-testid="composer"
-          value={value}
-          disabled={disabled}
-          /*
-           * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
-           * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
-           * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
-           */
-          placeholder={
-            disabled
-              ? t('conn.starting')
-              : busy
-                ? t('composer.busy')
-                : expanded
-                  ? t('composer.phTall')
-                  : t('composer.ph')
-          }
-          onChange={(e) => {
-            setValue(e.target.value)
-            setCursor(e.target.selectionStart)
-            setAtMenuDismissed(false)
-          }}
-          onSelect={rememberCursor}
-          onClick={rememberCursor}
-          onKeyUp={rememberCursor}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        />
+        {/* 提示符：普通输入是 `›`，`!` 开头的直执行命令是 `$`（设计规范 §3.5） */}
+        <div className="composer-line">
+          <span className="composer-prompt" aria-hidden>
+            {bashMode ? '$' : '›'}
+          </span>
+          <textarea
+            ref={ref}
+            rows={2}
+            data-testid="composer"
+            value={value}
+            disabled={disabled}
+            /*
+             * 高度由上面那个 effect 统一写（它要知道 tall 与内容两个因素）。
+             * 这里**不能**再写一次 inline height —— 两处写同一个属性正是
+             * 「回车后变矮」那个 bug 的来源（React 写的会被 effect 覆盖，反之亦然）。
+             */
+            placeholder={
+              disabled
+                ? t('conn.starting')
+                : busy
+                  ? t('composer.busy')
+                  : expanded
+                    ? t('composer.phTall')
+                    : t('composer.ph')
+            }
+            onChange={(e) => {
+              setValue(e.target.value)
+              setCursor(e.target.selectionStart)
+              setAtMenuDismissed(false)
+            }}
+            onSelect={rememberCursor}
+            onClick={rememberCursor}
+            onKeyUp={rememberCursor}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+          />
+        </div>
 
         <div className="composer-bar">
           <div className="composer-tools">
@@ -1189,16 +1231,15 @@ export function Composer() {
                   : undefined
             }
           >
-            <Icon name={busy ? 'alert-circle' : bashMode ? 'activity' : 'send'} size={12} />
+            <Icon name={busy ? 'stop' : bashMode ? 'terminal' : 'send'} size={12} />
             <span>{busy ? t('composer.stop') : bashMode ? t('composer.run') : t('composer.go')}</span>
           </button>
         </div>
       </div>
+      </div>
 
       </div>
 
-      {/* 用量条：合并版，放在输入框下方 */}
-      <UsageBar />
     </div>
   )
 }
@@ -1210,636 +1251,6 @@ function sameFileCwd(a: string, b: string): boolean {
 function toAbsoluteFilePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
-}
-
-/**
- * 输入框上方的消息栈：**悬着的（待投递）** + pi 队列里（已投递）的。
- *
- * 两层语义要分清：
- *   · `pendingSends` —— 还没投给 pi，用户点「插话 / 排队」之后才投递。
- *     用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户自己选择
- *     是插话还是排队」。它只存在于渲染端（`store.pendingSends`）。
- *   · `queue.steering` / `queue.followUp` —— pi **已经收下**的（插话中 /
- *     排队中）。每行右侧的「撤回」只操作仍在队列快照中的条目：目标一旦被
- *     pi 取走就会从快照消失，不会给用户一个虚假的撤回成功。
- */
-function QueueStack() {
-  const t = useT()
-  const queue = useStore((s) => s.queue)
-  const steerQueued = useStore((s) => s.steerQueued)
-  const removeQueued = useStore((s) => s.removeQueued)
-  const pendingSends = useStore((s) => s.pendingSends)
-  const releaseSend = useStore((s) => s.releaseSend)
-  const restoreSend = useStore((s) => s.restoreSend)
-  /*
-   * 回合跑着才需要「插话 / 排队」二选一；停了就只剩「发送」一个动作。
-   *
-   * ⚠️ 这里**故意不算 `isCompacting`**（与上面 `Composer` 里那个同名判据不同）：
-   *    压缩期间模型没有在生成，“插话”没有意义 —— 卡片上只给一个
-   *    「发送」（内部走 `followUp`：等压缩完再投）才是对的。
-   *    `Composer` 那个判据加上压缩，是为了让这个时候按 Enter 先进待定区、
-   *    不要拿着裸 prompt 去撞 pi。两处职责不同，不是写漏了。
-   */
-  const roundRunning = useStore(
-    (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running
-  )
-  const steering = queue.steering
-  const followUp = queue.followUp
-  if (steering.length + followUp.length + pendingSends.length === 0) return null
-
-  return (
-    <div className="queue-stack" data-testid="queue-stack">
-      {pendingSends.map((item) => (
-        <div className="qrow pending" key={item.id} title={item.text} data-testid="queue-pending">
-          <Icon name="send" size={12} />
-          <span className="qrow-text">{item.text}</span>
-          <span className="qrow-tag">{t('queue.hold')}</span>
-          {roundRunning ? (
-            <>
-              <button
-                className="qrow-jump primary"
-                data-testid="pending-steer"
-                title={t('queue.steerNowTip')}
-                onClick={() => void releaseSend(item.id, 'steer')}
-              >
-                {t('queue.steerNow')}
-              </button>
-              <button
-                className="qrow-jump"
-                data-testid="pending-follow"
-                title={t('queue.queueItTip')}
-                onClick={() => void releaseSend(item.id, 'followUp')}
-              >
-                {t('queue.queueIt')}
-              </button>
-            </>
-          ) : (
-            <button
-              className="qrow-jump primary"
-              data-testid="pending-send"
-              title={t('queue.sendNowTip')}
-              onClick={() => void releaseSend(item.id, 'followUp')}
-            >
-              {t('queue.sendNow')}
-            </button>
-          )}
-          <button
-            className="qrow-jump"
-            data-testid="pending-restore"
-            title={t('queue.restoreTip')}
-            onClick={() => restoreSend(item.id)}
-          >
-            {t('queue.restore')}
-          </button>
-        </div>
-      ))}
-      {steering.map((item) => (
-        <div className="qrow steering" key={item.id} title={item.text} data-testid="queue-row">
-          <Icon name="queue" size={12} />
-          <span className="qrow-text">{item.text}</span>
-          <span className="qrow-tag">{t('queue.inserting')}</span>
-          <button
-            className="qrow-jump"
-            data-testid="queue-retract"
-            title={t('queue.retractTip')}
-            onClick={() => void removeQueued(item.id)}
-          >
-            {t('queue.retract')}
-          </button>
-        </div>
-      ))}
-      {followUp.map((item) => (
-        <div className="qrow" key={item.id} title={item.text} data-testid="queue-row">
-          <Icon name="history" size={12} />
-          <span className="qrow-text">{item.text}</span>
-          <button
-            className="qrow-jump"
-            data-testid="queue-steer"
-            title={t('queue.steerTip')}
-            onClick={() => void steerQueued(item.id)}
-          >
-            {t('queue.steer')}
-          </button>
-          <button
-            className="qrow-jump"
-            data-testid="queue-retract"
-            title={t('queue.retractTip')}
-            onClick={() => void removeQueued(item.id)}
-          >
-            {t('queue.retract')}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/**
- * 会话工作模式选择器。把当前值和三种模式放在输入区旁，点一次即可切换。
- */
-function WorkModePicker({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonElement | null> }) {
-  const t = useT()
-  const stored = useStore((s) => s.workMode)
-  const fallback = useStore((s) => s.settings?.defaultWorkMode ?? 'standard')
-  const setWorkMode = useStore((s) => s.setWorkMode)
-  const state: WorkMode = stored?.mode ?? fallback
-  const [open, setOpen] = useState(false)
-  const [index, setIndex] = useState(0)
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const menuWidth = 288
-
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null)
-      return
-    }
-    setIndex(Math.max(0, WORK_MODES.indexOf(state)))
-    const rect = buttonRef.current?.getBoundingClientRect()
-    if (rect) {
-      setAnchor({
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8)),
-        bottom: Math.max(8, window.innerHeight - rect.top + 6)
-      })
-    }
-    menuRef.current?.focus()
-  }, [open, state, buttonRef])
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  const commit = (mode: WorkMode) => {
-    setOpen(false)
-    buttonRef.current?.focus()
-    if (mode !== state) void setWorkMode(mode)
-  }
-
-  return (
-    <div className="mode-picker" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="ctool mode-button"
-        data-testid="work-mode-button"
-        data-mode={state}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={t(`workMode.desc.${state}`)}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault()
-            setOpen(true)
-          } else if (event.key === 'Escape' && open) {
-            event.preventDefault()
-            setOpen(false)
-          }
-        }}
-      >
-        <Icon name="sparkles" size={12} />
-        <span className="mode-label" data-testid="work-mode-label">
-          {t(`workMode.label.${state}`)}
-        </span>
-        <span className="mode-caret" aria-hidden>▾</span>
-      </button>
-
-      {open ? (
-        <div
-          className="mode-menu"
-          role="menu"
-          data-testid="work-mode-menu"
-          data-mode={state}
-          ref={menuRef}
-          tabIndex={-1}
-          style={{ width: menuWidth, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              setIndex((value) => (value + 1) % WORK_MODES.length)
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault()
-              setIndex((value) => (value - 1 + WORK_MODES.length) % WORK_MODES.length)
-            } else if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              commit(WORK_MODES[index])
-            } else if (event.key === 'Escape') {
-              event.preventDefault()
-              setOpen(false)
-              buttonRef.current?.focus()
-            }
-          }}
-        >
-          {WORK_MODES.map((mode, itemIndex) => (
-            <button
-              key={mode}
-              role="menuitemradio"
-              aria-checked={mode === state}
-              tabIndex={-1}
-              className={`mode-item ${itemIndex === index ? 'active' : ''} ${mode === state ? 'current' : ''}`}
-              data-testid={`work-mode-option-${mode}`}
-              data-mode={mode}
-              onMouseEnter={() => setIndex(itemIndex)}
-              onClick={() => commit(mode)}
-            >
-              <span className="mode-item-label">{t(`workMode.label.${mode}`)}</span>
-              <span className="mode-item-desc">{t(`workMode.desc.${mode}`)}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * `+` 菜单（2026-09-22）：codex 式「添加」入口。
- *
- * 为什么不再让 `+` 直接开图片选择器：图片只是**其中一种**能加进来的东西。
- * 「文件和文件夹」「图片」「能力」并排之后，用户不用先猜 `+` 会做什么。
- *
- * ⚠️ 菜单是 `fixed` 定位：`.composer` 有 `overflow: hidden`（圆角与自主光带
- *    需要它），`absolute` 会被整块裁掉 —— 与 `.mode-menu` / `.mt-pop` 同一个坑。
- */
-function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
-  const t = useT()
-  const pickImages = useStore((s) => s.pickImages)
-  const pickFiles = useStore((s) => s.pickFiles)
-  const setGoal = useStore((s) => s.setGoal)
-  const openSettings = useStore((s) => s.openSettings)
-  const [open, setOpen] = useState(false)
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const [caps, setCaps] = useState<{ id: string; title: string; hint: string }[] | null>(null)
-  /* 目标表单：菜单内的第二层，不另开浮层（浮层叠浮层在窄屏上会互相遮） */
-  const [composing, setComposing] = useState(false)
-  const [goalText, setGoalText] = useState('')
-  const [outcomeText, setOutcomeText] = useState('')
-  /*
-   * 可选补充栏（实施-16 G-1）：默认收起 —— 不展开时仍是原来的「目标 + 成果」两栏流程，
-   * 菜单长度和维护习惯不变；空字符串 = 用户没写，不往目标里塞默认句。
-   */
-  const [extrasOpen, setExtrasOpen] = useState(false)
-  const [deliverableText, setDeliverableText] = useState('')
-  const [scopeText, setScopeText] = useState('')
-  const [constraintsText, setConstraintsText] = useState('')
-  const rootRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const goalInputRef = useRef<HTMLTextAreaElement>(null)
-  const MENU_WIDTH = 340
-
-  /* 打开时量按钮坐标并把焦点交给菜单 —— 否则方向键到不了菜单里 */
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null)
-      return
-    }
-    const el = buttonRef.current
-    if (el) {
-      const r = el.getBoundingClientRect()
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8))
-      setAnchor({ left, bottom: Math.max(8, window.innerHeight - r.top + 6) })
-    }
-    menuRef.current?.focus()
-  }, [open])
-
-  /* 点外部关闭（菜单是浮层，不能一直挡着输入区） */
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  /*
-   * 能力清单**打开时才拉**：它要读磁盘上的技能目录与 MCP 配置，
-   * 每次渲染都拉会把输入区变成一个会打磁盘的组件。
-   */
-  useEffect(() => {
-    if (!open || caps) return
-    let alive = true
-    void (async () => {
-      try {
-        const snap = await window.yan.capabilities.snapshot()
-        if (!alive) return
-        setCaps([
-          ...snap.skills.map((s) => ({ id: `skill:${s.id}`, title: s.title, hint: s.description })),
-          ...snap.servers.map((s) => ({
-            id: `mcp:${s.id}`,
-            title: s.title,
-            hint: s.enabled ? s.transport : `${s.transport} · ${t('cap.disabled')}`
-          }))
-        ])
-      } catch {
-        /* 读不到就当没有能力 —— 菜单本身仍然可用 */
-        if (alive) setCaps([])
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [open, caps, t])
-
-  const close = (): void => {
-    setOpen(false)
-    setComposing(false)
-    buttonRef.current?.focus()
-  }
-
-  /* 进目标表单时把焦点交给第一栏 —— 否则键盘用户要 Tab 一路找过去 */
-  useEffect(() => {
-    if (open && composing) goalInputRef.current?.focus()
-  }, [open, composing])
-
-  /** 建立持续目标：成功才把消息模板写进输入框（失败时输入框不该被动过） */
-  const startGoal = async (): Promise<void> => {
-    const goal = goalText.trim()
-    const outcome = outcomeText.trim()
-    if (!goal || !outcome) return
-    const deliverable = deliverableText.trim()
-    const scope = scopeText.trim()
-    const constraints = constraintsText.trim()
-    /*
-     * A7（实施-14 F5）：await 之前记下会话身份，回来先核对。
-     * 用户在等响应的这几百毫秒里切了会话时，不能把目标模板插到另一条会话的输入框。
-     */
-    const before = identityForAwait(useStore.getState())
-    const res = await setGoal({
-      goal,
-      outcome,
-      ...(deliverable ? { deliverable } : {}),
-      ...(scope ? { scope } : {}),
-      ...(constraints ? { constraints } : {})
-    })
-    if (!res.ok) return
-    if (identityForAwait(useStore.getState()) !== before) return
-    close()
-    /* 种子消息带上用户写全的契约：模型第一轮就该看到补充字段，而不是只看到两栏 */
-    const extra = [
-      deliverable ? t('plus.goalSeedDeliverable', { value: deliverable }) : '',
-      scope ? t('plus.goalSeedScope', { value: scope }) : '',
-      constraints ? t('plus.goalSeedConstraints', { value: constraints }) : ''
-    ].filter(Boolean)
-    onInsert([t('plus.goalSeed', { goal, outcome }), ...extra].join('\n'))
-    setGoalText('')
-    setOutcomeText('')
-    setDeliverableText('')
-    setScopeText('')
-    setConstraintsText('')
-    setExtrasOpen(false)
-  }
-
-  return (
-    <div className="mode-picker" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="ctool"
-        title={t('composer.attach')}
-        data-testid="composer-attach"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            e.preventDefault()
-            setOpen(true)
-          } else if (e.key === 'Escape' && open) {
-            e.preventDefault()
-            close()
-          }
-        }}
-      >
-        <Icon name="plus" size={12} />
-      </button>
-
-      {open ? (
-        <div
-          className="mode-menu plus-menu"
-          role="menu"
-          data-testid="plus-menu"
-          ref={menuRef}
-          tabIndex={-1}
-          style={{ width: MENU_WIDTH, ...(anchor ? { left: anchor.left, bottom: anchor.bottom } : {}) }}
-        >
-          {composing ? (
-            /*
-             * 目标表单：目标 + **可衡量的成果**两栏。
-             * 第二栏不是可选的 —— 「不达成不结束」需要一条能验收的判据，
-             * 否则模型永远可以宣布自己完成了。
-             */
-            <div className="plus-compose" data-testid="plus-goal-compose">
-              <span className="plus-group-label">{t('plus.goalTitle')}</span>
-              <label className="plus-field">
-                <span className="plus-field-label">{t('plus.goalField')}</span>
-                <textarea
-                  ref={goalInputRef}
-                  className="plus-input"
-                  data-testid="plus-goal-text"
-                  rows={2}
-                  value={goalText}
-                  placeholder={t('plus.goalPlaceholder')}
-                  onChange={(e) => setGoalText(e.target.value)}
-                />
-              </label>
-              <label className="plus-field">
-                <span className="plus-field-label">{t('plus.outcomeField')}</span>
-                <textarea
-                  className="plus-input"
-                  data-testid="plus-outcome-text"
-                  rows={2}
-                  value={outcomeText}
-                  placeholder={t('plus.outcomePlaceholder')}
-                  onChange={(e) => setOutcomeText(e.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="plus-extras-toggle"
-                data-testid="plus-goal-extras-toggle"
-                aria-expanded={extrasOpen}
-                onClick={() => setExtrasOpen((v) => !v)}
-              >
-                {t('plus.extrasToggle')}
-              </button>
-              {extrasOpen ? (
-                <>
-                  <label className="plus-field">
-                    <span className="plus-field-label">{t('plus.deliverableField')}</span>
-                    <textarea
-                      className="plus-input"
-                      data-testid="plus-deliverable-text"
-                      rows={2}
-                      value={deliverableText}
-                      placeholder={t('plus.deliverablePlaceholder')}
-                      onChange={(e) => setDeliverableText(e.target.value)}
-                    />
-                  </label>
-                  <label className="plus-field">
-                    <span className="plus-field-label">{t('plus.scopeField')}</span>
-                    <textarea
-                      className="plus-input"
-                      data-testid="plus-scope-text"
-                      rows={2}
-                      value={scopeText}
-                      placeholder={t('plus.scopePlaceholder')}
-                      onChange={(e) => setScopeText(e.target.value)}
-                    />
-                  </label>
-                  <label className="plus-field">
-                    <span className="plus-field-label">{t('plus.constraintsField')}</span>
-                    <textarea
-                      className="plus-input"
-                      data-testid="plus-constraints-text"
-                      rows={2}
-                      value={constraintsText}
-                      placeholder={t('plus.constraintsPlaceholder')}
-                      onChange={(e) => setConstraintsText(e.target.value)}
-                    />
-                  </label>
-                </>
-              ) : null}
-              <div className="plus-actions">
-                <button
-                  className="plus-start"
-                  data-testid="plus-goal-start"
-                  disabled={!goalText.trim() || !outcomeText.trim()}
-                  onClick={() => void startGoal()}
-                >
-                  {t('plus.goalStart')}
-                </button>
-                <button
-                  className="plus-back"
-                  data-testid="plus-goal-back"
-                  onClick={() => setComposing(false)}
-                >
-                  {t('plus.goalBack')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-          <button
-            className="mode-item"
-            role="menuitem"
-            data-testid="plus-files"
-            onClick={() => {
-              close()
-              void pickFiles()
-            }}
-          >
-            <span className="mode-item-label">{t('plus.files')}</span>
-            <span className="mode-item-desc">{t('plus.filesHint')}</span>
-          </button>
-          <button
-            className="mode-item"
-            role="menuitem"
-            data-testid="plus-images"
-            onClick={() => {
-              close()
-              void pickImages()
-            }}
-          >
-            <span className="mode-item-label">{t('plus.images')}</span>
-            <span className="mode-item-desc">{t('plus.imagesHint')}</span>
-          </button>
-          <button
-            className="mode-item"
-            role="menuitem"
-            data-testid="plus-goal"
-            onClick={() => setComposing(true)}
-          >
-            <span className="mode-item-label">{t('plus.goal')}</span>
-            <span className="mode-item-desc">{t('plus.goalHint')}</span>
-          </button>
-
-          <div className="plus-group" data-testid="plus-capabilities">
-            <span className="plus-group-label">{t('plus.capabilities')}</span>
-            {caps === null ? null : caps.length === 0 ? (
-              /*
-               * 空态可直接点：用户看到「去设置里加」时的下一个动作就是去那里，
-               * 让他再自己找一遍设置入口是多一层无用功。
-               */
-              <button
-                className="mode-item plus-empty"
-                data-testid="plus-cap-empty"
-                onClick={() => {
-                  close()
-                  openSettings('capabilities')
-                }}
-              >
-                <span className="mode-item-label">{t('plus.capEmpty')}</span>
-                <span className="mode-item-desc">{t('plus.capEmptyHint')}</span>
-              </button>
-            ) : (
-              caps.map((cap) => (
-                <button
-                  key={cap.id}
-                  className="mode-item"
-                  role="menuitem"
-                  data-testid={`plus-cap-${cap.id}`}
-                  onClick={() => {
-                    close()
-                    onInsert(t('plus.useCapability', { title: cap.title }))
-                  }}
-                >
-                  <span className="mode-item-label">{cap.title}</span>
-                  <span className="mode-item-desc">{cap.hint}</span>
-                </button>
-              ))
-            )}
-          </div>
-            </>
-          )}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/** 把 File 读成 base64 附件 */
-async function readFiles(files: File[], add: (a: Attachment[]) => void): Promise<void> {
-  const out: Attachment[] = []
-  for (const f of files) {
-    if (f.size > 12 * 1024 * 1024) continue
-    try {
-      const buf = await f.arrayBuffer()
-      const data = bytesToBase64(new Uint8Array(buf))
-      out.push({
-        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: f.name || 'pasted.png',
-        mimeType: f.type || 'image/png',
-        size: f.size,
-        data,
-        preview: data
-      })
-    } catch {
-      /* 读不了就跳过 */
-    }
-  }
-  add(out)
-}
-
-/** 不用 FileReader：它返回 data: 前缀，而 pi 要的是裸 base64 */
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(bin)
-}
-
-function fmtSize(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 /** 分类只影响候选菜单的视觉顺序，不改变 pi 原始命令的身份。 */
@@ -1866,8 +1277,6 @@ function commandSourceLabel(source: SlashCommand['source']): string {
 }
 
 /** 排队的插话 / 后续消息 —— 让「它知道我说了」可见 */
-
-
 
 /**
  * 输入区里的模型胶囊 —— 点它打开设置的「状态」页。

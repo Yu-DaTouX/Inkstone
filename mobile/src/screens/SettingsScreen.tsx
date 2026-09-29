@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import type { Connection } from '../api/client'
 import { openAlertSettings } from '../questionAlerts'
 import { useRemote } from '../state'
-import { font, radius, space, usePalette } from '../theme'
-import { Button, Header, IconButton, SectionTitle } from '../ui'
+import { font, mono, radius, space, usePalette } from '../theme'
+import { Button, Header, IconButton, Input, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
 import { deviceInfo } from '../device'
 
 const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone/blob/main/docs/MOBILE_ACCESS.md'
@@ -41,8 +41,8 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
         <SectionTitle>电脑</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <Text style={{ color: p.fg, fontSize: font.body }}>{info?.computer?.name || connection.computerName || '已配对电脑'}</Text>
-          <Text style={{ color: p.fg, fontSize: font.body }} selectable>{connection.baseUrl.replace(/^https?:\/\//, '')}</Text>
-          <Text style={{ color: stream === 'open' ? p.ok : p.warn, fontSize: font.sm }}>{stream === 'open' ? '已连接' : '等待电脑连接'}</Text>
+          <Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }} selectable>{connection.baseUrl.replace(/^https?:\/\//, '')}</Text>
+          <View style={styles.row}><StatusDot color={stream === 'open' ? p.ok : p.warn} /><Meta color={stream === 'open' ? p.ok : p.warn} style={{ fontSize: font.sm, marginLeft: space[2] }}>{STATUS_TEXT[stream]}</Meta></View>
         </View>
         <SectionTitle>待回答提醒</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
@@ -58,8 +58,8 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
         <Button label="下载 Tailscale" icon="external" onPress={() => open('https://tailscale.com/download/android')} />
         <SectionTitle>设备管理</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
-          <Text style={{ color: p.fgDim, fontSize: font.sm }}>此手机</Text>
-          <View style={styles.row}><TextInput disableFullscreenUI value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机设备名" style={{ flex: 1, color: p.fg, minHeight: 44, padding: 8, backgroundColor: p.bg0, borderRadius: radius.md }} />{info?.capabilities.includes('device-name') ? <IconButton name="check" label="保存设备名" busy={renaming} disabled={!name.trim() || name.trim() === info.device?.name} onPress={() => void rename()} /> : null}</View>
+          <Meta style={{ fontSize: font.sm }}>此手机</Meta>
+          <View style={[styles.row, { gap: space[2] }]}><Input inset value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机设备名" style={{ flex: 1 }} />{info?.capabilities.includes('device-name') ? <IconButton name="check" label="保存设备名" busy={renaming} disabled={!name.trim() || name.trim() === info.device?.name} onPress={() => void rename()} /> : null}</View>
         </View>
         <Button label="解除配对" variant="danger" onPress={() => Alert.alert('解除配对？', '提醒将停止，重新连接需要新配对码。', [
           { text: '取消', style: 'cancel' },

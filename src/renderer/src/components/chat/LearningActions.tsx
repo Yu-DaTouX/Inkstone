@@ -1,5 +1,6 @@
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { Button } from '../ui'
 
 /**
  * 学习会话的三个快捷回应（需求稿 3.3）：继续讲解 / 给个例子 / 让我试试。
@@ -25,15 +26,9 @@ export function LearningActions() {
   return (
     <div className="learn-actions btn-row" role="group" aria-label={t('learn.quick.label')} data-testid="learn-actions">
       {actions.map((action) => (
-        <button
-          key={action.key}
-          type="button"
-          className="btn sm"
-          data-testid={`learn-action-${action.key}`}
-          onClick={() => void send(action.text)}
-        >
+        <Button size="sm" key={action.key} type="button" data-testid={`learn-action-${action.key}`} onClick={() => void send(action.text)}>
           {action.label}
-        </button>
+        </Button>
       ))}
     </div>
   )

@@ -143,7 +143,7 @@ class QuestionAlertService : Service() {
         manager.cancel(QUESTION_ID)
       } else {
         val notification = Notification.Builder(this, QUESTION_CHANNEL)
-          .setSmallIcon(android.R.drawable.ic_dialog_info)
+          .setSmallIcon(R.drawable.ic_stat_inkstone).setColor(ACCENT)
           .setContentTitle("砚需要你回答")
           .setContentText("${current.size} 个问题待回答")
           .setContentIntent(openAppIntent())
@@ -187,8 +187,8 @@ class QuestionAlertService : Service() {
         }
       }
       val state = when {
-        waiting -> "等待你回答"
-        tasks.isNotEmpty() -> "正在运行" + if (tasks.size > 1) " · ${tasks.size} 个任务" else ""
+        waiting -> "等你回答"
+        tasks.isNotEmpty() -> "运行中" + if (tasks.size > 1) " · ${tasks.size} 个任务" else ""
         else -> "已连接"
       }
       updateOngoing(title, state, current)
@@ -197,14 +197,14 @@ class QuestionAlertService : Service() {
   }
 
   private fun ongoingNotification(title: String, state: String): Notification = Notification.Builder(this, SERVICE_CHANNEL)
-    .setSmallIcon(android.R.drawable.ic_dialog_info)
+    .setSmallIcon(R.drawable.ic_stat_inkstone).setColor(ACCENT)
     .setContentTitle(title)
     .setContentText(state)
     .setContentIntent(openAppIntent())
     .setOngoing(true)
     .setOnlyAlertOnce(true)
     .setVisibility(Notification.VISIBILITY_PRIVATE)
-    .setPublicVersion(Notification.Builder(this, SERVICE_CHANNEL).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("砚").setContentText(state).build())
+    .setPublicVersion(Notification.Builder(this, SERVICE_CHANNEL).setSmallIcon(R.drawable.ic_stat_inkstone).setColor(ACCENT).setContentTitle("砚").setContentText(state).build())
     .build()
 
   private fun updateOngoing(title: String, state: String, current: Int) {
@@ -262,5 +262,7 @@ class QuestionAlertService : Service() {
     private const val QUESTION_CHANNEL = "inkstone.questions"
     private const val SERVICE_ID = 37921
     private const val QUESTION_ID = 37922
+    /** 浅色主题强调色（tokens.css --accent），通知标题与小图标的着色 */
+    private val ACCENT = 0xFF5264C8.toInt()
   }
 }

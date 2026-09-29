@@ -409,14 +409,14 @@ export function EnvironmentMenu() {
     <div className={`env-wrap ${open ? 'open' : ''}`} ref={wrapRef} data-testid="env-wrap">
       <button
         type="button"
-        className={`shead-proj env-btn ${project ? '' : 'none'}`}
+        className={`shead-proj env-trigger ${project ? '' : 'none'}`}
         title={project ?? t('header.noProject')}
         data-testid="session-project"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="shead-proj-ico" aria-hidden="true">{project ? '▸' : '·'}</span>
+        <Icon name={project ? 'folder' : 'folder-open'} size={12} className="shead-proj-ico" />
         <span className="shead-proj-name">{project ? shortProject(project) : t('header.noProject')}</span>
         <Icon name="chevron-right" size={12} className="chev env-caret" />
       </button>

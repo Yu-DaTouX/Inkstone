@@ -838,7 +838,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
-                          {expandedTurns.includes(n.path) ? '⌃' : '⌄'}
+                          <Icon name="chevron-right" size={12} className={`chev ${expandedTurns.includes(n.path) ? 'on' : ''}`} />
                         </button>
                       ) : null}
                       {n.childCount > 0 ? (
@@ -865,7 +865,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
-                            {folded ? '+' : '−'}
+                            <Icon name={folded ? 'plus' : 'minus'} size={12} />
                           </button>
                         </>
                       ) : null}
@@ -1002,7 +1002,7 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
-                            ⑂
+                            <Icon name="branch" size={12} />
                           </button>
                         ) : null}
                         <span className="wb-turn-body">
@@ -1078,12 +1078,12 @@ export function SessionMap({ onOpen, onBackToChat }: Props): React.JSX.Element {
           {t('map.fit')}
         </button>
         <span className="wb-map-zoom">
-          <button onClick={() => zoomAt(1 / ZOOM_STEP)} title={t('map.zoomOut')} data-testid="map-zoom-out">
-            −
+          <button onClick={() => zoomAt(1 / ZOOM_STEP)} title={t('map.zoomOut')} aria-label={t('map.zoomOut')} data-testid="map-zoom-out">
+            <Icon name="minus" size={12} />
           </button>
           <span data-testid="map-zoom-level">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => zoomAt(ZOOM_STEP)} title={t('map.zoomIn')} data-testid="map-zoom-in">
-            +
+          <button onClick={() => zoomAt(ZOOM_STEP)} title={t('map.zoomIn')} aria-label={t('map.zoomIn')} data-testid="map-zoom-in">
+            <Icon name="plus" size={12} />
           </button>
         </span>
       </div>

@@ -6,6 +6,7 @@ import { samePath } from '../../../../shared/session-path'
 import { useSessionSources } from '../../state/daily-sources'
 import { goalDisplayTitle } from '../../state/goal-view'
 import { buildSessionMap } from '../../../../shared/session-map'
+import { Button } from '../ui'
 
 /**
  * 工作台首页（实施-18 S3；实施-27 B3 收敛为「一主行动 + ≤3 张有内容的卡」）。
@@ -135,9 +136,9 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
             {t('wb.inboxCard')}
           </h2>
           <p className="wb-card-main">{t('wb.inboxCount', { n: inboxWaiting })}</p>
-          <button className="btn sm wb-card-action" onClick={onOpenInbox} data-testid="wb-inbox-open">
+          <Button size="sm" className="wb-card-action" onClick={onOpenInbox} data-testid="wb-inbox-open">
             {t('inbox.open')}
-          </button>
+          </Button>
         </section>
       )
     })
@@ -188,10 +189,10 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
           <p className="wb-card-meta" data-testid="wb-card-space-count">
             {t('wb.spaceCardCount', { sessions: spaceSessionCount, sources: spaceSourceCount })}
           </p>
-          <button className="btn sm wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
+          <Button size="sm" className="wb-open-map" data-testid="wb-open-space" onClick={onOpenSpace}>
             {t('wb.spaceCardOpen')}
             <Icon name="chevron-right" size={12} />
-          </button>
+          </Button>
         </section>
       )
     })
@@ -240,10 +241,10 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
             {t('map.title')}
           </h2>
           <p className="wb-card-meta">{t('map.stats', { lanes: mapSummary.laneCount, nodes: mapSummary.total })}</p>
-          <button className="btn sm wb-open-map" onClick={onOpenMap} data-testid="wb-open-map">
+          <Button size="sm" className="wb-open-map" onClick={onOpenMap} data-testid="wb-open-map">
             {t('wb.open')}
             <Icon name="chevron-right" size={12} />
-          </button>
+          </Button>
         </section>
       )
     })
@@ -268,10 +269,10 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
               {shortName(heroTarget.cwd)} · {time(heroTarget.lastActivityAt ?? heroTarget.createdAt)}
             </p>
           </div>
-          <button className="btn primary wb-hero-go" data-testid="wb-hero-go" onClick={() => onOpenSession(heroTarget.path)}>
+          <Button variant="primary" className="wb-hero-go" data-testid="wb-hero-go" onClick={() => onOpenSession(heroTarget.path)}>
             {t('wb.open')}
             <Icon name="chevron-right" size={12} />
-          </button>
+          </Button>
         </section>
       ) : (
         <section className="wb-hero wb-hero-plain" data-testid="wb-hero">

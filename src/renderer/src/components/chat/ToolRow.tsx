@@ -36,7 +36,7 @@ import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
 import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
-import { ThinkingOrbIndicator } from './ThinkingOrbIndicator'
+import { Spinner } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
 
@@ -138,10 +138,12 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
         }}
         aria-expanded={open}
         title={target}
+        aria-label={`${verb} ${target}`}
         data-testid="tool-row"
       >
+        {/* 命令块（设计规范 §3.5）：状态 · 工具名 · 目标 · 右侧耗时 */}
         <span className="trow-ico" aria-hidden>
-          {running ? <ThinkingOrbIndicator state={orbStateForTool(call.name)} /> : toolGlyph(call.name, failed)}
+          {running ? <Spinner /> : <span className={`trow-dot ${failed ? 'err' : cancelled ? 'warn' : 'ok'}`} />}
         </span>
         {taskPlan || goalCmd ? (
           <span
@@ -152,11 +154,13 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
             {taskPlan ? t('tool2.yanTaskPlan') : t('tool2.yanGoal')}
           </span>
         ) : null}
-        <span className="trow-verb">{verb}</span>
+        <span className="trow-verb">{call.name}</span>
         <span className="trow-target" data-testid="tool-target">
+          {kind === 'command' ? <span className="trow-dollar">$ </span> : null}
           {target || t('tool2.noTarget')}
         </span>
         <span className="spacer" />
+        {!running && secs !== null ? <span className="trow-time">{secs}s</span> : null}
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
         ) : cancelled ? (
@@ -211,15 +215,6 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
       </div>
     </div>
   )
-}
-
-/** 把工具的可观察意图映射为 Orb 的动作语义；未知工具保持中性的 working。 */
-function orbStateForTool(name: string): import('thinking-orbs').OrbState {
-  const value = name.toLowerCase()
-  if (/search|grep|rg|find|web|browser|fetch|curl|wget|url/.test(value)) return 'searching'
-  if (/connect|remote|ssh|login|auth|socket/.test(value)) return 'connecting'
-  if (/write|edit|patch|create|compose|save|move|rename/.test(value)) return 'composing'
-  return 'working'
 }
 
 /**
@@ -369,12 +364,6 @@ function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit
   return t('tool2.vCall')
 }
 
-/** 状态图标：成功 ✓ / 失败 ✕（Codex 用的是 ✓ 勾） */
-function toolGlyph(name: string, failed: boolean) {
-  if (failed) return <Icon name="alert-circle" size={12} />
-  void name
-  return <span className="trow-check">✓</span>
-}
 
 /**
  * 耗时（秒）。取自 call 上的 startedAt/endedAt（agent 归一化时写的）；

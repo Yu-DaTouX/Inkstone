@@ -53,9 +53,14 @@ import { readFileSync, readdirSync, existsSync, mkdtempSync, writeFileSync, rmSy
 import { join, resolve, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 
-/* 加载顺序无关紧要（两个目录用同一套规则），但必须**两个目录一致** */
-const ORDER = [
+/*
+ * 加载顺序与层：优先读目录里的 `index.css`（`@import './x.css' layer(y)`，
+ * 与 scripts/lib/css-order.mjs 同一种写法）。没有 index.css 的旧快照按下面的
+ * 历史顺序、全部视为未分层处理。两个目录各按各的入口算，比较的是最终结果。
+ */
+const LEGACY_ORDER = [
   'tokens.css',
+  'ui.css',
   'app.css',
   'stage1.css',
   'redesign.css',
@@ -65,13 +70,43 @@ const ORDER = [
   'highlight.css',
   'layout.css',
   'shell.css',
+  'dialog.css',
   'rail.css',
   'chat.css',
   'composer.css',
   'tools.css',
   'browser.css',
-  'dialog.css'
+  'terminal.css',
+  'review.css',
+  'workbench.css',
+  'icon-state.css'
 ]
+
+/** → [{ name, layerIndex }]，未分层记为 Infinity（压过所有层） */
+function entriesOf(dir) {
+  const index = join(dir, 'index.css')
+  if (!existsSync(index)) {
+    const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.css')) : []
+    const extra = files.filter((f) => !LEGACY_ORDER.includes(f)).sort()
+    return [...LEGACY_ORDER, ...extra].map((name) => ({
+      name,
+      layerIndex: Infinity
+    }))
+  }
+  const src = readFileSync(index, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const layers = (/@layer\s+([\w\s,-]+);/.exec(src)?.[1] ?? '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const out = []
+  for (const m of src.matchAll(/@import\s+'\.\/([\w.-]+\.css)'(?:\s+layer\(([\w-]+)\))?\s*;/g)) {
+    out.push({
+      name: m[1],
+      layerIndex: m[2] ? layers.indexOf(m[2]) : Infinity
+    })
+  }
+  return out
+}
 
 /** 按顶层逗号拆选择器（尊重括号与引号） */
 function splitTopLevel(s, sep) {
@@ -129,14 +164,57 @@ function parseDecl(decl) {
 
 const fmt = (d) => `${d.value}${d.important ? ' !important' : ''}`
 
+/*
+ * 简写展开成长写再比。`.x { padding-top: 0 }` 之后再出现 `.x { padding: 12px }`，
+ * 胜负发生在 padding-top 上 —— 只按属性名比，这种覆盖完全看不见（实测漏过：
+ * 迁移后输入框顶部多出 12px 内边距与 1px 边框）。展开后长写的值记成
+ * 「简写名(原值)」，不做精确拆分：只要最终来源变了，文本就不同。
+ */
+const SIDES = ['top', 'right', 'bottom', 'left']
+const CORNERS = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
+const SHORTHANDS = {
+  padding: SIDES.map((x) => `padding-${x}`),
+  margin: SIDES.map((x) => `margin-${x}`),
+  inset: SIDES,
+  gap: ['row-gap', 'column-gap'],
+  overflow: ['overflow-x', 'overflow-y'],
+  'border-radius': CORNERS.map((x) => `border-${x}-radius`),
+  'border-width': SIDES.map((x) => `border-${x}-width`),
+  'border-style': SIDES.map((x) => `border-${x}-style`),
+  'border-color': SIDES.map((x) => `border-${x}-color`),
+  border: SIDES.flatMap((x) => [`border-${x}-width`, `border-${x}-style`, `border-${x}-color`]),
+  ...Object.fromEntries(
+    SIDES.map((x) => [`border-${x}`, [`border-${x}-width`, `border-${x}-style`, `border-${x}-color`]])
+  ),
+  outline: ['outline-width', 'outline-style', 'outline-color'],
+  background: ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat'],
+  flex: ['flex-grow', 'flex-shrink', 'flex-basis'],
+  font: ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height'],
+  transition: ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay'],
+  animation: [
+    'animation-name',
+    'animation-duration',
+    'animation-timing-function',
+    'animation-delay',
+    'animation-iteration-count',
+    'animation-fill-mode'
+  ],
+  'grid-template': ['grid-template-rows', 'grid-template-columns'],
+  'place-items': ['align-items', 'justify-items'],
+  'place-content': ['align-content', 'justify-content']
+}
+
+/** 一条声明 → 长写声明列表（非简写原样返回） */
+function expand(d) {
+  const longs = SHORTHANDS[d.prop]
+  if (!longs) return [d]
+  return longs.map((prop) => ({ ...d, prop, value: `${d.prop}(${d.value})` }))
+}
+
 /** 解析成 Map<"媒体查询|选择器", Map<属性, {value, important}>>，同 key 按层叠规则合并 */
 function layer(dir) {
   const result = new Map()
-  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.css')) : []
-  /* 目录里可能有 ORDER 之外的新文件（比如设置页的独立样式），一并纳入，
-     但放在 ORDER 之后 —— 以文件名为序，保证两个目录的处理顺序一致 */
-  const extra = files.filter((f) => !ORDER.includes(f)).sort()
-  for (const name of [...ORDER, ...extra]) {
+  for (const { name, layerIndex } of entriesOf(dir)) {
     const p = join(dir, name)
     if (!existsSync(p)) continue
     const css = readFileSync(p, 'utf8')
@@ -157,14 +235,23 @@ function layer(dir) {
         const key = (media ? media + ' ' : '') + sel
         const m = result.get(key) ?? new Map()
         for (const raw of splitTopLevel(body, ';')) {
-          const d = parseDecl(raw)
-          if (!d) continue
-          const prev = m.get(d.prop)
-          /*
-           * 层叠：important 赢过非 important；同档后写赢。
-           * prev 是 important 而新声明不是 → 保留 prev（这正是旧版丢掉的那一步）。
-           */
-          if (!prev || !prev.important || d.important) m.set(d.prop, d)
+          const parsed = parseDecl(raw)
+          if (!parsed) continue
+          for (const d of expand(parsed)) {
+            d.layerIndex = layerIndex
+            const prev = m.get(d.prop)
+            /*
+             * 层叠：important 赢过非 important（prev 是 important 而新声明不是 → 保留 prev，
+             * 这正是旧版丢掉的那一步）。同为普通声明：层高者胜，同层后写赢；
+             * 同为 important：层低者胜，同层后写赢。
+             */
+            let wins
+            if (!prev) wins = true
+            else if (prev.important !== d.important) wins = d.important
+            else if (d.important) wins = d.layerIndex <= prev.layerIndex
+            else wins = d.layerIndex >= prev.layerIndex
+            if (wins) m.set(d.prop, d)
+          }
         }
         result.set(key, m)
       }
@@ -218,8 +305,27 @@ function layer(dir) {
  *
  * 抽成函数是为了 `--selftest` 能直接调用，不用起子进程。
  */
+/**
+ * 把 `var(--x)` 换成 `:root` 上的常量值再比较：把裸值换成同值令牌（`8px` → `var(--sp-2)`）
+ * 不改变结果，不该报「值变化」。只解析 `:root` 里的定义（主题块里的颜色两边各自一致，
+ * 不参与）；带回退值或未定义的 var() 原样保留。
+ */
+function resolver(map) {
+  const root = map.get(':root') ?? new Map()
+  const resolve = (value, depth = 0) =>
+    depth > 8
+      ? value
+      : value.replace(/var\(\s*(--[\w-]+)\s*\)/g, (m, name) => {
+          const d = root.get(name)
+          return d ? resolve(d.value, depth + 1) : m
+        })
+  return resolve
+}
+
 function compare(A, B) {
   const issues = []
+  const ra = resolver(A)
+  const rb = resolver(B)
   for (const [key, props] of A) {
     const now = B.get(key)
     if (!now) {
@@ -229,7 +335,7 @@ function compare(A, B) {
     for (const [prop, a] of props) {
       const b = now.get(prop)
       if (!b) issues.push(`✗ 属性消失：${key} { ${prop}: ${fmt(a)} }`)
-      else if (b.value !== a.value || b.important !== a.important) {
+      else if (rb(b.value) !== ra(a.value) || b.important !== a.important) {
         issues.push(`✗ 值变化：${key} { ${prop}: ${fmt(a)} → ${fmt(b)} }`)
       }
     }
@@ -259,13 +365,17 @@ function selftest() {
     },
     {
       name: 'important 赢过非 important（后期不带 important 不该覆盖它）',
-      a: { 'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 2px }\n' },
+      a: {
+        'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 2px }\n'
+      },
       b: { 'zz-a.css': '.x { padding: 1px !important }\n' },
       expect: 0
     },
     {
       name: '假通过用例：同值时 important 被覆盖掉（旧版会判等价）',
-      a: { 'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 1px }\n.x { padding: 2px }\n' },
+      a: {
+        'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 1px }\n.x { padding: 2px }\n'
+      },
       b: { 'zz-a.css': '.x { padding: 1px }\n.x { padding: 2px }\n' },
       expect: 1
     },
@@ -277,7 +387,9 @@ function selftest() {
     },
     {
       name: '同档 important 后写赢（顺序有意义）',
-      a: { 'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 2px !important }\n' },
+      a: {
+        'zz-a.css': '.x { padding: 1px !important }\n.x { padding: 2px !important }\n'
+      },
       b: { 'zz-a.css': '.x { padding: 2px !important }\n' },
       expect: 0
     },
@@ -285,13 +397,11 @@ function selftest() {
       name: ':is(.a, .b) 里的逗号不算顶层分隔（不能被拆坏）',
       /* 直接测拆分器：两个目录都拆坏的话比对结果一样，测不出来 */
       run: () =>
-        splitTopLevel(':is(.a, .b), [data-x="p,q"]', ',').length === 2 &&
-        splitTopLevel('.a, .b', ',').length === 2
+        splitTopLevel(':is(.a, .b), [data-x="p,q"]', ',').length === 2 && splitTopLevel('.a, .b', ',').length === 2
     },
     {
       name: '声明里的分号在括号内不拆分（url(data:…;base64,…)）',
-      run: () =>
-        splitTopLevel('background: url(data:image/svg+xml;base64,AAA); color: red', ';').length === 2
+      run: () => splitTopLevel('background: url(data:image/svg+xml;base64,AAA); color: red', ';').length === 2
     },
     {
       name: '跨 @media 不判胜负：挪到媒体查询外必须报错',
@@ -306,8 +416,17 @@ function selftest() {
       expect: 0
     },
     {
+      name: '简写覆盖长写：后出现的 padding 盖掉先前的 padding-top 要报出来',
+      a: { 'zz-a.css': '.x { padding: 12px }\n.x { padding-top: 0 }\n' },
+      b: { 'zz-a.css': '.x { padding-top: 0 }\n.x { padding: 12px }\n' },
+      expect: 1
+    },
+    {
       name: '多文件顺序：后者覆盖前者',
-      a: { 'zz-a.css': '.x { color: red }\n', 'zz-b.css': '.x { color: blue }\n' },
+      a: {
+        'zz-a.css': '.x { color: red }\n',
+        'zz-b.css': '.x { color: blue }\n'
+      },
       b: { 'zz-a.css': '.x { color: blue }\n' },
       expect: 0
     }
@@ -334,7 +453,8 @@ function selftest() {
       const pass = got === c.expect
       if (!pass) failed++
       console.log(`${pass ? '  ✓' : '  ✗'} ${c.name}`)
-      if (!pass) console.log(`      期望 ${c.expect === 0 ? '等价' : '报错'}，实际 ${got === 0 ? '等价' : issues.join(' / ')}`)
+      if (!pass)
+        console.log(`      期望 ${c.expect === 0 ? '等价' : '报错'}，实际 ${got === 0 ? '等价' : issues.join(' / ')}`)
     } finally {
       for (const d of dirs) rmSync(d, { recursive: true, force: true })
     }

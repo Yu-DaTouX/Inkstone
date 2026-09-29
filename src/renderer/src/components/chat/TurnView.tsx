@@ -9,6 +9,7 @@ import { ToolGroup, ToolRow } from './ToolRow'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
+import { Caret } from '../ui'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -27,7 +28,7 @@ import { fileUrl as toFileUrl } from '../../../../shared/file-url'
  * 「每次发送的信息要根据段落来显示」——
  * AI 一次吐好几段（解释 + 清单 + 结论）时，合成一个死长的 <p> 是一坨。
  * 现在每段是一个 <p>，段间有间距、新到的段各自淡入
- * （见 redesign.css 的 `.turn-para`）。
+ * （见 chat.css 的 `.turn-para`）。
  */
 
 export const TurnView = memo(function TurnView({ turn, streaming }: { turn: Turn; streaming?: boolean }) {
@@ -51,7 +52,7 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
         {/*
          * 「提问」标记：这条用户消息是问题面板的回答，不是手打的。
          * 问答只存在于工具结果里，不标出来回看时容易当成自己当时真的发了这些字。
-         * 身份不再用「你」标签表达：右对齐的气泡本身就是身份。
+         * 身份不用「你」标签表达：块首的 `›` 提示符就是身份（设计规范 §3.5）。
          */}
         {msg.question ? (
           <div className="msg-label">
@@ -85,8 +86,15 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
           </div>
         ) : null}
 
-        {msg.text ? <div className="bubble">{msg.text}</div> : null}
-        {/* 气泡下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
+        {msg.text ? (
+          <div className="bubble">
+            <span className="bubble-prompt" aria-hidden>
+              ›
+            </span>
+            <span className="bubble-text">{msg.text}</span>
+          </div>
+        ) : null}
+        {/* 消息块下方一行：时间 + 从这里分支。悬停 / 聚焦时才完全显现，平时淡显。 */}
         <div className="turn-footer msg-meta">
           {msg.timestamp ? <TurnTime timestamp={msg.timestamp} /> : null}
           <button
@@ -202,9 +210,9 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
           </div>
         ) : null}
 
-        {/* 刚开始、什么都还没有时给个光标 */}
+        {/* 刚开始、什么都还没有时给个光标：还没有输出，所以是「停下」态的闪烁 */}
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? (
-          <span className="cursor" />
+          <Caret idle className="cursor" />
         ) : null}
         <TurnFooter turn={turn} />
       </div>
