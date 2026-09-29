@@ -43,7 +43,7 @@ export const MessageBody = memo(function MessageBody({ text }: { text: string })
         {block.kind === 'list' ? '•  ' : ''}<Inline value={block.value} />
       </Text>
     ))}
-    {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm, fontFamily: mono }}>展开完整消息</Text></Pressable> : null}
+    {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm }}>展开完整消息</Text></Pressable> : null}
   </View>
 })
 

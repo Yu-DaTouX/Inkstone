@@ -10,11 +10,11 @@ import { HomeScreen } from './screens/HomeScreen'
 import { PairScreen } from './screens/PairScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
-import { RemoteProvider } from './state'
+import { RemoteProvider, useRemote } from './state'
 import { EmptyState } from './ui'
 import { clearConnection, loadConnection, saveConnection } from './storage'
 import { usePalette } from './theme'
-import { ContentEnter } from './motion'
+import { BootSplash, ContentEnter } from './motion'
 import { useFoldLayout } from './foldLayout'
 import { cancelSpeech, isSpeechActive } from './speech'
 
@@ -28,6 +28,14 @@ type Route =
  * 砚手机端：配对一台电脑 → 首页（等你回答的问题 + 会话）→ 会话（历史 / 回复 / 中止）→ 成果。
  * 路由与会话草稿由应用层保存，窗口和列表宽度变化不重置正在阅读的会话。
  */
+/** 已配对时：会话列表首次返回、流连上或出错（任一有结论）即可撤启动画面 */
+function RemoteReady({ onReady }: { onReady: () => void }) {
+  const { sessions, stream, error } = useRemote()
+  const settled = sessions.length > 0 || stream === 'open' || !!error
+  useEffect(() => { if (settled) onReady() }, [settled, onReady])
+  return null
+}
+
 export default function App() {
   const p = usePalette()
   const scheme = useColorScheme()
@@ -56,6 +64,11 @@ export default function App() {
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft[]>>({})
   const [project, setProject] = useState<{ id: string; name: string } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  /* 启动画面：读完配对信息；已配对再等首批会话（设计规范 §3.4.1） */
+  const [booting, setBooting] = useState(true)
+  const [remoteReady, setRemoteReady] = useState(false)
+  const markRemoteReady = useCallback(() => setRemoteReady(true), [])
+  const endBoot = useCallback(() => setBooting(false), [])
   const sidebarVisible = expanded && (!sidebarCollapsed || route.name === 'home')
   // Short windows use one unobstructed region. Tabletop chat reserves both regions.
   const tabletop = route.name === 'session' && horizontalInside && horizontalInside.top >= 140 && frame.height - horizontalInside.top - horizontalInside.gap >= 220 ? horizontalInside : null
@@ -160,6 +173,7 @@ export default function App() {
         ) : (
           /* 令牌被撤销（401）时回到配对页 */
           <RemoteProvider connection={connection} onUnauthorized={unpair}>
+            {booting ? <RemoteReady onReady={markRemoteReady} /> : null}
             <View style={[safeRegion, { flexDirection: expanded ? 'row' : 'column' }]}>
               {(expanded || route.name === 'home') ? (
                 <View style={expanded ? { display: sidebarVisible ? 'flex' : 'none', width: verticalInside?.left ?? Math.min(380, Math.round(width * 0.42)), borderRightWidth: 1, borderRightColor: p.borderSoft } : { flex: 1 }}>
@@ -223,6 +237,7 @@ export default function App() {
         )}
         </View>
         </KeyboardAvoidingView>
+        {booting ? <BootSplash ready={connection === null || (connection !== undefined && (!!pairingPrefill || remoteReady))} onDone={endBoot} /> : null}
       </SafeAreaView>
     </SafeAreaProvider>
   )

@@ -50,7 +50,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
             <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>任务与问题通知</Text>
             <Switch value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
           </View>
-          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>锁屏仅显示问题数量</Text>
+          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>锁屏只显示待回答数量。</Text>
           <Button label="系统通知设置" onPress={() => void openAlertSettings()} />
         </View>
         <SectionTitle>帮助</SectionTitle>
@@ -61,7 +61,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
           <Meta style={{ fontSize: font.sm }}>此手机</Meta>
           <View style={[styles.row, { gap: space[2] }]}><Input inset value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机设备名" style={{ flex: 1 }} />{info?.capabilities.includes('device-name') ? <IconButton name="check" label="保存设备名" busy={renaming} disabled={!name.trim() || name.trim() === info.device?.name} onPress={() => void rename()} /> : null}</View>
         </View>
-        <Button label="解除配对" variant="danger" onPress={() => Alert.alert('解除配对？', '提醒将停止，重新连接需要新配对码。', [
+        <Button label="解除配对" variant="danger" onPress={() => Alert.alert('解除配对？', '重新连接需要新的配对码。', [
           { text: '取消', style: 'cancel' },
           { text: '解除配对', style: 'destructive', onPress: onUnpair }
         ])} />

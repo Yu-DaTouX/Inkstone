@@ -1,9 +1,10 @@
-import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native'
+import { Alert, NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native'
 
 interface SpeechInputNative {
   recognize(): Promise<string | null>
   stop(): void
   cancel(): void
+  openServiceSettings(): Promise<boolean>
 }
 
 export type SpeechPhase = 'idle' | 'starting' | 'listening' | 'processing'
@@ -31,6 +32,13 @@ export async function recognizeSpeech(isCancelled: () => boolean = () => false):
       if (cancelled || isCancelled()) return null
       return await native.recognize()
     } catch (error) {
+      if ((error as { code?: string })?.code === 'speech_service_permission') {
+        /* 缺权限的是系统里负责转写的应用，不是砚；给一个直达它权限页的入口 */
+        Alert.alert('识别服务缺少麦克风权限', (error as Error).message, [
+          { text: '取消', style: 'cancel' },
+          { text: '去授权', onPress: () => void native.openServiceSettings() }
+        ])
+      }
       if ((error as { code?: string })?.code !== 'speech_permission_required') throw error
       const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
         title: '允许砚使用麦克风',

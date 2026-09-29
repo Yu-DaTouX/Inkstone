@@ -2,13 +2,13 @@
  * 手机端的统一控件：与桌面 components/ui 同一套意图（主要 / 次要 / 无框 / 危险、徽标、空状态、输入框），
  * 尺寸按触屏放大。页面只组合这些控件，不各自写一套按钮、输入框或状态行。
  *
- * 字体分工与桌面一致：按钮、徽标、分区标题、元数据用等宽（骨架），页标题与正文用系统无衬线。
+ * 字体分工与桌面一致：界面汉字用系统无衬线，代码与纯命令用等宽。
  */
 import { forwardRef, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from './theme'
 import { Icon } from './icons'
-import { Spinner } from './motion'
+import { RunDot, Spinner } from './motion'
 import type { IconName } from '../../src/renderer/src/icons/sprite'
 
 /** 状态用词与桌面状态栏一致（设计规范 §7） */
@@ -24,7 +24,7 @@ export const STATUS_TEXT = {
 export function IconButton({ name, label, onPress, disabled, busy, primary = false, back = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; back?: boolean }) {
   const p = usePalette()
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? p.accent : 'transparent', opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
-    {busy ? <Spinner color={primary ? p.onAccent : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={icon.md} color={primary ? p.onAccent : p.fgDim} /></View>}
+    {busy ? <RunDot color={primary ? p.onAccent : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={icon.md} color={primary ? p.onAccent : p.fgDim} /></View>}
   </Pressable>
 }
 
@@ -74,7 +74,7 @@ export function Button({
         style
       ]}
     >
-      {busy ? <Spinner color={variant === 'primary' ? colors.fg : undefined} /> : <View style={styles.buttonInner}><Text style={[styles.buttonText, { color: colors.fg }]}>{label}</Text>{iconName ? <Icon name={iconName} size={icon.sm} color={colors.fg} /> : null}</View>}
+      {busy ? <View style={styles.buttonInner}><RunDot color={variant === 'primary' ? colors.fg : undefined} /><Text style={[styles.buttonText, { color: colors.fg }]}>{label}</Text></View> : <View style={styles.buttonInner}><Text style={[styles.buttonText, { color: colors.fg }]}>{label}</Text>{iconName ? <Icon name={iconName} size={icon.sm} color={colors.fg} /> : null}</View>}
     </Pressable>
   )
 }
@@ -152,7 +152,7 @@ export function RunBar({ mode, text }: { mode: 'run' | 'wait' | 'offline'; text?
   </View>
 }
 
-/** 列表里的状态点：未读、连接状态；运行中用 Spinner，不用点 */
+/** 列表里的状态点：未读、连接状态；运行中由 RunDot 表达。 */
 export function StatusDot({ color, label }: { color: string; label?: string }) {
   return <View accessibilityLabel={label} style={[styles.dot, { backgroundColor: color }]} />
 }
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   },
   buttonCompact: { minHeight: touch.compact, paddingHorizontal: space[3] },
   buttonInner: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  buttonText: { fontSize: font.base, fontWeight: weight.medium, fontFamily: mono },
+  buttonText: { fontSize: font.base, fontWeight: weight.medium },
   badge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 6,
@@ -176,8 +176,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1
   },
-  badgeText: { fontSize: font.xs, fontWeight: weight.medium, fontFamily: mono },
-  empty: { fontSize: font.sm, paddingVertical: space[4], textAlign: 'center', fontFamily: mono },
+  badgeText: { fontSize: font.xs, fontWeight: weight.medium },
+  empty: { fontSize: font.sm, paddingVertical: space[4], textAlign: 'center' },
   header: {
     minHeight: 60,
     flexDirection: 'row',
@@ -191,11 +191,11 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: font.lg, fontWeight: weight.strong },
   headerTitleTwoLine: { fontSize: font.body },
   headerSub: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  section: { fontSize: font.sm, fontWeight: weight.strong, fontFamily: mono, marginTop: space[4], marginBottom: space[2] },
-  meta: { fontSize: font.xs, fontFamily: mono, fontVariant: ['tabular-nums'] },
+  section: { fontSize: font.sm, fontWeight: weight.strong, marginTop: space[4], marginBottom: space[2] },
+  meta: { fontSize: font.xs, fontVariant: ['tabular-nums'] },
   input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], fontSize: font.base },
   inputCode: { fontFamily: mono },
   runbar: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  runbarText: { flexShrink: 1, fontSize: font.sm, fontFamily: mono },
+  runbarText: { flexShrink: 1, fontSize: font.sm },
   dot: { width: 6, height: 6, borderRadius: 3 }
 })
