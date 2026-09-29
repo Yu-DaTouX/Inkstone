@@ -81,8 +81,8 @@ export const weight = { regular: '400', medium: '500', strong: '600' } as const
 export const icon = { sm: 16, md: 20, lg: 24 } as const
 export const touch = { min: 44, compact: 36 } as const
 /**
- * 骨架等宽、正文无衬线（与桌面 --font-ui / --font-body 同一分工）。
- * 等宽用系统 monospace，不在 APK 内嵌 Maple Mono CN：汉字回退到系统 CJK 字体，观感与桌面接近，
+ * 界面汉字用系统无衬线；地址、配对码、代码与纯命令用系统等宽。
+ * 不在 APK 内嵌 Maple Mono CN：
  * 安装包不因字体增加数 MB，也不必随桌面字体子集一起维护。
  */
 export const mono = 'monospace'

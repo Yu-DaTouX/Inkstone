@@ -51,7 +51,7 @@ export function ArtifactScreen({
           <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? '读取中…'}</Text>
         </ScrollView>
       ) : (
-        <EmptyState>这种格式（{artifact.mediaType}）请在电脑上打开查看</EmptyState>
+        <EmptyState>请在电脑上打开 {artifact.mediaType} 文件。</EmptyState>
       )}
     </View>
   )

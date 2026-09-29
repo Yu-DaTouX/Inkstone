@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same paths and stroke widths as build/prompt-stone.svg; the OS masks the 108dp canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Adaptive foregrounds are zoomed before masking; keep the mark in the safe centre. -->
+    <group android:scaleX="0.75" android:scaleY="0.75" android:pivotX="50" android:pivotY="50">
+    <path
+        android:pathData="M70,22H25Q22,22 22,25V75Q22,78 25,78H75Q78,78 78,75V53"
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#ECECE8"
+        android:strokeWidth="6"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M36,40L47,50L36,60M57,62H69"
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#93A4F4"
+        android:strokeWidth="6"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter" />
+    </group>
+</vector>

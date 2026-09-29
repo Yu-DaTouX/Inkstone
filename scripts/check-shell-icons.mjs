@@ -126,7 +126,7 @@ ok(
 )
 
 /* ---- ⑤ 空文件 ---- */
-const emptyFiles = readdirSync(buildDir).filter((name) => statSync(join(buildDir, name)).size === 0)
+const emptyFiles = readdirSync(buildDir).filter((name) => { const s = statSync(join(buildDir, name)); return s.isFile() && s.size === 0 })
 if (emptyFiles.length) {
   notes.push(`build/ 下有 ${emptyFiles.length} 个空文件：${emptyFiles.join('、')}（会被当有效资源打包，建议清掉）`)
 }

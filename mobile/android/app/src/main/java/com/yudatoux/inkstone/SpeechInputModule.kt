@@ -31,6 +31,7 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
   private var timeout: Runnable? = null
   private var phase = "idle"
   private var lastLevelAt = 0L
+  private var serviceNeedingPermission: String? = null
 
   init { context.addLifecycleEventListener(this) }
   override fun getName(): String = "InkstoneSpeechInput"
@@ -59,6 +60,18 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
 
   @ReactMethod fun cancel() { main.post { resolve(null) } }
 
+  /** 打开缺麦克风权限的识别服务应用的系统详情页 */
+  @ReactMethod
+  fun openServiceSettings(promise: Promise) {
+    val pkg = serviceNeedingPermission ?: return promise.resolve(false)
+    try {
+      val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", pkg, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      reactApplicationContext.startActivity(intent)
+      promise.resolve(true)
+    } catch (_: Exception) { promise.resolve(false) }
+  }
+
   private fun emit(state: String, level: Float = 0f) {
     phase = state
     val event = Arguments.createMap().apply {
@@ -67,6 +80,26 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
     }
     reactApplicationContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
       .emit("inkstone-speech-state", event)
+  }
+
+  /** Google 的识别服务按这个顺序优先：Google 应用、设备端智能服务、Google 语音服务；不是 Google 的排在后面 */
+  private val googleServices = listOf("com.google.android.googlequicksearchbox", "com.google.android.as", "com.google.android.tts")
+  private fun googleRank(pkg: String): Int = googleServices.indexOf(pkg).let { if (it < 0) googleServices.size else it }
+
+  /**
+   * 选识别服务：只考虑自己有麦克风权限的（没权限的会直接报「权限不足」）。
+   * 顺序：Google → 系统设置里的默认识别服务 → 其他任意一个。全都没权限时返回 null。
+   */
+  private fun pickRecognitionService(services: List<android.content.pm.ServiceInfo>): android.content.pm.ServiceInfo? {
+    val pm = reactApplicationContext.packageManager
+    val usable = services.filter { pm.checkPermission(Manifest.permission.RECORD_AUDIO, it.packageName) == PackageManager.PERMISSION_GRANTED }
+    usable.filter { googleRank(it.packageName) < googleServices.size }.minByOrNull { googleRank(it.packageName) }?.let { return it }
+    val preferred = try {
+      android.provider.Settings.Secure.getString(reactApplicationContext.contentResolver, "voice_recognition_service")
+        ?.let(ComponentName::unflattenFromString)
+    } catch (_: Exception) { null }
+    usable.firstOrNull { preferred != null && it.packageName == preferred.packageName && it.name == preferred.className }?.let { return it }
+    return usable.firstOrNull()
   }
 
   private fun startRecognition() {
@@ -84,13 +117,16 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
         @Suppress("DEPRECATION")
         context.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
       }
-      if (services.size == 1 && context.packageManager.checkPermission(Manifest.permission.RECORD_AUDIO, services.first().serviceInfo.packageName) != PackageManager.PERMISSION_GRANTED) {
-        return reject("speech_service_permission", "识别服务缺少麦克风权限，请在系统设置授权")
+      if (services.isEmpty()) return reject("speech_unavailable", "系统无识别服务，可用键盘语音输入")
+      val pick = pickRecognitionService(services.map { it.serviceInfo })
+      if (pick == null) {
+        /* 砚自己已有权限；缺权限的是负责转写的应用。报错点名（有 Google 就点名 Google），并记下包名供「去授权」跳转 */
+        val info = services.map { it.serviceInfo }.sortedBy { googleRank(it.packageName) }.first()
+        val label = try { info.applicationInfo.loadLabel(context.packageManager).toString() } catch (_: Exception) { info.packageName }
+        serviceNeedingPermission = info.packageName
+        return reject("speech_service_permission", "砚已有麦克风权限，但负责转写的「$label」没有。请给「$label」授权麦克风，或改用键盘语音输入")
       }
-      val speech = if (services.size == 1) {
-        val info = services.first().serviceInfo
-        SpeechRecognizer.createSpeechRecognizer(context, ComponentName(info.packageName, info.name))
-      } else SpeechRecognizer.createSpeechRecognizer(context)
+      val speech = SpeechRecognizer.createSpeechRecognizer(context, ComponentName(pick.packageName, pick.name))
       recognizer = speech
       speech.setRecognitionListener(object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) { if (recognizer === speech) emit("listening") }
@@ -116,7 +152,7 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
           val message = when (error) {
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有听清，请再试一次"
             SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别服务无法连接网络"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "语音识别服务没有麦克风权限"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "砚已有麦克风权限，但手机的语音识别服务没有；请在系统设置里给识别服务应用授权"
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "手机的识别服务正在使用中，请稍后重试"
             SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "识别服务暂不支持当前语言，请检查系统语音设置"
             else -> "语音识别失败（错误 $error）"

@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class SpeechInputPackage : ReactPackage {
   override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> =
-      listOf(SpeechInputModule(context), QuestionAlertModule(context), FoldLayoutModule(context), MobileDeviceModule(context))
+      listOf(SpeechInputModule(context), QuestionAlertModule(context), FoldLayoutModule(context), MobileDeviceModule(context), PairScannerModule(context))
 
   override fun createViewManagers(context: ReactApplicationContext): List<ViewManager<*, *>> =
       emptyList()

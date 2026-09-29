@@ -218,9 +218,12 @@ export function RemoteProvider({
 
   const unread = useMemo(() => new Set(sessions.filter((session) => {
     const reply = session.lastReply ?? previews[session.id]?.reply
-    const readAt = marks[session.id]?.at ?? session.lastOpenedAt ?? marks._baseline?.at ?? Infinity
+    /* 任一端看过都算已读：手机的已读标记与电脑记的打开时间取较晚者；电脑正开着的会话也算看过 */
+    if (session.id === activeSessionId) return false
+    const seen = Math.max(marks[session.id]?.at ?? 0, session.lastOpenedAt ?? 0)
+    const readAt = seen || (marks._baseline?.at ?? Infinity)
     return marksReady && !!reply && reply.at > readAt
-  }).map((session) => session.id)), [sessions, previews, marks, marksReady])
+  }).map((session) => session.id)), [sessions, previews, marks, marksReady, activeSessionId])
   const value = useMemo<RemoteState>(
     () => ({ client, stream, sessions, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent }),
     [client, stream, sessions, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent]

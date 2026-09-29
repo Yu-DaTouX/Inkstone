@@ -16,6 +16,9 @@ build/*
 !build/installer-sidebar-generated.png
 !build/installerHeader.bmp
 !build/installer-header-generated.png
+!build/installer.nsh
+!build/installer-anim/
+!build/installer-anim/*.bmp
 release/
 *.tsbuildinfo
 

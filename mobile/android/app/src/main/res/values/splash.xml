@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动底色 = 手机浅色 bg0；深色在 values-night。与 RN 内的启动画面同色，接缝处不闪（设计规范 §3.4.1） -->
+<resources>
+    <color name="splash_background">#FCFCFA</color>
+</resources>

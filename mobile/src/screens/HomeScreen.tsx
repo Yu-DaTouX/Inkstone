@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type SessionListItem } from '../api/client'
 import { QuestionCard } from '../components/QuestionCard'
 import { Icon, BrandMark } from '../icons'
-import { ContentEnter, LoadingBar, Spinner } from '../motion'
+import { ContentEnter, RunDot, Spinner } from '../motion'
 import { useRemote } from '../state'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
 import { EmptyState, Header, IconButton, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
@@ -44,7 +44,7 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
   }, [sessions])
   const activeIds = new Set(runners.filter((r) => r.running || r.waiting).map((r) => r.sessionId))
   for (const question of questions) if (question.sessionId) activeIds.add(question.sessionId)
-  for (const id of unread) activeIds.add(id)
+  /* 活动会话只列正在运行或等你回答的；未读回复留在「最近」里用圆点提示 */
   const visible = [...sessions].filter((s) => (!project || folderKey(s) === project.id)
     && `${s.title} ${s.cwdName ?? ''} ${previews[s.id]?.text ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => activityAt(b) - activityAt(a))
@@ -60,7 +60,7 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
         {activity ? <Meta numberOfLines={1} color={waiting ? p.warn : unread.has(session.id) ? p.accent : undefined}>{waiting ? STATUS_TEXT.wait : runner?.running ? STATUS_TEXT.run : '未读回复'} · {session.cwdName || '未分类'}</Meta>
           : previews[session.id]?.text ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.sm }}><Text style={{ fontFamily: mono, color: previews[session.id].role === 'user' ? p.accent : p.fgMute }}>{previews[session.id].role === 'user' ? '› ' : '砚 '}</Text>{previews[session.id].text}</Text> : !project ? <Meta numberOfLines={1}>{session.cwdName || '未分类'}</Meta> : null}
       </View>
-      {waiting ? <Icon name="bell" size={icon.sm} color={p.warn} /> : runner?.running ? <Spinner label={STATUS_TEXT.run} /> : unread.has(session.id) ? <StatusDot color={p.accent} label="未读回复" /> : <Meta>{timeAgo(activityAt(session))}</Meta>}
+      {waiting ? <Icon name="bell" size={icon.sm} color={p.warn} /> : runner?.running ? <RunDot label={STATUS_TEXT.run} /> : unread.has(session.id) ? <StatusDot color={p.accent} label="未读回复" /> : <Meta>{timeAgo(activityAt(session))}</Meta>}
     </Pressable>
   }
   const create = async () => {
@@ -87,13 +87,12 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
         <Text accessibilityLabel={client.connection.baseUrl} numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
         <Meta>· {STATUS_TEXT[stream]}</Meta>
       </>}
-      right={<IconButton name="settings" label="打开手机设置" onPress={onSettings} />}
+      right={<View style={{ flexDirection: 'row' }}><IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} /><IconButton name="settings" label="打开手机设置" onPress={onSettings} /></View>}
     />
-    <LoadingBar active={refreshing || creating || stream === 'connecting' || stream === 'reconnecting'} />
-    {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{error}</Text> : null}
+    {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={[styles.activity, { borderBottomColor: p.borderSoft }]}>{selectedSessionId ? <RunDot label={STATUS_TEXT[stream]} /> : <Spinner label={STATUS_TEXT[stream]} />}<Text style={{ color: p.fgDim, fontSize: font.sm }}>{creating ? '正在新建会话' : refreshing ? '正在刷新会话' : STATUS_TEXT[stream]}</Text></View> : null}
+    {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时/.test(error) ? '连接超时，请检查电脑和 Tailscale。' : error}</Text> : null}
     <ContentEnter key={project?.id ?? 'root'}>
       <FlatList data={visible} keyExtractor={(s) => s.id} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} tintColor={p.accent} />}
         ListHeaderComponent={<>
           {questions.length > 0 && !project ? <>
             <SectionTitle>{STATUS_TEXT.wait} · {questions.length}</SectionTitle>
@@ -106,7 +105,7 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
             {active.length ? active.map((s) => <View key={s.id}>{renderSession(s, true)}</View>) : <Meta style={{ fontSize: font.sm, paddingVertical: space[2] }}>{stream === 'open' ? '暂无活动' : '等待连接'}</Meta>}
             <SectionTitle>项目</SectionTitle>
             {groups.map((group) => <Pressable key={group.id} accessibilityRole="button" onPress={() => { onProjectChange(group); setQuery('') }} style={({ pressed }) => [styles.folder, { opacity: pressed ? 0.6 : 1 }]}>
-              <Icon name="folder" color={p.fgDim} size={icon.md} /><Text numberOfLines={1} style={{ flex: 1, color: p.fg, fontSize: font.body, fontFamily: mono }}>{group.name}</Text><Meta>{group.count}</Meta><Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
+              <Icon name="folder" color={p.fgDim} size={icon.md} /><Text numberOfLines={1} style={{ flex: 1, color: p.fg, fontSize: font.body }}>{group.name}</Text><Meta>{group.count}</Meta><Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
             </Pressable>)}
           </> : null}
           <SectionTitle>{query ? `搜索结果 · ${visible.length}` : project ? `会话 · ${visible.length}` : '最近'}</SectionTitle>
@@ -114,9 +113,9 @@ export function HomeScreen({ onOpen, onSettings, alertsEnabled, onEnableAlerts, 
         ListEmptyComponent={<EmptyState>{query ? '没有匹配的会话' : stream === 'open' ? '还没有会话' : '正在等待电脑的会话…'}</EmptyState>}
         renderItem={({ item }) => renderSession(item)} />
     </ContentEnter>
-    {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm, fontFamily: mono }}>开启待回答提醒</Text></Pressable> : null}
+    {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>开启待回答提醒</Text></Pressable> : null}
     <View style={[styles.dock, { borderTopColor: p.borderSoft, backgroundColor: p.bg1 }]}>
-      <View style={[styles.search, { borderColor: p.border, backgroundColor: p.bg0 }]}><Icon name="search" size={icon.sm} color={p.fgMute} /><TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder={project ? '搜索此项目' : '搜索会话'} placeholderTextColor={p.fgMute} accessibilityLabel="搜索会话" style={{ flex: 1, minHeight: touch.min, paddingVertical: 6, color: p.fg, fontSize: font.base, fontFamily: mono }} /></View>
+      <View style={[styles.search, { borderColor: p.border, backgroundColor: p.bg0 }]}><Icon name="search" size={icon.sm} color={p.fgMute} /><TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder={project ? '搜索此项目' : '搜索会话'} placeholderTextColor={p.fgMute} accessibilityLabel="搜索会话" style={{ flex: 1, minHeight: touch.min, paddingVertical: 6, color: p.fg, fontSize: font.base }} /></View>
       <IconButton name="pencil" primary label="新建会话" busy={creating} disabled={stream !== 'open'} onPress={() => Alert.alert('新建会话', '使用电脑当前目录，并切换电脑会话。', [{ text: '取消', style: 'cancel' }, { text: '新建', onPress: () => void create() }])} />
     </View>
   </View>
@@ -130,6 +129,7 @@ const styles = StyleSheet.create({
   folder: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[2] },
   question: { flexDirection: 'row', alignItems: 'center', gap: space[3], borderWidth: 1, padding: space[3], marginBottom: space[2], borderRadius: radius.md },
   error: { fontSize: font.sm, padding: space[3] },
+  activity: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4], borderBottomWidth: StyleSheet.hairlineWidth },
   alertPrompt: { minHeight: touch.min, paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center', gap: space[2] },
   dock: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4], paddingVertical: space[3], borderTopWidth: StyleSheet.hairlineWidth },
   search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], borderWidth: 1, borderRadius: radius.md }

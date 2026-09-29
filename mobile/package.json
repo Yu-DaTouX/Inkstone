@@ -7,7 +7,8 @@
     "android": "react-native run-android",
     "start": "react-native start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build:apk": "node scripts/sync-brand.mjs && cd android && gradlew.bat assembleRelease"
+    "icons:launcher": "node ../node_modules/electron/cli.js scripts/build-launcher-icons.mjs",
+    "build:apk": "node scripts/sync-brand.mjs && npm run icons:launcher && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
     "react": "19.1.0",
