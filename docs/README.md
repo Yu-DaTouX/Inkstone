@@ -18,5 +18,6 @@
 | 第三方组件与许可 | [第三方许可](THIRD-PARTY.md) |
 | 放置文件与公开 / 本地资料的边界 | [文件归属与长期维护规范](REPOSITORY_GUIDE.md) |
 | AI 协作约定 | [AGENTS.md](../AGENTS.md) |
+| 多个 AI agent 之间的状态、交接与本地资料 | [多 Agent 协作流程](AGENT_WORKFLOW.md) |
 
 内部实施计划、设计讨论、交接记录、历史审计和验收截图不随公开文档分发。它们不是构建或贡献的前置依赖。图标生成与 CSS 检查工具位于 `scripts/design/`；公开品牌素材位于 `docs/assets/inkstone/`。
