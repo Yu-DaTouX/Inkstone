@@ -11,6 +11,7 @@
 | 从源码运行与贡献 | [贡献指南](CONTRIBUTING.md) |
 | 理解进程与数据边界 | [架构简介](ARCHITECTURE.md) |
 | 定位源码 | [代码导览](PROJECT.md) · [按功能查找的代码地图](CODE_MAP.md) |
+| 多 Agent 工作台（外部终端 agent、互相派活、手机审批）设计稿 | [多 Agent 工作台设计](AGENT_HUB.md) |
 | 评估语言与桌面/手机技术路线 | [技术路线与迁移可行性](TECH_STACK_OPTIONS.md) |
 | Windows 打包与数据备份 | [发布说明](dev/RELEASING.md) |
 | 界面设计、控件与动效规范 | [设计规范](DESIGN_SYSTEM.md) · [界面重构计划](UI_REDESIGN.md) |
