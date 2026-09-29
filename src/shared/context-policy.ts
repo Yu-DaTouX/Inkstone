@@ -466,6 +466,17 @@ export function resolveContextPolicy(layers: ContextPolicyLayers = {}): Resolved
   return { policy, source, sourceKey, overridden }
 }
 
+/**
+ * 生效策略里有没有**显式的旧数值 / 开关覆盖**（env、用户级、供应商级、模型级）。
+ *
+ * 上下文预算 V1 的迁移规则：新会话存在这类覆盖时保留 legacy，
+ * 不擅自把它迁到 V1（用户可在上下文设置里为当前会话明确启用）。
+ * 只改了 `kinds`（例如关掉状态生成的开关）不算 —— 那不是旧阈值配置。
+ */
+export function hasExplicitLegacyOverride(resolved: ResolvedContextPolicy): boolean {
+  return resolved.source !== 'default' && resolved.overridden.some((field) => field !== 'kinds')
+}
+
 /* ---------------------------------------------------------------- 触发决策 */
 
 /** 连续两次策略压缩之间的最小间隔：压缩失败时不要每一轮都重试同一个动作 */
