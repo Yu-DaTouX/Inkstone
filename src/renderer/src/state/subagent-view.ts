@@ -69,3 +69,24 @@ export function selectSubagentRuns(runs: SubagentRun[], scope: SubagentScope): S
 export function subagentTabId(runId: string): string {
   return `subagent:${runId}`
 }
+
+/** 刚结束的子代理在任务分区里保留多久（过后自动退场） */
+export const RECENT_DONE_MS = 5 * 60_000
+
+/**
+ * 需要在界面上继续露面的当前会话子代理：运行中 / 失败 / 待审阅或有冲突 / 刚完成。
+ * 已合并、已放弃、已归档、被用户停止的安静退场。
+ */
+export function visibleSubagentRuns(runs: SubagentRun[], scope: SubagentScope, now = Date.now()): SubagentRun[] {
+  return selectSubagentRuns(runs, scope).all.filter((run) => {
+    if (run.status === 'starting' || run.status === 'running' || run.status === 'error') return true
+    if (run.review === 'pending' || run.review === 'conflict') return true
+    return run.status === 'done' && !!run.endedAt && now - run.endedAt < RECENT_DONE_MS
+  })
+}
+
+/** 分区「是否为空」的探针用：布尔，避免选择器每帧返回新数组 */
+export function hasVisibleSubagents(s: { subagents: SubagentRun[]; session?: { sessionId?: string; conversationId?: string } | null }): boolean {
+  const sessionIds = [s.session?.sessionId, s.session?.conversationId].filter((v): v is string => !!v)
+  return visibleSubagentRuns(s.subagents, { sessionIds }).length > 0
+}

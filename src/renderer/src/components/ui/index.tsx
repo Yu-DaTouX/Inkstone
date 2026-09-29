@@ -272,6 +272,19 @@ export function Spinner({ mute, className, label }: { mute?: boolean; className?
   )
 }
 
+/**
+ * 进行中的静态标记：强调色方点。同一时刻界面上只有一个方点阵（当前会话运行时
+ * 在输入区运行条）；工具行、任务、左栏、推理头等次要位置用它，避免多处同时在转。
+ */
+export function RunDot({ className, label }: { className?: string; label?: string }) {
+  return (
+    <span
+      className={cx('ui-run-dot', className)}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+    />
+  )
+}
+
 /** 流式输出的光标：输出中常亮，停下后闪烁 */
 export function Caret({ idle, className }: { idle?: boolean; className?: string }) {
   return <span className={cx('ui-caret', idle && 'idle', className)} aria-hidden />
@@ -348,6 +361,49 @@ export function Field({
       {children}
       {hint ? <span className="ui-field-hint">{hint}</span> : null}
     </label>
+  )
+}
+
+/**
+ * 设置分组：页内的一组设置，带一行淡色小标题（设计规范 §5）。
+ * 内容通常是一个 `.ui-rows`；合并后的设置页用它区分原来的几页。
+ */
+export function SettingGroup({
+  title,
+  className,
+  children,
+  ...rest
+}: { title?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLElement>) {
+  return (
+    <section className={cx('ui-group', className)} {...rest}>
+      {title ? <h3 className="ui-group-title">{title}</h3> : null}
+      {children}
+    </section>
+  )
+}
+
+/**
+ * 折叠披露：低频的高级选项与诊断默认收起，点标题展开（原生 details，键盘可用）。
+ */
+export function Disclosure({
+  title,
+  defaultOpen,
+  testId,
+  children
+}: {
+  title: ReactNode
+  defaultOpen?: boolean
+  testId?: string
+  children: ReactNode
+}) {
+  return (
+    <details className="ui-disclosure" open={defaultOpen} data-testid={testId}>
+      <summary>
+        <Icon name="chevron-right" size={12} className="chev" />
+        {title}
+      </summary>
+      <div className="ui-disclosure-body">{children}</div>
+    </details>
   )
 }
 
@@ -556,6 +612,33 @@ export function MenuSeparator() {
 }
 
 /* ------------------------------------------------------------------ 检查器与列表 */
+
+/**
+ * 检查器摘要里的迷你用量条：固定宽度，数字写在它左边，条本身不写字。
+ * percent 为 null 表示用量未知（画成空槽，不画成 0%）；超过 100 只夹取宽度。
+ */
+export function MiniMeter({
+  percent,
+  tone,
+  title,
+  className
+}: {
+  percent: number | null
+  tone?: 'ok' | 'warn' | 'err' | ''
+  title?: string
+  className?: string
+}) {
+  const value = percent === null || !Number.isFinite(percent) ? null : Math.max(0, Math.min(100, percent))
+  return (
+    <span
+      className={cx('ui-mini-meter', tone, value === null && 'unknown', className)}
+      title={title ?? (value === null ? '用量未知' : `已用 ${percent!.toFixed(1)}%`)}
+      aria-hidden="true"
+    >
+      <i style={{ width: `${value ?? 0}%` }} />
+    </span>
+  )
+}
 
 /** 检查器分区：标题 + 右侧摘要 + 内容。分区之间只有一条细线 */
 export function InspectorSection({

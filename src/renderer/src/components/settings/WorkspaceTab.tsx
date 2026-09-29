@@ -3,7 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { WORK_MODES, type WorkMode } from '../../../../shared/work-mode'
-import { Button, SettingRow } from '../ui'
+import { Button, SettingGroup, SettingRow } from '../ui'
 
 /** 活动档案的选项：与输入区原来的选择器同源（实施-25 P01 的七档） */
 const AGENT_PROFILES = [
@@ -68,15 +68,34 @@ export function WorkspaceTab() {
 
   return (
     <>
+      {/* 界面形态是全局的；工作模式与活动档案按会话保存 */}
       <div className="ui-rows">
-        <SettingRow name={t('set.sessionHead')} desc={t('set.sessionHeadDesc')} />
+        <SettingRow name={t('set.workspaceMode')} desc={t('set.workspaceModeDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-workspace-mode" }}>
+          {modeOpts.map((o) => (
+            <button
+              key={o.id}
+              className={`seg-btn ${workspaceMode === o.id ? 'sel' : ''}`}
+              data-workspace={o.id}
+              onClick={() => {
+                if (workspaceMode !== o.id) void setWorkspaceMode(o.id)
+              }}
+            >
+              <Icon name={o.icon} size={12} />
+              <span>{o.label}</span>
+            </button>
+          ))}
+        </SettingRow>
+      </div>
 
-        <SettingRow name={t('set.workModeNow')} desc={t('set.workModeNowDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-work-mode" }}>
+      <SettingGroup title={t('set.sessionHead')}>
+        <div className="ui-rows">
+          <SettingRow name={t('set.workModeNow')} desc={t('set.workModeNowDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-work-mode" }}>
             {WORK_MODES.map((mode) => (
               <button
                 key={mode}
                 className={`seg-btn ${workMode === mode ? 'sel' : ''}`}
                 data-mode={mode}
+                title={t(`workMode.desc.${mode}`)}
                 onClick={() => {
                   if (workMode !== mode) void setWorkMode(mode)
                 }}
@@ -86,12 +105,13 @@ export function WorkspaceTab() {
             ))}
           </SettingRow>
 
-        <SettingRow name={<><Icon name="agent" size={12} /> {t('set.agentProfileNow')}</>} desc={t('set.agentProfileNowDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-agent-profile" }}>
+          <SettingRow col name={t('set.agentProfileNow')} desc={t('set.agentProfileNowDesc')} ctlClassName="seg seg-scale" ctlProps={{ 'data-testid': "set-agent-profile" }}>
             {AGENT_PROFILES.map((item) => (
               <button
                 key={item.key}
                 className={`seg-btn ${profileKey === item.key ? 'sel' : ''}`}
                 data-profile={item.key}
+                title={t(`agentProfile.desc.${item.key}`)}
                 onClick={() => {
                   if (profileKey === item.key) return
                   void setAgentProfile(
@@ -105,28 +125,12 @@ export function WorkspaceTab() {
               </button>
             ))}
           </SettingRow>
-      </div>
+        </div>
+      </SettingGroup>
 
+      <SettingGroup title={t('set.spaceManage')}>
       <div className="ui-rows">
-        <SettingRow name={t('set.workspaceMode')} desc={t('set.workspaceModeDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "set-workspace-mode" }}>
-            {modeOpts.map((o) => (
-              <button
-                key={o.id}
-                className={`seg-btn ${workspaceMode === o.id ? 'sel' : ''}`}
-                data-workspace={o.id}
-                onClick={() => {
-                  if (workspaceMode !== o.id) void setWorkspaceMode(o.id)
-                }}
-              >
-                <Icon name={o.icon} size={12} />
-                <span>{o.label}</span>
-              </button>
-            ))}
-          </SettingRow>
-      </div>
-
-      <div className="ui-rows">
-        <SettingRow name={t('set.spaceManage')} desc={t('set.spaceManageDesc')}>
+        <SettingRow name={t('set.spaceNew')} desc={t('set.spaceManageDesc')}>
             <input
               className="ui-input"
               value={newName}
@@ -250,6 +254,7 @@ export function WorkspaceTab() {
           </>
         ) : null}
       </div>
+      </SettingGroup>
     </>
   )
 }

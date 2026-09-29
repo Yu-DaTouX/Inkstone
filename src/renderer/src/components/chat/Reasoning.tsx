@@ -20,7 +20,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import { Caret, Spinner } from '../ui'
+import { Caret, RunDot } from '../ui'
 
 /** 系统是否要求减少动态效果 */
 function prefersReducedMotion(): boolean {
@@ -148,7 +148,7 @@ function ReasoningCapsuleImpl({
          */}
         {live ? (
           <span className="reason-spin" aria-hidden>
-            <Spinner />
+            <RunDot />
           </span>
         ) : (
           <Icon name="chevron-right" size={12} className="chev" />

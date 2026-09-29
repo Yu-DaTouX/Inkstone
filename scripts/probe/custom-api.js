@@ -43,7 +43,7 @@
     const tab = q('[data-testid="settings-tab-auth"]') ?? [...document.querySelectorAll('button')].find((b) => /接入/.test(b.textContent ?? ''))
     click(tab)
     const ready = await until(() => q('[data-testid="custom-api"]'), 8000)
-    ok(ready, '设置 → 接入里有「自定义 API 服务」')
+    ok(ready, '设置 → 模型里有「自定义 API 服务」')
 
     /* 协议下拉只给受支持集合 */
     click(q('[data-testid="custom-api-add"]'))

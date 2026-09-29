@@ -5,11 +5,15 @@ import { useStore } from '../../state/store'
 import { forkFromText } from '../../lib/fork'
 import { Markdown } from './MessageParts'
 import { ReasoningCapsule } from './Reasoning'
-import { ToolGroup, ToolRow } from './ToolRow'
+import { ToolGroup } from './ToolRow'
+import { TurnSubagents } from './TurnSubagents'
+import { SubagentNoticeRow } from './SubagentCards'
+import { parseSubagentNotice } from '../../../../shared/subagent-notice'
 import type { AssistantTurn, BashTurn, Turn, UserTurn } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { Caret } from '../ui'
+import { ChatImage } from './ChatImage'
 
 /**
  * 回合视图 —— 把「一轮对话」渲染成**一块**。
@@ -42,6 +46,9 @@ export const TurnView = memo(function TurnView({ turn, streaming }: { turn: Turn
 function UserTurnView({ turn }: { turn: UserTurn }) {
   const t = useT()
   const msg = turn.msg
+  /* 宿主发给模型的子代理通知：显示成一行小提示，不当作用户说的话 */
+  const notice = parseSubagentNotice(msg.text)
+  if (notice) return <SubagentNoticeRow notice={notice} />
 
   return (
     <article className="msg user" data-msg-id={msg.id} data-turn-id={turn.id}>
@@ -67,10 +74,10 @@ function UserTurnView({ turn }: { turn: UserTurn }) {
           <div className="msg-images">
             {msg.images.map((im, i) =>
               im.data ? (
-                <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" />
+                <ChatImage key={i} src={`data:${im.mimeType};base64,${im.data}`} />
               ) : im.url ? (
-                /* 历史里的图：已落盘，直接读文件（重启后也看得到） */
-                <img key={i} src={im.url} alt="" />
+                /* 历史里的图：已落盘，直接读文件（重启后也看得到）；点开进右栏预览 */
+                <ChatImage key={i} src={im.url} />
               ) : (
                 /*
                  * 历史回放时图片数据被体积保护丢掉了（见 state/keep-images.ts）。
@@ -127,9 +134,7 @@ function BashTurnView({ turn }: { turn: BashTurn }) {
           <span>{t('chat.bash')}</span>
         </div>
         {/* 用户主动跑的命令（`!命令`）—— 用同一套 Codex 风格行 */}
-        {(msg.toolCalls ?? []).map((c) => (
-          <ToolRow key={c.id} call={c} />
-        ))}
+        <ToolGroup tools={msg.toolCalls ?? []} />
         {msg.error ? (
           <div className="msg-error">
             <Icon name="alert-circle" size={12} />
@@ -185,6 +190,11 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
         {/* 同一回合的非正式输出连续阅读；短进展折叠也只出现一次。 */}
         {commentary.length ? <CommentaryList parts={commentary} /> : null}
 
+        {/* 过程记录（推理 + 工具）在解说之后、正式回复之前：按发生顺序读 */}
+        <TurnActivity turn={turn} streaming={streaming} />
+        {/* 这一回合派出的子代理：一个一行，运行中显示模型与最新动作 */}
+        <TurnSubagents turn={turn} />
+
         {/* 正式回复仍逐段保留，避免自主续跑时把不同来源的正文拼成一段。 */}
         {segmented
           ? turn.segments.map((segment) => (
@@ -194,8 +204,6 @@ function AssistantTurnView({ turn, streaming }: { turn: AssistantTurn; streaming
             ? <TurnResponse response={turn.response} parts={turn.responseParts} />
             : null}
 
-        {/* 工具与推理属于可回看的过程记录，集中排在正文下方。 */}
-        <TurnActivity turn={turn} streaming={streaming} />
 
         {turn.artifacts.length ? (
           <div className="turn-artifacts" data-testid="turn-artifacts">
@@ -339,7 +347,14 @@ function ArtifactCard({ artifact }: { artifact: AssistantTurn['artifacts'][numbe
   }, [artifact.path, isCode, unavailable])
 
   return (
-    <section className="artifact-card" data-artifact-id={artifact.id}>
+    <section
+      className="artifact-card"
+      data-artifact-id={artifact.id}
+      /* 单击在软件内打开，双击在资源管理器定位；按钮与下载链接自己处理点击 */
+      onClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void previewFile(artifact.path) }}
+      onDoubleClick={(e) => { if (!unavailable && !(e.target as HTMLElement).closest('a,button')) void window.yan.revealPath(artifact.path) }}
+      title={unavailable ? undefined : '单击在右侧打开，双击在资源管理器中显示'}
+    >
       <div className="artifact-head">
         <Icon name={artifact.kind === 'image' || artifact.kind === 'svg' ? 'sparkles' : 'file'} size={12} />
         <strong title={artifact.description}>{artifact.filename}</strong>
@@ -515,16 +530,11 @@ function CommentaryList({ parts }: { parts: readonly AssistantTurn['commentary']
 }
 
 /**
- * 整轮活动摘要 —— 「推理了 N 次 · 执行了 M 次工具」。
+ * 回合的过程记录：推理一行 + 工具命令块表。
  *
- * 合并之后这里的 N/M 是**整个回合**的合计（不是一个 API 往返的）。
- * 一个回合十几次工具往返很常见，平铺出来会把回答淹掉，所以收进一行。
- *
- * 展开规则（用户要求：「只展开正在运行的那条」）：
- *   · 正在跑 / 排队中的工具 → 单独一行，自动展开详情（用户在等，要看进度）
- *   · 已结束的工具 → 收进折叠组，默认收起，用户点了才展开
- *   · 失败 → 只把摘要行标红，**不自动展开**（失败输出经常几十行）
- *   · 用户手动点过之后不再被自动规则推翻
+ * 展开规则（用户要求：「只展开正在运行的那条」）：默认全部一行；
+ * 设置里打开「工具详情」时，只有最新开始的那条运行中的调用自动展开
+ *（并行时三个终端同时展开会把回答顶出屏幕）。失败不自动展开。
  */
 function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }) {
   const tools = turn.tools
@@ -533,51 +543,14 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
   const thinkingLive = turn.thinkingLive
   const hasThinking = !!thinking
 
-  /*
-   * ⚠️ 这里曾经是个 bug（用户报「为什么我看不到推理」）：
-   *   ReasoningCapsule 被 import 了，但**没有任何地方渲染它**，
-   *   而函数又在 tools 为空时直接 return null —— 于是「纯推理、还没调工具」
-   *   的那一段什么都看不到（推理胶囊整块丢失）。
-   *   教训：import 了不等于渲染了；tsconfig 没开 noUnusedLocals 抓不到。
-   */
   if (!hasThinking && tools.length === 0) return null
 
-  /*
-   * 工具行的展开规则（用户要求：「只展开正在运行的那条」）。
-   *
-   * 拆成两组，而不是把所有工具塞进同一个组里：
-   *   · 正在跑 / 排队中的 → 单独一行渲染，ToolRow 会自动展开它的详情
-   *   · 已结束的 → 收进 ToolGroup，默认收起（用户点了才展开）
-   * 之前是放同一个组、组在运行中自动展开 —— 于是模型一调工具，
-   * 整组（连同所有已结束的行）一起弹开，就是用户报的「整个工具调用栏会展开」。
-   */
   const runningTools = tools.filter((c) => c.status === 'running' || c.status === 'pending')
-  const doneTools = tools.filter((c) => c.status !== 'running' && c.status !== 'pending')
-  /*
-   * 并行时只有**最新开始的那条**自动展开（方案 4.2）：
-   * 三条命令同时跑，三个终端窗口会把回答顶出屏幕。
-   * 其余保持一行，用户点哪条看哪条。
-   */
   const activeToolId = runningTools.length ? runningTools[runningTools.length - 1].id : null
 
   return (
     <>
-      {/*
-       * 工具调用用 **Codex 风格**（用户要求）：一行一条，已结束的折叠在
-       * 「运行了命令 N」下面（见 ToolRow.tsx）。
-       *
-       * 与上一版的区别：不再把「正在跑」也塞进那个折叠组里 ——
-       * 运行中的单独一行、自动展开详情；只有已结束的才进组且默认收起。
-       */}
-      {runningTools.map((c) => (
-        <ToolRow key={c.id} call={c} autoOpen={c.id === activeToolId} />
-      ))}
-      {doneTools.length === 1 ? (
-        <ToolRow call={doneTools[0]} />
-      ) : doneTools.length > 1 ? (
-        <ToolGroup tools={doneTools} />
-      ) : null}
-      {/* 思考放在过程记录末尾；仍使用原文，展开状态只由用户操作控制。 */}
+      {/* 先思考、后动手：推理一行在前，工具命令块表在后（按发生顺序） */}
       {hasThinking ? (
         <ReasoningCapsule
           text={thinking}
@@ -586,6 +559,7 @@ function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: bo
           turnLive={streaming}
         />
       ) : null}
+      <ToolGroup tools={tools} activeId={activeToolId} />
     </>
   )
 }

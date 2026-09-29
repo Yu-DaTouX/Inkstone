@@ -213,6 +213,17 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runAttachmentTests } = await import('./test-attachments.mjs')
 const { runKeepImagesTests } = await import('./test-keep-images.mjs')
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/same-messages.ts'],
+    outfile: 'out/test/same-messages.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
+const { runSameMessagesTests } = await import('./test-same-messages.mjs')
 /* 会话 JSONL 的读取：图片 base64 不能被体积截断（node 平台，要读真实文件） */
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1647,6 +1658,7 @@ await runSubagentUsageTests(ok)
 // 工具磁贴布局契约（U-0）：迁移/归一/夹取/并发写
 await runToolLayoutTests(ok)
 await runKeepImagesTests(ok)
+await runSameMessagesTests(ok)
 await runAttachmentTests(ok)
 await runSessionImageTests(ok)
 
@@ -2254,6 +2266,8 @@ await runLanguageExtensionTests(ok, languageExtension)
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
 await runPreambleExtensionTests(ok, preambleExtension)
+const { runAppUpdateTests } = await import('./test-app-update.mjs')
+await runAppUpdateTests(ok)
 
 /*
  * 切片安全规则（resources/pi-extensions/context-safety.js，N21-10）。
@@ -3041,6 +3055,25 @@ await runGitRepoTests(ok)
 }
 
 /*
+ * 高危操作确认的判定（resources/pi-extensions/danger-guard.js）：
+ * 命中要问、日常命令不能误伤。只测纯判定，确认框在宿主。
+ */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({
+    entryPoints: ['resources/pi-extensions/danger-guard.js'],
+    outfile: 'out/test/danger-guard.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  })
+  const dangerGuard = await import('../out/test/danger-guard.mjs')
+  const { runDangerGuardTests } = await import('./test-danger-guard.mjs')
+  runDangerGuardTests(ok, dangerGuard)
+}
+
+/*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
  * （如 Settings.tsx 的 `<div className="ui-row-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
@@ -3387,23 +3420,6 @@ const { runTurnCacheTests } = await import('./test-turn-cache.mjs')
 await runTurnCacheTests(ok, turnCache)
 
 /*
- * 画布轮次层（实施-26 R3）：轮次层几何 + 分支对齐。
- * 纯逻辑，现场编译。
- */
-const turnLayer = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/turn-layer.ts'],
-    outfile: 'out/test/turn-layer.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/turn-layer.mjs'))
-)
-const { runTurnLayerTests } = await import('./test-turn-layer.mjs')
-await runTurnLayerTests(ok, turnLayer)
-
-/*
  * 活动档案（实施-25 P01）：角色文本/工具策略纯逻辑 + 存储与快照。
  * shared 那份保持平台中立；store 那份要真读写临时目录。
  */
@@ -3704,6 +3720,20 @@ const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then((
 )
 const { runSubagentBriefTests } = await import('./test-subagent-brief.mjs')
 runSubagentBriefTests(ok, subagentBrief)
+
+/* 子代理的结局说法、结束通知、任务输入限额与「别 sleep 轮询」 */
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  const bundle = async (entry, out) => {
+    await build({ entryPoints: [entry], outfile: out, bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+    return import('../' + out)
+  }
+  const outcome = await bundle('src/shared/subagent-outcome.ts', 'out/test/subagent-outcome.mjs')
+  const notice = await bundle('src/shared/subagent-notice.ts', 'out/test/subagent-notice.mjs')
+  const repeatGuard = await import('../resources/pi-extensions/repeat-guard.js')
+  const { runSubagentOutcomeTests } = await import('./test-subagent-outcome.mjs')
+  runSubagentOutcomeTests(ok, { outcome, notice, brief: subagentBrief, repeatGuard })
+}
 
 /*
  * 持续关注与提醒（实施-25 P16）：节奏 / 到点 / 提醒规则 / 落盘。

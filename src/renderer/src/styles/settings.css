@@ -17,9 +17,9 @@ html[data-theme='light'] .settings-scrim {
 
 .settings {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr);
-  width: min(920px, calc(100vw - 64px));
-  height: min(660px, calc(100vh - 64px));
+  grid-template-columns: 184px minmax(0, 1fr);
+  width: min(960px, calc(100vw - 64px));
+  height: min(700px, calc(100vh - 64px));
   /* 内容区用窗口底色，导航用抬高一级的面板色：深浅两套主题里层级方向一致 */
   background: var(--bg-0);
   border: 1px solid var(--border);
@@ -61,6 +61,10 @@ html[data-theme='light'] .settings-scrim {
   scrollbar-gutter: stable;
   padding: var(--sp-5) var(--sp-6) var(--sp-6);
   min-width: 0;
+}
+/* 内容列不随窗口无限拉宽：设置行「名称 + 说明｜控件」在 720px 内最好读 */
+.settings-body > * {
+  max-width: 720px;
 }
 .settings-page-title {
   margin: 0 0 var(--sp-3);
@@ -156,7 +160,7 @@ html[data-theme='light'] .settings-scrim {
   gap: 6px;
 }
 .stream-width-ctl .range {
-  width: 200px;
+  width: 160px;
   max-width: 42vw;
   height: 18px;
   margin: 0;
@@ -192,6 +196,7 @@ html[data-theme='light'] .settings-scrim {
   cursor: default;
 }
 .set-warn {
+  display: block;
   margin-top: var(--sp-2);
   padding: var(--sp-2);
   border-radius: var(--r-sm);
@@ -260,52 +265,20 @@ html[data-theme='light'] .settings-scrim {
   text-align: left;
 }
 
-/* 按活动用不同模型（实施-25 P18）：五行配置 + 每行的「为什么是这个模型」 */
-.am-scope {
-  margin: 0;
-  color: var(--fg-mute);
-  overflow-wrap: break-word;
+/* 按活动分配模型：一句说明 + 默认 + 五行（活动名｜模型 key 输入框） */
+.am-desc {
+  padding: var(--sp-2) 0;
 }
-
 .am-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 100%;
 }
-
-.am-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-
-.am-name {
-  flex: 0 0 auto;
-  min-width: 48px;
-  font-size: var(--fs-xs);
-  color: var(--fg);
-}
-
-/* 模型 key 是长串（provider/id），给足宽度并允许换行 */
-.am-item .ui-input {
-  flex: 1 1 200px;
-  width: auto;
-  min-width: 0;
+.am-list .ui-input,
+[data-testid='set-activity-models'] .ui-input {
+  width: 260px;
   text-align: left;
 }
-
-.am-note {
-  flex: 1 1 100%;
-  min-width: 0;
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-  overflow-wrap: break-word;
-}
-
-/* 回退是「配置的模型不可用」——要能一眼看出来，不能和普通解释同色 */
+/* 回退是「配置的模型不可用」—— 要能一眼看出来 */
 .am-note.fell-back {
   color: var(--warn);
 }
@@ -339,16 +312,24 @@ html[data-theme='light'] .settings-scrim {
   justify-content: flex-start;
 }
 
+/* 列表项：一行名称 + 最多两行说明，项之间一条细线（与设置行同一语言） */
 .pkg-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: var(--sp-1) 6px;
-  border-radius: var(--r-xs);
+  gap: 2px;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border-soft);
 }
-
-.pkg-item:hover {
-  background: var(--bg-2);
+.pkg-item:last-child {
+  border-bottom: 0;
+}
+.pkg-item .pkg-detail-line:not(.pkg-dim) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .pkg-item-main {
@@ -359,7 +340,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 .pkg-name {
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
   color: var(--fg);
   overflow: hidden;
@@ -368,7 +349,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 .pkg-ver {
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
@@ -406,7 +387,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 .pkg-detail-line {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--fg-dim);
   word-break: break-all;
@@ -498,7 +479,7 @@ html[data-theme='light'] .settings-scrim {
 }
 .kn-id {
   color: var(--fg-mute);
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
 }
 .kn-text {
@@ -1048,4 +1029,87 @@ html[data-theme='light'] .ob-scrim {
 .settings-page-title,
 .ob-title {
   font-family: var(--font-body);
+}
+
+/* 关于 · 诊断信息：键值两列，值可选中复制 */
+.set-diag {
+  display: grid;
+  gap: var(--sp-1);
+}
+.set-diag-line {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.set-diag-k {
+  color: var(--fg-mute);
+}
+.set-diag-v {
+  overflow: hidden;
+  color: var(--fg-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-diag .set-logs {
+  margin-top: var(--sp-2);
+}
+
+/* 上下文预算：档位分段 + 「自动时最多用到」一行 */
+.set-ctx-budget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.set-ctx-max {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* 说明里的附加一行（状态、临时抬线、出口提示） */
+.set-line {
+  display: block;
+  margin-top: 2px;
+}
+.ui-row-desc.err {
+  color: var(--err);
+}
+.set-diag-line.set-material {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.ui-row.kn-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 0;
+}
+.ui-row.col .seg-scale {
+  justify-content: flex-start;
+}
+
+/* 搜索后端的安装渠道：按钮一行，窄窗口换行 */
+.set-install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.set-install-log {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+}
+.set-install-log.err {
+  color: var(--err);
+}
+/* 电脑操作：标题说明与开关同一行，开关贴右 */
+.set-cu-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-3);
 }

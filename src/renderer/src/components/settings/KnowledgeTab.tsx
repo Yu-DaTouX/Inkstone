@@ -3,7 +3,7 @@ import { createLatestOnly, type LatestOnly } from '../../lib/latest-only'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView, KnowledgeScope } from '../../../../shared/ipc'
-import { Button } from '../ui'
+import { Button, SettingRow, Switch } from '../ui'
 
 /**
  * 「项目知识」设置页（实施-03 S5）。
@@ -202,81 +202,64 @@ export function KnowledgeTab() {
 
   return (
     <div className="ui-rows">
-      {/* ① 开关 */}
-      <div className="ui-row col">
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span className="ui-row-name">{tk('set.knTitle')}</span>
-          </div>
-          <div className="ui-row-ctl seg" data-testid="kn-toggle">
-            <button
-              className="seg-btn"
-              data-testid="kn-toggle-btn"
-              onClick={() => void patchSettings({ projectKnowledge: { enabled: !enabled } })}
-            >
-              {tk(enabled ? 'set.knOn' : 'set.knOff')}
-            </button>
-          </div>
-        </div>
-        <div className="ui-row-desc">
-          <span className="set-tag kn-tagline">{tk('set.knTag')}</span>
-        </div>
-        <div className="ui-row-desc" data-testid="kn-desc">
-          {tk(enabled ? 'set.knDescOn' : 'set.knDescOff')}
-        </div>
-      </div>
+      {/* 开关：关闭时不检索、不注入、不生成候选；已保存的条目保留 */}
+      <SettingRow name={tk('set.knTitle')} desc={<span data-testid="kn-desc">{tk(enabled ? 'set.knDescOn' : 'set.knDescOff')}</span>} ctlProps={{ 'data-testid': 'kn-toggle' }}>
+        <Switch
+          checked={enabled}
+          onChange={(next) => void patchSettings({ projectKnowledge: { enabled: next } })}
+          label={tk('set.knTitle')}
+          testId="kn-toggle-btn"
+        />
+      </SettingRow>
 
-      {/* ② 范围 + 状态 + 筛选 */}
-      <div className="ui-row col">
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span className="ui-row-name">{tk('set.knScope')}</span>
-          </div>
-          <div className="ui-row-ctl seg" data-testid="kn-scope">
-            {(['project', 'personal'] as const).map((id) => (
-              <button
-                key={id}
-                className={`seg-btn ${scope === id ? 'sel' : ''}`}
-                data-testid={`kn-scope-${id}`}
-                onClick={() => setScope(id)}
-              >
-                {tk(id === 'project' ? 'set.knScopeProject' : 'set.knScopePersonal')}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span className="ui-row-name">{tk(scope === 'personal' ? 'set.knScopePersonal' : 'set.knProject')}</span>
-            <div className="ui-row-desc set-path" data-testid="kn-project">
-              {scope === 'personal'
-                ? tk('set.knPersonalDesc')
-                : view?.projectId ?? (loading ? '…' : tk('set.knNoProject'))}
-            </div>
-          </div>
-          <div className="ui-row-ctl seg kn-filter" data-testid="kn-filter">
-            {(
-              [
-                ['active', 'set.knFilterActive', counts.active],
-                ['candidate', 'set.knFilterCandidate', counts.candidate],
-                ['review', 'set.knFilterReview', counts.review]
-              ] as const
-            ).map(([id, key, count]) => (
-              <button
-                key={id}
-                className={`seg-btn ${filter === id ? 'sel' : ''}`}
-                data-testid={`kn-filter-${id}`}
-                onClick={() => setFilter(id)}
-              >
-                {tk(key)} {count}
-              </button>
-            ))}
-          </div>
+      {/* 范围（本项目 / 个人记忆）+ 状态筛选 */}
+      <SettingRow
+        name={tk('set.knScope')}
+        desc={
+          <span className="set-path" data-testid="kn-project">
+            {scope === 'personal'
+              ? tk('set.knPersonalDesc')
+              : view?.projectId ?? (loading ? '…' : tk('set.knNoProject'))}
+          </span>
+        }
+        ctlClassName="seg"
+        ctlProps={{ 'data-testid': 'kn-scope' }}
+      >
+        {(['project', 'personal'] as const).map((id) => (
+          <button
+            key={id}
+            className={`seg-btn ${scope === id ? 'sel' : ''}`}
+            data-testid={`kn-scope-${id}`}
+            onClick={() => setScope(id)}
+          >
+            {tk(id === 'project' ? 'set.knScopeProject' : 'set.knScopePersonal')}
+          </button>
+        ))}
+      </SettingRow>
+
+      <div className="ui-row kn-filter-row">
+        <div className="seg sm kn-filter" data-testid="kn-filter">
+          {(
+            [
+              ['active', 'set.knFilterActive', counts.active],
+              ['candidate', 'set.knFilterCandidate', counts.candidate],
+              ['review', 'set.knFilterReview', counts.review]
+            ] as const
+          ).map(([id, key, count]) => (
+            <button
+              key={id}
+              className={`seg-btn ${filter === id ? 'sel' : ''}`}
+              data-testid={`kn-filter-${id}`}
+              onClick={() => setFilter(id)}
+            >
+              {tk(key)} {count}
+            </button>
+          ))}
         </div>
         {view?.error ? (
           <div className="ui-row-desc kn-err" data-testid="kn-error">
             {view.error}
-            <Button className="kn-retry" onClick={() => void refresh()} data-testid="kn-retry">
+            <Button size="sm" variant="ghost" className="kn-retry" onClick={() => void refresh()} data-testid="kn-retry">
               {tk('set.knRetry')}
             </Button>
           </div>
@@ -330,23 +313,15 @@ export function KnowledgeTab() {
         ))
       )}
 
-      {/* ④ 导出 */}
-      <div className="ui-row col">
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span className="ui-row-name">{tk('set.knExport')}</span>
-            <div className="ui-row-desc">{tk('set.knExportHint')}</div>
-          </div>
-          <div className="ui-row-ctl">
-            <Button disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">
-              {tk('set.knExportCopy')}
-            </Button>
-            <Button disabled={busy === '__export__'} onClick={() => void exportMarkdown('save')} data-testid="kn-export-save">
-              {tk('set.knExportSave')}
-            </Button>
-          </div>
-        </div>
-      </div>
+      {/* 导出为 Markdown：复制或另存，不会改写仓库里的文档 */}
+      <SettingRow name={tk('set.knExport')} desc={tk('set.knExportHint')}>
+        <Button size="sm" variant="ghost" disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">
+          {tk('set.knExportCopy')}
+        </Button>
+        <Button size="sm" disabled={busy === '__export__'} onClick={() => void exportMarkdown('save')} data-testid="kn-export-save">
+          {tk('set.knExportSave')}
+        </Button>
+      </SettingRow>
 
       {notice ? (
         <div className={`ui-row col kn-notice ${notice.kind}`} data-testid="kn-notice">

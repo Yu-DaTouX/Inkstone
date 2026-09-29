@@ -641,3 +641,52 @@ export {
   cleanText,
   summarizeSources
 } from './aggregate'
+
+/** 用户在设置页点「安装 OpenCLI」时的结果；error 是给用户看的句子 */
+export interface OpenCliInstallResult {
+  ok: boolean
+  /** 找不到 npm（通常是没装 Node.js）：界面据此给出 Node.js 下载入口 */
+  needsNode?: boolean
+  error?: string
+  /** npm 输出的最后几行，失败时给用户看原因 */
+  log?: string
+}
+
+/**
+ * 用户明确点了「安装」才会调用：`npm install -g @jackwener/opencli`。
+ * 参数数组、不拼 shell；Windows 上 npm 是 .cmd，必须经 cmd.exe 启动（参数都是常量）。
+ * 超时 5 分钟；输出只留尾部。
+ */
+export function installOpenCli(): Promise<OpenCliInstallResult> {
+  const npm = findExecutableOnPath('npm')
+  if (!npm) return Promise.resolve({ ok: false, needsNode: true, error: '没有找到 npm，需要先安装 Node.js（20.18.1 或更新）' })
+  const args = ['install', '-g', '@jackwener/opencli']
+  const isCmd = process.platform === 'win32' && /\.(cmd|bat)$/i.test(npm)
+  return new Promise((resolve) => {
+    let log = ''
+    const keep = (c: Buffer): void => {
+      log = (log + c.toString('utf8')).slice(-8000)
+    }
+    let child: ReturnType<typeof spawn>
+    try {
+      child = isCmd
+        ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${npm}" ${args.join(' ')}`], { windowsHide: true, windowsVerbatimArguments: true })
+        : spawn(npm, args, { windowsHide: true })
+    } catch (e) {
+      resolve({ ok: false, error: e instanceof Error ? e.message : String(e) })
+      return
+    }
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5 * 60_000)
+    child.stdout?.on('data', keep)
+    child.stderr?.on('data', keep)
+    child.on('error', (e) => {
+      clearTimeout(timer)
+      resolve({ ok: false, error: e.message, log: log.trim().split('\n').slice(-12).join('\n') })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      const tail = log.trim().split('\n').slice(-12).join('\n')
+      resolve(code === 0 ? { ok: true, log: tail } : { ok: false, error: `npm 退出码 ${code ?? '?'}`, log: tail })
+    })
+  })
+}

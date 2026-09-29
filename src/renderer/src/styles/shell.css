@@ -126,8 +126,22 @@
 }
 
 .tb-name {
+  font-family: var(--font-body);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-strong);
   letter-spacing: 0;
-  font-weight: var(--fw-medium);
+}
+/* 字标：11px、字距放宽的淡色 INKSTONE，窄窗时先让位 */
+.tb-word {
+  margin-left: -2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.14em;
+}
+@media (max-width: 980px) {
+  .tb-word {
+    display: none;
+  }
 }
 
 /* 通用图标按钮（非窗口控制） */
@@ -469,6 +483,9 @@
   border-radius: var(--r-full);
   background: var(--fg-mute);
 }
+.sb-agents .sb-dot.on {
+  background: var(--accent);
+}
 .sb-pi[data-state='ready'] .sb-dot {
   background: var(--ok);
 }
@@ -590,3 +607,21 @@ html[data-theme-dir='in']::view-transition-new(root) {
     animation: none !important;
   }
 }
+/* 状态栏详情浮层：left/right 由组件按被点的段落给出（贴近点击处），这里只定竖向与尺寸 */
+.sb-details { position: fixed; z-index: 80; bottom: calc(var(--statusbar-h) + var(--sp-2)); width: min(320px, calc(100vw - 16px)); max-height: 50vh; overflow: auto; font-size: var(--fs-sm); padding: var(--sp-3) var(--sp-4); }
+.sb-details-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.sb-kv { display: grid; gap: var(--sp-1); margin: 0; }
+.sb-kv-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: var(--sp-3); align-items: baseline; }
+.sb-kv dt { color: var(--fg-mute); }
+.sb-kv dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.sb-details-path { font-size: var(--fs-xs); }
+.sb-details .sb-details-note { color: var(--fg-mute); font-size: var(--fs-xs); margin: var(--sp-3) 0 0; }
+.sb-details-actions { display: flex; justify-content: flex-end; margin-top: var(--sp-3); }
+.statusbar .sb-seg, .statusbar .sb-mode, .statusbar .usagebar { cursor: pointer; }
+
+/* ---- 启动画面（设计规范 §3.4.1）：盖住启动中间态，数据就绪后淡出；动画在 motion.css ---- */
+.boot { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; background: var(--bg-0); }
+.boot-mark { width: 56px; height: 56px; overflow: visible; }
+.boot-frame { stroke: var(--fg); stroke-width: 6; stroke-linejoin: round; }
+.boot-prompt, .boot-cursor { stroke: var(--accent); stroke-width: 6; stroke-linecap: square; stroke-linejoin: miter; }
+.boot.out { pointer-events: none; }

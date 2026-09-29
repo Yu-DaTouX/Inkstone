@@ -31,6 +31,10 @@ export interface SubagentBrief {
   sources: string[]
   /** 边界：不许做什么（例如「不要改测试」「不要动 docs/」）。 */
   boundary: string
+  /** 工具调用预算：用到这个数就让它收尾交结论；不给就只受时间限制。 */
+  maxToolCalls?: number
+  /** 总时长上限（分钟）；不给用默认。仍受宿主上限约束。 */
+  timeoutMinutes?: number
 }
 
 export const SUBAGENT_BRIEF_LIMITS = {
@@ -39,8 +43,19 @@ export const SUBAGENT_BRIEF_LIMITS = {
   maxDeliverables: 8,
   maxSources: 20,
   /** 单条清单项最长多少字符（按 code point 数）。 */
-  maxItem: 500
+  maxItem: 500,
+  minToolCalls: 5,
+  maxToolCalls: 300,
+  maxTimeoutMinutes: 60
 } as const
+
+/** 可选的正整数入参：缺省 → undefined；给了就夹到 [min, max]；不是数字 → 报错。 */
+function optionalInt(raw: unknown, label: string, min: number, max: number): { ok: true; value?: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true }
+  const value = typeof raw === 'string' ? Number(raw) : raw
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return { ok: false, error: `${label}必须是正数` }
+  return { ok: true, value: Math.min(max, Math.max(min, Math.round(value))) }
+}
 
 function charLength(text: string): number {
   return [...text].length
@@ -88,9 +103,20 @@ export function parseSubagentBrief(
   if (charLength(boundaryRaw) > SUBAGENT_BRIEF_LIMITS.maxBoundary) {
     return { ok: false, error: `边界说明超过 ${SUBAGENT_BRIEF_LIMITS.maxBoundary} 字符` }
   }
+  const toolCalls = optionalInt(box.maxToolCalls, '工具调用预算', SUBAGENT_BRIEF_LIMITS.minToolCalls, SUBAGENT_BRIEF_LIMITS.maxToolCalls)
+  if (!toolCalls.ok) return toolCalls
+  const minutes = optionalInt(box.timeoutMinutes, '时间上限', 1, SUBAGENT_BRIEF_LIMITS.maxTimeoutMinutes)
+  if (!minutes.ok) return minutes
   return {
     ok: true,
-    brief: { goal, deliverables: deliverables.items, sources: sources.items, boundary: boundaryRaw }
+    brief: {
+      goal,
+      deliverables: deliverables.items,
+      sources: sources.items,
+      boundary: boundaryRaw,
+      ...(toolCalls.value ? { maxToolCalls: toolCalls.value } : {}),
+      ...(minutes.value ? { timeoutMinutes: minutes.value } : {})
+    }
   }
 }
 
@@ -114,6 +140,7 @@ export function briefPrompt(brief: SubagentBrief, task: string): string {
     for (const item of brief.sources) lines.push(`- ${item}`)
   }
   if (brief.boundary) lines.push('', `边界：${brief.boundary}`)
+  if (brief.maxToolCalls) lines.push('', `预算：最多 ${brief.maxToolCalls} 次工具调用，用完就用已有资料交结论，不要为了求全继续查。`)
   lines.push('', '交回时先说结论（做了什么 / 结论是什么），再说依据；做不到的部分如实说做不到。')
   return lines.join('\n')
 }

@@ -27,11 +27,12 @@
   }
   const store = window.__yanStore
 
+  const flatRules = (rules) => { const out = []; for (const r of rules) { if (r.selectorText !== undefined || !r.cssRules) out.push(r); else if (r.conditionText !== undefined) out.push(r); if (r.cssRules) out.push(...flatRules(r.cssRules)) } return out }
   const findRule = (re) => {
     for (const sheet of document.styleSheets) {
       let rules
       try { rules = sheet.cssRules } catch { continue }
-      for (const r of rules) if (r.selectorText && re.test(r.selectorText)) return r
+      for (const r of flatRules(rules)) if (r.selectorText && re.test(r.selectorText)) return r
     }
     return null
   }
@@ -139,7 +140,7 @@
     const sel = q('.srow-wrap.has-acts') ?? q('.srow-wrap.sel')
     ok(!!sel, '有选中的会话行')
     if (sel) {
-      const rule = findRule(/\.srow-wrap:hover\s+\.srow-time/)
+      const rule = findRule(/\.srow-wrap(:hover|:has\(> \.srow-row:hover\))[^,]*\.srow-time/)
       ok(!!rule && /opacity\s*:\s*0/.test(rule.style?.cssText ?? rule.cssText ?? ''), '悬停时时间让位（不叠在动作按钮上）')
     }
 

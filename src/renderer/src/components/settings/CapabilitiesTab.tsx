@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ConsentSection } from './ConsentSection'
+import { ComputerUseSection } from './ComputerUseSection'
 import type {
-  BuiltinCapabilityView,
   CapabilitySearchResultView,
   CapabilitySettingsSnapshot,
   CapabilityVerificationStatus
 } from '../../../../shared/ipc'
 import type { SearchBackendStatus } from '../../../../shared/search'
-import { Button } from '../ui'
+import { Button, Disclosure, SettingRow } from '../ui'
 
 const STRATEGIES = ['existing-only', 'search-and-recommend', 'auto-connect'] as const
 
@@ -20,7 +20,6 @@ export function CapabilitiesTab(): React.JSX.Element {
   const patchSettings = useStore((s) => s.patchSettings)
   const strategy = settings?.capabilityStrategy ?? 'auto-connect'
   const [snapshot, setSnapshot] = useState<CapabilitySettingsSnapshot | null>(null)
-  const [builtin, setBuiltin] = useState<BuiltinCapabilityView[]>([])
   const [searchText, setSearchText] = useState('')
   const [search, setSearch] = useState<CapabilitySearchResultView | null>(null)
   const [searching, setSearching] = useState(false)
@@ -36,6 +35,8 @@ export function CapabilitiesTab(): React.JSX.Element {
   const [backendBusy, setBackendBusy] = useState(false)
   /* 探针自己失败了（IPC 抛错）与「后端不可用」是两回事，不能都显示成「检测中…」 */
   const [backendFailed, setBackendFailed] = useState(false)
+  /** 用户点了「安装 OpenCLI」：进行中 / 结果（needsNode 时给 Node.js 下载入口） */
+  const [install, setInstall] = useState<{ busy: boolean; ok?: boolean; needsNode?: boolean; text?: string } | null>(null)
 
   const checkBackend = useCallback(async (): Promise<void> => {
     setBackendBusy(true)
@@ -56,14 +57,9 @@ export function CapabilitiesTab(): React.JSX.Element {
   }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
-    const [next, builtins] = await Promise.all([
-      window.yan.capabilities.snapshot(),
-      window.yan.builtinCapabilities.list()
-    ])
-    if (mounted.current) {
-      setSnapshot(next)
-      setBuiltin(builtins)
-    }
+    /* 内置能力只在「插件」一组里列一次（带说明），这里不重复 */
+    const next = await window.yan.capabilities.snapshot()
+    if (mounted.current) setSnapshot(next)
   }, [])
 
   useEffect(() => {
@@ -130,166 +126,26 @@ export function CapabilitiesTab(): React.JSX.Element {
 
   return (
     <div className="ui-rows" data-testid="set-capabilities">
-      {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
-      <div className="ui-row set-row-col" data-testid="cap-ext-tools">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('set.extTools')}</div>
-          <div className="ui-row-desc">{t('set.extToolsDesc')}</div>
-        </div>
-        <div className="ui-row-desc" data-testid="cap-search-backend">
-          <strong>{t('set.searchBackend')}</strong>
-          {' — '}
-          {backend === null
-            ? backendFailed
-              ? t('set.searchBackendProbeFailed')
-              : t('set.searchBackendUnknown')
-            : backend.available
-              ? backend.code === 'extension_not_connected'
-                ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })
-                : t('set.searchBackendReady', { version: backend.version ?? '?' })
-              : backend.code === 'backend_unusable'
-                ? t('set.searchBackendUnusable', { version: backend.version ?? '?' })
-                : t('set.searchBackendMissing')}
-          {backend && !backend.available ? (
-            <div className="ui-row-desc">
-              {backend.code === 'backend_unusable'
-                ? t('set.searchBackendUnusableHint')
-                : /node/i.test(backend.detail ?? '')
-                  ? t('set.searchBackendNodeHint')
-                  : t('set.searchBackendHint')}
-            </div>
-          ) : null}
-          {/*
-            不可用时一律把 detail 摆出来 —— 它才是真正的原因：可能是「没装 opencli」，
-            也可能是「装了 opencli 但 PATH 里没 node」（只看上面那句「安装：npm i -g …」
-            会把后一种人带去重装已经装好的东西）。
-          */}
-          {backend && !backend.available && backend.detail ? (
-            <div className="ui-row-desc" data-testid="cap-search-backend-detail">
-              {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
-            </div>
-          ) : null}
-          {backend && backend.available && backend.code === 'extension_not_connected' ? (
-            <div className="ui-row-desc">{t('set.searchBackendExtHint')}</div>
-          ) : null}
-        </div>
-        <div className="ui-row-ctl">
-          <Button data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
-            {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
-          </Button>
-        </div>
-      </div>
-
-      <div className="ui-row set-row-col" data-testid="cap-browsers">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('set.browsers')}</div>
-          <div className="ui-row-desc">{t('set.browsersDesc')}</div>
-        </div>
-        <div className="ui-row-desc">
-          <strong>{t('set.browserBuiltin')}</strong> — {t('set.browserBuiltinDesc')}
-        </div>
-        <div className="ui-row-desc">
-          <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
-        </div>
-      </div>
-      <div className="ui-row set-row-col" data-testid="cap-strategy">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('cap.strategyTitle')}</div>
-          <div className="ui-row-desc">{t('cap.strategyDesc')}</div>
-        </div>
-        <div className="seg" role="group" aria-label={t('cap.strategyTitle')}>
-          {STRATEGIES.map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={`seg-btn ${strategy === value ? 'sel' : ''}`}
-              aria-pressed={strategy === value}
-              data-testid={`cap-strategy-${value}`}
-              onClick={() => void patchSettings({ capabilityStrategy: value })}
-            >
-              {t(`cap.strategy.${value}` as MessageKey)}
-            </button>
-          ))}
-        </div>
-        <div className="ui-row-desc">{t(`cap.strategyDesc.${strategy}` as MessageKey)}</div>
-      </div>
-
-      <div className="ui-row set-row-col" data-testid="cap-search">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('cap.searchTitle')}</div>
-          <div className="ui-row-desc">{t('cap.searchDesc')}</div>
-        </div>
-        <form className="pkg-install-row" onSubmit={(event) => void runSearch(event)}>
-          <input
-            className="ui-input"
-            value={searchText}
-            maxLength={500}
-            placeholder={t('cap.searchPlaceholder')}
-            aria-label={t('cap.searchPlaceholder')}
-            onChange={(event) => setSearchText(event.target.value)}
-          />
-          <button type="submit" className="env-mini" disabled={searching || searchText.trim().length < 2}>
-            {searching ? t('cap.searching') : t('cap.search')}
+      <SettingRow
+        data-testid="cap-strategy"
+        name={t('cap.strategyTitle')}
+        desc={t(`cap.strategyDesc.${strategy}` as MessageKey)}
+        ctlClassName="seg"
+        ctlProps={{ role: 'group', 'aria-label': t('cap.strategyTitle') }}
+      >
+        {STRATEGIES.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={`seg-btn ${strategy === value ? 'sel' : ''}`}
+            aria-pressed={strategy === value}
+            data-testid={`cap-strategy-${value}`}
+            onClick={() => void patchSettings({ capabilityStrategy: value })}
+          >
+            {t(`cap.strategy.${value}` as MessageKey)}
           </button>
-        </form>
-        {search ? (
-          <>
-            <div className="pkg-list" data-testid="cap-search-sources">
-              {search.sources.map((source) => (
-                <div className="pkg-detail-line" key={source.sourceId}>
-                  {source.sourceId === 'npm-registry' ? t('cap.source.npm') : t('cap.source.mcp')} ·{' '}
-                  {source.ok ? t('cap.sourceOk') : t('cap.sourceFailed')} · {t('cap.sourceCounts', {
-                    pages: source.pages,
-                    count: source.candidateCount
-                  })}
-                </div>
-              ))}
-            </div>
-            {search.reason ? <div className="pkg-detail-warn">{t(`cap.searchReason.${search.reason}` as MessageKey)}</div> : null}
-            {search.candidates.length === 0 ? <div className="ui-row-desc">{t('cap.noCandidates')}</div> : null}
-            <div className="pkg-list" data-testid="cap-search-results">
-              {search.candidates.map((candidate) => (
-                <article className="pkg-item" key={candidate.candidateId} data-testid="cap-candidate">
-                  <div className="pkg-item-main">
-                    <span className="pkg-name" title={candidate.title}>{candidate.title}</span>
-                    {candidate.version ? <span className="pkg-ver">{candidate.version}</span> : null}
-                    <span className={`pkg-scope ${candidate.verification === 'metadata-only' ? 'project' : 'user'}`}>
-                      {t(`cap.verification.${candidate.verification}` as MessageKey)}
-                    </span>
-                    <span className="pkg-spacer" />
-                    <span className="pkg-dim">{candidate.kind === 'skill' ? t('cap.skill') : t('cap.mcp')}</span>
-                  </div>
-                  <div className="pkg-detail-line">{candidate.summary}</div>
-                  <div className="pkg-detail-line pkg-dim">
-                    {candidate.publisher ? `${candidate.publisher} · ` : ''}{candidate.installKind}
-                  </div>
-                  <div className="pkg-detail-warn">{t('cap.candidateWarning')}</div>
-                </article>
-              ))}
-            </div>
-          </>
-        ) : null}
-      </div>
-
-      <div className="ui-row set-row-col" data-testid="cap-builtins">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('cap.builtinTitle')}</div>
-          <div className="ui-row-desc">{t('cap.builtinDesc')}</div>
-        </div>
-        <div className="pkg-list">
-          {builtin.length === 0 ? <div className="ui-row-desc">{t('cap.emptyBuiltin')}</div> : null}
-          {builtin.map((item) => (
-            <div className="pkg-item" key={item.id} data-testid="cap-builtin">
-              <div className="pkg-item-main">
-                <span className="pkg-name" title={item.id}>{item.id}</span>
-                {item.file ? <span className="pkg-ver">{item.file}</span> : null}
-                <span className="pkg-scope user">{t('cap.builtinBadge')}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+        ))}
+      </SettingRow>
       <div className="ui-row set-row-col" data-testid="cap-skills">
         <div className="ui-row-label">
           <div className="ui-row-name">{t('cap.skillsTitle')}</div>
@@ -363,7 +219,180 @@ export function CapabilitiesTab(): React.JSX.Element {
           })}
         </div>
       </div>
-      <ConsentSection />
+      <div className="ui-row set-row-col" data-testid="cap-search">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('cap.searchTitle')}</div>
+          <div className="ui-row-desc">{t('cap.searchDesc')}</div>
+        </div>
+        <form className="pkg-install-row" onSubmit={(event) => void runSearch(event)}>
+          <input
+            className="ui-input"
+            value={searchText}
+            maxLength={500}
+            placeholder={t('cap.searchPlaceholder')}
+            aria-label={t('cap.searchPlaceholder')}
+            onChange={(event) => setSearchText(event.target.value)}
+          />
+          <button type="submit" className="env-mini" disabled={searching || searchText.trim().length < 2}>
+            {searching ? t('cap.searching') : t('cap.search')}
+          </button>
+        </form>
+        {search ? (
+          <>
+            <div className="pkg-list" data-testid="cap-search-sources">
+              {search.sources.map((source) => (
+                <div className="pkg-detail-line" key={source.sourceId}>
+                  {source.sourceId === 'npm-registry' ? t('cap.source.npm') : t('cap.source.mcp')} ·{' '}
+                  {source.ok ? t('cap.sourceOk') : t('cap.sourceFailed')} · {t('cap.sourceCounts', {
+                    pages: source.pages,
+                    count: source.candidateCount
+                  })}
+                </div>
+              ))}
+            </div>
+            {search.reason ? <div className="pkg-detail-warn">{t(`cap.searchReason.${search.reason}` as MessageKey)}</div> : null}
+            {search.candidates.length === 0 ? <div className="ui-row-desc">{t('cap.noCandidates')}</div> : null}
+            <div className="pkg-list" data-testid="cap-search-results">
+              {search.candidates.map((candidate) => (
+                <article className="pkg-item" key={candidate.candidateId} data-testid="cap-candidate">
+                  <div className="pkg-item-main">
+                    <span className="pkg-name" title={candidate.title}>{candidate.title}</span>
+                    {candidate.version ? <span className="pkg-ver">{candidate.version}</span> : null}
+                    <span className={`pkg-scope ${candidate.verification === 'metadata-only' ? 'project' : 'user'}`}>
+                      {t(`cap.verification.${candidate.verification}` as MessageKey)}
+                    </span>
+                    <span className="pkg-spacer" />
+                    <span className="pkg-dim">{candidate.kind === 'skill' ? t('cap.skill') : t('cap.mcp')}</span>
+                  </div>
+                  <div className="pkg-detail-line">{candidate.summary}</div>
+                  <div className="pkg-detail-line pkg-dim">
+                    {candidate.publisher ? `${candidate.publisher} · ` : ''}{candidate.installKind}
+                  </div>
+                  <div className="pkg-detail-warn">{t('cap.candidateWarning')}</div>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className="ui-rows">
+        <ComputerUseSection />
+      </div>
+
+      <Disclosure title={t('set.extTools')} testId="cap-external" defaultOpen={!!backend && !backend.available}>
+        <div className="ui-rows">
+          {/* 外部工具与浏览器（实施-27 D4）：搜索后端在不在、扩展连没连 */}
+          <div className="ui-row set-row-col" data-testid="cap-ext-tools">
+            <div className="ui-row-label">
+              <div className="ui-row-name">{t('set.extTools')}</div>
+              <div className="ui-row-desc">{t('set.extToolsDesc')}</div>
+            </div>
+            <div className="ui-row-desc" data-testid="cap-search-backend">
+              <strong>{t('set.searchBackend')}</strong>
+              {' — '}
+              {backend === null
+                ? backendFailed
+                  ? t('set.searchBackendProbeFailed')
+                  : t('set.searchBackendUnknown')
+                : backend.available
+                  ? backend.code === 'extension_not_connected'
+                    ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })
+                    : t('set.searchBackendReady', { version: backend.version ?? '?' })
+                  : backend.code === 'backend_unusable'
+                    ? t('set.searchBackendUnusable', { version: backend.version ?? '?' })
+                    : t('set.searchBackendMissing')}
+              {backend && !backend.available ? (
+                <div className="ui-row-desc">
+                  {backend.code === 'backend_unusable'
+                    ? t('set.searchBackendUnusableHint')
+                    : /node/i.test(backend.detail ?? '')
+                      ? t('set.searchBackendNodeHint')
+                      : t('set.searchBackendHint')}
+                </div>
+              ) : null}
+              {/*
+                不可用时一律把 detail 摆出来 —— 它才是真正的原因：可能是「没装 opencli」，
+                也可能是「装了 opencli 但 PATH 里没 node」（只看上面那句「安装：npm i -g …」
+                会把后一种人带去重装已经装好的东西）。
+              */}
+              {backend && !backend.available && backend.detail ? (
+                <div className="ui-row-desc" data-testid="cap-search-backend-detail">
+                  {backend.detail.length > 240 ? backend.detail.slice(0, 240) + '…' : backend.detail}
+                </div>
+              ) : null}
+              {backend && backend.available && backend.code === 'extension_not_connected' ? (
+                <div className="ui-row-desc">{t('set.searchBackendExtHint')}</div>
+              ) : null}
+              {/* 安装渠道：命令行后端（npm）与浏览器扩展（Chrome 应用商店 / GitHub 发布包） */}
+              {backend && !backend.available && backend.code !== 'backend_unusable' ? (
+                <div className="set-install-actions" data-testid="cap-search-install">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={install?.busy}
+                    onClick={() => {
+                      setInstall({ busy: true })
+                      void window.yan.search.installBackend().then(async (r) => {
+                        setInstall({ busy: false, ok: r.ok, needsNode: r.needsNode, text: r.ok ? t('set.opencliInstalled') : [r.error, r.log].filter(Boolean).join('\n') })
+                        if (r.ok) await checkBackend()
+                      }).catch((e: unknown) => {
+                        /* IPC 被拒绝时也要解除忙碌态，否则按钮永远停在「安装中」 */
+                        setInstall({ busy: false, ok: false, text: e instanceof Error ? e.message : String(e) })
+                      })
+                    }}
+                  >
+                    {install?.busy ? t('set.opencliInstalling') : t('set.opencliInstall')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText('npm install -g @jackwener/opencli')}>
+                    {t('set.opencliCopyCmd')}
+                  </Button>
+                  {install?.needsNode || /node|npm/i.test(backend.detail ?? '') ? (
+                    <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://nodejs.org/zh-cn/download')}>
+                      {t('set.opencliGetNode')}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {install?.text ? (
+                <div className={`ui-row-desc set-install-log ${install.ok ? '' : 'err'}`} data-testid="cap-search-install-result">{install.text}</div>
+              ) : null}
+              {backend?.available ? (
+                <div className="set-install-actions" data-testid="cap-search-extension">
+                  <span className="ui-row-desc">{t('set.opencliExtension')}</span>
+                  <Button size="sm" onClick={() => void window.yan.browser.openExternal('https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk')}>
+                    {t('set.opencliExtStore')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal('https://github.com/jackwener/OpenCLI/releases')}>
+                    {t('set.opencliExtZip')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <div className="ui-row-ctl">
+              <Button data-testid="cap-search-recheck" disabled={backendBusy} onClick={() => void checkBackend()}>
+                {backendBusy ? t('set.searchBackendChecking') : t('set.extRecheck')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="ui-row set-row-col" data-testid="cap-browsers">
+            <div className="ui-row-label">
+              <div className="ui-row-name">{t('set.browsers')}</div>
+              <div className="ui-row-desc">{t('set.browsersDesc')}</div>
+            </div>
+            <div className="ui-row-desc">
+              <strong>{t('set.browserBuiltin')}</strong> — {t('set.browserBuiltinDesc')}
+            </div>
+            <div className="ui-row-desc">
+              <strong>{t('set.browserUser')}</strong> — {t('set.browserUserDesc')}
+            </div>
+          </div>
+        </div>
+      </Disclosure>
+      <Disclosure title={t('consent.title')} testId="cap-consent">
+        <ConsentSection />
+      </Disclosure>
       {notice ? <div className="pkg-detail-warn" role="alert">{notice}</div> : null}
     </div>
   )

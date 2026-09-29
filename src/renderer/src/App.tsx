@@ -32,6 +32,7 @@ import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
 import { StatusBar } from './components/shell/StatusBar'
+import { dismissBootSplash } from './lib/boot-splash'
 import { useStore } from './state/store'
 /* 全部样式经级联层入口加载：覆盖关系由层决定，见 styles/index.css */
 import './styles/index.css'
@@ -109,29 +110,7 @@ export default function App() {
   const [onboarding, setOnboarding] = useState(false)
   /** 只在第一次判定时决定是否自动弹，之后用户关了就不管了 */
   const onboardDecided = useRef(false)
-  /**
-   * 左栏自动隐藏。
-   *
-   * 三种状态：
-   *   pinned  用户点了标题栏的按钮 → 展开
-   *   其余    收起
-   *
-   * 为什么默认收起：会话列表是「偶尔翻找」的东西，
-   * 让它常驻占 300px 不如把宽度让给对话。
-   */
-  /**
-   * 左栏只由标题栏那个按钮控制（用户要求取消鼠标悬停自动展开）。
-   *
-   * ⚠️ 以前有三种状态：pinned / hover / 收起。悬停那套实现是
-   *   “鼠标靠近左边缘 12px → 延迟 320ms 展开，离开 1.5s 后收回”。
-   *   为什么去掉：
-   *     · 它会**抢走鼠标**——想去点中栏最左边的导航轨时，
-   *       侧栏先弹出来把内容推走（推挤式布局会重排）
-   *     · “1.5s 后收回”让界面在你还没读完时就开始动
-   *     · 现在开关在**各自面板的头部**（用户要求），
-   *       收起后左栏左边留一个把手（.rail-stub）用于展开，
-   *       显式控制比猜测意图可靠
-   */
+  /** 左栏由标题栏开关显式控制，首次收起，后续恢复保存的展开状态。 */
   const railPinned = useStore((s) => s.railPinned)
   const setRailPinned = useStore((s) => s.setRailPinned)
   const rightPanelOpen = useStore((s) => s.settings?.rightPanelOpen ?? true)
@@ -357,6 +336,23 @@ export default function App() {
     startConnWatch()
     return off
   }, [applyPush, bootstrap, startConnWatch])
+
+  /*
+   * ---- 启动画面：设置、会话与 pi 连接都有结论后才撤（设计规范 §3.4.1）----
+   * 只等 bootstrap 会露出「空壳 → 恢复上次会话」的跳变；pi 起不来时连接状态
+   * 会变成 exited / error，那时也撤，让界面自己说明原因。等两帧让最终布局先画好。
+   */
+  const bootConn = useStore((s) => s.conn)
+  const bootSession = useStore((s) => s.session)
+  useEffect(() => { performance.mark('yan:conn-' + bootConn) }, [bootConn])
+  useEffect(() => { if (bootSession) performance.mark('yan:session-known') }, [!!bootSession])
+  useEffect(() => {
+    if (!settings) return
+    const settled = bootConn === 'exited' || bootConn === 'error' || (bootConn === 'ready' && !!bootSession)
+    if (!settled) return
+    let id = requestAnimationFrame(() => { id = requestAnimationFrame(dismissBootSplash) })
+    return () => cancelAnimationFrame(id)
+  }, [settings, bootConn, bootSession])
 
   /* ---- 首次引导：数据到位后判定一次 ---- */
   useEffect(() => {
@@ -730,6 +726,12 @@ export default function App() {
       if (e.shiftKey && !e.ctrlKey && !e.altKey && e.key === 'Tab') {
         e.preventDefault()
         guard('cycleThinking')
+        return
+      }
+      /* Ctrl+N：新对话（左栏按钮上标着这个键位） */
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        void useStore.getState().newSession({ scope: 'global' })
       }
     }
     window.addEventListener('keydown', onKey)
@@ -827,7 +829,7 @@ export default function App() {
                 onOpenSession={openSessionFromSpace}
               />
             ) : mapOpen ? (
-              /* 会话地图：砚自己的 React 实现，投影在 shared/session-map.ts */
+              /* 会话地图读取当前会话家族的持久日志和真实分支。 */
               <SessionMap onOpen={openSessionFromMap} onBackToChat={() => showMap(false)} />
             ) : virtual ? (
               <VList
@@ -838,7 +840,7 @@ export default function App() {
                 onScroll={onVirtualScroll}
               >
                 {(tt) => (
-                  <div className="stream-row">
+                  <div key={tt.id} className="stream-row">
                     <TurnView turn={tt} streaming={tt.kind === 'assistant' && tt.streaming} />
                   </div>
                 )}

@@ -253,7 +253,6 @@
     }
 
     /* ---- 5. 搜索态下不允许拖 ---- */
-    click(q('[data-testid="rail-search-btn"]'))
     await until(() => !!q('[data-testid="rail-search"]'))
     const input = q('[data-testid="rail-search"]')
     if (input) {

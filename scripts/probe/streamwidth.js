@@ -63,8 +63,8 @@
         : NaN
     out.push(`  宽度 1100 时刻度右缘距正文 ${gapAt1100}px`)
     ok(
-      Number.isFinite(gapAt720) && Number.isFinite(gapAt1100) && Math.abs(gapAt720 - gapAt1100) <= 12,
-      '变宽后刻度与正文的相对位置保持稳定（导轨跟着内容列走）'
+      Number.isFinite(gapAt720) && Number.isFinite(gapAt1100) && gapAt720 >= -1 && gapAt1100 >= -1,
+      '任意宽度下刻度都不压到正文（导轨固定贴会话区左缘，正文按 --outline-avoid 让位）'
     )
   }
 

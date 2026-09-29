@@ -27,7 +27,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import type { SubagentRun, UIMessage } from '../shared/ipc'
+import type { SubagentEndReason, SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { accumulateUsage, ingestUsageSnapshot, type UsageSnapshots } from '../shared/subagent-usage'
 import {
@@ -47,24 +47,46 @@ import {
 
 /** 同时最多跑几个（方案 8.4 建议首期 2 个） */
 const MAX_CONCURRENT = 2
-/** 单次运行上限：到点标记失败并杀进程，避免僵尸任务占着额度 */
-const RUN_TIMEOUT_MS = 10 * 60 * 1000
 /**
- * 实际用的运行上限。
- *
- * `YAN_SUBAGENT_TIMEOUT_MS` 只为测试能真跑一次超时分支（真实验证等不起 10 分钟）——
- * 与 `YAN_AUTO_CONTINUE` 同一个先例；不设时就是上面那个常量。
+ * 时间限制有三层，避免「干了很多活却在整点被一刀杀掉、成果全丢」：
+ *   · 空闲上限：这么久没有任何输出 / 工具动静才算卡死；
+ *   · 总上限：不管有没有进展，最长跑这么久（任务输入里可给 `timeoutMinutes`，仍封顶）；
+ *   · 收尾宽限：到点先让它交出目前的结论，宽限内仍不结束才硬停。
  */
-function runTimeoutMs(): number {
-  const override = Number(process.env.YAN_SUBAGENT_TIMEOUT_MS)
-  return Number.isFinite(override) && override > 0 ? override : RUN_TIMEOUT_MS
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000
+const TOTAL_TIMEOUT_MS = 30 * 60 * 1000
+const GRACE_MS = 75 * 1000
+
+/**
+ * 三个上限的实际取值。
+ *
+ * `YAN_SUBAGENT_TIMEOUT_MS` / `YAN_SUBAGENT_IDLE_MS` / `YAN_SUBAGENT_GRACE_MS` 只为测试能真跑
+ * 超时分支（真实验证等不起几十分钟）——与 `YAN_AUTO_CONTINUE` 同一个先例。
+ */
+function envMs(name: string): number | undefined {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+function limitsFor(brief: SubagentBrief): { totalMs: number; idleMs: number; graceMs: number } {
+  const total = envMs('YAN_SUBAGENT_TIMEOUT_MS') ?? (brief.timeoutMinutes ? brief.timeoutMinutes * 60_000 : TOTAL_TIMEOUT_MS)
+  return { totalMs: total, idleMs: envMs('YAN_SUBAGENT_IDLE_MS') ?? IDLE_TIMEOUT_MS, graceMs: envMs('YAN_SUBAGENT_GRACE_MS') ?? GRACE_MS }
 }
 
-/** 超时提示要报**实际上限**：测试把它压到几百毫秒时不能再写「超过 10 分钟」 */
-function runTimeoutText(ms: number): string {
-  if (ms >= 60_000) return `运行超时（超过 ${Math.round(ms / 60_000)} 分钟）`
-  if (ms >= 1_000) return `运行超时（超过 ${Math.round(ms / 1000)} 秒）`
-  return `运行超时（超过 ${ms} 毫秒）`
+/** 时长的可读写法：报**实际上限**，测试把它压到几百毫秒时不能还写「10 分钟」 */
+function spanText(ms: number): string {
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)} 分钟`
+  if (ms >= 1_000) return `${Math.round(ms / 1000)} 秒`
+  return `${ms} 毫秒`
+}
+const totalTimeoutText = (ms: number): string => `运行超时（超过 ${spanText(ms)}）`
+const idleTimeoutText = (ms: number): string => `长时间没有进展（超过 ${spanText(ms)} 没有任何输出）`
+
+/** 到点后发给子代理的收尾指令 */
+function wrapUpMessage(reason: 'timeout' | 'budget'): string {
+  return (
+    (reason === 'budget' ? '【宿主提示】工具调用次数已用完。' : '【宿主提示】时间到了。') +
+    '不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。'
+  )
 }
 /** 转录最多保留多少条 */
 const MAX_TRANSCRIPT = 200
@@ -98,13 +120,21 @@ export interface SubagentRpc {
 
 interface Run extends SubagentRun {
   rpc: SubagentRpc
+  /** 当前排定的看门计时器（到点检查空闲 / 总上限，或收尾宽限） */
   timer: NodeJS.Timeout
+  /** 最近一次收到 pi 事件的时刻：空闲上限从这里算 */
+  lastProgressAt: number
+  totalMs: number
+  idleMs: number
+  graceMs: number
   /** 收到过 agent_settled / agent_end 就认为这一轮结束 */
   settled: boolean
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
   /** worktree 已经归档或确认无需保留（退出清理据此避免重复 git 操作） */
   worktreeDone?: boolean
+  /** 已经回调过 onFinished（每个运行只通知一次） */
+  notified?: boolean
   /**
    * 转录消息的序号，只在**真的落一条新消息**时 +1。
    *
@@ -147,6 +177,8 @@ export interface SubagentOptions {
   /** 运行状态变化时回调（主进程转成 push） */
   onChange: (run: SubagentRun) => void
   onRemove?: (id: string) => void
+  /** 一次运行收口（差异与审阅状态已定）后回调一次；用来通知父会话 */
+  onFinished?: (run: SubagentRun) => void
   /** 造 pi 客户端（默认真的 PiRpc；单测注入假实现） */
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   /** 准备隔离工作区（默认真的 git worktree；单测注入以便控制准备阶段的时长） */
@@ -187,9 +219,13 @@ export class SubagentController {
       isolation: run.isolation,
       resultPath: run.resultPath,
       model: run.model,
+      thinkingLevel: run.thinkingLevel,
       status: run.status,
       startedAt: run.startedAt,
       endedAt: run.endedAt,
+      endReason: run.endReason,
+      toolCalls: run.toolCalls,
+      wrapUp: run.wrapUp,
       latestActivity: run.latestActivity,
       transcript: run.transcript,
       diff: run.diff,
@@ -318,22 +354,24 @@ export class SubagentController {
       workspace,
       settled: false,
       msgSeq: 0,
-      /* 占位，下面立刻覆盖 */
+      toolCalls: 0,
+      lastProgressAt: Date.now(),
+      /* 上限在**创建时就固定**（而不是等回调里再读 env）：测试提前清掉覆盖值时，提示会写成另一个数。 */
+      ...limitsFor(brief),
+      /* 占位，下面立刻排定 */
       timer: setTimeout(() => undefined, 0)
     }
     clearTimeout(run.timer)
-    /*
-     * 上限在**排定时就固定**（而不是等回调里再读 env）：
-     * 否则测试提前清掉覆盖值时，提示会写成另一个数。
-     */
-    const timeoutMs = runTimeoutMs()
-    run.timer = setTimeout(() => void this.fail(id, runTimeoutText(timeoutMs)), timeoutMs)
+    this.armWatch(run)
 
     rpc.on('event', (evt: Record<string, unknown>) => this.handleEvent(run, evt))
     rpc.on('exit', () => {
       /* 进程自己退了但没标结束 —— 也算结束，不留在“运行中” */
       if (run.status === 'running' || run.status === 'starting') {
+        clearTimeout(run.timer)
         run.status = 'error'
+        run.endReason = 'exited'
+        run.wrapUp = undefined
         run.error = run.error ?? 'pi 子进程提前退出'
         run.endedAt = Date.now()
         this.emit(run)
@@ -348,10 +386,15 @@ export class SubagentController {
       rpc.spawn()
       /* 等 pi 起来（扩展加载 + RPC 就绪） */
       const ready = await this.waitReady(rpc, 20_000)
-      if (!ready) {
-        await this.fail(id, '子代理启动超时')
+      /* 等待期间用户可能已经停掉它：不能再把 cancelled 覆盖回 running，更不能继续派活。 */
+      if (run.status !== 'starting') return { ok: false, error: '子代理在启动期间已停止' }
+      if (!ready.ok) {
+        await this.fail(id, '子代理启动超时', 'startup')
         return { ok: false, error: '子代理启动超时' }
       }
+      /* 未显式指定模型时记下 pi 实际选用的那个，界面才能如实显示。 */
+      if (ready.model) run.model = ready.model
+      if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
       run.status = 'running'
       run.latestActivity = '已启动'
       this.emit(run)
@@ -377,6 +420,8 @@ export class SubagentController {
     isolation: 'worktree' | 'controlled-cwd'
   ): SubagentRpc {
     const args = [
+      /* 子代理的记录由宿主自己保存；不落 pi 会话文件，否则会混进左栏的用户会话列表。 */
+      '--no-session',
       /* 子代理也走默认 pi 边界：用户目录里的扩展 / Skill 不会被隐式带入。 */
       '--no-extensions',
       '--no-skills',
@@ -427,6 +472,8 @@ export class SubagentController {
     clearTimeout(run.timer)
     await run.rpc.close()
     run.status = 'cancelled'
+    run.endReason = 'stopped'
+    run.wrapUp = undefined
     run.endedAt = Date.now()
     run.latestActivity = '已停止'
     this.emit(run)
@@ -446,12 +493,14 @@ export class SubagentController {
     }
   }
 
-  private async fail(id: string, message: string): Promise<void> {
+  private async fail(id: string, message: string, reason: SubagentEndReason = 'failed'): Promise<void> {
     const run = this.runs.get(id)
     if (!run) return
     clearTimeout(run.timer)
     await run.rpc.close()
     run.status = run.status === 'cancelled' ? 'cancelled' : 'error'
+    run.endReason = run.status === 'cancelled' ? 'stopped' : reason
+    run.wrapUp = undefined
     run.error = message
     run.endedAt = Date.now()
     run.latestActivity = message
@@ -507,6 +556,14 @@ export class SubagentController {
       await this.writeMetadata(run)
     }
     this.emit(run)
+    if (!run.notified) {
+      run.notified = true
+      try {
+        this.opts.onFinished?.(this.snapshot(run))
+      } catch {
+        /* 通知失败不能拖垮收口 */
+      }
+    }
   }
 
   /**
@@ -622,23 +679,75 @@ export class SubagentController {
     return { ok: true }
   }
 
-  private async waitReady(rpc: SubagentRpc, timeoutMs: number): Promise<boolean> {
+  /** 排定下一次看门检查：空闲上限与总上限里更早的那个 */
+  private armWatch(run: Run): void {
+    clearTimeout(run.timer)
+    if (run.status !== 'running' && run.status !== 'starting') return
+    const at = Math.min(run.startedAt + run.totalMs, run.lastProgressAt + run.idleMs)
+    run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
+  }
+
+  private onWatch(run: Run): void {
+    if (run.status !== 'running' && run.status !== 'starting') return
+    const now = Date.now()
+    if (now >= run.startedAt + run.totalMs) void this.wrapUp(run, 'timeout', totalTimeoutText(run.totalMs))
+    else if (now >= run.lastProgressAt + run.idleMs) void this.wrapUp(run, 'timeout', idleTimeoutText(run.idleMs))
+    else this.armWatch(run) // 期间有过进展：按新的空闲起点重排
+  }
+
+  /**
+   * 到点（时间或调用预算）：先让它收尾交结论，宽限内仍没结束才硬停。
+   *
+   * 硬停时已经产出的助手文本仍会进摘要（见 `summarizeSubagentRun`），不会因为超时丢掉。
+   * 启动阶段没有可收尾的东西，直接判失败。
+   */
+  private async wrapUp(run: Run, reason: 'timeout' | 'budget', text: string): Promise<void> {
+    if (run.wrapUp || run.settled) return
+    if (run.status !== 'running') {
+      await this.fail(run.id, text, reason)
+      return
+    }
+    run.wrapUp = { reason, since: Date.now() }
+    run.latestActivity = reason === 'budget' ? '调用次数用完，正在收尾…' : '时间到，正在收尾…'
+    this.emit(run)
+    clearTimeout(run.timer)
+    run.timer = setTimeout(() => void this.fail(run.id, text, reason), run.graceMs)
+    try {
+      const res = await run.rpc.command('steer', { message: wrapUpMessage(reason) }, { timeoutMs: 5000 })
+      if (!res.success) await this.fail(run.id, text, reason)
+    } catch {
+      await this.fail(run.id, text, reason)
+    }
+  }
+
+  private async waitReady(
+    rpc: SubagentRpc,
+    timeoutMs: number
+  ): Promise<{ ok: boolean; model?: string; thinkingLevel?: string }> {
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {
-      if (!rpc.running) return false
+      if (!rpc.running) return { ok: false }
       try {
         const res = await rpc.command('get_state', undefined, { timeoutMs: 2000 })
-        if (res.success) return true
+        if (res.success) {
+          const data = res.data as { model?: unknown; thinkingLevel?: unknown } | undefined
+          return {
+            ok: true,
+            model: modelLabel(data?.model),
+            thinkingLevel: typeof data?.thinkingLevel === 'string' && data.thinkingLevel ? data.thinkingLevel : undefined
+          }
+        }
       } catch {
         /* 还没起来，继续等 */
       }
       await new Promise((r) => setTimeout(r, 300))
     }
-    return false
+    return { ok: false }
   }
 
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
+    run.lastProgressAt = Date.now()
     /* 临时调试开关：看 pi 到底推了哪些事件（YAN_DEBUG_SUBAGENT=1）。
        Windows 上 Electron 是 GUI 子系统，console.log 不进 stdout，所以落临时文件。 */
     if (process.env.YAN_DEBUG_SUBAGENT) {
@@ -716,7 +825,13 @@ export class SubagentController {
     }
 
     if (type === 'tool_execution_start') {
-      run.latestActivity = `运行 ${String(evt.toolName ?? '工具')}`
+      run.toolCalls = (run.toolCalls ?? 0) + 1
+      const budget = run.brief?.maxToolCalls
+      if (budget && run.toolCalls >= budget && !run.wrapUp && run.status === 'running') {
+        void this.wrapUp(run, 'budget', `工具调用次数用完（${budget} 次）`)
+        return
+      }
+      if (!run.wrapUp) run.latestActivity = `运行 ${String(evt.toolName ?? '工具')}`
       this.emit(run)
       return
     }
@@ -733,10 +848,19 @@ export class SubagentController {
        * 误判成失败；反过来只看 settled 则把失败当成功。
        */
       const modelFailed = run.status !== 'cancelled' && run.stopReason === 'error'
+      const wrapped = run.status !== 'cancelled' && !modelFailed ? run.wrapUp : undefined
       run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
+      run.endReason = run.status === 'cancelled' ? 'stopped' : modelFailed ? 'model-error' : (wrapped?.reason ?? 'completed')
+      run.wrapUp = undefined
       run.endedAt = Date.now()
       if (modelFailed) run.error = run.error ?? '模型返回错误（这一轮没有产出可用结果）'
-      run.latestActivity = modelFailed ? '模型返回错误' : '已完成'
+      run.latestActivity = modelFailed
+        ? '模型返回错误'
+        : wrapped
+          ? wrapped.reason === 'budget'
+            ? '调用次数用完，已收尾'
+            : '超时，已收尾'
+          : '已完成'
       this.emit(run)
       /*
        * 跑完的子代理进程必须收掉（D16）。
@@ -794,6 +918,14 @@ export class SubagentController {
       if (Date.now() - changedAt >= quietMs) return
     }
   }
+}
+
+/** pi `get_state` 里的 model 对象 → `provider/id`（与 `--model` 的写法一致） */
+function modelLabel(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { provider, id } = raw as { provider?: unknown; id?: unknown }
+  if (typeof id !== 'string' || !id) return undefined
+  return typeof provider === 'string' && provider ? `${provider}/${id}` : id
 }
 
 /** 列表里显示的那一行活动 */

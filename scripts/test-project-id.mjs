@@ -8,8 +8,8 @@
 export function runProjectIdTests(ok, projectId) {
   const { legacyProjectId, hashedProjectId, projectIdForCwd } = projectId
 
-  const a = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop'
-  const b = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop-2'
+  const a = 'C:\\Users\\me\\Desktop\\pi-desktop'
+  const b = 'C:\\Users\\me\\Desktop\\pi-desktop-2'
 
   ok(legacyProjectId(a) === legacyProjectId(b), '旧算法确实会同前缀碰撞（先复现缺陷）')
   ok(/^project-[A-Za-z0-9_-]{36}$/.test(legacyProjectId(a)), '旧算法 id 形状不变（已有设置不必迁移）')
@@ -40,8 +40,8 @@ export function runProjectIdTests(ok, projectId) {
    * 回退到裸 `legacyProjectId`，两者就会共用一个目录，工作树读到主仓库的知识。
    * 主进程的 `knowledgeProjectId()` 就是靠这个 `isTaken` 退路挡住的。
    */
-  const repo = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop'
-  const worktree = 'C:\\Users\\YuDaTou\\Desktop\\pi-desktop-worktrees\\feat'
+  const repo = 'C:\\Users\\me\\Desktop\\pi-desktop'
+  const worktree = 'C:\\Users\\me\\Desktop\\pi-desktop-worktrees\\feat'
   ok(legacyProjectId(repo) === legacyProjectId(worktree), '前提：工作树与主仓库的旧算法 id 相同')
   const registered = new Set([legacyProjectId(repo)])
   const worktreeId = projectIdForCwd(worktree, (id) => registered.has(id))

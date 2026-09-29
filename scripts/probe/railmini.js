@@ -145,10 +145,8 @@
     ok(!q('[data-testid="rail-menu-time"]'), '临时菜单不留在已收起的左栏里')
 
     /* 搜索中收起：搜索结果仍完整；清搜索后才按预览折叠 */
-    const searchBtn = q('[data-testid="rail-search-btn"]')
-    if (searchBtn) {
-      click(searchBtn)
-      await sleep(300)
+    const search = q('[data-testid="rail-search"]')
+    if (search) {
       setVal(q('[data-testid="rail-search"]'), '会话')
       await sleep(500)
       const matched = rows().length
@@ -163,7 +161,7 @@
       await sleep(500)
       ok(rows().length === 5, '清掉搜索后才回到预览五行')
     } else {
-      out.push('  （没找到搜索入口，跳过搜索中的收起断言）')
+      out.push('  （没找到常驻搜索框，跳过搜索中的收起断言）')
     }
 
     out.push('')

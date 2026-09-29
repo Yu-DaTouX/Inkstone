@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppSettings,
+  OAuthLoginEvent,
+  OAuthLoginResult,
+  ComputerUseStatusView,
+  ComputerUseActionResult,
+  StorageInfoView,
   AttachmentPruneResult,
   AttachmentUsage,
   BuiltinCapabilityView,
@@ -130,6 +135,13 @@ const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
+  appUpdate: {
+    status: () => invoke('yan:update:status'),
+    check: () => invoke('yan:update:check'),
+    automatic: (enabled) => invoke('yan:update:automatic', enabled),
+    download: () => invoke('yan:update:download'),
+    install: () => invoke('yan:update:install')
+  },
   /* 探针标记（YAN_PROBE）——渲染端唯一能知道自己在被验收的方式 */
   isProbe: !!process.env.YAN_PROBE,
 
@@ -283,6 +295,16 @@ const api: YanBridge = {
   authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
   codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),
   codexLoginCancel: () => invoke<void>('yan:codexLoginCancel'),
+  oauthLogin: (provider) => invoke<OAuthLoginResult>('yan:oauthLogin', provider),
+  oauthLoginAnswer: (provider, promptId, value) => invoke<boolean>('yan:oauthLoginAnswer', provider, promptId, value),
+  oauthLoginCancel: (provider) => invoke<void>('yan:oauthLoginCancel', provider),
+  onOAuthEvent: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, ev: OAuthLoginEvent): void => cb(ev)
+    ipcRenderer.on('yan:oauth', listener)
+    return () => {
+      ipcRenderer.removeListener('yan:oauth', listener)
+    }
+  },
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
@@ -434,7 +456,13 @@ const api: YanBridge = {
   },
   search: {
     /** 搜索后端诊断（实施-27 S3/D4）：未安装也返回可读结果 */
-    doctor: () => invoke<SearchBackendStatus>('yan:search:doctor')
+    doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
+    installBackend: () => invoke<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>('yan:search:install')
+  },
+  computerUse: {
+    status: () => invoke<ComputerUseStatusView>('yan:computerUse:status'),
+    installUv: () => invoke<ComputerUseActionResult>('yan:computerUse:installUv'),
+    set: (enabled: boolean) => invoke<ComputerUseActionResult>('yan:computerUse:set', enabled)
   },
   taskInbox: {
     /*
@@ -510,6 +538,13 @@ const api: YanBridge = {
   /* ---- 诊断 ---- */
   probePi: () => invoke<PiProbe>('yan:probePi'),
   openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
+  storage: {
+    info: () => invoke<StorageInfoView>('yan:storage:info'),
+    pick: () => invoke<string | null>('yan:storage:pick'),
+    schedule: (target, relaunch) => invoke<{ ok: boolean; error?: string }>('yan:storage:schedule', target, relaunch),
+    cancel: () => invoke<void>('yan:storage:cancel')
+  },
+  openFileDefault: (p, cwd) => invoke<{ ok: boolean; revealed?: boolean; error?: string }>('yan:openFileDefault', p, cwd),
   revealPath: (p) => invoke<void>('yan:revealPath', p),
 
   /* ---- 界面缩放（0 = 自动） ---- */
@@ -621,6 +656,7 @@ const api: YanBridge = {
 
   /* ---- 语音输入（本地转写） ---- */
   voice: {
+    prepare: () => invoke('yan:voice:prepare'),
     status: () => invoke<VoiceInputStatus>('yan:voice:status'),
     plan: (target) => invoke<{ ok: true; plan: VoiceDownloadPlan } | { ok: false; error: string }>('yan:voice:plan', target),
     download: (planId) => invoke<Ok>('yan:voice:download', planId),

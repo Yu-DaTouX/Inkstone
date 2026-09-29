@@ -49,13 +49,12 @@
   log('=== 3. tab 数量 ===')
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tab: ' + JSON.stringify(tabs))
-  ok(tabs.length >= 4, `有 ${tabs.length} 个 tab（含关闭）`)
+  ok(tabs.length === 10, `九个设置页加关闭入口（实际 ${tabs.length}）`)
 
   log('')
-  log('=== 4. 记忆已移除 ===')
-  // 设置里不应再有「记忆」tab（记忆功能整体删掉了）
-  const memTab = qa('.settings-tab').find((x) => /记忆|Memory/.test(x.textContent))
-  ok(!memTab, '设置里没有「记忆」tab')
+  log('=== 4. 上下文与记忆合并 ===')
+  const memTab = qa('.settings-tab').find((x) => /上下文与记忆|Context & memory/.test(x.textContent))
+  ok(!!memTab, '设置里有「上下文与记忆」合并页')
   ok(!q('.rightpanel .mem-sections'), '右栏里没有记忆面板')
   ok(!q('.review'), '没有记忆审阅条')
 
@@ -80,38 +79,39 @@
     click(aboutTab)
     await sleep(500)
     const aboutBody = q('.settings-body')?.textContent ?? ''
-    ok(/来源|Source/.test(aboutBody), '关于页显示 pi 来源（内置/系统安装）')
-    ok(/版本|Version/.test(aboutBody), '关于页显示 pi 版本')
+    ok(/内置运行时|系统安装|环境变量|Bundled|System|Environment/i.test(aboutBody), '关于页显示 pi 来源（内置/系统安装）')
+    const pi = store.getState().piInfo
+    ok(!!pi?.version && aboutBody.includes(pi.version), '关于页显示当前 pi 版本')
     ok(!!q('[data-testid="pi-redetect"]'), '关于页有「重新检测」按钮')
     /*
      * 项目主页：地址来自 package.json（构建时注入 BUILD_INFO）。
      * 断言到 github 域名这一层 —— 只验“这一行在且带了地址”，
      * 不把仓库全路径写死在探针里（否则改仓库就要同时改探针）。
      */
-    const repoRow = q('[data-testid="about-repo"]')
-    ok(!!repoRow, '关于页有项目主页行')
+    const repoButton = q('[data-testid="about-repo-open"]')
+    ok(!!repoButton, '关于页有项目主页入口')
     ok(
-      /github\.com\//.test(repoRow?.textContent ?? ''),
-      '项目主页行显示仓库地址',
-      JSON.stringify((repoRow?.textContent ?? '').slice(0, 80))
+      /github\.com\//.test(repoButton?.getAttribute('title') ?? ''),
+      '项目主页入口指向仓库地址',
+      JSON.stringify((repoButton?.getAttribute('title') ?? '').slice(0, 80))
     )
-    const pi = store.getState().piInfo
     ok(!!pi && !!pi.source, 'store.piInfo 带 source', 'source=' + (pi && pi.source))
     ok(!!pi && !!pi.bin, 'store.piInfo 带入口路径')
   }
 
   log('')
-  log('=== 5c. 声音与通知 tab ===')
-  const soundTab = qa('.settings-tab').find((x) => /声音与通知|Sound & notifications/.test(x.textContent))
-  ok(!!soundTab, '有「声音与通知」tab')
+  log('=== 5c. 输入与提醒 tab ===')
+  const soundTab = qa('.settings-tab').find((x) => /输入与提醒|Input & notifications/.test(x.textContent))
+  ok(!!soundTab, '有「输入与提醒」tab')
   if (soundTab) {
     click(soundTab)
     await sleep(500)
-    ok(!!q('[data-testid="set-sound"]'), '声音页渲染出设置组')
+    ok(!!q('[data-testid="set-sound"]'), '合并页渲染出声音设置组')
     const sound0 = store.getState().settings?.sound
     ok(!!sound0 && typeof sound0.volume === 'number', 'store.settings 带 sound 配置')
     const enableBtn = q('[data-testid="set-sound-enabled"]')
     ok(!!enableBtn, '有总开关')
+    ok(enableBtn?.getAttribute('role') === 'switch', '总开关使用 Switch')
     if (enableBtn && sound0) {
       click(enableBtn)
       await sleep(500)

@@ -4714,62 +4714,37 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       st.setRailPinned(true);
       st.closeReview?.();
       const sessionId = st.session?.sessionId ?? 'session-note';
-      const startedAt = Date.now() - 42_000;
+      const now = Date.now();
       const base = (over) => ({
         cwd: 'C:/yan-worktrees/sub-note',
         parentSessionId: sessionId,
-        isolation: 'worktree',
+        isolation: 'controlled-cwd',
         model: 'deepseek/deepseek-v4.1-flash',
+        thinkingLevel: 'high',
         status: 'running',
-        startedAt,
+        startedAt: now - 42_000,
         review: 'none',
         transcript: [],
+        toolCalls: 12,
+        usage: { input: 60000, output: 4200, cacheRead: null, cacheWrite: null, totalTokens: 6299000, cost: null, reportedMessages: 3 },
         ...over
       });
+      const summary = (text, from = 'last-message') => ({ summary: text, summaryTruncated: false, summaryFrom: from, sources: [], artifacts: [], openQuestions: [], at: now });
       window.__yanStore.setState({
         subagents: [
-          base({ id: 'sub-note-run', task: '把登录流程的错误分支补上测试并跑一遍', latestActivity: '正在跑 npm run test' }),
-          base({
-            id: 'sub-note-review',
-            task: '整理设置页的模型接入说明',
-            status: 'done',
-            startedAt: startedAt - 60_000,
-            endedAt: startedAt - 5_000,
-            review: 'pending',
-            diff: { files: 3, additions: 42, deletions: 7, paths: ['src/a.ts'], patchPath: null, truncated: false }
-          }),
-          /*
-           * 带任务输入与结果汇总的已结束任务（实施-25 P15）：
-           * 卡片上要能看到「要交回什么」与「它回来时给主 agent 的摘要」。
-           */
-          base({
-            id: 'sub-note-summary',
-            task: '查一下两个模块的错误处理是否一致',
-            status: 'done',
-            startedAt: startedAt - 90_000,
-            endedAt: startedAt - 2_000,
-            review: 'none',
-            latestActivity: '读完了两个文件',
-            brief: {
-              goal: '摸清两个模块的错误处理是否一致',
-              deliverables: ['一段结论', '不一致的具体位置'],
-              sources: ['src/main/agent.ts', 'src/main/index.ts'],
-              boundary: '只读，不要改代码'
-            },
-            result: {
-              summary: '两处读法不一致：agent.ts 把错误吞掉只记一行日志，index.ts 直接往上抛 —— 调用方在两条路径上会看到不同的失败形态。',
-              summaryTruncated: false,
-              summaryFrom: 'last-message',
-              sources: ['src/main/agent.ts', 'src/main/index.ts'],
-              artifacts: ['src/main/error.ts'],
-              openQuestions: [],
-              at: startedAt - 2_000
-            }
-          })
+          base({ id: 'sub-note-done', task: '核对 IPC 通道一致性', status: 'done', startedAt: now - 130_000, endedAt: now - 60_000, endReason: 'completed', toolCalls: 9, result: summary('三处通道一致。') }),
+          base({ id: 'sub-note-run', task: '把登录流程的错误分支补上测试并跑一遍', isolation: 'worktree', latestActivity: '运行 bash', toolCalls: 31 }),
+          base({ id: 'sub-note-wrap', task: '聊天渲染层代码审查', wrapUp: { reason: 'timeout', since: now - 3000 }, latestActivity: '时间到，正在收尾…', startedAt: now - 600_000 }),
+          base({ id: 'sub-note-timeout', task: '审查主进程与 IPC 改动', status: 'error', startedAt: now - 610_000, endedAt: now - 5_000, endReason: 'timeout', toolCalls: 90, error: '运行超时（超过 10 分钟）', result: summary('已读完 index.ts 与 ipc.ts：交叉文件没有覆盖既有改动；respondUi 路由会答给错误实例。') }),
+          base({ id: 'sub-note-partial', task: '为设置页写测试', isolation: 'worktree', status: 'done', startedAt: now - 700_000, endedAt: now - 20_000, endReason: 'timeout', review: 'none', toolCalls: 44, result: summary('已补两条用例；第三条没来得及核实。') }),
+          base({ id: 'sub-note-review', task: '整理设置页的模型接入说明', isolation: 'worktree', status: 'done', startedAt: now - 190_000, endedAt: now - 5_000, endReason: 'completed', review: 'pending', diff: { files: 3, additions: 42, deletions: 7, paths: ['src/a.ts'], patchPath: null, truncated: false }, result: summary('改了 3 个文件，已在隔离目录里跑过检查。') }),
+          base({ id: 'sub-note-error', task: '升级依赖并跑一遍测试', status: 'error', endedAt: now - 30_000, endReason: 'model-error', error: '模型返回 429：免费额度已用完', result: summary('模型返回 429：免费额度已用完', 'error') }),
+          base({ id: 'sub-note-stopped', task: '试探性重构会话栏', status: 'cancelled', endedAt: now - 8_000, endReason: 'stopped' })
         ]
       });
-      await sleep(400);
-      return document.querySelector('[data-testid="subagent-notes"]') ? 'ok' : 'no-notes';
+      window.__yanStore.setState({ rightPanelOpen: true });
+      await sleep(500);
+      return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
     })()
   `,
   subagentfailed: `
@@ -4780,32 +4755,34 @@ if (!document.querySelector('[data-testid="env-menu"]')) {
       st.setRailPinned(true);
       st.closeReview?.();
       const sessionId = st.session?.sessionId ?? 'session-note';
-      const startedAt = Date.now() - 92_000;
+      const now = Date.now();
       const base = (over) => ({
         cwd: 'C:/yan-worktrees/sub-note-fail',
         parentSessionId: sessionId,
         isolation: 'worktree',
         status: 'error',
-        startedAt,
-        endedAt: startedAt + 8_000,
+        startedAt: now - 92_000,
+        endedAt: now - 84_000,
         review: 'none',
         transcript: [],
         ...over
       });
       window.__yanStore.setState({
         subagents: [
-          base({ id: 'sub-note-error', task: '升级依赖并跑一遍测试', error: '模型返回 429：免费额度已用完' }),
+          base({ id: 'sub-note-error', task: '升级依赖并跑一遍测试', endReason: 'model-error', error: '模型返回 429：免费额度已用完' }),
           base({
             id: 'sub-note-conflict',
             task: '重构会话栏并修正分支编号',
             status: 'done',
+            endReason: 'completed',
             review: 'conflict',
             diff: { files: 5, additions: 88, deletions: 12, paths: ['src/b.ts', 'src/c.ts'], patchPath: null, truncated: false }
           })
         ]
       });
+      window.__yanStore.setState({ rightPanelOpen: true });
       await sleep(400);
-      return document.querySelector('[data-testid="subagent-notes"]') ? 'ok' : 'no-notes';
+      return document.querySelector('.sg-card') ? 'ok' : 'no-cards';
     })()
   `,
   workbenchhome: `
@@ -5489,13 +5466,12 @@ const MUST_HAVE = {
   ],
   /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
   workmodekey: ['.ui-row:has([data-testid="set-work-mode-key"])'],
-  /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
+  /* 子代理卡片：出错与有冲突各一张，冲突那张要带合并 / 放弃两个操作 */
   subagentfailed: [
-    '[data-testid="right-window-tab-subagent-sub-failed"]',
-    '[data-testid="subagent-preview"]',
-    '[data-testid="subagent-exec-state"].error',
-    '.sp-err',
-    '[data-testid="subagent-overview"]'
+    '[data-testid="rp-subagents"]',
+    '.sg-card.tone-err.is-attn',
+    '[data-testid="subagent-note-state-sub-note-error"]',
+    '[data-testid="subagent-note-merge-sub-note-conflict"]'
   ],
   /* 拖拽中的视觉：被拖行 + 目标行上的插入线必须都在，否则这张图没意义 */
   railreorder: [
@@ -5521,7 +5497,7 @@ const MUST_HAVE = {
     '[data-testid="inbox-card"][data-status="failed"]'
   ],
   taskinbox: ['[data-testid="task-inbox"]', '[data-testid="inbox-refresh"]', '[data-testid="inbox-filter-all"]'],
-  subagentnote: ['[data-testid="subagent-notes"]', '.sa-note', '.sa-note-dot', '[data-testid="subagent-note-summary-sub-note-summary"]'],
+  subagentnote: ['[data-testid="rp-subagents"]', '.sg-card', '.sg-mark', '[data-testid="subagent-note-reason-sub-note-timeout"]'],
   sessionmap: [
     '[data-testid="map-node"]',
     '.wb-lane',

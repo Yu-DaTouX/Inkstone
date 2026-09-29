@@ -10,8 +10,8 @@ export async function runPreambleExtensionTests(ok, mod) {
   const { NATIVE_PREAMBLE, YAN_PREAMBLE, default: extension } = mod
 
   ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are an expert coding assistant'), '导出的原生句就是 pi 的英文 preamble')
-  ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Yan'), '导出的砚开场白包含产品名 Yan')
-  ok(YAN_PREAMBLE.includes('coding agent harness') && !YAN_PREAMBLE.includes('inside pi,'), '开场白保持英文措辞，只换产品名')
+  ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
+  ok(YAN_PREAMBLE.includes('underlying execution engine') && !YAN_PREAMBLE.includes('inside pi,'), '开场白保持英文措辞，只换产品名')
 
   const handlers = {}
   extension({ on: (name, fn) => (handlers[name] = fn) })
@@ -25,7 +25,7 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>`, '只替换开场白这一句，其余段落逐字保留')
   ok(!out.systemPrompt.includes(NATIVE_PREAMBLE), '替换后不再包含原生英文句')
 
-  ok(run('BASE') === undefined, '认不出原生开场白时不改动（返回 undefined）')
-  ok(run('') === undefined, '空系统提示也不改动')
+  ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}`, '未知原生开场白保留原文并补充砚身份')
+  ok(run('').systemPrompt.includes(YAN_PREAMBLE), '空系统提示仍包含砚身份')
   ok(run(`${YAN_PREAMBLE}\n\n<tools>`) === undefined, '幂等：已替换过的提示不再重复替换')
 }

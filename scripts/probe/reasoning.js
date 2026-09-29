@@ -95,7 +95,7 @@
 
   /* ---- 1. 流式期间也是默认折叠的最新句 ---- */
   const label = q('.reason-label')?.textContent ?? ''
-  ok(label.includes('推理中'), `正在推理时标题 =「${label}」`)
+  ok(/推理中|思考中/.test(label), `正在推理时标题 =「${label}」`)
   ok(!isOpen(), '流式推理也保持默认折叠（不再随回合自动展开）')
   ok(!!q('[data-layout="reasoning"]'), '推理块使用当前正文布局契约')
   ok(
@@ -208,7 +208,8 @@
     Math.abs(capActual - capExpected) <= 2,
     `展开高度是窗口高的四分之一（${Math.round(capActual)}px ≈ ${Math.round(capExpected)}px）`
   )
-  ok(body().getBoundingClientRect().width <= window.innerWidth * 0.5 + 1, '展开宽度不超过半窗宽')
+  /* 展开块现在是与命令块表同宽的整列，不再限半窗宽；只要不超出中栏 */
+  ok(body().getBoundingClientRect().width <= (q('.center')?.getBoundingClientRect().width ?? window.innerWidth) + 1, '展开宽度不超出中栏')
 
   /*
    * 展开后不能被输入框挡住（用户：「展开这个窗口的时候会被输入框挡住」）。
@@ -396,8 +397,8 @@
     const beforeArticle = q('[data-testid="reasoning"]')?.closest('[data-turn-id]')
     log(`  多段诊断：推理=${caps.length} 回复=${document.querySelectorAll('[data-testid="turn-response"]').length} 解说=${document.querySelectorAll('[data-testid="turn-commentary"]').length} 回合=${beforeArticle?.getAttribute('data-turn-id')} 顺序=${firstResponse && caps[0] ? firstResponse.compareDocumentPosition(caps[0]) : 'missing'}`)
     ok(
-      caps.length === 1 && !!firstResponse && !!(firstResponse.compareDocumentPosition(caps[0]) & Node.DOCUMENT_POSITION_FOLLOWING),
-      '第二段还没正文时，过程记录汇总在正式回复下方'
+      caps.length === 1 && !!firstResponse && !!(firstResponse.compareDocumentPosition(caps[0]) & Node.DOCUMENT_POSITION_PRECEDING),
+      '第二段还没正文时，过程记录汇总（按发生顺序）在正式回复上方'
     )
     patch('segment-b', { text: '第二部分完成', thinkingLive: false })
     for (let i = 0; i < 30 && document.querySelectorAll('[data-testid="turn-response"]').length < 2; i++) await sleep(50)

@@ -28,6 +28,12 @@ export interface ContextBudgetOutputAdapterV1 {
   adapterId: string
   fieldPath: readonly string[] | 'openai-completions-compat'
   accounting: string
+  /**
+   * 请求体里本来就不带输出上限、由服务端按模型上限截断的接口（ChatGPT 订阅的
+   * Codex 后端拒收 max_output_tokens）。字段缺失时以模型声明的 maxTokens 作 R；
+   * 字段存在时仍以字段为准。其余接口字段缺失仍然 fail closed。
+   */
+  fallback?: 'model-max-tokens'
 }
 
 export interface ContextBudgetOutputResolutionV1 {
@@ -239,7 +245,8 @@ export const CONTEXT_BUDGET_OUTPUT_ADAPTERS_V1: Readonly<Record<string, ContextB
   },
   'openai-codex-responses': {
     api: 'openai-codex-responses', adapterId: 'openai-codex-responses-max-output-tokens-v1',
-    fieldPath: ['max_output_tokens'], accounting: 'responses-max-output-tokens-includes-reasoning'
+    fieldPath: ['max_output_tokens'], accounting: 'responses-max-output-tokens-includes-reasoning',
+    fallback: 'model-max-tokens'
   },
   'google-generative-ai': {
     api: 'google-generative-ai', adapterId: 'google-generation-config-v1',
@@ -273,6 +280,8 @@ export function resolveContextBudgetOutputReserveV1(input: {
   api: unknown
   payload: unknown
   compat?: unknown
+  /** 模型声明的最大输出；只给声明了 fallback 的接口在字段缺失时使用 */
+  modelMaxTokens?: unknown
 }): ContextBudgetOutputResolutionV1 {
   if (typeof input.api !== 'string') return { adapterId: 'unknown', outputReserve: null, reason: 'provider_api_unknown' }
   const adapter = CONTEXT_BUDGET_OUTPUT_ADAPTERS_V1[input.api]
@@ -291,6 +300,9 @@ export function resolveContextBudgetOutputReserveV1(input: {
     raw = valueAtPath(input.payload, [field])
   } else {
     raw = valueAtPath(input.payload, adapter.fieldPath)
+  }
+  if (raw === undefined && adapter.fallback === 'model-max-tokens' && validTokenCount(input.modelMaxTokens) && input.modelMaxTokens > 0) {
+    return { adapterId: adapter.adapterId, outputReserve: input.modelMaxTokens, reason: 'model_output_limit_assumed' }
   }
   if (!validTokenCount(raw) || raw === 0) {
     return { adapterId: adapter.adapterId, outputReserve: null, reason: 'request_output_limit_unknown' }

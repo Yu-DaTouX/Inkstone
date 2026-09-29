@@ -344,7 +344,8 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
         "brief":{"goal":"摸清两个模块的错误处理是否一致",
                   "deliverables":["一段结论","不一致的具体位置"],
                   "sources":["src/main/agent.ts","src/main/index.ts"],
-                  "boundary":"只读，不要改代码"}}
+                  "boundary":"只读，不要改代码",
+                  "maxToolCalls":40,"timeoutMinutes":10}}
   list                         查看所有子代理的状态与活动摘要
   get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
   stop   --id <子代理ID>        停止一个仍在运行的子代理
@@ -352,6 +353,9 @@ API 前砚会弹出确认，拒绝后不会发送请求，也不会静默换供�
 说明：
   · start 默认使用独立 Git worktree；readOnly=true 使用当前目录但只开放 read/grep/find/ls；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
+    maxToolCalls（5–300）限工具调用次数，timeoutMinutes（1–60）限总时长（默认 30 分钟，另有 5 分钟无输出的空闲上限）；
+    到点先让它收尾交结论，宽限内仍不结束才停止；
+  · 派出后不要 sleep 轮询：结束时宿主会通知你；
   · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——
     摘要取的是它**最后一段话**（会在数据里标名），不是子代理自报的结论；
     「未决问题」不自动猜：那要主 agent 判断，宿主不替它下结论；

@@ -75,7 +75,7 @@
     if (!first) return out.join('\n')
 
     /* 开关与计数：计数来自主进程，不是界面自己数 items */
-    ok(!!q('[data-testid="kn-toggle"]'), '有启用开关')
+    ok(q('[data-testid="kn-toggle-btn"]')?.getAttribute('role') === 'switch', '记忆启用项使用 Switch')
     const filterText = (id) => q(`[data-testid="kn-filter-${id}"]`)?.textContent ?? ''
     ok(/1/.test(filterText('candidate')), '「待确认」计数 = 1', filterText('candidate').trim())
     ok(/1/.test(filterText('active')), '「已确认」计数 = 1', filterText('active').trim())

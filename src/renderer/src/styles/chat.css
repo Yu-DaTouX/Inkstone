@@ -124,37 +124,31 @@
   padding: 0 var(--sp-5);
 }
 
+/* 空状态：标志 · 一句话 · 一行说明 · 几个入口，安静地居中 */
 .empty-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  margin-bottom: var(--sp-4);
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  /* 内描边高光：比投影干净，且不违反 DESIGN §4 */
-  box-shadow: inset 0 1px 0 var(--edge);
-  color: var(--ok);
-  font-size: 18px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--sp-3);
+  color: var(--fg-dim);
+  opacity: 0.8;
 }
 
 .empty-title {
+  margin-bottom: var(--sp-1);
   color: var(--fg);
-  font-size: 17px;
+  font-family: var(--font-body);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-strong);
   line-height: 1.4;
-  letter-spacing: 0.01em;
-  margin-bottom: var(--sp-2);
 }
 
 .empty-hint {
   max-width: 44ch;
+  margin-bottom: var(--sp-5);
   color: var(--fg-mute);
+  font-family: var(--font-body);
   font-size: var(--fs-base);
   line-height: var(--lh-base);
-  margin-bottom: var(--sp-5);
 }
 
 /* 2. 卡片层次：加内描边高光 + 大一点的圆角 */
@@ -256,7 +250,6 @@
 }
 
 .msg.user .gutter {
-  color: var(--cyan);
   color: var(--cyan);
 }
 
@@ -385,7 +378,6 @@
 .op-empty {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-style: italic;
 }
 
 /* ── 基础段结束 ── */
@@ -427,8 +419,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  max-width: var(--w-stream);
-  margin: 0 auto;
+  width: 100%;
   min-width: 0;
 }
 
@@ -499,25 +490,28 @@
   animation: sheadflash var(--dur-600) var(--ease);
 }
 
-/* 41. 主区头部：标题 + 项目胶囊（删掉了「上次聊到」那一行） */
+/* 主区头部：标题 · 视图切换 · 项目胶囊 · 目标（44px，横贯中栏） */
 .shead {
-  background: var(--bg-1);
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 44px;
+  padding: 0 var(--sp-5);
   border-bottom: 1px solid var(--border-soft);
-  padding: var(--sp-2) var(--sp-5) 7px;
+  background: var(--bg-0);
 }
 
 .shead-title {
-  color: var(--fg);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-regular);
-  letter-spacing: 0.01em;
-  margin: 0;
+  flex: 1;
   min-width: 0;
+  margin: 0;
   overflow: hidden;
+  color: var(--fg);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: var(--fw-medium);
-  line-height: 1.3;
 }
 
 /* 项目胶囊：终端风格，用小三角而不是圆点 */
@@ -585,45 +579,6 @@
 /* 新 UI 不用提示符作为角色装饰；命令回合仍可保留 `$` 作为技术内容语义。 */
 .msg.user .gutter-prompt {
   display: none;
-}
-
-/*
- * 用户消息：低对比、靠右的消息块。
- * 角色区分靠位置、标题和留白，不再使用彩色右线或提示符装饰。
- */
-.msg.user .bubble {
-  width: fit-content;
-  max-width: min(680px, 72%);
-  margin-left: auto;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-2);
-  padding: var(--sp-3) var(--sp-4);
-  overflow-wrap: anywhere;
-  box-sizing: border-box;
-}
-
-/* 用户消息、附件和标签共用同一条右内容轴；不要靠消息区的额外 padding 推位置。 */
-.msg.user .msg-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  min-width: 0;
-}
-
-.msg.user .msg-label {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-2);
-  width: 100%;
-}
-
-.msg.user .msg-images {
-  justify-content: flex-end;
-  width: fit-content;
-  max-width: min(680px, 72%);
-  margin-left: auto;
 }
 
 /* 助手正文：无容器，只留一条左侧竖线作为「这是它说的话」的标记 */
@@ -967,33 +922,31 @@
 
 /* 60. 推理流：默认只显示最新一句，头部按钮原位开合限高全文。
    开合不跟流式状态自动变化（手动展开后回合结束也保持），见 Reasoning.tsx。 */
+/* 推理：一行「思考 · 3s」+ 最新一句预览；点开在原位展开全文 */
 .reason {
-  margin-bottom: var(--sp-2);
-  border-left: 2px solid var(--border-str);
-  transition: border-color var(--dur) var(--ease);
-}
-
-.reason.live {
-  border-left-color: var(--accent-line);
+  margin: var(--sp-2) 0;
 }
 
 .reason-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   width: 100%;
-  padding: 2px 0 2px var(--sp-3);
+  height: 22px;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
   text-align: left;
+}
+.reason-label {
+  flex: none;
 }
 
 .reason-head:hover {
   color: var(--fg-dim);
 }
 
-.reason.live .reason-head {
-  color: var(--accent);
+.reason.live .reason-label {
+  color: var(--fg-dim);
 }
 
 .reason-head .chev {
@@ -1006,13 +959,9 @@
 }
 
 .reason-spin {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
 }
 
 /* 折叠时的单行预览：一行最新句。元素本身带 dir="rtl"（见 Reasoning.tsx），
@@ -1030,9 +979,8 @@
 
 .reason-body {
   box-sizing: border-box;
-  width: min(50vw, calc(100% - var(--sp-3)));
+  width: 100%;
   height: 0;
-  margin-left: var(--sp-3);
   border: 0 solid var(--border-soft);
   border-radius: var(--r-md);
   background: var(--bg-1);
@@ -1091,269 +1039,155 @@
   }
 }
 
-/* 61. 工具调用 —— Codex 风格（用户要求，附截图）
-   运行中：  ⠋ 正在运行 <命令>  ›
-   结束后：  ✓ 已在 11s 内运行 <命令>  ›
-   多条时折叠在「运行了命令 N」下面（Codex 的「运行了命令 ⌄」）。
-   要点：**一行一条**，命令原文直接铺在行里，超长截断（title 里有全文）。
-   展开后是**终端窗口**（下一节）——默认是否展开由设置 toolDetail 决定。 */
+/* 61. 工具调用 = 命令块表（设计规范 §3.5）
+   一回合的全部工具在一个细边框块里，一行一条：状态 · 工具名 · 目标 · 右侧耗时。
+   步数多时收起较早的几步（首行「前面 N 步」），失败数标在那一行；
+   点一行在块内展开详情（命令 → 终端，改动 → diff，其余 → 结果）。 */
 .tgroup {
-  margin: var(--sp-2) 0;
+  margin: var(--sp-3) 0 var(--sp-2);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+.tgroup > * + * {
+  border-top: 1px solid var(--border-soft);
 }
 
-.tgroup-top {
+.tgroup-fold {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  min-width: 0;
-}
-
-.tgroup-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  padding: 2px 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--sp-3);
   color: var(--fg-mute);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   text-align: left;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
-
-.tgroup-head:hover {
+.tgroup-fold:hover {
+  background: var(--bg-1);
   color: var(--fg-dim);
 }
-
-.tgroup-head .chev {
-  opacity: 0.6;
-  transition: transform var(--dur) var(--ease);
-}
-
-.tgroup.open .tgroup-head .chev {
+.tgroup-fold .chev {
+  opacity: 0.7;
   transform: rotate(90deg);
 }
-
-.tgroup-head .spacer {
-  flex: 1;
-}
-
-.tgroup-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-
-.tgroup-fail-action {
-  flex: none;
-  padding: 2px 0;
-  color: var(--err);
-  font-size: var(--fs-xs);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/*
- * 组里有失败：靠 `has-fail` 标记 + 标题右侧的角标表达，
- * **不把标题文字染色**。
- *
- * 为什么：标题里除了「N 个失败」还有「调用了 N 次工具/命令」和折叠箭头 ——
- * 整行变红会让人觉得「这组整体都出错了」，也会把本来就很淡的
- * 组标题（--fg-mute）变掉，一屏里突然多出一大块红字。
- * 红只留给角标（那才是真的坏消息）。
- *
- * ⚠️ `has-fail` 现在**没有视觉样式**，只做语义标记：
- *    探针用它认「哪一组有失败」，将来的逻辑也用得上。
- *    （别删 —— 删了 toolrow 探针的分支判断就失效了。）
- */
-.tgroup-fail {
-  flex: none;
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-xs);
-  background: var(--err-soft);
-  color: var(--err);
-  font-size: var(--fs-xs);
-}
-
-/*
- * 组展开后的列表（用户 2026-09-19：「主动展开调用工具/命令栏的时候，给展开的
- * 条目一个显示范围，而不是铺开到整个界面」）。
- *
- * 一次 `npm run check` 能产生一百多条调用：以前这里没有任何高度限制，
- * 点一下组头，这些行就把整段对话顶走（用户截图里那条带 146 次调用的组）。
- *
- * 卡住高度后 `.tgroup-head` 始终留在上方（它在 body 外面，列表自己滚），
- * 它本身就是那个「折叠回去的按钮」。
- *
- * 高度：用户 2026-09-25 把口径统一成「窗口高的四分之一」（三处一致：
- * 产物图片含衬底 / 推理过程 / 命令列表），所以不再用「25 行」这个算法，
- * 改成 25vh。矮窗口下也一样成立，不需要再留 80vh 那条退路。
- *
- * ⚠️ `toolgroup` 探针原来按「可见 ≥ 25 行」断言，改这个数会让它变红，
- *    已经跟着改成按 25vh 反推行数。
- *
- * 单条详情与推理全文见 `.reason-body.open`，同一口径。
- */
-.tgroup-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 25vh;
-  overflow: auto;
-  /* 在列表里滚到底不要把消息区一起带着滚 */
-  overscroll-behavior: contain;
+.tgroup-fold.up .chev {
+  transform: rotate(-90deg);
 }
 
 .trow {
   min-width: 0;
 }
-
 .trow-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   width: 100%;
-  padding: 2px var(--sp-1);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  text-align: left;
   min-width: 0;
-}
-
-.trow-head:hover {
-  background: var(--bg-2);
+  height: 30px;
+  padding: 0 var(--sp-3);
   color: var(--fg-dim);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
 }
-
-.trow[data-state='error'] .trow-head {
-  color: var(--err);
+.trow-head:hover,
+.trow.open > .trow-head {
+  background: var(--bg-1);
 }
-
 .trow-ico {
+  display: grid;
+  place-items: center;
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  color: var(--fg-mute);
+  width: 12px;
 }
-
-.trow[data-state='ok'] .trow-ico {
-  color: var(--ok);
-}
-
-.trow[data-state='error'] .trow-ico {
-  color: var(--err);
-}
-
-.trow-check {
-  font-size: var(--fs-xs);
-  line-height: 1;
-}
-
-/* 动词（正在运行 / 已在 Ns 内运行）：比目标淡，让命令本身最醒目 */
+/* 工具名：比目标淡，让命令本身最醒目 */
 .trow-verb {
   flex: none;
+  min-width: 40px;
   color: var(--fg-mute);
   white-space: nowrap;
 }
-
-/*
- * 来源徽标（实施-02 S4）：目前只有「任务计划 · 砚内置」一种。
- *
- * 有一条硬约束：它**不能把命令顶掉** —— 用户判断这条调用在干什么，
- * 靠的仍然是 `yan tasks apply …` 那几个字，徽标只是补充归属。
- * 所以 `flex: none` 且不设最大宽度，让 `.trow-target` 去承担截断。
- */
+/* 来源徽标（砚内置的任务计划 / 目标）：补充归属，不把命令顶掉 */
 .trow-src {
   flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-full);
   color: var(--accent);
   font-size: var(--fs-xs);
-  line-height: 16px;
   white-space: nowrap;
 }
-
-/* 目标（命令原文）：等宽，超长截断 */
+/* 目标（命令原文 / 路径）：等宽，超长截断（title 里有全文） */
 .trow-target {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-dim);
-  font-family: var(--font-code);
-  font-size: var(--fs-code);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
 }
-
 .trow-head:hover .trow-target {
   color: var(--fg);
 }
-
-.trow-head .spacer {
-  flex: 1;
-}
-
-.trow-badge.err {
-  flex: none;
+.trow[data-state='error'] .trow-target {
   color: var(--err);
-  font-size: var(--fs-xs);
 }
-
-.trow-badge.warn {
+.trow-dollar {
+  color: var(--accent);
+}
+.trow-time,
+.trow-badge {
   flex: none;
-  color: var(--warn);
+  color: var(--fg-mute);
   font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
-
-/*
- * 运行中的「扫光」（方案 4.1）。
- *
- * 设计规范原本要求「无渐变」；本轮修订为：**静态界面不用装饰渐变，
- * 只有运行状态允许低对比度扫光** —— 它是状态反馈，不是装饰。
- * 不使用动画作为唯一状态信息：图标、动词与 spinner 同时在表达「在跑」。
- */
-.trow[data-state='running'] .trow-head,
-.trow[data-state='pending'] .trow-head {
-  position: relative;
-  overflow: hidden;
+.trow-badge.err {
+  color: var(--err);
 }
-
-.trow[data-state='running'] .trow-head::after,
-.trow[data-state='pending'] .trow-head::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
-  transform: translateX(-100%);
-  animation: trow-sweep var(--dur-1900) linear infinite;
+.trow-badge.warn {
+  color: var(--warn);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .trow[data-state='running'] .trow-head::after,
-  .trow[data-state='pending'] .trow-head::after {
-    display: none;
-  }
-}
-
+/* 展开箭头只在悬停 / 展开时出现：静止时一行只有事实 */
 .trow-head .chev {
   flex: none;
-  opacity: 0.5;
-  transition: transform var(--dur) var(--ease);
+  margin-right: -4px;
+  opacity: 0;
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
-
+.trow-head:hover .chev,
+.trow-head:focus-visible .chev,
+.trow-head .chev.on {
+  opacity: 0.6;
+}
 .trow-head .chev.on {
   transform: rotate(90deg);
 }
+.trow-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--fg-mute);
+}
+.trow-dot.ok {
+  background: var(--ok);
+}
+.trow-dot.err {
+  background: var(--err);
+}
+.trow-dot.warn {
+  background: var(--warn);
+}
 
+/* 展开 = 设计规范 §6 的 grow：0fr ↔ 1fr，旧内容被连续推开，不跳 */
 .trow-expand {
-  /* 展开 = 设计规范 §6 的 grow：0fr ↔ 1fr，旧内容被连续推开，不跳 */
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -1361,55 +1195,35 @@
     grid-template-rows var(--mo-slow) var(--mo-ease),
     opacity var(--mo-base) var(--mo-ease);
 }
-
 .trow-expand.open {
   grid-template-rows: 1fr;
   opacity: 1;
 }
-
 .trow-expand-inner {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-
+/* 单条详情卡在窗口高的四分之一（与推理全文同一口径），长输出自己滚 */
 .trow-expand.open > .trow-expand-inner {
-  /*
-   * 单条工具调用的详情同样卡在窗口高的四分之一。
-   * 没有上限时，展开一条长输出（如 npm run check）就能把整段对话顶走，
-   * 和 `.tgroup-body` 早年的毛病一样。
-   */
   max-height: 25vh;
   overflow: auto;
   overscroll-behavior: contain;
 }
-
 .trow-body {
   box-sizing: border-box;
-  width: min(50vw, calc(100% - 18px));
-  /* 与推理过程、命令列表同一口径：窗口高的四分之一 */
-  height: 25vh;
-  margin-left: 18px;
-  padding: var(--sp-1) 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-1);
 }
-
-/* 命令的终端自己滚动并保留拖拽尺寸；目录改动卡片另列在其下。 */
+/* 命令的终端自己滚动并保留拖拽尺寸 */
 .trow-body[data-kind='command'] {
-  height: auto;
   overflow: visible;
 }
-
 .trow-body > :not(.term) {
   max-height: none;
   overflow: visible;
-}
-
-@media (max-width: 700px) {
-  .trow-body {
-    width: calc(100% - 18px);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1469,7 +1283,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-dim);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .fd-state {
@@ -1549,7 +1363,7 @@
 
 .wsc-root {
   padding: 3px var(--sp-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   color: var(--fg-mute);
   overflow: hidden;
@@ -1604,7 +1418,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-dim);
 }
 
@@ -1672,7 +1486,7 @@
 .term-title {
   flex: none;
   color: #d6d6d6;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: var(--fw-medium);
 }
 
@@ -1951,6 +1765,43 @@
   color: var(--accent);
   text-decoration: none;
   cursor: pointer;
+  /* 长路径、长网址在任意位置折行，不把消息列撑宽 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 行内代码里整段是路径 / 网址：双击可打开，悬停时给一条虚下划线提示 */
+.md code.md-code-link {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  cursor: default;
+}
+.md code.md-code-link:hover {
+  text-decoration: underline dotted var(--fg-mute);
+  text-underline-offset: 3px;
+}
+
+/* 回复里引用的图片（Markdown `![](…)`） */
+.md img.md-image {
+  display: block;
+  max-width: min(100%, 480px);
+  max-height: 360px;
+  margin: var(--sp-2) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.md .md-image-alt {
+  color: var(--fg-mute);
+}
+
+/* 可点开的对话图片（用户贴的、工具截的、回复引用的） */
+img.chat-image-open {
+  cursor: zoom-in;
+}
+
+/* 行内代码里的长路径 / 长标识符同样允许折行（代码块不受影响，仍横向滚动） */
+.md :not(pre) > code {
+  overflow-wrap: anywhere;
 }
 
 .md a:hover {
@@ -2027,6 +1878,7 @@
 .tool-pre {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-code);
   font-size: var(--fs-code);
   line-height: var(--lh-tight);
   white-space: pre-wrap;
@@ -2056,7 +1908,6 @@
   padding: var(--sp-2) var(--sp-3);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-style: italic;
 }
 
 .diff-side {
@@ -2085,6 +1936,7 @@
 .diff-pre {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-code);
   font-size: var(--fs-code);
   line-height: var(--lh-tight);
   white-space: pre-wrap;
@@ -2219,24 +2071,25 @@
 /* 三条建议：把空白变成入口 */
 .empty-suggest {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  width: min(420px, 100%);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  max-width: 100%;
   margin-bottom: var(--sp-5);
 }
 
 .empty-sug {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  width: 100%;
-  padding: 7px var(--sp-3);
+  height: var(--ctl-h);
+  padding: 0 var(--sp-3);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: var(--bg-1);
   color: var(--fg-dim);
-  font-size: var(--fs-base);
-  text-align: left;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
@@ -2441,7 +2294,7 @@
 
 .fd-stat {
   flex: none;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -2469,96 +2322,236 @@
 }
 
 /*
- * 实施-20 U4：子代理在会话流里的普通入口（替代撤下的专用管理页 / 资源标签）。
- * 一条非阻塞状态行：状态点 + 任务 + 状态 + 最新活动 + 变更统计 + 人类操作按钮。
+ * 子代理卡片（会话流里 / 右栏任务分区共用）。
+ * 三层：状态图标 + 任务 + 状态词耗时；灰色小字一行元信息；只出现一次的正文。
+ * 需要处理的卡片（出错 / 超时 / 待合并）左边带色条，排在运行中之后、已完成之前。
  */
-.sa-notes {
+.sg-group {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
-  margin: 0 0 6px;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: var(--sp-2) 0;
 }
-
-.sa-note {
+.sg-card {
+  --sg-tone: var(--fg-mute);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border-left: 2px solid transparent;
+  font-size: var(--fs-sm);
+  color: var(--fg-dim);
+}
+.sg-card.tone-live {
+  --sg-tone: var(--accent);
+}
+.sg-card.tone-ok {
+  --sg-tone: var(--ok);
+}
+.sg-card.tone-warn {
+  --sg-tone: var(--warn);
+}
+.sg-card.tone-err {
+  --sg-tone: var(--err);
+}
+.sg-card.is-attn {
+  border-left-color: var(--sg-tone);
+  background: var(--bg-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.sg-main,
+.sg-meta,
+.sg-actions {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
+}
+.sg-mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--sg-tone);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  line-height: 1;
+}
+.sg-card.is-live .sg-mark::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--sg-tone);
+}
+.sg-task {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--fw-strong);
+  text-align: left;
+  color: var(--fg);
+  cursor: pointer;
+}
+.sg-state {
+  flex: 0 0 auto;
+  font-weight: var(--fw-strong);
+  color: var(--sg-tone);
+}
+.sg-time {
+  flex: 0 0 auto;
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-mute);
+}
+/* 元信息：灰色小字一行，放不下就换行，不和任务争宽度 */
+.sg-meta {
+  flex-wrap: wrap;
+  gap: 0 var(--sp-3);
+  padding-left: calc(14px + var(--sp-2));
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+.sg-meta-item {
+  white-space: nowrap;
+}
+.sg-meta .rw {
+  color: var(--accent);
+}
+.sg-model {
+  font-family: var(--font-mono);
+}
+.sg-line,
+.sg-produced {
+  padding-left: calc(14px + var(--sp-2));
+  overflow-wrap: anywhere;
+}
+.sg-activity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+.sg-reason {
+  color: var(--sg-tone);
+}
+.sg-produced {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  color: var(--fg);
+}
+.sg-produced-label {
+  margin-right: var(--sp-2);
+  color: var(--fg-mute);
+}
+.sg-actions {
+  padding: var(--sp-1) 0 0 calc(14px + var(--sp-2));
+}
+
+/* 详情：最近几步工具调用 + 回复；回复限高自己滚动，不把消息流撑开 */
+.sg-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--sp-1) 0 0 calc(14px + var(--sp-2));
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: var(--bg-2);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-code);
+}
+.sg-d-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--sp-1);
+}
+.sg-d-tool {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  color: var(--fg-mute);
+}
+.sg-d-tool.error {
+  color: var(--err);
+}
+.sg-d-tool-name {
+  flex: 0 0 auto;
   color: var(--fg-dim);
 }
+.sg-d-tool-args {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sg-d-text {
+  max-height: 9em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.sg-d-dim {
+  color: var(--fg-mute);
+}
 
-.sa-note-dot {
+/* 子代理结束通知：一行安静的小提示 */
+.sg-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: var(--sp-1) 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-mute);
+}
+.sg-dot {
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--r-full);
   background: var(--fg-mute);
 }
-
-.sa-note-dot.running,
-.sa-note-dot.starting {
-  background: var(--accent);
+.sg-dot.done {
+  background: var(--ok);
 }
-
-.sa-note-dot.error {
+.sg-dot.error {
   background: var(--err);
 }
-
-.sa-note-task {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg);
-}
-
-.sa-note-state,
-.sa-note-diff,
-.sa-note-activity {
+.sg-notice-tag {
   flex: 0 0 auto;
-  color: var(--fg-mute);
 }
-
-.sa-note-activity {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 220px;
-}
-
-/*
- * 任务输入与结果汇总（实施-25 P15）。
- * 这一行是**非阻塞**提示：摘要只在有内容时出现，宽度不够就省略，
- * 不把整段子代理输出塞进会话流（详情仍在转录里）。
- */
-.sa-note-brief {
-  flex: 0 1 auto;
+.sg-notice-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 240px;
-  color: var(--fg-mute);
 }
 
-.sa-note-summary {
-  flex: 1 1 160px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-dim);
+@media (prefers-reduced-motion: no-preference) {
+  .sg-card.is-live .sg-mark::before {
+    animation: sg-pulse 1.4s ease-in-out infinite;
+  }
 }
-
-.sa-note-result-meta {
-  flex: 0 0 auto;
-  color: var(--fg-mute);
+@keyframes sg-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 连续阅读的段落用无衬线（设计规范 §2.2）：用户消息、推理全文、会话标题 */
@@ -2573,16 +2566,18 @@
  * 提示符是身份标记，不再靠右对齐的气泡区分角色。
  */
 .msg.user .msg-body {
+  display: flex;
+  flex-direction: column;
   align-items: stretch;
+  min-width: 0;
 }
 .msg.user .bubble {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr);
   gap: var(--sp-2);
-  width: auto;
-  max-width: none;
-  margin-left: 0;
   padding: var(--sp-2) var(--sp-3);
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   /* 浅色主题下 --bg-2（白）与页面底几乎相同，靠细边分出块 */
   border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
@@ -2598,42 +2593,97 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.msg.user .msg-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
 .msg.user .msg-label,
 .msg.user .msg-meta {
   justify-content: flex-start;
 }
 .msg.user .msg-images {
   justify-content: flex-start;
-  margin-left: 0;
+  width: fit-content;
+  max-width: min(680px, 100%);
 }
 
-/* 工具调用 = 命令块（设计规范 §3.5）：状态点 · 工具名 · 目标 · 耗时；命令前加强调色 `$` */
-.trow-dot {
-  display: block;
-  width: 6px;
-  height: 6px;
+
+/*
+ * 代码块、表格与工具输出里的滚动条：细（9px 命中区、3px 可见），平时很淡，
+ * 指向这块内容时才清楚。全局 14px 的滚动条留给消息流等大区域。
+ */
+:is(.md pre, .md-table-wrap, .md table, .tool-pre, .diff-pre, .term-body)::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+:is(.md pre, .md-table-wrap, .md table, .tool-pre, .diff-pre, .term-body)::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
   border-radius: var(--r-full);
-  background: var(--fg-mute);
+  background-clip: content-box;
+  background-color: transparent;
 }
-.trow-dot.ok {
-  background: var(--ok);
+:is(.md pre, .md-table-wrap, .md table, .tool-pre, .diff-pre, .term-body):hover::-webkit-scrollbar-thumb {
+  background-color: var(--bg-4);
 }
-.trow-dot.err {
-  background: var(--err);
+:is(.md pre, .md-table-wrap, .md table, .tool-pre, .diff-pre, .term-body)::-webkit-scrollbar-track,
+:is(.md pre, .md-table-wrap, .md table, .tool-pre, .diff-pre, .term-body)::-webkit-scrollbar-corner {
+  background: transparent;
 }
-.trow-dot.warn {
-  background: var(--warn);
+
+/*
+ * 工具详情压平：行本身已经是一层带边框的块，展开的详情不再套第二、第三层框。
+ * 行头已有工具名 / 路径 / 命令 / 状态，详情里的同名标题一律不重复。
+ */
+.trow-body {
+  padding: 0;
+  background: transparent;
 }
-.trow-verb {
-  font-family: var(--font-ui);
+.trow-body .fd,
+.trow-body .term {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
-.trow-dollar {
-  color: var(--accent);
-  font-weight: var(--fw-strong);
+.trow-body .fd {
+  background: transparent;
 }
-.trow-time {
-  flex: none;
-  color: var(--fg-mute);
+.trow-body .fd-head {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.trow-body .fd-head .ico,
+.trow-body .fd-path,
+.trow-body .fd-state,
+.trow-body .term-title,
+.trow-body .term-ico {
+  display: none;
+}
+.trow-body .term-bar {
+  border-bottom: 0;
+  background: transparent;
+}
+
+/* 展开「前面 N 步」后整张表自己滚动，不把消息流撑得很长 */
+.tgroup.is-expanded {
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 右栏任务分区里的子代理：窄栏下一行放不下就换行 */
+.rp-subagents {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+.rp-sub-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
+  color: var(--fg-mute);
 }

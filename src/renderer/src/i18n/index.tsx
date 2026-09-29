@@ -37,7 +37,7 @@ function translate(lang: Lang, key: MessageKey, vars?: TVars): string {
     return key
   }
   if (vars) {
-    for (const [n, v] of Object.entries(vars)) s = s.replace(`{${n}}`, String(v))
+    for (const [n, v] of Object.entries(vars)) s = s.split(`{${n}}`).join(String(v))
   }
   return s
 }

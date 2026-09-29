@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useT } from '../../i18n'
-import { Badge, Button, EmptyState, Segmented, SettingRow, Switch } from '../ui'
+import { Badge, Button, Disclosure, EmptyState, Segmented, SettingRow, Switch } from '../ui'
 import {
   DEFAULT_REMOTE_ACCESS_SETTINGS,
   type RemoteAccessSettings,
@@ -40,6 +40,7 @@ export function RemoteTab() {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
   const [draft, setDraft] = useState<RemoteAccessSettings>(saved)
   const [busy, setBusy] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   const refresh = useCallback(async () => {
@@ -91,22 +92,13 @@ export function RemoteTab() {
   const pairingLink = status?.pairing && endpoint
     ? `inkstone://pair?address=${encodeURIComponent(`http://${endpoint}`)}&code=${status.pairing.code}`
     : null
+  useEffect(() => setLinkCopied(false), [pairingLink])
   const secondsLeft = status?.pairing ? Math.max(0, Math.ceil((status.pairing.expiresAt - now) / 1000)) : 0
   const activeDevices = status?.devices.filter((device) => device.revokedAt === null) ?? []
   const revokedDevices = status?.devices.filter((device) => device.revokedAt !== null) ?? []
 
   return (
     <div className="ui-rows" data-testid="settings-remote">
-      <div className="ui-row col">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('remote.setupTitle')}</div>
-          <div className="ui-row-desc">{t('remote.setupDesc')}</div>
-        </div>
-        <div className="btn-row">
-          <Button size="sm" onClick={() => openGuide(WINDOWS_TAILSCALE_URL)}>{t('remote.downloadWindows')}</Button>
-          <Button size="sm" onClick={() => openGuide(ANDROID_TAILSCALE_URL)}>{t('remote.downloadAndroid')}</Button>
-        </div>
-      </div>
       <SettingRow name={t('remote.enable')} desc={t('remote.enableDesc')}>
           <Switch
             checked={draft.enabled}
@@ -114,52 +106,6 @@ export function RemoteTab() {
             disabled={busy}
             testId="remote-enable"
             onChange={(enabled) => void configure({ ...draft, enabled })}
-          />
-        </SettingRow>
-
-      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
-          <Segmented<BindChoice>
-            value={choice}
-            label={t('remote.bind')}
-            testId="remote-bind"
-            options={[
-              { value: 'tailscale', label: 'Tailscale' },
-              { value: 'loopback', label: t('remote.bindLoopback') },
-              { value: 'custom', label: t('remote.bindCustom') }
-            ]}
-            onChange={(value) => {
-              if (value === 'custom') {
-                const lan = status?.addresses.find((entry) => entry.kind === 'lan')?.address ?? ''
-                setDraft({ ...draft, bind: lan })
-                if (lan) void configure({ ...draft, bind: lan })
-                return
-              }
-              void configure({ ...draft, bind: value })
-            }}
-          />
-        </SettingRow>
-
-      {choice === 'custom' ? (
-        <SettingRow name={t('remote.customAddress')} desc={t('remote.customAddressDesc')}>
-            <input
-              className="ui-input remote-address-input"
-              value={draft.bind}
-              placeholder="192.168.1.20"
-              data-testid="remote-custom-address"
-              onChange={(e) => setDraft({ ...draft, bind: e.target.value.trim() })}
-              onBlur={() => void configure(draft)}
-            />
-          </SettingRow>
-      ) : null}
-
-      <SettingRow name={t('remote.port')} desc={t('remote.portDesc')}>
-          <input
-            className="ui-input num"
-            inputMode="numeric"
-            value={String(draft.port)}
-            data-testid="remote-port"
-            onChange={(e) => setDraft({ ...draft, port: Number(e.target.value.replace(/\D/g, '')) || 0 })}
-            onBlur={() => void configure(draft)}
           />
         </SettingRow>
 
@@ -191,7 +137,7 @@ export function RemoteTab() {
           <div className="remote-pairing">
             <div className="remote-pairing-layout">
               {pairingLink ? (
-                <div className="remote-pairing-qr" aria-label="手机配对二维码">
+                <div className="remote-pairing-qr" aria-label="手机配对二维码" data-testid="remote-pairing-qr">
                   <QRCodeSVG value={pairingLink} size={180} level="M" marginSize={2} />
                 </div>
               ) : null}
@@ -203,6 +149,10 @@ export function RemoteTab() {
                   {t('remote.pairExpires', { seconds: secondsLeft })}
                 </div>
                 <div className="ui-row-desc">{t('remote.scanHint')}</div>
+                {status?.host === '127.0.0.1' ? <div className="set-warn">{t('remote.loopbackWarning')}</div> : null}
+                {pairingLink ? <Button size="sm" data-testid="remote-pairing-link-copy" onClick={() => {
+                  void navigator.clipboard.writeText(pairingLink).then(() => setLinkCopied(true)).catch(() => setLinkCopied(false))
+                }}>{t(linkCopied ? 'remote.linkCopied' : 'remote.copyLink')}</Button> : null}
               </div>
             </div>
             <div className="btn-row">
@@ -265,6 +215,64 @@ export function RemoteTab() {
           </ul>
         )}
       </div>
+      <Disclosure title={t('remote.networkSettings')}>      <SettingRow name={t('remote.bind')} desc={t('remote.bindDesc')}>
+          <Segmented<BindChoice>
+            value={choice}
+            label={t('remote.bind')}
+            testId="remote-bind"
+            options={[
+              { value: 'tailscale', label: 'Tailscale' },
+              { value: 'loopback', label: t('remote.bindLoopback') },
+              { value: 'custom', label: t('remote.bindCustom') }
+            ]}
+            onChange={(value) => {
+              if (value === 'custom') {
+                const lan = status?.addresses.find((entry) => entry.kind === 'lan')?.address ?? ''
+                setDraft({ ...draft, bind: lan })
+                if (lan) void configure({ ...draft, bind: lan })
+                return
+              }
+              void configure({ ...draft, bind: value })
+            }}
+          />
+        </SettingRow>
+
+      {choice === 'custom' ? (
+        <SettingRow name={t('remote.customAddress')} desc={t('remote.customAddressDesc')}>
+            <input
+              className="ui-input remote-address-input"
+              value={draft.bind}
+              placeholder="192.168.1.20"
+              data-testid="remote-custom-address"
+              onChange={(e) => setDraft({ ...draft, bind: e.target.value.trim() })}
+              onBlur={() => void configure(draft)}
+            />
+          </SettingRow>
+      ) : null}
+
+      <SettingRow name={t('remote.port')} desc={t('remote.portDesc')}>
+          <input
+            className="ui-input num"
+            inputMode="numeric"
+            value={String(draft.port)}
+            data-testid="remote-port"
+            onChange={(e) => setDraft({ ...draft, port: Number(e.target.value.replace(/\D/g, '')) || 0 })}
+            onBlur={() => void configure(draft)}
+          />
+        </SettingRow>
+
+</Disclosure>
+      <Disclosure title={t('remote.connectionHelp')}>      <div className="ui-row col">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('remote.setupTitle')}</div>
+          <div className="ui-row-desc">{t('remote.setupDesc')}</div>
+        </div>
+        <div className="btn-row">
+          <Button size="sm" onClick={() => openGuide(WINDOWS_TAILSCALE_URL)}>{t('remote.downloadWindows')}</Button>
+          <Button size="sm" onClick={() => openGuide(ANDROID_TAILSCALE_URL)}>{t('remote.downloadAndroid')}</Button>
+        </div>
+      </div>
+</Disclosure>
     </div>
   )
 }

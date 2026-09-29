@@ -61,7 +61,7 @@ function useRunProgress(): RunProgress | null {
     if (!tool) {
       const call = [...(message.toolCalls ?? [])].reverse().find((item) => item.status === 'running')
       if (call) {
-        tool = { name: call.name, ...(call.startedAt !== undefined ? { startedAt: call.startedAt } : {}) }
+        tool = { name: runLabel(call), ...(call.startedAt !== undefined ? { startedAt: call.startedAt } : {}) }
       }
     }
   }
@@ -78,6 +78,14 @@ function useRunProgress(): RunProgress | null {
     startedAt: startedRef.current ?? turn[0]?.timestamp ?? null,
     now
   })
+}
+
+/** 运行条上的工具说明：命令原文（`$ npm run check`）或「工具名 目标」，比光秃秃的工具名有用 */
+function runLabel(call: { name: string; args?: unknown }): string {
+  const a = (call.args && typeof call.args === 'object' ? call.args : {}) as Record<string, unknown>
+  if (typeof a.command === 'string' && a.command.trim()) return `$ ${a.command.trim().split(/\r?\n/)[0]}`
+  const target = [a.path, a.file_path, a.pattern, a.query, a.url].find((v) => typeof v === 'string' && v)
+  return target ? `${call.name} ${String(target)}` : call.name
 }
 
 /**

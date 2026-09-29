@@ -165,6 +165,8 @@ const KNOWN_COMMANDS = new Set([
   'office.read',
   /* 普通工具使用前的同意判断（按真实答复记录自动放行或询问）。 */
   'consent.request',
+  /* 高危操作确认：只由 danger-guard 薄层调用，宿主弹框后回答放行 / 拒绝。 */
+  'danger.confirm',
   'context.budget.status',
   'context.budget.adjust',
   /* 目标状态（实施-05 S3）：计划档就绪转移与自主档推进报告。 */

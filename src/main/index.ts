@@ -4,15 +4,18 @@
  * 一个窗口可以承载多个按 cwd/session 隔离的 AgentController；
  * 会话切换优先复用已有实例或空闲实例，不停止仍在工作的后台会话。
  */
-import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage } from 'electron'
-import { join, dirname, basename, extname, resolve } from 'node:path'
+/* 数据目录迁移必须先于一切文件访问（见 storage-move.ts） */
+import './storage-move-boot'
+import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
+import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { constants as fsConstants, existsSync, readdirSync } from 'node:fs'
-import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, appendFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt, type GoalCommandHost } from './agent'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { getSettings, patchSettings } from './settings'
+import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { rememberSession } from './session-layout'
 import { readChainMessages } from './session-history'
 import { ArtifactStore } from './artifacts'
@@ -59,10 +62,12 @@ import { registerContextBudgetIpc } from './ipc/context-budget-ipc'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
+import { createSubagentNotifier } from './subagent-notify'
 import { configureGoalCoordinator, setDefaultWorkMode, defaultWorkMode, goalBudgetUsage, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile, refreshSessionContext, buildContextRequest, pushGoal, applyGoalResume, cancelGoalResume, consumeRepeatBlocks, goals, maybeArmGoalContinue } from './goal-coordinator'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { configureHandoffCoordinator, handoffRunner, publishHandoffReplacement, handoffPending, handoffIdentities, hasHandoffOperation, tryArmHandoff, abandonHandoff } from './handoff-coordinator'
 import { registerVoiceIpc } from './ipc/voice-ipc'
+import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import type { ConsentDecision } from '../shared/tool-consent'
@@ -248,6 +253,8 @@ if (process.env.YAN_PROBE) {
   app.commandLine.appendSwitch('disable-background-timer-throttling')
   app.commandLine.appendSwitch('disable-renderer-backgrounding')
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+  /* 性能排查：仅测试探针下、显式给端口时才开调试口，用 CDP 抓 CPU profile */
+  if (/^\d{4,5}$/.test(process.env.YAN_PROBE_DEBUG_PORT ?? '')) app.commandLine.appendSwitch('remote-debugging-port', process.env.YAN_PROBE_DEBUG_PORT as string)
 }
 
 /*
@@ -268,6 +275,14 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
  * electron.exe（那样通知会以“Electron”之名发出，或干脆不显示）。
  */
 const APP_ID = 'com.yudatoux.yan'
+
+/** 双击链接时不直接启动的类型（可执行、脚本、快捷方式）：只在文件管理器里定位 */
+const RUNNABLE_EXT = new Set([
+  '.exe', '.com', '.bat', '.cmd', '.msi', '.msix', '.appx', '.scr', '.pif', '.cpl', '.lnk', '.url',
+  '.ps1', '.psm1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.reg', '.dll',
+  '.sys', '.appref-ms', '.application', '.gadget', '.inf', '.msc', '.sh', '.py', '.pyw', '.pyz',
+  '.docm', '.xlsm', '.pptm', '.dotm', '.xlam', '.chm', '.ws', '.pl', '.rb', '.iso', '.vhd', '.vhdx'
+])
 try {
   app.setAppUserModelId(APP_ID)
 } catch {
@@ -277,6 +292,7 @@ try {
 /* 全局状态 */
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
+let trayThemeListening = false
 let trayLanguage: string | undefined
 let isQuitting = false
 let exitRequestInFlight: Promise<{
@@ -319,7 +335,15 @@ let browser: BrowserController | null = null
 const subagentService = new SubagentService({
   onChange: (run) => push({ ch: 'subagent', payload: run }),
   onRemove: (id) => push({ ch: 'subagent-remove', payload: id }),
-  resolveAgentProfile: (id) => resolveAgentProfile(id)
+  resolveAgentProfile: (id) => resolveAgentProfile(id),
+  /* 结束后叫醒发起它的会话：按稳定会话 id 找实例，找不到（会话已关）就不投 */
+  onFinished: createSubagentNotifier({
+    enabled: async () => (await getSettings()).subagentNotify !== false,
+    find: (run) =>
+      (run.parentSessionId ? runners?.agentForSession(run.parentSessionId) : null) ??
+      (run.parentRunId ? runners?.agentOf(run.parentRunId) : null) ??
+      null
+  })
 })
 /** 安卓远程管理服务；默认关闭，避免升级后意外监听网络端口。 */
 /** 手机接入（远程访问）：按设置启停，见 remote-access.ts */
@@ -490,6 +514,10 @@ function projectKnowledgeExtensionPath(): string | undefined {
  *
  * 只有它能在运行时拦下一次工具调用（`tool_call` 钩子），RPC 面没有这个事件。
  */
+/** 高危操作确认（薄层 tool_call 钩子；确认框在宿主）。 */
+function dangerGuardExtensionPath(): string | undefined {
+  return yanThinResourcePath('danger-guard.js')
+}
 function repeatGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('repeat-guard.js')
 }
@@ -526,6 +554,7 @@ function yanThinExtensionPaths(): string[] {
     contextExtensionPath(),
     projectKnowledgeExtensionPath(),
     repeatGuardExtensionPath(),
+    dangerGuardExtensionPath(),
     contextBudgetMaintenanceExtensionPath(),
     contextBudgetObserverExtensionPath()
   ].filter((p): p is string => !!p)
@@ -1746,17 +1775,37 @@ function requestExit(): Promise<ExitResult> {
 }
 
 function shellIconPath(): string | undefined {
+  /* Windows 用多尺寸 ICO：任务栏 24px 等小尺寸取像素对齐的那一档，而不是把 512 缩下来 */
+  const file = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   const iconCandidates = [
-    join(app.getAppPath(), 'build', 'icon.png'),
-    join(__dirname_, '..', '..', 'build', 'icon.png')
+    join(app.getAppPath(), 'build', file),
+    join(__dirname_, '..', '..', 'build', file),
+    join(app.getAppPath(), 'build', 'icon.png')
   ]
   return iconCandidates.find((candidate) => existsSync(candidate))
 }
 
+/**
+ * 托盘字形（设计规范 §3.4.1）：无底砖的单色标志，按**系统任务栏**的深浅选浅色或深色字形。
+ * 砖形应用图标缩到托盘尺寸会糊成一块，所以托盘单独一套；@1.5x/@2x 由 nativeImage 按文件名自动挑。
+ */
+function trayImage(): Electron.NativeImage {
+  const name = nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 'tray-on-dark.png' : 'tray-on-light.png'
+  const candidates = [join(app.getAppPath(), 'build', 'tray', name), join(__dirname_, '..', '..', 'build', 'tray', name)]
+  const found = candidates.find((candidate) => existsSync(candidate))
+  if (found) return nativeImage.createFromPath(found)
+  const iconPath = shellIconPath()
+  return iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty()
+}
+
 async function createTray(): Promise<void> {
   if (tray) return
-  const iconPath = shellIconPath()
-  tray = new Tray(iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty())
+  tray = new Tray(trayImage())
+  /* 用户切换任务栏深浅时跟着换字形 */
+  if (!trayThemeListening) {
+    trayThemeListening = true
+    nativeTheme.on('updated', () => tray?.setImage(trayImage()))
+  }
   tray.setToolTip('砚 · Yan')
   const settings = await getSettings()
   trayLanguage = settings.lang
@@ -2178,6 +2227,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         projectKnowledgeExtension: projectKnowledgeExtensionPath(),
         /* 单轮重复动作兜底（2026-09-22）：拦下在薄层，计入目标失败签名在宿主 */
         repeatGuardExtension: repeatGuardExtensionPath(),
+        dangerGuardExtension: dangerGuardExtensionPath(),
         bundledSkills: bundledSkillPaths(),
         /* 用户技能（YAN_DIR/skills）：每次启动会话时重新列出 */
         userSkills: () => userSkillPaths(),
@@ -2326,6 +2376,28 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             noLink: true
           })
           return response.response === 1
+        },
+        /* 高危操作确认（danger-guard 薄层发起）：每次都弹框，不记忆；关掉框按拒绝。 */
+        confirmDanger: async (request): Promise<ConsentDecision | null> => {
+          if (!win || win.isDestroyed()) return null
+          const response = await dialog.showMessageBox(win, {
+            type: 'warning',
+            title: '高危操作，需要你确认',
+            message: 'Agent 想执行一个难以撤销的操作',
+            detail: [
+              ...request.reasons.map((r) => `· ${r}`),
+              '',
+              request.tool === 'bash' ? `命令：${request.detail}` : `文件：${request.detail}`,
+              `项目：${request.cwd}`,
+              '',
+              '拒绝后模型会收到说明并改用别的做法。每次都会询问，不会记住你的选择。'
+            ].join('\n'),
+            buttons: ['拒绝', '允许这一次'],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true
+          })
+          return response.response === 1 ? 'allow' : 'deny'
         },
         /*
          * 普通工具使用前的询问（需求稿 4.3）。关掉对话框不算答复（返回 null，不记录）；
@@ -2779,7 +2851,12 @@ function registerIpc(): void {
   handle('yan:getMessages', async () => ac()?.getMessages() ?? [])
   handle('yan:getStats', async () => ac()?.refreshStats() ?? null)
 
-  registerAuthIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
+  registerAuthIpc(ipc, {
+    restartAgent: (reason: string) => restartAgent(reason),
+    sendOAuthEvent: (event) => {
+      if (win && !win.isDestroyed()) win.webContents.send('yan:oauth', event)
+    }
+  })
 
   registerFilesIpc(ipc, { resolveFileContext })
 
@@ -2831,7 +2908,7 @@ function registerIpc(): void {
   })
 
   /* ---- 扩展 UI 应答（不需要返回值） ---- */
-  ipcMain.on('yan:respondUi', (_e, res) => ac()?.respondUi(res))
+  ipcMain.on('yan:respondUi', (_e, res) => (runners ? runners.respondUi(res) : ac()?.respondUi(res)))
 
   /*
    * 延长待回答问题：倒计时在主进程抱，渲染端点「加时间」必须走到这里。
@@ -2937,6 +3014,61 @@ function registerIpc(): void {
     if (!existsSync(p)) return { ok: false, error: 'missing' }
     const err = await shell.openPath(existsSync(dirname(p)) ? dirname(p) : p)
     return err ? { ok: false, error: err } : { ok: true }
+  })
+
+  /*
+   * 用系统默认程序打开文件（对话里双击文件链接）。
+   * 链接是模型写的，所以能直接「运行」的类型一律不启动，只在文件管理器里选中 ——
+   * 双击一个链接不应该等于执行一段程序。
+   */
+  handle('yan:openFileDefault', async (p: string, cwd?: string) => {
+    const raw = String(p ?? '').trim()
+    if (!raw) return { ok: false, error: 'empty path' }
+    /* UNC 路径会让系统向远端主机发起认证，链接不该指向网络共享 */
+    if (/^[\\/]{2}/.test(raw)) return { ok: false, error: 'network path' }
+    const base = typeof cwd === 'string' && cwd.trim() ? cwd : (await getSettings()).cwd
+    const target = isAbsolute(raw) ? raw : resolve(base || process.cwd(), raw)
+    let st
+    try {
+      st = await stat(target)
+    } catch {
+      return { ok: false, error: 'missing' }
+    }
+    if (!st.isFile()) {
+      const err = await shell.openPath(target)
+      return err ? { ok: false, error: err } : { ok: true }
+    }
+    /* 链接名可能是 foo.txt、真实目标却是 bar.exe：两个扩展名都要判 */
+    let real = target
+    try { real = await realpath(target) } catch { /* 取不到就按链接名判 */ }
+    if (RUNNABLE_EXT.has(extname(target).toLowerCase()) || RUNNABLE_EXT.has(extname(real).toLowerCase())) {
+      shell.showItemInFolder(target)
+      return { ok: true, revealed: true }
+    }
+    const err = await shell.openPath(target)
+    return err ? { ok: false, error: err } : { ok: true }
+  })
+
+  /* ---- 数据位置（迁移到非系统盘，见 storage-move.ts） ---- */
+  handle('yan:storage:info', async () => {
+    const info = storageInfo()
+    return { ...info, bytes: await storageSize(info.realDir) }
+  })
+  handle('yan:storage:pick', async () => {
+    if (!win) return null
+    const r = await dialog.showOpenDialog(win, { title: '选择新的数据位置（建议非系统盘上的空文件夹）', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : r.filePaths[0] ?? null
+  })
+  handle('yan:storage:schedule', async (target: string, relaunch?: boolean) => {
+    const r = await scheduleStorageMove(String(target ?? ''))
+    if (r.ok && relaunch) {
+      app.relaunch()
+      app.quit()
+    }
+    return r
+  })
+  handle('yan:storage:cancel', async () => {
+    cancelStorageMove()
   })
 
   /** 在系统文件管理器里选中某个文件（比 openPath 精确） */
@@ -3144,6 +3276,7 @@ function registerIpc(): void {
   registerOfficeIpc(ipc, async () => (await getSettings()).cwd)
 
   /* ---- 语音输入：本地转写（下载须经界面确认） ---- */
+  registerAppUpdate(ipc, () => (runners?.statuses() ?? []).some((status) => status.running))
   registerVoiceIpc(ipc, {
     service: new VoiceService(async () => (await getSettings()).voiceInput),
     window: () => win,
@@ -3210,7 +3343,8 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
-    backgroundColor: '#0b0b0d',
+    /* 与深色 --bg-0 / 启动画面底色一致；浅色主题在读到设置后改（见下方 getSettings） */
+    backgroundColor: '#151515',
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
       /*
@@ -3254,6 +3388,7 @@ function createWindow(): void {
    */
   void getSettings().then((s) => {
     if (!win) return
+    if (s.theme === 'light') win.setBackgroundColor('#fcfcfa')
     if (s.alwaysOnTop) {
       win.setAlwaysOnTop(true)
       pushWinState()

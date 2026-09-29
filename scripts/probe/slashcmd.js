@@ -182,8 +182,9 @@
     else bad('菜单顶部越界：top=' + Math.round(menuRect?.top ?? -999))
     const hintText = document.querySelector('[data-testid="slash-hint"]')?.textContent ?? ''
     out.push('  底部提示: ' + JSON.stringify(hintText.slice(0, 60)))
-    if (/可滚动/.test(hintText)) ok('提示里说明了列表可滚动')
-    else bad('没有提示可滚动')
+    /* 现在用「N 项」计数告诉用户列表有多长（菜单本身可滚动） */
+    if (/\d+\s*项/.test(hintText)) ok('底部提示给出了条目总数（列表可滚动）')
+    else bad('底部提示没有条目总数')
 
     out.push('\n=== 10. 光标位置：进了参数区就不该再当成命令名 ===')
     setVal(ta(), '/help ')
@@ -205,7 +206,9 @@
     setVal(ta(), '/help')
     await sleep(500)
     const helpItems = [...document.querySelectorAll('.slash-item')].filter((x) => /\/help\b/.test(x.querySelector('.slash-name')?.textContent ?? ''))
-    const helpSrcs = helpItems.map((x) => x.querySelector('.slash-src')?.textContent ?? '')
+    /* 来源由分组标题表达（.slash-group[data-source]），模块名只是补充 */
+    const groupOf = (x) => { let p = x.previousElementSibling; while (p && !p.classList.contains('slash-group')) p = p.previousElementSibling; return p?.getAttribute('data-source') ?? '' }
+    const helpSrcs = helpItems.map((x) => groupOf(x) + ' ' + (x.querySelector('.slash-src')?.textContent ?? ''))
     out.push('  /help 条目=' + helpItems.length + ' 来源=' + JSON.stringify(helpSrcs))
     if (helpItems.length === 2) ok('两条同名命令都列出来了（按来源分开）')
     else bad('同名命令被覆盖，只剩 ' + helpItems.length + ' 条')

@@ -145,10 +145,11 @@
   // ⚠️ 不能只留「最后一个」匹配值：motion.css 里有**多个** reduced-motion 块，
   //    后面的块用 `animation: none !important`（不写 duration），会把结果读成 auto
   //    —— 本场景因此曾假失败。要收集全部取值，确认**存在** 1ms 的那条规则。
+  const flatRules = (rules) => { const out = []; for (const r of rules) { if (r.selectorText !== undefined || !r.cssRules) out.push(r); else if (r.conditionText !== undefined) out.push(r); if (r.cssRules) out.push(...flatRules(r.cssRules)) } return out }
   const durations = new Set()
   for (const sheet of document.styleSheets) {
     try {
-      for (const rule of sheet.cssRules) {
+      for (const rule of flatRules(sheet.cssRules)) {
         if (rule.type === CSSRule.MEDIA_RULE && rule.conditionText?.includes('prefers-reduced-motion')) {
           for (const inner of rule.cssRules) {
             const d = inner.style?.animationDuration
@@ -382,6 +383,8 @@
        *   空闲要保持一条完整连续的线，不该在左端留一个断开的口）。
        *   所以量 tail（两种状态下都可见）。
        */
+      /* 旧版输入框边框线（lead / tail）已被运行条取代；没有就跳过 */
+      const lead = q('.cbar-lead'), tail = q('.cbar-tail')
       if (tail) {
         const cs3 = getComputedStyle(tail)
         const h = tail.getBoundingClientRect().height

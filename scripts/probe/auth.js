@@ -100,7 +100,7 @@
   const tabs = qa('.settings-tab').map((x) => x.textContent)
   log('  tabs = ' + JSON.stringify(tabs))
   ok(
-    tabs.some((x) => /接入|Providers/.test(x)),
+    tabs.some((x) => /接入|模型|Providers|Models/.test(x)),
     '有「接入」tab'
   )
 
@@ -112,12 +112,13 @@
 
   const cmds = qa('.auth-cmd')
   log('  订阅制的命令提示 = ' + cmds.length)
-  ok(cmds.length > 0, '订阅制给的是命令提示（不是输入框）')
+  /* 订阅制都能在应用内登录；命令提示只留给没有应用内登录的服务 */
+  ok(qa('[data-testid^="auth-login-"]').length > 0, '订阅制给的是「登录」按钮（不是输入框）')
 
   const setBtns = qa('[data-testid^="auth-set-"]')
   ok(setBtns.length > 0, 'API key 有「填入 / 更换」按钮')
 
-  ok(!!q('.auth-path'), '显示凭证文件路径')
+  /* 凭证文件路径行已从这一页移除（数据位置见「关于」页的数据位置） */
   ok(!!q('[data-testid="auth-recheck"]'), '有「重新检测」按钮')
 
   /*
@@ -138,8 +139,8 @@
    */
   ok(!!q('[data-testid="auth-login-openai-codex"]'), '未登录时给「在本应用内登录」按钮')
   ok(
-    !q('[data-testid="auth-login-anthropic"]'),
-    '其余订阅制（Claude）不给登录按钮 —— 只给 pi → /login 提示'
+    !!q('[data-testid="auth-login-anthropic"]'),
+    '其余订阅制（Claude）也有应用内登录按钮'
   )
 
   /* 展开一个输入框，确认是 password 类型（不明文显示 key） */

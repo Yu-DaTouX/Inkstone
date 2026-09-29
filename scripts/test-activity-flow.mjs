@@ -18,8 +18,14 @@ export function runActivityFlowTests(ok, mod) {
     const dailyAnswerShort = decideTaskCreation({ profile: 'daily', activity: 'answer', itemCount: 1, text: '今天天气怎么样' })
     ok(dailyAnswerShort.create === false && dailyAnswerShort.reason === 'simple-answer', '日常 + 问答 + 一句话 → 不建任务')
 
-    const coding = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, text: 'x' })
-    ok(coding.create === true && coding.reason === 'coding', 'coding 一律放行（不干预既有行为）')
+    const coding = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 3, text: 'x' })
+    ok(coding.create === true && coding.reason === 'coding', 'coding：3 步以上照常建')
+    const codingSmall = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, text: 'x' })
+    ok(codingSmall.create === false && codingSmall.reason === 'coding-small', 'coding：一两步的新清单不建（省 token）')
+    const codingAppend = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, existingItems: 4 })
+    ok(codingAppend.create === true, 'coding：往已有清单追加一条照常放行')
+    const codingExplicit = decideTaskCreation({ profile: 'coding', activity: 'answer', itemCount: 1, explicit: true })
+    ok(codingExplicit.create === true && codingExplicit.reason === 'explicit', 'coding：用户明确要计划就建')
 
     /* auto 档：活动由模型当场判断，宿主不看旧 activity 的流程 */
     const autoShort = decideTaskCreation({ profile: 'auto', activity: 'research', itemCount: 1, text: '今天天气怎么样' })

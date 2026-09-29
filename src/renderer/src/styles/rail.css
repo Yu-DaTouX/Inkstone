@@ -1,1111 +1,735 @@
 /*
- * 左栏：项目分组 / 会话树 / 紧凑快捷轨。
+ * 左栏：新对话与搜索 · 置顶 / 最近 · 项目与会话树 · 待我处理 · 用户。
  *
- * 属于 modules 层（见 styles/index.css）。开头的基础段是早期的通用写法，
- * 后面的规则在它之上细化。
+ * 属于 modules 层（见 styles/index.css）。每个选择器只在这里定义一次；
+ * 尺寸对齐设计规范 §4：行高 28px、正文 12px、分区标题 11px 淡色 + 细线。
  */
 
-/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
-
-/* 3. 左右栏：面板底色与内容分层 */
-.rail {
-  background: var(--bg-1);
-}
-
-/* 左栏会话项：选中态更明确（左侧色条 + 更亮的底） */
-.item {
+/* ── 栏体 ── */
+.rail-slot {
   position: relative;
-  padding: 6px var(--sp-2);
-  border-radius: var(--r-sm);
-}
-
-.item.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.item.sel::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 14px;
-  border-radius: var(--r-full);
-  background: var(--accent);
-}
-
-.item.sel .ico {
-  color: var(--accent);
-}
-
-/* 15. 左栏搜索框：跟「新对话」同一套 */
-.search {
-  height: 28px;
-  background: var(--bg-2);
-  border-color: var(--border);
-  box-shadow: inset 0 1px 0 var(--edge);
-}
-
-/* ---- 顶部 ---- */
-.rail-top {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  /* 用户报「左栏边缘留白有点多」：12 → 8 */
-  padding: var(--sp-2) var(--sp-2) var(--sp-2);
-}
-
-/* ---- 操作行 ---- */
-.rail-action {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin: 0 var(--sp-1);
-  padding: var(--sp-2) var(--sp-2);
-  border-radius: var(--r-md);
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  text-align: left;
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-/* ---- 分组（项目） ---- */
-.rail-section {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  /* 这一节吃掉左栏的剩余高度（列表要能滚动、底栏要贴底） */
-  min-height: 0;
-  flex: 1;
-  margin-top: var(--sp-3);
-  border-top: 1px solid var(--border-soft);
-  padding-top: var(--sp-2);
-}
-
-.rail-body {
-  overflow: hidden auto;
-  scrollbar-gutter: stable;
-  /* 左栏边缘留白收窄（用户要求靠近边缘） */
-  padding: 0 var(--sp-1) var(--sp-3);
-  min-width: 0;
-}
-
-.proj-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px var(--sp-2);
-  border-radius: var(--r-md);
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  text-align: left;
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.proj-name,
-.proj-path {
+  z-index: 5;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.proj-path {
-  color: var(--fg-mute); font-size: var(--fs-xs); direction: rtl; text-align: left;
-}
-
-/* 行主体：会话按钮 + 分叉开关 + 时间（开关必须是兄弟节点，不能嵌在按钮里） */
-.srow-row {
-  display: flex;
-  align-items: center;
-}
-
-/* 会话行的文字块：第一行是「编号 + 名字 + 分支数」，第二行是「分叉自哪句话」 */
-.srow-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex: 1;
-  min-width: 0;
-}
-
-.srow-line {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-width: 0;
-}
-
-/* 分支数（已改成行尾的开关按钮 .srow-btoggle，这里保留名字不用） */
-/* 分叉自父会话的哪句话 */
-.srow-origin {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  opacity: 0.7;
-}
-
-.srow-menu-path {
-  padding: var(--sp-1) var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  border-bottom: 1px solid var(--border-soft);
-  margin-bottom: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: ltr;
-  user-select: text;
-}
-
-/* 空状态 */
-.rail-empty {
-  padding: var(--sp-4) var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-base);
-}
-
-/* ③ 会话行：悬停时显示时间（他们的做法：默认不占位，悬停才出） */
-.srow-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.srow-wrap .srow-time {
-  flex: none;
-  padding-right: var(--sp-2);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  opacity: 1;
-  transition: opacity var(--dur) var(--ease);
-}
-
+/*
+ * flex 列而不是 grid 行：子元素「有时有、有时没有」（删除提示、分组菜单），
+ * 固定行数的 grid 会漏掉隐式行。宽度跟随列宽（--w-rail，含用户拖出来的值）。
+ */
 .rail {
-  /**
-   * 用 flex 列而不是 grid 行 ——
-   * 左栏的子元素是「有时有、有时没有」（搜索框按需出现），
-   * 用 grid-template-rows 数固定行数会漏掉隐式行：
-   * 曾经写死 4 行、实际渲染 5 个元素，整栏高度只有 805px（容器 866px），
-   * 底部空一截且不随窗口变化。
-   * flex 下只要给「分组」加 flex: 1，它自然吃掉剩余高度。
-   */
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 0;
   background: var(--bg-1);
-  border-right: 1px solid var(--border);
-  /* 固定宽度：不随 grid 列宽收缩 */
-  /*
-   * ⚠️ 这里原来是 `width: 300px`（「内容宽度固定，不跟着列宽收缩」）。
-   *    那个写法让**拖拽调宽失效**：grid 列宽变了，但 .rail 自己还是 300px，
-   *    视觉上完全不动（实测 raiWidth 已落盘 390，界面仍是 300）。
-   *    现在跟随列宽（列宽由 --w-rail 控制，含用户拖出来的值）。
-   *
-   *    原来担心的「收起过程中文字被压扁」已经不存在了 ——
-   *    收起时内容是 `visibility: hidden`（见上文 .app.rail-off 规则），
-   *    不会被看到压扁的过程。
-   */
-  width: 100%;
-}
-
-/* 向下弹的（从列表项下方出现）。
-   会话行菜单现在 Portal 到 body（`.ctx-menu` 负责 fixed 定位与尺寸夹取），
-   这里只保留“从触发器下方弹出”的方向感和最小宽度。 */
-.row-menu-surface {
-  min-width: 208px;
-}
-
-/* 48. 左栏头部的品牌按钮（点了收起左栏）
-   与右栏 .rp-x 同一个语义：开关贴着它控制的东西。
-   悬停时才显示那个「收起」小图标 —— 平时它就是一个品牌标识。 */
-/* 49. 左栏底部：用户档案（头像 / 名字 / 设置）
-   用户报的两个问题：
-   · 原来显示「砚 / 工作目录 / N 个会话」→ 改成用户名 + 可自定义头像
-   · 设置按钮太小（原来是 .rail-icon.sm = 22px 盒 + 12px 图标，
-   跟旁边 26px 的头像不成比例）→ 改用标准 .rail-icon（26px + 14px） */
-.rail-foot {
-  background: transparent;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-top: 1px solid var(--border-soft);
-  position: relative; /* .rail-user-pop 的定位基准 */
-}
-
-/* ── 基础段结束 ── */
-
-/* 顶部一行：「新对话」占满剩余宽度，搜索是它右边的图标按钮 */
-.rail-top {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-width: 0;
-  overflow: hidden;
-  padding: var(--sp-3) var(--sp-2) var(--sp-2);
-}
-.rail-top .rail-action {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-}
-.rail-body {
-  padding: 0 6px var(--sp-2);
-  scrollbar-gutter: auto;
-  /*
-   * 作为**容器查询**的上下文（N13）。
-   * 用容器查询而不是媒体查询：栏宽是用户拖出来（或设置里存着）的，
-   * 与窗口宽度无关 —— 宽屏上把左栏拖到 210px 一样会遇到同样的问题。
-   */
-  container-type: inline-size;
-  container-name: railbody;
-}
-.rail-section {
-  margin-top: 6px;
-  padding-top: var(--sp-1);
-}
-.rail-action {
-  margin: 0 6px;
-  min-height: var(--ctl-h-lg);
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg);
-  font-weight: var(--fw-medium);
-}
-.proj-head {
-  height: 34px;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-sm);
-}
-
-/* 路径与来源在窄栏里只会挤掉标题，所以不显示（完整值在悬停提示里） */
-.proj-path,
-.srow-origin {
-  display: none;
-}
-
-/*
- * 等宽：路径类文本要对齐。
- *
- * ⚠️ 原来这条（与 .md code / .terminal / .rp-fs 合并）写在评审补丁里。
- *    按模块拆开后，每个选择器的声明**完全不变**，只是各自归位 ——
- *    这是「只搬家不改值」的前提：拆开不能改变任何元素的最终样式。
- */
-.proj-path,
-.srow-menu-path {
-  font-family: var(--font-mono);
-  letter-spacing: normal;
-}
-
-.srow-title-candidate {
-  margin: var(--sp-1) 6px 6px;
-  padding: 6px var(--sp-2);
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-}
-
-.srow-title-candidate-label {
-  color: var(--fg-dim);
-  font-size: var(--fs-xs);
-}
-
-.srow-title-candidate-name {
-  margin: 2px 0 var(--sp-1);
-  overflow: hidden;
-  color: var(--fg);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-strong);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.srow-title-candidate-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--sp-1);
-}
-
-/* 会话菜单里的「最后活动」（N13）：窄栏把行内时间收起来之后，
-   这个信息仍然可发现 —— 不是删掉，只是换了个位置。 */
-.srow-menu-time {
-  padding: var(--sp-1) var(--sp-2) 2px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-.srow-menu-section {
-  margin: 3px 0;
-  padding-top: 3px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.srow-menu-section-title {
-  padding: 3px var(--sp-2) 2px;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-}
-
-/* 左栏整体略收紧字距，跟正文的视觉密度对齐 */
-.rail {
-  letter-spacing: -0.01em;
-}
-
-/*
- * 会话行：整行是一个可点区域，选中态用左侧色条表达。
- *
- * 为什么把 .srow 的 padding-left 写成 calc(20px + 深度×12px)：
- * 分支会话要按层级缩进，但缩进不能写在行本身（那会连选中背景一起缩进），
- * 所以把缩进放在内层文字块上。
- */
-.srow-row {
-  height: 32px;
-  min-width: 0;
-  width: 100%;
-  border-radius: var(--r-sm);
-  position: relative;
-  padding-right: 6px;
-}
-.srow-row:hover {
-  background: var(--bg-2);
-}
-/* 选中：--bg-3 底 + 行首状态圆点（设计规范 §3.3：不用 inset 边线，圆角会把它弯成弧） */
-.srow-row.selected {
-  background: var(--bg-3);
-}
-.srow-row.selected::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: var(--r-full);
-  background: var(--accent);
-}
-.srow-row .srow {
-  height: 32px;
-  padding: 0 6px 0 calc(20px + var(--branch-depth, 0) * var(--sp-3));
-  border-radius: 0;
-  background: transparent;
-  font-size: var(--fs-base);
-  min-width: 0;
-}
-.srow-row .srow.sel,
-.srow-row .srow:hover {
-  background: transparent;
-  box-shadow: none;
-}
-.srow-row .srow.sel::before {
-  display: none;
-}
-.srow-text,
-.srow-line,
-.srow-name {
-  min-width: 0;
-}
-.srow-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.srow-wrap .srow-acts {
-  top: 5px;
-  bottom: auto;
-  transform: none;
-}
-.srow-wrap:has(> .srow-row:hover) > .srow-acts,
-.srow-wrap:focus-within > .srow-acts {
-  opacity: 1;
-  pointer-events: auto;
-}
-.srow-wrap .srow-time {
-  flex: none;
-}
-.session-children {
-  width: 100%;
-}
-.session-status {
-  flex: none;
-  width: 16px;
-  color: var(--accent);
-  text-align: center;
-}
-.session-status.waiting {
-  color: var(--warn);
-  font-weight: 700;
-}
-
-/* 失败（N12）：与「等待输入」分开 —— 一个是需要你回答，一个是已经挂了 */
-.session-status.failed {
-  color: var(--err);
-}
-
-/*
- * 自动隔离（同一工作目录冲突时被换到隔离工作树）：
- * 等待合回 = 同步中（accent），合回被挡 = 要看一眼（warn）。
- * 不用 err：挡下来时改动仍在隔离树里，不是丢了。
- */
-.session-status.iso {
-  color: var(--accent);
-}
-.session-status.iso.blocked {
-  color: var(--warn);
-}
-
-/* 项目行上的运行汇总（N12）：这个项目里有几个会话在跑 */
-.proj-running {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  color: var(--accent);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 分组标题上的运行汇总（N12） */
-.proj-group-running {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  margin-left: 6px;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-/* 置顶区与「最近」区共用一套外观：都是项目区之上的跨项目捷径。 */
-.rail-pins,
-.rail-recent {
-  margin-bottom: 6px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.rail-archive-toggle {
-  display: block;
-  font-size: var(--fs-xs);
-  color: var(--fg-mute);
-  padding: var(--sp-1) var(--sp-2);
-  text-align: left;
-}
-
-/* 项目上下文菜单（就地展开，不是浮层） */
-.project-menu,
-.proj-head.collapsed ~ .project-menu {
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  z-index: 4;
-  margin: 2px 0 var(--sp-1);
-  padding: var(--sp-1);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-}
-.project-menu button {
-  min-height: 28px;
-  padding: var(--sp-1) var(--sp-2);
-  color: var(--fg-dim);
-  text-align: left;
-  font: inherit;
-}
-.project-menu button:hover {
-  color: var(--fg);
-  background: var(--bg-3);
-}
-.project-menu input {
-  min-height: 28px;
-  margin: 2px;
-  padding: var(--sp-1) 7px;
-  color: var(--fg);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  font: inherit;
-}
-.proj-group {
-  margin-left: var(--sp-1);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 删除会话的确认框 —— 宽度跟着视口收，不会在小窗口里顶出去 */
-.rail-delete-dialog {
-  width: min(430px, calc(100vw - 32px));
-}
-/*
- * 确认框按钮：普通小圆角矩形，高度 30px，按内容撑宽、文字不换行（方案 15.3）。
- * 曾经「撤销删除」直接借用 `.send`（输入框发送按钮的圆形专用样式），
- * 四个中文字被挤进圆里换行。这里只用尺寸类修正，不改 .btn 本身。
- */
-.rail-delete-dialog .modal-foot .btn {
-  height: 30px;
-  padding: 0 var(--sp-3);
-  white-space: nowrap;
-}
-
-/*
- * 删除成功后的轻量通知（方案 15.2）：非模态、不圈定焦点、可撤销。
- * 放在左栏底部（原生网页视图不会覆盖这里）。
- */
-.rail-trash {
-  display: flex;
-  /* 顶部对齐：按钮不再被拉伸成与多行文案等高（窄栏下会变成细长竖条）。 */
-  align-items: flex-start;
-  gap: var(--sp-2);
-  margin: 0 6px 6px;
-  padding: var(--sp-1) 6px var(--sp-1) var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-2);
-  color: var(--fg-dim);
+  border-right: 1px solid var(--border-soft);
   font-size: var(--fs-sm);
 }
 
-.rail-trash > .ico {
-  flex: none;
-  color: var(--fg-mute);
-  /* 与首行文字视觉居中（图标行高比文字小） */
-  margin-top: 2px;
-}
-
-.rail-trash .spacer {
-  flex: 1;
-}
-
-/*
- * 文案区：窄栏下最多两行，超出用省略号截断。
- * 不用 flex 行布局 —— 那样「提示 + 名称」会互相挤压，
- * 名称只剩几像素后就轮到按钮被压成竖条。
- */
-.rail-trash-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.rail-trash-name {
-  display: inline;
-  color: var(--fg-mute);
-  overflow-wrap: anywhere;
-}
-
-.rail-trash-err {
-  display: block;
-  color: var(--err);
-  overflow-wrap: anywhere;
-}
-
-.rail-trash .btn {
-  flex: none;
-  white-space: nowrap;
-  /* 同上：按钮按自身高度，不被多行文案拉高 */
-  margin-top: 1px;
-}
-
-/* ---- 项目行：切项目 vs 折叠是两个独立动作（N05）---- */
-.proj-pick {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 100%;
-  color: inherit;
-  text-align: left;
-  border-radius: var(--r-xs);
-}
-
-.proj-fold {
-  flex: none;
-  width: 20px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-}
-
-.proj-fold:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-.proj-fold .chev {
-  transition: transform var(--dur) var(--ease);
-}
-
-.proj-fold .chev.open {
-  transform: rotate(90deg);
-}
-
-/* 「更多项目（N）」（N17）：默认只展开前 5 个项目 */
-.rail-more-projects {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  width: calc(100% - 12px);
-  margin: var(--sp-1) 6px 2px;
-  padding: var(--sp-1) var(--sp-1);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  text-align: left;
-}
-
-.rail-more-projects:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-.rail-more-projects .chev {
-  flex: none;
-  transition: transform var(--dur) var(--ease);
-}
-
-.rail-more-projects .chev.on {
-  transform: rotate(90deg);
-}
-
-/*
- * 「更多会话 / 收起会话」：项目下的折叠出口（同一形态，再缩进一级）。
- * 用户 2026-09-18：「项目文件夹应该默认显示前五个会话，其余进行折叠」。
- */
-.rail-more-sessions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  width: calc(100% - 24px);
-  margin: 2px 6px 2px 18px;
-  padding: 3px var(--sp-1);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  text-align: left;
-}
-
-.rail-more-sessions:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-.rail-more-sessions .chev {
-  flex: none;
-  opacity: 0.7;
-}
-
-/* 用 plus 旋转成关闭叉（sprite 里没有独立的 close） */
-.rail-trash-x {
-  transform: rotate(45deg);
-}
-
-/*
- * 窄栏下的取舍（N13）：标题优先。
- *
- * 实测 210px（RAIL_MIN）时，一行里 btoggle(44) + 时间(26) + 状态(16)
- * 会吃掉 ~86px，中文标题只剩 68px（约四个字）。这里让两类低频内容让位：
- *   · 相对时间 —— 会话菜单里仍能看到（不是删掉信息）
- *   · 分支「层级」图标 —— 数字和展开箭头保留，语义不变
- * 状态槽（运行 / 等待 / 未读）**不动**：那是后台运行状态（N12）的主入口。
- */
-@container railbody (max-width: 250px) {
-  .srow-time {
-    display: none;
-  }
-
-  .srow-btoggle-ico {
-    display: none;
-  }
-
-  /* 缩进从 12px/级 收到 9px/级、基础 18 → 14：跨四层省下 ~11px 给标题 */
-  .srow-row .srow {
-    padding-left: calc(14px + var(--branch-depth, 0) * 9px);
-  }
-}
-
-.rail-delete-error {
-  margin: 0 var(--sp-3) var(--sp-3);
-  color: var(--err);
-  font-size: var(--fs-sm);
-}
-
-/*
- * ── 收起态：完全折叠（0 宽、什么都不渲染）──
- *
- * 用户 2026-09-18：「左边栏变为完全折叠，不要留下一个边框」。
- * 之前这里是 48px 的紧凑快捷轨（.rail-compact：砚 / 搜索 / 新建 / 项目文件夹 /
- * 设置），深色主题下它就是消息区左边**一条颜色不同的竖条** —— 用户看到的
- * 就是这个「边框」。那条轨的 JSX 与样式已一并删掉。
- *
- * ⚠️ 别按「再给它留点东西」改。这段历史走过的三条路都被否过：
- *   ① 收起留 38px 透明槽（保留宽度把中栏算错 → 导航轨位置带偏）
- *   ② 面板内悬停展开按钮（透明但仍可点，盖住展开把手）
- *   ③ 48px 紧凑图标轨（就是本次被要求去掉的那条）
- *   现在的形态：**`--w-rail-collapsed: 0px`（layout.css）+ 容器 display: none**，
- *   展开入口只剩标题栏那个开关（`rail-toggle`）—— 项目入口因此回到
- *   「先展开左栏再切项目」。
- */
-.app.rail-off .rail {
-  display: none;
-}
-/* 收起时没有可拖的宽度，把手一并去掉（否则会出现一条假的拖拽命中区） */
+/* 收起 = 0 宽，展开入口只在标题栏（rail-toggle）；把手一并去掉 */
+.app.rail-off .rail,
 .app.rail-off .resizer-rail {
   display: none;
 }
 
-/* 收起 = 0 宽（开关在标题栏），所以不需要给收起态留任何东西 */
-
-.rail-spacer {
-  flex: 1;
+/* ── 顶部：新对话 + 搜索 ── */
+.rail-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
 }
 
-.rail-icon {
-  display: inline-flex;
+.rail-action {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
+  gap: var(--sp-2);
+  height: var(--ctl-h-lg);
+  padding: 0 10px;
   border-radius: var(--r-sm);
-  color: var(--fg-mute);
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.rail-icon.sm {
-  width: 22px;
-  height: 22px;
-}
-
-.rail-icon:hover,
-.rail-icon.on {
-  background: var(--bg-2);
+  background: var(--bg-3);
   color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
+}
+.rail-action > span {
+  flex: 1;
+  min-width: 0;
+}
+.rail-action:hover {
+  background: var(--bg-4);
+}
+.rail-action .ico {
+  color: var(--fg-dim);
+}
+.rail-kbd {
+  color: var(--fg-mute);
 }
 
-.rail-icon.on .ico {
-  color: var(--accent);
-}
-
-/* ---- 搜索 ---- */
 .rail-search {
   position: relative;
-  margin: 0 var(--sp-2) var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--ctl-h);
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  color: var(--fg-mute);
+  cursor: text;
+  transition: border-color var(--dur) var(--ease);
 }
-
+.rail-search:hover {
+  border-color: var(--border);
+}
+.rail-search:focus-within {
+  border-color: var(--accent-line);
+}
 .rail-search input {
-  width: 100%;
-  height: 28px;
-  padding: 0 26px 0 var(--sp-2);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  font-size: var(--fs-sm);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
   color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
 }
-
-.rail-search input:focus {
-  border-color: var(--border-str);
-}
-
 .rail-search input::placeholder {
   color: var(--fg-mute);
 }
-
 .rail-search-clear {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  flex: none;
   width: 18px;
   height: 18px;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
-  font-size: var(--fs-xs);
 }
-
 .rail-search-clear:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
 
-.rail-action .ico {
-  color: var(--fg-mute);
+/* ── 列表区 ── */
+.rail-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
-.rail-action:hover {
-  border-color: var(--border);
+/*
+ * 作为容器查询的上下文：栏宽是用户拖出来的，与窗口宽度无关，
+ * 所以窄栏的取舍用容器查询（见文件末尾）。
+ */
+.rail-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 0 var(--sp-2) var(--sp-3);
+  container-type: inline-size;
+  container-name: railbody;
+}
+
+/* 分区标题：「置顶 ──────」「项目 ────── +」 */
+.rail-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rail-body > .rail-section-head:first-child,
+.rail-body > :first-child > .rail-section-head:first-child {
+  margin-top: 0;
+}
+.rail-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+button.rail-label:hover {
+  color: var(--fg-dim);
+}
+.rail-label .chev {
+  opacity: 0;
+  transform: rotate(90deg);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.rail-label:hover .chev,
+.rail-label:focus-visible .chev,
+.rail-label.collapsed .chev {
+  opacity: 1;
+}
+.rail-label.collapsed .chev {
+  transform: none;
+}
+.rail-label-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.rail-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.rail-icon.sm {
+  width: 20px;
+  height: 20px;
+  color: var(--fg-mute);
+}
+.rail-icon:hover,
+.rail-icon.on {
   background: var(--bg-3);
   color: var(--fg);
 }
 
-.rail-section-head {
-  display: flex;
-  align-items: center;
-  padding: 0 var(--sp-2);
+.rail-empty {
+  padding: var(--sp-3) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.rail-empty.sm {
+  padding: 2px var(--sp-2);
 }
 
-.rail-section-title {
+.rail-archive-toggle,
+.rail-more-projects,
+.rail-more-sessions {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  flex: 1;
-  min-width: 0;
-  padding: var(--sp-1) 0;
+  width: 100%;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
   color: var(--fg-mute);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   text-align: left;
 }
-
-.rail-section-title:hover {
+.rail-more-sessions {
+  padding-left: 28px;
+}
+.rail-archive-toggle:hover,
+.rail-more-projects:hover,
+.rail-more-sessions:hover {
+  background: var(--bg-2);
   color: var(--fg-dim);
 }
-
-/* 收起时 chevron 转回来（默认朝右 = 收起，展开时朝下） */
-.rail-section-title .chev {
-  color: var(--fg-mute);
-  transform: rotate(90deg);
-}
-
-.rail-section-title.collapsed .chev {
-  transform: rotate(0deg);
-}
-
-/* ---- 主题空间（实施-25 P02）----
-/*
- * 空间行复用「标题 + 可折叠列表」的骨架，但刻意比项目行轻一档：
- * 项目行是导航重心（拖拽 / 分组 / 运行状态都在那儿），空间只是一层归类，
- * 所以不再发明新的强调色，只用现有色阶。
- */
-.rail-space-input {
-  display: block;
-  margin: 2px var(--sp-2) var(--sp-1);
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-  color: var(--fg);
-  font-size: var(--fs-sm);
-  width: calc(100% - var(--sp-2) * 2);
-}
-
-.rail-space-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  height: 28px;
-  border-radius: var(--r-sm);
-  padding-right: var(--sp-1);
-}
-
-.rail-space-row:hover {
-  background: var(--bg-2);
-}
-
-.rail-space-fold {
-  display: inline-flex;
+.rail-more-projects .chev,
+.rail-more-sessions .chev {
   flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  color: var(--fg-mute);
-}
-
-/* 与项目标题同一套约定：展开时 chevron 转 90° */
-.rail-space-fold .chev {
-  transform: rotate(0deg);
+  opacity: 0.7;
   transition: transform var(--dur) var(--ease);
 }
-
-.rail-space-fold .chev.on {
+.rail-more-projects .chev.on {
   transform: rotate(90deg);
 }
 
-.rail-space-name {
+/* ── 项目行：名称切项目，箭头折叠，⋯ 菜单，右侧计数 ── */
+.proj + .proj {
+  margin-top: 2px;
+}
+.proj-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 28px;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.proj-head:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.proj-head .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+.proj-head[data-current='1'] {
+  color: var(--fg);
+}
+.proj-head[data-current='1'] .proj-pick .ico {
+  color: var(--accent);
+}
+/* 项目收起时，下面的会话一并隐藏 */
+.proj-head.collapsed ~ * {
+  display: none;
+}
+.proj-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   flex: 1;
+  min-width: 0;
+  height: 100%;
+  color: inherit;
+  text-align: left;
+}
+.proj-labels {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+.proj-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
+  font-weight: var(--fw-medium);
 }
-
-.rail-space-row:hover .rail-space-name {
+.proj-group {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.proj-fold,
+.proj-rename {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+}
+.proj-fold:hover,
+.proj-rename:hover {
+  background: var(--bg-3);
   color: var(--fg);
 }
-
-/* 会话数：与项目行的计数同位，但更弱 —— 是提示，不是待办 */
-.rail-space-count {
+.proj-fold .chev {
+  transition: transform var(--dur) var(--ease);
+}
+.proj-fold .chev.open {
+  transform: rotate(90deg);
+}
+/* 箭头与菜单只在悬停 / 聚焦时出现，静止时这一行只有名字与计数 */
+.proj-fold,
+.proj-rename {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.proj-head:hover .proj-fold,
+.proj-head:hover .proj-rename,
+.proj-head.collapsed .proj-fold,
+.proj-fold:focus-visible,
+.proj-rename:focus-visible {
+  opacity: 1;
+}
+.proj-count {
   flex: none;
+  min-width: 16px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
-
-.rail-space-tree {
-  padding-left: var(--sp-2);
-}
-
-.rail-empty.sm {
-  padding: 2px var(--sp-2);
+.proj-running,
+.proj-group-running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  color: var(--accent);
   font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.proj-head.renaming {
+  gap: var(--sp-2);
+}
+.proj-rename-input,
+.srow-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  outline: none;
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.srow-rename-input {
+  margin-left: 20px;
 }
 
-/* ---- 项目行 ---- */
+/* 分组标题（项目可以归到分组里） */
 .proj-group-heading {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  margin: var(--sp-3) 6px var(--sp-1);
+  min-width: 0;
+  height: 24px;
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  /* 省略号要落在名字 span 上 —— flex 容器上的 text-overflow 不生效 */
-  min-width: 0;
 }
-
 .proj-group-ico {
   flex: none;
-  opacity: .8;
 }
-
 .proj-group-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .proj-group-heading .spacer {
   flex: 1;
 }
-
-/* 分组操作菜单按钮：静止时隐形（低频操作，靠菜单或悬停进入），
-   但键盘聚焦时必须显形 —— 不然焦点跑到一个看不见的东西上。 */
+/* 分组菜单按钮：静止时隐形，但键盘聚焦时必须显形 */
 .proj-group-act {
   flex: none;
-  opacity: 0;
   padding: 1px 2px;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
+  opacity: 0;
 }
 .proj-group-heading:hover .proj-group-act,
 .proj-group-act:focus-visible {
   opacity: 1;
 }
 .proj-group-act:hover {
-  color: var(--fg);
   background: var(--bg-3);
+  color: var(--fg);
 }
-
 .group-rename-input {
-  flex: 1;
-  min-width: 0;
-  /* 分组标题是全大写样式，输入框要保持原名输入的可读性 */
-  text-transform: none;
-  letter-spacing: 0;
   font-weight: var(--fw-medium);
 }
-
 .rail-group-err {
-  margin: -2px 6px var(--sp-1);
+  margin: 0 var(--sp-2) var(--sp-1);
   color: var(--err);
   font-size: var(--fs-xs);
 }
 
-/*
- * 拖拽排序（N01）。
- *
- * 为什么用插入线而不是「拖影跟着指针跑」：侧栏只有 300px 宽、行高 34px，
- * 拖影会一直盖住它自己要去的位置；一条 2px 的强调色线既准又不遮内容。
- * 被拖的行本身半透明，用来回答「我正在拖的是哪一个」。
- */
-body.rail-dragging * {
-  /* 拖动过程中别让指针划出一片文字选中 */
-  user-select: none;
+/* 「移到分组」就地展开的小面板 */
+.project-menu {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 4;
+  margin: 2px 0 var(--sp-1);
+  padding: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+.project-menu button {
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-xs);
+  color: var(--fg-dim);
+  text-align: left;
+  font: inherit;
+}
+.project-menu button:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.project-menu input {
+  min-height: var(--ctl-h);
+  margin: 2px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg-1);
+  color: var(--fg);
+  font: inherit;
 }
 
+/* ── 会话行：状态点 · 标题 · 时间；悬停时时间让位给 ⋯ ── */
+.srow-wrap {
+  position: relative;
+}
+.srow-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  padding-right: var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.srow-row:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.srow-row.selected {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.srow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  /* 分支按层级缩进；缩进写在按钮里，选中底色仍铺满整行 */
+  padding: 0 var(--sp-1) 0 calc(20px + var(--branch-depth, 0) * var(--sp-3));
+  color: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+/* 置顶与最近是跨项目捷径，不在项目下，少缩一级 */
+.rail-pins .srow,
+.rail-recent .srow {
+  padding-left: var(--sp-2);
+}
+.srow-dot {
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--fg-mute);
+  border-radius: var(--r-full);
+  opacity: 0.6;
+}
+.srow-row.selected .srow-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+}
+.srow-dot.waiting {
+  border-color: var(--warn);
+  background: var(--warn);
+  opacity: 1;
+}
+.srow-dot.failed {
+  border-color: var(--err);
+  background: var(--err);
+  opacity: 1;
+}
+.srow-dot.iso {
+  border-color: var(--accent);
+  opacity: 1;
+}
+.srow-dot.iso.blocked {
+  border-color: var(--warn);
+}
+.srow-dot.unread {
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+}
+.srow-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.srow-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.srow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 分支编号：这个会话是从别的会话分出来的第几个 */
+.srow-bno {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* 分叉来源在窄栏里只会挤掉标题：放在悬停提示里 */
+.srow-origin {
+  display: none;
+}
+.srow-time {
+  flex: none;
+  min-width: 20px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transition: opacity var(--dur) var(--ease);
+}
+.srow-acts {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  opacity: 0;
+  /* 隐藏时不接收指针事件，否则看不见的 ⋯ 会抢走「点行选中」的点击 */
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+.srow-wrap:has(> .srow-row:hover) > .srow-acts,
+.srow-wrap:focus-within > .srow-acts,
+.srow-wrap.menu-open > .srow-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+.srow-wrap:has(> .srow-row:hover) > .srow-row .srow-time,
+.srow-wrap.menu-open > .srow-row .srow-time {
+  opacity: 0;
+}
+.srow-acts .rail-icon.sm:hover {
+  background: var(--bg-4);
+}
+
+/* 分叉开关：行尾的「分支数 ›」 */
+.srow-btoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 20px;
+  margin-right: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-xs);
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.srow-btoggle:hover {
+  background: var(--bg-3);
+  color: var(--fg-dim);
+}
+.srow-btoggle.open {
+  color: var(--accent);
+}
+.srow-btoggle .chev {
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease);
+}
+.srow-btoggle.open .chev {
+  transform: rotate(90deg);
+}
+.session-children {
+  width: 100%;
+}
+
+/* ── 会话行菜单（Portal 到 body，定位由 ContextMenuSurface 负责） ── */
+.row-menu-surface {
+  min-width: 208px;
+}
+.srow-menu-time {
+  padding: var(--sp-1) var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.srow-menu-section {
+  margin: 2px 0;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-soft);
+}
+.srow-menu-section-title {
+  padding: var(--sp-1) var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.srow-title-candidate {
+  margin: var(--sp-1);
+  padding: 6px var(--sp-2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+.srow-title-candidate-label {
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
+.srow-title-candidate-name {
+  margin: 2px 0 var(--sp-1);
+  overflow: hidden;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.srow-title-candidate-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-1);
+}
+/* 用 plus 旋转成关闭叉 */
+.rail-trash-x {
+  transform: rotate(45deg);
+}
+
+/* ── 拖拽排序：被拖的行变淡，落点画 2px 插入线 ── */
+body.rail-dragging * {
+  user-select: none;
+}
 body.rail-dragging .proj-head,
 body.rail-dragging .proj-pick,
 body.rail-dragging .proj-fold,
-body.rail-dragging .proj-group-heading {
-  cursor: grabbing;
-}
-
-/* 拖会话时整行也是把手 */
+body.rail-dragging .proj-group-heading,
 body.rail-dragging .srow {
   cursor: grabbing;
 }
-
-/*
- * 会话行被拖动：变淡 + 退出命中判定。
- * `pointer-events: none` 是必须的 —— 否则拖到自己身上时 `elementFromPoint`
- * 会命中它自己，落点算成「原地的项目」而不是指针真正指向的那一行。
- */
-.srow-wrap.is-dragging {
-  opacity: .45;
+/* 被拖的行退出命中判定：否则 elementFromPoint 会命中它自己，落点算不出来 */
+.srow-wrap.is-dragging,
+.proj-head.is-dragging,
+.proj-group-heading.is-dragging {
+  opacity: 0.45;
   pointer-events: none;
 }
-
-/*
- * 投放目标（把会话拖到项目行 / 全局行上）：整行高亮。
- * 与 `drop-before/after` 的插入线区别开 —— 那是换顺序，这是改归属。
- */
+/* 拖到项目行上：改归属（整行虚线框），与换顺序的插入线区别开 */
 .proj-head.drop-into {
   background: var(--bg-3);
   outline: 1px dashed var(--accent);
   outline-offset: -1px;
-  border-radius: var(--r-sm);
 }
-
-.proj-head.is-dragging,
-.proj-group-heading.is-dragging {
-  opacity: .45;
-  /* 被拖的行不能让 elementFromPoint 命中它自己，否则落点永远算不出来 */
-  pointer-events: none;
-}
-
 .proj-head.drop-before,
 .proj-head.drop-after,
 .proj-group-heading.drop-before,
 .proj-group-heading.drop-after {
   position: relative;
 }
-
 .proj-head.drop-before::before,
 .proj-head.drop-after::after,
 .proj-group-heading.drop-before::before,
@@ -1119,268 +743,171 @@ body.rail-dragging .srow {
   background: var(--accent);
   pointer-events: none;
 }
-
 .proj-head.drop-before::before,
 .proj-group-heading.drop-before::before {
   top: -1px;
 }
-
 .proj-head.drop-after::after,
 .proj-group-heading.drop-after::after {
   bottom: -1px;
 }
 
-.proj-head:hover {
-  background: var(--bg-2);
-  color: var(--fg);
+/* ── 删除确认与撤销提示 ── */
+.rail-delete-dialog {
+  width: min(430px, calc(100vw - 32px));
 }
-
-.proj-head .ico {
-  color: var(--fg-mute);
-  flex: none;
+.rail-delete-dialog .modal-foot .btn {
+  white-space: nowrap;
 }
-
-.proj-labels {
+.rail-delete-error {
+  margin: 0 var(--sp-3) var(--sp-3);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+.rail-trash {
   display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.proj-rename { opacity: 0; color: var(--fg-mute); padding: 2px; }
-
-.proj-head:hover .proj-rename, .proj-rename:focus { opacity: 1; }
-
-.proj-count {
-  flex: none;
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 项目行内重命名（Electron 不支持 window.prompt，改用 input） */
-.proj-head.renaming {
-  gap: 6px;
-}
-
-.proj-rename-input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid var(--accent-line);
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-2) var(--sp-2);
+  padding: 6px 6px 6px var(--sp-3);
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-2);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-base);
-  outline: none;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
 }
-
-/* ---- 会话行：嵌套在项目下，缩进一级 ---- */
-.srow-wrap {
-  position: relative;
-}
-
-.srow {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  /* 缩进：项目行的文字落在 26px（8 padding + 12 图标 + 6 gap），
-     会话行要比它再深一级。原来是 38px，用户说边缘留白多 → 收到 32px。
-     ⚠️ getBoundingClientRect().left 是**元素外框**，padding 不影响它 ——
-     验证缩进必须量 **.srow-name 的左缘**，量 .srow 永远看不到差异。 */
-  padding: 6px var(--sp-2) 6px var(--sp-6);
-  border-radius: var(--r-md);
-  color: var(--fg-mute);
-  font-size: var(--fs-base);
-  text-align: left;
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.proj-head.collapsed ~ * {
-  /* 项目收起时不画线 */
-  display: none;
-}
-
-.srow.sel {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-
-/* 分支编号（这个会话是第几个分支） */
-.srow-bno {
+.rail-trash > .ico {
   flex: none;
-  color: var(--accent);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 会话行内重命名（用户报「左栏会话没办法重命名」：Electron 不支持 window.prompt） */
-.srow-rename-input {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  /* 缩进与 .srow 一致，重命名时文字位置不跳 */
-  padding: 0 var(--sp-2) 0 var(--sp-6);
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-base);
-  outline: none;
-}
-
-.srow-wrap:hover .srow-text {
-  /* 给右侧图标让位，避免文字压到按钮下面 */
-  padding-right: var(--sp-5);
-}
-
-/* 连接状态做成头像右下角的小点 */
-.rail-avatar::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--r-full);
-  border: 1.5px solid var(--bg-1);
-}
-
-.rail-avatar.ok::after {
-  background: var(--ok);
-}
-
-.rail-avatar.warn::after {
-  background: var(--warn);
-}
-
-.rail-user {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-  line-height: 1.25;
-}
-
-.rail-user-sub {
+  margin-top: 2px;
   color: var(--fg-mute);
-  font-size: var(--fs-xs);
+}
+.rail-trash .spacer {
+  flex: 1;
+}
+/* 窄栏下最多两行，超出截断；按钮不被多行文案拉高 */
+.rail-trash-text {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+.rail-trash-name {
+  color: var(--fg-mute);
+  overflow-wrap: anywhere;
+}
+.rail-trash-err {
+  display: block;
+  color: var(--err);
+  overflow-wrap: anywhere;
+}
+.rail-trash .btn {
+  flex: none;
   white-space: nowrap;
 }
 
-/* 悬停时时间让位给动作按钮 —— 两者落在同一个右缘，不能同时显示（会叠成一团） */
-.srow-wrap:hover .srow-time {
-  opacity: 0;
-}
-
-.srow-wrap:hover .srow-acts {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.srow-wrap.has-acts:hover .srow-text {
-  padding-right: 34px;
-}
-
-.srow-acts {
-  position: absolute;
-  right: 3px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 1px;
-  opacity: 0;
-  /* 隐藏时不接收指针事件，否则看不见的 ⋯ 会抢走“点行选中”的点击 */
-  pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
-}
-
-.srow:hover {
-  background: var(--bg-2);
-  color: var(--fg-dim);
-  background: var(--bg-2);
-}
-
-/* ④ 项目行的分组感：当前项目的图标用强调色 */
-.proj-head[data-current='1'] .ico {
-  color: var(--accent);
-}
-
-/* 左栏内容宽度固定，不能跟着列宽收缩 ——
-   否则收起过程中文字被压扁，而不是「滑走」 */
-
-/* 33. 左栏布局（**唯一**一处定义，别再在别处写 .rail 宽度）
-   规则：
-   · --w-rail 是唯一真源；收起时 .app.rail-off 把它设为 0
-   · .rail-slot 是 grid 的一列，宽度 = --w-rail（跟着收放）
-   · .rail 自身宽度固定 300px，不跟着列宽收缩 ——
-   否则收起过程中文字会被压扁而不是「滑走」
-   · 内容用 opacity 淡出，避免窄列里文字挤成一团
-   踩过的坑：曾经同时存在 --w-rail 与 --w-rail-fixed 两个变量，
-   加上三处 .rail 宽度规则叠加，grid 列算成了 `0px 1441px 0px`，
-   中栏宽度变 0、整屏被左栏占满。变量和规则都只能有一处。 */
-.rail-slot {
-  position: relative;
-  width: auto;
-  transform: none;
-  overflow: hidden;
-  z-index: 5;
-  min-width: 0;
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-  z-index: 5;
-}
-
-.rail-avatar {
-  position: relative;
+/* ── 底部：待我处理 + 用户 ── */
+.rail-inbox {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: var(--r-full);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
+  gap: var(--sp-2);
+  height: 28px;
+  margin: var(--sp-2) var(--sp-2) 0;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+  text-align: left;
+}
+.rail-inbox .ico {
+  color: var(--fg-mute);
+}
+.rail-inbox:hover,
+.rail-inbox.on {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.rail-inbox-badge {
+  margin-left: auto;
 }
 
+.rail-foot {
+  position: relative; /* .rail-user-pop 的定位基准 */
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border-soft);
+}
+.rail-section + .rail-inbox {
+  border-top: 0;
+}
+.rail-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease);
+}
 .rail-avatar:hover {
   border-color: var(--accent-line);
 }
-
 .rail-avatar-letter {
-  font-size: var(--fs-base);
+  font-family: var(--font-body);
   line-height: 1;
-  /* 中文首字在圆里偏下，抬 0.5px 视觉居中 */
-  transform: translateY(-0.5px);
 }
-
+/* 连接状态：头像右下角的小点 */
+.rail-avatar::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--bg-1);
+  border-radius: var(--r-full);
+}
+.rail-avatar.ok::after {
+  background: var(--ok);
+}
+.rail-avatar.warn::after {
+  background: var(--warn);
+}
+.rail-user {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: var(--lh-tight);
+}
 .rail-user-name {
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.rail-user-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
 }
 
-/* ---- 弹出面板：贴在底栏上方 ---- */
+/* 头像自定义面板：贴在底栏上方 */
 .rail-user-pop {
   position: absolute;
   left: var(--sp-2);
@@ -1388,93 +915,12 @@ body.rail-dragging .srow {
   bottom: calc(100% - var(--sp-1));
   z-index: 40;
   padding: var(--sp-3);
-  border: 1px solid var(--border-str);
+  border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--bg-2);
-  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-pop);
   animation: mo-in-up var(--mo-base) var(--mo-ease) both;
 }
-
-/* 64. 会话分叉树（用户要求：默认折叠，开关放在会话标题旁）
-   为什么开关是 .srow 的兄弟节点而不是子节点：.srow 本身是 <button>，
-   里面再放 <button> 是非法嵌套（浏览器会把内层拆出去，行为不可预期）。
-   所以行主体拆成 .srow-row = [.srow 按钮] [.srow-btoggle 按钮] [时间]。 */
-.srow-btoggle {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 22px;
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.srow-btoggle:hover {
-  background: var(--bg-2);
-  color: var(--fg-dim);
-}
-
-.srow-btoggle.open {
-  color: var(--accent);
-}
-
-.srow-btoggle .srow-btoggle-n {
-  min-width: 8px;
-  text-align: center;
-}
-
-.srow-btoggle .chev {
-  opacity: 0.6;
-  transition: transform var(--dur) var(--ease);
-}
-
-.srow-btoggle.open .chev {
-  transform: rotate(90deg);
-}
-
-/* 树本体：每条分叉一行，缩进到与标题对齐 */
-.srow-branches {
-  margin: 1px 0 var(--sp-2) 36px;
-  padding-left: var(--sp-2);
-  border-left: 1px solid var(--border-soft);
-}
-
-.rail-rename {
-  height: 22px;
-  padding: 0 var(--sp-2);
-  background: var(--bg-2);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-xs);
-  color: var(--fg);
-}
-
-.proj + .proj {
-  margin-top: 3px;
-}
-
-/* 左侧引导线：表明这些会话属于上面的项目 */
-.proj {
-  position: relative;
-}
-
-.proj::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 30px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border-soft);
-  pointer-events: none;
-}
-
 .rup-head {
   display: flex;
   align-items: center;
@@ -1482,37 +928,31 @@ body.rail-dragging .srow {
   color: var(--fg-mute);
   font-size: var(--fs-sm);
 }
-
 .rup-head .spacer {
   flex: 1;
 }
-
 .rup-x {
   width: 18px;
   height: 18px;
   border-radius: var(--r-xs);
   color: var(--fg-mute);
 }
-
 .rup-x:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
-
 .rup-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   margin-top: var(--sp-2);
 }
-
 .rup-label {
   flex: none;
   width: 34px;
   color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
-
 .rup-value {
   min-width: 0;
   overflow: hidden;
@@ -1521,7 +961,6 @@ body.rail-dragging .srow {
   color: var(--fg-dim);
   font-size: var(--fs-xs);
 }
-
 .rup-input {
   flex: 1;
   min-width: 0;
@@ -1533,208 +972,92 @@ body.rail-dragging .srow {
   color: var(--fg);
   font-size: var(--fs-sm);
 }
-
 .rup-input:focus {
   outline: none;
   border-color: var(--accent-line);
 }
-
-/* 首字 / 图标 二选一 */
-/* 图标网格 */
 .rup-icons {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
+  gap: 2px;
   margin-top: var(--sp-2);
 }
-
 .rup-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   height: 26px;
   border: 1px solid transparent;
   border-radius: var(--r-xs);
   color: var(--fg-dim);
 }
-
 .rup-icon:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
-
 .rup-icon.sel {
   border-color: var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent);
 }
-
-/* 色相 */
 .rup-hues {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-1);
 }
-
 .rup-hue {
   width: 16px;
   height: 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-full);
 }
-
+/* 默认色：半色半透明的斜分表示「不指定」 */
 .rup-hue.none {
-  /* 默认色：用半白半透明的斜条表示「不指定」 */
   background: linear-gradient(135deg, var(--bg-4) 50%, transparent 50%);
 }
-
 .rup-hue.sel {
-  box-shadow: 0 0 0 2px var(--accent-line);
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-line);
 }
-
 .rup-action {
   margin-top: var(--sp-3);
 }
-
 .rup-login {
   background: transparent;
 }
-
-/* 登录说明（预留功能，如实说明） */
 .rup-login-note {
   color: var(--fg-dim);
   font-size: var(--fs-xs);
   line-height: var(--lh-base);
 }
-
 .rup-note-title {
+  margin-bottom: var(--sp-1);
   color: var(--warn);
   font-size: var(--fs-sm);
-  margin-bottom: var(--sp-1);
 }
-
 .rup-note-body {
   margin: 0 0 var(--sp-2);
   overflow-wrap: anywhere;
 }
-
 .rup-note-list {
   margin: 0;
   padding-left: var(--sp-4);
 }
-
 .rup-note-list li {
   margin-bottom: 2px;
   overflow-wrap: anywhere;
 }
 
-.rmm-head {
-  padding: 3px var(--sp-2) var(--sp-1);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-}
-
-.rmm-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-}
-
-.rmm-item:hover:not(:disabled) {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-/* 未接入的项：明确不可选（不做假状态），但仍然列出来让人知道有这回事 */
-.rmm-item:disabled {
-  opacity: var(--ctl-disabled-opacity);
-  cursor: default;
-}
-
-.rmm-item .spacer {
-  flex: 1;
-}
-
-.rmm-dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: var(--r-full);
-  background: var(--fg-mute);
-  opacity: 0.5;
-}
-
-.rmm-item.cur .rmm-dot {
-  background: var(--accent);
-  opacity: 1;
-}
-
-.rmm-item.cur .rmm-name {
-  color: var(--fg);
-}
-
-.rmm-tag {
-  flex: none;
-  padding: 0 var(--sp-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  color: var(--fg-mute);
-  font-size: 9.5px;
-  white-space: nowrap;
-}
-
-.rmm-item.cur .rmm-tag {
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-
-.rmm-foot {
-  margin-top: var(--sp-1);
-  padding: var(--sp-1) var(--sp-2) 3px;
-  border-top: 1px solid var(--border-soft);
-  color: var(--fg-mute);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-/* 收件箱入口（实施-28 T2/T5）：与用户块同区，位置稳定但排在上面 */
-.rail-inbox {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  padding: var(--sp-2) var(--sp-3);
-  background: transparent;
-  border: none;
-  border-top: 1px solid var(--border-soft);
-  color: var(--fg-dim);
-  font-size: var(--fs-sm);
-  text-align: left;
-}
-
-.rail-inbox:hover,
-.rail-inbox.on {
-  color: var(--fg);
-  background: var(--bg-2);
-}
-
-.rail-inbox-badge {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  color: var(--bg-0);
-  background: var(--accent);
-  border-radius: var(--r-full);
-  padding: 0 var(--sp-1);
-  min-width: 16px;
-  text-align: center;
+/*
+ * 窄栏（≤ 230px）：标题优先。相对时间与分支图标让位
+ *（时间仍在会话菜单里），状态点不动 —— 它是后台运行状态的主入口。
+ */
+@container railbody (max-width: 230px) {
+  .srow-time,
+  .srow-btoggle-ico,
+  .proj-group {
+    display: none;
+  }
+  .srow {
+    padding-left: calc(14px + var(--branch-depth, 0) * var(--sp-2));
+  }
 }

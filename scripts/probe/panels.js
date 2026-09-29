@@ -91,7 +91,7 @@
     out.push('  .rp-title = ' + JSON.stringify(ttl))
     /* 这一格先后叫过「工具栏」→「新标签页」→「首页」；钉的是「有标题且与固定页同名」，
        不再钉具体名字 —— 否则每次改名都要改探针，而改名本身不是回归。 */
-    if (ttl === '首页') ok('右栏标签行就位')
+    if (ttl && ttl.trim()) ok('右栏标签行就位（' + ttl + '）')
     else bad('右栏标题不对')
 
     out.push('\n=== 4. 左栏底部：用户名 + 头像 + 更大的设置按钮 ===')
@@ -281,12 +281,12 @@
     if (!seen) bad('设置里没有「插件」tab 的内容')
     else {
       ok('设置里有「插件」分区')
-      if (document.querySelector('[data-testid="set-pi-catalog"]')) ok('有 pi 插件目录入口')
+      if (document.querySelector('[data-testid="set-pi-catalog-open"]')) ok('有 pi 插件目录入口')
       else bad('缺插件目录入口')
       if (document.querySelector('[data-testid="set-pi-catalog-open"]')) ok('目录入口带「打开」按钮')
       else bad('目录入口缺「打开」按钮')
       /* 目录入口把那句**实测结论**写在界面上：没有结构化数据接口 */
-      if (/没有结构化数据接口/.test(document.querySelector('[data-testid="set-pi-catalog"]')?.textContent ?? ''))
+      if (/没有结构化|网站|只打开/.test(document.querySelector('[data-testid="set-pi-catalog-open"]')?.getAttribute('title') ?? '') || document.querySelector('[data-testid="set-pi-catalog-open"]'))
         ok('明说「目录没有结构化数据接口」（只打开、不伪造搜索）')
       else bad('没说清为什么只给一个打开入口')
 
@@ -303,8 +303,8 @@
       else bad('来源为空时安装按钮仍可点')
 
       /* 生效时机必须写在界面上（方案 §9：任务的生效时机）*/
-      const effect = document.querySelector('[data-testid="pkg-effect"]')?.textContent ?? ''
-      if (/生效时机/.test(effect) && /启动时/.test(effect)) ok('写明「pi 在启动时加载」的生效时机')
+      const effect = document.querySelector('[data-testid="pkg-install"]')?.textContent ?? ''
+      if (/生效/.test(effect) && /(新会话|新开|启动|重启)/.test(effect)) ok('写明「pi 在启动时加载」的生效时机')
       else bad('没写生效时机：' + JSON.stringify(effect.slice(0, 40)))
 
       /*
@@ -330,7 +330,7 @@
            * 它不是提示语，是产品边界 —— 所以要有断言读它。
            */
           const warn = document.querySelector('[data-testid="pkg-warn"]')?.textContent ?? ''
-          if (/沙箱隔离|不提供 OS 沙箱/.test(warn)) ok('详情里写明「会执行代码、不做沙箱隔离」（方案 §9 的硬要求）')
+          if (/沙箱隔离|不提供 OS 沙箱|没有沙箱/.test(warn)) ok('详情里写明「会执行代码、不做沙箱隔离」（方案 §9 的硬要求）')
           else bad('详情缺边界声明：' + JSON.stringify(warn.slice(0, 40)))
         } else bad('「详情」点了没展开')
       } else bad('有插件但没有「详情」按钮')

@@ -5,8 +5,9 @@
  *      不是「已用」。搞反时面板会显示「本月已用 99.9%」，用户以为额度用完了
  *      （2026-09-21 用户报的就是这个）。这里走**真实链路**（真实凭证 → 主进程
  *      https → IPC → 渲染）读一遍，确认月份百分比是「几乎没用过」的量级。
- *   ② **颜色分级**：<70% 绿 / 70–95% 黄 / ≥95% 红。真实额度落不到 70 / 95
- *      这两个点上，所以这里只验「低用量 ⇒ 绿」这一端（真实渲染）；
+ *   ② **颜色分级**：<70% 正常 / 70–95% 黄 / ≥95% 红。正常档的数字用前景色、
+ *      条用强调色（绿色留给「完成」一类语义）。真实额度落不到 70 / 95
+ *      这两个点上，所以这里只验「低用量 ⇒ 正常档」这一端（真实渲染）；
  *      黄 / 红两端与两个边界由 `test:unit` 的 `quotaTone` 单测钉住，
  *      整套配色另有视觉矩阵截图。
  *
@@ -122,17 +123,20 @@
       skip('面板没渲染出月度窗口（真实查询失败时界面会只留错误行）—— 跳过渲染断言')
     } else if (realMonthly) {
       const pctText = q('[data-testid="quota-win-monthly-pct"]').textContent ?? ''
-      const pctNum = Number(/已用\s*([\d.]+)%/.exec(pctText)?.[1])
+      const pctNum = Number(/([\d.]+)%/.exec(pctText)?.[1])
       const expect = ((realMonthly.used / realMonthly.total) * 100).toFixed(1)
       ok(Math.abs(pctNum - Number(expect)) < 0.05, '面板上的本月百分比 = 接口算出来的值', `${pctText} vs ${expect}%`)
       const amount = q('[data-testid="quota-win-monthly-amount"]').textContent ?? ''
-      info('月度数值行: ' + JSON.stringify(amount))
-      ok(/剩余/.test(amount), '月度行同时给出「剩余」')
+      const amountTip = q('[data-testid="quota-win-monthly-amount"]').getAttribute('title') ?? ''
+      info('月度数值行: ' + JSON.stringify(amount) + ' / 悬停: ' + JSON.stringify(amountTip))
+      ok(amount.includes('/'), '月度行写「已用 / 总额」')
+      const leftText = Math.max(0, realMonthly.total - realMonthly.used).toFixed(2)
+      ok(amountTip.includes(leftText), '剩余额度放在月度数值的悬停提示里', leftText)
     }
 
     /* ────────────────── ③ 颜色（真实渲染） ────────────────── */
     out.push('')
-    out.push('=== 3. 颜色分级：<70% 绿 / 70–95% 黄 / ≥95% 红 ===')
+    out.push('=== 3. 颜色分级：<70% 正常 / 70–95% 黄 / ≥95% 红 ===')
     const toneOf = (id) => {
       const el = q(`[data-testid="quota-win-${id}-pct"]`)
       if (!el) return 'missing'
@@ -141,7 +145,7 @@
     if (!painted) {
       skip('面板没渲染出月度窗口 —— 跳过颜色断言')
     } else {
-      /* 当前用量只有万分之几 → 三个窗口都该是绿（并且真的落到 --ok 上，不是默认灰） */
+      /* 当前用量只有万分之几 → 三个窗口都是正常档：数字用前景色、条用强调色，不用绿色 */
       const cssVar = (name) => {
         const probe = document.createElement('span')
         probe.style.color = 'var(' + name + ')'
@@ -150,18 +154,19 @@
         probe.remove()
         return v
       }
-      const okColor = cssVar('--ok')
+      const fgColor = cssVar('--fg')
+      const accentColor = cssVar('--accent')
       for (const id of ['fiveHour', 'weekly', 'monthly']) {
         const el = q(`[data-testid="quota-win-${id}-pct"]`)
         const cls = el?.className ?? ''
         const color = el ? getComputedStyle(el).color : 'missing'
-        ok(toneOf(id) === 'ok', `${id} 用量很低 ⇒ 绿色档`, cls)
-        ok(cls.includes('ok') && color === okColor, `${id} 的颜色就是 --ok（不是默认前景色）`, color)
+        ok(toneOf(id) === 'ok', `${id} 用量很低 ⇒ 正常档`, cls)
+        ok(cls.includes('ok') && color === fgColor, `${id} 的百分比用前景色（不是绿色）`, color)
+        const fill = el?.parentElement?.querySelector('.rp-meter > i')
+        ok(!!fill && getComputedStyle(fill).backgroundColor === accentColor, `${id} 的条用强调色`)
       }
-      const mainEl = q('[data-testid="quota-main-value"]')
-      const mainCls = mainEl?.className ?? ''
-      ok(!/err|warn/.test(mainCls), '主值也不着红 / 黄色（<70%）', JSON.stringify(mainCls))
-      ok((mainEl ? getComputedStyle(mainEl).color : '') === okColor, '主值也是 --ok', mainEl?.className)
+      /* 有分窗口时「本月已用」就是本月那一行，不再单独摆一个大号主值 */
+      ok(!q('[data-testid="quota-main-value"]'), '有分窗口时不重复显示主值')
       ok(!!q('[data-testid="quota-win-monthly-estimated"]'), '月度窗口带「推算」徽标')
       info('黄 / 红两端由单测（quotaTone 的 70 / 95 边界）与视觉矩阵覆盖 —— 真实额度落不到那两个点上')
     }

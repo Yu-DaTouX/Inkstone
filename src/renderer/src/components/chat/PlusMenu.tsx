@@ -336,7 +336,7 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
                   }}
                 >
                   <span className="mode-item-label">{cap.title}</span>
-                  <span className="mode-item-desc">{cap.hint}</span>
+                  <span className="mode-item-desc" title={cap.hint}>{cap.hint.split(/[。；;（(\n]/)[0].slice(0, 20)}</span>
                 </button>
               ))
             )}

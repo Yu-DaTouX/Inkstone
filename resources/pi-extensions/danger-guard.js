@@ -1,0 +1,214 @@
+/**
+ * 高危操作确认 —— 薄层侧：判定 + 向宿主要一次确认。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * 范围（有意收得很窄）
+ * ══════════════════════════════════════════════════════════════════
+ * 只拦「做错了很难挽回」的那几类：大范围递归删除、丢弃未提交改动 / 强推的 Git 操作、
+ * 删库、格式化磁盘、把网络内容直接交给 shell 执行、关机重启、发布包，以及写系统或
+ * 凭证目录。普通的写文件、跑测试、装依赖都不问。
+ *
+ * ⚠️ 这是**提醒式的护栏，不是沙箱**：靠命令文本识别，绕得开（拼接、编码、脚本里再调用）。
+ *    它的作用是让「模型顺手敲出一条毁灭性命令」在执行前多一次人眼确认，不承诺挡住恶意。
+ *
+ * ── 为什么在薄层 ──
+ * `tool_call` 钩子是唯一能在工具执行前看到参数并拦下它的地方（与 work-mode.js 同理）。
+ * 确认框在宿主：这里用宿主注入的 `YAN_CLI_URL` 发一条 `danger.confirm`，宿主弹框，
+ * 答复回来后才决定放行还是 `{ block: true }`。
+ *
+ * ── 失败方向 ──
+ * 命中高危却连不上宿主 / 没有窗口 / 超时 → **拦下**（宁可让模型换路，也不在没人看着时放行）。
+ * 没命中的调用不产生任何网络请求，对正常工作零开销。
+ *
+ * `YAN_DANGER_GUARD=0` 只给自动化测试用，关闭整个护栏。
+ */
+
+import { posix } from 'node:path'
+import { homedir } from 'node:os'
+
+/** 确认框等用户的最长时间；超过就当作拒绝 */
+const CONFIRM_TIMEOUT_MS = 4 * 60 * 1000
+
+/* ------------------------------------------------------------------ 判定 */
+
+/** 目标路径是不是「大范围」：根、家目录、上级目录、通配、浅层绝对路径 */
+export function isBroadTarget(raw) {
+  let target = String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')
+  if (!target) return false
+  target = target.replace(/\\/g, '/').toLowerCase()
+  if (['/', '/*', '~', '~/', '~/*', '.', './', './*', '*', '*.*', '..', '../', '../*'].includes(target)) return true
+  if (/^(~|\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)(\/|$)/.test(target)) return true
+  if (target.split('/').includes('..')) return true
+  /* 绝对路径：盘符或以 / 开头，且不超过两层（/home/x、c:/users、/usr/local） */
+  if (/^([a-z]:)?\//.test(target)) {
+    const segments = target.replace(/^[a-z]:/, '').split('/').filter(Boolean)
+    return segments.length <= 2
+  }
+  return false
+}
+
+const SEGMENT_SPLIT = /&&|\|\||[;|\n]/
+
+function tokens(segment) {
+  return segment.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
+}
+
+/** 命令段的可执行名与参数：跳过 sudo / 环境变量前缀，去掉目录和 .exe */
+function commandOf(segment) {
+  const parts = tokens(segment)
+  let start = 0
+  while (start < parts.length && (/^sudo$/i.test(parts[start]) || /^\w+=/.test(parts[start]))) start += 1
+  const head = (parts[start] ?? '').toLowerCase().replace(/^.*[\\/]/, '').replace(/\.exe$/, '')
+  return { head, args: parts.slice(start + 1) }
+}
+
+/** 一条命令段里的递归删除：返回被命中的大范围目标，没有则 null */
+function recursiveDeleteTarget({ head, args }) {
+  let recursive = false
+  if (head === 'rm') {
+    recursive = args.some((a) => /^-[a-z]*r[a-z]*$/i.test(a) || a === '--recursive' || /^-recurse$/i.test(a))
+  } else if (['rmdir', 'rd', 'del', 'erase'].includes(head)) {
+    recursive = args.some((a) => /^\/s$/i.test(a) || /^-recurse$/i.test(a))
+  } else if (['remove-item', 'ri'].includes(head)) {
+    recursive = args.some((a) => /^-recurse$/i.test(a))
+  } else {
+    return null
+  }
+  if (!recursive) return null
+  const targets = args.filter((a) => !/^(-|\/[a-z]$)/i.test(a) && !/^-{1,2}\w/.test(a))
+  return targets.find(isBroadTarget) ?? null
+}
+
+/** 只在命令位（而不是任意参数里）出现才算：`grep reboot log` 不是重启 */
+const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
+
+/** `bash -c "…"` / `powershell -Command "…"` / `cmd /c …`：取出脚本部分再判一次 */
+const SHELL_WRAPPER = /^\s*(?:sudo\s+)?(?:\S*[\\/])?(?:bash|sh|zsh|dash|powershell|pwsh|cmd)(?:\.exe)?\s+(?:-\S+\s+)*?(?:-c|-command|\/c)\s+([\s\S]+)$/i
+
+/** 命令文本里的高危模式（整条匹配，不分段） */
+const COMMAND_RULES = [
+  { re: /\bgit\s+(?:-\S+\s+)*push\b[^;&|\n]*\s(?:--force(?!-with-lease)\b|-f\b|--mirror\b)/i, label: 'Git 强制推送，会覆盖远端历史' },
+  { re: /\bgit\s+reset\b[^;&|\n]*--hard\b/i, label: 'git reset --hard，会丢弃未提交的改动' },
+  { re: /\bgit\s+clean\b[^;&|\n]*\s(?:-[a-z]*f|--force\b)/i, label: 'git clean -f，会永久删除未跟踪的文件' },
+  { re: /\bgit\s+(?:checkout|restore)\b[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)/i, label: '还原整个工作区，会丢弃未提交的改动' },
+  { re: /\bgit\s+stash\s+(?:clear|drop)\b/i, label: '删除 Git stash 里暂存的改动' },
+  { re: /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i, label: '删除数据库或数据表' },
+  { re: /\b(?:mkfs(?:\.\w+)?|diskpart|fdisk|shred)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat\s+[a-z]:/i, label: '格式化或直接写磁盘' },
+  { re: /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+)?(?:\S*[\\/])?(?:sh|bash|zsh|iex|invoke-expression|powershell|pwsh)\b/i, label: '把网络内容直接交给 shell 执行' },
+  { re: /\bchmod\s+-R\b[^;&|\n]*\s\/(?:\s|$)|\bchown\s+-R\b[^;&|\n]*\s\/(?:\s|$)/i, label: '递归修改根目录的权限或属主' },
+  { re: /\breg(?:\.exe)?\s+delete\b/i, label: '删除注册表项' },
+  { re: /\bnpm\s+publish\b/i, label: '发布 npm 包（对外发布）' }
+]
+
+/** 写入这些位置视为高危（写在项目外时才算） */
+const SENSITIVE_PATH =
+  /\/(?:\.ssh|\.aws|\.gnupg|\.kube)(?:\/|$)|^\/(?:etc|usr|bin|sbin|boot|lib)(?:\/|$)|^[a-z]:\/windows(?:\/|$)|^[a-z]:\/program files|\/\.(?:bashrc|zshrc|profile|gitconfig|npmrc)$|\/start menu\/programs\/startup/i
+
+/**
+ * 统一成小写、正斜杠，并**归一化 `..` 与 `.`**：
+ * 不做这一步，`项目/../../Windows/…` 会因为前缀仍是项目根而被当成「在项目里」。
+ * 盘符单独拆出来，否则 `..` 会把 `c:` 当成一层目录弹掉。
+ */
+function normalizePath(p) {
+  const text = String(p ?? '').replace(/\\/g, '/').toLowerCase()
+  const match = /^([a-z]:)?(.*)$/.exec(text)
+  const drive = match?.[1] ?? ''
+  const rest = match?.[2] ?? ''
+  return drive + (rest ? posix.normalize(rest) : '')
+}
+
+/** 是不是绝对路径（POSIX 根或带盘符），不依赖当前系统的路径规则 */
+function isAbsolutePath(p) {
+  return /^(?:[a-z]:)?[\\/]/i.test(p) || /^[a-z]:/i.test(p)
+}
+
+/** 分段扫描一段 shell 文本；`bash -c "…"` 之类的包装最多再往里看两层 */
+function scanCommand(command, reasons, depth = 0) {
+  for (const segment of command.split(SEGMENT_SPLIT)) {
+    const cmd = commandOf(segment)
+    const hit = recursiveDeleteTarget(cmd)
+    if (hit) reasons.push(`递归删除大范围目录：${hit}`)
+    if (POWER_COMMANDS.has(cmd.head)) reasons.push('关机或重启')
+    if (depth < 2) {
+      const wrapped = SHELL_WRAPPER.exec(segment)
+      if (wrapped) scanCommand(wrapped[1].trim().replace(/^["']|["']$/g, ''), reasons, depth + 1)
+    }
+  }
+  for (const rule of COMMAND_RULES) if (rule.re.test(command)) reasons.push(rule.label)
+}
+
+/**
+ * 判定一次工具调用是否高危。返回原因数组（空 = 不需要确认）。
+ * `cwd` 用来判断写入是否落在项目外。
+ */
+export function detectDanger(toolName, input, cwd) {
+  const reasons = []
+  const name = String(toolName ?? '')
+  if (name === 'bash') {
+    const command = String(input?.command ?? '')
+    scanCommand(command, reasons)
+    if (/\bsudo\b/i.test(command) && reasons.length === 0 && /\brm\b/i.test(command)) reasons.push('以管理员身份删除文件')
+  } else if (name === 'write' || name === 'edit' || name === 'multi_edit' || name === 'apply_patch') {
+    const raw = input?.path ?? input?.file_path ?? input?.filePath
+    if (typeof raw === 'string' && raw.trim()) {
+      const base = cwd || process.cwd()
+      const abs = isAbsolutePath(raw) ? raw : `${String(base).replace(/[\\/]+$/, '')}/${raw}`
+      const normalized = normalizePath(abs)
+      const root = normalizePath(base).replace(/\/$/, '')
+      const inside = normalized === root || normalized.startsWith(`${root}/`)
+      const home = normalizePath(homedir()).replace(/\/$/, '')
+      /* 家目录下的凭证 / 配置：统一成 ~/ 再比 */
+      const shown = normalized.startsWith(`${home}/`) ? `~${normalized.slice(home.length)}` : normalized
+      if (!inside && (SENSITIVE_PATH.test(normalized) || SENSITIVE_PATH.test(shown.replace(/^~/, '')))) {
+        reasons.push(`修改项目之外的系统或凭证文件：${abs}`)
+      }
+    }
+  }
+  return [...new Set(reasons)]
+}
+
+/* ------------------------------------------------------------------ 向宿主确认 */
+
+async function askHost(toolName, input, reasons) {
+  const url = process.env.YAN_CLI_URL
+  const token = process.env.YAN_CLI_TOKEN
+  const sessionId = process.env.YAN_SESSION_ID
+  const projectId = process.env.YAN_PROJECT_ID
+  if (!url || !token || !sessionId || !projectId) return { allowed: false, why: '宿主确认通道不可用' }
+  const detail =
+    toolName === 'bash'
+      ? String(input?.command ?? '')
+      : String(input?.path ?? input?.file_path ?? input?.filePath ?? '')
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        apiVersion: 1,
+        command: 'danger.confirm',
+        params: { tool: toolName, detail: detail.slice(0, 2000), reasons },
+        sessionId,
+        projectId
+      }),
+      signal: AbortSignal.timeout(CONFIRM_TIMEOUT_MS)
+    })
+    const payload = await response.json()
+    if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
+    return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? '没有得到用户确认' : '用户拒绝了这次操作' }
+  } catch (err) {
+    return { allowed: false, why: `没能取得用户确认（${String(err?.message ?? err).slice(0, 80)}）` }
+  }
+}
+
+export default function dangerGuardExtension(pi) {
+  pi.on('tool_call', async (event, ctx) => {
+    if (process.env.YAN_DANGER_GUARD === '0') return undefined
+    const name = String(event?.toolName ?? '')
+    if (!name) return undefined
+    const reasons = detectDanger(name, event?.input ?? {}, ctx?.cwd)
+    if (reasons.length === 0) return undefined
+    const answer = await askHost(name, event?.input ?? {}, reasons)
+    if (answer.allowed) return undefined
+    return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
+  })
+}

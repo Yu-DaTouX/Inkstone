@@ -261,7 +261,8 @@
   ok(!!tActive && tActive.textContent.includes('任务 3'), '当前指向第 3 个（第一个未完成）')
   ok(qa('.rp-todo.active').length === 1, '列表里恰好一条标为 active')
   const tLabel = q('[data-testid="todo-active-label"]')
-  ok(!!tLabel && /正在进行/.test(tLabel.textContent), '当前那条行内显示「正在进行」')
+  /* 进行中改由勾选框里的强调色方点表达，不再写「正在进行」字样 */
+  ok(!!tLabel && !!tLabel.querySelector('*'), '当前那条的状态槽里有进行中标记')
 
   /* ---- 回合停下来：未完成的那些不该再冒充「正在进行」---- */
   /*
@@ -346,8 +347,8 @@
        * 曾经是三列（16px 状态槽打头），后来加了左侧运行标记槽 —— 断言同步改了，
        * 否则会一直假失败（这个场景当时就是因此没进 `npm run check`）。
        */
-      ok(cols.length === 4, `四列布局（实际 ${cs.gridTemplateColumns}）`)
-      ok(Math.abs(cols[1] - 16) <= 1, `状态槽 16px（实际 ${cols[1]}px）`)
+      ok(cols.length === 3, `三列布局（状态槽 / 文本 / 状态说明）（实际 ${cs.gridTemplateColumns}）`)
+      ok(Math.abs(cols[0] - 12) <= 1, `状态槽 12px（实际 ${cols[0]}px）`)
       ok(parseFloat(cs.columnGap) >= 8, `状态槽与文本间距 ≥ 8px（实际 ${cs.columnGap}）`)
       const box = row.querySelector('.rp-box')
       if (box) {

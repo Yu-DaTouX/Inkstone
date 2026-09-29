@@ -119,15 +119,8 @@
 
     const todos1 = store.getState().todos
     log('  todos = ' + JSON.stringify(todos1.map((t) => ({ text: t.text, done: t.done }))))
-    /*
-     * 先把收起里的工具组全部展开。
-     *
-     * ⚠️ 工具组默认收起、且**收起时内部的行不在 DOM 里**（`tgroup-body` 根本不渲染）。
-     * 所以不展开就断言 `.trow` 数量，测到的是“组是收起的”而不是“有没有这条调用”——
-     * 这条曾经把一次真实的失败（yan.mjs 语法错）衬成“模型没调工具”。
-     * 只展开一次：再点一次就是收起，后面的行会从 DOM 里消失。
-     */
-    qa('.tgroup-head').forEach((h) => click(h))
+    /* 七步及以上才折叠较早步骤；诊断时展开全部。 */
+    qa('.tgroup-fold[aria-expanded="false"]').forEach((h) => click(h))
     await sleep(500)
     /*
      * 诊断：没有工具行时必须能看出模型到底做了什么 ——

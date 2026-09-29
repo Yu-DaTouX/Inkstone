@@ -5,10 +5,41 @@ import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import { goalDisplayTitle } from '../../state/goal-view'
-import { Spinner } from '../ui'
+import { RunDot, Button } from '../ui'
+import { visibleSubagentRuns } from '../../state/subagent-view'
+import { SubagentGroup, isLive } from '../chat/SubagentCards'
 
-export function hasTaskTileContent(s: Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal'> & { hasMessageOutputs: boolean }): boolean {
-  return s.todos.length > 0 || !!s.goal?.goalId || !!s.goal?.links?.length || s.hasMessageOutputs
+export function hasTaskTileContent(
+  s: Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal'> & { hasMessageOutputs: boolean; hasSubagents?: boolean }
+): boolean {
+  return s.todos.length > 0 || !!s.goal?.goalId || !!s.goal?.links?.length || s.hasMessageOutputs || s.hasSubagents === true
+}
+
+/** 任务分区里的子代理：和清单一起回答「现在有什么在进行」 */
+function SubagentsBlock() {
+  const t = useT()
+  const runs = useStore((s) => s.subagents)
+  const session = useStore((s) => s.session)
+  const clearSubagents = useStore((s) => s.clearSubagents)
+  const sessionIds = [session?.sessionId, session?.conversationId].filter((v): v is string => !!v)
+  const visible = visibleSubagentRuns(runs, { sessionIds }).sort((a, b) => a.startedAt - b.startedAt)
+  if (!visible.length) return null
+  const finished = visible.filter((r) => !isLive(r)).length
+  return (
+    <div className="rp-subagents" data-testid="rp-subagents">
+      <div className="rp-sub-head">
+        <span>{t('sa.tag')}</span>
+        <span className="rp-count">{visible.length - finished}/{visible.length}</span>
+        <span className="spacer" />
+        {finished > 0 ? (
+          <Button size="sm" className="sa-act-btn" onClick={() => void clearSubagents()} data-testid="subagent-notes-clear">
+            {t('sa.clearFinished')}
+          </Button>
+        ) : null}
+      </div>
+      <SubagentGroup runs={visible} showTag={false} />
+    </div>
+  )
 }
 
 /** 任务完成数 / 总数（放在分区头部，不进 body） */
@@ -56,6 +87,7 @@ export function TodoSection() {
    * `isStreaming` 在工具执行期间是 false（见 shared/ipc.ts 的注释），
    * 所以两个都要看，否则「调工具的那几十秒」会被当成已经停下。
    */
+  const hasSubagents = useStore((s) => visibleSubagentRuns(s.subagents, { sessionIds: [s.session?.sessionId, s.session?.conversationId].filter((v): v is string => !!v) }).length > 0)
   const agentRunning = useStore(
     (s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true
   )
@@ -109,8 +141,8 @@ export function TodoSection() {
   }, [todos])
 
   if (todos.length === 0) {
-    if (!hasTaskTileContent({ todos, goal, hasMessageOutputs })) return null
-    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo"><GoalOutputs /></Section></>
+    if (!hasTaskTileContent({ todos, goal, hasMessageOutputs, hasSubagents })) return null
+    return <><GoalTaskSummary /><Section titleKey="rp.todo" testId="rp-todo"><SubagentsBlock /><GoalOutputs /></Section></>
   }
 
   const pct = todos.length ? (done / todos.length) * 100 : 0
@@ -160,13 +192,8 @@ export function TodoSection() {
       >
         <i style={{ width: `${pct}%` }} />
       </div>
-      {/*
-        正在进行的任务**在任务本体上显示**（用户要求：「不要单独开一栏」）。
-        这里只剩下「全部完成」的提示 —— 它不属于任何一个任务行。
-        原先这里有一行 .rp-todo-now 重复了一遍当前任务名，
-        与下面列表里那一行是同一件事，白占一行。
-      */}
-      {!active ? (
+      {/* 只有真的全部勾完才说「全部完成」；空闲但还有没做的，不是完成 */}
+      {allDone ? (
         <div className="rp-todo-all" data-testid="todo-all-done">
           <span className="rp-all-done">{t('rp.todoAllDone')}</span>
         </div>
@@ -195,24 +222,16 @@ export function TodoSection() {
               data-blocked={blocked ? '1' : '0'}
               title={todo.text}
             >
-              <span className="rp-running-mark" aria-hidden />
-              <span className="rp-box" aria-hidden>
-                {todo.done ? <Icon name="check" size={12} /> : blocked ? <Icon name="alert-circle" size={12} /> : null}
+              {/* 勾选框承载状态：完成 = 勾，进行中 = 强调色方点，受阻 = !；行尾不再重复写「已完成 / 未完成」 */}
+              <span className="rp-box" aria-hidden data-testid={isActive ? 'todo-active-label' : undefined}>
+                {todo.done ? <Icon name="check" size={12} /> : blocked ? <Icon name="alert-circle" size={12} /> : isActive ? <RunDot /> : null}
               </span>
               <span className="rp-text">{todo.text}</span>
-              {isActive ? (
-                <span className="rp-state doing" data-testid="todo-active-label">
-                  <Spinner className="rp-now-spin" />
-                  {t('rp.doing')}
-                </span>
-              ) : blocked ? (
+              {blocked ? (
                 <span className="rp-state blocked" data-testid="todo-blocked-label">
-                  <Icon name="alert-circle" size={12} />
                   {t('rp.blocked')}
                 </span>
-              ) : (
-                <span className="rp-state">{todo.done ? t('rp.done') : t('rp.open')}</span>
-              )}
+              ) : null}
             </div>
           )
         })}
@@ -290,6 +309,7 @@ export function TodoSection() {
         产物 / 参考跟着任务卡片（用户要求：三合一看成一件事，默认保留任务）。
         放在清单与历史之后 —— 它们是任务的**附属信息**，先看完任务本身。
       */}
+      <SubagentsBlock />
       <GoalOutputs />
     </Section>
     </>

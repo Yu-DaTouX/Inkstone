@@ -28,6 +28,8 @@ const SUBAGENT_SYSTEM_PROMPT = [
 export interface SubagentServiceDeps {
   onChange(run: SubagentRun): void
   onRemove(id: string): void
+  /** 运行收口后（终态、差异已定）回调一次 */
+  onFinished?(run: SubagentRun): void
   /** 父会话的活动档案（按活动配置模型时用） */
   resolveAgentProfile(id: string): Promise<AgentProfileState>
 }
@@ -50,7 +52,8 @@ export class SubagentService {
       piBin: s.piBin,
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       onChange: (run) => this.deps.onChange(run),
-      onRemove: (id) => this.deps.onRemove(id)
+      onRemove: (id) => this.deps.onRemove(id),
+      onFinished: (run) => this.deps.onFinished?.(run)
     })
     return this.controller
   }

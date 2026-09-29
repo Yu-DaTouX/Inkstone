@@ -92,7 +92,8 @@
     Math.abs(hDefault - window.innerHeight * 0.5) <= 2,
     `默认高度是半窗高（${Math.round(hDefault)}px）`
   )
-  ok(term.getBoundingClientRect().width <= window.innerWidth * 0.5 + 2, '终端默认宽度不超过半窗宽')
+  /* 命令块表整列同宽（设计规范 §3.5），不再限半窗宽；不超出中栏即可 */
+  ok(term.getBoundingClientRect().width <= (q('.center')?.getBoundingClientRect().width ?? window.innerWidth) + 2, '终端默认宽度不超出中栏')
 
   out.push('')
   out.push('=== 2. 调整窗口大小 ===')

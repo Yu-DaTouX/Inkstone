@@ -85,7 +85,7 @@
     ok(!!dialog, '点击后弹出确认框')
     const message = dialog?.querySelector('.modal-message')?.textContent ?? ''
     ok(message.includes('已归档项目'), '确认框说明会话进「已归档项目」')
-    ok(message.includes('磁盘上的目录不会被改动'), '确认框说明磁盘目录不动')
+    ok(/磁盘(上的)?目录(不会被改动|不受影响)/.test(message), '确认框说明磁盘目录不动')
 
     /* ---- 取消：什么都不该发生 ---- */
     const cancel = dialog?.querySelector('.modal-foot .btn')

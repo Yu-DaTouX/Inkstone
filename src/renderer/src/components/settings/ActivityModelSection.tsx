@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ACTIVITY_MODEL_SCOPE_NOTE, type ActivityModelRow } from '../../../../shared/activity-model'
 import type { AgentActivity } from '../../../../shared/agent-profile'
+import { SettingRow } from '../ui'
 
 /**
  * 按活动用不同模型（实施-25 P18）。
@@ -63,51 +64,42 @@ export function ActivityModelSection(): React.JSX.Element {
 
   return (
     <div className="ui-rows" data-testid="set-activity-models">
-      <div className="ui-row set-row-col">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('am.title')}</div>
-          <div className="ui-row-desc">{t('am.desc')}</div>
-        </div>
-        <div className="ui-row-desc am-scope" data-testid="am-scope">
-          {ACTIVITY_MODEL_SCOPE_NOTE}
-        </div>
-        <div className="pkg-install-row">
-          <input
-            className="ui-input"
-            data-testid="am-default"
-            value={defaultModel}
-            placeholder={t('am.defaultPlaceholder')}
-            aria-label={t('am.default')}
-            onChange={(event) => setDefaultModel(event.target.value)}
-            onBlur={() => void setDefault(defaultModel)}
-          />
-        </div>
+      {/* 只管配置：当前会话用哪个模型仍由输入框里的模型选择器决定（边界说明放在悬停提示里） */}
+      <div className="ui-row-desc am-desc" title={ACTIVITY_MODEL_SCOPE_NOTE} data-testid="am-scope">
+        {t('am.desc')}
       </div>
-
-      <div className="ui-row set-row-col">
-        <div className="am-list" data-testid="am-list">
-          {rows.map((row) => (
-            <div className="am-item" key={row.activity} data-testid={`am-row-${row.activity}`}>
-              <span className="am-name" data-testid={`am-name-${row.activity}`}>
-                {t(`agentProfile.${row.activity}`)}
-              </span>
-              <input
-                className="ui-input"
-                data-testid={`am-input-${row.activity}`}
-                defaultValue={row.configured ?? ''}
-                placeholder={t('am.followDefault')}
-                aria-label={row.activity}
-                onBlur={(event) => void setOne(row.activity, event.target.value)}
-              />
-              <span
-                className={`am-note ${row.resolution.fellBack ? 'fell-back' : ''}`}
-                data-testid={`am-note-${row.activity}`}
-              >
-                {row.resolution.note}
-              </span>
-            </div>
-          ))}
-        </div>
+      <SettingRow name={t('am.default')}>
+        <input
+          className="ui-input"
+          data-testid="am-default"
+          value={defaultModel}
+          placeholder={t('am.defaultPlaceholder')}
+          aria-label={t('am.default')}
+          onChange={(event) => setDefaultModel(event.target.value)}
+          onBlur={() => void setDefault(defaultModel)}
+        />
+      </SettingRow>
+      <div className="am-list" data-testid="am-list">
+        {rows.map((row) => (
+          <SettingRow
+            key={row.activity}
+            data-testid={`am-row-${row.activity}`}
+            name={<span data-testid={`am-name-${row.activity}`}>{t(`agentProfile.${row.activity}`)}</span>}
+            desc={row.resolution.fellBack ? (
+              <span className="am-note fell-back" data-testid={`am-note-${row.activity}`}>{row.resolution.note}</span>
+            ) : undefined}
+          >
+            <input
+              className="ui-input"
+              data-testid={`am-input-${row.activity}`}
+              defaultValue={row.configured ?? ''}
+              placeholder={t('am.followDefault')}
+              title={row.resolution.note}
+              aria-label={row.activity}
+              onBlur={(event) => void setOne(row.activity, event.target.value)}
+            />
+          </SettingRow>
+        ))}
       </div>
 
       {notice ? (

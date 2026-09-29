@@ -9,7 +9,7 @@ import { shortProject } from './rail-utils'
 import { RailUser } from './RailUser'
 import { ancestorPaths, useSidebarValue } from './sidebar-state'
 import { buildBranchIndex } from '../../../../shared/session-map'
-import { Spinner } from '../ui'
+import { RunDot } from '../ui'
 import { type TrashNotice, TrashNoticeBar, SessionDeleteDialog, ProjectRemoveDialog } from './RailDialogs'
 import { SessionRow } from './SessionRow'
 
@@ -112,6 +112,8 @@ export function Rail() {
   const t = useT()
   const sessions = useStore((s) => s.sessions)
   const session = useStore((s) => s.session)
+  /* 只读打开的会话没有接管运行实例，`session` 仍是那个在跑的会话；高亮要跟着正在看的那条 */
+  const viewingPath = useStore((s) => s.peekedPath ?? s.session?.sessionFile)
   const switchSession = useStore((s) => s.switchSession)
   const newSession = useStore((s) => s.newSession)
   const refreshSessions = useStore((s) => s.refreshSessions)
@@ -164,18 +166,8 @@ export function Rail() {
   const refreshSpaces = useStore((s) => s.refreshSpaces)
 
   const [query, setQuery] = useState('')
-  /*
-   * 搜索的两个焦点锚点。
-   *
-   * 为什么要它们：打开搜索时输入框是 `autoFocus`（焦点自然在那儿），
-   * 但**清空/关掉之后焦点就没人管了** —— 输入框一卸载，焦点掉回 body，
-   * 键盘用户得从头 Tab 一遍才能回到左栏。
-   *   · 清空（✕）后仍想继续搜 → 焦点回输入框
-   *   · 关掉搜索（Esc）后 → 焦点还给那个开关按钮
-   */
+  /* 搜索框常驻；点清空（✕）后焦点留在输入框，方便继续搜 */
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchBtnRef = useRef<HTMLButtonElement>(null)
-  const [searching, setSearching] = useState(false)
   const [projectsOpen, setProjectsOpen] = useSidebarValue('projects-open', true)
   const [collapsed, setCollapsed] = useSidebarValue<string[]>('collapsed-projects', [])
   /** 哪些项目已点开「更多会话」（按项目 id 记；默认只显示前 SESSION_PREVIEW 条） */
@@ -294,7 +286,7 @@ export function Rail() {
 
   useEffect(() => {
     const clearCurrent = (): void => {
-      const path = useStore.getState().session?.sessionFile
+      const path = useStore.getState().peekedPath ?? useStore.getState().session?.sessionFile
       if (path) setUnread((prev) => prev.includes(path) ? prev.filter((p) => p !== path) : prev)
     }
     window.addEventListener('focus', clearCurrent)
@@ -419,7 +411,7 @@ export function Rail() {
       return {
         id: `global:${cwd}`,
         cwd,
-        label: cwd === '—' ? t('rail.local') : `${t('rail.global')} · ${shortProject(cwd)}`
+        label: cwd === '—' ? t('rail.local') : shortProject(cwd)
       }
     }
 
@@ -452,7 +444,7 @@ export function Rail() {
     for (const cwd of settings?.recentCwds ?? []) {
       const alreadyShown = [...byProject.values()].some((project) => project.cwd.toLowerCase() === cwd.toLowerCase())
       if (!alreadyShown && (!q || (projectNames[cwd] || cwd).toLowerCase().includes(q))) {
-        addProject({ id: `global:${cwd}`, cwd, label: `${t('rail.global')} · ${shortProject(cwd)}` })
+        addProject({ id: `global:${cwd}`, cwd, label: shortProject(cwd) })
       }
     }
 
@@ -908,7 +900,7 @@ export function Rail() {
     const next = new Set(lineage).add(s.path)
     const children = list.filter((c) => c.parentSession === s.path && !next.has(c.path))
     const isOpen = !!query || expanded.includes(s.path)
-    return <SessionRow key={s.path} s={s} selected={session?.sessionFile === s.path}
+    return <SessionRow key={s.path} s={s} selected={viewingPath === s.path}
       depth={depth} branchCount={children.length} branchIndex={branchIndex.get(s.path)}
       branchesOpen={isOpen} onToggleBranches={() => toggleBranch(s.path)}
       children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next, containerKey)) : null}
@@ -927,50 +919,32 @@ export function Rail() {
 
   return (
     <aside className="rail">
-      {/* ---- 顶部：品牌模式开关 + 动作 ---- */}
+      {/*
+       * 顶部：新对话 + 常驻搜索框。品牌只在标题栏出现一次；
+       * 「编码 / 日常」工作区形态在设置 · 工作区里切换。
+       */}
       <div className="rail-top">
-        {/*
-         * 顶部一行：新对话 + 搜索。品牌只在标题栏出现一次（这里不再重复）；
-         * 「编码 / 日常」工作区形态在设置 · 工作区里切换。
-         */}
         <button className="rail-action" onClick={() => void newSession({ scope: 'global' })} data-testid="rail-new">
           <Icon name="plus" size={14} />
           <span>{t('rail.new')}</span>
+          <kbd className="ui-kbd plain">Ctrl N</kbd>
         </button>
-        <button
-          ref={searchBtnRef}
-          className={`rail-icon ${searching ? 'on' : ''}`}
-          title={t('rail.search')}
-          onClick={() => {
-            setSearching((v) => !v)
-            if (searching) setQuery('')
-          }}
-          data-testid="rail-search-btn"
-        >
+        <label className="rail-search">
           <Icon name="search" size={12} />
-        </button>
-      </div>
-
-      {searching ? (
-        <div className="rail-search">
           <input
             ref={searchInputRef}
-            autoFocus
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            /*
-             * Esc：关掉搜索并把焦点还给开关。
-             * 与设置面板一致 —— 弹层关掉后焦点回到打开它的那个东西。
-             */
+            /* Esc：先清空查询，再按一次离开输入框 */
             onKeyDown={(e) => {
               if (e.key !== 'Escape') return
               e.preventDefault()
-              setQuery('')
-              setSearching(false)
-              searchBtnRef.current?.focus()
+              if (query) setQuery('')
+              else e.currentTarget.blur()
             }}
             placeholder={t('rail.search')}
+            aria-label={t('rail.search')}
             data-testid="rail-search"
           />
           {query ? (
@@ -987,33 +961,15 @@ export function Rail() {
               <Icon name="close" size={12} />
             </button>
           ) : null}
-        </div>
-      ) : null}
+        </label>
+      </div>
 
       {/* ---- 项目分组 ---- */}
       <div className="rail-section">
-        <div className="rail-section-head">
-          <button
-            className={`rail-section-title ${projectsOpen ? '' : 'collapsed'}`}
-            onClick={() => setProjectsOpen((v) => !v)}
-            data-testid="rail-projects-head"
-          >
-            <span>{t('rail.projects')}</span>
-            <Icon name="chevron-right" size={12} className="chev" />
-          </button>
-          <button
-            className="rail-icon sm"
-            title={t('rail.addProject')}
-            onClick={async () => { const cwd = await window.yan.pickCwd(); if (!cwd) return; const r = await window.yan.setCwd(cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else await useStore.getState().bootstrap() }}
-          >
-            <Icon name="plus" size={12} />
-          </button>
-        </div>
-
         <div className="rail-body">
           {projectError ? <div className="rail-empty" role="alert">{projectError}</div> : null}
           {!query && !showArchived && pinned.some((p) => sessions.some((s) => s.path === p && !archived.includes(s.cwd))) ? <div className="rail-pins">
-            <div className="rail-section-title">{t('rail.pinned')}</div>
+            <div className="rail-section-head"><span className="rail-label">{t('rail.pinned')}</span><span className="rail-label-line" aria-hidden /></div>
             {sessions.filter((s) => pinned.includes(s.path) && !archived.includes(s.cwd)).map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
           {/*
@@ -1022,13 +978,33 @@ export function Rail() {
             * 归档视图里项目区本身就在展示被移除的项目。
             */}
           {!query && !showArchived && recentSessions.length > 0 ? <div className="rail-recent" data-testid="rail-recent">
-            <div className="rail-section-title">{t('rail.recent')}</div>
+            <div className="rail-section-head"><span className="rail-label">{t('rail.recent')}</span><span className="rail-label-line" aria-hidden /></div>
             {recentSessions.map((s) => renderSession({ ...s, title: manualTitles[s.id] || titles[s.id] || s.title }, []))}
           </div> : null}
           {/* 没有归档项目时不摆「已归档项目 · 0」：一个永远指向空列表的入口只是噪音 */}
           {showArchived || archived.length > 0 ? (
             <button className="rail-archive-toggle" onClick={() => setShowArchived((v) => !v)}>{showArchived ? t('rail.backProjects') : t('rail.archivedProjects', { n: archived.length })}</button>
           ) : null}
+          <div className="rail-section-head">
+            <button
+              className={`rail-label ${projectsOpen ? '' : 'collapsed'}`}
+              onClick={() => setProjectsOpen((v) => !v)}
+              aria-expanded={projectsOpen}
+              data-testid="rail-projects-head"
+            >
+              {t('rail.projects')}
+              <Icon name="chevron-right" size={12} className="chev" />
+            </button>
+            <span className="rail-label-line" aria-hidden />
+            <button
+              className="rail-icon sm"
+              title={t('rail.addProject')}
+              aria-label={t('rail.addProject')}
+              onClick={async () => { const cwd = await window.yan.pickCwd(); if (!cwd) return; const r = await window.yan.setCwd(cwd); if (!r.ok) setProjectError(r.error || t('rail.projectError')); else await useStore.getState().bootstrap() }}
+            >
+              <Icon name="plus" size={12} />
+            </button>
+          </div>
           {total === 0 && projects.length === 0 ? (
             <div className="rail-empty">{t('rail.empty')}</div>
           ) : shown === 0 && projects.length === 0 ? (
@@ -1090,7 +1066,7 @@ export function Rail() {
                               data-testid="rail-group-running"
                               title={t('rail.runningCount', { n: groupRunning.get(group.id) ?? 0 })}
                             >
-                              <Spinner />
+                              <RunDot />
                               {groupRunning.get(group.id)}
                             </span>
                           ) : null}
@@ -1194,11 +1170,12 @@ export function Rail() {
                     <button
                       className="proj-pick"
                       data-testid="rail-project"
-                      title={`${p.label}\n${p.cwd}`}
+                      title={p.projectId ? `${p.label}\n${p.cwd}` : `${t('rail.global')}\n${p.cwd}`}
                       aria-current={p.isCurrent ? 'true' : undefined}
                       onClick={() => void switchProject(p.cwd, p.projectId)}
                     >
-                      <Icon name={pOpen ? 'folder-open' : 'folder'} size={12} />
+                      {/* 没登记成项目的目录（全局会话）用地球图标区分，名字只写目录名 */}
+                      <Icon name={p.projectId ? (pOpen ? 'folder-open' : 'folder') : 'globe'} size={12} />
                       <span className="proj-labels">
                         <span className="proj-name">{p.label}</span>
                         {p.projectId && projectRecords.find((record) => record.id === p.projectId)?.groupId ? <span className="proj-group">{projectGroups.find((g) => g.id === projectRecords.find((record) => record.id === p.projectId)?.groupId)?.name}</span> : null}
@@ -1236,7 +1213,7 @@ export function Rail() {
                         data-testid="rail-project-running"
                         title={t('rail.runningCount', { n: runningIn(p.list) })}
                       >
-                        <Spinner />
+                        <RunDot />
                         {runningIn(p.list)}
                       </span>
                     ) : null}
@@ -1304,7 +1281,7 @@ export function Rail() {
                      */
                     const roots = p.list.filter((s) => !s.parentSession || !p.list.some((x) => x.path === s.parentSession))
                     /* 当前会话若落在折叠段里，至少展开到它那一行（不能把自己藏起来） */
-                    const currentIndex = roots.findIndex((s) => s.path === session?.sessionFile)
+                    const currentIndex = roots.findIndex((s) => s.path === viewingPath)
                     const floor = Math.max(SESSION_PREVIEW, currentIndex + 1)
                     const all = shownAllSessions.includes(p.id)
                     const limit = all ? roots.length : floor
@@ -1367,7 +1344,7 @@ export function Rail() {
       >
         <Icon name="checklist" size={14} />
         <span>{t('inbox.title')}</span>
-        {inboxCount > 0 ? <b className="rail-inbox-badge">{inboxCount}</b> : null}
+        {inboxCount > 0 ? <span className="ui-badge warn rail-inbox-badge">{inboxCount}</span> : null}
       </button>
       <RailUser />
       {trashNotice ? (

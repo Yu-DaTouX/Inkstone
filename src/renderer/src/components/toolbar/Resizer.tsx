@@ -85,7 +85,11 @@ export function Resizer({ side, review = false }: { side: 'rail' | 'panel'; revi
    * 浏览器会整条丢弃 —— 表现为「这一拖完全没反应」，而且
    * 落盘时读回CSS变量又变成 NaN，最后保存了个旧值。
    */
-  const clamp = useCallback((w: number): number => Math.round(Math.min(max, Math.max(min, w))), [min, max])
+  const clamp = useCallback((w: number): number => {
+    const other = document.querySelector(side === 'rail' ? '.rightpanel' : '.rail')?.getBoundingClientRect().width ?? 0
+    const available = Math.max(min, window.innerWidth - other - 360)
+    return Math.round(Math.min(max, available, Math.max(min, w)))
+  }, [min, max, side])
   /** 从 CSS 变量读出当前实际宽度（没设置过就是设计默认值） */
   const readCurrent = useCallback((): number => {
     const el = document.documentElement

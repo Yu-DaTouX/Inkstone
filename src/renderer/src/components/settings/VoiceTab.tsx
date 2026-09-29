@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
-import { Badge, Button, Segmented, SettingRow } from '../ui'
+import { Badge, Button, Disclosure, Segmented, SettingRow } from '../ui'
 import { useStore } from '../../state/store'
 import {
   VOICE_LANGUAGES,
@@ -100,21 +100,37 @@ export function VoiceTab() {
         <div className="ui-row-desc" data-testid="voice-state">
           {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
           {status?.model ? <span className="set-path"> {status.model.label}</span> : null}
+          {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
         </div>
       </div>
 
-      {hw ? (
-        <SettingRow col name={t('voice.hardware')} desc={<>
-              {t('voice.hardwareLine', {
-                cpu: hw.cpuModel || '—',
-                threads: hw.threads,
-                free: (hw.freeMemoryMB / 1024).toFixed(1),
-                total: (hw.totalMemoryMB / 1024).toFixed(1),
-                load: hw.cpuLoad === null ? '—' : `${Math.round(hw.cpuLoad * 100)}%`
-              })}
-              {hw.gpu ? <div>{t('voice.gpuNote', { gpu: hw.gpu })}</div> : null}
-            </>} />
-      ) : null}
+      <div className="ui-row col" data-testid="voice-binary">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('voice.engine')}</div>
+          <div className="ui-row-desc">{t('voice.engineDesc')}</div>
+        </div>
+        <div className="ui-row-desc">
+          {status?.binary ? (
+            <>
+              <Badge tone="ok">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>{' '}
+              <span className="set-path">{status.binary.path}</span>
+            </>
+          ) : (
+            <Badge>{t('voice.engineMissing')}</Badge>
+          )}
+        </div>
+        <div className="btn-row">
+          <Button size="sm" disabled={busy || downloading} onClick={() => void askPlan({ kind: 'binary' })}>
+            {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
+          </Button>
+          <Button size="sm" onClick={() => void pick('binary')}>{t('voice.pickEngine')}</Button>
+          {saved?.binaryPath ? (
+            <Button size="sm" variant="ghost" onClick={() => void save({ ...saved, binaryPath: undefined })}>
+              {t('voice.clearEngine')}
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       <div className="ui-row col" data-testid="voice-models">
         <div className="ui-row-label">
@@ -153,34 +169,6 @@ export function VoiceTab() {
         <div className="btn-row">
           <Button size="sm" onClick={() => void pick('model')}>{t('voice.pickModel')}</Button>
           {saved?.model?.kind === 'file' ? <span className="set-path">{saved.model.path}</span> : null}
-        </div>
-      </div>
-
-      <div className="ui-row col" data-testid="voice-binary">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('voice.engine')}</div>
-          <div className="ui-row-desc">{t('voice.engineDesc')}</div>
-        </div>
-        <div className="ui-row-desc">
-          {status?.binary ? (
-            <>
-              <Badge tone="ok">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>{' '}
-              <span className="set-path">{status.binary.path}</span>
-            </>
-          ) : (
-            <Badge>{t('voice.engineMissing')}</Badge>
-          )}
-        </div>
-        <div className="btn-row">
-          <Button size="sm" disabled={busy || downloading} onClick={() => void askPlan({ kind: 'binary' })}>
-            {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
-          </Button>
-          <Button size="sm" onClick={() => void pick('binary')}>{t('voice.pickEngine')}</Button>
-          {saved?.binaryPath ? (
-            <Button size="sm" variant="ghost" onClick={() => void save({ ...saved, binaryPath: undefined })}>
-              {t('voice.clearEngine')}
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -244,6 +232,20 @@ export function VoiceTab() {
         <div className="ui-row-desc">{t('voice.privacy', { dir: status?.storageDir ?? '' })}</div>
         {error ? <div className="set-warn" role="alert">{error}</div> : null}
       </div>
+      <Disclosure title={t('set.advanced')}>      {hw ? (
+        <SettingRow col name={t('voice.hardware')} desc={<>
+              {t('voice.hardwareLine', {
+                cpu: hw.cpuModel || '—',
+                threads: hw.threads,
+                free: (hw.freeMemoryMB / 1024).toFixed(1),
+                total: (hw.totalMemoryMB / 1024).toFixed(1),
+                load: hw.cpuLoad === null ? '—' : `${Math.round(hw.cpuLoad * 100)}%`
+              })}
+              {hw.gpu ? <div>{t('voice.gpuNote', { gpu: hw.gpu })}</div> : null}
+            </>} />
+      ) : null}
+
+</Disclosure>
     </div>
   )
 }

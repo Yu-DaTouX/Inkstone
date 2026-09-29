@@ -52,19 +52,6 @@
   min-height: 0;
 }
 
-/* 4. 左栏 —— 话题 + 时间线 */
-.rail {
-  background: var(--bg-1);
-  border-right: 1px solid var(--border);
-  display: grid;
-  /* minmax(0,1fr) 而不是默认的 auto：
-     默认 auto 列会把 grid 列撑到子元素的 max-content（长会话名直接撑破 224px），
-     minmax(0,…) 才允许内容收缩。同理见 .center / .workspace */
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 0;
-}
-
 .search {
   display: flex;
   align-items: center;
@@ -176,10 +163,10 @@
   padding: 0 var(--sp-5);
 }
 
+/* 消息单列：身份靠用户块的 `›` 提示符与块底色表达，不再占一条角色符号槽 */
 .msg {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: var(--sp-3);
+  grid-template-columns: minmax(0, 1fr);
   margin-bottom: var(--sp-5);
 }
 /*
@@ -204,15 +191,7 @@
   margin-bottom: 0;
 }
 .msg .gutter {
-  padding-top: 1px;
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  user-select: none;
-}
-.msg.assistant .gutter {
-  color: var(--ok);
-  display: flex;
-  justify-content: center;
+  display: none;
 }
 .msg-body {
   min-width: 0;
@@ -269,7 +248,6 @@
   list-style: none;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
-  font-style: italic;
   display: flex;
   align-items: center;
   gap: 6px;

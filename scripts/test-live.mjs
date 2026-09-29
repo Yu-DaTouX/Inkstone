@@ -347,6 +347,12 @@ const CASES = {
    * 而其他场景仍然默认不上屏（用户要求测试不要弹窗）。
    */
   perf: { probe: 'scripts/probe/perf.js', delay: 16000, cost: 0, visible: true },
+  // 启动耗时：只打印渲染端性能标记，用于改动前后对比
+  bootspeed: { probe: 'scripts/probe/bootspeed.js', delay: 1500, cost: 0, visible: true },
+  // 切换会话耗时：只测量，用于改动前后对比
+  switchspeed: { probe: 'scripts/probe/switchspeed.js', delay: 1000, cost: 0, visible: true, budget: 120000 },
+  // 只等着（外部用 CDP 抓 profile 时用）：YAN_PROBE_DEBUG_PORT=9333 npm run test:live -- hold
+  hold: { probe: 'scripts/probe/hold.js', delay: 500, cost: 0, visible: true, budget: 150000 },
   // 增量推送协议：textDelta / thinkingDelta / outputDelta 的拼接与兜底
   deltas: { probe: 'scripts/probe/deltas.js', delay: 12000, cost: 0 },
   // 诊断：grid 容器的行/列是否依赖子元素数量（同类布局 bug 排查）
@@ -386,6 +392,12 @@ const CASES = {
     delay: 9000,
     cost: 0,
     wins: ['1456x1000', '1002x700', '940x700']
+  },
+  righttabs: {
+    probe: 'scripts/probe/righttabs.js',
+    delay: 9000,
+    cost: 0,
+    wins: ['1456x900', '940x700']
   },
   // 布局宽度扫描（P0-2 取基线用；只测量 + 最小可用宽度断言）
   narrowscan: {
@@ -2566,6 +2578,16 @@ function seedSessions(destRoot) {
     }
   } catch (e) {
     console.log('  ⚠️  拷贝真实会话失败：' + e.message)
+  }
+
+  /* 排查加载速度用：YAN_TEST_EXTRA_SESSIONS 里（分号分隔）的会话文件会被拷进隔离目录 */
+  for (const extra of (process.env.YAN_TEST_EXTRA_SESSIONS ?? '').split(';').filter(Boolean)) {
+    try {
+      copyFileSync(extra, join(destDir, basename(extra)))
+      n++
+    } catch (e) {
+      console.log('  ⚠️  额外会话拷贝失败：' + e.message)
+    }
   }
 
   // 合成：带任务清单的会话（确定性，不依赖真实数据）

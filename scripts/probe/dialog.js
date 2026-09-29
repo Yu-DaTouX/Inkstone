@@ -39,6 +39,11 @@
   obs.observe(document.body, { childList: true, subtree: true })
 
   out.push('=== 1. 打开设置面板 ===')
+  /* 左栏收起时它不可聚焦（刻意）；先展开，让设置按钮成为可用的「面板之外的界面」 */
+  if (q('.app')?.classList.contains('rail-off')) {
+    q('[data-testid="rail-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await new Promise((r) => setTimeout(r, 500))
+  }
   const railBtn = q('[data-testid="rail-settings"]')
   ok(!!railBtn, '左栏底部有设置入口')
   const thinkBefore = store.getState().session?.thinkingLevel

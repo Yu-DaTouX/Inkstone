@@ -1,10 +1,10 @@
 /**
- * 左栏搜索：入口稳定、过滤正确、**清空/关闭后焦点不丢**。
+ * 左栏常驻搜索：过滤正确、清空后焦点不丢。
  *
  * 对应方案 P1 4.1 的验收：
  *   · 清空搜索后恢复搜索前的展开状态（实现上搜索是「临时展开」，
  *     不改 collapsed/expanded 这两个 state，所以清空后自然恢复）
- *   · 焦点不丢（清空后回输入框；关掉后回开关按钮）
+ *   · 焦点不丢（清空后留在输入框；Esc 清空，再按一次离开）
  *   · 搜索命中能定位、状态图标有文字提示
  */
 ;(async () => {
@@ -28,20 +28,12 @@
     store.getState().setRailPinned(true)
     await sleep(500)
 
-    out.push('=== 1. 打开搜索 ===')
-    const btn = q('[data-testid="rail-search-btn"]')
-    ok(!!btn, '有搜索入口')
-    const btnBox = btn?.getBoundingClientRect()
-    click(btn)
-    await sleep(300)
+    out.push('=== 1. 常驻搜索 ===')
     const input = q('[data-testid="rail-search"]')
-    ok(!!input, '搜索框出现')
-    ok(document.activeElement === input, '打开后焦点在搜索框（autoFocus）')
-    const btnBox2 = q('[data-testid="rail-search-btn"]')?.getBoundingClientRect()
-    ok(
-      !!btnBox && !!btnBox2 && Math.abs(btnBox.x - btnBox2.x) < 1 && Math.abs(btnBox.y - btnBox2.y) < 1,
-      '搜索框出现不会把入口挤走（入口位置不变）'
-    )
+    ok(!!input, '搜索框常驻')
+    const inputBox = input?.getBoundingClientRect()
+    input?.focus()
+    ok(document.activeElement === input, '搜索框可聚焦')
 
     out.push('')
     out.push('=== 2. 过滤 + 展开状态不被破坏 ===')
@@ -74,7 +66,7 @@
     )
 
     out.push('')
-    out.push('=== 4. Esc 关闭搜索 + 焦点回开关 ===')
+    out.push('=== 4. Esc 清空并退出输入框 ===')
     setVal(q('[data-testid="rail-search"]'), 'x')
     await sleep(200)
     const input3 = q('[data-testid="rail-search"]')
@@ -82,11 +74,12 @@
       input3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     }
     await sleep(300)
-    ok(!q('[data-testid="rail-search"]'), '搜索框已关闭')
-    ok(
-      document.activeElement === q('[data-testid="rail-search-btn"]'),
-      '焦点回到搜索按钮（而不是掉回 body）'
-    )
+    ok(input3?.value === '', '首次 Esc 清空查询')
+    input3?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await sleep(100)
+    ok(document.activeElement !== input3, '再次 Esc 离开输入框')
+    const inputBox2 = q('[data-testid="rail-search"]')?.getBoundingClientRect()
+    ok(!!inputBox && !!inputBox2 && Math.abs(inputBox.x - inputBox2.x) < 1, '搜索框始终占据原位置')
 
     out.push('')
     out.push('=== 5. 会话状态图标带文字提示 ===')

@@ -696,44 +696,21 @@ html[data-theme='light'] {
 /* ---- 进度条 ---- */
 .rp-meter {
   position: relative;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--bg-4);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--bg-3);
   overflow: hidden;
-  margin: 2px 0 6px;
+  margin: 0 0 var(--sp-1);
 }
 .rp-meter i {
   display: block;
   height: 100%;
-  border-radius: 2px;
-  background: var(--ok);
+  border-radius: 1px;
+  background: var(--accent);
   /* 宽度变化要有过程 —— 勾完一条时「长过去」比瞬跳好读 */
   transition:
     width var(--dur-420) var(--mo-ease),
     background-color var(--dur-200) var(--mo-ease);
-}
-/*
- * 还没全做完时：条上有一道扫光，表示「还在推进」。
- * 与输入框边框的扫光是同一手法（两层背景：底色铺满 + 高光带扫过）。
- */
-.rp-meter.busy i {
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.5) 50%,
-    transparent 100%
-  );
-  background-size: 60px 100%;
-  background-repeat: no-repeat;
-  animation: rp-sweep var(--dur-1500) linear infinite;
-}
-@keyframes rp-sweep {
-  from {
-    background-position: -60px 0;
-  }
-  to {
-    background-position: calc(100% + 60px) 0;
-  }
 }
 
 /* ---- 当前正在做的那条（常驻一行，带 spinner）---- */
@@ -785,8 +762,6 @@ html[data-theme='light'] {
 /* 当前条目：运行标记 + 名字提亮 */
 .rp-todo.active {
   position: relative;
-  background: var(--bg-2);
-  border-radius: var(--r-xs);
 }
 .rp-todo.active .rp-text {
   color: var(--fg);
@@ -795,7 +770,6 @@ html[data-theme='light'] {
   color: var(--accent);
 }
 .rp-todo.active .rp-box {
-  /* 当前条目的空框用强调色描边（与「未完成」的黄色区分开） */
   border-color: var(--accent);
 }
 
@@ -838,25 +812,10 @@ html[data-theme='light'] {
 html[data-theme='light'] .rp-meter {
   background: var(--bg-3);
 }
-html[data-theme='light'] .rp-meter.busy i {
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.75) 50%,
-    transparent 100%
-  );
-}
 html[data-theme='light'] .rp-todo-now {
   background: var(--accent-soft);
 }
 
-/* reduced-motion：去掉扫光与闪动，但**保留**进度条本身 */
-@media (prefers-reduced-motion: reduce) {
-  .rp-meter.busy i {
-    animation: none !important;
-    background-image: none;
-  }
-}
 
 /* 58. 设置 · 模型接入页
    两条路要一眼分得开：订阅制（OAuth，需要终端里跑一次 pi）
@@ -1030,6 +989,49 @@ html[data-theme='light'] .rp-todo-now {
   animation: mo-item-in var(--mo-fast) var(--mo-ease) both;
 }
 
+/* 订阅登录进行中：面板换到该行下面占满整行（版式；控件外观来自 ui.css） */
+.auth-row:has(.auth-login-panel) {
+  flex-wrap: wrap;
+}
+.auth-login-panel {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0 var(--sp-1) 14px;
+  min-width: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+}
+.auth-login-status,
+.auth-login-device,
+.auth-login-url,
+.auth-login-options,
+.auth-login-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.auth-login-code {
+  font-family: var(--font-code);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  color: var(--fg);
+}
+.auth-login-form > .ui-input {
+  flex: 1 1 220px;
+  width: auto;
+}
+.auth-login-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  overflow-wrap: anywhere;
+}
+
 /* 填 key 的那一行 */
 .auth-actions,
 .auth-edit {
@@ -1103,11 +1105,6 @@ html[data-theme='light'] .rp-todo-now {
     opacity: 1;
   }
 }
-@keyframes trow-sweep {
-  to {
-    transform: translateX(100%);
-  }
-}
 @keyframes qpanel-bump {
   0% { opacity: 0; transform: translateY(4px) }
   15% { opacity: 1; transform: translateY(-50%) }
@@ -1121,15 +1118,6 @@ html[data-theme='light'] .rp-todo-now {
   }
 }
 
-@keyframes ubpulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
 @keyframes sheadflash {
   0%,
   100% {
@@ -1396,5 +1384,31 @@ html[data-theme='light'] .rp-todo-now {
   .ui-grow,
   .seg.sliding::before {
     transition-duration: var(--dur-1);
+  }
+}
+
+/*
+ * 启动画面：石框从右上开口处起笔、逆时针描出， 随后淡入，光标  出现后按 --mo-loop 呼吸直到就绪；
+ * 就绪后整体淡出。描画总时长 --boot-ms 由 lib/boot-splash.ts 按上次实测的就绪时间写入（缺省 --mo-slow × 2），
+ * 让描完的一刻与就绪对齐。减少动画时全局规则把它们压成终态。
+ */
+.boot { --boot-ms: calc(var(--mo-slow) * 2); }
+.boot-frame { stroke-dasharray: 1; stroke-dashoffset: 1; animation: boot-draw var(--boot-ms) var(--mo-ease) forwards; }
+.boot-prompt { opacity: 0; animation: boot-show var(--mo-base) var(--mo-ease) calc(var(--boot-ms) * 0.75) forwards; }
+.boot-cursor { opacity: 0; animation: boot-show var(--mo-base) var(--mo-ease) var(--boot-ms) forwards, boot-breathe var(--dur-1200) var(--mo-loop) calc(var(--boot-ms) + var(--mo-base)) infinite; }
+.boot.out { animation: mo-fade-out var(--mo-base) var(--mo-ease-out) forwards; }
+@keyframes boot-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes boot-show {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes boot-breathe {
+  50% {
+    opacity: 0.35;
   }
 }

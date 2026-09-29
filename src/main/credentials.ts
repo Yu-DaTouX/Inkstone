@@ -18,8 +18,8 @@
  * OAuth 订阅（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、xAI、
  * OpenRouter、Radius）的 token 也存这里，形状是
  * `{ type:'oauth', access, refresh, expires, accountId }`。
- * 本模块只管**读写与状态展示**；其中 ChatGPT 的登录流程在 `src/main/oauth.ts`
- * （参数逐字对齐内置 pi 的实现），其余几家仍要用户自己跑 `pi → /login`。
+ * 本模块只管**读写与状态展示**；ChatGPT 的登录流程在 `src/main/oauth.ts`，
+ * 其余几家由 `src/main/oauth-providers.ts` 驱动随包 pi 的登录模块，都在应用内完成。
  *
  * ══════════════════════════════════════════════════════════════════
  * 为什么要写这个（而 README 里说「不碰 pi 的 settings.json」）
@@ -91,7 +91,7 @@ export async function resolveCodexAccountId(): Promise<string | undefined> {
  * 其余 provider 依然可用（pi 自己认识它们），只是不在这里给引导。
  */
 const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
-  // ---- 订阅制（OAuth，需要 pi 的交互式 /login） ----
+  // ---- 订阅制（OAuth，应用内登录；pi 的 /login 仍可用） ----
   {
     id: 'openai-codex',
     name: 'ChatGPT Plus / Pro',
@@ -110,7 +110,8 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     hint: 'Anthropic 第三方客户端按 token 计费，不占用 Claude 套餐额度',
     envVar: 'ANTHROPIC_API_KEY',
     authKey: 'anthropic',
-    loginCmd: 'pi'
+    loginCmd: 'pi',
+    inAppLogin: true
   },
   {
     id: 'github-copilot',
@@ -119,9 +120,10 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     hint: '用 Copilot 订阅；企业版可填自建域名',
     envVar: '',
     authKey: '',
-    loginCmd: 'pi'
+    loginCmd: 'pi',
+    inAppLogin: true
   },
-  { id: 'xai', name: 'xAI（Grok / X 订阅）', kind: 'subscription', hint: '', envVar: 'XAI_API_KEY', authKey: 'xai', loginCmd: 'pi' },
+  { id: 'xai', name: 'xAI（Grok / X 订阅）', kind: 'subscription', hint: '', envVar: 'XAI_API_KEY', authKey: 'xai', loginCmd: 'pi', inAppLogin: true },
   {
     id: 'openrouter',
     name: 'OpenRouter',
@@ -129,7 +131,8 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
     hint: 'OAuth 登录后会签发一个属于你的 API key（按 OpenRouter 余额计费）',
     envVar: 'OPENROUTER_API_KEY',
     authKey: 'openrouter',
-    loginCmd: 'pi'
+    loginCmd: 'pi',
+    inAppLogin: true
   },
 
   // ---- API key ----

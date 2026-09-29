@@ -1,29 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useT } from '../../i18n'
+import { useT, type TFunc } from '../../i18n'
 import { Section } from './ToolSection'
 import { useStore } from '../../state/store'
 import { quotaTone } from '../../../../shared/quota-tone'
 import { money, quotaCompactWindows, windowPct } from '../../../../shared/quota-mini'
 import { decideQuotaRefresh, hasDueQuotaWindow } from '../../../../shared/quota-refresh'
 import { type QuotaWindow } from '../../../../shared/ipc'
-import { Button } from '../ui'
-
-/* 一个可折叠的小分区 —— 右栏所有块共用 */
-
-/* 上下文 —— 用多少 / 占多少 / 花了多少 */
-
-export function UsageRing({ percent, tone }: { percent: number | null; tone?: string }) {
-  const value = percent === null || !Number.isFinite(percent) ? null : Math.max(0, Math.min(100, percent))
-  return (
-    <span
-      className={`rp-usage-ring ${tone ?? ''}`}
-      style={{ '--ring-pct': `${value ?? 0}%` } as React.CSSProperties}
-      title={value === null ? '用量未知' : `已用 ${percent!.toFixed(1)}%`}
-    >
-      <span>{value === null ? '—' : `${Math.round(percent!)}%`}</span>
-    </span>
-  )
-}
+import { Button, MiniMeter } from '../ui'
 
 /**
  * 额度自动刷新间隔（实施-20 U3）。
@@ -161,7 +144,8 @@ export function QuotaSection() {
     quota?.used !== undefined && quota.total !== undefined && quota.total > 0
       ? (quota.used / quota.total) * 100
       : undefined
-  const mainTone = mainPct === undefined ? '' : quotaTone(mainPct, anyExceeded)
+  /* 正常档不着色（用前景色），只在黄 / 红档提醒 —— 绿色留给「完成」一类语义 */
+  const mainTone = mainPct === undefined ? '' : quotaTone(mainPct, anyExceeded).replace('ok', '')
   const mainText = !quota
     ? null
     : hasWindows || isPercent
@@ -178,29 +162,29 @@ export function QuotaSection() {
   const ringWindow = compactWindows.reduce<QuotaWindow | null>((highest, item) =>
     !highest || item.window.used / item.window.total > highest.used / highest.total ? item.window : highest, null)
   const ringPct = ringWindow && ringWindow.total > 0 ? ringWindow.used / ringWindow.total * 100 : (mainPct ?? null)
+  /* 摘要条跟最紧的那个窗口；任一窗口已超限时条也标红 */
+  const ringTone = ringPct === null ? '' : quotaTone(ringPct, anyExceeded)
+  /* 空入口不渲染：没有供应商，或查不到任何可显示的数（不支持 / 未登录 / 出错）时整块不占位 */
+  if (!provider || (!loading && !mainText && compactWindows.length === 0 && !budget)) return null
+
   return (
-    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen={false} compactWhenFloating extra={
+    <Section titleKey="rp.quota" testId="rp-quota" defaultOpen compactWhenFloating extra={
       <span className="rp-header-usage">
-        <UsageRing percent={ringPct} tone={ringPct === null ? '' : quotaTone(ringPct, anyExceeded)} />
         <span className="rp-header-values" title={provider || undefined}>
           {compactWindows.length ? compactWindows.map(({ window, label }) => {
             const pct = windowPct(window)
-            return <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>{label} {pct === null ? '—' : `${pct}%`}</span>
-          }) : <span>{mainText ?? (loading ? '…' : '—')}</span>}
+            return (
+              <span className={pct === null ? '' : quotaTone(pct, window.exceeded)} key={window.id}>
+                <span className="rp-header-k">{label}</span> <b>{pct === null ? '—' : `${pct}%`}</b>
+              </span>
+            )
+          }) : <b>{mainText ?? (loading ? '…' : '—')}</b>}
         </span>
+        {ringPct !== null ? <MiniMeter percent={ringPct} tone={ringTone} /> : null}
       </span>
     }>
-      {/* 标题区：供应商 + 刷新（方案 7.2：刷新放标题区） */}
-      <div className="rp-kv">
-        <span className="rp-k">{provider || '—'}</span>
-        <span className="spacer" />
-        <Button size="sm" className="rp-btn" onClick={() => void refresh()} disabled={loading} data-testid="quota-refresh">
-          {loading ? '…' : t('quota.refresh')}
-        </Button>
-      </div>
-
       {/* 主值：本月已用（有分窗口时）—— 不再取“最紧窗口”的 used */}
-      {mainText ? (
+      {mainText && !hasWindows ? (
         <div className={`rp-quota-main ${hasWindows ? '' : 'rp-mini-duplicate'}`} data-testid="quota-main">
           <span className="rp-quota-main-label">{mainLabel}</span>
           <span className={`rp-v big ${mainTone}`} data-testid="quota-main-value">
@@ -220,11 +204,7 @@ export function QuotaSection() {
           {t('quota.stale', { msg: error })}
         </div>
       ) : null}
-      {quota ? (
-        <div className="rp-dim" data-testid="quota-checked">
-          {t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString() })}
-        </div>
-      ) : null}
+
 
       {quota?.windows?.length ? (
         <div className="rp-quota-wins">
@@ -233,56 +213,48 @@ export function QuotaSection() {
             const realPct = windowPct(w, 1) ?? 0
             /* 进度条只夹取宽度，不改数字 */
             const barPct = Math.min(100, Math.max(0, realPct))
-            const left = Math.max(0, w.total - w.used)
             /*
-             * 颜色分级：<70% 绿 / 70–95% 黄 / ≥95% 红（口径见 shared/quota-tone.ts）。
+             * 颜色分级：<70% 正常 / 70–95% 黄 / ≥95% 红（口径见 shared/quota-tone.ts）。
              * exceeded（供应商报的已超限）恒红，不受百分比影响。
+             * 正常档：数字用前景色、条用强调色；绿色留给「完成」一类语义。
              */
             const tone = quotaTone(realPct, w.exceeded)
-            const reset = resetText(w)
+            const reset = resetText(t, w)
+            /* 百分比口径（codex）的 used/total 就是百分比本身，再写一遍金额只是重复 */
+            const amount = isPercent ? '' : `${money(w.used, quota.currency)} / ${money(w.total, quota.currency)}`
             return (
+              /* 一个窗口两行：标签 | 条 | 百分比；下面一行暗色的「已用 / 总额  重置」对齐到条，窄栏时整段换行 */
               <div key={w.id} className="rp-quota-win" data-testid={`quota-win-${w.id}`}>
-                <div className="rp-kv">
-                  <span className="rp-k">{w.label}</span>
-                  {/* 推算值必须标明来源，不能伪装成官方额度 */}
-                  {w.estimated ? (
-                    <span
-                      className="rp-quota-est"
-                      title={t('quota.estimatedTip')}
-                      data-testid={`quota-win-${w.id}-estimated`}
-                    >
-                      {t('quota.estimated')}
-                    </span>
-                  ) : null}
-                  <span className="spacer" />
-                  <span
-                    /*
-                     * 三档都要落到类名上：以前 ok 档被写成空字符串，于是「低用量」
-                     * 用的是 .rp-v 的默认色（--fg-dim 灰）—— 而用户要的是**绿色**。
-                     */
-                    className={`rp-v ${tone} ${compactWindows.some(({ window }) => window.id === w.id) ? 'rp-mini-duplicate' : ''}`}
-                    data-testid={`quota-win-${w.id}-pct`}
-                  >
-                    {t('quota.usedInline', { pct: realPct.toFixed(1) })}
-                  </span>
-                </div>
-                <div className="rp-kv">
-                  <span className="rp-u" data-testid={`quota-win-${w.id}-amount`}>
-                    {money(w.used, quota.currency)} / {t('quota.remainingShort')} {money(left, quota.currency)}
-                  </span>
-                  <span className="spacer" />
-                </div>
-                <div className={`rp-meter ${tone}`} title={reset || undefined}>
+                <span className="rp-quota-label">{w.label}</span>
+                <div className={`rp-meter ${tone}`} title={[amount, reset.tip].filter(Boolean).join(' · ') || undefined}>
                   <i style={{ width: `${barPct}%` }} />
                 </div>
-                {w.exceeded ? (
-                  <div className="rp-dim err" data-testid={`quota-win-${w.id}-reached`}>
-                    {t('quota.limitReached')}
-                    {reset ? ` · ${reset}` : ''}
+                <span className={`rp-quota-pct ${tone}`} data-testid={`quota-win-${w.id}-pct`}>
+                  {`${realPct.toFixed(1)}%`}
+                </span>
+                {amount || reset.text || w.estimated ? (
+                  <div className="rp-quota-sub">
+                    {amount ? (
+                      <span
+                        className="rp-quota-amount"
+                        data-testid={`quota-win-${w.id}-amount`}
+                        title={`${t('quota.remainingShort')} ${money(Math.max(0, w.total - w.used), quota.currency)}`}
+                      >
+                        {amount}
+                      </span>
+                    ) : null}
+                    {reset.text ? <span data-testid={`quota-win-${w.id}-reset`} title={reset.tip}>{reset.text}</span> : null}
+                    {/* 推算值必须标明来源，不能伪装成官方额度；徽标不参与省略 */}
+                    {w.estimated ? (
+                      <span className="ui-badge" title={t('quota.estimatedTip')} data-testid={`quota-win-${w.id}-estimated`}>
+                        {t('quota.estimated')}
+                      </span>
+                    ) : null}
                   </div>
-                ) : reset ? (
-                  <div className="rp-dim" data-testid={`quota-win-${w.id}-reset`}>
-                    {reset}
+                ) : null}
+                {w.exceeded ? (
+                  <div className="rp-quota-sub err" data-testid={`quota-win-${w.id}-reached`}>
+                    {t('quota.limitReached')}
                   </div>
                 ) : null}
               </div>
@@ -290,6 +262,27 @@ export function QuotaSection() {
           })}
         </div>
       ) : null}
+
+      {/* 来源与时间：一行暗色信息，刷新是行尾的图标按钮 */}
+      <div className="rp-quota-meta">
+        <span className="rp-quota-provider" title={provider || undefined}>{provider || '—'}</span>
+        {quota ? (
+          <span data-testid="quota-checked" title={new Date(quota.checkedAt).toLocaleString()}>
+            {t('quota.checkedAt', { time: new Date(quota.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) })}
+          </span>
+        ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="refresh"
+          className="rp-quota-refresh"
+          title={t('quota.refresh')}
+          aria-label={t('quota.refresh')}
+          onClick={() => void refresh()}
+          disabled={loading}
+          data-testid="quota-refresh"
+        />
+      </div>
 
       <div className="rp-quota-actions">
         {/* 月预算只适用于按量计费的 openai 平台 key；订阅制（codex）没有这个概念 */}
@@ -312,28 +305,30 @@ export function QuotaSection() {
 }
 
 /**
- * 重置说明（方案 7.2）：
- *   · 五小时 / 周 → 本地时区**倒计时**
- *   · 月 → 完整年月日与秒
+ * 重置说明（方案 7.2）：行内写短的，完整时间放悬停提示。
+ *   · 五小时 / 周 → 倒计时「57分后重置」「6天5时后重置」
+ *   · 月 → 日期「10/22 重置」
  *   · 已到点 → 「待刷新」（不本地归零，由 effect 重新查询）
  */
-function resetText(w: QuotaWindow): string {
-  if (w.resetAt === undefined) return ''
+function resetText(t: TFunc, w: QuotaWindow): { text: string; tip: string } {
+  if (w.resetAt === undefined) return { text: '', tip: '' }
   const now = Date.now()
-  if (w.resetAt <= now) return '已到重置时间 · 待刷新'
+  const tip = t('quota.resetAtTip', { time: new Date(w.resetAt).toLocaleString(undefined, { hour12: false }) })
+  if (w.resetAt <= now) return { text: t('quota.resetDue'), tip }
   if (w.id === 'monthly') {
-    return `重置于 ${new Date(w.resetAt).toLocaleString('zh-CN', { hour12: false })}`
+    const d = new Date(w.resetAt)
+    return { text: t('quota.resetOn', { d: `${d.getMonth() + 1}/${d.getDate()}` }), tip }
   }
-  return `重置于 ${countdown(w.resetAt - now)}`
+  return { text: t('quota.resetIn', { t: countdown(t, w.resetAt - now) }), tip }
 }
 
-/** 剩余时长：3天4时12分后 / 2时18分后 / 12分钟后 */
-function countdown(ms: number): string {
+/** 剩余时长：3天4时 / 2时18分 / 12分（天级不再细到分钟） */
+function countdown(t: TFunc, ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const d = Math.floor(total / 86400)
   const h = Math.floor((total % 86400) / 3600)
   const m = Math.floor((total % 3600) / 60)
-  if (d > 0) return `${d}天${h}时${m}分后`
-  if (h > 0) return `${h}时${m}分后`
-  return `${Math.max(1, m)}分钟后`
+  if (d > 0) return t('quota.durDH', { d, h })
+  if (h > 0) return t('quota.durHM', { h, m })
+  return t('quota.durM', { m: Math.max(1, m) })
 }

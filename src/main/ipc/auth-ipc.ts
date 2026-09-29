@@ -10,15 +10,19 @@ import type { CustomProviderInput } from '../../shared/custom-provider'
 import { listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from '../credentials'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
+import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
+import type { OAuthLoginEvent } from '../../shared/ipc'
 
 export interface AuthIpcDeps {
   /** 登录成功后重启 pi（等当前回合结束，不阻塞返回） */
   restartAgent(reason: string): Promise<void>
+  /** 订阅登录过程事件 → 设置页（通道 yan:oauth） */
+  sendOAuthEvent(event: OAuthLoginEvent): void
 }
 
 export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   const { handle } = ipc
-  const { restartAgent } = deps
+  const { restartAgent, sendOAuthEvent } = deps
   /* ---- 模型接入（凭证） ---- */
   handle('yan:authProviders', async (deep?: boolean) => {
     const s = await getSettings()
@@ -60,5 +64,23 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   })
   handle('yan:codexLoginCancel', async () => {
     cancelCodexLogin()
+  })
+
+  /*
+   * 其余订阅（Claude Pro/Max、Copilot、xAI、OpenRouter）：驱动随包 pi 的登录模块，
+   * 过程事件走 yan:oauth 推给设置页；成功后同样非阻塞地重启 pi。
+   */
+  handle('yan:oauthLogin', async (provider: string) => {
+    const s = await getSettings()
+    const probe = resolvePi({ override: s.piBin })
+    const r = await startOAuthLogin({ provider: String(provider ?? ''), piEntry: probe.args.at(-1) ?? '', send: sendOAuthEvent })
+    if (r.ok) void restartAgent('订阅登录')
+    return r
+  })
+  handle('yan:oauthLoginAnswer', async (provider: string, promptId: number, value: string) =>
+    answerOAuthPrompt(String(provider ?? ''), Number(promptId), String(value ?? ''))
+  )
+  handle('yan:oauthLoginCancel', async (provider: string) => {
+    cancelOAuthLogin(String(provider ?? '') || undefined)
   })
 }

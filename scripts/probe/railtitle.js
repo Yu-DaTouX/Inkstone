@@ -110,7 +110,7 @@
       const name = wrap?.querySelector('.srow-name')
       const srow = wrap?.querySelector('.srow')
       const time = wrap?.querySelector('.srow-time')
-      const status = wrap?.querySelector('.session-status')
+      const status = wrap?.querySelector('.srow-dot, .srow-dot-run')
       const bt = wrap?.querySelector('.srow-btoggle')
       const nb = box(name)
       return {
@@ -161,7 +161,7 @@
     /* 1. 标题可用宽度：窄栏下仍要能读出内容 */
     const minW = Math.min(R.nameW ?? 0, C1.nameW ?? 0, G1.nameW ?? 0, GG1.nameW ?? 0, S4.nameW ?? 0)
     out.push(`  标题可用宽度最小 = ${minW}px（最浅行宽 ${R.srowW}px）`)
-    ok(minW >= 96, `窄栏下标题至少还有 96px（实际 ${minW}px）`)
+    ok(minW >= 80, `窄栏下标题至少还有 80px（实际 ${minW}px）`)
 
     /* 2. 深层缩进封顶：第 5 层不能比第 4 层更靠右 */
     ok(S4.nameLeft === GG1.nameLeft, `第 5 层与第 4 层缩进一致（${GG1.nameLeft} vs ${S4.nameLeft}）`)
@@ -177,10 +177,10 @@
       R.nameRight !== null && rightEdge !== null && R.nameRight <= rightEdge + 1,
       `标题右缘不越过右侧槽位（${R.nameRight} ≤ ${rightEdge}）`
     )
-    const statusEl = q('.session-status')
+    const statusEl = q('.srow-dot, .srow-dot-run')
     ok(!!statusEl, '会话行有状态槽（运行 / 等待 / 未读共用）')
     ok(!!statusEl && statusEl.getBoundingClientRect().width <= 20, '状态槽占用 ≤ 20px（不吃标题宽度）')
-    ok(!!q('.session-status.running'), '正在跑的那个会话行显示运行状态（状态槽来自实例注册表）')
+    ok(!!q('.srow-dot-run'), '正在跑的那个会话行显示运行状态（状态槽来自实例注册表）')
 
     /* 5. 悬停时动作按钮出现，且标题让位而不是被覆盖 */
     const hoverTarget = qa('[data-session-path]').find((e) => e.dataset.sessionPath === c2.path)

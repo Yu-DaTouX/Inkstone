@@ -59,6 +59,7 @@ import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-stor
 import { mergeCommandDescriptors } from './command-registry'
 import { generateTitle, manualTitleOf } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
+import { SessionEntriesLite } from './session-entries-lite'
 import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
@@ -243,6 +244,14 @@ export interface ExternalApiConfirmationRequest {
 
 export type CapabilityAuthorizationChoice = 'deny' | 'allow' | 'allow-with-lifecycle-scripts'
 /** 普通工具使用前的询问（需求稿 4.3）：宿主显示确认框，返回用户的真实答复；没有答复为 null */
+/** 高危操作确认框的入参（由 danger-guard 薄层发起） */
+export interface DangerConfirmPrompt {
+  tool: string
+  detail: string
+  reasons: string[]
+  cwd: string
+}
+
 export interface ToolConsentPrompt {
   parts: ConsentKeyParts
   purpose: string
@@ -399,6 +408,8 @@ export class AgentController extends EventEmitter {
   ) => Promise<CapabilityAuthorizationChoice>
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
+  private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+  private dangerGuardExtension?: string
   /**
    * 宿主能力服务注入给 pi 子进程的身份与地址（见 capability-server.ts / yan-cli.ts）。
    *
@@ -553,6 +564,20 @@ export class AgentController extends EventEmitter {
   /** 正在走策略触发流程（防止两次 stats 刷新同时判定过线） */
   private policyTriggering = false
   /** 扩展与宿主发起的界面请求（见 ui-requests.ts） */
+  /** 会话文件的轻量条目索引（任务清单 / 自定义条目 / 用户轮次），见 session-entries-lite.ts */
+  private readonly entriesLite = new SessionEntriesLite()
+
+  /**
+   * 任务清单这类读者要的条目：优先读会话文件（只读新增部分、不带消息内容），
+   * 文件还不存在（新会话尚未落盘）时退回 pi 的 `get_entries`。
+   */
+  private async sessionEntries(): Promise<Record<string, unknown>[] | null> {
+    const lite = await this.entriesLite.entries(this.state?.sessionFile).catch(() => null)
+    if (lite) return lite
+    const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
+    return res?.success ? (res.data?.entries ?? []) : null
+  }
+
   private readonly ui = new UiRequests({
     push: (msg) => this.push(msg),
     respondToPi: (res) => this.rpc?.respondUi(res)
@@ -662,6 +687,8 @@ export class AgentController extends EventEmitter {
     ) => Promise<CapabilityAuthorizationChoice>
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
+    confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+    dangerGuardExtension?: string
     /** 宿主能力服务环境（`yan` CLI 用）；未提供时不注入，CLI 会报「宿主不可用」。 */
     yanCliEnv?: YanCliEnv
     /** 宿主能力服务参数；提供时由本实例自己启动端点与启动器。 */
@@ -711,6 +738,8 @@ export class AgentController extends EventEmitter {
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
+    this.confirmDanger = opts.confirmDanger
+    this.dangerGuardExtension = opts.dangerGuardExtension
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
       ? { ...opts.capability, runnerGeneration: opts.capability.runnerGeneration ?? 1 }
@@ -894,6 +923,7 @@ export class AgentController extends EventEmitter {
          * 放最后：它要在其它扩展都不拦的时候才生效（不抢模式门禁的判断）。
          */
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
+        ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         /* 受管 skill-files 只按当前项目 active 记录显式传入；不扫描全盘。 */
         ...managedSkillArgs,
         /* 随包技能：领域做法（例如办公文件）放在技能里按需加载，不写进宿主 */
@@ -1114,9 +1144,9 @@ export class AgentController extends EventEmitter {
 
   async getCustomEntries(): Promise<CustomEntry[]> {
     try {
-      const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
-      if (!res?.success) return []
-      return (res.data?.entries ?? [])
+      const entries = await this.sessionEntries()
+      if (!entries) return []
+      return entries
         .filter((e) => e.type === 'custom')
         .map((e) => ({
           id: String(e.id ?? ''),
@@ -1143,10 +1173,10 @@ export class AgentController extends EventEmitter {
    */
   async refreshTodos(): Promise<SessionTodo[]> {
     try {
-      const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
-      if (!res?.success) return []
+      const entries = await this.sessionEntries()
+      if (!entries) return []
       const hostEntries = await this.taskPlanEntries()
-      const snaps = todoSnapshotsFromEntries([...(res.data?.entries ?? []), ...hostEntries])
+      const snaps = todoSnapshotsFromEntries([...entries, ...hostEntries])
       /*
        * 推两条：
        *   · todos —— 最新那份（旧行为不变，界面主体的任务清单就是它）
@@ -1288,6 +1318,7 @@ export class AgentController extends EventEmitter {
     if (command === 'context.find') return this.runContextFindCommand(params)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
+    if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
     if (command.startsWith('context.budget.')) return this.contextBudget.runContextBudgetCommand(command, params)
     switch (command) {
       case 'tasks.apply':
@@ -1479,6 +1510,25 @@ export class AgentController extends EventEmitter {
     if (!answer) return { data: { verdict }, summary: summary('no-answer') }
     await recordConsentAnswer(parts, answer)
     return { data: { verdict }, summary: summary(answer) }
+  }
+
+  /**
+   * `danger.confirm`：danger-guard 薄层命中高危操作后来问一次。
+   * 每次都弹框，不看历史答复、不记「以后都允许」——高危操作不该被同意率放行。
+   * 没有窗口 / 没有回调 / 用户关掉框都算没有确认（薄层据此拦下）。
+   */
+  private async runDangerConfirmCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+    const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
+    const detail = typeof params.detail === 'string' ? params.detail.slice(0, 2000) : ''
+    const reasons = Array.isArray(params.reasons)
+      ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)).slice(0, 6)
+      : []
+    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd }) : null
+    const decision = answer ?? 'no-answer'
+    return {
+      data: { decision },
+      summary: { kind: 'danger-confirm', tool, decision, allowed: answer === 'allow' }
+    }
   }
 
   /**
@@ -1893,10 +1943,10 @@ export class AgentController extends EventEmitter {
    */
   private async currentUserRound(): Promise<number> {
     try {
-      const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
-      if (!res?.success) return 1
+      const entries = await this.sessionEntries()
+      if (!entries) return 1
       let userMsgs = 0
-      for (const e of res.data?.entries ?? []) {
+      for (const e of entries) {
         if (e.type !== 'message') continue
         const m = e.message as { role?: unknown } | undefined
         if (m?.role === 'user') userMsgs++
@@ -1954,10 +2004,13 @@ export class AgentController extends EventEmitter {
       const snapshot = this.readAgentProfileSnapshot()
       if (snapshot) {
         const itemCount = Array.isArray(params.items) ? params.items.length : 0
+        const existing = await currentTaskPlan(sessionId).catch(() => null)
         const decision = decideTaskCreation({
           profile: snapshot.profile,
           activity: snapshot.activity,
-          itemCount
+          itemCount,
+          /* `set` 是整份替换，不算追加；只有 `add` 往已有清单上加才放行 */
+          existingItems: request.action === 'add' ? (existing?.state.todos.length ?? 0) : 0
         })
         if (!decision.create) {
           const current = await currentTaskPlan(sessionId).catch(() => null)
@@ -3457,7 +3510,7 @@ export class AgentController extends EventEmitter {
     //    而它忙着压缩 —— 漏了这一项就会发出裸 prompt 被 pi 拒掉（渲染端丢了草稿）。
     //    这里只做兜底：正常路径下渲染端会把消息先悬到待定区。
     if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
-      payload.streamingBehavior = mode ?? 'steer'
+      payload.streamingBehavior = mode ?? 'followUp'
     }
 
     await this.prepareKnowledge(text)
@@ -4390,6 +4443,13 @@ export class AgentController extends EventEmitter {
 
   /** 还在等用户回答的请求数（N12：后台会话的状态槽用它） */  getPendingUiCount(): number {
     return this.ui.pending.size
+  }
+
+  /** 宿主改了 MCP 配置（如开关电脑操作）：关掉现有连接，下次用到时按新配置重建 */
+  async reloadMcpServers(): Promise<void> {
+    const old = this.mcpManager
+    this.mcpManager = undefined
+    await old?.close().catch(() => undefined)
   }
 
   async stop(): Promise<void> {

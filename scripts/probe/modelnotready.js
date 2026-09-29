@@ -45,7 +45,7 @@
   log(`  data-state = ${JSON.stringify(trigger.dataset.state)}`)
   ok(trigger.dataset.state === 'unknown', '标记为 unknown 状态')
   ok(
-    /模型未就绪|Model not ready/.test(trigger.textContent ?? ''),
+    /模型未就绪|未选模型|Model not ready|No model/i.test(trigger.textContent ?? ''),
     '触发器给出明确的「未就绪」文案，而不是空白'
   )
   ok(trigger.classList.contains('unknown'), '带 unknown 类（用于弱化样式）')
@@ -107,9 +107,8 @@
   const highColor = await badgeColorAt('high')
   const lowColor = await badgeColorAt('low')
   log(`  角标颜色: high=${highColor} · low=${lowColor}`)
-  ok(highColor === 'rgb(178, 148, 187)', 'high 档文字用 --think-high (#b294bb)')
-  ok(lowColor === 'rgb(95, 135, 175)', 'low 档文字用 --think-low (#5f87af)')
-  ok(highColor !== lowColor, '不同档位的文字颜色确实不同（不是所有档位共用一个色）')
+  /* 设计规范 §3.5：档位色只留在边线与方点阵上，角标文字统一用 --fg-dim */
+  ok(highColor === lowColor && highColor !== '(没有角标)', '角标文字各档统一（档位色不进文字）')
   /* 把档位复位，不给后面的用例留一个改过的 session */
   store.setState({ session: fake })
   await sleep(120)

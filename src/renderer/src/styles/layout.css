@@ -146,8 +146,8 @@
  */
 @media (max-width: 980px) {
   .workspace {
-    --w-rail: min(var(--w-rail-user, 260px), 210px);
-    --w-right: min(var(--w-panel-user, 264px), 190px);
+    --w-rail: min(var(--w-rail-user, 210px), max(180px, calc(100vw - 360px - var(--w-right))));
+    --w-right: min(var(--w-panel-user, 190px), max(170px, calc((100vw - 360px) / 2)));
   }
   /* 收起宽度与宽窗口走同一个真源（--w-rail-collapsed = 0px）。
      这条**必须留着**：上面那条 min() 是 .workspace 自己的声明，会压过从
@@ -170,8 +170,8 @@
  */
 @media (max-width: 900px) {
   .workspace {
-    --w-rail: min(var(--w-rail-user, 260px), 180px);
-    --w-right: min(var(--w-panel-user, 264px), 170px);
+    --w-rail: min(var(--w-rail-user, 180px), max(180px, calc(100vw - 360px - var(--w-right))));
+    --w-right: min(var(--w-panel-user, 170px), max(170px, calc((100vw - 360px) / 2)));
   }
   /* 同上一档：收起值必须走 --w-rail-collapsed，不要写死宽度 */
   .app.rail-off .workspace {
@@ -194,15 +194,6 @@ html[data-theme='light'] .outline-bar {
 
 html[data-theme='light'] .outline-hit.on .outline-bar {
   background: var(--fg);
-}
-
-html[data-theme='light'] .rp-box {
-  background: #fff;
-}
-
-html[data-theme='light'] .rp-todo.done .rp-box {
-  background: var(--ok);
-  color: #fff;
 }
 
 html[data-theme='light'] .md pre {

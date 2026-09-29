@@ -5,7 +5,8 @@
  * MCP 验证由主进程分配 operationId 并固定到 runnerId + generation，渲染端不能指定项目。
  */
 import type { IpcRegistrar } from './registrar'
-import { searchDoctor } from '../search/opencli'
+import { installOpenCli, searchDoctor } from '../search/opencli'
+import { computerUseStatus, disableComputerUse, enableComputerUse, installUv } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { builtinCapabilities } from '../extensions-inventory'
 import type { AgentController } from '../agent'
@@ -54,6 +55,20 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
    * 只读探针，不装不升级；未安装时也返回可读结果（available:false）。
    */
   handle('yan:search:doctor', async () => searchDoctor())
+  /* 用户在设置页明确点了「安装」才会跑（npm 全局安装 OpenCLI）；诊断本身仍然只读 */
+  handle('yan:search:install', async () => installOpenCli())
+
+  /*
+   * 电脑操作（Windows-MCP，见 computer-use.ts）：状态只读；安装 uv 与开关都要用户在设置页点。
+   * 开关改的是宿主 MCP 配置，改完让所有实例丢掉旧连接。
+   */
+  handle('yan:computerUse:status', async () => computerUseStatus())
+  handle('yan:computerUse:installUv', async () => installUv())
+  handle('yan:computerUse:set', async (value: unknown) => {
+    const result = value === true ? await enableComputerUse() : await disableComputerUse()
+    if (result.ok) await registry()?.reloadMcpServers()
+    return result
+  })
 
   /*
    * 能力页初次打开只取 pi 已加载的 Skill 与本 runner 可见的 MCP 配置；不握手、不启动 stdio。

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
@@ -17,8 +17,7 @@ import { nextContextStage, LARGE_PRESET_NAME_KEYS, largePresetOf, incompressible
 import { contextActionRows } from '../../state/context-actions-view'
 import type { ContextActionSummary } from '../../../../shared/context-actions'
 import { type CompactionInfo } from '../../../../shared/ipc'
-import { Button, Spinner } from '../ui'
-import { UsageRing } from './QuotaSection'
+import { Button, MiniMeter, RunDot } from '../ui'
 
 export function ContextSection() {
   const t = useT()
@@ -61,12 +60,13 @@ export function ContextSection() {
   const workingSet = policy && policy.budget.workingSet > 0 ? policy.budget.workingSet : 0
   const workingSetMode = workingSet > 0
   /*
-   * C-5：主值与进度条的分母是**有效模型窗口**，砚真正动手的那条线（工作集）
-   * 画成条上的软标记，并在下面单独给一行。
-   *
-   * 两个方向都是真话，但不能只说一半：拿工作集当分母会出现 `240k / 240k = 100%`，
-   * 被读成「1M 模型满了」；只给窗口尺度又会让人以为「还早得很」，
-   * 而砚在 240k 就已经会动手。所以主值给物理尺度，下面那行给策略尺度。
+   * 两个尺度各说一半真话，分开摆、各自标名：
+   *   · 分区头部（常驻）= 物理窗口：「4% 40k / 1M」+ 迷你条；
+   *   · 展开体 = 工作集：「工作集 17% 40k / 240k」+ 按工作集画的进度条，
+   *     清理 / 折叠 / 压缩三条刻度落在 70% / 85% / 100%，名字写在刻度下。
+   * 只给工作集会出现 `240k / 240k = 100%`，被读成「1M 模型满了」；只给窗口
+   * 又会让人以为「还早得很」，而砚在 240k 就已经会动手。
+   * 没有策略（工作集不可得）时展开体的条退回窗口尺度，画 pi 的压缩触发线。
    */
   const policyWindow = policy?.budget.contextWindow
   const effectiveWin = policyWindow && policyWindow > 0 ? policyWindow : win
@@ -74,6 +74,13 @@ export function ContextSection() {
   /* 压力色只看工作集 —— 它才是砚的动手线（物理窗口满之前早就过线了） */
   const pctWork = known && workingSetMode ? (used / workingSet) * 100 : pctWindow
   const tone = pctWork >= 95 ? 'err' : pctWork >= 85 ? 'warn' : 'ok'
+  /** 阶段触发点（token）与它在工作集尺度上的位置（%）；刻度与刻度名共用 */
+  const stageAt = (kind: (typeof CONTEXT_STAGES)[number]): number => {
+    const tr = policy?.budget.triggers
+    if (!tr) return 0
+    return kind === 'tool-sweep' ? tr.sweep : kind === 'episode-fold' ? tr.fold : tr.compact
+  }
+  const stageLeft = (at: number): number => Math.max(0, Math.min(100, workingSet > 0 ? (at / workingSet) * 100 : 0))
   const cost = [...messages].reverse().find((m) => m.role === 'assistant' && m.usage)?.usage?.cost ?? 0
 
   /* 压缩的可观测状态（N21-2）：进行中的原因 + 已结束的最近一次，都来自主进程的 RPC 事件归一化 */
@@ -109,6 +116,32 @@ export function ContextSection() {
     }
   }, [session?.sessionId, lastCompaction?.endedAt, lastCompaction?.status, contextActionRefresh])
   const actionRows = useMemo(() => contextActionRows(t, actions, lastCompaction), [t, actions, lastCompaction])
+
+  /*
+   * 阶段名默认收在各自刻度左下；刻度只隔 15% 工作集，窄栏或英文（Compact）
+   * 下名字可能比间距还宽。量到重叠时改成右对齐的一排文字（data-crowded），
+   * 宁可不贴刻度也不叠字。先去掉标记再量，才量得到「贴刻度」时的真实位置。
+   * 用回调 ref：分区从收起到展开时这一行才挂上，普通 effect 会错过它。
+   */
+  const stagesObserver = useRef<ResizeObserver | null>(null)
+  const stageKey = workingSetMode ? `${policy!.kinds.join(',')}|${policy!.budget.triggers.sweep}|${policy!.budget.triggers.fold}|${workingSet}` : ''
+  const stagesRef = useCallback((el: HTMLDivElement | null) => {
+    stagesObserver.current?.disconnect()
+    stagesObserver.current = null
+    if (!el) return
+    const check = (): void => {
+      delete el.dataset.crowded
+      const box = el.getBoundingClientRect()
+      const rects = [...el.children].map((c) => c.getBoundingClientRect()).sort((a, b) => a.left - b.left)
+      const crowded = rects.some((r, i) => (i === 0 ? r.left < box.left : r.left < rects[i - 1].right + 4))
+      if (crowded) el.dataset.crowded = '1'
+    }
+    check()
+    stagesObserver.current = new ResizeObserver(check)
+    stagesObserver.current.observe(el)
+    // stageKey / t 变了（刻度位置或名字变了）要重新量
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageKey, t])
 
   /* 工作集刻度的下一步（N21-3）：只预报**真的会执行**的阶段 */
   const nextStage = policy ? nextContextStage(known ? used : null, policy.budget, policy.kinds) : null
@@ -154,10 +187,10 @@ export function ContextSection() {
   /** 详情（阈值 / 保留量 / 预留 token / 累计花费）默认收起（方案 7.3） */
   const [detailsOpen, setDetailsOpen] = useState(false)
   /** 84k / 200k 这种紧凑写法（方案 7.3 的示例写法） */
-  const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
+  const fmtK = (n: number): string => n >= 1_000_000 ? `${Number((n / 1_000_000).toFixed(1))}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 
   return (
-    <Section titleKey="rp.context" testId="rp-context" defaultOpen={false} compactWhenFloating extra={
+    <Section titleKey="rp.context" testId="rp-context" defaultOpen compactWhenFloating extra={
       /*
        * 压缩中就把摘要位让给状态（用户 2026-09-25：压缩时界面上好几处都在转，
        * 只留这一个）。
@@ -167,7 +200,7 @@ export function ContextSection() {
        */
       session?.isCompacting ? (
         <span className="rp-header-usage rp-header-compacting">
-          <Spinner className="rp-now-spin" />
+          <RunDot />
           {/*
            * 「压缩中 · 已达阈值」（N21-2）：只说“正在压缩”回答不了用户当下最想
            * 知道的 —— 为什么突然在压缩？原因来自 pi 的 `compaction_start.reason`。
@@ -179,8 +212,17 @@ export function ContextSection() {
         </span>
       ) : (
         <span className="rp-header-usage">
-          <UsageRing percent={known ? pctWindow : null} tone={known ? tone : ''} />
-          <span className="rp-header-values">{known ? `${fmtK(used)} / ${fmtK(effectiveWin)}` : '用量未知'}</span>
+          <span className="rp-header-values">
+            {known ? (
+              <span className={tone}>
+                <b>{`${Math.round(pctWindow)}%`}</b> <span className="rp-header-k rp-header-sub">{`${fmtK(used)}/${fmtK(effectiveWin)}`}</span>
+              </span>
+            ) : (
+              <span className="rp-header-k">{t('ctx.usageUnknown')}</span>
+            )}
+          </span>
+          {/* 条按物理窗口画，颜色按工作集压力（与展开体同一档） */}
+          <MiniMeter percent={known ? pctWindow : null} tone={known ? tone : ''} />
         </span>
       )
     }>
@@ -197,14 +239,12 @@ export function ContextSection() {
        * 没有策略（工作集不可得）时不显示 —— 不编一条不存在的线。
        */}
       {workingSetMode ? (
-        <div className="rp-dim" data-testid="ctx-working-set-line">
-          {known
-            ? t('ctx.workingSetLine', {
-                used: fmtK(used),
-                cap: fmtK(workingSet),
-                pct: pctWork.toFixed(0)
-              })
-            : t('ctx.workingSetLineUnknown', { cap: fmtK(workingSet) })}
+        <div className="rp-working-summary" data-testid="ctx-working-set-line">
+          <span className="rp-working-k">{t('ctx.workingSetLabel')}</span>
+          <span className="rp-working-v">
+            {known ? <><b className={tone}>{`${Math.round(pctWork)}%`}</b>{' '}</> : null}
+            {`${known ? fmtK(used) : '—'} / ${fmtK(workingSet)}`}
+          </span>
         </div>
       ) : null}
 
@@ -234,7 +274,7 @@ export function ContextSection() {
             : t('ctx.afterCompact')
         }
       >
-        <i style={{ width: `${Math.min(100, pctWindow)}%` }} />
+        <i style={{ width: `${Math.min(100, pctWork)}%` }} />
         {workingSetMode ? (
           /*
            * 工作集刻度（N21-3）：三条线都在同一个尺度上（工作集 × 70/85/100%），
@@ -243,14 +283,14 @@ export function ContextSection() {
            * 并把“什么时候才会真的发生”放进 title（不上色、不装成生效了）。
            */
           CONTEXT_STAGES.map((kind) => {
-            const at = kind === 'tool-sweep' ? policy!.budget.triggers.sweep : kind === 'episode-fold' ? policy!.budget.triggers.fold : policy!.budget.triggers.compact
+            const at = stageAt(kind)
             const active = policy!.kinds.includes(kind)
-            /* 刻度画在**窗口尺度**上（与分母一致），否则会跑到条外去 */
-            const left = Math.max(0, Math.min(100, effectiveWin > 0 ? (at / effectiveWin) * 100 : 0))
+            /* 刻度与填充同一个分母（工作集），否则会跑到条外去 */
+            const left = stageLeft(at)
             return (
               <b
                 key={kind}
-                className={`rp-stage ${active ? 'active' : 'planned'}`}
+                className={`rp-stage ${active ? 'active' : 'planned'} ${left >= 97 ? 'end' : ''}`}
                 data-testid="ctx-stage-mark"
                 data-kind={kind}
                 data-active={active ? '1' : '0'}
@@ -272,6 +312,31 @@ export function ContextSection() {
           />
         ) : null}
       </div>
+
+      {/* 阶段名收在各自刻度左下；未接管的更淡（title 里说明何时才会真的发生） */}
+      {workingSetMode ? (
+        <div className="rp-stages" ref={stagesRef} data-testid="ctx-stages" title={t('ctx.stagesTip')}>
+          {CONTEXT_STAGES.map((kind) => {
+            const active = policy!.kinds.includes(kind)
+            const at = stageAt(kind)
+            const left = stageLeft(at)
+            return (
+              <span
+                key={kind}
+                className={`rp-stage-label ${active ? 'active' : 'planned'}`}
+                style={{ left: `${left}%` }}
+                data-testid="ctx-stage-chip"
+                data-kind={kind}
+                data-active={active ? '1' : '0'}
+                /* 说明也挂在名字上：用户是看着这三个词问“它们是干什么的” */
+                title={contextStageTip(t, kind, { at, ratio: left / 100, active })}
+              >
+                {contextStageLabel(t, kind)}
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
 
       {/*
         工作集模式下的「下一步」（N21-3）：只预报真的会执行的那个阶段。
@@ -296,31 +361,6 @@ export function ContextSection() {
         </div>
       ) : null}
 
-      {/* 阶段图例：名字 + 是否已接管（虚线 = 阶段 4 前不会触发） */}
-      {workingSetMode ? (
-        <div className="rp-stages" data-testid="ctx-stages" title={t('ctx.stagesTip')}>
-          {CONTEXT_STAGES.map((kind) => {
-            const active = policy!.kinds.includes(kind)
-            return (
-              <span
-                key={kind}
-                className={`ui-badge rp-stage ${active ? 'accent' : 'planned'}`}
-                data-testid="ctx-stage-chip"
-                data-kind={kind}
-                data-active={active ? '1' : '0'}
-                /* 说明也挂在格子上：用户是看着这三个词问“它们是干什么的” */
-                title={contextStageTip(t, kind, {
-                  at: kind === 'tool-sweep' ? policy!.budget.triggers.sweep : kind === 'episode-fold' ? policy!.budget.triggers.fold : policy!.budget.triggers.compact,
-                  ratio: kind === 'tool-sweep' ? 0.7 : kind === 'episode-fold' ? 0.85 : 1,
-                  active
-                })}
-              >
-                {contextStageLabel(t, kind)}
-              </span>
-            )
-          })}
-        </div>
-      ) : null}
 
       {/*
         自动压缩的触发点**只在进度条上画一条记号**（用户要求）：

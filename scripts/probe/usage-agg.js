@@ -84,7 +84,8 @@
 
     ok(val('输出') === '100', `输出 = 10 + 90（不是只显示最后一条）`, `实际 ${JSON.stringify(val('输出'))}`)
     ok(val('输入') === '3.00k', '输入 = 1000 + 2000（缩写 3.00k）', `实际 ${JSON.stringify(val('输入'))}`)
-    ok(val('缓存') === '8.00k', '缓存读 = 0 + 8000', `实际 ${JSON.stringify(val('缓存'))}`)
+    /* 缓存项常显命中率：8000 / (3000 输入 + 8000 缓存读) = 72.72%；读取量在悬停提示里 */
+    ok(val('缓存') === '72.72%', '缓存命中率 = 8000 / (3000 + 8000)', `实际 ${JSON.stringify(val('缓存'))}`)
     ok(!val('输出').startsWith('≥'), '两条都报了用量 → 不标下限')
 
     /* ---- 2. 有请求没报用量 → 标成下限并说明 ---- */
@@ -112,7 +113,8 @@
       ]
     })
     await sleep(500)
-    ok(val('输出') === '—', '一条都没报 → 显示 —（未知 ≠ 下限）', `实际 ${JSON.stringify(val('输出'))}`)
+    /* 一点用量都没有时用量条只留空容器（data-state=no-usage），不铺一排「—」；两种都不会误标下限 */
+    ok(val('输出') === '—' || (document.querySelector('[data-testid="usagebar"]')?.dataset.state === 'no-usage' && !/≥/.test(val('输出'))), '一条都没报 → 显示 —或空容器（未知 ≠ 下限）', `实际 ${JSON.stringify(val('输出'))}`)
 
     /* ---- 4. 回合页脚：用时的 tooltip 给出工具等待 ---- */
     store.setState({

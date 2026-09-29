@@ -314,7 +314,13 @@ const REQUEST_TIMEOUT = 30_000
 
 export class PiRpc extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null
-  private buf = ''
+  /**
+   * 尚未遇到换行的输出片段。按块存、遇到换行才拼：大图会话的一条记录可达几十 MB，
+   * 以前「buf += chunk 再从头找换行」每块都重扫整个缓冲，40MB 一行要扫几百遍
+   * （打开长会话时主进程卡数秒的原因之一）。
+   */
+  private parts: string[] = []
+  private partsLen = 0
   private pending = new Map<string, Pending>()
   private seq = 0
   private closed = false
@@ -392,20 +398,30 @@ export class PiRpc extends EventEmitter {
 
   /** 累积 stdout 并按 LF 切记录 */
   private feed(chunk: string): void {
-    this.buf += chunk
-
+    let start = 0
     let nl: number
-    while ((nl = this.buf.indexOf('\n')) >= 0) {
+    // 只扫描这一块里的新内容；换行之前的旧片段不再重扫
+    while ((nl = chunk.indexOf('\n', start)) >= 0) {
+      const piece = chunk.slice(start, nl)
+      start = nl + 1
+      let line = this.partsLen > 0 ? this.parts.join('') + piece : piece
+      this.parts = []
+      this.partsLen = 0
       // 只按 \n 切；容忍 CRLF
-      const line = this.buf.slice(0, nl).replace(/\r$/, '')
-      this.buf = this.buf.slice(nl + 1)
+      if (line.endsWith('\r')) line = line.slice(0, -1)
       if (!line.trim()) continue
       this.handleLine(line)
     }
+    if (start < chunk.length) {
+      const rest = start === 0 ? chunk : chunk.slice(start)
+      this.parts.push(rest)
+      this.partsLen += rest.length
+    }
 
     // 防御：万一上游吐了没有换行的巨量内容，别把内存吃干净
-    if (this.buf.length > 64 * 1024 * 1024) {
-      this.buf = ''
+    if (this.partsLen > 64 * 1024 * 1024) {
+      this.parts = []
+      this.partsLen = 0
       this.emit('stderr', '[yan] 单条记录超过 64MB，已丢弃（协议异常？）')
     }
   }
@@ -418,6 +434,11 @@ export class PiRpc extends EventEmitter {
       // 不是 JSON 的行（第三方扩展 print 之类）—— 记下来，不要崩
       this.emit('stderr', `[非 JSON 输出] ${line.slice(0, 500)}`)
       return
+    }
+    /* 超大记录留一条诊断：长会话卡顿时能看出是哪类记录在搬几十 MB */
+    if (line.length > 4 * 1024 * 1024) {
+      const kind = [obj.type, obj.command, (obj as { event?: { type?: unknown } }).event?.type].filter((v) => typeof v === 'string').join('/')
+      this.emit('stderr', `[yan] 大 RPC 记录 ${kind || '?'}：${(line.length / 1024 / 1024).toFixed(1)}MB`)
     }
 
     // 1. 响应：带 id 的关联回去
