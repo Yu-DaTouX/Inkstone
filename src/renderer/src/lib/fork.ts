@@ -25,8 +25,8 @@ export async function forkLatest(): Promise<void> {
  * 地图预览里那条「从此分叉」用它 —— entryId 自己就是从
  * `get_fork_messages` 拿的，不用再按文本找一次。
  */
-export async function forkAt(entryId: string): Promise<void> {
-  await useStore.getState().fork(entryId)
+export async function forkAt(entryId: string): Promise<boolean> {
+  return useStore.getState().fork(entryId)
 }
 
 /**

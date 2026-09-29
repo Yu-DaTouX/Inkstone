@@ -6,6 +6,7 @@ import { useStore } from '../../state/store'
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { shortProject } from './rail-utils'
 import { forkLatest } from '../../lib/fork'
+import { RunDot } from '../ui'
 
 /* ---------------------------------------------------------------- 会话行 */
 
@@ -100,6 +101,13 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
           />
         ) : (
           <button className={`srow ${selected ? 'sel' : ''}`} onClick={onSelect} title={`${s.title}${s.branchOrigin ? '\n' + s.branchOrigin : ''}\n${s.path}`} data-testid={depth ? 'rail-branch-item' : 'rail-session'}>
+            {/* 行首状态点：运行（强调色方点）/ 等你回答 / 失败 / 隔离 / 未读 / 空心（静止） */}
+            {waiting ? <span className="srow-dot waiting" data-testid="rail-waiting" title={t('rail.waiting')} />
+              : failure ? <span className="srow-dot failed" data-testid="rail-failed" title={failure} />
+              : running ? <RunDot className="srow-dot-run" label={t('rail.running')} />
+              : isolation ? <span className={`srow-dot iso${isolation === 'blocked' ? ' blocked' : ''}`} data-testid={`rail-isolation-${isolation}`} title={isolationLabel} />
+              : unread ? <span className="srow-dot unread" data-testid="rail-unread" title={t('rail.unread')} />
+              : <span className="srow-dot" aria-hidden />}
             <span className="srow-text">
               <span className="srow-line">
                 {/* 分支编号：这个会话是从别的会话分出来的第几个 */}
@@ -135,7 +143,6 @@ export function SessionRow({ s, selected, branchCount, branchIndex, branchesOpen
           </button>
         ) : null}
 
-        {waiting ? <span className="session-status waiting" data-testid="rail-waiting" title={t('rail.waiting')}>?</span> : failure ? <span className="session-status failed" data-testid="rail-failed" title={failure}><Icon name="alert-circle" size={12} /></span> : running ? <span className="session-status running" title={t('rail.running')}><Icon name="activity" size={12} /></span> : isolation ? <span className={`session-status iso${isolation === 'blocked' ? ' blocked' : ''}`} data-testid={`rail-isolation-${isolation}`} title={isolationLabel}>{isolation === 'blocked' ? <Icon name="alert-circle" size={12} /> : <Icon name="refresh" size={12} />}</span> : unread ? <span className="session-status" data-testid="rail-unread" title={t('rail.unread')}>●</span> : null}
         {/* 显示的时间必须与排序键一致，否则看起来“没排序” */}
         <span className="srow-time">{relTime(s.lastActivityAt ?? s.updatedAt)}</span>
       </div>

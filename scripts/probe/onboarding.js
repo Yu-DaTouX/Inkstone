@@ -137,7 +137,7 @@
       ok(await until(() => q('.settings')), '点「去配置」打开了设置面板')
       const selTab = q('.settings-tab.sel')
       out.push('  选中 tab = ' + JSON.stringify((selTab?.textContent || '').trim()))
-      ok(/接入|Access/i.test(selTab?.textContent || ''), '设置停在「模型接入」页')
+      ok(/接入|Access|模型|Model/i.test(selTab?.textContent || ''), '设置停在「模型接入」页')
 
       /* 从配置页返回：关掉设置，引导层应该还在（它是下层模态，不能被顶掉） */
       const closeTab = [...document.querySelectorAll('.settings-tab')].find((x) => /关闭|Close/.test(x.textContent || ''))

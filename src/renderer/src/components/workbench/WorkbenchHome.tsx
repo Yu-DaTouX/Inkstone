@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../../icons/Icon'
+import { BrandMark } from '../shell/BrandMark'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { samePath } from '../../../../shared/session-path'
 import { useSessionSources } from '../../state/daily-sources'
 import { goalDisplayTitle } from '../../state/goal-view'
-import { buildSessionMap } from '../../../../shared/session-map'
 import { Button } from '../ui'
 
 /**
@@ -77,7 +77,16 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
   )
   const heroTarget = recent[0]
 
-  const mapSummary = useMemo(() => buildSessionMap({ sessions }).stats, [sessions])
+  const mapBranches = useMemo(() => {
+    const byPath = new Map(sessions.map((item) => [item.path, item]))
+    let root = sessions.find((item) => samePath(item.path, session?.sessionFile))?.path
+    const seen = new Set<string>()
+    while (root && byPath.get(root)?.parentSession && !seen.has(root)) { seen.add(root); root = byPath.get(root)?.parentSession }
+    const family = new Set<string>()
+    const visit = (path: string): void => { if (family.has(path)) return; family.add(path); for (const item of sessions) if (samePath(item.parentSession, path)) visit(item.path) }
+    if (root) visit(root)
+    return family.size
+  }, [sessions, session?.sessionFile])
 
   /*
    * 当前空间：**从当前会话的归属派生**，不另存一份（T04-8）。
@@ -228,10 +237,9 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
   }
 
   /*
-   * 会话地图只在**有东西可看**时给入口（>1 条会话才值得摊开看）。
-   * 它原来是常驻卡片，但单会话时那张卡只有一个数字 —— 纯噪音。
+   * 当前会话有分支时提供地图入口，数量只统计该会话家族。
    */
-  if (mapSummary.total > 1) {
+  if (mapBranches > 1) {
     cards.push({
       id: 'map',
       node: (
@@ -240,7 +248,7 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
             <Icon name="map" size={12} />
             {t('map.title')}
           </h2>
-          <p className="wb-card-meta">{t('map.stats', { lanes: mapSummary.laneCount, nodes: mapSummary.total })}</p>
+          <p className="wb-card-meta">{t('map.familyCount', { n: mapBranches })}</p>
           <Button size="sm" className="wb-open-map" onClick={onOpenMap} data-testid="wb-open-map">
             {t('wb.open')}
             <Icon name="chevron-right" size={12} />
@@ -248,6 +256,40 @@ export function WorkbenchHome({ onOpenSession, onOpenMap, onOpenSpace, onOpenInb
         </section>
       )
     })
+  }
+
+  /* 什么都还没有：给三个日常入口，点了只把草稿填进输入框，发不发由你定 */
+  if (!heroTarget && cards.length === 0) {
+    const suggest = (text: string): void => {
+      const ta = document.querySelector<HTMLTextAreaElement>('[data-testid="composer"]')
+      if (!ta) return
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(ta, text)
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      ta.focus()
+    }
+    return (
+      <div className="empty-stream" data-testid="workbench-home">
+        <div className="empty-mark" aria-hidden>
+          <BrandMark size={40} decorative />
+        </div>
+        <div className="empty-title">{t('wb.emptyTitle')}</div>
+        <div className="empty-hint">{t('wb.emptyHint')}</div>
+        <div className="empty-suggest" data-testid="wb-hero">
+          <button className="empty-sug" onClick={() => suggest(t('wb.draftAsk'))}>
+            <Icon name="message-dots" size={12} />
+            <span>{t('wb.entryAsk')}</span>
+          </button>
+          <button className="empty-sug" onClick={() => suggest(t('wb.draftResearch'))}>
+            <Icon name="search" size={12} />
+            <span>{t('wb.entryResearch')}</span>
+          </button>
+          <button className="empty-sug" onClick={() => suggest(t('wb.draftWrite'))}>
+            <Icon name="pencil" size={12} />
+            <span>{t('wb.entryWrite')}</span>
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

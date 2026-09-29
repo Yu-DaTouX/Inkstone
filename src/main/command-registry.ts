@@ -21,7 +21,7 @@ type RuntimeCommand = {
 const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
   {
     name: 'login',
-    description: '打开模型接入设置',
+    description: '打开模型设置',
     source: 'yan',
     executable: true,
     usage: '/login'

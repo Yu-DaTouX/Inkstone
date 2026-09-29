@@ -29,20 +29,21 @@
  *    不要全部弹出」）。一次 agent 跑几十条命令是常态，
  *    已结束的全展开会把回答顶出屏幕。
  */
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { withScrollAnchor } from '../../lib/scrollAnchor'
 import { TerminalWindow } from './Terminal'
 import { FileChangeDetail, ToolResultDetail, WorkspaceChangesDetail, detailKind, readWorkspaceChanges } from './ToolDetails'
-import { Spinner } from '../ui'
+import { RunDot } from '../ui'
 import { goalCommand, summarizeTaskPlanCommand, summarizeYanCommand, taskPlanCommand } from '../../../../shared/tool-origin'
 import type { UIToolCall } from '../../../../shared/ipc'
+import { ChatImage } from './ChatImage'
 
 
 /** 一行工具：图标 + 动词 + 目标 + 状态 */
-function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolCall; autoOpen?: boolean; openRequest?: number }) {
+function ToolRowImpl({ call, autoOpen = true }: { call: UIToolCall; autoOpen?: boolean }) {
   const t = useT()
   /** 用户手动开关；null = 跟随默认值 */
   const [manual, setManual] = useState<boolean | null>(null)
@@ -80,16 +81,6 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
   const open = manual ?? (running && autoDetail && autoOpen)
   /** 滚动锚点：展开/收起时让这一行在屏幕上原地不动（方案 4.2） */
   const rowRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!openRequest) return
-    setManual(true)
-    const frame = requestAnimationFrame(() => {
-      const row = rowRef.current
-      row?.scrollIntoView({ block: 'nearest' })
-      row?.querySelector<HTMLButtonElement>('.trow-head')?.focus({ preventScroll: true })
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [openRequest])
   /** 详情分型（方案 4.1）：命令 / 文件改动 / 普通结果 */
   const kind = detailKind(call.name)
   const wsChanges = readWorkspaceChanges(call.details)
@@ -143,7 +134,7 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
       >
         {/* 命令块（设计规范 §3.5）：状态 · 工具名 · 目标 · 右侧耗时 */}
         <span className="trow-ico" aria-hidden>
-          {running ? <Spinner /> : <span className={`trow-dot ${failed ? 'err' : cancelled ? 'warn' : 'ok'}`} />}
+          {running ? <RunDot /> : <span className={`trow-dot ${failed ? 'err' : cancelled ? 'warn' : 'ok'}`} />}
         </span>
         {taskPlan || goalCmd ? (
           <span
@@ -159,7 +150,6 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
           {kind === 'command' ? <span className="trow-dollar">$ </span> : null}
           {target || t('tool2.noTarget')}
         </span>
-        <span className="spacer" />
         {!running && secs !== null ? <span className="trow-time">{secs}s</span> : null}
         {failed ? (
           <span className="trow-badge err">{t('tool.failed')}</span>
@@ -183,9 +173,9 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
             <div className="trow-images" data-testid="tool-images">
               {call.images.map((im, i) =>
                 im.data ? (
-                  <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" />
+                  <ChatImage key={i} src={`data:${im.mimeType};base64,${im.data}`} />
                 ) : im.url ? (
-                  <img key={i} src={im.url} alt="" />
+                  <ChatImage key={i} src={im.url} />
                 ) : null
               )}
             </div>
@@ -236,7 +226,7 @@ function ToolRowImpl({ call, autoOpen = true, openRequest = 0 }: { call: UIToolC
  * 实时条目用长度就够区分（同一个工具换一张图，长度几乎不会相等）。
  */
 function imageKey(c: UIToolCall): string {
-  return c.images?.map((i) => i.url || String(i.data.length)).join('|') ?? ''
+  return c.images?.map((i) => i.url || String(i.data?.length ?? 0)).join('|') ?? ''
 }
 
 function sameCall(a: UIToolCall, b: UIToolCall): boolean {
@@ -257,93 +247,70 @@ function sameCall(a: UIToolCall, b: UIToolCall): boolean {
   )
 }
 
-export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && a.openRequest === b.openRequest && sameCall(a.call, b.call))
+export const ToolRow = memo(ToolRowImpl, (a, b) => a.autoOpen === b.autoOpen && sameCall(a.call, b.call))
 
 /**
- * 一组**已结束**的工具：折叠在「调用了 N 次工具/命令」下面（Codex 的「运行了命令 ⌄」）。
+ * 一回合的全部工具：一个细边框的命令块表（设计规范 §3.5），一行一条。
  *
- * ⚠️ 默认**收起**，而且**不因有工具在跑而自动展开**。
- *   历史上这里写过 `open = running && streaming` —— 结果是模型一调工具，
- *   整组（连同所有已结束的行）一起弹开，把回答顶出屏幕（用户报的）。
- *   正在运行的那条不再放进本组：它由 TurnView 单独渲染并自动展开详情，
- *   这样只有「当前在跑的工具」是打开的，其余保持一行。
+ * 运行中的与已结束的放在同一张表里、按发生顺序排列；已成功结束的较早几步
+ * 收在首行「前面 N 步」里分批展开。运行中和失败的始终可见，不参与折叠。
+ * 只有 `activeId` 那条会按设置里的「工具详情」偏好自动展开，其余保持一行。
  */
-function ToolGroupImpl({ tools }: { tools: UIToolCall[] }) {
-  const t = useT()
-  const [manual, setManual] = useState<boolean | null>(null)
-  const [failureRequest, setFailureRequest] = useState(0)
-  /*
-   * 「只看失败」（用户：「点击的时候应该是仅显示失败的项目 现在是显示了全部」）。
-   * 点「查看失败」后列表只剩失败行，按钮变成「显示全部」可切回。
-   */
-  const [onlyFailed, setOnlyFailed] = useState(false)
-  /*
-   * 组里有失败的 → 标题上标出来，但**默认仍然收起**（N03）。
-   *
-   * 历史上有过两版自动展开规则，都被用户报过：
-   *   · `open = running && streaming`：模型一调工具，整组十几行一起弹开；
-   *   · `open = failedCount > 0`：一条失败就把整组展开，同样抢版面。
-   * 现在自动展开必须由用户显式打开 `toolDetail`，失败只靠
-   * 「N 个失败」角标 + 行内红色状态提示 —— 一眼看得出有东西挂了，
-   * 但不替用户决定要不要展开。
-   */
-  const failedCount = tools.filter((c) => c.status === 'error').length
-  const firstFailureId = tools.find((c) => c.status === 'error')?.id
-  const typeCounts = new Map<string, number>()
-  for (const call of tools) {
-    const type = verbOf(call.name, t)
-    typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1)
-  }
-  const typeSummary = [...typeCounts].map(([name, count]) => `${name} ${count}`).join(' · ')
-  const open = manual ?? false
-  /* 过滤后的列表：只看失败时只剩 error 行 */
-  const shown = onlyFailed ? tools.filter((c) => c.status === 'error') : tools
+/** 点「前面 N 步」先展开最近几步，再按批追加 */
+const REVEAL_FIRST = 8
+const REVEAL_MORE = 20
 
+function ToolGroupImpl({ tools, activeId = null }: { tools: UIToolCall[]; activeId?: string | null }) {
+  const t = useT()
+  /*
+   * 已展开的较早步数（从最近的往前数）：大任务分批展开，不一次铺出几十上百行。
+   * 记着它属于哪一组（以首条调用 id 为准）：列表串到别的回合时不沿用旧的展开量。
+   */
+  const groupKey = tools[0]?.id ?? ''
+  const [reveal, setReveal] = useState({ key: groupKey, n: 0 })
   if (tools.length === 0) return null
+  const setRevealed = (next: (n: number) => number) => setReveal((r) => ({ key: groupKey, n: next(r.key === groupKey ? r.n : 0) }))
+
+  const history = tools.filter((c) => c.status !== 'running' && c.status !== 'pending' && c.status !== 'error')
+  const revealed = reveal.key === groupKey ? Math.min(reveal.n, history.length) : 0
+  const shownHistory = new Set(history.slice(history.length - revealed))
+  const visible = tools.filter((c) => !history.includes(c) || shownHistory.has(c))
+  const foldable = history.length > 0
+  const hidden = history.length - shownHistory.size
+  const expanded = revealed > 0
 
   return (
-    <div className={`tgroup ${open ? 'open' : ''} ${failedCount > 0 ? 'has-fail' : ''}`} data-testid="tool-group">
-      <div className="tgroup-top">
-        <button className="tgroup-head" onClick={() => setManual(!open)} aria-expanded={open} data-testid="tool-group-toggle">
+    <div className={`tgroup ${expanded && foldable ? 'is-expanded' : ''}`} data-testid="tool-group" data-count={tools.length}>
+      {hidden > 0 ? (
+        <button
+          className="tgroup-fold"
+          onClick={() => setRevealed((n) => n + (n === 0 ? REVEAL_FIRST : REVEAL_MORE))}
+          aria-expanded={expanded}
+          data-testid="tool-group-toggle"
+        >
           <Icon name="chevron-right" size={12} className="chev" />
-          <span>{t('tool2.ran', { n: tools.length })}</span>
-          <span className="tgroup-summary">{typeSummary}</span>
-          {failedCount > 0 ? (
-            <span className="tgroup-fail" data-testid="tool-group-fail">
-              {t('tool2.failed', { n: failedCount })}
-            </span>
-          ) : null}
+          <span>{expanded ? t('tool2.moreEarlier', { n: hidden, k: Math.min(hidden, REVEAL_MORE) }) : t('tool2.earlier', { n: hidden })}</span>
         </button>
-        {firstFailureId ? (
-          <button className="tgroup-fail-action" onClick={() => {
-            setManual(true)
-            const next = !onlyFailed
-            setOnlyFailed(next)
-            /* 进「只看失败」时顺便把第一条失败的详情展开，省一次点击 */
-            if (next) setFailureRequest((count) => count + 1)
-          }}>
-            {onlyFailed ? t('tool2.viewAll') : t('tool2.viewFailure')}
-          </button>
-        ) : null}
-      </div>
-      {open ? (
-        <div className="tgroup-body">
-          {shown.map((c) => (
-            <ToolRow key={c.id} call={c} openRequest={c.id === firstFailureId ? failureRequest : 0} />
-          ))}
-        </div>
+      ) : null}
+      {visible.map((c) => (
+        <ToolRow key={c.id} call={c} autoOpen={c.id === activeId} />
+      ))}
+      {foldable && expanded ? (
+        <button className="tgroup-fold up" onClick={() => setRevealed(() => 0)} aria-expanded data-testid="tool-group-toggle">
+          <Icon name="chevron-right" size={12} className="chev" />
+          <span>{t('tool2.foldEarlier')}</span>
+        </button>
       ) : null}
     </div>
   )
 }
 
 /**
- * 组的 memo：比较的也是「渲染上等价」——长度相同且逐条 sameCall。
- *
- * 不比较数组引用：`TurnActivity` 每次都用 filter 新建数组，引用永远不相等，
- * 用默认比较等于没 memo。
+ * 组的 memo：比较的是「渲染上等价」——长度相同且逐条 sameCall。
+ * 不比较数组引用：`TurnActivity` 每次都新建数组，引用永远不相等。
  */
 export const ToolGroup = memo(ToolGroupImpl, (a, b) => {
+  if (a.activeId !== b.activeId) return false
   if (a.tools === b.tools) return true
   if (a.tools.length !== b.tools.length) return false
   for (let i = 0; i < a.tools.length; i++) {
@@ -351,8 +318,6 @@ export const ToolGroup = memo(ToolGroupImpl, (a, b) => {
   }
   return true
 })
-
-
 
 /** 动词：按工具类型给一个中文动作词 */
 function verbOf(name: string, t: (k: 'tool2.vRun' | 'tool2.vRead' | 'tool2.vEdit' | 'tool2.vWrite' | 'tool2.vSearch' | 'tool2.vCall') => string): string {

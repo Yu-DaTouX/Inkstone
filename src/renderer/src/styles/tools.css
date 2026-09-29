@@ -134,11 +134,6 @@
    ④ 「在任务模块的旁边加入一个当前会话历史任务查看以及跳转」
       → ③④ 共用同一个入口：折叠模块的头部（就在任务列表下面）
    =================================================================== */
-/* 当前任务行：底色与圆角；运行标记由行内槽位单独渲染 */
-.rp-todo.active {
-  background: var(--bg-2);
-  border-radius: var(--r-xs);
-}
 
 .rp-now-spin {
   display: inline-flex;
@@ -160,6 +155,7 @@
   padding-top: 1px;
 }
 .rp-sec-row {
+  position: relative;
   display: flex;
   align-items: center;
 }
@@ -248,7 +244,7 @@
 
 /* ── 文件树 ── */
 .rp-fs {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   letter-spacing: normal;
 }
 .rp-fs-state {
@@ -605,7 +601,7 @@
   cursor: pointer;
 }
 .rp-compact-summary strong { color: var(--fg); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
-.rp-compact-summary strong.ok, .rp-compact-subvalue.ok { color: var(--ok); }
+.rp-compact-summary strong.ok, .rp-compact-subvalue.ok { color: var(--fg); }
 .rp-compact-summary strong.warn, .rp-compact-subvalue.warn { color: var(--warn); }
 .rp-compact-summary strong.err, .rp-compact-subvalue.err { color: var(--err); }
 .rp-compact-chevron { display: inline-flex; flex: 0 0 auto; opacity: .62; transition: transform var(--dur) var(--ease); }
@@ -614,7 +610,7 @@
 .rp-compact-subvalue { color: var(--fg-dim); }
 .rp-compact-summary > .rp-quota-compact-windows { display: flex; flex: 0 0 auto; min-width: max-content; gap: var(--sp-2); color: var(--fg-dim); }
 .rp-quota-compact-windows > span { flex: none; }
-.rp-quota-compact-windows > span.ok { color: var(--ok); }
+.rp-quota-compact-windows > span.ok { color: var(--fg-dim); }
 .rp-quota-compact-windows > span.warn { color: var(--warn); }
 .rp-quota-compact-windows > span.err { color: var(--err); }
 .rp-compact-reset { color: var(--fg-mute); }
@@ -625,23 +621,19 @@
 .rp-compact-details { min-width: 0; }
 .rp-compact-panel[data-compact="true"] .rp-compact-details { display: none; }
 .rp-compact-meter { height: 3px; margin: 2px 0 3px 18px; overflow: hidden; border-radius: var(--r-full); background: var(--bg-2); }
-.rp-compact-meter i { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
+.rp-compact-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .rp-compact-meter i.warn { background: var(--warn); }
 .rp-compact-meter i.err { background: var(--err); }
 .rp-compact-meter i.unknown { background: var(--fg-mute); }
 .rp-compact-panel[data-compact="true"] .rp-compact-meter { display: block; }
 .rp-compact-panel[data-compact="false"] .rp-compact-meter { display: none; }
 
-/* 窗口额度（Command Code 的 5 小时 / 每周）——每条一行 + 一条细进度条 */
+/* 窗口额度（5 小时 / 每周 / 本月）——每个窗口两行，版式见文件末尾 .rp-quota-win */
 .rp-quota-wins {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-2);
   margin: 2px 0;
-}
-
-.rp-quota-win .rp-u {
-  flex: none;
 }
 
 .rp-dim.err {
@@ -651,10 +643,6 @@
 /* 需要用户注意、但不是错误（如 D21：项目的 .pi/settings.json 未生效） */
 .rp-dim.warn {
   color: var(--warn);
-}
-
-.rp-quota-win .rp-meter {
-  margin: 2px 0 1px;
 }
 
 .rp-context-summary {
@@ -692,9 +680,8 @@
  *  ① `align-items: baseline` 对按钮不成立：按钮高 24px、文字 17px，
  *     基线对齐的结果是按钮与「自动压缩」看起来不在一条线上；
  *     这里改成 center，两者共用同一条中线。
- *  ② 右栏可以窄到 220px，按钮文字**必须保持一行高度**（之前折成
- *     「压缩上 / 下文」两行，行高跟着变）。nowrap + 省略号：
- *     宁短一点，也不让它把这一行撞成两行。
+ *  ② 极窄右栏放不下三项时，手动按钮整体换到下一行；按钮文字仍保持一行，
+ *     不把按钮压成零宽，也不挤入窗口标签。
  */
 .rp-ctx-actions {
   /*
@@ -707,7 +694,7 @@
   container-type: inline-size;
   container-name: ctxactions;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   /* 这一行有 3 个元素，默认 gap 会吃掉 24px —— 最窄档下就是按钮文字的救命宽度 */
   gap: 6px;
 }
@@ -718,6 +705,8 @@
 .rp-ctx-actions .btn {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
 }
 .rp-ctx-actions .btn > span {
   min-width: 0;
@@ -817,7 +806,18 @@
   background: var(--warn);
 }
 
-/* 两段式开关：一次一条 / 一次全投 */
+/* 行内文字链接（「方式」这类低频展开入口） */
+.rp-link {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+.rp-link:hover,
+.rp-link[aria-expanded='true'] {
+  color: var(--accent);
+}
+
+/* 两段式开关：逐条 / 全部 */
 .rp-mode {
   margin-top: 2px;
 }
@@ -888,10 +888,6 @@
   flex: 1 1 auto;
 }
 
-.rp-todo.todo-open .rp-box {
-  border-color: var(--warn);
-  background: transparent;
-}
 
 /* 右侧状态字：已完成 / 未完成 */
 .rp-state {
@@ -1009,14 +1005,9 @@
 .rp-header-usage { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 65%; }
 .rp-header-values { display: inline-flex; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--fg-mute); font-weight: var(--fw-regular); }
 .rp-header-values > span { flex: none; }
-.rp-header-values .ok { color: var(--ok); }
+.rp-header-values .ok { color: var(--fg-dim); }
 .rp-header-values .warn { color: var(--warn); }
 .rp-header-values .err { color: var(--err); }
-.rp-usage-ring { --ring-color: var(--fg-mute); width: 30px; height: 30px; flex: none; display: inline-grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--ring-color) var(--ring-pct), var(--border-soft) 0); font-size: 8px; font-variant-numeric: tabular-nums; color: var(--fg); }
-.rp-usage-ring.ok { --ring-color: var(--ok); }
-.rp-usage-ring.warn { --ring-color: var(--warn); }
-.rp-usage-ring.err { --ring-color: var(--err); }
-.rp-usage-ring > span { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--bg-1); }
 
 .rp-grip {
   flex: none;
@@ -1138,7 +1129,7 @@
  * 已接管的实线（强调色），未接管的虚线 + 更淡 —— 与 `title` 里的说明一致。
  * 标记都用 `pointer-events: none`，不让它们挡住进度条自己的悬停提示。
  */
-.rp-stage {
+.rp-meter > .rp-stage {
   position: absolute;
   top: -1px;
   bottom: -1px;
@@ -1148,7 +1139,7 @@
   opacity: 0.8;
   pointer-events: none;
 }
-.rp-stage.planned {
+.rp-meter > .rp-stage.planned {
   width: 1px;
   margin-left: -0.5px;
   /* 未接管也要看得见（它是“这里将来会动手”的位置），但不能和目标一样重 */
@@ -1156,16 +1147,38 @@
   opacity: 0.85;
 }
 
-/* 阶段图例（名字 + 是否已接管）；窄栏会换行，不横溢 */
+/*
+ * 阶段名：各自收在刻度左下（右边缘对齐刻度，left 由组件按触发点算）。
+ * 统一右对齐而不是居中：三个名字的间距就等于刻度间距（15% 工作集），
+ * 窄栏下相邻两个名字也不会叠在一起；最右一个也不会出界。
+ */
 .rp-stages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-1);
-  margin: -2px 0 var(--sp-1);
+  position: relative;
+  height: 16px;
+  margin: 3px 0 var(--sp-1);
 }
-/* 阶段图例用 ui.css 的徽标；尚未接管的阶段用虚线表示「阶段 4 前不会触发」 */
-.rp-stage.planned {
-  border-style: dashed;
+.rp-stage-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-100%);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  white-space: nowrap;
+}
+/* 名字比刻度间距宽（窄栏、英文）时：退成右对齐的一排，不贴刻度也不叠字 */
+.rp-stages[data-crowded='1'] {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+.rp-stages[data-crowded='1'] > .rp-stage-label {
+  position: static;
+  transform: none;
+}
+/* 尚未接管的阶段更淡（刻度本身是虚线，见 .rp-meter > .rp-stage.planned） */
+.rp-stage-label.planned {
+  color: var(--fg-mute);
 }
 
 /* 文件区头部的小开关（显示隐藏项）—— 打开时高亮，与别处 .on 语义一致 */
@@ -1566,9 +1579,9 @@
 
 .rp-goal-summary {
   min-width: 0;
-  padding: 3px 0 var(--sp-2);
-  margin-bottom: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-sm);
 }
 
 .rp-goal-summary-head {
@@ -1740,7 +1753,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  */
 .rp-todo {
   display: grid;
-  grid-template-columns: 2px 16px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   column-gap: var(--sp-2);
   align-items: start;
   padding: 2px 0;
@@ -1751,39 +1764,28 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   min-width: 0;
 }
 
-/* 运行状态：行内独立标记，顶部/底部各留 6px；选中态不复用这条线。 */
-.rp-running-mark {
-  display: block;
-  width: 2px;
-  min-width: 2px;
-  min-height: 8px;
-  align-self: stretch;
-  margin-block: 6px;
-  border-radius: var(--r-full);
-  background: transparent;
-}
-
-.rp-todo.active .rp-running-mark {
-  /* 进行中由右侧「正在进行」与方点阵表达，不再画左侧竖条（设计规范 §3.3） */
-  background: transparent;
-}
-
 /* 勾选框：一个真方框 */
 .rp-box {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  margin-top: 1px;
-  border: 1px solid var(--border-str);
-  border-radius: 2px;
-  background: var(--bg-2);
-  color: transparent;
-  font-size: 9px;
-  line-height: 1;
-  grid-column: 2;
+  display: inline-grid;
+  place-items: center;
   flex: none;
+  grid-column: 1;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-str);
+  border-radius: 3px;
+  color: var(--accent);
+}
+.rp-box .ico {
+  width: 10px;
+  height: 10px;
+}
+.rp-box .ui-run-dot {
+  width: 4px;
+  height: 4px;
+  vertical-align: 0;
 }
 
 .rp-todo .rp-text,
@@ -1797,19 +1799,21 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   white-space: normal;
   text-overflow: ellipsis;
 }
-.rp-todo .rp-text { grid-column: 3; }
+.rp-todo .rp-text { grid-column: 2; }
 .rp-hist-todo .rp-text { grid-column: 2; }
 
 .rp-todo .rp-state {
-  grid-column: 4;
+  grid-column: 3;
   min-width: max-content;
 }
 
 .rp-todo.done .rp-box {
-  border-color: var(--ok);
-  background: var(--ok);
-  color: #0b1f16;
-  font-weight: 700;
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.rp-todo.done .rp-text {
+  color: var(--fg-mute);
+  text-decoration: line-through;
 }
 
 /* 受阻（方案 7.1）：只有数据真的标了 blocked 才显示，不把“跑得久”推断成受阻 */
@@ -2278,7 +2282,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .sp-parent {
   opacity: 0.75;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .sp-review {
@@ -2302,7 +2306,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   margin: var(--sp-1) 0;
   overflow: hidden;
   color: var(--fg-mute);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2353,7 +2357,6 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   margin: 2px 0;
   color: var(--fg-mute);
   font-size: var(--fs-sm);
-  font-style: italic;
   white-space: pre-wrap;
 }
 
@@ -2424,8 +2427,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
      用户报的「滑动条很占位置」就是它。右栏的滚动条改用 overlay 式：
      不预留、不滚动时不画（见文件末尾第 52 节）。 */
   scrollbar-gutter: auto;
-  /* 与 .rp-top 的 6px 对齐（卡片自己收边，面板给它留出左右空隙） */
-  padding: 0 6px var(--sp-4);
+  padding: 0 0 var(--sp-4);
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
@@ -2436,20 +2438,23 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  * 分区 = 检查器里的一组（v0.4）。
  *
  * 右栏是对话的旁注，不是仪表盘：分区之间只用一条细分隔线，不再每块一张
- * 圆角卡片；标题 12px 半粗、次级前景色，右侧摘要（环形 + 数字）保留。
+ * 圆角卡片；标题 12px 半粗、次级前景色，右侧摘要（数字 + 迷你条）保留。
  * 上下内边距相等，收起态的标题仍在行内居中。
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec {
   min-width: 0;
-  padding: 0 var(--sp-2);
+  padding: 0 var(--sp-4);
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.rightpanel:not(.browser-mode):not(.review-mode) .rp-slot + .rp-slot {
-  margin-top: 0;
-  border-top: 1px solid var(--border-soft);
+/* 分区之间一条细线；分区自己判定为空（返回 null）时整个槽位不占位，不留双线 */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-slot:not(:has(> .rp-sec)) {
+  display: none;
+}
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-slot {
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec + .rp-sec {
@@ -2457,7 +2462,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-row {
-  min-height: 40px;
+  min-height: 36px;
   align-items: center;
 }
 
@@ -2467,9 +2472,12 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
    * 之前的 20px + 4px 左边距会把每个分区的箭头和标题整体推远，
    * 在窄右栏里就表现成标题左侧一大片空白。
    */
+  position: absolute;
+  top: 50%;
+  left: calc(var(--sp-4) * -1 + 2px);
   width: 12px;
   height: 20px;
-  margin-left: 0;
+  margin: -10px 0 0;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head {
@@ -2482,7 +2490,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
    * 圆环孤零零在第二行，看起来像布局坏了。改成不换行，放宽不下时
    * 由摘要自己收缩/截断（见 `.rp-header-usage`）。
    */
-  min-height: 40px;
+  min-height: 36px;
   height: auto;
   flex-wrap: nowrap;
   /*
@@ -2491,18 +2499,17 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
    * 牺牲顺序：先摘要里的数字，再摘要本身，最后才是这一层。
    */
   overflow: hidden;
-  padding: 6px 6px 6px 0;
-  gap: 6px;
-  color: var(--fg);
+  padding: 0;
+  gap: var(--sp-2);
   /*
    * 标题字号 --fs-lg(15) → --fs-base(13)（用户：「把标题都变小一些」）。
-   * 右栏拖窄时这三四个字很占地方，而标题旁边还有环形 + 数值。
+   * 右栏拖窄时这三四个字很占地方，而标题旁边还有数值 + 迷你条。
    * 摘要里的 `.rp-header-values` 自己有 `--fs-sm`，不受这里影响。
    */
   color: var(--fg-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: var(--fw-strong);
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 /* 卡片标题前的图标（没给 icon 的分区仍用折叠箭头，见 ToolSection） */
@@ -2528,11 +2535,11 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 }
 
 /*
- * 标题右侧的摘要（环形 + 数字）。
+ * 标题右侧的摘要（数字 + 迷你条）。
  *
- * ⚠️ 块宽固定（两卡同一个基准值）：上下文与额度两张卡的环形要**落在
- *    同一条竖线上**。摘要区等基准、环形摆区首、数字右对齐吸收文本长短
- *    差异，两个环形的 x 坐标就与标题长短无关了（只跟卡片内边距有关）。
+ * ⚠️ 块宽固定（两卡同一个基准值）：上下文与额度两张卡的迷你条要**落在
+ *    同一条竖线上**。摘要区等基准、迷你条摆区尾、数字右对齐吸收文本长短
+ *    差异，两根条的 x 坐标就与标题长短无关了（只跟卡片内边距有关）。
  *
  * ⚠️ 但上限不能写成 50% —— 额度摘要是「5h 2% 周 52%」而上下文是
  *    「36k / 400k」，用百分比限制时额度那条会被截掉后半段（用户报的
@@ -2541,21 +2548,21 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
  */
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-head > .rp-header-usage {
   /*
-   * 基准宽 150（两张卡的环形要落在同一条竖线上），可以收缩，
+   * 基准宽 150（两张卡的迷你条要落在同一条竖线上），可以收缩，
    * 而且**优先收缩**。
    *
    * `flex-shrink: 20` 是关键：压缩量按 shrink × basis 分，标题（shrink 1、
    * basis ≈ 标题宽）只分到 2% 左右，所以窄栏时先掉的是摘要里的数字 ——
    * 而不是把标题压成「上…」「额.」（用户截图）。
    *
-   * `min-width: 36px` = 环形 30 + gap 6：数字全部消失后就到底了，
+   * `min-width: 62px` = 迷你条 56 + gap 6：数字全部消失后就到底了，
    * 再窄才轮到标题缩。
    */
   flex: 0 20 150px;
   width: auto;
   max-width: none;
-  min-width: 36px;
-  justify-content: flex-start;
+  min-width: 62px;
+  justify-content: flex-end;
 }
 
 /* 压缩中：上下文卡的摘要位让给状态（见 RightPanel 里 Section 的 extra） */
@@ -2598,6 +2605,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-sec-body-inner {
   gap: 6px;
   padding: 0 0 var(--sp-3);
+  font-size: var(--fs-sm);
   border-top: 0;
 }
 
@@ -3218,6 +3226,7 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
   box-sizing: border-box;
   min-width: 0;
   min-height: 42px;
+  gap: var(--sp-1);
   padding: 0 var(--sp-2);
   overflow-x: auto;
   overflow-y: visible;
@@ -3230,12 +3239,21 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 
 .rightpanel.right-window-panel .rp-windowbar .ui-tab {
   flex: 0 1 auto;
-  /* 窄右栏（≤980px 时设计宽度只有 190px）里两个 128px 胶囊放不下：
-     窄窗口下右栏第一屏就是标签栏，标签必须自己收缩。靠“隐藏滚动条 + 横向滚”
-     用户根本看不出第二个标签存在（940x620 实测：「工具」被挤到可视区外，
-     看上去像被裁掉）。收缩留给文字截断，图标不参与。外观来自 .ui-tab.doc。 */
-  min-width: 0;
+  /* 190px 右栏里先截断文字；图标与关闭钮保留自己的空间。多标签超出时
+     仍可横向滚动，不把不可收缩的控件挤在一起。外观来自 .ui-tab.doc。 */
+  /* Keep enough room for the icon and a readable label before scrolling. */
+  min-width: 58px;
   max-width: 220px;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .ui-tab:has(.ui-tab-close) {
+  /* A close control must never compress into the icon or label. */
+  min-width: 78px;
+}
+
+.rightpanel.right-window-panel .rp-windowbar .ui-tab:first-child {
+  /* The permanent inspector title stays readable; resource labels truncate first. */
+  flex: none;
 }
 
 .rightpanel.right-window-panel .rp-windowbar .ui-tab > span:not(.spacer):not(.ui-tab-close) {
@@ -3252,6 +3270,9 @@ button.rp-output-row:hover:not(:disabled) { color: var(--fg); background: var(--
 .rightpanel.right-window-panel .rp-windowbar .rp-tool-launcher-wrap {
   z-index: 20;
   flex: none;
+  position: sticky;
+  right: 0;
+  background: var(--bg-1);
 }
 
 .rightpanel.right-window-panel.window-browser .browser-surface,
@@ -3771,7 +3792,7 @@ body.tile-dragging .rp-float-head {
 
 /*
  * 实施-20 U2：mini 摘要的分栏规则。
- * 环是固定尺寸的锚点；值区独占剩下的宽度并在自己那一列换行。
+ * 迷你条是固定尺寸的锚点；值区独占剩下的宽度并在自己那一列换行。
  * 值再长也只是把自己折行，不会把环推走形成“假第二列”；
  * 整块在窄栏仍按上面的规则落到标题下一行（.rp-sec-head 已经 flex-wrap）。
  */
@@ -3779,12 +3800,9 @@ body.tile-dragging .rp-float-head {
   flex-wrap: nowrap;
 }
 
-.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-usage > .rp-usage-ring {
-  flex: 0 0 auto;
-}
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-values {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
 }
 
 .rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-header-values > span {
@@ -3983,3 +4001,112 @@ body.tile-dragging .rp-float-head {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* 右栏窗口栏上的「恢复默认布局」：低频操作，悬停窗口栏或键盘聚焦时才出现 */
+.rp-windowbar > .rp-x {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.rp-windowbar:hover > .rp-x,
+.rp-windowbar > .rp-x:focus-visible {
+  opacity: 1;
+}
+/*
+ * 上下文 / 额度的摘要（分区头部）：「主值 次值 ▬▬」。
+ * 主值（百分比）用前景色，次值与窗口标签用 --fg-mute；迷你条定宽，
+ * 两张卡的条落在同一条竖线上。黄 / 红档只给主值和条上色。
+ */
+.rp-summary-sec .rp-header-usage { justify-content: flex-end; margin-left: auto; }
+.rp-summary-sec .rp-sec-head > .rp-header-usage > .rp-header-values { flex: 0 1 auto; }
+.rp-header-values b { font-weight: var(--fw-medium); color: var(--fg); }
+.rp-header-values .rp-header-k { color: var(--fg-mute); }
+.rp-header-values .warn b { color: var(--warn); }
+.rp-header-values .err b { color: var(--err); }
+
+/* 上下文展开体：工作集一行 + 按工作集画的进度条 + 刻度名 */
+.rp-working-summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-sm); }
+.rp-working-k { color: var(--fg-dim); }
+.rp-working-v { color: var(--fg-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-working-v b { font-weight: var(--fw-medium); color: var(--fg); }
+.rp-working-v b.warn { color: var(--warn); }
+.rp-working-v b.err { color: var(--err); }
+/* 刻度要伸出条的上下沿才看得见，所以这根条不裁切溢出 */
+[data-testid='rp-context'] .rp-meter { height: 4px; border-radius: var(--r-full); overflow: visible; margin: var(--sp-2) 0 0; }
+[data-testid='rp-context'] .rp-meter > i { border-radius: inherit; }
+[data-testid='rp-context'] .rp-meter > .rp-stage,
+[data-testid='rp-context'] .rp-meter > .rp-threshold { top: -3px; bottom: -3px; }
+/* 落在条末端的刻度整根收进条内，不被分区边缘裁掉一半 */
+[data-testid='rp-context'] .rp-meter > .rp-stage.end { margin-left: -2px; }
+
+/* 额度窗口：标签 | 条 | 百分比；第二行「已用 / 总额 · 重置」与条左对齐 */
+.rp-quota-win { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; column-gap: var(--sp-2); row-gap: 2px; align-items: center; min-width: 0; }
+.rp-quota-label { color: var(--fg-dim); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-quota-win > .rp-meter { height: 4px; border-radius: var(--r-full); margin: 0; }
+.rp-quota-win > .rp-meter > i { border-radius: inherit; }
+.rp-quota-pct { text-align: right; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-quota-pct.warn { color: var(--warn); }
+.rp-quota-pct.err { color: var(--err); }
+/* 金额、重置、徽标各自不折行；放不下时整段换到下一行，而不是截成省略号 */
+.rp-quota-sub { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--sp-2); row-gap: 2px; min-width: 0; color: var(--fg-mute); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.rp-quota-sub > span { white-space: nowrap; }
+.rp-quota-sub.err { color: var(--err); }
+.rp-quota-meta { display: flex; align-items: center; gap: var(--sp-1); margin-top: var(--sp-2); color: var(--fg-mute); font-size: var(--fs-xs); }
+.rp-quota-provider { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-quota-provider + span::before { content: '· '; }
+.rp-quota-meta > .rp-quota-refresh { margin-left: auto; }
+
+/*
+ * 窄栏与密度（上下文 / 额度两张摘要卡）。
+ *
+ * 窄栏：摘要不再换到标题下一行，而是按标题行的实际宽度逐级收：
+ *   先藏次要数字（`40k/1M`）→ 迷你条缩短；额度明细先藏「已用 / 总额」（仍在条的悬停提示里），
+ *   只留百分比与重置时间。容器挂在各自的行上，不给共用的 .rp-sec 加 containment。
+ * 密度：分组之间给出明确间隔 —— 工作集一组、阶段说明、操作行、窗口与窗口之间。
+ */
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-head {
+  flex-wrap: nowrap;
+  container-type: inline-size;
+  container-name: rphead;
+}
+.rightpanel:not(.browser-mode):not(.review-mode) .rp-summary-sec .rp-sec-head > .rp-header-usage {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.rp-summary-sec .rp-header-values {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+@container rphead (max-width: 250px) {
+  .rp-header-sub { display: none; }
+  .rp-header-usage > .ui-mini-meter { width: 36px; flex-basis: 36px; }
+}
+@container rphead (max-width: 170px) {
+  .rp-header-usage > .ui-mini-meter { display: none; }
+}
+
+[data-testid='rp-context'] .rp-working-summary { margin-top: 2px; }
+[data-testid='rp-context'] .rp-stages { margin-bottom: var(--sp-2); }
+[data-testid='rp-context'] [data-testid='ctx-next-stage'],
+[data-testid='rp-context'] [data-testid='ctx-incompressible'] { margin-bottom: var(--sp-1); }
+[data-testid='rp-context'] .rp-ctx-actions { margin-top: var(--sp-2); }
+
+.rp-quota-wins {
+  gap: var(--sp-3);
+  margin: var(--sp-1) 0 0;
+  container-type: inline-size;
+  container-name: quotawins;
+}
+@container quotawins (max-width: 250px) {
+  .rp-quota-win { grid-template-columns: 44px minmax(0, 1fr) 48px; column-gap: 6px; }
+  .rp-quota-amount { display: none; }
+}
+.rp-quota-meta {
+  margin-top: var(--sp-3);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.rp-quota-meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rp-quota-meta > .rp-quota-provider { flex: 0 1 auto; }
+.rp-quota-meta > [data-testid='quota-checked'] { flex: 0 0 auto; }
+/* 分区正文是 grid：隐式列按最宽子项的最小宽度撑开，单行的来源信息会把整列顶出右栏 */
+.rp-summary-sec .rp-sec-body-inner { grid-template-columns: minmax(0, 1fr); }

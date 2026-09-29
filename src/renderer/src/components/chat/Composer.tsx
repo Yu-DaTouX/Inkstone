@@ -34,6 +34,7 @@ export function Composer() {
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const send = useStore((s) => s.send)
+  const holdSend = useStore((s) => s.holdSend)
   const abort = useStore((s) => s.abort)
   const runBash = useStore((s) => s.runBash)
   const busy = useStore((s) => !!s.session?.isStreaming)
@@ -58,7 +59,6 @@ export function Composer() {
   const roundRunning = useStore(
     (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running || !!s.session?.isCompacting
   )
-  const holdSend = useStore((s) => s.holdSend)
   const pendingSends = useStore((s) => s.pendingSends)
   const conn = useStore((s) => s.conn)
   const commands = useStore((s) => s.commands)
@@ -680,7 +680,7 @@ export function Composer() {
      * pi 的订阅制登录是**交互式**的（OAuth 要开浏览器、回调回连 localhost），
      * RPC 的 47 个命令里没有 login —— 直接发过去模型会把它当一句话回答
      *（用户报的「输入 /login 模型没办法正常接受」）。
-     * 这里路由到「设置 → 模型接入」：那里列出了准确的登录方式。
+     * 这里路由到「设置 → 模型」：那里列出了准确的登录方式。
      */
     if (raw === '/login' || raw.startsWith('/login ')) {
       setValue('')
@@ -749,18 +749,17 @@ export function Composer() {
       return
     }
 
-    /*
-     * 生成中不直接投递：先把消息**悬在输入框上方**，由用户选「插话」还是
-     * 「排队」（用户 2026-09-19：「发送的消息默认悬浮在输入框上方，让用户
-     * 自己选择是插话还是排队」）。
-     *
-     * 悬着的消息在回合结束后会**自动按「排队」发出**（见下面的 effect）：
-     * 那时“插话”已经没有意义，而用户不选也不该把消息丢掉。
-     */
+    /* 运行中默认加入 follow-up 队列；压缩维护期间先保留，结束后再投递。 */
     if (roundRunning) {
+      if (useStore.getState().session?.isCompacting) {
+        holdSend(outgoing, images.length ? images : undefined)
+        setValue(''); clearAttachments(); return
+      }
+      const savedAttachments = useStore.getState().attachments
       setValue('')
       clearAttachments()
-      holdSend(outgoing, images.length ? images : undefined)
+      const sent = await send(outgoing, images.length ? images : undefined, 'followUp')
+      if (!sent) { useStore.setState({ attachments: savedAttachments }); setValue((draft) => draft ? `${outgoing}\n${draft}` : outgoing) }
       return
     }
 
@@ -995,7 +994,6 @@ export function Composer() {
        * 又不能塞进 .composer —— 那张卡片有 overflow: hidden，浮层会被裁掉。
        */}
       <div className="composer-stack">
-      <QuestionPanel />
       {/* 环绕流光：一次运行超过 3 秒才淡入（motion.css 的 .ui-orbit）；自主模式有自己的光带，不叠加 */}
       <div className={`composer-orbit ui-orbit ${running && !autonomous ? 'on' : ''}`} data-testid="composer-orbit">
       <div className={`composer ${expanded ? 'tall' : ''} ${heightAnimating ? 'animating' : ''}`}>
@@ -1008,6 +1006,7 @@ export function Composer() {
          *   · 边框颜色顺便承载了当前思考强度
          */}
         <ComposerBorder />
+        <QuestionPanel />
         {attachments.length > 0 ? (
           <div className="attach-strip">
             {attachments.map((a) => (
@@ -1056,8 +1055,9 @@ export function Composer() {
                   aria-selected={i === menu.index}
                 >
                   <span className="slash-name">/{c.name}</span>
-                  <span className="slash-desc">{c.description ?? ''}</span>
-                  <span className="slash-src">{c.source}{c.module ? ` · ${c.module}` : ''}</span>
+                  {/* 只显示说明的第一句；全文在悬停提示里（技能说明常常是一整段） */}
+                  <span className="slash-desc" title={c.description}>{firstClause(c.description)}</span>
+                  {c.module ? <span className="slash-src">{c.module}</span> : null}
                 </button>
               </Fragment>
             ))}
@@ -1251,6 +1251,14 @@ function sameFileCwd(a: string, b: string): boolean {
 function toAbsoluteFilePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
   return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
+}
+
+/** 命令说明的第一句（到第一个句号 / 分号 / 括号为止），菜单一行放得下 */
+function firstClause(text?: string): string {
+  if (!text) return ''
+  const cut = text.search(/[。；;（(]|\.\s/)
+  const head = (cut > 0 ? text.slice(0, cut) : text).trim()
+  return head.length > 24 ? `${head.slice(0, 23)}…` : head
 }
 
 /** 分类只影响候选菜单的视觉顺序，不改变 pi 原始命令的身份。 */

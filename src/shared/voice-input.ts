@@ -8,7 +8,7 @@
  *  · 模型与程序都要用户**看过大小和保存位置、明确同意**后才下载；也可以指定已有的文件。
  *  · 推荐只是建议：按 CPU 线程、可用内存和当前负载给出轻量 / 均衡 / 高质量三档，用户可手动选。
  *  · 录音只在转写期间以临时文件存在，转写结束即删除，不保留录音。
- *  · 首版用 CPU 版程序，不承诺实时识别：录音结束后整段转写。
+ *  · Windows NVIDIA 设备优先选择官方 CUDA 包；录音按短段转写，支持本地驻留服务。
  *
  * 不碰 electron / 文件系统，主进程、渲染端与单测共用。
  */
@@ -48,6 +48,7 @@ export const VOICE_MODELS: VoiceModelSpec[] = [
 export const VOICE_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
 /** whisper.cpp 官方发布页（CPU 版 Windows 程序从这里取最新一版） */
 export const WHISPER_RELEASE_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
+export const WHISPER_RELEASES_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=20'
 export const WHISPER_WINDOWS_ASSET = 'whisper-bin-x64.zip'
 
 export type VoiceLanguage = 'auto' | 'zh' | 'en'
@@ -69,7 +70,7 @@ export interface VoiceHardware {
   freeMemoryMB: number
   /** 最近一小段时间的 CPU 占用（0–1），取不到时为 null */
   cpuLoad: number | null
-  /** 显卡名称（只作说明；首版程序不用显卡加速） */
+  /** 显卡名称；后端是否启用以运行日志为准 */
   gpu: string | null
 }
 
@@ -134,6 +135,8 @@ export interface VoiceInputStatus {
   candidates: VoiceModelCandidate[]
   /** 当前可用的程序：砚管理的一份、用户指定的一份，或没有 */
   binary: { path: string; source: 'managed' | 'custom' } | null
+  /** 最近实际转写确认的后端；未执行前保持 unknown。 */
+  backend?: 'cuda' | 'cpu' | 'unknown'
   /** 当前选用且文件确实存在的模型 */
   model: { label: string; path: string; catalogId: string | null } | null
   language: VoiceLanguage

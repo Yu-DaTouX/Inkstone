@@ -42,6 +42,16 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const session = useStore((s) => s.session)
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  /*
+   * 「只读打开」：点开的会话没有接管运行实例（同一目录已有忙碌实例），
+   * `session` 仍是那个正在跑的会话。标题、空间入口、忙碌点都要跟着**正在看的**会话走，
+   * 否则界面切过去了，头部还写着上一条会话的名字。
+   */
+  const activeFile = session?.conversationFile ?? session?.sessionFile
+  const previewing = !!peekedPath && peekedPath !== activeFile
+  const previewed = previewing ? sessions.find((x) => x.path === peekedPath) : undefined
 
   /**
    * 标题取值顺序：
@@ -51,8 +61,12 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
    *   ④ 首条用户消息（本地兜底）
    *   ⑤ 「新会话」
    */
-  const fromModel = session?.sessionId ? titles[session.conversationId ?? session.sessionId] : undefined
-  const fromList = sessions.find((x) => x.path === (session?.conversationFile ?? session?.sessionFile))?.title
+  const fromModel = previewing
+    ? (peekedSessionId ? titles[peekedSessionId] : undefined)
+    : session?.sessionId
+      ? titles[session.conversationId ?? session.sessionId]
+      : undefined
+  const fromList = previewing ? previewed?.title : sessions.find((x) => x.path === activeFile)?.title
   const fromFirst = messages.find((m) => m.role === 'user')?.text
   /**
    * 当前会话归属的空间（决定要不要给「空间」入口）。
@@ -61,10 +75,11 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
    * 只按 path 匹配会让「刚开会话就想去空间」变成无入口；
    * 再退回 path，是因为列表里的 id 与当前会话的 id 在分叉/接管等情形下不一定同时就绪。
    */
-  const currentFile = session?.conversationFile ?? session?.sessionFile
-  const spaceId =
-    (session?.sessionId ? sessions.find((x) => x.id === session.sessionId)?.spaceId : undefined) ??
-    (currentFile ? sessions.find((x) => x.path === currentFile)?.spaceId : undefined)
+  const currentFile = previewing ? peekedPath : activeFile
+  const spaceId = previewing
+    ? previewed?.spaceId
+    : (session?.sessionId ? sessions.find((x) => x.id === session.sessionId)?.spaceId : undefined) ??
+      (currentFile ? sessions.find((x) => x.path === currentFile)?.spaceId : undefined)
   /**
    * 「空间」入口的显示条件。
    *
@@ -78,7 +93,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
   const showSpace = Boolean(spaceId) || !knownInList
   const title =
     fromModel ||
-    session?.sessionName ||
+    (previewing ? undefined : session?.sessionName) ||
     fromList ||
     (fromFirst ? shortTitle(fromFirst, 60).short : t('header.untitled'))
 
@@ -153,7 +168,7 @@ export function SessionHeader({ mapEnabled, mapOpen, onToggleMap, spaceEnabled, 
          *
          * 保留的只有「正在流式」的小圆点 —— 它是**状态**，不是名称。
          */}
-        {session?.isStreaming ? (
+        {session?.isStreaming && !previewing ? (
           <span className="shead-busy" title={t('chat.working')} data-testid="shead-busy">
             <span className="shead-dot busy" />
           </span>

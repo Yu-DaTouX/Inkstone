@@ -45,6 +45,7 @@ import { Button, IconButton } from '../ui'
 import { ContextSection } from './ContextSection'
 import { QuotaSection } from './QuotaSection'
 import { hasTaskTileContent, TodoCount, TodoSection } from './TodoSection'
+import { hasVisibleSubagents } from '../../state/subagent-view'
 import { LogCount, QueueSection, ExtSection, LogSection, ActionsSection } from './PanelSections'
 
 type RightWindowView = WorkbenchView
@@ -171,6 +172,7 @@ export function RightPanel() {
   const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
     !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
   ))
+  const hasSubagents = useStore(hasVisibleSubagents)
   const logs = useStore((s) => s.logs)
   const statuses = useStore((s) => s.statuses)
   const widgets = useStore((s) => s.widgets)
@@ -192,9 +194,9 @@ export function RightPanel() {
   const isEmptySection = useCallback(
     (id: ToolSectionId): boolean => {
       const probe = SECTION_REGISTRY[id].isEmpty
-      return probe ? probe({ todos, goal, hasMessageOutputs, logs, statuses, widgets }) : false
+      return probe ? probe({ todos, goal, hasMessageOutputs, hasSubagents, logs, statuses, widgets }) : false
     },
-    [todos, goal, hasMessageOutputs, logs, statuses, widgets]
+    [todos, goal, hasMessageOutputs, hasSubagents, logs, statuses, widgets]
   )
 
   /** 工具页里实际渲染的停靠磁贴：布局顺序 → 去掉内容为空的 */
@@ -292,9 +294,17 @@ export function RightPanel() {
   const previousBrowserOpen = useRef(browserOpen)
   const previousReviewOpen = useRef(reviewOpen)
   const previousFilePreview = useRef(!!filePreview)
+  /*
+   * 只在「打开了另一份预览」时展开右栏。不能把 `open` 放进触发条件：
+   * 否则文件一开着，用户点折叠就会被这里立刻重新展开，永远收不回去。
+   */
+  const previewIdentity = filePreview ? `${filePreview.cwd ?? ''}\n${filePreview.path}\n${filePreview.line ?? ''}\n${filePreview.lineEnd ?? ''}` : ''
+  const [previewFocus, setPreviewFocus] = useState(false)
+  const openRef = useRef(open)
+  openRef.current = open
   useEffect(() => {
-    if (filePreview && !open) void setRightPanelOpen(true)
-  }, [filePreview, open, setRightPanelOpen])
+    if (previewIdentity && !openRef.current) void setRightPanelOpen(true)
+  }, [previewIdentity, setRightPanelOpen])
 
   useEffect(() => {
     const opened = browserOpen && !previousBrowserOpen.current
@@ -490,10 +500,11 @@ export function RightPanel() {
             className={`ui-tab doc review-tab rp-window-tab ${homeMode ? 'active' : ''}`}
             role="tab"
             aria-selected={homeMode}
+            title={t('rp.home')}
             data-testid="right-window-tab-start"
             onClick={() => switchWindow('start')}
           >
-            <Icon name="home" size={12} />
+            <Icon name="dashboard" size={12} />
             <span className="rp-title">{t('rp.home')}</span>
           </div>
 
@@ -655,7 +666,7 @@ export function RightPanel() {
           </button>
           <button type="button" className="rp-tool-menu-item" role="menuitem" onClick={() => switchWindow('start')}>
             <Icon name="dashboard" size={12} />
-            <span>工作信息</span>
+            <span>{t('rp.home')}</span>
           </button>
         </div>
       ) : null}
@@ -672,8 +683,8 @@ export function RightPanel() {
       ) : null}
       {toolsMode || (fileMode && open) ? (
         <div className="rp-body" data-testid="rp-body">
-          {fileMode && filePreview ? <FilePreviewPane /> : null}
-          {sequence.map((tile) => {
+          {fileMode && filePreview ? <FilePreviewPane focus={previewFocus} onToggleFocus={() => setPreviewFocus((v) => !v)} /> : null}
+          {(fileMode && filePreview && previewFocus ? [] : sequence).map((tile) => {
             if (tile.placement === 'floating') {
               return (
                 <FloatPlaceholder
@@ -1211,9 +1222,10 @@ export const SECTION_REGISTRY: Record<
 }
 
 /** 空判据只投影所需字段，消息正文不进入分区注册表。 */
-type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal' | 'messages' | 'logs' | 'statuses' | 'widgets'>
+type ToolPanelState = Pick<ReturnType<typeof useStore.getState>, 'todos' | 'goal' | 'messages' | 'logs' | 'statuses' | 'widgets' | 'subagents' | 'session'>
 type ToolPanelProbe = Pick<ToolPanelState, 'todos' | 'goal' | 'logs' | 'statuses' | 'widgets'> & {
   hasMessageOutputs: boolean
+  hasSubagents?: boolean
 }
 
 function toolPanelProbe(s: ToolPanelState): ToolPanelProbe {
@@ -1223,6 +1235,7 @@ function toolPanelProbe(s: ToolPanelState): ToolPanelProbe {
     logs: s.logs,
     statuses: s.statuses,
     widgets: s.widgets,
+    hasSubagents: hasVisibleSubagents(s),
     hasMessageOutputs: s.messages.some((message) =>
       !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
     )

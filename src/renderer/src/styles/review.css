@@ -879,7 +879,7 @@ button.env-item:hover {
   display: inline-block;
   width: 8px;
   text-align: center;
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
   line-height: 1;
 }
@@ -961,7 +961,7 @@ button.env-item:hover {
 }
 
 .commit-target {
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1103,7 +1103,7 @@ button.env-item:hover {
 .env-branch-name {
   flex: 1;
   min-width: 0;
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -1135,7 +1135,7 @@ button.env-item:hover {
   min-width: 0;
   height: 22px;
   padding: 0 6px;
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: 11.5px;
   color: var(--fg);
   background: var(--bg-2);
@@ -1231,7 +1231,7 @@ button.env-item:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-code);
+  font-family: var(--font-ui);
   font-size: 11.5px;
 }
 
@@ -1492,3 +1492,19 @@ button.env-item:hover {
   padding-top: var(--sp-1);
   padding-bottom: var(--sp-1);
 }
+.conversation-map { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.conversation-map-bar { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; padding: var(--sp-3); }
+.conversation-map-bar > strong { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-map-bar > input { width: 220px; }
+.conversation-map-viewport { flex: 1; min-height: 180px; overflow: auto; }
+.conversation-map-world { position: relative; transform-origin: top left; }
+.conversation-map-links { position: absolute; inset: 0; pointer-events: none; }
+.conversation-map-card { position: absolute; height: 156px; display: flex; flex-direction: column; }
+.conversation-map-title { position: absolute; width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-map-summary { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); flex: 1; min-height: 0; text-align: left; overflow: hidden; }
+.conversation-map-summary > strong, .conversation-map-summary > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.conversation-map-actions { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-2); flex-wrap: wrap; }
+.conversation-map-detail { flex: 0 1 35%; overflow: auto; padding: var(--sp-3); border-top: 1px solid var(--border-soft); }
+.conversation-map-detail p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.conversation-map-empty-branch { position: absolute; display: flex; align-items: center; justify-content: space-between; width: 300px; min-height: 48px; padding: var(--sp-2); border: 1px dashed var(--border-soft); border-radius: var(--r-md); background: var(--bg-1); color: var(--fg-mute); }

@@ -56,7 +56,8 @@ export function ModelThinkingPicker() {
   const [cursor, setCursor] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
 
-  const cur = session?.model
+  /* pi 没拿到模型时会报一个名为 unknown 的占位：界面上不直接露出这个词 */
+  const cur = session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
   const busy = !!session?.isStreaming || !!session?.isCompacting
@@ -253,6 +254,8 @@ export function ModelThinkingPicker() {
         data-testid="model-picker"
         data-state={cur ? 'ready' : 'unknown'}
       >
+        {/* 档位色的小点：与运行条同一套 --think-* 颜色，一眼看出当前强度 */}
+        <span className="mt-dot" data-level={hasLevels ? level : 'off'} aria-hidden />
         <span className="mt-model">{cur ? cur.name : t('picker.notReady')}</span>
         {hasLevels && level !== 'off' ? (
           <span className="mt-level" data-level={level} data-testid="thinking-badge">

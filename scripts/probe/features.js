@@ -125,6 +125,9 @@
   for (let i = 0; i < 60; i++) {
     await sleep(400)
     // ⚠️ 选择器跟着 DOM 改（Codex 风格：.tool 卡片 → .trow 一行）
+    /* 已完成的步骤默认折叠成「已完成 N 步」一行（见 toolgroup 探针），展开后再看 .trow */
+    const fold = q('.msg.bash [data-testid="tool-group-toggle"]')
+    if (fold && fold.getAttribute('aria-expanded') === 'false') click(fold)
     const t = q('.msg.bash .trow')
     if (t && t.dataset.state !== 'running' && t.dataset.state !== 'pending') {
       bashDone = true
@@ -135,6 +138,7 @@
 
   const bashMsg = q('.msg.bash')
   ok(!!bashMsg, '产生了 bash 消息')
+  if (!bashDone) log('  bash DOM: ' + (q('.msg.bash')?.innerHTML || '').slice(0, 900))
   ok(bashDone, '命令执行完毕（状态不再是 running）')
   if (bashMsg) {
     /*
@@ -376,7 +380,7 @@
   /* ================= 6. 会话重命名 ================= */
   // 左栏默认收起（自动隐藏模式）→ 断言前先把它展开，
   // 否则元素虽然在 DOM 里，但宽度是 0，可见性相关的判断会失效。
-  window.dispatchEvent(new MouseEvent('mousemove', { clientX: 3, clientY: 400, bubbles: true }))
+  if (q('.app').classList.contains('rail-off')) click(q('[data-testid="rail-toggle"]'))
   const railOpen = await until(() => !q('.app').classList.contains('rail-off'))
   ok(railOpen, '左栏已展开（后续断言依赖它可见）')
 

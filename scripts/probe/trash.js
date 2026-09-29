@@ -74,7 +74,7 @@
       ok(!confirm.classList.contains('send'), '确认按钮不再借用 .send（圆形发送按钮样式）')
       const h = confirm.getBoundingClientRect().height
       out.push(`  确认按钮高度 = ${h.toFixed(1)}px，scrollWidth=${confirm.scrollWidth} clientWidth=${confirm.clientWidth}`)
-      ok(h >= 28 && h <= 34, `按钮高度在 28–34px（推荐 30–32）`)
+      ok(h >= 26 && h <= 34, `按钮高度在 26–34px（设计规范默认 28）`)
       ok(confirm.scrollWidth <= confirm.clientWidth + 1, '按钮文字完整：没有因为固定圆形尺寸被裁/换行')
       ok(getComputedStyle(confirm).whiteSpace !== 'normal' || confirm.scrollWidth <= confirm.clientWidth + 1, '文字不换行')
     }

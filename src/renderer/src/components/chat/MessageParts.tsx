@@ -7,6 +7,8 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink } from '../../../../shared/links'
 import type { UIToolCall } from '../../../../shared/ipc'
+import { fileUrl as toFileUrl } from '../../../../shared/file-url'
+import { ChatImage } from './ChatImage'
 
 /**
  * 共享的渲染件：Markdown / 工具行 / 工具详情。
@@ -49,6 +51,8 @@ const MessageSourceCwd = createContext<string | undefined>(undefined)
 
 const MD_COMPONENTS = {
   a: LinkAnchor,
+  img: MarkdownImage,
+  code: InlineCodeLink,
   // 表格用等宽栅格，横向可滚
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="md-table-wrap">
@@ -90,6 +94,13 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
     else if (target.kind === 'file') void previewFile(target.path, target.line, sourceCwd, target.lineEnd)
     /* invalid：什么也不做（title 已说明原因） */
   }
+  /* 双击 = 交给系统：文件用默认程序打开（可执行类只定位），网址用外部浏览器 */
+  const onDoubleClick = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (target.kind === 'url') void window.yan.browser.openExternal(target.url)
+    else if (target.kind === 'file') void window.yan.revealPath(resolveAgainstCwd(target.path, sourceCwd))
+  }
 
   const title =
     target.kind === 'file'
@@ -110,13 +121,78 @@ function LinkAnchor({ href, children }: { href?: string; children?: React.ReactN
       /* 行号给测试与范围高亮用；不带行号时不写属性（别把 undefined 写成字符串）。 */
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
-      title={title}
+      title={target.kind === 'invalid' ? title : `${title}
+${t('link.dblclickHint')}`}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onAuxClick={(e) => e.preventDefault()}
     >
       {children}
     </a>
   )
+}
+
+/**
+ * 回复里的 Markdown 图片：本地路径按消息的工作目录解析成 file 地址；
+ * 危险协议（data: / javascript: 等）不渲染。点击进右栏预览（见 ChatImage）。
+ */
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const sourceCwd = useContext(MessageSourceCwd)
+  const target = classifyLink(src)
+  if (target.kind === 'invalid') return alt ? <span className="md-image-alt">{alt}</span> : null
+  if (target.kind === 'url') {
+    if (!/^https?:/i.test(target.url)) return null
+    return <ChatImage src={target.url} alt={alt} className="md-image" />
+  }
+  const abs = /^[a-zA-Z]:[\\/]|^\//.test(target.path) || !sourceCwd
+    ? target.path
+    : `${sourceCwd.replace(/[\\/]+$/, '')}/${target.path.replace(/^\.[\\/]/, '')}`
+  return <ChatImage src={toFileUrl(abs)} alt={alt} sourceCwd={sourceCwd} className="md-image" />
+}
+
+/**
+ * 行内代码里**整段就是**一个文件路径或网址时（模型常把路径写在反引号里），
+ * 双击打开：文件进右栏预览，网址进内部浏览器。单击仍可正常选中文字；
+ * 含空白的片段、没有扩展名的相对片段都不算，不改写普通代码。
+ */
+function InlineCodeLink({ className, children }: { className?: string; children?: React.ReactNode }) {
+  const t = useT()
+  const openBrowser = useStore((s) => s.openBrowser)
+  const previewFile = useStore((s) => s.previewFile)
+  const sourceCwd = useContext(MessageSourceCwd)
+  const text = typeof children === 'string' ? children : Array.isArray(children) && children.length === 1 && typeof children[0] === 'string' ? children[0] : null
+  /*
+   * 认三种：绝对路径 / 网址 / 带目录分隔符且有扩展名的相对路径（`src/a.ts`、`out/v.mp4`）。
+   * 相对路径按消息的工作目录解析，预览层会拒绝越出该目录的路径。
+   */
+  const candidate = text && !className && !/\s/.test(text.trim()) &&
+    (/^(?:[a-zA-Z]:[\\/]|https?:\/\/|file:\/\/)/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/][^\\/]*\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(text.trim()))
+    ? classifyLink(text.trim())
+    : null
+  if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
+  /* 单击在软件内打开（文件进右栏、网址进内部浏览器），双击在资源管理器定位（网址用外部浏览器） */
+  const open = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    if (candidate.kind === 'url') void openBrowser(candidate.url)
+    else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
+  }
+  const openExternally = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    window.getSelection()?.removeAllRanges()
+    if (candidate.kind === 'url') void window.yan.browser.openExternal(candidate.url)
+    else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
+  }
+  return (
+    <code className="md-code-link" title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally}>
+      {children}
+    </code>
+  )
+}
+
+/** 相对路径按消息的工作目录补全（revealPath 只认绝对路径） */
+function resolveAgainstCwd(path: string, cwd?: string): string {
+  if (/^[a-zA-Z]:[\\/]|^[\\/]/.test(path) || !cwd) return path
+  return `${cwd.replace(/[\\/]+$/, '')}/${path.replace(/^\.[\\/]/, '')}`
 }
 
 /** 是否停在一个没闭合的代码围欄里（流式中的半截代码块） */
@@ -252,7 +328,9 @@ export function ToolDetail({ call }: { call: UIToolCall }) {
   }
 
   /* ---- 通用：命令/参数 + 输出 ---- */
-  const argsText = call.args && Object.keys(a).length ? JSON.stringify(call.args, null, 2) : call.argsRaw
+  /* 只有命令本身的参数不再重复一遍 JSON：命令已经写在提示符那一行 */
+  const onlyCommand = typeof a.command === 'string' && Object.keys(a).every((k) => k === 'command' || k === 'timeout')
+  const argsText = onlyCommand ? '' : call.args && Object.keys(a).length ? JSON.stringify(call.args, null, 2) : call.argsRaw
 
   return (
     <>

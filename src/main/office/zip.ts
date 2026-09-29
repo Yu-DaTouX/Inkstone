@@ -23,7 +23,7 @@ export interface ZipEntry {
 export class ZipReader {
   readonly entries = new Map<string, ZipEntry>()
 
-  constructor(private readonly buf: Buffer) {
+  constructor(private readonly buf: Buffer, private readonly maxEntryBytes = MAX_ENTRY_BYTES) {
     const eocd = this.findEocd()
     const count = buf.readUInt16LE(eocd + 10)
     let offset = buf.readUInt32LE(eocd + 16)
@@ -61,13 +61,13 @@ export class ZipReader {
   read(name: string): Buffer | null {
     const entry = this.entries.get(name)
     if (!entry) return null
-    if (entry.size > MAX_ENTRY_BYTES) throw new Error(`zip 条目过大：${name}`)
+    if (entry.size > this.maxEntryBytes) throw new Error(`zip 条目过大：${name}`)
     const at = entry.localOffset
     if (this.buf.readUInt32LE(at) !== LOCAL_SIGNATURE) throw new Error(`zip 条目头损坏：${name}`)
     const start = at + 30 + this.buf.readUInt16LE(at + 26) + this.buf.readUInt16LE(at + 28)
     const data = this.buf.subarray(start, start + entry.compressedSize)
     if (entry.method === 0) return Buffer.from(data)
-    if (entry.method === 8) return inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES })
+    if (entry.method === 8) return inflateRawSync(data, { maxOutputLength: this.maxEntryBytes })
     throw new Error(`不支持的 zip 压缩方式 ${entry.method}：${name}`)
   }
 

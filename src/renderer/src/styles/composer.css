@@ -1,139 +1,38 @@
 /*
- * 输入区：输入框、发送 / 停止、用量条、排队消息、斜杠命令、附件。
- * 以及从输入区弹出的模型 / 思考选择器（Pickers.tsx）。
+ * 输入区：输入框、运行条、工具条、发送 / 中止；用量条的条目（状态栏复用）；
+ * 以及从输入区弹出的模型 / 思考、工作模式、`+`、`/` 与 `@` 菜单。
  *
- * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
+ * 版式（设计规范 §3.5）：卡片 = 运行条（只在运行时长出） · `›` 输入行 · 工具条。
+ * 工具条左侧是 `+` 与工作模式，右侧是语音、模型 · 档位与发送键；控件统一 24px，发送 28px。
  */
 
-/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
-
-.composer {
-  box-shadow: inset 0 1px 0 var(--edge);
-}
-
-.composer textarea::placeholder {
-  color: var(--fg-mute);
-}
-
-.ub-item.dim {
-  opacity: 0.55;
-}
-
-.ub-label {
-  color: var(--fg-mute);
-  white-space: nowrap;
-}
-
-.ub-value {
-  /* 用量是诊断信息：常驻但退到三级色，不和输入区争注意力（需求稿 3.1） */
-  color: var(--fg-mute);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-}
-
-.ub-unit {
-  color: var(--fg-mute);
-  font-size: 0.92em;
-}
-
-/* 缓存命中率：只比数值亮一档。绿色只表达成功 / 新增（DESIGN §2.6），这里不借用 */
-.ub-extra {
-  color: var(--fg-dim);
-}
-
-.ub-live {
-  width: 4px;
-  height: 4px;
-  border-radius: var(--r-full);
-  background: var(--ok);
-  animation: ubpulse var(--dur-1100) var(--mo-loop) infinite;
-}
-
-.ub-turn {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  min-width: 0;
-}
-
-/* 29. 输入区工具条（对齐 Agents-Anywhere）
-   左：附件 / 模型胶囊；右：圆形发送键 */
-.composer-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-top: var(--sp-2);
-}
-
-.ctool {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-1);
-  height: 26px;
-  min-width: 26px;
-  padding: 0 6px;
-  border-radius: var(--r-md);
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.ctool:hover {
-  background: var(--bg-3);
-  color: var(--fg);
-}
-
-/* 发送键：圆形（对齐他们的圆形箭头按钮） */
-.send {
-  height: 28px;
-  border-radius: var(--r-sm);
-  padding: 0 var(--sp-4);
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: var(--r-full);
-  background: var(--fg);
-  color: var(--bg-0);
-  flex: none;
-  justify-content: center;
-  gap: 0;
-  /* 文字只在忙碌时（中止）显示，正常状态只有一个箭头 */
-}
-
-.send:disabled {
-  opacity: var(--ctl-disabled-opacity);
-}
-
-/* 34. 输入区悬浮
-   之前是贴底的实心条（铺满整个宽度、带背景色 + 上边框），
-   视觉上像「页面的一块」，和消息流割裂。
-   改成一张浮起的卡片：圆角更大、有边框与淡淡的落影、
-   左右留出边距，看起来是"浮在内容之上"。
-   同时用量条跟着悬浮（它附在输入区下方）。 */
+/* ── 容器 ── */
 .composer-wrap {
-  padding-bottom: var(--sp-3);
-  /* 不再铺满：左右留边距，让卡片浮起来 */
-  padding: var(--sp-3) var(--sp-5) var(--sp-4);
-  background: transparent;
-  border-top: none;
-  /* 让上面的消息流滚到卡片下面时能被遮住，强化"浮层"感 */
   position: relative;
   z-index: 3;
+  padding: var(--sp-2) var(--sp-5) var(--sp-3);
 }
 
+.composer {
+  position: relative;
+  max-width: var(--w-stream);
+  margin: 0 auto;
+  overflow: hidden;
+  /* 顶边留给运行条（motion.css 的 .cborder）：它自带下边距，所以这里不要上内边距 */
+  padding: 0 var(--sp-3) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  transition: border-color var(--dur) var(--ease);
+}
 .composer:focus-within {
   border-color: var(--accent-line);
-  box-shadow:
-    0 2px 4px -2px rgba(0, 0, 0, 0.4),
-    0 12px 36px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 3px var(--accent-soft);
 }
-
-/* 拖入文件时整张卡片亮起来（比改边框更明显） */
+/* 自主模式：静态的强调色边界，不加光带（固定状态位置、克制反馈） */
+.composer-wrap.autonomous .composer {
+  border-color: var(--accent-line);
+}
+/* 拖入文件：整张卡片亮起来 */
 .composer-wrap.dropping .composer {
   border-color: var(--accent);
   background: var(--bg-2);
@@ -142,307 +41,236 @@
 .composer textarea {
   min-height: 40px;
   padding: 2px 2px 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+.composer textarea::placeholder {
+  color: var(--fg-mute);
+}
+/* 只留卡片的聚焦边界；textarea 自己再画一圈会成「双重描边」 */
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+}
+/* 长文模式切换时临时加 animating，平时打字长高不做过渡 */
+.composer.animating textarea {
+  transition: height var(--dur-200) var(--ease);
 }
 
-/*
- * 输入框拖拽调高。
- *
- * 用户要求：「向上拖动可以放大输入框」。
- *
- * 实现方式是把 textarea 的 max-height 当成可调尺寸（不是给卡片加高度）——
- * 这样文字多的时候卡片自然变高，而写码区的滚动仍然由 textarea 自己管。
- * 拖拽柄放在顶边框上（那一行本来就有），不额外占高度。
- */
-.composer {
-  border-radius: var(--r-lg);
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
-  max-width: var(--w-stream);
-  margin-left: auto;
-  margin-right: auto;
-  max-width: var(--w-stream);
-  margin: 0 auto;
-  background: var(--bg-1);
-  /* 浮层：圆角 + 明显的边框 + 极淡落影（DESIGN §4 的例外，见下方说明） */
-  border: 1px solid var(--border-str);
-  border-radius: var(--r-xl);
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
-  box-shadow:
-    0 2px 4px -2px rgba(0, 0, 0, 0.4),
-    0 12px 32px -12px rgba(0, 0, 0, 0.55);
-  transition:
-    border-color var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
-  position: relative;
-}
-
-.ub-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--sp-1);
-  min-width: 0;
-  gap: var(--sp-1);
-}
-
-/* 45. 用量条：`.ub-sep` 撤掉，换成中点分隔符 */
-.ub-dot {
-  flex: none;
-  width: 2px;
-  height: 2px;
-  border-radius: var(--r-full);
-  background: var(--border-str);
-  align-self: center;
-}
-
-.mt-pop {
-  /*
-   * ⚠️ `position: fixed`，而不是 absolute 贴住 `.picker-wrap`。
-   *
-   * 模型选择器现在在**输入框内部**，而 `.composer` 有 `overflow: hidden`
-   * （圆角与自主模式光带需要它）—— absolute 的菜单会被整块裁掉，
-   * 只剩贴着输入框上沿的一小截（实测截图里就只能看到两行）。
-   * 坐标由 `Pickers.tsx` 按触发器的 rect 写进 inline style（right/bottom）。
-   */
-  position: fixed;
-  z-index: 40;
-  /*
-   * 宽度跟着窗口收：窄窗口下不越界，普通窗口给到 360px
-   *（长模型名更能完整显示，而不是早早省略）。
-   */
-  width: min(360px, calc(100vw - 24px));
-  /*
-   * 高度（N08）：打开时由 JS 按「触发器上方真实可用空间」写成 inline
-   * max-height；这里的值是回退，也是普通窗口的上限。
-   * 旧值 400px —— 900px 高的窗口里只放得下 5 行多（用户报的「五个半」）。
-   */
-  max-height: min(560px, calc(100vh - 120px));
+/* ── 工具条 ── */
+.composer-bar {
   display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  border: 1px solid var(--border-str);
-  overflow: hidden;
-  border-radius: var(--r-sm);
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-1);
 }
-
-/* 顶边留给运行条（motion.css 的 .cborder）：它自己带下边距，所以输入框不再要上内边距 */
-.composer {
-  border-radius: var(--r-md);
-  padding-top: 0;
-  overflow: hidden;
-}
-
-/* ── 基础段结束 ── */
-
 .composer-tools {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
-/* 窄窗（900×520）时工具条不换行：按钮文字保持一行，发送规则提示先省略 */
+/* 窄窗时工具条不换行：按钮文字保持一行，发送规则提示先省略 */
 .composer-tools > *,
 .composer-bar > * {
   flex: none;
   white-space: nowrap;
 }
+.composer-bar > .composer-tools {
+  flex: 1 1 auto;
+}
 .composer-tools > .ctool-hint {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
   text-overflow: ellipsis;
-  color: var(--fg-mute);
-}
-.composer-bar > .composer-tools {
-  flex: 1 1 auto;
 }
 
-/*
- * N10：自主模式是低干扰的“模式已开”提示，不改变输入区尺寸或点击区域。
- *
- * ── 为什么不是 conic-gradient ──
- * 早期实现用 `conic-gradient` 铺满伪元素，再 `transform: rotate()` 让它转。
- * 那是**绕元素中心的角度插值**，在输入框这种宽扁矩形上完全不成立：
- * 长边（左右）跨越的角度很小、短边（上下）很大，于是光斑在长边一闪而过、
- * 在短边几乎停住；而旋转的伪元素与矩形边框形状也不匹配，边角处会跳变 ——
- * 用户报的「光效有位置问题」就是这个。
- *
- * 当前实现：自主档只保留静态的靛蓝边界与模式文字。
- * 动态光带曾用于旧视觉方案；它会让宽扁输入框同时出现多个视觉重心，
- * 与新的“固定状态位置、克制反馈”规则冲突，因此不再生成伪元素。
- */
-.composer-wrap.autonomous .composer {
-  border-color: var(--accent-line);
-}
-
-/* 状态保留在固定位置，避免光带、彩线和旋转标识同时竞争注意力。 */
-.composer-wrap.autonomous .composer::before,
-.composer-wrap.autonomous .composer::after {
-  display: none;
-}
-
-/* 兼容旧浏览器：静态边界仍然明确可见。 */
-@media (prefers-reduced-motion: reduce) {
-  .composer-wrap.autonomous .composer {
-    border-color: var(--accent-line);
-  }
-  .composer-wrap.autonomous .composer::before,
-  .composer-wrap.autonomous .composer::after {
-    display: none;
-  }
-}
-
-.send span {
-  display: none;
-}
-
-.send .ico {
-  color: currentColor;
-}
-
-.send:hover:not(:disabled) {
-  filter: none;
-  opacity: 0.9;
-}
-
-/* 核心输入区：一层边界、稳定的圆角和克制的聚焦反馈。 */
-.composer-wrap {
-  /* 顶部 12 → 8：与 .stream 的 padding-bottom 16 合起来共 24px 间隙 */
-  padding: var(--sp-2) var(--sp-5) var(--sp-4);
-}
-
-.composer {
-  border-radius: var(--r-lg);
-  border-color: var(--border);
-  background: var(--bg-2);
-  box-shadow: none;
-}
-
-.composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.composer-wrap.autonomous .composer {
-  border-color: var(--accent-line);
-}
-
-.composer-wrap.dropping .composer {
-  border-color: var(--accent);
-  background: var(--bg-2);
-}
-
-.composer textarea {
-  font-family: var(--font-body);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-}
-
-.composer textarea::placeholder {
-  color: var(--fg-mute);
-}
-
-.send {
-  min-width: 32px;
-  height: 32px;
+.ctool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ctl-h-sm);
+  min-width: var(--ctl-h-sm);
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
-  background: var(--accent);
-  color: var(--bg-0);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
-
-/* 忙碌时按钮变「中止」：给文字留位置 */
-.send.abort {
-  width: auto;
-  padding: 0 var(--sp-3);
-  border-radius: var(--r-md);
+.ctool:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
 
+/* 发送：28px 强调色方键；忙碌时变「■ 中止」描边键 */
+.send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  padding: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  transition:
+    opacity var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.send span {
+  display: none;
+}
+.send .ico {
+  color: currentColor;
+}
+.send:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.send:disabled {
+  opacity: var(--ctl-disabled-opacity);
+}
+.send.abort {
+  width: auto;
+  height: var(--ctl-h-sm);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
+}
 .send.abort span {
   display: inline;
 }
-
-/*
- * 输入框内的 textarea 不要自己的 focus 框。
- *
- * ⚠️ 用户报「单击输入框边框会有两圈高光」—— 就是这里：
- *   ① textarea 自己拿到 `:focus-visible` → tokens.css 里的全局规则
- *      给了它 1px 蓝色 outline（实测 0.8px solid rgb(76,126,243)）
- *   ② 卡片 .composer:focus-within 另外给了一圈 `0 0 0 3px` 的 accent 光环
- *   两个框一起出现，而且大小不同 → 看着像“双重描边”。
- *
- * 只留外圈（“输入区是聚焦的”比“textarea 这个元素是聚焦的”更有意义）。
- */
-.composer textarea:focus,
-.composer textarea:focus-visible {
-  outline: none;
+.send.abort .ico {
+  color: var(--err);
+}
+.send.abort:hover:not(:disabled) {
+  opacity: 1;
+  border-color: var(--border-str);
+  color: var(--fg);
 }
 
 /*
- * 长文模式切换的高度过渡。
- *
- * 高度是 JS 写的 inline style（它要知道 tall 与内容两个因素），所以过渡
- * 只能接在 CSS 这一侧；而 `animating` 类由 Composer 在切换的那一瞬间临时加上
- * （见 animateHeight）—— 常开的话打字白动长高会慢半拍、拖拽柄也不跟手。
- */
-.composer.animating textarea {
-  transition: height var(--dur-200) var(--ease);
-}
-
-/*
- * 拖拽柄：拖 = 调高，**点 = 切换长文模式**。
- *
- * 可见性分三档（它现在是一个可点的入口，不能只在 hover 时显形）：
- *   常态     淡的短横（暗示可交互）
- *   hover    变长变强调色 + 出现提示文字（由 title 负责）
- *   长文模式 常亮（用户需要知道“现在能点它回去”）
+ * 拖拽柄：拖 = 调高，点 = 切换长文模式。贴在卡片顶边，命中区比视觉大；
+ * 常态淡的短横，悬停变强调色，长文模式常亮（提示「能点回去」）。
  */
 .composer-resize {
   position: absolute;
   top: -4px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 96px;
-  height: 12px;
-  cursor: ns-resize;
-  /* 组合窗口的可拖拽区域不能吞掉这个交互把手。 */
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-  touch-action: none;
   z-index: 2;
   display: grid;
   place-items: center;
-  /* 命中区比视觉大：12px 高很好点，但看着只是一条细线 */
+  width: 96px;
+  height: 12px;
   border-radius: var(--r-xs);
+  transform: translateX(-50%);
+  cursor: ns-resize;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-app-region: no-drag;
 }
-
-/* 中间那根小短横 —— 暗示“这里可以点/拖” */
 .composer-resize::after {
   content: '';
   width: 28px;
   height: 3px;
   border-radius: 2px;
-  background: var(--border-str);
+  background: transparent;
   transition:
     background var(--dur) var(--ease),
     width var(--dur) var(--ease);
 }
-
+.composer:hover .composer-resize::after {
+  background: var(--border-str);
+}
 .composer-resize:hover::after,
-.composer-resize.active::after {
-  background: var(--accent);
-  width: 44px;
-}
-
-/* 长文模式：短横常亮 + 居中两段（像一个“收起来”的提示） */
-.composer.tall .composer-resize::after {
-  background: var(--accent-line);
-  width: 40px;
-}
-
+.composer-resize.active::after,
 .composer.tall .composer-resize:hover::after {
+  width: 44px;
   background: var(--accent);
-  width: 52px;
+}
+.composer.tall .composer-resize::after {
+  width: 40px;
+  background: var(--accent-line);
+}
+
+/* ── 用量条目（状态栏右段复用） ── */
+.ub-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ub-item.dim {
+  opacity: 0.55;
+}
+.ub-label {
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+/* 用量是诊断信息：常驻但退到三级色 */
+.ub-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--fg-mute);
+}
+.ub-unit {
+  color: var(--fg-mute);
+  font-size: 0.92em;
+}
+/* 缓存命中率只比数值亮一档；绿色只表达成功 / 新增 */
+.ub-extra {
+  color: var(--fg-dim);
+}
+/* 流式中的小点：静态（运行中的动效只在输入区运行条） */
+.ub-live {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--ok);
+}
+.ub-turn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.ub-dot {
+  flex: none;
+  align-self: center;
+  width: 2px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--border-str);
+}
+
+/*
+ * 模型 / 思考选择器浮层。position: fixed：输入框有 overflow: hidden，
+ * absolute 会被裁掉；坐标与可用高度由 Pickers.tsx 按触发器写进 inline style。
+ */
+.mt-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 120px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-pop);
 }
 
 .mt-trigger:hover:not(:disabled),
@@ -500,6 +328,10 @@
 }
 .mt-level {
   flex: none;
+}
+/* 输入框里的档位字用中性色：档位色只留在小点、边线和方点阵上（设计规范 §4） */
+.mt-trigger .mt-level {
+  color: var(--fg-mute);
 }
 
 .mt-trigger .chev {
@@ -797,23 +629,48 @@
   min-width: var(--sp-3);
 }
 
-/* 模型/强度标签贴右下：终端风格方角 */
+/* 模型 · 档位：输入框右下角，档位色小点 + 名称 + 档位字 */
 .mt-trigger {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
-  height: 24px;
+  height: var(--ctl-h-sm);
   padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
   border: 1px solid transparent;
-  font-size: var(--fs-sm);
+  border-radius: var(--r-sm);
+  color: var(--fg-dim);
+  font-size: var(--fs-xs);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
-  height: 22px;
-  padding: 0 6px;
-  font-size: var(--fs-xs);
-  border-radius: var(--r-xs);
+}
+.mt-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+.mt-dot[data-level='off'] {
+  background: var(--fg-mute);
+}
+.mt-dot[data-level='minimal'] {
+  background: var(--think-minimal);
+}
+.mt-dot[data-level='low'] {
+  background: var(--think-low);
+}
+.mt-dot[data-level='medium'] {
+  background: var(--think-medium);
+}
+.mt-dot[data-level='high'] {
+  background: var(--think-high);
+}
+.mt-dot[data-level='xhigh'] {
+  background: var(--think-xhigh);
+}
+.mt-dot[data-level='max'] {
+  background: var(--think-max);
 }
 
 /*
@@ -823,7 +680,6 @@
  */
 .mt-trigger.unknown .mt-model {
   color: var(--fg-mute);
-  font-style: italic;
 }
 
 /* 56. `/` 命令菜单底部的按键说明（用户要求「补全填充」要看得见）
@@ -1041,9 +897,15 @@
 .queue-stack {
   display: flex;
   flex-direction: column;
-  gap: 3px;
   max-width: var(--w-stream);
   margin: 0 auto var(--sp-2);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+}
+.queue-stack > .qrow + .qrow {
+  border-top: 1px solid var(--border-soft);
 }
 
 .attach-strip {
@@ -1331,64 +1193,36 @@
   flex: none;
 }
 
+/* 一行排队消息：图标 · 文本 · 状态字 · 动作（无框小按钮，主动作用强调色字） */
 .qrow {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 2px var(--sp-1) 2px var(--sp-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
+  gap: var(--sp-2);
+  min-height: 30px;
+  padding: 0 var(--sp-1) 0 var(--sp-3);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
 }
-
-.qrow.steering {
-  border-color: var(--accent-line);
-  color: var(--fg);
-}
-
-/*
- * 悬着的消息（还没投给 pi）。
- *
- * 做成**栈里最显眼的一行**：它是等用户拍板的草稿（插话还是排队），
- * 而下面的 steering / followUp 已经被 pi 收下了 —— 两者不能看起来一样。
- */
-.qrow.pending {
-  border-color: var(--accent);
-  background: var(--bg-1);
-  box-shadow: 0 4px 14px -8px rgba(0, 0, 0, 0.65);
-  color: var(--fg);
-}
-
-.qrow.pending .ico,
-.qrow.pending svg {
-  color: var(--accent);
-}
-
-/* 主动作（插话 / 发送）：实心，与旁边那个次要的「排队」拉开层级 */
-.qrow-jump.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--bg-1);
-}
-
-.qrow-jump.primary:hover {
-  border-color: var(--accent);
-  color: var(--bg-1);
-  filter: brightness(1.08);
-}
-
 .qrow .ico {
   flex: none;
   color: var(--fg-mute);
 }
-
+/* 已被 pi 收下、正在插话的：正文色 + 强调色图标 */
+.qrow.steering {
+  color: var(--fg);
+}
 .qrow.steering .ico {
   color: var(--accent);
 }
-
+/* 还悬着、等你决定插话还是排队的：淡强调底，栈里最显眼 */
+.qrow.pending {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.qrow.pending .ico,
+.qrow.pending svg {
+  color: var(--accent);
+}
 .qrow-text {
   flex: 1;
   min-width: 0;
@@ -1396,30 +1230,33 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .qrow-tag {
   flex: none;
-  color: var(--accent);
+  color: var(--fg-mute);
   font-size: var(--fs-xs);
 }
-
 .qrow-jump {
   flex: none;
-  height: 20px;
+  height: var(--ctl-h-sm);
   padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-1);
   color: var(--fg-dim);
   font-size: var(--fs-xs);
   cursor: pointer;
   transition:
-    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
     color var(--dur) var(--ease);
 }
-
 .qrow-jump:hover {
-  border-color: var(--accent-line);
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.qrow-jump.primary {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+.qrow-jump.primary:hover {
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -1438,18 +1275,14 @@
 }
 
 .qpanel {
-  position: absolute;
-  left: 0;
-  right: 0;
+  position: relative;
   /* 贴着输入框上沿向上生长：宽度与输入框对齐，高度随内容（超出内滚） */
-  bottom: calc(100% + var(--sp-2));
   z-index: 2;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-md);
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
   background: var(--bg-1);
-  box-shadow:
-    0 2px 4px -2px rgba(0, 0, 0, 0.4),
-    0 16px 40px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -1614,7 +1447,9 @@
 
 .qpanel-msg {
   color: var(--fg-dim);
+  font-family: var(--font-body);
   font-size: var(--fs-base);
+  line-height: var(--lh-base);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;

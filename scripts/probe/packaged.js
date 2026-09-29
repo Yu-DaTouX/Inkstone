@@ -251,7 +251,7 @@
     ok(!!q('[data-testid="set-capabilities"]'), '解包态能力设置页已打开')
     ok(!!q('[data-testid="cap-strategy"]'), '解包态能力策略区域已渲染')
     ok(!!q('[data-testid="cap-search"]'), '解包态能力搜索区域已渲染')
-    ok(!!q('[data-testid="cap-builtins"]'), '解包态内置能力区域已渲染')
+    ok(!!q('[data-testid="cap-skills"]'), '解包态技能区域已渲染（内置能力并入技能列表）')
     ok(!!q('[data-testid="cap-mcp"]'), '解包态 MCP 区域已渲染')
   } catch (error) {
     ok(false, `解包态能力设置页验收报错：${error?.message ?? error}`)

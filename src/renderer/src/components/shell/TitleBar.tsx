@@ -79,6 +79,7 @@ export function TitleBar({
         <span className="tb-brand" data-testid="app-brand">
           <BrandMark size={16} />
           <span className="tb-name">砚</span>
+          <span className="tb-word" aria-hidden>INKSTONE</span>
         </span>
         {/*
          * 会话名胶囊**已删**（用户要求）。

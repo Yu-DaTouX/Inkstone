@@ -10,6 +10,22 @@ export async function runContextBudgetV1Tests(ok, budget, observerModule) {
 
   console.log('\n--- 上下文预算 V1 ---')
 
+  /*
+   * Codex（ChatGPT 订阅）的请求体不带 max_output_tokens，服务端按模型上限截断。
+   * 以前这里判「输出上限未知」并 fail closed，结果 Codex 模型每条消息都被中止、没有回复。
+   */
+  {
+    const { resolveContextBudgetOutputReserveV1: resolveR } = budget
+    const codexNoField = resolveR({ api: 'openai-codex-responses', payload: { model: 'gpt' }, modelMaxTokens: 128_000 })
+    ok(codexNoField.outputReserve === 128_000 && codexNoField.reason === 'model_output_limit_assumed', 'Codex 请求不带输出上限时按模型 maxTokens 预留（不再中止）')
+    const codexField = resolveR({ api: 'openai-codex-responses', payload: { max_output_tokens: 9_000 }, modelMaxTokens: 128_000 })
+    ok(codexField.outputReserve === 9_000, 'Codex 请求带了字段时仍以字段为准')
+    const codexNoModel = resolveR({ api: 'openai-codex-responses', payload: {} })
+    ok(codexNoModel.outputReserve === null, 'Codex 连模型上限也没有时仍 fail closed')
+    const responsesNoField = resolveR({ api: 'openai-responses', payload: {}, modelMaxTokens: 128_000 })
+    ok(responsesNoField.outputReserve === null, '其他接口字段缺失时不借用模型上限（仍 fail closed）')
+  }
+
   const api = {
     endpointKey: 'test/openai-completions/model/default',
     modelId: 'model',

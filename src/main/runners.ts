@@ -172,6 +172,22 @@ export class RunnerRegistry {
   }
 
   /**
+   * 回答一个待答问题：交给**持有该 id 的实例**。
+   *
+   * 后台会话也会弹问题，用户答的时候可能正看着别的会话；按「当前实例」投递会把答复
+   * 发给错的 pi 进程。没有实例持有该 id（已超时 / 已答）时退回当前实例，行为同旧路径。
+   */
+  respondUi(res: Parameters<AgentController['respondUi']>[0]): void {
+    for (const runner of this.runners.values()) {
+      if (runner.agent.pendingUiRequests().some((item) => item.id === res.id)) {
+        runner.agent.respondUi(res)
+        return
+      }
+    }
+    this.active()?.respondUi(res)
+  }
+
+  /**
    * 「用户看到这一条了」→ 让持有它的实例开始计时。
    *
    * 与 `extendHostUi` 同一套查找：渲染端只知道 request id，不知道它属于哪个实例。
@@ -195,6 +211,11 @@ export class RunnerRegistry {
    */
   refreshPolicyViews(): void {
     for (const runner of this.runners.values()) runner.agent.refreshPolicyView()
+  }
+
+  /** MCP 配置变了：所有实例丢掉旧连接，下次调用按新配置连 */
+  async reloadMcpServers(): Promise<void> {
+    await Promise.all([...this.runners.values()].map((runner) => runner.agent.reloadMcpServers()))
   }
 
   /** 按稳定 sessionId 取运行实例；重生成标题等只读动作不应切换视图。 */

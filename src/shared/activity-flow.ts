@@ -21,6 +21,8 @@ export function isMultiStepActivity(activity: AgentActivity): boolean {
 
 /** 超过这个长度就不再算「简单问答」（阈值是有意保守的，宁可不拦）。 */
 export const SIMPLE_REQUEST_MAX_CHARS = 160
+/** coding 会话新建清单至少要几条待办（一两步的活不值得一份清单，也省 token）。 */
+export const CODING_MIN_ITEMS = 3
 /** 简单问答最多允许的待办条数。 */
 export const SIMPLE_TASK_MAX_ITEMS = 1
 
@@ -33,9 +35,11 @@ export interface TaskCreationInput {
   itemCount: number
   /** 用户明确要求「建任务 / 列个计划 / 持续跟进」。 */
   explicit?: boolean
+  /** 会话里已经有的待办条数：往已有清单上追加不算「新建」，不受最少条数限制。 */
+  existingItems?: number
 }
 
-export type TaskCreationReason = 'coding' | 'explicit' | 'activity-flow' | 'multi-step' | 'simple-answer'
+export type TaskCreationReason = 'coding' | 'coding-small' | 'explicit' | 'activity-flow' | 'multi-step' | 'simple-answer'
 
 export interface TaskCreationDecision {
   create: boolean
@@ -56,8 +60,12 @@ export interface TaskCreationDecision {
  * 替它认定「这是个多步流程」——否则一个默认自动的会话会因为上次的活动而突然建清单。
  */
 export function decideTaskCreation(input: TaskCreationInput): TaskCreationDecision {
-  if (input.profile === 'coding') return { create: true, reason: 'coding' }
   if (input.explicit) return { create: true, reason: 'explicit' }
+  if (input.profile === 'coding') {
+    /* 新建清单要真的是多步；已有清单上的追加照旧放行 */
+    if ((input.existingItems ?? 0) > 0 || input.itemCount >= CODING_MIN_ITEMS) return { create: true, reason: 'coding' }
+    return { create: false, reason: 'coding-small' }
+  }
   if (input.profile === 'daily' && isMultiStepActivity(input.activity)) {
     return { create: true, reason: 'activity-flow' }
   }
@@ -69,6 +77,9 @@ export function decideTaskCreation(input: TaskCreationInput): TaskCreationDecisi
 
 /** 被拦下时给模型的一句可读说明（模型据此停止重试，而不是反复提交）。 */
 export function taskCreationRefusal(reason: TaskCreationReason): string | null {
+  if (reason === 'coding-small') {
+    return `任务不足 ${CODING_MIN_ITEMS} 步，宿主没有建立任务清单。直接动手即可；确实是多步任务时，一次写全所有步骤再提交，或让用户明确要求「列个计划」。`
+  }
   if (reason !== 'simple-answer') return null
   return [
     '这是一个简单问答（活动 = 直接回答），宿主没有为它建立任务清单。',

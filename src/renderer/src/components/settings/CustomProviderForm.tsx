@@ -96,10 +96,7 @@ export function CustomProviderForm() {
 
   return (
     <div className="ui-rows" data-testid="custom-api">
-      <div className="ui-row-label">
-        <div className="ui-row-name">{t('customApi.title')}</div>
-        <div className="ui-row-desc">{t('customApi.desc')}</div>
-      </div>
+      <div className="ui-row-desc custom-api-desc">{t('customApi.desc')}</div>
 
       {list === null ? <div className="ui-row-desc">{t('customApi.loading')}</div> : null}
 
@@ -248,7 +245,6 @@ export function CustomProviderForm() {
             const modelId = item.models[0]?.id ?? ''
             return (
               <div className="custom-api-test" data-testid={`custom-api-test-panel-${item.id}`}>
-                <div className="ui-row-desc">{t('customApi.testHint')}</div>
                 <div className="ui-row custom-api-test-actions">
                   <Button type="button" disabled={!!testing} data-testid={`custom-api-test-endpoint-${item.id}`} onClick={() => void runTest(item.id, 'endpoint', modelId)}>
                     {testing === `${item.id}:endpoint` ? t('customApi.testRunning') : t('customApi.testEndpoint')}

@@ -5,11 +5,16 @@
 #
 #   resources/pi-runtime  →  resources/pi-runtime   （20MB 内置 pi，vendor:pi 生成）
 #
-# 主进程（src/main/**）只 import 'electron' 和 node: 内置模块，
-# 渲染层的第三方依赖被 Vite 打进 out/renderer/**。
-# 所以 asar 里**不需要 node_modules** —— files 只收 out/ 与 package.json。
+# 主进程（src/main/**）用到的第三方依赖由 Vite 打进 out/main/**（见
+# electron.vite.config.ts 里 externalizeDepsPlugin 的 exclude 列表），渲染层的
+# 依赖打进 out/renderer/**。所以 asar 里**不需要 node_modules** —— files 只收
+# out/ 与 package.json；唯一的运行时例外是原生模块 node-pty（见下方 asarUnpack）。
 
 appId: com.yudatoux.yan
+publish:
+  provider: github
+  owner: Yu-DaTouX
+  repo: Inkstone
 productName: 砚
 copyright: Copyright © 2026 Yu-DaTouX
 
@@ -29,6 +34,8 @@ files:
   - out/preload/**
   - out/renderer/**
   - build/icon.png
+  - build/icon.ico
+  - build/tray/**
   - package.json
   - '!node_modules/**'
   #
@@ -129,6 +136,8 @@ nsis:
   uninstallerSidebar: build/installerSidebar.bmp
   # 内页页眉（150×57）：与侧栏同一套品牌配色，由 npm run installer:sidebar 生成
   installerHeader: build/installerHeader.bmp
+  # 欢迎页动画（build/installer.nsh + build/installer-anim/）
+  include: build/installer.nsh
   artifactName: ${productName}-${version}-setup.${ext}
 
 # 免安装单文件版（可选，用户想直接跑不装时用）

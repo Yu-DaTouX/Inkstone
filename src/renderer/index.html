@@ -17,8 +17,20 @@
                connect-src 'self' ws://localhost:* http://localhost:*"
     />
     <title>砚</title>
+    <script src="/boot-theme.js"></script>
   </head>
   <body>
+    <!--
+      启动画面（设计规范 §3.4.1）：写在静态 HTML 里，窗口首帧就有；
+      样式在 styles/shell.css + motion.css，数据就绪后由 lib/boot-splash.ts 淡出并移除。
+    -->
+    <div id="boot" class="boot" aria-hidden="true">
+      <svg class="boot-mark" viewBox="0 0 100 100" fill="none">
+        <path class="boot-frame" pathLength="1" d="M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53" />
+        <path class="boot-prompt" d="M36 40L47 50L36 60" />
+        <path class="boot-cursor" d="M57 62H69" />
+      </svg>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

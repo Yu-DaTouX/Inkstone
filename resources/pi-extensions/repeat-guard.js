@@ -111,6 +111,19 @@ export function fingerprint(toolName, input) {
   return `${String(toolName ?? '')}\n${stableJson(input ?? {})}`
 }
 
+/**
+ * 「sleep 着轮询子代理」的形状：同一条 bash 里既有 `yan subagent list|get` 又有睡眠。
+ *
+ * 子代理结束时宿主会主动通知父会话，轮询只会让主代理干等、上下文缓存过期，
+ * 醒来还得整段重读。只认命令形状，不去猜「有没有子代理在跑」。
+ */
+export function isSubagentPollLoop(toolName, input) {
+  if (toolName !== 'bash') return false
+  const command = String(input?.command ?? '')
+  if (!/\byan\s+subagent\s+(?:list|get)\b/.test(command)) return false
+  return /\bsleep\s+\d|\bstart-sleep\b|\btimeout\s+\/t\b|\bping\s+-n\s+\d/i.test(command)
+}
+
 /** 提醒文案（英文：与 pi 自己的工具错误文案同一语言，不受界面语言影响）。 */
 function remindText(toolName, run) {
   return (
@@ -164,6 +177,16 @@ export default function repeatGuard(pi) {
     if (isGoalReportCall(toolName, event?.input)) {
       reset('goal-report')
       return undefined
+    }
+    if (isSubagentPollLoop(toolName, event?.input)) {
+      note('subagent_poll_blocked', {})
+      return {
+        block: true,
+        reason:
+          'Do not poll subagents with sleep. The host notifies this session when a subagent finishes, ' +
+          'so waiting here only wastes time and lets the prompt cache expire. Either keep working on something ' +
+          'that does not depend on it, or end this turn and tell the user the subagent is running and you will be notified.'
+      }
     }
     const key = fingerprint(toolName, event?.input)
     if (key === lastKey) {

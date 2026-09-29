@@ -29,7 +29,10 @@
   const ub = q('[data-testid="usagebar"]')
   if (ub) ok(true, '.usagebar 存在')
   else skip(`pi 未就绪（conn=${store.getState().conn}），没有用量数据 → 用量条不渲染`)
-  if (ub) {
+  /* 用量条现在在底部状态栏里；没有用量数据时只渲染 data-state=no-usage 的空占位 */
+  const ubEmpty = ub?.getAttribute('data-state') === 'no-usage'
+  if (ub && ubEmpty) skip('还没有用量数据，用量条是空占位')
+  if (ub && !ubEmpty) {
     out.push('  内容: ' + JSON.stringify(ub.textContent.replace(/\s+/g, ' ').trim()))
     const labels = qa('.usagebar .ub-label').map(e => e.textContent)
     out.push('  字段: ' + JSON.stringify(labels))
@@ -40,9 +43,11 @@
     for (const need of ['输入', '输出', '缓存', '速度']) ok(labels.includes(need), `含「${need}」`)
     ok(!labels.includes('上下文'), '上下文已移出用量条')
     ok(!q('[data-testid="ub-ctx"]'), '旧的内联上下文按钮已移除')
+    const inStatusBar = !!ub.closest('.statusbar, [data-testid="statusbar"]')
     // 位置：在 composer 下方
     const c = q('.composer'), r1 = ub.getBoundingClientRect(), r2 = c.getBoundingClientRect()
     ok(r1.top >= r2.bottom - 2, `在输入框下方（usagebar.top=${Math.round(r1.top)} composer.bottom=${Math.round(r2.bottom)}）`)
+    if (!inStatusBar) {
     // 居中
     const center = q('.center').getBoundingClientRect()
     const leftGap = Math.round(r1.left - center.left), rightGap = Math.round(center.right - r1.right)
@@ -51,6 +56,7 @@
     const ubw = Math.round(r1.width), cw = Math.round(r2.width)
     out.push(`  用量条宽 ${ubw} / 输入框宽 ${cw}`)
     ok(Math.abs(ubw - cw) <= 4, `用量条与输入框同宽（差 ${Math.abs(ubw - cw)}px）`)
+    }
     // 不能再有那种「只占位不表意」的竖线分隔符
     ok(qa('.ub-sep').length === 0, '已清除多余的竖线分隔符（.ub-sep）')
   }

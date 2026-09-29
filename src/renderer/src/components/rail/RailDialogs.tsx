@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -131,7 +132,9 @@ export function SessionDeleteDialog({ session, onClose, onDeleted }: {
     onDeleted(res.undoToken ?? null, refreshFailed)
   }
 
-  return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+  /* 挂到 body：左栏收起（display:none）时对话框不能跟着消失 */
+  return createPortal(
+    <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
     <div className="modal rail-delete-dialog" ref={panel}>
       <div className="modal-head">
         <Icon name="alert-circle" size={14} />
@@ -157,7 +160,9 @@ export function SessionDeleteDialog({ session, onClose, onDeleted }: {
         </Button>
       </div>
     </div>
-  </div>
+  </div>,
+    document.body
+  )
 }
 
 /**
@@ -200,7 +205,9 @@ export function ProjectRemoveDialog({ project, onClose, onRemoved }: {
     }
   }
 
-  return <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="remove-project-title">
+  /* 挂到 body：左栏收起（display:none）时对话框不能跟着消失 */
+  return createPortal(
+    <div className="modal-scrim rail-delete-scrim" role="dialog" aria-modal="true" aria-labelledby="remove-project-title">
     <div className="modal rail-delete-dialog" ref={panel}>
       <div className="modal-head">
         <Icon name="alert-circle" size={14} />
@@ -216,5 +223,7 @@ export function ProjectRemoveDialog({ project, onClose, onRemoved }: {
         </Button>
       </div>
     </div>
-  </div>
+  </div>,
+    document.body
+  )
 }

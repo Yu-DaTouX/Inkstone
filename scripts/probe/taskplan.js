@@ -122,12 +122,8 @@
     /* 清单可能比回合结束稍晚（refreshTodos 是异步推送），给足等待 */
     await until(() => store.getState().todos.length > 0, 20000)
 
-    /*
-     * 工具组默认收起、且**收起时内部的行不在 DOM 里**（`tgroup-body` 不渲染）。
-     * 不展开就数 `.trow`，测到的是「组是收起的」而不是「有没有这条调用」——
-     * 这个坑在 taskcli 里已经让一次真实失败（yan.mjs 语法错）被误读成「模型没调工具」。
-     */
-    qa('.tgroup-head').forEach((h) => click(h))
+    /* 七步及以上才折叠较早步骤；诊断时展开全部。 */
+    qa('.tgroup-fold[aria-expanded="false"]').forEach((h) => click(h))
     await sleep(600)
 
     /*

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
-import type { AuthProviderInfo } from '../../../../shared/ipc'
+import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { ActivityModelSection } from './ActivityModelSection'
-import { Button, Spinner } from '../ui'
+import { Button, Disclosure, Input, SettingGroup, SettingRow, Spinner } from '../ui'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -17,18 +16,12 @@ import { Button, Spinner } from '../ui'
  *
  * **② 订阅制**（ChatGPT Plus/Pro、Claude Pro/Max、GitHub Copilot、
  *    xAI、OpenRouter、Radius）：走 OAuth，token 也落在 auth.json。
- *    pi 的 RPC 里没有 login 命令（查过 docs/rpc.md 的 47 个命令，确认没有），
- *    但 **ChatGPT 这一家的参数可以从内置 pi 的实现里逐字对齐抄出来**，
- *    所以它在应用内就能登录（见 src/main/oauth.ts）—— 界面给按钮。
- *    其余几家仍只能跑 `pi → /login`：协议/客户端参数不同，不能照搬。
+ *    pi 的 RPC 里没有 login 命令，所以登录在宿主里跑：
+ *    ChatGPT 走 src/main/oauth.ts；Claude Pro/Max、Copilot、xAI、OpenRouter
+ *    由 src/main/oauth-providers.ts 加载随包 pi 自己的登录模块。
+ *    过程中要用户做的事（浏览器授权、输入验证码、粘贴回调地址、填企业域名）
+ *    显示在该行下面的登录面板里。登录模块缺失（换了外部 pi）时才退回 `pi → /login`。
  *    这一步只做一次，之后 token 自动续期。
- *
- * ── 为什么其余几家不也做成「一键弹出终端自动跑」──
- * 各平台的终端启动方式差别太大（Windows Terminal / conhost / macOS Terminal
- * / Linux 各种 emulator），而且 OAuth 要用户在浏览器里点授权、
- * 回调地址还得能回连 localhost。自动化的失败模式比手动多。
- * 诚实地给一条命令，比一个时灵时不灵的按钮好；
- * 真能自己跑完的那一家（ChatGPT）就真给按钮。
  */
 export function AuthTab() {
   const t = useT()
@@ -41,6 +34,33 @@ export function AuthTab() {
   /** 应用内 OAuth 进行中（要等用户在浏览器里点完，可能几十秒）。 */
   const [loggingIn, setLoggingIn] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  /** 其余订阅的应用内登录：哪一家在登、过程中收到的提示 */
+  const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
+
+  useEffect(
+    () =>
+      window.yan.onOAuthEvent((ev) =>
+        setOauth((cur) => (cur && cur.provider === ev.provider ? { ...cur, events: [...cur.events, ev] } : cur))
+      ),
+    []
+  )
+
+  const loginSubscription = async (provider: string): Promise<void> => {
+    setOauth({ provider, events: [] })
+    setMsg(null)
+    try {
+      const r = await window.yan.oauthLogin(provider)
+      if (r.ok) {
+        setMsg({ kind: 'ok', text: t('auth.loginOkGeneric') })
+        await load(false)
+        await load(true)
+      } else if (!r.cancelled) {
+        setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
+      }
+    } finally {
+      setOauth(null)
+    }
+  }
 
   const load = async (deep: boolean): Promise<void> => {
     if (deep) setChecking(true)
@@ -116,180 +136,270 @@ export function AuthTab() {
   const subs = (list ?? []).filter((x) => x.kind === 'subscription')
   const keys = (list ?? []).filter((x) => x.kind === 'api_key')
   const readyCount = (list ?? []).filter((x) => x.status === 'ready').length
+  /* 已配置的 Key 常显；其余服务商折叠 —— 二十个空行会把真正用到的那几个淹掉 */
+  const keysReady = keys.filter((x) => x.status === 'ready' || editing === x.id)
+  const keysOther = keys.filter((x) => x.status !== 'ready' && editing !== x.id)
+
+  const keyRow = (p: AuthProviderInfo): React.ReactNode => (
+    <div className="auth-row" key={p.id} data-testid={`auth-row-${p.id}`}>
+      <div className="auth-row-main">
+        <div className="auth-row-name">
+          <span className={`auth-dot ${p.status}`} />
+          {p.name}
+        </div>
+        {p.envVar ? <div className="auth-row-hint">{t('auth.orEnv')} <code>{p.envVar}</code></div> : null}
+      </div>
+
+      {editing === p.id ? (
+        <div className="auth-edit">
+          <input
+            className="ui-input auth-input"
+            type="password"
+            autoFocus
+            value={draft}
+            placeholder={t('auth.pasteKey')}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void save()
+              }
+              if (e.key === 'Escape') setEditing(null)
+            }}
+            data-testid={`auth-input-${p.id}`}
+          />
+          <Button variant="primary" size="sm" onClick={() => void save()} disabled={busy || !draft.trim()}>
+            {t('auth.save')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+            {t('ui.cancel')}
+          </Button>
+        </div>
+      ) : (
+        <div className="auth-actions">
+          {p.status === 'ready' ? (
+            <Button size="sm" variant="ghost" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
+              {t('auth.signOut')}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(p.id)
+              setDraft('')
+              setMsg(null)
+            }}
+            data-testid={`auth-set-${p.id}`}
+          >
+            {p.status === 'ready' ? t('auth.replace') : t('auth.setKey')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <>
-      {/* 按活动用不同模型（实施-25 P18）：配置在接入页，切模型不在这里 */}
-      <ActivityModelSection />
       <div className="ui-rows auth-page">
-      {/* ---- 顶部：状态摘要 ---- */}
-      <div className="auth-head">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('auth.title')}</div>
-          <div className="ui-row-desc">
-            {t('auth.summary', { ready: readyCount, total: (list ?? []).length })}
+        {/* 顶部：就绪数 + 重新检测（深查一次，以 pi 自己的判断为准） */}
+        <SettingRow name={t('auth.summary', { ready: readyCount, total: (list ?? []).length })} desc={t('auth.safety')}>
+          <Button size="sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
+            {checking ? <Spinner mute /> : null}
+            <span>{checking ? t('auth.checking') : t('auth.recheck')}</span>
+          </Button>
+        </SettingRow>
+
+        {msg ? (
+          <div className={`auth-msg ${msg.kind}`} data-testid="auth-msg">
+            {msg.text}
           </div>
-        </div>
-        <Button size="sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
-          {checking ? <Spinner mute /> : <Icon name="refresh" size={12} />}
-          <span>{checking ? t('auth.checking') : t('auth.recheck')}</span>
-        </Button>
+        ) : null}
       </div>
 
-      {info ? (
-        <div className="auth-path" title={info.path}>
-          <Icon name="folder" size={12} />
-          <span className="auth-path-label">{t('auth.fileHint')}</span>
-          <code>{info.path}</code>
-          <span className="auth-path-count">
-            {info.exists ? t('auth.entries', { n: info.count }) : t('auth.noFile')}
-          </span>
-        </div>
-      ) : null}
-
-      {msg ? (
-        <div className={`auth-msg ${msg.kind}`} data-testid="auth-msg">
-          {msg.text}
-        </div>
-      ) : null}
-
-      {/* ---- 订阅制 ---- */}
-      <div className="auth-sec-head">
-        <Icon name="shield-check" size={12} />
-        <span>{t('auth.subs')}</span>
-        <span className="spacer" />
-        <span className="auth-sec-note">{t('auth.subsNote')}</span>
-      </div>
-
-      {subs.map((p) => (
-        <div className="auth-row" key={p.id} data-testid={`auth-row-${p.id}`}>
-          <div className="auth-row-main">
-            <div className="auth-row-name">
-              <span className={`auth-dot ${p.status}`} />
-              {p.name}
-            </div>
-            {p.hint ? <div className="auth-row-hint">{p.hint}</div> : null}
-          </div>
-
-          {p.status === 'ready' ? (
-            <Button size="sm" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
-              {t('auth.signOut')}
-            </Button>
-          ) : p.inAppLogin ? (
-            /*
-             * 能应用内登录的（目前只有 ChatGPT 订阅）就给按钮；
-             * 其余订阅制仍然只能给命令提示 —— 不是不想做，是各家协议/参数不同，
-             * 而 pi 没有可通过 RPC 发起的登录（见 AuthTab 顶部注释）。
-             */
-            <div className="auth-actions">
-              {loggingIn ? (
-                <>
-                  <span className="auth-waiting" data-testid="auth-login-waiting">
-                    <Spinner mute />
-                    <span>{t('auth.loginWaiting')}</span>
-                  </span>
-                  <Button size="sm" data-testid="auth-login-cancel" onClick={() => void window.yan.codexLoginCancel()}>
-                    {t('ui.cancel')}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="primary" size="sm" data-testid={`auth-login-${p.id}`} disabled={busy} onClick={() => void loginCodex()}>
-                    {t('auth.loginInApp')}
-                  </Button>
-                  <span className="auth-cmd" title={t('auth.cmdTip')}>
-                    <code>pi</code>
-                    <span className="auth-cmd-then">→</span>
-                    <code>/login</code>
-                  </span>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="auth-cmd" title={t('auth.cmdTip')}>
-              <code>pi</code>
-              <span className="auth-cmd-then">→</span>
-              <code>/login</code>
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* ---- API key ---- */}
-      <div className="auth-sec-head">
-        <Icon name="key" size={12} />
-        <span>{t('auth.keys')}</span>
-        <span className="spacer" />
-        <span className="auth-sec-note">{t('auth.keysNote')}</span>
-      </div>
-
-      {keys.map((p) => (
-        <div className="auth-row" key={p.id} data-testid={`auth-row-${p.id}`}>
-          <div className="auth-row-main">
-            <div className="auth-row-name">
-              <span className={`auth-dot ${p.status}`} />
-              {p.name}
-              {p.status === 'ready' ? <span className="auth-badge">{t('auth.ready')}</span> : null}
-            </div>
-            {p.envVar ? (
-              <div className="auth-row-hint">
-                {t('auth.orEnv')} <code>{p.envVar}</code>
+      {/* 订阅制：ChatGPT 可在应用内登录；其余几家协议不同，只能在终端跑一次 pi → /login */}
+      {subs.length > 0 ? (
+      <SettingGroup title={t('auth.subs')}>
+        <div className="ui-rows">
+          {subs.map((p) => (
+            <div className="auth-row" key={p.id} data-testid={`auth-row-${p.id}`}>
+              <div className="auth-row-main">
+                <div className="auth-row-name">
+                  <span className={`auth-dot ${p.status}`} />
+                  {p.name}
+                </div>
+                {p.hint ? <div className="auth-row-hint">{p.hint}</div> : null}
               </div>
-            ) : null}
-          </div>
 
-          {editing === p.id ? (
-            <div className="auth-edit">
-              <input
-                className="auth-input"
-                type="password"
-                autoFocus
-                value={draft}
-                placeholder={t('auth.pasteKey')}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void save()
-                  }
-                  if (e.key === 'Escape') setEditing(null)
-                }}
-                data-testid={`auth-input-${p.id}`}
-              />
-              <Button variant="primary" size="sm" onClick={() => void save()} disabled={busy || !draft.trim()}>
-                {t('auth.save')}
-              </Button>
-              <Button size="sm" onClick={() => setEditing(null)}>
-                {t('ui.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <div className="auth-actions">
-              <Button size="sm" onClick={() => {
-                  setEditing(p.id)
-                  setDraft('')
-                  setMsg(null)
-                }} data-testid={`auth-set-${p.id}`}>
-                {p.status === 'ready' ? t('auth.replace') : t('auth.setKey')}
-              </Button>
               {p.status === 'ready' ? (
-                <Button size="sm" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
+                <Button size="sm" variant="ghost" onClick={() => void signOut(p.id)} disabled={busy || loggingIn || !!oauth}>
                   {t('auth.signOut')}
                 </Button>
-              ) : null}
+              ) : p.inAppLogin && p.id !== 'openai-codex' ? (
+                <div className="auth-actions">
+                  {oauth?.provider === p.id ? (
+                    <Button size="sm" variant="ghost" data-testid="auth-login-cancel" onClick={() => void window.yan.oauthLoginCancel(p.id)}>
+                      {t('ui.cancel')}
+                    </Button>
+                  ) : (
+                    <Button size="sm" data-testid={`auth-login-${p.id}`} disabled={busy || loggingIn || !!oauth} onClick={() => void loginSubscription(p.id)}>
+                      {t('auth.loginInApp')}
+                    </Button>
+                  )}
+                </div>
+              ) : p.inAppLogin ? (
+                <div className="auth-actions">
+                  {loggingIn ? (
+                    <>
+                      <span className="auth-waiting" data-testid="auth-login-waiting">
+                        <Spinner mute />
+                        <span>{t('auth.loginWaiting')}</span>
+                      </span>
+                      <Button size="sm" variant="ghost" data-testid="auth-login-cancel" onClick={() => void window.yan.codexLoginCancel()}>
+                        {t('ui.cancel')}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" data-testid={`auth-login-${p.id}`} disabled={busy || !!oauth} onClick={() => void loginCodex()}>
+                      {t('auth.loginInApp')}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="auth-cmd" title={t('auth.cmdTip')}>
+                  <code>pi</code>
+                  <span className="auth-cmd-then">→</span>
+                  <code>/login</code>
+                </div>
+              )}
+              {oauth?.provider === p.id ? <SubscriptionLoginPanel provider={p.id} events={oauth.events} /> : null}
             </div>
-          )}
+          ))}
         </div>
-      ))}
+      </SettingGroup>
+      ) : null}
 
-      {/* 实施-23：自定义 API 服务（真源是 pi 的 models.json） */}
-      <CustomProviderForm />
+      {keys.length > 0 ? (
+      <SettingGroup title={t('auth.keys')}>
+        <div className="ui-rows">
+          {keysReady.map(keyRow)}
+          {keysOther.length > 0 ? (
+            <Disclosure title={keysReady.length ? t('auth.moreProviders', { n: keysOther.length }) : t('auth.allProviders', { n: keysOther.length })} testId="auth-more-keys">
+              <div className="ui-rows">{keysOther.map(keyRow)}</div>
+            </Disclosure>
+          ) : null}
+        </div>
+      </SettingGroup>
+      ) : null}
 
-      <div className="auth-foot">
-        <Icon name="alert-circle" size={12} />
-        <span>{t('auth.safety')}</span>
-      </div>
-      </div>
+      {/* 自定义 API 服务（真源是 pi 的 models.json） */}
+      <SettingGroup title={t('customApi.title')}>
+        <CustomProviderForm />
+      </SettingGroup>
+
+      {/* 按活动分配模型：低频配置，收在页尾 */}
+      <SettingGroup>
+        <Disclosure title={t('am.title')} testId="auth-activity-models">
+          <ActivityModelSection />
+        </Disclosure>
+        {info ? (
+          <Disclosure title={t('auth.fileHint')}>
+            <div className="set-diag">
+              <div className="set-diag-line">
+                <span className="set-diag-k">{t('set.piPath')}</span>
+                <span className="set-diag-v set-path" title={info.path}>{info.path}</span>
+              </div>
+              <div className="set-diag-line">
+                <span className="set-diag-k">{t('auth.entriesLabel')}</span>
+                <span className="set-diag-v">{info.exists ? t('auth.entries', { n: info.count }) : t('auth.noFile')}</span>
+              </div>
+            </div>
+          </Disclosure>
+        ) : null}
+      </SettingGroup>
     </>
+  )
+}
+
+/**
+ * 订阅登录进行中：把登录模块要用户做的事摆出来。
+ *   · 验证码（Copilot / xAI）：大号显示 + 复制 + 打开验证页
+ *   · 授权地址（Claude / OpenRouter）：已自动用浏览器打开；打不开时可再次打开或复制
+ *   · 提问：粘贴回调地址、企业域名（文本），或在几个选项里选一个
+ * 只显示最新的一条进度；已回答或被登录模块撤回的提问不再显示。
+ */
+function SubscriptionLoginPanel({ provider, events }: { provider: string; events: OAuthLoginEvent[] }) {
+  const t = useT()
+  const [answer, setAnswer] = useState('')
+  const [sent, setSent] = useState<number[]>([])
+  const closed = new Set<number>(sent)
+  for (const e of events) if (e.type === 'prompt_closed') closed.add(e.promptId)
+  const latest = <K extends OAuthLoginEvent['type']>(type: K): Extract<OAuthLoginEvent, { type: K }> | undefined =>
+    [...events].reverse().find((e) => e.type === type) as Extract<OAuthLoginEvent, { type: K }> | undefined
+  const authUrl = latest('auth_url')
+  const device = latest('device_code')
+  const progress = latest('progress')
+  const prompt = [...events]
+    .reverse()
+    .find((e): e is Extract<OAuthLoginEvent, { type: 'prompt' }> => e.type === 'prompt' && !closed.has(e.promptId))
+  const reply = (value: string): void => {
+    if (!prompt) return
+    setSent((cur) => [...cur, prompt.promptId])
+    setAnswer('')
+    void window.yan.oauthLoginAnswer(provider, prompt.promptId, value)
+  }
+  const copy = (text: string): void => {
+    void navigator.clipboard?.writeText(text).catch(() => undefined)
+  }
+  return (
+    <div className="auth-login-panel" data-testid={`auth-login-panel-${provider}`}>
+      <div className="auth-login-status">
+        <Spinner mute />
+        <span>{progress?.message || (device ? t('auth.deviceWaiting') : t('auth.loginWaiting'))}</span>
+      </div>
+      {device ? (
+        <div className="auth-login-device">
+          <span className="auth-login-code" data-testid="auth-device-code">{device.userCode}</span>
+          <Button size="sm" onClick={() => copy(device.userCode)}>{t('auth.copyCode')}</Button>
+          {device.url ? (
+            <Button size="sm" variant="primary" onClick={() => void window.yan.browser.openExternal(device.url)}>
+              {t('auth.openVerify')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {authUrl && !device ? (
+        <div className="auth-login-url">
+          <span>{t('auth.browserOpened')}</span>
+          <Button size="sm" variant="ghost" onClick={() => void window.yan.browser.openExternal(authUrl.url)}>
+            {t('auth.openAgain')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => copy(authUrl.url)}>{t('auth.copyLink')}</Button>
+        </div>
+      ) : null}
+      {prompt ? (
+        <div className="auth-login-prompt">
+          <div>{prompt.message}</div>
+          {prompt.kind === 'select' && prompt.options?.length ? (
+            <div className="auth-login-options">
+              {prompt.options.map((o) => (
+                <Button key={o.id} size="sm" onClick={() => reply(o.id)}>{o.label}</Button>
+              ))}
+            </div>
+          ) : (
+            <form
+              className="auth-login-form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                reply(answer)
+              }}
+            >
+              <Input value={answer} placeholder={prompt.placeholder} onChange={(e) => setAnswer(e.target.value)} autoFocus />
+              <Button size="sm" type="submit">{t('auth.submit')}</Button>
+            </form>
+          )}
+          {prompt.kind === 'manual_code' ? <div className="auth-row-hint">{t('auth.manualCodeHint')}</div> : null}
+        </div>
+      ) : null}
+    </div>
   )
 }

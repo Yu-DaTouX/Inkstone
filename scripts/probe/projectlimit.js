@@ -131,10 +131,8 @@
     ok(!!q('.proj-head[data-current="1"]'), '当前项目行带 data-current 标记')
 
     /* ---- 搜索：临时显示全部匹配，清空后回到折叠态 ---- */
-    click(q('[data-testid="rail-search-btn"]'))
-    await sleep(350)
     const search = q('[data-testid="rail-search"]')
-    ok(!!search, '搜索框打开')
+    ok(!!search, '搜索框常驻')
     const body = q('.rail-body')
     const scrollBefore = body?.scrollTop ?? 0
     setValue(search, '第6号')

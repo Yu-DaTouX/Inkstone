@@ -833,6 +833,61 @@ export interface CodexLoginResult {
   error?: string
 }
 
+/** 数据位置（设置 → 关于） */
+export interface StorageInfoView {
+  agentDir: string
+  realDir: string
+  relocated: boolean
+  movable: boolean
+  bytes: number
+  pendingTarget?: string
+  /** 原位置不在、旁边留着迁移前备份：数据没丢，在这里 */
+  strandedBackup?: string
+  lastResult?: { ok: boolean; at: number; from: string; to: string; error?: string; leftover?: string }
+}
+
+/** 应用内订阅登录（非 ChatGPT）的结果；error 是给用户看的句子 */
+/** 电脑操作（Windows-MCP）的状态投影 */
+export interface ComputerUseStatusView {
+  supported: boolean
+  /** uvx 的位置；null = 还没装 uv */
+  uvx: string | null
+  enabled: boolean
+  /** 能用 winget 一键安装 uv */
+  canInstallUv: boolean
+}
+
+export interface ComputerUseActionResult {
+  ok: boolean
+  error?: string
+  log?: string
+  /** 没有 winget，需要按 uv 官方说明手动安装 */
+  needsManual?: boolean
+}
+
+export interface OAuthLoginResult {
+  ok: boolean
+  cancelled?: boolean
+  error?: string
+}
+
+/** 登录过程中推给设置页的事件（通道 yan:oauth） */
+export type OAuthLoginEvent =
+  | { provider: string; type: 'auth_url'; url: string; message?: string }
+  | { provider: string; type: 'device_code'; userCode: string; url: string; expiresInSeconds?: number }
+  | { provider: string; type: 'progress'; message: string }
+  | {
+      provider: string
+      type: 'prompt'
+      promptId: number
+      kind: 'manual_code' | 'text' | 'select'
+      message: string
+      placeholder?: string
+      options?: { id: string; label: string }[]
+    }
+  | { provider: string; type: 'prompt_closed'; promptId: number }
+  | { provider: string; type: 'done' }
+
 /** 接入方式：订阅制（OAuth）还是 API key */
 export type AuthKind = 'subscription' | 'api_key'
 
@@ -858,10 +913,8 @@ export interface AuthProviderInfo {
   /**
    * 能不能**在应用内直接登录**（不用回终端）。
    *
-   * 目前只有 ChatGPT 订阅（`openai-codex`）为 true —— 它的 OAuth 参数
-   * 可以从内置 pi 里逐字对齐抄出来（见 src/main/oauth.ts）。
-   * 其余订阅制（Claude Pro、Copilot、xAI、OpenRouter）仍只能跑 `pi → /login`：
-   * 要么是各自协议不同，要么是 pi 没提供可拷贝的客户端参数。
+   * ChatGPT 订阅走 src/main/oauth.ts；Claude Pro、Copilot、xAI、OpenRouter
+   * 由 src/main/oauth-providers.ts 驱动随包 pi 自己的登录模块。
    */
   inAppLogin?: boolean
   status: AuthStatus
@@ -1053,6 +1106,11 @@ export interface AppSettings {
    * 旧字段 `workModeTab: false`（裸 Tab 快切关掉）在读取时迁到这里，之后不再写回。
    */
   workModeShortcutEnabled?: boolean
+  /**
+   * 子代理结束时是否自动通知发起它的会话（唤醒模型继续 / 汇总）。
+   * `undefined` = 没改过 = **开**；只有明确关掉才是 `false`。
+   */
+  subagentNotify?: boolean
   /**
    * 手机接入（远程访问，需求稿第 3 步）。`undefined` = 从没开过 = 关闭，不监听任何端口。
    * 形状与默认值见 `shared/remote-protocol.ts` 的 RemoteAccessSettings。
@@ -1305,9 +1363,9 @@ export function normalizeToolHidden(v: unknown): string[] {
  *   而非法值会让 `grid-template-columns` 整条声明失效（那一拖就完全没反应）。
  */
 export const RAIL_MIN = 210
-export const RAIL_MAX = 420
+export const RAIL_MAX = 1200
 export const PANEL_MIN = 220
-export const PANEL_MAX = 560
+export const PANEL_MAX = 1200
 
 /** 夹一个合法的面板宽度；0 / 非数字都当「用默认」 */
 export function clampPanelWidth(v: unknown, min: number, max: number): number {
@@ -1906,6 +1964,14 @@ export interface SubagentUsageTotals {
   reportedMessages: number
 }
 
+/**
+ * 子代理为什么结束。界面与通知据此说清是「做完了」还是「超时 / 调用用完 / 报错 / 被停」，
+ * 而不是把它们都压成一个「失败」。
+ *   · timeout / budget：到点后先让它收尾；收尾交出了结论则 status=done，硬停则 status=error
+ *   · startup：pi 没起来；exited：进程自己退了；failed：其余启动或运行错误
+ */
+export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-error' | 'startup' | 'exited' | 'failed' | 'stopped'
+
 export type { SubagentBrief, SubagentResult } from './subagent-brief'
 import type { SubagentBrief, SubagentResult } from './subagent-brief'
 
@@ -1926,6 +1992,8 @@ export interface SubagentRun {
   /** 审阅结束后为空；待审阅时指向 worktree，退出归档后指向补丁。 */
   resultPath?: string
   model?: string
+  /** pi 报告的思考强度（off / low / high …）；没拿到就缺省 */
+  thinkingLevel?: string
   status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
   startedAt: number
   endedAt?: number
@@ -1936,6 +2004,12 @@ export interface SubagentRun {
   diff?: SubagentDiffSummary
   review: SubagentReviewState
   error?: string
+  /** 结束原因；运行中为空 */
+  endReason?: SubagentEndReason
+  /** 已发起的工具调用次数 */
+  toolCalls?: number
+  /** 到点后正在收尾：已要求它立刻交出目前的结论，超过宽限仍不结束才会被停掉 */
+  wrapUp?: { reason: 'timeout' | 'budget'; since: number }
   /** H-10b：按消息 id 去重后的 usage 累计；没收到过就是 undefined（界面显示未知） */
   usage?: SubagentUsageTotals
   /**
@@ -2900,6 +2974,13 @@ export interface AttachmentPruneResult {
 }
 
 export interface YanBridge {
+  appUpdate: {
+    status(): Promise<import('./app-update').AppUpdateStatus>
+    check(): Promise<import('./app-update').AppUpdateStatus>
+    automatic(enabled: boolean): Promise<import('./app-update').AppUpdateStatus>
+    download(): Promise<import('./app-update').AppUpdateStatus>
+    install(): Promise<{ ok: boolean; error?: string }>
+  }
   /* 会话控制 */
   /**
    * 切到某个会话（N12）：命中已有实例就只改视图，**不发停止命令**；
@@ -3200,6 +3281,13 @@ export interface YanBridge {
   codexLogin(): Promise<CodexLoginResult>
   /** 取消正在进行的 ChatGPT 登录（关掉本地回调、释放 1455 端口）。 */
   codexLoginCancel(): Promise<void>
+  /** 应用内登录其余订阅（Claude Pro/Max、Copilot、xAI、OpenRouter）；流程结束时 resolve */
+  oauthLogin(provider: string): Promise<OAuthLoginResult>
+  /** 回答登录过程中的提问（粘贴回调地址、企业域名、选项） */
+  oauthLoginAnswer(provider: string, promptId: number, value: string): Promise<boolean>
+  oauthLoginCancel(provider: string): Promise<void>
+  /** 订阅登录过程事件；返回取消订阅 */
+  onOAuthEvent(cb: (event: OAuthLoginEvent) => void): () => void
   /** 写入一个 provider 的 API key（**合并**写入 auth.json） */
   setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
   /** 移除某个 provider 的凭证（界面上的「退出」） */
@@ -3275,8 +3363,21 @@ export interface YanBridge {
   /* 诊断 */
   probePi(): Promise<PiProbe>
   openPath(p: string): Promise<{ ok: boolean; error?: string }>
+  /**
+   * 用系统默认程序打开一个文件（对话里双击文件链接、预览里的「打开」）。
+   * 相对路径按 cwd 解析；可执行 / 脚本类文件不启动，只在文件管理器里定位。
+   */
+  openFileDefault(p: string, cwd?: string): Promise<{ ok: boolean; revealed?: boolean; error?: string }>
   /** 在系统文件管理器里定位一个文件 */
   revealPath(p: string): Promise<void>
+  /** 数据位置（会话、凭证、语音模型等）与迁移到非系统盘 */
+  storage: {
+    info(): Promise<StorageInfoView>
+    pick(): Promise<string | null>
+    /** 登记下次启动迁移；relaunch=true 时立即重启应用执行 */
+    schedule(target: string, relaunch?: boolean): Promise<{ ok: boolean; error?: string }>
+    cancel(): Promise<void>
+  }
 
   /**
    * 是不是跑在验收探针里（主进程带了 `YAN_PROBE`）。
@@ -3445,6 +3546,17 @@ export interface YanBridge {
    */
   search: {
     doctor(): Promise<SearchBackendStatus>
+    /** 用户点「安装 OpenCLI」：npm 全局安装；needsNode 表示先要装 Node.js */
+    installBackend(): Promise<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>
+  }
+  /**
+   * 电脑操作（Windows-MCP）：状态只读；安装 uv、开关都由用户在设置页点。
+   * 开启时由 uv 下载 Python 与 windows-mcp，登记为只开放界面操作工具的 MCP 服务。
+   */
+  computerUse: {
+    status(): Promise<ComputerUseStatusView>
+    installUv(): Promise<ComputerUseActionResult>
+    set(enabled: boolean): Promise<ComputerUseActionResult>
   }
   /**
    * 任务收件箱（实施-28 T2）：会话 × 运行实例 × 任务计划的只读投影。
@@ -3533,6 +3645,7 @@ export interface YanBridge {
     change(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<import('./tool-consent').ConsentEntryView[]>
   }
   voice: {
+    prepare(): Promise<{ ok: boolean; error?: string }>
     status(): Promise<import('./voice-input').VoiceInputStatus>
     plan(
       target: import('./voice-input').VoiceDownloadPlan['target']

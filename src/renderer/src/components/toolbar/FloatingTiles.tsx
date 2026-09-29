@@ -21,6 +21,7 @@ import {
   type ToolTile
 } from '../../../../shared/tool-layout'
 import { IconButton } from '../ui'
+import { hasVisibleSubagents } from '../../state/subagent-view'
 
 /** 进入拖动的最小位移（设计 §5.2：≥6 CSS px；正文选字/点击不触发拖动） */
 const DRAG_THRESHOLD = 6
@@ -106,6 +107,7 @@ export function FloatingTiles() {
   const hasMessageOutputs = useStore((s) => s.messages.some((message) =>
     !!message.artifacts?.length || (message.role === 'user' && !!message.images?.length)
   ))
+  const hasSubagents = useStore(hasVisibleSubagents)
   const logs = useStore((s) => s.logs)
   const statuses = useStore((s) => s.statuses)
   const widgets = useStore((s) => s.widgets)
@@ -421,7 +423,7 @@ export function FloatingTiles() {
                       style={{ maxHeight: Math.max(0, rect.height - TILE_HEAD_H) }}
                     >
                       {(SECTION_REGISTRY[id].isEmpty
-                        ? SECTION_REGISTRY[id].isEmpty!({ todos, goal, hasMessageOutputs, logs, statuses, widgets })
+                        ? SECTION_REGISTRY[id].isEmpty!({ todos, goal, hasMessageOutputs, hasSubagents, logs, statuses, widgets })
                         : false) ? (
                         <div className="rp-float-empty">{t('tl.empty')}</div>
                       ) : (

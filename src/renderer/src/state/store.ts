@@ -75,6 +75,7 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { keepLocalImages } from './keep-images'
+import { reuseIfSame } from './same-messages'
 import {
   rebindSessionRuntime,
   updateSessionRuntime,
@@ -654,7 +655,7 @@ export interface Store {
   acceptTitleCandidate: (sessionId: string) => Promise<void>
   dismissTitleCandidate: (sessionId: string) => void
   deleteSession: (path: string) => Promise<void>
-  fork: (entryId: string) => Promise<void>
+  fork: (entryId: string) => Promise<boolean>
   clone: () => Promise<void>
   exportHtml: () => Promise<void>
   compact: () => Promise<void>
@@ -938,6 +939,7 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
  */
 function projectSnapshotKeepingPeek(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
   const projection = projectRuntimeSnapshot(snapshot)
+  if (projection.messages) projection.messages = reuseIfSame(state.messages, projection.messages) as typeof state.messages
   if (snapshot.messages.length === 0 && state.messages.length > 0 && state.peekedPath) {
     delete projection.messages
   }
@@ -1281,15 +1283,14 @@ export const useStore = create<Store>((rawSet, get) => {
   /**
    * 左栏是否展开（持久化到 localStorage）。
    *
-   * 读不到时默认 **true**：取消悬停展开之后，按钮是唯一手段，
-   * 而它远在标题栏左上角 —— 首次打开就收起会让新用户找不到会话列表。
+   * 首次打开默认收起；已有保存值优先，启动时恢复上次退出的状态。
    */
   railPinned: ((): boolean => {
     try {
       const v = localStorage.getItem('yan.rail-open')
-      return v === null ? true : v === '1'
+      return v === '1'
     } catch {
-      return true
+      return false
     }
   })(),
   titles: {},
@@ -1337,7 +1338,10 @@ export const useStore = create<Store>((rawSet, get) => {
   /* ------------------------------------------------------------- 初始化 */
 
   bootstrap: async () => {
+    /* 每个启动请求各自的完成时刻（相对 bootstrap 起点），用来看谁拖慢首屏 */
+    const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { /* 标记缺失时忽略 */ } })
     const api = window.yan
+    performance.mark('yan:bootstrap-start')
     /*
      * ⚠️ 连接状态（conn）**不在这里拉、也不在这里写**。
      *
@@ -1355,19 +1359,20 @@ export const useStore = create<Store>((rawSet, get) => {
      */
     const [loadedSettings, sessions, session, messages, stats, todos, titles, manualTitles, pi, browserState] =
       await Promise.all([
-        api.getSettings(),
-        api.listSessions(),
-        api.getState(),
-        api.getMessages(),
-        api.getStats(),
-        api.refreshTodos().catch(() => [] as SessionTodo[]),
-        api.cachedTitles().catch(() => ({}) as Record<string, string>),
-        api.manualTitles().catch(() => ({}) as Record<string, string>),
+        timedBoot('settings', api.getSettings()),
+        timedBoot('listSessions', api.listSessions()),
+        timedBoot('getState', api.getState()),
+        timedBoot('getMessages', api.getMessages()),
+        timedBoot('getStats', api.getStats()),
+        timedBoot('todos', api.refreshTodos().catch(() => [] as SessionTodo[])),
+        timedBoot('titles', api.cachedTitles().catch(() => ({}) as Record<string, string>)),
+        timedBoot('manualTitles', api.manualTitles().catch(() => ({}) as Record<string, string>)),
         // pi 入口 / 版本（右栏「环境」分区）——探测失败不能影响启动
-        api.piInfo().catch(() => null),
+        timedBoot('piInfo', api.piInfo().catch(() => null)),
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
 
+    performance.mark('yan:bootstrap-fetched')
     /*
      * 工作区模式迁移（实施-18 S0）：settings 里还没有这个键时，用旧
      * localStorage 值（或 daily）补上并落盘，随后清掉旧键。localStorage
@@ -1399,6 +1404,7 @@ export const useStore = create<Store>((rawSet, get) => {
       browserState
     })
 
+    performance.mark('yan:bootstrap-set')
     // 模型 / 斜杠命令在启动后单独拉（要等 pi ready）
     void get().reloadModels()
     // 界面缩放现状（设置面板要显示「自动 = 1.15×，屏幕 125%」）
@@ -1473,7 +1479,7 @@ export const useStore = create<Store>((rawSet, get) => {
          * （见 keep-images.ts 的说明）。
          */
         set({
-          messages: keepLocalImages(s.messages, m.payload),
+          messages: reuseIfSame(s.messages, keepLocalImages(s.messages, m.payload)) as typeof s.messages,
           peekedPath: null,
           peekedSessionId: null,
           peekNote: null
@@ -2492,8 +2498,10 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ goal: null, handoff: null })
 
     // ① 立即显示（不等 pi）
+    performance.mark('yan:switch-start')
     try {
       const peek = await window.yan.peekSession(path)
+      performance.mark('yan:switch-peeked')
       if (peek && peek.messages.length) {
         set({
           messages: peek.messages,
@@ -2501,6 +2509,7 @@ export const useStore = create<Store>((rawSet, get) => {
           peekedSessionId: peek.sessionId ?? sum?.id ?? null,
           peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null
         })
+        requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
       }
     } catch {
       /* 读不出来就等 pi —— 不是致命错误 */
@@ -2526,6 +2535,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() =>
       window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
     )
+    performance.mark('yan:switch-selected')
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? '切换失败'),
@@ -2707,11 +2717,16 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   fork: async (entryId) => {
+    if (!(await get().ensureActivated())) return false
+    const sourceRunner = get().activeRunnerId
     const res = await piCall(() => window.yan.fork(entryId))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? '分叉失败') })
-      return
+      return false
     }
+    const [branchState, branchMessages] = await Promise.all([window.yan.getState(), window.yan.getMessages()])
+    if (get().activeRunnerId !== sourceRunner) return false
+    if (branchState) set({ session: branchState, messages: branchMessages, pendingActivation: null, peekedPath: null, peekedSessionId: null, peekNote: null })
     set({
       queue: EMPTY_QUEUE,
       pendingSends: [],
@@ -2731,6 +2746,7 @@ export const useStore = create<Store>((rawSet, get) => {
     })
     if (res.text) get().injectComposerText(res.text)
     await get().refreshSessions()
+    return true
   },
 
   clone: async () => {
@@ -3607,14 +3623,7 @@ export const useStore = create<Store>((rawSet, get) => {
     settingsBlockerRelease = null
   },
   /**
-   * 左栏是否展开。
-   *
-   * ⚠️ 取消「鼠标悬停自动展开」后，它变成了**用户唯一的手段**，
-   *   所以两件事必须做对：
-   *     ① 默认展开（否则首次打开看到的是一个光秃秃的界面，
-   *        而开关键远在标题栏最左上角）
-   *     ② 记住用户的选择（落盘）—— 以前不落盘是因为
-   *        hover 会随时改它，存下来反而奇怪；现在它是显式设置。
+   * 显式切换左栏并立即保存，正常退出后无需另一次异步写入。
    */
   setRailPinned: (v) => {
     set({ railPinned: v })

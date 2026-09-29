@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useT } from '../../i18n'
 import type { MessageKey } from '../../i18n'
 import { Section } from './ToolSection'
@@ -23,13 +24,16 @@ export function QueueSection() {
   const session = useStore((s) => s.session)
   const setSteeringMode = useStore((s) => s.setSteeringMode)
   const setFollowUpMode = useStore((s) => s.setFollowUpMode)
+  /* 投递方式是低频设置：队列为空时收起，点「方式」才展开 */
+  const [modesOpen, setModesOpen] = useState(false)
 
   const steering = session?.steeringMode ?? 'one-at-a-time'
   const followUp = session?.followUpMode ?? 'one-at-a-time'
   const pending = queue.steering.length + queue.followUp.length
+  const showModes = pending > 0 || modesOpen
 
   return (
-    <Section titleKey="rp.queue" testId="rp-queue">
+    <Section titleKey="rp.queue" testId="rp-queue" extra={pending > 0 ? <span className="rp-count">{pending}</span> : null}>
       {pending > 0 ? (
         <div className="rp-queued">
           {[...queue.steering, ...queue.followUp].map((q) => (
@@ -40,21 +44,31 @@ export function QueueSection() {
           ))}
         </div>
       ) : (
-        <div className="rp-dim">{t('rp.noQueue')}</div>
+        <div className="rp-kv">
+          <span className="rp-dim">{t('rp.noQueue')}</span>
+          <span className="spacer" />
+          <button className="rp-link" onClick={() => setModesOpen((v) => !v)} aria-expanded={modesOpen} data-testid="queue-modes-toggle">
+            {t('rp.queueModes')}
+          </button>
+        </div>
       )}
 
-      <ModeRow
-        labelKey="rp.steering"
-        value={steering}
-        onChange={(m) => void setSteeringMode(m)}
-        testId="steering-mode"
-      />
-      <ModeRow
-        labelKey="rp.followUp"
-        value={followUp}
-        onChange={(m) => void setFollowUpMode(m)}
-        testId="followup-mode"
-      />
+      {showModes ? (
+        <>
+          <ModeRow
+            labelKey="rp.steering"
+            value={steering}
+            onChange={(m) => void setSteeringMode(m)}
+            testId="steering-mode"
+          />
+          <ModeRow
+            labelKey="rp.followUp"
+            value={followUp}
+            onChange={(m) => void setFollowUpMode(m)}
+            testId="followup-mode"
+          />
+        </>
+      ) : null}
     </Section>
   )
 }

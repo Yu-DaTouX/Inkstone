@@ -10,15 +10,15 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 
-type Phase = { kind: 'idle' } | { kind: 'recording'; startedAt: number } | { kind: 'transcribing' } | { kind: 'error'; message: string }
+type Phase = { kind: 'idle' } | { kind: 'recording'; startedAt: number } | { kind: 'preparing' } | { kind: 'transcribing' } | { kind: 'error'; message: string }
 
 export function VoiceInputButton({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
   const t = useT()
   const openSettings = useStore((s) => s.openSettings)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [now, setNow] = useState(Date.now())
-  const recorder = useRef<MediaRecorder | null>(null)
-  const chunks = useRef<Blob[]>([])
+  const recorder = useRef<{ stop: () => void } | null>(null)
+  const generation = useRef(0)
   const cancelled = useRef(false)
   /* 转写结束时用最新的插入函数：录音期间用户可能还在打字 */
   const onTextRef = useRef(onText)
@@ -46,66 +46,80 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
   useEffect(
     () => () => {
       cancelled.current = true
+      generation.current++
       recorder.current?.stop()
     },
     []
   )
 
   const start = async (): Promise<void> => {
+    const token = ++generation.current
+    cancelled.current = false
     const status = await window.yan.voice.status().catch(() => null)
+    if (generation.current !== token || cancelled.current) return
     if (!status?.ready) {
       openSettings('voice')
       return
     }
+    setPhase({ kind: 'preparing' })
+    const prepared = await window.yan.voice.prepare().catch((error) => ({ ok: false, error: String(error) }))
+    if (generation.current !== token || cancelled.current) return
+    if (!prepared.ok) { setPhase({ kind: 'error', message: prepared.error ?? t('voice.notReady') }); return }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
     } catch {
+      if (generation.current !== token || cancelled.current) return
       setPhase({ kind: 'error', message: t('voice.micDenied') })
       return
     }
-    chunks.current = []
-    cancelled.current = false
-    const rec = new MediaRecorder(stream)
-    recorder.current = rec
-    rec.ondataavailable = (e) => {
-      if (e.data.size) chunks.current.push(e.data)
+    if (generation.current !== token || cancelled.current) { stream.getTracks().forEach((track) => track.stop()); return }
+    const context = new AudioContext({ sampleRate: 16000 })
+    const source = context.createMediaStreamSource(stream)
+    const processor = context.createScriptProcessor(4096, 1, 1)
+    const muted = context.createGain(); muted.gain.value = 0
+    source.connect(processor); processor.connect(muted); muted.connect(context.destination)
+    let samples: number[] = [], stopped = false, failed = false
+    let pending = Promise.resolve()
+    const flush = (): void => {
+      if (!samples.length) return
+      const original = Float32Array.from(samples); samples = []
+      const ratio = context.sampleRate / 16000
+      const pcm = new Float32Array(Math.floor(original.length / ratio))
+      for (let i = 0; i < pcm.length; i++) pcm[i] = original[Math.min(original.length - 1, Math.floor(i * ratio))]
+      const wav = encodeWav16k(pcm)
+      pending = pending.then(async () => {
+        if (cancelled.current || generation.current !== token || failed) return
+        const result = await window.yan.voice.transcribe(wav, status.language)
+        if (cancelled.current || generation.current !== token) return
+        if (!result.ok) { failed = true; recorder.current?.stop(); setPhase({ kind: 'error', message: result.error }); return }
+        onTextRef.current(result.text)
+      }).catch((error) => { if (generation.current === token && !cancelled.current) { failed = true; recorder.current?.stop(); setPhase({ kind: 'error', message: String(error) }) } })
     }
-    rec.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop())
-      recorder.current = null
-      if (cancelled.current) {
-        setPhase({ kind: 'idle' })
-        return
-      }
-      void finish(new Blob(chunks.current, { type: rec.mimeType }), status.language)
+    processor.onaudioprocess = (event) => {
+      if (stopped) return
+      samples.push(...event.inputBuffer.getChannelData(0))
+      if (samples.length >= context.sampleRate * 5) flush()
     }
-    rec.start()
-    const at = Date.now()
-    setNow(at)
-    setPhase({ kind: 'recording', startedAt: at })
-  }
-
-  const finish = async (blob: Blob, language: 'auto' | 'zh' | 'en'): Promise<void> => {
-    setPhase({ kind: 'transcribing' })
-    try {
-      const wav = await toWav16k(blob)
-      const result = await window.yan.voice.transcribe(wav, language)
-      if (!result.ok) {
-        setPhase({ kind: 'error', message: result.error })
-        return
-      }
-      onTextRef.current(result.text)
-      setPhase({ kind: 'idle' })
-    } catch (error) {
-      setPhase({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
-    }
+    recorder.current = { stop: () => {
+      if (stopped) return
+      stopped = true; processor.disconnect(); source.disconnect(); muted.disconnect()
+      stream.getTracks().forEach((track) => track.stop()); void context.close(); recorder.current = null
+      if (cancelled.current) { samples = []; if (generation.current === token) setPhase({ kind: 'idle' }); return }
+      flush()
+      if (!failed) setPhase({ kind: 'transcribing' })
+      void pending.then(() => { if (generation.current === token && !failed && !cancelled.current) setPhase({ kind: 'idle' }) })
+    } }
+    const at = Date.now(); setNow(at); setPhase({ kind: 'recording', startedAt: at })
+    await context.resume()
   }
 
   const stop = (): void => recorder.current?.stop()
   const cancel = (): void => {
     cancelled.current = true
     recorder.current?.stop()
+    generation.current++
+    setPhase({ kind: 'idle' })
   }
 
   if (phase.kind === 'recording') {
@@ -130,13 +144,14 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
       <button
         type="button"
         className="ctool"
-        disabled={disabled || phase.kind === 'transcribing'}
+        disabled={disabled || phase.kind === 'preparing' || phase.kind === 'transcribing'}
         onClick={() => void start()}
         title={t('voice.start')}
         aria-label={t('voice.start')}
         data-testid="voice-start"
       >
         <Icon name="mic" size={12} />
+        {phase.kind === 'preparing' ? <span>{t('voice.preparing')}</span> : null}
         {phase.kind === 'transcribing' ? <span>{t('voice.transcribing')}</span> : null}
       </button>
       {phase.kind === 'error' ? (
@@ -146,23 +161,4 @@ export function VoiceInputButton({ onText, disabled }: { onText: (text: string) 
       ) : null}
     </span>
   )
-}
-
-/** 浏览器录下的压缩音频 → 16kHz 单声道 WAV（whisper.cpp 的输入格式） */
-async function toWav16k(blob: Blob): Promise<Uint8Array> {
-  const bytes = await blob.arrayBuffer()
-  const ctx = new AudioContext()
-  try {
-    const decoded = await ctx.decodeAudioData(bytes)
-    const length = Math.max(1, Math.ceil(decoded.duration * 16_000))
-    const offline = new OfflineAudioContext(1, length, 16_000)
-    const source = offline.createBufferSource()
-    source.buffer = decoded
-    source.connect(offline.destination)
-    source.start()
-    const rendered = await offline.startRendering()
-    return encodeWav16k(rendered.getChannelData(0))
-  } finally {
-    void ctx.close()
-  }
 }

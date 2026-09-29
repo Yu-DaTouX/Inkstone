@@ -113,10 +113,11 @@
   out.push('  轨道 gap: ' + barGap + 'px')
 
   let hasRule = false
+  const flatRules = (rules) => { const out = []; for (const r of rules) { if (r.selectorText !== undefined || !r.cssRules) out.push(r); else if (r.conditionText !== undefined) out.push(r); if (r.cssRules) out.push(...flatRules(r.cssRules)) } return out }
   let hasHitRule = false
   for (const sheet of document.styleSheets) {
     try {
-      for (const rule of sheet.cssRules) {
+      for (const rule of flatRules(sheet.cssRules)) {
         const s = rule.selectorText ?? ''
         if (s.includes('.outline-hit.hover .outline-bar')) hasHitRule = true
         if (s.includes(':has(.outline-hit.hover)')) hasRule = true

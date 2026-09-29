@@ -61,7 +61,7 @@
     }
 
     /* ---- 3. 接线页也要标来源 ---- */
-    out.push('\n=== 3. 设置 → 模型接入（来源标注）===')
+    out.push('\n=== 3. 设置 → 模型（来源标注）===')
     const store = window.__yanStore
     store.getState().openSettings('auth')
     await until(() => document.querySelector('.settings'), 4000)

@@ -78,7 +78,8 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
 
   const piOk = !!piInfo?.version
   const connOk = conn === 'ready'
-  const modelOk = !!session?.model
+  /* pi 拿不到模型时会报一个名为 unknown 的占位，那不算「可用」 */
+  const modelOk = models.length > 0 && !!session?.model && session.model.id !== 'unknown'
   const authOk = (ready?.n ?? 0) > 0
 
   /**
@@ -199,7 +200,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           {/* ④ 模型列表（能列出模型 = pi 跑起来了） */}
           <Row
             testId="ob-models"
-            ok={modelOk || models.length > 0}
+            ok={modelOk}
             title={t('ob.modelTitle')}
             desc={modelOk ? t('ob.modelOk', { n: models.length, name: session?.model?.name ?? '' }) : t('ob.modelMissing')}
             action={
@@ -209,7 +210,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             }
           />
 
-          {/* 两条「知道就好」的说明 */}
+          {/* 两条「知道就好」的键位 */}
           <div className="ob-tips">
             <div className="ob-tip">
               <Icon name="message-dots" size={12} />
@@ -218,10 +219,6 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
             <div className="ob-tip">
               <Icon name="terminal" size={12} />
               <span>{t('ob.tip2')}</span>
-            </div>
-            <div className="ob-tip">
-              <Icon name="menu" size={12} />
-              <span>{t('ob.tip3')}</span>
             </div>
           </div>
         </div>

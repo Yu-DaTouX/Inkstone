@@ -62,7 +62,7 @@
 | `--font-code` | `var(--font-mono)` | **tokens**: var(--font-mono) |
 | `--font-mono` | `'Maple Mono CN', ui-monospace, Consolas, monospace` | **tokens**: 'Maple Mono CN', ui-monospace, Consolas, monospace |
 | `--font-sans` | `'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif` | **tokens**: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif |
-| `--font-ui` | `var(--font-mono)` | **tokens**: var(--font-mono) |
+| `--font-ui` | `'Inkstone UI CJK', var(--font-mono)` | **tokens**: 'Inkstone UI CJK', var(--font-mono) |
 | `--fs-base` | `13px` | **tokens**: 13px |
 | `--fs-body` | `14px` | **tokens**: 14px |
 | `--fs-code` | `12.5px` | **tokens**: 12.5px |

@@ -148,7 +148,8 @@
   const main = q('[data-testid="ctx-main"]')
   ok(main?.getAttribute('data-mode') === 'working-set', `主值切到工作集视角（data-mode=${main?.getAttribute('data-mode')}）`)
   const tokensText = text('[data-testid="ctx-tokens"]')
-  const fmtK = (n) => `${Math.round(n / 1000)}k`
+  /* 与 ContextSection 的 fmtK 同一写法：百万级写 1M / 1.5M，其余写 240k */
+  const fmtK = (n) => (n >= 1_000_000 ? `${Number((n / 1_000_000).toFixed(1))}M` : `${Math.round(n / 1000)}k`)
   /*
    * C-5：主值分母是**有效模型窗口**，不是工作集 —— `240k / 240k = 100%`
    * 会被读成「1M 模型满了」，而砚的动手线（工作集）单独占一行。
@@ -162,14 +163,23 @@
     wsLine.includes(fmtK(pushed.budget.workingSet)),
     `工作集单独一行，不被窗口分母盖掉（实际 ${JSON.stringify(wsLine)}）`
   )
-  /* 进度条本体的填充宽度也得按窗口比例（不能改了文字不改条） */
+  /*
+   * 两个尺度分开摆：分区头部的迷你条按窗口比例（与「x% 40k/1M」同一口径），
+   * 展开体的进度条按工作集比例（与「工作集 17% 40k / 240k」那行同一口径），
+   * 三条阶段刻度因此摊开在 70% / 85% / 100%，而不是挤在窗口尺度的左四分之一。
+   */
   {
-    const bar = q('.rp-meter i')
-    const box = q('.rp-meter')
+    const tokensNow = S().stats?.contextUsage?.tokens ?? 0
+    const mini = q('[data-testid="rp-context"] .ui-mini-meter')
+    const mw = mini?.getBoundingClientRect().width ?? 0
+    const mf = mini?.querySelector('i')?.getBoundingClientRect().width ?? 0
+    const expectMini = Math.min(1, tokensNow / pushed.budget.contextWindow) * mw
+    ok(mw > 0 && Math.abs(mf - expectMini) <= 2, `头部迷你条按窗口比例（${Math.round(mf)}px ≈ ${Math.round(expectMini)}px）`)
+    const box = q('[data-testid="rp-context"] .rp-meter')
     const bw = box?.getBoundingClientRect().width ?? 0
-    const fw = bar?.getBoundingClientRect().width ?? 0
-    const expect = ((S().stats?.contextUsage?.tokens ?? 0) / pushed.budget.contextWindow) * bw
-    ok(bw > 0 && Math.abs(fw - expect) <= 3, `进度条填充按窗口比例（${Math.round(fw)}px ≈ ${Math.round(expect)}px）`)
+    const fw = box?.querySelector('i')?.getBoundingClientRect().width ?? 0
+    const expect = Math.min(1, tokensNow / pushed.budget.workingSet) * bw
+    ok(bw > 0 && Math.abs(fw - expect) <= 3, `展开体进度条按工作集比例（${Math.round(fw)}px ≈ ${Math.round(expect)}px）`)
   }
 
   /* 三条阶段标记：只有压缩会真的触发 */
@@ -190,20 +200,27 @@
   ok(!!marks.find((m) => kindOf(m) === 'episode-fold')?.className.includes('active'), '已接管的刻度用实线样式')
 
   /* 刻度位置真的按比例（不是随便摆三条线） */
-  const meter = q('.rp-meter')
+  const meter = q('[data-testid="rp-context"] .rp-meter')
   const mr = meter?.getBoundingClientRect()
   const ratios = { 'tool-sweep': 0.7, 'episode-fold': 0.85, compaction: 1 }
   for (const [kind, ratio] of Object.entries(ratios)) {
     const el = marks.find((m) => kindOf(m) === kind)
     if (!el || !mr) continue
     const r = el.getBoundingClientRect()
-    /* 刻度画在窗口尺度上：工作集 × 阶段比例 ÷ 窗口 */
-    const expect =
-      mr.left + mr.width * ((pushed.budget.workingSet * ratio) / pushed.budget.contextWindow)
+    /* 刻度画在工作集尺度上：条宽 × 阶段比例（末端那条收进条内，允许多 2px） */
+    const expect = mr.left + mr.width * ratio
     ok(
-      Math.abs(r.left - expect) <= 3,
-      `${kind} 刻度在窗口尺度上的位置正确（偏差 ${Math.round(r.left - expect)}px）`
+      Math.abs(r.left + r.width / 2 - expect) <= 3,
+      `${kind} 刻度在工作集尺度上的位置正确（偏差 ${Math.round(r.left + r.width / 2 - expect)}px）`
     )
+    /* 刻度名右缘对齐刻度，三个名字互不重叠 */
+    const chip = qa('[data-testid="ctx-stage-chip"]').find((c) => c.getAttribute('data-kind') === kind)
+    const cr = chip?.getBoundingClientRect()
+    ok(!!cr && Math.abs(cr.right - expect) <= 3, `${kind} 的名字收在刻度左下（偏差 ${cr ? Math.round(cr.right - expect) : '—'}px）`)
+  }
+  {
+    const rects = qa('[data-testid="ctx-stage-chip"]').map((c) => c.getBoundingClientRect()).sort((a, b) => a.left - b.left)
+    ok(rects.every((r, i) => i === 0 || r.left >= rects[i - 1].right - 0.5), '三个阶段名互不重叠')
   }
 
   /* 「下一步」只预报真的会执行的阶段，而且取**最先到的那条** */

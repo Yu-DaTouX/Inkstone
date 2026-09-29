@@ -144,6 +144,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     ok(res.ok === true, '只读子代理可以启动', res.error ?? '')
     const args = factory.created[0]?.args ?? []
     ok(args.includes('--no-extensions'), '子代理关闭用户扩展自动发现', JSON.stringify(args))
+    ok(args.includes('--no-session'), '子代理不落 pi 会话文件（否则混进左栏会话列表）', JSON.stringify(args))
     ok(args.includes('--no-skills'), '子代理关闭用户 Skill 自动发现', JSON.stringify(args))
     const at = args.indexOf('--tools')
     ok(at >= 0, '只读子代理把工具白名单交给 pi（--tools）', JSON.stringify(args))
@@ -368,6 +369,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       prepare: fakePrepare
     })
     process.env.YAN_SUBAGENT_TIMEOUT_MS = '200'
+    process.env.YAN_SUBAGENT_GRACE_MS = '150'
     const res = await ctrl.start('挂着不动', undefined, 'controlled-cwd')
     const rpc = factory.created[0]
     let timedOut = false
@@ -377,15 +379,119 @@ export async function runSubagentControllerTests(ok, SubagentController) {
         return r?.status === 'error' && /运行超时/.test(r.error ?? '')
       }, 5000)
     } finally {
-      /*
-       * 覆盖值必须留到超时**真的触发**之后：`runTimeoutText()` 在触发时
-       * 才读 env（实测提前 delete 会让提示写成「超过 10 分钟」而实际是 200ms）。
-       */
       delete process.env.YAN_SUBAGENT_TIMEOUT_MS
+      delete process.env.YAN_SUBAGENT_GRACE_MS
     }
-    ok(timedOut, '到点后转 error 且原因写着运行超时', String(ctrl.get(res.run?.id ?? '')?.error))
-    ok(!/10 分钟/.test(ctrl.get(res.run?.id ?? '')?.error ?? ''), '提示报的是覆盖后的上限（不是写死的 10 分钟）')
+    const finalRun = ctrl.get(res.run?.id ?? '')
+    ok(timedOut, '收尾宽限内没有结束：转 error 且原因写着运行超时', String(finalRun?.error))
+    ok(finalRun?.endReason === 'timeout', '结束原因记为 timeout（界面据此区分超时与其他失败）', String(finalRun?.endReason))
+    ok(!/10 分钟|30 分钟/.test(finalRun?.error ?? ''), '提示报的是覆盖后的上限（不是写死的分钟数）')
     ok(rpc?.closed === true, '超时后 pi 子进程被收掉（不留僵尸）')
+    await ctrl.stopAll()
+  }
+
+  /*
+   * 到点先收尾、不直接杀：宿主给它发一条 steer，宽限内它交出结论就按「完成」落，
+   * 结束原因仍记 timeout，摘要取它收尾时的那段话（干了大半的活不丢）。
+   */
+  {
+    const factory = makeRpcFactory()
+    const steers = []
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: (opts) => {
+        const rpc = factory.createRpc(opts)
+        const inner = rpc.command
+        rpc.command = async (type, payload) => {
+          if (type === 'steer') steers.push(payload)
+          return inner(type, payload)
+        }
+        return rpc
+      },
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    process.env.YAN_SUBAGENT_TIMEOUT_MS = '150'
+    process.env.YAN_SUBAGENT_GRACE_MS = '4000'
+    const res = await ctrl.start('干到一半', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    const id = res.run?.id ?? ''
+    try {
+      ok(await waitFor(() => steers.length > 0, 3000), '到点后发出收尾指令（steer）')
+      ok(ctrl.get(id)?.status === 'running' && ctrl.get(id)?.wrapUp?.reason === 'timeout', '收尾期间仍在运行并标着 wrapUp', JSON.stringify(ctrl.get(id)?.wrapUp))
+      ok(/立刻|不要再调用/.test(String(steers[0]?.message ?? '')), '收尾指令要求立刻交结论')
+      rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [{ type: 'text', text: '已确认 A 一致；B 没来得及核实。' }] } })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已确认 A 一致；B 没来得及核实。' }], stopReason: 'stop' } })
+      rpc.emit('event', { type: 'agent_settled' })
+      ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000), '收尾交出结论后按完成落')
+      const done = ctrl.get(id)
+      ok(done?.endReason === 'timeout', '结束原因仍是 timeout（不伪装成正常完成）', String(done?.endReason))
+      ok(/B 没来得及核实/.test(done?.result?.summary ?? ''), '摘要取收尾时的那段话')
+    } finally {
+      delete process.env.YAN_SUBAGENT_TIMEOUT_MS
+      delete process.env.YAN_SUBAGENT_GRACE_MS
+    }
+    await ctrl.stopAll()
+  }
+
+  /* 空闲上限：有输出就续期，真的没动静才算卡死 */
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: factory.createRpc,
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    process.env.YAN_SUBAGENT_IDLE_MS = '300'
+    process.env.YAN_SUBAGENT_GRACE_MS = '100'
+    const res = await ctrl.start('慢但有进展', undefined, 'controlled-cwd')
+    const rpc = factory.created[0]
+    const id = res.run?.id ?? ''
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        await new Promise((r) => setTimeout(r, 150))
+        rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
+      }
+      ok(ctrl.get(id)?.status === 'running' && !ctrl.get(id)?.wrapUp, '持续有动静时不算空闲超时（共 600ms > 300ms 上限）')
+      ok(ctrl.get(id)?.toolCalls === 4, '记下已发起的工具调用次数', String(ctrl.get(id)?.toolCalls))
+      ok(await waitFor(() => ctrl.get(id)?.status === 'error', 3000), '停下来之后到空闲上限转 error')
+      ok(/没有进展/.test(ctrl.get(id)?.error ?? '') && ctrl.get(id)?.endReason === 'timeout', '原因写着没有进展', String(ctrl.get(id)?.error))
+    } finally {
+      delete process.env.YAN_SUBAGENT_IDLE_MS
+      delete process.env.YAN_SUBAGENT_GRACE_MS
+    }
+    await ctrl.stopAll()
+  }
+
+  /* 调用预算：用完就让它收尾，结束原因记 budget */
+  {
+    const factory = makeRpcFactory()
+    const steers = []
+    const ctrl = new SubagentController({
+      cwd: 'C:/proj-a',
+      createRpc: (opts) => {
+        const rpc = factory.createRpc(opts)
+        const inner = rpc.command
+        rpc.command = async (type, payload) => {
+          if (type === 'steer') steers.push(payload)
+          return inner(type, payload)
+        }
+        return rpc
+      },
+      onChange: () => {},
+      prepare: fakePrepare
+    })
+    const res = await ctrl.start('只许查五次', undefined, 'controlled-cwd', { goal: '只许查五次', maxToolCalls: 5 })
+    const rpc = factory.created[0]
+    const id = res.run?.id ?? ''
+    for (let i = 0; i < 4; i += 1) rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
+    ok(steers.length === 0, '预算没用完不打扰')
+    rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
+    ok(await waitFor(() => steers.length === 1, 2000), '用满预算就发收尾指令')
+    ok(ctrl.get(id)?.wrapUp?.reason === 'budget', 'wrapUp 原因是 budget')
+    rpc.emit('event', { type: 'agent_settled' })
+    ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000) && ctrl.get(id)?.endReason === 'budget', '收尾后记为 budget', String(ctrl.get(id)?.endReason))
     await ctrl.stopAll()
   }
 

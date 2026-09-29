@@ -18,6 +18,7 @@ export function registerVoiceIpc(ipc: IpcRegistrar, deps: VoiceIpcDeps): void {
   const { handle } = ipc
   const { service } = deps
   handle('yan:voice:status', () => service.status())
+  handle('yan:voice:prepare', () => service.prepare())
   handle('yan:voice:plan', (target: unknown) => {
     const raw = (target ?? {}) as { kind?: unknown; id?: unknown }
     if (raw.kind === 'binary') return service.plan({ kind: 'binary' })

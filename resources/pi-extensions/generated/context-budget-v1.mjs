@@ -1,5 +1,5 @@
 /* Generated from src/shared/context-budget-v1.ts. Do not edit.
- * source-sha256: 943a88bd7bf7501938b686292dfb805319e838adc33179dae2ac98d68f46e928
+ * source-sha256: 375f684ac756d4bd791e950b17c694b352f9bec47ec16cc191912df245931cb1
  */
 /**
  * Context budget V1. This module is deliberately pure so the host, UI and the
@@ -33,7 +33,8 @@ export const CONTEXT_BUDGET_OUTPUT_ADAPTERS_V1 = {
     },
     'openai-codex-responses': {
         api: 'openai-codex-responses', adapterId: 'openai-codex-responses-max-output-tokens-v1',
-        fieldPath: ['max_output_tokens'], accounting: 'responses-max-output-tokens-includes-reasoning'
+        fieldPath: ['max_output_tokens'], accounting: 'responses-max-output-tokens-includes-reasoning',
+        fallback: 'model-max-tokens'
     },
     'google-generative-ai': {
         api: 'google-generative-ai', adapterId: 'google-generation-config-v1',
@@ -83,6 +84,9 @@ export function resolveContextBudgetOutputReserveV1(input) {
     }
     else {
         raw = valueAtPath(input.payload, adapter.fieldPath);
+    }
+    if (raw === undefined && adapter.fallback === 'model-max-tokens' && validTokenCount(input.modelMaxTokens) && input.modelMaxTokens > 0) {
+        return { adapterId: adapter.adapterId, outputReserve: input.modelMaxTokens, reason: 'model_output_limit_assumed' };
     }
     if (!validTokenCount(raw) || raw === 0) {
         return { adapterId: adapter.adapterId, outputReserve: null, reason: 'request_output_limit_unknown' };

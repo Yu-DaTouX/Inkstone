@@ -11,7 +11,7 @@ import {
 } from '../../../../shared/context-budget-v1'
 import type { ContextMaintenanceOperationV1 } from '../../../../shared/context-maintenance'
 import type { ContextBackgroundUsageSummary } from '../../../../shared/context-background-usage'
-import { SettingRow } from '../ui'
+import { Button, Disclosure, SettingRow, Switch } from '../ui'
 
 /**
  * 「上下文」设置页（N21-7）。
@@ -283,190 +283,345 @@ export function ContextTab() {
    */
   const foldOff = settings?.contextFold?.enabled === false
 
+  const maintenanceStuck =
+    !!maintenanceOperation && (maintenanceOperation.state === 'needs_action' || maintenanceOperation.state === 'failed')
+
   return (
-    <div className="ui-rows">
-      <div className="ui-row col" data-testid="ctx-budget-v1">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{tk('set.ctxBudgetV1Title')}</div>
-          <div className="ui-row-desc">{tk('set.ctxBudgetV1Desc')}</div>
-        </div>
-        {activeBudgetPhase ? (
-          <>
-            {!budgetV1Enabled ? (
-              <div className="ui-row-desc" data-testid="ctx-budget-v1-legacy" role="status">
-                {tk('set.ctxBudgetV1Legacy')}
-              </div>
-            ) : null}
-            {budgetV1Enabled ? (
-              <div className="ui-row-desc set-num" data-testid="ctx-budget-v1-current">
+    <>
+      <div className="ui-rows">
+        {/* 预算：自动或固定一档。状态一行写在说明里，细节（最近检查、材料）在「高级」 */}
+        <SettingRow
+          col
+          data-testid="ctx-budget-v1"
+          name={tk('set.ctxBudgetV1Title')}
+          desc={
+            !activeBudgetPhase ? (
+              <span role="status">{budgetV1Error || tk('set.ctxBudgetV1Unavailable')}</span>
+            ) : budgetV1Enabled ? (
+              <span className="set-num" data-testid="ctx-budget-v1-current">
                 {t('set.ctxBudgetV1Current', {
                   mode: tk(activeBudgetPhase.mode === 'auto' ? 'set.ctxBudgetV1Auto' : 'set.ctxBudgetV1Fixed'),
                   selected: `${activeBudgetPhase.selectedBudget / 1000}K`,
                   phase: activeBudgetPhase.phaseId
                 })}
-              </div>
-            ) : null}
-            <div className="ui-row-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1Mode')}>
-              <button
-                className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? 'sel' : ''}`}
-                data-testid="ctx-budget-v1-auto"
-                disabled={budgetV1Busy}
-                onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: activeBudgetPhase.autoMaxBudget })}
-              >
-                {tk('set.ctxBudgetV1Auto')}
-              </button>
-              {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
+              </span>
+            ) : (
+              <span data-testid="ctx-budget-v1-legacy" role="status">{tk('set.ctxBudgetV1Legacy')}</span>
+            )
+          }
+        >
+          {activeBudgetPhase ? (
+            <div className="set-ctx-budget">
+              <div className="seg seg-scale" aria-label={tk('set.ctxBudgetV1Mode')}>
                 <button
-                  key={tier}
-                  className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'fixed' && activeBudgetPhase.selectedBudget === tier ? 'sel' : ''}`}
-                  data-testid={`ctx-budget-v1-fixed-${tier}`}
+                  className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? 'sel' : ''}`}
+                  data-testid="ctx-budget-v1-auto"
                   disabled={budgetV1Busy}
-                  onClick={() => void updateBudgetV1({ mode: 'fixed', selectedBudget: tier })}
+                  onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: activeBudgetPhase.autoMaxBudget })}
                 >
-                  {tk('set.ctxBudgetV1Fix')} {tier / 1000}K
+                  {tk('set.ctxBudgetV1Auto')}
                 </button>
-              ))}
-            </div>
-            {budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? (
-              <div className="ui-row-ctl seg seg-scale" aria-label={tk('set.ctxBudgetV1AutoMax')}>
                 {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
                   <button
                     key={tier}
-                    className={`seg-btn ${activeBudgetPhase.autoMaxBudget === tier ? 'sel' : ''}`}
-                    data-testid={`ctx-budget-v1-max-${tier}`}
+                    className={`seg-btn ${budgetV1Enabled && activeBudgetPhase.mode === 'fixed' && activeBudgetPhase.selectedBudget === tier ? 'sel' : ''}`}
+                    data-testid={`ctx-budget-v1-fixed-${tier}`}
+                    title={tk('set.ctxBudgetV1Fix')}
                     disabled={budgetV1Busy}
-                    onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: tier })}
+                    onClick={() => void updateBudgetV1({ mode: 'fixed', selectedBudget: tier })}
                   >
-                    {tk('set.ctxBudgetV1Max')} {tier / 1000}K
+                    {tier / 1000}K
                   </button>
                 ))}
               </div>
-            ) : null}
-            {budgetSnapshot ? (
-              <div className="ui-row-desc set-num" data-testid="ctx-budget-v1-last-check" role="status">
-                {t('set.ctxBudgetV1LastCheck', {
-                  time: new Date(budgetSnapshot.observedAt).toLocaleTimeString(),
-                  decision: tk(budgetDecisionKey),
-                  input: budgetSnapshot.inputTokens?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
-                  selected: `${budgetSnapshot.check.selectedBudget / 1000}K`,
-                  review: budgetSnapshot.check.calculation.reviewLine?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
-                  hard: budgetSnapshot.check.calculation.hardInputLimit?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown')
-                })}
-                <br />
-                {tk(budgetReasonKeys[budgetSnapshot.check.reason] ?? 'set.ctxBudgetV1ReasonGeneric')}
-                <br />
-                <button
-                  className="seg-btn"
-                  data-testid="ctx-budget-v1-refresh-snapshot"
-                  disabled={budgetV1Busy}
-                  onClick={() => {
-                    void window.yan.contextBudgetSnapshotV1().then(setBudgetSnapshot).catch(() => {
-                      setBudgetV1Error(tk('set.ctxBudgetV1Unavailable'))
-                    })
-                  }}
-                >
-                  {tk('set.ctxBudgetV1Refresh')}
-                </button>
-              </div>
-            ) : null}
-            <div className="ui-row-desc" data-testid="ctx-budget-v1-maintenance">
-              <div>{tk('set.ctxBudgetV1MaintenanceHelp')}</div>
-              {maintenanceOperation ? (
-                <div data-testid="ctx-budget-v1-maintenance-status" role="status">
-                  {tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.state}`)}
-                  {maintenanceOperation.failureCode === 'resume_send_uncertain'
-                    ? ` · ${tk('set.ctxBudgetV1MaintenanceResumeUncertain')}`
-                    : maintenanceOperation.failureCode
-                      ? ` · ${maintenanceFailureText(maintenanceOperation.failureCode, tk)}`
-                      : ''}
-                  {/* 卡在哪一步 + 能否直接重试：失败时用户要知道「等一下再试」还是「先去处理原因」 */}
-                  {maintenanceOperation.failureCode && maintenanceOperation.failedStage ? (
-                    <div data-testid="ctx-budget-v1-maintenance-stage">
-                      {t('set.ctxBudgetV1MaintenanceStoppedAt', {
-                        stage: maintenanceOperation.failedStage === 'resuming'
-                          ? tk('set.ctxBudgetV1MaintenanceStageResuming')
-                          : tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.failedStage}`)
-                      })}
-                      {typeof maintenanceOperation.retryable === 'boolean'
-                        ? ` · ${tk(maintenanceOperation.retryable ? 'set.ctxBudgetV1MaintenanceRetryable' : 'set.ctxBudgetV1MaintenanceNotRetryable')}`
-                        : ''}
-                    </div>
-                  ) : null}
+              {budgetV1Enabled && activeBudgetPhase.mode === 'auto' ? (
+                <div className="set-ctx-max">
+                  <span className="ui-row-desc">{tk('set.ctxBudgetV1AutoMax')}</span>
+                  <div className="seg sm" aria-label={tk('set.ctxBudgetV1AutoMax')}>
+                    {CONTEXT_BUDGET_V1_TIERS.map((tier) => (
+                      <button
+                        key={tier}
+                        className={`seg-btn ${activeBudgetPhase.autoMaxBudget === tier ? 'sel' : ''}`}
+                        data-testid={`ctx-budget-v1-max-${tier}`}
+                        disabled={budgetV1Busy}
+                        onClick={() => void updateBudgetV1({ mode: 'auto', autoMaxBudget: tier })}
+                      >
+                        {tier / 1000}K
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
-              <button
-                className="seg-btn"
+            </div>
+          ) : null}
+        </SettingRow>
+        {budgetV1Error && activeBudgetPhase ? <div className="ui-row-desc err" role="alert">{budgetV1Error}</div> : null}
+
+        {/* 手动整理较早的上下文：失败停下时给出三个出口（重试 / 临时抬线 / 降档） */}
+        {activeBudgetPhase ? (
+          <SettingRow
+            data-testid="ctx-budget-v1-maintenance"
+            name={tk('set.ctxBudgetV1MaintainTitle')}
+            desc={
+              <>
+                {maintenanceOperation ? (
+                  <span data-testid="ctx-budget-v1-maintenance-status" role="status">
+                    {tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.state}`)}
+                    {maintenanceOperation.failureCode === 'resume_send_uncertain'
+                      ? ` · ${tk('set.ctxBudgetV1MaintenanceResumeUncertain')}`
+                      : maintenanceOperation.failureCode
+                        ? ` · ${maintenanceFailureText(maintenanceOperation.failureCode, tk)}`
+                        : ''}
+                    {maintenanceOperation.failureCode && maintenanceOperation.failedStage ? (
+                      <span data-testid="ctx-budget-v1-maintenance-stage">
+                        {' · '}
+                        {t('set.ctxBudgetV1MaintenanceStoppedAt', {
+                          stage: maintenanceOperation.failedStage === 'resuming'
+                            ? tk('set.ctxBudgetV1MaintenanceStageResuming')
+                            : tk(`set.ctxBudgetV1MaintenanceState.${maintenanceOperation.failedStage}`)
+                        })}
+                        {typeof maintenanceOperation.retryable === 'boolean'
+                          ? ` · ${tk(maintenanceOperation.retryable ? 'set.ctxBudgetV1MaintenanceRetryable' : 'set.ctxBudgetV1MaintenanceNotRetryable')}`
+                          : ''}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  tk('set.ctxBudgetV1MaintenanceHelp')
+                )}
+                {activeTemporaryOverride ? (
+                  <span className="set-line" data-testid="ctx-budget-v1-temporary-raise" role="status">
+                    {t('set.ctxBudgetV1TemporaryRaise', {
+                      selected: `${activeTemporaryOverride.selectedBudget / 1000}K`,
+                      falls: `${activeBudgetPhase.selectedBudget / 1000}K`,
+                      until: fmtUntil(activeTemporaryOverride.expiresAt)
+                    })}
+                  </span>
+                ) : null}
+                {maintenanceOperation?.state === 'needs_action' ? (
+                  <span className="set-line" data-testid="ctx-budget-v1-blocked" role="status">
+                    {tk('set.ctxBudgetV1BlockedHint')}
+                  </span>
+                ) : null}
+                {maintenanceMessage ? <span className="set-line" role="status">{maintenanceMessage}</span> : null}
+              </>
+            }
+          >
+            {maintenanceStuck && maintenanceOperation?.failureCode !== 'resume_send_uncertain' ? (
+              <Button
+                size="sm"
+                data-testid="ctx-budget-v1-maintenance-retry"
+                disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                onClick={() => void maintainContextV1(maintenanceOperation?.identity.operationId)}
+              >
+                {tk('set.ctxBudgetV1MaintenanceRetry')}
+              </Button>
+            ) : null}
+            {maintenanceStuck ? (
+              <>
+                <Button
+                  size="sm"
+                  data-testid="ctx-budget-v1-exit-raise"
+                  disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                  onClick={() => void exitMaintenanceBlock('raise-line')}
+                >
+                  {tk('set.ctxBudgetV1ExitRaise')}
+                </Button>
+                <Button
+                  size="sm"
+                  data-testid="ctx-budget-v1-exit-lower"
+                  disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
+                  onClick={() => void exitMaintenanceBlock('lower-tier')}
+                >
+                  {tk('set.ctxBudgetV1ExitLower')}
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
                 data-testid="ctx-budget-v1-maintain"
                 disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
                 onClick={() => void maintainContextV1()}
               >
                 {tk(maintenanceBusy ? 'set.ctxBudgetV1Maintaining' : 'set.ctxBudgetV1Maintain')}
+              </Button>
+            )}
+          </SettingRow>
+        ) : null}
+
+        {/* 任务状态：长回合结束后记下进展（默认开）。关掉只是不再生成，已有的状态文件不删 */}
+        <SettingRow name={tk('set.foldTitle')} desc={<span data-testid="ctx-fold-desc">{tk(foldOff ? 'set.foldDescOff' : 'set.foldDescOn')}</span>} ctlProps={{ 'data-testid': 'ctx-fold' }}>
+          <Switch checked={!foldOff} onChange={(next) => void patchSettings({ contextFold: { enabled: next } })} label={tk('set.foldTitle')} testId="ctx-fold-toggle" />
+        </SettingRow>
+
+        {/* 深度归纳：回答前先归纳进展（默认关，会多一次调用与等待） */}
+        <SettingRow name={tk('set.deepTitle')} desc={<span data-testid="ctx-deep-desc">{tk(deepOn ? 'set.deepDescOn' : 'set.deepDescOff')}</span>} ctlProps={{ 'data-testid': 'ctx-deep' }}>
+          <Switch checked={deepOn} onChange={(next) => void patchSettings({ contextDeep: { enabled: next } })} label={tk('set.deepTitle')} testId="ctx-deep-toggle" />
+        </SettingRow>
+      </div>
+
+      {/* ---- 高级：生效来源、工作集数值、模型级覆盖、最近检查、材料与后台用量 ---- */}
+      <Disclosure title={t('set.ctxAdvanced')} testId="ctx-advanced">
+        <div className="ui-rows">
+          {/* 生效来源：让人相信界面上的数就是真正在用的数 */}
+          <SettingRow
+            name={t('set.ctxSource')}
+            desc={
+              <>
+                <span data-testid="ctx-source">
+                  {policy
+                    ? `${tk(`set.ctxSource.${policy.source}`)}${policy.sourceKey ? ` · ${policy.sourceKey}` : ''} · ${t('set.ctxWorkingSet', { n: policy.budget.workingSet.toLocaleString('en-US') })}`
+                    : t('set.ctxSource.off')}
+                </span>
+                <span className="set-line set-num">
+                  {policy?.overridden?.length
+                    ? t('set.ctxOverridden', { fields: policy.overridden.map((f) => tk(`set.ctxField.${f}`)).join(' / ') })
+                    : t('set.ctxAllDefault')}
+                </span>
+              </>
+            }
+          />
+
+          <SettingRow name={t('set.ctxPreset')} desc={t('set.ctxPresetDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': 'ctx-preset' }}>
+            {(['default', 'reference'] as const).map((p) => (
+              <button
+                key={p}
+                className={`seg-btn ${currentPreset === p ? 'sel' : ''}`}
+                data-preset={p}
+                onClick={() => void patchSettings({ contextPolicy: presetOverrides(p) })}
+              >
+                {tk(`set.ctxPreset.${p}`)}
               </button>
-              {maintenanceOperation && (maintenanceOperation.state === 'needs_action' || maintenanceOperation.state === 'failed') &&
-                maintenanceOperation.failureCode !== 'resume_send_uncertain' ? (
+            ))}
+          </SettingRow>
+
+          <NumRow label={t('set.ctxCap')} desc={t('set.ctxCapDesc')} testid="ctx-cap" value={draft.cap} onChange={(v) => setDraft({ ...draft, cap: v })} />
+          <NumRow label={t('set.ctxRatio')} desc={t('set.ctxRatioDesc')} testid="ctx-ratio" value={draft.ratio} onChange={(v) => setDraft({ ...draft, ratio: v })} />
+          <NumRow label={t('set.ctxReserve')} desc={t('set.ctxReserveDesc')} testid="ctx-reserve" value={draft.reserve} onChange={(v) => setDraft({ ...draft, reserve: v })} />
+          <SettingRow desc={t('set.ctxHint')}>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="ctx-reset"
+              onClick={() => {
+                setDraft(fields(undefined))
+                void patchSettings({ contextPolicy: undefined })
+              }}
+            >
+              {t('set.ctxReset')}
+            </Button>
+            <Button size="sm" data-testid="ctx-save" onClick={saveUser}>
+              {t('set.ctxSave')}
+            </Button>
+          </SettingRow>
+
+          {/* 模型级覆盖：只为当前模型改，切模型各用各的 */}
+          <SettingRow name={t('set.ctxModel')} desc={modelKey ? t('set.ctxModelDesc', { model: modelKey }) : t('set.ctxModelNoModel')} />
+          {modelKey ? (
+            <>
+              <SettingRow data-testid="ctx-model-presets" name={tk('set.ctxModelPreset')} desc={tk(largeWindowCandidate ? 'set.ctxModelPresetDesc' : 'set.ctxModelPresetUnavailable')} ctlClassName="seg">
                 <button
-                  className="seg-btn"
-                  data-testid="ctx-budget-v1-maintenance-retry"
-                  disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
-                  onClick={() => void maintainContextV1(maintenanceOperation.identity.operationId)}
+                  className={`seg-btn ${modelLargePreset === 'balanced' ? 'sel' : ''}`}
+                  data-testid="ctx-model-large-balanced"
+                  disabled={!largeWindowCandidate}
+                  onClick={() => applyModelLargePreset('balanced')}
                 >
-                  {tk('set.ctxBudgetV1MaintenanceRetry')}
+                  {tk('set.ctxModelPresetBalanced')}
                 </button>
-              ) : null}
-              {/*
-                失败停下后，”重试“并不总是最优解：没有候选、归档满这类确定性失败，
-                重试只会得到同样结果。另两个出口直接改变处境：抬线让它不再撞线，
-                降档让这一轮本来就发得出去。
-              */}
-              {maintenanceOperation && (maintenanceOperation.state === 'needs_action' || maintenanceOperation.state === 'failed') ? (
-                <>
-                  <button
-                    className="seg-btn"
-                    data-testid="ctx-budget-v1-exit-raise"
-                    disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
-                    onClick={() => void exitMaintenanceBlock('raise-line')}
+                <button
+                  className={`seg-btn ${modelLargePreset === 'long' ? 'sel' : ''}`}
+                  data-testid="ctx-model-large-long"
+                  disabled={!largeWindowCandidate}
+                  onClick={() => applyModelLargePreset('long')}
+                >
+                  {tk('set.ctxModelPresetLong')}
+                </button>
+              </SettingRow>
+              <NumRow label={t('set.ctxCap')} desc="" testid="ctx-model-cap" value={modelDraft.cap} onChange={(v) => setModelDraft({ ...modelDraft, cap: v })} />
+              <NumRow label={t('set.ctxRatio')} desc="" testid="ctx-model-ratio" value={modelDraft.ratio} onChange={(v) => setModelDraft({ ...modelDraft, ratio: v })} />
+              <SettingRow desc={t('set.ctxModelHint')}>
+                {modelOver ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="ctx-model-remove"
+                    onClick={() => {
+                      setModelDraft(fields(undefined))
+                      removeModel(modelKey)
+                    }}
                   >
-                    {tk('set.ctxBudgetV1ExitRaise')}
-                  </button>
-                  <button
-                    className="seg-btn"
-                    data-testid="ctx-budget-v1-exit-lower"
-                    disabled={!budgetV1Enabled || budgetV1Busy || maintenanceBusy}
-                    onClick={() => void exitMaintenanceBlock('lower-tier')}
-                  >
-                    {tk('set.ctxBudgetV1ExitLower')}
-                  </button>
-                </>
-              ) : null}
-              {activeTemporaryOverride ? (
-                <div className="ui-row-desc" data-testid="ctx-budget-v1-temporary-raise" role="status">
-                  {t('set.ctxBudgetV1TemporaryRaise', {
-                    selected: `${activeTemporaryOverride.selectedBudget / 1000}K`,
-                    falls: `${activeBudgetPhase.selectedBudget / 1000}K`,
-                    until: fmtUntil(activeTemporaryOverride.expiresAt)
+                    {t('set.ctxModelRemove')}
+                  </Button>
+                ) : null}
+                <Button size="sm" data-testid="ctx-model-save" onClick={saveModel}>
+                  {modelOver ? t('set.ctxModelUpdate') : t('set.ctxModelAdd')}
+                </Button>
+              </SettingRow>
+            </>
+          ) : null}
+
+          {otherKeys.length ? (
+            <SettingRow col name={t('set.ctxModelOthers')}>
+              <div className="set-diag">
+                {otherKeys.map((k) => (
+                  <div className="set-diag-line set-material" key={k} data-testid="ctx-model-other" title={`${k} · ${summary(byModel[k])}`}>
+                    <span className="set-diag-v">{k} · {summary(byModel[k])}</span>
+                    <button className="ctx-link" onClick={() => removeModel(k)}>
+                      {t('set.ctxModelRemove')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </SettingRow>
+          ) : null}
+
+          {budgetSnapshot ? (
+            <SettingRow
+              col
+              name={tk('set.ctxBudgetV1LastCheckTitle')}
+              desc={
+                <span className="set-num" data-testid="ctx-budget-v1-last-check" role="status">
+                  {t('set.ctxBudgetV1LastCheck', {
+                    time: new Date(budgetSnapshot.observedAt).toLocaleTimeString(),
+                    decision: tk(budgetDecisionKey),
+                    input: budgetSnapshot.inputTokens?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
+                    selected: `${budgetSnapshot.check.selectedBudget / 1000}K`,
+                    review: budgetSnapshot.check.calculation.reviewLine?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown'),
+                    hard: budgetSnapshot.check.calculation.hardInputLimit?.toLocaleString('en-US') ?? tk('set.ctxBudgetV1Unknown')
                   })}
-                </div>
-              ) : null}
-              {maintenanceOperation?.state === 'needs_action' ? (
-                <div className="ui-row-desc" data-testid="ctx-budget-v1-blocked" role="status">
-                  {tk('set.ctxBudgetV1BlockedHint')}
-                </div>
-              ) : null}
-              {maintenanceMessage ? <div role="status">{maintenanceMessage}</div> : null}
-            </div>
-            {activeBudgetPhase.materials.length > 0 ? (
-              <div className="ui-row-desc" data-testid="ctx-budget-v1-materials">
-                <div>{t('set.ctxBudgetV1Materials', { count: activeBudgetPhase.materials.length })}</div>
+                  <span className="set-line">{tk(budgetReasonKeys[budgetSnapshot.check.reason] ?? 'set.ctxBudgetV1ReasonGeneric')}</span>
+                </span>
+              }
+            >
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="ctx-budget-v1-refresh-snapshot"
+                disabled={budgetV1Busy}
+                onClick={() => {
+                  void window.yan.contextBudgetSnapshotV1().then(setBudgetSnapshot).catch(() => {
+                    setBudgetV1Error(tk('set.ctxBudgetV1Unavailable'))
+                  })
+                }}
+              >
+                {tk('set.ctxBudgetV1Refresh')}
+              </Button>
+            </SettingRow>
+          ) : null}
+
+          {activeBudgetPhase && activeBudgetPhase.materials.length > 0 ? (
+            <SettingRow col data-testid="ctx-budget-v1-materials" name={t('set.ctxBudgetV1Materials', { count: activeBudgetPhase.materials.length })}>
+              <div className="set-diag">
                 {[...activeBudgetPhase.materials.filter((material) => material.pinnedByUser),
                   ...activeBudgetPhase.materials.filter((material) => !material.pinnedByUser).slice(-20)]
                   .map((material) => (
-                    <div key={material.id} className="set-ctrow" data-testid={`ctx-budget-v1-material-${material.id}`}>
-                      <span title={material.purpose}>
+                    <div key={material.id} className="set-diag-line set-material" data-testid={`ctx-budget-v1-material-${material.id}`}>
+                      <span className="set-diag-v" title={material.purpose}>
                         {material.sourceRef} · ~{material.tokenEstimate.toLocaleString('en-US')} tokens
                         {material.status !== 'available' ? ` · ${material.status}` : ''}
                       </span>
                       <button
-                        className="seg-btn"
+                        className="ctx-link"
                         data-testid={`ctx-budget-v1-pin-${material.id}`}
                         disabled={budgetV1Busy}
                         onClick={() => void setMaterialPinned(material.id, !material.pinnedByUser)}
@@ -476,268 +631,57 @@ export function ContextTab() {
                     </div>
                   ))}
               </div>
-            ) : null}
-          </>
-        ) : (
-          <div className="ui-row-desc" role="status">{budgetV1Error || tk('set.ctxBudgetV1Unavailable')}</div>
-        )}
-        {budgetV1Error && activeBudgetPhase ? <div className="ui-row-desc" role="alert">{budgetV1Error}</div> : null}
-      </div>
-      {/*
-       * 任务状态记忆（`episode-fold`，P2-7）。与 Deep Context 相邻是因为它们是同一类东西 ——
-       * 都会**多花一次模型调用**；差别是它默认开，而且只在会话够长、并且这一回合
-       * 真的改过东西（脏判定）时才动手，短会话与纯只读回合不花钱。
-       * 它进默认接管集后一直没有界面入口（想关只能手改 `kinds`），这一行补的就是这个缺口。
-       */}
-      <div className="ui-row col">
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span>{tk('set.foldTitle')}</span>
-            <span className="set-tag">{tk('set.foldTag')}</span>
-          </div>
-          <div className="ui-row-ctl seg" data-testid="ctx-fold">
-            <button
-              className="seg-btn"
-              data-testid="ctx-fold-toggle"
-              onClick={() => void patchSettings({ contextFold: { enabled: foldOff } })}
-            >
-              {tk(foldOff ? 'set.foldOff' : 'set.foldOn')}
-            </button>
-          </div>
-        </div>
-        <div className="ui-row-desc" data-testid="ctx-fold-desc">
-          {tk(foldOff ? 'set.foldDescOff' : 'set.foldDescOn')}
-        </div>
-      </div>
-      {/*
-       * Deep Context（N21-8）。它与本页其它选项**不是一类**：那些改的是「什么时候压缩」，
-       * 而它改的是「回答前要不要先归纳一遍工作集」—— 代价是**同步阻塞**一次模型调用
-       * （每轮最多多等 30s），所以默认关、说清楚再让人自己选。
-       */}
-      <div className="ui-row col">
-        <div className="set-ctrow">
-          <div className="ui-row-label">
-            <span>{tk('set.deepTitle')}</span>
-            <span className="set-tag">{tk('set.deepTag')}</span>
-          </div>
-          <div className="ui-row-ctl seg" data-testid="ctx-deep">
-            <button
-              className="seg-btn"
-              data-testid="ctx-deep-toggle"
-              onClick={() => void patchSettings({ contextDeep: { enabled: !deepOn } })}
-            >
-              {tk(deepOn ? 'set.deepOn' : 'set.deepOff')}
-            </button>
-          </div>
-        </div>
-        <div className="ui-row-desc" data-testid="ctx-deep-desc">
-          {tk(deepOn ? 'set.deepDescOn' : 'set.deepDescOff')}
-        </div>
-      </div>
-      {/* 生效来源：这一块的全部意义就是“让人相信界面上的数就是真正在用的数” */}
-      <div className="ui-row col">
-        <div className="ui-row-label">
-          <div className="ui-row-name">{t('set.ctxSource')}</div>
-          <div className="ui-row-desc" data-testid="ctx-source">
-            {policy
-              ? `${tk(`set.ctxSource.${policy.source}`)}${
-                  policy.sourceKey ? ` · ${policy.sourceKey}` : ''
-                } · ${t('set.ctxWorkingSet', { n: policy.budget.workingSet.toLocaleString('en-US') })}`
-              : t('set.ctxSource.off')}
-          </div>
-          <div className="ui-row-desc set-num">
-            {policy?.overridden?.length
-              ? t('set.ctxOverridden', { fields: policy.overridden.map((f) => tk(`set.ctxField.${f}`)).join(' / ') })
-              : t('set.ctxAllDefault')}
-          </div>
-        </div>
-      </div>
-
-      <SettingRow name={t('set.ctxPreset')} desc={t('set.ctxPresetDesc')} ctlClassName="seg" ctlProps={{ 'data-testid': "ctx-preset" }}>
-          {(['default', 'reference'] as const).map((p) => (
-            <button
-              key={p}
-              className={`seg-btn ${currentPreset === p ? 'sel' : ''}`}
-              data-preset={p}
-              onClick={() => void patchSettings({ contextPolicy: presetOverrides(p) })}
-            >
-              {tk(`set.ctxPreset.${p}`)}
-            </button>
-          ))}
-        </SettingRow>
-
-      <NumRow
-        label={t('set.ctxCap')}
-        desc={t('set.ctxCapDesc')}
-        testid="ctx-cap"
-        value={draft.cap}
-        onChange={(v) => setDraft({ ...draft, cap: v })}
-      />
-      <NumRow
-        label={t('set.ctxRatio')}
-        desc={t('set.ctxRatioDesc')}
-        testid="ctx-ratio"
-        value={draft.ratio}
-        onChange={(v) => setDraft({ ...draft, ratio: v })}
-      />
-      <NumRow
-        label={t('set.ctxReserve')}
-        desc={t('set.ctxReserveDesc')}
-        testid="ctx-reserve"
-        value={draft.reserve}
-        onChange={(v) => setDraft({ ...draft, reserve: v })}
-      />
-
-      <SettingRow desc={t('set.ctxHint')} ctlClassName="seg">
-          <button className="seg-btn" data-testid="ctx-save" onClick={saveUser}>
-            {t('set.ctxSave')}
-          </button>
-          <button
-            className="seg-btn"
-            data-testid="ctx-reset"
-            onClick={() => {
-              setDraft(fields(undefined))
-              void patchSettings({ contextPolicy: undefined })
-            }}
-          >
-            {t('set.ctxReset')}
-          </button>
-        </SettingRow>
-
-      {/* ---- 模型级覆盖 ---- */}
-      <SettingRow col name={t('set.ctxModel')} desc={modelKey ? t('set.ctxModelDesc', { model: modelKey }) : t('set.ctxModelNoModel')} />
-
-      {modelKey ? (
-        <>
-          <SettingRow col data-testid="ctx-model-presets" name={tk('set.ctxModelPreset')} desc={tk(largeWindowCandidate ? 'set.ctxModelPresetDesc' : 'set.ctxModelPresetUnavailable')} ctlClassName="seg">
-              <button
-                className={`seg-btn ${modelLargePreset === 'balanced' ? 'sel' : ''}`}
-                data-testid="ctx-model-large-balanced"
-                disabled={!largeWindowCandidate}
-                onClick={() => applyModelLargePreset('balanced')}
-              >
-                {tk('set.ctxModelPresetBalanced')}
-              </button>
-              <button
-                className={`seg-btn ${modelLargePreset === 'long' ? 'sel' : ''}`}
-                data-testid="ctx-model-large-long"
-                disabled={!largeWindowCandidate}
-                onClick={() => applyModelLargePreset('long')}
-              >
-                {tk('set.ctxModelPresetLong')}
-              </button>
             </SettingRow>
-          <NumRow
-            label={t('set.ctxCap')}
-            desc={t('set.ctxCapDesc')}
-            testid="ctx-model-cap"
-            value={modelDraft.cap}
-            onChange={(v) => setModelDraft({ ...modelDraft, cap: v })}
-          />
-          <NumRow
-            label={t('set.ctxRatio')}
-            desc={t('set.ctxRatioDesc')}
-            testid="ctx-model-ratio"
-            value={modelDraft.ratio}
-            onChange={(v) => setModelDraft({ ...modelDraft, ratio: v })}
-          />
-          <SettingRow desc={t('set.ctxModelHint')} ctlClassName="seg">
-              <button className="seg-btn" data-testid="ctx-model-save" onClick={saveModel}>
-                {modelOver ? t('set.ctxModelUpdate') : t('set.ctxModelAdd')}
-              </button>
-              {modelOver ? (
-                <button
-                  className="seg-btn"
-                  data-testid="ctx-model-remove"
-                  onClick={() => {
-                    setModelDraft(fields(undefined))
-                    removeModel(modelKey)
-                  }}
-                >
-                  {t('set.ctxModelRemove')}
-                </button>
-              ) : null}
+          ) : null}
+
+          {/* 后台调用用量（供应商口径）：这些请求绕开会话循环，主对话的用量看不到 */}
+          {backgroundUsage ? (
+            <SettingRow
+              col
+              data-testid="ctx-background-usage"
+              name={t('set.ctxBackgroundUsage')}
+              desc={
+                backgroundUsage.calls === 0 ? (
+                  <span role="status">{t('set.ctxBackgroundUsageEmpty')}</span>
+                ) : (
+                  <>
+                    <span className="set-num" data-testid="ctx-background-usage-total" role="status">
+                      {t('set.ctxBackgroundUsageTotal', {
+                        calls: String(backgroundUsage.calls),
+                        input: fmtTok(backgroundUsage.input),
+                        hit: backgroundUsage.cacheHitRate === null ? '—' : `${backgroundUsage.cacheHitRate.toFixed(1)}%`,
+                        output: fmtTok(backgroundUsage.output)
+                      })}
+                    </span>
+                    {backgroundUsage.kinds.filter((kind) => kind.calls > 0).map((kind) => (
+                      <span className="set-line set-num" key={kind.kind} data-testid={`ctx-background-usage-${kind.kind}`}>
+                        {t('set.ctxBackgroundUsageKind', {
+                          kind: tk(`set.ctxBackgroundKind.${kind.kind}`),
+                          calls: String(kind.calls),
+                          input: fmtTok(kind.input),
+                          hit: kind.input + kind.cacheRead > 0
+                            ? `${((kind.cacheRead / (kind.input + kind.cacheRead)) * 100).toFixed(1)}%`
+                            : '—'
+                        })}
+                      </span>
+                    ))}
+                    {backgroundUsage.missingUsage > 0 ? (
+                      <span className="set-line" role="status">
+                        {t('set.ctxBackgroundUsageMissing', { count: String(backgroundUsage.missingUsage) })}
+                      </span>
+                    ) : null}
+                  </>
+                )
+              }
+            >
+              <Button size="sm" variant="ghost" data-testid="ctx-background-usage-refresh" onClick={() => void refreshBackgroundUsage()}>
+                {t('set.ctxBackgroundUsageRefresh')}
+              </Button>
             </SettingRow>
-        </>
-      ) : null}
-
-      {otherKeys.length ? (
-        <div className="ui-row col">
-          <div className="ui-row-label">
-            <div className="ui-row-name">{t('set.ctxModelOthers')}</div>
-            {otherKeys.map((k) => (
-              <div
-                className="ui-row-desc set-num"
-                key={k}
-                data-testid="ctx-model-other"
-                /* 长 `provider/model` 在窄栏会被截断：完整值用 title 给出口 */
-                title={`${k} · ${summary(byModel[k])}`}
-              >
-                {k} · {summary(byModel[k])}
-                <button className="ctx-link" onClick={() => removeModel(k)}>
-                  {t('set.ctxModelRemove')}
-                </button>
-              </div>
-            ))}
-          </div>
+          ) : null}
         </div>
-      ) : null}
-
-      {/*
-        后台调用用量（供应商口径）。
-        为什么单独一栏：这些请求绕开会话循环（或跑在独立进程里），
-        主对话的用量条永远看不到它们 —— 用户只能看到一个“总量”，
-        没法回答“是主对话花得多，还是后台在烧”。
-      */}
-      {backgroundUsage ? (
-        <div className="ui-row col" data-testid="ctx-background-usage">
-          <div className="ui-row-label">
-            <div className="ui-row-name">{t('set.ctxBackgroundUsage')}</div>
-            <div className="ui-row-desc">{t('set.ctxBackgroundUsageDesc')}</div>
-          </div>
-          {backgroundUsage.calls === 0 ? (
-            <div className="ui-row-desc" role="status">{t('set.ctxBackgroundUsageEmpty')}</div>
-          ) : (
-            <>
-              <div className="ui-row-desc set-num" data-testid="ctx-background-usage-total" role="status">
-                {t('set.ctxBackgroundUsageTotal', {
-                  calls: String(backgroundUsage.calls),
-                  input: fmtTok(backgroundUsage.input),
-                  hit: backgroundUsage.cacheHitRate === null ? '—' : `${backgroundUsage.cacheHitRate.toFixed(1)}%`,
-                  output: fmtTok(backgroundUsage.output)
-                })}
-              </div>
-              {backgroundUsage.kinds.filter((kind) => kind.calls > 0).map((kind) => (
-                <div
-                  className="ui-row-desc set-num"
-                  key={kind.kind}
-                  data-testid={`ctx-background-usage-${kind.kind}`}
-                >
-                  {t('set.ctxBackgroundUsageKind', {
-                    kind: tk(`set.ctxBackgroundKind.${kind.kind}`),
-                    calls: String(kind.calls),
-                    input: fmtTok(kind.input),
-                    hit: kind.input + kind.cacheRead > 0
-                      ? `${((kind.cacheRead / (kind.input + kind.cacheRead)) * 100).toFixed(1)}%`
-                      : '—'
-                  })}
-                </div>
-              ))}
-              {backgroundUsage.missingUsage > 0 ? (
-                <div className="ui-row-desc" role="status">
-                  {t('set.ctxBackgroundUsageMissing', { count: String(backgroundUsage.missingUsage) })}
-                </div>
-              ) : null}
-            </>
-          )}
-          <div className="ui-row-ctl">
-            <button className="seg-btn" data-testid="ctx-background-usage-refresh" onClick={() => void refreshBackgroundUsage()}>
-              {t('set.ctxBackgroundUsageRefresh')}
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+      </Disclosure>
+    </>
   )
 }
 

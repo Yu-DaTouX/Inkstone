@@ -9,17 +9,19 @@
  *  · 转写：录音以临时 WAV 写进系统临时目录，whisper-cli 读完即删；不保留录音。
  */
 import { app, net } from 'electron'
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, freemem, tmpdir, totalmem } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   VOICE_MAX_WAV_BYTES,
   VOICE_MODEL_BASE_URL,
   VOICE_MODELS,
   WHISPER_RELEASE_API,
+  WHISPER_RELEASES_API,
   WHISPER_WINDOWS_ASSET,
   parseWhisperOutput,
   recommendVoiceModel,
@@ -40,7 +42,7 @@ const MODELS_DIR = join(VOICE_DIR, 'models')
 const BIN_DIR = join(VOICE_DIR, 'bin')
 const BINARY_NAMES = ['whisper-cli.exe', 'whisper-cli']
 /** 程序 zip 的上限：官方 CPU 版只有几 MB，远超这个数说明拿错了东西 */
-const MAX_BINARY_ZIP_BYTES = 200 * 1024 * 1024
+const MAX_BINARY_ZIP_BYTES = 1024 * 1024 * 1024
 /** plan 的有效期：确认框开太久就重新核实一次大小 */
 const PLAN_TTL_MS = 30 * 60_000
 
@@ -53,8 +55,47 @@ export class VoiceService {
   private plans = new Map<string, PendingPlan>()
   private progress: VoiceDownloadProgress | null = null
   private abort: AbortController | null = null
+  private backend: 'cuda' | 'cpu' | 'unknown' = 'unknown'
+  private worker: { process: ChildProcess; key: string; url: string } | null = null
+  private workerStart: Promise<string> | null = null
 
-  constructor(private readonly getSettings: () => Promise<VoiceInputSettings | undefined>) {}
+  constructor(private readonly getSettings: () => Promise<VoiceInputSettings | undefined>) {
+    app.on('before-quit', () => { this.worker?.process.kill(); this.worker = null; this.abort?.abort() })
+  }
+
+  /** Keep the selected model resident between dictations; only localhost receives audio. */
+  private async server(binary: string, model: string, language: string): Promise<string | null> {
+    const executable = join(dirname(binary), process.platform === 'win32' ? 'whisper-server.exe' : 'whisper-server')
+    if (!(await isFile(executable))) return null
+    const key = `${binary}|${model}|${language}`
+    if (this.workerStart) await this.workerStart
+    if (this.worker?.key === key) return this.worker.url
+    this.worker?.process.kill(); this.worker = null
+    this.workerStart = (async () => {
+      const port = await new Promise<number>((resolve, reject) => {
+        const listener = createServer(); listener.on('error', reject)
+        listener.listen(0, '127.0.0.1', () => { const address = listener.address(); listener.close(() => typeof address === 'object' && address ? resolve(address.port) : reject(new Error('无法分配本地转写端口'))) })
+      })
+      const child = spawn(executable, ['-m', model, '--host', '127.0.0.1', '--port', String(port), '-l', language, '-t', String(Math.max(1, Math.min(8, cpus().length - 1)))], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      const url = `http://127.0.0.1:${port}`
+      let log = '', failure = ''
+      child.on('error', (error) => { failure = error.message })
+      child.on('exit', (code) => { failure = `转写服务退出（${code}）：${log.slice(-1200)}`; if (this.worker?.process === child) this.worker = null })
+      const collect = (chunk: Buffer): void => { log = (log + chunk.toString()).slice(-16000); if (/CUDA.*(device|GPU)|using CUDA|ggml_cuda_init: found/i.test(log)) this.backend = 'cuda'; else if (/use gpu\s*=\s*0|CPU backend/i.test(log)) this.backend = 'cpu' }
+      child.stdout?.on('data', collect); child.stderr?.on('data', collect)
+      this.backend = 'unknown'
+      try {
+        const deadline = Date.now() + 90_000
+        while (Date.now() < deadline) {
+          if (failure) throw new Error(failure)
+          try { const response = await fetch(url, { signal: AbortSignal.timeout(1000) }); if (response.status < 500) { this.worker = { process: child, key, url }; return url } } catch { /* Model is still loading. */ }
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+        throw new Error('转写模型加载超时')
+      } catch (error) { child.kill(); throw error }
+    })()
+    try { return await this.workerStart } finally { this.workerStart = null }
+  }
 
   get storageDir(): string {
     return VOICE_DIR
@@ -65,9 +106,11 @@ export class VoiceService {
     const load = await sampleCpuLoad()
     let gpu: string | null = null
     try {
-      const info = (await app.getGPUInfo('basic')) as { gpuDevice?: Array<{ active?: boolean; deviceString?: string; vendorId?: number }> }
+      const info = (await app.getGPUInfo('complete')) as { gpuDevice?: Array<{ active?: boolean; deviceString?: string; vendorId?: number }> }
       const device = info.gpuDevice?.find((item) => item.active) ?? info.gpuDevice?.[0]
       gpu = device?.deviceString ?? null
+      const nvidia = await new Promise<string>((resolve) => execFile('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { windowsHide: true, timeout: 3000 }, (error, out) => resolve(error ? '' : out.trim())))
+      if (nvidia) gpu = nvidia.split('\n')[0]
     } catch {
       gpu = null
     }
@@ -126,9 +169,20 @@ export class VoiceService {
       model,
       language: settings?.language ?? 'auto',
       ready: !!binary && !!model,
+      backend: this.backend,
       storageDir: VOICE_DIR,
       download: this.progress
     }
+  }
+
+  async prepare(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const settings = await this.getSettings()
+      const binary = await this.resolveBinary(settings), model = await this.resolveModel(settings, await this.installedModels())
+      if (!binary || !model) return { ok: false, error: '请先准备转写程序和模型' }
+      await this.server(binary.path, model.path, settings?.language ?? 'auto')
+      return { ok: true }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /** 第一步：核实大小与保存位置，不下载任何内容 */
@@ -152,9 +206,23 @@ export class VoiceService {
       } else {
         const response = await net.fetch(WHISPER_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } })
         if (!response.ok) return { ok: false, error: `查询 whisper.cpp 发布版本失败（HTTP ${response.status}）` }
-        const release = (await response.json()) as { tag_name?: string; assets?: Array<{ name: string; size: number; browser_download_url: string }> }
-        const asset = release.assets?.find((item) => item.name === WHISPER_WINDOWS_ASSET)
-        if (!asset) return { ok: false, error: `最新发布里没有 ${WHISPER_WINDOWS_ASSET}，请手动指定 whisper-cli 程序` }
+        type Release = { tag_name?: string; prerelease?: boolean; draft?: boolean; assets?: Array<{ name: string; size: number; browser_download_url: string }> }
+        const latest = (await response.json()) as Release
+        const versionsResponse = await net.fetch(WHISPER_RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+        const versions = versionsResponse.ok ? (await versionsResponse.json()) as Release[] : []
+        const releases = [latest, ...versions.filter((r) => !r.prerelease && !r.draft && r.tag_name?.startsWith('v')), ...versions.filter((r) => !r.draft && !r.tag_name?.startsWith('v'))]
+        const gpu = (await this.hardware()).gpu ?? ''
+        const names = process.arch === 'arm64' ? ['whisper-bin-win-cpu-arm64.zip'] : /NVIDIA/i.test(gpu) ? ['whisper-cublas-12.4.0-bin-x64.zip', WHISPER_WINDOWS_ASSET] : [WHISPER_WINDOWS_ASSET]
+        let selected: { release: Release; asset: NonNullable<Release['assets']>[number] } | undefined
+        for (const name of names) {
+          for (const release of releases) {
+            const asset = release.assets?.find((item) => item.name === name)
+            if (asset) { selected = { release, asset }; break }
+          }
+          if (selected) break
+        }
+        if (!selected) return { ok: false, error: '官方发布暂时没有适合这台电脑的转写程序，请稍后重试或指定已有程序' }
+        const { release, asset } = selected
         plan = {
           planId: randomUUID(),
           target: { kind: 'binary' },
@@ -216,6 +284,11 @@ export class VoiceService {
       if (plan.target.kind === 'model') {
         await rename(part, plan.destination)
       } else {
+        if (this.workerStart) await this.workerStart.catch(() => undefined)
+        if (this.worker) {
+          const worker = this.worker.process; this.worker = null
+          if (worker.exitCode === null) await new Promise<void>((resolve) => { worker.once('exit', () => resolve()); worker.kill() })
+        }
         await installBinaryZip(part)
         await rm(part, { force: true })
       }
@@ -243,6 +316,18 @@ export class VoiceService {
     const file = join(tmpdir(), `yan-voice-${randomUUID()}.wav`)
     const started = Date.now()
     try {
+      const url = await this.server(binary.path, model.path, lang)
+      if (url) {
+        const form = new FormData()
+        form.set('file', new Blob([new Uint8Array(wav).buffer], { type: 'audio/wav' }), 'dictation.wav')
+        form.set('response_format', 'json'); form.set('language', lang)
+        const response = await fetch(`${url}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) })
+        if (!response.ok) throw new Error(`本地转写服务 HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`)
+        const result = await response.json() as { text?: string; error?: string }
+        const text = (result.text ?? '').trim()
+        if (!text) return { ok: false, error: result.error ?? '没有识别到内容，请靠近麦克风再试一次' }
+        return { ok: true, text, elapsedMs: Date.now() - started }
+      }
       await writeFile(file, wav)
       const seconds = (wav.byteLength - 44) / 32_000
       const threads = Math.max(1, Math.min(8, cpus().length - 1))
@@ -310,8 +395,9 @@ async function sampleCpuLoad(): Promise<number | null> {
 
 /** 从官方 zip 里取出 exe / dll，拍平到 bin 目录（先解到临时目录，齐了再替换） */
 async function installBinaryZip(zipPath: string): Promise<void> {
-  const zip = new ZipReader(await readFile(zipPath))
+  const zip = new ZipReader(await readFile(zipPath), MAX_BINARY_ZIP_BYTES)
   const wanted = zip.names().filter((name) => /\.(exe|dll)$/i.test(name) && !name.endsWith('/'))
+  if (wanted.reduce((sum, name) => sum + (zip.entries.get(name)?.size ?? 0), 0) > 2 * MAX_BINARY_ZIP_BYTES) throw new Error('程序包解压后过大，已停止')
   if (!wanted.some((name) => /(^|\/)whisper-cli\.exe$/i.test(name))) throw new Error('程序包里没有 whisper-cli.exe')
   const staging = join(VOICE_DIR, `bin-${randomUUID()}`)
   await mkdir(staging, { recursive: true })
@@ -320,8 +406,10 @@ async function installBinaryZip(zipPath: string): Promise<void> {
       const data = zip.read(name)
       if (data) await writeFile(join(staging, basename(name)), data)
     }
-    await rm(BIN_DIR, { recursive: true, force: true })
-    await rename(staging, BIN_DIR)
+    const backup = join(VOICE_DIR, `bin-backup-${randomUUID()}`)
+    let backedUp = false
+    try { await rename(BIN_DIR, backup); backedUp = true } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    try { await rename(staging, BIN_DIR) } catch (error) { if (backedUp) await rename(backup, BIN_DIR); throw error }
   } catch (error) {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     throw error

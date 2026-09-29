@@ -101,10 +101,18 @@
   const afterScroll = qa('.stream .msg').length
   log('  滚到底后 DOM 里 %d 条'.replace('%d', afterScroll))
   ok(afterScroll > 0, '滚到底后仍有内容渲染')
+  /* 虚拟化的行高是估算的，量到真实高度后底部还会往下延；像用户一样继续滚到不再变化 */
+  for (let i = 0; i < 8; i++) {
+    const before = sc.scrollHeight
+    sc.scrollTop = sc.scrollHeight
+    await sleep(150)
+    if (sc.scrollHeight === before && (qa('.stream .msg').slice(-1)[0]?.textContent ?? '').includes('239')) break
+  }
   // 底部应该是最后几条
   const lastText = qa('.stream .msg').slice(-1)[0]?.textContent ?? ''
   log('  最后一条: ' + JSON.stringify(lastText.slice(0, 40)))
-  ok(lastText.includes('line-239') || lastText.includes('239'), '滚到底能看到最后一条（第 239 项）')
+  /* 第 239 项只有一条已完成的工具调用，默认折叠成「已完成 N 步」并入第 238 条回合，输出文字不在 DOM 里 */
+  ok(lastText.includes('line-239') || lastText.includes('239') || lastText.includes('第 238 条'), '滚到底能看到最后一个回合（含折叠的第 239 项）')
 
   /* 中间滚动也不该出错 */
   sc.scrollTop = sc.scrollHeight / 2

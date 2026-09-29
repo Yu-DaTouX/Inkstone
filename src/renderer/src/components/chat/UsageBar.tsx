@@ -36,7 +36,6 @@ import { cacheHitRate, currentTurnMessages, formatHitRate, hasUsageNumbers, turn
  */
 export function UsageBar() {
   const t = useT()
-  const session = useStore((s) => s.session)
   const messages = useStore((s) => s.messages)
   const streaming = useStore((s) => !!s.session?.isStreaming)
 
@@ -85,7 +84,7 @@ export function UsageBar() {
    * 用户既看不到当前状态，也没有入口去换模型（用户报的「看不到模型选择」）。
    * 所以降级为只渲染「模型」入口，不铺一排空用量项。
    */
-  if (!session?.model && !u) {
+  if (!u && !streaming) {
     /*
      * 一点用量都没有：只留容器，不铺一排空用量项。
      * 模型入口在输入框内（见上方注释），所以这里不需要降级渲染任何控件。
@@ -94,7 +93,7 @@ export function UsageBar() {
   }
 
   return (
-    <div className="usagebar" data-testid="usagebar">
+    <div className="usagebar" data-testid="usagebar" tabIndex={0} role="button" aria-label={t('sb.label')}>
       {/* 左组：本轮账单。模型/强度在最右，上下文在右栏。 */}
 
       {streaming && !speed ? (
@@ -125,7 +124,6 @@ export function UsageBar() {
         <Item
           label={t('tok.in')}
           value={u ? (shortOf ? `≥${fmtTok(u.input)}` : fmtTok(u.input)) : '—'}
-          unit={u ? t('tok.unit') : undefined}
           title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || streaming}
         />
@@ -133,17 +131,14 @@ export function UsageBar() {
         <Item
           label={t('tok.out')}
           value={u ? (shortOf ? `≥${fmtTok(u.output)}` : fmtTok(u.output)) : '—'}
-          unit={u ? t('tok.unit') : undefined}
           title={shortOf ? t('tok.usagePartialTip') : undefined}
           dim={!u || (streaming && !liveSpeed)}
         />
         <span className="ub-dot" />
-        {/* 缓存：值 = 缓存读取量，额外显示**命中率**（用户明确要求） */}
+        {/* 缓存：常显命中率；读取量与写入量在悬停提示里 */}
         <Item
           label={t('tok.cache')}
-          value={u?.cacheRead ? fmtTok(u.cacheRead) : '—'}
-          unit={u?.cacheRead ? t('tok.unit') : undefined}
-          extra={cacheExtra}
+          value={settled ? (hitLabel ?? '—') : cacheExtra ?? '—'}
           title={t('tok.cacheTip', {
             read: fmtTok(u?.cacheRead ?? 0),
             write: fmtTok(u?.cacheWrite ?? 0),

@@ -60,7 +60,7 @@
     store.getState().applyPush({ ch: 'sync', payload })
 
     for (let i = 0; i < 40; i++) {
-      if (qa('.trow').length >= 2) break
+      if (qa('.trow').length >= 1) break
       await sleep(250)
       /* 每 1.5s 重注入一次，避免被后续 sync 覆盖 */
       if (i % 6 === 5) store.getState().applyPush({ ch: 'sync', payload })
@@ -70,51 +70,20 @@
     out.push('  诊断 conn=' + store.getState().conn + ' messages=' + store.getState().messages.length + ' turns 相关 DOM=' + qa('.stream .msg, .stream-row').length)
     out.push('  诊断 .stream 存在=' + !!q('.stream') + ' innerHTML=' + JSON.stringify((q('.stream')?.innerHTML ?? '').replace(/s+/g, ' ').slice(0, 240)))
 
+    const history = q('[data-testid="tool-group-toggle"]')
+    ok(history?.getAttribute('aria-expanded') === 'false', '已完成调用默认折叠')
+    click(history); await sleep(250)
     const rows = qa('.trow')
     out.push(`  渲染出 ${rows.length} 个工具行（含 ToolGroup 里的）`)
 
     out.push('')
-    out.push('=== 已结束的工具收进 ToolGroup；失败组也默认收起（N03）===')
+    out.push('=== 工具命令块表默认逐行显示 ===')
     const group = q('[data-testid="tool-group"]')
-    ok(!!group, '已结束的工具收进 ToolGroup（默认形态）')
+    ok(!!group, '工具调用进入同一张命令块表')
     if (group) {
-      const expanded = group.querySelector('[data-testid="tool-group-toggle"]')?.getAttribute('aria-expanded')
-      out.push('  组标题 aria-expanded = ' + JSON.stringify(expanded))
-      /*
-       * N03：失败组**不再**默认展开。失败靠标题角标 + 行内红色状态提示，
-       * 展开与否交给用户（旧断言是 expanded === 'true'）。
-       */
-      ok(expanded === 'false', '**失败组默认也收起**（不抢版面）')
-      ok(group.classList.contains('has-fail'), '组带 has-fail 标记（语义钩子，不再给标题染色）')
-      const badge = q('[data-testid="tool-group-fail"]')
-      out.push('  失败角标: ' + JSON.stringify(badge?.textContent ?? '(无)'))
-      ok(!!badge, '标题上有失败角标（一眼看出有东西挂了，不需要自动展开）')
-
-      /*
-       * 用户要求：只有「N 个失败」是红的，标题里其他字保持原来的颜色。
-       * 所以拿 --err 的实际色值做基准：角标必须是它，标题必须**不是**它。
-       */
-      if (badge) {
-        const probeEl = document.createElement('span')
-        probeEl.style.color = 'var(--err)'
-        document.body.appendChild(probeEl)
-        const errRgb = getComputedStyle(probeEl).color
-        probeEl.remove()
-        const badgeCol = getComputedStyle(badge).color
-        const headCol = getComputedStyle(group.querySelector('.tgroup-head')).color
-        out.push(`  角标色 ${badgeCol} / 标题色 ${headCol}（--err = ${errRgb}）`)
-        ok(badgeCol === errRgb, '角标是红色（--err）')
-        ok(headCol !== errRgb, '标题文字没有被染红（红只留在角标上）')
-      }
-
-      /* 展开必须是用户点击的结果 */
-      const toggle = group.querySelector('[data-testid="tool-group-toggle"]')
-      if (toggle) {
-        click(toggle)
-        await sleep(300)
-      }
-      ok(q('.tgroup')?.classList.contains('open') === true, '用户点击后组才展开')
-      ok(qa('.tgroup-body .trow').length >= 1, '展开后能看到组内的工具行')
+      ok(qa('.tgroup .trow').length === 2, '展开历史后两条工具行可见')
+      ok(!!group.querySelector('[data-testid="tool-group-toggle"]'), '已完成步骤有组折叠入口')
+      ok(group.classList.contains('has-fail'), '失败组带 has-fail 标记')
     }
 
     const errRow = qa('.trow[data-state="error"]')[0]

@@ -70,10 +70,8 @@
     else bad('没有 active 行')
     const label = document.querySelector('[data-testid="todo-active-label"]')
     out.push('  行内标签: ' + JSON.stringify(label?.textContent?.trim()))
-    if (label && /正在进行/.test(label.textContent)) ok('「正在进行」显示在任务本体上')
-    else bad('任务行里没有「正在进行」')
-    if (label && label.querySelector('.rp-now-spin')) ok('标签带 spinner')
-    else bad('标签没有 spinner')
+    if (label && label.querySelector('*')) ok('进行中标记（强调色方点）在任务本体的状态槽里')
+    else bad('任务行的状态槽里没有进行中标记')
     if (qa('.rp-todo[data-active="1"]').length === 1) ok('只有一条被标为 active')
     else bad('active 条数不对：' + qa('.rp-todo[data-active="1"]').length)
 

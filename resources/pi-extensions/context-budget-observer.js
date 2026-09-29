@@ -87,7 +87,8 @@ function actualOutputReserve(api, payload, model) {
   return resolveContextBudgetOutputReserveV1({
     api,
     payload,
-    compat: model?.compat
+    compat: model?.compat,
+    modelMaxTokens: model?.maxTokens
   })
 }
 

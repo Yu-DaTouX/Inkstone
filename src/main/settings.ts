@@ -435,6 +435,7 @@ export async function getSettings(): Promise<AppSettings> {
     cached.workModeShortcutEnabled =
       cached.workModeShortcutEnabled === false || legacyWorkModeTab === false ? false : undefined
     cached.workModeShortcut = normalizeWorkModeShortcut(cached.workModeShortcut)
+    cached.subagentNotify = cached.subagentNotify === false ? false : undefined
     // 发送键：只认三个已知值，脏值回落到 auto（默认行为）
     cached.sendKey =
       cached.sendKey === 'enter' || cached.sendKey === 'ctrlEnter' ? cached.sendKey : 'auto'

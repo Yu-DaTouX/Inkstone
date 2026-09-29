@@ -91,7 +91,7 @@
     const inject = () => store.getState().applyPush({ ch: 'sync', payload })
     inject()
     for (let i = 0; i < 40; i++) {
-      if (q('[data-testid="tool-images"]')) break
+      if (q('[data-testid="tool-images"]') || q('[data-testid="tool-group-toggle"]')) break
       await sleep(250)
       /* 应用自己也收 pi 的 sync（它才是权威的），定期重注入 */
       if (i % 6 === 5) inject()
@@ -99,7 +99,7 @@
 
     out.push('=== 1. 工具结果里的图片 ===')
     out.push('  渲染出的工具行 ' + qa('.trow').length + ' 个')
-    /* 已结束的工具收进 ToolGroup，默认收起 —— 先展开才看得到行内详情 */
+    /* 长工具组只折叠较早步骤；图片所在行可能在折叠区。 */
     const group = q('[data-testid="tool-group-toggle"]')
     if (group && group.getAttribute('aria-expanded') === 'false') {
       click(group)
@@ -265,7 +265,7 @@
     ok(pruned.kept <= usage.files, '留下来的不会多于原有文件数')
 
     out.push('')
-    out.push('=== 3. 设置 → 包与数据：附件那一节 ===')
+    out.push('=== 3. 设置 → 能力与插件：附件那一节 ===')
     store.getState().openSettings('packages')
     await sleep(900)
     ok(!!q('[data-testid="set-attachments"]'), '设置里有「图片附件」一节')

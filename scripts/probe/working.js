@@ -27,7 +27,7 @@
   await sleep(300)
   ok(!!working(), '流式输出时提示常驻')
   ok(q('[data-testid="composer-border"]')?.dataset.phase === 'responding', '正文流显示 responding 阶段')
-  ok((working()?.textContent ?? '').includes('正在生成回复'), '正文流文案反映真实阶段', working()?.textContent ?? '')
+  ok((working()?.textContent ?? '').includes('生成回复'), '正文流文案反映真实阶段', working()?.textContent ?? '')
 
   setState({ isStreaming: false, isAgentRunning: true }, [
     { role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'working-probe', name: 'bash', arguments: {}, status: 'running' }] }
@@ -35,7 +35,7 @@
   await sleep(300)
   ok(!!working(), '工具执行期间（isStreaming=false）提示仍然常驻')
   ok(q('[data-testid="composer-border"]')?.dataset.phase === 'tool', '工具等待显示 tool 阶段')
-  ok((working()?.textContent ?? '').includes('正在bash'), '提示文案带真实工具名', working()?.textContent ?? '')
+  ok((working()?.textContent ?? '').includes('bash'), '提示文案带真实工具名', working()?.textContent ?? '')
 
   setState({ isStreaming: false, isAgentRunning: true }, [
     { role: 'assistant', content: '', timestamp: Date.now(), thinkingLive: true }

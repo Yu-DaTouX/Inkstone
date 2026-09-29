@@ -106,7 +106,7 @@
 
     out.push('')
     out.push('=== 5. 设置里能改（并且落盘） ===')
-    store.getState().openSettings?.()
+    store.getState().openSettings?.('input')
     await sleep(350)
     const seg = q('[data-testid="set-send-key"]')
     ok(!!seg, '设置面板里有「发送键」分段')

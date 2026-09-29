@@ -419,15 +419,15 @@
         else bad('文件标签不对：' + JSON.stringify(tabLabels()))
       } else bad('找不到 src/main/agent.ts 行')
 
-      if (await openRow('src/main/goal-service.ts')) {
+      if (await openRow('src/main/artifacts.ts')) {
         const two = await until(() => fileTabs().length >= 2, 6000)
         out.push('  标签 = ' + JSON.stringify(tabLabels()) + '，当前 = ' + JSON.stringify(currentName()))
         if (two) ok('两个不同文件 → 两个标签（不共用同一个）')
         else bad('第二个文件没有生成新标签：' + JSON.stringify(tabLabels()))
-        if (tabLabels().some((l) => l.includes('agent.ts')) && tabLabels().some((l) => l.includes('goal-service.ts'))) {
+        if (tabLabels().some((l) => l.includes('agent.ts')) && tabLabels().some((l) => l.includes('artifacts.ts'))) {
           ok('每个标签显示自己的文件名（不是都叫「文件」）')
         } else bad('标签标题不对：' + JSON.stringify(tabLabels()))
-        if (currentName().includes('goal-service.ts')) ok('新打开的文件是当前预览')
+        if (currentName().includes('artifacts.ts')) ok('新打开的文件是当前预览')
         else bad('当前预览不是刚打开的文件：' + JSON.stringify(currentName()))
 
         /* 切回旧标签：内容跟着恢复（不是空白、也不叠一份新的） */
@@ -449,7 +449,7 @@
         else bad('关闭后标签数 = ' + fileTabs().length)
         if (!fileTabs().some((el) => (el.textContent ?? '').includes('agent.ts'))) ok('被关掉的标签真的不在了')
         else bad('被关掉的标签还在')
-      } else bad('找不到 src/main/goal-service.ts 行')
+      } else bad('找不到 src/main/artifacts.ts 行')
       store.getState().closePreview()
       await until(() => fileTabs().length === 0, 4000)
     }

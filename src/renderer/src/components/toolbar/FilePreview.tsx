@@ -27,7 +27,8 @@ import { OfficePreview } from '../review/OfficeContent'
 /** 一次最多渲染多少行（2MB 文本可能有几万行，全铺出来会卡） */
 const MAX_RENDER_LINES = 2000
 
-export function FilePreviewPane() {
+/** `focus`：预览独占右栏（收起下方的文件树等分区），由右栏持有状态 */
+export function FilePreviewPane({ focus = false, onToggleFocus }: { focus?: boolean; onToggleFocus?: () => void } = {}) {
   const t = useT()
   const preview = useStore((s) => s.filePreview)
   const closePreview = useStore((s) => s.closePreview)
@@ -195,6 +196,15 @@ export function FilePreviewPane() {
           label={t('fp.copyPath')}
           onClick={() => void navigator.clipboard.writeText(data?.abs || preview.path)}
         />
+        {onToggleFocus ? (
+          <IconButton
+            size="sm"
+            icon="maximize"
+            label={focus ? '恢复文件树' : '预览占满右栏'}
+            onClick={onToggleFocus}
+            data-testid="file-preview-focus"
+          />
+        ) : null}
         {data?.abs ? (
           <IconButton
             size="sm"
@@ -208,7 +218,7 @@ export function FilePreviewPane() {
             size="sm"
             icon="external"
             label={t('fp.open')}
-            onClick={() => void window.yan.openPath(data.abs)}
+            onClick={() => void window.yan.openFileDefault(data.abs)}
           />
         ) : null}
         <IconButton
@@ -221,7 +231,7 @@ export function FilePreviewPane() {
       </div>
 
       <div className="fp-path" title={preview.path} hidden={isImage}>
-        {preview.path}
+        {(data?.abs || preview.path).replace(/[\\/]+/g, ' › ')}
       </div>
 
       {/* 内容被外部改写：就地说一声，不自动重载、不抢回阅读位置 */}

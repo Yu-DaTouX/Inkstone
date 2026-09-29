@@ -127,7 +127,7 @@
     if (homeMs >= 0) ok('Home 复原')
     else bad('Home 没复原：' + w('.rail').toFixed(1))
 
-    out.push('\n=== 6. 拖动范围：下限 210、上限 420 ===')
+    out.push('\n=== 6. 拖动范围：下限 210、上限随窗口（RAIL_MAX=1200，且给中栏留位） ===')
     /*
      * 先验证超过下限但没有越过收起临界时，宽度和落盘值都精确夹到 210。
      */
@@ -144,7 +144,7 @@
     const wasPinned = store.getState().railPinned
     const big = store.getState().settings?.railWidth
     out.push('  极限右拖后 railWidth=' + big)
-    if (big === 420 && Math.abs(w('.rail') - 420) < 1) ok('上限精确夹到 420px')
+    if (big > 420 && Math.abs(w('.rail') - big) < 1) ok('上限被窗口夹住，宽度与落盘值一致（' + big + 'px）')
     else bad('没夹住：' + big)
 
     await drag(hr, -9999)

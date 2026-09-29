@@ -114,10 +114,10 @@
     const rowOf = (path) => qa('[data-session-path]').find((e) => e.dataset.sessionPath === path)
     const rowA = rowOf(a.path)
     const rowB = rowOf(b.path)
-    out.push('  A 行状态 = ' + JSON.stringify(rowA?.querySelector('.session-status')?.className ?? null))
-    out.push('  B 行状态 = ' + JSON.stringify(rowB?.querySelector('.session-status')?.className ?? null))
-    ok(!!rowB?.querySelector('.session-status.running'), '**后台**会话行显示「运行中」（这正是以前看不到的）')
-    ok(!rowA?.querySelector('.session-status.running'), '没在跑的会话行不显示运行状态')
+    out.push('  A 行状态 = ' + JSON.stringify(rowA?.querySelector('.srow-dot, .srow-dot-run')?.className ?? null))
+    out.push('  B 行状态 = ' + JSON.stringify(rowB?.querySelector('.srow-dot, .srow-dot-run')?.className ?? null))
+    ok(!!rowB?.querySelector('.srow-dot-run'), '**后台**会话行显示「运行中」（这正是以前看不到的）')
+    ok(!rowA?.querySelector('.srow-dot-run'), '没在跑的会话行不显示运行状态')
 
     /* 等待输入 / 失败 */
     store.getState().applyPush({
@@ -127,10 +127,10 @@
     await sleep(400)
     const rowA2 = rowOf(a.path)
     const rowB2 = rowOf(b.path)
-    out.push('  A 行(等待) = ' + JSON.stringify(rowA2?.querySelector('.session-status')?.textContent ?? null))
-    out.push('  B 行(失败) = ' + JSON.stringify(rowB2?.querySelector('.session-status')?.className ?? null))
-    ok(!!rowA2?.querySelector('.session-status.waiting'), '等待输入的会话行有状态标记')
-    ok(!!rowB2?.querySelector('.session-status'), '失败的会话行有状态标记')
+    out.push('  A 行(等待) = ' + JSON.stringify(rowA2?.querySelector('.srow-dot, .srow-dot-run')?.textContent ?? null))
+    out.push('  B 行(失败) = ' + JSON.stringify(rowB2?.querySelector('.srow-dot, .srow-dot-run')?.className ?? null))
+    ok(!!rowA2?.querySelector('.srow-dot.waiting'), '等待输入的会话行有状态标记')
+    ok(!!rowB2?.querySelector('.srow-dot, .srow-dot-run'), '失败的会话行有状态标记')
 
     /* ---- 3. 会话菜单里能单独停掉一个实例 ---- */
     out.push('')

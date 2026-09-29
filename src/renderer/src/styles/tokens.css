@@ -18,6 +18,24 @@
    里的引用不用改。 */
 @import '@mogeko/maple-mono-cn/dist/font/result.css';
 
+/* 界面骨架里的汉字（设计规范 §2.2）。
+   Maple 的汉字占两格，而且只有常规字重：在按钮、导航、分区标题里读起来像
+   「字 距 拉 开」，加粗时是合成的伪粗体。界面骨架只需要拉丁与数字等宽，
+   所以在 --font-ui 里把 CJK 区段交给系统的微软雅黑 UI（本机字体，不增加体积）；
+   代码、diff、终端仍用 --font-code，保持严格 1:2 栅格。 */
+@font-face {
+  font-family: 'Inkstone UI CJK';
+  src: local('Microsoft YaHei UI'), local('Microsoft YaHei');
+  font-weight: 100 500;
+  unicode-range: U+2E80-2FDF, U+3000-303F, U+3040-30FF, U+3100-312F, U+31A0-31FF, U+3200-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+@font-face {
+  font-family: 'Inkstone UI CJK';
+  src: local('Microsoft YaHei UI Bold'), local('Microsoft YaHei Bold');
+  font-weight: 501 900;
+  unicode-range: U+2E80-2FDF, U+3000-303F, U+3040-30FF, U+3100-312F, U+31A0-31FF, U+3200-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
 /* 1. 令牌 */
 :root {
   /*
@@ -29,7 +47,7 @@
   --font-mono: 'Maple Mono CN', ui-monospace, Consolas, monospace;
   --font-sans: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
   --font-code: var(--font-mono);
-  --font-ui: var(--font-mono);
+  --font-ui: 'Inkstone UI CJK', var(--font-mono);
   --font-body: var(--font-sans);
 
   --fs-xs: 11px;

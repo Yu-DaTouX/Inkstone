@@ -147,9 +147,12 @@
     const made = await runBash(`${NODE} "require('fs').writeFileSync('ws-probe-ui.txt','ui\\n')"`)
     const callId = made.call && made.call.id
     /* 展开那条工具行：卡片只在展开后渲染 */
-    const rows = [...document.querySelectorAll('[data-testid="tool-row"]')]
     let card = null
     for (let i = 0; i < 25 && !card; i++) {
+      /* 已完成的步骤默认折叠在「已完成 N 步」里，先展开再找行 */
+      document.querySelectorAll('[data-testid="tool-group-toggle"][aria-expanded="false"]').forEach((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+      await sleep(100)
+      const rows = [...document.querySelectorAll('[data-testid="tool-row"]')]
       const row = rows.find((r) => r.closest('.trow') && r.getAttribute('aria-expanded') !== 'true' && /ws-probe-ui\.txt/.test(r.textContent || ''))
       if (row) row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await sleep(200)
