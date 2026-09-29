@@ -226,8 +226,17 @@ export function Rail() {
     [sessions, pinned, archived]
   )
 
-  /** 打开菜单的会话（path / 位置 / 触发元素分开存，位置只用来定位浮层） */
-  const [menuFor, setMenuFor] = useState<{ path: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
+  /**
+   * 打开菜单的会话。
+   *
+   * ⚠️ 用 `key`（渲染实例）而不是只用 `path` 标识：同一条会话会同时出现在
+   *    「最近 / 置顶」区和项目树里，两处是两个 SessionRow 实例。只按 path
+   *    判断 `menuOpen` 会让**两个菜单同时打开、位置重叠**；用户点到的是另一个
+   *    实例的菜单项，于是动作作用在没看到的那一行上 —— 表现为「点重命名/
+   *    删除，菜单关了，但这一行没变」。`key` 由 `renderSession` 用
+   *    「容器 + 会话路径」拼出，锚点与触发元素另外存。
+   */
+  const [menuFor, setMenuFor] = useState<{ key: string; path: string; x: number; y: number; trigger: HTMLElement | null } | null>(null)
   /** 正在重命名哪个项目（cwd）；null = 没有 */
   const [projRename, setProjRename] = useState<string | null>(null)
   const [projDraft, setProjDraft] = useState('')
@@ -872,14 +881,14 @@ export function Rail() {
     setUnread((prev) => prev.filter((p) => p !== path))
   }
   /**
-   * 会话行菜单：位置与触发元素和会话身份分开存。
+   * 会话行菜单：按**渲染实例**（`key`）而非会话路径开菜单，位置与触发元素另外存。
    * 菜单由 `ContextMenuSurface` Portal 到 body —— 行内渲染会被 `.rail-body`
    * 的 `overflow` 裁掉（列表最后几行最明显），也会顶大行的 scrollHeight。
    */
-  const openSessionMenu = (path: string) => (trigger: HTMLElement | null, point?: { x: number; y: number }): void => {
-    if (menuFor?.path === path) { setMenuFor(null); return }
+  const openSessionMenu = (key: string, path: string) => (trigger: HTMLElement | null, point?: { x: number; y: number }): void => {
+    if (menuFor?.key === key) { setMenuFor(null); return }
     const rect = trigger?.getBoundingClientRect()
-    setMenuFor({ path, x: point?.x ?? rect?.left ?? 0, y: point?.y ?? rect?.bottom ?? 0, trigger })
+    setMenuFor({ key, path, x: point?.x ?? rect?.left ?? 0, y: point?.y ?? rect?.bottom ?? 0, trigger })
   }
   const closeSessionMenu = (): void => {
     const trigger = menuFor?.trigger
@@ -900,12 +909,14 @@ export function Rail() {
     const next = new Set(lineage).add(s.path)
     const children = list.filter((c) => c.parentSession === s.path && !next.has(c.path))
     const isOpen = !!query || expanded.includes(s.path)
+    /* 渲染实例的标识：同一条会话在「最近/置顶」区与项目树里是两个实例 */
+    const instanceKey = `${containerKey}|${s.path}`
     return <SessionRow key={s.path} s={s} selected={viewingPath === s.path}
       depth={depth} branchCount={children.length} branchIndex={branchIndex.get(s.path)}
       branchesOpen={isOpen} onToggleBranches={() => toggleBranch(s.path)}
       children={isOpen ? children.map((c) => renderSession(c, list, depth + 1, next, containerKey)) : null}
-      menuOpen={menuFor?.path === s.path} menuAnchor={menuFor?.path === s.path ? menuFor : null}
-      onOpenMenu={openSessionMenu(s.path)} onCloseMenu={closeSessionMenu}
+      menuOpen={menuFor?.key === instanceKey} menuAnchor={menuFor?.key === instanceKey ? menuFor : null}
+      onOpenMenu={openSessionMenu(instanceKey, s.path)} onCloseMenu={closeSessionMenu}
       onSelect={() => void select(s.path)} pinned={pinned.includes(s.path)} unread={unread.includes(s.path)}
       projectRecords={projectRecords}
       dragging={dragItem?.kind === 'session' && dragItem.id === s.id}
