@@ -66,7 +66,7 @@
 .btn.sm {
   height: var(--ctl-h-sm);
   padding: 0 var(--sp-2);
-  gap: 4px;
+  gap: var(--sp-1);
   font-size: var(--fs-xs);
 }
 .btn.lg {
@@ -178,7 +178,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: calc(var(--ctl-h) - 6px);
   padding: 0 var(--sp-3);
   border-radius: var(--r-xs);
@@ -259,7 +259,7 @@
 .ui-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   flex: none;
   height: 18px;
   padding: 0 6px;
@@ -340,7 +340,7 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: var(--r-xs);
@@ -348,4 +348,328 @@
   font-family: var(--font-code);
   font-size: var(--fs-xs);
   line-height: 1;
+}
+
+/* ── 输入框：单行 / 多行 / 下拉（<Input> <Textarea> <Select>） ──
+   默认 240px 宽、左对齐；数值用 .num（96px、等宽数字、右对齐）。
+   所在版面要撑满时由模块写 width / flex，不重写底色、描边与字号。 */
+.ui-input {
+  width: 240px;
+  max-width: 100%;
+  min-width: 0;
+  height: var(--ctl-h);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-base);
+  transition: border-color var(--dur) var(--ease);
+}
+.ui-input::placeholder {
+  color: var(--fg-mute);
+}
+.ui-input:hover {
+  border-color: var(--border-str);
+}
+.ui-input:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+}
+.ui-input:disabled {
+  opacity: var(--ctl-disabled-opacity);
+}
+.ui-input.num {
+  width: 96px;
+  font-size: var(--fs-code);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+textarea.ui-input {
+  height: auto;
+  min-height: calc(var(--ctl-h) * 2);
+  padding: var(--sp-1) var(--sp-2);
+  line-height: var(--lh-base);
+  resize: vertical;
+}
+select.ui-input {
+  padding-right: var(--sp-1);
+}
+
+/* ── 字段：标签 + 控件 + 说明（<Field>，表单里一项一行） ── */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ui-field-label {
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.ui-field-hint {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
+/* ── 设置行：「名称 + 说明｜控件」两列（<SettingRow>），行间一条细线，行本身不响应悬停 ── */
+.ui-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ui-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ui-row:last-child {
+  border-bottom: none;
+}
+/* 上下排布的行（进度条、日志这类要占满宽） */
+.ui-row.col {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+.ui-row-label {
+  min-width: 0;
+}
+.ui-row-name {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  margin-bottom: 3px;
+}
+.ui-row-desc {
+  color: var(--fg-mute);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+.ui-row-ctl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+/* ── 页签：<Tabs>。选中项 --bg-3 底 + 正文色 + 中等字重，图标变强调色（与分段同一语言，不画下划线）。
+   .vertical 用于设置导航这类竖排；.doc 是可关闭的文档页签（审查、浏览器、空间） ── */
+.ui-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.ui-tabs.vertical {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ui-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: var(--ctl-h);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.ui-tab .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+.ui-tab:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.ui-tab[aria-selected='true'],
+.ui-tab.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+.ui-tab[aria-selected='true'] .ico,
+.ui-tab.sel .ico {
+  color: var(--accent);
+}
+.ui-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-tabs.vertical .ui-tab {
+  width: 100%;
+  height: var(--ctl-h-lg);
+  font-size: var(--fs-base);
+}
+.ui-tab.doc {
+  max-width: 220px;
+  padding-right: var(--sp-1);
+}
+.ui-tab-close {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--fg-mute);
+  cursor: pointer;
+}
+.ui-tab-close:hover {
+  background: var(--bg-4);
+  color: var(--fg);
+}
+
+/* ── 菜单：<Menu> / <MenuItem>（右键菜单、行菜单、下拉）。
+   选中或键盘聚焦的项 --bg-3 底；.danger 只染文字；分隔用 .ui-menu-sep ── */
+.ui-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 168px;
+  max-width: min(320px, 80vw);
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-pop);
+}
+.ui-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl-h);
+  padding: var(--sp-1) var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-menu-item .ico {
+  flex: none;
+  color: var(--fg-mute);
+}
+.ui-menu-item:hover,
+.ui-menu-item:focus-visible,
+.ui-menu-item[aria-selected='true'] {
+  outline: none;
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ui-menu-item.danger,
+.ui-menu-item.danger .ico {
+  color: var(--err);
+}
+.ui-menu-item:disabled,
+.ui-menu-item[aria-disabled='true'] {
+  opacity: var(--ctl-disabled-opacity);
+  cursor: default;
+}
+.ui-menu-item:disabled:hover,
+.ui-menu-item[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--fg-dim);
+}
+.ui-menu-sep {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--border-soft);
+}
+.ui-menu-title {
+  padding: var(--sp-1) var(--sp-2) 2px;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* ── 检查器分区：<InspectorSection>。分区之间一条细线，标题 12px 半粗，右侧放摘要 ── */
+.ui-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ui-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+}
+.ui-inspector-summary {
+  margin-left: auto;
+  color: var(--fg-mute);
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 列表行：<ListRow>（左栏会话、文件、队列这类可点的一行）。
+   选中 --bg-3 底；不画 inset 边线（圆角会把它弯成弧） ── */
+.ui-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-list-row:hover {
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.ui-list-row[aria-current='true'],
+.ui-list-row.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ui-list-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-list-row-meta {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }

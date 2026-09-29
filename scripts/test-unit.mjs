@@ -3042,7 +3042,7 @@ await runGitRepoTests(ok)
 
 /*
  * i18n 文案是**纯文本**：`t()` 的结果直接插进 JSX 文本节点
- * （如 Settings.tsx 的 `<div className="set-desc">{t('…')}</div>`），
+ * （如 Settings.tsx 的 `<div className="ui-row-desc">{t('…')}</div>`），
  * 没有 markdown 渲染。所以文案里写 `**正在运行**` 就会把星号原样画到
  * 界面上 —— set.toolDetailDesc 就是这么错的（已在截图里看到）。
  *

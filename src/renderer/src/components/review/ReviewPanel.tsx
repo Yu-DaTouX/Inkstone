@@ -22,7 +22,6 @@ import type {
   GitRefOption,
   GitScopeRequest
 } from '../../../../shared/ipc'
-import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { ChangedFileTree, statusGlyph } from './ChangedFileTree'
@@ -37,6 +36,7 @@ import {
   normalizeReviewSidePrefs,
   type ReviewSidePrefs
 } from '../../../../shared/review-layout'
+import { Button, IconButton } from '../ui'
 
 /**
  * 内层文件目录的宽度 / 收起状态（实施-22 R1）。
@@ -187,68 +187,32 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
         <span className="spacer" />
 
         {bulkKind && expected ? (
-          <button
-            type="button"
-            className="btn icon sm review-act"
-            title={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
-            aria-label={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
+          <IconButton
+            icon={bulkKind === 'stage-all' ? 'plus' : 'minus'}
+            size="sm"
+            className="review-act"
+            label={bulkKind === 'stage-all' ? t('git.stageAll') : t('git.unstageAll')}
             data-testid={bulkKind === 'stage-all' ? 'review-stage-all' : 'review-unstage-all'}
             disabled={!!write.busy || files.length === 0}
             onClick={() => void write.run({ kind: bulkKind }, expected)}
-          >
-            <span className="stage-glyph" aria-hidden="true">
-              {bulkKind === 'stage-all' ? '+' : '−'}
-            </span>
-          </button>
+          />
         ) : null}
 
-        <button
-          type="button"
-          className="btn icon sm review-act"
-          title={t('review.markAllViewed')}
-          aria-label={t('review.markAllViewed')}
-          data-testid="review-mark-all"
-          disabled={!files.length}
-          onClick={() => viewed.markAll(files, identity)}
-        >
-          <Icon name="check-circle" size={12} />
-        </button>
-        <button
-          type="button"
-          className={`btn icon sm review-act ${sidePrefs.open ? 'on' : ''}`}
-          title={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
-          aria-label={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
-          aria-pressed={sidePrefs.open}
+        <IconButton icon="check-circle" label={t('review.markAllViewed')} size="sm" className="review-act" type="button" data-testid="review-mark-all" disabled={!files.length} onClick={() => viewed.markAll(files, identity)} />
+        <IconButton
+          icon="folder-open"
+          size="sm"
+          active={sidePrefs.open}
+          className="review-act"
+          label={sidePrefs.open ? t('review.hideSide') : t('review.showSide')}
           data-testid="review-side-toggle"
-          onClick={() =>
-            applySidePrefs({ ...sidePrefsRef.current, open: !sidePrefsRef.current.open }, true)
-          }
-        >
-          <Icon name="folder-open" size={12} />
-        </button>
-        <button
-          type="button"
-          className="btn icon sm review-act"
-          title={t('review.refresh')}
-          aria-label={t('review.refresh')}
-          data-testid="review-refresh"
-          onClick={() => {
+          onClick={() => applySidePrefs({ ...sidePrefsRef.current, open: !sidePrefsRef.current.open }, true)}
+        />
+        <IconButton icon="refresh" label={t('review.refresh')} size="sm" className="review-act" type="button" data-testid="review-refresh" onClick={() => {
             patches.clear()
             setBump((v) => v + 1)
-          }}
-        >
-          <Icon name="refresh" size={12} />
-        </button>
-        <button
-          type="button"
-          className="btn icon sm review-act"
-          title={t('review.close')}
-          aria-label={t('review.close')}
-          data-testid="review-close"
-          onClick={closeReview}
-        >
-          <span className="review-close-glyph" aria-hidden="true">×</span>
-        </button>
+          }} />
+        <IconButton icon="close" size="sm" className="review-act" label={t('review.close')} data-testid="review-close" onClick={closeReview} />
       </div>
 
       {rangeMode ? <RangeBar scope={scope} cwd={cwd} onChange={setReviewScope} /> : null}
@@ -279,16 +243,14 @@ export function ReviewPanel({ onRepoStateChanged }: { onRepoStateChanged?: () =>
             <div className="review-side">
               <div className="review-side-head">
                 <span className="review-side-title">{t('review.side')}</span>
-                <button
-                  type="button"
-                  className="btn icon sm review-act"
-                  title={t('review.hideSide')}
-                  aria-label={t('review.hideSide')}
+                <IconButton
+                  icon="close"
+                  size="sm"
+                  className="review-act"
+                  label={t('review.hideSide')}
                   data-testid="review-side-hide"
                   onClick={() => applySidePrefs({ ...sidePrefsRef.current, open: false }, true)}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
+                />
               </div>
               <ChangedFileTree
                 files={files}
@@ -589,42 +551,29 @@ function FileCard({
          * 破坏性大的靠里（远离右侧边缘，不容易误点）。
          */}
         {canStage && hasUnstaged ? (
-          <button
-            type="button"
-            className="btn sm rcard-stage"
-            data-testid="review-stage"
-            disabled={busy}
-            title={t('git.stageFile')}
-            onClick={() => onStage(true)}
-          >
+          <Button size="sm" className="rcard-stage" type="button" data-testid="review-stage" disabled={busy} title={t('git.stageFile')} onClick={() => onStage(true)}>
             <span className="stage-glyph" aria-hidden="true">+</span>
             <span>{t('git.stage')}</span>
-          </button>
+          </Button>
         ) : null}
         {canStage && hasStaged ? (
-          <button
-            type="button"
-            className="btn sm ghost rcard-stage off"
-            data-testid="review-unstage"
-            disabled={busy}
-            title={t('git.unstageFile')}
-            onClick={() => onStage(false)}
-          >
+          <Button variant="ghost" size="sm" className="rcard-stage off" type="button" data-testid="review-unstage" disabled={busy} title={t('git.unstageFile')} onClick={() => onStage(false)}>
             <span className="stage-glyph" aria-hidden="true">−</span>
             <span>{t('git.unstage')}</span>
-          </button>
+          </Button>
         ) : null}
 
-        <button
-          type="button"
-          className={`btn sm rcard-viewed ${viewed ? 'on' : ''}`}
+        <Button
+          size="sm"
+          icon={viewed ? 'check-circle' : 'check'}
+          active={viewed}
+          className="rcard-viewed"
           data-testid="review-viewed"
           title={viewed ? t('review.viewedOn') : t('review.viewed')}
           onClick={() => onViewed(!viewed)}
         >
-          <Icon name={viewed ? 'check-circle' : 'check'} size={12} />
-          <span>{viewed ? t('review.viewedOn') : t('review.viewed')}</span>
-        </button>
+          {viewed ? t('review.viewedOn') : t('review.viewed')}
+        </Button>
       </header>
 
       {open ? (

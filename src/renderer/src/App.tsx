@@ -31,45 +31,10 @@ import { SubagentNote } from './components/chat/SubagentNote'
 import { Settings, type SettingsTab } from './components/settings/Settings'
 import { Onboarding, markOnboarded, shouldAutoOnboard } from './components/settings/Onboarding'
 import { ConnBar, Notices, UiDialog } from './components/shell/UiBridge'
+import { StatusBar } from './components/shell/StatusBar'
 import { useStore } from './state/store'
-import './styles/tokens.css'
-/* 统一控件层：按钮 / 分段 / 开关 / 徽标 / 空状态的唯一外观来源（模块层只管版面） */
-import './styles/ui.css'
-import './styles/app.css'
-import './styles/stage1.css'
-import './styles/redesign.css'
-// 动效放最后：它要覆盖同名选择器上的旧动画（第 43 节那套已废弃）
-import './styles/motion.css'
-import './styles/settings.css'
-import './styles/electron.css'
-import './styles/highlight.css'
-/*
- * ── 模块化收敛层（最后加载）──
- *
- * 这些文件装的是**最新评审的最终形态**，按模块归属（见各文件头部说明）。
- * 它们放在加载链末尾有两个原因：
- *   ① 迁移期间要保证「最后胜出」的规则归属不再漂移；
- *   ② 它们内部互不重叠，所以彼此顺序不影响结果。
- *
- * 历史：这里原来是单个 sidebar-review.css（评审补丁）。P0-1 把它按模块
- * 拆开、后面继续把 redesign.css 里属于各模块的规则逐步迁进来。
- * 拆分过程有脚本保证等价：scripts/css-split-check.mjs
- */
-import './styles/layout.css'
-import './styles/shell.css'
-import './styles/dialog.css'
-import './styles/rail.css'
-import './styles/chat.css'
-import './styles/composer.css'
-import './styles/tools.css'
-import './styles/browser.css'
-/* 交互终端（H-11）：xterm 主题与终端表面布局 */
-import './styles/terminal.css'
-/* 审查与环境菜单（方案 G1）：与其它模块化层同为最后加载 */
-import './styles/review.css'
-import './styles/workbench.css'
-/* 跨模块的语义图标反馈（H-8a/b）：要在各模块的状态色之后加载 */
-import './styles/icon-state.css'
+/* 全部样式经级联层入口加载：覆盖关系由层决定，见 styles/index.css */
+import './styles/index.css'
 
 /**
  * 超过这么多条消息才开启虚拟化。
@@ -934,6 +899,7 @@ export default function App() {
           {/* 浮动工具磁贴（实施-12 U-4/U-5）：应用内容区上的独立层，不随右栏收起而消失 */}
           <FloatingTiles />
         </div>
+        <StatusBar />
       </div>
 
       {onboarding ? (

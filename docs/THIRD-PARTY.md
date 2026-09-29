@@ -4,13 +4,8 @@
 
 ## 图标
 
-| 组件 | 版本 | 许可 |
-| --- | --- | --- |
-| [Lucide](https://lucide.dev)（npm 包 `lucide-static`） | 1.48.0 | ISC |
-
-- 界面图标的几何全部来自 Lucide。完整许可文本见 [`scripts/design/icons/LICENSE-lucide.txt`](../scripts/design/icons/LICENSE-lucide.txt)（其中也包含 Lucide 派生自 [Feather](https://feathericons.com) 的那部分图标所适用的 MIT 条款）。
-- 语义 → 图标的映射写在 [`scripts/design/icons/catalog.json`](../scripts/design/icons/catalog.json)，由 `npm run icons` 在构建期生成 `src/renderer/src/icons/sprite.ts`。图标因此是构建产物、不是运行时依赖，但许可声明仍需随分发保留。
-- 2026-09-27 之前的图标来自 [reicon](https://reicon.dev)（MIT 声明，但包内未附 LICENSE 文件），已整体替换为 Lucide。
+- 界面图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](../scripts/design/icons/catalog.json)，由 `npm run icons` 在构建期生成 `src/renderer/src/icons/sprite.ts`。
+- 2026-09-28 之前的版本使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-static`），更早使用 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
 
 ## 其它运行时组件
 

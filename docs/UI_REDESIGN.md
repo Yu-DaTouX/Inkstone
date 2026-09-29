@@ -1,134 +1,125 @@
-# 界面重构计划 · 终端风格（v0.5 草案）
+# 界面重构计划 · 终端风格（v0.5）
 
 [文档索引](README.md) · [设计规范](DESIGN_SYSTEM.md) · [品牌规范](BRAND.md) · [代码地图](CODE_MAP.md)
 
-状态：**草案**（2026-09-28）。本文记录界面重构的目标、原型结论与分阶段路线，尚未实现。按[设计规范](DESIGN_SYSTEM.md) §9「先改规范再改代码」，下文每个决定在采纳时写入 `DESIGN_SYSTEM.md`，本文随之收缩为路线与进度说明。
+状态：**P0–P6 完成**（2026-09-28）。视觉方向、状态栏、图标、动效与手机端规则已写入[设计规范 v0.5](DESIGN_SYSTEM.md)；本文记录范围、界面清单、分阶段路线、进度、已作的决定与验证的边界（第 8、9 节）。
 
-原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.draft.json`](../scripts/design/icons/inkline.draft.json)。
+原型源码：[`scripts/design/terminal-preview/`](../scripts/design/terminal-preview/README.md)（工作台演示、组件与令牌、动效规范、图标规范四块画板）。图标几何：[`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)。
 
 ## 1. 目标与边界
 
-- **风格延续**：保留 v0.4 的墨色工作空间、内容优先、单一靛蓝强调、色阶表达层级；在此之上加入现代终端的气质（等宽骨架、提示符语言、命令块、状态栏、方点阵与块光标）。
+- **风格延续**：保留 v0.4 的墨色工作空间、内容优先、单一靛蓝强调、色阶表达层级；在此之上加入现代终端的气质。
 - **结构先行**：先把样式收拢到令牌、控件层和级联层，再改视觉。结构到位后，视觉调整基本只动 `tokens.css` 与 `ui.css`。
-- **不改的**：品牌标志 `build/prompt-stone.svg` 的路径、线宽与比例；深浅双主题；键盘可达与窄屏可读；现有检查脚本的约束。
-- **首版只做 Windows 桌面端**，不为其他平台预建空壳。
+- **全部界面**：重构覆盖第 3 节清单里的每一个桌面界面与 Android 手机端页面，不只是工作台主画面。清单是验收范围：每一项在 P5 / P6 结束时都要有深浅主题截图。
+- **不改的**：品牌标志 `build/prompt-stone.svg` 的路径、线宽与比例；深浅双主题；键盘可达与窄屏可读；现有检查脚本的约束；手机端的连接、分页与提醒行为。
+- **平台**：Windows 桌面端与 Android 手机端。iOS、macOS 与 Linux 桌面不预建空壳。
 
-## 2. 现状（2026-09-28 测量）
+## 2. 定案摘要（详见设计规范）
+
+| 待决项 | 决定 | 规范位置 |
+| --- | --- | --- |
+| 骨架字体 | 骨架等宽（Maple Mono CN），对话正文与页标题无衬线 | §2.2 |
+| 底部状态栏 | 新增；输入区下方用量条并入状态栏后移除；不重复模型档位与上下文 | §4 |
+| `Ctrl K` 命令面板 | 不新增；现有 `/` 命令菜单按命令面板样式改版 | §3.6 |
+| 图标 | 采纳「砚线」；桌面 1.25px、手机 1.5dp，附可读性规则 | §3.4、§7 |
+| 强调色 | 保持靛蓝 | §2.1 |
+| 环绕流光 | 只在运行超过 3 秒后出现 | §6 |
+| 位移上限 | 6px → 4px | §6 |
+
+## 3. 界面清单
+
+按用户看到的界面列出，括号内是主要源码。行数为 2026-09-28 测量。
+
+### 3.1 桌面端（`src/renderer/src/`）
+
+| 区域 | 界面 | 主要源码 |
+| --- | --- | --- |
+| 外壳 | 标题栏、品牌标志、原生层桥接 | `shell/TitleBar`、`shell/BrandMark`、`shell/UiBridge` |
+| 外壳 | 状态栏（新增） | `shell/StatusBar`（内嵌 `chat/UsageBar`） |
+| 左栏 | 新对话与搜索、置顶 / 最近、项目与会话树、待我处理、用户区、右键菜单 | `rail/Rail`、`SessionRow`、`RailDialogs`、`RailUser`、`common/ContextMenu` |
+| 对话 | 会话头、空状态、回合、用户消息、助手正文、推理、工具行与详情、子代理说明、交接与延续说明、提问面板、学习操作、对话大纲 | `chat/SessionHeader`、`EmptyStream`、`TurnView`、`MessageParts`、`Reasoning`、`ToolRow`、`ToolDetails`、`SubagentNote`、`HandoffNote`、`Continuity`、`QuestionPanel`、`LearningActions`、`ConversationOutline` |
+| 输入区 | 输入框与边框、运行条、`/` 命令菜单、`@` 文件菜单、模型与思考档位、语音输入 | `chat/Composer`、`ComposerPickers`、`PlusMenu`、`attachment-files`、`ComposerBorder`、`slash-query`、`at-query`、`Pickers`、`VoiceInputButton` |
+| 右栏检查器 | 任务、上下文、额度、文件树与预览、队列、目标、工具分区、浮出磁贴、拖动预览、开始页、工作对象条 | `toolbar/RightPanel`、`ContextSection`、`QuotaSection`、`TodoSection`、`PanelSections`、`GoalSection`、`GoalPopover`、`FileTree`、`FilePreview`、`FloatingTiles`、`DragPreview`、`StartPage`、`WorkObjectBar`、`ToolSection` |
+| 工作台 | 工作台首页、空间概览与空间工作台、任务收件箱、资料库、成果查看、会话地图与预览、跟随面板 | `workbench/*` |
+| 审查 | 审查面板、改动文件树、差异查看、提交条、环境与来源菜单、Office 内容 | `review/*` |
+| 内嵌表面 | 浏览器、终端 | `browser/BrowserSurface`、`terminal/TerminalSurface`、`chat/Terminal` |
+| 设置 | 模型接入、外观、工作区、上下文、知识、能力、声音提示、状态、能力包、语音、手机接入、砚互联、关于；自定义模型表单、授权同意、活动模型 | `settings/*` |
+| 引导与对话框 | 首次引导、砚互联批准对话框、通用对话框 | `settings/Onboarding`、`shell/PeerApprovalDialog`、`styles/dialog.css` |
+| 兜底 | 错误边界 | `ErrorBoundary` |
+| 主进程页面 | 模型登录回调页 | `src/main/oauth.ts` |
+| 安装与品牌 | 安装器侧栏与页眉位图、应用图标 | `scripts/build-installer-sidebar.mjs`、`build/` |
+
+### 3.2 Android 手机端（`mobile/src/`）
+
+| 界面 | 主要源码 |
+| --- | --- |
+| 配对（扫码 / 手动输入） | `screens/PairScreen` |
+| 工作台首页：待回答、活动会话、项目、最近会话、搜索 | `screens/HomeScreen` |
+| 会话：消息、工具折叠、运行条、输入栏、模型选择、语音输入 | `screens/SessionScreen`（423 行）、`components/MessageBody`、`ModelPicker`、`SpeechInputButton` |
+| 提问卡片 | `components/QuestionCard` |
+| 成果查看 | `screens/ArtifactScreen` |
+| 设置与待回答提醒 | `screens/SettingsScreen` |
+| 宽屏 / 折叠屏双栏 | `App`、`foldLayout` |
+| 系统通知（常驻与提醒） | `android/…/QuestionAlertService.kt` |
+| 共用：令牌、控件、动效、图标、品牌 | `theme`、`ui`、`motion`、`icons`、`brandMark` |
+| 启动图标 | `android/app/src/main/res/mipmap-*` |
+
+## 4. 现状（2026-09-28 测量）
 
 | 指标 | 数值 | 说明 |
 | --- | --- | --- |
-| 样式文件 | 21 个，约 2.1 万行 | `tools.css` ≈ 4000 行，`workbench.css` ≈ 3300 行 |
-| 按历史命名的层 | `stage1.css`、`redesign.css` | 早加载、被后续文件覆盖；归属靠 import 顺序 |
+| 样式文件 | 21 个，约 2 万行 | `tools.css` ≈ 4000 行，`chat.css` ≈ 2200 行 |
+| 按历史命名的层 | `stage1.css`、`redesign.css` | 早加载、被后续文件覆盖；归属靠 import 顺序（P1 已拆除） |
 | 散落像素值 | 2042 个，1464 个有同值令牌 | 无令牌的高频值：`5px` ×113、`10px` ×100、`18/20/22/26px` |
 | 统一控件使用 | `components/ui` 被 3 个 tsx 引用 | 另有 158 处直接写 `className="btn…"` |
 | 模块私有控件 | 约 25 种 `*-btn / *-chip / *-tab` | 如 `.set-chip`、`.rp-stage-chip` |
-| 超大组件 | `RightPanel` 2839 行、`Rail` 1983 行、`Composer` 1882 行 | |
-| 图标 | `catalog.json` 61 个语义，全部 Lucide | 12px 是最常用尺寸；`scripts/design/README.md` 仍写 55 个 |
+| 超大组件 | `RightPanel` 2839 行、`Rail` 1983 行、`Composer` 1882 行 | P5 拆分后分别为 1230 / 1401 / 1278 行；`Rail`、`Composer` 主函数体仍各约 1200 行 |
+| 图标 | `catalog.json` 61 个语义，全部 Lucide（P4 已换成砚线） | 12px 是最常用尺寸；手机端解析同一份 sprite |
+| 手机令牌 | `mobile/src/theme.ts` 手抄桌面色值 | 目前靠人工同步，没有检查 |
 
-数据来源：`npm run measure:css` 生成的 `scripts/design/CSS-*.md`，以及对 `src/renderer/src` 的静态统计。
+数据来源：`npm run measure:css` 生成的 `scripts/design/CSS-*.md`，以及对源码的静态统计。
 
-## 3. 视觉方向
-
-### 3.1 字体分工
-
-- `--mono`（Maple Mono CN）：界面骨架、元数据、路径、工具行、代码、终端、状态栏、快捷键。
-- `--sans`：对话正文与页标题。长段中文用无衬线更好读。原型提供「正文等宽」开关用于比较，默认关闭。
-
-### 3.2 提示符语言
-
-| 位置 | 形式 |
-| --- | --- |
-| 用户消息 | `›` 提示符 + 正文的块，`--bg-2` 底；时间与分支淡显于下方 |
-| 工具调用 | 命令块：状态（方点阵 / 成功点）· 工具名 · 目标 · 右侧耗时或 `+n −m`；`bash` 目标前加强调色 `$` |
-| 写入 / 编辑 | 命令块内联 diff 预览，行号 + `+` 标记，新增行 `--ok-soft` 底 |
-| 输入区 | `›` + 2px 块光标；顶边为运行条（方点阵 · 阶段文字 · 计时 · 中止）；运行时边框环绕流光 |
-| 选中项 | `--bg-3` 底 + 行首强调色 `›`（命令面板）或状态圆点（左栏）。**不用 inset 边线**：圆角会把它弯成一道蓝弧 |
-
-### 3.3 新增区域（待决策）
-
-- **状态栏**（窗口底部 24px）：左端模式色块 `RUN / IDLE / WAIT`，其后是分支与改动数、pi 连接、手机配对、模型档位、上下文占用、当日花费、本地模式。它会成为 v0.4 版面图之外的新常驻区域，与输入区下方用量条的职责需要重新划分。
-- **命令面板**（`Ctrl K`）：`›` 输入行、分组结果、右侧快捷键、底部键位提示；入场 240ms、退场 110ms。
-- **检查器分区编号** `01…05` 与**上下文方格条**（25 格，系统 / 对话 / 工具三色）。
-
-## 4. 动效体系
-
-在现有 `motion.css` 令牌上收敛为「一条曲线、三档时长、一个节拍」：
-
-| 令牌 | 值 | 用途 |
-| --- | --- | --- |
-| `--mo-fast` | 110ms | 退场、按压、悬停 |
-| `--mo-base` | 170ms | 淡入、图标切换 |
-| `--mo-slow` | 240ms | 展开、滑块、色阶变化 |
-| `--mo-ease` | `cubic-bezier(.22,1,.36,1)` | 所有入场与位移 |
-| `--mo-ease-out` | `cubic-bezier(.4,0,1,1)` | 退场 |
-| `--mo-loop`（新增） | `cubic-bezier(.45,0,.55,1)` | 只给运行中的循环 |
-| 错峰 | 60–70ms | 列表、diff 行 |
-| 字符节奏 | 输入 30ms/字 · 流式正文 20ms/字 | |
-
-约束：位移 ≤ 4px、缩放 ≥ 0.965、不弹跳；循环只挂在真实运行的状态上且不是唯一的状态信息；`prefers-reduced-motion` 下 1ms 直达终态。
-
-基础件（原型中已有实现，迁入 `motion.css` 与 `components/ui`）：
-
-- **展开** `grow`：新块 `grid-template-rows: 0fr → 1fr` 同步透明度，旧内容被连续推开，不跳。
-- **方点阵** `spin`：10×10px、3×3 方点，亮点沿外圈转、带一格尾迹，0.8s 一圈；取代 `loader-circle` 图标与盲文字符（后者是 2×4 竖长条）。
-- **光标** `caret`：2px 宽、1.2em 高；输入时常亮，停下后 1.06s `step-end` 闪烁。
-- **环绕流光** `orbit`：`@property --ang` + `conic-gradient` 边框，经 mask 只露 1px 边；2.4s 一圈，随运行状态 240ms 淡入淡出。
-- **分段滑块**：选中底块 `translateX` 滑动，而不是跳到新位置。
-- **状态交叉淡变**：状态栏色块颜色 240ms 过渡，文字叠放交叉淡变，宽度固定。
-
-**同一时钟原则**：运行中的各面板（输入区运行条、工具行、任务、上下文、改动、终端、状态栏）都从同一条运行事件流推导状态，不各自计时，因此动效始终同拍。
-
-## 5. 图标规范「砚线」
-
-母题是品牌标志「提示砚」：开口石框 + 方头斜接的 `>_`。
-
-1. **16 网格，12 活动区**，四周留 2px，对齐 12 / 14 / 16 三档尺寸。
-2. **描边恒定 1.25px**：`vector-effect: non-scaling-stroke`，三档尺寸一样粗。现状 1.5/24 在 12px 下只有 0.75px。
-3. **方头 · 斜接**：`stroke-linecap: square; stroke-linejoin: miter`。按 16px 缩放后标志框角半径仅约 0.5px，所以统一直角。
-4. **开口角**：文件、目录、终端、外链等容器类图标右上角留缺口。
-5. **直线与整圆为主**：0° / 45° / 90°，不画插画式隐喻。
-6. **进行中不用图标**：用方点阵；状态点、勾选框由 CSS 绘制。
-
-语义调整：`sparkles` → 星号 `*`；`agent`（bot）→ `>>`；`settings`（齿轮）→ 推子；`alert-circle` / `check-circle` → 方框内 `!` / 勾；`running`、`activity` 由方点阵取代；`terminal` 即标志图形。
-
-首批 48 个几何已写入 [`inkline.draft.json`](../scripts/design/icons/inkline.draft.json)，按 `name="…"` 静态引用统计约覆盖九成用法。尚未重画：`learn`、`dashboard`、`dock`、`home`、`tile`、`compare`、`pull-request`、`library`、`group`、`audio`、`message-dots`。
-
-接入方式：`catalog.json` 的 `lib` 增加 `inkline`，`build-icons.mjs` 从草案文件读取几何并输出同名 symbol；`npm run check:icons` 的约束（语义唯一、属性一致、生成物同步）保持不变。
-
-## 6. 结构重构
+## 5. 结构重构
 
 | 步骤 | 做法 | 完成标准 |
 | --- | --- | --- |
-| 级联层 | `@layer tokens, base, ui, layout, modules, overrides;`，覆盖关系由层决定 | 不再依赖 import 顺序；`stage1.css`、`redesign.css` 按内容拆回归属文件后删除；`npm run lint:layers` 证明最终生效声明不变 |
-| 令牌补缺 | `5px`→4/6、`10px`→8/12 按规则归并；新增 `--ctl-h-xs: 20px`、浮层与菜单宽度令牌；已有同值令牌的裸值批量替换 | `measure:css` 散落值只降不升 |
+| 级联层 | `styles/index.css` 声明 `@layer tokens, base, ui, layout, modules, overrides;`，各文件按层导入 | 不再依赖 import 顺序；`stage1.css`、`redesign.css` 按内容拆回归属文件后删除；`css-layer-check`（含简写展开与令牌解析）与逐元素计算样式对比（`css-computed-diff`）证明结果不变 |
+| 令牌补缺 | 间距、圆角、字号、字重的同值裸值按属性语义换成令牌（P1）；`5px`→4/6、`10px`→8/12 的间距归并随 P5 完成（余下的 5px / 10px 是尺寸、微型字号与阴影，不是间距）；`--ctl-h-xs: 20px`、浮层与菜单宽度令牌随 P2 控件落地 | `check:css-budget` 散落值只降不升 |
+| 手机令牌同源 | 检查脚本比对 `tokens.css` 与 `mobile/src/theme.ts` 的同名色值 | 不一致即失败，接入 `npm run check` |
 | 控件层 | `components/ui` 补 `Menu`/`Popover`、`Tabs`、`Field`/`Input`/`Select`、`SettingRow`、`InspectorSection`、`ListRow`；每个先写进规范 §3 | 模块私有 `*-btn/*-chip/*-tab` 清零；`className="btn…"` 改用组件 |
-| 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条 | 单文件体量明显下降，行为不变 |
-| 防回退 | 散落值数、模块私有控件类数、`!important` 数记基线，接入 `npm run check` | 只允许下降 |
+| 组件拆分 | `RightPanel` 按检查器分区拆文件；`Rail`、`Composer` 拆出行与工具条；随 P5 改到哪一区拆到哪一区 | 单文件体量明显下降，行为不变 |
+| 防回退 | 散落值数、模块私有控件类数、`!important` 数记基线（`scripts/design/css-budget.json`），`npm run check:css-budget` 接入 `npm run check` | 只允许下降 |
 
-## 7. 分阶段路线
+## 6. 分阶段路线
 
-| 阶段 | 内容 | 检查 |
-| --- | --- | --- |
-| P0 规范 | 第 8 节待决策项定案，写入 `DESIGN_SYSTEM.md` v0.5 | 文档评审 |
-| P1 结构 | 级联层、拆历史层、令牌补缺 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵截图无差异 |
-| P2 控件 | 扩充 `components/ui`，先迁设置页 | 同上 + 设置相关 `test:live` |
-| P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块入 `motion.css` 与组件 | `check:motion` + 实机录屏 |
-| P4 图标 | 砚线接入生成链，先迁引用最多的前 10 个 | `icons`、`check:icons`、`check:shell-icons` |
-| P5 视觉 | 左栏 → 右栏 → 输入区与对话流 → 工具行与工作台；状态栏；命令面板 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 |
+| 阶段 | 内容 | 检查 | 进度 |
+| --- | --- | --- | --- |
+| P0 规范 | 待决项定案，写入 `DESIGN_SYSTEM.md` v0.5；界面清单 | 文档评审 | 完成 |
+| P1 结构 | 级联层、拆历史层、同值令牌替换、手机令牌同源检查、样式预算 | `typecheck`、`lint:css`、`lint:layers`、`check:css-docs`、视觉矩阵逐元素计算样式无差异 | 完成 |
+| P2 控件 | 扩充 `components/ui`（输入框、字段、设置行、页签、菜单、检查器分区、列表行）；设置页改用 `SettingRow`；模块私有控件类 21 → 0；`className="btn…"` 全部改为 `Button` / `IconButton`；界面里的 `× ✓ ‹ › ↻ ⛶ ＋ −` 文字符号换成图标 | 同上；`test:live` 需要 pi 运行时，本容器未运行 | 完成 |
+| P3 动效 | `grow`、`spin`、`caret`、`orbit`、滑块入 `motion.css` 与组件；盲文帧、旋转图标与 thinking-orbs 小球统一换成方点阵；工具行展开改为 grow；减少动画改为 1ms 保留终态；位移上限 4px（手机 `motion.tsx` 已是 4dp）；交叉淡变随状态栏在 P5 | `check:motion` + 截图 | 完成 |
+| P4 图标 | 砚线接入生成链；补齐未画语义；桌面与手机同时切换；去掉 `lucide-static` 依赖 | `icons`、`check:icons`、`check:shell-icons`；12/14px 可读性对照图 | 完成 |
+| P5 桌面视觉 | 按第 3.1 节逐区：外壳与状态栏 → 左栏 → 对话与输入区（含 `/` 菜单）→ 右栏 → 工作台 → 审查 → 设置、引导与对话框 → 浏览器、终端与兜底页 → 登录回调页与安装器 | 全量 `npm run check`；深浅主题 × 1440×900 / 940×620 / 900×520 截图 | 完成（见第 9 节） |
+| P6 手机视觉 | 按第 3.2 节逐页：配对 → 首页 → 会话 → 成果 → 设置 → 通知；宽屏与折叠屏双栏 | `mobile` 下 `npm run typecheck`；深浅主题 × 手机竖屏 / 折叠屏展开实机截图 | 完成代码与类型检查；实机截图待维护者复核（见第 9 节） |
 
-每阶段单独提交；视觉结论以实际截图为准，构建、静态检查、运行与截图证据分别说明。
+每阶段单独提交；视觉结论以实际截图为准，构建、静态检查、运行与截图证据分别说明。云端容器没有 Windows 字体与 Android 设备，那里产出的截图只作同环境前后对比，Windows 与实机截图由维护者复核。
 
-## 8. 待决策
+## 7. 已作的决定
 
-1. 界面骨架整体改用等宽字体？（原型默认：是；正文保持无衬线）
-2. 是否新增底部状态栏？用量条保留还是并入状态栏？
-3. 是否新增 `Ctrl K` 命令面板？
-4. 是否采纳「砚线」替换 Lucide？描边取 1 / 1.25 / 1.5 哪档？（原型默认 1.25）
-5. 强调色保持靛蓝？（原型另备青绿、紫两档用于比较）
-6. 运行时边框流光是否常驻，还是只在长任务（例如超过 3 秒）时出现？
+已决定（P5）：检查器分区**不编号**——分区可拖动排序，编号会随用户调整而变，传达不了真实信息；上下文**保留环形 + 数字**，暂不改方格条——「系统 / 对话 / 工具」三类占用只在上下文预算的运行快照里有（`messagesTokens` / `toolsTokens` / `systemTokens`，可能为空），右栏检查器目前拿不到；要画三色格得先接一条数据通路，并在分项缺失时退回单色，不能凭估算编出比例。
 
-## 9. 原型的已知限制
+已决定（P6）：**手机端字体**继续用系统等宽字体，不在 APK 内嵌 Maple Mono CN 子集——汉字本来就回退到系统 CJK 字体，内嵌只统一拉丁字形，却让安装包多出数 MB，并要随桌面字体子集一起维护。实机截图若显示拉丁字形差异明显，再单独评估。
+
+## 8. 原型的已知限制
 
 - 画布无法加载随包的 Maple Mono CN，等宽回退为 JetBrains Mono + Noto Sans SC，汉字未严格落在 1:2 栅格上。
-- `@property` 角度动画与 `grid-template-rows` 过渡在 Electron 的 Chromium 中可用，但尚未在应用内实测。
-- 原型数据（会话、文件、数字）为演示用途，不代表真实运行结果。
+- `@property` 角度动画与 `grid-template-rows` 过渡已在应用内（Electron 的 Chromium）确认：视觉矩阵逐元素样式里，运行中输入框的环绕流光 `conic-gradient` 起始角随时间变化；运行条的展开由 `npm run check:motion` 的探针断言。
+- 原型数据（会话、文件、数字）为演示用途，不代表真实运行结果。原型状态栏中的模型档位与上下文百分比已按定案去掉。
+
+## 9. 验证与边界
+
+- **构建与静态检查**：`npm run build`、`npm run typecheck`（含 CSS 布局、层序与 `lint:layers`）、`check:motion`、`check:icons`、`check:css-budget`（散落像素值 1191 → 1184，`!important` 19，模块私有控件 0）、`check:mobile-tokens`（38 项）与 `mobile` 下 `tsc` 均通过。
+- **行为不变的证明**：P1 结构重构与 P5 组件拆分都用 `YAN_STYLE_DUMP=1` 的逐元素计算样式对比；拆分前后视觉矩阵第 0 组 68 个状态、61026 个元素结构与样式一致，只有动画帧不同。`test:unit` 通过数与改版前相同（5129）；未通过的几项依赖 Windows 路径、随包 pi 运行时或非 root 写权限，改版前后一致。
+- **视觉矩阵**：改版前后各跑全量 255 张（深浅主题，1440×900 / 1280×800 / 1180×780 / 940×620 / 900×520，100% / 125% / 150%）。截图脚本在云端容器里有 41 个状态脚本拿不到数据（工作台、会话地图、空间页等依赖真实 IPC），改版前后是同一组，与改版无关。
+- **手机端**：没有 Android 设备与 SDK，Kotlin 与矢量图标未编译；界面用 react-native-web 在浏览器里按假数据渲染核对版面与深浅主题，只作近似，实机截图由维护者复核。
+- **未覆盖**：`test:live` 需要 pi 运行时与模型额度，未运行；云端容器没有 Windows 字体，截图只作同环境前后对比。

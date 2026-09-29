@@ -41,10 +41,10 @@ export function ConsentSection() {
   }
 
   return (
-    <div className="set-row col" data-testid="consent-section">
-      <div className="set-label">
-        <div className="set-name">{t('consent.title')}</div>
-        <div className="set-desc">{t('consent.desc')}</div>
+    <div className="ui-row col" data-testid="consent-section">
+      <div className="ui-row-label">
+        <div className="ui-row-name">{t('consent.title')}</div>
+        <div className="ui-row-desc">{t('consent.desc')}</div>
       </div>
       {entries && entries.length === 0 ? <EmptyState>{t('consent.empty')}</EmptyState> : null}
       {entries?.map((entry) => {
@@ -52,20 +52,20 @@ export function ConsentSection() {
         return (
           <div className="consent-entry" key={entry.key} data-testid="consent-entry">
             <div className="consent-head">
-              <span className="set-name">
+              <span className="ui-row-name">
                 {parts.capability} · {parts.action}
               </span>
               {verdict.mode === 'auto' ? <Badge tone="ok">{t('consent.auto')}</Badge> : <Badge>{t('consent.ask')}</Badge>}
               {verdict.danger ? <Badge tone="warn">{verdict.danger}</Badge> : null}
               {entry.override ? <Badge tone="accent">{t('consent.alwaysAsk')}</Badge> : null}
             </div>
-            <div className="set-desc">
+            <div className="ui-row-desc">
               <span className="set-path">{parts.resource}</span>
             </div>
-            <div className="set-desc">
+            <div className="ui-row-desc">
               {t('consent.stats', { allows: verdict.stats.allows, denies: verdict.stats.denies, last: formatTime(entry.lastAnswerAt), auto: formatTime(entry.lastAutoAt) })}
             </div>
-            <div className="set-desc">{verdict.reason}</div>
+            <div className="ui-row-desc">{verdict.reason}</div>
             <div className="btn-row">
               {entry.override ? (
                 <Button size="sm" disabled={busy === entry.key} onClick={() => void change(entry.key, 'allow-auto')}>

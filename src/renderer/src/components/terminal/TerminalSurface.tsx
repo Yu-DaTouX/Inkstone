@@ -16,10 +16,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import '@xterm/xterm/css/xterm.css'
 import { useStore } from '../../state/store'
 import { useT } from '../../i18n'
 import { Icon } from '../../icons/Icon'
+import { Button } from '../ui'
 
 /**
  * xterm 的主题：**从 tokens.css 的 CSS 变量读**，不写死两份色值。
@@ -241,9 +241,9 @@ export function TerminalSurface() {
           <div>{t('term.unavailable')}</div>
           {error ? <code data-testid="terminal-error">{error}</code> : null}
         </div>
-        <button type="button" className="btn sm rp-btn" onClick={() => void refresh()} data-testid="terminal-retry">
+        <Button size="sm" className="rp-btn" type="button" onClick={() => void refresh()} data-testid="terminal-retry">
           {t('term.retry')}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -260,14 +260,12 @@ export function TerminalSurface() {
           </span>
         ) : null}
         <span className="spacer" />
-        <button type="button" className="btn sm rp-btn" onClick={() => void newTerminal()} data-testid="terminal-new">
-          <Icon name="plus" size={12} />
-          {t('term.new')}
-        </button>
+        <Button size="sm" icon="plus" className="rp-btn" type="button" onClick={() => void newTerminal()} data-testid="terminal-new">{t('term.new')}
+        </Button>
         {active ? (
-          <button type="button" className="btn sm rp-btn" onClick={() => void closeActive()} data-testid="terminal-close">
+          <Button size="sm" className="rp-btn" type="button" onClick={() => void closeActive()} data-testid="terminal-close">
             {t('term.close')}
-          </button>
+          </Button>
         ) : null}
       </div>
       <div className="term-host" ref={hostRef} data-testid="terminal-host" />

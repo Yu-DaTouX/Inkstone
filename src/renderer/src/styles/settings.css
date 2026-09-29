@@ -43,45 +43,10 @@ html[data-theme='light'] .settings-scrim {
   font-size: var(--fs-lg);
   font-weight: var(--fw-strong);
 }
-/* tab 按钮组：role=tablist 的容器，继续沿用导航列的竖排间距 */
+/* 页签外观来自 ui.css 的 .ui-tabs.vertical / .ui-tab；这里只管导航列里的伸缩 */
 .settings-tabs {
-  display: flex;
   flex: none;
-  flex-direction: column;
-  gap: 2px;
   min-height: 0;
-}
-.settings-tab {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  min-height: var(--ctl-h-lg);
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  color: var(--fg-dim);
-  font-size: var(--fs-base);
-  text-align: left;
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-.settings-tab .ico {
-  color: var(--fg-mute);
-  flex: none;
-}
-.settings-tab:hover {
-  background: var(--bg-2);
-  color: var(--fg);
-}
-.settings-tab.sel {
-  background: var(--bg-3);
-  color: var(--fg);
-  font-weight: var(--fw-medium);
-}
-.settings-tab.sel .ico {
-  color: var(--accent);
 }
 .settings-nav .spacer {
   flex: 1;
@@ -105,29 +70,6 @@ html[data-theme='light'] .settings-scrim {
   line-height: 1.3;
 }
 
-/* 设置项：左标签 + 右控件 */
-.set-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.set-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-4);
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border-soft);
-}
-.set-row:last-child {
-  border-bottom: none;
-}
-/* 上下排布的行（进度条、日志这类要占满宽） */
-.set-row.col {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: stretch;
-  gap: var(--sp-2);
-}
 
 /*
  * 最近目录快切（设置 → 关于）：目录名长短不一，允许换行；
@@ -159,21 +101,6 @@ html[data-theme='light'] .settings-scrim {
   color: var(--fg-mute);
   cursor: default;
 }
-.set-label {
-  min-width: 0;
-}
-.set-name {
-  color: var(--fg);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-medium);
-  margin-bottom: 3px;
-}
-.set-desc {
-  color: var(--fg-mute);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-tight);
-  overflow-wrap: anywhere;
-}
 /* 数值类说明（屏幕 125% · 自动 1.15× · 当前 1.15×）—— 等宽对数字更易读 */
 .set-num {
   color: var(--fg-dim);
@@ -200,39 +127,12 @@ html[data-theme='light'] .settings-scrim {
   unicode-bidi: plaintext;
   user-select: text;
 }
-.set-ctl {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex: none;
-}
 .set-static {
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
-}
-/*
- * 数值输入（上下文策略 N21-7）。
- * 宽度写死：参数列是 auto 宽，不定宽的 input 会被浏览器默认尺寸（~170px）
- * 撑开整行，把左侧标签挤窄；tabular-nums 让同列数字对齐。
- */
-.set-input {
-  width: 96px;
-  height: var(--ctl-h);
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-2);
-  color: var(--fg);
-  font-size: var(--fs-code);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.set-input:focus-visible {
-  outline: none;
-  border-color: var(--accent-line);
 }
 /* 覆盖列表里行内的“移除”入口 */
 .ctx-link {
@@ -273,7 +173,7 @@ html[data-theme='light'] .settings-scrim {
   appearance: none;
   width: 14px;
   height: 14px;
-  margin-top: -5px;
+  margin-top: -4px;
   border-radius: var(--r-full);
   background: var(--accent);
   border: 2px solid var(--bg-1);
@@ -326,7 +226,7 @@ html[data-theme='light'] .settings-scrim {
 /* ── pi 插件（方案 §9 的 P2）────────────────────────────── */
 
 /*
- * ⚠️ 必须显式改 display：`.set-row` 是 **grid**（两列：标签 + 控件）。
+ * ⚠️ 必须显式改 display：`.ui-row` 是 **grid**（两列：标签 + 控件）。
  * 只写 flex-direction 是没有用的 —— 它会被留在第二列，表现成「内容整块
  * 跑到右半边」（视觉矩阵的截图抓到的就是这个）。
  */
@@ -338,21 +238,21 @@ html[data-theme='light'] .settings-scrim {
 }
 
 /*
- * ⚠️ 这一条不能省：.set-row 原本是横向的（标签左、控件右），标签没有宽度约束。
+ * ⚠️ 这一条不能省：.ui-row 原本是横向的（标签左、控件右），标签没有宽度约束。
  * 改成纵向之后，标签会按内容收缩到一个字宽 —— 文字会**竖着排**成一列
  *（视觉矩阵的截图抓到的就是这个）。
  */
-.set-row-col > .set-label {
+.set-row-col > .ui-row-label {
   width: 100%;
 }
 
 .pkg-install-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
-.pkg-install-row .set-input {
+.pkg-install-row .ui-input {
   flex: 1;
   min-width: 0;
   /* 需求描述是左对齐的一句话，不是行内数字 */
@@ -378,7 +278,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -390,7 +290,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 /* 模型 key 是长串（provider/id），给足宽度并允许换行 */
-.am-item .set-input {
+.am-item .ui-input {
   flex: 1 1 200px;
   width: auto;
   min-width: 0;
@@ -413,8 +313,8 @@ html[data-theme='light'] .settings-scrim {
 .pkg-local {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
   color: var(--fg-mute);
   cursor: pointer;
   white-space: nowrap;
@@ -432,7 +332,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 /*
- * 名字必须靠左。`.set-row` 的横向布局带了右对齐（标签左、控件右），
+ * 名字必须靠左。`.ui-row` 的横向布局带了右对齐（标签左、控件右），
  * 列表项继承下来会整行被推到右边 —— 视觉矩阵的截图里看得一清二楚。
  */
 .pkg-item-main {
@@ -443,8 +343,8 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 4px 6px;
-  border-radius: 4px;
+  padding: var(--sp-1) 6px;
+  border-radius: var(--r-xs);
 }
 
 .pkg-item:hover {
@@ -460,7 +360,7 @@ html[data-theme='light'] .settings-scrim {
 
 .pkg-name {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -469,13 +369,13 @@ html[data-theme='light'] .settings-scrim {
 
 .pkg-ver {
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--fg-mute);
 }
 
 .pkg-scope {
   font-size: 10.5px;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border-radius: 3px;
   border: 1px solid var(--border-soft);
   color: var(--fg-mute);
@@ -498,7 +398,7 @@ html[data-theme='light'] .settings-scrim {
 }
 
 .pkg-detail {
-  padding: 4px 0 2px 6px;
+  padding: var(--sp-1) 0 2px 6px;
   border-left: 2px solid var(--border-soft);
   display: flex;
   flex-direction: column;
@@ -527,12 +427,12 @@ html[data-theme='light'] .settings-scrim {
 .pkg-ok,
 .pkg-fail {
   margin: 0 0 6px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-xs);
   font-size: 11.5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .pkg-ok {
@@ -567,8 +467,8 @@ html[data-theme='light'] .settings-scrim {
 .kn-item .set-ctrow {
   align-items: flex-start;
 }
-.kn-item .set-ctl,
-.kn-editor .set-ctl {
+.kn-item .ui-row-ctl,
+.kn-editor .ui-row-ctl {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -637,17 +537,17 @@ html[data-theme='light'] .settings-scrim {
 .kn-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px var(--sp-3);
+  gap: var(--sp-1) var(--sp-3);
   margin-top: var(--sp-1);
 }
 .kn-evidence {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-right: var(--sp-2);
 }
 .kn-evidence code {
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--code-inline-bg);
   color: var(--code-inline-fg);
@@ -685,13 +585,13 @@ html[data-theme='light'] .settings-scrim {
   gap: var(--sp-2);
   color: var(--err);
 }
-.kn-inline-btn {
+.kn-retry {
   flex: none;
 }
-.kn-notice.ok .set-desc {
+.kn-notice.ok .ui-row-desc {
   color: var(--ok);
 }
-.kn-notice.err .set-desc {
+.kn-notice.err .ui-row-desc {
   color: var(--err);
 }
 .kn-tagline {
@@ -702,7 +602,7 @@ html[data-theme='light'] .settings-scrim {
 /*
  * 实施-23 M2：自定义 API 服务表单。
  *
- * `.set-row` 是「标签 + 控件」的两列 grid；这里的服务行是「说明 + 按钮组」，
+ * `.ui-row` 是「标签 + 控件」的两列 grid；这里的服务行是「说明 + 按钮组」，
  * 直接套会被挤成竖排 —— 所以这几类行用 flex 覆写。
  */
 .custom-api-row {
@@ -738,7 +638,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-sm);
   background: var(--bg-1);
@@ -754,7 +654,7 @@ html[data-theme='light'] .settings-scrim {
 .custom-api-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   color: var(--fg-dim);
   font-size: var(--fs-sm);
   white-space: nowrap;
@@ -765,7 +665,7 @@ html[data-theme='light'] .settings-scrim {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: var(--sp-2);
   border: 1px dashed var(--border-soft);
   border-radius: var(--r-sm);
 }
@@ -834,17 +734,11 @@ html[data-theme='light'] .ob-scrim {
   font-size: var(--fs-sm);
 }
 .ob-x {
-  display: inline-grid;
-  place-items: center;
   align-self: flex-start;
-  width: var(--ctl-h);
-  height: var(--ctl-h);
-  border-radius: var(--r-sm);
-  color: var(--fg-mute);
 }
-.ob-x:hover {
-  background: var(--bg-3);
-  color: var(--fg);
+/* 每项说明是一句话：用无衬线（设计规范 §2.2） */
+.ob-row-desc {
+  font-family: var(--font-body);
 }
 
 .ob-body {
@@ -898,7 +792,7 @@ html[data-theme='light'] .ob-scrim {
   line-height: var(--lh-base);
 }
 .ob-row-desc code {
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-xs);
   background: var(--code-inline-bg);
   color: var(--code-inline-fg);
@@ -951,15 +845,6 @@ html[data-theme='light'] .ob-scrim {
 .ob-foot-note {
   color: var(--fg-mute);
   font-size: var(--fs-xs);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ob-scrim,
-  .ob-card,
-  .ob-row {
-    animation-duration: var(--dur-1) !important;
-    animation-delay: var(--dur-0) !important;
-  }
 }
 
 /* ── 手机接入 ─────────────────────────────────────────────── */
@@ -1157,4 +1042,10 @@ html[data-theme='light'] .ob-scrim {
 .peer-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* 页标题与引导标题用无衬线（设计规范 §2.2） */
+.settings-page-title,
+.ob-title {
+  font-family: var(--font-body);
 }

@@ -11,4 +11,4 @@
 
 这些文件是 Design Component 格式（`<x-dc>` 模板 + `class Component extends DCLogic`），需要设计画布的运行时才能渲染，直接用浏览器打开不会显示完整画面。实现时从中取用 CSS 片段（`@keyframes`、`.spin`、`.orbit`、`.grow`）、版面结构与演示时间轴；颜色与尺寸以 `src/renderer/src/styles/tokens.css` 为准。
 
-图标几何的机器可读版本在 [`../icons/inkline.draft.json`](../icons/inkline.draft.json)。
+图标几何的机器可读版本在 [`../icons/inkline.json`](../icons/inkline.json)，已接入 `npm run icons`。

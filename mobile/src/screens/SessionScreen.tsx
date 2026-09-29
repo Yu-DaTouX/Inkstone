@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
+import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type HistoryMessage } from '../api/client'
 import { QuestionCard } from '../components/QuestionCard'
 import { MessageBody } from '../components/MessageBody'
 import { SpeechInputButton } from '../components/SpeechInputButton'
 import { useRemote } from '../state'
-import { font, mono, radius, space, touch, usePalette } from '../theme'
-import { EmptyState, IconButton } from '../ui'
+import { font, icon, mono, radius, space, touch, usePalette } from '../theme'
+import { EmptyState, Header, IconButton, Meta, RunBar, STATUS_TEXT, StatusDot } from '../ui'
 import { Icon } from '../icons'
-import { LoadingBar } from '../motion'
+import { LoadingBar, Spinner } from '../motion'
 import type { SpeechPhase } from '../speech'
 import { mergeRecentHistory } from '../historyCache'
 import { pickImages, type PhotoDraft } from '../device'
@@ -268,14 +268,12 @@ export function SessionScreen({
   return (
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: p.bg0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
-      <View style={[styles.header, { borderBottomColor: p.borderSoft }]}>
-        <IconButton name="back" label="返回会话列表" onPress={onBack} />
-        <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
-          <Text accessibilityRole="header" numberOfLines={1} style={{ color: p.fg, fontSize: font.body, fontWeight: '600' }}>{title || '会话'}</Text>
-          <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'} · {info?.computer?.name || client.connection.computerName || (stream === 'open' ? '已连接' : '重新连接中')}</Text>
-        </View>
-        {onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <Icon name="terminal" color={p.fgMute} size={20} />}
-      </View>
+      <Header
+        title={title || '会话'}
+        left={<IconButton name="back" label="返回会话列表" onPress={onBack} />}
+        subtitle={`${sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'} · ${info?.computer?.name || client.connection.computerName || STATUS_TEXT[stream]}`}
+        right={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : undefined}
+      />
       <LoadingBar active={loading || sending} />
       {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{error}</Text> : null}
       <FlatList
@@ -290,7 +288,7 @@ export function SessionScreen({
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         viewabilityConfig={viewability}
         onViewableItemsChanged={onViewable}
-        ListHeaderComponent={hasOlder ? <View style={{ height: 28, alignItems: 'center', justifyContent: 'center' }}>{loadingOlder ? <ActivityIndicator accessibilityLabel="读取更早消息" size="small" color={p.accent} /> : null}</View> : limitedOlder ? <Text style={{ color: p.fgMute, fontSize: font.xs, textAlign: 'center' }}>更早记录在电脑查看</Text> : null}
+        ListHeaderComponent={hasOlder ? <View style={{ height: 28, alignItems: 'center', justifyContent: 'center' }}>{loadingOlder ? <Spinner label="读取更早消息" /> : null}</View> : limitedOlder ? <Meta style={{ textAlign: 'center' }}>更早记录在电脑查看</Meta> : null}
         onScrollBeginDrag={({ nativeEvent }) => {
           scrollGesture.current = true
           userScrolled.current = true
@@ -336,16 +334,17 @@ export function SessionScreen({
               onPress={() => setExpandedTools((current) => expanded ? current.filter((key) => key !== item.key) : [...current, item.key])}
               style={[styles.toolSummary, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}
             >
-              <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}><Icon name="terminal" color={p.fgMute} size={16} /><Text style={{ flex: 1, color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>工具 {item.count}{item.failed ? <Text style={{ color: p.err }}> · 失败 {item.failed}</Text> : null}</Text><View style={{ transform: [{ rotate: expanded ? '-90deg' : '90deg' }] }}><Icon name="chevron-right" size={14} color={p.fgMute} /></View></View>
-              {expanded ? <Text style={{ color: p.fgMute, fontSize: font.xs, lineHeight: 19 }}>{names.join(' · ') || '工具详情请在电脑上查看'}</Text> : null}
+              <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}><StatusDot color={item.failed ? p.err : p.ok} /><Text style={{ color: p.accent, fontSize: font.sm, fontFamily: mono }}>$</Text><Text style={{ flex: 1, color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>工具 {item.count}{item.failed ? <Text style={{ color: p.err }}> · 失败 {item.failed}</Text> : null}</Text><View style={{ transform: [{ rotate: expanded ? '-90deg' : '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View></View>
+              {expanded ? <Meta style={{ lineHeight: 19 }}>{names.join(' · ') || '工具详情请在电脑上查看'}</Meta> : null}
             </Pressable>
           }
           const message = item.message
           const mine = message.role === 'user'
           return (
-            <View style={[styles.message, mine ? styles.mine : null]}>
-              <Text style={[styles.role, { color: mine ? p.accent : p.fgMute }]}>{mine ? 'you ›' : 'inkstone ›'}</Text>
-              {message.text ? <MessageBody text={message.text} mine={mine} /> : null}
+            <View style={[styles.message, mine ? [styles.mine, { backgroundColor: p.bg2, borderColor: p.borderSoft }] : null]}>
+              {mine ? <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.prompt, { color: p.accent }]}>›</Text> : null}
+              <View style={styles.messageMain}>
+              {message.text ? <MessageBody text={message.text} /> : null}
               {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <Image key={index} accessibilityLabel={`消息图片 ${index + 1}`} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} />)}</View> : null}
               {message.error ? <Text style={[styles.meta, { color: p.err }]}>{message.error}</Text> : null}
               {(message.artifacts ?? []).map((artifact) => (
@@ -356,10 +355,11 @@ export function SessionScreen({
                   onPress={() => onOpenArtifact(artifact)}
                   style={[styles.artifact, { borderColor: p.border, backgroundColor: p.bg1, opacity: artifact.unavailable ? 0.5 : 1 }]}
                 >
-                  <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm }}>{artifact.filename}</Text>
-                  <Text style={{ color: p.fgMute, fontSize: font.xs }}>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Text>
+                  <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm, fontFamily: mono }}>{artifact.filename}</Text>
+                  <Meta>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Meta>
                 </Pressable>
               ))}
+              </View>
             </View>
           )
         }}
@@ -368,11 +368,11 @@ export function SessionScreen({
       {tabletop ? <View style={{ height: tabletop.gap }} /> : null}
       <View style={tabletop ? { flex: 1, justifyContent: 'flex-end' } : undefined}>
       <View style={[styles.composer, { borderTopColor: p.borderSoft, backgroundColor: p.bg1 }]}>
-        {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>新回复 ↓</Text></Pressable> : null}
-        {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={`待发送图片 ${index + 1}`} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={`移除图片 ${index + 1}`} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={16} color={p.fg} /></View></Pressable></View>)}</View> : null}
-        {runner?.running || runner?.waiting || pending.length ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>{runner?.running && !runner?.waiting && !pending.length ? <ActivityIndicator size="small" color={p.accent} /> : <Icon name="bell" color={p.warn} size={16} />}<Text accessibilityLiveRegion="polite" style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>{runner?.waiting || pending.length ? '等待你的回答' : '电脑正在执行…'}</Text></View> : null}
+        {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm, fontFamily: mono }}>新回复 ↓</Text></Pressable> : null}
+        {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={`待发送图片 ${index + 1}`} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={`移除图片 ${index + 1}`} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
+        {runner?.waiting || pending.length ? <RunBar mode="wait" /> : runner?.running ? <RunBar mode="run" /> : stream !== 'open' ? <RunBar mode="offline" text={STATUS_TEXT[stream]} /> : null}
         <View style={[styles.inputFrame, { backgroundColor: p.bg0, borderColor: p.border }]}>
-        <Text style={{ color: p.accent, fontFamily: mono, fontSize: font.body, paddingTop: space[3] }}>›</Text>
+        <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.prompt, { color: p.accent, paddingTop: space[3] }]}>›</Text>
         <TextInput
           disableFullscreenUI
           style={[styles.input, { color: p.fg }]}
@@ -388,7 +388,7 @@ export function SessionScreen({
         <View style={styles.composerActions}>
           <IconButton name="image" label="添加图片" busy={picking} disabled={sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
           <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} />
-          {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs, fontFamily: mono }]}>{voicePhase === 'listening' ? '正在听…' : voicePhase === 'processing' ? '转写中…' : '准备中…'}</Text> : <Pressable accessibilityRole="button" accessibilityLabel={`选择模型，当前 ${model?.name || model?.id || '电脑模型'}`} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert('请更新电脑端', '新版电脑端支持模型选择。') }} style={{ flex: 1, minWidth: 0, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: 4 }}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{model?.name || model?.id || sessions.find((session) => session.id === sessionId)?.model || '模型'}</Text><View style={{ transform: [{ rotate: '90deg' }] }}><Icon name="chevron-right" size={12} color={p.fgMute} /></View></Pressable>}
+          {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs, fontFamily: mono }]}>{voicePhase === 'listening' ? '正在听…' : voicePhase === 'processing' ? '转写中…' : '准备中…'}</Text> : <Pressable accessibilityRole="button" accessibilityLabel={`选择模型，当前 ${model?.name || model?.id || '电脑模型'}`} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert('请更新电脑端', '新版电脑端支持模型选择。') }} style={{ flex: 1, minWidth: 0, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: 4 }}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fgMute, fontSize: font.xs, fontFamily: mono }}>{model?.name || model?.id || sessions.find((session) => session.id === sessionId)?.model || '模型'}</Text><View style={{ transform: [{ rotate: '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View></Pressable>}
           {runner?.running ? (
             <IconButton name="stop" label="停止当前运行" busy={aborting} onPress={() => void abort(runner.runId)} />
           ) : null}
@@ -404,19 +404,19 @@ export function SessionScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { minHeight: 68, flexDirection: 'row', gap: space[2], alignItems: 'center', paddingHorizontal: space[3], borderBottomWidth: StyleSheet.hairlineWidth },
   list: { paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[5] },
   error: { fontSize: font.sm, paddingHorizontal: space[4], paddingVertical: space[2] },
-  message: { gap: space[1], alignItems: 'flex-start', maxWidth: '100%' },
-  mine: { alignItems: 'flex-end' },
-  role: { fontSize: font.xs, fontFamily: mono, marginBottom: space[1] },
+  message: { flexDirection: 'row', gap: space[2], maxWidth: '100%' },
+  mine: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space[3], paddingVertical: space[2] },
+  messageMain: { flex: 1, minWidth: 0, gap: space[1], alignItems: 'flex-start' },
+  prompt: { fontFamily: mono, fontSize: font.body, lineHeight: 23 },
   meta: { fontSize: font.xs },
-  toolSummary: { alignSelf: 'stretch', borderLeftWidth: 2, borderRadius: radius.sm, paddingHorizontal: space[3], paddingVertical: space[3], gap: space[2] },
+  toolSummary: { alignSelf: 'stretch', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[3], gap: space[2] },
   artifact: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2], gap: 2, maxWidth: '92%' },
   pending: { marginTop: space[4] },
   composer: { paddingHorizontal: space[4], paddingTop: space[3], paddingBottom: space[2], gap: space[2], borderTopWidth: StyleSheet.hairlineWidth },
   inputFrame: { flexDirection: 'row', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], gap: space[2] },
-  input: { flex: 1, minHeight: touch.min, maxHeight: 160, paddingVertical: space[3], fontSize: font.body, fontFamily: mono, textAlignVertical: 'top' },
+  input: { flex: 1, minHeight: touch.min, maxHeight: 160, paddingVertical: space[3], fontSize: font.body, textAlignVertical: 'top' },
   composerActions: { flexDirection: 'row', gap: space[2], alignItems: 'center' },
   voiceError: { fontSize: font.sm, lineHeight: 19 },
   flex: { flex: 1 }

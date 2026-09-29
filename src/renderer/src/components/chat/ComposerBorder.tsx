@@ -3,66 +3,18 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, runPhaseIsActive, type RunProgress } from '../../../../shared/run-progress'
 import { formatDuration } from '../../../../shared/duration'
+import { Spinner } from '../ui'
 
 /**
- * 输入框顶边框上的工作状态 —— **pi TUI 的原样实现**。
+ * 输入区顶边的运行条（设计规范 §3.5）：方点阵 · 阶段文字 · 计时。
  *
- * ══════════════════════════════════════════════════════════════════
- * 参考 pi 的真实实现（不是猜的）
- * ══════════════════════════════════════════════════════════════════
- * pi 的 TUI 把这个状态**画在输入框的顶边框上**，而不是单独占一行：
+ * 只在运行时用 grow 长出来（motion.css 的 .cborder）；空闲时高度为 0，输入框保留完整边框。
+ * 思考档位色落在方点阵与运行条底线上（沿用 pi 的七档色，这样档位有个常驻的视觉载体），
+ * 文字用中性色。中止在输入框右下角的发送键上，这里不重复放。
  *
- *   dist/modes/interactive/components/custom-editor.js
- *     renderTopBorder(width, hiddenLineCount) {
- *       let status = this.workingStatusIndicator.renderInBorder(width - 5)
- *       return borderColor('── ')
- *            + status
- *            + borderColor(' ' + '─'.repeat(width - statusWidth - 4))
- *     }
- *
- * 渲染出来就是：
- *
- *   ── ⠋ 正在处理… ─────────────────────────────────────────────
- *   关于聊天栏 按照 pi 的样式来设计▌
- *
- * 三个细节都照抄了：
- *   ① 前缀固定是 `── `（两个横 + 一个空格）
- *   ② 状态后面接一个空格，再用 `─` 把剩余宽度填满
- *   ③ **边框颜色 = 当前思考强度的颜色**
- *      （pi: `theme.getThinkingBorderColor(thinkingLevel)`，
- *        七档各一个颜色：off 深灰 → max 品红）
- *      这样「思考强度」这个抽象档位有了一个常驻的视觉载体。
- *
- * 状态文案也按 pi 的几种来（status-indicator.js）：
- *   Working / Compacting context… / Auto-compacting… / Retrying (1/3) in 5s…
- * ══════════════════════════════════════════════════════════════════
+ * 阶段文案按 pi 的状态提示来（status-indicator.js）：工作中 / 压缩上下文 / 重试……
+ * 阶段本身由 deriveRunProgress 纯投影决定，这里只负责把快照凑齐与显示。
  */
-
-/** pi 用的 10 帧盲文点阵（loader.js 的 DEFAULT_FRAMES，80ms 一帧） */
-export const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-const FRAME_MS = 80
-
-/** 转动的长度（字符数）—— 与 pi 一致 */ 
-function useFrame(active: boolean, frames: string[] = FRAMES): string {
-  const [i, setI] = useState(0)
-
-  useEffect(() => {
-    if (!active) {
-      setI(0)
-      return
-    }
-    // 尊重系统设置：不转，固定一帧（与 CSS 的 reduced-motion 同一原则）
-    const reduce =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce || frames.length <= 1) return
-
-    const id = setInterval(() => setI((v) => (v + 1) % frames.length), FRAME_MS)
-    return () => clearInterval(id)
-  }, [active, frames])
-
-  return frames[i] ?? frames[0] ?? ''
-}
 
 /**
  * 本回合的运行阶段（实施-21 P1/P2）。
@@ -137,7 +89,6 @@ export function ComposerBorder() {
   const progress = useRunProgress()
   const level = useStore((s) => s.session?.thinkingLevel ?? 'off')
   const busy = !!progress && runPhaseIsActive(progress.phase)
-  const frame = useFrame(busy)
 
   /*
    * 阶段文案（实施-21 P2）：只说真的发生了的事。
@@ -175,32 +126,19 @@ export function ComposerBorder() {
       data-phase={progress?.phase ?? 'idle'}
       data-testid="composer-border"
     >
-      {/* 左端固定的 `── ` —— pi 的 renderTopBorder 里就是 '── ' */}
-      <span className="cborder-dash lead" aria-hidden>
-        ──
-      </span>
-
-      {progress ? (
-        <span
-          className="cborder-status"
-          data-testid="working"
-          role="status"
-          aria-live="polite"
-          title={title}
-        >
-          <span className="cborder-spinner" aria-hidden>
-            {frame}
+      <div className="cborder-row">
+        {progress ? (
+          <span className="cborder-status" data-testid="working" role="status" aria-live="polite" title={title}>
+            {/* 方点阵：思考档位色（motion.css 的 .cborder-spinner） */}
+            <Spinner className="cborder-spinner" />
+            {/* key 让文案变化时重演一次淡入 */}
+            <span className="cborder-text" key={text}>
+              {text}
+            </span>
           </span>
-          {/* key 让文案变化时重演一次淡入 —— 状态切换是「有新消息」，
-              不该是硬切（pi 每次刷新整行，浏览器这边用淡入表达同一件事） */}
-          <span className="cborder-text" key={text}>
-            {text}
-          </span>
-        </span>
-      ) : null}
-
-      {/* 剩余宽度：可伸缩的横线。`flex:1` 代替 TUI 里手算 repeat() */}
-      <span className="cborder-dash tail" aria-hidden />
+        ) : null}
+        {progress ? <span className="cborder-time">{formatDuration(progress.elapsedMs)}</span> : null}
+      </div>
     </div>
   )
 }

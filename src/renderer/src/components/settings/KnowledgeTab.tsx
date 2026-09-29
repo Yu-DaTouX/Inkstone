@@ -3,6 +3,7 @@ import { createLatestOnly, type LatestOnly } from '../../lib/latest-only'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { KnowledgeActionRequest, KnowledgeEntryView, KnowledgeListView, KnowledgeScope } from '../../../../shared/ipc'
+import { Button } from '../ui'
 
 /**
  * 「项目知识」设置页（实施-03 S5）。
@@ -200,14 +201,14 @@ export function KnowledgeTab() {
   }
 
   return (
-    <div className="set-group">
+    <div className="ui-rows">
       {/* ① 开关 */}
-      <div className="set-row col">
+      <div className="ui-row col">
         <div className="set-ctrow">
-          <div className="set-label">
-            <span className="set-name">{tk('set.knTitle')}</span>
+          <div className="ui-row-label">
+            <span className="ui-row-name">{tk('set.knTitle')}</span>
           </div>
-          <div className="set-ctl seg" data-testid="kn-toggle">
+          <div className="ui-row-ctl seg" data-testid="kn-toggle">
             <button
               className="seg-btn"
               data-testid="kn-toggle-btn"
@@ -217,21 +218,21 @@ export function KnowledgeTab() {
             </button>
           </div>
         </div>
-        <div className="set-desc">
+        <div className="ui-row-desc">
           <span className="set-tag kn-tagline">{tk('set.knTag')}</span>
         </div>
-        <div className="set-desc" data-testid="kn-desc">
+        <div className="ui-row-desc" data-testid="kn-desc">
           {tk(enabled ? 'set.knDescOn' : 'set.knDescOff')}
         </div>
       </div>
 
       {/* ② 范围 + 状态 + 筛选 */}
-      <div className="set-row col">
+      <div className="ui-row col">
         <div className="set-ctrow">
-          <div className="set-label">
-            <span className="set-name">{tk('set.knScope')}</span>
+          <div className="ui-row-label">
+            <span className="ui-row-name">{tk('set.knScope')}</span>
           </div>
-          <div className="set-ctl seg" data-testid="kn-scope">
+          <div className="ui-row-ctl seg" data-testid="kn-scope">
             {(['project', 'personal'] as const).map((id) => (
               <button
                 key={id}
@@ -245,15 +246,15 @@ export function KnowledgeTab() {
           </div>
         </div>
         <div className="set-ctrow">
-          <div className="set-label">
-            <span className="set-name">{tk(scope === 'personal' ? 'set.knScopePersonal' : 'set.knProject')}</span>
-            <div className="set-desc set-path" data-testid="kn-project">
+          <div className="ui-row-label">
+            <span className="ui-row-name">{tk(scope === 'personal' ? 'set.knScopePersonal' : 'set.knProject')}</span>
+            <div className="ui-row-desc set-path" data-testid="kn-project">
               {scope === 'personal'
                 ? tk('set.knPersonalDesc')
                 : view?.projectId ?? (loading ? '…' : tk('set.knNoProject'))}
             </div>
           </div>
-          <div className="set-ctl seg kn-filter" data-testid="kn-filter">
+          <div className="ui-row-ctl seg kn-filter" data-testid="kn-filter">
             {(
               [
                 ['active', 'set.knFilterActive', counts.active],
@@ -273,19 +274,19 @@ export function KnowledgeTab() {
           </div>
         </div>
         {view?.error ? (
-          <div className="set-desc kn-err" data-testid="kn-error">
+          <div className="ui-row-desc kn-err" data-testid="kn-error">
             {view.error}
-            <button className="btn kn-inline-btn" onClick={() => void refresh()} data-testid="kn-retry">
+            <Button className="kn-retry" onClick={() => void refresh()} data-testid="kn-retry">
               {tk('set.knRetry')}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
 
       {/* ③ 列表 */}
       {shown.length === 0 ? (
-        <div className="set-row col">
-          <div className="set-desc" data-testid="kn-empty">
+        <div className="ui-row col">
+          <div className="ui-row-desc" data-testid="kn-empty">
             {!view?.projectId ? tk('set.knNoProject') : entries.length === 0 ? tk('set.knEmpty') : tk('set.knEmptyFilter')}
           </div>
         </div>
@@ -330,26 +331,26 @@ export function KnowledgeTab() {
       )}
 
       {/* ④ 导出 */}
-      <div className="set-row col">
+      <div className="ui-row col">
         <div className="set-ctrow">
-          <div className="set-label">
-            <span className="set-name">{tk('set.knExport')}</span>
-            <div className="set-desc">{tk('set.knExportHint')}</div>
+          <div className="ui-row-label">
+            <span className="ui-row-name">{tk('set.knExport')}</span>
+            <div className="ui-row-desc">{tk('set.knExportHint')}</div>
           </div>
-          <div className="set-ctl">
-            <button className="btn" disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">
+          <div className="ui-row-ctl">
+            <Button disabled={busy === '__export__'} onClick={() => void exportMarkdown('copy')} data-testid="kn-export-copy">
               {tk('set.knExportCopy')}
-            </button>
-            <button className="btn" disabled={busy === '__export__'} onClick={() => void exportMarkdown('save')} data-testid="kn-export-save">
+            </Button>
+            <Button disabled={busy === '__export__'} onClick={() => void exportMarkdown('save')} data-testid="kn-export-save">
               {tk('set.knExportSave')}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
       {notice ? (
-        <div className={`set-row col kn-notice ${notice.kind}`} data-testid="kn-notice">
-          <div className="set-desc">{notice.text}</div>
+        <div className={`ui-row col kn-notice ${notice.kind}`} data-testid="kn-notice">
+          <div className="ui-row-desc">{notice.text}</div>
         </div>
       ) : null}
     </div>
@@ -396,33 +397,33 @@ function KnowledgeRow({
 }) {
   const kindLabel = tk(`set.knKind.${entry.kind}`)
   return (
-    <div className="set-row col kn-item" data-testid={`kn-item-${entry.id}`}>
+    <div className="ui-row col kn-item" data-testid={`kn-item-${entry.id}`}>
       <div className="set-ctrow">
-        <div className="set-label">
+        <div className="ui-row-label">
           {/* 标题行只放「类型 · id」，正文在下面出**一次** —— 两处都放正文会让同一条看起来像两条（首版就是这个毛病，视觉矩阵抓到的） */}
-          <span className="set-name">
+          <span className="ui-row-name">
             {kindLabel} · <span className="kn-id">{entry.id}</span>
           </span>
-          <span className="set-desc">
+          <span className="ui-row-desc">
             <span className={`kn-badge st-${entry.status}`}>{tk(`set.knStatus.${entry.status}`)}</span>
             <span className="kn-badge">{tk(`set.knConfidence.${entry.confidenceClass}`)}</span>
           </span>
         </div>
-        <div className="set-ctl kn-actions">
+        <div className="ui-row-ctl kn-actions">
           {entry.status === 'candidate' ? (
-            <button className="btn" disabled={busy} onClick={onConfirm} data-testid={`kn-confirm-${entry.id}`}>
+            <Button disabled={busy} onClick={onConfirm} data-testid={`kn-confirm-${entry.id}`}>
               {tk('set.knConfirm')}
-            </button>
+            </Button>
           ) : null}
-          <button className="btn" disabled={busy} onClick={onStartEdit} data-testid={`kn-edit-${entry.id}`}>
+          <Button disabled={busy} onClick={onStartEdit} data-testid={`kn-edit-${entry.id}`}>
             {tk('set.knEdit')}
-          </button>
-          <button className="btn" disabled={busy} onClick={onStartReplace} data-testid={`kn-replace-${entry.id}`}>
+          </Button>
+          <Button disabled={busy} onClick={onStartReplace} data-testid={`kn-replace-${entry.id}`}>
             {tk('set.knReplace')}
-          </button>
-          <button className="btn danger" disabled={busy} onClick={() => onAskDelete(false)} data-testid={`kn-delete-${entry.id}`}>
+          </Button>
+          <Button variant="danger" disabled={busy} onClick={() => onAskDelete(false)} data-testid={`kn-delete-${entry.id}`}>
             {tk('set.knDelete')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -434,13 +435,13 @@ function KnowledgeRow({
             data-testid={`kn-editor-${entry.id}`}
             onChange={(event) => onEdit({ id: entry.id, text: event.target.value })}
           />
-          <div className="set-ctl">
-            <button className="btn" disabled={busy || !editing.trim()} onClick={() => onSave(editing)} data-testid={`kn-save-${entry.id}`}>
+          <div className="ui-row-ctl">
+            <Button disabled={busy || !editing.trim()} onClick={() => onSave(editing)} data-testid={`kn-save-${entry.id}`}>
               {tk('set.knSave')}
-            </button>
-            <button className="btn" onClick={onCancel}>
+            </Button>
+            <Button onClick={onCancel}>
               {tk('set.knCancel')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -449,47 +450,42 @@ function KnowledgeRow({
 
       {replacing !== null ? (
         <div className="kn-editor">
-          <div className="set-desc">{tk('set.knReplaceHint')}</div>
+          <div className="ui-row-desc">{tk('set.knReplaceHint')}</div>
           <textarea
             className="kn-textarea"
             value={replacing}
             data-testid={`kn-replace-editor-${entry.id}`}
             onChange={(event) => onReplace({ id: entry.id, text: event.target.value })}
           />
-          <div className="set-ctl">
-            <button
-              className="btn"
-              disabled={busy || !replacing.trim()}
-              onClick={() => onSupersede(replacing)}
-              data-testid={`kn-replace-save-${entry.id}`}
-            >
+          <div className="ui-row-ctl">
+            <Button disabled={busy || !replacing.trim()} onClick={() => onSupersede(replacing)} data-testid={`kn-replace-save-${entry.id}`}>
               {tk('set.knReplaceSave')}
-            </button>
-            <button className="btn" onClick={onCancel}>
+            </Button>
+            <Button onClick={onCancel}>
               {tk('set.knCancel')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
 
       {asking !== null ? (
         <div className="kn-editor kn-ask">
-          <div className="set-desc">{tk('set.knDeleteAsk')}</div>
-          <div className="set-ctl">
-            <button className="btn" disabled={busy} onClick={() => onDelete(false)} data-testid={`kn-delete-logical-${entry.id}`}>
+          <div className="ui-row-desc">{tk('set.knDeleteAsk')}</div>
+          <div className="ui-row-ctl">
+            <Button disabled={busy} onClick={() => onDelete(false)} data-testid={`kn-delete-logical-${entry.id}`}>
               {tk('set.knDeleteLogical')}
-            </button>
-            <button className="btn danger" disabled={busy} onClick={() => onDelete(true)} data-testid={`kn-delete-permanent-${entry.id}`}>
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={() => onDelete(true)} data-testid={`kn-delete-permanent-${entry.id}`}>
               {tk('set.knDeletePermanent')}
-            </button>
-            <button className="btn" onClick={onCancel}>
+            </Button>
+            <Button onClick={onCancel}>
               {tk('set.knCancel')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
 
-      <div className="set-desc kn-meta">
+      <div className="ui-row-desc kn-meta">
         {entry.tags.length ? (
           <span>
             {tk('set.knTags')}：{entry.tags.join('、')}

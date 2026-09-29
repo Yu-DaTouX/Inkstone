@@ -4,9 +4,85 @@
  * 本文件是 P0-1「样式收敛」模块化层的一部分（最后加载）—— 见 layout.css。
  */
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 redesign.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
+/* ── 基础段：本文件后面的规则在此之上细化（同特异性时后者胜） ── */
+
+/* 连接状态、对话回合、工具调用及右侧工具面板样式。
+   尺寸与颜色优先使用 tokens.css 中的设计令牌。 */
+/* 1. 连接状态条 */
+.connbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-5);
+  background: var(--err-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--err);
+  font-size: var(--fs-sm);
+}
+
+/* 11. 通知 */
+.notices {
+  position: fixed;
+  right: var(--sp-5);
+  /* 往上抬：底部会挡住输入区和右栏的记忆列表 */
+  bottom: calc(var(--h-titlebar) + var(--sp-5));
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 380px;
+  /* 不要把点击穿透到下面的界面 */
+  pointer-events: none;
+}
+
+.notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border-str);
+  border-left-width: 2px;
+  border-radius: var(--r-md);
+  color: var(--fg-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+  /* 长消息（扩展常刷一段路径很长的话）截断到三行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notice:hover {
+  color: var(--fg);
+}
+
+.logdrawer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+/* 42. 标题栏改 Win11 风格
+   与 mac 风格的差别：
+   · 窗口按钮在**最右**，46×32 的方形区域（不是左侧三个圆点）
+   · 悬停：关闭变红、其余变中性灰
+   · 最大化时图标切成「还原」（两个错开方框）
+   尺寸严格按 Win11：宽 46px、高 32px（= 标题栏高度） */
+.titlebar {
+  padding-right: 0; /* 让窗口按钮紧贴右边缘 */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.tb-right {
+  gap: 2px;
+  /* 窗口控制要贴边，这里不留间距 */
+  padding-right: 0;
+}
+
+/* ── 基础段结束 ── */
 
 /* 13. 标题栏控件统一成胶囊，别一个是文字一个是图标 */
 .tb-right .btn:not(.icon),
@@ -51,7 +127,7 @@
 
 .tb-name {
   letter-spacing: 0;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 /* 通用图标按钮（非窗口控制） */
@@ -221,10 +297,6 @@
   width: 2px;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .connbar.starting {
   background: var(--warn-soft);
   color: var(--warn);
@@ -296,10 +368,6 @@
   border-left-color: var(--err);
 }
 
-/* ══════════════════════════════════════════════════════════════
-   以下从 stage1.css 迁入（P0-1 样式收敛：按模块归位，只搬家不改值）
-   ══════════════════════════════════════════════════════════════ */
-
 .dot.err {
   background: var(--err);
   box-shadow: 0 0 0 3px var(--err-soft);
@@ -309,20 +377,152 @@
   line-height: 1;
 }
 
-/* 12. 状态条 + 日志抽屉 */
+/*
+ * 底部状态栏（设计规范 §4）：24px 横贯全宽，11px 等宽、三级色、表格数字。
+ * 左段全局状态，右段本轮用量；窄窗时按优先级从右往左藏（容器查询）。
+ */
 .statusbar {
   display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 2px var(--sp-5);
+  align-items: stretch;
+  min-width: 0;
+  height: var(--statusbar-h);
+  overflow: hidden;
+  border-top: 1px solid var(--border-soft);
   background: var(--bg-1);
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-xs);
   color: var(--fg-mute);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  container-type: inline-size;
+  user-select: none;
+  /* 工作区内容万一溢出本行，也不能盖住状态栏 */
+  position: relative;
+  z-index: 1;
 }
 
-.statusbar .spacer {
+/* 模式色块：宽度固定，颜色 240ms 过渡，文字叠放交叉淡变 */
+.sb-mode {
+  display: grid;
+  flex: none;
+  width: 52px;
+  place-items: center;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-weight: var(--fw-strong);
+  letter-spacing: 0.06em;
+  transition:
+    background-color var(--mo-slow) var(--mo-ease),
+    color var(--mo-slow) var(--mo-ease);
+}
+.sb-mode[data-mode='run'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.sb-mode[data-mode='wait'] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.sb-mode-label {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity var(--mo-slow) var(--mo-ease);
+}
+.sb-mode-label.on {
+  opacity: 1;
+}
+
+.sb-seg {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 var(--sp-2);
+}
+.sb-seg:focus-visible,
+.sb-mode:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-w));
+}
+.sb-branch,
+.sb-pi,
+.sb-phone {
+  border-right: 1px solid var(--border-soft);
+}
+.sb-branch {
+  color: var(--fg-dim);
+}
+.sb-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-branch .sb-text {
+  max-width: 180px;
+}
+.sb-changed {
+  color: var(--warn);
+}
+.sb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--fg-mute);
+}
+.sb-pi[data-state='ready'] .sb-dot {
+  background: var(--ok);
+}
+.sb-pi[data-state='starting'] .sb-dot {
+  background: var(--warn);
+}
+.sb-pi[data-state='exited'] .sb-dot,
+.sb-pi[data-state='error'] .sb-dot {
+  background: var(--err);
+}
+.sb-grow {
   flex: 1;
+  min-width: 0;
+}
+.sb-cost {
+  border-left: 1px solid var(--border-soft);
+}
+
+/* 用量条在状态栏里：只保留一行，靠右，与其它段同一字号；空间不够时从右端截断，不压到左段 */
+.statusbar .usagebar {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--sp-2);
+  border-left: 1px solid var(--border-soft);
+  color: var(--fg-mute);
+}
+.statusbar .usagebar[data-state='no-usage'] {
+  display: none;
+}
+
+.statusbar .usagebar .spacer {
+  display: none;
+}
+
+@container (max-width: 1100px) {
+  .sb-cost {
+    display: none;
+  }
+}
+@container (max-width: 980px) {
+  .sb-phone,
+  .sb-pi {
+    display: none;
+  }
+  /* tok 单位在每项重复出现；窄窗只留数值，标签（输入 / 输出 / 缓存）足以说明 */
+  .statusbar .ub-unit {
+    display: none;
+  }
 }
 /*
  * 圆心坐标系要钉死 —— 否则写进去的坐标可能不是屏幕上的那个点。

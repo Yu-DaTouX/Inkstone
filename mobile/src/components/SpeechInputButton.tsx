@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Animated, BackHandler, Easing, Keyboard, Pressable, Text, View } from 'react-native'
+import { Animated, BackHandler, Easing, Keyboard, Pressable, Text, View } from 'react-native'
 import { cancelSpeech, recognizeSpeech, stopSpeech, subscribeSpeech, type SpeechPhase } from '../speech'
-import { font, radius, space, touch, usePalette } from '../theme'
+import { font, icon, radius, space, touch, usePalette } from '../theme'
 import { IconButton } from '../ui'
 import { Icon } from '../icons'
-import { useReducedMotion } from '../motion'
+import { Spinner, useReducedMotion } from '../motion'
 
 /** A real audio level, confined to the existing composer action row. */
 function VoiceWave({ level }: { level: number }) {
@@ -98,7 +98,7 @@ export function SpeechInputButton({ onText, onError, onStateChange, disabled }: 
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {busy ? <>
         <Pressable accessibilityRole="button" accessibilityLabel={phase === 'processing' ? '正在转写语音' : '结束录音并转写'} accessibilityState={{ disabled: phase !== 'listening' }} disabled={phase !== 'listening'} onPress={stopSpeech} style={({ pressed }) => ({ minHeight: touch.min, minWidth: touch.min, paddingHorizontal: 8, borderRadius: radius.md, backgroundColor: p.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}>
-          {phase === 'listening' ? <><VoiceWave level={level} /><Icon name="stop" size={13} color={p.accent} /></> : <ActivityIndicator size="small" color={p.accent} />}
+          {phase === 'listening' ? <><VoiceWave level={level} /><Icon name="stop" size={icon.sm} color={p.accent} /></> : <Spinner />}
         </Pressable>
         <IconButton name="close" label="取消语音输入" onPress={cancel} />
       </> : <IconButton name="audio" label="语音转文字，核对后发送" disabled={disabled} onPress={() => void start()} />}

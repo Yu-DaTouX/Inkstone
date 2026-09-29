@@ -4,6 +4,7 @@ import { useT, type MessageKey } from '../../i18n'
 import type { GoalLink, GoalState } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import { goalDisplayTitle } from '../../state/goal-view'
+import { Button } from '../ui'
 
 const PHASE_LABEL: Record<GoalState['phase'], MessageKey> = {
   planning: 'goal.planning',
@@ -134,24 +135,12 @@ export function GoalContent() {
           </div>
           <small>{t('goal.reviewReadOnly')}</small>
           <div className="goal-review-actions">
-            <button
-              type="button"
-              className="btn sm sa-act-btn primary"
-              onClick={() => void approveGoalReady()}
-              disabled={goalLoading || mode !== 'clarify'}
-              data-testid="goal-approve-and-start"
-            >
+            <Button variant="primary" size="sm" className="sa-act-btn" type="button" onClick={() => void approveGoalReady()} disabled={goalLoading || mode !== 'clarify'} data-testid="goal-approve-and-start">
               {t('goal.approveAndStart')}
-            </button>
-            <button
-              type="button"
-              className="btn sm sa-act-btn"
-              onClick={() => void modifyGoalReady()}
-              disabled={goalLoading || mode !== 'clarify'}
-              data-testid="goal-modify-plan"
-            >
+            </Button>
+            <Button size="sm" className="sa-act-btn" type="button" onClick={() => void modifyGoalReady()} disabled={goalLoading || mode !== 'clarify'} data-testid="goal-modify-plan">
               {t('goal.modifyPlan')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
@@ -162,9 +151,9 @@ export function GoalContent() {
           <div className="goal-panel-empty goal-panel-error" data-testid="goal-error">
             <span>{t('goal.loadFailed')}</span>
             <small title={goalError}>{goalError}</small>
-            <button type="button" className="btn sm sa-act-btn" onClick={() => void loadGoal()} data-testid="goal-retry">
+            <Button size="sm" className="sa-act-btn" type="button" onClick={() => void loadGoal()} data-testid="goal-retry">
               {t('goal.retry')}
-            </button>
+            </Button>
           </div>
         ) : goalLoading ? (
           <div className="goal-panel-empty" data-testid="goal-loading">

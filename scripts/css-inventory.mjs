@@ -1,10 +1,9 @@
 /**
  * 样式清单：谁定义了哪些规则、谁覆盖了谁。
  *
- * 用途：P0-1「样式收敛」的**归属表**。10 个 CSS 文件按
- * tokens → app → stage1 → stage2 → redesign → motion → settings →
- * electron → highlight → sidebar-review 顺序加载，最后加载的同特异性规则胜出。
- * 于是「最终效果」不等于「任何单个文件的效果」，而是层层覆盖的结果。
+ * 用途：样式**归属表**。文件经 styles/index.css 按级联层加载：后面的层整体胜出，
+ * 同层内同特异性时后加载者胜。于是「最终效果」不等于「任何单个文件的效果」，
+ * 而是层层覆盖的结果。
  * 这个脚本把覆盖关系量化出来，迁移时才有依据（而不是凭感觉删）。
  *
  * 用法： node scripts/css-inventory.mjs [--md]
@@ -13,12 +12,14 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readStyleOrder } from './lib/css-order.mjs'
+import { readStyleEntries } from './lib/css-order.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/* 顺序不再手写：直接读 App.tsx（见 scripts/lib/css-order.mjs 的头注释） */
-const ORDER = readStyleOrder(root)
+/* 顺序与层不再手写：读样式入口 styles/index.css（见 scripts/lib/css-order.mjs 的头注释） */
+const ENTRIES = readStyleEntries(root)
+const ORDER = ENTRIES.map((e) => e.name)
+const LAYER = new Map(ENTRIES.map((e) => [e.name, e.layer ?? '（未分层）']))
 
 const dir = join(root, 'src/renderer/src/styles')
 
@@ -108,22 +109,22 @@ L('# 样式规则归属表（自动生成）')
 L()
 L('> 由 `node scripts/css-inventory.mjs --md` 生成。改 CSS 后重新生成再对比。')
 L('>')
-L('> 加载顺序与 `App.tsx` 的 import 一致；**同特异性时后加载者胜**。')
+L('> 加载顺序与级联层见 `styles/index.css`：后面的层整体压过前面的层；**同层内同特异性时后加载者胜**。')
 L()
 L('## 1. 各文件规模')
 L()
-L('| 顺序 | 文件 | 行数 | 唯一选择器 | 规则数 | @media | !important |')
-L('| ---: | --- | ---: | ---: | ---: | ---: | ---: |')
+L('| 顺序 | 文件 | 层 | 行数 | 唯一选择器 | 规则数 | @media | !important |')
+L('| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |')
 stats.forEach((s, i) => {
   if (s.missing) {
-    L(`| ${i + 1} | ${s.name} | — | — | — | — | — |`)
+    L(`| ${i + 1} | ${s.name} | ${LAYER.get(s.name)} | — | — | — | — | — |`)
     return
   }
-  L(`| ${i + 1} | \`${s.name}\` | ${s.lines} | ${s.uniq} | ${s.total} | ${s.media} | ${s.important} |`)
+  L(`| ${i + 1} | \`${s.name}\` | ${LAYER.get(s.name)} | ${s.lines} | ${s.uniq} | ${s.total} | ${s.media} | ${s.important} |`)
 })
 const totalLines = stats.reduce((n, s) => n + (s.lines ?? 0), 0)
 const totalUniq = new Set([...owners.keys()]).size
-L(`| | **合计** | **${totalLines}** | **${totalUniq}** | | | |`)
+L(`| | **合计** | | **${totalLines}** | **${totalUniq}** | | | |`)
 L()
 L('## 2. 覆盖热力：每个文件「最终胜出」的选择器数')
 L()

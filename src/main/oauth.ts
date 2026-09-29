@@ -90,7 +90,10 @@ function extractAccountId(accessToken: string): string | null {
   return typeof id === 'string' && id.length > 0 ? id : null
 }
 
-/** 回调页：与 pi 的页面同款观感（深色、居中、零外链资源）。 */
+/**
+ * 回调页：与应用同源的配色与字体分工（设计规范 v0.5）—— 骨架等宽、标题无衬线，
+ * 深浅跟随系统，零外链资源（浏览器打开的是本机回调地址，不能依赖应用的样式文件）。
+ */
 function resultPage(heading: string, message: string, details?: string): string {
   const esc = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -101,19 +104,30 @@ function resultPage(heading: string, message: string, details?: string): string 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${esc(heading)}</title>
   <style>
-    :root { color-scheme: dark; }
+    :root { color-scheme: dark; --bg: #151515; --bg2: #1b1b1a; --border: rgba(255,255,255,.1);
+            --fg: #ecece8; --dim: #b4b4ac; --mute: #92928a; --accent: #93a4f4;
+            --mono: "Maple Mono CN", ui-monospace, Consolas, monospace;
+            --sans: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; }
+    @media (prefers-color-scheme: light) {
+      :root { color-scheme: light; --bg: #fcfcfa; --bg2: #f3f3f0; --border: rgba(0,0,0,.13);
+              --fg: #252522; --dim: #66665f; --mute: #73736b; --accent: #5264c8; }
+    }
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-           padding: 24px; background: #09090b; color: #fafafa; text-align: center;
-           font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
-    main { max-width: 520px; }
-    h1 { margin: 0 0 10px; font-size: 24px; font-weight: 600; }
-    p { margin: 0; color: #a1a1aa; font-size: 15px; line-height: 1.7; }
-    .details { margin-top: 16px; font-family: ui-monospace, Consolas, monospace; font-size: 13px;
-               color: #a1a1aa; white-space: pre-wrap; word-break: break-word; }
+           padding: 24px; box-sizing: border-box; background: var(--bg); color: var(--fg);
+           font-family: var(--mono); font-size: 13px; }
+    main { width: min(520px, 100%); padding: 24px; border: 1px solid var(--border); border-radius: 12px;
+           background: var(--bg2); }
+    .brand { margin: 0 0 16px; color: var(--mute); font-size: 12px; }
+    .brand b { color: var(--accent); font-weight: 600; }
+    h1 { margin: 0 0 8px; font-family: var(--sans); font-size: 18px; font-weight: 600; }
+    p { margin: 0; color: var(--dim); font-family: var(--sans); font-size: 14px; line-height: 1.7; }
+    .details { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--mute);
+               font-size: 12px; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
 <body>
   <main>
+    <p class="brand"><b>›</b> 砚 · Inkstone</p>
     <h1>${esc(heading)}</h1>
     <p>${esc(message)}</p>
     ${details ? `<div class="details">${esc(details)}</div>` : ''}

@@ -43,7 +43,7 @@
     "shot": "electron scripts/shot.mjs",
     "shots": "electron scripts/shots.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run check:shell-icons && npm run check:css-docs && npm run check:icons && npm run check:motion && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog spaces taskinbox externalchrome browser browserframes zoom resize fs fsedge atpathedge projectswitch knowledgeasync gitreview workspacechanges branch topbar controlstates iconsurface goallinks outlinepos iconstate narrow todonew sendkey railmini pending slashcmd tools vheight tooltiles tilerestart settingstabs resourceheads panels symmetry titlebar motion atPath auth authEnv reasoning terminal terminalsurface streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh contextblocked fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename projectremove railreorder usageagg",
+    "check": "npm run typecheck && npm run check:shell-icons && npm run check:css-docs && npm run check:icons && npm run check:mobile-tokens && npm run check:css-budget && npm run check:motion && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live features sessions historyswitch layout outline todos taskext virtual settings sound toolgroup light hotkeys dialog spaces taskinbox externalchrome browser browserframes zoom resize fs fsedge atpathedge projectswitch knowledgeasync gitreview workspacechanges branch topbar controlstates iconsurface goallinks outlinepos iconstate narrow todonew sendkey railmini pending slashcmd tools vheight tooltiles tilerestart settingstabs resourceheads panels symmetry titlebar motion atPath auth authEnv reasoning terminal terminalsurface streamwidth working rename context contextswitchguard queuestack queueretract logs perf deltas railsearch toolrow trash contextstate contextsweep contextproduce contextfoldpref contextepisode contextgate contextrefresh contextblocked fileref linkpreview detail subagent density capabilityload modelnotready modelswitch modelmenu sessionlayout runnerselect sessionrunners sessionab crash railtitle onboarding grouprename projectremove railreorder usageagg",
     "test:unit": "node scripts/test-unit.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-skill-files-scheduler.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
@@ -53,7 +53,7 @@
     "lint:css": "node scripts/lint-css.mjs",
     "lint:layers": "node scripts/css-layer-check.mjs --selftest",
     "measure:design": "electron scripts/design/measure-design.mjs",
-    "measure:css": "node scripts/css-drift.mjs --md",
+    "measure:css": "node scripts/css-tokens.mjs --md && node scripts/css-inventory.mjs --md && node scripts/css-drift.mjs --md",
     "check:css-docs": "node scripts/css-tokens.mjs --check && node scripts/css-inventory.mjs --check && node scripts/css-drift.mjs --check",
     "vendor:pi": "node scripts/vendor-pi.mjs",
     "vendor:pi:check": "node scripts/vendor-pi.mjs --check",
@@ -74,6 +74,8 @@
     "check:shell-icons": "node scripts/check-shell-icons.mjs",
     "capture:native-overlay": "node scripts/capture-native-overlay.mjs",
     "check:icons": "node scripts/check-icons.mjs",
+    "check:mobile-tokens": "node scripts/check-mobile-tokens.mjs",
+    "check:css-budget": "node scripts/check-css-budget.mjs",
     "check:motion": "node scripts/check-motion.mjs --selftest && node scripts/check-motion.mjs",
     "probe:search": "node scripts/probe/search.mjs",
     "report:i18n": "node scripts/report-unused-i18n.mjs"
@@ -86,7 +88,6 @@
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "lucide-static": "^1.48.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.0"
   },
@@ -104,7 +105,6 @@
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "tar": "7.5.22",
-    "thinking-orbs": "^0.3.1",
     "virtua": "^0.51.2",
     "zustand": "^5.0.15"
   },

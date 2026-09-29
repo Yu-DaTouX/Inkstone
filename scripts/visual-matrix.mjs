@@ -57,6 +57,60 @@ const STAMP = process.env.YAN_MATRIX_STAMP || defaultStamp()
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /*
+ * 逐元素计算样式（只在 `YAN_STYLE_DUMP` 时注入，见 shot()）。
+ *
+ * 路径用「标签 + 同级序号」，不用 class：结构重构不改 DOM，路径前后一致；
+ * 若某处 class 变了，路径不变、差异会落到样式上，正是要看的。
+ * 全部计算值只存哈希，常用属性存原值；`YAN_STYLE_DUMP=full` 时存全部原值（排查用，体积大）。
+ * 动画中的 opacity / transform 不稳定，由比较脚本按需忽略。
+ */
+const STYLE_DUMP_JS = `(() => {
+  const FULL = ${process.env.YAN_STYLE_DUMP === 'full'};
+  const out = {};
+  const pathOf = (el) => {
+    const parts = [];
+    for (let n = el; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
+      let i = 0;
+      for (let s = n.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === n.tagName) i++;
+      parts.push(n.tagName.toLowerCase() + (i ? ':' + i : ''));
+    }
+    return parts.reverse().join('>');
+  };
+  /* 全部属性只存哈希（全量太大）；常用的版面与外观属性存原值，方便指出差在哪。
+     自定义属性（--x）是输入不是结果：新增一个令牌会让每个元素都「不同」，所以不计入。 */
+  const KEEP = ['display','position','top','right','bottom','left','width','height','min-width','max-width','min-height','max-height',
+    'margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left',
+    'gap','row-gap','column-gap','flex-grow','flex-shrink','flex-basis','align-items','justify-content','grid-template-columns','grid-template-rows',
+    'color','background-color','background-image','border-top-color','border-right-color','border-bottom-color','border-left-color',
+    'border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-left-radius','border-bottom-right-radius',
+    'box-shadow','outline-color','outline-width','opacity','visibility','overflow-x','overflow-y','z-index','cursor','transform',
+    'font-family','font-size','font-weight','line-height','letter-spacing','text-align','white-space','text-overflow',
+    'animation-name','animation-duration','transition-duration','transition-property','fill','stroke','stroke-width','content'];
+  const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const read = (cs) => {
+    const all = [];
+    for (let i = 0; i < cs.length; i++) { const p = cs[i]; if (!p.startsWith('--')) all.push(p + ':' + cs.getPropertyValue(p)); }
+    const o = { '#': hash(all.join(';')) };
+    for (const p of FULL ? Array.from(cs) : KEEP) o[p] = cs.getPropertyValue(p);
+    return o;
+  };
+  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')];
+  for (const el of all) {
+    const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'HEAD' || el.closest('head')) continue;
+    const key = pathOf(el) || 'html';
+    const entry = { cls: typeof el.className === 'string' ? el.className : '', s: read(getComputedStyle(el)) };
+    for (const pe of ['::before', '::after']) {
+      const cs = getComputedStyle(el, pe);
+      if (cs.content && cs.content !== 'none' && cs.content !== 'normal') entry[pe] = read(cs);
+    }
+    if (r && r.width === 0 && r.height === 0) entry.hidden = true;
+    out[key] = entry;
+  }
+  return out;
+})()`
+
+/*
  * 自己去一个临时 userData 目录，并且**每次运行都是新的**。
  *
  * 为什么：用默认 userData 时，上一次运行留下的 GPUCache / 锁会让下一次运行
@@ -2211,7 +2265,7 @@ const STATES = {
       st.openSettings('appearance');
       await new Promise((r) => setTimeout(r, 600));
       const key = document.querySelector('[data-testid="set-work-mode-key"]');
-      key?.closest('.set-row')?.scrollIntoView?.({ block: 'center' });
+      key?.closest('.ui-row')?.scrollIntoView?.({ block: 'center' });
       await new Promise((r) => setTimeout(r, 500));
       return 'ok';
     })()
@@ -5434,7 +5488,7 @@ const MUST_HAVE = {
     '[data-testid="goal-modify-plan"]'
   ],
   /* 模式快捷键那一行（2026-09-22：从裸 Tab 改成可改键的全局组合键） */
-  workmodekey: ['.set-row:has([data-testid="set-work-mode-key"])'],
+  workmodekey: ['.ui-row:has([data-testid="set-work-mode-key"])'],
   /* 子代理委派：入口 + 展开的任务面板（面板里四个元素缺一这张图就没有意义） */
   subagentfailed: [
     '[data-testid="right-window-tab-subagent-sub-failed"]',
@@ -5973,6 +6027,15 @@ async function main() {
       return geometry
     }
     await writeFile(outPath, png)
+    /*
+     * 结构重构的等价证据：`YAN_STYLE_DUMP=1` 时，在截图旁写一份逐元素的计算样式。
+     * 前后两批用 `scripts/css-computed-diff.mjs` 比较 —— 截图只能看到像素，
+     * 这份能指出是哪个元素的哪个属性变了（含 ::before / ::after）。
+     */
+    if (process.env.YAN_STYLE_DUMP) {
+      const dump = await win.webContents.executeJavaScript(STYLE_DUMP_JS).catch((e) => ({ error: String(e) }))
+      await writeFile(outPath.replace(/\.png$/, '.styles.json'), JSON.stringify(dump))
+    }
     const over = geometry.sw - geometry.cw
     const missing = Object.entries(geometry.must ?? {})
       .filter(([, okFlag]) => !okFlag)

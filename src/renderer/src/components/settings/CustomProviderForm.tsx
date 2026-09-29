@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../../i18n'
-import { Icon } from '../../icons/Icon'
 import type { CustomProviderInput, CustomProviderTestResult, CustomProviderView } from '../../../../shared/ipc'
 import { CUSTOM_API_CHOICES } from '../../../../shared/custom-provider'
+import { Icon } from '../../icons/Icon'
+import { Button } from '../ui'
 
 /**
  * 「接入」设置页的自定义 API 服务（实施-23 M2）。
@@ -94,78 +95,61 @@ export function CustomProviderForm() {
   }
 
   return (
-    <div className="set-group" data-testid="custom-api">
-      <div className="set-label">
-        <div className="set-name">{t('customApi.title')}</div>
-        <div className="set-desc">{t('customApi.desc')}</div>
+    <div className="ui-rows" data-testid="custom-api">
+      <div className="ui-row-label">
+        <div className="ui-row-name">{t('customApi.title')}</div>
+        <div className="ui-row-desc">{t('customApi.desc')}</div>
       </div>
 
-      {list === null ? <div className="set-desc">{t('customApi.loading')}</div> : null}
+      {list === null ? <div className="ui-row-desc">{t('customApi.loading')}</div> : null}
 
       {list?.map((item) => (
-        <div className="set-row custom-api-row" key={item.id} data-testid={`custom-api-row-${item.id}`}>
+        <div className="ui-row custom-api-row" key={item.id} data-testid={`custom-api-row-${item.id}`}>
           <div className="custom-api-row-main">
-            <span className="set-name">{item.id}</span>
-            <span className="set-desc">
+            <span className="ui-row-name">{item.id}</span>
+            <span className="ui-row-desc">
               {item.api} · {item.baseUrl} · {t('customApi.modelCount', { n: item.models.length })} ·{' '}
               {item.hasApiKey ? t('customApi.keySet') : t('customApi.keyMissing')}
             </span>
           </div>
           <span className="spacer" />
-          <button
-            type="button"
-            className="btn"
-            data-testid={`custom-api-edit-${item.id}`}
-            onClick={() =>
+          <Button type="button" data-testid={`custom-api-edit-${item.id}`} onClick={() =>
               setDraft({
                 id: item.id,
                 api: item.api || 'openai-completions',
                 baseUrl: item.baseUrl,
                 models: item.models.length ? item.models : [{ id: '' }]
               })
-            }
-          >
+            }>
             {t('customApi.edit')}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-testid={`custom-api-test-${item.id}`}
-            aria-expanded={testId === item.id}
-            onClick={() => {
+          </Button>
+          <Button type="button" data-testid={`custom-api-test-${item.id}`} aria-expanded={testId === item.id} onClick={() => {
               setTestResult(null)
               setTestId(testId === item.id ? null : item.id)
-            }}
-          >
+            }}>
             {t('customApi.test')}
-          </button>
-          <button
-            type="button"
-            className="btn danger"
-            data-testid={`custom-api-remove-${item.id}`}
-            disabled={busy}
-            onClick={() => void remove(item.id)}
-          >
+          </Button>
+          <Button variant="danger" type="button" data-testid={`custom-api-remove-${item.id}`} disabled={busy} onClick={() => void remove(item.id)}>
             {t('customApi.remove')}
-          </button>
+          </Button>
         </div>
       ))}
 
       {draft ? (
         <div className="custom-api-form" data-testid="custom-api-form">
-          <label className="set-row">
-            <span className="set-name">{t('customApi.id')}</span>
+          <label className="ui-row">
+            <span className="ui-row-name">{t('customApi.id')}</span>
             <input
-              className="set-input"
+              className="ui-input"
               value={draft.id}
               data-testid="custom-api-id"
               onChange={(event) => setDraft({ ...draft, id: event.target.value })}
             />
           </label>
-          <label className="set-row">
-            <span className="set-name">{t('customApi.protocol')}</span>
+          <label className="ui-row">
+            <span className="ui-row-name">{t('customApi.protocol')}</span>
             <select
-              className="set-input"
+              className="ui-input"
               value={draft.api}
               data-testid="custom-api-protocol"
               onChange={(event) => setDraft({ ...draft, api: event.target.value })}
@@ -177,20 +161,20 @@ export function CustomProviderForm() {
               ))}
             </select>
           </label>
-          <label className="set-row">
-            <span className="set-name">{t('customApi.baseUrl')}</span>
+          <label className="ui-row">
+            <span className="ui-row-name">{t('customApi.baseUrl')}</span>
             <input
-              className="set-input"
+              className="ui-input"
               value={draft.baseUrl}
               placeholder="https://api.example.com/v1"
               data-testid="custom-api-base-url"
               onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
             />
           </label>
-          <label className="set-row">
-            <span className="set-name">{t('customApi.apiKey')}</span>
+          <label className="ui-row">
+            <span className="ui-row-name">{t('customApi.apiKey')}</span>
             <input
-              className="set-input"
+              className="ui-input"
               type="password"
               /* 不回显已存密钥：留空表示沿用 */
               value={draft.apiKey ?? ''}
@@ -201,23 +185,23 @@ export function CustomProviderForm() {
           </label>
 
           {draft.models.map((model, index) => (
-            <div className="set-row custom-api-model" key={index}>
+            <div className="ui-row custom-api-model" key={index}>
               <input
-                className="set-input"
+                className="ui-input"
                 value={model.id}
                 placeholder={t('customApi.modelId')}
                 data-testid={`custom-api-model-id-${index}`}
                 onChange={(event) => patchModel(index, { id: event.target.value })}
               />
               <input
-                className="set-input"
+                className="ui-input"
                 value={model.name ?? ''}
                 placeholder={t('customApi.modelName')}
                 data-testid={`custom-api-model-name-${index}`}
                 onChange={(event) => patchModel(index, { name: event.target.value })}
               />
               <input
-                className="set-input"
+                className="ui-input num"
                 type="number"
                 value={model.contextWindow ?? ''}
                 placeholder={t('customApi.contextWindow')}
@@ -238,40 +222,22 @@ export function CustomProviderForm() {
             </div>
           ))}
 
-          <div className="set-row">
-            <button
-              type="button"
-              className="btn"
-              data-testid="custom-api-add-model"
-              onClick={() => setDraft({ ...draft, models: [...draft.models, { id: '' }] })}
-            >
-              <Icon name="plus" size={12} /> {t('customApi.addModel')}
-            </button>
+          <div className="ui-row">
+            <Button icon="plus" type="button" data-testid="custom-api-add-model" onClick={() => setDraft({ ...draft, models: [...draft.models, { id: '' }] })}>{t('customApi.addModel')}
+            </Button>
             <span className="spacer" />
-            <button type="button" className="btn" onClick={() => setDraft(null)}>
+            <Button type="button" onClick={() => setDraft(null)}>
               {t('customApi.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={busy}
-              data-testid="custom-api-save"
-              onClick={() => void save()}
-            >
+            </Button>
+            <Button variant="primary" type="button" disabled={busy} data-testid="custom-api-save" onClick={() => void save()}>
               {t('customApi.save')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <div className="set-row custom-api-add-row">
-          <button
-            type="button"
-            className="btn"
-            data-testid="custom-api-add"
-            onClick={() => setDraft(blank())}
-          >
-            <Icon name="plus" size={12} /> {t('customApi.add')}
-          </button>
+        <div className="ui-row custom-api-add-row">
+          <Button icon="plus" type="button" data-testid="custom-api-add" onClick={() => setDraft(blank())}>{t('customApi.add')}
+          </Button>
         </div>
       )}
 
@@ -282,37 +248,25 @@ export function CustomProviderForm() {
             const modelId = item.models[0]?.id ?? ''
             return (
               <div className="custom-api-test" data-testid={`custom-api-test-panel-${item.id}`}>
-                <div className="set-desc">{t('customApi.testHint')}</div>
-                <div className="set-row custom-api-test-actions">
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!!testing}
-                    data-testid={`custom-api-test-endpoint-${item.id}`}
-                    onClick={() => void runTest(item.id, 'endpoint', modelId)}
-                  >
+                <div className="ui-row-desc">{t('customApi.testHint')}</div>
+                <div className="ui-row custom-api-test-actions">
+                  <Button type="button" disabled={!!testing} data-testid={`custom-api-test-endpoint-${item.id}`} onClick={() => void runTest(item.id, 'endpoint', modelId)}>
                     {testing === `${item.id}:endpoint` ? t('customApi.testRunning') : t('customApi.testEndpoint')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!!testing}
-                    data-testid={`custom-api-test-billable-${item.id}`}
-                    onClick={() => void runTest(item.id, 'billable', modelId)}
-                  >
+                  </Button>
+                  <Button type="button" disabled={!!testing} data-testid={`custom-api-test-billable-${item.id}`} onClick={() => void runTest(item.id, 'billable', modelId)}>
                     {testing === `${item.id}:billable` ? t('customApi.testRunning') : t('customApi.testBillable')}
-                  </button>
+                  </Button>
                   <span className="spacer" />
                 </div>
                 {/* 成本提示必须就在按钮旁边：点下去之前就要知道哪一段会花钱 */}
-                <div className="set-desc">{t('customApi.testCost')}</div>
+                <div className="ui-row-desc">{t('customApi.testCost')}</div>
                 {testResult ? (
                   <div
-                    className={testResult.ok ? 'set-desc' : 'set-desc err'}
+                    className={testResult.ok ? 'ui-row-desc' : 'ui-row-desc err'}
                     data-testid={`custom-api-test-result-${item.id}`}
                   >
-                    {(testResult.ok ? '✓ ' : '✗ ') +
-                      testResult.message +
+                    <Icon name={testResult.ok ? 'check' : 'alert-circle'} size={12} />{' '}
+                    {testResult.message +
                       ` · ${testResult.ms}ms` +
                       (testResult.text ? ` · ${testResult.text.slice(0, 60)}` : '')}
                   </div>
@@ -323,7 +277,7 @@ export function CustomProviderForm() {
         : null}
 
       {msg ? (
-        <div className={msg.kind === 'err' ? 'set-desc err' : 'set-desc'} data-testid="custom-api-msg">
+        <div className={msg.kind === 'err' ? 'ui-row-desc err' : 'ui-row-desc'} data-testid="custom-api-msg">
           {msg.text}
         </div>
       ) : null}

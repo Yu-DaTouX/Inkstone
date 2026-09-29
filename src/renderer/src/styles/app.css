@@ -5,11 +5,11 @@
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: var(--h-titlebar) minmax(0, 1fr);
+  grid-template-rows: var(--h-titlebar) minmax(0, 1fr) var(--statusbar-h);
 }
 /* ⚠️ 这里曾经是 `display: none` —— 它会让滑出动画完全失效
    （display 不可过渡，元素直接消失）。
-   收起时的宽度处理统一在 redesign.css 里（--w-rail: 0 + 推挤）。 */
+   收起时的宽度处理统一在 layout.css 里（--w-rail: 0 + 推挤）。 */
 
 /* ---- 标题栏 ---- */
 .titlebar {
@@ -45,7 +45,7 @@
   gap: var(--sp-1);
 }
 
-/* 布局列数在 redesign.css 里统一管（三列：左栏 / 中栏 / 右栏）。
+/* 布局列数在 layout.css 里统一管（三列：左栏 / 中栏 / 右栏）。
    这里只保留最低限度的骨架，避免两处规则打架。 */
 .workspace {
   display: grid;
@@ -99,7 +99,7 @@
   grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-2);
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--fg-dim);
@@ -256,13 +256,13 @@
   background: var(--code-inline-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 1px 5px;
+  padding: 1px var(--sp-1);
   font-size: var(--fs-code);
   color: var(--code-inline-fg);
 }
 .prose strong {
   color: var(--fg);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 .think summary {
   cursor: pointer;
@@ -302,7 +302,7 @@ kbd {
   border: 1px solid var(--border);
   border-bottom-color: var(--border-str);
   border-radius: var(--r-sm);
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   font-size: var(--fs-xs);
   color: var(--fg-dim);
 }
@@ -316,7 +316,7 @@ kbd {
   background: var(--accent);
   color: #0b0b0d;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 .send:hover {
   filter: brightness(1.1);
@@ -430,7 +430,7 @@ kbd {
 }
 .usage-line b {
   color: var(--fg-dim);
-  font-weight: 400;
+  font-weight: var(--fw-regular);
 }
 .dot {
   width: 7px;
@@ -461,7 +461,7 @@ kbd {
  *   它已经**完全失效**，而且失效得很隐蔽：
  *     · `:root{--w-rail:0px}` 被 sidebar-review.css 的
  *       `:root{--w-rail: var(--w-rail-user, 260px)}` 覆盖（同特异性、后加载）
- *     · `.rail{display:none}` 被 redesign.css 的 `.rail{display:flex}` 覆盖（同理）
+ *     · `.rail{display:none}` 被后加载的 `.rail{display:flex}` 覆盖（同理，现在在 rail.css）
  *   所以无论窗口多窄都不会生效 —— 它不是「有效但过时」，而是死代码。
  *   实测（视口 818px，max-900 媒体查询为 true）里左栏仍然 210px 且可见。
  *
@@ -496,7 +496,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--err);
 }
 
@@ -524,4 +524,9 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+
+/* 崩溃页的说明是一段话：用无衬线（设计规范 §2.2） */
+.crash-body {
+  font-family: var(--font-body);
 }

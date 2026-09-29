@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { FOLLOW_KIND_LABELS, FOLLOW_APP_ONLY_NOTE, formatWhen, type FollowKind } from '../../../../shared/follow'
+import { Button } from '../ui'
 
 /** 常用节奏（分钟）。自定义走输入框 —— 但不允许短于 30 分钟。 */
 const PRESET_MINUTES = [1440, 4320, 10080]
@@ -109,29 +110,17 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
               ) : null}
               <div className="wb-follow-actions">
                 {view.watch.enabled ? (
-                  <button
-                    className="btn wb-btn"
-                    data-testid={`space-follow-pause-${view.watch.id}`}
-                    onClick={() => void updateWatch({ id: view.watch.id, enabled: false })}
-                  >
+                  <Button data-testid={`space-follow-pause-${view.watch.id}`} onClick={() => void updateWatch({ id: view.watch.id, enabled: false })}>
                     {t('space.follow.pause')}
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    className="btn wb-btn primary"
-                    data-testid={`space-follow-enable-${view.watch.id}`}
-                    onClick={() => void updateWatch({ id: view.watch.id, enabled: true })}
-                  >
+                  <Button variant="primary" data-testid={`space-follow-enable-${view.watch.id}`} onClick={() => void updateWatch({ id: view.watch.id, enabled: true })}>
                     {t('space.follow.enable')}
-                  </button>
+                  </Button>
                 )}
-                <button
-                  className="btn wb-btn"
-                  data-testid={`space-follow-remove-${view.watch.id}`}
-                  onClick={() => void removeWatch(view.watch.id)}
-                >
+                <Button data-testid={`space-follow-remove-${view.watch.id}`} onClick={() => void removeWatch(view.watch.id)}>
                   {t('space.follow.remove')}
-                </button>
+                </Button>
               </div>
             </li>
           ))}
@@ -185,19 +174,17 @@ export function FollowPanel({ spaceId }: { spaceId?: string }): React.JSX.Elemen
             onChange={(e) => setPlace(e.target.value)}
           />
           <div className="wb-follow-actions">
-            <button className="btn wb-btn primary" data-testid="space-follow-new-save" onClick={() => void submit()}>
+            <Button variant="primary" data-testid="space-follow-new-save" onClick={() => void submit()}>
               {t('space.follow.save')}
-            </button>
-            <button className="btn wb-btn" data-testid="space-follow-new-cancel" onClick={() => setDraftOpen(false)}>
+            </Button>
+            <Button data-testid="space-follow-new-cancel" onClick={() => setDraftOpen(false)}>
               {t('space.follow.cancel')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <button className="btn wb-btn wb-follow-add" data-testid="space-follow-new" onClick={() => setDraftOpen(true)}>
-          <Icon name="plus" size={12} />
-          {t('space.follow.new')}
-        </button>
+        <Button icon="plus" className="wb-follow-add" data-testid="space-follow-new" onClick={() => setDraftOpen(true)}>{t('space.follow.new')}
+        </Button>
       )}
     </div>
   )

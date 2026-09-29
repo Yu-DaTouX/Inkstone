@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Icon } from '../icons/Icon'
 import { useT } from '../i18n'
+import { Button } from './ui'
 
 /**
  * 渲染异常的兜底界面（D8）。
@@ -76,16 +77,12 @@ function ErrorFallback({ detail, onCopy }: { detail: string; onCopy: () => void 
           {detail.slice(0, 4000)}
         </pre>
         <div className="crash-actions">
-          <button className="btn" onClick={onCopy} data-testid="crash-copy">
+          <Button onClick={onCopy} data-testid="crash-copy">
             {t('crash.copy')}
-          </button>
-          <button
-            className="btn primary"
-            onClick={() => location.reload()}
-            data-testid="crash-reload"
-          >
+          </Button>
+          <Button variant="primary" onClick={() => location.reload()} data-testid="crash-reload">
             {t('crash.reload')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

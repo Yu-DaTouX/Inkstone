@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import type { AuthProviderInfo } from '../../../../shared/ipc'
 import { CustomProviderForm } from './CustomProviderForm'
 import { ActivityModelSection } from './ActivityModelSection'
+import { Button, Spinner } from '../ui'
 
 /**
  * 「接入」设置页 —— 模型凭证管理。
@@ -120,19 +121,19 @@ export function AuthTab() {
     <>
       {/* 按活动用不同模型（实施-25 P18）：配置在接入页，切模型不在这里 */}
       <ActivityModelSection />
-      <div className="set-group auth-tab">
+      <div className="ui-rows auth-page">
       {/* ---- 顶部：状态摘要 ---- */}
       <div className="auth-head">
-        <div className="set-label">
-          <div className="set-name">{t('auth.title')}</div>
-          <div className="set-desc">
+        <div className="ui-row-label">
+          <div className="ui-row-name">{t('auth.title')}</div>
+          <div className="ui-row-desc">
             {t('auth.summary', { ready: readyCount, total: (list ?? []).length })}
           </div>
         </div>
-        <button className="btn sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
-          <Icon name="refresh" size={12} className={checking ? 'spin' : ''} />
+        <Button size="sm" onClick={() => void load(true)} disabled={checking} data-testid="auth-recheck">
+          {checking ? <Spinner mute /> : <Icon name="refresh" size={12} />}
           <span>{checking ? t('auth.checking') : t('auth.recheck')}</span>
-        </button>
+        </Button>
       </div>
 
       {info ? (
@@ -171,9 +172,9 @@ export function AuthTab() {
           </div>
 
           {p.status === 'ready' ? (
-            <button className="btn sm" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
+            <Button size="sm" onClick={() => void signOut(p.id)} disabled={busy || loggingIn}>
               {t('auth.signOut')}
-            </button>
+            </Button>
           ) : p.inAppLogin ? (
             /*
              * 能应用内登录的（目前只有 ChatGPT 订阅）就给按钮；
@@ -184,27 +185,18 @@ export function AuthTab() {
               {loggingIn ? (
                 <>
                   <span className="auth-waiting" data-testid="auth-login-waiting">
-                    <Icon name="refresh" size={12} className="spin" />
+                    <Spinner mute />
                     <span>{t('auth.loginWaiting')}</span>
                   </span>
-                  <button
-                    className="btn sm"
-                    data-testid="auth-login-cancel"
-                    onClick={() => void window.yan.codexLoginCancel()}
-                  >
+                  <Button size="sm" data-testid="auth-login-cancel" onClick={() => void window.yan.codexLoginCancel()}>
                     {t('ui.cancel')}
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <>
-                  <button
-                    className="btn sm primary"
-                    data-testid={`auth-login-${p.id}`}
-                    disabled={busy}
-                    onClick={() => void loginCodex()}
-                  >
+                  <Button variant="primary" size="sm" data-testid={`auth-login-${p.id}`} disabled={busy} onClick={() => void loginCodex()}>
                     {t('auth.loginInApp')}
-                  </button>
+                  </Button>
                   <span className="auth-cmd" title={t('auth.cmdTip')}>
                     <code>pi</code>
                     <span className="auth-cmd-then">→</span>
@@ -264,30 +256,26 @@ export function AuthTab() {
                 }}
                 data-testid={`auth-input-${p.id}`}
               />
-              <button className="btn sm primary" onClick={() => void save()} disabled={busy || !draft.trim()}>
+              <Button variant="primary" size="sm" onClick={() => void save()} disabled={busy || !draft.trim()}>
                 {t('auth.save')}
-              </button>
-              <button className="btn sm" onClick={() => setEditing(null)}>
+              </Button>
+              <Button size="sm" onClick={() => setEditing(null)}>
                 {t('ui.cancel')}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="auth-actions">
-              <button
-                className="btn sm"
-                onClick={() => {
+              <Button size="sm" onClick={() => {
                   setEditing(p.id)
                   setDraft('')
                   setMsg(null)
-                }}
-                data-testid={`auth-set-${p.id}`}
-              >
+                }} data-testid={`auth-set-${p.id}`}>
                 {p.status === 'ready' ? t('auth.replace') : t('auth.setKey')}
-              </button>
+              </Button>
               {p.status === 'ready' ? (
-                <button className="btn sm" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
+                <Button size="sm" onClick={() => void signOut(p.authKey || p.id)} disabled={busy}>
                   {t('auth.signOut')}
-                </button>
+                </Button>
               ) : null}
             </div>
           )}

@@ -3,6 +3,7 @@ import { Icon } from '../../icons/Icon'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { shortProject } from './rail-utils'
+import { Button } from '../ui'
 
 /**
  * 左栏底部的用户块：头像 + 名字 + 设置。
@@ -149,8 +150,8 @@ function ProfilePop({ onClose }: { onClose: () => void }) {
       <div className="rup-head">
         <span>{t('rail.profile')}</span>
         <span className="spacer" />
-        <button className="rup-x" onClick={onClose} title={t('set.close')}>
-          ✕
+        <button className="rup-x" onClick={onClose} title={t('set.close')} aria-label={t('set.close')}>
+          <Icon name="close" size={12} />
         </button>
       </div>
 
@@ -164,9 +165,9 @@ function ProfilePop({ onClose }: { onClose: () => void }) {
             <li>{t('rail.loginWill2')}</li>
             <li>{t('rail.loginWill3')}</li>
           </ul>
-          <button className="rup-btn" onClick={() => setLogin(false)} data-testid="rail-login-back">
+          <Button block className="rup-action" onClick={() => setLogin(false)} data-testid="rail-login-back">
             {t('rail.back')}
-          </button>
+          </Button>
         </div>
       ) : (
         <>
@@ -193,16 +194,18 @@ function ProfilePop({ onClose }: { onClose: () => void }) {
           {/* ---- 头像形式 ---- */}
           <div className="rup-row">
             <span className="rup-label">{t('rail.avatar')}</span>
-            <div className="rup-seg">
+            <div className="seg sm" role="group" aria-label={t('rail.avatar')}>
               <button
-                className={`rup-seg-btn ${!profile?.avatarKind || profile.avatarKind === 'letter' ? 'sel' : ''}`}
+                className={`seg-btn ${!profile?.avatarKind || profile.avatarKind === 'letter' ? 'sel' : ''}`}
+                aria-pressed={!profile?.avatarKind || profile.avatarKind === 'letter'}
                 onClick={() => void patchProfile({ avatarKind: 'letter', avatarValue: '' })}
                 data-testid="rail-avatar-letter"
               >
                 {t('rail.letter')}
               </button>
               <button
-                className={`rup-seg-btn ${profile?.avatarKind === 'icon' ? 'sel' : ''}`}
+                className={`seg-btn ${profile?.avatarKind === 'icon' ? 'sel' : ''}`}
+                aria-pressed={profile?.avatarKind === 'icon'}
                 onClick={() =>
                   void patchProfile({
                     avatarKind: 'icon',
@@ -261,13 +264,9 @@ function ProfilePop({ onClose }: { onClose: () => void }) {
             </span>
           </div>
 
-          <button
-            className="rup-btn rup-login"
-            onClick={() => setLogin(true)}
-            data-testid="rail-login"
-          >
+          <Button block className="rup-action rup-login" onClick={() => setLogin(true)} data-testid="rail-login">
             {t('rail.login')}
-          </button>
+          </Button>
         </>
       )}
     </div>

@@ -5,6 +5,7 @@ import { useStore } from '../../state/store'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
 import { useFocusTrap, useModalLayer } from '../../lib/modalLayer'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
+import { Button, IconButton } from '../ui'
 
 /** 退场时长 —— 与 motion.css 里的 `--mo-fast` 同源。改一处要改两处，所以写注释。 */
 const EXIT_MS = 110
@@ -99,9 +100,7 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
           <Icon name={req.method === 'confirm' ? 'alert-circle' : 'message-dots'} size={12} />
           <span className="modal-title">{req.title ?? title}</span>
           <span className="spacer" />
-          <button className="btn icon" onClick={cancel} title={t('ui.cancel')}>
-            ✕
-          </button>
+          <IconButton icon="close" iconSize={12} label={t('ui.cancel')} onClick={cancel} />
         </div>
 
         {req.message ? <div className="modal-message">{req.message}</div> : null}
@@ -145,15 +144,15 @@ function DialogBody({ req, closing }: { req: ExtensionUiRequest; closing?: boole
 
         <div className="modal-foot">
           <span className="spacer" />
-          <button className="btn" onClick={cancel}>
+          <Button onClick={cancel}>
             {t('ui.cancel')}
-          </button>
+          </Button>
 
           {req.method === 'confirm' ? (
             <>
-              <button className="btn danger" onClick={() => answerUi({ id: req.id, confirmed: false })}>
+              <Button variant="danger" onClick={() => answerUi({ id: req.id, confirmed: false })}>
                 {t('ui.no')}
-              </button>
+              </Button>
               <button className="send" onClick={() => answerUi({ id: req.id, confirmed: true })}>
                 {t('ui.yes')}
               </button>
@@ -190,12 +189,12 @@ export function ConnBar({ conn }: { conn: 'starting' | 'ready' | 'exited' | 'err
         {conn === 'starting' ? '正在启动 pi…' : connDetail || 'pi 未连接'}
       </span>
       <span className="spacer" />
-      <button className="btn" onClick={() => setShowDetail((v) => !v)}>
+      <Button onClick={() => setShowDetail((v) => !v)}>
         {showDetail ? '收起' : '详情'}
-      </button>
-      <button className="btn" onClick={() => void window.yan.start()}>
+      </Button>
+      <Button onClick={() => void window.yan.start()}>
         重试
-      </button>
+      </Button>
 
       {showDetail ? (
         <pre className="connbar-detail">
