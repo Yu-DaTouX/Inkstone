@@ -2002,6 +2002,16 @@ const CASES = {
   contextmenu: { probe: 'scripts/probe/contextmenu.js', delay: 10000, cost: 0 },
 
   /*
+   * 会话行菜单的**真实点击**路径（cost 0）：在菜单项坐标上按完整指针序列
+   * 派发，并用 elementFromPoint 查遮挡。补 contextmenu / rename / contextstate
+   * 只用合成 click 时绕过的那部分。
+   */
+  sessionmenuclick: { probe: 'scripts/probe/sessionmenuclick.js', delay: 9000, cost: 0 },
+
+  /* 同一会话是否在左栏多处渲染、右键是否同时开多个菜单（cost 0） */
+  sessionmenudupe: { probe: 'scripts/probe/sessionmenudupe.js', delay: 9000, cost: 0 },
+
+  /*
    * 实施-11 H-4（解析 / 呈现切片）：Markdown 文件链接的 `#L42` 与点击（cost 0）。
    * 走 fixture 沙箱（`repo`），因为要点开 README.md 验证主进程真的读了文件。
    */
