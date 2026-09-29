@@ -16,5 +16,16 @@
 | Maple Mono CN（`@mogeko/maple-mono-cn`） | 见包内声明 |
 | node-pty | 见包内声明 |
 | 内置 pi 运行时（`resources/pi-runtime/`） | 见上游项目声明 |
+| electron-updater | MIT（见包内声明） |
+
+## Android 应用
+
+随 APK 分发：
+
+| 组件 | 许可 |
+| --- | --- |
+| React Native / Hermes | MIT |
+| AndroidX（`window` / `activity` / `camera:*`） | Apache-2.0 |
+| ML Kit 条码扫描（`com.google.mlkit:barcode-scanning`） | Google ML Kit 条款（见包内声明） |
 
 完整许可文本随各自分发包一起保留；升级依赖时请同步核对本表。

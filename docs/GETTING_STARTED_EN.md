@@ -66,6 +66,10 @@ Default locations, unless you have configured overrides:
 
 For the single-file portable version, close the app and back up the entire adjacent `砚数据/` folder. For installed and ZIP versions, back up `.pi/agent/` in your user directory. Browser logins and other Electron state are stored separately in the app data directory and are not included in that session backup. Full directory details are in [packaging and data](dev/RELEASING.md).
 
+**Moving to another disk**: Installed and ZIP versions can pick an empty folder in **Settings → About → Data location**. On the next start the app moves the whole data directory there and leaves a directory junction in the old location, so existing sessions and `pi` in your terminal keep working. The original directory is deleted only after the copy is verified; if anything fails the app rolls back. The single-file portable version and test environments cannot be moved.
+
+**App updates**: Settings can check for a new version. With the installed version you confirm the restart after the download finishes; installation is refused while a task is running. The portable version only links to the release page.
+
 Backups can contain API credentials, private conversations, and browser state. Keep them private and do not upload them to public repositories or issues. Automatic cross-device sync is not provided.
 
 ## Get help
