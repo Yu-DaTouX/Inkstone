@@ -81,6 +81,8 @@ export function visibleSubagentRuns(runs: SubagentRun[], scope: SubagentScope, n
   return selectSubagentRuns(runs, scope).all.filter((run) => {
     if (run.status === 'starting' || run.status === 'running' || run.status === 'error') return true
     if (run.review === 'pending' || run.review === 'conflict') return true
+    /* 已合并 / 已放弃 / 已归档的即使刚结束也安静退场（与上面的说明一致） */
+    if (run.review === 'merged' || run.review === 'discarded' || run.review === 'archived') return false
     return run.status === 'done' && !!run.endedAt && now - run.endedAt < RECENT_DONE_MS
   })
 }
