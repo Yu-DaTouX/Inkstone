@@ -83,7 +83,7 @@
     if (group) {
       ok(qa('.tgroup .trow').length === 2, '展开历史后两条工具行可见')
       ok(!!group.querySelector('[data-testid="tool-group-toggle"]'), '已完成步骤有组折叠入口')
-      ok(group.classList.contains('has-fail'), '失败组带 has-fail 标记')
+      ok(!!group.querySelector('.trow[data-state="error"]'), '失败的调用在组里仍以出错态显示')
     }
 
     const errRow = qa('.trow[data-state="error"]')[0]

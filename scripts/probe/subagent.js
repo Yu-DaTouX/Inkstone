@@ -82,14 +82,14 @@
     /* 普通会话流里的状态行应该出现（替代撤下的专用页与资源标签） */
     let noted = false
     for (let i = 0; i < 20; i++) {
-      if (q('[data-testid="subagent-notes"]') && q(`[data-testid="subagent-note-${id}"]`)) {
+      if (q('[data-testid="subagent-group"]') && q(`[data-testid="subagent-note-${id}"]`)) {
         noted = true
         break
       }
       await sleep(300)
     }
     out.push(`  诊断：subagentPreviewId=${JSON.stringify(store.getState().subagentPreviewId)}`)
-    out.push(`  诊断：notes=${!!q('[data-testid="subagent-notes"]')}`)
+    out.push(`  诊断：notes=${!!q('[data-testid="subagent-group"]')}`)
     ok(noted, '会话流里出现子代理状态行（不需要专用管理页）')
     ok(!q('[data-testid="subagent-new"]'), '专用「调用子代理」入口已撤下')
 

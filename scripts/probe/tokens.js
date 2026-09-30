@@ -106,7 +106,8 @@
 
   // 缓存命中率
   const cacheTok = toks.find((x) => x.querySelector('.ub-label')?.textContent === '缓存')
-  const hitShown = cacheTok?.querySelector('.ub-extra')?.textContent ?? ''
+  /* 命中率就是缓存项的值（.ub-value）；不再有单独的 .ub-extra */
+  const hitShown = cacheTok?.querySelector('.ub-value')?.textContent ?? ''
   log('  命中率显示: ' + JSON.stringify(hitShown))
   const u = last.usage
   const expect =

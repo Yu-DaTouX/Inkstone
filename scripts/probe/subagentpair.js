@@ -125,7 +125,7 @@
     ok(!!a0 && !!b0 && a0.cwd !== b0.cwd, '两个任务的 cwd 互不相同')
     ok(!!a0 && a0.cwd !== mainCwd() && /yan-subagent-/.test(a0.cwd ?? ''), `A 在隔离 worktree 里（${a0?.cwd}）`)
     ok(!!b0 && b0.cwd !== mainCwd() && /yan-subagent-/.test(b0.cwd ?? ''), `B 在隔离 worktree 里（${b0?.cwd}）`)
-    ok(!!q('[data-testid="subagent-notes"]'), '主对话区渲染出子任务列表')
+    ok(!!q('[data-testid="subagent-group"]'), '主对话区渲染出子任务列表')
     ok(!!q(`[data-testid="subagent-note-${idA}"]`) && !!q(`[data-testid="subagent-note-${idB}"]`), '列表里两条都在')
 
     out.push('')
@@ -282,7 +282,7 @@
        * 实施-20 U4：会话流只列**当前会话**的子代理。切到别的会话看不到它，
        * 切回来又能看到 —— 这就是归属过滤的实际行为。
        */
-      ok(!q('[data-testid="subagent-notes"]'), '切到别的会话后不显示属于原会话的子代理')
+      ok(!q('[data-testid="subagent-group"]'), '切到别的会话后不显示属于原会话的子代理')
       store.setState({ session: sessionBefore })
       await sleep(900)
       ok(!!q(`[data-testid="subagent-note-${idL}"]`), '切回原会话后又能看到这条状态行')

@@ -17,6 +17,7 @@
 
     out.push('=== 1. 启动状态 ===')
     const initial = await window.yan.win.lifecycle()
+    out.push('  lifecycle = ' + JSON.stringify(initial))
     ok(initial.tray, '真实应用创建了托盘')
     ok(initial.visible && !initial.quitting, '窗口可见且尚未进入退出状态')
 

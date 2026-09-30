@@ -1,14 +1,14 @@
 /**
- * 内部 agent 分工（实施-25 P15）—— 会话上方的子代理卡片上的
- * 「任务输入」与「结果汇总」两行。
+ * 内部 agent 分工 —— 会话流里子代理卡片的信息分层（界面重构后的契约）。
  *
  * 盯住三件事：
- *   · 派活时写清的三样（要交回什么 / 依据什么 / 不许做什么）在卡片上看得见；
- *   · 回来时给主 agent 的摘要与来源 / 成果计数看得见；
+ *   · 顺利完成、没有待处理改动的卡片只有主行与元信息，不再铺摘要；
+ *   · 需要人处理的卡片（例如待合并）才展开「结论 / 已产出」摘要，悬停可看全文；
  *   · 还没结束的任务**不显示摘要**（不制造「它已经有结论了」的错觉）。
  *
  * cost 0：不启动真实子代理（那会花额度），这里走的是渲染端真实渲染路径，
  * 数据用注入的 run —— 汇总本身的规则由 `test:unit` 的纯函数断言钉住。
+ * 「要交回什么 / 来源与成果计数」两行已随界面重构撤下，不再断言。
  */
 ;(async () => {
   const out = []
@@ -33,7 +33,7 @@
   }
   if (S().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${S().conn}）`
 
-  log('=== 1. 派活时写清任务输入（T15-1） ===')
+  log('=== 1. 卡片的信息分层 ===')
   const sessionId = S().session?.sessionId ?? 'probe-session'
   const startedAt = Date.now() - 90_000
   const base = (over) => ({
@@ -72,25 +72,39 @@
           at: startedAt - 2_000
         }
       }),
+      base({
+        id: 'sub-probe-review',
+        task: '把两个模块的错误处理统一一下',
+        status: 'done',
+        endedAt: startedAt - 1_000,
+        review: 'pending',
+        diff: { files: 2, additions: 10, deletions: 3, paths: ['src/a.ts'], patchPath: null, truncated: false },
+        result: {
+          summary: '已把 agent.ts 的吞错改成向上抛，index.ts 保持不变。',
+          summaryTruncated: false,
+          summaryFrom: 'last-message',
+          sources: [],
+          artifacts: [],
+          openQuestions: [],
+          at: startedAt - 1_000
+        }
+      }),
       base({ id: 'sub-probe-running', task: '把设置页的说明整理一遍', latestActivity: '正在读文件' })
     ]
   })
   await sleep(600)
 
-  ok(!!q('[data-testid="subagent-notes"]'), '会话里有子代理卡片')
-  const briefEl = q('[data-testid="subagent-note-brief-sub-probe-summary"]')
-  ok(!!briefEl, '看得到「要交回什么」')
-  ok(/一段结论/.test(String(briefEl?.textContent ?? '')), '交付物内容在', String(briefEl?.textContent ?? ''))
-  ok(/src\/main\/agent\.ts/.test(String(briefEl?.title ?? '')), '来源写进了 title（悬停可看全）')
+  ok(!!q('[data-testid="subagent-group"]'), '会话里有子代理卡片')
+  ok(!!q('[data-testid="subagent-note-sub-probe-summary"]'), '顺利完成的子代理有一张卡片')
+  ok(/完成/.test(String(q('[data-testid="subagent-note-state-sub-probe-summary"]')?.textContent ?? '')), '状态词是「完成」')
+  ok(!q('[data-testid="subagent-note-summary-sub-probe-summary"]'), '顺利完成的卡片不铺摘要（只留主行与元信息）')
 
-  log('=== 2. 结果汇总（T15-4） ===')
-  const summaryEl = q('[data-testid="subagent-note-summary-sub-probe-summary"]')
-  ok(!!summaryEl, '看得到给主 agent 的摘要')
-  ok(/两处读法不一致/.test(String(summaryEl?.textContent ?? '')), '摘要内容在', String(summaryEl?.textContent ?? '').slice(0, 30))
-  ok(/agent\.ts/.test(String(summaryEl?.title ?? '')), 'title 上有摘要全文（卡片上只显示一行）')
-  const metaEl = q('[data-testid="subagent-note-result-sub-probe-summary"]')
-  ok(!!metaEl, '看得到来源 / 成果计数')
-  ok(/2/.test(String(metaEl?.textContent ?? '')) && /1/.test(String(metaEl?.textContent ?? '')), '计数是 2 个来源 / 1 个成果', String(metaEl?.textContent ?? ''))
+  log('=== 2. 需要处理的卡片才展开摘要 ===')
+  const summaryEl = q('[data-testid="subagent-note-summary-sub-probe-review"]')
+  ok(!!summaryEl, '待合并的卡片显示摘要')
+  ok(/向上抛/.test(String(summaryEl?.textContent ?? '')), '摘要内容在', String(summaryEl?.textContent ?? '').slice(0, 30))
+  ok(/agent.ts/.test(String(summaryEl?.title ?? '')), 'title 上有摘要全文（卡片上只显示一行）')
+  ok(!!q('[data-testid="subagent-note-merge-sub-probe-review"]'), '待合并的卡片给出「合并」')
 
   log('=== 3. 还在跑的任务不显示摘要 ===')
   ok(!q('[data-testid="subagent-note-summary-sub-probe-running"]'), '运行中的子代理没有摘要行（不制造「已经有结论了」的错觉）')
@@ -98,6 +112,6 @@
   /* 清理：把注入的卡片拿掉，别把假数据留给下一个场景 */
   window.__yanStore.setState({ subagents: [] })
   await sleep(300)
-  ok(!q('[data-testid="subagent-notes"]'), '清掉注入后卡片消失')
+  ok(!q('[data-testid="subagent-group"]'), '清掉注入后卡片消失')
   return out.join('\n')
 })()

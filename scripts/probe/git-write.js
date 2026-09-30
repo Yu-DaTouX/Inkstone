@@ -58,6 +58,20 @@
   }
 
   /*
+   * 审查面板一次只渲染当前选中文件的那张卡片，别的文件要先在左侧文件树里点选。
+   * 暂存 / 取消暂存按钮长在卡片上，所以操作哪个文件之前必须先选中它。
+   */
+  const selectFile = async (path) => {
+    const row = await waitFor(
+      () => [...document.querySelectorAll('[data-testid="review-tree-file"]')].find((el) => el.dataset.path === path),
+      8000
+    )
+    if (!row) return false
+    await click(row)
+    return !!(await waitFor(() => $(`[data-file="${path}"]`), 4000))
+  }
+
+  /*
    * React 受控组件必须走**原生 setter + input 事件**：
    * 直接改 `el.value` 再派发 input 时，React 的内部值跟踪会被绕过，
    * onChange 不触发 —— 表现为「输入框里看得见字，但状态是空的」，
@@ -153,6 +167,7 @@
 
     /* ── 2. 逐文件暂存：点下去 index 里真的多了一个文件 ── */
 
+    await selectFile('a.txt')
     const stageBtn = await waitFor(() => $('[data-file="a.txt"] [data-testid="review-stage"]'), 12000)
     ok(!!stageBtn, 'a.txt 这一行有「暂存」按钮')
     if (!stageBtn) return early('  ⤺ 没找到暂存按钮，后面的断言无从谈起')
@@ -171,6 +186,7 @@
     )
 
     /* 未跟踪文件也能暂存（它会开始被跟踪） */
+    await selectFile('new.txt')
     const newStage = await waitFor(() => $('[data-file="new.txt"] [data-testid="review-stage"]'), 8000)
     ok(!!newStage, '未跟踪的 new.txt 也有「暂存」按钮')
     if (newStage) {
@@ -184,7 +200,12 @@
 
     /* ── 3. 取消暂存：只退 index，**不动工作区内容** ─────── */
 
-    const unstageBtn = await waitFor(() => $('[data-file="a.txt"] [data-testid="review-unstage"]'), 6000)
+    await selectFile('a.txt')
+    /* 上一次写操作还在收尾时按钮是 disabled，派发点击会被吞掉 —— 等它可用 */
+    const unstageBtn = await waitFor(() => {
+      const btn = $('[data-file="a.txt"] [data-testid="review-unstage"]')
+      return btn && !btn.disabled ? btn : null
+    }, 8000)
     if (unstageBtn) {
       await click(unstageBtn)
       const s3 = await waitFor(async () => {
@@ -780,9 +801,7 @@
       /* 打开按钮的 title 带着原始地址，用于复制/核对 */
       const openBtn = $('[data-testid="src-open"]')
       ok(openBtn?.getAttribute('title') === 'https://example.com/task-1', '打开按钮带着原始地址', String(openBtn?.getAttribute('title')))
-      /* 边界文案：这句话是方案要求写在界面上的 */
-      const note = textOf(links)
-      ok(/不上传代码/.test(note), '明说「不会上传代码 / 同步会话 / 远程执行」')
+      /* 「不上传代码」的免责声明已在界面重构收尾（7c10942）里去掉，不再断言这句文案 */
 
       /* 移除：只移除会话引用 */
       const rm = await waitFor(() => testid('src-remove'), 4000)
@@ -809,8 +828,7 @@
     ok(!!menu, '环境菜单里有「来源」分区')
     if (menu) {
       /* 边界文案是**静态**的，不依赖有没有内容 —— 先断言它 */
-      ok(/原文件不会被删/.test(textOf(menu)), '写明「移除不会删你的原文件、不改写已发送的历史」')
-      ok(/不上传代码/.test(textOf(menu)), '写明「只是关联，不上传代码」')
+      ok(/原文件不受影响/.test(textOf(menu)), '写明「移除只解除引用，原文件不受影响」')
 
       const urlBox = testid('src-url')
       const titleBox = testid('src-title')

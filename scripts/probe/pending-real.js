@@ -12,6 +12,9 @@
  *
  * 这个场景把整条链走一遍：真实模型回合 → 跑着时按 Enter 悬起 → 回合结束 → 自动投递。
  * 断言「回合结束后 runners 快照变 false」是修复点的直接证据（修复前这一条会 ✗）。
+ *
+ * 界面重构（7c10942）起，运行中按 Enter 默认直接排队（followUp），只有压缩维护期间才悬在待定区，
+ * 所以这里断言的是「直接排队投出」；待定区的自动投递由 `pending`（cost 0）覆盖。
  */
 ;(async () => {
   const out = []
@@ -78,40 +81,33 @@
   if (!started) return out.join('\n')
 
   out.push('')
-  out.push('=== 2. 回合跑着时按 Enter：消息应该悬在待定区 ===')
-  const MSG = 'YAN-PENDING-REAL（回合结束后应自动按排队投出）'
+  out.push('=== 2. 回合跑着时按 Enter：直接以排队方式投给 pi ===')
+  const MSG = 'YAN-PENDING-REAL（回合结束后应作为排队消息处理）'
   setVal(ta, MSG)
   await sleep(150)
   pressEnter(ta)
   await sleep(400)
-  out.push(`  pendingSends = ${pending().length} · runners[active].running = ${roundRunning()}`)
-  ok(pending().length === 1, '消息进了待定区，没有直接投出去')
-  ok(roundRunning() === true, '此时候回合级 running = true（正是插话时机）')
+  out.push(`  pendingSends = ${pending().length} · runners[active].running = ${roundRunning()} · 投递方式 = ${JSON.stringify(modes)}`)
+  ok(pending().length === 0, '没有悬在待定区（运行中默认直接排队）')
+  ok(modes.includes('followUp'), '运行中按 Enter 以 followUp 投递')
+  ok(roundRunning() === true, '此时回合级 running = true')
 
   out.push('')
-  out.push('=== 3. 等真实回合结束：待定消息必须自动投出 ===')
+  out.push('=== 3. 等真实回合结束：排队消息被处理完，运行状态回落 ===')
+  /* 排队消息会在这一轮之后再开一轮，所以「结束」要等到整个队列处理完 */
   let ended = false
-  for (let i = 0; i < 240; i++) {
+  for (let i = 0; i < 400; i++) {
     await sleep(300)
-    if (store.getState().session?.isAgentRunning !== true) {
+    const queue = store.getState().queue ?? { steering: [], followUp: [] }
+    if (store.getState().session?.isAgentRunning !== true && !roundRunning() && queue.followUp.length === 0) {
       ended = true
       break
     }
   }
-  ok(ended, '回合已结束')
-
-  let drained = false
-  for (let i = 0; i < 40; i++) {
-    await sleep(250)
-    if (pending().length === 0) {
-      drained = true
-      break
-    }
-  }
-  out.push(`  回合结束后 runners[active].running = ${roundRunning()} · pendingSends = ${pending().length}`)
+  ok(ended, '回合与排队消息都处理完了')
+  out.push(`  结束后 runners[active].running = ${roundRunning()} · queue.followUp = ${(store.getState().queue?.followUp ?? []).length}`)
   ok(roundRunning() === false, '回合结束后 runners 快照已刷新为 false（修复点：修复前会停在 true）')
-  ok(drained, '待定消息自动投出（卡片消失）')
-  ok(modes.includes('followUp'), `投递方式 = ${JSON.stringify(modes)}（应为 followUp）`)
+  ok((store.getState().queue?.followUp ?? []).length === 0, '排队消息已被 pi 接收（队列清空）')
 
   return out.join('\n')
 })()
